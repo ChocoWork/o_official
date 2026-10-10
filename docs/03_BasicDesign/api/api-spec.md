@@ -113,6 +113,8 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | `POST /api/profile` | 会員認証 U + CSRF呼出 C* | JSON: profilePayloadSchema（下記） | 200 `{success:true,email,fullName,kanaName,phone,address}` | Uの401/503; 400 payload; 500 DB。C*の制限参照 | 氏名/電話をupsert。返すaddressは保存済みdefault address [実装](../../../src/app/api/profile/route.ts) |
 | `DELETE /api/profile` | 会員認証 U + CSRF呼出 C* | 本文なし | 200 `{success:true}` | Uの401/503; 500 DB。C*の制限参照 | プロフィール欄をnullへ更新（認証ユーザーの削除ではない） [実装](../../../src/app/api/profile/route.ts) |
 
+注文の商品の行ごとの数（発送した数・受注生産中の数など。グループ E-1）は、お客様の注文の一覧と詳細、管理画面の注文の一覧と履歴、発送の材料（`GET /api/admin/orders/[id]/fulfillments`）が、同じ読み出し（`listOrderLineFulfillment`）で読む。注文の番号を小文字にそろえて、200件ずつ DB に渡す。1回の答えが 1000 行（PostgREST の上限）に届いた時は、切れている恐れがあるので数えずに止め、窓口は 500 を返す（切れたまま数えると、残りがあるのに「配送中」と出すなど、注文の言葉を誤るため）。お客様の注文の窓口は、この発送と数の読み出しの失敗のログに、名前・code・operation だけを残す（DB の文に宛先などが混ざりうるため）。管理画面の注文の一覧も、失敗のログに名前・code・operation だけを残す。根拠: [読み出し](../../../src/lib/orders/fulfillment/fulfillment-store.ts)。
+
 ## Checkout
 
 | メソッド・パス | 認証・認可 | 入力 | 応答 | 主な失敗（HTTP） | 副作用・補足 / 根拠 |
@@ -247,7 +249,7 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | `GET /api/admin/orders` | RBAC `admin.orders.read` | Query O（querySchema。下記） | 200 `{data:管理注文[],pagination:{page,pageSize,total,totalPages}}` | 400 query; 500 DB/例外 | Stripe状態/返金残額/操作可否/レビュー要否を付加。商品の行ごとの数（service_role で読む）から、注文の言葉（status）・DB の状態（orderStatus）・言葉の記号（progressKey）・一部発送済みか・仕上がりを記録できるかを返す（グループ E-1） [実装](../../../src/app/api/admin/orders/route.ts) |
 | `GET /api/admin/orders/[id]/history` | RBAC `admin.orders.read` | Path UUID | 200 `{order:{id,orderNumber,statusLabel,recipient},sendPaused,entries}`。本文は返さない | 400 id; 404 order; 500 DB/例外 | 受付・状態の変化（返金を含む）・発送・発送の取消・仕上がり・仕上がりの取消（グループ E-1）・メールを新しい順、送信の一時停止、no-store。発送のメールは何回目の発送かを付ける。見出しの statusLabel は DB の状態の言葉（決済完了・発送済みなど）のまま [実装](../../../src/app/api/admin/orders/%5Bid%5D/history/route.ts) |
 | `GET /api/admin/orders/[id]/emails/[emailId]` | RBAC `admin.orders.read` | Path: id/emailIdともUUID | 200 `{status:"available",subject,bodyText,sentAt}` 又は `{status:"erased",sentAt}` | 400 id; 404 対象なし/未送信; 500 DB/例外 | 送信済みだけ。45日を過ぎた本文を毎日の片付けで消した後はerased、no-store [実装](../../../src/app/api/admin/orders/%5Bid%5D/emails/%5BemailId%5D/route.ts) |
-| `POST /api/admin/orders/[id]/emails/resend` | RBAC `admin.orders.manage` + CSRF C、送信元・管理者ごと10分に30回 | Path UUID、JSON `{kind,fulfillmentId?}`（注文のメール5種類。発送のメールは発送の番号 fulfillmentId が要る） | 200 `{success:true,emailId}` | 400 id/body; 404 order; 409 送信待ちの再送あり/状態不適合/再送元なし/発送の番号が無い・取り消し済み; 429 回数; 503 制限DB障害; 500 DB/例外 | 手の再送の行を足し、監査、応答後after()でworker [実装](../../../src/app/api/admin/orders/%5Bid%5D/emails/resend/route.ts) |
+| `POST /api/admin/orders/[id]/emails/resend` | RBAC `admin.orders.manage` + CSRF C、送信元・管理者ごと10分に30回 | Path UUID、JSON `{kind,fulfillmentId?}`（注文のメール5種類。発送のメールは発送の番号 fulfillmentId が要る） | 200 `{success:true,emailId}` | 400 id/body（発送のメールに fulfillmentId が無い・発送のメール以外に fulfillmentId がある、を含む）; 404 order; 409 送信待ちの再送あり/状態不適合/再送元なし/発送がその注文の物でない・取り消し済み; 429 回数; 503 制限DB障害; 500 DB/例外 | 手の再送の行を足し、監査、応答後after()でworker [実装](../../../src/app/api/admin/orders/%5Bid%5D/emails/resend/route.ts) |
 | `POST /api/admin/orders/[id]/refund` | RBAC `admin.orders.manage` + JWT role admin | Path UUID。JSON: `{amount?:正整数,reason?:requested_by_customer&#124;duplicate&#124;fraudulent}`（既定requested_by_customer） | 200 `{success:true,refundId,refundAmount,currency,refundStatus,orderStatus}` | 400 id/body/非Stripe/金額超過; 403 role; 404 order; 409 未完了状態; Stripe例外400/409又は502; 500 DB/例外 | Stripe Refund作成、orders返金同期 [実装](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) |
 | `POST /api/admin/orders/[id]/review` | RBAC `admin.orders.manage` + CSRF C | Path UUID、本文なし | 200 `{success:true}` | 400 id; 409 未確認reasonなし/競合; 500 DB/例外 | reviewed_at/byを更新 [実装](../../../src/app/api/admin/orders/%5Bid%5D/review/route.ts) |
 | `GET /api/admin/orders/[id]/status` | RBAC `admin.orders.read` | Path: id（このGETにはUUID検証なし） | 200 `{endpoint,method:"POST",description,requiredBody:{status:"cancelled",reason:CANCEL_REASONS}}` | RBACの失敗応答のみ | 操作方法を返す。注文状態照会ではない [実装](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
@@ -436,8 +438,6 @@ costTypeはmaterial/sewing/pattern/planning/accessories/processing/inspection_fi
 2026-10-07にグループ F の入口の変更を表へ反映した（廃止した`update-shipping`の行を消し、`promotion-code`・`place-order`・`resume`の3行を足し、`create-session`とカートの行を直した）。実装を読んで書いたもので、上の件数（89・125）は2026-10-03時点のままであり、再集計していない。
 
 2026-10-10にグループ E-1 の入口の変更を表へ反映した（`POST /api/admin/orders/[id]/status` から発送を除き、発送・発送の取消・仕上がり・仕上がりの取消の5組を足し、お客様の注文・管理画面の注文の一覧・在庫の答えと、メールの再送の本文を直した）。実装を読んで書いたもので、上の件数は再集計していない。
-
-商品の行ごとの数（発送した数・受注生産中の数など）を読む窓口（管理画面の注文の一覧と履歴、お客様の注文の一覧と詳細）は、注文の番号を小文字にそろえて、200件ずつ DB に渡す。1回の答えが 1000 行（PostgREST の上限）に届いた時は、切れている恐れがあるので数えずに止め、500 を返す（切れたまま数えると、残りがあるのに「配送中」と出すなど、注文の言葉を誤るため）。管理画面の注文の一覧とお客様の注文の窓口は、失敗のログに名前・code・operation だけを残す（DB の文に宛先などが混ざりうるため）。
 
 この確認は静的な契約照合であり、実行時のDB適用状況、外部provider設定、デプロイ状態、全APIの疎通を検証したという意味ではない。
 

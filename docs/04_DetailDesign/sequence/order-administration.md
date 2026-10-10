@@ -28,7 +28,7 @@
 | `refunds.list`、成功返金集計、CASと再確認 | [返金同期](../../../src/lib/stripe/order-refund-sync.ts)、[返金投影RPC](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
 | 取消・発送のメール（発送は発送ごとに1通） | [送る予定の表](../../../supabase/migrations/20261009095633_order_email_outbox.sql)、[状態を変える関数](../../../supabase/migrations/20261009095736_order_email_enqueue.sql)、[発送ごとのメールの行](../../../supabase/migrations/20261010120100_fulfillment_order_emails.sql)、[worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts) |
 
-status/resolve APIは管理認可の後、ID・本文の検証より先に`requireCsrfOrDeny`を呼び、戻り値がResponseならそのまま返して後続へ進まない。helperはrefresh Cookieがなければ検査不要として通し、Cookieがある場合のCSRFヘッダー欠落・hash不一致は403、例外は500。[CSRF helper](../../../src/lib/csrfMiddleware.ts)を参照。これはAPI独自のチェックであり、共通proxyのOrigin検査と別に行われる。発送・仕上がりのAPI（`fulfillments`・`completions`）は、管理認可（`admin.orders.manage`）→ CSRF helper → 回数の制限（送信元ごと・管理者ごと）→ 注文の番号の検証 → 本文の検証の順で、先に断った段階で後ろへ進まない（[メールの再送API](../../../src/app/api/admin/orders/%5Bid%5D/emails/resend/route.ts)と同じ形）。
+status/resolve APIは管理認可の後、ID・本文の検証より先に`requireCsrfOrDeny`を呼び、戻り値がResponseならそのまま返して後続へ進まない。helperはrefresh Cookieがなければ検査不要として通し、Cookieがある場合のCSRFヘッダー欠落・hash不一致は403、例外は500。[CSRF helper](../../../src/lib/csrfMiddleware.ts)を参照。これはAPI独自のチェックであり、共通proxyのOrigin検査と別に行われる。発送・仕上がりのAPI（`fulfillments`・`completions`）は、管理認可（`admin.orders.manage`）→ CSRF helper → 回数の制限（送信元ごと・管理者ごと）→ 注文の番号の検証 → 本文の検証の順で、先に断った段階で後ろへ進まない（[メールの再送API](../../../src/app/api/admin/orders/%5Bid%5D/emails/resend/route.ts)と同じ形）。ただし発送の材料を読む `GET …/fulfillments` は、管理認可（`admin.orders.manage`）の後に注文の番号を検証するだけで、CSRF と回数の制限は通さない（読むだけで、状態を変えないため）。
 
 review APIも同じCSRF helperを呼ぶ。refund APIには明示的なCSRF helper呼出しがなく、共通[proxy](../../../src/proxy.ts)の状態変更APIに対するOrigin/Referer検査を通る。管理認可は検証済みJWT、セッションの有効性、DB ACLの対象権限、JWTの`aal2`を確認する。トークン不正・セッション失効は401、権限またはAAL2不足は403、セッション有効性を確認できない場合は503。refundの追加admin判定は検証済みJWTの`app_metadata.role`を使う。ACLのadmin権限だけでこの追加判定を代替する処理ではない。
 
@@ -122,7 +122,9 @@ sequenceDiagram
     API->>DB: admin_create_fulfillment(order, actor, requestKey, carrier, tracking, notify, lines)
     alt 同じ requestKey が記録済みで同じ中身
         DB-->>API: 前の結果（replayed = true）
+        API->>DB: 発送成功の監査（replayed = true）
         API-->>Admin: 200（二重に記録しない）
+        API-->>Mail: after() で worker を動かす（送り直しでも動かす）
     else 条件が成立
         Note over DB: 注文の行を FOR UPDATE。商品ごとに発送準備中の数を確かめて発送を書き、最後の発送なら shipped にし、notify なら発送ごとのメールの行を同じ取引で書く
         DB-->>API: fulfillment_id・number・completes_order・order_status
@@ -171,8 +173,8 @@ sequenceDiagram
 | 条件 | 結果・保存内容 |
 | --- | --- |
 | 発送できない状態 | 決済完了でない・未発送が無い: `ORDER_NOT_SHIPPABLE`（409）。配送先の必須項目が足りない: `SHIPPING_ADDRESS_INCOMPLETE`（409）。未解決の paid_amount_mismatch: `PAYMENT_REVIEW_REQUIRED`（409）。review_reason の未確認自体は拒否条件に含まれない |
-| 数の超過 | 注文に無い商品・発送準備中の数を超える数: `QUANTITY_EXCEEDS_READY`（409）。受注生産中の品は、仕上がりを記録するまで送れない。関数の確かめに重ねて、`shipped ≤ completed ≤ quantity` を破る書き込みはトリガーが `FULFILLMENT_BOUNDS_VIOLATED`（23514）で止める |
-| 同時の操作 | 注文の行の鍵で1つずつ進む。後の方は前の結果を見て、上の断りになる。2回目の発送は記録されない |
+| 数の超過 | 注文に無い商品: `LINE_NOT_IN_ORDER`、発送準備中の数を超える数: `QUANTITY_EXCEEDS_READY`（どちらも窓口は 409 で、画面の言葉は同じ）。受注生産中の品は、仕上がりを記録するまで送れない。関数の確かめに重ねて、`shipped ≤ completed ≤ quantity` を破る書き込みはトリガーが `FULFILLMENT_BOUNDS_VIOLATED`（23514）で止める（この言葉は窓口の言葉の表に無いので、窓口は 500） |
+| 同時の操作 | 注文の行の鍵で1つずつ進む。後の方は前の発送の後の数で確かめ、超える分は上の断りになる（同じ品を同時に送ると2回目は記録されない） |
 | 重複防止キー | 同じキーで同じ中身は前の結果（`replayed`）、違う中身は `FULFILLMENT_REQUEST_MISMATCH`（409）。答えが分からない時、画面は同じキーで確かめ直す |
 | 保存 | 発送（番号は注文ごとの最大＋1。取り消した番号は使い回さない）・発送の商品。全部を送った時だけ、注文の shipped・出荷日時・配送業者・追跡番号。注文の改訂の理由は `admin_create_fulfillment`・`admin_cancel_fulfillment` |
 | メール | `notifyCustomer` が真の時だけ、その発送の発送メールの行を同じ取引で書く。返事の後に worker が送る。失敗はやり直し、送れなければ店へ知らせる |
@@ -259,7 +261,7 @@ sequenceDiagram
     end
 ```
 
-解決済みの再検出は検出回数・最終時刻を更新するが未解決には戻さない。メモは任意で最大500字。未解決paid_amount_mismatchを解決すると出荷RPCのその拒否条件がなくなるが、解決記録自体はStripeの金額訂正をしない。根拠は[resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts)と[例外RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。
+解決済みの再検出は検出回数・最終時刻を更新するが未解決には戻さない。メモは任意で最大500字。未解決paid_amount_mismatchを解決すると発送の関数（`admin_create_fulfillment`）のその拒否条件（`PAYMENT_REVIEW_REQUIRED`）がなくなるが、解決記録自体はStripeの金額訂正をしない。根拠は[resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts)と[例外RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。
 
 ## SQ-ADMIN-05: 未入金注文を取り消して要対応を解決する
 

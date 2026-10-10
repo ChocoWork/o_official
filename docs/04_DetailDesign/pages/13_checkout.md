@@ -469,7 +469,7 @@ draft の配送先（`shipping_snapshot`）を書く経路は、`POST /api/check
 
 最終確認画面に出した配送先と、注文に写す配送先は、どちらも同じ下書きの写しなので、確認の後に変わることは無い（OWASP ASVS V11.1.6 の TOCTOU）。
 
-通常の流れは、入力画面の「確認へ進む」で配送先を検証・保存し、最終確認画面の「注文する」で place-order が支払いの前に注文を作る。以下の欠落監査は、受付を通らないまま完了した（入金済み・入金待ち）決済の画面を、共通照合器の `placeAndMark` が後から注文にする予備処理に限る。この予備処理では、注文を作る前に配送先の必須項目（メールアドレス・氏名・郵便番号・都道府県・市区町村・番地・電話番号）の欠落を確認する。欠けていても決済の画面は完了しており、入金済み・入金待ちの状態を照合する必要があるので注文は作り、欠けた項目を監査ログにエラーとして残す。注文一覧は`配送先要確認`を表示して発送操作を隠し、`admin_ship_paid_order`とDBトリガーも`shipped`への遷移を拒否する（ASVS V11.1.5 / V11.1.7）。根拠は[place-order](../../../src/app/api/checkout/place-order/route.ts)と[共通照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)。
+通常の流れは、入力画面の「確認へ進む」で配送先を検証・保存し、最終確認画面の「注文する」で place-order が支払いの前に注文を作る。以下の欠落監査は、受付を通らないまま完了した（入金済み・入金待ち）決済の画面を、共通照合器の `placeAndMark` が後から注文にする予備処理に限る。この予備処理では、注文を作る前に配送先の必須項目（メールアドレス・氏名・郵便番号・都道府県・市区町村・番地・電話番号）の欠落を確認する。欠けていても決済の画面は完了しており、入金済み・入金待ちの状態を照合する必要があるので注文は作り、欠けた項目を監査ログにエラーとして残す。注文一覧は`配送先要確認`を表示して発送操作を隠し、発送の関数`admin_create_fulfillment`も一部の発送を含めて`SHIPPING_ADDRESS_INCOMPLETE`で断り、DBトリガーも`shipped`への遷移を拒否する（ASVS V11.1.5 / V11.1.7）。根拠は[place-order](../../../src/app/api/checkout/place-order/route.ts)と[共通照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)。
 
 | テスト                                                                      | 内容                                                            |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------- |
@@ -676,7 +676,7 @@ Stripe 公式（無料の注文）に「無料注文のフルフィルメント�
 
 いまは受付 RPC `place_order_from_checkout_draft` が商品を `LEFT JOIN` で引き、行が無い商品も非公開と同じ `item_unavailable` で断る（注文を作らない）。支払いの後なら照合関数が要対応（`order_not_creatable`、詳細 `item_unavailable`）として記録して店へ知らせ、お客様には受付を通らない支払いの案内を1回送る。完了 API は 409 を返す。検証は `tests/integration/db/place_order_from_checkout_draft.integration.test.ts` の「非公開の商品と存在しない商品は item_unavailable」。
 
-### 注文メールは1注文・1種類につき1通（FREQ-386・FREQ-434）
+### 注文メールは1注文・1種類につき1通（発送のメールは発送ごと。FREQ-386・FREQ-434・FREQ-442）
 
 2026-10-09 から、注文のメールは送る予定の表（transactional outbox）で送る（[グループ D 設計書](../../superpowers/specs/2026-10-09-order-email-outbox-design.md)）。
 

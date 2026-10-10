@@ -5,7 +5,7 @@
 > 直す指摘: [レビュー台帳](../../05_Quality/reviews/code/2026-09-25-working-diff-security-review.md) の R-34（送信に失敗した確認メールを再送する経路が無い）と R-14（送信権の取得に失敗すると重複送信を許す）。要求 FREQ-386「0通や2通にならない」を満たす
 > 方針: **Shopify と同じ形に近づける。Shopify の仕組みが見つからない所は、世界の業界の定番（ベストプラクティス・デファクトスタンダード）に従う**（ユーザーの指示）。各設計の節の終わりに、根拠の資料を添えて突き合わせた結果を書く
 > 関連: [グループ A 設計書](2026-09-26-order-payment-reconciliation-design.md)（照合と注文の状態）、[グループ B 設計書](2026-10-05-webhook-queue-operations-design.md)（キュー・worker・定期処理・店への知らせ）、[グループ F 設計書](2026-10-07-checkout-place-order-payment-design.md)
-> 後の変更: 発送のメールの決まりは、[グループ E-1 設計書](2026-10-10-partial-fulfillment-design.md) の 8 章で「発送ごとに1通」に変わった（この文書の 3-1・3-2・4-1・5-3・5-4・7-1・7-3 の発送の部分。古い文は記録として残し、変わる所に注記を付けた）
+> 後の変更: 発送のメールの決まりは、[グループ E-1 設計書](2026-10-10-partial-fulfillment-design.md) の 8 章で「発送ごとに1通」に変わった（この文書の 2 章・3-1・3-2・4-1・5-3・5-4・7-1・7-3・9 章・11 章の発送の部分と、5-1 の状態の表示名。古い文は記録として残し、変わる所に注記を付けた）
 
 ---
 
@@ -273,7 +273,7 @@ sequenceDiagram
 
 - 上に宛先（注文のメールアドレス）を出す。送信を一時停止している時は「メールの送信を一時停止しています（理由）」と出す。
 - 状態の変化の表示は、表に残っている前後の値をそのまま出さず、上の項目だけを決まった文で出す（住所などを余計に出さない）。
-- 注文の状態の表示名は、[order-history.ts](../../../src/lib/orders/email/order-history.ts) の `ORDER_STATUS_LABELS` を正本とし、注文一覧と履歴の窓口で共有する。
+- 注文の状態の表示名は、[order-history.ts](../../../src/lib/orders/email/order-history.ts) の `ORDER_STATUS_LABELS` を正本とし、注文一覧と履歴の窓口で共有する（2026-10-10 グループ E-1 から、注文一覧は [order-progress.ts](../../../src/lib/orders/order-progress.ts) の進み具合の言葉を出す。`ORDER_STATUS_LABELS` を使うのは履歴の窓口（見出しと状態の変化の行）だけ）。
 - `public.list_order_status_history` は `'status' = ANY (changed_fields)` で絞り、`apply_order_refund_projection` の `refund_update` による状態変更も含める。`order-history.ts` は返金でキャンセルになった行に「理由: 全額返金」、キャンセルから戻った行に「返金の取り消し」を出す。
 
 ### 5-2 送ったメールの中身
