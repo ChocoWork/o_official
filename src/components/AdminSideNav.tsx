@@ -19,6 +19,7 @@ const TAB_ICONS: Record<TabType, string> = {
   USER: "ri-user-line",
   ORDER: "ri-shopping-cart-line",
   CONTACT: "ri-mail-line",
+  SETTINGS: "ri-settings-3-line",
 };
 
 // 左側の縦ナビ。薄いグレーの長方形パネル上にアイコン + ラベルを並べ、

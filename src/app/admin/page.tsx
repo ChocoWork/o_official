@@ -14,6 +14,7 @@ import ItemSection from '@/components/ItemSection';
 import LookSection from '@/components/LookSection';
 import StockistSection from '@/components/StockistSection';
 import UserSection from '@/components/UserSection';
+import ShopSettingsSection from '@/components/ShopSettingsSection';
 import OrderSection, { type OrderItem } from '@/components/OrderSection';
 import AttentionInbox from '@/components/AttentionInbox';
 import OrderCancelDialog, { type OrderCancelValues } from '@/components/OrderCancelDialog';
@@ -35,7 +36,8 @@ type AdminOrderAttention = OrderAttention & {
   emailSending?: { paused: boolean; reasonLabel: string | null } | null;
 };
 
-const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER'];
+// SETTINGS（ショップの設定）は店長だけ。サポートの人の supporterTabs には足さない（窓口も権限 admin.settings.manage で守る）
+const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'SETTINGS'];
 const supporterTabs: TabType[] = ['ORDER'];
 // 絞り込みは DB の状態で行う（段階で絞ると、ページを分けて読む作りが崩れる。設計書 4-4）。value は窓口の status にそのまま送る
 const ORDER_STATUS_FILTERS = [
@@ -838,6 +840,9 @@ function AdminPageContent() {
       case 'USER':
         if (userRole !== 'admin') return null;
         return <UserSection />;
+      case 'SETTINGS':
+        if (userRole !== 'admin') return null;
+        return <ShopSettingsSection />;
       case 'ORDER':
         return (
           <div className="space-y-4">
