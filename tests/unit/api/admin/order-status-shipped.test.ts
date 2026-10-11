@@ -449,6 +449,45 @@ describe('POST /api/admin/orders/[id]/status - 支払い済みのキャンセル
     expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Refund accepted' }));
   });
 
+  test.each([
+    { label: 'requestKey が UUID でない', body: { ...PAID_CANCEL, requestKey: 'abc' } },
+    { label: '在庫に戻すが真偽でない', body: { ...PAID_CANCEL, restock: 'yes' } },
+  ])('取消済みへの再送の誤り（$label）は、返金の権限と回数の制限を通して 400。返金を始めない', async ({ body }) => {
+    currentOrder('cancelled');
+
+    const res = await post(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: '入力を確かめてください。', code: 'invalid_request' });
+    expect(mockAuthorize.mock.calls.map(([permission]) => permission)).toEqual(['admin.orders.manage', 'admin.orders.refund']);
+    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(2);
+    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(1, {
+      request: expect.any(Request), endpoint: 'admin:orders:paid-cancel', limit: 30, windowSeconds: 600,
+    });
+    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(2, {
+      request: expect.any(Request), endpoint: 'admin:orders:paid-cancel', limit: 30, windowSeconds: 600, subject: 'admin-1',
+    });
+    expect(mockMaybeSingle.mock.invocationCallOrder[0]).toBeLessThan(mockAuthorize.mock.invocationCallOrder[1]);
+    expect(mockAuthorize.mock.invocationCallOrder[1]).toBeLessThan(mockEnforceRateLimit.mock.invocationCallOrder[0]);
+    expect(mockEnforceRateLimit.mock.invocationCallOrder[1]).toBeLessThan(mockLogAudit.mock.invocationCallOrder[0]);
+    expect(mockSubmitPaidOrderCancel).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'failure', detail: 'Invalid request body', metadata: null,
+    }));
+  });
+
+  test('取消済みへの番号なしの再送は、返金の権限と回数の制限を通さず、従来の 200 を返す', async () => {
+    currentOrder('cancelled');
+
+    const res = await post(CANCEL);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true, status: 'cancelled' });
+    expect(mockAuthorize.mock.calls.map(([permission]) => permission)).toEqual(['admin.orders.manage']);
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+    expect(mockSubmitPaidOrderCancel).not.toHaveBeenCalled();
+  });
+
   test('返金の権限が無い人（サポート）は、中身が足りなくても 400 でなく 403（権限が先）。回数も数えず、返金も始めない', async () => {
     mockAuthorize.mockImplementation(supporter);
 

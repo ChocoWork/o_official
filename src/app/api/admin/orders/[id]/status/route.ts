@@ -160,7 +160,14 @@ export async function POST(
 
     // 支払い済みのキャンセルの送り直し（二重防止の番号つき）は、返金が成功して注文がもう取消になっていても返金の流れに回す。
     // DB は同じ番号の前の記録を返す（replayed）ので、通信が切れた後の「もう一度確かめる」も返金の窓口と同じ答えになる
-    if (currentOrder.status === 'cancelled' && paidCancelSchema.safeParse(rawBody).success) {
+    // 番号・在庫の検証は cancelPaidOrder の中で、返金の認可と回数の制限の後に1回だけ行う
+    if (
+      currentOrder.status === 'cancelled'
+      && typeof rawBody === 'object'
+      && rawBody !== null
+      && 'requestKey' in rawBody
+      && rawBody.requestKey != null
+    ) {
       return cancelPaidOrder(request, currentOrder, rawBody, cancel, audit);
     }
 
