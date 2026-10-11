@@ -58,6 +58,18 @@ async function insertFulfillmentRecord(db: PgClient, orderId: string): Promise<s
   return res.rows[0].id as string;
 }
 
+/** 返金の記録を直接書く（グループ E-2）。結果を書く関数の試験では、返金を始める関数を通さない */
+async function insertRefundRecord(db: PgClient, orderId: string, amount: number): Promise<string> {
+  const res = await db.query(
+    `insert into public.order_refunds
+       (order_id, source, request_key, request_fingerprint, status, amount, notify_customer)
+     values ($1, 'admin', gen_random_uuid(), 'fixture', 'awaiting_response', $2, false)
+     returning id`,
+    [orderId, amount],
+  );
+  return res.rows[0].id as string;
+}
+
 async function claim(db: PgClient): Promise<Row | null> {
   const res = await db.query('select * from public.claim_order_email(300)');
   return res.rows[0] ?? null;
@@ -575,36 +587,26 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
 
     test('一部の返金は状態の履歴を増やさず、全額の返金による取消は履歴に返す', async () => {
       const orderId = await createOrder(db(), 'paid');
-      const orderStateSql = `select status::text as status, total_amount, refunded_amount,
-                                   payment_status_updated_at::text as payment_status_updated_at
-                            from public.orders where id = $1`;
-      // 期待する更新時刻は文字列で読み、PostgreSQL の秒未満の精度を保つ。
-      const initial = (await db().query(orderStateSql, [orderId])).rows[0];
-      const partialAmount = Math.floor(Number(initial.total_amount) / 2);
+      const total = Number((await db().query('select total_amount from public.orders where id = $1', [orderId])).rows[0].total_amount);
+      const partialAmount = Math.floor(total / 2);
       expect(partialAmount).toBeGreaterThan(0);
-      expect(partialAmount).toBeLessThan(Number(initial.total_amount));
+      expect(partialAmount).toBeLessThan(total);
       const before = await db().query('select * from public.list_order_status_history($1)', [orderId]);
       expect(before.rows).toEqual([]);
-
-      const partial = await db().query(
-        `select * from public.apply_order_refund_projection(
-          $1::uuid, $2::public.order_status, $3::integer, $4::timestamptz, $5::integer, now(), now(), null
-        )`,
-        [orderId, initial.status, initial.refunded_amount, initial.payment_status_updated_at, partialAmount],
+      const recordSucceeded = (refundId: string) => db().query(
+        `select order_status::text as order_status, refunded_amount
+         from public.record_order_refund_result($1::uuid, $2::text, 'succeeded', null, null, null, 'card', null, null)`,
+        [refundId, `re_${uniqueSuffix()}`],
       );
-      expect(partial.rows).toEqual([{ id: orderId, status: 'paid', refunded_amount: partialAmount }]);
+
+      const partial = await recordSucceeded(await insertRefundRecord(db(), orderId, partialAmount));
+      expect(partial.rows).toEqual([{ order_status: 'paid', refunded_amount: partialAmount }]);
       expect((await db().query('select * from public.list_order_status_history($1)', [orderId])).rows).toEqual(before.rows);
 
-      const afterPartial = (await db().query(orderStateSql, [orderId])).rows[0];
-      const full = await db().query(
-        `select * from public.apply_order_refund_projection(
-          $1::uuid, $2::public.order_status, $3::integer, $4::timestamptz, $5::integer, now(), now(), null
-        )`,
-        [orderId, afterPartial.status, afterPartial.refunded_amount, afterPartial.payment_status_updated_at, afterPartial.total_amount],
-      );
-      expect(full.rows).toEqual([{ id: orderId, status: 'cancelled', refunded_amount: Number(afterPartial.total_amount) }]);
+      const full = await recordSucceeded(await insertRefundRecord(db(), orderId, total - partialAmount));
+      expect(full.rows).toEqual([{ order_status: 'cancelled', refunded_amount: total }]);
       expect((await db().query('select * from public.list_order_status_history($1)', [orderId])).rows).toEqual([
-        expect.objectContaining({ from_status: 'paid', to_status: 'cancelled', change_reason: 'stripe_refund_projection' }),
+        expect.objectContaining({ from_status: 'paid', to_status: 'cancelled', change_reason: 'refund_projection' }),
       ]);
     });
 
@@ -780,7 +782,7 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
     test.each([
       'private.order_email_max_attempts()',
       'private.order_email_retry_delay(integer)',
-      'private.enqueue_order_email(uuid, text, text, uuid)',
+      'private.enqueue_order_email(uuid, text, text, uuid, uuid)',
       'private.set_order_email_pause(text)',
       'private.purge_order_email_data()',
     ])('%s の実行権限は anon・authenticated・service_role のどれにも無い', async (signature) => {

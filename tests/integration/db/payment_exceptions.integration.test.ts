@@ -67,6 +67,18 @@ describeLocalDb('integration: 要対応・要確認', (db) => {
     ).rejects.toMatchObject({ code: '23514' });
   });
 
+  test('返金の失敗（refund_failed）を理由に記録でき、補足コードは Stripe の失敗の理由の形だけ入る（グループ E-2）', async () => {
+    const ref = `re_${uniqueSuffix()}`;
+    const first = await record(db(), { ref, reason: 'refund_failed', detail: 'expired_or_canceled_card' });
+    const again = await record(db(), { ref, reason: 'refund_failed', detail: 'expired_or_canceled_card' });
+
+    expect(first).toMatchObject({ is_new: true, is_resolved: false });
+    expect(again).toEqual({ exception_id: first.exception_id, is_new: false, is_resolved: false });
+    await expect(
+      record(db(), { ref: `re_${uniqueSuffix()}`, reason: 'refund_failed', detail: 'Declined By Bank' }),
+    ).rejects.toMatchObject({ code: '23514' });
+  });
+
   test('通知の送信権は1回だけ取れ、戻すともう一度取れる', async () => {
     const { exception_id: id } = await record(db(), { ref: `cs_${uniqueSuffix()}`, reason: 'state_conflict' });
 

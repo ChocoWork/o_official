@@ -103,6 +103,23 @@ describe('integration: order state transition hardening', () => {
     return line.rows[0].id as string;
   }
 
+  /** 返金の記録は関数だけが書く（service_role は読むだけ）ので、service_role に切り替える前に、返事待ちの記録を直に入れる */
+  async function insertRefundRecord(
+    orderId: string,
+    amount: number,
+    actorId: string,
+    source: 'admin' | 'auto_cancelled_order_payment' = 'admin',
+  ): Promise<string> {
+    const refund = await client.query(
+      `insert into public.order_refunds
+         (order_id, source, request_key, request_fingerprint, status, amount, notify_customer, actor_id)
+       values ($1, $2, $3, $4, 'awaiting_response', $5, false, $6)
+       returning id`,
+      [orderId, source, source === 'admin' ? crypto.randomUUID() : null, source === 'admin' ? 'fixture' : null, amount, actorId],
+    );
+    return refund.rows[0].id as string;
+  }
+
   test('authenticated cannot update orders or execute transition RPCs', async () => {
     const privileges = await client.query(
       `select has_table_privilege('authenticated', 'public.orders', 'UPDATE') as can_update,
@@ -118,9 +135,9 @@ describe('integration: order state transition hardening', () => {
               ) as can_ship,
               has_function_privilege(
                 'authenticated',
-                'public.apply_order_refund_projection(uuid,order_status,integer,timestamp with time zone,integer,timestamp with time zone,timestamp with time zone,uuid)',
+                'public.record_order_refund_result(uuid,text,text,text,text,timestamp with time zone,text,text,text)',
                 'EXECUTE'
-              ) as can_project_refund,
+              ) as can_record_refund,
               has_function_privilege(
                 'service_role',
                 'public.admin_cancel_failed_order(uuid,uuid,text,text)',
@@ -133,19 +150,19 @@ describe('integration: order state transition hardening', () => {
               ) as service_can_ship,
               has_function_privilege(
                 'service_role',
-                'public.apply_order_refund_projection(uuid,order_status,integer,timestamp with time zone,integer,timestamp with time zone,timestamp with time zone,uuid)',
+                'public.record_order_refund_result(uuid,text,text,text,text,timestamp with time zone,text,text,text)',
                 'EXECUTE'
-              ) as service_can_project_refund`,
+              ) as service_can_record_refund`,
     );
 
     expect(privileges.rows[0]).toEqual({
       can_update: false,
       can_cancel: false,
       can_ship: false,
-      can_project_refund: false,
+      can_record_refund: false,
       service_can_cancel: true,
       service_can_ship: true,
-      service_can_project_refund: true,
+      service_can_record_refund: true,
     });
 
     await client.query('begin');
@@ -198,7 +215,7 @@ describe('integration: order state transition hardening', () => {
     }
   });
 
-  test('shipping and refund projection RPCs execute with service-role-only transitions', async () => {
+  test('shipping and refund result RPCs execute with service-role-only transitions', async () => {
     await client.query('begin');
     try {
       const user = await client.query(
@@ -212,8 +229,13 @@ describe('integration: order state transition hardening', () => {
       const shippingItemId = await insertOrderItem(shippingOrderId);
       const refundOrderId = await insertOrder({ status: 'paid' });
       const legacyCancelledId = await insertOrder({ status: 'cancelled' });
-      const firstProjectionAt = '2026-09-22T00:00:00.000Z';
-      const secondProjectionAt = '2026-09-22T00:01:00.000Z';
+      const firstRefundId = await insertRefundRecord(refundOrderId, 800, actorId);
+      const secondRefundId = await insertRefundRecord(refundOrderId, 200, actorId);
+      const unpaidRefundId = await insertRefundRecord(legacyCancelledId, 100, actorId, 'auto_cancelled_order_payment');
+      const recordRefundResult = (refundId: string, status: string) => client.query(
+        `select * from public.record_order_refund_result($1::uuid, $2::text, $3::text, null, null, null, 'card', null, null)`,
+        [refundId, `re_${refundId.replace(/-/g, '')}`, status],
+      );
 
       await client.query('set local role service_role');
       const shipped = await client.query(
@@ -222,57 +244,24 @@ describe('integration: order state transition hardening', () => {
          )`,
         [shippingOrderId, actorId, JSON.stringify([{ order_item_id: shippingItemId, quantity: 1 }])],
       );
-      const fullyRefunded = await client.query(
-        `select * from public.apply_order_refund_projection(
-           $1::uuid,
-           'paid'::public.order_status,
-           0,
-           null::timestamptz,
-           1000,
-           now(),
-           $3::timestamptz,
-           $2::uuid
-         )`,
-        [refundOrderId, actorId, firstProjectionAt],
-      );
-      const restored = await client.query(
-        `select * from public.apply_order_refund_projection(
-           $1::uuid,
-           'cancelled'::public.order_status,
-           1000,
-           $3::timestamptz,
-           200,
-           now(),
-           $4::timestamptz,
-           $2::uuid
-         )`,
-        [refundOrderId, actorId, firstProjectionAt, secondProjectionAt],
-      );
-      const legacyProjection = await client.query(
-        `select * from public.apply_order_refund_projection(
-           $1::uuid,
-           'cancelled'::public.order_status,
-           0,
-           null::timestamptz,
-           100,
-           now(),
-           $3::timestamptz,
-           $2::uuid
-         )`,
-        [legacyCancelledId, actorId, firstProjectionAt],
-      );
+      await recordRefundResult(firstRefundId, 'succeeded');
+      const fullyRefunded = await recordRefundResult(secondRefundId, 'succeeded');
+      const restored = await recordRefundResult(firstRefundId, 'failed');
+      const unpaidRefunded = await recordRefundResult(unpaidRefundId, 'succeeded');
       await client.query('reset role');
 
       expect(shipped.rows).toEqual([
         expect.objectContaining({ completes_order: true, order_status: 'shipped', replayed: false }),
       ]);
       expect(fullyRefunded.rows).toEqual([
-        { id: refundOrderId, status: 'cancelled', refunded_amount: 1000 },
+        expect.objectContaining({ order_status: 'cancelled', refunded_amount: 1000 }),
       ]);
       expect(restored.rows).toEqual([
-        { id: refundOrderId, status: 'paid', refunded_amount: 200 },
+        expect.objectContaining({ order_status: 'paid', refunded_amount: 200 }),
       ]);
-      expect(legacyProjection.rows).toEqual([]);
+      expect(unpaidRefunded.rows).toEqual([
+        expect.objectContaining({ order_status: 'cancelled', refunded_amount: 100 }),
+      ]);
 
       const persisted = await client.query(
         `select id, status::text as status, shipping_carrier, tracking_number
@@ -384,6 +373,50 @@ describe('integration: order state transition hardening', () => {
         ),
       ).rejects.toMatchObject({ code: '23514', message: expect.stringContaining('ORDER_STATUS_TRANSITION_NOT_ALLOWED') });
       await client.query('rollback to savepoint direct_unship');
+    } finally {
+      await client.query('rollback');
+    }
+  });
+
+  test('残りを返金して発送済みになった注文は、その返金の失敗で発送済みから支払い済みへ戻せる（グループ E-2 設計書 4-7・11-4）', async () => {
+    await client.query('begin');
+    try {
+      const actor = await client.query(
+        `insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+         values (gen_random_uuid(), $1, '{}'::jsonb, now(), now()) returning id`,
+        [`refund-reopen-${Date.now()}@example.com`],
+      );
+      const actorId = actor.rows[0].id as string;
+      const orderId = await insertOrder({ status: 'paid' });
+      const shippedItemId = await insertOrderItem(orderId);
+      const refundedItemId = await insertOrderItem(orderId);
+
+      await client.query('set local role service_role');
+      await client.query(
+        `select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), 'yamato', 'TRACK-11', false, $3::jsonb)`,
+        [orderId, actorId, JSON.stringify([{ order_item_id: shippedItemId, quantity: 1 }])],
+      );
+      await client.query('reset role');
+      // 発送の後に、残りの1点を返す返事待ちの記録を所有者のまま直に入れる（先に入れると、返事待ちの品は送れないので発送が注文を完了にする）
+      const refundId = await insertRefundRecord(orderId, 500, actorId);
+      await client.query(
+        `insert into public.order_refund_lines (refund_id, order_item_id, quantity, before_shipment, restock_type, amount)
+         values ($1, $2, 1, true, 'cancel', 500)`,
+        [refundId, refundedItemId],
+      );
+      const recordResult = (status: string) => client.query(
+        `select order_status::text as order_status
+         from public.record_order_refund_result($1::uuid, $2::text, $3::text, null, null, null, 'card', null, null)`,
+        [refundId, `re_${refundId.replace(/-/g, '')}`, status],
+      );
+
+      await client.query('set local role service_role');
+      const completed = await recordResult('pending');
+      const reopened = await recordResult('failed');
+      await client.query('reset role');
+
+      expect(completed.rows).toEqual([{ order_status: 'shipped' }]);
+      expect(reopened.rows).toEqual([{ order_status: 'paid' }]);
     } finally {
       await client.query('rollback');
     }

@@ -35,7 +35,8 @@ BEGIN
   END IF;
 
   -- 設計書 4-1 の表に無い遷移は拒否する（取消の注文の復元は、全額返金の失敗で入金済み・発送済みへ戻すため。
-  -- 発送済みから入金済みへは、発送の取消で未発送の品が戻った時だけ。グループ E-1 設計書 7-3）
+  -- 発送済みから入金済みへは、発送の取消で未発送の品が戻った時（グループ E-1 設計書 7-3）と、
+  -- 返金の失敗で発送前に返金した品が戻った時（グループ E-2 設計書 4-7）だけ。入金済みから発送済みへは、元から通る）
   IF NEW.status IS DISTINCT FROM OLD.status AND NOT (
        (OLD.status = 'payment_in_progress' AND NEW.status IN ('paid', 'pending', 'failed', 'abandoned', 'cancelled'))
     OR (OLD.status = 'pending' AND NEW.status IN ('paid', 'failed', 'cancelled'))
@@ -44,27 +45,29 @@ BEGIN
     OR (OLD.status = 'shipped' AND NEW.status = 'cancelled')
     OR (OLD.status = 'shipped' AND NEW.status = 'paid'
         AND pg_catalog.current_setting('app.order_change_reason', true) = 'admin_cancel_fulfillment')
+    OR (OLD.status = 'shipped' AND NEW.status = 'paid'
+        AND pg_catalog.current_setting('app.order_change_reason', true) = 'refund_failed_reopened')
     OR (OLD.status = 'cancelled' AND NEW.status IN ('paid', 'shipped'))
   ) THEN
     RAISE EXCEPTION 'ORDER_STATUS_TRANSITION_NOT_ALLOWED:%->%', OLD.status, NEW.status
       USING ERRCODE = '23514';
   END IF;
 
-  -- 入金済み・発送済みの注文は、成功済み返金合計が注文総額に達する同一更新でだけ
+  -- 入金済み・発送済みの注文は、成功済み返金合計が受け取った額（空なら注文総額）に達する同一更新でだけ
   -- cancelled へ遷移できる。
   IF OLD.status IN ('paid', 'shipped')
      AND NEW.status = 'cancelled'::public.order_status
-     AND NEW.refunded_amount < NEW.total_amount THEN
+     AND NEW.refunded_amount < COALESCE(NULLIF(NEW.paid_amount, 0), NEW.total_amount) THEN
     RAISE EXCEPTION 'PAID_ORDER_REQUIRES_FULL_REFUND_BEFORE_CANCELLATION'
       USING ERRCODE = '23514';
   END IF;
 
   -- 全額返金で cancelled になった注文から成功済み返金が失われた場合は、
   -- 発送記録の有無に従って shipped / paid へ同じ更新で復元する。
-  -- 未決済由来の既存 cancelled（OLD.refunded_amount < OLD.total_amount）は対象外。
+  -- 未決済由来の既存 cancelled（OLD.refunded_amount < 受け取った額）は対象外。
   IF OLD.status = 'cancelled'::public.order_status
-     AND OLD.refunded_amount >= OLD.total_amount
-     AND NEW.refunded_amount < NEW.total_amount THEN
+     AND OLD.refunded_amount >= COALESCE(NULLIF(OLD.paid_amount, 0), OLD.total_amount)
+     AND NEW.refunded_amount < COALESCE(NULLIF(NEW.paid_amount, 0), NEW.total_amount) THEN
     required_restored_status := CASE
       WHEN NEW.shipped_at IS NOT NULL THEN 'shipped'::public.order_status
       ELSE 'paid'::public.order_status

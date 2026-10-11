@@ -576,9 +576,12 @@ describeLocalDb('integration: 発送の関数と発送ごとのメール（移�
         `select to_regprocedure('public.admin_ship_paid_order(uuid,uuid,text,text,boolean)') as ship,
                 to_regclass('public.variant_backorder_summary') as backorder_view,
                 to_regprocedure('private.enqueue_order_email(uuid,text,text)') as old_enqueue,
+                to_regprocedure('private.enqueue_order_email(uuid,text,text,uuid)') as old_enqueue_with_fulfillment,
                 to_regprocedure('public.request_order_email_resend(uuid,text,uuid)') as old_resend`,
       );
-      expect(res.rows[0]).toEqual({ ship: null, backorder_view: null, old_enqueue: null, old_resend: null });
+      expect(res.rows[0]).toEqual({
+        ship: null, backorder_view: null, old_enqueue: null, old_enqueue_with_fulfillment: null, old_resend: null,
+      });
 
       // 同じ名前の関数が2つあると、Data API が呼び分けられない（PGRST203）
       for (const [schema, name] of [
