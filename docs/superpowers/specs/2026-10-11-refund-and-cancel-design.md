@@ -284,7 +284,7 @@ stateDiagram-v2
 
 ### 4-5 商品ごとの返金額（割引の割り振り）
 
-- 商品の小計 L = 単価 × q。注文の割引 D を、商品の小計の割合で割る: Dᵢ = 四捨五入(D × Lᵢ ÷ ΣL)。最後の商品（商品の番号の順）は D − 他の合計にして、合計を D にそろえる
+- 商品の小計 L = 単価 × q。注文の割引 D を、商品の小計の割合で割る。商品の登録順に小計を足していった和 Cᵢ について R(C) = 四捨五入(D × C ÷ ΣL) とし、Dᵢ = R(Cᵢ) − R(Cᵢ₋₁)（累積で丸める）。どの Dᵢ も0以上で、合計は必ず D になる（割引が数円で商品が多い注文でも、最後の商品の割り振りが負にならない。商品が2つまでの注文は「最初は四捨五入、最後は残り」と同じ値）
 - disc(n) = 四捨五入(Dᵢ × n ÷ qᵢ) とする。前に返した数を b（返事待ち・保留・成功）、今回の数を k とすると、今回の額 = 単価 × k − (disc(b + k) − disc(b))
 - 全部の数を返すと disc(q) = Dᵢ になるので、最後の返金で合計とぴったり合う
 - 計算 = 商品の額の合計 + 送料。計算との差 = 返金額 − 計算
@@ -698,7 +698,7 @@ Shopify の注文の履歴（タイムライン）と同じく、時刻の順に
 
 ### 9-6 ショップの設定（新しい画面）
 
-- 管理画面の左のメニューに「ショップの設定」を足す。新しい権限 `admin.settings.manage`（店長の役割だけ）を持つ人にだけ出す。サポートの人のメニューには出さない
+- 管理画面の左のメニューに `SETTINGS`（今のメニューの英語の名前 `KPI`・`ORDER` などに合わせる。画面の題は「ショップの設定」）を足す。新しい権限 `admin.settings.manage` を持つ店長の役割にだけ出す。サポートの人のメニューには出さない
 - 「自動の返金」の欄に、トグルを2つ置く
 
 | トグル | 既定 | 説明の文 |
@@ -747,8 +747,11 @@ Shopify の注文の履歴（タイムライン）と同じく、時刻の順に
 
 | 移行 | 中身 |
 |---|---|
-| A（返金の記録と数え方） | 返金の2つの表と守り・トリガー、`orders.paid_amount`、`stock_movements.refund_id`、`public.shop_settings`、`private.refund_ledger_state`、権限の行、`private.order_line_reservations`・`private.order_line_fulfillment`・`public.list_order_line_fulfillment`・守りのトリガーの変更、返金の DB の関数、`admin_cancel_fulfillment`・`mark_order_paid`・`list_item_stock_history` の変更、前からの写しと受け取った額 |
-| B（返金のメールと要対応） | 注文のメールの表の種類・書き分け・列・CHECK・索引、メールの DB の関数の変更、要対応の理由 `refund_failed`、`apply_order_refund_projection` を消す |
+| A（返金の記録と数え方） | 返金の2つの表と守り・トリガー、`orders.paid_amount`、`stock_movements.refund_id`、`public.shop_settings`、`private.refund_ledger_state`、権限の行、`private.order_line_reservations`・`private.order_line_fulfillment`・`public.list_order_line_fulfillment`・守りのトリガーの変更、割引の割り振り、`mark_order_paid`・`list_item_stock_history` の変更、前からの写しと受け取った額 |
+| B（返金を始める） | 返金を始める・材料・読み出し・返事待ちの一覧・ショップの設定の DB の関数、`admin_cancel_fulfillment` の変更 |
+| C（返金の結果とメール） | 注文のメールの表の種類・書き分け・列・CHECK・索引、メールの DB の関数の変更、要対応の理由 `refund_failed`、結果を書く・外からの返金・エラーにする関数、`apply_order_refund_projection` を消す |
+
+実装計画（`docs/superpowers/plans/2026-10-11-refund-and-cancel.md` の P1）で、結果を書く関数がメールの予定と要対応を書くことから、2本を3本に分けた（2026-10-11）。
 
 ### 11-2 関数
 
@@ -757,7 +760,8 @@ Shopify の注文の履歴（タイムライン）と同じく、時刻の順に
 | `public.begin_order_refund(...)` | 新規 | 返事待ちの記録と商品の行を作る（4-5 の額の計算・4-6 の確かめ・7-4 の決まり・二重防止の番号）。ア・イ・エ・オが使う |
 | `public.record_order_refund_result(uuid, ...)` | 新規 | Stripe の返金の値で状態を進める。受け付けた時の在庫とメールの予定（1回）、失敗の後始末（1回）、注文の額と状態（4-7）を1回の処理で書く |
 | `public.record_external_order_refund(uuid, ...)` | 新規 | 印の無い返金を `stripe_dashboard` か `legacy` で記録し、結果を書く。Stripe の返金の番号で何度呼んでも1行 |
-| `public.mark_order_refund_error(uuid, text)` | 新規 | 返事待ちをエラーにする（Stripe の断り・15分の見回り） |
+| `public.mark_order_refund_error(uuid, text)` | 新規 | 返事待ちをエラーにする（Stripe の断り・15分の見回り）。未発送が戻れば発送済みから支払い済みに戻す |
+| `public.record_cancelled_order_paid_amount(uuid, text, integer)` | 新規 | 照合が取り消した注文への入金を見つけた時に、受け取った額を書く（4-3。①のオン・オフに依らない。空の時だけ） |
 | `public.list_order_refunds(uuid)` | 新規 | 返金と商品の行（履歴・お客様の画面） |
 | `public.load_order_refund_materials(uuid)` | 新規 | 返金の画面の材料（4-3・4-4 の数と割り振った割引） |
 | `public.list_awaiting_order_refunds(timestamptz, integer)` | 新規 | 見回りが確かめる返事待ちの返金 |
@@ -859,9 +863,9 @@ Shopify の注文の履歴（タイムライン）と同じく、時刻の順に
 | FREQ-447 | 返金を1件ずつ記録し、お金の動きを5つの状態で追う | 履歴に返金ごとの行（額・状態）が出る／受け取った額を超える返金は断られる／失敗とエラーの返金は数えない | `e2e/FR-ADMIN-077-order-history-refunds.spec.ts` |
 | FREQ-448 | 返金の画面 | 発送前と発送済みに分かれて出る／在庫に戻すは発送前の在庫の品を選んだ時だけ出て最初から入っている／1つも発送していない注文で全部を選ぶと送料の全額が入り減らせない／ボタンに額が出る／答えが分からない時は「もう一度確かめる」だけが出る／全額なのに未発送が選ばれていないと断りの文が出る | `e2e/FR-ADMIN-074-refund-dialog.spec.ts` |
 | FREQ-449 | 支払い済みの注文のキャンセル | 支払い済みで未発送の注文にキャンセルが出る／一部発送の後は出ない／全額と戻る時期が出る／コンビニ払いの待ちでは「キャンセルの手続き中」 | `e2e/FR-ADMIN-075-paid-order-cancel.spec.ts` |
-| FREQ-450 | Stripe の画面からの返金の取り込み | Stripe で直接返した返金が「Stripe の画面からの返金」として記録される／1つも発送していない注文の全額なら在庫が戻る／お客様に返金のお知らせが届く／切り替えより前の返金は写しになりメールが届かない | `e2e/FR-ADMIN-080-stripe-dashboard-refund.spec.ts`（Stripe のテストモード・手元の DB・Mailpit） |
-| FREQ-451 | 自動の返金① | 設定がオンで取り消した注文に入金が届くと全額が返金される／お客様に①の文の返金のお知らせが届く／店に「自動で全額を返金しました」が届く | `e2e/FR-CHECKOUT-051-auto-refund-cancelled-order.spec.ts`（同上） |
-| FREQ-452 | 自動の返金② | 既定はオフ／オンにする時に確かめが出る／自動で解決した要対応に「システムが自動で解決した」と出る（自動の取消そのものは DB 結合で確かめる） | `e2e/FR-ADMIN-079-shop-settings.spec.ts` |
+| FREQ-450 | Stripe の画面からの返金の取り込み | Stripe で直接返した返金が「Stripe の画面からの返金」として記録される／全額なら（一部を発送した注文でも）未発送の商品が全部その返金の発送前の行に入って在庫が戻り、注文がキャンセルになる／お客様に返金のお知らせが届く／切り替えより前の返金は写しになりメールが届かない | `e2e/FR-ADMIN-080-stripe-dashboard-refund.spec.ts`（Stripe のテストモード・手元の DB・Mailpit） |
+| FREQ-451 | 自動の返金① | 設定がオンで取り消した注文に入金が届くと全額が返金される／お客様に①の文の返金のお知らせが届く／店に「自動で全額を返金しました」が届く／①がオフの時や①が始める前に断られた時も、受け取った額が書かれ、管理画面の「返金」の「すべて選ぶ」で全額を返せる（在庫は動かない） | `e2e/FR-CHECKOUT-051-auto-refund-cancelled-order.spec.ts`（同上） |
+| FREQ-452 | 自動の返金② | 既定はオフ／オンにする時に確かめが出る／自動で解決した要対応は、解決の記録が「システムが自動で解決した」で解決した人が空になる（解決した要対応を出す画面は無い。自動の取消そのものは DB 結合と単体で確かめる） | `e2e/FR-ADMIN-079-shop-settings.spec.ts` |
 | FREQ-453 | 返金と在庫 | 発送前の在庫の品を「在庫に戻す」で返金すると、すぐ出せる数が増え引き当て済みが減る／「戻さない」では、すぐ出せる数は変わらず、引き当て済みと手元の数が減り、履歴に2行出る／返金の行の言葉が出る | `e2e/FR-ADMIN-080-stripe-dashboard-refund.spec.ts`・`e2e/FR-ADMIN-081-inventory-history-refund.spec.ts` |
 | FREQ-454 | 返金と発送・仕上がり | 返金した商品は発送の画面に出ない／発送後に返金した商品の発送は取り消せない／残りを全部返金した注文は配送中（発送済み）になる／まだ作っていない数が返金した分だけ減る | `e2e/FR-ADMIN-082-fulfillment-after-refund.spec.ts` |
 | FREQ-455 | 返金のお知らせ | 返金ごとに1通届く／額・送料・商品と数・戻る時期が書いてある／発送前の返金では「返金した商品はお送りしません」／チェックを外すと届かない | `e2e/FR-ADMIN-080-stripe-dashboard-refund.spec.ts`・`e2e/FR-CHECKOUT-051-auto-refund-cancelled-order.spec.ts` |
@@ -870,7 +874,7 @@ Shopify の注文の履歴（タイムライン）と同じく、時刻の順に
 | FREQ-458 | 一覧の支払いの列 | 「支払い」列に6つのどれかが出る／「進み具合」列の名前／返金の手続き中・返金の失敗の印／返金とキャンセルのボタンの出る条件／CSV に支払いと返金額 | `e2e/FR-ADMIN-076-order-list-payment-column.spec.ts` |
 | FREQ-459 | 注文の履歴の返金 | 返金の行に額・商品・在庫に戻した数・どこから・状態の移り変わり・照会番号が出る／キャンセルの行に理由とメモが出る | `e2e/FR-ADMIN-077-order-history-refunds.spec.ts` |
 | FREQ-460 | お客様の注文の画面の返金 | 返金ごとの日付・額・状態（手続き中・完了）が出る／返金した商品に「返金済み N点」が出る／コンビニ払いの待ちに期限の文が出る／失敗した返金は出ない | `e2e/FR-ACCOUNT-033-order-refunds.spec.ts` |
-| FREQ-461 | ショップの設定 | 店長のメニューに「ショップの設定」が出て、サポートの人には出ない／①オン・②オフが最初の値／変えると最後に変えた人と時刻が出る | `e2e/FR-ADMIN-079-shop-settings.spec.ts` |
+| FREQ-461 | ショップの設定 | 店長のメニューに `SETTINGS`（画面の題「ショップの設定」）が出て、サポートの人には出ない／①オン・②オフが最初の値／変えると最後に変えた人と時刻が出る | `e2e/FR-ADMIN-079-shop-settings.spec.ts` |
 
 - FREQ-404（入金済みの注文は返金なしでキャンセルできない）には、「支払い済みのキャンセルは FREQ-449 に、返金の同期は FREQ-447・450 に引き継いだ」と注記する
 - 合わせて直す今の E2E: 返金の流れ（FR-ADMIN-051-order-refund-safety）、一覧の列の名前（FR-ADMIN-070 など）、お客様の注文の画面。計画の中で、列の名前と返金の窓口を見ている E2E を検索して一覧にする
@@ -890,6 +894,9 @@ Shopify の注文の履歴（タイムライン）と同じく、時刻の順に
 | `docs/04_DetailDesign/pages/16_admin.md` | 一覧の列・返金の画面・キャンセルの画面・履歴・要対応・ショップの設定・在庫の履歴 |
 | `docs/04_DetailDesign/pages/15_account.md` | お客様の画面の返金 |
 | `docs/06_Operations/order-email-operations.md`・`docs/06_Operations/secrets.md` | 返金のメール・Stripe の返金のメールを切る・受ける知らせ |
+| `docs/06_Operations/webhook-queue-operations.md` | 開店のときの順番の表に、16章のうちまだ無い物（Stripe の返金のメールを切る・コンビニ払いを使うか・ショップの設定・状態の移り変わりを守る SQL）を足す |
+| `docs/04_DetailDesign/states/payment-exception.md`・`docs/04_DetailDesign/sequence/stripe-webhooks.md`・`docs/04_DetailDesign/sequence/checkout-payment.md` | 消す関数（`apply_order_refund_projection`）とやめる流れ（返金の投影・支払いの番号の無い返金の失敗・照合の返金額の比べ）を、新しい作りに直す。要対応の理由に `refund_failed`、システムの自動の解決 |
+| `docs/04_DetailDesign/pages/13_checkout.md` | 照合の見回りの表に、返事待ちの返金の見回りを足す |
 | `docs/05_Quality/reviews/code/2026-09-25-working-diff-security-review.md` | R-03・R-06・R-16 を修正済みに。グループ B で直った R-33 も直す |
 | `docs/superpowers/specs/2026-10-10-group-e-overview-design.md` | E-3 の決定（18章）と開店前の設定（16章）を書き足す |
 
@@ -916,7 +923,7 @@ Shopify の注文の履歴（タイムライン）と同じく、時刻の順に
    - `stripe_refunds` の行の数
    - 確保が残るキャンセルの注文の数（0でなければ止めて相談する）
    - 開いている要対応（取り消した注文への入金・支払額の違い）の数
-3. ユーザーの許可を得てから、移行 A・B を続けて MCP で当てる（その間に開発の画面で操作しない）
+3. ユーザーの許可を得てから、移行 A・B・C を続けて MCP で当てる（その間に開発の画面で操作しない）
 4. 当てた後に、関数・表・索引・権限の指紋を手元と比べる。前からの写しの数・受け取った額を書いた注文の数・切り替えの時刻の行・権限の行を確かめる
 5. 版の名前に改名し、移行のファイル名を読む単体の試験と文書のリンクを直す
 6. 注意: 普段の開発は本番の DB を使う。当てた後に開発で返金を試すと、本番に返金のメールの予定が溜まる（グループ D の注意と同じ）。公開前の確かめで件数を見る
