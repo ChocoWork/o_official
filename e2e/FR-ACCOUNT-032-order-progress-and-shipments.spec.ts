@@ -31,6 +31,9 @@ const BASE = {
   shippingEmail: 'user@example.com',
   shippingPhone: '090-1111-2222',
   shippingAddress: '〒1500001 東京都 渋谷区 神宮前1-2-3',
+  // グループ E-2: お客様の窓口の答えは、返金の欄を必ず返す
+  refunds: [],
+  refundTotal: null,
 };
 
 function line(input: {
@@ -51,6 +54,7 @@ function line(input: {
     shippedQuantity: 0,
     readyQuantity: 0,
     inProductionQuantity: 0,
+    refundedQuantity: 0,
     ...input,
   };
 }

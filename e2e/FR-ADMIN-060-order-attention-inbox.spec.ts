@@ -165,6 +165,9 @@ for (const viewport of viewports) {
 
       await page.getByRole('button', { name: '解決済みにする' }).click();
       const dialog = page.getByRole('dialog', { name: '解決済みにする' });
+      // グループ E-2: 返金は管理画面の返金の画面から行えるので、解決の画面は Stripe ダッシュボードでの返金を前提にしない
+      await expect(dialog.getByText('返金やお客様への連絡を済ませてから、解決済みにしてください。')).toBeVisible();
+      await expect(dialog.getByText('Stripe ダッシュボード')).toHaveCount(0);
       await dialog.getByRole('textbox', { name: /メモ/ }).fill('Stripe で返金済み');
       await dialog.getByRole('button', { name: '解決する' }).click();
 

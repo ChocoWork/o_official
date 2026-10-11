@@ -1,6 +1,7 @@
 /**
- * お客様の注文の窓口（GET /api/orders/[id]）の答えのうち、グループ E-1 で足した所（進み具合・発送ごとの配送情報・商品ごとの数）。
- * 古い注文詳細の写しに足して使う。形は共通の約束（実装計画 C-2、Task 8）に合わせる。
+ * お客様の注文の窓口（GET /api/orders/[id]）の答えのうち、グループ E-1 で足した所（進み具合・発送ごとの配送情報・商品ごとの数）と、
+ * グループ E-2 で足した所（返金・返金の合計・商品ごとの返金した数）。
+ * 古い注文詳細の写しに足して使う。形は共通の約束（実装計画 C-2、Task 8・Task 14）に合わせる。
  */
 import type { OrderProgressKey, OrderProgressStep, OrderProgressStepKey } from '@/lib/orders/order-progress';
 
@@ -20,6 +21,15 @@ export type DetailShipment = {
   trackingNumber: string | null;
   trackingUrl: string | null;
   items: Array<{ orderItemId: string; name: string; color: string | null; size: string | null; quantity: number }>;
+};
+
+/** お客様に見せる返金の1行（窓口が古い順に、エラーと失敗を除いて返す。Task 14） */
+export type DetailRefund = {
+  id: string;
+  date: string;
+  amount: string;
+  status: 'processing' | 'completed';
+  customerActionDeadline: string | null;
 };
 
 const STEP_LABELS: Record<OrderProgressStepKey, string> = {
@@ -76,7 +86,10 @@ export const STOCK_READY_PROGRESS = progressOf({ key: 'ready', label: '発送準
 /** 在庫の品だけで、全部を送った注文（配送中）の進み具合 */
 export const STOCK_IN_TRANSIT_PROGRESS = progressOf({ key: 'in_transit', label: '配送中', current: 'in_transit' });
 
-/** 古い注文詳細の写し（在庫の品だけの入金済み）に、E-1 で足した所を足す。商品は全部、発送準備中の数に入る */
+/**
+ * 古い注文詳細の写し（在庫の品だけの入金済み）に、E-1・E-2 で足した所を足す。
+ * 商品は全部、発送準備中の数に入り、返金は無い（refunds は空、refundTotal は null、商品ごとの返金した数は 0）
+ */
 export function withReadyProgress<T extends { items: Array<{ quantity: number }> }>(detail: T) {
   return {
     ...detail,
@@ -85,8 +98,11 @@ export function withReadyProgress<T extends { items: Array<{ quantity: number }>
       shippedQuantity: 0,
       readyQuantity: item.quantity,
       inProductionQuantity: 0,
+      refundedQuantity: 0,
     })),
     progress: STOCK_READY_PROGRESS,
     shipments: [] as DetailShipment[],
+    refunds: [] as DetailRefund[],
+    refundTotal: null as string | null,
   };
 }
