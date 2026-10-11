@@ -386,6 +386,10 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged }: OrderHistoryDia
         </li>
       );
     }
+    // 返金・確保し直しの行は、画面を作る次の作業（Task 12）が描く。それまではメールの行だけを描く
+    if (entry.type !== 'email') {
+      return null;
+    }
     return (
       <li key={`email-${entry.emailId}`} className="space-y-1 font-acumin lk-text-3xs text-black">
         <div className="flex flex-wrap items-center gap-2">

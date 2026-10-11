@@ -115,6 +115,23 @@ export function refundFailureReasonLabel(reason: string | null | undefined): str
     : REFUND_FAILURE_REASON_LABELS.unknown;
 }
 
+/**
+ * コンビニ払いの口座の入力の期限の日付（日本時間）。「その日のうちに入れれば必ず間に合う最後の日」＝期限の時刻の1分後の日付の前日。
+ * 期限を実際より遅く伝えないため（グループ E-2 の決め事 E2）。読めない時は null
+ */
+export function konbiniDeadlineLastDay(expiresAt: string | null | undefined): { year: number; month: number; day: number } | null {
+  if (!expiresAt) {
+    return null;
+  }
+  const time = Date.parse(expiresAt);
+  if (Number.isNaN(time)) {
+    return null;
+  }
+  const jst = new Date(time + 9 * 60 * 60 * 1000 + 60 * 1000);
+  jst.setUTCDate(jst.getUTCDate() - 1);
+  return { year: jst.getUTCFullYear(), month: jst.getUTCMonth() + 1, day: jst.getUTCDate() };
+}
+
 const REFUND_TIMING_NOTES = {
   card: 'お金はカード会社によって、5〜10営業日ほどで戻ります。',
   link: 'お金はカード会社によって、5〜10営業日ほどで戻ります。',

@@ -17,6 +17,8 @@ const ATTENTION: OrderAttention = {
       lastDetectedAt: '2026-09-27T01:00:00.000Z',
       detectionCount: 1,
       canCancelOrder: false,
+      canRetryRefund: false,
+      refundFailure: null,
     },
     {
       id: 'exception-2',
@@ -31,6 +33,8 @@ const ATTENTION: OrderAttention = {
       lastDetectedAt: '2026-09-27T02:00:00.000Z',
       detectionCount: 1,
       canCancelOrder: true,
+      canRetryRefund: false,
+      refundFailure: null,
     },
   ],
   reviews: [

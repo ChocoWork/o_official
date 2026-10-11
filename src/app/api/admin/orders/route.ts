@@ -6,7 +6,9 @@ import { getStripeServerClient } from '@/lib/stripe/server';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { ORDER_STATUSES, type OrderStatus } from '@/lib/orders/order-payment-types';
 import { deriveOrderProgress } from '@/lib/orders/order-progress';
+import { derivePaymentStatus, PAYMENT_STATUS_LABELS } from '@/lib/orders/payment-status';
 import { listOrderLineFulfillment, type OrderLineFulfillmentRow } from '@/lib/orders/fulfillment/fulfillment-store';
+import { listOrderRefundSummaries, type OrderRefundSummary } from '@/lib/orders/refund/refund-store';
 import { findMissingShippingFields } from '@/features/checkout/services/checkout-draft.service';
 
 type OrderRow = {
@@ -17,6 +19,8 @@ type OrderRow = {
   review_reason: string | null;
   reviewed_at: string | null;
   total_amount: number;
+  /** 成功した返金の合計（利用者の JWT でも読める列）。受け取った額は店内だけの列なので、要約の RPC から受け取る */
+  refunded_amount: number;
   currency: string;
   shipping_full_name: string | null;
   shipping_email: string | null;
@@ -206,6 +210,15 @@ async function fetchLineCounts(orderRows: OrderRow[]): Promise<Map<string, Order
 }
 
 /**
+ * 注文ごとの返金の要約（受け取った額・返せる額・返事待ちか保留の返金・開いている返金の失敗の要対応）。1ページ分を1回で読む。
+ * 「支払い」の列と返金・キャンセルのボタンは、Stripe の支払いではなくこの要約で決める（本計画 P13）。
+ * 要約は service_role で読む（新しい表は利用者の JWT からは読めない。受け取った額も店内だけの列）
+ */
+async function fetchRefundSummaries(orderRows: OrderRow[]): Promise<Map<string, OrderRefundSummary>> {
+  return listOrderRefundSummaries(await createServiceRoleClient(), orderRows.map((order) => order.id));
+}
+
+/**
  * ログに出す例外の項目。名前と、あれば code・operation だけにする（発送の窓口と同じ決まり）。
  * ・Supabase の誤りは、Error ではない素のオブジェクトで、message・details・hint を直下に持つ（だから名前は UnknownError になる）
  * ・FulfillmentStoreError は、DB の生の誤り（details・hint 込み）を cause に持ち、Node は [cause] まで出す
@@ -267,6 +280,7 @@ export async function GET(request: Request) {
         reviewed_at,
         status,
         total_amount,
+        refunded_amount,
         currency,
         shipping_full_name,
         shipping_email,
@@ -342,10 +356,11 @@ export async function GET(request: Request) {
       .map((order) => order.payment_intent_id)
       .filter((paymentIntentId): paymentIntentId is string => Boolean(paymentIntentId?.startsWith('pi_')));
 
-    const [paymentIntentMap, shipBlockedOrderIds, lineCountsByOrder] = await Promise.all([
+    const [paymentIntentMap, shipBlockedOrderIds, lineCountsByOrder, refundSummaries] = await Promise.all([
       fetchPaymentIntentMap(paymentIntentIds),
       fetchShipBlockedOrderIds(orderRows.map((order) => order.id)),
       fetchLineCounts(orderRows),
+      fetchRefundSummaries(orderRows),
     ]);
 
     const responseData = orderRows.map((order) => {
@@ -369,7 +384,16 @@ export async function GET(request: Request) {
       const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
       const inProductionTotal = items.reduce((sum, item) => sum + item.inProduction, 0);
       const readyTotal = items.reduce((sum, item) => sum + item.readyUnshipped, 0);
-      const progress = deriveOrderProgress(order.status, lineCounts);
+      // 要約が無い注文（来ないはずだが型の上ではありうる）は、受け取った額が無く、手続き中の返金も無い物として扱う
+      const refundSummary = refundSummaries.get(order.id);
+      const hasOpenRefund = refundSummary?.hasOpenRefund ?? false;
+      const refundableAmount = refundSummary?.refundableAmount ?? 0;
+      const progress = deriveOrderProgress(order.status, lineCounts, { hasOpenRefund });
+      const paymentStatusKey = derivePaymentStatus({
+        status: order.status,
+        paidAmount: refundSummary?.paidAmount ?? null,
+        refundedAmount: order.refunded_amount,
+      });
       const paymentIntent = order.payment_intent_id ? paymentIntentMap.get(order.payment_intent_id) ?? null : null;
       const missingShippingFields = findMissingShippingFields({
         email: order.shipping_email,
@@ -395,6 +419,17 @@ export async function GET(request: Request) {
           ? new Date(voucherExpiresAt * 1000).toISOString()
           : null;
 
+      // 取消の種類。未入金の注文の取消（unpaid）は今のまま Stripe の支払いで決める。支払い済みの注文のキャンセル（paid）は、
+      // 1つも発送していなくて、返せる額が残っている時だけ（発送した品がある注文は、返金の画面を使う）
+      const unpaidCancellable =
+        order.status === 'payment_in_progress'
+        || order.status === 'failed'
+        // Stripe を読めなかった入金待ち（paymentIntent が null）は、取り消せない側に倒す
+        || (order.status === 'pending' && paymentIntent !== null && !awaitingPayment);
+      const shippedTotal = items.reduce((sum, item) => sum + item.shipped, 0);
+      const paidCancellable = order.status === 'paid' && shippedTotal === 0 && refundableAmount > 0;
+      const cancelKind: 'unpaid' | 'paid' | null = unpaidCancellable ? 'unpaid' : paidCancellable ? 'paid' : null;
+
       return {
         id: order.id,
         customerName: order.shipping_full_name?.trim() || 'ゲスト',
@@ -411,6 +446,12 @@ export async function GET(request: Request) {
         paymentMethod: mapPaymentMethodLabel(paymentIntent),
         paymentReference: order.payment_intent_id ?? order.checkout_session_id ?? '-',
         stripePaymentStatus: paymentIntent?.status ?? null,
+        // 「支払い」の列と小さな印。受け取った額と返金の記録で決め、Stripe は読まない（本計画 P13）
+        paymentStatusKey,
+        paymentStatus: PAYMENT_STATUS_LABELS[paymentStatusKey],
+        refundPending: hasOpenRefund,
+        refundFailed: refundSummary?.hasUnresolvedRefundFailure ?? false,
+        refundedAmountLabel: order.refunded_amount > 0 ? toCurrencyLabel(order.refunded_amount, order.currency) : '-',
         shippedAt: order.shipped_at,
         shippingCarrier: order.shipping_carrier,
         trackingNumber: order.tracking_number,
@@ -424,16 +465,13 @@ export async function GET(request: Request) {
         missingShippingFields,
         shipBlockedReason,
         needsReview: order.review_reason !== null && order.reviewed_at === null,
-        canCancel:
-          order.status === 'payment_in_progress'
-          || order.status === 'failed'
-          // Stripe を読めなかった入金待ち（paymentIntent が null）は、取り消せない側に倒す
-          || (order.status === 'pending' && paymentIntent !== null && !awaitingPayment),
+        canCancel: cancelKind !== null,
+        cancelKind,
         cancelBlockedUntil,
-        canRefund:
-          (order.status === 'paid' || order.status === 'shipped') &&
-          paymentIntent?.status === 'succeeded' &&
-          Boolean(order.payment_intent_id?.startsWith('pi_')),
+        // 返金のボタンは Stripe を読まずに決める（本計画 P13）。受け取った額があり、返せる額が残っている注文。返せる額は返事待ち・保留・成功を
+        // 引いた残りなので、返事待ち・保留の返金があっても残りがあれば出す（返事待ちがある時は返金の画面が「確かめ中の返金があります」を出す）。
+        // 取り消した注文に入金が届いた時（受け取った額が書かれた cancelled）も、同じ条件で出る
+        canRefund: (refundSummary?.paidAmount ?? 0) > 0 && refundableAmount > 0,
       };
     });
 

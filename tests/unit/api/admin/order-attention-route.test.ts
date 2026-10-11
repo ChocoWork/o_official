@@ -25,6 +25,12 @@ let attachedOrder: Record<string, unknown> | null = null;
 let attachedOrderError: unknown = null;
 // 一覧の読み込みが DB に断られた時の error。null なら成功
 let listError: unknown = null;
+// 返金の失敗の要対応が指す返金の記録（order_refunds に order_refund_lines と order_items を埋め込んだ、PostgREST が返す形）
+let refundRecords: Array<Record<string, unknown>> = [];
+// 返金の記録の読み込みが DB に断られた時の error。null なら成功
+let refundLookupError: unknown = null;
+// 返金の記録を読んだ呼び出し（どの列で、どの値を探したか）
+const refundLookupCalls: Array<{ column: string; values: string[] }> = [];
 
 function listQuery(rows: () => unknown[]) {
   const query: Record<string, unknown> = {};
@@ -39,11 +45,27 @@ function listQuery(rows: () => unknown[]) {
   return query;
 }
 
+// 返金の記録の読み込み: select(列).in(列, 値)。列の値が探す値の中にある記録だけ返す
+function refundLookupQuery() {
+  return {
+    in: async (column: string, values: string[]) => {
+      refundLookupCalls.push({ column, values });
+      return {
+        data: refundLookupError ? null : refundRecords.filter((record) => values.includes(String(record[column]))),
+        error: refundLookupError,
+      };
+    },
+  };
+}
+
 const mockServiceClient = {
   rpc: (...args: unknown[]) => mockRpc(...args),
   from: (table: string) => ({
     select: (columns: string) => {
       mockSelectColumns.push(columns);
+      if (table === 'order_refunds') {
+        return refundLookupQuery();
+      }
       return table === 'payment_exceptions' ? listQuery(() => exceptionRows) : listQuery(() => reviewRows);
     },
   }),
@@ -125,6 +147,9 @@ beforeEach(() => {
   attachedOrder = null;
   attachedOrderError = null;
   listError = null;
+  refundRecords = [];
+  refundLookupError = null;
+  refundLookupCalls.length = 0;
   mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1', role: 'supporter', actorEmail: null });
   mockRequireCsrf.mockResolvedValue(undefined);
   mockExpireOpenCheckoutSession.mockResolvedValue('expired');
@@ -242,8 +267,12 @@ describe('GET /api/admin/order-attention', () => {
       lastDetectedAt: '2026-09-27T02:00:00.000Z',
       detectionCount: 2,
       canCancelOrder: false,
+      canRetryRefund: false,
+      refundFailure: null,
     });
-    expect(res.body.data.exceptions[1]).toMatchObject({ orderNumber: 'ORD-A1B2C3D4', canCancelOrder: true });
+    expect(res.body.data.exceptions[1]).toMatchObject({
+      orderNumber: 'ORD-A1B2C3D4', canCancelOrder: true, canRetryRefund: false, refundFailure: null,
+    });
     expect(res.body.data.reviews[0]).toEqual({
       orderId: ORDER_ID,
       orderNumber: 'ORD-A1B2C3D4',
@@ -288,6 +317,252 @@ describe('GET /api/admin/order-attention', () => {
     const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse;
 
     expect(res.status).toBe(403);
+  });
+  describe('返金の失敗の行（「もう一度返金する」を出せるか）', () => {
+    const SECOND_EXCEPTION_ID = 'c1b2c3d4-1111-2222-8333-444455556666';
+    const REFUND_FAILED_ROW = {
+      id: EXCEPTION_ID,
+      reason: 'refund_failed',
+      detail: 'expired',
+      order_id: ORDER_ID,
+      payment_ref: 're_failed1',
+      first_detected_at: '2026-10-11T01:00:00.000Z',
+      last_detected_at: '2026-10-11T01:00:00.000Z',
+      detection_count: 1,
+      orders: { status: 'paid' },
+    };
+
+    /** 返せる額の RPC（list_order_refund_summaries）の答えを決める。ほかの RPC（メールの送信状態）は、送信を止めていない答え */
+    function mockRefundableAmount(refundableAmount: number) {
+      mockRpc.mockImplementation(async (name: string) =>
+        name === 'list_order_refund_summaries'
+          ? {
+              data: [{
+                order_id: ORDER_ID, paid_amount: 10_000, succeeded_amount: 0, open_amount: 0, refundable_amount: refundableAmount,
+                has_open_refund: false, has_unresolved_refund_failure: true,
+              }],
+              error: null,
+            }
+          : { data: [{ paused: false, reason: null }], error: null },
+      );
+    }
+
+    async function listExceptions(): Promise<Array<Record<string, any>>> {
+      const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse;
+      expect(res.status).toBe(200);
+      return res.body.data.exceptions;
+    }
+
+    it('注文の返せる額が残っていれば、理由の名前は「返金の失敗」で、「もう一度返金する」を出せる', async () => {
+      exceptionRows = [REFUND_FAILED_ROW];
+      mockRefundableAmount(10_000);
+
+      const exceptions = await listExceptions();
+
+      expect(exceptions[0]).toMatchObject({
+        reason: 'refund_failed', reasonLabel: '返金の失敗', detail: 'expired', orderNumber: 'ORD-A1B2C3D4', orderStatus: 'paid',
+        paymentRef: 're_failed1', canCancelOrder: false, canRetryRefund: true,
+      });
+      expect(mockRpc).toHaveBeenCalledWith('list_order_refund_summaries', { _order_ids: [ORDER_ID] });
+    });
+
+    it('注文の返せる額が0なら（別の方法で返し終えた、など）「もう一度返金する」は出せない', async () => {
+      exceptionRows = [REFUND_FAILED_ROW];
+      mockRefundableAmount(0);
+
+      expect((await listExceptions())[0]).toMatchObject({ reason: 'refund_failed', canRetryRefund: false });
+    });
+
+    it('同じ注文の返金の失敗が2行あっても、返せる額は注文の番号を重ねずに1回で読む', async () => {
+      exceptionRows = [REFUND_FAILED_ROW, { ...REFUND_FAILED_ROW, id: SECOND_EXCEPTION_ID, payment_ref: 're_failed2' }];
+      mockRefundableAmount(4_000);
+
+      const exceptions = await listExceptions();
+
+      expect(exceptions.map((row) => row.canRetryRefund)).toEqual([true, true]);
+      expect(mockRpc.mock.calls.filter(([name]) => name === 'list_order_refund_summaries')).toEqual([
+        ['list_order_refund_summaries', { _order_ids: [ORDER_ID] }],
+      ]);
+    });
+
+    it('返金の失敗でない行と、注文の無い返金の失敗は、返せる額を読まずに false', async () => {
+      exceptionRows = [
+        { ...REFUND_FAILED_ROW, reason: 'unexpected_state', detail: null, orders: { status: 'payment_in_progress' } },
+        { ...REFUND_FAILED_ROW, id: SECOND_EXCEPTION_ID, order_id: null, orders: null },
+      ];
+      mockRefundableAmount(10_000);
+
+      const exceptions = await listExceptions();
+
+      expect(exceptions.map((row) => row.canRetryRefund)).toEqual([false, false]);
+      expect(mockRpc).not.toHaveBeenCalledWith('list_order_refund_summaries', expect.anything());
+    });
+
+    it('返せる額が読めなくても要対応は 200 のまま返し、「もう一度返金する」は出さない。ログは例外名と DB の記号だけ', async () => {
+      exceptionRows = [REFUND_FAILED_ROW];
+      mockRpc.mockImplementation(async (name: string) =>
+        name === 'list_order_refund_summaries'
+          ? { data: null, error: { code: '08006', message: '店のメモ・支払いの番号を含む例外' } }
+          : { data: [{ paused: false, reason: null }], error: null },
+      );
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        const exceptions = await listExceptions();
+
+        expect(exceptions[0]).toMatchObject({ reason: 'refund_failed', canRetryRefund: false });
+        expect(warn.mock.calls).toEqual([['[admin.order-attention] Failed to fetch refundable amounts', 'RefundStoreError', '08006']]);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    describe('返金の記録（額・失敗の理由・確保し直せなかった商品）', () => {
+      const RECORD_ID = 'f1b2c3d4-1111-2222-8333-444455556666';
+      // PostgREST が返す形（order_refunds に order_refund_lines と order_items を埋め込んだ物）
+      const REFUND_RECORD = {
+        id: RECORD_ID,
+        stripe_refund_id: 're_failed1',
+        amount: 5_500,
+        order_refund_lines: [
+          { rereserve_shortage: 1, order_items: { item_name: 'シルクブラウス', color: '白', size: 'M' } },
+          { rereserve_shortage: 0, order_items: { item_name: 'リネンパンツ', color: null, size: null } },
+          { rereserve_shortage: 2, order_items: { item_name: 'ウールコート', color: null, size: null } },
+        ],
+      };
+
+      it('返金の失敗の行は、返金の記録の額・失敗の理由の言葉・確保し直せなかった商品と数を持つ。お客様の個人情報の列は読まない', async () => {
+        exceptionRows = [REFUND_FAILED_ROW];
+        refundRecords = [REFUND_RECORD];
+        mockRefundableAmount(10_000);
+
+        const exceptions = await listExceptions();
+
+        // 確保し直せた商品（rereserve_shortage が 0）は出さない。名前は「商品名（色 / サイズ）」
+        expect(exceptions[0].refundFailure).toEqual({
+          amount: 5_500,
+          failureReasonLabel: '口座の入力の期限が過ぎました',
+          shortages: [
+            { name: 'シルクブラウス（白 / M）', quantity: 1 },
+            { name: 'ウールコート', quantity: 2 },
+          ],
+        });
+        // Stripe の返金の番号は stripe_refund_id で探す
+        expect(refundLookupCalls).toEqual([{ column: 'stripe_refund_id', values: ['re_failed1'] }]);
+        const refundColumns = mockSelectColumns.filter((columns) => columns.includes('order_refund_lines')).join(',');
+        expect(refundColumns).toContain('item_name');
+        expect(refundColumns).not.toMatch(/shipping_|email|phone|full_name|address/);
+      });
+
+      it('支払いの番号が返金の記録の番号（Stripe の返事が来る前に失敗した返金）なら、記録の番号で探す', async () => {
+        exceptionRows = [{ ...REFUND_FAILED_ROW, payment_ref: RECORD_ID, detail: 'declined' }];
+        refundRecords = [{ ...REFUND_RECORD, stripe_refund_id: null }];
+        mockRefundableAmount(10_000);
+
+        const exceptions = await listExceptions();
+
+        expect(exceptions[0].refundFailure).toMatchObject({ amount: 5_500, failureReasonLabel: 'カード会社に断られました' });
+        expect(refundLookupCalls).toEqual([{ column: 'id', values: [RECORD_ID] }]);
+      });
+
+      it('カード以外の返金の番号（pyr_ など、re_ 以外の形。本計画 P29）も Stripe の返金の番号として stripe_refund_id で探す', async () => {
+        exceptionRows = [{ ...REFUND_FAILED_ROW, payment_ref: 'pyr_3AbCdEf123' }];
+        refundRecords = [{ ...REFUND_RECORD, stripe_refund_id: 'pyr_3AbCdEf123' }];
+        mockRefundableAmount(10_000);
+
+        const exceptions = await listExceptions();
+
+        expect(exceptions[0].refundFailure).toMatchObject({ amount: 5_500, failureReasonLabel: '口座の入力の期限が過ぎました' });
+        expect(refundLookupCalls).toEqual([{ column: 'stripe_refund_id', values: ['pyr_3AbCdEf123'] }]);
+      });
+
+      it('Stripe の返金の番号の行と記録の番号の行が混ざっても、それぞれ1回で読み、行ごとの額を返す', async () => {
+        const OTHER_RECORD_ID = 'a0000000-0000-4000-8000-000000000001';
+        exceptionRows = [
+          REFUND_FAILED_ROW,
+          { ...REFUND_FAILED_ROW, id: SECOND_EXCEPTION_ID, payment_ref: 're_failed2' },
+          { ...REFUND_FAILED_ROW, id: 'd1b2c3d4-1111-2222-8333-444455556666', payment_ref: OTHER_RECORD_ID },
+        ];
+        refundRecords = [
+          { id: RECORD_ID, stripe_refund_id: 're_failed1', amount: 1_000, order_refund_lines: [] },
+          { id: 'a0000000-0000-4000-8000-000000000002', stripe_refund_id: 're_failed2', amount: 2_000, order_refund_lines: [] },
+          { id: OTHER_RECORD_ID, stripe_refund_id: null, amount: 3_000, order_refund_lines: [] },
+        ];
+        mockRefundableAmount(10_000);
+
+        const exceptions = await listExceptions();
+
+        expect(exceptions.map((row) => row.refundFailure.amount)).toEqual([1_000, 2_000, 3_000]);
+        expect(refundLookupCalls).toEqual([
+          { column: 'stripe_refund_id', values: ['re_failed1', 're_failed2'] },
+          { column: 'id', values: [OTHER_RECORD_ID] },
+        ]);
+      });
+
+      it('形の合わない支払いの番号（Stripe の返金の番号でも記録の番号でもない）は DB に渡さず、記録が無い物として扱う', async () => {
+        // 本文に _ がある・種類が長すぎる・_ が無い（P29 の形 ^[a-z]{2,4}_[A-Za-z0-9]+$ に合わない）
+        exceptionRows = [
+          { ...REFUND_FAILED_ROW, payment_ref: 're_has_underscore' },
+          { ...REFUND_FAILED_ROW, id: SECOND_EXCEPTION_ID, payment_ref: 'toolong_abc123' },
+          { ...REFUND_FAILED_ROW, id: 'd1b2c3d4-1111-2222-8333-444455556666', payment_ref: 'not-a-uuid' },
+        ];
+        refundRecords = [REFUND_RECORD];
+        mockRefundableAmount(10_000);
+
+        const exceptions = await listExceptions();
+
+        expect(exceptions.map((row) => row.refundFailure.amount)).toEqual([0, 0, 0]);
+        expect(refundLookupCalls).toEqual([]);
+      });
+
+      it('返金の記録が見つからなければ、額は0・商品は空で、失敗の理由の言葉は出す', async () => {
+        exceptionRows = [REFUND_FAILED_ROW];
+        mockRefundableAmount(10_000);
+
+        expect((await listExceptions())[0].refundFailure).toEqual({
+          amount: 0, failureReasonLabel: '口座の入力の期限が過ぎました', shortages: [],
+        });
+      });
+
+      it.each([
+        ['表に無い記号', 'a_code_stripe_added_later'],
+        ['空', null],
+        // Object が持つ名前を、表の言葉として引かない
+        ['Object が持つ名前', 'constructor'],
+      ])('失敗の理由が%sなら「不明な理由」と出す', async (_name, detail) => {
+        exceptionRows = [{ ...REFUND_FAILED_ROW, detail }];
+        mockRefundableAmount(10_000);
+
+        expect((await listExceptions())[0].refundFailure).toMatchObject({ failureReasonLabel: '不明な理由' });
+      });
+
+      it('返金の失敗でない行は refundFailure が null で、返金の記録を読まない', async () => {
+        exceptionRows = [{ ...REFUND_FAILED_ROW, reason: 'unexpected_state', detail: null, orders: { status: 'payment_in_progress' } }];
+        refundRecords = [REFUND_RECORD];
+        mockRefundableAmount(10_000);
+
+        expect((await listExceptions())[0].refundFailure).toBeNull();
+        expect(refundLookupCalls).toEqual([]);
+      });
+
+      it('返金の記録が読めなくても要対応は 200 のまま返し、額は0・商品は空で返す。ログは例外名と DB の記号だけ', async () => {
+        exceptionRows = [REFUND_FAILED_ROW];
+        refundLookupError = { code: '42P01', message: '店のメモ・商品の名前を含む例外' };
+        mockRefundableAmount(10_000);
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+          const exceptions = await listExceptions();
+
+          expect(exceptions[0]).toMatchObject({
+            canRetryRefund: true,
+            refundFailure: { amount: 0, failureReasonLabel: '口座の入力の期限が過ぎました', shortages: [] },
+          });
+          expect(warn.mock.calls).toEqual([['[admin.order-attention] Failed to fetch refund records', 'UnknownError', '42P01']]);
+          expect(JSON.stringify(warn.mock.calls)).not.toContain('メモ');
+        } finally {
+          warn.mockRestore();
+        }
+      });
+    });
   });
 });
 

@@ -18,6 +18,7 @@ import {
   listOrderFulfillments,
   listOrderLineFulfillment,
 } from '@/lib/orders/fulfillment/fulfillment-store';
+import { listOrderRefunds, RefundStoreError } from '@/lib/orders/refund/refund-store';
 
 type HistoryOrderRow = { id: string; status: OrderStatus; shipping_email: string | null; created_at: string };
 type HistoryItemRow = { id: string; item_name: string; color: string | null; size: string | null };
@@ -50,7 +51,7 @@ async function loadHistoryLines(client: SupabaseClient, orderId: string): Promis
   });
 }
 
-/** 「この注文の履歴」（グループ D 設計書 5-1、グループ E-1 設計書 9-2）。状態の変化・メール・発送・仕上がりとその取消を新しい順に返す。本文は返さない */
+/** 「この注文の履歴」（グループ D 設計書 5-1、グループ E-1・E-2 設計書 9-2）。状態の変化・メール・発送・仕上がり・返金とその取消を新しい順に返す。本文は返さない */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const authz = await authorizeAdminPermission('admin.orders.read', request);
   if (!authz.ok) {
@@ -78,12 +79,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const store = supabase as unknown as OrderEmailStore;
-    const [statusRows, emailRows, sendState, fulfillments, completions, lines] = await Promise.all([
+    const [statusRows, emailRows, sendState, fulfillments, completions, refunds, lines] = await Promise.all([
       listOrderStatusHistory(store, order.id),
       listOrderEmailHistory(store, order.id),
       getOrderEmailSendState(store),
       listOrderFulfillments(supabase, order.id),
       listOrderCompletions(supabase, order.id),
+      listOrderRefunds(supabase, order.id),
       loadHistoryLines(supabase, order.id),
     ]);
 
@@ -95,13 +97,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         sendState,
         fulfillments,
         completions,
+        refunds,
         lines,
       }),
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
     console.error('[admin.orders.history] Failed to load history', error instanceof Error ? error.name : 'UnknownError',
-      ...((error instanceof OrderEmailStoreError || error instanceof FulfillmentStoreError) && error.code ? [error.code] : []));
+      ...((error instanceof OrderEmailStoreError || error instanceof FulfillmentStoreError || error instanceof RefundStoreError)
+        && error.code ? [error.code] : []));
     return NextResponse.json({ error: 'Failed to load history' }, { status: 500 });
   }
 }

@@ -11,6 +11,7 @@ import {
   STRIPE_REFUND_REASON_LABELS,
   UNKNOWN_REFUND_OUTCOME_MESSAGE,
   formatYen,
+  konbiniDeadlineLastDay,
   refundErrorBody,
   refundFailureBody,
   refundFailureReasonLabel,
@@ -212,6 +213,21 @@ describe('formatYen（金額の書き方。ブラウザの画面で使う）', (
     for (const amount of [0, 1, 999, 1000, 4055, 8500, 1234567]) {
       expect(formatYen(amount)).toBe(formatCurrency(amount, 'jpy'));
     }
+  });
+});
+
+describe('konbiniDeadlineLastDay（コンビニ払いの口座の入力の期限の日付）', () => {
+  it.each([
+    ['2026-11-24T15:30:00.000Z', { year: 2026, month: 11, day: 24 }],
+    ['2026-11-25T14:59:59.000Z', { year: 2026, month: 11, day: 25 }],
+    ['2026-11-25T15:00:00.000Z', { year: 2026, month: 11, day: 25 }],
+    ['2026-12-31T15:00:00.000Z', { year: 2026, month: 12, day: 31 }],
+  ])('期限 %s は、その日のうちに入力すれば間に合う最後の日を日本時間で返す', (expiresAt, expected) => {
+    expect(konbiniDeadlineLastDay(expiresAt)).toEqual(expected);
+  });
+
+  it.each([null, undefined, '', 'invalid-date'])('読めない期限 %s は null', (expiresAt) => {
+    expect(konbiniDeadlineLastDay(expiresAt)).toBeNull();
   });
 });
 

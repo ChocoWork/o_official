@@ -94,6 +94,10 @@ export type AttentionException = {
   detectionCount: number;
   /** 未入金の注文が付いていれば「注文を取り消して解決」を選べる */
   canCancelOrder: boolean;
+  /** 返金の失敗で、注文の返せる額が残っていれば「もう一度返金する」を選べる */
+  canRetryRefund: boolean;
+  /** 理由が返金の失敗の時だけ。返金の記録の額・失敗の理由の言葉・確保し直せなかった商品と数（記録が見つからない時は額0・商品なし）。ほかの理由は null */
+  refundFailure: { amount: number; failureReasonLabel: string; shortages: Array<{ name: string; quantity: number }> } | null;
 };
 
 /** 管理画面の「要対応・要確認」欄の1行(要確認) */

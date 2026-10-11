@@ -48,6 +48,7 @@ const ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455556666';
 const EMAIL_ID = 'b1b2c3d4-1111-4222-8333-444455556666';
 const FULFILLMENT_ID = 'c1b2c3d4-1111-4222-8333-444455556666';
 const COMPLETION_ID = 'e1b2c3d4-1111-4222-8333-444455556666';
+const REFUND_ID = 'f1b2c3d4-1111-4222-8333-444455556666';
 const ITEM_1 = 'd1b2c3d4-1111-4222-8333-444455556661';
 const ITEM_2 = 'd1b2c3d4-1111-4222-8333-444455556662';
 const DENIED = new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
@@ -200,6 +201,90 @@ describe('GET /api/admin/orders/[id]/history', () => {
         ['[admin.orders.history] Failed to load history', 'FulfillmentStoreError', '08006'],
         ['[admin.orders.history] Failed to load history', 'FulfillmentStoreError', '42P01'],
       ]);
+    } finally {
+      error.mockRestore();
+    }
+  });
+  it('返金の行と、失敗で在庫を確保し直した行も、状態の行と一緒に新しい順に返す', async () => {
+    mockMaybeSingle.mockResolvedValue({
+      data: { id: ORDER_ID, status: 'paid', shipping_email: 'hanako@example.com', created_at: '2026-10-08T23:00:00.000Z' },
+      error: null,
+    });
+    mockOrderItems.mockResolvedValue({ data: [{ id: ITEM_1, item_name: 'シルクブラウス', color: '白', size: 'M' }], error: null });
+    rpcReturns({
+      // 一部を発送した注文の残りを返金して発送済みになり、返金が失敗して発送待ちに戻った
+      list_order_status_history: { data: [
+        {
+          changed_at: '2026-11-25T00:00:00.000Z', from_status: 'shipped', to_status: 'paid', change_reason: 'refund_failed_reopened',
+          actor_email: null, shipping_carrier: null, tracking_number: null, cancel_reason: null,
+        },
+        {
+          changed_at: '2026-10-11T01:00:03.000Z', from_status: 'paid', to_status: 'shipped', change_reason: 'refund_completed_order',
+          actor_email: null, shipping_carrier: 'yamato', tracking_number: '1234-5678', cancel_reason: null,
+        },
+      ] },
+      get_order_email_send_state: { data: [{ paused: false, reason: null, paused_at: null, next_probe_at: null }] },
+      list_order_refunds: { data: [{
+        refund_id: REFUND_ID, source: 'admin', status: 'failed', stripe_status: 'failed', stripe_pending_reason: null,
+        stripe_failure_reason: 'expired', customer_action_expires_at: null, payment_method_type: 'konbini', amount: 5500,
+        shipping_amount: 500, adjustment_amount: 0, note: 'お客様の依頼', stripe_reason: 'requested_by_customer', cancel_reason: null,
+        notify_customer: true, actor_email: 'admin@example.com', reference_number: null, reference_type: null,
+        created_at: '2026-10-11T01:00:00.000Z', accepted_at: '2026-10-11T01:00:03.000Z', succeeded_at: null,
+        failed_at: '2026-11-25T00:00:00.000Z', errored_at: null,
+        lines: [{
+          order_item_id: ITEM_1, quantity: 1, before_shipment: true, restock_type: 'cancel', amount: 5000,
+          released_quantity: 1, restocked_quantity: 1, rereserved_quantity: 0, rereserve_shortage: 1,
+        }],
+      }] },
+      list_order_line_fulfillment: { data: [{
+        order_id: ORDER_ID, order_item_id: ITEM_1, variant_id: 11, fulfillment_type: 'stock', quantity: 2, shipped: 1, completed: 2,
+        refunded_before_shipment: 0, refunded_after_shipment: 0, in_production: 0, ready_unshipped: 0, unshipped: 0,
+      }] },
+    });
+
+    const response = await getHistory(request(), context);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.entries.map((entry: { type: string }) => entry.type)).toEqual([
+      'status', 'refund_rereserve', 'status', 'refund', 'created',
+    ]);
+    expect(body.entries[0]).toMatchObject({
+      fromLabel: '発送済み', toLabel: '決済完了', detail: '返金の失敗で発送待ちに戻りました',
+    });
+    expect(body.entries[1]).toEqual({
+      type: 'refund_rereserve', at: '2026-11-25T00:00:00.000Z', refundId: REFUND_ID,
+      items: [{ name: 'シルクブラウス（白 / M）', quantity: 0, shortage: 1 }],
+    });
+    expect(body.entries[2]).toMatchObject({
+      fromLabel: '決済完了', toLabel: '発送済み', detail: '残りの商品を返金したため発送済み',
+    });
+    expect(body.entries[3]).toMatchObject({
+      type: 'refund', refundId: REFUND_ID, source: 'admin', sourceLabel: '管理画面', actorEmail: 'admin@example.com',
+      amount: 5500, shippingAmount: 500, failureReasonLabel: '口座の入力の期限が過ぎました',
+      stripeReasonLabel: 'お客様の希望', note: 'お客様の依頼',
+      items: [{ name: 'シルクブラウス（白 / M）', quantity: 1, beforeShipment: true, restockedQuantity: 1 }],
+      steps: [
+        { status: 'awaiting_response', label: '返事待ち', at: '2026-10-11T01:00:00.000Z' },
+        { status: 'pending', label: '保留', at: '2026-10-11T01:00:03.000Z' },
+        { status: 'failed', label: '失敗', at: '2026-11-25T00:00:00.000Z' },
+      ],
+    });
+    expect(mockRpc).toHaveBeenCalledWith('list_order_refunds', { _order_id: ORDER_ID });
+  });
+
+  it('返金の一覧の読み込みが失敗しても 500。ログは例外名と DB の記号だけで、メモなどの文は出さない', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockMaybeSingle.mockResolvedValue({ data: { id: ORDER_ID, status: 'paid', shipping_email: null, created_at: '2026-10-08T23:00:00Z' }, error: null });
+      rpcReturns({ list_order_refunds: { data: null, error: { message: '店のメモを含む例外', code: '08006' } } });
+
+      const response = await getHistory(request(), context);
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toEqual({ error: 'Failed to load history' });
+      expect(error.mock.calls).toEqual([['[admin.orders.history] Failed to load history', 'RefundStoreError', '08006']]);
+      expect(JSON.stringify(error.mock.calls)).not.toContain('メモ');
     } finally {
       error.mockRestore();
     }

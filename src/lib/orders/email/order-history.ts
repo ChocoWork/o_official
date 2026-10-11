@@ -1,5 +1,12 @@
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { CANCEL_REASON_LABELS, CANCEL_REASONS, type CancelReason, type OrderStatus } from '@/lib/orders/order-payment-types';
+import {
+  refundFailureReasonLabel,
+  REFUND_SOURCE_LABELS,
+  REFUND_STATUS_LABELS,
+  STRIPE_REFUND_REASON_LABELS,
+} from '@/lib/orders/refund/refund-messages';
+import type { OrderRefundSource, OrderRefundStatus } from '@/lib/orders/refund/refund-types';
 import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import {
   describeOrderEmailState,
@@ -14,10 +21,11 @@ import {
 } from '@/lib/orders/email/order-email-types';
 // 型だけを読む（実行時には何も読み込まない）。窓口が DB の関数から読んだ行を、そのまま渡してもらう
 import type { OrderCompletionHistoryRow, OrderFulfillmentHistoryRow } from '@/lib/orders/fulfillment/fulfillment-store';
+import type { OrderRefundRow } from '@/lib/orders/refund/refund-store';
 
 /**
- * 管理画面の「この注文の履歴」（グループ D 設計書 5-1、グループ E-1 設計書 9-2）。窓口と画面の両方が使うので、
- * サーバーだけの物を import しない。注文の状態の変化・メール・発送・仕上がりとその取消を新しい順に並べる。
+ * 管理画面の「この注文の履歴」（グループ D 設計書 5-1、グループ E-1・E-2 設計書 9-2）。窓口と画面の両方が使うので、
+ * サーバーだけの物を import しない。注文の状態の変化・メール・発送・仕上がり・返金とその取消を新しい順に並べる。
  * 再送できるか・取り消せるかは窓口が決めて返す（画面は判断しない）。
  */
 export const ORDER_STATUS_LABELS = {
@@ -142,6 +150,34 @@ export type OrderHistoryCompletionCancelEntry = {
   actorEmail: string | null;
 };
 
+/** 返金1件の行（グループ E-2 設計書 9-2）。状態の移り変わり（返事待ち → 保留 → 成功・失敗など）を時刻つきで持つ。at は作った時刻 */
+export type OrderHistoryRefundEntry = {
+  type: 'refund';
+  at: string;
+  refundId: string;
+  source: OrderRefundSource;
+  sourceLabel: string;
+  actorEmail: string | null;
+  amount: number;
+  shippingAmount: number;
+  items: Array<{ name: string; quantity: number; beforeShipment: boolean; restockedQuantity: number }>;
+  steps: Array<{ status: OrderRefundStatus; label: string; at: string }>;
+  failureReasonLabel: string | null;
+  referenceNumber: string | null;
+  customerActionExpiresAt: string | null;
+  note: string | null;
+  stripeReasonLabel: string | null;
+  cancelReasonLabel: string | null;
+};
+
+/** 返金の失敗で在庫を確保し直した行。at は失敗した時刻。quantity は確保し直せた数、shortage は足りなかった数 */
+export type OrderHistoryRefundRereserveEntry = {
+  type: 'refund_rereserve';
+  at: string;
+  refundId: string;
+  items: Array<{ name: string; quantity: number; shortage: number }>;
+};
+
 export type OrderHistoryEntry =
   | OrderHistoryCreatedEntry
   | OrderHistoryStatusEntry
@@ -149,7 +185,9 @@ export type OrderHistoryEntry =
   | OrderHistoryFulfillmentEntry
   | OrderHistoryFulfillmentCancelEntry
   | OrderHistoryCompletionEntry
-  | OrderHistoryCompletionCancelEntry;
+  | OrderHistoryCompletionCancelEntry
+  | OrderHistoryRefundEntry
+  | OrderHistoryRefundRereserveEntry;
 
 export type OrderHistoryResponse = {
   order: { id: string; orderNumber: string; statusLabel: string; recipient: string | null };
@@ -168,6 +206,7 @@ export type BuildOrderHistoryInput = {
   sendState: { paused: boolean; reason: OrderEmailErrorCode | null };
   fulfillments: OrderFulfillmentHistoryRow[];
   completions: OrderCompletionHistoryRow[];
+  refunds: OrderRefundRow[];
   lines: OrderHistoryLine[];
 };
 
@@ -185,11 +224,17 @@ function isCancelReason(value: unknown): value is CancelReason {
 }
 
 function statusDetail(row: OrderStatusHistoryRow): string | null {
-  // Stripe の返金の同期（DB の apply_order_refund_projection）で変わった行は、取消の理由（cancel_reason）が入らず説明が空になるので、
-  // 返金として説明する。発送済みへ戻る行は配送業者も入るので、配送業者の説明より先に見る
-  if (row.changeReason === 'stripe_refund_projection') {
+  // 返金の結果で変わった行（DB の結果を書く関数。前の版の stripe_refund_projection も含む）は、取消の理由（cancel_reason）が
+  // 入らない、入っていても返金の行に出るので、返金として説明する。発送済みへ変わる・戻る行は配送業者も入るので、配送業者の説明より先に見る
+  if (row.changeReason === 'refund_projection' || row.changeReason === 'stripe_refund_projection') {
     if (row.toStatus === 'cancelled') return '理由: 全額返金';
     if (row.fromStatus === 'cancelled') return '返金の取り消し';
+  }
+  if (row.changeReason === 'refund_completed_order') {
+    return '残りの商品を返金したため発送済み';
+  }
+  if (row.changeReason === 'refund_failed_reopened') {
+    return '返金の失敗で発送待ちに戻りました';
   }
   // 発送の取消で、全部を送った注文が発送済みから決済完了に戻った行
   if (row.changeReason === 'admin_cancel_fulfillment') {
@@ -204,8 +249,34 @@ function statusDetail(row: OrderStatusHistoryRow): string | null {
   return null;
 }
 
+/**
+ * 返金の状態の移り変わり。作った時刻（返事待ち）と、Stripe の返事で状態が進んだ時刻を、時刻の順に並べる。
+ * 受け付けてすぐ成功した返金は保留を通っていない（受け付けた時刻と成功の時刻が同じ）ので、成功の1行だけにする。
+ * 同じ時刻の行は、状態の進む順（返事待ち → エラー → 保留 → 成功 → 失敗）に置く
+ */
+function refundSteps(row: OrderRefundRow): OrderHistoryRefundEntry['steps'] {
+  const steps: OrderHistoryRefundEntry['steps'] = [
+    { status: 'awaiting_response', label: REFUND_STATUS_LABELS.awaiting_response, at: row.createdAt },
+  ];
+  const addStep = (status: OrderRefundStatus, at: string | null) => {
+    if (at !== null) {
+      steps.push({ status, label: REFUND_STATUS_LABELS[status], at });
+    }
+  };
+  const acceptedStraightToSuccess =
+    row.acceptedAt !== null && row.succeededAt !== null && Date.parse(row.acceptedAt) === Date.parse(row.succeededAt);
+
+  addStep('error', row.erroredAt);
+  if (!acceptedStraightToSuccess) {
+    addStep('pending', row.acceptedAt);
+  }
+  addStep('succeeded', row.succeededAt);
+  addStep('failed', row.failedAt);
+  return steps.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
 export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryResponse {
-  const { order, statusRows, emailRows, sendState, fulfillments, completions, lines } = input;
+  const { order, statusRows, emailRows, sendState, fulfillments, completions, refunds, lines } = input;
   const lineByItem = new Map(lines.map((line) => [line.orderItemId, line] as const));
   const itemsOf = (rows: ReadonlyArray<{ orderItemId: string; quantity: number }>) =>
     rows.map((row) => ({ name: lineByItem.get(row.orderItemId)?.name ?? UNKNOWN_ITEM_NAME, quantity: row.quantity }));
@@ -309,14 +380,54 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
       : [{ type: 'completion_cancel', at: row.cancelledAt, completionId: row.completionId, actorEmail: row.cancelledByEmail }],
   );
 
-  // 同じ時刻（同じ取引で書いた行）は、結果が上に来る順に置く: メール → 状態 → 取消 → 発送・仕上がり → 受付
+  const refundEntries: OrderHistoryRefundEntry[] = refunds.map((row) => ({
+    type: 'refund',
+    at: row.createdAt,
+    refundId: row.refundId,
+    source: row.source,
+    sourceLabel: REFUND_SOURCE_LABELS[row.source],
+    actorEmail: row.actorEmail,
+    amount: row.amount,
+    shippingAmount: row.shippingAmount,
+    items: row.lines.map((line) => ({
+      name: lineByItem.get(line.orderItemId)?.name ?? UNKNOWN_ITEM_NAME,
+      quantity: line.quantity,
+      beforeShipment: line.beforeShipment,
+      restockedQuantity: line.restockedQuantity,
+    })),
+    steps: refundSteps(row),
+    failureReasonLabel: row.status === 'failed' || row.status === 'error' ? refundFailureReasonLabel(row.failureReason) : null,
+    referenceNumber: row.referenceNumber,
+    customerActionExpiresAt: row.customerActionExpiresAt,
+    note: row.note,
+    stripeReasonLabel: row.stripeReason ? STRIPE_REFUND_REASON_LABELS[row.stripeReason] : null,
+    cancelReasonLabel: row.cancelReason ? CANCEL_REASON_LABELS[row.cancelReason] : null,
+  }));
+
+  // 失敗で在庫を確保し直した商品の行。確保し直しの記録が無い失敗（返事待ちから直に失敗・エラー）や、失敗していない返金には足さない
+  const refundRereserveEntries = refunds.flatMap((row): OrderHistoryRefundRereserveEntry[] => {
+    const items = row.lines
+      .filter((line) => line.rereservedQuantity + line.rereserveShortage > 0)
+      .map((line) => ({
+        name: lineByItem.get(line.orderItemId)?.name ?? UNKNOWN_ITEM_NAME,
+        quantity: line.rereservedQuantity,
+        shortage: line.rereserveShortage,
+      }));
+    return row.failedAt === null || items.length === 0
+      ? []
+      : [{ type: 'refund_rereserve', at: row.failedAt, refundId: row.refundId, items }];
+  });
+
+  // 同じ時刻（同じ取引で書いた行）は、結果が上に来る順に置く: メール → 状態 → 取消 → 確保し直し → 発送・仕上がり・返金 → 受付
   const entries: OrderHistoryEntry[] = [
     ...emailEntries,
     ...statusEntries,
     ...fulfillmentCancelEntries,
     ...completionCancelEntries,
+    ...refundRereserveEntries,
     ...fulfillmentEntries,
     ...completionEntries,
+    ...refundEntries,
     { type: 'created', at: order.createdAt },
   ];
   entries.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));

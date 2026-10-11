@@ -10,6 +10,24 @@ let shipBlockedRows: Array<{ order_id: string }> = [];
 // public.list_order_line_fulfillment が返す行（service_role の RPC）。支払い済み・発送済みの注文の商品ごとの数
 let lineFulfillmentRows: Array<Record<string, unknown>> = [];
 const rpcMock = jest.fn();
+// public.list_order_refund_summaries が返す行を、注文の番号ごとに上書きする（service_role の RPC）。
+// 書かなかった注文は、受け取った額が無い要約になる
+let refundSummaryOverrides: Record<string, Record<string, unknown>> = {};
+// 商品ごとの数（list_order_line_fulfillment）の読み込みだけを失敗させる時の DB の誤り。null なら成功
+let lineFulfillmentError: unknown = null;
+
+function refundSummaryRow(orderId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    order_id: orderId, paid_amount: null, succeeded_amount: 0, open_amount: 0, refundable_amount: 0,
+    has_open_refund: false, has_unresolved_refund_failure: false,
+    ...overrides,
+  };
+}
+
+/** 名前を指定した RPC を呼んだ引数を、呼んだ順に返す */
+function rpcCallsOf(name: string): unknown[] {
+  return rpcMock.mock.calls.filter(([calledName]) => calledName === name).map(([, args]) => args);
+}
 
 function lineRow(overrides: Record<string, unknown>) {
   return {
@@ -67,8 +85,20 @@ describe('GET /api/admin/orders statutory search', () => {
     createClientMock.mockResolvedValue({ from: jest.fn().mockReturnValue(query) });
     shipBlockedRows = [];
     lineFulfillmentRows = [];
+    lineFulfillmentError = null;
+    refundSummaryOverrides = {};
     rpcMock.mockReset();
-    rpcMock.mockImplementation(async () => ({ data: lineFulfillmentRows, error: null }));
+    rpcMock.mockImplementation(async (name: string, args: { _order_ids?: string[] }) => {
+      if (name === 'list_order_refund_summaries') {
+        return {
+          data: (args._order_ids ?? []).map((orderId) => refundSummaryRow(orderId, refundSummaryOverrides[orderId])),
+          error: null,
+        };
+      }
+      return lineFulfillmentError
+        ? { data: null, error: lineFulfillmentError }
+        : { data: lineFulfillmentRows, error: null };
+    });
     createServiceRoleClientMock.mockResolvedValue({
       from: jest.fn().mockReturnValue({
         select: () => ({
@@ -126,7 +156,9 @@ describe('GET /api/admin/orders statutory search', () => {
     expect(response.status).toBe(400);
   });
 
-  it('marks both paid and shipped Stripe orders as refundable', async () => {
+  // 返金のボタンは、受け取った額と返金の記録（list_order_refund_summaries）で決める。Stripe の支払いは読まない（本計画 P13）。
+  // 片方は Stripe を読めず、片方は支払いが成功になっていない。どちらでも返金の可否は変わらない
+  it('支払い済みと発送済みの注文は、Stripe の支払いを読めなくても、返せる額が残っていれば返金できる', async () => {
     queryResult = {
       data: [
         {
@@ -134,6 +166,7 @@ describe('GET /api/admin/orders statutory search', () => {
           payment_intent_id: 'pi_refundable_paid',
           status: 'paid',
           total_amount: 10_000,
+          refunded_amount: 0,
           currency: 'jpy',
           shipping_full_name: 'Paid Customer',
           shipping_email: 'paid@example.com',
@@ -148,6 +181,7 @@ describe('GET /api/admin/orders statutory search', () => {
           payment_intent_id: 'pi_refundable_shipped',
           status: 'shipped',
           total_amount: 10_000,
+          refunded_amount: 0,
           currency: 'jpy',
           shipping_full_name: 'Shipped Customer',
           shipping_email: 'shipped@example.com',
@@ -161,25 +195,36 @@ describe('GET /api/admin/orders statutory search', () => {
       count: 2,
       error: null,
     };
+    refundSummaryOverrides = {
+      'paid-order': { paid_amount: 10_000, refundable_amount: 10_000 },
+      'shipped-order': { paid_amount: 10_000, refundable_amount: 10_000 },
+    };
     getStripeMock.mockReturnValue({
       paymentIntents: {
-        retrieve: jest.fn().mockImplementation((id: string) => Promise.resolve({
-          id,
-          status: 'succeeded',
-          payment_method_types: ['card'],
-        })),
+        retrieve: jest.fn().mockImplementation((id: string) =>
+          id === 'pi_refundable_paid'
+            ? Promise.reject(new Error('stripe unavailable'))
+            : Promise.resolve({ id, status: 'requires_payment_method', payment_method_types: ['card'] })),
       },
     });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    const { GET } = await import('@/app/api/admin/orders/route');
-    const response = await GET(new Request('http://localhost/api/admin/orders'));
-    const body = await response.json() as { data: Array<{ id: string; canRefund: boolean }> };
+    try {
+      const { GET } = await import('@/app/api/admin/orders/route');
+      const response = await GET(new Request('http://localhost/api/admin/orders'));
+      const body = await response.json() as { data: Array<{ id: string; canRefund: boolean }> };
 
-    expect(response.status).toBe(200);
-    expect(body.data).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'paid-order', canRefund: true }),
-      expect.objectContaining({ id: 'shipped-order', canRefund: true }),
-    ]));
+      expect(response.status).toBe(200);
+      // 支払い方法の言葉と Stripe の状態は、今のまま Stripe の支払いから出る（読めなかった側は「不明」と null）
+      expect(body.data).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'paid-order', canRefund: true, paymentMethod: '不明', stripePaymentStatus: null }),
+        expect.objectContaining({
+          id: 'shipped-order', canRefund: true, paymentMethod: 'カード', stripePaymentStatus: 'requires_payment_method',
+        }),
+      ]));
+    } finally {
+      warn.mockRestore();
+    }
   });
 
 
@@ -474,8 +519,7 @@ describe('GET /api/admin/orders statutory search', () => {
 
       const { rows } = await listOrders([paidOrderRow()]);
 
-      expect(rpcMock).toHaveBeenCalledTimes(1);
-      expect(rpcMock).toHaveBeenCalledWith('list_order_line_fulfillment', { _order_ids: ['order-1'] });
+      expect(rpcCallsOf('list_order_line_fulfillment')).toEqual([{ _order_ids: ['order-1'] }]);
       expect(rows[0]).toMatchObject({
         status: '受注生産中',
         orderStatus: 'paid',
@@ -550,7 +594,7 @@ describe('GET /api/admin/orders statutory search', () => {
       const { rows } = await listOrders([paidOrderRow({ status: 'pending' })]);
 
       expect(rows).toHaveLength(1);
-      expect(rpcMock).not.toHaveBeenCalled();
+      expect(rpcCallsOf('list_order_line_fulfillment')).toEqual([]);
     });
 
     it('支払額の確認が残る注文は発送できないが、受注生産中の数があれば仕上がりは記録できる', async () => {
@@ -578,7 +622,7 @@ describe('GET /api/admin/orders statutory search', () => {
 
     it('数を読めなかった時は 500 にする（数が無いまま発送できる印を出さない）', async () => {
       const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-      rpcMock.mockResolvedValue({ data: null, error: { message: 'down', code: '08006' } });
+      lineFulfillmentError = { message: 'down', code: '08006' };
       queryResult = { data: [paidOrderRow()], count: 1, error: null };
 
       try {
@@ -595,10 +639,7 @@ describe('GET /api/admin/orders statutory search', () => {
     // 発送の窓口と同じく、名前と code・operation だけを出す
     it('数を読めなかった時のログには、例外の名前・code・operation だけを出し、DB の文（message・details・hint）は出さない', async () => {
       const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-      rpcMock.mockResolvedValue({
-        data: null,
-        error: { message: 'SECRET-MESSAGE', details: 'SECRET-DETAILS', hint: 'SECRET-HINT', code: '08006' },
-      });
+      lineFulfillmentError = { message: 'SECRET-MESSAGE', details: 'SECRET-DETAILS', hint: 'SECRET-HINT', code: '08006' };
       queryResult = { data: [paidOrderRow()], count: 1, error: null };
 
       try {
@@ -644,4 +685,256 @@ describe('GET /api/admin/orders statutory search', () => {
       expect((await GET(new Request(`http://localhost/api/admin/orders?status=${encodeURIComponent('配送中')}`))).status).toBe(400);
     });
   });
+  // 「支払い」の列・小さな印・返金とキャンセルのボタンは、受け取った額と返金の記録（service_role の list_order_refund_summaries）で決める。
+  // 返金のボタンのために Stripe の支払いを読まない（本計画 P13）。未入金の取消の判定と支払い方法の言葉は、今のまま Stripe の支払いを読む。
+  // PaymentIntent は route.ts の中で5分覚えているので、Stripe を使う試験は PaymentIntent の番号を試験ごとに変える
+  describe('支払いの列・返金の印・返金とキャンセルのボタン', () => {
+    function orderRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'order-1',
+        payment_intent_id: null,
+        checkout_session_id: 'cs_1',
+        status: 'paid',
+        total_amount: 10_000,
+        refunded_amount: 0,
+        currency: 'jpy',
+        shipping_email: 'buyer@example.com',
+        shipping_full_name: '山田太郎',
+        shipping_postal_code: '1000001',
+        shipping_prefecture: '東京都',
+        shipping_city: '千代田区',
+        shipping_address: '丸の内1-1-1',
+        shipping_phone: '0312345678',
+        review_reason: null,
+        reviewed_at: null,
+        created_at: '2026-10-11T00:00:00.000Z',
+        shipped_at: null,
+        shipping_carrier: null,
+        tracking_number: null,
+        order_items: [
+          { id: 'item-1', item_name: 'シルクブラウス', color: '白', size: 'M', quantity: 2, fulfillment_type: 'stock' },
+        ],
+        ...overrides,
+      };
+    }
+
+    async function listOrders(rows: unknown[]) {
+      queryResult = { data: rows, count: rows.length, error: null };
+      const { GET } = await import('@/app/api/admin/orders/route');
+      const response = await GET(new Request('http://localhost/api/admin/orders'));
+      const body = await response.json() as { data: Array<Record<string, any>> };
+      return { response, rows: body.data };
+    }
+
+    it('返金済みの額（refunded_amount）は利用者の JWT で読み、受け取った額（paid_amount）は読まない', async () => {
+      await listOrders([]);
+
+      const selected = String(query.select.mock.calls[0][0]);
+      expect(selected).toMatch(/\brefunded_amount\b/);
+      // paid_amount は店内だけの列（お客様の JWT に GRANT しない）。要約の RPC から受け取る
+      expect(selected).not.toMatch(/\bpaid_amount\b/);
+    });
+
+    it('返金の要約は、1ページ分の注文（ほかの状態の注文も含む）を1回で読む', async () => {
+      await listOrders([
+        orderRow({ id: 'order-a' }),
+        orderRow({ id: 'order-b', status: 'pending' }),
+        orderRow({ id: 'order-c', status: 'cancelled' }),
+      ]);
+
+      expect(rpcCallsOf('list_order_refund_summaries')).toEqual([{ _order_ids: ['order-a', 'order-b', 'order-c'] }]);
+    });
+
+    it.each<[string, string, string, Record<string, unknown>, number | null]>([
+      ['支払い手続き中', 'unpaid', '未入金', { status: 'payment_in_progress' }, null],
+      ['入金待ち', 'unpaid', '未入金', { status: 'pending' }, null],
+      ['決済失敗', 'failed', '支払いの失敗', { status: 'failed' }, null],
+      ['放棄', 'none', '支払いなし', { status: 'abandoned' }, null],
+      ['未入金のまま取り消した注文', 'none', '支払いなし', { status: 'cancelled' }, null],
+      ['支払い済み', 'paid', '支払い済み', { status: 'paid' }, 10_000],
+      ['返金の無い発送済み', 'paid', '支払い済み', { status: 'shipped' }, 10_000],
+      ['一部を返金した注文', 'partially_refunded', '一部返金', { status: 'paid', refunded_amount: 3_000 }, 10_000],
+      ['全額を返金して取り消した注文', 'refunded', '返金済み', { status: 'cancelled', refunded_amount: 10_000 }, 10_000],
+    ])('%s の支払いは %s（%s）', async (_name, key, word, overrides, paidAmount) => {
+      refundSummaryOverrides = { 'order-1': { paid_amount: paidAmount } };
+
+      const { rows } = await listOrders([orderRow(overrides)]);
+
+      expect(rows[0]).toMatchObject({ paymentStatusKey: key, paymentStatus: word });
+    });
+
+    it('返金済みの額は金額の言葉で返し、返金が無ければ -', async () => {
+      refundSummaryOverrides = { 'order-1': { paid_amount: 10_000 }, 'order-2': { paid_amount: 10_000 } };
+
+      const { rows } = await listOrders([
+        orderRow({ id: 'order-1', refunded_amount: 3_000 }),
+        orderRow({ id: 'order-2' }),
+      ]);
+
+      expect(rows[0].refundedAmountLabel).toMatch(/3,000$/);
+      expect(rows[1].refundedAmountLabel).toBe('-');
+    });
+
+    it('小さな印は、返事待ち・保留の返金（返金の手続き中）と、開いている返金の失敗の要対応（返金の失敗）をそれぞれ返す', async () => {
+      refundSummaryOverrides = {
+        'order-pending': { paid_amount: 10_000, open_amount: 6_000, refundable_amount: 4_000, has_open_refund: true },
+        'order-failed': { paid_amount: 10_000, refundable_amount: 10_000, has_unresolved_refund_failure: true },
+        'order-plain': { paid_amount: 10_000, refundable_amount: 10_000 },
+      };
+
+      const { rows } = await listOrders([
+        orderRow({ id: 'order-pending' }),
+        orderRow({ id: 'order-failed' }),
+        orderRow({ id: 'order-plain' }),
+      ]);
+      const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
+
+      expect(byId['order-pending']).toMatchObject({ refundPending: true, refundFailed: false });
+      expect(byId['order-failed']).toMatchObject({ refundPending: false, refundFailed: true });
+      expect(byId['order-plain']).toMatchObject({ refundPending: false, refundFailed: false });
+    });
+
+    it.each<[string, boolean, Record<string, unknown>, Record<string, unknown>]>([
+      ['支払い済みで返せる額がある', true, { status: 'paid' }, { paid_amount: 10_000, refundable_amount: 10_000 }],
+      ['発送済みで返せる額がある', true, { status: 'shipped' }, { paid_amount: 10_000, refundable_amount: 10_000 }],
+      [
+        '一部を返金した後も返せる額が残っている', true, { status: 'paid', refunded_amount: 3_000 },
+        { paid_amount: 10_000, succeeded_amount: 3_000, refundable_amount: 7_000 },
+      ],
+      [
+        '取り消した注文に入金が届いた（受け取った額があり、まだ返していない）', true, { status: 'cancelled' },
+        { paid_amount: 10_000, refundable_amount: 10_000 },
+      ],
+      [
+        '全額を返し終えた', false, { status: 'cancelled', refunded_amount: 10_000 },
+        { paid_amount: 10_000, succeeded_amount: 10_000, refundable_amount: 0 },
+      ],
+      [
+        'コンビニ払いの返金が保留（口座の入力待ち）や返事待ちでも、返せる額が残っていれば出す', true, { status: 'paid' },
+        { paid_amount: 10_000, open_amount: 4_000, refundable_amount: 6_000, has_open_refund: true },
+      ],
+      [
+        '残りを全部返す返金が返事待ち・保留で、返せる額が0', false, { status: 'paid' },
+        { paid_amount: 10_000, open_amount: 10_000, refundable_amount: 0, has_open_refund: true },
+      ],
+      ['入金待ち（受け取った額が無い）', false, { status: 'pending' }, { paid_amount: null }],
+      ['未入金のまま取り消した注文', false, { status: 'cancelled' }, { paid_amount: null }],
+    ])('%s なら canRefund=%s', async (_name, canRefund, overrides, summary) => {
+      refundSummaryOverrides = { 'order-1': summary };
+
+      const { rows } = await listOrders([orderRow(overrides)]);
+
+      expect(rows[0].canRefund).toBe(canRefund);
+    });
+
+    type CancelCase = {
+      name: string;
+      kind: 'unpaid' | 'paid' | null;
+      order: Record<string, unknown>;
+      summary?: Record<string, unknown>;
+      /** 発送した数（支払い済み・発送済みの注文の商品ごとの数。注文の数は2） */
+      shipped?: number;
+      /** 入金待ちの注文の PaymentIntent（Stripe が返す物） */
+      paymentIntent?: Record<string, unknown>;
+    };
+
+    it.each<CancelCase>([
+      { name: '支払い手続き中', kind: 'unpaid', order: { status: 'payment_in_progress' } },
+      { name: '決済失敗', kind: 'unpaid', order: { status: 'failed' } },
+      {
+        name: '入金待ちで払込票が期限切れ', kind: 'unpaid',
+        order: { status: 'pending', payment_intent_id: 'pi_cancel_kind_expired' },
+        paymentIntent: { status: 'requires_payment_method' },
+      },
+      {
+        name: '入金待ちで払込票が有効', kind: null,
+        order: { status: 'pending', payment_intent_id: 'pi_cancel_kind_voucher' },
+        paymentIntent: { status: 'requires_action' },
+      },
+      {
+        name: '支払い済みで1つも発送していない', kind: 'paid', order: { status: 'paid' },
+        summary: { paid_amount: 10_000, refundable_amount: 10_000 }, shipped: 0,
+      },
+      {
+        name: '支払い済みで一部を発送した', kind: null, order: { status: 'paid' },
+        summary: { paid_amount: 10_000, refundable_amount: 10_000 }, shipped: 1,
+      },
+      {
+        name: '支払い済みで返せる額が無い', kind: null, order: { status: 'paid' },
+        summary: { paid_amount: 10_000, refundable_amount: 0 }, shipped: 0,
+      },
+      {
+        name: '発送済み', kind: null, order: { status: 'shipped' },
+        summary: { paid_amount: 10_000, refundable_amount: 10_000 }, shipped: 2,
+      },
+      {
+        name: '取り消した注文', kind: null, order: { status: 'cancelled' },
+        summary: { paid_amount: 10_000, refundable_amount: 10_000 },
+      },
+    ])('$name の注文は cancelKind=$kind', async ({ kind, order, summary = {}, shipped = 0, paymentIntent }) => {
+      refundSummaryOverrides = { 'order-1': summary };
+      lineFulfillmentRows = [lineRow({
+        order_id: 'order-1', order_item_id: 'item-1', quantity: 2, shipped, completed: 2,
+        ready_unshipped: 2 - shipped, unshipped: 2 - shipped,
+      })];
+      if (paymentIntent) {
+        getStripeMock.mockReturnValue({
+          paymentIntents: { retrieve: jest.fn().mockResolvedValue({ payment_method_types: ['konbini'], ...paymentIntent }) },
+        });
+      }
+
+      const { rows } = await listOrders([orderRow(order)]);
+
+      expect(rows[0]).toMatchObject({ cancelKind: kind, canCancel: kind !== null });
+    });
+
+    it('支払い済みで、未発送も発送も0で、返事待ち・保留の返金がある注文は「キャンセルの手続き中」', async () => {
+      lineFulfillmentRows = [lineRow({
+        order_id: 'order-1', order_item_id: 'item-1', quantity: 2, shipped: 0, completed: 2, ready_unshipped: 0, unshipped: 0,
+      })];
+      refundSummaryOverrides = {
+        'order-1': { paid_amount: 10_000, open_amount: 10_000, refundable_amount: 0, has_open_refund: true },
+      };
+
+      const { rows } = await listOrders([orderRow()]);
+
+      expect(rows[0]).toMatchObject({
+        status: 'キャンセルの手続き中', orderStatus: 'paid', progressKey: 'cancel_pending', refundPending: true, canShip: false,
+      });
+    });
+
+    it('未発送が残っていれば、返金の手続き中でも進み具合の言葉は変えない', async () => {
+      lineFulfillmentRows = [lineRow({
+        order_id: 'order-1', order_item_id: 'item-1', quantity: 2, shipped: 0, completed: 2, ready_unshipped: 1, unshipped: 1,
+      })];
+      refundSummaryOverrides = {
+        'order-1': { paid_amount: 10_000, open_amount: 4_000, refundable_amount: 6_000, has_open_refund: true },
+      };
+
+      const { rows } = await listOrders([orderRow()]);
+
+      expect(rows[0]).toMatchObject({ status: '発送準備中', progressKey: 'ready', refundPending: true });
+    });
+
+    it('返金の要約を読めなかった時は 500 にする（返せる額が分からないまま返金のボタンを出さない）。ログは名前と code だけ', async () => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      rpcMock.mockImplementation(async (name: string) =>
+        name === 'list_order_refund_summaries'
+          ? { data: null, error: { message: 'SECRET-MESSAGE', details: 'SECRET-DETAILS', hint: 'SECRET-HINT', code: '08006' } }
+          : { data: lineFulfillmentRows, error: null });
+      queryResult = { data: [orderRow()], count: 1, error: null };
+
+      try {
+        const { GET } = await import('@/app/api/admin/orders/route');
+        const response = await GET(new Request('http://localhost/api/admin/orders'));
+
+        expect(response.status).toBe(500);
+        expect(consoleError.mock.calls[0].slice(0, 3)).toEqual(['GET /api/admin/orders error:', 'RefundStoreError', '08006']);
+        expect(inspect(consoleError.mock.calls, { depth: null })).not.toContain('SECRET');
+      } finally {
+        consoleError.mockRestore();
+      }
+    });
+  });
+
 });

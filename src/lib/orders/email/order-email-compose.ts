@@ -12,6 +12,7 @@ import { listOrderLineFulfillment } from '@/lib/orders/fulfillment/fulfillment-s
 import type { CancelReason, OrderStatus } from '@/lib/orders/order-payment-types';
 import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import type { OrderEmailKind, OrderEmailVariant, RefundEmailVariant } from '@/lib/orders/email/order-email-types';
+import { konbiniDeadlineLastDay } from '@/lib/orders/refund/refund-messages';
 
 /**
  * 注文のメールの材料を読み、件名と本文を作る（グループ D 設計書 4-2）。
@@ -480,17 +481,11 @@ function composeCanceled(material: OrderEmailMaterial, previousStatus: 'payment_
 }
 
 /**
- * その日のうちに入力すれば間に合う最後の日を、日本時間の YYYY年M月D日で返す。読めなければ null。
- * 期限を実際より遅く伝えないため、期限の1分後の日本時間の日付から1日戻す（日本に夏時間は無い）。
+ * 共通の部品で出した、口座の入力が間に合う最後の日を YYYY年M月D日で書く。読めなければ null
  */
 function formatKonbiniDeadlineDate(value: string): string | null {
-  const time = Date.parse(value);
-  if (Number.isNaN(time)) {
-    return null;
-  }
-  const jst = new Date(time + 9 * 60 * 60 * 1000 + 60 * 1000);
-  jst.setUTCDate(jst.getUTCDate() - 1);
-  return `${jst.getUTCFullYear()}年${jst.getUTCMonth() + 1}月${jst.getUTCDate()}日`;
+  const deadline = konbiniDeadlineLastDay(value);
+  return deadline ? `${deadline.year}年${deadline.month}月${deadline.day}日` : null;
 }
 
 /**
