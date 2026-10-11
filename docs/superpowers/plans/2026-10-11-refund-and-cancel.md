@@ -165,7 +165,8 @@
 | `src/lib/orders/refund/refund-sweep.ts`（新規）、`src/app/api/cron/expire-pending-orders/route.ts` | 毎時の見回り | 6 |
 | `src/lib/stripe/reconcile-orders.ts`、`src/app/api/cron/stripe-reconcile/route.ts` | 毎晩の照合 | 6 |
 | `src/app/api/admin/orders/[id]/refund/route.ts`・`tests/unit/api/admin/order-refund-route.test.ts`（呼び先だけのつなぎ。Task 9 が全文を置き換える。P18）、`tests/unit/api/webhook/stripe-ingest.test.ts`（差し替えの名前）、`tests/integration/db/reconciler_postgrest.integration.test.ts`（照合の返金の部品の作り方。P18 の3件） | 消す名前の付け替え | 6 |
-| `src/lib/stripe/checkout-payment-reconciler.ts`・`checkout-payment-reconciler-deps.ts` | 照合の返金の同期の入れ替え・取り消した注文への入金の受け取った額（P27）・自動の返金①② | 6・7 |
+| `src/lib/stripe/checkout-payment-reconciler-deps.ts` | 照合の返金の同期の入れ替え（Task 6）・既定の部品の2つの欄（Task 7） | 6・7 |
+| `src/lib/stripe/checkout-payment-reconciler.ts` | 取り消した注文への入金の受け取った額（P27）・自動の返金①② | 7 |
 | `tests/unit/lib/stripe/checkout-payment-reconciler.test.ts` | 自動の返金①②の試験（試験の部品の2つの欄） | 7 |
 | `tests/unit/lib/stripe/checkout-payment-reconciler-default-deps.test.ts`（新規）、`tests/integration/db/reconciler_composed.integration.test.ts`・`reconciler_postgrest.integration.test.ts`（`ReconcilerDeps` の2つの欄。`reconciler_composed` の取消の後の入金の流れは、P27 の受け取った額と支払いの番号の書き込みを本物の DB で確かめる形に直す） | 照合の既定の部品の試験 | 7 |
 | `src/lib/orders/email/order-email-types.ts`・`tests/unit/lib/orders/email/order-email-types.test.ts`（種類・書き分け・再送の表。表を読む試験は移行 C を読む。P26）、`tests/unit/api/admin/order-email-routes.test.ts`（再送の窓口の `refund`）、`tests/integration/db/order_email_outbox.integration.test.ts`（再送の状態の表が `ORDER_EMAIL_KINDS` を回すので `refund` の行）、`tests/integration/db/order_email_material_postgrest.integration.test.ts`（新規。返金の材料を本物の PostgREST で読む）、`src/lib/orders/email/order-email-store.ts`・`order-email-compose.ts`・`order-email-worker.ts`・`order-history.ts`（`OrderEmailHistoryRow.refundId` だけ）、`src/lib/orders/order-confirmation-email.ts`（`itemLabel` を export） | 返金の番号・材料・本文 | 8 |
@@ -178,7 +179,7 @@
 | `src/components/OrderHistoryDialog.tsx`（型を通す1か所）・`tests/unit/components/AttentionInbox.test.tsx`（型の付いた見本）・`tests/unit/api/admin/order-email-routes.test.ts`（履歴の窓口の試験） | Task 10 の型の変更に合わせる | 10 |
 | `src/lib/orders/refund/refund-client.ts`（新規）、`src/hooks/useRefundSubmission.ts`（新規。2つの画面が共有する送信の流れ）、`src/components/OrderRefundDialog.tsx`（新規）、`src/components/OrderPaidCancelDialog.tsx`（新規）、`src/app/admin/page.tsx`、`src/components/OrderSection.tsx`（`OrderItem` に `cancelKind` の1行だけ。page.tsx が先に使うため） | 返金の画面・支払い済みのキャンセルの画面・つなぎ | 11 |
 | `src/components/OrderSection.tsx`・`src/app/admin/page.tsx`（CSV）・`src/components/OrderHistoryDialog.tsx`・`src/components/AttentionInbox.tsx`・`src/app/admin/item/ItemStockSection.tsx`・`src/app/api/admin/items/[id]/variants/route.ts` | 一覧・履歴・要対応・在庫の画面 | 12 |
-| `src/components/ShopSettingsSection.tsx`（新規）、`src/components/AdminSideNav.tsx`・`src/components/AdminTabs.tsx`・`src/app/admin/page.tsx` | ショップの設定の画面とメニュー | 13 |
+| `src/components/ShopSettingsSection.tsx`（新規）、`src/components/AdminSideNav.tsx`・`src/components/AdminTabs.tsx`・`src/app/admin/page.tsx`、`e2e/FR-ADMIN-029-accounting-tab.spec.ts`（店長の左のメニューの並びに `SETTINGS`） | ショップの設定の画面とメニュー | 13 |
 | `src/app/api/orders/[id]/route.ts`・`src/app/api/orders/route.ts`（一覧の進み具合の `hasOpenRefund`）、`src/app/account/orders/[id]/page.tsx`、`src/features/account/components/OrderItemRow.tsx` | お客様の画面 | 14 |
 | `e2e/FR-ADMIN-074`〜`083`・`e2e/FR-CHECKOUT-051`・`e2e/FR-ACCOUNT-033`（新規）、今の E2E の直し、`e2e/order-email-test-utils.ts`・`e2e/refund-test-utils.ts`（新規） | E2E | 15 |
 | 要求表・設計の文書・手順書・レビュー台帳・全体の決定の書き足し（設計書 15章の表の文書に加え、E-2 で書いてあることが誤りになる `docs/04_DetailDesign/states/payment-exception.md`・`docs/04_DetailDesign/sequence/stripe-webhooks.md`・`docs/04_DetailDesign/sequence/checkout-payment.md`、開店のときの順番の表がある `docs/06_Operations/webhook-queue-operations.md`、足りないだけの `docs/04_DetailDesign/pages/13_checkout.md`） | 文書 | 16 |
@@ -214,7 +215,7 @@
 | `adjustment_amount` | `integer NOT NULL DEFAULT 0` |
 | `note` | `text CHECK (note IS NULL OR pg_catalog.char_length(note) <= 500)` |
 | `stripe_reason` | `text CHECK (stripe_reason IS NULL OR stripe_reason IN ('requested_by_customer','duplicate','fraudulent'))` |
-| `cancel_reason` | `text CHECK (cancel_reason IS NULL OR cancel_reason IN ('stock_unavailable','customer_request','suspected_fraud','other'))` |
+| `cancel_reason` | `text CONSTRAINT order_refunds_cancel_reason_value_check CHECK (cancel_reason IS NULL OR cancel_reason IN ('stock_unavailable','customer_request','suspected_fraud','other'))`（列の CHECK の自動の名前は表の CHECK `order_refunds_cancel_reason_check` とぶつかるので名前を付ける） |
 | `notify_customer` | `boolean NOT NULL` |
 | `actor_id` | `uuid`（外部キーにしない。`stock_movements.created_by` と同じ理由） |
 | `reference_number` | `text CHECK (reference_number IS NULL OR pg_catalog.char_length(reference_number) BETWEEN 1 AND 64)` |
@@ -2150,7 +2151,8 @@ CREATE TABLE IF NOT EXISTS public.order_refunds (
   stripe_reason text CHECK (
     stripe_reason IS NULL OR stripe_reason IN ('requested_by_customer', 'duplicate', 'fraudulent')
   ),
-  cancel_reason text CHECK (
+  -- 列の CHECK に自動で付く名前（order_refunds_cancel_reason_check）は、下の表の CHECK の名前とぶつかって表を作れないので、別の名前を付ける
+  cancel_reason text CONSTRAINT order_refunds_cancel_reason_value_check CHECK (
     cancel_reason IS NULL OR cancel_reason IN ('stock_unavailable', 'customer_request', 'suspected_fraud', 'other')
   ),
   notify_customer boolean NOT NULL,
@@ -13862,7 +13864,7 @@ git commit -m "feat(orders): 返金の TS の土台と、要対応の理由・�
 - Produces（名前・引数・型は共通の約束 C-2 のとおり。ここに無い物は、このタスクの中だけで使う）:
   - `refund-stripe.ts`: 型 `StripeRefundSnapshot`・`CreateStripeRefundInput`・`CreateStripeRefundOutcome`、関数 `toStripeRefundSnapshot`・`refundIdempotencyKey`・`createStripeRefund`・`listPaymentIntentRefunds`・`readPaymentMethodType`
   - `refund-service.ts`: 型 `RefundServiceDeps`・`RefundSubmitResult`、関数 `submitAdminRefund`・`submitPaidOrderCancel`・`startAutomaticRefund`・`confirmAwaitingRefund`・`applyRefundSideEffects`・`createDefaultRefundServiceDeps`
-  - 使う側: Task 6（`listPaymentIntentRefunds`・`applyRefundSideEffects`・`createDefaultRefundServiceDeps`）、Task 7（`startAutomaticRefund`・`createDefaultRefundServiceDeps`）、Task 9（`submitAdminRefund`・`submitPaidOrderCancel`・`confirmAwaitingRefund`・`createDefaultRefundServiceDeps`）
+  - 使う側: Task 6（`listPaymentIntentRefunds`・`applyRefundSideEffects`・`createDefaultRefundServiceDeps`）、Task 7（`startAutomaticRefund`。照合の既定の返金の部品は、Task 6 が `createDefaultReconcilerDeps` の中で `createDefaultRefundServiceDeps` から作る）、Task 9（`submitAdminRefund`・`submitPaidOrderCancel`・`confirmAwaitingRefund`・`createDefaultRefundServiceDeps`）
 
 決め事（本計画 P10・P15・P23・P24 の続き。共通の約束に書いていない所）:
 - 支払いの番号（`pi_` で始まる `orders.payment_intent_id`）と連絡先のメール（`orders.shipping_email`）は、記録を作る前に service_role で `orders` から読む。注文が無ければ `order_not_found`、番号が空か `pi_` で始まらなければ `order_not_refundable` で断り、返事待ちの記録を残さない。
@@ -13876,7 +13878,7 @@ git commit -m "feat(orders): 返金の TS の土台と、要対応の理由・�
 - イ（支払い済みのキャンセル）・エ（①）・オ（②）は、`beginOrderRefund` の額と送料に 0 を渡す（C-1: この3つの道では使わず、DB が返せる額・返せる送料の全部を使う）。②の理由 `other`・メモ `支払額の違いの自動の取消`・Stripe に伝える理由 `requested_by_customer`・在庫に戻す・お客様に知らせる は、TS が渡す。
 - 後の始末（`applyRefundSideEffects`）は例外を投げない。記録はもう書けているので、知らせの準備で落ちても返金の結果を変えない（変えると、画面が失敗と受け取って、同じ返金をもう一度押される）。書けなかった店への知らせは、未送信の要対応として毎時の見回りが送り直す。
 - 店への知らせの商品の名前は `品名（色 / サイズ）`（色もサイズも無ければ品名だけ）。`paymentRef` は Stripe の返金の番号（記録に無ければ記録の番号）。`detail` は失敗の理由の記号（無ければ `unknown`）。`cancelEmailSent` は、道が `order_cancel`・`auto_amount_mismatch` で、`notifyCustomer` で、受け付けた時刻（`acceptedAt`）がある時（キャンセルのお知らせの予定は Stripe が受け付けた時に書くので、返事待ちからそのまま失敗した返金（P21）は送っていない。残高不足の保留から失敗した返金は見分けない）。
-- `createDefaultRefundServiceDeps` は、照合の部品（`checkout-payment-reconciler.ts`・`checkout-payment-reconciler-deps.ts`）を関数の中で `import()` する。照合の側が Task 6・7 でこのファイルを import するので、静的に import すると互いを import する輪ができるため。`createDefaultReconcilerDeps` は呼ばない（Task 7 がそこから `createDefaultRefundServiceDeps` を呼ぶので、呼ぶと輪になる）。
+- `createDefaultRefundServiceDeps` は、照合の部品（`checkout-payment-reconciler.ts`・`checkout-payment-reconciler-deps.ts`）を関数の中で `import()` する。照合の側が Task 6・7 でこのファイルを import するので、静的に import すると互いを import する輪ができるため。`createDefaultReconcilerDeps` は呼ばない（Task 6 がそこから `createDefaultRefundServiceDeps` を呼ぶので、呼ぶと輪になる）。
 - Task 4 の `RefundOperationError`（`new RefundOperationError(code)`）・`RefundStoreError`（`new RefundStoreError(operation, cause)`）の作りを使う。
 - 照会番号は `destination_details.card.reference`、その種類は `card.reference_type`、無ければ返金先の種類（`destination_details.type`）、それも無ければ null。番号が届く前の返金とカード以外の返金は、番号を null にする（種類だけが入ることがある）。空の文字は null にする（記録の列は1文字以上で、空の文字が届くと結果を書く関数が止まる）。
 
@@ -39169,7 +39171,7 @@ for (const viewport of viewports) {
 ```ts
 /**
  * FR-ADMIN-077 注文の履歴の返金の行
- * 対応 FREQ: FREQ-447（AC-01〜AC-03）・FREQ-459（AC-01〜AC-03）
+ * 対応 FREQ: FREQ-447（AC-01〜AC-03）・FREQ-459（AC-01・AC-02。確保し直しの行も画面で確かめるが、FREQ-459-AC-03 は受け付け基準の表で DB 結合・単体の基準）
  *
  * 履歴の画面は窓口を差し替えて確かめる（実装計画 P16）。窓口の答えは共通の約束（C-2）の形。
  * 返金を数える決まり（受け取った額を超える返金は断る・エラーと失敗の返金は返せる額に数えない。AC-02・AC-03）は、
@@ -39467,7 +39469,6 @@ for (const viewport of viewports) {
     });
 
     test('失敗した返金の確保し直しの行が出て、足りなかった数は合計を約束の文の1行で出す。返金のお知らせのメールの行は再送のボタンが無い', async ({ page }) => {
-      // FREQ-459-AC-03
       const dialog = await openHistory(page);
 
       const rereserve = dialog.getByRole('listitem').filter({ hasText: '返金の失敗で在庫を確保し直しました' });
@@ -45019,7 +45020,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - E2E の「前の一覧」は、E-1 の確かめ（E-1 の計画の Task 12。2616 通過・176 失敗・28 飛ばし）を作り直した物にする。Task 12 の結果の JSON は次の全件で上書きされて残っていないので、同じ 2820 件を持つ E-1 の push の後の JSON（開始 `2026-10-10T12:32:08.683Z`）に、Task 12 の失敗の一覧 `fail-full.txt` の 176 件を当てて、通った・失敗したを付け直す。作ると 2616・176・28 に戻ることで、作り方が合っていると確かめられる。`test-results/e2e-results.json` は次の E2E の実行で上書きされるので、**実装を始める前（Task 1 より前）に作っておく**
 - 作業用の script と SQL は `tmp/` に置く。リポジトリのコードではないので、コミットしない・lint しない
 - 「確保が残るキャンセルの注文」は、`cancelled` の注文のうち、台帳の確保（`private.order_line_reservations` の `reserved`）が発送した数（`private.order_line_fulfillment` の `shipped`）を超える商品が1つでもある注文。発送した分の確保は出庫で正しく無くなっているので、発送した数は引く
-- 指紋の SQL は、移行 A・B・C を続けて当てた後に1回流す。名前に `refund` か `shop_settings` を含む `public`・`private` の関数は、一覧に書き漏らしても自動で指紋に入る。それ以外の関数の書き漏らしは、Step 9 の `diff` が見つける。名前を決めた制約（C-1 と Task 1〜3 が名前を付けた16本。`order_refunds` の7本は、一意の制約 `order_refunds_request_key_key`・`order_refunds_stripe_refund_id_key`、返金の番号の形の CHECK `order_refunds_stripe_refund_id_check`（P29）、`order_refunds_request_check`・`order_refunds_external_check`・`order_refunds_cancel_reason_check`・`order_refunds_legacy_check`）が表に本当にあるかは、`named` の行で確かめる（制約の指紋は表ごとに全部の制約を名前つきで見るので、手元と本番の食い違いはそれで見つかる。`named` の行は、手元も本番も同じように名前が違う、という見逃しを防ぐ）
+- 指紋の SQL は、移行 A・B・C を続けて当てた後に1回流す。名前に `refund` か `shop_settings` を含む `public`・`private` の関数は、一覧に書き漏らしても自動で指紋に入る。それ以外の関数の書き漏らしは、Step 9 の `diff` が見つける。名前を決めた制約（C-1 と Task 1〜3 が名前を付けた17本。`order_refunds` の8本は、一意の制約 `order_refunds_request_key_key`・`order_refunds_stripe_refund_id_key`、返金の番号の形の CHECK `order_refunds_stripe_refund_id_check`（P29）、取消の理由の値の CHECK `order_refunds_cancel_reason_value_check`、`order_refunds_request_check`・`order_refunds_external_check`・`order_refunds_cancel_reason_check`・`order_refunds_legacy_check`）が表に本当にあるかは、`named` の行で確かめる（制約の指紋は表ごとに全部の制約を名前つきで見るので、手元と本番の食い違いはそれで見つかる。`named` の行は、手元も本番も同じように名前が違う、という見逃しを防ぐ）
 - 指紋は、本番と手元で値がずれやすい所を避ける。表の権限は文字列ではなく `anon`・`authenticated`・`service_role` が実際に読み書きできるかで比べ、並べ替えは `collate "C"` で固定する。関数の実行の権限は `proacl` を指紋に入れ、`anon`・`authenticated` が実行できないことは、当てた後の 4-7 で別に確かめる
 - 新しい12本が流れて通ったこと（失敗も飛ばしも無いこと）は、ログの grep でなく結果の JSON で数える（Step 7）。ログは試験ごとの進み具合の行に全部のファイル名を出すので、ファイル名の grep は全部通っていても何かを出し、確かめにならない。飛ばしになりうるのは、本物の Stripe を使う `FR-ADMIN-080` の1本目と `FR-CHECKOUT-051`（3つの画面幅で計6本）だけで、Stripe に届かない・テスト用の鍵が Stripe に断られる（認証・権限の誤り）・見本の商品が無い（FR-CHECKOUT-051 の seedCart）時に、理由つきで飛ばす。Stripe の鍵が無い・テスト用でない時は、E2E の見張り（`scripts/e2e/environment.ts`）が起動の前に全体を止めるので、飛ばしにはならず、試験が1本も流れない。飛ばしは `e2e:compare` の「失敗」には出ないので、飛ばしが 0 であることを必須にする
 - 受け付け基準の番号と確かめ方の表は、Task 16 の冒頭の「番号と確かめ方の対応」の表が正（骨組みの Global Constraints）。Step 8 の数え方は、その表に合わせる
@@ -45280,7 +45281,7 @@ main().catch((error) => {
 ```
 
 Run: `node tmp/e2-fingerprint-local.cjs tmp/e2-fingerprint.sql`
-Expected: 誤りなく1行 `{"items":"<n>","dropped_but_present":"0","named_but_absent":"0","overall":"<md5>"}` が出る。`items` と `overall` を台帳に控える（本番と比べる値）。`dropped_but_present` が 0（移行 C が消した古い関数が、手元に残っていない）。`named_but_absent` が 0（名前を決めた制約16本が、手元の表に全部ある）
+Expected: 誤りなく1行 `{"items":"<n>","dropped_but_present":"0","named_but_absent":"0","overall":"<md5>"}` が出る。`items` と `overall` を台帳に控える（本番と比べる値）。`dropped_but_present` が 0（移行 C が消した古い関数が、手元に残っていない）。`named_but_absent` が 0（名前を決めた制約17本が、手元の表に全部ある）
 
 指紋の SQL が名指しする関数が、移行 A・B・C が作った・変えた関数と一致するかを確かめる。
 
@@ -45304,7 +45305,7 @@ grep -oE "\('(public|private)\.[a-z_]+', '[a-z0-9_]+'\)" tmp/e2-fingerprint.sql 
 diff tmp/e2-constraints-in-migrations.txt tmp/e2-constraints-in-fingerprint.txt
 ```
 
-Expected: 何も出ない（16本が一致する。一意の制約 `order_refunds_request_key_key`・`order_refunds_stripe_refund_id_key` と、返金の番号の形の CHECK `order_refunds_stripe_refund_id_check` を含む）。`<` の行は、移行が名前を付けたのに `named` に無い制約（`named` の一覧に足す）。`>` の行は、`named` にあるのに移行が名前を付けていない制約（一覧から外す）
+Expected: 何も出ない（17本が一致する。一意の制約 `order_refunds_request_key_key`・`order_refunds_stripe_refund_id_key` と、返金の番号の形の CHECK `order_refunds_stripe_refund_id_check` を含む）。`<` の行は、移行が名前を付けたのに `named` に無い制約（`named` の一覧に足す）。`>` の行は、`named` にあるのに移行が名前を付けていない制約（一覧から外す）
 
 指紋の SQL が見ている表に、抜けが無いかを確かめる。
 
@@ -45338,7 +45339,7 @@ Expected: 何も出ない（全部のタスクのファイルはコミット済�
 - Task 17 Step 6: 3000番を空けて db reset の後に E2E の全件 — <P> passed・<F> failed・<K> skipped（全体 <T>。<M>分。full-e2e.log）。基準（E-1 の確かめ）は 2616 passed・176 failed・28 skipped
 - Task 17 Step 7: npm run e2e:compare（e2e-compare.log）— 前に通っていて…通らない <a>件、前は飛ばし・前に無くて…失敗 <b>件（0であること）、前は失敗で後は通過 <c>件、前にあり後に無い <d>件、後にだけある <e>件。<a>件の切り分け: <1件ずつ、単独で流した結果と error-context.md の原因>。全件の結果の写し e2e-results-group-e2.json で、新しい12本は <N> 件（Task 15 の表では243）・全部 expected（飛ばし 0・失敗 0）
 - Task 17 Step 8: 受け付け基準 <n> 個（Task 16 の表では67個）すべてに試験がある（task17-ac-trace.md。DB 結合・単体だけの9個は、基準の文が名指すファイルを開いて確かめた）。Review Focus 1〜5 の試験: <ファイル名>
-- Task 17 Step 9: 指紋の SQL は手元で通り、関数36本と名前を決めた制約16本の抜けは無い（手元の指紋 items <n>・overall <md5>・dropped_but_present 0・named_but_absent 0）
+- Task 17 Step 9: 指紋の SQL は手元で通り、関数36本と名前を決めた制約17本の抜けは無い（手元の指紋 items <n>・overall <md5>・dropped_but_present 0・named_but_absent 0）
 - Task 17 Step 10〜11: graphify update . を流した。git status は空
 - Task 17: complete
 ```
@@ -45522,6 +45523,7 @@ with fx as (
     ('public.order_refunds', 'order_refunds_request_check'),
     ('public.order_refunds', 'order_refunds_external_check'),
     ('public.order_refunds', 'order_refunds_cancel_reason_check'),
+    ('public.order_refunds', 'order_refunds_cancel_reason_value_check'),
     ('public.order_refunds', 'order_refunds_legacy_check'),
     ('public.order_refund_lines', 'order_refund_lines_refund_item_key'),
     ('public.order_refund_lines', 'order_refund_lines_restock_check'),
@@ -45608,7 +45610,7 @@ from fx;
 
 Run（手元）: `node tmp/e2-fingerprint-local.cjs tmp/e2-fingerprint.sql`
 Run（本番）: 同じ SQL を `execute_sql` で流す
-Expected: 手元と本番で `items` と `overall` が同じ（手元の値は、本番に当てた SQL と同じ移行で `db reset` した DB のもの。当てる前に移行の SQL を直したら、`npx supabase db reset` をやり直して手元の値を取り直す）。`dropped_but_present` は 0（C が消した `apply_order_refund_projection` と、4つの引数の `private.enqueue_order_email` が本番に無い）。`named_but_absent` は 0（名前を決めた制約16本が、本番の表に全部ある。一意の制約 `order_refunds_request_key_key`・`order_refunds_stripe_refund_id_key` と、返金の番号の形の CHECK `order_refunds_stripe_refund_id_check` を含む。1つでも `absent` なら、本番の移行の SQL の写し間違いか、C-1 の名前と違う）。食い違ったら、最後の `select` だけを次に替えて手元と本番の両方で流し、`kind`・`name` ごとの行を比べて、食い違った物を探す。本番にだけ名前に `refund` を含む関数があれば `items` がずれる（移行の外から足された物なので、ユーザーに伝える）。関数が食い違う時は、移行のファイルの SQL と、本番に渡した SQL が一字違わないか（改行・コメント）を疑う:
+Expected: 手元と本番で `items` と `overall` が同じ（手元の値は、本番に当てた SQL と同じ移行で `db reset` した DB のもの。当てる前に移行の SQL を直したら、`npx supabase db reset` をやり直して手元の値を取り直す）。`dropped_but_present` は 0（C が消した `apply_order_refund_projection` と、4つの引数の `private.enqueue_order_email` が本番に無い）。`named_but_absent` は 0（名前を決めた制約17本が、本番の表に全部ある。一意の制約 `order_refunds_request_key_key`・`order_refunds_stripe_refund_id_key` と、返金の番号の形の CHECK `order_refunds_stripe_refund_id_check` を含む。1つでも `absent` なら、本番の移行の SQL の写し間違いか、C-1 の名前と違う）。食い違ったら、最後の `select` だけを次に替えて手元と本番の両方で流し、`kind`・`name` ごとの行を比べて、食い違った物を探す。本番にだけ名前に `refund` を含む関数があれば `items` がずれる（移行の外から足された物なので、ユーザーに伝える）。関数が食い違う時は、移行のファイルの SQL と、本番に渡した SQL が一字違わないか（改行・コメント）を疑う:
 
 ```sql
 select kind, name, fp, acl from fx order by kind collate "C", name collate "C";
