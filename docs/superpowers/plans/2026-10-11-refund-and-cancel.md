@@ -45293,7 +45293,7 @@ grep -oE "\('(public|private)', '[a-z0-9_]+'\)" tmp/e2-fingerprint.sql | sed -E 
 diff tmp/e2-functions-in-migrations.txt tmp/e2-functions-in-fingerprint.txt
 ```
 
-Expected: 何も出ない（36本が一致する）。`<` の行は、移行が作ったのに指紋の SQL に無い関数（SQL の一覧に足す）。`>` の行は、指紋の SQL にあるのに移行が作っていない関数（一覧から外す）。直した SQL は台帳に書く
+Expected: 何も出ない（37本が一致する。最後のレビューの直しで、移行 C が作り直す `public.skip_order_email` を一覧に足した）。`<` の行は、移行が作ったのに指紋の SQL に無い関数（SQL の一覧に足す）。`>` の行は、指紋の SQL にあるのに移行が作っていない関数（一覧から外す）。直した SQL は台帳に書く
 
 指紋の SQL の `named` の行が名指しする制約が、移行 A・B・C が名前を付けた制約（`…_check`・`…_key`・`…_range`）と一致するかを確かめる。
 
@@ -45339,7 +45339,7 @@ Expected: 何も出ない（全部のタスクのファイルはコミット済�
 - Task 17 Step 6: 3000番を空けて db reset の後に E2E の全件 — <P> passed・<F> failed・<K> skipped（全体 <T>。<M>分。full-e2e.log）。基準（E-1 の確かめ）は 2616 passed・176 failed・28 skipped
 - Task 17 Step 7: npm run e2e:compare（e2e-compare.log）— 前に通っていて…通らない <a>件、前は飛ばし・前に無くて…失敗 <b>件（0であること）、前は失敗で後は通過 <c>件、前にあり後に無い <d>件、後にだけある <e>件。<a>件の切り分け: <1件ずつ、単独で流した結果と error-context.md の原因>。全件の結果の写し e2e-results-group-e2.json で、新しい12本は <N> 件（Task 15 の表では243）・全部 expected（飛ばし 0・失敗 0）
 - Task 17 Step 8: 受け付け基準 <n> 個（Task 16 の表では67個）すべてに試験がある（task17-ac-trace.md。DB 結合・単体だけの9個は、基準の文が名指すファイルを開いて確かめた）。Review Focus 1〜5 の試験: <ファイル名>
-- Task 17 Step 9: 指紋の SQL は手元で通り、関数36本と名前を決めた制約17本の抜けは無い（手元の指紋 items <n>・overall <md5>・dropped_but_present 0・named_but_absent 0）
+- Task 17 Step 9: 指紋の SQL は手元で通り、関数37本と名前を決めた制約17本の抜けは無い（手元の指紋 items <n>・overall <md5>・dropped_but_present 0・named_but_absent 0）
 - Task 17 Step 10〜11: graphify update . を流した。git status は空
 - Task 17: complete
 ```
@@ -45497,7 +45497,8 @@ with fx as (
     ('private', 'refund_stripe_fields_valid'), ('private', 'order_cancelled_by_refund'),
     ('public', 'claim_order_email'), ('public', 'list_order_email_history'), ('public', 'request_order_email_resend'),
     ('public', 'record_order_refund_result'), ('public', 'record_external_order_refund'), ('public', 'mark_order_refund_error'),
-    ('public', 'list_order_refund_summaries'), ('public', 'resolve_payment_exception_by_system')
+    ('public', 'list_order_refund_summaries'), ('public', 'resolve_payment_exception_by_system'),
+    ('public', 'skip_order_email')
   )
   or (n.nspname = any (array['public', 'private']) and (p.proname like '%refund%' or p.proname like '%shop_settings%'))
   union all
