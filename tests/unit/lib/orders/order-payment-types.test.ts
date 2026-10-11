@@ -32,7 +32,7 @@ describe('注文と支払いの値', () => {
   });
 
   it('要対応の理由と取消の理由は DB の CHECK と同じ', () => {
-    // 理由の CHECK は、返金の移行 C（20261011120200_order_refund_results.sql）が名前を付けて作り直し、refund_failed を足した
+    // 理由の CHECK は、返金の移行 C（20261011223453_order_refund_results.sql）が名前を付けて作り直し、refund_failed を足した
     const refundResults = migrationEndingWith('_order_refund_results.sql');
     const exceptions = `${migration('20260927100500_payment_exceptions.sql')}\n${refundResults}`;
     const columns = migration('20260927100100_order_payment_columns.sql');

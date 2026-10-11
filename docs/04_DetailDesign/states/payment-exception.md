@@ -8,7 +8,7 @@
 
 ## 範囲と根拠
 
-対応領域: [ADMINの要対応・要確認](../pages/16_admin.md)、[注文管理シーケンス](../sequence/order-administration.md)。定義とRPCは[要対応migration](../../../supabase/migrations/20260927100500_payment_exceptions.sql)、検出は[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、解決は[resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts)（人が押す解決）。システムの自動の解決（グループ E-2）は、[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql)の `resolve_payment_exception_by_system`。
+対応領域: [ADMINの要対応・要確認](../pages/16_admin.md)、[注文管理シーケンス](../sequence/order-administration.md)。定義とRPCは[要対応migration](../../../supabase/migrations/20260927100500_payment_exceptions.sql)、検出は[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、解決は[resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts)（人が押す解決）。システムの自動の解決（グループ E-2）は、[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql)の `resolve_payment_exception_by_system`。
 
 ## 状態定義と図
 
@@ -46,7 +46,7 @@ stateDiagram-v2
 | `stripe_object_missing` | 既存注文にStripe missingが対応する。注文なしのmissingはrecord_onlyで要対応行を作らない |
 | `refund_failed` | 照合器ではなく返金のDB関数が記録する（グループ E-2）。返金の結果を書く関数（`record_order_refund_result`・`record_external_order_refund`）が、保留・成功だった返金、または返事待ちの返金を初めて失敗にした時（`failure_applied_at`で1回だけ）。`payment_ref`はStripeの返金の番号（まだ無ければ返金の記録の番号）。ただし、エラーにした記録が受け付けられずに（保留・成功を通らずに）失敗になった時は返金の記録の番号で、エラーの時の要対応と同じ1行にまとまり、店への通知も1通。エラーの後に保留・成功になり（その時、発送前の行の商品の数の関係が保たれていれば、エラーの時の要対応はシステムが閉じる）、その後に失敗になった時（コンビニ払いの期限切れなど）は、Stripeの返金の番号の別の行として新しい要対応を作り、店へ知らせる（閉じた行に重ねて、本当の失敗を誰にも知らせないことを避けるため）。`detail`は失敗の理由。もう一つは、毎時の見回りがStripeに見つからない返事待ちの返金をエラーにした時（`mark_order_refund_error`。`payment_ref`は返金の記録の番号、`detail`は`not_found_in_stripe`）。店への通知はアプリが送る（送る前に送信権を押さえる） |
 
-根拠は[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)と[判定表](../../../src/lib/stripe/checkout-payment-decision.ts)（`refund_failed`は[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql)、受取額の書き込みは[E-2 移行 B](../../../supabase/migrations/20261011120100_order_refund_requests.sql)）。注文なし・下書きIDなしの対象外支払い、注文なしの0円完了、注文なしの全額返金済みpaidもrecord_onlyであり、初回検出として描かない。
+根拠は[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)と[判定表](../../../src/lib/stripe/checkout-payment-decision.ts)（`refund_failed`は[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql)、受取額の書き込みは[E-2 移行 B](../../../supabase/migrations/20261011223147_order_refund_requests.sql)）。注文なし・下書きIDなしの対象外支払い、注文なしの0円完了、注文なしの全額返金済みpaidもrecord_onlyであり、初回検出として描かない。
 
 ### 注文を取り消して解決する場合
 

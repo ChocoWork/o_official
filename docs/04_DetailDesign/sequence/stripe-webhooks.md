@@ -19,7 +19,7 @@ Stripe Webhookの受付は、署名を検証した13種のイベントのうち�
 | `POST /api/cron/process-stripe-webhooks`、Bearer認証、payload検査、繰り返し | [worker](../../../src/app/api/cron/process-stripe-webhooks/route.ts)、[workerの起動](../../../src/lib/stripe/webhook-worker.ts)、[繰り返し](../../../src/lib/stripe/webhook-drain.ts)、[Cron認証](../../../src/lib/cron/auth.ts) |
 | 決済・返金イベントの振り分け、会計同期、処理監査 | [イベント処理](../../../src/lib/stripe/webhook-processor.ts) |
 | `checkout.sessions.retrieve/list`、`paymentIntents.retrieve`、注文RPC | [Stripe読取り](../../../src/lib/stripe/checkout-payment-reader.ts)、[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[RPC接続](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts) |
-| `refunds.list`と返金の結果を書く関数（`record_order_refund_result`・`record_external_order_refund`。グループ E-2 で `apply_order_refund_projection` を消して置き換えた） | [返金の取り込み](../../../src/lib/stripe/order-refund-sync.ts)、[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql) |
+| `refunds.list`と返金の結果を書く関数（`record_order_refund_result`・`record_external_order_refund`。グループ E-2 で `apply_order_refund_projection` を消して置き換えた） | [返金の取り込み](../../../src/lib/stripe/order-refund-sync.ts)、[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql) |
 | 会計原始記録のSDK読取りと保存 | [会計同期](../../../src/lib/stripe/accounting-sync.ts)、[DB接続](../../../src/lib/stripe/supabase-accounting-database.ts)、[保存処理](../../../src/lib/stripe/accounting-store.ts) |
 
 ## SQ-WEBHOOK-01: 署名検証済みイベントの受付

@@ -334,7 +334,7 @@ Stripe は、設定が入っていると返金のたびにお客様へ返金の�
 
 ### 8-3 公開前の送信待ちの確かめ
 
-グループ E-2 の移行（[移行 A](../../supabase/migrations/20261011120000_order_refund_records.sql)・[移行 B](../../supabase/migrations/20261011120100_order_refund_requests.sql)・[移行 C](../../supabase/migrations/20261011120200_order_refund_results.sql)）を本番に当てた後も、1-2 と同じく、公開前に本番で返金・キャンセルを試さない。普段の開発は本番の DB につないでいるので、試すと、返金のお知らせの行が本番に溜まり、公開後の最初の worker が試しの注文の宛先へ送ってしまう。
+グループ E-2 の移行（[移行 A](../../supabase/migrations/20261011222930_order_refund_records.sql)・[移行 B](../../supabase/migrations/20261011223147_order_refund_requests.sql)・[移行 C](../../supabase/migrations/20261011223453_order_refund_results.sql)）を本番に当てた後も、1-2 と同じく、公開前に本番で返金・キャンセルを試さない。普段の開発は本番の DB につないでいるので、試すと、返金のお知らせの行が本番に溜まり、公開後の最初の worker が試しの注文の宛先へ送ってしまう。
 
 [1-2](#1-2-公開前の送信待ちの確かめ) の読むだけの SQL は、メールの種類を絞らずに送信待ち・送信中・やり直し待ちの行を数えるので、返金のお知らせも入る。公開前の確かめ（1-3 の順 0）はそれで足りる。ここは、返金に結び付く行だけの内訳を見たい時の補足。次の読むだけの SQL を、Supabase のダッシュボード（本番のプロジェクト）→ SQL Editor で流す。
 

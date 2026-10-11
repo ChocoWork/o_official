@@ -985,7 +985,7 @@ type SameRequestPath = [
 
 /**
  * 4つの道（ア・イ・エ・オ）それぞれの、最初の頼み方と、DB が記録に残す値。
- * 記録に残す値は supabase/migrations/20261011120100_order_refund_requests.sql の begin_order_refund（v_stripe_reason・v_actor）のとおりで、
+ * 記録に残す値は supabase/migrations/20261011223147_order_refund_requests.sql の begin_order_refund（v_stripe_reason・v_actor）のとおりで、
  * ア・イは渡された値のまま、自動の返金（エ・オ）は呼ぶ側の値を使わず両方とも空にする
  * （tests/integration/db/order_refund_requests.integration.test.ts の「呼ぶ側の値は使わない」の試験が確かめている）
  */

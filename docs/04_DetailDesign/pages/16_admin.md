@@ -168,7 +168,7 @@ DB変更は次の2段階で適用する。第1段階は本番適用済み、第2
 1. [20260925000218_add_order_state_transition_rpcs.sql](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql): 3つのservice-role専用RPCと監査主体のGUC連携を追加する。既存権限は維持する。
 2. [harden_order_state_transitions.sql](../../../supabase/pending/harden_order_state_transitions.sql): アプリ切替確認後に`anon` / `authenticated`の`orders` UPDATE、広範なUPDATE policyを削除し、不変条件トリガーを追加する。
 
-3つのRPCは`SECURITY DEFINER`、`search_path=''`、完全修飾名を使い、`PUBLIC` / `anon` / `authenticated`から実行権限を剥奪する。人間の操作はサーバーが認証済みセッションから得た利用者IDを渡し、`order_revisions.changed_by`へ記録する。クライアント本文の利用者IDは受け付けない。返金を投影する`apply_order_refund_projection`は、グループE-2の[移行C](../../../supabase/migrations/20261011120200_order_refund_results.sql)で消し、結果を書く関数に置き換えた。
+3つのRPCは`SECURITY DEFINER`、`search_path=''`、完全修飾名を使い、`PUBLIC` / `anon` / `authenticated`から実行権限を剥奪する。人間の操作はサーバーが認証済みセッションから得た利用者IDを渡し、`order_revisions.changed_by`へ記録する。クライアント本文の利用者IDは受け付けない。返金を投影する`apply_order_refund_projection`は、グループE-2の[移行C](../../../supabase/migrations/20261011223453_order_refund_results.sql)で消し、結果を書く関数に置き換えた。
 
 ## ORDER タブの要対応・要確認と取消の画面（ADMIN-ORDER-ATTENTION / FREQ-411〜413・415・435）
 

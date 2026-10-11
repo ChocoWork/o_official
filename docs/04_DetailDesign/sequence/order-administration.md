@@ -26,9 +26,9 @@
 | 発送・仕上がり | [E-1 移行 A: 商品ごとの数と仕上がりの関数](../../../supabase/migrations/20261010120303_order_fulfillments.sql)、[E-1 移行 B: 発送・発送の取消の関数](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql)、[必須配送先判定](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) |
 | 失敗注文の取消・例外解決 | [管理RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。取消メールの行を書く在庫解放関数は [移行 B](../../../supabase/migrations/20261009095736_order_email_enqueue.sql) |
 | `refunds.list`（その支払いの返金を全ページ）、1件ずつの取り込みと読み直し、毎時の見回り、毎晩の照合 | [返金の取り込み](../../../src/lib/stripe/order-refund-sync.ts)、[毎時の見回り](../../../src/lib/orders/refund/refund-sweep.ts)、[毎晩の照合](../../../src/lib/stripe/reconcile-orders.ts) |
-| 返金の記録・返金を始める関数・結果を書く関数・外からの返金の記録 | [E-2 移行 A: 表と数え方](../../../supabase/migrations/20261011120000_order_refund_records.sql)、[E-2 移行 B: 始める・材料](../../../supabase/migrations/20261011120100_order_refund_requests.sql)、[E-2 移行 C: 結果を書く・外からの返金・メールの行](../../../supabase/migrations/20261011120200_order_refund_results.sql) |
+| 返金の記録・返金を始める関数・結果を書く関数・外からの返金の記録 | [E-2 移行 A: 表と数え方](../../../supabase/migrations/20261011222930_order_refund_records.sql)、[E-2 移行 B: 始める・材料](../../../supabase/migrations/20261011223147_order_refund_requests.sql)、[E-2 移行 C: 結果を書く・外からの返金・メールの行](../../../supabase/migrations/20261011223453_order_refund_results.sql) |
 | 自動の返金①②とショップの設定 | [決済照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[設定API](../../../src/app/api/admin/settings/shop/route.ts) |
-| 取消・発送・返金のメール（発送は発送ごとに、返金は返金ごとに1通） | [送る予定の表](../../../supabase/migrations/20261009095633_order_email_outbox.sql)、[状態を変える関数](../../../supabase/migrations/20261009095736_order_email_enqueue.sql)、[発送ごとのメールの行](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql)、[返金ごとのメールの行](../../../supabase/migrations/20261011120200_order_refund_results.sql)、[worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts) |
+| 取消・発送・返金のメール（発送は発送ごとに、返金は返金ごとに1通） | [送る予定の表](../../../supabase/migrations/20261009095633_order_email_outbox.sql)、[状態を変える関数](../../../supabase/migrations/20261009095736_order_email_enqueue.sql)、[発送ごとのメールの行](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql)、[返金ごとのメールの行](../../../supabase/migrations/20261011223453_order_refund_results.sql)、[worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts) |
 
 status/resolve APIは管理認可の後、ID・本文の検証より先に`requireCsrfOrDeny`を呼び、戻り値がResponseならそのまま返して後続へ進まない。helperはrefresh Cookieがなければ検査不要として通し、Cookieがある場合のCSRFヘッダー欠落・hash不一致は403、例外は500。[CSRF helper](../../../src/lib/csrfMiddleware.ts)を参照。これはAPI独自のチェックであり、共通proxyのOrigin検査と別に行われる。発送・仕上がりのAPI（`fulfillments`・`completions`）は、管理認可（`admin.orders.manage`）→ CSRF helper → 回数の制限（送信元ごと・管理者ごと）→ 注文の番号の検証 → 本文の検証の順で、先に断った段階で後ろへ進まない（[メールの再送API](../../../src/app/api/admin/orders/%5Bid%5D/emails/resend/route.ts)と同じ形）。ただし発送の材料を読む `GET …/fulfillments` は、管理認可（`admin.orders.manage`）の後に注文の番号を検証するだけで、CSRF と回数の制限は通さない（読むだけで、状態を変えないため）。
 
@@ -241,7 +241,7 @@ sequenceDiagram
 | 権限 | 店長の役割（`admin.orders.refund`）だけ。サポートの人は断られる |
 | 監査 | 返金の記録の番号・額・数・道・状態・実行した人だけ。お客様の名前・住所・メールとメモの本文は入れない。コンビニ払いの返金だけ、注文の連絡先のメールを Stripe の `instructions_email` に渡す（監査とログには入れない） |
 
-根拠は [refund API](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[Stripe への頼み方](../../../src/lib/orders/refund/refund-stripe.ts)、[E-2 移行 B](../../../supabase/migrations/20261011120100_order_refund_requests.sql)、[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql)。同じ結果を書く関数は、支払い済みのキャンセル（SQ-ADMIN-06）、Stripe の返金の知らせの取り込み（SQ-ADMIN-07）、自動の返金（SQ-ADMIN-08）からも呼ばれる。
+根拠は [refund API](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[Stripe への頼み方](../../../src/lib/orders/refund/refund-stripe.ts)、[E-2 移行 B](../../../supabase/migrations/20261011223147_order_refund_requests.sql)、[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql)。同じ結果を書く関数は、支払い済みのキャンセル（SQ-ADMIN-06）、Stripe の返金の知らせの取り込み（SQ-ADMIN-07）、自動の返金（SQ-ADMIN-08）からも呼ばれる。
 
 ## SQ-ADMIN-04: 要対応記録を解決済みにする
 
@@ -370,7 +370,7 @@ sequenceDiagram
 | 同時の操作・答えが分からない時 | 注文の行の鍵で、返金・発送と1つずつ進む。二重防止の番号は画面を開いた時に作り、答えが分からない時は502（記録は返事待ちのまま）を返して、画面が同じ番号で「もう一度確かめる」（SQ-ADMIN-03 の表の「二重防止」「答えが分からない」） |
 | 取消になった後の送り直し | カード・PayPay の返金は Stripe がその場で成功を返し、1回目の中で注文が `cancelled` になる。通信が切れて同じ二重防止の番号で送り直された時は、注文がもう `cancelled` でも、本文に null でない `requestKey` があれば支払い済みのキャンセルとして確かめ（返金の権限を確かめ、回数を数える）、DB が前の記録を返して `replayed: true` の答え（200）になる。この時、本文が不正なら（`requestKey` が UUID でない・`restock` が真偽値でない）、取消済みの200では返さず 400 `invalid_request` で断る。開いたままの別の画面から新しい番号で送った時は、DB が `ORDER_NOT_CANCELLABLE` で断る（409）。`requestKey` の無い（または null の）送り直し（未入金の取消）は今のまま |
 
-根拠は [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[E-2 移行 B](../../../supabase/migrations/20261011120100_order_refund_requests.sql)、[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql)。
+根拠は [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[E-2 移行 B](../../../supabase/migrations/20261011223147_order_refund_requests.sql)、[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql)。
 
 ## SQ-ADMIN-07: Stripe の返金の取り込みと見回り
 
@@ -434,7 +434,7 @@ flowchart TD
 | 毎晩の照合 | `POST /api/cron/stripe-reconcile` で、前の48時間に Stripe で作られた返金の支払いと、こちらの保留の返金の支払いを集め、知らせの取り込みと同じ手順で1件ずつ合わせる。時間の予算に届いたら残りを次の夜に回す。作られてから48時間より後に成功から失敗に変わり、知らせも届かない返金は拾えない（Stripe は知らせを3日間送り直す）。成功した返金の合計を全部の支払いで比べる同期はやめた。会計の `stripe_refunds` への写しは今のまま続ける |
 | 定期処理の登録 | 毎分・毎時・毎晩の3本は本番に未登録の間は動かない（開店前の設定。[全体の決定](../../superpowers/specs/2026-10-10-group-e-overview-design.md) の 8章）。登録するまで、見回りと照合は取りこぼしを拾わない |
 
-根拠は [返金の取り込み](../../../src/lib/stripe/order-refund-sync.ts)、[Webhook の処理](../../../src/lib/stripe/webhook-processor.ts)、[毎時の見回り](../../../src/lib/orders/refund/refund-sweep.ts)、[毎晩の照合](../../../src/lib/stripe/reconcile-orders.ts)、[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql)。キューと worker の仕組みは [Webhook のシーケンス](stripe-webhooks.md) を参照する。
+根拠は [返金の取り込み](../../../src/lib/stripe/order-refund-sync.ts)、[Webhook の処理](../../../src/lib/stripe/webhook-processor.ts)、[毎時の見回り](../../../src/lib/orders/refund/refund-sweep.ts)、[毎晩の照合](../../../src/lib/stripe/reconcile-orders.ts)、[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql)。キューと worker の仕組みは [Webhook のシーケンス](stripe-webhooks.md) を参照する。
 
 ## SQ-ADMIN-08: 自動の返金（取り消した注文への入金・支払額の違い）
 
@@ -500,7 +500,7 @@ sequenceDiagram
 - 自動の返金の部品が誤りを投げた時は、送信権を戻してから投げ直す（再試行の照合は、結果の無い知らせを送る）
 - 自動の返金の記録と要対応は、注文と支払いで結び付く。設定は店長だけが変える（`admin.settings.manage`）
 
-根拠は [決済照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[店への知らせの文](../../../src/lib/orders/order-lifecycle-emails.ts)、[設定API](../../../src/app/api/admin/settings/shop/route.ts)、[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql)。
+根拠は [決済照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[店への知らせの文](../../../src/lib/orders/order-lifecycle-emails.ts)、[設定API](../../../src/app/api/admin/settings/shop/route.ts)、[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql)。
 
 ## 通知・履歴・要確認の別軸
 

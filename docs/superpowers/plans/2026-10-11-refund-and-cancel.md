@@ -16,9 +16,9 @@
 
 | Task | 作る物 | 主なファイル |
 |---|---|---|
-| 1 | 返金の2つの表と守り、受け取った額・台帳の返金の番号・ショップの設定・切り替えの時刻・権限の行、商品ごとの数と確保の数への返金の組み込み、割引の割り振り、前からの写し（移行 A） | `supabase/migrations/20261011120000_order_refund_records.sql` |
-| 2 | 返金を始める・材料・読み出し・返事待ちの一覧・ショップの設定・取り消した注文への入金の受け取った額の DB の関数、発送の取消の返金の守り（移行 B） | `supabase/migrations/20261011120100_order_refund_requests.sql` |
-| 3 | 返金の結果を書く・外からの返金を記録する・エラーにする DB の関数（在庫・メールの予定・要対応・注文の額と状態）、注文のメールの表の変更、要対応の理由 `refund_failed`、古い返金の関数の削除、保留の SQL の直し（移行 C） | `supabase/migrations/20261011120200_order_refund_results.sql` |
+| 1 | 返金の2つの表と守り、受け取った額・台帳の返金の番号・ショップの設定・切り替えの時刻・権限の行、商品ごとの数と確保の数への返金の組み込み、割引の割り振り、前からの写し（移行 A） | `supabase/migrations/20261011222930_order_refund_records.sql` |
+| 2 | 返金を始める・材料・読み出し・返事待ちの一覧・ショップの設定・取り消した注文への入金の受け取った額の DB の関数、発送の取消の返金の守り（移行 B） | `supabase/migrations/20261011223147_order_refund_requests.sql` |
+| 3 | 返金の結果を書く・外からの返金を記録する・エラーにする DB の関数（在庫・メールの予定・要対応・注文の額と状態）、注文のメールの表の変更、要対応の理由 `refund_failed`、古い返金の関数の削除、保留の SQL の直し（移行 C） | `supabase/migrations/20261011223453_order_refund_results.sql` |
 | 4 | TS の土台（返金の型・誤りの言葉・額の計算・DB の呼び出し・材料・支払いの言葉・進み具合・権限・数の2つの列・要対応の理由 `refund_failed`・店への知らせの型と文） | `src/lib/orders/refund/`・`src/lib/orders/payment-status.ts`・`src/lib/orders/order-progress.ts`・`src/lib/orders/order-lifecycle-emails.ts` |
 | 5 | Stripe への頼み方と返金の流れ（管理画面の返金・支払い済みのキャンセル・自動の返金の入口・確かめ直し・結果の後の始末） | `src/lib/orders/refund/refund-stripe.ts`・`refund-service.ts` |
 | 6 | Stripe の知らせの取り込み（R-06）と、毎時の見回り・毎晩の照合 | `src/lib/stripe/order-refund-sync.ts`・`webhook-processor.ts`・cron の2つの窓口 |
@@ -77,7 +77,7 @@
 - 権限: 新しい権限 `admin.orders.refund`（名前 `注文の返金`）・`admin.settings.manage`（名前 `ショップの設定`）を店長（`admin`）の役割だけに付ける。返金の窓口（GET・POST）は `admin.orders.refund`。支払い済みの注文のキャンセルは `admin.orders.manage` と `admin.orders.refund` の両方。ショップの設定（GET・PUT）は `admin.settings.manage`。履歴は `admin.orders.read`（今のまま）。書く窓口は CSRF（`requireCsrfOrDeny`）と回数の制限（送信元ごとと管理者ごと）を通す。回数の制限の窓口名と回数: `admin:orders:refund-create`（10分に30回）・`admin:orders:paid-cancel`（10分に30回）・`admin:settings:shop-update`（10分に30回）
 - 監査（`logAudit`）に宛先・氏名・住所・メール・メモの本文を入れない（返金の記録の番号・額・数・道・状態だけ）
 - 新しい表は `public`（切り替えの時刻だけ `private`）。RLS を有効にし、`anon`・`authenticated` は RESTRICTIVE の方針で全部拒み、権限も外す。`service_role` は SELECT だけ。書くのは関数だけ。関数は `SECURITY DEFINER`＋`SET search_path = ''`＋完全修飾名。`PUBLIC`・`anon`・`authenticated` から EXECUTE を外し、`service_role` だけに与える（`private` の関数は `PUBLIC` から外すだけ）。移行の最後に `NOTIFY pgrst, 'reload schema';`
-- 移行は3本（どれも `BEGIN;`〜`COMMIT;`。前からのデータの写しは何度当てても同じ結果）: A `supabase/migrations/20261011120000_order_refund_records.sql`、B `supabase/migrations/20261011120100_order_refund_requests.sql`、C `supabase/migrations/20261011120200_order_refund_results.sql`。本番 DB へは、全タスクの後、ユーザーの push の後で許可を得て Supabase MCP の `apply_migration` で A・B・C の順に当て、当てた版にファイル名と文書の版を直す
+- 移行は3本（どれも `BEGIN;`〜`COMMIT;`。前からのデータの写しは何度当てても同じ結果）: A `supabase/migrations/20261011222930_order_refund_records.sql`、B `supabase/migrations/20261011223147_order_refund_requests.sql`、C `supabase/migrations/20261011223453_order_refund_results.sql`。本番 DB へは、全タスクの後、ユーザーの push の後で許可を得て Supabase MCP の `apply_migration` で A・B・C の順に当て、当てた版にファイル名と文書の版を直す
 - 画面と機能の変更は `docs/02_Requirements/requirements.md` に FREQ-447〜461 の行を足す（Task 16。`grep -oE "FREQ-[0-9]+" docs/02_Requirements/requirements.md | sort -t- -k2 -n | tail -1` が FREQ-446 であることを確かめる）。受け付け基準の番号と確かめ方（E2E・DB 結合・単体）の表は Task 16 の冒頭の表が正で、Task 15 の E2E のコメントの番号（`// FREQ-4xx-AC-nn`）と Task 17 の数え方はそれに合わせる。新しい E2E は `e2e/FR-ADMIN-074`〜`083`・`e2e/FR-CHECKOUT-051`・`e2e/FR-ACCOUNT-033`（`ls e2e | grep -E "^FR-ADMIN-[0-9]" | sort -V | tail -1` が FR-ADMIN-073、FR-CHECKOUT は 050、FR-ACCOUNT は 032 であることを確かめる）
 - E2E は本番ビルド（`next build && next start`）・手元の Supabase（`npx supabase db reset` の直後）で、mobile（390px）・tablet（768px）・desktop（1280px）の3つの画面幅で流す。流す前に3000番に何も無いことを `Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue` で確かめる。DB 結合テストの直後に E2E を流さない（`npx supabase db reset` を挟む）。`PLAYWRIGHT_HTML_OPEN=never` を付ける
 - DB 結合テストは `npx supabase db reset` の後に、フォルダ全体を `--runInBand` で流す: `eval "$(npx supabase status -o env | grep -E '^(API_URL|SERVICE_ROLE_KEY)=')"` の後に `LOCAL_SUPABASE_URL="$API_URL" LOCAL_SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres npx jest tests/integration/db --runInBand`（値は画面に出さない）
@@ -138,13 +138,13 @@
 
 | ファイル | 責務 | タスク |
 |---|---|---|
-| `supabase/migrations/20261011120000_order_refund_records.sql`（新規） | 移行 A | 1 |
+| `supabase/migrations/20261011222930_order_refund_records.sql`（新規） | 移行 A | 1 |
 | `tests/integration/db/order_refund_records.integration.test.ts`（新規）、`tests/integration/db/helpers/order-fixtures.ts`（道具を足す） | 移行 A の結合テスト・返金の試験の道具 | 1 |
 | `tests/integration/db/order_internal_columns.integration.test.ts` | `paid_amount` を店内の列に足す | 1 |
 | `tests/integration/db/fulfillment_postgrest.integration.test.ts` | 在庫の履歴の答えに `refund_id: null`（数の TS の行の `toEqual` は Task 4 が直す） | 1・4 |
-| `supabase/migrations/20261011120100_order_refund_requests.sql`（新規） | 移行 B | 2 |
+| `supabase/migrations/20261011223147_order_refund_requests.sql`（新規） | 移行 B | 2 |
 | `tests/integration/db/order_refund_requests.integration.test.ts`（新規）、`tests/integration/db/fulfillment_order_emails.integration.test.ts`（発送の取消の返金の守りの2件） | 移行 B の結合テスト | 2 |
-| `supabase/migrations/20261011120200_order_refund_results.sql`（新規） | 移行 C | 3 |
+| `supabase/migrations/20261011223453_order_refund_results.sql`（新規） | 移行 C | 3 |
 | `tests/integration/db/order_refund_results.integration.test.ts`（新規） | 移行 C の結合テスト | 3 |
 | `tests/integration/db/order_state_transition_hardening.integration.test.ts`・`order_email_outbox.integration.test.ts`・`payment_exceptions.integration.test.ts`・`fulfillment_order_emails.integration.test.ts` | 古い返金の関数・メールの表の変更・要対応の理由に合わせる | 3 |
 | `supabase/pending/harden_order_state_transitions.sql`、`tests/unit/migrations/order-state-transition-hardening.test.ts` | 状態の移り方の表を直す（P19） | 3 |
@@ -715,7 +715,7 @@ refundTotal: string | null; // 2件以上の時だけ
 ### Task 1: 返金の記録と数え方（移行 A）
 
 **Files:**
-- Create: `supabase/migrations/20261011120000_order_refund_records.sql`
+- Create: `supabase/migrations/20261011222930_order_refund_records.sql`
 - Create: `tests/integration/db/order_refund_records.integration.test.ts`
 - Modify: `tests/integration/db/helpers/order-fixtures.ts:269-334`（`FixtureLine` と `insertOrderWithLines` に省略できる引数を足し、末尾に返金の記録を直接書く道具 `insertRefundRecord` を足す）
 - Modify: `tests/integration/db/order_internal_columns.integration.test.ts:14,67`（店内の列に `paid_amount` を足す）
@@ -2102,7 +2102,7 @@ Expected: FAIL。新しい表・列・関数が無いための誤りで落ちる
 
 - [ ] **Step 5: 移行 A を書く**
 
-`supabase/migrations/20261011120000_order_refund_records.sql`:
+`supabase/migrations/20261011222930_order_refund_records.sql`:
 
 ```sql
 -- 返金の記録と数え方（グループ E-2 設計書 4・7・10・11 章）の移行 A
@@ -2968,7 +2968,7 @@ Expected: 誤り0件（lint の警告は今より増やさない）
 コミットは controller が、このタスクのファイルだけを名指しで行う。
 
 ```bash
-git add supabase/migrations/20261011120000_order_refund_records.sql tests/integration/db/order_refund_records.integration.test.ts tests/integration/db/helpers/order-fixtures.ts tests/integration/db/order_internal_columns.integration.test.ts tests/integration/db/fulfillment_postgrest.integration.test.ts
+git add supabase/migrations/20261011222930_order_refund_records.sql tests/integration/db/order_refund_records.integration.test.ts tests/integration/db/helpers/order-fixtures.ts tests/integration/db/order_internal_columns.integration.test.ts tests/integration/db/fulfillment_postgrest.integration.test.ts
 git commit -m "$(cat <<'EOF'
 feat(orders): 返金の記録と数え方の表・列・関数を足す（グループ E-2 の移行 A）
 
@@ -2986,7 +2986,7 @@ EOF
 ### Task 2: 返金を始める・材料・読み出し・ショップの設定の DB の関数（移行 B）
 
 **Files:**
-- Create: `supabase/migrations/20261011120100_order_refund_requests.sql`
+- Create: `supabase/migrations/20261011223147_order_refund_requests.sql`
 - Create: `tests/integration/db/order_refund_requests.integration.test.ts`
 - Modify: `tests/integration/db/fulfillment_order_emails.integration.test.ts:655`（最後の行の後に、発送の取消と返金の守りの試験を足す。今の20件は変えない）
 
@@ -4913,7 +4913,7 @@ Expected: FAIL。`order_refund_requests` の69件のうち68件と、`fulfillmen
 
 - [ ] **Step 4: 移行 B を書く**
 
-`supabase/migrations/20261011120100_order_refund_requests.sql`:
+`supabase/migrations/20261011223147_order_refund_requests.sql`:
 
 ```sql
 -- 返金とキャンセル（グループ E-2 設計書 3・4・5・7・9・11 章）の移行 B
@@ -4922,7 +4922,7 @@ Expected: FAIL。`order_refund_requests` の69件のうち68件と、`fulfillmen
 -- ショップの設定の関数、取り消した注文に入金が届いた時の受け取った額を書く関数を作り、
 -- 発送の取消に「返金した商品の発送は取り消せない」守りを足す。
 -- 返金の結果を書く関数（在庫・メールの予定・要対応・注文の額と状態）は、注文のメールの表と要対応の理由を変える移行 C で作る。
--- 移行 A（20261011120000_order_refund_records.sql）の後に当てる。
+-- 移行 A（20261011222930_order_refund_records.sql）の後に当てる。
 BEGIN;
 
 -- 1. 返金の商品の行（JSON）の形を確かめて分ける。形が違えば REFUND_ARGUMENT_INVALID で止める。
@@ -5871,7 +5871,7 @@ Expected: 誤り0件（このタスクは TS のソースを変えない。試�
 実装者はコミットしない。controller がこのタスクのファイルだけを名指しでコミットする。
 
 ```bash
-git add supabase/migrations/20261011120100_order_refund_requests.sql tests/integration/db/order_refund_requests.integration.test.ts tests/integration/db/fulfillment_order_emails.integration.test.ts
+git add supabase/migrations/20261011223147_order_refund_requests.sql tests/integration/db/order_refund_requests.integration.test.ts tests/integration/db/fulfillment_order_emails.integration.test.ts
 git commit -m "$(cat <<'EOF'
 feat(orders): 返金を始める関数・返金の読み出し・ショップの設定・取り消した注文の受け取った額の関数を足す（グループ E-2 の移行 B）
 
@@ -5890,7 +5890,7 @@ EOF
 ### Task 3: 返金の結果を書く関数と返金のメールの表（移行 C）
 
 **Files:**
-- Create: `supabase/migrations/20261011120200_order_refund_results.sql`
+- Create: `supabase/migrations/20261011223453_order_refund_results.sql`
 - Create: `tests/integration/db/order_refund_results.integration.test.ts`（同時の書き込みの試験を含む）
 - Modify: `tests/integration/db/order_email_outbox.integration.test.ts`（返金の同期の試験 576〜609 を新しい関数に、権限の一覧 783 の引数の形）
 - Modify: `tests/integration/db/order_state_transition_hardening.integration.test.ts`（権限の試験 106〜149、返金の関数の試験 201〜303、返金の失敗で発送済みから支払い済みへ戻す試験を1件）
@@ -7637,7 +7637,7 @@ Expected: FAIL（74件中71件が落ちる。前の移行からある3つの関�
 
 - [ ] **Step 3: 移行 C を書く**
 
-`supabase/migrations/20261011120200_order_refund_results.sql`:
+`supabase/migrations/20261011223453_order_refund_results.sql`:
 
 ```sql
 -- 返金の結果を書く関数と、注文のメールの表の変更（グループ E-2 設計書 4・6〜8・11 章）の移行 C
@@ -7647,7 +7647,7 @@ Expected: FAIL（74件中71件が落ちる。前の移行からある3つの関�
 -- 返事待ちのエラーも、同じ道を通る。
 -- 注文のメールの表に返金の番号の列を足し、返金のお知らせと支払い済みのキャンセルのお知らせを返金ごとの行にする。
 -- 要対応の理由に「返金の失敗」を足し、前の返金の関数（apply_order_refund_projection。注文の額と状態だけを書いた）を消す。
--- 移行 A（20261011120000_order_refund_records.sql）・移行 B（20261011120100_order_refund_requests.sql）の後に当てる。
+-- 移行 A（20261011222930_order_refund_records.sql）・移行 B（20261011223147_order_refund_requests.sql）の後に当てる。
 BEGIN;
 
 -- 1. 注文のメールの表: 返金の番号の列と、種類・書き分け・返金の番号の CHECK（設計書 8-6）。
@@ -9152,7 +9152,7 @@ Expected: PASS（全部）
 ```ts
 const REFUND_RESULTS_PATH = path.join(
   process.cwd(),
-  'supabase/migrations/20261011120200_order_refund_results.sql',
+  'supabase/migrations/20261011223453_order_refund_results.sql',
 );
 ```
 
@@ -9362,7 +9362,7 @@ Expected: 誤り0件（TS の型の和は変えていないので、型の誤り
 - [ ] **Step 11: コミット**
 
 ```bash
-git add supabase/migrations/20261011120200_order_refund_results.sql tests/integration/db/order_refund_results.integration.test.ts tests/integration/db/order_email_outbox.integration.test.ts tests/integration/db/order_state_transition_hardening.integration.test.ts tests/integration/db/payment_exceptions.integration.test.ts tests/integration/db/fulfillment_order_emails.integration.test.ts supabase/pending/harden_order_state_transitions.sql tests/unit/migrations/order-state-transition-hardening.test.ts
+git add supabase/migrations/20261011223453_order_refund_results.sql tests/integration/db/order_refund_results.integration.test.ts tests/integration/db/order_email_outbox.integration.test.ts tests/integration/db/order_state_transition_hardening.integration.test.ts tests/integration/db/payment_exceptions.integration.test.ts tests/integration/db/fulfillment_order_emails.integration.test.ts supabase/pending/harden_order_state_transitions.sql tests/unit/migrations/order-state-transition-hardening.test.ts
 git commit -m "$(cat <<'EOF'
 feat(orders): 返金の結果を書く関数と返金のメールの表を足す（グループ E-2 の移行 C）
 
@@ -12844,7 +12844,7 @@ function migrationEndingWith(suffix: string): string {
 
 ```ts
   it('要対応の理由と取消の理由は DB の CHECK と同じ', () => {
-    // 理由の CHECK は、返金の移行 C（20261011120200_order_refund_results.sql）が名前を付けて作り直し、refund_failed を足した
+    // 理由の CHECK は、返金の移行 C（20261011223453_order_refund_results.sql）が名前を付けて作り直し、refund_failed を足した
     const refundResults = migrationEndingWith('_order_refund_results.sql');
     const exceptions = `${migration('20260927100500_payment_exceptions.sql')}\n${refundResults}`;
     const columns = migration('20260927100100_order_payment_columns.sql');
@@ -13736,7 +13736,7 @@ Task 2 の移行 B が作り直した `admin_cancel_fulfillment` は、取り消
 置き換えた後:
 
 ```ts
-    // FULFILLMENT_REFUNDED は、返金の移行 B（20261011120100_order_refund_requests.sql。admin_cancel_fulfillment を作り直した）が足した
+    // FULFILLMENT_REFUNDED は、返金の移行 B（20261011223147_order_refund_requests.sql。admin_cancel_fulfillment を作り直した）が足した
     const sql = [
       migrationText('_order_fulfillments.sql'),
       migrationText('_fulfillment_order_emails.sql'),
@@ -22100,7 +22100,7 @@ EOF
 **Interfaces:**
 - Consumes:
   - Task 1: 表 `public.order_refunds`（`id`・`order_id`・`amount`・`shipping_amount`・`payment_method_type`・`customer_action_expires_at`・`cancel_reason`）と `public.order_refund_lines`（`refund_id`・`order_item_id`・`quantity`・`before_shipment`）。service_role が SELECT できる。`public.list_order_line_fulfillment(_order_ids uuid[])`（E-1 で作り、Task 1 が返金の2つの列を足して作り直す。service_role が EXECUTE できる。このタスクが読む `unshipped` の列は今のまま）
-  - Task 3（DB だけ。TS の種類・書き分けはこのタスクで足す。P26）: 移行 C `supabase/migrations/20261011120200_order_refund_results.sql`。列 `private.order_email_outbox.refund_id`、`claim_order_email` と `list_order_email_history` の最後の列 `refund_id`、種類の CHECK `order_email_outbox_kind_check`（`refund` を含む）、書き分けの CHECK `order_email_outbox_variant_check`（`canceled` に `paid`、`refund` に `standard`・`after_cancel`）、関数 `request_order_email_resend`（許可の表に `refund` は無い）。このタスクの `order-email-types.test.ts` はこの移行の本文を読む（読み方が頼る書き方は T8-12）
+  - Task 3（DB だけ。TS の種類・書き分けはこのタスクで足す。P26）: 移行 C `supabase/migrations/20261011223453_order_refund_results.sql`。列 `private.order_email_outbox.refund_id`、`claim_order_email` と `list_order_email_history` の最後の列 `refund_id`、種類の CHECK `order_email_outbox_kind_check`（`refund` を含む）、書き分けの CHECK `order_email_outbox_variant_check`（`canceled` に `paid`、`refund` に `standard`・`after_cancel`）、関数 `request_order_email_resend`（許可の表に `refund` は無い）。このタスクの `order-email-types.test.ts` はこの移行の本文を読む（読み方が頼る書き方は T8-12）
   - DB 結合テスト（Step 10）が使う物: Task 3 が `order_email_outbox.integration.test.ts` の中に足した道具 `insertRefundRecord(db: PgClient, orderId: string, amount: number): Promise<string>`（管理画面の返金・返事待ち・`notify_customer = false` の記録を直に書く。このタスクは足し直さない）、Task 3 の `private.enqueue_order_email(uuid, text, text, uuid, uuid)`（5つ目が返金の番号）、`public.request_order_email_resend` が `refund` を `RESEND_NOT_ALLOWED`（22023）で断ること
   - 実際の PostgREST に通す結合テスト（Step 11）が使う物: Task 1 が `tests/integration/db/helpers/order-fixtures.ts` に足す共有の道具 `insertOrderWithLines`（`{ orderId, orderItemIds }` を返す）と `insertRefundRecord(db, { orderId, status?, amount?, shippingAmount?, lines? }): Promise<{ refundId: string }>`（Step 10 の道具と同じ名前だが別物。引数も答えも違う）、既存の `createCatalogFixture`・`describeLocalDb`・`isLocalDatabase`。service_role が `order_refunds`・`order_refund_lines`・`order_items` を SELECT でき、`list_order_line_fulfillment` を EXECUTE できること（Task 1）
   - 既存: `greeting`・`contactLine`・`orderSummaryLines`・`SHOP_NAME`（`order-email-compose.ts`）、`toOrderNumber`、`itemLabel`・`formatCurrency`（`order-confirmation-email.ts`）、`listOrderLineFulfillment`（`src/lib/orders/fulfillment/fulfillment-store.ts`）、`CancelReason`（`order-payment-types.ts`）
@@ -22165,7 +22165,7 @@ import type { PaidEmailVariant } from '@/lib/orders/order-payment-types';
  * アプリの値と DB の CHECK・関数の入力制限がずれないことを、移行の本文で確かめる。
  * - 状態・配達の状態・一時停止の理由・失敗の分類・原因の記号・配達の問題の索引: グループ D の移行（20261009095633）
  * - 発送ごとのメールで作り直した関数（取りやめの理由）: グループ E-1 の移行 B（20261010122320）
- * - メールの種類・書き分けの CHECK と、再送できる状態の表（request_order_email_resend）: 返金のお知らせを足したグループ E-2 の移行 C（20261011120200）
+ * - メールの種類・書き分けの CHECK と、再送できる状態の表（request_order_email_resend）: 返金のお知らせを足したグループ E-2 の移行 C（20261011223453）
  * 本番へ当てて版を改名したら、ここの名前も直す。
  */
 const outboxMigration = fs.readFileSync(
@@ -22176,7 +22176,7 @@ const fulfillmentEmailMigration = fs
   .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261010122320_fulfillment_order_emails.sql'), 'utf8')
   .replace(/--.*$/gm, '');
 const refundResultsMigration = fs
-  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261011120200_order_refund_results.sql'), 'utf8')
+  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261011223453_order_refund_results.sql'), 'utf8')
   .replace(/--.*$/gm, '');
 
 function sqlValues(pattern: RegExp, sql = outboxMigration): string[] {
@@ -22368,7 +22368,7 @@ import type { OrderStatus, PaidEmailVariant } from '@/lib/orders/order-payment-t
  * 注文のメールの種類・状態・原因の記号（グループ D 設計書 3・4・5・6 章）。
  * DB の CHECK 制約（移行 20261009095633_order_email_outbox.sql）と同じ値を1か所に置く。画面からも読む。
  * 取りやめの理由は、発送ごとのメールで作り直した移行 20261010122320_fulfillment_order_emails.sql の関数と同じ。
- * 種類・書き分けと再送できる状態の表は、返金のお知らせを足した移行 20261011120200_order_refund_results.sql と同じ（グループ E-2 設計書 8-6）。
+ * 種類・書き分けと再送できる状態の表は、返金のお知らせを足した移行 20261011223453_order_refund_results.sql と同じ（グループ E-2 設計書 8-6）。
  */
 export const ORDER_EMAIL_KINDS = ['paid', 'awaiting_payment', 'payment_expired', 'canceled', 'shipped', 'refund'] as const;
 export type OrderEmailKind = (typeof ORDER_EMAIL_KINDS)[number];
@@ -42155,7 +42155,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - T16-5: レビュー台帳で直すのは R-03・R-06・R-16・R-33 と、グループの表の E の行だけ。同じグループ B で直った R-05・R-07・R-32・R-35 の行は、設計書 15章に無いので触らない。「直したコミット」は `E-2 の実装（コミットは実装の後に controller が書き足す）` と書く
 - T16-6: 監査の操作名・応答の鍵の名前は、Task 6・Task 9 の説明書に合わせた（`admin.orders.refund.create`・`admin.orders.refund.confirm`・`admin.orders.status.update`（支払い済みのキャンセルは metadata の `source: 'order_cancel'`）・`admin.settings.shop.update`、Stripe の知らせの受け口の監査 `checkout.webhook.refund_without_payment_intent`・`checkout.webhook.refund_on_unpaid_order`・取り込みの監査 `stripe.refund.marker_unmatched`）。この名前は共通の約束に無い。実装が違う名前になっていたら、実装の名前に合わせて文書を直す
 - T16-7: 受け付け基準の番号は、設計書 14章の「主な受け付け基準」の並びの順に付け（Task 15 の決め事 E2-6 の並びに合わせた。FREQ-460 は 01 返金ごとの行・02 返金済みの印・03 期限の文・04 失敗は出ない・05 キャンセルの手続き中、FREQ-461 は 01 メニュー・02 最初の値・03 最後に変えた人）、DB 結合と単体だけで確かめる基準は各要求の最後に足した（下の表）。FREQ-451 の 05（①がオフの時や、①が始める前に断られた時の、管理画面からの全額の返金）は、Task 15 の確かめで足した（E2E は FR-ADMIN-074）。この冒頭の表が、番号と確かめ方（E2E・DB 結合・単体）の正（骨組みの決まり）で、Task 15 の E2E のコメントの番号（`// FREQ-448-AC-01`）と Task 17 の数え方は、これに合わせる。表の E2E の欄は、Task 15 の下書きが実際にコメントへ書いている番号（手元の DB・Mailpit で確かめる基準を含む）と突き合わせて決めた。E2E が番号を引かない基準（9個）は、Step 8 の数え方で `tests=0` と出るので、台帳（Task 17）に件数を残す
-- T16-8: 文書のリンクは、手元の版の名前（移行 A `20261011120000_order_refund_records.sql`・B `20261011120100_order_refund_requests.sql`・C `20261011120200_order_refund_results.sql`）で書く。本番に当てた後の改名と文書のリンクの直しは、E-1 の `f628cd2c` と同じく、push と本番の適用の後に controller が行う（見つけ方: `grep -rn "20261011120" docs`）。レビュー台帳のグループの表の E の行も、その時に「push 済み・本番適用済み」へ直す
+- T16-8: 文書のリンクは、手元の版の名前（移行 A `20261011222930_order_refund_records.sql`・B `20261011223147_order_refund_requests.sql`・C `20261011223453_order_refund_results.sql`）で書く。本番に当てた後の改名と文書のリンクの直しは、E-1 の `f628cd2c` と同じく、push と本番の適用の後に controller が行う（見つけ方: `grep -rn "20261011120" docs`）。レビュー台帳のグループの表の E の行も、その時に「push 済み・本番適用済み」へ直す
 
 このタスクの試験が確かめる Review Focus: なし（文書）。
 
@@ -42291,7 +42291,7 @@ FREQ-404 の他の要件と基準は、この Task では変えない（返金�
 ```text
 本番の適用状況は未確認（本番へは push の後に当てる）。
 
-2026-10-11 追記（グループ E-2、FREQ-447〜461）: [移行 A](../../../supabase/migrations/20261011120000_order_refund_records.sql) で `public.order_refunds`（返金。1件の返金が Stripe の返金1件。消さず、中身を直さず、進むのは状態・細目・時刻・印だけ）・`public.order_refund_lines`（返金した商品と数。確保を外した数などの4つの列だけを、0から1回だけ書ける）・`public.shop_settings`（ショップの設定。1行だけ）・`private.refund_ledger_state`（返金の記録に切り替えた時刻。1行だけ）を足し、`public.orders.paid_amount`（受け取った額。店内だけの列）と `public.stock_movements.refund_id` を足した。4つの表は RLS を有効にして表の権限を外し、service_role は読むだけ、書くのは SECURITY DEFINER の DB の関数だけにした。[移行 B](../../../supabase/migrations/20261011120100_order_refund_requests.sql) で返金を始める・材料を読む・返金を一覧する関数とショップの設定の関数、取り消した注文への入金の受け取った額と支払いの番号を書く関数 `public.record_cancelled_order_paid_amount`（空の時だけ書く）を、[移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql) で `private.order_email_outbox` に `refund_id`（返金のお知らせと、返金に結び付く支払い済みのキャンセルのお知らせの行だけが持つ）を足し、返金の結果を書く関数・外からの返金を記録する関数を作り、古い返金の関数 `public.apply_order_refund_projection` を消した。前からの返金（`stripe_refunds` の行）は、移行 A の末尾の `private.backfill_legacy_order_refunds()` が `legacy` の写しとして記録する（何度呼んでも同じ結果）。差分はテーブル +4（public +3、private +1）、物理 FK +5（返金の表の `order_id`・返金した商品の表の2本・台帳の `refund_id`・注文のメールの `refund_id`。実行した人の列 `actor_id` と設定を変えた人の列は、外部キーにしない）で、前の追記の66テーブル・75 FKから **70テーブル・80 FK** になる。本番の適用状況は未確認（本番へは push の後に当てる）。
+2026-10-11 追記（グループ E-2、FREQ-447〜461）: [移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) で `public.order_refunds`（返金。1件の返金が Stripe の返金1件。消さず、中身を直さず、進むのは状態・細目・時刻・印だけ）・`public.order_refund_lines`（返金した商品と数。確保を外した数などの4つの列だけを、0から1回だけ書ける）・`public.shop_settings`（ショップの設定。1行だけ）・`private.refund_ledger_state`（返金の記録に切り替えた時刻。1行だけ）を足し、`public.orders.paid_amount`（受け取った額。店内だけの列）と `public.stock_movements.refund_id` を足した。4つの表は RLS を有効にして表の権限を外し、service_role は読むだけ、書くのは SECURITY DEFINER の DB の関数だけにした。[移行 B](../../../supabase/migrations/20261011223147_order_refund_requests.sql) で返金を始める・材料を読む・返金を一覧する関数とショップの設定の関数、取り消した注文への入金の受け取った額と支払いの番号を書く関数 `public.record_cancelled_order_paid_amount`（空の時だけ書く）を、[移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql) で `private.order_email_outbox` に `refund_id`（返金のお知らせと、返金に結び付く支払い済みのキャンセルのお知らせの行だけが持つ）を足し、返金の結果を書く関数・外からの返金を記録する関数を作り、古い返金の関数 `public.apply_order_refund_projection` を消した。前からの返金（`stripe_refunds` の行）は、移行 A の末尾の `private.backfill_legacy_order_refunds()` が `legacy` の写しとして記録する（何度呼んでも同じ結果）。差分はテーブル +4（public +3、private +1）、物理 FK +5（返金の表の `order_id`・返金した商品の表の2本・台帳の `refund_id`・注文のメールの `refund_id`。実行した人の列 `actor_id` と設定を変えた人の列は、外部キーにしない）で、前の追記の66テーブル・75 FKから **70テーブル・80 FK** になる。本番の適用状況は未確認（本番へは push の後に当てる）。
 ```
 
 **編集 2-4。** 置き換え前:
@@ -42467,10 +42467,10 @@ FREQ-404 の他の要件と基準は、この Task では変えない（返金�
 
 ```text
 | `public.order_item_completions` | `(id)` | `(request_key, order_item_id)` | 参照元 0 / 参照先 2 | [移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) |
-| `public.order_refunds` | `(id)` | `(request_key)`; `(stripe_refund_id)` | 参照元 3 / 参照先 1 | [E-2 移行 A](../../../supabase/migrations/20261011120000_order_refund_records.sql) |
-| `public.order_refund_lines` | `(id)` | `(refund_id, order_item_id, before_shipment)` | 参照元 0 / 参照先 2 | [E-2 移行 A](../../../supabase/migrations/20261011120000_order_refund_records.sql) |
-| `public.shop_settings` | `(id)` | なし（1行） | なし（独立） | [E-2 移行 A](../../../supabase/migrations/20261011120000_order_refund_records.sql) |
-| `private.refund_ledger_state` | `(id)` | なし（1行） | なし（独立） | [E-2 移行 A](../../../supabase/migrations/20261011120000_order_refund_records.sql) |
+| `public.order_refunds` | `(id)` | `(request_key)`; `(stripe_refund_id)` | 参照元 3 / 参照先 1 | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
+| `public.order_refund_lines` | `(id)` | `(refund_id, order_item_id, before_shipment)` | 参照元 0 / 参照先 2 | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
+| `public.shop_settings` | `(id)` | なし（1行） | なし（独立） | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
+| `private.refund_ledger_state` | `(id)` | なし（1行） | なし（独立） | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
 ```
 
 **編集 2-16（注文のメールの表の行）。** 置き換え前:
@@ -42516,7 +42516,7 @@ FREQ-404 の他の要件と基準は、この Task では変えない（返金�
 | `stock_movements(refund_id)`（`refund_id` が空でない行だけ） | 返金で動いた台帳の行を探す |
 | `private.order_email_outbox` の一意の索引 | 自動の行は、発送のメール・返金に結び付く行以外が `(order_id, kind)`、返金に結び付く行が `(refund_id, kind)`。手の送信待ちは `(order_id, kind, fulfillment_id, refund_id)`（NULLS NOT DISTINCT） |
 
-返金の2つの表・`shop_settings`・`private.refund_ledger_state` は RLS を有効にし、anon・authenticated の権限を外し、service_role は SELECT だけを持つ。書くのは `begin_order_refund`・`record_order_refund_result`・`record_external_order_refund`・`mark_order_refund_error`・`admin_update_shop_settings`（どれも SECURITY DEFINER）だけ。注文の受け取った額 `orders.paid_amount` を書くのは、`mark_order_paid` と `record_cancelled_order_paid_amount`（取り消した注文で空の時だけ。移行 B）と、取り消した注文への入金の自動の返金の `begin_order_refund`（空の時だけ）。返金の表は消せず、中身も直せない（トリガー `order_refunds_guard` が、進めてよい列と状態の移り方以外を `ORDER_REFUND_APPEND_ONLY`・`ORDER_REFUND_IMMUTABLE`・`ORDER_REFUND_INVALID_TRANSITION`（どれも SQLSTATE 23514）で止める）。商品ごとの数は E-1 の `private.order_line_fulfillment` の1か所で数え、返金した数の2つの列（`refunded_before_shipment`・`refunded_after_shipment`）を足した。`shipped + refunded_before_shipment ≤ quantity`・`refunded_after_shipment ≤ shipped`・`shipped ≤ completed` を、トリガー `private.check_order_line_fulfillment_bounds` が `FULFILLMENT_BOUNDS_VIOLATED`（SQLSTATE 23514）で守る。定義は [移行 A](../../../supabase/migrations/20261011120000_order_refund_records.sql)・[移行 B](../../../supabase/migrations/20261011120100_order_refund_requests.sql)・[移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql) に従う。
+返金の2つの表・`shop_settings`・`private.refund_ledger_state` は RLS を有効にし、anon・authenticated の権限を外し、service_role は SELECT だけを持つ。書くのは `begin_order_refund`・`record_order_refund_result`・`record_external_order_refund`・`mark_order_refund_error`・`admin_update_shop_settings`（どれも SECURITY DEFINER）だけ。注文の受け取った額 `orders.paid_amount` を書くのは、`mark_order_paid` と `record_cancelled_order_paid_amount`（取り消した注文で空の時だけ。移行 B）と、取り消した注文への入金の自動の返金の `begin_order_refund`（空の時だけ）。返金の表は消せず、中身も直せない（トリガー `order_refunds_guard` が、進めてよい列と状態の移り方以外を `ORDER_REFUND_APPEND_ONLY`・`ORDER_REFUND_IMMUTABLE`・`ORDER_REFUND_INVALID_TRANSITION`（どれも SQLSTATE 23514）で止める）。商品ごとの数は E-1 の `private.order_line_fulfillment` の1か所で数え、返金した数の2つの列（`refunded_before_shipment`・`refunded_after_shipment`）を足した。`shipped + refunded_before_shipment ≤ quantity`・`refunded_after_shipment ≤ shipped`・`shipped ≤ completed` を、トリガー `private.check_order_line_fulfillment_bounds` が `FULFILLMENT_BOUNDS_VIOLATED`（SQLSTATE 23514）で守る。定義は [移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql)・[移行 B](../../../supabase/migrations/20261011223147_order_refund_requests.sql)・[移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql) に従う。
 
 ### 3.4 決済・下書き
 ```
@@ -42531,11 +42531,11 @@ FREQ-404 の他の要件と基準は、この Task では変えない（返金�
 
 ```text
 | `private.order_email_outbox.fulfillment_id` | `public.order_fulfillments(id)` | `uuid` / 可 | 0..N | `RESTRICT` | [E-1 移行 B](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql) |
-| `public.order_refunds.order_id` | `public.orders(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-2 移行 A](../../../supabase/migrations/20261011120000_order_refund_records.sql) |
-| `public.order_refund_lines.refund_id` | `public.order_refunds(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-2 移行 A](../../../supabase/migrations/20261011120000_order_refund_records.sql) |
-| `public.order_refund_lines.order_item_id` | `public.order_items(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-2 移行 A](../../../supabase/migrations/20261011120000_order_refund_records.sql) |
-| `public.stock_movements.refund_id` | `public.order_refunds(id)` | `uuid` / 可 | 0..N | `RESTRICT` | [E-2 移行 A](../../../supabase/migrations/20261011120000_order_refund_records.sql) |
-| `private.order_email_outbox.refund_id` | `public.order_refunds(id)` | `uuid` / 可 | 0..N | `RESTRICT` | [E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql) |
+| `public.order_refunds.order_id` | `public.orders(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
+| `public.order_refund_lines.refund_id` | `public.order_refunds(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
+| `public.order_refund_lines.order_item_id` | `public.order_items(id)` | `uuid` / 不可 | 0..N | `RESTRICT` | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
+| `public.stock_movements.refund_id` | `public.order_refunds(id)` | `uuid` / 可 | 0..N | `RESTRICT` | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
+| `private.order_email_outbox.refund_id` | `public.order_refunds(id)` | `uuid` / 可 | 0..N | `RESTRICT` | [E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql) |
 ```
 
 **編集 2-19（5.1 の表に、実行した人の列の行を足す）。** 置き換え前:
@@ -42548,7 +42548,7 @@ FREQ-404 の他の要件と基準は、この Task では変えない（返金�
 
 ```text
 [在庫台帳の理由コメント](../../../supabase/migrations/20260919065355_add_stock_movements.sql#L15) |
-| `order_refunds.actor_id`、`shop_settings` の `auto_refund_cancelled_order_payment_updated_by`・`auto_cancel_amount_mismatch_updated_by` | UUID の通常列（実行した人・設定を最後に変えた人の `auth.users` の番号）。`auth.users` への FK はない。`order_refunds.actor_id` は、消した人を空にする `ON DELETE SET NULL` が更新として動き、返金の記録の「進めてよい列」の守りとぶつかるため（`stock_movements.created_by` と同じ）。設定の2つの列も同じく通常列 | [E-2 移行 A](../../../supabase/migrations/20261011120000_order_refund_records.sql) |
+| `order_refunds.actor_id`、`shop_settings` の `auto_refund_cancelled_order_payment_updated_by`・`auto_cancel_amount_mismatch_updated_by` | UUID の通常列（実行した人・設定を最後に変えた人の `auth.users` の番号）。`auth.users` への FK はない。`order_refunds.actor_id` は、消した人を空にする `ON DELETE SET NULL` が更新として動き、返金の記録の「進めてよい列」の守りとぶつかるため（`stock_movements.created_by` と同じ）。設定の2つの列も同じく通常列 | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
 ```
 
 **編集 2-20（5.2 に E-2 の箇条書きを足す）。** 置き換え前:
@@ -42561,7 +42561,7 @@ FREQ-404 の他の要件と基準は、この Task では変えない（返金�
 
 ```text
 `(kind = 'shipped') = (fulfillment_id IS NOT NULL)` の CHECK）。
-- [グループ E-2 の移行 A](../../../supabase/migrations/20261011120000_order_refund_records.sql) は、返金を `order_refunds`・`order_refund_lines` に1件ずつ持つ。`orders.refunded_amount`（成功した返金の合計）の意味は変えず、全額の判定は受け取った額 `orders.paid_amount` で行い（支払額が注文の合計と違う注文でも、全部返す・全額でキャンセルする、を正しく決めるため）、状態の移り方（返金の合計が全額に届いたらキャンセル）だけは、受け取った額が0か空の注文を注文の合計で比べる（`COALESCE(NULLIF(paid_amount, 0), total_amount)`。返金が0円のままキャンセルにならないため）。CHECK `orders_refunded_amount_range` の上限は `GREATEST(total_amount, COALESCE(paid_amount, 0))` にした。`private.order_email_outbox.refund_id` は、種類が `refund` の行と、返金に結び付く支払い済みのキャンセルのお知らせ（種類 `canceled`・書き分け `paid`）の行だけが持つ。前の返金の関数 `public.apply_order_refund_projection` は [移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql) で消し、結果を書く関数に置き換えた。
+- [グループ E-2 の移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) は、返金を `order_refunds`・`order_refund_lines` に1件ずつ持つ。`orders.refunded_amount`（成功した返金の合計）の意味は変えず、全額の判定は受け取った額 `orders.paid_amount` で行い（支払額が注文の合計と違う注文でも、全部返す・全額でキャンセルする、を正しく決めるため）、状態の移り方（返金の合計が全額に届いたらキャンセル）だけは、受け取った額が0か空の注文を注文の合計で比べる（`COALESCE(NULLIF(paid_amount, 0), total_amount)`。返金が0円のままキャンセルにならないため）。CHECK `orders_refunded_amount_range` の上限は `GREATEST(total_amount, COALESCE(paid_amount, 0))` にした。`private.order_email_outbox.refund_id` は、種類が `refund` の行と、返金に結び付く支払い済みのキャンセルのお知らせ（種類 `canceled`・書き分け `paid`）の行だけが持つ。前の返金の関数 `public.apply_order_refund_projection` は [移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql) で消し、結果を書く関数に置き換えた。
 ```
 
 **編集 2-21（第 6 節の数）。** 置き換え前:
@@ -42909,9 +42909,9 @@ shippingAddress,progress,shipments,refunds,refundTotal,items}
 
 ```text
 | FB | [グループ E-1 の移行 B: 発送・発送の取消と、発送ごとのメールの行](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql) |
-| RA | [グループ E-2 の移行 A: 返金の記録・受け取った額・商品ごとの数への返金の組み込み](../../../supabase/migrations/20261011120000_order_refund_records.sql) |
-| RB | [グループ E-2 の移行 B: 返金を始める・材料を読む関数](../../../supabase/migrations/20261011120100_order_refund_requests.sql) |
-| RC | [グループ E-2 の移行 C: 返金の結果を書く関数・外からの返金の記録・返金のメールの行](../../../supabase/migrations/20261011120200_order_refund_results.sql) |
+| RA | [グループ E-2 の移行 A: 返金の記録・受け取った額・商品ごとの数への返金の組み込み](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
+| RB | [グループ E-2 の移行 B: 返金を始める・材料を読む関数](../../../supabase/migrations/20261011223147_order_refund_requests.sql) |
+| RC | [グループ E-2 の移行 C: 返金の結果を書く関数・外からの返金の記録・返金のメールの行](../../../supabase/migrations/20261011223453_order_refund_results.sql) |
 ```
 
 **編集 3-2（古い返金投影の根拠）。** 置き換え前:
@@ -43327,7 +43327,7 @@ stateDiagram-v2
 
 ```text
 | `refunds.list`（その支払いの返金を全ページ）、1件ずつの取り込みと読み直し、毎時の見回り、毎晩の照合 | [返金の取り込み](../../../src/lib/stripe/order-refund-sync.ts)、[毎時の見回り](../../../src/lib/orders/refund/refund-sweep.ts)、[毎晩の照合](../../../src/lib/stripe/reconcile-orders.ts) |
-| 返金の記録・返金を始める関数・結果を書く関数・外からの返金の記録 | [E-2 移行 A: 表と数え方](../../../supabase/migrations/20261011120000_order_refund_records.sql)、[E-2 移行 B: 始める・材料](../../../supabase/migrations/20261011120100_order_refund_requests.sql)、[E-2 移行 C: 結果を書く・外からの返金・メールの行](../../../supabase/migrations/20261011120200_order_refund_results.sql) |
+| 返金の記録・返金を始める関数・結果を書く関数・外からの返金の記録 | [E-2 移行 A: 表と数え方](../../../supabase/migrations/20261011222930_order_refund_records.sql)、[E-2 移行 B: 始める・材料](../../../supabase/migrations/20261011223147_order_refund_requests.sql)、[E-2 移行 C: 結果を書く・外からの返金・メールの行](../../../supabase/migrations/20261011223453_order_refund_results.sql) |
 | 自動の返金①②とショップの設定 | [決済照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[設定API](../../../src/app/api/admin/settings/shop/route.ts) |
 ```
 
@@ -43352,7 +43352,7 @@ stateDiagram-v2
 置き換え後:
 
 ```text
-、[発送ごとのメールの行](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql)、[返金ごとのメールの行](../../../supabase/migrations/20261011120200_order_refund_results.sql)、[worker](
+、[発送ごとのメールの行](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql)、[返金ごとのメールの行](../../../supabase/migrations/20261011223453_order_refund_results.sql)、[worker](
 ```
 
 **編集 3-28（認可と CSRF の段落。返金も CSRF を通す）。** 置き換え前:
@@ -43488,7 +43488,7 @@ sequenceDiagram
 | 権限 | 店長の役割（`admin.orders.refund`）だけ。サポートの人は断られる |
 | 監査 | 返金の記録の番号・額・数・道・状態・実行した人だけ。お客様の名前・住所・メールとメモの本文は入れない。コンビニ払いの返金だけ、注文の連絡先のメールを Stripe の `instructions_email` に渡す（監査とログには入れない） |
 
-根拠は [refund API](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[Stripe への頼み方](../../../src/lib/orders/refund/refund-stripe.ts)、[E-2 移行 B](../../../supabase/migrations/20261011120100_order_refund_requests.sql)、[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql)。同じ結果を書く関数は、支払い済みのキャンセル（SQ-ADMIN-06）、Stripe の返金の知らせの取り込み（SQ-ADMIN-07）、自動の返金（SQ-ADMIN-08）からも呼ばれる。
+根拠は [refund API](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[Stripe への頼み方](../../../src/lib/orders/refund/refund-stripe.ts)、[E-2 移行 B](../../../supabase/migrations/20261011223147_order_refund_requests.sql)、[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql)。同じ結果を書く関数は、支払い済みのキャンセル（SQ-ADMIN-06）、Stripe の返金の知らせの取り込み（SQ-ADMIN-07）、自動の返金（SQ-ADMIN-08）からも呼ばれる。
 
 ```
 
@@ -43543,7 +43543,7 @@ sequenceDiagram
 | 同時の操作・答えが分からない時 | 注文の行の鍵で、返金・発送と1つずつ進む。二重防止の番号は画面を開いた時に作り、答えが分からない時は502（記録は返事待ちのまま）を返して、画面が同じ番号で「もう一度確かめる」（SQ-ADMIN-03 の表の「二重防止」「答えが分からない」） |
 | 取消になった後の送り直し | カード・PayPay の返金は Stripe がその場で成功を返し、1回目の中で注文が `cancelled` になる。通信が切れて同じ二重防止の番号で送り直された時は、注文がもう `cancelled` でも返金の流れに回し、DB が前の記録を返して `replayed: true` の答え（200）になる。開いたままの別の画面から新しい番号で送った時は、DB が `ORDER_NOT_CANCELLABLE` で断る（409）。二重防止の番号の無い送り直し（未入金の取消）は今のまま |
 
-根拠は [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[E-2 移行 B](../../../supabase/migrations/20261011120100_order_refund_requests.sql)、[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql)。
+根拠は [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[E-2 移行 B](../../../supabase/migrations/20261011223147_order_refund_requests.sql)、[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql)。
 
 ## SQ-ADMIN-07: Stripe の返金の取り込みと見回り
 
@@ -43607,7 +43607,7 @@ flowchart TD
 | 毎晩の照合 | `POST /api/cron/stripe-reconcile` で、前の48時間に Stripe で作られた返金の支払いと、こちらの保留の返金の支払いを集め、知らせの取り込みと同じ手順で1件ずつ合わせる。時間の予算に届いたら残りを次の夜に回す。成功した返金の合計を全部の支払いで比べる同期はやめた。会計の `stripe_refunds` への写しは今のまま続ける |
 | 定期処理の登録 | 毎分・毎時・毎晩の3本は本番に未登録の間は動かない（開店前の設定。[全体の決定](../../superpowers/specs/2026-10-10-group-e-overview-design.md) の 8章）。登録するまで、見回りと照合は取りこぼしを拾わない |
 
-根拠は [返金の取り込み](../../../src/lib/stripe/order-refund-sync.ts)、[Webhook の処理](../../../src/lib/stripe/webhook-processor.ts)、[毎時の見回り](../../../src/lib/orders/refund/refund-sweep.ts)、[毎晩の照合](../../../src/lib/stripe/reconcile-orders.ts)、[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql)。キューと worker の仕組みは [Webhook のシーケンス](stripe-webhooks.md) を参照する。
+根拠は [返金の取り込み](../../../src/lib/stripe/order-refund-sync.ts)、[Webhook の処理](../../../src/lib/stripe/webhook-processor.ts)、[毎時の見回り](../../../src/lib/orders/refund/refund-sweep.ts)、[毎晩の照合](../../../src/lib/stripe/reconcile-orders.ts)、[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql)。キューと worker の仕組みは [Webhook のシーケンス](stripe-webhooks.md) を参照する。
 
 ## SQ-ADMIN-08: 自動の返金（取り消した注文への入金・支払額の違い）
 
@@ -43657,7 +43657,7 @@ sequenceDiagram
 | ② 支払額の違い（既定オフ） | 設定がオンで、注文が支払い済みで1つも発送していなければ、支払い済みの注文のキャンセルを `auto_amount_mismatch` で行う（残りの商品全部と、送料は返せる送料と返せる額の小さい方を返す。理由は「その他」、メモ「支払額の違いの自動の取消」、在庫に戻す、お客様に知らせる）。Stripe が受け付けたら、要対応を「システムが自動で解決した」と記録して閉じ、店へ「自動で全額を返金し、注文を取り消しました。」と知らせる。オフか取り消せなかった時は、店へ「管理画面で差額を返金するか、注文をキャンセルしてください。解決済みにするまで発送できません。」と知らせる |
 | 共通 | 自動の返金は、どちらも、照合が要対応を初めて記録した時だけ動き、失敗しても次の照合では動かし直さない（①の受け取った額の書き込みだけは、記録のたびに行う）。店への知らせの送信権は自動の返金の前に押さえ、同じ支払いの照合が同時に走っても、結果を載せた1通だけを送る。要対応を閉じるのは照合で、`resolve_payment_exception_by_system`（解決した人は空）を使い、閉じてから結果を送る（開いたままの要対応に「対応は要りません」を送らないため）。自動の返金の記録と要対応は、注文と支払いで結び付く。設定は店長だけが変える（`admin.settings.manage`） |
 
-根拠は [決済照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[店への知らせの文](../../../src/lib/orders/order-lifecycle-emails.ts)、[設定API](../../../src/app/api/admin/settings/shop/route.ts)、[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql)。
+根拠は [決済照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[店への知らせの文](../../../src/lib/orders/order-lifecycle-emails.ts)、[設定API](../../../src/app/api/admin/settings/shop/route.ts)、[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql)。
 
 ## 通知・履歴・要確認の別軸
 ```
@@ -43747,7 +43747,7 @@ SQLコメントの計画と現行APIの呼出し経路を区別する。グル�
 置き換え後:
 
 ```text
-解決は[resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts)（人が押す解決）。システムの自動の解決（グループ E-2）は、[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql)の `resolve_payment_exception_by_system`。
+解決は[resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts)（人が押す解決）。システムの自動の解決（グループ E-2）は、[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql)の `resolve_payment_exception_by_system`。
 ```
 
 **編集 3-42（状態の図。システムの自動の解決）。** 置き換え前:
@@ -43810,7 +43810,7 @@ SQLコメントの計画と現行APIの呼出し経路を区別する。グル�
 置き換え後:
 
 ```text
-根拠は[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)と[判定表](../../../src/lib/stripe/checkout-payment-decision.ts)（`refund_failed`は[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql)、受取額の書き込みは[E-2 移行 B](../../../supabase/migrations/20261011120100_order_refund_requests.sql)）。注文なし
+根拠は[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)と[判定表](../../../src/lib/stripe/checkout-payment-decision.ts)（`refund_failed`は[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql)、受取額の書き込みは[E-2 移行 B](../../../supabase/migrations/20261011223147_order_refund_requests.sql)）。注文なし
 ```
 
 **編集 3-47（独立属性の表。理由の一覧）。** 置き換え前:
@@ -43872,7 +43872,7 @@ SQLコメントの計画と現行APIの呼出し経路を区別する。グル�
 置き換え後:
 
 ```text
-| `refunds.list`と返金の結果を書く関数（`record_order_refund_result`・`record_external_order_refund`。グループ E-2 で `apply_order_refund_projection` を消して置き換えた） | [返金の取り込み](../../../src/lib/stripe/order-refund-sync.ts)、[E-2 移行 C](../../../supabase/migrations/20261011120200_order_refund_results.sql) |
+| `refunds.list`と返金の結果を書く関数（`record_order_refund_result`・`record_external_order_refund`。グループ E-2 で `apply_order_refund_projection` を消して置き換えた） | [返金の取り込み](../../../src/lib/stripe/order-refund-sync.ts)、[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql) |
 ```
 
 **編集 3-52（SQ-WEBHOOK-02 の図。照合の返金の同期。字下げは今のまま24字）。** 置き換え前:
@@ -44303,7 +44303,7 @@ Stripe・DBの一時的な失敗は503。支払い済みで1つも発送して�
 置き換え後:
 
 ```text
-。クライアント本文の利用者IDは受け付けない。返金を投影する`apply_order_refund_projection`は、グループE-2の[移行C](../../../supabase/migrations/20261011120200_order_refund_results.sql)で消し、結果を書く関数に置き換えた。
+。クライアント本文の利用者IDは受け付けない。返金を投影する`apply_order_refund_projection`は、グループE-2の[移行C](../../../supabase/migrations/20261011223453_order_refund_results.sql)で消し、結果を書く関数に置き換えた。
 ```
 
 **編集 4-13（取消の可否の行）。** 置き換え前:
@@ -44672,7 +44672,7 @@ Stripe は、設定が入っていると返金のたびにお客様へ返金の�
 
 ### 8-3 公開前の送信待ちの確かめ
 
-グループ E-2 の移行（[移行 A](../../supabase/migrations/20261011120000_order_refund_records.sql)・[移行 B](../../supabase/migrations/20261011120100_order_refund_requests.sql)・[移行 C](../../supabase/migrations/20261011120200_order_refund_results.sql)）を本番に当てた後も、1-2 と同じく、公開前に本番で返金・キャンセルを試さない。普段の開発は本番の DB につないでいるので、試すと、返金のお知らせの行が本番に溜まり、公開後の最初の worker が試しの注文の宛先へ送ってしまう。
+グループ E-2 の移行（[移行 A](../../supabase/migrations/20261011222930_order_refund_records.sql)・[移行 B](../../supabase/migrations/20261011223147_order_refund_requests.sql)・[移行 C](../../supabase/migrations/20261011223453_order_refund_results.sql)）を本番に当てた後も、1-2 と同じく、公開前に本番で返金・キャンセルを試さない。普段の開発は本番の DB につないでいるので、試すと、返金のお知らせの行が本番に溜まり、公開後の最初の worker が試しの注文の宛先へ送ってしまう。
 
 [1-2](#1-2-公開前の送信待ちの確かめ) の読むだけの SQL は、メールの種類を絞らずに送信待ち・送信中・やり直し待ちの行を数えるので、返金のお知らせも入る。公開前の確かめ（1-3 の順 0）はそれで足りる。ここは、返金に結び付く行だけの内訳を見たい時の補足。次の読むだけの SQL を、Supabase のダッシュボード（本番のプロジェクト）→ SQL Editor で流す。
 
@@ -44972,7 +44972,7 @@ Expected: 12行（`FR-ADMIN-074-refund-dialog.spec.ts`・`FR-ADMIN-075-paid-orde
 5. 文書が指す移行のファイルがあること:
 
 Run: `ls supabase/migrations | grep -E "^20261011120(000|100|200)_"`
-Expected: 3行（`20261011120000_order_refund_records.sql`・`20261011120100_order_refund_requests.sql`・`20261011120200_order_refund_results.sql`）。本番に当てて改名した後は、版が変わるので T16-8 の見つけ方で文書のリンクを直す
+Expected: 3行（`20261011222930_order_refund_records.sql`・`20261011223147_order_refund_requests.sql`・`20261011223453_order_refund_results.sql`）。本番に当てて改名した後は、版が変わるので T16-8 の見つけ方で文書のリンクを直す
 
 6. 直した文書だけが変わっていること・改行が LF のままなこと・絵文字を足していないこと:
 

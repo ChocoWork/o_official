@@ -26,7 +26,7 @@ import type { PaidEmailVariant } from '@/lib/orders/order-payment-types';
  * - 状態・配達の状態・一時停止の理由・失敗の分類・原因の記号・配達の問題の索引: グループ D の移行（20261009095633）
  * - メールの種類・書き分けの CHECK、再送できる状態の表（request_order_email_resend）、取りやめの理由（skip_order_email。
  *   発送ごとのメールで理由を足した E-1 の移行 B を、失敗・エラーになった返金の行の取りやめを足して作り直した関数）:
- *   返金のお知らせを足したグループ E-2 の移行 C（20261011120200）
+ *   返金のお知らせを足したグループ E-2 の移行 C（20261011223453）
  * 本番へ当てて版を改名したら、ここの名前も直す。
  */
 const outboxMigration = fs.readFileSync(
@@ -34,7 +34,7 @@ const outboxMigration = fs.readFileSync(
 );
 // 行の説明にも関数名や許可の表の例が出るので、説明は外してから読む
 const refundResultsMigration = fs
-  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261011120200_order_refund_results.sql'), 'utf8')
+  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261011223453_order_refund_results.sql'), 'utf8')
   .replace(/--.*$/gm, '');
 
 function sqlValues(pattern: RegExp, sql = outboxMigration): string[] {

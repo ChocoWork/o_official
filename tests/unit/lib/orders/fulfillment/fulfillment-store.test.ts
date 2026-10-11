@@ -84,7 +84,7 @@ describe('toFulfillmentErrorCode', () => {
       expect(files).toHaveLength(1);
       return fs.readFileSync(path.join(directory, files[0]), 'utf8');
     };
-    // FULFILLMENT_REFUNDED は、返金の移行 B（20261011120100_order_refund_requests.sql。admin_cancel_fulfillment を作り直した）が足した
+    // FULFILLMENT_REFUNDED は、返金の移行 B（20261011223147_order_refund_requests.sql。admin_cancel_fulfillment を作り直した）が足した
     const sql = [
       migrationText('_order_fulfillments.sql'),
       migrationText('_fulfillment_order_emails.sql'),

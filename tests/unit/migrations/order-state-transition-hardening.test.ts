@@ -16,7 +16,7 @@ const FULFILLMENT_PATH = path.join(
 
 const REFUND_RESULTS_PATH = path.join(
   process.cwd(),
-  'supabase/migrations/20261011120200_order_refund_results.sql',
+  'supabase/migrations/20261011223453_order_refund_results.sql',
 );
 
 describe('order state transition migrations', () => {
