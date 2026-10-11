@@ -27,6 +27,7 @@ const EXPECTED = [
   ['completion_request_mismatch', 409, '前の記録と内容が違います。画面を開き直してください。'],
   ['completion_not_found', 404, '仕上がりの記録が見つかりません。'],
   ['completion_already_shipped', 409, 'もう発送した数があるため、取り消せません。'],
+  ['fulfillment_refunded', 409, '返金した商品の発送は取り消せません。'],
 ] as const;
 
 describe('誤りの記号ごとの HTTP と言葉', () => {

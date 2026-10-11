@@ -28,7 +28,7 @@ const BACKORDER_READY = line({ fulfillmentType: 'backorder' });
 const BACKORDER_SHIPPED = line({ fulfillmentType: 'backorder', shipped: 2, readyUnshipped: 0, unshipped: 0 });
 
 describe('注文の言葉と印', () => {
-  it('9つの言葉・一部発送済みの印・進み具合の段の名前は設計書のとおり', () => {
+  it('10の言葉・一部発送済みの印・進み具合の段の名前は設計書のとおり', () => {
     expect(ORDER_PROGRESS_LABELS).toEqual({
       payment_in_progress: '支払い手続き中',
       unpaid: '未決済',
@@ -39,6 +39,7 @@ describe('注文の言葉と印', () => {
       failed: '決済失敗',
       abandoned: '放棄',
       cancelled: 'キャンセル',
+      cancel_pending: 'キャンセルの手続き中',
     });
     expect(Object.keys(ORDER_PROGRESS_LABELS)).toEqual([...ORDER_PROGRESS_KEYS]);
     expect(PARTIALLY_SHIPPED_LABEL).toBe('一部発送済み');
@@ -87,6 +88,50 @@ describe('deriveOrderProgress', () => {
       expect(() => deriveOrderProgress(status, [STOCK_READY, BACKORDER_IN_PRODUCTION])).not.toThrow();
     }
   });
+});
+
+/** 在庫の品。2つとも発送前に返金した（これから送る品も、送った品も残っていない） */
+const STOCK_REFUNDED = line({ readyUnshipped: 0, unshipped: 0 });
+/** 受注生産の品。2つとも作り始める前に返金した */
+const BACKORDER_REFUNDED = line({ fulfillmentType: 'backorder', readyUnshipped: 0, unshipped: 0 });
+
+describe('deriveOrderProgress の「キャンセルの手続き中」（グループ E-2 設計書 5-3・9-1）', () => {
+  const OPEN_REFUND = { hasOpenRefund: true };
+
+  it.each([
+    ['在庫の品だけを全部返金した', [STOCK_REFUNDED]],
+    ['在庫の品と受注生産の品を全部返金した', [STOCK_REFUNDED, BACKORDER_REFUNDED]],
+  ] as const)('支払い済みで、送った品も未発送の品も無く、返金が手続き中なら cancel_pending（%s）。段は出さない', (_name, lines) => {
+    const progress = deriveOrderProgress('paid', lines, OPEN_REFUND);
+
+    expect(progress).toEqual({ key: 'cancel_pending', label: 'キャンセルの手続き中', partiallyShipped: false });
+    expect(buildOrderProgressSteps(progress, lines)).toBeNull();
+  });
+
+  it('手続き中の返金が無ければ（指定なし・false・空）、同じ数でも今までの言葉（発送準備中）のまま', () => {
+    const today = { key: 'ready', label: '発送準備中', partiallyShipped: false };
+
+    expect(deriveOrderProgress('paid', [STOCK_REFUNDED])).toEqual(today);
+    expect(deriveOrderProgress('paid', [STOCK_REFUNDED], { hasOpenRefund: false })).toEqual(today);
+    expect(deriveOrderProgress('paid', [STOCK_REFUNDED], {})).toEqual(today);
+  });
+
+  it.each([
+    ['まだ送る品が残っている（一部だけ返金した）', 'paid', [STOCK_READY, STOCK_REFUNDED]],
+    ['送った品がある（送った後の返金の手続き中）', 'paid', [STOCK_SHIPPED]],
+    ['送った品があり、残りを発送前に返金した', 'paid', [STOCK_SHIPPED, STOCK_REFUNDED]],
+    ['受注生産の品を作っている途中', 'paid', [BACKORDER_IN_PRODUCTION]],
+    ['発送済み（shipped）の注文', 'shipped', [STOCK_SHIPPED]],
+  ] as const)('返金が手続き中でも、%s は今までの言葉のまま', (_name, status, lines) => {
+    expect(deriveOrderProgress(status, lines, OPEN_REFUND)).toEqual(deriveOrderProgress(status, lines));
+  });
+
+  it.each(['payment_in_progress', 'pending', 'failed', 'abandoned', 'cancelled'] as const)(
+    '支払い済みでない注文（%s）は、手続き中の返金があっても今までの言葉のまま',
+    (status) => {
+      expect(deriveOrderProgress(status, [STOCK_REFUNDED], OPEN_REFUND)).toEqual(deriveOrderProgress(status, [STOCK_REFUNDED]));
+    },
+  );
 });
 
 describe('buildOrderProgressSteps', () => {

@@ -56,6 +56,8 @@ const READY_LINE_ROW = {
 	quantity: 1,
 	shipped: 0,
 	completed: 1,
+	refunded_before_shipment: 0,
+	refunded_after_shipment: 0,
 	in_production: 0,
 	ready_unshipped: 1,
 	unshipped: 1,

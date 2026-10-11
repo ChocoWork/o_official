@@ -60,6 +60,7 @@ const DB_ERROR_WORDS: ReadonlyArray<readonly [string, FulfillmentErrorCode]> = [
   ['COMPLETION_REQUEST_MISMATCH', 'completion_request_mismatch'],
   ['COMPLETION_NOT_FOUND', 'completion_not_found'],
   ['COMPLETION_ALREADY_SHIPPED', 'completion_already_shipped'],
+  ['FULFILLMENT_REFUNDED', 'fulfillment_refunded'],
 ];
 
 /** DB の誤りの文に表の言葉が含まれていれば、その記号。無ければ null */
@@ -124,6 +125,10 @@ export type OrderLineFulfillmentRow = {
   quantity: number;
   shipped: number;
   completed: number;
+  /** 発送前に返金した数（返事待ち・保留・成功の返金の、発送前の行。E-2 設計書 4-4 の rb） */
+  refundedBeforeShipment: number;
+  /** 発送後に返金した数（同じく、発送後の行。ra） */
+  refundedAfterShipment: number;
   inProduction: number;
   readyUnshipped: number;
   unshipped: number;
@@ -137,7 +142,7 @@ const LINE_FULFILLMENT_CHUNK_SIZE = 200;
 const POSTGREST_MAX_ROWS = 1000;
 
 /**
- * 注文ごとの商品の数（発送した・仕上がった・受注生産中・発送準備中・未発送）。数え方は DB の1か所にあるので、
+ * 注文ごとの商品の数（発送した・仕上がった・返金した・受注生産中・発送準備中・未発送）。数え方は DB の1か所にあるので、
  * 窓口と画面は必ずこの答えを使う。渡した注文の番号は全部キーに入る（渡した文字のまま。商品の行が無ければ空の配列）。
  * 空なら DB を呼ばない。DB の関数が受ける上限に合わせて、200件ずつに分けて呼ぶ。
  * 1回の答えが PostgREST の行の上限に届いたら、切れている恐れがあるので FulfillmentStoreError で止める。
@@ -168,6 +173,8 @@ export async function listOrderLineFulfillment(
         quantity: Number(row.quantity),
         shipped: Number(row.shipped),
         completed: Number(row.completed),
+        refundedBeforeShipment: Number(row.refunded_before_shipment),
+        refundedAfterShipment: Number(row.refunded_after_shipment),
         inProduction: Number(row.in_production),
         readyUnshipped: Number(row.ready_unshipped),
         unshipped: Number(row.unshipped),

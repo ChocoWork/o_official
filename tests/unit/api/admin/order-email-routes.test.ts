@@ -135,11 +135,11 @@ describe('GET /api/admin/orders/[id]/history', () => {
       list_order_line_fulfillment: { data: [
         {
           order_id: ORDER_ID, order_item_id: ITEM_1, variant_id: 11, fulfillment_type: 'stock', quantity: 2, shipped: 1, completed: 2,
-          in_production: 0, ready_unshipped: 1, unshipped: 1,
+          refunded_before_shipment: 0, refunded_after_shipment: 0, in_production: 0, ready_unshipped: 1, unshipped: 1,
         },
         {
           order_id: ORDER_ID, order_item_id: ITEM_2, variant_id: 12, fulfillment_type: 'backorder', quantity: 1, shipped: 0, completed: 1,
-          in_production: 0, ready_unshipped: 1, unshipped: 1,
+          refunded_before_shipment: 0, refunded_after_shipment: 0, in_production: 0, ready_unshipped: 1, unshipped: 1,
         },
       ] },
     });

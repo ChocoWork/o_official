@@ -37,11 +37,11 @@ const ITEM_ROWS = [
 const COUNT_ROWS = [
   {
     order_id: ORDER_ID, order_item_id: STOCK_ITEM, variant_id: 11, fulfillment_type: 'stock', quantity: 2, shipped: 0, completed: 2,
-    in_production: 0, ready_unshipped: 2, unshipped: 2,
+    refunded_before_shipment: 0, refunded_after_shipment: 0, in_production: 0, ready_unshipped: 2, unshipped: 2,
   },
   {
     order_id: ORDER_ID, order_item_id: BACKORDER_ITEM, variant_id: 12, fulfillment_type: 'backorder', quantity: 1, shipped: 0, completed: 0,
-    in_production: 1, ready_unshipped: 0, unshipped: 1,
+    refunded_before_shipment: 0, refunded_after_shipment: 0, in_production: 1, ready_unshipped: 0, unshipped: 1,
   },
 ];
 const FULFILLMENT_ROWS = [

@@ -73,7 +73,8 @@ function orderRow(id: string, status: string) {
 function line(orderId: string, overrides: Record<string, unknown> = {}) {
   return {
     orderId, orderItemId: `${orderId}-line`, variantId: 101, fulfillmentType: 'stock', quantity: 1,
-    shipped: 0, completed: 1, inProduction: 0, readyUnshipped: 1, unshipped: 1, ...overrides,
+    shipped: 0, completed: 1, refundedBeforeShipment: 0, refundedAfterShipment: 0, inProduction: 0, readyUnshipped: 1, unshipped: 1,
+    ...overrides,
   };
 }
 

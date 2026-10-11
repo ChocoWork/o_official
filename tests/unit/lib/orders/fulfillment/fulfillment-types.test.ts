@@ -47,12 +47,12 @@ describe('totalQuantity', () => {
 });
 
 describe('誤りの記号', () => {
-  it('窓口が返す14の記号は共通の約束のとおり', () => {
+  it('窓口が返す15の記号は共通の約束のとおり', () => {
     expect([...FULFILLMENT_ERROR_CODES]).toEqual([
       'order_not_found', 'not_shippable', 'address_incomplete', 'payment_review_required', 'quantity_exceeds_ready',
       'fulfillment_request_mismatch', 'invalid_argument', 'fulfillment_not_found', 'fulfillment_cancel_not_allowed',
       'not_in_production', 'quantity_exceeds_in_production', 'completion_request_mismatch', 'completion_not_found',
-      'completion_already_shipped',
+      'completion_already_shipped', 'fulfillment_refunded',
     ]);
   });
 });

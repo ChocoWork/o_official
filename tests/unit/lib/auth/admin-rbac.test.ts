@@ -4,7 +4,7 @@ jest.mock('next/server', () => ({
   },
 }));
 
-import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
+import { authorizeAdminPermission, legacyPermissionMap } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { checkAuthSessionLiveness, verifyAccessToken } from '@/lib/auth/authenticate';
 
@@ -146,5 +146,39 @@ describe('authorizeAdminPermission', () => {
       expect(result.response.status).toBe(500);
       expect(JSON.stringify((result.response as unknown as { body: unknown }).body)).not.toContain('leaked');
     }
+  });
+
+  // 返金とショップの設定の権限は、店長（admin）の役割だけに付ける（グループ E-2 設計書 11-3）。
+  // 認可は DB の ACL で決まる。ここでは、新しい権限の記号が通ること、ほかの権限では通らないことを確かめる
+  describe.each(['admin.orders.refund', 'admin.settings.manage'] as const)('新しい権限 %s', (code) => {
+    it('DB の ACL にその権限があれば通る', async () => {
+      grantPermission(code);
+
+      const result = await authorizeAdminPermission(code, mockRequest);
+
+      expect(result.ok).toBe(true);
+    });
+
+    it('注文の管理の権限（admin.orders.manage）だけでは通らない', async () => {
+      grantPermission('admin.orders.manage');
+
+      const result = await authorizeAdminPermission(code, mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.response.status).toBe(403);
+        expect((result.response as unknown as { body: { permission: string } }).body.permission).toBe(code);
+      }
+    });
+  });
+});
+
+describe('legacyPermissionMap', () => {
+  it('店長の組には返金とショップの設定の権限が入り、サポートの人の組には入らない', () => {
+    expect(legacyPermissionMap.admin.has('admin.orders.refund')).toBe(true);
+    expect(legacyPermissionMap.admin.has('admin.settings.manage')).toBe(true);
+    expect(legacyPermissionMap.supporter.has('admin.orders.refund')).toBe(false);
+    expect(legacyPermissionMap.supporter.has('admin.settings.manage')).toBe(false);
+    expect(legacyPermissionMap.user.size).toBe(0);
   });
 });

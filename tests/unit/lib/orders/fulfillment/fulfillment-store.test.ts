@@ -55,6 +55,7 @@ const DB_WORDS = [
   ['COMPLETION_REQUEST_MISMATCH', 'completion_request_mismatch'],
   ['COMPLETION_NOT_FOUND', 'completion_not_found'],
   ['COMPLETION_ALREADY_SHIPPED', 'completion_already_shipped'],
+  ['FULFILLMENT_REFUNDED', 'fulfillment_refunded'],
 ] as const satisfies ReadonlyArray<readonly [string, FulfillmentErrorCode]>;
 
 describe('toFulfillmentErrorCode', () => {
@@ -64,7 +65,7 @@ describe('toFulfillmentErrorCode', () => {
     expect(toFulfillmentErrorCode(`error: ${word} (detail)`)).toBe(code);
   });
 
-  it('14の記号が全部、どれかの DB の言葉から届く', () => {
+  it('15の記号が全部、どれかの DB の言葉から届く', () => {
     expect(new Set(DB_WORDS.map(([, code]) => code))).toEqual(new Set(FULFILLMENT_ERROR_CODES));
   });
 
@@ -83,7 +84,12 @@ describe('toFulfillmentErrorCode', () => {
       expect(files).toHaveLength(1);
       return fs.readFileSync(path.join(directory, files[0]), 'utf8');
     };
-    const sql = `${migrationText('_order_fulfillments.sql')}\n${migrationText('_fulfillment_order_emails.sql')}`;
+    // FULFILLMENT_REFUNDED は、返金の移行 B（20261011120100_order_refund_requests.sql。admin_cancel_fulfillment を作り直した）が足した
+    const sql = [
+      migrationText('_order_fulfillments.sql'),
+      migrationText('_fulfillment_order_emails.sql'),
+      migrationText('_order_refund_requests.sql'),
+    ].join('\n');
 
     for (const [word] of DB_WORDS) {
       expect(sql).toContain(word);
@@ -324,7 +330,8 @@ describe('listOrderFulfillments / listOrderCompletions', () => {
 describe('listOrderLineFulfillment', () => {
   const countRow = (orderId: string, orderItemId: string, overrides: Record<string, unknown> = {}) => ({
     order_id: orderId, order_item_id: orderItemId, variant_id: 11, fulfillment_type: 'stock', quantity: 2, shipped: 1,
-    completed: 2, in_production: 0, ready_unshipped: 1, unshipped: 1, ...overrides,
+    completed: 2, refunded_before_shipment: 0, refunded_after_shipment: 0, in_production: 0, ready_unshipped: 1, unshipped: 1,
+    ...overrides,
   });
 
   it('空の入力は DB を呼ばず、空の Map を返す', async () => {
@@ -353,15 +360,34 @@ describe('listOrderLineFulfillment', () => {
     expect(result.get(ORDER_ID)).toEqual([
       {
         orderId: ORDER_ID, orderItemId: ITEM_1, variantId: 11, fulfillmentType: 'stock', quantity: 2, shipped: 1, completed: 2,
-        inProduction: 0, readyUnshipped: 1, unshipped: 1,
+        refundedBeforeShipment: 0, refundedAfterShipment: 0, inProduction: 0, readyUnshipped: 1, unshipped: 1,
       },
       {
         orderId: ORDER_ID, orderItemId: ITEM_2, variantId: null, fulfillmentType: 'backorder', quantity: 3, shipped: 0, completed: 1,
-        inProduction: 2, readyUnshipped: 1, unshipped: 3,
+        refundedBeforeShipment: 0, refundedAfterShipment: 0, inProduction: 2, readyUnshipped: 1, unshipped: 3,
       },
     ]);
     expect(result.get(OTHER_ORDER_ID)).toHaveLength(1);
     expect(result.get(EMPTY_ORDER_ID)).toEqual([]);
+  });
+
+  it('返金した数（発送前・発送後）の2つの列を写す。未発送や発送後に返せる数の計算に使う（E-2 設計書 4-4）', async () => {
+    // 注文の数 5、発送 2、発送前に返金 2、発送後に返金 1。未発送 = 5 − 2 − 2 = 1
+    const { store } = storeWith({
+      list_order_line_fulfillment: {
+        data: [countRow(ORDER_ID, ITEM_1, {
+          quantity: 5, shipped: 2, completed: 5, refunded_before_shipment: 2, refunded_after_shipment: 1,
+          ready_unshipped: 1, unshipped: 1,
+        })],
+      },
+    });
+
+    const result = await listOrderLineFulfillment(store, [ORDER_ID]);
+
+    expect(result.get(ORDER_ID)).toEqual([{
+      orderId: ORDER_ID, orderItemId: ITEM_1, variantId: 11, fulfillmentType: 'stock', quantity: 5, shipped: 2, completed: 5,
+      refundedBeforeShipment: 2, refundedAfterShipment: 1, inProduction: 0, readyUnshipped: 1, unshipped: 1,
+    }]);
   });
 
   it('同じ番号は1回として数える', async () => {
@@ -384,7 +410,7 @@ describe('listOrderLineFulfillment', () => {
     expect([...result.keys()]).toEqual([upper]);
     expect(result.get(upper)).toEqual([{
       orderId: ORDER_ID, orderItemId: ITEM_1, variantId: 11, fulfillmentType: 'stock', quantity: 2, shipped: 1, completed: 2,
-      inProduction: 0, readyUnshipped: 1, unshipped: 1,
+      refundedBeforeShipment: 0, refundedAfterShipment: 0, inProduction: 0, readyUnshipped: 1, unshipped: 1,
     }]);
   });
 

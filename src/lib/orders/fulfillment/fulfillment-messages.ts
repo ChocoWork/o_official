@@ -22,6 +22,7 @@ export const FULFILLMENT_ERROR_MESSAGES = {
   completion_request_mismatch: { status: 409, message: '前の記録と内容が違います。画面を開き直してください。' },
   completion_not_found: { status: 404, message: '仕上がりの記録が見つかりません。' },
   completion_already_shipped: { status: 409, message: 'もう発送した数があるため、取り消せません。' },
+  fulfillment_refunded: { status: 409, message: '返金した商品の発送は取り消せません。' },
 } as const satisfies Record<FulfillmentErrorCode, { status: 400 | 404 | 409; message: string }>;
 
 /** 窓口に届いた中身の形が誤っている時（400）。どこが誤りかは返さない */

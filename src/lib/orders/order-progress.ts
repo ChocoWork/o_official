@@ -15,6 +15,7 @@ export const ORDER_PROGRESS_KEYS = [
   'failed',
   'abandoned',
   'cancelled',
+  'cancel_pending',
 ] as const;
 export type OrderProgressKey = (typeof ORDER_PROGRESS_KEYS)[number];
 
@@ -28,6 +29,7 @@ export const ORDER_PROGRESS_LABELS = {
   failed: '決済失敗',
   abandoned: '放棄',
   cancelled: 'キャンセル',
+  cancel_pending: 'キャンセルの手続き中',
 } as const satisfies Record<OrderProgressKey, string>;
 export type OrderProgressLabel = (typeof ORDER_PROGRESS_LABELS)[OrderProgressKey];
 
@@ -62,14 +64,23 @@ function sumOf(lines: readonly OrderLineProgressCounts[], pick: (line: OrderLine
 /**
  * 注文の言葉。paid・shipped は、商品の段階のうちいちばん手前（受注生産中 → 発送準備中 → 配送中）にそろえる。
  * 配達済みは配送の状況を持つ E-4 から。E-1 では、発送した品は全部「配送中」になる。
+ * paid で、送った品も未発送の品も無く（発送前に全部返金した）、返金のお金がまだ戻っていない（hasOpenRefund）間は
+ * 「キャンセルの手続き中」（E-2 設計書 5-3）。返金が成功すれば注文が cancelled になり、この言葉は「キャンセル」に変わる。
  */
-export function deriveOrderProgress(status: OrderStatus, lines: readonly OrderLineProgressCounts[]): OrderProgress {
+export function deriveOrderProgress(
+  status: OrderStatus,
+  lines: readonly OrderLineProgressCounts[],
+  options?: { hasOpenRefund?: boolean },
+): OrderProgress {
   if (status !== 'paid' && status !== 'shipped') {
     const key = FIXED_PROGRESS_KEYS[status];
     return { key, label: ORDER_PROGRESS_LABELS[key], partiallyShipped: false };
   }
 
   const shipped = sumOf(lines, (line) => line.shipped);
+  if (status === 'paid' && options?.hasOpenRefund && shipped === 0 && sumOf(lines, (line) => line.unshipped) === 0) {
+    return { key: 'cancel_pending', label: ORDER_PROGRESS_LABELS.cancel_pending, partiallyShipped: false };
+  }
   let key: OrderProgressKey = 'ready';
   if (sumOf(lines, (line) => line.inProduction) > 0) {
     key = 'in_production';
@@ -97,7 +108,7 @@ export const ORDER_PROGRESS_STEP_LABELS = {
 
 export type OrderProgressStep = { key: OrderProgressStepKey; label: string; state: 'done' | 'current' | 'todo' };
 
-/** 言葉の記号 → 今いる段。段を出さない言葉（支払い手続き中・決済失敗・放棄・キャンセル）は入れない */
+/** 言葉の記号 → 今いる段。段を出さない言葉（支払い手続き中・決済失敗・放棄・キャンセル・キャンセルの手続き中）は入れない */
 const CURRENT_STEP_KEYS: Partial<Record<OrderProgressKey, OrderProgressStepKey>> = {
   unpaid: 'payment',
   in_production: 'in_production',
@@ -108,7 +119,7 @@ const CURRENT_STEP_KEYS: Partial<Record<OrderProgressKey, OrderProgressStepKey>>
 
 /**
  * お客様の注文の画面の進み具合の段。受注生産の品を含む注文だけ「受注生産中」の段が入る（5段）。
- * 支払い手続き中・決済失敗・放棄・キャンセルは null（段を出さない）。
+ * 支払い手続き中・決済失敗・放棄・キャンセル・キャンセルの手続き中は null（段を出さない）。
  */
 export function buildOrderProgressSteps(
   progress: OrderProgress,

@@ -81,6 +81,7 @@ export const FULFILLMENT_ERROR_CODES = [
   'completion_request_mismatch',
   'completion_not_found',
   'completion_already_shipped',
+  'fulfillment_refunded',
 ] as const;
 export type FulfillmentErrorCode = (typeof FULFILLMENT_ERROR_CODES)[number];
 

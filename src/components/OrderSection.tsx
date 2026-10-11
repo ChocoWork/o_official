@@ -18,7 +18,8 @@ export type OrderStatus =
 	| '配達済み'
 	| '決済失敗'
 	| '放棄'
-	| 'キャンセル';
+	| 'キャンセル'
+	| 'キャンセルの手続き中';
 
 export type OrderLineItem = {
 	/** 注文の商品の番号。React の key に使う（同じ商品の色違いが重なるため、名前では区別できない） */
@@ -91,6 +92,7 @@ const STATUS_TONES: Record<OrderStatus, StatusBadgeTone> = {
 	決済失敗: 'danger',
 	放棄: 'danger',
 	キャンセル: 'danger',
+	キャンセルの手続き中: 'warning',
 };
 
 const STATUS_CLASSES: Record<OrderStatus, string> = {
@@ -103,6 +105,7 @@ const STATUS_CLASSES: Record<OrderStatus, string> = {
 	決済失敗: 'bg-orange-100 text-orange-800',
 	放棄: 'bg-gray-100 text-[#474747]',
 	キャンセル: 'bg-gray-100 text-gray-500',
+	キャンセルの手続き中: 'bg-gray-100 text-[#474747]',
 };
 
 function formatDeadline(value: string): string {

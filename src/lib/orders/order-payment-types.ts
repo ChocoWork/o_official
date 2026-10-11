@@ -39,6 +39,7 @@ export const PAYMENT_EXCEPTION_REASONS = [
   'state_conflict',
   'unexpected_state',
   'stripe_object_missing',
+  'refund_failed',
 ] as const;
 
 export type PaymentExceptionReason = (typeof PAYMENT_EXCEPTION_REASONS)[number];
@@ -50,6 +51,7 @@ export const PAYMENT_EXCEPTION_REASON_LABELS: Record<PaymentExceptionReason, str
   state_conflict: '注文と支払いの矛盾',
   unexpected_state: '想定外の支払い状態',
   stripe_object_missing: 'Stripe に支払いが無い',
+  refund_failed: '返金の失敗',
 };
 
 /**

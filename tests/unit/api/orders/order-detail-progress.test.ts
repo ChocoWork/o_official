@@ -90,7 +90,8 @@ function orderRow(overrides: Record<string, unknown> = {}) {
 function stockLine(overrides: Record<string, unknown> = {}) {
   return {
     orderId: ORDER_ID, orderItemId: 'line-stock', variantId: 101, fulfillmentType: 'stock', quantity: 2,
-    shipped: 0, completed: 2, inProduction: 0, readyUnshipped: 2, unshipped: 2, ...overrides,
+    shipped: 0, completed: 2, refundedBeforeShipment: 0, refundedAfterShipment: 0, inProduction: 0, readyUnshipped: 2, unshipped: 2,
+    ...overrides,
   };
 }
 
@@ -98,7 +99,8 @@ function stockLine(overrides: Record<string, unknown> = {}) {
 function madeLine(overrides: Record<string, unknown> = {}) {
   return {
     orderId: ORDER_ID, orderItemId: 'line-made', variantId: 111, fulfillmentType: 'backorder', quantity: 1,
-    shipped: 0, completed: 0, inProduction: 1, readyUnshipped: 0, unshipped: 1, ...overrides,
+    shipped: 0, completed: 0, refundedBeforeShipment: 0, refundedAfterShipment: 0, inProduction: 1, readyUnshipped: 0, unshipped: 1,
+    ...overrides,
   };
 }
 

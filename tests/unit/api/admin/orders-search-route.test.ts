@@ -14,7 +14,7 @@ const rpcMock = jest.fn();
 function lineRow(overrides: Record<string, unknown>) {
   return {
     order_id: 'order-1', order_item_id: 'item-1', variant_id: 1, fulfillment_type: 'stock', quantity: 1,
-    shipped: 0, completed: 1, in_production: 0, ready_unshipped: 1, unshipped: 1,
+    shipped: 0, completed: 1, refunded_before_shipment: 0, refunded_after_shipment: 0, in_production: 0, ready_unshipped: 1, unshipped: 1,
     ...overrides,
   };
 }

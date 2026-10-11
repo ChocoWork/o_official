@@ -51,6 +51,19 @@ export async function sendUnplacedPaymentNotice(params: {
   }
 }
 
+/** 自動の返金（グループ E-2 設計書 6-4）の結果。照合が付ける。付くのは、設定がオンで自動の返金を試した時だけ */
+export type ShopAlertAutomation = 'auto_refunded' | 'auto_refund_failed' | 'auto_cancelled' | 'auto_cancel_failed';
+
+/** 返金の失敗の知らせに足す行の材料（設計書 8-4）。返金の結果を書いた後の始末が組み立てる */
+export type ShopAlertRefundFailure = {
+  /** 失敗の理由の言葉（例: 口座の入力の期限が過ぎました） */
+  failureReasonLabel: string;
+  /** 在庫を確保し直せなかった商品。無ければ空 */
+  shortages: Array<{ name: string; quantity: number }>;
+  /** 返金のもとになったキャンセルのお知らせを、お客様に送っていたか */
+  cancelEmailSent: boolean;
+};
+
 export type ShopPaymentAlert = {
   reason: PaymentExceptionReason;
   detail: string | null;
@@ -58,21 +71,44 @@ export type ShopPaymentAlert = {
   /** Session ID（無ければ PaymentIntent ID） */
   paymentRef: string;
   detectedAt: Date;
+  automation?: ShopAlertAutomation;
+  refundFailure?: ShopAlertRefundFailure;
 };
 
-const SHOP_ALERT_NEXT_STEPS: Record<PaymentExceptionReason, string> = {
-  order_not_creatable:
-    'Stripe ダッシュボードで支払いを確かめ、返金するか、お客様に連絡して注文を登録してください。お客様には確認中の案内を送っています。',
-  paid_amount_mismatch:
-    'Stripe ダッシュボードで支払額を確かめ、差額の返金などを行ってください。解決済みにするまで発送できません。',
-  cancelled_order_paid: 'Stripe ダッシュボードで返金してください。',
-  state_conflict:
-    'Stripe ダッシュボードで支払いの状態を確かめてください。未入金の注文は管理画面の「注文を取り消して解決」で閉じられます。',
-  unexpected_state:
-    'Stripe ダッシュボードで支払いの状態を確かめてください。未入金の注文は管理画面の「注文を取り消して解決」で閉じられます。',
-  stripe_object_missing:
-    'Stripe ダッシュボードに支払いがあるか確かめてください。未入金の注文は管理画面の「注文を取り消して解決」で閉じられます。',
-};
+/**
+ * 店への知らせの「次にやること」（グループ E-2 設計書 8-4）。理由と、自動の返金の結果（automation）で決まる。
+ * autoEnabled は、その理由の自動の返金の設定がオンか（①は cancelled_order_paid、②は paid_amount_mismatch。ほかの理由では使わない）。
+ * ①は、設定がオンなのに結果が付いていない知らせを「返金できなかった」の文にする。要対応が開いたままなのは、自動の返金で
+ * 閉じられなかったということで、店がすること（管理画面の注文から返金する）は同じ。
+ * ②は、設定がオフの時と取り消せなかった時で店がすることが同じなので、文も同じ。
+ */
+export function shopAlertNextStep(
+  alert: Pick<ShopPaymentAlert, 'reason' | 'automation'>,
+  autoEnabled: boolean,
+): string {
+  switch (alert.reason) {
+    case 'refund_failed':
+      return 'お客様に連絡し、別の方法で返金するか、管理画面からもう一度返金してください。';
+    case 'cancelled_order_paid':
+      if (alert.automation === 'auto_refunded') {
+        return '自動で全額を返金しました。対応は要りません。';
+      }
+      return autoEnabled
+        ? '自動の返金ができませんでした。管理画面の注文から返金してください。'
+        : '管理画面の注文から返金してください。';
+    case 'paid_amount_mismatch':
+      return alert.automation === 'auto_cancelled'
+        ? '自動で全額を返金し、注文を取り消しました。'
+        : '管理画面で差額を返金するか、注文をキャンセルしてください。解決済みにするまで発送できません。';
+    case 'order_not_creatable':
+      return '支払いを確かめ、管理画面から返金するか、お客様に連絡して注文を登録してください。お客様には確認中の案内を送っています。';
+    case 'state_conflict':
+    case 'unexpected_state':
+      return '管理画面と Stripe の記録で支払いの状態を確かめてください。未入金の注文は管理画面の「注文を取り消して解決」で閉じられます。';
+    case 'stripe_object_missing':
+      return '管理画面と Stripe の記録で支払いがあるか確かめてください。未入金の注文は管理画面の「注文を取り消して解決」で閉じられます。';
+  }
+}
 
 function formatJst(date: Date): string {
   return new Intl.DateTimeFormat('ja-JP', {
@@ -82,10 +118,27 @@ function formatJst(date: Date): string {
   }).format(date);
 }
 
+/** 返金の失敗の知らせに足す行（後ろに空行を1つ置く）。材料が無ければ（知らせの送り直し）足さない */
+function refundFailureLines(failure: ShopAlertRefundFailure | undefined): string[] {
+  if (!failure) {
+    return [];
+  }
+
+  const shortages = failure.shortages.map((shortage) => `${shortage.name} × ${shortage.quantity}`).join('、');
+  return [
+    `失敗の理由: ${failure.failureReasonLabel}`,
+    ...(shortages ? [`確保し直せなかった商品: ${shortages}`] : []),
+    ...(failure.cancelEmailSent ? ['キャンセルのお知らせを送った注文です。お客様への連絡が要ります。'] : []),
+    '',
+  ];
+}
+
 /**
  * 店への要対応メール。お客様の氏名・住所・メールは入れない（個人情報の最小化）。
  * 送り先は SHOP_ALERT_EMAIL。未設定なら送らず、毎時の見回りが送り直す。
  * ALERT_AUDIT_URL は監査ログを全件転送するので使わない（重要な通知が埋もれる）。
+ * 自動の返金の結果（automation）が付くのは設定がオンで試した時だけなので、「設定がオンか」にそのまま使う。
+ * 送り直す知らせには、結果も返金の失敗の材料も付かない。
  */
 export async function sendShopPaymentAlert(alert: ShopPaymentAlert): Promise<boolean> {
   const to = process.env.SHOP_ALERT_EMAIL;
@@ -107,7 +160,8 @@ export async function sendShopPaymentAlert(alert: ShopPaymentAlert): Promise<boo
         `Stripe の支払い: ${alert.paymentRef}`,
         `検知時刻: ${formatJst(alert.detectedAt)}`,
         '',
-        `次にやること: ${SHOP_ALERT_NEXT_STEPS[alert.reason]}`,
+        ...refundFailureLines(alert.refundFailure),
+        `次にやること: ${shopAlertNextStep(alert, alert.automation !== undefined)}`,
       ].join('\n'),
     });
     return true;

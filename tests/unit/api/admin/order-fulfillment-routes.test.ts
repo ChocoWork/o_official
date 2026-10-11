@@ -473,6 +473,7 @@ describe('POST /api/admin/orders/[id]/fulfillments/[fulfillmentId]/cancel（発�
     ['ORDER_NOT_FOUND', 'P0002', 404, 'order_not_found', '注文が見つかりません。'],
     ['FULFILLMENT_NOT_FOUND', 'P0002', 404, 'fulfillment_not_found', '発送の記録が見つかりません。'],
     ['FULFILLMENT_CANCEL_NOT_ALLOWED', '22023', 409, 'fulfillment_cancel_not_allowed', 'この発送は取り消せません。注文の状態を確かめてください。'],
+    ['FULFILLMENT_REFUNDED', '22023', 409, 'fulfillment_refunded', '返金した商品の発送は取り消せません。'],
     ['FULFILLMENT_ARGUMENT_INVALID', '22023', 400, 'invalid_argument', '入力を確かめてください。'],
   ] as const)('DB が %s（%s）で断ったら %i %s', async (message, dbCode, status, code, error) => {
     rpcReturns({ admin_cancel_fulfillment: { data: null, error: { message, code: dbCode } } });
