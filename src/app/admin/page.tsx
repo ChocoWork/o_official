@@ -20,12 +20,15 @@ import OrderCancelDialog, { type OrderCancelValues } from '@/components/OrderCan
 import OrderShipDialog from '@/components/OrderShipDialog';
 import OrderCompletionDialog from '@/components/OrderCompletionDialog';
 import OrderHistoryDialog from '@/components/OrderHistoryDialog';
+import OrderPaidCancelDialog from '@/components/OrderPaidCancelDialog';
+import OrderRefundDialog from '@/components/OrderRefundDialog';
 import { BannerAlert } from '@/components/ui/BannerAlert/BannerAlert';
 import { Button } from '@/components/ui/Button/Button';
 import { DateTimePicker } from '@/components/ui/DateTimePicker/DateTimePicker';
 import { SearchField } from '@/components/ui/SearchField/SearchField';
 import { COMPLETION_RECORDED_MESSAGE } from '@/lib/orders/fulfillment/fulfillment-client';
 import type { OrderAttention, OrderStatus } from '@/lib/orders/order-payment-types';
+import type { RefundAcceptedResponse } from '@/lib/orders/refund/refund-types';
 
 type AdminOrderAttention = OrderAttention & {
   emailSending?: { paused: boolean; reasonLabel: string | null } | null;
@@ -52,13 +55,15 @@ type ForbiddenErrorBody = {
 };
 
 
-type RefundResponseBody = {
-  refundStatus?: unknown;
-  orderStatus?: unknown;
-};
-
-const REFUND_STATUSES = new Set(['pending', 'requires_action', 'succeeded', 'failed', 'canceled']);
-const REFUND_ORDER_STATUSES = new Set(['paid', 'shipped', 'cancelled']);
+// 返金・キャンセルを受け付けた後に、一覧の上へ出す知らせ。保留は、お金が戻り終えるまで注文の状態が変わらない
+const REFUND_NOTICES = {
+  pending: '返金を受け付けました。お金が戻ると、注文の状態が変わります。',
+  succeeded: '返金しました。',
+} as const;
+const PAID_CANCEL_NOTICES = {
+  pending: 'キャンセルを受け付けました。返金が済むと、注文がキャンセルになります。',
+  succeeded: '注文をキャンセルし、返金しました。',
+} as const;
 
 // 取消・解決で Stripe の状態を確かめられなかった（503）。一覧を更新しても直らないので、再試行を案内する
 const STRIPE_UNAVAILABLE_MESSAGE = 'Stripe の状態を確認できませんでした。時間をおいて再試行してください。';
@@ -131,6 +136,8 @@ function AdminPageContent() {
   const [processingAttentionIds, setProcessingAttentionIds] = useState<string[]>([]);
   const [cancelTarget, setCancelTarget] = useState<OrderItem | null>(null);
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
+  const [refundOrderId, setRefundOrderId] = useState<string | null>(null);
+  const [paidCancelOrderId, setPaidCancelOrderId] = useState<string | null>(null);
 
   const visibleTabs = useMemo<TabType[]>(() => {
     if (userRole === 'admin') {
@@ -417,6 +424,17 @@ function AdminPageContent() {
     });
   }, [orders, orderSearchKeyword, orderStatusFilters]);
 
+  // 支払い済みの注文のキャンセルは返金を伴うので、返金と同じく店長だけに出す（設計書 5-4。返金のボタンも店長だけ）。
+  // 一覧の窓口は役割に関係なく canCancel を返すので、ここで店長でない人の分を false にする。
+  // 件数と CSV は displayedOrders のまま。ボタンを出すかだけを役割で変える。未入金の注文の取消は、サポートの人もできる
+  const listedOrders = useMemo(
+    () =>
+      userRole === 'admin'
+        ? displayedOrders
+        : displayedOrders.map((order) => (order.cancelKind === 'paid' ? { ...order, canCancel: false } : order)),
+    [displayedOrders, userRole],
+  );
+
   const handleStatusFilterToggle = (nextFilter: OrderStatusFilterValue) => {
     setOrderStatusFilters((prev) => {
       if (nextFilter === 'all') {
@@ -460,6 +478,11 @@ function AdminPageContent() {
     }
 
     setOrdersNoticeMessage(null);
+    // 支払い済みの注文のキャンセルは返金を伴うので、材料を読む新しい画面を開く。未入金の注文の取消は今の画面のまま
+    if (order.cancelKind === 'paid') {
+      setPaidCancelOrderId(order.id);
+      return;
+    }
     setCancelTarget(order);
   };
 
@@ -614,68 +637,32 @@ function AdminPageContent() {
     void fetchOrdersRef.current();
   };
 
-  const handleRefundOrder = async (id: string) => {
-    if (!window.confirm('この注文を全額返金しますか？')) {
-      return;
-    }
+  // 返金の画面を開く。返金は画面の中で窓口を呼ぶ（確認の文を出して残りを全部返す作りはやめた）
+  const handleRefundOrder = (id: string) => {
+    setOrdersNoticeMessage(null);
+    setRefundOrderId(id);
+  };
 
-    try {
-      setOrdersErrorMessage(null);
-      setOrdersNoticeMessage(null);
-      updateProcessingOrder(id, true);
+  // 返金の画面・支払い済みのキャンセルの画面は自分で窓口を呼ぶ。受け付けたら、ここで知らせを出して、一覧と要対応を読み直す
+  // （手元で言葉を書き換えない。返金で自動で解決する要対応があるので、要対応も読み直す）。
+  // 2つの画面は送っている間は閉じられないので、受け付けた時に開いているのは、その操作の画面
+  const handleRefunded = (result: RefundAcceptedResponse) => {
+    setRefundOrderId(null);
+    setOrdersNoticeMessage(result.status === 'succeeded' ? REFUND_NOTICES.succeeded : REFUND_NOTICES.pending);
+    void fetchOrdersRef.current();
+    void fetchAttention();
+  };
 
-      const response = await clientFetch(`/api/admin/orders/${id}/refund`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ reason: 'requested_by_customer' }),
-      });
+  const handlePaidCancelled = (result: RefundAcceptedResponse) => {
+    setPaidCancelOrderId(null);
+    setOrdersNoticeMessage(result.status === 'succeeded' ? PAID_CANCEL_NOTICES.succeeded : PAID_CANCEL_NOTICES.pending);
+    void fetchOrdersRef.current();
+    void fetchAttention();
+  };
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('認証が必要です。再ログインしてください。');
-        }
-
-        if (response.status === 403) {
-          throw new Error('返金操作の権限がありません。');
-        }
-
-        throw new Error(await readSafeOrderActionError(response, '返金処理に失敗しました。'));
-      }
-
-      const body = (await response.json()) as RefundResponseBody;
-      if (
-        typeof body.refundStatus !== 'string'
-        || !REFUND_STATUSES.has(body.refundStatus)
-        || typeof body.orderStatus !== 'string'
-        || !REFUND_ORDER_STATUSES.has(body.orderStatus)
-      ) {
-        throw new Error('返金状態を確認できませんでした。');
-      }
-
-      const refreshed = await fetchOrdersRef.current();
-      if (!refreshed) {
-        throw new Error('返金後の注文状態を確認できませんでした。一覧を再読み込みしてください。');
-      }
-
-      if (body.refundStatus === 'failed' || body.refundStatus === 'canceled') {
-        throw new Error('返金が完了しませんでした。注文状態を確認してください。');
-      }
-
-      if (body.refundStatus === 'pending' || body.refundStatus === 'requires_action') {
-        setOrdersNoticeMessage('返金処理を受け付けました。Stripeで完了後に注文状態が更新されます。');
-      } else if (body.orderStatus === 'cancelled') {
-        setOrdersNoticeMessage('全額返金が完了し、注文をキャンセルしました。');
-      } else {
-        setOrdersNoticeMessage('返金が完了しました。再取得した注文状態を表示しています。');
-      }
-    } catch (error) {
-      console.error('Failed to refund order:', error);
-      setOrdersErrorMessage(error instanceof Error ? error.message : '返金処理に失敗しました。');
-    } finally {
-      updateProcessingOrder(id, false);
-    }
+  // 答えが分からないまま画面を閉じた。返金が頼まれたかもしれないので、一覧だけ読み直す（知らせは出さない）
+  const handleRefundUncertain = () => {
+    void fetchOrdersRef.current();
   };
 
   const handleApplyPeriodFilter = () => {
@@ -978,7 +965,7 @@ function AdminPageContent() {
             </div>
             {periodErrorMessage ? <p className="lk-text-sm text-red-700 font-acumin">{periodErrorMessage}</p> : null}
             <OrderSection
-              orders={displayedOrders}
+              orders={listedOrders}
               isLoading={isOrdersLoading}
               errorMessage={ordersErrorMessage}
               noticeMessage={ordersNoticeMessage}
@@ -1007,6 +994,18 @@ function AdminPageContent() {
               orderId={historyOrderId}
               onClose={() => setHistoryOrderId(null)}
               onChanged={handleFulfillmentChanged}
+            />
+            <OrderRefundDialog
+              orderId={refundOrderId}
+              onClose={() => setRefundOrderId(null)}
+              onRefunded={handleRefunded}
+              onUncertain={handleRefundUncertain}
+            />
+            <OrderPaidCancelDialog
+              orderId={paidCancelOrderId}
+              onClose={() => setPaidCancelOrderId(null)}
+              onCancelled={handlePaidCancelled}
+              onUncertain={handleRefundUncertain}
             />
             <OrderCancelDialog
               open={cancelTarget !== null}

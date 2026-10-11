@@ -65,6 +65,8 @@ export type OrderItem = {
 	canCancel?: boolean;
 	/** 払込票が有効な間は取り消せない。その払込期限（ISO） */
 	cancelBlockedUntil?: string | null;
+	/** キャンセルの種類。unpaid は未入金の取消（取消の画面）、paid は支払い済みのキャンセル（返金を伴う画面）。出さない注文は null */
+	cancelKind?: 'unpaid' | 'paid' | null;
 };
 
 interface OrderSectionProps {
