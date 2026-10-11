@@ -11,7 +11,8 @@ import { createCatalogFixture, uniqueSuffix } from './helpers/order-fixtures';
  * 「ほかの列はすべて読める」が落ちるので、足した人が決める。お客様に見せる列なら、足す移行で anon・authenticated へ
  * SELECT を付ける。店内だけの列なら、INTERNAL_COLUMNS へ足す（20260927100900_hide_internal_order_columns.sql の冒頭を参照）。
  */
-const INTERNAL_COLUMNS = ['cancel_note', 'cancel_reason', 'cancel_notify_customer', 'reviewed_by'];
+// paid_amount はグループ E-2 で足した（お客様から受け取った額。返金の全額の基準で、店内だけに残す）
+const INTERNAL_COLUMNS = ['cancel_note', 'cancel_reason', 'cancel_notify_customer', 'reviewed_by', 'paid_amount'];
 
 type UserRole = 'anon' | 'authenticated';
 
@@ -64,7 +65,7 @@ async function queryAs(
 
 describeLocalDb('integration: 店内の注文の列を利用者の Data API から隠す', (db) => {
   test.each(['anon', 'authenticated'] as const)(
-    '%s は店内の4列を読めず、ほかの列はすべて読める',
+    '%s は店内の5列を読めず、ほかの列はすべて読める',
     async (role) => {
       const columns = await ordersColumns(db());
 

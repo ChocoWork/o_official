@@ -273,11 +273,17 @@ export type FixtureLine = {
   fulfillmentType: 'stock' | 'backorder';
   /** 在庫の品で、台帳に確保（purchase）を入れるか。既定は入れる */
   reserved?: boolean;
+  /** 単価。既定は PRICE（グループ E-2: 割引の割り振りの試験が、単価の違う商品を作る） */
+  itemPrice?: number;
+  /** 明細を登録した時刻（ISO）。既定は取引の時刻で、同じ注文の明細は全部同じ時刻になる（本物の注文と同じ） */
+  createdAt?: string;
 };
 
 /**
  * 在庫の品と受注生産の品を混ぜた注文を直接作る（グループ E-1）。
  * shipped を渡すと、状態を発送済みにして発送の時刻・配送業者・伝票番号も入れる（移行の前に発送した注文を再現する）。
+ * グループ E-2: 送料・割引・受け取った額・支払いの番号・返金済みの額も渡せる。合計は「小計 + 送料 − 割引」。
+ * 受け取った額 orders.paid_amount は移行 A の列なので、移行 A を当てるまで、この道具は使えない。
  */
 export async function insertOrderWithLines(
   db: PgClient,
@@ -286,24 +292,46 @@ export async function insertOrderWithLines(
     lines: FixtureLine[];
     shippingEmail?: string;
     shipped?: { carrier: 'yamato' | 'sagawa' | 'japanpost' | null; trackingNumber: string | null };
+    /** 送料（既定 0） */
+    shippingAmount?: number;
+    /** 割引（既定 0） */
+    discountAmount?: number;
+    /** お客様から受け取った額 orders.paid_amount（既定は空） */
+    paidAmount?: number | null;
+    /** 支払いの番号（既定は空） */
+    paymentIntentId?: string | null;
+    /** 返金済みの額 orders.refunded_amount（既定 0） */
+    refundedAmount?: number;
   },
 ): Promise<{ orderId: string; orderItemIds: string[] }> {
   const suffix = uniqueSuffix();
-  const subtotal = options.lines.reduce((sum, line) => sum + PRICE * line.quantity, 0);
+  const priceOf = (line: FixtureLine) => line.itemPrice ?? PRICE;
+  const shippingAmount = options.shippingAmount ?? 0;
+  const discountAmount = options.discountAmount ?? 0;
+  const subtotal = options.lines.reduce((sum, line) => sum + priceOf(line) * line.quantity, 0);
   const order = await db.query(
     `insert into public.orders
        (session_id, checkout_session_id, payment_intent_id, status,
-        subtotal_amount, shipping_amount, total_amount, currency,
+        subtotal_amount, shipping_amount, discount_amount, total_amount, currency,
+        paid_amount, refunded_amount, refunded_at,
         shipping_email, shipping_full_name, shipping_postal_code, shipping_prefecture,
         shipping_city, shipping_address, shipping_phone, shipped_at, shipping_carrier, tracking_number)
-     values ($1, $2, null, $3::public.order_status, $4, 0, $4, 'jpy',
-             $5, '山田 花子', '1500001', '東京都', '渋谷区', '神宮前1-1-1', '0311112222', $6, $7, $8)
+     values ($1, $2, $3, $4::public.order_status,
+             $5, $6, $7, $8, 'jpy',
+             $9, $10, case when $10::integer > 0 then now() else null end,
+             $11, '山田 花子', '1500001', '東京都', '渋谷区', '神宮前1-1-1', '0311112222', $12, $13, $14)
      returning id`,
     [
       `fx-order-${suffix}`,
       `cs_fx_${suffix}`,
+      options.paymentIntentId ?? null,
       options.status,
       subtotal,
+      shippingAmount,
+      discountAmount,
+      subtotal + shippingAmount - discountAmount,
+      options.paidAmount ?? null,
+      options.refundedAmount ?? 0,
       options.shippingEmail ?? 'fixture@example.com',
       options.shipped ? new Date().toISOString() : null,
       options.shipped?.carrier ?? null,
@@ -313,12 +341,13 @@ export async function insertOrderWithLines(
   const orderId = order.rows[0].id as string;
   const orderItemIds: string[] = [];
   for (const line of options.lines) {
+    const price = priceOf(line);
     const inserted = await db.query(
       `insert into public.order_items
-         (order_id, item_id, item_name, item_price, color, size, quantity, line_total, variant_id, fulfillment_type)
-       values ($1, $2, '照合テスト', $3, 'BLACK', 'M', $4, $5, $6, $7)
+         (order_id, item_id, item_name, item_price, color, size, quantity, line_total, variant_id, fulfillment_type, created_at)
+       values ($1, $2, '照合テスト', $3, 'BLACK', 'M', $4, $5, $6, $7, coalesce($8::timestamptz, now()))
        returning id`,
-      [orderId, line.itemId, PRICE, line.quantity, PRICE * line.quantity, line.variantId, line.fulfillmentType],
+      [orderId, line.itemId, price, line.quantity, price * line.quantity, line.variantId, line.fulfillmentType, line.createdAt ?? null],
     );
     const orderItemId = inserted.rows[0].id as string;
     orderItemIds.push(orderItemId);
@@ -331,4 +360,51 @@ export async function insertOrderWithLines(
     }
   }
   return { orderId, orderItemIds };
+}
+
+export type RefundFixtureStatus = 'awaiting_response' | 'error' | 'pending' | 'succeeded' | 'failed';
+
+export type RefundFixtureLine = {
+  orderItemId: string;
+  quantity: number;
+  /** 発送前の行か。既定は発送前 */
+  beforeShipment?: boolean;
+  /** 発送前の行の在庫の戻し方。既定は cancel。発送後の行は no_restock に決まっている */
+  restockType?: 'cancel' | 'no_restock';
+  /** 行の返金額。既定は 0 */
+  amount?: number;
+};
+
+/**
+ * 返金の記録と商品の行を直接書く（グループ E-2）。返金を始める関数（移行 B）を通さずに、数え方・守り・読み出しの試験が
+ * 欲しい状態を作る。道は管理画面の返金（admin）に決まっていて、二重防止の番号と指紋は書き捨ての値を入れる。
+ * 行は記録の後に1行ずつ書くので、数の守りのトリガーは行ごとに働く（数が合わない行は、ここで落ちる）。
+ */
+export async function insertRefundRecord(
+  db: PgClient,
+  options: {
+    orderId: string;
+    status?: RefundFixtureStatus;
+    amount?: number;
+    shippingAmount?: number;
+    lines?: RefundFixtureLine[];
+  },
+): Promise<{ refundId: string }> {
+  const refund = await db.query(
+    `insert into public.order_refunds
+       (order_id, source, request_key, request_fingerprint, status, amount, shipping_amount, notify_customer)
+     values ($1, 'admin', gen_random_uuid(), 'fixture', $2, $3, $4, false)
+     returning id`,
+    [options.orderId, options.status ?? 'awaiting_response', options.amount ?? 1000, options.shippingAmount ?? 0],
+  );
+  const refundId = refund.rows[0].id as string;
+  for (const line of options.lines ?? []) {
+    const beforeShipment = line.beforeShipment ?? true;
+    await db.query(
+      `insert into public.order_refund_lines (refund_id, order_item_id, quantity, before_shipment, restock_type, amount)
+       values ($1, $2, $3, $4, $5, $6)`,
+      [refundId, line.orderItemId, line.quantity, beforeShipment, beforeShipment ? (line.restockType ?? 'cancel') : 'no_restock', line.amount ?? 0],
+    );
+  }
+  return { refundId };
 }
