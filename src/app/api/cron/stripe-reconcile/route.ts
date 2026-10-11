@@ -4,20 +4,22 @@ import { authorizeCronRequest } from '@/lib/cron/auth';
 import { logAudit } from '@/lib/audit';
 import { recordHeartbeat, type OpsStore } from '@/lib/ops/ops-store';
 import { reconcileFindingsMail, sendOpsAlertMail } from '@/lib/ops/ops-alert-mail';
+import { createDefaultRefundServiceDeps } from '@/lib/orders/refund/refund-service';
 import {
+  reconcileRecentRefunds,
   reconcileStripeOrders,
   reconcileStripePayouts,
+  type RecentRefundReconciliationReport,
   type ReconcileDatabase,
   type ReconcilePayoutStripe,
   type ReconcileStripe,
   type StripeReconciliationError,
   type UnmatchedRecentPayment,
 } from '@/lib/stripe/reconcile-orders';
-import { syncOrderRefunds, type OrderRefundDatabase, type RefundListClient } from '@/lib/stripe/order-refund-sync';
 import { syncPaymentIntentAccounting, syncPayoutAccounting } from '@/lib/stripe/accounting-sync';
 import { createStripeAccountingDatabase } from '@/lib/stripe/supabase-accounting-database';
 import { getStripeServerClient } from '@/lib/stripe/server';
-import { webhookFailureCause } from '@/lib/stripe/webhook-events';
+import { webhookFailureCause, type WebhookFailureCause } from '@/lib/stripe/webhook-events';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
 // Stripe の全履歴を読むので300秒まで動かす。pg_net は60秒で待つのをやめ、長い実行は応答が timed_out になるが実行は続く（成功か失敗かは ops_job_heartbeats が正）
@@ -40,6 +42,12 @@ const MAX_AUDITED_ERRORS = 20;
 
 /** 監査の1行に載せる、注文の無い直近の支払いの ID の数 */
 const MAX_AUDITED_PAYMENT_IDS = 20;
+
+/** 返金の照合が読む範囲。毎晩の実行が1回抜けても拾えるよう、前の48時間にする（設計書 6-2） */
+const REFUND_LOOKBACK_MS = 48 * 60 * 60 * 1000;
+
+/** 返金の照合に使う時間。全履歴を読む注文の照合と出金の照合に時間が残るよう、300秒のうち先の120秒だけ使う */
+const REFUND_RECONCILE_BUDGET_MS = 120_000;
 
 /** 最後の成功・失敗を記録する（照合の遅れの点検が読む。設計書 4-6）。記録の失敗で応答を変えない。 */
 async function recordRun(store: OpsStore | null, succeeded: boolean, errorCode: string | null): Promise<void> {
@@ -77,14 +85,24 @@ export async function POST(request: Request) {
     const accountingDatabase = createStripeAccountingDatabase(database);
     const accountingStripe = stripe as unknown as AccountingStripeClient;
 
+    // 返金の照合を先に行う。全履歴を読む次の照合が時間を使い切っても、返金の取りこぼしを拾う時間が残る
+    const startedAt = Date.now();
+    let refundReport: RecentRefundReconciliationReport;
+    try {
+      refundReport = await reconcileRecentRefunds(await createDefaultRefundServiceDeps(), {
+        since: new Date(startedAt - REFUND_LOOKBACK_MS),
+        deadline: startedAt + REFUND_RECONCILE_BUDGET_MS,
+      });
+    } catch (refundError) {
+      // 返金の一覧を読めなくても、注文・会計・出金の照合は続ける。失敗は原因の記号だけを errors に残し、知らせのメールに載せる
+      const reason = webhookFailureCause(refundError);
+      console.error('[stripe-reconcile] Refund reconciliation failed', reason);
+      refundReport = { checkedPaymentIntents: 0, syncedRefunds: 0, errors: [{ paymentIntentId: 'refunds', message: reason }] };
+    }
+
     const orderReport = await reconcileStripeOrders({
       database: database as unknown as ReconcileDatabase,
       stripe: stripe as unknown as ReconcileStripe,
-      syncRefunds: (paymentIntentId) => syncOrderRefunds({
-        database: database as unknown as OrderRefundDatabase,
-        stripe: stripe as unknown as RefundListClient,
-        paymentIntentId,
-      }),
       syncAccounting: (paymentIntentId) => syncPaymentIntentAccounting({
         stripe: accountingStripe,
         database: accountingDatabase,
@@ -101,14 +119,21 @@ export async function POST(request: Request) {
       }),
     });
 
+    // 返金の照合の失敗は、{ sourceId, reason } の形にそろえる（sourceId は支払いの番号。一覧そのものを読めなかった時は 'refunds'。
+    // message は原因の記号 — webhookFailureCause の記号か、収まらない時の not_converged。例外の文は入っていない）
+    const refundErrors: StripeReconciliationError[] = refundReport.errors.map((failure) => ({
+      sourceId: failure.paymentIntentId,
+      reason: failure.message as WebhookFailureCause,
+    }));
+
     const data: StripeReconcileResponse = {
       matchedOrders: orderReport.checkedPayments - orderReport.unmatchedActivePayments.length,
       unmatchedPayments: orderReport.unmatchedActivePayments.length,
       syncedBalanceTransactions: orderReport.syncedBalanceTransactions,
-      syncedRefunds: orderReport.syncedRefunds,
+      syncedRefunds: refundReport.syncedRefunds,
       syncedPayouts: payoutReport.syncedPayouts,
       payoutMismatches: payoutReport.payoutMismatches,
-      errors: [...orderReport.errors, ...payoutReport.errors],
+      errors: [...orderReport.errors, ...refundErrors, ...payoutReport.errors],
     };
 
     // 1件ずつの失敗は止めずに数え、支払いの ID と原因の記号を監査に残す（設計書 4-5）

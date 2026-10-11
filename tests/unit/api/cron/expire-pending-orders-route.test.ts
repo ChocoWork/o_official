@@ -54,6 +54,17 @@ jest.mock('@/lib/stripe/orphan-payment-recovery', () => ({
   loadRecoveredOrderSummaries: (...args: unknown[]) => mockLoadRecoveredOrderSummaries(...args),
 }));
 
+// 返事待ちの返金の見回り（グループ E-2 設計書 6-2）。中身は refund-sweep.test.ts が確かめる。
+// ここでは、呼ぶ条件・渡す引数・要約への足し方を確かめる
+const mockSweepAwaitingRefunds = jest.fn();
+jest.mock('@/lib/orders/refund/refund-sweep', () => ({
+  sweepAwaitingRefunds: (...args: unknown[]) => mockSweepAwaitingRefunds(...args),
+}));
+const mockRefundDeps = { name: 'refund-service-deps' };
+jest.mock('@/lib/orders/refund/refund-service', () => ({
+  createDefaultRefundServiceDeps: async () => mockRefundDeps,
+}));
+
 const mockRecordHeartbeat = jest.fn();
 jest.mock('@/lib/ops/ops-store', () => ({
   recordHeartbeat: (...args: unknown[]) => mockRecordHeartbeat(...args),
@@ -144,6 +155,7 @@ describe('POST /api/cron/expire-pending-orders（照合の見回り）', () => {
     mockNotifyShop.mockResolvedValue(true);
     candidates([]);
     mockRecoverOrphanPayments.mockResolvedValue({ checkedSessions: 0, recovered: [], failed: 0, timeBudgetExhausted: false });
+    mockSweepAwaitingRefunds.mockResolvedValue({ checked: 0, synced: 0, errored: 0, failures: 0, timeBudgetExhausted: false });
     mockLoadRecoveredOrderSummaries.mockResolvedValue([]);
     mockRecordHeartbeat.mockResolvedValue(undefined);
     mockRunOpsChecks.mockResolvedValue({ backlogAlerted: false, deadNotified: 0, staleAlerted: [], failedChecks: [] });
@@ -376,6 +388,7 @@ describe('POST /api/cron/expire-pending-orders（照合の見回り）', () => {
     expect(mockReconcile).toHaveBeenCalledTimes(1);
     expect(mockListUnsentShopAlerts).not.toHaveBeenCalled();
     expect(mockRecoverOrphanPayments).not.toHaveBeenCalled();
+    expect(mockSweepAwaitingRefunds).not.toHaveBeenCalled();
     expect(response.body).toMatchObject({ processed: 1, timeBudgetExhausted: true });
     expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure' }));
   });
@@ -432,6 +445,70 @@ describe('POST /api/cron/expire-pending-orders（照合の見回り）', () => {
     expect(error).toHaveBeenCalledWith('[cron] failed to recover orphan payments', 'stripe_unavailable');
     expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockServiceClient, 'order_sweep', true, null);
     error.mockRestore();
+  });
+
+  it('返事待ちの返金の見回りを、見回りの45秒の残りで行う（15分より前の物を20件まで。設計書 6-2）', async () => {
+    await sweep();
+
+    expect(mockSweepAwaitingRefunds).toHaveBeenCalledTimes(1);
+    expect(mockSweepAwaitingRefunds).toHaveBeenCalledWith(mockRefundDeps, {
+      olderThan: new Date(NOW - 15 * 60 * 1000),
+      limit: 20,
+      deadline: NOW + 45_000,
+    });
+  });
+
+  it('返金の見回りの数を要約に足し、見回りの失敗は失敗の数に入れる', async () => {
+    mockSweepAwaitingRefunds.mockResolvedValue({ checked: 5, synced: 3, errored: 1, failures: 1, timeBudgetExhausted: false });
+
+    const response = await sweep();
+
+    expect(response.body).toMatchObject({ checkedRefunds: 5, syncedRefunds: 3, erroredRefunds: 1, failed: 1 });
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'error',
+      metadata: expect.objectContaining({ checkedRefunds: 5, syncedRefunds: 3, erroredRefunds: 1 }),
+    }));
+  });
+
+  it('返金の見回りが時間切れを報告したら、要約の timeBudgetExhausted に反映する', async () => {
+    mockSweepAwaitingRefunds.mockResolvedValue({ checked: 2, synced: 2, errored: 0, failures: 0, timeBudgetExhausted: true });
+
+    const response = await sweep();
+
+    expect(response.body).toMatchObject({ timeBudgetExhausted: true });
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure' }));
+  });
+
+  it('拾い上げで時間を使い切っていたら、返金の見回りは動かさない', async () => {
+    mockRecoverOrphanPayments.mockResolvedValue({ checkedSessions: 0, recovered: [], failed: 0, timeBudgetExhausted: true });
+
+    const response = await sweep();
+
+    expect(mockSweepAwaitingRefunds).not.toHaveBeenCalled();
+    expect(response.body).toMatchObject({ timeBudgetExhausted: true, checkedRefunds: 0 });
+  });
+
+  it('返金の見回りが失敗しても見回りは最後まで進み、失敗の数に入れる', async () => {
+    mockSweepAwaitingRefunds.mockRejectedValue(Object.assign(new Error('x'), { type: 'StripeConnectionError' }));
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await sweep();
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ failed: 1, checkedRefunds: 0 });
+    expect(error).toHaveBeenCalledWith('[cron] failed to sweep awaiting refunds', 'stripe_unavailable');
+    expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockServiceClient, 'order_sweep', true, null);
+    error.mockRestore();
+  });
+
+  it('返金の見回りは、拾い上げの後・最後の成功の記録の前に動く', async () => {
+    await sweep();
+
+    const recovery = mockRecoverOrphanPayments.mock.invocationCallOrder[0];
+    const refunds = mockSweepAwaitingRefunds.mock.invocationCallOrder[0];
+    const heartbeat = mockRecordHeartbeat.mock.invocationCallOrder[0];
+    expect(recovery).toBeLessThan(refunds);
+    expect(refunds).toBeLessThan(heartbeat);
   });
 
   it('最後の成功は、拾い上げの後・遅い後続（監査の行）の前に記録し、点検は最後にする（設計書 4-6）', async () => {

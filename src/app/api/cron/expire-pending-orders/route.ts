@@ -23,6 +23,8 @@ import {
   type ReconcileResult,
 } from '@/lib/stripe/checkout-payment-reconciler';
 import { createDefaultReconcilerDeps, listUnsentShopAlerts } from '@/lib/stripe/checkout-payment-reconciler-deps';
+import { createDefaultRefundServiceDeps } from '@/lib/orders/refund/refund-service';
+import { sweepAwaitingRefunds, type AwaitingRefundSweepReport } from '@/lib/orders/refund/refund-sweep';
 import { runOrderEmailOpsChecks } from '@/lib/orders/email/order-email-ops';
 import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
 import type { OrderEmailStore } from '@/lib/orders/email/order-email-store';
@@ -36,6 +38,8 @@ import type { OrderEmailStore } from '@/lib/orders/email/order-email-store';
 // 最後に、直近24時間の完了済みの決済のうち注文の無いものを拾って注文にし、要確認「支払いから作った注文」を付ける。
 // 拾った注文はその回の1通にまとめて店へ知らせる。最後の成功を記録し、溜まり・退避・遅れを点検する
 // （設計書 2026-10-05 グループ B の 3-5・4-6）。
+// 返事待ちの返金（Stripe に頼んだ後に返事を書けなかった物）も、15分より前の物を Stripe の現在値と合わせる
+// （グループ E-2 設計書 6-2）。
 // pg_cron + pg_net から呼ばれる。net.http_post は POST しか送れないため POST。
 
 export const maxDuration = 60;
@@ -52,6 +56,12 @@ const MILLISECONDS_PER_HOUR = 60 * 60 * 1000;
 const CHECKOUT_SESSION_VALIDITY_MS = 30 * 60 * 1000;
 
 const MAX_SHOP_ALERTS_PER_RUN = 20;
+
+/** 返事待ちの返金は、頼んで15分たっても返事を書けていない物だけを確かめる（頼んでいる最中の返金を横取りしない。設計書 6-2） */
+const AWAITING_REFUND_MIN_AGE_MS = 15 * 60 * 1000;
+
+/** 1回の実行で確かめる返事待ちの返金の数。45秒の予算の中で、Stripe を1件ずつ読んで収まる数 */
+const MAX_AWAITING_REFUNDS_PER_RUN = 20;
 
 type SweepOrderRow = {
   id: string;
@@ -262,6 +272,24 @@ export async function POST(request: Request) {
     }
   }
 
+  // 返事待ちの返金の見回り（グループ E-2 設計書 6-2）。Stripe に頼んだ後に返事を書けなかった返金を、印で探して合わせる。
+  // 今の45秒の予算の残りで行い、読み切れない分は次の回に回す
+  let awaitingRefunds: AwaitingRefundSweepReport | null = null;
+  if (!timeBudgetExhausted) {
+    try {
+      awaitingRefunds = await sweepAwaitingRefunds(await createDefaultRefundServiceDeps(), {
+        olderThan: new Date(nowMs - AWAITING_REFUND_MIN_AGE_MS),
+        limit: MAX_AWAITING_REFUNDS_PER_RUN,
+        deadline: startedAt + TIME_BUDGET_MS,
+      });
+      failed += awaitingRefunds.failures;
+      timeBudgetExhausted = awaitingRefunds.timeBudgetExhausted;
+    } catch (refundSweepError) {
+      console.error('[cron] failed to sweep awaiting refunds', webhookFailureCause(refundSweepError));
+      failed += 1;
+    }
+  }
+
   // 最後の成功は、遅くなりうる後続（要約の読み込み・メール・監査の行）の前に記録する。
   // 後続で実行の上限（60秒）に届いても、見回りが動いたことは残り、遅れの知らせが誤って出ない。
   await recordSweepRun(opsStore, true, null);
@@ -290,6 +318,9 @@ export async function POST(request: Request) {
     checkedSessions: recovery?.checkedSessions ?? 0,
     recoveredOrders: recovery?.recovered.length ?? 0,
     recoveredOrdersNotified,
+    checkedRefunds: awaitingRefunds?.checked ?? 0,
+    syncedRefunds: awaitingRefunds?.synced ?? 0,
+    erroredRefunds: awaitingRefunds?.errored ?? 0,
     capped: candidateCount > MAX_ORDERS_PER_RUN,
     timeBudgetExhausted,
   };

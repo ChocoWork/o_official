@@ -2,8 +2,35 @@ jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn().mockResolvedValue(undefined),
 }));
 
+// 返金の同期の中身は order-refund-sync.test.ts が確かめる。ここでは、同期した後の注文の状態を返すことと、
+// 一時的な失敗を照合の一時的な失敗にすることだけを確かめる
+const mockSyncPaymentIntentRefunds = jest.fn();
+jest.mock('@/lib/stripe/order-refund-sync', () => {
+  class OrderNotFoundForPaymentIntentError extends Error {}
+  class RefundSyncNotConvergedError extends Error {}
+  return {
+    OrderNotFoundForPaymentIntentError,
+    RefundSyncNotConvergedError,
+    syncPaymentIntentRefunds: (...args: unknown[]) => mockSyncPaymentIntentRefunds(...args),
+  };
+});
+// 返金の部品。createDefaultReconcilerDeps が1回だけ作って、返金の同期に使うことを確かめる
+const mockCreateDefaultRefundServiceDeps = jest.fn();
+jest.mock('@/lib/orders/refund/refund-service', () => ({
+  createDefaultRefundServiceDeps: (...args: unknown[]) => mockCreateDefaultRefundServiceDeps(...args),
+}));
+// createDefaultReconcilerDeps が作る client。この試験では中身を使わない
+jest.mock('@/lib/supabase/server', () => ({
+  createServiceRoleClient: jest.fn(async () => ({ name: 'service-role-client' })),
+}));
+jest.mock('@/lib/stripe/server', () => ({
+  getStripeServerClient: jest.fn(() => ({ name: 'stripe-client' })),
+}));
+
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { RefundServiceDeps } from '@/lib/orders/refund/refund-service';
 import {
+  createDefaultReconcilerDeps,
   createReconcilerRefundSync,
   createSupabaseReconcilerDatabase,
   isTransientSupabaseError,
@@ -11,9 +38,7 @@ import {
 } from '@/lib/stripe/checkout-payment-reconciler-deps';
 import {
   OrderNotFoundForPaymentIntentError,
-  type OrderRefundDatabase,
-  type RefundListClient,
-  type RefundSnapshot,
+  RefundSyncNotConvergedError,
 } from '@/lib/stripe/order-refund-sync';
 
 /**
@@ -234,91 +259,42 @@ describe('createSupabaseReconcilerDatabase', () => {
 
 describe('createReconcilerRefundSync', () => {
   /**
-   * 照合が呼ぶ返金の同期（order-refund-sync.ts の syncOrderRefunds）。同期そのものは order-refund-sync.test.ts が確かめる。
-   * ここでは、一時的な失敗（Stripe の通信・5xx・回数制限、DB の接続・直列化など）を照合の一時的な失敗にして投げ直し
-   * （呼び出し元が再試行する）、恒久的な失敗は元のエラーのまま投げることを確かめる。
+   * 照合が呼ぶ返金の同期（order-refund-sync.ts の syncPaymentIntentRefunds）。同期そのものは order-refund-sync.test.ts が確かめる。
+   * ここでは、同期した後の注文の状態を返すことと、一時的な失敗（Stripe の通信・5xx・回数制限、DB の接続・直列化など）を
+   * 照合の一時的な失敗にして投げ直し（呼び出し元が再試行する）、恒久的な失敗は元のエラーのまま投げることを確かめる。
    */
-  type DbResult = { data: unknown; error: { message: string; code?: string } | null };
+  const refundDeps = { name: 'refund-service-deps' } as unknown as RefundServiceDeps;
+  const sync = createReconcilerRefundSync(refundDeps);
 
-  const PAID_ORDER = {
-    id: 'order-1',
-    status: 'paid',
-    total_amount: 5000,
-    refunded_amount: 0,
-    payment_status_updated_at: null,
-    shipped_at: null,
-  };
+  beforeEach(() => {
+    mockSyncPaymentIntentRefunds.mockReset();
+  });
 
-  function refundSyncWorld(options: {
-    order?: DbResult;
-    rpc?: DbResult;
-    refunds?: () => AsyncIterable<RefundSnapshot>;
-  } = {}) {
-    const rpc = jest.fn(async () => options.rpc ?? {
-      data: [{ id: 'order-1', status: 'paid', refunded_amount: 2000 }],
-      error: null,
-    });
-    const database = {
-      from: () => ({
-        select: () => ({
-          eq: () => ({ maybeSingle: async () => options.order ?? { data: PAID_ORDER, error: null } }),
-        }),
-      }),
-      rpc,
-    } as unknown as OrderRefundDatabase;
-    const list = jest.fn(() => options.refunds?.() ?? succeededRefunds(2000));
-    const stripe = { refunds: { list } } as unknown as RefundListClient;
-    return { sync: createReconcilerRefundSync(database, stripe), rpc, list };
-  }
-
-  function succeededRefunds(amount: number): AsyncIterable<RefundSnapshot> {
-    return {
-      async *[Symbol.asyncIterator]() {
-        yield { status: 'succeeded', amount, created: 1_786_000_000 };
-      },
-    };
-  }
-
-  function failingRefunds(error: unknown): () => AsyncIterable<RefundSnapshot> {
-    return () => ({
-      [Symbol.asyncIterator]: () => ({
-        next: async () => {
-          throw error;
-        },
-      }),
-    });
-  }
-
-  it('PaymentIntent の返金を Stripe から読み、返金投影の RPC で注文へ反映し、反映したあとの注文の状態を返す', async () => {
-    const { sync, rpc, list } = refundSyncWorld();
+  it('PaymentIntent の返金を取り込み、取り込んだ後の注文の状態を返す', async () => {
+    mockSyncPaymentIntentRefunds.mockResolvedValue({ kind: 'synced', orderId: 'order-1', orderStatus: 'paid', results: [] });
 
     await expect(sync('pi_1')).resolves.toBe('paid');
 
-    expect(list).toHaveBeenCalledWith({ payment_intent: 'pi_1', limit: 100 });
-    expect(rpc).toHaveBeenCalledWith('apply_order_refund_projection', expect.objectContaining({
-      _order_id: 'order-1',
-      _expected_status: 'paid',
-      _refunded_amount: 2000,
-    }));
+    expect(mockSyncPaymentIntentRefunds).toHaveBeenCalledWith(refundDeps, 'pi_1');
   });
 
-  it('全額返金を反映して注文が取消になったら、取消を返す', async () => {
-    const { sync, rpc } = refundSyncWorld({
-      refunds: () => succeededRefunds(5000),
-      rpc: { data: [{ id: 'order-1', status: 'cancelled', refunded_amount: 5000 }], error: null },
-    });
+  it('全額返金を取り込んで注文が取消になったら、取消を返す', async () => {
+    mockSyncPaymentIntentRefunds.mockResolvedValue({ kind: 'synced', orderId: 'order-1', orderStatus: 'cancelled', results: [] });
 
     await expect(sync('pi_1')).resolves.toBe('cancelled');
-
-    expect(rpc).toHaveBeenCalledWith('apply_order_refund_projection', expect.objectContaining({ _refunded_amount: 5000 }));
   });
 
-  it('競合で収まらず（3回とも更新が0件）に失敗した返金の同期は、照合の一時的な失敗（not_converged）にする', async () => {
+  it('入金が決まる前の注文（skipped_unpaid）は、その状態を返す', async () => {
+    mockSyncPaymentIntentRefunds.mockResolvedValue({ kind: 'skipped_unpaid', orderId: 'order-1', orderStatus: 'pending' });
+
+    await expect(sync('pi_1')).resolves.toBe('pending');
+  });
+
+  it('書いている間に返金が変わり続けて収まらない（RefundSyncNotConvergedError）失敗は、照合の一時的な失敗（not_converged）にする', async () => {
     // 同時の更新や Stripe の返金の変化は、読み直せば収まる。恒久的なエラーとして永久に失敗させない
-    const { sync, rpc } = refundSyncWorld({ rpc: { data: [], error: null } });
+    mockSyncPaymentIntentRefunds.mockRejectedValue(new RefundSyncNotConvergedError());
 
     await expect(sync('pi_1')).rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'not_converged' });
-    expect(rpc).toHaveBeenCalledTimes(3);
   });
 
   it.each([
@@ -326,14 +302,14 @@ describe('createReconcilerRefundSync', () => {
     ['Stripe の障害', { type: 'StripeAPIError', statusCode: 500 }],
     ['回数制限', { type: 'StripeRateLimitError', statusCode: 429 }],
   ])('Stripe の一時的な失敗（%s）は、照合の一時的な失敗（stripe_unavailable）にする', async (_name, stripeError) => {
-    const { sync } = refundSyncWorld({ refunds: failingRefunds(stripeError) });
+    mockSyncPaymentIntentRefunds.mockRejectedValue(stripeError);
 
     await expect(sync('pi_1')).rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'stripe_unavailable' });
   });
 
   it('Stripe の恒久的なエラー（入力の誤りなど）は、元のエラーのまま投げる', async () => {
     const stripeError = { type: 'StripeInvalidRequestError', statusCode: 400 };
-    const { sync } = refundSyncWorld({ refunds: failingRefunds(stripeError) });
+    mockSyncPaymentIntentRefunds.mockRejectedValue(stripeError);
 
     await expect(sync('pi_1')).rejects.toBe(stripeError);
   });
@@ -341,38 +317,49 @@ describe('createReconcilerRefundSync', () => {
   it.each([
     ['code の無い（通信の失敗）', { message: 'timeout' }],
     ['接続の失敗（08006）', { message: 'connection failure', code: '08006' }],
-  ])('注文の読み取りの失敗（%s）は、照合の一時的な失敗（db_unavailable）にする', async (_name, dbError) => {
-    const { sync, rpc } = refundSyncWorld({ order: { data: null, error: dbError } });
-
-    await expect(sync('pi_1')).rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'db_unavailable' });
-    expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it('返金投影の RPC の直列化の失敗（40001）も、照合の一時的な失敗（db_unavailable）にする', async () => {
-    const { sync } = refundSyncWorld({
-      rpc: { data: null, error: { message: 'could not serialize access', code: '40001' } },
-    });
+    ['直列化の失敗（40001）', { message: 'could not serialize access', code: '40001' }],
+  ])('DB の一時的な失敗（%s）は、照合の一時的な失敗（db_unavailable）にする', async (_name, dbError) => {
+    // 取り込みは DB の失敗を message だけの Error にして投げ、元のエラー（code 付き）を cause に残す
+    mockSyncPaymentIntentRefunds.mockRejectedValue(new Error('refund store failed: record_order_refund_result', { cause: dbError }));
 
     await expect(sync('pi_1')).rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'db_unavailable' });
   });
 
   it.each([
-    ['注文の読み取り', { order: { data: null, error: { message: 'permission denied', code: '42501' } } }, 'Failed to read order refund state: permission denied'],
-    ['返金投影の RPC', { rpc: { data: null, error: { message: 'check constraint violated', code: '23514' } } }, 'Failed to update order refund state: check constraint violated'],
-  ])('%sの恒久的なエラーは、一時的な失敗にせず、これまでと同じ内容のエラーのまま投げる', async (_name, options, message) => {
-    const { sync } = refundSyncWorld(options);
+    ['注文の読み取り', { message: 'permission denied', code: '42501' }, 'Failed to read order refund state: permission denied'],
+    ['返金の記録の書き込み', { message: 'check constraint violated', code: '23514' }, 'refund store failed: record_order_refund_result'],
+  ])('%sの恒久的なエラーは、一時的な失敗にせず、同じ内容のエラーのまま投げる', async (_name, dbError, message) => {
+    const failure = new Error(message, { cause: dbError });
+    mockSyncPaymentIntentRefunds.mockRejectedValue(failure);
 
-    const error = await sync('pi_1').catch((caught: unknown) => caught);
+    await expect(sync('pi_1')).rejects.toBe(failure);
+  });
 
-    expect(error).toBeInstanceOf(Error);
-    expect(error).not.toMatchObject({ name: 'ReconcileTransientError' });
-    expect((error as Error).message).toBe(message);
+  it('原因を持たない失敗（cause が null）は、一時的な失敗にしない', async () => {
+    const failure = new Error('refund store failed: record_order_refund_result', { cause: null });
+    mockSyncPaymentIntentRefunds.mockRejectedValue(failure);
+
+    await expect(sync('pi_1')).rejects.toBe(failure);
   });
 
   it('PaymentIntent に注文が無ければ、その型のエラーのまま投げる（一時的な失敗にしない）', async () => {
-    const { sync } = refundSyncWorld({ order: { data: null, error: null } });
+    mockSyncPaymentIntentRefunds.mockRejectedValue(new OrderNotFoundForPaymentIntentError());
 
     await expect(sync('pi_1')).rejects.toBeInstanceOf(OrderNotFoundForPaymentIntentError);
+  });
+});
+
+describe('createDefaultReconcilerDeps', () => {
+  it('返金の部品を1回だけ作り、決済の照合の返金の同期に使う（返金の部品は、この関数を呼び返さない）', async () => {
+    const refundDeps = { name: 'refund-service-deps' };
+    mockCreateDefaultRefundServiceDeps.mockResolvedValue(refundDeps);
+    mockSyncPaymentIntentRefunds.mockResolvedValue({ kind: 'synced', orderId: 'order-1', orderStatus: 'cancelled', results: [] });
+
+    const deps = await createDefaultReconcilerDeps();
+
+    expect(mockCreateDefaultRefundServiceDeps).toHaveBeenCalledTimes(1);
+    await expect(deps.syncRefunds('pi_1')).resolves.toBe('cancelled');
+    expect(mockSyncPaymentIntentRefunds).toHaveBeenCalledWith(refundDeps, 'pi_1');
   });
 });
 

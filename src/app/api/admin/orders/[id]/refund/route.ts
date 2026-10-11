@@ -3,13 +3,10 @@ import Stripe from 'stripe';
 import { z } from 'zod';
 import { logAudit } from '@/lib/audit';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
+import { createDefaultRefundServiceDeps } from '@/lib/orders/refund/refund-service';
 import { getStripeServerClient } from '@/lib/stripe/server';
-import {
-  syncOrderRefunds,
-  type OrderRefundDatabase,
-  type RefundListClient,
-} from '@/lib/stripe/order-refund-sync';
-import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
+import { syncPaymentIntentRefunds } from '@/lib/stripe/order-refund-sync';
+import { createClient } from '@/lib/supabase/server';
 
 const orderIdSchema = z.string().uuid();
 const refundRequestSchema = z.object({
@@ -182,14 +179,11 @@ export async function POST(
 
     // A refund can remain pending (for example, Konbini requires bank details).
     // Derive order state only from refunds Stripe confirms as succeeded.
-    const serviceRoleSupabase = await createServiceRoleClient();
-    const refundSync = await syncOrderRefunds({
-      actorId,
-      database: serviceRoleSupabase as unknown as OrderRefundDatabase,
-      stripe: stripe as unknown as RefundListClient,
-      paymentIntentId: order.payment_intent_id,
-    });
-    const isFullRefund = refundSync.refundedAmount >= order.total_amount;
+    // 返金の窓口を返金の記録の流れに作り直すまでのつなぎ。同期は、知らせと同じ取り込みを呼ぶ。
+    // 返金済みの額は、取り込みが最後に書いた結果の値（書いた返金が無ければ0）
+    const refundSync = await syncPaymentIntentRefunds(await createDefaultRefundServiceDeps(), order.payment_intent_id);
+    const lastResult = refundSync.kind === 'synced' ? refundSync.results[refundSync.results.length - 1] : undefined;
+    const isFullRefund = (lastResult?.refundedAmount ?? 0) >= order.total_amount;
 
     await logAudit({
       action: 'admin.orders.refund.create',

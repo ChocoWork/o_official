@@ -18,19 +18,25 @@ jest.mock('@/lib/stripe/server', () => ({ getStripeServerClient: jest.fn() }));
 jest.mock('@/lib/stripe/reconcile-orders', () => ({
   reconcileStripeOrders: jest.fn(),
   reconcileStripePayouts: jest.fn(),
+  reconcileRecentRefunds: jest.fn(),
+}));
+const mockRefundDeps = { name: 'refund-service-deps' };
+jest.mock('@/lib/orders/refund/refund-service', () => ({
+  createDefaultRefundServiceDeps: async () => mockRefundDeps,
 }));
 jest.mock('@/lib/stripe/supabase-accounting-database', () => ({
   createStripeAccountingDatabase: jest.fn().mockReturnValue({}),
 }));
 
 import * as reconcileRoute from '@/app/api/cron/stripe-reconcile/route';
-import { reconcileStripeOrders, reconcileStripePayouts } from '@/lib/stripe/reconcile-orders';
+import { reconcileRecentRefunds, reconcileStripeOrders, reconcileStripePayouts } from '@/lib/stripe/reconcile-orders';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
 const mockDatabase = { name: 'service-role-client' };
 
 const mockReconcileOrders = reconcileStripeOrders as jest.Mock;
 const mockReconcilePayouts = reconcileStripePayouts as jest.Mock;
+const mockReconcileRefunds = reconcileRecentRefunds as jest.Mock;
 const { POST } = reconcileRoute;
 // 定期処理の合言葉は32文字以上（設計書 2026-10-05 グループ B の 4-3）
 const CRON_SECRET = 'cron-secret-for-unit-tests-0123456789';
@@ -49,12 +55,14 @@ function orderReport(overrides: Record<string, unknown> = {}) {
     checkedPayments: 0,
     unmatchedActivePayments: [],
     unmatchedRecentPayments: [],
-    refundMismatches: [],
     syncedBalanceTransactions: 0,
-    syncedRefunds: 0,
     errors: [],
     ...overrides,
   };
+}
+
+function refundReport(overrides: Record<string, unknown> = {}) {
+  return { checkedPaymentIntents: 0, syncedRefunds: 0, errors: [], ...overrides };
 }
 
 function payoutReport(overrides: Record<string, unknown> = {}) {
@@ -72,6 +80,7 @@ describe('POST /api/cron/stripe-reconcile', () => {
     mockRecordHeartbeat.mockResolvedValue(undefined);
     mockSendOpsAlertMail.mockResolvedValue(true);
     mockReconcileFindingsMail.mockReturnValue(findingsMail);
+    mockReconcileRefunds.mockResolvedValue(refundReport());
   });
   afterEach(() => {
     warn.mockRestore();
@@ -82,6 +91,7 @@ describe('POST /api/cron/stripe-reconcile', () => {
     const response = await POST(new Request('http://localhost/api/cron/stripe-reconcile', { method: 'POST' }));
     expect(response.status).toBe(401);
     expect(reconcileStripeOrders).not.toHaveBeenCalled();
+    expect(reconcileRecentRefunds).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
@@ -93,6 +103,7 @@ describe('POST /api/cron/stripe-reconcile', () => {
     }));
     expect(response.status).toBe(401);
     expect(reconcileStripeOrders).not.toHaveBeenCalled();
+    expect(reconcileRecentRefunds).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
@@ -101,17 +112,14 @@ describe('POST /api/cron/stripe-reconcile', () => {
   });
 
   it('does not create orders for unmatched Stripe payments', async () => {
-    mockReconcileOrders.mockResolvedValue({
+    mockReconcileOrders.mockResolvedValue(orderReport({
       checkedPayments: 2,
       unmatchedActivePayments: ['pi_stripe_only'],
       // 7日より古い支払いなので、メールの対象には入らない
       unmatchedRecentPayments: [],
-      refundMismatches: [],
       syncedBalanceTransactions: 1,
-      syncedRefunds: 0,
-      errors: [],
-    });
-    mockReconcilePayouts.mockResolvedValue({ syncedPayouts: 0, payoutMismatches: 0, errors: [] });
+    }));
+    mockReconcilePayouts.mockResolvedValue(payoutReport());
 
     const response = await POST(authorizedRequest());
     const body = await response.json();
@@ -128,35 +136,37 @@ describe('POST /api/cron/stripe-reconcile', () => {
     });
   });
 
-  it('merges order and payout errors into one report', async () => {
-    mockReconcileOrders.mockResolvedValue({
+  it('merges order, refund and payout errors into one report（返金の照合の失敗は、支払いの番号と原因の記号の形にそろえる）', async () => {
+    mockReconcileOrders.mockResolvedValue(orderReport({
       checkedPayments: 1,
-      unmatchedActivePayments: [],
-      unmatchedRecentPayments: [],
-      refundMismatches: [],
-      syncedBalanceTransactions: 0,
-      syncedRefunds: 0,
-      errors: [{ sourceId: 'pi_1', reason: 'stripe unavailable' }],
-    });
-    mockReconcilePayouts.mockResolvedValue({
+      errors: [{ sourceId: 'pi_1', reason: 'stripe_unavailable' }],
+    }));
+    mockReconcileRefunds.mockResolvedValue(refundReport({
+      checkedPaymentIntents: 3,
+      syncedRefunds: 2,
+      errors: [{ paymentIntentId: 'pi_2', message: 'db_unavailable' }],
+    }));
+    mockReconcilePayouts.mockResolvedValue(payoutReport({
       syncedPayouts: 1,
       payoutMismatches: 1,
-      errors: [{ sourceId: 'po_1', reason: 'payout sync failed' }],
-    });
+      errors: [{ sourceId: 'po_1', reason: 'unexpected_error' }],
+    }));
 
     const body = await (await POST(authorizedRequest())).json();
 
     expect(body.data.errors).toEqual([
-      { sourceId: 'pi_1', reason: 'stripe unavailable' },
-      { sourceId: 'po_1', reason: 'payout sync failed' },
+      { sourceId: 'pi_1', reason: 'stripe_unavailable' },
+      { sourceId: 'pi_2', reason: 'db_unavailable' },
+      { sourceId: 'po_1', reason: 'unexpected_error' },
     ]);
     expect(body.data.payoutMismatches).toBe(1);
+    expect(body.data.syncedRefunds).toBe(2);
   });
 
   it('returns 502 when reconciliation itself throws', async () => {
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockReconcileOrders.mockRejectedValue(new Error('database down'));
-    mockReconcilePayouts.mockResolvedValue({ syncedPayouts: 0, payoutMismatches: 0, errors: [] });
+    mockReconcilePayouts.mockResolvedValue(payoutReport());
 
     const response = await POST(authorizedRequest());
 
@@ -165,16 +175,12 @@ describe('POST /api/cron/stripe-reconcile', () => {
   });
 
   it('records the run as succeeded and audits the counts with failure causes only', async () => {
-    mockReconcileOrders.mockResolvedValue({
+    mockReconcileOrders.mockResolvedValue(orderReport({
       checkedPayments: 2,
-      unmatchedActivePayments: [],
-      unmatchedRecentPayments: [],
-      refundMismatches: [],
       syncedBalanceTransactions: 1,
-      syncedRefunds: 0,
       errors: [{ sourceId: 'pi_1', reason: 'stripe_unavailable' }],
-    });
-    mockReconcilePayouts.mockResolvedValue({ syncedPayouts: 1, payoutMismatches: 0, errors: [] });
+    }));
+    mockReconcilePayouts.mockResolvedValue(payoutReport({ syncedPayouts: 1 }));
 
     const response = await POST(authorizedRequest());
 
@@ -194,7 +200,7 @@ describe('POST /api/cron/stripe-reconcile', () => {
 
   it('records the run as failed with a cause code when reconciliation throws', async () => {
     mockReconcileOrders.mockRejectedValue(Object.assign(new Error('x'), { code: 'db_unavailable' }));
-    mockReconcilePayouts.mockResolvedValue({ syncedPayouts: 0, payoutMismatches: 0, errors: [] });
+    mockReconcilePayouts.mockResolvedValue(payoutReport());
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     const response = await POST(authorizedRequest());
@@ -207,16 +213,8 @@ describe('POST /api/cron/stripe-reconcile', () => {
   });
 
   it('still answers 200 when the heartbeat cannot be recorded', async () => {
-    mockReconcileOrders.mockResolvedValue({
-      checkedPayments: 0,
-      unmatchedActivePayments: [],
-      unmatchedRecentPayments: [],
-      refundMismatches: [],
-      syncedBalanceTransactions: 0,
-      syncedRefunds: 0,
-      errors: [],
-    });
-    mockReconcilePayouts.mockResolvedValue({ syncedPayouts: 0, payoutMismatches: 0, errors: [] });
+    mockReconcileOrders.mockResolvedValue(orderReport());
+    mockReconcilePayouts.mockResolvedValue(payoutReport());
     mockRecordHeartbeat.mockRejectedValue(new Error('db down'));
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -228,12 +226,76 @@ describe('POST /api/cron/stripe-reconcile', () => {
     expect(reconcileRoute.maxDuration).toBe(300);
   });
 
+  describe('返金の照合（グループ E-2 設計書 6-2）', () => {
+    const NOW = Date.parse('2026-10-12T18:00:00.000Z');
+    let dateSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      dateSpy = jest.spyOn(Date, 'now').mockReturnValue(NOW);
+      mockReconcileOrders.mockResolvedValue(orderReport());
+      mockReconcilePayouts.mockResolvedValue(payoutReport());
+    });
+    afterEach(() => {
+      dateSpy.mockRestore();
+    });
+
+    it('前の48時間の返金を、120秒の予算で照合する。答えの syncedRefunds と監査の数は、その数', async () => {
+      mockReconcileRefunds.mockResolvedValue(refundReport({ checkedPaymentIntents: 5, syncedRefunds: 4 }));
+
+      const body = await (await POST(authorizedRequest())).json();
+
+      expect(mockReconcileRefunds).toHaveBeenCalledTimes(1);
+      expect(mockReconcileRefunds).toHaveBeenCalledWith(mockRefundDeps, {
+        since: new Date(NOW - 48 * 60 * 60 * 1000),
+        deadline: NOW + 120_000,
+      });
+      expect(body.data.syncedRefunds).toBe(4);
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        metadata: expect.objectContaining({ syncedRefunds: 4 }),
+      }));
+    });
+
+    it('返金の照合を、全履歴を読む注文の照合より先に行う（あとの照合が時間を使い切っても、返金の照合の時間が残る）', async () => {
+      await POST(authorizedRequest());
+
+      expect(mockReconcileRefunds.mock.invocationCallOrder[0]).toBeLessThan(mockReconcileOrders.mock.invocationCallOrder[0]);
+      expect(mockReconcileOrders.mock.invocationCallOrder[0]).toBeLessThan(mockReconcilePayouts.mock.invocationCallOrder[0]);
+    });
+
+    it('返金の照合が投げても、注文・出金の照合は続け、失敗は原因の記号だけを errors に残して 200 で返す', async () => {
+      mockReconcileRefunds.mockRejectedValue(
+        Object.assign(new Error('Stripe is down for buyer@example.com'), { code: 'db_unavailable' }),
+      );
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      try {
+        const response = await POST(authorizedRequest());
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(body.data.errors).toEqual([{ sourceId: 'refunds', reason: 'db_unavailable' }]);
+        expect(body.data.syncedRefunds).toBe(0);
+        expect(mockReconcileOrders).toHaveBeenCalledTimes(1);
+        expect(mockReconcilePayouts).toHaveBeenCalledTimes(1);
+        expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockDatabase, 'stripe_reconcile', true, null);
+        expect(error).toHaveBeenCalledWith('[stripe-reconcile] Refund reconciliation failed', 'db_unavailable');
+        // 例外の文（個人情報が混ざりうる）は、答えにもログにも出さない
+        expect(JSON.stringify(body)).not.toContain('buyer@example.com');
+        expect(JSON.stringify(error.mock.calls)).not.toContain('buyer@example.com');
+      } finally {
+        error.mockRestore();
+      }
+    });
+  });
+
   describe('見つかったことのメール（1回の実行につき1通）', () => {
     const unmatched = [
       { id: 'pi_1', amount: 89000, currency: 'jpy', created: 1_790_000_000 },
       { id: 'pi_2', amount: 1200, currency: 'jpy', created: 1_790_000_100 },
     ];
     const orderErrors = [{ sourceId: 'pi_9', reason: 'stripe_unavailable' }];
+    const refundErrors = [{ paymentIntentId: 'pi_8', message: 'db_unavailable' }];
+    const refundErrorsAsReported = [{ sourceId: 'pi_8', reason: 'db_unavailable' }];
     const payoutErrors = [{ sourceId: 'po_1', reason: 'db_unavailable' }];
 
     it('直近7日の注文の無い支払いがあれば、1通送り、監査にその支払いの ID を残す', async () => {
@@ -255,13 +317,17 @@ describe('POST /api/cron/stripe-reconcile', () => {
       }));
     });
 
-    it('失敗だけのときも、支払いの失敗と入金の失敗をまとめて1通送る', async () => {
+    it('失敗だけのときも、支払いの失敗・返金の失敗・入金の失敗をまとめて1通送る', async () => {
       mockReconcileOrders.mockResolvedValue(orderReport({ errors: orderErrors }));
+      mockReconcileRefunds.mockResolvedValue(refundReport({ errors: refundErrors }));
       mockReconcilePayouts.mockResolvedValue(payoutReport({ errors: payoutErrors }));
 
       await POST(authorizedRequest());
 
-      expect(mockReconcileFindingsMail).toHaveBeenCalledWith({ unmatched: [], errors: [...orderErrors, ...payoutErrors] });
+      expect(mockReconcileFindingsMail).toHaveBeenCalledWith({
+        unmatched: [],
+        errors: [...orderErrors, ...refundErrorsAsReported, ...payoutErrors],
+      });
       expect(mockSendOpsAlertMail).toHaveBeenCalledTimes(1);
     });
 

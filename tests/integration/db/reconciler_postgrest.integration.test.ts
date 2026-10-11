@@ -53,6 +53,23 @@ jest.mock('@/lib/ops/ops-checks', () => ({
     .fn()
     .mockResolvedValue({ backlogAlerted: false, deadNotified: 0, staleAlerted: [], failedChecks: [] }),
 }));
+// 返事待ちの返金の見回りは、候補の条件と関わらない。偽物にして Stripe も返金の行も触らない。
+// 取り込みの後の始末（メールの予定・店への知らせ）も、ここでは確かめないので何もしない
+jest.mock('@/lib/orders/refund/refund-sweep', () => ({
+  sweepAwaitingRefunds: jest
+    .fn()
+    .mockResolvedValue({ checked: 0, synced: 0, errored: 0, failures: 0, timeBudgetExhausted: false }),
+}));
+jest.mock('@/lib/orders/refund/refund-service', () => ({
+  createDefaultRefundServiceDeps: jest.fn().mockResolvedValue({}),
+  applyRefundSideEffects: jest.fn().mockResolvedValue(undefined),
+}));
+// 返金の照合に渡す Stripe の返金の一覧（composedDeps が決める）。Stripe は呼ばない
+const mockStripeRefundsOf = jest.fn();
+jest.mock('@/lib/orders/refund/refund-stripe', () => ({
+  listPaymentIntentRefunds: async (_stripe: unknown, paymentIntentId: string) => mockStripeRefundsOf(paymentIntentId),
+  readPaymentMethodType: async () => 'card',
+}));
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { POST } from '@/app/api/cron/expire-pending-orders/route';
@@ -62,12 +79,12 @@ import type {
   ReconcilerDeps,
   ReconcilerMailer,
 } from '@/lib/stripe/checkout-payment-reconciler';
+import type { StripeRefundSnapshot } from '@/lib/orders/refund/refund-stripe';
 import {
   createReconcilerRefundSync,
   createSupabaseReconcilerDatabase,
   listUnsentShopAlerts,
 } from '@/lib/stripe/checkout-payment-reconciler-deps';
-import type { OrderRefundDatabase, RefundListClient } from '@/lib/stripe/order-refund-sync';
 import { describeLocalDb, isLocalDatabase, type PgClient } from './helpers/local-db';
 import {
   PRICE,
@@ -161,23 +178,38 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
   /**
    * 本物の照合関数の依存。注文・在庫・返金の書き込みは実際の PostgREST（本物の RPC）に通す。
    * 偽物にするのは、Stripe の現在値（入金済み・返金済みの額）・Stripe の返金一覧・メール・監査ログだけ。
+   * 返金は、Stripe の画面からの返金（印の無い成功の返金）として取り込まれる。作った時刻が今なので、切り替えの後の返金になる。
    */
   function composedDeps(draft: DraftFixture, paymentIntentId: string, amountRefunded: number): ReconcilerDeps {
     const mailer: ReconcilerMailer = {
       sendUnplacedPaymentNotice: jest.fn().mockResolvedValue(true),
       sendShopAlert: jest.fn().mockResolvedValue(true),
     };
-    const stripeRefunds = {
-      refunds: {
-        list: () => ({
-          async *[Symbol.asyncIterator]() {
-            if (amountRefunded > 0) {
-              yield { status: 'succeeded', amount: amountRefunded, created: Math.floor(Date.now() / 1000) };
-            }
-          },
-        }),
-      },
-    } as unknown as RefundListClient;
+    // 同じ照合を2回流しても同じ返金の番号になるよう、返金の写しは1つだけ作る
+    const stripeRefund: StripeRefundSnapshot = {
+      stripeRefundId: `re_pgrst${uniqueSuffix()}`,
+      stripeStatus: 'succeeded',
+      pendingReason: null,
+      failureReason: null,
+      customerActionExpiresAt: null,
+      paymentMethodType: null,
+      referenceNumber: null,
+      referenceType: null,
+      amount: amountRefunded,
+      reason: null,
+      created: new Date().toISOString(),
+      paymentIntentId,
+      metadataRefundId: null,
+      metadataOrderId: null,
+    };
+    mockStripeRefundsOf.mockImplementation(() => (amountRefunded > 0 ? [stripeRefund] : []));
+    const refund = {
+      store: client,
+      stripe: {},
+      now: () => new Date(),
+      notifyShopOfRefundFailure: jest.fn().mockResolvedValue(true),
+      scheduleOrderEmailDelivery: jest.fn(),
+    } as unknown as Parameters<typeof createReconcilerRefundSync>[0];
 
     return {
       readPayment: async () => ({
@@ -196,7 +228,7 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
       database,
       mailer,
       audit: jest.fn().mockResolvedValue(undefined),
-      syncRefunds: createReconcilerRefundSync(client as unknown as OrderRefundDatabase, stripeRefunds),
+      syncRefunds: createReconcilerRefundSync(refund),
       now: () => new Date(),
     };
   }

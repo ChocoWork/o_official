@@ -1,377 +1,488 @@
+const mockLogAudit = jest.fn();
+jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
+
+// 結果を書いた後の始末（メールの予定・店への知らせ）の中身は refund-service.test.ts が確かめる。ここでは呼ばれ方だけを見る
+const mockApplySideEffects = jest.fn();
+jest.mock('@/lib/orders/refund/refund-service', () => ({
+  applyRefundSideEffects: (...args: unknown[]) => mockApplySideEffects(...args),
+}));
+
+// DB の関数の呼び出しの中身は refund-store.test.ts が、Stripe の読み方は refund-stripe.test.ts が確かめる
+const mockGetOrderRefund = jest.fn();
+const mockRecordResult = jest.fn();
+const mockRecordExternal = jest.fn();
+jest.mock('@/lib/orders/refund/refund-store', () => ({
+  getOrderRefund: (...args: unknown[]) => mockGetOrderRefund(...args),
+  recordOrderRefundResult: (...args: unknown[]) => mockRecordResult(...args),
+  recordExternalOrderRefund: (...args: unknown[]) => mockRecordExternal(...args),
+}));
+
+const mockListRefunds = jest.fn();
+const mockReadPaymentMethodType = jest.fn();
+jest.mock('@/lib/orders/refund/refund-stripe', () => ({
+  listPaymentIntentRefunds: (...args: unknown[]) => mockListRefunds(...args),
+  readPaymentMethodType: (...args: unknown[]) => mockReadPaymentMethodType(...args),
+}));
+
+import type { RefundServiceDeps } from '@/lib/orders/refund/refund-service';
+import type { ExternalRefundResultRow, RefundResultRow } from '@/lib/orders/refund/refund-store';
+import type { StripeRefundSnapshot } from '@/lib/orders/refund/refund-stripe';
 import {
-  calculateSucceededRefundTotal,
   OrderNotFoundForPaymentIntentError,
-  OrderRefundSyncNotConvergedError,
-  syncOrderRefunds,
-  type OrderRefundDatabase,
-  type RefundListClient,
+  RefundSyncNotConvergedError,
+  syncPaymentIntentRefunds,
 } from '@/lib/stripe/order-refund-sync';
 
-type TestOrder = {
-  id: string;
-  status: 'pending' | 'paid' | 'failed' | 'cancelled' | 'shipped';
-  total_amount: number;
-  refunded_amount: number;
-  payment_status_updated_at: string | null;
-  shipped_at: string | null;
-};
+const PAYMENT_INTENT_ID = 'pi_sync_1';
+const ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455556666';
+const OTHER_ORDER_ID = 'f1b2c3d4-1111-4222-8333-444455559999';
+const OWN_REFUND_ID = 'b1b2c3d4-1111-4222-8333-444455556666';
+const OTHER_REFUND_ID = 'c1b2c3d4-1111-4222-8333-444455556666';
 
-const BASE_ORDER: TestOrder = {
-  id: 'order-1',
-  status: 'paid',
-  total_amount: 10_000,
-  refunded_amount: 0,
-  payment_status_updated_at: null,
-  shipped_at: null,
-};
-
-describe('calculateSucceededRefundTotal', () => {
-  it('counts only succeeded refunds', () => {
-    expect(calculateSucceededRefundTotal([
-      { status: 'succeeded', amount: 3_000, created: 10 },
-      { status: 'requires_action', amount: 4_000, created: 20 },
-      { status: 'failed', amount: 5_000, created: 30 },
-    ])).toEqual({ amount: 3_000, latestSucceededAt: 10 });
-  });
-});
-
-function asyncRefunds(rows: Array<{ status: string | null; amount: number; created: number }>) {
+/** Stripe の返金の写し。既定は、この注文の返金の記録（OWN_REFUND_ID）の印が付いた成功の返金 */
+function snapshot(overrides: Partial<StripeRefundSnapshot> = {}): StripeRefundSnapshot {
   return {
-    async *[Symbol.asyncIterator]() {
-      for (const row of rows) yield row;
-    },
+    stripeRefundId: 're_own1',
+    stripeStatus: 'succeeded',
+    pendingReason: null,
+    failureReason: null,
+    customerActionExpiresAt: null,
+    paymentMethodType: null,
+    referenceNumber: null,
+    referenceType: null,
+    amount: 5000,
+    reason: 'requested_by_customer',
+    created: '2026-10-12T01:00:00.000Z',
+    paymentIntentId: PAYMENT_INTENT_ID,
+    metadataRefundId: OWN_REFUND_ID,
+    metadataOrderId: ORDER_ID,
+    ...overrides,
   };
 }
 
-function createDatabase({
-  orders = [BASE_ORDER],
-  rpcResults,
-}: {
-  orders?: TestOrder[];
-  rpcResults?: Array<{ data: unknown; error: { message?: string } | null }>;
-} = {}) {
-  const maybeSingle = jest.fn();
-  orders.forEach((order) => maybeSingle.mockResolvedValueOnce({ data: order, error: null }));
-  const selectEq = jest.fn().mockReturnValue({ maybeSingle });
-  const select = jest.fn().mockReturnValue({ eq: selectEq });
+/** 印の無い返金（Stripe の画面からの返金など） */
+function unmarked(overrides: Partial<StripeRefundSnapshot> = {}): StripeRefundSnapshot {
+  return snapshot({ metadataRefundId: null, metadataOrderId: null, reason: null, ...overrides });
+}
+
+function resultRow(overrides: Partial<RefundResultRow> = {}): RefundResultRow {
+  return {
+    refundId: OWN_REFUND_ID,
+    orderId: ORDER_ID,
+    status: 'succeeded',
+    newlyAccepted: true,
+    newlyFailed: false,
+    orderStatus: 'paid',
+    refundedAmount: 5000,
+    rereserveShortage: 0,
+    emailEnqueued: false,
+    exceptionId: null,
+    ...overrides,
+  };
+}
+
+function externalRow(overrides: Partial<ExternalRefundResultRow> = {}): ExternalRefundResultRow {
+  return {
+    ...resultRow({ refundId: 'd1b2c3d4-1111-4222-8333-444455556666' }),
+    created: true,
+    source: 'stripe_dashboard',
+    ...overrides,
+  };
+}
+
+function ownRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    refundId: OWN_REFUND_ID,
+    orderId: ORDER_ID,
+    source: 'admin',
+    status: 'pending',
+    stripeRefundId: null,
+    amount: 5000,
+    paymentIntentId: PAYMENT_INTENT_ID,
+    createdAt: '2026-10-12T00:59:00.000Z',
+    ...overrides,
+  };
+}
+
+type OrderRead = { data: { id: string; status: string } | null; error: { message: string; code?: string } | null };
+
+function setup(order: OrderRead = { data: { id: ORDER_ID, status: 'paid' }, error: null }) {
+  const maybeSingle = jest.fn().mockResolvedValue(order);
+  const eq = jest.fn().mockReturnValue({ maybeSingle });
+  const select = jest.fn().mockReturnValue({ eq });
   const from = jest.fn().mockReturnValue({ select });
-  const rpc = jest.fn();
-  const defaults = rpcResults ?? [{
-    data: [{ id: 'order-1', status: 'paid', refunded_amount: 0 }],
-    error: null,
-  }];
-  defaults.forEach((result) => rpc.mockResolvedValueOnce(result));
-
-  return {
-    database: { from, rpc } as unknown as OrderRefundDatabase,
-    maybeSingle,
-    rpc,
-  };
+  const deps = {
+    store: { from, rpc: jest.fn() },
+    stripe: { name: 'stripe' },
+    now: () => new Date('2026-10-12T02:00:00.000Z'),
+    notifyShopOfRefundFailure: jest.fn(),
+    scheduleOrderEmailDelivery: jest.fn(),
+  } as unknown as RefundServiceDeps;
+  return { deps, from, select, eq };
 }
 
-function createStripe(refunds: Array<{ status: string | null; amount: number; created: number }>) {
-  return {
-    refunds: {
-      list: jest.fn().mockImplementation(() => asyncRefunds(refunds)),
-    },
-  } as unknown as RefundListClient;
-}
-
-describe('syncOrderRefunds', () => {
-  it('does not count a requires_action refund and applies the projection through the RPC', async () => {
-    const { database, rpc } = createDatabase();
-    const stripe = createStripe([{ status: 'requires_action', amount: 10_000, created: 20 }]);
-
-    const result = await syncOrderRefunds({
-      database,
-      stripe,
-      paymentIntentId: 'pi_1',
-      actorId: 'admin-1',
-    });
-
-    expect(result).toEqual({ orderId: 'order-1', refundedAmount: 0, orderStatus: 'paid' });
-    expect(rpc).toHaveBeenCalledWith('apply_order_refund_projection', expect.objectContaining({
-      _actor_id: 'admin-1',
-      _expected_payment_status_updated_at: null,
-      _expected_refunded_amount: 0,
-      _expected_status: 'paid',
-      _order_id: 'order-1',
-      _refunded_amount: 0,
-      _refunded_at: null,
-      _payment_status_updated_at: expect.any(String),
-    }));
+describe('syncPaymentIntentRefunds', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+    mockLogAudit.mockResolvedValue(undefined);
+    mockApplySideEffects.mockResolvedValue(undefined);
+    mockListRefunds.mockResolvedValue([]);
+    mockReadPaymentMethodType.mockResolvedValue('card');
   });
 
-  it('cancels an order only after succeeded refunds reach the total', async () => {
-    const { database, rpc } = createDatabase({
-      rpcResults: [{
-        data: [{ id: 'order-1', status: 'cancelled', refunded_amount: 10_000 }],
-        error: null,
-      }],
-    });
-    const stripe = createStripe([
-      { status: 'succeeded', amount: 4_000, created: 20 },
-      { status: 'succeeded', amount: 6_000, created: 30 },
-    ]);
+  it('OrderNotFoundForPaymentIntentError の文は今のまま', () => {
+    const error = new OrderNotFoundForPaymentIntentError();
 
-    const result = await syncOrderRefunds({ database, stripe, paymentIntentId: 'pi_1' });
-
-    expect(result).toEqual({ orderId: 'order-1', refundedAmount: 10_000, orderStatus: 'cancelled' });
-    expect(rpc).toHaveBeenCalledWith('apply_order_refund_projection', expect.objectContaining({
-      _expected_payment_status_updated_at: null,
-      _expected_refunded_amount: 0,
-      _expected_status: 'paid',
-      _refunded_amount: 10_000,
-      _refunded_at: new Date(30_000).toISOString(),
-    }));
+    expect(error.message).toBe('Order not found for Stripe PaymentIntent');
+    expect(error.name).toBe('OrderNotFoundForPaymentIntentError');
   });
 
-  it('uses Stripe auto-pagination so 101 succeeded refunds are all included', async () => {
-    const refunds = Array.from({ length: 101 }, (_, index) => ({
-      status: 'succeeded',
-      amount: 100,
-      created: index + 1,
-    }));
-    const order = { ...BASE_ORDER, total_amount: 10_100 };
-    const { database, rpc } = createDatabase({
-      orders: [order],
-      rpcResults: [{
-        data: [{ id: 'order-1', status: 'cancelled', refunded_amount: 10_100 }],
-        error: null,
-      }],
-    });
-    const stripe = createStripe(refunds);
+  it('支払いの番号を持つ注文が無ければ OrderNotFoundForPaymentIntentError を投げ、Stripe を読まない', async () => {
+    const { deps, from, select, eq } = setup({ data: null, error: null });
 
-    await syncOrderRefunds({ database, stripe, paymentIntentId: 'pi_many' });
+    await expect(syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID)).rejects.toBeInstanceOf(OrderNotFoundForPaymentIntentError);
 
-    expect(rpc).toHaveBeenCalledWith('apply_order_refund_projection', expect.objectContaining({
-      _refunded_amount: 10_100,
-    }));
+    expect(from).toHaveBeenCalledWith('orders');
+    expect(select).toHaveBeenCalledWith('id, status');
+    expect(eq).toHaveBeenCalledWith('payment_intent_id', PAYMENT_INTENT_ID);
+    expect(mockListRefunds).not.toHaveBeenCalled();
   });
 
-  it('leaves a legacy unpaid cancellation outside the refund projection path', async () => {
-    const legacyCancelled = {
-      ...BASE_ORDER,
-      status: 'cancelled' as const,
-      refunded_amount: 0,
-    };
-    const { database, rpc } = createDatabase({ orders: [legacyCancelled] });
-    const stripe = createStripe([{ status: 'succeeded', amount: 1_000, created: 20 }]);
+  it('注文の読み取りが失敗したら、DB の誤りを cause に残した Error を投げる（呼ぶ側が一時的な失敗かを見分ける）', async () => {
+    const dbError = { message: 'permission denied', code: '42501' };
+    const { deps } = setup({ data: null, error: dbError });
 
-    const result = await syncOrderRefunds({
-      database,
-      stripe,
-      paymentIntentId: 'pi_legacy_cancelled',
-    });
+    const error = await syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID).catch((caught: unknown) => caught);
 
-    expect(result).toEqual({
-      orderId: 'order-1',
-      refundedAmount: 0,
-      orderStatus: 'cancelled',
-    });
-    expect(stripe.refunds.list).not.toHaveBeenCalled();
-    expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it('repairs a stale successful projection when post-write Stripe verification changed', async () => {
-    const projectionTimestamp = '2026-09-22T00:00:00.000Z';
-    const { database, rpc } = createDatabase({
-      orders: [
-        BASE_ORDER,
-        {
-          ...BASE_ORDER,
-          status: 'cancelled',
-          refunded_amount: 10_000,
-          payment_status_updated_at: projectionTimestamp,
-        },
-      ],
-      rpcResults: [
-        { data: [{ id: 'order-1', status: 'cancelled', refunded_amount: 10_000 }], error: null },
-        { data: [{ id: 'order-1', status: 'paid', refunded_amount: 0 }], error: null },
-      ],
-    });
-    const list = jest.fn()
-      .mockImplementationOnce(() => asyncRefunds([
-        { status: 'succeeded', amount: 10_000, created: 30 },
-      ]))
-      .mockImplementationOnce(() => asyncRefunds([]))
-      .mockImplementationOnce(() => asyncRefunds([]))
-      .mockImplementationOnce(() => asyncRefunds([]));
-    const stripe = { refunds: { list } } as unknown as RefundListClient;
-
-    const result = await syncOrderRefunds({
-      database,
-      stripe,
-      paymentIntentId: 'pi_stale_snapshot',
-    });
-
-    expect(result).toEqual({ orderId: 'order-1', refundedAmount: 0, orderStatus: 'paid' });
-    expect(list).toHaveBeenCalledTimes(4);
-    expect(rpc).toHaveBeenCalledTimes(2);
-    expect(rpc).toHaveBeenLastCalledWith('apply_order_refund_projection', expect.objectContaining({
-      _expected_payment_status_updated_at: projectionTimestamp,
-      _expected_refunded_amount: 10_000,
-      _expected_status: 'cancelled',
-      _refunded_amount: 0,
-    }));
-  });
-  it('re-reads Stripe and the order after a CAS conflict, then succeeds', async () => {
-    const { database, maybeSingle, rpc } = createDatabase({
-      orders: [BASE_ORDER, { ...BASE_ORDER, refunded_amount: 4_000 }],
-      rpcResults: [
-        { data: [], error: null },
-        { data: [{ id: 'order-1', status: 'cancelled', refunded_amount: 10_000 }], error: null },
-      ],
-    });
-    const stripe = createStripe([{ status: 'succeeded', amount: 10_000, created: 30 }]);
-
-    const result = await syncOrderRefunds({ database, stripe, paymentIntentId: 'pi_retry' });
-
-    expect(result.orderStatus).toBe('cancelled');
-    expect(maybeSingle).toHaveBeenCalledTimes(2);
-    expect(stripe.refunds.list).toHaveBeenCalledTimes(3);
-    expect(rpc).toHaveBeenCalledTimes(2);
-    expect(rpc).toHaveBeenLastCalledWith('apply_order_refund_projection', expect.objectContaining({
-      _expected_refunded_amount: 4_000,
-      _expected_status: 'paid',
-    }));
-  });
-
-  it('throws after three CAS conflicts so the webhook can return 5xx', async () => {
-    const { database, rpc } = createDatabase({
-      orders: [BASE_ORDER, BASE_ORDER, BASE_ORDER],
-      rpcResults: [
-        { data: [], error: null },
-        { data: [], error: null },
-        { data: [], error: null },
-      ],
-    });
-    const stripe = createStripe([{ status: 'succeeded', amount: 10_000, created: 30 }]);
-
-    await expect(syncOrderRefunds({
-      database,
-      stripe,
-      paymentIntentId: 'pi_conflict',
-    })).rejects.toThrow('concurrent updates');
-
-    expect(stripe.refunds.list).toHaveBeenCalledTimes(3);
-    expect(rpc).toHaveBeenCalledTimes(3);
-  });
-
-  it('throws a typed error, with the same message as before, when three attempts all lose the race', async () => {
-    const { database } = createDatabase({
-      orders: [BASE_ORDER, BASE_ORDER, BASE_ORDER],
-      rpcResults: [
-        { data: [], error: null },
-        { data: [], error: null },
-        { data: [], error: null },
-      ],
-    });
-    const stripe = createStripe([{ status: 'succeeded', amount: 10_000, created: 30 }]);
-
-    const error = await syncOrderRefunds({
-      database,
-      stripe,
-      paymentIntentId: 'pi_conflict',
-    }).catch((caught: unknown) => caught);
-
-    // The cron reconcile job and the admin refund route only see an Error with this message, as before.
-    expect(error).toBeInstanceOf(OrderRefundSyncNotConvergedError);
     expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe(
-      'Failed to update order refund state after concurrent updates or changing Stripe refund state',
+    expect(error).not.toBeInstanceOf(OrderNotFoundForPaymentIntentError);
+    expect((error as Error).message).toBe('Failed to read order refund state: permission denied');
+    expect((error as Error).cause).toBe(dbError);
+    expect(mockListRefunds).not.toHaveBeenCalled();
+  });
+
+  it.each(['payment_in_progress', 'pending', 'failed', 'abandoned'] as const)(
+    '入金が決まる前の注文（%s）は skipped_unpaid。Stripe を読まず、何も書かない（R-06）',
+    async (status) => {
+      const { deps } = setup({ data: { id: ORDER_ID, status }, error: null });
+
+      await expect(syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID)).resolves.toEqual({
+        kind: 'skipped_unpaid',
+        orderId: ORDER_ID,
+        orderStatus: status,
+      });
+
+      expect(mockListRefunds).not.toHaveBeenCalled();
+      expect(mockRecordResult).not.toHaveBeenCalled();
+      expect(mockRecordExternal).not.toHaveBeenCalled();
+      expect(mockApplySideEffects).not.toHaveBeenCalled();
+    },
+  );
+
+  it('取り消した注文（未入金で取り消した注文を含む）の返金は飛ばさずに記録する（設計書 6-1。前は飛ばしていた）', async () => {
+    const { deps } = setup({ data: { id: ORDER_ID, status: 'cancelled' }, error: null });
+    const row = externalRow({ orderStatus: 'cancelled', refundedAmount: 5000 });
+    mockListRefunds.mockResolvedValue([unmarked({ stripeRefundId: 're_after_cancel' })]);
+    mockRecordExternal.mockResolvedValue(row);
+
+    await expect(syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID)).resolves.toEqual({
+      kind: 'synced',
+      orderId: ORDER_ID,
+      orderStatus: 'cancelled',
+      results: [row],
+    });
+
+    expect(mockRecordExternal).toHaveBeenCalledWith(
+      deps.store,
+      expect.objectContaining({ orderId: ORDER_ID, stripeRefundId: 're_after_cancel' }),
+    );
+    expect(mockApplySideEffects).toHaveBeenCalledWith(deps, row);
+  });
+
+  it('印 refund_id がこの注文の記録に当たる返金は、その記録に結果を書き、後の始末を呼ぶ', async () => {
+    const { deps } = setup();
+    const refund = snapshot();
+    const row = resultRow();
+    mockListRefunds.mockResolvedValue([refund]);
+    mockGetOrderRefund.mockResolvedValue(ownRecord());
+    mockRecordResult.mockResolvedValue(row);
+
+    await expect(syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID)).resolves.toEqual({
+      kind: 'synced',
+      orderId: ORDER_ID,
+      orderStatus: 'paid',
+      results: [row],
+    });
+
+    expect(mockListRefunds).toHaveBeenCalledWith(deps.stripe, PAYMENT_INTENT_ID);
+    expect(mockGetOrderRefund).toHaveBeenCalledWith(deps.store, OWN_REFUND_ID);
+    expect(mockRecordResult).toHaveBeenCalledWith(deps.store, OWN_REFUND_ID, refund);
+    expect(mockRecordExternal).not.toHaveBeenCalled();
+    // 返事を書けた記録（保留）には、頼んだ時に読んだ支払いの種類が入っている。読み直さない
+    expect(mockReadPaymentMethodType).not.toHaveBeenCalled();
+    expect(mockApplySideEffects).toHaveBeenCalledTimes(1);
+    expect(mockApplySideEffects).toHaveBeenCalledWith(deps, row);
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  it.each(['awaiting_response', 'error'] as const)(
+    '返事を書けていない記録（%s）に結果を書く時は、一覧の写しに支払いの種類が無ければ、Stripe から1回だけ読んで渡す',
+    async (status) => {
+      const { deps } = setup();
+      const refund = snapshot();
+      mockListRefunds.mockResolvedValue([refund]);
+      mockGetOrderRefund.mockResolvedValue(ownRecord({ status }));
+      mockRecordResult.mockResolvedValue(resultRow());
+      mockReadPaymentMethodType.mockResolvedValue('konbini');
+
+      await syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID);
+
+      expect(mockReadPaymentMethodType).toHaveBeenCalledTimes(1);
+      expect(mockRecordResult).toHaveBeenCalledWith(deps.store, OWN_REFUND_ID, { ...refund, paymentMethodType: 'konbini' });
+    },
+  );
+
+  it('返事を書けていない記録でも、一覧の写しが支払いの種類を持っていれば、読み直さずにその種類を渡す', async () => {
+    const { deps } = setup();
+    const refund = snapshot({ paymentMethodType: 'paypay' });
+    mockListRefunds.mockResolvedValue([refund]);
+    mockGetOrderRefund.mockResolvedValue(ownRecord({ status: 'awaiting_response' }));
+    mockRecordResult.mockResolvedValue(resultRow());
+
+    await syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID);
+
+    expect(mockReadPaymentMethodType).not.toHaveBeenCalled();
+    expect(mockRecordResult).toHaveBeenCalledWith(deps.store, OWN_REFUND_ID, refund);
+  });
+
+  it('印の無い返金は外からの返金として、古い順に記録する。支払いの種類は Stripe から1回だけ読み、注文の状態は最後の結果の物', async () => {
+    const { deps } = setup();
+    const older = unmarked({ stripeRefundId: 're_ext_old', amount: 3000, created: '2026-10-12T01:00:00.000Z' });
+    const newer = unmarked({
+      stripeRefundId: 're_ext_new',
+      amount: 2000,
+      created: '2026-10-12T01:30:00.000Z',
+      stripeStatus: 'pending',
+      pendingReason: 'processing',
+    });
+    // Stripe は新しい順に返す
+    mockListRefunds.mockResolvedValue([newer, older]);
+    const firstRow = externalRow({ orderStatus: 'paid', refundedAmount: 3000 });
+    const secondRow = externalRow({ refundId: 'e1b2c3d4-1111-4222-8333-444455556666', orderStatus: 'cancelled', refundedAmount: 5000 });
+    mockRecordExternal.mockResolvedValueOnce(firstRow).mockResolvedValueOnce(secondRow);
+
+    const result = await syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID);
+
+    expect(mockGetOrderRefund).not.toHaveBeenCalled();
+    expect(mockReadPaymentMethodType).toHaveBeenCalledTimes(1);
+    expect(mockReadPaymentMethodType).toHaveBeenCalledWith(deps.stripe, PAYMENT_INTENT_ID);
+    expect(mockRecordExternal).toHaveBeenCalledTimes(2);
+    expect(mockRecordExternal).toHaveBeenNthCalledWith(1, deps.store, {
+      orderId: ORDER_ID,
+      amount: 3000,
+      stripeReason: null,
+      stripeCreatedAt: '2026-10-12T01:00:00.000Z',
+      stripeRefundId: 're_ext_old',
+      stripeStatus: 'succeeded',
+      pendingReason: null,
+      failureReason: null,
+      customerActionExpiresAt: null,
+      paymentMethodType: 'card',
+      referenceNumber: null,
+      referenceType: null,
+    });
+    expect(mockRecordExternal).toHaveBeenNthCalledWith(
+      2,
+      deps.store,
+      expect.objectContaining({
+        amount: 2000,
+        stripeRefundId: 're_ext_new',
+        stripeStatus: 'pending',
+        pendingReason: 'processing',
+        paymentMethodType: 'card',
+      }),
+    );
+    expect(result).toEqual({ kind: 'synced', orderId: ORDER_ID, orderStatus: 'cancelled', results: [firstRow, secondRow] });
+    expect(mockApplySideEffects).toHaveBeenNthCalledWith(1, deps, firstRow);
+    expect(mockApplySideEffects).toHaveBeenNthCalledWith(2, deps, secondRow);
+  });
+
+  it('外からの返金でも、一覧の写しが支払いの種類を持っていれば、読み直さずにその種類を渡す', async () => {
+    const { deps } = setup();
+    mockListRefunds.mockResolvedValue([unmarked({ stripeRefundId: 're_ext_paypay', paymentMethodType: 'paypay' })]);
+    mockRecordExternal.mockResolvedValue(externalRow());
+
+    await syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID);
+
+    expect(mockReadPaymentMethodType).not.toHaveBeenCalled();
+    expect(mockRecordExternal).toHaveBeenCalledWith(deps.store, expect.objectContaining({ paymentMethodType: 'paypay' }));
+  });
+
+  it('他の注文の印の返金は、外からの返金として記録し、監査に残す（Stripe の返金の番号と印だけ）', async () => {
+    const { deps } = setup();
+    mockListRefunds.mockResolvedValue([snapshot({ stripeRefundId: 're_other', metadataRefundId: OTHER_REFUND_ID })]);
+    mockGetOrderRefund.mockResolvedValue(ownRecord({ refundId: OTHER_REFUND_ID, orderId: OTHER_ORDER_ID }));
+    mockRecordExternal.mockResolvedValue(externalRow());
+
+    await syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID);
+
+    expect(mockGetOrderRefund).toHaveBeenCalledWith(deps.store, OTHER_REFUND_ID);
+    expect(mockRecordResult).not.toHaveBeenCalled();
+    expect(mockRecordExternal).toHaveBeenCalledWith(deps.store, expect.objectContaining({ orderId: ORDER_ID, stripeRefundId: 're_other' }));
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'stripe.refund.marker_unmatched',
+        resource: 'orders',
+        resource_id: ORDER_ID,
+        outcome: 'conflict',
+        metadata: { stripe_refund_id: 're_other', marker_refund_id: OTHER_REFUND_ID },
+      }),
     );
   });
 
-  it('does not report a database error as a lost race', async () => {
-    const { database } = createDatabase({
-      rpcResults: [{ data: null, error: { message: 'permission denied' } }],
+  it.each([
+    ['記録が無い印', OTHER_REFUND_ID, 1],
+    ['uuid の形でない印', 'not-a-uuid', 0],
+  ])('%sの返金も外からの返金として記録し、監査に残す（uuid の形でない印では記録を探さない）', async (_name, marker, lookups) => {
+    const { deps } = setup();
+    mockListRefunds.mockResolvedValue([snapshot({ stripeRefundId: 're_marked', metadataRefundId: marker })]);
+    mockGetOrderRefund.mockResolvedValue(null);
+    mockRecordExternal.mockResolvedValue(externalRow());
+
+    await syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID);
+
+    expect(mockGetOrderRefund).toHaveBeenCalledTimes(lookups);
+    expect(mockRecordResult).not.toHaveBeenCalled();
+    expect(mockRecordExternal).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'stripe.refund.marker_unmatched',
+        metadata: { stripe_refund_id: 're_marked', marker_refund_id: marker },
+      }),
+    );
+  });
+
+  it('印の合わない返金でも、すでに記録してあった返金（created が false）を合わせ直す時は、監査を残さない（同じ支払いの同期は何度も走る）', async () => {
+    const { deps } = setup();
+    mockListRefunds.mockResolvedValue([snapshot({ stripeRefundId: 're_again', metadataRefundId: OTHER_REFUND_ID })]);
+    mockGetOrderRefund.mockResolvedValue(null);
+    mockRecordExternal.mockResolvedValue(externalRow({ created: false }));
+
+    await syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID);
+
+    expect(mockRecordExternal).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  it('返金が1件も無ければ、何も書かず、注文の状態をそのまま返す', async () => {
+    const { deps } = setup({ data: { id: ORDER_ID, status: 'shipped' }, error: null });
+
+    await expect(syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID)).resolves.toEqual({
+      kind: 'synced',
+      orderId: ORDER_ID,
+      orderStatus: 'shipped',
+      results: [],
     });
 
-    const error = await syncOrderRefunds({
-      database,
-      stripe: createStripe([]),
-      paymentIntentId: 'pi_error',
-    }).catch((caught: unknown) => caught);
-
-    expect(error).not.toBeInstanceOf(OrderRefundSyncNotConvergedError);
+    expect(mockRecordResult).not.toHaveBeenCalled();
+    expect(mockRecordExternal).not.toHaveBeenCalled();
+    expect(mockApplySideEffects).not.toHaveBeenCalled();
   });
 
-  it('surfaces an RPC error without retrying it as a conflict', async () => {
-    const { database, rpc } = createDatabase({
-      rpcResults: [{ data: null, error: { message: 'permission denied' } }],
+  it('切り替えより前の返金（Review Focus 5）: 古さは DB の関数が決める。作った時刻をそのまま渡し、写し legacy の答えをそのまま返す', async () => {
+    const { deps } = setup();
+    mockListRefunds.mockResolvedValue([unmarked({ stripeRefundId: 're_old_test', created: '2026-10-01T00:00:00.000Z' })]);
+    const legacy = externalRow({ source: 'legacy', newlyAccepted: false, emailEnqueued: false });
+    mockRecordExternal.mockResolvedValue(legacy);
+
+    const result = await syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID);
+
+    expect(mockRecordExternal).toHaveBeenCalledWith(deps.store, expect.objectContaining({ stripeCreatedAt: '2026-10-01T00:00:00.000Z' }));
+    expect(result).toEqual({ kind: 'synced', orderId: ORDER_ID, orderStatus: 'paid', results: [legacy] });
+    // 写しは在庫もメールも動かさない。後の始末には、動かさなかった答えがそのまま渡る
+    expect(mockApplySideEffects).toHaveBeenCalledWith(deps, legacy);
+  });
+
+  it('一部を発送した注文の外からの全額の返金（Review Focus 4）: キャンセルとメールの予定の答えを、後の始末にそのまま渡す', async () => {
+    const { deps } = setup({ data: { id: ORDER_ID, status: 'paid' }, error: null });
+    mockListRefunds.mockResolvedValue([unmarked({ stripeRefundId: 're_full', amount: 10_000 })]);
+    // DB の関数が、未発送の商品を全部この返金の発送前の行に入れて在庫に戻し、注文をキャンセルにした答え
+    const cancelled = externalRow({
+      created: true,
+      source: 'stripe_dashboard',
+      status: 'succeeded',
+      newlyAccepted: true,
+      orderStatus: 'cancelled',
+      refundedAmount: 10_000,
+      emailEnqueued: true,
     });
-    const stripe = createStripe([]);
+    mockRecordExternal.mockResolvedValue(cancelled);
 
-    await expect(syncOrderRefunds({
-      database,
-      stripe,
-      paymentIntentId: 'pi_error',
-    })).rejects.toThrow('permission denied');
+    const result = await syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID);
 
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ kind: 'synced', orderId: ORDER_ID, orderStatus: 'cancelled', results: [cancelled] });
+    expect(mockApplySideEffects).toHaveBeenCalledTimes(1);
+    expect(mockApplySideEffects).toHaveBeenCalledWith(deps, cancelled);
   });
 
-  it('throws a typed error, with the same message as before, when no order has the PaymentIntent', async () => {
-    const { database, maybeSingle, rpc } = createDatabase({ orders: [] });
-    maybeSingle.mockResolvedValue({ data: null, error: null });
-    const stripe = createStripe([{ status: 'succeeded', amount: 1_000, created: 20 }]);
+  it('書いた後に返金の状態が変わっていたら、読み直した一覧で書き直す', async () => {
+    const { deps } = setup();
+    const pending = snapshot({ stripeStatus: 'pending', pendingReason: 'processing' });
+    const succeeded = snapshot();
+    mockListRefunds
+      .mockResolvedValueOnce([pending])
+      .mockResolvedValueOnce([succeeded])
+      .mockResolvedValueOnce([succeeded]);
+    mockGetOrderRefund.mockResolvedValue(ownRecord());
+    mockRecordResult
+      .mockResolvedValueOnce(resultRow({ status: 'pending' }))
+      .mockResolvedValueOnce(resultRow({ status: 'succeeded' }));
 
-    const error = await syncOrderRefunds({
-      database,
-      stripe,
-      paymentIntentId: 'pi_without_order',
-    }).catch((caught: unknown) => caught);
+    const result = await syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID);
 
-    // The cron reconcile job and the admin refund route only see an Error with this message, as before.
-    expect(error).toBeInstanceOf(OrderNotFoundForPaymentIntentError);
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe('Order not found for Stripe PaymentIntent');
-    expect(stripe.refunds.list).not.toHaveBeenCalled();
-    expect(rpc).not.toHaveBeenCalled();
+    // 最初の一覧・書いた後の読み直し・書き直した後の読み直し
+    expect(mockListRefunds).toHaveBeenCalledTimes(3);
+    expect(mockRecordResult).toHaveBeenCalledTimes(2);
+    expect(mockRecordResult).toHaveBeenNthCalledWith(1, deps.store, OWN_REFUND_ID, pending);
+    expect(mockRecordResult).toHaveBeenNthCalledWith(2, deps.store, OWN_REFUND_ID, succeeded);
+    expect(result).toMatchObject({ kind: 'synced', results: [expect.objectContaining({ status: 'succeeded' })] });
+    expect(mockApplySideEffects).toHaveBeenCalledTimes(2);
   });
 
-  it('does not mistake a failed order read for a missing order', async () => {
-    const { database, maybeSingle } = createDatabase({ orders: [] });
-    maybeSingle.mockResolvedValue({ data: null, error: { message: 'connection lost' } });
-    const stripe = createStripe([]);
+  it('3回書いても返金が変わり続けたら RefundSyncNotConvergedError。書くのは3回まで', async () => {
+    const { deps } = setup();
+    let reads = 0;
+    mockListRefunds.mockImplementation(async () => {
+      reads += 1;
+      return [unmarked({ stripeRefundId: `re_loop${reads}` })];
+    });
+    mockRecordExternal.mockResolvedValue(externalRow());
 
-    const error = await syncOrderRefunds({
-      database,
-      stripe,
-      paymentIntentId: 'pi_read_failed',
-    }).catch((caught: unknown) => caught);
+    await expect(syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID)).rejects.toBeInstanceOf(RefundSyncNotConvergedError);
 
-    expect(error).not.toBeInstanceOf(OrderNotFoundForPaymentIntentError);
-    expect((error as Error).message).toBe('Failed to read order refund state: connection lost');
+    // 最初の一覧 + 書くたびの読み直し3回
+    expect(mockListRefunds).toHaveBeenCalledTimes(4);
+    expect(mockRecordExternal).toHaveBeenCalledTimes(3);
   });
 
-  it('keeps the database error of a failed order read as the cause, so a caller can tell a transient failure', async () => {
-    const dbError = { message: 'connection lost', code: '08006' };
-    const { database, maybeSingle } = createDatabase({ orders: [] });
-    maybeSingle.mockResolvedValue({ data: null, error: dbError });
+  it('結果を書く DB の呼び出しが失敗したら、そのまま投げる（知らせの再試行に任せる）。後の始末は呼ばない', async () => {
+    const { deps } = setup();
+    const failure = new Error('refund store failed: record_order_refund_result');
+    mockListRefunds.mockResolvedValue([snapshot()]);
+    mockGetOrderRefund.mockResolvedValue(ownRecord());
+    mockRecordResult.mockRejectedValue(failure);
 
-    const error = await syncOrderRefunds({
-      database,
-      stripe: createStripe([]),
-      paymentIntentId: 'pi_read_failed',
-    }).catch((caught: unknown) => caught);
+    await expect(syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID)).rejects.toBe(failure);
 
-    expect((error as Error).message).toBe('Failed to read order refund state: connection lost');
-    expect((error as Error).cause).toBe(dbError);
+    expect(mockApplySideEffects).not.toHaveBeenCalled();
   });
 
-  it('keeps the database error of a failed projection RPC as the cause', async () => {
-    const dbError = { message: 'could not serialize access', code: '40001' };
-    const { database } = createDatabase({ rpcResults: [{ data: null, error: dbError }] });
+  it('Stripe の読み取りの失敗はそのまま投げる（照合が一時的な失敗かを見分ける）', async () => {
+    const { deps } = setup();
+    const stripeError = { type: 'StripeConnectionError' };
+    mockListRefunds.mockRejectedValue(stripeError);
 
-    const error = await syncOrderRefunds({
-      database,
-      stripe: createStripe([]),
-      paymentIntentId: 'pi_rpc_failed',
-    }).catch((caught: unknown) => caught);
-
-    expect((error as Error).message).toBe('Failed to update order refund state: could not serialize access');
-    expect((error as Error).cause).toBe(dbError);
+    await expect(syncPaymentIntentRefunds(deps, PAYMENT_INTENT_ID)).rejects.toBe(stripeError);
   });
 });

@@ -22,20 +22,14 @@ jest.mock('@supabase/supabase-js', () => ({
 }));
 
 const mockConstructEvent = jest.fn();
-const mockRefundList = jest.fn();
 const mockOrdersUpdate = jest.fn();
 const mockSyncPaymentIntentAccounting = jest.fn().mockResolvedValue({ disposition: 'inserted' });
 const mockSyncRefundAccounting = jest.fn().mockResolvedValue({ disposition: 'inserted' });
 const mockSyncPayoutAccounting = jest.fn().mockResolvedValue({ reconciliationStatus: 'matched' });
-let orderLookupData: Record<string, unknown> | null = null;
-let orderLookupError: { message: string } | null = null;
 jest.mock('@/lib/stripe/server', () => ({
   getStripeServerClient: jest.fn().mockReturnValue({
     webhooks: {
       constructEvent: mockConstructEvent,
-    },
-    refunds: {
-      list: mockRefundList,
     },
   }),
 }));
@@ -70,6 +64,22 @@ jest.mock('@/lib/stripe/refund-failure-exception', () => ({
   raiseRefundFailureWithoutOrder: (...args: unknown[]) => mockRaiseRefundFailure(...args),
 }));
 
+// 返金の取り込み。中身は order-refund-sync.test.ts が確かめる。ここでは、知らせから支払いの番号を取り出して渡すことと、
+// 取り込みの答え（注文が無い・未入金の注文）に応じた監査と完了を確かめる。
+const mockSyncPaymentIntentRefunds = jest.fn();
+jest.mock('@/lib/stripe/order-refund-sync', () => {
+  class OrderNotFoundForPaymentIntentError extends Error {}
+  return {
+    OrderNotFoundForPaymentIntentError,
+    syncPaymentIntentRefunds: (...args: unknown[]) => mockSyncPaymentIntentRefunds(...args),
+  };
+});
+const mockRefundDeps = { name: 'refund-service-deps' };
+jest.mock('@/lib/orders/refund/refund-service', () => ({
+  createDefaultRefundServiceDeps: async () => mockRefundDeps,
+}));
+
+import { OrderNotFoundForPaymentIntentError } from '@/lib/stripe/order-refund-sync';
 import { processStripeWebhookEvent } from '@/lib/stripe/webhook-processor';
 
 async function processForTest(req: NextRequest): Promise<{ status: number; body: Record<string, unknown> }> {
@@ -96,135 +106,142 @@ describe('Stripe webhook business processor', () => {
     jest.clearAllMocks();
     mockReconcile.mockResolvedValue({ kind: 'ok', action: { type: 'none' }, orderId: null, orderStatus: null });
     mockRaiseRefundFailure.mockResolvedValue({ exceptionId: 'exception-1', isNew: true });
-    orderLookupData = null;
-    orderLookupError = null;
-    mockRefundList.mockReturnValue({
-      async *[Symbol.asyncIterator]() {},
-    });
+    mockSyncPaymentIntentRefunds.mockReset();
+    mockSyncPaymentIntentRefunds.mockResolvedValue({ kind: 'synced', orderId: 'order-1', orderStatus: 'paid', results: [] });
     mockRpc.mockResolvedValue({ data: [{ released: true, order_id: 'order-1' }], error: null });
-    mockFrom.mockImplementation((table: string) => {
-      if (table === 'orders') {
-        return {
-          update: mockOrdersUpdate,
-          select: jest.fn().mockReturnValue({
-            eq: jest.fn().mockReturnValue({
-              maybeSingle: jest.fn().mockImplementation(() =>
-                Promise.resolve({ data: orderLookupData, error: orderLookupError })
-              ),
-            }),
-          }),
-        };
-      }
-
-      return {};
-    });
+    mockFrom.mockReturnValue({ update: mockOrdersUpdate });
   });
 
-  it('refund.updatedで成功済み返金累計をCAS RPCへ同期する', async () => {
-    orderLookupData = {
-      id: 'order-1',
-      status: 'paid',
-      total_amount: 10_000,
-      refunded_amount: 0,
-      payment_status_updated_at: null,
-      shipped_at: null,
-    };
-    mockRpc.mockImplementation((functionName: string) => Promise.resolve(
-      functionName === 'apply_order_refund_projection'
-        ? { data: [{ id: 'order-1', status: 'paid', refunded_amount: 2_500 }], error: null }
-        : { data: [{ released: true, order_id: 'order-1' }], error: null },
-    ));
-    mockRefundList.mockReturnValue({
-      async *[Symbol.asyncIterator]() {
-        yield { status: 'succeeded', amount: 2_500, created: 1_786_000_000 };
-      },
-    });
+  it('refund.updated は、その支払いの返金を読み直して返金の記録に合わせ、会計も同期する', async () => {
     const event = {
       id: 'evt_refund',
       type: 'refund.updated',
       data: { object: { id: 're_1', payment_intent: 'pi_refund' } },
     };
-    mockConstructEvent.mockReturnValue(event);
 
     const response = await processForTest(makeRequest(event));
 
-    expect((response as { status: number }).status).toBe(200);
-    expect(mockRefundList).toHaveBeenCalledWith({ payment_intent: 'pi_refund', limit: 100 });
-    expect(mockRpc).toHaveBeenCalledWith('apply_order_refund_projection', expect.objectContaining({
-      _actor_id: null,
-      _expected_payment_status_updated_at: null,
-      _expected_refunded_amount: 0,
-      _expected_status: 'paid',
-      _refunded_amount: 2_500,
-    }));
-    expect(mockOrdersUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ refunded_amount: 2_500 }));
+    expect(response.status).toBe(200);
+    // 知らせの中身（返金の状態・額）は使わない。支払いの番号だけを渡し、返金の読み直しは取り込みの中で行う
+    expect(mockSyncPaymentIntentRefunds).toHaveBeenCalledTimes(1);
+    expect(mockSyncPaymentIntentRefunds).toHaveBeenCalledWith(mockRefundDeps, 'pi_refund');
     expect(mockSyncRefundAccounting).toHaveBeenCalledWith(expect.objectContaining({ refundId: 're_1' }));
+    expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'checkout.webhook.refund_without_order' }));
+    expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'checkout.webhook.refund_without_payment_intent' }));
+    expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'checkout.webhook.refund_on_unpaid_order' }));
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'checkout.webhook.event_processing',
+      outcome: 'success',
+    }));
   });
 
-  it('refund.failedでStripe現在値から返金投影と会計を再同期する', async () => {
-    orderLookupData = {
-      id: 'order-1',
-      status: 'cancelled',
-      total_amount: 10_000,
-      refunded_amount: 10_000,
-      payment_status_updated_at: null,
-      shipped_at: null,
-    };
-    mockRpc.mockImplementation((functionName: string) => Promise.resolve(
-      functionName === 'apply_order_refund_projection'
-        ? { data: [{ id: 'order-1', status: 'paid', refunded_amount: 2_500 }], error: null }
-        : { data: [{ released: true, order_id: 'order-1' }], error: null },
-    ));
-    mockRefundList.mockReturnValue({
-      async *[Symbol.asyncIterator]() {
-        yield { status: 'succeeded', amount: 2_500, created: 1_786_000_000 };
-        yield { status: 'failed', amount: 7_500, created: 1_786_000_100 };
-      },
-    });
+  it('refund.failed も同じ。注文のある支払いは取り込みに任せ、注文なしの要対応を記録しない', async () => {
     const event = {
       id: 'evt_refund_failed',
       type: 'refund.failed',
-      data: { object: { id: 're_failed', payment_intent: 'pi_refund' } },
+      data: { object: { id: 're_failed', payment_intent: 'pi_refund', status: 'failed' } },
     };
-    mockConstructEvent.mockReturnValue(event);
 
     const response = await processForTest(makeRequest(event));
 
-    expect((response as { status: number }).status).toBe(200);
-    expect(mockRpc).toHaveBeenCalledWith('apply_order_refund_projection', expect.objectContaining({
-      _expected_refunded_amount: 10_000,
-      _expected_status: 'cancelled',
-      _refunded_amount: 2_500,
-    }));
+    expect(response.status).toBe(200);
+    expect(mockSyncPaymentIntentRefunds).toHaveBeenCalledWith(mockRefundDeps, 'pi_refund');
+    expect(mockRaiseRefundFailure).not.toHaveBeenCalled();
     expect(mockSyncRefundAccounting).toHaveBeenCalledWith(expect.objectContaining({ refundId: 're_failed' }));
   });
 
-  it('返金投影が3回競合したら処理を失敗させ、workerの再試行対象にする', async () => {
-    orderLookupData = {
-      id: 'order-1',
-      status: 'paid',
-      total_amount: 10_000,
-      refunded_amount: 0,
-      payment_status_updated_at: null,
-      shipped_at: null,
-    };
-    mockRpc.mockImplementation((functionName: string) => Promise.resolve(
-      functionName === 'apply_order_refund_projection'
-        ? { data: [], error: null }
-        : { data: [{ released: true, order_id: 'order-1' }], error: null },
-    ));
+  it.each([
+    ['PaymentIntent の ID', 'pi_charge'],
+    ['展開された PaymentIntent', { id: 'pi_charge' }],
+  ])('charge.refunded（payment_intent が%s）も取り込む。会計の同期は refund.* だけ', async (_name, paymentIntent) => {
+    const event = { id: 'evt_charge', type: 'charge.refunded', data: { object: { id: 'ch_1', payment_intent: paymentIntent } } };
+
+    const response = await processForTest(makeRequest(event));
+
+    expect(response.status).toBe(200);
+    expect(mockSyncPaymentIntentRefunds).toHaveBeenCalledWith(mockRefundDeps, 'pi_charge');
+    expect(mockSyncRefundAccounting).not.toHaveBeenCalled();
+  });
+
+  it('返金の取り込みが失敗したら処理を失敗にし、workerの再試行対象にする（会計の同期も完了の監査も進めない）', async () => {
+    mockSyncPaymentIntentRefunds.mockRejectedValue(new Error('Stripe refunds kept changing while they were synced to the order'));
     const event = {
       id: 'evt_refund_conflict',
       type: 'refund.updated',
       data: { object: { id: 're_conflict', payment_intent: 'pi_refund' } },
     };
-    mockConstructEvent.mockReturnValue(event);
 
     const response = await processForTest(makeRequest(event));
 
-    expect((response as { status: number }).status).toBe(500);
-    expect(mockRefundList).toHaveBeenCalledTimes(3);
-    expect(mockRpc.mock.calls.filter(([name]) => name === 'apply_order_refund_projection')).toHaveLength(3);
+    expect(response.status).toBe(500);
+    expect(mockSyncRefundAccounting).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'checkout.webhook.event_processing' }));
+  });
+
+  describe('失敗を繰り返さない返金の知らせ（R-06）', () => {
+    it.each([
+      ['refund.created', { id: 're_1', payment_intent: null }, { refund_id: 're_1', charge_id: null }],
+      ['refund.updated', { id: 're_1', payment_intent: null }, { refund_id: 're_1', charge_id: null }],
+      ['refund.failed', { id: 're_1', payment_intent: null, status: 'failed' }, { refund_id: 're_1', charge_id: null }],
+      ['charge.refunded', { id: 'ch_1', payment_intent: null }, { refund_id: null, charge_id: 'ch_1' }],
+    ])(
+      '%s に PaymentIntent が無くても、失敗にせず、監査に残して完了にする。読み直す相手が無いので、取り込みも会計の同期も呼ばない',
+      async (type, object, ids) => {
+        const event = { id: `evt_no_pi_${type}`, type, data: { object } };
+
+        const response = await processForTest(makeRequest(event));
+
+        expect(response.status).toBe(200);
+        expect(mockSyncPaymentIntentRefunds).not.toHaveBeenCalled();
+        expect(mockRaiseRefundFailure).not.toHaveBeenCalled();
+        expect(mockSyncRefundAccounting).not.toHaveBeenCalled();
+        // 監査に入れるのは ID だけ（カード・個人情報は入れない）
+        expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+          action: 'checkout.webhook.refund_without_payment_intent',
+          resource: 'stripe_webhook',
+          outcome: 'success',
+          metadata: {
+            event_id: `evt_no_pi_${type}`,
+            event_type: type,
+            payment_intent_id: null,
+            ...ids,
+          },
+        }));
+        expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+          action: 'checkout.webhook.event_processing',
+          outcome: 'success',
+        }));
+      },
+    );
+
+    it('入金が決まる前の注文（skipped_unpaid）の返金は、失敗にせず、監査に残して完了にする。会計の同期は続ける', async () => {
+      mockSyncPaymentIntentRefunds.mockResolvedValue({ kind: 'skipped_unpaid', orderId: 'order-1', orderStatus: 'pending' });
+      const event = { id: 'evt_unpaid', type: 'refund.created', data: { object: { id: 're_1', payment_intent: 'pi_unpaid' } } };
+
+      const response = await processForTest(makeRequest(event));
+
+      expect(response.status).toBe(200);
+      expect(mockSyncPaymentIntentRefunds).toHaveBeenCalledWith(mockRefundDeps, 'pi_unpaid');
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'checkout.webhook.refund_on_unpaid_order',
+        resource: 'stripe_webhook',
+        outcome: 'success',
+        metadata: {
+          event_id: 'evt_unpaid',
+          event_type: 'refund.created',
+          payment_intent_id: 'pi_unpaid',
+          refund_id: 're_1',
+          charge_id: null,
+          order_id: 'order-1',
+          order_status: 'pending',
+        },
+      }));
+      expect(mockSyncRefundAccounting).toHaveBeenCalledWith(expect.objectContaining({ refundId: 're_1' }));
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'checkout.webhook.event_processing',
+        outcome: 'success',
+      }));
+    });
   });
 
   describe('注文に結び付いていない支払いの返金イベント', () => {
@@ -232,6 +249,11 @@ describe('Stripe webhook business processor', () => {
     // 再試行しても直らない。イベントを失敗にして永久に再試行させず、監査に残して会計の同期へ進む。
     // ただし返金が失敗・取消になったときは、支払いだけが残り、照合もこの支払いを二度と見ないので、要対応にして店へ知らせる。
     const REFUND_EVENT_TYPES = ['refund.created', 'refund.updated', 'refund.failed'] as const;
+
+    beforeEach(() => {
+      // 取り込みが「この支払いに注文が無い」と答える
+      mockSyncPaymentIntentRefunds.mockRejectedValue(new OrderNotFoundForPaymentIntentError());
+    });
 
     // 返金の状態が成功・保留（失敗でも取消でもない）のイベント。これまでどおり、要対応にせず飛ばす
     const orphanEvents: Array<[string, Record<string, unknown>, Record<string, string | null>]> = [
@@ -254,9 +276,8 @@ describe('Stripe webhook business processor', () => {
       const response = await processForTest(makeRequest(event));
 
       expect(response.status).toBe(200);
-      // 注文が無いので、Stripe の返金一覧も返金投影の RPC も使わない
-      expect(mockRefundList).not.toHaveBeenCalled();
-      expect(mockRpc).not.toHaveBeenCalledWith('apply_order_refund_projection', expect.anything());
+      // 注文が無いかどうかは取り込みが決める。知らせからは支払いの番号だけを渡す
+      expect(mockSyncPaymentIntentRefunds).toHaveBeenCalledWith(mockRefundDeps, 'pi_orphan');
       expect(mockRaiseRefundFailure).not.toHaveBeenCalled();
       // 監査に入れるのは ID だけ（カード・個人情報は入れない）
       expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
@@ -315,9 +336,7 @@ describe('Stripe webhook business processor', () => {
           refundId: 're_orphan',
           refundStatus: expectedStatus,
         });
-        // 注文が無いので、Stripe の返金一覧も返金投影の RPC も使わない。会計の同期は続ける
-        expect(mockRefundList).not.toHaveBeenCalled();
-        expect(mockRpc).not.toHaveBeenCalledWith('apply_order_refund_projection', expect.anything());
+        // 会計の同期は続ける
         expect(mockSyncRefundAccounting).toHaveBeenCalledTimes(1);
         expect(mockSyncRefundAccounting).toHaveBeenCalledWith(expect.objectContaining({ refundId: 're_orphan' }));
         // 飛ばした（成功）ではなく、要対応にした（error）と監査に残す。入れるのは ID と状態だけ
@@ -381,20 +400,8 @@ describe('Stripe webhook business processor', () => {
       expect(mockSyncRefundAccounting).toHaveBeenCalledWith(expect.objectContaining({ refundId: 're_orphan' }));
     });
 
-    it('注文のある支払いの失敗した返金は、これまでどおり返金を同期し、要対応を記録しない', async () => {
-      orderLookupData = {
-        id: 'order-1',
-        status: 'paid',
-        total_amount: 10_000,
-        refunded_amount: 0,
-        payment_status_updated_at: null,
-        shipped_at: null,
-      };
-      mockRpc.mockImplementation((functionName: string) => Promise.resolve(
-        functionName === 'apply_order_refund_projection'
-          ? { data: [{ id: 'order-1', status: 'paid', refunded_amount: 0 }], error: null }
-          : { data: [{ released: true, order_id: 'order-1' }], error: null },
-      ));
+    it('注文のある支払いの失敗した返金は、取り込みに任せ、注文なしの要対応を記録しない', async () => {
+      mockSyncPaymentIntentRefunds.mockResolvedValue({ kind: 'synced', orderId: 'order-1', orderStatus: 'paid', results: [] });
       const event = {
         id: 'evt_failed_with_order',
         type: 'refund.failed',
@@ -404,42 +411,26 @@ describe('Stripe webhook business processor', () => {
       const response = await processForTest(makeRequest(event));
 
       expect(response.status).toBe(200);
-      expect(mockRpc).toHaveBeenCalledWith('apply_order_refund_projection', expect.objectContaining({ _refunded_amount: 0 }));
+      expect(mockSyncPaymentIntentRefunds).toHaveBeenCalledWith(mockRefundDeps, 'pi_refund');
       expect(mockRaiseRefundFailure).not.toHaveBeenCalled();
       expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'checkout.webhook.refund_without_order' }));
     });
 
-    it('注文のある支払いの返金イベントは、これまでどおり返金を同期し、注文なしの監査を残さない', async () => {
-      orderLookupData = {
-        id: 'order-1',
-        status: 'paid',
-        total_amount: 10_000,
-        refunded_amount: 0,
-        payment_status_updated_at: null,
-        shipped_at: null,
-      };
-      mockRpc.mockImplementation((functionName: string) => Promise.resolve(
-        functionName === 'apply_order_refund_projection'
-          ? { data: [{ id: 'order-1', status: 'paid', refunded_amount: 2_500 }], error: null }
-          : { data: [{ released: true, order_id: 'order-1' }], error: null },
-      ));
-      mockRefundList.mockReturnValue({
-        async *[Symbol.asyncIterator]() {
-          yield { status: 'succeeded', amount: 2_500, created: 1_786_000_000 };
-        },
-      });
+    it('注文のある支払いの返金イベントは、取り込みに任せ、注文なしの監査を残さない', async () => {
+      mockSyncPaymentIntentRefunds.mockResolvedValue({ kind: 'synced', orderId: 'order-1', orderStatus: 'paid', results: [] });
       const event = { id: 'evt_with_order', type: 'refund.created', data: { object: { id: 're_1', payment_intent: 'pi_refund' } } };
 
       const response = await processForTest(makeRequest(event));
 
       expect(response.status).toBe(200);
-      expect(mockRpc).toHaveBeenCalledWith('apply_order_refund_projection', expect.objectContaining({ _refunded_amount: 2_500 }));
       expect(mockSyncRefundAccounting).toHaveBeenCalledWith(expect.objectContaining({ refundId: 're_1' }));
       expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'checkout.webhook.refund_without_order' }));
     });
 
     it('注文の読み取り自体が失敗した返金イベントは、注文が無いのと区別して失敗にし、再試行させる', async () => {
-      orderLookupError = { message: 'connection lost' };
+      mockSyncPaymentIntentRefunds.mockRejectedValue(
+        new Error('Failed to read order refund state: connection lost', { cause: { message: 'connection lost' } }),
+      );
       const event = { id: 'evt_read_failed', type: 'refund.updated', data: { object: { id: 're_1', payment_intent: 'pi_refund' } } };
 
       const response = await processForTest(makeRequest(event));
@@ -447,15 +438,6 @@ describe('Stripe webhook business processor', () => {
       expect(response.status).toBe(500);
       expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'checkout.webhook.refund_without_order' }));
       expect(mockSyncRefundAccounting).not.toHaveBeenCalled();
-    });
-
-    it('PaymentIntent の無い返金イベントは、これまでどおり不正なイベントとして失敗にする', async () => {
-      const event = { id: 'evt_no_pi', type: 'refund.created', data: { object: { id: 're_1', payment_intent: null } } };
-
-      const response = await processForTest(makeRequest(event));
-
-      expect(response.status).toBe(500);
-      expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'checkout.webhook.refund_without_order' }));
     });
   });
 

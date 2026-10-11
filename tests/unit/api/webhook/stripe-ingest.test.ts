@@ -22,7 +22,7 @@ jest.mock('next/server', () => {
 
 const mockConstructEvent = jest.fn();
 const mockEnqueueRpc = jest.fn();
-const mockSyncOrderRefunds = jest.fn();
+const mockSyncPaymentIntentRefunds = jest.fn();
 
 jest.mock('@supabase/supabase-js', () => ({
   createClient: jest.fn().mockReturnValue({
@@ -48,7 +48,7 @@ jest.mock('@/lib/stripe/server', () => ({
 }));
 
 jest.mock('@/lib/stripe/order-refund-sync', () => ({
-  syncOrderRefunds: (...args: unknown[]) => mockSyncOrderRefunds(...args),
+  syncPaymentIntentRefunds: (...args: unknown[]) => mockSyncPaymentIntentRefunds(...args),
 }));
 
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
@@ -97,7 +97,7 @@ describe('Stripe webhook durable ingress', () => {
       data: { object: { id: 're_1', payment_intent: 'pi_1' } },
     };
     mockConstructEvent.mockReturnValue(event);
-    mockSyncOrderRefunds.mockRejectedValue(new Error('slow business processing failed'));
+    mockSyncPaymentIntentRefunds.mockRejectedValue(new Error('slow business processing failed'));
 
     const response = await POST(request(event));
 
@@ -109,7 +109,7 @@ describe('Stripe webhook durable ingress', () => {
         _event_type: 'refund.failed',
       }),
     );
-    expect(mockSyncOrderRefunds).not.toHaveBeenCalled();
+    expect(mockSyncPaymentIntentRefunds).not.toHaveBeenCalled();
   });
 
   it('永続化できなければ2xxを返さない', async () => {
@@ -141,7 +141,7 @@ describe('Stripe webhook durable ingress', () => {
     const response = await POST(request(event));
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ received: true, duplicate: true });
-    expect(mockSyncOrderRefunds).not.toHaveBeenCalled();
+    expect(mockSyncPaymentIntentRefunds).not.toHaveBeenCalled();
   });
 
   it('署名ヘッダー欠落ならStripeとDBを呼ばない', async () => {
