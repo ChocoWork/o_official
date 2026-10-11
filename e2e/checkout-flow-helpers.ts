@@ -100,8 +100,23 @@ export async function paymentElementFrame(page: Page): Promise<Frame> {
   return page.frames().find(isPaymentElementFrame)!;
 }
 
+/**
+ * テスト用カード（4242…）を入れる。Stripe はお客様の環境によって、決済の入力欄を「カード」以外
+ * （PayPay など）を開いた状態で出すことがあり、その時は「カード」のボタンが閉じていて、カード番号の欄が無い。
+ * カードが閉じている時だけ「カード」のボタンを押して開く（カードが開いているのに欄の描画が遅いだけの時に押すと、閉じてしまうので押さない）。
+ * 「カード」のボタンが無い形（カードだけ）では、今までどおり欄に入れるだけ。
+ */
 export async function fillTestCard(frame: Frame): Promise<void> {
-  await frame.getByRole('textbox', { name: 'カード番号' }).fill('4242424242424242');
+  const cardNumber = frame.getByRole('textbox', { name: 'カード番号' });
+  const cardButton = frame.getByRole('button', { name: 'カード', exact: true });
+  // 欄かボタンのどちらかが出るまで待つ（getAttribute は要素が無いと待ち続けるので、有無は count() で先に見る）
+  await expect(cardNumber.or(cardButton).first()).toBeVisible({ timeout: 30_000 });
+  if (!(await cardNumber.isVisible()) && (await cardButton.count()) > 0) {
+    if ((await cardButton.getAttribute('aria-expanded')) !== 'true') {
+      await cardButton.click();
+    }
+  }
+  await cardNumber.fill('4242424242424242');
   await frame.getByRole('textbox', { name: '有効期限' }).fill('12 / 34');
   await frame.getByRole('textbox', { name: 'セキュリティコード' }).fill('123');
 }

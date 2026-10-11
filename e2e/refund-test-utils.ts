@@ -401,7 +401,8 @@ export type SignedEventType = 'refund.created' | 'refund.updated' | 'refund.fail
 
 /**
  * Stripe の知らせを、署名をつけて手元の窓口へ送る。署名の合言葉は E2E の固定の値（scripts/e2e/environment.ts）で、
- * 本番の値ではない。送った知らせの番号を返す。label は知らせの番号を試験ごとに分けるための短い文字（英数字とハイフン）。
+ * 本番の値ではない。送った知らせの番号を返す。label は知らせの番号を試験ごとに分けるための短い文字。英数字以外は `_` に替える
+ * （DB の enqueue_stripe_webhook_event が番号を英数字と `_` だけに限るため。ハイフンが入ると窓口は保存の失敗で 500 を返す）。
  */
 export async function sendSignedStripeEvent(
   request: APIRequestContext,
@@ -411,7 +412,9 @@ export async function sendSignedStripeEvent(
 ): Promise<string> {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) throw new Error('STRIPE_WEBHOOK_SECRET が無い（E2E の固定の値）');
-  const eventId = `evt_e2e_${label}_${Date.now()}_${randomUUID().slice(0, 8)}`;
+  // 本物の Stripe の番号は英数字だけ。DB の確かめ（^evt_[A-Za-z0-9_]+$）に通るよう、label の英数字以外を `_` にする
+  const safeLabel = label.replace(/[^A-Za-z0-9]/g, '_');
+  const eventId = `evt_e2e_${safeLabel}_${Date.now()}_${randomUUID().slice(0, 8)}`;
   const payload = JSON.stringify({
     id: eventId,
     object: 'event',

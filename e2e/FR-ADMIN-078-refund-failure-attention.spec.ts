@@ -1,6 +1,6 @@
 /**
  * FR-ADMIN-078 要対応の「返金の失敗」
- * 対応 FREQ: FREQ-457（AC-01〜AC-03）
+ * 対応 FREQ: FREQ-457（AC-01・AC-02）
  *
  * 要対応の欄を、窓口を差し替えて確かめる（実装計画 P16。FR-ADMIN-060 と同じやり方）。窓口の答えは共通の約束（C-2）の形。
  * AC-03 の「店へのメールに『Stripe ダッシュボードで返金』の案内が無い」は、本物のメールで確かめる FR-CHECKOUT-051 が持つ。
@@ -145,7 +145,7 @@ for (const viewport of viewports) {
       await expect.poll(() => attention.reads).toBeGreaterThan(readsBefore);
     });
 
-    test('サポートの人と、返せる額が残っていない注文には「もう一度返金する」が出ない。「解決済みにする」は出る', async ({ page }) => {
+    test('サポートの人には「もう一度返金する」が出ない。「解決済みにする」は出る', async ({ page }) => {
       // FREQ-457-AC-02
       await mockApis(page, 'supporter');
       await openOrderTab(page);

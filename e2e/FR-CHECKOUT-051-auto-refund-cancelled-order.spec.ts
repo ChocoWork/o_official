@@ -8,8 +8,10 @@
  * 照合が取り消した注文への入金を見つけた時に、受け取った額と番号を書く。本計画 P27）。要求を止めたまま、署名した
  * checkout.session.completed を送ると、worker の照合が「取り消した注文への入金」を初めて見つけ、受け取った額と番号を書いて、
  * ショップの設定①（既定でオン）に従い、その番号で全額を自動で返金する。
- * そのあと、預かった要求を通し、署名した知らせをもう一度送って、同じ照合が画面の道からも知らせの道からも動き直しても、
- * 返金も要対応もメールも増えないことを確かめる。署名の合言葉は E2E の固定の値（scripts/e2e/environment.ts）で、本番の値ではない。
+ * そのあと、預かった要求を通し、署名した知らせをもう一度送って、同じ入金の知らせが画面の道からも知らせの道からも重ねて届いても、
+ * 返金も要対応もメールも増えないことを確かめる（1回目で全額を返し切っているので、これは「要対応を初めて記録した一回だけ自動の返金が動く」
+ * 本計画 P7 の証拠にはならない。P7 そのものは、単体の tests/unit/lib/stripe/checkout-payment-reconciler.test.ts が確かめる）。
+ * 署名の合言葉は E2E の固定の値（scripts/e2e/environment.ts）で、本番の値ではない。
  * Stripe に届かない・テスト用の鍵が Stripe に断られる時と、見本の商品が無い時は、理由を出して skip する
  * （鍵が無い・テスト用でない時は、E2E の見張りが起動の前に止める）。
  */
@@ -118,7 +120,9 @@ test.describe('FR-CHECKOUT-051 取り消した注文に届いた入金の自動�
 
   for (const viewport of CHECKOUT_VIEWPORTS) {
     test(`${viewport.name}（${viewport.width}px）取り消した注文に入金が届くと、自動で全額が返金され、お客様に①の文の返金のお知らせ、店に「自動で全額を返金しました」の知らせが届く。同じ入金の知らせを送り直しても増えない`, async ({ page, request }) => {
-      // FREQ-451-AC-01, FREQ-451-AC-02, FREQ-451-AC-03, FREQ-451-AC-04, FREQ-455-AC-01, FREQ-455-AC-02, FREQ-455-AC-03, FREQ-457-AC-03（Review Focus 5）
+      // FREQ-451-AC-01, FREQ-451-AC-02, FREQ-451-AC-03, FREQ-451-AC-04, FREQ-455-AC-01, FREQ-455-AC-02, FREQ-455-AC-03, FREQ-457-AC-03
+      // （Review Focus 5 のうち確かめるのは「同じ入金の知らせが重ねて届いても増えない」まで。「要対応を初めて記録した一回だけ自動の返金が動く」
+      // 本計画 P7 そのものは、単体の tests/unit/lib/stripe/checkout-payment-reconciler.test.ts が確かめる）
       const runtime = await stripeForE2e();
       test.skip(!runtime.ok, runtime.ok ? '' : runtime.reason);
       if (!runtime.ok) return;
@@ -252,9 +256,12 @@ test.describe('FR-CHECKOUT-051 取り消した注文に届いた入金の自動�
       });
       expect(after.exceptions[0].resolved_at).not.toBeNull();
 
-      // 二度目の照合を、2つの道で動かす。預かっていた画面の要求を通し（画面の道）、同じ入金の知らせをもう一度届ける
-      // （知らせの道。Stripe の知らせの再送・毎晩の照合と同じ）。どちらも、取り消した注文への入金を全額返金済みと読むので、
-      // 返金も要対応も、お客様と店へのメールも増えない（自動の返金は、要対応を初めて記録した一回だけ。本計画 P7）
+      // 同じ入金の知らせが重ねて届いても増えないことを、2つの道で確かめる。預かっていた画面の要求を通し（画面の道）、同じ入金の知らせを
+      // もう一度届ける（知らせの道。Stripe の知らせの再送・毎晩の照合と同じ）。どちらも、取り消した注文への入金を全額返金済みと読むので、
+      // 返金も要対応も、お客様と店へのメールも増えない。
+      // ただし1回目で全額を返し切っているので、ここで増えないことは、自動の返金が「要対応を初めて記録した一回だけ」動く（本計画 P7）
+      // ことの証拠にはならない（DB が返せる額 0 で断っても同じ結果になる）。P7 そのものは、単体の
+      // tests/unit/lib/stripe/checkout-payment-reconciler.test.ts が確かめる
       release();
       const secondEventId = await sendSignedStripeEvent(
         request,
