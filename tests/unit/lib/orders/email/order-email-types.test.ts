@@ -12,16 +12,20 @@ import {
   ORDER_EMAIL_DELIVERY_STATUSES,
   DELIVERY_PROBLEM_STATUSES,
   RESENDABLE_ORDER_STATUSES,
+  type CanceledEmailVariant,
   type OrderEmailVariant,
   type OrderEmailPauseReason,
   type OrderEmailSkipReason,
   type OrderEmailFailureCategory,
+  type RefundEmailVariant,
 } from '@/lib/orders/email/order-email-types';
+import type { PaidEmailVariant } from '@/lib/orders/order-payment-types';
 
 /**
  * アプリの値と DB の CHECK・関数の入力制限がずれないことを、移行の本文で確かめる。
- * - 表の CHECK・書き分け・失敗の分類: グループ D の移行（20261009095633）
- * - 発送ごとのメールで作り直した関数（取りやめの理由・再送できる状態の表）: グループ E-1 の移行 B（20261010122320）
+ * - 状態・配達の状態・一時停止の理由・失敗の分類・原因の記号・配達の問題の索引: グループ D の移行（20261009095633）
+ * - 発送ごとのメールで作り直した関数（取りやめの理由）: グループ E-1 の移行 B（20261010122320）
+ * - メールの種類・書き分けの CHECK と、再送できる状態の表（request_order_email_resend）: 返金のお知らせを足したグループ E-2 の移行 C（20261011120200）
  * 本番へ当てて版を改名したら、ここの名前も直す。
  */
 const outboxMigration = fs.readFileSync(
@@ -30,6 +34,9 @@ const outboxMigration = fs.readFileSync(
 // 行の説明にも関数名や許可の表の例が出るので、説明は外してから読む
 const fulfillmentEmailMigration = fs
   .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261010122320_fulfillment_order_emails.sql'), 'utf8')
+  .replace(/--.*$/gm, '');
+const refundResultsMigration = fs
+  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261011120200_order_refund_results.sql'), 'utf8')
   .replace(/--.*$/gm, '');
 
 function sqlValues(pattern: RegExp, sql = outboxMigration): string[] {
@@ -46,24 +53,53 @@ function functionBody(sql: string, qualifiedName: string): string {
   return body as string;
 }
 
+/**
+ * 書き分けの CHECK（order_email_outbox_variant_check）から、種類ごとの書き分けを集める。
+ * 1つの枝は `(kind = '種類' AND variant IS NOT NULL AND variant IN ('値', …))` の形。1つの種類に枝が複数あれば和を取る。
+ * 書き分けの無い種類（`variant IS NULL` の枝）は集めない
+ */
+function variantsByKind(sql: string): Record<string, string[]> {
+  const check = sql.split(/CONSTRAINT order_email_outbox_variant_check\s+CHECK/)[1]?.split(';')[0];
+  expect(check).toBeDefined();
+  const byKind: Record<string, Set<string>> = {};
+  for (const branch of (check as string).matchAll(/kind = '([a-z_]+)'[^)]*?variant IN \(([^)]+)\)/g)) {
+    const values = byKind[branch[1]] ?? new Set<string>();
+    for (const value of branch[2].matchAll(/'([^']+)'/g)) values.add(value[1]);
+    byKind[branch[1]] = values;
+  }
+  return Object.fromEntries(Object.entries(byKind).map(([kind, values]) => [kind, [...values].sort()]));
+}
+
 describe('注文のメールの種類と名前', () => {
   it('メールの種類・状態・配達の状態は DB の CHECK と同じ値', () => {
-    expect([...ORDER_EMAIL_KINDS].sort()).toEqual(sqlValues(/CHECK\s*\(kind IN \(([^)]+)\)/));
+    // 種類は、返金のお知らせを足した移行 C の CHECK（order_email_outbox_kind_check）から読む
+    expect([...ORDER_EMAIL_KINDS].sort()).toEqual(
+      sqlValues(/CONSTRAINT order_email_outbox_kind_check\s+CHECK\s*\(\s*kind IN \(([^)]+)\)/, refundResultsMigration),
+    );
     expect([...ORDER_EMAIL_STATUSES].sort()).toEqual(sqlValues(/CHECK\s*\(status IN \(([^)]+)\)/));
     expect([...ORDER_EMAIL_DELIVERY_STATUSES].sort()).toEqual(sqlValues(/delivery_status IN \(([^)]+)\)/));
   });
 
   it('書き分けと一時停止の理由は DB の CHECK と同じ値', () => {
     // 型だけの値も Record で全件を並べ、型の増減と DB の増減を両方検知する。
-    const variants: Record<OrderEmailVariant, true> = {
-      order_confirmed: true, payment_received: true, payment_received_after_expiry: true, payment_in_progress: true, pending: true,
+    // 書き分けは種類ごとの和（支払い済み・取消・返金）に分けて並べ、3つを合わせた Record が OrderEmailVariant の全件になることも型で確かめる
+    const paidVariants: Record<PaidEmailVariant, true> = {
+      order_confirmed: true, payment_received: true, payment_received_after_expiry: true,
     };
+    const canceledVariants: Record<CanceledEmailVariant, true> = { payment_in_progress: true, pending: true, paid: true };
+    const refundVariants: Record<RefundEmailVariant, true> = { standard: true, after_cancel: true };
+    const variants: Record<OrderEmailVariant, true> = { ...paidVariants, ...canceledVariants, ...refundVariants };
     const pauseReasons: Record<OrderEmailPauseReason, true> = {
       config_api_key: true, config_sender_domain: true, config_provider: true, quota_daily: true, quota_monthly: true,
     };
-    const paidVariants = sqlValues(/kind = 'paid'[\s\S]*?variant IN \(([^)]+)\)/);
-    const canceledVariants = sqlValues(/kind = 'canceled'[\s\S]*?variant IN \(([^)]+)\)/);
-    expect(Object.keys(variants).sort()).toEqual([...paidVariants, ...canceledVariants].sort());
+    // 書き分けは、返金のお知らせを足した移行 C の CHECK（order_email_outbox_variant_check）から、種類ごとに読む
+    const sqlVariants = variantsByKind(refundResultsMigration);
+    expect(sqlVariants).toEqual({
+      paid: Object.keys(paidVariants).sort(),
+      canceled: Object.keys(canceledVariants).sort(),
+      refund: Object.keys(refundVariants).sort(),
+    });
+    expect(Object.keys(variants).sort()).toEqual(Object.values(sqlVariants).flat().sort());
     expect(Object.keys(pauseReasons).sort()).toEqual(sqlValues(/reason IN \(([^)]+)\)/));
   });
 
@@ -90,6 +126,7 @@ describe('注文のメールの種類と名前', () => {
   it('種類の名前は設計書のとおり', () => {
     expect(ORDER_EMAIL_KIND_LABELS).toEqual({
       paid: '注文確認', awaiting_payment: '入金待ち', payment_expired: '支払い期限切れ', canceled: '取消', shipped: '発送',
+      refund: '返金のお知らせ',
     });
   });
 
@@ -100,20 +137,26 @@ describe('注文のメールの種類と名前', () => {
     expect(ORDER_EMAIL_ERROR_LABELS.fulfillment_cancelled).toBe('発送の取消');
   });
 
-  it('再送できる注文の状態は DB の request_order_email_resend と同じ表（発送のメールは、一部だけ送った間の決済完了でも再送できる）', () => {
+  it('再送できる注文の状態は DB の request_order_email_resend と同じ表（発送のメールは、一部だけ送った間の決済完了でも再送できる。返金のお知らせは再送しない）', () => {
     expect(RESENDABLE_ORDER_STATUSES).toEqual({
-      paid: ['paid', 'shipped'], awaiting_payment: ['pending'], payment_expired: ['failed'], canceled: ['cancelled'], shipped: ['paid', 'shipped'],
+      paid: ['paid', 'shipped'], awaiting_payment: ['pending'], payment_expired: ['failed'], canceled: ['cancelled'],
+      shipped: ['paid', 'shipped'], refund: [],
     });
 
-    // 移行 B の関数の許可の表を読んで突き合わせる。1つの種類は
-    // `(_kind = '種類' AND v_status IN ('状態', ...))` か `(_kind = '種類' AND v_status = '状態')` の形で書いてある
+    // 移行 C の関数の許可の表を読んで突き合わせる。1つの種類は
+    // `(_kind = '種類' AND v_status IN ('状態', ...))` か `(_kind = '種類' AND v_status = '状態')` の形で書いてある。
+    // 再送できない種類（返金のお知らせ）は、表に組が1つも無い
     const sqlMatrix: Record<string, string[]> = {};
-    for (const match of functionBody(fulfillmentEmailMigration, 'public.request_order_email_resend').matchAll(
+    for (const match of functionBody(refundResultsMigration, 'public.request_order_email_resend').matchAll(
       /\(_kind = '([a-z_]+)' AND v_status (?:IN \(([^)]+)\)|= '([a-z_]+)')\)/g,
     )) {
       sqlMatrix[match[1]] = (match[2] ? [...match[2].matchAll(/'([^']+)'/g)].map((value) => value[1]) : [match[3]]).sort();
     }
-    const appMatrix = Object.fromEntries(ORDER_EMAIL_KINDS.map((kind) => [kind, [...RESENDABLE_ORDER_STATUSES[kind]].sort()]));
+    const appMatrix = Object.fromEntries(
+      ORDER_EMAIL_KINDS
+        .filter((kind) => RESENDABLE_ORDER_STATUSES[kind].length > 0)
+        .map((kind) => [kind, [...RESENDABLE_ORDER_STATUSES[kind]].sort()]),
+    );
     expect(sqlMatrix).toEqual(appMatrix);
   });
 
@@ -136,7 +179,8 @@ describe('注文のメールの種類と名前', () => {
 
   it('種類と原因の記号を見分ける', () => {
     expect(isOrderEmailKind('shipped')).toBe(true);
-    expect(isOrderEmailKind('refund')).toBe(false);
+    expect(isOrderEmailKind('refund')).toBe(true);
+    expect(isOrderEmailKind('refunded')).toBe(false);
     expect(isOrderEmailErrorCode('lease_expired')).toBe(true);
     expect(isOrderEmailErrorCode('Error: boom')).toBe(false);
   });

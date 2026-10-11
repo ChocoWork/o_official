@@ -26,7 +26,8 @@ export function formatCurrency(amount: number, currency: string): string {
   }
 }
 
-function itemLabel(item: { item_name: string; color?: string | null; size?: string | null }): string {
+/** 品名（色 / サイズ）。確定メール・発送のメール・返金のお知らせで同じ書き方を使う */
+export function itemLabel(item: { item_name: string; color?: string | null; size?: string | null }): string {
   const variant = [item.color, item.size].filter(Boolean).join(' / ');
   return variant ? `${item.item_name}（${variant}）` : item.item_name;
 }

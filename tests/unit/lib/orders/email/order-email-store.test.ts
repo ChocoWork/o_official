@@ -15,7 +15,7 @@ function storeReturning(data: unknown, error: { message?: string; code?: string 
 
 const claimRow = {
   email_id: 'email-1', order_id: 'order-1', kind: 'paid', variant: 'order_confirmed', origin: 'auto', attempts: 1,
-  lease_token: 'lease-1', subject: null, body_text: null, payment_expired_sent: false, fulfillment_id: null,
+  lease_token: 'lease-1', subject: null, body_text: null, payment_expired_sent: false, fulfillment_id: null, refund_id: null,
 };
 
 const historyRow = {
@@ -30,7 +30,7 @@ describe('order-email-store', () => {
 
     await expect(claimOrderEmail(store, 300)).resolves.toEqual({
       id: 'email-1', orderId: 'order-1', kind: 'paid', variant: 'order_confirmed', origin: 'auto', attempts: 1,
-      leaseToken: 'lease-1', subject: null, bodyText: null, paymentExpiredSent: false, fulfillmentId: null,
+      leaseToken: 'lease-1', subject: null, bodyText: null, paymentExpiredSent: false, fulfillmentId: null, refundId: null,
     });
     expect(rpc).toHaveBeenCalledWith('claim_order_email', { _lease_seconds: 300 });
     await expect(claimOrderEmail(storeReturning([]).store, 300)).resolves.toBeNull();
@@ -39,7 +39,18 @@ describe('order-email-store', () => {
   it('発送のメールの行は、どの発送のメールかを発送の番号で返す', async () => {
     const { store } = storeReturning([{ ...claimRow, email_id: 'email-2', kind: 'shipped', variant: null, fulfillment_id: 'fulfillment-1' }]);
 
-    await expect(claimOrderEmail(store, 300)).resolves.toMatchObject({ id: 'email-2', kind: 'shipped', fulfillmentId: 'fulfillment-1' });
+    await expect(claimOrderEmail(store, 300)).resolves.toMatchObject({ id: 'email-2', kind: 'shipped', fulfillmentId: 'fulfillment-1', refundId: null });
+  });
+
+  it.each([
+    ['返金のお知らせ', 'refund', 'standard'],
+    ['支払い済みのキャンセルのお知らせ', 'canceled', 'paid'],
+  ])('%s の行は、どの返金のお知らせかを返金の番号で返す', async (_label, kind, variant) => {
+    const { store } = storeReturning([{ ...claimRow, email_id: 'email-3', kind, variant, refund_id: 'refund-1' }]);
+
+    await expect(claimOrderEmail(store, 300)).resolves.toMatchObject({
+      id: 'email-3', kind, variant, fulfillmentId: null, refundId: 'refund-1',
+    });
   });
 
   it('失敗の記録に分け方・原因・待つ時間を渡す', async () => {
@@ -79,6 +90,24 @@ describe('order-email-store', () => {
     expect(rows.map((row) => [row.id, row.kind, row.fulfillmentId, row.fulfillmentNumber])).toEqual([
       ['email-2', 'shipped', 'fulfillment-2', 2],
       ['email-1', 'paid', null, null],
+    ]);
+  });
+
+  it('履歴の行に返金の番号を足して返す。返金に結び付かない行は null（列が無い行も null）', async () => {
+    const { store } = storeReturning([
+      { ...historyRow, email_id: 'email-4', kind: 'refund', fulfillment_id: null, fulfillment_number: null, refund_id: 'refund-1' },
+      { ...historyRow, email_id: 'email-3', kind: 'canceled', fulfillment_id: null, fulfillment_number: null, refund_id: 'refund-2' },
+      { ...historyRow, email_id: 'email-2', kind: 'shipped', fulfillment_id: 'fulfillment-2', fulfillment_number: 2, refund_id: null },
+      { ...historyRow, email_id: 'email-1', kind: 'paid', fulfillment_id: null, fulfillment_number: null },
+    ]);
+
+    const rows = await listOrderEmailHistory(store, 'order-1');
+
+    expect(rows.map((row) => [row.id, row.kind, row.refundId])).toEqual([
+      ['email-4', 'refund', 'refund-1'],
+      ['email-3', 'canceled', 'refund-2'],
+      ['email-2', 'shipped', null],
+      ['email-1', 'paid', null],
     ]);
   });
 });

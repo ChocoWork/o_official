@@ -36,8 +36,11 @@ export const ORDER_EMAIL_LEASE_SECONDS = 300;
 
 export type OrderEmailWorkerDeps = {
   store: OrderEmailStore;
-  /** 発送のメールの行は、行の発送の番号で発送の材料も読む。ほかの種類は null（グループ E-1 設計書 8-1） */
-  loadMaterial: (orderId: string, fulfillmentId: string | null) => Promise<OrderEmailMaterial | null>;
+  /**
+   * 発送のメールの行は行の発送の番号で発送の材料を、返金のお知らせと支払い済みのキャンセルのお知らせの行は行の返金の番号で
+   * 返金の材料を読む。ほかの種類は null（グループ E-1 設計書 8-1、グループ E-2 設計書 8-6）
+   */
+  loadMaterial: (orderId: string, fulfillmentId: string | null, refundId: string | null) => Promise<OrderEmailMaterial | null>;
   send: (message: OrderEmailMessage) => Promise<OrderEmailSendOutcome>;
   checkConfig: () => OrderEmailPauseReason | null;
   now: () => number;
@@ -113,11 +116,12 @@ async function recordFailure(
 async function deliver(deps: OrderEmailWorkerDeps, claim: ClaimedOrderEmail): Promise<DeliverOutcome> {
   let material: OrderEmailMaterial | null;
   try {
-    material = await deps.loadMaterial(claim.orderId, claim.fulfillmentId);
+    material = await deps.loadMaterial(claim.orderId, claim.fulfillmentId, claim.refundId);
   } catch {
     return recordFailure(deps, claim, { category: 'transient', code: 'db_unavailable', retryAfterSeconds: null });
   }
   if (!material) {
+    // 注文・明細のほか、発送のメールの発送の記録・返金のお知らせの返金の記録が無い時もここに入る（グループ E-2 設計書 8-6）
     return recordFailure(deps, claim, { category: 'permanent', code: 'source_missing', retryAfterSeconds: null });
   }
 
@@ -225,7 +229,7 @@ export async function runOrderEmailWorker(options: { budgetMs?: number } = {}): 
   const store = client as unknown as OrderEmailStore & OpsStore;
   const result = await processOrderEmails({
     store,
-    loadMaterial: (orderId, fulfillmentId) => loadOrderEmailMaterial(client, orderId, fulfillmentId),
+    loadMaterial: (orderId, fulfillmentId, refundId) => loadOrderEmailMaterial(client, orderId, fulfillmentId, refundId),
     send: (message) => sendOrderEmailMessage(message),
     checkConfig: () => checkOrderEmailSendConfig(),
     now: () => Date.now(),

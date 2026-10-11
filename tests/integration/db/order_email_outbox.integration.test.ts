@@ -38,10 +38,11 @@ async function enqueue(
   kind: string,
   variant: string | null = null,
   fulfillmentId: string | null = null,
+  refundId: string | null = null,
 ): Promise<boolean> {
   const res = await db.query(
-    'select private.enqueue_order_email($1::uuid, $2::text, $3::text, $4::uuid) as inserted',
-    [orderId, kind, variant, fulfillmentId],
+    'select private.enqueue_order_email($1::uuid, $2::text, $3::text, $4::uuid, $5::uuid) as inserted',
+    [orderId, kind, variant, fulfillmentId, refundId],
   );
   return res.rows[0].inserted as boolean;
 }
@@ -445,10 +446,12 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
       '送信済みの %s × 注文状態 %s の再送可否は RESENDABLE_ORDER_STATUSES と一致する', async (kind, status) => {
         const actor = await createActor(db());
         const orderId = await createOrder(db(), status);
-        const variant = kind === 'paid' ? 'order_confirmed' : kind === 'canceled' ? 'pending' : null;
+        const variant = kind === 'paid' ? 'order_confirmed' : kind === 'canceled' ? 'pending' : kind === 'refund' ? 'standard' : null;
         // 発送のメールは発送ごとに送るので、発送の記録を用意して、その発送の行にする（グループ E-1）
         const fulfillmentId = kind === 'shipped' ? await insertFulfillmentRecord(db(), orderId) : null;
-        await enqueue(db(), orderId, kind, variant, fulfillmentId);
+        // 返金のお知らせは返金ごとに送るので、Task 3 が同じファイルに足した道具で返金の記録を用意して、その返金の行にする（グループ E-2。再送は断られる）
+        const refundId = kind === 'refund' ? await insertRefundRecord(db(), orderId, 1000) : null;
+        await enqueue(db(), orderId, kind, variant, fulfillmentId, refundId);
         // 今の注文の状態に関係なく過去に送れた行を用意し、再送の状態表だけを確かめる
         await db().query("update private.order_email_outbox set status = 'sent', sent_at = now(), finished_at = now() where order_id = $1", [orderId]);
         const sql = 'select public.request_order_email_resend($1, $2, $3, $4) as email_id';

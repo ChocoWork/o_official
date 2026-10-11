@@ -58,9 +58,11 @@ export type OrderEmailHistoryRow = {
   finishedAt: string | null;
   hasBody: boolean;
   bodyErased: boolean;
-  /** 発送のメールだけが、どの発送のメールかを持つ */
+  /** 発送のメールだけが、どの発送のメールか・何回目の発送かを持つ */
   fulfillmentId: string | null;
   fulfillmentNumber: number | null;
+  /** 返金のお知らせと、支払い済みのキャンセルのお知らせだけが、どの返金のお知らせかを持つ（グループ E-2 設計書 8-6） */
+  refundId: string | null;
 };
 
 /** 注文の商品ごとの名前（商品名（色 / サイズ））と、発送した数・仕上がった数。取り消せるかの判断に使う */

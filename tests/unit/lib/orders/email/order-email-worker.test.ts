@@ -19,26 +19,33 @@ import {
   type OrderEmailWorkerDeps,
 } from '@/lib/orders/email/order-email-worker';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { OrderEmailMaterialError, type OrderEmailFulfillmentMaterial, type OrderEmailMaterial } from '@/lib/orders/email/order-email-compose';
+import {
+  OrderEmailMaterialError,
+  type OrderEmailFulfillmentMaterial,
+  type OrderEmailMaterial,
+  type OrderEmailRefundMaterial,
+} from '@/lib/orders/email/order-email-compose';
 import { OrderEmailStoreError, type OrderEmailStore } from '@/lib/orders/email/order-email-store';
 import type { OrderEmailSendOutcome } from '@/lib/orders/email/order-email-sender';
 
 type QueueRow = {
   email_id: string; order_id: string; kind: string; variant: string | null; origin: string; attempts: number;
   lease_token: string; subject: string | null; body_text: string | null; payment_expired_sent: boolean;
-  fulfillment_id: string | null;
+  fulfillment_id: string | null; refund_id: string | null;
 };
 
 function row(overrides: Partial<QueueRow> = {}): QueueRow {
   return {
     email_id: 'email-1', order_id: 'order-1', kind: 'paid', variant: 'order_confirmed', origin: 'auto', attempts: 1,
-    lease_token: 'lease-1', subject: null, body_text: null, payment_expired_sent: false, fulfillment_id: null, ...overrides,
+    lease_token: 'lease-1', subject: null, body_text: null, payment_expired_sent: false, fulfillment_id: null,
+    refund_id: null, ...overrides,
   };
 }
 
 function material(
   overrides: Partial<OrderEmailMaterial['order']> = {},
   fulfillment: OrderEmailMaterial['fulfillment'] = null,
+  refund: OrderEmailMaterial['refund'] = null,
 ): OrderEmailMaterial {
   return {
     order: {
@@ -50,6 +57,7 @@ function material(
     },
     items: [{ item_name: 'コート', color: null, size: null, quantity: 1, line_total: 5000, fulfillment_type: 'stock' }],
     fulfillment,
+    refund,
   };
 }
 
@@ -58,6 +66,15 @@ function fulfillmentMaterial(overrides: Partial<OrderEmailFulfillmentMaterial> =
   return {
     number: 1, carrier: 'yamato', trackingNumber: '1234-5678', completesOrder: true, cancelled: false,
     lines: [{ item_name: 'コート', color: null, size: null, quantity: 1 }],
+    ...overrides,
+  };
+}
+
+/** 返金のお知らせ・支払い済みのキャンセルのお知らせの材料。既定は、カードで払った注文の額だけの返金 */
+function refundMaterial(overrides: Partial<OrderEmailRefundMaterial> = {}): OrderEmailRefundMaterial {
+  return {
+    amount: 3000, shippingAmount: 0, paymentMethodType: 'card', customerActionExpiresAt: null, cancelReason: null,
+    lines: [], stillShipping: false,
     ...overrides,
   };
 }
@@ -254,6 +271,43 @@ describe('runOrderEmailWorker', () => {
     expect(filters).toEqual([['id', 'fulfillment-1'], ['order_id', 'order-1']]);
     expect(mockClientRpc).toHaveBeenCalledWith('fail_order_email', expect.objectContaining({ _error_code: 'source_missing' }));
   });
+  it('返金のお知らせの行は、行の返金の番号で返金の記録を読む（注文の番号でも絞る）', async () => {
+    type FilterChain = {
+      eq: (column: string, value: unknown) => FilterChain;
+      maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
+    };
+    const filters: Array<[string, unknown]> = [];
+    const refundQuery: FilterChain = {
+      eq: (column, value) => {
+        filters.push([column, value]);
+        return refundQuery;
+      },
+      maybeSingle: async () => ({ data: null, error: null }),
+    };
+    mockClient.from.mockImplementation((table: string) => {
+      if (table === 'orders') {
+        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: material().order, error: null }) }) }) };
+      }
+      if (table === 'order_items') {
+        return { select: () => ({ eq: async () => ({ data: material().items, error: null }) }) };
+      }
+      if (table === 'order_refunds') {
+        return { select: () => refundQuery };
+      }
+      throw new Error(`unexpected table: ${table}`);
+    });
+    const claims = [[row({ kind: 'refund', variant: 'standard', refund_id: 'refund-1' })], []];
+    mockClientRpc.mockImplementation(async (name: string) => ({
+      data: name === 'claim_order_email' ? (claims.shift() ?? []) : 'dead',
+      error: null,
+    }));
+
+    await expect(runOrderEmailWorker()).resolves.toMatchObject({ failed: 1, stoppedBy: 'empty' });
+
+    expect(filters).toEqual([['id', 'refund-1'], ['order_id', 'order-1']]);
+    expect(mockClientRpc).toHaveBeenCalledWith('fail_order_email', expect.objectContaining({ _error_code: 'source_missing' }));
+  });
+
 });
 
 describe('processOrderEmails', () => {
@@ -265,8 +319,8 @@ describe('processOrderEmails', () => {
     const result = await processOrderEmails(h.deps);
 
     expect(result).toEqual({ sent: 1, skipped: 0, failed: 0, stoppedBy: 'empty' });
-    // 発送のメールでない行は、発送の番号を渡さずに材料を読む
-    expect(h.loadMaterial).toHaveBeenCalledWith('order-1', null);
+    // 発送のメールでも返金のお知らせでもない行は、発送の番号も返金の番号も渡さずに材料を読む
+    expect(h.loadMaterial).toHaveBeenCalledWith('order-1', null, null);
     expect(names(h.calls)).toEqual(['claim_order_email', 'save_order_email_content', 'complete_order_email', 'claim_order_email']);
     const saved = h.calls[1].params as { _subject: string; _body_text: string };
     expect(saved._subject).toBe('【Le Fil des Heures】ご注文ありがとうございます（ORD-ORDER-1）');
@@ -316,7 +370,7 @@ describe('processOrderEmails', () => {
     const result = await processOrderEmails(h.deps);
 
     expect(result).toEqual({ sent: 1, skipped: 0, failed: 0, stoppedBy: 'empty' });
-    expect(h.loadMaterial).toHaveBeenCalledWith('order-1', 'fulfillment-2');
+    expect(h.loadMaterial).toHaveBeenCalledWith('order-1', 'fulfillment-2', null);
     const saved = h.calls.find((call) => call.name === 'save_order_email_content')?.params as { _subject: string; _body_text: string };
     expect(saved._subject).toBe('【Le Fil des Heures】商品を発送いたしました（ORD-ORDER-1）');
     expect(saved._body_text).toContain('・コート x1');
@@ -368,6 +422,72 @@ describe('processOrderEmails', () => {
       _error_code: 'source_missing', _category: 'permanent',
     });
     expect(shipped.send).not.toHaveBeenCalled();
+  });
+
+  it('返金のお知らせは、行の返金の番号で材料を読み、返金額と戻る時期を書いて、行の番号の重複防止キーで送る', async () => {
+    const h = harness([row({ kind: 'refund', variant: 'standard', refund_id: 'refund-1' })], {
+      material: material({ status: 'paid' }, null, refundMaterial({ amount: 2000 })),
+    });
+
+    const result = await processOrderEmails(h.deps);
+
+    expect(result).toEqual({ sent: 1, skipped: 0, failed: 0, stoppedBy: 'empty' });
+    expect(h.loadMaterial).toHaveBeenCalledWith('order-1', null, 'refund-1');
+    const saved = h.calls.find((call) => call.name === 'save_order_email_content')?.params as { _subject: string; _body_text: string };
+    expect(saved._subject).toBe('【Le Fil des Heures】ご返金のお知らせ（ORD-ORDER-1）');
+    expect(saved._body_text).toContain('返金額: ￥2,000');
+    expect(saved._body_text).toContain('ご返金は、カード会社によって5〜10営業日ほどで反映されます。');
+    // 重複防止キーは今のまま行の番号。返金の番号は入れない（やり直しでも同じ行は同じ鍵で送り、Resend が2通目を送らない）
+    expect(h.send).toHaveBeenCalledWith({
+      to: 'hanako@example.com', subject: saved._subject, text: saved._body_text, idempotencyKey: 'order-email/email-1',
+    });
+  });
+
+  it('支払い済みのキャンセルのお知らせも、行の返金の番号で材料を読み、全額の返金を書く。お支払いは発生していないとは書かない', async () => {
+    const h = harness([row({ kind: 'canceled', variant: 'paid', refund_id: 'refund-2' })], {
+      material: material({ status: 'cancelled' }, null, refundMaterial({ amount: 5000, cancelReason: 'customer_request' })),
+    });
+
+    const result = await processOrderEmails(h.deps);
+
+    expect(result).toEqual({ sent: 1, skipped: 0, failed: 0, stoppedBy: 'empty' });
+    expect(h.loadMaterial).toHaveBeenCalledWith('order-1', null, 'refund-2');
+    const saved = h.calls.find((call) => call.name === 'save_order_email_content')?.params as { _subject: string; _body_text: string };
+    expect(saved._subject).toBe('【Le Fil des Heures】ご注文取消のお知らせ（ORD-ORDER-1）');
+    expect(saved._body_text).toContain('ご依頼により、ご注文を取り消しました。');
+    expect(saved._body_text).toContain('お支払いいただいた ￥5,000（全額）を返金いたします。');
+    expect(saved._body_text).not.toContain('お支払いは発生していません。');
+    expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'order-email/email-1' }));
+  });
+
+  it('未入金の取消のお知らせは今のまま。返金の番号を渡さずに材料を読み、お支払いは発生していないと書く', async () => {
+    const h = harness([row({ kind: 'canceled', variant: 'pending' })], { material: material({ status: 'cancelled' }) });
+
+    await processOrderEmails(h.deps);
+
+    expect(h.loadMaterial).toHaveBeenCalledWith('order-1', null, null);
+    const saved = h.calls.find((call) => call.name === 'save_order_email_content')?.params as { _body_text: string };
+    expect(saved._body_text).toContain('お支払い待ちのご注文を取り消しました。\nお支払いは発生していません。');
+  });
+
+  it('返金の記録が読めない（材料が無い）時と、返金の材料が付いていない時は、すぐ送れなかったにする。送らない', async () => {
+    const missing = harness([row({ kind: 'refund', variant: 'standard', refund_id: 'refund-1' })], { material: null });
+    await processOrderEmails(missing.deps);
+    expect(missing.loadMaterial).toHaveBeenCalledWith('order-1', null, 'refund-1');
+    expect(missing.calls.find((call) => call.name === 'fail_order_email')?.params).toMatchObject({
+      _error_code: 'source_missing', _category: 'permanent',
+    });
+    expect(missing.send).not.toHaveBeenCalled();
+
+    // 支払い済みのキャンセルのお知らせの行なのに返金の材料が無い。未入金の取消の本文で送ってしまわない
+    const noRefund = harness([row({ kind: 'canceled', variant: 'paid', refund_id: 'refund-2' })], {
+      material: material({ status: 'cancelled' }),
+    });
+    await processOrderEmails(noRefund.deps);
+    expect(noRefund.calls.find((call) => call.name === 'fail_order_email')?.params).toMatchObject({
+      _error_code: 'source_missing', _category: 'permanent',
+    });
+    expect(noRefund.send).not.toHaveBeenCalled();
   });
 
   it('材料を読めないときと、中身を控えられないときは、送らずにやり直す', async () => {
@@ -510,6 +630,10 @@ describe('skipReasonFor（設計書 4-1）', () => {
     ['paid', 'shipped', null],
     ['canceled', 'cancelled', null],
     ['shipped', 'shipped', null],
+    // 返金のお知らせは、注文がどの状態でも取りやめにしない（返金は決済完了でも発送済みでもキャンセルでも起きる）
+    ['refund', 'paid', null],
+    ['refund', 'shipped', null],
+    ['refund', 'cancelled', null],
   ])('%s のメールは、注文が %s なら %s', (kind, status, expected) => {
     expect(skipReasonFor(claim(kind), material({ status: status as never }))).toBe(expected);
   });

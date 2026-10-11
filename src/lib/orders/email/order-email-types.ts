@@ -3,14 +3,17 @@ import type { OrderStatus, PaidEmailVariant } from '@/lib/orders/order-payment-t
 /**
  * 注文のメールの種類・状態・原因の記号（グループ D 設計書 3・4・5・6 章）。
  * DB の CHECK 制約（移行 20261009095633_order_email_outbox.sql）と同じ値を1か所に置く。画面からも読む。
- * 取りやめの理由と再送できる状態の表は、発送ごとのメールで作り直した移行 20261010122320_fulfillment_order_emails.sql の関数と同じ。
+ * 取りやめの理由は、発送ごとのメールで作り直した移行 20261010122320_fulfillment_order_emails.sql の関数と同じ。
+ * 種類・書き分けと再送できる状態の表は、返金のお知らせを足した移行 20261011120200_order_refund_results.sql と同じ（グループ E-2 設計書 8-6）。
  */
-export const ORDER_EMAIL_KINDS = ['paid', 'awaiting_payment', 'payment_expired', 'canceled', 'shipped'] as const;
+export const ORDER_EMAIL_KINDS = ['paid', 'awaiting_payment', 'payment_expired', 'canceled', 'shipped', 'refund'] as const;
 export type OrderEmailKind = (typeof ORDER_EMAIL_KINDS)[number];
 
-/** 取消のメールの書き出しは、取り消す前の状態で変わる */
-export type CanceledEmailVariant = 'payment_in_progress' | 'pending';
-export type OrderEmailVariant = PaidEmailVariant | CanceledEmailVariant;
+/** 取消のメールの書き出しは、取り消す前の状態で変わる。paid は支払い済みの注文のキャンセル（返金を知らせる。グループ E-2 設計書 8-2） */
+export type CanceledEmailVariant = 'payment_in_progress' | 'pending' | 'paid';
+/** 返金のお知らせの書き分け。after_cancel は、未入金のうちに取り消した注文へ後から入金があって、自動で全額を返した時（自動の返金①。グループ E-2 設計書 8-1） */
+export type RefundEmailVariant = 'standard' | 'after_cancel';
+export type OrderEmailVariant = PaidEmailVariant | CanceledEmailVariant | RefundEmailVariant;
 
 export const ORDER_EMAIL_STATUSES = ['pending', 'sending', 'retry_wait', 'sent', 'skipped', 'dead'] as const;
 export type OrderEmailStatus = (typeof ORDER_EMAIL_STATUSES)[number];
@@ -63,6 +66,7 @@ export const ORDER_EMAIL_KIND_LABELS: Record<OrderEmailKind, string> = {
   payment_expired: '支払い期限切れ',
   canceled: '取消',
   shipped: '発送',
+  refund: '返金のお知らせ',
 };
 
 /** 管理画面の履歴と店への知らせに出す原因（設計書 5-1） */
@@ -100,6 +104,7 @@ export const ORDER_EMAIL_DELIVERY_LABELS: Record<OrderEmailDeliveryStatus, strin
  * 再送できる種類と、そのときの注文の状態（設計書 5-3。DB の request_order_email_resend と同じ表）。
  * 発送のメールは、一部だけ送った間の注文（決済完了）でも再送できる（グループ E-1 設計書 8-2）。
  * その発送が取り消されていないことは、DB の関数と履歴の組み立てが見る。
+ * 返金のお知らせは再送しない（返金ごとに1通。グループ E-2 設計書 8-1）。DB の関数も断るので、状態は1つも無い。
  */
 export const RESENDABLE_ORDER_STATUSES: Record<OrderEmailKind, readonly OrderStatus[]> = {
   paid: ['paid', 'shipped'],
@@ -107,6 +112,7 @@ export const RESENDABLE_ORDER_STATUSES: Record<OrderEmailKind, readonly OrderSta
   payment_expired: ['failed'],
   canceled: ['cancelled'],
   shipped: ['paid', 'shipped'],
+  refund: [],
 };
 
 export function isOrderEmailKind(value: unknown): value is OrderEmailKind {

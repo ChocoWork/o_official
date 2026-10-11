@@ -71,6 +71,8 @@ export type ClaimedOrderEmail = {
   paymentExpiredSent: boolean;
   /** 発送のメールだけ、どの発送のメールかを示す。ほかの種類は null（グループ E-1 設計書 8-1） */
   fulfillmentId: string | null;
+  /** 返金のお知らせと、支払い済みのキャンセルのお知らせだけ、どの返金のお知らせかを示す。ほかの種類は null（グループ E-2 設計書 8-6） */
+  refundId: string | null;
 };
 
 export type OrderEmailLease = Pick<ClaimedOrderEmail, 'id' | 'leaseToken'>;
@@ -124,6 +126,7 @@ export async function claimOrderEmail(store: OrderEmailStore, leaseSeconds: numb
     bodyText: textOrNull(row.body_text),
     paymentExpiredSent: row.payment_expired_sent === true,
     fulfillmentId: textOrNull(row.fulfillment_id),
+    refundId: textOrNull(row.refund_id),
   };
 }
 
@@ -358,6 +361,7 @@ export async function listOrderEmailHistory(store: OrderEmailStore, orderId: str
     bodyErased: row.body_erased === true,
     fulfillmentId: textOrNull(row.fulfillment_id),
     fulfillmentNumber: numberOrNull(row.fulfillment_number),
+    refundId: textOrNull(row.refund_id),
   }));
 }
 
