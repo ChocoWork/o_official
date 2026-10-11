@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import { RefundFlowContent } from '@/components/RefundFlowContent';
 import { Button } from '@/components/ui/Button/Button';
 import { Checkbox } from '@/components/ui/Checkbox/Checkbox';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
@@ -248,178 +249,142 @@ function OrderRefundDialogBody({ orderId, onClose, onRefunded, onUncertain }: Or
   return (
     <Dialog open onClose={flow.close} title="返金" fullScreenOnMobile>
       <form className="space-y-3" onSubmit={handleSubmit} onKeyDown={blockEnterSubmit}>
-        {!materials && !flow.loadError ? <p className="font-acumin lk-text-3xs text-[#474747]">読み込み中です...</p> : null}
-
-        {awaiting ? (
-          <p className="font-acumin lk-text-sm text-black">{`確かめ中の返金があります（${formatYen(awaiting.amount)}）。`}</p>
-        ) : null}
-
-        {order && estimate && !awaiting ? (
-          // 幅が 768px 以上の Dialog は高さを制限しないので、入力の部分だけを縦に動かし、誤りの文とボタンは動かさない
-          <div className="space-y-3 md:max-h-[60vh] md:overflow-y-auto md:pr-1">
-            <p className="font-acumin lk-text-3xs text-[#474747]">{refundTimingNote(order.paymentMethod)}</p>
-            <div className="flex justify-end">
-              <Button variant="secondary" size="sm" className="font-acumin" disabled={stopped} onClick={selectAll}>
-                すべて選ぶ
-              </Button>
-            </div>
-
-            {beforeLines.length > 0 ? (
-              <section aria-labelledby="refund-before-heading" className="space-y-2">
-                <h4 id="refund-before-heading" className="font-acumin lk-text-sm text-black">
-                  発送前の商品
-                </h4>
-                <ul className="space-y-3">
-                  {beforeLines.map((line) => (
-                    <RefundLineRow
-                      key={line.orderItemId}
-                      line={line}
-                      beforeShipment
-                      max={line.unshipped}
-                      value={quantityOf(line, true)}
-                      disabled={stopped}
-                      onChange={(next) => changeQuantity(line, true, next)}
-                    />
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            {afterLines.length > 0 ? (
-              <section aria-labelledby="refund-after-heading" className="space-y-2">
-                <h4 id="refund-after-heading" className="font-acumin lk-text-sm text-black">
-                  発送済みの商品
-                </h4>
-                <p className="font-acumin lk-text-3xs text-[#474747]">{SHIPPED_NOTICE}</p>
-                <ul className="space-y-3">
-                  {afterLines.map((line) => (
-                    <RefundLineRow
-                      key={line.orderItemId}
-                      line={line}
-                      beforeShipment={false}
-                      max={line.shippedRefundable}
-                      value={quantityOf(line, false)}
-                      disabled={stopped}
-                      onChange={(next) => changeQuantity(line, false, next)}
-                    />
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            {showRestock ? (
-              <div className="space-y-1">
-                <Checkbox
-                  label="在庫に戻す"
-                  checked={restock}
-                  disabled={stopped}
-                  aria-describedby="refund-restock-hint"
-                  onChange={(event) => setRestock(event.target.checked)}
-                />
-                <p id="refund-restock-hint" className="font-acumin lk-text-3xs text-[#474747]">
-                  {RESTOCK_HINT}
-                </p>
+        <RefundFlowContent
+          flow={flow}
+          backLabel="キャンセル"
+          submitLabel={`${formatYen(amount)} を返金する`}
+          canSubmit={canSubmit}
+        >
+          {order && estimate && !awaiting ? (
+            // 幅が 768px 以上の Dialog は高さを制限しないので、入力の部分だけを縦に動かし、誤りの文とボタンは動かさない
+            <div className="space-y-3 md:max-h-[60vh] md:overflow-y-auto md:pr-1">
+              <p className="font-acumin lk-text-3xs text-[#474747]">{refundTimingNote(order.paymentMethod)}</p>
+              <div className="flex justify-end">
+                <Button variant="secondary" size="sm" className="font-acumin" disabled={stopped} onClick={selectAll}>
+                  すべて選ぶ
+                </Button>
               </div>
-            ) : null}
-            {showBackorderNotice ? <p className="font-acumin lk-text-3xs text-[#474747]">{BACKORDER_NOTICE}</p> : null}
 
-            <NumberInput
-              id="refund-shipping"
-              label="送料"
-              value={shippingAmount}
-              max={order.refundableShipping}
-              disabled={stopped || fixedFull || order.refundableShipping < 1}
-              hint={`返せる送料: ${formatYen(order.refundableShipping)}`}
-              onChange={changeShipping}
-            />
-            {fixedFull ? <p className="font-acumin lk-text-3xs text-[#474747]">{FULL_REFUND_NOTICE}</p> : null}
+              {beforeLines.length > 0 ? (
+                <section aria-labelledby="refund-before-heading" className="space-y-2">
+                  <h4 id="refund-before-heading" className="font-acumin lk-text-sm text-black">
+                    発送前の商品
+                  </h4>
+                  <ul className="space-y-3">
+                    {beforeLines.map((line) => (
+                      <RefundLineRow
+                        key={line.orderItemId}
+                        line={line}
+                        beforeShipment
+                        max={line.unshipped}
+                        value={quantityOf(line, true)}
+                        disabled={stopped}
+                        onChange={(next) => changeQuantity(line, true, next)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
 
-            <div role="group" aria-label="返金の内訳" className="border-t border-[#d4d4d4] pt-3">
-              <dl className="space-y-1">
-                {breakdownRows.map(([term, value]) => (
-                  <div key={term} className="flex justify-between font-acumin lk-text-sm text-black">
-                    <dt>{term}</dt>
-                    <dd>{value}</dd>
-                  </div>
-                ))}
-              </dl>
+              {afterLines.length > 0 ? (
+                <section aria-labelledby="refund-after-heading" className="space-y-2">
+                  <h4 id="refund-after-heading" className="font-acumin lk-text-sm text-black">
+                    発送済みの商品
+                  </h4>
+                  <p className="font-acumin lk-text-3xs text-[#474747]">{SHIPPED_NOTICE}</p>
+                  <ul className="space-y-3">
+                    {afterLines.map((line) => (
+                      <RefundLineRow
+                        key={line.orderItemId}
+                        line={line}
+                        beforeShipment={false}
+                        max={line.shippedRefundable}
+                        value={quantityOf(line, false)}
+                        disabled={stopped}
+                        onChange={(next) => changeQuantity(line, false, next)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {showRestock ? (
+                <div className="space-y-1">
+                  <Checkbox
+                    label="在庫に戻す"
+                    checked={restock}
+                    disabled={stopped}
+                    aria-describedby="refund-restock-hint"
+                    onChange={(event) => setRestock(event.target.checked)}
+                  />
+                  <p id="refund-restock-hint" className="font-acumin lk-text-3xs text-[#474747]">
+                    {RESTOCK_HINT}
+                  </p>
+                </div>
+              ) : null}
+              {showBackorderNotice ? <p className="font-acumin lk-text-3xs text-[#474747]">{BACKORDER_NOTICE}</p> : null}
+
+              <NumberInput
+                id="refund-shipping"
+                label="送料"
+                value={shippingAmount}
+                max={order.refundableShipping}
+                disabled={stopped || fixedFull || order.refundableShipping < 1}
+                hint={`返せる送料: ${formatYen(order.refundableShipping)}`}
+                onChange={changeShipping}
+              />
+              {fixedFull ? <p className="font-acumin lk-text-3xs text-[#474747]">{FULL_REFUND_NOTICE}</p> : null}
+
+              <div role="group" aria-label="返金の内訳" className="border-t border-[#d4d4d4] pt-3">
+                <dl className="space-y-1">
+                  {breakdownRows.map(([term, value]) => (
+                    <div key={term} className="flex justify-between font-acumin lk-text-sm text-black">
+                      <dt>{term}</dt>
+                      <dd>{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+              <NumberInput
+                id="refund-amount"
+                label="返金額"
+                value={amount}
+                max={order.refundableAmount}
+                disabled={stopped || fixedFull}
+                hint={`返せる額: ${formatYen(order.refundableAmount)}`}
+                onChange={setAmountEntered}
+              />
+
+              <SingleSelect
+                label="Stripe に伝える理由"
+                options={REASON_OPTIONS}
+                value={stripeReason}
+                disabled={stopped}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (isStripeReason(value)) setStripeReason(value);
+                }}
+              />
+              {stripeReason === 'fraudulent' ? <p className="font-acumin lk-text-3xs text-[#474747]">{FRAUD_NOTICE}</p> : null}
+              <TextAreaField
+                label="メモ（お客様には見えません）"
+                value={note}
+                rows={3}
+                maxLength={ADMIN_NOTE_MAX_LENGTH}
+                disabled={stopped}
+                onChange={(event) => setNote(event.target.value)}
+              />
+              <Checkbox
+                label="お客様に返金のメールを送る"
+                checked={notifyCustomer}
+                disabled={stopped}
+                onChange={(event) => setNotifyCustomer(event.target.checked)}
+              />
+              <p className="font-acumin lk-text-3xs text-[#474747]">返金は取り消せません。</p>
             </div>
-            <NumberInput
-              id="refund-amount"
-              label="返金額"
-              value={amount}
-              max={order.refundableAmount}
-              disabled={stopped || fixedFull}
-              hint={`返せる額: ${formatYen(order.refundableAmount)}`}
-              onChange={setAmountEntered}
-            />
+          ) : null}
 
-            <SingleSelect
-              label="Stripe に伝える理由"
-              options={REASON_OPTIONS}
-              value={stripeReason}
-              disabled={stopped}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (isStripeReason(value)) setStripeReason(value);
-              }}
-            />
-            {stripeReason === 'fraudulent' ? <p className="font-acumin lk-text-3xs text-[#474747]">{FRAUD_NOTICE}</p> : null}
-            <TextAreaField
-              label="メモ（お客様には見えません）"
-              value={note}
-              rows={3}
-              maxLength={ADMIN_NOTE_MAX_LENGTH}
-              disabled={stopped}
-              onChange={(event) => setNote(event.target.value)}
-            />
-            <Checkbox
-              label="お客様に返金のメールを送る"
-              checked={notifyCustomer}
-              disabled={stopped}
-              onChange={(event) => setNotifyCustomer(event.target.checked)}
-            />
-            <p className="font-acumin lk-text-3xs text-[#474747]">返金は取り消せません。</p>
-          </div>
-        ) : null}
-
-        {flow.alertText ? (
-          <p role="alert" className="font-acumin lk-text-3xs text-red-700">
-            {flow.alertText}
-          </p>
-        ) : null}
-
-        {flow.loadError ? (
-          <div className="flex gap-2 pt-1">
-            <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={flow.close}>
-              閉じる
-            </Button>
-          </div>
-        ) : awaiting || flow.uncertain ? (
-          <div className="flex gap-2 pt-1">
-            <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={flow.busy} onClick={flow.close}>
-              閉じる
-            </Button>
-            <Button variant="primary" size="sm" className="w-full font-acumin" disabled={flow.busy} onClick={flow.checkAgain}>
-              もう一度確かめる
-            </Button>
-          </div>
-        ) : (
-          <div className="flex gap-2 pt-1">
-            <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={flow.busy} onClick={flow.close}>
-              キャンセル
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              className="w-full font-acumin"
-              disabled={!canSubmit}
-            >
-              {`${formatYen(amount)} を返金する`}
-            </Button>
-          </div>
-        )}
+        </RefundFlowContent>
       </form>
     </Dialog>
   );

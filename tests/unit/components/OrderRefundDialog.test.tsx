@@ -686,6 +686,21 @@ describe('OrderRefundDialog の返金', () => {
 });
 
 describe('OrderRefundDialog の窓口の断り', () => {
+  it('最初の送信が403で処理前に断られても、次の送信は同じ二重防止の番号を使う', async () => {
+    const { dialog, onRefunded } = await openDialog();
+    mockClientFetch
+      .mockResolvedValueOnce(json({ error: 'Forbidden' }, 403))
+      .mockResolvedValueOnce(json(accepted()));
+    fireEvent.change(blouseBefore(dialog), { target: { value: '1' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '￥12,000 を返金する' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('この操作の権限がありません。');
+    expect(blouseBefore(dialog)).toBeEnabled();
+    fireEvent.click(within(dialog).getByRole('button', { name: '￥12,000 を返金する' }));
+    await waitFor(() => expect(onRefunded).toHaveBeenCalledTimes(1));
+    expect(requestBodyOf(2).requestKey).toBe(requestBodyOf(1).requestKey);
+  });
+
   it('窓口が断ったら、その文を画面の中に出し、入力は残して、次の送信は新しい二重防止の番号にする', async () => {
     const { dialog, onRefunded } = await openDialog();
     const message = '返せる額を超えています。';
@@ -749,6 +764,53 @@ const UNKNOWN_ANSWERS: Array<[string, () => Promise<unknown>]> = [
 ];
 
 describe('OrderRefundDialog の答えが分からない時', () => {
+  it.each([
+    [401, '認証が必要です。再ログインしてください。'],
+    [403, 'この操作の権限がありません。'],
+    [429, '返金の記録に失敗しました。'],
+  ])('再送が%iで処理前に断られても結果不明のまま、次も同じ番号・同じ本文で送る', async (status, message) => {
+    const { dialog, onRefunded, onUncertain } = await openDialog();
+    mockClientFetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json({ error: 'Blocked' }, status))
+      .mockResolvedValueOnce(json(accepted({ replayed: true })));
+    fireEvent.change(blouseBefore(dialog), { target: { value: '1' } });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'メモ（お客様には見えません）' }), { target: { value: '電話で依頼' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '￥12,000 を返金する' }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
+
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(message));
+    expect(blouseBefore(dialog)).toBeDisabled();
+    expect(within(dialog).getByRole('textbox', { name: 'メモ（お客様には見えません）' })).toBeDisabled();
+    expect(within(dialog).queryByRole('button', { name: /を返金する$/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '閉じる' })).toBeEnabled();
+    expect(mockClientFetch).toHaveBeenCalledTimes(3);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
+    await waitFor(() => expect(onRefunded).toHaveBeenCalledWith(accepted({ replayed: true })));
+    expect(mockClientFetch.mock.calls.slice(1).map(([url, init]) => [url, (init as RequestInit).body])).toEqual([
+      [REFUND_URL, (mockClientFetch.mock.calls[1][1] as RequestInit).body],
+      [REFUND_URL, (mockClientFetch.mock.calls[1][1] as RequestInit).body],
+      [REFUND_URL, (mockClientFetch.mock.calls[1][1] as RequestInit).body],
+    ]);
+    expect(onUncertain).not.toHaveBeenCalled();
+  });
+
+  it('結果不明の再送が403で処理前に断られた後に閉じても、一覧の読み直しを親に頼む', async () => {
+    const { dialog, onClose, onUncertain } = await openDialog();
+    mockClientFetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json({ error: 'Forbidden' }, 403));
+    fireEvent.change(blouseBefore(dialog), { target: { value: '1' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '￥12,000 を返金する' }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent('この操作の権限がありません。'));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    expect(onUncertain).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it.each(UNKNOWN_ANSWERS)(
     '%s時は、入力を止めて「もう一度確かめる」と「閉じる」だけを出し、同じ二重防止の番号・同じ中身で確かめ直す',
     async (_label, firstAnswer) => {
@@ -802,22 +864,41 @@ describe('OrderRefundDialog の答えが分からない時', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('確かめ直した答えが窓口の断りなら、その文を出して入力を戻し、新しい二重防止の番号で送れる', async () => {
+  it.each([400, 404, 409, 422])('再送が%iで断られたら、材料を読み直し、入力を戻して新しい番号で送れる', async (status) => {
     const { dialog, onRefunded } = await openDialog();
     const message = '返せる額を超えています。';
     mockClientFetch
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
-      .mockResolvedValueOnce(json({ error: message, code: 'exceeds_refundable' }, 409))
+      .mockResolvedValueOnce(json({ error: message, code: 'exceeds_refundable' }, status))
+      .mockResolvedValueOnce(json(materials({ order: { refundableAmount: 10000 } })))
       .mockResolvedValueOnce(json(accepted()));
     fireEvent.change(blouseBefore(dialog), { target: { value: '1' } });
     fireEvent.click(within(dialog).getByRole('button', { name: '￥12,000 を返金する' }));
     fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
 
-    expect(await within(dialog).findByText(message)).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: '￥10,000 を返金する' })).toBeEnabled());
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(message);
+    expect(mockClientFetch).toHaveBeenNthCalledWith(4, REFUND_URL, { cache: 'no-store' });
     expect(blouseBefore(dialog)).toBeEnabled();
-    fireEvent.click(within(dialog).getByRole('button', { name: '￥12,000 を返金する' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '￥10,000 を返金する' }));
     await waitFor(() => expect(onRefunded).toHaveBeenCalledTimes(1));
-    expect(requestBodyOf(3).requestKey).not.toBe(requestBodyOf(1).requestKey);
+    expect(requestBodyOf(4).requestKey).not.toBe(requestBodyOf(1).requestKey);
+  });
+
+  it('再送が409で断られた後の材料の読み直しが失敗したら、その文を出す', async () => {
+    const { dialog, onRefunded } = await openDialog();
+    mockClientFetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json({ error: '返せる額を超えています。' }, 409))
+      .mockResolvedValueOnce(json({ error: 'Forbidden' }, 403));
+    fireEvent.change(blouseBefore(dialog), { target: { value: '1' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '￥12,000 を返金する' }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
+
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent('この操作の権限がありません。'));
+    expect(mockClientFetch).toHaveBeenNthCalledWith(4, REFUND_URL, { cache: 'no-store' });
+    expect(blouseBefore(dialog)).toBeEnabled();
+    expect(onRefunded).not.toHaveBeenCalled();
   });
 
   it('Escape で閉じる。答えが分からない時だけ、一覧の読み直しを親に頼む', async () => {
@@ -839,6 +920,21 @@ describe('OrderRefundDialog の答えが分からない時', () => {
 });
 
 describe('OrderRefundDialog の材料を読めない時と確かめ中の返金', () => {
+  it('confirmが断られた後の材料の読み直しが失敗したら、その文を出す', async () => {
+    const { dialog, onRefunded } = await openDialog(
+      materials({ awaitingRefund: { id: 'refund-awaiting', amount: 12000, createdAt: '2026-10-11T01:00:00.000Z' } }),
+    );
+    mockClientFetch
+      .mockResolvedValueOnce(json({ error: 'Stripe が返金を受け付けませんでした。' }, 422))
+      .mockResolvedValueOnce(json({ error: 'Forbidden' }, 403));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
+
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent('この操作の権限がありません。'));
+    expect(mockClientFetch).toHaveBeenNthCalledWith(3, REFUND_URL, { cache: 'no-store' });
+    expect(within(dialog).getByRole('button', { name: 'もう一度確かめる' })).toBeEnabled();
+    expect(onRefunded).not.toHaveBeenCalled();
+  });
+
   it.each([
     [404, { error: '注文が見つかりません。', code: 'order_not_found' }, '注文が見つかりません。'],
     [403, { error: 'Forbidden' }, 'この操作の権限がありません。'],

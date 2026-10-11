@@ -24,7 +24,8 @@ type PostRequest = { url: string; body: object; confirm?: boolean };
 /**
  * 返金の画面と支払い済みのキャンセルの画面が共有する流れ（グループ E-2 設計書 5-1・5-3）。
  * 開く時に返金の材料を読み、二重防止の番号を作る。返金を送る・確かめ中の返金や答えが分からない返金を確かめ直す・閉じる、の動きを持つ。
- * 窓口の答えは3つに分ける: 受け付けた（onAccepted）・断られた（お金は動いていない。文を出し、番号を作り直す）・
+ * 窓口の答えは4つに分ける: 受け付けた（onAccepted）・処理前に断られた（文だけを出す）・
+ * 処理の中で断られた（お金は動いていない。文を出し、番号を作り直す）・
  * 分からない（通信が切れた・500番台。Stripe が返金を作ったかもしれない）。
  * 分からない時は、番号も中身も変えずに送り直せるようにしておく（同じ番号なら DB は前の記録を返し、Stripe の返金は1件だけになる）。
  * 番号と直近の中身は ref ではなく state で持つ（ref を読む関数を戻り値の object に入れると、lint の react-hooks/refs が止めるため）。
@@ -42,7 +43,7 @@ export function useRefundSubmission({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
-  // 二重防止の番号。画面を開いた時に作り、窓口が断った時だけ作り直す
+  // 二重防止の番号。画面を開いた時に作り、処理の中で断られた時だけ作り直す
   const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
   // 直近に送った中身。答えが分からない時の「もう一度確かめる」が、これをそのまま送り直す
   const [pending, setPending] = useState<PostRequest | null>(null);
@@ -67,15 +68,22 @@ export function useRefundSubmission({
     setBusy(true);
     setError(null);
     const result = await callRefundApi<RefundAcceptedResponse>(request.url, request.body, fallbackMessage);
+    if (result.kind === 'blocked') {
+      // 今回は処理に入っていない。前の送信の結果は分からないままなので、番号・中身・結果不明の状態を保つ
+      setError(result.message);
+      setBusy(false);
+      return;
+    }
     if (result.kind === 'refused') {
       // 窓口が断った＝返金は作られていない（Stripe の断りは記録がエラーになる）。次の送信は別の操作なので、新しい番号にする
       setRequestKey(crypto.randomUUID());
       setUncertain(false);
       setError(result.message);
-      // 確かめ直しが断られた＝記録はもう返事待ちでない。材料を読み直して入力を出す（断りの文は残す）。読み直す間は押せないままにする
-      if (request.confirm) {
+      // 確かめ直し・結果不明の再送の断りでは、現在の材料を読み直す。読み直す間は押せないままにする
+      if (request.confirm || uncertain) {
         const reloaded = await fetchRefundMaterials(orderId);
         if (reloaded.kind === 'ok') setMaterials(reloaded.materials);
+        else setError(reloaded.message);
       }
       setBusy(false);
       return;
@@ -99,8 +107,8 @@ export function useRefundSubmission({
     error,
     busy,
     uncertain,
-    /** 画面の中の `role="alert"` に出す文。答えが分からない時の文を、ほかの誤りより先にする */
-    alertText: uncertain ? UNKNOWN_REFUND_OUTCOME_MESSAGE : (error ?? loadError),
+    /** 画面の中の `role="alert"` に出す文。処理前の断りも、結果不明の状態を保ったまま表示する */
+    alertText: error ?? (uncertain ? UNKNOWN_REFUND_OUTCOME_MESSAGE : loadError),
     /** 返金（またはキャンセル）を送る。本文は、今の二重防止の番号を受け取って組む */
     submit: (makeBody: (requestKey: string) => object) => {
       if (busy || uncertain) return;

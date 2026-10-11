@@ -11,9 +11,11 @@ import type { RefundMaterials } from '@/lib/orders/refund/refund-types';
 const UNAUTHENTICATED_MESSAGE = '認証が必要です。再ログインしてください。';
 const FORBIDDEN_MESSAGE = 'この操作の権限がありません。';
 
-/** 窓口の答えを、画面が分けて扱う3つにする */
+/** 窓口の答えを、画面が分けて扱う4つにする */
 export type RefundCallResult<T> =
   | { kind: 'ok'; body: T }
+  // 認可・CSRF・回数の制限で、処理に入る前に断った。前の送信の結果は変わらない
+  | { kind: 'blocked'; message: string }
   // 窓口が断った（お金は動いていない）。画面に出す文を持つ
   | { kind: 'refused'; message: string }
   // 通信が切れた・500番台・成功なのに答えを読めない。Stripe に返金を頼んだか分からない
@@ -64,7 +66,8 @@ export async function callRefundApi<T>(url: string, body: unknown, fallbackMessa
   }
 
   const errorBody: unknown = await response.json().catch(() => null);
-  return { kind: 'refused', message: refusalMessage(response.status, errorBody, fallbackMessage) };
+  const kind = response.status === 401 || response.status === 403 || response.status === 429 ? 'blocked' : 'refused';
+  return { kind, message: refusalMessage(response.status, errorBody, fallbackMessage) };
 }
 
 /** 返金の画面と支払い済みのキャンセルの画面が、開いた時に読む「返金の材料」 */

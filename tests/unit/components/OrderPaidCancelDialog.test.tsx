@@ -310,6 +310,123 @@ const UNKNOWN_ANSWERS: Array<[string, () => Promise<unknown>]> = [
   ],
 ];
 
+describe('OrderPaidCancelDialog の処理前の断りと再送後の読み直し', () => {
+  it('最初の送信が403で処理前に断られても、次の送信は同じ二重防止の番号を使う', async () => {
+    const { dialog, onCancelled } = await openDialog();
+    mockClientFetch
+      .mockResolvedValueOnce(json({ error: 'Forbidden' }, 403))
+      .mockResolvedValueOnce(json(accepted()));
+    chooseReason(dialog, 'customer_request');
+    fireEvent.click(submitButton(dialog));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('この操作の権限がありません。');
+    expect(reasonSelect(dialog)).toBeEnabled();
+    fireEvent.click(submitButton(dialog));
+    await waitFor(() => expect(onCancelled).toHaveBeenCalledTimes(1));
+    expect(requestBodyOf(2).requestKey).toBe(requestBodyOf(1).requestKey);
+  });
+
+  it.each([
+    [401, '認証が必要です。再ログインしてください。'],
+    [403, 'この操作の権限がありません。'],
+    [429, '注文のキャンセルに失敗しました。'],
+  ])('再送が%iで処理前に断られても結果不明のまま、次も同じ番号・同じ本文で送る', async (status, message) => {
+    const { dialog, onCancelled, onUncertain } = await openDialog();
+    mockClientFetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json({ error: 'Blocked' }, status))
+      .mockResolvedValueOnce(json(accepted({ replayed: true })));
+    chooseReason(dialog, 'customer_request');
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'メモ（任意・店内のみ）' }), { target: { value: '電話で依頼' } });
+    fireEvent.click(submitButton(dialog));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
+
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(message));
+    expect(reasonSelect(dialog)).toBeDisabled();
+    expect(within(dialog).getByRole('textbox', { name: 'メモ（任意・店内のみ）' })).toBeDisabled();
+    expect(within(dialog).queryByRole('button', { name: SUBMIT })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '閉じる' })).toBeEnabled();
+    expect(mockClientFetch).toHaveBeenCalledTimes(3);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
+    await waitFor(() => expect(onCancelled).toHaveBeenCalledWith(accepted({ replayed: true })));
+    expect(mockClientFetch.mock.calls.slice(1).map(([url, init]) => [url, (init as RequestInit).body])).toEqual([
+      [STATUS_URL, (mockClientFetch.mock.calls[1][1] as RequestInit).body],
+      [STATUS_URL, (mockClientFetch.mock.calls[1][1] as RequestInit).body],
+      [STATUS_URL, (mockClientFetch.mock.calls[1][1] as RequestInit).body],
+    ]);
+    expect(onUncertain).not.toHaveBeenCalled();
+  });
+
+  it('結果不明の再送が403で処理前に断られた後に閉じても、一覧の読み直しを親に頼む', async () => {
+    const { dialog, onClose, onUncertain } = await openDialog();
+    mockClientFetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json({ error: 'Forbidden' }, 403));
+    chooseReason(dialog, 'customer_request');
+    fireEvent.click(submitButton(dialog));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent('この操作の権限がありません。'));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    expect(onUncertain).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([400, 404, 409, 422])('再送が%iで断られたら、材料を読み直し、入力を戻して新しい番号で送れる', async (status) => {
+    const { dialog, onCancelled } = await openDialog();
+    const message = '注文の状態が変わりました。';
+    mockClientFetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json({ error: message }, status))
+      .mockResolvedValueOnce(json(materials({ order: { refundableAmount: 10000 } })))
+      .mockResolvedValueOnce(json(accepted()));
+    chooseReason(dialog, 'customer_request');
+    fireEvent.click(submitButton(dialog));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
+
+    const submit = await within(dialog).findByRole('button', { name: '注文をキャンセルして ￥10,000 を返金する' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(message);
+    expect(mockClientFetch).toHaveBeenNthCalledWith(4, REFUND_URL, { cache: 'no-store' });
+    expect(reasonSelect(dialog)).toHaveValue('customer_request');
+    fireEvent.click(submit);
+    await waitFor(() => expect(onCancelled).toHaveBeenCalledTimes(1));
+    expect(requestBodyOf(4).requestKey).not.toBe(requestBodyOf(1).requestKey);
+  });
+
+  it('再送が409で断られた後の材料の読み直しが失敗したら、その文を出す', async () => {
+    const { dialog, onCancelled } = await openDialog();
+    mockClientFetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json({ error: '注文の状態が変わりました。' }, 409))
+      .mockResolvedValueOnce(json({ error: 'Forbidden' }, 403));
+    chooseReason(dialog, 'customer_request');
+    fireEvent.click(submitButton(dialog));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
+
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent('この操作の権限がありません。'));
+    expect(mockClientFetch).toHaveBeenNthCalledWith(4, REFUND_URL, { cache: 'no-store' });
+    expect(reasonSelect(dialog)).toBeEnabled();
+    expect(onCancelled).not.toHaveBeenCalled();
+  });
+
+  it('confirmが断られた後の材料の読み直しが失敗したら、その文を出す', async () => {
+    const { dialog, onCancelled } = await openDialog(
+      materials({ awaitingRefund: { id: 'refund-awaiting', amount: 54800, createdAt: '2026-10-11T01:00:00.000Z' } }),
+    );
+    mockClientFetch
+      .mockResolvedValueOnce(json({ error: 'Stripe が返金を受け付けませんでした。' }, 422))
+      .mockResolvedValueOnce(json({ error: 'Forbidden' }, 403));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
+
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent('この操作の権限がありません。'));
+    expect(mockClientFetch).toHaveBeenNthCalledWith(3, REFUND_URL, { cache: 'no-store' });
+    expect(within(dialog).getByRole('button', { name: 'もう一度確かめる' })).toBeEnabled();
+    expect(onCancelled).not.toHaveBeenCalled();
+  });
+});
+
 describe('OrderPaidCancelDialog の答えが分からない時', () => {
   it.each(UNKNOWN_ANSWERS)(
     '%s時は、入力を止めて「もう一度確かめる」と「閉じる」だけを出し、同じ二重防止の番号・同じ中身で確かめ直す',

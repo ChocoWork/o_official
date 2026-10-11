@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { Button } from '@/components/ui/Button/Button';
+import { RefundFlowContent } from '@/components/RefundFlowContent';
 import { Checkbox } from '@/components/ui/Checkbox/Checkbox';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
@@ -97,90 +97,60 @@ function OrderPaidCancelDialogBody({ orderId, onClose, onCancelled, onUncertain 
   return (
     <Dialog open onClose={flow.close} title="注文をキャンセルする" fullScreenOnMobile>
       <form className="space-y-3" onSubmit={handleSubmit} onKeyDown={blockEnterSubmit}>
-        {!materials && !flow.loadError ? <p className="font-acumin lk-text-3xs text-[#474747]">読み込み中です...</p> : null}
-
-        {awaiting ? (
-          <p className="font-acumin lk-text-sm text-black">{`確かめ中の返金があります（${formatYen(awaiting.amount)}）。`}</p>
-        ) : null}
-
-        {order && !awaiting ? (
-          // 幅が 768px 以上の Dialog は高さを制限しないので、入力の部分だけを縦に動かし、誤りの文とボタンは動かさない
-          <div className="space-y-3 md:max-h-[60vh] md:overflow-y-auto md:pr-1">
-            <p className="font-acumin lk-text-sm text-black">{`返金する額: ${formatYen(refundable)}（全額）`}</p>
-            <ul aria-label="返金の内訳" className="space-y-1 font-acumin lk-text-3xs text-[#474747]">
-              <li>{`商品 ${formatYen(refundable - shipping)}`}</li>
-              <li>{`送料 ${formatYen(shipping)}`}</li>
-            </ul>
-            <p className="font-acumin lk-text-3xs text-[#474747]">{refundTimingNote(order.paymentMethod)}</p>
-            <SingleSelect
-              label="取消の理由"
-              required
-              placeholder="選んでください"
-              options={REASON_OPTIONS}
-              value={reason}
-              disabled={stopped}
-              onChange={(event) => {
-                const value = event.target.value;
-                setReason(isCancelReason(value) ? value : '');
-              }}
-            />
-            <TextAreaField
-              label={noteNeeded ? 'メモ（必須・店内のみ）' : 'メモ（任意・店内のみ）'}
-              value={note}
-              rows={3}
-              maxLength={ADMIN_NOTE_MAX_LENGTH}
-              disabled={stopped}
-              onChange={(event) => setNote(event.target.value)}
-            />
-            {showRestock ? (
-              <Checkbox
-                label="在庫に戻す"
-                checked={restock}
+        <RefundFlowContent
+          flow={flow}
+          backLabel="戻る"
+          submitLabel={`注文をキャンセルして ${formatYen(refundable)} を返金する`}
+          canSubmit={canSubmit}
+        >
+          {order && !awaiting ? (
+            // 幅が 768px 以上の Dialog は高さを制限しないので、入力の部分だけを縦に動かし、誤りの文とボタンは動かさない
+            <div className="space-y-3 md:max-h-[60vh] md:overflow-y-auto md:pr-1">
+              <p className="font-acumin lk-text-sm text-black">{`返金する額: ${formatYen(refundable)}（全額）`}</p>
+              <ul aria-label="返金の内訳" className="space-y-1 font-acumin lk-text-3xs text-[#474747]">
+                <li>{`商品 ${formatYen(refundable - shipping)}`}</li>
+                <li>{`送料 ${formatYen(shipping)}`}</li>
+              </ul>
+              <p className="font-acumin lk-text-3xs text-[#474747]">{refundTimingNote(order.paymentMethod)}</p>
+              <SingleSelect
+                label="取消の理由"
+                required
+                placeholder="選んでください"
+                options={REASON_OPTIONS}
+                value={reason}
                 disabled={stopped}
-                onChange={(event) => setRestock(event.target.checked)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setReason(isCancelReason(value) ? value : '');
+                }}
               />
-            ) : null}
-            <Checkbox
-              label="お客様にキャンセルのお知らせを送る"
-              checked={notifyCustomer}
-              disabled={stopped}
-              onChange={(event) => setNotifyCustomer(event.target.checked)}
-            />
-            <p className="font-acumin lk-text-3xs text-[#474747]">キャンセルと返金は取り消せません。</p>
-          </div>
-        ) : null}
+              <TextAreaField
+                label={noteNeeded ? 'メモ（必須・店内のみ）' : 'メモ（任意・店内のみ）'}
+                value={note}
+                rows={3}
+                maxLength={ADMIN_NOTE_MAX_LENGTH}
+                disabled={stopped}
+                onChange={(event) => setNote(event.target.value)}
+              />
+              {showRestock ? (
+                <Checkbox
+                  label="在庫に戻す"
+                  checked={restock}
+                  disabled={stopped}
+                  onChange={(event) => setRestock(event.target.checked)}
+                />
+              ) : null}
+              <Checkbox
+                label="お客様にキャンセルのお知らせを送る"
+                checked={notifyCustomer}
+                disabled={stopped}
+                onChange={(event) => setNotifyCustomer(event.target.checked)}
+              />
+              <p className="font-acumin lk-text-3xs text-[#474747]">キャンセルと返金は取り消せません。</p>
+            </div>
+          ) : null}
 
-        {flow.alertText ? (
-          <p role="alert" className="font-acumin lk-text-3xs text-red-700">
-            {flow.alertText}
-          </p>
-        ) : null}
-
-        {flow.loadError ? (
-          <div className="flex gap-2 pt-1">
-            <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={flow.close}>
-              閉じる
-            </Button>
-          </div>
-        ) : awaiting || flow.uncertain ? (
-          <div className="flex gap-2 pt-1">
-            <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={flow.busy} onClick={flow.close}>
-              閉じる
-            </Button>
-            <Button variant="primary" size="sm" className="w-full font-acumin" disabled={flow.busy} onClick={flow.checkAgain}>
-              もう一度確かめる
-            </Button>
-          </div>
-        ) : (
-          <div className="flex gap-2 pt-1">
-            <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={flow.busy} onClick={flow.close}>
-              戻る
-            </Button>
-            <Button type="submit" variant="primary" size="sm" className="w-full font-acumin" disabled={!canSubmit}>
-              {`注文をキャンセルして ${formatYen(refundable)} を返金する`}
-            </Button>
-          </div>
-        )}
+        </RefundFlowContent>
       </form>
     </Dialog>
   );

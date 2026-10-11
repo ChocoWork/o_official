@@ -80,21 +80,14 @@ describe('callRefundApi', () => {
     }
   });
 
-  it('401・403 は固定の文、回数の制限（429）など共通の守りの英語の文は出さずに代わりの文にする', async () => {
-    mockClientFetch
-      .mockResolvedValueOnce(json({ error: 'Unauthorized' }, 401))
-      .mockResolvedValueOnce(json({ error: 'Forbidden' }, 403))
-      .mockResolvedValueOnce(json({ error: 'Too many requests' }, 429));
+  it.each([
+    [401, 'Unauthorized', '認証が必要です。再ログインしてください。'],
+    [403, 'Forbidden', 'この操作の権限がありません。'],
+    [429, 'Too many requests', '代わりの文'],
+  ])('%i は処理前の断り（blocked）にし、固定の文か代わりの文を返す', async (status, error, message) => {
+    mockClientFetch.mockResolvedValueOnce(json({ error }, status));
 
-    await expect(callRefundApi('/api/x', {}, '代わりの文')).resolves.toEqual({
-      kind: 'refused',
-      message: '認証が必要です。再ログインしてください。',
-    });
-    await expect(callRefundApi('/api/x', {}, '代わりの文')).resolves.toEqual({
-      kind: 'refused',
-      message: 'この操作の権限がありません。',
-    });
-    await expect(callRefundApi('/api/x', {}, '代わりの文')).resolves.toEqual({ kind: 'refused', message: '代わりの文' });
+    await expect(callRefundApi('/api/x', {}, '代わりの文')).resolves.toEqual({ kind: 'blocked', message });
   });
 });
 
