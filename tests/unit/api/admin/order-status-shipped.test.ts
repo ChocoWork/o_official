@@ -69,7 +69,21 @@ jest.mock('@/lib/audit', () => ({
   logAudit: (...args: unknown[]) => mockLogAudit(...args),
 }));
 
+// 支払い済みのキャンセルは、回数の制限と返金の流れ（Stripe に頼む所まで）を通る。試験では差し替える
+const mockEnforceRateLimit = jest.fn();
+jest.mock('@/features/auth/middleware/rateLimit', () => ({
+  enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
+}));
+
+const mockSubmitPaidOrderCancel = jest.fn();
+const mockRefundDeps = { name: 'refund-deps' };
+jest.mock('@/lib/orders/refund/refund-service', () => ({
+  submitPaidOrderCancel: (...args: unknown[]) => mockSubmitPaidOrderCancel(...args),
+  createDefaultRefundServiceDeps: async () => mockRefundDeps,
+}));
+
 import { POST } from '@/app/api/admin/orders/[id]/status/route';
+import { RefundStoreError } from '@/lib/orders/refund/refund-store';
 import { ReconcileTransientError } from '@/lib/stripe/checkout-payment-reader';
 
 type RouteResponse = { status: number; body: Record<string, unknown> };
@@ -338,7 +352,6 @@ describe('POST /api/admin/orders/[id]/status - 取消', () => {
 
   test.each([
     ['shipped', '発送済み'],
-    ['paid', '返金処理'],
     ['abandoned', '放棄'],
   ])('%s の注文は取り消せず 409 を返す', async (status, message) => {
     currentOrder(status);
@@ -356,5 +369,264 @@ describe('POST /api/admin/orders/[id]/status - 取消', () => {
 
     expect((await post(CANCEL)).body).toEqual({ success: true, status: 'cancelled' });
     expect(mockReconcile).not.toHaveBeenCalled();
+    // 二重防止の番号の無い送り直し（未入金の取消）は、返金の流れに回さない
+    expect(mockSubmitPaidOrderCancel).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/admin/orders/[id]/status - 支払い済みのキャンセル', () => {
+  const REQUEST_KEY = 'b1b2c3d4-1111-4222-8333-444455556666';
+  const REFUND_ID = 'c1b2c3d4-1111-4222-8333-444455556666';
+  const PAID_CANCEL = { ...CANCEL, requestKey: REQUEST_KEY, restock: true };
+  const ACCEPTED = { kind: 'accepted', refundId: REFUND_ID, status: 'pending', amount: 13500, replayed: false };
+  const ACCEPTED_BODY = { refundId: REFUND_ID, status: 'pending', amount: 13500, replayed: false };
+
+  // 注文の管理の権限だけを持ち、返金の権限を持たない人（サポート）
+  const supporter = async (permission: string) =>
+    permission === 'admin.orders.refund'
+      ? { ok: false, response: { status: 403, body: { error: 'Forbidden' } } }
+      : { ok: true, userId: 'supporter-1' };
+
+  beforeEach(() => {
+    currentOrder('paid');
+    mockEnforceRateLimit.mockResolvedValue(undefined);
+    mockSubmitPaidOrderCancel.mockResolvedValue(ACCEPTED);
+  });
+
+  afterEach(() => {
+    mockMaybeSingle.mockReset();
+    mockSubmitPaidOrderCancel.mockReset();
+    mockEnforceRateLimit.mockReset();
+  });
+
+  test('返金の権限も確かめ、返金とセットで取り消す。在庫・メモ・お知らせの指定をそのまま渡す', async () => {
+    const res = await post({ ...PAID_CANCEL, note: '電話で依頼', notifyCustomer: false, restock: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(ACCEPTED_BODY);
+    expect(mockAuthorize.mock.calls.map(([permission]) => permission)).toEqual(['admin.orders.manage', 'admin.orders.refund']);
+    expect(mockSubmitPaidOrderCancel).toHaveBeenCalledWith(mockRefundDeps, {
+      orderId: ORDER_ID,
+      actorId: 'admin-1',
+      request: { requestKey: REQUEST_KEY, reason: 'customer_request', note: '電話で依頼', restock: false, notifyCustomer: false },
+    });
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'admin.orders.status.update',
+      actor_id: 'admin-1',
+      resource: 'orders',
+      resource_id: ORDER_ID,
+      outcome: 'success',
+      detail: 'Refund accepted',
+      metadata: { refund_id: REFUND_ID, status: 'pending', amount: 13500, replayed: false, source: 'order_cancel' },
+    }));
+    // 未入金の取消の道には入らない。メールの worker は返金の流れが動かす（窓口は動かさない）
+    expect(mockReconcile).not.toHaveBeenCalled();
+    expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockScheduleOrderEmailDelivery).not.toHaveBeenCalled();
+  });
+
+  test('在庫に戻すを省くと戻す。メモが無ければ null、お知らせの既定は送る', async () => {
+    await post({ status: 'cancelled', reason: 'customer_request', requestKey: REQUEST_KEY });
+
+    expect(mockSubmitPaidOrderCancel).toHaveBeenCalledWith(mockRefundDeps, {
+      orderId: ORDER_ID,
+      actorId: 'admin-1',
+      request: { requestKey: REQUEST_KEY, reason: 'customer_request', note: null, restock: true, notifyCustomer: true },
+    });
+  });
+
+  // Review Focus 1: カードの返金は Stripe がその場で成功を返し、1回目の POST の中で注文が取消になる。返事が届かずに送り直しても、前の記録の答えを返す
+  test('返金が成功して取消になった注文に同じ番号で送り直すと、返金の流れに回し、前の記録の答え（replayed）を返す', async () => {
+    currentOrder('cancelled');
+    mockSubmitPaidOrderCancel.mockResolvedValue({ ...ACCEPTED, status: 'succeeded', replayed: true });
+
+    const res = await post(PAID_CANCEL);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ...ACCEPTED_BODY, status: 'succeeded', replayed: true });
+    expect(mockSubmitPaidOrderCancel).toHaveBeenCalledWith(mockRefundDeps, expect.objectContaining({ orderId: ORDER_ID }));
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Refund accepted' }));
+  });
+
+  test('返金の権限が無い人（サポート）は、中身が足りなくても 400 でなく 403（権限が先）。回数も数えず、返金も始めない', async () => {
+    mockAuthorize.mockImplementation(supporter);
+
+    const res = await post(CANCEL);
+
+    expect(res.status).toBe(403);
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+    expect(mockSubmitPaidOrderCancel).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  test('未入金の取消は、返金の権限が無いサポートの人もできる（返金の権限は確かめない）', async () => {
+    mockAuthorize.mockImplementation(supporter);
+    currentOrder('payment_in_progress', { payment_intent_id: null });
+
+    const res = await post(CANCEL);
+
+    expect(res.status).toBe(200);
+    expect(mockAuthorize).toHaveBeenCalledTimes(1);
+    expect(mockAuthorize).toHaveBeenCalledWith('admin.orders.manage', expect.any(Request));
+    expect(mockSubmitPaidOrderCancel).not.toHaveBeenCalled();
+  });
+
+  test('回数の制限は、支払い済みのキャンセルの名前と回数で、送信元ごと・管理者ごとに数える', async () => {
+    await post(PAID_CANCEL);
+
+    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(2);
+    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(1, {
+      request: expect.any(Request), endpoint: 'admin:orders:paid-cancel', limit: 30, windowSeconds: 600,
+    });
+    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(2, {
+      request: expect.any(Request), endpoint: 'admin:orders:paid-cancel', limit: 30, windowSeconds: 600, subject: 'admin-1',
+    });
+  });
+
+  test('送信元ごとの回数の制限を超えたら 429。管理者ごとの回数も数えず、返金を始めない', async () => {
+    mockEnforceRateLimit.mockResolvedValueOnce(new Response(null, { status: 429 }));
+
+    const res = await post(PAID_CANCEL);
+
+    expect(res.status).toBe(429);
+    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(1);
+    expect(mockSubmitPaidOrderCancel).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  test('管理者ごとの回数の制限を超えたら 429。返金を始めない', async () => {
+    mockEnforceRateLimit.mockResolvedValueOnce(undefined).mockResolvedValueOnce(new Response(null, { status: 429 }));
+
+    const res = await post(PAID_CANCEL);
+
+    expect(res.status).toBe(429);
+    expect(mockSubmitPaidOrderCancel).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    { label: 'requestKey が無い', body: { ...CANCEL, restock: true } },
+    { label: 'requestKey が UUID でない', body: { ...CANCEL, requestKey: 'abc' } },
+    { label: '在庫に戻すが真偽でない', body: { ...PAID_CANCEL, restock: 'yes' } },
+  ])('中身の誤り（$label）は 400。返金を始めず、固定の文だけを監査に残す', async ({ body }) => {
+    const res = await post(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: '入力を確かめてください。', code: 'invalid_request' });
+    expect(mockSubmitPaidOrderCancel).not.toHaveBeenCalled();
+    expect(mockLogAudit.mock.calls).toEqual([[{
+      action: 'admin.orders.status.update', actor_id: 'admin-1', resource: 'orders', resource_id: ORDER_ID,
+      outcome: 'failure', detail: 'Invalid request body', ip: null, user_agent: null, metadata: null,
+    }]]);
+  });
+
+  test('CSRF が合わなければ、注文も読まず返金も始めない', async () => {
+    mockRequireCsrf.mockResolvedValue(new Response(null, { status: 403 }));
+
+    const res = await post(PAID_CANCEL);
+
+    expect(res.status).toBe(403);
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+    expect(mockSubmitPaidOrderCancel).not.toHaveBeenCalled();
+  });
+
+  test('理由が「その他」でメモが無ければ 400。注文を読む前に断り、返金は始めない', async () => {
+    const res = await post({ ...PAID_CANCEL, reason: 'other', note: '   ' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('メモ');
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockSubmitPaidOrderCancel).not.toHaveBeenCalled();
+  });
+
+  // 返金の窓口と同じ答え・同じ監査（HTTP の対応は toRefundReply の1か所）
+  test.each([
+    {
+      label: '発送した商品がある注文（DB の断り）',
+      result: { kind: 'refused', code: 'order_not_cancellable' },
+      status: 409,
+      body: { error: '発送した商品がある注文はキャンセルできません。返金の画面を使ってください。', code: 'order_not_cancellable' },
+      outcome: 'conflict',
+      detail: 'Refund refused',
+      metadata: { code: 'order_not_cancellable' },
+    },
+    {
+      label: '確かめ中の返金がある注文',
+      result: { kind: 'refused', code: 'awaiting_refund_exists' },
+      status: 409,
+      body: { error: '確かめ中の返金があります。先に確かめてください。', code: 'awaiting_refund_exists' },
+      outcome: 'conflict',
+      detail: 'Refund refused',
+      metadata: { code: 'awaiting_refund_exists' },
+    },
+    {
+      label: 'Stripe の断り',
+      result: { kind: 'stripe_rejected', refundId: REFUND_ID, reasonLabel: 'カード会社に断られました' },
+      status: 422,
+      body: { error: 'Stripe が返金を受け付けませんでした（カード会社に断られました）。', code: 'stripe_rejected', refundId: REFUND_ID },
+      outcome: 'failure',
+      detail: 'Stripe rejected the refund',
+      metadata: { refund_id: REFUND_ID },
+    },
+    {
+      label: '答えが分からない（Review Focus 1。記録の番号を返し、画面が確かめ直せる）',
+      result: { kind: 'unknown', refundId: REFUND_ID },
+      status: 502,
+      body: {
+        error: '返金の結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。',
+        code: 'unknown_outcome',
+        refundId: REFUND_ID,
+      },
+      outcome: 'error',
+      detail: 'Refund outcome is unknown',
+      metadata: { refund_id: REFUND_ID },
+    },
+  ])('$label は、返金の窓口と同じ答えを返し、監査に残す', async ({ result, status, body, outcome, detail, metadata }) => {
+    mockSubmitPaidOrderCancel.mockResolvedValue(result);
+
+    const res = await post(PAID_CANCEL);
+
+    expect(res.status).toBe(status);
+    expect(res.body).toEqual(body);
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'admin.orders.status.update', outcome, detail, metadata: { ...metadata, source: 'order_cancel' },
+    }));
+  });
+
+  test('思いがけない失敗は 500。ログは例外名と DB の記号だけ（DB の文は出さない）', async () => {
+    mockSubmitPaidOrderCancel.mockRejectedValue(
+      new RefundStoreError('begin_order_refund', { message: '宛先・氏名を含む DB の文', code: '08006' }),
+    );
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const res = await post(PAID_CANCEL);
+
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ error: '注文のキャンセルに失敗しました。', code: 'failed' });
+      expect(error.mock.calls).toEqual([['[admin.orders.status] Failed to cancel paid order', 'RefundStoreError', '08006']]);
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'error', detail: 'Failed to cancel paid order', metadata: null,
+      }));
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  test('監査にメモ・メール・お客様の情報を入れない。入れた鍵が maskAuditEvent に伏せられることもない', async () => {
+    mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1', actorEmail: 'admin@example.com' });
+
+    await post({ ...PAID_CANCEL, note: '電話で依頼' });
+
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'Refund accepted' }));
+    const audited = JSON.stringify(mockLogAudit.mock.calls);
+    expect(audited).not.toContain('電話で依頼');
+    expect(audited).not.toContain('@example.com');
+    const { maskAuditEvent } = jest.requireActual('@/lib/audit');
+    const event = mockLogAudit.mock.calls[0][0];
+    expect(maskAuditEvent(event).metadata).toEqual(event.metadata);
   });
 });

@@ -16,6 +16,7 @@ import {
 } from '@/lib/stripe/checkout-payment-reconciler';
 import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
 import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { logAudit } from '@/lib/audit';
 import {
   ADMIN_NOTE_MAX_LENGTH,
@@ -24,16 +25,28 @@ import {
   type CancelReason,
   type OrderStatus,
 } from '@/lib/orders/order-payment-types';
+import { INVALID_REQUEST_BODY, refundFailureBody } from '@/lib/orders/refund/refund-messages';
+import { refundErrorLogFields, toRefundReply } from '@/lib/orders/refund/refund-route-support';
+import { createDefaultRefundServiceDeps, submitPaidOrderCancel } from '@/lib/orders/refund/refund-service';
 
 const orderIdSchema = z.string().uuid();
 
-// 発送は /api/admin/orders/[id]/fulfillments に移した（グループ E-1）。この窓口は未入金の注文の取消だけ
+// 発送は /api/admin/orders/[id]/fulfillments に移した（グループ E-1）。この窓口は注文の取消だけ
+// （未入金・失敗は今のまま、支払い済みは返金とセットで取り消す。グループ E-2）
 const updateStatusSchema = z.object({
   status: z.literal('cancelled'),
   reason: z.enum(CANCEL_REASONS),
   note: z.string().trim().max(ADMIN_NOTE_MAX_LENGTH).optional(),
   notifyCustomer: z.boolean().default(true),
 });
+
+// 支払い済みの取消だけが読む中身。二重防止の番号は必須。在庫に戻すの既定は戻す（設計書 5-3）
+const paidCancelSchema = z.object({
+  requestKey: z.string().uuid(),
+  restock: z.boolean().default(true),
+});
+
+const PAID_CANCEL_RATE_LIMIT = { endpoint: 'admin:orders:paid-cancel', limit: 30, windowSeconds: 600 } as const;
 
 type CancelRequest = { reason: CancelReason; note?: string; notifyCustomer: boolean };
 
@@ -109,7 +122,8 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid order id' }, { status: 400 });
     }
 
-    const parsedBody = updateStatusSchema.safeParse(await request.json().catch(() => ({})));
+    const rawBody: unknown = await request.json().catch(() => ({}));
+    const parsedBody = updateStatusSchema.safeParse(rawBody);
     if (!parsedBody.success) {
       await audit('failure', 'Invalid request body');
       return NextResponse.json(
@@ -144,6 +158,12 @@ export async function POST(
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
 
+    // 支払い済みのキャンセルの送り直し（二重防止の番号つき）は、返金が成功して注文がもう取消になっていても返金の流れに回す。
+    // DB は同じ番号の前の記録を返す（replayed）ので、通信が切れた後の「もう一度確かめる」も返金の窓口と同じ答えになる
+    if (currentOrder.status === 'cancelled' && paidCancelSchema.safeParse(rawBody).success) {
+      return cancelPaidOrder(request, currentOrder, rawBody, cancel, audit);
+    }
+
     if (currentOrder.status === 'cancelled') {
       await audit('conflict', 'Order already cancelled');
       return NextResponse.json({ success: true, status: 'cancelled' }, { status: 200 });
@@ -155,11 +175,7 @@ export async function POST(
     }
 
     if (currentOrder.status === 'paid') {
-      await audit('conflict', 'Cannot cancel: order is already paid');
-      return NextResponse.json(
-        { error: '支払い済みの注文は返金処理を伴わずキャンセルできません。' },
-        { status: 409 },
-      );
+      return cancelPaidOrder(request, currentOrder, rawBody, cancel, audit);
     }
 
     if (currentOrder.status === 'abandoned') {
@@ -175,6 +191,62 @@ export async function POST(
   } catch (error) {
     console.error('POST /api/admin/orders/:id/status error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+/**
+ * 支払い済み → 取消（グループ E-2 設計書 5-3・5-4）。残りの商品全部と送料の全額を1件の返金で返し、
+ * 返金が成功した時に注文が取消になる。お金を返す操作なので、返金の権限も要る（未入金の取消はサポートの人もできる）。
+ * 答えは返金の窓口と同じ形（HTTP の対応は toRefundReply の1か所）。メールの worker は返金の流れが動かす。
+ */
+async function cancelPaidOrder(
+  request: Request,
+  order: CurrentOrder,
+  rawBody: unknown,
+  cancel: CancelRequest,
+  audit: AuditFn,
+): Promise<Response> {
+  const refundAuthz = await authorizeAdminPermission('admin.orders.refund', request);
+  if (!refundAuthz.ok) {
+    return refundAuthz.response;
+  }
+
+  const ipLimited = await enforceRateLimit({ request, ...PAID_CANCEL_RATE_LIMIT });
+  if (ipLimited) {
+    return ipLimited;
+  }
+  const actorLimited = await enforceRateLimit({ request, ...PAID_CANCEL_RATE_LIMIT, subject: refundAuthz.userId });
+  if (actorLimited) {
+    return actorLimited;
+  }
+
+  const parsedPaid = paidCancelSchema.safeParse(rawBody);
+  if (!parsedPaid.success) {
+    // 入力値や検証の詳細はメモなどを含みうるので、固定の文だけを監査に残す
+    await audit('failure', 'Invalid request body');
+    return NextResponse.json(INVALID_REQUEST_BODY, { status: 400 });
+  }
+
+  try {
+    const deps = await createDefaultRefundServiceDeps();
+    const result = await submitPaidOrderCancel(deps, {
+      orderId: order.id,
+      actorId: refundAuthz.userId,
+      request: {
+        requestKey: parsedPaid.data.requestKey,
+        reason: cancel.reason,
+        note: cancel.note ?? null,
+        restock: parsedPaid.data.restock,
+        notifyCustomer: cancel.notifyCustomer,
+      },
+    });
+    const reply = toRefundReply(result);
+    await audit(reply.audit.outcome, reply.audit.detail, { ...reply.audit.metadata, source: 'order_cancel' });
+    return NextResponse.json(reply.body, { status: reply.status });
+  } catch (error) {
+    console.error('[admin.orders.status] Failed to cancel paid order', ...refundErrorLogFields(error));
+    await audit('error', 'Failed to cancel paid order');
+    return NextResponse.json(refundFailureBody('cancel'), { status: 500 });
   }
 }
 
