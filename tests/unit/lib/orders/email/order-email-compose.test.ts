@@ -38,6 +38,7 @@ function material(overrides: Partial<OrderEmailMaterial['order']> = {}): OrderEm
       shipping_amount: 0,
       discount_amount: 0,
       total_amount: 10000,
+      paid_amount: null,
       currency: 'jpy',
       shipping_postal_code: '1500001',
       shipping_prefecture: '東京都',
@@ -507,7 +508,7 @@ describe('お金が戻る時期の文（返金のお知らせと、支払い済�
     ['Link', 'link', null, CARD_TIMING],
     ['カード（期限が入っていても使わない）', 'card', '2026-11-24T15:30:00.000Z', CARD_TIMING],
     ['PayPay', 'paypay', null, PAYPAY_TIMING],
-    ['コンビニ払い（日本時間の期限の日付を書く）', 'konbini', '2026-11-24T15:30:00.000Z', konbiniTiming('2026年11月25日')],
+    ['コンビニ払い（その日のうちなら間に合う最後の日を書く）', 'konbini', '2026-11-24T15:30:00.000Z', konbiniTiming('2026年11月24日')],
     ['コンビニ払い（期限が空）', 'konbini', null, UNKNOWN_TIMING],
     ['コンビニ払い（期限が読めない）', 'konbini', 'あした', UNKNOWN_TIMING],
     ['支払い方法が空', null, null, UNKNOWN_TIMING],
@@ -523,14 +524,17 @@ describe('お金が戻る時期の文（返金のお知らせと、支払い済�
   });
 
   it.each([
-    ['日本時間では翌日になる時刻', '2026-11-24T15:30:00.000Z', '2026年11月25日'],
-    ['月と日に0を付けない', '2026-01-05T00:00:00.000Z', '2026年1月5日'],
-    ['年をまたぐ（日本時間の1月1日0時）', '2026-12-31T15:00:00.000Z', '2027年1月1日'],
+    ['日本時間の11月25日0時30分は前日まで', '2026-11-24T15:30:00.000Z', '2026年11月24日'],
+    ['日本時間の11月25日23時59分59秒は当日まで', '2026-11-25T14:59:59.000Z', '2026年11月25日'],
+    ['日本時間の11月26日0時は前日まで', '2026-11-25T15:00:00.000Z', '2026年11月25日'],
+    ['月と日に0を付けない', '2026-01-05T00:00:00.000Z', '2026年1月4日'],
+    ['年をまたぐ（日本時間の1月1日0時）', '2026-12-31T15:00:00.000Z', '2026年12月31日'],
     ['年をまたぐ手前（日本時間の12月31日23時59分）', '2026-12-31T14:59:59.000Z', '2026年12月31日'],
   ])('コンビニ払いの期限の日付: %s', (_label, customerActionExpiresAt, date) => {
     const refund = refundMaterial({ paymentMethodType: 'konbini', customerActionExpiresAt });
 
     expect(composeOrderEmail({ ...material(), refund }, REFUND_STANDARD)?.text).toContain(konbiniTiming(date));
+    expect(composeOrderEmail({ ...material({ status: 'cancelled' }), refund }, CANCELED_PAID)?.text).toContain(konbiniTiming(date));
   });
 });
 
@@ -538,7 +542,7 @@ describe('composeOrderEmail（支払い済みのキャンセルのお知らせ�
   it('理由の文・全額の返金・戻る時期・注文の内容の順に書く。件名は未入金の取消と同じで、「お支払いは発生していません。」は書かない', () => {
     const email = composeOrderEmail(
       {
-        ...material({ status: 'cancelled' }),
+        ...material({ status: 'cancelled', paid_amount: 10000 }),
         refund: refundMaterial({ amount: 10000, cancelReason: 'stock_unavailable' }),
       },
       CANCELED_PAID,
@@ -570,6 +574,25 @@ describe('composeOrderEmail（支払い済みのキャンセルのお知らせ�
   });
 
   it.each([
+    ['受取額と同じ額を全額返す（注文の合計とは異なる）', 12500, 12500, 'お支払いいただいた ￥12,500（全額）を返金いたします。'],
+    ['前に返金があり、残りの額を返す', 12500, 3000, 'お支払いいただいた金額のうち、残りの ￥3,000 を返金いたします。'],
+    ['受取額が空なら注文の合計を全額返す', null, 10000, 'お支払いいただいた ￥10,000（全額）を返金いたします。'],
+  ] as const)('返金額の案内: %s', (_label, paidAmount, amount, expected) => {
+    const email = composeOrderEmail(
+      { ...material({ status: 'cancelled', paid_amount: paidAmount }), refund: refundMaterial({ amount }) },
+      CANCELED_PAID,
+    );
+
+    expect(email?.text).toContain(expected);
+    if (paidAmount !== null && amount < paidAmount) {
+      expect(email?.text).not.toContain('（全額）');
+    } else {
+      expect(email?.text).not.toContain('残りの');
+    }
+    expect(email?.text).not.toContain('¥');
+  });
+
+  it.each([
     ['在庫切れ', 'stock_unavailable', '商品をご用意できなくなったため、ご注文を取り消しました。'],
     ['お客様の依頼', 'customer_request', 'ご依頼により、ご注文を取り消しました。'],
     ['不正の疑い（理由は書かない）', 'suspected_fraud', 'ご注文を取り消しました。'],
@@ -577,7 +600,7 @@ describe('composeOrderEmail（支払い済みのキャンセルのお知らせ�
     ['理由が空（記録の欠け。理由は書かない）', null, 'ご注文を取り消しました。'],
   ] as const)('理由の文: %s', (_label, cancelReason, lead) => {
     const email = composeOrderEmail(
-      { ...material({ status: 'cancelled' }), refund: refundMaterial({ cancelReason }) },
+      { ...material({ status: 'cancelled', paid_amount: 3000 }), refund: refundMaterial({ cancelReason }) },
       CANCELED_PAID,
     );
 
@@ -710,7 +733,7 @@ describe('loadOrderEmailMaterial', () => {
     };
   }
 
-  it('注文と明細を読む。注文の状態は読むが、配送業者・伝票番号は注文の行から読まない', async () => {
+  it('注文と明細を読む。注文の状態・受取額は読むが、配送業者・伝票番号は注文の行から読まない', async () => {
     const order = material().order;
     const items = material().items;
     const db = store({ order, items });
@@ -719,7 +742,7 @@ describe('loadOrderEmailMaterial', () => {
     const columns = (db.orderSelect.mock.calls[0] as unknown as [string])[0].split(',').map((column) => column.trim());
     expect(columns).toEqual([
       'id', 'status', 'shipping_email', 'shipping_full_name', 'subtotal_amount', 'shipping_amount', 'discount_amount',
-      'total_amount', 'currency', 'shipping_postal_code', 'shipping_prefecture', 'shipping_city', 'shipping_address',
+      'total_amount', 'paid_amount', 'currency', 'shipping_postal_code', 'shipping_prefecture', 'shipping_city', 'shipping_address',
       'shipping_building', 'shipping_phone', 'review_reason',
     ]);
     expect(db.itemSelect).toHaveBeenCalledWith('item_name, color, size, quantity, line_total, fulfillment_type');

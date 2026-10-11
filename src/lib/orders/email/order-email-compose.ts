@@ -24,7 +24,7 @@ const SHOP_NAME = 'Le Fil des Heures';
 
 // 配送業者と伝票番号は注文の行から読まない。注文の行の組は「全部を送った時の値」で、一部だけ送った間は空になるため
 const MATERIAL_ORDER_COLUMNS =
-  'id, status, shipping_email, shipping_full_name, subtotal_amount, shipping_amount, discount_amount, total_amount, currency, shipping_postal_code, shipping_prefecture, shipping_city, shipping_address, shipping_building, shipping_phone, review_reason';
+  'id, status, shipping_email, shipping_full_name, subtotal_amount, shipping_amount, discount_amount, total_amount, paid_amount, currency, shipping_postal_code, shipping_prefecture, shipping_city, shipping_address, shipping_building, shipping_phone, review_reason';
 
 const MATERIAL_FULFILLMENT_COLUMNS = 'number, shipping_carrier, tracking_number, completes_order, cancelled_at';
 const MATERIAL_FULFILLMENT_LINE_COLUMNS = 'quantity, order_items(item_name, color, size)';
@@ -73,7 +73,7 @@ const PAID_CANCEL_LEADS: Record<CancelReason, string> = {
   other: PAID_CANCEL_LEAD_DEFAULT,
 };
 
-export type OrderEmailMaterialRow = OrderEmailRow & { status: OrderStatus };
+export type OrderEmailMaterialRow = OrderEmailRow & { status: OrderStatus; paid_amount?: number | null };
 
 /**
  * 発送のメールの材料。発送の記録から読む。
@@ -479,13 +479,17 @@ function composeCanceled(material: OrderEmailMaterial, previousStatus: 'payment_
   };
 }
 
-/** 日本時間の YYYY年M月D日。日本に夏時間は無いので、世界標準時に9時間を足して年月日を読む。読めなければ null */
-function formatJstDate(value: string): string | null {
+/**
+ * その日のうちに入力すれば間に合う最後の日を、日本時間の YYYY年M月D日で返す。読めなければ null。
+ * 期限を実際より遅く伝えないため、期限の1分後の日本時間の日付から1日戻す（日本に夏時間は無い）。
+ */
+function formatKonbiniDeadlineDate(value: string): string | null {
   const time = Date.parse(value);
   if (Number.isNaN(time)) {
     return null;
   }
-  const jst = new Date(time + 9 * 60 * 60 * 1000);
+  const jst = new Date(time + 9 * 60 * 60 * 1000 + 60 * 1000);
+  jst.setUTCDate(jst.getUTCDate() - 1);
   return `${jst.getUTCFullYear()}年${jst.getUTCMonth() + 1}月${jst.getUTCDate()}日`;
 }
 
@@ -501,7 +505,7 @@ function refundTimingLine(refund: OrderEmailRefundMaterial): string {
     case 'paypay':
       return REFUND_TIMING_PAYPAY;
     case 'konbini': {
-      const deadline = refund.customerActionExpiresAt ? formatJstDate(refund.customerActionExpiresAt) : null;
+      const deadline = refund.customerActionExpiresAt ? formatKonbiniDeadlineDate(refund.customerActionExpiresAt) : null;
       return deadline ? refundTimingKonbini(deadline) : REFUND_TIMING_UNKNOWN;
     }
     default:
@@ -555,13 +559,18 @@ function composePaidCanceled(material: OrderEmailMaterial): ComposedOrderEmail |
   if (!refund) {
     return null;
   }
+  const paidAmount = order.paid_amount ?? order.total_amount;
+  const refundAmount = formatCurrency(refund.amount, order.currency);
+  const refundNotice = refund.amount < paidAmount
+    ? `お支払いいただいた金額のうち、残りの ${refundAmount} を返金いたします。`
+    : `お支払いいただいた ${refundAmount}（全額）を返金いたします。`;
   return {
     subject: canceledSubject(order.id),
     text: [
       greeting(order.shipping_full_name),
       '',
       refund.cancelReason ? PAID_CANCEL_LEADS[refund.cancelReason] : PAID_CANCEL_LEAD_DEFAULT,
-      `お支払いいただいた ${formatCurrency(refund.amount, order.currency)}（全額）を返金いたします。`,
+      refundNotice,
       '',
       refundTimingLine(refund),
       '',
