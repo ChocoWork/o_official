@@ -1,6 +1,11 @@
 /** @jest-environment node */
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
-import { createCatalogFixture, insertOrderWithStockLine, uniqueSuffix } from './helpers/order-fixtures';
+import {
+  createCatalogFixture,
+  insertOrderWithStockLine,
+  insertRefundRecord as insertRefundRecordWithStatus,
+  uniqueSuffix,
+} from './helpers/order-fixtures';
 import { ORDER_STATUSES } from '@/lib/orders/order-payment-types';
 import { ORDER_EMAIL_KINDS, RESENDABLE_ORDER_STATUSES } from '@/lib/orders/email/order-email-types';
 
@@ -359,6 +364,66 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
       expect(await emailRow(db(), claimed!.email_id)).toMatchObject({
         status: 'skipped', last_error_code: 'no_recipient', subject: null, body_text: null, lease_token: null, lease_expires_at: null,
       });
+    });
+
+    // 返金のお知らせと支払い済みのキャンセルのお知らせは、Stripe が返金を受け付けた時に予定が書かれ、送るのは後になる。
+    // その間に返金が失敗・エラーになった行だけ、superseded で取りやめにできる（E-2 設計書 8-1・8-2。移行 C の skip_order_email）
+    const REFUND_BOUND_EMAILS = [['refund', 'standard'], ['canceled', 'paid']] as const;
+    const refundBoundCases = (statuses: readonly ('awaiting_response' | 'error' | 'pending' | 'succeeded' | 'failed')[]) =>
+      REFUND_BOUND_EMAILS.flatMap(([kind, variant]) => statuses.map((refundStatus) => [kind, variant, refundStatus] as const));
+
+    /** 返金の記録つきの行を取り出し、本文を控えるところまで進める（送る直前の形） */
+    async function claimedRefundEmail(kind: string, variant: string, refundStatus: 'awaiting_response' | 'error' | 'pending' | 'succeeded' | 'failed') {
+      const orderId = await createOrder(db(), 'paid');
+      const { refundId } = await insertRefundRecordWithStatus(db(), { orderId, status: refundStatus, amount: 1000 });
+      await enqueue(db(), orderId, kind, variant, null, refundId);
+      const claimed = await claim(db());
+      await db().query('select public.save_order_email_content($1, $2, $3, $4)', [claimed!.email_id, claimed!.lease_token, '件名', '本文']);
+      return claimed!;
+    }
+
+    test.each(refundBoundCases(['failed', 'error']))(
+      '%s（%s）のメールは、返金が %s なら superseded で取りやめにでき、控えた本文を消す',
+      async (kind, variant, refundStatus) => {
+        const claimed = await claimedRefundEmail(kind, variant, refundStatus);
+
+        const skipped = await db().query('select public.skip_order_email($1, $2, $3) as skipped', [claimed.email_id, claimed.lease_token, 'superseded']);
+
+        expect(skipped.rows[0].skipped).toBe(true);
+        expect(await emailRow(db(), claimed.email_id)).toMatchObject({
+          status: 'skipped', last_error_code: 'superseded', subject: null, body_text: null, lease_token: null, lease_expires_at: null,
+        });
+      },
+    );
+
+    test.each(refundBoundCases(['awaiting_response', 'pending', 'succeeded']))(
+      '%s（%s）のメールは、返金が %s の間は superseded で取りやめにできない（送るべきメールを落とさない）',
+      async (kind, variant, refundStatus) => {
+        const claimed = await claimedRefundEmail(kind, variant, refundStatus);
+
+        await expectRejected(db(), 'select public.skip_order_email($1, $2, $3)', [claimed.email_id, claimed.lease_token, 'superseded'], {
+          code: '22023', message: 'SUPERSEDE_NOT_ALLOWED',
+        });
+        expect(await emailRow(db(), claimed.email_id)).toMatchObject({
+          status: 'sending', lease_token: claimed.lease_token, subject: '件名', body_text: '本文', last_error_code: null,
+        });
+      },
+    );
+
+    test('返金に結び付かない取消（未入金の取消）のメールは、superseded で取りやめにできない。入金待ちは今までどおりできる', async () => {
+      const cancelledOrder = await createOrder(db(), 'cancelled');
+      await enqueue(db(), cancelledOrder, 'canceled', 'pending');
+      const canceled = await claim(db());
+      await expectRejected(db(), 'select public.skip_order_email($1, $2, $3)', [canceled!.email_id, canceled!.lease_token, 'superseded'], {
+        code: '22023', message: 'SUPERSEDE_NOT_ALLOWED',
+      });
+
+      // 取り出しは注文ごとに順に出すので、別の注文の入金待ちの行は続けて取り出せる
+      const pendingOrder = await createOrder(db(), 'pending');
+      await enqueue(db(), pendingOrder, 'awaiting_payment');
+      const awaiting = await claim(db());
+      const skipped = await db().query('select public.skip_order_email($1, $2, $3) as skipped', [awaiting!.email_id, awaiting!.lease_token, 'superseded']);
+      expect(skipped.rows[0].skipped).toBe(true);
     });
   });
 

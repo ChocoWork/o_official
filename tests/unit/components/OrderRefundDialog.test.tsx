@@ -11,6 +11,8 @@ const REFUND_URL = `/api/admin/orders/${ORDER_ID}/refund`;
 const CONFIRM_URL = `${REFUND_URL}/confirm`;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const UNKNOWN_OUTCOME = '返金の結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。';
+/** 回数の制限（429）で処理の前に断られた時の文。管理画面のほかの所に決まった文が無いので、ここで決めた物 */
+const RATE_LIMITED = '操作が続いたため受け付けませんでした。しばらく待ってから、もう一度お試しください。';
 const BEFORE = '発送前の商品';
 const AFTER = '発送済みの商品';
 // 割引の行の符号は U+2212（ハイフンではなくマイナス記号）
@@ -738,7 +740,7 @@ describe('OrderRefundDialog の窓口の断り', () => {
     expect(requestBodyOf(2).requestKey).not.toBe(requestBodyOf(1).requestKey);
   });
 
-  it('権限が無い・認証が切れた時は固定の文、回数の制限（英語の短い文）は代わりの文を出す', async () => {
+  it('権限が無い・認証が切れた時は固定の文、回数の制限（英語の短い文）は回数の制限の固定の文を出す（「記録に失敗しました」とは言わない）', async () => {
     const { dialog } = await openDialog();
     mockClientFetch
       .mockResolvedValueOnce(json({ error: 'Forbidden' }, 403))
@@ -749,7 +751,8 @@ describe('OrderRefundDialog の窓口の断り', () => {
     expect(await within(dialog).findByText('この操作の権限がありません。')).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole('button', { name: '￥12,000 を返金する' }));
-    expect(await within(dialog).findByText('返金の記録に失敗しました。')).toBeInTheDocument();
+    expect(await within(dialog).findByText(RATE_LIMITED)).toBeInTheDocument();
+    expect(within(dialog).queryByText('返金の記録に失敗しました。')).not.toBeInTheDocument();
     expect(within(dialog).queryByText('Too many requests')).not.toBeInTheDocument();
   });
 });
@@ -767,7 +770,7 @@ describe('OrderRefundDialog の答えが分からない時', () => {
   it.each([
     [401, '認証が必要です。再ログインしてください。'],
     [403, 'この操作の権限がありません。'],
-    [429, '返金の記録に失敗しました。'],
+    [429, RATE_LIMITED],
   ])('再送が%iで処理前に断られても結果不明のまま、次も同じ番号・同じ本文で送る', async (status, message) => {
     const { dialog, onRefunded, onUncertain } = await openDialog();
     mockClientFetch
@@ -779,7 +782,8 @@ describe('OrderRefundDialog の答えが分からない時', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: '￥12,000 を返金する' }));
     fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
 
-    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(message));
+    // 断りの文の後ろに、答えが分からない時の文を続けて出す（取り消せない操作の結果が分からないことを、断りの文で隠さない）
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(`${message}${UNKNOWN_OUTCOME}`));
     expect(blouseBefore(dialog)).toBeDisabled();
     expect(within(dialog).getByRole('textbox', { name: 'メモ（お客様には見えません）' })).toBeDisabled();
     expect(within(dialog).queryByRole('button', { name: /を返金する$/ })).not.toBeInTheDocument();
@@ -794,6 +798,33 @@ describe('OrderRefundDialog の答えが分からない時', () => {
       [REFUND_URL, (mockClientFetch.mock.calls[1][1] as RequestInit).body],
     ]);
     expect(onUncertain).not.toHaveBeenCalled();
+  });
+
+  it('答えが分からない間の再送が429で断られても、回数の制限の文と答えが分からない時の文の両方を出す。番号と中身は同じまま、押せるのは「閉じる」と「もう一度確かめる」だけ', async () => {
+    const { dialog, onRefunded } = await openDialog();
+    mockClientFetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json({ error: 'Too many requests' }, 429))
+      .mockResolvedValueOnce(json(accepted({ replayed: true })));
+    fireEvent.change(blouseBefore(dialog), { target: { value: '1' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '￥12,000 を返金する' }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    await waitFor(() => expect(alert).toHaveTextContent(`${RATE_LIMITED}${UNKNOWN_OUTCOME}`));
+    // 取り消せない操作の結果が分からないのに「記録に失敗しました」（失敗した）と読ませない
+    expect(alert).not.toHaveTextContent('返金の記録に失敗しました。');
+    const enabledButtons = within(dialog)
+      .getAllByRole('button')
+      .filter((button) => !(button as HTMLButtonElement).disabled)
+      .map((button) => button.textContent);
+    expect(enabledButtons).toEqual(['閉じる', 'もう一度確かめる']);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
+    await waitFor(() => expect(onRefunded).toHaveBeenCalledWith(accepted({ replayed: true })));
+    // 429 で断られても、3回目は最初の送信と同じ二重防止の番号・同じ本文
+    expect(requestBodyOf(3)).toEqual(requestBodyOf(1));
+    expect(requestBodyOf(2)).toEqual(requestBodyOf(1));
   });
 
   it('結果不明の再送が403で処理前に断られた後に閉じても、一覧の読み直しを親に頼む', async () => {

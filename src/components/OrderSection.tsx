@@ -204,7 +204,9 @@ export default function OrderSection({
 					{
 						key: 'id',
 						header: '注文ID',
-						render: (order) => <p className="font-medium font-acumin">{order.id}</p>,
+						// 番号（UUID）は36字で、折り返さないと列が広がり、表が枠に入らなくなる。字は変えず、ハイフンの所で折り返させる。
+						// break-all は付けない: 折り返せる所が字ごとに増え、列が見出しの幅まで潰れて番号が7行に折れる（ハイフンの所だけなら4行）
+						render: (order) => <p className="max-w-[9rem] font-medium font-acumin">{order.id}</p>,
 					},
 					{
 						key: 'customer',
@@ -220,6 +222,8 @@ export default function OrderSection({
 					{
 						key: 'items',
 						header: '購入商品',
+						// 幅の下限。表が枠より広い時に、この列が潰れて商品名が1行ずつ折れ続けるのを防ぐ
+						className: 'min-w-[14rem]',
 						render: (order) => (
 							<div className="space-y-1">
 								{order.items.map((item) => (
@@ -276,13 +280,19 @@ export default function OrderSection({
 					{
 						key: 'action',
 						header: '操作',
+						// 右に貼り付け、表が横に動いても操作のボタンを画面の中に置く（下の字や色が透けないよう、見出しと中にそれぞれ背景色を付ける）。
+						// 表は border-collapse: collapse で、border は貼り付かず置いていかれるため、左の線は内側の影で引く
+						className: 'sticky right-0 shadow-[inset_1px_0_0_var(--table-border-color)]',
+						headerClassName: 'bg-[var(--table-header-bg)]',
+						cellClassName: 'bg-[var(--table-bg)]',
 						render: (order) => {
 							const isProcessing = processingOrderIds.includes(order.id);
 							const hasMissingShipping = (order.missingShippingFields?.length ?? 0) > 0;
 							const awaitingShipment = isAwaitingShipment(order);
 
 							return (
-							<div className="flex flex-wrap items-center gap-2">
+							// 貼り付けた列を狭く保つため、ボタンは縦に並べて同じ幅にそろえる
+							<div className="flex flex-col items-stretch gap-2">
 								{onShowHistory ? (
 									<Button
 										variant="secondary"

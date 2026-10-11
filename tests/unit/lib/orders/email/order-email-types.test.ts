@@ -24,17 +24,15 @@ import type { PaidEmailVariant } from '@/lib/orders/order-payment-types';
 /**
  * アプリの値と DB の CHECK・関数の入力制限がずれないことを、移行の本文で確かめる。
  * - 状態・配達の状態・一時停止の理由・失敗の分類・原因の記号・配達の問題の索引: グループ D の移行（20261009095633）
- * - 発送ごとのメールで作り直した関数（取りやめの理由）: グループ E-1 の移行 B（20261010122320）
- * - メールの種類・書き分けの CHECK と、再送できる状態の表（request_order_email_resend）: 返金のお知らせを足したグループ E-2 の移行 C（20261011120200）
+ * - メールの種類・書き分けの CHECK、再送できる状態の表（request_order_email_resend）、取りやめの理由（skip_order_email。
+ *   発送ごとのメールで理由を足した E-1 の移行 B を、失敗・エラーになった返金の行の取りやめを足して作り直した関数）:
+ *   返金のお知らせを足したグループ E-2 の移行 C（20261011120200）
  * 本番へ当てて版を改名したら、ここの名前も直す。
  */
 const outboxMigration = fs.readFileSync(
   path.join(process.cwd(), 'supabase/migrations/20261009095633_order_email_outbox.sql'), 'utf8',
 );
 // 行の説明にも関数名や許可の表の例が出るので、説明は外してから読む
-const fulfillmentEmailMigration = fs
-  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261010122320_fulfillment_order_emails.sql'), 'utf8')
-  .replace(/--.*$/gm, '');
 const refundResultsMigration = fs
   .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261011120200_order_refund_results.sql'), 'utf8')
   .replace(/--.*$/gm, '');
@@ -106,8 +104,8 @@ describe('注文のメールの種類と名前', () => {
   it('取りやめの理由・失敗の分類は DB の関数の入力制限と同じ値', () => {
     const skipReasons: Record<OrderEmailSkipReason, true> = { superseded: true, no_recipient: true, fulfillment_cancelled: true };
     const categories: Record<OrderEmailFailureCategory, true> = { transient: true, config: true, permanent: true };
-    // 取りやめの理由は、足した理由を含む移行 B の関数から読む。失敗の分類は変わっていないグループ D の移行から読む
-    const sqlSkipReasons = sqlValues(/_reason NOT IN \(([^)]+)\)/, functionBody(fulfillmentEmailMigration, 'public.skip_order_email'));
+    // 取りやめの理由は、一番新しい関数（返金の行の取りやめを足した移行 C）から読む。失敗の分類は変わっていないグループ D の移行から読む
+    const sqlSkipReasons = sqlValues(/_reason NOT IN \(([^)]+)\)/, functionBody(refundResultsMigration, 'public.skip_order_email'));
     expect(Object.keys(skipReasons).sort()).toEqual(sqlSkipReasons);
     // 取りやめの理由は、履歴に出す原因の記号でもある。DB が受ける理由は、アプリが名前を持つ記号だけ
     for (const reason of sqlSkipReasons) expect(isOrderEmailErrorCode(reason)).toBe(true);

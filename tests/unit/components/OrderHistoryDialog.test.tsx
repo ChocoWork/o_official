@@ -1133,6 +1133,29 @@ describe('OrderHistoryDialog の返金の行', () => {
     expect(within(first).queryAllByRole('button')).toHaveLength(0);
   });
 
+  it('確保し直せた数が0の商品は「× 0」を付けず品名だけを出す。確保し直せた商品には今のまま「× 数」を付け、足りなかった数の行も今のまま出す', async () => {
+    const someZero: OrderHistoryRefundRereserveEntry = {
+      type: 'refund_rereserve', at: '2026-10-12T01:00:00.000Z', refundId: REFUND_ID,
+      items: [
+        { name: 'シルクブラウス（白 / M）', quantity: 0, shortage: 1 },
+        { name: 'ウールコート（黒 / L）', quantity: 2, shortage: 1 },
+      ],
+    };
+    const allZero: OrderHistoryRefundRereserveEntry = {
+      ...someZero,
+      refundId: 'refund-all-zero',
+      items: [{ name: 'シルクブラウス（白 / M）', quantity: 0, shortage: 2 }],
+    };
+    const [first, second] = await openHistory([someZero, allZero]);
+
+    expect(first).toHaveTextContent('商品: シルクブラウス（白 / M） / ウールコート（黒 / L） × 2');
+    expect(first).not.toHaveTextContent('× 0');
+    expect(within(first).getByText('足りなかった数: 2')).toBeInTheDocument();
+    expect(within(second).getByText('商品: シルクブラウス（白 / M）')).toBeInTheDocument();
+    expect(second).not.toHaveTextContent('× 0');
+    expect(within(second).getByText('足りなかった数: 2')).toBeInTheDocument();
+  });
+
   it('返金のお知らせのメールの行は「返金のお知らせのメール」と出す。再送のボタンは窓口が決めた値のとおり出さない', async () => {
     const [item] = await openHistory([
       sentEmailEntry({ emailId: 'email-refund', kind: 'refund', kindLabel: '返金のお知らせ', resendable: false }),

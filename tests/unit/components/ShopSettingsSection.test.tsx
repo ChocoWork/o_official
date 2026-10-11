@@ -349,17 +349,24 @@ describe('ShopSettingsSection の②をオンにする時の確かめ', () => {
 });
 
 describe('ShopSettingsSection の保存中', () => {
-  it('保存している間は2つのトグルを押せず、読み直しも保存も二重に送らない。済むと押せる', async () => {
+  it('保存している間にトグルを押しても、読み直しも保存も二重に送らず、確かめの画面も出さない。トグルは disabled にしないので、キーボードの場所（フォーカス）を失わない', async () => {
     await renderLoaded();
     serveReread();
     const { held, release } = hold();
     mockedFetch.mockImplementationOnce(() => held);
+    const toggle = autoRefundSwitch();
+    toggle.focus();
+    const section = () => screen.getByRole('region', { name: 'ショップの設定' });
 
-    fireEvent.click(autoRefundSwitch());
+    fireEvent.click(toggle);
 
-    // 押した直後（読み直しの答えを待つ間）から、2つのトグルは押せない
-    expect(autoRefundSwitch()).toBeDisabled();
-    expect(autoCancelSwitch()).toBeDisabled();
+    // 押した直後（読み直しの答えを待つ間）から保存が済むまで、画面は「保存中」（aria-busy）。2つのトグルは disabled にしない:
+    // disabled にすると、本物のブラウザはフォーカスを body へ移し、保存が済んでも戻らない（キーボードで続けて操作できなくなる）
+    expect(section()).toHaveAttribute('aria-busy', 'true');
+    expect(autoRefundSwitch()).toBeEnabled();
+    expect(autoCancelSwitch()).toBeEnabled();
+    expect(toggle).toHaveFocus();
+    // 保存の間に押し直しても何も始めない。②を押しても確かめの画面は出ない（二重の保護は handleToggle の saving の判断だけ）
     fireEvent.click(autoRefundSwitch());
     fireEvent.click(autoCancelSwitch());
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -369,9 +376,11 @@ describe('ShopSettingsSection の保存中', () => {
 
     release(json({ data: settings({ autoRefund: { enabled: false } }) }));
 
-    await waitFor(() => expect(autoRefundSwitch()).toBeEnabled());
-    expect(autoCancelSwitch()).toBeEnabled();
-    expect(autoRefundSwitch()).not.toBeChecked();
+    await waitFor(() => expect(autoRefundSwitch()).not.toBeChecked());
+    expect(section()).toHaveAttribute('aria-busy', 'false');
+    expect(toggle).toHaveFocus();
+    expect(callOrder()).toEqual(['GET', 'GET', 'PUT']);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('確かめの画面から保存している間は、2つのボタンを押せず、Escape でも閉じない。済むと閉じる', async () => {

@@ -110,7 +110,9 @@ describe('店への要対応メール', () => {
     expect(mail.subject).toBe('【要対応】返金の失敗');
     const lines: string[] = mail.text.split('\n');
     expect(lines).toContain('理由: 返金の失敗（expired）');
-    expect(lines).toContain('Stripe の支払い: re_123');
+    // 参照は Stripe の返金の番号なので、「支払い」ではなく「返金」と名付ける
+    expect(lines).toContain('Stripe の返金: re_123');
+    expect(lines.some((line) => line.startsWith('Stripe の支払い:'))).toBe(false);
     expect(lines.slice(-6)).toEqual([
       '',
       '失敗の理由: 口座の入力の期限が過ぎました',
@@ -119,6 +121,27 @@ describe('店への要対応メール', () => {
       '',
       '次にやること: お客様に連絡し、別の方法で返金するか、管理画面からもう一度返金してください。',
     ]);
+  });
+
+  it('返金の失敗の参照が Stripe の返金の番号でない時（返事待ちのまま Stripe に見つからなかった返金。返金の記録の番号）は「返金の記録」と名付ける', async () => {
+    const RECORD_ID = 'e1b2c3d4-1111-2222-8333-444455556666';
+    await sendShopPaymentAlert({ ...REFUND_FAILED, paymentRef: RECORD_ID });
+
+    const lines: string[] = mockSendMail.mock.calls[0][0].text.split('\n');
+    expect(lines).toContain(`返金の記録: ${RECORD_ID}`);
+    expect(lines.some((line) => line.startsWith('Stripe の返金:') || line.startsWith('Stripe の支払い:'))).toBe(false);
+  });
+
+  it('Stripe の返金の番号は re_ だけでなく、支払い方法によって別の接頭辞（pyr_ など）でも「Stripe の返金」と名付ける', async () => {
+    await sendShopPaymentAlert({ ...REFUND_FAILED, paymentRef: 'pyr_1AbCdEf' });
+
+    expect(mockSendMail.mock.calls[0][0].text.split('\n')).toContain('Stripe の返金: pyr_1AbCdEf');
+  });
+
+  it('返金の失敗でない理由の参照は、今のまま「Stripe の支払い」と名付ける（Session の番号・支払いの番号）', async () => {
+    await sendShopPaymentAlert({ ...ALERT, paymentRef: 'pi_test_123' });
+
+    expect(mockSendMail.mock.calls[0][0].text.split('\n')).toContain('Stripe の支払い: pi_test_123');
   });
 
   it('確保し直せなかった商品が無く、キャンセルのお知らせも送っていなければ、失敗の理由の行だけを書く', async () => {

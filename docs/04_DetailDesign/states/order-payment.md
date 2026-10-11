@@ -1,10 +1,10 @@
 # 注文・決済の状態
 
-> 状態: 現行ソース確認 | 確認日: 2026-10-04 | 対象: `orders.status`と決済・在庫の独立属性
+> 状態: 現行ソース確認（返金の記録と状態・支払いの言葉・返金の取り込みと自動の返金の節は、グループ E-2 の変更を 2026-10-11 に反映） | 確認日: 2026-10-04 | 対象: `orders.status`と決済・在庫の独立属性
 
 ## 概要
 
-注文の状態値と、それを更新する照合・管理RPCを示す。Stripeの現在値、下書き、Webhookキュー、返金額、在庫確保、通知は別の対象・属性として扱う。現行アプリはStripeを入金済み・入金待ちと確認した照合処理から注文を作る。決済前に注文受付APIを呼ぶ経路は現在の `src` にはない。
+注文の状態値と、それを更新する照合・管理RPCを示す。Stripeの現在値、下書き、Webhookキュー、返金額、在庫確保、通知は別の対象・属性として扱う。現行アプリはStripeを入金済み・入金待ちと確認した照合処理から注文を作る。決済前に注文受付APIを呼ぶ経路は現在の `src` にはない。返金は、注文の返金済みの額だけでなく1件ずつの記録（`public.order_refunds`）で持つ。記録の状態・全額の数え方・注文の状態への書き方は「返金の記録と状態（グループ E-2）」の節にまとめる。
 
 ## 範囲と根拠
 
@@ -73,7 +73,7 @@ stateDiagram-v2
 | --- | --- | --- | --- |
 | ST-ORDER-01 | 注文なし、Stripe `paid/awaiting_payment`。paidは全額返金済みでないこと。draftがcreated、所有sessionと添付Sessionが一致、正の額、通貨と割引前合計が一致、商品が存在しpublished | payment_in_progressの注文と明細を作成。賄えるvariantのみstockとしpurchase台帳で確保、他はbackorder。draftをcompletedにする。ここではカートを消さない | P、C |
 | ST-ORDER-02 | Stripe `awaiting_payment`、現在payment_in_progress、既存PIがあれば一致 | pending、PI補完、snapshotに含む所有sessionのカート行を削除、入金待ち注文メールの行を同じ取引で書く | D、C |
-| ST-ORDER-03 | Stripe `paid`、期待状態がpayment_in_progress/pending/failedかつDB現在値一致、PI一致 | paid、PI補完、カート削除。stock明細で確保ゼロの分を再確保し、不足が残ればreview_reason。金額・通貨不一致でもpaidに更新後、要対応を記録して注文確定メールを抑止する。全額返金済みもpaidメールを抑止し、通知あり・金額一致なら注文確認メールの行を同じ取引で書く。金額一致なら後続のnone判定で返金を投影する | D、C |
+| ST-ORDER-03 | Stripe `paid`、期待状態がpayment_in_progress/pending/failedかつDB現在値一致、PI一致 | paid、PI補完、受け取った額（`orders.paid_amount`。金額が注文と違っても、実際に受け取った額）の書き込み、カート削除。stock明細で確保ゼロの分を再確保し、不足が残ればreview_reason。金額・通貨不一致でもpaidに更新後、要対応を記録して注文確定メールを抑止する。全額返金済みもpaidメールを抑止し、通知あり・金額一致なら注文確認メールの行を同じ取引で書く。金額一致なら後続のnone判定で返金同期を呼び、Stripe の返金を返金の記録に取り込む | D、C |
 | ST-ORDER-04 | Stripe `voucher_expired`、payment_in_progress/pending、通常照合 | failed、予約台帳の差から残る確保数量だけcancel台帳を追記、期限切れメールの行を同じ取引で書く | D、C |
 | ST-ORDER-05 | Stripe `checkout_abandoned`、payment_in_progress、通常照合 | abandoned、同じ在庫解放。pendingからのabandonedはRPCでも拒否。放棄メールは送らない | D、C |
 | ST-ORDER-06 | 管理取消: Session失効・再読取り後の期限切れ/放棄判定。要対応の取消付き解決: 外部支払可否確認後、関連注文がpayment_in_progress/pending | actor・理由必須、otherはメモ必須。期待状態付き更新、残る予約分だけ解放、取消情報を保存、指定時に取消メールの行を同じ取引で書く | D、E、[管理status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts)、[例外resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts) |
@@ -240,4 +240,4 @@ DB の状態の値（上の7つ）は変えない。管理画面とお客様の�
 
 ## 未確認事項
 
-本番migration適用、実際のStripe現在値、Cronの登録、実データによる全競合・遅延入金は未確認。`supabase/pending/`の状態遷移強制・schedule案を適用済みの事実として扱わない。保留の状態遷移強制（`harden_order_state_transitions.sql`）の表には、E-2 で`paid`→`shipped`（`refund_completed_order`）と`shipped`→`paid`（`refund_failed_reopened`）を足し、全額の判定を受け取った額に直したが、当てていない（開店前に当てるかを決める。当てる前に、全額返金で取り消した注文を戻す決まりに `private.order_cancelled_by_refund(OLD.id)` の確かめを足す。[開店のときの順番](../../06_Operations/webhook-queue-operations.md)の 5f）。ソース中の最大所要時間のコメントも、件数・時間制限がある見回りの無条件保証として記載しない。
+本番migration適用、実際のStripe現在値、Cronの登録、実データによる全競合・遅延入金は未確認。`supabase/pending/`の状態遷移強制・schedule案を適用済みの事実として扱わない。保留の状態遷移強制（`harden_order_state_transitions.sql`）の表には、E-2 で`paid`→`shipped`（`refund_completed_order`）と`shipped`→`paid`（`refund_failed_reopened`）を足し、全額の判定を受け取った額に直したが、当てていない（開店前に当てるかを決める。当てる前に、全額返金で取り消した注文を戻す決まりに `private.order_cancelled_by_refund(OLD.id)` の確かめを足す。足さないと、未入金で取り消した注文に届いた入金の全額の返金（自動の返金①、管理画面の返金の画面の「すべて選ぶ」で返した全額の返金、Stripe の画面からの全額の返金）が成功の後に失敗した時、失敗を記録できず止まる。[開店のときの順番](../../06_Operations/webhook-queue-operations.md)の 5f）。ソース中の最大所要時間のコメントも、件数・時間制限がある見回りの無条件保証として記載しない。

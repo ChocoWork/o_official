@@ -68,9 +68,10 @@ function shipment(overrides: Partial<OrderEmailFulfillmentMaterial> = {}): Order
   };
 }
 
-/** 返金のお知らせの材料。既定は、カードで払った注文の額だけの返金（商品の行なし・送料なし・まだ送る商品なし） */
+/** 返金のお知らせの材料。既定は、カードで払った注文の額だけの成功した返金（商品の行なし・送料なし・まだ送る商品なし） */
 function refundMaterial(overrides: Partial<OrderEmailRefundMaterial> = {}): OrderEmailRefundMaterial {
   return {
+    status: 'succeeded',
     amount: 3000,
     shippingAmount: 0,
     paymentMethodType: 'card',
@@ -632,6 +633,7 @@ describe('loadOrderEmailMaterial', () => {
     { quantity: 1, order_items: { item_name: 'ストール', color: null, size: null } },
   ];
   const REFUND_ROW = {
+    status: 'pending',
     amount: 12500,
     shipping_amount: 500,
     payment_method_type: 'konbini',
@@ -824,7 +826,7 @@ describe('loadOrderEmailMaterial', () => {
     ).rejects.toMatchObject({ name: 'OrderEmailMaterialError', table: 'order_fulfillment_lines' });
   });
 
-  it('返金の番号があれば、その返金の額・送料・支払い方法・期限・取消の理由・商品を読み、まだ送る商品があるかを数える（注文の番号でも絞る）', async () => {
+  it('返金の番号があれば、その返金の状態・額・送料・支払い方法・期限・取消の理由・商品を読み、まだ送る商品があるかを数える（注文の番号でも絞る）', async () => {
     const order = material().order;
     const items = material().items;
     const db = store({
@@ -841,6 +843,7 @@ describe('loadOrderEmailMaterial', () => {
       items,
       fulfillment: null,
       refund: {
+        status: 'pending',
         amount: 12500,
         shippingAmount: 500,
         paymentMethodType: 'konbini',
@@ -853,7 +856,9 @@ describe('loadOrderEmailMaterial', () => {
         stillShipping: true,
       },
     });
-    expect(db.refundSelect).toHaveBeenCalledWith('amount, shipping_amount, payment_method_type, customer_action_expires_at, cancel_reason');
+    expect(db.refundSelect).toHaveBeenCalledWith(
+      'status, amount, shipping_amount, payment_method_type, customer_action_expires_at, cancel_reason',
+    );
     expect(db.refundFilters).toEqual([['id', REFUND_ID], ['order_id', ORDER_ID]]);
     expect(db.refundLineSelect).toHaveBeenCalledWith('order_item_id, quantity, before_shipment, order_items(item_name, color, size, created_at)');
     expect(db.refundLineFilters).toEqual([['refund_id', REFUND_ID]]);
@@ -861,6 +866,24 @@ describe('loadOrderEmailMaterial', () => {
     // 返金の番号だけを渡した時は、発送の表を読まない
     expect(db.from).not.toHaveBeenCalledWith('order_fulfillments');
   });
+
+  // 送るかどうかは worker が決める（失敗・エラーの返金には送らない）。材料は、返金の状態をそのまま持つ
+  it.each(['awaiting_response', 'error', 'pending', 'succeeded', 'failed'] as const)(
+    '返金の状態（%s）を、そのまま材料に持つ',
+    async (status) => {
+      const db = store({
+        order: material().order,
+        items: material().items,
+        refund: { ...REFUND_ROW, status },
+        refundLines: [],
+        unshipped: [],
+      });
+
+      const loaded = await loadOrderEmailMaterial(db.client, ORDER_ID, null, REFUND_ID);
+
+      expect(loaded?.refund?.status).toBe(status);
+    },
+  );
 
   it('同じ商品の発送前と発送後の行は1行にまとめる（数は足し、発送前の印は1つでもあれば付く）', async () => {
     const db = store({

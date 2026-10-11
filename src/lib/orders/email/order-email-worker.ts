@@ -96,6 +96,11 @@ export function skipReasonFor(
   // 発送を取り消した後は、その発送のメールを送らない。送る前・やり直し待ちの行は取消の時に DB が取りやめるので、
   // ここで見るのは、取消の時に送っている途中だった行。控えた中身がある行も送らない（グループ E-1 設計書 7-3）
   if (claim.kind === 'shipped' && material.fulfillment?.cancelled) return 'fulfillment_cancelled';
+  // 返金のお知らせ・支払い済みのキャンセルのお知らせは、Stripe が返金を受け付けた時に予定が書かれ、送るのは後になる。
+  // その間に返金が失敗・エラーになったら、お金が戻らないのに「返金します」と送ることになるので送らない（設計書 8-1・8-2）。
+  // 返金の材料は返金の番号がある行（この2種類）だけが持つ。お客様への連絡は、店への要対応「返金の失敗」が受け持つ。
+  // 理由は superseded（DB の skip_order_email が、返金が失敗・エラーの行にだけ受ける）
+  if (material.refund && (material.refund.status === 'failed' || material.refund.status === 'error')) return 'superseded';
   return null;
 }
 

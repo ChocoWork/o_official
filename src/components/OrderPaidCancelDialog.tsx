@@ -70,6 +70,8 @@ function OrderPaidCancelDialogBody({ orderId, onClose, onCancelled, onUncertain 
   const order = materials?.order ?? null;
   const stopped = flow.busy || flow.uncertain;
   const refundable = order?.refundableAmount ?? 0;
+  // 返せる額が受け取った額より少ないのは、前に返金がある時。お客様へのメール（残りの ¥X を返金いたします）と同じく「残りの全額」と言う
+  const hasPriorRefund = order ? order.refundableAmount < order.paidAmount : false;
   // 送料は、返せる送料と返せる額の小さい方（DB が全部を返す時に入れる送料と同じ。送料 ≤ 額）
   const shipping = order ? Math.min(order.refundableShipping, order.refundableAmount) : 0;
   // 未発送の全部を返すので、在庫に戻せる数（restockable）が1以上の在庫の品があれば「在庫に戻す」を出す。
@@ -106,7 +108,7 @@ function OrderPaidCancelDialogBody({ orderId, onClose, onCancelled, onUncertain 
           {order && !awaiting ? (
             // 幅が 768px 以上の Dialog は高さを制限しないので、入力の部分だけを縦に動かし、誤りの文とボタンは動かさない
             <div className="space-y-3 md:max-h-[60vh] md:overflow-y-auto md:pr-1">
-              <p className="font-acumin lk-text-sm text-black">{`返金する額: ${formatYen(refundable)}（全額）`}</p>
+              <p className="font-acumin lk-text-sm text-black">{`返金する額: ${formatYen(refundable)}${hasPriorRefund ? '（残りの全額）' : '（全額）'}`}</p>
               <ul aria-label="返金の内訳" className="space-y-1 font-acumin lk-text-3xs text-[#474747]">
                 <li>{`商品 ${formatYen(refundable - shipping)}`}</li>
                 <li>{`送料 ${formatYen(shipping)}`}</li>

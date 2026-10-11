@@ -247,6 +247,12 @@ for (const viewport of viewports) {
         return doc.scrollWidth > doc.clientWidth + 1;
       });
       expect(hasHorizontalOverflow).toBe(false);
+
+      // 実際の注文（番号が36字の UUID）の表は 1280px でも枠に入りきらず、中だけ横に動く。「操作」の列は右に貼り付いているので、
+      // 表を横に動かさなくてもボタンが画面の中に見える
+      if (viewport.width >= 1280) {
+        await expect(rowOf(page, 'order-unpaid').getByRole('button', { name: 'キャンセル', exact: true })).toBeInViewport();
+      }
     });
   });
 }

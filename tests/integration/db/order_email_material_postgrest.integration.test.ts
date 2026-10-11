@@ -50,7 +50,8 @@ describeLocalDb('integration: 返金のお知らせの材料を、実際の Post
     const material = await loadOrderEmailMaterial(client, orderId, null, refundId);
 
     expect(material?.refund).toEqual({
-      amount: 1000, shippingAmount: 0, paymentMethodType: null, customerActionExpiresAt: null, cancelReason: null,
+      // status は、送る前に返金が失敗・エラーになっていないかを worker が見る材料
+      status: 'pending', amount: 1000, shippingAmount: 0, paymentMethodType: null, customerActionExpiresAt: null, cancelReason: null,
       lines: [{ item_name: '照合テスト', color: 'BLACK', size: 'M', quantity: 1, before_shipment: true }],
       stillShipping: true,
     });

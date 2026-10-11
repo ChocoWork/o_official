@@ -98,6 +98,10 @@ export function useRefundSubmission({
   };
 
   const awaiting = materials?.awaitingRefund ?? null;
+  // 結果が分からない間に処理前の断り（401・403・429）を受けた時は、断りの文の後ろに、結果が分からない時の文を続けて出す。
+  // 断りの文だけにすると、取り消せない操作の結果が分からないことが読めなくなり、失敗したと読めてしまう
+  const unknownText = uncertain ? UNKNOWN_REFUND_OUTCOME_MESSAGE : '';
+  const alertText = error ? `${error}${unknownText}` : unknownText || loadError;
 
   return {
     materials,
@@ -108,7 +112,7 @@ export function useRefundSubmission({
     busy,
     uncertain,
     /** 画面の中の `role="alert"` に出す文。処理前の断りも、結果不明の状態を保ったまま表示する */
-    alertText: error ?? (uncertain ? UNKNOWN_REFUND_OUTCOME_MESSAGE : loadError),
+    alertText,
     /** 返金（またはキャンセル）を送る。本文は、今の二重防止の番号を受け取って組む */
     submit: (makeBody: (requestKey: string) => object) => {
       if (busy || uncertain) return;

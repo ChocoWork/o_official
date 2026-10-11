@@ -4,6 +4,7 @@
 -- 注文の返金済みの額と状態へ、1回の処理で書く。Stripe の画面からの返金（こちらの印の無い返金）の記録と、
 -- 返事待ちのエラーも、同じ道を通る。
 -- 注文のメールの表に返金の番号の列を足し、返金のお知らせと支払い済みのキャンセルのお知らせを返金ごとの行にする。
+-- 送る前に返金が失敗・エラーになった行を取りやめにできるよう、取りやめの関数（skip_order_email）の受け方を足す。
 -- 要対応の理由に「返金の失敗」を足し、前の返金の関数（apply_order_refund_projection。注文の額と状態だけを書いた）を消す。
 -- 移行 A（20261011120000_order_refund_records.sql）・移行 B（20261011120100_order_refund_requests.sql）の後に当てる。
 BEGIN;
@@ -368,6 +369,66 @@ AS $$
   LEFT JOIN public.order_fulfillments AS f ON f.id = e.fulfillment_id
   WHERE e.order_id = _order_id
   ORDER BY e.seq DESC
+$$;
+
+-- 6の2. 取りやめ（superseded）に、失敗・エラーになった返金の行を足す（設計書 8-1・8-2「エラー・失敗の返金には送らない」）。
+--    返金のお知らせと支払い済みのキャンセルのお知らせは、Stripe が返金を受け付けた時に予定が書かれ、送るのは後になる。
+--    その間に返金が失敗・エラーになった行を worker が取りやめにできるよう、返金に結び付く行は、その返金が失敗・エラーの時だけ
+--    superseded を受ける（worker の思い違いで、送るべきメールを落とさない）。
+--    ほかの決まり（理由の3つ・入金待ちと支払い期限切れの取りやめ・発送の取消）は E-1 の移行 B（20261010122320）のまま
+CREATE OR REPLACE FUNCTION public.skip_order_email(_email_id uuid, _lease_token uuid, _reason text)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF _reason IS NULL OR _reason NOT IN ('superseded', 'no_recipient', 'fulfillment_cancelled') THEN
+    RAISE EXCEPTION 'INVALID_SKIP_REASON' USING ERRCODE = '22023';
+  END IF;
+
+  -- 取りやめ（superseded）は入金待ちと支払い期限切れ、および返金が失敗・エラーになった返金の行だけ。
+  -- 入金済み・取消・発送、返金が失敗・エラーでない返金の行は、その時の事実を伝えるので取りやめない
+  IF _reason = 'superseded' AND EXISTS (
+    SELECT 1
+    FROM private.order_email_outbox AS e
+    WHERE e.id = _email_id
+      AND e.kind NOT IN ('awaiting_payment', 'payment_expired')
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.order_refunds AS r
+        WHERE r.id = e.refund_id
+          AND r.status IN ('failed', 'error')
+      )
+  ) THEN
+    RAISE EXCEPTION 'SUPERSEDE_NOT_ALLOWED' USING ERRCODE = '22023';
+  END IF;
+
+  -- 発送の取消による取りやめは、取り消した発送の発送のメールだけ（worker の思い違いで、送るべきメールを落とさない）
+  IF _reason = 'fulfillment_cancelled' AND EXISTS (
+    SELECT 1
+    FROM private.order_email_outbox AS e
+    LEFT JOIN public.order_fulfillments AS f ON f.id = e.fulfillment_id
+    WHERE e.id = _email_id
+      AND (e.kind <> 'shipped' OR f.cancelled_at IS NULL)
+  ) THEN
+    RAISE EXCEPTION 'SKIP_REASON_NOT_ALLOWED' USING ERRCODE = '22023';
+  END IF;
+
+  UPDATE private.order_email_outbox AS e
+  SET status = 'skipped',
+      finished_at = pg_catalog.now(),
+      subject = NULL,
+      body_text = NULL,
+      body_erased_at = CASE WHEN e.subject IS NOT NULL THEN pg_catalog.now() ELSE e.body_erased_at END,
+      lease_token = NULL,
+      lease_expires_at = NULL,
+      last_error_code = _reason
+  WHERE e.id = _email_id
+    AND e.status = 'sending'
+    AND e.lease_token = _lease_token;
+  RETURN FOUND;
+END;
 $$;
 
 -- 7. Stripe の値の形の確かめ。結果を書く関数と、外からの返金を記録する関数が同じ確かめを使う。
@@ -1233,6 +1294,7 @@ REVOKE ALL ON FUNCTION private.order_cancelled_by_refund(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.apply_order_refund_state(uuid) FROM PUBLIC;
 
 REVOKE ALL ON FUNCTION public.claim_order_email(integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.skip_order_email(uuid, uuid, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.request_order_email_resend(uuid, text, uuid, uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.list_order_email_history(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.record_order_refund_result(uuid, text, text, text, text, timestamptz, text, text, text)
@@ -1245,6 +1307,7 @@ REVOKE ALL ON FUNCTION public.list_order_refund_summaries(uuid[]) FROM PUBLIC, a
 REVOKE ALL ON FUNCTION public.resolve_payment_exception_by_system(uuid, text) FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.claim_order_email(integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.skip_order_email(uuid, uuid, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.request_order_email_resend(uuid, text, uuid, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.list_order_email_history(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.record_order_refund_result(uuid, text, text, text, text, timestamptz, text, text, text)

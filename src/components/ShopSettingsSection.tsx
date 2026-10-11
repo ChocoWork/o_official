@@ -208,10 +208,11 @@ export default function ShopSettingsSection() {
               const state = load.settings[toggle.key];
               return (
                 <li key={toggle.key} className="space-y-1 py-3">
+                  {/* 保存の間も disabled にしない。disabled にすると、キーボードで押した時にブラウザがフォーカスを body へ移し、
+                      保存が済んでも戻らない。保存の間の押し直しは handleToggle の saving の判断が受け付けず、画面は aria-busy で知らせる */}
                   <SwitchToggle
                     label={toggle.name}
                     checked={state.enabled}
-                    disabled={saving}
                     fullWidth
                     size="sm"
                     onChange={(enabled) => handleToggle(toggle.key, enabled)}

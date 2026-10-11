@@ -152,6 +152,18 @@ for (const viewport of viewports) {
       // 変えていない②は、まだ変えていないまま
       await expect(autoCancelSwitch(page)).toHaveAttribute('aria-checked', 'false');
       await expect(page.getByText('まだ変えていません')).toHaveCount(1);
+
+      // キーボード（focus → Space）でも切り替わり、保存が済んだ後もフォーカスはそのトグルにある
+      // （保存の間 disabled にすると、ブラウザがフォーカスを body へ移し、戻らない）
+      await autoRefundSwitch(page).focus();
+      await page.keyboard.press('Space');
+      await expect(autoRefundSwitch(page)).toHaveAttribute('aria-checked', 'true');
+      await expect(page.getByRole('status').filter({ hasText: SAVED })).toBeVisible();
+      await expect(autoRefundSwitch(page)).toBeFocused();
+      expect(state.puts).toEqual([
+        { autoRefundCancelledOrderPayment: false, autoCancelAmountMismatch: false },
+        { autoRefundCancelledOrderPayment: true, autoCancelAmountMismatch: false },
+      ]);
     });
 
     test('②をオンにする時は確かめの画面が出て、やめると何も保存せず、オンにすると保存される', async ({ page }) => {

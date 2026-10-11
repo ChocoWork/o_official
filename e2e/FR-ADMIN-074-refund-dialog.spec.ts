@@ -655,7 +655,10 @@ for (const viewport of viewports) {
       await openOrderTab(page);
       const dialog = await openRefundDialog(page, ORDER_ID);
       await quantityInput(dialog, BEFORE, BLOUSE_LABEL).fill('1');
-      await expect(dialog.getByRole('button', { name: `${formatYen(12_000)} を返金する`, exact: true })).toBeEnabled();
+      const submit = dialog.getByRole('button', { name: `${formatYen(12_000)} を返金する`, exact: true });
+      await expect(submit).toBeEnabled();
+      // 確定のボタンの字は、3つの画面幅とも切れずに全部が見える（Button の既定は折り返さず、はみ出しを隠す）
+      expect(await submit.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
       const box = await dialog.boundingBox();
       if (!box) throw new Error('返金の画面の位置を取れなかった');

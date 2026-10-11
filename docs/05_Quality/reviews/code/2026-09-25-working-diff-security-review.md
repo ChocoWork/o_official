@@ -173,7 +173,7 @@
 - **箇所**: [apply_order_refund_projection](../../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql) 261〜292行、[stock_movements](../../../../supabase/migrations/20260919065355_add_stock_movements.sql) 10〜11行、[管理設計書](../../../04_DetailDesign/pages/16_admin.md) 151行。
 - **事実**: 全額返金で status を cancelled にするが、`reason='refund'` の台帳行を書く処理はリポジトリのどこにもない（grep）。設計書は refund を「注文の処理が書く理由」と定義している。refund.failed で cancelled から paid へ戻す分岐もあるため、戻すなら再引当も対になる。
 - **修正方針**: 未発送の全額返金で明細単位に冪等な refund 行を追記するか、手動調整（adjustment）で運用すると仕様に明記するかを決める。
-- **修正（2026-10-11）**: グループ E-2。発送前の在庫の品の返金は、Stripe が受け付けた時に1回だけ確保を外して台帳に `reason = 'refund'` で戻し（「戻さない」は `refund` +n と `adjustment` −n の2行）、全額の返金でキャンセルになる時は、どの道でも未発送の商品を全部その返金に入れるので、確保が「引き当て済み」に残らない。返金が失敗した時は確保し直す（`purchase`）。直したコミット: `4a6798cb`・`b77b54c2`・`b78bc093`（移行 A〜C の返金と在庫の関数）、`5e2d29f0`（Stripe の画面の全額の返金）。E2E は `7c20c469`（FR-ADMIN-080・081・082）。
+- **修正（2026-10-11）**: グループ E-2。発送前の在庫の品の返金は、Stripe が受け付けた時に1回だけ確保を外して台帳に `reason = 'refund'` で戻し（「戻さない」は `refund` +n と `adjustment` −n の2行）、全額の返金でキャンセルになる時は、前からの写し（`legacy`）を除くどの道でも未発送の商品を全部その返金に入れるので、確保が「引き当て済み」に残らない。返金が失敗した時は確保し直す（`purchase`）。直したコミット: `4a6798cb`・`b77b54c2`・`b78bc093`（移行 A〜C の返金と在庫の関数）、`5e2d29f0`（Stripe の画面の全額の返金）。E2E は `7c20c469`・`80891a1d`（FR-ADMIN-080。081・082 は `7c20c469`）。
 
 ### R-17 ウィッシュリストのカードに「受注生産」が出ない
 

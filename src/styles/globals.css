@@ -876,6 +876,16 @@ html[data-header-visible="false"] {
   margin-block-end: 0;
 }
 
+/* 返金の画面・支払い済みのキャンセルの画面の下のボタンの並び（RefundFlowContent）。
+   確定のボタンの字（「注文をキャンセルして ￥42,800 を返金する」など）は長く、Button.css の
+   white-space: nowrap + overflow: hidden のままでは幅を超えた分が両端から切れて読めない。
+   Button.css は @layer の外にあり Tailwind のクラスでは上書きできないので、上書きもここ（layer 外・詳細度 2）に置く。
+   折り返しを許すのはこの並びのボタンだけで、Button の既定は変えない。 */
+.refund-flow-actions [data-ui-button] {
+  white-space: normal;
+  overflow: visible;
+}
+
 /* ヒーローのモーション。loading ページの Motion Ideas「THREAD DRAW」と
    TextReveal を流用する。文字は TextReveal コンポーネント側で制御。 */
 @keyframes threadDraw {

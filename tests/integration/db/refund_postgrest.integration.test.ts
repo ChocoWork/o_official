@@ -12,6 +12,9 @@
  * 同じく使い捨てのローカル DB でだけ動かす（DATABASE_URL・LOCAL_SUPABASE_URL が localhost 以外なら失敗させる）。
  * 注文は毎回新しく作る。ただし、返事待ち・保留の返金は、ほかの結合テストの全体の一覧に混ざらないよう、試験の終わりに成功かエラーにする。
  * ショップの設定は、試験の前の値を控えて、終わりに戻す。
+ * 要対応の窓口（GET /api/admin/order-attention）の「返金の記録 → 返金の商品の行 → 商品」の埋め込みの select は、窓口そのものを呼んで通す
+ * （権限の確かめだけを通し、Service Role の client を、ここの本物の client にする）。select の文字を試験に写すと、窓口の select が
+ * 変わっても試験が通ってしまう。誤ると窓口は警告だけを出して「額0・不足なし」に黙って落ちるので、額と商品の名前・数を確かめる。
  *
  * 実行方法（ローカル Supabase を起動しておく）:
  *   eval "$(npx supabase status -o env | grep -E '^(API_URL|SERVICE_ROLE_KEY)=')"
@@ -19,7 +22,21 @@
  *   LOCAL_SUPABASE_URL="$API_URL" LOCAL_SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" \
  *     npx jest tests/integration/db/refund_postgrest --runInBand
  */
+// 要対応の窓口（GET）そのものを呼ぶための差し替え。権限の確かめは通し、Service Role の client は beforeAll で作る本物の client にする。
+// next/server は、Response の中身（status と body）だけを見る形にする（要対応の窓口の単体試験と同じ）
+jest.mock('next/server', () => ({
+  NextResponse: {
+    json: (body: unknown, init?: { status?: number }) => ({ status: init?.status ?? 200, body }),
+  },
+}));
+jest.mock('@/lib/auth/admin-rbac', () => ({ authorizeAdminPermission: jest.fn(async () => ({ ok: true })) }));
+let mockRouteClient: unknown;
+jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn(async () => mockRouteClient) }));
+
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { GET as getOrderAttention } from '@/app/api/admin/order-attention/route';
+import type { OrderAttention } from '@/lib/orders/order-payment-types';
+import { refundFailureReasonLabel } from '@/lib/orders/refund/refund-messages';
 import { loadRefundMaterials } from '@/lib/orders/refund/refund-materials';
 import {
   RefundOperationError,
@@ -40,7 +57,7 @@ import {
   type StripeRefundFields,
 } from '@/lib/orders/refund/refund-store';
 import { describeLocalDb, isLocalDatabase, type PgClient } from './helpers/local-db';
-import { PRICE, createCatalogFixture, uniqueSuffix } from './helpers/order-fixtures';
+import { PRICE, createCatalogFixture, uniqueSuffix, variantStock } from './helpers/order-fixtures';
 
 jest.setTimeout(30000);
 
@@ -146,6 +163,7 @@ describeLocalDb('integration: 返金の記録の窓口を実際の PostgREST に
     client = createClient(apiUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
     });
+    mockRouteClient = client;
     actor = await createActor(db());
   });
 
@@ -595,6 +613,77 @@ describeLocalDb('integration: 返金の記録の窓口を実際の PostgREST に
     });
 
     await markOrderRefundError(client, began.refundId, 'stripe_rejected', false);
+  });
+
+  test('要対応の窓口: 返金の失敗の行の額と、確保し直せなかった商品の名前・数が、返金の商品の行から商品を埋め込む select で読める（Stripe の返金の番号の行・記録の番号の行）', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const exceptionIds: string[] = [];
+    try {
+      // ① Stripe の返金の番号を持つ失敗。3つのうち2つを返金して受け付けられ（保留）、失敗するまでの間に在庫が売れて、1つが確保し直せなかった
+      const stripeOrder = await createPaidOrder(db(), { quantity: 3 });
+      const accepted = stripeFields({ stripeStatus: 'pending', pendingReason: 'processing' });
+      const stripeRefund = await beginOrderRefund(
+        client,
+        adminRefund(stripeOrder, {
+          lines: [{ orderItemId: stripeOrder.orderItemId, quantity: 2, beforeShipment: true }],
+          amount: PRICE * 2,
+        }),
+      );
+      await recordOrderRefundResult(client, stripeRefund.refundId, accepted);
+      const variant = await db().query('select variant_id from public.order_items where id = $1', [stripeOrder.orderItemId]);
+      const variantId = variant.rows[0].variant_id as number;
+      const stockNow = await variantStock(db(), variantId);
+      await db().query(
+        "insert into public.stock_movements (variant_id, delta, reason, note) values ($1, $2, 'adjustment', 'sold elsewhere')",
+        [variantId, -(stockNow - 1)],
+      );
+      const failed = await recordOrderRefundResult(client, stripeRefund.refundId, {
+        ...accepted,
+        stripeStatus: 'failed',
+        pendingReason: null,
+        failureReason: 'expired_or_canceled_card',
+      });
+      expect(failed).toMatchObject({ status: 'failed', newlyFailed: true, rereserveShortage: 1 });
+      exceptionIds.push(failed.exceptionId as string);
+
+      // ② 記録の番号を持つ失敗（返事待ちのまま Stripe に見つからなかった。Stripe の返金の番号がまだ無い）。商品は1つで、確保し直しは無い
+      const recordOrder = await createPaidOrder(db(), { quantity: 2 });
+      const awaiting = await beginOrderRefund(client, adminRefund(recordOrder));
+      const marked = await markOrderRefundError(client, awaiting.refundId, 'not_found_in_stripe', true);
+      exceptionIds.push(marked.exceptionId as string);
+
+      // 窓口は要対応を古い順に100件まで返す。ほかの結合テストが残した行に押し出されないよう、この試験の2件を一番古くする
+      await db().query("update public.payment_exceptions set first_detected_at = '1970-01-01T00:00:00Z' where id = any($1::uuid[])", [
+        exceptionIds,
+      ]);
+
+      // 窓口そのものを呼ぶ。返金の記録は、窓口が持つ select（返金の商品の行から商品を埋め込む）で読まれる
+      const response = (await getOrderAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as {
+        status: number;
+        body: { data: OrderAttention };
+      };
+
+      expect(response.status).toBe(200);
+      const failureOf = (orderId: string) => response.body.data.exceptions.find((exception) => exception.orderId === orderId)?.refundFailure;
+      expect(failureOf(stripeOrder.orderId)).toEqual({
+        amount: PRICE * 2,
+        failureReasonLabel: refundFailureReasonLabel('expired_or_canceled_card'),
+        shortages: [{ name: '照合テスト（BLACK / M）', quantity: 1 }],
+      });
+      expect(failureOf(recordOrder.orderId)).toEqual({
+        amount: PRICE,
+        failureReasonLabel: refundFailureReasonLabel('not_found_in_stripe'),
+        shortages: [],
+      });
+      // 読めなかった時の警告（額0・不足なしに黙って落ちる）が出ていない
+      expect(warn.mock.calls.filter(([message]) => String(message).startsWith('[admin.order-attention]'))).toEqual([]);
+    } finally {
+      warn.mockRestore();
+      // ほかの結合テストの全体の一覧に、開いたままの要対応を残さない
+      for (const exceptionId of exceptionIds) {
+        await resolvePaymentExceptionBySystem(client, exceptionId, '試験の後片付け');
+      }
+    }
   });
 
   test('ショップの設定: 既定の値と切り替えの時刻が読め、変えたトグルだけに更新者と時刻が付く', async () => {

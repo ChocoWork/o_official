@@ -99,8 +99,9 @@ function cancelSuccessText(entry: CancelTarget): string {
   return entry.type === 'fulfillment' ? `発送（${entry.number}回目）を取り消しました。` : '仕上がりを取り消しました。';
 }
 
+/** 数が0の商品は「× 0」を付けず品名だけにする（確保し直せた数が0の商品が出る。足りなかった数は別の行が伝える） */
 function formatItems(items: Array<{ name: string; quantity: number }>): string {
-  return items.map((item) => `${item.name} × ${item.quantity}`).join(' / ');
+  return items.map((item) => (item.quantity > 0 ? `${item.name} × ${item.quantity}` : item.name)).join(' / ');
 }
 
 /**

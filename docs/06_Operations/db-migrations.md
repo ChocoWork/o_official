@@ -163,6 +163,13 @@ supabase/migrations/<作ったときの番号>_<name>.sql  →  <台帳に記録
 公開時まで入れないものは `supabase/pending/` に置く（[supabase/pending/README.md](../../supabase/pending/README.md)）。
 入れるときは新しい version を付けて `supabase/migrations/` へ移す。元の古い日付のまま戻さないこと。
 
+### 新しい移行を前提にするコードは、当てるまで本番の DB につながない
+
+新しいコードが新しい移行（列・表・関数の追加）を前提にする時は、push の後、移行を本番に当てるまで、普段の開発（`npm run dev`。DB は本番のまま）で新しいコードを本番の DB につながない。
+移行の無い DB を読んで、画面と窓口が動かない。
+例: グループ E-2 は移行 A〜C が無いと、注文の一覧・全部の種類のメールの材料・返金が動かない。
+当てるまでの確かめは、手元の Supabase（`npm run db:start`・`npm run db:reset`）で行う。
+
 ### `--include-all` を使わない
 
 本番の最新より古い日付の未適用ファイルがあると、`db push` は

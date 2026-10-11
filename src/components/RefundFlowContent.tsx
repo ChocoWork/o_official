@@ -51,7 +51,9 @@ export function RefundFlowContent({ flow, backLabel, submitLabel, canSubmit, chi
           </Button>
         </div>
       ) : (
-        <div className="flex gap-2 pt-1">
+        // 確定のボタンの字は「注文をキャンセルして ￥42,800 を返金する」のように長く、半分ずつの幅に並べると 3つの画面幅とも両端が切れて読めない。
+        // 縦に並べて確定を1行の全部の幅にする（見た目は確定が上。並びの順は戻る → 確定のまま）。全部の幅でも収まらない時の折り返しは globals.css が許す
+        <div className="refund-flow-actions flex flex-col-reverse gap-2 pt-1">
           <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={flow.busy} onClick={flow.close}>
             {backLabel}
           </Button>

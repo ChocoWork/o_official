@@ -221,6 +221,8 @@ for (const viewport of viewports) {
       await reason.selectOption('customer_request');
       await expect(dialog.getByLabel('メモ（任意・店内のみ）')).toBeVisible();
       await expect(submit).toBeEnabled();
+      // 長い確定のボタンの字は、3つの画面幅とも切れずに全部が見える（Button の既定は折り返さず、はみ出しを隠す）
+      expect(await submit.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
       // ダイアログは開く時に160ミリ秒で現れる。途中の写りを避けるため、動きを終わらせてから撮る
       await page.screenshot({ path: `test-results/group-e2/paid-cancel-dialog-${viewport.width}.png`, animations: 'disabled' });
     });

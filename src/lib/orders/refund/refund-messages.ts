@@ -41,6 +41,12 @@ export const REFUND_FAILURE_MESSAGES = {
 } as const;
 export type RefundFailureKind = keyof typeof REFUND_FAILURE_MESSAGES;
 
+/**
+ * 回数の制限（429）で、処理に入る前に断られた時に画面が出す言葉。窓口の共通の守りは英語の短い文を返し、管理画面のほかの所にも
+ * 決まった文が無いので、ここで持つ。「記録に失敗しました」とは言わない（処理に入っていないので、前の送信の結果は変わらない）
+ */
+export const RATE_LIMITED_MESSAGE = '操作が続いたため受け付けませんでした。しばらく待ってから、もう一度お試しください。';
+
 /** 通信が切れたなど、サーバーが返金を記録したか分からない時（502）に画面が出す言葉。返金とキャンセルの両方で使う */
 export const UNKNOWN_REFUND_OUTCOME_MESSAGE =
   '返金の結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。';

@@ -1,5 +1,5 @@
 import { clientFetch } from '@/lib/client-fetch';
-import { REFUND_FAILURE_MESSAGES } from '@/lib/orders/refund/refund-messages';
+import { RATE_LIMITED_MESSAGE, REFUND_FAILURE_MESSAGES } from '@/lib/orders/refund/refund-messages';
 import type { RefundMaterials } from '@/lib/orders/refund/refund-types';
 
 /**
@@ -30,11 +30,13 @@ function ownErrorMessage(body: unknown): string | null {
 
 /**
  * 断られた時に画面へ出す文。回数の制限などの共通の守りは英語の短い文を返すので、窓口が日本語で返す
- * 400・404・409・422 の文だけをそのまま出し、権限（401・403）は固定の文にする。
+ * 400・404・409・422 の文だけをそのまま出し、権限（401・403）と回数の制限（429）は固定の文にする。
+ * 429 を代わりの文（「返金の記録に失敗しました」など）にすると、処理に入っていないのに失敗したと読めてしまう。
  */
 function refusalMessage(status: number, body: unknown, fallback: string): string {
   if (status === 401) return UNAUTHENTICATED_MESSAGE;
   if (status === 403) return FORBIDDEN_MESSAGE;
+  if (status === 429) return RATE_LIMITED_MESSAGE;
   if (status === 400 || status === 404 || status === 409 || status === 422) return ownErrorMessage(body) ?? fallback;
   return fallback;
 }

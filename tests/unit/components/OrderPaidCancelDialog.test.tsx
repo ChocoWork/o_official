@@ -12,6 +12,8 @@ const CONFIRM_URL = `${REFUND_URL}/confirm`;
 const STATUS_URL = `/api/admin/orders/${ORDER_ID}/status`;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const UNKNOWN_OUTCOME = '返金の結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。';
+/** 回数の制限（429）で処理の前に断られた時の文。管理画面のほかの所に決まった文が無いので、ここで決めた物 */
+const RATE_LIMITED = '操作が続いたため受け付けませんでした。しばらく待ってから、もう一度お試しください。';
 const SUBMIT = '注文をキャンセルして ￥54,800 を返金する';
 
 function json(body: unknown, status = 200) {
@@ -106,11 +108,30 @@ describe('OrderPaidCancelDialog の材料と入力', () => {
       }),
     );
 
-    expect(within(dialog).getByText('返金する額: ￥30,000（全額）')).toBeInTheDocument();
+    // 前に返金があるので「全額」でなく「残りの全額」（お客様へのメールの「残りの ¥X を返金いたします」と食い違わない）
+    expect(within(dialog).getByText('返金する額: ￥30,000（残りの全額）')).toBeInTheDocument();
     const breakdown = within(dialog).getByRole('list', { name: '返金の内訳' });
     expect(within(breakdown).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['商品 ￥30,000', '送料 ￥0']);
     chooseReason(dialog, 'customer_request');
     expect(within(dialog).getByRole('button', { name: '注文をキャンセルして ￥30,000 を返金する' })).toBeEnabled();
+  });
+
+  it('前に返金が無い時は「（全額）」と出す。受け取った額が注文の合計と違っても（支払額の違い）、返せる額が受け取った額のままなら「残りの」とは出さない', async () => {
+    const { dialog } = await openDialog(
+      materials({ order: { totalAmount: 54800, paidAmount: 50000, succeededAmount: 0, refundableAmount: 50000 } }),
+    );
+
+    expect(within(dialog).getByText('返金する額: ￥50,000（全額）')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/残りの全額/)).not.toBeInTheDocument();
+  });
+
+  it('前に返金がある時（送料だけを返していた場合も）は「（残りの全額）」と出し、「（全額）」とは出さない', async () => {
+    const { dialog } = await openDialog(
+      materials({ order: { succeededAmount: 800, refundableAmount: 54000, refundedShipping: 800, refundableShipping: 0 } }),
+    );
+
+    expect(within(dialog).getByText('返金する額: ￥54,000（残りの全額）')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/（全額）/)).not.toBeInTheDocument();
   });
 
   it('返せる額が返せる送料より小さい時は、送料を返せる額までにして内訳を出す（DB が全部を返す時の送料と同じ）', async () => {
@@ -124,7 +145,7 @@ describe('OrderPaidCancelDialog の材料と入力', () => {
       }),
     );
 
-    expect(within(dialog).getByText('返金する額: ￥300（全額）')).toBeInTheDocument();
+    expect(within(dialog).getByText('返金する額: ￥300（残りの全額）')).toBeInTheDocument();
     const breakdown = within(dialog).getByRole('list', { name: '返金の内訳' });
     expect(within(breakdown).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['商品 ￥0', '送料 ￥300']);
   });
@@ -329,7 +350,7 @@ describe('OrderPaidCancelDialog の処理前の断りと再送後の読み直し
   it.each([
     [401, '認証が必要です。再ログインしてください。'],
     [403, 'この操作の権限がありません。'],
-    [429, '注文のキャンセルに失敗しました。'],
+    [429, RATE_LIMITED],
   ])('再送が%iで処理前に断られても結果不明のまま、次も同じ番号・同じ本文で送る', async (status, message) => {
     const { dialog, onCancelled, onUncertain } = await openDialog();
     mockClientFetch
@@ -341,7 +362,8 @@ describe('OrderPaidCancelDialog の処理前の断りと再送後の読み直し
     fireEvent.click(submitButton(dialog));
     fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
 
-    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(message));
+    // 断りの文の後ろに、答えが分からない時の文を続けて出す（取り消せない操作の結果が分からないことを、断りの文で隠さない）
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(`${message}${UNKNOWN_OUTCOME}`));
     expect(reasonSelect(dialog)).toBeDisabled();
     expect(within(dialog).getByRole('textbox', { name: 'メモ（任意・店内のみ）' })).toBeDisabled();
     expect(within(dialog).queryByRole('button', { name: SUBMIT })).not.toBeInTheDocument();
@@ -356,6 +378,33 @@ describe('OrderPaidCancelDialog の処理前の断りと再送後の読み直し
       [STATUS_URL, (mockClientFetch.mock.calls[1][1] as RequestInit).body],
     ]);
     expect(onUncertain).not.toHaveBeenCalled();
+  });
+
+  it('答えが分からない間の再送が429で断られても、回数の制限の文と答えが分からない時の文の両方を出す。番号と中身は同じまま、押せるのは「閉じる」と「もう一度確かめる」だけ', async () => {
+    const { dialog, onCancelled } = await openDialog();
+    mockClientFetch
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(json({ error: 'Too many requests' }, 429))
+      .mockResolvedValueOnce(json(accepted({ replayed: true })));
+    chooseReason(dialog, 'customer_request');
+    fireEvent.click(submitButton(dialog));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    await waitFor(() => expect(alert).toHaveTextContent(`${RATE_LIMITED}${UNKNOWN_OUTCOME}`));
+    // 取り消せない操作の結果が分からないのに「キャンセルに失敗しました」（失敗した）と読ませない
+    expect(alert).not.toHaveTextContent('注文のキャンセルに失敗しました。');
+    const enabledButtons = within(dialog)
+      .getAllByRole('button')
+      .filter((button) => !(button as HTMLButtonElement).disabled)
+      .map((button) => button.textContent);
+    expect(enabledButtons).toEqual(['閉じる', 'もう一度確かめる']);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
+    await waitFor(() => expect(onCancelled).toHaveBeenCalledWith(accepted({ replayed: true })));
+    // 429 で断られても、3回目は最初の送信と同じ二重防止の番号・同じ本文
+    expect(requestBodyOf(3)).toEqual(requestBodyOf(1));
+    expect(requestBodyOf(2)).toEqual(requestBodyOf(1));
   });
 
   it('結果不明の再送が403で処理前に断られた後に閉じても、一覧の読み直しを親に頼む', async () => {

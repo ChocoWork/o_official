@@ -13,6 +13,7 @@ import type { CancelReason, OrderStatus } from '@/lib/orders/order-payment-types
 import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import type { OrderEmailKind, OrderEmailVariant, RefundEmailVariant } from '@/lib/orders/email/order-email-types';
 import { konbiniDeadlineLastDay } from '@/lib/orders/refund/refund-messages';
+import type { OrderRefundStatus } from '@/lib/orders/refund/refund-types';
 
 /**
  * 注文のメールの材料を読み、件名と本文を作る（グループ D 設計書 4-2）。
@@ -30,7 +31,8 @@ const MATERIAL_ORDER_COLUMNS =
 const MATERIAL_FULFILLMENT_COLUMNS = 'number, shipping_carrier, tracking_number, completes_order, cancelled_at';
 const MATERIAL_FULFILLMENT_LINE_COLUMNS = 'quantity, order_items(item_name, color, size)';
 
-const MATERIAL_REFUND_COLUMNS = 'amount, shipping_amount, payment_method_type, customer_action_expires_at, cancel_reason';
+// status は送る前の取りやめの判断に使う（予定を書いた後に返金が失敗・エラーになっていないか）
+const MATERIAL_REFUND_COLUMNS = 'status, amount, shipping_amount, payment_method_type, customer_action_expires_at, cancel_reason';
 // 商品の並び（作った時刻、同じなら番号）に使うので、商品の作った時刻も読む
 const MATERIAL_REFUND_LINE_COLUMNS = 'order_item_id, quantity, before_shipment, order_items(item_name, color, size, created_at)';
 
@@ -92,8 +94,11 @@ export type OrderEmailFulfillmentMaterial = {
 /**
  * 返金のお知らせと、支払い済みのキャンセルのお知らせの材料。返金の記録から読む。
  * 商品の行は、同じ商品の発送前と発送後を1行にまとめた形。stillShipping は、返金の後もこれから送る商品が残っているか。
+ * status は材料を読んだ時の返金の状態。予定は Stripe が返金を受け付けた時に書かれ、送るのは後になる。その間に失敗・エラーに
+ * なった返金には送らない（worker が決める。設計書 8-1・8-2）。
  */
 export type OrderEmailRefundMaterial = {
+  status: OrderRefundStatus;
   amount: number;
   shippingAmount: number;
   paymentMethodType: string | null;
@@ -153,6 +158,7 @@ type FulfillmentLineRow = {
 };
 
 type RefundRow = {
+  status: OrderRefundStatus;
   amount: number;
   shipping_amount: number;
   payment_method_type: string | null;
@@ -290,6 +296,7 @@ async function loadRefundMaterial(
   }
 
   return {
+    status: refund.status,
     amount: refund.amount,
     shippingAmount: refund.shipping_amount,
     paymentMethodType: refund.payment_method_type,

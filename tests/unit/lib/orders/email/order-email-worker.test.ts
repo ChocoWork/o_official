@@ -70,10 +70,10 @@ function fulfillmentMaterial(overrides: Partial<OrderEmailFulfillmentMaterial> =
   };
 }
 
-/** 返金のお知らせ・支払い済みのキャンセルのお知らせの材料。既定は、カードで払った注文の額だけの返金 */
+/** 返金のお知らせ・支払い済みのキャンセルのお知らせの材料。既定は、カードで払った注文の額だけの成功した返金 */
 function refundMaterial(overrides: Partial<OrderEmailRefundMaterial> = {}): OrderEmailRefundMaterial {
   return {
-    amount: 3000, shippingAmount: 0, paymentMethodType: 'card', customerActionExpiresAt: null, cancelReason: null,
+    status: 'succeeded', amount: 3000, shippingAmount: 0, paymentMethodType: 'card', customerActionExpiresAt: null, cancelReason: null,
     lines: [], stillShipping: false,
     ...overrides,
   };
@@ -470,6 +470,52 @@ describe('processOrderEmails', () => {
     expect(saved._body_text).toContain('お支払い待ちのご注文を取り消しました。\nお支払いは発生していません。');
   });
 
+  it.each(['failed', 'error'] as const)(
+    '返金が %s になっていたら、返金のお知らせも支払い済みのキャンセルのお知らせも、中身を作らず送らずに取りやめにする（受け付けた後に失敗しても、お金が戻らないのに「返金します」と送らない）',
+    async (status) => {
+      for (const queued of [
+        row({ kind: 'refund', variant: 'standard', refund_id: 'refund-1' }),
+        row({ kind: 'canceled', variant: 'paid', refund_id: 'refund-2' }),
+      ]) {
+        const h = harness([queued], { material: material({ status: 'paid' }, null, refundMaterial({ status })) });
+
+        const result = await processOrderEmails(h.deps);
+
+        expect(result).toEqual({ sent: 0, skipped: 1, failed: 0, stoppedBy: 'empty' });
+        expect(h.send).not.toHaveBeenCalled();
+        expect(names(h.calls)).not.toContain('save_order_email_content');
+        expect(h.calls.find((call) => call.name === 'skip_order_email')?.params).toEqual({
+          _email_id: 'email-1', _lease_token: 'lease-1', _reason: 'superseded',
+        });
+      }
+    },
+  );
+
+  it('控えた中身がある行（やり直しの行）でも、返金が失敗していたら送らずに取りやめにする', async () => {
+    const h = harness(
+      [row({ kind: 'refund', variant: 'standard', refund_id: 'refund-1', attempts: 2, subject: '控えた件名', body_text: '控えた本文' })],
+      { material: material({ status: 'paid' }, null, refundMaterial({ status: 'failed' })) },
+    );
+
+    const result = await processOrderEmails(h.deps);
+
+    expect(result).toEqual({ sent: 0, skipped: 1, failed: 0, stoppedBy: 'empty' });
+    expect(h.send).not.toHaveBeenCalled();
+    expect(h.calls.find((call) => call.name === 'skip_order_email')?.params).toMatchObject({ _reason: 'superseded' });
+  });
+
+  it('返金が保留（pending）の間は、返金のお知らせを今までどおり送る（残高不足の保留は、予定が成功まで書かれない）', async () => {
+    const h = harness([row({ kind: 'refund', variant: 'standard', refund_id: 'refund-1' })], {
+      material: material({ status: 'paid' }, null, refundMaterial({ status: 'pending', amount: 2000 })),
+    });
+
+    const result = await processOrderEmails(h.deps);
+
+    expect(result).toEqual({ sent: 1, skipped: 0, failed: 0, stoppedBy: 'empty' });
+    expect(names(h.calls)).not.toContain('skip_order_email');
+    expect(h.send).toHaveBeenCalledTimes(1);
+  });
+
   it('返金の記録が読めない（材料が無い）時と、返金の材料が付いていない時は、すぐ送れなかったにする。送らない', async () => {
     const missing = harness([row({ kind: 'refund', variant: 'standard', refund_id: 'refund-1' })], { material: null });
     await processOrderEmails(missing.deps);
@@ -636,6 +682,32 @@ describe('skipReasonFor（設計書 4-1）', () => {
     ['refund', 'cancelled', null],
   ])('%s のメールは、注文が %s なら %s', (kind, status, expected) => {
     expect(skipReasonFor(claim(kind), material({ status: status as never }))).toBe(expected);
+  });
+
+  // 返金のお知らせと支払い済みのキャンセルのお知らせの予定は、Stripe が返金を受け付けた時に書かれ、送るのは後になる。
+  // その間に返金が失敗・エラーになっていたら、お金が戻らないのに「返金します」と送ることになるので取りやめる（設計書 8-1・8-2）
+  it.each([
+    ['refund', 'failed', 'superseded'],
+    ['refund', 'error', 'superseded'],
+    ['canceled', 'failed', 'superseded'],
+    ['canceled', 'error', 'superseded'],
+    ['refund', 'pending', null],
+    ['refund', 'succeeded', null],
+    ['refund', 'awaiting_response', null],
+    ['canceled', 'pending', null],
+    ['canceled', 'succeeded', null],
+  ] as const)('%s のメールは、返金が %s なら %s', (kind, refundStatus, expected) => {
+    const refund = refundMaterial({ status: refundStatus });
+    expect(skipReasonFor(claim(kind), material({ status: 'paid' }, null, refund))).toBe(expected);
+  });
+
+  it('返金の材料が付いていない種類（未入金の取消など）は、返金の状態を見ずに今のまま', () => {
+    expect(skipReasonFor(claim('canceled'), material({ status: 'cancelled' }))).toBeNull();
+  });
+
+  it('宛先が無い時は、返金が失敗していても宛先が無い理由を先に返す', () => {
+    const refund = refundMaterial({ status: 'failed' });
+    expect(skipReasonFor(claim('refund'), material({ shipping_email: null }, null, refund))).toBe('no_recipient');
   });
 
   it.each([

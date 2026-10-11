@@ -5,6 +5,8 @@ import { callRefundApi, fetchRefundMaterials } from '@/lib/orders/refund/refund-
 
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
 const UNKNOWN_OUTCOME = '返金の結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。';
+/** 回数の制限（429）で断られた時の画面の文。管理画面のほかの所に決まった文が無いので、ここで決めた物 */
+const RATE_LIMITED = '操作が続いたため受け付けませんでした。しばらく待ってから、もう一度お試しください。';
 
 function json(body: unknown, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
@@ -83,11 +85,18 @@ describe('callRefundApi', () => {
   it.each([
     [401, 'Unauthorized', '認証が必要です。再ログインしてください。'],
     [403, 'Forbidden', 'この操作の権限がありません。'],
-    [429, 'Too many requests', '代わりの文'],
-  ])('%i は処理前の断り（blocked）にし、固定の文か代わりの文を返す', async (status, error, message) => {
+    // 回数の制限は、窓口の英語の短い文でも、画面ごとの代わりの文（「記録に失敗しました」）でもなく、回数の制限の固定の文にする
+    [429, 'Too many requests', RATE_LIMITED],
+  ])('%i は処理前の断り（blocked）にし、固定の文を返す', async (status, error, message) => {
     mockClientFetch.mockResolvedValueOnce(json({ error }, status));
 
     await expect(callRefundApi('/api/x', {}, '代わりの文')).resolves.toEqual({ kind: 'blocked', message });
+  });
+
+  it('回数の制限（429）の文は、窓口が日本語の文を返していても使わず、固定の文にする', async () => {
+    mockClientFetch.mockResolvedValueOnce(json({ error: 'しばらくお待ちください。' }, 429));
+
+    await expect(callRefundApi('/api/x', {}, '代わりの文')).resolves.toEqual({ kind: 'blocked', message: RATE_LIMITED });
   });
 });
 
@@ -106,7 +115,7 @@ describe('fetchRefundMaterials', () => {
     [404, { error: '注文が見つかりません。', code: 'order_not_found' }, '注文が見つかりません。'],
     [403, { error: 'Forbidden' }, 'この操作の権限がありません。'],
     [500, { error: 'x', code: 'failed' }, '返金の材料を読み込めませんでした。'],
-    [429, { error: 'Too many requests' }, '返金の材料を読み込めませんでした。'],
+    [429, { error: 'Too many requests' }, RATE_LIMITED],
   ])('%i の時は画面に出す文を返す', async (status, body, message) => {
     mockClientFetch.mockResolvedValueOnce(json(body, status));
 

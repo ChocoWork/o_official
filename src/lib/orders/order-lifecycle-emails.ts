@@ -118,6 +118,20 @@ function formatJst(date: Date): string {
   }).format(date);
 }
 
+/** Stripe の番号の形（接頭辞 + 英数字）。返金は re_ のほか、支払い方法によって pyr_ などもある */
+const STRIPE_ID_PATTERN = /^[a-z]{2,4}_[A-Za-z0-9]+$/;
+
+/**
+ * 知らせの「参照」の名前。返金の失敗の参照は Stripe の返金の番号。Stripe に返金が無い時（返事待ちのまま Stripe に見つからなかった返金）は
+ * 返金の記録の番号なので、Stripe の物とは書かない。ほかの理由の参照は Session の番号か支払いの番号
+ */
+function paymentRefLabel(alert: Pick<ShopPaymentAlert, 'reason' | 'paymentRef'>): string {
+  if (alert.reason !== 'refund_failed') {
+    return 'Stripe の支払い';
+  }
+  return STRIPE_ID_PATTERN.test(alert.paymentRef) ? 'Stripe の返金' : '返金の記録';
+}
+
 /** 返金の失敗の知らせに足す行（後ろに空行を1つ置く）。材料が無ければ（知らせの送り直し）足さない */
 function refundFailureLines(failure: ShopAlertRefundFailure | undefined): string[] {
   if (!failure) {
@@ -157,7 +171,7 @@ export async function sendShopPaymentAlert(alert: ShopPaymentAlert): Promise<boo
         '',
         `理由: ${label}${alert.detail ? `（${alert.detail}）` : ''}`,
         `注文番号: ${alert.orderId ? toOrderNumber(alert.orderId) : 'なし'}`,
-        `Stripe の支払い: ${alert.paymentRef}`,
+        `${paymentRefLabel(alert)}: ${alert.paymentRef}`,
         `検知時刻: ${formatJst(alert.detectedAt)}`,
         '',
         ...refundFailureLines(alert.refundFailure),
