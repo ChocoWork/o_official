@@ -16,6 +16,7 @@ import type {
 import { callFulfillmentApi } from '@/lib/orders/fulfillment/fulfillment-client';
 import { FULFILLMENT_FAILURE_MESSAGES } from '@/lib/orders/fulfillment/fulfillment-messages';
 import type { CancelCompletionResponse, CancelFulfillmentResponse } from '@/lib/orders/fulfillment/fulfillment-types';
+import { formatYen } from '@/lib/orders/refund/refund-messages';
 import { cn } from '@/lib/utils';
 
 /** 取り消せる行（発送か仕上がり） */
@@ -104,7 +105,7 @@ function formatItems(items: Array<{ name: string; quantity: number }>): string {
 
 /**
  * 「この注文の履歴」（グループ D 設計書 5 章。Shopify の注文の Timeline とメールの再送に合わせる）。
- * 状態の変化・メール・発送・仕上がり（とその取消）を新しい順に出し、送ったメールの中身・再送の確かめ・
+ * 状態の変化・メール・発送・仕上がり（とその取消）・返金を新しい順に出し、送ったメールの中身・再送の確かめ・
  * 発送と仕上がりの取消の確かめを同じダイアログの中で切り替える（ダイアログを重ねると、Escape で外側も閉じるため）。
  * 再送や取消ができるかは窓口が決めた値に従う。
  *
@@ -386,9 +387,52 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged }: OrderHistoryDia
         </li>
       );
     }
-    // 返金・確保し直しの行は、画面を作る次の作業（Task 12）が描く。それまではメールの行だけを描く
-    if (entry.type !== 'email') {
-      return null;
+    if (entry.type === 'refund') {
+      const current = entry.steps.at(-1);
+      // 在庫に戻せるのは発送前の商品だけ。「戻さない」の返金にも 0 を出して、戻さなかったことを履歴で確かめられるようにする
+      const hasBeforeShipmentItems = entry.items.some((item) => item.beforeShipment);
+      const restockedTotal = entry.items.reduce((sum, item) => sum + item.restockedQuantity, 0);
+      return (
+        <li key={`refund-${entry.refundId}`} className="space-y-1 font-acumin lk-text-3xs text-black">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[#474747]">{formatJst(entry.at)}</span>
+            <span>{`返金 ${formatYen(entry.amount)}`}</span>
+            {current ? (
+              <StatusBadge tone={current.status === 'failed' || current.status === 'error' ? 'danger' : 'neutral'} size="sm">
+                {current.label}
+              </StatusBadge>
+            ) : null}
+          </div>
+          <p className="text-[#474747]">{entry.sourceLabel}</p>
+          <p className="text-[#474747]">
+            {entry.steps.map((step) => `${step.label}（${formatJst(step.at)}）`).join(' → ')}
+          </p>
+          {entry.shippingAmount > 0 ? <p>{`送料 ${formatYen(entry.shippingAmount)}`}</p> : null}
+          {entry.items.length > 0 ? <p>{`商品: ${formatItems(entry.items)}`}</p> : null}
+          {hasBeforeShipmentItems ? <p>{`在庫に戻した数: ${restockedTotal}`}</p> : null}
+          {entry.referenceNumber ? <p>{`照会番号: ${entry.referenceNumber}`}</p> : null}
+          {entry.customerActionExpiresAt ? <p>{`口座の入力の期限: ${formatJst(entry.customerActionExpiresAt)}`}</p> : null}
+          {entry.failureReasonLabel ? <p>{`失敗の理由: ${entry.failureReasonLabel}`}</p> : null}
+          {entry.cancelReasonLabel ? <p>{`取消の理由: ${entry.cancelReasonLabel}`}</p> : null}
+          {entry.stripeReasonLabel ? <p>{`Stripe に伝えた理由: ${entry.stripeReasonLabel}`}</p> : null}
+          {entry.note ? <p>{`メモ: ${entry.note}`}</p> : null}
+          {entry.actorEmail ? <p className="text-[#474747]">操作: {entry.actorEmail}</p> : null}
+        </li>
+      );
+    }
+    if (entry.type === 'refund_rereserve') {
+      // どの商品が足りないかは、要対応の行（確保し直せなかった商品）と店へのメールに出る。ここは合計だけを約束の文のまま出す
+      const shortageTotal = entry.items.reduce((sum, item) => sum + item.shortage, 0);
+      return (
+        <li key={`refund-rereserve-${entry.refundId}`} className="space-y-1 font-acumin lk-text-3xs text-black">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[#474747]">{formatJst(entry.at)}</span>
+            <span>返金の失敗で在庫を確保し直しました</span>
+          </div>
+          <p>{`商品: ${formatItems(entry.items)}`}</p>
+          {shortageTotal > 0 ? <p>{`足りなかった数: ${shortageTotal}`}</p> : null}
+        </li>
+      );
     }
     return (
       <li key={`email-${entry.emailId}`} className="space-y-1 font-acumin lk-text-3xs text-black">

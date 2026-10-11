@@ -7,6 +7,7 @@ import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import type { OrderStatus as DbOrderStatus } from '@/lib/orders/order-payment-types';
 import { PARTIALLY_SHIPPED_LABEL, type OrderProgressKey } from '@/lib/orders/order-progress';
+import { PAYMENT_STATUS_LABELS, REFUND_FAILED_BADGE, REFUND_PENDING_BADGE, type PaymentStatusKey } from '@/lib/orders/payment-status';
 import { cn } from '@/lib/utils';
 
 export type OrderStatus =
@@ -61,10 +62,18 @@ export type OrderItem = {
 	needsReview?: boolean;
 	/** 発送できない理由（支払額の違いの要対応）。発送ボタンの代わりに出す */
 	shipBlockedReason?: string | null;
-	/** 取り消せる未入金の注文（支払い手続き中・入金待ち・失敗） */
+	/** キャンセルできる注文（未入金の注文と、支払い済みで1つも発送していない注文。種類は cancelKind） */
 	canCancel?: boolean;
 	/** 払込票が有効な間は取り消せない。その払込期限（ISO） */
 	cancelBlockedUntil?: string | null;
+	/** 支払いの言葉の記号（未入金・支払い済み・一部返金など）。言葉と色は「支払い」の列が決める */
+	paymentStatusKey?: PaymentStatusKey;
+	/** 返事待ち・保留の返金がある（「返金の手続き中」の印） */
+	refundPending?: boolean;
+	/** 開いている「返金の失敗」の要対応がある（「返金の失敗」の印） */
+	refundFailed?: boolean;
+	/** 成功した返金の合計（￥12,800）。返金が無ければ - */
+	refundedAmountLabel?: string;
 	/** キャンセルの種類。unpaid は未入金の取消（取消の画面）、paid は支払い済みのキャンセル（返金を伴う画面）。出さない注文は null */
 	cancelKind?: 'unpaid' | 'paid' | null;
 };
@@ -108,6 +117,26 @@ const STATUS_CLASSES: Record<OrderStatus, string> = {
 	放棄: 'bg-gray-100 text-[#474747]',
 	キャンセル: 'bg-gray-100 text-gray-500',
 	キャンセルの手続き中: 'bg-gray-100 text-[#474747]',
+};
+
+// 「支払い」の列の言葉の色。進み具合の言葉と並べて読むので、色の使い方をそろえる
+// （未入金は未決済と同じ赤、失敗は決済失敗と同じ橙、済んだ物は緑。返金は灰で、続きがある一部返金だけ黄）
+const PAYMENT_TONES: Record<PaymentStatusKey, StatusBadgeTone> = {
+	unpaid: 'warning',
+	failed: 'danger',
+	none: 'neutral',
+	paid: 'positive',
+	partially_refunded: 'warning',
+	refunded: 'neutral',
+};
+
+const PAYMENT_CLASSES: Record<PaymentStatusKey, string> = {
+	unpaid: 'bg-red-100 text-red-800',
+	failed: 'bg-orange-100 text-orange-800',
+	none: 'bg-gray-100 text-[#474747]',
+	paid: 'bg-green-100 text-green-800',
+	partially_refunded: 'bg-yellow-100 text-yellow-800',
+	refunded: 'bg-gray-100 text-[#474747]',
 };
 
 function formatDeadline(value: string): string {
@@ -204,8 +233,31 @@ export default function OrderSection({
 					{ key: 'count', header: '商品数', render: (order) => <p className="font-acumin">{order.itemCount}</p> },
 					{ key: 'total', header: '合計金額', render: (order) => <p className="font-acumin">{order.totalAmount}</p> },
 					{
+						key: 'payment',
+						header: '支払い',
+						render: (order) => (
+							<div className="flex flex-wrap items-center gap-1">
+								{order.paymentStatusKey ? (
+									<StatusBadge
+										tone={PAYMENT_TONES[order.paymentStatusKey]}
+										className={cn(PAYMENT_CLASSES[order.paymentStatusKey], 'whitespace-nowrap')}
+										size="md"
+									>
+										{PAYMENT_STATUS_LABELS[order.paymentStatusKey]}
+									</StatusBadge>
+								) : null}
+								{order.refundPending ? (
+									<TagLabel variant="outline" size="2xs">{REFUND_PENDING_BADGE}</TagLabel>
+								) : null}
+								{order.refundFailed ? (
+									<TagLabel variant="outline" size="2xs">{REFUND_FAILED_BADGE}</TagLabel>
+								) : null}
+							</div>
+						),
+					},
+					{
 						key: 'status',
-						header: '決済状況',
+						header: '進み具合',
 						render: (order) => (
 							<div className="flex flex-wrap items-center gap-1">
 								{/* 「受注生産中」「発送準備中」などは、狭い画面幅でも途中で折り返さない */}

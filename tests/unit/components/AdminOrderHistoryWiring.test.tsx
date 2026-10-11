@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import AdminPage from '@/app/admin/page';
+import type { RefundMaterials } from '@/lib/orders/refund/refund-types';
 
 /**
  * 管理画面の ORDER タブと、履歴・発送・仕上がりの画面のつなぎ込み（グループ D の Task 7、グループ E-1 の Task 7）。
@@ -790,5 +791,99 @@ describe('管理画面の絞り込み・件数・CSV', () => {
       expect(csv).not.toContain('ウールコート');
       expect(csv).toContain('"受注生産中"');
     });
+
+    it('見出しは決まった10列で、行には進み具合・支払い・返金額の値を書く。支払いの言葉が無い行は、その2つを空にする', async () => {
+      // 金額の言葉は、窓口が作った文字をそのまま書く（窓口の返金額は全角の ￥ の言葉。合計金額の見本は今のまま）
+      orderRows = [
+        orderRow({ id: 'order-part-refunded', paymentStatusKey: 'partially_refunded', refundedAmountLabel: '￥5,000' }),
+        orderRow({
+          id: 'order-cancelling',
+          status: 'キャンセルの手続き中',
+          progressKey: 'cancel_pending',
+          items: [{ ...BLOUSE, readyUnshipped: 0 }],
+          canShip: false,
+          paymentStatusKey: 'paid',
+          refundPending: true,
+          refundedAmountLabel: '-',
+        }),
+        orderRow({ id: 'order-without-payment' }),
+      ];
+      const createObjectURL = jest.fn<string, [Blob]>(() => 'blob:orders');
+      window.URL.createObjectURL = createObjectURL;
+      window.URL.revokeObjectURL = jest.fn();
+      jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+      render(<AdminPage />);
+      await screen.findByText('order-part-refunded');
+      fireEvent.click(screen.getByRole('button', { name: '表示中の注文をCSV出力' }));
+
+      // 先頭の BOM（Excel で文字化けしないための印）は、読み込む側によって残ることがあるので、外して比べる
+      const text = await readBlob(createObjectURL.mock.calls[0][0]);
+      const lines = (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text).split('\n');
+      expect(lines).toEqual([
+        '注文ID,顧客名,顧客メール,注文日,購入商品,商品数,合計金額,進み具合,支払い,返金額',
+        '"order-part-refunded","山田 花子","hanako@example.com","2026-10-09","シルクブラウス x1","1点","¥28,800","発送準備中","一部返金","￥5,000"',
+        '"order-cancelling","山田 花子","hanako@example.com","2026-10-09","","1点","¥28,800","キャンセルの手続き中","支払い済み","-"',
+        '"order-without-payment","山田 花子","hanako@example.com","2026-10-09","シルクブラウス x1","1点","¥28,800","発送準備中","",""',
+      ]);
+    });
+  });
+});
+
+// 要対応「返金の失敗」の細目と「もう一度返金する」（グループ E-2）。要対応の欄（AttentionInbox）も返金の画面（OrderRefundDialog）も本物
+const REFUND_MATERIALS: RefundMaterials = {
+  order: {
+    id: ORDER_ID, orderNumber: 'ORD-A1B2C3D4', status: 'paid', paymentMethod: 'card',
+    totalAmount: 28800, shippingAmount: 800, discountAmount: 0, paidAmount: 28800,
+    succeededAmount: 0, openAmount: 0, refundableAmount: 28800, refundedShipping: 0,
+    refundableShipping: 800, shippedTotal: 0, unshippedTotal: 1,
+  },
+  lines: [
+    {
+      orderItemId: ITEM_ID, name: 'シルクブラウス', color: '白', size: 'M', fulfillmentType: 'stock',
+      itemPrice: 28000, quantity: 1, lineTotal: 28000, shipped: 0, unshipped: 1,
+      refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 0, restockable: 1,
+      lineDiscount: 0, refundedUnits: 0,
+    },
+  ],
+  awaitingRefund: null,
+};
+
+describe('管理画面の要対応「返金の失敗」の細目と「もう一度返金する」', () => {
+  beforeEach(() => {
+    clientFetchMock.mockReset();
+    mockAttention.mockReset();
+    orderRows = [orderRow()];
+    mockAttention.mockImplementation(() => ok({ data: {
+      exceptions: [{
+        id: 'exception-refund', reason: 'refund_failed', reasonLabel: '返金の失敗', detail: 'expired_or_canceled_card',
+        orderId: ORDER_ID, orderNumber: 'ORD-A1B2C3D4', orderStatus: 'paid', paymentRef: 're_test_1',
+        firstDetectedAt: '2026-10-11T04:00:00.000Z', lastDetectedAt: '2026-10-11T04:00:00.000Z', detectionCount: 1,
+        canCancelOrder: false, canRetryRefund: true,
+        refundFailure: { amount: 28800, failureReasonLabel: 'カードが使えません', shortages: [] },
+      }],
+      reviews: [],
+      counts: { exceptions: 1, reviews: 0 },
+    } }));
+    clientFetchMock.mockImplementation((url: string) => {
+      const target = String(url);
+      if (target.startsWith('/api/admin/orders?')) {
+        return ok({ data: orderRows, pagination: { page: 1, pageSize: 20, total: orderRows.length, totalPages: 1 } });
+      }
+      if (target === `/api/admin/orders/${ORDER_ID}/refund`) return ok(REFUND_MATERIALS);
+      return ok({});
+    });
+  });
+
+  it('行に返金額と失敗の理由を出し、「もう一度返金する」を押すと、その注文の返金の画面を開いて、返金の材料を読む', async () => {
+    render(<AdminPage />);
+    const retry = await screen.findByRole('button', { name: 'もう一度返金する' });
+    expect(screen.getByText('返金 ￥28,800')).toBeInTheDocument();
+    expect(screen.getByText('失敗の理由: カードが使えません')).toBeInTheDocument();
+    expect(screen.queryByText(/確保し直せなかった商品/)).not.toBeInTheDocument();
+
+    fireEvent.click(retry);
+
+    expect(await screen.findByRole('dialog', { name: '返金' })).toBeInTheDocument();
+    expect(clientFetchMock.mock.calls.some(([url]) => String(url) === `/api/admin/orders/${ORDER_ID}/refund`)).toBe(true);
   });
 });

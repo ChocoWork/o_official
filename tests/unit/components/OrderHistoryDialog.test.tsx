@@ -4,8 +4,11 @@ import type {
   OrderHistoryCompletionEntry,
   OrderHistoryEmailEntry,
   OrderHistoryFulfillmentEntry,
+  OrderHistoryRefundEntry,
+  OrderHistoryRefundRereserveEntry,
   OrderHistoryResponse,
 } from '@/lib/orders/email/order-history';
+import type { OrderRefundStatus } from '@/lib/orders/refund/refund-types';
 
 const mockClientFetch = jest.fn();
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
@@ -990,5 +993,153 @@ describe('OrderHistoryDialog の仕上がりの取消', () => {
     // 読み直した履歴では、この仕上がりはもう取り消せない行になっている
     press(screen.getByRole('button', { name: 'やめる' }));
     expect(screen.queryByRole('button', { name: 'この仕上がりを取り消す' })).not.toBeInTheDocument();
+  });
+});
+
+// 返金（グループ E-2）。履歴の窓口が返す返金・確保し直しの行と、返金のお知らせのメールの行の出し方
+const REFUND_ID = 'e1e1e1e1-1111-2222-8333-444455556666';
+
+function refundEntry(overrides: Partial<OrderHistoryRefundEntry> = {}): OrderHistoryRefundEntry {
+  return {
+    type: 'refund', at: '2026-10-11T01:00:00.000Z', refundId: REFUND_ID, source: 'admin', sourceLabel: '管理画面',
+    actorEmail: 'admin@example.com', amount: 12800, shippingAmount: 800,
+    items: [{ name: 'シルクブラウス（白 / M）', quantity: 1, beforeShipment: true, restockedQuantity: 1 }],
+    steps: [
+      { status: 'awaiting_response', label: '返事待ち', at: '2026-10-11T01:00:00.000Z' },
+      { status: 'pending', label: '保留', at: '2026-10-11T01:00:02.000Z' },
+      { status: 'succeeded', label: '成功', at: '2026-10-16T05:30:00.000Z' },
+    ],
+    failureReasonLabel: null, referenceNumber: '123456789012', customerActionExpiresAt: null,
+    note: '色違いで再注文', stripeReasonLabel: 'お客様の希望', cancelReasonLabel: null,
+    ...overrides,
+  };
+}
+
+/** 履歴を開き、行（li）を上から順に返す */
+async function openHistory(entries: OrderHistoryResponse['entries']): Promise<HTMLElement[]> {
+  mockClientFetch.mockResolvedValueOnce(json(history({ entries })));
+  render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+  const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
+  await within(dialog).findByText('宛先: hanako@example.com');
+  return within(dialog).getAllByRole('listitem');
+}
+
+describe('OrderHistoryDialog の返金の行', () => {
+  it('返金の行は、題（額）・どこから・状態の移り変わり・細目を決まった言葉で出す。ボタンは出さない', async () => {
+    const [item] = await openHistory([refundEntry()]);
+
+    // 金額は formatYen の形（全角の ￥ と桁区切り）
+    expect(item).toHaveTextContent('返金 ￥12,800');
+    expect(item).toHaveTextContent('管理画面');
+    expect(item).toHaveTextContent('返事待ち（2026/10/11 10:00） → 保留（2026/10/11 10:00） → 成功（2026/10/16 14:30）');
+    expect(item).toHaveTextContent('送料 ￥800');
+    expect(item).toHaveTextContent('商品: シルクブラウス（白 / M） × 1');
+    expect(item).toHaveTextContent('在庫に戻した数: 1');
+    expect(item).toHaveTextContent('照会番号: 123456789012');
+    expect(item).toHaveTextContent('Stripe に伝えた理由: お客様の希望');
+    expect(item).toHaveTextContent('メモ: 色違いで再注文');
+    expect(item).toHaveTextContent('操作: admin@example.com');
+    expect(item).not.toHaveTextContent('失敗の理由');
+    expect(item).not.toHaveTextContent('取消の理由');
+    expect(item).not.toHaveTextContent('口座の入力の期限');
+    expect(within(item).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('失敗した返金は印を danger にして失敗の理由を出す。取消の理由と口座の入力の期限があれば出し、ほかの細目が無ければその行を出さない', async () => {
+    const [item] = await openHistory([
+      refundEntry({
+        source: 'order_cancel', sourceLabel: '注文のキャンセル', actorEmail: null, amount: 5000, shippingAmount: 0, items: [],
+        steps: [
+          { status: 'awaiting_response', label: '返事待ち', at: '2026-10-11T01:00:00.000Z' },
+          { status: 'pending', label: '保留', at: '2026-10-11T01:00:02.000Z' },
+          { status: 'failed', label: '失敗', at: '2026-10-16T05:30:00.000Z' },
+        ],
+        failureReasonLabel: '口座の入力の期限が過ぎました', customerActionExpiresAt: '2026-11-25T14:59:59.000Z',
+        referenceNumber: null, note: null, stripeReasonLabel: null, cancelReasonLabel: '在庫切れ',
+      }),
+    ]);
+
+    expect(item).toHaveTextContent('返金 ￥5,000');
+    expect(item).toHaveTextContent('注文のキャンセル');
+    expect(within(item).getByText('失敗', { selector: 'span' })).toHaveAttribute('data-ui-badge-tone', 'danger');
+    expect(item).toHaveTextContent('失敗の理由: 口座の入力の期限が過ぎました');
+    expect(item).toHaveTextContent('口座の入力の期限: 2026/11/25 23:59');
+    expect(item).toHaveTextContent('取消の理由: 在庫切れ');
+    for (const absent of ['送料', '商品:', '在庫に戻した数', '照会番号', 'Stripe に伝えた理由', 'メモ:', '操作:']) {
+      expect(item).not.toHaveTextContent(absent);
+    }
+  });
+
+  it.each<[OrderRefundStatus, string, string]>([
+    ['awaiting_response', '返事待ち', 'neutral'],
+    ['error', 'エラー', 'danger'],
+    ['pending', '保留', 'neutral'],
+    ['succeeded', '成功', 'neutral'],
+    ['failed', '失敗', 'danger'],
+  ])('いまの状態が %s の返金は、題の隣の印に「%s」と出し、tone は %s', async (status, label, tone) => {
+    const [item] = await openHistory([
+      refundEntry({ steps: [{ status, label, at: '2026-10-11T01:00:00.000Z' }] }),
+    ]);
+
+    expect(within(item).getByText(label, { selector: 'span' })).toHaveAttribute('data-ui-badge-tone', tone);
+  });
+
+  it('「在庫に戻した数」は発送前の商品がある返金にだけ出す（戻さない返金は 0 と出す）。発送後の商品だけの返金と、商品の無い返金には出さない', async () => {
+    const items = await openHistory([
+      refundEntry({
+        refundId: 'refund-restocked',
+        items: [
+          { name: 'A', quantity: 2, beforeShipment: true, restockedQuantity: 2 },
+          { name: 'B', quantity: 1, beforeShipment: true, restockedQuantity: 1 },
+        ],
+      }),
+      refundEntry({ refundId: 'refund-not-restocked', items: [{ name: 'C', quantity: 1, beforeShipment: true, restockedQuantity: 0 }] }),
+      refundEntry({ refundId: 'refund-shipped-only', items: [{ name: 'D', quantity: 1, beforeShipment: false, restockedQuantity: 0 }] }),
+      refundEntry({ refundId: 'refund-amount-only', items: [] }),
+    ]);
+
+    expect(items[0]).toHaveTextContent('在庫に戻した数: 3');
+    expect(items[1]).toHaveTextContent('在庫に戻した数: 0');
+    expect(items[2]).toHaveTextContent('商品: D × 1');
+    expect(items[2]).not.toHaveTextContent('在庫に戻した数');
+    expect(items[3]).not.toHaveTextContent('商品:');
+    expect(items[3]).not.toHaveTextContent('在庫に戻した数');
+  });
+
+  it('確保し直しの行は「返金の失敗で在庫を確保し直しました」と商品（品名 × 数）を出し、足りなかった数があれば合計を「足りなかった数: {n}」の1行で出す。無ければその行を出さない', async () => {
+    const withShortage: OrderHistoryRefundRereserveEntry = {
+      type: 'refund_rereserve', at: '2026-10-12T01:00:00.000Z', refundId: REFUND_ID,
+      items: [
+        { name: 'シルクブラウス（白 / M）', quantity: 1, shortage: 1 },
+        { name: 'ウールコート（黒 / L）', quantity: 2, shortage: 2 },
+        { name: 'ストール', quantity: 1, shortage: 0 },
+      ],
+    };
+    const withoutShortage: OrderHistoryRefundRereserveEntry = {
+      ...withShortage,
+      refundId: 'refund-without-shortage',
+      items: [{ name: 'シルクブラウス（白 / M）', quantity: 1, shortage: 0 }],
+    };
+    const [first, second] = await openHistory([withShortage, withoutShortage]);
+
+    expect(first).toHaveTextContent('2026/10/12 10:00');
+    expect(first).toHaveTextContent('返金の失敗で在庫を確保し直しました');
+    expect(first).toHaveTextContent('商品: シルクブラウス（白 / M） × 1 / ウールコート（黒 / L） × 2 / ストール × 1');
+    // 約束の文そのままの1つの要素にする（品名などを前に付けない）。数は商品ごとの足りなかった数の合計
+    expect(within(first).getByText('足りなかった数: 3')).toBeInTheDocument();
+    expect(within(first).getAllByText(/足りなかった数/)).toHaveLength(1);
+    expect(second).toHaveTextContent('返金の失敗で在庫を確保し直しました');
+    expect(second).not.toHaveTextContent('足りなかった数');
+    expect(within(first).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('返金のお知らせのメールの行は「返金のお知らせのメール」と出す。再送のボタンは窓口が決めた値のとおり出さない', async () => {
+    const [item] = await openHistory([
+      sentEmailEntry({ emailId: 'email-refund', kind: 'refund', kindLabel: '返金のお知らせ', resendable: false }),
+    ]);
+
+    expect(item).toHaveTextContent('返金のお知らせのメール');
+    expect(within(item).getByRole('button', { name: '中身を見る' })).toBeInTheDocument();
+    expect(within(item).queryByRole('button', { name: 'お客様へ再送' })).not.toBeInTheDocument();
   });
 });

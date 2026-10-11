@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/Button/Button';
 import { DateTimePicker } from '@/components/ui/DateTimePicker/DateTimePicker';
 import { SearchField } from '@/components/ui/SearchField/SearchField';
 import { COMPLETION_RECORDED_MESSAGE } from '@/lib/orders/fulfillment/fulfillment-client';
+import { PAYMENT_STATUS_LABELS } from '@/lib/orders/payment-status';
 import type { OrderAttention, OrderStatus } from '@/lib/orders/order-payment-types';
 import type { RefundAcceptedResponse } from '@/lib/orders/refund/refund-types';
 
@@ -85,7 +86,7 @@ async function readSafeOrderActionError(response: Response, fallback: string): P
   return fallback;
 }
 
-const ORDER_CSV_HEADERS = ['注文ID', '顧客名', '顧客メール', '注文日', '購入商品', '商品数', '合計金額', '決済状況'] as const;
+const ORDER_CSV_HEADERS = ['注文ID', '顧客名', '顧客メール', '注文日', '購入商品', '商品数', '合計金額', '進み具合', '支払い', '返金額'] as const;
 
 // 発送準備中の数だけ書く。もう送った品と、まだ作っている品を詰めないため（設計書 9-1）
 function formatOrderItems(items: OrderItem['items']): string {
@@ -700,6 +701,8 @@ function AdminPageContent() {
         order.itemCount,
         order.totalAmount,
         order.status,
+        order.paymentStatusKey ? PAYMENT_STATUS_LABELS[order.paymentStatusKey] : '',
+        order.refundedAmountLabel ?? '',
       ];
 
       return row.map((value) => escapeCsvValue(value)).join(',');
@@ -851,6 +854,7 @@ function AdminPageContent() {
               onReview={handleReviewOrder}
               onResolve={handleResolveException}
               onCancelAndResolve={handleCancelAndResolve}
+              onRetryRefund={userRole === 'admin' ? handleRefundOrder : undefined}
             />
             {attentionErrorMessage ? (
               <p role="alert" className="lk-text-sm text-red-700 font-acumin">{attentionErrorMessage}</p>

@@ -273,6 +273,34 @@ describe('GET /api/admin/items/[id]/variants', () => {
     ]);
   });
 
+  it('返金で動いた行は返金の番号を refundId で返す。返金に結び付かない行は null', async () => {
+    const refundId = 'e1e1e1e1-1111-4222-8333-444455556666';
+    setupReads({
+      history: [
+        {
+          movement_id: 12, variant_id: 11, delta: -1, reason: 'adjustment', note: null, created_at: '2026-10-11T00:00:01Z',
+          actor_email: null, order_id: 'a1b2c3d4-1111-4222-8333-444455556666', balance_after: 3, refund_id: refundId,
+        },
+        {
+          movement_id: 11, variant_id: 11, delta: 1, reason: 'refund', note: null, created_at: '2026-10-11T00:00:01Z',
+          actor_email: null, order_id: 'a1b2c3d4-1111-4222-8333-444455556666', balance_after: 4, refund_id: refundId,
+        },
+        {
+          movement_id: 5, variant_id: 11, delta: 4, reason: 'restock', note: '入荷', created_at: '2026-09-21T00:00:00Z',
+          actor_email: 'admin@example.com', order_id: null, balance_after: 4, refund_id: null,
+        },
+      ],
+    });
+
+    const res = await callGet();
+
+    expect(res.body.movements.map((movement) => [movement.reason, movement.refundId])).toEqual([
+      ['adjustment', refundId],
+      ['refund', refundId],
+      ['restock', null],
+    ]);
+  });
+
   it('バリアントが無い商品は、数も履歴も DB の関数を呼ばずに空で返す', async () => {
     setupReads({ variants: [] });
 

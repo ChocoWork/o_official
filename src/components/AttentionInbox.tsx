@@ -10,6 +10,7 @@ import {
   type AttentionException,
   type OrderAttention,
 } from '@/lib/orders/order-payment-types';
+import { formatYen } from '@/lib/orders/refund/refund-messages';
 
 type AttentionInboxProps = {
   attention: OrderAttention | null;
@@ -18,6 +19,8 @@ type AttentionInboxProps = {
   onReview: (orderId: string) => void;
   onResolve: (input: { exceptionId: string; note: string }) => void;
   onCancelAndResolve: (input: { exceptionId: string; values: OrderCancelValues }) => void;
+  /** 返金の失敗の行から、その注文の返金の画面を開く。返金の権限が無い人には渡さない（ボタンを出さない） */
+  onRetryRefund?: (orderId: string) => void;
 };
 
 function formatDateTime(value: string | null): string {
@@ -41,6 +44,7 @@ export default function AttentionInbox({
   onReview,
   onResolve,
   onCancelAndResolve,
+  onRetryRefund,
 }: AttentionInboxProps) {
   const headingId = useId();
   const [resolving, setResolving] = useState<AttentionException | null>(null);
@@ -63,6 +67,7 @@ export default function AttentionInbox({
           <ul className="divide-y divide-black/10">
             {attention.exceptions.map((item) => {
               const busy = processingIds.includes(item.id);
+              const retryOrderId = item.canRetryRefund ? item.orderId : null;
               return (
                 <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <div className="min-w-0 font-acumin lk-text-3xs">
@@ -73,6 +78,19 @@ export default function AttentionInbox({
                     <p className="break-all text-[#474747]">
                       {item.paymentRef}・{formatDateTime(item.firstDetectedAt)}
                     </p>
+                    {item.refundFailure ? (
+                      <>
+                        {item.refundFailure.amount > 0 ? (
+                          <p className="text-black">{`返金 ${formatYen(item.refundFailure.amount)}`}</p>
+                        ) : null}
+                        <p className="text-black">{`失敗の理由: ${item.refundFailure.failureReasonLabel}`}</p>
+                        {item.refundFailure.shortages.length > 0 ? (
+                          <p className="text-black">
+                            {`確保し直せなかった商品: ${item.refundFailure.shortages.map((shortage) => `${shortage.name} × ${shortage.quantity}`).join('、')}`}
+                          </p>
+                        ) : null}
+                      </>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {item.canCancelOrder ? (
@@ -84,6 +102,17 @@ export default function AttentionInbox({
                         onClick={() => setCancelling(item)}
                       >
                         注文を取り消して解決
+                      </Button>
+                    ) : null}
+                    {retryOrderId !== null && onRetryRefund ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="font-acumin"
+                        disabled={busy}
+                        onClick={() => onRetryRefund(retryOrderId)}
+                      >
+                        もう一度返金する
                       </Button>
                     ) : null}
                     <Button
@@ -144,7 +173,7 @@ export default function AttentionInbox({
           }}
         >
           <p className="font-acumin lk-text-3xs text-[#474747]">
-            Stripe ダッシュボードで返金などを済ませてから、解決済みにしてください。
+            返金やお客様への連絡を済ませてから、解決済みにしてください。
           </p>
           <TextAreaField
             label="メモ（任意・店内のみ）"

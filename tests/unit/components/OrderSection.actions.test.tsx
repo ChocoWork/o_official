@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import OrderSection, { type OrderItem, type OrderLineItem, type OrderStatus } from '@/components/OrderSection';
+import { ORDER_PROGRESS_LABELS, PARTIALLY_SHIPPED_LABEL } from '@/lib/orders/order-progress';
+import { PAYMENT_STATUS_LABELS, REFUND_FAILED_BADGE, REFUND_PENDING_BADGE, type PaymentStatusKey } from '@/lib/orders/payment-status';
 
 function line(overrides: Partial<OrderLineItem> = {}): OrderLineItem {
   return {
@@ -49,12 +51,16 @@ const inProductionOrder: OrderItem = {
 };
 
 describe('OrderSection order actions', () => {
-  it('shows cancel only for an unpaid order', () => {
+  it('キャンセルは canCancel の注文に出る（未入金の注文も、支払い済みで1つも発送していない注文も）。出ない注文には出さない', () => {
     const onCancelOrder = jest.fn();
 
     render(
       <OrderSection
-        orders={[paidOrder, pendingOrder]}
+        orders={[
+          { ...paidOrder, id: 'paid-cancellable', canCancel: true, cancelKind: 'paid' },
+          { ...paidOrder, id: 'shipped-order', status: '配送中', orderStatus: 'shipped', canShip: false, canCancel: false, cancelKind: null },
+          { ...pendingOrder, cancelKind: 'unpaid' },
+        ]}
         onCancelOrder={onCancelOrder}
         onRefundOrder={jest.fn()}
         onShipOrder={jest.fn()}
@@ -62,10 +68,12 @@ describe('OrderSection order actions', () => {
     );
 
     const cancelButtons = screen.getAllByRole('button', { name: 'キャンセル' });
-    expect(cancelButtons).toHaveLength(1);
+    expect(cancelButtons).toHaveLength(2);
 
     fireEvent.click(cancelButtons[0]);
-    expect(onCancelOrder).toHaveBeenCalledWith('pending-order');
+    fireEvent.click(cancelButtons[1]);
+    expect(onCancelOrder).toHaveBeenNthCalledWith(1, 'paid-cancellable');
+    expect(onCancelOrder).toHaveBeenNthCalledWith(2, 'pending-order');
   });
 
   it('配送先が欠けた決済済み注文は発送操作を出さず確認を促す', () => {
@@ -220,6 +228,7 @@ describe('OrderSection の注文の言葉と印', () => {
     ['配達済み', 'bg-green-100 text-green-800', 'positive'],
     ['決済失敗', 'bg-orange-100 text-orange-800', 'danger'],
     ['キャンセル', 'bg-gray-100 text-gray-500', 'danger'],
+    ['キャンセルの手続き中', 'bg-gray-100 text-[#474747]', 'warning'],
   ])('「%s」の印は %s の色で、tone は %s', (status, classes, tone) => {
     render(<OrderSection orders={[{ ...paidOrder, status }]} />);
 
@@ -350,5 +359,102 @@ describe('OrderSection の仕上がりと発送のボタン', () => {
     for (const button of screen.getAllByRole('button', { name: '処理中...' })) {
       expect(button).toBeDisabled();
     }
+  });
+});
+
+/** 注文の行（注文ID の文字で探す）。一覧の行の中だけを調べるため */
+function orderRowOf(id: string): HTMLElement {
+  const row = screen.getAllByRole('row').find((candidate) => candidate.textContent?.includes(id));
+  if (!row) throw new Error(`行が見つかりません: ${id}`);
+  return row;
+}
+
+describe('OrderSection の列の見出し', () => {
+  it('「支払い」「進み具合」の順に並び、「決済状況」は無い', () => {
+    render(<OrderSection orders={[paidOrder]} />);
+
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
+      '注文ID', '顧客名', '注文日', '購入商品', '商品数', '合計金額', '支払い', '進み具合', '操作',
+    ]);
+    expect(screen.queryByRole('columnheader', { name: '決済状況' })).not.toBeInTheDocument();
+  });
+});
+
+describe('OrderSection の支払いの列と返金の印', () => {
+  it.each<[PaymentStatusKey, string, string, string]>([
+    ['unpaid', '未入金', 'bg-red-100 text-red-800', 'warning'],
+    ['failed', '支払いの失敗', 'bg-orange-100 text-orange-800', 'danger'],
+    ['none', '支払いなし', 'bg-gray-100 text-[#474747]', 'neutral'],
+    ['paid', '支払い済み', 'bg-green-100 text-green-800', 'positive'],
+    ['partially_refunded', '一部返金', 'bg-yellow-100 text-yellow-800', 'warning'],
+    ['refunded', '返金済み', 'bg-gray-100 text-[#474747]', 'neutral'],
+  ])('支払いの記号 %s は「%s」と出し、印は %s の色で、tone は %s', (key, word, classes, tone) => {
+    render(<OrderSection orders={[{ ...paidOrder, paymentStatusKey: key }]} />);
+
+    const badge = screen.getByText(word, { selector: 'span' });
+    expect(badge).toHaveClass(...classes.split(' '));
+    expect(badge).toHaveAttribute('data-ui-badge-tone', tone);
+  });
+
+  it('返事待ち・保留の返金がある注文に「返金の手続き中」、開いている返金の失敗がある注文に「返金の失敗」の小さな印を出す。無い注文には出さない', () => {
+    render(
+      <OrderSection
+        orders={[
+          { ...paidOrder, id: 'refund-pending', paymentStatusKey: 'paid', refundPending: true },
+          { ...paidOrder, id: 'refund-failed', paymentStatusKey: 'paid', refundFailed: true },
+          { ...paidOrder, id: 'refund-plain', paymentStatusKey: 'paid' },
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByText('返金の手続き中')).toHaveLength(1);
+    expect(screen.getAllByText('返金の失敗')).toHaveLength(1);
+    expect(within(orderRowOf('refund-pending')).getByText('返金の手続き中')).toBeInTheDocument();
+    expect(within(orderRowOf('refund-pending')).queryByText('返金の失敗')).not.toBeInTheDocument();
+    expect(within(orderRowOf('refund-failed')).getByText('返金の失敗')).toBeInTheDocument();
+    expect(within(orderRowOf('refund-failed')).queryByText('返金の手続き中')).not.toBeInTheDocument();
+    expect(within(orderRowOf('refund-plain')).queryByText('返金の手続き中')).not.toBeInTheDocument();
+    expect(within(orderRowOf('refund-plain')).queryByText('返金の失敗')).not.toBeInTheDocument();
+  });
+
+  it('支払いの言葉は、進み具合の言葉・行の小さな印・操作のボタンの字と1つも同じにならない（行の中の言葉を exact で探す E2E が、支払いの列を足しても1つに決まるように）', () => {
+    const paymentWords: string[] = Object.values(PAYMENT_STATUS_LABELS);
+    const otherWords: string[] = [
+      ...Object.values(ORDER_PROGRESS_LABELS),
+      PARTIALLY_SHIPPED_LABEL,
+      '要確認',
+      REFUND_PENDING_BADGE,
+      REFUND_FAILED_BADGE,
+      '履歴',
+      '返金',
+      'キャンセル',
+      '発送済みにする',
+      '仕上がりを記録する',
+    ];
+
+    expect(paymentWords).toHaveLength(6);
+    expect(paymentWords.filter((word) => otherWords.includes(word))).toEqual([]);
+  });
+
+  it('「返金」は canRefund の注文だけに出し、押すと注文の番号を渡す。返金の手続き中の印があっても、canRefund が true なら出す', () => {
+    const onRefundOrder = jest.fn();
+
+    render(
+      <OrderSection
+        orders={[
+          { ...paidOrder, id: 'refundable', canRefund: true },
+          { ...paidOrder, id: 'refundable-while-pending', canRefund: true, refundPending: true },
+          { ...paidOrder, id: 'nothing-left', canRefund: false },
+        ]}
+        onRefundOrder={onRefundOrder}
+      />,
+    );
+
+    // 出すかどうかは窓口が決めた canRefund だけで決める（返せる額が残っていれば、返事待ち・保留の返金があっても出る）
+    const buttons = screen.getAllByRole('button', { name: '返金' });
+    expect(buttons).toHaveLength(2);
+    fireEvent.click(buttons[1]);
+    expect(onRefundOrder).toHaveBeenCalledWith('refundable-while-pending');
+    expect(within(orderRowOf('nothing-left')).queryByRole('button', { name: '返金' })).not.toBeInTheDocument();
   });
 });

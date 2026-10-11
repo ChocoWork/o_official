@@ -50,8 +50,56 @@ const ATTENTION: OrderAttention = {
   counts: { exceptions: 2, reviews: 1 },
 };
 
+/** 返金の失敗の要対応。1つ目は返せる額が残っていて（もう一度返金できる）、確保し直せなかった商品がある。2つ目は返せる額が残っていない */
+const REFUND_FAILED_ATTENTION: OrderAttention = {
+  exceptions: [
+    {
+      id: 'exception-refund',
+      reason: 'refund_failed',
+      reasonLabel: '返金の失敗',
+      detail: 'expired_or_canceled_card',
+      orderId: 'c1c2c3d4-1111-2222-8333-444455556666',
+      orderNumber: 'ORD-C1C2C3D4',
+      orderStatus: 'paid',
+      paymentRef: 're_test_1',
+      firstDetectedAt: '2026-10-11T04:00:00.000Z',
+      lastDetectedAt: '2026-10-11T04:00:00.000Z',
+      detectionCount: 1,
+      canCancelOrder: false,
+      canRetryRefund: true,
+      refundFailure: {
+        amount: 12800,
+        failureReasonLabel: 'カードが使えません',
+        shortages: [
+          { name: 'シルクブラウス（白 / M）', quantity: 1 },
+          { name: 'ウールコート（黒 / L）', quantity: 2 },
+        ],
+      },
+    },
+    {
+      id: 'exception-refund-nothing-left',
+      reason: 'refund_failed',
+      reasonLabel: '返金の失敗',
+      detail: null,
+      orderId: 'd1d2d3d4-1111-2222-8333-444455556666',
+      orderNumber: 'ORD-D1D2D3D4',
+      orderStatus: 'cancelled',
+      paymentRef: 're_test_2',
+      firstDetectedAt: '2026-10-11T05:00:00.000Z',
+      lastDetectedAt: '2026-10-11T05:00:00.000Z',
+      detectionCount: 1,
+      canCancelOrder: false,
+      canRetryRefund: false,
+      // 要対応の記録に合う返金が見つからなかった時の形（額 0・不足なし）
+      refundFailure: { amount: 0, failureReasonLabel: '不明な理由', shortages: [] },
+    },
+  ],
+  reviews: [],
+  counts: { exceptions: 2, reviews: 0 },
+};
+
 function renderInbox(attention: OrderAttention | null = ATTENTION) {
-  const handlers = { onReview: jest.fn(), onResolve: jest.fn(), onCancelAndResolve: jest.fn() };
+  const handlers = { onReview: jest.fn(), onResolve: jest.fn(), onCancelAndResolve: jest.fn(), onRetryRefund: jest.fn() };
   render(<AttentionInbox attention={attention} processingIds={[]} {...handlers} />);
   return handlers;
 }
@@ -129,5 +177,96 @@ describe('AttentionInbox', () => {
       exceptionId: 'exception-2',
       values: { reason: 'other', note: 'Stripe に支払いが無い', notifyCustomer: true },
     });
+  });
+
+  it('返金できる返金の失敗（canRetryRefund）にだけ「もう一度返金する」を出し、押すと注文の番号を渡す', () => {
+    const { onRetryRefund } = renderInbox(REFUND_FAILED_ATTENTION);
+
+    const buttons = screen.getAllByRole('button', { name: 'もう一度返金する' });
+    expect(buttons).toHaveLength(1);
+    // 返金できない方の行にも、解決済みにする操作は残る
+    expect(screen.getAllByRole('button', { name: '解決済みにする' })).toHaveLength(2);
+
+    fireEvent.click(buttons[0]);
+    expect(onRetryRefund).toHaveBeenCalledTimes(1);
+    expect(onRetryRefund).toHaveBeenCalledWith('c1c2c3d4-1111-2222-8333-444455556666');
+  });
+
+  it('返金の画面を開く処理を渡されていない時（返金の権限が無い人）は、返金できる行にも「もう一度返金する」を出さない', () => {
+    const props = {
+      attention: REFUND_FAILED_ATTENTION,
+      processingIds: [],
+      onReview: jest.fn(),
+      onResolve: jest.fn(),
+      onCancelAndResolve: jest.fn(),
+    };
+    const { rerender } = render(<AttentionInbox {...props} onRetryRefund={jest.fn()} />);
+    expect(screen.getAllByRole('button', { name: 'もう一度返金する' })).toHaveLength(1);
+
+    rerender(<AttentionInbox {...props} />);
+
+    expect(screen.queryByRole('button', { name: 'もう一度返金する' })).not.toBeInTheDocument();
+  });
+
+  it('操作中の要対応では「もう一度返金する」を押せない', () => {
+    const onRetryRefund = jest.fn();
+    render(
+      <AttentionInbox
+        attention={REFUND_FAILED_ATTENTION}
+        processingIds={['exception-refund']}
+        onReview={jest.fn()}
+        onResolve={jest.fn()}
+        onCancelAndResolve={jest.fn()}
+        onRetryRefund={onRetryRefund}
+      />,
+    );
+
+    const button = screen.getByRole('button', { name: 'もう一度返金する' });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onRetryRefund).not.toHaveBeenCalled();
+  });
+
+  it('「解決済みにする」の画面は、返金やお客様への連絡を済ませてからと案内し、Stripe ダッシュボードとは書かない', () => {
+    renderInbox();
+
+    fireEvent.click(screen.getAllByRole('button', { name: '解決済みにする' })[0]);
+    const dialog = screen.getByRole('dialog', { name: '解決済みにする' });
+
+    expect(within(dialog).getByText('返金やお客様への連絡を済ませてから、解決済みにしてください。')).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('Stripe ダッシュボード');
+  });
+
+  it('返金の失敗の行に、返金額・失敗の理由・確保し直せなかった商品を出す（商品は「、」でつなぐ）', () => {
+    renderInbox(REFUND_FAILED_ATTENTION);
+
+    // 金額は formatYen の形（全角の ￥ と桁区切り）
+    const row = screen.getAllByRole('listitem')[0];
+    expect(row).toHaveTextContent('返金の失敗（ORD-C1C2C3D4）');
+    expect(within(row).getByText('返金 ￥12,800')).toBeInTheDocument();
+    expect(within(row).getByText('失敗の理由: カードが使えません')).toBeInTheDocument();
+    expect(
+      within(row).getByText('確保し直せなかった商品: シルクブラウス（白 / M） × 1、ウールコート（黒 / L） × 2'),
+    ).toBeInTheDocument();
+  });
+
+  it('額が 0 の返金の失敗には「返金」の行を、不足が無ければ「確保し直せなかった商品」の行を出さない。失敗の理由は出す', () => {
+    renderInbox(REFUND_FAILED_ATTENTION);
+
+    const row = screen.getAllByRole('listitem')[1];
+    expect(row).toHaveTextContent('返金の失敗（ORD-D1D2D3D4）');
+    expect(within(row).getByText('失敗の理由: 不明な理由')).toBeInTheDocument();
+    expect(row).not.toHaveTextContent('返金 ￥');
+    expect(row).not.toHaveTextContent('確保し直せなかった商品');
+  });
+
+  it('返金の失敗以外の要対応（refundFailure が null）には、返金額・失敗の理由・確保し直せなかった商品の行を足さない', () => {
+    renderInbox();
+
+    const row = screen.getAllByRole('listitem')[0];
+    expect(row).toHaveTextContent('注文を作れない支払い');
+    expect(row).not.toHaveTextContent('返金 ￥');
+    expect(row).not.toHaveTextContent('失敗の理由');
+    expect(row).not.toHaveTextContent('確保し直せなかった商品');
   });
 });

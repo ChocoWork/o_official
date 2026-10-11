@@ -56,6 +56,8 @@ type StockHistoryRow = {
   actor_email: string | null;
   order_id: string | null;
   balance_after: number;
+  /** 返金で動いた行の返金の番号。返金に結び付かない行は null */
+  refund_id: string | null;
 };
 
 /** 在庫の画面に出す履歴の件数 */
@@ -163,6 +165,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           orderId: row.order_id,
           orderNumber: row.order_id ? toOrderNumber(row.order_id) : null,
           balanceAfter: row.balance_after,
+          refundId: row.refund_id,
         })),
       },
       { status: 200 },

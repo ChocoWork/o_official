@@ -48,6 +48,8 @@ type Movement = {
   orderNumber: string | null;
   /** その行で変わった後の、この色・サイズのすぐ出せる数 */
   balanceAfter: number;
+  /** 返金で動いた行の返金の番号。返金に結び付かない行は null（画面には番号を出さず、理由の言葉を変えるのに使う） */
+  refundId: string | null;
 };
 
 const REASON_LABELS: Record<string, string> = {
@@ -57,6 +59,16 @@ const REASON_LABELS: Record<string, string> = {
   cancel: "取消",
   refund: "返金",
 };
+
+/**
+ * 履歴の理由の言葉。返金で動いた行（refundId がある）の「棚卸調整」と「販売」は、ふつうの棚卸調整・販売と区別する:
+ * 棚卸調整は「在庫に戻さない」を選んだ返金が手元の数を減らした行、販売は返金の失敗で確保し直した行。
+ */
+function movementReasonLabel(movement: Movement): string {
+  if (movement.refundId && movement.reason === "adjustment") return "棚卸調整（返金で在庫に戻さない）";
+  if (movement.refundId && movement.reason === "purchase") return "販売（返金の失敗で確保し直し）";
+  return REASON_LABELS[movement.reason] ?? movement.reason;
+}
 
 // 4つの数の言葉の説明。画面の上に1回だけ書く（色・サイズごとの行には書かない）
 const STOCK_TERMS_EXPLANATION =
@@ -354,7 +366,7 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
                   <span data-testid="stock-movement-variant">{variantLabel(variant)}</span>
                 )}
                 <span data-testid="stock-movement-reason">
-                  {REASON_LABELS[movement.reason] ?? movement.reason}
+                  {movementReasonLabel(movement)}
                 </span>
                 <span data-testid="stock-movement-delta" className="font-medium text-black">
                   {formatDelta(movement.delta)}

@@ -141,6 +141,28 @@ describe('ItemStockSection の4つの数と履歴（グループ E-1）', () => 
   });
 });
 
+describe('ItemStockSection の返金で動いた履歴の行（グループ E-2）', () => {
+  const REFUND_ID = 'e1e1e1e1-1111-4222-8333-444455556666';
+
+  beforeEach(() => {
+    mockedFetch.mockReset();
+  });
+
+  // 返金の番号（refundId）が付いた行だけ、同じ理由でも言葉を変える。
+  // 棚卸調整は「在庫に戻さない」を選んだ返金が手元の数を減らした行、販売は返金の失敗で確保し直した行
+  it.each<[string, string | null, string]>([
+    ['refund', REFUND_ID, '返金'],
+    ['adjustment', REFUND_ID, '棚卸調整（返金で在庫に戻さない）'],
+    ['purchase', REFUND_ID, '販売（返金の失敗で確保し直し）'],
+    ['adjustment', null, '棚卸調整'],
+    ['purchase', null, '販売'],
+  ])('理由 %s・返金の番号 %s の行は「%s」と出す', async (reason, refundId, label) => {
+    await renderLoaded({ movements: [{ ...PURCHASE, reason, refundId }] });
+
+    expect(screen.getByTestId('stock-movement-reason').textContent).toBe(label);
+  });
+});
+
 describe('ItemStockSection の読み込みの失敗（店主は英語が読めない）', () => {
   const LOAD_ERROR = /^在庫の取得に失敗しました。$/;
   let consoleError: jest.SpyInstance;
