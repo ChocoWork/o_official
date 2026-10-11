@@ -111,7 +111,8 @@ export async function submitPaidOrderCancel(
 
 /**
  * 自動の返金（道エ・オ）。呼ぶのは、照合が要対応を初めて記録した時だけ（P7）。
- * 失敗しても自動ではやり直さない（やり直すかどうかは呼ぶ側が決める）。実行した人はいない
+ * 失敗しても自動ではやり直さない（やり直すかどうかは呼ぶ側が決める）。実行した人はいない。
+ * Stripe に理由を伝えるのは、エ・オのどちらもしない
  */
 export async function startAutomaticRefund(
   deps: RefundServiceDeps,
@@ -132,7 +133,9 @@ export async function startAutomaticRefund(
     shippingAmount: 0,
     amount: 0,
     note: cancelsOrder ? AMOUNT_MISMATCH_CANCEL_NOTE : null,
-    stripeReason: cancelsOrder ? 'requested_by_customer' : null,
+    // ①・②とも Stripe に理由を伝えない。DB（begin_order_refund）は自動の返金の理由を記録に残さず、確かめ直しは記録の値で頼む。
+    // 最初の頼みに理由を付けると、同じ重複防止キーで中身が違う頼みになり、Stripe が idempotency_error にして、前の頼みが通ったかを教えない
+    stripeReason: null,
     cancelReason: cancelsOrder ? 'other' : null,
     notifyCustomer: true,
     actorId: null,

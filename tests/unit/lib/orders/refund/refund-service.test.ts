@@ -44,8 +44,9 @@ import {
   submitAdminRefund,
   submitPaidOrderCancel,
   type RefundServiceDeps,
+  type RefundSubmitResult,
 } from '@/lib/orders/refund/refund-service';
-import type { CreateRefundRequest, PaidCancelRequest } from '@/lib/orders/refund/refund-types';
+import type { CreateRefundRequest, OrderRefundSource, PaidCancelRequest } from '@/lib/orders/refund/refund-types';
 import { notifyShopOfException } from '@/lib/stripe/checkout-payment-reconciler';
 import { createReconcilerMailer, createSupabaseReconcilerDatabase } from '@/lib/stripe/checkout-payment-reconciler-deps';
 import { getStripeServerClient } from '@/lib/stripe/server';
@@ -736,7 +737,7 @@ describe('startAutomaticRefund（自動の返金）', () => {
     expect(params.metadata).toEqual({ order_id: ORDER_ID, refund_id: REFUND_ID });
   });
 
-  it('②支払額の違い: 理由 other・メモ・在庫に戻す・知らせるを渡し、Stripe には requested_by_customer と伝える', async () => {
+  it('②支払額の違い: 理由 other・メモ・在庫に戻す・知らせるを渡し、Stripe には理由を伝えない（DB も記録に理由を残さない）', async () => {
     const { deps, create } = setup();
 
     await expect(
@@ -752,13 +753,16 @@ describe('startAutomaticRefund（自動の返金）', () => {
       shippingAmount: 0,
       amount: 0,
       note: '支払額の違いの自動の取消',
-      stripeReason: 'requested_by_customer',
+      stripeReason: null,
       cancelReason: 'other',
       notifyCustomer: true,
       actorId: null,
       receivedAmount: null,
     });
-    expect(create.mock.calls[0][0]).toMatchObject({ reason: 'requested_by_customer' });
+    // 理由を付けると、記録から作る確かめ直し（理由なし）と中身が違い、同じ重複防止キーで idempotency_error になる
+    const [params] = create.mock.calls[0];
+    expect(params).not.toHaveProperty('reason');
+    expect(params.metadata).toEqual({ order_id: ORDER_ID, refund_id: REFUND_ID });
   });
 
   it('DB が断ったら refused を返す（自動ではやり直さない。呼ぶ側が要対応を開いたままにする）', async () => {
@@ -969,6 +973,80 @@ describe('confirmAwaitingRefund（返事待ちの記録の確かめ直し。P24�
     await expect(confirmAwaitingRefund(deps, CONFIRM_INPUT)).resolves.toEqual({ kind: 'refused', code: 'order_not_refundable' });
     expect(create).not.toHaveBeenCalled();
   });
+});
+
+type SameRequestPath = [
+  name: string,
+  source: OrderRefundSource,
+  start: (deps: RefundServiceDeps) => Promise<RefundSubmitResult>,
+  /** DB の begin_order_refund が記録に残す、Stripe に伝える理由と実行した人 */
+  stored: Pick<OrderRefundRef, 'stripeReason' | 'actorId'>,
+];
+
+/**
+ * 4つの道（ア・イ・エ・オ）それぞれの、最初の頼み方と、DB が記録に残す値。
+ * 記録に残す値は supabase/migrations/20261011120100_order_refund_requests.sql の begin_order_refund（v_stripe_reason・v_actor）のとおりで、
+ * ア・イは渡された値のまま、自動の返金（エ・オ）は呼ぶ側の値を使わず両方とも空にする
+ * （tests/integration/db/order_refund_requests.integration.test.ts の「呼ぶ側の値は使わない」の試験が確かめている）
+ */
+const SAME_REQUEST_PATHS: SameRequestPath[] = [
+  [
+    'ア 管理画面の返金（理由 duplicate）',
+    'admin',
+    (deps) => submitAdminRefund(deps, { ...ADMIN_INPUT, request: { ...ADMIN_REQUEST, stripeReason: 'duplicate' } }),
+    { stripeReason: 'duplicate', actorId: ACTOR_ID },
+  ],
+  [
+    'イ 支払い済みのキャンセル（お客様の希望）',
+    'order_cancel',
+    (deps) => submitPaidOrderCancel(deps, { orderId: ORDER_ID, actorId: ACTOR_ID, request: CANCEL_REQUEST }),
+    { stripeReason: 'requested_by_customer', actorId: ACTOR_ID },
+  ],
+  [
+    'イ 支払い済みのキャンセル（不正の疑い）',
+    'order_cancel',
+    (deps) =>
+      submitPaidOrderCancel(deps, {
+        orderId: ORDER_ID,
+        actorId: ACTOR_ID,
+        request: { ...CANCEL_REQUEST, reason: 'suspected_fraud' },
+      }),
+    { stripeReason: 'fraudulent', actorId: ACTOR_ID },
+  ],
+  [
+    'エ 自動の返金①（取り消した注文への入金）',
+    'auto_cancelled_order_payment',
+    (deps) => startAutomaticRefund(deps, { orderId: ORDER_ID, source: 'auto_cancelled_order_payment', receivedAmount: 5500 }),
+    { stripeReason: null, actorId: null },
+  ],
+  [
+    'オ 自動の返金②（支払額の違いの自動の取消）',
+    'auto_amount_mismatch',
+    (deps) => startAutomaticRefund(deps, { orderId: ORDER_ID, source: 'auto_amount_mismatch', receivedAmount: null }),
+    { stripeReason: null, actorId: null },
+  ],
+];
+
+// Stripe は、同じ重複防止キーで中身が違う頼みを idempotency_error にして、前の頼みが通ったかを教えない（記録は返事待ちのまま、
+// 毎時の見回りまで unknown になる）。確かめ直しは今の入力ではなく記録の値で頼むので、記録に残る値が最初の頼みと食い違うと中身が変わる
+describe.each(SAME_REQUEST_PATHS)('最初の頼みと確かめ直しの中身が同じ（Review Focus 1）: %s', (_name, source, start, stored) => {
+  it.each(['card', 'konbini'] as const)(
+    '支払いが %s で、最初の頼みの返事が届かなかった後の確かめ直しは、同じ重複防止キー・同じ中身で頼む',
+    async (paymentMethod) => {
+      const { deps, create, retrieve } = setup();
+      retrieve.mockResolvedValue({ latest_charge: { payment_method_details: { type: paymentMethod } } });
+      create.mockRejectedValueOnce(new Stripe.errors.StripeConnectionError({ type: 'api_error', message: 'socket hang up' }));
+
+      await expect(start(deps)).resolves.toEqual({ kind: 'unknown', refundId: REFUND_ID });
+      // 記録は返事待ちのまま。確かめ直しは、DB が残した値で作った記録から頼む
+      mockGet.mockResolvedValue(refundRef({ source, amount: BEGAN.amount, createdAt: FRESH, ...stored }));
+      await expect(confirmAwaitingRefund(deps, CONFIRM_INPUT)).resolves.toMatchObject({ kind: 'accepted', replayed: true });
+
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(create.mock.calls[0][1]).toEqual({ idempotencyKey: `order-refund-${REFUND_ID}` });
+      expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
+    },
+  );
 });
 
 describe('applyRefundSideEffects（結果を書いた後の始末。P15）', () => {
