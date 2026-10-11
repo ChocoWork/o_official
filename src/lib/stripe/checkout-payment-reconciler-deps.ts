@@ -26,6 +26,7 @@ import {
 } from '@/lib/stripe/checkout-payment-reader';
 import { RefundSyncNotConvergedError, syncPaymentIntentRefunds } from '@/lib/stripe/order-refund-sync';
 import { createDefaultRefundServiceDeps, type RefundServiceDeps } from '@/lib/orders/refund/refund-service';
+import { getShopSettings } from '@/lib/orders/refund/refund-store';
 import type {
   ReconcilerAudit,
   ReconcilerDatabase,
@@ -334,6 +335,8 @@ export async function createDefaultReconcilerDeps(): Promise<ReconcilerDeps> {
     mailer: createReconcilerMailer(),
     audit: reconcileAudit,
     syncRefunds: createReconcilerRefundSync(refund),
+    readShopSettings: () => getShopSettings(client),
+    refund,
     now: () => new Date(),
   };
 }

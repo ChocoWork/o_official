@@ -9,10 +9,12 @@
  *
  * 本物: 照合関数、createSupabaseReconcilerDatabase（supabase-js → PostgREST → RPC・表・トリガー。要対応の記録と
  *       通知の送信権の RPC を含む）、createReconcilerMailer（店への要対応メールの組み立て）。お客様への注文のメールは、
- *       本物の RPC が同じ取引で書く送る予定の行で確かめる。
+ *       本物の RPC が同じ取引で書く送る予定の行で確かめる。取消後の入金で照合が呼ぶ、受け取った額を注文に書く RPC
+ *       （record_cancelled_order_paid_amount。本計画 P27）は、deps.refund.store に本物の client を渡して通す。
  * 偽物: Stripe の読み取り（readPayment。段階ごとの現在値を返す。state は本物の classifyStripePaymentState で作る）、
  *       メールの送信（@/lib/mail の sendMail だけ。呼び出しを記録する）、監査ログ（deps.audit と @/lib/audit）、
- *       返金の同期（syncRefunds。この4つの流れに返金は無いので、呼ばれたら失敗させる）。
+ *       返金の同期（syncRefunds。この4つの流れに返金は無いので、呼ばれたら失敗させる）、
+ *       ショップの設定（readShopSettings。自動の返金①②は試さないので両方オフ）、返金の部品（deps.refund。store 以外は使われない）。
  *
  * 後片付けはしない。試験の注文は削除禁止のトリガーで、在庫の台帳は追記だけのトリガーで消せないので、ほかの DB 結合テストと
  * 同じく使い捨てのローカル DB でだけ動かす（DATABASE_URL・LOCAL_SUPABASE_URL が localhost 以外なら失敗させる）。
@@ -34,6 +36,8 @@ import { createClient } from '@supabase/supabase-js';
 import sendMail from '@/lib/mail';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { PAYMENT_EXCEPTION_REASON_LABELS } from '@/lib/orders/order-payment-types';
+import type { RefundServiceDeps } from '@/lib/orders/refund/refund-service';
+import type { ShopSettingsRow } from '@/lib/orders/refund/refund-store';
 import type { StripePaymentState } from '@/lib/stripe/checkout-payment-decision';
 import { classifyStripePaymentState, type CheckoutPaymentSnapshot } from '@/lib/stripe/checkout-payment-reader';
 import {
@@ -60,6 +64,12 @@ const LOCAL_API_URL = process.env.LOCAL_SUPABASE_URL;
 const LOCAL_SERVICE_ROLE_KEY = process.env.LOCAL_SUPABASE_SERVICE_ROLE_KEY;
 /** 店への要対応メールの宛先。メールは送られない（sendMail が偽物）ので、実在しない宛先でよい */
 const SHOP_ALERT_TO = 'shop-alert@example.com';
+/** ショップの設定。この試験の流れは自動の返金を試さない（取消後の入金も金額の違いも、要対応と店への知らせの組み立てを確かめる）ので、両方オフ */
+const AUTOMATIC_REFUNDS_OFF: ShopSettingsRow = {
+  autoRefundCancelledOrderPayment: { enabled: false, updatedAt: null, updatedByEmail: null },
+  autoCancelAmountMismatch: { enabled: false, updatedAt: null, updatedByEmail: null },
+  refundLedgerStartedAt: '2026-10-11T00:00:00.000Z',
+};
 
 type DraftFixture = Awaited<ReturnType<typeof createDraft>> & { variantId: number };
 
@@ -135,6 +145,7 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
   let savedEnv: Record<string, string | undefined> = {};
   let database: ReconcilerDatabase;
   let mailer: ReconcilerMailer;
+  let refund: RefundServiceDeps;
 
   beforeAll(() => {
     // 偽物に差し替わっていなければ、環境変数を入れたあとの本物の sendMail が本当に送ってしまう。その前に止める
@@ -146,6 +157,9 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
     });
     database = createSupabaseReconcilerDatabase(client);
     mailer = createReconcilerMailer();
+    // 自動の返金の部品。この試験は自動の返金を試さない（設定がオフ）ので、使われるのは store だけ。取消後の入金で、
+    // 受け取った額を書く RPC（本計画 P27）を本物の PostgREST と DB に通すため、store には本物の client を渡す
+    refund = { store: client } as unknown as RefundServiceDeps;
     savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
     process.env.MAIL_FROM_ADDRESS = 'no-reply@example.com';
     process.env.SHOP_ALERT_EMAIL = SHOP_ALERT_TO;
@@ -201,6 +215,9 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       syncRefunds: async () => {
         throw new Error('返金のない支払いで返金の同期が呼ばれた');
       },
+      readShopSettings: async () => AUTOMATIC_REFUNDS_OFF,
+      // 設定がオフなので、自動の返金は動かない。使われるのは store（受け取った額を書く RPC）だけ
+      refund,
       now: () => new Date(),
     };
     return { world, deps };
@@ -217,6 +234,10 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
         [draft.checkoutSessionId],
       )
     ).rows;
+
+  /** 注文の受け取った額（paid_amount）。取り消した注文への入金を、照合が書く（本計画 P27） */
+  const paidAmountOf = async (orderId: string) =>
+    (await db().query('select paid_amount from public.orders where id = $1', [orderId])).rows[0].paid_amount as number | null;
 
   const exceptionsOf = async (draft: DraftFixture) =>
     (
@@ -433,7 +454,7 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       expect((await ordersOf(draft))[0]).toMatchObject({ id: orderId, status: 'shipped' });
     });
 
-    test('取消後の入金: 取り消した注文は取消のまま在庫も戻したままにし、要対応に記録して店へ1回だけ知らせる', async () => {
+    test('取消後の入金: 取り消した注文は取消のまま在庫も戻したままにし、受け取った額だけを注文に書き、要対応に記録して店へ1回だけ知らせる', async () => {
       const draft = await newDraft();
       const orderId = await placeOrThrow(draft);
       // 管理画面の取消と同じ RPC（本物）で取り消す。実行者と理由は必須
@@ -457,16 +478,23 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       expect(await movementsOf(db(), draft.variantId)).toEqual(movementsAfterCancel);
       const revisionsAfterCancel = await revisionsOf(db(), orderId);
 
-      // そのあとで、Stripe は入金済み（返金なし）と言う
-      const paymentIntentId = `pi_composed_${uniqueSuffix()}`;
+      // そのあとで、Stripe は入金済み（返金なし）と言う。支払いの番号は、Stripe の実物と同じ pi_ と英数字だけにする
+      // （照合が受け取った額を書く DB の関数は、この形でない番号を断る）
+      const paymentIntentId = `pi_composed${uniqueSuffix()}`;
       const stripe = fakeStripe(snapshotOf(draft, paymentIntentId, stripeState.paid(PRICE)));
       const first = await reconcile(stripe.deps, draft);
 
       // 判定表（decidePaid）: 取消 × 入金済み（返金額が受取額に満たない）→ 要対応 cancelled_order_paid
       expect(first).toMatchObject({ kind: 'needs_action', reason: 'cancelled_order_paid', orderId, orderStatus: 'cancelled' });
-      // 注文には何も書かず、在庫も確保し直さない
-      expect((await ordersOf(draft))[0]).toMatchObject({ id: orderId, status: 'cancelled' });
-      expect(await revisionsOf(db(), orderId)).toEqual(revisionsAfterCancel);
+      // 注文は取消のまま、在庫も確保し直さない。書くのは、受け取った額と空だった支払いの番号だけ（本計画 P27。
+      // 自動の返金①がオフでも書く）。変更履歴は、その書き込みの1行（record_cancelled_order_payment）だけが増える
+      expect((await ordersOf(draft))[0]).toMatchObject({ id: orderId, status: 'cancelled', payment_intent_id: paymentIntentId });
+      expect(await paidAmountOf(orderId)).toBe(PRICE);
+      const revisionsAfterFirst = await revisionsOf(db(), orderId);
+      expect(revisionsAfterFirst).toEqual([
+        ...revisionsAfterCancel,
+        { reason: 'record_cancelled_order_payment', sourceEventId: null, changedBy: null },
+      ]);
       expect(await movementsOf(db(), draft.variantId)).toEqual(movementsAfterCancel);
       expect(await variantStock(db(), draft.variantId)).toBe(2);
       const [exception] = await exceptionsOf(draft);
@@ -499,6 +527,9 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       expect(await exceptionsOf(draft)).toEqual([{ ...exception, detection_count: 2 }]);
       expect(sentMails()).toHaveLength(1);
       expect((await ordersOf(draft))[0]).toMatchObject({ status: 'cancelled' });
+      // 受け取った額は書き済みなので、照合し直しても書き直さず、変更履歴も増えない
+      expect(await paidAmountOf(orderId)).toBe(PRICE);
+      expect(await revisionsOf(db(), orderId)).toEqual(revisionsAfterFirst);
     });
   });
 });

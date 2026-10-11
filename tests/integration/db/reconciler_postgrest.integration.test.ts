@@ -80,6 +80,7 @@ import type {
   ReconcilerMailer,
 } from '@/lib/stripe/checkout-payment-reconciler';
 import type { StripeRefundSnapshot } from '@/lib/orders/refund/refund-stripe';
+import type { ShopSettingsRow } from '@/lib/orders/refund/refund-store';
 import {
   createReconcilerRefundSync,
   createSupabaseReconcilerDatabase,
@@ -102,6 +103,12 @@ const LOCAL_SERVICE_ROLE_KEY = process.env.LOCAL_SUPABASE_SERVICE_ROLE_KEY;
 const CRON_SECRET = 'postgrest-integration-cron-secret';
 /** 決済画面は開いてから30分ちょうどまで有効、30分を超えたら見回りの対象（設計書 2-2） */
 const CHECKOUT_SESSION_VALIDITY_MS = 30 * 60 * 1000;
+/** ショップの設定。この試験の流れは自動の返金を試さない（照合の依存の RPC と見回りの候補を確かめる）ので、両方オフ */
+const AUTOMATIC_REFUNDS_OFF: ShopSettingsRow = {
+  autoRefundCancelledOrderPayment: { enabled: false, updatedAt: null, updatedByEmail: null },
+  autoCancelAmountMismatch: { enabled: false, updatedAt: null, updatedByEmail: null },
+  refundLedgerStartedAt: '2026-10-11T00:00:00.000Z',
+};
 
 type ReconcilerDatabase = ReturnType<typeof createSupabaseReconcilerDatabase>;
 type DraftFixture = Awaited<ReturnType<typeof createDraft>> & { variantId: number };
@@ -229,6 +236,9 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
       mailer,
       audit: jest.fn().mockResolvedValue(undefined),
       syncRefunds: createReconcilerRefundSync(refund),
+      readShopSettings: async () => AUTOMATIC_REFUNDS_OFF,
+      // 設定がオフなので、自動の返金の部品（Task 6 が作った refund）は使われない
+      refund,
       now: () => new Date(),
     };
   }
