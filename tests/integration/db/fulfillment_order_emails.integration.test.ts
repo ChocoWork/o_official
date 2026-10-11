@@ -653,3 +653,74 @@ describeLocalDb('integration: 同時の発送（Review Focus 1）', (db) => {
     expect(count.rows[0].n).toBe(1);
   });
 });
+
+/** 受け取った額を注文の合計と同じにする（返金の関数は、受け取った額が無い注文を断る）。変更の理由を付ける（本計画 P17） */
+async function markReceived(db: PgClient, orderId: string): Promise<void> {
+  await db.query("select set_config('app.order_change_reason', 'integration_test', true)");
+  await db.query('update public.orders set paid_amount = total_amount where id = $1', [orderId]);
+}
+
+/** 管理画面の返金（ア）を返事待ちで始める。額は商品1点分（5000）で、全額にならない。Stripe の返事を書く関数は移行 C なので、返事待ちのまま数える */
+function startRefund(db: PgClient, orderId: string, actorId: string, lines: unknown) {
+  return db.query(
+    'select * from public.begin_order_refund($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13)',
+    [orderId, 'admin', crypto.randomUUID(), JSON.stringify(lines), false, 0, 5000, null, null, null, false, actorId, null],
+  );
+}
+
+describeLocalDb('integration: 発送の取消と返金の守り（グループ E-2 の移行 B）', (db) => {
+  beforeEach(async () => {
+    await db().query('begin');
+  });
+
+  afterEach(async () => {
+    await db().query('rollback');
+  });
+
+  test('発送後に返金した数を下回る取消は断り（FULFILLMENT_REFUNDED）、下回らなければ今どおり取り消せる', async () => {
+    const { orderId, stockItemId } = await createMixedOrder(db());
+    const actor = await createActor(db());
+    await markReceived(db(), orderId);
+    const first = await ship(db(), orderId, actor.id, { notify: false, lines: [{ order_item_id: stockItemId, quantity: 1 }] });
+    const second = await ship(db(), orderId, actor.id, { notify: false, lines: [{ order_item_id: stockItemId, quantity: 1 }] });
+    // 発送した2点のうち1点を返金する（発送後の行）
+    await startRefund(db(), orderId, actor.id, [{ order_item_id: stockItemId, quantity: 1, before_shipment: false }]);
+
+    // 取り消した後の発送した数（2 − 1 = 1）が返金した数（1）を下回らないので、取り消せる
+    const cancelled = await cancelFulfillment(db(), orderId, first.rows[0].fulfillment_id, actor.id);
+    expect(cancelled.rows).toEqual([{ outcome: 'cancelled', order_status: 'paid' }]);
+
+    // もう1つを取り消すと、発送した数（0）が返金した数（1）を下回る
+    await expectRejected(
+      db(),
+      'select * from public.admin_cancel_fulfillment($1, $2, $3)',
+      [orderId, second.rows[0].fulfillment_id, actor.id],
+      { code: '22023', message: 'FULFILLMENT_REFUNDED' },
+    );
+    const row = await db().query('select cancelled_at from public.order_fulfillments where id = $1', [second.rows[0].fulfillment_id]);
+    expect(row.rows[0].cancelled_at).toBeNull();
+    expect((await lineCounts(db(), orderId))[stockItemId]).toMatchObject({ shipped: 1, refunded_after_shipment: 1 });
+  });
+
+  test('発送前の返金は取消を止めず、返金を入れた未発送の数が残る間は、発送済みの注文を決済完了に戻す', async () => {
+    const { orderId, stockItemId, madeItemId } = await createMixedOrder(db());
+    const actor = await createActor(db());
+    await markReceived(db(), orderId);
+    // 在庫の品1点を発送前に返金する → 発送できるのは残りの1点。受注生産の3点を仕上げて、残りを全部送ると注文は発送済みになる
+    await startRefund(db(), orderId, actor.id, [{ order_item_id: stockItemId, quantity: 1, before_shipment: true }]);
+    await recordCompletion(db(), orderId, actor.id, [{ order_item_id: madeItemId, quantity: 3 }]);
+    const shipped = await ship(db(), orderId, actor.id, {
+      notify: false,
+      lines: [{ order_item_id: stockItemId, quantity: 1 }, { order_item_id: madeItemId, quantity: 3 }],
+    });
+    expect(shipped.rows[0]).toMatchObject({ completes_order: true, order_status: 'shipped' });
+
+    const cancelled = await cancelFulfillment(db(), orderId, shipped.rows[0].fulfillment_id, actor.id);
+
+    expect(cancelled.rows).toEqual([{ outcome: 'cancelled', order_status: 'paid' }]);
+    expect(await orderShipping(db(), orderId)).toEqual({
+      status: 'paid', shipped_at: null, shipping_carrier: null, tracking_number: null,
+    });
+    expect((await lineCounts(db(), orderId))[stockItemId]).toMatchObject({ shipped: 0, refunded_before_shipment: 1, unshipped: 1 });
+  });
+});
