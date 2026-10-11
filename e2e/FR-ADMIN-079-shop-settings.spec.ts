@@ -6,8 +6,9 @@
  * 「支払額が注文と違う注文を…」の文字がトグルの名前と確かめの画面の題の2か所に出るので、文字でなく役割と名前（role）で探す。
  * 自動の返金②が要対応を自動で閉じた時の記録（FREQ-452-AC-03。解決した人が空であることと、閉じ済みの要対応を上書きしないこと）は、
  * 手元の DB の関数を直に呼んで確かめる。解決した要対応を出す画面は無い（要対応の欄は未解決だけ）ので、画面でなく DB の記録を見る。
- * 解決のメモの文は試験が自分で渡して読み返すので、実装が渡す文の確かめにはならない（その文は、単体の
- * tests/unit/lib/stripe/checkout-payment-reconciler.test.ts と、DB 結合の tests/integration/db/order_refund_results.integration.test.ts が確かめる）。
+ * 解決のメモの文は試験が自分で渡して読み返すので、実装が渡す文の確かめにはならない。その文は、単体の
+ * tests/unit/lib/stripe/checkout-payment-reconciler.test.ts が確かめる（DB 結合の tests/integration/db/order_refund_results.integration.test.ts は、
+ * 渡した文がそのまま残ることと、解決した人が空になることを確かめる）。
  * （自動の取消そのものは、Stripe のテストで支払額の違いを作れないので DB 結合で確かめる）。
  */
 import { expect, test, type Page } from '@playwright/test';
@@ -213,8 +214,8 @@ for (const viewport of viewports) {
       // FREQ-452-AC-03
       // 確かめるのは、システムが閉じた要対応の「解決した人」が空になること（resolved_by が null）と、閉じ済みの要対応を上書きしないこと。
       // 解決のメモの文は試験が自分で渡して読み返すだけで、実装が渡す文（①は「システムが自動で返金した」、②は「システムが自動で解決した」）の
-      // 確かめではない。その文は単体（tests/unit/lib/stripe/checkout-payment-reconciler.test.ts）と DB 結合
-      // （tests/integration/db/order_refund_results.integration.test.ts）の試験が確かめる
+      // 確かめではない。その文は単体（tests/unit/lib/stripe/checkout-payment-reconciler.test.ts）が確かめる。DB 結合
+      // （tests/integration/db/order_refund_results.integration.test.ts）は、渡した文がそのまま残ることと、解決した人が空になることを確かめる
       await withLocalDb(async (db) => {
         const order = await createOrderWithLines(
           db,

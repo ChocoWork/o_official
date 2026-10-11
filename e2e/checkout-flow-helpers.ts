@@ -1,5 +1,5 @@
 import { expect, type Frame, type Page } from '@playwright/test';
-import { waitForPositionToSettle } from './checkout-test-utils';
+import { selectPaymentMethod, waitForPositionToSettle } from './checkout-test-utils';
 
 /**
  * 決済の新しい流れ（グループ F）の E2E の共通の部品。
@@ -103,18 +103,19 @@ export async function paymentElementFrame(page: Page): Promise<Frame> {
 /**
  * テスト用カード（4242…）を入れる。Stripe はお客様の環境によって、決済の入力欄を「カード」以外
  * （PayPay など）を開いた状態で出すことがあり、その時は「カード」のボタンが閉じていて、カード番号の欄が無い。
- * カードが閉じている時だけ「カード」のボタンを押して開く（カードが開いているのに欄の描画が遅いだけの時に押すと、閉じてしまうので押さない）。
+ * カード番号の欄が見えず「カード」のボタンがある時は、共通の selectPaymentMethod で「カード」を開く。この道具は、
+ * お支払い方法の欄を画面に入れ、位置が落ち着くのを待ち、開いた（aria-expanded が true）ことを確かめるまで押し直す
+ * （Stripe は読み込みの途中で既定の支払い方法を選び直すことがあり、早く押したカードの選択が戻ることがあるため）。
+ * 開いていない時だけ押すことも、この道具の中で守られる。
  * 「カード」のボタンが無い形（カードだけ）では、今までどおり欄に入れるだけ。
  */
 export async function fillTestCard(frame: Frame): Promise<void> {
   const cardNumber = frame.getByRole('textbox', { name: 'カード番号' });
   const cardButton = frame.getByRole('button', { name: 'カード', exact: true });
-  // 欄かボタンのどちらかが出るまで待つ（getAttribute は要素が無いと待ち続けるので、有無は count() で先に見る）
+  // 欄かボタンのどちらかが出るまで待つ。ボタンの有無は count() で先に見る（カードだけの形ではボタンが無い）
   await expect(cardNumber.or(cardButton).first()).toBeVisible({ timeout: 30_000 });
   if (!(await cardNumber.isVisible()) && (await cardButton.count()) > 0) {
-    if ((await cardButton.getAttribute('aria-expanded')) !== 'true') {
-      await cardButton.click();
-    }
+    await selectPaymentMethod(frame.page(), frame, 'カード');
   }
   await cardNumber.fill('4242424242424242');
   await frame.getByRole('textbox', { name: '有効期限' }).fill('12 / 34');
