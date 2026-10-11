@@ -7,6 +7,7 @@ jest.mock('@/lib/orders/refund/refund-store', () => ({
 import {
   MAX_RECONCILE_ATTEMPTS,
   ReconcileTransientError,
+  notifyShopOfException,
   reconcileCheckoutPayment,
   type ReconcilerDatabase,
   type ReconcilerDeps,
@@ -864,6 +865,23 @@ describe('自動の返金①②（グループ E-2 設計書 6-4・本計画 P7�
   const sentAlert = (h: { mailer: ReconcilerMailer }) =>
     (h.mailer.sendShopAlert as jest.Mock).mock.calls[0][0] as ShopPaymentAlert;
 
+  /**
+   * 閉じた要対応を、DB と同じく次の照合で「解決済み」と読ませる（record_payment_exception の is_resolved。毎時の見回りの
+   * 送り直しも未解決だけが対象）。要対応を閉じる関数が呼ばれた番号を覚え、以降の記録の答えに載せる。1回目の記録だけが新しい
+   */
+  function closeExceptionsLikeDb(h: ReturnType<typeof harness>) {
+    const closed = new Set<string>();
+    mockResolveBySystem.mockImplementation(async (_store, exceptionId) => {
+      closed.add(exceptionId);
+      return true;
+    });
+    let recordings = 0;
+    jest.spyOn(h.database, 'recordException').mockImplementation(async () => {
+      recordings += 1;
+      return { exceptionId: 'exception-1', isNew: recordings === 1, isResolved: closed.has('exception-1') };
+    });
+  }
+
   describe('① 取り消した注文への入金（cancelled_order_paid）', () => {
     /** 取り消した注文に、Stripe が受け取った額の入金が届いた（注文の額と同じとは限らない） */
     const cancelledOrderPaid = (settings: ShopSettingsRow, received = 5000) =>
@@ -873,7 +891,7 @@ describe('自動の返金①②（グループ E-2 設計書 6-4・本計画 P7�
         settings,
       });
 
-    it('設定がオンで初めての要対応なら、Stripe が受け取った額で全額を自動で返金し、受け付けたら要対応を閉じてから「返金した」と店へ知らせる', async () => {
+    it('設定がオンで初めての要対応なら、Stripe が受け取った額で全額を自動で返金し、受け付けたら「返金した」と店へ知らせてから要対応を閉じる', async () => {
       const h = cancelledOrderPaid(shopSettings({ autoRefund: true }), 4800);
 
       const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
@@ -893,9 +911,10 @@ describe('自動の返金①②（グループ E-2 設計書 6-4・本計画 P7�
         detectedAt: NOW,
         automation: 'auto_refunded',
       });
-      // 要対応を閉じてから知らせる（開いたままの要対応に「対応は要りません」を送らない）
-      expect(mockResolveBySystem.mock.invocationCallOrder[0]).toBeLessThan(
-        (h.mailer.sendShopAlert as jest.Mock).mock.invocationCallOrder[0],
+      // 知らせを送れてから要対応を閉じる（閉じた要対応は、毎時の見回りの送り直しにも次の照合にも拾われないので、
+      // 先に閉じて送れないと、店は返金を知る手段を失う）
+      expect((h.mailer.sendShopAlert as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+        mockResolveBySystem.mock.invocationCallOrder[0],
       );
       expect(result).toMatchObject({
         kind: 'needs_action',
@@ -999,17 +1018,66 @@ describe('自動の返金①②（グループ E-2 設計書 6-4・本計画 P7�
       expect(sentAlert(h)).toMatchObject({ reason: 'cancelled_order_paid', automation: 'auto_refunded' });
     });
 
-    it('店への知らせの送信権を先に取られていても、自動の返金は行い、この照合は知らせを送らず、送信権も戻さない', async () => {
+    it('店への知らせの送信権を先に取られていても、自動の返金は行うが、この照合は知らせを送らず、送信権も戻さず、要対応も閉じない', async () => {
       const h = cancelledOrderPaid(shopSettings({ autoRefund: true }));
       jest.spyOn(h.database, 'claimExceptionNotification').mockResolvedValue(false);
 
       await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
 
       expect(mockStartAutomaticRefund).toHaveBeenCalledTimes(1);
-      expect(mockResolveBySystem).toHaveBeenCalledWith(h.refund.store, 'exception-1', 'システムが自動で返金した');
       expect(h.mailer.sendShopAlert).not.toHaveBeenCalled();
       // 取っていない送信権は戻さない（取った側の知らせを妨げない）
       expect(h.database.releaseExceptionNotification).not.toHaveBeenCalled();
+      // 知らせを送るのは取った側。その送信が失敗しても毎時の見回りが送り直せるよう、ここでは閉じない（閉じた要対応は対象外）
+      expect(mockResolveBySystem).not.toHaveBeenCalled();
+    });
+
+    it('自動の返金が受け付けられても、店への知らせを送れなかった時は、要対応を閉じず送信権を戻し、次の照合が送る', async () => {
+      const h = cancelledOrderPaid(shopSettings({ autoRefund: true }));
+      closeExceptionsLikeDb(h);
+      // 1回目は、SHOP_ALERT_EMAIL の未設定や Resend の不具合で、知らせを送れない
+      jest.spyOn(h.mailer, 'sendShopAlert').mockResolvedValueOnce(false);
+
+      const first = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+      expect(first).toMatchObject({ kind: 'needs_action', reason: 'cancelled_order_paid' });
+      expect(mockStartAutomaticRefund).toHaveBeenCalledTimes(1);
+      // 閉じた要対応は、毎時の見回りの送り直し（未解決だけが対象）にも次の照合（解決済みは知らせ直さない）にも拾われない
+      expect(mockResolveBySystem).not.toHaveBeenCalled();
+      expect(h.database.releaseExceptionNotification).toHaveBeenCalledWith('exception-1', 'shop');
+
+      const second = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+      // 開いたままの要対応なので、次の照合は結果の付かない知らせを送る。自動の返金は動かし直さない
+      expect(second).toMatchObject({ kind: 'needs_action', reason: 'cancelled_order_paid' });
+      expect(mockStartAutomaticRefund).toHaveBeenCalledTimes(1);
+      expect(h.mailer.sendShopAlert).toHaveBeenCalledTimes(2);
+      expect((h.mailer.sendShopAlert as jest.Mock).mock.calls[1][0]).not.toHaveProperty('automation');
+    });
+
+    it('自動の返金の部品が誤りを投げ、送信権を戻す所も誤りを投げても、照合は元の誤りを投げる（ログには戻す所の誤りの名前と記号だけを出す）', async () => {
+      const h = cancelledOrderPaid(shopSettings({ autoRefund: true }));
+      const failure = new Error('db down');
+      mockStartAutomaticRefund.mockRejectedValueOnce(failure);
+      jest
+        .spyOn(h.database, 'releaseExceptionNotification')
+        .mockRejectedValueOnce(Object.assign(new Error('release failed: 宛先を含む文'), { code: '57014' }));
+      const log = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      try {
+        await expect(reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' })).rejects.toBe(failure);
+
+        expect(h.database.releaseExceptionNotification).toHaveBeenCalledWith('exception-1', 'shop');
+        expect(h.mailer.sendShopAlert).not.toHaveBeenCalled();
+        expect(log).toHaveBeenCalledWith('[reconcile] failed to release the shop notification claim', {
+          name: 'Error',
+          code: '57014',
+        });
+        // ログに誤りの文は出さない（DB の文には宛先などが混ざりうる）
+        expect(JSON.stringify(log.mock.calls)).not.toContain('release failed');
+      } finally {
+        log.mockRestore();
+      }
     });
 
     it('Stripe が受け付けた後に要対応を閉じる所が誤りを投げても、照合は投げず、「返金した」と店へ知らせる（要対応は開いたまま残る）', async () => {
@@ -1120,7 +1188,7 @@ describe('自動の返金①②（グループ E-2 設計書 6-4・本計画 P7�
     it.each([
       ['入金済みにした直後に違いが分かった', justPaid],
       ['すでに入金済みの注文を照合し直した', alreadyPaid],
-    ] as const)('設定がオンで入金済みの注文なら（%s）、全額を自動で返金して取り消し、要対応を閉じてから店へ知らせる', async (_name, build) => {
+    ] as const)('設定がオンで入金済みの注文なら（%s）、全額を自動で返金して取り消し、店へ知らせてから要対応を閉じる', async (_name, build) => {
       const h = build(shopSettings({ autoCancel: true }));
 
       const result = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
@@ -1133,8 +1201,9 @@ describe('自動の返金①②（グループ E-2 設計書 6-4・本計画 P7�
       });
       expect(mockResolveBySystem).toHaveBeenCalledWith(h.refund.store, 'exception-1', 'システムが自動で解決した');
       expect(sentAlert(h)).toMatchObject({ reason: 'paid_amount_mismatch', orderId: 'order-1', automation: 'auto_cancelled' });
-      expect(mockResolveBySystem.mock.invocationCallOrder[0]).toBeLessThan(
-        (h.mailer.sendShopAlert as jest.Mock).mock.invocationCallOrder[0],
+      // 知らせを送れてから要対応を閉じる（閉じた要対応は送り直しの対象外。先に閉じて送れないと、店は注文が取り消されたことを知らない）
+      expect((h.mailer.sendShopAlert as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+        mockResolveBySystem.mock.invocationCallOrder[0],
       );
       expect(result).toMatchObject({ kind: 'needs_action', reason: 'paid_amount_mismatch', orderId: 'order-1', orderStatus: 'paid' });
     });
@@ -1159,6 +1228,28 @@ describe('自動の返金①②（グループ E-2 設計書 6-4・本計画 P7�
       expect(mockStartAutomaticRefund).not.toHaveBeenCalled();
       expect(mockResolveBySystem).not.toHaveBeenCalled();
       expect(sentAlert(h)).not.toHaveProperty('automation');
+    });
+
+    it('自動の取消が受け付けられても、店への知らせを送れなかった時は、要対応を閉じず送信権を戻し、次の照合が送る', async () => {
+      // 入金済みの注文の額が Stripe の受取額と違う状態は、照合のたびに導き直されるので、2回目の照合も同じ要対応に当たる
+      const h = alreadyPaid(shopSettings({ autoCancel: true }));
+      closeExceptionsLikeDb(h);
+      jest.spyOn(h.mailer, 'sendShopAlert').mockResolvedValueOnce(false);
+
+      const first = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+      expect(first).toMatchObject({ kind: 'needs_action', reason: 'paid_amount_mismatch', orderStatus: 'paid' });
+      expect(mockStartAutomaticRefund).toHaveBeenCalledTimes(1);
+      // 閉じると、取り消した注文を店が知らないまま、送り直しも受けられなくなる
+      expect(mockResolveBySystem).not.toHaveBeenCalled();
+      expect(h.database.releaseExceptionNotification).toHaveBeenCalledWith('exception-1', 'shop');
+
+      const second = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+      expect(second).toMatchObject({ kind: 'needs_action', reason: 'paid_amount_mismatch' });
+      expect(mockStartAutomaticRefund).toHaveBeenCalledTimes(1);
+      expect(h.mailer.sendShopAlert).toHaveBeenCalledTimes(2);
+      expect((h.mailer.sendShopAlert as jest.Mock).mock.calls[1][0]).not.toHaveProperty('automation');
     });
 
     it('一部だけ発送した入金済みの注文は DB が断る（ORDER_NOT_CANCELLABLE）ので、取り消せなかった知らせを店へ送り、要対応を閉じない', async () => {
@@ -1284,5 +1375,39 @@ describe('自動の返金①②（グループ E-2 設計書 6-4・本計画 P7�
     await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
 
     expect(mockRecordPaidAmount).not.toHaveBeenCalled();
+  });
+});
+
+describe('notifyShopOfException（店への要対応メール。送る前に送信権を押さえ、送れなければ戻す）', () => {
+  const alert: ShopPaymentAlert = {
+    reason: 'state_conflict',
+    detail: null,
+    orderId: 'order-1',
+    paymentRef: 'cs_1',
+    detectedAt: NOW,
+  };
+
+  it('知らせを送れず、送信権を戻す所が誤りを投げても、投げずに false を返し、ログには誤りの名前と記号だけを出す', async () => {
+    const h = harness({ stripe: snapshot(PAID) });
+    jest.spyOn(h.mailer, 'sendShopAlert').mockResolvedValueOnce(false);
+    jest
+      .spyOn(h.database, 'releaseExceptionNotification')
+      .mockRejectedValueOnce(Object.assign(new Error('release failed: 宛先を含む文'), { code: '57014' }));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      // 「送れなかった」という結果を、戻す所の誤りで隠さない。毎時の見回りの送り直しは、続きの要対応を送り直せる
+      await expect(notifyShopOfException(h.deps, 'exception-1', alert)).resolves.toBe(false);
+
+      expect(h.database.releaseExceptionNotification).toHaveBeenCalledWith('exception-1', 'shop');
+      expect(log).toHaveBeenCalledWith('[reconcile] failed to release the shop notification claim', {
+        name: 'Error',
+        code: '57014',
+      });
+      // ログに誤りの文は出さない（DB の文には宛先などが混ざりうる）
+      expect(JSON.stringify(log.mock.calls)).not.toContain('release failed');
+    } finally {
+      log.mockRestore();
+    }
   });
 });

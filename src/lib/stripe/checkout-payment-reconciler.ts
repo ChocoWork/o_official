@@ -609,7 +609,11 @@ async function recordPaidAmountOfCancelledOrder(
  * 自動の返金①②を試してから、その結果を載せて店へ知らせる。送信権は返金の前に押さえる: 同じ支払いの照合が同時に走ると
  * （コンビニ払いの入金は知らせが2つほぼ同時に届く）、初めてでない方が結果の無い知らせを先に送り、結果の付いた知らせが
  * 送れなくなるため。自動の返金の部品が誤りを投げたら、送信権を戻してから投げる（再試行の照合が、結果の無い知らせを送る。T7-4）。
- * 送信権を先に取られていた時は、返金だけ行って送らない
+ * 送信権を先に取られていた時は、返金だけ行って送らず、要対応も閉じない。
+ *
+ * Stripe が受け付けた自動の返金の要対応は、知らせを送れた後に閉じる。閉じた要対応は、毎時の見回りの送り直し（未解決だけが
+ * 対象）にも、次の照合（解決済みは知らせ直さない）にも拾われないので、先に閉じて知らせを送れないと、店は返金（②は注文の取消）を
+ * 知る手段を失う。送れなかった時は、送信権を戻し、要対応を開いたままにして、見回りか次の照合に送らせる
  */
 async function notifyShopAfterAutomaticRefund(
   deps: ReconcilerDeps,
@@ -620,40 +624,52 @@ async function notifyShopAfterAutomaticRefund(
   alert: ShopPaymentAlert,
 ): Promise<void> {
   const claimed = await deps.database.claimExceptionNotification(exceptionId, 'shop');
-  let automation: ShopAlertAutomation | null;
+  let outcome: AutomaticRefundOutcome | null;
   try {
-    automation = await runAutomaticRefund(deps, snapshot, order, reason, exceptionId);
+    outcome = await runAutomaticRefund(deps, snapshot, order, reason);
   } catch (error) {
     if (claimed) {
-      await deps.database.releaseExceptionNotification(exceptionId, 'shop');
+      await releaseShopNotification(deps, exceptionId);
     }
     throw error;
   }
+  // 知らせを送るのは送信権を取った側。その送信が失敗しても見回りが送り直せるよう、取っていない側は要対応を閉じない
   if (!claimed) {
     return;
   }
-  if (!(await deps.mailer.sendShopAlert({ ...alert, ...(automation ? { automation } : {}) }))) {
-    await deps.database.releaseExceptionNotification(exceptionId, 'shop');
+
+  if (!(await deps.mailer.sendShopAlert({ ...alert, ...(outcome ? { automation: outcome.automation } : {}) }))) {
+    await releaseShopNotification(deps, exceptionId);
+    return;
+  }
+  if (outcome?.resolutionNote) {
+    await resolveAfterAutomaticRefund(deps, exceptionId, outcome.resolutionNote);
   }
 }
 
 /**
+ * 自動の返金①②の結果。automation は店への知らせに付ける値。resolutionNote は、知らせを送れた後に要対応を閉じる時の
+ * 解決のメモ（Stripe が受け付けなかった時は null。閉じない）
+ */
+type AutomaticRefundOutcome = { automation: ShopAlertAutomation; resolutionNote: string | null };
+
+/**
  * 自動の返金①②（グループ E-2 設計書 6-4）。要対応を初めて記録した時だけ呼ぶ（本計画 P7）。
- * 返した値は店への知らせに付ける。自動の返金をしない（設定がオフ・条件に合わない）時は null。
+ * 自動の返金をしない（設定がオフ・条件に合わない）時は null。
  *
  * - ① 取り消した注文への入金: 設定①がオンなら、Stripe が受け取った額で全額を返金する
  * - ② 支払額の違い: 設定②がオンで、入金済みの注文なら、全額を返金して注文を取り消す。発送を始めた注文は
  *   DB が断る（ORDER_NOT_CANCELLABLE）ので、取り消せなかった扱いになる
  *
- * Stripe が受け付けたら要対応を閉じる（システムが解決）。断られた・結果が分からない時は、開いたままにして店に任せる。
+ * Stripe が受け付けたら、要対応を閉じる時のメモを返す。閉じるのは、店への知らせを送れた後（notifyShopAfterAutomaticRefund）。
+ * 断られた・結果が分からない時は、メモを返さず、開いたままにして店に任せる。
  */
 async function runAutomaticRefund(
   deps: ReconcilerDeps,
   snapshot: CheckoutPaymentSnapshot,
   order: ReconcilerOrder | null,
   reason: PaymentExceptionReason,
-  exceptionId: string,
-): Promise<ShopAlertAutomation | null> {
+): Promise<AutomaticRefundOutcome | null> {
   const { state } = snapshot;
   // Stripe が受け取った入金が無い支払い（0円で完了した、など）には、返す物が無い
   if (!order || state.kind !== 'paid') {
@@ -664,48 +680,59 @@ async function runAutomaticRefund(
     if (!(await deps.readShopSettings()).autoRefundCancelledOrderPayment.enabled) {
       return null;
     }
-    const accepted = await refundAutomatically(deps, exceptionId, 'システムが自動で返金した', {
+    const result = await startAutomaticRefund(deps.refund, {
       orderId: order.id,
       source: 'auto_cancelled_order_payment',
       receivedAmount: state.amountReceived,
     });
-    return accepted ? 'auto_refunded' : 'auto_refund_failed';
+    return result.kind === 'accepted'
+      ? { automation: 'auto_refunded', resolutionNote: 'システムが自動で返金した' }
+      : { automation: 'auto_refund_failed', resolutionNote: null };
   }
 
   if (reason === 'paid_amount_mismatch' && order.status === 'paid') {
     if (!(await deps.readShopSettings()).autoCancelAmountMismatch.enabled) {
       return null;
     }
-    const accepted = await refundAutomatically(deps, exceptionId, 'システムが自動で解決した', {
+    const result = await startAutomaticRefund(deps.refund, {
       orderId: order.id,
       source: 'auto_amount_mismatch',
       receivedAmount: null,
     });
-    return accepted ? 'auto_cancelled' : 'auto_cancel_failed';
+    return result.kind === 'accepted'
+      ? { automation: 'auto_cancelled', resolutionNote: 'システムが自動で解決した' }
+      : { automation: 'auto_cancel_failed', resolutionNote: null };
   }
 
   return null;
 }
 
-/** 自動の返金を始め、Stripe が受け付けたら要対応を閉じる。受け付けたか（断られた・結果が分からない時は false）を返す */
-async function refundAutomatically(
+/**
+ * Stripe が受け付けた自動の返金の要対応を、システムが閉じる。店への知らせを送れた後にだけ呼ぶ。
+ * 閉じられなくても投げない: 返金は済んでいて、知らせも送れている（要対応は開いたまま残り、店が画面で閉じる）
+ */
+async function resolveAfterAutomaticRefund(
   deps: ReconcilerDeps,
   exceptionId: string,
   resolutionNote: string,
-  request: Parameters<typeof startAutomaticRefund>[1],
-): Promise<boolean> {
-  const result = await startAutomaticRefund(deps.refund, request);
-  if (result.kind !== 'accepted') {
-    return false;
-  }
-
+): Promise<void> {
   try {
     await resolvePaymentExceptionBySystem(deps.refund.store, exceptionId, resolutionNote);
   } catch (error) {
-    // 返金は Stripe が受け付けた。閉じられなくても「返金した」と知らせる（要対応は開いたまま残り、店が画面で閉じる）
     console.error('[reconcile] the exception was not resolved after the automatic refund', errorNameAndCode(error));
   }
-  return true;
+}
+
+/**
+ * 店への知らせの送信権を戻す。戻せなくても投げない: 呼ぶのは、自動の返金の部品が投げた後（元の誤りを隠さない）と、
+ * 知らせを送れなかった後（「送れなかった」という結果を隠さない）。ログには誤りの名前と記号だけを出す
+ */
+async function releaseShopNotification(deps: Pick<ReconcilerDeps, 'database'>, exceptionId: string): Promise<void> {
+  try {
+    await deps.database.releaseExceptionNotification(exceptionId, 'shop');
+  } catch (error) {
+    console.error('[reconcile] failed to release the shop notification claim', errorNameAndCode(error));
+  }
 }
 
 /** ログに出す誤りの名前と記号だけ（DB の文には宛先などが混ざりうる） */
@@ -729,7 +756,7 @@ export async function notifyShopOfException(
 
   const sent = await deps.mailer.sendShopAlert(alert);
   if (!sent) {
-    await deps.database.releaseExceptionNotification(exceptionId, 'shop');
+    await releaseShopNotification(deps, exceptionId);
   }
   return sent;
 }
