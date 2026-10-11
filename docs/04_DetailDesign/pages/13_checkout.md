@@ -806,6 +806,7 @@ Link を独立した支払手段として有効化する、または Express Che
 | 決済画面の失効 | 支払い手続き中の注文のうち、開いてから30分を超えてまだ開いている Checkout Session を失効させる（`expireOpenCheckoutSession`）。支払いの前に注文を作る受付 API（グループ F）が入った後は、Webhook が届かなくても、放棄された決済の在庫は最長90分で戻る。今は注文を支払いの後に作るので、放棄された決済は在庫を押さえない |
 | 判定 | 照合関数（`reconcileCheckoutPayment`）が Stripe の Session と PaymentIntent の現在値だけで決める。アプリ独自の日数で入金待ちを打ち切らない |
 | 店への要対応メール | 送れていない分を1回20件まで送り直す（`listUnsentShopAlerts`） |
+| 返事待ちの返金（グループ E-2） | 時間の予算が残っている時だけ、15分より前から返事待ちの返金を20件まで Stripe の返金に付けた印で探して合わせ、見つからなければエラーにして要対応「返金の失敗」（[注文管理のシーケンス](../sequence/order-administration.md) の SQ-ADMIN-07） |
 
 | 環境変数 | 用途 |
 | --- | --- |

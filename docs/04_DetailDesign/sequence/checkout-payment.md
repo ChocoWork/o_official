@@ -1,6 +1,6 @@
 # 購入・決済照合シーケンス
 
-> 状態: 現行ソース確認 | 確認日: 2026-10-07（買い手の確かめと比べはグループ C の変更を 2026-10-08 に反映） | 対象: `/checkout`、Checkout Session、注文・在庫の照合
+> 状態: 現行ソース確認 | 確認日: 2026-10-07（買い手の確かめと比べはグループ C の変更を 2026-10-08 に、返金の取り込みの図と自動の返金の注はグループ E-2 の変更を 2026-10-11 に反映） | 対象: `/checkout`、Checkout Session、注文・在庫の照合
 
 ## 概要
 
@@ -246,10 +246,10 @@ sequenceDiagram
         C->>C: 現在値から行動判定
         alt 変更不要・記録のみ
             opt none、paid/shipped注文、paid snapshot、返金額あり、PIあり
-                C->>Stripe: syncRefunds / 全ページの成功返金を読取り
-                C->>DB: apply_order_refund_projection (CAS)
-                DB-->>C: 返金投影後の注文状態
-                C->>Stripe: 返金再読取りで投影確認 (最大3回)
+                C->>Stripe: syncRefunds / その支払いの返金を全ページ読む
+                C->>DB: 返金1件ずつ record_order_refund_result か record_external_order_refund
+                DB-->>C: 記録を書いた後の注文状態
+                C->>Stripe: 返金を読み直し、番号と状態の組が変わっていれば書き直す (最大3回)
                 Note over C,DB: 失敗は例外で終了 / 古い注文状態で成功を返さない
             end
             C->>C: ok または 前回更新で要確認ならneeds_review
@@ -259,7 +259,7 @@ sequenceDiagram
             Note over C: 記録・通知をせず次の読取りへ
         else その他の例外・最終回のstate_conflict
             C->>DB: 要対応を記録、通知権をclaim
-            C->>C: 未解決・送信権ありなら通知を試みる
+            C->>C: 未解決・送信権ありなら通知を試みる（取り消した注文への入金・支払額の違いを初めて記録した時は、設定に応じた自動の返金①②の後に結果を載せて送る。取り消した注文への入金は、前からの要対応でも、記録のたびに受け取った額と支払いの番号を注文に書く。グループ E-2。注文管理の SQ-ADMIN-08）
             C->>DB: 結果を監査
             C-->>Caller: needs_actionで終了
         else 条件付き更新が必要
@@ -320,7 +320,7 @@ sequenceDiagram
     end
 ```
 
-`break`はその条件で部分シナリオを終了する。照合器の`place_order_from_checkout_draft`は買い手を渡さないので、この経路で作る注文の`user_id`は空（グループ C。持ち主は「注文する」の受け付けだけが書く）。snapshot不足もunexpected_stateを記録してdoneとなり、placeへ進まない。入金更新が成立してから後続処理が例外になった場合、成立済みのRPCを一括で巻き戻す処理はない。根拠は照合器の`placeAndMark`・`markPaid`・`markAwaiting`。返金の投影は[注文管理](order-administration.md)へ分ける。
+`break`はその条件で部分シナリオを終了する。照合器の`place_order_from_checkout_draft`は買い手を渡さないので、この経路で作る注文の`user_id`は空（グループ C。持ち主は「注文する」の受け付けだけが書く）。snapshot不足もunexpected_stateを記録してdoneとなり、placeへ進まない。入金更新が成立してから後続処理が例外になった場合、成立済みのRPCを一括で巻き戻す処理はない。根拠は照合器の`placeAndMark`・`markPaid`・`markAwaiting`。返金の取り込みと自動の返金は[注文管理](order-administration.md)の SQ-ADMIN-07・08 へ分ける。
 
 ## 照合・例外・永続化の条件
 
@@ -330,7 +330,7 @@ sequenceDiagram
 | 完了判定 | `payment_status=paid OR status=complete`のSessionを受け、照合結果にorderIdとpaid/pending/shippedの状態があれば200。`needs_action/needs_review`という結果名だけで常にエラーにする実装ではない |
 | 返金が注文より先 | `paid`で`amountRefunded > 0 && amountRefunded >= amountReceived`なら注文なしでは`record_only(refunded_before_order)`。注文・在庫確保・注文メールを作らず、completeはorderIdなしの409。一部返金だけなら注文を作り、後続の照合で返金を同期する |
 | 既存注文の返金 | 判定がnone、注文paid/shipped、snapshot paid、返金額>0、PIありの場合だけsyncRefundsを呼ぶ。入金更新直後の読み直しも対象。同期後statusを返し、全額返金によるcancelledならcompleteは409。record_only・返金0・cancelledには呼ばない。事前のPI/金額不一致は要対応分岐を優先する |
-| 返金同期の失敗 | Stripe一時障害はstripe_unavailable、DB errorのcauseが一時障害ならdb_unavailable、最大3回の返金投影が未収束ならnot_convergedのReconcileTransientErrorへ変換。completeは503、workerはfail/retry。その他は元の例外を返す。成立済み注文RPCは巻き戻さない |
+| 返金同期の失敗 | Stripe一時障害はstripe_unavailable、DB errorのcauseが一時障害ならdb_unavailable、最大3回の返金の取り込みが収まらなければ（`RefundSyncNotConvergedError`）not_convergedのReconcileTransientErrorへ変換。completeは503、workerはfail/retry。その他は元の例外を返す。成立済み注文RPCは巻き戻さない |
 | 配送先 | completeのshippingは形式検証のみ。注文作成時はロックしたdraft.shipping_snapshotから写す。必須配送snapshot欠落は監査して注文作成を続ける |
 | 新規受付 | Sessionで既存注文を確認、draftロック後にも確認。商品はID昇順でKEY SHARE、variantはID昇順でUPDATEロック。商品・金額等の拒否時はorder_not_creatableを記録し、自動返金はしない。「注文する」の受け付け（place-order）は、最終確認画面で在庫ありと見せたバリアントを渡して呼び、source_cart_line_idのcart_linesが下書きのcart_idに属さない・消えている、またはcart_idが無い移行前の下書きなら`cart_changed`、見せた後の価格の変化は`price_changed`、在庫ありから受注生産への変化は`stock_changed`で断る（注文も在庫の確保も作らず、下書きは`created`のまま）。この引数が無い呼び出し（照合器の予備処理）はカート行を検証せず、足りない明細を受注生産として受ける。「注文する」の受け付けは、下書きをロックした直後（既にある注文を返すより前）に下書きの買い手と引数の買い手を比べ、違えば`login_changed`で断る（何も変えない）。下書きが無い時や、下書きの Session・`session_id` の印が要求と違う時は、既にある注文の持ち主と比べる。買い手だけを渡して配列を渡さない呼び間違いは`PLACE_ORDER_ARGUMENT_REQUIRED`（22023）で断る |
 | 在庫 | 同variant数量を合算し、activeかつ足りるvariantだけstock、残りはbackorder。stock明細をpurchase台帳で確保。確保は注文を作る受付RPCの中で行い、通常は「注文する」の受け付け（支払いの前）。create-session（確認へ進む）では予約しない |
