@@ -6,6 +6,7 @@ import { toOrderNumber } from '@/lib/orders/order-number';
 import { HIDDEN_ORDER_STATUS_FILTER } from '@/lib/orders/order-payment-types';
 import { deriveOrderProgress } from '@/lib/orders/order-progress';
 import { listOrderLineFulfillment, type OrderLineFulfillmentRow } from '@/lib/orders/fulfillment/fulfillment-store';
+import { listOrderRefundSummaries, type OrderRefundSummary } from '@/lib/orders/refund/refund-store';
 
 const NO_STORE_HEADERS = {
 	'Cache-Control': 'no-store',
@@ -142,11 +143,28 @@ export async function GET(request: NextRequest) {
 		return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500, headers: NO_STORE_HEADERS });
 	}
 
+
+	// 手続き中の返金がある注文は「キャンセルの手続き中」と出す（注文の画面と言葉をそろえる）。返金の有無も一覧の分を1回で読む
+	let refundSummaries: Map<string, OrderRefundSummary>;
+	try {
+		refundSummaries = await listOrderRefundSummaries(serviceSupabase, orders.map((order) => order.id));
+	} catch (refundError) {
+		console.error(
+			'Orders refund fetch error:',
+			refundError instanceof Error ? refundError.name : 'UnknownError',
+			(refundError as { code?: unknown })?.code ?? null,
+			(refundError as { operation?: unknown })?.operation ?? null,
+		);
+		return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500, headers: NO_STORE_HEADERS });
+	}
+
 	const response = await Promise.all(orders.map(async (order) => ({
 		id: order.id,
 		orderNumber: toOrderNumber(order.id),
 		orderDate: formatOrderDate(order.created_at),
-		status: deriveOrderProgress(order.status, lineRowsByOrder.get(order.id) ?? []).label,
+		status: deriveOrderProgress(order.status, lineRowsByOrder.get(order.id) ?? [], {
+			hasOpenRefund: refundSummaries.get(order.id)?.hasOpenRefund ?? false,
+		}).label,
 		totalAmount: formatCurrency(order.total_amount, order.currency),
 		itemCount: (order.order_items ?? []).reduce((sum, item) => sum + item.quantity, 0),
 		shippingFullName: order.shipping_full_name ?? '',

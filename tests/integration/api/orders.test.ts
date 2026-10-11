@@ -106,7 +106,10 @@ describe('GET /api/orders', () => {
 			from: jest.fn().mockReturnValue(orderQuery),
 		});
 
-		const rpc = jest.fn().mockResolvedValue({ data: [READY_LINE_ROW], error: null });
+		const rpc = jest.fn().mockImplementation(async (name: string) => ({
+			data: name === 'list_order_line_fulfillment' ? [READY_LINE_ROW] : [],
+			error: null,
+		}));
 		createServiceRoleClient.mockResolvedValue({ rpc });
 
 		const { GET } = require('@/app/api/orders/route');
@@ -147,6 +150,76 @@ describe('GET /api/orders', () => {
 			],
 		});
 		expect(rpc).toHaveBeenCalledWith('list_order_line_fulfillment', { _order_ids: ['order-1'] });
+		expect(rpc).toHaveBeenCalledWith('list_order_refund_summaries', { _order_ids: ['order-1'] });
+	});
+
+
+	test('全部の商品を発送前に返金して手続き中の返金がある注文は、一覧の言葉も「キャンセルの手続き中」になる', async () => {
+		const orderQuery = {
+			select: jest.fn().mockReturnThis(),
+			eq: jest.fn().mockReturnThis(),
+			not: jest.fn().mockReturnThis(),
+			order: jest.fn().mockResolvedValue({
+				data: [
+					{
+						id: 'order-1',
+						created_at: '2026-04-01T00:00:00.000Z',
+						status: 'paid',
+						total_amount: 12000,
+						currency: 'jpy',
+						order_items: [
+							{
+								id: 'line-1',
+								item_id: 10,
+								item_name: 'Silk Blouse',
+								item_image_url: null,
+								color: 'Black',
+								size: 'M',
+								quantity: 1,
+								line_total: 12000,
+							},
+						],
+					},
+				],
+				error: null,
+			}),
+		};
+		createClient.mockResolvedValue({ from: jest.fn().mockReturnValue(orderQuery) });
+		signItemImageUrl.mockResolvedValue(null);
+
+		const rpc = jest.fn().mockImplementation(async (name: string) => {
+			if (name === 'list_order_line_fulfillment') {
+				// 1点を発送前に全部返金した（未発送 0・発送準備中 0）
+				return { data: [{ ...READY_LINE_ROW, refunded_before_shipment: 1, ready_unshipped: 0, unshipped: 0 }], error: null };
+			}
+			if (name === 'list_order_refund_summaries') {
+				return {
+					data: [
+						{
+							order_id: 'order-1',
+							paid_amount: 12000,
+							succeeded_amount: 0,
+							open_amount: 12000,
+							refundable_amount: 0,
+							has_open_refund: true,
+							has_unresolved_refund_failure: false,
+						},
+					],
+					error: null,
+				};
+			}
+			return { data: [], error: null };
+		});
+		createServiceRoleClient.mockResolvedValue({ rpc });
+
+		const { GET } = require('@/app/api/orders/route');
+		const response: { status: number; json: () => Promise<{ data: Array<{ status: string }> }> } = await GET(
+			new Request('http://localhost/api/orders'),
+		);
+		const body = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(body.data.map((order) => order.status)).toEqual(['キャンセルの手続き中']);
 	});
 
 	test('returns no-store on unauthorized responses', async () => {
@@ -216,6 +289,39 @@ describe('GET /api/orders/[id]', () => {
 			}),
 		});
 
+		// list_order_refunds の1行（送料だけを返金して成功した。商品の行なし）。操作した人のメールなど内側の情報も入れておく
+		const REFUND_ROW = {
+			refund_id: 'refund-1',
+			source: 'admin',
+			status: 'succeeded',
+			stripe_status: 'succeeded',
+			stripe_pending_reason: null,
+			stripe_failure_reason: null,
+			customer_action_expires_at: null,
+			payment_method_type: 'card',
+			amount: 500,
+			shipping_amount: 500,
+			adjustment_amount: 0,
+			note: null,
+			stripe_reason: 'requested_by_customer',
+			cancel_reason: null,
+			notify_customer: true,
+			actor_email: 'admin@example.com',
+			reference_number: null,
+			reference_type: null,
+			created_at: '2026-04-02T00:30:00.000Z',
+			accepted_at: '2026-04-02T00:30:01.000Z',
+			succeeded_at: '2026-04-02T00:30:02.000Z',
+			failed_at: null,
+			errored_at: null,
+			lines: [],
+		};
+		const rpc = jest.fn().mockImplementation(async (name: string) => {
+			if (name === 'list_order_line_fulfillment') return { data: [READY_LINE_ROW], error: null };
+			if (name === 'list_order_refunds') return { data: [REFUND_ROW], error: null };
+			return { data: [], error: null };
+		});
+
 		createServiceRoleClient.mockResolvedValue({
 			from: jest.fn().mockImplementation((table: string) => {
 				if (table === 'checkout_drafts') {
@@ -238,10 +344,7 @@ describe('GET /api/orders/[id]', () => {
 					}),
 				};
 			}),
-			rpc: jest.fn().mockImplementation(async (name: string) => ({
-				data: name === 'list_order_line_fulfillment' ? [READY_LINE_ROW] : [],
-				error: null,
-			})),
+			rpc,
 		});
 
 		const { GET } = require('@/app/api/orders/[id]/route');
@@ -270,6 +373,17 @@ describe('GET /api/orders/[id]', () => {
 				],
 			},
 			shipments: [],
+			// 本物の listOrderRefunds が DB の行を読み、窓口が日本時間の日付と円の言葉に直す
+			refunds: [
+				{
+					id: 'refund-1',
+					date: '2026/04/02',
+					amount: expect.stringMatching(/^[¥￥]500$/),
+					status: 'completed',
+					customerActionDeadline: null,
+				},
+			],
+			refundTotal: null,
 			subtotalAmount: expect.stringMatching(/^[¥￥]12,000$/),
 			shippingAmount: expect.stringMatching(/^[¥￥]500$/),
 			discountAmount: expect.stringMatching(/^-[¥￥]1,000$/),
@@ -280,11 +394,15 @@ describe('GET /api/orders/[id]', () => {
 					id: 'line-1',
 					itemId: 10,
 					shippedQuantity: 0,
+					refundedQuantity: 0,
 					readyQuantity: 1,
 					inProductionQuantity: 0,
 				}),
 			],
 		});
+		expect(rpc).toHaveBeenCalledWith('list_order_refunds', { _order_id: 'order-1' });
+		// 操作した人のメールなど内側の情報は、DB の行にあっても、お客様に返さない
+		expect(JSON.stringify(body)).not.toContain('admin@example.com');
 		expect(body).not.toHaveProperty('shippedAt');
 		expect(body).not.toHaveProperty('shippingCarrier');
 		expect(body).not.toHaveProperty('trackingNumber');

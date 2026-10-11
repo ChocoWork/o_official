@@ -39,6 +39,11 @@ jest.mock('@/lib/orders/fulfillment/fulfillment-store', () => ({
   listOrderLineFulfillment: (...args: unknown[]) => mockListLines(...args),
 }));
 
+const mockListRefundSummaries = jest.fn();
+jest.mock('@/lib/orders/refund/refund-store', () => ({
+  listOrderRefundSummaries: (...args: unknown[]) => mockListRefundSummaries(...args),
+}));
+
 import { NextRequest } from 'next/server';
 import { GET } from '@/app/api/orders/route';
 
@@ -78,11 +83,20 @@ function line(orderId: string, overrides: Record<string, unknown> = {}) {
   };
 }
 
+// listOrderRefundSummaries の1行
+function refundSummary(orderId: string, hasOpenRefund: boolean) {
+  return {
+    orderId, paidAmount: 12000, succeededAmount: 0, openAmount: hasOpenRefund ? 12000 : 0,
+    refundableAmount: hasOpenRefund ? 0 : 12000, hasOpenRefund, hasUnresolvedRefundFailure: false,
+  };
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockOrdersQuery.select.mockReturnValue(mockOrdersQuery);
   mockOrdersQuery.eq.mockReturnValue(mockOrdersQuery);
   mockOrdersQuery.not.mockReturnValue(mockOrdersQuery);
+  mockListRefundSummaries.mockResolvedValue(new Map());
 });
 
 describe('GET /api/orders の言葉（グループ E-1）', () => {
@@ -199,6 +213,73 @@ describe('GET /api/orders の言葉（グループ E-1）', () => {
 
     expect(response.status).toBe(500);
     expect(mockListLines).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+});
+
+describe('GET /api/orders の言葉と返金（グループ E-2）', () => {
+  it('全部の商品を発送前に返金して手続き中の返金がある注文は、一覧も「キャンセルの手続き中」。返金の有無は一覧の全部の注文を1回で読む', async () => {
+    mockOrdersQuery.order.mockResolvedValue({
+      data: [orderRow('order-cancel-pending', 'paid'), orderRow('order-ready', 'paid'), orderRow('order-partial', 'paid')],
+      error: null,
+    });
+    mockListLines.mockResolvedValue(
+      new Map([
+        // 1点の注文を、発送前に全部返金した（未発送 0・発送 0）
+        ['order-cancel-pending', [line('order-cancel-pending', { refundedBeforeShipment: 1, readyUnshipped: 0, unshipped: 0 })]],
+        ['order-ready', [line('order-ready')]],
+        // 2点のうち1点だけ返金した。まだ送る商品が残る
+        [
+          'order-partial',
+          [
+            line('order-partial', { refundedBeforeShipment: 1, readyUnshipped: 0, unshipped: 0 }),
+            line('order-partial', { orderItemId: 'order-partial-line-2' }),
+          ],
+        ],
+      ]),
+    );
+    mockListRefundSummaries.mockResolvedValue(
+      new Map([
+        ['order-cancel-pending', refundSummary('order-cancel-pending', true)],
+        ['order-ready', refundSummary('order-ready', false)],
+        ['order-partial', refundSummary('order-partial', true)],
+      ]),
+    );
+
+    const { status, body } = await getList();
+
+    expect(status).toBe(200);
+    expect(body.data.map((order: Json) => order.status)).toEqual(['キャンセルの手続き中', '発送準備中', '発送準備中']);
+    expect(mockListRefundSummaries).toHaveBeenCalledTimes(1);
+    expect(mockListRefundSummaries).toHaveBeenCalledWith(mockServiceClient, [
+      'order-cancel-pending', 'order-ready', 'order-partial',
+    ]);
+  });
+
+  it('返金の有無の読み取りが失敗したら 500（no-store）で、ログに名前・code・operation だけを残し、DB の文を出さない', async () => {
+    mockOrdersQuery.order.mockResolvedValue({ data: [orderRow('order-1', 'paid')], error: null });
+    mockListLines.mockResolvedValue(new Map([['order-1', [line('order-1')]]]));
+    mockListRefundSummaries.mockRejectedValue(
+      Object.assign(
+        new Error('refund store failed: list_order_refund_summaries', { cause: { message: 'DB-MESSAGE 〒1500001 神宮前1-2-3' } }),
+        { name: 'RefundStoreError', code: '57014', operation: 'list_order_refund_summaries' },
+      ),
+    );
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await getList();
+
+    expect(response.status).toBe(500);
+    expect(response.headers['Cache-Control']).toBe('no-store');
+    expect(response.body).toEqual({ error: 'Failed to fetch orders' });
+    expect(consoleError).toHaveBeenCalledWith(
+      'Orders refund fetch error:',
+      'RefundStoreError',
+      '57014',
+      'list_order_refund_summaries',
+    );
+    expect(loggedText(consoleError)).not.toContain('DB-MESSAGE');
+    expect(loggedText(consoleError)).not.toContain('神宮前');
     consoleError.mockRestore();
   });
 });

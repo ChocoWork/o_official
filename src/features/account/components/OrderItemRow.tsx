@@ -18,6 +18,8 @@ export type OrderLineItem = {
   quantity: number;
   amount: string;
   stockStatus?: "in_stock" | "low_stock" | "sold_out" | "unknown";
+  /** 返金した数（返事待ち・保留・成功の返金の合計）。注文の窓口が数える。省くと 0 点で、印を出さない */
+  refundedQuantity?: number;
 };
 
 export function OrderItemRow({
@@ -61,6 +63,7 @@ export function OrderItemRow({
   };
 
   const action = renderAction();
+  const refundedQuantity = item.refundedQuantity ?? 0;
 
   return (
     <div className="account-order-item">
@@ -80,6 +83,14 @@ export function OrderItemRow({
             {item.color} / {item.size}
           </p>
           <p className="account-label">数量: {item.quantity}</p>
+          {refundedQuantity > 0 ? (
+            <span
+              className="account-status account-status-sm mt-1"
+              data-testid="order-item-refunded"
+            >
+              {`返金済み ${refundedQuantity}点`}
+            </span>
+          ) : null}
         </div>
         <p className="account-value">{item.amount}</p>
         {action ? <div className="mt-1 sm:hidden">{action}</div> : null}

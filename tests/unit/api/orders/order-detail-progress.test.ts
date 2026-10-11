@@ -42,6 +42,11 @@ jest.mock('@/lib/orders/fulfillment/fulfillment-store', () => ({
   listOrderFulfillments: (...args: unknown[]) => mockListFulfillments(...args),
 }));
 
+const mockListRefunds = jest.fn();
+jest.mock('@/lib/orders/refund/refund-store', () => ({
+  listOrderRefunds: (...args: unknown[]) => mockListRefunds(...args),
+}));
+
 import { NextRequest } from 'next/server';
 import { GET } from '@/app/api/orders/[id]/route';
 
@@ -113,11 +118,24 @@ function fulfillment(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function setup(options: { order?: unknown; lines?: unknown[]; fulfillments?: unknown[] } = {}) {
-  const { order = orderRow(), lines = [stockLine(), madeLine()], fulfillments = [] } = options;
+// listOrderRefunds の1行。お客様に出さない内側の情報（操作した人のメール・メモ・照会番号など）も入れておき、答えに混ざらないことを確かめる
+function refundRow(overrides: Record<string, unknown> = {}) {
+  return {
+    refundId: 'refund-1', source: 'admin', status: 'succeeded', stripeStatus: 'succeeded', pendingReason: null,
+    failureReason: null, customerActionExpiresAt: null, paymentMethodType: 'card', amount: 12000, shippingAmount: 0,
+    adjustmentAmount: 0, note: '社内メモ', stripeReason: 'requested_by_customer', cancelReason: null, notifyCustomer: true,
+    actorEmail: 'admin@example.com', referenceNumber: 'ARN-123456', referenceType: 'acquirer_reference_number',
+    createdAt: '2026-10-12T03:00:00.000Z', acceptedAt: '2026-10-12T03:00:01.000Z', succeededAt: '2026-10-12T03:00:02.000Z',
+    failedAt: null, erroredAt: null, lines: [], ...overrides,
+  };
+}
+
+function setup(options: { order?: unknown; lines?: unknown[]; fulfillments?: unknown[]; refunds?: unknown[] } = {}) {
+  const { order = orderRow(), lines = [stockLine(), madeLine()], fulfillments = [], refunds = [] } = options;
   mockOwnerQuery.maybeSingle.mockResolvedValue({ data: order, error: null });
   mockListLines.mockResolvedValue(new Map([[ORDER_ID, lines]]));
   mockListFulfillments.mockResolvedValue(fulfillments);
+  mockListRefunds.mockResolvedValue(refunds);
 }
 
 beforeEach(() => {
@@ -402,6 +420,304 @@ describe('GET /api/orders/[id] の発送と進み具合（グループ E-1）', 
       '57014',
       'list_order_fulfillments',
     );
+    expect(loggedText(consoleError)).not.toContain('DB-MESSAGE');
+    expect(loggedText(consoleError)).not.toContain('神宮前');
+    consoleError.mockRestore();
+  });
+});
+
+describe('GET /api/orders/[id] の返金（グループ E-2）', () => {
+  it('持ち主の確かめを通った注文だけ、同じ service_role の client で返金を読む', async () => {
+    setup();
+
+    const response = await getDetail();
+
+    expect(response.status).toBe(200);
+    expect(mockCreateServiceRoleClient).toHaveBeenCalledTimes(1);
+    expect(mockListRefunds).toHaveBeenCalledTimes(1);
+    expect(mockListRefunds).toHaveBeenCalledWith(mockServiceClient, ORDER_ID);
+  });
+
+  it('他のお客様の注文（持ち主の確かめで見つからない）は 404 で、service_role も返金の読み取りも使わない', async () => {
+    setup({ order: null, refunds: [refundRow()] });
+
+    const response = await getDetail();
+
+    expect(response.status).toBe(404);
+    expect(response.headers['Cache-Control']).toBe('no-store');
+    expect(response.body).toEqual({ error: 'Order not found' });
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+    expect(mockListRefunds).not.toHaveBeenCalled();
+  });
+
+  it('返金が無い注文は、refunds を空・refundTotal を null・商品の返金した数を 0 で返す', async () => {
+    setup();
+
+    const { body } = await getDetail();
+
+    expect(body.refunds).toEqual([]);
+    expect(body.refundTotal).toBeNull();
+    expect(body.items.map((item: Json) => item.refundedQuantity)).toEqual([0, 0]);
+  });
+
+  it('返事待ち・保留は「手続き中」、成功は「完了」で、古い順に返す。日付は日本時間の日付、額は円の言葉（T14-1・T14-2）', async () => {
+    // DB の関数は新しい順に返す
+    setup({
+      refunds: [
+        refundRow({ refundId: 'refund-3', status: 'succeeded', amount: 3000, createdAt: '2026-10-15T09:00:00.000Z' }),
+        refundRow({ refundId: 'refund-2', status: 'pending', amount: 2000, createdAt: '2026-10-13T01:00:00.000Z' }),
+        // 15:30（UTC）は日本時間の翌日 0:30 なので、日付は 10/12
+        refundRow({ refundId: 'refund-1', status: 'awaiting_response', amount: 1000, createdAt: '2026-10-11T15:30:00.000Z' }),
+      ],
+    });
+
+    const { body } = await getDetail();
+
+    expect(body.refunds).toEqual([
+      { id: 'refund-1', date: '2026/10/12', amount: expect.stringMatching(/^[¥￥]1,000$/), status: 'processing', customerActionDeadline: null },
+      { id: 'refund-2', date: '2026/10/13', amount: expect.stringMatching(/^[¥￥]2,000$/), status: 'processing', customerActionDeadline: null },
+      { id: 'refund-3', date: '2026/10/15', amount: expect.stringMatching(/^[¥￥]3,000$/), status: 'completed', customerActionDeadline: null },
+    ]);
+  });
+
+  it('エラーと失敗の返金は返さない。期限で失敗したコンビニ払いの返金は、額も期限も答えのどこにも出ない（Review Focus 2）', async () => {
+    // 失敗の後始末の後: 注文は支払い済みに戻り、商品の返金した数も 0 に戻っている
+    setup({
+      order: orderRow({ order_items: [STOCK_ITEM] }),
+      lines: [stockLine()],
+      refunds: [
+        refundRow({
+          refundId: 'refund-failed', status: 'failed', amount: 13579, paymentMethodType: 'konbini', stripeStatus: 'failed',
+          failureReason: 'expired', customerActionExpiresAt: '2026-11-24T15:00:00.000Z',
+          createdAt: '2026-10-12T03:00:00.000Z', failedAt: '2026-11-25T00:00:00.000Z', succeededAt: null,
+        }),
+        refundRow({
+          refundId: 'refund-error', status: 'error', amount: 24680, stripeStatus: null,
+          createdAt: '2026-10-12T03:30:00.000Z', erroredAt: '2026-10-12T04:00:00.000Z', succeededAt: null,
+        }),
+      ],
+    });
+
+    const { status, body } = await getDetail();
+
+    expect(status).toBe(200);
+    expect(body.status).toBe('paid');
+    expect(body.progress.key).toBe('ready');
+    expect(body.refunds).toEqual([]);
+    expect(body.refundTotal).toBeNull();
+    expect(body.items[0].refundedQuantity).toBe(0);
+    const json = JSON.stringify(body);
+    expect(json).not.toContain('13,579');
+    expect(json).not.toContain('24,680');
+    expect(json).not.toContain('refund-failed');
+    expect(json).not.toContain('refund-error');
+    expect(json).not.toContain('11月24日');
+  });
+
+  it('エラー・失敗が混ざっていても、出している返金（手続き中・完了）だけで合計を出す（T14-3）', async () => {
+    setup({
+      refunds: [
+        refundRow({ refundId: 'r4', status: 'failed', amount: 9999, createdAt: '2026-10-16T00:00:00.000Z' }),
+        refundRow({ refundId: 'r3', status: 'succeeded', amount: 3000, createdAt: '2026-10-15T00:00:00.000Z' }),
+        refundRow({ refundId: 'r2', status: 'error', amount: 8888, createdAt: '2026-10-14T00:00:00.000Z' }),
+        refundRow({ refundId: 'r1', status: 'pending', amount: 2000, createdAt: '2026-10-13T00:00:00.000Z' }),
+      ],
+    });
+
+    const { body } = await getDetail();
+
+    expect(body.refunds.map((refund: Json) => refund.id)).toEqual(['r1', 'r3']);
+    expect(body.refundTotal).toMatch(/^[¥￥]5,000$/);
+  });
+
+  it('「ご返金の合計」は、出す返金が2件以上の時だけ返す（T14-3）', async () => {
+    setup({ refunds: [refundRow({ amount: 3000 })] });
+    expect((await getDetail()).body.refundTotal).toBeNull();
+
+    setup({
+      refunds: [
+        refundRow({ refundId: 'refund-2', amount: 2000, createdAt: '2026-10-13T00:00:00.000Z' }),
+        refundRow({ refundId: 'refund-1', amount: 3000 }),
+      ],
+    });
+    expect((await getDetail()).body.refundTotal).toMatch(/^[¥￥]5,000$/);
+  });
+
+  it('コンビニ払いで保留の返金だけ、返金先の口座の入力の期限を日本時間の「M月D日」で返す（T14-7）', async () => {
+    setup({
+      refunds: [
+        // 日本時間の 11/25 0:00。必ず間に合う最後の日は 11/24。保留・コンビニ払い・期限あり → 出す
+        refundRow({
+          refundId: 'r1', status: 'pending', paymentMethodType: 'konbini',
+          customerActionExpiresAt: '2026-11-24T15:00:00.000Z', createdAt: '2026-10-10T00:00:00.000Z',
+        }),
+        // 期限が無い → 出さない
+        refundRow({
+          refundId: 'r2', status: 'pending', paymentMethodType: 'konbini',
+          customerActionExpiresAt: null, createdAt: '2026-10-11T00:00:00.000Z',
+        }),
+        // コンビニ払いでも成功なら、口座の入力は済んでいるので出さない
+        refundRow({
+          refundId: 'r3', status: 'succeeded', paymentMethodType: 'konbini',
+          customerActionExpiresAt: '2026-11-24T15:00:00.000Z', createdAt: '2026-10-12T00:00:00.000Z',
+        }),
+        // カードの保留は、期限を持っていても出さない
+        refundRow({
+          refundId: 'r4', status: 'pending', paymentMethodType: 'card',
+          customerActionExpiresAt: '2026-11-24T15:00:00.000Z', createdAt: '2026-10-13T00:00:00.000Z',
+        }),
+        // 返事待ち（Stripe の答えがまだ無い）も出さない
+        refundRow({
+          refundId: 'r5', status: 'awaiting_response', paymentMethodType: null,
+          customerActionExpiresAt: null, createdAt: '2026-10-14T00:00:00.000Z',
+        }),
+      ],
+    });
+
+    const { body } = await getDetail();
+
+    expect(body.refunds.map((refund: Json) => [refund.id, refund.customerActionDeadline])).toEqual([
+      ['r1', '11月24日'],
+      ['r2', null],
+      ['r3', null],
+      ['r4', null],
+      ['r5', null],
+    ]);
+  });
+
+  it('コンビニ払いの期限が日本時間の 23:59:59 なら、その日を口座の入力が必ず間に合う最後の日として返す（Ruling E2）', async () => {
+    setup({
+      refunds: [refundRow({
+        status: 'pending', paymentMethodType: 'konbini', customerActionExpiresAt: '2026-11-25T14:59:59.000Z',
+      })],
+    });
+
+    const { body } = await getDetail();
+
+    expect(body.refunds[0].customerActionDeadline).toBe('11月25日');
+  });
+
+  it('商品ごとの返金した数は、発送前に返金した数と発送後に返金した数の合計（T14-4）', async () => {
+    setup({
+      order: orderRow({ order_items: [{ ...STOCK_ITEM, quantity: 3 }, MADE_ITEM] }),
+      lines: [
+        // 3点のうち、1点を発送後に、1点を発送前に返金した（発送 1・未発送 1）
+        stockLine({
+          quantity: 3, shipped: 1, completed: 3, refundedBeforeShipment: 1, refundedAfterShipment: 1,
+          readyUnshipped: 1, unshipped: 1,
+        }),
+        madeLine(),
+      ],
+    });
+
+    const { body } = await getDetail();
+
+    expect(body.items).toEqual([
+      expect.objectContaining({ id: 'line-stock', refundedQuantity: 2 }),
+      expect.objectContaining({ id: 'line-made', refundedQuantity: 0 }),
+    ]);
+  });
+
+  it('返金の行には名指しした5項目だけを入れ、操作した人のメール・メモ・照会番号・Stripe に伝えた理由は渡さない（T14-6）', async () => {
+    setup({ refunds: [refundRow()] });
+
+    const { body } = await getDetail();
+
+    expect(Object.keys(body.refunds[0]).sort()).toEqual(['amount', 'customerActionDeadline', 'date', 'id', 'status']);
+    const json = JSON.stringify(body);
+    expect(json).not.toContain('admin@example.com');
+    expect(json).not.toContain('社内メモ');
+    expect(json).not.toContain('ARN-123456');
+    expect(json).not.toContain('requested_by_customer');
+  });
+
+  it.each(['awaiting_response', 'pending'] as const)(
+    '全部の商品を発送前に返金して、%s の返金がある支払い済みの注文は「キャンセルの手続き中」で、段を出さない',
+    async (refundStatus) => {
+      setup({
+        order: orderRow({ order_items: [STOCK_ITEM] }),
+        // 注文の数 2 を全部、発送前に返金した（未発送 0・発送 0）
+        lines: [stockLine({ refundedBeforeShipment: 2, readyUnshipped: 0, unshipped: 0 })],
+        refunds: [refundRow({ status: refundStatus, amount: 24000 })],
+      });
+
+      const { body } = await getDetail();
+
+      expect(body.status).toBe('paid');
+      expect(body.progress).toEqual({
+        key: 'cancel_pending',
+        label: 'キャンセルの手続き中',
+        partiallyShipped: false,
+        steps: null,
+      });
+      expect(body.items[0]).toMatchObject({ refundedQuantity: 2, readyQuantity: 0, inProductionQuantity: 0 });
+      expect(body.refunds).toHaveLength(1);
+    },
+  );
+
+  it.each(['failed', 'error'] as const)(
+    '失敗・エラー（%s）の返金だけが残る注文は、手続き中の返金が無いので「キャンセルの手続き中」にしない',
+    async (refundStatus) => {
+      // DB の数は失敗した返金を数えないので、この組み合わせは実際には起きない。
+      // 窓口が「手続き中の返金がある」を返金の状態（返事待ち・保留だけ）で決めることを確かめる
+      setup({
+        order: orderRow({ order_items: [STOCK_ITEM] }),
+        lines: [stockLine({ refundedBeforeShipment: 2, readyUnshipped: 0, unshipped: 0 })],
+        refunds: [refundRow({ status: refundStatus })],
+      });
+
+      const { body } = await getDetail();
+
+      expect(body.progress.key).not.toBe('cancel_pending');
+      expect(body.refunds).toEqual([]);
+    },
+  );
+
+  it('一部の商品だけを返金して、まだ送る商品が残る注文は、手続き中の返金があっても「キャンセルの手続き中」にしない', async () => {
+    setup({
+      order: orderRow({ order_items: [STOCK_ITEM] }),
+      lines: [stockLine({ refundedBeforeShipment: 1, readyUnshipped: 1, unshipped: 1 })],
+      refunds: [refundRow({ status: 'pending', amount: 12000 })],
+    });
+
+    const { body } = await getDetail();
+
+    expect(body.progress).toMatchObject({ key: 'ready', label: '発送準備中' });
+    expect(body.progress.steps).not.toBeNull();
+    expect(body.items[0]).toMatchObject({ refundedQuantity: 1, readyQuantity: 1 });
+    expect(body.refunds).toHaveLength(1);
+  });
+
+  it('全額を返金してキャンセルになった注文は、完了した返金を出し、言葉は「キャンセル」のまま', async () => {
+    setup({
+      order: orderRow({ status: 'cancelled', order_items: [STOCK_ITEM] }),
+      lines: [stockLine({ refundedBeforeShipment: 2, readyUnshipped: 0, unshipped: 0 })],
+      refunds: [refundRow({ amount: 24000 })],
+    });
+
+    const { body } = await getDetail();
+
+    expect(body.progress).toEqual({ key: 'cancelled', label: 'キャンセル', partiallyShipped: false, steps: null });
+    expect(body.refunds).toEqual([expect.objectContaining({ id: 'refund-1', status: 'completed' })]);
+    expect(body.items[0]).toMatchObject({ refundedQuantity: 2 });
+  });
+
+  it('返金の読み取りが失敗したら 500（no-store）で、中身を返さない。ログに名前・code・operation だけを残し、DB の文を出さない（T14-5）', async () => {
+    setup();
+    mockListRefunds.mockRejectedValue(
+      Object.assign(
+        new Error('refund store failed: list_order_refunds', { cause: { message: 'DB-MESSAGE 〒1500001 神宮前1-2-3' } }),
+        { name: 'RefundStoreError', code: '57014', operation: 'list_order_refunds' },
+      ),
+    );
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await getDetail();
+
+    expect(response.status).toBe(500);
+    expect(response.headers['Cache-Control']).toBe('no-store');
+    expect(response.body).toEqual({ error: 'Failed to fetch order detail' });
+    expect(consoleError).toHaveBeenCalledWith('Order refund fetch error:', 'RefundStoreError', '57014', 'list_order_refunds');
     expect(loggedText(consoleError)).not.toContain('DB-MESSAGE');
     expect(loggedText(consoleError)).not.toContain('神宮前');
     consoleError.mockRestore();

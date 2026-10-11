@@ -52,6 +52,18 @@ type OrderShipment = {
   }>;
 };
 
+/** お客様に見せる返金（窓口が古い順に返す。エラーと失敗の返金は返さない） */
+type OrderRefund = {
+  id: string;
+  /** 返金の日付（日本時間。窓口が整える） */
+  date: string;
+  amount: string;
+  /** 返事待ち・保留は processing（手続き中）、成功は completed（完了） */
+  status: "processing" | "completed";
+  /** コンビニ払いで、返金先の口座の入力が要る時の期限（M月D日）。それ以外は null */
+  customerActionDeadline: string | null;
+};
+
 type OrderDetail = {
   id: string;
   orderNumber: string;
@@ -71,6 +83,9 @@ type OrderDetail = {
   shippingAddress: string;
   items: OrderDetailItem[];
   shipments: OrderShipment[];
+  refunds: OrderRefund[];
+  /** 返金が2件以上の時だけ、その額の合計 */
+  refundTotal: string | null;
 };
 
 /** 発送日は日本時間の日付で出す（窓口は時刻のまま返す） */
@@ -97,6 +112,11 @@ function describeItem(
   const variant = [color, size].filter(Boolean).join(" / ");
   return variant ? `${name}（${variant}）` : name;
 }
+
+const REFUND_STATUS_LABELS = {
+  processing: "手続き中",
+  completed: "完了",
+} as const satisfies Record<OrderRefund["status"], string>;
 
 export default function AccountOrderDetailPage() {
   const params = useParams<{ id: string }>();
@@ -451,6 +471,57 @@ export default function AccountOrderDetailPage() {
                   </dd>
                 </div>
               </dl>
+
+              {/* 返金。窓口が古い順に、エラーと失敗を除いて返す。返金が無い注文には欄ごと出さない */}
+              {order.refunds.length > 0 ? (
+                <section
+                  aria-label="ご返金"
+                  className="border-t border-black/10 pt-4"
+                >
+                  <dl className="space-y-2">
+                    {order.refunds.map((refund) => (
+                      <div
+                        key={refund.id}
+                        data-testid="order-refund-row"
+                        className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1"
+                      >
+                        <dt className="text-[#474747]" style={bodyStyle}>
+                          ご返金
+                        </dt>
+                        <dd
+                          className="flex flex-wrap items-center justify-end gap-2 text-black"
+                          style={bodyStyle}
+                        >
+                          <span className="tabular-nums">
+                            {`${refund.date} ${refund.amount}`}
+                          </span>
+                          <span className="account-status account-status-sm">
+                            {REFUND_STATUS_LABELS[refund.status]}
+                          </span>
+                        </dd>
+                        {refund.customerActionDeadline ? (
+                          <dd className="w-full text-[#474747]" style={bodyStyle}>
+                            {`返金先の口座の入力をお願いしています（${refund.customerActionDeadline}まで）`}
+                          </dd>
+                        ) : null}
+                      </div>
+                    ))}
+                    {order.refundTotal ? (
+                      <div
+                        data-testid="order-refund-total"
+                        className="flex items-baseline justify-between border-t border-black/10 pt-3"
+                      >
+                        <dt className="text-black" style={bodyStyle}>
+                          ご返金の合計
+                        </dt>
+                        <dd className="text-black" style={bodyStyle}>
+                          {order.refundTotal}
+                        </dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                </section>
+              ) : null}
             </section>
 
             {/* OD-5: 次アクション（注文サマリー直下 = 注文に対する操作として近接配置） */}

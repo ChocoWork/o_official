@@ -12,6 +12,9 @@ import {
 	type OrderFulfillmentHistoryRow,
 	type OrderLineFulfillmentRow,
 } from '@/lib/orders/fulfillment/fulfillment-store';
+import { listOrderRefunds, type OrderRefundRow } from '@/lib/orders/refund/refund-store';
+import type { OrderRefundStatus } from '@/lib/orders/refund/refund-types';
+import { konbiniDeadlineLastDay } from '@/lib/orders/refund/refund-messages';
 import { mapPaymentMethodLabel } from '@/features/checkout/services/payment-method.service';
 
 const NO_STORE_HEADERS = {
@@ -55,6 +58,15 @@ type OrderDetailRow = {
 // 商品の段階（発送準備中・受注生産中）は、入金後の注文にだけ出す。未入金・失敗・キャンセルの注文の品を「発送準備中」と見せないため
 const STAGE_VISIBLE_STATUSES: ReadonlyArray<OrderDetailRow['status']> = ['paid', 'shipped'];
 
+type CustomerRefundStatus = 'processing' | 'completed';
+
+// お客様に見せる返金の状態。返事待ち・保留は手続き中、成功は完了。エラー・失敗は入れない（店が連絡するため。設計書 9-3）
+const CUSTOMER_REFUND_STATUSES: Partial<Record<OrderRefundStatus, CustomerRefundStatus>> = {
+	awaiting_response: 'processing',
+	pending: 'processing',
+	succeeded: 'completed',
+};
+
 function formatCurrency(amount: number, currency: string) {
 	try {
 		return new Intl.NumberFormat('ja-JP', {
@@ -82,6 +94,27 @@ function formatOrderDateTime(dateText: string) {
 		minute: '2-digit',
 		timeZone: 'Asia/Tokyo',
 	}).format(date);
+}
+
+// 返金の日付は日本時間の日付だけ（注文日時の書き方から時刻を除いた「2026/10/12」）
+function formatRefundDate(dateText: string) {
+	const date = new Date(dateText);
+	if (Number.isNaN(date.getTime())) {
+		return '-';
+	}
+
+	return new Intl.DateTimeFormat('ja-JP', {
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+		timeZone: 'Asia/Tokyo',
+	}).format(date);
+}
+
+// 口座の入力が必ず間に合う最後の日は、メールと同じ部品で決める。ここでは「M月D日」の書き方だけを持つ
+function formatMonthDay(dateText: string) {
+	const deadline = konbiniDeadlineLastDay(dateText);
+	return deadline ? `${deadline.month}月${deadline.day}日` : null;
 }
 
 function toShippingAddress(order: OrderDetailRow) {
@@ -130,6 +163,39 @@ function toShipments(fulfillments: readonly OrderFulfillmentHistoryRow[], items:
 				}),
 			};
 		});
+}
+
+/**
+ * お客様に見せる返金と、その合計。返金は古い順に返す（DB の関数は新しい順に返す）。
+ * 返事待ち・保留は手続き中、成功は完了。エラー・失敗は入れない（店が連絡する）。
+ * 項目は名指しで選び、操作した人のメール・メモ・照会番号・失敗の理由など内側の情報は渡さない。
+ */
+function toCustomerRefunds(rows: readonly OrderRefundRow[], currency: string) {
+	const shown = rows
+		.flatMap((row) => {
+			const status = CUSTOMER_REFUND_STATUSES[row.status];
+			return status ? [{ row, status }] : [];
+		})
+		.sort((a, b) => Date.parse(a.row.createdAt) - Date.parse(b.row.createdAt));
+
+	return {
+		refunds: shown.map(({ row, status }) => ({
+			id: row.refundId,
+			date: formatRefundDate(row.createdAt),
+			amount: formatCurrency(row.amount, currency),
+			status,
+			// コンビニ払いは、お客様が返金先の口座を入れるまで保留のまま。入力の期限を知らせる
+			customerActionDeadline:
+				row.status === 'pending' && row.paymentMethodType === 'konbini' && row.customerActionExpiresAt
+					? formatMonthDay(row.customerActionExpiresAt)
+					: null,
+		})),
+		// 合計は、出している返金の額の和（画面の行を足すと合計になる）。1件だけの時は出さない
+		refundTotal:
+			shown.length >= 2
+				? formatCurrency(shown.reduce((total, { row }) => total + row.amount, 0), currency)
+				: null,
+	};
 }
 
 export async function GET(
@@ -217,9 +283,28 @@ export async function GET(
 		return NextResponse.json({ error: 'Failed to fetch order detail' }, { status: 500, headers: NO_STORE_HEADERS });
 	}
 
-	const progress = deriveOrderProgress(data.status, lineRows);
+	// 返金も、持ち主の確かめを通った注文だけ service_role で読む（返金の表もお客様から直接読めない）
+	let refundRows: OrderRefundRow[];
+	try {
+		refundRows = await listOrderRefunds(serviceSupabase, data.id);
+	} catch (refundError) {
+		// 読めないまま返金の無い画面にすると、手続き中の返金がある注文が「発送準備中」と出る。隠さず 500 にする。
+		// 発送の読み取りと同じく、DB の文は出さず、名前・code・operation だけを残す
+		console.error(
+			'Order refund fetch error:',
+			refundError instanceof Error ? refundError.name : 'UnknownError',
+			(refundError as { code?: unknown })?.code ?? null,
+			(refundError as { operation?: unknown })?.operation ?? null,
+		);
+		return NextResponse.json({ error: 'Failed to fetch order detail' }, { status: 500, headers: NO_STORE_HEADERS });
+	}
+
+	// 返事待ち・保留の返金がある間は、全部の商品を返金した注文を「キャンセルの手続き中」と出す
+	const hasOpenRefund = refundRows.some((row) => row.status === 'awaiting_response' || row.status === 'pending');
+	const progress = deriveOrderProgress(data.status, lineRows, { hasOpenRefund });
 	const lineByItemId = new Map<string, OrderLineFulfillmentRow>(lineRows.map((row) => [row.orderItemId, row]));
 	const showStages = STAGE_VISIBLE_STATUSES.includes(data.status);
+	const { refunds, refundTotal } = toCustomerRefunds(refundRows, data.currency);
 
 	// 支払方法（checkout_drafts に注文確定時の payment_intent_id が書き戻されている）
 	let paymentMethod: string | null = null;
@@ -253,6 +338,8 @@ export async function GET(
 		shippingPhone: data.shipping_phone ?? '',
 		shippingAddress: toShippingAddress(data),
 		shipments: toShipments(fulfillments, data.order_items ?? []),
+		refunds,
+		refundTotal,
 		items: await Promise.all((data.order_items ?? []).map(async (item) => {
 			const line = lineByItemId.get(item.id);
 			return {
@@ -266,6 +353,8 @@ export async function GET(
 				quantity: item.quantity,
 				amount: formatCurrency(item.line_total, data.currency),
 				shippedQuantity: line?.shipped ?? 0,
+				// 返事待ち・保留・成功の返金の数（発送前と発送後の合計）。数え方は DB の1か所にある
+				refundedQuantity: (line?.refundedBeforeShipment ?? 0) + (line?.refundedAfterShipment ?? 0),
 				readyQuantity: showStages ? (line?.readyUnshipped ?? 0) : 0,
 				inProductionQuantity: showStages ? (line?.inProduction ?? 0) : 0,
 			};

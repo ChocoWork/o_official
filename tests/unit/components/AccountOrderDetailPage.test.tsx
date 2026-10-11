@@ -38,7 +38,8 @@ const STEPS_IN_PRODUCTION = [
 function item(overrides: Record<string, unknown> = {}) {
   return {
     id: 'line-1', itemId: 10, variantId: 101, name: 'リネンシャツ', imageUrl: null, color: '白', size: 'M',
-    quantity: 2, amount: '¥24,000', shippedQuantity: 0, readyQuantity: 0, inProductionQuantity: 0, ...overrides,
+    quantity: 2, amount: '¥24,000', shippedQuantity: 0, refundedQuantity: 0, readyQuantity: 0, inProductionQuantity: 0,
+    ...overrides,
   };
 }
 
@@ -48,7 +49,14 @@ function order(overrides: Record<string, unknown> = {}) {
     progress: { key: 'ready', label: '発送準備中', partiallyShipped: false, steps: STEPS_READY },
     subtotalAmount: '¥24,000', shippingAmount: '¥0', discountAmount: '¥0', totalAmount: '¥24,000',
     paymentMethod: 'クレジットカード', shippingAddress: '〒1500001 東京都 渋谷区 神宮前1-2-3',
-    shipments: [], items: [item({ readyQuantity: 2 })], ...overrides,
+    shipments: [], refunds: [], refundTotal: null, items: [item({ readyQuantity: 2 })], ...overrides,
+  };
+}
+
+function refund(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'refund-1', date: '2026/10/12', amount: '¥10,000', status: 'completed', customerActionDeadline: null,
+    ...overrides,
   };
 }
 
@@ -225,5 +233,116 @@ describe('お客様の注文の画面（グループ E-1）', () => {
     expect(section).not.toHaveTextContent('配送業者');
     expect(section).not.toHaveTextContent('追跡番号');
     expect(within(section).queryByRole('link')).not.toBeInTheDocument();
+  });
+});
+
+describe('お客様の注文の画面の返金（グループ E-2）', () => {
+  beforeEach(() => {
+    mockClientFetch.mockReset();
+  });
+
+  it('返金が無い注文には「ご返金」の欄も返金済みの印も出さない', async () => {
+    await renderPage(order());
+
+    expect(screen.queryByRole('region', { name: 'ご返金' })).not.toBeInTheDocument();
+    expect(screen.queryByText('ご返金の合計')).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId('order-item-refunded')).toHaveLength(0);
+  });
+
+  it('返金ごとに「ご返金」の行を、日付・額・状態（手続き中・完了）つきで、窓口が返した順に、支払金額の欄の最後に出す', async () => {
+    await renderPage(
+      order({
+        refunds: [
+          refund({ id: 'refund-1', date: '2026/10/12', amount: '¥10,000', status: 'completed' }),
+          refund({ id: 'refund-2', date: '2026/10/14', amount: '¥14,500', status: 'processing' }),
+        ],
+        refundTotal: '¥24,500',
+      }),
+    );
+
+    const payment = screen.getByRole('heading', { name: '支払金額' }).closest('section') as HTMLElement;
+    const region = within(payment).getByRole('region', { name: 'ご返金' });
+    expect(payment.lastElementChild).toBe(region);
+
+    const rows = within(region).getAllByTestId('order-refund-row');
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByText('ご返金')).toBeInTheDocument();
+    expect(rows[0]).toHaveTextContent('2026/10/12 ¥10,000');
+    expect(within(rows[0]).getByText('完了')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('ご返金')).toBeInTheDocument();
+    expect(rows[1]).toHaveTextContent('2026/10/14 ¥14,500');
+    expect(within(rows[1]).getByText('手続き中')).toBeInTheDocument();
+  });
+
+  it('コンビニ払いの手続き中の返金には、返金先の口座の入力をお願いする文を期限つきで出す。期限が無い返金には出さない', async () => {
+    await renderPage(
+      order({
+        refunds: [
+          refund({ id: 'refund-1', status: 'processing', customerActionDeadline: '11月25日' }),
+          refund({ id: 'refund-2', status: 'processing', customerActionDeadline: null }),
+        ],
+        refundTotal: '¥20,000',
+      }),
+    );
+
+    const rows = screen.getAllByTestId('order-refund-row');
+    expect(
+      within(rows[0]).getByText('返金先の口座の入力をお願いしています（11月25日まで）'),
+    ).toBeInTheDocument();
+    expect(within(rows[1]).queryByText(/返金先の口座/)).not.toBeInTheDocument();
+  });
+
+  it('窓口が合計を返した時（返金が2件以上）は、「ご返金の合計」の行を出す', async () => {
+    await renderPage(
+      order({
+        refunds: [refund({ id: 'refund-1' }), refund({ id: 'refund-2', date: '2026/10/14', amount: '¥14,500' })],
+        refundTotal: '¥24,500',
+      }),
+    );
+
+    const total = screen.getByTestId('order-refund-total');
+    expect(total).toHaveTextContent('ご返金の合計');
+    expect(total).toHaveTextContent('¥24,500');
+  });
+
+  it('窓口が合計を返さない時（返金が1件）は、「ご返金の合計」の行を出さない', async () => {
+    await renderPage(order({ refunds: [refund()], refundTotal: null }));
+
+    expect(screen.getAllByTestId('order-refund-row')).toHaveLength(1);
+    expect(screen.queryByTestId('order-refund-total')).not.toBeInTheDocument();
+    expect(screen.queryByText('ご返金の合計')).not.toBeInTheDocument();
+  });
+
+  it('返金した数が1以上の商品だけに「返金済み n点」の印を出す', async () => {
+    await renderPage(
+      order({
+        items: [
+          item({ id: 'a', name: 'リネンシャツ', quantity: 3, refundedQuantity: 2, readyQuantity: 1 }),
+          item({ id: 'b', name: 'ウールコート', color: '黒', size: 'L', quantity: 1, refundedQuantity: 0, readyQuantity: 1 }),
+        ],
+      }),
+    );
+
+    const marks = screen.getAllByTestId('order-item-refunded');
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toHaveTextContent('返金済み 2点');
+    const row = marks[0].closest('.account-order-lines');
+    expect(row).toHaveTextContent('リネンシャツ');
+    expect(row).not.toHaveTextContent('ウールコート');
+  });
+
+  it('キャンセルの手続き中の注文は、その言葉を状態に出し、進み具合の段は出さない（今の動きを固める）', async () => {
+    await renderPage(
+      order({
+        status: 'paid',
+        progress: { key: 'cancel_pending', label: 'キャンセルの手続き中', partiallyShipped: false, steps: null },
+        items: [item({ refundedQuantity: 2 })],
+        refunds: [refund({ status: 'processing', customerActionDeadline: '11月25日' })],
+      }),
+    );
+
+    expect(screen.getByTestId('order-progress-status')).toHaveTextContent('キャンセルの手続き中');
+    expect(screen.queryByRole('list', { name: '配送ステータス' })).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('region', { name: /^配送情報/ })).toHaveLength(0);
   });
 });
