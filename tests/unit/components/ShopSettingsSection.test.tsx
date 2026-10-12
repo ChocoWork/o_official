@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import ShopSettingsSection from '@/components/ShopSettingsSection';
 import { clientFetch } from '@/lib/client-fetch';
 import type { ShopSettingToggle, ShopSettings } from '@/lib/orders/refund/refund-types';
+import { buildShopReturnSettings } from './shop-return-settings-test-fixtures';
 
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: jest.fn() }));
 
@@ -502,5 +503,306 @@ describe('ShopSettingsSection の送り方', () => {
       cookie.mockRestore();
       Object.defineProperty(global, 'fetch', { value: originalFetch, writable: true, configurable: true });
     }
+  });
+});
+
+// ここから下は、グループ E-3 の Task 12（ショップの設定の「返品」の欄）で足した試験。窓口の答えに返品の設定（returns）が付く
+
+/** 返品の設定が付いた窓口の答え。形の違う returns も渡せるよう unknown にする */
+type AnswerWithReturns = ShopSettings & { returns?: unknown };
+
+function withReturns(returns: unknown = buildShopReturnSettings(), toggles: ShopSettings = settings()): AnswerWithReturns {
+  return { ...toggles, returns };
+}
+
+const RETURN_ADDRESS = {
+  name: '返品係 山田',
+  postalCode: '150-0001',
+  address: '東京都渋谷区神宮前1-2-3',
+  phone: '03-1234-5678',
+};
+
+const SAVE_RETURNS_LABEL = '保存する';
+const PRESSED_WHILE_SAVING = '保存の最中です。済んでから、もう一度「保存する」を押してください。';
+const saveReturnsButton = () => screen.getByRole('button', { name: SAVE_RETURNS_LABEL });
+const regionOf = (name: string) => screen.getByRole('region', { name });
+const changeField = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
+
+describe('ShopSettingsSection の返品の欄の読み込み', () => {
+  it('答えに返品の設定があると、自動の返金の下に「返品」の欄を出し、保存してある値を入れる', async () => {
+    await renderLoaded(withReturns(buildShopReturnSettings({ returnAddress: RETURN_ADDRESS, windowDays: 14 })));
+
+    expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual(['自動の返金', '返品']);
+    expect(screen.getByLabelText('名前')).toHaveValue(RETURN_ADDRESS.name);
+    expect(screen.getByLabelText('日数')).toHaveValue('14');
+    // 自動の返金の2つは今までどおり
+    expect(autoRefundSwitch()).toBeChecked();
+    expect(autoCancelSwitch()).not.toBeChecked();
+  });
+
+  it('答えに返品の設定が無い（E-2 の窓口の形の）時は、返品の欄を出さず、自動の返金の2つだけを出す', async () => {
+    await renderLoaded();
+
+    expect(screen.queryByRole('heading', { name: '返品' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: SAVE_RETURNS_LABEL })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('switch')).toHaveLength(2);
+  });
+
+  it.each<[string, unknown]>([
+    ['null', null],
+    ['理由が1つ足りない', { ...buildShopReturnSettings(), reasons: buildShopReturnSettings().reasons.slice(0, 9) }],
+    ['最後に変えた人の形が違う', { ...buildShopReturnSettings(), updated: { ...buildShopReturnSettings().updated, fees: null } }],
+    ['日数が文字', { ...buildShopReturnSettings(), windowDays: '7' }],
+  ])('返品の設定の形が違う時（%s）は、読み込めなかった旨を出し、トグルも返品の欄も出さない', async (_label, returns) => {
+    mockedFetch.mockResolvedValueOnce(json({ data: withReturns(returns) }));
+
+    render(<ShopSettingsSection />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(LOAD_FAILED);
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '返品' })).not.toBeInTheDocument();
+  });
+});
+
+describe('ShopSettingsSection の返品の欄の保存', () => {
+  it('「保存する」で、保存の直前に読み直し、自動の返金の2つは読み直した値と一緒に PUT する。済むと窓口が返した値と最後に変えた人を出す', async () => {
+    await renderLoaded(withReturns());
+    // 画面を開いた後に、別のタブで②がオンになった。保存は読み直した値を送り、②をオフに戻さない
+    const turnedOnElsewhere = { enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'staff@example.com' };
+    const saved = buildShopReturnSettings({
+      returnAddress: RETURN_ADDRESS,
+      updated: { ...buildShopReturnSettings().updated, shipping: { at: CHANGED_AT, byEmail: 'owner@example.com' } },
+    });
+    serveSave(settings({ autoCancel: turnedOnElsewhere }), withReturns(saved, settings({ autoCancel: turnedOnElsewhere })));
+    changeField('名前', RETURN_ADDRESS.name);
+    changeField('郵便番号', RETURN_ADDRESS.postalCode);
+    changeField('住所', RETURN_ADDRESS.address);
+    changeField('電話番号', RETURN_ADDRESS.phone);
+
+    fireEvent.click(saveReturnsButton());
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(SAVED));
+    expect(callOrder()).toEqual(['GET', 'GET', 'PUT']);
+    expect(mockedFetch).toHaveBeenNthCalledWith(2, SETTINGS_URL, { cache: 'no-store' });
+    expect(putCalls()[0][0]).toBe(SETTINGS_URL);
+    expect(putCalls()[0][1]).toMatchObject({ method: 'PUT', headers: { 'Content-Type': 'application/json' } });
+    const body = putBody();
+    expect(Object.keys(body).sort()).toEqual(['autoCancelAmountMismatch', 'autoRefundCancelledOrderPayment', 'returns']);
+    expect(body.autoRefundCancelledOrderPayment).toBe(true);
+    expect(body.autoCancelAmountMismatch).toBe(true);
+    expect(body.returns).toMatchObject({ returnAddress: RETURN_ADDRESS, windowDays: 7, customerPaidMethod: 'customer_ships' });
+    // 窓口が返した値で画面を置き換える
+    expect(autoCancelSwitch()).toBeChecked();
+    expect(
+      within(regionOf('返送')).getByText(`最後に変えた人: owner@example.com（${screenTime(CHANGED_AT)}）`),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('名前')).toHaveValue(RETURN_ADDRESS.name);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('入力に誤りがある時は、読み直しも保存も呼ばずに、誤りの欄を示す', async () => {
+    await renderLoaded(withReturns());
+    changeField('日数', '0');
+
+    fireEvent.click(saveReturnsButton());
+
+    expect(screen.getByRole('alert')).toHaveTextContent('入力を確かめてください。');
+    expect(screen.getByLabelText('日数')).toBeInvalid();
+    expect(mockedFetch).toHaveBeenCalledTimes(1); // 開く時の読み込みだけ
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  });
+
+  it('保存できた後に誤りを入れて「保存する」を押すと、前の保存の知らせを消し、誤りのまとめの文だけを出す', async () => {
+    await renderLoaded(withReturns());
+    serveSave(settings(), withReturns());
+    fireEvent.click(saveReturnsButton());
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(SAVED));
+    changeField('日数', '0');
+
+    fireEvent.click(saveReturnsButton());
+
+    expect(screen.getByRole('alert')).toHaveTextContent('入力を確かめてください。');
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  });
+
+  it('保存に失敗した後に誤りを入れて「保存する」を押すと、窓口の失敗の文を消し、誤りのまとめの文だけを出す', async () => {
+    await renderLoaded(withReturns());
+    serveReread();
+    mockedFetch.mockResolvedValueOnce(json({ error: 'x', code: 'failed' }, 500));
+    fireEvent.click(saveReturnsButton());
+    expect(await screen.findByRole('alert')).toHaveTextContent(SAVE_FAILED);
+    changeField('日数', '0');
+
+    fireEvent.click(saveReturnsButton());
+
+    expect(screen.getByRole('alert')).toHaveTextContent('入力を確かめてください。');
+    expect(screen.queryByText(SAVE_FAILED)).not.toBeInTheDocument();
+  });
+
+  it.each<[string, () => Promise<Response>]>([
+    ['500', () => Promise.resolve(json({ error: 'x', code: 'failed' }, 500))],
+    ['403', () => Promise.resolve(json({ error: 'Forbidden' }, 403))],
+    ['429', () => Promise.resolve(json({ error: 'Too many requests' }, 429))],
+    ['通信が切れた', () => Promise.reject(new TypeError('Failed to fetch'))],
+  ])('保存（PUT）できなかった時（%s）は、失敗の文を出し、入力は残す。保存の知らせは出さない', async (_label, answer) => {
+    await renderLoaded(withReturns());
+    serveReread();
+    mockedFetch.mockImplementationOnce(answer);
+    changeField('日数', '30');
+
+    fireEvent.click(saveReturnsButton());
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(SAVE_FAILED);
+    expect(callOrder()).toEqual(['GET', 'GET', 'PUT']);
+    expect(screen.getByLabelText('日数')).toHaveValue('30');
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    expect(screen.queryByText('Too many requests')).not.toBeInTheDocument();
+    expect(saveReturnsButton()).toBeEnabled();
+  });
+
+  it('保存の直前の読み直しができなかった時は、保存の窓口を呼ばずに、失敗の文を出す', async () => {
+    await renderLoaded(withReturns());
+    mockedFetch.mockResolvedValueOnce(json({ error: 'x', code: 'failed' }, 500));
+    changeField('日数', '30');
+
+    fireEvent.click(saveReturnsButton());
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(SAVE_FAILED);
+    expect(putCalls()).toHaveLength(0);
+    expect(screen.getByLabelText('日数')).toHaveValue('30');
+  });
+
+  it('保存の答えに返品の設定が無い時は、保存できたと確かめられないので、失敗の文を出して入力を残す', async () => {
+    await renderLoaded(withReturns());
+    serveSave(settings(), settings());
+    changeField('日数', '30');
+
+    fireEvent.click(saveReturnsButton());
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(SAVE_FAILED);
+    expect(screen.getByLabelText('日数')).toHaveValue('30');
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  });
+
+  it('保存している間に「保存する」や自動の返金のトグルを押し直しても、読み直しも保存も二重に送らない', async () => {
+    await renderLoaded(withReturns());
+    serveReread();
+    const { held, release } = hold();
+    mockedFetch.mockImplementationOnce(() => held);
+
+    fireEvent.click(saveReturnsButton());
+
+    // 押した直後から保存が済むまで、画面は「保存中」（aria-busy）。ボタンは disabled にしない（キーボードのフォーカスを失わないため）
+    expect(screen.getByRole('region', { name: 'ショップの設定' })).toHaveAttribute('aria-busy', 'true');
+    expect(saveReturnsButton()).toBeEnabled();
+    fireEvent.click(saveReturnsButton());
+    fireEvent.click(autoRefundSwitch());
+    await waitFor(() => expect(putCalls()).toHaveLength(1));
+    expect(callOrder()).toEqual(['GET', 'GET', 'PUT']);
+
+    release(json({ data: withReturns() }));
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(SAVED));
+    expect(screen.getByRole('region', { name: 'ショップの設定' })).toHaveAttribute('aria-busy', 'false');
+    expect(callOrder()).toEqual(['GET', 'GET', 'PUT']);
+  });
+
+  it('自動の返金のトグルを保存している間に「保存する」を押すと、返品の欄は送らず、済んでから押し直すよう知らせる。保存が済むと知らせは消える', async () => {
+    await renderLoaded(withReturns());
+    serveReread();
+    const { held, release } = hold();
+    mockedFetch.mockImplementationOnce(() => held);
+
+    fireEvent.click(autoRefundSwitch());
+    fireEvent.click(saveReturnsButton());
+
+    expect(screen.getByText(PRESSED_WHILE_SAVING)).toBeInTheDocument();
+    await waitFor(() => expect(putCalls()).toHaveLength(1));
+    expect(callOrder()).toEqual(['GET', 'GET', 'PUT']);
+    expect(putBody()).toEqual({ autoRefundCancelledOrderPayment: false, autoCancelAmountMismatch: false });
+
+    release(json({ data: settings({ autoRefund: { enabled: false } }) }));
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(SAVED));
+    expect(screen.queryByText(PRESSED_WHILE_SAVING)).not.toBeInTheDocument();
+  });
+
+  it('自動の返金のトグルを保存しても、返品の欄に入れかけの値は消えず、トグルの保存は返品の設定を送らない', async () => {
+    await renderLoaded(withReturns());
+    changeField('日数', '30');
+    serveSave(settings(), withReturns(buildShopReturnSettings(), settings({ autoRefund: { enabled: false } })));
+
+    fireEvent.click(autoRefundSwitch());
+
+    await waitFor(() => expect(autoRefundSwitch()).not.toBeChecked());
+    expect(screen.getByLabelText('日数')).toHaveValue('30');
+    expect(putBody()).toEqual({ autoRefundCancelledOrderPayment: false, autoCancelAmountMismatch: false });
+  });
+
+  it('自動の返金のトグルの保存の答えに返品の設定が無くても、返品の欄は消えない', async () => {
+    await renderLoaded(withReturns());
+    serveSave(settings(), settings({ autoRefund: { enabled: false } }));
+
+    fireEvent.click(autoRefundSwitch());
+
+    await waitFor(() => expect(autoRefundSwitch()).not.toBeChecked());
+    expect(screen.getByRole('heading', { name: '返品', level: 3 })).toBeInTheDocument();
+    expect(screen.getByLabelText('日数')).toBeInTheDocument();
+  });
+});
+
+// 保存の結果の文（role="status"・role="alert"）は入れ物が1つずつのまま、CSS の order で見える位置を動かす（T12-13）。
+// jsdom は配置を計算しないので、どの位置の印（order-*）が付くかを確かめる。画面の中に見えるかは Task 14 の E2E（FR-ADMIN-092）が確かめる
+describe('ShopSettingsSection の保存の結果を見せる位置', () => {
+  it('自動の返金の欄は order-1、返品の欄を包む入れ物は order-3。保存の知らせの入れ物は1つで、返品の欄の結果の位置（order-4）から始まる', async () => {
+    await renderLoaded(withReturns());
+
+    expect(screen.getByRole('region', { name: '自動の返金' })).toHaveClass('order-1');
+    expect(regionOf('返品').parentElement).toHaveClass('order-3');
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveClass('order-4', 'sr-only');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('保存の知らせは、トグルを保存した時は自動の返金の欄の直後（order-2）に、返品の欄を保存した時は返品の欄の直後（order-4）に見せる。入れ物は1つのまま', async () => {
+    await renderLoaded(withReturns());
+    serveSave(settings(), withReturns(buildShopReturnSettings(), settings({ autoRefund: { enabled: false } })));
+
+    fireEvent.click(autoRefundSwitch());
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(SAVED));
+    expect(screen.getByRole('status')).toHaveClass('order-2');
+    expect(screen.getByRole('status')).not.toHaveClass('order-4');
+
+    serveSave(
+      settings({ autoRefund: { enabled: false } }),
+      withReturns(buildShopReturnSettings(), settings({ autoRefund: { enabled: false } })),
+    );
+    fireEvent.click(saveReturnsButton());
+
+    await waitFor(() => expect(putCalls()).toHaveLength(2));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(SAVED));
+    expect(screen.getByRole('status')).toHaveClass('order-4');
+    expect(screen.getByRole('status')).not.toHaveClass('order-2');
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+  });
+
+  it('窓口の失敗の文も同じ。トグルの保存に失敗した時は自動の返金の欄の直後（order-2）に、返品の欄の保存に失敗した時は返品の欄の直後（order-4）に見せる。入れ物は1つのまま', async () => {
+    await renderLoaded(withReturns());
+    serveReread();
+    mockedFetch.mockResolvedValueOnce(json({ error: 'x', code: 'failed' }, 500));
+
+    fireEvent.click(autoRefundSwitch());
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(SAVE_FAILED);
+    expect(screen.getByRole('alert')).toHaveClass('order-2');
+
+    serveReread();
+    mockedFetch.mockResolvedValueOnce(json({ error: 'x', code: 'failed' }, 500));
+    fireEvent.click(saveReturnsButton());
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(SAVE_FAILED);
+    expect(screen.getByRole('alert')).toHaveClass('order-4');
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
   });
 });

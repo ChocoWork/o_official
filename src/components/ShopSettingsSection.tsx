@@ -1,12 +1,19 @@
 'use client';
 
 import { useEffect, useId, useState } from 'react';
+import ShopReturnSettingsSection from '@/components/ShopReturnSettingsSection';
 import { Button } from '@/components/ui/Button/Button';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { SwitchToggle } from '@/components/ui/SwitchToggle/SwitchToggle';
 import { clientFetch } from '@/lib/client-fetch';
 import { REFUND_FAILURE_MESSAGES } from '@/lib/orders/refund/refund-messages';
 import type { ShopSettings, ShopSettingToggle, UpdateShopSettingsRequest } from '@/lib/orders/refund/refund-types';
+import {
+  RETURN_REASONS,
+  type ReturnReason,
+  type ShopReturnSettings,
+  type ShopReturnSettingsUpdate,
+} from '@/lib/orders/returns/return-types';
 import { cn } from '@/lib/utils';
 
 const SETTINGS_URL = '/api/admin/settings/shop';
@@ -41,9 +48,18 @@ const AUTO_CANCEL_TOGGLE: ToggleDefinition = {
 
 const TOGGLES: readonly ToggleDefinition[] = [AUTO_REFUND_TOGGLE, AUTO_CANCEL_TOGGLE];
 
-type LoadState = { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; settings: ShopSettings };
+/**
+ * 窓口が返した設定。returns は返品の欄の設定。窓口の答えに無い間（E-2 の窓口の形）は null で、返品の欄を出さない
+ * （returns があるのに形が違う答えは null でなく、読み込めなかった扱いにする）
+ */
+type LoadedSettings = { settings: ShopSettings; returns: ShopReturnSettings | null };
 
-type SettingsResult = { ok: true; settings: ShopSettings } | { ok: false };
+type LoadState = { kind: 'loading' } | { kind: 'error' } | ({ kind: 'ready' } & LoadedSettings);
+
+type SettingsResult = ({ ok: true } & LoadedSettings) | { ok: false };
+
+/** 窓口へ送る中身。自動の返金の2つは必ず送り、returns は返品の欄を保存する時だけ付ける */
+type SettingsRequest = UpdateShopSettingsRequest & { returns?: ShopReturnSettingsUpdate };
 
 function formatJst(value: string): string {
   const date = new Date(value);
@@ -73,8 +89,86 @@ function isShopSettings(value: unknown): value is ShopSettings {
   return isToggle(autoRefundCancelledOrderPayment) && isToggle(autoCancelAmountMismatch);
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+const isInteger = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value);
+const isNullableString = (value: unknown): boolean => value === null || typeof value === 'string';
+
+/** ShopReturnSettings.updated のキー（まとまりの名前）。段2の requests も、形だけは確かめる */
+const UPDATED_GROUPS = ['requests', 'window', 'shipping', 'reasons', 'fees', 'receiving'] as const;
+
+function isUpdatedEntry(value: unknown): boolean {
+  return isRecord(value) && isNullableString(value.at) && isNullableString(value.byEmail);
+}
+
+function isReturnAddress(value: unknown): boolean {
+  if (value === null) {
+    return true;
+  }
+  return (
+    isRecord(value) &&
+    typeof value.name === 'string' &&
+    typeof value.postalCode === 'string' &&
+    typeof value.address === 'string' &&
+    typeof value.phone === 'string'
+  );
+}
+
+function isReasonRow(value: unknown, reason: ReturnReason): boolean {
+  return (
+    isRecord(value) &&
+    value.reason === reason &&
+    (value.outOfStockExchange === 'make' || value.outOfStockExchange === 'decline') &&
+    (value.shippingPayer === 'shop' || value.shippingPayer === 'customer')
+  );
+}
+
 /**
- * 窓口の答え（{ data: ShopSettings }）を読む。断られた・通信が切れた・答えの形が違う、はどれも失敗にする。
+ * 返品の設定の形を確かめる。確かめるのは、この画面が読む欄（段1の分）だけ。段2の欄（申し込み・注意書き・
+ * 理由ごとの出す／ご希望／写真）は、画面が使わないので見ない。理由は10個そろっていること（欠けると理由ごとの行を作れない）。
+ */
+function isShopReturnSettings(value: unknown): value is ShopReturnSettings {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const { reasons, updated } = value;
+  return (
+    (value.windowDays === null || isInteger(value.windowDays)) &&
+    (value.windowStart === 'each_item' || value.windowStart === 'last_item') &&
+    isInteger(value.deliveryBufferDays) &&
+    isReturnAddress(value.returnAddress) &&
+    (value.customerPaidMethod === 'customer_ships' || value.customerPaidMethod === 'shop_label') &&
+    isInteger(value.shopLabelFee) &&
+    typeof value.noReturnNeededEnabled === 'boolean' &&
+    typeof value.restockingFeeEnabled === 'boolean' &&
+    isInteger(value.restockingFeePercent) &&
+    typeof value.exchangeFeesEnabled === 'boolean' &&
+    isInteger(value.exchangeFee) &&
+    isInteger(value.exchangeShippingFee) &&
+    typeof value.inspectionEnabled === 'boolean' &&
+    Array.isArray(reasons) &&
+    RETURN_REASONS.every((reason) => reasons.some((row) => isReasonRow(row, reason))) &&
+    isRecord(updated) &&
+    UPDATED_GROUPS.every((group) => isUpdatedEntry(updated[group]))
+  );
+}
+
+/**
+ * 窓口の答えの中身（data）を読む。自動の返金の2つは今までどおり必ず要る。returns が無い（undefined）答えは返品の欄なしとして読み、
+ * returns があるのに形が違う答え（null を含む）は失敗にする。
+ */
+function parseSettings(data: unknown): SettingsResult {
+  if (!isShopSettings(data)) {
+    return { ok: false };
+  }
+  const returns: unknown = 'returns' in data ? data.returns : undefined;
+  if (returns === undefined) {
+    return { ok: true, settings: data, returns: null };
+  }
+  return isShopReturnSettings(returns) ? { ok: true, settings: data, returns } : { ok: false };
+}
+
+/**
+ * 窓口の答え（{ data: ShopSettings に returns が付いた物 }）を読む。断られた・通信が切れた・答えの形が違う、はどれも失敗にする。
  * 画面は理由を分けず、読み込みと保存で1つずつの文を出す（窓口の英語の文を出さないため）。
  */
 async function readSettings(send: () => Promise<Response>): Promise<SettingsResult> {
@@ -84,7 +178,7 @@ async function readSettings(send: () => Promise<Response>): Promise<SettingsResu
       return { ok: false };
     }
     const body = (await response.json()) as { data?: unknown };
-    return isShopSettings(body.data) ? { ok: true, settings: body.data } : { ok: false };
+    return parseSettings(body.data);
   } catch {
     return { ok: false };
   }
@@ -93,7 +187,7 @@ async function readSettings(send: () => Promise<Response>): Promise<SettingsResu
 const loadSettings = () => readSettings(() => clientFetch(SETTINGS_URL, { cache: 'no-store' }));
 
 // 書き込みは clientFetch が CSRF の印（x-csrf-token）を付ける
-const saveSettings = (request: UpdateShopSettingsRequest) =>
+const saveSettings = (request: SettingsRequest) =>
   readSettings(() =>
     clientFetch(SETTINGS_URL, {
       method: 'PUT',
@@ -111,11 +205,25 @@ function requestWith(settings: ShopSettings, key: ToggleKey, enabled: boolean): 
   };
 }
 
+/** 返品の欄を保存する時の自動の返金の2つ。変えないので、保存の直前に読み直した値をそのまま送る（窓口は2つの値を必ず受け取る） */
+function keepingToggles(settings: ShopSettings): UpdateShopSettingsRequest {
+  return {
+    autoRefundCancelledOrderPayment: settings.autoRefundCancelledOrderPayment.enabled,
+    autoCancelAmountMismatch: settings.autoCancelAmountMismatch.enabled,
+  };
+}
+
 /**
  * ショップの設定の画面（グループ E-2 設計書 9-6。店長だけ）。「自動の返金」の2つのトグルを出し、切り替えるたびに保存する。
  * 自動の取消②をオンにする時だけ、保存の前に確かめの画面を出す（差が小さくても注文が取り消されるため）。
  * 保存の直前に設定を読み直し、変えない方のトグルは読み直した値を送る（開きっぱなしの古い画面が、
  * 別のタブで変えた値を黙って戻さないため）。各トグルの下に、最後に変えた人と日本時間の時刻を出す。
+ *
+ * グループ E-3 で、その下に「返品」の欄（ShopReturnSettingsSection）を足した。窓口の答えに返品の設定が付いている時だけ出す。
+ * 返品の欄は「保存する」で1回に保存し、手順は自動の返金と同じ（保存の直前に読み直し、変えない自動の返金の2つは読み直した値を送る）。
+ * 返品の欄の入力は欄の部品が持つので、自動の返金のトグルを保存しても消えない。
+ * 保存の結果の文は、トグルを保存した時は自動の返金の欄の直後、返品の欄を保存した時は返品の欄の直後に見せる
+ * （入れ物は1つずつのまま、CSS の order で位置だけ動かす。T12-13）。
  */
 export default function ShopSettingsSection() {
   const titleId = useId();
@@ -125,12 +233,15 @@ export default function ShopSettingsSection() {
   const [confirming, setConfirming] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // 保存の結果の文（role="status"・role="alert"）を見せる位置。入れ物は1つずつのまま、CSS の order で動かす（T12-13）。
+  // 自動の返金のトグルの保存の結果は自動の返金の欄の直後、返品の欄の保存の結果は返品の欄の直後に見せる
+  const [resultPlace, setResultPlace] = useState<'toggles' | 'returns'>('returns');
 
   useEffect(() => {
     let active = true;
     void loadSettings().then((result) => {
       if (active) {
-        setLoad(result.ok ? { kind: 'ready', settings: result.settings } : { kind: 'error' });
+        setLoad(result.ok ? { kind: 'ready', settings: result.settings, returns: result.returns } : { kind: 'error' });
       }
     });
     return () => {
@@ -139,6 +250,8 @@ export default function ShopSettingsSection() {
   }, []);
 
   const save = async (key: ToggleKey, enabled: boolean) => {
+    // 結果の文は、自動の返金の欄の直後に見せる（T12-13）
+    setResultPlace('toggles');
     setSaving(true);
     setNotice(null);
     setSaveError(null);
@@ -151,11 +264,42 @@ export default function ShopSettingsSection() {
     setSaving(false);
     setConfirming(false);
     if (result.ok) {
-      setLoad({ kind: 'ready', settings: result.settings });
+      // 自動の返金の保存の答えに返品の設定が無くても、返品の欄は消さない
+      setLoad((current) => ({
+        kind: 'ready',
+        settings: result.settings,
+        returns: result.returns ?? (current.kind === 'ready' ? current.returns : null),
+      }));
       setNotice(SAVED_MESSAGE);
       return;
     }
     setSaveError(REFUND_FAILURE_MESSAGES.settings_update);
+  };
+
+  /**
+   * 返品の欄の「保存する」。自動の返金のトグルの保存と同じ手順で、保存の直前に読み直し、変えない自動の返金の2つは読み直した値を
+   * 一緒に送る（T13-4）。窓口が返した返品の設定を返す。保存できなかった時は失敗の文を出して null を返し、入力は欄に残る。
+   * 答えに返品の設定が無い時は、保存できたと確かめられないので失敗にする。
+   */
+  const saveReturns = async (input: ShopReturnSettingsUpdate): Promise<ShopReturnSettings | null> => {
+    if (saving) {
+      return null;
+    }
+    // 結果の文は、返品の欄の直後に見せる（T12-13）
+    setResultPlace('returns');
+    setSaving(true);
+    setNotice(null);
+    setSaveError(null);
+    const latest = await loadSettings();
+    const result = latest.ok ? await saveSettings({ ...keepingToggles(latest.settings), returns: input }) : latest;
+    setSaving(false);
+    if (result.ok && result.returns) {
+      setLoad({ kind: 'ready', settings: result.settings, returns: result.returns });
+      setNotice(SAVED_MESSAGE);
+      return result.returns;
+    }
+    setSaveError(REFUND_FAILURE_MESSAGES.settings_update);
+    return null;
   };
 
   const handleToggle = (key: ToggleKey, enabled: boolean) => {
@@ -184,8 +328,12 @@ export default function ShopSettingsSection() {
     }
   };
 
+  // 保存の結果の文を見せる位置（CSS の order。T12-13）。トグルの結果は自動の返金の欄（order-1）の直後、返品の欄の結果は
+  // 返品の欄を包む入れ物（order-3）の直後。DOM の順は変えない（読み上げとフォーカスの順は今のまま）
+  const resultOrder = resultPlace === 'toggles' ? 'order-2' : 'order-4';
+
   return (
-    <section aria-labelledby={titleId} aria-busy={saving} className="max-w-3xl space-y-6">
+    <section aria-labelledby={titleId} aria-busy={saving} className="max-w-3xl flex flex-col gap-6">
       <h2 id={titleId} className="font-acumin lk-text-lg text-black">
         ショップの設定
       </h2>
@@ -199,7 +347,7 @@ export default function ShopSettingsSection() {
       ) : null}
 
       {load.kind === 'ready' ? (
-        <section aria-labelledby={groupId} className="space-y-2 border border-black/15 p-4">
+        <section aria-labelledby={groupId} className="order-1 space-y-2 border border-black/15 p-4">
           <h3 id={groupId} className="font-acumin lk-text-3xs tracking-widest text-[#474747]">
             自動の返金
           </h3>
@@ -228,13 +376,29 @@ export default function ShopSettingsSection() {
         </section>
       ) : null}
 
-      {/* 保存の知らせ。後から差し込むと読み上げられない環境が多いので、入れ物は最初から置く（空の間は場所を取らない） */}
-      <p role="status" aria-live="polite" className={cn('font-acumin lk-text-sm text-[#474747]', !notice && 'sr-only')}>
+      {load.kind === 'ready' && load.returns ? (
+        <div className="order-3">
+          <ShopReturnSettingsSection
+            settings={load.returns}
+            saving={saving}
+            onSave={saveReturns}
+            onInvalid={() => {
+              // 入力の誤りで保存しなかった時は、前の保存の知らせと窓口の失敗の文を残さない（誤りのまとめの文と並べない）
+              setNotice(null);
+              setSaveError(null);
+            }}
+          />
+        </div>
+      ) : null}
+
+      {/* 保存の知らせ。後から差し込むと読み上げられない環境が多いので、入れ物は最初から置く（空の間は場所を取らない）。
+          見せる位置は resultOrder（トグルの保存の結果は自動の返金の欄の直後、返品の欄の保存の結果は返品の欄の直後。T12-13） */}
+      <p role="status" aria-live="polite" className={cn('font-acumin lk-text-sm text-[#474747]', resultOrder, !notice && 'sr-only')}>
         {notice}
       </p>
 
       {saveError ? (
-        <p role="alert" className="font-acumin lk-text-sm text-red-700">
+        <p role="alert" className={cn('font-acumin lk-text-sm text-red-700', resultOrder)}>
           {saveError}
         </p>
       ) : null}
