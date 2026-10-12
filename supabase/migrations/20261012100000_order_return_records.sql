@@ -66,7 +66,10 @@ CREATE TABLE public.order_returns (
   cancelled_by uuid,
   reopened_at timestamptz,
   reopened_by uuid,
-  CONSTRAINT order_returns_order_id_number_key UNIQUE (order_id, number)
+  CONSTRAINT order_returns_order_id_number_key UNIQUE (order_id, number),
+  CONSTRAINT order_returns_fee_waived_check CHECK (
+    NOT fee_waived OR (fee_received_at IS NOT NULL AND fee_received_by IS NOT NULL)
+  )
 );
 
 -- 返す品は、どの発送のどの品か（発送の行の組）を指す。返金は今までどおり注文の商品ごと。
@@ -95,7 +98,8 @@ CREATE TABLE public.order_return_lines (
   CONSTRAINT order_return_lines_fulfillment_line_fkey FOREIGN KEY (fulfillment_id, order_item_id)
     REFERENCES public.order_fulfillment_lines (fulfillment_id, order_item_id) ON DELETE RESTRICT,
   CONSTRAINT order_return_lines_exchange_check CHECK (
-    (resolution = 'exchange') = (exchange_variant_id IS NOT NULL AND exchange_method IS NOT NULL)
+    (resolution = 'exchange') = (exchange_variant_id IS NOT NULL)
+    AND (resolution = 'exchange') = (exchange_method IS NOT NULL)
   )
 );
 
@@ -153,6 +157,10 @@ CREATE TABLE public.order_return_receipt_lines (
 CREATE INDEX order_returns_status_idx ON public.order_returns (status, created_at DESC);
 CREATE INDEX order_return_lines_return_idx ON public.order_return_lines (return_id);
 CREATE INDEX order_return_lines_fulfillment_line_idx ON public.order_return_lines (fulfillment_id, order_item_id);
+CREATE INDEX order_return_lines_requested_exchange_variant_idx ON public.order_return_lines (requested_exchange_variant_id)
+  WHERE requested_exchange_variant_id IS NOT NULL;
+CREATE INDEX order_return_lines_exchange_variant_idx ON public.order_return_lines (exchange_variant_id)
+  WHERE exchange_variant_id IS NOT NULL;
 CREATE INDEX order_return_receipts_return_idx ON public.order_return_receipts (return_id, created_at);
 CREATE INDEX order_return_receipts_refund_idx ON public.order_return_receipts (refund_id) WHERE refund_id IS NOT NULL;
 CREATE INDEX order_return_receipt_lines_line_idx ON public.order_return_receipt_lines (return_line_id);
@@ -254,7 +262,8 @@ ALTER TABLE private.order_email_outbox
     (kind = 'return_accepted' AND return_id IS NOT NULL AND return_receipt_id IS NULL)
     OR (kind IN ('return_received', 'return_sent_back', 'return_refund_pending_shop')
         AND return_id IS NOT NULL AND return_receipt_id IS NOT NULL)
-    OR (kind = 'refund' AND (return_receipt_id IS NULL OR return_id IS NOT NULL))
+    OR (kind = 'refund' AND (return_receipt_id IS NULL OR return_id IS NOT NULL)
+        AND ((variant = 'return') = (return_id IS NOT NULL)))
     OR (kind NOT IN ('return_accepted', 'return_received', 'return_sent_back', 'return_refund_pending_shop', 'refund')
         AND return_id IS NULL AND return_receipt_id IS NULL)
   );
@@ -620,6 +629,10 @@ $$;
 --     行を作った順に割り当てる。返金待ち refund_waiting = 返金の解決の品 − 覆われた数。
 --     ただし注文の商品ごとに「発送した数 − 返金した数 − (申し込み + 未処理 + 交換 + お返し + 返金しない)」を超えない。
 --     超えた分は、ふつうの返金の画面で先に返した品として「覆われた」数に入れる（返品の番号が小さい順、行を作った順）。
+--     開き直して受け取った返金の品は、手元に残った品より先に、ふつうの発送後の返金（return 以外）で覆う。
+--     開き直した数と、返品の返金・返金しないことで既に終えた分を除く返金待ちの小さい方までを優先する。
+--     優先する覆いと上限の超過は大きい方だけを使い、同じ返金を二重に割り当てない。返し足りない時は、
+--     減った返金待ちと同じだけ refundable_after_shipment が増えるので、ふつうの返金の画面から補える。
 --     お返し・返金しないことにした品をふつうの返金で後から返した時も、その返金は同じ商品の返金待ちの品に当てたものとして
 --     数える（上限の式に お返し・返金しない が入っているため。二重の返金を避ける側。C-0 の補足。試験「上限の式の性質」で固める）。
 --     完了した返品も数える（返品の返金が失敗すると覆いが外れて、完了した返品でも返金待ちが戻る。本計画 P21）。
@@ -671,6 +684,7 @@ AS $$
            GREATEST(s.missing - s.missing_reopened, 0) AS missing,
            s.received_exchange AS exchanged,
            s.refund_waived,
+           s.missing_reopened,
            GREATEST(s.received_refund - s.refund_waived, 0) AS refund_units
     FROM base AS b
     CROSS JOIN LATERAL (
@@ -723,47 +737,83 @@ AS $$
     FROM worked AS w
   ),
   line_waiting AS (
-    SELECT a.*, a.refund_units - a.covered_by_return AS waiting
+    SELECT a.*,
+           a.refund_units - a.covered_by_return AS waiting,
+           CASE WHEN a.return_status IN ('open', 'closed')
+             THEN LEAST(a.missing_reopened, a.refund_units - a.covered_by_return)
+             ELSE 0
+           END AS reopened_waiting
     FROM assigned AS a
   ),
   item_totals AS (
+    -- 状態の扱いを変える時は、ここ・order_line_return_counts の totals・fulfillment_line_returnable の per_line の3か所をそろえる。
     SELECT lw.order_item_id,
            COALESCE(pg_catalog.sum(CASE WHEN lw.return_status = 'requested' THEN lw.quantity ELSE 0 END), 0) AS requested,
            COALESCE(pg_catalog.sum(CASE WHEN lw.return_status = 'open' THEN GREATEST(lw.quantity - lw.processed, 0) ELSE 0 END), 0) AS open_unprocessed,
            COALESCE(pg_catalog.sum(CASE WHEN lw.return_status IN ('open', 'closed') THEN lw.exchanged ELSE 0 END), 0) AS exchanged,
            COALESCE(pg_catalog.sum(CASE WHEN lw.return_status IN ('open', 'closed') THEN lw.sent_back ELSE 0 END), 0) AS sent_back,
            COALESCE(pg_catalog.sum(CASE WHEN lw.return_status IN ('open', 'closed') THEN lw.refund_waived ELSE 0 END), 0) AS refund_waived,
-           COALESCE(pg_catalog.sum(CASE WHEN lw.return_status IN ('open', 'closed') THEN lw.waiting ELSE 0 END), 0) AS waiting
+           COALESCE(pg_catalog.sum(CASE WHEN lw.return_status IN ('open', 'closed') THEN lw.waiting ELSE 0 END), 0) AS waiting,
+           pg_catalog.sum(lw.reopened_waiting) AS reopened_waiting
     FROM line_waiting AS lw
     GROUP BY lw.order_item_id
   ),
   excess AS (
     SELECT t.order_item_id,
+           LEAST(n.quantity, t.reopened_waiting) AS reopened_covered,
            GREATEST(
              t.waiting - GREATEST(
                f.shipped - f.refunded_after_shipment - t.requested - t.open_unprocessed - t.exchanged - t.sent_back - t.refund_waived,
                0
              ),
+             LEAST(n.quantity, t.reopened_waiting),
              0
            ) AS excess
     FROM item_totals AS t
     JOIN private.order_line_fulfillment(_order_id) AS f ON f.order_item_id = t.order_item_id
+    CROSS JOIN LATERAL (
+      SELECT COALESCE(pg_catalog.sum(rl.quantity), 0) AS quantity
+      FROM public.order_refund_lines AS rl
+      JOIN public.order_refunds AS rf ON rf.id = rl.refund_id
+      WHERE rl.order_item_id = t.order_item_id
+        AND rf.source <> 'return'
+        AND NOT rl.before_shipment
+        AND rf.status IN ('awaiting_response', 'pending', 'succeeded')
+    ) AS n
   ),
-  final AS (
+  prioritized AS (
+    -- まず開き直した品へ当てる。複数の返品でも、商品ごとのふつうの返金の数までに抑える。
     SELECT lw.*,
            LEAST(
-             lw.waiting,
+             lw.reopened_waiting,
              GREATEST(
-               e.excess - COALESCE(pg_catalog.sum(lw.waiting) OVER (
+               e.reopened_covered - COALESCE(pg_catalog.sum(lw.reopened_waiting) OVER (
                  PARTITION BY lw.order_item_id
                  ORDER BY lw.return_number, lw.line_created_at, lw.line_id
                  ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
                ), 0),
                0
              )
-           ) AS covered_extra
+           ) AS covered_reopened
     FROM line_waiting AS lw
     JOIN excess AS e ON e.order_item_id = lw.order_item_id
+  ),
+  final AS (
+    -- 優先して覆った分を両側から引き、残りの超過だけを従来の順で割り当てる。
+    SELECT p.*,
+           p.covered_reopened + LEAST(
+             p.waiting - p.covered_reopened,
+             GREATEST(
+               e.excess - e.reopened_covered - COALESCE(pg_catalog.sum(p.waiting - p.covered_reopened) OVER (
+                 PARTITION BY p.order_item_id
+                 ORDER BY p.return_number, p.line_created_at, p.line_id
+                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+               ), 0),
+               0
+             )
+           ) AS covered_extra
+    FROM prioritized AS p
+    JOIN excess AS e ON e.order_item_id = p.order_item_id
   )
   SELECT f.return_id,
          f.line_id,
@@ -842,6 +892,7 @@ STABLE
 SET search_path = ''
 AS $$
   WITH totals AS (
+    -- 状態の扱いを変える時は、ここ・order_return_line_states の item_totals・fulfillment_line_returnable の per_line の3か所をそろえる。
     SELECT s.order_item_id,
            COALESCE(pg_catalog.sum(CASE WHEN s.return_status = 'requested' THEN s.quantity ELSE 0 END), 0)::integer AS requested,
            COALESCE(pg_catalog.sum(CASE WHEN s.return_status = 'open' THEN s.unprocessed ELSE 0 END), 0)::integer AS open_unprocessed,
@@ -952,6 +1003,7 @@ AS $$
       AND f.cancelled_at IS NULL
   ),
   per_line AS (
+    -- 状態の扱いを変える時は、ここ・order_return_line_states の item_totals・order_line_return_counts の totals の3か所をそろえる。
     SELECT st.fulfillment_id,
            st.order_item_id,
            pg_catalog.sum(st.quantity)::integer AS in_returns,

@@ -342,6 +342,25 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
   });
 
   describe('返品の表の決まり', () => {
+    test('手数料をいただかない時は、受け取りの時刻と人の両方が要る', async () => {
+      const order = await createShipped(db(), 1);
+      const created = await returnOf(db(), order, 1);
+      const actor = await createActor(db());
+      for (const set of [
+        'fee_waived = true',
+        'fee_waived = true, fee_received_at = now()',
+        'fee_waived = true, fee_received_by = $2',
+      ]) {
+        await expectRejected(db(), `update public.order_returns set ${set} where id = $1`,
+          set.includes('$2') ? [created.returnId, actor.id] : [created.returnId],
+          { code: '23514', constraint: 'order_returns_fee_waived_check' });
+      }
+      await db().query('update public.order_returns set fee_waived = true, fee_received_at = now(), fee_received_by = $2 where id = $1',
+        [created.returnId, actor.id]);
+      const saved = await db().query('select fee_waived from public.order_returns where id = $1', [created.returnId]);
+      expect(saved.rows[0].fee_waived).toBe(true);
+    });
+
     test('値の決まり: 道・状態・返送の方法と負担・配送業者・伝票番号の形・手数料の範囲・文の長さ', async () => {
       const order = await createShipped(db(), 1);
       const refused: Array<[Record<string, string>, string]> = [
@@ -565,6 +584,33 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
   });
 
   describe('返品の行の決まり', () => {
+    test('返金の行に交換の色・サイズだけ、または送り方だけを付ける形も断る', async () => {
+      const order = await createShipped(db(), 1);
+      const created = await returnOf(db(), order, 1);
+      const ids = { returnId: created.returnId, fulfillmentId: order.fulfillmentId, orderItemId: order.orderItemId };
+      const refused: Array<Record<string, string>> = [{ exchange_variant_id: String(order.variantId) }, { exchange_method: "'stock'" }];
+      for (const extra of refused) {
+        await db().query('savepoint check_case');
+        await expect(insertLineRow(db(), ids, extra)).rejects.toMatchObject({
+          code: '23514', constraint: 'order_return_lines_exchange_check',
+        });
+        await db().query('rollback to savepoint check_case');
+      }
+    });
+
+    test('交換の色・サイズの外部キー2つには、空でない行だけの索引がある', async () => {
+      const indexes = await db().query(
+        `select indexname, indexdef from pg_indexes where schemaname = 'public' and tablename = 'order_return_lines'
+         and indexname in ('order_return_lines_requested_exchange_variant_idx', 'order_return_lines_exchange_variant_idx')`,
+      );
+      expect(indexes.rows).toHaveLength(2);
+      for (const column of ['requested_exchange_variant_id', 'exchange_variant_id']) {
+        const name = column === 'requested_exchange_variant_id'
+          ? 'order_return_lines_requested_exchange_variant_idx' : 'order_return_lines_exchange_variant_idx';
+        expect(indexes.rows.find((row) => row.indexname === name)?.indexdef).toContain(`(${column}) WHERE (${column} IS NOT NULL)`);
+      }
+    });
+
     test('解決が交換なら交換の色・サイズと送り方が両方要り、返金なら両方付けられない', async () => {
       const order = await createShipped(db(), 3);
       const other = await addItemVariant(db(), { itemId: order.itemId, colorName: 'BLUE', sizeLabel: 'L', stock: 2 });
@@ -616,7 +662,7 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
         [{ customer_note: "repeat('あ', 301)" }, '23514', 'order_return_lines_customer_note_check'],
         [{ requested_resolution: "'x'" }, '23514', 'order_return_lines_requested_resolution_check'],
         [{ resolution: "'x'" }, '23514', 'order_return_lines_resolution_check'],
-        [{ exchange_method: "'x'" }, '23514', 'order_return_lines_exchange_method_check'],
+        [{ resolution: "'exchange'", exchange_variant_id: String(order.variantId), exchange_method: "'x'" }, '23514', 'order_return_lines_exchange_method_check'],
         [{ resolution: "'exchange'", exchange_variant_id: '999999999', exchange_method: "'stock'" }, '23503', 'order_return_lines_exchange_variant_id_fkey'],
         [{ requested_exchange_variant_id: '999999999' }, '23503', 'order_return_lines_requested_exchange_variant_id_fkey'],
       ];
@@ -1082,6 +1128,24 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
   });
 
   describe('注文のメールの予定（返品のお知らせ）', () => {
+    test('返金のお知らせは書き分け return と返品の番号の有無が一致しなければ断る', async () => {
+      const order = await createShipped(db(), 1);
+      const created = await returnOf(db(), order, 1);
+      const refund = await insertRefundRecord(db(), { orderId: order.orderId });
+      const refused: Array<Parameters<typeof insertEmailRow>[3]> = [
+        { variant: 'return', refundId: refund.refundId },
+        { variant: 'standard', refundId: refund.refundId, returnId: created.returnId },
+        { variant: 'after_cancel', refundId: refund.refundId, returnId: created.returnId },
+      ];
+      for (const extra of refused) {
+        await db().query('savepoint check_case');
+        await expect(insertEmailRow(db(), order.orderId, 'refund', extra)).rejects.toMatchObject({
+          code: '23514', constraint: 'order_email_outbox_return_check',
+        });
+        await db().query('rollback to savepoint check_case');
+      }
+    });
+
     async function createOrderWithTwoReturns() {
       const order = await createShipped(db(), 5);
       const first = await returnOf(db(), order, 1);
@@ -1399,6 +1463,50 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
   });
 
   describe('商品ごとの返品の数（private.order_line_return_counts）', () => {
+    async function reopenAndReceive(created: { returnId: string; lineId: string }) {
+      await db().query("update public.order_returns set status = 'open', reopened_at = now() where id = $1", [created.returnId]);
+      await insertReturnReceipt(db(), {
+        returnId: created.returnId, kind: 'reopen',
+        lines: [{ returnLineId: created.lineId, disposition: 'missing_reopened', quantity: 1 }],
+      });
+      await insertReturnReceipt(db(), {
+        returnId: created.returnId, refundChoice: 'consult',
+        lines: [{ returnLineId: created.lineId, disposition: 'restocked', quantity: 1 }],
+      });
+    }
+
+    test('本体は列の名前と並び、返品番号・行の作成順・行の番号の順を保ち、取消の行も未処理で返す', async () => {
+      const order = await createShipped(db(), 5);
+      const first = await insertReturnRecord(db(), {
+        orderId: order.orderId, lines: [],
+      });
+      // 作った順と時刻の順を逆にし、同時刻の行は UUID の順で比べる。
+      const lines = await db().query(
+        `insert into public.order_return_lines (return_id, fulfillment_id, order_item_id, quantity, reason, resolution, created_at)
+         values ($1, $2, $3, 1, 'defective', 'refund', now() + interval '2 days'),
+                ($1, $2, $3, 1, 'defective', 'refund', now() + interval '2 days'),
+                ($1, $2, $3, 1, 'defective', 'refund', now() + interval '1 day') returning id`,
+        [first.returnId, order.fulfillmentId, order.orderItemId],
+      );
+      const second = await returnOf(db(), order, 1);
+      const cancelled = await returnOf(db(), order, 1, { status: 'cancelled' });
+      const tied = [lines.rows[0].id as string, lines.rows[1].id as string].sort();
+      await insertReturnReceipt(db(), {
+        returnId: second.returnId, refundChoice: 'consult',
+        lines: [{ returnLineId: second.lineId, disposition: 'restocked', quantity: 1 }],
+      });
+      const states = await db().query('select * from private.order_return_line_states($1)', [order.orderId]);
+      expect(Object.keys(states.rows[0])).toEqual([
+        'return_id', 'return_line_id', 'return_number', 'return_status', 'fulfillment_id', 'order_item_id', 'quantity',
+        'restocked', 'not_restocked', 'pending_inspection', 'sent_back', 'missing', 'processed', 'unprocessed',
+        'exchanged', 'refund_covered', 'refund_waived', 'refund_waiting',
+      ]);
+      expect(states.rows.map((row) => row.return_line_id)).toEqual([lines.rows[2].id, ...tied, second.lineId, cancelled.lineId]);
+      expect(states.rows.map((row) => [row.return_number, row.return_status, row.processed, row.unprocessed])).toEqual([
+        [1, 'open', 0, 1], [1, 'open', 0, 1], [1, 'open', 0, 1], [2, 'open', 1, 0], [3, 'cancelled', 0, 1],
+      ]);
+    });
+
     test('返品が無い注文は、発送した数がそのまま返品できる数と、ふつうの返金で選べる数になる。列は C-1 の並び', async () => {
       const order = await createShipped(db(), 3);
 
@@ -1735,6 +1843,120 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
       });
       const status = await db().query('select private.refresh_order_return_status($1) as status', [created.returnId]);
       expect(status.rows[0].status).toBe('closed');
+    });
+
+    test.each<[RefundFixtureStatus, number]>([
+      ['awaiting_response', 0], ['pending', 0], ['succeeded', 0], ['failed', 1], ['error', 1],
+    ])('Review Focus 3: 2点注文・返品1点で届かないを経て届いた品を、ふつうの返金（%s）の覆いに先にする', async (status, waiting) => {
+      const order = await createShipped(db(), 2);
+      const created = await returnOf(db(), order, 1, { status: 'closed' });
+      await insertReturnReceipt(db(), {
+        returnId: created.returnId, kind: 'close_missing',
+        lines: [{ returnLineId: created.lineId, disposition: 'missing', quantity: 1 }],
+      });
+      await insertRefundRecord(db(), {
+        orderId: order.orderId, status,
+        lines: [{ orderItemId: order.orderItemId, quantity: 1, beforeShipment: false }],
+      });
+      await reopenAndReceive(created);
+      expect(await countsOf(db(), order.orderId, order.orderItemId)).toMatchObject({
+        refund_waiting: waiting, refundable_after_shipment: 1,
+      });
+      expect((await progressOf(db(), created.returnId))[0]).toMatchObject({ refund_covered: 1 - waiting, refund_waiting: waiting });
+      const refreshed = await db().query('select private.refresh_order_return_status($1) as status', [created.returnId]);
+      expect(refreshed.rows[0].status).toBe(waiting === 0 ? 'closed' : 'open');
+    });
+
+    test('届かないを通らない返品の品は、ふつうの返金が手元の品の分なら返金待ちに残る', async () => {
+      const order = await createShipped(db(), 2);
+      const created = await returnOf(db(), order, 1);
+      await insertRefundRecord(db(), {
+        orderId: order.orderId, status: 'succeeded',
+        lines: [{ orderItemId: order.orderItemId, quantity: 1, beforeShipment: false }],
+      });
+      await insertReturnReceipt(db(), {
+        returnId: created.returnId, refundChoice: 'consult',
+        lines: [{ returnLineId: created.lineId, disposition: 'restocked', quantity: 1 }],
+      });
+      expect(await countsOf(db(), order.orderId, order.orderItemId)).toMatchObject({ refund_waiting: 1, refundable_after_shipment: 0 });
+      expect((await progressOf(db(), created.returnId))[0]).toMatchObject({ refund_covered: 0, refund_waiting: 1 });
+      expect((await db().query('select private.refresh_order_return_status($1) as status', [created.returnId])).rows[0].status).toBe('open');
+      // 開き直した品を先に覆う方では選べる数が1点増えるため、手元の品の返金をここから補える。
+    });
+
+    test('ふつうの返金1点を開き直した2つの返品へ重ねて当てず、番号の小さい返品から覆う', async () => {
+      const order = await createShipped(db(), 4);
+      const returns = [];
+      for (let i = 0; i < 2; i += 1) {
+        const created = await returnOf(db(), order, 1, { status: 'closed' });
+        await insertReturnReceipt(db(), {
+          returnId: created.returnId, kind: 'close_missing',
+          lines: [{ returnLineId: created.lineId, disposition: 'missing', quantity: 1 }],
+        });
+        returns.push(created);
+      }
+      await insertRefundRecord(db(), {
+        orderId: order.orderId, status: 'succeeded',
+        lines: [{ orderItemId: order.orderItemId, quantity: 1, beforeShipment: false }],
+      });
+      for (const created of returns) await reopenAndReceive(created);
+      expect(await countsOf(db(), order.orderId, order.orderItemId)).toMatchObject({ refund_waiting: 1, refundable_after_shipment: 2 });
+      expect((await progressOf(db(), returns[0].returnId))[0]).toMatchObject({ refund_covered: 1, refund_waiting: 0 });
+      expect((await progressOf(db(), returns[1].returnId))[0]).toMatchObject({ refund_covered: 0, refund_waiting: 1 });
+    });
+
+    test('開き直した品を通常の受け取りより先に覆い、上限の超過と同じ返金の覆いを二度足さない', async () => {
+      const order = await createShipped(db(), 3);
+      const first = await returnOf(db(), order, 1);
+      await insertReturnReceipt(db(), {
+        returnId: first.returnId, refundChoice: 'consult',
+        lines: [{ returnLineId: first.lineId, disposition: 'restocked', quantity: 1 }],
+      });
+      const second = await returnOf(db(), order, 1, { status: 'closed' });
+      await insertReturnReceipt(db(), {
+        returnId: second.returnId, kind: 'close_missing',
+        lines: [{ returnLineId: second.lineId, disposition: 'missing', quantity: 1 }],
+      });
+      await insertRefundRecord(db(), {
+        orderId: order.orderId, status: 'succeeded',
+        lines: [{ orderItemId: order.orderItemId, quantity: 1, beforeShipment: false }],
+      });
+      await reopenAndReceive(second);
+      expect((await progressOf(db(), first.returnId))[0]).toMatchObject({ refund_covered: 0, refund_waiting: 1 });
+      expect((await progressOf(db(), second.returnId))[0]).toMatchObject({ refund_covered: 1, refund_waiting: 0 });
+      await insertRefundRecord(db(), {
+        orderId: order.orderId, status: 'succeeded',
+        lines: [{ orderItemId: order.orderItemId, quantity: 1, beforeShipment: false }],
+      });
+      expect(await countsOf(db(), order.orderId, order.orderItemId)).toMatchObject({ refund_waiting: 1, refundable_after_shipment: 0 });
+      // 超過が優先分より大きくなった時は、残りだけを通常の受け取りへ当てる。
+      await insertRefundRecord(db(), {
+        orderId: order.orderId, status: 'succeeded',
+        lines: [{ orderItemId: order.orderItemId, quantity: 1, beforeShipment: false }],
+      });
+      expect((await progressOf(db(), first.returnId))[0]).toMatchObject({ refund_covered: 1, refund_waiting: 0 });
+      expect((await progressOf(db(), second.returnId))[0]).toMatchObject({ refund_covered: 1, refund_waiting: 0 });
+    });
+
+    test('別の返品の返金を、開き直した品を覆うふつうの返金として数えない', async () => {
+      const order = await createShipped(db(), 3);
+      const first = await returnOf(db(), order, 1);
+      await insertReturnReceipt(db(), {
+        returnId: first.returnId, refundChoice: 'now',
+        lines: [{ returnLineId: first.lineId, disposition: 'restocked', quantity: 1 }],
+      });
+      await insertReturnRefund(db(), {
+        orderId: order.orderId, returnId: first.returnId, status: 'succeeded',
+        lines: [{ orderItemId: order.orderItemId, quantity: 1 }],
+      });
+      const second = await returnOf(db(), order, 1, { status: 'closed' });
+      await insertReturnReceipt(db(), {
+        returnId: second.returnId, kind: 'close_missing',
+        lines: [{ returnLineId: second.lineId, disposition: 'missing', quantity: 1 }],
+      });
+      await reopenAndReceive(second);
+      expect((await progressOf(db(), second.returnId))[0]).toMatchObject({ refund_covered: 0, refund_waiting: 1 });
+      expect(await countsOf(db(), order.orderId, order.orderItemId)).toMatchObject({ refund_waiting: 1, refundable_after_shipment: 1 });
     });
 
     test('返金しないことにした数（refund_waived）は返金待ちから引く。返品できる数からも引く（返ってきた品が、また返品できる数に戻らない）', async () => {
