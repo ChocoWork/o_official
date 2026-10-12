@@ -1154,3 +1154,34 @@ describeLocalDb('integration: 返金の記録と数え方（移行 A）', (db) =
     });
   });
 });
+
+describeLocalDb('E-3: 交換の行の割引と人気と返金の支払額',db=>{
+  beforeEach(async()=>{await db().query('begin');});
+  afterEach(async()=>{await db().query('rollback');});
+  test('交換のゼロ円の行を割引と人気から外し、元の支払額14999を5000・4999・5000に割る',async()=>{
+    const cat=await createCatalogFixture(db(),{stock:10});
+    const order=await insertOrderWithLines(db(),{status:'paid',discountAmount:1,paidAmount:14999,
+      lines:[{itemId:cat.itemId,variantId:cat.variantId,quantity:3,fulfillmentType:'stock'}]});
+    const ship=(await db().query(`insert into public.order_fulfillments(order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order)
+      values($1,1,gen_random_uuid(),'yamato','TEST-4',false,true) returning id`,[order.orderId])).rows[0].id;
+    await db().query('insert into public.order_fulfillment_lines(fulfillment_id,order_item_id,quantity) values($1,$2,3)',[ship,order.orderItemIds[0]]);
+    const ret=(await db().query(`insert into public.order_returns(order_id,number,source,status,request_key,request_fingerprint,return_method,return_shipping_payer,notify_customer)
+      values($1,1,'shop','open',gen_random_uuid(),'fixture','customer_ships','customer',false) returning id`,[order.orderId])).rows[0].id;
+    const rl=(await db().query(`insert into public.order_return_lines(return_id,fulfillment_id,order_item_id,quantity,reason,resolution,exchange_variant_id,exchange_method)
+      values($1,$2,$3,3,'unknown','exchange',$4,'make') returning id`,[ret,ship,order.orderItemIds[0],cat.variantId])).rows[0].id;
+    const ex=(await db().query(`insert into public.order_items(order_id,item_id,variant_id,item_name,item_price,quantity,line_total,fulfillment_type,line_kind,exchange_return_line_id,exchange_paid_amount)
+      values($1,$2,$3,'交換の品',0,3,0,'backorder','exchange',$4,14999) returning id`,[order.orderId,cat.itemId,cat.variantId,rl])).rows[0].id;
+    const discount=await db().query('select * from private.order_line_discounts($1) order by order_item_id',[order.orderId]);
+    expect(discount.rows).toEqual(expect.arrayContaining([{order_item_id:order.orderItemIds[0],line_discount:1},{order_item_id:ex,line_discount:0}]));
+    expect(discount.rows).toHaveLength(2);
+    const materials=(await db().query('select * from public.load_order_refund_materials($1)',[order.orderId])).rows[0];
+    expect(materials.lines.find((line:Row)=>line.order_item_id===ex).exchange_paid_amount).toBe(14999);
+    expect(materials.lines.find((line:Row)=>line.order_item_id===order.orderItemIds[0]).exchange_paid_amount).toBeNull();
+    const popular=await db().query('select purchase_count from public.get_popular_items(100000) where id=$1',[cat.itemId]);
+    expect(Number(popular.rows[0].purchase_count)).toBe(3);
+    expect((await db().query('select private.return_units_amount($1,1,0) amount',[ex])).rows[0].amount).toBe(5000);
+    expect((await db().query('select private.return_units_amount($1,1,1) amount',[ex])).rows[0].amount).toBe(4999);
+    expect((await db().query('select private.return_units_amount($1,1,2) amount',[ex])).rows[0].amount).toBe(5000);
+    expect((await db().query('select private.return_units_amount($1,3,0) amount',[ex])).rows[0].amount).toBe(14999);
+  });
+});

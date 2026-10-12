@@ -1604,6 +1604,10 @@ describeLocalDb('integration: 返金の結果を書く関数・外からの返�
       // 同じ名前の関数が2つあると、Data API が呼び分けられない（PGRST203）
       for (const [schema, name] of [
         ['private', 'enqueue_order_email'],
+        ['private', 'begin_order_refund_core'],
+        ['public', 'begin_order_refund'],
+        ['public', 'admin_receive_return'],
+        ['public', 'admin_refund_return'],
         ['public', 'claim_order_email'],
         ['public', 'list_order_email_history'],
         ['public', 'request_order_email_resend'],
@@ -1720,5 +1724,34 @@ describeLocalDb('integration: 返金の結果の同時の書き込み（Review F
 
     const count = await db().query('select count(*)::int as n from public.order_fulfillments where order_id = $1', [order.orderId]);
     expect(count.rows[0].n).toBe(0);
+  });
+});
+
+describeLocalDb('E-3: 返品のメールも既存のリースと履歴で扱う',db=>{
+  beforeEach(async()=>{await db().query('begin');await db().query('delete from private.order_email_outbox');});
+  afterEach(async()=>{await db().query('rollback');});
+  test.each(['return_accepted','return_received','return_sent_back','return_refund_pending_shop'])('%s の参照列を返し、手の再送を断り、superseded の条件を守る',async kind=>{
+    const actor=await createActor(db());const order=await createOrder(db(),{lines:[{quantity:1}]});
+    const ret=(await db().query(`insert into public.order_returns(order_id,number,source,status,request_key,request_fingerprint,
+      return_method,return_shipping_payer,notify_customer,approved_at,approved_by,created_by)
+      values($1,1,'shop','open',gen_random_uuid(),'fixture','customer_ships','customer',false,now(),$2,$2) returning id`,[order.orderId,actor.id])).rows[0].id;
+    const receipt=kind==='return_accepted'?null:(await db().query(`insert into public.order_return_receipts(return_id,request_key,request_fingerprint,kind,refund_choice,actor_id,actor_can_refund)
+      values($1,gen_random_uuid(),'fixture','receive','consult',$2,false) returning id`,[ret,actor.id])).rows[0].id;
+    expect((await db().query('select private.enqueue_return_email($1,$2,$3,$4) enqueued',[order.orderId,kind,ret,receipt])).rows[0].enqueued).toBe(true);
+    expect((await db().query('select private.enqueue_return_email($1,$2,$3,$4) enqueued',[order.orderId,kind,ret,receipt])).rows[0].enqueued).toBe(false);
+    const claim=(await db().query('select * from public.claim_order_email(300)')).rows[0];
+    expect(claim).toMatchObject({order_id:order.orderId,kind,return_id:ret,return_receipt_id:receipt,refund_id:null,fulfillment_id:null});
+    expect(Object.keys(claim).slice(-3)).toEqual(['refund_id','return_id','return_receipt_id']);
+    const history=(await db().query('select * from public.list_order_email_history($1)',[order.orderId])).rows[0];
+    expect(history).toMatchObject({kind,return_id:ret,return_receipt_id:receipt});
+    expect(Object.keys(history).slice(-3)).toEqual(['refund_id','return_id','return_receipt_id']);
+    await expectRejected(db(),'select public.request_order_email_resend($1,$2,$3)',[order.orderId,kind,actor.id],{code:'22023',message:'RESEND_NOT_ALLOWED'});
+    if(kind==='return_refund_pending_shop') {
+      // この参照列の試験は返品の行が無いので返金待ちは0。店への知らせだけ取りやめられる（06-5）。
+      expect((await db().query("select public.skip_order_email($1,$2,'superseded') skipped",[claim.email_id,claim.lease_token])).rows[0].skipped).toBe(true);
+    } else {
+      await expectRejected(db(),"select public.skip_order_email($1,$2,'superseded')",[claim.email_id,claim.lease_token],{code:'22023',message:'SUPERSEDE_NOT_ALLOWED'});
+      expect((await db().query("select public.skip_order_email($1,$2,'no_recipient') skipped",[claim.email_id,claim.lease_token])).rows[0].skipped).toBe(true);
+    }
   });
 });

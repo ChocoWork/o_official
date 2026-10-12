@@ -36,7 +36,9 @@ BEGIN
 
   -- 設計書 4-1 の表に無い遷移は拒否する（取消の注文の復元は、全額返金の失敗で入金済み・発送済みへ戻すため。
   -- 発送済みから入金済みへは、発送の取消で未発送の品が戻った時（グループ E-1 設計書 7-3）と、
-  -- 返金の失敗で発送前に返金した品が戻った時（グループ E-2 設計書 4-7）だけ。入金済みから発送済みへは、元から通る）
+  -- 返金の失敗で発送前に返金した品が戻った時（グループ E-2 設計書 4-7）、
+  -- 返品の受け取りで交換の品を足して未発送ができた時（グループ E-3 設計書 7-2）だけ。
+  -- 入金済みから発送済みへは、元から通る）
   IF NEW.status IS DISTINCT FROM OLD.status AND NOT (
        (OLD.status = 'payment_in_progress' AND NEW.status IN ('paid', 'pending', 'failed', 'abandoned', 'cancelled'))
     OR (OLD.status = 'pending' AND NEW.status IN ('paid', 'failed', 'cancelled'))
@@ -47,6 +49,8 @@ BEGIN
         AND pg_catalog.current_setting('app.order_change_reason', true) = 'admin_cancel_fulfillment')
     OR (OLD.status = 'shipped' AND NEW.status = 'paid'
         AND pg_catalog.current_setting('app.order_change_reason', true) = 'refund_failed_reopened')
+    OR (OLD.status = 'shipped' AND NEW.status = 'paid'
+        AND pg_catalog.current_setting('app.order_change_reason', true) = 'return_exchange_added')
     OR (OLD.status = 'cancelled' AND NEW.status IN ('paid', 'shipped'))
   ) THEN
     RAISE EXCEPTION 'ORDER_STATUS_TRANSITION_NOT_ALLOWED:%->%', OLD.status, NEW.status

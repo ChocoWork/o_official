@@ -68,6 +68,9 @@ describe('order state transition migrations', () => {
     expect(sql).toContain("pg_catalog.current_setting('app.order_change_reason', true) = 'admin_cancel_fulfillment'");
     // 返金の失敗で、発送前に返金した品が戻った注文も、発送済みから支払い済みへ戻せる（グループ E-2 設計書 4-7。入金済みから発送済みへは元から通る）
     expect(sql).toContain("pg_catalog.current_setting('app.order_change_reason', true) = 'refund_failed_reopened'");
+    // 交換品を足して未発送ができた時だけ戻せる理由を追加し、発送済みからの自由な巻き戻しを許さない。
+    expect(sql).toMatch(/\(OLD\.status = 'shipped' AND NEW\.status = 'paid'\s+AND pg_catalog\.current_setting\('app\.order_change_reason', true\) = 'return_exchange_added'\)/);
+
   });
 
   it('replaces the ship RPC with service-role-only fulfillment RPCs that record the change reason', () => {

@@ -1299,12 +1299,12 @@ describeLocalDb('integration: 返金を始める関数と読み出しの関数�
         {
           order_item_id: x, fulfillment_type: 'stock', item_price: 3000, quantity: 2, line_total: 6000, shipped: 0, unshipped: 2,
           refunded_before_shipment: 0, refunded_after_shipment: 0, shipped_refundable: 0, restockable: 2, line_discount: 667,
-          refunded_units: 0,
+          refunded_units: 0, exchange_paid_amount: null,
         },
         {
           order_item_id: y, fulfillment_type: 'backorder', item_price: 1000, quantity: 3, line_total: 3000, shipped: 0, unshipped: 3,
           refunded_before_shipment: 0, refunded_after_shipment: 0, shipped_refundable: 0, restockable: 0, line_discount: 333,
-          refunded_units: 0,
+          refunded_units: 0, exchange_paid_amount: null,
         },
       ]);
     });
@@ -1341,12 +1341,12 @@ describeLocalDb('integration: 返金を始める関数と読み出しの関数�
         {
           order_item_id: x, fulfillment_type: 'stock', item_price: 3000, quantity: 2, line_total: 6000, shipped: 1, unshipped: 0,
           refunded_before_shipment: 1, refunded_after_shipment: 1, shipped_refundable: 0, restockable: 0, line_discount: 667,
-          refunded_units: 2,
+          refunded_units: 2, exchange_paid_amount: null,
         },
         {
           order_item_id: y, fulfillment_type: 'backorder', item_price: 1000, quantity: 3, line_total: 3000, shipped: 0, unshipped: 2,
           refunded_before_shipment: 1, refunded_after_shipment: 0, shipped_refundable: 0, restockable: 0, line_discount: 333,
-          refunded_units: 1,
+          refunded_units: 1, exchange_paid_amount: null,
         },
       ]);
     });
@@ -1795,5 +1795,70 @@ describeLocalDb('integration: 返金と発送の同時の操作（Review Focus 3
     expect(await countRefunds(db(), order.orderId)).toBe(0);
     const fulfillments = await db().query('select count(*)::int as n from public.order_fulfillments where order_id = $1', [order.orderId]);
     expect(fulfillments.rows[0].n).toBe(1);
+  });
+});
+
+describeLocalDb('E-3: E-2 の返金開始の署名と返品の上限',db=>{
+  beforeEach(async()=>{await db().query('begin');});
+  afterEach(async()=>{await db().query('rollback');});
+  test('public の13引数と既定値と権限を保持し、core は15引数で直接実行できない',async()=>{
+    const rows=await db().query(`select n.nspname,p.proname,p.pronargs,p.pronargdefaults,p.prosecdef,p.proconfig
+      from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where (n.nspname='public' and p.proname='begin_order_refund')
+         or (n.nspname='private' and p.proname='begin_order_refund_core') order by n.nspname`);
+    expect(rows.rows).toEqual([
+      {nspname:'private',proname:'begin_order_refund_core',pronargs:15,pronargdefaults:0,prosecdef:false,proconfig:['search_path=""']},
+      {nspname:'public',proname:'begin_order_refund',pronargs:13,pronargdefaults:1,prosecdef:true,proconfig:['search_path=""']},
+    ]);
+    for(const role of ['anon','authenticated','service_role']) {
+      const allowed=await db().query(`select has_function_privilege($1,'public.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)','execute') as api,
+        has_function_privilege($1,'private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)','execute') as core`,[role]);
+      expect(allowed.rows[0]).toEqual({api:role==='service_role',core:false});
+    }
+  });
+  test('返品が受付中の品は普通の返金に出さず、core も REFUND_QUANTITY_EXCEEDS_SHIPPED で断る',async()=>{
+    const actor=await createActor(db());
+    const order=await createOrder(db(),{lines:[{quantity:2,price:5000,fulfillmentType:'stock'}],withPaymentIntent:true});
+    const shipped=(await ship(db(),order.orderId,actor.id,[{order_item_id:order.itemIds[0],quantity:2}])).rows[0];
+    await db().query(`update public.shop_return_settings set return_address_name='試験店舗',return_address_postal_code='1500001',
+      return_address_line='東京都渋谷区神宮前1-1-1',return_address_phone='0311112222' where id=1`);
+    await db().query(`select * from public.admin_create_return($1,$2,$3,$4::jsonb,'customer_ships','customer',null,null,0,0,0,0,null,false)`,
+      [order.orderId,actor.id,crypto.randomUUID(),JSON.stringify([{fulfillment_id:shipped.fulfillment_id,order_item_id:order.itemIds[0],quantity:1,
+      reason:'unknown',reason_note:null,resolution:'refund',exchange_variant_id:null,exchange_method:null}])]);
+    const materials=(await db().query('select * from public.load_order_refund_materials($1)',[order.orderId])).rows[0];
+    expect(materials.lines[0].shipped_refundable).toBe(1);
+    await expectRejected(db(),BEGIN_SQL,beginParams(order.orderId,{amount:10000,actorId:actor.id,lines:[refundAfter(order.itemIds[0],2)]}),
+      {code:'22023',message:'REFUND_QUANTITY_EXCEEDS_SHIPPED'});
+    const accepted=await beginRefund(db(),order.orderId,{amount:5000,actorId:actor.id,lines:[refundAfter(order.itemIds[0],1)]});
+    expect(accepted.rows[0]).toMatchObject({amount:5000,status:'awaiting_response',replayed:false});
+    expect((await db().query('select return_fee_deduction from public.order_refunds where id=$1',[accepted.rows[0].refund_id])).rows[0].return_fee_deduction).toBe(0);
+  });
+});
+
+describeLocalDb('E-3: 交換行の発送前の返金を E-2 の core が累積配分する（P22）',db=>{
+  beforeEach(async()=>{await db().query('begin');});
+  afterEach(async()=>{await db().query('rollback');});
+  test('元の支払額14999を3回の返金で5000・4999・5000に割り、材料にも元の支払額を返す',async()=>{
+    const actor=await createActor(db());
+    const order=await createOrder(db(),{lines:[{quantity:3,price:5000,fulfillmentType:'stock'}],discountAmount:1,withPaymentIntent:true});
+    const ship=(await db().query(`insert into public.order_fulfillments(order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order)
+      values($1,1,gen_random_uuid(),'yamato','TEST-5',false,true) returning id`,[order.orderId])).rows[0].id;
+    await db().query('insert into public.order_fulfillment_lines(fulfillment_id,order_item_id,quantity) values($1,$2,3)',[ship,order.itemIds[0]]);
+    const ret=(await db().query(`insert into public.order_returns(order_id,number,source,status,request_key,request_fingerprint,return_method,return_shipping_payer,notify_customer)
+      values($1,1,'shop','open',gen_random_uuid(),'fixture','customer_ships','customer',false) returning id`,[order.orderId])).rows[0].id;
+    const rl=(await db().query(`insert into public.order_return_lines(return_id,fulfillment_id,order_item_id,quantity,reason,resolution,exchange_variant_id,exchange_method)
+      values($1,$2,$3,3,'unknown','exchange',$4,'make') returning id`,[ret,ship,order.itemIds[0],order.variantIds[0]])).rows[0].id;
+    const ex=(await db().query(`insert into public.order_items(order_id,item_id,variant_id,item_name,item_price,quantity,line_total,fulfillment_type,line_kind,exchange_return_line_id,exchange_paid_amount)
+      select order_id,item_id,variant_id,'交換の品',0,3,0,'backorder','exchange',$2,14999 from public.order_items where id=$1 returning id`,[order.itemIds[0],rl])).rows[0].id;
+    const materials=(await db().query('select * from public.load_order_refund_materials($1)',[order.orderId])).rows[0];
+    expect(materials.lines.find((line:Row)=>line.order_item_id===ex)).toMatchObject({item_price:0,exchange_paid_amount:14999,line_discount:0});
+    for(const amount of [5000,4999,5000]) {
+      const refund=(await beginRefund(db(),order.orderId,{actorId:actor.id,amount,restock:false,
+        lines:[{order_item_id:ex,before_shipment:true,quantity:1}]})).rows[0];
+      expect(refund.amount).toBe(amount);
+      expect(Object.values(await refundLines(db(),refund.refund_id))).toEqual([expect.objectContaining({order_item_id:ex,amount,quantity:1})]);
+      await settle(db(),refund.refund_id,'succeeded');
+    }
+    expect((await db().query('select sum(rl.amount)::int amount from public.order_refund_lines rl where rl.order_item_id=$1',[ex])).rows[0].amount).toBe(14999);
   });
 });

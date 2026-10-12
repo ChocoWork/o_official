@@ -1,5 +1,6 @@
 /** @jest-environment node */
 export {};
+import { createCatalogFixture, insertOrderWithLines } from './helpers/order-fixtures';
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -418,6 +419,78 @@ describe('integration: order state transition hardening', () => {
       expect(completed.rows).toEqual([{ order_status: 'shipped' }]);
       expect(reopened.rows).toEqual([{ order_status: 'paid' }]);
     } finally {
+      await client.query('rollback');
+    }
+  });
+
+  test('保留の守りを適用した DB でも返品の受け取りで交換品を足して shipped から paid へ戻せる', async () => {
+    await client.query('begin');
+    try {
+      const actor = await client.query(
+        `insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+         values (gen_random_uuid(), $1, '{}'::jsonb, now(), now()) returning id`,
+        [`return-exchange-${crypto.randomUUID()}@example.com`],
+      );
+      const actorId = actor.rows[0].id as string;
+      const catalog = await createCatalogFixture(client, { stock: 1 });
+      const order = await insertOrderWithLines(client, {
+        status: 'paid', paidAmount: 5000, paymentIntentId: `pi_${crypto.randomUUID().replace(/-/g, '')}`,
+        lines: [{ itemId: catalog.itemId, variantId: catalog.variantId, quantity: 1, fulfillmentType: 'stock' }],
+      });
+      const orderItemId = order.orderItemIds[0];
+      // 返送先は注文作成後に不変な配送先と別の設定。試験の取引だけ設定し、最後に戻す。
+      await client.query(
+        `update public.shop_return_settings
+         set return_address_name = '試験店舗', return_address_postal_code = '1500001',
+             return_address_line = '東京都渋谷区神宮前1-1-1', return_address_phone = '0311112222'
+         where id = 1`,
+      );
+      await client.query('set local role service_role');
+      const shipped = await client.query(
+        `select * from public.admin_create_fulfillment($1::uuid, $2::uuid, $3::uuid, 'yamato', 'RETURN-1', false, $4::jsonb)`,
+        [order.orderId, actorId, crypto.randomUUID(), JSON.stringify([{ order_item_id: orderItemId, quantity: 1 }])],
+      );
+      expect(shipped.rows[0]).toMatchObject({ order_status: 'shipped', completes_order: true });
+      const created = await client.query(
+        `select * from public.admin_create_return($1::uuid, $2::uuid, $3::uuid, $4::jsonb,
+          'customer_ships', 'customer', null, null, 0, 0, 0, 0, null, false)`,
+        [order.orderId, actorId, crypto.randomUUID(), JSON.stringify([{
+          fulfillment_id: shipped.rows[0].fulfillment_id, order_item_id: orderItemId, quantity: 1,
+          reason: 'unknown', reason_note: null, resolution: 'exchange',
+          exchange_variant_id: catalog.variantId, exchange_method: 'make',
+        }])],
+      );
+      const returnId = created.rows[0].return_id as string;
+      await client.query('reset role');
+      const returnLineId = (await client.query('select id from public.order_return_lines where return_id = $1', [returnId])).rows[0].id as string;
+      const key = crypto.randomUUID();
+      const params = [returnId, actorId, key, JSON.stringify([{ return_line_id: returnLineId, disposition: 'not_restocked', quantity: 1 }])];
+      const receiveSql = `select * from public.admin_receive_return($1::uuid, $2::uuid, true, $3::uuid, $4::jsonb,
+        '[]'::jsonb, 'none', null, 0, null, false, null, null, null)`;
+      await client.query('set local role service_role');
+      const received = (await client.query(receiveSql, params)).rows[0];
+      const replay = (await client.query(receiveSql, params)).rows[0];
+      await client.query('reset role');
+
+      expect(received).toMatchObject({ refund_id: null, replayed: false });
+      expect(received.exchange_order_item_ids).toHaveLength(1);
+      expect(replay).toMatchObject({ receipt_id: received.receipt_id, exchange_order_item_ids: received.exchange_order_item_ids, replayed: true });
+      expect((await client.query(
+        'select status::text status, shipped_at, shipping_carrier, tracking_number from public.orders where id = $1',
+        [order.orderId],
+      )).rows).toEqual([{ status: 'paid', shipped_at: null, shipping_carrier: null, tracking_number: null }]);
+      expect((await client.query(
+        `select id, fulfillment_type, line_kind from public.order_items where id = $1`,
+        [received.exchange_order_item_ids[0]],
+      )).rows).toEqual([{ id: received.exchange_order_item_ids[0], fulfillment_type: 'backorder', line_kind: 'exchange' }]);
+      expect((await client.query(
+        `select before_data ->> 'status' as from_status, after_data ->> 'status' as to_status, reason, changed_by
+         from public.order_revisions where order_id = $1 and reason = 'return_exchange_added' order by id`,
+        [order.orderId],
+      )).rows).toEqual([{ from_status: 'shipped', to_status: 'paid', reason: 'return_exchange_added', changed_by: actorId }]);
+      expect((await client.query('select count(*)::int n from public.order_return_receipts where return_id = $1', [returnId])).rows[0].n).toBe(1);
+    } finally {
+      // 失敗で取引が止まった場合も、ローカルの試験データと role の変更をまとめて戻す。
       await client.query('rollback');
     }
   });
