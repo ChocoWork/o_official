@@ -82,7 +82,7 @@ Permission Codes:
 
 （user は上記権限なし）
 
-グループ E-3 の返品では、`admin.orders.return`（店長とサポート）で返品の窓口を使い、返金に関わる操作（受け取りの今返金・返金額の指定・送料・交換の選び直し、額を決めて返金する、手数料の受け取りの記録、支払いを待たずに送る）は `admin.orders.return` と `admin.orders.refund` の両方（店長だけ）を要る。サポートの受け取りは、相談で受け取って返品を「返金待ち」にするところまで。権限の行は移行 A（`20261012100000_order_return_records.sql`）が入れ、`src/lib/auth/admin-rbac.ts` の `PermissionCode` と `legacyPermissionMap`（店長・サポートの両方）にも足す。
+グループ E-3 の返品では、`admin.orders.return`（店長とサポート）で返品の窓口を使い、返金に関わる操作（受け取りの今返金・返金額の指定・送料・交換の選び直し、額を決めて返金する、手数料の受け取りの記録、支払いを待たずに送る）は `admin.orders.return` と `admin.orders.refund` の両方（店長だけ）が要る。サポートの受け取りは、相談で受け取って返品を「返金待ち」にするところまで。権限の行は移行 A（`20261012100000_order_return_records.sql`）が入れ、`src/lib/auth/admin-rbac.ts` の `PermissionCode` と `legacyPermissionMap`（店長・サポートの両方）にも足す。
 
 ---
 
