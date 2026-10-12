@@ -938,7 +938,7 @@ describeLocalDb('integration: 返金の記録と数え方（移行 A）', (db) =
   });
 
   describe('在庫の履歴', () => {
-    test('返金の番号が、最後の列 refund_id で返る', async () => {
+    test('返金の番号が列 refund_id で返る（グループ E-3 で最後に return_id が付いたので、最後の2列は refund_id・return_id）', async () => {
       const { orderId, stockItemId, stockFx } = await createPaidOrder(db());
       const { refundId } = await insertRefundRecord(db(), { orderId });
       await db().query(
@@ -954,7 +954,7 @@ describeLocalDb('integration: 返金の記録と数え方（移行 A）', (db) =
         ['purchase', null],
         ['restock', null],
       ]);
-      expect(Object.keys(res.rows[0]).pop()).toBe('refund_id');
+      expect(Object.keys(res.rows[0]).slice(-2)).toEqual(['refund_id', 'return_id']);
     });
   });
 

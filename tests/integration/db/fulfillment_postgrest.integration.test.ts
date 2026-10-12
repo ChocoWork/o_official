@@ -388,6 +388,7 @@ describeLocalDb('integration: 発送・仕上がり・在庫の関数を実際�
         order_id: orderId,
         balance_after: 3,
         refund_id: null,
+        return_id: null,
       },
       {
         movement_id: expect.any(Number),
@@ -400,6 +401,7 @@ describeLocalDb('integration: 発送・仕上がり・在庫の関数を実際�
         order_id: null,
         balance_after: 5,
         refund_id: null,
+        return_id: null,
       },
     ]);
     const limited = await client.rpc('list_item_stock_history', { _item_id: stock.itemId, _limit: 1 });

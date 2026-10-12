@@ -408,3 +408,374 @@ export async function insertRefundRecord(
   }
   return { refundId };
 }
+
+export type ShippedOrderLine = {
+  /** 注文の数 */
+  quantity: number;
+  /** 既定は在庫の品。受注生産の品は、発送の前に仕上がり（order_item_completions）を数の全部で記録する */
+  fulfillmentType?: 'stock' | 'backorder';
+  /** 単価。既定は PRICE */
+  itemPrice?: number;
+  /** 台帳の確保（purchase）とは別に、色・サイズの在庫へ足す数。既定は 0（確保した後の在庫は 0 になる） */
+  extraStock?: number;
+};
+
+export type ShippedOrderShipment = {
+  /** 送る商品。lineIndex は lines の番号（0 始まり） */
+  lines: Array<{ lineIndex: number; quantity: number }>;
+  /** 発送の時刻（ISO）。既定は取引の時刻。期限の試験が、日本時間の日の境目を作る */
+  shippedAt?: string;
+  /** true なら、記録した後で取り消した発送にする。取り消す発送も含めた合計が注文の数を超えないこと */
+  cancelled?: boolean;
+};
+
+export type ShippedOrderFixture = {
+  orderId: string;
+  /** lines と同じ並び */
+  orderItemIds: string[];
+  itemIds: number[];
+  variantIds: number[];
+  /** shipments と同じ並び。発送の番号は 1 から */
+  fulfillments: Array<{ id: string; number: number; lines: Array<{ orderItemId: string; quantity: number }> }>;
+};
+
+/**
+ * 発送した品のある注文を直接作る（グループ E-3: 返品の試験の土台）。
+ * 商品は lines の 1 行ごとに別の商品・色・サイズ（BLACK・M）を作る。在庫の品は台帳に確保（purchase）も入れる。
+ * 発送は shipments の並びに番号 1, 2, … で書く（既定は全部を 1 回で送る）。
+ * 取り消していない発送で全部送り終えていれば注文の状態は shipped、残りがあれば paid。
+ * 受け取った額 orders.paid_amount は合計（商品の小計 + 送料 − 割引）と同じにし、支払いの番号も入れる。
+ */
+export async function createShippedOrderFixture(
+  db: PgClient,
+  options: {
+    lines?: ShippedOrderLine[];
+    shipments?: ShippedOrderShipment[];
+    shippingAmount?: number;
+    discountAmount?: number;
+  } = {},
+): Promise<ShippedOrderFixture> {
+  const lines = options.lines ?? [{ quantity: 3 }];
+  const shipments =
+    options.shipments ?? [{ lines: lines.map((line, lineIndex) => ({ lineIndex, quantity: line.quantity })) }];
+  const typeOf = (line: ShippedOrderLine) => line.fulfillmentType ?? 'stock';
+
+  const itemIds: number[] = [];
+  const variantIds: number[] = [];
+  for (const line of lines) {
+    const fx = await createCatalogFixture(db, {
+      stock: (typeOf(line) === 'stock' ? line.quantity : 0) + (line.extraStock ?? 0),
+    });
+    itemIds.push(fx.itemId);
+    variantIds.push(fx.variantId);
+  }
+
+  const shippedByLine = lines.map(() => 0);
+  for (const shipment of shipments) {
+    if (shipment.cancelled) continue;
+    for (const shipped of shipment.lines) shippedByLine[shipped.lineIndex] += shipped.quantity;
+  }
+  const allShipped = lines.every((line, index) => shippedByLine[index] === line.quantity);
+
+  const shippingAmount = options.shippingAmount ?? 0;
+  const discountAmount = options.discountAmount ?? 0;
+  const subtotal = lines.reduce((sum, line) => sum + (line.itemPrice ?? PRICE) * line.quantity, 0);
+  const { orderId, orderItemIds } = await insertOrderWithLines(db, {
+    status: allShipped ? 'shipped' : 'paid',
+    shipped: allShipped ? { carrier: 'yamato', trackingNumber: '1234-5678-9012' } : undefined,
+    shippingAmount,
+    discountAmount,
+    paidAmount: subtotal + shippingAmount - discountAmount,
+    paymentIntentId: `pi_${uniqueSuffix()}`,
+    lines: lines.map((line, index) => ({
+      itemId: itemIds[index],
+      variantId: variantIds[index],
+      quantity: line.quantity,
+      fulfillmentType: typeOf(line),
+      itemPrice: line.itemPrice,
+    })),
+  });
+
+  // 受注生産の品は、発送の数の守り（発送 ≤ 仕上がり）のために、先に全部仕上げておく
+  for (const [index, line] of lines.entries()) {
+    if (typeOf(line) === 'backorder') {
+      await db.query(
+        `insert into public.order_item_completions (order_id, order_item_id, quantity, request_key)
+         values ($1, $2, $3, gen_random_uuid())`,
+        [orderId, orderItemIds[index], line.quantity],
+      );
+    }
+  }
+
+  const fulfillments: ShippedOrderFixture['fulfillments'] = [];
+  for (const [index, shipment] of shipments.entries()) {
+    const created = await db.query(
+      `insert into public.order_fulfillments
+         (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, shipped_at)
+       values ($1, $2, gen_random_uuid(), 'yamato', '1234-5678-9012', false, false, coalesce($3::timestamptz, now()))
+       returning id`,
+      [orderId, index + 1, shipment.shippedAt ?? null],
+    );
+    const id = created.rows[0].id as string;
+    for (const shipped of shipment.lines) {
+      await db.query(
+        'insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, $3)',
+        [id, orderItemIds[shipped.lineIndex], shipped.quantity],
+      );
+    }
+    if (shipment.cancelled) {
+      await db.query('update public.order_fulfillments set cancelled_at = now() where id = $1', [id]);
+    }
+    fulfillments.push({
+      id,
+      number: index + 1,
+      lines: shipment.lines.map((shipped) => ({ orderItemId: orderItemIds[shipped.lineIndex], quantity: shipped.quantity })),
+    });
+  }
+
+  return { orderId, orderItemIds, itemIds, variantIds, fulfillments };
+}
+
+/**
+ * 同じ商品に、新しい色・サイズの色違い・サイズ違い（バリアント）を足す（交換の色・サイズの試験用）。
+ * 色・サイズの名前は商品ごとに一意なので、既にある名前（BLACK・M）は渡さない。在庫は台帳の restock で入れる。
+ */
+export async function addItemVariant(
+  db: PgClient,
+  options: { itemId: number; colorName: string; sizeLabel: string; stock?: number; isActive?: boolean },
+): Promise<{ variantId: number }> {
+  const color = await db.query(
+    `insert into public.item_colors (item_id, name, hex, position) values ($1, $2, '#112233', 1) returning id`,
+    [options.itemId, options.colorName],
+  );
+  const size = await db.query(
+    `insert into public.item_sizes (item_id, label, position) values ($1, $2, 1) returning id`,
+    [options.itemId, options.sizeLabel],
+  );
+  const variant = await db.query(
+    `insert into public.item_variants (item_id, color_id, size_id, is_active) values ($1, $2, $3, $4) returning id`,
+    [options.itemId, color.rows[0].id, size.rows[0].id, options.isActive ?? true],
+  );
+  const variantId = Number(variant.rows[0].id);
+  if ((options.stock ?? 0) > 0) {
+    await db.query(
+      `insert into public.stock_movements (variant_id, delta, reason, note) values ($1, $2, 'restock', 'fixture')`,
+      [variantId, options.stock],
+    );
+  }
+  return { variantId };
+}
+
+export type ReturnFixtureStatus = 'requested' | 'open' | 'closed' | 'cancelled' | 'declined';
+
+export type ReturnFixtureLine = {
+  fulfillmentId: string;
+  orderItemId: string;
+  quantity: number;
+  /** 既定は defective（破損・不良） */
+  reason?: string;
+  /** 作った時の予定の解決。既定は refund（返金） */
+  resolution?: 'refund' | 'exchange';
+  /** 解決が exchange の時の交換の色・サイズ（item_variants の番号）。exchange の時は必須 */
+  exchangeVariantId?: number;
+  /** 解決が exchange の時の送り方の予定。既定は stock（在庫から） */
+  exchangeMethod?: 'stock' | 'make';
+};
+
+/**
+ * 返品と返品の行を直接書く（グループ E-3）。返品を作る関数（移行 B）を通さずに、数え方・守り・読み出しの試験が
+ * 欲しい状態を作る。番号は注文の中の次の番号。二重防止の番号は書き捨ての値、指紋は 'fixture'。
+ * 道は status が requested・declined なら customer_request、ほかは shop。状態に合う時刻の列（requested_at・approved_at・
+ * declined_at・closed_at・cancelled_at）も入れる。受け取りの記録は insertReturnReceipt で足す。
+ */
+export async function insertReturnRecord(
+  db: PgClient,
+  options: {
+    orderId: string;
+    lines: ReturnFixtureLine[];
+    /** 既定は open（受付中） */
+    status?: ReturnFixtureStatus;
+    returnMethod?: 'customer_ships' | 'shop_label' | 'not_required';
+    returnShippingPayer?: 'shop' | 'customer';
+    returnShippingFee?: number;
+    restockingFeePercent?: number;
+    exchangeFee?: number;
+    exchangeShippingFee?: number;
+    /** 返金から引けずにお客様からいただく額（既定 0） */
+    feeDueAmount?: number;
+    notifyCustomer?: boolean;
+  },
+): Promise<{ returnId: string; number: number; lineIds: string[] }> {
+  const status = options.status ?? 'open';
+  const source = status === 'requested' || status === 'declined' ? 'customer_request' : 'shop';
+  const next = await db.query(
+    'select coalesce(max(number), 0) + 1 as next from public.order_returns where order_id = $1',
+    [options.orderId],
+  );
+  const number = Number(next.rows[0].next);
+  const created = await db.query(
+    `insert into public.order_returns
+       (order_id, number, source, status, request_key, request_fingerprint,
+        requested_at, approved_at, declined_at, decline_reason, closed_at, cancelled_at,
+        return_method, return_shipping_payer, return_shipping_fee, restocking_fee_percent,
+        exchange_fee, exchange_shipping_fee, fee_due_amount, notify_customer)
+     values ($1, $2, $3, $4, gen_random_uuid(), 'fixture',
+             case when $3::text = 'customer_request' then now() end,
+             case when $4::text in ('open', 'closed', 'cancelled') then now() end,
+             case when $4::text = 'declined' then now() end,
+             case when $4::text = 'declined' then 'other' end,
+             case when $4::text = 'closed' then now() end,
+             case when $4::text = 'cancelled' then now() end,
+             $5, $6, $7, $8, $9, $10, $11, $12)
+     returning id`,
+    [
+      options.orderId,
+      number,
+      source,
+      status,
+      options.returnMethod ?? 'customer_ships',
+      options.returnShippingPayer ?? 'shop',
+      options.returnShippingFee ?? 0,
+      options.restockingFeePercent ?? 0,
+      options.exchangeFee ?? 0,
+      options.exchangeShippingFee ?? 0,
+      options.feeDueAmount ?? 0,
+      options.notifyCustomer ?? false,
+    ],
+  );
+  const returnId = created.rows[0].id as string;
+  const lineIds: string[] = [];
+  for (const line of options.lines) {
+    const resolution = line.resolution ?? 'refund';
+    const inserted = await db.query(
+      `insert into public.order_return_lines
+         (return_id, fulfillment_id, order_item_id, quantity, reason, resolution, exchange_variant_id, exchange_method)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)
+       returning id`,
+      [
+        returnId,
+        line.fulfillmentId,
+        line.orderItemId,
+        line.quantity,
+        line.reason ?? 'defective',
+        resolution,
+        resolution === 'exchange' ? line.exchangeVariantId ?? null : null,
+        resolution === 'exchange' ? line.exchangeMethod ?? 'stock' : null,
+      ],
+    );
+    lineIds.push(inserted.rows[0].id as string);
+  }
+  return { returnId, number, lineIds };
+}
+
+export type ReturnReceiptDisposition =
+  | 'restocked'
+  | 'not_restocked'
+  | 'pending_inspection'
+  | 'inspected_restocked'
+  | 'inspected_not_restocked'
+  | 'sent_back'
+  | 'missing'
+  | 'missing_reopened'
+  | 'refund_waived';
+
+/**
+ * 受け取りの記録と商品の扱いを直接書く（グループ E-3）。受け取りの関数（移行 C）を通さないので、在庫の台帳・
+ * 返金・返品の状態は動かさない（試験が必要なら別に書く）。kind が receive の時だけ refundChoice が要る（既定 none）。
+ * 二重防止の番号は書き捨ての値、指紋は 'fixture'。商品の扱いは、返品の行の番号と扱いと数で渡す。
+ * 受け取った品（restocked・not_restocked・pending_inspection）の行には、その受け取りで実際に決まった解決を書く:
+ * resolution を省くと、返品の行の予定の解決（交換なら送り方も）を使う。ほかの扱いには解決を書かない。
+ */
+export async function insertReturnReceipt(
+  db: PgClient,
+  options: {
+    returnId: string;
+    lines: Array<{
+      returnLineId: string;
+      disposition: ReturnReceiptDisposition;
+      quantity: number;
+      resolution?: 'refund' | 'exchange';
+      exchangeMethod?: 'stock' | 'make';
+    }>;
+    /** 既定は receive */
+    kind?: 'receive' | 'inspect' | 'close_missing' | 'reopen' | 'waive_refund';
+    /** kind が receive の時の返金の選び方。既定は none。receive 以外では書かない */
+    refundChoice?: 'now' | 'consult' | 'none';
+    refundId?: string | null;
+    notifyCustomer?: boolean;
+    sentBackMessage?: string | null;
+  },
+): Promise<{ receiptId: string }> {
+  const kind = options.kind ?? 'receive';
+  const created = await db.query(
+    `insert into public.order_return_receipts
+       (return_id, request_key, request_fingerprint, kind, refund_choice, refund_id, notify_customer, sent_back_message)
+     values ($1, gen_random_uuid(), 'fixture', $2, $3, $4, $5, $6)
+     returning id`,
+    [
+      options.returnId,
+      kind,
+      kind === 'receive' ? options.refundChoice ?? 'none' : null,
+      options.refundId ?? null,
+      options.notifyCustomer ?? false,
+      options.sentBackMessage ?? null,
+    ],
+  );
+  const receiptId = created.rows[0].id as string;
+  for (const line of options.lines) {
+    const received =
+      line.disposition === 'restocked' || line.disposition === 'not_restocked' || line.disposition === 'pending_inspection';
+    let resolution: string | null = null;
+    let exchangeMethod: string | null = null;
+    if (received) {
+      const planned = await db.query(
+        'select resolution, exchange_method from public.order_return_lines where id = $1',
+        [line.returnLineId],
+      );
+      resolution = line.resolution ?? (planned.rows[0].resolution as string);
+      if (resolution === 'exchange') {
+        exchangeMethod = line.exchangeMethod ?? (planned.rows[0].exchange_method as string | null) ?? 'stock';
+      }
+    }
+    await db.query(
+      `insert into public.order_return_receipt_lines (receipt_id, return_line_id, disposition, quantity, resolution, exchange_method)
+       values ($1, $2, $3, $4, $5, $6)`,
+      [receiptId, line.returnLineId, line.disposition, line.quantity, resolution, exchangeMethod],
+    );
+  }
+  return { receiptId };
+}
+
+/**
+ * 返品の返金（道 return）の記録と商品の行を直接書く（グループ E-3）。商品の行は発送後の行で、在庫の戻し方は return。
+ * 返金を始める関数（移行 C）を通さずに、返品の返金で覆われた数の試験が欲しい状態を作る。
+ * 二重防止の番号は書き捨ての値、指紋は 'fixture'。行は記録の後に 1 行ずつ書くので、数の守りのトリガーは行ごとに働く。
+ */
+export async function insertReturnRefund(
+  db: PgClient,
+  options: {
+    orderId: string;
+    returnId: string;
+    lines: Array<{ orderItemId: string; quantity: number; amount?: number }>;
+    /** 既定は pending（保留） */
+    status?: RefundFixtureStatus;
+    amount?: number;
+  },
+): Promise<{ refundId: string }> {
+  const refund = await db.query(
+    `insert into public.order_refunds
+       (order_id, source, return_id, request_key, request_fingerprint, status, amount, notify_customer)
+     values ($1, 'return', $2, gen_random_uuid(), 'fixture', $3, $4, false)
+     returning id`,
+    [options.orderId, options.returnId, options.status ?? 'pending', options.amount ?? 1000],
+  );
+  const refundId = refund.rows[0].id as string;
+  for (const line of options.lines) {
+    await db.query(
+      `insert into public.order_refund_lines (refund_id, order_item_id, quantity, before_shipment, restock_type, amount)
+       values ($1, $2, $3, false, 'return', $4)`,
+      [refundId, line.orderItemId, line.quantity, line.amount ?? 0],
+    );
+  }
+  return { refundId };
+}
