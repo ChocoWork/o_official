@@ -44,8 +44,10 @@ CREATE TABLE public.order_returns (
   return_shipping_fee integer NOT NULL DEFAULT 0 CHECK (return_shipping_fee >= 0),
   exchange_fee integer NOT NULL DEFAULT 0 CHECK (exchange_fee >= 0),
   exchange_shipping_fee integer NOT NULL DEFAULT 0 CHECK (exchange_shipping_fee >= 0),
-  -- 返金から引けずに、お客様からいただく額（受け取りの時に決まる）
+  -- 返金から引けずに、お客様からいただく、まだ決着していない額（受け取りの時に決まる）
   fee_due_amount integer NOT NULL DEFAULT 0 CHECK (fee_due_amount >= 0),
+  -- 受け取りを記録した分と、いただかないで終えた分の合計。新しい未収額と分け、二度求めない。
+  fee_settled_amount integer NOT NULL DEFAULT 0 CHECK (fee_settled_amount >= 0),
   -- 相談の受け取りで付き、額を決めて返金する時にその返金から引く手数料
   fee_pending_deduction integer NOT NULL DEFAULT 0 CHECK (fee_pending_deduction >= 0),
   restocking_fee_percent integer NOT NULL DEFAULT 0 CHECK (restocking_fee_percent BETWEEN 0 AND 100),
@@ -53,7 +55,7 @@ CREATE TABLE public.order_returns (
   fee_received_by uuid,
   fee_received_note text CHECK (pg_catalog.char_length(fee_received_note) <= 500),
   -- 手数料をいただかないことにした（手数料の画面の「いただかないで終える」。P27）。真の時も fee_received_at・fee_received_by を入れる。
-  -- fee_due_amount は履歴に出すため変えない。お支払い待ちの決め方（fee_due_amount > 0 で fee_received_at が空）も変えない
+  -- 決着した額は fee_settled_amount に移す。お支払い待ちの決め方（fee_due_amount > 0 で fee_received_at が空）は変えない。
   fee_waived boolean NOT NULL DEFAULT false,
   exchange_released_at timestamptz,
   exchange_released_by uuid,
@@ -329,11 +331,11 @@ END;
 $$;
 
 -- 5. 守り。書くのは SECURITY DEFINER の関数だけだが、関数の書き間違いも DB で止める（E-1・E-2 の表と同じ考え）。
---    記録は消さない。返品は状態・時刻・する人・手数料の受け取り（fee_waived を含む）・支払いを待たずに送る・手数料の額だけが進み、
+--    記録は消さない。返品は状態・時刻・する人・手数料の受け取り（fee_waived を含む）・支払いを待たずに送る・手数料の額（決着した合計 fee_settled_amount を含む）だけが進み、
 --    返品の行・受け取りの記録・受け取りの商品の扱いは追記だけ（作った後に一切変えない）。
 --    エラーの文字は E-2 の ORDER_REFUND_* に揃える
 
--- 返品: 直せるのは、状態・時刻・する人・手数料の受け取り（fee_waived を含む）・支払いを待たずに送る・手数料の額の列だけ。消せない
+-- 返品: 直せるのは、状態・時刻・する人・手数料の受け取り（fee_waived を含む）・支払いを待たずに送る・手数料の額（決着した合計 fee_settled_amount を含む）の列だけ。消せない
 CREATE OR REPLACE FUNCTION private.guard_order_return_change()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -346,7 +348,7 @@ DECLARE
   v_movable CONSTANT text[] := ARRAY[
     'status', 'approved_at', 'approved_by', 'declined_at', 'declined_by', 'decline_reason', 'decline_message',
     'closed_at', 'cancelled_at', 'cancelled_by', 'reopened_at', 'reopened_by',
-    'fee_due_amount', 'fee_pending_deduction', 'fee_received_at', 'fee_received_by', 'fee_received_note', 'fee_waived',
+    'fee_due_amount', 'fee_settled_amount', 'fee_pending_deduction', 'fee_received_at', 'fee_received_by', 'fee_received_note', 'fee_waived',
     'exchange_released_at', 'exchange_released_by'
   ];
 BEGIN
@@ -637,7 +639,9 @@ $$;
 --     数える（上限の式に お返し・返金しない が入っているため。二重の返金を避ける側。C-0 の補足。試験「上限の式の性質」で固める）。
 --     完了した返品も数える（返品の返金が失敗すると覆いが外れて、完了した返品でも返金待ちが戻る。本計画 P21）。
 --     取消・お断りの返品の行は、受け取りが無いので処理の数は 0（未処理は返す数のまま）。商品ごとの合計には入れない
-CREATE OR REPLACE FUNCTION private.order_return_line_states(_order_id uuid)
+-- 未保存の受け取り明細も同じ集計に足せるようにし、返金IDを追記専用の記録に書く前にrwの増分を確かめる。
+-- 実際の読み出しは下の1引数の関数から空の明細を渡す。rfと開き直した品への優先の覆いは、この本体だけに持つ。
+CREATE OR REPLACE FUNCTION private.order_return_line_states_core(_order_id uuid, _receive_lines jsonb)
 RETURNS TABLE (
   return_id uuid,
   return_line_id uuid,
@@ -703,8 +707,16 @@ AS $$
              COALESCE(pg_catalog.sum(x.quantity) FILTER (
                WHERE x.disposition IN ('restocked', 'not_restocked', 'pending_inspection') AND x.resolution = 'refund'
              ), 0) AS received_refund
-      FROM public.order_return_receipt_lines AS x
-      WHERE x.return_line_id = b.line_id
+      FROM (
+        SELECT x.quantity, x.disposition, x.resolution
+        FROM public.order_return_receipt_lines AS x
+        WHERE x.return_line_id = b.line_id
+        UNION ALL
+        SELECT x.quantity, x.disposition, x.resolution
+        FROM pg_catalog.jsonb_to_recordset(_receive_lines)
+          AS x(return_line_id uuid, quantity integer, disposition text, resolution text)
+        WHERE x.return_line_id = b.line_id
+      ) AS x
     ) AS s
   ),
   worked AS (
@@ -837,6 +849,35 @@ AS $$
   ORDER BY f.return_number, f.line_created_at, f.line_id
 $$;
 
+-- 呼ぶ側の署名・答えを保ち、保存済みの明細だけを数える。
+CREATE OR REPLACE FUNCTION private.order_return_line_states(_order_id uuid)
+RETURNS TABLE (
+  return_id uuid,
+  return_line_id uuid,
+  return_number integer,
+  return_status text,
+  fulfillment_id uuid,
+  order_item_id uuid,
+  quantity integer,
+  restocked integer,
+  not_restocked integer,
+  pending_inspection integer,
+  sent_back integer,
+  missing integer,
+  processed integer,
+  unprocessed integer,
+  exchanged integer,
+  refund_covered integer,
+  refund_waived integer,
+  refund_waiting integer
+)
+LANGUAGE sql
+STABLE
+SET search_path = ''
+AS $$
+  SELECT * FROM private.order_return_line_states_core(_order_id, '[]'::jsonb)
+$$;
+
 -- 1 つの返品の、行ごとの処理の数（C-1 の答えの列）。行を作った順
 CREATE OR REPLACE FUNCTION private.order_return_line_progress(_return_id uuid)
 RETURNS TABLE (
@@ -892,7 +933,7 @@ STABLE
 SET search_path = ''
 AS $$
   WITH totals AS (
-    -- 状態の扱いを変える時は、ここ・order_return_line_states の item_totals・fulfillment_line_returnable の per_line の3か所をそろえる。
+    -- 状態の扱いを変える時は、ここ・order_return_line_states_core の item_totals・fulfillment_line_returnable の per_line の3か所をそろえる。
     SELECT s.order_item_id,
            COALESCE(pg_catalog.sum(CASE WHEN s.return_status = 'requested' THEN s.quantity ELSE 0 END), 0)::integer AS requested,
            COALESCE(pg_catalog.sum(CASE WHEN s.return_status = 'open' THEN s.unprocessed ELSE 0 END), 0)::integer AS open_unprocessed,
@@ -1003,7 +1044,7 @@ AS $$
       AND f.cancelled_at IS NULL
   ),
   per_line AS (
-    -- 状態の扱いを変える時は、ここ・order_return_line_states の item_totals・order_line_return_counts の totals の3か所をそろえる。
+    -- 状態の扱いを変える時は、ここ・order_return_line_states_core の item_totals・order_line_return_counts の totals の3か所をそろえる。
     SELECT st.fulfillment_id,
            st.order_item_id,
            pg_catalog.sum(st.quantity)::integer AS in_returns,
@@ -1208,6 +1249,7 @@ REVOKE ALL ON FUNCTION private.check_return_line_order() FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.check_receipt_line_return() FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.enqueue_order_email(uuid, text, text, uuid, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.order_line_reservations(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION private.order_return_line_states_core(uuid,jsonb) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.order_return_line_states(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.order_return_line_progress(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.order_line_return_counts(uuid) FROM PUBLIC;

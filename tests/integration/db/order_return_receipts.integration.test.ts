@@ -39,6 +39,10 @@ async function receive(db:PgClient,f:Fx,o:Row={}):Promise<Row> {
 async function refund(db:PgClient,f:Fx,amount:number|null=null,key=randomUUID()):Promise<Row> {
   return (await db.query('select * from public.admin_refund_return($1,$2,$3,$4,0,null,true)',[f.returnId,f.actor,key,amount])).rows[0];
 }
+async function ordinaryRefund(db:PgClient,f:Fx):Promise<Row> {
+  return (await db.query(`select * from public.begin_order_refund($1,'admin',$2,$3::jsonb,false,0,$4,null,'requested_by_customer',null,false,$5)`,
+    [f.orderId,randomUUID(),JSON.stringify([{order_item_id:f.itemId,before_shipment:false,quantity:1}]),PRICE,f.actor])).rows[0];
+}
 async function result(db:PgClient,id:string,status:string) {
   return (await db.query(`select * from public.record_order_refund_result($1,$2,$3,null,$4,null,'card',null,null)`,
     [id,`re_${id.replace(/-/g,'')}`,status,status==='failed'?'lost_or_stolen_card':null])).rows[0];
@@ -176,14 +180,14 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     const first=await receive(db(),f,{choice:'now',disposition:'not_restocked',overrides:[{return_line_id:f.lineId,action:'refund'}]});
     expect(first).toMatchObject({return_status:'open',refund_id:null,refund_status:'waived',fee_due_amount:1000});
     await db().query('select * from public.admin_record_return_fee_payment($1,$2,null,_waive => true)',[f.returnId,f.actor]);
-    const waived=(await db().query('select status,fee_due_amount,fee_waived,fee_received_at,fee_received_by from public.order_returns where id=$1',[f.returnId])).rows[0];
-    expect(waived).toMatchObject({status:'open',fee_due_amount:1000,fee_waived:true,fee_received_by:f.actor});
+    const waived=(await db().query('select status,fee_due_amount,fee_settled_amount,fee_waived,fee_received_at,fee_received_by from public.order_returns where id=$1',[f.returnId])).rows[0];
+    expect(waived).toMatchObject({status:'open',fee_due_amount:0,fee_settled_amount:1000,fee_waived:true,fee_received_by:f.actor});
     expect(waived.fee_received_at).toBeInstanceOf(Date);
     // 次の1点は作って送る交換にし、新たに付く600円は受領も免除もしていない状態に戻す。
     const second=await receive(db(),f,{choice:'none',disposition:'not_restocked',overrides:[{return_line_id:f.lineId,action:'make'}]});
-    expect(second).toMatchObject({return_status:'open',fee_due_amount:1600});
-    expect((await db().query('select status,fee_due_amount,fee_waived,fee_received_at,fee_received_by,fee_received_note from public.order_returns where id=$1',[f.returnId])).rows[0])
-      .toEqual({status:'open',fee_due_amount:1600,fee_waived:false,fee_received_at:null,fee_received_by:null,fee_received_note:null});
+    expect(second).toMatchObject({return_status:'open',fee_due_amount:600});
+    expect((await db().query('select status,fee_due_amount,fee_settled_amount,fee_waived,fee_received_at,fee_received_by,fee_received_note from public.order_returns where id=$1',[f.returnId])).rows[0])
+      .toEqual({status:'open',fee_due_amount:600,fee_settled_amount:1000,fee_waived:false,fee_received_at:null,fee_received_by:null,fee_received_note:null});
     expect((await db().query('select * from private.return_display_state($1)',[f.returnId])).rows[0])
       .toEqual({display_status:'in_progress',marks:['awaiting_fee'],unprocessed:0,refund_waiting:0});
   });
@@ -202,6 +206,66 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
       [f.orderId,randomUUID(),JSON.stringify([{order_item_id:f.itemId,before_shipment:false,quantity:1}]),PRICE,f.actor])).rows[0];
     await result(db(),r.refund_id,'succeeded');await db().query('select * from public.admin_reopen_return($1,$2,$3)',[f.returnId,f.actor,randomUUID()]);
     expect((await receive(db(),f,{choice:'now'})).refund_id).toBeNull();expect((await progress(db(),f)).refund_waiting).toBe(0);
+  });
+  test.each([{choice:'now',can:true},{choice:'consult',can:false}])('2点のうち届かない1点を普通の返金で覆った後は、開き直して %j で受け取っても返金と相談の手数料と店への知らせを増やさない（I-1 A）',async options=>{
+    const f=await fixture(db(),{quantity:2,returnQuantity:1,shippingFee:600,percent:10});
+    await db().query('select * from public.admin_close_return_missing($1,$2,$3)',[f.returnId,f.actor,randomUUID()]);
+    const ordinary=await ordinaryRefund(db(),f);await result(db(),ordinary.refund_id,'succeeded');
+    await db().query('select * from public.admin_reopen_return($1,$2,$3)',[f.returnId,f.actor,randomUUID()]);
+    const key=randomUUID();const received=await receive(db(),f,{...options,key});
+    expect(received).toMatchObject({return_status:'closed',refund_id:null,refund_amount:null,refund_status:null,shop_notice_enqueued:false,fee_due_amount:0});
+    expect(await receive(db(),f,{...options,key})).toMatchObject({receipt_id:received.receipt_id,refund_id:null,refund_amount:null,refund_status:null,replayed:true});
+    expect((await progress(db(),f)).refund_waiting).toBe(0);
+    expect(await returnFees(db(),f)).toEqual({fee_pending_deduction:0,fee_due_amount:0});
+    expect((await db().query('select count(*)::int n from public.order_refunds where order_id=$1',[f.orderId])).rows[0].n).toBe(1);
+    expect((await db().query("select count(*)::int n from private.order_email_outbox where return_id=$1 and kind='return_refund_pending_shop'",[f.returnId])).rows[0].n).toBe(0);
+  });
+  test('1点目を返金しないで終え、普通の返金で1点を覆った後は2点目を今返金で受け取っても返金を作らない（I-1 B）',async()=>{
+    const f=await fixture(db(),{quantity:2,percent:100});
+    expect(await receive(db(),f,{choice:'now'})).toMatchObject({refund_id:null,refund_status:'waived'});
+    const ordinary=await ordinaryRefund(db(),f);await result(db(),ordinary.refund_id,'succeeded');
+    const received=await receive(db(),f,{choice:'now'});
+    expect(received).toMatchObject({return_status:'closed',refund_id:null,refund_amount:null,refund_status:null});
+    expect(await progress(db(),f)).toMatchObject({unprocessed:0,refund_waiting:0,refund_waived:1});
+    expect((await db().query('select count(*)::int n from public.order_refunds where order_id=$1',[f.orderId])).rows[0].n).toBe(1);
+    expect((await db().query("select count(*)::int n from public.order_return_receipt_lines where receipt_id=$1 and disposition='refund_waived'",[received.receipt_id])).rows[0].n).toBe(0);
+  });
+  test('決着後に額を決めて返金で引けない新しい手数料が付くと、決着済みを含めず免除と受領を戻す（M-2・I-2）',async()=>{
+    const f=await fixture(db(),{quantity:3,shippingFee:6000,percent:100});
+    expect(await receive(db(),f,{choice:'now'})).toMatchObject({refund_status:'waived',fee_due_amount:6000});
+    await db().query('select * from public.admin_record_return_fee_payment($1,$2,null,true)',[f.returnId,f.actor]);
+    await receive(db(),f,{choice:'consult',quantity:2});
+    // 相談の2点の手数料10000円のうち、普通の返金が1点を覆うので、残る商品5000円から引けない分だけが新しい未収額になる。
+    const ordinary=await ordinaryRefund(db(),f);await result(db(),ordinary.refund_id,'succeeded');
+    const key=randomUUID();expect(await refund(db(),f,null,key)).toMatchObject({refund_id:null,amount:0,status:'waived'});
+    expect((await refund(db(),f,null,key)).replayed).toBe(true);
+    expect((await db().query('select status,fee_due_amount,fee_settled_amount,fee_pending_deduction,fee_waived,fee_received_at,fee_received_by,fee_received_note from public.order_returns where id=$1',[f.returnId])).rows[0])
+      .toEqual({status:'open',fee_due_amount:5000,fee_settled_amount:6000,fee_pending_deduction:0,fee_waived:false,fee_received_at:null,fee_received_by:null,fee_received_note:null});
+    expect((await db().query('select * from private.return_display_state($1)',[f.returnId])).rows[0])
+      .toEqual({display_status:'in_progress',marks:['awaiting_fee'],unprocessed:0,refund_waiting:0});
+    await db().query('select * from public.admin_record_return_fee_payment($1,$2,null,false)',[f.returnId,f.actor]);
+    expect((await db().query('select status,fee_due_amount,fee_settled_amount from public.order_returns where id=$1',[f.returnId])).rows[0])
+      .toEqual({status:'closed',fee_due_amount:0,fee_settled_amount:11000});
+  });
+  test('お返しと相談の返金待ちの品がある返品は、普通の返金で覆った時に自動で完了し、結果とエラーの後も数を確かめ直す（M-3）',async()=>{
+    const f=await fixture(db(),{quantity:2});
+    await receive(db(),f,{choice:'consult',message:'ご確認ください。',units:[
+      {return_line_id:f.lineId,disposition:'sent_back',quantity:1},{return_line_id:f.lineId,disposition:'not_restocked',quantity:1},
+    ]});
+    expect((await progress(db(),f)).refund_waiting).toBe(1);
+    const ordinary=await ordinaryRefund(db(),f);
+    expect((await db().query('select status from public.order_returns where id=$1',[f.returnId])).rows[0].status).toBe('closed');
+    // 以前の処理で受付中のまま残った返品も、結果を書く入口が完了を確かめ直す。
+    await db().query("update public.order_returns set status='open',closed_at=null where id=$1",[f.returnId]);
+    await result(db(),ordinary.refund_id,'succeeded');
+    expect((await db().query('select status from public.order_returns where id=$1',[f.returnId])).rows[0].status).toBe('closed');
+    // 行のない額だけの返金をエラーにしても、成功した普通の返金の覆いは残る。エラーの入口も以前の受付中を完了にする。
+    const adjustment=(await db().query(`select * from public.begin_order_refund($1,'admin',$2,'[]'::jsonb,false,0,1,null,'requested_by_customer',null,false,$3)`,
+      [f.orderId,randomUUID(),f.actor])).rows[0];
+    await db().query("update public.order_returns set status='open',closed_at=null where id=$1",[f.returnId]);
+    await markError(db(),adjustment.refund_id);
+    expect((await progress(db(),f)).refund_waiting).toBe(0);
+    expect((await db().query('select status from public.order_returns where id=$1',[f.returnId])).rows[0].status).toBe('closed');
   });
   test('1回の受け取りで交換予定2点のうち1点だけ返金へ上書きし、返品行は分割も更新もしない',async()=>{
     const f=await fixture(db(),{quantity:2,exchange:true,stock:0});

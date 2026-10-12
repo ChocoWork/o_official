@@ -1219,7 +1219,7 @@ $$;
 -- 10. 手数料の受け取りの記録（設計書 6-4。店長だけ。権限は窓口が確かめる）。受付中で、お支払い待ち
 --     （fee_due_amount が1以上で、受け取りがまだ）の時だけ。メモは500字まで。記録した後、ほかに待つ物が無ければ自動で完了になる。
 --     _waive が真なら「いただかないで終える」（設計書 6-4 の「額を0に直す」。本計画 P27）: 条件も書く列（受け取りの時刻・人・メモ）も
---     受け取りの記録と同じで、さらに fee_waived を真にする。fee_due_amount は履歴に出すため変えない。
+--     受け取りの記録と同じで、さらに fee_waived を真にする。決着した額は fee_settled_amount に足し、fee_due_amount は0に戻す。
 --     お支払い待ちの決まり（fee_due_amount ≥ 1 で fee_received_at が空）は変えないので、いただかないで終えると待ち物ではなくなる
 CREATE OR REPLACE FUNCTION public.admin_record_return_fee_payment(_return_id uuid, _actor_id uuid, _note text, _waive boolean)
 RETURNS TABLE (return_id uuid, return_status text)
@@ -1249,7 +1249,9 @@ BEGIN
   SET fee_received_at = pg_catalog.now(),
       fee_received_by = _actor_id,
       fee_received_note = NULLIF(pg_catalog.btrim(_note), ''),
-      fee_waived = _waive
+      fee_waived = _waive,
+      fee_settled_amount = r.fee_settled_amount + r.fee_due_amount,
+      fee_due_amount = 0
   WHERE r.id = _return_id;
 
   v_status := private.refresh_order_return_status(_return_id);

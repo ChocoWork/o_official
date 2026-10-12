@@ -330,6 +330,7 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
         'private.enqueue_order_email(uuid, text, text, uuid, uuid)',
         'private.order_line_reservations(uuid)',
         'private.order_return_line_states(uuid)',
+        'private.order_return_line_states_core(uuid,jsonb)',
         'private.order_return_line_progress(uuid)',
         'private.order_line_return_counts(uuid)',
         'private.fulfillment_line_returnable(uuid)',
@@ -381,6 +382,7 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
         [{ exchange_fee: '-1' }, 'order_returns_exchange_fee_check'],
         [{ exchange_shipping_fee: '-1' }, 'order_returns_exchange_shipping_fee_check'],
         [{ fee_due_amount: '-1' }, 'order_returns_fee_due_amount_check'],
+        [{ fee_settled_amount: '-1' }, 'order_returns_fee_settled_amount_check'],
         [{ fee_pending_deduction: '-1' }, 'order_returns_fee_pending_deduction_check'],
         [{ restocking_fee_percent: '101' }, 'order_returns_restocking_fee_percent_check'],
         [{ restocking_fee_percent: '-1' }, 'order_returns_restocking_fee_percent_check'],
@@ -432,7 +434,7 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
       await insertReturnRow(db(), second.orderId, { number: '1' });
     });
 
-    test('直せるのは、状態・時刻・する人・手数料の受け取り（いただかない印 fee_waived を含む）・支払いを待たずに送る・手数料の額の列だけ。ほかの列は直せない', async () => {
+    test('直せるのは、状態・時刻・する人・手数料の受け取り（いただかない印 fee_waived を含む）・支払いを待たずに送る・手数料の額（決着した合計 fee_settled_amount を含む）の列だけ。ほかの列は直せない', async () => {
       const order = await createShipped(db(), 3);
       const other = await createShipped(db(), 1);
       const actor = await createActor(db());
@@ -476,6 +478,7 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
         'reopened_at = now()',
         'reopened_by = $2',
         'fee_due_amount = 300',
+        'fee_settled_amount = 100',
         'fee_pending_deduction = 200',
         'fee_received_at = now()',
         'fee_received_by = $2',
@@ -490,16 +493,29 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
         );
       }
       const saved = await db().query(
-        'select fee_due_amount, fee_pending_deduction, fee_received_note, fee_waived, status from public.order_returns where id = $1',
+        'select fee_due_amount, fee_settled_amount, fee_pending_deduction, fee_received_note, fee_waived, status from public.order_returns where id = $1',
         [created.returnId],
       );
       expect(saved.rows[0]).toEqual({
         fee_due_amount: 300,
+        fee_settled_amount: 100,
         fee_pending_deduction: 200,
         fee_received_note: '現金で受け取り',
         fee_waived: true,
         status: 'open',
       });
+    });
+
+    test('決着した手数料の合計 fee_settled_amount は最初は0で、空にも負にもできない', async () => {
+      const order = await createShipped(db(), 1);
+      const created = await returnOf(db(), order, 1);
+      const settledOf = async () =>
+        (await db().query('select fee_settled_amount from public.order_returns where id = $1', [created.returnId])).rows[0].fee_settled_amount as number;
+      expect(await settledOf()).toBe(0);
+      await expectRejected(db(), 'update public.order_returns set fee_settled_amount = null where id = $1', [created.returnId], { code: '23502' });
+      await expectRejected(db(), 'update public.order_returns set fee_settled_amount = -1 where id = $1', [created.returnId],
+        { code: '23514', constraint: 'order_returns_fee_settled_amount_check' });
+      expect(await settledOf()).toBe(0);
     });
 
     test('手数料をいただかないことにした印 fee_waived は、返品を作った時の値が偽で、空にはできない', async () => {

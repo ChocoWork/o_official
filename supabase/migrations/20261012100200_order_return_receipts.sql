@@ -231,6 +231,10 @@ BEGIN
       v_fingerprint:=pg_catalog.md5(pg_catalog.jsonb_build_object('return_id',_return_id,'amount',_received_amount,
         'shipping_amount',_shipping_amount,'note',_note,'notify_customer',_notify_customer)::text);
     END IF;
+  ELSE
+    -- 普通の返金も返品のrwを覆うため、返金の行を書く前に、注文の次に受付中の返品をID順でロックする。
+    PERFORM 1 FROM public.order_returns AS rt
+    WHERE rt.order_id=_order_id AND rt.status='open' ORDER BY rt.id FOR UPDATE;
   END IF;
 
   -- 3. 同じ二重防止の番号の送り直し（通信が切れた後の「もう一度確かめる」）。同じ中身なら前の記録を返し、
@@ -466,6 +470,11 @@ BEGIN
   FROM pg_catalog.jsonb_to_recordset(v_priced)
     AS x(order_item_id uuid, before_shipment boolean, quantity integer, restock_type text, amount integer);
 
+  IF _source <> 'return' THEN
+    -- 返金の行が覆った後の数で完了を確かめ、返品が操作できない受付中のまま残るのを防ぐ。
+    PERFORM private.refresh_order_return_status(rt.id) FROM public.order_returns AS rt
+    WHERE rt.order_id=_order_id AND rt.status='open' ORDER BY rt.id;
+  END IF;
   RETURN QUERY SELECT v_refund_id, v_amount, 'awaiting_response'::text, false;
 END;
 $$;
@@ -1328,6 +1337,7 @@ AS $$
 DECLARE
   v_order_id uuid;
   v_current public.order_refunds%ROWTYPE;
+  v_return_id uuid;
   v_next text;
   v_error_exception uuid;
   v_applied record;
@@ -1341,15 +1351,19 @@ BEGIN
     RAISE EXCEPTION 'REFUND_ARGUMENT_INVALID' USING ERRCODE = '22023';
   END IF;
 
-  SELECT r.order_id INTO v_order_id FROM public.order_refunds AS r WHERE r.id = _refund_id;
+  SELECT r.order_id, r.return_id INTO v_order_id, v_return_id FROM public.order_refunds AS r WHERE r.id = _refund_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'REFUND_NOT_FOUND' USING ERRCODE = 'P0002';
   END IF;
 
-  -- 鍵は注文 → 返品 → 返金の順（返品の返金だけ返品の鍵を足す）
+  -- 鍵は注文 → 返品 → 返金の順。普通の返金も受付中の返品の数を変えるので、先にその返品をロックする。
   PERFORM 1 FROM public.orders AS o WHERE o.id = v_order_id FOR UPDATE;
-  PERFORM 1 FROM public.order_returns AS rt
-  WHERE rt.id=(SELECT r.return_id FROM public.order_refunds AS r WHERE r.id=_refund_id) FOR UPDATE;
+  IF v_return_id IS NOT NULL THEN
+    PERFORM 1 FROM public.order_returns AS rt WHERE rt.id=v_return_id FOR UPDATE;
+  ELSE
+    PERFORM 1 FROM public.order_returns AS rt
+    WHERE rt.order_id=v_order_id AND rt.status='open' ORDER BY rt.id FOR UPDATE;
+  END IF;
   SELECT r.* INTO v_current FROM public.order_refunds AS r WHERE r.id = _refund_id FOR UPDATE;
 
   -- Stripe の返金の番号は、記録に1つだけ。別の記録がもう使っている番号も断る
@@ -1444,6 +1458,10 @@ BEGIN
   -- 完了の確かめ直し（P19。閉じた返品は戻さない）。return_received を予定した時は、メールの予定を書いたと答える（窓口が送る処理を動かす）
   IF v_current.return_id IS NOT NULL THEN
     v_return_email := private.apply_return_refund_outcome(_refund_id, v_current.status);
+  ELSE
+    -- 普通の返金の結果が書かれた後の覆いで、受付中の返品を確かめ直す。
+    PERFORM private.refresh_order_return_status(rt.id) FROM public.order_returns AS rt
+    WHERE rt.order_id=v_order_id AND rt.status='open' ORDER BY rt.id;
   END IF;
 
   RETURN QUERY
@@ -1492,6 +1510,9 @@ BEGIN
   SELECT o.* INTO v_order FROM public.orders AS o WHERE o.id = v_order_id FOR UPDATE;
   IF v_return_id IS NOT NULL THEN
     PERFORM 1 FROM public.order_returns AS rt WHERE rt.id = v_return_id FOR UPDATE;
+  ELSE
+    PERFORM 1 FROM public.order_returns AS rt
+    WHERE rt.order_id=v_order_id AND rt.status='open' ORDER BY rt.id FOR UPDATE;
   END IF;
   SELECT r.* INTO v_refund FROM public.order_refunds AS r WHERE r.id = _refund_id FOR UPDATE;
 
@@ -1524,6 +1545,10 @@ BEGIN
 
   IF v_return_id IS NOT NULL THEN
     PERFORM private.apply_return_refund_outcome(_refund_id, 'awaiting_response');
+  ELSE
+    -- エラーで覆いが外れた後の数を使う。完了した返品を戻すのではなく、受付中だけを確かめ直す。
+    PERFORM private.refresh_order_return_status(rt.id) FROM public.order_returns AS rt
+    WHERE rt.order_id=v_order_id AND rt.status='open' ORDER BY rt.id;
   END IF;
 
   RETURN QUERY SELECT 'errored'::text, v_order_id, v_exception;
@@ -1963,19 +1988,29 @@ BEGIN
     INSERT INTO public.stock_movements(variant_id,delta,reason,order_id,order_item_id,created_by,return_id)
     VALUES(v_line.variant_id,v_line.quantity,'return',v_order,v_line.order_item_id,_actor_id,_return_id);
   END LOOP;
-  -- 普通の返金で先に返した数を、この受け取りの返金に入れない（Review Focus 3）。
+  -- 受け取り後にこの返品のrwが増える数だけを返金する。rfと開き直した品への優先の覆いも、移行Aの本体で数える。
+  -- 未保存の明細を本体に渡すため、追記専用の受け取りは返金IDをINSERT時に確定したまま書ける。
+  WITH before_receive AS (
+    SELECT s.order_item_id, pg_catalog.sum(s.refund_waiting)::integer AS waiting
+    FROM private.order_return_line_states(v_order) AS s
+    WHERE s.return_id=_return_id GROUP BY s.order_item_id
+  ), after_receive AS (
+    SELECT s.order_item_id, pg_catalog.sum(s.refund_waiting)::integer AS waiting
+    FROM private.order_return_line_states_core(v_order,v_effective) AS s
+    WHERE s.return_id=_return_id GROUP BY s.order_item_id
+  )
   SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('order_item_id',t.order_item_id,'before_shipment',false,'quantity',t.quantity)
       ORDER BY t.order_item_id) FILTER(WHERE t.quantity>0),'[]'::jsonb),
     COALESCE(pg_catalog.sum(private.return_units_amount(t.order_item_id,t.quantity)) FILTER(WHERE t.quantity>0),0)::integer
     INTO v_lines,v_goods FROM (
       SELECT l.order_item_id,LEAST(pg_catalog.sum(x.quantity)::integer,
-        GREATEST(rc.shipped-rc.refunded_after_shipment-rc.requested-rc.open_unprocessed-rc.refund_waiting-rc.exchanged-rc.sent_back
-          +pg_catalog.sum(x.quantity)::integer,0)) AS quantity
+        GREATEST(a.waiting-b.waiting,0)) AS quantity
       FROM pg_catalog.jsonb_to_recordset(v_effective) AS x(return_line_id uuid,disposition text,quantity integer,resolution text,exchange_method text)
       JOIN public.order_return_lines AS l ON l.id=x.return_line_id
-      JOIN private.order_line_return_counts(v_order) AS rc ON rc.order_item_id=l.order_item_id
+      JOIN before_receive AS b ON b.order_item_id=l.order_item_id
+      JOIN after_receive AS a ON a.order_item_id=l.order_item_id
       WHERE x.resolution='refund'
-      GROUP BY l.order_item_id,rc.shipped,rc.refunded_after_shipment,rc.requested,rc.open_unprocessed,rc.refund_waiting,rc.exchanged,rc.sent_back
+      GROUP BY l.order_item_id,a.waiting,b.waiting
     ) AS t;
   IF _refund_choice='none' AND pg_catalog.jsonb_array_length(v_lines)>0 THEN
     RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;

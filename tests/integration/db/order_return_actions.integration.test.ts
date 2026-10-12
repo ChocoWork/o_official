@@ -1714,7 +1714,7 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
       expect(res.rows).toEqual([{ return_id: returnId, return_status: 'open' }]);
       const row = await returnRow(db(), returnId);
       // 受け取りを記録しただけなので、いただかないことにした印（fee_waived）は偽のまま
-      expect(row).toMatchObject({ fee_due_amount: 300, fee_waived: false, fee_received_by: order.actorId, fee_received_note: '銀行振込' });
+      expect(row).toMatchObject({ fee_due_amount: 0, fee_settled_amount: 300, fee_waived: false, fee_received_by: order.actorId, fee_received_note: '銀行振込' });
       expect(row.fee_received_at).not.toBeNull();
       // 記録した後は、受け取りの記録も「いただかないで終える」も断る
       for (const waive of [false, true]) {
@@ -1739,7 +1739,7 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
       expect((await returnRow(db(), returnId)).fee_waived).toBe(false);
     });
 
-    test('いただかないで終える（_waive）と、受け取りを記録した時と同じ時刻・人・メモが残り、fee_waived が真になる。額は変わらず、最後の待ち物なら返品が自動で完了になる（本計画 P27）', async () => {
+    test('いただかないで終える（_waive）と、受け取りを記録した時と同じ時刻・人・メモが残り、fee_waived が真になる。額は決着した合計へ移り、最後の待ち物なら返品が自動で完了になる', async () => {
       const { order, returnId } = await feeDueReturn();
       await closeMissing(db(), returnId, order.actorId);
       expect(await displayStateOf(db(), returnId)).toMatchObject({ display_status: 'in_progress', marks: ['awaiting_fee'] });
@@ -1748,10 +1748,11 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
 
       expect(res.rows).toEqual([{ return_id: returnId, return_status: 'closed' }]);
       const row = await returnRow(db(), returnId);
-      // 額（fee_due_amount）は履歴に出すので残す。受け取りの時刻が入るので、お支払い待ちの印は付かない
+      // 決着した額は合計に残し、未収額を0にするので、新しい手数料に以前の免除分を含めない。
       expect(row).toMatchObject({
         status: 'closed',
-        fee_due_amount: 300,
+        fee_due_amount: 0,
+        fee_settled_amount: 300,
         fee_waived: true,
         fee_received_by: order.actorId,
         fee_received_note: '店長の判断でいただかない',
