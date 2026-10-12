@@ -16,6 +16,7 @@ function storeReturning(data: unknown, error: { message?: string; code?: string 
 const claimRow = {
   email_id: 'email-1', order_id: 'order-1', kind: 'paid', variant: 'order_confirmed', origin: 'auto', attempts: 1,
   lease_token: 'lease-1', subject: null, body_text: null, payment_expired_sent: false, fulfillment_id: null, refund_id: null,
+  return_id: null, return_receipt_id: null,
 };
 
 const historyRow = {
@@ -31,6 +32,7 @@ describe('order-email-store', () => {
     await expect(claimOrderEmail(store, 300)).resolves.toEqual({
       id: 'email-1', orderId: 'order-1', kind: 'paid', variant: 'order_confirmed', origin: 'auto', attempts: 1,
       leaseToken: 'lease-1', subject: null, bodyText: null, paymentExpiredSent: false, fulfillmentId: null, refundId: null,
+      returnId: null, returnReceiptId: null,
     });
     expect(rpc).toHaveBeenCalledWith('claim_order_email', { _lease_seconds: 300 });
     await expect(claimOrderEmail(storeReturning([]).store, 300)).resolves.toBeNull();
@@ -51,6 +53,31 @@ describe('order-email-store', () => {
     await expect(claimOrderEmail(store, 300)).resolves.toMatchObject({
       id: 'email-3', kind, variant, fulfillmentId: null, refundId: 'refund-1',
     });
+  });
+
+  it.each([
+    ['返品の受付のお知らせ', 'return_accepted', null, 'return-1', null],
+    ['返品の受け取りのお知らせ', 'return_received', null, 'return-1', 'receipt-1'],
+    ['品物のお返しのお知らせ', 'return_sent_back', null, 'return-1', 'receipt-1'],
+    ['店への知らせ（返金待ち）', 'return_refund_pending_shop', null, 'return-1', 'receipt-1'],
+    ['受け取りと一緒の返金のお知らせ', 'refund', 'return', 'return-1', 'receipt-1'],
+    ['額を決めて後で返した返金のお知らせ', 'refund', 'return', 'return-1', null],
+  ])('%s の行は、どの返品・どの受け取りのメールかを返品の番号・受け取りの番号で返す', async (_label, kind, variant, returnId, returnReceiptId) => {
+    const refundId = kind === 'refund' ? 'refund-1' : null;
+    const { store } = storeReturning([
+      { ...claimRow, email_id: 'email-5', kind, variant, refund_id: refundId, return_id: returnId, return_receipt_id: returnReceiptId },
+    ]);
+
+    await expect(claimOrderEmail(store, 300)).resolves.toMatchObject({
+      id: 'email-5', kind, variant, fulfillmentId: null, refundId, returnId, returnReceiptId,
+    });
+  });
+
+  it('取り出した行に返品の列が無くても（古い形の答え）、返品の番号・受け取りの番号は null', async () => {
+    const legacyRow = Object.fromEntries(Object.entries(claimRow).filter(([column]) => !column.startsWith('return_')));
+    const { store } = storeReturning([legacyRow]);
+
+    await expect(claimOrderEmail(store, 300)).resolves.toMatchObject({ returnId: null, returnReceiptId: null });
   });
 
   it('失敗の記録に分け方・原因・待つ時間を渡す', async () => {
@@ -108,6 +135,24 @@ describe('order-email-store', () => {
       ['email-3', 'canceled', 'refund-2'],
       ['email-2', 'shipped', null],
       ['email-1', 'paid', null],
+    ]);
+  });
+
+  it('履歴の行に返品の番号と受け取りの番号を足して返す。返品に結び付かない行は両方 null（列が無い行も null）', async () => {
+    const { store } = storeReturning([
+      { ...historyRow, email_id: 'email-6', kind: 'return_received', fulfillment_id: null, fulfillment_number: null, refund_id: null, return_id: 'return-1', return_receipt_id: 'receipt-1' },
+      { ...historyRow, email_id: 'email-5', kind: 'return_accepted', fulfillment_id: null, fulfillment_number: null, refund_id: null, return_id: 'return-1', return_receipt_id: null },
+      { ...historyRow, email_id: 'email-4', kind: 'refund', fulfillment_id: null, fulfillment_number: null, refund_id: 'refund-1', return_id: null, return_receipt_id: null },
+      { ...historyRow, email_id: 'email-1', kind: 'paid', fulfillment_id: null, fulfillment_number: null },
+    ]);
+
+    const rows = await listOrderEmailHistory(store, 'order-1');
+
+    expect(rows.map((row) => [row.id, row.kind, row.returnId, row.returnReceiptId])).toEqual([
+      ['email-6', 'return_received', 'return-1', 'receipt-1'],
+      ['email-5', 'return_accepted', 'return-1', null],
+      ['email-4', 'refund', null, null],
+      ['email-1', 'paid', null, null],
     ]);
   });
 });

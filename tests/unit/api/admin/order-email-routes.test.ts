@@ -422,19 +422,23 @@ describe('POST /api/admin/orders/[id]/emails/resend', () => {
     expect(mockLogAudit).toHaveBeenNthCalledWith(2, expect.objectContaining({ outcome: 'failure', detail: 'Invalid order id', metadata: null }));
   });
 
-  it('返金のお知らせは知っている種類。再送の依頼は DB まで届き、DB が断る（409）。どの種類かを監査に残す', async () => {
-    rpcReturns({ request_order_email_resend: { data: null, error: { message: 'RESEND_NOT_ALLOWED', code: '22023' } } });
+  // 返金のお知らせと返品のメール4種類（グループ E-3 計画 P7）は、再送しない種類。知っている種類なので窓口は通し、DB が断る
+  it.each(['refund', 'return_accepted', 'return_received', 'return_sent_back', 'return_refund_pending_shop'])(
+    '%s のメールは知っている種類。再送の依頼は DB まで届き、DB が断る（409）。どの種類かを監査に残す',
+    async (kind) => {
+      rpcReturns({ request_order_email_resend: { data: null, error: { message: 'RESEND_NOT_ALLOWED', code: '22023' } } });
 
-    const response = await postResend(request({ kind: 'refund' }), context);
+      const response = await postResend(request({ kind }), context);
 
-    expect(response.status).toBe(409);
-    await expect(response.json()).resolves.toEqual({ error: '今の注文の状態では、このメールは再送できません。' });
-    expect(mockRpc).toHaveBeenCalledWith('request_order_email_resend', {
-      _order_id: ORDER_ID, _kind: 'refund', _actor_id: 'admin-1', _fulfillment_id: null,
-    });
-    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'conflict', metadata: { kind: 'refund' } }));
-    expect(mockSchedule).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({ error: '今の注文の状態では、このメールは再送できません。' });
+      expect(mockRpc).toHaveBeenCalledWith('request_order_email_resend', {
+        _order_id: ORDER_ID, _kind: kind, _actor_id: 'admin-1', _fulfillment_id: null,
+      });
+      expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'conflict', metadata: { kind } }));
+      expect(mockSchedule).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     ['発送のメールに発送の番号が無い', { kind: 'shipped' }],

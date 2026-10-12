@@ -52,6 +52,7 @@ function material(overrides: Partial<OrderEmailMaterial['order']> = {}): OrderEm
     items: [{ item_name: 'コート', color: 'BLACK', size: 'M', quantity: 1, line_total: 10000, fulfillment_type: 'backorder' }],
     fulfillment: null,
     refund: null,
+    orderReturn: null,
   };
 }
 
@@ -740,7 +741,9 @@ describe('loadOrderEmailMaterial', () => {
     const items = material().items;
     const db = store({ order, items });
 
-    await expect(loadOrderEmailMaterial(db.client, ORDER_ID)).resolves.toEqual({ order, items, fulfillment: null, refund: null });
+    await expect(loadOrderEmailMaterial(db.client, ORDER_ID)).resolves.toEqual({
+      order, items, fulfillment: null, refund: null, orderReturn: null,
+    });
     const columns = (db.orderSelect.mock.calls[0] as unknown as [string])[0].split(',').map((column) => column.trim());
     expect(columns).toEqual([
       'id', 'status', 'shipping_email', 'shipping_full_name', 'subtotal_amount', 'shipping_amount', 'discount_amount',
@@ -748,11 +751,14 @@ describe('loadOrderEmailMaterial', () => {
       'shipping_building', 'shipping_phone', 'review_reason',
     ]);
     expect(db.itemSelect).toHaveBeenCalledWith('item_name, color, size, quantity, line_total, fulfillment_type');
-    // 発送の番号も返金の番号も無い種類は、発送・返金の表も DB の数え方も読まない
+    // 発送の番号も返金の番号も返品の番号も無い種類は、発送・返金・返品の表も DB の数え方も読まない
     expect(db.from).not.toHaveBeenCalledWith('order_fulfillments');
     expect(db.from).not.toHaveBeenCalledWith('order_fulfillment_lines');
     expect(db.from).not.toHaveBeenCalledWith('order_refunds');
     expect(db.from).not.toHaveBeenCalledWith('order_refund_lines');
+    expect(db.from).not.toHaveBeenCalledWith('order_returns');
+    expect(db.from).not.toHaveBeenCalledWith('order_return_lines');
+    expect(db.from).not.toHaveBeenCalledWith('order_return_receipts');
     expect(db.rpc).not.toHaveBeenCalled();
   });
 
@@ -771,16 +777,38 @@ describe('loadOrderEmailMaterial', () => {
         completesOrder: false,
         cancelled: false,
         lines: [
-          { item_name: 'コート', color: 'BLACK', size: 'M', quantity: 2 },
-          { item_name: 'ストール', color: null, size: null, quantity: 1 },
+          { item_name: 'コート', color: 'BLACK', size: 'M', quantity: 2, exchange: false },
+          { item_name: 'ストール', color: null, size: null, quantity: 1, exchange: false },
         ],
       },
       refund: null,
+      orderReturn: null,
     });
     expect(db.fulfillmentSelect).toHaveBeenCalledWith('number, shipping_carrier, tracking_number, completes_order, cancelled_at');
     expect(db.fulfillmentFilters).toEqual([['id', FULFILLMENT_ID], ['order_id', ORDER_ID]]);
-    expect(db.lineSelect).toHaveBeenCalledWith('quantity, order_items(item_name, color, size)');
+    expect(db.lineSelect).toHaveBeenCalledWith('quantity, order_items(item_name, color, size, line_kind)');
     expect(db.lineFilters).toEqual([['fulfillment_id', FULFILLMENT_ID]]);
+  });
+
+  it('発送の商品が交換の品の行（line_kind が exchange）なら交換の印を付けて返す。ふつうの行・印の列が無い行は交換の品ではない', async () => {
+    const db = store({
+      order: material().order,
+      items: material().items,
+      fulfillment: FULFILLMENT_ROW,
+      lines: [
+        { quantity: 1, order_items: { item_name: 'ワンピース', color: 'NAVY', size: 'M', line_kind: 'exchange' } },
+        { quantity: 2, order_items: { item_name: 'コート', color: 'BLACK', size: 'M', line_kind: 'order' } },
+        { quantity: 1, order_items: { item_name: 'ストール', color: null, size: null } },
+      ],
+    });
+
+    const loaded = await loadOrderEmailMaterial(db.client, ORDER_ID, FULFILLMENT_ID);
+
+    expect(loaded?.fulfillment?.lines.map((line) => [line.item_name, line.exchange])).toEqual([
+      ['ワンピース', true],
+      ['コート', false],
+      ['ストール', false],
+    ]);
   });
 
   it('取り消した発送も読み、取消済みの印を付けて返す（送るかどうかは worker が決める）', async () => {
@@ -855,6 +883,7 @@ describe('loadOrderEmailMaterial', () => {
         ],
         stillShipping: true,
       },
+      orderReturn: null,
     });
     expect(db.refundSelect).toHaveBeenCalledWith(
       'status, amount, shipping_amount, payment_method_type, customer_action_expires_at, cancel_reason',
@@ -863,8 +892,9 @@ describe('loadOrderEmailMaterial', () => {
     expect(db.refundLineSelect).toHaveBeenCalledWith('order_item_id, quantity, before_shipment, order_items(item_name, color, size, created_at)');
     expect(db.refundLineFilters).toEqual([['refund_id', REFUND_ID]]);
     expect(db.rpc).toHaveBeenCalledWith('list_order_line_fulfillment', { _order_ids: [ORDER_ID] });
-    // 返金の番号だけを渡した時は、発送の表を読まない
+    // 返金の番号だけを渡した時は、発送の表を読まない。返品の番号が無い返金（返品でない返金）は、返品の表も読まない
     expect(db.from).not.toHaveBeenCalledWith('order_fulfillments');
+    expect(db.from).not.toHaveBeenCalledWith('order_returns');
   });
 
   // 送るかどうかは worker が決める（失敗・エラーの返金には送らない）。材料は、返金の状態をそのまま持つ

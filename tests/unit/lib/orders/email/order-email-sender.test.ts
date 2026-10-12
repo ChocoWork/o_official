@@ -18,6 +18,7 @@ import {
   parseRetryAfter,
   ORDER_EMAIL_SEND_TIMEOUT_MS,
   sendOrderEmailMessage,
+  shopAlertRecipient,
 } from '@/lib/orders/email/order-email-sender';
 
 const MESSAGE = { to: 'hanako@example.com', subject: '件名', text: '本文', idempotencyKey: 'order-email/email-1' };
@@ -51,6 +52,24 @@ describe('checkOrderEmailSendConfig', () => {
     [{ ...RESEND_ENV, RESEND_API_KEY: '' }, 'config_api_key'],
   ] as const)('%o は %s', (env, expected) => {
     expect(checkOrderEmailSendConfig(env)).toBe(expected);
+  });
+});
+
+describe('shopAlertRecipient（店への知らせ（返金待ち）の送り先。グループ E-3 計画 P7）', () => {
+  it.each([
+    [{ SHOP_ALERT_EMAIL: 'shop-alert@example.com' }, 'shop-alert@example.com'],
+    // 前後の空白・改行は除く
+    [{ SHOP_ALERT_EMAIL: '  shop-alert@example.com \n' }, 'shop-alert@example.com'],
+    [{ SHOP_ALERT_EMAIL: '' }, null],
+    [{ SHOP_ALERT_EMAIL: '   ' }, null],
+    [{}, null],
+  ] as const)('%j の送り先は %s', (env, expected) => {
+    expect(shopAlertRecipient(env)).toBe(expected);
+  });
+
+  it('送り先が無いだけでは、送れる設定かどうかの確かめは変わらない（お客様へのメールは送れる）', () => {
+    expect(shopAlertRecipient(RESEND_ENV)).toBeNull();
+    expect(checkOrderEmailSendConfig(RESEND_ENV)).toBeNull();
   });
 });
 

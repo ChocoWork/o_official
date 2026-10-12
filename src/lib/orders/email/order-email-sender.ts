@@ -89,6 +89,15 @@ export function checkOrderEmailSendConfig(env: Env = process.env): OrderEmailPau
   return null;
 }
 
+/**
+ * 店への知らせ（返金待ち。グループ E-3 計画 P7）の送り先。今の店への要対応のメールと同じ SHOP_ALERT_EMAIL。
+ * 空・空白だけなら null。送り先が無いだけでは送信全体を止めない（お客様へのメールは送れる）ので、checkOrderEmailSendConfig には入れない
+ */
+export function shopAlertRecipient(env: Env = process.env): string | null {
+  const address = env.SHOP_ALERT_EMAIL?.trim();
+  return address ? address : null;
+}
+
 /** 待つ時間の指示（秒）。大文字小文字を問わず読み、1日で打ち切る */
 export function parseRetryAfter(headers: Record<string, string> | null | undefined): number | null {
   if (!headers) return null;

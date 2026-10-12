@@ -71,6 +71,10 @@ export type OrderEmailHistoryRow = {
   fulfillmentNumber: number | null;
   /** 返金のお知らせと、支払い済みのキャンセルのお知らせだけが、どの返金のお知らせかを持つ（グループ E-2 設計書 8-6） */
   refundId: string | null;
+  /** 返品のメール4種類と、返品の返金のお知らせ（書き分け return）だけ、どの返品のメールかを示す。ほかの種類は null（グループ E-3 設計書 9 章） */
+  returnId: string | null;
+  /** 返品の受け取りのお知らせ・品物のお返しのお知らせ・店への知らせ（返金待ち）と、受け取りと一緒の返金のお知らせだけ、どの受け取りのメールかを示す。ほかの種類は null */
+  returnReceiptId: string | null;
 };
 
 /** 注文の商品ごとの名前（商品名（色 / サイズ））と、発送した数・仕上がった数。取り消せるかの判断に使う */

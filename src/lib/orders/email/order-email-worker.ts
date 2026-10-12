@@ -9,6 +9,7 @@ import {
   checkOrderEmailSendConfig,
   isLocalOrderEmailDatabase,
   sendOrderEmailMessage,
+  shopAlertRecipient,
   type OrderEmailMessage,
   type OrderEmailSendFailure,
   type OrderEmailSendOutcome,
@@ -38,9 +39,18 @@ export type OrderEmailWorkerDeps = {
   store: OrderEmailStore;
   /**
    * 発送のメールの行は行の発送の番号で発送の材料を、返金のお知らせと支払い済みのキャンセルのお知らせの行は行の返金の番号で
-   * 返金の材料を読む。ほかの種類は null（グループ E-1 設計書 8-1、グループ E-2 設計書 8-6）
+   * 返金の材料を、返品のメールの行は行の返品・受け取りの番号で返品の材料を読む。ほかの種類は null
+   * （グループ E-1 設計書 8-1、グループ E-2 設計書 8-6、グループ E-3 設計書 9 章）
    */
-  loadMaterial: (orderId: string, fulfillmentId: string | null, refundId: string | null) => Promise<OrderEmailMaterial | null>;
+  loadMaterial: (
+    orderId: string,
+    fulfillmentId: string | null,
+    refundId: string | null,
+    returnId: string | null,
+    returnReceiptId: string | null,
+  ) => Promise<OrderEmailMaterial | null>;
+  /** 店への知らせ（返金待ち）の送り先（SHOP_ALERT_EMAIL）。無ければ null */
+  shopRecipient: () => string | null;
   send: (message: OrderEmailMessage) => Promise<OrderEmailSendOutcome>;
   checkConfig: () => OrderEmailPauseReason | null;
   now: () => number;
@@ -83,12 +93,26 @@ function errorDetails(error: unknown): string[] {
   return error instanceof OrderEmailStoreError && error.code ? [name, error.code] : [name];
 }
 
+/**
+ * メールの送り先。店への知らせ（返金待ち）は店のアドレス（SHOP_ALERT_EMAIL）、ほかはお客様の宛先（注文の配送先のメール）。
+ * 前後の空白を除き、無い・空白だけなら null。店への知らせは、お客様の宛先が空でも送る（お客様に送るメールではないため）
+ */
+export function recipientFor(
+  claim: Pick<ClaimedOrderEmail, 'kind'>,
+  material: OrderEmailMaterial,
+  shopRecipient: string | null,
+): string | null {
+  const address = claim.kind === 'return_refund_pending_shop' ? shopRecipient : material.order.shipping_email;
+  return address?.trim() || null;
+}
+
 /** 送る前に取りやめにする理由（設計書 4-1）。送ってよければ null */
 export function skipReasonFor(
   claim: Pick<ClaimedOrderEmail, 'kind'>,
   material: OrderEmailMaterial,
+  shopRecipient: string | null = null,
 ): OrderEmailSkipReason | null {
-  if (!material.order.shipping_email?.trim()) return 'no_recipient';
+  if (!recipientFor(claim, material, shopRecipient)) return 'no_recipient';
   if (claim.kind === 'awaiting_payment' && material.order.status !== 'pending') return 'superseded';
   if (claim.kind === 'payment_expired' && (material.order.status === 'paid' || material.order.status === 'shipped')) {
     return 'superseded';
@@ -96,6 +120,13 @@ export function skipReasonFor(
   // 発送を取り消した後は、その発送のメールを送らない。送る前・やり直し待ちの行は取消の時に DB が取りやめるので、
   // ここで見るのは、取消の時に送っている途中だった行。控えた中身がある行も送らない（グループ E-1 設計書 7-3）
   if (claim.kind === 'shipped' && material.fulfillment?.cancelled) return 'fulfillment_cancelled';
+  // 店への知らせ（返金待ち）は、予定を書いてから送るまでの間に店長が「額を決めて返金する」を済ませて、返金待ちの品が無くなったら、
+  // もう知らせる事が無いので取りやめる。受け取りの材料そのものが無い時は、ここでは取りやめず、本文を作る所で材料の不足になる。
+  // 理由は superseded（DB の skip_order_email が、返金待ちが0の返品の、店への知らせの行にだけ受ける）
+  const receipt = material.orderReturn?.receipt;
+  if (claim.kind === 'return_refund_pending_shop' && receipt && (receipt.pendingRefund?.items.length ?? 0) === 0) {
+    return 'superseded';
+  }
   // 返金のお知らせ・支払い済みのキャンセルのお知らせは、Stripe が返金を受け付けた時に予定が書かれ、送るのは後になる。
   // その間に返金が失敗・エラーになったら、お金が戻らないのに「返金します」と送ることになるので送らない（設計書 8-1・8-2）。
   // 返金の材料は返金の番号がある行（この2種類）だけが持つ。お客様への連絡は、店への要対応「返金の失敗」が受け持つ。
@@ -121,17 +152,23 @@ async function recordFailure(
 async function deliver(deps: OrderEmailWorkerDeps, claim: ClaimedOrderEmail): Promise<DeliverOutcome> {
   let material: OrderEmailMaterial | null;
   try {
-    material = await deps.loadMaterial(claim.orderId, claim.fulfillmentId, claim.refundId);
+    material = await deps.loadMaterial(claim.orderId, claim.fulfillmentId, claim.refundId, claim.returnId, claim.returnReceiptId);
   } catch {
     return recordFailure(deps, claim, { category: 'transient', code: 'db_unavailable', retryAfterSeconds: null });
   }
   if (!material) {
-    // 注文・明細のほか、発送のメールの発送の記録・返金のお知らせの返金の記録が無い時もここに入る（グループ E-2 設計書 8-6）
+    // 注文・明細のほか、発送のメールの発送の記録・返金のお知らせの返金の記録・返品のメールの返品の記録が無い時もここに入る
+    // （グループ E-2 設計書 8-6、グループ E-3 設計書 9 章）
     return recordFailure(deps, claim, { category: 'permanent', code: 'source_missing', retryAfterSeconds: null });
   }
 
-  const skip = skipReasonFor(claim, material);
+  const shopRecipient = deps.shopRecipient();
+  const skip = skipReasonFor(claim, material, shopRecipient);
   if (skip) {
+    if (skip === 'no_recipient' && claim.kind === 'return_refund_pending_shop') {
+      // 今の店への知らせと同じく、宛先の設定が無いことだけをログに出す（値は出さない）
+      console.warn('[order-email-worker] SHOP_ALERT_EMAIL is not configured', claim.id);
+    }
     try {
       await skipOrderEmail(deps.store, claim, skip);
     } catch (error) {
@@ -166,7 +203,8 @@ async function deliver(deps: OrderEmailWorkerDeps, claim: ClaimedOrderEmail): Pr
   }
 
   const outcome = await deps.send({
-    to: (material.order.shipping_email as string).trim(),
+    // 宛先が無ければ上の skipReasonFor で取りやめになっているので、ここでは必ずある
+    to: recipientFor(claim, material, shopRecipient) as string,
     subject: content.subject,
     text: content.text,
     idempotencyKey: `order-email/${claim.id}`,
@@ -234,7 +272,9 @@ export async function runOrderEmailWorker(options: { budgetMs?: number } = {}): 
   const store = client as unknown as OrderEmailStore & OpsStore;
   const result = await processOrderEmails({
     store,
-    loadMaterial: (orderId, fulfillmentId, refundId) => loadOrderEmailMaterial(client, orderId, fulfillmentId, refundId),
+    loadMaterial: (orderId, fulfillmentId, refundId, returnId, returnReceiptId) =>
+      loadOrderEmailMaterial(client, orderId, fulfillmentId, refundId, returnId, returnReceiptId),
+    shopRecipient: () => shopAlertRecipient(),
     send: (message) => sendOrderEmailMessage(message),
     checkConfig: () => checkOrderEmailSendConfig(),
     now: () => Date.now(),

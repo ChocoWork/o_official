@@ -27,7 +27,7 @@ function email(overrides: Partial<OrderEmailHistoryRow> = {}): OrderEmailHistory
     id: 'email-1', kind: 'paid', origin: 'auto', requestedByEmail: null, status: 'sent', attempts: 1, lastErrorCode: null,
     deliveryStatus: null, deliveryEventAt: null, createdAt: '2026-10-09T01:00:00.000Z', sentAt: '2026-10-09T01:00:05.000Z',
     finishedAt: '2026-10-09T01:00:05.000Z', hasBody: true, bodyErased: false, fulfillmentId: null, fulfillmentNumber: null,
-    refundId: null, ...overrides,
+    refundId: null, returnId: null, returnReceiptId: null, ...overrides,
   };
 }
 
@@ -723,6 +723,43 @@ describe('buildOrderHistory - 返金のお知らせと並び順', () => {
     const history = buildOrderHistory(input({ order: { ...ORDER, status: 'shipped' }, emailRows: [email({ kind: 'refund' })] }));
 
     expect(entriesOf(history.entries, 'email')[0]).toMatchObject({ kindLabel: '返金のお知らせ', resendable: false });
+  });
+
+  // 返品のメール4種類（グループ E-3 計画 C-5・P7）。返品ごと・受け取りごとに1通で、お返しのメッセージは送った時の事実なので再送しない
+  it.each([
+    ['return_accepted', '返品の受付のお知らせ', { returnId: 'return-1' }],
+    ['return_received', '返品の受け取りのお知らせ', { returnId: 'return-1', returnReceiptId: 'receipt-1' }],
+    ['return_sent_back', '品物のお返しのお知らせ', { returnId: 'return-1', returnReceiptId: 'receipt-1' }],
+    ['return_refund_pending_shop', '店への知らせ（返金待ち）', { returnId: 'return-1', returnReceiptId: 'receipt-1' }],
+  ] as const)('%s のメールの行は、種類の名前「%s」で出し、どの注文の状態でも再送できない', (kind, kindLabel, ids) => {
+    for (const status of ['paid', 'shipped', 'cancelled'] as const) {
+      const history = buildOrderHistory(input({ order: { ...ORDER, status }, emailRows: [email({ kind, ...ids })] }));
+
+      expect(entriesOf(history.entries, 'email')[0]).toMatchObject({
+        kindLabel, resendable: false, stateLabel: '送信済み', canViewContent: true, fulfillmentId: null, fulfillmentNumber: null,
+      });
+    }
+  });
+
+  it('送れなかった返品のメールの行も、再送できない', () => {
+    const history = buildOrderHistory(input({
+      emailRows: [email({ kind: 'return_received', status: 'dead', lastErrorCode: 'source_missing', hasBody: false, returnReceiptId: 'receipt-1' })],
+    }));
+
+    expect(entriesOf(history.entries, 'email')[0]).toMatchObject({
+      kindLabel: '返品の受け取りのお知らせ', stateLabel: '送れなかった', warning: true, errorLabel: '注文の情報が足りない', resendable: false,
+    });
+  });
+
+  // 返品を取り消すと、DB がまだ送っていない受付のお知らせを取りやめにする（原因の記号 return_cancelled。グループ E-3 設計書 7-3）
+  it('取り消した返品の、まだ送っていなかった受付のお知らせの行は、取りやめとして原因を「返品の取消」と出す', () => {
+    const history = buildOrderHistory(input({
+      emailRows: [email({ kind: 'return_accepted', status: 'skipped', lastErrorCode: 'return_cancelled', hasBody: false, sentAt: null, returnId: 'return-1' })],
+    }));
+
+    expect(entriesOf(history.entries, 'email')[0]).toMatchObject({
+      kindLabel: '返品の受付のお知らせ', stateLabel: '取りやめ', errorLabel: '返品の取消', resendable: false, canViewContent: false,
+    });
   });
 
   it('同じ時刻の行は、結果が上になる順（メール → 状態 → 取消 → 確保し直し → 発送・仕上がり・返金 → 受付）に置く', () => {

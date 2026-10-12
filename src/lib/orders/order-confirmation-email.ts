@@ -49,14 +49,21 @@ export function formatItemLines(
   });
 }
 
-export type ShipmentItem = { item_name: string; color?: string | null; size?: string | null; quantity: number };
+export type ShipmentItem = {
+  item_name: string;
+  color?: string | null;
+  size?: string | null;
+  quantity: number;
+  /** 交換の品の行か（グループ E-3 設計書 9-1 の7）。そうなら行の末尾に（交換の品）を付ける */
+  exchange?: boolean;
+};
 
 /**
  * 発送のメールの明細の行（グループ E-1 設計書 8-1）。値段は書かない。
  * 一部だけ送ると、注文の行の値段と送った数が合わなくなるため。
  */
 export function formatShipmentItemLines(items: readonly ShipmentItem[]): string[] {
-  return items.map((item) => `・${itemLabel(item)} x${item.quantity}`);
+  return items.map((item) => `・${itemLabel(item)} x${item.quantity}${item.exchange ? '（交換の品）' : ''}`);
 }
 
 export type OrderEmailRow = {

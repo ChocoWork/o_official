@@ -34,6 +34,18 @@ describe('発送のメールの明細の行（グループ E-1 設計書 8-1）'
     ]);
   });
 
+  test('交換の品の行（グループ E-3 設計書 9-1 の7）は、行の末尾に（交換の品）を付ける。印の無い行・false の行には付けない', () => {
+    expect(formatShipmentItemLines([
+      { item_name: 'ワンピース', color: 'NAVY', size: 'M', quantity: 1, exchange: true },
+      { item_name: 'コート', color: 'BLACK', size: 'M', quantity: 2, exchange: false },
+      { item_name: 'ストール', color: null, size: null, quantity: 1 },
+    ])).toEqual([
+      '・ワンピース（NAVY / M） x1（交換の品）',
+      '・コート（BLACK / M） x2',
+      '・ストール x1',
+    ]);
+  });
+
   test('注文の明細（値段の項目を持つ）を渡しても、値段は書かない', () => {
     const orderItems = [
       { item_name: 'シルクブラウス', color: 'WHITE', size: 'M', quantity: 1, line_total: 28000, fulfillment_type: 'stock' },
