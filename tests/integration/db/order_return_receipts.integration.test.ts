@@ -130,12 +130,22 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
   });
   test('通信切断の再送は元の返金番号を返し、在庫とメールも一度だけ（Review Focus 1）',async()=>{
     const f=await fixture(db());const key=randomUUID();const a=await receive(db(),f,{key,choice:'now'});
+    expect((await db().query('select refund_choice from public.order_return_receipts where id=$1',[a.receipt_id])).rows[0])
+      .toEqual({refund_choice:'now'});
     expect(await receive(db(),f,{key,choice:'now'})).toMatchObject({receipt_id:a.receipt_id,refund_id:a.refund_id,replayed:true});
     await fails(db(),()=>receive(db(),f,{key,choice:'consult'}),'RETURN_REQUEST_MISMATCH');
     await result(db(),a.refund_id,'succeeded');expect((await receive(db(),f,{key,choice:'now'})).refund_status).toBe('succeeded');
     expect(await variantStock(db(),f.variantId)).toBe(2);
     expect((await db().query('select count(*)::int n from public.order_return_receipts where return_id=$1',[f.returnId])).rows[0].n).toBe(1);
     expect((await db().query('select kind,variant,return_id,return_receipt_id from private.order_email_outbox where order_id=$1',[f.orderId])).rows).toEqual([{kind:'refund',variant:'return',return_id:f.returnId,return_receipt_id:a.receipt_id}]);
+  });
+  test('交換だけを今返金で受け取っても返金は起きず、選び方は none で記録する',async()=>{
+    const f=await fixture(db(),{exchange:true});
+    const received=await receive(db(),f,{choice:'now',disposition:'not_restocked'});
+    expect(received.refund_id).toBeNull();
+    expect(received.exchange_order_item_ids).toHaveLength(1);
+    expect((await db().query('select refund_choice,refund_id from public.order_return_receipts where id=$1',[received.receipt_id])).rows[0])
+      .toEqual({refund_choice:'none',refund_id:null});
   });
   test('交換の再送も同じ交換の行を返し、確保を増やさない',async()=>{
     const f=await fixture(db(),{exchange:true});const key=randomUUID();const a=await receive(db(),f,{key,choice:'none',disposition:'not_restocked'});
@@ -146,7 +156,10 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     const f=await fixture(db());const key=randomUUID();
     await fails(db(),()=>receive(db(),f,{can:false,choice:'now'}),'RETURN_FORBIDDEN');
     await fails(db(),()=>receive(db(),f,{can:false,amount:1}),'RETURN_FORBIDDEN');
-    expect((await receive(db(),f,{can:false,key})).shop_notice_enqueued).toBe(true);
+    const received=await receive(db(),f,{can:false,key});
+    expect(received.shop_notice_enqueued).toBe(true);
+    expect((await db().query('select refund_choice from public.order_return_receipts where id=$1',[received.receipt_id])).rows[0])
+      .toEqual({refund_choice:'consult'});
     expect((await receive(db(),f,{can:false,key})).replayed).toBe(true);
     expect((await db().query(`select count(*)::int n from private.order_email_outbox where kind='return_refund_pending_shop' and return_id=$1`,[f.returnId])).rows[0].n).toBe(1);
     const r=await refund(db(),f,4000);await result(db(),r.refund_id,'succeeded');
@@ -215,6 +228,10 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     const key=randomUUID();const received=await receive(db(),f,{...options,key});
     expect(received).toMatchObject({return_status:'closed',refund_id:null,refund_amount:null,refund_status:null,shop_notice_enqueued:false,fee_due_amount:0});
     expect(await receive(db(),f,{...options,key})).toMatchObject({receipt_id:received.receipt_id,refund_id:null,refund_amount:null,refund_status:null,replayed:true});
+    expect((await db().query('select refund_choice,refund_id from public.order_return_receipts where id=$1',[received.receipt_id])).rows[0])
+      .toEqual({refund_choice:'none',refund_id:null});
+    expect((await db().query('select kind from private.order_email_outbox where return_receipt_id=$1',[received.receipt_id])).rows)
+      .toEqual([{kind:'return_received'}]);
     expect((await progress(db(),f)).refund_waiting).toBe(0);
     expect(await returnFees(db(),f)).toEqual({fee_pending_deduction:0,fee_due_amount:0});
     expect((await db().query('select count(*)::int n from public.order_refunds where order_id=$1',[f.orderId])).rows[0].n).toBe(1);
@@ -222,7 +239,10 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
   });
   test('1点目を返金しないで終え、普通の返金で1点を覆った後は2点目を今返金で受け取っても返金を作らない（I-1 B）',async()=>{
     const f=await fixture(db(),{quantity:2,percent:100});
-    expect(await receive(db(),f,{choice:'now'})).toMatchObject({refund_id:null,refund_status:'waived'});
+    const first=await receive(db(),f,{choice:'now'});
+    expect(first).toMatchObject({refund_id:null,refund_status:'waived'});
+    expect((await db().query('select refund_choice from public.order_return_receipts where id=$1',[first.receipt_id])).rows[0])
+      .toEqual({refund_choice:'now'});
     const ordinary=await ordinaryRefund(db(),f);await result(db(),ordinary.refund_id,'succeeded');
     const received=await receive(db(),f,{choice:'now'});
     expect(received).toMatchObject({return_status:'closed',refund_id:null,refund_amount:null,refund_status:null});

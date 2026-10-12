@@ -282,7 +282,7 @@ describe('runOrderEmailWorker', () => {
         return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: material().order, error: null }) }) }) };
       }
       if (table === 'order_items') {
-        return { select: () => ({ eq: async () => ({ data: material().items, error: null }) }) };
+        return { select: () => ({ eq: () => ({ eq: async () => ({ data: material().items, error: null }) }) }) };
       }
       if (table === 'order_fulfillments') {
         return { select: () => fulfillmentQuery };
@@ -318,7 +318,7 @@ describe('runOrderEmailWorker', () => {
         return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: material().order, error: null }) }) }) };
       }
       if (table === 'order_items') {
-        return { select: () => ({ eq: async () => ({ data: material().items, error: null }) }) };
+        return { select: () => ({ eq: () => ({ eq: async () => ({ data: material().items, error: null }) }) }) };
       }
       if (table === 'order_refunds') {
         return { select: () => refundQuery };
@@ -355,7 +355,7 @@ describe('runOrderEmailWorker', () => {
         return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: material().order, error: null }) }) }) };
       }
       if (table === 'order_items') {
-        return { select: () => ({ eq: async () => ({ data: material().items, error: null }) }) };
+        return { select: () => ({ eq: () => ({ eq: async () => ({ data: material().items, error: null }) }) }) };
       }
       if (table === 'order_returns') {
         return { select: () => returnQuery };
@@ -388,7 +388,7 @@ describe('runOrderEmailWorker', () => {
         return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: material().order, error: null }) }) }) };
       }
       if (table === 'order_items') {
-        return { select: () => ({ eq: async () => ({ data: material().items, error: null }) }) };
+        return { select: () => ({ eq: () => ({ eq: async () => ({ data: material().items, error: null }) }) }) };
       }
       if (table === 'order_return_receipts') {
         return { select: () => receiptQuery };

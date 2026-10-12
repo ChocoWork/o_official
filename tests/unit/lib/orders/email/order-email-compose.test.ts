@@ -678,7 +678,17 @@ describe('loadOrderEmailMaterial', () => {
     unshipped?: unknown; unshippedError?: unknown;
   }) {
     const orderSelect = jest.fn(() => ({ eq: () => ({ maybeSingle: async () => ({ data: results.order, error: results.orderError ?? null }) }) }));
-    const itemSelect = jest.fn(() => ({ eq: async () => ({ data: results.items ?? null, error: results.itemsError ?? null }) }));
+    const itemFilters: Array<[string, unknown]> = [];
+    const itemResult = { data: results.items ?? null, error: results.itemsError ?? null };
+    const itemChain = {
+      eq: (column: string, value: unknown) => {
+        itemFilters.push([column, value]);
+        return itemChain;
+      },
+      then: (resolve: (value: typeof itemResult) => unknown, reject?: (reason: unknown) => unknown) =>
+        Promise.resolve(itemResult).then(resolve, reject),
+    };
+    const itemSelect = jest.fn(() => itemChain);
     const fulfillmentFilters: Array<[string, unknown]> = [];
     const fulfillmentChain: FilterChain = {
       eq: (column, value) => {
@@ -731,10 +741,18 @@ describe('loadOrderEmailMaterial', () => {
       return { select: itemSelect };
     });
     return {
-      client: { from, rpc } as never, from, rpc, orderSelect, itemSelect, fulfillmentSelect, fulfillmentFilters, lineSelect, lineFilters,
+      client: { from, rpc } as never, from, rpc, orderSelect, itemSelect, itemFilters, fulfillmentSelect, fulfillmentFilters, lineSelect, lineFilters,
       refundSelect, refundFilters, refundLineSelect, refundLineFilters,
     };
   }
+
+  it('注文確認の明細は注文した品だけに絞り、交換で足した0円の行を含めない', async () => {
+    const db = store({ order: material().order, items: material().items });
+
+    await loadOrderEmailMaterial(db.client, ORDER_ID);
+
+    expect(db.itemFilters).toEqual([['order_id', ORDER_ID], ['line_kind', 'order']]);
+  });
 
   it('注文と明細を読む。注文の状態・受取額は読むが、配送業者・伝票番号は注文の行から読まない', async () => {
     const order = material().order;

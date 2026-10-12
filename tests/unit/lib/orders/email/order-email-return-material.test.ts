@@ -466,6 +466,31 @@ describe('loadOrderEmailMaterial（受け取りの材料）', () => {
     ]);
   });
 
+  it('交換の品を C・B・A の順で読んでも、C と A をまとめた行は早い元商品 A の位置で B より先に出る', async () => {
+    const originals = [
+      { ...ITEM_ROWS.find((item) => item.id === 'item-coat')!, id: 'item-a' },
+      { ...ITEM_ROWS.find((item) => item.id === 'item-dress')!, id: 'item-b' },
+      { ...ITEM_ROWS.find((item) => item.id === 'item-blouse')!, id: 'item-c', item_name: 'コート' },
+    ];
+    const lines = originals.map((item, index) => ({
+      id: `line-${index}`, order_item_id: item.id, quantity: 1, resolution: 'exchange',
+      exchange_variant_id: index === 1 ? 9002 : 9003, exchange_method: 'stock',
+    }));
+    // 取得順が変わっても、まとめた交換の品の位置は最も早い元商品の登録順で決まる。
+    const received = [lines[2], lines[1], lines[0]].map((line) => ({
+      return_line_id: line.id, disposition: 'restocked', quantity: 1, resolution: 'exchange', exchange_method: 'stock',
+    }));
+    const { orderReturn } = await loadReturn(returnTables({
+      order_items: (columns) => ({ data: columns.startsWith('item_name') ? BASE_ITEMS : originals }),
+      order_return_lines: { data: lines }, order_return_receipt_lines: { data: received },
+    }), { returnReceiptId: RECEIPT_ID });
+
+    expect(orderReturn?.receipt?.exchanges).toEqual([
+      { item_name: 'コート', color: 'WHITE', size: 'L', quantity: 2, method: 'stock', leadDays: null },
+      { item_name: 'ワンピース', color: 'NAVY', size: 'M', quantity: 1, method: 'stock', leadDays: null },
+    ]);
+  });
+
   it.each([
     ['ヤマト運輸', 'yamato', 'yamato'],
     ['佐川急便', 'sagawa', 'sagawa'],

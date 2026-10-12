@@ -240,6 +240,17 @@ describe('composeOrderEmail（返品の受付のお知らせ）', () => {
     );
   });
 
+  it('お客様の負担でお店の送り状を使い、返送料が0円なら差し引きの文を書かない', () => {
+    const email = composeOrderEmail(withReturn(returnMaterial({
+      returnMethod: 'shop_label', returnShippingPayer: 'customer', returnShippingFee: 0,
+    })), RETURN_ACCEPTED);
+
+    expect(email).not.toBeNull();
+    expect(email?.text.split('\n')).toContain('当店がご用意する送り状でお送りください。');
+    expect(email?.text).not.toContain('返送料 ￥0');
+    expect(email?.text).not.toContain('をご返金額から差し引きます。');
+  });
+
   it.each([
     ['お店の負担（お客様が送る）', 'customer_ships', 'shop', '返送料は当店が負担いたします。着払いでお送りください。'],
     ['お客様の負担（お客様が送る）', 'customer_ships', 'customer', '恐れ入りますが、返送料はお客様のご負担でお送りください。'],

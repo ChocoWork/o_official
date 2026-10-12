@@ -280,6 +280,9 @@ describeLocalDb('integration: 返金のお知らせの材料を、実際の Post
     const first = await loadOrderEmailMaterial(client, orderId, fulfillmentId, null);
     const exchange = await loadOrderEmailMaterial(client, orderId, second.rows[0].id as string, null);
 
+    // 同じ注文に交換の品があっても、注文確認の材料は注文した3点だけ。発送の材料は交換の品を別に読む。
+    expect(first?.items).toEqual([{ ...BOUGHT, quantity: 3, line_total: 15000, fulfillment_type: 'stock' }]);
+    expect(exchange?.items).toEqual(first?.items);
     expect(first?.fulfillment?.lines).toEqual([{ ...BOUGHT, quantity: 3, exchange: false }]);
     expect(exchange?.fulfillment?.lines).toEqual([{ item_name: '照合テスト', color: 'NAVY', size: 'L', quantity: 1, exchange: true }]);
   });

@@ -1791,7 +1791,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE
   v_order uuid; v_return public.order_returns%ROWTYPE; v_old public.order_return_receipts%ROWTYPE;
   v_units jsonb; v_effective jsonb; v_overrides jsonb; v_fp text; v_j jsonb; v_id uuid; v_n integer; v_seen text[]:=ARRAY[]::text[];
-  v_receipt uuid:=pg_catalog.gen_random_uuid(); v_refund uuid; v_amount integer; v_status text;
+  v_receipt uuid:=pg_catalog.gen_random_uuid(); v_refund uuid; v_amount integer; v_status text; v_choice text;
   v_lines jsonb:='[]'::jsonb; v_goods integer:=0; v_exchange integer:=0; v_sent integer:=0;
   v_fees integer:=0; v_due integer:=0; v_pending integer:=0; v_shop boolean:=false;
   v_first_goods boolean; v_first_exchange boolean; v_line record; v_action text; v_available integer;
@@ -2014,6 +2014,9 @@ BEGIN
     ) AS t;
   IF _refund_choice='none' AND pg_catalog.jsonb_array_length(v_lines)>0 THEN
     RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+  -- この受け取りで返金する品が無い時（覆われた品だけ・交換だけ・お返しだけ）は、相談・今返金を選んでも返金は起きない。
+  -- 記録・履歴・メールを実際と合わせるため none で残す。指紋は入力から作るので、同じ入力の送り直しは前の結果を返す。
+  v_choice:=CASE WHEN pg_catalog.jsonb_array_length(v_lines)=0 THEN 'none' ELSE _refund_choice END;
   v_first_goods:=NOT EXISTS(SELECT 1 FROM public.order_return_receipts AS rr
     JOIN public.order_return_receipt_lines AS u ON u.receipt_id=rr.id
     WHERE rr.return_id=_return_id AND rr.kind='receive' AND u.resolution IN ('refund','exchange'));
@@ -2048,7 +2051,7 @@ BEGIN
   BEGIN
     INSERT INTO public.order_return_receipts(id,return_id,request_key,request_fingerprint,kind,refund_choice,refund_id,
       notify_customer,sent_back_message,sent_back_carrier,sent_back_tracking_number,note,actor_id,actor_can_refund)
-    VALUES(v_receipt,_return_id,_request_key,v_fp,'receive',_refund_choice,v_refund,_notify_customer,
+    VALUES(v_receipt,_return_id,_request_key,v_fp,'receive',v_choice,v_refund,_notify_customer,
       _sent_back_message,_sent_back_carrier,_sent_back_tracking_number,_note,_actor_id,_actor_can_refund);
   EXCEPTION WHEN unique_violation THEN RAISE EXCEPTION 'RETURN_REQUEST_MISMATCH' USING ERRCODE='22023'; END;
   INSERT INTO public.order_return_receipt_lines(receipt_id,return_line_id,disposition,quantity,resolution,exchange_method)

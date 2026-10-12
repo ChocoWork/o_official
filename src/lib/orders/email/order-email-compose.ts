@@ -116,6 +116,8 @@ const RETURN_NO_SHIPPING_NEEDED = '品物のご返送は不要です。';
 const RETURN_SEND_TO = '下記の返送先へお送りください。';
 const RETURN_SHIPPING_SHOP_PAYS = '返送料は当店が負担いたします。着払いでお送りください。';
 const RETURN_SHIPPING_CUSTOMER_PAYS = '恐れ入りますが、返送料はお客様のご負担でお送りください。';
+/** 返送料が0円の時は差し引く物が無いので、送り状の案内だけにする */
+const RETURN_SHIPPING_SHOP_LABEL_FREE = '当店がご用意する送り状でお送りください。';
 const returnShippingShopLabel = (fee: string) =>
   `当店がご用意する送り状でお送りください。返送料 ${fee} をご返金額から差し引きます。`;
 const RETURN_FEE_NOTICE = '手数料はご返金から差し引きます。差し引けない分は、別にご案内いたします。';
@@ -560,7 +562,11 @@ function toExchangeItems(
     merged.set(
       key,
       same
-        ? { original: same.original, exchange: { ...same.exchange, quantity: same.exchange.quantity + entry.exchange.quantity } }
+        ? {
+            // 取得順によらず、まとめた品の位置は最も早い元商品の登録順に合わせる。
+            original: compareOrderItems(same.original, entry.original) <= 0 ? same.original : entry.original,
+            exchange: { ...same.exchange, quantity: same.exchange.quantity + entry.exchange.quantity },
+          }
         : entry,
     );
   }
@@ -922,10 +928,13 @@ export async function loadOrderEmailMaterial(
     return null;
   }
 
+  // 交換の品の行（line_kind = exchange）は返品で作った ￥0 の行。注文確認・注文の内容はお客様が注文した品だけを書く。
+  // 発送のお知らせは発送の材料で交換の品に印を付けて別に読む。
   const { data: items, error: itemsError } = await store
     .from('order_items')
     .select('item_name, color, size, quantity, line_total, fulfillment_type')
-    .eq('order_id', orderId);
+    .eq('order_id', orderId)
+    .eq('line_kind', 'order');
   if (itemsError) {
     throw new OrderEmailMaterialError('order_items', { cause: itemsError });
   }
@@ -1237,7 +1246,9 @@ function returnShippingLines(orderReturn: OrderEmailReturnMaterial, currency: st
     orderReturn.returnShippingPayer === 'shop'
       ? RETURN_SHIPPING_SHOP_PAYS
       : orderReturn.returnMethod === 'shop_label'
-        ? returnShippingShopLabel(formatCurrency(orderReturn.returnShippingFee, currency))
+        ? orderReturn.returnShippingFee > 0
+          ? returnShippingShopLabel(formatCurrency(orderReturn.returnShippingFee, currency))
+          : RETURN_SHIPPING_SHOP_LABEL_FREE
         : RETURN_SHIPPING_CUSTOMER_PAYS;
   return [RETURN_SEND_TO, burden, '返送先:', address.name, `〒${address.postalCode} ${address.address}`, address.phone];
 }
