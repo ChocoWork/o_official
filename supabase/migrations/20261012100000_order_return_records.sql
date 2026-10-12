@@ -631,7 +631,8 @@ $$;
 --     行を作った順に割り当てる。返金待ち refund_waiting = 返金の解決の品 − 覆われた数。
 --     ただし注文の商品ごとに「発送した数 − 返金した数 − (申し込み + 未処理 + 交換 + お返し + 返金しない)」を超えない。
 --     超えた分は、ふつうの返金の画面で先に返した品として「覆われた」数に入れる（返品の番号が小さい順、行を作った順）。
---     開き直して受け取った返金の品は、手元に残った品より先に、ふつうの発送後の返金（return 以外）で覆う。
+--     開き直して受け取った返金の品は、手元に残った品より先に、その品が「届かない」だった間に作った
+--     ふつうの発送後の返金（return 以外）だけで覆う（届かないの記録から次の開き直しまで、両端を含む）。
 --     開き直した数と、返品の返金・返金しないことで既に終えた分を除く返金待ちの小さい方までを優先する。
 --     優先する覆いと上限の超過は大きい方だけを使い、同じ返金を二重に割り当てない。返し足りない時は、
 --     減った返金待ちと同じだけ refundable_after_shipment が増えるので、ふつうの返金の画面から補える。
@@ -758,7 +759,7 @@ AS $$
     FROM assigned AS a
   ),
   item_totals AS (
-    -- 状態の扱いを変える時は、ここ・order_line_return_counts の totals・fulfillment_line_returnable の per_line の3か所をそろえる。
+    -- 状態の扱いを変える時は、ここ・line_waiting の reopened_waiting の CASE・order_line_return_counts の totals・fulfillment_line_returnable の per_line の4か所をそろえる。
     SELECT lw.order_item_id,
            COALESCE(pg_catalog.sum(CASE WHEN lw.return_status = 'requested' THEN lw.quantity ELSE 0 END), 0) AS requested,
            COALESCE(pg_catalog.sum(CASE WHEN lw.return_status = 'open' THEN GREATEST(lw.quantity - lw.processed, 0) ELSE 0 END), 0) AS open_unprocessed,
@@ -784,6 +785,8 @@ AS $$
     FROM item_totals AS t
     JOIN private.order_line_fulfillment(_order_id) AS f ON f.order_item_id = t.order_item_id
     CROSS JOIN LATERAL (
+      -- 手元の品の返金で開き直した品を打ち消さないよう、同じ商品の行の「届かない」から次の開き直しまでに作った返金だけを使う。
+      -- 同じ取引では now() が同じになるため窓の両端を含む。開き直しの無い窓は除き、EXISTS で重なる窓も一度だけ数える。
       SELECT COALESCE(pg_catalog.sum(rl.quantity), 0) AS quantity
       FROM public.order_refund_lines AS rl
       JOIN public.order_refunds AS rf ON rf.id = rl.refund_id
@@ -791,6 +794,26 @@ AS $$
         AND rf.source <> 'return'
         AND NOT rl.before_shipment
         AND rf.status IN ('awaiting_response', 'pending', 'succeeded')
+        AND EXISTS (
+          SELECT 1
+          FROM public.order_return_lines AS l
+          JOIN public.order_returns AS rt ON rt.id = l.return_id
+          JOIN public.order_return_receipt_lines AS missing ON missing.return_line_id = l.id
+          JOIN public.order_return_receipts AS missing_receipt ON missing_receipt.id = missing.receipt_id
+          WHERE l.order_item_id = t.order_item_id
+            AND rt.order_id = _order_id
+            AND rt.status IN ('open', 'closed')
+            AND missing.disposition = 'missing'
+            AND rf.created_at >= missing_receipt.created_at
+            AND rf.created_at <= (
+              SELECT pg_catalog.min(reopened_receipt.created_at)
+              FROM public.order_return_receipt_lines AS reopened
+              JOIN public.order_return_receipts AS reopened_receipt ON reopened_receipt.id = reopened.receipt_id
+              WHERE reopened.return_line_id = l.id
+                AND reopened.disposition = 'missing_reopened'
+                AND reopened_receipt.created_at >= missing_receipt.created_at
+            )
+        )
     ) AS n
   ),
   prioritized AS (

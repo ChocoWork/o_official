@@ -2012,6 +2012,17 @@ BEGIN
       WHERE x.resolution='refund'
       GROUP BY l.order_item_id,a.waiting,b.waiting
     ) AS t;
+  -- 先にふつうの返金で返した品（覆い）があると、画面の見込みより返金する品が少なくなる。
+  -- 店長が見込みから直した額や送料をそのまま付けると多く返りうるため、計算どおりか相談で受け取り直してもらう。
+  -- 全部が覆われて返金する品が0点の時も、入れた額や送料を黙って捨てずに同じ断りにする。
+  IF _refund_choice='now' AND (_refund_amount IS NOT NULL OR _refund_shipping_amount<>0)
+    AND (SELECT COALESCE(pg_catalog.sum(x.quantity),0)
+      FROM pg_catalog.jsonb_to_recordset(v_lines) AS x(quantity integer))
+      < (SELECT COALESCE(pg_catalog.sum(x.quantity),0)
+        FROM pg_catalog.jsonb_to_recordset(v_effective) AS x(resolution text,quantity integer)
+        WHERE x.resolution='refund') THEN
+    RAISE EXCEPTION 'RETURN_STATE_CONFLICT' USING ERRCODE='22023';
+  END IF;
   IF _refund_choice='none' AND pg_catalog.jsonb_array_length(v_lines)>0 THEN
     RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
   -- この受け取りで返金する品が無い時（覆われた品だけ・交換だけ・お返しだけ）は、相談・今返金を選んでも返金は起きない。

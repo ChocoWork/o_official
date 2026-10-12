@@ -6,12 +6,13 @@ import { PRICE, createCatalogFixture, insertOrderWithLines, variantStock, unique
 jest.setTimeout(30000);
 type Row = Record<string, any>;
 type Fx = { orderId:string; itemId:string; variantId:number; returnId:string; lineId:string; actor:string };
+type RefundFx = Pick<Fx,'orderId'|'itemId'|'actor'>;
 async function fails(db:PgClient,work:()=>Promise<unknown>,message:string) {
   await db.query('savepoint expected_error');
   try { await expect(work()).rejects.toMatchObject({message}); }
   finally { await db.query('rollback to savepoint expected_error'); }
 }
-async function fixture(db:PgClient,o:{quantity?:number;returnQuantity?:number;exchange?:boolean;method?:string;stock?:number;fee?:number;shippingFee?:number;percent?:number;discount?:number;paymentIntent?:string|null;paid?:number|null}={}):Promise<Fx> {
+async function fixture(db:PgClient,o:{quantity?:number;returnQuantity?:number;exchange?:boolean;method?:string;stock?:number;fee?:number;shippingFee?:number;orderShippingAmount?:number;percent?:number;discount?:number;paymentIntent?:string|null;paid?:number|null;beforeReturn?:(f:RefundFx)=>Promise<void>}={}):Promise<Fx> {
   // 空の返送先では返品作成が止まるため、試験用の住所を取引の中だけ設定する。
   await db.query(`update public.shop_return_settings set return_address_name='試験店舗',return_address_postal_code='1500001',
     return_address_line='東京都渋谷区神宮前1-1-1',return_address_phone='0311112222',
@@ -21,9 +22,10 @@ async function fixture(db:PgClient,o:{quantity?:number;returnQuantity?:number;ex
     values(gen_random_uuid(),$1,'{}',now(),now()) returning id`,[`returns-${uniqueSuffix()}@example.com`])).rows[0].id;
   const cat=await createCatalogFixture(db,{stock:q+(o.stock??1)});
   const order=await insertOrderWithLines(db,{status:'paid',lines:[{itemId:cat.itemId,variantId:cat.variantId,quantity:q,fulfillmentType:'stock'}],
-    discountAmount:o.discount??0,paidAmount:o.paid===undefined?PRICE*q-(o.discount??0):o.paid,paymentIntentId:o.paymentIntent===undefined?`pi_fx_${uniqueSuffix()}`:o.paymentIntent});
+    shippingAmount:o.orderShippingAmount??0,discountAmount:o.discount??0,paidAmount:o.paid===undefined?PRICE*q-(o.discount??0)+(o.orderShippingAmount??0):o.paid,paymentIntentId:o.paymentIntent===undefined?`pi_fx_${uniqueSuffix()}`:o.paymentIntent});
   const ship=(await db.query(`select * from public.admin_create_fulfillment($1,$2,$3,'yamato','TEST-1',false,$4::jsonb)`,
     [order.orderId,actor,randomUUID(),JSON.stringify([{order_item_id:order.orderItemIds[0],quantity:q}])])).rows[0];
+  await o.beforeReturn?.({orderId:order.orderId,itemId:order.orderItemIds[0],actor});
   const ret=(await db.query(`select * from public.admin_create_return($1,$2,$3,$4::jsonb,$5,'customer',null,null,$6,$7,$8,0,null,false)`,
     [order.orderId,actor,randomUUID(),JSON.stringify([{fulfillment_id:ship.fulfillment_id,order_item_id:order.orderItemIds[0],quantity:o.returnQuantity??q,reason:'unknown',reason_note:null,
     resolution:o.exchange?'exchange':'refund',exchange_variant_id:o.exchange?cat.variantId:null,exchange_method:o.exchange?(o.method??'stock'):null}]),
@@ -32,14 +34,14 @@ async function fixture(db:PgClient,o:{quantity?:number;returnQuantity?:number;ex
   return {orderId:order.orderId,itemId:order.orderItemIds[0],variantId:cat.variantId,returnId:ret.return_id,lineId:line.id,actor};
 }
 async function receive(db:PgClient,f:Fx,o:Row={}):Promise<Row> {
-  return (await db.query(`select * from public.admin_receive_return($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,0,null,$9,$10,null,null)`,
+  return (await db.query(`select * from public.admin_receive_return($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8,$11,null,$9,$10,null,null)`,
     [f.returnId,f.actor,o.can??true,o.key??randomUUID(),JSON.stringify(o.units??[{return_line_id:f.lineId,disposition:o.disposition??'restocked',quantity:o.quantity??1}]),
-    JSON.stringify(o.overrides??[]),o.choice??'consult',o.amount??null,o.notify??true,o.message??null])).rows[0];
+    JSON.stringify(o.overrides??[]),o.choice??'consult',o.amount??null,o.notify??true,o.message??null,o.shippingAmount??0])).rows[0];
 }
 async function refund(db:PgClient,f:Fx,amount:number|null=null,key=randomUUID()):Promise<Row> {
   return (await db.query('select * from public.admin_refund_return($1,$2,$3,$4,0,null,true)',[f.returnId,f.actor,key,amount])).rows[0];
 }
-async function ordinaryRefund(db:PgClient,f:Fx):Promise<Row> {
+async function ordinaryRefund(db:PgClient,f:RefundFx):Promise<Row> {
   return (await db.query(`select * from public.begin_order_refund($1,'admin',$2,$3::jsonb,false,0,$4,null,'requested_by_customer',null,false,$5)`,
     [f.orderId,randomUUID(),JSON.stringify([{order_item_id:f.itemId,before_shipment:false,quantity:1}]),PRICE,f.actor])).rows[0];
 }
@@ -48,6 +50,42 @@ async function result(db:PgClient,id:string,status:string) {
     [id,`re_${id.replace(/-/g,'')}`,status,status==='failed'?'lost_or_stolen_card':null])).rows[0];
 }
 async function progress(db:PgClient,f:Fx) {return (await db.query('select * from private.order_return_line_progress($1)',[f.returnId])).rows[0];}
+// now() は取引中ずっと同じなので、窓の前・中・後を固定時刻で分ける。既存の追記専用の記録は書き換えない。
+// 既定値の変更と設定は beforeEach の取引内だけで、afterEach の rollback により元へ戻る。
+async function returnEventTime(db:PgClient,time:string) {
+  await db.query("select set_config('test.return_event_time',$1,true)",[time]);
+  // 後回しの外部キー（受け取りの refund_id。後回しにできる制約はこれだけ）の確かめが残っていると表の定義を
+  // 変えられないので、先に済ませてから既定値を変え、元の後回しに戻す。
+  await db.query('set constraints all immediate');
+  await db.query(`alter table public.order_return_receipts alter column created_at
+    set default current_setting('test.return_event_time')::timestamptz`);
+  await db.query(`alter table public.order_refunds alter column created_at
+    set default current_setting('test.return_event_time')::timestamptz`);
+  await db.query('set constraints all deferred');
+}
+async function closeMissingThenRefundAndReopen(db:PgClient,f:Fx) {
+  await returnEventTime(db,'2026-10-13T01:00:00Z');
+  await db.query('select * from public.admin_close_return_missing($1,$2,$3)',[f.returnId,f.actor,randomUUID()]);
+  await returnEventTime(db,'2026-10-13T02:00:00Z');
+  const ordinary=await ordinaryRefund(db,f);await result(db,ordinary.refund_id,'succeeded');
+  await returnEventTime(db,'2026-10-13T03:00:00Z');
+  await db.query('select * from public.admin_reopen_return($1,$2,$3)',[f.returnId,f.actor,randomUUID()]);
+}
+// 2点の同じ発送から、R1・R2 に1点ずつ作る。R2 は相談で受け取り、R1 だけを開き直す。
+async function reopenBesideWaitingReturn(db:PgClient):Promise<{r1:Fx;r2:Fx}> {
+  const r1=await fixture(db,{quantity:2,returnQuantity:1});
+  const original=(await db.query('select fulfillment_id from public.order_return_lines where id=$1',[r1.lineId])).rows[0];
+  const ret=(await db.query(`select * from public.admin_create_return($1,$2,$3,$4::jsonb,'customer_ships','customer',null,null,0,0,0,0,null,false)`,
+    [r1.orderId,r1.actor,randomUUID(),JSON.stringify([{fulfillment_id:original.fulfillment_id,order_item_id:r1.itemId,quantity:1,
+      reason:'unknown',reason_note:null,resolution:'refund',exchange_variant_id:null,exchange_method:null}])])).rows[0];
+  const line=(await db.query('select id from public.order_return_lines where return_id=$1',[ret.return_id])).rows[0];
+  const r2={...r1,returnId:ret.return_id,lineId:line.id};
+  await receive(db,r2,{can:false,choice:'consult'});
+  expect(await progress(db,r2)).toMatchObject({unprocessed:0,refund_waiting:1});
+  expect((await db.query('select status from public.order_returns where id=$1',[r2.returnId])).rows[0].status).toBe('open');
+  await closeMissingThenRefundAndReopen(db,r1);
+  return {r1,r2};
+}
 // 同じ商品の2点を、同じ色・サイズへの交換（在庫から）の2行に分けた返品。在庫は受け取りの前に stock 点。
 // lineId・secondLineId は list_order_returns の lines の並び（DB が在庫を割り当てる順・画面が数える順）の1つ目と2つ目
 async function twoExchangeLines(db:PgClient,stock:number,discount=0):Promise<Fx&{secondLineId:string}> {
@@ -219,6 +257,83 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
       [f.orderId,randomUUID(),JSON.stringify([{order_item_id:f.itemId,before_shipment:false,quantity:1}]),PRICE,f.actor])).rows[0];
     await result(db(),r.refund_id,'succeeded');await db().query('select * from public.admin_reopen_return($1,$2,$3)',[f.returnId,f.actor,randomUUID()]);
     expect((await receive(db(),f,{choice:'now'})).refund_id).toBeNull();expect((await progress(db(),f)).refund_waiting).toBe(0);
+  });
+  test('開き直しで覆われた別の返品を直ちに完了にし、お返しの後も完了を保つ（最後の直し I-1 a）',async()=>{
+    const {r1,r2}=await reopenBesideWaitingReturn(db());
+    expect(await progress(db(),r2)).toMatchObject({unprocessed:0,refund_waiting:0});
+    expect((await db().query('select status from public.order_returns where id=$1',[r2.returnId])).rows[0].status).toBe('closed');
+    await receive(db(),r1,{choice:'none',disposition:'sent_back',message:'届いた品をお返しします。'});
+    expect(await progress(db(),r2)).toMatchObject({unprocessed:0,refund_waiting:0});
+    expect((await db().query('select status from public.order_returns where id=$1',[r2.returnId])).rows[0].status).toBe('closed');
+  });
+  test('開き直した返品の今返金は覆われ、別の返品は完了のまま返金待ち1になる（最後の直し I-1 b）',async()=>{
+    const {r1,r2}=await reopenBesideWaitingReturn(db());
+    // 受け取り後の数も観測できるよう、ここでは開き直し直後の状態の期待を重ねない。
+    const received=await receive(db(),r1,{choice:'now'});
+    expect(received.refund_id).toBeNull();
+    expect(await progress(db(),r1)).toMatchObject({unprocessed:0,refund_waiting:0});
+    expect((await db().query('select count(*)::int n from public.order_refunds where return_id=$1',[r1.returnId])).rows[0].n).toBe(0);
+    expect(await progress(db(),r2)).toMatchObject({unprocessed:0,refund_waiting:1});
+    expect((await db().query('select status from public.order_returns where id=$1',[r2.returnId])).rows[0].status).toBe('closed');
+  });
+  test('届かない記録より前の普通の返金を覆いに使わず、開き直した2点を今返金する（最後の直し I-2 a）',async()=>{
+    await returnEventTime(db(),'2026-10-13T00:00:00Z');
+    const f=await fixture(db(),{quantity:3,returnQuantity:2,beforeReturn:async ordinaryFx=>{
+      const ordinary=await ordinaryRefund(db(),ordinaryFx);await result(db(),ordinary.refund_id,'succeeded');
+    }});
+    await returnEventTime(db(),'2026-10-13T01:00:00Z');
+    await db().query('select * from public.admin_close_return_missing($1,$2,$3)',[f.returnId,f.actor,randomUUID()]);
+    await returnEventTime(db(),'2026-10-13T03:00:00Z');
+    await db().query('select * from public.admin_reopen_return($1,$2,$3)',[f.returnId,f.actor,randomUUID()]);
+    const received=await receive(db(),f,{choice:'now',quantity:2});
+    expect(received.refund_id).not.toBeNull();
+    expect((await db().query('select order_item_id,quantity from public.order_refund_lines where refund_id=$1',[received.refund_id])).rows)
+      .toEqual([{order_item_id:f.itemId,quantity:2}]);
+    expect(received.refund_amount).toBe(PRICE*2);
+  });
+  test('開き直しより後の普通の返金を覆いに使わず、開き直した2点を今返金する（最後の直し I-2 b）',async()=>{
+    const f=await fixture(db(),{quantity:3,returnQuantity:2});
+    await returnEventTime(db(),'2026-10-13T01:00:00Z');
+    await db().query('select * from public.admin_close_return_missing($1,$2,$3)',[f.returnId,f.actor,randomUUID()]);
+    await returnEventTime(db(),'2026-10-13T03:00:00Z');
+    await db().query('select * from public.admin_reopen_return($1,$2,$3)',[f.returnId,f.actor,randomUUID()]);
+    await returnEventTime(db(),'2026-10-13T04:00:00Z');
+    const ordinary=await ordinaryRefund(db(),f);await result(db(),ordinary.refund_id,'succeeded');
+    const received=await receive(db(),f,{choice:'now',quantity:2});
+    expect(received.refund_id).not.toBeNull();
+    expect((await db().query('select order_item_id,quantity from public.order_refund_lines where refund_id=$1',[received.refund_id])).rows)
+      .toEqual([{order_item_id:f.itemId,quantity:2}]);
+    expect(received.refund_amount).toBe(PRICE*2);
+  });
+  test.each([{amount:PRICE+400,shippingAmount:0},{shippingAmount:600}])('覆いで2点から1点に減る今返金の額・送料指定 %j を断り、記録と在庫を増やさない（最後の直し M-1 a）',async options=>{
+    const f=await fixture(db(),{quantity:2,orderShippingAmount:600});
+    await closeMissingThenRefundAndReopen(db(),f);
+    const counts=async()=>(await db().query(`select
+      (select count(*)::int from public.order_return_receipts where return_id=$1) receipts,
+      (select count(*)::int from public.order_return_receipt_lines u join public.order_return_receipts r on r.id=u.receipt_id where r.return_id=$1) receipt_lines,
+      (select count(*)::int from public.order_refunds where order_id=$2) refunds,
+      (select count(*)::int from public.order_refund_lines l join public.order_refunds r on r.id=l.refund_id where r.order_id=$2) refund_lines,
+      (select count(*)::int from public.stock_movements where return_id=$1) stock_movements`,[f.returnId,f.orderId])).rows[0];
+    const before=await counts();const stockBefore=await variantStock(db(),f.variantId);
+    const key=randomUUID();
+    for(let attempt=0;attempt<2;attempt++) {
+      await fails(db(),()=>receive(db(),f,{choice:'now',quantity:2,key,...options}),'RETURN_STATE_CONFLICT');
+      expect(await counts()).toEqual(before);
+      expect(await variantStock(db(),f.variantId)).toBe(stockBefore);
+      expect(await progress(db(),f)).toMatchObject({unprocessed:2,refund_waiting:0});
+    }
+  });
+  test('覆いで2点から1点に減っても、額・送料を入れない今返金は1点分で受け取れる（最後の直し M-1 b）',async()=>{
+    const f=await fixture(db(),{quantity:2});
+    await closeMissingThenRefundAndReopen(db(),f);
+    const received=await receive(db(),f,{choice:'now',quantity:2});
+    expect(received).toMatchObject({return_status:'closed',refund_amount:PRICE,refund_status:'awaiting_response'});
+    expect(received.refund_id).not.toBeNull();
+    expect((await db().query('select order_item_id,quantity from public.order_refund_lines where refund_id=$1',[received.refund_id])).rows)
+      .toEqual([{order_item_id:f.itemId,quantity:1}]);
+    expect((await db().query("select disposition,quantity from public.order_return_receipt_lines where receipt_id=$1 and disposition='restocked'",[received.receipt_id])).rows)
+      .toEqual([{disposition:'restocked',quantity:2}]);
+    expect(await variantStock(db(),f.variantId)).toBe(3);
   });
   test.each([{choice:'now',can:true},{choice:'consult',can:false}])('2点のうち届かない1点を普通の返金で覆った後は、開き直して %j で受け取っても返金と相談の手数料と店への知らせを増やさない（I-1 A）',async options=>{
     const f=await fixture(db(),{quantity:2,returnQuantity:1,shippingFee:600,percent:10});

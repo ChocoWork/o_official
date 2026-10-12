@@ -1077,6 +1077,13 @@ BEGIN
       reopened_by = _actor_id
   WHERE r.id = _return_id;
 
+  -- 開き直すと未処理の数が戻って同じ商品の上限が下がり、ほかの返品の返金待ちが覆われることがある。
+  -- 返金待ちも未処理も無い返品が受付中のまま固まらないよう、注文の鍵の下でほかの受付中を番号の順に確かめ直す。
+  PERFORM private.refresh_order_return_status(rt.id)
+  FROM public.order_returns AS rt
+  WHERE rt.order_id = v_return.order_id AND rt.id <> _return_id AND rt.status = 'open'
+  ORDER BY rt.id;
+
   RETURN QUERY SELECT v_receipt_id, 'open'::text, false;
 END;
 $$;
