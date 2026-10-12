@@ -32,6 +32,8 @@ type OrderItemRow = {
 	size: string | null;
 	quantity: number;
 	line_total: number;
+	// 'exchange' は返品の交換でお店が足した品の行（値段は 0）。画面が「交換の品」の印を付け、値段を「—」にする
+	line_kind: 'order' | 'exchange';
 };
 
 type OrderDetailRow = {
@@ -158,7 +160,7 @@ function toShipments(fulfillments: readonly OrderFulfillmentHistoryRow[], items:
 				items: fulfillment.lines.flatMap((line) => {
 					const item = itemById.get(line.orderItemId);
 					return item
-						? [{ orderItemId: item.id, name: item.item_name, color: item.color, size: item.size, quantity: line.quantity }]
+						? [{ orderItemId: item.id, name: item.item_name, color: item.color, size: item.size, quantity: line.quantity, lineKind: item.line_kind }]
 						: [];
 				}),
 			};
@@ -242,7 +244,8 @@ export async function GET(
 				color,
 				size,
 				quantity,
-				line_total
+				line_total,
+				line_kind
 			)
 		`)
 		.eq('id', id)
@@ -352,6 +355,8 @@ export async function GET(
 				size: item.size,
 				quantity: item.quantity,
 				amount: formatCurrency(item.line_total, data.currency),
+				// 'exchange' は交換の品の行。金額は DB の値（¥0）のまま返し、「—」にするのは画面
+				lineKind: item.line_kind,
 				shippedQuantity: line?.shipped ?? 0,
 				// 返事待ち・保留・成功の返金の数（発送前と発送後の合計）。数え方は DB の1か所にある
 				refundedQuantity: (line?.refundedBeforeShipment ?? 0) + (line?.refundedAfterShipment ?? 0),

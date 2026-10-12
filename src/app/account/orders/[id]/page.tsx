@@ -49,6 +49,8 @@ type OrderShipment = {
     color: string | null;
     size: string | null;
     quantity: number;
+    /** 'exchange' は返品の交換でお店が送る品。「交換の品」の印を付ける。省くと 'order'（古い形の答えでも画面を壊さない） */
+    lineKind?: "order" | "exchange";
   }>;
 };
 
@@ -357,6 +359,15 @@ export default function AccountOrderDetailPage() {
                   {shipment.items.map((line) => (
                     <li key={line.orderItemId}>
                       {`${describeItem(line.name, line.color, line.size)} × ${line.quantity}`}
+                      {/* 交換の品の発送は「交換の品」と書く（返品の交換でお店が送る品） */}
+                      {line.lineKind === "exchange" ? (
+                        <span
+                          className="account-status account-status-sm ml-2"
+                          data-testid="order-shipment-exchange"
+                        >
+                          交換の品
+                        </span>
+                      ) : null}
                     </li>
                   ))}
                 </ul>

@@ -72,11 +72,16 @@ function loggedText(spy: jest.SpyInstance): string {
 
 const STOCK_ITEM = {
   id: 'line-stock', item_id: 10, variant_id: 101, item_name: 'リネンシャツ', item_image_url: null,
-  color: '白', size: 'M', quantity: 2, line_total: 24000,
+  color: '白', size: 'M', quantity: 2, line_total: 24000, line_kind: 'order',
 };
 const MADE_ITEM = {
   id: 'line-made', item_id: 11, variant_id: 111, item_name: 'ウールコート', item_image_url: null,
-  color: '黒', size: 'L', quantity: 1, line_total: 58000,
+  color: '黒', size: 'L', quantity: 1, line_total: 58000, line_kind: 'order',
+};
+// 返品の交換でお店が足した品の行（同じ商品の色・サイズ違い）。値段は 0
+const EXCHANGE_ITEM = {
+  id: 'line-exchange', item_id: 10, variant_id: 102, item_name: 'リネンシャツ', item_image_url: null,
+  color: '白', size: 'L', quantity: 1, line_total: 0, line_kind: 'exchange',
 };
 
 function orderRow(overrides: Record<string, unknown> = {}) {
@@ -105,6 +110,15 @@ function madeLine(overrides: Record<string, unknown> = {}) {
   return {
     orderId: ORDER_ID, orderItemId: 'line-made', variantId: 111, fulfillmentType: 'backorder', quantity: 1,
     shipped: 0, completed: 0, refundedBeforeShipment: 0, refundedAfterShipment: 0, inProduction: 1, readyUnshipped: 0, unshipped: 1,
+    ...overrides,
+  };
+}
+
+// 交換の品1点（在庫から）が発送準備中
+function exchangeLine(overrides: Record<string, unknown> = {}) {
+  return {
+    orderId: ORDER_ID, orderItemId: 'line-exchange', variantId: 102, fulfillmentType: 'stock', quantity: 1,
+    shipped: 0, completed: 1, refundedBeforeShipment: 0, refundedAfterShipment: 0, inProduction: 0, readyUnshipped: 1, unshipped: 1,
     ...overrides,
   };
 }
@@ -311,7 +325,7 @@ describe('GET /api/orders/[id] の発送と進み具合（グループ E-1）', 
       carrierLabel: 'ヤマト運輸',
       trackingNumber: '1234-5678-9012',
       trackingUrl: 'https://toi.kuronekoyamato.co.jp/cgi-bin/tneko?number=1234-5678-9012',
-      items: [{ orderItemId: 'line-stock', name: 'リネンシャツ', color: '白', size: 'M', quantity: 2 }],
+      items: [{ orderItemId: 'line-stock', name: 'リネンシャツ', color: '白', size: 'M', quantity: 2, lineKind: 'order' }],
     });
     expect(body.shipments[1]).toMatchObject({
       id: 'ful-2',
@@ -721,5 +735,86 @@ describe('GET /api/orders/[id] の返金（グループ E-2）', () => {
     expect(loggedText(consoleError)).not.toContain('DB-MESSAGE');
     expect(loggedText(consoleError)).not.toContain('神宮前');
     consoleError.mockRestore();
+  });
+});
+
+describe('GET /api/orders/[id] の交換の品の行と返品の返金（グループ E-3）', () => {
+  it('商品の行ごとに lineKind（order か exchange）を返す。交換の品の行の金額は DB の値（¥0）のまま返す（T13-3）', async () => {
+    setup({
+      order: orderRow({ order_items: [STOCK_ITEM, EXCHANGE_ITEM] }),
+      lines: [stockLine({ shipped: 2, readyUnshipped: 0, unshipped: 0 }), exchangeLine()],
+    });
+
+    const { body } = await getDetail();
+
+    expect(body.items.map((item: Json) => [item.id, item.lineKind])).toEqual([
+      ['line-stock', 'order'],
+      ['line-exchange', 'exchange'],
+    ]);
+    expect(body.items[1]).toMatchObject({ itemId: 10, variantId: 102, color: '白', size: 'L', quantity: 1 });
+    expect(body.items[1].amount).toMatch(/^[¥￥]0$/);
+  });
+
+  it('商品の読み取りに line_kind の列を入れる', async () => {
+    setup();
+
+    await getDetail();
+
+    expect(String(mockOwnerQuery.select.mock.calls[0][0])).toMatch(/line_kind/);
+  });
+
+  it('発送の商品にも lineKind を付ける（交換の品の発送を「交換の品」と書くため）', async () => {
+    setup({
+      order: orderRow({ status: 'shipped', order_items: [STOCK_ITEM, EXCHANGE_ITEM] }),
+      lines: [
+        stockLine({ shipped: 2, readyUnshipped: 0, unshipped: 0 }),
+        exchangeLine({ shipped: 1, readyUnshipped: 0, unshipped: 0 }),
+      ],
+      fulfillments: [
+        fulfillment({
+          fulfillmentId: 'ful-2', number: 2, shippedAt: '2026-10-20T00:00:00.000Z',
+          lines: [{ orderItemId: 'line-exchange', quantity: 1 }],
+        }),
+        fulfillment(),
+      ],
+    });
+
+    const { body } = await getDetail();
+
+    expect(body.shipments.map((shipment: Json) => shipment.items)).toEqual([
+      [{ orderItemId: 'line-stock', name: 'リネンシャツ', color: '白', size: 'M', quantity: 2, lineKind: 'order' }],
+      [{ orderItemId: 'line-exchange', name: 'リネンシャツ', color: '白', size: 'L', quantity: 1, lineKind: 'exchange' }],
+    ]);
+  });
+
+  it('交換の品を足して支払い済みに戻った注文は、交換の品を発送準備中に数え、「一部発送済み」を付ける（今の数え方のまま）', async () => {
+    setup({
+      order: orderRow({ order_items: [STOCK_ITEM, EXCHANGE_ITEM] }),
+      // 元の品2点は発送済み。交換の品1点は在庫から、発送準備中
+      lines: [stockLine({ shipped: 2, readyUnshipped: 0, unshipped: 0 }), exchangeLine()],
+      fulfillments: [fulfillment()],
+    });
+
+    const { body } = await getDetail();
+
+    expect(body.status).toBe('paid');
+    expect(body.progress).toMatchObject({ key: 'ready', label: '発送準備中', partiallyShipped: true });
+    expect(body.items.map((item: Json) => [item.id, item.shippedQuantity, item.readyQuantity])).toEqual([
+      ['line-stock', 2, 0],
+      ['line-exchange', 0, 1],
+    ]);
+  });
+
+  it('返品の返金（source が return）も、ほかの返金と同じく「ご返金」に出す（仕様書 8-2）', async () => {
+    setup({ refunds: [refundRow({ refundId: 'refund-return', source: 'return', amount: 9000 })] });
+
+    const { body } = await getDetail();
+
+    expect(body.refunds).toEqual([
+      {
+        id: 'refund-return', date: '2026/10/12', amount: expect.stringMatching(/^[¥￥]9,000$/),
+        status: 'completed', customerActionDeadline: null,
+      },
+    ]);
   });
 });

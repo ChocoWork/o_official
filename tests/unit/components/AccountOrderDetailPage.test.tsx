@@ -346,3 +346,82 @@ describe('お客様の注文の画面の返金（グループ E-2）', () => {
     expect(screen.queryAllByRole('region', { name: /^配送情報/ })).toHaveLength(0);
   });
 });
+
+describe('お客様の注文の画面の交換の品（グループ E-3）', () => {
+  beforeEach(() => {
+    mockClientFetch.mockReset();
+  });
+
+  it('ご注文商品の交換の品の行に「交換の品」の印を付け、値段は「—」にする。ふつうの行は金額を出し、印を付けない。「発送準備中の商品」の欄には印を付けない', async () => {
+    await renderPage(
+      order({
+        items: [
+          item({ id: 'line-1', quantity: 1, amount: '¥12,000', shippedQuantity: 1, lineKind: 'order' }),
+          item({ id: 'line-2', size: 'L', quantity: 1, amount: '¥0', readyQuantity: 1, lineKind: 'exchange' }),
+        ],
+      }),
+    );
+
+    expect(screen.getAllByTestId('order-item-exchange')).toHaveLength(1);
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('.account-order-item'));
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).queryByTestId('order-item-exchange')).not.toBeInTheDocument();
+    expect(rows[0]).toHaveTextContent('¥12,000');
+    expect(rows[0]).not.toHaveTextContent('—');
+    expect(within(rows[1]).getByTestId('order-item-exchange')).toHaveTextContent('交換の品');
+    expect(within(rows[1]).getByText('—')).toBeInTheDocument();
+    expect(rows[1]).not.toHaveTextContent('¥0');
+    // 「発送準備中の商品」の欄には印を付けない（T13-5）
+    expect(screen.getByRole('region', { name: '発送準備中の商品' })).not.toHaveTextContent('交換の品');
+  });
+
+  it('配送情報の交換の品の行に「交換の品」の印を付ける。ふつうの行には付けない', async () => {
+    await renderPage(
+      order({
+        status: 'shipped',
+        progress: {
+          key: 'in_transit',
+          label: '配送中',
+          partiallyShipped: false,
+          steps: [
+            { key: 'payment', label: 'お支払い', state: 'done' },
+            { key: 'ready', label: '発送準備中', state: 'done' },
+            { key: 'in_transit', label: '配送中', state: 'current' },
+            { key: 'delivered', label: '配達済み', state: 'todo' },
+          ],
+        },
+        shipments: [
+          {
+            id: 'f1', number: 1, shippedAt: '2026-10-05T15:30:00.000Z', carrier: 'yamato', carrierLabel: 'ヤマト運輸',
+            trackingNumber: '1234-5678-9012', trackingUrl: null,
+            items: [{ orderItemId: 'line-1', name: 'リネンシャツ', color: '白', size: 'M', quantity: 1, lineKind: 'order' }],
+          },
+          {
+            id: 'f2', number: 2, shippedAt: '2026-10-20T00:00:00.000Z', carrier: 'sagawa', carrierLabel: '佐川急便',
+            trackingNumber: 'AB-123', trackingUrl: null,
+            items: [{ orderItemId: 'line-2', name: 'リネンシャツ', color: '白', size: 'L', quantity: 1, lineKind: 'exchange' }],
+          },
+        ],
+        items: [
+          item({ id: 'line-1', quantity: 1, amount: '¥12,000', shippedQuantity: 1 }),
+          item({ id: 'line-2', size: 'L', quantity: 1, amount: '¥0', shippedQuantity: 1, lineKind: 'exchange' }),
+        ],
+      }),
+    );
+
+    const first = screen.getByRole('region', { name: '配送情報（1回目）' });
+    expect(first).toHaveTextContent('リネンシャツ（白 / M） × 1');
+    expect(within(first).queryByTestId('order-shipment-exchange')).not.toBeInTheDocument();
+
+    const second = screen.getByRole('region', { name: '配送情報（2回目）' });
+    expect(second).toHaveTextContent('リネンシャツ（白 / L） × 1');
+    expect(within(second).getByTestId('order-shipment-exchange')).toHaveTextContent('交換の品');
+  });
+
+  it('交換の品の行が無い注文（lineKind を省いた古い形の答えを含む）には、どちらの印も出さない', async () => {
+    await renderPage(order());
+
+    expect(screen.queryAllByTestId('order-item-exchange')).toHaveLength(0);
+    expect(screen.queryAllByTestId('order-shipment-exchange')).toHaveLength(0);
+  });
+});

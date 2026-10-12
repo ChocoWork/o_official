@@ -20,6 +20,8 @@ export type OrderLineItem = {
   stockStatus?: "in_stock" | "low_stock" | "sold_out" | "unknown";
   /** 返金した数（返事待ち・保留・成功の返金の合計）。注文の窓口が数える。省くと 0 点で、印を出さない */
   refundedQuantity?: number;
+  /** 'exchange' は返品の交換でお店が足した品の行（値段は 0）。「交換の品」の印を付け、値段は「—」と出す。省くと 'order'（ふつうの行） */
+  lineKind?: "order" | "exchange";
 };
 
 export function OrderItemRow({
@@ -64,6 +66,7 @@ export function OrderItemRow({
 
   const action = renderAction();
   const refundedQuantity = item.refundedQuantity ?? 0;
+  const isExchange = item.lineKind === "exchange";
 
   return (
     <div className="account-order-item">
@@ -83,6 +86,14 @@ export function OrderItemRow({
             {item.color} / {item.size}
           </p>
           <p className="account-label">数量: {item.quantity}</p>
+          {isExchange ? (
+            <span
+              className="account-status account-status-sm mt-1 mr-1"
+              data-testid="order-item-exchange"
+            >
+              交換の品
+            </span>
+          ) : null}
           {refundedQuantity > 0 ? (
             <span
               className="account-status account-status-sm mt-1"
@@ -92,7 +103,8 @@ export function OrderItemRow({
             </span>
           ) : null}
         </div>
-        <p className="account-value">{item.amount}</p>
+        {/* 交換の品の行は値段が 0。「¥0」と出すと無料で買った品に見えるので「—」にする */}
+        <p className="account-value">{isExchange ? "—" : item.amount}</p>
         {action ? <div className="mt-1 sm:hidden">{action}</div> : null}
       </div>
       {action ? (

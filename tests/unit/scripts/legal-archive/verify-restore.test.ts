@@ -27,4 +27,8 @@ it('verifies restored structure, counts, totals and artifact hashes', async () =
   });
   expect(result).toEqual({ ok: true, checks: 10 });
   expect(client.query.mock.calls.flat().join(' ')).not.toMatch(/shipping_/);
+  // 写しの明細の数（マニフェスト）は交換の品の行を外した数なので、復元した DB の明細も外して数える（T13-9）
+  expect(client.query.mock.calls.flat().join(' ')).toContain(
+    "coalesce(to_jsonb(i)->>'line_kind', 'order') <> 'exchange'",
+  );
 });

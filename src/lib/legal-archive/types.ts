@@ -33,6 +33,8 @@ export type LegalArchiveOrderItem = {
   size: string | null;
   quantity: number;
   line_total: number;
+  // 'exchange' は返品の交換でお店が足した行。写しには入れない（export-query.ts が外す）
+  line_kind?: 'order' | 'exchange';
   created_at: string;
 };
 

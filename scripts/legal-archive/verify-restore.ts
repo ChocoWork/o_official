@@ -33,10 +33,12 @@ export async function verifyRestore(input: {
     'select count(*)::integer as count from order_items i left join orders o on o.id=i.order_id where o.id is null',
   );
   if (Number(orphan.rows[0]?.count ?? 0) !== 0) return fail('ORPHAN_ORDER_ITEM');
+  // 明細の数は、写しの明細（manifest.rowCounts.orderItems）と同じく交換の品の行を外す（お金が動かない行）。
+  // 交換の列が無い古いダンプでも落ちないよう、to_jsonb で読む（無ければ order）
   const counts = await input.client.query(
     `select
       (select count(*) from orders where created_at >= '${lower}' and created_at < '${upper}')::integer as orders,
-      (select count(*) from order_items i join orders o on o.id=i.order_id where o.created_at >= '${lower}' and o.created_at < '${upper}')::integer as items,
+      (select count(*) from order_items i join orders o on o.id=i.order_id where o.created_at >= '${lower}' and o.created_at < '${upper}' and coalesce(to_jsonb(i)->>'line_kind', 'order') <> 'exchange')::integer as items,
       (select count(*) from order_revisions r join orders o on o.id=r.order_id where o.created_at >= '${lower}' and o.created_at < '${upper}')::integer as revisions`,
   );
   const count = counts.rows[0] ?? {};

@@ -47,3 +47,30 @@ describe('OrderItemRow の返金済みの印（グループ E-2）', () => {
     expect(screen.getAllByRole('button', { name: '再度購入' })).toHaveLength(2);
   });
 });
+
+describe('OrderItemRow の交換の品の印（グループ E-3）', () => {
+  it('交換の品の行は、数量の下に「交換の品」の印を出し、値段を「—」にする（¥0 と出さない）', () => {
+    renderRow({ lineKind: 'exchange', quantity: 1, amount: '¥0' });
+
+    expect(screen.getByTestId('order-item-exchange')).toHaveTextContent('交換の品');
+    expect(screen.getByText('数量: 1')).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.queryByText('¥0')).not.toBeInTheDocument();
+  });
+
+  it('ふつうの行（lineKind が order）は、印を出さず、金額をそのまま出す', () => {
+    renderRow({ lineKind: 'order' });
+
+    expect(screen.queryByTestId('order-item-exchange')).not.toBeInTheDocument();
+    expect(screen.queryByText('交換の品')).not.toBeInTheDocument();
+    expect(screen.queryByText('—')).not.toBeInTheDocument();
+    expect(screen.getByText('¥36,000')).toBeInTheDocument();
+  });
+
+  it('交換の品の行に返金した数が付いた時は、2つの印を並べて出す（T13-7）', () => {
+    renderRow({ lineKind: 'exchange', amount: '¥0', refundedQuantity: 1 });
+
+    expect(screen.getByTestId('order-item-exchange')).toHaveTextContent('交換の品');
+    expect(screen.getByTestId('order-item-refunded')).toHaveTextContent('返金済み 1点');
+  });
+});

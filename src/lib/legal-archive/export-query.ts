@@ -74,7 +74,11 @@ export async function fetchLegalArchivePage(input: {
       .order('order_id', { ascending: true })
       .order('created_at', { ascending: true })
       .order('id', { ascending: true });
-    orderItems = assertQuery(itemResult, 'order items') as LegalArchiveOrderItem[];
+    // 交換の品の行（返品の交換でお店が足した行。値段は 0）は、お金が動かないので写しに入れない。
+    // 注文の金額の合計（totals）は注文の行から出すので変わらない。DB 全体のダンプには交換の行も入る
+    orderItems = (assertQuery(itemResult, 'order items') as LegalArchiveOrderItem[]).filter(
+      (item) => item.line_kind !== 'exchange',
+    );
 
     const revisionResult = await input.client
       .from('order_revisions')

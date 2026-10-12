@@ -25,6 +25,8 @@ type OrderItemMetricRow = {
   item_name: string;
   quantity: number;
   line_total: number;
+  // 'exchange' は返品の交換でお店が足した品の行（値段は 0）。お金が動かないので、セット注文と販売実績の数に入れない
+  line_kind: 'order' | 'exchange';
   created_at: string;
 };
 
@@ -309,7 +311,7 @@ export async function GET(request: Request) {
         // 受付の前の注文（支払い手続き中・放棄）は数えない。CVR と返品率を下げないため
         .not('status', 'in', HIDDEN_ORDER_STATUS_FILTER)
         .order('created_at', { ascending: false }),
-      supabase.from('order_items').select('order_id, item_id, item_name, quantity, line_total, created_at'),
+      supabase.from('order_items').select('order_id, item_id, item_name, quantity, line_total, line_kind, created_at'),
       supabase.from('items').select('id, status'),
     ]);
 
@@ -343,6 +345,11 @@ export async function GET(request: Request) {
 
     const orderAggregationByOrderId = new Map<string, OrderAggregation>();
     for (const orderItem of orderItems) {
+      // 交換の品の行は数えない。数えると、1点の注文に交換の品が付いただけで「セット注文」になり、同じ商品が2回売れたことになる
+      if (orderItem.line_kind === 'exchange') {
+        continue;
+      }
+
       const current = orderAggregationByOrderId.get(orderItem.order_id) ?? { totalUnits: 0, itemIds: [] };
       current.totalUnits += orderItem.quantity;
       current.itemIds.push(orderItem.item_id);

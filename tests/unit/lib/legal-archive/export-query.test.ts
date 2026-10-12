@@ -1,6 +1,47 @@
 import { fetchLegalArchivePage } from '@/lib/legal-archive/export-query';
 
 describe('fetchLegalArchivePage', () => {
+  it('交換の品の行（line_kind が exchange）は写しに入れない。ふつうの行と、注文の金額の合計は変えない（T13-2）', async () => {
+    const orderQuery = chain({
+      data: [
+        {
+          id: 'order-1',
+          created_at: '2026-01-02T00:00:00.000Z',
+          total_amount: 12000,
+          refunded_amount: 0,
+        },
+      ],
+      error: null,
+    });
+    const itemQuery = chain({
+      data: [
+        { id: 'item-1', order_id: 'order-1', line_kind: 'order', line_total: 12000 },
+        { id: 'item-2', order_id: 'order-1', line_kind: 'exchange', line_total: 0 },
+      ],
+      error: null,
+    });
+    const revisionQuery = chain({ data: [{ id: 1, order_id: 'order-1' }], error: null });
+    const client = {
+      from: jest
+        .fn()
+        .mockReturnValueOnce(orderQuery)
+        .mockReturnValueOnce(itemQuery)
+        .mockReturnValueOnce(revisionQuery),
+    };
+
+    const result = await fetchLegalArchivePage({
+      client,
+      year: 2026,
+      cursor: null,
+      pageSize: 500,
+    });
+
+    expect(result.orders).toHaveLength(1);
+    expect(result.orderItems.map((item) => item.id)).toEqual(['item-1']);
+    expect(result.revisions).toHaveLength(1);
+    expect(result.totals).toEqual({ grossAmount: 12000, refundedAmount: 0, netAmount: 12000 });
+  });
+
   it('uses JST calendar-year bounds and returns related rows and totals', async () => {
     const orderQuery = chain({
       data: [
