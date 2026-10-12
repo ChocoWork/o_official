@@ -752,6 +752,7 @@ AS $$
   line_waiting AS (
     SELECT a.*,
            a.refund_units - a.covered_by_return AS waiting,
+           -- 状態の扱いを変える時は、ここ・item_totals・order_line_return_counts の totals・fulfillment_line_returnable の per_line の4か所をそろえる。
            CASE WHEN a.return_status IN ('open', 'closed')
              THEN LEAST(a.missing_reopened, a.refund_units - a.covered_by_return)
              ELSE 0
@@ -956,7 +957,7 @@ STABLE
 SET search_path = ''
 AS $$
   WITH totals AS (
-    -- 状態の扱いを変える時は、ここ・order_return_line_states_core の item_totals・fulfillment_line_returnable の per_line の3か所をそろえる。
+    -- 状態の扱いを変える時は、ここ・order_return_line_states_core の item_totals と line_waiting の reopened_waiting の CASE・fulfillment_line_returnable の per_line の4か所をそろえる。
     SELECT s.order_item_id,
            COALESCE(pg_catalog.sum(CASE WHEN s.return_status = 'requested' THEN s.quantity ELSE 0 END), 0)::integer AS requested,
            COALESCE(pg_catalog.sum(CASE WHEN s.return_status = 'open' THEN s.unprocessed ELSE 0 END), 0)::integer AS open_unprocessed,
@@ -1067,7 +1068,7 @@ AS $$
       AND f.cancelled_at IS NULL
   ),
   per_line AS (
-    -- 状態の扱いを変える時は、ここ・order_return_line_states_core の item_totals・order_line_return_counts の totals の3か所をそろえる。
+    -- 状態の扱いを変える時は、ここ・order_return_line_states_core の item_totals と line_waiting の reopened_waiting の CASE・order_line_return_counts の totals の4か所をそろえる。
     SELECT st.fulfillment_id,
            st.order_item_id,
            pg_catalog.sum(st.quantity)::integer AS in_returns,
