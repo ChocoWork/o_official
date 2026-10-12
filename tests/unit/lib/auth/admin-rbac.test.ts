@@ -171,6 +171,39 @@ describe('authorizeAdminPermission', () => {
       }
     });
   });
+
+  // 返品の権限は、店長（admin）とサポート（supporter）の両方の役割に付ける（グループ E-3 設計書 10-2）。
+  // 認可は DB の ACL で決まる。ここでは、返品の権限が通ること、注文の管理の権限や返金の権限だけでは通らないこと
+  // （返品と返金は別の権限）を確かめる
+  describe('新しい権限 admin.orders.return', () => {
+    it('DB の ACL にその権限があれば通る', async () => {
+      grantPermission('admin.orders.return');
+
+      const result = await authorizeAdminPermission('admin.orders.return', mockRequest);
+
+      expect(result.ok).toBe(true);
+    });
+
+    it.each(['admin.orders.manage', 'admin.orders.refund'] as const)('%s だけでは通らない', async (granted) => {
+      grantPermission(granted);
+
+      const result = await authorizeAdminPermission('admin.orders.return', mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.response.status).toBe(403);
+        expect((result.response as unknown as { body: { permission: string } }).body.permission).toBe('admin.orders.return');
+      }
+    });
+
+    it('返品の権限だけでは、返金の権限が要る操作は通らない', async () => {
+      grantPermission('admin.orders.return');
+
+      const result = await authorizeAdminPermission('admin.orders.refund', mockRequest);
+
+      expect(result.ok).toBe(false);
+    });
+  });
 });
 
 describe('legacyPermissionMap', () => {
@@ -180,5 +213,11 @@ describe('legacyPermissionMap', () => {
     expect(legacyPermissionMap.supporter.has('admin.orders.refund')).toBe(false);
     expect(legacyPermissionMap.supporter.has('admin.settings.manage')).toBe(false);
     expect(legacyPermissionMap.user.size).toBe(0);
+  });
+
+  it('返品の権限は店長の組にもサポートの人の組にも入る（額を決める返金とは別の権限）', () => {
+    expect(legacyPermissionMap.admin.has('admin.orders.return')).toBe(true);
+    expect(legacyPermissionMap.supporter.has('admin.orders.return')).toBe(true);
+    expect(legacyPermissionMap.user.has('admin.orders.return')).toBe(false);
   });
 });

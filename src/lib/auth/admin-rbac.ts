@@ -22,7 +22,8 @@ export type PermissionCode =
   | 'admin.finance.manage'
   | 'admin.audit.read'
   | 'admin.orders.refund'
-  | 'admin.settings.manage';
+  | 'admin.settings.manage'
+  | 'admin.orders.return';
 
 type AuthzSuccess = {
   ok: true;
@@ -62,6 +63,8 @@ export const legacyPermissionMap: Record<AppRole, Set<PermissionCode>> = {
     // 返金とショップの設定は店長だけ（サポートの人の組には入れない。グループ E-2 設計書 11-3）
     'admin.orders.refund',
     'admin.settings.manage',
+    // 返品は店長とサポートの両方が扱う（額を決める返金は admin.orders.refund のまま店長だけ。グループ E-3 設計書 10-2）
+    'admin.orders.return',
   ]),
   supporter: new Set<PermissionCode>([
     'admin.orders.read',
@@ -69,6 +72,8 @@ export const legacyPermissionMap: Record<AppRole, Set<PermissionCode>> = {
     'admin.users.read',
     'admin.contact.read',
     'admin.contact.manage',
+    // 返品を作る・受け取る・取消・開き直し・検品はサポートもできる（グループ E-3 設計書 10-2）
+    'admin.orders.return',
   ]),
   user: new Set<PermissionCode>([]),
 };
