@@ -11,11 +11,22 @@ export function unitsDiscount(lineDiscount: number, quantity: number, units: num
   return Math.floor((2 * lineDiscount * units + quantity) / (2 * quantity));
 }
 
-/** 前に返した数 refundedUnits の後に、units 個を返す時の額（単価 · units − (disc(b + units) − disc(b))） */
+/**
+ * 前に返した数 refundedUnits の後に、units 個を返す時の額（単価 · units − (disc(b + units) − disc(b))）。
+ * 交換の品の行（exchangePaidAmount がある行。値段は0）は、元の品の支払額 P を同じ形で数に割り振る: A(b + units) − A(b)、
+ * A(n) = floor((2·P·n + q) / (2·q))（SQL の private.return_units_amount と同じ式。グループ E-3、本計画 P22）
+ */
 export function refundLineAmount(
-  line: Pick<RefundMaterialLine, 'itemPrice' | 'quantity' | 'lineDiscount' | 'refundedUnits'>,
+  line: Pick<RefundMaterialLine, 'itemPrice' | 'quantity' | 'lineDiscount' | 'refundedUnits' | 'exchangePaidAmount'>,
   units: number,
 ): number {
+  const exchangePaid = line.exchangePaidAmount ?? null;
+  if (exchangePaid !== null) {
+    return (
+      unitsDiscount(exchangePaid, line.quantity, line.refundedUnits + units) -
+      unitsDiscount(exchangePaid, line.quantity, line.refundedUnits)
+    );
+  }
   const discount =
     unitsDiscount(line.lineDiscount, line.quantity, line.refundedUnits + units) -
     unitsDiscount(line.lineDiscount, line.quantity, line.refundedUnits);
@@ -45,6 +56,11 @@ export function estimateRefund(
   for (const line of lines) {
     const units = unitsByItem.get(line.orderItemId);
     if (!units) {
+      continue;
+    }
+    // 交換の品の行は割引を持たない。元の品の支払額から割り振った額を、そのまま商品の額に入れる
+    if ((line.exchangePaidAmount ?? null) !== null) {
+      itemsAmount += refundLineAmount(line, units);
       continue;
     }
     itemsAmount += line.itemPrice * units;

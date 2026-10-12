@@ -23,6 +23,9 @@ export const FULFILLMENT_ERROR_MESSAGES = {
   completion_not_found: { status: 404, message: '仕上がりの記録が見つかりません。' },
   completion_already_shipped: { status: 409, message: 'もう発送した数があるため、取り消せません。' },
   fulfillment_refunded: { status: 409, message: '返金した商品の発送は取り消せません。' },
+  // 返品の窓口の FULFILLMENT_HAS_RETURN・FULFILLMENT_EXCHANGE_ON_HOLD（return-messages.ts）と同じ文。食い違わないことは試験が突き合わせる
+  fulfillment_has_return: { status: 409, message: '返品のある発送は取り消せません。' },
+  fulfillment_exchange_on_hold: { status: 409, message: '手数料のお支払いを待っている交換の品は送れません。' },
 } as const satisfies Record<FulfillmentErrorCode, { status: 400 | 404 | 409; message: string }>;
 
 /** 窓口に届いた中身の形が誤っている時（400）。どこが誤りかは返さない */

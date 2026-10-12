@@ -28,13 +28,28 @@ jest.mock('@/lib/orders/email/order-email-schedule', () => ({
 const mockRpc = jest.fn();
 const mockMaybeSingle = jest.fn();
 const mockOrderItems = jest.fn();
+// 返品の受け取りの行（order_return_receipt_lines）。select の後ろの in で、受け取りの番号を渡して読む（表の名前も受け取って確かめる）
+const mockReceiptLines = jest.fn();
+// 返品の記録（order_returns の取消などをした人の番号と fee_waived）。select の後ろの in で、返品の番号を渡して読む（読む列も受け取って確かめる）
+const mockReturnRecords = jest.fn();
+// 人の番号からメールを引く Auth の管理の窓口（supabase.auth.admin.getUserById）
+const mockGetUserById = jest.fn();
+// 返品の一覧（Task 4 の return-store の listOrderReturns）。履歴の窓口の試験では DB の jsonb ではなく、窓口の形で渡す
+const mockListOrderReturns = jest.fn();
+jest.mock('@/lib/orders/returns/return-store', () => ({
+  ...jest.requireActual('@/lib/orders/returns/return-store'),
+  listOrderReturns: (...args: unknown[]) => mockListOrderReturns(...args),
+}));
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(async () => ({
     rpc: (...args: unknown[]) => mockRpc(...args),
-    // 注文の行は eq の後ろの maybeSingle で1行、商品の名前は eq の後ろをそのまま待つ
+    auth: { admin: { getUserById: (...args: unknown[]) => mockGetUserById(...args) } },
+    // 注文の行は eq の後ろの maybeSingle で1行、商品の名前は eq の後ろをそのまま待つ。受け取りの行と返品の記録は in の後ろを待つ
     from: (table: string) => ({
-      select: () => ({
+      select: (columns: string) => ({
         eq: () => (table === 'order_items' ? mockOrderItems() : { maybeSingle: (...args: unknown[]) => mockMaybeSingle(...args) }),
+        in: (...args: unknown[]) =>
+          (table === 'order_returns' ? mockReturnRecords(columns, ...args) : mockReceiptLines(table, ...args)),
       }),
     }),
   })),
@@ -43,12 +58,16 @@ jest.mock('@/lib/supabase/server', () => ({
 import { GET as getHistory } from '@/app/api/admin/orders/[id]/history/route';
 import { GET as getContent } from '@/app/api/admin/orders/[id]/emails/[emailId]/route';
 import { POST as postResend } from '@/app/api/admin/orders/[id]/emails/resend/route';
+import { returnDetail } from '../../lib/orders/returns/order-return-detail-fixture';
 
 const ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455556666';
 const EMAIL_ID = 'b1b2c3d4-1111-4222-8333-444455556666';
 const FULFILLMENT_ID = 'c1b2c3d4-1111-4222-8333-444455556666';
 const COMPLETION_ID = 'e1b2c3d4-1111-4222-8333-444455556666';
 const REFUND_ID = 'f1b2c3d4-1111-4222-8333-444455556666';
+const RECEIPT_ID = 'a2b2c3d4-1111-4222-8333-444455556666';
+const ADMIN_USER_ID = 'b2b2c3d4-1111-4222-8333-444455556666';
+const GONE_USER_ID = 'b3b2c3d4-1111-4222-8333-444455556666'; // 消えた利用者（Auth が 404 を返す）
 const ITEM_1 = 'd1b2c3d4-1111-4222-8333-444455556661';
 const ITEM_2 = 'd1b2c3d4-1111-4222-8333-444455556662';
 const DENIED = new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
@@ -63,6 +82,14 @@ beforeEach(() => {
   mockMaybeSingle.mockReset();
   mockOrderItems.mockReset();
   mockOrderItems.mockResolvedValue({ data: [], error: null });
+  mockReceiptLines.mockReset();
+  mockReceiptLines.mockResolvedValue({ data: [], error: null });
+  mockReturnRecords.mockReset();
+  mockReturnRecords.mockResolvedValue({ data: [], error: null });
+  mockGetUserById.mockReset();
+  mockGetUserById.mockResolvedValue({ data: { user: null }, error: { status: 404, code: 'user_not_found', message: 'User not found' } });
+  mockListOrderReturns.mockReset();
+  mockListOrderReturns.mockResolvedValue([]);
   mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1', role: 'admin', actorEmail: 'admin@example.com' });
   mockRequireCsrf.mockResolvedValue(undefined);
   mockEnforceRateLimit.mockResolvedValue(undefined);
@@ -285,6 +312,243 @@ describe('GET /api/admin/orders/[id]/history', () => {
       await expect(response.json()).resolves.toEqual({ error: 'Failed to load history' });
       expect(error.mock.calls).toEqual([['[admin.orders.history] Failed to load history', 'RefundStoreError', '08006']]);
       expect(JSON.stringify(error.mock.calls)).not.toContain('メモ');
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('返品の行（作った・受け取り・手数料）、交換の品を足した行、返品の返金の「どこから」を、ほかの行と一緒に新しい順に返す', async () => {
+    mockMaybeSingle.mockResolvedValue({
+      data: { id: ORDER_ID, status: 'paid', shipping_email: 'hanako@example.com', created_at: '2026-10-08T23:00:00.000Z' },
+      error: null,
+    });
+    mockOrderItems.mockResolvedValue({
+      data: [
+        { id: ITEM_1, item_name: 'シルクブラウス', color: '白', size: 'M', quantity: 2, line_kind: 'order', created_at: '2026-10-08T23:00:00+00:00' },
+        { id: ITEM_2, item_name: 'シルクブラウス', color: '黒', size: 'L', quantity: 1, line_kind: 'exchange', created_at: '2026-10-12T02:00:00+00:00' },
+      ],
+      error: null,
+    });
+    mockListOrderReturns.mockResolvedValue([returnDetail({
+      receipts: [{ id: RECEIPT_ID, kind: 'receive', refundChoice: 'now', createdAt: '2026-10-12T02:00:00+00:00', actorEmail: 'support@example.com' }],
+      refunds: [{ id: REFUND_ID, amount: 4500, status: 'succeeded', createdAt: '2026-10-12T02:00:00+00:00' }],
+      fees: { feeDueAmount: 0, feeReceivedAt: '2026-10-12T03:00:00+00:00' },
+    })]);
+    mockReturnRecords.mockResolvedValue({
+      data: [{ id: 'ret-1', cancelled_by: null, fee_received_by: null, exchange_released_by: null, fee_waived: false, fee_settled_amount: 800 }],
+      error: null,
+    });
+    mockReceiptLines.mockResolvedValue({
+      data: [
+        { receipt_id: RECEIPT_ID, disposition: 'restocked', quantity: 1 },
+        { receipt_id: RECEIPT_ID, disposition: 'sent_back', quantity: 1 },
+      ],
+      error: null,
+    });
+    rpcReturns({
+      get_order_email_send_state: { data: [{ paused: false, reason: null, paused_at: null, next_probe_at: null }] },
+      list_order_refunds: { data: [{
+        refund_id: REFUND_ID, source: 'return', status: 'succeeded', stripe_status: 'succeeded', stripe_pending_reason: null,
+        stripe_failure_reason: null, customer_action_expires_at: null, payment_method_type: 'card', amount: 4500,
+        shipping_amount: 0, adjustment_amount: 0, note: null, stripe_reason: 'requested_by_customer', cancel_reason: null,
+        notify_customer: true, actor_email: 'support@example.com', reference_number: null, reference_type: null,
+        created_at: '2026-10-12T02:00:00+00:00', accepted_at: '2026-10-12T02:00:01+00:00', succeeded_at: '2026-10-12T02:00:01+00:00',
+        failed_at: null, errored_at: null,
+        lines: [{
+          order_item_id: ITEM_1, quantity: 1, before_shipment: false, restock_type: 'return', amount: 4500,
+          released_quantity: 0, restocked_quantity: 0, rereserved_quantity: 0, rereserve_shortage: 0,
+        }],
+      }] },
+      list_order_line_fulfillment: { data: [
+        {
+          order_id: ORDER_ID, order_item_id: ITEM_1, variant_id: 11, fulfillment_type: 'stock', quantity: 2, shipped: 1, completed: 2,
+          refunded_before_shipment: 0, refunded_after_shipment: 1, in_production: 0, ready_unshipped: 1, unshipped: 1,
+        },
+        {
+          order_id: ORDER_ID, order_item_id: ITEM_2, variant_id: 12, fulfillment_type: 'stock', quantity: 1, shipped: 0, completed: 1,
+          refunded_before_shipment: 0, refunded_after_shipment: 0, in_production: 0, ready_unshipped: 1, unshipped: 1,
+        },
+      ] },
+    });
+
+    const response = await getHistory(request(), context);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.entries.map((entry: { type: string; kind?: string }) => (entry.type === 'return' ? `return:${entry.kind}` : entry.type))).toEqual([
+      'return:fee_received', 'return:exchange_added', 'refund', 'return:receive', 'return:created', 'created',
+    ]);
+    expect(body.entries[0]).toMatchObject({ title: '手数料の受け取りを記録した（￥800）', actorEmail: null });
+    expect(body.entries[1]).toMatchObject({ title: '交換の品を足した（シルクブラウス（黒 / L） × 1）', returnId: null });
+    expect(body.entries[2]).toMatchObject({ type: 'refund', refundId: REFUND_ID, source: 'return', sourceLabel: '返品（ORD-A1B2C3D4-R1）' });
+    expect(body.entries[3]).toMatchObject({
+      title: '返品の受け取り（ORD-A1B2C3D4-R1）', details: ['在庫に戻す 1点', 'お返し 1点'], actorEmail: 'support@example.com',
+    });
+    expect(body.entries[4]).toMatchObject({ title: '返品を作った（ORD-A1B2C3D4-R1）', actorEmail: 'admin@example.com' });
+    expect(mockListOrderReturns).toHaveBeenCalledWith(expect.objectContaining({ rpc: expect.any(Function) }), ORDER_ID);
+    expect(mockReceiptLines).toHaveBeenCalledWith('order_return_receipt_lines', 'receipt_id', [RECEIPT_ID]);
+  });
+
+  it('受け取りも、取消・手数料の受け取り・支払いを待たずに送るも無い返品は、受け取りの行（order_return_receipt_lines）も返品の記録（order_returns）も読まない', async () => {
+    mockMaybeSingle.mockResolvedValue({
+      data: { id: ORDER_ID, status: 'paid', shipping_email: 'hanako@example.com', created_at: '2026-10-08T23:00:00.000Z' },
+      error: null,
+    });
+    mockListOrderReturns.mockResolvedValue([returnDetail()]);
+    rpcReturns({ get_order_email_send_state: { data: [{ paused: false, reason: null, paused_at: null, next_probe_at: null }] } });
+
+    const response = await getHistory(request(), context);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.entries.map((entry: { type: string; kind?: string }) => (entry.type === 'return' ? `return:${entry.kind}` : entry.type))).toEqual([
+      'return:created', 'created',
+    ]);
+    expect(mockReceiptLines).not.toHaveBeenCalled();
+    // 取消・手数料の受け取り・支払いを待たずに送るの無い返品は、した人（と手数料をいただかない印）を読まない
+    expect(mockReturnRecords).not.toHaveBeenCalled();
+    expect(mockGetUserById).not.toHaveBeenCalled();
+  });
+
+  it('受け取りの行の読み込みが失敗しても 500。ログは例外名と DB の記号だけで、DB の文は出さない', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockMaybeSingle.mockResolvedValue({ data: { id: ORDER_ID, status: 'paid', shipping_email: null, created_at: '2026-10-08T23:00:00Z' }, error: null });
+      mockListOrderReturns.mockResolvedValue([returnDetail({
+        receipts: [{ id: RECEIPT_ID, kind: 'receive', refundChoice: 'now', createdAt: '2026-10-12T02:00:00+00:00', actorEmail: 'admin@example.com' }],
+      })]);
+      mockReceiptLines.mockResolvedValue({ data: null, error: { message: '宛先を含む例外', code: '42P01' } });
+      rpcReturns({});
+
+      const response = await getHistory(request(), context);
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toEqual({ error: 'Failed to load history' });
+      expect(error.mock.calls).toEqual([['[admin.orders.history] Failed to load history', 'FulfillmentStoreError', '42P01']]);
+      expect(JSON.stringify(error.mock.calls)).not.toContain('宛先');
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('返品の一覧の読み込みが失敗しても 500。ログは例外名だけで、メッセージは出さない', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockMaybeSingle.mockResolvedValue({ data: { id: ORDER_ID, status: 'paid', shipping_email: null, created_at: '2026-10-08T23:00:00Z' }, error: null });
+      mockListOrderReturns.mockRejectedValue(new Error('宛先を含む例外'));
+      rpcReturns({});
+
+      const response = await getHistory(request(), context);
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toEqual({ error: 'Failed to load history' });
+      expect(error.mock.calls).toEqual([['[admin.orders.history] Failed to load history', 'Error']]);
+      expect(JSON.stringify(error.mock.calls)).not.toContain('宛先');
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('返品の取消・手数料の受け取り・支払いを待たずに送るの行は、order_returns の人の番号からメールを引いて、した人を出す。同じ人は1回だけ引き、消えた利用者は null', async () => {
+    mockMaybeSingle.mockResolvedValue({
+      data: { id: ORDER_ID, status: 'paid', shipping_email: 'hanako@example.com', created_at: '2026-10-08T23:00:00.000Z' },
+      error: null,
+    });
+    mockListOrderReturns.mockResolvedValue([
+      returnDetail({ status: 'cancelled', cancelledAt: '2026-10-12T02:00:00+00:00' }),
+      returnDetail({
+        id: 'ret-2', number: 2, label: 'ORD-A1B2C3D4-R2',
+        fees: { feeDueAmount: 0, feeReceivedAt: '2026-10-12T04:00:00+00:00', exchangeReleasedAt: '2026-10-12T03:00:00+00:00' },
+      }),
+    ]);
+    mockReturnRecords.mockResolvedValue({
+      data: [
+        { id: 'ret-1', cancelled_by: ADMIN_USER_ID, fee_received_by: null, exchange_released_by: null, fee_waived: false, fee_settled_amount: 0 },
+        { id: 'ret-2', cancelled_by: null, fee_received_by: ADMIN_USER_ID, exchange_released_by: GONE_USER_ID, fee_waived: false, fee_settled_amount: 800 },
+      ],
+      error: null,
+    });
+    mockGetUserById.mockImplementation(async (userId: string) => (userId === ADMIN_USER_ID
+      ? { data: { user: { id: ADMIN_USER_ID, email: 'admin@example.com' } }, error: null }
+      : { data: { user: null }, error: { status: 404, code: 'user_not_found', message: 'User not found' } }));
+    rpcReturns({ get_order_email_send_state: { data: [{ paused: false, reason: null, paused_at: null, next_probe_at: null }] } });
+
+    const response = await getHistory(request(), context);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    const returnRows = body.entries.filter((entry: { type: string }) => entry.type === 'return');
+    expect(returnRows.map((entry: { kind: string; actorEmail: string | null }) => [entry.kind, entry.actorEmail])).toEqual([
+      ['fee_received', 'admin@example.com'],
+      ['exchange_released', null],
+      ['cancel', 'admin@example.com'],
+      ['created', 'admin@example.com'],
+      ['created', 'admin@example.com'],
+    ]);
+    expect(mockReturnRecords).toHaveBeenCalledWith('id, cancelled_by, fee_received_by, exchange_released_by, fee_waived, fee_settled_amount', 'id', ['ret-1', 'ret-2']);
+    // 同じ人は1回だけ引く
+    expect(mockGetUserById.mock.calls.map(([userId]) => userId).sort()).toEqual([ADMIN_USER_ID, GONE_USER_ID].sort());
+  });
+
+  it('手数料をいただかないことにした返品（order_returns.fee_waived）は、手数料の行を「手数料をいただかないことにした（￥n）」と出す（P27）', async () => {
+    mockMaybeSingle.mockResolvedValue({
+      data: { id: ORDER_ID, status: 'paid', shipping_email: 'hanako@example.com', created_at: '2026-10-08T23:00:00.000Z' },
+      error: null,
+    });
+    mockListOrderReturns.mockResolvedValue([returnDetail({ fees: { feeDueAmount: 0, feeReceivedAt: '2026-10-12T03:00:00+00:00' } })]);
+    mockReturnRecords.mockResolvedValue({
+      data: [{ id: 'ret-1', cancelled_by: null, fee_received_by: ADMIN_USER_ID, exchange_released_by: null, fee_waived: true, fee_settled_amount: 800 }],
+      error: null,
+    });
+    mockGetUserById.mockResolvedValue({ data: { user: { id: ADMIN_USER_ID, email: 'admin@example.com' } }, error: null });
+    rpcReturns({ get_order_email_send_state: { data: [{ paused: false, reason: null, paused_at: null, next_probe_at: null }] } });
+
+    const response = await getHistory(request(), context);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.entries[0]).toMatchObject({
+      type: 'return', kind: 'fee_received', title: '手数料をいただかないことにした（￥800）', actorEmail: 'admin@example.com',
+    });
+  });
+
+  it('した人のメールを引けなかった時（消えた利用者でない失敗）は 500。ログは例外名と記号だけで、文は出さない', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockMaybeSingle.mockResolvedValue({ data: { id: ORDER_ID, status: 'paid', shipping_email: null, created_at: '2026-10-08T23:00:00Z' }, error: null });
+      mockListOrderReturns.mockResolvedValue([returnDetail({ status: 'cancelled', cancelledAt: '2026-10-12T02:00:00+00:00' })]);
+      mockReturnRecords.mockResolvedValue({
+        data: [{ id: 'ret-1', cancelled_by: ADMIN_USER_ID, fee_received_by: null, exchange_released_by: null, fee_waived: false, fee_settled_amount: 0 }],
+        error: null,
+      });
+      mockGetUserById.mockResolvedValue({ data: { user: null }, error: { status: 500, code: 'unexpected_failure', message: '宛先を含む例外' } });
+      rpcReturns({});
+
+      const response = await getHistory(request(), context);
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toEqual({ error: 'Failed to load history' });
+      expect(error.mock.calls).toEqual([['[admin.orders.history] Failed to load history', 'FulfillmentStoreError', 'unexpected_failure']]);
+      expect(JSON.stringify(error.mock.calls)).not.toContain('宛先');
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('返品の記録（order_returns）が読めなかった時は 500。ログは例外名と DB の記号だけ', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockMaybeSingle.mockResolvedValue({ data: { id: ORDER_ID, status: 'paid', shipping_email: null, created_at: '2026-10-08T23:00:00Z' }, error: null });
+      mockListOrderReturns.mockResolvedValue([returnDetail({ status: 'cancelled', cancelledAt: '2026-10-12T02:00:00+00:00' })]);
+      mockReturnRecords.mockResolvedValue({ data: null, error: { message: '宛先を含む例外', code: '42501' } });
+      rpcReturns({});
+
+      const response = await getHistory(request(), context);
+
+      expect(response.status).toBe(500);
+      expect(error.mock.calls).toEqual([['[admin.orders.history] Failed to load history', 'FulfillmentStoreError', '42501']]);
+      expect(JSON.stringify(error.mock.calls)).not.toContain('宛先');
+      expect(mockGetUserById).not.toHaveBeenCalled();
     } finally {
       error.mockRestore();
     }

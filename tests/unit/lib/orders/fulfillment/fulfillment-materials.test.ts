@@ -1,6 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadFulfillmentMaterials } from '@/lib/orders/fulfillment/fulfillment-materials';
 import { FulfillmentStoreError } from '@/lib/orders/fulfillment/fulfillment-store';
+import { returnDetail } from '../returns/order-return-detail-fixture';
+
+// 返品の一覧（Task 4 の return-store の listOrderReturns）は、窓口の形で差し替える。交換の品の行がある時だけ呼ばれる
+const mockListOrderReturns = jest.fn();
+jest.mock('@/lib/orders/returns/return-store', () => ({
+  listOrderReturns: (...args: unknown[]) => mockListOrderReturns(...args),
+}));
 
 const ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455556666';
 const STOCK_ITEM = 'f1b2c3d4-1111-4222-8333-444455556661';
@@ -80,6 +87,11 @@ function stubClient(options: {
 }
 
 describe('loadFulfillmentMaterials', () => {
+  beforeEach(() => {
+    mockListOrderReturns.mockReset();
+    mockListOrderReturns.mockResolvedValue([]);
+  });
+
   it('注文・商品ごとの数・発送の一覧をまとめて返す。商品の並びは登録順', async () => {
     const { client, rpc, tables } = stubClient();
 
@@ -94,11 +106,11 @@ describe('loadFulfillmentMaterials', () => {
       lines: [
         {
           orderItemId: STOCK_ITEM, name: 'シルクブラウス', color: '白', size: 'M', fulfillmentType: 'stock', quantity: 2,
-          shipped: 0, inProduction: 0, readyUnshipped: 2, unshipped: 2,
+          shipped: 0, inProduction: 0, readyUnshipped: 2, unshipped: 2, lineKind: 'order', exchangeOnHold: 0,
         },
         {
           orderItemId: BACKORDER_ITEM, name: 'リネンパンツ', color: null, size: null, fulfillmentType: 'backorder', quantity: 1,
-          shipped: 0, inProduction: 1, readyUnshipped: 0, unshipped: 1,
+          shipped: 0, inProduction: 1, readyUnshipped: 0, unshipped: 1, lineKind: 'order', exchangeOnHold: 0,
         },
       ],
       fulfillments: [
@@ -224,6 +236,96 @@ describe('loadFulfillmentMaterials', () => {
       const { client } = stubClient(options);
 
       await expect(loadFulfillmentMaterials(client, ORDER_ID)).rejects.toBeInstanceOf(FulfillmentStoreError);
+    });
+  });
+  describe('交換の品の印と、手数料のお支払い待ちで送れない数（グループ E-3 設計書 7-1）', () => {
+    const EXCHANGE_ITEM = 'f1b2c3d4-1111-4222-8333-444455556663';
+    const EXCHANGE_ITEM_ROW = { id: EXCHANGE_ITEM, item_name: 'シルクブラウス', color: '黒', size: 'L', line_kind: 'exchange' };
+    const EXCHANGE_COUNT_ROW = {
+      order_id: ORDER_ID, order_item_id: EXCHANGE_ITEM, variant_id: 13, fulfillment_type: 'stock', quantity: 2, shipped: 0, completed: 2,
+      refunded_before_shipment: 0, refunded_after_shipment: 0, in_production: 0, ready_unshipped: 2, unshipped: 2,
+    };
+    const EXCHANGE_ITEMS = [{
+      orderItemId: EXCHANGE_ITEM, itemName: 'シルクブラウス', color: '黒', size: 'L', quantity: 2, fulfillmentType: 'stock' as const, shipped: 0,
+    }];
+
+    /** 交換の品の行（足された物）がある注文。返品の一覧は mockListOrderReturns で渡す */
+    function withExchangeLine(countOverrides: Record<string, unknown> = {}) {
+      return stubClient({
+        items: { data: [...ITEM_ROWS, EXCHANGE_ITEM_ROW], error: null },
+        rpc: { list_order_line_fulfillment: { data: [...COUNT_ROWS, { ...EXCHANGE_COUNT_ROW, ...countOverrides }], error: null } },
+      });
+    }
+
+    it('商品の読み込みは、交換の品の印（line_kind）も読む', async () => {
+      const { client, tables } = stubClient();
+
+      await loadFulfillmentMaterials(client, ORDER_ID);
+
+      expect(tables.order_items.select).toHaveBeenCalledWith('id, item_name, color, size, line_kind');
+    });
+
+    it('手数料のお支払いを待っている返品の交換の品は、印と、送れない数（未発送の数の全部）を返す', async () => {
+      mockListOrderReturns.mockResolvedValue([returnDetail({ fees: { feeDueAmount: 800 }, exchangeItems: EXCHANGE_ITEMS })]);
+      const { client } = withExchangeLine();
+
+      const materials = await loadFulfillmentMaterials(client, ORDER_ID);
+
+      expect(mockListOrderReturns).toHaveBeenCalledWith(client, ORDER_ID);
+      expect(materials?.lines.map((line) => [line.orderItemId, line.lineKind, line.exchangeOnHold])).toEqual([
+        [STOCK_ITEM, 'order', 0],
+        [BACKORDER_ITEM, 'order', 0],
+        [EXCHANGE_ITEM, 'exchange', 2],
+      ]);
+    });
+
+    it('送れない数は未発送の数まで（もう発送した数は入れない）', async () => {
+      mockListOrderReturns.mockResolvedValue([returnDetail({ fees: { feeDueAmount: 800 }, exchangeItems: EXCHANGE_ITEMS })]);
+      const { client } = withExchangeLine({ shipped: 1, ready_unshipped: 1, unshipped: 1 });
+
+      const materials = await loadFulfillmentMaterials(client, ORDER_ID);
+
+      expect(materials?.lines[2]).toMatchObject({ orderItemId: EXCHANGE_ITEM, lineKind: 'exchange', shipped: 1, unshipped: 1, exchangeOnHold: 1 });
+    });
+
+    it.each<[string, Parameters<typeof returnDetail>[0]]>([
+      ['手数料の受け取りを記録した', { fees: { feeDueAmount: 800, feeReceivedAt: '2026-10-12T03:00:00.000Z' } }],
+      ['「支払いを待たずに送る」を押した', { fees: { feeDueAmount: 800, exchangeReleasedAt: '2026-10-12T03:00:00.000Z' } }],
+      ['払う手数料が無い', { fees: { feeDueAmount: 0 } }],
+    ])('%s返品の交換の品は止めない（送れない数は 0。印は付く）', async (_name, overrides) => {
+      mockListOrderReturns.mockResolvedValue([returnDetail({ exchangeItems: EXCHANGE_ITEMS, ...overrides })]);
+      const { client } = withExchangeLine();
+
+      const materials = await loadFulfillmentMaterials(client, ORDER_ID);
+
+      expect(materials?.lines[2]).toMatchObject({ orderItemId: EXCHANGE_ITEM, lineKind: 'exchange', exchangeOnHold: 0 });
+    });
+
+    it('ほかの返品の交換の品が止まっていても、この行は止めない', async () => {
+      mockListOrderReturns.mockResolvedValue([
+        returnDetail({ id: 'ret-other', fees: { feeDueAmount: 800 }, exchangeItems: [{ ...EXCHANGE_ITEMS[0], orderItemId: 'other-exchange-item' }] }),
+      ]);
+      const { client } = withExchangeLine();
+
+      const materials = await loadFulfillmentMaterials(client, ORDER_ID);
+
+      expect(materials?.lines[2]).toMatchObject({ orderItemId: EXCHANGE_ITEM, exchangeOnHold: 0 });
+    });
+
+    it('交換の品の行が無い注文は、返品の一覧を読まない', async () => {
+      const { client } = stubClient();
+
+      const materials = await loadFulfillmentMaterials(client, ORDER_ID);
+
+      expect(mockListOrderReturns).not.toHaveBeenCalled();
+      expect(materials?.lines.every((line) => line.lineKind === 'order' && line.exchangeOnHold === 0)).toBe(true);
+    });
+
+    it('返品の一覧を読めなかった時は、材料を返さずに投げる（手数料待ちを見落としたまま発送の画面を開かない）', async () => {
+      mockListOrderReturns.mockRejectedValue(new Error('down'));
+      const { client } = withExchangeLine();
+
+      await expect(loadFulfillmentMaterials(client, ORDER_ID)).rejects.toThrow('down');
     });
   });
 });

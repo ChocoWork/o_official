@@ -61,6 +61,8 @@ const DB_ERROR_WORDS: ReadonlyArray<readonly [string, FulfillmentErrorCode]> = [
   ['COMPLETION_NOT_FOUND', 'completion_not_found'],
   ['COMPLETION_ALREADY_SHIPPED', 'completion_already_shipped'],
   ['FULFILLMENT_REFUNDED', 'fulfillment_refunded'],
+  ['FULFILLMENT_HAS_RETURN', 'fulfillment_has_return'],
+  ['FULFILLMENT_EXCHANGE_ON_HOLD', 'fulfillment_exchange_on_hold'],
 ];
 
 /** DB の誤りの文に表の言葉が含まれていれば、その記号。無ければ null */

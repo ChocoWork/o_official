@@ -13,6 +13,9 @@ jest.mock('next/server', () => {
 
 const mockFrom = jest.fn();
 const mockRpc = jest.fn();
+// 在庫の履歴の返品の番号の読み出し（order_returns の select(列).in('id', 番号)）
+const mockReturnsSelect = jest.fn();
+const mockReturnsIn = jest.fn();
 
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn().mockResolvedValue({ from: mockFrom, rpc: mockRpc }),
@@ -68,6 +71,9 @@ function setupReads(options: {
   statesError?: DbError | null;
   history?: unknown[];
   historyError?: DbError | null;
+  /** 在庫の履歴の返品で動いた行の、返品の番号の材料（order_returns の id・order_id・number） */
+  returns?: unknown[];
+  returnsError?: DbError | null;
 } = {}) {
   const {
     variants = [variantRow(11, 4)],
@@ -88,9 +94,14 @@ function setupReads(options: {
       },
     ],
     historyError = null,
+    returns = [],
+    returnsError = null,
   } = options;
 
-  // 台帳や view は直接読まない。item_variants 以外を読もうとすると、from が空の物を返して落ちる
+  mockReturnsSelect.mockReturnValue({ in: mockReturnsIn });
+  mockReturnsIn.mockResolvedValue({ data: returnsError ? null : returns, error: returnsError });
+
+  // 台帳や view は直接読まない。item_variants と、返品の番号を引く order_returns 以外を読もうとすると、from が空の物を返して落ちる
   mockFrom.mockImplementation((table: string) => {
     if (table === 'item_variants') {
       return {
@@ -100,6 +111,9 @@ function setupReads(options: {
           }),
         }),
       };
+    }
+    if (table === 'order_returns') {
+      return { select: mockReturnsSelect };
     }
 
     return {};
@@ -257,6 +271,7 @@ describe('GET /api/admin/items/[id]/variants', () => {
         orderId: 'a1b2c3d4-1111-4222-8333-444455556666',
         orderNumber: 'ORD-A1B2C3D4',
         balanceAfter: 3,
+        returnNumber: null,
       },
       {
         id: 5,
@@ -269,6 +284,7 @@ describe('GET /api/admin/items/[id]/variants', () => {
         orderId: null,
         orderNumber: null,
         balanceAfter: 4,
+        returnNumber: null,
       },
     ]);
   });
@@ -299,6 +315,63 @@ describe('GET /api/admin/items/[id]/variants', () => {
       ['refund', refundId],
       ['restock', null],
     ]);
+  });
+
+  it('返品の受け取り（return）と交換の品の確保（exchange）で動いた行は、返品の番号を returnId と returnNumber（{注文番号}-R{n}）で返す。返品に結び付かない行は null', async () => {
+    const returnId = 'c1c1c1c1-1111-4222-8333-444455556666';
+    setupReads({
+      history: [
+        {
+          movement_id: 14, variant_id: 11, delta: -1, reason: 'exchange', note: null, created_at: '2026-10-12T00:00:01Z',
+          actor_email: null, order_id: 'a1b2c3d4-1111-4222-8333-444455556666', balance_after: 2, refund_id: null, return_id: returnId,
+        },
+        {
+          movement_id: 13, variant_id: 11, delta: 1, reason: 'return', note: null, created_at: '2026-10-12T00:00:01Z',
+          actor_email: null, order_id: 'a1b2c3d4-1111-4222-8333-444455556666', balance_after: 3, refund_id: null, return_id: returnId,
+        },
+        {
+          movement_id: 5, variant_id: 11, delta: 4, reason: 'restock', note: '入荷', created_at: '2026-09-21T00:00:00Z',
+          actor_email: 'admin@example.com', order_id: null, balance_after: 4, refund_id: null, return_id: null,
+        },
+      ],
+      returns: [{ id: returnId, order_id: 'a1b2c3d4-1111-4222-8333-444455556666', number: 2 }],
+    });
+
+    const res = await callGet();
+
+    expect(res.body.movements.map((movement) => [movement.reason, movement.returnId, movement.returnNumber])).toEqual([
+      ['exchange', returnId, 'ORD-A1B2C3D4-R2'],
+      ['return', returnId, 'ORD-A1B2C3D4-R2'],
+      ['restock', null, null],
+    ]);
+    expect(res.body.movements[0]).toMatchObject({ orderNumber: 'ORD-A1B2C3D4', delta: -1, balanceAfter: 2 });
+    // 返品の番号は、履歴に出た返品だけを1回で読む（同じ返品は1つにまとめる）
+    expect(mockReturnsSelect).toHaveBeenCalledWith('id, order_id, number');
+    expect(mockReturnsIn).toHaveBeenCalledTimes(1);
+    expect(mockReturnsIn).toHaveBeenCalledWith('id', [returnId]);
+  });
+
+  it('返品の番号が読めなければ 500 を返す。ログは名前と code だけで、DB の文は出さない', async () => {
+    setupReads({
+      history: [{
+        movement_id: 13, variant_id: 11, delta: 1, reason: 'return', note: null, created_at: '2026-10-12T00:00:01Z',
+        actor_email: null, order_id: 'a1b2c3d4-1111-4222-8333-444455556666', balance_after: 3, refund_id: null,
+        return_id: 'c1c1c1c1-1111-4222-8333-444455556666',
+      }],
+      returnsError: { message: 'MESSAGE-MARKER', details: 'DETAILS-MARKER', hint: 'HINT-MARKER', code: '42501' },
+    });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const res = await callGet();
+
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ error: 'Failed to fetch stock history' });
+      expect(consoleError).toHaveBeenCalledWith('Failed to fetch stock history returns:', 7, 'UnknownError', '42501');
+      expect(inspect(consoleError.mock.calls, { depth: null })).not.toMatch(/MESSAGE-MARKER|DETAILS-MARKER|HINT-MARKER/);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('バリアントが無い商品は、数も履歴も DB の関数を呼ばずに空で返す', async () => {
@@ -458,9 +531,10 @@ describe('POST /api/admin/items/[id]/variants', () => {
   });
 
   /**
-   * purchase / cancel / refund は注文の処理が書く。管理画面から打てると台帳の意味が壊れる。
+   * purchase / cancel / refund / return / exchange は注文の処理が書く（return は返品の受け取り、exchange は交換の品の確保）。
+   * 管理画面から打てると台帳の意味が壊れる。
    */
-  it.each([['purchase'], ['cancel'], ['refund']])('%s は管理画面から打てない', async (reason) => {
+  it.each([['purchase'], ['cancel'], ['refund'], ['return'], ['exchange']])('%s は管理画面から打てない', async (reason) => {
     const res = (await POST(makeRequest({ variantId: 11, delta: 1, reason }), params())) as unknown as {
       status: number;
     };

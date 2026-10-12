@@ -56,6 +56,8 @@ const DB_WORDS = [
   ['COMPLETION_NOT_FOUND', 'completion_not_found'],
   ['COMPLETION_ALREADY_SHIPPED', 'completion_already_shipped'],
   ['FULFILLMENT_REFUNDED', 'fulfillment_refunded'],
+  ['FULFILLMENT_HAS_RETURN', 'fulfillment_has_return'],
+  ['FULFILLMENT_EXCHANGE_ON_HOLD', 'fulfillment_exchange_on_hold'],
 ] as const satisfies ReadonlyArray<readonly [string, FulfillmentErrorCode]>;
 
 describe('toFulfillmentErrorCode', () => {
@@ -65,7 +67,7 @@ describe('toFulfillmentErrorCode', () => {
     expect(toFulfillmentErrorCode(`error: ${word} (detail)`)).toBe(code);
   });
 
-  it('15の記号が全部、どれかの DB の言葉から届く', () => {
+  it('17の記号が全部、どれかの DB の言葉から届く', () => {
     expect(new Set(DB_WORDS.map(([, code]) => code))).toEqual(new Set(FULFILLMENT_ERROR_CODES));
   });
 
@@ -84,11 +86,15 @@ describe('toFulfillmentErrorCode', () => {
       expect(files).toHaveLength(1);
       return fs.readFileSync(path.join(directory, files[0]), 'utf8');
     };
-    // FULFILLMENT_REFUNDED は、返金の移行 B（20261011223147_order_refund_requests.sql。admin_cancel_fulfillment を作り直した）が足した
+    // FULFILLMENT_REFUNDED は、返金の移行 B（20261011223147_order_refund_requests.sql。admin_cancel_fulfillment を作り直した）が足した。
+    // FULFILLMENT_HAS_RETURN は返品の移行 B（20261012100100_order_return_actions.sql。admin_cancel_fulfillment を作り直した）、
+    // FULFILLMENT_EXCHANGE_ON_HOLD は返品の移行 C（20261012100200_order_return_receipts.sql。admin_create_fulfillment を作り直した）が足した
     const sql = [
       migrationText('_order_fulfillments.sql'),
       migrationText('_fulfillment_order_emails.sql'),
       migrationText('_order_refund_requests.sql'),
+      migrationText('_order_return_actions.sql'),
+      migrationText('_order_return_receipts.sql'),
     ].join('\n');
 
     for (const [word] of DB_WORDS) {

@@ -6,6 +6,8 @@ import type { CancelReason, OrderStatus } from '@/lib/orders/order-payment-types
  */
 export const ORDER_REFUND_SOURCES = [
   'admin', 'order_cancel', 'stripe_dashboard', 'auto_cancelled_order_payment', 'auto_amount_mismatch', 'legacy',
+  // 返品の返金（受け取りで今返金・額を決めて返金。グループ E-3）。返金の記録は返品の番号 order_refunds.return_id を持つ
+  'return',
 ] as const;
 export type OrderRefundSource = (typeof ORDER_REFUND_SOURCES)[number];
 export const ORDER_REFUND_STATUSES = ['awaiting_response', 'error', 'pending', 'succeeded', 'failed'] as const;
@@ -14,11 +16,18 @@ export const STRIPE_REFUND_REASONS = ['requested_by_customer', 'duplicate', 'fra
 export type StripeRefundReason = (typeof STRIPE_REFUND_REASONS)[number];
 export type RefundPaymentMethod = 'card' | 'link' | 'paypay' | 'konbini' | 'unknown';
 export type RefundLineRequest = { orderItemId: string; quantity: number; beforeShipment: boolean };
+/**
+ * 返金の画面の商品の行。shippedRefundable は、ふつうの返金の画面で選べる発送済みの数（発送した数 − 発送後に返金した数 −
+ * 申し込み中・受付中・返金待ち・交換にした返品の数。グループ E-3 の4-8）。DB の load_order_refund_materials が数えるので、
+ * ここで shipped − refundedAfterShipment と数え直さない。
+ * exchangePaidAmount は、交換の品の行（返品の交換で足した行。値段は0）だけが持つ、元の品のその数の分の支払額（ほかの行は null）。
+ * 返す額はこれを数で累積に割り振る（refund-allocation.ts。本計画 P22）。省ける形なのは、今の見本を書き換えずに済ませるため。窓口は必ず返す
+ */
 export type RefundMaterialLine = {
   orderItemId: string; name: string; color: string | null; size: string | null; fulfillmentType: 'stock' | 'backorder';
   itemPrice: number; quantity: number; lineTotal: number; shipped: number; unshipped: number;
   refundedBeforeShipment: number; refundedAfterShipment: number; shippedRefundable: number; restockable: number;
-  lineDiscount: number; refundedUnits: number;
+  lineDiscount: number; refundedUnits: number; exchangePaidAmount?: number | null;
 };
 export type RefundMaterials = {
   order: {

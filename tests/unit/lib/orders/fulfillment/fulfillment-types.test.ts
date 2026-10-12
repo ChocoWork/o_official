@@ -36,6 +36,14 @@ describe('initialShipQuantities（発送の画面の最初の数）', () => {
     ])).toEqual({ left: 1 });
     expect(initialShipQuantities([])).toEqual({});
   });
+
+  it('手数料のお支払い待ちで送れない数は、最初の数に入れない（押し間違えて DB に断られないように）。欄は0で並べる', () => {
+    expect(initialShipQuantities([
+      materialLine({ orderItemId: 'held', lineKind: 'exchange', quantity: 2, readyUnshipped: 2, unshipped: 2, exchangeOnHold: 2 }),
+      materialLine({ orderItemId: 'free', lineKind: 'exchange', quantity: 1, readyUnshipped: 1, unshipped: 1, exchangeOnHold: 0 }),
+      materialLine({ orderItemId: 'plain', readyUnshipped: 2, unshipped: 2 }),
+    ])).toEqual({ held: 0, free: 1, plain: 2 });
+  });
 });
 
 describe('totalQuantity', () => {
@@ -47,12 +55,12 @@ describe('totalQuantity', () => {
 });
 
 describe('誤りの記号', () => {
-  it('窓口が返す15の記号は共通の約束のとおり', () => {
+  it('窓口が返す17の記号は共通の約束のとおり（最後の2つは返品の交換で足した物）', () => {
     expect([...FULFILLMENT_ERROR_CODES]).toEqual([
       'order_not_found', 'not_shippable', 'address_incomplete', 'payment_review_required', 'quantity_exceeds_ready',
       'fulfillment_request_mismatch', 'invalid_argument', 'fulfillment_not_found', 'fulfillment_cancel_not_allowed',
       'not_in_production', 'quantity_exceeds_in_production', 'completion_request_mismatch', 'completion_not_found',
-      'completion_already_shipped', 'fulfillment_refunded',
+      'completion_already_shipped', 'fulfillment_refunded', 'fulfillment_has_return', 'fulfillment_exchange_on_hold',
     ]);
   });
 });

@@ -4,9 +4,12 @@ import {
   type OrderEmailHistoryRow,
   type OrderHistoryEntry,
   type OrderHistoryLine,
+  type OrderHistoryReturnReceiptLine,
+  type OrderHistoryReturnRecord,
 } from '@/lib/orders/email/order-history';
 import type { OrderCompletionHistoryRow, OrderFulfillmentHistoryRow } from '@/lib/orders/fulfillment/fulfillment-store';
 import type { OrderRefundLineRow, OrderRefundRow } from '@/lib/orders/refund/refund-store';
+import { returnDetail } from '../returns/order-return-detail-fixture';
 
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
 const NOT_PAUSED = { paused: false, reason: null, pausedAt: null, nextProbeAt: null };
@@ -71,7 +74,8 @@ function refund(overrides: Partial<OrderRefundRow> = {}): OrderRefundRow {
 
 function input(overrides: Partial<BuildOrderHistoryInput> = {}): BuildOrderHistoryInput {
   return {
-    order: ORDER, statusRows: [], emailRows: [], sendState: NOT_PAUSED, fulfillments: [], completions: [], refunds: [], lines: [],
+    order: ORDER, statusRows: [], emailRows: [], sendState: NOT_PAUSED, fulfillments: [], completions: [], refunds: [], returns: [],
+    returnReceiptLines: [], returnRecords: [], lines: [],
     ...overrides,
   };
 }
@@ -797,4 +801,261 @@ describe('buildOrderHistory - 返金のお知らせと並び順', () => {
 
     expect(history.entries.map((entry) => entry.type)).toEqual(['email', 'status', 'refund', 'created']);
   });
+});
+
+
+// 返品の行（グループ E-3 設計書 8-1。文は共通の約束 C-5）。returnDetail の見本は、注文 ORDER_ID の1つ目の返品（番号 ORD-A1B2C3D4-R1）
+const EXCHANGE_LINE = '44444444-4444-4444-8444-444444444444'; // 返品の交換で足した交換の品の行
+
+function receiptLine(receiptId: string, disposition: string, quantity: number): OrderHistoryReturnReceiptLine {
+  return { receiptId, disposition, quantity };
+}
+
+/** 窓口が order_returns から引いて渡す、取消などをした人のメールと手数料をいただかない印（returnDetail の見本の返品 ret-1 の分） */
+function returnRecord(overrides: Partial<OrderHistoryReturnRecord> = {}): OrderHistoryReturnRecord {
+  return {
+    returnId: 'ret-1', cancelledByEmail: null, feeReceivedByEmail: null, exchangeReleasedByEmail: null, feeWaived: false, feeSettledAmount: 0, ...overrides,
+  };
+}
+
+describe('buildOrderHistory - 返品', () => {
+  it('お店が作った返品は「返品を作った」の行を、作った時刻・作った人つきで出す', () => {
+    const history = buildOrderHistory(input({ returns: [returnDetail()] }));
+
+    expect(entriesOf(history.entries, 'return')).toEqual([{
+      type: 'return', kind: 'created', id: 'created:ret-1', at: '2026-10-12T01:00:00.000Z', returnId: 'ret-1',
+      title: '返品を作った（ORD-A1B2C3D4-R1）', details: [], actorEmail: 'admin@example.com',
+    }]);
+  });
+
+  it('お客様の申し込みの返品（段2）には「返品を作った」の行を出さない（段2で申し込み・承認の行を足す）', () => {
+    const history = buildOrderHistory(input({ returns: [returnDetail({ source: 'customer_request', status: 'requested' })] }));
+
+    expect(entriesOf(history.entries, 'return')).toEqual([]);
+  });
+
+  it('返品の受け取りは、品の状態ごとの数を 在庫に戻す → 戻さない → お返し → 検品待ち の順に細目で出す。0点の状態は出さず、別の受け取りの数は混ぜない', () => {
+    const returns = [returnDetail({
+      receipts: [
+        { id: 'rc-2', kind: 'receive', refundChoice: 'none', createdAt: '2026-10-12T03:00:00.000Z', actorEmail: 'admin@example.com' },
+        { id: 'rc-1', kind: 'receive', refundChoice: 'now', createdAt: '2026-10-12T02:00:00.000Z', actorEmail: 'support@example.com' },
+      ],
+    })];
+    const returnReceiptLines = [
+      receiptLine('rc-1', 'sent_back', 1), receiptLine('rc-1', 'restocked', 1), receiptLine('rc-1', 'restocked', 1),
+      receiptLine('rc-1', 'pending_inspection', 1), receiptLine('rc-1', 'not_restocked', 2),
+      receiptLine('rc-2', 'restocked', 1),
+    ];
+
+    const history = buildOrderHistory(input({ returns, returnReceiptLines }));
+    const receives = entriesOf(history.entries, 'return').filter((entry) => entry.kind === 'receive');
+
+    expect(receives).toEqual([
+      {
+        type: 'return', kind: 'receive', id: 'receipt:rc-2', at: '2026-10-12T03:00:00.000Z', returnId: 'ret-1',
+        title: '返品の受け取り（ORD-A1B2C3D4-R1）', details: ['在庫に戻す 1点'], actorEmail: 'admin@example.com',
+      },
+      {
+        type: 'return', kind: 'receive', id: 'receipt:rc-1', at: '2026-10-12T02:00:00.000Z', returnId: 'ret-1',
+        title: '返品の受け取り（ORD-A1B2C3D4-R1）',
+        details: ['在庫に戻す 2点', '戻さない 2点', 'お返し 1点', '検品待ち 1点'],
+        actorEmail: 'support@example.com',
+      },
+    ]);
+  });
+
+  it('「届かない」として終えた行は届かない数の合計、検品を終えた行・開き直した行は返品の番号を出す', () => {
+    const returns = [returnDetail({
+      receipts: [
+        { id: 'rc-3', kind: 'reopen', refundChoice: null, createdAt: '2026-10-12T05:00:00.000Z', actorEmail: 'admin@example.com' },
+        { id: 'rc-2', kind: 'inspect', refundChoice: null, createdAt: '2026-10-12T04:00:00.000Z', actorEmail: 'support@example.com' },
+        { id: 'rc-1', kind: 'close_missing', refundChoice: null, createdAt: '2026-10-12T03:00:00.000Z', actorEmail: 'admin@example.com' },
+      ],
+    })];
+    const returnReceiptLines = [
+      receiptLine('rc-1', 'missing', 2), receiptLine('rc-1', 'missing', 1), receiptLine('rc-3', 'missing_reopened', 3),
+    ];
+
+    const history = buildOrderHistory(input({ returns, returnReceiptLines }));
+
+    expect(entriesOf(history.entries, 'return').map((entry) => [entry.kind, entry.title, entry.actorEmail])).toEqual([
+      ['reopen', '返品を開き直した（ORD-A1B2C3D4-R1）', 'admin@example.com'],
+      ['inspect', '検品を終えた（ORD-A1B2C3D4-R1）', 'support@example.com'],
+      ['close_missing', '「届かない」として返品を終えた（ORD-A1B2C3D4-R1・3点）', 'admin@example.com'],
+      ['created', '返品を作った（ORD-A1B2C3D4-R1）', 'admin@example.com'],
+    ]);
+  });
+
+  // 返金額が0円になって返金の記録を作らなかった数は、受け取りの行 refund_waived で残る（本計画 P20）
+  it('返金しないで終えた行: 受け取りの中で返金しなかった数は、受け取りの行と別に足して同じ時刻なら受け取りの上に置く。額を決めて返金で0にした受け取り（waive_refund）も出す', () => {
+    const returns = [returnDetail({
+      receipts: [
+        { id: 'rc-2', kind: 'waive_refund', refundChoice: null, createdAt: '2026-10-12T04:00:00.000Z', actorEmail: 'admin@example.com' },
+        { id: 'rc-1', kind: 'receive', refundChoice: 'now', createdAt: '2026-10-12T02:00:00.000Z', actorEmail: 'admin@example.com' },
+      ],
+    })];
+    const returnReceiptLines = [
+      receiptLine('rc-1', 'restocked', 2), receiptLine('rc-1', 'refund_waived', 2), receiptLine('rc-2', 'refund_waived', 1),
+    ];
+
+    const history = buildOrderHistory(input({ returns, returnReceiptLines }));
+
+    expect(entriesOf(history.entries, 'return').map((entry) => [entry.kind, entry.id, entry.title, entry.details])).toEqual([
+      ['refund_waived', 'waived:rc-2', '返金しないで終えた（ORD-A1B2C3D4-R1・1点）', []],
+      ['refund_waived', 'waived:rc-1', '返金しないで終えた（ORD-A1B2C3D4-R1・2点）', []],
+      ['receive', 'receipt:rc-1', '返品の受け取り（ORD-A1B2C3D4-R1）', ['在庫に戻す 2点']],
+      ['created', 'created:ret-1', '返品を作った（ORD-A1B2C3D4-R1）', []],
+    ]);
+    expect(entriesOf(history.entries, 'return')[0]).toMatchObject({ actorEmail: 'admin@example.com', returnId: 'ret-1' });
+  });
+
+  it('返金しなかった数の無い受け取りには「返金しないで終えた」の行を足さない', () => {
+    const returns = [returnDetail({
+      receipts: [{ id: 'rc-1', kind: 'receive', refundChoice: 'now', createdAt: '2026-10-12T02:00:00.000Z', actorEmail: 'admin@example.com' }],
+    })];
+
+    const history = buildOrderHistory(input({ returns, returnReceiptLines: [receiptLine('rc-1', 'restocked', 1)] }));
+
+    expect(entriesOf(history.entries, 'return').map((entry) => entry.kind)).toEqual(['receive', 'created']);
+  });
+
+  it('返品の取り消しの行は、取り消した時刻と、窓口が引いた取り消した人で出す。した人が分からなければ null', () => {
+    const cancelled = returnDetail({ status: 'cancelled', cancelledAt: '2026-10-12T02:00:00.000Z' });
+    const history = buildOrderHistory(input({
+      returns: [cancelled],
+      returnRecords: [returnRecord({ cancelledByEmail: 'support@example.com' })],
+    }));
+
+    expect(entriesOf(history.entries, 'return')[0]).toEqual({
+      type: 'return', kind: 'cancel', id: 'cancel:ret-1', at: '2026-10-12T02:00:00.000Z', returnId: 'ret-1',
+      title: '返品を取り消した（ORD-A1B2C3D4-R1）', details: [], actorEmail: 'support@example.com',
+    });
+    expect(entriesOf(buildOrderHistory(input({ returns: [cancelled] })).entries, 'return')[0]).toMatchObject({
+      kind: 'cancel', actorEmail: null,
+    });
+  });
+
+  it('手数料の受け取りの行は金額を全角の ￥ と桁区切りで、支払いを待たずに送れるようにした行は返品の番号を出す。どちらも窓口が引いたした人を出す', () => {
+    const history = buildOrderHistory(input({
+      returns: [returnDetail({
+        fees: { feeDueAmount: 0, feeReceivedAt: '2026-10-12T06:00:00.000Z', exchangeReleasedAt: '2026-10-12T05:00:00.000Z' },
+      })],
+      returnRecords: [returnRecord({ feeReceivedByEmail: 'admin@example.com', feeSettledAmount: 1_500, exchangeReleasedByEmail: 'owner@example.com' })],
+    }));
+    const [fee, release] = entriesOf(history.entries, 'return');
+
+    expect(fee).toEqual({
+      type: 'return', kind: 'fee_received', id: 'fee:ret-1', at: '2026-10-12T06:00:00.000Z', returnId: 'ret-1',
+      title: '手数料の受け取りを記録した（￥1,500）', details: [], actorEmail: 'admin@example.com',
+    });
+    // 金額の書き方は E-2 の formatYen と同じ（半角の ¥ ではなく、全角の ￥）
+    expect(fee.title.charCodeAt(fee.title.indexOf('（') + 1)).toBe(0xffe5);
+    expect(release).toEqual({
+      type: 'return', kind: 'exchange_released', id: 'release:ret-1', at: '2026-10-12T05:00:00.000Z', returnId: 'ret-1',
+      title: '支払いを待たずに送れるようにした（ORD-A1B2C3D4-R1）', details: [], actorEmail: 'owner@example.com',
+    });
+  });
+
+  // 手数料をいただかないことにした返品（order_returns.fee_waived。本計画 P27）。受け取りの記録と同じ列 fee_received_at・fee_received_by が入り、
+  // 額は決着で fee_settled_amount に移して fee_due_amount を0にする（Task 3 の I-2）。fee_waived は返品の一覧に無いので、窓口が order_returns から直に引いて渡す
+  it('手数料をいただかないことにした返品（feeWaived）の行は「手数料をいただかないことにした（￥n）」と出す。額はいただくはずだった額、した人は記録した人。印が偽・記録が無い時は受け取りの言葉', () => {
+    const returns = [returnDetail({ fees: { feeDueAmount: 0, feeReceivedAt: '2026-10-12T06:00:00.000Z' } })];
+
+    const waived = buildOrderHistory(input({
+      returns, returnRecords: [returnRecord({ feeReceivedByEmail: 'admin@example.com', feeSettledAmount: 1_500, feeWaived: true })],
+    }));
+    const received = buildOrderHistory(input({
+      returns, returnRecords: [returnRecord({ feeReceivedByEmail: 'admin@example.com', feeSettledAmount: 1_500, feeWaived: false })],
+    }));
+
+    expect(entriesOf(waived.entries, 'return')[0]).toEqual({
+      type: 'return', kind: 'fee_received', id: 'fee:ret-1', at: '2026-10-12T06:00:00.000Z', returnId: 'ret-1',
+      title: '手数料をいただかないことにした（￥1,500）', details: [], actorEmail: 'admin@example.com',
+    });
+    expect(entriesOf(received.entries, 'return')[0]).toMatchObject({
+      kind: 'fee_received', title: '手数料の受け取りを記録した（￥1,500）', actorEmail: 'admin@example.com',
+    });
+    // 窓口が返品の記録を引けなかった時は、いただかないことにした印が分からないので、受け取りの言葉のまま（した人は null）
+    expect(entriesOf(buildOrderHistory(input({ returns })).entries, 'return')[0]).toMatchObject({
+      kind: 'fee_received', title: '手数料の受け取りを記録した（￥0）', actorEmail: null,
+    });
+  });
+
+  it('返品の交換で足した交換の品の行は「交換の品を足した」の行を、足した時刻と、同じ時刻の受け取りをした人で出す。返品の番号は持たない', () => {
+    const addedAt = '2026-10-12T02:00:00.000Z';
+    const exchangeLine: OrderHistoryLine = {
+      orderItemId: EXCHANGE_LINE, name: 'シルクブラウス（黒 / L）', shipped: 0, completed: 2, exchange: { quantity: 2, createdAt: addedAt },
+    };
+    const history = buildOrderHistory(input({
+      lines: [...LINES, exchangeLine],
+      returns: [returnDetail({
+        receipts: [{ id: 'rc-1', kind: 'receive', refundChoice: 'none', createdAt: addedAt, actorEmail: 'support@example.com' }],
+        exchangeItems: [{
+          orderItemId: EXCHANGE_LINE, itemName: 'シルクブラウス', color: '黒', size: 'L', quantity: 2, fulfillmentType: 'stock', shipped: 0,
+        }],
+      })],
+    }));
+
+    expect(entriesOf(history.entries, 'return').find((entry) => entry.kind === 'exchange_added')).toEqual({
+      type: 'return', kind: 'exchange_added', id: `exchange:${EXCHANGE_LINE}`, at: addedAt, returnId: null,
+      title: '交換の品を足した（シルクブラウス（黒 / L） × 2）', details: [], actorEmail: 'support@example.com',
+    });
+    // その品を持つ返品が一覧に無い時は、足した人は null
+    expect(entriesOf(buildOrderHistory(input({ lines: [...LINES, exchangeLine] })).entries, 'return')[0]).toMatchObject({
+      kind: 'exchange_added', actorEmail: null,
+    });
+  });
+
+  it('返品の返金の行の「どこから」は 返品（番号）。返品の番号が引けない返金は 返品 だけ。ほかの道は今のまま', () => {
+    const history = buildOrderHistory(input({
+      returns: [returnDetail({ refunds: [{ id: 'r-ret', amount: 4_000, status: 'succeeded', createdAt: REFUND_CREATED_AT }] })],
+      refunds: [
+        refund({ refundId: 'r-ret', source: 'return', lines: [refundLine({ restockType: 'return', beforeShipment: false })] }),
+        refund({ refundId: 'r-unknown', source: 'return', createdAt: '2026-10-11T00:00:00.000Z', lines: [] }),
+        refund({ refundId: 'r-admin', createdAt: '2026-10-10T00:00:00.000Z' }),
+      ],
+      lines: LINES,
+    }));
+
+    expect(entriesOf(history.entries, 'refund').map((entry) => [entry.refundId, entry.source, entry.sourceLabel])).toEqual([
+      ['r-ret', 'return', '返品（ORD-A1B2C3D4-R1）'],
+      ['r-unknown', 'return', '返品'],
+      ['r-admin', 'admin', '管理画面'],
+    ]);
+  });
+
+  it('同じ時刻の行は、結果が上に来る順に置く: メール → 状態 → 交換の品を足した → 返金 → 返品の受け取り', () => {
+    const at = '2026-10-12T02:00:00.000Z';
+    const history = buildOrderHistory(input({
+      statusRows: [{
+        changedAt: at, fromStatus: 'shipped', toStatus: 'paid', changeReason: 'return_exchange_added',
+        actorEmail: null, shippingCarrier: null, trackingNumber: null, cancelReason: null,
+      }],
+      emailRows: [email({ kind: 'refund', refundId: 'r-ret', createdAt: at })],
+      refunds: [refund({ refundId: 'r-ret', source: 'return', createdAt: at, acceptedAt: at, succeededAt: at, lines: [] })],
+      returns: [returnDetail({
+        receipts: [{ id: 'rc-1', kind: 'receive', refundChoice: 'now', createdAt: at, actorEmail: 'admin@example.com' }],
+        refunds: [{ id: 'r-ret', amount: 5_000, status: 'succeeded', createdAt: at }],
+      })],
+      returnReceiptLines: [receiptLine('rc-1', 'restocked', 1)],
+      lines: [
+        ...LINES,
+        { orderItemId: EXCHANGE_LINE, name: 'シルクブラウス（黒 / L）', shipped: 0, completed: 1, exchange: { quantity: 1, createdAt: at } },
+      ],
+    }));
+
+    expect(history.entries.map((entry) => (entry.type === 'return' ? `return:${entry.kind}` : entry.type))).toEqual([
+      'email', 'status', 'return:exchange_added', 'refund', 'return:receive', 'return:created', 'created',
+    ]);
+  });
+
+  it('決着の後に新しい手数料が付いて受け取りの時刻が空なら、決着済み額が残っていても手数料の行を出さない', () => {
+    const history = buildOrderHistory(input({
+      returns: [returnDetail({ fees: { feeDueAmount: 800, feeReceivedAt: null } })],
+      returnRecords: [returnRecord({ feeSettledAmount: 1_500 })],
+    }));
+
+    expect(entriesOf(history.entries, 'return').map((entry) => entry.kind)).toEqual(['created']);
+  });
+
 });

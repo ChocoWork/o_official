@@ -50,7 +50,7 @@ const EXPECTED = [
 describe('返金の記号', () => {
   it('返金の道・状態・Stripe に伝える理由は Global Constraints のとおり', () => {
     expect([...ORDER_REFUND_SOURCES]).toEqual([
-      'admin', 'order_cancel', 'stripe_dashboard', 'auto_cancelled_order_payment', 'auto_amount_mismatch', 'legacy',
+      'admin', 'order_cancel', 'stripe_dashboard', 'auto_cancelled_order_payment', 'auto_amount_mismatch', 'legacy', 'return',
     ]);
     expect([...ORDER_REFUND_STATUSES]).toEqual(['awaiting_response', 'error', 'pending', 'succeeded', 'failed']);
     expect([...STRIPE_REFUND_REASONS]).toEqual(['requested_by_customer', 'duplicate', 'fraudulent']);
@@ -134,6 +134,8 @@ describe('ラベルの表', () => {
       auto_cancelled_order_payment: '自動の返金（取り消した注文への入金）',
       auto_amount_mismatch: '自動の取消（支払額の違い）',
       legacy: '前からの写し',
+      // 履歴の返金の行は、返品の番号が引ければ「返品（{番号}）」と出す。この言葉は、番号が引けない時の言葉
+      return: '返品',
     });
     expect(Object.keys(REFUND_SOURCE_LABELS)).toEqual([...ORDER_REFUND_SOURCES]);
   });

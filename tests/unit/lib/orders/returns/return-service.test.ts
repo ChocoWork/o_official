@@ -225,7 +225,7 @@ function refundRef(overrides: Partial<OrderRefundRef> = {}): OrderRefundRef {
   return {
     refundId: REFUND_ID,
     orderId: ORDER_ID,
-    source: 'admin',
+    source: 'return',
     status: 'awaiting_response',
     stripeRefundId: null,
     amount: 5000,
@@ -241,7 +241,7 @@ function refundRef(overrides: Partial<OrderRefundRef> = {}): OrderRefundRef {
 function refundRow(overrides: Partial<OrderRefundRow> = {}): OrderRefundRow {
   return {
     refundId: REFUND_ID,
-    source: 'admin',
+    source: 'return',
     status: 'failed',
     stripeStatus: 'failed',
     pendingReason: null,

@@ -80,7 +80,7 @@ export const REFUND_STATUS_LABELS = {
   failed: '失敗',
 } as const satisfies Record<OrderRefundStatus, string>;
 
-/** 履歴の返金の行の「どこから」 */
+/** 履歴の返金の行の「どこから」。return は、返品の番号が引けない時の言葉（引ければ order-history.ts が「返品（{番号}）」と出す） */
 export const REFUND_SOURCE_LABELS = {
   admin: '管理画面',
   order_cancel: '注文のキャンセル',
@@ -88,6 +88,7 @@ export const REFUND_SOURCE_LABELS = {
   auto_cancelled_order_payment: '自動の返金（取り消した注文への入金）',
   auto_amount_mismatch: '自動の取消（支払額の違い）',
   legacy: '前からの写し',
+  return: '返品',
 } as const satisfies Record<OrderRefundSource, string>;
 
 export const STRIPE_REFUND_REASON_LABELS = {

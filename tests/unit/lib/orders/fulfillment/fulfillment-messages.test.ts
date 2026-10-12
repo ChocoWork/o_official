@@ -10,6 +10,7 @@ import {
   fulfillmentFailureBody,
 } from '@/lib/orders/fulfillment/fulfillment-messages';
 import { FULFILLMENT_ERROR_CODES } from '@/lib/orders/fulfillment/fulfillment-types';
+import { RETURN_ERROR_MESSAGES } from '@/lib/orders/returns/return-messages';
 
 // 共通の約束 C-2 の表。言葉を直す時は、画面と文書の言葉も一緒に直すため、ここは1字も変えずに写す
 const EXPECTED = [
@@ -28,6 +29,9 @@ const EXPECTED = [
   ['completion_not_found', 404, '仕上がりの記録が見つかりません。'],
   ['completion_already_shipped', 409, 'もう発送した数があるため、取り消せません。'],
   ['fulfillment_refunded', 409, '返金した商品の発送は取り消せません。'],
+  // グループ E-3（共通の約束 C-4）。返品の窓口の FULFILLMENT_HAS_RETURN・FULFILLMENT_EXCHANGE_ON_HOLD と同じ文
+  ['fulfillment_has_return', 409, '返品のある発送は取り消せません。'],
+  ['fulfillment_exchange_on_hold', 409, '手数料のお支払いを待っている交換の品は送れません。'],
 ] as const;
 
 describe('誤りの記号ごとの HTTP と言葉', () => {
@@ -41,6 +45,13 @@ describe('誤りの記号ごとの HTTP と言葉', () => {
 
     expect(EXPECTED.map(([code]) => code).sort()).toEqual(codes);
     expect(Object.keys(FULFILLMENT_ERROR_MESSAGES).sort()).toEqual(codes);
+  });
+
+  // 発送の窓口（小文字の記号）と返品の窓口（大文字の記号）で、同じ断りに別の文を出さない。
+  // fulfillment-messages.ts は画面からも読むので return-messages.ts を import せず、文を写して、ここで突き合わせる
+  it('返品の窓口（return-messages.ts）の同じ断りと、言葉も HTTP も食い違わない', () => {
+    expect(FULFILLMENT_ERROR_MESSAGES.fulfillment_has_return).toEqual(RETURN_ERROR_MESSAGES.FULFILLMENT_HAS_RETURN);
+    expect(FULFILLMENT_ERROR_MESSAGES.fulfillment_exchange_on_hold).toEqual(RETURN_ERROR_MESSAGES.FULFILLMENT_EXCHANGE_ON_HOLD);
   });
 });
 

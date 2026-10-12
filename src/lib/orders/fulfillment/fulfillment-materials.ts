@@ -13,6 +13,8 @@ import type {
   FulfillmentMaterialLine,
   FulfillmentMaterials,
 } from '@/lib/orders/fulfillment/fulfillment-types';
+import { listOrderReturns } from '@/lib/orders/returns/return-store';
+import type { OrderReturnDetail } from '@/lib/orders/returns/return-types';
 
 type MaterialOrderRow = {
   id: string;
@@ -26,7 +28,14 @@ type MaterialOrderRow = {
   shipping_phone: string | null;
 };
 
-type MaterialItemRow = { id: string; item_name: string; color: string | null; size: string | null };
+type MaterialItemRow = {
+  id: string;
+  item_name: string;
+  color: string | null;
+  size: string | null;
+  /** 交換の品の行は exchange。読めなかった行（古い見本）は order と同じに扱う */
+  line_kind?: 'order' | 'exchange';
+};
 
 const ORDER_COLUMNS =
   'id, status, shipping_email, shipping_full_name, shipping_postal_code, shipping_prefecture, shipping_city, shipping_address, shipping_phone';
@@ -37,6 +46,7 @@ const ORDER_COLUMNS =
  * （決済完了でない → 配送先が足りない → 支払額の違いの要対応が残っている、の順）。DB の判定と全く同じではなく、2点が違う。
  * - 空白だけの欄は、画面の方が厳しく見る（JS の trim は全角空白も除く。DB の btrim は半角空白だけ）
  * - 未発送の品が無い決済完了の注文は、DB だけが断る（ORDER_NOT_SHIPPABLE）
+ * 交換の品の行（返品の交換で足した行）があれば、返品の一覧から、手数料のお支払いを待っていて送れない数も出す（グループ E-3 設計書 7-1）。
  * 注文が無ければ null。
  */
 export async function loadFulfillmentMaterials(client: SupabaseClient, orderId: string): Promise<FulfillmentMaterials | null> {
@@ -57,7 +67,7 @@ export async function loadFulfillmentMaterials(client: SupabaseClient, orderId: 
     // 同じ注文の商品は同じ時刻に登録されるので、id を足して並びを決める
     client
       .from('order_items')
-      .select('id, item_name, color, size')
+      .select('id, item_name, color, size, line_kind')
       .eq('order_id', order.id)
       .order('created_at', { ascending: true })
       .order('id', { ascending: true }),
@@ -79,7 +89,13 @@ export async function loadFulfillmentMaterials(client: SupabaseClient, orderId: 
   }
 
   const counts = new Map((countsByOrder.get(order.id) ?? []).map((row) => [row.orderItemId, row] as const));
-  const lines = ((itemsResult.data ?? []) as MaterialItemRow[]).flatMap((item): FulfillmentMaterialLine[] => {
+  const itemRows = (itemsResult.data ?? []) as MaterialItemRow[];
+  // 交換の品の行がある時だけ、返品の一覧を読む（交換の品の無い注文が、返品のために余分に読まないように）。
+  // 手数料のお支払いを待っている返品の交換の品は、送れない数として写す
+  const heldItemIds = itemRows.some((item) => item.line_kind === 'exchange')
+    ? heldExchangeItemIds(await listOrderReturns(client, order.id))
+    : new Set<string>();
+  const lines = itemRows.flatMap((item): FulfillmentMaterialLine[] => {
     const row = counts.get(item.id);
     if (!row) {
       return [];
@@ -95,6 +111,9 @@ export async function loadFulfillmentMaterials(client: SupabaseClient, orderId: 
       inProduction: row.inProduction,
       readyUnshipped: row.readyUnshipped,
       unshipped: row.unshipped,
+      lineKind: item.line_kind === 'exchange' ? 'exchange' : 'order',
+      // 手数料待ちで止まるのは、その行の未発送の数の全部（一部だけ止まることは無い）
+      exchangeOnHold: heldItemIds.has(item.id) ? row.unshipped : 0,
     }];
   });
 
@@ -137,4 +156,17 @@ function blockedReasonOf(order: MaterialOrderRow, paymentReviewOpen: boolean): F
     return 'address_incomplete';
   }
   return paymentReviewOpen ? 'payment_review_required' : null;
+}
+
+
+/**
+ * 手数料のお支払いを待っている返品の、交換の品の行の番号。DB の関数 admin_create_fulfillment が FULFILLMENT_EXCHANGE_ON_HOLD で
+ * 断る条件と同じ（その返品に払う手数料があり、受け取りの記録も「支払いを待たずに送る」も無い）。
+ */
+function heldExchangeItemIds(returns: readonly OrderReturnDetail[]): Set<string> {
+  return new Set(
+    returns
+      .filter((detail) => detail.fees.feeDueAmount > 0 && detail.fees.feeReceivedAt === null && detail.fees.exchangeReleasedAt === null)
+      .flatMap((detail) => detail.exchangeItems.map((item) => item.orderItemId)),
+  );
 }

@@ -4,6 +4,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { toOrderNumber } from '@/lib/orders/order-number';
+import { formatReturnNumber } from '@/lib/orders/returns/return-messages';
 
 /**
  * 色 × サイズ（バリアント）の在庫を管理画面から扱う（FREQ-399）。
@@ -14,8 +15,9 @@ import { toOrderNumber } from '@/lib/orders/order-number';
 
 const itemIdSchema = z.coerce.number().int().positive();
 
-// 注文の処理が書く理由（purchase / cancel / refund）は管理画面から打てない。
+// 注文の処理が書く理由（purchase / cancel / refund / return / exchange）は管理画面から打てない。
 // 打てると「注文に紐づかない購入」が台帳に混ざり、受注数や突合の意味が壊れる。
+// return（返品の受け取り）と exchange（交換の品の確保）は、返品の DB の関数だけが書く（グループ E-3）。
 const ADMIN_STOCK_REASONS = ['restock', 'adjustment'] as const;
 
 const movementSchema = z.object({
@@ -58,7 +60,12 @@ type StockHistoryRow = {
   balance_after: number;
   /** 返金で動いた行の返金の番号。返金に結び付かない行は null */
   refund_id: string | null;
+  /** 返品の受け取り（return）と交換の品の確保（exchange）で動いた行の返品の番号。返品に結び付かない行は null */
+  return_id: string | null;
 };
+
+/** 在庫の履歴の返品で動いた行の、返品の番号の文字を作る材料（public.order_returns。service_role は SELECT だけを持つ） */
+type StockHistoryReturnRow = { id: string; order_id: string; number: number };
 
 /** 在庫の画面に出す履歴の件数 */
 const STOCK_HISTORY_LIMIT = 50;
@@ -130,6 +137,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Failed to fetch stock history' }, { status: 500 });
     }
 
+    // 返品の受け取り・交換の品の確保で動いた行は、どの返品かを返品の番号（{注文番号}-R{n}。設計書 8-1「どの注文のどの返品か」）で返す。
+    // 番号の文字は DB が作らないので、履歴に出た返品だけを返品の表から読み、注文の番号と何番目かから付ける
+    const historyRows = (history ?? []) as StockHistoryRow[];
+    const returnIds = [...new Set(historyRows.flatMap((row) => (row.return_id ? [row.return_id] : [])))];
+    const { data: returnRows, error: returnRowsError } = returnIds.length
+      ? await supabase.from('order_returns').select('id, order_id, number').in('id', returnIds)
+      : { data: [], error: null };
+    if (returnRowsError) {
+      console.error('Failed to fetch stock history returns:', itemId, ...describeErrorForLog(returnRowsError));
+      return NextResponse.json({ error: 'Failed to fetch stock history' }, { status: 500 });
+    }
+    const returnNumberById = new Map(
+      ((returnRows ?? []) as StockHistoryReturnRow[]).map((row) => [row.id, formatReturnNumber(row.order_id, row.number)] as const),
+    );
+
     const stateByVariant = new Map<number, StockStateRow>(
       ((stockStates ?? []) as StockStateRow[]).map((row) => [row.variant_id, row]),
     );
@@ -154,7 +176,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             backorderQuantity: state?.backorder ?? 0,
           };
         }),
-        movements: ((history ?? []) as StockHistoryRow[]).map((row) => ({
+        movements: historyRows.map((row) => ({
           id: row.movement_id,
           variantId: row.variant_id,
           delta: row.delta,
@@ -166,6 +188,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           orderNumber: row.order_id ? toOrderNumber(row.order_id) : null,
           balanceAfter: row.balance_after,
           refundId: row.refund_id,
+          returnId: row.return_id,
+          // 返品で動いた行は、どの返品かを番号で出す（設計書 8-1）。返品に結び付かない行は null
+          returnNumber: row.return_id ? (returnNumberById.get(row.return_id) ?? null) : null,
         })),
       },
       { status: 200 },

@@ -19,6 +19,16 @@ export type FulfillmentMaterialLine = {
   inProduction: number;
   readyUnshipped: number;
   unshipped: number;
+  /**
+   * 交換の品の行（返品の交換で足した行。グループ E-3 設計書 7-1）の印。省くと order（ふつうの行）と同じ。
+   * 窓口は必ず返す。省ける形なのは、今の見本（試験・E2E）を書き換えずに済ませるため
+   */
+  lineKind?: 'order' | 'exchange';
+  /**
+   * 手数料のお支払いを待っていて、送れない数（交換の品の行だけ。その行の未発送の数の全部）。省くと 0 と同じ。窓口は必ず返す。
+   * 送れるかどうかを決めるのは DB の関数 admin_create_fulfillment（FULFILLMENT_EXCHANGE_ON_HOLD）で、ここは画面が先に知らせるための写し
+   */
+  exchangeOnHold?: number;
 };
 
 export type FulfillmentRecordSummary = {
@@ -82,17 +92,20 @@ export const FULFILLMENT_ERROR_CODES = [
   'completion_not_found',
   'completion_already_shipped',
   'fulfillment_refunded',
+  // 返品の交換（グループ E-3）: 返品が指す発送は取り消せない。手数料のお支払いを待っている交換の品は送れない（どちらも DB の関数が断る）
+  'fulfillment_has_return',
+  'fulfillment_exchange_on_hold',
 ] as const;
 export type FulfillmentErrorCode = (typeof FULFILLMENT_ERROR_CODES)[number];
 
 export type FulfillmentErrorResponse = { error: string; code: FulfillmentErrorCode | 'invalid_request' | 'failed' };
 
-/** 発送の画面の最初の数: 未発送が1以上の商品ごとに、発送準備中の数の全部（受注生産中は入らない） */
+/** 発送の画面の最初の数: 未発送が1以上の商品ごとに、発送準備中の数の全部（受注生産中と、手数料のお支払い待ちで送れない数は入らない） */
 export function initialShipQuantities(lines: readonly FulfillmentMaterialLine[]): Record<string, number> {
   const quantities: Record<string, number> = {};
   for (const line of lines) {
     if (line.unshipped >= 1) {
-      quantities[line.orderItemId] = line.readyUnshipped;
+      quantities[line.orderItemId] = Math.max(0, line.readyUnshipped - (line.exchangeOnHold ?? 0));
     }
   }
   return quantities;

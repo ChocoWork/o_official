@@ -435,6 +435,10 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged }: OrderHistoryDia
         </li>
       );
     }
+    // 返品の行は、画面を作る次の作業（Task 11）が描く。それまではメールの行だけを描く
+    if (entry.type !== 'email') {
+      return null;
+    }
     return (
       <li key={`email-${entry.emailId}`} className="space-y-1 font-acumin lk-text-3xs text-black">
         <div className="flex flex-wrap items-center gap-2">

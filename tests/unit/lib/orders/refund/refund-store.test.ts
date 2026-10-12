@@ -680,6 +680,26 @@ describe('listOrderRefunds', () => {
     expect(refund).toMatchObject({ source: 'order_cancel', cancelReason: 'customer_request' });
   });
 
+  it('返品の返金（道 return）の商品の行は、在庫の戻し方 return をそのまま写す（no_restock にしない）', async () => {
+    const { store } = storeWith({
+      list_order_refunds: {
+        data: [{
+          ...REFUND_ROW,
+          source: 'return',
+          lines: [{ ...REFUND_ROW.lines[0], before_shipment: false, restock_type: 'return', released_quantity: 0, restocked_quantity: 0 }],
+        }],
+      },
+    });
+
+    const [refund] = await listOrderRefunds(store, ORDER_ID);
+
+    expect(refund.source).toBe('return');
+    expect(refund.lines).toEqual([{
+      orderItemId: ITEM_1, quantity: 1, beforeShipment: false, restockType: 'return', amount: 2666, releasedQuantity: 0,
+      restockedQuantity: 0, rereservedQuantity: 0, rereserveShortage: 0,
+    }]);
+  });
+
   describe('PostgREST の max_rows（1000）で答えが切れうる時', () => {
     const rows = (count: number) => Array.from({ length: count }, () => ({ ...REFUND_ROW }));
 

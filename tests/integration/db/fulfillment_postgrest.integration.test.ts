@@ -435,6 +435,8 @@ describeLocalDb('integration: 発送・仕上がり・在庫の関数を実際�
           inProduction: 0,
           readyUnshipped: 0,
           unshipped: 0,
+          lineKind: 'order',
+          exchangeOnHold: 0,
         },
         {
           orderItemId: order.madeItemId,
@@ -447,6 +449,8 @@ describeLocalDb('integration: 発送・仕上がり・在庫の関数を実際�
           inProduction: 3,
           readyUnshipped: 0,
           unshipped: 3,
+          lineKind: 'order',
+          exchangeOnHold: 0,
         },
       ]),
       fulfillments: [

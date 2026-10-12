@@ -96,8 +96,18 @@ export type AttentionException = {
   canCancelOrder: boolean;
   /** 返金の失敗で、注文の返せる額が残っていれば「もう一度返金する」を選べる */
   canRetryRefund: boolean;
-  /** 理由が返金の失敗の時だけ。返金の記録の額・失敗の理由の言葉・確保し直せなかった商品と数（記録が見つからない時は額0・商品なし）。ほかの理由は null */
-  refundFailure: { amount: number; failureReasonLabel: string; shortages: Array<{ name: string; quantity: number }> } | null;
+  /**
+   * 理由が返金の失敗の時だけ。返金の記録の額・失敗の理由の言葉・確保し直せなかった商品と数（記録が見つからない時は額0・商品なし）。
+   * returnId は、返品の返金（受け取りで今返金・額を決めて返金）の失敗ならその返品の番号。画面は、番号があれば「もう一度返金する」で
+   * 注文の返品の画面を開く（ふつうの返金の画面では、返金待ちの品を選べないため。グループ E-3、本計画 P21）。ふつうの返金・記録が
+   * 見つからない時は null。省ける形なのは、今の見本を書き換えずに済ませるため。窓口は必ず返す。ほかの理由は refundFailure ごと null
+   */
+  refundFailure: {
+    amount: number;
+    failureReasonLabel: string;
+    shortages: Array<{ name: string; quantity: number }>;
+    returnId?: string | null;
+  } | null;
 };
 
 /** 管理画面の「要対応・要確認」欄の1行(要確認) */

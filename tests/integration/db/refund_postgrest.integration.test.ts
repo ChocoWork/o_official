@@ -536,6 +536,7 @@ describeLocalDb('integration: 返金の記録の窓口を実際の PostgREST に
           restockable: 2,
           lineDiscount: 0,
           refundedUnits: 0,
+          exchangePaidAmount: null,
         },
       ],
       awaitingRefund: null,
@@ -669,11 +670,13 @@ describeLocalDb('integration: 返金の記録の窓口を実際の PostgREST に
         amount: PRICE * 2,
         failureReasonLabel: refundFailureReasonLabel('expired_or_canceled_card'),
         shortages: [{ name: '照合テスト（BLACK / M）', quantity: 1 }],
+        returnId: null,
       });
       expect(failureOf(recordOrder.orderId)).toEqual({
         amount: PRICE,
         failureReasonLabel: refundFailureReasonLabel('not_found_in_stripe'),
         shortages: [],
+        returnId: null,
       });
       // 読めなかった時の警告（額0・不足なしに黙って落ちる）が出ていない
       expect(warn.mock.calls.filter(([message]) => String(message).startsWith('[admin.order-attention]'))).toEqual([]);

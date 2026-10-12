@@ -1,12 +1,14 @@
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { CANCEL_REASON_LABELS, CANCEL_REASONS, type CancelReason, type OrderStatus } from '@/lib/orders/order-payment-types';
 import {
+  formatYen,
   refundFailureReasonLabel,
   REFUND_SOURCE_LABELS,
   REFUND_STATUS_LABELS,
   STRIPE_REFUND_REASON_LABELS,
 } from '@/lib/orders/refund/refund-messages';
 import type { OrderRefundSource, OrderRefundStatus } from '@/lib/orders/refund/refund-types';
+import type { OrderReturnDetail } from '@/lib/orders/returns/return-types';
 import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import {
   describeOrderEmailState,
@@ -24,8 +26,8 @@ import type { OrderCompletionHistoryRow, OrderFulfillmentHistoryRow } from '@/li
 import type { OrderRefundRow } from '@/lib/orders/refund/refund-store';
 
 /**
- * 管理画面の「この注文の履歴」（グループ D 設計書 5-1、グループ E-1・E-2 設計書 9-2）。窓口と画面の両方が使うので、
- * サーバーだけの物を import しない。注文の状態の変化・メール・発送・仕上がり・返金とその取消を新しい順に並べる。
+ * 管理画面の「この注文の履歴」（グループ D 設計書 5-1、グループ E-1・E-2・E-3 設計書 9-2・8-1）。窓口と画面の両方が使うので、
+ * サーバーだけの物を import しない。注文の状態の変化・メール・発送・仕上がり・返金・返品とその取消を新しい順に並べる。
  * 再送できるか・取り消せるかは窓口が決めて返す（画面は判断しない）。
  */
 export const ORDER_STATUS_LABELS = {
@@ -77,8 +79,17 @@ export type OrderEmailHistoryRow = {
   returnReceiptId: string | null;
 };
 
-/** 注文の商品ごとの名前（商品名（色 / サイズ））と、発送した数・仕上がった数。取り消せるかの判断に使う */
-export type OrderHistoryLine = { orderItemId: string; name: string; shipped: number; completed: number };
+/**
+ * 注文の商品ごとの名前（商品名（色 / サイズ））と、発送した数・仕上がった数。取り消せるかの判断に使う。
+ * exchange は、返品の交換で足した交換の品の行だけが持つ（数と足した時刻。履歴の「交換の品を足した」の行になる。グループ E-3）
+ */
+export type OrderHistoryLine = {
+  orderItemId: string;
+  name: string;
+  shipped: number;
+  completed: number;
+  exchange?: { quantity: number; createdAt: string };
+};
 
 export type OrderHistoryCreatedEntry = { type: 'created'; at: string };
 
@@ -182,6 +193,53 @@ export type OrderHistoryRefundRereserveEntry = {
   items: Array<{ name: string; quantity: number; shortage: number }>;
 };
 
+/** 受け取りの行ごとの数（order_return_receipt_lines）。履歴の「返品の受け取り」の細目と「届かない」「返金しない」の数に使う。disposition は restocked・missing・refund_waived など */
+export type OrderHistoryReturnReceiptLine = { receiptId: string; disposition: string; quantity: number };
+
+/**
+ * 返品の記録（order_returns）に直に残っていて、返品の一覧（list_order_returns。共通の約束 C-2）が持たない欄。
+ * 取消・手数料の受け取り・支払いを待たずに送るをした人のメール（設計書 8-1「日時とした人つき」）と、手数料をいただかないことにした印
+ * （fee_waived。本計画 P27）。履歴の窓口が order_returns から引いて渡す。メールが引けない人（消えた利用者など）は null
+ */
+export type OrderHistoryReturnRecord = {
+  returnId: string;
+  cancelledByEmail: string | null;
+  feeReceivedByEmail: string | null;
+  exchangeReleasedByEmail: string | null;
+  feeWaived: boolean;
+  /** 決着で fee_due_amount から移した額の合計（Task 3 の I-2）。履歴は未決着額ではなく、この額を出す */
+  feeSettledAmount: number;
+};
+
+export type OrderHistoryReturnEntryKind =
+  | 'created'
+  | 'receive'
+  | 'refund_waived'
+  | 'close_missing'
+  | 'inspect'
+  | 'cancel'
+  | 'reopen'
+  | 'exchange_added'
+  | 'fee_received'
+  | 'exchange_released';
+
+/**
+ * 返品の行（グループ E-3 設計書 8-1）。文は共通の約束 C-5 のとおりここで組み立て済みで、画面は title と details をそのまま出す。
+ * id は画面の一覧の key（返品の行どうしで重ならない）。returnId は、交換の品を足した行だけ null。
+ * した人（actorEmail）は、作った・受け取りの記録の行は返品の一覧から、取消・手数料の受け取り・支払いを待たずに送るは窓口が
+ * order_returns から引いた物（OrderHistoryReturnRecord）、交換の品を足したは同じ時刻の受け取りをした人。分からない時（消えた利用者など）は null
+ */
+export type OrderHistoryReturnEntry = {
+  type: 'return';
+  kind: OrderHistoryReturnEntryKind;
+  id: string;
+  at: string;
+  returnId: string | null;
+  title: string;
+  details: string[];
+  actorEmail: string | null;
+};
+
 export type OrderHistoryEntry =
   | OrderHistoryCreatedEntry
   | OrderHistoryStatusEntry
@@ -191,7 +249,8 @@ export type OrderHistoryEntry =
   | OrderHistoryCompletionEntry
   | OrderHistoryCompletionCancelEntry
   | OrderHistoryRefundEntry
-  | OrderHistoryRefundRereserveEntry;
+  | OrderHistoryRefundRereserveEntry
+  | OrderHistoryReturnEntry;
 
 export type OrderHistoryResponse = {
   order: { id: string; orderNumber: string; statusLabel: string; recipient: string | null };
@@ -211,6 +270,9 @@ export type BuildOrderHistoryInput = {
   fulfillments: OrderFulfillmentHistoryRow[];
   completions: OrderCompletionHistoryRow[];
   refunds: OrderRefundRow[];
+  returns: OrderReturnDetail[];
+  returnReceiptLines: OrderHistoryReturnReceiptLine[];
+  returnRecords: OrderHistoryReturnRecord[];
   lines: OrderHistoryLine[];
 };
 
@@ -279,9 +341,118 @@ function refundSteps(row: OrderRefundRow): OrderHistoryRefundEntry['steps'] {
   return steps.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
 
+/** 受け取りの品の状態ごとの数の言葉。順番は C-5 のとおり: 在庫に戻す → 戻さない → お返し → 検品待ち */
+const RECEIVE_DETAIL_WORDS = [
+  ['在庫に戻す', 'restocked'],
+  ['戻さない', 'not_restocked'],
+  ['お返し', 'sent_back'],
+  ['検品待ち', 'pending_inspection'],
+] as const;
+
+/** ある受け取りの、ある品の状態の数の合計（同じ状態の行は、返品の行や解決ごとに分かれている） */
+function receiptQuantity(lines: readonly OrderHistoryReturnReceiptLine[], receiptId: string, disposition: string): number {
+  return lines
+    .filter((line) => line.receiptId === receiptId && line.disposition === disposition)
+    .reduce((total, line) => total + line.quantity, 0);
+}
+
+/**
+ * 返品1件の履歴の行（グループ E-3 設計書 8-1、文は共通の約束 C-5）。受け取りの記録（receipts）から、受け取り・検品・届かない・
+ * 開き直し・返金しないで終えた、を出す。取消・手数料の受け取り・支払いを待たずに送るは、返品の記録の時刻と、窓口が引いた
+ * 返品の記録（record。した人のメールと、手数料をいただかない印 feeWaived）から出す。
+ * 金額は E-2 の「金額の書き方」（全角の ￥ と桁区切り）。同じ時刻の行は、結果が上に来る順（返金しないで終えた → 受け取り）に並べる
+ */
+function returnHistoryEntries(
+  detail: OrderReturnDetail,
+  receiptLines: readonly OrderHistoryReturnReceiptLine[],
+  record: OrderHistoryReturnRecord | undefined,
+): OrderHistoryReturnEntry[] {
+  const entry = (
+    kind: OrderHistoryReturnEntryKind,
+    id: string,
+    at: string,
+    title: string,
+    actorEmail: string | null,
+    details: string[] = [],
+  ): OrderHistoryReturnEntry => ({ type: 'return', kind, id, at, returnId: detail.id, title, details, actorEmail });
+  const waivedEntry = (receipt: OrderReturnDetail['receipts'][number]) =>
+    entry(
+      'refund_waived',
+      `waived:${receipt.id}`,
+      receipt.createdAt,
+      `返金しないで終えた（${detail.label}・${receiptQuantity(receiptLines, receipt.id, 'refund_waived')}点）`,
+      receipt.actorEmail,
+    );
+
+  const entries: OrderHistoryReturnEntry[] = [];
+  // 段1の返品はお店が作った物だけ。お客様の申し込みの返品（段2）の「申し込み」「承認」の行は、段2で足す
+  if (detail.source === 'shop') {
+    entries.push(entry('created', `created:${detail.id}`, detail.createdAt, `返品を作った（${detail.label}）`, detail.createdByEmail));
+  }
+  for (const receipt of detail.receipts) {
+    const id = `receipt:${receipt.id}`;
+    if (receipt.kind === 'receive') {
+      // 返金額が0円になって返金しなかった数（refund_waived）があれば、受け取りの行の上に「返金しないで終えた」を足す（本計画 P20）
+      if (receiptQuantity(receiptLines, receipt.id, 'refund_waived') > 0) {
+        entries.push(waivedEntry(receipt));
+      }
+      const details = RECEIVE_DETAIL_WORDS.flatMap(([word, disposition]) => {
+        const quantity = receiptQuantity(receiptLines, receipt.id, disposition);
+        return quantity > 0 ? [`${word} ${quantity}点`] : [];
+      });
+      entries.push(entry('receive', id, receipt.createdAt, `返品の受け取り（${detail.label}）`, receipt.actorEmail, details));
+    } else if (receipt.kind === 'waive_refund') {
+      entries.push(waivedEntry(receipt));
+    } else if (receipt.kind === 'close_missing') {
+      const missing = receiptQuantity(receiptLines, receipt.id, 'missing');
+      entries.push(
+        entry('close_missing', id, receipt.createdAt, `「届かない」として返品を終えた（${detail.label}・${missing}点）`, receipt.actorEmail),
+      );
+    } else if (receipt.kind === 'inspect') {
+      entries.push(entry('inspect', id, receipt.createdAt, `検品を終えた（${detail.label}）`, receipt.actorEmail));
+    } else {
+      entries.push(entry('reopen', id, receipt.createdAt, `返品を開き直した（${detail.label}）`, receipt.actorEmail));
+    }
+  }
+  if (detail.cancelledAt !== null) {
+    entries.push(
+      entry('cancel', `cancel:${detail.id}`, detail.cancelledAt, `返品を取り消した（${detail.label}）`, record?.cancelledByEmail ?? null),
+    );
+  }
+  if (detail.fees.feeReceivedAt !== null) {
+    // 手数料をいただかないことにした時（fee_waived。本計画 P27）は、受け取りとは別の言葉で出す。額は決着で fee_settled_amount に移した合計（fee_due_amount は0になる。Task 3 の I-2）
+    const feeWord = record?.feeWaived === true ? '手数料をいただかないことにした' : '手数料の受け取りを記録した';
+    entries.push(
+      entry(
+        'fee_received',
+        `fee:${detail.id}`,
+        detail.fees.feeReceivedAt,
+        `${feeWord}（${formatYen(record?.feeSettledAmount ?? detail.fees.feeDueAmount)}）`,
+        record?.feeReceivedByEmail ?? null,
+      ),
+    );
+  }
+  if (detail.fees.exchangeReleasedAt !== null) {
+    entries.push(
+      entry(
+        'exchange_released',
+        `release:${detail.id}`,
+        detail.fees.exchangeReleasedAt,
+        `支払いを待たずに送れるようにした（${detail.label}）`,
+        record?.exchangeReleasedByEmail ?? null,
+      ),
+    );
+  }
+  return entries;
+}
+
 export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryResponse {
-  const { order, statusRows, emailRows, sendState, fulfillments, completions, refunds, lines } = input;
+  const {
+    order, statusRows, emailRows, sendState, fulfillments, completions, refunds, returns, returnReceiptLines, returnRecords, lines,
+  } = input;
   const lineByItem = new Map(lines.map((line) => [line.orderItemId, line] as const));
+  // 返品の返金の行の「どこから」に返品の番号を出すため、返金の番号から返品の番号を引けるようにする（返金の一覧は返品の番号を持たない）
+  const returnLabelByRefundId = new Map(returns.flatMap((detail) => detail.refunds.map((refundOf) => [refundOf.id, detail.label] as const)));
   const itemsOf = (rows: ReadonlyArray<{ orderItemId: string; quantity: number }>) =>
     rows.map((row) => ({ name: lineByItem.get(row.orderItemId)?.name ?? UNKNOWN_ITEM_NAME, quantity: row.quantity }));
   const cancelledFulfillmentIds = new Set(
@@ -389,7 +560,11 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
     at: row.createdAt,
     refundId: row.refundId,
     source: row.source,
-    sourceLabel: REFUND_SOURCE_LABELS[row.source],
+    // 返品の返金は「返品（{番号}）」。番号が引けない時は、道の言葉（返品）のまま
+    sourceLabel:
+      row.source === 'return' && returnLabelByRefundId.has(row.refundId)
+        ? `返品（${returnLabelByRefundId.get(row.refundId)}）`
+        : REFUND_SOURCE_LABELS[row.source],
     actorEmail: row.actorEmail,
     amount: row.amount,
     shippingAmount: row.shippingAmount,
@@ -422,16 +597,44 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
       : [{ type: 'refund_rereserve', at: row.failedAt, refundId: row.refundId, items }];
   });
 
-  // 同じ時刻（同じ取引で書いた行）は、結果が上に来る順に置く: メール → 状態 → 取消 → 確保し直し → 発送・仕上がり・返金 → 受付
+  // 返品の交換で足した交換の品の行。足した時刻（受け取りと同じ取引なので受け取りと同じ時刻）で「交換の品を足した」を出す。
+  // 足した人は、その品を持つ返品の、同じ時刻の受け取りをした人（足した時刻と受け取りの時刻は、同じ取引の now() で同じになる）
+  const exchangeAdderOf = (orderItemId: string, createdAt: string): string | null => {
+    const detail = returns.find((candidate) => candidate.exchangeItems.some((item) => item.orderItemId === orderItemId));
+    const receipt = detail?.receipts.find(
+      (candidate) => candidate.kind === 'receive' && Date.parse(candidate.createdAt) === Date.parse(createdAt),
+    );
+    return receipt?.actorEmail ?? null;
+  };
+  const exchangeAddedEntries = lines.flatMap((line): OrderHistoryReturnEntry[] =>
+    line.exchange
+      ? [{
+          type: 'return',
+          kind: 'exchange_added',
+          id: `exchange:${line.orderItemId}`,
+          at: line.exchange.createdAt,
+          returnId: null,
+          title: `交換の品を足した（${line.name} × ${line.exchange.quantity}）`,
+          details: [],
+          actorEmail: exchangeAdderOf(line.orderItemId, line.exchange.createdAt),
+        }]
+      : []);
+  const recordByReturn = new Map(returnRecords.map((row) => [row.returnId, row] as const));
+  const returnEntries = returns.flatMap((detail) => returnHistoryEntries(detail, returnReceiptLines, recordByReturn.get(detail.id)));
+
+  // 同じ時刻（同じ取引で書いた行）は、結果が上に来る順に置く:
+  // メール → 状態 → 取消 → 確保し直し → 交換の品を足した → 発送・仕上がり → 返金 → 返品の行（返金しないで終えた → 受け取り）→ 受付
   const entries: OrderHistoryEntry[] = [
     ...emailEntries,
     ...statusEntries,
     ...fulfillmentCancelEntries,
     ...completionCancelEntries,
     ...refundRereserveEntries,
+    ...exchangeAddedEntries,
     ...fulfillmentEntries,
     ...completionEntries,
     ...refundEntries,
+    ...returnEntries,
     { type: 'created', at: order.createdAt },
   ];
   entries.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));

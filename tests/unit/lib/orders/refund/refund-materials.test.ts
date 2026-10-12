@@ -83,12 +83,12 @@ describe('loadRefundMaterials', () => {
         {
           orderItemId: ITEM_X, name: 'シルクブラウス', color: '白', size: 'M', fulfillmentType: 'stock', itemPrice: 3000, quantity: 2,
           lineTotal: 6000, shipped: 0, unshipped: 2, refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 0,
-          restockable: 2, lineDiscount: 667, refundedUnits: 0,
+          restockable: 2, lineDiscount: 667, refundedUnits: 0, exchangePaidAmount: null,
         },
         {
           orderItemId: ITEM_Y, name: 'リネンパンツ', color: null, size: null, fulfillmentType: 'backorder', itemPrice: 1000, quantity: 3,
           lineTotal: 3000, shipped: 0, unshipped: 3, refundedBeforeShipment: 0, refundedAfterShipment: 0, shippedRefundable: 0,
-          restockable: 0, lineDiscount: 333, refundedUnits: 0,
+          restockable: 0, lineDiscount: 333, refundedUnits: 0, exchangePaidAmount: null,
         },
       ],
       awaitingRefund: null,
@@ -146,6 +146,38 @@ describe('loadRefundMaterials', () => {
       quantity: 3, shipped: 1, unshipped: 1, refundedBeforeShipment: 1, refundedAfterShipment: 1, shippedRefundable: 0,
       restockable: 1, lineDiscount: 667, refundedUnits: 2,
     });
+  });
+
+  // 返品の申し込み・受付中・返金待ち・交換にした品は、ふつうの返金の画面で選べない（グループ E-3 の4-8。Review Focus 4）。
+  // 選べる数は DB が数える（shipped_refundable）。TS で shipped − refundedAfterShipment と数え直さない
+  it('ふつうの返金の画面で選べる発送済みの数（shippedRefundable）は、DB の shipped_refundable をそのまま写す', async () => {
+    // 3点を発送し、発送後の返金は0点。そのうち2点は返品の中なので、DB が選べる数を1点にしている
+    const inReturns = {
+      ...LINE_X, quantity: 3, shipped: 3, unshipped: 0, refunded_after_shipment: 0, shipped_refundable: 1, restockable: 0, refunded_units: 0,
+    };
+    const { client } = stubClient({
+      rpc: { data: [{ ...MATERIAL_ROW, shipped_total: 3, unshipped_total: 3, lines: [inReturns, LINE_Y] }], error: null },
+    });
+
+    const materials = await loadRefundMaterials(client, ORDER_ID);
+
+    expect(materials?.lines[0]).toMatchObject({ shipped: 3, refundedAfterShipment: 0, shippedRefundable: 1 });
+  });
+
+  // 交換の品の行は値段が0。返す額は元の品の支払額を数で累積に割り振る（本計画 P22）ので、DB の材料の行がその支払額を持つ
+  it('交換の品の行は、DB の材料の exchange_paid_amount を exchangePaidAmount に写す。ふつうの行（null）は null のまま（0にしない）', async () => {
+    const ordinary = { ...LINE_X, exchange_paid_amount: null };
+    const exchange = { ...LINE_Y, item_price: 0, line_total: 0, line_discount: 0, exchange_paid_amount: 14999 };
+    const { client } = stubClient({
+      rpc: { data: [{ ...MATERIAL_ROW, lines: [ordinary, exchange] }], error: null },
+    });
+
+    const materials = await loadRefundMaterials(client, ORDER_ID);
+
+    expect(materials?.lines.map((line) => [line.orderItemId, line.itemPrice, line.exchangePaidAmount])).toEqual([
+      [ITEM_X, 3000, null],
+      [ITEM_Y, 0, 14999],
+    ]);
   });
 
   it('返事待ちの返金があれば、その番号・額・始めた時刻を返す。成功・保留の額は材料の金額に入っている', async () => {

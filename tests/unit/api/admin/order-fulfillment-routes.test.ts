@@ -348,6 +348,7 @@ describe('POST /api/admin/orders/[id]/fulfillments（発送する）', () => {
     ['QUANTITY_EXCEEDS_READY', '22023', 409, 'quantity_exceeds_ready', '発送する数が発送準備中の数を超えています。受注生産の品は、先に仕上がりを記録してください。'],
     ['FULFILLMENT_REQUEST_MISMATCH', '22023', 409, 'fulfillment_request_mismatch', '前の発送と内容が違います。画面を開き直してください。'],
     ['FULFILLMENT_ARGUMENT_INVALID', '22023', 400, 'invalid_argument', '入力を確かめてください。'],
+    ['FULFILLMENT_EXCHANGE_ON_HOLD', '22023', 409, 'fulfillment_exchange_on_hold', '手数料のお支払いを待っている交換の品は送れません。'],
   ] as const)('DB が %s（%s）で断ったら %i %s', async (message, dbCode, status, code, error) => {
     rpcReturns({ admin_create_fulfillment: { data: null, error: { message, code: dbCode } } });
 
@@ -474,6 +475,7 @@ describe('POST /api/admin/orders/[id]/fulfillments/[fulfillmentId]/cancel（発�
     ['FULFILLMENT_NOT_FOUND', 'P0002', 404, 'fulfillment_not_found', '発送の記録が見つかりません。'],
     ['FULFILLMENT_CANCEL_NOT_ALLOWED', '22023', 409, 'fulfillment_cancel_not_allowed', 'この発送は取り消せません。注文の状態を確かめてください。'],
     ['FULFILLMENT_REFUNDED', '22023', 409, 'fulfillment_refunded', '返金した商品の発送は取り消せません。'],
+    ['FULFILLMENT_HAS_RETURN', '22023', 409, 'fulfillment_has_return', '返品のある発送は取り消せません。'],
     ['FULFILLMENT_ARGUMENT_INVALID', '22023', 400, 'invalid_argument', '入力を確かめてください。'],
   ] as const)('DB が %s（%s）で断ったら %i %s', async (message, dbCode, status, code, error) => {
     rpcReturns({ admin_cancel_fulfillment: { data: null, error: { message, code: dbCode } } });

@@ -120,7 +120,8 @@ function textOrNull(value: unknown): string | null {
 
 export type BeginRefundInput = {
   orderId: string;
-  source: Exclude<OrderRefundSource, 'stripe_dashboard' | 'legacy'>;
+  // 返品の返金（return）は、返品の受け取り・額を決めて返金の DB の関数が始める。ここ（公開の begin_order_refund）の道ではない
+  source: Exclude<OrderRefundSource, 'stripe_dashboard' | 'legacy' | 'return'>;
   requestKey: string | null;
   lines: RefundLineRequest[];
   restock: boolean;
@@ -366,7 +367,7 @@ export type OrderRefundLineRow = {
   orderItemId: string;
   quantity: number;
   beforeShipment: boolean;
-  restockType: 'cancel' | 'no_restock';
+  restockType: 'cancel' | 'no_restock' | 'return';
   amount: number;
   releasedQuantity: number;
   restockedQuantity: number;
@@ -408,7 +409,8 @@ function fromDbLines(value: unknown): OrderRefundLineRow[] {
     orderItemId: String(line.order_item_id),
     quantity: Number(line.quantity),
     beforeShipment: line.before_shipment === true,
-    restockType: line.restock_type === 'cancel' ? 'cancel' : 'no_restock',
+    // 返品の返金の行（restock_type = 'return'）は、発送後の行だけ。在庫は受け取りで動かし済みなので、返金では動かさない
+    restockType: line.restock_type === 'cancel' ? 'cancel' : line.restock_type === 'return' ? 'return' : 'no_restock',
     amount: Number(line.amount),
     releasedQuantity: Number(line.released_quantity),
     restockedQuantity: Number(line.restocked_quantity),

@@ -1,4 +1,6 @@
 import { inspect } from 'node:util';
+import { RefundStoreError } from '@/lib/orders/refund/refund-store';
+import type { OrderReturnSummary } from '@/lib/orders/returns/return-types';
 
 export {};
 
@@ -15,6 +17,22 @@ const rpcMock = jest.fn();
 let refundSummaryOverrides: Record<string, Record<string, unknown>> = {};
 // 商品ごとの数（list_order_line_fulfillment）の読み込みだけを失敗させる時の DB の誤り。null なら成功
 let lineFulfillmentError: unknown = null;
+// public.list_order_ids_by_return_status が返す行（service_role の RPC）。返品の絞り込み（return=）に当たる注文の番号
+let returnFilterRows: Array<{ order_id: string }> = [];
+// その RPC だけを失敗させる時の DB の誤り。null なら成功
+let returnFilterError: unknown = null;
+// 返品の要約（Task 4 の return-store の listOrderReturnSummaries を差し替えた物）を、注文の番号ごとに上書きする。
+// 書かなかった注文は、返品の無い要約になる
+let returnSummaryOverrides: Record<string, Partial<OrderReturnSummary>> = {};
+const listOrderReturnSummariesMock = jest.fn();
+const countReturnAttentionMock = jest.fn();
+
+function returnSummaryOf(orderId: string, overrides: Partial<OrderReturnSummary> = {}): OrderReturnSummary {
+  return {
+    orderId, displayStatus: null, marks: [], nextAction: 'none', hasReturnable: false, refundWaitingReturns: 0, requestedReturns: 0,
+    ...overrides,
+  };
+}
 
 function refundSummaryRow(orderId: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -60,6 +78,12 @@ jest.mock('@/lib/stripe/server', () => ({
   getStripeServerClient: (...args: unknown[]) => getStripeMock(...args),
 }));
 
+// 返品の要約と一行の数（Task 4 の return-store）は、窓口の形で差し替える
+jest.mock('@/lib/orders/returns/return-store', () => ({
+  listOrderReturnSummaries: (...args: unknown[]) => listOrderReturnSummariesMock(...args),
+  countReturnAttention: (...args: unknown[]) => countReturnAttentionMock(...args),
+}));
+
 describe('GET /api/admin/orders statutory search', () => {
   const query = {
     select: jest.fn(),
@@ -72,12 +96,13 @@ describe('GET /api/admin/orders statutory search', () => {
     not: jest.fn(),
     is: jest.fn(),
     or: jest.fn(),
+    in: jest.fn(),
     then: (resolve: (value: unknown) => void) => resolve(queryResult),
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    for (const method of ['select', 'order', 'range', 'gte', 'lte', 'eq', 'neq', 'not', 'is', 'or'] as const) {
+    for (const method of ['select', 'order', 'range', 'gte', 'lte', 'eq', 'neq', 'not', 'is', 'or', 'in'] as const) {
       query[method].mockReturnValue(query);
     }
     queryResult = { data: [], count: 0, error: null };
@@ -87,6 +112,14 @@ describe('GET /api/admin/orders statutory search', () => {
     lineFulfillmentRows = [];
     lineFulfillmentError = null;
     refundSummaryOverrides = {};
+    returnFilterRows = [];
+    returnFilterError = null;
+    returnSummaryOverrides = {};
+    listOrderReturnSummariesMock.mockReset();
+    listOrderReturnSummariesMock.mockImplementation(async (_store: unknown, orderIds: string[]) =>
+      new Map(orderIds.map((orderId): [string, OrderReturnSummary] => [orderId, returnSummaryOf(orderId, returnSummaryOverrides[orderId])])));
+    countReturnAttentionMock.mockReset();
+    countReturnAttentionMock.mockResolvedValue({ requested: 0, refundWaiting: 0 });
     rpcMock.mockReset();
     rpcMock.mockImplementation(async (name: string, args: { _order_ids?: string[] }) => {
       if (name === 'list_order_refund_summaries') {
@@ -94,6 +127,9 @@ describe('GET /api/admin/orders statutory search', () => {
           data: (args._order_ids ?? []).map((orderId) => refundSummaryRow(orderId, refundSummaryOverrides[orderId])),
           error: null,
         };
+      }
+      if (name === 'list_order_ids_by_return_status') {
+        return returnFilterError ? { data: null, error: returnFilterError } : { data: returnFilterRows, error: null };
       }
       return lineFulfillmentError
         ? { data: null, error: lineFulfillmentError }
@@ -503,11 +539,11 @@ describe('GET /api/admin/orders statutory search', () => {
       return { response, rows: body.data };
     }
 
-    it('商品の番号・色・サイズ・在庫か受注生産かを、注文の商品と一緒に読む', async () => {
+    it('商品の番号・色・サイズ・在庫か受注生産か・交換の品の印（line_kind）を、注文の商品と一緒に読む', async () => {
       await listOrders([]);
 
       const selected = String(query.select.mock.calls[0][0]);
-      expect(selected).toMatch(/order_items\s*\(\s*id,\s*item_name,\s*color,\s*size,\s*quantity,\s*fulfillment_type\s*\)/);
+      expect(selected).toMatch(/order_items\s*\(\s*id,\s*item_name,\s*color,\s*size,\s*quantity,\s*fulfillment_type,\s*line_kind\s*\)/);
       expect(query.select.mock.calls[0][1]).toEqual({ count: 'exact' });
     });
 
@@ -531,11 +567,11 @@ describe('GET /api/admin/orders statutory search', () => {
       });
       expect(rows[0].items).toEqual([
         {
-          id: 'item-stock', name: 'シルクブラウス', color: '白', size: 'M', quantity: 2, fulfillmentType: 'stock',
+          id: 'item-stock', name: 'シルクブラウス', color: '白', size: 'M', quantity: 2, fulfillmentType: 'stock', lineKind: 'order',
           shipped: 1, inProduction: 0, readyUnshipped: 1,
         },
         {
-          id: 'item-coat', name: 'ウールコート', color: '黒', size: 'L', quantity: 1, fulfillmentType: 'backorder',
+          id: 'item-coat', name: 'ウールコート', color: '黒', size: 'L', quantity: 1, fulfillmentType: 'backorder', lineKind: 'order',
           shipped: 0, inProduction: 1, readyUnshipped: 0,
         },
       ]);
@@ -937,4 +973,281 @@ describe('GET /api/admin/orders statutory search', () => {
     });
   });
 
+  // 返品の列・小さな印・ボタンの名前（returnSummary）、一覧の上の一行の数（returnAttention）、返品の絞り込み（return=）、
+  // 商品数から交換の品を外すこと。返品の要約と数は DB の関数が出す（Task 4 の return-store を差し替えて渡す）。
+  // 絞り込みは、DB の関数 list_order_ids_by_return_status が返す注文の番号で注文を絞る（グループ E-3 設計書 8-1・10-1）
+  describe('返品の要約・一行の数・絞り込み・交換の品の商品数', () => {
+    function orderRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'order-1',
+        payment_intent_id: null,
+        checkout_session_id: 'cs_1',
+        status: 'paid',
+        total_amount: 10_000,
+        refunded_amount: 0,
+        currency: 'jpy',
+        shipping_email: 'buyer@example.com',
+        shipping_full_name: '山田太郎',
+        shipping_postal_code: '1000001',
+        shipping_prefecture: '東京都',
+        shipping_city: '千代田区',
+        shipping_address: '丸の内1-1-1',
+        shipping_phone: '0312345678',
+        review_reason: null,
+        reviewed_at: null,
+        created_at: '2026-10-12T00:00:00.000Z',
+        shipped_at: null,
+        shipping_carrier: null,
+        tracking_number: null,
+        order_items: [
+          { id: 'item-1', item_name: 'シルクブラウス', color: '白', size: 'M', quantity: 2, fulfillment_type: 'stock', line_kind: 'order' },
+        ],
+        ...overrides,
+      };
+    }
+
+    async function listOrders(rows: unknown[], url = 'http://localhost/api/admin/orders') {
+      queryResult = { data: rows, count: rows.length, error: null };
+      const { GET } = await import('@/app/api/admin/orders/route');
+      const response = await GET(new Request(url));
+      const body = await response.json() as { data: Array<Record<string, any>>; pagination: unknown; returnAttention: unknown };
+      return { response, body, rows: body.data };
+    }
+
+    it('商品数（itemCount）は交換の品の行を外す。購入商品（items）には残して lineKind を付け、line_kind が読めない行は order', async () => {
+      const { rows } = await listOrders([orderRow({
+        order_items: [
+          { id: 'item-1', item_name: 'シルクブラウス', color: '白', size: 'M', quantity: 2, fulfillment_type: 'stock', line_kind: 'order' },
+          { id: 'item-ex', item_name: 'シルクブラウス', color: '黒', size: 'L', quantity: 1, fulfillment_type: 'stock', line_kind: 'exchange' },
+          { id: 'item-old', item_name: 'ウールコート', color: null, size: null, quantity: 3, fulfillment_type: 'stock' },
+        ],
+      })]);
+
+      expect(rows[0].itemCount).toBe('5点');
+      expect(rows[0].items.map((item: { id: string; lineKind: string }) => [item.id, item.lineKind])).toEqual([
+        ['item-1', 'order'],
+        ['item-ex', 'exchange'],
+        ['item-old', 'order'],
+      ]);
+    });
+
+    it('発送・受注生産の数（進み具合・発送と仕上がりのボタン）は、交換の品の行も数える', async () => {
+      lineFulfillmentRows = [
+        lineRow({ order_id: 'order-1', order_item_id: 'item-1', quantity: 2, shipped: 2, completed: 2, ready_unshipped: 0, unshipped: 0 }),
+        lineRow({
+          order_id: 'order-1', order_item_id: 'item-ex', fulfillment_type: 'backorder', quantity: 1, shipped: 0, completed: 0,
+          in_production: 1, ready_unshipped: 0, unshipped: 1,
+        }),
+      ];
+
+      const { rows } = await listOrders([orderRow({
+        order_items: [
+          { id: 'item-1', item_name: 'シルクブラウス', color: '白', size: 'M', quantity: 2, fulfillment_type: 'stock', line_kind: 'order' },
+          { id: 'item-ex', item_name: 'シルクブラウス', color: '黒', size: 'L', quantity: 1, fulfillment_type: 'backorder', line_kind: 'exchange' },
+        ],
+      })]);
+
+      expect(rows[0]).toMatchObject({
+        itemCount: '2点', status: '受注生産中', partiallyShipped: true, canShip: true, canRecordCompletion: true,
+      });
+    });
+
+    it('各注文に返品の要約（returnSummary）を付ける。要約は DB の関数が出した物をそのまま写し、返品の無い注文は null と 0 の要約', async () => {
+      returnSummaryOverrides = {
+        'order-a': {
+          displayStatus: 'refund_waiting', marks: ['awaiting_fee'], nextAction: 'refund', hasReturnable: true,
+          refundWaitingReturns: 1, requestedReturns: 0,
+        },
+        'order-b': { displayStatus: 'in_progress', marks: ['partially_received'], nextAction: 'receive' },
+      };
+
+      const { rows } = await listOrders([orderRow({ id: 'order-a' }), orderRow({ id: 'order-b' }), orderRow({ id: 'order-c' })]);
+      const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
+
+      expect(byId['order-a'].returnSummary).toEqual({
+        orderId: 'order-a', displayStatus: 'refund_waiting', marks: ['awaiting_fee'], nextAction: 'refund', hasReturnable: true,
+        refundWaitingReturns: 1, requestedReturns: 0,
+      });
+      expect(byId['order-b'].returnSummary).toMatchObject({
+        displayStatus: 'in_progress', marks: ['partially_received'], nextAction: 'receive',
+      });
+      expect(byId['order-c'].returnSummary).toEqual(returnSummaryOf('order-c'));
+    });
+
+    it('返品の要約は、1ページ分の注文（ほかの状態の注文も含む）を service_role で1回で読む', async () => {
+      await listOrders([
+        orderRow({ id: 'order-a' }),
+        orderRow({ id: 'order-b', status: 'pending' }),
+        orderRow({ id: 'order-c', status: 'cancelled' }),
+      ]);
+
+      expect(listOrderReturnSummariesMock).toHaveBeenCalledTimes(1);
+      expect(listOrderReturnSummariesMock).toHaveBeenCalledWith(
+        expect.objectContaining({ rpc: expect.any(Function) }),
+        ['order-a', 'order-b', 'order-c'],
+      );
+    });
+
+    it('要約が返らなかった注文は、返品の無い要約にする', async () => {
+      listOrderReturnSummariesMock.mockResolvedValueOnce(new Map());
+
+      const { rows } = await listOrders([orderRow()]);
+
+      expect(rows[0].returnSummary).toEqual(returnSummaryOf('order-1'));
+    });
+
+    it('一覧の上の一行の数（returnAttention）を service_role で読み、答えに付ける', async () => {
+      countReturnAttentionMock.mockResolvedValue({ requested: 2, refundWaiting: 1 });
+
+      const { body } = await listOrders([orderRow()]);
+
+      expect(body.returnAttention).toEqual({ requested: 2, refundWaiting: 1 });
+      expect(countReturnAttentionMock).toHaveBeenCalledWith(expect.objectContaining({ rpc: expect.any(Function) }));
+    });
+
+    it.each(['requested', 'in_progress', 'refund_waiting', 'returned'])(
+      '返品の絞り込み return=%s は、DB の関数が返した注文の番号で注文を絞る',
+      async (displayStatus) => {
+        returnFilterRows = [{ order_id: 'order-a' }, { order_id: 'order-b' }];
+
+        const { response, rows } = await listOrders(
+          [orderRow({ id: 'order-a' }), orderRow({ id: 'order-b' })],
+          `http://localhost/api/admin/orders?return=${displayStatus}`,
+        );
+
+        expect(response.status).toBe(200);
+        expect(rows.map((row) => row.id)).toEqual(['order-a', 'order-b']);
+        expect(rpcCallsOf('list_order_ids_by_return_status')).toEqual([{ _display_status: displayStatus }]);
+        expect(query.in).toHaveBeenCalledWith('id', ['order-a', 'order-b']);
+      },
+    );
+
+    it('絞り込みの問いが無ければ、番号を引く DB の関数を呼ばず、注文を番号で絞らない', async () => {
+      await listOrders([orderRow()]);
+
+      expect(rpcCallsOf('list_order_ids_by_return_status')).toEqual([]);
+      expect(query.in).not.toHaveBeenCalled();
+    });
+
+    it('返品の絞り込みは、ほかの絞り込み（状態・検索）と「かつ」で重なる', async () => {
+      returnFilterRows = [{ order_id: 'order-a' }];
+
+      await listOrders(
+        [orderRow({ id: 'order-a' })],
+        'http://localhost/api/admin/orders?return=returned&status=paid&counterparty=yamada',
+      );
+
+      expect(query.eq).toHaveBeenCalledWith('status', 'paid');
+      expect(query.or).toHaveBeenCalledWith(expect.stringContaining('shipping_full_name.ilike.%yamada%'));
+      expect(query.in).toHaveBeenCalledWith('id', ['order-a']);
+    });
+
+    it.each(['return=cancelled', 'return=', 'return=refund_waiting%20'])(
+      '返品の絞り込みの値が4つのどれでもなければ（%s）400。DB の関数を呼ばない',
+      async (parameters) => {
+        const { GET } = await import('@/app/api/admin/orders/route');
+
+        const response = await GET(new Request(`http://localhost/api/admin/orders?${parameters}`));
+
+        expect(response.status).toBe(400);
+        expect(rpcCallsOf('list_order_ids_by_return_status')).toEqual([]);
+      },
+    );
+
+    it('当たる注文が無ければ、注文を読まずに空の一覧を返す。一行の数は付ける', async () => {
+      returnFilterRows = [];
+      countReturnAttentionMock.mockResolvedValue({ requested: 1, refundWaiting: 2 });
+      const { GET } = await import('@/app/api/admin/orders/route');
+
+      const response = await GET(new Request('http://localhost/api/admin/orders?return=requested&page=3&pageSize=50'));
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({
+        data: [],
+        pagination: { page: 3, pageSize: 50, total: 0, totalPages: 1 },
+        returnAttention: { requested: 1, refundWaiting: 2 },
+      });
+      expect(query.select).not.toHaveBeenCalled();
+      expect(query.in).not.toHaveBeenCalled();
+      expect(rpcCallsOf('list_order_line_fulfillment')).toEqual([]);
+    });
+
+    it('絞り込みの番号を読めなかった時は 500。ログは名前と code だけで、DB の文は出さない', async () => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      returnFilterError = { message: 'SECRET-MESSAGE', details: 'SECRET-DETAILS', hint: 'SECRET-HINT', code: '08006' };
+
+      try {
+        const { GET } = await import('@/app/api/admin/orders/route');
+        const response = await GET(new Request('http://localhost/api/admin/orders?return=requested'));
+
+        expect(response.status).toBe(500);
+        expect(consoleError).toHaveBeenCalledWith('GET /api/admin/orders error:', 'UnknownError', '08006', null);
+        expect(inspect(consoleError.mock.calls, { depth: null })).not.toContain('SECRET');
+      } finally {
+        consoleError.mockRestore();
+      }
+    });
+
+    it('当たる注文が100件より多い時は、番号を100件ずつに分けて読み、新しい順に並べ直してこのページの分を返す（URL の長さで断られないように）', async () => {
+      const ids = Array.from({ length: 250 }, (_, index) => `order-${String(index).padStart(3, '0')}`);
+      returnFilterRows = ids.map((orderId) => ({ order_id: orderId }));
+      // 分けた問い合わせごとに、その番号の先頭の注文だけが、ほかの絞り込みにも当たった答えを返す（後ろの番号ほど新しい注文）
+      const createdAtOf: Record<string, string> = {
+        'order-000': '2026-10-10T00:00:00.000Z',
+        'order-100': '2026-10-11T00:00:00.000Z',
+        'order-200': '2026-10-12T00:00:00.000Z',
+      };
+      query.in.mockImplementation((_column: string, chunk: string[]) => {
+        queryResult = { data: [orderRow({ id: chunk[0], created_at: createdAtOf[chunk[0]] })], count: 1, error: null };
+        return query;
+      });
+      const { GET } = await import('@/app/api/admin/orders/route');
+
+      const response = await GET(new Request('http://localhost/api/admin/orders?return=returned&pageSize=2'));
+      const body = await response.json() as { data: Array<{ id: string }>; pagination: unknown };
+
+      expect(response.status).toBe(200);
+      expect(query.in.mock.calls.map(([column, chunk]) => [column, chunk.length])).toEqual([['id', 100], ['id', 100], ['id', 50]]);
+      expect(query.in.mock.calls.flatMap(([, chunk]) => chunk)).toEqual(ids);
+      // ほかの絞り込み（ここでは既定の「放棄を除く」）は、分けた問い合わせごとに重ねる。ページは範囲の指定（range）ではなく、並べ直した後で切り出す
+      expect(query.neq.mock.calls).toEqual([['status', 'abandoned'], ['status', 'abandoned'], ['status', 'abandoned']]);
+      expect(query.range).not.toHaveBeenCalled();
+      // 3件に当たり、新しい順の先頭2件がこのページ。総数は当たった数
+      expect(body.data.map((row) => row.id)).toEqual(['order-200', 'order-100']);
+      expect(body.pagination).toEqual({ page: 1, pageSize: 2, total: 3, totalPages: 2 });
+    });
+
+    // 思いがけない DB の失敗は、Task 4 の return-store が E-2 の RefundStoreError（呼び出しの名前と DB の記号を持ち、DB の文は cause にだけ残す）で投げる
+    it.each<[string, () => unknown, string]>([
+      [
+        '返品の要約',
+        () => listOrderReturnSummariesMock.mockRejectedValue(
+          new RefundStoreError('list_order_return_summaries', { message: 'SECRET-MESSAGE', code: '08006' }),
+        ),
+        'list_order_return_summaries',
+      ],
+      [
+        '一覧の上の一行の数',
+        () => countReturnAttentionMock.mockRejectedValue(
+          new RefundStoreError('count_order_return_attention', { message: 'SECRET-MESSAGE', code: '08006' }),
+        ),
+        'count_order_return_attention',
+      ],
+    ])('%sを読めなかった時は 500（返品の印を欠いたまま一覧を出さない）。ログは名前・code・呼び出しの名前だけ', async (_name, fail, operation) => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      fail();
+      queryResult = { data: [orderRow()], count: 1, error: null };
+
+      try {
+        const { GET } = await import('@/app/api/admin/orders/route');
+        const response = await GET(new Request('http://localhost/api/admin/orders'));
+
+        expect(response.status).toBe(500);
+        expect(consoleError).toHaveBeenCalledWith('GET /api/admin/orders error:', 'RefundStoreError', '08006', operation);
+        expect(inspect(consoleError.mock.calls, { depth: null })).not.toContain('SECRET');
+      } finally {
+        consoleError.mockRestore();
+      }
+    });
+  });
 });

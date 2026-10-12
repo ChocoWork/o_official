@@ -445,12 +445,33 @@ describe('GET /api/admin/order-attention', () => {
             { name: 'シルクブラウス（白 / M）', quantity: 1 },
             { name: 'ウールコート', quantity: 2 },
           ],
+          returnId: null,
         });
         // Stripe の返金の番号は stripe_refund_id で探す
         expect(refundLookupCalls).toEqual([{ column: 'stripe_refund_id', values: ['re_failed1'] }]);
         const refundColumns = mockSelectColumns.filter((columns) => columns.includes('order_refund_lines')).join(',');
         expect(refundColumns).toContain('item_name');
+        expect(refundColumns).toContain('return_id');
         expect(refundColumns).not.toMatch(/shipping_|email|phone|full_name|address/);
+      });
+
+      it('返品の返金（返金の記録が return_id を持つ）の失敗の行は返品の番号 returnId を持つ。ふつうの返金は null', async () => {
+        const RETURN_ID = 'c0000000-0000-4000-8000-000000000001';
+        exceptionRows = [
+          REFUND_FAILED_ROW,
+          { ...REFUND_FAILED_ROW, id: SECOND_EXCEPTION_ID, payment_ref: 're_failed2' },
+        ];
+        refundRecords = [
+          { ...REFUND_RECORD, return_id: RETURN_ID },
+          { id: 'a0000000-0000-4000-8000-000000000002', stripe_refund_id: 're_failed2', amount: 2_000, return_id: null, order_refund_lines: [] },
+        ];
+        mockRefundableAmount(10_000);
+
+        const exceptions = await listExceptions();
+
+        expect(exceptions.map((row) => row.refundFailure.returnId)).toEqual([RETURN_ID, null]);
+        // 「もう一度返金する」を出せるか（canRetryRefund）の決め方は、返品の返金でも変わらない。画面が returnId を見て、開く画面を選ぶ
+        expect(exceptions.map((row) => row.canRetryRefund)).toEqual([true, true]);
       });
 
       it('支払いの番号が返金の記録の番号（Stripe の返事が来る前に失敗した返金）なら、記録の番号で探す', async () => {
@@ -519,7 +540,7 @@ describe('GET /api/admin/order-attention', () => {
         mockRefundableAmount(10_000);
 
         expect((await listExceptions())[0].refundFailure).toEqual({
-          amount: 0, failureReasonLabel: '口座の入力の期限が過ぎました', shortages: [],
+          amount: 0, failureReasonLabel: '口座の入力の期限が過ぎました', shortages: [], returnId: null,
         });
       });
 

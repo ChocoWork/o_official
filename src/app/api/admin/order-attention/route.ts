@@ -80,25 +80,27 @@ async function fetchRetryableRefundOrderIds(store: RefundStore, rows: ExceptionR
 // 形で見分けて、探す列を決める（形の合わない番号は DB に渡さない）
 const STRIPE_REFUND_REF_PATTERN = /^[a-z]{2,4}_[A-Za-z0-9]+$/;
 const REFUND_RECORD_REF_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// 返金の記録と、その商品の行（確保し直せなかった数）と商品の名前。お客様の氏名・連絡先・住所は読まない
+// 返金の記録（返品の返金なら、返品の番号 return_id も）と、その商品の行（確保し直せなかった数）と商品の名前。お客様の氏名・連絡先・住所は読まない
 const REFUND_RECORD_SELECT =
-  'id, stripe_refund_id, amount, order_refund_lines (rereserve_shortage, order_items (item_name, color, size))';
+  'id, stripe_refund_id, amount, return_id, order_refund_lines (rereserve_shortage, order_items (item_name, color, size))';
 
 type RefundRecordRow = {
   id: string;
   stripe_refund_id: string | null;
   amount: number;
+  return_id: string | null;
   order_refund_lines: Array<{
     rereserve_shortage: number;
     order_items: { item_name: string; color: string | null; size: string | null };
   }> | null;
 };
-type RefundFailureRecord = { amount: number; shortages: Array<{ name: string; quantity: number }> };
+type RefundFailureRecord = { amount: number; returnId: string | null; shortages: Array<{ name: string; quantity: number }> };
 
 /** 確保し直せなかった商品（rereserve_shortage が1以上の行）と数。名前はメールの明細と同じ「商品名（色 / サイズ）」 */
 function toRefundFailureRecord(row: RefundRecordRow): RefundFailureRecord {
   return {
     amount: row.amount,
+    returnId: row.return_id ?? null,
     shortages: (row.order_refund_lines ?? [])
       .filter((line) => line.rereserve_shortage > 0)
       .map((line) => {
@@ -202,13 +204,15 @@ export async function GET(request: Request) {
         detectionCount: row.detection_count,
         canCancelOrder: orderStatus === 'payment_in_progress' || orderStatus === 'pending',
         canRetryRefund: row.reason === 'refund_failed' && row.order_id !== null && retryableRefundOrderIds.has(row.order_id),
-        // 返金の失敗の行だけ。記録が見つからない時は額0・商品なし（失敗の理由の言葉は要対応の detail から出る）
+        // 返金の失敗の行だけ。記録が見つからない時は額0・商品なし・返品なし（失敗の理由の言葉は要対応の detail から出る）。
+        // 返品の返金の失敗なら返品の番号を返す（画面は「もう一度返金する」で注文の返品の画面を開く。本計画 P21）
         refundFailure:
           row.reason === 'refund_failed'
             ? {
                 amount: refundRecord?.amount ?? 0,
                 failureReasonLabel: refundFailureReasonLabel(row.detail),
                 shortages: refundRecord?.shortages ?? [],
+                returnId: refundRecord?.returnId ?? null,
               }
             : null,
       };

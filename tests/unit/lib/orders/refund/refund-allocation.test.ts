@@ -97,6 +97,73 @@ describe('refundLineAmount（今回の k 個の額 = 単価 · k − (disc(b + k
   });
 });
 
+describe('交換の品の行（グループ E-3、本計画 P22）の額は、元の品の支払額 P を数で累積に割り振る', () => {
+  // 値 D（Task 3 の DB 結合テストの private.return_units_amount と同じ値。TS と SQL の答えが食い違わないことを確かめる）:
+  // 元の支払額 14999、数 3 → A(n) = floor((2·P·n + q) / (2·q)) で A(1) = 5000・A(2) = 9999・A(3) = 14999。
+  // 1個ずつ返すと 5000・4999・5000、3個まとめて 14999
+  const EXCHANGE = { itemPrice: 0, quantity: 3, lineDiscount: 0, refundedUnits: 0, exchangePaidAmount: 14999 } as const;
+
+  it.each([
+    ['値 D: まだ返していない時に 1 個', 0, 1, 5000],
+    ['値 D: 1 個返した後に 1 個', 1, 1, 4999],
+    ['値 D: 2 個返した後に 1 個', 2, 1, 5000],
+    ['値 D: まだ返していない時に 3 個まとめて', 0, 3, 14999],
+    ['値 D: 1 個返した後に 2 個', 1, 2, 9999],
+  ] as const)('%s → %i', (_name, refundedUnits, units, expected) => {
+    expect(refundLineAmount({ ...EXCHANGE, refundedUnits }, units)).toBe(expected);
+  });
+
+  it('1個ずつ順に返しても、合計は元の支払額にぴったり合う（端数が出ても合計が変わらない）', () => {
+    let total = 0;
+    for (let refundedUnits = 0; refundedUnits < EXCHANGE.quantity; refundedUnits += 1) {
+      total += refundLineAmount({ ...EXCHANGE, refundedUnits }, 1);
+    }
+
+    expect(total).toBe(EXCHANGE.exchangePaidAmount);
+  });
+
+  it('元の支払額が0の交換の品は、いくつ返しても 0 円', () => {
+    expect(refundLineAmount({ ...EXCHANGE, exchangePaidAmount: 0 }, 2)).toBe(0);
+  });
+
+  it('exchangePaidAmount が null か省かれた行は、ふつうの行の式（単価 · 数 − 割引の差）のまま', () => {
+    expect(refundLineAmount({ ...X, exchangePaidAmount: null }, 1)).toBe(2666);
+    expect(refundLineAmount(X, 1)).toBe(2666);
+  });
+});
+
+describe('estimateRefund（交換の品の行を含む）', () => {
+  const EXCHANGE_LINE = materialLine({
+    orderItemId: 'item-ex', name: 'シルクブラウス', color: '黒', size: 'L', itemPrice: 0, quantity: 3, lineTotal: 0, unshipped: 3,
+    restockable: 0, lineDiscount: 0, exchangePaidAmount: 14999,
+  });
+
+  it('交換の品の額は「商品」に入れ、「割引」には入れない。値 D: 2個選ぶと 商品 9999・割引 0・合計 9999', () => {
+    expect(estimateRefund([EXCHANGE_LINE], [{ orderItemId: 'item-ex', beforeShipment: true, quantity: 2 }], 0)).toEqual({
+      itemsAmount: 9999, discountAmount: 0, shippingAmount: 0, total: 9999,
+    });
+  });
+
+  it('前に1個返した交換の品をもう1個選ぶと 4999（前に返した数 refundedUnits から割り振る）', () => {
+    const afterOne = { ...EXCHANGE_LINE, refundedUnits: 1, refundedBeforeShipment: 1, unshipped: 2 };
+
+    expect(estimateRefund([afterOne], [{ orderItemId: 'item-ex', beforeShipment: true, quantity: 1 }], 0)).toEqual({
+      itemsAmount: 4999, discountAmount: 0, shippingAmount: 0, total: 4999,
+    });
+  });
+
+  it('ふつうの行と一緒に選ぶ: 値 A の X を 1 個（商品 3000・割引 334）と交換の品を 1 個（5000）・送料 500 → 商品 8000・割引 334・合計 8166', () => {
+    const selections = [
+      { orderItemId: 'item-x', beforeShipment: true, quantity: 1 },
+      { orderItemId: 'item-ex', beforeShipment: true, quantity: 1 },
+    ];
+
+    expect(estimateRefund([LINE_X, EXCHANGE_LINE], selections, 500)).toEqual({
+      itemsAmount: 8000, discountAmount: 334, shippingAmount: 500, total: 8166,
+    });
+  });
+});
+
 describe('estimateRefund', () => {
   it('選んだ数が無ければ、商品も割引も 0。送料だけが合計に入る', () => {
     expect(estimateRefund([LINE_X, LINE_Y], [], 500)).toEqual({
