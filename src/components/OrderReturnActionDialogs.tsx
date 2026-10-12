@@ -75,7 +75,8 @@ function ActionFrame({ flow, title, submitLabel, canSubmit, onSubmit, extraActio
     <Dialog open onClose={flow.close} title={title} fullScreenOnMobile>
       <form className="space-y-3" onSubmit={handleSubmit} onKeyDown={blockEnterSubmit}>
         <ReturnFlowContent flow={flow} backLabel="戻る" submitLabel={submitLabel} canSubmit={canSubmit} extraAction={extraAction}>
-          <div className="space-y-3">{children}</div>
+          {/* 768px 以上は Dialog が高さを制限しないので、入力の部分だけを縦に動かす（検品の品が多くても確定のボタンに届く。T10-14） */}
+          <div className="space-y-3 md:max-h-[60vh] md:overflow-y-auto md:pr-1">{children}</div>
         </ReturnFlowContent>
       </form>
     </Dialog>

@@ -417,6 +417,13 @@ describe('OrderReturnInspectDialog（検品を終える）', () => {
     expect(within(dialog).getByRole('button', { name: '検品を終える' })).toBeDisabled();
   });
 
+  it('768px 以上では、検品待ちの品の入れ物だけを縦に動かす（品が多くても確定のボタンに届く。T10-14）', async () => {
+    const { dialog } = await openDialog(OrderReturnInspectDialog, TITLE);
+
+    const scroller = within(dialog).getByRole('list', { name: '検品待ちの品' }).parentElement;
+    expect(scroller).toHaveClass('md:max-h-[60vh]', 'md:overflow-y-auto');
+  });
+
   it('答えが分からない時は、入力を止めて、同じ二重防止の番号・同じ中身で確かめ直す', async () => {
     const { dialog, onDone } = await openDialog(OrderReturnInspectDialog, TITLE);
     mockClientFetch
