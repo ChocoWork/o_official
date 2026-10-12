@@ -1,7 +1,7 @@
 # ハイブリッド RBAC (Role-Based Access Control) アーキテクチャ
 
 **ステータス**: 実装完料
-**最終更新**: 2026-02-23
+**最終更新**: 2026-10-13
 **Migration**: 023_add_acl_rbac_tables_and_policies.sql
 
 ---
@@ -76,8 +76,13 @@ Permission Codes:
 | `admin.looks.manage` | ルック CRUD | admin |
 | `admin.orders.read` | 注文一覧表示 | supporter |
 | `admin.orders.manage` | 注文操作（配送等） | supporter |
+| `admin.orders.refund` | 注文の返金・支払い済みの注文のキャンセル・返品の返金に関わる操作（グループ E-2・E-3） | admin |
+| `admin.settings.manage` | ショップの設定（グループ E-2。返品の欄は E-3） | admin |
+| `admin.orders.return` | 注文の返品（見る・作る・受け取る・取り消す・開き直す・届かないで終える・検品する。グループ E-3） | admin, supporter |
 
 （user は上記権限なし）
+
+グループ E-3 の返品では、`admin.orders.return`（店長とサポート）で返品の窓口を使い、返金に関わる操作（受け取りの今返金・返金額の指定・送料・交換の選び直し、額を決めて返金する、手数料の受け取りの記録、支払いを待たずに送る）は `admin.orders.return` と `admin.orders.refund` の両方（店長だけ）を要る。サポートの受け取りは、相談で受け取って返品を「返金待ち」にするところまで。権限の行は移行 A（`20261012100000_order_return_records.sql`）が入れ、`src/lib/auth/admin-rbac.ts` の `PermissionCode` と `legacyPermissionMap`（店長・サポートの両方）にも足す。
 
 ---
 

@@ -14,7 +14,7 @@
 | FR-ACCOUNT-002 | プロフィールタブではメールアドレス（読み取り専用）・氏名・電話番号を表示・編集できる | IMPL-ACCOUNT-002 | `src/app/account/page.tsx`, `src/app/api/profile/route.ts` | `/api/profile` が認証済みユーザーの email / 氏名 / 電話番号を返し、account 画面で read-only メール表示と編集保存を行う | 済 |
 | FR-ACCOUNT-003 | 未ログイン時のアクセスは案内表示またはログイン導線で適切にハンドリングする | IMPL-ACCOUNT-003 | `src/app/account/page.tsx` | `isLoggedIn` が false の場合に案内テキストと `/login` への誘導ボタンを表示する | 済 |
 | FR-ACCOUNT-004 | 配送情報タブでは郵便番号・都道府県・市区町村・番地を入力・保存でき、郵便番号入力時に住所自動補完を行う | IMPL-ACCOUNT-004 | `src/app/account/page.tsx`, `src/app/api/profile/route.ts` | 配送情報タブで住所を保存し、郵便番号補完は `/api/checkout/postal-code` 経由で実行する | 済 |
-| FR-ACCOUNT-005 | 注文履歴タブでは過去の注文を一覧表示し、注文詳細への遷移を提供する | IMPL-ACCOUNT-005 | `src/app/account/page.tsx`, `src/app/api/orders/route.ts`, `src/app/api/orders/[id]/route.ts`, `src/app/account/orders/[id]/page.tsx` | `/api/orders` で本人注文一覧を返し、一覧カードと `/account/orders/[id]` の注文詳細導線を実装する。状態の言葉は進み具合の言葉（未決済・受注生産中・発送準備中・配送中。FREQ-441）で、注文詳細は進み具合の段と発送ごとの配送情報を出す（FREQ-444）。返金ごとの行と返金済みの印も出す（FREQ-460） | 済 |
+| FR-ACCOUNT-005 | 注文履歴タブでは過去の注文を一覧表示し、注文詳細への遷移を提供する | IMPL-ACCOUNT-005 | `src/app/account/page.tsx`, `src/app/api/orders/route.ts`, `src/app/api/orders/[id]/route.ts`, `src/app/account/orders/[id]/page.tsx` | `/api/orders` で本人注文一覧を返し、一覧カードと `/account/orders/[id]` の注文詳細導線を実装する。状態の言葉は進み具合の言葉（未決済・受注生産中・発送準備中・配送中。FREQ-441）で、注文詳細は進み具合の段と発送ごとの配送情報を出す（FREQ-444）。返金ごとの行と返金済みの印も出す（FREQ-460）。返品の交換の品の行には印「交換の品」を付け、値段は「—」にする（FREQ-473） | 済 |
 | FR-ACCOUNT-006 | 顧客プロフィールの保存項目を拡張し、フリガナ・住所を含めた完全な顧客情報を管理できるようにする | IMPL-ACCOUNT-006 | `src/app/account/page.tsx`, `src/app/api/profile/route.ts` | `profiles.kana_name` / `phone` / `address` を保存対象に含め、プロフィール編集から完全な顧客情報を管理できるようにする | 済 |
 | FR-ACCOUNT-007 | account ページからログアウトできる導線を提供し、ログアウト後は未ログイン状態を明示する | IMPL-ACCOUNT-007 | `src/app/account/page.tsx`, `src/contexts/LoginContext.tsx`, `src/app/api/auth/logout/route.ts` | account サイドバーにログアウトボタンを追加し、`/api/auth/logout` 呼び出し後に未ログイン案内表示へ戻す | 済 |
 | FR-ACCOUNT-008 | メールアドレスをプロフィールカードへ含め、配送先住所 UI を配送情報タブへ分離する | IMPL-ACCOUNT-008 | `src/app/account/page.tsx`, `e2e/FR-ACCOUNT-008-profile-address-integration.spec.ts` | プロフィールカード内に read-only メール表示を含め、住所管理は配送情報タブへ分離する | 済 |
@@ -105,3 +105,27 @@
 | FREQ-460-AC-03 | コンビニ払いで手続き中の返金に口座の入力の期限の文が出る | FR-ACCOUNT-033 |
 | FREQ-460-AC-04 | 失敗した返金とエラーの返金は出ない | FR-ACCOUNT-033 |
 | FREQ-460-AC-05 | 返金を待つキャンセルの注文の状態が「キャンセルの手続き中」になる | FR-ACCOUNT-033 |
+
+## 注文の画面の交換の品（ACCOUNT-ORDER-EXCHANGE / FREQ-473）
+
+2026-10-13 から、返品の交換でお店が足した品（値段0の行）に「交換の品」の印を付ける（[グループ E-3 設計書](../../superpowers/specs/2026-10-12-returns-design.md) の 8-2。お客様の申し込みと返品の欄は段2）。DB の状態の値は変えない。
+
+| 画面 | 内容 |
+| --- | --- |
+| ご注文商品 | 交換の品の行に、印「交換の品」（`data-testid="order-item-exchange"`）を数量の下に出し、値段は「—」にする。通常の品には印も「—」も出さない。交換の品の行も発送前の返金ができるので、「返金済み {n}点」の印と並んでも崩れない |
+| 配送情報 | 発送ごとの区切りの中の交換の品の行にも、印「交換の品」（`data-testid="order-shipment-exchange"`）を行の末尾に出す |
+| まだ送っていない商品 | 「発送準備中の商品」「受注生産中の商品」の欄には付けない |
+| 購入履歴の一覧 | 変えない（商品の金額も商品数も出していない） |
+
+注文の窓口（`GET /api/orders/[id]`）は、商品の行と発送の商品の行に `lineKind`（`order`・`exchange`）を返す。金額 `amount` は DB の値のまま（交換の品の行は ￥0）で、値段を「—」にするのは画面。一覧の窓口（`GET /api/orders`）の `itemCount` は交換の品の行も数えるが、画面は使わない（管理画面の一覧の商品数は交換の品の行を数えない）。
+
+### 受け付け基準と E2E（グループ E-3）
+
+試験: [FR-ACCOUNT-034](../../../e2e/FR-ACCOUNT-034-order-exchange-items.spec.ts)、[OrderItemRow の単体](../../../tests/unit/components/OrderItemRow.test.tsx)、[注文の画面の単体](../../../tests/unit/components/AccountOrderDetailPage.test.tsx)、[注文の窓口の単体](../../../tests/unit/api/orders/order-detail-progress.test.ts)。
+
+| 受け付け基準 | 確かめること | E2E・試験 |
+| --- | --- | --- |
+| FREQ-473-AC-01 | 注文の画面のご注文商品の交換の品に「交換の品」の印と値段「—」が出て、通常の品には出ない | E2E FR-ACCOUNT-034、単体 OrderItemRow・AccountOrderDetailPage |
+| FREQ-473-AC-02 | 配送情報の交換の品にも「交換の品」の印が出る | E2E FR-ACCOUNT-034 |
+| FREQ-473-AC-03 | 注文の窓口が品と発送の品に `lineKind` を返す（本物の窓口と手元の DB） | E2E FR-ACCOUNT-034（手元の DB）、単体 order-detail-progress |
+| FREQ-473-AC-04 | 交換の品が無い注文には印も「—」も出ず、横方向のページスクロールも発生しない | E2E FR-ACCOUNT-034 |

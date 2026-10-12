@@ -1,6 +1,6 @@
 # APIルート一覧
 
-> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02（checkout の入口の変更は 2026-10-07、カートの入口の変更は 2026-10-08、発送・仕上がりの入口の変更は 2026-10-10、返金・ショップの設定の入口の変更は 2026-10-11 に反映） | 対象: `src/app/api/**/route.ts`
+> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02（checkout の入口の変更は 2026-10-07、カートの入口の変更は 2026-10-08、発送・仕上がりの入口の変更は 2026-10-10、返金・ショップの設定の入口の変更は 2026-10-11 に、返品の入口の変更は 2026-10-13 に反映） | 対象: `src/app/api/**/route.ts`
 
 ## 概要
 
@@ -48,10 +48,20 @@
 | `/api/admin/orders/[id]/history` | `GET` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/history/route.ts) |
 | `/api/admin/orders/[id]/refund/confirm` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/refund/confirm/route.ts) |
 | `/api/admin/orders/[id]/refund` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) |
+| `/api/admin/orders/[id]/returns/materials` | `GET` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/returns/materials/route.ts) |
+| `/api/admin/orders/[id]/returns` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/returns/route.ts) |
 | `/api/admin/orders/[id]/review` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/review/route.ts) |
 | `/api/admin/orders/[id]/status` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
 | `/api/admin/orders` | `GET` | [route.ts](../../../src/app/api/admin/orders/route.ts) |
 | `/api/admin/payment-exceptions/[id]/resolve` | `POST` | [route.ts](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts) |
+| `/api/admin/returns/[returnId]/cancel` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/cancel/route.ts) |
+| `/api/admin/returns/[returnId]/close-missing` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/close-missing/route.ts) |
+| `/api/admin/returns/[returnId]/fee-payment` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/fee-payment/route.ts) |
+| `/api/admin/returns/[returnId]/inspect` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/inspect/route.ts) |
+| `/api/admin/returns/[returnId]/receive` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/receive/route.ts) |
+| `/api/admin/returns/[returnId]/refund` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/refund/route.ts) |
+| `/api/admin/returns/[returnId]/release-exchange` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/release-exchange/route.ts) |
+| `/api/admin/returns/[returnId]/reopen` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/reopen/route.ts) |
 | `/api/admin/revoke-user-sessions` | `POST` | [route.ts](../../../src/app/api/admin/revoke-user-sessions/route.ts) |
 | `/api/admin/settings/shop` | `GET`, `PUT` | [route.ts](../../../src/app/api/admin/settings/shop/route.ts) |
 | `/api/admin/stockists/[id]` | `DELETE`, `GET`, `PATCH`, `PUT` | [route.ts](../../../src/app/api/admin/stockists/%5Bid%5D/route.ts) |
@@ -113,7 +123,7 @@
 
 ## 注文のメール・発送・返金・ショップの設定
 
-履歴・中身は `admin.orders.read`、再送は `admin.orders.manage`・CSRF・送信元と管理者ごと10分に30回。配達の受け口は公開で Svix 署名を確かめる。発送・発送の取消・仕上がり・仕上がりの取消は `admin.orders.manage`・CSRF・回数の制限（発送と仕上がりの記録は10分に60回、取消は30回）で、発送は `POST /api/admin/orders/[id]/fulfillments` の本文 `notifyCustomer`（真偽、既定 true）で知らせるかを選ぶ（グループ E-1。発送ごとに発送のメールを1通送る）。返金の材料の読み込み（`GET …/refund`）は `admin.orders.refund` だけ（読むだけなので CSRF と回数の制限は通さない）、返金（`POST …/refund`）と返事待ちの確かめ直し（`POST …/refund/confirm`）は `admin.orders.refund`・CSRF・回数の制限（10分に30回。確かめ直しも返金と同じ数に数える）、支払い済みの注文のキャンセル（`POST …/status` の支払い済みの道）は `admin.orders.manage` と `admin.orders.refund` の両方・CSRF・回数の制限（10分に30回）、ショップの設定（`GET`・`PUT /api/admin/settings/shop`）は `admin.settings.manage`（`PUT` は CSRF と回数の制限、10分に30回）で守る（グループ E-2。返金は返金ごとに返金のお知らせを1通、支払い済みのキャンセルはキャンセルのお知らせを1通送る）。詳しい入力と応答は [APIの主要契約](api-spec.md)の「管理:注文・要対応」「管理:ショップの設定」「Webhook・Cron」に記す。
+履歴・中身は `admin.orders.read`、再送は `admin.orders.manage`・CSRF・送信元と管理者ごと10分に30回。配達の受け口は公開で Svix 署名を確かめる。発送・発送の取消・仕上がり・仕上がりの取消は `admin.orders.manage`・CSRF・回数の制限（発送と仕上がりの記録は10分に60回、取消は30回）で、発送は `POST /api/admin/orders/[id]/fulfillments` の本文 `notifyCustomer`（真偽、既定 true）で知らせるかを選ぶ（グループ E-1。発送ごとに発送のメールを1通送る）。返金の材料の読み込み（`GET …/refund`）は `admin.orders.refund` だけ（読むだけなので CSRF と回数の制限は通さない）、返金（`POST …/refund`）と返事待ちの確かめ直し（`POST …/refund/confirm`）は `admin.orders.refund`・CSRF・回数の制限（10分に30回。確かめ直しも返金と同じ数に数える）、支払い済みの注文のキャンセル（`POST …/status` の支払い済みの道）は `admin.orders.manage` と `admin.orders.refund` の両方・CSRF・回数の制限（10分に30回）、ショップの設定（`GET`・`PUT /api/admin/settings/shop`）は `admin.settings.manage`（`PUT` は CSRF と回数の制限、10分に30回）で守る（グループ E-2。返金は返金ごとに返金のお知らせを1通、支払い済みのキャンセルはキャンセルのお知らせを1通送る）。返品の入口（グループ E-3）は、読む `GET …/returns`・`GET …/returns/materials` が `admin.orders.return`（読むだけなので CSRF と回数の制限は通さない）、書く `POST …/returns` と `POST /api/admin/returns/[returnId]/…` が `admin.orders.return`・CSRF・回数の制限（作る・受け取る・額を決めて返金するは10分に30回、取消・開き直し・届かないで終える・検品・手数料の受け取りの記録・支払いを待たずに送るは10分に60回）で守る。受け取りの今返金・額の指定・送料・交換の選び直しと、額を決めて返金・手数料の受け取りの記録・支払いを待たずに送るは、`admin.orders.refund` も要る（店長だけ）。詳しい入力と応答は [APIの主要契約](api-spec.md)の「管理:注文・要対応」「管理:ショップの設定」「Webhook・Cron」に記す。
 
 ## 更新と検証
 

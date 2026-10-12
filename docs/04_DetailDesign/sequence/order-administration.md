@@ -1,10 +1,10 @@
 # 注文管理のシーケンス
 
-> 状態: 現行ソース確認（発送の節はグループ E-1 の変更を 2026-10-10 に、返金・支払い済みのキャンセル・取り込みと見回り・自動の返金の節はグループ E-2 の変更を 2026-10-11 に反映） | 確認日: 2026-10-04 | 対象: 未入金取消、発送（一部の発送・仕上がり・取消を含む）、管理返金と支払い済みのキャンセル、Stripe の返金の取り込みと見回り、自動の返金、要対応の解決
+> 状態: 現行ソース確認（発送の節はグループ E-1 の変更を 2026-10-10 に、返金・支払い済みのキャンセル・取り込みと見回り・自動の返金の節はグループ E-2 の変更を 2026-10-11 に、返品を作る・受け取る・額を決めて返金する節はグループ E-3 の変更を 2026-10-13 に反映） | 確認日: 2026-10-04 | 対象: 未入金取消、発送（一部の発送・仕上がり・取消を含む）、管理返金と支払い済みのキャンセル、Stripe の返金の取り込みと見回り、自動の返金、返品（作る・受け取る・額を決めて返金する）、要対応の解決
 
 ## 概要
 
-管理操作がAPIの認可、Stripeの確認、条件付きRPC、通知へ進む順序を示す。未入金注文の取消、返金（支払い済みのキャンセルを含む）による取消、要対応記録の解決は別の操作であり、保存結果も異なる。通常取消と取消付き解決ではStripeを確認するガードが異なるため、別シナリオとして記す。
+管理操作がAPIの認可、Stripeの確認、条件付きRPC、通知へ進む順序を示す。未入金注文の取消、返金（支払い済みのキャンセルを含む）による取消、要対応記録の解決は別の操作であり、保存結果も異なる。通常取消と取消付き解決ではStripeを確認するガードが異なるため、別シナリオとして記す。返品（グループ E-3）は、作る・受け取る（今返金なら Stripe に頼む）・額を決めて返金するの3つを SQ-ADMIN-09〜11 に分けて記す。受け取りと返金は、E-2 の「記録を先に作り、Stripe に頼み、結果を書く」に乗る。
 
 図の粒度は[記載方針](README.md)、注文状態と独立属性は[注文・決済](../states/order-payment.md)、例外の状態は[決済の要対応](../states/payment-exception.md)を参照する。
 
@@ -18,8 +18,9 @@
 | `GET`・`POST /api/admin/orders/[id]/fulfillments`、発送の取消 `…/fulfillments/[fulfillmentId]/cancel` | [発送API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts)、[発送の取消API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/cancel/route.ts) |
 | `POST /api/admin/orders/[id]/completions`、仕上がりの取消 `…/completions/[completionId]/cancel` | [仕上がりAPI](../../../src/app/api/admin/orders/%5Bid%5D/completions/route.ts)、[仕上がりの取消API](../../../src/app/api/admin/orders/%5Bid%5D/completions/%5BcompletionId%5D/cancel/route.ts) |
 | `GET`・`POST /api/admin/orders/[id]/refund`、返事待ちの確かめ直し `…/refund/confirm`、`refunds.create` | [refund API](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts)、[確かめ直しAPI](../../../src/app/api/admin/orders/%5Bid%5D/refund/confirm/route.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[Stripe への頼み方](../../../src/lib/orders/refund/refund-stripe.ts) |
+| `GET`・`POST /api/admin/orders/[id]/returns`、`GET …/returns/materials`、`POST /api/admin/returns/[returnId]/{receive,refund,cancel,reopen,close-missing,inspect,fee-payment,release-exchange}` | [返品の一覧と作る API](../../../src/app/api/admin/orders/%5Bid%5D/returns/route.ts)、[作る画面の材料 API](../../../src/app/api/admin/orders/%5Bid%5D/returns/materials/route.ts)、[受け取り API](../../../src/app/api/admin/returns/%5BreturnId%5D/receive/route.ts)、[額を決めて返金する API](../../../src/app/api/admin/returns/%5BreturnId%5D/refund/route.ts)、[返品の流れ](../../../src/lib/orders/returns/return-service.ts)、[返品の DB の呼び出し](../../../src/lib/orders/returns/return-store.ts) |
 | `POST /api/admin/payment-exceptions/[id]/resolve` | [resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts) |
-| 管理認可 | [admin.orders.manage・admin.orders.refund・admin.settings.manage・セッション・AAL2確認](../../../src/lib/auth/admin-rbac.ts)。返金と確かめ直しは `admin.orders.refund`、支払い済みのキャンセルは `admin.orders.manage` と `admin.orders.refund` の両方（店長だけ）。status/resolve/refund/refund confirm APIは認可後に明示的なCSRF helperを呼ぶ |
+| 管理認可 | [admin.orders.manage・admin.orders.refund・admin.orders.return・admin.settings.manage・セッション・AAL2確認](../../../src/lib/auth/admin-rbac.ts)。返金と確かめ直しは `admin.orders.refund`、支払い済みのキャンセルは `admin.orders.manage` と `admin.orders.refund` の両方（店長だけ）。返品の窓口は `admin.orders.return`（店長とサポート）で、返金に関わる操作（受け取りの今返金・額の指定・送料・交換の選び直し、額を決めて返金する、手数料の受け取りの記録、支払いを待たずに送る）は `admin.orders.return` と `admin.orders.refund` の両方（店長だけ。グループ E-3）。status/resolve/refund/refund confirm APIは認可後に明示的なCSRF helperを呼ぶ |
 | `checkout.sessions.retrieve/expire`と失効競合 | [Session失効](../../../src/lib/stripe/checkout-session-expiry.ts) |
 | `checkout.sessions.retrieve/list`、`paymentIntents.retrieve`、照合判定・条件付き更新 | [Stripe読取り](../../../src/lib/stripe/checkout-payment-reader.ts)、[照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[判定表](../../../src/lib/stripe/checkout-payment-decision.ts)、[RPC接続](../../../src/lib/stripe/checkout-payment-reconciler-deps.ts) |
 | 在庫解放と取消記録 | [注文IDによる在庫解放RPC](../../../supabase/migrations/20260927100200_release_stock_by_order.sql)、[台帳反映トリガー](../../../supabase/migrations/20260919065355_add_stock_movements.sql) |
@@ -27,6 +28,7 @@
 | 失敗注文の取消・例外解決 | [管理RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。取消メールの行を書く在庫解放関数は [移行 B](../../../supabase/migrations/20261009095736_order_email_enqueue.sql) |
 | `refunds.list`（その支払いの返金を全ページ）、1件ずつの取り込みと読み直し、毎時の見回り、毎晩の照合 | [返金の取り込み](../../../src/lib/stripe/order-refund-sync.ts)、[毎時の見回り](../../../src/lib/orders/refund/refund-sweep.ts)、[毎晩の照合](../../../src/lib/stripe/reconcile-orders.ts) |
 | 返金の記録・返金を始める関数・結果を書く関数・外からの返金の記録 | [E-2 移行 A: 表と数え方](../../../supabase/migrations/20261011222930_order_refund_records.sql)、[E-2 移行 B: 始める・材料](../../../supabase/migrations/20261011223147_order_refund_requests.sql)、[E-2 移行 C: 結果を書く・外からの返金・メールの行](../../../supabase/migrations/20261011223453_order_refund_results.sql) |
+| 返品の記録・返品を作る関数・受け取り・額を決めて返金する関数 | [E-3 移行 A: 表と数え方](../../../supabase/migrations/20261012100000_order_return_records.sql)、[E-3 移行 B: 作る・取り消す・開き直す・届かないで終える・検品・手数料・読み出し](../../../supabase/migrations/20261012100100_order_return_actions.sql)、[E-3 移行 C: 受け取り・額を決めて返金・返金を始める本体の切り出し・メールの予定](../../../supabase/migrations/20261012100200_order_return_receipts.sql) |
 | 自動の返金①②とショップの設定 | [決済照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[設定API](../../../src/app/api/admin/settings/shop/route.ts) |
 | 取消・発送・返金のメール（発送は発送ごとに、返金は返金ごとに1通） | [送る予定の表](../../../supabase/migrations/20261009095633_order_email_outbox.sql)、[状態を変える関数](../../../supabase/migrations/20261009095736_order_email_enqueue.sql)、[発送ごとのメールの行](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql)、[返金ごとのメールの行](../../../supabase/migrations/20261011223453_order_refund_results.sql)、[worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts) |
 
@@ -34,15 +36,19 @@ status/resolve APIは管理認可の後、ID・本文の検証より先に`requi
 
 review APIも同じCSRF helperを呼ぶ。refund API（返金と確かめ直し）とショップの設定のPUTも、E-2から同じCSRF helperを呼び、管理認可（`admin.orders.refund`・`admin.settings.manage`）→ CSRF helper → 回数の制限（送信元ごと・管理者ごと）→（注文の窓口だけ）注文の番号の検証 → 本文の検証の順で、先に断った段階で後ろへ進まない。支払い済みのキャンセルは、status APIの中で注文が`paid`と分かってから`admin.orders.refund`を確かめる（未入金の取消はサポートの人もできるまま）。管理認可は検証済みJWT、セッションの有効性、DB ACLの対象権限、JWTの`aal2`を確認する。トークン不正・セッション失効は401、権限またはAAL2不足は403、セッション有効性を確認できない場合は503。返金の権限は、検証済みJWTの`app_metadata.role`ではなく、DBの権限`admin.orders.refund`（店長の役割だけに付ける）で確かめる（グループE-2。以前の追加admin判定はやめた）。
 
+返品の窓口（グループE-3）も同じ順に断る。管理認可（`admin.orders.return`。返金に関わる操作は`admin.orders.refund`も）→ CSRF helper → 回数の制限（送信元ごと・管理者ごと。作る・受け取る・額を決めて返金するは10分に30回、取消・開き直し・届かないで終える・検品・手数料の受け取りの記録・支払いを待たずに送るは10分に60回）→ 注文または返品の番号の検証 → 本文の検証。読む`GET …/returns`・`GET …/returns/materials`は、管理認可の後に注文の番号を検証するだけで、CSRFと回数の制限は通さない（読むだけで、状態を変えないため）。受け取りでは、`admin.orders.refund`を持たない人（サポート）の呼び出しを窓口が`_actor_can_refund = false`としてDBの関数へ渡し、今返金・額の指定は`RETURN_FORBIDDEN`で断る。DBの関数は権限そのものを確かめない（E-1・E-2と同じ）。
+
 ### 関連する照会入口
 
 | 入口 | 図・操作との対応と結果 | 根拠 |
 | --- | --- | --- |
-| `GET /api/admin/orders` | `admin.orders.read`とAAL2で注文一覧を読む。返金のボタンの判定は、Stripeではなく受け取った額と返金の記録（`list_order_refund_summaries`）で決める。未入金の注文の取消の判定は、StripeのPIと未解決の金額不一致も参照する。canShip/canRecordCompletion/canCancel/canRefund等の表示用属性と、商品ごとの数から出した注文の言葉（status）・一部発送済みか、支払いの言葉と返金の印（paymentStatusKey・refundPending・refundFailed）を返す。状態変更はしない。操作時は各POSTが再検証する | [注文一覧](../../../src/app/api/admin/orders/route.ts) |
+| `GET /api/admin/orders` | `admin.orders.read`とAAL2で注文一覧を読む。返金のボタンの判定は、Stripeではなく受け取った額と返金の記録（`list_order_refund_summaries`）で決める。未入金の注文の取消の判定は、StripeのPIと未解決の金額不一致も参照する。canShip/canRecordCompletion/canCancel/canRefund等の表示用属性と、商品ごとの数から出した注文の言葉（status）・一部発送済みか、支払いの言葉と返金の印（paymentStatusKey・refundPending・refundFailed）と、返品の要約（returnSummary。`list_order_return_summaries`）、一覧の上の一行の件数（returnAttention。`count_order_return_attention`）を返し、問い `return=` で返品の状態に絞り込む（グループE-3。絞り込みは新しい注文から500件まで）。状態変更はしない。操作時は各POSTが再検証する | [注文一覧](../../../src/app/api/admin/orders/route.ts) |
 | `GET /api/admin/order-attention` | 同じread認可で未解決例外・未確認注文を各最大100件返し、件数も返す。canCancelOrderは注文状態に基づく表示用属性で、Stripeの取消ガード成功を示さない。「返金の失敗」の行には、「もう一度返金する」を出せるか（canRetryRefund。注文の返せる額が0より多い）と、細目（refundFailure: 返金の額・失敗の理由の言葉・確保し直せなかった商品と数。要対応の支払いの印で返金の記録を service_role で引く）を付ける | [要対応・要確認一覧](../../../src/app/api/admin/order-attention/route.ts) |
 | `GET /api/admin/orders/[id]/status` | 同じread認可でPOSTの説明とrequiredBodyを返す。対象注文の現在状態を取得・変更するAPIではない | [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
 | `GET /api/admin/orders/[id]/fulfillments` | `admin.orders.manage` で、発送と仕上がりの画面の材料（商品ごとの数・発送の一覧・発送できない理由）を service_role で読む。状態変更はしない。操作時は各POSTが再検証する | [発送API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts) |
 | `GET /api/admin/orders/[id]/refund` | `admin.orders.refund`で、返金の画面の材料（注文の金額・返せる額・商品ごとの数と割り振った割引・返事待ちの返金）をservice_roleで読む。状態変更はしない。操作時はPOSTが再検証する | [refund API](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) |
+| `GET /api/admin/orders/[id]/returns` | `admin.orders.return` で、返品の画面の材料（返品の一覧と行ごとの進み具合・返金待ちの額の見込み・手数料・返せる額と送料・返品できる数の合計・要検品の設定）を service_role で読む。取消・お断りの返品も返すが、画面は出さない。返金の権限の有無（canRefund）も返す。状態変更はしない。操作時は各POSTが再検証する | [返品の一覧と作る API](../../../src/app/api/admin/orders/%5Bid%5D/returns/route.ts) |
+| `GET /api/admin/orders/[id]/returns/materials` | `admin.orders.return` で、返品を作る画面の材料（発送ごとの品・返品できる数と期限・交換の色とサイズと在庫・理由ごとの設定・返送先の有無・使う手数料の設定）を service_role で読む。状態変更はしない。操作時はPOSTが再検証する | [作る画面の材料 API](../../../src/app/api/admin/orders/%5Bid%5D/returns/materials/route.ts) |
 | `POST /api/cron/expire-pending-orders` | `CRON_SECRET`のBearer認証で未入金の注文を見回り、最後に、時間の予算が残っている時だけ、15分より前から返事待ちの返金を探して合わせる（SQ-ADMIN-07）。管理認可とは別の入口 | [見回りAPI](../../../src/app/api/cron/expire-pending-orders/route.ts)、[Cron認証](../../../src/lib/cron/auth.ts) |
 | `POST /api/cron/stripe-reconcile` | `CRON_SECRET`のBearer認証でPI・会計・Payoutを照合し、返金は前の48時間に作られた返金の支払いと保留の返金の支払いを、知らせの取り込みと同じ手順で返金の記録に合わせる（SQ-ADMIN-07）。管理認可とは別の入口 | [照合API](../../../src/app/api/cron/stripe-reconcile/route.ts)、[Cron認証](../../../src/lib/cron/auth.ts)、[Webhook関連見回り](stripe-webhooks.md#関連する見回りとschedule) |
 
@@ -502,15 +508,194 @@ sequenceDiagram
 
 根拠は [決済照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[店への知らせの文](../../../src/lib/orders/order-lifecycle-emails.ts)、[設定API](../../../src/app/api/admin/settings/shop/route.ts)、[E-2 移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql)。
 
+## SQ-ADMIN-09: 返品を作る（お店が作る返品）
+
+目的は、発送済みの品の返品（返す品・数・理由・解決（返金か、同じ商品の色・サイズの交換）・返送のしかた・手数料）をお店が記録すること。お客様の申し込みは段2で、段1の返品はお店が作り、作った時から受付中になる。事前条件は管理認可（`admin.orders.return`）→ CSRF helper → 回数の制限（送信元ごと・管理者ごと、10分に30回）→ 注文の番号の検証 → 本文の検証を通ること。終了結果は、作れた200、DB の断りの400・404・409、思いがけない失敗の500。考え方は [グループ E-3 設計書](../../superpowers/specs/2026-10-12-returns-design.md) の 5 章（お店が作る返品）。
+
+```mermaid
+sequenceDiagram
+    participant Admin as 管理者
+    participant API as 返品API
+    participant DB as DB / RPC
+    participant Mail as 注文のメールworker
+    Admin->>API: GET /api/admin/orders/[id]/returns/materials
+    API->>DB: get_order_return_materials（service_role）
+    DB-->>API: 発送ごとの品・返品できる数と期限・交換の色とサイズと在庫・理由ごとの設定・返送先の有無
+    API-->>Admin: 200 作る画面の材料
+    Admin->>API: POST /api/admin/orders/[id]/returns（requestKey・品と数と理由と解決・返送・手数料・メモ・知らせるか）
+    API->>API: 管理認可 → CSRF helper → 回数の制限 → 注文の番号 → 中身を検証
+    API->>DB: admin_create_return（返品と行を1回の取引で記録）
+    alt 決まった言葉の断り
+        DB-->>API: RETURN_QUANTITY_EXCEEDS・RETURN_ADDRESS_REQUIRED・ORDER_NOT_RETURNABLE など
+        API-->>Admin: 409 / 400 / 404 と画面に出す言葉
+    else 記録ができた（同じ requestKey で同じ中身の送り直しは前の結果、replayed = true）
+        DB-->>API: 返品の番号・状態（受付中）
+        opt お客様に知らせるを入れた時（新しく作った時だけ）
+            DB->>DB: 受付のお知らせ（return_accepted）の行を同じ取引で書く
+        end
+        API->>DB: 作成の監査
+        API-->>Admin: 200 返品の番号
+        opt 受付のお知らせの行を書いた時
+            API-->>Mail: after() で worker を動かす
+        end
+    end
+```
+
+### 例外と永続化
+
+| 条件 | 結果・保存内容 |
+| --- | --- |
+| 数の確かめ | 返す数は、発送の行ごとの返品できる数まで（`RETURN_QUANTITY_EXCEEDS`）。注文の商品ごとの返品できる数（[注文・決済の状態](../states/order-payment.md) の「返品の記録と状態」）も同時に確かめる。取消・お断りの返品の数は数えない |
+| 注文の状態 | 支払い済み・発送済み以外（取り消した注文を含む）は `ORDER_NOT_RETURNABLE` |
+| 返送先 | ショップの設定の返送先（名前・郵便番号・住所・電話番号）が空だと `RETURN_ADDRESS_REQUIRED`。返送不要の返品も止める |
+| 受付の期限 | 期限を過ぎた発送の品も作れる。画面に警告を出すだけ（段1はお店が作るため） |
+| 交換と理由 | 交換の色・サイズは同じ商品の物だけ（`RETURN_EXCHANGE_VARIANT_INVALID`）。理由が「その他」の時は理由のメモが要る（`RETURN_REASON_NOTE_REQUIRED`）。手数料の入力は0以上の整数で、円の欄は1,000,000円まで、返品の手数料の割合は0〜100まで（`RETURN_FEE_INVALID`） |
+| 二重防止 | 画面を開いた時に作る番号と、入力の指紋。違う中身は `RETURN_REQUEST_MISMATCH`（409） |
+| 番号 | 返品の番号は、注文の行の鍵の中で「その注文の返品の数 + 1」にする（取消の返品も数える。表示は `{注文番号}-R{n}`） |
+| 権限 | `admin.orders.return`（店長とサポート） |
+| 保存 | 返品の記録（`order_returns`）と行（`order_return_lines`）。「お客様に知らせる」を入れた時だけ、受付のお知らせ（種類 `return_accepted`）の行を同じ取引で書く。在庫・注文の状態・返金は動かさない |
+| 監査 | 返品の番号・数・状態・実行した人だけ（`admin.orders.return.create`）。宛先・氏名・住所・メッセージとメモの本文は入れない |
+
+受け取りの前後の小さな操作は、どれも CSRF helper と回数の制限（10分に60回）を通り、お客様にメールを送らない。
+
+| 操作 | 窓口 | 権限 | 起きること |
+| --- | --- | --- | --- |
+| 取消 | `POST …/returns/[returnId]/cancel` | `admin.orders.return` | 何も受け取る前の受付中だけ。取消にし、品はまた返品できる。処理した数が1点でもある返品は `RETURN_STATE_CONFLICT`（「届かない」で終えて開き直し、まだ何も受け取っていない返品は取り消せる） |
+| 届かないで終える | `…/close-missing` | `admin.orders.return` | 残りを `missing` の受け取りの行にして返品を終える（届かない品は返金も交換もしない）。二重防止の番号つき |
+| 開き直し | `…/reopen` | `admin.orders.return` | 完了した返品の「届かない」の品を、また受け取れるようにする（`missing_reopened`）。受け取り済みの品は変わらない。閉じた後にその品をふつうの返金で返していた時は、受け取っても返金待ちにならない（開き直して受け取った返金の品は、ふつうの返金の当て先として先に数えるため）。二重防止の番号つき |
+| 検品を終える | `…/inspect` | `admin.orders.return` | 検品待ちの品を、戻す・戻さないに決める（一部でもよい）。戻す分だけ台帳 `return` の +n。二重防止の番号つき |
+| 手数料の受け取りの記録 | `…/fee-payment` | `admin.orders.return` と `admin.orders.refund` | 手数料の受け取りを記録するか、`waive: true` で「いただかないで終える」。どちらも、その時の手数料の額を決着した額（`fee_settled_amount`）に移して `fee_due_amount` を0に戻し、お支払い待ちを終え、ほかに待ち物が無ければ返品が完了する |
+| 支払いを待たずに送る | `…/release-exchange` | `admin.orders.return` と `admin.orders.refund` | 手数料をお支払い待ちのまま、交換の品を送れるようにする。返品は完了しない |
+
+根拠は [返品の一覧と作る API](../../../src/app/api/admin/orders/%5Bid%5D/returns/route.ts)、[返品の流れ](../../../src/lib/orders/returns/return-service.ts)、[E-3 移行 A](../../../supabase/migrations/20261012100000_order_return_records.sql)、[E-3 移行 B](../../../supabase/migrations/20261012100100_order_return_actions.sql)。
+
+## SQ-ADMIN-10: 返品の受け取り（品ごとの扱い・今返金・相談・交換・お返し）
+
+目的は、届いた品を1点ずつ「在庫に戻す・戻さない・検品待ち・お返し」に決めて記録し、返金（今・額を相談してから）・交換の品の追加・お客様へのお知らせを、1回の取引で書くこと。返金は E-2 と同じ「記録を先に作り、Stripe に頼み、結果を書く」に乗る。事前条件は管理認可（`admin.orders.return`。今返金・額の指定・送料・交換の選び直しは `admin.orders.refund` も）→ CSRF helper → 回数の制限（送信元ごと・管理者ごと、10分に30回）→ 返品の番号の検証 → 本文の検証を通ること。終了結果は、受け取れた200、DB の断りの400・403・404・409、Stripe の断りの422、答えが分からない502、思いがけない失敗の500。考え方は [グループ E-3 設計書](../../superpowers/specs/2026-10-12-returns-design.md) の 6 章。
+
+```mermaid
+sequenceDiagram
+    participant Admin as 管理者
+    participant API as 受け取りAPI
+    participant DB as DB / RPC
+    participant Stripe as Stripe API
+    participant Mail as 注文のメールworker
+    Admin->>API: POST /api/admin/returns/[returnId]/receive（requestKey・品ごとの扱い・交換の選び直し・返金の選び方・額・送料・メモ・知らせるか・お返しのメッセージ）
+    API->>API: 管理認可（権限から actorCanRefund を決める）→ CSRF helper → 回数の制限 → 返品の番号 → 中身を検証
+    API->>DB: admin_receive_return（受け取り・在庫の台帳・交換の品の行・返金の記録・返品と注文の状態・メールの予定を1回で）
+    alt 決まった言葉の断り
+        DB-->>API: RETURN_RECEIPT_EXCEEDS・RETURN_EXCHANGE_OUT_OF_STOCK・RETURN_FORBIDDEN など、または E-2 の返金の断り
+        API-->>Admin: 409 / 403 / 400 と画面に出す言葉（何も書かない）
+    else 受け取りを記録した（同じ requestKey で同じ中身の送り直しは前の結果、replayed = true）
+        DB-->>API: 受け取りの番号・返品の状態・返金の記録の番号（あれば）・手数料のお支払い待ち・店への知らせの有無
+        alt 返事待ちの返金ができた（今返金で、返金の品がある）
+            API->>Stripe: refunds.create（重複防止キー order-refund-記録の番号、理由 requested_by_customer）
+            alt Stripe が受け付けた（保留か成功）
+                Stripe-->>API: 返金
+                API->>DB: record_order_refund_result（メールの予定・要対応・注文の額と状態・返品の状態を1回で。返品の返金は在庫を動かさない）
+                API-->>Admin: 200 受け取りの番号・返金の番号・状態・額
+                API-->>Mail: after() で worker を動かす
+            else Stripe が断った
+                Stripe-->>API: エラー
+                API->>DB: mark_order_refund_error（エラーにする。受け取りのお知らせの予定は DB が書く）
+                API-->>Admin: 422 断りの理由と受け取りの番号
+                API-->>Mail: after() で worker を動かす
+            else 答えが分からない（通信の誤り・5xx・時間切れ）
+                API-->>Admin: 502 返金の記録の番号と受け取りの番号（画面は「もう一度確かめる」）
+            end
+        else 返金の記録が無い（相談・なし・この受け取りで返金する品が0点・0円で返金しない）
+            API-->>Admin: 200 受け取りの番号・手数料のお支払い待ち
+            API-->>Mail: お知らせの予定を新しく書いた時だけ worker を動かす
+        end
+    end
+```
+
+### 例外と永続化
+
+| 条件 | 結果・保存内容 |
+| --- | --- |
+| 品ごとの扱い | 返品の行ごとに、届いた数を「在庫に戻す（`restocked`）・戻さない（`not_restocked`）・検品待ち（`pending_inspection`。設定で要検品を使う時だけ）・お返し（`sent_back`）」に分ける。残りの数を超えると `RETURN_RECEIPT_EXCEEDS`。一部だけ届いた時は受付中のまま残り、次は残りだけ受け取る。受け取りは取り消せない |
+| 在庫 | 在庫に戻した分は台帳 `return` の +n（`stock_movements.return_id` に返品を残す）。受注生産で売った品も、戻すを選べばその色・サイズの在庫に足す。戻さない・お返し・届かないは動かさない。在庫から送る交換は台帳 `exchange` の −n で確保する |
+| 返金の選び方 | `now`（今返金。店長だけで、サポートは `RETURN_FORBIDDEN`）・`consult`（額を相談してから。返金待ちに残す）・`none`（返金の品が無い受け取り。返金の品を含むと `RETURN_ARGUMENT_INVALID`）。サポートの受け取りは相談かなしだけで、返金待ちが残る返品は「返金待ち」になる。この受け取りで返金する品が0点（覆われた品だけ・交換だけ・お返しだけ）なら、選び方が今返金・相談でも、受け取りの記録の `refund_choice` は `none` で残す（入力の指紋は入力のまま作るので、同じ入力の送り直しは前の結果を返す。監査の記録は入力の値を書く） |
+| 返金額 | 商品の額（E-2 の割り振り）− 手数料（最低0円）+ 送料の返金。店長は返せる額まで直せ、計算との差を `adjustment_amount` に残す（`RETURN_REFUND_AMOUNT_INVALID`）。0円になる時は返金の記録を作らず Stripe にも頼まず、`refund_waived` の受け取りの行で残す（答えは返金の番号なし・状態 `waived`）。お客様に返金のお知らせは出さず、受け取りのお知らせにその旨の一文を入れる。返金する数は数え方の本体で「この受け取りで返金待ちが増える数」として出し、0点の受け取りは、今返金でも返金の記録を作らず（返金の番号・額・状態は空。`waived` ではない）、受け取りだけを記録する。相談でも0点なら手数料の差し引き待ちを足さず、サポートでも店への知らせは予定しない。画面の見込みは覆いを見ないので、この場面では返金ありの見込みが出るが、記録は DB が正（受け入れた食い違い） |
+| 交換の品 | 受け取った交換の数だけ、値段0の交換の品の行を足す。在庫が足りない時は、理由の設定「在庫の無い交換」で、作って送る（自動）、店長の選択（`exchangeOverrides`。作って送る・返金に変える）、または `RETURN_EXCHANGE_OUT_OF_STOCK`。同時に別のお客様が最後の1点を買っても、鍵の順番（注文 → 返品 → 返金 → 在庫）で在庫は0より小さくならない。注文が `shipped` なら `paid` に戻る（[注文・決済の状態](../states/order-payment.md) の ST-ORDER-15） |
+| お返し | お客様へのメッセージ（必須。`RETURN_SENT_BACK_MESSAGE_REQUIRED`）・配送業者・伝票番号を受け取りの記録に残し、お知らせに必ず入れる。返金も交換もしない |
+| メール | 返金のお知らせが出る受け取り（今返金を Stripe が受け付けた）は、返金のお知らせ（返品の書き分け。受け取りとお返しの文もここに入る）が1通。出ない受け取り（相談・なし・交換・返金が0円）は、受け取りの記録と同じ取引で「返品をお受け取りしました」（`return_received`）を予定し、全部をお返しする時は「品物をお返しします」（`return_sent_back`）を予定する。今返金が Stripe に受け付けられずエラーか失敗になった受け取りも返金のお知らせが出ないので、その結果を書く取引（`mark_order_refund_error`・`record_order_refund_result`）で、DB が「返品をお受け取りしました」を予定する（相談の時の一文つき）。サポートの受け取りで返金待ちが残る時は、店への知らせ（`return_refund_pending_shop`）も1通予定する。どれも受け取りごとに1行（一意の索引）で、送り直しても2通にならない。「お客様に知らせる」を外すとお客様向けのメールは書かない（お返しを含む時は、メッセージを伝えるために外せない）。相談の一文は、受け取りの記録の選び方が相談の時だけ入り、返金する品が0点の受け取り（記録が `none`）には入らない |
+| 二重防止 | 同じ番号・同じ指紋は前の受け取りと返金の記録を返す（`replayed`）。違う中身は `RETURN_REQUEST_MISMATCH`。Stripe への重複防止キーは返金の記録の番号から作るので、通信が切れて押し直しても Stripe の返金は1件 |
+| Stripe が断った・答えが分からない | E-2 の返金と同じ（SQ-ADMIN-03）。422 は返金の記録を「エラー」にし、502 は返事待ちのまま画面が「もう一度確かめる」。受け取りは記録済みなので、本文に受け取りの番号も付く。エラーになった返金で引いた手数料は、返品に戻す。受け取りは取り消さない |
+| 保存（Stripe が受け付けた時） | SQ-ADMIN-03 と同じ。返品の返金は、結果を書く関数が返品の状態も確かめ直す。ふつうの返金（道が `return` 以外）の始め・結果・エラーの後も、その注文の受付中の返品の状態を確かめ直す（鍵の順は注文 → 返品 → 返金） |
+| 権限 | `admin.orders.return`（店長とサポート）。今返金・額の指定・送料・交換の選び直しは `admin.orders.refund` も（店長だけ） |
+| 監査 | 返品・受け取り・返金の番号・数・額・状態・実行した人だけ（`admin.orders.return.receive`）。宛先・氏名・住所・メッセージとメモの本文は入れない |
+
+根拠は [受け取り API](../../../src/app/api/admin/returns/%5BreturnId%5D/receive/route.ts)、[返品の流れ](../../../src/lib/orders/returns/return-service.ts)、[Stripe への頼み方](../../../src/lib/orders/refund/refund-stripe.ts)、[E-3 移行 C](../../../supabase/migrations/20261012100200_order_return_receipts.sql)。
+
+## SQ-ADMIN-11: 額を決めて返金する（相談の後・サポートの受け取りの後・返金が失敗した後）
+
+目的は、返金待ちの品（相談で受け取った品、サポートが受け取った品、返金が失敗した品）を、店長が額を決めて返すこと。事前条件は管理認可（`admin.orders.return` と `admin.orders.refund`）→ CSRF helper → 回数の制限（送信元ごと・管理者ごと、10分に30回）→ 返品の番号の検証 → 本文の検証を通ること。終了結果は、受け付けた200、返金しないで終えた200（`waived`）、DB の断りの400・404・409、Stripe の断りの422、答えが分からない502、思いがけない失敗の500。考え方は [グループ E-3 設計書](../../superpowers/specs/2026-10-12-returns-design.md) の 6-3。
+
+```mermaid
+sequenceDiagram
+    participant Admin as 店長
+    participant API as 返金API
+    participant DB as DB / RPC
+    participant Stripe as Stripe API
+    participant Mail as 注文のメールworker
+    Admin->>API: GET /api/admin/orders/[id]/returns
+    API->>DB: list_order_returns（service_role）
+    DB-->>API: 返金待ちの品・計算どおりの額・預かっている手数料
+    API-->>Admin: 200 返品の中身・返せる額と送料
+    Admin->>API: POST /api/admin/returns/[returnId]/refund（requestKey・額・送料・メモ・知らせるか）
+    API->>API: 管理認可（return と refund の両方）→ CSRF helper → 回数の制限 → 返品の番号 → 中身を検証
+    API->>DB: admin_refund_return（返金待ちの品に返金の記録を作る。計算どおりの額は DB が決める）
+    alt 決まった言葉の断り
+        DB-->>API: RETURN_NOTHING_TO_REFUND・RETURN_REFUND_AMOUNT_INVALID・E-2 の返金の断り など
+        API-->>Admin: 409 / 400 と画面に出す言葉
+    else 額が0円（返金しないで終える）
+        DB-->>API: 返金の記録なし・状態 waived（その数は受け取りの記録 waive_refund に残し、返品を完了する）
+        API-->>Admin: 200 返金しないで終えました
+    else 返事待ちの返金ができた（同じ requestKey で同じ中身の送り直しは前の記録、replayed = true）
+        DB-->>API: 返金の記録の番号・額
+        API->>Stripe: refunds.create（重複防止キー order-refund-記録の番号）
+        alt Stripe が受け付けた（保留か成功）
+            Stripe-->>API: 返金
+            API->>DB: record_order_refund_result（メールの予定・要対応・注文の額と状態・返品の状態を1回で。返品の返金は在庫を動かさない）
+            API-->>Admin: 200 返金の番号・状態・額
+            API-->>Mail: after() で worker を動かす
+        else Stripe が断った
+            Stripe-->>API: エラー
+            API->>DB: mark_order_refund_error（エラーにする。引いた手数料は返品に戻す）
+            API-->>Admin: 422 断りの理由
+        else 答えが分からない
+            API-->>Admin: 502 返金の記録の番号と「もう一度確かめる」
+        end
+    end
+```
+
+### 例外と永続化
+
+| 条件 | 結果・保存内容 |
+| --- | --- |
+| 額 | 「計算どおり」（額を送らない）は、返金待ちの品の商品の額（E-2 の割り振り）から、相談で預かっていた手数料（`fee_pending_deduction`）を引いた額（最低0円）+ 送料。店長は返せる額（受け取った額 − 返事待ち・保留・成功の返金の合計）まで直せる（`RETURN_REFUND_AMOUNT_INVALID`）。額0は返金しないで終える |
+| 返金待ちの品が無い | `RETURN_NOTHING_TO_REFUND`（画面を開き直す） |
+| 返金しないで終える | 返金の記録を作らず、Stripe にも頼まない。その数を受け取りの記録（`kind = 'waive_refund'`、行は `refund_waived`）に残し、返品を確かめ直して完了する。お客様にメールは送らない（額を相談した中でお店が伝える）。権限は今返金と同じ（店長） |
+| 失敗した後の返し直し | 新しい二重防止の番号で、新しい返金の記録を作り、新しい記録の番号の重複防止キーで頼む（断られた記録のキーは使い回さない）。道は `return` のまま。要対応の「返金の失敗」の「もう一度返金する」は、返品の返金の時は注文の返品の画面を開く（ふつうの返金の画面では返金待ちの品を選べないため） |
+| メール | Stripe が受け付けた時の1回だけ、返金のお知らせ（返品の書き分け。「ご返品いただいた商品のご返金です」の一文つき）を1通予定する。返金しないで終える時は出さない |
+| 返品の状態 | 返金の記録を作った時点で返金待ちが無くなれば、返品は完了する。返金が失敗しても完了は戻らず、覆いが外れて「返金待ち」に戻る |
+| 二重防止・Stripe が断った・答えが分からない | SQ-ADMIN-03・SQ-ADMIN-10 と同じ |
+| 権限・監査 | `admin.orders.return` と `admin.orders.refund`（店長だけ）。監査は `admin.orders.return.refund`（返金・返品の番号・額・数・状態・実行した人だけ） |
+
+根拠は [額を決めて返金する API](../../../src/app/api/admin/returns/%5BreturnId%5D/refund/route.ts)、[返品の流れ](../../../src/lib/orders/returns/return-service.ts)、[E-3 移行 C](../../../supabase/migrations/20261012100200_order_return_receipts.sql)。
+
 ## 通知・履歴・要確認の別軸
 
 | 項目 | 現行処理 |
 | --- | --- |
 | 取消・発送のメール | 取消・発送のメールは、状態を変える関数が同じ取引で送る予定の行を書き、worker が行の番号から作った重複防止キーで送る。失敗はやり直し、送れなければ店へ知らせる（FREQ-434・435）。発送のメールは発送ごとに1行で、取り消した発送のまだ送っていない行は取りやめになる（FREQ-442・443）。返金のお知らせは返金ごとに1行、支払い済みのキャンセルのお知らせ（種類 `canceled`・書き分け `paid`）も返金ごとに1行で、結果を書く関数が Stripe の受け付けた時（残高不足の保留は成功した時）に1回だけ書く（FREQ-455・456） |
+| 返品のメール | 返品のメールの予定の種類は4つ。受付のお知らせ（`return_accepted`。返品ごとに1行）、返品をお受け取りしました（`return_received`）・品物をお返しします（`return_sent_back`）・店への知らせ（`return_refund_pending_shop`。送り先は環境変数 `SHOP_ALERT_EMAIL`）は、受け取りごとに1行。ほかに、返金のお知らせの書き分け `return`（受け取りと一緒の返金・額を決めて返した返金）と、発送のお知らせの交換の一文がある。どれも状態を書く関数が同じ取引で行を書き、worker が送る。返品の4種類は履歴からの再送の対象にならない（`RESEND_NOT_ALLOWED`）（グループ E-3。FREQ-469） |
 | 発送の選択 | `notifyCustomer`（真偽、既定 true）が false なら、その発送のメールの行を書かない（FREQ-438。グループ E-1 から発送ごとに選ぶ） |
-| 履歴 | RPCがactor・理由を設定し、order_revisionsに変更前後・変更列等を記録する。返金ではrefund_update、状態変更ではstatus_update等として記録。状態が変わらない一部の発送・仕上がりとそれらの取消は、発送の表・仕上がりの表から読んで同じ履歴に並べる（グループ E-1）。返金は返金の記録（`order_refunds`）から読んで同じ履歴に並べ、失敗の確保し直しも1行にする（グループ E-2。FREQ-459） |
+| 履歴 | RPCがactor・理由を設定し、order_revisionsに変更前後・変更列等を記録する。返金ではrefund_update、状態変更ではstatus_update等として記録。状態が変わらない一部の発送・仕上がりとそれらの取消は、発送の表・仕上がりの表から読んで同じ履歴に並べる（グループ E-1）。返金は返金の記録（`order_refunds`）から読んで同じ履歴に並べ、失敗の確保し直しも1行にする（グループ E-2。FREQ-459）。返品は返品の記録・受け取りの記録・手数料の記録から読んで同じ履歴に並べる（返品を作った・返品の受け取り（細目つき）・「届かない」として終えた・検品を終えた・取り消した・開き直した・交換の品を足した・手数料の受け取りを記録した・いただかないことにした・支払いを待たずに送れるようにした・返金しないで終えた。返金の行の「どこから」は「返品（番号）」。グループ E-3。FREQ-474） |
 | 要確認 | [review API](../../../src/app/api/admin/orders/%5Bid%5D/review/route.ts)は管理認可・CSRF後にmark_order_reviewed。review_reasonあり・reviewed_atなしを条件にreviewed_at/byを保存し、reasonを消さない。要対応resolveとは別操作 |
-| 返金の失敗 | 返金が失敗になった時、結果を書く関数が要対応（理由 `refund_failed`）を作り、アプリが店へ1通メールする（今の要対応の知らせと同じ。送る前に送信権を押さえる）。キャンセルのお知らせを送っていた注文が支払い済みに戻った時は、その旨をメールに書く。お客様へは自動のメールを送らない。管理画面の要対応で「もう一度返金する」か、別の方法で返したら「解決済みにする」（FREQ-457） |
+| 返金の失敗 | 返金が失敗になった時、結果を書く関数が要対応（理由 `refund_failed`）を作り、アプリが店へ1通メールする（今の要対応の知らせと同じ。送る前に送信権を押さえる）。キャンセルのお知らせを送っていた注文が支払い済みに戻った時は、その旨をメールに書く。お客様へは自動のメールを送らない。管理画面の要対応で「もう一度返金する」か、別の方法で返したら「解決済みにする」（FREQ-457）。失敗した返金が返品の返金の時は、「もう一度返金する」が注文の返品の画面を開き、そこの「額を決めて返金する」で返し直す（グループ E-3。SQ-ADMIN-11） |
 | API応答と外部副作用 | 先行RPCやStripeの成功後に後続処理が失敗する場合がある。応答コードだけから取消・返金・メールの全結果を判断しない |
 
 根拠: [worker](../../../src/lib/orders/email/order-email-worker.ts)、[中身](../../../src/lib/orders/email/order-email-compose.ts)、[履歴トリガー](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql)、[状態の履歴](../../../supabase/migrations/20261009095633_order_email_outbox.sql#L606)、[要確認RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。
@@ -523,6 +708,7 @@ sequenceDiagram
 | 通常取消・競合 | [在庫解放RPC](../../../tests/integration/db/release_stock_by_order.integration.test.ts) |
 | 管理返金・確かめ直し・支払い済みのキャンセル | [refund API](../../../tests/unit/api/admin/order-refund-route.test.ts)、[返金を始めるDB](../../../tests/integration/db/order_refund_requests.integration.test.ts)、[E2E 返金の画面](../../../e2e/FR-ADMIN-074-refund-dialog.spec.ts)、[E2E 支払い済みのキャンセル](../../../e2e/FR-ADMIN-075-paid-order-cancel.spec.ts) |
 | 結果の書き方・外からの返金・取り込みと見回り・自動の返金 | [返金の結果のDB](../../../tests/integration/db/order_refund_results.integration.test.ts)、[返金の取り込み](../../../tests/unit/lib/stripe/order-refund-sync.test.ts)、[E2E Stripe の画面からの返金](../../../e2e/FR-ADMIN-080-stripe-dashboard-refund.spec.ts)、[E2E 自動の返金①](../../../e2e/FR-CHECKOUT-051-auto-refund-cancelled-order.spec.ts) |
+| 返品を作る・受け取る・額を決めて返金する | [返品の記録のDB](../../../tests/integration/db/order_return_records.integration.test.ts)、[返品の操作のDB](../../../tests/integration/db/order_return_actions.integration.test.ts)、[返品の受け取りのDB](../../../tests/integration/db/order_return_receipts.integration.test.ts)、[返品の窓口を通したDB](../../../tests/integration/db/return_postgrest.integration.test.ts)、[返品の流れ](../../../tests/unit/lib/orders/returns/return-service.test.ts)、[E2E 作る](../../../e2e/FR-ADMIN-084-return-create.spec.ts)、[E2E 受け取りと返金](../../../e2e/FR-ADMIN-085-return-receive-refund.spec.ts)、[E2E 相談と額を決めて返金](../../../e2e/FR-ADMIN-087-return-consult-refund.spec.ts)、[E2E 交換](../../../e2e/FR-ADMIN-088-return-exchange.spec.ts) |
 | 解決・取消前のStripe確認・要確認 | [要対応API](../../../tests/unit/api/admin/order-attention-route.test.ts)、[例外RPC](../../../tests/integration/db/payment_exceptions.integration.test.ts) |
 | 注文のメール | [中身](../../../tests/unit/lib/orders/email/order-email-compose.test.ts)、[worker](../../../tests/unit/lib/orders/email/order-email-worker.test.ts)、[送る予定の表](../../../tests/integration/db/order_email_outbox.integration.test.ts)、[行を書く関数](../../../tests/integration/db/order_email_enqueue.integration.test.ts)、[発送ごとのメール](../../../e2e/FR-ADMIN-071-fulfillment-shipping-email.spec.ts) |
 
@@ -530,6 +716,6 @@ sequenceDiagram
 
 ## 未確認事項
 
-本番のRPC・トリガー・権限適用、実際の管理者ACL、Stripeの入金・返金結果、外部確認とDB更新の競合、メール到達は未確認。[pendingの状態強制](../../../supabase/pending/harden_order_state_transitions.sql)は実適用を確認せずに有効と断定しない。SQLコメントの計画と現行APIの呼出し経路を区別する。グループ E-2 の毎時の見回り・毎晩の照合は、定期処理が本番に登録されるまで動かず、Stripe の本番の受け口に返金の4つの知らせを入れたかも未確認（どちらも開店前の設定）。
+本番のRPC・トリガー・権限適用、実際の管理者ACL、Stripeの入金・返金結果、外部確認とDB更新の競合、メール到達は未確認。[pendingの状態強制](../../../supabase/pending/harden_order_state_transitions.sql)は実適用を確認せずに有効と断定しない。SQLコメントの計画と現行APIの呼出し経路を区別する。グループ E-2 の毎時の見回り・毎晩の照合は、定期処理が本番に登録されるまで動かず、Stripe の本番の受け口に返金の4つの知らせを入れたかも未確認（どちらも開店前の設定）。グループ E-3 の返品の移行 A〜C（`20261012100000`〜`20261012100200`）の名前は手元の版で、本番の適用状況は未確認（本番へは push の後に当てる）。受け取りで今返金する道の Stripe のテストの場での実際の返金は、管理者の権限の行が手元の DB に無いため、窓口を差し替える E2E では行わず、Stripe を差し替えた単体の試験と DB 結合の試験で確かめている。
 
 最終照合のコード基準はmasterの`bbb18761`と、2026-10-04の作業ツリーにある決済・返金ライブラリの未コミット変更。取消・出荷のCSRF前段ガードと、返金同期の呼出し元・全額返金の扱いを静的に確認した。今回、コードの実行テストと本番反映は確認していない。
