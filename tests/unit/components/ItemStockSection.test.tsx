@@ -163,6 +163,36 @@ describe('ItemStockSection の返金で動いた履歴の行（グループ E-2�
   });
 });
 
+describe('ItemStockSection の返品で動いた履歴の行（グループ E-3）', () => {
+  const RETURN_ID = 'f1f1f1f1-1111-4222-8333-444455556666';
+  const RETURN_NUMBER = 'ORD-A1B2C3D4-R1';
+
+  beforeEach(() => {
+    mockedFetch.mockReset();
+  });
+
+  // 返品の受け取りで在庫に戻した行（+n）と、交換の品を在庫から確保した行（−n）は、注文の処理が書く理由で、返品の番号が付く。
+  // 言葉は理由で決め、注文の番号の欄には注文番号の代わりに返品の番号を出す（uuid は出さない）
+  it.each<[string, number, string]>([
+    ['return', 1, '返品の受け取り'],
+    ['exchange', -1, '交換の品の確保'],
+  ])('理由 %s の行（増減 %i）は「%s」と出し、注文の番号の欄には返品の番号を出す（uuid は出さない）', async (reason, delta, label) => {
+    await renderLoaded({ movements: [{ ...PURCHASE, reason, delta, returnId: RETURN_ID, returnNumber: RETURN_NUMBER }] });
+
+    const row = screen.getByTestId('stock-movement-row');
+    expect(within(row).getByTestId('stock-movement-reason').textContent).toBe(label);
+    expect(within(row).getByTestId('stock-movement-order').textContent).toBe(RETURN_NUMBER);
+    expect(row).not.toHaveTextContent(RETURN_ID);
+  });
+
+  it('返品に結び付かない行（返品の番号が null）は、これまでどおり注文番号を出す', async () => {
+    await renderLoaded({ movements: [{ ...PURCHASE, returnId: null, returnNumber: null }] });
+
+    const row = screen.getByTestId('stock-movement-row');
+    expect(within(row).getByTestId('stock-movement-order').textContent).toBe('ORD-A1B2C3D4');
+  });
+});
+
 describe('ItemStockSection の読み込みの失敗（店主は英語が読めない）', () => {
   const LOAD_ERROR = /^在庫の取得に失敗しました。$/;
   let consoleError: jest.SpyInstance;

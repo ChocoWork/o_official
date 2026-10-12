@@ -8,7 +8,12 @@ import { toOrderNumber } from '@/lib/orders/order-number';
 import type { OrderStatus as DbOrderStatus } from '@/lib/orders/order-payment-types';
 import { PARTIALLY_SHIPPED_LABEL, type OrderProgressKey } from '@/lib/orders/order-progress';
 import { PAYMENT_STATUS_LABELS, REFUND_FAILED_BADGE, REFUND_PENDING_BADGE, type PaymentStatusKey } from '@/lib/orders/payment-status';
+import { RETURN_DISPLAY_STATUS_LABELS, RETURN_MARK_LABELS } from '@/lib/orders/returns/return-messages';
+import type { OrderReturnSummary, ReturnDisplayStatus, ReturnNextAction } from '@/lib/orders/returns/return-types';
 import { cn } from '@/lib/utils';
+
+/** 返品の交換で足された品の行の印（購入商品の欄に付ける。C-5） */
+const EXCHANGE_ITEM_LABEL = '交換の品';
 
 export type OrderStatus =
 	| '支払い手続き中'
@@ -36,6 +41,8 @@ export type OrderLineItem = {
 	inProduction: number;
 	/** 発送準備中の数（仕上がっていて、まだ送っていない数） */
 	readyUnshipped: number;
+	/** 返品の交換で足された行は exchange。購入商品の欄に「（交換の品）」を付ける。窓口が付けない昔の形は order と同じに扱う */
+	lineKind?: 'order' | 'exchange';
 };
 
 export type OrderItem = {
@@ -76,6 +83,8 @@ export type OrderItem = {
 	refundedAmountLabel?: string;
 	/** キャンセルの種類。unpaid は未入金の取消（取消の画面）、paid は支払い済みのキャンセル（返金を伴う画面）。出さない注文は null */
 	cancelKind?: 'unpaid' | 'paid' | null;
+	/** 返品の要約（返品の列・小さな印・「返品」のボタンの名前）。窓口が返品の無い注文にも付ける。無い昔の形は返品の無い注文と同じに扱う */
+	returnSummary?: OrderReturnSummary;
 };
 
 interface OrderSectionProps {
@@ -90,6 +99,10 @@ interface OrderSectionProps {
 	onRecordCompletion?: (id: string) => void;
 	/** 注文の履歴（状態の変化とメール）を開く */
 	onShowHistory?: (id: string) => void;
+	/** 返品の画面（返品の一覧・受け取り・返金・作る）を開く */
+	onShowReturns?: (id: string) => void;
+	/** 「額を決めて返金する」を押せる人（店長）か。サポートの人には、その名前を出さず、受け取る品が残っていれば「受け取る」、無ければ「返品」にする */
+	canRefundReturn?: boolean;
 	processingOrderIds?: string[];
 }
 
@@ -139,6 +152,49 @@ const PAYMENT_CLASSES: Record<PaymentStatusKey, string> = {
 	refunded: 'bg-gray-100 text-[#474747]',
 };
 
+// 「返品」の列の言葉の色。申し込みと返金待ちは店が動く番なので目立たせ（赤・黄）、返品中は作業中（青。受注生産中と同じ）、済んだ物は灰
+const RETURN_STATUS_TONES: Record<ReturnDisplayStatus, StatusBadgeTone> = {
+	requested: 'warning',
+	in_progress: 'neutral',
+	refund_waiting: 'warning',
+	returned: 'neutral',
+};
+
+const RETURN_STATUS_CLASSES: Record<ReturnDisplayStatus, string> = {
+	requested: 'bg-red-100 text-red-800',
+	in_progress: 'bg-blue-100 text-blue-800',
+	refund_waiting: 'bg-yellow-100 text-yellow-800',
+	returned: 'bg-gray-100 text-[#474747]',
+};
+
+// 「返品」のボタンの名前（C-5）。次にすることがある時は、その名前に変わる
+const RETURN_BUTTON_LABELS: Record<ReturnNextAction, string> = {
+	review_request: '申し込みを確かめる',
+	refund: '額を決めて返金する',
+	receive: '受け取る',
+	none: '返品',
+};
+
+/**
+ * 「返品」のボタンの名前。額を決めて返金するのは店長だけなので、サポートの人には出さず、設計書 8-1 の順の次にする:
+ * 受付中の返品にまだ受け取っていない品があれば「受け取る」、無ければ「返品」。窓口の次にすることは役割を知らずに決まるので、
+ * 受け取る品があるかは要約の印で見る（受け取り待ち・一部受け取りは、受付中の返品に未処理の品がある時だけ付く）
+ */
+function returnButtonLabel(summary: OrderReturnSummary, canRefundReturn: boolean): string {
+	if (summary.nextAction !== 'refund' || canRefundReturn) {
+		return RETURN_BUTTON_LABELS[summary.nextAction];
+	}
+	const hasItemsToReceive =
+		summary.displayStatus === 'in_progress' &&
+		summary.marks.some((mark) => mark === 'awaiting_items' || mark === 'partially_received');
+	return hasItemsToReceive ? RETURN_BUTTON_LABELS.receive : RETURN_BUTTON_LABELS.none;
+}
+
+/** 返品がある注文か、返品できる品がある注文だけに「返品」のボタンを出す（どちらも無ければ、開く物が無い） */
+function hasReturnsToShow(summary: OrderReturnSummary): boolean {
+	return Boolean(summary.displayStatus) || summary.hasReturnable;
+}
+
 function formatDeadline(value: string): string {
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) {
@@ -147,7 +203,10 @@ function formatDeadline(value: string): string {
 	return new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
-/** 「ブラウス（白 / M）×2（受注生産中 1・発送済み 1）」。括弧の中は0でない数だけ */
+/**
+ * 「ブラウス（白 / M）×2（受注生産中 1・発送済み 1）」。括弧の中は0でない数だけ。
+ * 交換の品の行は C-5 のとおり「ブラウス（白 / M） × 1（交換の品）」。数の言葉が続く時は「（交換の品・発送準備中 1）」と、同じ括弧の中に「・」でつなぐ
+ */
 function formatOrderLineItem(item: OrderLineItem): string {
 	const variant = [item.color, item.size].filter((part): part is string => Boolean(part)).join(' / ');
 	const counts = [
@@ -156,6 +215,9 @@ function formatOrderLineItem(item: OrderLineItem): string {
 		item.shipped > 0 ? `発送済み ${item.shipped}` : null,
 	].filter((part): part is string => part !== null);
 	const name = variant ? `${item.name}（${variant}）` : item.name;
+	if (item.lineKind === 'exchange') {
+		return `${name} × ${item.quantity}（${[EXCHANGE_ITEM_LABEL, ...counts].join('・')}）`;
+	}
 	return counts.length > 0 ? `${name}×${item.quantity}（${counts.join('・')}）` : `${name}×${item.quantity}`;
 }
 
@@ -174,6 +236,8 @@ export default function OrderSection({
 	onShipOrder,
 	onRecordCompletion,
 	onShowHistory,
+	onShowReturns,
+	canRefundReturn = false,
 	processingOrderIds = [],
 }: OrderSectionProps) {
 
@@ -278,6 +342,30 @@ export default function OrderSection({
 						),
 					},
 					{
+						key: 'return',
+						header: '返品',
+						render: (order) => {
+							const summary = order.returnSummary;
+							if (!summary?.displayStatus) {
+								return <p className="font-acumin text-[#474747]">—</p>;
+							}
+							return (
+								<div className="flex flex-wrap items-center gap-1">
+									<StatusBadge
+										tone={RETURN_STATUS_TONES[summary.displayStatus]}
+										className={cn(RETURN_STATUS_CLASSES[summary.displayStatus], 'whitespace-nowrap')}
+										size="md"
+									>
+										{RETURN_DISPLAY_STATUS_LABELS[summary.displayStatus]}
+									</StatusBadge>
+									{summary.marks.map((mark) => (
+										<TagLabel key={mark} variant="outline" size="2xs">{RETURN_MARK_LABELS[mark]}</TagLabel>
+									))}
+								</div>
+							);
+						},
+					},
+					{
 						key: 'action',
 						header: '操作',
 						// 右に貼り付け、表が横に動いても操作のボタンを画面の中に置く（下の字や色が透けないよう、見出しと中にそれぞれ背景色を付ける）。
@@ -313,6 +401,17 @@ export default function OrderSection({
 										disabled={isProcessing}
 									>
 										{isProcessing ? '処理中...' : '返金'}
+									</Button>
+								) : null}
+								{order.returnSummary && onShowReturns && hasReturnsToShow(order.returnSummary) ? (
+									<Button
+										variant="secondary"
+										size="sm"
+										className="font-acumin"
+										onClick={() => onShowReturns(order.id)}
+										disabled={isProcessing}
+									>
+										{isProcessing ? '処理中...' : returnButtonLabel(order.returnSummary, canRefundReturn)}
 									</Button>
 								) : null}
 								{awaitingShipment && order.shipBlockedReason ? (

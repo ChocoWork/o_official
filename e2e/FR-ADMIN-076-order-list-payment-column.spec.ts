@@ -114,7 +114,7 @@ for (const viewport of viewports) {
       await openList(page);
 
       expect(await page.getByRole('columnheader').allTextContents()).toEqual([
-        '注文ID', '顧客名', '注文日', '購入商品', '商品数', '合計金額', '支払い', '進み具合', '操作',
+        '注文ID', '顧客名', '注文日', '購入商品', '商品数', '合計金額', '支払い', '進み具合', '返品', '操作',
       ]);
       await expect(page.getByRole('columnheader', { name: '決済状況' })).toHaveCount(0);
     });
@@ -217,7 +217,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('dialog', { name: '注文を取り消す', exact: true })).toBeVisible();
     });
 
-    test('CSV の見出しは10列で、発送待ちの注文の行に、進み具合・支払い・返金額を書く', async ({ page }) => {
+    test('CSV の見出しは11列で、発送待ちの注文の行に、進み具合・支払い・返金額を書く（返品の無い行の返品は空）', async ({ page }) => {
       // FREQ-458-AC-05
       await openList(page);
 
@@ -229,13 +229,14 @@ for (const viewport of viewports) {
       for await (const chunk of stream) chunks.push(Buffer.from(chunk));
       const lines = Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '').split('\n');
 
-      expect(lines[0]).toBe('注文ID,顧客名,顧客メール,注文日,購入商品,商品数,合計金額,進み具合,支払い,返金額');
-      // 書き出すのは DB の状態が決済完了（paid）の注文だけ。進み具合・支払い・返金額は、一覧に出ている言葉と文字のまま
-      expect(lines.slice(1).map((line) => parseCsvLine(line)).map((values) => [values[0], values[7], values[8], values[9]])).toEqual([
-        ['order-paid', '発送準備中', '支払い済み', '-'],
-        ['order-partial', '発送準備中', '一部返金', formatYen(5_000)],
-        ['order-cancel-pending', 'キャンセルの手続き中', '支払い済み', '-'],
-        ['order-refund-failed', '発送準備中', '支払い済み', '-'],
+      expect(lines[0]).toBe('注文ID,顧客名,顧客メール,注文日,購入商品,商品数,合計金額,進み具合,支払い,返金額,返品');
+      // 書き出すのは DB の状態が決済完了（paid）の注文だけ。進み具合・支払い・返金額は、一覧に出ている言葉と文字のまま。
+      // この試験の行には返品の要約が無い（窓口を差し替えている）ので、返品の値は空
+      expect(lines.slice(1).map((line) => parseCsvLine(line)).map((values) => [values[0], values[7], values[8], values[9], values[10]])).toEqual([
+        ['order-paid', '発送準備中', '支払い済み', '-', ''],
+        ['order-partial', '発送準備中', '一部返金', formatYen(5_000), ''],
+        ['order-cancel-pending', 'キャンセルの手続き中', '支払い済み', '-', ''],
+        ['order-refund-failed', '発送準備中', '支払い済み', '-', ''],
       ]);
     });
 

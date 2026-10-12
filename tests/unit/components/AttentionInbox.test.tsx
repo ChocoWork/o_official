@@ -98,8 +98,40 @@ const REFUND_FAILED_ATTENTION: OrderAttention = {
   counts: { exceptions: 2, reviews: 0 },
 };
 
+/** 返品の返金の失敗の要対応（失敗した返金が返品の返金。P21）。返せる額が残っている（もう一度返金できる） */
+const RETURN_REFUND_FAILED_ATTENTION: OrderAttention = {
+  exceptions: [
+    {
+      id: 'exception-return-refund',
+      reason: 'refund_failed',
+      reasonLabel: '返金の失敗',
+      detail: 'expired_or_canceled_card',
+      orderId: 'c1c2c3d4-1111-2222-8333-444455556666',
+      orderNumber: 'ORD-C1C2C3D4',
+      orderStatus: 'paid',
+      paymentRef: 're_test_3',
+      firstDetectedAt: '2026-10-12T04:00:00.000Z',
+      lastDetectedAt: '2026-10-12T04:00:00.000Z',
+      detectionCount: 1,
+      canCancelOrder: false,
+      canRetryRefund: true,
+      refundFailure: {
+        amount: 8800,
+        failureReasonLabel: 'カードが使えません',
+        shortages: [],
+        returnId: 'f1f1f1f1-1111-2222-8333-444455556666',
+      },
+    },
+  ],
+  reviews: [],
+  counts: { exceptions: 1, reviews: 0 },
+};
+
 function renderInbox(attention: OrderAttention | null = ATTENTION) {
-  const handlers = { onReview: jest.fn(), onResolve: jest.fn(), onCancelAndResolve: jest.fn(), onRetryRefund: jest.fn() };
+  const handlers = {
+    onReview: jest.fn(), onResolve: jest.fn(), onCancelAndResolve: jest.fn(),
+    onRetryRefund: jest.fn(), onRetryReturnRefund: jest.fn(),
+  };
   render(<AttentionInbox attention={attention} processingIds={[]} {...handlers} />);
   return handlers;
 }
@@ -268,5 +300,62 @@ describe('AttentionInbox', () => {
     expect(row).not.toHaveTextContent('返金 ￥');
     expect(row).not.toHaveTextContent('失敗の理由');
     expect(row).not.toHaveTextContent('確保し直せなかった商品');
+  });
+});
+
+describe('AttentionInbox の返品の返金の失敗（グループ E-3 の P21）', () => {
+  it('失敗した返金が返品の返金（refundFailure.returnId あり）の「もう一度返金する」は、返品の画面を開く処理に注文の番号を渡し、ふつうの返金の画面を開く処理は呼ばない', () => {
+    const { onRetryRefund, onRetryReturnRefund } = renderInbox(RETURN_REFUND_FAILED_ATTENTION);
+
+    fireEvent.click(screen.getByRole('button', { name: 'もう一度返金する' }));
+
+    expect(onRetryReturnRefund).toHaveBeenCalledTimes(1);
+    expect(onRetryReturnRefund).toHaveBeenCalledWith('c1c2c3d4-1111-2222-8333-444455556666');
+    expect(onRetryRefund).not.toHaveBeenCalled();
+  });
+
+  it('ふつうの返金の失敗（returnId が無い・null）は、今のとおりふつうの返金の画面を開く処理を呼び、返品の画面を開く処理は呼ばない', () => {
+    const { onRetryRefund, onRetryReturnRefund } = renderInbox(REFUND_FAILED_ATTENTION);
+
+    fireEvent.click(screen.getByRole('button', { name: 'もう一度返金する' }));
+
+    expect(onRetryRefund).toHaveBeenCalledWith('c1c2c3d4-1111-2222-8333-444455556666');
+    expect(onRetryReturnRefund).not.toHaveBeenCalled();
+  });
+
+  it('返品の画面を開く処理を渡されていない時は、返品の返金の失敗に「もう一度返金する」を出さない（ふつうの返金の画面を開く処理があっても、返品の返金は開かない）', () => {
+    const props = {
+      attention: RETURN_REFUND_FAILED_ATTENTION,
+      processingIds: [],
+      onReview: jest.fn(),
+      onResolve: jest.fn(),
+      onCancelAndResolve: jest.fn(),
+    };
+    const { rerender } = render(<AttentionInbox {...props} onRetryRefund={jest.fn()} onRetryReturnRefund={jest.fn()} />);
+    expect(screen.getAllByRole('button', { name: 'もう一度返金する' })).toHaveLength(1);
+
+    rerender(<AttentionInbox {...props} onRetryRefund={jest.fn()} />);
+
+    expect(screen.queryByRole('button', { name: 'もう一度返金する' })).not.toBeInTheDocument();
+  });
+
+  it('操作中の返品の返金の失敗では「もう一度返金する」を押せない', () => {
+    const onRetryReturnRefund = jest.fn();
+    render(
+      <AttentionInbox
+        attention={RETURN_REFUND_FAILED_ATTENTION}
+        processingIds={['exception-return-refund']}
+        onReview={jest.fn()}
+        onResolve={jest.fn()}
+        onCancelAndResolve={jest.fn()}
+        onRetryRefund={jest.fn()}
+        onRetryReturnRefund={onRetryReturnRefund}
+      />,
+    );
+
+    const button = screen.getByRole('button', { name: 'もう一度返金する' });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onRetryReturnRefund).not.toHaveBeenCalled();
   });
 });

@@ -792,7 +792,7 @@ describe('管理画面の絞り込み・件数・CSV', () => {
       expect(csv).toContain('"受注生産中"');
     });
 
-    it('見出しは決まった10列で、行には進み具合・支払い・返金額の値を書く。支払いの言葉が無い行は、その2つを空にする', async () => {
+    it('見出しは決まった11列で、行には進み具合・支払い・返金額・返品の値を書く。支払いの言葉が無い行は、その2つを空にし、返品の無い行は返品を空にする', async () => {
       // 金額の言葉は、窓口が作った文字をそのまま書く（窓口の返金額は全角の ￥ の言葉。合計金額の見本は今のまま）
       orderRows = [
         orderRow({ id: 'order-part-refunded', paymentStatusKey: 'partially_refunded', refundedAmountLabel: '￥5,000' }),
@@ -820,10 +820,43 @@ describe('管理画面の絞り込み・件数・CSV', () => {
       const text = await readBlob(createObjectURL.mock.calls[0][0]);
       const lines = (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text).split('\n');
       expect(lines).toEqual([
-        '注文ID,顧客名,顧客メール,注文日,購入商品,商品数,合計金額,進み具合,支払い,返金額',
-        '"order-part-refunded","山田 花子","hanako@example.com","2026-10-09","シルクブラウス x1","1点","¥28,800","発送準備中","一部返金","￥5,000"',
-        '"order-cancelling","山田 花子","hanako@example.com","2026-10-09","","1点","¥28,800","キャンセルの手続き中","支払い済み","-"',
-        '"order-without-payment","山田 花子","hanako@example.com","2026-10-09","シルクブラウス x1","1点","¥28,800","発送準備中","",""',
+        '注文ID,顧客名,顧客メール,注文日,購入商品,商品数,合計金額,進み具合,支払い,返金額,返品',
+        '"order-part-refunded","山田 花子","hanako@example.com","2026-10-09","シルクブラウス x1","1点","¥28,800","発送準備中","一部返金","￥5,000",""',
+        '"order-cancelling","山田 花子","hanako@example.com","2026-10-09","","1点","¥28,800","キャンセルの手続き中","支払い済み","-",""',
+        '"order-without-payment","山田 花子","hanako@example.com","2026-10-09","シルクブラウス x1","1点","¥28,800","発送準備中","","",""',
+      ]);
+    });
+
+    it('「返品」の列に返品の状態の言葉を書き（返品の無い注文は空）、交換の品の行には「（交換の品）」を付ける。商品数は窓口が数えた値のまま書く', async () => {
+      orderRows = [
+        orderRow({
+          id: 'order-returning',
+          itemCount: '1点',
+          items: [
+            { ...BLOUSE, shipped: 1, readyUnshipped: 0 },
+            { ...BLOUSE, id: 'item-exchange', color: '黒', size: 'L', shipped: 0, readyUnshipped: 1, lineKind: 'exchange' },
+          ],
+          returnSummary: {
+            orderId: 'order-returning', displayStatus: 'in_progress', marks: ['awaiting_items'], nextAction: 'receive',
+            hasReturnable: true, refundWaitingReturns: 0, requestedReturns: 0,
+          },
+        }),
+        orderRow({ id: 'order-no-return' }),
+      ];
+      const createObjectURL = jest.fn<string, [Blob]>(() => 'blob:orders');
+      window.URL.createObjectURL = createObjectURL;
+      window.URL.revokeObjectURL = jest.fn();
+      jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+      render(<AdminPage />);
+      await screen.findByText('order-returning');
+      fireEvent.click(screen.getByRole('button', { name: '表示中の注文をCSV出力' }));
+
+      const text = await readBlob(createObjectURL.mock.calls[0][0]);
+      const lines = (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text).split('\n');
+      // 返品の状態の言葉だけを書く（小さな印は書かない）。商品数の「1点」は窓口の値のまま（交換の品の行を数えない）
+      expect(lines.slice(1)).toEqual([
+        '"order-returning","山田 花子","hanako@example.com","2026-10-09","シルクブラウス x1（交換の品）","1点","¥28,800","発送準備中","","","返品中"',
+        '"order-no-return","山田 花子","hanako@example.com","2026-10-09","シルクブラウス x1","1点","¥28,800","発送準備中","","",""',
       ]);
     });
   });

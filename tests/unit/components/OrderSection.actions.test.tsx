@@ -2,6 +2,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import OrderSection, { type OrderItem, type OrderLineItem, type OrderStatus } from '@/components/OrderSection';
 import { ORDER_PROGRESS_LABELS, PARTIALLY_SHIPPED_LABEL } from '@/lib/orders/order-progress';
 import { PAYMENT_STATUS_LABELS, REFUND_FAILED_BADGE, REFUND_PENDING_BADGE, type PaymentStatusKey } from '@/lib/orders/payment-status';
+import { RETURN_DISPLAY_STATUS_LABELS, RETURN_MARK_LABELS } from '@/lib/orders/returns/return-messages';
+import type { OrderReturnSummary, ReturnDisplayStatus, ReturnMark, ReturnNextAction } from '@/lib/orders/returns/return-types';
 
 function line(overrides: Partial<OrderLineItem> = {}): OrderLineItem {
   return {
@@ -370,11 +372,11 @@ function orderRowOf(id: string): HTMLElement {
 }
 
 describe('OrderSection の列の見出し', () => {
-  it('「支払い」「進み具合」の順に並び、「決済状況」は無い', () => {
+  it('「支払い」「進み具合」「返品」の順に並び、「決済状況」は無い', () => {
     render(<OrderSection orders={[paidOrder]} />);
 
     expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
-      '注文ID', '顧客名', '注文日', '購入商品', '商品数', '合計金額', '支払い', '進み具合', '操作',
+      '注文ID', '顧客名', '注文日', '購入商品', '商品数', '合計金額', '支払い', '進み具合', '返品', '操作',
     ]);
     expect(screen.queryByRole('columnheader', { name: '決済状況' })).not.toBeInTheDocument();
   });
@@ -456,5 +458,228 @@ describe('OrderSection の支払いの列と返金の印', () => {
     fireEvent.click(buttons[1]);
     expect(onRefundOrder).toHaveBeenCalledWith('refundable-while-pending');
     expect(within(orderRowOf('nothing-left')).queryByRole('button', { name: '返金' })).not.toBeInTheDocument();
+  });
+});
+
+/** 返品の要約の見本。既定は、返品が無く、返品できる品も無い注文 */
+function returnSummary(overrides: Partial<OrderReturnSummary> = {}): OrderReturnSummary {
+  return {
+    orderId: 'paid-order', displayStatus: null, marks: [], nextAction: 'none',
+    hasReturnable: false, refundWaitingReturns: 0, requestedReturns: 0,
+    ...overrides,
+  };
+}
+
+describe('OrderSection の返品の列（グループ E-3）', () => {
+  it('返品の無い注文（要約が無い・状態が null）は「—」を出し、返品の状態の言葉も小さな印も出さない', () => {
+    render(
+      <OrderSection
+        orders={[
+          { ...paidOrder, id: 'no-summary' },
+          { ...paidOrder, id: 'no-return', returnSummary: returnSummary() },
+        ]}
+      />,
+    );
+
+    expect(within(orderRowOf('no-summary')).getByText('—')).toBeInTheDocument();
+    expect(within(orderRowOf('no-return')).getByText('—')).toBeInTheDocument();
+    for (const word of [...Object.values(RETURN_DISPLAY_STATUS_LABELS), ...Object.values(RETURN_MARK_LABELS)]) {
+      expect(screen.queryByText(word)).not.toBeInTheDocument();
+    }
+  });
+
+  it.each<[ReturnDisplayStatus, string, string, string]>([
+    ['requested', '返品の申し込み', 'bg-red-100 text-red-800', 'warning'],
+    ['in_progress', '返品中', 'bg-blue-100 text-blue-800', 'neutral'],
+    ['refund_waiting', '返金待ち', 'bg-yellow-100 text-yellow-800', 'warning'],
+    ['returned', '返品済み', 'bg-gray-100 text-[#474747]', 'neutral'],
+  ])('返品の状態 %s は「%s」と出し、印は %s の色で、tone は %s', (displayStatus, word, classes, tone) => {
+    render(<OrderSection orders={[{ ...paidOrder, returnSummary: returnSummary({ displayStatus }) }]} />);
+
+    const badge = screen.getByText(word, { selector: 'span' });
+    expect(badge).toHaveClass(...classes.split(' '));
+    expect(badge).toHaveAttribute('data-ui-badge-tone', tone);
+    expect(screen.queryByText('—')).not.toBeInTheDocument();
+  });
+
+  it.each<[ReturnMark, string]>([
+    ['awaiting_items', '受け取り待ち'],
+    ['partially_received', '一部受け取り'],
+    ['pending_inspection', '検品待ち'],
+    ['awaiting_fee', 'お支払い待ち'],
+  ])('返品中の小さな印 %s は「%s」と出し、印の無い返品中の注文には出さない', (mark, word) => {
+    render(
+      <OrderSection
+        orders={[
+          { ...paidOrder, id: 'return-marked', returnSummary: returnSummary({ displayStatus: 'in_progress', marks: [mark] }) },
+          { ...paidOrder, id: 'return-plain', returnSummary: returnSummary({ displayStatus: 'in_progress' }) },
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByText(word)).toHaveLength(1);
+    expect(within(orderRowOf('return-marked')).getByText(word)).toBeInTheDocument();
+    expect(within(orderRowOf('return-plain')).queryByText(word)).not.toBeInTheDocument();
+  });
+
+  it('小さな印は何個でも状態の言葉の隣に並ぶ', () => {
+    render(
+      <OrderSection
+        orders={[{ ...paidOrder, returnSummary: returnSummary({ displayStatus: 'in_progress', marks: ['partially_received', 'awaiting_fee'] }) }]}
+      />,
+    );
+
+    const row = orderRowOf('paid-order');
+    expect(within(row).getByText('返品中')).toBeInTheDocument();
+    expect(within(row).getByText('一部受け取り')).toBeInTheDocument();
+    expect(within(row).getByText('お支払い待ち')).toBeInTheDocument();
+    expect(within(row).queryByText('受け取り待ち')).not.toBeInTheDocument();
+    expect(within(row).queryByText('検品待ち')).not.toBeInTheDocument();
+  });
+
+  it('購入商品の交換の品の行は「品名（色 / サイズ） × 数（交換の品）」と出す。数の言葉が続く時は括弧の中に「・」でつなぎ、ふつうの行は今のまま', () => {
+    render(
+      <OrderSection
+        orders={[
+          {
+            ...paidOrder,
+            items: [
+              line({ id: 'line-order', quantity: 2, readyUnshipped: 2 }),
+              line({ id: 'line-exchange', color: '黒', size: 'L', quantity: 1, readyUnshipped: 0, lineKind: 'exchange' }),
+              line({ id: 'line-exchange-ready', color: '赤', size: 'S', quantity: 1, readyUnshipped: 1, lineKind: 'exchange' }),
+              line({ id: 'line-order-kind', name: 'ストール', color: null, size: null, quantity: 1, readyUnshipped: 1, lineKind: 'order' }),
+            ],
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('シルクブラウス（白 / M）×2（発送準備中 2）')).toBeInTheDocument();
+    expect(screen.getByText('シルクブラウス（黒 / L） × 1（交換の品）')).toBeInTheDocument();
+    expect(screen.getByText('シルクブラウス（赤 / S） × 1（交換の品・発送準備中 1）')).toBeInTheDocument();
+    expect(screen.getByText('ストール×1（発送準備中 1）')).toBeInTheDocument();
+  });
+});
+
+describe('OrderSection の「返品」のボタン（グループ E-3）', () => {
+  // 要約に小さな印が無い表。サポートの人の refund は、受け取る品が残っていないので「返品」になる（残っている時は、この表の次の試験）
+  it.each<[ReturnNextAction, boolean, string]>([
+    ['none', true, '返品'],
+    ['review_request', true, '申し込みを確かめる'],
+    ['refund', true, '額を決めて返金する'],
+    ['receive', true, '受け取る'],
+    ['none', false, '返品'],
+    ['review_request', false, '申し込みを確かめる'],
+    ['refund', false, '返品'],
+    ['receive', false, '受け取る'],
+  ])('次にすること %s・額を決めて返金できる人 %s → ボタンの名前は「%s」で、押すと注文の番号を渡す', (nextAction, canRefundReturn, label) => {
+    const onShowReturns = jest.fn();
+    render(
+      <OrderSection
+        orders={[{ ...paidOrder, returnSummary: returnSummary({ displayStatus: 'in_progress', nextAction, hasReturnable: true }) }]}
+        onShowReturns={onShowReturns}
+        canRefundReturn={canRefundReturn}
+      />,
+    );
+
+    // 出ているボタンはこの1つだけ（ほかの操作の処理は渡していない）
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    expect(onShowReturns).toHaveBeenCalledWith('paid-order');
+  });
+
+  it('サポートの人（額を決めて返金できない人）は、返金待ちの品とまだ受け取っていない品の両方がある時、「受け取る」を出す（設計書 8-1 の順。額を決めて返金するは店長だけ）', () => {
+    render(
+      <OrderSection
+        orders={[
+          {
+            ...paidOrder,
+            id: 'partly-received',
+            returnSummary: returnSummary({ displayStatus: 'in_progress', marks: ['partially_received'], nextAction: 'refund', hasReturnable: true }),
+          },
+          // 別の返品の返金が失敗して返金待ちが残り、受付中の返品は何も届いていない（P21）
+          { ...paidOrder, id: 'nothing-received', returnSummary: returnSummary({ displayStatus: 'in_progress', marks: ['awaiting_items'], nextAction: 'refund' }) },
+          // 受け取る品が残っていない（受付中の返品に未処理の品が無い）ので、名前は「返品」のまま
+          { ...paidOrder, id: 'all-received', returnSummary: returnSummary({ displayStatus: 'refund_waiting', nextAction: 'refund' }) },
+        ]}
+        onShowReturns={jest.fn()}
+        canRefundReturn={false}
+      />,
+    );
+
+    expect(within(orderRowOf('partly-received')).getByRole('button', { name: '受け取る' })).toBeInTheDocument();
+    expect(within(orderRowOf('nothing-received')).getByRole('button', { name: '受け取る' })).toBeInTheDocument();
+    expect(within(orderRowOf('all-received')).getByRole('button', { name: '返品' })).toBeInTheDocument();
+  });
+
+  it('「返品」は、返品がある注文か、返品できる品がある注文にだけ出す。どちらも無い注文と、要約が無い注文には出さない', () => {
+    const onShowReturns = jest.fn();
+    render(
+      <OrderSection
+        orders={[
+          { ...paidOrder, id: 'returnable-only', returnSummary: returnSummary({ hasReturnable: true }) },
+          { ...paidOrder, id: 'has-return-only', returnSummary: returnSummary({ displayStatus: 'returned' }) },
+          { ...paidOrder, id: 'nothing', returnSummary: returnSummary() },
+          { ...paidOrder, id: 'no-summary' },
+        ]}
+        onShowReturns={onShowReturns}
+      />,
+    );
+
+    expect(within(orderRowOf('returnable-only')).getByRole('button', { name: '返品' })).toBeInTheDocument();
+    expect(within(orderRowOf('has-return-only')).getByRole('button', { name: '返品' })).toBeInTheDocument();
+    expect(within(orderRowOf('nothing')).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(orderRowOf('no-summary')).queryByRole('button')).not.toBeInTheDocument();
+    fireEvent.click(within(orderRowOf('has-return-only')).getByRole('button', { name: '返品' }));
+    expect(onShowReturns).toHaveBeenCalledWith('has-return-only');
+  });
+
+  it('押した時の処理（onShowReturns）が渡されていない一覧には、返品があっても「返品」を出さない', () => {
+    render(<OrderSection orders={[{ ...paidOrder, returnSummary: returnSummary({ displayStatus: 'in_progress', hasReturnable: true }) }]} />);
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('処理中の注文の「返品」は押せず「処理中...」と出す', () => {
+    const onShowReturns = jest.fn();
+    render(
+      <OrderSection
+        orders={[{ ...paidOrder, returnSummary: returnSummary({ hasReturnable: true }) }]}
+        onShowReturns={onShowReturns}
+        processingOrderIds={['paid-order']}
+      />,
+    );
+
+    const button = screen.getByRole('button', { name: '処理中...' });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onShowReturns).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrderSection の返品の言葉の重なり（グループ E-3）', () => {
+  it('返品の言葉は、進み具合・支払いの言葉・行の小さな印・操作のボタンの字と1つも同じにならない（行の中の言葉を exact で探す E2E が、返品の列を足しても1つに決まるように）', () => {
+    const returnWords: string[] = [...Object.values(RETURN_DISPLAY_STATUS_LABELS), ...Object.values(RETURN_MARK_LABELS)];
+    const otherWords: string[] = [
+      ...Object.values(ORDER_PROGRESS_LABELS),
+      ...Object.values(PAYMENT_STATUS_LABELS),
+      PARTIALLY_SHIPPED_LABEL,
+      '要確認',
+      REFUND_PENDING_BADGE,
+      REFUND_FAILED_BADGE,
+      '配送先要確認',
+      '履歴',
+      '返金',
+      'キャンセル',
+      '発送済みにする',
+      '仕上がりを記録する',
+      '返品',
+      '申し込みを確かめる',
+      '額を決めて返金する',
+      '受け取る',
+    ];
+
+    expect(returnWords).toHaveLength(8);
+    expect(returnWords.filter((word) => otherWords.includes(word))).toEqual([]);
   });
 });

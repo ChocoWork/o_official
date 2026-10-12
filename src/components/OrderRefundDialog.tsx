@@ -123,6 +123,10 @@ function RefundLineRow({ line, beforeShipment, max, value, disabled, onChange }:
           <TagLabel variant="outline" size="2xs">
             {line.fulfillmentType === 'stock' ? '在庫' : '受注生産'}
           </TagLabel>
+          {/* 返品の交換で足された品（元の品の支払額が入る行）。同じ商品名の行が2つ並ぶので、印で見分ける */}
+          {line.exchangePaidAmount != null ? (
+            <TagLabel variant="outline" size="2xs">交換の品</TagLabel>
+          ) : null}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>

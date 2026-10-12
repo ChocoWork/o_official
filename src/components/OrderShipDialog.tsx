@@ -58,9 +58,25 @@ type UnknownOutcome =
 
 const TRACKING_NUMBER_PATTERN = /^[0-9A-Za-z-]{1,64}$/;
 const NO_QUANTITY_MESSAGE = '送る数を入れてください。';
+/** 返品の交換で足された品の行の印（C-5） */
+const EXCHANGE_ITEM_LABEL = '交換の品';
+
+/** 手数料のお支払いを待っている交換の品がある時の知らせ（C-5）。units は送れない点数の合計 */
+function exchangeOnHoldMessage(units: number): string {
+  return `手数料のお支払いを待っている交換の品があります（${units}点）。送るには、返品の画面で受け取りを記録するか「支払いを待たずに送る」を押してください。`;
+}
 
 /**
- * 仕上がりを画面の中で記録した後の送る数。記録した数を、その商品の送る数に足す（発送準備中の数までに収める）。
+ * 今回送れる数の上限。手数料のお支払い待ちの交換の品は送れない（DB の関数も FULFILLMENT_EXCHANGE_ON_HOLD で断る）。
+ * お支払い待ちは返品ごとにまとめて止まるので、発送準備中の数からお支払い待ちの数を引けば、窓口が発送準備中の数に
+ * お支払い待ちを含めていてもいなくても、送れる数は同じになる（最初の数も、Task 8 の initialShipQuantities が同じ式で入れる）
+ */
+function shippableOf(line: FulfillmentMaterialLine): number {
+  return Math.max(0, line.readyUnshipped - (line.exchangeOnHold ?? 0));
+}
+
+/**
+ * 仕上がりを画面の中で記録した後の送る数。記録した数を、その商品の送る数に足す（送れる数までに収める）。
  * 仕上がった品もそのまま送る流れが自然で、入れ直したければ直せる。
  */
 function quantitiesAfterCompletion(
@@ -72,7 +88,7 @@ function quantitiesAfterCompletion(
   for (const line of lines) {
     if (line.unshipped < 1) continue;
     const added = recorded.find((entry) => entry.orderItemId === line.orderItemId)?.quantity ?? 0;
-    next[line.orderItemId] = Math.min(line.readyUnshipped, (previous[line.orderItemId] ?? 0) + added);
+    next[line.orderItemId] = Math.min(shippableOf(line), (previous[line.orderItemId] ?? 0) + added);
   }
   return next;
 }
@@ -126,6 +142,8 @@ function OrderShipDialogBody({ orderId, onClose, onShipped }: OrderShipDialogBod
   const alertText = unknown ? UNKNOWN_OUTCOME_MESSAGE : (error ?? blockedMessage ?? loadError);
   const rows = materials?.lines.filter((line) => line.unshipped >= 1) ?? [];
   const total = totalQuantity(quantities);
+  // 手数料のお支払いを待っている交換の品の点数の合計（知らせに出す）
+  const holdUnits = rows.reduce((sum, line) => sum + (line.exchangeOnHold ?? 0), 0);
 
   const postShip = async (request: CreateFulfillmentRequest) => {
     setBusy(true);
@@ -235,11 +253,15 @@ function OrderShipDialogBody({ orderId, onClose, onShipped }: OrderShipDialogBod
 
         {materials ? (
           <>
+            {holdUnits > 0 ? (
+              <p className="font-acumin lk-text-3xs text-[#474747]">{exchangeOnHoldMessage(holdUnits)}</p>
+            ) : null}
             <ul className="max-h-[50vh] space-y-3 overflow-y-auto" aria-label="発送する商品">
               {rows.map((line) => {
                 const label = lineLabel(line);
                 const quantityId = `ship-quantity-${line.orderItemId}`;
                 const completionId = `ship-completion-${line.orderItemId}`;
+                const shippable = shippableOf(line);
                 return (
                   <li key={line.orderItemId}>
                     <div role="group" aria-label={label} className="space-y-2 border border-[#d4d4d4] p-3">
@@ -248,6 +270,9 @@ function OrderShipDialogBody({ orderId, onClose, onShipped }: OrderShipDialogBod
                         <TagLabel variant="outline" size="2xs">
                           {line.fulfillmentType === 'stock' ? '在庫' : '受注生産'}
                         </TagLabel>
+                        {line.lineKind === 'exchange' ? (
+                          <TagLabel variant="outline" size="2xs">{EXCHANGE_ITEM_LABEL}</TagLabel>
+                        ) : null}
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
@@ -263,12 +288,12 @@ function OrderShipDialogBody({ orderId, onClose, onShipped }: OrderShipDialogBod
                             type="number"
                             inputMode="numeric"
                             min={0}
-                            max={line.readyUnshipped}
+                            max={shippable}
                             step={1}
                             value={quantities[line.orderItemId] ?? 0}
-                            disabled={locked || line.readyUnshipped < 1}
+                            disabled={locked || shippable < 1}
                             onChange={(event) => {
-                              const next = clampQuantity(event.target.value, line.readyUnshipped);
+                              const next = clampQuantity(event.target.value, shippable);
                               setQuantities((previous) => ({ ...previous, [line.orderItemId]: next }));
                             }}
                             className="mt-1 h-9 w-full border border-[#d4d4d4] bg-white px-2 font-acumin lk-text-3xs text-black disabled:bg-[#f3f3f3]"

@@ -8,6 +8,7 @@ import type {
   OrderHistoryRefundRereserveEntry,
   OrderHistoryResponse,
 } from '@/lib/orders/email/order-history';
+import type { OrderHistoryReturnEntry } from '@/lib/orders/email/order-history';
 import type { OrderRefundStatus } from '@/lib/orders/refund/refund-types';
 
 const mockClientFetch = jest.fn();
@@ -1164,5 +1165,91 @@ describe('OrderHistoryDialog の返金の行', () => {
     expect(item).toHaveTextContent('返金のお知らせのメール');
     expect(within(item).getByRole('button', { name: '中身を見る' })).toBeInTheDocument();
     expect(within(item).queryByRole('button', { name: 'お客様へ再送' })).not.toBeInTheDocument();
+  });
+});
+
+
+// 返品（グループ E-3）。履歴の窓口が返す返品の行（文は窓口が組み立て済み）と、返品の返金の「どこから」の出し方
+const RETURN_ID = 'f1f1f1f1-1111-2222-8333-444455556666';
+
+function returnEntry(overrides: Partial<OrderHistoryReturnEntry> = {}): OrderHistoryReturnEntry {
+  return {
+    type: 'return', kind: 'receive', id: 'receipt:r1', at: '2026-10-12T01:00:00.000Z', returnId: RETURN_ID,
+    title: '返品の受け取り（ORD-A1B2C3D4-R1）', details: ['在庫に戻す 2点', '検品待ち 1点'], actorEmail: 'admin@example.com',
+    ...overrides,
+  };
+}
+
+describe('OrderHistoryDialog の返品の行', () => {
+  it('時刻・題・細目（1行に1つ）・操作した人を出し、ボタンは出さない', async () => {
+    const [item] = await openHistory([returnEntry()]);
+
+    expect(item).toHaveTextContent('2026/10/12 10:00');
+    expect(within(item).getByText('返品の受け取り（ORD-A1B2C3D4-R1）')).toBeInTheDocument();
+    expect(within(item).getByText('在庫に戻す 2点')).toBeInTheDocument();
+    expect(within(item).getByText('検品待ち 1点')).toBeInTheDocument();
+    expect(item).toHaveTextContent('操作: admin@example.com');
+    expect(within(item).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('細目が空の行は細目の行を出さない（段落は「操作:」の1行だけ）', async () => {
+    const [item] = await openHistory([
+      returnEntry({ kind: 'created', id: 'created:r1', title: '返品を作った（ORD-A1B2C3D4-R1）', details: [] }),
+    ]);
+
+    expect(item).toHaveTextContent('返品を作った（ORD-A1B2C3D4-R1）');
+    expect(item.querySelectorAll('p')).toHaveLength(1);
+  });
+
+  it('操作した人（actorEmail）が空の行は「操作:」の行を出さない', async () => {
+    const [item] = await openHistory([
+      returnEntry({ kind: 'cancel', id: 'cancel:r1', title: '返品を取り消した（ORD-A1B2C3D4-R1）', details: [], actorEmail: null }),
+    ]);
+
+    expect(item).toHaveTextContent('返品を取り消した（ORD-A1B2C3D4-R1）');
+    expect(item).not.toHaveTextContent('操作:');
+    expect(item.querySelectorAll('p')).toHaveLength(0);
+  });
+
+  it.each<[OrderHistoryReturnEntry['kind'], string]>([
+    ['close_missing', '「届かない」として返品を終えた（ORD-A1B2C3D4-R1・2点）'],
+    ['refund_waived', '返金しないで終えた（ORD-A1B2C3D4-R1・3点）'],
+    ['fee_received', '手数料の受け取りを記録した（￥1,200）'],
+  ])('%s の行は、窓口が組み立てた題をそのまま出す', async (kind, title) => {
+    const [item] = await openHistory([returnEntry({ kind, id: `${kind}:r1`, title, details: [] })]);
+
+    expect(item).toHaveTextContent(title);
+  });
+
+  it('交換の品を足した行（返品の番号を持たない。returnId が null）も、題を出す', async () => {
+    const [item] = await openHistory([
+      returnEntry({
+        kind: 'exchange_added', id: 'exchange:i1', returnId: null,
+        title: '交換の品を足した（シルクブラウス（黒 / L） × 1）', details: [], actorEmail: null,
+      }),
+    ]);
+
+    expect(item).toHaveTextContent('交換の品を足した（シルクブラウス（黒 / L） × 1）');
+  });
+
+  it('同じ返品の行が並んでも（returnId が同じ）、行の key が重ならず、警告を出さない', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const items = await openHistory([
+        returnEntry({ id: 'receipt:r2' }),
+        returnEntry({ kind: 'created', id: 'created:r1', title: '返品を作った（ORD-A1B2C3D4-R1）', details: [] }),
+      ]);
+
+      expect(items).toHaveLength(2);
+      expect(error.mock.calls.some(([message]) => String(message).includes('same key'))).toBe(false);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('返品の返金の行は、どこからに窓口が決めた「返品（番号）」をそのまま出す（表示は sourceLabel だけを使う）', async () => {
+    const [item] = await openHistory([refundEntry({ source: 'return', sourceLabel: '返品（ORD-A1B2C3D4-R1）', note: null })]);
+
+    expect(within(item).getByText('返品（ORD-A1B2C3D4-R1）')).toBeInTheDocument();
   });
 });

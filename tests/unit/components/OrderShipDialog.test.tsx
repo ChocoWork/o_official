@@ -602,3 +602,81 @@ describe('OrderShipDialog の画面の中での仕上がりの記録', () => {
     expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
   });
 });
+
+
+describe('OrderShipDialog の交換の品（グループ E-3）', () => {
+  /** 返品の交換で足された品の行（手数料のお支払い待ちは無い）。在庫から送る */
+  const EXCHANGE_LINE: FulfillmentMaterialLine = {
+    ...STOCK_LINE, orderItemId: 'item-exchange', name: 'ウールコート', color: '黒', size: 'L',
+    quantity: 1, readyUnshipped: 1, unshipped: 1, lineKind: 'exchange', exchangeOnHold: 0,
+  };
+  /** 手数料のお支払いを待っている交換の品の行 */
+  const HELD_EXCHANGE_LINE: FulfillmentMaterialLine = {
+    ...EXCHANGE_LINE, orderItemId: 'item-held', name: 'ストール', color: null, size: null, exchangeOnHold: 1,
+  };
+  const holdNotice = (units: number) =>
+    `手数料のお支払いを待っている交換の品があります（${units}点）。送るには、返品の画面で受け取りを記録するか「支払いを待たずに送る」を押してください。`;
+
+  it('交換の品の行にだけ「交換の品」の印を付ける。お支払い待ちが無ければ、知らせは出さず、ふつうに送る数が入る', async () => {
+    const { dialog } = await openDialog(materials({ lines: [STOCK_LINE, EXCHANGE_LINE] }));
+
+    expect(within(within(dialog).getByRole('group', { name: 'ウールコート（黒 / L）' })).getByText('交換の品')).toBeInTheDocument();
+    expect(within(within(dialog).getByRole('group', { name: 'シルクブラウス（白 / M）' })).queryByText('交換の品')).not.toBeInTheDocument();
+    expect(shipQuantityInput(dialog, 'ウールコート（黒 / L）')).toHaveValue(1);
+    expect(within(dialog).getByText('今回送る数の合計: 3点')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/手数料のお支払いを待っている/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['お支払い待ちの数が発送準備中の数に含まれる窓口の形', 1],
+    ['お支払い待ちの数が発送準備中の数に含まれない窓口の形', 0],
+  ])('手数料のお支払い待ちの交換の品は、%s でも、知らせ（点数つき）を出し、送る数を0にして入力を止める。ほかの品は送れて、発送の窓口へは含めない', async (_label, readyUnshipped) => {
+    const { dialog, onShipped } = await openDialog(
+      materials({ lines: [STOCK_LINE, { ...HELD_EXCHANGE_LINE, readyUnshipped }] }),
+    );
+
+    expect(within(dialog).getByText(holdNotice(1))).toBeInTheDocument();
+    const held = within(dialog).getByRole('group', { name: 'ストール' });
+    expect(within(held).getByText('交換の品')).toBeInTheDocument();
+    expect(within(held).getByLabelText('今回送る数')).toHaveValue(0);
+    expect(within(held).getByLabelText('今回送る数')).toBeDisabled();
+    expect(shipQuantityInput(dialog)).toBeEnabled();
+    expect(within(dialog).getByText('今回送る数の合計: 2点')).toBeInTheDocument();
+
+    mockClientFetch.mockResolvedValueOnce(json(shipped()));
+    typeTracking(dialog);
+    fireEvent.click(within(dialog).getByRole('button', { name: '発送する' }));
+    await waitFor(() => expect(onShipped).toHaveBeenCalled());
+    expect(requestBodyOf(1).lines).toEqual([{ orderItemId: 'item-stock', quantity: 2 }]);
+  });
+
+  it('お支払い待ちの交換の品が複数ある時は、点数を合計して知らせる', async () => {
+    const heldTwo: FulfillmentMaterialLine = {
+      ...HELD_EXCHANGE_LINE, orderItemId: 'item-held-two', name: 'マフラー', quantity: 2, readyUnshipped: 2, unshipped: 2, exchangeOnHold: 2,
+    };
+    const { dialog } = await openDialog(materials({ lines: [HELD_EXCHANGE_LINE, heldTwo] }));
+
+    expect(within(dialog).getByText(holdNotice(3))).toBeInTheDocument();
+    expect(within(dialog).getByText('今回送る数の合計: 0点')).toBeInTheDocument();
+  });
+
+  it('作って送る交換の品がお支払い待ちの間は、仕上がりを記録して発送準備中に移っても、送る数は0のまま', async () => {
+    const heldMaking: FulfillmentMaterialLine = {
+      ...BACKORDER_LINE, orderItemId: 'item-held-making', name: 'マフラー', color: null, size: null,
+      lineKind: 'exchange', exchangeOnHold: 1,
+    };
+    const { dialog } = await openDialog(materials({ lines: [STOCK_LINE, heldMaking] }));
+    mockClientFetch
+      .mockResolvedValueOnce(json({ completionIds: ['completion-1'], replayed: false }))
+      .mockResolvedValueOnce(json(materials({ lines: [STOCK_LINE, { ...heldMaking, inProduction: 0, readyUnshipped: 1 }] })));
+    const row = within(dialog).getByRole('group', { name: 'マフラー' });
+    fireEvent.change(within(row).getByLabelText('仕上がった数'), { target: { value: '1' } });
+    fireEvent.click(within(row).getByRole('button', { name: '仕上がりを記録' }));
+    await within(dialog).findByText('仕上がりを記録しました。');
+
+    expect(shipQuantityInput(dialog, 'マフラー')).toHaveValue(0);
+    expect(shipQuantityInput(dialog, 'マフラー')).toBeDisabled();
+    expect(within(dialog).getByText('今回送る数の合計: 2点')).toBeInTheDocument();
+    expect(within(dialog).getByText(holdNotice(1))).toBeInTheDocument();
+  });
+});

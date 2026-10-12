@@ -9,7 +9,7 @@ import { clientFetch } from "@/lib/client-fetch";
  * 色 × サイズごとの在庫（FREQ-399）。
  *
  * 在庫は台帳（stock_movements）への追記でしか動かさない。画面は数量と理由を送るだけで、
- * item_variants を直接書き換えない。注文の処理が書く理由（purchase / cancel / refund）は
+ * item_variants を直接書き換えない。注文の処理が書く理由（purchase / cancel / refund / return / exchange）は
  * ここからは選べない。
  *
  * 在庫が無い組み合わせも受注生産として売れる（ブランドの前提）。すぐ出せる数が 0 でも「売れない」
@@ -50,6 +50,10 @@ type Movement = {
   balanceAfter: number;
   /** 返金で動いた行の返金の番号。返金に結び付かない行は null（画面には番号を出さず、理由の言葉を変えるのに使う） */
   refundId: string | null;
+  /** 返品で動いた行（理由 return・exchange）の返品の番号（uuid）。返品に結び付かない行は null（画面には出さない。見せるのは returnNumber） */
+  returnId: string | null;
+  /** 返品で動いた行の返品の番号の形（{注文番号}-R{n}）。返品に結び付かない行は null。注文の番号の欄に、注文番号の代わりに出す */
+  returnNumber: string | null;
 };
 
 const REASON_LABELS: Record<string, string> = {
@@ -58,6 +62,8 @@ const REASON_LABELS: Record<string, string> = {
   purchase: "販売",
   cancel: "取消",
   refund: "返金",
+  return: "返品の受け取り",
+  exchange: "交換の品の確保",
 };
 
 /**
@@ -374,8 +380,9 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
                 <span data-testid="stock-movement-balance">{`変わった後 ${movement.balanceAfter}`}</span>
                 {/* 記録した人が空の行は、注文や取消の処理が自動で書いたもの */}
                 <span data-testid="stock-movement-actor">{movement.actorEmail ?? "自動"}</span>
-                {movement.orderNumber && (
-                  <span data-testid="stock-movement-order">{movement.orderNumber}</span>
+                {/* 返品で動いた行は、注文番号の代わりに返品の番号（{注文番号}-R{n}）を出す。どの注文のどの返品かが分かる */}
+                {(movement.returnNumber ?? movement.orderNumber) && (
+                  <span data-testid="stock-movement-order">{movement.returnNumber ?? movement.orderNumber}</span>
                 )}
                 {movement.note && (
                   <span data-testid="stock-movement-note" className="text-black/50">

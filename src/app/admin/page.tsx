@@ -1,7 +1,7 @@
 // ----------------- 管理ダッシュボード -----------------
 'use client';
 
-import { Suspense, useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import { Fragment, Suspense, useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { type TabType } from '@/components/AdminTabs';
 import AdminSideNav from '@/components/AdminSideNav';
@@ -23,14 +23,18 @@ import OrderCompletionDialog from '@/components/OrderCompletionDialog';
 import OrderHistoryDialog from '@/components/OrderHistoryDialog';
 import OrderPaidCancelDialog from '@/components/OrderPaidCancelDialog';
 import OrderRefundDialog from '@/components/OrderRefundDialog';
+import OrderReturnsDialog from '@/components/OrderReturnsDialog';
 import { BannerAlert } from '@/components/ui/BannerAlert/BannerAlert';
 import { Button } from '@/components/ui/Button/Button';
 import { DateTimePicker } from '@/components/ui/DateTimePicker/DateTimePicker';
 import { SearchField } from '@/components/ui/SearchField/SearchField';
+import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 import { COMPLETION_RECORDED_MESSAGE } from '@/lib/orders/fulfillment/fulfillment-client';
 import { PAYMENT_STATUS_LABELS } from '@/lib/orders/payment-status';
 import type { OrderAttention, OrderStatus } from '@/lib/orders/order-payment-types';
 import type { RefundAcceptedResponse } from '@/lib/orders/refund/refund-types';
+import { RETURN_DISPLAY_STATUS_LABELS } from '@/lib/orders/returns/return-messages';
+import { RETURN_DISPLAY_STATUSES, type ReturnDisplayStatus } from '@/lib/orders/returns/return-types';
 
 type AdminOrderAttention = OrderAttention & {
   emailSending?: { paused: boolean; reasonLabel: string | null } | null;
@@ -52,6 +56,21 @@ const ORDER_STATUS_FILTERS = [
 ] as const satisfies ReadonlyArray<{ label: string; value: 'all' | OrderStatus }>;
 
 type OrderStatusFilterValue = (typeof ORDER_STATUS_FILTERS)[number]['value'];
+
+// 返品の絞り込みは窓口に頼む（DB の注文の状態の絞り込みとは別。設計書 8-1）。value は窓口の return にそのまま送る。
+// 言葉は返品の状態の表（return-messages.ts）から引き、ここでは作らない
+type ReturnFilterValue = 'all' | ReturnDisplayStatus;
+const RETURN_FILTER_OPTIONS: Array<{ label: string; value: ReturnFilterValue }> = [
+  { label: 'すべて', value: 'all' },
+  ...RETURN_DISPLAY_STATUSES.map((status) => ({ label: RETURN_DISPLAY_STATUS_LABELS[status], value: status })),
+];
+
+function isReturnFilterValue(value: string): value is ReturnFilterValue {
+  return RETURN_FILTER_OPTIONS.some((option) => option.value === value);
+}
+
+/** 一覧の窓口が返す、一覧の上の一行の件数。返品がある注文の数（返品の数ではない。同じ注文に返品が2つあっても1件）で、全体の数。今のページの数ではない */
+type ReturnAttention = { requested: number; refundWaiting: number };
 
 type ForbiddenErrorBody = {
   reason?: string;
@@ -88,13 +107,16 @@ async function readSafeOrderActionError(response: Response, fallback: string): P
   return fallback;
 }
 
-const ORDER_CSV_HEADERS = ['注文ID', '顧客名', '顧客メール', '注文日', '購入商品', '商品数', '合計金額', '進み具合', '支払い', '返金額'] as const;
+const ORDER_CSV_HEADERS = ['注文ID', '顧客名', '顧客メール', '注文日', '購入商品', '商品数', '合計金額', '進み具合', '支払い', '返金額', '返品'] as const;
 
-// 発送準備中の数だけ書く。もう送った品と、まだ作っている品を詰めないため（設計書 9-1）
+// 返品の交換で足された品の行の印（一覧の購入商品の欄と同じ言葉。C-5）
+const EXCHANGE_ITEM_CSV_SUFFIX = '（交換の品）';
+
+// 発送準備中の数だけ書く。もう送った品と、まだ作っている品を詰めないため（設計書 9-1）。交換の品の行は末尾に「（交換の品）」を付ける
 function formatOrderItems(items: OrderItem['items']): string {
   return items
     .filter((item) => item.readyUnshipped > 0)
-    .map((item) => `${item.name} x${item.readyUnshipped}`)
+    .map((item) => `${item.name} x${item.readyUnshipped}${item.lineKind === 'exchange' ? EXCHANGE_ITEM_CSV_SUFFIX : ''}`)
     .join(' / ');
 }
 
@@ -141,6 +163,9 @@ function AdminPageContent() {
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
   const [refundOrderId, setRefundOrderId] = useState<string | null>(null);
   const [paidCancelOrderId, setPaidCancelOrderId] = useState<string | null>(null);
+  const [returnFilter, setReturnFilter] = useState<ReturnFilterValue>('all');
+  const [returnAttention, setReturnAttention] = useState<ReturnAttention | null>(null);
+  const [returnsOrderId, setReturnsOrderId] = useState<string | null>(null);
 
   const visibleTabs = useMemo<TabType[]>(() => {
     if (userRole === 'admin') {
@@ -276,6 +301,10 @@ function AdminPageContent() {
         query.set('review', 'only');
       }
 
+      if (returnFilter !== 'all') {
+        query.set('return', returnFilter);
+      }
+
       const response = await clientFetch(`/api/admin/orders?${query.toString()}`, {
         cache: 'no-store',
       });
@@ -300,14 +329,16 @@ function AdminPageContent() {
           total: number;
           totalPages: number;
         };
+        returnAttention?: ReturnAttention;
       };
 
-      // 後から始めた読みがあれば、この答えは捨てる（一覧・件数・ページ・誤り・読み込み中の表示は、その新しい読みが決める）
+      // 後から始めた読みがあれば、この答えは捨てる（一覧・件数・ページ・一行の数・誤り・読み込み中の表示は、その新しい読みが決める）
       if (isLatestRequest()) {
         setOrders(json.data ?? []);
         setOrdersPage(json.pagination?.page ?? page);
         setOrdersTotalPages(json.pagination?.totalPages ?? 1);
         setOrdersTotalCount(json.pagination?.total ?? 0);
+        setReturnAttention(json.returnAttention ?? null);
       }
       return true;
     } catch (error) {
@@ -333,6 +364,7 @@ function AdminPageContent() {
     orderAmountMax,
     orderStatusFilters,
     reviewOnly,
+    returnFilter,
   ]);
 
   // 窓口の返事を待つ間に絞り込みやページが変わっても、返事の後の読み直しは今の条件で頼む。
@@ -437,6 +469,45 @@ function AdminPageContent() {
         : displayedOrders.map((order) => (order.cancelKind === 'paid' ? { ...order, canCancel: false } : order)),
     [displayedOrders, userRole],
   );
+
+  // 一覧の上の一行の中身。0件の数は出さず（段1は返品の申し込みがいつも0件なので、返金待ちだけが出る。P13）、両方0件なら空
+  const returnAttentionPieces = useMemo(() => {
+    if (!returnAttention) {
+      return [];
+    }
+    const pieces: Array<{ filter: 'requested' | 'refund_waiting'; count: number }> = [
+      { filter: 'requested', count: returnAttention.requested },
+      { filter: 'refund_waiting', count: returnAttention.refundWaiting },
+    ];
+    return pieces
+      .filter((piece) => piece.count > 0)
+      .map((piece) => ({ filter: piece.filter, label: `${RETURN_DISPLAY_STATUS_LABELS[piece.filter]} ${piece.count}件` }));
+  }, [returnAttention]);
+
+  // 絞り込みを変えたら1ページ目から読む（ほかの絞り込みと同じ）
+  const handleReturnFilterChange = (value: string) => {
+    setOrdersPage(1);
+    setReturnFilter(isReturnFilterValue(value) ? value : 'all');
+  };
+
+  // 一行の数を押すと、その絞り込みにする。数は全体の注文の数なので、ほかの絞り込み（状態・要確認のみ・取引先・注文・決済ID・金額・期間）は
+  // 全部外して、数と一覧を合わせる（Shopify の件数のリンクと同じ）。同じ数をもう一度押すと、返品の絞り込みだけを外す（押している印は aria-pressed）。
+  // handleClearPeriodFilter は下で定義している（押した時に呼ぶので、並びは関係ない）
+  const handleReturnAttentionToggle = (filter: ReturnDisplayStatus) => {
+    setOrdersPage(1);
+    if (returnFilter === filter) {
+      setReturnFilter('all');
+      return;
+    }
+    setReturnFilter(filter);
+    setOrderStatusFilters(['all']);
+    setReviewOnly(false);
+    setOrderSearchKeyword('');
+    setOrderReference('');
+    setOrderAmountMin('');
+    setOrderAmountMax('');
+    handleClearPeriodFilter();
+  };
 
   const handleStatusFilterToggle = (nextFilter: OrderStatusFilterValue) => {
     setOrderStatusFilters((prev) => {
@@ -668,6 +739,24 @@ function AdminPageContent() {
     void fetchOrdersRef.current();
   };
 
+  // 返品の画面を開く（一覧の「返品」と、要対応の返品の返金の失敗の「もう一度返金する」から）。受け取り・返金・取消などは画面の中で
+  // 窓口を呼ぶ。何かを変えたら、ここで一覧と要対応を読み直し（返品の返金が失敗すると要対応が増える）、閉じた時にも一覧を読み直す
+  // （答えが分からないまま閉じた時など、変えたかどうかを画面が知らせない場合のため）
+  const handleShowReturns = (id: string) => {
+    setOrdersNoticeMessage(null);
+    setReturnsOrderId(id);
+  };
+
+  const handleReturnsChanged = () => {
+    void fetchOrdersRef.current();
+    void fetchAttention();
+  };
+
+  const handleReturnsClosed = () => {
+    setReturnsOrderId(null);
+    void fetchOrdersRef.current();
+  };
+
   const handleApplyPeriodFilter = () => {
     if (periodFromInput && periodToInput && periodFromInput > periodToInput) {
       setPeriodErrorMessage('期間指定が不正です。開始日は終了日以前にしてください。');
@@ -705,6 +794,8 @@ function AdminPageContent() {
         order.status,
         order.paymentStatusKey ? PAYMENT_STATUS_LABELS[order.paymentStatusKey] : '',
         order.refundedAmountLabel ?? '',
+        // 返品の状態の言葉だけを書く（小さな印は書かない）。返品の無い注文は空
+        order.returnSummary?.displayStatus ? RETURN_DISPLAY_STATUS_LABELS[order.returnSummary.displayStatus] : '',
       ];
 
       return row.map((value) => escapeCsvValue(value)).join(',');
@@ -860,9 +951,28 @@ function AdminPageContent() {
               onResolve={handleResolveException}
               onCancelAndResolve={handleCancelAndResolve}
               onRetryRefund={userRole === 'admin' ? handleRefundOrder : undefined}
+              onRetryReturnRefund={userRole === 'admin' ? handleShowReturns : undefined}
             />
             {attentionErrorMessage ? (
               <p role="alert" className="lk-text-sm text-red-700 font-acumin">{attentionErrorMessage}</p>
+            ) : null}
+            {returnAttentionPieces.length > 0 ? (
+              <div data-testid="return-attention" className="flex flex-wrap items-center gap-x-1 lk-text-sm text-[#474747] font-acumin">
+                {returnAttentionPieces.map((piece, index) => (
+                  <Fragment key={piece.filter}>
+                    {index > 0 ? <span aria-hidden="true">・</span> : null}
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="font-acumin"
+                      aria-pressed={returnFilter === piece.filter}
+                      onClick={() => handleReturnAttentionToggle(piece.filter)}
+                    >
+                      {piece.label}
+                    </Button>
+                  </Fragment>
+                ))}
+              </div>
             ) : null}
             <div className="space-y-3 border-b border-black/10 pb-4">
               <div className="flex flex-wrap items-end gap-3">
@@ -908,6 +1018,15 @@ function AdminPageContent() {
                     showClearButton
                     onClear={() => setOrderReference('')}
                     size="sm"
+                  />
+                </div>
+                <div className="w-44">
+                  <SingleSelect
+                    label="返品"
+                    size="sm"
+                    options={RETURN_FILTER_OPTIONS}
+                    value={returnFilter}
+                    onChange={(event) => handleReturnFilterChange(event.target.value)}
                   />
                 </div>
                 <div className="flex items-center gap-2">
@@ -983,6 +1102,8 @@ function AdminPageContent() {
               onShipOrder={openShipDialog}
               onRecordCompletion={openCompletionDialog}
               onShowHistory={setHistoryOrderId}
+              onShowReturns={handleShowReturns}
+              canRefundReturn={userRole === 'admin'}
               processingOrderIds={processingOrderIds}
             />
             <OrderShipDialog
@@ -1016,6 +1137,15 @@ function AdminPageContent() {
               onCancelled={handlePaidCancelled}
               onUncertain={handleRefundUncertain}
             />
+            {returnsOrderId ? (
+              <OrderReturnsDialog
+                orderId={returnsOrderId}
+                canRefund={userRole === 'admin'}
+                open
+                onClose={handleReturnsClosed}
+                onChanged={handleReturnsChanged}
+              />
+            ) : null}
             <OrderCancelDialog
               open={cancelTarget !== null}
               title="注文を取り消す"

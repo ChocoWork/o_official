@@ -106,7 +106,7 @@ function formatItems(items: Array<{ name: string; quantity: number }>): string {
 
 /**
  * 「この注文の履歴」（グループ D 設計書 5 章。Shopify の注文の Timeline とメールの再送に合わせる）。
- * 状態の変化・メール・発送・仕上がり（とその取消）・返金を新しい順に出し、送ったメールの中身・再送の確かめ・
+ * 状態の変化・メール・発送・仕上がり（とその取消）・返金・返品を新しい順に出し、送ったメールの中身・再送の確かめ・
  * 発送と仕上がりの取消の確かめを同じダイアログの中で切り替える（ダイアログを重ねると、Escape で外側も閉じるため）。
  * 再送や取消ができるかは窓口が決めた値に従う。
  *
@@ -435,9 +435,20 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged }: OrderHistoryDia
         </li>
       );
     }
-    // 返品の行は、画面を作る次の作業（Task 11）が描く。それまではメールの行だけを描く
-    if (entry.type !== 'email') {
-      return null;
+    if (entry.type === 'return') {
+      // 題と細目は窓口が C-5 のとおり組み立て済み。ここは描き方だけを決める
+      return (
+        <li key={`return-${entry.id}`} className="space-y-1 font-acumin lk-text-3xs text-black">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[#474747]">{formatJst(entry.at)}</span>
+            <span>{entry.title}</span>
+          </div>
+          {entry.details.map((detail, index) => (
+            <p key={`${index}-${detail}`}>{detail}</p>
+          ))}
+          {entry.actorEmail ? <p className="text-[#474747]">操作: {entry.actorEmail}</p> : null}
+        </li>
+      );
     }
     return (
       <li key={`email-${entry.emailId}`} className="space-y-1 font-acumin lk-text-3xs text-black">

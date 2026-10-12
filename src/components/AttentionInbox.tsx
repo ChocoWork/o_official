@@ -21,6 +21,11 @@ type AttentionInboxProps = {
   onCancelAndResolve: (input: { exceptionId: string; values: OrderCancelValues }) => void;
   /** 返金の失敗の行から、その注文の返金の画面を開く。返金の権限が無い人には渡さない（ボタンを出さない） */
   onRetryRefund?: (orderId: string) => void;
+  /**
+   * 失敗した返金が返品の返金（refundFailure.returnId あり）の行から、その注文の返品の画面を開く。返品の返金は、返品の画面の
+   * 「額を決めて返金する」で返し直す（ふつうの返金の画面では返金待ちの品を選べない。グループ E-3 の P21）。返金の権限が無い人には渡さない（ボタンを出さない）
+   */
+  onRetryReturnRefund?: (orderId: string) => void;
 };
 
 function formatDateTime(value: string | null): string {
@@ -45,6 +50,7 @@ export default function AttentionInbox({
   onResolve,
   onCancelAndResolve,
   onRetryRefund,
+  onRetryReturnRefund,
 }: AttentionInboxProps) {
   const headingId = useId();
   const [resolving, setResolving] = useState<AttentionException | null>(null);
@@ -68,6 +74,8 @@ export default function AttentionInbox({
             {attention.exceptions.map((item) => {
               const busy = processingIds.includes(item.id);
               const retryOrderId = item.canRetryRefund ? item.orderId : null;
+              // 返品の返金の失敗は、ふつうの返金の画面ではなく、注文の返品の画面で返し直す（P21）。その処理が無い人には、ボタンを出さない
+              const retry = item.refundFailure?.returnId ? onRetryReturnRefund : onRetryRefund;
               return (
                 <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <div className="min-w-0 font-acumin lk-text-3xs">
@@ -104,13 +112,13 @@ export default function AttentionInbox({
                         注文を取り消して解決
                       </Button>
                     ) : null}
-                    {retryOrderId !== null && onRetryRefund ? (
+                    {retryOrderId !== null && retry ? (
                       <Button
                         variant="secondary"
                         size="sm"
                         className="font-acumin"
                         disabled={busy}
-                        onClick={() => onRetryRefund(retryOrderId)}
+                        onClick={() => retry(retryOrderId)}
                       >
                         もう一度返金する
                       </Button>

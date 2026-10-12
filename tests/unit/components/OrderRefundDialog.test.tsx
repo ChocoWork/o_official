@@ -1044,3 +1044,32 @@ describe('OrderRefundDialog の材料を読めない時と確かめ中の返金'
     expect(onUncertain).not.toHaveBeenCalled();
   });
 });
+
+
+describe('OrderRefundDialog の交換の品の行（グループ E-3）', () => {
+  /** 返品の交換で足された品の行（未発送）。値段は 0 で、元の品の支払額が exchangePaidAmount に入る */
+  const EXCHANGE_LINE: RefundMaterialLine = {
+    ...STOCK_LINE, orderItemId: 'item-exchange', color: '黒', size: 'L', itemPrice: 0, quantity: 1, lineTotal: 0,
+    shipped: 0, unshipped: 1, restockable: 1, exchangePaidAmount: 12000,
+  };
+
+  it('交換の品の行にだけ「交換の品」の印を付ける（同じ商品名の行が並んでも見分けられる）', async () => {
+    const { dialog } = await openDialog(materials({ lines: [STOCK_LINE, EXCHANGE_LINE] }));
+    const region = within(dialog).getByRole('region', { name: BEFORE });
+
+    expect(within(within(region).getByRole('group', { name: 'シルクブラウス（黒 / L）' })).getByText('交換の品')).toBeInTheDocument();
+    expect(within(within(region).getByRole('group', { name: 'シルクブラウス（白 / M）' })).queryByText('交換の品')).not.toBeInTheDocument();
+  });
+
+  it('交換の品の支払額が 0 の行にも印を付ける（数であれば付く）', async () => {
+    const { dialog } = await openDialog(materials({ lines: [{ ...EXCHANGE_LINE, exchangePaidAmount: 0 }] }));
+
+    expect(within(dialog).getByText('交換の品')).toBeInTheDocument();
+  });
+
+  it('支払額が null の行・無い行（ふつうの行）には印を付けない', async () => {
+    const { dialog } = await openDialog(materials({ lines: [{ ...STOCK_LINE, exchangePaidAmount: null }, BACKORDER_LINE] }));
+
+    expect(within(dialog).queryByText('交換の品')).not.toBeInTheDocument();
+  });
+});
