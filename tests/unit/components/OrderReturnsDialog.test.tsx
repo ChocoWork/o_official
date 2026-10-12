@@ -564,6 +564,20 @@ describe('OrderReturnsDialog から操作の画面を開く', () => {
     expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
+  it('操作の後の読み直しが失敗したら、古い返品と操作のボタンを消し、閉じるだけを出す', async () => {
+    const { dialog } = await openDialog();
+    mockClientFetch.mockResolvedValueOnce(json({ error: 'x', code: 'failed' }, 500));
+    fireEvent.click(within(card(dialog)).getByRole('button', { name: '受け取る' }));
+    fireEvent.click(await screen.findByRole('button', { name: '受け取りを完了' }));
+
+    const reopened = await screen.findByRole('dialog', { name: TITLE });
+    expect(await within(reopened).findByRole('alert')).toHaveTextContent('返品の情報を読み込めませんでした。');
+    expect(buttonNames(reopened)).toEqual(['閉じる']);
+    expect(within(reopened).queryAllByRole('group')).toHaveLength(0);
+    expect(within(reopened).queryByText(/返品できる品/)).not.toBeInTheDocument();
+    expect(within(reopened).getByRole('status')).toHaveTextContent('受け取りを記録しました。');
+  });
+
   it('何もせずに閉じた時も返品の欄に戻って中身を読み直すが、親には伝えない', async () => {
     const { dialog, onChanged } = await openDialog();
     mockClientFetch.mockResolvedValueOnce(json(returnsBody()));

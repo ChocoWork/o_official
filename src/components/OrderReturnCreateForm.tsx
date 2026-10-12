@@ -502,7 +502,8 @@ export default function OrderReturnCreateForm({ orderId, onClose, onCreated, onU
   const exchangeShippingFee = feesEntered.exchangeShipping ?? settings?.exchangeShippingFee ?? 0;
 
   const trackingText = trackingNumber.trim();
-  const trackingInvalid = trackingText !== '' && !TRACKING_PATTERN.test(trackingText);
+  // 返送不要の間は伝票番号の欄を隠して送らないので、確かめない（T9-9・T9-11 と同じ「出している欄だけ」）
+  const trackingInvalid = method !== 'not_required' && trackingText !== '' && !TRACKING_PATTERN.test(trackingText);
   // 金額の欄は上限を超えた数を残して誤りを出す。出している欄だけを見る（出していない欄は 0 で送る）
   const feeOverMax =
     (showShippingFee && shippingFee > FEE_MAX_YEN) ||

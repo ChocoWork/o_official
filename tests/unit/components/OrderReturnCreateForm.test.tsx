@@ -707,6 +707,24 @@ describe('OrderReturnCreateForm の作る', () => {
     expect(onCreated).toHaveBeenCalledWith(created({ returnId: 'ret-9', number: 3 }).data, 'not_required');
   });
 
+  it('形の外れた伝票番号を入れてから返送不要にすると、作るボタンを押せ、伝票番号は null で送る', async () => {
+    const { dialog, onCreated } = await openForm(materials({ settings: { noReturnNeededEnabled: true } }));
+    mockClientFetch.mockResolvedValueOnce(json(created()));
+    setQuantity(pants(dialog), '1');
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '返送の伝票番号（任意）' }), { target: { value: '１２３' } });
+    expect(submitButton(dialog)).toBeDisabled();
+    expect(within(dialog).getByText('伝票番号は英数字とハイフンで入力してください。')).toBeInTheDocument();
+
+    fireEvent.change(select(dialog, '返送の方法'), { target: { value: 'not_required' } });
+    expect(within(dialog).queryByLabelText('返送の伝票番号（任意）')).not.toBeInTheDocument();
+    expect(within(dialog).queryByText('伝票番号は英数字とハイフンで入力してください。')).not.toBeInTheDocument();
+    expect(submitButton(dialog)).toBeEnabled();
+    fireEvent.click(submitButton(dialog));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+    expect(requestBodyOf(1)).toMatchObject({ returnMethod: 'not_required', returnTrackingNumber: null });
+  });
+
   it('開き直すたびに、入力も二重防止の番号も新しくなる', async () => {
     const first = await openForm();
     mockClientFetch.mockResolvedValueOnce(json(created()));

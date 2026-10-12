@@ -274,6 +274,8 @@ function OrderReturnsDialogBody({ orderId, canRefund, onClose, onChanged }: Orde
     void fetchReturnData<OrderReturnsData>(`/api/admin/orders/${orderId}/returns`, LOAD_FAILURE_MESSAGE).then((result) => {
       if (!active) return;
       if (result.kind === 'error') {
+        // 読み直しが失敗したら古い中身とボタンを残さない。読めない時のボタンは「閉じる」だけ
+        setData(null);
         setLoadError(result.message);
         return;
       }
