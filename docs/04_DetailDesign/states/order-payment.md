@@ -22,9 +22,9 @@
 | RA | [グループ E-2 の移行 A: 返金の記録・受け取った額・商品ごとの数への返金の組み込み](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
 | RB | [グループ E-2 の移行 B: 返金を始める・材料を読む関数](../../../supabase/migrations/20261011223147_order_refund_requests.sql) |
 | RC | [グループ E-2 の移行 C: 返金の結果を書く関数・外からの返金の記録・返金のメールの行](../../../supabase/migrations/20261011223453_order_refund_results.sql) |
-| RTA | [グループ E-3 の移行 A: 返品の4つの表・返品の設定の2つの表・交換の品の列・返品できる数と期限の関数](../../../supabase/migrations/20261012100000_order_return_records.sql) |
-| RTB | [グループ E-3 の移行 B: 返品を作る・取り消す・開き直す・届かないで終える・検品する・手数料を記録する関数と読み出し](../../../supabase/migrations/20261012100100_order_return_actions.sql) |
-| RTC | [グループ E-3 の移行 C: 受け取り・額を決めて返金する関数、返金を始める本体の切り出し、交換の品の行、返品のメールの予定、発送の手数料待ちの守り](../../../supabase/migrations/20261012100200_order_return_receipts.sql) |
+| RTA | [グループ E-3 の移行 A: 返品の4つの表・返品の設定の2つの表・交換の品の列・返品できる数と期限の関数](../../../supabase/migrations/20261012235910_order_return_records.sql) |
+| RTB | [グループ E-3 の移行 B: 返品を作る・取り消す・開き直す・届かないで終える・検品する・手数料を記録する関数と読み出し](../../../supabase/migrations/20261013000456_order_return_actions.sql) |
+| RTC | [グループ E-3 の移行 C: 受け取り・額を決めて返金する関数、返金を始める本体の切り出し、交換の品の行、返品のメールの予定、発送の手数料待ちの守り](../../../supabase/migrations/20261013001143_order_return_receipts.sql) |
 | R | [返金投影RPC](../../../supabase/migrations/20260925000218_add_order_state_transition_rpcs.sql)。`apply_order_refund_projection` は E-2 の移行 C で消し、結果を書く関数（RC）に置き換えた。古い定義の記録 |
 | C | [照合器](../../../src/lib/stripe/checkout-payment-reconciler.ts)、[判定関数](../../../src/lib/stripe/checkout-payment-decision.ts)、[Stripe現在値の読取り](../../../src/lib/stripe/checkout-payment-reader.ts) |
 
@@ -329,4 +329,4 @@ DB の状態の値（上の7つ）は変えない。管理画面とお客様の�
 
 ## 未確認事項
 
-本番migration適用、実際のStripe現在値、Cronの登録、実データによる全競合・遅延入金は未確認。グループ E-3 の移行 A〜C（`20261012100000`〜`20261012100200`）の名前は手元の版で、本番の適用状況は未確認（本番へは push の後に当てる）。本番のデータでの返品の動きも未確認。`supabase/pending/`の状態遷移強制・schedule案を適用済みの事実として扱わない。保留の状態遷移強制（`harden_order_state_transitions.sql`）の表には、E-2 で`paid`→`shipped`（`refund_completed_order`）と`shipped`→`paid`（`refund_failed_reopened`）を足し、全額の判定を受け取った額に直したが、当てていない（開店前に当てるかを決める。当てる前に、全額返金で取り消した注文を戻す決まりに `private.order_cancelled_by_refund(OLD.id)` の確かめを足す。足さないと、未入金で取り消した注文に届いた入金の全額の返金（自動の返金①、管理画面の返金の画面の「すべて選ぶ」で返した全額の返金、Stripe の画面からの全額の返金）が成功の後に失敗した時、失敗を記録できず止まる。[開店のときの順番](../../06_Operations/webhook-queue-operations.md)の 5f）。E-3 で`shipped`→`paid`の許す理由に `return_exchange_added`（交換の品を足した時）も足したが、同じく当てていない（当てるなら、この理由が入っていることを先に確かめる。入っていないと、交換の品を足す受け取りが断られる）。ソース中の最大所要時間のコメントも、件数・時間制限がある見回りの無条件保証として記載しない。
+本番migration適用、実際のStripe現在値、Cronの登録、実データによる全競合・遅延入金は未確認。グループ E-3 の移行 A〜C（`20261012235910`〜`20261013001143`）は、2026-10-13 に本番へ適用済み（20261012235910・20261013000456・20261013001143）。本番のデータでの返品の動きも未確認。`supabase/pending/`の状態遷移強制・schedule案を適用済みの事実として扱わない。保留の状態遷移強制（`harden_order_state_transitions.sql`）の表には、E-2 で`paid`→`shipped`（`refund_completed_order`）と`shipped`→`paid`（`refund_failed_reopened`）を足し、全額の判定を受け取った額に直したが、当てていない（開店前に当てるかを決める。当てる前に、全額返金で取り消した注文を戻す決まりに `private.order_cancelled_by_refund(OLD.id)` の確かめを足す。足さないと、未入金で取り消した注文に届いた入金の全額の返金（自動の返金①、管理画面の返金の画面の「すべて選ぶ」で返した全額の返金、Stripe の画面からの全額の返金）が成功の後に失敗した時、失敗を記録できず止まる。[開店のときの順番](../../06_Operations/webhook-queue-operations.md)の 5f）。E-3 で`shipped`→`paid`の許す理由に `return_exchange_added`（交換の品を足した時）も足したが、同じく当てていない（当てるなら、この理由が入っていることを先に確かめる。入っていないと、交換の品を足す受け取りが断られる）。ソース中の最大所要時間のコメントも、件数・時間制限がある見回りの無条件保証として記載しない。

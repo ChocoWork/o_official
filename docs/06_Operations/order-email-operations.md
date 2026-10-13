@@ -416,7 +416,7 @@ order by created_at;
 
 ### 9-3 公開前の送信待ちの確かめ
 
-グループ E-3 の移行（[移行 A](../../supabase/migrations/20261012100000_order_return_records.sql)・[移行 B](../../supabase/migrations/20261012100100_order_return_actions.sql)・[移行 C](../../supabase/migrations/20261012100200_order_return_receipts.sql)）を本番に当てた後も、1-2 と同じく、公開前に本番で返品を試さない。移行 A〜C は、アプリを出す（開店のときの順 1）より先に、A・B・C の順で当てる（[開店のときの順番](webhook-queue-operations.md#1-開店のときの順番)の注意）。普段の開発は本番の DB につないでいるので、試すと、返品のメールの行が本番に溜まり、公開後の最初の worker が試しの注文の宛先へ送ってしまう。
+グループ E-3 の移行（[移行 A](../../supabase/migrations/20261012235910_order_return_records.sql)・[移行 B](../../supabase/migrations/20261013000456_order_return_actions.sql)・[移行 C](../../supabase/migrations/20261013001143_order_return_receipts.sql)）を本番に当てた後も、1-2 と同じく、公開前に本番で返品を試さない。移行 A〜C は、アプリを出す（開店のときの順 1）より先に、A・B・C の順で当てる（[開店のときの順番](webhook-queue-operations.md#1-開店のときの順番)の注意）。普段の開発は本番の DB につないでいるので、試すと、返品のメールの行が本番に溜まり、公開後の最初の worker が試しの注文の宛先へ送ってしまう。
 
 [1-2](#1-2-公開前の送信待ちの確かめ) の読むだけの SQL は、メールの種類を絞らずに送信待ち・送信中・やり直し待ちの行を数えるので、返品のメールも入る。公開前の確かめ（1-3 の順 0）はそれで足りる。ここは、返品に結び付く行だけの内訳を見たい時の補足。次の読むだけの SQL を、Supabase のダッシュボード（本番のプロジェクト）→ SQL Editor で流す。
 

@@ -3,9 +3,9 @@ import type { OrderStatus, PaidEmailVariant } from '@/lib/orders/order-payment-t
 /**
  * 注文のメールの種類・状態・原因の記号（グループ D 設計書 3・4・5・6 章）。
  * DB の CHECK 制約（移行 20261009095633_order_email_outbox.sql）と同じ値を1か所に置く。画面からも読む。
- * 取りやめの理由は、返品のメールの扱いを足して作り直した移行 20261012100200_order_return_receipts.sql の関数と同じ（値は E-1 の移行 20261010122320_fulfillment_order_emails.sql から変わらない）。
- * 種類・書き分けは、返品のメール4種類と返金のお知らせの返品の書き分けを足した移行 20261012100000_order_return_records.sql と同じ（グループ E-3 設計書 9 章）。
- * 再送できる状態の表は、返品のメールを再送の対象にしない形に作り直した移行 20261012100200_order_return_receipts.sql の関数と同じ。
+ * 取りやめの理由は、返品のメールの扱いを足して作り直した移行 20261013001143_order_return_receipts.sql の関数と同じ（値は E-1 の移行 20261010122320_fulfillment_order_emails.sql から変わらない）。
+ * 種類・書き分けは、返品のメール4種類と返金のお知らせの返品の書き分けを足した移行 20261012235910_order_return_records.sql と同じ（グループ E-3 設計書 9 章）。
+ * 再送できる状態の表は、返品のメールを再送の対象にしない形に作り直した移行 20261013001143_order_return_receipts.sql の関数と同じ。
  */
 export const ORDER_EMAIL_KINDS = [
   'paid',

@@ -25,10 +25,10 @@ import type { PaidEmailVariant } from '@/lib/orders/order-payment-types';
  * アプリの値と DB の CHECK・関数の入力制限がずれないことを、移行の本文で確かめる。
  * - 状態・配達の状態・一時停止の理由・失敗の分類・原因の記号・配達の問題の索引: グループ D の移行（20261009095633）
  * - メールの種類・書き分けの CHECK（返品のメール4種類と、返金のお知らせの返品の書き分けを足した）:
- *   グループ E-3 の移行 A（20261012100000）
+ *   グループ E-3 の移行 A（20261012235910）
  * - 再送できる状態の表（request_order_email_resend）、取りやめの理由（skip_order_email。発送ごとのメールで理由を足した E-1 の移行 B を、
  *   失敗・エラーになった返金の行の取りやめを足して作り直した関数を、E-3 が返品のメールの扱いを足して作り直した）:
- *   グループ E-3 の移行 C（20261012100200）
+ *   グループ E-3 の移行 C（20261013001143）
  * - 取消した返品の受付のお知らせの原因 return_cancelled は、返品の取消で DB が直に書く記号（グループ E-3 の移行 B）。
  *   worker が skip_order_email に渡す取りやめの理由ではないので、移行は読まず、アプリが名前を持つことだけを確かめる
  * 本番へ当てて版を改名したら、ここの名前も直す。
@@ -38,10 +38,10 @@ const outboxMigration = fs.readFileSync(
 );
 // 行の説明にも関数名や許可の表の例が出るので、説明は外してから読む
 const returnRecordsMigration = fs
-  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261012100000_order_return_records.sql'), 'utf8')
+  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261012235910_order_return_records.sql'), 'utf8')
   .replace(/--.*$/gm, '');
 const returnReceiptsMigration = fs
-  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261012100200_order_return_receipts.sql'), 'utf8')
+  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261013001143_order_return_receipts.sql'), 'utf8')
   .replace(/--.*$/gm, '');
 
 function sqlValues(pattern: RegExp, sql = outboxMigration): string[] {
