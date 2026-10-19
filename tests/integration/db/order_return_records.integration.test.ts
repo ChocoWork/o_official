@@ -721,7 +721,7 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
       );
     });
 
-    test('返品の行は、作った後に一切変えられず、消せない', async () => {
+    test('受付中（open）の返品の行は、作った後に一切変えられず、消せない（申し込み中の返品の行は、承認で決める 3 列だけ移行 D の守りが開ける）', async () => {
       const order = await createShipped(db(), 3);
       const created = await returnOf(db(), order, 2);
 

@@ -1741,7 +1741,7 @@ describeLocalDb('E-3: 返品のメールも既存のリースと履歴で扱う'
     expect((await db().query('select private.enqueue_return_email($1,$2,$3,$4) enqueued',[order.orderId,kind,ret,receipt])).rows[0].enqueued).toBe(false);
     const claim=(await db().query('select * from public.claim_order_email(300)')).rows[0];
     expect(claim).toMatchObject({order_id:order.orderId,kind,return_id:ret,return_receipt_id:receipt,refund_id:null,fulfillment_id:null});
-    expect(Object.keys(claim).slice(-3)).toEqual(['refund_id','return_id','return_receipt_id']);
+    expect(Object.keys(claim).slice(-4)).toEqual(['refund_id','return_id','return_receipt_id','cancel_request_id']);
     const history=(await db().query('select * from public.list_order_email_history($1)',[order.orderId])).rows[0];
     expect(history).toMatchObject({kind,return_id:ret,return_receipt_id:receipt});
     expect(Object.keys(history).slice(-3)).toEqual(['refund_id','return_id','return_receipt_id']);

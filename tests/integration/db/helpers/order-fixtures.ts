@@ -779,3 +779,147 @@ export async function insertReturnRefund(
   }
   return { refundId };
 }
+
+/**
+ * 写真の送り先を直接書く（グループ E-3 段 2）。送り先を出す関数（移行 E）を通さずに、写真・申し込み・消す処理の試験が
+ * 欲しい状態を作る。場所は requests/{注文の番号}/{送り先の番号}（送り先の番号は DB が作る）。
+ * お客様の番号を省くと書き捨ての値。時刻を省くと取引の時刻。消す処理の試験が「1 日より前に出した送り先」を作る時は、
+ * createdAt に昔の時刻（ISO）を渡す。attachedAt・purgedAt を渡すと、使い済み・消し済みの送り先として書く。
+ */
+export async function insertReturnPhotoUpload(
+  db: PgClient,
+  options: {
+    orderId: string;
+    customerId?: string;
+    createdAt?: string;
+    attachedAt?: string | null;
+    purgedAt?: string | null;
+  },
+): Promise<{ uploadId: string; storagePath: string; customerId: string }> {
+  const created = await db.query(
+    `with picked as (select pg_catalog.gen_random_uuid() as id)
+     insert into public.order_return_photo_uploads (id, order_id, customer_id, storage_path, created_at, attached_at, purged_at)
+     select picked.id, $1::uuid, coalesce($2::uuid, pg_catalog.gen_random_uuid()),
+            'requests/' || $1::uuid::text || '/' || picked.id::text,
+            coalesce($3::timestamptz, now()), $4::timestamptz, $5::timestamptz
+     from picked
+     returning id, storage_path, customer_id`,
+    [options.orderId, options.customerId ?? null, options.createdAt ?? null, options.attachedAt ?? null, options.purgedAt ?? null],
+  );
+  return {
+    uploadId: created.rows[0].id as string,
+    storagePath: created.rows[0].storage_path as string,
+    customerId: created.rows[0].customer_id as string,
+  };
+}
+
+/**
+ * 申し込みに付いた写真を直接書く（グループ E-3 段 2）。送り先（使い済み）と写真の行を 1 組で作る。
+ * 申し込みの関数（移行 E）を通さずに、写真の一覧・消す処理の試験が欲しい状態を作る。
+ * uploadCreatedAt は送り先を出した時刻、createdAt は写真の行を作った（送り先を使った）時刻で、省くと取引の時刻。
+ * purgedAt を渡すと、写真と送り先の両方を消し済みにする。
+ */
+export async function insertReturnPhoto(
+  db: PgClient,
+  options: {
+    returnLineId: string;
+    orderId: string;
+    customerId?: string;
+    contentType?: 'image/jpeg' | 'image/png';
+    sizeBytes?: number;
+    uploadCreatedAt?: string;
+    createdAt?: string;
+    purgedAt?: string | null;
+  },
+): Promise<{ photoId: string; uploadId: string; storagePath: string }> {
+  const upload = await insertReturnPhotoUpload(db, {
+    orderId: options.orderId,
+    customerId: options.customerId,
+    createdAt: options.uploadCreatedAt,
+  });
+  await db.query(
+    `update public.order_return_photo_uploads
+     set attached_at = coalesce($2::timestamptz, now()), purged_at = $3::timestamptz
+     where id = $1`,
+    [upload.uploadId, options.createdAt ?? null, options.purgedAt ?? null],
+  );
+  const photo = await db.query(
+    `insert into public.order_return_photos (return_line_id, upload_id, storage_path, content_type, size_bytes, created_at, purged_at)
+     values ($1, $2, $3, $4, $5, coalesce($6::timestamptz, now()), $7::timestamptz)
+     returning id`,
+    [
+      options.returnLineId,
+      upload.uploadId,
+      upload.storagePath,
+      options.contentType ?? 'image/jpeg',
+      options.sizeBytes ?? 1000,
+      options.createdAt ?? null,
+      options.purgedAt ?? null,
+    ],
+  );
+  return { photoId: photo.rows[0].id as string, uploadId: upload.uploadId, storagePath: upload.storagePath };
+}
+
+export type CancelRequestFixtureStatus = 'requested' | 'resolved' | 'declined' | 'closed';
+
+/**
+ * キャンセルの申し込みと行を直接書く（グループ E-3 段 2）。申し込みの関数（移行 E）を通さずに、守り・読み出し・お断りと
+ * 解決の試験が欲しい状態を作る。二重防止の番号は書き捨ての値、指紋は 'fixture'。
+ * 状態に合う列（お断りの理由とメッセージ・時刻、解決の時刻、解決済みの時刻）も入れて、表の CHECK を通す。
+ * status が resolved の時は、resolvedRefundId があれば「その返金で解決」、なければ「注文の取消で解決」にする。
+ * 開いている（requested の）申し込みは注文に 1 つだけなので、同じ注文に requested を 2 つは書けない。
+ */
+export async function insertCancelRequest(
+  db: PgClient,
+  options: {
+    orderId: string;
+    lines: Array<{ orderItemId: string; quantity: number }>;
+    /** 既定は requested */
+    status?: CancelRequestFixtureStatus;
+    customerId?: string;
+    customerNote?: string | null;
+    /** 申し込んだ時刻（ISO）。省くと取引の時刻 */
+    requestedAt?: string;
+    resolvedRefundId?: string;
+  },
+): Promise<{ cancelRequestId: string; lineIds: string[]; customerId: string }> {
+  const created = await db.query(
+    `with picked as (select coalesce($6::uuid, pg_catalog.gen_random_uuid()) as customer_id)
+     insert into public.order_cancel_requests
+       (order_id, status, request_key, request_fingerprint, customer_note, requested_at, requested_by,
+        decline_reason, decline_message, declined_at, declined_by,
+        resolved_at, resolved_by, resolved_refund_id, resolved_by_cancel_at,
+        closed_at, closed_by)
+     select $1::uuid, $2::text, pg_catalog.gen_random_uuid(), 'fixture', $3::text, coalesce($4::timestamptz, now()), picked.customer_id,
+            case when $2::text = 'declined' then 'other' end,
+            case when $2::text = 'declined' then 'お断りの文' end,
+            case when $2::text = 'declined' then now() end,
+            case when $2::text = 'declined' then pg_catalog.gen_random_uuid() end,
+            case when $2::text = 'resolved' then now() end,
+            case when $2::text = 'resolved' then pg_catalog.gen_random_uuid() end,
+            case when $2::text = 'resolved' then $5::uuid end,
+            case when $2::text = 'resolved' and $5::uuid is null then now() end,
+            case when $2::text = 'closed' then now() end,
+            case when $2::text = 'closed' then pg_catalog.gen_random_uuid() end
+     from picked
+     returning id, requested_by`,
+    [
+      options.orderId,
+      options.status ?? 'requested',
+      options.customerNote ?? null,
+      options.requestedAt ?? null,
+      options.resolvedRefundId ?? null,
+      options.customerId ?? null,
+    ],
+  );
+  const cancelRequestId = created.rows[0].id as string;
+  const lineIds: string[] = [];
+  for (const line of options.lines) {
+    const inserted = await db.query(
+      'insert into public.order_cancel_request_lines (cancel_request_id, order_item_id, quantity) values ($1, $2, $3) returning id',
+      [cancelRequestId, line.orderItemId, line.quantity],
+    );
+    lineIds.push(inserted.rows[0].id as string);
+  }
+  return { cancelRequestId, lineIds, customerId: created.rows[0].requested_by as string };
+}
