@@ -156,19 +156,19 @@ async function insertUploads(
   );
 }
 
-/** 写真の送り先の行を 1 つ足して、番号と場所を返す。ageHours は作った時刻を古くする */
+/** 写真の送り先の行を 1 つ足して、番号と場所を返す。ageHours・ageMinutes は作った時刻を古くする */
 async function insertUpload(
   db: PgClient,
   target: { orderId: string; customerId: string },
-  options: { attached?: boolean; purged?: boolean; ageHours?: number } = {},
+  options: { attached?: boolean; purged?: boolean; ageHours?: number; ageMinutes?: number } = {},
 ): Promise<{ id: string; path: string }> {
   const id = crypto.randomUUID();
   const path = `requests/${target.orderId}/${id}`;
   await db.query(
     `insert into public.order_return_photo_uploads (id, order_id, customer_id, storage_path, created_at, attached_at, purged_at)
-     values ($1::uuid, $2::uuid, $3::uuid, $4, now() - make_interval(hours => $5::int),
+     values ($1::uuid, $2::uuid, $3::uuid, $4, now() - make_interval(hours => $5::int, mins => $8::int),
              case when $6::boolean then now() end, case when $7::boolean then now() end)`,
-    [id, target.orderId, target.customerId, path, options.ageHours ?? 0, options.attached ?? false, options.purged ?? false],
+    [id, target.orderId, target.customerId, path, options.ageHours ?? 0, options.attached ?? false, options.purged ?? false, options.ageMinutes ?? 0],
   );
   return { id, path };
 }
@@ -1285,7 +1285,10 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
       }
 
       // 6 枚は断る。同じ送り先を 2 つの行で使うことも断る
-      const six = await Promise.all(Array.from({ length: 6 }, () => insertUpload(db(), order)));
+      const six = [];
+      for (const index of Array.from({ length: 6 }).keys()) {
+        six[index] = await insertUpload(db(), order);
+      }
       expect(await rejectionOf(db(), REQUEST_SQL, requestParams(order, { lines: [defective(six.map((upload) => photoOf(upload)))] }))).toEqual(invalidPhoto);
       expect(
         await rejectionOf(db(), REQUEST_SQL, requestParams(order, { lines: [defective([photoOf(mine)]), reqLine(order, 1, 1, { photos: [photoOf(mine)] })] })),
@@ -1302,6 +1305,26 @@ describeLocalDb('integration: お客様の側の関数（移行 E）', (db) => {
       const ok = await requestReturn(db(), order, { lines: [defective(five.map((upload) => photoOf(upload)))] });
       expect(await photoRows(db(), ok.rows[0].return_id)).toHaveLength(5);
       expect(await recordCounts(db(), order.orderId)).toMatchObject({ returns: 1, lines: 1, photos: 5, attached: 6 });
+    });
+
+    test.each([
+      { label: '23 時間の 1 分前は通る', ageMinutes: -1, allowed: true },
+      { label: '23 時間ちょうどは RETURN_PHOTO_INVALID', ageMinutes: 0, allowed: false },
+      { label: '23 時間の 1 分後は RETURN_PHOTO_INVALID', ageMinutes: 1, allowed: false },
+    ])('写真の送り先の期限の境目: $label', async ({ ageMinutes, allowed }) => {
+      const order = await createCustomerOrder(db());
+      // now() が動かない同じ取引の中で、23 時間の直前・ちょうど・直後を作る（P6）。
+      const upload = await insertUpload(db(), order, { ageHours: 23, ageMinutes });
+      const lines = [reqLine(order, 0, 1, { reason: 'defective', customer_note: '破れています', photos: [photoOf(upload)] })];
+
+      if (allowed) {
+        const result = await requestReturn(db(), order, { lines });
+        expect(await photoRows(db(), result.rows[0].return_id)).toHaveLength(1);
+        expect((await uploadRow(db(), upload.id)).attached_at).not.toBeNull();
+      } else {
+        expect(await rejectionOf(db(), REQUEST_SQL, requestParams(order, { lines }))).toEqual(refusal('RETURN_PHOTO_INVALID'));
+        expect(await recordCounts(db(), order.orderId)).toMatchObject({ returns: 0, lines: 0, photos: 0, attached: 0 });
+      }
     });
 
     test('返送の方法と負担、手数料の仮の値（P5）: 理由のどれかがお店の負担ならお店・着払い、ほかは設定のお客様負担の送り方。手数料は設定で使う時だけ', async () => {
@@ -2195,7 +2218,10 @@ describeLocalDb('integration: 申し込みの同時の操作（Review Focus 4）
     return createCustomerOrder(db(), { lines: [{ quantity: 1 }] });
   }
 
-  /** お店が返品を作る関数（段 1）の呼び出し。知らせない（確定したメールの予定を残さない） */
+  /**
+   * お店が返品を作る関数（段 1）の呼び出し。お店の作成のメールの予定は残さない。
+   * お客様の申し込みはメールの予定を確定して残すので、試験後の db reset を前提にする。
+   */
   function adminCreateReturn(client: PgClient, order: CustomerOrder, actorId: string, quantity: number) {
     return client.query('select * from public.admin_create_return($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)', [
       order.orderId,
@@ -2332,14 +2358,21 @@ describeLocalDb('integration: 申し込みの同時の操作（Review Focus 4）
     const stranger = await createCustomer(db(), 'stranger');
 
     await db().query('begin');
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       await db().query('select id from public.orders where id = $1 for update', [order.orderId]);
       const attempt = other
         .query(REQUEST_SQL, requestParams(order, { customerId: stranger }))
         .then(() => null, (error: { code: string; message: string }) => ({ code: error.code, message: error.message }));
-      const outcome = await Promise.race([attempt, new Promise((resolve) => setTimeout(() => resolve('blocked'), 3000))]);
+      const outcome = await Promise.race([
+        attempt,
+        new Promise((resolve) => {
+          timeout = setTimeout(() => resolve('blocked'), 3000);
+        }),
+      ]);
       expect(outcome).toEqual(NOT_FOUND);
     } finally {
+      clearTimeout(timeout);
       await db().query('rollback');
     }
   });
