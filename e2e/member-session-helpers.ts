@@ -102,8 +102,12 @@ async function readLatestCode(email: string, previousMessageIds: ReadonlySet<str
   throw new Error('確認コードのメールが届かない');
 }
 
-/** 同じブラウザで注文する際の認証と CSRF を、アプリの実際の発行処理で揃える。 */
-export async function loginAsMember(page: Page, member: TestMember): Promise<void> {
+/**
+ * 同じブラウザで注文する際の認証と CSRF を、アプリの実際の発行処理で揃える。
+ * forwardedFor を渡すと、回数の制限を数える送り元として確認コードの送信・検証の要求に付ける。
+ * 試験ごとに別の値を渡せば、全部の E2E が共有する 127.0.0.1 の枠を使い切らない。手元の E2E サーバーだけで効く。
+ */
+export async function loginAsMember(page: Page, member: TestMember, forwardedFor?: string): Promise<void> {
   if (!isLocalUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) || process.env.MAIL_PROVIDER !== 'local') {
     throw new Error('会員のログインは手元の Supabase とメール送信だけで使える');
   }
@@ -118,9 +122,11 @@ export async function loginAsMember(page: Page, member: TestMember): Promise<voi
   await setLoginTwoFactorCookie(page, member.email, member.userId);
   // アプリと Mailpit の時計がずれても、再送前からあるメールを選ばないため。
   const previousMessageIds = new Set((await readMailpitMessages(member.email)).map((message) => message.ID));
+  // 渡された時だけ付ける。渡さない既存の呼び出しは、これまでと同じ要求になる。
+  const sourceHeaders: Record<string, string> = forwardedFor === undefined ? {} : { 'x-forwarded-for': forwardedFor };
   // page.request の baseURL と表示中のページが違っても、確認済みの手元へだけ送るため。
   const resend = await page.request.post(new URL('/api/auth/login/resend', origin).toString(), {
-    headers: { origin },
+    headers: { origin, ...sourceHeaders },
     maxRedirects: 0,
   }).catch(() => {
     throw new Error('確認コードを送る要求に失敗した');
@@ -130,7 +136,7 @@ export async function loginAsMember(page: Page, member: TestMember): Promise<voi
   }
   const code = await readLatestCode(member.email, previousMessageIds);
   const verify = await page.request.post(new URL('/api/auth/otp/verify', origin).toString(), {
-    headers: { origin },
+    headers: { origin, ...sourceHeaders },
     data: { code },
     maxRedirects: 0,
   }).catch(() => {

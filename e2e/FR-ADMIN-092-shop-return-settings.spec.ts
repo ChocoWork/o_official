@@ -1,6 +1,6 @@
 /**
  * FR-ADMIN-092 ショップの設定の「返品」の欄（段1）
- * 対応 FREQ: FREQ-470（AC-01〜AC-14・AC-16・AC-17）
+ * 対応 FREQ: FREQ-470（AC-01〜AC-14・AC-16・AC-17）、FREQ-485-AC-08
  *
  * 画面は窓口を差し替えて確かめる（実装計画 P11。FR-ADMIN-079 と同じやり方）。窓口の答えは共通の約束（C-2）の形で、返品の設定の元は
  * 単体の試験と同じ道具（buildShopReturnSettings）で作る。最初の値が移行 A の値と同じこと（AC-14）は、手元の DB の設定の表を読んで確かめる。
@@ -15,6 +15,7 @@ import { buildShopReturnSettings } from '../tests/unit/components/shop-return-se
 import { withLocalDb } from './order-email-test-utils';
 import { fulfillJson, mockOrderList, viewports } from './order-fulfillment-test-utils';
 import { formatJst, mockAdminSessionAs } from './refund-test-utils';
+import { applyReturnSettingsUpdate } from './return-request-test-utils';
 
 const CHANGED_AT = '2026-10-12T02:30:00.000Z';
 const SAVED = '設定を保存しました。';
@@ -24,7 +25,7 @@ const SUMMARY = '入力を確かめてください。';
 const YEN_LIMIT = '0から1000000までの整数（半角）で入れてください。';
 /** 保存の最中に「保存する」を押した時の知らせ（Task 12 の T12-6） */
 const PRESSED_WHILE_SAVING = '保存の最中です。済んでから、もう一度「保存する」を押してください。';
-const GROUPS = ['返送', '受付の期限', '理由ごとの設定', '手数料', '受け取り'] as const;
+const GROUPS = ['申し込み', '返送', '受付の期限', '理由ごとの設定', '手数料', '受け取り'] as const;
 /** 理由の言葉（C-5）。理由ごとの設定は、この10個をこの順に出す */
 const REASON_LABELS = [
   '破損・不良',
@@ -55,59 +56,9 @@ type SettingsState = {
   releasePut: () => void;
 };
 
-const CHANGED = { at: CHANGED_AT, byEmail: 'admin@example.com' };
-
 /** 送られた中身で設定を更新し、値が変わったまとまりだけに「最後に変えた人」を書く（DB の関数 admin_update_shop_return_settings と同じ） */
 function applyUpdate(current: ShopReturnSettings, update: ShopReturnSettingsUpdate): ShopReturnSettings {
-  const changedAddress = JSON.stringify(update.returnAddress) !== JSON.stringify(current.returnAddress);
-  const shipping =
-    changedAddress ||
-    update.customerPaidMethod !== current.customerPaidMethod ||
-    update.shopLabelFee !== current.shopLabelFee ||
-    update.noReturnNeededEnabled !== current.noReturnNeededEnabled;
-  const periodChanged =
-    update.windowDays !== current.windowDays ||
-    update.windowStart !== current.windowStart ||
-    update.deliveryBufferDays !== current.deliveryBufferDays;
-  const reasonsChanged = update.reasons.some((row) => {
-    const before = current.reasons.find((item) => item.reason === row.reason);
-    return before?.shippingPayer !== row.shippingPayer || before?.outOfStockExchange !== row.outOfStockExchange;
-  });
-  const fees =
-    update.restockingFeeEnabled !== current.restockingFeeEnabled ||
-    update.restockingFeePercent !== current.restockingFeePercent ||
-    update.exchangeFeesEnabled !== current.exchangeFeesEnabled ||
-    update.exchangeFee !== current.exchangeFee ||
-    update.exchangeShippingFee !== current.exchangeShippingFee;
-  const receiving = update.inspectionEnabled !== current.inspectionEnabled;
-  return {
-    ...current,
-    returnAddress: update.returnAddress,
-    customerPaidMethod: update.customerPaidMethod,
-    shopLabelFee: update.shopLabelFee,
-    noReturnNeededEnabled: update.noReturnNeededEnabled,
-    windowDays: update.windowDays,
-    windowStart: update.windowStart,
-    deliveryBufferDays: update.deliveryBufferDays,
-    restockingFeeEnabled: update.restockingFeeEnabled,
-    restockingFeePercent: update.restockingFeePercent,
-    exchangeFeesEnabled: update.exchangeFeesEnabled,
-    exchangeFee: update.exchangeFee,
-    exchangeShippingFee: update.exchangeShippingFee,
-    inspectionEnabled: update.inspectionEnabled,
-    reasons: current.reasons.map((row) => {
-      const next = update.reasons.find((item) => item.reason === row.reason);
-      return next ? { ...row, shippingPayer: next.shippingPayer, outOfStockExchange: next.outOfStockExchange } : row;
-    }),
-    updated: {
-      ...current.updated,
-      ...(shipping ? { shipping: CHANGED } : {}),
-      ...(periodChanged ? { window: CHANGED } : {}),
-      ...(reasonsChanged ? { reasons: CHANGED } : {}),
-      ...(fees ? { fees: CHANGED } : {}),
-      ...(receiving ? { receiving: CHANGED } : {}),
-    },
-  };
+  return applyReturnSettingsUpdate(current, update);
 }
 
 /** 設定の窓口（GET・PUT）を差し替える。GET は返品の設定つきの答え、PUT は送られた返品の設定で更新した答えを返す */
@@ -179,14 +130,14 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('ショップの設定に見出し「返品」の欄が出て、5つのまとまりが見出しつきでこの順に並ぶ', async ({ page }) => {
+    test('ショップの設定に見出し「返品」の欄が出て、6つのまとまりが見出しつきでこの順に並ぶ', async ({ page }) => {
       // FREQ-470-AC-01
       await mockSettingsApis(page);
       await openSettings(page);
 
       // 見出し（h4）は返品の欄の中だけで数える（どの画面にも出るフッターにも h4 の SHOP・INFORMATION・FOLLOW US がある）
       const returnsSection = page.getByRole('region', { name: '返品', exact: true });
-      expect(await returnsSection.getByRole('heading', { level: 4 }).allTextContents()).toEqual([...GROUPS]);
+      expect(await returnsSection.getByRole('heading', { level: 4 }).allTextContents()).toEqual(['申し込み', '返送', '受付の期限', '理由ごとの設定', '手数料', '受け取り']);
       for (const name of GROUPS) await expect(group(page, name)).toBeVisible();
       // 自動の返金の欄は、これまでどおり出る
       await expect(page.getByRole('heading', { name: '自動の返金', level: 3 })).toBeVisible();
@@ -313,8 +264,14 @@ for (const viewport of viewports) {
       await stock('その他').selectOption({ label: '作って送る' });
       const saved = await save(page, state);
       expect(saved.reasons).toHaveLength(10);
-      expect(saved.reasons.find((row) => row.reason === 'other')).toEqual({ reason: 'other', shippingPayer: 'shop', outOfStockExchange: 'make' });
-      expect(saved.reasons.find((row) => row.reason === 'defective')).toEqual({ reason: 'defective', shippingPayer: 'shop', outOfStockExchange: 'make' });
+      expect(saved.reasons.find((row) => row.reason === 'other')).toEqual({
+        reason: 'other', shown: true, resolutions: 'refund_and_exchange', photo: 'optional',
+        photoInstructions: '', shippingPayer: 'shop', outOfStockExchange: 'make',
+      });
+      expect(saved.reasons.find((row) => row.reason === 'defective')).toEqual({
+        reason: 'defective', shown: true, resolutions: 'refund_and_exchange', photo: 'required',
+        photoInstructions: '傷や不具合の場所がわかる写真をお送りください', shippingPayer: 'shop', outOfStockExchange: 'make',
+      });
     });
 
     test('手数料のトグルをオンにした時だけ入力が出て、「手で受け取った手数料は、帳簿に自動では入りません。」の注意が出る。入れた値が保存で窓口へ届く', async ({ page }) => {
@@ -369,6 +326,9 @@ for (const viewport of viewports) {
       // 保存の直前に、自動の返金のトグルを読み直してから送る
       expect(state.calls.slice(-2)).toEqual(['GET', 'PUT']);
       expect(saved).toEqual({
+        requestsEnabled: true,
+        requestTypes: 'returns_only',
+        noticeText: '',
         returnAddress: null,
         customerPaidMethod: 'customer_ships',
         shopLabelFee: 0,
@@ -377,16 +337,16 @@ for (const viewport of viewports) {
         windowStart: 'each_item',
         deliveryBufferDays: 3,
         reasons: [
-          { reason: 'defective', shippingPayer: 'shop', outOfStockExchange: 'make' },
-          { reason: 'wrong_item', shippingPayer: 'shop', outOfStockExchange: 'make' },
-          { reason: 'size_too_small', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-          { reason: 'size_too_large', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-          { reason: 'color', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-          { reason: 'style', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-          { reason: 'not_as_described', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-          { reason: 'unwanted', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-          { reason: 'other', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-          { reason: 'unknown', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+          { reason: 'defective', shown: true, resolutions: 'refund_and_exchange', photo: 'required', photoInstructions: '傷や不具合の場所がわかる写真をお送りください', shippingPayer: 'shop', outOfStockExchange: 'make' },
+          { reason: 'wrong_item', shown: true, resolutions: 'refund_and_exchange', photo: 'required', photoInstructions: '傷や不具合の場所がわかる写真をお送りください', shippingPayer: 'shop', outOfStockExchange: 'make' },
+          { reason: 'size_too_small', shown: true, resolutions: 'exchange_only', photo: 'optional', photoInstructions: 'タグの付いた状態がわかる写真をお送りください', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+          { reason: 'size_too_large', shown: true, resolutions: 'exchange_only', photo: 'optional', photoInstructions: 'タグの付いた状態がわかる写真をお送りください', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+          { reason: 'color', shown: false, resolutions: 'refund_and_exchange', photo: 'optional', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+          { reason: 'style', shown: false, resolutions: 'refund_and_exchange', photo: 'optional', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+          { reason: 'not_as_described', shown: false, resolutions: 'refund_and_exchange', photo: 'optional', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+          { reason: 'unwanted', shown: false, resolutions: 'refund_and_exchange', photo: 'optional', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+          { reason: 'other', shown: true, resolutions: 'refund_and_exchange', photo: 'optional', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+          { reason: 'unknown', shown: false, resolutions: 'refund_and_exchange', photo: 'none', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
         ],
         restockingFeeEnabled: false,
         restockingFeePercent: 0,

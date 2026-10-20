@@ -22,6 +22,7 @@ const SECTION_TITLES = [
   '商品説明',
   'バリエーション',
   '商品仕様',
+  '返品',
   '公開設定',
 ];
 
@@ -139,7 +140,7 @@ for (const viewport of viewports) {
       expect(await hasHorizontalOverflow(page)).toBe(false);
     });
 
-    test('FREQ-310-AC-05: 登録フォームに6つのセクション見出しが表示される', async ({
+    test('FREQ-310-AC-05: 登録フォームに7つのセクション見出しが表示される', async ({
       page,
     }) => {
       await mockAdminApis(page);
