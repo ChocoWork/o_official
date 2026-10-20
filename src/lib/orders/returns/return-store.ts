@@ -277,7 +277,7 @@ export type ExchangeOverrideInput = { returnLineId: string; action: 'make' | 're
 export type ReceiveReturnInput = {
   returnId: string;
   actorId: string;
-  /** 窓口が権限（admin.orders.refund）から決める。偽なら refundChoice は consult か none だけ */
+  /** 窓口が権限（admin.orders.refund）から決める。偽（サポート）の今返金は、DB がお客様の申し込みの返品（返送不要でない）だけに許す（P9）。額・送料・交換の選び直しは偽なら窓口も DB も断る */
   actorCanRefund: boolean;
   requestKey: string;
   units: ReceiveUnitInput[];

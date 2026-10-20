@@ -26,6 +26,10 @@ let returnFilterError: unknown = null;
 let returnSummaryOverrides: Record<string, Partial<OrderReturnSummary>> = {};
 const listOrderReturnSummariesMock = jest.fn();
 const countReturnAttentionMock = jest.fn();
+// キャンセルの申し込みの印・一行の数・絞り込みの読み出し（Task 8 の cancel-request-reads）を、窓口の形で差し替える
+const listOrderIdsWithOpenCancelRequestMock = jest.fn();
+const findOrderIdsWithOpenCancelRequestMock = jest.fn();
+const countOrdersWithOpenCancelRequestMock = jest.fn();
 
 function returnSummaryOf(orderId: string, overrides: Partial<OrderReturnSummary> = {}): OrderReturnSummary {
   return {
@@ -78,6 +82,12 @@ jest.mock('@/lib/stripe/server', () => ({
   getStripeServerClient: (...args: unknown[]) => getStripeMock(...args),
 }));
 
+jest.mock('@/lib/orders/returns/cancel-request-reads', () => ({
+  listOrderIdsWithOpenCancelRequest: (...args: unknown[]) => listOrderIdsWithOpenCancelRequestMock(...args),
+  findOrderIdsWithOpenCancelRequest: (...args: unknown[]) => findOrderIdsWithOpenCancelRequestMock(...args),
+  countOrdersWithOpenCancelRequest: (...args: unknown[]) => countOrdersWithOpenCancelRequestMock(...args),
+}));
+
 // 返品の要約と一行の数（Task 4 の return-store）は、窓口の形で差し替える
 jest.mock('@/lib/orders/returns/return-store', () => ({
   listOrderReturnSummaries: (...args: unknown[]) => listOrderReturnSummariesMock(...args),
@@ -120,6 +130,12 @@ describe('GET /api/admin/orders statutory search', () => {
       new Map(orderIds.map((orderId): [string, OrderReturnSummary] => [orderId, returnSummaryOf(orderId, returnSummaryOverrides[orderId])])));
     countReturnAttentionMock.mockReset();
     countReturnAttentionMock.mockResolvedValue({ requested: 0, refundWaiting: 0 });
+    listOrderIdsWithOpenCancelRequestMock.mockReset();
+    listOrderIdsWithOpenCancelRequestMock.mockResolvedValue([]);
+    findOrderIdsWithOpenCancelRequestMock.mockReset();
+    findOrderIdsWithOpenCancelRequestMock.mockResolvedValue(new Set());
+    countOrdersWithOpenCancelRequestMock.mockReset();
+    countOrdersWithOpenCancelRequestMock.mockResolvedValue(0);
     rpcMock.mockReset();
     rpcMock.mockImplementation(async (name: string, args: { _order_ids?: string[] }) => {
       if (name === 'list_order_refund_summaries') {
@@ -1166,6 +1182,7 @@ describe('GET /api/admin/orders statutory search', () => {
         data: [],
         pagination: { page: 3, pageSize: 50, total: 0, totalPages: 1 },
         returnAttention: { requested: 1, refundWaiting: 2 },
+        cancelRequestAttention: 0,
       });
       expect(query.select).not.toHaveBeenCalled();
       expect(query.in).not.toHaveBeenCalled();
@@ -1215,6 +1232,181 @@ describe('GET /api/admin/orders statutory search', () => {
       // 3件に当たり、新しい順の先頭2件がこのページ。総数は当たった数
       expect(body.data.map((row) => row.id)).toEqual(['order-200', 'order-100']);
       expect(body.pagination).toEqual({ page: 1, pageSize: 2, total: 3, totalPages: 2 });
+    });
+
+    // キャンセルの申し込み（グループ E-3 段2、決め事 P11）: 各行の印 cancelRequestOpen、一覧の上の一行の数 cancelRequestAttention、
+    // 絞り込み cancelRequest=open。読み出しは cancel-request-reads が表を直に読む（ここでは差し替えた物の呼ばれ方と答えの形を確かめる）
+    describe('キャンセルの申し込みの印・一行の数・絞り込み', () => {
+      it('各注文に cancelRequestOpen を付ける。印は1ページ分の注文の番号（ほかの状態の注文も含む）で1回だけ引く', async () => {
+        findOrderIdsWithOpenCancelRequestMock.mockResolvedValue(new Set(['order-a']));
+
+        const { rows } = await listOrders([
+          orderRow({ id: 'order-a' }),
+          orderRow({ id: 'order-b', status: 'pending' }),
+          orderRow({ id: 'order-c', status: 'cancelled' }),
+        ]);
+
+        expect(Object.fromEntries(rows.map((row) => [row.id, row.cancelRequestOpen]))).toEqual({
+          'order-a': true,
+          'order-b': false,
+          'order-c': false,
+        });
+        expect(findOrderIdsWithOpenCancelRequestMock).toHaveBeenCalledTimes(1);
+        expect(findOrderIdsWithOpenCancelRequestMock).toHaveBeenCalledWith(
+          expect.objectContaining({ rpc: expect.any(Function) }),
+          ['order-a', 'order-b', 'order-c'],
+        );
+      });
+
+      it('一覧の上の一行の数（cancelRequestAttention）を service_role で読み、答えに付ける', async () => {
+        countOrdersWithOpenCancelRequestMock.mockResolvedValue(3);
+
+        const { body } = await listOrders([orderRow()]);
+
+        expect((body as unknown as { cancelRequestAttention: number }).cancelRequestAttention).toBe(3);
+        expect(countOrdersWithOpenCancelRequestMock).toHaveBeenCalledWith(expect.objectContaining({ rpc: expect.any(Function) }));
+      });
+
+      it('絞り込みの問いが無ければ、番号を引く読み出しを呼ばず、注文を番号で絞らない', async () => {
+        await listOrders([orderRow()]);
+
+        expect(listOrderIdsWithOpenCancelRequestMock).not.toHaveBeenCalled();
+        expect(query.in).not.toHaveBeenCalled();
+      });
+
+      it('絞り込み cancelRequest=open は、開いている申し込みのある注文の番号で注文を絞る', async () => {
+        listOrderIdsWithOpenCancelRequestMock.mockResolvedValue(['order-b', 'order-a']);
+
+        const { response, rows } = await listOrders(
+          [orderRow({ id: 'order-a' }), orderRow({ id: 'order-b' })],
+          'http://localhost/api/admin/orders?cancelRequest=open',
+        );
+
+        expect(response.status).toBe(200);
+        expect(rows.map((row) => row.id)).toEqual(['order-a', 'order-b']);
+        expect(listOrderIdsWithOpenCancelRequestMock).toHaveBeenCalledTimes(1);
+        expect(listOrderIdsWithOpenCancelRequestMock).toHaveBeenCalledWith(expect.objectContaining({ rpc: expect.any(Function) }));
+        expect(query.in).toHaveBeenCalledWith('id', ['order-b', 'order-a']);
+        expect(rpcCallsOf('list_order_ids_by_return_status')).toEqual([]);
+      });
+
+      it('cancelRequest=open は、ほかの絞り込み（状態・検索）と「かつ」で重なる', async () => {
+        listOrderIdsWithOpenCancelRequestMock.mockResolvedValue(['order-a']);
+
+        await listOrders(
+          [orderRow({ id: 'order-a' })],
+          'http://localhost/api/admin/orders?cancelRequest=open&status=paid&counterparty=yamada',
+        );
+
+        expect(query.eq).toHaveBeenCalledWith('status', 'paid');
+        expect(query.or).toHaveBeenCalledWith(expect.stringContaining('shipping_full_name.ilike.%yamada%'));
+        expect(query.in).toHaveBeenCalledWith('id', ['order-a']);
+      });
+
+      it('return= と cancelRequest=open が両方付いたら、両方に当たる注文だけで絞る（return= 側の並びのまま）', async () => {
+        returnFilterRows = [{ order_id: 'order-a' }, { order_id: 'order-b' }, { order_id: 'order-c' }];
+        listOrderIdsWithOpenCancelRequestMock.mockResolvedValue(['order-d', 'order-c', 'order-b']);
+
+        await listOrders(
+          [orderRow({ id: 'order-b' }), orderRow({ id: 'order-c' })],
+          'http://localhost/api/admin/orders?return=requested&cancelRequest=open',
+        );
+
+        expect(rpcCallsOf('list_order_ids_by_return_status')).toEqual([{ _display_status: 'requested' }]);
+        expect(query.in).toHaveBeenCalledWith('id', ['order-b', 'order-c']);
+      });
+
+      it('両方付いて重なる注文が無ければ、注文を読まずに空の一覧を返す。二つの一行の数は付ける', async () => {
+        returnFilterRows = [{ order_id: 'order-a' }];
+        listOrderIdsWithOpenCancelRequestMock.mockResolvedValue(['order-z']);
+        countReturnAttentionMock.mockResolvedValue({ requested: 1, refundWaiting: 0 });
+        countOrdersWithOpenCancelRequestMock.mockResolvedValue(4);
+        const { GET } = await import('@/app/api/admin/orders/route');
+
+        const response = await GET(new Request('http://localhost/api/admin/orders?return=requested&cancelRequest=open'));
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toEqual({
+          data: [],
+          pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 },
+          returnAttention: { requested: 1, refundWaiting: 0 },
+          cancelRequestAttention: 4,
+        });
+        expect(query.select).not.toHaveBeenCalled();
+        expect(query.in).not.toHaveBeenCalled();
+      });
+
+      it('cancelRequest=open だけで、開いている申し込みが無ければ、注文を読まずに空の一覧を返す', async () => {
+        listOrderIdsWithOpenCancelRequestMock.mockResolvedValue([]);
+        countOrdersWithOpenCancelRequestMock.mockResolvedValue(0);
+        const { GET } = await import('@/app/api/admin/orders/route');
+
+        const response = await GET(new Request('http://localhost/api/admin/orders?cancelRequest=open&page=2'));
+
+        await expect(response.json()).resolves.toEqual({
+          data: [],
+          pagination: { page: 2, pageSize: 20, total: 0, totalPages: 1 },
+          returnAttention: { requested: 0, refundWaiting: 0 },
+          cancelRequestAttention: 0,
+        });
+        expect(query.select).not.toHaveBeenCalled();
+        expect(findOrderIdsWithOpenCancelRequestMock).not.toHaveBeenCalled();
+      });
+
+      it.each(['cancelRequest=closed', 'cancelRequest=', 'cancelRequest=OPEN'])(
+        '絞り込みの値が open でなければ（%s）400。表を読まない',
+        async (parameters) => {
+          const { GET } = await import('@/app/api/admin/orders/route');
+
+          const response = await GET(new Request(`http://localhost/api/admin/orders?${parameters}`));
+
+          expect(response.status).toBe(400);
+          expect(listOrderIdsWithOpenCancelRequestMock).not.toHaveBeenCalled();
+        },
+      );
+
+      // 読めなかった時は 500（印と「キャンセルの申し込み」の数を欠いたまま一覧を出さない）。cancel-request-reads は E-2 の RefundStoreError で投げる
+      it.each<[string, () => unknown, string, string]>([
+        [
+          '各行の印',
+          () => findOrderIdsWithOpenCancelRequestMock.mockRejectedValue(
+            new RefundStoreError('find_open_cancel_requests', { message: 'SECRET-MESSAGE', code: '08006' }),
+          ),
+          'http://localhost/api/admin/orders',
+          'find_open_cancel_requests',
+        ],
+        [
+          '一覧の上の一行の数',
+          () => countOrdersWithOpenCancelRequestMock.mockRejectedValue(
+            new RefundStoreError('count_open_cancel_requests', { message: 'SECRET-MESSAGE', code: '08006' }),
+          ),
+          'http://localhost/api/admin/orders',
+          'count_open_cancel_requests',
+        ],
+        [
+          '絞り込みの番号',
+          () => listOrderIdsWithOpenCancelRequestMock.mockRejectedValue(
+            new RefundStoreError('list_open_cancel_requests', { message: 'SECRET-MESSAGE', code: '08006' }),
+          ),
+          'http://localhost/api/admin/orders?cancelRequest=open',
+          'list_open_cancel_requests',
+        ],
+      ])('%sを読めなかった時は 500。ログは名前・code・呼び出しの名前だけで、DB の文は出さない', async (_name, fail, url, operation) => {
+        const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        fail();
+        queryResult = { data: [orderRow()], count: 1, error: null };
+
+        try {
+          const { GET } = await import('@/app/api/admin/orders/route');
+          const response = await GET(new Request(url));
+
+          expect(response.status).toBe(500);
+          expect(consoleError).toHaveBeenCalledWith('GET /api/admin/orders error:', 'RefundStoreError', '08006', operation);
+          expect(inspect(consoleError.mock.calls, { depth: null })).not.toContain('SECRET');
+        } finally {
+          consoleError.mockRestore();
+        }
+      });
     });
 
     // 思いがけない DB の失敗は、Task 4 の return-store が E-2 の RefundStoreError（呼び出しの名前と DB の記号を持ち、DB の文は cause にだけ残す）で投げる

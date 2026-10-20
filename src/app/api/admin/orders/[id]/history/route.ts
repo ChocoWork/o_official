@@ -24,6 +24,7 @@ import {
   listOrderLineFulfillment,
 } from '@/lib/orders/fulfillment/fulfillment-store';
 import { listOrderRefunds, RefundStoreError } from '@/lib/orders/refund/refund-store';
+import { listOrderCancelRequests } from '@/lib/orders/returns/cancel-request-store';
 import { listOrderReturns } from '@/lib/orders/returns/return-store';
 import type { OrderReturnDetail } from '@/lib/orders/returns/return-types';
 
@@ -44,6 +45,7 @@ type ReturnRecordRow = {
   cancelled_by: string | null;
   fee_received_by: string | null;
   exchange_released_by: string | null;
+  declined_by: string | null;
   fee_waived: boolean;
   fee_settled_amount: number;
 };
@@ -109,21 +111,27 @@ async function loadReturnReceiptLines(
  * 返品の記録（order_returns）にだけある欄として、取消・手数料の受け取り・支払いを待たずに送るをした人のメール（設計書 8-1「日時とした人つき」）と、
  * 手数料をいただかないことにした印（fee_waived。本計画 P27）と決着済み額（fee_settled_amount。Task 3 の I-2）を読む。返品の一覧（list_order_returns。共通の約束 C-2）はどれも持たないので、
  * 受け取りの細目と同じく order_returns を service_role で直に読み（service_role は SELECT だけを持つ）、人の番号からメールを引く。
- * 取消・手数料の受け取り・支払いを待たずに送るの、どの時刻も無い返品は読まない
+ * 申し込みのお断りをした人（declined_by。グループ E-3 段2）も、同じ読み出しで引く。取消・手数料の受け取り・支払いを待たずに送る・お断りの、どの時刻も無い返品は読まない
  */
 async function loadReturnRecords(
   client: SupabaseClient,
   returns: readonly OrderReturnDetail[],
 ): Promise<OrderHistoryReturnRecord[]> {
   const returnIds = returns
-    .filter((detail) => detail.cancelledAt !== null || detail.fees.feeReceivedAt !== null || detail.fees.exchangeReleasedAt !== null)
+    .filter(
+      (detail) =>
+        detail.cancelledAt !== null
+        || detail.fees.feeReceivedAt !== null
+        || detail.fees.exchangeReleasedAt !== null
+        || detail.declinedAt !== null,
+    )
     .map((detail) => detail.id);
   if (returnIds.length === 0) {
     return [];
   }
   const { data, error } = await client
     .from('order_returns')
-    .select('id, cancelled_by, fee_received_by, exchange_released_by, fee_waived, fee_settled_amount')
+    .select('id, cancelled_by, fee_received_by, exchange_released_by, declined_by, fee_waived, fee_settled_amount')
     .in('id', returnIds);
   if (error) {
     throw new FulfillmentStoreError('load_return_records', error);
@@ -132,8 +140,8 @@ async function loadReturnRecords(
   const actorIds = [
     ...new Set(
       rows
-        .flatMap((row) => [row.cancelled_by, row.fee_received_by, row.exchange_released_by])
-        .filter((actorId): actorId is string => actorId !== null),
+        .flatMap((row) => [row.cancelled_by, row.fee_received_by, row.exchange_released_by, row.declined_by])
+        .filter((actorId): actorId is string => typeof actorId === 'string'),
     ),
   ];
   // 同じ人は1回だけ引く
@@ -146,6 +154,7 @@ async function loadReturnRecords(
     cancelledByEmail: emailOf(row.cancelled_by),
     feeReceivedByEmail: emailOf(row.fee_received_by),
     exchangeReleasedByEmail: emailOf(row.exchange_released_by),
+    declinedByEmail: emailOf(row.declined_by),
     feeWaived: row.fee_waived === true,
     feeSettledAmount: Number(row.fee_settled_amount),
   }));
@@ -167,7 +176,7 @@ async function actorEmailOf(client: SupabaseClient, actorId: string): Promise<st
   return data.user?.email ?? null;
 }
 
-/** 「この注文の履歴」（グループ D 設計書 5-1、グループ E-1・E-2・E-3 設計書 9-2・8-1）。状態の変化・メール・発送・仕上がり・返金・返品とその取消を新しい順に返す。本文は返さない */
+/** 「この注文の履歴」（グループ D 設計書 5-1、グループ E-1・E-2・E-3 設計書 9-2・8-1）。状態の変化・メール・発送・仕上がり・返金・返品（申し込み・承認・お断りを含む）とその取消、キャンセルの申し込みを新しい順に返す。本文は返さない */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const authz = await authorizeAdminPermission('admin.orders.read', request);
   if (!authz.ok) {
@@ -195,7 +204,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const store = supabase as unknown as OrderEmailStore;
-    const [statusRows, emailRows, sendState, fulfillments, completions, refunds, returns, lines] = await Promise.all([
+    const [statusRows, emailRows, sendState, fulfillments, completions, refunds, returns, cancelRequests, lines] = await Promise.all([
       listOrderStatusHistory(store, order.id),
       listOrderEmailHistory(store, order.id),
       getOrderEmailSendState(store),
@@ -203,6 +212,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       listOrderCompletions(supabase, order.id),
       listOrderRefunds(supabase, order.id),
       listOrderReturns(supabase, order.id),
+      listOrderCancelRequests(supabase, order.id),
       loadHistoryLines(supabase, order.id),
     ]);
     // 受け取りの細目と、返品の記録（取消などをした人と手数料をいただかない印）は、返品の一覧で番号が分かってから読む
@@ -223,6 +233,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         returns,
         returnReceiptLines,
         returnRecords,
+        cancelRequests,
         lines,
       }),
       { headers: { 'Cache-Control': 'no-store' } },

@@ -56,8 +56,10 @@ const bodySchema = z.object({
  * 受け取る（グループ E-3 設計書 6-1・6-3）。品を1点ずつ確かめた結果（在庫に戻す・戻さない・検品待ち・お返し）を記録し、
  * 選んだ返金（今・相談・なし）を行う。今返金は Stripe に頼む（返金の流れが行う）。
  * 権限 → CSRF → 回数の制限（送信元ごとと管理者ごと）→ 返品の番号 → 本文 → 返金の権限 → 受け取りの流れの順に確かめる。
- * 返金の権限（admin.orders.refund）が要るのは、今返金・額の指定・送料の指定・交換の選び直しだけ。
- * 持たない人（サポート）は相談・なしの受け取りができる。答えが分からない時（502）も返金の番号と受け取りの番号を返し、
+ * 返金の権限（admin.orders.refund）が要るのは、額の指定・送料の指定・交換の選び直しだけ。
+ * 持たない人（サポート）は相談・なしの受け取りができ、お客様の申し込みの返品（返送不要でない）なら今返金も送れる
+ * （額は DB が計算する。窓口は断らず DB に渡し、DB が許さない返品は RETURN_FORBIDDEN で断る。グループ E-3 段2 の P9）。
+ * 答えが分からない時（502）も返金の番号と受け取りの番号を返し、
  * 画面は同じ requestKey で送り直して確かめる。監査にメモ・お返しのメッセージ・伝票番号は入れない。
  */
 export async function POST(request: Request, { params }: { params: Promise<{ returnId: string }> }) {
@@ -86,10 +88,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ ret
   if (!refundSide.ok) {
     return refundSide.response;
   }
-  // 今返金・額の指定（0を含む）・送料の指定・交換の選び直しは店長だけ。DB も _actor_can_refund で断る（二重の守り）
+  // 額の指定（0を含む）・送料の指定・交換の選び直しは店長だけ。DB も _actor_can_refund で断る（二重の守り）。
+  // 今返金は、サポートも「お客様の申し込みの返品（返送不要でない）」なら DB が許す（P9）ので、ここでは断らず DB に任せる
   const needsRefundPermission =
-    input.refundChoice === 'now'
-    || input.refundAmount !== null
+    input.refundAmount !== null
     || input.refundShippingAmount > 0
     || input.exchangeOverrides.length > 0;
   if (needsRefundPermission && !refundSide.canRefund) {

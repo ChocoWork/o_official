@@ -9,6 +9,11 @@ import { deriveOrderProgress } from '@/lib/orders/order-progress';
 import { derivePaymentStatus, PAYMENT_STATUS_LABELS } from '@/lib/orders/payment-status';
 import { listOrderLineFulfillment, type OrderLineFulfillmentRow } from '@/lib/orders/fulfillment/fulfillment-store';
 import { listOrderRefundSummaries, type OrderRefundSummary } from '@/lib/orders/refund/refund-store';
+import {
+  countOrdersWithOpenCancelRequest,
+  findOrderIdsWithOpenCancelRequest,
+  listOrderIdsWithOpenCancelRequest,
+} from '@/lib/orders/returns/cancel-request-reads';
 import { countReturnAttention, listOrderReturnSummaries } from '@/lib/orders/returns/return-store';
 import { RETURN_DISPLAY_STATUSES, type OrderReturnSummary, type ReturnDisplayStatus } from '@/lib/orders/returns/return-types';
 import { findMissingShippingFields } from '@/features/checkout/services/checkout-draft.service';
@@ -62,6 +67,8 @@ const querySchema = z
     review: z.enum(['only']).optional(),
     // 返品の絞り込み（画面の返品の状態。DB の状態の絞り込み status とは別。グループ E-3 設計書 8-1）
     return: z.enum(RETURN_DISPLAY_STATUSES).optional(),
+    // キャンセルの申し込みの絞り込み（開いている申し込みのある注文だけ。グループ E-3 段2）
+    cancelRequest: z.enum(['open']).optional(),
   })
   .refine((value) => !value.from || !value.to || value.from <= value.to, {
     message: 'from must be before or equal to to',
@@ -262,6 +269,36 @@ async function fetchOrderIdsByReturnStatus(displayStatus: ReturnDisplayStatus): 
 // 検索の文字（日本語は1字で9字に増える）が長くても収まるよう、今の1ページ分の in（最大100件）と同じ数にする
 const ORDER_IDS_PER_REQUEST = 100;
 
+/** 一覧の上の一行の数（開いているキャンセルの申し込みのある注文の数。表を直に読む。グループ E-3 段2、決め事 P11） */
+async function fetchCancelRequestAttention(): Promise<number> {
+  return countOrdersWithOpenCancelRequest(await createServiceRoleClient());
+}
+
+/** 1ページ分の注文のうち、開いているキャンセルの申し込みのある物の番号（各行の印 cancelRequestOpen） */
+async function fetchCancelRequestMarks(orderRows: OrderRow[]): Promise<Set<string>> {
+  return findOrderIdsWithOpenCancelRequest(await createServiceRoleClient(), orderRows.map((order) => order.id));
+}
+
+/** 絞り込み cancelRequest=open に当たる注文の番号（申し込みの新しい順に500件まで）。読めなかった時は投げる（窓口が 500 にする） */
+async function fetchOrderIdsWithOpenCancelRequest(): Promise<string[]> {
+  return listOrderIdsWithOpenCancelRequest(await createServiceRoleClient());
+}
+
+/**
+ * 返品の絞り込み（return=）とキャンセルの申し込みの絞り込み（cancelRequest=open）の、注文の番号をまとめる。
+ * 付いていない側は絞らない（null）。両方付いた時は、両方に当たる注文だけ（return= 側の並びのまま）
+ */
+function narrowOrderIds(returnIds: string[] | null, cancelRequestIds: string[] | null): string[] | null {
+  if (returnIds === null) {
+    return cancelRequestIds;
+  }
+  if (cancelRequestIds === null) {
+    return returnIds;
+  }
+  const wanted = new Set(cancelRequestIds);
+  return returnIds.filter((id) => wanted.has(id));
+}
+
 /**
  * ログに出す例外の項目。名前と、あれば code・operation だけにする（発送の窓口と同じ決まり）。
  * ・Supabase の誤りは、Error ではない素のオブジェクトで、message・details・hint を直下に持つ（だから名前は UnknownError になる）
@@ -296,6 +333,7 @@ export async function GET(request: Request) {
       status: requestUrl.searchParams.get('status') ?? undefined,
       review: requestUrl.searchParams.get('review') ?? undefined,
       return: requestUrl.searchParams.get('return') ?? undefined,
+      cancelRequest: requestUrl.searchParams.get('cancelRequest') ?? undefined,
     });
 
     if (!parsedQuery.success) {
@@ -315,15 +353,18 @@ export async function GET(request: Request) {
     const pageSize = parsedQuery.data.pageSize;
     const offset = (page - 1) * pageSize;
 
-    // 返品の絞り込み。DB の関数が当たる注文の番号（新しい注文から500件まで）を返すので、その番号で注文を絞る。
+    // 返品の絞り込み（return=）とキャンセルの申し込みの絞り込み（cancelRequest=open）。返品は DB の関数、申し込みは表が、当たる注文の番号（どちらも新しい物から500件まで）を返すので、その番号で注文を絞る。
     // 当たる注文が無ければ、注文を読まずに空の一覧を返す（in の中身が空の問い合わせを投げない）
-    const returnFilterOrderIds = parsedQuery.data.return ? await fetchOrderIdsByReturnStatus(parsedQuery.data.return) : null;
-    if (returnFilterOrderIds !== null && returnFilterOrderIds.length === 0) {
+    const returnIds = parsedQuery.data.return ? await fetchOrderIdsByReturnStatus(parsedQuery.data.return) : null;
+    const cancelRequestIds = parsedQuery.data.cancelRequest ? await fetchOrderIdsWithOpenCancelRequest() : null;
+    const listFilterOrderIds = narrowOrderIds(returnIds, cancelRequestIds);
+    if (listFilterOrderIds !== null && listFilterOrderIds.length === 0) {
       return NextResponse.json(
         {
           data: [],
           pagination: { page, pageSize, total: 0, totalPages: 1 },
           returnAttention: await fetchReturnAttention(),
+          cancelRequestAttention: await fetchCancelRequestAttention(),
         },
         { status: 200 },
       );
@@ -411,7 +452,7 @@ export async function GET(request: Request) {
 
     let orderRows: OrderRow[];
     let total: number;
-    if (returnFilterOrderIds === null) {
+    if (listFilterOrderIds === null) {
       const { data, count, error } = await buildOrdersQuery().range(offset, offset + pageSize - 1);
 
       if (error) {
@@ -426,8 +467,8 @@ export async function GET(request: Request) {
       // 100件ずつ、ほかの絞り込みを重ねて読み（多くて5回・500件。DB の関数が新しい注文から500件で切る）、
       // 新しい順に並べ直してから、このページの分を切り出す。総数は当たった数
       const matched: OrderRow[] = [];
-      for (let start = 0; start < returnFilterOrderIds.length; start += ORDER_IDS_PER_REQUEST) {
-        const { data, error } = await buildOrdersQuery().in('id', returnFilterOrderIds.slice(start, start + ORDER_IDS_PER_REQUEST));
+      for (let start = 0; start < listFilterOrderIds.length; start += ORDER_IDS_PER_REQUEST) {
+        const { data, error } = await buildOrdersQuery().in('id', listFilterOrderIds.slice(start, start + ORDER_IDS_PER_REQUEST));
 
         if (error) {
           console.error('[admin.orders] Failed to fetch orders:', ...describeErrorForLog(error));
@@ -444,7 +485,16 @@ export async function GET(request: Request) {
       .map((order) => order.payment_intent_id)
       .filter((paymentIntentId): paymentIntentId is string => Boolean(paymentIntentId?.startsWith('pi_')));
 
-    const [paymentIntentMap, shipBlockedOrderIds, lineCountsByOrder, refundSummaries, returnSummaries, returnAttention] =
+    const [
+      paymentIntentMap,
+      shipBlockedOrderIds,
+      lineCountsByOrder,
+      refundSummaries,
+      returnSummaries,
+      returnAttention,
+      cancelRequestOrderIds,
+      cancelRequestAttention,
+    ] =
       await Promise.all([
         fetchPaymentIntentMap(paymentIntentIds),
         fetchShipBlockedOrderIds(orderRows.map((order) => order.id)),
@@ -452,6 +502,8 @@ export async function GET(request: Request) {
         fetchRefundSummaries(orderRows),
         fetchReturnSummaries(orderRows),
         fetchReturnAttention(),
+        fetchCancelRequestMarks(orderRows),
+        fetchCancelRequestAttention(),
       ]);
 
     const responseData = orderRows.map((order) => {
@@ -548,6 +600,8 @@ export async function GET(request: Request) {
         refundedAmountLabel: order.refunded_amount > 0 ? toCurrencyLabel(order.refunded_amount, order.currency) : '-',
         // 返品の列・小さな印・ボタンの名前・「返品できる品」の有無。DB の要約をそのまま写す（返品の無い注文は displayStatus が null）
         returnSummary: returnSummaries.get(order.id) ?? emptyReturnSummary(order.id),
+        // 開いているキャンセルの申し込みがあるか。画面は「キャンセルの申し込み」のボタンを出す（グループ E-3 段2、決め事 P11）
+        cancelRequestOpen: cancelRequestOrderIds.has(order.id),
         shippedAt: order.shipped_at,
         shippingCarrier: order.shipping_carrier,
         trackingNumber: order.tracking_number,
@@ -583,6 +637,7 @@ export async function GET(request: Request) {
           totalPages,
         },
         returnAttention,
+        cancelRequestAttention,
       },
       { status: 200 },
     );

@@ -15,16 +15,22 @@ import {
   type AuditOutcome,
 } from '@/lib/orders/returns/return-route-support';
 import { getShopReturnSettings, updateShopReturnSettings } from '@/lib/orders/returns/return-store';
-import { RETURN_REASONS, type ShopReturnSettings } from '@/lib/orders/returns/return-types';
+import { RETURN_REASONS, type ShopReturnSettings, type ShopReturnSettingsUpdate } from '@/lib/orders/returns/return-types';
 
 /**
- * 返品の欄の本文（Task 4 の return-types.ts の ShopReturnSettingsUpdate と同じ形。型は import せず、ここで zod で持つ。
- * 段1の画面が出す欄を全部、キーは ShopReturnSettings と同じ）。
- * 範囲は DB の関数（Task 2 の admin_update_shop_return_settings。円の3つは Global Constraints の 1,000,000 円まで）と同じなので、
- * 画面（Task 12）が通した値では 400 にならない。知らない欄（段2の欄など）は 400 にする（strict）
+ * 返品の欄の本文（Task 4 の return-types.ts の ShopReturnSettingsUpdate と同じ形。段1の欄は必須、段2の欄は任意）。
+ * 段2の欄（申し込み・種類・注意書き、理由の行の 出す／ご希望／写真／案内の文）は、渡さなければ DB が今の値のままにする
+ * （段1の設定の画面は Task 13 まで段1の欄だけを送る。段2の画面はいつも全部を送る）。
+ * 範囲は DB の関数（admin_update_shop_return_settings。円の3つは Global Constraints の 1,000,000 円まで、注意書き2000字、写真の案内の文500字）と
+ * 同じ（文は前後の空白を除いて数える。P14）。知らない欄は 400 にする（strict）。
+ * 保存の前後を比べる部品（changedReturnGroups）は ShopReturnSettingsUpdate で受けるので、この形が型とずれたら、型の誤りで気づく
  */
 const returnSettingsSchema = z
   .object({
+    // 申し込み（グループ E-3 段2）。任意。注意書きは前後の空白を除いて2000字まで（空は空）
+    requestsEnabled: z.boolean().optional(),
+    requestTypes: z.enum(['returns_and_cancellations', 'returns_only', 'cancellations_only']).optional(),
+    noticeText: z.string().trim().max(2000).optional(),
     returnAddress: z
       .object({
         name: z.string().trim().min(1).max(200),
@@ -40,19 +46,24 @@ const returnSettingsSchema = z
     windowDays: z.number().int().min(1).max(365).nullable(),
     windowStart: z.enum(['each_item', 'last_item']),
     deliveryBufferDays: z.number().int().min(0).max(14),
-    // 理由ごとの返送料の負担と在庫の無い交換。10の理由を1行ずつそろえて送る（出す／ご希望／写真は段2）
+    // 理由ごとの設定。10の理由を1行ずつそろえて送る。段2の欄（出す／ご希望／写真／案内の文）は任意。「不明」はお客様に出さない（「出す」を真にすると DB も断る）
     reasons: z
       .array(
         z
           .object({
             reason: z.enum(RETURN_REASONS),
+            shown: z.boolean().optional(),
+            resolutions: z.enum(['refund_and_exchange', 'exchange_only', 'refund_only']).optional(),
             shippingPayer: z.enum(['shop', 'customer']),
             outOfStockExchange: z.enum(['make', 'decline']),
+            photo: z.enum(['none', 'optional', 'required']).optional(),
+            photoInstructions: z.string().trim().max(500).optional(),
           })
           .strict(),
       )
       .length(RETURN_REASONS.length)
-      .refine((rows) => new Set(rows.map((row) => row.reason)).size === rows.length),
+      .refine((rows) => new Set(rows.map((row) => row.reason)).size === rows.length)
+      .refine((rows) => rows.every((row) => row.reason !== 'unknown' || row.shown !== true)),
     restockingFeeEnabled: z.boolean(),
     restockingFeePercent: z.number().int().min(0).max(100),
     exchangeFeesEnabled: z.boolean(),
@@ -69,7 +80,8 @@ const bodySchema = z.object({
   returns: returnSettingsSchema.optional(),
 });
 
-type ReturnSettingsUpdate = z.infer<typeof returnSettingsSchema>;
+// 保存の前後を比べる部品は、画面が送る型（Task 4）で受ける。zod の形がこの型とずれたら、呼ぶ所（changedReturnGroups(…, returns)）が型の誤りになる
+type ReturnSettingsUpdate = ShopReturnSettingsUpdate;
 
 const RATE_LIMIT = { endpoint: 'admin:settings:shop-update', limit: 30, windowSeconds: 600 } as const;
 
@@ -107,7 +119,14 @@ function sameReturnAddress(next: ReturnSettingsUpdate['returnAddress'], current:
 function sameReasons(next: ReturnSettingsUpdate['reasons'], current: ShopReturnSettings['reasons']): boolean {
   return next.every((entry) => {
     const row = current.find((candidate) => candidate.reason === entry.reason);
-    return row !== undefined && row.shippingPayer === entry.shippingPayer && row.outOfStockExchange === entry.outOfStockExchange;
+    // 段2の欄は渡さなければ今の値のまま（undefined）なので、渡した欄だけを比べる
+    return row !== undefined
+      && (entry.shown === undefined || row.shown === entry.shown)
+      && (entry.resolutions === undefined || row.resolutions === entry.resolutions)
+      && row.shippingPayer === entry.shippingPayer
+      && row.outOfStockExchange === entry.outOfStockExchange
+      && (entry.photo === undefined || row.photo === entry.photo)
+      && (entry.photoInstructions === undefined || row.photoInstructions === entry.photoInstructions);
   });
 }
 
@@ -117,6 +136,15 @@ function sameReasons(next: ReturnSettingsUpdate['reasons'], current: ShopReturnS
  */
 function changedReturnGroups(before: ShopReturnSettings, next: ReturnSettingsUpdate): string[] {
   const groups: string[] = [];
+  // 申し込み（受付・種類・注意書き）。渡さなかった欄（undefined）は今の値のままなので、変わったとは数えない。
+  // 画面のまとまり「申し込み」は段1のまとまりの前（グループ E-3 段2）
+  if (
+    (next.requestsEnabled !== undefined && next.requestsEnabled !== before.requestsEnabled)
+    || (next.requestTypes !== undefined && next.requestTypes !== before.requestTypes)
+    || (next.noticeText !== undefined && next.noticeText !== before.noticeText)
+  ) {
+    groups.push('requests');
+  }
   if (
     !sameReturnAddress(next.returnAddress, before.returnAddress)
     || next.customerPaidMethod !== before.customerPaidMethod

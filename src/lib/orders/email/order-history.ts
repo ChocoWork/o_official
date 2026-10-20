@@ -8,7 +8,7 @@ import {
   STRIPE_REFUND_REASON_LABELS,
 } from '@/lib/orders/refund/refund-messages';
 import type { OrderRefundSource, OrderRefundStatus } from '@/lib/orders/refund/refund-types';
-import type { OrderReturnDetail } from '@/lib/orders/returns/return-types';
+import type { AdminCancelRequest, OrderReturnDetail } from '@/lib/orders/returns/return-types';
 import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import {
   describeOrderEmailState,
@@ -206,6 +206,8 @@ export type OrderHistoryReturnRecord = {
   cancelledByEmail: string | null;
   feeReceivedByEmail: string | null;
   exchangeReleasedByEmail: string | null;
+  /** 申し込みの返品をお断りした人（order_returns.declined_by のメール）。返品の一覧（OrderReturnDetail）は持たない（グループ E-3 段2） */
+  declinedByEmail: string | null;
   feeWaived: boolean;
   /** 決着で fee_due_amount から移した額の合計（Task 3 の I-2）。履歴は未決着額ではなく、この額を出す */
   feeSettledAmount: number;
@@ -221,11 +223,18 @@ export type OrderHistoryReturnEntryKind =
   | 'reopen'
   | 'exchange_added'
   | 'fee_received'
-  | 'exchange_released';
+  | 'exchange_released'
+  | 'request'
+  | 'approve'
+  | 'decline'
+  | 'cancel_request'
+  | 'cancel_request_decline'
+  | 'cancel_request_close'
+  | 'cancel_request_resolve';
 
 /**
  * 返品の行（グループ E-3 設計書 8-1）。文は共通の約束 C-5 のとおりここで組み立て済みで、画面は title と details をそのまま出す。
- * id は画面の一覧の key（返品の行どうしで重ならない）。returnId は、交換の品を足した行だけ null。
+ * id は画面の一覧の key（返品の行どうしで重ならない）。returnId は、交換の品を足した行と、キャンセルの申し込みの行だけ null。
  * した人（actorEmail）は、作った・受け取りの記録の行は返品の一覧から、取消・手数料の受け取り・支払いを待たずに送るは窓口が
  * order_returns から引いた物（OrderHistoryReturnRecord）、交換の品を足したは同じ時刻の受け取りをした人。分からない時（消えた利用者など）は null
  */
@@ -273,6 +282,8 @@ export type BuildOrderHistoryInput = {
   returns: OrderReturnDetail[];
   returnReceiptLines: OrderHistoryReturnReceiptLine[];
   returnRecords: OrderHistoryReturnRecord[];
+  /** キャンセルの申し込み（Task 4 の listOrderCancelRequests の答え）。申し込み・お断り・解決済み・解決の行に使う（グループ E-3 段2） */
+  cancelRequests: AdminCancelRequest[];
   lines: OrderHistoryLine[];
 };
 
@@ -385,9 +396,25 @@ function returnHistoryEntries(
     );
 
   const entries: OrderHistoryReturnEntry[] = [];
-  // 段1の返品はお店が作った物だけ。お客様の申し込みの返品（段2）の「申し込み」「承認」の行は、段2で足す
+  // お店が作った返品は「返品を作った」の1行。お客様の申し込みの返品は、作った行を出さず、申し込み・承認・お断りの行を、時刻があれば出す（下）
   if (detail.source === 'shop') {
     entries.push(entry('created', `created:${detail.id}`, detail.createdAt, `返品を作った（${detail.label}）`, detail.createdByEmail));
+  }
+  // お客様の申し込みの返品（グループ E-3 段2、決め事 P17）。申し込みはお客様がするので、した人は出さない。
+  // お断りをした人は返品の一覧（OrderReturnDetail）に無いので、窓口が order_returns から引いた物（record）から出す
+  if (detail.requestedAt !== null) {
+    entries.push(entry('request', `request:${detail.id}`, detail.requestedAt, `返品の申し込み（${detail.label}）`, null));
+  }
+  // 承認の行は、お客様の申し込みの返品だけ。お店が作った返品は、段1の admin_create_return が approved_at・approved_by に作った時刻と人を入れるので、source で絞る
+  if (detail.source === 'customer_request' && detail.approvedAt !== null) {
+    entries.push(
+      entry('approve', `approve:${detail.id}`, detail.approvedAt, `返品の申し込みを承認した（${detail.label}）`, detail.approvedByEmail),
+    );
+  }
+  if (detail.declinedAt !== null) {
+    entries.push(
+      entry('decline', `decline:${detail.id}`, detail.declinedAt, `返品の申し込みをお断りした（${detail.label}）`, record?.declinedByEmail ?? null),
+    );
   }
   for (const receipt of detail.receipts) {
     const id = `receipt:${receipt.id}`;
@@ -446,9 +473,49 @@ function returnHistoryEntries(
   return entries;
 }
 
+/**
+ * キャンセルの申し込みの行（グループ E-3 段2、決め事 P17）。申し込みごとに、申し込み・お断り・解決済み・解決の、時刻のある物を出す。
+ * Task 4 の listOrderCancelRequests の答え（AdminCancelRequest）が、時刻とした人のメールを全部持つ。申し込みはお客様がするので、した人は出さない。
+ * 返品の行と同じ type: 'return' の形（題 title・細目 details・した人 actorEmail）で出し、返品の番号は持たない（returnId は null）。
+ * お断りのメッセージ・ご連絡事項は出さない（細目は空）。解決は、品を外した返金の番号があれば（返金）、無ければ（キャンセル）
+ */
+function cancelRequestHistoryEntries(cancelRequests: readonly AdminCancelRequest[]): OrderHistoryReturnEntry[] {
+  const entry = (
+    kind: OrderHistoryReturnEntryKind,
+    idPrefix: string,
+    request: AdminCancelRequest,
+    at: string,
+    title: string,
+    actorEmail: string | null,
+  ): OrderHistoryReturnEntry => ({
+    type: 'return', kind, id: `${idPrefix}:${request.id}`, at, returnId: null, title, details: [], actorEmail,
+  });
+
+  return cancelRequests.flatMap((request) => {
+    const entries = [entry('cancel_request', 'cancel-request', request, request.requestedAt, 'キャンセルの申し込み', null)];
+    if (request.declinedAt !== null) {
+      entries.push(
+        entry('cancel_request_decline', 'cancel-request-decline', request, request.declinedAt, 'キャンセルの申し込みをお断りした', request.declinedByEmail),
+      );
+    }
+    if (request.closedAt !== null) {
+      entries.push(
+        entry('cancel_request_close', 'cancel-request-close', request, request.closedAt, 'キャンセルの申し込みを解決済みにした', request.closedByEmail),
+      );
+    }
+    if (request.resolvedAt !== null) {
+      const how = request.resolvedRefundId !== null ? '返金' : 'キャンセル';
+      entries.push(
+        entry('cancel_request_resolve', 'cancel-request-resolve', request, request.resolvedAt, `キャンセルの申し込みを解決した（${how}）`, request.resolvedByEmail),
+      );
+    }
+    return entries;
+  });
+}
+
 export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryResponse {
   const {
-    order, statusRows, emailRows, sendState, fulfillments, completions, refunds, returns, returnReceiptLines, returnRecords, lines,
+    order, statusRows, emailRows, sendState, fulfillments, completions, refunds, returns, returnReceiptLines, returnRecords, cancelRequests, lines,
   } = input;
   const lineByItem = new Map(lines.map((line) => [line.orderItemId, line] as const));
   // 返品の返金の行の「どこから」に返品の番号を出すため、返金の番号から返品の番号を引けるようにする（返金の一覧は返品の番号を持たない）
@@ -621,6 +688,7 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
       : []);
   const recordByReturn = new Map(returnRecords.map((row) => [row.returnId, row] as const));
   const returnEntries = returns.flatMap((detail) => returnHistoryEntries(detail, returnReceiptLines, recordByReturn.get(detail.id)));
+  const cancelRequestEntries = cancelRequestHistoryEntries(cancelRequests);
 
   // 同じ時刻（同じ取引で書いた行）は、結果が上に来る順に置く:
   // メール → 状態 → 取消 → 確保し直し → 交換の品を足した → 発送・仕上がり → 返金 → 返品の行（返金しないで終えた → 受け取り）→ 受付
@@ -635,6 +703,7 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
     ...completionEntries,
     ...refundEntries,
     ...returnEntries,
+    ...cancelRequestEntries,
     { type: 'created', at: order.createdAt },
   ];
   entries.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));

@@ -93,9 +93,14 @@ const RETURNS_BEFORE: ShopReturnSettings = {
 
 // テスト用の返送先（本物の住所ではない）。監査に値が入らないことを確かめるのにも使う
 const ADDRESS = { name: 'テスト商店', postalCode: '150-0001', address: '東京都渋谷区テスト町1-2-3', phone: '03-1234-5678' };
+// 申し込みの画面の注意書き（グループ E-3 段2）。監査に値が入らないことを確かめるのにも使う
+const NOTICE = '返品・交換は、商品がお手元に届いてから7日以内にお申し込みください。';
 
-/** 保存の前と同じ値の本文（変更なし）。画面は段1の欄を全部送る */
+/** 保存の前と同じ値の本文（変更なし）。画面は段1と段2の欄を全部送る */
 const RETURNS_UNCHANGED = {
+  requestsEnabled: true,
+  requestTypes: 'returns_only',
+  noticeText: '',
   returnAddress: null,
   customerPaidMethod: 'customer_ships',
   shopLabelFee: 0,
@@ -103,7 +108,9 @@ const RETURNS_UNCHANGED = {
   windowDays: 7,
   windowStart: 'each_item',
   deliveryBufferDays: 3,
-  reasons: RETURN_REASONS.map((reason) => ({ reason, shippingPayer: 'customer', outOfStockExchange: 'decline' })),
+  reasons: RETURN_REASONS.map((reason) => ({
+    reason, ...REASON_BASE, shippingPayer: 'customer', outOfStockExchange: 'decline',
+  })),
   restockingFeeEnabled: false,
   restockingFeePercent: 0,
   exchangeFeesEnabled: false,
@@ -111,8 +118,11 @@ const RETURNS_UNCHANGED = {
   exchangeShippingFee: 0,
   inspectionEnabled: false,
 };
-/** 5つのまとまり（返送・受付の期限・理由ごとの設定・手数料・受け取り）が全部変わる本文 */
+/** 6つのまとまり（申し込み・返送・受付の期限・理由ごとの設定・手数料・受け取り）が全部変わる本文 */
 const RETURNS_REQUEST = {
+  requestsEnabled: false,
+  requestTypes: 'returns_and_cancellations',
+  noticeText: NOTICE,
   returnAddress: ADDRESS,
   customerPaidMethod: 'shop_label',
   shopLabelFee: 800,
@@ -122,8 +132,12 @@ const RETURNS_REQUEST = {
   deliveryBufferDays: 2,
   reasons: RETURN_REASONS.map((reason) => ({
     reason,
+    shown: reason !== 'unknown',
+    resolutions: reason === 'size_too_small' ? 'exchange_only' : 'refund_and_exchange',
     shippingPayer: reason === 'defective' ? 'shop' : 'customer',
     outOfStockExchange: reason === 'defective' ? 'make' : 'decline',
+    photo: reason === 'defective' ? 'required' : 'none',
+    photoInstructions: reason === 'defective' ? '傷んだ所が分かるように撮ってください。' : '',
   })),
   restockingFeeEnabled: true,
   restockingFeePercent: 10,
@@ -132,9 +146,12 @@ const RETURNS_REQUEST = {
   exchangeShippingFee: 500,
   inspectionEnabled: true,
 };
-// 保存の後の返品の設定（RETURNS_REQUEST を保存した結果。5つのまとまりを admin@example.com が変えた）
+// 保存の後の返品の設定（RETURNS_REQUEST を保存した結果。6つのまとまりを admin@example.com が変えた）
 const RETURNS_AFTER: ShopReturnSettings = {
   ...RETURNS_BEFORE,
+  requestsEnabled: false,
+  requestTypes: 'returns_and_cancellations',
+  noticeText: NOTICE,
   returnAddress: ADDRESS,
   customerPaidMethod: 'shop_label',
   shopLabelFee: 800,
@@ -142,16 +159,28 @@ const RETURNS_AFTER: ShopReturnSettings = {
   windowDays: 14,
   windowStart: 'last_item',
   deliveryBufferDays: 2,
-  reasons: RETURNS_BEFORE.reasons.map((row) =>
-    row.reason === 'defective' ? { ...row, shippingPayer: 'shop' as const, outOfStockExchange: 'make' as const } : row,
-  ),
+  reasons: RETURNS_BEFORE.reasons.map((row) => ({
+    ...row,
+    shown: row.reason !== 'unknown',
+    resolutions: row.reason === 'size_too_small' ? ('exchange_only' as const) : ('refund_and_exchange' as const),
+    ...(row.reason === 'defective'
+      ? {
+          shippingPayer: 'shop' as const,
+          outOfStockExchange: 'make' as const,
+          photo: 'required' as const,
+          photoInstructions: '傷んだ所が分かるように撮ってください。',
+        }
+      : {}),
+  })),
   restockingFeeEnabled: true,
   restockingFeePercent: 10,
   exchangeFeesEnabled: true,
   exchangeFee: 300,
   exchangeShippingFee: 500,
   inspectionEnabled: true,
-  updated: { ...RETURNS_BEFORE.updated, shipping: CHANGED, window: CHANGED, reasons: CHANGED, fees: CHANGED, receiving: CHANGED },
+  updated: {
+    ...RETURNS_BEFORE.updated, requests: CHANGED, shipping: CHANGED, window: CHANGED, reasons: CHANGED, fees: CHANGED, receiving: CHANGED,
+  },
 };
 
 /** 実物の maskAuditEvent を通しても、監査の鍵が [REDACTED] にならないこと */
@@ -486,8 +515,12 @@ describe('PUT /api/admin/settings/shop（返品の欄）', () => {
     ['返品の欄の項目が欠けている（要検品）', withReturns({ inspectionEnabled: undefined })],
     ['返品の欄の項目が欠けている（返送先）', withReturns({ returnAddress: undefined })],
     ['返品の欄の項目が欠けている（理由の行）', withReturns({ reasons: undefined })],
-    ['段2の欄（申し込みの受付）は送れない', withReturns({ requestsEnabled: false })],
-    ['段2の欄（注意書き）は送れない', withReturns({ noticeText: '注意' })],
+    ['申し込みの受付が真偽でない', withReturns({ requestsEnabled: 'yes' })],
+    ['申し込みの種類が知らない値', withReturns({ requestTypes: 'exchanges_only' })],
+    ['注意書きが2001文字', withReturns({ noticeText: 'あ'.repeat(2001) })],
+    ['注意書きが前後の空白を除いても2001文字', withReturns({ noticeText: ` ${'あ'.repeat(2001)} ` })],
+    ['注意書きが文字でない', withReturns({ noticeText: 5 })],
+    ['知らない欄（段2の先の欄）', withReturns({ returnPolicyUrl: 'https://example.test/policy' })],
     ['返送先の郵便番号の形が違う', withReturns({ returnAddress: { ...ADDRESS, postalCode: '12345' } })],
     ['返送先の電話番号の形が違う', withReturns({ returnAddress: { ...ADDRESS, phone: 'abc' } })],
     ['返送先の名前が空白だけ', withReturns({ returnAddress: { ...ADDRESS, name: '   ' } })],
@@ -521,7 +554,22 @@ describe('PUT /api/admin/settings/shop（返品の欄）', () => {
       '理由の行の項目が欠けている',
       withReturns({ reasons: [{ reason: REASONS[0].reason, shippingPayer: 'shop' }, ...REASONS.slice(1)] }),
     ],
-    ['理由の行に知らない欄（写真）', withReturns({ reasons: [{ ...REASONS[0], photo: 'required' }, ...REASONS.slice(1)] })],
+    ['理由の行に知らない欄', withReturns({ reasons: [{ ...REASONS[0], note: 'x' }, ...REASONS.slice(1)] })],
+    ['理由の行の「出す」が真偽でない', withReturns({ reasons: [{ ...REASONS[0], shown: 'yes' }, ...REASONS.slice(1)] })],
+    ['理由の行の「ご希望」が知らない値', withReturns({ reasons: [{ ...REASONS[0], resolutions: 'credit_only' }, ...REASONS.slice(1)] })],
+    ['理由の行の「写真」が知らない値', withReturns({ reasons: [{ ...REASONS[0], photo: 'always' }, ...REASONS.slice(1)] })],
+    [
+      '理由の行の「写真の案内の文」が501文字',
+      withReturns({ reasons: [{ ...REASONS[0], photoInstructions: 'あ'.repeat(501) }, ...REASONS.slice(1)] }),
+    ],
+    [
+      '理由の行の「写真の案内の文」が前後の空白を除いても501文字',
+      withReturns({ reasons: [{ ...REASONS[0], photoInstructions: ` ${'あ'.repeat(501)} ` }, ...REASONS.slice(1)] }),
+    ],
+    [
+      '「不明」の行の「出す」を真にする（お客様には出さない）',
+      withReturns({ reasons: REASONS.map((row) => (row.reason === 'unknown' ? { ...row, shown: true } : row)) }),
+    ],
     ['返品の手数料を使うが真偽でない', withReturns({ restockingFeeEnabled: 'yes' })],
     ['返品の手数料が101%', withReturns({ restockingFeePercent: 101 })],
     ['返品の手数料が負', withReturns({ restockingFeePercent: -1 })],
@@ -558,6 +606,50 @@ describe('PUT /api/admin/settings/shop（返品の欄）', () => {
     expect(mockUpdateShopReturnSettings.mock.invocationCallOrder[0]).toBeLessThan(mockUpdateShopSettings.mock.invocationCallOrder[0]);
   });
 
+  // 段2の欄は任意（P14）。Task 13 の前の設定の画面は段1の欄だけを送るので、400 にしない。送っていない欄は保存に渡さず、「申し込み」のまとまりを変わったと残さない
+  it('段2の欄を送らない本文（段1の欄だけ）も通る。送っていない欄は保存に渡さず、監査の requests に数えない', async () => {
+    const stageTwoKeys = ['requestsEnabled', 'requestTypes', 'noticeText'];
+    const returns = {
+      ...Object.fromEntries(Object.entries(RETURNS_REQUEST).filter(([key]) => !stageTwoKeys.includes(key))),
+      reasons: RETURNS_REQUEST.reasons.map(({ reason, shippingPayer, outOfStockExchange }) => ({
+        reason, shippingPayer, outOfStockExchange,
+      })),
+    };
+
+    const response = await PUT(putRequest({ ...NEXT, returns }));
+
+    expect(response.status).toBe(200);
+    expect(mockUpdateShopReturnSettings).toHaveBeenCalledWith(mockServiceClient, { settings: returns, actorId: 'admin-1' });
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ returns_changed_groups: ['shipping', 'window', 'reasons', 'fees', 'receiving'] }),
+    }));
+  });
+
+  // 注意書き2000字・写真の案内の文500字は、前後の空白を除いて数える（P14）。ちょうどは通り、除いた文を保存に渡す
+  it('段2の文は前後の空白を除いて保存に渡す。注意書き2000字・写真の案内の文500字ちょうどは通る', async () => {
+    const returns = {
+      ...RETURNS_REQUEST,
+      noticeText: `  ${'あ'.repeat(2000)}  `,
+      reasons: RETURNS_REQUEST.reasons.map((row) =>
+        row.reason === 'defective' ? { ...row, photoInstructions: ` ${'い'.repeat(500)} ` } : row,
+      ),
+    };
+
+    const response = await PUT(putRequest({ ...NEXT, returns }));
+
+    expect(response.status).toBe(200);
+    expect(mockUpdateShopReturnSettings).toHaveBeenCalledWith(mockServiceClient, {
+      settings: {
+        ...returns,
+        noticeText: 'あ'.repeat(2000),
+        reasons: RETURNS_REQUEST.reasons.map((row) =>
+          row.reason === 'defective' ? { ...row, photoInstructions: 'い'.repeat(500) } : row,
+        ),
+      },
+      actorId: 'admin-1',
+    });
+  });
+
   it('返送先・名前・住所の前後の空白は除いて保存に渡す。返送先を消す（null）も渡せる', async () => {
     await PUT(putRequest(withReturns({ returnAddress: { ...ADDRESS, name: '  テスト商店  ', address: ' 東京都渋谷区テスト町1-2-3 ' } })));
     expect(mockUpdateShopReturnSettings).toHaveBeenLastCalledWith(mockServiceClient, {
@@ -585,11 +677,11 @@ describe('PUT /api/admin/settings/shop（返品の欄）', () => {
       user_agent: 'jest',
       metadata: {
         changes: { auto_refund_cancelled_order_payment: false, auto_cancel_amount_mismatch: true },
-        returns_changed_groups: ['shipping', 'window', 'reasons', 'fees', 'receiving'],
+        returns_changed_groups: ['requests', 'shipping', 'window', 'reasons', 'fees', 'receiving'],
       },
     });
     const audited = JSON.stringify(mockLogAudit.mock.calls);
-    for (const secret of ['テスト商店', '東京都渋谷区', '150-0001', '03-1234-5678', '@example.com']) {
+    for (const secret of ['テスト商店', '東京都渋谷区', '150-0001', '03-1234-5678', '@example.com', NOTICE, '傷んだ所が分かるように']) {
       expect(audited).not.toContain(secret);
     }
     expectNoKeyIsRedacted(mockLogAudit.mock.calls[0][0]);
@@ -608,6 +700,47 @@ describe('PUT /api/admin/settings/shop（返品の欄）', () => {
       ['reasons'],
     ],
     ['返送先を入れる', { returnAddress: ADDRESS }, ['shipping']],
+    ['申し込みの受付だけ', { requestsEnabled: false }, ['requests']],
+    ['申し込みの種類だけ', { requestTypes: 'cancellations_only' }, ['requests']],
+    ['注意書きだけ', { noticeText: NOTICE }, ['requests']],
+    [
+      '1つの理由の「出す」だけ',
+      { reasons: RETURNS_UNCHANGED.reasons.map((row) => (row.reason === 'color' ? { ...row, shown: true } : row)) },
+      ['reasons'],
+    ],
+    [
+      '1つの理由の「ご希望」だけ',
+      { reasons: RETURNS_UNCHANGED.reasons.map((row) => (row.reason === 'color' ? { ...row, resolutions: 'refund_only' } : row)) },
+      ['reasons'],
+    ],
+    [
+      '1つの理由の写真だけ',
+      { reasons: RETURNS_UNCHANGED.reasons.map((row) => (row.reason === 'defective' ? { ...row, photo: 'required' } : row)) },
+      ['reasons'],
+    ],
+    [
+      '1つの理由の写真の案内の文だけ',
+      {
+        reasons: RETURNS_UNCHANGED.reasons.map((row) =>
+          row.reason === 'defective' ? { ...row, photoInstructions: '全体が分かる写真を撮ってください。' } : row,
+        ),
+      },
+      ['reasons'],
+    ],
+    ['申し込みと手数料が一緒に変わる', { requestsEnabled: false, restockingFeeEnabled: true, restockingFeePercent: 5 }, ['requests', 'fees']],
+    // 段2の欄は任意（P14）。渡さない欄は DB が今の値のままにするので、変わったとは数えない（undefined は JSON から消える）
+    ['注意書きに空白だけを入れる（前の値は空）', { noticeText: '   ' }, []],
+    ['注意書きを送らない（今の値のまま）', { noticeText: undefined }, []],
+    ['申し込みの受付と種類を送らない（今の値のまま）', { requestsEnabled: undefined, requestTypes: undefined }, []],
+    [
+      '理由の行の段2の欄を送らない（段1の欄だけ）',
+      {
+        reasons: RETURNS_UNCHANGED.reasons.map(({ reason, shippingPayer, outOfStockExchange }) => ({
+          reason, shippingPayer, outOfStockExchange,
+        })),
+      },
+      [],
+    ],
   ])('変わったまとまりだけを監査に残す（%s）', async (_name, change, groups) => {
     await PUT(putRequest({ ...NEXT, returns: { ...RETURNS_UNCHANGED, ...change } }));
 
@@ -713,7 +846,7 @@ describe('PUT /api/admin/settings/shop（返品の欄）', () => {
       expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
         outcome: 'error',
         detail: 'Failed to save shop settings',
-        metadata: { returns_changed_groups: ['shipping', 'window', 'reasons', 'fees', 'receiving'] },
+        metadata: { returns_changed_groups: ['requests', 'shipping', 'window', 'reasons', 'fees', 'receiving'] },
       }));
     } finally {
       consoleError.mockRestore();
@@ -731,7 +864,7 @@ describe('PUT /api/admin/settings/shop（返品の欄）', () => {
     expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
       outcome: 'failure',
       detail: 'Shop settings refused',
-      metadata: { code: 'invalid_argument', returns_changed_groups: ['shipping', 'window', 'reasons', 'fees', 'receiving'] },
+      metadata: { code: 'invalid_argument', returns_changed_groups: ['requests', 'shipping', 'window', 'reasons', 'fees', 'receiving'] },
     }));
   });
 });

@@ -29,6 +29,10 @@ export const RETURN_RATE_LIMITS = {
   refund: { endpoint: 'admin:returns:refund', limit: 30, windowSeconds: 600 },
   // 取消・開き直し・届かないで終える・検品・手数料の記録・支払いを待たずに送る
   update: { endpoint: 'admin:returns:update', limit: 60, windowSeconds: 600 },
+  // 申し込みの承認・お断り（グループ E-3 段2。Global Constraints の値）
+  review: { endpoint: 'admin:returns:review', limit: 30, windowSeconds: 600 },
+  // キャンセルの申し込みのお断り・解決済みにする・解決する（同上）
+  cancelRequestUpdate: { endpoint: 'admin:cancel-requests:update', limit: 60, windowSeconds: 600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** 思いがけない失敗（500）の言葉。C-4・C-5 に無いので本タスクで決めた。何をしようとして失敗したかで分ける */
@@ -39,6 +43,11 @@ export const RETURN_FAILURE_MESSAGES = {
   receive: '受け取りの記録に失敗しました。',
   refund: '返金の記録に失敗しました。',
   update: '返品の更新に失敗しました。',
+  approve: '返品の申し込みの承認に失敗しました。',
+  decline: '返品の申し込みのお断りに失敗しました。',
+  photos: '写真を読み込めませんでした。',
+  cancelRequests: 'キャンセルの申し込みを読み込めませんでした。',
+  cancelRequestUpdate: 'キャンセルの申し込みの更新に失敗しました。',
 } as const;
 export type ReturnFailureKind = keyof typeof RETURN_FAILURE_MESSAGES;
 
@@ -212,7 +221,7 @@ export type ReturnAudit = (outcome: AuditOutcome, detail: string, metadata?: Rec
 export function createReturnAudit(
   request: Request,
   actorId: string,
-  target: { action: string; resource: 'orders' | 'order_returns'; resourceId: string },
+  target: { action: string; resource: 'orders' | 'order_returns' | 'order_cancel_requests'; resourceId: string },
 ): ReturnAudit {
   return (outcome, detail, metadata = null) =>
     logAudit({

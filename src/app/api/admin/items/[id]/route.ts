@@ -14,6 +14,8 @@ import { buildItemDeleteGuidance } from '@/lib/items/item-delete-guidance';
 
 const itemCategorySchema = z.enum(['TOPS', 'BOTTOMS', 'OUTERWEAR', 'ACCESSORIES']);
 const itemStatusSchema = z.enum(['private', 'published']);
+// 返品不可の印（グループ E-3 段2、決め事 P15）。FormData の文字 'true'・'false' を boolean にする。ほかの値は 400
+const returnIneligibleSchema = z.enum(['true', 'false']).transform((value) => value === 'true');
 const colorSchema = z.object({
   name: z.string().trim().min(1).max(40),
   hex: z.string().regex(/^#[0-9a-fA-F]{6}$/),
@@ -28,6 +30,7 @@ const updateItemSchema = z.object({
   origin: z.string().trim().max(200).optional().default(''),
   care: z.string().trim().max(500).optional().default(''),
   product_note: z.string().trim().max(500).optional().default(''),
+  return_ineligible: returnIneligibleSchema,
   status: itemStatusSchema,
   sizes: z.array(z.string().trim().min(1).max(20)).min(1),
   colors: z.array(colorSchema).min(1),
@@ -158,6 +161,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       origin: formData.get('origin') ?? '',
       care: formData.get('care') ?? '',
       product_note: formData.get('product_note') ?? '',
+      return_ineligible: formData.get('return_ineligible') ?? 'false',
       status: formData.get('status'),
       sizes: parseJsonField(formData.get('sizes'), z.array(z.string())),
       colors: parseJsonField(formData.get('colors'), z.array(colorSchema)),
@@ -198,6 +202,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       origin: parsedPayload.data.origin || null,
       care: parsedPayload.data.care || null,
       product_note: parsedPayload.data.product_note || null,
+      return_ineligible: parsedPayload.data.return_ineligible,
       status: parsedPayload.data.status,
     };
 

@@ -75,7 +75,7 @@ function refund(overrides: Partial<OrderRefundRow> = {}): OrderRefundRow {
 function input(overrides: Partial<BuildOrderHistoryInput> = {}): BuildOrderHistoryInput {
   return {
     order: ORDER, statusRows: [], emailRows: [], sendState: NOT_PAUSED, fulfillments: [], completions: [], refunds: [], returns: [],
-    returnReceiptLines: [], returnRecords: [], lines: [],
+    returnReceiptLines: [], returnRecords: [], cancelRequests: [], lines: [],
     ...overrides,
   };
 }
@@ -833,7 +833,7 @@ function receiptLine(receiptId: string, disposition: string, quantity: number): 
 /** 窓口が order_returns から引いて渡す、取消などをした人のメールと手数料をいただかない印（returnDetail の見本の返品 ret-1 の分） */
 function returnRecord(overrides: Partial<OrderHistoryReturnRecord> = {}): OrderHistoryReturnRecord {
   return {
-    returnId: 'ret-1', cancelledByEmail: null, feeReceivedByEmail: null, exchangeReleasedByEmail: null, feeWaived: false, feeSettledAmount: 0, ...overrides,
+    returnId: 'ret-1', cancelledByEmail: null, feeReceivedByEmail: null, exchangeReleasedByEmail: null, declinedByEmail: null, feeWaived: false, feeSettledAmount: 0, ...overrides,
   };
 }
 
@@ -847,8 +847,8 @@ describe('buildOrderHistory - 返品', () => {
     }]);
   });
 
-  it('お客様の申し込みの返品（段2）には「返品を作った」の行を出さない（段2で申し込み・承認の行を足す）', () => {
-    const history = buildOrderHistory(input({ returns: [returnDetail({ source: 'customer_request', status: 'requested' })] }));
+  it('お客様の申し込みの返品（段2）には「返品を作った」の行を出さない（申し込み・承認・お断りの行は、時刻があれば出す。order-history-requests.test.ts）', () => {
+    const history = buildOrderHistory(input({ returns: [returnDetail({ source: 'customer_request', status: 'requested', requestedAt: null })] }));
 
     expect(entriesOf(history.entries, 'return')).toEqual([]);
   });

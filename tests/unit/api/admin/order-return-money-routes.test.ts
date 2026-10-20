@@ -597,7 +597,9 @@ describe('POST /api/admin/returns/[returnId]/receive（受け取る）', () => {
   });
 
   it.each<[string, Record<string, unknown>]>([
-    ['今返金', { refundChoice: 'now' }],
+    ['今返金で額の指定', { refundChoice: 'now', refundAmount: 5000 }],
+    ['今返金で送料の指定', { refundChoice: 'now', refundShippingAmount: 300 }],
+    ['今返金で交換の選び直し', { refundChoice: 'now', exchangeOverrides: [{ returnLineId: LINE_ID, action: 'refund' }] }],
     ['返金額の指定', { refundChoice: 'consult', refundAmount: 5000 }],
     ['返金額を0に指定', { refundChoice: 'consult', refundAmount: 0 }],
     ['送料の指定', { refundChoice: 'consult', refundShippingAmount: 300 }],
@@ -615,6 +617,59 @@ describe('POST /api/admin/returns/[returnId]/receive（受け取る）', () => {
       outcome: 'failure', detail: 'Refund permission is missing', ip: '203.0.113.5', user_agent: 'jest',
       metadata: { code: 'RETURN_FORBIDDEN' },
     }]]);
+  });
+
+  // 計画の冒頭 P9: サポートの今返金は、お客様の申し込みの返品（返送不要でない）なら DB が許す。窓口は断らず、
+  // 返金の権限なし（actorCanRefund: false）のまま DB に渡す。許すかは DB が返品の道（source）と返送の方法で決める
+  it('サポートの今返金は窓口で断らず、返金の権限なし（actorCanRefund: false）のまま入口（DB）に渡す。額・送料・交換の選び直しは付けない（Review Focus 5）', async () => {
+    grant('admin.orders.return');
+
+    const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, refundChoice: 'now' } });
+
+    expect(response.status).toBe(200);
+    expect(mockReceive).toHaveBeenCalledTimes(1);
+    expect(mockReceive).toHaveBeenCalledWith(mockDeps, expect.objectContaining({
+      actorCanRefund: false, refundChoice: 'now', refundAmount: null, refundShippingAmount: 0, exchangeOverrides: [],
+    }));
+  });
+
+  it('サポートの今返金で返金ができた時は、店長の今返金と同じ形の答え（受け取りの番号・返金の番号・額・状態）を返す（Review Focus 5）', async () => {
+    grant('admin.orders.return');
+
+    const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, refundChoice: 'now' } });
+
+    await expect(response.json()).resolves.toEqual({ data: RECEIVED_DATA });
+  });
+
+  it('サポートの今返金を DB が RETURN_FORBIDDEN で断ったら（お店が作った返品・返送不要の返品）、403 と C-4 の言葉。監査は断りとして残す（Review Focus 5）', async () => {
+    grant('admin.orders.return');
+    mockReceive.mockResolvedValue({ kind: 'refused', code: 'RETURN_FORBIDDEN' });
+
+    const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, refundChoice: 'now' } });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: 'この操作は店長だけができます。', code: 'RETURN_FORBIDDEN' });
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action: 'admin.orders.return.receive', actor_id: 'admin-1', resource: 'order_returns', resource_id: RETURN_ID,
+      outcome: 'failure', detail: 'Return receive refused', ip: '203.0.113.5', user_agent: 'jest',
+      metadata: { code: 'RETURN_FORBIDDEN', refund_choice: 'now', unit_count: 2 },
+    });
+  });
+
+  // Review Focus 5: E-2 の確かめ中の返金がある時、DB は受け取りも返金も記録せず E-2 の言葉で断る
+  it('サポートの今返金で確かめ中の返金があれば、E-2 の言葉と HTTP（409 awaiting_refund_exists）をそのまま返す（Review Focus 5）', async () => {
+    grant('admin.orders.return');
+    mockReceive.mockResolvedValue({ kind: 'refused', code: 'awaiting_refund_exists' });
+
+    const response = await call(ENDPOINTS[0], { body: { ...RECEIVE_BODY, refundChoice: 'now' } });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: '確かめ中の返金があります。先に確かめてください。',
+      code: 'awaiting_refund_exists',
+    });
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'conflict', detail: 'Return receive refused' }));
   });
 
   // 返金の権限を確かめられなかった（セッションの確認が一時的に使えない）だけの店長を、黙ってサポートの扱いにしない

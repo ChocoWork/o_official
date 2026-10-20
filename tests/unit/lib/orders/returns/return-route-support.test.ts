@@ -86,16 +86,18 @@ beforeEach(() => {
 });
 
 describe('計画の冒頭の値（回数の制限の窓口名と回数・500 の言葉・手数料の上限）', () => {
-  it('回数の制限は 作る・受け取り・額を決めて返金が10分に30回、取消などが10分に60回', () => {
+  it('回数の制限は 作る・受け取り・額を決めて返金・申し込みの承認とお断りが10分に30回、取消など・キャンセルの申し込みの更新が10分に60回', () => {
     expect(RETURN_RATE_LIMITS).toEqual({
       create: { endpoint: 'admin:returns:create', limit: 30, windowSeconds: 600 },
       receive: { endpoint: 'admin:returns:receive', limit: 30, windowSeconds: 600 },
       refund: { endpoint: 'admin:returns:refund', limit: 30, windowSeconds: 600 },
       update: { endpoint: 'admin:returns:update', limit: 60, windowSeconds: 600 },
+      review: { endpoint: 'admin:returns:review', limit: 30, windowSeconds: 600 },
+      cancelRequestUpdate: { endpoint: 'admin:cancel-requests:update', limit: 60, windowSeconds: 600 },
     });
   });
 
-  it('思いがけない失敗（500）の言葉は6つ。記号は E-2 と同じ failed', () => {
+  it('思いがけない失敗（500）の言葉は11個。記号は E-2 と同じ failed', () => {
     expect(RETURN_FAILURE_MESSAGES).toEqual({
       list: '返品の一覧を読み込めませんでした。',
       materials: '返品の材料を読み込めませんでした。',
@@ -103,8 +105,14 @@ describe('計画の冒頭の値（回数の制限の窓口名と回数・500 の
       receive: '受け取りの記録に失敗しました。',
       refund: '返金の記録に失敗しました。',
       update: '返品の更新に失敗しました。',
+      approve: '返品の申し込みの承認に失敗しました。',
+      decline: '返品の申し込みのお断りに失敗しました。',
+      photos: '写真を読み込めませんでした。',
+      cancelRequests: 'キャンセルの申し込みを読み込めませんでした。',
+      cancelRequestUpdate: 'キャンセルの申し込みの更新に失敗しました。',
     });
     expect(returnFailureBody('receive')).toEqual({ error: '受け取りの記録に失敗しました。', code: 'failed' });
+    expect(returnFailureBody('approve')).toEqual({ error: '返品の申し込みの承認に失敗しました。', code: 'failed' });
   });
 
   it('手数料の円の欄の上限は 1000000（Global Constraints の金額の上限。DB・画面と同じ値）', () => {
@@ -518,6 +526,29 @@ describe('createReturnAudit（監査の書き込み）', () => {
       resource: 'orders', resource_id: 'x', outcome: 'failure', detail: 'Invalid order id', ip: null, metadata: null,
     }));
     expect(mockLogAudit.mock.calls[0][0].user_agent).toBeNull();
+  });
+});
+
+describe('createReturnAudit（キャンセルの申し込み。グループ E-3 段2）', () => {
+  it('対象の種類 order_cancel_requests と申し込みの番号を付けて logAudit に渡す', async () => {
+    const cancelRequestId = 'a4b2c3d4-1111-4222-8333-444455556666';
+    const audit = createReturnAudit(postRequest(), 'admin-1', {
+      action: 'admin.orders.cancel_request.close', resource: 'order_cancel_requests', resourceId: cancelRequestId,
+    });
+
+    await audit('success', 'Cancel request closed', { status: 'closed' });
+
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action: 'admin.orders.cancel_request.close',
+      actor_id: 'admin-1',
+      resource: 'order_cancel_requests',
+      resource_id: cancelRequestId,
+      outcome: 'success',
+      detail: 'Cancel request closed',
+      ip: '203.0.113.5',
+      user_agent: 'jest',
+      metadata: { status: 'closed' },
+    });
   });
 });
 
