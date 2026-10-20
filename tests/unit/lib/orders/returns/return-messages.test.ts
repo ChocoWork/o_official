@@ -5,14 +5,19 @@ import { REFUND_ERROR_CODES } from '@/lib/orders/refund/refund-types';
 import {
   DISPOSITION_LABELS,
   RETURN_CARRIER_LABELS,
+  RETURN_DECLINE_MESSAGE_PREFILL,
+  RETURN_DECLINE_REASON_LABELS,
   RETURN_DISPLAY_STATUS_LABELS,
   RETURN_ERROR_MESSAGES,
   RETURN_MARK_LABELS,
   RETURN_REASON_LABELS,
   formatReturnNumber,
+  prefillDeclineMessage,
 } from '@/lib/orders/returns/return-messages';
 import {
+  CANCEL_REQUEST_STATUSES,
   RETURN_CARRIERS,
+  RETURN_DECLINE_REASONS,
   RETURN_DISPLAY_STATUSES,
   RETURN_ERROR_CODES,
   RETURN_MARKS,
@@ -52,6 +57,18 @@ const EXPECTED = [
   ['FULFILLMENT_HAS_RETURN', 409, '返品のある発送は取り消せません。'],
   ['FULFILLMENT_EXCHANGE_ON_HOLD', 409, '手数料のお支払いを待っている交換の品は送れません。'],
   ['ORDER_NOT_RETURNABLE', 409, 'この注文は返品を作れません。'],
+  // 段2（共通の約束 C-4 の管理画面の言葉）。管理画面の窓口からは出ない記号（お客様の申し込みだけで出る物）は、言葉 `申し込みを受け付けられませんでした。`
+  ['RETURN_NOT_ELIGIBLE', 409, '申し込めない品が含まれています。画面を開き直してください。'],
+  ['RETURN_REQUESTS_CLOSED', 409, '申し込みの受付がオフです。'],
+  ['RETURN_PHOTO_INVALID', 400, '写真を確かめてください。'],
+  ['RETURN_CUSTOMER_NOTE_REQUIRED', 400, '詳しい内容が必要です。'],
+  ['RETURN_DECLINE_MESSAGE_REQUIRED', 400, 'お客様へのメッセージを入れてください（1000字まで）。'],
+  ['CANCEL_REQUEST_NOT_FOUND', 404, 'キャンセルの申し込みが見つかりません。'],
+  ['CANCEL_REQUEST_EXISTS', 409, '申し込みを受け付けられませんでした。'],
+  ['CANCEL_REQUEST_NOT_ELIGIBLE', 409, '申し込みを受け付けられませんでした。'],
+  ['CANCEL_REQUEST_QUANTITY_EXCEEDS', 409, '申し込みを受け付けられませんでした。'],
+  ['CANCEL_REQUEST_STATE_CONFLICT', 409, 'キャンセルの申し込みの状態が変わりました。画面を開き直してください。'],
+  ['CANCEL_REQUEST_RESOLUTION_INVALID', 409, '返金・キャンセルの記録を確かめられませんでした。画面を開き直してください。'],
 ] as const;
 
 describe('返品の記号', () => {
@@ -66,13 +83,21 @@ describe('返品の記号', () => {
     expect([...RETURN_CARRIERS]).toEqual(['yamato', 'sagawa', 'japanpost', 'other']);
   });
 
-  it('窓口が返す18の誤りの記号は共通の約束 C-2 のとおり', () => {
+  it('お断りの理由とキャンセルの申し込みの状態の値は Global Constraints のとおり', () => {
+    expect([...RETURN_DECLINE_REASONS]).toEqual(['window_passed', 'final_sale', 'other']);
+    expect([...CANCEL_REQUEST_STATUSES]).toEqual(['requested', 'resolved', 'declined', 'closed']);
+  });
+
+  it('窓口が返す29の誤りの記号（段1の18と段2の11）は共通の約束 C-2 のとおり', () => {
     expect([...RETURN_ERROR_CODES]).toEqual([
       'RETURN_NOT_FOUND', 'RETURN_ARGUMENT_INVALID', 'RETURN_QUANTITY_EXCEEDS', 'RETURN_EXCHANGE_VARIANT_INVALID',
       'RETURN_ADDRESS_REQUIRED', 'RETURN_STATE_CONFLICT', 'RETURN_RECEIPT_EXCEEDS', 'RETURN_EXCHANGE_OUT_OF_STOCK',
       'RETURN_FORBIDDEN', 'RETURN_REQUEST_MISMATCH', 'RETURN_REASON_NOTE_REQUIRED', 'RETURN_SENT_BACK_MESSAGE_REQUIRED',
       'RETURN_FEE_INVALID', 'RETURN_REFUND_AMOUNT_INVALID', 'RETURN_NOTHING_TO_REFUND', 'FULFILLMENT_HAS_RETURN',
       'FULFILLMENT_EXCHANGE_ON_HOLD', 'ORDER_NOT_RETURNABLE',
+      'RETURN_NOT_ELIGIBLE', 'RETURN_REQUESTS_CLOSED', 'RETURN_PHOTO_INVALID', 'RETURN_CUSTOMER_NOTE_REQUIRED',
+      'RETURN_DECLINE_MESSAGE_REQUIRED', 'CANCEL_REQUEST_NOT_FOUND', 'CANCEL_REQUEST_EXISTS', 'CANCEL_REQUEST_NOT_ELIGIBLE',
+      'CANCEL_REQUEST_QUANTITY_EXCEEDS', 'CANCEL_REQUEST_STATE_CONFLICT', 'CANCEL_REQUEST_RESOLUTION_INVALID',
     ]);
   });
 
@@ -80,6 +105,14 @@ describe('返品の記号', () => {
     const sql = migrationText('_order_return_records.sql');
 
     for (const value of [...RETURN_STATUSES, ...RETURN_REASONS, ...RETURN_CARRIERS]) {
+      expect(sql).toContain(`'${value}'`);
+    }
+  });
+
+  it('お断りの理由とキャンセルの申し込みの状態の値は、移行 D の CHECK の値と同じ（段2の Task 1 の移行がある前提）', () => {
+    const sql = migrationText('_order_return_request_records.sql');
+
+    for (const value of [...RETURN_DECLINE_REASONS, ...CANCEL_REQUEST_STATUSES]) {
       expect(sql).toContain(`'${value}'`);
     }
   });
@@ -152,6 +185,30 @@ describe('ラベルの表（共通の約束 C-5）', () => {
       pending_inspection: '検品待ち',
       sent_back: '条件に合わないのでお返しする',
     });
+  });
+});
+
+describe('お断りの理由の言葉と、メッセージの最初の文（共通の約束 C-2・C-5。P8）', () => {
+  it('理由の言葉と最初の文（その他は空）', () => {
+    expect(RETURN_DECLINE_REASON_LABELS).toEqual({ window_passed: '期間切れ', final_sale: '返品不可', other: 'その他' });
+    expect(RETURN_DECLINE_MESSAGE_PREFILL).toEqual({
+      window_passed: '受付の期限を過ぎているため、今回のお申し込みはお受けできませんでした。',
+      final_sale: 'この商品は返品不可の商品のため、お客様のご都合による返品・交換はお受けできませんでした。',
+      other: '',
+    });
+    expect(Object.keys(RETURN_DECLINE_REASON_LABELS)).toEqual([...RETURN_DECLINE_REASONS]);
+    expect(Object.keys(RETURN_DECLINE_MESSAGE_PREFILL)).toEqual([...RETURN_DECLINE_REASONS]);
+  });
+
+  it.each([
+    ['空の欄に、初めて理由を選ぶ', '', null, 'window_passed', RETURN_DECLINE_MESSAGE_PREFILL.window_passed],
+    ['空白だけの欄（全角の空白を含む）', '　 \n', 'other', 'final_sale', RETURN_DECLINE_MESSAGE_PREFILL.final_sale],
+    ['前の理由の最初の文のままなら、新しい理由の最初の文', RETURN_DECLINE_MESSAGE_PREFILL.window_passed, 'window_passed', 'final_sale', RETURN_DECLINE_MESSAGE_PREFILL.final_sale],
+    ['前の理由の最初の文のままで、その他を選ぶと空', RETURN_DECLINE_MESSAGE_PREFILL.final_sale, 'final_sale', 'other', ''],
+    ['直した文は残す', `${RETURN_DECLINE_MESSAGE_PREFILL.window_passed}\n返品の期限は到着後7日です。`, 'window_passed', 'final_sale', `${RETURN_DECLINE_MESSAGE_PREFILL.window_passed}\n返品の期限は到着後7日です。`],
+    ['前の理由が無い（選び直す前に「選んでください」に戻した）時は、書いた文を残す', RETURN_DECLINE_MESSAGE_PREFILL.window_passed, null, 'final_sale', RETURN_DECLINE_MESSAGE_PREFILL.window_passed],
+  ] as const)('%s', (_label, current, previous, next, expected) => {
+    expect(prefillDeclineMessage(current, previous, next)).toBe(expected);
   });
 });
 

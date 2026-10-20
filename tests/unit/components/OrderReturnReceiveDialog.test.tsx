@@ -53,7 +53,7 @@ const BLOUSE: OrderReturnLineDetail = {
   id: 'line-blouse', fulfillmentId: 'ful-1', fulfillmentNumber: 1, orderItemId: 'item-blouse',
   itemName: 'シルクブラウス', color: '白', size: 'M', quantity: 2, reason: 'size_too_small', reasonNote: null,
   resolution: 'refund', exchange: null, progress: progress(),
-  refundAmountsByCount: [12000, 24000], refundWaitingAmount: 0,
+  refundAmountsByCount: [12000, 24000], refundWaitingAmount: 0, customerNote: null, requestedResolution: null, requestedExchange: null, photos: [], returnIneligible: false,
 };
 
 /** 交換の行。黒 / L のコートを、同じ商品の黒 / XL に替える。1点。額の列は空で、返金に変える試験だけが渡す。同じ交換先の2行を並べる試験（どちらもこのコートの行）は、2行とも空の同じ列のまま */
@@ -63,7 +63,7 @@ const COAT: OrderReturnLineDetail = {
   resolution: 'exchange',
   exchange: { variantId: 501, color: '黒', size: 'XL', method: 'stock', stockQuantity: 3, madeToOrderLeadDays: 14, outOfStockExchange: 'make' },
   progress: progress({ unprocessed: 1 }),
-  refundAmountsByCount: [], refundWaitingAmount: 0,
+  refundAmountsByCount: [], refundWaitingAmount: 0, customerNote: null, requestedResolution: null, requestedExchange: null, photos: [], returnIneligible: false,
 };
 
 function exchangeLine(exchange: Partial<Exchange> = {}, overrides: Partial<OrderReturnLineDetail> = {}): OrderReturnLineDetail {
@@ -81,7 +81,7 @@ function returnDetail(overrides: Partial<OrderReturnDetail> = {}): OrderReturnDe
     },
     firstReceiptDone: false, firstExchangeReceiptDone: false,
     shopNote: null, notifyCustomer: true, createdAt: '2026-10-12T01:00:00.000Z', createdByEmail: 'admin@example.com',
-    closedAt: null, cancelledAt: null,
+    closedAt: null, cancelledAt: null, requestedAt: null, approvedAt: null, approvedByEmail: null, declinedAt: null, declineReason: null, declineMessage: null,
     lines: [BLOUSE], refunds: [], receipts: [], exchangeItems: [],
     ...overrides,
   };

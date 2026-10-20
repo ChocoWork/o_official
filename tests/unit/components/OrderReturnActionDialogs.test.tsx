@@ -41,7 +41,7 @@ const BLOUSE: OrderReturnLineDetail = {
   itemName: 'シルクブラウス', color: '白', size: 'M', quantity: 2, reason: 'size_too_small', reasonNote: null,
   resolution: 'refund', exchange: null,
   progress: progress({ pendingInspection: 2, processed: 2 }),
-  refundAmountsByCount: [], refundWaitingAmount: 0,
+  refundAmountsByCount: [], refundWaitingAmount: 0, customerNote: null, requestedResolution: null, requestedExchange: null, photos: [], returnIneligible: false,
 };
 
 /** 1点が検品待ちの品。サイズが無い */
@@ -62,7 +62,7 @@ function returnDetail(overrides: Partial<OrderReturnDetail> = {}): OrderReturnDe
     },
     firstReceiptDone: false, firstExchangeReceiptDone: false,
     shopNote: null, notifyCustomer: true, createdAt: '2026-10-12T01:00:00.000Z', createdByEmail: 'admin@example.com',
-    closedAt: null, cancelledAt: null,
+    closedAt: null, cancelledAt: null, requestedAt: null, approvedAt: null, approvedByEmail: null, declinedAt: null, declineReason: null, declineMessage: null,
     lines: [BLOUSE, BELT], refunds: [], receipts: [], exchangeItems: [],
     ...overrides,
   };

@@ -34,13 +34,31 @@ import { createFulfillment } from '@/lib/orders/fulfillment/fulfillment-store';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { markOrderRefundError } from '@/lib/orders/refund/refund-store';
 import {
+  closeCancelRequest,
+  declineCancelRequest,
+  listOrderCancelRequests,
+  resolveCancelRequest,
+} from '@/lib/orders/returns/cancel-request-store';
+import {
+  CustomerOrderNotFoundError,
+  createCustomerReturnPhotoUpload,
+  loadCustomerOrderReturns,
+  loadCustomerReturnRequestMaterials,
+  requestCustomerCancel,
+  requestCustomerReturn,
+} from '@/lib/orders/returns/customer-return-store';
+import type { CustomerReturnRequestInput } from '@/lib/orders/returns/customer-return-types';
+import {
   ReturnStoreError,
+  approveReturn,
   cancelReturn,
   countReturnAttention,
   createReturn,
+  declineReturn,
   getShopReturnSettings,
   listOrderReturnSummaries,
   listOrderReturns,
+  listReturnPhotos,
   loadReturnCreateMaterials,
   receiveReturn,
   refundReturn,
@@ -66,7 +84,9 @@ const RETURN_ADDRESS = { name: 'Le Fil des Heures 返品係', postalCode: '150-0
 const MATERIALS_KEYS = ['order', 'shipments', 'exchangeOptions', 'settings'];
 const MATERIALS_ORDER_KEYS = ['id', 'status', 'hasAwaitingRefund'];
 const SHIPMENT_KEYS = ['fulfillmentId', 'number', 'shippedAt', 'deadlineDate', 'pastDeadline', 'lines'];
-const SHIPMENT_LINE_KEYS = ['orderItemId', 'itemId', 'variantId', 'itemName', 'color', 'size', 'lineKind', 'quantity', 'returnable'];
+const SHIPMENT_LINE_KEYS = [
+  'orderItemId', 'itemId', 'variantId', 'itemName', 'color', 'size', 'lineKind', 'quantity', 'returnable', 'returnIneligible',
+];
 const EXCHANGE_OPTION_KEYS = ['itemId', 'variants'];
 const EXCHANGE_VARIANT_KEYS = ['variantId', 'color', 'size', 'isActive', 'stockQuantity', 'madeToOrderLeadDays'];
 const MATERIALS_SETTINGS_KEYS = [
@@ -77,6 +97,7 @@ const RETURN_KEYS = [
   'id', 'number', 'label', 'status', 'source', 'displayStatus', 'marks', 'returnMethod', 'returnShippingPayer', 'returnCarrier',
   'returnTrackingNumber', 'fees', 'firstReceiptDone', 'firstExchangeReceiptDone', 'shopNote', 'notifyCustomer', 'createdAt',
   'createdByEmail', 'closedAt', 'cancelledAt', 'lines', 'refunds', 'receipts', 'exchangeItems',
+  'requestedAt', 'approvedAt', 'approvedByEmail', 'declinedAt', 'declineReason', 'declineMessage',
 ];
 const RETURN_FEES_KEYS = [
   'returnShippingFee', 'restockingFeePercent', 'exchangeFee', 'exchangeShippingFee', 'feeDueAmount', 'feePendingDeduction', 'feeReceivedAt',
@@ -85,6 +106,7 @@ const RETURN_FEES_KEYS = [
 const RETURN_LINE_KEYS = [
   'id', 'fulfillmentId', 'fulfillmentNumber', 'orderItemId', 'itemName', 'color', 'size', 'quantity', 'reason', 'reasonNote', 'resolution',
   'exchange', 'progress', 'refundAmountsByCount', 'refundWaitingAmount',
+  'customerNote', 'requestedResolution', 'requestedExchange', 'photos', 'returnIneligible',
 ];
 const RETURN_LINE_EXCHANGE_KEYS = ['variantId', 'color', 'size', 'method', 'stockQuantity', 'madeToOrderLeadDays', 'outOfStockExchange'];
 const RETURN_PROGRESS_KEYS = [
@@ -378,7 +400,7 @@ describeLocalDb('integration: 返品の窓口を実際の PostgREST に通す', 
     expectKeys(shipment.lines[0], SHIPMENT_LINE_KEYS);
     expect(shipment.lines[0]).toEqual({
       orderItemId: order.orderItemId, itemId: order.itemId, variantId: order.variantId, itemName: '照合テスト', color: 'BLACK', size: 'M',
-      lineKind: 'order', quantity: QUANTITY, returnable: QUANTITY,
+      lineKind: 'order', quantity: QUANTITY, returnable: QUANTITY, returnIneligible: false,
     });
 
     // 交換で選べる色・サイズ: 同じ商品の、元の色・サイズと足した色・サイズ
@@ -689,6 +711,351 @@ describeLocalDb('integration: 返品の窓口を実際の PostgREST に通す', 
     const raw = await client.rpc('list_order_returns', { _order_id: order.orderId });
     expect(raw.error).toBeNull();
     expect(missingRawKeys(raw.data, returns, 'returns', { ignore: ['label'] })).toEqual([]);
+  });
+
+  test('段2の読み出し: 写真とキャンセルの申し込みの一覧は空の配列。お客様の関数は、持ち主でない番号なら ORDER_NOT_FOUND の文が PostgREST を通って null / CustomerOrderNotFoundError になる', async () => {
+    await expect(listReturnPhotos(client, returnId)).resolves.toEqual([]);
+    await expect(listOrderCancelRequests(client, order.orderId)).resolves.toEqual([]);
+
+    const stranger = { orderId: order.orderId, customerId: crypto.randomUUID() };
+    // 窓口が拾う前の、PostgREST の誤りの文から DB の言葉を拾えること（持ち主でない番号は、注文が無いのと同じ断り）
+    const raw = await client.rpc('get_customer_return_request_materials', { _order_id: stranger.orderId, _customer_id: stranger.customerId });
+    expect(raw.data).toBeNull();
+    expect(toReturnErrorCode(raw.error?.message)).toBe('order_not_found');
+    await expect(loadCustomerReturnRequestMaterials(client, stranger)).resolves.toBeNull();
+    await expect(loadCustomerOrderReturns(client, stranger)).resolves.toBeNull();
+    const refusal = await refusalOf(
+      requestCustomerCancel(client, {
+        ...stranger, requestKey: crypto.randomUUID(), lines: [{ orderItemId: order.orderItemId, quantity: 1 }], customerNote: null,
+      }),
+    );
+    expect(refusal).toBeInstanceOf(CustomerOrderNotFoundError);
+  });
+
+  // ---- 段2: 申し込み・承認・お断り・キャンセルの申し込みを本物の PostgREST に通す ----
+  // 管理画面の E2E は窓口を差し替え（P16）、単体試験は rpc を差し替えるので、移行 E・F の jsonb のキーと TS の読み取りのずれは
+  // 窓口・画面の試験からは見つけにくい。ここで先に見つける。値の入った申し込みの返品・キャンセルの申し込みを作り、入れ子のキー（requested_exchange・photos・
+  // return_address・lines など）まで、DB の jsonb が C-2 の型の全部のキーを snake_case で持つことを確かめる。
+  // お客様の申し込みはメールの予定（return_requested など）を必ず書く（ほかの PostgREST の試験と同じく、確定した行は残る）
+
+  const REQUEST_MATERIALS_KEYS = ['order', 'availability', 'noticeText', 'shipments', 'reasons', 'exchangeOptions', 'fees'];
+  const REQUEST_SHIPMENT_KEYS = ['fulfillmentId', 'number', 'shippedAt', 'deadlineDate', 'pastDeadline', 'lines'];
+  const REQUEST_LINE_KEYS = [
+    'orderItemId', 'itemId', 'itemName', 'color', 'size', 'lineKind', 'quantity', 'selectable', 'state', 'returnIneligible',
+  ];
+  const REQUEST_REASON_KEYS = ['reason', 'resolutions', 'outOfStockExchange', 'photo', 'photoInstructions', 'shippingPayer'];
+  const REQUEST_VARIANT_KEYS = ['variantId', 'color', 'size', 'stockQuantity', 'madeToOrderLeadDays'];
+  const REQUEST_FEES_KEYS = ['customerPaidMethod', 'shopLabelFee', 'restockingFeePercent', 'exchangeFee', 'exchangeShippingFee'];
+  const CUSTOMER_RETURN_KEYS = [
+    'id', 'number', 'label', 'status', 'customerStatus', 'returnMethod', 'returnShippingPayer', 'returnShippingFee', 'returnAddress',
+    'requestedAt', 'closedAt', 'lines', 'refundAmount', 'sentBack', 'declineMessage', 'exchangeShipping',
+  ];
+  const CUSTOMER_RETURN_LINE_KEYS = ['itemName', 'color', 'size', 'quantity', 'requestedResolution', 'requestedExchange', 'resolution', 'exchange'];
+  const CUSTOMER_CANCEL_KEYS = ['id', 'status', 'requestedAt', 'lines', 'declineMessage'];
+  const ADMIN_CANCEL_KEYS = [
+    'id', 'status', 'requestedAt', 'customerNote', 'lines', 'declineReason', 'declineMessage', 'declinedAt', 'declinedByEmail',
+    'resolvedAt', 'resolvedByEmail', 'resolvedRefundId', 'resolvedByCancelAt', 'closedAt', 'closedByEmail',
+  ];
+  const ADMIN_CANCEL_LINE_KEYS = ['orderItemId', 'itemName', 'color', 'size', 'quantity', 'unshipped'];
+  const PHOTO_REF_KEYS = ['photoId', 'returnLineId', 'storagePath', 'purged'];
+
+  type CustomerShippedOrder = { orderId: string; fulfillmentId: string; ineligibleItemId: number; ineligibleOrderItemId: string; otherOrderItemId: string };
+
+  /** お客様の持ち物の、発送した注文（品は2つ。1つ目の商品は返品不可・2点、2つ目は1点）。持ち主は空から値へ1回だけ書ける */
+  async function createCustomerShippedOrder(customerId: string): Promise<CustomerShippedOrder> {
+    const ineligible = await createCatalogFixture(db(), { stock: 2 });
+    const other = await createCatalogFixture(db(), { stock: 1 });
+    await db().query('update public.items set return_ineligible = true where id = $1', [ineligible.itemId]);
+    const { orderId, orderItemIds } = await insertOrderWithLines(db(), {
+      status: 'paid',
+      paidAmount: PRICE * 3,
+      paymentIntentId: `pi_pgrst_request_${uniqueSuffix()}`,
+      lines: [
+        { itemId: ineligible.itemId, variantId: ineligible.variantId, quantity: 2, fulfillmentType: 'stock' },
+        { itemId: other.itemId, variantId: other.variantId, quantity: 1, fulfillmentType: 'stock' },
+      ],
+    });
+    await db().query('update public.orders set user_id = $1 where id = $2', [customerId, orderId]);
+    const shipped = await createFulfillment(client, {
+      orderId,
+      actorId: actor.id,
+      requestKey: crypto.randomUUID(),
+      carrier: 'yamato',
+      trackingNumber: TRACKING_NUMBER,
+      notifyCustomer: false,
+      lines: [{ orderItemId: orderItemIds[0], quantity: 2 }, { orderItemId: orderItemIds[1], quantity: 1 }],
+    });
+    return {
+      orderId, fulfillmentId: shipped.fulfillmentId, ineligibleItemId: ineligible.itemId,
+      ineligibleOrderItemId: orderItemIds[0], otherOrderItemId: orderItemIds[1],
+    };
+  }
+
+  test('段2の返品の申し込み: 材料・写真の送り先・申し込みと同じ番号の送り直し（Review Focus 1）・承認・お断り・管理画面の中身と写真・お客様の返品の欄が、C-2 のキーを過不足なく持ち、DB の jsonb が全部のキーを持つ', async () => {
+    const customer = await createActor(db());
+    const target = await createCustomerShippedOrder(customer.id);
+    const owner = { orderId: target.orderId, customerId: customer.id };
+    const navyVariantId = await addVariant(db(), target.ineligibleItemId, 'NAVY', 'S', 3);
+
+    // 申し込みの画面の材料
+    const materials = (await loadCustomerReturnRequestMaterials(client, owner))!;
+    expectKeys(materials, REQUEST_MATERIALS_KEYS);
+    expectKeys(materials.order, ['id', 'status']);
+    expect(materials.availability).toEqual({ returns: 'available', endedOn: null });
+    expect(materials.shipments).toHaveLength(1);
+    expectKeys(materials.shipments[0], REQUEST_SHIPMENT_KEYS);
+    for (const line of materials.shipments[0].lines) expectKeys(line, REQUEST_LINE_KEYS);
+    expect(materials.shipments[0].lines.find((line) => line.orderItemId === target.ineligibleOrderItemId)).toMatchObject({
+      state: 'selectable', selectable: 2, returnIneligible: true,
+    });
+    expect(materials.shipments[0].lines.find((line) => line.orderItemId === target.otherOrderItemId)).toMatchObject({
+      state: 'selectable', selectable: 1, returnIneligible: false,
+    });
+    expect(materials.reasons.length).toBeGreaterThan(0);
+    expect(materials.reasons.map((reason) => reason.reason)).not.toContain('unknown');
+    for (const reason of materials.reasons) expectKeys(reason, REQUEST_REASON_KEYS);
+    const option = materials.exchangeOptions.find((entry) => entry.itemId === target.ineligibleItemId);
+    expect(option?.variants.map((variant) => variant.variantId)).toContain(navyVariantId);
+    for (const variant of option?.variants ?? []) expectKeys(variant, REQUEST_VARIANT_KEYS);
+    expectKeys(materials.fees, REQUEST_FEES_KEYS);
+    expect(brokenValues(materials, 'materials')).toEqual([]);
+    const rawMaterials = await client.rpc('get_customer_return_request_materials', { _order_id: owner.orderId, _customer_id: owner.customerId });
+    expect(rawMaterials.error).toBeNull();
+    expect(missingRawKeys(rawMaterials.data, materials, 'materials')).toEqual([]);
+
+    // 写真の送り先（置き場には置かない。DB は送り先の行と種類・大きさの値だけを確かめる）
+    const upload = await createCustomerReturnPhotoUpload(client, owner);
+    expectKeys(upload, ['uploadId', 'storagePath']);
+    expect(upload.storagePath).toBe(`requests/${target.orderId}/${upload.uploadId}`);
+
+    // 申し込み（返品不可の品は破損・不良で交換、もう1つの品はその他で返金）と、同じ番号の送り直し（Review Focus 1）
+    const requestInput: CustomerReturnRequestInput = {
+      ...owner,
+      requestKey: crypto.randomUUID(),
+      lines: [
+        {
+          fulfillmentId: target.fulfillmentId, orderItemId: target.ineligibleOrderItemId, quantity: 1, reason: 'defective',
+          customerNote: '袖に穴がありました', requestedResolution: 'exchange', requestedExchangeVariantId: navyVariantId,
+          photos: [{ uploadId: upload.uploadId, contentType: 'image/jpeg', sizeBytes: 123456 }],
+        },
+        {
+          fulfillmentId: target.fulfillmentId, orderItemId: target.otherOrderItemId, quantity: 1, reason: 'other',
+          customerNote: '思っていた色と違いました', requestedResolution: 'refund', requestedExchangeVariantId: null, photos: [],
+        },
+      ],
+    };
+    const requested = await requestCustomerReturn(client, requestInput);
+    expectKeys(requested, ['returnId', 'number', 'status', 'replayed']);
+    expect(requested).toEqual({ returnId: expect.stringMatching(UUID_PATTERN), number: 1, status: 'requested', replayed: false });
+    expect(await requestCustomerReturn(client, requestInput)).toEqual({ ...requested, replayed: true });
+
+    // 持ち主でない番号は、書く関数でも CustomerOrderNotFoundError（窓口は 404）
+    const stranger = { orderId: target.orderId, customerId: crypto.randomUUID() };
+    expect(await refusalOf(createCustomerReturnPhotoUpload(client, stranger))).toBeInstanceOf(CustomerOrderNotFoundError);
+    expect(await refusalOf(requestCustomerReturn(client, { ...requestInput, ...stranger, requestKey: crypto.randomUUID() })))
+      .toBeInstanceOf(CustomerOrderNotFoundError);
+
+    // 管理画面の中身: 段2のキーに値が入った形（ご希望の色・サイズ・写真・返品不可の印）で、入れ子のキーまで DB と突き合わせる
+    const [detail] = await listOrderReturns(client, target.orderId);
+    expectKeys(detail, RETURN_KEYS);
+    expect(detail).toMatchObject({
+      id: requested.returnId, status: 'requested', source: 'customer_request', requestedAt: expect.any(String),
+      approvedAt: null, approvedByEmail: null, declinedAt: null, declineReason: null, declineMessage: null,
+    });
+    for (const line of detail.lines) expectKeys(line, RETURN_LINE_KEYS);
+    const exchangeRequest = detail.lines.find((line) => line.orderItemId === target.ineligibleOrderItemId)!;
+    const refundRequest = detail.lines.find((line) => line.orderItemId === target.otherOrderItemId)!;
+    expect(exchangeRequest).toMatchObject({
+      customerNote: '袖に穴がありました', requestedResolution: 'exchange',
+      requestedExchange: { variantId: navyVariantId, color: 'NAVY', size: 'S' },
+      photos: [{ id: expect.stringMatching(UUID_PATTERN), purged: false }],
+      returnIneligible: true,
+    });
+    expectKeys(exchangeRequest.requestedExchange, ['variantId', 'color', 'size']);
+    expectKeys(exchangeRequest.photos[0], ['id', 'purged']);
+    expect(refundRequest).toMatchObject({ requestedResolution: 'refund', requestedExchange: null, photos: [], returnIneligible: false });
+    expect(brokenValues(detail, 'detail')).toEqual([]);
+    const rawRequested = await client.rpc('list_order_returns', { _order_id: target.orderId });
+    expect(rawRequested.error).toBeNull();
+    expect(missingRawKeys(rawRequested.data, [detail], 'returns', { ignore: ['label'] })).toEqual([]);
+
+    // 写真の一覧（置き場の場所を含む。窓口は署名つきのリンクにして返す）
+    const photos = await listReturnPhotos(client, requested.returnId);
+    expect(photos).toEqual([
+      { photoId: exchangeRequest.photos[0].id, returnLineId: exchangeRequest.id, storagePath: upload.storagePath, purged: false },
+    ]);
+    for (const photo of photos) expectKeys(photo, PHOTO_REF_KEYS);
+    const rawPhotos = await client.rpc('list_return_photos', { _return_id: requested.returnId });
+    expect(rawPhotos.error).toBeNull();
+    expect(missingRawKeys(rawPhotos.data, photos, 'photos')).toEqual([]);
+
+    // 承認: 返金の行も exchange_variant_id・exchange_method を null で送る（DB は4つのキーが全部あることを求める）
+    const approved = await approveReturn(client, {
+      returnId: requested.returnId,
+      actorId: actor.id,
+      lines: [
+        { returnLineId: exchangeRequest.id, resolution: 'exchange', exchangeVariantId: navyVariantId, exchangeMethod: 'stock' },
+        { returnLineId: refundRequest.id, resolution: 'refund', exchangeVariantId: null, exchangeMethod: null },
+      ],
+      returnMethod: 'customer_ships',
+      returnShippingPayer: 'shop',
+      returnCarrier: null,
+      returnTrackingNumber: null,
+      returnShippingFee: 0,
+      restockingFeePercent: 0,
+      exchangeFee: 0,
+      exchangeShippingFee: 0,
+      shopNote: null,
+      notifyCustomer: false,
+    });
+    expect(approved).toEqual({ returnId: requested.returnId, returnStatus: 'open' });
+    // 2回目は状態で断る（P8）
+    expect(
+      await refusalOf(declineReturn(client, { returnId: requested.returnId, actorId: actor.id, declineReason: 'other', declineMessage: '重ねて押した' })),
+    ).toMatchObject({ code: 'RETURN_STATE_CONFLICT' });
+
+    // もう1つ申し込み（返品不可の品の残りの1点を、注文と違う品で返金）、お断りする
+    const secondUpload = await createCustomerReturnPhotoUpload(client, owner);
+    const second = await requestCustomerReturn(client, {
+      ...owner,
+      requestKey: crypto.randomUUID(),
+      lines: [
+        {
+          fulfillmentId: target.fulfillmentId, orderItemId: target.ineligibleOrderItemId, quantity: 1, reason: 'wrong_item',
+          customerNote: null, requestedResolution: 'refund', requestedExchangeVariantId: null,
+          photos: [{ uploadId: secondUpload.uploadId, contentType: 'image/png', sizeBytes: 4567 }],
+        },
+      ],
+    });
+    const declineMessage = 'この商品は返品不可の商品のため、お受けできませんでした。';
+    expect(
+      await declineReturn(client, { returnId: second.returnId, actorId: actor.id, declineReason: 'final_sale', declineMessage }),
+    ).toEqual({ returnId: second.returnId, returnStatus: 'declined' });
+
+    const decided = await listOrderReturns(client, target.orderId);
+    expect(decided.find((row) => row.id === requested.returnId)).toMatchObject({
+      status: 'open', approvedAt: expect.any(String), approvedByEmail: actor.email,
+    });
+    expect(decided.find((row) => row.id === second.returnId)).toMatchObject({
+      status: 'declined', declinedAt: expect.any(String), declineReason: 'final_sale', declineMessage,
+    });
+    const rawDecided = await client.rpc('list_order_returns', { _order_id: target.orderId });
+    expect(rawDecided.error).toBeNull();
+    expect(missingRawKeys(rawDecided.data, decided, 'returns', { ignore: ['label'] })).toEqual([]);
+
+    // お客様の注文の画面の返品の欄: 承認した返品は受付済みで返送先が付き、お断りした返品はメッセージだけ（理由の記号・した人は出さない。P19）
+    const section = (await loadCustomerOrderReturns(client, owner))!;
+    expectKeys(section, ['returns', 'cancelRequests', 'availability']);
+    expectKeys(section.availability, ['returns', 'endedOn', 'cancel']);
+    expect(section.returns.map((row) => [row.id, row.status, row.customerStatus])).toEqual([
+      [second.returnId, 'declined', 'declined'],
+      [requested.returnId, 'open', 'accepted'],
+    ]);
+    for (const row of section.returns) {
+      expectKeys(row, CUSTOMER_RETURN_KEYS);
+      for (const line of row.lines) expectKeys(line, CUSTOMER_RETURN_LINE_KEYS);
+    }
+    const accepted = section.returns.find((row) => row.id === requested.returnId)!;
+    expect(accepted.returnAddress).toEqual(RETURN_ADDRESS);
+    expect(accepted.lines.find((line) => line.resolution === 'exchange')).toMatchObject({
+      requestedResolution: 'exchange', requestedExchange: { color: 'NAVY', size: 'S' }, exchange: { color: 'NAVY', size: 'S' },
+    });
+    expect(section.returns.find((row) => row.id === second.returnId)).toMatchObject({ declineMessage, returnAddress: null });
+    expect(brokenValues(section, 'section')).toEqual([]);
+    const rawSection = await client.rpc('get_customer_order_returns', { _order_id: owner.orderId, _customer_id: owner.customerId });
+    expect(rawSection.error).toBeNull();
+    expect(missingRawKeys(rawSection.data, section, 'section', { ignore: ['label'] })).toEqual([]);
+    const rawText = JSON.stringify(rawSection.data);
+    expect(rawText).not.toContain('final_sale');
+    expect(rawText).not.toContain(actor.email);
+  });
+
+  test('段2のキャンセルの申し込み: お客様の申し込みと同じ番号の送り直し（Review Focus 1）・お客様の欄・管理画面の一覧・お断り・解決済み・解決の断りが PostgREST を通り、C-2 のキーを過不足なく持つ', async () => {
+    // 種類は返品とキャンセル（設定は最後の試験で戻す）
+    await updateShopReturnSettings(client, { settings: { requestTypes: 'returns_and_cancellations' }, actorId: actor.id });
+    const customer = await createActor(db());
+    const catalog = await createCatalogFixture(db(), { stock: 2 });
+    const { orderId, orderItemIds } = await insertOrderWithLines(db(), {
+      status: 'paid',
+      paidAmount: PRICE * 2,
+      paymentIntentId: `pi_pgrst_cancel_${uniqueSuffix()}`,
+      lines: [{ itemId: catalog.itemId, variantId: catalog.variantId, quantity: 2, fulfillmentType: 'stock' }],
+    });
+    await db().query('update public.orders set user_id = $1 where id = $2', [customer.id, orderId]);
+    const owner = { orderId, customerId: customer.id };
+    expect((await loadCustomerOrderReturns(client, owner))?.availability).toEqual({ returns: 'none', endedOn: null, cancel: true });
+
+    const cancelInput = {
+      ...owner, requestKey: crypto.randomUUID(), lines: [{ orderItemId: orderItemIds[0], quantity: 1 }], customerNote: '色違いを買い直します',
+    };
+    const first = await requestCustomerCancel(client, cancelInput);
+    expectKeys(first, ['cancelRequestId', 'status', 'replayed']);
+    expect(first).toEqual({ cancelRequestId: expect.stringMatching(UUID_PATTERN), status: 'requested', replayed: false });
+    expect(await requestCustomerCancel(client, cancelInput)).toEqual({ ...first, replayed: true });
+    expect(await refusalOf(requestCustomerCancel(client, { ...cancelInput, requestKey: crypto.randomUUID() }))).toMatchObject({
+      code: 'CANCEL_REQUEST_EXISTS',
+    });
+
+    // お客様の欄
+    const section = (await loadCustomerOrderReturns(client, owner))!;
+    expect(section.cancelRequests).toHaveLength(1);
+    for (const request of section.cancelRequests) {
+      expectKeys(request, CUSTOMER_CANCEL_KEYS);
+      for (const line of request.lines) expectKeys(line, ['itemName', 'color', 'size', 'quantity']);
+    }
+    expect(section.availability.cancel).toBe(false);
+    const rawSection = await client.rpc('get_customer_order_returns', { _order_id: orderId, _customer_id: customer.id });
+    expect(rawSection.error).toBeNull();
+    expect(missingRawKeys(rawSection.data, section, 'section', { ignore: ['label'] })).toEqual([]);
+
+    // 管理画面の一覧（未発送の数は今の数）
+    const listed = await listOrderCancelRequests(client, orderId);
+    expect(listed).toHaveLength(1);
+    expectKeys(listed[0], ADMIN_CANCEL_KEYS);
+    expect(listed[0]).toMatchObject({ id: first.cancelRequestId, status: 'requested', customerNote: '色違いを買い直します' });
+    expect(listed[0].lines).toEqual([
+      { orderItemId: orderItemIds[0], itemName: '照合テスト', color: 'BLACK', size: 'M', quantity: 1, unshipped: 2 },
+    ]);
+    for (const line of listed[0].lines) expectKeys(line, ADMIN_CANCEL_LINE_KEYS);
+
+    // お断り。2回目（ほかの操作も）は状態で断る
+    const declineMessage = 'すでに発送の準備を進めています。';
+    expect(
+      await declineCancelRequest(client, { cancelRequestId: first.cancelRequestId, actorId: actor.id, declineReason: 'other', declineMessage }),
+    ).toEqual({ cancelRequestId: first.cancelRequestId, status: 'declined' });
+    expect(await refusalOf(closeCancelRequest(client, { cancelRequestId: first.cancelRequestId, actorId: actor.id }))).toMatchObject({
+      code: 'CANCEL_REQUEST_STATE_CONFLICT',
+    });
+
+    // 解決済みにする
+    const second = await requestCustomerCancel(client, { ...cancelInput, requestKey: crypto.randomUUID(), customerNote: null });
+    expect(await closeCancelRequest(client, { cancelRequestId: second.cancelRequestId, actorId: actor.id })).toEqual({
+      cancelRequestId: second.cancelRequestId, status: 'closed',
+    });
+
+    // 解決: 根拠の無い返金の番号は断る（引数の名前が食い違えば、記号の断りではなく PostgREST の誤り＝RefundStoreError になる）
+    const third = await requestCustomerCancel(client, { ...cancelInput, requestKey: crypto.randomUUID() });
+    expect(
+      await refusalOf(
+        resolveCancelRequest(client, { cancelRequestId: third.cancelRequestId, actorId: actor.id, refundId: crypto.randomUUID(), orderCancelled: false }),
+      ),
+    ).toMatchObject({ code: 'CANCEL_REQUEST_RESOLUTION_INVALID' });
+    await closeCancelRequest(client, { cancelRequestId: third.cancelRequestId, actorId: actor.id });
+
+    // 終わった申し込みの中身と、した人のメール。入れ子のキーまで DB と突き合わせる
+    const all = await listOrderCancelRequests(client, orderId);
+    for (const request of all) expectKeys(request, ADMIN_CANCEL_KEYS);
+    expect(all.map((request) => request.status).sort()).toEqual(['closed', 'closed', 'declined']);
+    expect(all.find((request) => request.id === first.cancelRequestId)).toMatchObject({
+      declineReason: 'other', declineMessage, declinedAt: expect.any(String), declinedByEmail: actor.email,
+    });
+    expect(all.find((request) => request.id === second.cancelRequestId)).toMatchObject({
+      customerNote: null, closedAt: expect.any(String), closedByEmail: actor.email,
+    });
+    expect(brokenValues(all, 'cancelRequests')).toEqual([]);
+    const rawAll = await client.rpc('list_order_cancel_requests', { _order_id: orderId });
+    expect(rawAll.error).toBeNull();
+    expect(missingRawKeys(rawAll.data, all, 'cancelRequests')).toEqual([]);
   });
 
   // 後片付けは afterAll に書かない: describeLocalDb が先に登録した afterAll（DB の接続を閉じる）が、定義の順で先に動き、

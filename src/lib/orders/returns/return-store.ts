@@ -4,10 +4,12 @@ import { RefundStoreError, toRefundErrorCode } from '@/lib/orders/refund/refund-
 import type { OrderRefundStatus, RefundErrorCode } from '@/lib/orders/refund/refund-types';
 import { formatReturnNumber } from '@/lib/orders/returns/return-messages';
 import {
+  RETURN_DECLINE_REASONS,
   RETURN_DISPLAY_STATUSES,
   RETURN_ERROR_CODES,
   RETURN_MARKS,
   RETURN_NEXT_ACTIONS,
+  type ApproveReturnInput,
   type ExchangeMethod,
   type OrderReturnDetail,
   type OrderReturnLineDetail,
@@ -17,11 +19,13 @@ import {
   type RefundChoice,
   type ReturnCarrier,
   type ReturnCreateMaterials,
+  type ReturnDeclineReason,
   type ReturnDisplayStatus,
   type ReturnErrorCode,
   type ReturnMark,
   type ReturnMethod,
   type ReturnNextAction,
+  type ReturnPhotoRef,
   type ReturnReason,
   type ReturnResolution,
   type ReturnStatus,
@@ -48,7 +52,7 @@ export class ReturnStoreError extends Error {
   }
 }
 
-// DB の関数が RAISE EXCEPTION で止める返品の言葉 → 誤りの記号。C-4 の18個は言葉と記号が同じ綴り。
+// DB の関数が RAISE EXCEPTION で止める返品の言葉 → 誤りの記号。C-4 の29個（段1の18個と段2の11個）は言葉と記号が同じ綴り。
 // TOO_MANY_ORDERS（注文の番号を200件より多く渡した時の一覧の関数 list_order_line_return_counts・list_order_return_summaries）は、
 // C-4 にも E-2 の言葉の表にも無いので RETURN_ARGUMENT_INVALID にする（store は200件ずつに分けて呼ぶので、ふつうは来ない）。
 // 長い言葉から先に照らす（ある言葉が別の言葉の一部になる綴りが足されても、長い方が先に当たるようにする。E-2 の本計画 P3 と同じ）
@@ -70,7 +74,7 @@ export function toReturnErrorCode(message: string | undefined): ReturnErrorCode 
   return RETURN_DB_WORDS.find(([word]) => message.includes(word))?.[1] ?? toRefundErrorCode(message);
 }
 
-type ReturnRpcName =
+export type ReturnRpcName =
   | 'admin_create_return'
   | 'admin_receive_return'
   | 'admin_refund_return'
@@ -85,9 +89,25 @@ type ReturnRpcName =
   | 'list_order_return_summaries'
   | 'count_order_return_attention'
   | 'get_shop_return_settings'
-  | 'admin_update_shop_return_settings';
+  | 'admin_update_shop_return_settings'
+  | 'admin_approve_return'
+  | 'admin_decline_return'
+  | 'list_return_photos'
+  | 'list_order_cancel_requests'
+  | 'admin_decline_cancel_request'
+  | 'admin_close_cancel_request'
+  | 'admin_resolve_cancel_request'
+  | 'get_customer_return_request_materials'
+  | 'customer_create_return_photo_upload'
+  | 'customer_request_return'
+  | 'customer_request_cancel'
+  | 'get_customer_order_returns';
 
-async function callRpc(store: ReturnStore, name: ReturnRpcName, args: Record<string, unknown>): Promise<unknown> {
+/**
+ * DB の関数を呼ぶ入口（断りは ReturnStoreError、思いがけない失敗は RefundStoreError）。
+ * 同じ ReturnStore を使う兄弟のファイル（cancel-request-store.ts・customer-return-store.ts）も、この入口と下の読み取りの道具を使う
+ */
+export async function callRpc(store: ReturnStore, name: ReturnRpcName, args: Record<string, unknown>): Promise<unknown> {
   const { data, error } = await store.rpc(name, args);
   if (error) {
     const code = toReturnErrorCode(error.message);
@@ -96,7 +116,7 @@ async function callRpc(store: ReturnStore, name: ReturnRpcName, args: Record<str
   return data;
 }
 
-type JsonObject = Record<string, unknown>;
+export type JsonObject = Record<string, unknown>;
 
 /** PostgREST は表を返す関数の答えを配列で返す。行が1つのオブジェクトで来ても読めるようにする */
 function rowsOf(data: unknown): JsonObject[] {
@@ -105,7 +125,7 @@ function rowsOf(data: unknown): JsonObject[] {
 }
 
 /** 1行を返すはずの関数の答えの行。行が無ければ RefundStoreError */
-function firstRowOf(data: unknown, operation: ReturnRpcName): JsonObject {
+export function firstRowOf(data: unknown, operation: ReturnRpcName): JsonObject {
   const row = rowsOf(data)[0];
   if (!row) {
     throw new RefundStoreError(operation, null);
@@ -129,25 +149,25 @@ function listRowsOf(data: unknown, operation: ReturnRpcName): JsonObject[] {
 // DB の関数 list_order_return_summaries が一度に受ける注文の数の上限
 const ORDER_IDS_CHUNK_SIZE = 200;
 
-function textOrNull(value: unknown): string | null {
+export function textOrNull(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 
-function numberOrNull(value: unknown): number | null {
+export function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' ? value : null;
 }
 
 /** jsonb の値（オブジェクト）。配列に包まれて来ても読める。オブジェクトでなければ null */
-function jsonObjectOf(data: unknown): JsonObject | null {
+export function jsonObjectOf(data: unknown): JsonObject | null {
   const value = Array.isArray(data) ? data[0] : data;
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : null;
 }
 
-function objectOf(value: unknown): JsonObject {
+export function objectOf(value: unknown): JsonObject {
   return jsonObjectOf(value) ?? {};
 }
 
-function objectsOf(value: unknown): JsonObject[] {
+export function objectsOf(value: unknown): JsonObject[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is JsonObject => !!entry && typeof entry === 'object' && !Array.isArray(entry))
     : [];
@@ -155,6 +175,27 @@ function objectsOf(value: unknown): JsonObject[] {
 
 function stringsOf(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+}
+
+/** 解決の方法の記号。表に無い記号は null（お客様のご希望は、お店が作った行には無い） */
+export function resolutionOrNull(value: unknown): ReturnResolution | null {
+  return value === 'refund' || value === 'exchange' ? value : null;
+}
+
+/** お断りの理由の記号。表に無い記号は null（画面が言葉の表を引いて undefined にならないように） */
+export function declineReasonOf(value: unknown): ReturnDeclineReason | null {
+  return (RETURN_DECLINE_REASONS as readonly unknown[]).includes(value) ? (value as ReturnDeclineReason) : null;
+}
+
+/**
+ * 表の値でなければ、思いがけない失敗（RefundStoreError）にする。DB の CHECK が守る値で、型に null の逃げが無い欄に使う
+ * （黙って別の値にすると、画面が違う状態を見せてしまう）
+ */
+export function requiredEnum<T extends string>(value: unknown, allowed: readonly T[], operation: ReturnRpcName): T {
+  if ((allowed as readonly unknown[]).includes(value)) {
+    return value as T;
+  }
+  throw new RefundStoreError(operation, null);
 }
 
 // ---- 操作（作る・受け取り・返金・取消・開き直し・届かない・検品・手数料・支払いを待たずに送る） ----
@@ -484,6 +525,68 @@ export async function releaseReturnExchange(
   );
 }
 
+// ---- 申し込みの承認・お断り（段2。お客様の申し込みは、状態 requested の返品として入っている） ----
+
+/** 承認・お断りの答え。DB の列は return_id と status（手数料の記録などの return_status とは列の名前が違う） */
+function toDecisionResult(row: JsonObject): ReturnStatusResult {
+  return { returnId: String(row.return_id), returnStatus: row.status as ReturnStatus };
+}
+
+/**
+ * 申し込みを承認する（requested → open）。行ごとの解決（返金／交換の色・サイズと送り方）と、返送・手数料・メモ・お知らせを一度に決める。
+ * 手数料はどれも必須（範囲は DB が確かめる）。二重防止の番号は持たず、2回目は状態に合わない断り（RETURN_STATE_CONFLICT）になる。
+ * DB は行の4つのキーが全部あることを求める（移行 F の ?&）ので、返金の行でも色・サイズと送り方を null で必ず送る
+ * （JSON にすると undefined のキーは消えるので、渡し忘れも null にする）
+ */
+export async function approveReturn(store: ReturnStore, input: ApproveReturnInput): Promise<ReturnStatusResult> {
+  return toDecisionResult(
+    firstRowOf(
+      await callRpc(store, 'admin_approve_return', {
+        _return_id: input.returnId,
+        _actor_id: input.actorId,
+        _lines: input.lines.map((line) => ({
+          return_line_id: line.returnLineId,
+          resolution: line.resolution,
+          exchange_variant_id: line.exchangeVariantId ?? null,
+          exchange_method: line.exchangeMethod ?? null,
+        })),
+        _return_method: input.returnMethod,
+        _return_shipping_payer: input.returnShippingPayer,
+        _return_carrier: input.returnCarrier,
+        _return_tracking_number: input.returnTrackingNumber,
+        _return_shipping_fee: input.returnShippingFee,
+        _restocking_fee_percent: input.restockingFeePercent,
+        _exchange_fee: input.exchangeFee,
+        _exchange_shipping_fee: input.exchangeShippingFee,
+        _shop_note: input.shopNote,
+        _notify_customer: input.notifyCustomer,
+      }),
+      'admin_approve_return',
+    ),
+  );
+}
+
+/**
+ * 申し込みをお断りする（requested → declined）。メッセージはお客様に届く（前後の空白を外して1〜1000字かは DB が確かめる）。
+ * 二重防止の番号は持たず、2回目は状態に合わない断り（RETURN_STATE_CONFLICT）になる
+ */
+export async function declineReturn(
+  store: ReturnStore,
+  input: { returnId: string; actorId: string; declineReason: ReturnDeclineReason; declineMessage: string },
+): Promise<ReturnStatusResult> {
+  return toDecisionResult(
+    firstRowOf(
+      await callRpc(store, 'admin_decline_return', {
+        _return_id: input.returnId,
+        _actor_id: input.actorId,
+        _decline_reason: input.declineReason,
+        _decline_message: input.declineMessage,
+      }),
+      'admin_decline_return',
+    ),
+  );
+}
+
 // ---- 読み出し（作る画面の材料・返品の中身・一覧の要約・数） ----
 
 type ShipmentMaterial = ReturnCreateMaterials['shipments'][number];
@@ -502,6 +605,7 @@ function toShipmentLine(line: JsonObject): ShipmentLineMaterial {
     lineKind: line.line_kind === 'exchange' ? 'exchange' : 'order',
     quantity: Number(line.quantity),
     returnable: Number(line.returnable),
+    returnIneligible: line.return_ineligible === true,
   };
 }
 
@@ -608,6 +712,7 @@ function toLineExchange(exchange: JsonObject): ReturnLineExchange {
 function toReturnLine(line: JsonObject): OrderReturnLineDetail {
   const exchange = jsonObjectOf(line.exchange);
   const progress = objectOf(line.progress);
+  const requestedExchange = jsonObjectOf(line.requested_exchange);
   return {
     id: String(line.id),
     fulfillmentId: String(line.fulfillment_id),
@@ -636,6 +741,17 @@ function toReturnLine(line: JsonObject): OrderReturnLineDetail {
     },
     refundAmountsByCount: Array.isArray(line.refund_amounts_by_count) ? line.refund_amounts_by_count.map(Number) : [],
     refundWaitingAmount: Number(line.refund_waiting_amount),
+    customerNote: textOrNull(line.customer_note),
+    requestedResolution: resolutionOrNull(line.requested_resolution),
+    requestedExchange: requestedExchange
+      ? {
+          variantId: Number(requestedExchange.variant_id),
+          color: textOrNull(requestedExchange.color),
+          size: textOrNull(requestedExchange.size),
+        }
+      : null,
+    photos: objectsOf(line.photos).map((photo) => ({ id: String(photo.id), purged: photo.purged === true })),
+    returnIneligible: line.return_ineligible === true,
   };
 }
 
@@ -673,6 +789,12 @@ function toReturnDetail(row: JsonObject, orderId: string): OrderReturnDetail {
     createdByEmail: textOrNull(row.created_by_email),
     closedAt: textOrNull(row.closed_at),
     cancelledAt: textOrNull(row.cancelled_at),
+    requestedAt: textOrNull(row.requested_at),
+    approvedAt: textOrNull(row.approved_at),
+    approvedByEmail: textOrNull(row.approved_by_email),
+    declinedAt: textOrNull(row.declined_at),
+    declineReason: declineReasonOf(row.decline_reason),
+    declineMessage: textOrNull(row.decline_message),
     lines: objectsOf(row.lines).map(toReturnLine),
     refunds: objectsOf(row.refunds).map((refund) => ({
       id: String(refund.id),
@@ -708,6 +830,20 @@ function toReturnDetail(row: JsonObject, orderId: string): OrderReturnDetail {
 export async function listOrderReturns(store: ReturnStore, orderId: string): Promise<OrderReturnDetail[]> {
   const data = await callRpc(store, 'list_order_returns', { _order_id: orderId });
   return objectsOf(data).map((row) => toReturnDetail(row, orderId));
+}
+
+/**
+ * 返品の写真の一覧（返品の行の作った順 → 写真の作った順。並びは DB が決める）。置き場の場所を含むので、答えをそのまま画面に返さない
+ * （署名つきの10分のリンクにして返す。return-photo-storage.ts の signReturnPhotoUrls）
+ */
+export async function listReturnPhotos(store: ReturnStore, returnId: string): Promise<ReturnPhotoRef[]> {
+  const data = await callRpc(store, 'list_return_photos', { _return_id: returnId });
+  return rowsOf(data).map((row) => ({
+    photoId: String(row.photo_id),
+    returnLineId: String(row.return_line_id),
+    storagePath: String(row.storage_path),
+    purged: row.purged === true,
+  }));
 }
 
 /** DB が行を返さなかった注文の要約。返品は無く、返品できる品の有無は分からない（false） */

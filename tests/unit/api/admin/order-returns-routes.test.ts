@@ -123,6 +123,7 @@ const RETURN_DETAIL: OrderReturnDetail = {
   firstReceiptDone: false, firstExchangeReceiptDone: false,
   shopNote: null, notifyCustomer: true, createdAt: '2026-10-12T01:00:00.000Z', createdByEmail: 'admin@example.com',
   closedAt: null, cancelledAt: null,
+  requestedAt: null, approvedAt: null, approvedByEmail: null, declinedAt: null, declineReason: null, declineMessage: null,
   lines: [{
     id: LINE_ID, fulfillmentId: FULFILLMENT_ID, fulfillmentNumber: 1, orderItemId: ITEM_ID,
     itemName: 'シルクブラウス', color: '白', size: 'M',
@@ -132,6 +133,7 @@ const RETURN_DETAIL: OrderReturnDetail = {
       processed: 0, unprocessed: 2, exchanged: 0, refundCovered: 0, refundWaived: 0, refundWaiting: 0,
     },
     refundAmountsByCount: [4000, 8000], refundWaitingAmount: 0,
+    customerNote: null, requestedResolution: null, requestedExchange: null, photos: [], returnIneligible: false,
   }],
   refunds: [], receipts: [], exchangeItems: [],
 };
@@ -145,7 +147,7 @@ const MATERIALS: ReturnCreateMaterials = {
     fulfillmentId: FULFILLMENT_ID, number: 1, shippedAt: '2026-10-05T03:00:00.000Z', deadlineDate: '2026-10-15', pastDeadline: false,
     lines: [{
       orderItemId: ITEM_ID, itemId: 10, variantId: 100, itemName: 'シルクブラウス', color: '白', size: 'M',
-      lineKind: 'order', quantity: 2, returnable: 2,
+      lineKind: 'order', quantity: 2, returnable: 2, returnIneligible: false,
     }],
   }],
   exchangeOptions: [{

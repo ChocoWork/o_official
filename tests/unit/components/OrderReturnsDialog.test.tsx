@@ -85,7 +85,7 @@ function line(progress: Partial<Progress> = {}, overrides: Partial<OrderReturnLi
       restocked: 0, notRestocked: 0, pendingInspection: 0, sentBack: 0, missing: 0,
       processed: 0, unprocessed: 2, exchanged: 0, refundCovered: 0, refundWaived: 0, refundWaiting: 0, ...progress,
     },
-    refundAmountsByCount: [12000, 24000], refundWaitingAmount: 0,
+    refundAmountsByCount: [12000, 24000], refundWaitingAmount: 0, customerNote: null, requestedResolution: null, requestedExchange: null, photos: [], returnIneligible: false,
     ...overrides,
   };
 }
@@ -108,7 +108,7 @@ function returnDetail(overrides: Partial<OrderReturnDetail> = {}): OrderReturnDe
       feeDueAmount: 0, feePendingDeduction: 0, feeReceivedAt: null, exchangeReleasedAt: null,
     },
     firstReceiptDone: false, firstExchangeReceiptDone: false, shopNote: null, notifyCustomer: true,
-    createdAt: '2026-10-12T01:00:00.000Z', createdByEmail: 'staff@example.com', closedAt: null, cancelledAt: null,
+    createdAt: '2026-10-12T01:00:00.000Z', createdByEmail: 'staff@example.com', closedAt: null, cancelledAt: null, requestedAt: null, approvedAt: null, approvedByEmail: null, declinedAt: null, declineReason: null, declineMessage: null,
     lines: [line()], refunds: [], receipts: [], exchangeItems: [],
     ...overrides,
   };

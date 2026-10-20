@@ -21,7 +21,7 @@ export const HEADERS = { 'content-type': 'application/json', 'x-forwarded-for': 
 
 export const UNKNOWN_MESSAGE = '返金の結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。';
 
-/** 計画の冒頭 C-4 の表（記号・HTTP・言葉）。18個すべて */
+/** 共通の約束 C-4 の管理画面の言葉の表（記号・HTTP・言葉）。段1の18個と段2の11個の、29個すべて */
 export const C4_CASES: Array<[ReturnErrorCode, number, string]> = [
   ['RETURN_NOT_FOUND', 404, '返品が見つかりません。'],
   ['RETURN_ARGUMENT_INVALID', 400, '入力を確かめてください。'],
@@ -41,6 +41,17 @@ export const C4_CASES: Array<[ReturnErrorCode, number, string]> = [
   ['FULFILLMENT_HAS_RETURN', 409, '返品のある発送は取り消せません。'],
   ['FULFILLMENT_EXCHANGE_ON_HOLD', 409, '手数料のお支払いを待っている交換の品は送れません。'],
   ['ORDER_NOT_RETURNABLE', 409, 'この注文は返品を作れません。'],
+  ['RETURN_NOT_ELIGIBLE', 409, '申し込めない品が含まれています。画面を開き直してください。'],
+  ['RETURN_REQUESTS_CLOSED', 409, '申し込みの受付がオフです。'],
+  ['RETURN_PHOTO_INVALID', 400, '写真を確かめてください。'],
+  ['RETURN_CUSTOMER_NOTE_REQUIRED', 400, '詳しい内容が必要です。'],
+  ['RETURN_DECLINE_MESSAGE_REQUIRED', 400, 'お客様へのメッセージを入れてください（1000字まで）。'],
+  ['CANCEL_REQUEST_NOT_FOUND', 404, 'キャンセルの申し込みが見つかりません。'],
+  ['CANCEL_REQUEST_EXISTS', 409, '申し込みを受け付けられませんでした。'],
+  ['CANCEL_REQUEST_NOT_ELIGIBLE', 409, '申し込みを受け付けられませんでした。'],
+  ['CANCEL_REQUEST_QUANTITY_EXCEEDS', 409, '申し込みを受け付けられませんでした。'],
+  ['CANCEL_REQUEST_STATE_CONFLICT', 409, 'キャンセルの申し込みの状態が変わりました。画面を開き直してください。'],
+  ['CANCEL_REQUEST_RESOLUTION_INVALID', 409, '返金・キャンセルの記録を確かめられませんでした。画面を開き直してください。'],
 ];
 
 /** E-2 の返金の誤り（refund-messages.ts の言葉と HTTP。返品の窓口もそのまま返す）。13個すべて */

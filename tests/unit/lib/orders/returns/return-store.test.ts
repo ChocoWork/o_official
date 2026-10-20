@@ -4,14 +4,17 @@ import { RefundStoreError } from '@/lib/orders/refund/refund-store';
 import type { RefundErrorCode } from '@/lib/orders/refund/refund-types';
 import {
   ReturnStoreError,
+  approveReturn,
   cancelReturn,
   closeReturnMissing,
   countReturnAttention,
   createReturn,
+  declineReturn,
   getShopReturnSettings,
   inspectReturn,
   listOrderReturnSummaries,
   listOrderReturns,
+  listReturnPhotos,
   loadReturnCreateMaterials,
   receiveReturn,
   recordReturnFeePayment,
@@ -26,7 +29,7 @@ import {
   type ReturnStore,
   type ShopReturnSettingsPatch,
 } from '@/lib/orders/returns/return-store';
-import { RETURN_ERROR_CODES, type ShopReturnSettingsUpdate } from '@/lib/orders/returns/return-types';
+import { RETURN_ERROR_CODES, type ApproveReturnInput, type ShopReturnSettingsUpdate } from '@/lib/orders/returns/return-types';
 
 const ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455556666';
 const OTHER_ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455557777';
@@ -62,9 +65,16 @@ function migrationText(suffix: string): string {
   return fs.readFileSync(path.join(directory, files[0]), 'utf8');
 }
 
-const MIGRATION_SUFFIXES = ['_order_return_records.sql', '_order_return_actions.sql', '_order_return_receipts.sql'];
+const MIGRATION_SUFFIXES = [
+  '_order_return_records.sql',
+  '_order_return_actions.sql',
+  '_order_return_receipts.sql',
+  '_order_return_request_records.sql',
+  '_order_return_customer_requests.sql',
+  '_order_return_request_reviews.sql',
+];
 
-/** 移行 A・B・C の本文をつないだ物 */
+/** 移行 A〜F の本文をつないだ物（A・B・C は段1、D・E・F は段2） */
 function returnMigrationsText(): string {
   return MIGRATION_SUFFIXES.map(migrationText).join('\n');
 }
@@ -196,7 +206,27 @@ const REFUND_INPUT: RefundReturnInput = {
   notifyCustomer: true,
 };
 
-// TS が呼ぶ DB の関数（移行 A・B・C）と、その呼び出し
+// 申し込みの承認: 1行目は返金、2行目は色違い（42）を作って送る交換。返送は当店の送り状（お客様の負担）で、手数料は全部決めて渡す
+const APPROVE_INPUT: ApproveReturnInput = {
+  returnId: RETURN_ID,
+  actorId: ACTOR_ID,
+  lines: [
+    { returnLineId: LINE_1, resolution: 'refund', exchangeVariantId: null, exchangeMethod: null },
+    { returnLineId: LINE_2, resolution: 'exchange', exchangeVariantId: 42, exchangeMethod: 'make' },
+  ],
+  returnMethod: 'shop_label',
+  returnShippingPayer: 'customer',
+  returnCarrier: 'yamato',
+  returnTrackingNumber: 'AB-1234',
+  returnShippingFee: 800,
+  restockingFeePercent: 10,
+  exchangeFee: 500,
+  exchangeShippingFee: 300,
+  shopNote: '電話で相談済み',
+  notifyCustomer: true,
+};
+
+// TS が呼ぶ DB の関数（移行 A〜F）と、その呼び出し
 const CALLS: Array<[rpcName: string, run: (store: ReturnStore) => Promise<unknown>]> = [
   ['admin_create_return', (store) => createReturn(store, CREATE_INPUT)],
   ['admin_receive_return', (store) => receiveReturn(store, RECEIVE_INPUT)],
@@ -217,8 +247,15 @@ const CALLS: Array<[rpcName: string, run: (store: ReturnStore) => Promise<unknow
     (store) => recordReturnFeePayment(store, { returnId: RETURN_ID, actorId: ACTOR_ID, note: '振込', waive: false }),
   ],
   ['admin_release_return_exchange', (store) => releaseReturnExchange(store, { returnId: RETURN_ID, actorId: ACTOR_ID })],
+  ['admin_approve_return', (store) => approveReturn(store, APPROVE_INPUT)],
+  [
+    'admin_decline_return',
+    (store) =>
+      declineReturn(store, { returnId: RETURN_ID, actorId: ACTOR_ID, declineReason: 'window_passed', declineMessage: '受付の期限を過ぎています。' }),
+  ],
   ['get_order_return_materials', (store) => loadReturnCreateMaterials(store, ORDER_ID)],
   ['list_order_returns', (store) => listOrderReturns(store, ORDER_ID)],
+  ['list_return_photos', (store) => listReturnPhotos(store, RETURN_ID)],
   ['list_order_return_summaries', (store) => listOrderReturnSummaries(store, [ORDER_ID])],
   ['count_order_return_attention', (store) => countReturnAttention(store)],
   ['get_shop_return_settings', (store) => getShopReturnSettings(store)],
@@ -239,6 +276,8 @@ const ROW_REQUIRED_RPCS = [
   'admin_inspect_return',
   'admin_record_return_fee_payment',
   'admin_release_return_exchange',
+  'admin_approve_return',
+  'admin_decline_return',
   'count_order_return_attention',
   'get_shop_return_settings',
   'admin_update_shop_return_settings',
@@ -275,6 +314,21 @@ describe('toReturnErrorCode', () => {
     expect(toReturnErrorCode('ORDER_NOT_FOUND / RETURN_STATE_CONFLICT')).toBe('RETURN_STATE_CONFLICT');
   });
 
+  it('段2の11の言葉も、同じ綴りの記号（前後に別の文が付いても、E-2 の言葉が一緒に入っていても）', () => {
+    const added = [
+      'RETURN_NOT_ELIGIBLE', 'RETURN_REQUESTS_CLOSED', 'RETURN_PHOTO_INVALID', 'RETURN_CUSTOMER_NOTE_REQUIRED',
+      'RETURN_DECLINE_MESSAGE_REQUIRED', 'CANCEL_REQUEST_NOT_FOUND', 'CANCEL_REQUEST_EXISTS', 'CANCEL_REQUEST_NOT_ELIGIBLE',
+      'CANCEL_REQUEST_QUANTITY_EXCEEDS', 'CANCEL_REQUEST_STATE_CONFLICT', 'CANCEL_REQUEST_RESOLUTION_INVALID',
+    ] as const;
+
+    for (const code of added) {
+      expect(RETURN_ERROR_CODES).toContain(code);
+      expect(toReturnErrorCode(code)).toBe(code);
+      expect(toReturnErrorCode(`error: ${code} (detail)`)).toBe(code);
+      expect(toReturnErrorCode(`ORDER_NOT_FOUND / ${code}`)).toBe(code);
+    }
+  });
+
   it('表に無い言葉・空・undefined は null', () => {
     expect(toReturnErrorCode('RETURN_UNKNOWN_WORD')).toBeNull();
     expect(toReturnErrorCode('connection refused')).toBeNull();
@@ -283,7 +337,7 @@ describe('toReturnErrorCode', () => {
   });
 });
 
-describe('移行 A・B・C との突き合わせ（Task 1〜3 の移行がある前提。無ければこの describe だけ FAIL する）', () => {
+describe('移行 A〜F との突き合わせ（段1と段2の Task 1〜3 の移行がある前提。無ければこの describe だけ FAIL する）', () => {
   it('DB の関数が止める返品の言葉は、移行の本文にある（綴りが食い違うと、画面に出る言葉が変わる）', () => {
     const sql = returnMigrationsText();
 
@@ -727,6 +781,110 @@ describe('取消・開き直し・届かないで終える・検品・手数料�
   });
 });
 
+describe('申し込みの承認とお断り（approveReturn・declineReturn）', () => {
+  it('approveReturn: DB の関数の引数名のとおりに渡し、返品の番号と状態（open）を返す。DB の列は return_id と status', async () => {
+    const { store, rpc } = storeWith({ admin_approve_return: { data: [{ return_id: RETURN_ID, status: 'open' }] } });
+
+    await expect(approveReturn(store, APPROVE_INPUT)).resolves.toEqual({ returnId: RETURN_ID, returnStatus: 'open' });
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('admin_approve_return', {
+      _return_id: RETURN_ID,
+      _actor_id: ACTOR_ID,
+      _lines: [
+        { return_line_id: LINE_1, resolution: 'refund', exchange_variant_id: null, exchange_method: null },
+        { return_line_id: LINE_2, resolution: 'exchange', exchange_variant_id: 42, exchange_method: 'make' },
+      ],
+      _return_method: 'shop_label',
+      _return_shipping_payer: 'customer',
+      _return_carrier: 'yamato',
+      _return_tracking_number: 'AB-1234',
+      _return_shipping_fee: 800,
+      _restocking_fee_percent: 10,
+      _exchange_fee: 500,
+      _exchange_shipping_fee: 300,
+      _shop_note: '電話で相談済み',
+      _notify_customer: true,
+    });
+  });
+
+  it('approveReturn: 配送業者・伝票番号・メモが無ければ null のまま渡し、お知らせを送らない承認は _notify_customer を偽で渡す。行が1つのオブジェクトで来ても読める', async () => {
+    const { store, rpc } = storeWith({ admin_approve_return: { data: { return_id: RETURN_ID, status: 'open' } } });
+
+    await expect(
+      approveReturn(store, {
+        ...APPROVE_INPUT,
+        returnMethod: 'not_required',
+        returnCarrier: null,
+        returnTrackingNumber: null,
+        shopNote: null,
+        notifyCustomer: false,
+      }),
+    ).resolves.toEqual({ returnId: RETURN_ID, returnStatus: 'open' });
+
+    expect(rpc).toHaveBeenCalledWith(
+      'admin_approve_return',
+      expect.objectContaining({
+        _return_method: 'not_required', _return_carrier: null, _return_tracking_number: null, _shop_note: null, _notify_customer: false,
+      }),
+    );
+  });
+
+  it('approveReturn: 返金の行でも exchange_variant_id・exchange_method を省かず null で送る（DB は行の4つのキーが全部あることを求める）。渡し忘れも null にし、JSON にしてもキーが残る', async () => {
+    const { store, rpc } = storeWith({ admin_approve_return: { data: [{ return_id: RETURN_ID, status: 'open' }] } });
+    const forgotten = { returnLineId: LINE_2, resolution: 'refund' } as unknown as ApproveReturnInput['lines'][number];
+
+    await approveReturn(store, { ...APPROVE_INPUT, lines: [APPROVE_INPUT.lines[0], forgotten] });
+
+    const sent = JSON.parse(JSON.stringify(rpc.mock.calls[0][1])) as { _lines: Array<Record<string, unknown>> };
+    expect(sent._lines).toHaveLength(2);
+    for (const line of sent._lines) {
+      expect(line.resolution).toBe('refund');
+      expect(Object.keys(line).sort()).toEqual(['exchange_method', 'exchange_variant_id', 'resolution', 'return_line_id']);
+      expect(line.exchange_variant_id).toBeNull();
+      expect(line.exchange_method).toBeNull();
+    }
+  });
+
+  it('declineReturn: DB の関数の引数名のとおりに渡し、返品の番号と状態（declined）を返す', async () => {
+    const { store, rpc } = storeWith({ admin_decline_return: { data: [{ return_id: RETURN_ID, status: 'declined' }] } });
+
+    await expect(
+      declineReturn(store, {
+        returnId: RETURN_ID, actorId: ACTOR_ID, declineReason: 'final_sale', declineMessage: 'この商品は返品不可の商品のため、お受けできませんでした。',
+      }),
+    ).resolves.toEqual({ returnId: RETURN_ID, returnStatus: 'declined' });
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('admin_decline_return', {
+      _return_id: RETURN_ID,
+      _actor_id: ACTOR_ID,
+      _decline_reason: 'final_sale',
+      _decline_message: 'この商品は返品不可の商品のため、お受けできませんでした。',
+    });
+  });
+
+  it.each([
+    'RETURN_NOT_FOUND',
+    'RETURN_STATE_CONFLICT',
+    'RETURN_ADDRESS_REQUIRED',
+    'RETURN_EXCHANGE_VARIANT_INVALID',
+    'RETURN_FEE_INVALID',
+    'RETURN_ARGUMENT_INVALID',
+  ] as const)('approveReturn は DB が %s で断れば、同じ綴りの記号', async (word) => {
+    await expectRefusal('admin_approve_return', word, word, (store) => approveReturn(store, APPROVE_INPUT));
+  });
+
+  it.each(['RETURN_NOT_FOUND', 'RETURN_STATE_CONFLICT', 'RETURN_DECLINE_MESSAGE_REQUIRED', 'RETURN_ARGUMENT_INVALID'] as const)(
+    'declineReturn は DB が %s で断れば、同じ綴りの記号',
+    async (word) => {
+      await expectRefusal('admin_decline_return', word, word, (store) =>
+        declineReturn(store, { returnId: RETURN_ID, actorId: ACTOR_ID, declineReason: 'other', declineMessage: ' ' }),
+      );
+    },
+  );
+});
+
 // ---- 読み出しの答えの変換 ----
 
 const REASON_SHIPPING_PAYERS = {
@@ -747,11 +905,11 @@ const MATERIALS_JSON = {
       lines: [
         {
           order_item_id: ITEM_1, item_id: 12, variant_id: 101, item_name: 'シルクブラウス', color: '白', size: 'M',
-          line_kind: 'order', quantity: 2, returnable: 2,
+          line_kind: 'order', quantity: 2, returnable: 2, return_ineligible: false,
         },
         {
           order_item_id: EXCHANGE_ITEM_ID, item_id: 13, variant_id: null, item_name: 'リネンパンツ', color: null, size: null,
-          line_kind: 'exchange', quantity: 1, returnable: 0,
+          line_kind: 'exchange', quantity: 1, returnable: 0, return_ineligible: true,
         },
       ],
     },
@@ -780,11 +938,11 @@ const MATERIALS = {
       lines: [
         {
           orderItemId: ITEM_1, itemId: 12, variantId: 101, itemName: 'シルクブラウス', color: '白', size: 'M',
-          lineKind: 'order', quantity: 2, returnable: 2,
+          lineKind: 'order', quantity: 2, returnable: 2, returnIneligible: false,
         },
         {
           orderItemId: EXCHANGE_ITEM_ID, itemId: 13, variantId: null, itemName: 'リネンパンツ', color: null, size: null,
-          lineKind: 'exchange', quantity: 1, returnable: 0,
+          lineKind: 'exchange', quantity: 1, returnable: 0, returnIneligible: true,
         },
       ],
     },
@@ -845,6 +1003,7 @@ const RETURN_JSON = {
   first_receipt_done: true, first_exchange_receipt_done: false,
   shop_note: '電話で受付', notify_customer: true, created_at: '2026-10-12T01:00:00+00:00', created_by_email: 'owner@example.com',
   closed_at: null, cancelled_at: null,
+  requested_at: null, approved_at: null, approved_by_email: null, declined_at: null, decline_reason: null, decline_message: null,
   lines: [
     {
       id: LINE_1, fulfillment_id: FULFILLMENT_ID, fulfillment_number: 1, order_item_id: ITEM_1, item_name: 'シルクブラウス', color: '白', size: 'M',
@@ -854,6 +1013,7 @@ const RETURN_JSON = {
         exchanged: 0, refund_covered: 0, refund_waived: 1, refund_waiting: 1,
       },
       refund_amounts_by_count: [2666], refund_waiting_amount: 2666,
+      customer_note: null, requested_resolution: null, requested_exchange: null, photos: [], return_ineligible: false,
     },
     {
       id: LINE_2, fulfillment_id: FULFILLMENT_ID, fulfillment_number: 1, order_item_id: ITEM_2, item_name: 'リネンパンツ', color: null, size: null,
@@ -864,6 +1024,7 @@ const RETURN_JSON = {
         exchanged: 1, refund_covered: 0, refund_waived: 0, refund_waiting: 0,
       },
       refund_amounts_by_count: [], refund_waiting_amount: 0,
+      customer_note: null, requested_resolution: null, requested_exchange: null, photos: [], return_ineligible: true,
     },
   ],
   refunds: [{ id: REFUND_ID, amount: 2666, status: 'pending', created_at: '2026-10-12T02:00:00+00:00' }],
@@ -887,6 +1048,7 @@ const RETURN = {
   firstReceiptDone: true, firstExchangeReceiptDone: false,
   shopNote: '電話で受付', notifyCustomer: true, createdAt: '2026-10-12T01:00:00+00:00', createdByEmail: 'owner@example.com',
   closedAt: null, cancelledAt: null,
+  requestedAt: null, approvedAt: null, approvedByEmail: null, declinedAt: null, declineReason: null, declineMessage: null,
   lines: [
     {
       id: LINE_1, fulfillmentId: FULFILLMENT_ID, fulfillmentNumber: 1, orderItemId: ITEM_1, itemName: 'シルクブラウス', color: '白', size: 'M',
@@ -896,6 +1058,7 @@ const RETURN = {
         exchanged: 0, refundCovered: 0, refundWaived: 1, refundWaiting: 1,
       },
       refundAmountsByCount: [2666], refundWaitingAmount: 2666,
+      customerNote: null, requestedResolution: null, requestedExchange: null, photos: [], returnIneligible: false,
     },
     {
       id: LINE_2, fulfillmentId: FULFILLMENT_ID, fulfillmentNumber: 1, orderItemId: ITEM_2, itemName: 'リネンパンツ', color: null, size: null,
@@ -906,6 +1069,7 @@ const RETURN = {
         exchanged: 1, refundCovered: 0, refundWaived: 0, refundWaiting: 0,
       },
       refundAmountsByCount: [], refundWaitingAmount: 0,
+      customerNote: null, requestedResolution: null, requestedExchange: null, photos: [], returnIneligible: true,
     },
   ],
   refunds: [{ id: REFUND_ID, amount: 2666, status: 'pending', createdAt: '2026-10-12T02:00:00+00:00' }],
@@ -978,6 +1142,154 @@ describe('listOrderReturns', () => {
     const [detail] = await listOrderReturns(weird.store, ORDER_ID);
 
     expect(detail).toMatchObject({ displayStatus: null, marks: ['awaiting_items'] });
+  });
+});
+
+// list_order_returns の答えの段2のキー: お客様の申し込みの返品（状態 requested）。行にご希望・詳しい内容・写真・返品不可の印が付く
+const PHOTO_1 = '61b2c3d4-1111-4222-8333-444455556661';
+const PHOTO_2 = '61b2c3d4-1111-4222-8333-444455556662';
+const REQUESTED_JSON = {
+  id: RETURN_ID, number: 3, status: 'requested', source: 'customer_request', display_status: 'requested', marks: [],
+  return_method: 'customer_ships', return_shipping_payer: 'shop', return_carrier: null, return_tracking_number: null,
+  fees: {
+    return_shipping_fee: 0, restocking_fee_percent: 0, exchange_fee: 0, exchange_shipping_fee: 0, fee_due_amount: 0,
+    fee_pending_deduction: 0, fee_received_at: null, exchange_released_at: null,
+  },
+  first_receipt_done: false, first_exchange_receipt_done: false,
+  shop_note: null, notify_customer: true, created_at: '2026-10-12T01:00:00+00:00', created_by_email: null,
+  closed_at: null, cancelled_at: null,
+  requested_at: '2026-10-12T01:00:00+00:00', approved_at: null, approved_by_email: null,
+  declined_at: null, decline_reason: null, decline_message: null,
+  lines: [
+    {
+      id: LINE_1, fulfillment_id: FULFILLMENT_ID, fulfillment_number: 1, order_item_id: ITEM_1, item_name: 'シルクブラウス', color: '白', size: 'M',
+      quantity: 2, reason: 'defective', reason_note: null, resolution: 'exchange',
+      exchange: { variant_id: 102, color: '白', size: 'L', method: 'make', stock_quantity: 0, made_to_order_lead_days: 14, out_of_stock_exchange: 'make' },
+      progress: {
+        restocked: 0, not_restocked: 0, pending_inspection: 0, sent_back: 0, missing: 0, processed: 0, unprocessed: 2,
+        exchanged: 0, refund_covered: 0, refund_waived: 0, refund_waiting: 0,
+      },
+      refund_amounts_by_count: [],
+      refund_waiting_amount: 0,
+      customer_note: '袖に穴がありました', requested_resolution: 'exchange',
+      requested_exchange: { variant_id: 102, color: '白', size: 'L' },
+      photos: [{ id: PHOTO_1, purged: false }, { id: PHOTO_2, purged: true }],
+      return_ineligible: true,
+    },
+  ],
+  refunds: [], receipts: [], exchange_items: [],
+};
+
+describe('listOrderReturns（段2のキー）', () => {
+  it('申し込みの返品: 申し込んだ日時と、行のご希望・詳しい内容・ご希望の色・サイズ・写真・返品不可の印を写す', async () => {
+    const { store } = storeWith({ list_order_returns: { data: [REQUESTED_JSON] } });
+
+    const [detail] = await listOrderReturns(store, ORDER_ID);
+
+    expect(detail).toMatchObject({
+      status: 'requested', source: 'customer_request', displayStatus: 'requested', label: 'ORD-A1B2C3D4-R3',
+      requestedAt: '2026-10-12T01:00:00+00:00', approvedAt: null, approvedByEmail: null,
+      declinedAt: null, declineReason: null, declineMessage: null,
+    });
+    expect(detail.lines[0]).toMatchObject({
+      resolution: 'exchange',
+      customerNote: '袖に穴がありました',
+      requestedResolution: 'exchange',
+      requestedExchange: { variantId: 102, color: '白', size: 'L' },
+      photos: [{ id: PHOTO_1, purged: false }, { id: PHOTO_2, purged: true }],
+      returnIneligible: true,
+    });
+  });
+
+  it('承認した返品は承認の日時と承認した人のメール、お断りした返品はお断りの日時・理由・メッセージを写す', async () => {
+    const approved = {
+      ...REQUESTED_JSON, status: 'open', display_status: 'in_progress',
+      approved_at: '2026-10-12T05:00:00+00:00', approved_by_email: 'owner@example.com',
+    };
+    const declined = {
+      ...REQUESTED_JSON, id: '51b2c3d4-1111-4222-8333-444455556667', status: 'declined', display_status: null,
+      declined_at: '2026-10-12T06:00:00+00:00', decline_reason: 'final_sale', decline_message: 'この商品は返品不可の商品のため、お受けできませんでした。',
+    };
+    const { store } = storeWith({ list_order_returns: { data: [approved, declined] } });
+
+    const [open, refused] = await listOrderReturns(store, ORDER_ID);
+
+    expect(open).toMatchObject({
+      status: 'open', requestedAt: '2026-10-12T01:00:00+00:00',
+      approvedAt: '2026-10-12T05:00:00+00:00', approvedByEmail: 'owner@example.com', declinedAt: null,
+    });
+    expect(refused).toMatchObject({
+      status: 'declined', approvedAt: null,
+      declinedAt: '2026-10-12T06:00:00+00:00', declineReason: 'final_sale',
+      declineMessage: 'この商品は返品不可の商品のため、お受けできませんでした。',
+    });
+  });
+
+  it('お断りの理由の3つの記号を写す。表に無い記号・表に無いご希望は null（画面が言葉の表を引いて undefined にならない）', async () => {
+    for (const reason of ['window_passed', 'final_sale', 'other']) {
+      const { store } = storeWith({ list_order_returns: { data: [{ ...REQUESTED_JSON, status: 'declined', decline_reason: reason }] } });
+
+      const [detail] = await listOrderReturns(store, ORDER_ID);
+
+      expect(detail.declineReason).toBe(reason);
+    }
+
+    const weird = storeWith({
+      list_order_returns: {
+        data: [{ ...REQUESTED_JSON, decline_reason: 'weird', lines: [{ ...REQUESTED_JSON.lines[0], requested_resolution: 'weird' }] }],
+      },
+    });
+    const [detail] = await listOrderReturns(weird.store, ORDER_ID);
+    expect(detail.declineReason).toBeNull();
+    expect(detail.lines[0].requestedResolution).toBeNull();
+  });
+
+  it('段2のキーが無い返品（取消の返品・段1の形）は、日時・メッセージが null、写真が空の配列、返品不可の印が偽', async () => {
+    const withoutLines = storeWith({ list_order_returns: { data: [CANCELLED_JSON] } });
+    const [cancelled] = await listOrderReturns(withoutLines.store, ORDER_ID);
+    expect(cancelled).toMatchObject({
+      requestedAt: null, approvedAt: null, approvedByEmail: null, declinedAt: null, declineReason: null, declineMessage: null,
+    });
+
+    const stage2Keys = ['customer_note', 'requested_resolution', 'requested_exchange', 'photos', 'return_ineligible'];
+    const stage1Line = Object.fromEntries(Object.entries(REQUESTED_JSON.lines[0]).filter(([key]) => !stage2Keys.includes(key)));
+    const stage1 = storeWith({ list_order_returns: { data: [{ ...RETURN_JSON, lines: [stage1Line] }] } });
+    const [detail] = await listOrderReturns(stage1.store, ORDER_ID);
+    expect(detail.lines[0]).toMatchObject({
+      customerNote: null, requestedResolution: null, requestedExchange: null, photos: [], returnIneligible: false,
+    });
+  });
+});
+
+describe('listReturnPhotos', () => {
+  it('返品の番号を渡し、写真の番号・返品の行の番号・置き場の場所・消したかを返す（並びは DB が決めたまま）', async () => {
+    const { store, rpc } = storeWith({
+      list_return_photos: {
+        data: [
+          { photo_id: PHOTO_1, return_line_id: LINE_1, storage_path: `requests/${ORDER_ID}/${PHOTO_1}`, purged: false },
+          { photo_id: PHOTO_2, return_line_id: LINE_2, storage_path: `requests/${ORDER_ID}/${PHOTO_2}`, purged: true },
+        ],
+      },
+    });
+
+    await expect(listReturnPhotos(store, RETURN_ID)).resolves.toEqual([
+      { photoId: PHOTO_1, returnLineId: LINE_1, storagePath: `requests/${ORDER_ID}/${PHOTO_1}`, purged: false },
+      { photoId: PHOTO_2, returnLineId: LINE_2, storagePath: `requests/${ORDER_ID}/${PHOTO_2}`, purged: true },
+    ]);
+
+    expect(rpc).toHaveBeenCalledWith('list_return_photos', { _return_id: RETURN_ID });
+  });
+
+  it('写真が無ければ空の配列。行が1つのオブジェクトで来ても読める', async () => {
+    const empty = storeWith({ list_return_photos: { data: [] } });
+    await expect(listReturnPhotos(empty.store, RETURN_ID)).resolves.toEqual([]);
+
+    const object = storeWith({
+      list_return_photos: { data: { photo_id: PHOTO_1, return_line_id: LINE_1, storage_path: `requests/${ORDER_ID}/${PHOTO_1}`, purged: false } },
+    });
+    await expect(listReturnPhotos(object.store, RETURN_ID)).resolves.toEqual([
+      { photoId: PHOTO_1, returnLineId: LINE_1, storagePath: `requests/${ORDER_ID}/${PHOTO_1}`, purged: false },
+    ]);
   });
 });
 
@@ -1297,7 +1609,7 @@ describe('getShopReturnSettings / updateShopReturnSettings', () => {
     });
   });
 
-  it('設定の画面が送る ShopReturnSettingsUpdate は、そのまま渡せる。段2の欄は DB に渡さない', async () => {
+  it('段1の欄だけの ShopReturnSettingsUpdate は、そのまま渡せる。段2の欄を入れていなければ DB に渡さない', async () => {
     const update: ShopReturnSettingsUpdate = {
       returnAddress: { name: '返品係', postalCode: '150-0001', address: '東京都渋谷区神宮前1-2-3', phone: '03-1234-5678' },
       customerPaidMethod: 'shop_label',
@@ -1341,6 +1653,64 @@ describe('getShopReturnSettings / updateShopReturnSettings', () => {
     for (const key of ['requests_enabled', 'request_types', 'notice_text']) {
       expect(sent).not.toHaveProperty(key);
     }
+  });
+
+  it('段2の欄（申し込み・種類・注意書き・理由ごとの出す／ご希望／写真と案内の文）を含む ShopReturnSettingsUpdate も、そのまま渡せる', async () => {
+    const update: ShopReturnSettingsUpdate = {
+      returnAddress: null,
+      customerPaidMethod: 'customer_ships',
+      shopLabelFee: 0,
+      noReturnNeededEnabled: false,
+      windowDays: 7,
+      windowStart: 'each_item',
+      deliveryBufferDays: 3,
+      reasons: [
+        {
+          reason: 'defective', shippingPayer: 'shop', outOfStockExchange: 'make',
+          shown: true, resolutions: 'refund_only', photo: 'required', photoInstructions: '傷の場所がわかる写真をお送りください',
+        },
+      ],
+      restockingFeeEnabled: false,
+      restockingFeePercent: 0,
+      exchangeFeesEnabled: false,
+      exchangeFee: 0,
+      exchangeShippingFee: 0,
+      inspectionEnabled: true,
+      requestsEnabled: true,
+      requestTypes: 'returns_only',
+      noticeText: 'お申し込みの前に、商品の状態をご確認ください',
+    };
+    const { store, rpc } = storeWith({ admin_update_shop_return_settings: { data: SETTINGS_JSON } });
+
+    await updateShopReturnSettings(store, { settings: update, actorId: ACTOR_ID });
+
+    expect(rpc).toHaveBeenCalledWith('admin_update_shop_return_settings', {
+      _settings: {
+        return_address: null,
+        customer_paid_method: 'customer_ships',
+        shop_label_fee: 0,
+        no_return_needed_enabled: false,
+        window_days: 7,
+        window_start: 'each_item',
+        delivery_buffer_days: 3,
+        reasons: [
+          {
+            reason: 'defective', shipping_payer: 'shop', out_of_stock_exchange: 'make',
+            shown: true, resolutions: 'refund_only', photo: 'required', photo_instructions: '傷の場所がわかる写真をお送りください',
+          },
+        ],
+        restocking_fee_enabled: false,
+        restocking_fee_percent: 0,
+        exchange_fees_enabled: false,
+        exchange_fee: 0,
+        exchange_shipping_fee: 0,
+        inspection_enabled: true,
+        requests_enabled: true,
+        request_types: 'returns_only',
+        notice_text: 'お申し込みの前に、商品の状態をご確認ください',
+      },
+      _actor_id: ACTOR_ID,
+    });
   });
 
   it('渡さない欄は DB に渡さない（何も変えない設定は空のオブジェクト）', async () => {

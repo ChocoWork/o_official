@@ -70,17 +70,17 @@ const SETTINGS: Materials['settings'] = {
 
 /** 返せる数が2。同じ商品に、使える色・サイズが2つと使えない色・サイズが1つ */
 const BLOUSE: ShipmentLine = {
-  orderItemId: 'item-blouse', itemId: 11, variantId: 101, itemName: 'シルクブラウス', color: '白', size: 'M',
+  orderItemId: 'item-blouse', itemId: 11, variantId: 101, itemName: 'シルクブラウス', color: '白', size: 'M', returnIneligible: false,
   lineKind: 'order', quantity: 2, returnable: 2,
 };
 /** 色が無い品。サイズだけが括弧に入る */
 const PANTS: ShipmentLine = {
-  orderItemId: 'item-pants', itemId: 12, variantId: 201, itemName: 'ウールパンツ', color: null, size: '2',
+  orderItemId: 'item-pants', itemId: 12, variantId: 201, itemName: 'ウールパンツ', color: null, size: '2', returnIneligible: false,
   lineKind: 'order', quantity: 1, returnable: 1,
 };
 /** 交換できる色・サイズが材料に無い品（交換を選べない） */
 const BELT: ShipmentLine = {
-  orderItemId: 'item-belt', itemId: 13, variantId: null, itemName: 'レザーベルト', color: '茶', size: null,
+  orderItemId: 'item-belt', itemId: 13, variantId: null, itemName: 'レザーベルト', color: '茶', size: null, returnIneligible: false,
   lineKind: 'order', quantity: 1, returnable: 1,
 };
 

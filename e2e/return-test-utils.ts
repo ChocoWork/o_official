@@ -920,6 +920,11 @@ export function returnLineOf(input: {
     // 交換の予定の行にも入れる（受け取りで「返金に変える」を選んだ時の見込みに使う。計画の冒頭 C-2）
     refundAmountsByCount: Array.from({ length: unprocessed }, (_, index) => unitAmount * (index + 1)),
     refundWaitingAmount: exchange ? 0 : unitAmount * done.refundWaiting,
+    customerNote: null,
+    requestedResolution: null,
+    requestedExchange: null,
+    photos: [],
+    returnIneligible: false,
   };
 }
 
@@ -976,6 +981,12 @@ export function returnDetailOf(input: {
     createdByEmail: 'admin@example.com',
     closedAt: status === 'closed' ? '2026-10-12T00:00:00.000Z' : null,
     cancelledAt: status === 'cancelled' ? '2026-10-12T00:00:00.000Z' : null,
+    requestedAt: null,
+    approvedAt: null,
+    approvedByEmail: null,
+    declinedAt: null,
+    declineReason: null,
+    declineMessage: null,
     lines: input.lines,
     refunds: input.refunds ?? [],
     receipts: input.receipts ?? [],
@@ -1010,6 +1021,7 @@ export function materialsLineOf(input: Partial<MaterialLine> & { orderItemId: st
     lineKind: 'order',
     quantity: 1,
     returnable: 1,
+    returnIneligible: false,
     ...input,
   };
 }
