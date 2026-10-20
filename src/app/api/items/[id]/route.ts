@@ -41,7 +41,7 @@ export async function GET(
 
     const { data, error } = await supabase
       .from('items')
-      .select('id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, material, origin, care, product_note')
+      .select('id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, material, origin, care, product_note, return_ineligible')
       .eq('id', id)
       .eq('status', 'published')
       .single();
@@ -67,7 +67,9 @@ export async function GET(
       );
     }
 
-    const signedData = await signItemImageFields(await createServiceRoleClient(), data);
+    // 返品不可の印は、列の名前（return_ineligible）のまま返さず、下で returnIneligible に直して返す
+    const { return_ineligible: returnIneligible, ...itemColumns } = data;
+    const signedData = await signItemImageFields(await createServiceRoleClient(), itemColumns);
     // 在庫の単位は色 × サイズ（FREQ-400 / FREQ-401）。
     const publicItem = signedData;
     const availability = await getItemAvailability(id);
@@ -75,6 +77,7 @@ export async function GET(
     return NextResponse.json(
       {
         ...publicItem,
+        returnIneligible: returnIneligible === true,
         madeToOrder: availability.madeToOrder,
         variantAvailability: availability.combinations,
       },

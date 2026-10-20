@@ -47,8 +47,15 @@ jest.mock('@/lib/orders/refund/refund-store', () => ({
   listOrderRefunds: (...args: unknown[]) => mockListRefunds(...args),
 }));
 
+// 返品・交換の欄（グループ E-3 段2）。実物の読み出し（DB の関数）は使わず、答えを差し替える
+const mockLoadCustomerOrderReturns = jest.fn();
+jest.mock('@/lib/orders/returns/customer-return-store', () => ({
+  loadCustomerOrderReturns: (...args: unknown[]) => mockLoadCustomerOrderReturns(...args),
+}));
+
 import { NextRequest } from 'next/server';
 import { GET } from '@/app/api/orders/[id]/route';
+import type { CustomerOrderReturns } from '@/lib/orders/returns/customer-return-types';
 
 type Json = Record<string, any>;
 type RouteResponse = { status: number; body: Json; headers: Record<string, string> };
@@ -158,6 +165,7 @@ beforeEach(() => {
   mockOwnerQuery.eq.mockReturnValue(mockOwnerQuery);
   mockOwnerQuery.not.mockReturnValue(mockOwnerQuery);
   mockCreateServiceRoleClient.mockResolvedValue(mockServiceClient);
+  mockLoadCustomerOrderReturns.mockResolvedValue(null);
 });
 
 describe('GET /api/orders/[id] の発送と進み具合（グループ E-1）', () => {
@@ -735,6 +743,96 @@ describe('GET /api/orders/[id] の返金（グループ E-2）', () => {
     expect(loggedText(consoleError)).not.toContain('DB-MESSAGE');
     expect(loggedText(consoleError)).not.toContain('神宮前');
     consoleError.mockRestore();
+  });
+});
+
+describe('GET /api/orders/[id] の返品・交換の欄 returnSection（グループ E-3 段2）', () => {
+  const RETURN_SECTION: CustomerOrderReturns = {
+    returns: [
+      {
+        id: 'e1b2c3d4-1111-4222-8333-444455556666', number: 1, label: 'ORD-A1B2C3D4-R1',
+        status: 'requested', customerStatus: 'requested',
+        returnMethod: 'customer_ships', returnShippingPayer: 'shop', returnShippingFee: 0, returnAddress: null,
+        requestedAt: '2026-10-13T01:00:00.000Z', closedAt: null,
+        lines: [
+          {
+            itemName: 'リネンシャツ', color: '白', size: 'M', quantity: 1,
+            requestedResolution: 'refund', requestedExchange: null, resolution: 'refund', exchange: null,
+          },
+        ],
+        refundAmount: null, sentBack: [], declineMessage: null, exchangeShipping: 'none',
+      },
+    ],
+    cancelRequests: [],
+    availability: { returns: 'available', endedOn: null, cancel: false },
+  };
+
+  it('持ち主の確かめを通った注文だけ、同じ service_role の client とお客様の番号（claims.sub）で読み、答えの returnSection に入れる', async () => {
+    setup();
+    mockLoadCustomerOrderReturns.mockResolvedValue(RETURN_SECTION);
+
+    const response = await getDetail();
+
+    expect(response.status).toBe(200);
+    expect(mockCreateServiceRoleClient).toHaveBeenCalledTimes(1);
+    expect(mockLoadCustomerOrderReturns).toHaveBeenCalledTimes(1);
+    expect(mockLoadCustomerOrderReturns).toHaveBeenCalledWith(mockServiceClient, { orderId: ORDER_ID, customerId: 'user-1' });
+    expect(response.body.returnSection).toEqual(RETURN_SECTION);
+  });
+
+  it('他のお客様の注文（持ち主の確かめで見つからない）は 404 で、返品の欄を読まない', async () => {
+    setup({ order: null });
+
+    const response = await getDetail();
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: 'Order not found' });
+    expect(mockLoadCustomerOrderReturns).not.toHaveBeenCalled();
+  });
+
+  it('返品の欄が読めなくても、注文の答えは返し、返品の欄だけ null にする。ログは誤りの名前だけで、DB の文・記号を出さない', async () => {
+    setup();
+    mockLoadCustomerOrderReturns.mockRejectedValue(
+      Object.assign(new Error('DB-MESSAGE 〒1500001 神宮前1-2-3'), { name: 'RefundStoreError', code: '57014' }),
+    );
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await getDetail();
+
+    expect(response.status).toBe(200);
+    expect(response.body.returnSection).toBeNull();
+    expect(response.body).toMatchObject({ id: ORDER_ID, orderNumber: 'ORD-A1B2C3D4', status: 'paid' });
+    expect(consoleError).toHaveBeenCalledWith('Order return section fetch error:', 'RefundStoreError');
+    expect(loggedText(consoleError)).not.toContain('DB-MESSAGE');
+    expect(loggedText(consoleError)).not.toContain('神宮前');
+    expect(loggedText(consoleError)).not.toContain('57014');
+    consoleError.mockRestore();
+  });
+
+  it('DB が注文なし（null）と答えた時も、返品の欄は null で注文は返す', async () => {
+    setup();
+    mockLoadCustomerOrderReturns.mockResolvedValue(null);
+
+    const response = await getDetail();
+
+    expect(response.status).toBe(200);
+    expect(response.body.returnSection).toBeNull();
+  });
+
+  it('返品の欄は、ほかの項目に影響しない（返品の欄を除くと、欄が null の時の答えと同じ）', async () => {
+    setup({ fulfillments: [fulfillment()], refunds: [refundRow()] });
+    const empty = await getDetail();
+    mockLoadCustomerOrderReturns.mockResolvedValue(RETURN_SECTION);
+    const filled = await getDetail();
+
+    const { returnSection: emptySection, ...emptyRest } = empty.body;
+    const { returnSection: filledSection, ...filledRest } = filled.body;
+    expect(emptySection).toBeNull();
+    expect(filledSection).toEqual(RETURN_SECTION);
+    expect(filledRest).toEqual(emptyRest);
+    // 比べる相手が空でないこと（発送と返金が答えに入っている）
+    expect(filledRest.shipments).toHaveLength(1);
+    expect(filledRest.refunds).toHaveLength(1);
   });
 });
 

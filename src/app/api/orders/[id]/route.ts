@@ -16,6 +16,8 @@ import { listOrderRefunds, type OrderRefundRow } from '@/lib/orders/refund/refun
 import type { OrderRefundStatus } from '@/lib/orders/refund/refund-types';
 import { konbiniDeadlineLastDay } from '@/lib/orders/refund/refund-messages';
 import { mapPaymentMethodLabel } from '@/features/checkout/services/payment-method.service';
+import { loadCustomerOrderReturns } from '@/lib/orders/returns/customer-return-store';
+import type { CustomerOrderReturns } from '@/lib/orders/returns/customer-return-types';
 
 const NO_STORE_HEADERS = {
 	'Cache-Control': 'no-store',
@@ -309,6 +311,16 @@ export async function GET(
 	const showStages = STAGE_VISIBLE_STATUSES.includes(data.status);
 	const { refunds, refundTotal } = toCustomerRefunds(refundRows, data.currency);
 
+	// 返品・交換の欄（グループ E-3 段2）。読めなくても注文の答えは返し、欄だけ null にする（画面は欄を出さない）。
+	// 持ち主の確かめはこの窓口で済んでいる。DB の関数は、お客様に隠す状態の注文なら null で答える
+	let returnSection: CustomerOrderReturns | null = null;
+	try {
+		returnSection = await loadCustomerOrderReturns(serviceSupabase, { orderId: data.id, customerId: userId });
+	} catch (returnError) {
+		// ログには誤りの名前だけを残す（DB の文には宛先・氏名などが混ざりうる）
+		console.error('Order return section fetch error:', returnError instanceof Error ? returnError.name : 'UnknownError');
+	}
+
 	// 支払方法（checkout_drafts に注文確定時の payment_intent_id が書き戻されている）
 	let paymentMethod: string | null = null;
 	if (data.payment_intent_id) {
@@ -343,6 +355,7 @@ export async function GET(
 		shipments: toShipments(fulfillments, data.order_items ?? []),
 		refunds,
 		refundTotal,
+		returnSection,
 		items: await Promise.all((data.order_items ?? []).map(async (item) => {
 			const line = lineByItemId.get(item.id);
 			return {
