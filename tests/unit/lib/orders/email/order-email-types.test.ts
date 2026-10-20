@@ -33,7 +33,7 @@ import type { PaidEmailVariant } from '@/lib/orders/order-payment-types';
  * アプリの値と DB の CHECK・関数の入力制限がずれないことを、移行の本文で確かめる。
  * - 状態・配達の状態・一時停止の理由・失敗の分類・原因の記号・配達の問題の索引: グループ D の移行（20261009095633）
  * - メールの種類・書き分けの CHECK（段1の移行 A が返品のメール4種類と返金のお知らせの返品の書き分けを足した物を、
- *   申し込みのメール6種類を足して作り直した）: グループ E-3 段2の移行 D（20261013100000）
+ *   申し込みのメール6種類を足して作り直した）: グループ E-3 段2の移行 D（20261020144439）
  * - 取りやめの理由（skip_order_email）: グループ E-3 段1の移行 C（20261013001143）。申し込みのメール6種類でも変わらない
  * - 取り出しの関数（claim_order_email）の答えの列: 段1の移行 C の関数を、段2の移行 D が cancel_request_id を足して作り直した物
  * - 再送の関数（request_order_email_resend）が種類として受ける一覧・再送できる状態の表: 段1の移行 C のまま（段2は作り直さない）。
@@ -51,7 +51,7 @@ function readMigration(fileName: string): string {
   return fs.readFileSync(path.join(process.cwd(), 'supabase/migrations', fileName), 'utf8').replace(/--.*$/gm, '');
 }
 const returnReceiptsMigration = readMigration('20261013001143_order_return_receipts.sql');
-const requestRecordsMigration = readMigration('20261013100000_order_return_request_records.sql');
+const requestRecordsMigration = readMigration('20261020144439_order_return_request_records.sql');
 
 function sqlValues(pattern: RegExp, sql = outboxMigration): string[] {
   const values = sql.match(pattern)?.[1];

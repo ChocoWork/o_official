@@ -235,7 +235,7 @@ BEGIN
     reason := v_item ->> 'reason';
     requested_resolution := v_item ->> 'requested_resolution';
     -- 空白だけの文は持たない（外す空白は 半角のスペース・タブ・改行・全角の空白 U+3000。窓口の JS の trim() に近づける）
-    customer_note := NULLIF(pg_catalog.btrim(v_item ->> 'customer_note', E' \t\r\n\u3000'), '');
+    customer_note := NULLIF(pg_catalog.btrim(v_item ->> 'customer_note', E' \t\r\n　'), '');
 
     IF quantity < 1
        OR quantity > 999
@@ -934,7 +934,7 @@ AS $$
 #variable_conflict use_column
 DECLARE
   -- 外す空白は 半角のスペース・タブ・改行・全角の空白 U+3000（parse_customer_return_lines の詳しい内容と同じ）
-  v_note text := NULLIF(pg_catalog.btrim(_customer_note, E' \t\r\n\u3000'), '');
+  v_note text := NULLIF(pg_catalog.btrim(_customer_note, E' \t\r\n　'), '');
   v_item jsonb;
   v_item_id uuid;
   v_quantity integer;

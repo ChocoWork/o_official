@@ -6,7 +6,7 @@ import type { OrderStatus, PaidEmailVariant } from '@/lib/orders/order-payment-t
  * 取りやめの理由は、返品のメールの扱いを足して作り直した移行 20261013001143_order_return_receipts.sql の関数と同じ（値は E-1 の移行 20261010122320_fulfillment_order_emails.sql から変わらない）。
  * 種類・書き分けは、返品のメール4種類と返金のお知らせの返品の書き分けを足した移行 20261012235910_order_return_records.sql と同じ（グループ E-3 設計書 9 章）。
  * 再送できる状態の表は、返品のメールを再送の対象にしない形に作り直した移行 20261013001143_order_return_receipts.sql の関数と同じ。
- * 申し込みのメール6種類（返品の申し込み3つ・キャンセルの申し込み3つ）の種類・書き分けは、それを足して作り直した段2の移行 20261013100000_order_return_request_records.sql と同じ
+ * 申し込みのメール6種類（返品の申し込み3つ・キャンセルの申し込み3つ）の種類・書き分けは、それを足して作り直した段2の移行 20261020144439_order_return_request_records.sql と同じ
  * （グループ E-3 段2 計画 C-0 の7）。取り出しの関数の答えの列は、段2の移行 D が同じに作り直す。再送の関数は段1のままで、
  * 申し込みのメール6種類を種類として受けない（INVALID_EMAIL_KIND）ので、管理画面の再送の窓口が DB を呼ぶ前に断る。
  */
