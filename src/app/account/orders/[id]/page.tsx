@@ -16,6 +16,8 @@ import {
   type OrderLineItem,
 } from "@/features/account/components/OrderItemRow";
 import { useReorder } from "@/features/account/hooks/useReorder";
+import { OrderReturnsSection } from "@/features/account/returns/OrderReturnsSection";
+import type { CustomerOrderReturns } from "@/lib/orders/returns/customer-return-types";
 import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import "../../account.css";
 
@@ -88,6 +90,8 @@ type OrderDetail = {
   refunds: OrderRefund[];
   /** 返金が2件以上の時だけ、その額の合計 */
   refundTotal: string | null;
+  /** 返品・交換の欄の中身（計画の冒頭 C-2）。窓口が読めなかった時は null。古い形の答えには無い（省ける）ので、その時も欄を出さない */
+  returnSection?: CustomerOrderReturns | null;
 };
 
 /** 発送日は日本時間の日付で出す（窓口は時刻のまま返す） */
@@ -130,6 +134,11 @@ export default function AccountOrderDetailPage() {
     null,
   );
   const [reorderError, setReorderError] = React.useState<string | null>(null);
+  // 申し込みを受け付けた後などに、注文の答えを読み直すための回数。読み直すたびに増やす
+  const [reloadCount, setReloadCount] = React.useState(0);
+  const reloadOrder = React.useCallback(() => {
+    setReloadCount((count) => count + 1);
+  }, []);
 
   const { reorderingItemId, reorder } = useReorder({
     onSuccess: (message) => {
@@ -147,7 +156,10 @@ export default function AccountOrderDetailPage() {
     }
 
     const fetchOrderDetail = async () => {
-      setIsLoading(true);
+      // 最初の読み込みだけスケルトンを出す。読み直しの間は今の画面を残す（スケルトンで欄を押し下げない）
+      if (reloadCount === 0) {
+        setIsLoading(true);
+      }
       setErrorMessage(null);
 
       try {
@@ -169,7 +181,7 @@ export default function AccountOrderDetailPage() {
     };
 
     void fetchOrderDetail();
-  }, [isAuthResolved, isLoggedIn, params.id]);
+  }, [isAuthResolved, isLoggedIn, params.id, reloadCount]);
 
   if (!isAuthResolved) {
     return (
@@ -199,6 +211,23 @@ export default function AccountOrderDetailPage() {
   const readyItems = order?.items.filter((item) => item.readyQuantity > 0) ?? [];
   const inProductionItems =
     order?.items.filter((item) => item.inProductionQuantity > 0) ?? [];
+  // キャンセルのお申し込みで選べる品 = 未発送の数が1以上の品（DB の「未発送」と同じ数）。
+  // 未入金の注文は窓口が段の数を返さないので注文の数、入金後の注文は発送準備中と受注生産中の合計
+  const isUnpaid = order?.status === "pending";
+  const cancelLines = (order?.items ?? []).flatMap((item) => {
+    const unshipped = isUnpaid
+      ? item.quantity
+      : item.readyQuantity + item.inProductionQuantity;
+    return unshipped > 0
+      ? [
+          {
+            orderItemId: item.id,
+            label: describeItem(item.name, item.color, item.size),
+            unshipped,
+          },
+        ]
+      : [];
+  });
 
   return (
     // lg 以上は横幅を活かして 61.8% : 38.2%（黄金比）の2カラムに分割する
@@ -535,7 +564,17 @@ export default function AccountOrderDetailPage() {
               ) : null}
             </section>
 
-            {/* OD-5: 次アクション（注文サマリー直下 = 注文に対する操作として近接配置） */}
+            {/* 返品・交換の欄。問い合わせのボタンの前に置く。窓口が読めなかった時（null）と古い形の答えには出さない */}
+            {order.returnSection ? (
+              <OrderReturnsSection
+                orderId={order.id}
+                section={order.returnSection}
+                cancelLines={cancelLines}
+                onChanged={reloadOrder}
+              />
+            ) : null}
+
+            {/* OD-5: 次アクション（注文サマリー直下 = 注文に対する操作として近接配置。返品・交換の欄がある時は、その欄の下） */}
             <Button
               href="/contact"
               variant="secondary"

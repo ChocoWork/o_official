@@ -107,3 +107,12 @@ export async function callCustomerReturnApi(url: string, body: unknown): Promise
 export async function submitCustomerReturnRequest(orderId: string, body: unknown): Promise<CustomerReturnCallResult> {
   return callCustomerReturnApi(returnRequestUrl(orderId), body);
 }
+
+/**
+ * キャンセルのお申し込み（グループ E-3 段2）。窓口 POST /api/orders/{orderId}/cancel-request へ送る。
+ * 二重防止の番号と中身は呼び出し側（CancelRequestForm）が持ち、答えが分からない時（unknown）は同じ物で確かめ直す。
+ * 答えの4分類と言葉の引き方は、返品の申し込みと同じ callCustomerReturnApi に任せる。
+ */
+export async function submitCustomerCancelRequest(orderId: string, body: unknown): Promise<CustomerReturnCallResult> {
+  return callCustomerReturnApi(`/api/orders/${encodeURIComponent(orderId)}/cancel-request`, body);
+}

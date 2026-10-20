@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import AccountOrderDetailPage from '@/app/account/orders/[id]/page';
 
 jest.mock('next/link', () => ({ href, children, ...props }: any) => (
@@ -14,6 +14,10 @@ jest.mock('@/contexts/LoginContext', () => ({
 }));
 jest.mock('@/features/account/hooks/useReorder', () => ({
   useReorder: () => ({ reorderingItemId: null, reorder: jest.fn() }),
+}));
+const mockSubmitCancelRequest = jest.fn();
+jest.mock('@/features/account/returns/customer-return-client', () => ({
+  submitCustomerCancelRequest: (...args: unknown[]) => mockSubmitCancelRequest(...args),
 }));
 const mockClientFetch = jest.fn();
 jest.mock('@/lib/client-fetch', () => ({
@@ -423,5 +427,142 @@ describe('お客様の注文の画面の交換の品（グループ E-3）', () 
 
     expect(screen.queryAllByTestId('order-item-exchange')).toHaveLength(0);
     expect(screen.queryAllByTestId('order-shipment-exchange')).toHaveLength(0);
+  });
+});
+
+describe('お客様の注文の画面の返品・交換の欄（グループ E-3 段2）', () => {
+  beforeEach(() => {
+    mockClientFetch.mockReset();
+    mockSubmitCancelRequest.mockReset();
+  });
+
+  function availability(overrides: Record<string, unknown> = {}) {
+    return { returns: 'none', endedOn: null, cancel: false, ...overrides };
+  }
+
+  function returnSection(overrides: Record<string, unknown> = {}) {
+    return { returns: [], cancelRequests: [], availability: availability(), ...overrides };
+  }
+
+  function answer(body: unknown) {
+    return { ok: true, json: async () => body };
+  }
+
+  it.each([
+    ['無い（古い形の答え）', undefined],
+    ['null（窓口が読めなかった）', null],
+  ])('returnSection が%sの時は、返品・交換の欄を出さない。注文の画面は今までどおり出る', async (_label, value) => {
+    await renderPage(order(value === undefined ? {} : { returnSection: value }));
+
+    expect(screen.queryByRole('region', { name: '返品・交換' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'この注文について問い合わせる' })).toBeInTheDocument();
+  });
+
+  it('欄は右の列の、支払金額の欄の後・問い合わせのボタンの前に置く。申し込める時は、注文の申し込みの画面へのリンクを出す', async () => {
+    await renderPage(order({ returnSection: returnSection({ availability: availability({ returns: 'available' }) }) }));
+
+    const payment = screen.getByRole('heading', { name: '支払金額' }).closest('section') as HTMLElement;
+    const card = screen.getByRole('region', { name: '返品・交換' });
+    const contact = screen.getByRole('link', { name: 'この注文について問い合わせる' });
+    expect(card.closest('aside')).toBe(payment.closest('aside'));
+    expect(payment.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.compareDocumentPosition(contact) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(card).getByRole('link', { name: '返品・交換を申し込む' })).toHaveAttribute(
+      'href',
+      '/account/orders/order-1/return',
+    );
+  });
+
+  it('キャンセルのお申し込みで選べる品と数は、入金後の注文なら発送準備中と受注生産中の合計。発送した品は選べない', async () => {
+    await renderPage(
+      order({
+        status: 'paid',
+        items: [
+          item({ id: 'a', name: 'リネンシャツ', quantity: 3, shippedQuantity: 1, readyQuantity: 1, inProductionQuantity: 1 }),
+          item({ id: 'b', name: 'ウールコート', color: '黒', size: 'L', quantity: 1, shippedQuantity: 1 }),
+        ],
+        returnSection: returnSection({ availability: availability({ cancel: true }) }),
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセルを申し込む' }));
+
+    expect(screen.queryByRole('group', { name: 'ウールコート（黒 / L）' })).not.toBeInTheDocument();
+    const group = screen.getByRole('group', { name: 'リネンシャツ（白 / M）' });
+    fireEvent.click(within(group).getByRole('checkbox'));
+    const select = within(group).getByLabelText('数') as HTMLSelectElement;
+    expect(Array.from(select.options).map((option) => option.value)).toEqual(['1', '2']);
+    expect(select).toHaveValue('2');
+  });
+
+  it('キャンセルのお申し込みで選べる数は、未入金の注文なら注文の数（窓口は未入金の注文に段の数を返さない）', async () => {
+    await renderPage(
+      order({
+        status: 'pending',
+        items: [item({ id: 'a', name: 'リネンシャツ', quantity: 3 })],
+        returnSection: returnSection({ availability: availability({ cancel: true }) }),
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセルを申し込む' }));
+    const group = screen.getByRole('group', { name: 'リネンシャツ（白 / M）' });
+    fireEvent.click(within(group).getByRole('checkbox'));
+
+    const select = within(group).getByLabelText('数') as HTMLSelectElement;
+    expect(Array.from(select.options).map((option) => option.value)).toEqual(['1', '2', '3']);
+    expect(select).toHaveValue('3');
+  });
+
+  it('キャンセルを申し込むと、注文の答えを読み直す。読み直しの間も今の画面を残し、申し込みの状態を出す。受け付けた文は残り、申し込みのボタンは出ない', async () => {
+    const before = order({ returnSection: returnSection({ availability: availability({ cancel: true }) }) });
+    const after = order({
+      returnSection: returnSection({
+        cancelRequests: [
+          {
+            id: 'cr-1',
+            status: 'requested',
+            requestedAt: '2026-10-13T01:00:00.000Z',
+            lines: [{ itemName: 'リネンシャツ', color: '白', size: 'M', quantity: 2 }],
+            declineMessage: null,
+          },
+        ],
+        availability: availability({ cancel: false }),
+      }),
+    });
+    let finishReload: (value: unknown) => void = () => {};
+    mockClientFetch.mockResolvedValueOnce(answer(before)).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishReload = resolve;
+        }),
+    );
+    mockSubmitCancelRequest.mockResolvedValueOnce({
+      kind: 'ok',
+      body: { data: { cancelRequestId: 'cr-1', replayed: false } },
+    });
+    render(<AccountOrderDetailPage />);
+    await screen.findByText('ORD-0001');
+
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセルを申し込む' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'リネンシャツ（白 / M）' }));
+    fireEvent.click(screen.getByRole('button', { name: '申し込む' }));
+
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalledTimes(2));
+    expect(mockClientFetch).toHaveBeenNthCalledWith(2, '/api/orders/order-1', { cache: 'no-store' });
+    expect(mockSubmitCancelRequest).toHaveBeenCalledWith(
+      'order-1',
+      expect.objectContaining({ lines: [{ orderItemId: 'line-1', quantity: 2 }], customerNote: null }),
+    );
+    // 読み直しの間は、今の画面を残す（スケルトンで欄を押し下げない）
+    expect(document.querySelector('.animate-pulse')).toBeNull();
+    expect(screen.getByText('ORD-0001')).toBeInTheDocument();
+
+    finishReload(answer(after));
+    const card = screen.getByRole('region', { name: '返品・交換' });
+    expect((await within(card).findByTestId('order-cancel-request-status')).textContent).toBe('キャンセルのお申し込み中');
+    expect(within(card).getByTestId('order-cancel-notice')).toHaveTextContent(
+      'キャンセルのお申し込みを受け付けました。内容を確かめて、メールでご連絡します。',
+    );
+    expect(within(card).queryByRole('button', { name: 'キャンセルを申し込む' })).not.toBeInTheDocument();
   });
 });
