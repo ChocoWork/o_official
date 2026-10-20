@@ -78,11 +78,11 @@ Permission Codes:
 | `admin.orders.manage` | 注文操作（配送等） | supporter |
 | `admin.orders.refund` | 注文の返金・支払い済みの注文のキャンセル・返品の返金に関わる操作（グループ E-2・E-3） | admin |
 | `admin.settings.manage` | ショップの設定（グループ E-2。返品の欄は E-3） | admin |
-| `admin.orders.return` | 注文の返品（見る・作る・受け取る・取り消す・開き直す・届かないで終える・検品する。グループ E-3） | admin, supporter |
+| `admin.orders.return` | 注文の返品（見る・作る・受け取る・取り消す・開き直す・届かないで終える・検品する・承認・お断り・写真を見る・キャンセルの申し込みを見る・お断り・解決済み・解決する。グループ E-3） | admin, supporter |
 
 （user は上記権限なし）
 
-グループ E-3 の返品では、`admin.orders.return`（店長とサポート）で返品の窓口を使い、返金に関わる操作（受け取りの今返金・返金額の指定・送料・交換の選び直し、額を決めて返金する、手数料の受け取りの記録、支払いを待たずに送る）は `admin.orders.return` と `admin.orders.refund` の両方（店長だけ）が要る。サポートの受け取りは、相談で受け取って返品を「返金待ち」にするところまで。権限の行は移行 A（`20261012235910_order_return_records.sql`）が入れ、`src/lib/auth/admin-rbac.ts` の `PermissionCode` と `legacyPermissionMap`（店長・サポートの両方）にも足す。
+グループ E-3 の返品では、`admin.orders.return`（店長とサポート）で返品の窓口を使い、返金に関わる操作（受け取りの今返金（お客様の申し込みで返送不要でない返品の計算どおりの場合を除く）・返金額の指定・送料・交換の選び直し、額を決めて返金する、手数料の受け取りの記録、支払いを待たずに送る）は `admin.orders.return` と `admin.orders.refund` の両方（店長だけ）が要る。サポートの受け取りは、お店が作った返品・返送不要の返品では、相談で受け取って返品を「返金待ち」にするところまで。権限の行は移行 A（`20261012235910_order_return_records.sql`）が入れ、`src/lib/auth/admin-rbac.ts` の `PermissionCode` と `legacyPermissionMap`（店長・サポートの両方）にも足す。グループ E-3 段2では、返品の承認・お断り・写真を見る・キャンセルの申し込みを見る・お断り・解決済み・解決も `admin.orders.return`（店長とサポート）。サポートは `source = 'customer_request'` かつ `return_method <> 'not_required'` の返品の受け取りに限り、計算どおりの今返金を選べる（額・送料・交換の上書きは窓口が 403、DB も `RETURN_FORBIDDEN`）。相談なら返金待ちにして店へ知らせる。商品の返品不可は `admin.items.manage`、設定は `admin.settings.manage`。お客様の入口は `authenticateRequest` の `claims.sub` を DB に渡し、DB が `orders.user_id` を送り直しより先に照合する。新4表は利用者から直接読めず書けず、`service_role` は読むだけで、書く関数の実行だけを許す。
 
 ---
 

@@ -4,7 +4,7 @@
 
 ## 概要
 
-本書は「1.5 商品詳細ページ（ITEM DETAIL）詳細設計」の既存設計を記録する。要件IDと設計意図を保持しているが、表中の実装状況は現在のコードと一括再照合していない。
+本書は「1.5 商品詳細ページ（ITEM DETAIL）詳細設計」の既存設計を記録する。要件IDと設計意図を保持しているが、表中の実装状況は現在のコードと一括再照合していない。E-3 段2の返品不可の一文と公開 API の returnIneligible を末尾に記す。
 
 ## カート・お気に入りの引き継ぎ（2026-10-08 / FREQ-428〜432）
 
@@ -98,3 +98,9 @@
 - **在庫を理由にカートへの追加を止めない。** 以前は在庫 0 で `SOLD OUT` を出しボタンを無効化していたが、受注生産で買える以上それは事実と違う
 - 公開レスポンスに残数は含めない。在庫量が外から分かるうえ、「あと1点」で急かす売り方はセールをしない方針と合わない
 - 判定は `item_variants` の在庫と有効・無効に依る。`description` の文字列（"sold out" / "在庫切れ"）や `items.stock_quantity` は見ない
+
+## 返品不可の案内（E-3 段2 / FREQ-482）
+
+GET /api/items/[id] は returnIneligible: boolean を返す。画面の Item.returnIneligible? が true の時だけ、item-detail-identity の直後に data-testid="item-return-ineligible-note" の段落を出す。false・未指定なら段落も出さない。文は「この商品は、初期不良・誤送を除き、返品・交換をお受けしていません」。購入の操作は止めない。管理 API と FormData のキーは return_ineligible、DB は items.return_ineligible であり、公開の答えと混ぜない。
+
+検証は FREQ-482-AC-04・05。E2E は [FR-ITEM-DETAIL-066](../../../e2e/FR-ITEM-DETAIL-066-return-ineligible.spec.ts)、単体は [ItemDetailReturnIneligible](../../../tests/unit/components/ItemDetailReturnIneligible.test.tsx)。

@@ -7,7 +7,7 @@
 
 ## 概要
 
-開店のときに定期処理を登録する順番、合言葉の入れ替え、Stripe の購読の設定、店へ知らせのメールが届いたときの調べ方をまとめる。値（合言葉・鍵）はこの文書にもチャットにもコミットにも残さない。
+開店のときに定期処理を登録する順番、合言葉の入れ替え、Stripe の購読の設定、店へ知らせのメールが届いたときの調べ方をまとめる。値（合言葉・鍵）はこの文書にもチャットにもコミットにも残さない。E-3 段2の写真を消す処理は毎日4:20、最後の成功と49時間の遅れを以下で確認する。
 
 | 場面 | 見る節 |
 |---|---|
@@ -24,6 +24,7 @@
 | 見回り | 毎時0分 | POST `/api/cron/expire-pending-orders` |
 | 照合 | 毎日 3:00（18:00 UTC） | POST `/api/cron/stripe-reconcile` |
 | 実行の記録の掃除 | 毎日 4:00（19:00 UTC） | DB の中だけ（7日を残す） |
+| 写真を消す処理（purge-return-photos、印 return_photo_purge） | 毎日4:20（19:20 UTC） | POST `/api/cron/purge-return-photos`（開店時に保留 SQL で登録） |
 | 注文のメールの片付け（`order-email-retention`） | 毎日 4:40（19:40 UTC） | DB の中だけ（本文と受付済みの番号の片付け） |
 
 ---
@@ -46,8 +47,8 @@ flowchart TD
 | 0 | 本番の環境変数（`MAIL_PROVIDER` など）を入れる前に、[注文のメールの手順書](order-email-operations.md)の1-1で移行前後を照合し、1-2の読むだけの SQL で送信待ち・送信中・やり直し待ちを確かめる。試しの行の取りやめはユーザーに見せ、明示の承認を得た後だけ | ユーザーと Claude | 古い印が種類ごとに同じ8行・2注文で、公開前の試しの送信待ちが残っていない（宛先を出さない） |
 | 1 | Vercel に公開し、環境変数を入れる。`CRON_SECRET` は32文字以上のランダムな値（例: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`）。`SHOP_ALERT_EMAIL`・`MAIL_FROM_ADDRESS`・`STRIPE_SECRET_KEY`（本番の鍵）も入れる。知らせのメールを送る設定（`MAIL_PROVIDER` は `resend`（小文字）、`RESEND_API_KEY`。本番の注文のメールは Resend でしか送らない。[注文のメールの手順書](order-email-operations.md)の1）も入れる。`resend` は秘密ではない設定値で、`Resend` と入れると完全一致の検証で止まり、店への知らせも届かない | ユーザー | 公開した URL で画面が開く。Vercel の環境変数に、`SHOP_ALERT_EMAIL`・`MAIL_FROM_ADDRESS` とメールを送る設定が入っている（無いと、知らせのメールは送られず、アプリのログに警告が出るだけになる） |
 | 2 | 本番 DB で `create extension if not exists pg_net with schema extensions;` を流し、Vault に `cron_secret`（Vercel の `CRON_SECRET` と同じ値）と `app_base_url`（公開した URL。末尾の `/` は付けずに入れる）を入れる | 合言葉はユーザー（Vault の画面で入れる）、それ以外は Claude（許可を得て） | `select name from vault.decrypted_secrets where name in ('cron_secret', 'app_base_url');` が2行 |
-| 3 | `supabase/pending/` の `schedule_stripe_webhook_worker.sql`・`schedule_expire_pending_orders.sql`・`schedule_stripe_reconcile.sql` を、新しい version の移行にして当てる（`supabase/pending/README.md` の手順） | Claude（許可を得て） | `select jobname, schedule, active from cron.job order by jobname;` に、`cron-job-run-details-retention`（掃除。移行で登録済み）・`expire-pending-orders`・`process-stripe-webhooks`・`stripe-reconcile`・`order-email-retention`（毎日19:40 UTC、本文と受付済みの番号の片付け。グループ D の移行 A で登録）の5つが `active` で並ぶ。保持期限の別のジョブ（`checkout-drafts-retention`・`rate-limit-counters-retention`）が並んでいてもよい |
-| 4 | 定期処理が成功しているのを確かめる | Claude | 6 の「実行の記録と、その直後の応答」の SQL（`jobname` を変えて使う）。worker は数分後に、`process-stripe-webhooks` の `status` が `succeeded`、応答の `status_code` が200。見回りは次の毎時0分の後、照合は次の 18:00 UTC の後に、`expire-pending-orders`・`stripe-reconcile` の実行の記録と応答（応答は実行から6時間以内に見る）、そして `ops_job_heartbeats` の `order_sweep`・`stripe_reconcile` の成功の時刻で確かめる。照合は最大300秒動き、pg_net は60秒で待つのをやめるので、応答が `timed_out` でも、`stripe_reconcile` の成功の時刻が新しければ成功（6 の「応答の見方」）。掃除は次の 19:00 UTC の後に、6 の「定期処理ごとの実行の記録」の SQL（`cron-job-run-details-retention`。URL を呼ばないので応答は無い）で確かめる |
+| 3 | `supabase/pending/` の `schedule_stripe_webhook_worker.sql`・`schedule_expire_pending_orders.sql`・`schedule_stripe_reconcile.sql`・`schedule_return_photo_purge.sql` を、新しい version の移行にして当てる（`supabase/pending/README.md` の手順） | Claude（許可を得て） | `select jobname, schedule, active from cron.job order by jobname;` に、`cron-job-run-details-retention`（掃除。移行で登録済み）・`expire-pending-orders`・`process-stripe-webhooks`・`stripe-reconcile`・`order-email-retention`（毎日19:40 UTC、本文と受付済みの番号の片付け。グループ D の移行 A で登録）・`purge-return-photos`（毎日19:20 UTC）の6つが `active` で並ぶ。保持期限の別のジョブ（`checkout-drafts-retention`・`rate-limit-counters-retention`）が並んでいてもよい |
+| 4 | 定期処理が成功しているのを確かめる | Claude | 6 の「実行の記録と、その直後の応答」の SQL（`jobname` を変えて使う）。worker は数分後に、`process-stripe-webhooks` の `status` が `succeeded`、応答の `status_code` が200。見回りは次の毎時0分の後、照合は次の 18:00 UTC の後に、`expire-pending-orders`・`stripe-reconcile` の実行の記録と応答（応答は実行から6時間以内に見る）、そして `ops_job_heartbeats` の `order_sweep`・`stripe_reconcile` の成功の時刻で確かめる。照合は最大300秒動き、pg_net は60秒で待つのをやめるので、応答が `timed_out` でも、`stripe_reconcile` の成功の時刻が新しければ成功（6 の「応答の見方」）。写真を消す処理は次の19:20 UTCの後、6節と下の写真の確認の SQL で200の uploads・photos と return_photo_purge の最初の成功を確認する。対象0でも成功時刻は更新される。掃除は次の 19:00 UTC の後に、6 の「定期処理ごとの実行の記録」の SQL（`cron-job-run-details-retention`。URL を呼ばないので応答は無い）で確かめる |
 | 5 | Stripe の管理画面で知らせの宛先（`<公開した URL>/api/webhook/stripe`）を作り、4 の13種を購読し、署名の合言葉を Vercel の `STRIPE_WEBHOOK_SECRET` に入れて出し直す | ユーザー | Stripe の管理画面で宛先が有効 |
 | 5b | Resend の配達の知らせの宛先を登録する（[注文のメールの手順書](order-email-operations.md)の1の順2） | ユーザー | Resend の管理画面で宛先が有効 |
 | 5c | 本番の Stripe の設定「顧客に返金のメールを送信する」を切る（こちらの返金のお知らせと二重になるため。コンビニ払いの口座の入力のお願いのメールは切らない。グループ E-2。[注文のメールの手順書](order-email-operations.md)の 8-1） | ユーザー | Stripe の設定の画面で、その設定が切れている |
@@ -56,6 +57,8 @@ flowchart TD
 | 5f | 状態の移り変わりを守る SQL（`supabase/pending/harden_order_state_transitions.sql`。グループ E-2 で表を直し、グループ E-3 で `shipped` から `paid` へ戻す理由に `return_exchange_added`（交換の品を足した時）も足した版）を当てるかを決める。当てる前に、`grep -n "return_exchange_added" supabase/pending/harden_order_state_transitions.sql` でこの理由が入っていることを確かめる（入っていないと、交換の品を足す受け取りが断られる）。当てるなら、当てる前に、全額返金で取り消した注文を戻す決まり（ファイルの `OLD.status = 'cancelled'` から始まる検査）に `private.order_cancelled_by_refund(OLD.id)` の確かめを足して、返金で取り消した注文だけに当てる（足さないと、未入金で取り消した注文に届いた入金の全額の返金が成功の後に失敗した時、失敗を記録できず `FAILED_FULL_REFUND_CANNOT_REMAIN_CANCELLED` で止まり、取り込みがやり直し続ける。その返金は、自動の返金①、管理画面の返金の画面の「すべて選ぶ」で返した全額の返金（取り消した注文でも決まりは同じ。P28）、Stripe の画面からの全額の返金のどれでも起きる）。新しい version の移行にして、ユーザーの許可を得て当てる | ユーザーと Claude | 決めた結果を台帳に残す |
 | 5g | 返品の返送先をショップの設定に入れる。管理画面の SETTINGS（題「ショップの設定」）の「返品」の欄の「返送」のまとまりで、「返送先」（名前・郵便番号・住所・電話番号）を入れて「保存する」を押す。4つとも空の間は、返品を作れない。返品の受付のお知らせにも載る（グループ E-3） | ユーザー | SETTINGS の「返送」のまとまりに返送先が入っていて、「最後に変えた人」に変えた人と日時が出ている（本番で返品を作って確かめることはしない） |
 | 5h | 本番の DB の役割の表に、権限 `admin.orders.return`（注文の返品）の行があり、店長（`admin`）とサポート（`supporter`）の役割に付いているかを、読むだけの SQL で確かめる。移行 A（`20261012235910_order_return_records.sql`）が入れるが、役割の行が無い DB では何も入らない（グループ E-3。下の SQL） | Claude（許可を得て） | 下の SQL の結果が2行（`admin`・`supporter`） |
+| 5i | E-3 段2の「申し込み」で受付・種類・注意書きと理由の出す／ご希望／写真を確認し、返送先を入れる。受付は最初からオン、ブランドは返品だけ。/legal・/terms の問い合わせの案内を申し込みに合わせる文章は店が確定する | ユーザー | 保存した設定と法的な案内が公開内容に合う |
+| 5j | 非公開 return-photos の存在、10485760・image/jpeg・image/png と、サーバーの SUPABASE_URL（無ければ NEXT_PUBLIC_SUPABASE_URL）がブラウザから届くことを確認する | Claude とユーザー | 開店前に本番の写真の送信・管理画面の表示を1回確認する。リンクや秘密の値は出さない |
 | 6 | 最初の知らせが処理されたのを確かめる。本番の鍵ではテストカードが使えず、テストモードの知らせは本番の宛先に届かない。少額の本番の決済を1回して、確かめた後に返金する（グループ E-2 から、返金のお知らせのメールがお客様の宛先に届く。5c で Stripe 側の返金のメールを切った後に行う。管理画面の返金の画面から返すと、返金の記録・在庫・メールの流れも確かめられる） | ユーザー（決済と返金）、Claude（確かめる） | `stripe_webhook_events` の新しい行（決済の知らせ。返金したら返金の知らせも）が `completed` |
 | 7 | 普段の開発を手元の DB に切り替える（設計書 第7章） | Claude とユーザー | `npm run dev` の画面が手元の見本データを出す |
 
@@ -142,6 +145,12 @@ order by r.code;
 - 件名: 【要確認】定期処理が止まっています（毎晩の照合）
   - 何が起きたか: 照合が25時間以上成功していない
   - やること: 6 の「実行の記録と、その直後の応答」の SQL（`jobname` を `stripe-reconcile` にする）で実行の記録と応答を見て、`ops_job_heartbeats` の `stripe_reconcile` の `last_error_code`（原因の記号）を見る。最初の遅れの知らせは、18:00 UTC の実行が失敗した約1時間後（最後の成功から25時間たった時点）に届く。応答は6時間残るので、知らせを見てすぐなら、失敗した実行の応答がまだ残っている。6時間以上たっていたら応答は消えているので、実行の記録（7日残る）と `ops_job_heartbeats` で見る（次の実行（18:00 UTC）の後6時間以内にも、応答を見られる）。401・3xx・実行の記録が `failed` のときは、「知らせが溜まったとき」の 2 と同じ。502 は、注文を DB から読めなかったか、Stripe の支払い・Payout の一覧を読めなかったとき（`last_error_code` が `db_unavailable`・`stripe_unavailable` など）。404・そのほかの5xx は、アプリの公開とログを確かめる。照合のルートは最大300秒動き、pg_net は60秒で待つのをやめるので、長い実行の応答は `timed_out` になるのが普通で、それだけでは失敗と判断しない。成功か失敗かは、`ops_job_heartbeats` の `stripe_reconcile` と、監査の行（`audit_logs` の `action = 'stripe.reconcile'`）で見る
+
+- 件名: 【要確認】定期処理が止まっています（写真を消す処理）
+  - 何が起きたか: 見回りの印 return_photo_purge の最後の成功が49時間より古い。知らせの鍵は job_stale_return_photo_purge。一度も成功していない処理には知らせが出ないため、登録直後の最初の成功を必ず確認する。
+  - やること: purge-return-photos の cron の登録・実行を確認し、実行直後6時間以内に pg_net の応答を確認する。ジョブの succeeded は HTTP をキューに置けた証拠で、写真の消去の成功ではない。200 の data.uploads・data.photos と heartbeat の成功の時刻を見る。
+  - 401 は Vault の cron_secret とアプリの CRON_SECRET の一致、3xx は最終の本番 app_base_url、404 はアプリの公開、HTTP が無く cron が failed は秘密の名前の存在を確認する。値・ジョブの command・Authorization は表示しない。502 は storage_unavailable・db_unavailable・unexpected_error の記号で切り分ける。アプリ全体が停止していれば通知も止まる。
+  - 対象は1回500件まで。Storage API remove に成功した分だけ印を付け、失敗分は次の実行で残る。消去後の印付け失敗も同じ対象の再実行で回復する。storage.objects の SQL DELETE や行の purged_at の手修正で消したことにしない。設定・接続を直し、許可された運用経路で同じ POST を再実行して、残数と heartbeat を確認する。日次500件に届き続ける場合は対象の残数を毎回確認し、店と開発者で追加実行を判断する。
 
 ### 署名不正の知らせが来たとき
 
@@ -247,3 +256,45 @@ order by dead_at desc limit 50;
 - 同じ時刻に複数の定期処理が動く（毎時0分は worker と見回り、18:00 UTC は照合も）。応答の行が複数並んだときは、`content`（応答の本文）で見分ける。worker は `processed`・`failed`・`stoppedBy`、見回りは `candidateCount`、照合は `data`（失敗のときは `Reconciliation failed`＝照合の失敗）を含む。401の本文は、どれも `Unauthorized`（認可されていない）。
 - 照合のルートは最大300秒動くが、pg_net は60秒で待つのをやめる。長い実行の応答の行は `timed_out` が `true` になるのが普通で、失敗ではない。照合の成否は、`ops_job_heartbeats` の `stripe_reconcile`（成功の時刻・失敗の時刻・原因の記号）と、監査の行（`audit_logs` の `action = 'stripe.reconcile'`。`outcome` が `error` なら、1件ずつの失敗があった）で見る。
 - 応答は6時間で消える。照合は1日に1回なので、応答を見るのは実行の後6時間以内。それより後は、実行の記録（7日残る）と `ops_job_heartbeats` で見る。
+
+## 7. 写真を消す処理の登録と確認（E-3 段2）
+
+E-3 段2の写真を消す処理は、D→E→F の DB の移行を本番に当てて照合し、アプリを公開してから、開店時に schedule_return_photo_purge.sql を新しい移行へ昇格して登録する。本番の適用状況は未確認（本番へは push の後に当てる）。保留 SQL を置いただけではジョブは登録されない。Vault の app_base_url・cron_secret の名前の存在、アプリの CRON_SECRET との一致を値を表示せず確認する。SQL は [保留の一覧](../../supabase/pending/README.md) の手順で登録する。
+
+```sql
+-- 名前と実行時刻だけを見る。command は秘密を参照するため表示しない。
+select jobname, schedule, active
+from cron.job
+where jobname = 'purge-return-photos';
+
+-- 初回の成功が NULL でないことを登録翌日に確認し、以後毎日更新されることを見る。
+select job, last_succeeded_at, last_failed_at, last_error_code
+from public.ops_job_heartbeats
+where job = 'return_photo_purge';
+
+-- 実行の記録は7日保持。生の return_message は出さない。
+select d.start_time, d.end_time, d.status
+from cron.job_run_details d
+join cron.job j using (jobid)
+where j.jobname = 'purge-return-photos'
+order by d.start_time desc
+limit 10;
+
+-- 応答は6時間保持。同時実行の応答も並びうるため uploads・photos と時刻で見分ける。
+select r.created, r.status_code, r.timed_out,
+       case when r.status_code = 200 then r.content::jsonb #>> '{data,uploads}' end as uploads,
+       case when r.status_code = 200 then r.content::jsonb #>> '{data,photos}' end as photos
+from cron.job_run_details d
+join cron.job j using (jobid)
+join net._http_response r
+  on r.created >= d.start_time and r.created < d.start_time + interval '90 seconds'
+where j.jobname = 'purge-return-photos'
+order by d.start_time desc, r.created desc
+limit 10;
+
+-- 対象の残数だけを確認し、storage_path を表示しない。
+select count(*) as targets_in_next_batch
+from public.list_return_photo_purge_targets(500);
+```
+
+対象0件も200で最後の成功が進む。uploads と photos は成功して印を付けた数で、写真を消した時に同時に付く送り先の印を uploads に二重計上しない。置き場の物は未使用1日、返品の完了・取消・お断りから90日で対象になり、日次の実行時に消す。DB の行は残る。初回成功前の「知らせが無い」は運用開始の証拠にならない。監査は orders.return_photos.purge の数だけを見て、署名つきリンク・パス・原文のエラーを報告しない。

@@ -4,7 +4,7 @@
 
 ## 概要
 
-注文の状態値と、それを更新する照合・管理RPCを示す。Stripeの現在値、下書き、Webhookキュー、返金額、在庫確保、通知は別の対象・属性として扱う。現行アプリはStripeを入金済み・入金待ちと確認した照合処理から注文を作る。決済前に注文受付APIを呼ぶ経路は現在の `src` にはない。返金は、注文の返金済みの額だけでなく1件ずつの記録（`public.order_refunds`）で持つ。記録の状態・全額の数え方・注文の状態への書き方は「返金の記録と状態（グループ E-2）」の節にまとめる。返品は、返品の記録（`public.order_returns`）と受け取りの記録で持ち、交換の品は注文の商品の行（`line_kind = 'exchange'`）として足す。返品の状態・数え方・返金との関わりは「返品の記録と状態（グループ E-3）」の節にまとめる。注文の状態の値は増やさない。
+注文の状態値と、それを更新する照合・管理RPCを示す。Stripeの現在値、下書き、Webhookキュー、返金額、在庫確保、通知は別の対象・属性として扱う。現行アプリはStripeを入金済み・入金待ちと確認した照合処理から注文を作る。決済前に注文受付APIを呼ぶ経路は現在の `src` にはない。返金は、注文の返金済みの額だけでなく1件ずつの記録（`public.order_refunds`）で持つ。記録の状態・全額の数え方・注文の状態への書き方は「返金の記録と状態（グループ E-2）」の節にまとめる。返品は、返品の記録（`public.order_returns`）と受け取りの記録で持ち、交換の品は注文の商品の行（`line_kind = 'exchange'`）として足す。返品の状態・数え方・返金との関わりは「返品の記録と状態（グループ E-3）」の節にまとめる。注文の状態の値は増やさない。E-3 段2の requested・declined とお客様用の8状態、キャンセルの申し込みの独立した4状態を以下に加える。
 
 ## 範囲と根拠
 
@@ -147,17 +147,23 @@ stateDiagram-v2
 
 ## 返品の記録と状態（グループ E-3）
 
-2026-10-13 から、返品は注文の状態の値（上の7つ）を増やさず、1件ずつの記録（`public.order_returns`）で持つ（[グループ E-3 設計書](../../superpowers/specs/2026-10-12-returns-design.md) の 3・4・6・7 章）。返す品は `order_return_lines`（作った後に一切変えない）、受け取りは `order_return_receipts` と `order_return_receipt_lines`（追記だけ。更新と削除はトリガーが断る）に残す（RTA）。返品の記録も消さず、直せるのは状態・時刻・する人・手数料の列だけで、書くのは SECURITY DEFINER の DB の関数だけ。段1はお店が作る返品（`source = 'shop'`）だけで、お客様の申し込みとお断り（`requested`・`declined`）は段2で足す。
+2026-10-13 から、返品は注文の状態の値（上の7つ）を増やさず、1件ずつの記録（`public.order_returns`）で持つ（[グループ E-3 設計書](../../superpowers/specs/2026-10-12-returns-design.md) の 3・4・6・7 章）。返す品は `order_return_lines`（数・理由・詳しい内容・ご希望は変えない。親が requested の間だけ resolution・exchange_variant_id・exchange_method を承認で更新できる）、受け取りは `order_return_receipts` と `order_return_receipt_lines`（追記だけ。更新と削除はトリガーが断る）に残す（RTA）。返品の記録も消さず、直せるのは状態・時刻・する人・手数料の列と、requested から open への承認の1回の返送・手数料・知らせ・店のメモだけで、書くのは SECURITY DEFINER の DB の関数だけ。段1の source = 'shop' に加え、段2は source = 'customer_request'・requested で作り、承認で open、お断りで declined に進む。
 
 ```mermaid
 stateDiagram-v2
+  state "お申し込み中" as requested
   state "受付中" as open
   state "完了" as closed
   state "取消" as cancelled
-  [*] --> open: お店が作る（admin_create_return）
+  state "お断り" as declined
+  [*] --> requested: customer_request_return
+  [*] --> open: admin_create_return
+  requested --> open: admin_approve_return
+  requested --> declined: admin_decline_return
   open --> cancelled: 何も受け取る前の取消
-  open --> closed: 全部の品が処理され、返金待ち・検品待ち・お支払い待ちが無い
-  closed --> open: 開き直し（届かない品がある時だけ）
+  open --> closed: 未処理・返金待ち・検品待ち・支払待ちなし
+  closed --> open: 届かない品の開き直し
+  declined --> [*]
   cancelled --> [*]
 ```
 
@@ -330,3 +336,43 @@ DB の状態の値（上の7つ）は変えない。管理画面とお客様の�
 ## 未確認事項
 
 本番migration適用、実際のStripe現在値、Cronの登録、実データによる全競合・遅延入金は未確認。グループ E-3 の移行 A〜C（`20261012235910`〜`20261013001143`）は、2026-10-13 に本番へ適用済み（20261012235910・20261013000456・20261013001143）。本番のデータでの返品の動きも未確認。`supabase/pending/`の状態遷移強制・schedule案を適用済みの事実として扱わない。保留の状態遷移強制（`harden_order_state_transitions.sql`）の表には、E-2 で`paid`→`shipped`（`refund_completed_order`）と`shipped`→`paid`（`refund_failed_reopened`）を足し、全額の判定を受け取った額に直したが、当てていない（開店前に当てるかを決める。当てる前に、全額返金で取り消した注文を戻す決まりに `private.order_cancelled_by_refund(OLD.id)` の確かめを足す。足さないと、未入金で取り消した注文に届いた入金の全額の返金（自動の返金①、管理画面の返金の画面の「すべて選ぶ」で返した全額の返金、Stripe の画面からの全額の返金）が成功の後に失敗した時、失敗を記録できず止まる。[開店のときの順番](../../06_Operations/webhook-queue-operations.md)の 5f）。E-3 で`shipped`→`paid`の許す理由に `return_exchange_added`（交換の品を足した時）も足したが、同じく当てていない（当てるなら、この理由が入っていることを先に確かめる。入っていないと、交換の品を足す受け取りが断られる）。ソース中の最大所要時間のコメントも、件数・時間制限がある見回りの無条件保証として記載しない。
+
+## お客様の申し込みと表示する状態（E-3 段2）
+
+お客様は paid・shipped の注文の取り消していない発送だけを申し込む。deadline_date >= (pg_catalog.now() AT TIME ZONE 'Asia/Tokyo')::date の間を期限内とし、null は無制限。選べる数は発送の行と注文の商品ごとの returnable の小さい方。requested の行は rq に入り、申し込んだ時から数を消費する。承認で数は変わらない。ご希望と仮の解決の3列を分けて持つ。
+
+顧客用の状態は次の表で上から最初に当たった物。注文の order_status の値は増やさない。
+
+| 条件 | customer_status | 言葉 |
+| --- | --- | --- |
+| 記録が requested | requested | お申し込み中 |
+| 記録が declined | declined | お受けできませんでした |
+| 管理用の表示が refund_waiting | refund_preparing | ご返金の準備中 |
+| 記録が closed | returned | 返品済み |
+| open でお支払い待ち | awaiting_fee | お支払いをお待ちしています |
+| open で受け取った品があり未処理が残る | partially_received | 一部をお受け取りしました |
+| open で未処理なし・検品待ちあり | inspecting | お受け取りしました（確かめています） |
+| ほかの open | accepted | 返品の受付済み |
+
+取消の返品は顧客へ返さない。返送先は open だけ。availability は、受付オフ・キャンセルだけなら closed、paid・shipped 以外は none、選べる品ありは available、期限切れの品ありは ended（endedOn はその最大の日付）、残りは none。商品の行は、数あり・期限内→selectable、数あり・期限切れ→past_deadline、申し込み中か受付中の未処理あり→requested、お返しあり→sent_back、残り→unavailable。
+
+### キャンセルの申し込みの独立した状態
+
+```mermaid
+stateDiagram-v2
+  [*] --> requested: customer_request_cancel
+  requested --> declined: admin_decline_cancel_request
+  requested --> closed: admin_close_cancel_request
+  requested --> resolved: admin_resolve_cancel_request
+  declined --> [*]
+  closed --> [*]
+  resolved --> [*]
+```
+
+注文に開いている申し込みは1つ。pending・paid の未発送の数までで、設定の受付オン・返品とキャンセルかキャンセルだけの時に申し込める。resolved は返金なら同じ注文で申し込み後の awaiting_response・pending・succeeded を確認し、取消なら注文が cancelled であることを確認し、返金の細目が申し込みの品を全部覆うかは確認しない。declined はメッセージをメールで伝え、closed は注文を変えずメールも送らない。終わった状態からは戻さず、同じ状態への更新も拒む。
+
+### サポートの今返金の例外
+
+_actor_can_refund = false でも、source = 'customer_request' AND return_method <> 'not_required' の時だけ今返金を許す。額・送料・交換の上書きは許さない。DB の計算額を E-2 の返金の記録として作り、Stripe の重複防止キーは order-refund-{記録の番号} のまま。確かめ中の返金があれば受け取りごと取り消す。相談なら受け取りを残し、記録の選択が consult の時だけ店への返金待ちを予定する。今返金・0円・返金の品0点では予定しない。
+
+E-3 段2の移行 D・E・F の名前は手元の版で、本番の適用状況は未確認（本番へは push の後に当てる）。Stripe の実際の返金、本番の Storage・配達は開店前に別途確認する。

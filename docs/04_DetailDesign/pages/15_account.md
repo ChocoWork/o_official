@@ -4,7 +4,7 @@
 
 ## 概要
 
-本書は「1.15 マイアカウントページ（ACCOUNT）詳細設計」の既存設計を記録する。要件IDと設計意図を保持しているが、表中の実装状況は現在のコードと一括再照合していない。
+本書は「1.15 マイアカウントページ（ACCOUNT）詳細設計」の既存設計を記録する。要件IDと設計意図を保持しているが、表中の実装状況は現在のコードと一括再照合していない。E-3 段2の別画面の申し込み・写真・注文の返品とキャンセルの欄は末尾に記す。
 
 ## 機能要件対応表
 
@@ -129,3 +129,65 @@
 | FREQ-473-AC-02 | 配送情報の交換の品にも「交換の品」の印が出る | E2E FR-ACCOUNT-034 |
 | FREQ-473-AC-03 | 注文の窓口が品と発送の品に `lineKind` を返す（本物の窓口と手元の DB） | E2E FR-ACCOUNT-034（手元の DB）、単体 order-detail-progress |
 | FREQ-473-AC-04 | 交換の品が無い注文には印も「—」も出ず、横方向のページスクロールも発生しない | E2E FR-ACCOUNT-034 |
+
+## 返品・交換の申し込みと注文の欄（E-3 段2 / FREQ-475〜477・480・481）
+
+注文の右の列（aside）の支払金額の後、問い合わせの前に OrderReturnsSection を置く。GET /api/orders/[id] の returnSection: CustomerOrderReturns | null を読み、null なら欄を出さない。欄を読めない場合も注文は200で返る。店のメモ・お断りの理由の記号・した人のメール・返金の失敗の中身は受け取らない。返送先は open の間だけ。
+
+「返品・交換を申し込む」は available の時に別の /account/orders/[id]/return を開く。キャンセルの申し込みは同じ欄の中で CancelRequestForm を開き、Dialog にしない。入金後の選べる数は readyQuantity + inProductionQuantity、未入金は quantity。DB が未発送の数を再確認する。受付後は reloadCount で注文の答えを読み直す。
+
+申し込みは3段で、写真を送っている間は確かめる段に進めない。二重防止の番号は確かめる段への移動時に作る。通信切れ・500番台は入力を止めて同じ番号と本文で確認、400・409は番号を作り直す。401・403・429は番号を保つ。RETURN_PHOTO_INVALID は品を選ぶ段へ戻して誤りへフォーカスを移す。見本は data: の画像で、署名つき URL を画面の文やログへ出さない。
+
+### 文言と表示条件
+
+- お客様の申し込みの画面: 題 `返品・交換のお申し込み`、注文番号の行 `ご注文番号: {注文番号}`、段の名前 `1. 商品を選ぶ`・`2. 内容を確かめる`・`3. お申し込みの受付`、注意書き（設定の文をそのまま。空なら出さない）、発送の見出し `{n}回目の発送（{M月D日}発送）`、期限 `返品・交換の受付：{M月D日}まで`・`返品・交換の受付：期限なし`、品 `{品名}（{色} / {サイズ}）`、選ぶ `この商品を申し込む`、数 `数`（選べる数まで）、理由 `理由`（選んでください `選んでください`）、詳しい内容 `詳しい内容（必須・300字まで）`・`詳しい内容（任意・300字まで）`、写真 `写真（必須・{n}枚まで）`・`写真（任意・{n}枚まで）`・案内の文（理由の設定の文をそのまま）・ボタン `写真を選ぶ`・`この写真を外す`・送っている間 `写真を送っています…`、ご希望 `ご希望`（`返金`・`交換`）、交換 `交換する色・サイズ`、作って送る `お作りしてお送りします（お届けの目安 {n}日）`（目安が無い・0日は `お作りしてお送りします`）、選べない色・サイズ `在庫がないため選べません`、返品不可の品 `この商品は返品不可の商品です。初期不良・誤送の時だけお申し込みいただけます。`、選べない品の言葉 `受付の期限を過ぎました`（`past_deadline`）・`お申し込み済み`（`requested`）・`お返しした商品のため、お申し込みいただけません`（`sent_back`）・`お申し込みいただける数がありません`（`unavailable`）、ボタン `内容を確かめる`・`戻る`・`申し込む`・`注文の画面に戻る`
+- 確かめる段: 見出し `お申し込みの内容`、行 `{品名}（{色} / {サイズ}） × {n}`・`理由: {理由}`・`詳しい内容: {文}`・`ご希望: 返金`／`ご希望: 交換（{色} / {サイズ}）`・`写真 {n}枚`、返送料 `返送料: 当店が負担します（着払いでお送りください）`（負担が店）・`返送料: お客様のご負担です`（負担がお客様で `customer_ships`）・`返送料: ¥{n}（ご返金から差し引きます）`（負担がお客様で `shop_label`、返送料が1円以上）・`返送料: 当店がご用意する送り状でお送りください。`（負担がお客様で `shop_label`、返送料が0円）、手数料（使う物だけ）`返品の手数料: ご返金の商品の額の {n}%`・`交換の手数料: ¥{n}`・`交換の送料: ¥{n}`、手数料の添え書き（手数料がある時だけ。仕様書 6-4）は、返金の品がある時 `手数料はご返金から差し引きます。差し引けない分は、お支払いのご案内をお送りします。`、交換だけの時 `手数料は、お支払いのご案内をお送りします。お支払いの後に交換の品をお送りします。`、注意 `お申し込みの後、当店で内容を確かめてから、メールでご連絡します。`
+- 受け付けた段: `お申し込みを受け付けました。内容を確かめて、メールでご連絡します。`（返品番号 `返品番号: {注文番号}-R{n}`）
+- 申し込みの画面の入力の誤り: `申し込む商品を選んでください。`・`理由を選んでください。`・`詳しい内容を入れてください（300字まで）。`・`写真を1枚以上選んでください。`・`写真は{n}枚までです。`・`JPEG か PNG の写真を選んでください。`・`1枚 10MB までの写真を選んでください。`・`写真を送れませんでした。もう一度選んでください。`・`交換する色・サイズを選んでください。`
+- 申し込みの画面のほかの文: 段の並びの見出し `お申し込みの手順`、ログインしていない時 `お申し込みにはログインが必要です`、読み込み中 `読み込み中...`、交換の色・サイズの欄の最初 `選んでください`
+- 申し込みの画面の答えが分からない時: `お申し込みの結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。`（ボタン `もう一度確かめる`）
+- 申し込みの画面を開けない時: `closed` `現在、返品・交換のお申し込みを受け付けていません。`、`ended` `返品・交換の受付は {M月D日} で終わりました`、`none` `この注文は、返品・交換のお申し込みを受け付けていません。`、読み込めない `お申し込みの画面を読み込めませんでした。時間をおいて、もう一度お試しください。`
+- お客様の注文の画面: ボタン `返品・交換を申し込む`（`available` の時）、受付の終わり `返品・交換の受付は {M月D日} で終わりました`（`ended` の時）、欄の見出し `返品・交換`、返品の番号 `返品番号 {注文番号}-R{n}`、状態の言葉と添える文（`requested` `お申し込み中`・`内容を確かめて、メールでご連絡します。`／`accepted` `返品の受付済み`・返送のしかた／`partially_received` `一部をお受け取りしました`・`残りの商品の返送のしかたは、下のとおりです。`と返送のしかた／`inspecting` `お受け取りしました（確かめています）`・`確かめてから、ご連絡します。`／`awaiting_fee` `お支払いをお待ちしています`・`ご案内のメールをご覧ください。`／`refund_preparing` `ご返金の準備中`・添える文なし／`returned` `返品済み`・交換の品がある時 `交換の品をお送りします。`（`exchangeShipping` が `pending`）か `交換の品をお送りしました。`（`shipped`）／`declined` `お受けできませんでした`・`当店より:` とお店のメッセージ）、行 `{品名}（{色} / {サイズ}） × {n}`、申し込み中のご希望 `ご希望: 返金`／`ご希望: 交換（{色} / {サイズ}）`、承認の後の解決 `返金`／`交換: {色} / {サイズ}`、返金 `ご返金 ¥{n}`、返送のしかたの見出し `返送のしかた`、返送不要 `品物のご返送は不要です。`、ほか `下記の返送先へお送りください。`・返送料の文（負担が店 `返送料は当店が負担いたします。着払いでお送りください。`、お客様で `customer_ships` `恐れ入りますが、返送料はお客様のご負担でお送りください。`、`shop_label` `当店がご用意する送り状でお送りください。返送料 ¥{n} をご返金額から差し引きます。`、`shop_label` で返送料が0円 `当店がご用意する送り状でお送りください。`）・`返送先:`・`{名前}`・`〒{郵便番号} {住所}`・`{電話番号}`、お返しの見出し `お返しした商品`・`当店より:`・`送り返しの伝票番号: {配送業者} {伝票番号}`
+- キャンセルの申し込み（お客様の注文の画面）: ボタン `キャンセルを申し込む`（`availability.cancel` の時）、画面の題 `キャンセルのお申し込み`、`キャンセルする商品`、品 `{品名}（{色} / {サイズ}）`・`数`、`ご連絡事項（任意・300字まで）`、ボタン `申し込む`・`戻る`、受け付けた `キャンセルのお申し込みを受け付けました。内容を確かめて、メールでご連絡します。`、入力の誤り `キャンセルする商品を選んでください。`、申し込みの状態 `requested` `キャンセルのお申し込み中`／`declined` `キャンセルのお申し込みをお受けできませんでした`・`当店より:` とメッセージ／`resolved`・`closed` `キャンセルのお申し込みのお手続きが済みました`
+
+状態は DB の注文の状態とは別に表示する。requested の間はご希望、承認後は解決を出す。返金額は受け付けられた返金の合計、取消の返品は出さない。お店のメッセージは HTML として解釈しない。金額は formatYen の全角の ￥ と桁区切り、日付は日本時間の M月D日。
+
+### 受け付け基準と検証
+
+E2E は FR-ACCOUNT-035-return-request.spec.ts・036-return-request-photos.spec.ts・037-return-request-eligibility.spec.ts・038-order-returns.spec.ts・039-cancel-request.spec.ts。DB 結合は tests/integration/db/ の同名、単体は tests/unit/ 以下の同名のファイルで確かめる。
+
+| 受け付け基準 | 確かめること | 確かめ方 |
+| --- | --- | --- |
+| FREQ-475-AC-01 | 発送ごとの品・数・理由・詳しい内容・ご希望を選び、品を選ぶ→確かめる→受け付けた段の3段で進むこと | E2E FR-ACCOUNT-035、単体 ReturnRequestForm・ReturnRequestConfirm |
+| FREQ-475-AC-02 | 設定で出す理由だけを出し、unknown を出さず、defective・other の詳しい内容1〜300字を必須にすること | E2E FR-ACCOUNT-035、DB 結合 order_return_customer_requests、単体 return-request-model |
+| FREQ-475-AC-03 | ご希望を理由の resolutions で絞り、同じ商品の有効な色・サイズだけを選べ、在庫不足は make の設定だけで選べること | E2E FR-ACCOUNT-035、DB 結合 order_return_customer_requests、単体 return-request-model |
+| FREQ-475-AC-04 | 確かめる段に品・理由・詳しい内容・ご希望・写真の数、返送料の負担と手数料の仮の値（仕様書 5-1）と確認の文を出し、手数料の添え書きは、返金の品がある時と交換だけの時で分けること | E2E FR-ACCOUNT-035・FR-ACCOUNT-036、単体 ReturnRequestConfirm・return-request-model |
+| FREQ-475-AC-05 | 受付の文「お申し込みを受け付けました。内容を確かめて、メールでご連絡します。」と返品番号を出すこと | E2E FR-ACCOUNT-035、単体 ReturnRequestConfirm |
+| FREQ-475-AC-06 | requested・customer_request の返品、仮の解決・ご希望の行、写真、使用済みの印、受付と店への予定2行を同じ取引で作ること | E2E FR-ACCOUNT-035（本物の窓口・DB・Mailpit）、DB 結合 order_return_customer_requests |
+| FREQ-475-AC-07 | 同じ発送の同じ商品は1行でご希望を1つ選び、未選択・理由なし・交換先なしを送信前に止めること | E2E FR-ACCOUNT-035（未選択の止め）、単体 return-request-model・ReturnRequestForm |
+| FREQ-475-AC-08 | 通信切れ・500番台の後は入力を止め、同じ番号・本文で「もう一度確かめる」を出し、返品・写真・予定を増やさないこと | E2E FR-ACCOUNT-035、DB 結合 order_return_customer_requests、単体 customer-return-client・ReturnRequestConfirm・ReturnRequestForm・return-request-routes |
+| FREQ-476-AC-01 | JPEG・PNG の1枚10MB（10,000,000バイト）までを選び、長い辺2000px・JPEG品質0.85に作り直して送ること | E2E FR-ACCOUNT-036、単体 return-photo-client・ReturnPhotoPicker |
+| FREQ-476-AC-02 | none・optional・required と案内の文を反映し、1つの返品の行に5枚までで、送信中は「内容を確かめる」を押せないこと | E2E FR-ACCOUNT-036、単体 ReturnPhotoPicker・ReturnRequestForm |
+| FREQ-476-AC-03 | 非公開 return-photos に requests/{注文の id}/{送り先の id} を出し、upsert: false・有効2時間の署名つきの送り先を使うこと | E2E FR-ACCOUNT-036（本物の Storage）、DB 結合 order_return_request_records、単体 return-photo-storage |
+| FREQ-476-AC-04 | サーバーが印・大きさ・作りを調べ、JPEG の APP0・APP14 を残してほかの APP1〜APP15 と COM、PNG の eXIf・tEXt・zTXt・iTXt・tIME を外して置き直すこと | E2E FR-ACCOUNT-036（位置情報入り JPEG・文字入り PNG の直接送信）、単体 return-photo-sanitize・return-photo-storage |
+| FREQ-476-AC-05 | 画像でない物・壊れた物を400 RETURN_PHOTO_INVALID と invalidPhotoUploadIds で断り、申し込みを記録しないこと | E2E FR-ACCOUNT-036、単体 return-photo-sanitize・return-request-routes |
+| FREQ-476-AC-06 | 管理画面は権限を確認して10分の写真のリンクを出し、大きく見られ、消した写真は url: null・purged: true と消した旨の文になること | E2E FR-ADMIN-094（消していない写真のリンクと大きく見ること）、DB 結合 order_return_request_reviews（消した写真の印）、単体 ReturnPhotoViewer・order-return-review-routes（消した写真の url: null と文） |
+| FREQ-476-AC-07 | 未使用は作成から1日、closed・cancelled・declined の写真は各終了時刻から90日より前だけを、古い順に合わせて500件まで対象にすること | E2E FR-ACCOUNT-036（未使用1日・終了後90日）、DB 結合 order_return_request_reviews |
+| FREQ-476-AC-08 | Storage API の remove 成功分だけ purged_at を書き、行を消さず、再実行で安全に続けられること | 単体 return-photo-storage・purge-return-photos-route、DB 結合 order_return_request_reviews |
+| FREQ-476-AC-09 | 定期処理の200は uploads・photos の数、失敗は502を返し、return_photo_purge の成功が49時間より古ければ job_stale_return_photo_purge で知らせること | 単体 purge-return-photos-route・ops-checks・ops-alert-mail、DB 結合 order_return_request_records（見回りの印の CHECK） |
+| FREQ-477-AC-01 | selectable・past_deadline・requested・sent_back・unavailable を所定の優先順で決め、selectable だけ選べること | E2E FR-ACCOUNT-037、DB 結合 order_return_customer_requests、単体 ReturnRequestForm |
+| FREQ-477-AC-02 | 日本時間の期限当日23:59:59までは申し込め、翌日0:00の直接送信は RETURN_NOT_ELIGIBLE、期限なしは null になること | DB 結合 order_return_customer_requests |
+| FREQ-477-AC-03 | 返品不可は defective・wrong_item だけを選べ、ほかの理由の直接送信も DB が断ること | E2E FR-ACCOUNT-037、DB 結合 order_return_customer_requests、単体 return-request-model |
+| FREQ-477-AC-04 | available・ended・closed・none を区別し、ended は終了日、closed は受付停止の文を出して直接送信も断ること | E2E FR-ACCOUNT-037、DB 結合 order_return_customer_requests、単体 ReturnRequestPage |
+| FREQ-477-AC-05 | 申し込み済み・お返しした品・数が無い品を選べず、『お申し込み済み』『お返しした商品のため、お申し込みいただけません』『お申し込みいただける数がありません』を出すこと | E2E FR-ACCOUNT-037、単体 ReturnRequestForm |
+| FREQ-477-AC-06 | paid・shipped の取り消していない発送だけを材料にし、発送の行と注文の商品ごとの返品できる数の小さい方まで受けること | DB 結合 order_return_customer_requests、単体 customer-return-store |
+| FREQ-477-AC-07 | 出していない理由・unknown・理由に無いご希望・別の商品や無効な交換先を DB が断ること | DB 結合 order_return_customer_requests |
+| FREQ-480-AC-01 | 注文の右の列の支払金額の後・問い合わせの前に「返品・交換」を置き、available だけ申し込みボタン、ended は終了日の文を出すこと | E2E FR-ACCOUNT-035（申し込みの入口）・FR-ACCOUNT-037（終了日の文）、単体 AccountOrderDetailPage（欄の位置）・OrderReturnsSection |
+| FREQ-480-AC-02 | requested・accepted・partially_received・inspecting・awaiting_fee・refund_preparing・returned・declined を、順に『お申し込み中』『返品の受付済み』『一部をお受け取りしました』『お受け取りしました（確かめています）』『お支払いをお待ちしています』『ご返金の準備中』『返品済み』『お受けできませんでした』の言葉と添える文で出すこと | E2E FR-ACCOUNT-038、DB 結合 order_return_customer_requests、単体 OrderReturnsSection |
+| FREQ-480-AC-03 | 受付中だけ返送先としかたを出し、返送不要・店負担・お客様負担・お店の送り状（返送料が0円なら金額を出さない）を区別すること | E2E FR-ACCOUNT-038、DB 結合 order_return_customer_requests、単体 OrderReturnsSection（返送料が0円の送り状を含む） |
+| FREQ-480-AC-04 | お返しの品・メッセージ・伝票番号、受け付けられた返金の額、交換の発送待ち・発送済みの一文を出すこと | E2E FR-ACCOUNT-038、単体 OrderReturnsSection |
+| FREQ-480-AC-05 | 取消の返品、店のメモ・理由の記号・した人のメール・返金の失敗の中身を返さないこと | DB 結合 order_return_customer_requests、単体 customer-return-store |
+| FREQ-480-AC-06 | returnSection が読めない時は null・注文200、画面は欄を出さず、ログは誤りの名前だけにすること | 単体 order-detail-progress・AccountOrderDetailPage |
+| FREQ-480-AC-07 | 受付後は注文を読み直し、3つの画面幅で横方向のページスクロールが出ないこと | E2E FR-ACCOUNT-038・FR-ACCOUNT-039、単体 AccountOrderDetailPage |
+
+キャンセルの申し込みは FREQ-481-AC-01〜03 と FREQ-480-AC-07。管理側の解決・お断り・履歴は [管理画面](16_admin.md) に記す。

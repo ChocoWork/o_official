@@ -4,7 +4,7 @@
 
 ## 概要
 
-現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。97ファイル、明示exportされた131組のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
+現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。124ファイル、明示exportされた163組（E2E 用の `/api/e2e/server-info` を除く123ファイル・162組を本書で記す）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
 
 | 読み方 | 内容 |
 | --- | --- |
@@ -13,7 +13,7 @@
 | 入出力定義 | I/N/L/S/T/O/F/Pなどの再利用schema、応答の詳細と根拠へのリンク |
 | 入口の所在 | [APIルート一覧](route-inventory.md)（所在表） |
 
-表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは131組に含めない。
+表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは163組に含めない。
 
 ## 共通境界
 
@@ -256,7 +256,7 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | `GET /api/admin/orders/[id]/returns` | RBAC `admin.orders.return` | Path UUID | 200 `{data:{returns:OrderReturnDetail[],canRefund,returnableUnits,refundableAmount,refundableShipping,inspectionEnabled}}`。Cache-Control: no-store | 400 id; 404 order; 500 DB/例外 | 返品の画面の中身（取消・お断りの返品も入るが、画面は出さない）。service_role で、返品の一覧（`list_order_returns`）・注文の商品ごとの返品できる数の合計（`list_order_line_return_counts`）・返金の材料の返せる額と送料・ショップの設定の「要検品を使う」を読む。`canRefund` は権限 `admin.orders.refund` の結果（403 だけを「持たない」と見なし、確かめられなかった時はその応答を返す）。状態変更はしない（グループ E-3） [実装](../../../src/app/api/admin/orders/%5Bid%5D/returns/route.ts) |
 | `GET /api/admin/orders/[id]/returns/materials` | RBAC `admin.orders.return` | Path UUID | 200 `{data:ReturnCreateMaterials}`。Cache-Control: no-store | 400 id; 404 order; 500 DB/例外 | 返品を作る画面の材料（発送ごとの品・返品できる数と期限・交換の色とサイズと在庫・理由ごとの設定・返送先の有無・使う手数料の設定）。返品できる品が無い注文（支払い済み・発送済み以外を含む）も材料は返し、画面が「この注文は返品を作れません。」を出す。状態変更はしない（グループ E-3） [実装](../../../src/app/api/admin/orders/%5Bid%5D/returns/materials/route.ts) |
 | `POST /api/admin/orders/[id]/returns` | RBAC `admin.orders.return` + CSRF C、送信元・管理者ごと10分に30回 | Path UUID、JSON O-return-create（下記） | 200 `{data:{returnId,number,status,replayed}}` | 400 id/body; 404 order; 409 DBの断り（返品できる数の超過・返送先なし・返品を作れない注文・中身の違う同じ番号 など）; 429 回数; 503 制限DB障害; 500 `{error,code:"failed"}` | 返品の作成の関数 `admin_create_return` で返品（受付中）と行を記録する。「お客様に返品の受付のお知らせを送る」が入っている時だけ、受付のメールの行を同じ取引で書き、新しく作った時だけ応答の後に worker を動かす。監査 `admin.orders.return.create`。同じ二重防止の番号の送り直しは前の結果（`replayed:true`）（グループ E-3） [実装](../../../src/app/api/admin/orders/%5Bid%5D/returns/route.ts) |
-| `POST /api/admin/returns/[returnId]/receive` | RBAC `admin.orders.return`（今返金・額の指定（0を含む）・送料・交換の選び直しは `admin.orders.refund` も）+ CSRF C、送信元・管理者ごと10分に30回 | Path 返品UUID、JSON O-return-receive（下記） | 200 `{data:{receiptId,returnStatus,refundId,refundAmount,refundStatus,feeDueAmount,replayed}}`（返金が無い時（相談・なし・今返金でも返金する品が0点の受け取り）は `refundId`・`refundAmount`・`refundStatus` が null。0円で省いた時は `refundId:null`・`refundAmount:0`・`refundStatus:"waived"`） | 400 id/body; 403 `RETURN_FORBIDDEN`（サポートの今返金・額の指定・送料・交換の選び直し）; 404; 409 DBの断り（覆いで返金する品が減る受け取りで額・送料を入れた時の `RETURN_STATE_CONFLICT` を含む）; 422 `{error,code:"stripe_rejected",refundId,receiptId}`; 502 `{error,code:"unknown_outcome",refundId,receiptId}`; 429; 503; 500 | 受け取りの関数 `admin_receive_return` が、受け取りの記録・品ごとの扱い・在庫の台帳・交換の品の行と確保・返金の記録（返事待ち）・返品の状態・注文の状態・メールの予定を1回の取引で書き、今返金なら Stripe に頼んで結果を書く（E-2 の流れ。重複防止キー `order-refund-{記録の番号}`）。受け取りは記録済みなので、422・502 の本文に `receiptId` も付く。監査 `admin.orders.return.receive`（グループ E-3） [実装](../../../src/app/api/admin/returns/%5BreturnId%5D/receive/route.ts) |
+| `POST /api/admin/returns/[returnId]/receive` | RBAC `admin.orders.return`（今返金（お客様の申し込みで返送不要でない返品の計算どおりの場合を除く）・額の指定（0を含む）・送料・交換の選び直しは `admin.orders.refund` も）+ CSRF C、送信元・管理者ごと10分に30回 | Path 返品UUID、JSON O-return-receive（下記） | 200 `{data:{receiptId,returnStatus,refundId,refundAmount,refundStatus,feeDueAmount,replayed}}`（返金が無い時（相談・なし・今返金でも返金する品が0点の受け取り）は `refundId`・`refundAmount`・`refundStatus` が null。0円で省いた時は `refundId:null`・`refundAmount:0`・`refundStatus:"waived"`） | 400 id/body; 403 `RETURN_FORBIDDEN`（サポートの今返金（お客様の申し込みで返送不要でない返品の計算どおりの場合を除く）・額の指定・送料・交換の選び直し）; 404; 409 DBの断り（覆いで返金する品が減る受け取りで額・送料を入れた時の `RETURN_STATE_CONFLICT` を含む）; 422 `{error,code:"stripe_rejected",refundId,receiptId}`; 502 `{error,code:"unknown_outcome",refundId,receiptId}`; 429; 503; 500 | 受け取りの関数 `admin_receive_return` が、受け取りの記録・品ごとの扱い・在庫の台帳・交換の品の行と確保・返金の記録（返事待ち）・返品の状態・注文の状態・メールの予定を1回の取引で書き、今返金なら Stripe に頼んで結果を書く（E-2 の流れ。重複防止キー `order-refund-{記録の番号}`）。受け取りは記録済みなので、422・502 の本文に `receiptId` も付く。監査 `admin.orders.return.receive`（グループ E-3） [実装](../../../src/app/api/admin/returns/%5BreturnId%5D/receive/route.ts) |
 | `POST /api/admin/returns/[returnId]/refund` | RBAC `admin.orders.return` と `admin.orders.refund` + CSRF C、送信元・管理者ごと10分に30回 | Path 返品UUID、JSON O-return-refund（下記） | 200 `{data:{refundId,amount,status,replayed}}`（0円は `refundId:null`・`amount:0`・`status:"waived"`） | 400（返金額が返せる額を超える `RETURN_REFUND_AMOUNT_INVALID` を含む）; 404; 409 DBの断り（返金する品が無い・状態が合わない など）; 422; 502; 429; 503; 500 | 返金待ちの品を、額を決めて返す（`admin_refund_return`）。計算どおりの額は DB が決め、店長は返せる額まで直せる。0円は返金の記録を作らず Stripe にも頼まず、返金しないことにした数を受け取りの記録（`waive_refund`）に残して返品を完了する（お客様へのメールは出さない）。失敗した返金の返し直しも同じ窓口で、道は `return` のまま。監査 `admin.orders.return.refund`（グループ E-3） [実装](../../../src/app/api/admin/returns/%5BreturnId%5D/refund/route.ts) |
 | `POST /api/admin/returns/[returnId]/cancel` | RBAC `admin.orders.return` + CSRF C、送信元・管理者ごと10分に60回 | Path 返品UUID、本文は読まない | 200 `{data:{returnStatus}}` | 400 id; 404; 409 `RETURN_STATE_CONFLICT`（受付中でない・処理した数（受け取り・お返し・検品待ち・届かない − 開き直し）がある）; 429; 503; 500 | 何も受け取る前だけ返品を取り消す。取り消した品はまた返品できる。お客様にメールは送らない。監査 `admin.orders.return.cancel`（グループ E-3） [実装](../../../src/app/api/admin/returns/%5BreturnId%5D/cancel/route.ts) |
 | `POST /api/admin/returns/[returnId]/reopen` | RBAC `admin.orders.return` + CSRF C、送信元・管理者ごと10分に60回 | Path 返品UUID、JSON `{requestKey:UUID}` | 200 `{data:{returnStatus,receiptId,replayed}}` | 400; 404; 409 DBの断り（完了した返品の届かない品があること、発送の行の空き）; 429; 503; 500 | 「届かない」として終えた返品を開き直し、また受け取れるようにする。監査 `admin.orders.return.reopen`（グループ E-3） [実装](../../../src/app/api/admin/returns/%5BreturnId%5D/reopen/route.ts) |
@@ -279,7 +279,7 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | メソッド・パス | 認証・認可 | 入力 | 応答 | 主な失敗（HTTP） | 副作用・補足 / 根拠 |
 | --- | --- | --- | --- | --- | --- |
 | `GET /api/admin/settings/shop` | RBAC `admin.settings.manage` | 本文なし | 200 `{data:ShopSettings}`（`{autoRefundCancelledOrderPayment:{enabled,updatedAt,updatedByEmail},autoCancelAmountMismatch:{enabled,updatedAt,updatedByEmail},returns:ShopReturnSettings}`） | 500 `{error,code:"failed"}`（RBACの失敗応答は別） | 自動の返金①②の設定を読む。切り替えの時刻は返さない（グループ E-2）。答えには返品の欄 `returns` を必ず入れる（返送先・受付の期限・理由ごとの設定・手数料・受け取りと、まとまりごとの最後に変えた人。グループ E-3） [実装](../../../src/app/api/admin/settings/shop/route.ts) |
-| `PUT /api/admin/settings/shop` | RBAC `admin.settings.manage` + CSRF C、送信元・管理者ごと10分に30回 | JSON O-settings（下記） | 200 `{data:ShopSettings}` | 400 body; 429 回数; 503 制限DB障害; 500 `{error,code:"failed"}` | 変わったトグルだけ、更新者と時刻を書く。監査 `admin.settings.shop.update`（変えた設定の列名と新しい値だけ。更新者のメールと時刻は入れない）（グループ E-2）。本文に returns（任意。段1の欄 14 個を全部。理由の行は10行そろえる。知らない欄は 400）を付けると、返品の欄を先に保存し、そのあとトグルを保存する（別々の取引。返品の欄を DB が断れば、トグルは保存しない）。監査は returns_changed_groups（変わったまとまり shipping・window・reasons・fees・receiving の並びだけ。返送先の値は入れない）を足す（グループ E-3） [実装](../../../src/app/api/admin/settings/shop/route.ts) |
+| `PUT /api/admin/settings/shop` | RBAC `admin.settings.manage` + CSRF C、送信元・管理者ごと10分に30回 | JSON O-settings（下記） | 200 `{data:ShopSettings}` | 400 body; 429 回数; 503 制限DB障害; 500 `{error,code:"failed"}` | 変わったトグルだけ、更新者と時刻を書く。監査 `admin.settings.shop.update`（変えた設定の列名と新しい値だけ。更新者のメールと時刻は入れない）（グループ E-2）。本文に returns（任意。段1の14欄は必須、段2の requestsEnabled・requestTypes・noticeText は任意。画面は17欄を全部。理由の行は10行そろえる。知らない欄は 400）を付けると、返品の欄を先に保存し、そのあとトグルを保存する（別々の取引。返品の欄を DB が断れば、トグルは保存しない）。監査は returns_changed_groups（変わったまとまり requests・shipping・window・reasons・fees・receiving の並びだけ。返送先の値は入れない）を足す（グループ E-3） [実装](../../../src/app/api/admin/settings/shop/route.ts) |
 
 ## 管理:KPI・Meta
 
@@ -382,13 +382,13 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | O-completion | `{requestKey:UUID,lines:[{orderItemId:UUID,quantity:1〜999}]}`。linesは1〜100行。決済完了の注文の受注生産の品の、受注生産中の数以内だけ記録できる。断りは ORDER_NOT_IN_PRODUCTION・LINE_NOT_IN_PRODUCTION・QUANTITY_EXCEEDS_IN_PRODUCTION・COMPLETION_REQUEST_MISMATCH（取消は COMPLETION_ALREADY_SHIPPED） | [completions Handler](../../../src/app/api/admin/orders/%5Bid%5D/completions/route.ts)、[fulfillment-messages.ts](../../../src/lib/orders/fulfillment/fulfillment-messages.ts) |
 | O-refund | `{requestKey:UUID,lines:[{orderItemId:UUID,quantity:1〜999,beforeShipment:boolean}],restock:boolean,shippingAmount:0〜2147483647の整数,amount:1〜2147483647の整数,note:trim/max500又はnull,stripeReason:requested_by_customer&#124;duplicate&#124;fraudulent,notifyCustomer:boolean}`。全項目が必須（noteはnull可）。linesは0〜100行で、同じ商品の同じ発送前／発送後の組は1行だけ。返せる額・返せる送料・数の超過、全額なのに未発送が選ばれていない、1つも発送していない注文で残りの商品を全部返すのに送料か額が全部でない、中身の違う同じ requestKey、返事待ちの返金がある注文への別の返金などは、DBの決まった言葉（REFUND_EXCEEDS_REFUNDABLE・REFUND_SHIPPING_EXCEEDS・REFUND_QUANTITY_EXCEEDS_UNSHIPPED・REFUND_QUANTITY_EXCEEDS_SHIPPED・REFUND_MUST_INCLUDE_UNSHIPPED・REFUND_MUST_BE_FULL・REFUND_REQUEST_MISMATCH・AWAITING_REFUND_EXISTS・ORDER_NOT_REFUNDABLE・REFUND_LINE_NOT_IN_ORDER など）から画面の言葉とHTTPに直す | [refund Handler](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts)、[refund-types.ts](../../../src/lib/orders/refund/refund-types.ts)、[refund-messages.ts](../../../src/lib/orders/refund/refund-messages.ts) |
 | O-return-create | `{requestKey:UUID,lines:[{fulfillmentId:UUID,orderItemId:UUID,quantity:1以上の整数,reason:10の理由,reasonNote?:trim/max255,resolution:refund&#124;exchange,exchangeVariantId?:正整数,exchangeMethod?:stock&#124;make}],returnMethod:customer_ships&#124;shop_label&#124;not_required,returnShippingPayer:shop&#124;customer,returnCarrier?:yamato&#124;sagawa&#124;japanpost&#124;other,returnTrackingNumber?:英数字とハイフンの1〜64文字,returnShippingFee,restockingFeePercent,exchangeFee,exchangeShippingFee,shopNote?:trim/max500,notifyCustomer:boolean}`。`?` は省ける。`reasonNote`・`returnTrackingNumber`・`shopNote` は null か空の文字も受け、null に直す（伝票番号は形が違えば 400）。`returnCarrier`・`exchangeVariantId`・`exchangeMethod` は値か null で、空の文字は 400。`lines` は1〜100行、`quantity` は1〜999。手数料の4つは必須の0以上の整数（円は最大 1,000,000、割合は0〜100）で、使わない手数料は0。解決が交換の行は色・サイズ（exchangeVariantId）と送り方が要り、返金の行はどちらも空にする。理由が「その他」の行は理由のメモが要る（DB が確かめる） | [returns Handler](../../../src/app/api/admin/orders/%5Bid%5D/returns/route.ts)、[return-types.ts](../../../src/lib/orders/returns/return-types.ts)、[return-messages.ts](../../../src/lib/orders/returns/return-messages.ts) |
-| O-return-receive | `{requestKey:UUID,units:[{returnLineId:UUID,disposition:restocked&#124;not_restocked&#124;pending_inspection&#124;sent_back,quantity:1以上の整数}],exchangeOverrides?:[{returnLineId:UUID,action:make&#124;refund}],refundChoice:now&#124;consult&#124;none,refundAmount?:0以上の整数,refundShippingAmount?:0以上の整数,note?:trim/max500,notifyCustomer:boolean,sentBackMessage?:trim/max1000,sentBackCarrier?:yamato&#124;sagawa&#124;japanpost&#124;other,sentBackTrackingNumber?:英数字とハイフンの1〜64文字}`。`units` は1〜100行（同じ品の同じ状態は数を足して1行にする）、`quantity` は1〜999。`exchangeOverrides` は省くと空の配列で、送るなら配列（`null` は 400）。`refundAmount` は省く／null が計算どおり、0は返金しないで終える。`refundShippingAmount` は省くと0で、送るなら数（`null` は 400）。額と送料の上限は 2147483647（DB の integer の上限）。`note`・`sentBackMessage`・`sentBackTrackingNumber` は null か空の文字も受け、null に直す（伝票番号は形が違えば 400）。`sentBackCarrier` は値か null で、空の文字は 400。お返し（`sent_back`）を含む時は `sentBackMessage` が要り、`notifyCustomer` は true。今返金・額の指定・送料・交換の選び直しはサポートの人には 403 `RETURN_FORBIDDEN`。検品待ちは設定の「要検品を使う」がオンの時だけ | [receive Handler](../../../src/app/api/admin/returns/%5BreturnId%5D/receive/route.ts)、[return-types.ts](../../../src/lib/orders/returns/return-types.ts) |
+| O-return-receive | `{requestKey:UUID,units:[{returnLineId:UUID,disposition:restocked&#124;not_restocked&#124;pending_inspection&#124;sent_back,quantity:1以上の整数}],exchangeOverrides?:[{returnLineId:UUID,action:make&#124;refund}],refundChoice:now&#124;consult&#124;none,refundAmount?:0以上の整数,refundShippingAmount?:0以上の整数,note?:trim/max500,notifyCustomer:boolean,sentBackMessage?:trim/max1000,sentBackCarrier?:yamato&#124;sagawa&#124;japanpost&#124;other,sentBackTrackingNumber?:英数字とハイフンの1〜64文字}`。`units` は1〜100行（同じ品の同じ状態は数を足して1行にする）、`quantity` は1〜999。`exchangeOverrides` は省くと空の配列で、送るなら配列（`null` は 400）。`refundAmount` は省く／null が計算どおり、0は返金しないで終える。`refundShippingAmount` は省くと0で、送るなら数（`null` は 400）。額と送料の上限は 2147483647（DB の integer の上限）。`note`・`sentBackMessage`・`sentBackTrackingNumber` は null か空の文字も受け、null に直す（伝票番号は形が違えば 400）。`sentBackCarrier` は値か null で、空の文字は 400。お返し（`sent_back`）を含む時は `sentBackMessage` が要り、`notifyCustomer` は true。今返金（お客様の申し込みで返送不要でない返品の計算どおりの場合を除く）・額の指定・送料・交換の選び直しはサポートの人には 403 `RETURN_FORBIDDEN`。検品待ちは設定の「要検品を使う」がオンの時だけ | [receive Handler](../../../src/app/api/admin/returns/%5BreturnId%5D/receive/route.ts)、[return-types.ts](../../../src/lib/orders/returns/return-types.ts) |
 | O-return-refund | `{requestKey:UUID,amount?:0以上の整数,shippingAmount?:0以上の整数,note?:trim/max500,notifyCustomer:boolean}`。`amount` は省く／null が計算どおり、0は返金しないで終える。`shippingAmount` は省くと0で、送るなら数（`null` は 400）。額と送料の上限は 2147483647（DB の integer の上限）で、返せる額までは DB が確かめる。`note` は null か空の文字も受け、null に直す | [refund Handler](../../../src/app/api/admin/returns/%5BreturnId%5D/refund/route.ts)、[return-types.ts](../../../src/lib/orders/returns/return-types.ts) |
-| O-settings | `{autoRefundCancelledOrderPayment:boolean,autoCancelAmountMismatch:boolean}`（2つとも必須）。応答は `{data:{autoRefundCancelledOrderPayment:{enabled,updatedAt,updatedByEmail},autoCancelAmountMismatch:{enabled,updatedAt,updatedByEmail}}}`。切り替えの時刻は返さない。変わったトグルだけ、その更新者と時刻を書く。グループ E-3: 本文に returns（任意。ShopReturnSettingsUpdate の14キー returnAddress・customerPaidMethod・shopLabelFee・noReturnNeededEnabled・windowDays・windowStart・deliveryBufferDays・reasons・restockingFeeEnabled・restockingFeePercent・exchangeFeesEnabled・exchangeFee・exchangeShippingFee・inspectionEnabled を全部。金額は0〜1,000,000、割合は0〜100、理由の行は10行そろえる。知らないキーは400）を足せる。応答の data に returns を必ず入れる | [shop Handler](../../../src/app/api/admin/settings/shop/route.ts)、[refund-types.ts](../../../src/lib/orders/refund/refund-types.ts)、[return-types.ts](../../../src/lib/orders/returns/return-types.ts) |
+| O-settings | `{autoRefundCancelledOrderPayment:boolean,autoCancelAmountMismatch:boolean}`（2つとも必須）。応答は `{data:{autoRefundCancelledOrderPayment:{enabled,updatedAt,updatedByEmail},autoCancelAmountMismatch:{enabled,updatedAt,updatedByEmail}}}`。切り替えの時刻は返さない。変わったトグルだけ、その更新者と時刻を書く。グループ E-3: 本文に returns（任意。ShopReturnSettingsUpdate の14キー returnAddress・customerPaidMethod・shopLabelFee・noReturnNeededEnabled・windowDays・windowStart・deliveryBufferDays・reasons・restockingFeeEnabled・restockingFeePercent・exchangeFeesEnabled・exchangeFee・exchangeShippingFee・inspectionEnabled を全部、段2の requestsEnabled?:boolean・requestTypes?:returns_and_cancellations&#124;returns_only&#124;cancellations_only・noticeText?:trim/max2000 は任意。reasons の10行に shown?:boolean・resolutions?:refund_and_exchange&#124;exchange_only&#124;refund_only・photo?:none&#124;optional&#124;required・photoInstructions?:trim/max500 を任意で足す。画面は毎回17欄と理由の7欄×10行を送る。金額は0〜1,000,000、割合は0〜100、理由の行は10行そろえる。知らないキーは400）を足せる。応答の data に returns を必ず入れる | [shop Handler](../../../src/app/api/admin/settings/shop/route.ts)、[refund-types.ts](../../../src/lib/orders/refund/refund-types.ts)、[return-types.ts](../../../src/lib/orders/returns/return-types.ts) |
 | 管理注文応答 | customerName/Email、orderDate、itemCount/items、通貨整形totalAmount、表示status、paymentMethod/reference、Stripe status、shippedAt/carrier/tracking、canShip/canRecordCompletion/missingShippingFields/shipBlockedReason、status（進み具合の言葉）/orderStatus（DBの状態）/progressKey/partiallyShipped、itemsの各行のid/color/size/fulfillmentType/shipped/inProduction/readyUnshipped（グループ E-1）、needsReview、canCancel/cancelBlockedUntil、canRefund等を返す（グループ E-2: paymentStatusKey・paymentStatus・refundPending・refundFailed・refundedAmountLabel・cancelKind を足す。canRefund は受け取った額があり返せる額が0より多い注文で true、canCancel は未入金の今の条件か、支払い済みで1つも発送していなくて返せる額がある注文で true）。グループ E-3: 各注文に returnSummary、itemsの各行に lineKind を足し、itemCount は交換の品の行を数えない。答えの外側に returnAttention を足す。詳細な全fieldはresponseData構築を正とする | [orders responseData](../../../src/app/api/admin/orders/route.ts) |
 | 要対応解決 | cancelOrder既定false、note max500、cancelReasonは上記enum、notifyCustomer既定true。cancelOrder=true時にreasonとnoteを要求。Stripeに入金/処理/有効な払込票が残る場合等は拒否、状態競合は409 | [resolve Handler](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts) |
 | 返金（グループ E-2） | 対象は受け取った額があり、支払い済み・発送済み・キャンセル（取り消した注文に入金が届いた時）の注文。返せる額 = 受け取った額（`orders.paid_amount`）− 返事待ち・保留・成功の返金の合計。返金は、管理画面の返金（admin）・支払い済みのキャンセル（order_cancel）・Stripe の画面からの返金の取り込み（stripe_dashboard）・自動の返金（auto_cancelled_order_payment・auto_amount_mismatch）・前からの写し（legacy）の6つの道があり、どれも1件の返金の記録になる。注文の状態は、結果を書く DB の関数（record_order_refund_result・record_external_order_refund）が決める | [refund Handler](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts)、[refund-service.ts](../../../src/lib/orders/refund/refund-service.ts)、[order-refund-sync](../../../src/lib/stripe/order-refund-sync.ts) |
-| 返品（グループ E-3） | 返品はお店が作る（段1）。状態は 申し込み・受付中・完了・取消・お断り の5つ（段1は受付中・完了・取消）で、画面の言葉は 返品の申し込み・返品中・返金待ち・返品済み。受け取りは1回の取引で品ごとの状態（在庫に戻す・戻さない・お返し・検品待ち）を決め、在庫の台帳・交換の品の行・返金の記録・メールの予定を書く。返金は E-2 と同じ記録（道 `return`、返品の番号つき）で、今返金は Stripe に頼み、相談は返金待ちにして店長が額を決めて返す。返金額が0円になる時は返金の記録を作らず、返金しないことにした数を受け取りの記録に残す。返品できる数は `private.order_line_return_counts` の1か所で数え、E-2 の返金の発送後に返せる数も `s − ra − rq − op − rw − ex` にする。交換の品は注文に値段0の行（`line_kind = 'exchange'`）として足し、手数料のお支払い待ちの間は送れない。権限は `admin.orders.return`（店長とサポート）で、返金に関わる操作（今返金・額の指定・送料・交換の選び直し・額を決めて返金・手数料の受け取りの記録・支払いを待たずに送る）は `admin.orders.refund` も要る（店長だけ） | [return-service.ts](../../../src/lib/orders/returns/return-service.ts)、[return-store.ts](../../../src/lib/orders/returns/return-store.ts)、[return-calc.ts](../../../src/lib/orders/returns/return-calc.ts)、[receive Handler](../../../src/app/api/admin/returns/%5BreturnId%5D/receive/route.ts) |
+| 返品（グループ E-3） | 返品はお店が作るか、お客様の申し込みを承認する（段1・段2）。状態は 申し込み・受付中・完了・取消・お断り の5つ（段1は受付中・完了・取消）で、画面の言葉は 返品の申し込み・返品中・返金待ち・返品済み。受け取りは1回の取引で品ごとの状態（在庫に戻す・戻さない・お返し・検品待ち）を決め、在庫の台帳・交換の品の行・返金の記録・メールの予定を書く。返金は E-2 と同じ記録（道 `return`、返品の番号つき）で、今返金は Stripe に頼み、相談は返金待ちにして店長が額を決めて返す。返金額が0円になる時は返金の記録を作らず、返金しないことにした数を受け取りの記録に残す。返品できる数は `private.order_line_return_counts` の1か所で数え、E-2 の返金の発送後に返せる数も `s − ra − rq − op − rw − ex` にする。交換の品は注文に値段0の行（`line_kind = 'exchange'`）として足し、手数料のお支払い待ちの間は送れない。権限は `admin.orders.return`（店長とサポート）で、返金に関わる操作（今返金（お客様の申し込みで返送不要でない返品の計算どおりの場合を除く）・額の指定・送料・交換の選び直し・額を決めて返金・手数料の受け取りの記録・支払いを待たずに送る）は `admin.orders.refund` も要る（店長だけ） | [return-service.ts](../../../src/lib/orders/returns/return-service.ts)、[return-store.ts](../../../src/lib/orders/returns/return-store.ts)、[return-calc.ts](../../../src/lib/orders/returns/return-calc.ts)、[receive Handler](../../../src/app/api/admin/returns/%5BreturnId%5D/receive/route.ts) |
 
 ### 会計（F）
 
@@ -472,3 +472,298 @@ costTypeはmaterial/sewing/pattern/planning/accessories/processing/inspection_fi
 この確認は静的な契約照合であり、実行時のDB適用状況、外部provider設定、デプロイ状態、全APIの疎通を検証したという意味ではない。
 
 関連: [システム構成](../architecture/system-overview.md)、[認証シーケンス](../../04_DetailDesign/sequence/auth-login-mfa.md)、[決済状態](../../04_DetailDesign/states/order-payment.md)。
+
+## お客様の申し込みと管理画面の追加の契約（E-3 段2 / FREQ-475〜486）
+
+段2の入口は新規11パス・12メソッドで、既存の注文・商品・一覧・履歴・設定・受け取りも拡張する。読取の材料・写真のリンクは no-store。お客様の認証は authenticateRequest、claims.sub を _customer_id に渡し、aal2 は求めない。持ち主でない・無い・payment_in_progress・abandoned は404 `{ error: 'Order not found' }`。書く窓口はログイン→CSRF→送信元→利用者の回数制限。成功は200。
+
+| 窓口 | 方法 | 確かめ | 回数の制限 | 中身 → 答え |
+|---|---|---|---|---|
+| `/api/orders/[id]/return-request` | GET | お客様（持ち主） | — | → `{ data: CustomerReturnRequestMaterials }`（`Cache-Control: no-store`） |
+| `/api/orders/[id]/return-request/photos` | POST | お客様・CSRF | `account:returns:photo-upload` | 中身なし → `{ data: { uploadId: string; signedUrl: string } }` |
+| `/api/orders/[id]/return-request` | POST | お客様・CSRF | `account:returns:request` | `{ requestKey: uuid; lines: Array<{ fulfillmentId: uuid; orderItemId: uuid; quantity: 1〜999; reason: CustomerReturnReason; customerNote: string \| null（300字まで）; requestedResolution: 'refund' \| 'exchange'; requestedExchangeVariantId: number \| null; photoUploadIds: uuid[]（0〜5） }>（1〜100） }` → `{ data: { returnId, number, label, replayed } }`。写真が合わない時は 400 `{ error, code: 'RETURN_PHOTO_INVALID', invalidPhotoUploadIds: string[] }`（DB を呼ぶ前に確かめる） |
+| `/api/orders/[id]/cancel-request` | POST | お客様・CSRF | `account:cancel-requests:create` | `{ requestKey: uuid; lines: Array<{ orderItemId: uuid; quantity: 1〜999 }>（1〜100）; customerNote: string \| null（300字まで） }` → `{ data: { cancelRequestId, replayed } }` |
+| `/api/orders/[id]` | GET | お客様（持ち主） | — | 答えに `returnSection: CustomerOrderReturns \| null` を足す（読めない時は null にし、注文の答えは返す。ログに誤りの名前だけ） |
+| `/api/items/[id]` | GET | 公開 | — | 答えに `returnIneligible: boolean` を足す |
+| `/api/admin/returns/[returnId]/approve` | POST | `admin.orders.return`・CSRF | `admin:returns:review` | `{ lines: Array<{ returnLineId, resolution, exchangeVariantId, exchangeMethod }>; returnMethod; returnShippingPayer; returnCarrier; returnTrackingNumber; returnShippingFee; restockingFeePercent; exchangeFee; exchangeShippingFee; shopNote; notifyCustomer }`（形は段1の作るの窓口と同じ zod の部品）→ `{ data: { returnStatus: 'open' } }` |
+| `/api/admin/returns/[returnId]/decline` | POST | `admin.orders.return`・CSRF | `admin:returns:review` | `{ declineReason: ReturnDeclineReason; declineMessage: string（1〜1000） }` → `{ data: { returnStatus: 'declined' } }` |
+| `/api/admin/returns/[returnId]/photos` | GET | `admin.orders.return` | — | → `{ data: { photos: Array<{ photoId; returnLineId; url: string \| null; purged: boolean }> } }`（`no-store`。消した写真は `url: null`） |
+| `/api/admin/returns/[returnId]/receive` | POST | `admin.orders.return`（今返金（お客様の申し込みで返送不要でない返品の計算どおりの場合を除く）・額・送料・交換の選び直しは `admin.orders.refund` も）・CSRF | `admin:returns:receive` | サポートの `refundChoice: 'now'` は窓口では断らず DB に任せる（お客様の申し込みで返送不要でない返品の計算どおりだけ許し、ほかは `RETURN_FORBIDDEN`）。`admin.orders.refund` を持たない人が `refundAmount`・`refundShippingAmount`・`exchangeOverrides` を送ると、窓口が 403 `RETURN_FORBIDDEN` |
+| `/api/admin/orders/[id]/cancel-requests` | GET | `admin.orders.return` | — | → `{ data: { cancelRequests: AdminCancelRequest[]; orderStatus: OrderStatus; shippedUnits: number; unshippedUnits: number } }`（`shippedUnits` は発送した数の合計、`unshippedUnits` は未発送の数の合計（E-1 の `private.order_line_fulfillment` の `unshipped` の合計）。画面が `mode` を決める） |
+| `/api/admin/cancel-requests/[cancelRequestId]/decline` | POST | `admin.orders.return`・CSRF | `admin:cancel-requests:update` | `{ declineReason; declineMessage }` → `{ data: { status: 'declined' } }` |
+| `/api/admin/cancel-requests/[cancelRequestId]/close` | POST | 同上 | 同上 | `{}` → `{ data: { status: 'closed' } }` |
+| `/api/admin/cancel-requests/[cancelRequestId]/resolve` | POST | 同上 | 同上 | `{ refundId: uuid \| null; orderCancelled: boolean }` → `{ data: { status: 'resolved' } }` |
+| `/api/admin/orders` | GET | `admin.orders.read` | — | 各注文に `cancelRequestOpen: boolean`、答えに `cancelRequestAttention: number`（開いている申し込みのある注文の数）、問い `cancelRequest=open`（開いている申し込みのある注文だけ。申し込みの新しい順に500件まで） |
+| `/api/admin/orders/[id]/history` | GET | `admin.orders.read` | — | 返品の申し込み・承認・お断りと、キャンセルの申し込みの行を足す（下の「履歴・再送・監査」） |
+| `/api/admin/settings/shop` | GET・PUT | `admin.settings.manage`（PUT は CSRF も） | PUT は `admin:settings:shop-update` | PUT の `returns` に段2の欄を足し、画面は17欄を送る（[管理画面の設計](../../04_DetailDesign/pages/16_admin.md)の「申し込み・理由の設定と商品編集」） |
+| `/api/admin/items`（POST）・`/api/admin/items/[id]`（GET・PUT） | POST・GET・PUT | POST・PUT は `admin.items.manage`、GET は `admin.items.read` | — | FormData に `return_ineligible`（`'true'`・`'false'`。無ければ `false`）、GET の答えに `return_ineligible` |
+| `/api/cron/purge-return-photos` | POST | `authorizeCronRequest`（`CRON_SECRET`） | — | → `{ data: { uploads: number; photos: number } }` |
+
+お客様の窓口の誤りは `{ error: <お客様の言葉（下の「追加のエラー」）>, code: <記号> }`、管理画面は段1と同じ `{ error, code }`。お客様の窓口の想定外の失敗は 500 `{ error: CUSTOMER_RETURN_FAILURE_MESSAGE }`。監査の action は下の「履歴・再送・監査」のとおり。
+
+### 型と入力の補足
+
+下は DTO の型であり、HTTP の本文は上の表のとおりで、customerId・actorId・storagePath・写真の種類と大きさをブラウザから信用して受け取らない。材料と注文の答えは camelCase、DB の jsonb はそのキーの snake_case。既存の ReturnResolution・ReturnMethod・ShippingPayer・ReturnCarrier・ExchangeMethod・OrderStatus・ReturnReason・OutOfStockExchange は既存の型の定義を使う。
+
+```ts
+export type ApproveReturnLineInput = {
+  returnLineId: string;
+  resolution: ReturnResolution;
+  exchangeVariantId: number | null;
+  exchangeMethod: ExchangeMethod | null;
+};
+export type ApproveReturnInput = {
+  returnId: string;
+  actorId: string;
+  lines: ApproveReturnLineInput[];
+  returnMethod: ReturnMethod;
+  returnShippingPayer: ShippingPayer;
+  returnCarrier: ReturnCarrier | null;
+  returnTrackingNumber: string | null;
+  returnShippingFee: number;
+  restockingFeePercent: number;
+  exchangeFee: number;
+  exchangeShippingFee: number;
+  shopNote: string | null;
+  notifyCustomer: boolean;
+};
+export type ReturnPhotoRef = { photoId: string; returnLineId: string; storagePath: string; purged: boolean };
+export type AdminCancelRequest = {
+  id: string;
+  status: CancelRequestStatus;
+  requestedAt: string;
+  customerNote: string | null;
+  lines: Array<{ orderItemId: string; itemName: string; color: string | null; size: string | null; quantity: number; unshipped: number }>;
+  declineReason: ReturnDeclineReason | null;
+  declineMessage: string | null;
+  declinedAt: string | null;
+  declinedByEmail: string | null;
+  resolvedAt: string | null;
+  resolvedByEmail: string | null;
+  resolvedRefundId: string | null;
+  resolvedByCancelAt: string | null;
+  closedAt: string | null;
+  closedByEmail: string | null;
+};
+
+export const CUSTOMER_RETURN_STATUSES = [
+  'requested', 'accepted', 'partially_received', 'inspecting', 'awaiting_fee', 'refund_preparing', 'returned', 'declined',
+] as const;
+export type CustomerReturnStatus = (typeof CUSTOMER_RETURN_STATUSES)[number];
+export type CustomerReturnLineState = 'selectable' | 'past_deadline' | 'requested' | 'sent_back' | 'unavailable';
+export type ReturnRequestAvailability = 'available' | 'ended' | 'closed' | 'none';
+export type CustomerReturnReason = Exclude<ReturnReason, 'unknown'>;
+export type ReasonResolutions = 'refund_and_exchange' | 'exchange_only' | 'refund_only';
+export type ReasonPhotoRule = 'none' | 'optional' | 'required';
+
+export type CustomerReturnRequestMaterials = {
+  order: { id: string; status: OrderStatus };
+  availability: { returns: ReturnRequestAvailability; endedOn: string | null };
+  noticeText: string;
+  shipments: Array<{
+    fulfillmentId: string;
+    number: number;
+    shippedAt: string;
+    deadlineDate: string | null;
+    pastDeadline: boolean;
+    lines: Array<{
+      orderItemId: string;
+      itemId: number;
+      itemName: string;
+      color: string | null;
+      size: string | null;
+      lineKind: 'order' | 'exchange';
+      quantity: number;
+      selectable: number;
+      state: CustomerReturnLineState;
+      returnIneligible: boolean;
+    }>;
+  }>;
+  reasons: Array<{
+    reason: CustomerReturnReason;
+    resolutions: ReasonResolutions;
+    outOfStockExchange: OutOfStockExchange;
+    photo: ReasonPhotoRule;
+    photoInstructions: string;
+    shippingPayer: ShippingPayer;
+  }>;
+  exchangeOptions: Array<{
+    itemId: number;
+    variants: Array<{ variantId: number; color: string | null; size: string | null; stockQuantity: number; madeToOrderLeadDays: number | null }>;
+  }>;
+  fees: {
+    customerPaidMethod: 'customer_ships' | 'shop_label';
+    shopLabelFee: number;
+    restockingFeePercent: number;
+    exchangeFee: number;
+    exchangeShippingFee: number;
+  };
+};
+
+export type ReturnPhotoMeta = { uploadId: string; contentType: 'image/jpeg' | 'image/png'; sizeBytes: number };
+export type CustomerReturnRequestLineInput = {
+  fulfillmentId: string;
+  orderItemId: string;
+  quantity: number;
+  reason: CustomerReturnReason;
+  customerNote: string | null;
+  requestedResolution: ReturnResolution;
+  requestedExchangeVariantId: number | null;
+  photos: ReturnPhotoMeta[];
+};
+export type CustomerReturnRequestInput = {
+  orderId: string;
+  customerId: string;
+  requestKey: string;
+  lines: CustomerReturnRequestLineInput[];
+};
+export type CustomerRequestedReturn = { returnId: string; number: number; status: 'requested'; replayed: boolean };
+
+export type CustomerOrderReturn = {
+  id: string;
+  number: number;
+  label: string;
+  status: 'requested' | 'open' | 'closed' | 'declined';
+  customerStatus: CustomerReturnStatus;
+  returnMethod: ReturnMethod;
+  returnShippingPayer: ShippingPayer;
+  returnShippingFee: number;
+  returnAddress: { name: string; postalCode: string; address: string; phone: string } | null;
+  requestedAt: string | null;
+  closedAt: string | null;
+  lines: Array<{
+    itemName: string;
+    color: string | null;
+    size: string | null;
+    quantity: number;
+    requestedResolution: ReturnResolution | null;
+    requestedExchange: { color: string | null; size: string | null } | null;
+    resolution: ReturnResolution;
+    exchange: { color: string | null; size: string | null } | null;
+  }>;
+  refundAmount: number | null;
+  sentBack: Array<{
+    itemName: string;
+    color: string | null;
+    size: string | null;
+    quantity: number;
+    message: string | null;
+    carrier: ReturnCarrier | null;
+    trackingNumber: string | null;
+  }>;
+  declineMessage: string | null;
+  exchangeShipping: 'none' | 'pending' | 'shipped';
+};
+export type CustomerCancelRequest = {
+  id: string;
+  status: CancelRequestStatus;
+  requestedAt: string;
+  lines: Array<{ itemName: string; color: string | null; size: string | null; quantity: number }>;
+  declineMessage: string | null;
+};
+export type CustomerOrderReturns = {
+  returns: CustomerOrderReturn[];
+  cancelRequests: CustomerCancelRequest[];
+  availability: { returns: ReturnRequestAvailability; endedOn: string | null; cancel: boolean };
+};
+export type CustomerCancelRequestInput = {
+  orderId: string;
+  customerId: string;
+  requestKey: string;
+  lines: Array<{ orderItemId: string; quantity: number }>;
+  customerNote: string | null;
+};
+export type CustomerRequestedCancel = { cancelRequestId: string; status: 'requested'; replayed: boolean };
+```
+
+写真の送り先は無本文。RETURN_PHOTO_INVALID の400は必ず invalidPhotoUploadIds（DB が断った時は空の配列）。1回の申し込みの写真は合計60枚まで。サーバーで写真を確認してから申し込みの DB 関数を呼び、新規記録（replayed: false）の時だけ scheduleOrderEmailDelivery() を呼ぶ。
+
+商品の POST・PUT は FormData の return_ineligible（文字 'true'・'false'、欠けたら false）。GET /api/admin/items/[id] は data.return_ineligible: boolean、GET /api/items/[id] は returnIneligible: boolean。商品の保存は admin.items.manage。設定の段2の更新欄は任意で、渡さない欄は現値を保つ。GET の returns は段2の全欄と updated.requests を持ち、画面は17欄を必ず送る。
+
+回数の制限は送信元・利用者の2つ: account:returns:request は1時間10回、account:returns:photo-upload は1時間30回、account:cancel-requests:create は1時間10回、admin:returns:review は10分30回、admin:cancel-requests:update は10分60回。受け取りと設定の既存の制限は変えない。
+
+### DB の関数と答え
+
+どの関数も `SET search_path = ''` と完全修飾名。public の関数は `SECURITY DEFINER`、`PUBLIC`・`anon`・`authenticated` から EXECUTE を外して `service_role` だけに与える。private の補助の関数は段1と同じく `SECURITY DEFINER` を付けず、`PUBLIC` から外すだけ。jsonb の答えのキーは上の型のキーの snake_case（一字も違えない）。
+
+**移行 D**: ER の「お客様の申し込みの列・索引・更新の守り」の守りの関数（新規6つと作り直し1つ）・メールの予定の部品の `private.enqueue_order_email`（作り直し）、`public.claim_order_email(integer)`（作り直し。段1の移行 C の本文のまま、答えの最後に `cancel_request_id uuid` を足す。答えの形が変わるので DROP してから作る。メールの worker が読む）。`public.request_order_email_resend` は作り直さない（新しい6種類は今の本文のまま `INVALID_EMAIL_KIND` で断られる。管理画面の再送の窓口は DB を呼ぶ前に断る）。
+
+**移行 E（お客様の側）**
+
+| 関数 | 引数 → 答え | 中身 |
+|---|---|---|
+| `private.customer_order_for_request(_order_id uuid, _customer_id uuid, _lock boolean)` | → `public.orders` | 注文を読み（`_lock` が真なら `FOR UPDATE`）、無い・`user_id` が `_customer_id` でない・状態が `payment_in_progress` か `abandoned` なら `ORDER_NOT_FOUND`（P0002） |
+| `private.customer_return_line_states(_order_id uuid)` | → `TABLE (fulfillment_id uuid, fulfillment_number integer, shipped_at timestamptz, deadline_date date, past_deadline boolean, order_item_id uuid, quantity integer, selectable integer, state text)` | 段1の `private.fulfillment_line_returnable` の行ごとに、`返品できる数 = LEAST(発送の行の returnable, 注文の商品の returnable（段1の private.order_line_return_counts）)`、`past_deadline = deadline_date IS NOT NULL AND deadline_date < (pg_catalog.now() AT TIME ZONE 'Asia/Tokyo')::date`。`state`: 返品できる数 > 0 で期限内 → `selectable`（`selectable` = 返品できる数）、返品できる数 > 0 で期限切れ → `past_deadline`（0）、その発送の行を指す申し込み中の返品の行か、未処理（段1の `unprocessed`）が残る受付中の返品の行がある → `requested`（0）、注文の商品のお返しの数（段1の `sent_back`）> 0 → `sent_back`（0）、ほか → `unavailable`（0）。並びは発送の番号 → 注文の商品の登録順 → `order_item_id` |
+| `private.customer_return_availability(_order public.orders)` | → `TABLE (returns text, ended_on date, cancel boolean)` | `returns`: 設定の `requests_enabled` が偽か種類が `cancellations_only` → `closed`、注文の状態が `paid`・`shipped` でない → `none`、`selectable` の行がある → `available`、`past_deadline` の行がある → `ended`（`ended_on` = その行の `deadline_date` の最大）、ほか → `none`。`cancel`: `requests_enabled` が真で種類が `returns_and_cancellations` か `cancellations_only`、注文の状態が `pending` か `paid`、未発送（E-1 の `private.order_line_fulfillment` の `unshipped` の合計）> 0、開いているキャンセルの申し込みが無い |
+| `public.get_customer_return_request_materials(_order_id uuid, _customer_id uuid)` | → `jsonb`（上の `CustomerReturnRequestMaterials`） | 持ち主の確かめ（鍵なし）。`shipments` は取り消していない発送ごとの `customer_return_line_states`、`reasons` は設定で出す理由（`unknown` を除く。段1の決まった順）、`exchange_options` は発送した品の商品の使える色・サイズ（`is_active`）、`fees` は設定の値（使わない手数料は0） |
+| `public.customer_create_return_photo_upload(_order_id uuid, _customer_id uuid)` | → `TABLE (upload_id uuid, storage_path text)` | 持ち主の確かめ（鍵なし）→ 受付が `available` でなければ `RETURN_REQUESTS_CLOSED`（`closed`）か `RETURN_NOT_ELIGIBLE`（ほか）→ その注文とお客様の、使っていない・消していない・1日以内の送り先が60以上なら `RETURN_PHOTO_INVALID` → 番号を作り、場所 `requests/{注文の id}/{番号}` で1行を足す |
+| `private.parse_customer_return_lines(_lines jsonb)` | → `TABLE (fulfillment_id uuid, order_item_id uuid, quantity integer, reason text, customer_note text, requested_resolution text, requested_exchange_variant_id bigint, photos jsonb)` | 段1の `private.parse_return_lines` と同じ作り。配列は1〜100。各行は `fulfillment_id`（文字）・`order_item_id`（文字）・`quantity`（1〜999 の整数）・`reason`（文字。10種類のどれか）・`customer_note`（文字か null。前後の空白を外し、空なら null、300字まで）・`requested_resolution`（`refund`・`exchange`）・`requested_exchange_variant_id`（数か null。交換なら必須、返金なら null）・`photos`（配列 0〜5。各 `{ upload_id: 文字, content_type: 'image/jpeg' か 'image/png', size_bytes: 1〜10485760 の整数 }`、同じ `upload_id` は全部の行を通して1回）。同じ `(fulfillment_id, order_item_id)` は1回（同じ商品の行は1つ）。形が違えば `RETURN_ARGUMENT_INVALID`（ただし写真の数が5を超える・種類・大きさ・同じ `upload_id` の重ねは `RETURN_PHOTO_INVALID`、交換で `requested_exchange_variant_id` が空なのは段1と同じ `RETURN_EXCHANGE_VARIANT_INVALID`） |
+| `public.customer_request_return(_order_id uuid, _customer_id uuid, _request_key uuid, _lines jsonb)` | → `TABLE (return_id uuid, number integer, status text, replayed boolean)` | 設計書 4-10 の順に確かめる（注文の鍵を取ってから数える）。指紋は `{ order_id, lines: 行を fulfillment_id・order_item_id の順に並べた [{ fulfillment_id, order_item_id, quantity, reason, customer_note, requested_resolution, requested_exchange_variant_id, photo_upload_ids: 昇順 }] }` の md5（写真の種類と大きさは入れない）。同じ番号で同じ指紋なら持ち主を確かめた後に前の返品を返す（`replayed = true`）。返品を `status = 'requested'`・`source = 'customer_request'`・番号は段1と同じ決め方・`requested_at = now()`・`requested_by = _customer_id`・返送と手数料は仮の値（理由のどれかがお店の負担ならお店・着払い、ほかは設定の送り方。手数料は設定から）・`notify_customer = true`・`shop_note`・`created_by` は空で作り、行は仮の値（解決の方法・交換の色・サイズはご希望どおり。送り方は在庫が申し込む数以上なら `stock`、足りなければ `make`）と `customer_note`・ご希望で作り、写真の行を足して送り先に `attached_at` を書き、`return_requested` と `return_request_shop` の予定を `private.enqueue_return_email` で書く |
+| `public.customer_request_cancel(_order_id uuid, _customer_id uuid, _request_key uuid, _lines jsonb, _customer_note text)` | → `TABLE (cancel_request_id uuid, status text, replayed boolean)` | 引数（行は1〜100、各 `{ order_item_id: 文字, quantity: 1〜999 }`、同じ品は1回、ご連絡事項は前後の空白を外して空なら null・300字まで。違えば `RETURN_ARGUMENT_INVALID`）→ 持ち主（注文の鍵）→ 二重防止（同じ番号で同じ注文・同じ指紋なら前の申し込みを返す。違えば `RETURN_REQUEST_MISMATCH`）→ 設定（受付と種類。`RETURN_REQUESTS_CLOSED`）→ 注文の状態 `pending`・`paid`（`CANCEL_REQUEST_NOT_ELIGIBLE`）→ 開いている申し込み（`CANCEL_REQUEST_EXISTS`）→ 品がこの注文の品で、数が未発送の数まで（`CANCEL_REQUEST_QUANTITY_EXCEEDS`）→ 申し込みと行を足し、`cancel_request_received` と `cancel_request_shop` の予定を書く。指紋は `{ order_id, lines: order_item_id の順 [{ order_item_id, quantity }], customer_note }` の md5 |
+| `public.get_customer_order_returns(_order_id uuid, _customer_id uuid)` | → `jsonb`（上の `CustomerOrderReturns`） | 持ち主の確かめ（鍵なし）。取消の返品は入れない。返品と申し込みは新しい順。`customer_status` は[注文・決済の状態](../../04_DetailDesign/states/order-payment.md)の表のとおり。返送先は受付中（`open`）の時だけ。`refund_amount` はその返品の返金（`awaiting_response`・`pending`・`succeeded`）の額の合計（無ければ null）。お断りの理由の記号・店のメモ・した人は入れない |
+| `private.enqueue_return_email(uuid, text, uuid, uuid)` | 作り直し | 受ける種類に `return_requested`・`return_declined`・`return_request_shop` を足す。受け取りの番号は `return_accepted` と新しい3つでは空、受け取りの3つでは必須（違えば段1と同じ `RETURN_ARGUMENT_INVALID`） |
+| `private.enqueue_cancel_request_email(_order_id uuid, _kind text, _cancel_request_id uuid)` | → `boolean` | 種類は `cancel_request_received`・`cancel_request_declined`・`cancel_request_shop` だけ（違えば `RETURN_ARGUMENT_INVALID`）。`origin = 'auto'`・`variant` 空で1行を足し、一意の索引に当たれば何も書かない（`ON CONFLICT DO NOTHING`）。書いたかを返す |
+
+**移行 F（お店の側）**
+
+| 関数 | 引数 → 答え | 中身 |
+|---|---|---|
+| `public.admin_approve_return(_return_id uuid, _actor_id uuid, _lines jsonb, _return_method text, _return_shipping_payer text, _return_carrier text, _return_tracking_number text, _return_shipping_fee integer, _restocking_fee_percent integer, _exchange_fee integer, _exchange_shipping_fee integer, _shop_note text, _notify_customer boolean)` | → `TABLE (return_id uuid, status text)` | 引数（段1の `admin_create_return` の 1・2 と同じ確かめ。手数料はどれも必須で、円は 0〜1,000,000・% は 0〜100。違えば `RETURN_FEE_INVALID`）→ 行（`[{ return_line_id, resolution, exchange_variant_id, exchange_method }]`、返品の全部の行をちょうど1回ずつ。交換は色・サイズと送り方が必須、返金はどちらも null。違えば `RETURN_ARGUMENT_INVALID`）→ 鍵（段1の `private.lock_order_return`）→ 状態が `requested` でなければ `RETURN_STATE_CONFLICT` → 返送先（`RETURN_ADDRESS_REQUIRED`）→ 返送不要は設定がオンの時だけ（`RETURN_ARGUMENT_INVALID`）→ 交換の色・サイズは同じ商品の使える物（`RETURN_EXCHANGE_VARIANT_INVALID`）→ 行の3列を直し、返品を `open`・`approved_at = now()`・`approved_by = _actor_id` と返送・手数料（返送料の定額は段1の作ると同じく `shop_label` でお客様の負担の時だけ。ほかは0）・メモ・知らせにし、知らせる時は `return_accepted` の予定を書く |
+| `public.admin_decline_return(_return_id uuid, _actor_id uuid, _decline_reason text, _decline_message text)` | → `TABLE (return_id uuid, status text)` | 理由は3つのどれか（`RETURN_ARGUMENT_INVALID`）、メッセージは前後の空白を外して1〜1000字（`RETURN_DECLINE_MESSAGE_REQUIRED`）→ 鍵 → 状態が `requested` でなければ `RETURN_STATE_CONFLICT` → `declined`・`declined_at = now()`・`declined_by`・理由・メッセージ → `return_declined` の予定を書く（いつも） |
+| `private.return_detail_json(uuid)` | 作り直し | 段1の移行 B の本文のまま、答えに上の `OrderReturnDetail` の段2のキー（`requested_at`・`approved_at`・`approved_by_email`・`declined_at`・`decline_reason`・`decline_message`）と、行に（`customer_note`・`requested_resolution`・`requested_exchange`・`photos`・`return_ineligible`）を足す |
+| `public.get_order_return_materials(uuid)` | 作り直し | 段1の移行 B の本文のまま、`shipments[].lines[]` に `return_ineligible`（`items.return_ineligible`）を足す |
+| `public.list_return_photos(_return_id uuid)` | → `TABLE (photo_id uuid, return_line_id uuid, storage_path text, purged boolean)` | その返品の写真。返品の行の作った順 → 写真の作った順 |
+| `public.admin_receive_return(_return_id uuid, _actor_id uuid, _actor_can_refund boolean, _request_key uuid, _units jsonb, _exchange_overrides jsonb, _refund_choice text, _refund_amount integer, _refund_shipping_amount integer, _note text, _notify_customer boolean, _sent_back_message text, _sent_back_carrier text, _sent_back_tracking_number text)` | 作り直し（引数と答えは段1のまま） | 本文は段1の移行 C の本文のまま、次の3か所だけを変える: ① 最初の `IF NOT _actor_can_refund AND (_refund_choice='now' OR …)` から `_refund_choice='now' OR ` を外す ② 二重防止の送り直しの枝の後（`IF v_return.status<>'open' THEN …` の前）に `IF NOT _actor_can_refund AND _refund_choice='now' AND NOT (v_return.source='customer_request' AND v_return.return_method<>'not_required') THEN RAISE EXCEPTION 'RETURN_FORBIDDEN' USING ERRCODE='22023'; END IF;` を足す ③ 店への知らせの `IF NOT _actor_can_refund AND pg_catalog.jsonb_array_length(v_lines)>0 THEN` を `IF NOT _actor_can_refund AND v_choice='consult' THEN` にする |
+| `private.lock_order_cancel_request(_cancel_request_id uuid)` | → `public.order_cancel_requests` | 申し込みを読み、その注文を `FOR UPDATE` で鍵を取ってから申し込みの行に `FOR UPDATE` で鍵を取る（鍵の順番は注文 → 申し込み）。無ければ `CANCEL_REQUEST_NOT_FOUND`。下の3つの操作が使う（公開しない） |
+| `public.list_order_cancel_requests(_order_id uuid)` | → `jsonb`（上の `AdminCancelRequest[]`） | 注文の申し込み（新しい順）と行（品名・色・サイズ・数・今の未発送の数）、ご連絡事項、お断り・解決・解決済みの中身と、した人のメール（`auth.users`） |
+| `public.admin_decline_cancel_request(_cancel_request_id uuid, _actor_id uuid, _decline_reason text, _decline_message text)` | → `TABLE (cancel_request_id uuid, status text)` | 引数（返品のお断りと同じ）→ 注文の鍵 → 申し込みの鍵（無ければ `CANCEL_REQUEST_NOT_FOUND`）→ `requested` でなければ `CANCEL_REQUEST_STATE_CONFLICT` → `declined` と中身 → `cancel_request_declined` の予定を書く |
+| `public.admin_close_cancel_request(_cancel_request_id uuid, _actor_id uuid)` | → `TABLE (cancel_request_id uuid, status text)` | 鍵 → `requested` でなければ `CANCEL_REQUEST_STATE_CONFLICT` → `closed`・`closed_at`・`closed_by`（メールなし） |
+| `public.admin_resolve_cancel_request(_cancel_request_id uuid, _actor_id uuid, _refund_id uuid, _order_cancelled boolean)` | → `TABLE (cancel_request_id uuid, status text)` | `_refund_id` が空でないか `_order_cancelled` が真の、どちらか1つ（違えば `CANCEL_REQUEST_RESOLUTION_INVALID`）→ 鍵 → `requested` でなければ `CANCEL_REQUEST_STATE_CONFLICT` → 返金なら、その返金が同じ注文で、`created_at >= 申し込みの requested_at`、状態が `awaiting_response`・`pending`・`succeeded` であること。取消なら、注文の状態が `cancelled` であること（違えば `CANCEL_REQUEST_RESOLUTION_INVALID`）→ `resolved`・`resolved_at`・`resolved_by` と `resolved_refund_id` か `resolved_by_cancel_at = now()` |
+| `public.list_return_photo_purge_targets(_limit integer)` | → `TABLE (target_kind text, target_id uuid, storage_path text)` | `upload`: `attached_at` も `purged_at` も空で `created_at < now() - interval '1 day'` の送り先。`photo`: `purged_at` が空で、返品が `closed`（`closed_at`）・`cancelled`（`cancelled_at`）・`declined`（`declined_at`）になってから `interval '90 days'` より前の写真。古い順に、合わせて `LEAST(GREATEST(COALESCE(_limit, 500), 1), 500)` 件まで |
+| `public.mark_return_photo_targets_purged(_target_kind text, _ids uuid[])` | → `integer`（印を付けた数） | `upload` なら送り先の、`photo` なら写真とその送り先の `purged_at` を、空の物だけ `now()` にする（種類が違えば `RETURN_ARGUMENT_INVALID`） |
+
+### 追加のエラー
+
+| 記号 | HTTP | 管理画面の言葉 | お客様の言葉 |
+|---|---|---|---|
+| `RETURN_NOT_ELIGIBLE` | 409 | 申し込めない品が含まれています。画面を開き直してください。 | お申し込みいただけない商品が含まれています。画面を開き直してください。 |
+| `RETURN_REQUESTS_CLOSED` | 409 | 申し込みの受付がオフです。 | 現在、返品・交換のお申し込みを受け付けていません。 |
+| `RETURN_PHOTO_INVALID` | 400 | 写真を確かめてください。 | 写真を確かめてください（JPEG・PNG、1枚10MBまで、1つの商品に5枚まで）。 |
+| `RETURN_CUSTOMER_NOTE_REQUIRED` | 400 | 詳しい内容が必要です。 | 「破損・不良」「その他」の時は、詳しい内容を入れてください（300字まで）。 |
+| `RETURN_DECLINE_MESSAGE_REQUIRED` | 400 | お客様へのメッセージを入れてください（1000字まで）。 | — |
+| `RETURN_QUANTITY_EXCEEDS` | 409 | 段1のまま | お申し込みいただける数を超えています。画面を開き直してください。 |
+| `RETURN_REQUEST_MISMATCH` | 409 | 段1のまま | お申し込みの内容が変わりました。画面を開き直してください。 |
+| `RETURN_EXCHANGE_VARIANT_INVALID` | 400 | 段1のまま | 交換する色・サイズを選び直してください。 |
+| `RETURN_ARGUMENT_INVALID` | 400 | 段1のまま | 入力を確かめてください。 |
+| `ORDER_NOT_RETURNABLE` | 409 | 段1のまま | この注文は、返品・交換のお申し込みを受け付けていません。 |
+| `CANCEL_REQUEST_NOT_FOUND` | 404 | キャンセルの申し込みが見つかりません。 | — |
+| `CANCEL_REQUEST_EXISTS` | 409 | — | キャンセルのお申し込みは、すでに受け付けています。 |
+| `CANCEL_REQUEST_NOT_ELIGIBLE` | 409 | — | この注文は、キャンセルのお申し込みを受け付けていません。 |
+| `CANCEL_REQUEST_QUANTITY_EXCEEDS` | 409 | — | お申し込みいただける数を超えています。画面を開き直してください。 |
+| `CANCEL_REQUEST_STATE_CONFLICT` | 409 | キャンセルの申し込みの状態が変わりました。画面を開き直してください。 | — |
+| `CANCEL_REQUEST_RESOLUTION_INVALID` | 409 | 返金・キャンセルの記録を確かめられませんでした。画面を開き直してください。 | — |
+
+- 管理画面の言葉が「—」の記号（お客様の申し込みだけで出る記号）は、管理画面の窓口からは出ないが、`RETURN_ERROR_MESSAGES` は `Record<ReturnErrorCode, …>` なので、言葉 `申し込みを受け付けられませんでした。`・HTTP は表のままで入れる。お客様の言葉が「—」の記号は、お客様の窓口からは出ない（`CustomerReturnErrorCode` に入れない）
+- `ORDER_NOT_FOUND`（DB）はお客様の窓口で 404 `{ error: 'Order not found' }`（今の注文の窓口と同じ）
+- お客様の窓口の回数の制限（429）の画面の言葉 `CUSTOMER_RETURN_RATE_LIMITED_MESSAGE` = `しばらくしてから、もう一度お試しください。`、想定外の失敗 `CUSTOMER_RETURN_FAILURE_MESSAGE` = `お申し込みを受け付けられませんでした。時間をおいて、もう一度お試しください。`
+
+### 履歴・再送・監査
+
+履歴の行は type: 'return'。キャンセルの行は returnId: null、お客様の行は actorEmail: null。返品の申し込み・承認・お断りと、キャンセルの申し込み・お断り・解決済み・解決（返金／キャンセル）を表から読んで並べる。新しい6種類のメールは再送の窓口が DB より先に409 `今の注文の状態では、このメールは再送できません。`（監査の detail は `Resend not allowed`）で断る。public.request_order_email_resend は作り直さない。
+
+| kind | title | 時刻とした人 |
+| --- | --- | --- |
+| request | 返品の申し込み（{番号}） | requestedAt、actorEmail: null |
+| approve | 返品の申し込みを承認した（{番号}） | approvedAt、approvedByEmail |
+| decline | 返品の申し込みをお断りした（{番号}） | declinedAt、返品の表の declined_by から読むメール |
+| cancel_request | キャンセルの申し込み | requestedAt、actorEmail: null |
+| cancel_request_decline | キャンセルの申し込みをお断りした | declinedAt、declinedByEmail |
+| cancel_request_close | キャンセルの申し込みを解決済みにした | closedAt、closedByEmail |
+| cancel_request_resolve | キャンセルの申し込みを解決した（返金） | resolvedAt、resolvedByEmail、resolvedRefundId がある |
+| cancel_request_resolve | キャンセルの申し込みを解決した（キャンセル） | resolvedAt、resolvedByEmail、resolvedRefundId がない |
+
+番号は {注文番号}-R{n}。キャンセルの行の returnId は null、details は空の配列で、ご連絡事項・お断りのメッセージを履歴の細目へ出さない。
+
+監査の action は admin.orders.return.approve・admin.orders.return.decline・admin.orders.cancel_request.decline・admin.orders.cancel_request.close・admin.orders.cancel_request.resolve・account.orders.return.request・account.orders.cancel_request.create・orders.return_photos.purge。番号・数・状態・記号だけを記録し、写真の送り先の窓口は監査を書かない。メール・氏名・住所・詳しい内容・メッセージ・写真の場所と署名つきのリンクを記録しない。
+
+検証: お客様の窓口は本物の手元の DB・Storage を通す E2E。管理画面は窓口を差し替える E2E、窓口の単体、DB 結合と PostgREST の照合を分ける。Stripe の実際の返金・本番 Storage・本番の配達は別途開店前に確認する。

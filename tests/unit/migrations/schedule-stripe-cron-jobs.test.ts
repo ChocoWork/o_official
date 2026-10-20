@@ -27,6 +27,12 @@ describe.each([
     schedule: '0 18 * * *',
     endpoint: '/api/cron/stripe-reconcile',
   },
+  {
+    file: 'schedule_return_photo_purge.sql',
+    job: 'purge-return-photos',
+    schedule: '20 19 * * *',
+    endpoint: '/api/cron/purge-return-photos',
+  },
 ])('$file', ({ file, job, schedule, endpoint }) => {
   const sql = readPending(file);
   const beforeSchedule = sql.slice(0, sql.search(/cron\.schedule\(/i));

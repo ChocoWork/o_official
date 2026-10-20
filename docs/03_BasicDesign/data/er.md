@@ -2,7 +2,7 @@
 
 ## 概要
 
-`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 の追記を反映した掲載対象は **76 テーブル（public 70、private 4、security 2）と 94 FK（public 起点 88、private 起点 6）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
+`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 段1・段2の追記を反映した掲載対象は **80 テーブル（public 74、private 4、security 2）と 102 FK（public 起点 95、private 起点 7）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
 
 基準の確認日: **2026-10-03**。ソース基準コミット: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`。基準は [20260901102912_remote_schema.sql](../../../supabase/migrations/20260901102912_remote_schema.sql)、基準集計の最後の対象ファイルは [20260927100800_retire_legacy_order_rpcs.sql](../../../supabase/migrations/20260927100800_retire_legacy_order_rpcs.sql)。対象の 40 SQL ファイルの基準は59テーブル・63 FKで、後続の記載済みの追記を含む一覧は2026-10-09に数え直し、グループ E-1 の分を2026-10-10 に、グループ E-2 の分を2026-10-11 に、グループ E-3 の分を2026-10-13 に足した。本番 DB の適用状況は確認していない。
 
@@ -20,7 +20,9 @@
 
 2026-10-13 追記（グループ E-3、FREQ-462〜474）: [移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) で `public.order_returns`（返品。お店が作る返品は作った時から受付中。消さず、直せるのは状態・時刻・する人・手数料の列だけ）・`public.order_return_lines`（返す品。発送の行の組を指す。作った後は一切変えない）・`public.order_return_receipts`（受け取りの記録。1回の操作が1行。追記だけ）・`public.order_return_receipt_lines`（受け取りの商品の扱い。追記だけ）・`public.shop_return_settings`（返品の設定。1行だけ）・`public.shop_return_reason_settings`（理由ごとの設定。理由ごとに1行）を足し、`public.order_items` に交換の品の列（`line_kind`・`exchange_return_line_id`・`exchange_paid_amount`）、`public.order_refunds` に `return_id`（道 `return`）、`public.stock_movements` に `return_id`（理由 `return`・`exchange`）、`private.order_email_outbox` に `return_id`・`return_receipt_id`（返品の4つの種類と、返金のお知らせの書き分け `return`）を足した。返品の4つの表と設定の2つの表は RLS を有効にして表の権限を外し、service_role は読むだけ、書くのは SECURITY DEFINER の DB の関数だけにした。権限の行 `admin.orders.return`（注文の返品）は店長とサポートの役割に付ける。[移行 B](../../../supabase/migrations/20261013000456_order_return_actions.sql) で返品を作る・取り消す・開き直す・届かないで終える・検品する・手数料の受け取りを記録する・支払いを待たずに送る関数と、読み出しの関数、設定を書く関数を作り、発送の取消に返品の守り（`FULFILLMENT_HAS_RETURN`）を足した。[移行 C](../../../supabase/migrations/20261013001143_order_return_receipts.sql) で受け取り・額を決めて返金する関数、E-2 の返金を始める関数の本体の切り出し（`private.begin_order_refund_core`）、返品の返金で引いた手数料を持つ列（`public.order_refunds.return_fee_deduction`）、交換の品の行・在庫・メールの予定の書き方、割引の割り振りと人気の商品からの交換の品の除外、発送の手数料待ちの守り（`FULFILLMENT_EXCHANGE_ON_HOLD`）を作った。差分はテーブル +6（public +6）、物理 FK +14（返品の表の `order_id` の1本・返す品の表の4本（返品・発送の行の組・交換の色とサイズの2本）・受け取りの記録の2本・受け取りの商品の扱いの2本・注文の商品の `exchange_return_line_id`・返金の `return_id`・台帳の `return_id`・注文のメールの `return_id` と `return_receipt_id`。実行した人の列と設定を変えた人の列は、外部キーにしない）で、前の追記の70テーブル・80 FK から **76テーブル・94 FK** になる。2026-10-13 に本番へ適用済み（20261012235910・20261013000456・20261013001143）。
 
-図は領域別に分割する。PK・FK と関係を読むための列だけを載せ、全列、CHECK、RLS、トリガー、RPC、Storage オブジェクトの一覧は SQL に委ねる（グループ E-1 の3つの表と `private.order_email_outbox` の追加の列だけは例外で、全列・CHECK・索引・RLS・トリガー・書く関数を第 3 節の「発送と仕上がりの列・索引」に書く。グループ E-2 の返金の2つの表・ショップの設定・切り替えの時刻の表と、追加の列も同じ例外で、第 3 節の「返金の列・索引」に書く。グループ E-3 の返品の4つの表・返品の設定の2つの表と、追加の列も同じ例外で、第 3 節の「返品の列・索引」に書く）。旧 `migrations/` と `supabase/pending/` は主な集計の基準に含めず、現行コードが依存する旧定義だけを補足する。
+E-3 段2（FREQ-475〜486）: [移行 D](../../../supabase/migrations/20261013100000_order_return_request_records.sql)・[移行 E](../../../supabase/migrations/20261013100100_order_return_customer_requests.sql)・[移行 F](../../../supabase/migrations/20261013100200_order_return_request_reviews.sql) で、写真の送り先・写真・キャンセルの申し込み・行の4表、items.return_ineligible、outbox.cancel_request_id、承認の更新の守りと6種類のメールの索引を足す。76表・94 FK に public 4表・public 起点7 FK・private 起点1 FK を足して80表・102 FK。移行の名前は手元の版で、本番の適用状況は未確認（本番へは push の後に当てる）。
+
+図は領域別に分割する。PK・FK と関係を読むための列だけを載せ、全列、CHECK、RLS、トリガー、RPC、Storage オブジェクトの一覧は SQL に委ねる（グループ E-1 の3つの表と `private.order_email_outbox` の追加の列だけは例外で、全列・CHECK・索引・RLS・トリガー・書く関数を第 3 節の「発送と仕上がりの列・索引」に書く。グループ E-2 の返金の2つの表・ショップの設定・切り替えの時刻の表と、追加の列も同じ例外で、第 3 節の「返金の列・索引」に書く。グループ E-3 の返品の4つの表・返品の設定の2つの表と、追加の列も同じ例外で、第 3 節の「返品の列・索引」に書く）。E-3 段2の追加4表も全列・CHECK・索引・RLS・守りを第3節に記す。旧 `migrations/` と `supabase/pending/` は主な集計の基準に含めず、現行コードが依存する旧定義だけを補足する。
 
 | 領域 | 内容 |
 | --- | --- |
@@ -691,9 +693,25 @@ erDiagram
   }
 ```
 
+### 2.9 お客様の申し込みの追加の関係（E-3 段2）
+
+```mermaid
+erDiagram
+  orders ||--o{ order_return_photo_uploads : order_id
+  order_return_lines ||--o{ order_return_photos : return_line_id
+  order_return_photo_uploads ||--o| order_return_photos : upload_id
+  orders ||--o{ order_cancel_requests : order_id
+  order_refunds o|--o{ order_cancel_requests : resolved_refund_id
+  order_cancel_requests ||--o{ order_cancel_request_lines : cancel_request_id
+  order_items ||--o{ order_cancel_request_lines : order_item_id
+  order_cancel_requests o|--o{ order_email_outbox : cancel_request_id
+```
+
+`customer_id`・`requested_by`・操作した人の UUID は物理 FK にしない。`storage_path` は Storage の場所の文字列であり物理 FK ではない。新しい8本はすべて ON DELETE RESTRICT。写真の実体は非公開の Storage に置き、DB には場所と消去の印を残す。
+
 ## 3. 全テーブルとキーの一覧
 
-以下は掲載対象の76テーブル・94 FKの定義元とキーの一覧。FK の有無は入出両方向で判定する。`audit_logs_backups.id` は主キーではなく nullable の通常列である。
+以下は掲載対象の80テーブル・102 FKの定義元とキーの一覧。FK の有無は入出両方向で判定する。`audit_logs_backups.id` は主キーではなく nullable の通常列である。
 
 ### 3.1 認証・利用者
 
@@ -748,23 +766,27 @@ erDiagram
 
 | テーブル | PK | PK 以外の一意性 | 物理 FK 接続 | 定義元 |
 | --- | --- | --- | --- | --- |
-| `public.orders` | `(id)` | `(payment_intent_id)`; `(checkout_session_id)` | 参照元 12 / 参照先 1 | [20260901102912:718](../../../supabase/migrations/20260901102912_remote_schema.sql#L718) |
-| `public.order_items` | `(id)` | なし | 参照元 4 / 参照先 4 | [20260901102912:677](../../../supabase/migrations/20260901102912_remote_schema.sql#L677) |
+| `public.orders` | `(id)` | `(payment_intent_id)`; `(checkout_session_id)` | 参照元 14 / 参照先 1 | [20260901102912:718](../../../supabase/migrations/20260901102912_remote_schema.sql#L718) |
+| `public.order_items` | `(id)` | なし | 参照元 5 / 参照先 4 | [20260901102912:677](../../../supabase/migrations/20260901102912_remote_schema.sql#L677) |
 | `public.order_revisions` | `(id)` | なし | 参照元 0 / 参照先 2 | [20260901102912:698](../../../supabase/migrations/20260901102912_remote_schema.sql#L698) |
 | `public.stock_movements` | `(id)` | なし | 参照元 0 / 参照先 5 | [20260919065355:6](../../../supabase/migrations/20260919065355_add_stock_movements.sql#L6) |
 | `public.order_fulfillments` | `(id)` | `(order_id, number)`; `(request_key)` | 参照元 2 / 参照先 1 | [移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) |
 | `public.order_fulfillment_lines` | `(fulfillment_id, order_item_id)` | なし | 参照元 1 / 参照先 2 | [移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) |
 | `public.order_item_completions` | `(id)` | `(request_key, order_item_id)` | 参照元 0 / 参照先 2 | [移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) |
-| `public.order_refunds` | `(id)` | `(request_key)`; `(stripe_refund_id)` | 参照元 4 / 参照先 2 | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
+| `public.order_refunds` | `(id)` | `(request_key)`; `(stripe_refund_id)` | 参照元 5 / 参照先 2 | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
 | `public.order_refund_lines` | `(id)` | `(refund_id, order_item_id, before_shipment)` | 参照元 0 / 参照先 2 | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
 | `public.shop_settings` | `(id)` | なし（1行） | なし（独立） | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
 | `private.refund_ledger_state` | `(id)` | なし（1行） | なし（独立） | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
 | `public.order_returns` | `(id)` | `(order_id, number)`; `(request_key)` | 参照元 5 / 参照先 1 | [E-3 移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) |
-| `public.order_return_lines` | `(id)` | なし | 参照元 2 / 参照先 4 | [E-3 移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) |
+| `public.order_return_lines` | `(id)` | なし | 参照元 3 / 参照先 4 | [E-3 移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) |
 | `public.order_return_receipts` | `(id)` | `(request_key)` | 参照元 2 / 参照先 2 | [E-3 移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) |
 | `public.order_return_receipt_lines` | `(id)` | `(receipt_id, return_line_id, disposition, resolution, exchange_method)`（NULLS NOT DISTINCT） | 参照元 0 / 参照先 2 | [E-3 移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) |
 | `public.shop_return_settings` | `(id)` | なし（1行） | なし（独立） | [E-3 移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) |
 | `public.shop_return_reason_settings` | `(reason)` | なし | なし（独立） | [E-3 移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) |
+| `public.order_return_photo_uploads` | `(id)` | `(storage_path)` | 参照元 1 / 参照先 1 | [E-3 段2 移行 D](../../../supabase/migrations/20261013100000_order_return_request_records.sql) |
+| `public.order_return_photos` | `(id)` | `(upload_id)` | 参照元 0 / 参照先 2 | [E-3 段2 移行 D](../../../supabase/migrations/20261013100000_order_return_request_records.sql) |
+| `public.order_cancel_requests` | `(id)` | `(request_key)`; `(order_id) WHERE status = 'requested'` | 参照元 2 / 参照先 2 | [E-3 段2 移行 D](../../../supabase/migrations/20261013100000_order_return_request_records.sql) |
+| `public.order_cancel_request_lines` | `(id)` | `(cancel_request_id, order_item_id)` | 参照元 0 / 参照先 2 | [E-3 段2 移行 D](../../../supabase/migrations/20261013100000_order_return_request_records.sql) |
 | `private.order_email_outbox` | `(id)` | `(seq)`; 自動 `(order_id, kind)`（発送のメール・返金に結び付く行・返品の4つの種類以外）; 自動の発送のメール `(fulfillment_id)`; 自動の返金に結び付く行 `(refund_id, kind)`; 自動の返品の受付のお知らせ `(return_id)`; 自動の受け取りに結び付く行（返品のメールと、受け取りと一緒の返金のお知らせ） `(return_receipt_id, kind)`; 手の送信待ち `(order_id, kind, fulfillment_id, refund_id)`（NULLS NOT DISTINCT）; `(provider_message_id)` | 参照元 0 / 参照先 6（orders・auth.users・order_fulfillments・order_refunds・order_returns・order_return_receipts） | [20261009095633:11](../../../supabase/migrations/20261009095633_order_email_outbox.sql#L11) |
 | `private.order_email_send_pause` | `(id)` | なし（1行） | なし（独立） | [20261009095633:91](../../../supabase/migrations/20261009095633_order_email_outbox.sql#L91) |
 | `private.resend_webhook_receipts` | `(svix_id)` | なし | なし（独立） | [20261009095633:110](../../../supabase/migrations/20261009095633_order_email_outbox.sql#L110) |
@@ -817,8 +839,8 @@ erDiagram
 
 | 表 | 列と制約 |
 | --- | --- |
-| `order_returns` | `id uuid` PK（gen_random_uuid）、`order_id uuid` NOT NULL（RESTRICT）、`number integer` NOT NULL（1以上。`(order_id, number)` UNIQUE。返品の番号 `{注文番号}-R{n}` の n。注文の行の鍵の中で「その注文の返品の数 + 1」にする）、`source text` NOT NULL（`customer_request`・`shop`。段1は `shop` だけ）、`status text` NOT NULL（`requested`・`open`・`closed`・`cancelled`・`declined`）、`request_key uuid` NOT NULL UNIQUE（二重防止の番号）、`request_fingerprint text` NOT NULL、`return_method text` NOT NULL（`customer_ships`・`shop_label`・`not_required`）、`return_shipping_payer text` NOT NULL（`shop`・`customer`）、`return_carrier text`（`yamato`・`sagawa`・`japanpost`・`other`）、`return_tracking_number text`（`^[0-9A-Za-z-]{1,64}$`）、`return_shipping_fee`・`exchange_fee`・`exchange_shipping_fee`・`fee_due_amount`・`fee_settled_amount`・`fee_pending_deduction integer` NOT NULL（0以上。既定 0。`fee_due_amount` は引けずにお客様からいただく、まだ決着していない額、`fee_settled_amount` は手数料の受け取りの記録・いただかないで終えるで決着した額の合計（決着のたびに、その時の `fee_due_amount` を足して `fee_due_amount` を0に戻す）、`fee_pending_deduction` は相談の受け取りで付き、額を決めて返金する時に引く額）、`restocking_fee_percent integer` NOT NULL（0〜100）、`fee_received_at`・`fee_received_by`・`fee_received_note`（手数料の受け取りの記録。メモは500字まで）、`fee_waived boolean` NOT NULL（既定 false。手数料をいただかないことにした印。真の時も `fee_received_at`・`fee_received_by` を入れる（CHECK `order_returns_fee_waived_check`）。決着した額は `fee_settled_amount` に移して `fee_due_amount` は0に戻す。受け取り・額を決めて返金で新しい手数料が付いて、`fee_received_at`・`fee_received_by`・`fee_received_note` を空に戻す時は、同じ更新で `fee_waived` も false に戻す）、`exchange_released_at`・`exchange_released_by`（支払いを待たずに送る）、`notify_customer boolean` NOT NULL、`shop_note text`（500字まで）、`created_at`・`created_by`・`closed_at`・`cancelled_at`・`cancelled_by`・`reopened_at`・`reopened_by`。段2の列（`requested_at`・`requested_by`・`declined_at`・`declined_by`・`decline_reason`・`decline_message`）は段1では空のまま。`approved_at`・`approved_by` は、お店が返品を作った時に、作った時刻と人を入れる。実行した人の列は `auth.users` の番号で、外部キーにしない（`stock_movements.created_by` と同じ） |
-| `order_return_lines` | `id uuid` PK、`return_id uuid` NOT NULL（RESTRICT）、`fulfillment_id uuid`・`order_item_id uuid` NOT NULL（`order_fulfillment_lines` の組を指す複合の外部キー、RESTRICT。その返品の注文の発送だけを指す）、`quantity integer` NOT NULL（1以上）、`reason text` NOT NULL（10の理由）、`reason_note text`（255字まで）、`resolution text` NOT NULL（`refund`・`exchange`。作った時の予定）、`exchange_variant_id bigint`・`exchange_method text`（`stock`・`make`。CHECK で、`resolution = 'exchange'` の時だけ両方が入る）、`customer_note`・`requested_resolution`・`requested_exchange_variant_id`（段2の列）、`created_at timestamptz` NOT NULL。作った後は一切変えず、消せない。実際に決まった解決（在庫不足で作って送るに変えた・店長が返金に変えた）は、受け取りの商品の扱いに残す |
+| `order_returns` | `id uuid` PK（gen_random_uuid）、`order_id uuid` NOT NULL（RESTRICT）、`number integer` NOT NULL（1以上。`(order_id, number)` UNIQUE。返品の番号 `{注文番号}-R{n}` の n。注文の行の鍵の中で「その注文の返品の数 + 1」にする）、`source text` NOT NULL（`customer_request`・`shop`。段1は `shop` だけ）、`status text` NOT NULL（`requested`・`open`・`closed`・`cancelled`・`declined`）、`request_key uuid` NOT NULL UNIQUE（二重防止の番号）、`request_fingerprint text` NOT NULL、`return_method text` NOT NULL（`customer_ships`・`shop_label`・`not_required`）、`return_shipping_payer text` NOT NULL（`shop`・`customer`）、`return_carrier text`（`yamato`・`sagawa`・`japanpost`・`other`）、`return_tracking_number text`（`^[0-9A-Za-z-]{1,64}$`）、`return_shipping_fee`・`exchange_fee`・`exchange_shipping_fee`・`fee_due_amount`・`fee_settled_amount`・`fee_pending_deduction integer` NOT NULL（0以上。既定 0。`fee_due_amount` は引けずにお客様からいただく、まだ決着していない額、`fee_settled_amount` は手数料の受け取りの記録・いただかないで終えるで決着した額の合計（決着のたびに、その時の `fee_due_amount` を足して `fee_due_amount` を0に戻す）、`fee_pending_deduction` は相談の受け取りで付き、額を決めて返金する時に引く額）、`restocking_fee_percent integer` NOT NULL（0〜100）、`fee_received_at`・`fee_received_by`・`fee_received_note`（手数料の受け取りの記録。メモは500字まで）、`fee_waived boolean` NOT NULL（既定 false。手数料をいただかないことにした印。真の時も `fee_received_at`・`fee_received_by` を入れる（CHECK `order_returns_fee_waived_check`）。決着した額は `fee_settled_amount` に移して `fee_due_amount` は0に戻す。受け取り・額を決めて返金で新しい手数料が付いて、`fee_received_at`・`fee_received_by`・`fee_received_note` を空に戻す時は、同じ更新で `fee_waived` も false に戻す）、`exchange_released_at`・`exchange_released_by`（支払いを待たずに送る）、`notify_customer boolean` NOT NULL、`shop_note text`（500字まで）、`created_at`・`created_by`・`closed_at`・`cancelled_at`・`cancelled_by`・`reopened_at`・`reopened_by`。段2の列（`requested_at`・`requested_by`・`declined_at`・`declined_by`・`decline_reason`・`decline_message`）は段1では空のまま。`approved_at`・`approved_by` は、お店が返品を作った時に、作った時刻と人を入れる。お客様の申し込み（`source = 'customer_request'`）では、承認の更新で入れる。実行した人の列は `auth.users` の番号で、外部キーにしない（`stock_movements.created_by` と同じ） |
+| `order_return_lines` | `id uuid` PK、`return_id uuid` NOT NULL（RESTRICT）、`fulfillment_id uuid`・`order_item_id uuid` NOT NULL（`order_fulfillment_lines` の組を指す複合の外部キー、RESTRICT。その返品の注文の発送だけを指す）、`quantity integer` NOT NULL（1以上）、`reason text` NOT NULL（10の理由）、`reason_note text`（255字まで）、`resolution text` NOT NULL（`refund`・`exchange`。作った時の予定）、`exchange_variant_id bigint`・`exchange_method text`（`stock`・`make`。CHECK で、`resolution = 'exchange'` の時だけ両方が入る）、`customer_note`・`requested_resolution`・`requested_exchange_variant_id`（段2の列）、`created_at timestamptz` NOT NULL。数・理由・詳しい内容・ご希望は変えず、消せない。親が requested の間だけ、承認で resolution・exchange_variant_id・exchange_method の3列を変えられる。実際に決まった解決（在庫不足で作って送るに変えた・店長が返金に変えた）は、受け取りの商品の扱いに残す |
 | `order_return_receipts` | `id uuid` PK、`return_id uuid` NOT NULL（RESTRICT）、`request_key uuid` NOT NULL UNIQUE、`request_fingerprint text` NOT NULL、`kind text` NOT NULL（`receive`・`inspect`・`close_missing`・`reopen`・`waive_refund`）、`refund_choice text`（`now`・`consult`・`none`。`kind = 'receive'` の時だけ入る。この受け取りで返金する品が0点（覆われた品だけ・交換だけ・お返しだけ）なら、選び方が今返金・相談でも `none` を入れる）、`refund_id uuid`（`order_refunds(id)`、RESTRICT。移行 C で DEFERRABLE INITIALLY DEFERRED。この受け取りと一緒に作った返金）、`notify_customer boolean` NOT NULL、`sent_back_message`（1000字まで）・`sent_back_carrier`・`sent_back_tracking_number`（お返しのメッセージと送り返しの配送業者・伝票番号）、`note text`（500字まで）、`actor_id uuid`・`actor_can_refund boolean`（した人と、返金の権限があったか）、`created_at timestamptz` NOT NULL。追記だけ（変更と削除をトリガーで拒む） |
 | `order_return_receipt_lines` | `id uuid` PK、`receipt_id uuid`・`return_line_id uuid` NOT NULL（どちらも RESTRICT）、`disposition text` NOT NULL（`restocked`・`not_restocked`・`pending_inspection`・`inspected_restocked`・`inspected_not_restocked`・`sent_back`・`missing`・`missing_reopened`・`refund_waived`）、`quantity integer` NOT NULL（1以上）、`resolution text`（`refund`・`exchange`。受け取った品（`restocked`・`not_restocked`・`pending_inspection`）の行だけが、その受け取りで実際に決まった解決を持つ）、`exchange_method text`（`resolution = 'exchange'` の時だけ）。`(receipt_id, return_line_id, disposition, resolution, exchange_method)` UNIQUE（NULLS NOT DISTINCT）。追記だけ。交換の数・返金待ち・覆いは、返品の行の予定ではなく、この行の解決で数える |
 | `shop_return_settings` | `id smallint` PK（1だけ。CHECK `id = 1`）、`window_days integer`（1〜365。空は無制限。既定 7）、`window_start text`（`each_item`・`last_item`。既定 `each_item`）、`delivery_buffer_days integer`（0〜14。既定 3）、`return_address_name`・`return_address_postal_code`・`return_address_line`・`return_address_phone`（4つとも空か、4つとも入っている。CHECK `shop_return_settings_address_check`）、`customer_paid_method text`（`customer_ships`・`shop_label`。既定 `customer_ships`）、`shop_label_fee integer`（0以上）、`no_return_needed_enabled`・`restocking_fee_enabled`・`exchange_fees_enabled`・`inspection_enabled boolean`（既定 false）、`restocking_fee_percent`・`exchange_fee`・`exchange_shipping_fee`、段2の列（`requests_enabled`・`request_types`・`notice_text`）、まとまりごとの `{requests\|window\|shipping\|reasons\|fees\|receiving}_updated_at`・`…_updated_by`（最後に変えた時刻と人。外部キーにしない）。移行が1行を入れる |
@@ -840,6 +862,130 @@ erDiagram
 | `private.order_email_outbox` の一意の索引 | 自動の行は、`(order_id, kind)`（発送のメール・返金に結び付く行・返品の4つの種類以外）に加えて、返品の受付が `(return_id)`、受け取りに結び付く行（3つの返品の種類と、受け取りと一緒の返金のお知らせ）が `(return_receipt_id, kind)`。1つの注文に返品が何回もあるため、返品の種類は注文ごとの索引から外した |
 
 返品の4つの表と設定の2つの表は RLS を有効にし、anon・authenticated の権限を外し、service_role は SELECT だけを持つ。書くのは `admin_create_return`・`admin_receive_return`・`admin_refund_return`・`admin_cancel_return`・`admin_reopen_return`・`admin_close_return_missing`・`admin_inspect_return`・`admin_record_return_fee_payment`・`admin_release_return_exchange`・設定の更新の関数（どれも SECURITY DEFINER）だけ。返品の表は消せず、直せる列は状態・時刻・する人・手数料の受け取り（いただかない印を含む）・支払いを待たずに送る・手数料の額（決着した合計 `fee_settled_amount` を含む）に限る（トリガー `order_returns_guard` が、それ以外の変更を `ORDER_RETURN_IMMUTABLE`、許さない状態の移り方を `ORDER_RETURN_INVALID_TRANSITION`、削除を `ORDER_RETURN_APPEND_ONLY`（どれも SQLSTATE 23514）で止める）。返品の行・受け取りの記録・受け取りの商品の扱いは、変更も削除もトリガーが `ORDER_RETURN_APPEND_ONLY` で止める。返品の行ごとの処理の数は `private.order_return_line_progress`、商品ごとの返品できる数（申し込み `rq`・受付中で未処理 `op`・返金待ち `rw`・交換 `ex`・お返し `sb`）は `private.order_line_return_counts` の1か所で数え、窓口・画面・E-2 の返金の発送後に返せる数が同じ数を使う。定義は [移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql)・[移行 B](../../../supabase/migrations/20261013000456_order_return_actions.sql)・[移行 C](../../../supabase/migrations/20261013001143_order_return_receipts.sql) に従う。
+
+#### お客様の申し込みの列・索引・更新の守り（E-3 段2）
+
+既存の段1の記述のうち、返品の行の更新、承認時の返品の更新、メールの種類と一意の索引は、この節が現行の定義を示す。段1の移行自体は書き換えない。`items.return_ineligible` と `private.order_email_outbox.cancel_request_id` 以外の新しい列の型も以下のとおり。
+
+**移行 D が作る・変える物**（段1の表の形は、ここに書いた所のほかは変えない）
+
+1. `public.items` に `return_ineligible boolean NOT NULL DEFAULT false`（返品不可）を足す。
+
+2. `public.order_return_photo_uploads`（出した写真の送り先。1行が1つの送り先）
+
+| 列 | 型 | 決まり |
+|---|---|---|
+| `id` | `uuid` | `PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid()` |
+| `order_id` | `uuid` | `NOT NULL REFERENCES public.orders (id) ON DELETE RESTRICT` |
+| `customer_id` | `uuid` | `NOT NULL`（外部キーにしない。段1の「した人」の列と同じ考え） |
+| `storage_path` | `text` | `NOT NULL CONSTRAINT order_return_photo_uploads_storage_path_key UNIQUE CONSTRAINT order_return_photo_uploads_storage_path_check CHECK (storage_path ~ '^requests/[0-9a-f-]{36}/[0-9a-f-]{36}$')` |
+| `created_at` | `timestamptz` | `NOT NULL DEFAULT pg_catalog.now()` |
+| `attached_at` | `timestamptz` | 申し込みに使った時刻。空から値へ1回だけ |
+| `purged_at` | `timestamptz` | 置き場から消した時刻。空から値へ1回だけ |
+
+索引: `order_return_photo_uploads_order_idx ON (order_id, created_at)`、`order_return_photo_uploads_unattached_idx ON (created_at) WHERE attached_at IS NULL AND purged_at IS NULL`。
+
+3. `public.order_return_photos`（申し込みに付いた写真）
+
+| 列 | 型 | 決まり |
+|---|---|---|
+| `id` | `uuid` | `PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid()` |
+| `return_line_id` | `uuid` | `NOT NULL REFERENCES public.order_return_lines (id) ON DELETE RESTRICT` |
+| `upload_id` | `uuid` | `NOT NULL CONSTRAINT order_return_photos_upload_id_key UNIQUE REFERENCES public.order_return_photo_uploads (id) ON DELETE RESTRICT` |
+| `storage_path` | `text` | `NOT NULL`（送り先の場所と同じ） |
+| `content_type` | `text` | `NOT NULL CHECK (content_type IN ('image/jpeg', 'image/png'))` |
+| `size_bytes` | `integer` | `NOT NULL CHECK (size_bytes BETWEEN 1 AND 10485760)`（撮影の情報を消した後の大きさ） |
+| `created_at` | `timestamptz` | `NOT NULL DEFAULT pg_catalog.now()` |
+| `purged_at` | `timestamptz` | 置き場から消した時刻。空から値へ1回だけ |
+
+索引: `order_return_photos_line_idx ON (return_line_id)`。
+
+4. `public.order_cancel_requests`（キャンセルの申し込み）
+
+| 列 | 型 | 決まり |
+|---|---|---|
+| `id` | `uuid` | `PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid()` |
+| `order_id` | `uuid` | `NOT NULL REFERENCES public.orders (id) ON DELETE RESTRICT` |
+| `status` | `text` | `NOT NULL CHECK (status IN ('requested', 'resolved', 'declined', 'closed'))` |
+| `request_key` | `uuid` | `NOT NULL CONSTRAINT order_cancel_requests_request_key_key UNIQUE` |
+| `request_fingerprint` | `text` | `NOT NULL` |
+| `customer_note` | `text` | `CHECK (pg_catalog.char_length(customer_note) <= 300)`（ご連絡事項。空白だけは持たない＝空） |
+| `requested_at` | `timestamptz` | `NOT NULL DEFAULT pg_catalog.now()` |
+| `requested_by` | `uuid` | `NOT NULL`（お客様） |
+| `decline_reason` | `text` | `CHECK (decline_reason IN ('window_passed', 'final_sale', 'other'))` |
+| `decline_message` | `text` | `CHECK (pg_catalog.char_length(decline_message) <= 1000)` |
+| `declined_at`・`declined_by` | `timestamptz`・`uuid` | お断り |
+| `resolved_at`・`resolved_by` | `timestamptz`・`uuid` | 解決 |
+| `resolved_refund_id` | `uuid` | `REFERENCES public.order_refunds (id) ON DELETE RESTRICT`（品を外した返金） |
+| `resolved_by_cancel_at` | `timestamptz` | 品を外した注文の取消（未入金の取消・支払い済みのキャンセル）を確かめた時刻 |
+| `closed_at`・`closed_by` | `timestamptz`・`uuid` | 解決済みにする |
+
+表の CHECK `order_cancel_requests_state_check`:
+
+```sql
+CHECK (
+  (status = 'requested' AND declined_at IS NULL AND resolved_at IS NULL AND closed_at IS NULL)
+  OR (status = 'declined' AND declined_at IS NOT NULL AND decline_reason IS NOT NULL AND decline_message IS NOT NULL)
+  OR (status = 'resolved' AND resolved_at IS NOT NULL AND ((resolved_refund_id IS NOT NULL) <> (resolved_by_cancel_at IS NOT NULL)))
+  OR (status = 'closed' AND closed_at IS NOT NULL)
+)
+```
+
+索引: `order_cancel_requests_open_idx`（`UNIQUE ON (order_id) WHERE status = 'requested'`。開いている申し込みは注文に1つ）、`order_cancel_requests_order_idx ON (order_id, requested_at DESC)`、`order_cancel_requests_refund_idx ON (resolved_refund_id) WHERE resolved_refund_id IS NOT NULL`。
+
+5. `public.order_cancel_request_lines`
+
+| 列 | 型 | 決まり |
+|---|---|---|
+| `id` | `uuid` | `PRIMARY KEY DEFAULT pg_catalog.gen_random_uuid()` |
+| `cancel_request_id` | `uuid` | `NOT NULL REFERENCES public.order_cancel_requests (id) ON DELETE RESTRICT` |
+| `order_item_id` | `uuid` | `NOT NULL REFERENCES public.order_items (id) ON DELETE RESTRICT` |
+| `quantity` | `integer` | `NOT NULL CHECK (quantity >= 1)` |
+
+制約: `order_cancel_request_lines_request_item_key UNIQUE (cancel_request_id, order_item_id)`。索引: `order_cancel_request_lines_order_item_idx ON (order_item_id)`（外部キーの索引）。
+
+6. 守り（トリガー。エラーの文字は段1に揃える）
+
+| 表 | 動き | 関数（新規） | 断る時の文字 |
+|---|---|---|---|
+| `order_return_photo_uploads` | 削除・TRUNCATE を断る。更新は `attached_at`・`purged_at` が空から値へ進む時だけ（ほかの列が変わる・値から別の値・値から空は断る） | `private.guard_return_photo_upload_change()` | 削除 `ORDER_RETURN_APPEND_ONLY`、更新 `ORDER_RETURN_IMMUTABLE` |
+| `order_return_photos` | 同じ。更新は `purged_at` が空から値へ進む時だけ | `private.guard_return_photo_change()` | 同じ |
+| `order_cancel_requests` | 削除・TRUNCATE を断る。更新は `status`・`decline_reason`・`decline_message`・`declined_at`・`declined_by`・`resolved_at`・`resolved_by`・`resolved_refund_id`・`resolved_by_cancel_at`・`closed_at`・`closed_by` だけ。状態は `requested` → `resolved`・`declined`・`closed` だけ | `private.guard_order_cancel_request_change()` | 削除 `ORDER_CANCEL_REQUEST_APPEND_ONLY`、列 `ORDER_CANCEL_REQUEST_IMMUTABLE`、状態 `ORDER_CANCEL_REQUEST_INVALID_TRANSITION` |
+| `order_cancel_request_lines` | 更新・削除・TRUNCATE を断る。足す時は、品がその申し込みの注文の品であること | `private.reject_order_cancel_request_line_change()`・`private.check_cancel_request_line_order()` | `ORDER_CANCEL_REQUEST_APPEND_ONLY`・`CANCEL_REQUEST_LINE_NOT_IN_ORDER` |
+| `order_return_lines`（段1） | 段1のトリガー `order_return_lines_no_change`（更新・削除を断る）を消し、削除だけを断る `order_return_lines_no_delete`（`private.reject_order_return_record_change()`）と、更新を守る `order_return_lines_review_guard`（新しい関数）を作る。更新は、変わる列が `resolution`・`exchange_variant_id`・`exchange_method` の中だけで、親の返品の状態が `requested` の時だけ許す。TRUNCATE のトリガーは段1のまま | `private.guard_order_return_line_change()` | `ORDER_RETURN_APPEND_ONLY` |
+| `order_returns`（段1） | 段1の `private.guard_order_return_change()` を作り直す。変えてよい列は段1のまま。ただし、状態が `requested` から `open` に進む更新でだけ、`return_method`・`return_shipping_payer`・`return_carrier`・`return_tracking_number`・`return_shipping_fee`・`restocking_fee_percent`・`exchange_fee`・`exchange_shipping_fee`・`notify_customer`・`shop_note` も変えてよい。状態の移り方は段1のまま | `private.guard_order_return_change()`（作り直し） | 段1のまま |
+
+7. `private.order_email_outbox`（段1の表に足す）
+   - 列 `cancel_request_id uuid REFERENCES public.order_cancel_requests (id) ON DELETE RESTRICT`
+   - `order_email_outbox_kind_check` を作り直す（今の10種類＋`return_requested`・`return_declined`・`return_request_shop`・`cancel_request_received`・`cancel_request_declined`・`cancel_request_shop`）
+   - `order_email_outbox_variant_check` を作り直す（新しい6種類は `variant IS NULL`。ほかは段1のまま）
+   - `order_email_outbox_return_check` を作り直す:
+
+```sql
+CHECK (
+  (kind IN ('return_accepted', 'return_requested', 'return_declined', 'return_request_shop')
+    AND return_id IS NOT NULL AND return_receipt_id IS NULL)
+  OR (kind IN ('return_received', 'return_sent_back', 'return_refund_pending_shop')
+      AND return_id IS NOT NULL AND return_receipt_id IS NOT NULL)
+  OR (kind = 'refund' AND (return_receipt_id IS NULL OR return_id IS NOT NULL)
+      AND ((variant = 'return') = (return_id IS NOT NULL)))
+  OR (kind NOT IN ('return_accepted', 'return_requested', 'return_declined', 'return_request_shop',
+                   'return_received', 'return_sent_back', 'return_refund_pending_shop', 'refund')
+      AND return_id IS NULL AND return_receipt_id IS NULL)
+)
+```
+
+   - 新しい CHECK `order_email_outbox_cancel_request_check`: `CHECK ((kind IN ('cancel_request_received', 'cancel_request_declined', 'cancel_request_shop')) = (cancel_request_id IS NOT NULL))`
+   - 一意の索引: 段1の `order_email_outbox_auto_return_idx` を消して、同じ名前で `ON private.order_email_outbox (return_id, kind) WHERE origin = 'auto' AND kind IN ('return_accepted', 'return_requested', 'return_declined', 'return_request_shop')` に作り直す。新しい `order_email_outbox_auto_cancel_request_idx ON private.order_email_outbox (cancel_request_id, kind) WHERE origin = 'auto' AND cancel_request_id IS NOT NULL`。`order_email_outbox_auto_once_idx` を消して、同じ名前で `ON private.order_email_outbox (order_id, kind) WHERE origin = 'auto' AND kind <> 'shipped' AND refund_id IS NULL AND kind NOT IN ('return_accepted', 'return_received', 'return_sent_back', 'return_refund_pending_shop', 'return_requested', 'return_declined', 'return_request_shop', 'cancel_request_received', 'cancel_request_declined', 'cancel_request_shop')` に作り直す
+   - `private.enqueue_order_email(uuid, text, text, uuid, uuid)` を作り直す。本文は段1の移行 C（`20261013001143_order_return_receipts.sql`）の本文のままで、最後の枝の `ON CONFLICT (order_id, kind) WHERE …` の条件だけを上の `order_email_outbox_auto_once_idx` の条件と同じ字にする
+
+8. 写真の置き場: `INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types) VALUES ('return-photos', 'return-photos', false, 10485760, ARRAY['image/jpeg', 'image/png']) ON CONFLICT (id) DO NOTHING;`。`storage.objects` の方針は作らない（読み書きは service_role と署名つきの送り先・リンクだけ）
+
+9. 見回りの印: `public.ops_job_heartbeats` の `ops_job_heartbeats_job_check` を作り直し、今の5つ（`webhook_worker`・`order_sweep`・`stripe_reconcile`・`order_email_worker`・`order_email_delivery_check`）に `return_photo_purge` を足す
+
+10. RLS と権限: 新しい4つの表は段1の返品の表と同じ（RLS を有効、`anon`・`authenticated` を RESTRICTIVE の方針 `deny direct client access` で全部拒む、`PUBLIC`・`anon`・`authenticated`・`service_role` から全部外し、`service_role` に SELECT だけ）
+
+`private.guard_order_return_line_change()` は親が requested の間に解決の3列だけを許す。承認の関数は行を更新してから親を open にする。`private.guard_order_cancel_request_change()` は requested 以外の行の同じ状態への更新も拒否する。公開の書く関数だけを service_role が実行し、新4表は読むだけである。`public.claim_order_email(integer)` は答えの最後に `cancel_request_id uuid` を足して作り直す。`public.request_order_email_resend` は作り直さず、新6種類を管理画面の再送の窓口が DB より先に拒否する。
 
 ### 3.4 決済・下書き
 
@@ -978,6 +1124,19 @@ erDiagram
 | `private.order_email_outbox.return_id` | `public.order_returns(id)` | `uuid` / 可 | 0..N | `RESTRICT` | [E-3 移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) |
 | `private.order_email_outbox.return_receipt_id` | `public.order_return_receipts(id)` | `uuid` / 可 | 0..N | `RESTRICT` | [E-3 移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) |
 
+### 4.3.1 お客様の申し込みの追加8 FK（E-3 段2）
+
+| 参照元 | 参照先 | NULL | 親からの多重度 | 削除動作 |
+| --- | --- | --- | --- | --- |
+| `public.order_return_photo_uploads.order_id` | `public.orders.id` | 不可 | 0..多 | RESTRICT |
+| `public.order_return_photos.return_line_id` | `public.order_return_lines.id` | 不可 | 0..多 | RESTRICT |
+| `public.order_return_photos.upload_id` | `public.order_return_photo_uploads.id` | 不可 | 0..1（UNIQUE） | RESTRICT |
+| `public.order_cancel_requests.order_id` | `public.orders.id` | 不可 | 0..多 | RESTRICT |
+| `public.order_cancel_requests.resolved_refund_id` | `public.order_refunds.id` | 可 | 0..多 | RESTRICT |
+| `public.order_cancel_request_lines.cancel_request_id` | `public.order_cancel_requests.id` | 不可 | 0..多 | RESTRICT |
+| `public.order_cancel_request_lines.order_item_id` | `public.order_items.id` | 不可 | 0..多 | RESTRICT |
+| `private.order_email_outbox.cancel_request_id` | `public.order_cancel_requests.id` | 可 | 0..多 | RESTRICT |
+
 ### 4.4 決済記録・Checkout 下書き
 
 | 子テーブル.FK 列 | 参照先 | 型 / NULL可 | 親あたりの子 | ON DELETE | 定義元 |
@@ -1065,14 +1224,15 @@ erDiagram
 - [グループ C の移行](../../../supabase/migrations/20261008055720_checkout_order_owner_binding.sql)は、2 つのトリガーで持ち主の決まりを DB に置く。`checkout_drafts.buyer_user_id` は作った後に変えられない（`checkout_drafts_buyer_immutable`、例外 `CHECKOUT_DRAFT_BUYER_IMMUTABLE`）。`orders.user_id` は空から会員へだけ書け、会員から別の会員への付け替えは `ORDER_OWNER_IMMUTABLE` で断る（`orders_owner_immutable`。`SECURITY DEFINER` で `profiles` を見る）。会員から空への更新は、その会員の `profiles` の行が無い時、つまり会員を消して FK の `ON DELETE SET NULL` が空にする時だけ通る。
 - [グループ E-1 の移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql) は、発送した数・仕上がった数を、変えられない `order_items` ではなく 3 つの新しい表に持つ（商品ごとの数は `private.order_line_fulfillment` の 1 か所で数え、`shipped ≤ completed ≤ quantity` を DB の関数とトリガーで守る）。`orders.shipped_at`・`shipping_carrier`・`tracking_number` は「全部の商品を発送した時」の値として残し、発送の取消で未発送が出たら空に戻す（`shipped_at` で戻し先を決める返金の取り消しの決まりが、そのまま使える）。`private.order_email_outbox.fulfillment_id` は、種類が `shipped` の行だけが持つ（`(kind = 'shipped') = (fulfillment_id IS NOT NULL)` の CHECK）。
 - [グループ E-2 の移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) は、返金を `order_refunds`・`order_refund_lines` に1件ずつ持つ。`orders.refunded_amount`（成功した返金の合計）の意味は変えず、全額の判定は受け取った額 `orders.paid_amount` で行い（支払額が注文の合計と違う注文でも、全部返す・全額でキャンセルする、を正しく決めるため）、状態の移り方（返金の合計が全額に届いたらキャンセル）だけは、受け取った額が0か空の注文を注文の合計で比べる（`COALESCE(NULLIF(paid_amount, 0), total_amount)`。返金が0円のままキャンセルにならないため）。CHECK `orders_refunded_amount_range` の上限は `GREATEST(total_amount, COALESCE(paid_amount, 0))` にした。`private.order_email_outbox.refund_id` は、種類が `refund` の行と、返金に結び付く支払い済みのキャンセルのお知らせ（種類 `canceled`・書き分け `paid`）の行だけが持つ。前の返金の関数 `public.apply_order_refund_projection` は [移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql) で消し、結果を書く関数に置き換えた。
-- [グループ E-3 の移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) は、返品を `order_returns`・`order_return_lines` に、受け取りを `order_return_receipts`・`order_return_receipt_lines` に持つ。返品の行（`order_return_lines`）は作った後に数も解決も変えず、実際に決まった解決（在庫不足で作って送るに変えた・店長が返金に変えた）は受け取りの商品の扱い（`resolution`・`exchange_method`）に残す。商品ごとの返品できる数は `private.order_line_return_counts` の1か所で数え、E-2 の返金の発送後に返せる数も `s − ra − rq − op − rw − ex` にした。返金待ち（rw）と覆いは、返品の行ごとの数を出す本体 `private.order_return_line_states_core` の1か所で数える（未保存の受け取りの明細も足して数えられるので、受け取りの関数は受け取りの前後の返金待ちの差を「この受け取りで返金待ちが増える数」として出す。保存済みの記録だけを数える `private.order_return_line_states` は、これを空の明細で呼ぶ）。「届かない」で閉じた後に開き直して受け取った返金の品は、その品が「届かない」だった間（届かないの記録から次の開き直しまで、両端を含む）に作ったふつうの返金（道が `return` 以外の発送後の返金）だけの当て先として先に数える（二重の返金を避ける側。返し足りない時は、ふつうの返金の画面で選べる数が同じだけ増える）。ふつうの返金を始めた後・結果を書いた後・エラーにした後も、その注文の受付中の返品の状態を確かめ直す（鍵の順は注文 → 返品 → 返金）。交換の品は `order_items` に値段0の行（`line_kind = 'exchange'`）として足し、元の支払額を `exchange_paid_amount` に持つ。`private.order_email_outbox` の自動の行の一意の索引は、返品の4つの種類を外して作り直した（1つの注文に返品が何回もあるため）。2026-10-13 に本番へ適用済み（20261012235910・20261013000456・20261013001143）。
+- [グループ E-3 の移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) は、返品を `order_returns`・`order_return_lines` に、受け取りを `order_return_receipts`・`order_return_receipt_lines` に持つ。返品の行（`order_return_lines`）は数・理由・詳しい内容・ご希望を変えず、親が requested の間だけ承認で解決の3列を変えられ、open の後は変えない、実際に決まった解決（在庫不足で作って送るに変えた・店長が返金に変えた）は受け取りの商品の扱い（`resolution`・`exchange_method`）に残す。商品ごとの返品できる数は `private.order_line_return_counts` の1か所で数え、E-2 の返金の発送後に返せる数も `s − ra − rq − op − rw − ex` にした。返金待ち（rw）と覆いは、返品の行ごとの数を出す本体 `private.order_return_line_states_core` の1か所で数える（未保存の受け取りの明細も足して数えられるので、受け取りの関数は受け取りの前後の返金待ちの差を「この受け取りで返金待ちが増える数」として出す。保存済みの記録だけを数える `private.order_return_line_states` は、これを空の明細で呼ぶ）。「届かない」で閉じた後に開き直して受け取った返金の品は、その品が「届かない」だった間（届かないの記録から次の開き直しまで、両端を含む）に作ったふつうの返金（道が `return` 以外の発送後の返金）だけの当て先として先に数える（二重の返金を避ける側。返し足りない時は、ふつうの返金の画面で選べる数が同じだけ増える）。ふつうの返金を始めた後・結果を書いた後・エラーにした後も、その注文の受付中の返品の状態を確かめ直す（鍵の順は注文 → 返品 → 返金）。交換の品は `order_items` に値段0の行（`line_kind = 'exchange'`）として足し、元の支払額を `exchange_paid_amount` に持つ。`private.order_email_outbox` の自動の行の一意の索引は、返品の4つの種類を外して作り直した（1つの注文に返品が何回もあるため）。2026-10-13 に本番へ適用済み（20261012235910・20261013000456・20261013001143）。
+- E-3 段2の最終構造は、4表と items.return_ineligible、outbox.cancel_request_id、承認の1回だけの更新、返品ごと・種類ごと／キャンセルの申し込みごと・種類ごとのメールの索引、非公開 return-photos を含む。写真の実体の消去は Storage API、DB の行は消さない。本番の適用状況は未確認（本番へは push の後に当てる）。
 - 2026-10-03 の基準範囲にはテーブルの DROP や FK の DROP / 差し替えはない。2026-10-08 の移行 A は旧カート・お気に入りの表を作り直す。一方、CHECK、通常列、UNIQUE、RPC の変更はあるため、基準 SQL だけでは最終構造を表せない。
 
 ## 6. 現行コードの追加依存とビュー
 
 ### 6.1 現行マイグレーション列にない 3 テーブル
 
-以下の 3 テーブルは現行の `.from()` 呼び出しに存在するが、`supabase/migrations/` の基準 SQL と後続変更には CREATE TABLE がない。定義は旧 `migrations/` に存在するため、**現行コードの依存と旧 SQL の構造**として示す。第 2〜4 節の76テーブル・94 FKには加算していない。実 DB に存在するか、旧 SQL のとおりの制約があるかは未確認である。
+以下の 3 テーブルは現行の `.from()` 呼び出しに存在するが、`supabase/migrations/` の基準 SQL と後続変更には CREATE TABLE がない。定義は旧 `migrations/` に存在するため、**現行コードの依存と旧 SQL の構造**として示す。第 2〜4 節の80テーブル・102 FKには加算していない。実 DB に存在するか、旧 SQL のとおりの制約があるかは未確認である。
 
 | 現行コードの参照テーブル | 旧 SQL の PK / UNIQUE | 旧 SQL の FK | 定義元 / 現行の参照元 |
 | --- | --- | --- | --- |
