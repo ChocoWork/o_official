@@ -79,6 +79,7 @@ function buildCsp(nonce: string): string {
     'https://placehold.co',
     'https://readdy.ai',
     'https://*.readdy.ai',
+    ...(supabaseOrigin ? [supabaseOrigin] : []),
     'https://*.supabase.co',
     'https://q.stripe.com',
     'https://*.stripe.com',

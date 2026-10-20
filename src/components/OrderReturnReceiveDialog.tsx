@@ -91,6 +91,8 @@ const UNKNOWN_RECEIVE_MESSAGE =
 const CONSULT_HINT =
   '着た跡や付属品の不足などで、お客様と相談して額を決める時に選びます。受け取りだけを記録し、返品は「返金待ち」になります。';
 const SUPPORT_REFUND_NOTICE = '返金は店長が行います（受け取ると「返金待ち」になります）。';
+// サポートが、お客様の申し込みの返品（返送不要でない）を受け取る時の相談の選びの言葉（C-5）。今返金の言葉は店長の選びと同じ「計算どおり {額} を返金する」
+const SUPPORT_CONSULT_LABEL = '額を相談してから返金する（店長が額を決めます）';
 const MAKE_REASON = '在庫が足りないため、作ってお送りします。';
 const CHOOSE_NOTICE = '在庫が足りません。「作って送る」か「返金に変える」を選んでください。';
 const SUPPORT_STOCK_NOTICE = '在庫が足りません。この品は店長が受け取ります。';
@@ -393,8 +395,11 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
     exchangeShippingFee: detail.fees.exchangeShippingFee,
     shippingRefund: shippingAmount,
   });
-  // 返金の品が無ければ none。サポートは今返金できないので、返金の品があれば相談（返金待ち）
-  const effectiveChoice: RefundChoice = refundUnits === 0 ? 'none' : canRefund ? refundChoice : 'consult';
+  // サポート（返金の権限が無い人）の今返金は、お客様の申し込みの返品（返送不要でない）を受け取る時だけ許される（P9。DB も同じ条件で断る）。
+  // 額・送料・在庫不足の上書きは変えられず、窓口でも DB でも断られるので、画面は入力を出さず、額は DB が計算する
+  const supportAutoRefund = !canRefund && detail.source === 'customer_request' && detail.returnMethod !== 'not_required';
+  // 返金の品が無ければ none。サポートは、自動の返金が許される返品なら今返金か相談を選べ、ほかの返品は相談（返金待ち）
+  const effectiveChoice: RefundChoice = refundUnits === 0 ? 'none' : canRefund || supportAutoRefund ? refundChoice : 'consult';
   const amount = Math.min(refundableAmount, amountEntered ?? preview.refundAmount);
   const breakdownRows: Array<[string, string]> = [['商品', formatYen(preview.itemsAmount)]];
   if (preview.fees.returnShipping > 0) breakdownRows.push(['返送料', `${MINUS}${formatYen(preview.fees.returnShipping)}`]);
@@ -430,7 +435,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
     exchangeUnits,
     sentBackUnits,
     refundChoice: effectiveChoice,
-    refundAmount: amount,
+    refundAmount: canRefund ? amount : preview.refundAmount,
     actorCanRefund: canRefund,
   });
   const submitLabel = step === 'missing' ? '返品を終える' : step === 'confirm' ? (sentBackUnits > 0 ? 'お返しする' : '記録する') : formLabel;
@@ -455,8 +460,8 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
     }),
     refundChoice: effectiveChoice,
     // 見込みと同じ額なら送らない（DB が同じ式で計算する）。手で直した額と、返せる額で切った額だけを送る
-    refundAmount: effectiveChoice === 'now' && amount !== preview.refundAmount ? amount : null,
-    refundShippingAmount: effectiveChoice === 'now' ? shippingAmount : 0,
+    refundAmount: effectiveChoice === 'now' && canRefund && amount !== preview.refundAmount ? amount : null, // サポートは額を送らない（DB が計算する。P9）
+    refundShippingAmount: effectiveChoice === 'now' && canRefund ? shippingAmount : 0,
     note: null,
     // お返しのメッセージを伝えるため、お返しを含む時は必ず送る
     notifyCustomer: sentBackUnits > 0 ? true : notifyCustomer,
@@ -694,10 +699,42 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
                   </div>
                 </fieldset>
               ) : null}
-              {refundUnits > 0 && !canRefund ? (
+              {refundUnits > 0 && supportAutoRefund ? (
+                <fieldset className="space-y-2">
+                  <legend className="font-acumin lk-text-sm text-black">返金</legend>
+                  {refundChoice === 'now' ? (
+                    <p className="font-acumin lk-text-sm text-black">{`受け取ると、計算どおり ${formatYen(preview.refundAmount)} を自動で返金します（額は変えられません）。`}</p>
+                  ) : null}
+                  <label className="flex min-h-9 cursor-pointer items-center gap-2">
+                    <input
+                      type="radio"
+                      name="return-receive-refund-choice"
+                      value="now"
+                      className="h-4 w-4 accent-black"
+                      checked={refundChoice === 'now'}
+                      disabled={stopped}
+                      onChange={() => setRefundChoice('now')}
+                    />
+                    <span className="font-acumin lk-text-sm text-black">{`計算どおり ${formatYen(preview.refundAmount)} を返金する`}</span>
+                  </label>
+                  <label className="flex min-h-9 cursor-pointer items-center gap-2">
+                    <input
+                      type="radio"
+                      name="return-receive-refund-choice"
+                      value="consult"
+                      className="h-4 w-4 accent-black"
+                      checked={refundChoice === 'consult'}
+                      disabled={stopped}
+                      onChange={() => setRefundChoice('consult')}
+                    />
+                    <span className="font-acumin lk-text-sm text-black">{SUPPORT_CONSULT_LABEL}</span>
+                  </label>
+                </fieldset>
+              ) : null}
+              {refundUnits > 0 && !canRefund && !supportAutoRefund ? (
                 <p className="font-acumin lk-text-sm text-black">{SUPPORT_REFUND_NOTICE}</p>
               ) : null}
-              {effectiveChoice === 'now' ? (
+              {effectiveChoice === 'now' && canRefund ? (
                 <ReturnRefundFields
                   idPrefix="return-receive"
                   rows={breakdownRows}
@@ -715,6 +752,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
                 />
               ) : null}
 
+              {effectiveChoice === 'now' && !canRefund ? feeDueNotice : null}
               {effectiveChoice === 'none' && feeDuePreview > 0 ? (
                 <div className="space-y-2">
                   <dl className="space-y-1 border-t border-[#d4d4d4] pt-3">

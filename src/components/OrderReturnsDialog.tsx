@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   OrderReturnCancelDialog,
   OrderReturnFeePaymentDialog,
@@ -11,6 +11,8 @@ import {
 import OrderReturnCreateForm, { type CreateReturnResponse } from '@/components/OrderReturnCreateForm';
 import OrderReturnReceiveDialog from '@/components/OrderReturnReceiveDialog';
 import OrderReturnRefundDialog from '@/components/OrderReturnRefundDialog';
+import OrderReturnReviewDialog from '@/components/OrderReturnReviewDialog';
+import { requestedWishText } from '@/components/ReturnDialogParts';
 import { Button } from '@/components/ui/Button/Button';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { StatusBadge, type StatusBadgeTone } from '@/components/ui/StatusBadge/StatusBadge';
@@ -58,8 +60,8 @@ type OrderReturnsDialogProps = {
 
 type OrderReturnsDialogBodyProps = Omit<OrderReturnsDialogProps, 'open'>;
 
-/** 返品の欄から開く、返品ごとの操作の画面（Task 9 の部品） */
-type SubDialogKind = 'receive' | 'refund' | 'inspect' | 'cancel' | 'reopen' | 'fee_payment' | 'release_exchange';
+/** 返品の欄から開く、返品ごとの操作の画面（Task 9 の部品と、段2の申し込みを確かめる画面） */
+type SubDialogKind = 'review' | 'receive' | 'refund' | 'inspect' | 'cancel' | 'reopen' | 'fee_payment' | 'release_exchange';
 
 /** 開いている画面。「返品を作る」か、返品ごとの操作。何も開いていない間だけ、この返品の欄を出す */
 type OpenScreen = { kind: 'create' } | { kind: SubDialogKind; returnId: string };
@@ -67,6 +69,7 @@ type OpenScreen = { kind: 'create' } | { kind: SubDialogKind; returnId: string }
 const LOAD_FAILURE_MESSAGE = '返品の情報を読み込めませんでした。';
 const EMPTY_MESSAGE = 'この注文にはまだ返品がありません。';
 const CREATED_NOTICE = '返品を作りました。';
+const APPROVED_NOTICE = '承認しました。';
 
 const DISPLAY_STATUS_TONES: Record<ReturnDisplayStatus, StatusBadgeTone> = {
   requested: 'warning',
@@ -105,6 +108,7 @@ function progressTexts(progress: OrderReturnLineDetail['progress']): string[] {
 }
 
 type ReturnActions = {
+  review: boolean;
   receive: boolean;
   inspect: boolean;
   refund: boolean;
@@ -117,12 +121,26 @@ type ReturnActions = {
 /**
  * 返品の状態に合うボタン（設計書 8-1）。DB が最後に確かめるので、ここは「出すか」だけを決める。
  * 額を決めて返金・手数料の記録・支払いを待たずに送るは、権限 admin.orders.refund を持つ人（canRefund）にだけ出す。
+ * 申し込み中（requested）の返品は「申し込みを確かめる」だけを出す（承認かお断りが済むまで、受け取り・返金・取消の対象ではない）。
  */
 function returnActionsOf(detail: OrderReturnDetail, canRefund: boolean): ReturnActions {
+  if (detail.status === 'requested') {
+    return {
+      review: true,
+      receive: false,
+      inspect: false,
+      refund: false,
+      recordFee: false,
+      releaseExchange: false,
+      cancel: false,
+      reopen: false,
+    };
+  }
   const sum = (pick: (line: OrderReturnLineDetail) => number) => detail.lines.reduce((total, line) => total + pick(line), 0);
   const isOpen = detail.status === 'open';
   const awaitingFee = detail.fees.feeDueAmount > 0 && detail.fees.feeReceivedAt === null;
   return {
+    review: false,
     receive: isOpen && sum((line) => line.progress.unprocessed) > 0,
     inspect: isOpen && sum((line) => line.progress.pendingInspection) > 0,
     // 完了した返品でも出す: 返品の返金が後で失敗すると、覆いが外れて返金待ちの品が戻り、返品の状態は返金待ちになる（P21）。
@@ -138,15 +156,19 @@ function returnActionsOf(detail: OrderReturnDetail, canRefund: boolean): ReturnA
   };
 }
 
-function ReturnLineRow({ line }: { line: OrderReturnLineDetail }) {
+function ReturnLineRow({ line, requested }: { line: OrderReturnLineDetail; requested: boolean }) {
   const label = lineLabel({ name: line.itemName, color: line.color, size: line.size });
   const reason = RETURN_REASON_LABELS[line.reason];
   const progress = progressTexts(line.progress);
+  // 申し込みの間の解決は仮の値なので、お客様のご希望を出す（承認の時にお店が決める）。写真の数も、申し込みの間だけ出す
+  const wish = requested ? requestedWishText(line) : null;
+  const photoCount = requested ? line.photos.length : 0;
   return (
     <li className="space-y-1">
       <p className="font-acumin lk-text-sm text-black">{`${label} × ${line.quantity}`}</p>
       <p className="font-acumin lk-text-3xs text-[#474747]">{`理由: ${reason}${line.reasonNote ? `（${line.reasonNote}）` : ''}`}</p>
-      <p className="font-acumin lk-text-3xs text-[#474747]">{resolutionText(line)}</p>
+      <p className="font-acumin lk-text-3xs text-[#474747]">{wish ?? resolutionText(line)}</p>
+      {photoCount > 0 ? <p className="font-acumin lk-text-3xs text-[#474747]">{`写真 ${photoCount}枚`}</p> : null}
       {progress.length > 0 ? (
         <p className="flex flex-wrap gap-x-3 font-acumin lk-text-3xs text-[#474747]">
           {progress.map((text) => (
@@ -167,7 +189,9 @@ type ReturnCardProps = {
 function ReturnCard({ detail, canRefund, onOpen }: ReturnCardProps) {
   const actions = returnActionsOf(detail, canRefund);
   const awaitingFee = detail.fees.feeDueAmount > 0 && detail.fees.feeReceivedAt === null;
+  const requested = detail.status === 'requested';
   const buttons: Array<{ show: boolean; kind: SubDialogKind; label: string }> = [
+    { show: actions.review, kind: 'review', label: '申し込みを確かめる' },
     { show: actions.receive, kind: 'receive', label: '受け取る' },
     { show: actions.inspect, kind: 'inspect', label: '検品を終える' },
     { show: actions.refund, kind: 'refund', label: '額を決めて返金する' },
@@ -194,7 +218,7 @@ function ReturnCard({ detail, canRefund, onOpen }: ReturnCardProps) {
         </div>
         <ul className="space-y-2">
           {detail.lines.map((line) => (
-            <ReturnLineRow key={line.id} line={line} />
+            <ReturnLineRow key={line.id} line={line} requested={requested} />
           ))}
         </ul>
         {awaitingFee ? (
@@ -226,11 +250,15 @@ type ReturnSubDialogProps = {
   onClose: () => void;
   onDone: (notice?: string) => void;
   onUncertain: () => void;
+  /** 申し込みを承認した（review の画面だけが呼ぶ）。返送不要で承認したかを渡す */
+  onApproved: (input: { notRequired: boolean }) => void;
 };
 
 /** 返品ごとの操作の画面を1つ開く。どれも注文と返品の番号だけを受け、自分で中身を読む（Task 9） */
-function ReturnSubDialog({ kind, ...props }: ReturnSubDialogProps) {
+function ReturnSubDialog({ kind, onApproved, ...props }: ReturnSubDialogProps) {
   switch (kind) {
+    case 'review':
+      return <OrderReturnReviewDialog {...props} onApproved={onApproved} />;
     case 'receive':
       return <OrderReturnReceiveDialog {...props} />;
     case 'refund':
@@ -251,6 +279,8 @@ function ReturnSubDialog({ kind, ...props }: ReturnSubDialogProps) {
 /**
  * 注文ごとの返品の画面（グループ E-3 設計書 8-1）。一覧の「返品」のボタンから開く。
  * 開く時に返品の中身を読み、返品ごとに番号・状態・品・理由・解決・処理の数・返金・手数料と、状態に合うボタンを出す。
+ * 申し込み中の返品は「申し込みを確かめる」を出し、一覧の同じ名前のボタンから開いた時（最初の読み込みで申し込み中の返品がある時）は、
+ * 返品の欄を経ずにその返品の確かめる画面を開く。承認・お断りの後は、知らせを出して読み直す。
  * 下の「返品を作る」で返品を作る画面を開く。受け取り・額を決めて返金・検品・取消などは、それぞれの画面を開く。
  * 画面は同時に1つだけ開く（Dialog は重ねると Esc で下の画面が閉じる）ので、操作の画面を開いている間はこの欄を出さない。
  * 操作の画面が閉じたら、中身を読み直す。開くたびに作り直す（open が偽の間は外し、key に注文を使う）。
@@ -268,6 +298,8 @@ function OrderReturnsDialogBody({ orderId, canRefund, onClose, onChanged }: Orde
   const [reloadCount, setReloadCount] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [screen, setScreen] = useState<OpenScreen | null>(null);
+  // 最初の読み込みの時だけ、申し込み中の返品の確かめる画面を開く。読み直しのたびには開かない（閉じた画面が勝手に戻らないように）
+  const autoReviewDoneRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -281,6 +313,11 @@ function OrderReturnsDialogBody({ orderId, canRefund, onClose, onChanged }: Orde
       }
       setLoadError(null);
       setData(result.data);
+      if (!autoReviewDoneRef.current) {
+        autoReviewDoneRef.current = true;
+        const target = result.data.returns.find((detail) => detail.status === 'requested');
+        if (target) setScreen({ kind: 'review', returnId: target.id });
+      }
     });
     return () => {
       active = false;
@@ -316,6 +353,14 @@ function OrderReturnsDialogBody({ orderId, canRefund, onClose, onChanged }: Orde
     onChanged();
     // 返送不要の返品は、作ってすぐ受け取りの画面を開く（設計書 5-3）
     setScreen(returnMethod === 'not_required' ? { kind: 'receive', returnId: result.returnId } : null);
+  };
+
+  // 申し込みを承認した。返送不要の返品は、承認してすぐ受け取りの画面を開く（P8）。そうでなければ返品の欄に戻る
+  const handleApproved = ({ notRequired }: { notRequired: boolean }) => {
+    setNotice(APPROVED_NOTICE);
+    setReloadCount((count) => count + 1);
+    onChanged();
+    setScreen((current) => (notRequired && current?.kind === 'review' ? { kind: 'receive', returnId: current.returnId } : null));
   };
 
   // 取消・お断りの返品は出さない（品はまた返品できる。取り消した事実は履歴の画面に残る）
@@ -391,6 +436,7 @@ function OrderReturnsDialogBody({ orderId, canRefund, onClose, onChanged }: Orde
           onClose={closeScreen}
           onDone={handleDone}
           onUncertain={handleUncertain}
+          onApproved={handleApproved}
         />
       ) : null}
     </>

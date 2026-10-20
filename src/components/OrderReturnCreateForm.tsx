@@ -327,6 +327,9 @@ function ReturnLineFields({ idPrefix, line, input, variants, disabled, onChange 
       <div role="group" aria-label={isExchangeLine ? `${label}（交換の品）` : label} className="space-y-2 border border-[#d4d4d4] p-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-acumin lk-text-sm text-black">{label}</span>
+          {line.returnIneligible ? (
+            <p className="font-acumin lk-text-3xs text-amber-800">返品不可の品です</p>
+          ) : null}
           {isExchangeLine ? (
             <TagLabel variant="outline" size="2xs">
               交換の品

@@ -7,6 +7,7 @@ import type { ReturnLoadState } from '@/hooks/useLoadedReturn';
 import type { useReturnOperation } from '@/hooks/useReturnOperation';
 import { clampQuantity } from '@/lib/orders/fulfillment/fulfillment-client';
 import { formatYen } from '@/lib/orders/refund/refund-messages';
+import type { OrderReturnLineDetail } from '@/lib/orders/returns/return-types';
 
 /** 返品の操作の画面（受け取り・額を決めて返金・検品・取消・開き直し・手数料・支払いを待たずに送る）が、7つとも受ける props */
 export type ReturnDialogProps = {
@@ -66,7 +67,12 @@ type ReturnFlowContentProps = {
   submitLabel: string;
   canSubmit: boolean;
   /** 確定と戻るの間（見た目は確定の下、戻るの上）に出す、もう1つの操作。手数料の「いただかないで終える」。省ける */
-  extraAction?: { label: string; onClick: () => void };
+  extraAction?: {
+    label: string;
+    onClick: () => void;
+    /** 省くと確定と同じく canSubmit に従う。お断りのように、確定が押せなくても押せる操作に付ける */
+    disabled?: boolean;
+  };
   children: ReactNode;
 };
 
@@ -108,7 +114,7 @@ export function ReturnFlowContent({ flow, backLabel, onBack, submitLabel, canSub
             {backLabel}
           </Button>
           {extraAction ? (
-            <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={!canSubmit} onClick={extraAction.onClick}>
+            <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={extraAction.disabled ?? !canSubmit} onClick={extraAction.onClick}>
               {extraAction.label}
             </Button>
           ) : null}
@@ -119,6 +125,19 @@ export function ReturnFlowContent({ flow, backLabel, onBack, submitLabel, canSub
       )}
     </>
   );
+}
+
+/**
+ * 申し込みの間の行に出す、お客様のご希望の文（C-5）。申し込みの間の解決は仮の値（お客様のご希望と同じ）なので、
+ * 承認の時にお店が決める解決とは分けて「ご希望」として出す。ご希望の記録が無い行（お店が作った返品）は null
+ */
+export function requestedWishText(line: Pick<OrderReturnLineDetail, 'requestedResolution' | 'requestedExchange'>): string | null {
+  if (line.requestedResolution === null) return null;
+  if (line.requestedResolution === 'refund') return 'ご希望: 返金';
+  const target = line.requestedExchange
+    ? [line.requestedExchange.color, line.requestedExchange.size].filter((part): part is string => Boolean(part)).join(' / ')
+    : '';
+  return target ? `ご希望: 交換（${target}）` : 'ご希望: 交換';
 }
 
 type ReturnNumberInputProps = {
