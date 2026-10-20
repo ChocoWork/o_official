@@ -1852,7 +1852,7 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
         sorted(['fulfillment_id', 'number', 'shipped_at', 'deadline_date', 'past_deadline', 'lines']),
       );
       expect(keysOf(materials.shipments[0].lines[0])).toEqual(
-        sorted(['order_item_id', 'item_id', 'variant_id', 'item_name', 'color', 'size', 'line_kind', 'quantity', 'returnable']),
+        sorted(['order_item_id', 'item_id', 'variant_id', 'item_name', 'color', 'size', 'line_kind', 'quantity', 'returnable', 'return_ineligible']),
       );
       expect(materials.shipments[0].lines).toEqual([
         {
@@ -1865,6 +1865,7 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
           line_kind: 'order',
           quantity: 2,
           returnable: 2,
+          return_ineligible: false,
         },
       ]);
       expect(materials.shipments[1].lines[0]).toMatchObject({ quantity: 1, returnable: 1 });
@@ -2008,6 +2009,7 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
           'id', 'number', 'status', 'source', 'display_status', 'marks', 'return_method', 'return_shipping_payer', 'return_carrier',
           'return_tracking_number', 'fees', 'first_receipt_done', 'first_exchange_receipt_done', 'shop_note', 'notify_customer',
           'created_at', 'created_by_email', 'closed_at', 'cancelled_at', 'lines', 'refunds', 'receipts', 'exchange_items',
+          'requested_at', 'approved_at', 'approved_by_email', 'declined_at', 'decline_reason', 'decline_message',
         ]),
       );
       expect(keysOf(detail.fees)).toEqual(
@@ -2052,6 +2054,7 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
       const lineKeys = sorted([
         'id', 'fulfillment_id', 'fulfillment_number', 'order_item_id', 'item_name', 'color', 'size', 'quantity', 'reason', 'reason_note',
         'resolution', 'exchange', 'progress', 'refund_amounts_by_count', 'refund_waiting_amount',
+        'customer_note', 'requested_resolution', 'requested_exchange', 'photos', 'return_ineligible',
       ]);
       const progressKeys = sorted([
         'restocked', 'not_restocked', 'pending_inspection', 'sent_back', 'missing', 'processed', 'unprocessed', 'exchanged',
