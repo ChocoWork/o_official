@@ -20,7 +20,7 @@ import {
  * 点検（設計書 2026-10-05 グループ B の 4-6）。worker と見回りの終わりに同じ点検を行う。
  * - 溜まり: 受け取ってから15分以上たって完了していない知らせ
  * - 退避: まだ知らせていない退避（まとめて1通、50件まで）
- * - 遅れ: 見回りは最後の成功から2時間、照合は25時間（一度も成功していない処理は対象にしない）
+ * - 遅れ: 見回りは最後の成功から2時間、照合は25時間、写真を消す処理は49時間（一度も成功していない処理は対象にしない）
  * 種類ごとに1時間に1回まで。送れなければ送る権利を返す。点検の1つが失敗しても、残りは続ける。
  * アプリや DB ごと止まったときは知らせが出ない（外からの見張りは入れないと決めた）。
  */
@@ -28,7 +28,7 @@ export const OPS_CHECK_LIMITS = {
   backlogAgeSeconds: 15 * 60,
   alertCooldownSeconds: 60 * 60,
   deadDigestLimit: 50,
-  staleAfterSeconds: { order_sweep: 2 * 60 * 60, stripe_reconcile: 25 * 60 * 60 },
+  staleAfterSeconds: { order_sweep: 2 * 60 * 60, stripe_reconcile: 25 * 60 * 60, return_photo_purge: 49 * 60 * 60 },
 } as const;
 
 export type OpsCheckDeps = {
@@ -40,11 +40,11 @@ export type OpsCheckDeps = {
 export type OpsCheckResult = {
   backlogAlerted: boolean;
   deadNotified: number;
-  staleAlerted: Array<'order_sweep' | 'stripe_reconcile'>;
+  staleAlerted: Array<'order_sweep' | 'stripe_reconcile' | 'return_photo_purge'>;
   failedChecks: Array<'backlog' | 'dead' | 'stale'>;
 };
 
-const STALE_JOBS = ['order_sweep', 'stripe_reconcile'] as const;
+const STALE_JOBS = ['order_sweep', 'stripe_reconcile', 'return_photo_purge'] as const;
 
 export async function sendOnce(deps: OpsCheckDeps, key: OpsAlertKey, mail: OpsAlertMail): Promise<boolean> {
   const claim = await claimAlert(deps.store, key, OPS_CHECK_LIMITS.alertCooldownSeconds);

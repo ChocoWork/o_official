@@ -67,6 +67,7 @@ const STALE_JOBS = {
   order_sweep: { label: '毎時の見回り', threshold: '2時間', runbook: RUNBOOK, section: '定期処理が止まったとき' },
   stripe_reconcile: { label: '毎晩の照合', threshold: '25時間', runbook: RUNBOOK, section: '定期処理が止まったとき' },
   order_email_worker: { label: '注文のメールの送信', threshold: '15分', runbook: ORDER_EMAIL_RUNBOOK, section: 'worker の停止' },
+  return_photo_purge: { label: '写真を消す処理', threshold: '49時間', runbook: RUNBOOK, section: '定期処理が止まったとき' },
 } as const;
 
 function formatJst(date: Date): string {

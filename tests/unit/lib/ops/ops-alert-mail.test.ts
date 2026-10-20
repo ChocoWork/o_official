@@ -119,6 +119,18 @@ describe('店への知らせのメールの文面', () => {
     });
   });
 
+  it('遅れ: 写真を消す処理は49時間と、手順書の「定期処理が止まったとき」を書く', () => {
+    expect(staleJobMail('return_photo_purge', new Date('2026-10-05T01:00:00Z'))).toEqual({
+      kind: 'job_stale', subject: '【要確認】定期処理が止まっています（写真を消す処理）',
+      lines: [
+        '写真を消す処理が、49時間以上成功していません。',
+        '最後の成功: 2026/10/05 10:00',
+        '',
+        '次にやること: 手順書（docs/06_Operations/webhook-queue-operations.md）の「定期処理が止まったとき」に沿って、定期処理の実行の記録を確かめてください。',
+      ],
+    });
+  });
+
   it('署名不正: 10分の件数と、合言葉を確かめる案内を書く', () => {
     const mail = signatureAlertMail(5);
     expect(mail.kind).toBe('webhook_signature_invalid');
@@ -379,6 +391,7 @@ describe('店への知らせのメールの文面', () => {
       backlogAlertMail([{ status: 'queued', count: 1, oldestReceivedAt: new Date(), lastErrors: [] }]),
       deadDigestMail([deadEvent(1)], 1),
       staleJobMail('order_sweep', new Date()),
+      staleJobMail('return_photo_purge', new Date()),
       signatureAlertMail(5),
       modeMismatchMail(true, false),
       recoveredOrdersMail([{ orderId: '11111111-2222-3333-4444-555555555555', reviewReason: 'recovered_from_payment', totalAmount: 100, currency: 'jpy' }]),

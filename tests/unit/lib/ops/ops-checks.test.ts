@@ -216,6 +216,8 @@ describe('runOpsChecks', () => {
     ['order_sweep', '2026-10-05T10:00:01Z', false],
     ['stripe_reconcile', '2026-10-04T11:00:00Z', true],
     ['stripe_reconcile', '2026-10-04T11:00:01Z', false],
+    ['return_photo_purge', '2026-10-03T11:00:00Z', true],
+    ['return_photo_purge', '2026-10-03T11:00:01Z', false],
   ])('%s の最後の成功が %s なら、遅れの知らせは %s', async (job, lastSucceededAt, expected) => {
     const state = emptyState();
     state.heartbeats = [heartbeat(job, lastSucceededAt)];
@@ -223,7 +225,7 @@ describe('runOpsChecks', () => {
     const send = jest.fn<Promise<boolean>, [OpsAlertMail]>().mockResolvedValue(true);
 
     const result = await runOpsChecks({ store, send, now: () => NOW });
-    expect(result.staleAlerted.includes(job as 'order_sweep' | 'stripe_reconcile')).toBe(expected);
+    expect(result.staleAlerted.includes(job as 'order_sweep' | 'stripe_reconcile' | 'return_photo_purge')).toBe(expected);
   });
 
   it('見回りの権利取得が失敗しても、同じ点検で照合の遅れを知らせる', async () => {
@@ -286,6 +288,58 @@ describe('runOpsChecks', () => {
     const result = await runOpsChecks({ store, send, now: () => NOW });
     expect(result.staleAlerted).toEqual([]);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('写真を消す処理が49時間以上成功していなければ、自分のキーと1時間の制限で知らせる', async () => {
+    const state = emptyState();
+    state.heartbeats = [heartbeat('return_photo_purge', '2026-10-03T10:00:00Z')];
+    const { store, calls } = fakeStore(state);
+    const send = jest.fn<Promise<boolean>, [OpsAlertMail]>().mockResolvedValue(true);
+
+    const result = await runOpsChecks({ store, send, now: () => NOW });
+
+    expect(result.staleAlerted).toEqual(['return_photo_purge']);
+    expect(result.failedChecks).toEqual([]);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0].subject).toBe('【要確認】定期処理が止まっています（写真を消す処理）');
+    expect(calls.filter((call) => call.name === 'claim_ops_alert').map((call) => call.params)).toEqual([
+      { _alert_key: 'job_stale_return_photo_purge', _cooldown_seconds: 3600 },
+    ]);
+  });
+
+  it('3つの定期処理が全部遅れたら、見回り・照合・写真を消す処理の順に、それぞれのキーで知らせる', async () => {
+    const state = emptyState();
+    state.heartbeats = [
+      heartbeat('order_sweep', '2026-10-05T09:00:00Z'),
+      heartbeat('stripe_reconcile', '2026-10-04T10:00:00Z'),
+      heartbeat('return_photo_purge', '2026-10-03T10:00:00Z'),
+    ];
+    const { store, calls } = fakeStore(state);
+    const send = jest.fn<Promise<boolean>, [OpsAlertMail]>().mockResolvedValue(true);
+
+    const result = await runOpsChecks({ store, send, now: () => NOW });
+
+    expect(result.staleAlerted).toEqual(['order_sweep', 'stripe_reconcile', 'return_photo_purge']);
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(calls.filter((call) => call.name === 'claim_ops_alert').map((call) => call.params?._alert_key)).toEqual([
+      'job_stale_order_sweep', 'job_stale_stripe_reconcile', 'job_stale_return_photo_purge',
+    ]);
+  });
+
+  it('写真を消す処理がまだ一度も成功していなければ（定期処理を登録する前）、遅れの対象にしない', async () => {
+    const state = emptyState();
+    state.heartbeats = [heartbeat('return_photo_purge', null)];
+    const { store } = fakeStore(state);
+    const send = jest.fn();
+
+    const result = await runOpsChecks({ store, send, now: () => NOW });
+
+    expect(result.staleAlerted).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('写真を消す処理の遅れの基準は49時間', () => {
+    expect(OPS_CHECK_LIMITS.staleAfterSeconds.return_photo_purge).toBe(49 * 60 * 60);
   });
 
   it('溜まりの読み出しが失敗しても、退避と遅れの点検は続ける', async () => {
