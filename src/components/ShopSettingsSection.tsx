@@ -92,6 +92,12 @@ function isShopSettings(value: unknown): value is ShopSettings {
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 const isInteger = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value);
 const isNullableString = (value: unknown): boolean => value === null || typeof value === 'string';
+const isOneOf = (value: unknown, allowed: readonly string[]): boolean => typeof value === 'string' && allowed.includes(value);
+
+/** 段2の欄の選べる値。ShopReturnSettings の型（return-types.ts）と同じ値で、窓口の答えの形の確かめに使う */
+const REQUEST_TYPES = ['returns_and_cancellations', 'returns_only', 'cancellations_only'] as const;
+const REASON_RESOLUTIONS = ['refund_and_exchange', 'exchange_only', 'refund_only'] as const;
+const REASON_PHOTO_RULES = ['none', 'optional', 'required'] as const;
 
 /** ShopReturnSettings.updated のキー（まとまりの名前）。段2の requests も、形だけは確かめる */
 const UPDATED_GROUPS = ['requests', 'window', 'shipping', 'reasons', 'fees', 'receiving'] as const;
@@ -117,14 +123,19 @@ function isReasonRow(value: unknown, reason: ReturnReason): boolean {
   return (
     isRecord(value) &&
     value.reason === reason &&
+    typeof value.shown === 'boolean' &&
+    isOneOf(value.resolutions, REASON_RESOLUTIONS) &&
     (value.outOfStockExchange === 'make' || value.outOfStockExchange === 'decline') &&
+    isOneOf(value.photo, REASON_PHOTO_RULES) &&
+    typeof value.photoInstructions === 'string' &&
     (value.shippingPayer === 'shop' || value.shippingPayer === 'customer')
   );
 }
 
 /**
- * 返品の設定の形を確かめる。確かめるのは、この画面が読む欄（段1の分）だけ。段2の欄（申し込み・注意書き・
- * 理由ごとの出す／ご希望／写真）は、画面が使わないので見ない。理由は10個そろっていること（欠けると理由ごとの行を作れない）。
+ * 返品の設定の形を確かめる。確かめるのは、この画面が読む欄（段1の分と、段2の申し込みの受付・種類・注意書き・
+ * 理由ごとの出す／ご希望／写真／案内の文）。欄の部品は保存で全部の欄を送り返すので、欠けた答えは読み込めなかった旨にする。
+ * 理由は10個そろっていること（欠けると理由ごとの行を作れない）。
  */
 function isShopReturnSettings(value: unknown): value is ShopReturnSettings {
   if (!isRecord(value)) {
@@ -145,6 +156,9 @@ function isShopReturnSettings(value: unknown): value is ShopReturnSettings {
     isInteger(value.exchangeFee) &&
     isInteger(value.exchangeShippingFee) &&
     typeof value.inspectionEnabled === 'boolean' &&
+    typeof value.requestsEnabled === 'boolean' &&
+    isOneOf(value.requestTypes, REQUEST_TYPES) &&
+    typeof value.noticeText === 'string' &&
     Array.isArray(reasons) &&
     RETURN_REASONS.every((reason) => reasons.some((row) => isReasonRow(row, reason))) &&
     isRecord(updated) &&

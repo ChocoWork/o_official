@@ -864,6 +864,17 @@ export default function ItemDetailClient({ id }: Props) {
                 </div>
               </div>
 
+              {/* 返品不可の印の付いた商品の一文（グループ E-3 段2）。商品名・価格・納期の直後に置き、購入の前に読めるようにする。
+                  在庫・納期の表示と購入の操作は変えない */}
+              {item.returnIneligible ? (
+                <p
+                  data-testid="item-return-ineligible-note"
+                  className="mt-2 lk-text-3xs leading-relaxed text-[#474747]"
+                >
+                  この商品は、初期不良・誤送を除き、返品・交換をお受けしていません
+                </p>
+              ) : null}
+
               {item.description && (
                 <div
                   data-testid="item-detail-description"

@@ -37,6 +37,8 @@ export type ItemResponse = {
   sewing_region?: string | null;
   care?: string | null;
   product_note?: string | null;
+  /** 返品不可の印（グループ E-3 段2）。窓口の古い答えには無いので省ける。無い時はオフとして扱う */
+  return_ineligible?: boolean;
   season?: 'SS' | 'AW' | null;
   status: ItemStatus;
 };
@@ -55,6 +57,8 @@ export interface ItemFormValues {
   sewingRegion?: string;
   care: string;
   productNote: string;
+  /** 返品不可の印。作る画面（最初の値なし）と、無い時はオフ */
+  returnIneligible?: boolean;
   season?: SeasonValue;
   status: ItemStatus;
   stockQuantity?: number | null;

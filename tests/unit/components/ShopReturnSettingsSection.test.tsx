@@ -16,7 +16,7 @@ const ADDRESS = {
   phone: '03-1234-5678',
 };
 
-const GROUP_NAMES = ['返送', '受付の期限', '理由ごとの設定', '手数料', '受け取り'];
+const GROUP_NAMES = ['申し込み', '返送', '受付の期限', '理由ごとの設定', '手数料', '受け取り'];
 
 const SUMMARY = '入力を確かめてください。';
 const WINDOW_DAYS_MESSAGE = '1から365までの整数（半角）で入れてください。';
@@ -28,23 +28,31 @@ const TOO_LONG_MESSAGE = '200字までで入れてください。';
 const POSTAL_CODE_MESSAGE = '郵便番号は 123-4567 の形で入れてください。';
 const PHONE_MESSAGE = '電話番号は、数字と「+」「-」だけで6〜20文字にしてください。';
 const PRESSED_WHILE_SAVING_MESSAGE = '保存の最中です。済んでから、もう一度「保存する」を押してください。';
+const NOTICE_TOO_LONG_MESSAGE = '2000字までで入れてください。';
+const PHOTO_INSTRUCTIONS_TOO_LONG_MESSAGE = '500字までで入れてください。';
 
-/** 既定の設定（仕様書 8-3 の最初の値）を保存した時に、窓口へ渡る理由ごとの行 */
+const DEFECT_PHOTO_NOTE = '傷や不具合の場所がわかる写真をお送りください';
+const SIZE_PHOTO_NOTE = 'タグの付いた状態がわかる写真をお送りください';
+
+/** 既定の設定（仕様書 8-3 の最初の値）を保存した時に、窓口へ渡る理由ごとの行（段1の2つの欄と、段2の4つの欄） */
 const DEFAULT_REASONS: ShopReturnSettingsUpdate['reasons'] = [
-  { reason: 'defective', shippingPayer: 'shop', outOfStockExchange: 'make' },
-  { reason: 'wrong_item', shippingPayer: 'shop', outOfStockExchange: 'make' },
-  { reason: 'size_too_small', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-  { reason: 'size_too_large', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-  { reason: 'color', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-  { reason: 'style', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-  { reason: 'not_as_described', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-  { reason: 'unwanted', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-  { reason: 'other', shippingPayer: 'customer', outOfStockExchange: 'decline' },
-  { reason: 'unknown', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+  { reason: 'defective', shown: true, resolutions: 'refund_and_exchange', photo: 'required', photoInstructions: DEFECT_PHOTO_NOTE, shippingPayer: 'shop', outOfStockExchange: 'make' },
+  { reason: 'wrong_item', shown: true, resolutions: 'refund_and_exchange', photo: 'required', photoInstructions: DEFECT_PHOTO_NOTE, shippingPayer: 'shop', outOfStockExchange: 'make' },
+  { reason: 'size_too_small', shown: true, resolutions: 'exchange_only', photo: 'optional', photoInstructions: SIZE_PHOTO_NOTE, shippingPayer: 'customer', outOfStockExchange: 'decline' },
+  { reason: 'size_too_large', shown: true, resolutions: 'exchange_only', photo: 'optional', photoInstructions: SIZE_PHOTO_NOTE, shippingPayer: 'customer', outOfStockExchange: 'decline' },
+  { reason: 'color', shown: false, resolutions: 'refund_and_exchange', photo: 'optional', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+  { reason: 'style', shown: false, resolutions: 'refund_and_exchange', photo: 'optional', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+  { reason: 'not_as_described', shown: false, resolutions: 'refund_and_exchange', photo: 'optional', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+  { reason: 'unwanted', shown: false, resolutions: 'refund_and_exchange', photo: 'optional', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+  { reason: 'other', shown: true, resolutions: 'refund_and_exchange', photo: 'optional', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
+  { reason: 'unknown', shown: false, resolutions: 'refund_and_exchange', photo: 'none', photoInstructions: '', shippingPayer: 'customer', outOfStockExchange: 'decline' },
 ];
 
 /** 既定の設定を何も変えずに保存した時に、窓口へ渡る中身 */
 const DEFAULT_INPUT: ShopReturnSettingsUpdate = {
+  requestsEnabled: true,
+  requestTypes: 'returns_only',
+  noticeText: '',
   returnAddress: null,
   customerPaidMethod: 'customer_ships',
   shopLabelFee: 0,
@@ -104,7 +112,7 @@ const fillAddress = () => {
 };
 
 describe('ShopReturnSettingsSection の表示', () => {
-  it('欄の見出し「返品」と、5つのまとまり（返送・受付の期限・理由ごとの設定・手数料・受け取り）を、この順に出す', () => {
+  it('欄の見出し「返品」と、6つのまとまり（申し込み・返送・受付の期限・理由ごとの設定・手数料・受け取り）を、この順に出す', () => {
     renderSection();
 
     expect(screen.getByRole('heading', { name: '返品', level: 3 })).toBeInTheDocument();
@@ -114,15 +122,17 @@ describe('ShopReturnSettingsSection の表示', () => {
     }
   });
 
-  it('段1の欄だけを出す（スイッチ4つ・選択欄22個・入力欄7つ・チェック1つ。申し込みや写真の欄は無い）', () => {
+  it('スイッチ5つ・選択欄43個・入力欄18個（複数行の欄を含む）・チェック11個を出す', () => {
     renderSection();
 
-    expect(screen.getAllByRole('switch')).toHaveLength(4);
-    // お客様の負担の時の送り方・数え始め、と、理由10個×（返送料の負担・在庫の無い交換）
-    expect(screen.getAllByRole('combobox')).toHaveLength(22);
-    // 返送先4・返送料の定額・日数・届いた日の目安（手数料の欄は、トグルがオフの間は出ない）
-    expect(screen.getAllByRole('textbox')).toHaveLength(7);
-    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+    // 申し込みの受付・「返送不要」・返品の手数料・交換の手数料と送料・要検品
+    expect(screen.getAllByRole('switch')).toHaveLength(5);
+    // 申し込みの種類・お客様の負担の時の送り方・数え始め、と、理由10個×（返送料の負担・在庫の無い交換・ご希望・写真）
+    expect(screen.getAllByRole('combobox')).toHaveLength(43);
+    // 注意書き・返送先4・返送料の定額・日数・届いた日の目安と、理由10個の写真の案内の文（手数料の欄は、トグルがオフの間は出ない）
+    expect(screen.getAllByRole('textbox')).toHaveLength(18);
+    // 「無制限」と、理由10個の「出す」
+    expect(screen.getAllByRole('checkbox')).toHaveLength(11);
   });
 
   it('保存してある値を入力欄に出す', () => {
@@ -277,7 +287,7 @@ describe('ShopReturnSettingsSection の表示', () => {
 });
 
 describe('ShopReturnSettingsSection の保存', () => {
-  it('何も変えずに保存すると、保存してある値を、窓口の形（段1の欄だけ）でそのまま渡す', async () => {
+  it('何も変えずに保存すると、保存してある値を、窓口の形（段1の14の欄と段2の3つの欄、理由の行は7つの欄）でそのまま渡す', async () => {
     const { onSave } = renderSection();
 
     fireEvent.click(saveButton());
@@ -321,6 +331,9 @@ describe('ShopReturnSettingsSection の保存', () => {
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     expect(onSave).toHaveBeenCalledWith({
+      requestsEnabled: true,
+      requestTypes: 'returns_only',
+      noticeText: '',
       returnAddress: ADDRESS,
       customerPaidMethod: 'shop_label',
       shopLabelFee: 800,
@@ -598,5 +611,278 @@ describe('ShopReturnSettingsSection の入力の確かめ', () => {
 
     expect(screen.getByLabelText('日数')).not.toBeInvalid();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+// ここから下は、グループ E-3 段2（Task 13）で足した試験。申し込みのまとまりと、理由ごとの出す・ご希望・写真・写真の案内の文
+
+const REQUESTS_LABEL = 'お客様からの申し込みを受け付ける';
+const NOTICE_LABEL = '申し込みの画面の注意書き';
+const UNKNOWN_NOT_SHOWN_NOTE = '「不明」はお客様に出しません。';
+
+/** 保存してある返品の設定の理由ごとの行を、指した理由だけ書き換えた物 */
+function savedReasons(
+  changes: Partial<Record<ReturnReason, Partial<ShopReturnSettings['reasons'][number]>>>,
+): ShopReturnSettings['reasons'] {
+  return buildShopReturnSettings().reasons.map((row) => ({ ...row, ...changes[row.reason] }));
+}
+
+const selectOptionTexts = (select: HTMLElement) => within(select).getAllByRole('option').map((option) => option.textContent);
+/** 理由ごとの行（名前は理由の言葉）の中の欄を、見出しの文字で探す。同じ見出しが10行にあるので、行で絞る */
+const reasonField = (reasonName: string, label: string) => within(reasonRow(reasonName)).getByLabelText(label);
+const shownCheckbox = (reasonName: string) => within(reasonRow(reasonName)).getByRole('checkbox', { name: '出す' });
+
+describe('ShopReturnSettingsSection の申し込みのまとまり（段2）', () => {
+  it('受付のトグル・申し込みの種類・注意書きを、保存してある値で出す', () => {
+    renderSection({
+      requestsEnabled: false,
+      requestTypes: 'cancellations_only',
+      noticeText: '返品はお申し込みの後にご案内します。',
+    });
+
+    const requests = within(region('申し込み'));
+    expect(requests.getByRole('switch', { name: REQUESTS_LABEL })).not.toBeChecked();
+    expect(requests.getByLabelText('申し込みの種類')).toHaveValue('cancellations_only');
+    expect(requests.getByLabelText(NOTICE_LABEL)).toHaveValue('返品はお申し込みの後にご案内します。');
+  });
+
+  it('最初の値（受付はオン・返品だけ・注意書きは空）を出す', () => {
+    renderSection();
+
+    expect(screen.getByRole('switch', { name: REQUESTS_LABEL })).toBeChecked();
+    expect(screen.getByLabelText('申し込みの種類')).toHaveValue('returns_only');
+    expect(screen.getByLabelText(NOTICE_LABEL)).toHaveValue('');
+  });
+
+  it('申し込みの種類の選択肢を「返品とキャンセル」「返品だけ」「キャンセルだけ」の順に出し、注意書きの説明を出す', () => {
+    renderSection();
+
+    expect(selectOptionTexts(screen.getByLabelText('申し込みの種類'))).toEqual(['返品とキャンセル', '返品だけ', 'キャンセルだけ']);
+    expect(screen.getByText('申し込みの画面のいちばん上に出します（2000字まで）。')).toBeInTheDocument();
+  });
+
+  it('注意書きは複数行の欄（textarea）で入れる', () => {
+    renderSection();
+
+    expect(screen.getByLabelText(NOTICE_LABEL).tagName).toBe('TEXTAREA');
+  });
+
+  it('受付のトグルを切り替えただけでは保存しない', () => {
+    const { onSave } = renderSection();
+
+    toggle(REQUESTS_LABEL);
+
+    expect(screen.getByRole('switch', { name: REQUESTS_LABEL })).not.toBeChecked();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('入れ直した受付・種類・注意書きを、窓口の形で渡す。注意書きの前後の空白は取り除き、途中の改行は残す', async () => {
+    const { onSave } = renderSection();
+
+    toggle(REQUESTS_LABEL);
+    setValue('申し込みの種類', 'returns_and_cancellations');
+    setValue(NOTICE_LABEL, '  返品は商品到着後7日以内に\nお申し込みください。\n');
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      requestsEnabled: false,
+      requestTypes: 'returns_and_cancellations',
+      noticeText: '返品は商品到着後7日以内に\nお申し込みください。',
+    });
+  });
+
+  it('注意書きは前後の空白を数えず、2000字までなら通る', async () => {
+    const { onSave } = renderSection();
+    setValue(NOTICE_LABEL, `${'あ'.repeat(2000)}  `);
+
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0].noticeText).toBe('あ'.repeat(2000));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('注意書きが2001字だと、欄に誤りを出し、窓口へ渡さず、その欄へ移る', () => {
+    const { onSave } = renderSection();
+    setValue(NOTICE_LABEL, 'あ'.repeat(2001));
+
+    fireEvent.click(saveButton());
+
+    const field = screen.getByLabelText(NOTICE_LABEL);
+    expect(field).toBeInvalid();
+    expect(screen.getByText(NOTICE_TOO_LONG_MESSAGE)).toBeInTheDocument();
+    expect(field).toHaveFocus();
+    expect(screen.getByRole('alert')).toHaveTextContent(SUMMARY);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('申し込みのまとまりの「最後に変えた人」は updated.requests を出す。ほかのまとまりは変わらない', () => {
+    const base = buildShopReturnSettings();
+    renderSection({ updated: { ...base.updated, requests: { at: CHANGED_AT, byEmail: 'owner@example.com' } } });
+
+    expect(within(region('申し込み')).getByText(`最後に変えた人: owner@example.com（${screenTime(CHANGED_AT)}）`)).toBeInTheDocument();
+    for (const name of ['返送', '受付の期限', '理由ごとの設定', '手数料', '受け取り']) {
+      expect(within(region(name)).getByText('まだ変えていません')).toBeInTheDocument();
+    }
+  });
+
+  it('保存できたら、受付・種類・注意書きも窓口が返した値で置き換える', async () => {
+    const saved = buildShopReturnSettings({
+      requestsEnabled: false,
+      requestTypes: 'returns_and_cancellations',
+      noticeText: '窓口が整えた注意書き',
+    });
+    const { onSave } = renderSection();
+    onSave.mockResolvedValueOnce(saved);
+    setValue(NOTICE_LABEL, '入れた注意書き');
+
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(screen.getByLabelText(NOTICE_LABEL)).toHaveValue('窓口が整えた注意書き'));
+    expect(screen.getByRole('switch', { name: REQUESTS_LABEL })).not.toBeChecked();
+    expect(screen.getByLabelText('申し込みの種類')).toHaveValue('returns_and_cancellations');
+  });
+});
+
+describe('ShopReturnSettingsSection の理由ごとの出す・ご希望・写真・写真の案内の文（段2）', () => {
+  it('理由ごとの行に「出す」「ご希望」「写真」「写真の案内の文」を出し、最初の値は仕様書 8-3 の表のとおり', () => {
+    renderSection();
+
+    const expected: Array<[string, boolean, string, string, string]> = [
+      ['破損・不良', true, 'refund_and_exchange', 'required', DEFECT_PHOTO_NOTE],
+      ['注文と違う品が届いた', true, 'refund_and_exchange', 'required', DEFECT_PHOTO_NOTE],
+      ['サイズが小さい', true, 'exchange_only', 'optional', SIZE_PHOTO_NOTE],
+      ['サイズが大きい', true, 'exchange_only', 'optional', SIZE_PHOTO_NOTE],
+      ['色がイメージと違った', false, 'refund_and_exchange', 'optional', ''],
+      ['デザインが好みでない', false, 'refund_and_exchange', 'optional', ''],
+      ['説明と違った', false, 'refund_and_exchange', 'optional', ''],
+      ['不要になった', false, 'refund_and_exchange', 'optional', ''],
+      ['その他', true, 'refund_and_exchange', 'optional', ''],
+      ['不明', false, 'refund_and_exchange', 'none', ''],
+    ];
+    for (const [name, shown, resolutions, photo, instructions] of expected) {
+      expect(shownCheckbox(name)).toHaveProperty('checked', shown);
+      expect(reasonField(name, 'ご希望')).toHaveValue(resolutions);
+      expect(reasonField(name, '写真')).toHaveValue(photo);
+      expect(reasonField(name, '写真の案内の文')).toHaveValue(instructions);
+    }
+  });
+
+  it('ご希望と写真の選択肢を C-5 の言葉で、この順に出す', () => {
+    renderSection();
+
+    expect(selectOptionTexts(reasonField('破損・不良', 'ご希望'))).toEqual(['返金と交換', '交換だけ', '返金だけ']);
+    expect(selectOptionTexts(reasonField('破損・不良', '写真'))).toEqual(['なし', '任意', '必須']);
+  });
+
+  it('「写真の案内の文」は複数行の欄（textarea）で入れる', () => {
+    renderSection();
+
+    expect(reasonField('破損・不良', '写真の案内の文').tagName).toBe('TEXTAREA');
+  });
+
+  it('「不明」の行の「出す」はオフで選べず、「「不明」はお客様に出しません。」の説明が付く。ほかの行には説明も無効も無い', () => {
+    renderSection();
+
+    expect(shownCheckbox('不明')).not.toBeChecked();
+    expect(shownCheckbox('不明')).toBeDisabled();
+    expect(shownCheckbox('不明')).toHaveAccessibleDescription(UNKNOWN_NOT_SHOWN_NOTE);
+    expect(screen.getAllByText(UNKNOWN_NOT_SHOWN_NOTE)).toHaveLength(1);
+    for (const name of ['破損・不良', '色がイメージと違った', 'その他']) {
+      expect(shownCheckbox(name)).toBeEnabled();
+    }
+  });
+
+  it('保存してある「不明」の「出す」がオンでも、画面ではオフにし、保存ではオフで渡す', async () => {
+    const { onSave } = renderSection({ reasons: savedReasons({ unknown: { shown: true } }) });
+
+    expect(shownCheckbox('不明')).not.toBeChecked();
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0].reasons.find((row) => row.reason === 'unknown')?.shown).toBe(false);
+  });
+
+  it('入れ直した「出す」「ご希望」「写真」「写真の案内の文」を、理由ごとの行で渡す。案内の文の前後の空白は取り除く', async () => {
+    const { onSave } = renderSection();
+
+    fireEvent.click(shownCheckbox('色がイメージと違った'));
+    fireEvent.click(shownCheckbox('その他'));
+    setReasonValue('サイズが小さい', 'ご希望', 'refund_only');
+    setReasonValue('サイズが小さい', '写真', 'required');
+    fireEvent.change(reasonField('その他', '写真の案内の文'), { target: { value: ' 全体と傷の写真をお送りください \n' } });
+    setReasonValue('不明', '写真', 'optional');
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0].reasons).toEqual(
+      reasonsWith({
+        color: { shown: true },
+        size_too_small: { resolutions: 'refund_only', photo: 'required' },
+        other: { shown: false, photoInstructions: '全体と傷の写真をお送りください' },
+        unknown: { photo: 'optional' },
+      }),
+    );
+  });
+
+  it('写真の案内の文は前後の空白を数えず、500字までなら通る', async () => {
+    const { onSave } = renderSection();
+    fireEvent.change(reasonField('サイズが小さい', '写真の案内の文'), { target: { value: `${'あ'.repeat(500)}  ` } });
+
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0].reasons.find((row) => row.reason === 'size_too_small')?.photoInstructions).toBe('あ'.repeat(500));
+  });
+
+  it('写真の案内の文が501字だと、その行の欄に誤りを出し、窓口へ渡さず、その欄へ移る。ほかの行には誤りを出さない', () => {
+    const { onSave } = renderSection();
+    fireEvent.change(reasonField('サイズが小さい', '写真の案内の文'), { target: { value: 'あ'.repeat(501) } });
+
+    fireEvent.click(saveButton());
+
+    const field = reasonField('サイズが小さい', '写真の案内の文');
+    expect(field).toBeInvalid();
+    expect(within(reasonRow('サイズが小さい')).getByText(PHOTO_INSTRUCTIONS_TOO_LONG_MESSAGE)).toBeInTheDocument();
+    expect(screen.getAllByText(PHOTO_INSTRUCTIONS_TOO_LONG_MESSAGE)).toHaveLength(1);
+    expect(reasonField('サイズが大きい', '写真の案内の文')).not.toBeInvalid();
+    expect(field).toHaveFocus();
+    expect(screen.getByRole('alert')).toHaveTextContent(SUMMARY);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('誤りが2つ以上ある時は、画面の上にある欄に移る（注意書き → 写真の案内の文 → 手数料の順）', () => {
+    renderSection();
+    toggle('返品の手数料を使う');
+    setValue('返品の手数料（%）', '101');
+    fireEvent.change(reasonField('その他', '写真の案内の文'), { target: { value: 'あ'.repeat(501) } });
+
+    fireEvent.click(saveButton());
+    expect(reasonField('その他', '写真の案内の文')).toHaveFocus();
+
+    setValue(NOTICE_LABEL, 'あ'.repeat(2001));
+    fireEvent.click(saveButton());
+    expect(screen.getByLabelText(NOTICE_LABEL)).toHaveFocus();
+  });
+
+  it('保存できたら、理由ごとの列も窓口が返した値で置き換える', async () => {
+    const saved = buildShopReturnSettings({
+      reasons: savedReasons({ other: { photo: 'required', photoInstructions: '窓口が整えた案内' } }),
+    });
+    const { onSave } = renderSection();
+    onSave.mockResolvedValueOnce(saved);
+    fireEvent.change(reasonField('その他', '写真の案内の文'), { target: { value: '入れた案内' } });
+
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(reasonField('その他', '写真の案内の文')).toHaveValue('窓口が整えた案内'));
+    expect(reasonField('その他', '写真')).toHaveValue('required');
+  });
+
+  it('理由ごとの行は10個のまま。行の中に別の group を作らない（FR-ADMIN-092 が数える）', () => {
+    renderSection();
+
+    expect(within(region('理由ごとの設定')).getAllByRole('group')).toHaveLength(10);
   });
 });

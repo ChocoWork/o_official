@@ -53,6 +53,7 @@ export default function AdminItemEditPage() {
           origin: item.origin ?? '',
           care: item.care ?? '',
           productNote: item.product_note ?? '',
+          returnIneligible: item.return_ineligible ?? false,
           status: item.status,
           previewUrls: existingImages,
         };

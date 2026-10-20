@@ -22,6 +22,11 @@ export type Item = {
   care?: string | null;
   /** 商品ごとの注意書き（PRODUCT NOTE） */
   product_note?: string | null;
+  /**
+   * 返品不可の印（グループ E-3 段2）。商品の窓口 /api/items/[id] が返す。印の付いた商品のページに一文を出す。
+   * 一覧の窓口などは返さないので、無い時は印なしとして扱う
+   */
+  returnIneligible?: boolean;
   /** コレクション。SS / AW のみ（年は持たない） */
   season?: 'SS' | 'AW' | null;
   status?: 'private' | 'published';

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 // preview images now handled by Card component
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button/Button";
+import { Checkbox } from "@/components/ui/Checkbox/Checkbox";
 import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { ColorPicker } from "@/components/ui/ColorPicker/ColorPicker";
 import { RadioButtonGroup } from "@/components/ui/RadioButtonGroup/RadioButtonGroup";
@@ -84,6 +85,9 @@ export function ItemForm({
   const [material, setMaterial] = useState(initialValues?.material ?? "");
   const [madeIn, setMadeIn] = useState(initialValues?.origin ?? "");
   const [care, setCare] = useState(initialValues?.care ?? "");
+  const [returnIneligible, setReturnIneligible] = useState(
+    initialValues?.returnIneligible ?? false,
+  );
   const [productNote, setProductNote] = useState(
     initialValues?.productNote ?? "",
   );
@@ -339,6 +343,7 @@ export function ItemForm({
       formData.append("origin", madeIn.trim());
       formData.append("care", care.trim());
       formData.append("product_note", productNote.trim());
+      formData.append("return_ineligible", returnIneligible ? "true" : "false");
       formData.append("status", status);
       formData.append("sizes", JSON.stringify(normalizedSizes));
       formData.append("colors", JSON.stringify(normalizedColors));
@@ -645,6 +650,21 @@ export function ItemForm({
                   size="md"
                 />
               </div>
+            </section>
+
+            <section className="item-form__fields">
+              <h2 className={SECTION_TITLE_CLASS}>返品</h2>
+
+              {/* 返品不可の印（グループ E-3 段2）。印の付いた商品は、お客様の申し込みでは理由が「破損・不良」「注文と違う品が届いた」の
+                  2つだけになり、商品のページに一文が出る。保存できるのは、今までどおり商品の編集の権限を持つ人だけ（窓口が確かめる） */}
+              <Checkbox
+                id="item-return-ineligible"
+                data-testid="item-return-ineligible"
+                label="返品不可（お客様のご都合による返品・交換を受けない）"
+                size="md"
+                checked={returnIneligible}
+                onChange={(e) => setReturnIneligible(e.target.checked)}
+              />
             </section>
 
             <section className="item-form__fields">
