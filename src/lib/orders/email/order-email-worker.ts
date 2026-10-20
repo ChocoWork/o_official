@@ -3,6 +3,7 @@ import { recordHeartbeat, type OpsStore } from '@/lib/ops/ops-store';
 import {
   composeOrderEmail,
   loadOrderEmailMaterial,
+  loadRequestEmailMaterial,
   type OrderEmailMaterial,
 } from '@/lib/orders/email/order-email-compose';
 import {
@@ -25,7 +26,13 @@ import {
   type ClaimedOrderEmail,
   type OrderEmailStore,
 } from '@/lib/orders/email/order-email-store';
-import type { OrderEmailPauseReason, OrderEmailSkipReason } from '@/lib/orders/email/order-email-types';
+import {
+  isRequestEmailKind,
+  isShopEmailKind,
+  type OrderEmailPauseReason,
+  type OrderEmailSkipReason,
+  type RequestEmailKind,
+} from '@/lib/orders/email/order-email-types';
 
 /**
  * 注文のメールの worker（グループ D 設計書 4 章）。
@@ -49,7 +56,17 @@ export type OrderEmailWorkerDeps = {
     returnId: string | null,
     returnReceiptId: string | null,
   ) => Promise<OrderEmailMaterial | null>;
-  /** 店への知らせ（返金待ち）の送り先（SHOP_ALERT_EMAIL）。無ければ null */
+  /**
+   * 申し込みのメール6種類（返品の申し込み3つ・キャンセルの申し込み3つ）の行は、行の返品の番号かキャンセルの申し込みの番号で
+   * 申し込みの材料を読む。ほかの種類は loadMaterial（グループ E-3 段2 計画 P12。返品の受付のお知らせと番号の組が同じなので、種類で読み分ける）
+   */
+  loadRequestMaterial: (
+    orderId: string,
+    kind: RequestEmailKind,
+    returnId: string | null,
+    cancelRequestId: string | null,
+  ) => Promise<OrderEmailMaterial | null>;
+  /** 店あてのメール（返金待ち・返品の申し込み・キャンセルの申し込み）の送り先（SHOP_ALERT_EMAIL）。無ければ null */
   shopRecipient: () => string | null;
   send: (message: OrderEmailMessage) => Promise<OrderEmailSendOutcome>;
   checkConfig: () => OrderEmailPauseReason | null;
@@ -94,7 +111,7 @@ function errorDetails(error: unknown): string[] {
 }
 
 /**
- * メールの送り先。店への知らせ（返金待ち）は店のアドレス（SHOP_ALERT_EMAIL）、ほかはお客様の宛先（注文の配送先のメール）。
+ * メールの送り先。店あて（返金待ち・返品の申し込み・キャンセルの申し込みの店への知らせ）は店のアドレス（SHOP_ALERT_EMAIL）、ほかはお客様の宛先（注文の配送先のメール）。
  * 前後の空白を除き、無い・空白だけなら null。店への知らせは、お客様の宛先が空でも送る（お客様に送るメールではないため）
  */
 export function recipientFor(
@@ -102,7 +119,7 @@ export function recipientFor(
   material: OrderEmailMaterial,
   shopRecipient: string | null,
 ): string | null {
-  const address = claim.kind === 'return_refund_pending_shop' ? shopRecipient : material.order.shipping_email;
+  const address = isShopEmailKind(claim.kind) ? shopRecipient : material.order.shipping_email;
   return address?.trim() || null;
 }
 
@@ -132,6 +149,8 @@ export function skipReasonFor(
   // 返金の材料は返金の番号がある行（この2種類）だけが持つ。お客様への連絡は、店への要対応「返金の失敗」が受け持つ。
   // 理由は superseded（DB の skip_order_email が、返金が失敗・エラーの行にだけ受ける）
   if (material.refund && (material.refund.status === 'failed' || material.refund.status === 'error')) return 'superseded';
+  // 申し込みのメール6種類（返品の申し込み・キャンセルの申し込み。グループ E-3 段2 計画 P12）は、注文がどの状態でも取りやめにしない。
+  // 受けた事実・お断りした事実を、その時のまま伝えるメールで、後から状況が変わっても中身が変わらない。取りやめは宛先が無い時だけ（上の判定）
   return null;
 }
 
@@ -152,7 +171,10 @@ async function recordFailure(
 async function deliver(deps: OrderEmailWorkerDeps, claim: ClaimedOrderEmail): Promise<DeliverOutcome> {
   let material: OrderEmailMaterial | null;
   try {
-    material = await deps.loadMaterial(claim.orderId, claim.fulfillmentId, claim.refundId, claim.returnId, claim.returnReceiptId);
+    // 申し込みのメール6種類は、返品・キャンセルの申し込みの記録から読む。ほかの種類は、発送・返金・返品・受け取りの番号で読む
+    material = isRequestEmailKind(claim.kind)
+      ? await deps.loadRequestMaterial(claim.orderId, claim.kind, claim.returnId, claim.cancelRequestId)
+      : await deps.loadMaterial(claim.orderId, claim.fulfillmentId, claim.refundId, claim.returnId, claim.returnReceiptId);
   } catch {
     return recordFailure(deps, claim, { category: 'transient', code: 'db_unavailable', retryAfterSeconds: null });
   }
@@ -165,7 +187,7 @@ async function deliver(deps: OrderEmailWorkerDeps, claim: ClaimedOrderEmail): Pr
   const shopRecipient = deps.shopRecipient();
   const skip = skipReasonFor(claim, material, shopRecipient);
   if (skip) {
-    if (skip === 'no_recipient' && claim.kind === 'return_refund_pending_shop') {
+    if (skip === 'no_recipient' && isShopEmailKind(claim.kind)) {
       // 今の店への知らせと同じく、宛先の設定が無いことだけをログに出す（値は出さない）
       console.warn('[order-email-worker] SHOP_ALERT_EMAIL is not configured', claim.id);
     }
@@ -274,6 +296,8 @@ export async function runOrderEmailWorker(options: { budgetMs?: number } = {}): 
     store,
     loadMaterial: (orderId, fulfillmentId, refundId, returnId, returnReceiptId) =>
       loadOrderEmailMaterial(client, orderId, fulfillmentId, refundId, returnId, returnReceiptId),
+    loadRequestMaterial: (orderId, kind, returnId, cancelRequestId) =>
+      loadRequestEmailMaterial(client, orderId, { kind, returnId, cancelRequestId }),
     shopRecipient: () => shopAlertRecipient(),
     send: (message) => sendOrderEmailMessage(message),
     checkConfig: () => checkOrderEmailSendConfig(),

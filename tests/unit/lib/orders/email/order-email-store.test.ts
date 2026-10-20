@@ -16,7 +16,7 @@ function storeReturning(data: unknown, error: { message?: string; code?: string 
 const claimRow = {
   email_id: 'email-1', order_id: 'order-1', kind: 'paid', variant: 'order_confirmed', origin: 'auto', attempts: 1,
   lease_token: 'lease-1', subject: null, body_text: null, payment_expired_sent: false, fulfillment_id: null, refund_id: null,
-  return_id: null, return_receipt_id: null,
+  return_id: null, return_receipt_id: null, cancel_request_id: null,
 };
 
 const historyRow = {
@@ -32,7 +32,7 @@ describe('order-email-store', () => {
     await expect(claimOrderEmail(store, 300)).resolves.toEqual({
       id: 'email-1', orderId: 'order-1', kind: 'paid', variant: 'order_confirmed', origin: 'auto', attempts: 1,
       leaseToken: 'lease-1', subject: null, bodyText: null, paymentExpiredSent: false, fulfillmentId: null, refundId: null,
-      returnId: null, returnReceiptId: null,
+      returnId: null, returnReceiptId: null, cancelRequestId: null,
     });
     expect(rpc).toHaveBeenCalledWith('claim_order_email', { _lease_seconds: 300 });
     await expect(claimOrderEmail(storeReturning([]).store, 300)).resolves.toBeNull();
@@ -78,6 +78,30 @@ describe('order-email-store', () => {
     const { store } = storeReturning([legacyRow]);
 
     await expect(claimOrderEmail(store, 300)).resolves.toMatchObject({ returnId: null, returnReceiptId: null });
+  });
+
+  it.each([
+    ['返品のお申し込みの受付のお知らせ', 'return_requested', 'return-1', null],
+    ['返品のお申し込みについてのお知らせ', 'return_declined', 'return-1', null],
+    ['店への知らせ（返品の申し込み）', 'return_request_shop', 'return-1', null],
+    ['キャンセルのお申し込みの受付のお知らせ', 'cancel_request_received', null, 'cancel-1'],
+    ['キャンセルのお申し込みについてのお知らせ', 'cancel_request_declined', null, 'cancel-1'],
+    ['店への知らせ（キャンセルの申し込み）', 'cancel_request_shop', null, 'cancel-1'],
+  ])('%s の行は、どの返品・どのキャンセルの申し込みのメールかを、返品の番号・キャンセルの申し込みの番号で返す（受け取りの番号は持たない）', async (_label, kind, returnId, cancelRequestId) => {
+    const { store } = storeReturning([
+      { ...claimRow, email_id: 'email-7', kind, variant: null, return_id: returnId, return_receipt_id: null, cancel_request_id: cancelRequestId },
+    ]);
+
+    await expect(claimOrderEmail(store, 300)).resolves.toMatchObject({
+      id: 'email-7', kind, variant: null, fulfillmentId: null, refundId: null, returnId, returnReceiptId: null, cancelRequestId,
+    });
+  });
+
+  it('取り出した行に cancel_request_id の列が無くても（古い形の答え）、キャンセルの申し込みの番号は null', async () => {
+    const legacyRow = Object.fromEntries(Object.entries(claimRow).filter(([column]) => column !== 'cancel_request_id'));
+    const { store } = storeReturning([legacyRow]);
+
+    await expect(claimOrderEmail(store, 300)).resolves.toMatchObject({ cancelRequestId: null });
   });
 
   it('失敗の記録に分け方・原因・待つ時間を渡す', async () => {

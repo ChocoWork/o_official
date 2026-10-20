@@ -40,6 +40,7 @@ const MATERIAL: OrderEmailMaterial = {
   items: [{ item_name: 'コート', color: null, size: null, quantity: 1, line_total: 5000, fulfillment_type: 'stock' }],
   fulfillment: null,
   refund: null,
+  request: null,
   orderReturn: {
     number: 1, returnMethod: 'customer_ships', returnShippingPayer: 'shop', returnShippingFee: 0, restockingFeePercent: 0,
     exchangeFee: 0, exchangeShippingFee: 0, feeWaitingAmount: 0, returnAddress: null, items: [], exchangePlan: [], hasRefundLines: true,

@@ -6,6 +6,9 @@ import type { OrderStatus, PaidEmailVariant } from '@/lib/orders/order-payment-t
  * 取りやめの理由は、返品のメールの扱いを足して作り直した移行 20261013001143_order_return_receipts.sql の関数と同じ（値は E-1 の移行 20261010122320_fulfillment_order_emails.sql から変わらない）。
  * 種類・書き分けは、返品のメール4種類と返金のお知らせの返品の書き分けを足した移行 20261012235910_order_return_records.sql と同じ（グループ E-3 設計書 9 章）。
  * 再送できる状態の表は、返品のメールを再送の対象にしない形に作り直した移行 20261013001143_order_return_receipts.sql の関数と同じ。
+ * 申し込みのメール6種類（返品の申し込み3つ・キャンセルの申し込み3つ）の種類・書き分けは、それを足して作り直した段2の移行 20261013100000_order_return_request_records.sql と同じ
+ * （グループ E-3 段2 計画 C-0 の7）。取り出しの関数の答えの列は、段2の移行 D が同じに作り直す。再送の関数は段1のままで、
+ * 申し込みのメール6種類を種類として受けない（INVALID_EMAIL_KIND）ので、管理画面の再送の窓口が DB を呼ぶ前に断る。
  */
 export const ORDER_EMAIL_KINDS = [
   'paid',
@@ -18,8 +21,59 @@ export const ORDER_EMAIL_KINDS = [
   'return_received',
   'return_sent_back',
   'return_refund_pending_shop',
+  // 申し込みのメール（グループ E-3 段2 計画 C-6）。返品の申し込み3つ、キャンセルの申し込み3つ。どれも書き分けは無い
+  'return_requested',
+  'return_declined',
+  'return_request_shop',
+  'cancel_request_received',
+  'cancel_request_declined',
+  'cancel_request_shop',
 ] as const;
 export type OrderEmailKind = (typeof ORDER_EMAIL_KINDS)[number];
+
+/** 返品の申し込みのメール3種類。返品ごと・種類ごとに1通（グループ E-3 段2 計画 P12）。材料は返品の申し込みの記録から読む */
+export const RETURN_REQUEST_EMAIL_KINDS = [
+  'return_requested',
+  'return_declined',
+  'return_request_shop',
+] as const satisfies readonly OrderEmailKind[];
+export type ReturnRequestEmailKind = (typeof RETURN_REQUEST_EMAIL_KINDS)[number];
+
+/** キャンセルの申し込みのメール3種類。申し込みごと・種類ごとに1通。材料はキャンセルの申し込みの記録から読む */
+export const CANCEL_REQUEST_EMAIL_KINDS = [
+  'cancel_request_received',
+  'cancel_request_declined',
+  'cancel_request_shop',
+] as const satisfies readonly OrderEmailKind[];
+export type CancelRequestEmailKind = (typeof CANCEL_REQUEST_EMAIL_KINDS)[number];
+
+/** 申し込みのメール6種類。worker は、この6種類だけ専用の材料の読み込み（loadRequestEmailMaterial）を使う */
+export const REQUEST_EMAIL_KINDS = [...RETURN_REQUEST_EMAIL_KINDS, ...CANCEL_REQUEST_EMAIL_KINDS] as const;
+export type RequestEmailKind = (typeof REQUEST_EMAIL_KINDS)[number];
+
+/** 店あてのメール（段1の返金待ちの知らせと、申し込みの知らせ2つ）。送り先は環境変数 SHOP_ALERT_EMAIL。ほかの種類はお客様の宛先へ送る */
+export const SHOP_EMAIL_KINDS = [
+  'return_refund_pending_shop',
+  'return_request_shop',
+  'cancel_request_shop',
+] as const satisfies readonly OrderEmailKind[];
+export type ShopEmailKind = (typeof SHOP_EMAIL_KINDS)[number];
+
+export function isReturnRequestEmailKind(kind: OrderEmailKind): kind is ReturnRequestEmailKind {
+  return (RETURN_REQUEST_EMAIL_KINDS as readonly string[]).includes(kind);
+}
+
+export function isCancelRequestEmailKind(kind: OrderEmailKind): kind is CancelRequestEmailKind {
+  return (CANCEL_REQUEST_EMAIL_KINDS as readonly string[]).includes(kind);
+}
+
+export function isRequestEmailKind(kind: OrderEmailKind): kind is RequestEmailKind {
+  return (REQUEST_EMAIL_KINDS as readonly string[]).includes(kind);
+}
+
+export function isShopEmailKind(kind: OrderEmailKind): kind is ShopEmailKind {
+  return (SHOP_EMAIL_KINDS as readonly string[]).includes(kind);
+}
 
 /** 取消のメールの書き出しは、取り消す前の状態で変わる。paid は支払い済みの注文のキャンセル（返金を知らせる。グループ E-2 設計書 8-2） */
 export type CanceledEmailVariant = 'payment_in_progress' | 'pending' | 'paid';
@@ -88,6 +142,13 @@ export const ORDER_EMAIL_KIND_LABELS: Record<OrderEmailKind, string> = {
   return_received: '返品の受け取りのお知らせ',
   return_sent_back: '品物のお返しのお知らせ',
   return_refund_pending_shop: '店への知らせ（返金待ち）',
+  // 申し込みのメール（グループ E-3 段2 計画 C-5）。履歴が「{名前}のメール」と出すので名詞の形
+  return_requested: '返品のお申し込みの受付のお知らせ',
+  return_declined: '返品のお申し込みについてのお知らせ',
+  return_request_shop: '店への知らせ（返品の申し込み）',
+  cancel_request_received: 'キャンセルのお申し込みの受付のお知らせ',
+  cancel_request_declined: 'キャンセルのお申し込みについてのお知らせ',
+  cancel_request_shop: '店への知らせ（キャンセルの申し込み）',
 };
 
 /** 管理画面の履歴と店への知らせに出す原因（設計書 5-1） */
@@ -129,6 +190,9 @@ export const ORDER_EMAIL_DELIVERY_LABELS: Record<OrderEmailDeliveryStatus, strin
  * 返金のお知らせは再送しない（返金ごとに1通。グループ E-2 設計書 8-1）。DB の関数も断るので、状態は1つも無い。
  * 返品のメール4種類（受付・受け取り・お返し・店への知らせ）も再送しない（返品ごと・受け取りごとに1通で、お返しのメッセージは
  * 送った時の事実。グループ E-3 計画 P7）。DB の関数も断るので、状態は1つも無い。
+ * 申し込みのメール6種類（返品のお申し込みの受付・お断り・店への知らせ、キャンセルのお申し込みの受付・お断り・店への知らせ）も再送しない
+ * （申し込みごと・種類ごとに1通で、受けた事実・お断りした事実をその時のまま伝える。グループ E-3 段2 計画 P12）。
+ * 管理画面の再送の窓口が先に断り、DB の関数も種類として受けずに断るので、状態は1つも無い。
  */
 export const RESENDABLE_ORDER_STATUSES: Record<OrderEmailKind, readonly OrderStatus[]> = {
   paid: ['paid', 'shipped'],
@@ -141,6 +205,12 @@ export const RESENDABLE_ORDER_STATUSES: Record<OrderEmailKind, readonly OrderSta
   return_received: [],
   return_sent_back: [],
   return_refund_pending_shop: [],
+  return_requested: [],
+  return_declined: [],
+  return_request_shop: [],
+  cancel_request_received: [],
+  cancel_request_declined: [],
+  cancel_request_shop: [],
 };
 
 export function isOrderEmailKind(value: unknown): value is OrderEmailKind {

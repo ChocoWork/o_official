@@ -52,7 +52,7 @@ function material(overrides: Partial<OrderEmailMaterial['order']> = {}): OrderEm
     items: [{ item_name: 'コート', color: 'BLACK', size: 'M', quantity: 1, line_total: 10000, fulfillment_type: 'backorder' }],
     fulfillment: null,
     refund: null,
-    orderReturn: null,
+    orderReturn: null, request: null,
   };
 }
 
@@ -760,7 +760,7 @@ describe('loadOrderEmailMaterial', () => {
     const db = store({ order, items });
 
     await expect(loadOrderEmailMaterial(db.client, ORDER_ID)).resolves.toEqual({
-      order, items, fulfillment: null, refund: null, orderReturn: null,
+      order, items, fulfillment: null, refund: null, orderReturn: null, request: null,
     });
     const columns = (db.orderSelect.mock.calls[0] as unknown as [string])[0].split(',').map((column) => column.trim());
     expect(columns).toEqual([
@@ -800,7 +800,7 @@ describe('loadOrderEmailMaterial', () => {
         ],
       },
       refund: null,
-      orderReturn: null,
+      orderReturn: null, request: null,
     });
     expect(db.fulfillmentSelect).toHaveBeenCalledWith('number, shipping_carrier, tracking_number, completes_order, cancelled_at');
     expect(db.fulfillmentFilters).toEqual([['id', FULFILLMENT_ID], ['order_id', ORDER_ID]]);
@@ -901,7 +901,7 @@ describe('loadOrderEmailMaterial', () => {
         ],
         stillShipping: true,
       },
-      orderReturn: null,
+      orderReturn: null, request: null,
     });
     expect(db.refundSelect).toHaveBeenCalledWith(
       'status, amount, shipping_amount, payment_method_type, customer_action_expires_at, cancel_reason',

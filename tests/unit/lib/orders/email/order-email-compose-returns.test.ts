@@ -62,6 +62,7 @@ function material(overrides: Partial<OrderEmailMaterial> = {}): OrderEmailMateri
     fulfillment: null,
     refund: null,
     orderReturn: null,
+    request: null,
     ...overrides,
   };
 }
@@ -1081,10 +1082,13 @@ describe('composeOrderEmail（発送のお知らせの交換の一文）', () =>
 });
 
 describe('composeOrderEmail（返品のメールの種類）', () => {
-  it('返品の材料が付いていなければ、返品のメール4種類は作らない（例外も投げない）', () => {
+  it('返品の材料・申し込みの材料が付いていなければ、返品のメール4種類と申し込みの返品の3種類は作らない（例外も投げない）', () => {
     const kinds = ORDER_EMAIL_KINDS.filter((kind) => kind.startsWith('return_'));
 
-    expect(kinds).toEqual(['return_accepted', 'return_received', 'return_sent_back', 'return_refund_pending_shop']);
+    expect(kinds).toEqual([
+      'return_accepted', 'return_received', 'return_sent_back', 'return_refund_pending_shop',
+      'return_requested', 'return_declined', 'return_request_shop',
+    ]);
     for (const kind of kinds) {
       expect(composeOrderEmail(material(), { kind, variant: null, paymentExpiredSent: false })).toBeNull();
     }

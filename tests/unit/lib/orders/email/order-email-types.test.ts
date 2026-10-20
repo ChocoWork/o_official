@@ -1,22 +1,30 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  CANCEL_REQUEST_EMAIL_KINDS,
+  DELIVERY_PROBLEM_STATUSES,
   describeOrderEmailState,
+  isCancelRequestEmailKind,
   isOrderEmailErrorCode,
   isOrderEmailKind,
+  isRequestEmailKind,
+  isReturnRequestEmailKind,
+  isShopEmailKind,
+  ORDER_EMAIL_DELIVERY_STATUSES,
   ORDER_EMAIL_ERROR_CODES,
   ORDER_EMAIL_ERROR_LABELS,
   ORDER_EMAIL_KIND_LABELS,
   ORDER_EMAIL_KINDS,
   ORDER_EMAIL_STATUSES,
-  ORDER_EMAIL_DELIVERY_STATUSES,
-  DELIVERY_PROBLEM_STATUSES,
+  REQUEST_EMAIL_KINDS,
   RESENDABLE_ORDER_STATUSES,
+  RETURN_REQUEST_EMAIL_KINDS,
+  SHOP_EMAIL_KINDS,
   type CanceledEmailVariant,
-  type OrderEmailVariant,
+  type OrderEmailFailureCategory,
   type OrderEmailPauseReason,
   type OrderEmailSkipReason,
-  type OrderEmailFailureCategory,
+  type OrderEmailVariant,
   type RefundEmailVariant,
 } from '@/lib/orders/email/order-email-types';
 import type { PaidEmailVariant } from '@/lib/orders/order-payment-types';
@@ -24,11 +32,12 @@ import type { PaidEmailVariant } from '@/lib/orders/order-payment-types';
 /**
  * アプリの値と DB の CHECK・関数の入力制限がずれないことを、移行の本文で確かめる。
  * - 状態・配達の状態・一時停止の理由・失敗の分類・原因の記号・配達の問題の索引: グループ D の移行（20261009095633）
- * - メールの種類・書き分けの CHECK（返品のメール4種類と、返金のお知らせの返品の書き分けを足した）:
- *   グループ E-3 の移行 A（20261012235910）
- * - 再送できる状態の表（request_order_email_resend）、取りやめの理由（skip_order_email。発送ごとのメールで理由を足した E-1 の移行 B を、
- *   失敗・エラーになった返金の行の取りやめを足して作り直した関数を、E-3 が返品のメールの扱いを足して作り直した）:
- *   グループ E-3 の移行 C（20261013001143）
+ * - メールの種類・書き分けの CHECK（段1の移行 A が返品のメール4種類と返金のお知らせの返品の書き分けを足した物を、
+ *   申し込みのメール6種類を足して作り直した）: グループ E-3 段2の移行 D（20261013100000）
+ * - 取りやめの理由（skip_order_email）: グループ E-3 段1の移行 C（20261013001143）。申し込みのメール6種類でも変わらない
+ * - 取り出しの関数（claim_order_email）の答えの列: 段1の移行 C の関数を、段2の移行 D が cancel_request_id を足して作り直した物
+ * - 再送の関数（request_order_email_resend）が種類として受ける一覧・再送できる状態の表: 段1の移行 C のまま（段2は作り直さない）。
+ *   申し込みのメール6種類は種類として受けず INVALID_EMAIL_KIND で断るので、管理画面の再送の窓口が DB を呼ぶ前に断る
  * - 取消した返品の受付のお知らせの原因 return_cancelled は、返品の取消で DB が直に書く記号（グループ E-3 の移行 B）。
  *   worker が skip_order_email に渡す取りやめの理由ではないので、移行は読まず、アプリが名前を持つことだけを確かめる
  * 本番へ当てて版を改名したら、ここの名前も直す。
@@ -36,13 +45,13 @@ import type { PaidEmailVariant } from '@/lib/orders/order-payment-types';
 const outboxMigration = fs.readFileSync(
   path.join(process.cwd(), 'supabase/migrations/20261009095633_order_email_outbox.sql'), 'utf8',
 );
+
 // 行の説明にも関数名や許可の表の例が出るので、説明は外してから読む
-const returnRecordsMigration = fs
-  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261012235910_order_return_records.sql'), 'utf8')
-  .replace(/--.*$/gm, '');
-const returnReceiptsMigration = fs
-  .readFileSync(path.join(process.cwd(), 'supabase/migrations/20261013001143_order_return_receipts.sql'), 'utf8')
-  .replace(/--.*$/gm, '');
+function readMigration(fileName: string): string {
+  return fs.readFileSync(path.join(process.cwd(), 'supabase/migrations', fileName), 'utf8').replace(/--.*$/gm, '');
+}
+const returnReceiptsMigration = readMigration('20261013001143_order_return_receipts.sql');
+const requestRecordsMigration = readMigration('20261013100000_order_return_request_records.sql');
 
 function sqlValues(pattern: RegExp, sql = outboxMigration): string[] {
   const values = sql.match(pattern)?.[1];
@@ -77,12 +86,26 @@ function variantsByKind(sql: string): Record<string, string[]> {
 
 describe('注文のメールの種類と名前', () => {
   it('メールの種類・状態・配達の状態は DB の CHECK と同じ値', () => {
-    // 種類は、返品のメール4種類を足した移行 A の CHECK（order_email_outbox_kind_check）から読む
+    // 種類は、申し込みのメール6種類を足して作り直した移行 D の CHECK（order_email_outbox_kind_check）から読む
     expect([...ORDER_EMAIL_KINDS].sort()).toEqual(
-      sqlValues(/CONSTRAINT order_email_outbox_kind_check\s+CHECK\s*\(\s*kind IN \(([^)]+)\)/, returnRecordsMigration),
+      sqlValues(/CONSTRAINT order_email_outbox_kind_check\s+CHECK\s*\(\s*kind IN \(([^)]+)\)/, requestRecordsMigration),
     );
     expect([...ORDER_EMAIL_STATUSES].sort()).toEqual(sqlValues(/CHECK\s*\(status IN \(([^)]+)\)/));
     expect([...ORDER_EMAIL_DELIVERY_STATUSES].sort()).toEqual(sqlValues(/delivery_status IN \(([^)]+)\)/));
+  });
+
+  it('種類の一覧は、段1の10種類の後ろに、申し込みのメール6種類（返品の申し込み3つ・キャンセルの申し込み3つ）が続く', () => {
+    expect(ORDER_EMAIL_KINDS).toEqual([
+      'paid', 'awaiting_payment', 'payment_expired', 'canceled', 'shipped', 'refund',
+      'return_accepted', 'return_received', 'return_sent_back', 'return_refund_pending_shop',
+      'return_requested', 'return_declined', 'return_request_shop',
+      'cancel_request_received', 'cancel_request_declined', 'cancel_request_shop',
+    ]);
+    expect(RETURN_REQUEST_EMAIL_KINDS).toEqual(['return_requested', 'return_declined', 'return_request_shop']);
+    expect(CANCEL_REQUEST_EMAIL_KINDS).toEqual(['cancel_request_received', 'cancel_request_declined', 'cancel_request_shop']);
+    expect(REQUEST_EMAIL_KINDS).toEqual([...RETURN_REQUEST_EMAIL_KINDS, ...CANCEL_REQUEST_EMAIL_KINDS]);
+    // 店あては、段1の返金待ちの知らせと、申し込みの知らせ2つ（送り先は環境変数 SHOP_ALERT_EMAIL）
+    expect(SHOP_EMAIL_KINDS).toEqual(['return_refund_pending_shop', 'return_request_shop', 'cancel_request_shop']);
   });
 
   it('書き分けと一時停止の理由は DB の CHECK と同じ値', () => {
@@ -97,9 +120,9 @@ describe('注文のメールの種類と名前', () => {
     const pauseReasons: Record<OrderEmailPauseReason, true> = {
       config_api_key: true, config_sender_domain: true, config_provider: true, quota_daily: true, quota_monthly: true,
     };
-    // 書き分けは、返金のお知らせの返品の書き分けを足した移行 A の CHECK（order_email_outbox_variant_check）から、種類ごとに読む。
-    // 返品のメール4種類は書き分けを持たない（variant IS NULL の枝なので集めない）
-    const sqlVariants = variantsByKind(returnRecordsMigration);
+    // 書き分けは、作り直した移行 D の CHECK（order_email_outbox_variant_check）から、種類ごとに読む。
+    // 返品のメール4種類と申し込みのメール6種類は書き分けを持たない（variant IS NULL の枝なので集めない）
+    const sqlVariants = variantsByKind(requestRecordsMigration);
     expect(sqlVariants).toEqual({
       paid: Object.keys(paidVariants).sort(),
       canceled: Object.keys(canceledVariants).sort(),
@@ -112,7 +135,7 @@ describe('注文のメールの種類と名前', () => {
   it('取りやめの理由・失敗の分類は DB の関数の入力制限と同じ値', () => {
     const skipReasons: Record<OrderEmailSkipReason, true> = { superseded: true, no_recipient: true, fulfillment_cancelled: true };
     const categories: Record<OrderEmailFailureCategory, true> = { transient: true, config: true, permanent: true };
-    // 取りやめの理由は、一番新しい関数（E-3 の移行 C）から読む。失敗の分類は変わっていないグループ D の移行から読む。
+    // 取りやめの理由は、一番新しい関数（E-3 段1の移行 C）から読む。失敗の分類は変わっていないグループ D の移行から読む。
     // return_cancelled（返品の取消で DB が直に書く記号）は、worker が渡す理由ではないので、ここには入れない
     const sqlSkipReasons = sqlValues(/_reason NOT IN \(([^)]+)\)/, functionBody(returnReceiptsMigration, 'public.skip_order_email'));
     expect(Object.keys(skipReasons).sort()).toEqual(sqlSkipReasons);
@@ -137,6 +160,12 @@ describe('注文のメールの種類と名前', () => {
       // 返品のメール（グループ E-3 計画 C-5 の「メールの種類の名前」）
       return_accepted: '返品の受付のお知らせ', return_received: '返品の受け取りのお知らせ',
       return_sent_back: '品物のお返しのお知らせ', return_refund_pending_shop: '店への知らせ（返金待ち）',
+      // 申し込みのメール（グループ E-3 段2 計画 C-5）。履歴が「{名前}のメール」と出すので名詞の形
+      return_requested: '返品のお申し込みの受付のお知らせ', return_declined: '返品のお申し込みについてのお知らせ',
+      return_request_shop: '店への知らせ（返品の申し込み）',
+      cancel_request_received: 'キャンセルのお申し込みの受付のお知らせ',
+      cancel_request_declined: 'キャンセルのお申し込みについてのお知らせ',
+      cancel_request_shop: '店への知らせ（キャンセルの申し込み）',
     });
   });
 
@@ -149,16 +178,18 @@ describe('注文のメールの種類と名前', () => {
     expect(ORDER_EMAIL_ERROR_LABELS.return_cancelled).toBe('返品の取消');
   });
 
-  it('再送できる注文の状態は DB の request_order_email_resend と同じ表（発送のメールは、一部だけ送った間の決済完了でも再送できる。返金のお知らせと返品のメール4種類は再送しない）', () => {
+  it('再送できる注文の状態は DB の request_order_email_resend と同じ表（発送のメールは、一部だけ送った間の決済完了でも再送できる。返金のお知らせ・返品のメール4種類・申し込みのメール6種類は再送しない）', () => {
     expect(RESENDABLE_ORDER_STATUSES).toEqual({
       paid: ['paid', 'shipped'], awaiting_payment: ['pending'], payment_expired: ['failed'], canceled: ['cancelled'],
       shipped: ['paid', 'shipped'], refund: [],
       return_accepted: [], return_received: [], return_sent_back: [], return_refund_pending_shop: [],
+      return_requested: [], return_declined: [], return_request_shop: [],
+      cancel_request_received: [], cancel_request_declined: [], cancel_request_shop: [],
     });
 
-    // 移行 C の関数の許可の表を読んで突き合わせる。1つの種類は
+    // 段1の移行 C の関数（段2は作り直さない）の許可の表を読んで突き合わせる。1つの種類は
     // `(_kind = '種類' AND v_status IN ('状態', ...))` か `(_kind = '種類' AND v_status = '状態')` の形で書いてある。
-    // 再送できない種類（返金のお知らせ・返品のメール4種類）は、表に組が1つも無い
+    // 再送できない種類（返金のお知らせ・返品のメール4種類・申し込みのメール6種類）は、表に組が1つも無い
     const sqlMatrix: Record<string, string[]> = {};
     for (const match of functionBody(returnReceiptsMigration, 'public.request_order_email_resend').matchAll(
       /\(_kind = '([a-z_]+)' AND v_status (?:IN \(([^)]+)\)|= '([a-z_]+)')\)/g,
@@ -171,6 +202,23 @@ describe('注文のメールの種類と名前', () => {
         .map((kind) => [kind, [...RESENDABLE_ORDER_STATUSES[kind]].sort()]),
     );
     expect(sqlMatrix).toEqual(appMatrix);
+  });
+
+  it('DB の再送の関数（段1のまま）が種類として受ける一覧は、段1の10種類。申し込みのメール6種類は受けず INVALID_EMAIL_KIND になるので、管理画面の再送の窓口が DB を呼ぶ前に断る', () => {
+    expect(sqlValues(/_kind NOT IN \(([^)]+)\)/, functionBody(returnReceiptsMigration, 'public.request_order_email_resend'))).toEqual(
+      ORDER_EMAIL_KINDS.filter((kind) => !isRequestEmailKind(kind)).sort(),
+    );
+  });
+
+  it('取り出しの関数（claim_order_email）の答えの列は、アプリの読む列と同じ。最後にキャンセルの申し込みの番号 cancel_request_id が付く', () => {
+    const table = functionBody(requestRecordsMigration, 'public.claim_order_email').match(/RETURNS TABLE\s*\(([^)]+)\)/)?.[1];
+    expect(table).toBeDefined();
+    const columns = (table ?? '').split(',').map((column) => column.trim().split(/\s+/)[0]);
+    // order-email-store.ts の claimOrderEmail が読む列（cancel_request_id の読み方は order-email-store.test.ts が確かめる）
+    expect(columns).toEqual([
+      'email_id', 'order_id', 'kind', 'variant', 'origin', 'attempts', 'lease_token', 'subject', 'body_text',
+      'payment_expired_sent', 'fulfillment_id', 'refund_id', 'return_id', 'return_receipt_id', 'cancel_request_id',
+    ]);
   });
 
   it.each([
@@ -193,13 +241,32 @@ describe('注文のメールの種類と名前', () => {
   it('種類と原因の記号を見分ける', () => {
     expect(isOrderEmailKind('shipped')).toBe(true);
     expect(isOrderEmailKind('refund')).toBe(true);
-    for (const kind of ['return_accepted', 'return_received', 'return_sent_back', 'return_refund_pending_shop']) {
+    for (const kind of [
+      'return_accepted', 'return_received', 'return_sent_back', 'return_refund_pending_shop',
+      'return_requested', 'return_declined', 'return_request_shop',
+      'cancel_request_received', 'cancel_request_declined', 'cancel_request_shop',
+    ]) {
       expect(isOrderEmailKind(kind)).toBe(true);
     }
     expect(isOrderEmailKind('refunded')).toBe(false);
     expect(isOrderEmailKind('return')).toBe(false);
+    expect(isOrderEmailKind('cancel_request')).toBe(false);
     expect(isOrderEmailErrorCode('lease_expired')).toBe(true);
     expect(isOrderEmailErrorCode('return_cancelled')).toBe(true);
     expect(isOrderEmailErrorCode('Error: boom')).toBe(false);
+  });
+
+  it('申し込みのメール・店あてのメールを、種類の一覧から見分ける', () => {
+    expect(ORDER_EMAIL_KINDS.filter(isReturnRequestEmailKind)).toEqual(['return_requested', 'return_declined', 'return_request_shop']);
+    expect(ORDER_EMAIL_KINDS.filter(isCancelRequestEmailKind)).toEqual([
+      'cancel_request_received', 'cancel_request_declined', 'cancel_request_shop',
+    ]);
+    expect(ORDER_EMAIL_KINDS.filter(isRequestEmailKind)).toEqual([...REQUEST_EMAIL_KINDS]);
+    expect(ORDER_EMAIL_KINDS.filter(isShopEmailKind)).toEqual([...SHOP_EMAIL_KINDS]);
+    // 返品の受付のお知らせ・受け取り・お返しは、番号の組が違うので申し込みのメールではない。お客様あて
+    for (const kind of ['paid', 'refund', 'return_accepted', 'return_received', 'return_sent_back'] as const) {
+      expect(isRequestEmailKind(kind)).toBe(false);
+      expect(isShopEmailKind(kind)).toBe(false);
+    }
   });
 });

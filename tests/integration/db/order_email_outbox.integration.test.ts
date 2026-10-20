@@ -7,7 +7,7 @@ import {
   uniqueSuffix,
 } from './helpers/order-fixtures';
 import { ORDER_STATUSES } from '@/lib/orders/order-payment-types';
-import { ORDER_EMAIL_KINDS, RESENDABLE_ORDER_STATUSES } from '@/lib/orders/email/order-email-types';
+import { isRequestEmailKind, ORDER_EMAIL_KINDS, RESENDABLE_ORDER_STATUSES } from '@/lib/orders/email/order-email-types';
 
 /**
  * 注文のメールの表と関数（グループ D 設計書 3・4・6・7 章）。
@@ -509,7 +509,8 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
   describe('手の再送', () => {
     // 返品のメール4種類は、行を作るのに返品の記録（return_id・return_receipt_id）が要り、再送の状態表に組も持たない。
     // 下の「返品のメールの再送」で確かめる（この表は、返品に結び付かない種類だけを回す）
-    const isReturnEmailKind = (kind: string) => kind.startsWith('return_');
+    // 返品のメール4種類と申し込みのメール6種類（キャンセルの申し込みの3種類を含む。グループ E-3 段2）
+    const isReturnEmailKind = (kind: string) => kind.startsWith('return_') || kind.startsWith('cancel_request_');
 
     test.each(ORDER_EMAIL_KINDS.filter((kind) => !isReturnEmailKind(kind)).flatMap((kind) => ORDER_STATUSES.map((status) => [kind, status] as const)))(
       '送信済みの %s × 注文状態 %s の再送可否は RESENDABLE_ORDER_STATUSES と一致する', async (kind, status) => {
@@ -539,7 +540,7 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
     // 返品のメール4種類（グループ E-3 計画 P7）は再送しない。DB の関数は種類を受けた上で、許可の表に組が無いので、
     // どの注文の状態でも（送信済みの行を用意する前に）RESEND_NOT_ALLOWED で断る
     test.each(
-      ORDER_EMAIL_KINDS.filter(isReturnEmailKind).flatMap((kind) => ORDER_STATUSES.map((status) => [kind, status] as const)),
+      ORDER_EMAIL_KINDS.filter((kind) => isReturnEmailKind(kind) && !isRequestEmailKind(kind)).flatMap((kind) => ORDER_STATUSES.map((status) => [kind, status] as const)),
     )('返品のメールの再送: %s × 注文状態 %s は RESEND_NOT_ALLOWED で断る', async (kind, status) => {
       const actor = await createActor(db());
       const orderId = await createOrder(db(), status);
@@ -557,6 +558,18 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
       await complete(db(), claimed!, `re_${uniqueSuffix()}`);
       return { orderId, emailId: claimed!.email_id };
     }
+
+    // 申し込みのメール6種類（グループ E-3 段2 計画 P12）は再送しない。再送の関数は段1のままで、これらを種類として受けず INVALID_EMAIL_KIND で断る
+    // （管理画面の再送の窓口は、DB を呼ぶ前に 409 で断る。窓口の試験は order-email-routes.test.ts）
+    test.each(ORDER_EMAIL_KINDS.filter(isRequestEmailKind))('申し込みのメール %s の再送は INVALID_EMAIL_KIND で断る', async (kind) => {
+      const actor = await createActor(db());
+      const orderId = await createOrder(db(), 'paid');
+
+      expect(RESENDABLE_ORDER_STATUSES[kind]).toEqual([]);
+      await expectRejected(db(), 'select public.request_order_email_resend($1, $2, $3, $4) as email_id', [orderId, kind, actor.id, null], {
+        code: '22023', message: 'INVALID_EMAIL_KIND',
+      });
+    });
 
     test('知らない再送の種類は INVALID_EMAIL_KIND で断る', async () => {
       const orderId = await createOrder(db(), 'paid');

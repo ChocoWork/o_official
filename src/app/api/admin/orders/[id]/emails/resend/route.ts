@@ -4,7 +4,7 @@ import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { logAudit } from '@/lib/audit';
-import { ORDER_EMAIL_KINDS } from '@/lib/orders/email/order-email-types';
+import { isRequestEmailKind, ORDER_EMAIL_KINDS } from '@/lib/orders/email/order-email-types';
 import {
   OrderEmailResendError,
   OrderEmailStoreError,
@@ -85,6 +85,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const fulfillmentId = parsedBody.data.fulfillmentId ?? null;
   // 発送の番号は個人情報ではないので、どの発送のメールかを監査に残す
   const target = fulfillmentId ? { kind, fulfillment_id: fulfillmentId } : { kind };
+
+  // 申し込みのメール6種類（返品の申し込み・キャンセルの申し込み。グループ E-3 段2 計画 P12）は再送しない。
+  // DB の関数は段1のままで、これらを種類として受けず INVALID_EMAIL_KIND にする（500 になる）ので、DB を呼ぶ前に「再送できない」と断る
+  if (isRequestEmailKind(kind)) {
+    await audit('conflict', 'Resend not allowed', target);
+    return NextResponse.json({ error: MESSAGES.not_allowed }, { status: 409 });
+  }
 
   try {
     const store = (await createServiceRoleClient()) as unknown as OrderEmailStore;

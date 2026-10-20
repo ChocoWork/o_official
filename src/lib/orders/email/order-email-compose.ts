@@ -11,15 +11,25 @@ import {
 import { listOrderLineFulfillment } from '@/lib/orders/fulfillment/fulfillment-store';
 import type { CancelReason, OrderStatus } from '@/lib/orders/order-payment-types';
 import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
-import type { OrderEmailKind, OrderEmailVariant, RefundEmailVariant } from '@/lib/orders/email/order-email-types';
+import {
+  isReturnRequestEmailKind,
+  type CancelRequestEmailKind,
+  type OrderEmailKind,
+  type OrderEmailVariant,
+  type RefundEmailVariant,
+  type RequestEmailKind,
+  type ReturnRequestEmailKind,
+} from '@/lib/orders/email/order-email-types';
 import { konbiniDeadlineLastDay } from '@/lib/orders/refund/refund-messages';
 import type { OrderRefundStatus } from '@/lib/orders/refund/refund-types';
-import { formatReturnNumber, RETURN_CARRIER_LABELS } from '@/lib/orders/returns/return-messages';
+import { formatReturnNumber, RETURN_CARRIER_LABELS, RETURN_REASON_LABELS } from '@/lib/orders/returns/return-messages';
 import {
   RETURN_CARRIERS,
   type RefundChoice,
   type ReturnCarrier,
   type ReturnMethod,
+  type ReturnReason,
+  type ReturnResolution,
   type ShippingPayer,
 } from '@/lib/orders/returns/return-types';
 
@@ -31,6 +41,8 @@ import {
  * 返金のお知らせと、支払い済みの注文のキャンセルのお知らせは返金ごとに作り、額・戻る時期・商品を返金の記録から読む（グループ E-2 設計書 8-1・8-2）。
  * 返品のメール（受付・受け取り・お返し・店への知らせ）は返品・受け取りごとに作り、品・手数料・返送先・お返しのメッセージを返品の記録から読む。
  * 返品の返金のお知らせ（返金の書き分け return）は、返金の記録が指す返品と、その返金を始めた受け取りも読む（グループ E-3 設計書 9 章）。
+ * 申し込みのメール6種類（返品のお申し込みの受付・お断り・店への知らせ、キャンセルのお申し込みの受付・お断り・店への知らせ）は、
+ * 返品・キャンセルの申し込みの記録から読む。お客様の詳しい内容・ご連絡事項と写真は読まない（グループ E-3 段2 計画 C-6）。
  */
 const SHOP_NAME = 'Le Fil des Heures';
 
@@ -60,6 +72,13 @@ const MATERIAL_RETURN_ITEM_COLUMNS = 'id, item_name, color, size, created_at';
 const MATERIAL_RETURN_VARIANT_COLUMNS = 'id, item_id, item_colors(name), item_sizes(label)';
 const MATERIAL_RETURN_ADDRESS_COLUMNS =
   'return_address_name, return_address_postal_code, return_address_line, return_address_phone';
+
+// 申し込みのメールの材料（グループ E-3 段2）。表と列は計画 C-0 のとおり。
+// お客様の詳しい内容（customer_note）・ご連絡事項は、店への知らせにも入れない（個人の事情が入りうるため）ので読まない
+const MATERIAL_REQUEST_RETURN_COLUMNS = 'number, decline_message';
+const MATERIAL_REQUEST_LINE_COLUMNS = 'id, order_item_id, quantity, reason, requested_resolution, requested_exchange_variant_id';
+const MATERIAL_CANCEL_REQUEST_COLUMNS = 'decline_message';
+const MATERIAL_CANCEL_REQUEST_LINE_COLUMNS = 'order_item_id, quantity';
 
 const PAID_LEAD = ['この度はご注文いただき誠にありがとうございます。', 'ご注文を承りました。'];
 
@@ -129,6 +148,11 @@ const returnFeeWaitingNotice = (fee: string) =>
 const RETURN_SHOP_ACTION = '管理画面の注文の一覧で「額を決めて返金する」を押して、返金してください。';
 /** 店への知らせの「受け取った人」。この知らせは返金できない人（サポート）の受け取りにだけ書かれる */
 const RETURN_SHOP_RECEIVER = 'サポート';
+
+/** 申し込みのメールの決まった文（グループ E-3 段2。計画 C-6 と一字も違えない） */
+const REQUEST_RECEIVED_CLOSING = '内容を確かめて、ご連絡いたします。';
+const RETURN_REQUEST_SHOP_ACTION = '管理画面の注文の一覧で「申し込みを確かめる」を押して、承認するかお断りしてください。';
+const CANCEL_REQUEST_SHOP_ACTION = '管理画面の注文の一覧で「キャンセルの申し込み」を押して、品を外すかお断りしてください。';
 
 export type OrderEmailMaterialRow = OrderEmailRow & { status: OrderStatus; paid_amount?: number | null };
 
@@ -217,6 +241,26 @@ export type OrderEmailReturnMaterial = {
   receipt: OrderEmailReturnReceipt | null;
 };
 
+/**
+ * 返品の申し込みのメールの1行（品名・色・サイズ・数に、理由・ご希望・写真の数を添えた形）。
+ * ご希望（requestedResolution・requestedExchange）は、お客様が申し込んだ時の値（requested_resolution・requested_exchange_variant_id）で、
+ * 承認で変わる解決の予定（resolution など）ではない。photoCount は申し込みに付いた写真の数で、店への知らせだけが読む（ほかは 0）
+ */
+export type OrderEmailReturnRequestLine = OrderEmailReturnItem & {
+  reason: ReturnReason;
+  requestedResolution: ReturnResolution;
+  requestedExchange: { color: string | null; size: string | null } | null;
+  photoCount: number;
+};
+
+/**
+ * 申し込みのメール6種類の材料。return は返品の申し込みの3種類、cancel はキャンセルの申し込みの3種類。
+ * lines は受付・店への知らせだけが読む（お断りのメールは []）。declineMessage はお断りのメールだけが読む（お店が書いた文。ほかは null）
+ */
+export type OrderEmailRequestMaterial =
+  | { kind: 'return'; number: number; declineMessage: string | null; lines: OrderEmailReturnRequestLine[] }
+  | { kind: 'cancel'; declineMessage: string | null; lines: OrderEmailReturnItem[] };
+
 export type OrderEmailMaterial = {
   order: OrderEmailMaterialRow;
   items: ConfirmationItem[];
@@ -226,6 +270,8 @@ export type OrderEmailMaterial = {
   refund: OrderEmailRefundMaterial | null;
   /** 返品のメール4種類と、返品の返金のお知らせ（書き分け return）の時だけ読む。ほかの種類は null（グループ E-3 設計書 9 章） */
   orderReturn: OrderEmailReturnMaterial | null;
+  /** 申し込みのメール6種類の時だけ読む（loadRequestEmailMaterial）。ほかの種類は null（グループ E-3 段2） */
+  request: OrderEmailRequestMaterial | null;
 };
 
 export type ComposeRequest = {
@@ -253,7 +299,10 @@ export type OrderEmailMaterialTable =
   | 'item_variants'
   | 'items'
   | 'shop_return_settings'
-  | 'list_order_returns';
+  | 'list_order_returns'
+  | 'order_return_photos'
+  | 'order_cancel_requests'
+  | 'order_cancel_request_lines';
 
 /** 材料を読めなかった（DB の失敗）。worker は一時的な失敗としてやり直す。table は読んだ表か、DB の関数の名前 */
 export class OrderEmailMaterialError extends Error {
@@ -966,7 +1015,214 @@ export async function loadOrderEmailMaterial(
     }
   }
 
-  return { order, items: items as ConfirmationItem[], fulfillment, refund, orderReturn };
+  return { order, items: items as ConfirmationItem[], fulfillment, refund, orderReturn, request: null };
+}
+
+type RequestReturnRow = { number: number; decline_message: string | null };
+
+type RequestLineRow = {
+  id: string;
+  order_item_id: string;
+  quantity: number;
+  reason: ReturnReason;
+  requested_resolution: ReturnResolution | null;
+  requested_exchange_variant_id: number | null;
+};
+
+type RequestPhotoRow = { return_line_id: string };
+
+type CancelRequestRow = { decline_message: string | null };
+
+type CancelRequestLineRow = { order_item_id: string; quantity: number };
+
+/** 申し込みの行が指す商品を、この注文の中から番号で引ける形に読む。読む商品が無ければ読まない */
+async function readOrderItemsById(
+  store: Pick<SupabaseClient, 'from'>,
+  orderId: string,
+  itemIds: readonly string[],
+): Promise<Map<string, ReturnItemRow>> {
+  const ids = [...new Set(itemIds)];
+  if (ids.length === 0) {
+    return new Map();
+  }
+  const rows = await readRows<ReturnItemRow>(
+    store.from('order_items').select(MATERIAL_RETURN_ITEM_COLUMNS).eq('order_id', orderId).in('id', ids),
+    'order_items',
+  );
+  return new Map(rows.map((item) => [item.id, item] as const));
+}
+
+/** 返品の行ごとの写真の数。消した写真（purged_at が入った行）も数える: 申し込みの時に付いた枚数を店に伝えるため */
+async function readPhotoCounts(store: Pick<SupabaseClient, 'from'>, lineIds: readonly string[]): Promise<Map<string, number>> {
+  const rows = await readRows<RequestPhotoRow>(
+    store.from('order_return_photos').select('return_line_id').in('return_line_id', [...lineIds]),
+    'order_return_photos',
+  );
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    counts.set(row.return_line_id, (counts.get(row.return_line_id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * 返品の申し込みのメール3種類の材料。返品は注文の番号でも絞って読む（取り出した行の注文と返品の組が食い違っても、
+ * ほかの注文の返品の中身をこの注文のお客様へ送らない）。ご希望は、申し込んだ時の値（requested_*）で読む。
+ * お断りのメールは、返品の番号とお断りのメッセージだけを読む。写真の数は店への知らせだけが読む。
+ * 返品が無い・行が無い・行の商品がこの注文に無い・ご希望が読めない（お店が作った返品の行など）・交換の色とサイズが読めない時は null（送れない）
+ */
+async function loadReturnRequestMaterial(
+  store: Pick<SupabaseClient, 'from'>,
+  orderId: string,
+  returnId: string,
+  kind: ReturnRequestEmailKind,
+): Promise<OrderEmailRequestMaterial | null> {
+  const row = await readRow<RequestReturnRow>(
+    store
+      .from('order_returns')
+      .select(MATERIAL_REQUEST_RETURN_COLUMNS)
+      .eq('id', returnId)
+      .eq('order_id', orderId)
+      .maybeSingle<RequestReturnRow>(),
+    'order_returns',
+  );
+  if (!row) {
+    return null;
+  }
+  if (kind === 'return_declined') {
+    return { kind: 'return', number: row.number, declineMessage: row.decline_message, lines: [] };
+  }
+
+  // 返品の行は番号の順に並べて読む（DB が返す順に頼らない）。書く時に商品の登録順に並べ直す
+  const lines = [
+    ...(await readRows<RequestLineRow>(
+      store.from('order_return_lines').select(MATERIAL_REQUEST_LINE_COLUMNS).eq('return_id', returnId),
+      'order_return_lines',
+    )),
+  ].sort((a, b) => a.id.localeCompare(b.id));
+  if (lines.length === 0) {
+    return null;
+  }
+  const itemById = await readOrderItemsById(store, orderId, lines.map((line) => line.order_item_id));
+  if (lines.some((line) => !itemById.has(line.order_item_id))) {
+    return null;
+  }
+  const itemOf = (line: RequestLineRow) => itemById.get(line.order_item_id) as ReturnItemRow;
+  const variantById = await readExchangeVariants(store, lines.map((line) => line.requested_exchange_variant_id));
+  const photoCounts =
+    kind === 'return_request_shop' ? await readPhotoCounts(store, lines.map((line) => line.id)) : new Map<string, number>();
+
+  // 商品の登録順に並べる。同じ商品の行は、まとめずに、返品の行の番号の順のまま（並べ替えは安定）
+  const requestLines: OrderEmailReturnRequestLine[] = [];
+  for (const line of [...lines].sort((a, b) => compareOrderItems(itemOf(a), itemOf(b)))) {
+    const resolution = line.requested_resolution;
+    if (resolution !== 'refund' && resolution !== 'exchange') {
+      return null;
+    }
+    let requestedExchange: OrderEmailReturnRequestLine['requestedExchange'] = null;
+    if (resolution === 'exchange') {
+      const variant =
+        line.requested_exchange_variant_id === null ? undefined : variantById.get(line.requested_exchange_variant_id);
+      if (!variant) {
+        return null;
+      }
+      requestedExchange = { color: variant.item_colors?.name ?? null, size: variant.item_sizes?.label ?? null };
+    }
+    const item = itemOf(line);
+    requestLines.push({
+      item_name: item.item_name,
+      color: item.color,
+      size: item.size,
+      quantity: line.quantity,
+      reason: line.reason,
+      requestedResolution: resolution,
+      requestedExchange,
+      photoCount: photoCounts.get(line.id) ?? 0,
+    });
+  }
+  return { kind: 'return', number: row.number, declineMessage: null, lines: requestLines };
+}
+
+/**
+ * キャンセルの申し込みのメール3種類の材料。申し込みは注文の番号でも絞って読む。
+ * お断りのメールは、お断りのメッセージだけを読む。申し込みが無い・行が無い・行の商品がこの注文に無い時は null（送れない）
+ */
+async function loadCancelRequestMaterial(
+  store: Pick<SupabaseClient, 'from'>,
+  orderId: string,
+  cancelRequestId: string,
+  kind: CancelRequestEmailKind,
+): Promise<OrderEmailRequestMaterial | null> {
+  const row = await readRow<CancelRequestRow>(
+    store
+      .from('order_cancel_requests')
+      .select(MATERIAL_CANCEL_REQUEST_COLUMNS)
+      .eq('id', cancelRequestId)
+      .eq('order_id', orderId)
+      .maybeSingle<CancelRequestRow>(),
+    'order_cancel_requests',
+  );
+  if (!row) {
+    return null;
+  }
+  if (kind === 'cancel_request_declined') {
+    return { kind: 'cancel', declineMessage: row.decline_message, lines: [] };
+  }
+
+  const lines = await readRows<CancelRequestLineRow>(
+    store
+      .from('order_cancel_request_lines')
+      .select(MATERIAL_CANCEL_REQUEST_LINE_COLUMNS)
+      .eq('cancel_request_id', cancelRequestId),
+    'order_cancel_request_lines',
+  );
+  if (lines.length === 0) {
+    return null;
+  }
+  const itemById = await readOrderItemsById(store, orderId, lines.map((line) => line.order_item_id));
+  if (lines.some((line) => !itemById.has(line.order_item_id))) {
+    return null;
+  }
+  return {
+    kind: 'cancel',
+    declineMessage: null,
+    lines: toReturnItems(
+      lines.map((line) => ({ item: itemById.get(line.order_item_id) as ReturnItemRow, quantity: line.quantity })),
+    ),
+  };
+}
+
+/**
+ * 申し込みのメール6種類の材料を読む（グループ E-3 段2）。メールの種類で、返品の申し込み（返品の番号）か
+ * キャンセルの申し込み（キャンセルの申し込みの番号）かを決める。番号が空・注文が無い・申し込みの記録が足りない時は null（送れない）。
+ * 注文の明細・発送・返金・返品の材料は付けない（注文の行と申し込みだけ）。読めなければ OrderEmailMaterialError を投げる
+ */
+export async function loadRequestEmailMaterial(
+  store: Pick<SupabaseClient, 'from'>,
+  orderId: string,
+  target: { kind: RequestEmailKind; returnId: string | null; cancelRequestId: string | null },
+): Promise<OrderEmailMaterial | null> {
+  const order = await readRow<OrderEmailMaterialRow>(
+    store.from('orders').select(MATERIAL_ORDER_COLUMNS).eq('id', orderId).maybeSingle<OrderEmailMaterialRow>(),
+    'orders',
+  );
+  if (!order) {
+    return null;
+  }
+  let request: OrderEmailRequestMaterial | null;
+  if (isReturnRequestEmailKind(target.kind)) {
+    request =
+      target.returnId === null ? null : await loadReturnRequestMaterial(store, orderId, target.returnId, target.kind);
+  } else {
+    request =
+      target.cancelRequestId === null
+        ? null
+        : await loadCancelRequestMaterial(store, orderId, target.cancelRequestId, target.kind);
+  }
+  if (!request) {
+    return null;
+  }
+  return { order, items: [], fulfillment: null, refund: null, orderReturn: null, request };
 }
 
 export function greeting(fullName: string | null): string {
@@ -1466,6 +1722,147 @@ function composeShipped({ order, fulfillment }: OrderEmailMaterial): ComposedOrd
   };
 }
 
+/** 色・サイズを「色 / サイズ」と書く。どちらも無ければ空文字（品名の後ろの括弧と同じ書き方） */
+function colorSizeLabel(variant: { color: string | null; size: string | null }): string {
+  return [variant.color, variant.size].filter(Boolean).join(' / ');
+}
+
+/**
+ * 返品の申し込みの1行。品の行の後ろに、理由とご希望を括弧で添える（計画 C-6）。店への知らせだけ、写真の数も添える。
+ * ご希望が交換の時は交換の色・サイズも書く（どちらも読めなければ「ご希望: 交換」だけ）
+ */
+function returnRequestLine(line: OrderEmailReturnRequestLine, withPhotoCount: boolean): string {
+  const exchange = line.requestedExchange ? colorSizeLabel(line.requestedExchange) : '';
+  const wish =
+    line.requestedResolution === 'exchange' ? (exchange ? `ご希望: 交換 ${exchange}` : 'ご希望: 交換') : 'ご希望: 返金';
+  const photos = withPhotoCount ? `／写真 ${line.photoCount}枚` : '';
+  return `${returnItemLine(line)}（理由: ${RETURN_REASON_LABELS[line.reason]}／${wish}${photos}）`;
+}
+
+/** 返品のお申し込みの受付（グループ E-3 段2 計画 C-6）。返品ごとに1通。申し込みの材料・申し込みの行が無ければ作らない */
+function composeReturnRequested(material: OrderEmailMaterial): ComposedOrderEmail | null {
+  const { order } = material;
+  const request = material.request;
+  if (!request || request.kind !== 'return' || request.lines.length === 0) {
+    return null;
+  }
+  const orderNumber = toOrderNumber(order.id);
+  return {
+    subject: `【${SHOP_NAME}】返品のお申し込みを受け付けました（${orderNumber}）`,
+    text: paragraphs(
+      [greeting(order.shipping_full_name)],
+      [`ご注文（${orderNumber}）の返品のお申し込みを受け付けました（返品番号 ${formatReturnNumber(order.id, request.number)}）。`],
+      ['お申し込みの商品:', ...request.lines.map((line) => returnRequestLine(line, false))],
+      [REQUEST_RECEIVED_CLOSING],
+      [contactLine(order.id)],
+      [SHOP_NAME],
+    ).join('\n'),
+  };
+}
+
+/** 返品のお申し込みについて（お断り。計画 C-6）。お店のメッセージは書かれたまま入れる。メッセージが無ければ作らない */
+function composeReturnDeclined(material: OrderEmailMaterial): ComposedOrderEmail | null {
+  const { order } = material;
+  const request = material.request;
+  if (!request || request.kind !== 'return' || !request.declineMessage) {
+    return null;
+  }
+  const orderNumber = toOrderNumber(order.id);
+  return {
+    subject: `【${SHOP_NAME}】返品のお申し込みについて（${orderNumber}）`,
+    text: paragraphs(
+      [greeting(order.shipping_full_name)],
+      [
+        `ご注文（${orderNumber}）の返品のお申し込み（返品番号 ${formatReturnNumber(order.id, request.number)}）は、お受けすることができませんでした。`,
+      ],
+      ['当店より:', request.declineMessage],
+      [contactLine(order.id)],
+      [SHOP_NAME],
+    ).join('\n'),
+  };
+}
+
+/**
+ * 店への知らせ（返品の申し込み。計画 C-6）。お客様の氏名・住所・メールと、詳しい内容は入れない（宛先は worker が店のアドレスにする）。
+ * 申し込みの材料・申し込みの行が無ければ作らない
+ */
+function composeReturnRequestShop(material: OrderEmailMaterial): ComposedOrderEmail | null {
+  const { order } = material;
+  const request = material.request;
+  if (!request || request.kind !== 'return' || request.lines.length === 0) {
+    return null;
+  }
+  return {
+    subject: `【要対応】返品の申し込みが届きました（${toOrderNumber(order.id)}）`,
+    text: paragraphs(
+      [`お客様から返品の申し込みが届きました（返品番号 ${formatReturnNumber(order.id, request.number)}）。`],
+      ['申し込みの商品:', ...request.lines.map((line) => returnRequestLine(line, true))],
+      [RETURN_REQUEST_SHOP_ACTION],
+    ).join('\n'),
+  };
+}
+
+/** キャンセルのお申し込みの受付（計画 C-6）。申し込みごとに1通。申し込みの材料・申し込みの行が無ければ作らない */
+function composeCancelRequestReceived(material: OrderEmailMaterial): ComposedOrderEmail | null {
+  const { order } = material;
+  const request = material.request;
+  if (!request || request.kind !== 'cancel' || request.lines.length === 0) {
+    return null;
+  }
+  const orderNumber = toOrderNumber(order.id);
+  return {
+    subject: `【${SHOP_NAME}】キャンセルのお申し込みを受け付けました（${orderNumber}）`,
+    text: paragraphs(
+      [greeting(order.shipping_full_name)],
+      [`ご注文（${orderNumber}）のキャンセルのお申し込みを受け付けました。`],
+      ['お申し込みの商品:', ...request.lines.map(returnItemLine)],
+      [REQUEST_RECEIVED_CLOSING],
+      [contactLine(order.id)],
+      [SHOP_NAME],
+    ).join('\n'),
+  };
+}
+
+/** キャンセルのお申し込みについて（お断り。計画 C-6）。お店のメッセージは書かれたまま入れる。メッセージが無ければ作らない */
+function composeCancelRequestDeclined(material: OrderEmailMaterial): ComposedOrderEmail | null {
+  const { order } = material;
+  const request = material.request;
+  if (!request || request.kind !== 'cancel' || !request.declineMessage) {
+    return null;
+  }
+  const orderNumber = toOrderNumber(order.id);
+  return {
+    subject: `【${SHOP_NAME}】キャンセルのお申し込みについて（${orderNumber}）`,
+    text: paragraphs(
+      [greeting(order.shipping_full_name)],
+      [`ご注文（${orderNumber}）のキャンセルのお申し込みは、お受けすることができませんでした。`],
+      ['当店より:', request.declineMessage],
+      [contactLine(order.id)],
+      [SHOP_NAME],
+    ).join('\n'),
+  };
+}
+
+/**
+ * 店への知らせ（キャンセルの申し込み。計画 C-6）。お客様の氏名・住所・メールと、ご連絡事項は入れない。
+ * 申し込みの材料・申し込みの行が無ければ作らない
+ */
+function composeCancelRequestShop(material: OrderEmailMaterial): ComposedOrderEmail | null {
+  const { order } = material;
+  const request = material.request;
+  if (!request || request.kind !== 'cancel' || request.lines.length === 0) {
+    return null;
+  }
+  return {
+    subject: `【要対応】キャンセルの申し込みが届きました（${toOrderNumber(order.id)}）`,
+    text: paragraphs(
+      ['お客様からキャンセルの申し込みが届きました。'],
+      ['申し込みの商品:', ...request.lines.map(returnItemLine)],
+      [CANCEL_REQUEST_SHOP_ACTION],
+    ).join('\n'),
+  };
+}
+
 /** 件名と本文を作る。材料が足りなければ null */
 export function composeOrderEmail(material: OrderEmailMaterial, request: ComposeRequest): ComposedOrderEmail | null {
   switch (request.kind) {
@@ -1500,5 +1897,17 @@ export function composeOrderEmail(material: OrderEmailMaterial, request: Compose
       return composeReturnSentBack(material);
     case 'return_refund_pending_shop':
       return composeReturnRefundPendingShop(material);
+    case 'return_requested':
+      return composeReturnRequested(material);
+    case 'return_declined':
+      return composeReturnDeclined(material);
+    case 'return_request_shop':
+      return composeReturnRequestShop(material);
+    case 'cancel_request_received':
+      return composeCancelRequestReceived(material);
+    case 'cancel_request_declined':
+      return composeCancelRequestDeclined(material);
+    case 'cancel_request_shop':
+      return composeCancelRequestShop(material);
   }
 }

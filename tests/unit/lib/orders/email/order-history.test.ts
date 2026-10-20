@@ -745,6 +745,25 @@ describe('buildOrderHistory - 返金のお知らせと並び順', () => {
     }
   });
 
+  // 申し込みのメール6種類（グループ E-3 段2 計画 C-5・P12）。申し込みごと・種類ごとに1通で、その時の事実を伝えるので再送しない。
+  // 履歴は種類の名前を ORDER_EMAIL_KIND_LABELS から引くだけで、申し込みの出来事の行（P17）は Task 8 が足す
+  it.each([
+    ['return_requested', '返品のお申し込みの受付のお知らせ', { returnId: 'return-1' }],
+    ['return_declined', '返品のお申し込みについてのお知らせ', { returnId: 'return-1' }],
+    ['return_request_shop', '店への知らせ（返品の申し込み）', { returnId: 'return-1' }],
+    ['cancel_request_received', 'キャンセルのお申し込みの受付のお知らせ', {}],
+    ['cancel_request_declined', 'キャンセルのお申し込みについてのお知らせ', {}],
+    ['cancel_request_shop', '店への知らせ（キャンセルの申し込み）', {}],
+  ] as const)('%s のメールの行は、種類の名前「%s」で出し、どの注文の状態でも再送できない', (kind, kindLabel, ids) => {
+    for (const status of ['pending', 'paid', 'shipped', 'cancelled', 'failed'] as const) {
+      const history = buildOrderHistory(input({ order: { ...ORDER, status }, emailRows: [email({ kind, ...ids })] }));
+
+      expect(entriesOf(history.entries, 'email')[0]).toMatchObject({
+        kindLabel, resendable: false, stateLabel: '送信済み', canViewContent: true, fulfillmentId: null, fulfillmentNumber: null,
+      });
+    }
+  });
+
   it('送れなかった返品のメールの行も、再送できない', () => {
     const history = buildOrderHistory(input({
       emailRows: [email({ kind: 'return_received', status: 'dead', lastErrorCode: 'source_missing', hasBody: false, returnReceiptId: 'receipt-1' })],

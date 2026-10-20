@@ -77,6 +77,8 @@ export type ClaimedOrderEmail = {
   returnId: string | null;
   /** 返品の受け取りのお知らせ・品物のお返しのお知らせ・店への知らせ（返金待ち）と、受け取りと一緒の返金のお知らせだけ、どの受け取りのメールかを示す。ほかの種類は null */
   returnReceiptId: string | null;
+  /** キャンセルの申し込みのメール3種類だけ、どの申し込みのメールかを示す。ほかの種類は null（グループ E-3 段2） */
+  cancelRequestId: string | null;
 };
 
 export type OrderEmailLease = Pick<ClaimedOrderEmail, 'id' | 'leaseToken'>;
@@ -129,6 +131,8 @@ export async function claimOrderEmail(store: OrderEmailStore, leaseSeconds: numb
     subject: textOrNull(row.subject),
     bodyText: textOrNull(row.body_text),
     paymentExpiredSent: row.payment_expired_sent === true,
+    // 古い形の答え（この列が無い）は null。キャンセルの申し込みのメール3種類の行だけ値を持つ
+    cancelRequestId: textOrNull(row.cancel_request_id),
     fulfillmentId: textOrNull(row.fulfillment_id),
     refundId: textOrNull(row.refund_id),
     returnId: textOrNull(row.return_id),

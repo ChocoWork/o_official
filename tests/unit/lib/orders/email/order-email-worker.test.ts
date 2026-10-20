@@ -63,6 +63,7 @@ function material(
     fulfillment,
     refund,
     orderReturn,
+    request: null,
   };
 }
 
@@ -150,6 +151,7 @@ function harness(queue: QueueRow[], options: {
   const deps: OrderEmailWorkerDeps = {
     store: { rpc } as unknown as OrderEmailStore,
     loadMaterial,
+    loadRequestMaterial: loadMaterial,
     shopRecipient: () => (options.shopRecipient === undefined ? 'shop-alert@example.com' : options.shopRecipient),
     send,
     checkConfig: options.config ?? (() => null),

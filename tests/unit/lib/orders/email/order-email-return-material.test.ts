@@ -687,7 +687,7 @@ describe('loadOrderEmailMaterial（返品の番号が無い時と読めない時
 
     const material = await load(db, {});
 
-    expect(material).toEqual({ order: ORDER_ROW, items: BASE_ITEMS, fulfillment: null, refund: null, orderReturn: null });
+    expect(material).toEqual({ order: ORDER_ROW, items: BASE_ITEMS, fulfillment: null, refund: null, orderReturn: null, request: null });
     expect(db.tablesRead()).toEqual(['orders', 'order_items']);
   });
 
