@@ -269,7 +269,24 @@ describe('POST /api/orders/[id]/cancel-request の成功と送り直し', () => 
 });
 
 describe('POST /api/orders/[id]/cancel-request の DB の断りと失敗', () => {
-  it.each(CUSTOMER_C4_CASES)('DB が %s で断ったら、HTTP %i とお客様の言葉（C-4）で返す。メールは送らない', async (code, status, message) => {
+  it('受付オフはキャンセルの言葉と RETURN_REQUESTS_CLOSED・409 で返し、監査を残してメールを送らない', async () => {
+    mockRequestCancel.mockRejectedValue(new ReturnStoreError('RETURN_REQUESTS_CLOSED'));
+
+    const response = await POST(postRequest(BODY), ORDER_CONTEXT);
+
+    expect(response.status).toBe(409);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    await expect(response.json()).resolves.toEqual({
+      error: '現在、キャンセルのお申し込みを受け付けていません。',
+      code: 'RETURN_REQUESTS_CLOSED',
+    });
+    expect(mockScheduleDelivery).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'conflict', detail: 'Cancel request refused', metadata: { code: 'RETURN_REQUESTS_CLOSED' },
+    }));
+  });
+
+  it.each(CUSTOMER_C4_CASES.filter(([code]) => code !== 'RETURN_REQUESTS_CLOSED'))('DB が %s で断ったら、HTTP %i とお客様の言葉（C-4）で返す。メールは送らない', async (code, status, message) => {
     mockRequestCancel.mockRejectedValue(new ReturnStoreError(code));
 
     const response = await POST(postRequest(BODY), ORDER_CONTEXT);

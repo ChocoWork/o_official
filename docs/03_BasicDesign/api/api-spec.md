@@ -727,7 +727,7 @@ export type CustomerRequestedCancel = { cancelRequestId: string; status: 'reques
 | 記号 | HTTP | 管理画面の言葉 | お客様の言葉 |
 |---|---|---|---|
 | `RETURN_NOT_ELIGIBLE` | 409 | 申し込めない品が含まれています。画面を開き直してください。 | お申し込みいただけない商品が含まれています。画面を開き直してください。 |
-| `RETURN_REQUESTS_CLOSED` | 409 | 申し込みの受付がオフです。 | 現在、返品・交換のお申し込みを受け付けていません。 |
+| `RETURN_REQUESTS_CLOSED` | 409 | 申し込みの受付がオフです。 | 現在、返品・交換のお申し込みを受け付けていません。<br>キャンセルの申し込みの窓口では「現在、キャンセルのお申し込みを受け付けていません。」 |
 | `RETURN_PHOTO_INVALID` | 400 | 写真を確かめてください。 | 写真を確かめてください（JPEG・PNG、1枚10MBまで、1つの商品に5枚まで）。 |
 | `RETURN_CUSTOMER_NOTE_REQUIRED` | 400 | 詳しい内容が必要です。 | 「破損・不良」「その他」の時は、詳しい内容を入れてください（300字まで）。 |
 | `RETURN_DECLINE_MESSAGE_REQUIRED` | 400 | お客様へのメッセージを入れてください（1000字まで）。 | — |

@@ -1,6 +1,7 @@
 import { clientFetch, refreshSessionOnce } from '@/lib/client-fetch';
 import { REQUEST_TEXT } from '@/features/account/returns/return-request-model';
 import {
+  CUSTOMER_CANCEL_REQUESTS_CLOSED_MESSAGE,
   CUSTOMER_RETURN_ERROR_MESSAGES,
   CUSTOMER_RETURN_FAILURE_MESSAGE,
   CUSTOMER_RETURN_RATE_LIMITED_MESSAGE,
@@ -111,8 +112,11 @@ export async function submitCustomerReturnRequest(orderId: string, body: unknown
 /**
  * キャンセルのお申し込み（グループ E-3 段2）。窓口 POST /api/orders/{orderId}/cancel-request へ送る。
  * 二重防止の番号と中身は呼び出し側（CancelRequestForm）が持ち、答えが分からない時（unknown）は同じ物で確かめ直す。
- * 答えの4分類と言葉の引き方は、返品の申し込みと同じ callCustomerReturnApi に任せる。
+ * 答えの4分類は callCustomerReturnApi に任せ、共通の受付停止の記号だけはキャンセルの言葉にする。
  */
 export async function submitCustomerCancelRequest(orderId: string, body: unknown): Promise<CustomerReturnCallResult> {
-  return callCustomerReturnApi(`/api/orders/${encodeURIComponent(orderId)}/cancel-request`, body);
+  const result = await callCustomerReturnApi(`/api/orders/${encodeURIComponent(orderId)}/cancel-request`, body);
+  return result.kind === 'refused' && result.code === 'RETURN_REQUESTS_CLOSED'
+    ? { ...result, message: CUSTOMER_CANCEL_REQUESTS_CLOSED_MESSAGE }
+    : result;
 }

@@ -1,7 +1,7 @@
 const mockClientFetch = jest.fn();
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
 
-import { submitCustomerCancelRequest } from '@/features/account/returns/customer-return-client';
+import { submitCustomerCancelRequest, submitCustomerReturnRequest } from '@/features/account/returns/customer-return-client';
 
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
 const CANCEL_URL = `/api/orders/${ORDER_ID}/cancel-request`;
@@ -50,7 +50,7 @@ describe('submitCustomerCancelRequest（キャンセルのお申し込みの窓�
     ['CANCEL_REQUEST_EXISTS', 409, 'キャンセルのお申し込みは、すでに受け付けています。'],
     ['CANCEL_REQUEST_NOT_ELIGIBLE', 409, 'この注文は、キャンセルのお申し込みを受け付けていません。'],
     ['CANCEL_REQUEST_QUANTITY_EXCEEDS', 409, 'お申し込みいただける数を超えています。画面を開き直してください。'],
-    ['RETURN_REQUESTS_CLOSED', 409, '現在、返品・交換のお申し込みを受け付けていません。'],
+    ['RETURN_REQUESTS_CLOSED', 409, '現在、キャンセルのお申し込みを受け付けていません。'],
     ['RETURN_REQUEST_MISMATCH', 409, 'お申し込みの内容が変わりました。画面を開き直してください。'],
     ['RETURN_ARGUMENT_INVALID', 400, '入力を確かめてください。'],
   ];
@@ -62,6 +62,17 @@ describe('submitCustomerCancelRequest（キャンセルのお申し込みの窓�
       kind: 'refused',
       message,
       code,
+      invalidPhotoUploadIds: [],
+    });
+  });
+
+  it('返品・交換の申し込みが受付オフで断られた時は、返品・交換の言葉を保つ', async () => {
+    mockClientFetch.mockResolvedValueOnce(json({ error: 'Conflict', code: 'RETURN_REQUESTS_CLOSED' }, 409));
+
+    await expect(submitCustomerReturnRequest(ORDER_ID, BODY)).resolves.toEqual({
+      kind: 'refused',
+      message: '現在、返品・交換のお申し込みを受け付けていません。',
+      code: 'RETURN_REQUESTS_CLOSED',
       invalidPhotoUploadIds: [],
     });
   });

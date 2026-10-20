@@ -24,6 +24,9 @@ export const CUSTOMER_RETURN_ERROR_CODES = [
 ] as const satisfies readonly ReturnErrorCode[];
 export type CustomerReturnErrorCode = (typeof CUSTOMER_RETURN_ERROR_CODES)[number];
 
+/** DB の受付停止の記号は共通なので、キャンセルの窓口と画面では申し込みの種類に合う言葉を使う */
+export const CUSTOMER_CANCEL_REQUESTS_CLOSED_MESSAGE = '現在、キャンセルのお申し込みを受け付けていません。';
+
 /** 窓口の誤りの記号が、お客様の言葉を持つ記号か（持たない記号は、お客様の窓口では想定外の失敗として扱う） */
 export function isCustomerReturnErrorCode(code: string): code is CustomerReturnErrorCode {
   return (CUSTOMER_RETURN_ERROR_CODES as readonly string[]).includes(code);

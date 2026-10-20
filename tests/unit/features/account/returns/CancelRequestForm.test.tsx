@@ -193,6 +193,19 @@ describe('CancelRequestForm の窓口の答え', () => {
     mockSubmit.mockReset();
   });
 
+  it('受付オフで断られた時は、キャンセルの言葉を表示し、返品・交換の言葉を表示しない', async () => {
+    const { onSubmitted } = renderForm();
+    const message = '現在、キャンセルのお申し込みを受け付けていません。';
+    mockSubmit.mockResolvedValueOnce(refused(message, 'RETURN_REQUESTS_CLOSED'));
+    chooseLine(SHIRT);
+    fireEvent.click(submitButton());
+
+    await expectAlert(message);
+    expect(screen.getByRole('alert').textContent).toBe(message);
+    expect(screen.queryByText('現在、返品・交換のお申し込みを受け付けていません。')).not.toBeInTheDocument();
+    expect(onSubmitted).not.toHaveBeenCalled();
+  });
+
   it('窓口が断った時は、その文を出し、入力を残し、次の送信は新しい二重防止の番号にする', async () => {
     const { onSubmitted } = renderForm();
     const message = 'お申し込みいただける数を超えています。画面を開き直してください。';

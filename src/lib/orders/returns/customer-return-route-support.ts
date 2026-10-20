@@ -186,6 +186,8 @@ export async function respondToCustomerReturnError(
     refusedDetail: string;
     /** 想定外の失敗の時の監査・ログの文 */
     failureDetail: string;
+    /** 受付停止の記号は共通なので、キャンセルの窓口では申し込みの種類に合う言葉にする */
+    requestsClosedMessage?: string;
   },
 ): Promise<NextResponse> {
   if (isOrderNotFound(error)) {
@@ -195,9 +197,10 @@ export async function respondToCustomerReturnError(
   const code = customerRefusalCodeOf(error);
   if (code) {
     const { status, message } = CUSTOMER_RETURN_ERROR_MESSAGES[code];
+    const refusalMessage = code === 'RETURN_REQUESTS_CLOSED' ? options.requestsClosedMessage ?? message : message;
     await options.audit?.(status === 409 ? 'conflict' : 'failure', options.refusedDetail, { code });
     // 写真の断りは、窓口が DB の前に断る時と同じ形（合わない送り先の番号つき）にそろえる。DB が断った時はどの写真か分からないので空
-    return code === 'RETURN_PHOTO_INVALID' ? photoInvalidResponse([]) : customerJson({ error: message, code }, status);
+    return code === 'RETURN_PHOTO_INVALID' ? photoInvalidResponse([]) : customerJson({ error: refusalMessage, code }, status);
   }
   console.error(`[${options.tag}] ${options.failureDetail}`, ...errorLogFields(error));
   await options.audit?.('error', options.failureDetail);

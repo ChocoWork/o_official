@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
+import { CUSTOMER_CANCEL_REQUESTS_CLOSED_MESSAGE } from '@/lib/orders/returns/customer-return-messages';
 import {
   CUSTOMER_RETURN_RATE_LIMITS,
   createCustomerAudit,
@@ -76,6 +77,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       tag: ACTION,
       refusedDetail: 'Cancel request refused',
       failureDetail: 'Failed to create cancel request',
+      requestsClosedMessage: CUSTOMER_CANCEL_REQUESTS_CLOSED_MESSAGE,
     });
   }
 }
