@@ -97,7 +97,8 @@ async function readDetail(page: Page, orderId: string): Promise<DetailBody> {
 
 async function openDetailPage(page: Page, orderId: string): Promise<void> {
   await page.goto(`/account/orders/${orderId}`);
-  await expect(page.getByText(orderNumberOf(orderId))).toBeVisible();
+  // 返品・交換の欄の「返品番号 ORD-…-R1」も注文番号を含むので、注文番号だけの字に絞る
+  await expect(page.getByText(orderNumberOf(orderId), { exact: true })).toBeVisible();
 }
 
 async function expectNoHorizontalScroll(page: Page): Promise<void> {
