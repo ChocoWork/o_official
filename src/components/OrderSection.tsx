@@ -85,6 +85,8 @@ export type OrderItem = {
 	cancelKind?: 'unpaid' | 'paid' | null;
 	/** 返品の要約（返品の列・小さな印・「返品」のボタンの名前）。窓口が返品の無い注文にも付ける。無い昔の形は返品の無い注文と同じに扱う */
 	returnSummary?: OrderReturnSummary;
+	/** 開いているキャンセルの申し込みがある（操作の列に「キャンセルの申し込み」のボタンを出す）。窓口が付けない昔の形は、無い注文と同じに扱う */
+	cancelRequestOpen?: boolean;
 };
 
 interface OrderSectionProps {
@@ -101,6 +103,8 @@ interface OrderSectionProps {
 	onShowHistory?: (id: string) => void;
 	/** 返品の画面（返品の一覧・受け取り・返金・作る）を開く */
 	onShowReturns?: (id: string) => void;
+	/** キャンセルの申し込みの画面を開く（開いている申し込みのある注文のボタン。店長もサポートの人も押せる） */
+	onShowCancelRequest?: (id: string) => void;
 	/** 「額を決めて返金する」を押せる人（店長）か。サポートの人には、その名前を出さず、受け取る品が残っていれば「受け取る」、無ければ「返品」にする */
 	canRefundReturn?: boolean;
 	processingOrderIds?: string[];
@@ -237,6 +241,7 @@ export default function OrderSection({
 	onRecordCompletion,
 	onShowHistory,
 	onShowReturns,
+	onShowCancelRequest,
 	canRefundReturn = false,
 	processingOrderIds = [],
 }: OrderSectionProps) {
@@ -412,6 +417,17 @@ export default function OrderSection({
 										disabled={isProcessing}
 									>
 										{isProcessing ? '処理中...' : returnButtonLabel(order.returnSummary, canRefundReturn)}
+									</Button>
+								) : null}
+								{order.cancelRequestOpen && onShowCancelRequest ? (
+									<Button
+										variant="secondary"
+										size="sm"
+										className="font-acumin"
+										onClick={() => onShowCancelRequest(order.id)}
+										disabled={isProcessing}
+									>
+										{isProcessing ? '処理中...' : 'キャンセルの申し込み'}
 									</Button>
 								) : null}
 								{awaitingShipment && order.shipBlockedReason ? (

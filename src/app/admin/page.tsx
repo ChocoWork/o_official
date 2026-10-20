@@ -18,6 +18,7 @@ import ShopSettingsSection from '@/components/ShopSettingsSection';
 import OrderSection, { type OrderItem } from '@/components/OrderSection';
 import AttentionInbox from '@/components/AttentionInbox';
 import OrderCancelDialog, { type OrderCancelValues } from '@/components/OrderCancelDialog';
+import OrderCancelRequestDialog, { type RemoveItemsRequest } from '@/components/OrderCancelRequestDialog';
 import OrderShipDialog from '@/components/OrderShipDialog';
 import OrderCompletionDialog from '@/components/OrderCompletionDialog';
 import OrderHistoryDialog from '@/components/OrderHistoryDialog';
@@ -89,6 +90,25 @@ const PAID_CANCEL_NOTICES = {
 
 // 取消・解決で Stripe の状態を確かめられなかった（503）。一覧を更新しても直らないので、再試行を案内する
 const STRIPE_UNAVAILABLE_MESSAGE = 'Stripe の状態を確認できませんでした。時間をおいて再試行してください。';
+
+// 品を外して解決を待つ申し込み（「品を外す」で画面を開いてから、返金・キャンセルが受け付けられるまで）。
+// 画面を閉じた時と、一覧の「返金」などの別の操作を始めた時は外す（後で別の返金をしても、この申し込みを解決しないため）
+type PendingCancelResolve = {
+  cancelRequestId: string;
+  orderId: string;
+  mode: RemoveItemsRequest['mode'];
+  lines: RemoveItemsRequest['lines'];
+};
+
+// 一覧の上の一行に並べる物。返品の数（押すと返品の絞り込み）に続けて、開いているキャンセルの申し込みの数（押すとその絞り込み）を並べる
+type AttentionPiece =
+  | { kind: 'return'; filter: 'requested' | 'refund_waiting'; label: string }
+  | { kind: 'cancel_request'; label: string };
+
+// 品を外した返金・キャンセルの後の、申し込みの解決（C-5）。解決の知らせは、返金・取消の知らせに続けて同じ段落に出す
+const CANCEL_REQUEST_RESOLVED_NOTICE = 'キャンセルの申し込みを解決しました。';
+const CANCEL_REQUEST_RESOLVE_FAILED_MESSAGE =
+  '返金・キャンセルは記録しましたが、申し込みを解決済みにできませんでした。キャンセルの申し込みの画面で「解決済みにする」を押してください。';
 
 async function readSafeOrderActionError(response: Response, fallback: string): Promise<string> {
   if (response.status !== 400 && response.status !== 409) {
@@ -166,6 +186,10 @@ function AdminPageContent() {
   const [returnFilter, setReturnFilter] = useState<ReturnFilterValue>('all');
   const [returnAttention, setReturnAttention] = useState<ReturnAttention | null>(null);
   const [returnsOrderId, setReturnsOrderId] = useState<string | null>(null);
+  const [cancelRequestFilter, setCancelRequestFilter] = useState(false);
+  const [cancelRequestAttention, setCancelRequestAttention] = useState(0);
+  const [cancelRequestOrderId, setCancelRequestOrderId] = useState<string | null>(null);
+  const [pendingResolve, setPendingResolve] = useState<PendingCancelResolve | null>(null);
 
   const visibleTabs = useMemo<TabType[]>(() => {
     if (userRole === 'admin') {
@@ -301,6 +325,10 @@ function AdminPageContent() {
         query.set('review', 'only');
       }
 
+      if (cancelRequestFilter) {
+        query.set('cancelRequest', 'open');
+      }
+
       if (returnFilter !== 'all') {
         query.set('return', returnFilter);
       }
@@ -330,6 +358,7 @@ function AdminPageContent() {
           totalPages: number;
         };
         returnAttention?: ReturnAttention;
+        cancelRequestAttention?: number;
       };
 
       // 後から始めた読みがあれば、この答えは捨てる（一覧・件数・ページ・一行の数・誤り・読み込み中の表示は、その新しい読みが決める）
@@ -339,6 +368,12 @@ function AdminPageContent() {
         setOrdersTotalPages(json.pagination?.totalPages ?? 1);
         setOrdersTotalCount(json.pagination?.total ?? 0);
         setReturnAttention(json.returnAttention ?? null);
+        const nextCancelRequestAttention = json.cancelRequestAttention ?? 0;
+        setCancelRequestAttention(nextCancelRequestAttention);
+        // 開いている申し込みが無くなったら絞り込みを外す（0件の数は出さないので、外す手段が無いまま空の一覧が残るため）
+        if (nextCancelRequestAttention === 0) {
+          setCancelRequestFilter(false);
+        }
       }
       return true;
     } catch (error) {
@@ -365,6 +400,7 @@ function AdminPageContent() {
     orderStatusFilters,
     reviewOnly,
     returnFilter,
+    cancelRequestFilter,
   ]);
 
   // 窓口の返事を待つ間に絞り込みやページが変わっても、返事の後の読み直しは今の条件で頼む。
@@ -484,6 +520,17 @@ function AdminPageContent() {
       .map((piece) => ({ filter: piece.filter, label: `${RETURN_DISPLAY_STATUS_LABELS[piece.filter]} ${piece.count}件` }));
   }, [returnAttention]);
 
+  // 一行に並べる物。返品の数に続けて、開いているキャンセルの申し込みの数を並べる（0件は出さない）
+  const attentionPieces = useMemo<AttentionPiece[]>(
+    () => [
+      ...returnAttentionPieces.map((piece): AttentionPiece => ({ kind: 'return', filter: piece.filter, label: piece.label })),
+      ...(cancelRequestAttention > 0
+        ? [{ kind: 'cancel_request', label: `キャンセルの申し込み ${cancelRequestAttention}件` } satisfies AttentionPiece]
+        : []),
+    ],
+    [returnAttentionPieces, cancelRequestAttention],
+  );
+
   // 絞り込みを変えたら1ページ目から読む（ほかの絞り込みと同じ）
   const handleReturnFilterChange = (value: string) => {
     setOrdersPage(1);
@@ -500,6 +547,27 @@ function AdminPageContent() {
       return;
     }
     setReturnFilter(filter);
+    setCancelRequestFilter(false);
+    setOrderStatusFilters(['all']);
+    setReviewOnly(false);
+    setOrderSearchKeyword('');
+    setOrderReference('');
+    setOrderAmountMin('');
+    setOrderAmountMax('');
+    handleClearPeriodFilter();
+  };
+
+  // キャンセルの申し込みの数を押すと、その絞り込みにする。数は全体の注文の数なので、返品の数と同じく、ほかの絞り込みを全部外して
+  // 数と一覧を合わせる。もう一度押すと、この絞り込みだけを外す（押している印は aria-pressed）。
+  // handleClearPeriodFilter は下で定義している（押した時に呼ぶので、並びは関係ない）
+  const handleCancelRequestAttentionToggle = () => {
+    setOrdersPage(1);
+    if (cancelRequestFilter) {
+      setCancelRequestFilter(false);
+      return;
+    }
+    setCancelRequestFilter(true);
+    setReturnFilter('all');
     setOrderStatusFilters(['all']);
     setReviewOnly(false);
     setOrderSearchKeyword('');
@@ -552,6 +620,7 @@ function AdminPageContent() {
     }
 
     setOrdersNoticeMessage(null);
+    setPendingResolve(null);
     // 支払い済みの注文のキャンセルは返金を伴うので、材料を読む新しい画面を開く。未入金の注文の取消は今の画面のまま
     if (order.cancelKind === 'paid') {
       setPaidCancelOrderId(order.id);
@@ -569,6 +638,8 @@ function AdminPageContent() {
     try {
       setOrdersErrorMessage(null);
       setCancelSubmitting(true);
+      // キャンセルの申し込みの「品を外す」から開いた取消なら、取り消せた後に申し込みを解決する
+      const resolveTarget = pendingResolve?.mode === 'unpaid_cancel' && pendingResolve.orderId === target.id ? pendingResolve : null;
       updateProcessingOrder(target.id, true);
 
       const response = await clientFetch(`/api/admin/orders/${target.id}/status`, {
@@ -602,7 +673,12 @@ function AdminPageContent() {
             : order,
         ),
       );
-      setOrdersNoticeMessage('注文を取り消しました。');
+      const cancelledNotice = '注文を取り消しました。';
+      setOrdersNoticeMessage(cancelledNotice);
+      if (resolveTarget) {
+        setPendingResolve(null);
+        void resolveCancelRequest(resolveTarget, { refundId: null, orderCancelled: true }, cancelledNotice);
+      }
       void fetchAttention();
     } catch (error) {
       console.error('Failed to cancel order:', error);
@@ -610,6 +686,7 @@ function AdminPageContent() {
     } finally {
       // 閉じるのは、この送信の注文の画面だけ。送信中に画面を閉じて別の注文の画面を開いていたら、その画面は閉じない
       setCancelTarget((current) => (current?.id === target.id ? null : current));
+      setPendingResolve((current) => (current?.mode === 'unpaid_cancel' && current.orderId === target.id ? null : current));
       setCancelSubmitting(false);
       updateProcessingOrder(target.id, false);
     }
@@ -714,6 +791,7 @@ function AdminPageContent() {
   // 返金の画面を開く。返金は画面の中で窓口を呼ぶ（確認の文を出して残りを全部返す作りはやめた）
   const handleRefundOrder = (id: string) => {
     setOrdersNoticeMessage(null);
+    setPendingResolve(null);
     setRefundOrderId(id);
   };
 
@@ -722,14 +800,19 @@ function AdminPageContent() {
   // 2つの画面は送っている間は閉じられないので、受け付けた時に開いているのは、その操作の画面
   const handleRefunded = (result: RefundAcceptedResponse) => {
     setRefundOrderId(null);
-    setOrdersNoticeMessage(result.status === 'succeeded' ? REFUND_NOTICES.succeeded : REFUND_NOTICES.pending);
+    const refundNotice = result.status === 'succeeded' ? REFUND_NOTICES.succeeded : REFUND_NOTICES.pending;
+    setOrdersNoticeMessage(refundNotice);
+    // キャンセルの申し込みの「品を外す」から開いた画面なら、返金の番号で申し込みを解決する
+    resolveAfterRefund('refund', result.refundId, refundNotice);
     void fetchOrdersRef.current();
     void fetchAttention();
   };
 
   const handlePaidCancelled = (result: RefundAcceptedResponse) => {
     setPaidCancelOrderId(null);
-    setOrdersNoticeMessage(result.status === 'succeeded' ? PAID_CANCEL_NOTICES.succeeded : PAID_CANCEL_NOTICES.pending);
+    const cancelNotice = result.status === 'succeeded' ? PAID_CANCEL_NOTICES.succeeded : PAID_CANCEL_NOTICES.pending;
+    setOrdersNoticeMessage(cancelNotice);
+    resolveAfterRefund('paid_cancel', result.refundId, cancelNotice);
     void fetchOrdersRef.current();
     void fetchAttention();
   };
@@ -755,6 +838,109 @@ function AdminPageContent() {
   const handleReturnsClosed = () => {
     setReturnsOrderId(null);
     void fetchOrdersRef.current();
+  };
+
+  // キャンセルの申し込みの画面を開く（一覧の「キャンセルの申し込み」のボタンから。店長もサポートの人も）
+  const handleShowCancelRequest = (id: string) => {
+    setOrdersNoticeMessage(null);
+    setCancelRequestOrderId(id);
+  };
+
+  // お断り・解決済みにした。開いている申し込みは注文に1つだけなので、続けて扱う物が無い。画面を閉じ、知らせを出して一覧を読み直す
+  // （開いている申し込みの印と、一覧の上の一行の数が変わるため）
+  const handleCancelRequestChanged = (notice: string) => {
+    setCancelRequestOrderId(null);
+    setOrdersNoticeMessage(notice);
+    void fetchOrdersRef.current();
+  };
+
+  /**
+   * 品を外した返金・キャンセルが受け付けられた後に、その申し込みを解決する窓口を呼ぶ（P11）。baseNotice は返金・取消の知らせで、
+   * 解決の知らせを同じ段落に続ける。失敗しても返金・キャンセルは済んでいて、申し込みは開いたまま残る。申し込みの画面の「解決済みにする」で
+   * 閉じられるので、その案内（C-5）を出す。どちらの場合も、開いている申し込みの印と一行の数が変わるので一覧を読み直す
+   */
+  const resolveCancelRequest = async (
+    pending: PendingCancelResolve,
+    outcome: { refundId: string | null; orderCancelled: boolean },
+    baseNotice: string,
+  ) => {
+    let resolved = false;
+    try {
+      const response = await clientFetch(`/api/admin/cancel-requests/${pending.cancelRequestId}/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(outcome),
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to resolve cancel request: ${response.status}`);
+      }
+      resolved = true;
+    } catch (error) {
+      console.error('Failed to resolve cancel request:', error);
+    }
+    // 一覧の読み直し（fetchOrders）は、先頭で誤りの文を消す。先に読み直しを始めてから文を出す
+    // （逆にすると、出した失敗の文がその場で消え、返金は済んだのに申し込みが開いたままであることを知らせられない）
+    void fetchOrdersRef.current();
+    if (resolved) {
+      setOrdersNoticeMessage(`${baseNotice}${CANCEL_REQUEST_RESOLVED_NOTICE}`);
+    } else {
+      setOrdersErrorMessage(CANCEL_REQUEST_RESOLVE_FAILED_MESSAGE);
+    }
+  };
+
+  // 返金の画面・支払い済みのキャンセルの画面が受け付けられた。「品を外す」から開いた画面（同じ種類の mode）なら、答えの返金の番号で
+  // 申し込みを解決する。一覧の「返金」などから開いた画面は pendingResolve が空なので、何もしない
+  const resolveAfterRefund = (mode: 'refund' | 'paid_cancel', refundId: string, baseNotice: string) => {
+    if (!pendingResolve || pendingResolve.mode !== mode) {
+      return;
+    }
+    setPendingResolve(null);
+    void resolveCancelRequest(pendingResolve, { refundId, orderCancelled: false }, baseNotice);
+  };
+
+  // 「品を外す」。画面は重ねない（Esc で下の画面が閉じる）ので、申し込みの画面を閉じてから、取消・支払い済みのキャンセル・返金の画面を開く。
+  // 解決は、その画面で返金・キャンセルが受け付けられた後に呼ぶ（pendingResolve）。取消の画面は一覧の行から作るので、行が一覧に無い時は
+  // 開かず、申し込みの画面を閉じて一覧を読み直し、案内を出す（何も言わずに終えると、押しても何も変わらず理由も出ない）
+  const handleRemoveItems = (request: RemoveItemsRequest) => {
+    const orderId = cancelRequestOrderId;
+    const order = orders.find((item) => item.id === orderId);
+    if (!orderId) {
+      return;
+    }
+    if (request.mode === 'unpaid_cancel' && !order) {
+      setCancelRequestOrderId(null);
+      // 読み直し（fetchOrders）は先頭で誤りの文を消すので、先に読み直しを始めてから文を入れる（resolveCancelRequest と同じ）
+      void fetchOrdersRef.current();
+      setOrdersErrorMessage('操作に失敗しました。一覧を更新してください。');
+      return;
+    }
+    setOrdersNoticeMessage(null);
+    setOrdersErrorMessage(null);
+    setCancelRequestOrderId(null);
+    setPendingResolve({ cancelRequestId: request.cancelRequestId, orderId, mode: request.mode, lines: request.lines });
+    if (request.mode === 'unpaid_cancel') {
+      setCancelTarget(order ?? null);
+    } else if (request.mode === 'paid_cancel') {
+      setPaidCancelOrderId(orderId);
+    } else {
+      setRefundOrderId(orderId);
+    }
+  };
+
+  // 返金・キャンセルの画面を閉じた（しなかった）。解決を待つ申し込みも外す（後で一覧の「返金」などで返金しても、この申し込みを解決しないため）
+  const closeRefundDialog = () => {
+    setRefundOrderId(null);
+    setPendingResolve(null);
+  };
+
+  const closePaidCancelDialog = () => {
+    setPaidCancelOrderId(null);
+    setPendingResolve(null);
+  };
+
+  const closeCancelDialog = () => {
+    setCancelTarget(null);
+    setPendingResolve(null);
   };
 
   const handleApplyPeriodFilter = () => {
@@ -956,17 +1142,17 @@ function AdminPageContent() {
             {attentionErrorMessage ? (
               <p role="alert" className="lk-text-sm text-red-700 font-acumin">{attentionErrorMessage}</p>
             ) : null}
-            {returnAttentionPieces.length > 0 ? (
+            {attentionPieces.length > 0 ? (
               <div data-testid="return-attention" className="flex flex-wrap items-center gap-x-1 lk-text-sm text-[#474747] font-acumin">
-                {returnAttentionPieces.map((piece, index) => (
-                  <Fragment key={piece.filter}>
+                {attentionPieces.map((piece, index) => (
+                  <Fragment key={piece.kind === 'return' ? piece.filter : piece.kind}>
                     {index > 0 ? <span aria-hidden="true">・</span> : null}
                     <Button
                       variant="link"
                       size="sm"
                       className="font-acumin"
-                      aria-pressed={returnFilter === piece.filter}
-                      onClick={() => handleReturnAttentionToggle(piece.filter)}
+                      aria-pressed={piece.kind === 'return' ? returnFilter === piece.filter : cancelRequestFilter}
+                      onClick={() => (piece.kind === 'return' ? handleReturnAttentionToggle(piece.filter) : handleCancelRequestAttentionToggle())}
                     >
                       {piece.label}
                     </Button>
@@ -1103,6 +1289,7 @@ function AdminPageContent() {
               onRecordCompletion={openCompletionDialog}
               onShowHistory={setHistoryOrderId}
               onShowReturns={handleShowReturns}
+              onShowCancelRequest={handleShowCancelRequest}
               canRefundReturn={userRole === 'admin'}
               processingOrderIds={processingOrderIds}
             />
@@ -1127,16 +1314,29 @@ function AdminPageContent() {
             />
             <OrderRefundDialog
               orderId={refundOrderId}
-              onClose={() => setRefundOrderId(null)}
+              prefillBeforeShipment={
+                pendingResolve?.mode === 'refund' && pendingResolve.orderId === refundOrderId ? pendingResolve.lines : undefined
+              }
+              onClose={closeRefundDialog}
               onRefunded={handleRefunded}
               onUncertain={handleRefundUncertain}
             />
             <OrderPaidCancelDialog
               orderId={paidCancelOrderId}
-              onClose={() => setPaidCancelOrderId(null)}
+              onClose={closePaidCancelDialog}
               onCancelled={handlePaidCancelled}
               onUncertain={handleRefundUncertain}
             />
+            {cancelRequestOrderId ? (
+              <OrderCancelRequestDialog
+                orderId={cancelRequestOrderId}
+                open
+                canRefund={userRole === 'admin'}
+                onClose={() => setCancelRequestOrderId(null)}
+                onChanged={handleCancelRequestChanged}
+                onRemoveItems={handleRemoveItems}
+              />
+            ) : null}
             {returnsOrderId ? (
               <OrderReturnsDialog
                 orderId={returnsOrderId}
@@ -1153,7 +1353,7 @@ function AdminPageContent() {
               showNotifyOption={cancelTarget?.status !== '決済失敗'}
               noteRequired={false}
               submitting={cancelSubmitting}
-              onClose={() => setCancelTarget(null)}
+              onClose={closeCancelDialog}
               onSubmit={(values) => void submitCancelOrder(values)}
             />
           </div>

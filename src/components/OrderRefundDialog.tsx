@@ -35,6 +35,11 @@ type OrderRefundDialogProps = {
   onRefunded: (result: RefundAcceptedResponse) => void;
   /** 答えが分からないまま閉じた。返金が頼まれたかもしれないので、親が一覧を読み直す */
   onUncertain?: () => void;
+  /**
+   * キャンセルの申し込みの「品を外す」から開いた時の、発送前の商品の最初の数（注文の商品の番号と数）。
+   * 材料を読んだ後に、未発送の数までに収めて入れる。手で直すまでの値で、「在庫に戻す」の最初の値は変えない
+   */
+  prefillBeforeShipment?: Array<{ orderItemId: string; quantity: number }>;
 };
 
 type OrderRefundDialogBodyProps = Omit<OrderRefundDialogProps, 'orderId'> & { orderId: string };
@@ -62,6 +67,23 @@ function quantityKey(orderItemId: string, beforeShipment: boolean): string {
 /** 全部を返す時に入れる送料。DB の REFUND_MUST_BE_FULL は、送料が min(返せる送料, 返せる額) であることを求める（送料 ≤ 額） */
 function fullRefundShipping(order: RefundMaterials['order']): number {
   return Math.min(order.refundableShipping, order.refundableAmount);
+}
+
+/**
+ * キャンセルの申し込みの品と数から、発送前の商品の最初の数を作る。材料の発送前の商品（未発送の数が1以上の行）に在る品だけを、
+ * 未発送の数までに収めて入れる（申し込みの後に発送・返金で未発送が減っていても、返せる数を超えて入れない。負の数は 0、小数は切り捨て）
+ */
+function prefillQuantities(
+  beforeLines: readonly RefundMaterialLine[],
+  prefill: ReadonlyArray<{ orderItemId: string; quantity: number }> | undefined,
+): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const requested of prefill ?? []) {
+    const line = beforeLines.find((candidate) => candidate.orderItemId === requested.orderItemId);
+    if (!line) continue;
+    result[line.orderItemId] = Math.min(Math.max(0, Math.trunc(requested.quantity)), line.unshipped);
+  }
+  return result;
 }
 
 type NumberInputProps = {
@@ -152,13 +174,20 @@ function RefundLineRow({ line, beforeShipment, max, value, disabled, onChange }:
  * 開く時に返金の材料を読み、発送前・発送済みの商品ごとに返す数を入れ、送料と返金額を決めて返金する。
  * 開くたびに中身を作り直す（key に注文を使う）ので、二重防止の番号も入力も開くたびに新しくなる。
  */
-export default function OrderRefundDialog({ orderId, onClose, onRefunded, onUncertain }: OrderRefundDialogProps) {
+export default function OrderRefundDialog({ orderId, onClose, onRefunded, onUncertain, prefillBeforeShipment }: OrderRefundDialogProps) {
   return orderId ? (
-    <OrderRefundDialogBody key={orderId} orderId={orderId} onClose={onClose} onRefunded={onRefunded} onUncertain={onUncertain} />
+    <OrderRefundDialogBody
+      key={orderId}
+      orderId={orderId}
+      onClose={onClose}
+      onRefunded={onRefunded}
+      onUncertain={onUncertain}
+      prefillBeforeShipment={prefillBeforeShipment}
+    />
   ) : null;
 }
 
-function OrderRefundDialogBody({ orderId, onClose, onRefunded, onUncertain }: OrderRefundDialogBodyProps) {
+function OrderRefundDialogBody({ orderId, onClose, onRefunded, onUncertain, prefillBeforeShipment }: OrderRefundDialogBodyProps) {
   const flow = useRefundSubmission({
     orderId,
     submitUrl: `/api/admin/orders/${orderId}/refund`,
@@ -180,8 +209,10 @@ function OrderRefundDialogBody({ orderId, onClose, onRefunded, onUncertain }: Or
   const order = materials?.order ?? null;
   const beforeLines = materials?.lines.filter((line) => line.unshipped >= 1) ?? [];
   const afterLines = materials?.lines.filter((line) => line.shippedRefundable >= 1) ?? [];
+  // キャンセルの申し込みから開いた時の最初の数。手で直した数（quantities）が先で、直していない発送前の商品にだけ使う
+  const prefilled = prefillQuantities(beforeLines, prefillBeforeShipment);
   const quantityOf = (line: RefundMaterialLine, beforeShipment: boolean) =>
-    quantities[quantityKey(line.orderItemId, beforeShipment)] ?? 0;
+    quantities[quantityKey(line.orderItemId, beforeShipment)] ?? (beforeShipment ? (prefilled[line.orderItemId] ?? 0) : 0);
   const selections: RefundSelection[] = [
     ...beforeLines.map((line) => ({ orderItemId: line.orderItemId, beforeShipment: true, quantity: quantityOf(line, true) })),
     ...afterLines.map((line) => ({ orderItemId: line.orderItemId, beforeShipment: false, quantity: quantityOf(line, false) })),

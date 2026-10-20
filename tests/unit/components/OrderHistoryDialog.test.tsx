@@ -1253,3 +1253,81 @@ describe('OrderHistoryDialog の返品の行', () => {
     expect(within(item).getByText('返品（ORD-A1B2C3D4-R1）')).toBeInTheDocument();
   });
 });
+
+// 返品・キャンセルの申し込みの行（グループ E-3 段2 の Task 12。本計画 P17）。窓口（Task 8 の buildOrderHistory）が組み立てた題を、今の返品の行の描き方で出す。
+// 見本は Task 8 の Step 12 が返す形のとおり: kind と id の綴り、細目 details は空、お客様の申し込みの行は actorEmail が null、キャンセルの申し込みの行は returnId が null
+describe('OrderHistoryDialog の申し込みの行（P17）', () => {
+  const requestEntry = (overrides: Partial<OrderHistoryReturnEntry>) =>
+    returnEntry({ details: [], actorEmail: null, ...overrides });
+
+  it.each<[OrderHistoryReturnEntry['kind'], string, string, string | null]>([
+    ['request', 'request:r1', '返品の申し込み（ORD-A1B2C3D4-R1）', null],
+    ['approve', 'approve:r1', '返品の申し込みを承認した（ORD-A1B2C3D4-R1）', 'admin@example.com'],
+    ['decline', 'decline:r1', '返品の申し込みをお断りした（ORD-A1B2C3D4-R1）', 'support@example.com'],
+    ['cancel_request', 'cancel-request:c1', 'キャンセルの申し込み', null],
+    ['cancel_request_decline', 'cancel-request-decline:c1', 'キャンセルの申し込みをお断りした', 'admin@example.com'],
+    ['cancel_request_close', 'cancel-request-close:c1', 'キャンセルの申し込みを解決済みにした', 'support@example.com'],
+    ['cancel_request_resolve', 'cancel-request-resolve:c1', 'キャンセルの申し込みを解決した（返金）', 'admin@example.com'],
+    ['cancel_request_resolve', 'cancel-request-resolve:c2', 'キャンセルの申し込みを解決した（キャンセル）', 'admin@example.com'],
+  ])('%s（%s）の行は、題をそのまま出し、した人がいる時だけ「操作:」を出す。ボタンは出さない', async (kind, id, title, actorEmail) => {
+    const [item] = await openHistory([
+      requestEntry({ kind, id, title, actorEmail, returnId: kind.startsWith('cancel_request') ? null : RETURN_ID }),
+    ]);
+
+    expect(within(item).getByText(title)).toBeInTheDocument();
+    if (actorEmail) {
+      expect(item).toHaveTextContent(`操作: ${actorEmail}`);
+    } else {
+      expect(item).not.toHaveTextContent('操作:');
+    }
+    expect(within(item).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('キャンセルの申し込みの行は細目が空（窓口は品を細目に入れない）。題だけを出し、細目の行は出さない（段落は「操作:」の分だけ）', async () => {
+    const [requested, declined] = await openHistory([
+      requestEntry({ kind: 'cancel_request', id: 'cancel-request:c1', returnId: null, title: 'キャンセルの申し込み' }),
+      requestEntry({
+        kind: 'cancel_request_decline', id: 'cancel-request-decline:c1', returnId: null,
+        title: 'キャンセルの申し込みをお断りした', actorEmail: 'admin@example.com',
+      }),
+    ]);
+
+    expect(requested).toHaveTextContent('キャンセルの申し込み');
+    expect(requested.querySelectorAll('p')).toHaveLength(0);
+    expect(declined).toHaveTextContent('キャンセルの申し込みをお断りした');
+    expect(declined.querySelectorAll('p')).toHaveLength(1);
+    expect(declined).toHaveTextContent('操作: admin@example.com');
+  });
+
+  it.each([
+    '返品のお申し込みの受付のお知らせ',
+    '返品のお申し込みについてのお知らせ',
+    '店への知らせ（返品の申し込み）',
+    'キャンセルのお申し込みの受付のお知らせ',
+    'キャンセルのお申し込みについてのお知らせ',
+    '店への知らせ（キャンセルの申し込み）',
+  ])('メールの行の名前「%s」は、窓口が決めた名前を「{名前}のメール」と出す', async (kindLabel) => {
+    const [item] = await openHistory([sentEmailEntry({ kindLabel })]);
+
+    expect(item).toHaveTextContent(`${kindLabel}のメール`);
+  });
+
+  it('返品の申し込みの行とキャンセルの申し込みの行が並んでも、行の key が重ならず、警告を出さない', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const items = await openHistory([
+        requestEntry({ kind: 'request', id: 'request:r1', title: '返品の申し込み（ORD-A1B2C3D4-R1）' }),
+        requestEntry({ kind: 'cancel_request', id: 'cancel-request:c1', returnId: null, title: 'キャンセルの申し込み' }),
+        requestEntry({
+          kind: 'cancel_request_decline', id: 'cancel-request-decline:c1', returnId: null,
+          title: 'キャンセルの申し込みをお断りした', actorEmail: 'admin@example.com',
+        }),
+      ]);
+
+      expect(items).toHaveLength(3);
+      expect(error.mock.calls.some(([message]) => String(message).includes('same key'))).toBe(false);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});

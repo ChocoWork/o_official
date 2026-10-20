@@ -683,3 +683,96 @@ describe('OrderSection の返品の言葉の重なり（グループ E-3）', ()
     expect(returnWords.filter((word) => otherWords.includes(word))).toEqual([]);
   });
 });
+
+describe('OrderSection の「キャンセルの申し込み」のボタン（グループ E-3 段2）', () => {
+  it('開いている申し込みのある注文（cancelRequestOpen）にだけ出し、押すと注文の番号を渡す。印が無い昔の形の注文には出さない', () => {
+    const onShowCancelRequest = jest.fn();
+    render(
+      <OrderSection
+        orders={[
+          { ...paidOrder, id: 'with-request', cancelRequestOpen: true },
+          { ...paidOrder, id: 'without-request', cancelRequestOpen: false },
+          { ...paidOrder, id: 'old-shape' },
+        ]}
+        onShowCancelRequest={onShowCancelRequest}
+      />,
+    );
+
+    expect(screen.getAllByRole('button', { name: 'キャンセルの申し込み' })).toHaveLength(1);
+    expect(within(orderRowOf('without-request')).queryByRole('button', { name: 'キャンセルの申し込み' })).not.toBeInTheDocument();
+    expect(within(orderRowOf('old-shape')).queryByRole('button', { name: 'キャンセルの申し込み' })).not.toBeInTheDocument();
+    fireEvent.click(within(orderRowOf('with-request')).getByRole('button', { name: 'キャンセルの申し込み' }));
+    expect(onShowCancelRequest).toHaveBeenCalledWith('with-request');
+  });
+
+  it('押した時の処理（onShowCancelRequest）が渡されていない一覧には、申し込みがあっても出さない', () => {
+    render(<OrderSection orders={[{ ...paidOrder, cancelRequestOpen: true }]} />);
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('処理中の注文のボタンは押せず「処理中...」と出す', () => {
+    const onShowCancelRequest = jest.fn();
+    render(
+      <OrderSection
+        orders={[{ ...paidOrder, cancelRequestOpen: true }]}
+        onShowCancelRequest={onShowCancelRequest}
+        processingOrderIds={['paid-order']}
+      />,
+    );
+
+    const button = screen.getByRole('button', { name: '処理中...' });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onShowCancelRequest).not.toHaveBeenCalled();
+  });
+
+  it('操作の列では「返品」の次、「キャンセル」の前に並ぶ', () => {
+    render(
+      <OrderSection
+        orders={[
+          {
+            ...paidOrder,
+            canCancel: true,
+            cancelKind: 'paid',
+            cancelRequestOpen: true,
+            returnSummary: returnSummary({ hasReturnable: true }),
+          },
+        ]}
+        onRefundOrder={jest.fn()}
+        onShowReturns={jest.fn()}
+        onCancelOrder={jest.fn()}
+        onShowCancelRequest={jest.fn()}
+      />,
+    );
+
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      '返金', '返品', 'キャンセルの申し込み', 'キャンセル',
+    ]);
+  });
+
+  it('名前「キャンセルの申し込み」は、返品の言葉・進み具合・支払いの言葉・ほかのボタンの字と同じにならない（行の中の言葉を exact で探す E2E が、1つに決まるように）', () => {
+    const otherWords: string[] = [
+      ...Object.values(RETURN_DISPLAY_STATUS_LABELS),
+      ...Object.values(RETURN_MARK_LABELS),
+      ...Object.values(ORDER_PROGRESS_LABELS),
+      ...Object.values(PAYMENT_STATUS_LABELS),
+      PARTIALLY_SHIPPED_LABEL,
+      '要確認',
+      REFUND_PENDING_BADGE,
+      REFUND_FAILED_BADGE,
+      '配送先要確認',
+      '履歴',
+      '返金',
+      'キャンセル',
+      '発送済みにする',
+      '仕上がりを記録する',
+      '返品',
+      '申し込みを確かめる',
+      '額を決めて返金する',
+      '受け取る',
+    ];
+
+    expect(otherWords).not.toContain('キャンセルの申し込み');
+  });
+});
