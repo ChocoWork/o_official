@@ -211,19 +211,39 @@ describe('OrderReturnReceiveDialog のサポートの受け取り（お客様の
     expect(within(dialog).queryByText(AUTO_TEXT)).not.toBeInTheDocument();
   });
 
-  it('返せる額より見込みが大きくても、サポートは額を送らない（DB が計算する）', async () => {
-    const { dialog, onDone } = await openReceive(acceptedReturn(), false, 10000);
+  it('見込みが注文の今の返せる額と同じ（以下）なら、サポートは自動の返金のまま。額は送らない（DB が計算する）', async () => {
+    const { dialog, onDone } = await openReceive(acceptedReturn(), false, 24000);
     mockClientFetch.mockResolvedValueOnce(jsonResponse({ data: receiveData() }));
     receiveAll(dialog);
 
-    // ボタンの額は、文の額（計算どおり）と同じ。返せる額（￥10,000）で切った額は書かない
+    // ボタンの額は、文の額（計算どおり）と同じ
     expect(within(dialog).getByText(AUTO_TEXT)).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: NOW_LABEL })).toBeChecked();
     expect(submitButton(dialog)).toHaveTextContent(`すべて受け取って ${formatYen(24000)} を返金する`);
 
     fireEvent.click(submitButton(dialog));
 
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(requestBodyOf(0)).toMatchObject({ refundChoice: 'now', refundAmount: null, refundShippingAmount: 0 });
+  });
+
+  it('見込みが注文の今の返せる額を超える時は、サポートに自動の返金の選びを出さず、相談（返金待ち）だけで送る', async () => {
+    // 見込み ￥24,000 が返せる額 ￥10,000 を超える。サポートは額を切って送れず、DB は返せる額を超える今返金を受け取りごと断るため
+    const { dialog, onDone } = await openReceive(acceptedReturn(), false, 10000);
+    mockClientFetch.mockResolvedValueOnce(jsonResponse({ data: receiveData() }));
+    receiveAll(dialog);
+
+    expect(within(dialog).queryByText(AUTO_TEXT)).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('radio', { name: NOW_LABEL })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument();
+    expect(within(dialog).getByText(SUPPORT_NOTICE)).toBeInTheDocument();
+    expect(submitButton(dialog)).toHaveTextContent(SUPPORT_CONSULT_BUTTON);
+    expect(submitButton(dialog)).toBeEnabled();
+
+    fireEvent.click(submitButton(dialog));
+
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith(NOTICE_RECORDED));
+    expect(requestBodyOf(0)).toMatchObject({ refundChoice: 'consult', refundAmount: null, refundShippingAmount: 0 });
   });
 
   it('交換の手数料が商品の額を上回る受け取りは、サポートの今返金にも「お支払い待ち」の見込みを出す', async () => {

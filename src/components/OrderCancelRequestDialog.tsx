@@ -358,7 +358,6 @@ function OrderCancelRequestDialogBody({
         <form className="space-y-3" onSubmit={handleSubmit}>
           <SingleSelect
             label="お断りの理由（お客様には見えません）"
-            required
             placeholder="選んでください"
             options={DECLINE_REASON_OPTIONS}
             value={reason}
@@ -373,7 +372,7 @@ function OrderCancelRequestDialogBody({
             disabled={busy}
             onChange={(event) => setMessage(event.target.value)}
           />
-          <p className="font-acumin lk-text-3xs text-[#474747]">お客様にメッセージが届きます。取り消せません。</p>
+          <p className="font-acumin lk-text-sm text-black">お客様にメッセージが届きます。取り消せません。</p>
           {error ? (
             <p role="alert" className="font-acumin lk-text-3xs text-red-700">
               {error}

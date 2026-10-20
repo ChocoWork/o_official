@@ -396,8 +396,8 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
     shippingRefund: shippingAmount,
   });
   // サポート（返金の権限が無い人）の今返金は、お客様の申し込みの返品（返送不要でない）を受け取る時だけ許される（P9。DB も同じ条件で断る）。
-  // 額・送料・在庫不足の上書きは変えられず、窓口でも DB でも断られるので、画面は入力を出さず、額は DB が計算する
-  const supportAutoRefund = !canRefund && detail.source === 'customer_request' && detail.returnMethod !== 'not_required';
+  // 額・送料・在庫不足の上書きは変えられず、窓口でも DB でも断られるので、画面は入力を出さず、額は DB が計算する。見込みの額が注文の今の返せる額を超える時は、サポートは額を切って送れず DB が受け取りごと断るので、自動の返金を出さず相談だけにする
+  const supportAutoRefund = !canRefund && detail.source === 'customer_request' && detail.returnMethod !== 'not_required' && preview.refundAmount <= refundableAmount;
   // 返金の品が無ければ none。サポートは、自動の返金が許される返品なら今返金か相談を選べ、ほかの返品は相談（返金待ち）
   const effectiveChoice: RefundChoice = refundUnits === 0 ? 'none' : canRefund || supportAutoRefund ? refundChoice : 'consult';
   const amount = Math.min(refundableAmount, amountEntered ?? preview.refundAmount);

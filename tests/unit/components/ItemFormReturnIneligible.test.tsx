@@ -99,9 +99,18 @@ async function submitAndRead(container: HTMLElement): Promise<FormData> {
   return sentFormData();
 }
 
+// jsdom は canvas の getContext を実装しておらず、呼ぶたびに「Not implemented」を console.error に出す（SingleSelect が文字の幅を測るために呼ぶ）。
+// jsdom の答えも null で、SingleSelect は null なら何もせず戻るので、動きは変えずに null を返す差し替えにして雑音だけを消す。試験の終わりに元へ戻す
+let getContextSpy: jest.SpyInstance;
+
 beforeEach(() => {
   jest.clearAllMocks();
+  getContextSpy = jest.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
   serve();
+});
+
+afterEach(() => {
+  getContextSpy.mockRestore();
 });
 
 describe('ItemForm の返品不可のチェック', () => {

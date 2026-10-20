@@ -319,6 +319,14 @@ describe('GET /api/orders/[id]', () => {
 		const rpc = jest.fn().mockImplementation(async (name: string) => {
 			if (name === 'list_order_line_fulfillment') return { data: [READY_LINE_ROW], error: null };
 			if (name === 'list_order_refunds') return { data: [REFUND_ROW], error: null };
+			// 返品・交換の欄の答え（返品もキャンセルの申し込みも無く、受付もしていない注文）。答えを足さないと、
+			// 空の配列が「答えが読めない」誤り（RefundStoreError）になり、窓口が欄を null にしてログに誤りを出す
+			if (name === 'get_customer_order_returns') {
+				return {
+					data: { returns: [], cancel_requests: [], availability: { returns: 'none', ended_on: null, cancel: false } },
+					error: null,
+				};
+			}
 			return { data: [], error: null };
 		});
 
@@ -384,6 +392,7 @@ describe('GET /api/orders/[id]', () => {
 				},
 			],
 			refundTotal: null,
+			returnSection: { returns: [], cancelRequests: [], availability: { returns: 'none', endedOn: null, cancel: false } },
 			subtotalAmount: expect.stringMatching(/^[¥￥]12,000$/),
 			shippingAmount: expect.stringMatching(/^[¥￥]500$/),
 			discountAmount: expect.stringMatching(/^-[¥￥]1,000$/),
@@ -401,6 +410,7 @@ describe('GET /api/orders/[id]', () => {
 			],
 		});
 		expect(rpc).toHaveBeenCalledWith('list_order_refunds', { _order_id: 'order-1' });
+		expect(rpc).toHaveBeenCalledWith('get_customer_order_returns', { _order_id: 'order-1', _customer_id: 'user-1' });
 		// 操作した人のメールなど内側の情報は、DB の行にあっても、お客様に返さない
 		expect(JSON.stringify(body)).not.toContain('admin@example.com');
 		expect(body).not.toHaveProperty('shippedAt');
