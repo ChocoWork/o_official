@@ -12,6 +12,7 @@ for (const viewport of viewports) {
 
     test('キャンセルありの設定で未発送の品を申し込み、状態と2種類のメールを確認し、2つ目を断る', async ({ page, request, rr }) => {
       // FREQ-481-AC-01, FREQ-481-AC-02, FREQ-481-AC-03, FREQ-480-AC-07, FREQ-484-AC-06
+      test.setTimeout(180_000);
       await rr.db.query("update public.shop_return_settings set request_types='returns_and_cancellations' where id=1");
       const fx = await unshipped(rr);
       await rr.login();

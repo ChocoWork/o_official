@@ -63,6 +63,7 @@ for (const viewport of viewports) {
 
     test('キャンセルのお断りも1画面でメッセージを送り、DB とお客様へのメールに残る', async ({ page, request, rr }) => {
       // FREQ-481-AC-08, FREQ-484-AC-06
+      test.setTimeout(180_000);
       await rr.db.query("update public.shop_return_settings set request_types='returns_and_cancellations' where id=1");
       const fx = await unshipped(rr);
       const id = await cancelDb(rr, fx.orderId, fx.orderItemIds[0]);

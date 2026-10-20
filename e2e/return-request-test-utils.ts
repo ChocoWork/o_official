@@ -61,9 +61,9 @@ export async function isolateOrderApiIp(page: Page): Promise<string> {
 }
 
 export const test = base.extend<{ rr: RR }>({
-  rr: [async ({ page }, provide, info) => {
-    // ロックの待ちは下の fixture の timeout が持つ。試験の時間は、メールの待ち（最大90秒）を含めて3分。
-    info.setTimeout(180_000);
+  rr: [async ({ page }, provide) => {
+    // ロックの待ちは下の fixture の timeout が持つ。timeout を付けた fixture の中の setTimeout は試験の時間を変えないので、
+    // メールを待つ試験と重い試験は、試験の中で test.setTimeout(180_000) を呼ぶ（既存のメール待ちの試験と同じ）。
     await withLocalDb(async (db) => {
       // 設定の1行を読む顧客試験どうしで、受付オンとオフを混ぜないため。
       await db.query('select pg_advisory_lock(14314, 2)');

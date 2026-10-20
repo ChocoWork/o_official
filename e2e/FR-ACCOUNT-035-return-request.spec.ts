@@ -13,6 +13,7 @@ for (const viewport of viewports) {
 
     test('商品・理由・詳しい内容・返金と交換のご希望を確かめ、受付・DB・メールを確かめる', async ({ page, request, rr }) => {
       // FREQ-475-AC-01, FREQ-475-AC-02, FREQ-475-AC-04, FREQ-475-AC-05, FREQ-475-AC-06, FREQ-475-AC-07, FREQ-480-AC-01, FREQ-484-AC-06
+      test.setTimeout(180_000);
       const fx = await shipped(rr, [
         { name: 'E2Eシャツ', quantity: 2, fulfillmentType: 'stock' },
         { name: 'E2Eスカート', quantity: 1, fulfillmentType: 'stock' },

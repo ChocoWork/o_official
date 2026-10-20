@@ -11,6 +11,7 @@ for (const viewport of viewports) {
 
     test('1画面で理由の最初の文・必須・確かめを出し、直したメッセージでお断りし、メールを送る', async ({ page, request, rr }) => {
       // FREQ-479-AC-01, FREQ-479-AC-02, FREQ-479-AC-03, FREQ-479-AC-04, FREQ-484-AC-06
+      test.setTimeout(180_000);
       const fx = await shipped(rr);
       const ret = await requestDb(rr, fx);
       const scene = await adminScene(page, rr, fx);

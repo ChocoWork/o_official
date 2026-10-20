@@ -39,6 +39,7 @@ for (const viewport of viewports) {
 
     test('返品の全8状態の言葉・添える文・返金額・お断りの文字を本物の注文 API と画面で確かめる', async ({ page, rr }) => {
       // FREQ-479-AC-05, FREQ-480-AC-02, FREQ-480-AC-07
+      test.setTimeout(180_000);
       await rr.login();
       const cases: Array<[CustomerReturnStatus, string, string | null]> = [
         ['requested', 'お申し込み中', '内容を確かめて、メールでご連絡します。'],

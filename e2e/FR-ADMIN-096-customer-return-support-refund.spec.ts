@@ -40,6 +40,7 @@ for (const viewport of viewports) {
 
     test('お店が作った返品と返送不要の申し込みでは今返金を許さず、店の返品は相談で返金待ちになる', async ({ page, request, rr }) => {
       // FREQ-483-AC-03
+      test.setTimeout(180_000);
       const fx = await shipped(rr);
       const created = await createReturnInDb(rr.db, fx, { lines: [{ orderItemId: fx.orderItemIds[0], quantity: 1 }], notify: false });
       await expectDbError(receiveReturnInDb(rr.db, created.returnId, fx.actorId, {

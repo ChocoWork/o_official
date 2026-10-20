@@ -73,6 +73,7 @@ for (const viewport of viewports) {
 
     test('Review Focus 2 直接置いた位置情報入り JPEG と tEXt 入り PNG をサーバーが消した写しにし、不正画像を写真の番号付きで断る', async ({ page, rr }) => {
       // FREQ-476-AC-03, FREQ-476-AC-04, FREQ-476-AC-05
+      test.setTimeout(180_000);
       await rr.login();
       const files = await photoFiles(page);
       expect(files.gps.buffer.includes(Buffer.from('Exif\0\0'))).toBe(true);
