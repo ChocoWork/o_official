@@ -9,6 +9,8 @@ import type { RefundMaterials } from '@/lib/orders/refund/refund-types';
  */
 const clientFetchMock = jest.fn();
 const mockAttention = jest.fn();
+// 役割は試験ごとに変える（既定は店長。サポートの人の試験だけ supporter にする）
+let mockUserRole: 'admin' | 'supporter' = 'admin';
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams('tab=ORDER'),
@@ -17,7 +19,7 @@ jest.mock('@/contexts/LoginContext', () => ({
   useLogin: () => ({
     isLoggedIn: true,
     isAuthResolved: true,
-    userRole: 'admin',
+    userRole: mockUserRole,
     isMfaVerified: true,
   }),
 }));
@@ -918,5 +920,270 @@ describe('管理画面の要対応「返金の失敗」の細目と「もう一�
 
     expect(await screen.findByRole('dialog', { name: '返金' })).toBeInTheDocument();
     expect(clientFetchMock.mock.calls.some(([url]) => String(url) === `/api/admin/orders/${ORDER_ID}/refund`)).toBe(true);
+  });
+});
+
+// 配送（グループ E-4 の Task 10）。一覧の印・要対応の「配送」の組・履歴の直す/配達済みの画面を、管理画面の中でつなぐ。
+// 一覧・要対応の欄・履歴・各画面は本物を使い、窓口（clientFetch）だけを差し替える
+const DELIVERY_ATTENTION_ID = 'a0a0a0a0-1111-2222-8333-444455556666';
+
+const DELIVERY_ATTENTION_ITEM = {
+  id: DELIVERY_ATTENTION_ID, orderId: ORDER_ID, orderNumber: 'ORD-A1B2C3D4', fulfillmentId: FULFILLMENT_ID,
+  fulfillmentNumber: 1, kind: 'delivery_failure', openedAt: '2026-10-21T03:00:00.000Z', status: 'failure',
+};
+
+const DELIVERY_DETAIL = {
+  fulfillmentId: FULFILLMENT_ID, number: 1, carrier: 'yamato', trackingNumber: '1234-5678', notifyCustomer: true,
+  shippedAt: '2026-10-10T02:00:00.000Z', cancelledAt: null, trackingVersion: 1, deliveryStatus: 'in_transit',
+  deliveryStatusAt: '2026-10-12T02:00:00.000Z', deliveredAt: null, deliveredSource: null,
+  registration: { state: 'registered', failureKind: null, stopReason: null, expiresAt: '2026-11-09T02:00:00.000Z' },
+  events: [], trackingChanges: [],
+};
+
+const DELIVERY_SHIPMENT = { ...CANCELLABLE_SHIPMENT, delivery: DELIVERY_DETAIL };
+
+function attentionWith(deliveries: unknown[]) {
+  return { data: { exceptions: [], reviews: [], deliveries, counts: { exceptions: 0, reviews: 0, deliveries: deliveries.length } } };
+}
+
+let mockedHistoryEntries: unknown[] = [];
+
+describe('管理画面の配送（一覧の印・要対応の配送の組・直す画面と配達済みの画面）', () => {
+  beforeEach(() => {
+    clientFetchMock.mockReset();
+    mockAttention.mockReset();
+    mockUserRole = 'admin';
+    orderRows = [orderRow({
+      status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false, canCancel: false,
+      items: [{ ...BLOUSE, shipped: 1, readyUnshipped: 0 }],
+    })];
+    mockedHistoryEntries = [DELIVERY_SHIPMENT];
+    postAnswer = () => ok({});
+    mockAttention.mockImplementation(() => ok(attentionWith([])));
+    clientFetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const target = String(url);
+      if (init?.method === 'POST') return postAnswer(target);
+      if (target.startsWith('/api/admin/orders?')) {
+        return ok({ data: orderRows, pagination: { page: 1, pageSize: 20, total: orderRows.length, totalPages: 1 } });
+      }
+      if (target.endsWith('/history')) return ok({ ...historyBody, deliveryTrackingEnabled: true, entries: mockedHistoryEntries });
+      return ok({});
+    });
+  });
+
+  afterEach(() => {
+    mockUserRole = 'admin';
+    jest.restoreAllMocks();
+  });
+
+  it('配送の要対応のある注文に、一覧の進み具合の列の印を出す', async () => {
+    orderRows = [orderRow({
+      status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false, deliveryAttention: 'attempted_delivery',
+    })];
+    render(<AdminPage />);
+
+    const mark = await screen.findByText('不在で持ち帰り');
+    expect(mark.closest('td')).toHaveTextContent('配送中');
+  });
+
+  it('要対応の欄に「配送」の組を出し、「履歴を開く」でその注文の履歴を開く', async () => {
+    mockAttention.mockImplementation(() => ok(attentionWith([DELIVERY_ATTENTION_ITEM])));
+    render(<AdminPage />);
+
+    expect(await screen.findByRole('heading', { name: '配送' })).toBeVisible();
+    expect(screen.getByText('注文番号 ORD-A1B2C3D4・1回目の発送')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '履歴を開く' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
+    await within(dialog).findByText('宛先: hanako@example.com');
+    expect(clientFetchMock).toHaveBeenCalledWith(`/api/admin/orders/${ORDER_ID}/history`, { cache: 'no-store' });
+  });
+
+  it('「対応済みにする」で窓口へ空の本文を送り、知らせを出し、要対応と一覧を読み直して、全部閉じたら組が消える', async () => {
+    let open = true;
+    mockAttention.mockImplementation(() => ok(attentionWith(open ? [DELIVERY_ATTENTION_ITEM] : [])));
+    postAnswer = (url) => {
+      open = false;
+      return url.endsWith('/resolve') ? ok({ data: { outcome: 'resolved' } }) : ok({});
+    };
+    render(<AdminPage />);
+    const resolve = await screen.findByRole('button', { name: '対応済みにする' });
+    const listsBefore = listRequests().length;
+
+    fireEvent.click(resolve);
+
+    await waitFor(() => expect(screen.queryByRole('heading', { name: '配送' })).not.toBeInTheDocument());
+    expect(clientFetchMock).toHaveBeenCalledWith(`/api/admin/order-attention/deliveries/${DELIVERY_ATTENTION_ID}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(listRequests().length).toBeGreaterThan(listsBefore);
+    expect(await screen.findByText('対応済みにしました。')).toBeVisible();
+  });
+
+  it('もう対応済みだった（already_resolved）時も、同じ知らせにする', async () => {
+    mockAttention.mockImplementation(() => ok(attentionWith([DELIVERY_ATTENTION_ITEM])));
+    postAnswer = () => ok({ data: { outcome: 'already_resolved' } });
+    render(<AdminPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '対応済みにする' }));
+
+    expect(await screen.findByText('対応済みにしました。')).toBeVisible();
+  });
+
+  it('返事を待つ間は、その行の「対応済みにする」を押せず、二重に送らない', async () => {
+    mockAttention.mockImplementation(() => ok(attentionWith([DELIVERY_ATTENTION_ITEM])));
+    const release = holdPost('/resolve');
+    render(<AdminPage />);
+    const resolve = await screen.findByRole('button', { name: '対応済みにする' });
+
+    fireEvent.click(resolve);
+
+    await waitFor(() => expect(resolve).toBeDisabled());
+    fireEvent.click(resolve);
+    expect(clientFetchMock.mock.calls.filter(([url]) => String(url).endsWith('/resolve'))).toHaveLength(1);
+
+    await release(ok({ data: { outcome: 'resolved' } }));
+    await waitFor(() => expect(resolve).toBeEnabled());
+  });
+
+  it('断られたら理由を欄の下に出し、行は残して押し直せる', async () => {
+    // 断られた操作は、今の要対応・要確認の操作と同じく console.error にも記録する（afterEach で戻す）
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockAttention.mockImplementation(() => ok(attentionWith([DELIVERY_ATTENTION_ITEM])));
+    postAnswer = () => refused(403, { error: 'Forbidden' });
+    render(<AdminPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '対応済みにする' }));
+
+    expect(await screen.findByText('この操作の権限がありません。')).toBeVisible();
+    expect(screen.getByRole('heading', { name: '配送' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '対応済みにする' })).toBeEnabled();
+    expect(screen.queryByText('対応済みにしました。')).not.toBeInTheDocument();
+    expect(logged).toHaveBeenCalledWith('Failed to update order attention:', expect.any(Error));
+  });
+
+  it.each([
+    [404, { error: '配送の要対応が見つかりません。', code: 'DELIVERY_ATTENTION_NOT_FOUND' }, '配送の要対応が見つかりません。'],
+    [409, { error: '操作の内容が変わりました。画面を開き直してください。', code: 'DELIVERY_REQUEST_MISMATCH' }, '操作の内容が変わりました。画面を開き直してください。'],
+    [429, { error: 'Too many requests' }, 'しばらくしてから、もう一度お試しください。'],
+    [500, { error: '配送の記録を保存できませんでした。時間をおいて、もう一度お試しください。' }, '操作に失敗しました。一覧を更新してください。'],
+  ])('配送の「対応済みにする」が %i で断られたら、窓口の日本語の文か画面の案内を出し、英語の文は出さない', async (status, body, message) => {
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockAttention.mockImplementation(() => ok(attentionWith([DELIVERY_ATTENTION_ITEM])));
+    postAnswer = () => refused(status, body);
+    render(<AdminPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '対応済みにする' }));
+
+    expect(await screen.findByText(message)).toBeVisible();
+    expect(screen.queryByText('Too many requests')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '対応済みにする' })).toBeEnabled();
+    expect(logged).toHaveBeenCalled();
+  });
+
+  it('サポートの人も、配送の「対応済みにする」と、履歴の「伝票番号を直す」「配達済みにする」を使える。返金の入口は出さない', async () => {
+    mockUserRole = 'supporter';
+    orderRows = [orderRow({
+      status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false, canRefund: true,
+      items: [{ ...BLOUSE, shipped: 1, readyUnshipped: 0 }],
+    })];
+    mockAttention.mockImplementation(() => ok(attentionWith([DELIVERY_ATTENTION_ITEM])));
+    render(<AdminPage />);
+
+    expect(await screen.findByRole('button', { name: '対応済みにする' })).toBeVisible();
+    // 返金の権限は広げない（同じ行に返金できる印があっても、サポートの人には返金の入口を出さない）
+    expect(screen.queryByRole('button', { name: '返金' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '履歴を開く' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
+    expect(await within(dialog).findByRole('button', { name: '伝票番号を直す' })).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: '配達済みにする' })).toBeVisible();
+  });
+
+  it('店長には返金の入口が出る（同じ行で、サポートの人との違いが返金だけであることの確かめ）', async () => {
+    orderRows = [orderRow({
+      status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false, canRefund: true,
+      items: [{ ...BLOUSE, shipped: 1, readyUnshipped: 0 }],
+    })];
+    render(<AdminPage />);
+
+    expect(await screen.findByRole('button', { name: '返金' })).toBeVisible();
+  });
+
+  it('履歴で伝票番号を直せたら、履歴は開いたまま、履歴・一覧・要対応を読み直し、成功の知らせを出す', async () => {
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' }));
+    fireEvent.click(await screen.findByRole('button', { name: '伝票番号を直す' }));
+    const dialog = await screen.findByRole('dialog', { name: '伝票番号を直す' });
+    // 追跡オンの履歴（deliveryTrackingEnabled: true）から開いたので、オンの説明が出る
+    expect(dialog).toHaveTextContent('直すと配送の状況は受付済みに戻り、新しい伝票番号で追跡します。');
+    const listsBefore = listRequests().length;
+    const attentionBefore = mockAttention.mock.calls.length;
+    const historyBefore = clientFetchMock.mock.calls.filter(([url]) => String(url).endsWith('/history')).length;
+    postAnswer = (url) => (url.endsWith('/tracking') ? ok({ data: { trackingChangeId: 'change-9', trackingVersion: 2, replayed: false } }) : ok({}));
+
+    fireEvent.change(within(dialog).getByLabelText('配送業者'), { target: { value: 'sagawa' } });
+    fireEvent.change(within(dialog).getByLabelText('伝票番号'), { target: { value: ' AB-99 ' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '伝票番号を直す' }));
+
+    expect(await screen.findByText('伝票番号を直しました。')).toBeVisible();
+    expect(postedBody('/tracking')).toEqual({
+      requestKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      carrier: 'sagawa',
+      trackingNumber: 'AB-99',
+      notifyCustomer: true,
+    });
+    expect(clientFetchMock).toHaveBeenCalledWith(
+      `/api/admin/orders/${ORDER_ID}/fulfillments/${FULFILLMENT_ID}/tracking`,
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
+    await waitFor(() => expect(listRequests()).toHaveLength(listsBefore + 1));
+    await waitFor(() => expect(mockAttention.mock.calls.length).toBeGreaterThan(attentionBefore));
+    expect(clientFetchMock.mock.calls.filter(([url]) => String(url).endsWith('/history')).length).toBeGreaterThan(historyBefore);
+  });
+
+  it('履歴で配達済みにできたら、届いた日と日本時間の今日で送り、履歴・一覧・要対応を読み直す', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-21T03:00:00.000Z'));
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' }));
+    fireEvent.click(await screen.findByRole('button', { name: '配達済みにする' }));
+    const dialog = await screen.findByRole('dialog', { name: '配達済みにする' });
+    expect(within(dialog).getByLabelText('届いた日')).toHaveValue('2026-10-21');
+    const listsBefore = listRequests().length;
+    const attentionBefore = mockAttention.mock.calls.length;
+    postAnswer = (url) => (url.endsWith('/delivered') ? ok({ data: { eventId: 'event-9', deliveredAt: '2026-10-21T03:00:00.000Z', replayed: false } }) : ok({}));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '配達済みにする' }));
+
+    expect(await screen.findByText('配達済みにしました。')).toBeVisible();
+    expect(postedBody('/delivered')).toEqual({
+      requestKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      deliveredOn: '2026-10-21',
+      notifyCustomer: true,
+    });
+    await waitFor(() => expect(listRequests()).toHaveLength(listsBefore + 1));
+    await waitFor(() => expect(mockAttention.mock.calls.length).toBeGreaterThan(attentionBefore));
+  });
+
+  it('履歴で結果が分からないまま戻っても、一覧と要対応を読み直す', async () => {
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' }));
+    fireEvent.click(await screen.findByRole('button', { name: '伝票番号を直す' }));
+    const dialog = await screen.findByRole('dialog', { name: '伝票番号を直す' });
+    const listsBefore = listRequests().length;
+    const attentionBefore = mockAttention.mock.calls.length;
+    postAnswer = () => Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
+
+    fireEvent.change(within(dialog).getByLabelText('伝票番号'), { target: { value: 'AB-99' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '伝票番号を直す' }));
+    await screen.findByText('結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。');
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
+
+    await waitFor(() => expect(listRequests()).toHaveLength(listsBefore + 1));
+    await waitFor(() => expect(mockAttention.mock.calls.length).toBeGreaterThan(attentionBefore));
+    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
   });
 });

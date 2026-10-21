@@ -1,35 +1,50 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import OrderDeliveredDialog from '@/components/OrderDeliveredDialog';
+import OrderTrackingEditDialog from '@/components/OrderTrackingEditDialog';
 import { Button } from '@/components/ui/Button/Button';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
-import { StatusBadge } from '@/components/ui/StatusBadge/StatusBadge';
+import { StatusBadge, type StatusBadgeTone } from '@/components/ui/StatusBadge/StatusBadge';
 import { clientFetch } from '@/lib/client-fetch';
 import type {
   OrderEmailContentResponse,
   OrderHistoryCompletionEntry,
+  OrderHistoryDeliveryEventEntry,
   OrderHistoryEmailEntry,
   OrderHistoryEntry,
   OrderHistoryFulfillmentEntry,
   OrderHistoryResponse,
+  OrderHistoryTrackingChangeEntry,
 } from '@/lib/orders/email/order-history';
 import { callFulfillmentApi } from '@/lib/orders/fulfillment/fulfillment-client';
 import { FULFILLMENT_FAILURE_MESSAGES } from '@/lib/orders/fulfillment/fulfillment-messages';
 import type { CancelCompletionResponse, CancelFulfillmentResponse } from '@/lib/orders/fulfillment/fulfillment-types';
 import { formatYen } from '@/lib/orders/refund/refund-messages';
+import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
+import { DELIVERY_STATUS_LABELS, TRACKING_STATE_LABELS } from '@/lib/orders/tracking/delivery-messages';
+import type { DeliveryStatus, FulfillmentDeliveryDetail, TrackingChange } from '@/lib/orders/tracking/delivery-types';
 import { cn } from '@/lib/utils';
 
 /** 取り消せる行（発送か仕上がり） */
 type CancelTarget = OrderHistoryFulfillmentEntry | OrderHistoryCompletionEntry;
 
+/** 伝票番号を直す・配達済みにする画面を開ける行（配送の現在値を持つ発送の行） */
+type DeliveryTarget = OrderHistoryFulfillmentEntry & { delivery: FulfillmentDeliveryDetail };
+
 type View =
   | { name: 'list' }
   | { name: 'content'; entry: OrderHistoryEmailEntry; content: OrderEmailContentResponse | null; error: string | null }
   | { name: 'confirm'; entry: OrderHistoryEmailEntry }
-  | { name: 'cancel'; entry: CancelTarget };
+  | { name: 'cancel'; entry: CancelTarget }
+  // 直す画面（tracking）か配達済みの画面（delivered）。履歴のダイアログと入れ替えて出す
+  | { name: 'tracking' | 'delivered'; entry: DeliveryTarget };
+
+/** 直す画面か配達済みの画面を開いている時の View */
+type DeliveryView = Extract<View, { name: 'tracking' | 'delivered' }>;
 
 /** 履歴の行のボタンの種類。確かめの画面から戻る時に、同じ行の同じボタンへフォーカスを戻すのに使う */
-type HistoryAction = 'content' | 'resend' | 'cancel';
+type HistoryAction = 'content' | 'resend' | 'cancel' | 'tracking' | 'delivered';
 
 /** 再送・取消の結果の知らせ。受け付けは status、断り・失敗は alert の入れ物に出す */
 type Notice = { tone: 'success' | 'failure'; text: string };
@@ -38,14 +53,17 @@ type OrderHistoryDialogProps = {
   /** 開いている注文。null なら閉じている */
   orderId: string | null;
   onClose: () => void;
-  /** 発送か仕上がりを取り消した（結果が分からない時も）。管理画面が一覧を読み直す */
+  /** 発送か仕上がりを取り消した・伝票番号を直した・配達済みにした（結果が分からない時も）。管理画面が一覧と要対応を読み直す */
   onChanged?: () => void;
+  /** 伝票番号を直す・配達済みにするボタンを出すか。店長とサポートの人だけ（返金の権限とは別。省くとオフ） */
+  canManageDelivery?: boolean;
 };
 
 type OrderHistoryDialogBodyProps = {
   orderId: string;
   onClose: () => void;
   onChanged?: () => void;
+  canManageDelivery?: boolean;
 };
 
 const RESEND_ACCEPTED_MESSAGE = '再送を受け付けました。少し待つと届きます。';
@@ -55,12 +73,60 @@ const FORBIDDEN_MESSAGE = 'この操作の権限がありません。';
 const CONTENT_FAILED_MESSAGE = 'メールの中身を読み込めませんでした。';
 const CANCEL_UNCERTAIN_MESSAGE =
   '結果を確かめられませんでした。履歴を読み直しました。取り消されたかどうかは、この履歴で確かめてください。';
+// 伝票番号を直した・配達済みにした後の知らせ（グループ E-4 の計画の C-5）
+const TRACKING_EDIT_SUCCESS_MESSAGE = '伝票番号を直しました。';
+const DELIVERED_SUCCESS_MESSAGE = '配達済みにしました。';
+const DELIVERED_SOURCE_LABELS = { tracking: '追跡', manual: '手で' } as const;
+
+/** 配送の状況の印の色。店が動く番の状況（不在・遅れ・問題あり）を目立たせる */
+const DELIVERY_STATUS_TONES: Record<DeliveryStatus, StatusBadgeTone> = {
+  confirmed: 'neutral',
+  in_transit: 'neutral',
+  out_for_delivery: 'neutral',
+  attempted_delivery: 'warning',
+  ready_for_pickup: 'neutral',
+  delivered: 'positive',
+  delayed: 'warning',
+  failure: 'danger',
+};
 
 function formatJst(value: string | null): string {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+/** 日本時間の「M月D日」（0詰めなし）。読めない時はそのまま返す。届いた日は日本時間の日付で数える（返品の期限が日本時間の日付で決まるため） */
+function formatMonthDay(value: string): string {
+  const time = Date.parse(value);
+  if (Number.isNaN(time)) return value;
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric' }).formatToParts(new Date(time));
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+  return month && day ? `${month}月${day}日` : value;
+}
+
+/** 「ヤマト運輸 1234-5678」。配送業者か番号が空ならその側だけを省き、どちらも空なら「記録なし」 */
+function carrierAndNumber(carrier: string | null, trackingNumber: string | null): string {
+  const label = carrier !== null && isShippingCarrierId(carrier) ? SHIPPING_CARRIERS[carrier].label : carrier;
+  return [label, trackingNumber].filter((part): part is string => Boolean(part)).join(' ') || '記録なし';
+}
+
+/** 直しのメールの状態の言葉。メールが無い（null）・取りやめた（skipped）は「送らない」 */
+function trackingChangeEmailLabel(status: TrackingChange['emailStatus']): string {
+  switch (status) {
+    case 'sent':
+      return '送信済み';
+    case 'pending':
+    case 'sending':
+    case 'retry_wait':
+      return '送信待ち';
+    case 'dead':
+      return '送れなかった';
+    default:
+      return '送らない';
+  }
 }
 
 function errorMessageOf(body: unknown, fallback: string): string {
@@ -88,10 +154,11 @@ function cancelTargetId(entry: CancelTarget): string {
   return entry.type === 'fulfillment' ? entry.fulfillmentId : entry.completionId;
 }
 
-/** 確かめ・取消の画面が見ている行の番号。履歴や中身の画面では null */
+/** 確かめ・取消・直す・配達済みの画面が見ている行の番号。履歴や中身の画面では null */
 function viewTargetId(view: View): string | null {
   if (view.name === 'confirm') return view.entry.emailId;
   if (view.name === 'cancel') return cancelTargetId(view.entry);
+  if (view.name === 'tracking' || view.name === 'delivered') return view.entry.fulfillmentId;
   return null;
 }
 
@@ -109,15 +176,20 @@ function formatItems(items: Array<{ name: string; quantity: number }>): string {
  * 状態の変化・メール・発送・仕上がり（とその取消）・返金・返品を新しい順に出し、送ったメールの中身・再送の確かめ・
  * 発送と仕上がりの取消の確かめを同じダイアログの中で切り替える（ダイアログを重ねると、Escape で外側も閉じるため）。
  * 再送や取消ができるかは窓口が決めた値に従う。
+ * 配送（グループ E-4）: 発送の行に届いた日・現在の状況・登録の状態、出来事と伝票番号の直しの行を出し、「伝票番号を直す」
+ * 「配達済みにする」は、それぞれの画面（OrderTrackingEditDialog・OrderDeliveredDialog）で行う。その画面は履歴のダイアログと
+ * 入れ替えて出す（ダイアログを重ねると、Escape で外側も閉じ、Tab の囲いも二重になるため）。閉じる・戻ると履歴へ戻り、履歴を読み直す。
  *
  * 開くたびに中身を作り直す（key に注文を使う）。前の注文の履歴や画面の切り替えを残したまま開くと、
  * ダイアログが先に中の先頭のボタンへ移したフォーカスが、その後の状態の消去でボタンごと外れてしまう。
  */
-export default function OrderHistoryDialog({ orderId, onClose, onChanged }: OrderHistoryDialogProps) {
-  return orderId ? <OrderHistoryDialogBody key={orderId} orderId={orderId} onClose={onClose} onChanged={onChanged} /> : null;
+export default function OrderHistoryDialog({ orderId, onClose, onChanged, canManageDelivery = false }: OrderHistoryDialogProps) {
+  return orderId ? (
+    <OrderHistoryDialogBody key={orderId} orderId={orderId} onClose={onClose} onChanged={onChanged} canManageDelivery={canManageDelivery} />
+  ) : null;
 }
 
-function OrderHistoryDialogBody({ orderId, onClose, onChanged }: OrderHistoryDialogBodyProps) {
+function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery = false }: OrderHistoryDialogBodyProps) {
   const [history, setHistory] = useState<OrderHistoryResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -129,6 +201,8 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged }: OrderHistoryDia
   const shownView = useRef<View['name']>('list');
   const contentRequest = useRef(0);
   const returnFocus = useRef<{ id: string; action: HistoryAction } | null>(null);
+  // 直す画面・配達済みの画面で記録できたか。履歴へ戻る時に、消えるボタンへフォーカスを戻さないために持つ
+  const deliveryDone = useRef(false);
 
   const load = useCallback(async (id: string) => {
     setLoadError(null);
@@ -278,6 +352,33 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged }: OrderHistoryDia
     await load(orderId);
   };
 
+  const openDelivery = (name: 'tracking' | 'delivered', entry: DeliveryTarget) => {
+    setNotice(null);
+    deliveryDone.current = false;
+    setView({ name, entry });
+  };
+
+  // 直す画面・配達済みの画面から履歴へ戻る（戻る・Escape・記録できた後）。履歴は、いつも読み直す
+  // （窓口が「履歴を読み直してください」と断った時にも応えるため）。配達済みにできた時は、押したボタンが読み直しで消えるので、
+  // フォーカスはパネルへ移す。伝票番号を直した時は同じボタンが残るので、そこへ戻す
+  const closeDelivery = (current: DeliveryView) => {
+    returnFocus.current =
+      current.name === 'delivered' && deliveryDone.current ? null : { id: current.entry.fulfillmentId, action: current.name };
+    deliveryDone.current = false;
+    setView({ name: 'list' });
+    void load(orderId);
+  };
+
+  // 記録できた（前の結果の再送でも）。親が一覧と要対応を読み直し、履歴へ戻った後に成功の知らせを出す
+  const deliveryChanged = (current: DeliveryView) => {
+    deliveryDone.current = true;
+    onChanged?.();
+    setPendingNotice({
+      targetId: current.entry.fulfillmentId,
+      notice: { tone: 'success', text: current.name === 'tracking' ? TRACKING_EDIT_SUCCESS_MESSAGE : DELIVERED_SUCCESS_MESSAGE },
+    });
+  };
+
   const title =
     view.name === 'content'
       ? `${view.entry.kindLabel}のメールの中身`
@@ -289,9 +390,72 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged }: OrderHistoryDia
   const statusText = notice?.tone === 'success' ? notice.text : null;
   const failureText = notice?.tone === 'failure' ? notice.text : null;
 
+  // 追跡がオンの時だけ、現在の状況と登録の状態を出す。届いた日・出来事・直しの記録は、オフでも出す（設計書 6-1）。
+  // 窓口が追跡のオン・オフを返さない昔の見本は、オフとして読む
+  const trackingEnabled = history?.deliveryTrackingEnabled === true;
+
+  /** 発送の行の配送の欄: 届いた日と出どころ（いつも）、今の状況・最後の更新・登録の状態（追跡オンで、取り消していない発送だけ） */
+  const renderFulfillmentDelivery = (entry: OrderHistoryFulfillmentEntry, delivery: FulfillmentDeliveryDetail) => (
+    <>
+      {delivery.deliveredAt !== null ? (
+        <p className="text-[#474747]">
+          {`お届け日 ${formatMonthDay(delivery.deliveredAt)}${delivery.deliveredSource ? `（${DELIVERED_SOURCE_LABELS[delivery.deliveredSource]}）` : ''}`}
+        </p>
+      ) : null}
+      {trackingEnabled && !entry.cancelled ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <span>{`配送の状況（${entry.number}回目）`}</span>
+            <StatusBadge tone={DELIVERY_STATUS_TONES[delivery.deliveryStatus]} size="sm">
+              {DELIVERY_STATUS_LABELS[delivery.deliveryStatus]}
+            </StatusBadge>
+            {delivery.registration ? (
+              <span className="text-[#474747]">{TRACKING_STATE_LABELS[delivery.registration.state]}</span>
+            ) : null}
+          </div>
+          <p className="text-[#474747]">{`最後の更新 ${formatJst(delivery.deliveryStatusAt)}`}</p>
+        </>
+      ) : null}
+    </>
+  );
+
+  /** 配送の出来事の行（状況と時刻。17TRACK の細かい状況は小さな字で、文字のまま出す） */
+  const renderDeliveryEvent = (entry: OrderHistoryDeliveryEventEntry) => (
+    <li key={`delivery-event-${entry.event.id}`} className="space-y-1 font-acumin lk-text-3xs text-black">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[#474747]">{formatJst(entry.at)}</span>
+        <span>{`配送の状況（${entry.number}回目）`}</span>
+        <StatusBadge tone={DELIVERY_STATUS_TONES[entry.event.status]} size="sm">
+          {DELIVERY_STATUS_LABELS[entry.event.status]}
+        </StatusBadge>
+      </div>
+      {entry.event.providerSubStatus ? <p className="break-all text-[11px] text-[#474747]">{entry.event.providerSubStatus}</p> : null}
+      {entry.event.actorEmail ? <p className="text-[#474747]">操作: {entry.event.actorEmail}</p> : null}
+    </li>
+  );
+
+  /** 伝票番号の直しの行（前の値 → 新しい値と、お客様へのメールの状態） */
+  const renderTrackingChange = (entry: OrderHistoryTrackingChangeEntry) => {
+    const { change } = entry;
+    return (
+      <li key={`tracking-change-${change.id}`} className="space-y-1 font-acumin lk-text-3xs text-black">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[#474747]">{formatJst(entry.at)}</span>
+          <span>{`伝票番号を直した（${entry.number}回目）`}</span>
+        </div>
+        <p className="break-all text-[#474747]">
+          {`${carrierAndNumber(change.fromCarrier, change.fromTrackingNumber)} → ${carrierAndNumber(change.toCarrier, change.toTrackingNumber)}`}
+        </p>
+        <p className="text-[#474747]">{`お客様へのメール：${trackingChangeEmailLabel(change.emailStatus)}`}</p>
+        {change.actorEmail ? <p className="text-[#474747]">操作: {change.actorEmail}</p> : null}
+      </li>
+    );
+  };
+
   const renderEntry = (entry: OrderHistoryEntry, index: number) => {
     // 配送の新しい行は Task 10 で表示する。既存のメール行には渡さない。
-    if (entry.type === 'delivery_event' || entry.type === 'tracking_change') return null;
+    if (entry.type === 'delivery_event') return renderDeliveryEvent(entry);
+    if (entry.type === 'tracking_change') return renderTrackingChange(entry);
     if (entry.type === 'created') {
       return (
         <li key={`created-${index}`} className="font-acumin lk-text-3xs text-black">
@@ -310,6 +474,10 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged }: OrderHistoryDia
       );
     }
     if (entry.type === 'fulfillment') {
+      const delivery = entry.delivery;
+      // 取り消した発送は、直す・配達済みにするの対象にしない。配達済みの発送には「配達済みにする」を出さない
+      const deliveryTarget: DeliveryTarget | null = canManageDelivery && delivery && !entry.cancelled ? { ...entry, delivery } : null;
+      const canMarkDelivered = deliveryTarget !== null && deliveryTarget.delivery.deliveredAt === null;
       return (
         <li key={`fulfillment-${entry.fulfillmentId}`} className="space-y-1 font-acumin lk-text-3xs text-black">
           <div className="flex flex-wrap items-center gap-2">
@@ -321,23 +489,51 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged }: OrderHistoryDia
               </StatusBadge>
             ) : null}
           </div>
-          <p className="text-[#474747]">{`配送業者: ${entry.carrierLabel ?? '-'} / 伝票番号: ${entry.trackingNumber ?? '-'}`}</p>
+          {/* 伝票番号は英数字とハイフンが64字まで続くことがあるので、狭い画面では字の途中でも折り返す */}
+          <p className="break-all text-[#474747]">{`配送業者: ${entry.carrierLabel ?? '-'} / 伝票番号: ${entry.trackingNumber ?? '-'}`}</p>
           <p>{`商品: ${formatItems(entry.items)}`}</p>
           <p className="text-[#474747]">{`お客様へのメール: ${entry.notifyCustomer ? '送る' : '送らない'}`}</p>
           {entry.completesOrder ? <p className="text-[#474747]">この発送で全部を送りました</p> : null}
           {entry.actorEmail ? <p className="text-[#474747]">操作: {entry.actorEmail}</p> : null}
-          {entry.cancellable ? (
+          {delivery ? renderFulfillmentDelivery(entry, delivery) : null}
+          {entry.cancellable || deliveryTarget ? (
             <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="font-acumin"
-                data-history-id={entry.fulfillmentId}
-                data-history-action="cancel"
-                onClick={() => askCancel(entry)}
-              >
-                この発送を取り消す
-              </Button>
+              {deliveryTarget ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="font-acumin"
+                  data-history-id={entry.fulfillmentId}
+                  data-history-action="tracking"
+                  onClick={() => openDelivery('tracking', deliveryTarget)}
+                >
+                  伝票番号を直す
+                </Button>
+              ) : null}
+              {deliveryTarget && canMarkDelivered ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="font-acumin"
+                  data-history-id={entry.fulfillmentId}
+                  data-history-action="delivered"
+                  onClick={() => openDelivery('delivered', deliveryTarget)}
+                >
+                  配達済みにする
+                </Button>
+              ) : null}
+              {entry.cancellable ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="font-acumin"
+                  data-history-id={entry.fulfillmentId}
+                  data-history-action="cancel"
+                  onClick={() => askCancel(entry)}
+                >
+                  この発送を取り消す
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </li>
@@ -480,6 +676,21 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged }: OrderHistoryDia
       </li>
     );
   };
+
+  // 直す画面・配達済みの画面は、履歴のダイアログと入れ替えて出す（重ねない）。閉じると、履歴のダイアログが作り直されて戻る
+  if (view.name === 'tracking' || view.name === 'delivered') {
+    const dialogProps = {
+      open: true,
+      orderId,
+      fulfillment: view.entry.delivery,
+      trackingEnabled,
+      onClose: () => closeDelivery(view),
+      onChanged: () => deliveryChanged(view),
+      // 結果が分からないまま閉じた。記録されたかもしれないので、親が一覧と要対応を読み直す（成功の知らせは出さない）
+      onUncertain: () => onChanged?.(),
+    };
+    return view.name === 'tracking' ? <OrderTrackingEditDialog {...dialogProps} /> : <OrderDeliveredDialog {...dialogProps} />;
+  }
 
   return (
     <Dialog open onClose={onClose} title={title}>

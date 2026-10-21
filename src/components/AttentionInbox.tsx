@@ -11,6 +11,7 @@ import {
   type OrderAttention,
 } from '@/lib/orders/order-payment-types';
 import { formatYen } from '@/lib/orders/refund/refund-messages';
+import { DELIVERY_ATTENTION_LABELS, DELIVERY_STATUS_LABELS } from '@/lib/orders/tracking/delivery-messages';
 
 type AttentionInboxProps = {
   attention: OrderAttention | null;
@@ -26,6 +27,10 @@ type AttentionInboxProps = {
    * 「額を決めて返金する」で返し直す（ふつうの返金の画面では返金待ちの品を選べない。グループ E-3 の P21）。返金の権限が無い人には渡さない（ボタンを出さない）
    */
   onRetryReturnRefund?: (orderId: string) => void;
+  /** 配送の要対応の行から、その注文の履歴を開く（グループ E-4 の Task 10）。渡さなければ「履歴を開く」を出さない */
+  onOpenDeliveryHistory?: (orderId: string) => void;
+  /** 配送の要対応を対応済みにする（要対応の番号を渡す）。管理の権限（店長とサポート）が無い人には渡さない（ボタンを出さない） */
+  onResolveDelivery?: (attentionId: string) => void;
 };
 
 function formatDateTime(value: string | null): string {
@@ -51,20 +56,25 @@ export default function AttentionInbox({
   onCancelAndResolve,
   onRetryRefund,
   onRetryReturnRefund,
+  onOpenDeliveryHistory,
+  onResolveDelivery,
 }: AttentionInboxProps) {
   const headingId = useId();
   const [resolving, setResolving] = useState<AttentionException | null>(null);
   const [cancelling, setCancelling] = useState<AttentionException | null>(null);
   const [note, setNote] = useState('');
 
-  if (!attention || (attention.exceptions.length === 0 && attention.reviews.length === 0)) {
+  // 配送の組は、開いている行が無ければ出さない（追跡オフの間は窓口が空で返す）。窓口が付けない昔の形は、無い組と同じに扱う
+  const deliveries = attention?.deliveries ?? [];
+  if (!attention || (attention.exceptions.length === 0 && attention.reviews.length === 0 && deliveries.length === 0)) {
     return null;
   }
+  const deliveryCount = attention.counts.deliveries ?? deliveries.length;
 
   return (
     <section aria-labelledby={headingId} className="space-y-4 border border-black/15 p-4">
       <h2 id={headingId} className="font-acumin lk-text-sm text-black">
-        要対応 {attention.counts.exceptions}件・要確認 {attention.counts.reviews}件
+        要対応 {attention.counts.exceptions}件・要確認 {attention.counts.reviews}件{deliveries.length > 0 ? `・配送 ${deliveryCount}件` : ''}
       </h2>
 
       {attention.exceptions.length > 0 ? (
@@ -164,6 +174,49 @@ export default function AttentionInbox({
                 </Button>
               </li>
             ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {deliveries.length > 0 ? (
+        <div className="space-y-2">
+          <h3 className="font-acumin lk-text-3xs tracking-widest text-[#474747]">配送</h3>
+          <ul className="divide-y divide-black/10">
+            {deliveries.map((item) => {
+              const busy = processingIds.includes(item.id);
+              return (
+                <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <div className="min-w-0 font-acumin lk-text-3xs">
+                    <p className="text-black">{DELIVERY_ATTENTION_LABELS[item.kind]}</p>
+                    <p className="break-all text-[#474747]">{`注文番号 ${item.orderNumber}・${item.fulfillmentNumber}回目の発送`}</p>
+                    <p className="text-[#474747]">{`${formatDateTime(item.openedAt)}・${DELIVERY_STATUS_LABELS[item.status]}`}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {onOpenDeliveryHistory ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="font-acumin"
+                        onClick={() => onOpenDeliveryHistory(item.orderId)}
+                      >
+                        履歴を開く
+                      </Button>
+                    ) : null}
+                    {onResolveDelivery ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        className="font-acumin"
+                        disabled={busy}
+                        onClick={() => onResolveDelivery(item.id)}
+                      >
+                        対応済みにする
+                      </Button>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}

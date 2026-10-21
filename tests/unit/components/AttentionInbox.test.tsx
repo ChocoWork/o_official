@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import AttentionInbox from '@/components/AttentionInbox';
 import type { OrderAttention } from '@/lib/orders/order-payment-types';
+import type { DeliveryAttentionItem } from '@/lib/orders/tracking/delivery-types';
 
 const ATTENTION: OrderAttention = {
   exceptions: [
@@ -357,5 +358,203 @@ describe('AttentionInbox の返品の返金の失敗（グループ E-3 の P21�
     expect(button).toBeDisabled();
     fireEvent.click(button);
     expect(onRetryReturnRefund).not.toHaveBeenCalled();
+  });
+});
+
+// 配送の要対応の組（グループ E-4 の Task 10。設計書 6-5・計画の C-5）。支払いの例外・確かめ待ちの注文の下に出す
+const DELIVERY_ORDER_ID = 'e1e2e3e4-1111-2222-8333-444455556666';
+
+function deliveryItem(overrides: Partial<DeliveryAttentionItem> = {}): DeliveryAttentionItem {
+  return {
+    id: 'attention-1', orderId: DELIVERY_ORDER_ID, orderNumber: 'ORD-E1E2E3E4', fulfillmentId: 'f1f1f1f1-1111-2222-8333-444455556666',
+    fulfillmentNumber: 2, kind: 'delivery_failure', openedAt: '2026-10-21T03:00:00.000Z', status: 'failure',
+    ...overrides,
+  };
+}
+
+function withDeliveries(deliveries: DeliveryAttentionItem[], base: OrderAttention = { exceptions: [], reviews: [], counts: { exceptions: 0, reviews: 0 } }): OrderAttention {
+  return { ...base, deliveries, counts: { ...base.counts, deliveries: deliveries.length } };
+}
+
+function renderDeliveryInbox(
+  attention: OrderAttention | null,
+  options: { processingIds?: string[]; withHistory?: boolean; withResolve?: boolean } = {},
+) {
+  const handlers = { onOpenDeliveryHistory: jest.fn(), onResolveDelivery: jest.fn() };
+  render(
+    <AttentionInbox
+      attention={attention}
+      processingIds={options.processingIds ?? []}
+      onReview={jest.fn()}
+      onResolve={jest.fn()}
+      onCancelAndResolve={jest.fn()}
+      {...(options.withHistory === false ? {} : { onOpenDeliveryHistory: handlers.onOpenDeliveryHistory })}
+      {...(options.withResolve === false ? {} : { onResolveDelivery: handlers.onResolveDelivery })}
+    />,
+  );
+  return handlers;
+}
+
+describe('AttentionInbox の配送の組', () => {
+  it('配送の要対応だけがある時も欄を出し、見出し「配送」と、数「配送 n件」を出す', () => {
+    renderDeliveryInbox(withDeliveries([deliveryItem(), deliveryItem({ id: 'attention-2', fulfillmentNumber: 1, kind: 'tracking_stalled' })]));
+
+    expect(screen.getByRole('heading', { name: '配送' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: '要対応 0件・要確認 0件・配送 2件' })).toBeVisible();
+  });
+
+  it('配送の要対応が無ければ、組ごと出さない（追跡オフの間は出ない）。数の見出しにも配送を足さない', () => {
+    renderDeliveryInbox(withDeliveries([], ATTENTION));
+
+    expect(screen.queryByRole('heading', { name: '配送' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '要対応 2件・要確認 1件' })).toBeVisible();
+  });
+
+  it('配送の項目を持たない昔の形の要対応でも、今までどおりに出す', () => {
+    renderDeliveryInbox(ATTENTION);
+
+    expect(screen.queryByRole('heading', { name: '配送' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '要対応 2件・要確認 1件' })).toBeVisible();
+  });
+
+  it('要対応も要確認も配送も0件なら何も出さない', () => {
+    const { container } = render(
+      <AttentionInbox
+        attention={withDeliveries([])}
+        processingIds={[]}
+        onReview={jest.fn()}
+        onResolve={jest.fn()}
+        onCancelAndResolve={jest.fn()}
+        onOpenDeliveryHistory={jest.fn()}
+        onResolveDelivery={jest.fn()}
+      />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('配送の組は、支払いの例外・確かめ待ちの注文の下に出す', () => {
+    renderDeliveryInbox(withDeliveries([deliveryItem()], ATTENTION));
+
+    const exceptions = screen.getByRole('heading', { name: '要対応' });
+    const reviews = screen.getByRole('heading', { name: '要確認' });
+    const delivery = screen.getByRole('heading', { name: '配送' });
+    expect(exceptions.compareDocumentPosition(delivery) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(reviews.compareDocumentPosition(delivery) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '要対応 2件・要確認 1件・配送 1件' })).toBeVisible();
+  });
+
+  it('1行は、注文番号・何回目の発送か・種類の名前・開いた時刻（日本時間）・今の状況だけを出す', () => {
+    renderDeliveryInbox(withDeliveries([deliveryItem({ kind: 'attempted_delivery', status: 'attempted_delivery' })]));
+
+    const row = screen.getAllByRole('listitem')[0];
+    expect(within(row).getByText('注文番号 ORD-E1E2E3E4・2回目の発送')).toBeVisible();
+    expect(within(row).getByText('不在で持ち帰り', { selector: 'p' })).toBeVisible();
+    expect(row).toHaveTextContent('2026/10/21 12:00');
+    expect(row).toHaveTextContent('不在で持ち帰り');
+    expect(row).not.toHaveTextContent('f1f1f1f1');
+    expect(row).not.toHaveTextContent(DELIVERY_ORDER_ID);
+  });
+
+  it.each([
+    ['delivery_failure', '問題あり'],
+    ['attempted_delivery', '不在で持ち帰り'],
+    ['tracking_not_found', '伝票番号で荷物が見つからない'],
+    ['tracking_registration_failed', '追跡の登録ができない'],
+    ['tracking_stalled', '配達済みにならない'],
+  ] as const)('種類 %s は「%s」と出す', (kind, label) => {
+    renderDeliveryInbox(withDeliveries([deliveryItem({ kind, status: 'in_transit' })]));
+
+    expect(within(screen.getAllByRole('listitem')[0]).getByText(label, { selector: 'p' })).toBeVisible();
+  });
+
+  it.each([
+    ['confirmed', '受付済み'],
+    ['in_transit', '輸送中'],
+    ['out_for_delivery', '配達中'],
+    ['attempted_delivery', '不在で持ち帰り'],
+    ['ready_for_pickup', '受け取り待ち'],
+    ['delivered', '配達済み'],
+    ['delayed', '遅れ'],
+    ['failure', '問題あり'],
+  ] as const)('今の状況 %s は「%s」と出す', (status, label) => {
+    renderDeliveryInbox(withDeliveries([deliveryItem({ kind: 'tracking_stalled', status })]));
+
+    expect(screen.getAllByRole('listitem')[0]).toHaveTextContent(`・${label}`);
+  });
+
+  it('行は窓口が返した順に出す', () => {
+    renderDeliveryInbox(withDeliveries([
+      deliveryItem({ id: 'attention-a', orderNumber: 'ORD-AAAAAAAA' }),
+      deliveryItem({ id: 'attention-b', orderNumber: 'ORD-BBBBBBBB', kind: 'tracking_not_found' }),
+      deliveryItem({ id: 'attention-c', orderNumber: 'ORD-CCCCCCCC', kind: 'tracking_stalled' }),
+    ]));
+
+    const rows = screen.getAllByRole('listitem');
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toHaveTextContent('ORD-AAAAAAAA');
+    expect(rows[1]).toHaveTextContent('ORD-BBBBBBBB');
+    expect(rows[2]).toHaveTextContent('ORD-CCCCCCCC');
+  });
+
+  it('注文番号は HTML としては読まず、文字のまま出す', () => {
+    renderDeliveryInbox(withDeliveries([deliveryItem({ orderNumber: '<b>ORD-X</b>' })]));
+
+    expect(screen.getByText('注文番号 <b>ORD-X</b>・2回目の発送')).toBeVisible();
+    expect(document.querySelector('b')).toBeNull();
+  });
+
+  it('「履歴を開く」で、その注文の番号を渡す', () => {
+    const { onOpenDeliveryHistory, onResolveDelivery } = renderDeliveryInbox(withDeliveries([deliveryItem()]));
+
+    fireEvent.click(screen.getByRole('button', { name: '履歴を開く' }));
+
+    expect(onOpenDeliveryHistory).toHaveBeenCalledTimes(1);
+    expect(onOpenDeliveryHistory).toHaveBeenCalledWith(DELIVERY_ORDER_ID);
+    expect(onResolveDelivery).not.toHaveBeenCalled();
+  });
+
+  it('「対応済みにする」で、その要対応の番号を渡す', () => {
+    const { onOpenDeliveryHistory, onResolveDelivery } = renderDeliveryInbox(
+      withDeliveries([deliveryItem(), deliveryItem({ id: 'attention-2', kind: 'tracking_stalled' })]),
+    );
+
+    fireEvent.click(screen.getAllByRole('button', { name: '対応済みにする' })[1]);
+
+    expect(onResolveDelivery).toHaveBeenCalledTimes(1);
+    expect(onResolveDelivery).toHaveBeenCalledWith('attention-2');
+    expect(onOpenDeliveryHistory).not.toHaveBeenCalled();
+  });
+
+  it('操作中の要対応の行のボタンだけを押せなくする', () => {
+    const { onResolveDelivery } = renderDeliveryInbox(
+      withDeliveries([deliveryItem(), deliveryItem({ id: 'attention-2', kind: 'tracking_stalled' })]),
+      { processingIds: ['attention-1'] },
+    );
+
+    const resolveButtons = screen.getAllByRole('button', { name: '対応済みにする' });
+    expect(resolveButtons[0]).toBeDisabled();
+    expect(resolveButtons[1]).toBeEnabled();
+    fireEvent.click(resolveButtons[0]);
+    expect(onResolveDelivery).not.toHaveBeenCalled();
+  });
+
+  it('処理を渡されていない時は、その処理のボタンを出さない（管理の権限が無い人には閉じるボタンを出さない）', () => {
+    renderDeliveryInbox(withDeliveries([deliveryItem()]), { withResolve: false });
+    expect(screen.getByRole('button', { name: '履歴を開く' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '対応済みにする' })).not.toBeInTheDocument();
+    cleanup();
+
+    renderDeliveryInbox(withDeliveries([deliveryItem()]), { withHistory: false });
+    expect(screen.queryByRole('button', { name: '履歴を開く' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '対応済みにする' })).toBeVisible();
+  });
+
+  it('配送の「対応済みにする」は、支払いの例外の「解決済みにする」の画面を開かない', () => {
+    renderDeliveryInbox(withDeliveries([deliveryItem()], ATTENTION));
+
+    fireEvent.click(screen.getByRole('button', { name: '対応済みにする' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

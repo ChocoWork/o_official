@@ -66,3 +66,10 @@ test('古い見本でdeliveryが無い時だけ従来の発送を使う', () => 
   expect(entry).toMatchObject({ trackingNumber: 'OLD', notifyCustomer: true, cancelled: false });
   expect(entry).not.toHaveProperty('delivery');
 });
+test.each([true, false])('履歴の答えに追跡のオン・オフ（enabled=%s）を付ける（管理画面が現在の状況と登録の状態を出すかの根拠）', (enabled) => {
+  expect(buildOrderHistory(input(detail(), enabled)).deliveryTrackingEnabled).toBe(enabled);
+});
+test('deliveryが無い古い見本には追跡のオン・オフを付けない（画面はオフとして読む）', () => {
+  const value = input(); delete value.delivery;
+  expect(buildOrderHistory(value)).not.toHaveProperty('deliveryTrackingEnabled');
+});

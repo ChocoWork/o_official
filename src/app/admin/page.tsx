@@ -110,8 +110,13 @@ const CANCEL_REQUEST_RESOLVED_NOTICE = 'キャンセルの申し込みを解決�
 const CANCEL_REQUEST_RESOLVE_FAILED_MESSAGE =
   '返金・キャンセルは記録しましたが、申し込みを解決済みにできませんでした。キャンセルの申し込みの画面で「解決済みにする」を押してください。';
 
-async function readSafeOrderActionError(response: Response, fallback: string): Promise<string> {
-  if (response.status !== 400 && response.status !== 409) {
+// readableStatuses: 窓口が日本語の文を返す断りの番号。配送の要対応を閉じる窓口は 404（見つかりません）も日本語の文を返す
+async function readSafeOrderActionError(
+  response: Response,
+  fallback: string,
+  readableStatuses: readonly number[] = [400, 409],
+): Promise<string> {
+  if (!readableStatuses.includes(response.status)) {
     return fallback;
   }
 
@@ -204,6 +209,10 @@ function AdminPageContent() {
   }, [userRole]);
 
   const canAccessAdmin = visibleTabs.length > 0;
+
+  // 伝票番号を直す・配達済みにする・配送の要対応を閉じる（窓口の権限は admin.orders.manage）。店長とサポートの人だけ。
+  // 返金の権限（店長だけ）とは別に決め、返金の入口は広げない
+  const canManageDelivery = userRole === 'admin' || userRole === 'supporter';
 
   const fetchKpi = useCallback(async () => {
     try {
@@ -696,7 +705,12 @@ function AdminPageContent() {
    * 要対応・要確認の操作。成功したら欄と一覧を読み直す。断られたら理由を欄のすぐ下に出す（行は残し、押し直せる）。
    * 送っている間は id を操作中に置き、成功でも失敗でも finally で外す。
    */
-  const runAttentionAction = async (id: string, request: () => Promise<Response>, successMessage: string) => {
+  const runAttentionAction = async (
+    id: string,
+    request: () => Promise<Response>,
+    successMessage: string,
+    failure: { readableStatuses?: readonly number[]; rateLimitedMessage?: string } = {},
+  ) => {
     try {
       setOrdersErrorMessage(null);
       setOrdersNoticeMessage(null);
@@ -711,7 +725,12 @@ function AdminPageContent() {
         if (response.status === 503) {
           throw new Error(STRIPE_UNAVAILABLE_MESSAGE);
         }
-        throw new Error(await readSafeOrderActionError(response, '操作に失敗しました。一覧を更新してください。'));
+        if (response.status === 429 && failure.rateLimitedMessage) {
+          throw new Error(failure.rateLimitedMessage);
+        }
+        throw new Error(
+          await readSafeOrderActionError(response, '操作に失敗しました。一覧を更新してください。', failure.readableStatuses),
+        );
       }
 
       setOrdersNoticeMessage(successMessage);
@@ -783,10 +802,27 @@ function AdminPageContent() {
     void fetchOrdersRef.current();
   };
 
-  // 履歴の画面で発送か仕上がりを取り消した。履歴の画面は開いたまま、一覧だけ読み直す
+  // 履歴の画面で発送か仕上がりを取り消した・伝票番号を直した・配達済みにした（結果が分からない時も）。履歴の画面は開いたまま、一覧を読み直す。
+  // 伝票番号を直す・配達済みにすると、開いていた配送の要対応が閉じるので、要対応の欄も読み直す
   const handleFulfillmentChanged = () => {
     void fetchOrdersRef.current();
+    void fetchAttention();
   };
+
+  // 配送の要対応を対応済みにする。成功したら欄と一覧を読み直し、全部閉じれば「配送」の組が消える（もう閉じてあった時も同じ）
+  const handleResolveDelivery = (attentionId: string) =>
+    void runAttentionAction(
+      attentionId,
+      () =>
+        clientFetch(`/api/admin/order-attention/deliveries/${attentionId}/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }),
+      '対応済みにしました。',
+      // 窓口は、見つからない（404）も日本語の文で返す。回数の制限（429）は、画面の案内（計画の C-4）にする
+      { readableStatuses: [400, 404, 409], rateLimitedMessage: 'しばらくしてから、もう一度お試しください。' },
+    );
 
   // 返金の画面を開く。返金は画面の中で窓口を呼ぶ（確認の文を出して残りを全部返す作りはやめた）
   const handleRefundOrder = (id: string) => {
@@ -1138,6 +1174,8 @@ function AdminPageContent() {
               onCancelAndResolve={handleCancelAndResolve}
               onRetryRefund={userRole === 'admin' ? handleRefundOrder : undefined}
               onRetryReturnRefund={userRole === 'admin' ? handleShowReturns : undefined}
+              onOpenDeliveryHistory={setHistoryOrderId}
+              onResolveDelivery={canManageDelivery ? handleResolveDelivery : undefined}
             />
             {attentionErrorMessage ? (
               <p role="alert" className="lk-text-sm text-red-700 font-acumin">{attentionErrorMessage}</p>
@@ -1311,6 +1349,7 @@ function AdminPageContent() {
               orderId={historyOrderId}
               onClose={() => setHistoryOrderId(null)}
               onChanged={handleFulfillmentChanged}
+              canManageDelivery={canManageDelivery}
             />
             <OrderRefundDialog
               orderId={refundOrderId}

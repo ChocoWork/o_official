@@ -776,3 +776,74 @@ describe('OrderSection の「キャンセルの申し込み」のボタン（グ
     expect(otherWords).not.toContain('キャンセルの申し込み');
   });
 });
+
+// 注文の一覧の配送の印（グループ E-4 の Task 10。設計書 6-4・計画の C-5）。印の優先順（問題あり → 不在で持ち帰り → 追跡できない）は
+// 窓口が1つに決めて deliveryAttention で返す。一覧は、渡された1つだけを進み具合の列に出す
+describe('OrderSection の配送の印', () => {
+  const shippedOrder: OrderItem = {
+    ...paidOrder,
+    id: 'shipped-order',
+    status: '配送中',
+    orderStatus: 'shipped',
+    progressKey: 'in_transit',
+    canShip: false,
+  };
+
+  it.each([
+    ['failure', '問題あり'],
+    ['attempted_delivery', '不在で持ち帰り'],
+    ['untrackable', '追跡できない'],
+  ] as const)('配送の要対応 %s のある注文に、進み具合の列の小さな印「%s」を出す', (deliveryAttention, label) => {
+    render(<OrderSection orders={[{ ...shippedOrder, deliveryAttention }]} />);
+
+    const mark = screen.getByText(label);
+    expect(mark).toBeVisible();
+    expect(mark.closest('td')).toHaveTextContent('配送中');
+  });
+
+  it('一度に出す印は1つだけ（ほかの2つの印は出さない）', () => {
+    render(<OrderSection orders={[{ ...shippedOrder, deliveryAttention: 'failure' }]} />);
+
+    expect(screen.getAllByText(/^(問題あり|不在で持ち帰り|追跡できない)$/)).toHaveLength(1);
+    expect(screen.queryByText('不在で持ち帰り')).not.toBeInTheDocument();
+    expect(screen.queryByText('追跡できない')).not.toBeInTheDocument();
+  });
+
+  it('配送の要対応が無い（null）注文と、窓口が付けない昔の形（省略）の注文には印を出さない', () => {
+    render(
+      <OrderSection
+        orders={[
+          { ...shippedOrder, id: 'order-null', deliveryAttention: null },
+          { ...shippedOrder, id: 'order-omitted' },
+        ]}
+      />,
+    );
+
+    for (const label of ['問題あり', '不在で持ち帰り', '追跡できない']) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
+  });
+
+  it('印は注文ごと。印のある注文の行にだけ出る', () => {
+    render(
+      <OrderSection
+        orders={[
+          { ...shippedOrder, id: 'order-a', deliveryAttention: 'attempted_delivery' },
+          { ...shippedOrder, id: 'order-b', deliveryAttention: null },
+        ]}
+      />,
+    );
+
+    const rows = screen.getAllByRole('row');
+    expect(within(rows[1]).getByText('不在で持ち帰り')).toBeVisible();
+    expect(within(rows[2]).queryByText('不在で持ち帰り')).not.toBeInTheDocument();
+  });
+
+  it('要確認の印・一部発送済みの印と並んでも、配送の印は別の印として出る', () => {
+    render(<OrderSection orders={[{ ...shippedOrder, needsReview: true, partiallyShipped: true, deliveryAttention: 'untrackable' }]} />);
+
+    expect(screen.getByText('要確認')).toBeVisible();
+    expect(screen.getByText(PARTIALLY_SHIPPED_LABEL)).toBeVisible();
+    expect(screen.getByText('追跡できない')).toBeVisible();
+  });
+});

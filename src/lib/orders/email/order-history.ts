@@ -276,6 +276,8 @@ export type OrderHistoryResponse = {
   order: { id: string; orderNumber: string; statusLabel: string; recipient: string | null };
   sendPaused: { reasonLabel: string } | null;
   entries: OrderHistoryEntry[];
+  /** 配送の追跡がオンか。画面は、オンの時だけ現在の状況と登録の状態を出す。窓口が配送の現在値を渡さない昔の見本では付かず、オフとして読む */
+  deliveryTrackingEnabled?: boolean;
 };
 
 export type OrderEmailContentResponse =
@@ -752,5 +754,6 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
       ? { reasonLabel: sendState.reason ? ORDER_EMAIL_ERROR_LABELS[sendState.reason] : ORDER_EMAIL_ERROR_LABELS.config_provider }
       : null,
     entries,
+    ...(input.delivery ? { deliveryTrackingEnabled: input.delivery.enabled } : {}),
   };
 }

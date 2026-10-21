@@ -1,15 +1,19 @@
 import { useState } from 'react';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type {
   OrderHistoryCompletionEntry,
+  OrderHistoryDeliveryEventEntry,
   OrderHistoryEmailEntry,
   OrderHistoryFulfillmentEntry,
   OrderHistoryRefundEntry,
   OrderHistoryRefundRereserveEntry,
   OrderHistoryResponse,
+  OrderHistoryTrackingChangeEntry,
 } from '@/lib/orders/email/order-history';
 import type { OrderHistoryReturnEntry } from '@/lib/orders/email/order-history';
 import type { OrderRefundStatus } from '@/lib/orders/refund/refund-types';
+import type { OrderEmailStatus } from '@/lib/orders/email/order-email-types';
+import type { DeliveryEvent, FulfillmentDeliveryDetail, TrackingChange } from '@/lib/orders/tracking/delivery-types';
 
 const mockClientFetch = jest.fn();
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
@@ -1329,5 +1333,582 @@ describe('OrderHistoryDialog の申し込みの行（P17）', () => {
     } finally {
       error.mockRestore();
     }
+  });
+});
+
+// 配送の状況（グループ E-4 の Task 10）。設計書 6-1 の表と、計画の C-5 の言葉。履歴の窓口が返す配送の行（Task 9）と、直す・配達済みにする画面とのつなぎ
+const DELIVERED_AT = '2026-10-21T03:00:00.000Z';
+const TRACKING_POST_URL = `/api/admin/orders/${ORDER_ID}/fulfillments/${FULFILLMENT_ID}/tracking`;
+const DELIVERED_POST_URL = `/api/admin/orders/${ORDER_ID}/fulfillments/${FULFILLMENT_ID}/delivered`;
+
+function deliveryDetail(overrides: Partial<FulfillmentDeliveryDetail> = {}): FulfillmentDeliveryDetail {
+  return {
+    fulfillmentId: FULFILLMENT_ID, number: 1, carrier: 'yamato', trackingNumber: '1234-5678', notifyCustomer: true,
+    shippedAt: '2026-10-10T02:00:00.000Z', cancelledAt: null, trackingVersion: 1, deliveryStatus: 'in_transit',
+    deliveryStatusAt: DELIVERED_AT, deliveredAt: null, deliveredSource: null,
+    registration: { state: 'registered', failureKind: null, stopReason: null, expiresAt: '2026-11-09T02:00:00.000Z' },
+    events: [], trackingChanges: [],
+    ...overrides,
+  };
+}
+
+/** 配送の現在値（delivery）つきの発送の行。取り消した発送なら、取り消し済みの行の形にする */
+function shipmentWithDelivery(
+  delivery: Partial<FulfillmentDeliveryDetail> = {},
+  overrides: Partial<OrderHistoryFulfillmentEntry> = {},
+): OrderHistoryFulfillmentEntry {
+  const detail = deliveryDetail(delivery);
+  const cancelled = detail.cancelledAt !== null;
+  return fulfillmentEntry({
+    fulfillmentId: detail.fulfillmentId, number: detail.number, cancelled, cancellable: !cancelled, delivery: detail, ...overrides,
+  });
+}
+
+function deliveryEvent(overrides: Partial<DeliveryEvent> = {}, number = 1): OrderHistoryDeliveryEventEntry {
+  const event: DeliveryEvent = {
+    id: 'event-1', trackingVersion: 1, status: 'in_transit', happenedAt: '2026-10-12T02:00:00.000Z',
+    recordedAt: '2026-10-12T02:00:05.000Z', source: 'tracking', providerSubStatus: 'InTransit_PickedUp', actorEmail: null,
+    ...overrides,
+  };
+  return { type: 'delivery_event', at: event.happenedAt, fulfillmentId: FULFILLMENT_ID, number, event };
+}
+
+function trackingChangeEntry(overrides: Partial<TrackingChange> = {}, number = 1): OrderHistoryTrackingChangeEntry {
+  const change: TrackingChange = {
+    id: 'change-1', fromCarrier: 'yamato', fromTrackingNumber: '1234-5678', toCarrier: 'sagawa', toTrackingNumber: 'AB-99',
+    trackingVersion: 2, notifyCustomer: true, changedAt: '2026-10-13T02:00:00.000Z', actorEmail: 'admin@example.com',
+    emailStatus: 'sent',
+    ...overrides,
+  };
+  return { type: 'tracking_change', at: change.changedAt, fulfillmentId: FULFILLMENT_ID, number, change };
+}
+
+/** 履歴を開く。enabled は履歴の窓口が返す追跡のオン・オフ（省くと、窓口が返さない昔の見本の形） */
+async function openDeliveryHistory(
+  entries: OrderHistoryResponse['entries'],
+  options: { enabled?: boolean; canManage?: boolean; onChanged?: () => void } = {},
+) {
+  mockClientFetch.mockResolvedValueOnce(
+    json(history({ entries, ...(options.enabled === undefined ? {} : { deliveryTrackingEnabled: options.enabled }) })),
+  );
+  const onClose = jest.fn();
+  render(
+    <OrderHistoryDialog
+      orderId={ORDER_ID}
+      onClose={onClose}
+      onChanged={options.onChanged}
+      canManageDelivery={options.canManage ?? true}
+    />,
+  );
+  const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
+  await within(dialog).findByText('宛先: hanako@example.com');
+  return { dialog, onClose, items: within(dialog).getAllByRole('listitem') };
+}
+
+type TableRow = {
+  label: string;
+  entries: () => OrderHistoryResponse['entries'];
+  probe: () => HTMLElement | null;
+  off: boolean;
+  on: boolean;
+};
+
+// 設計書 6-1 の表を1行ずつ。off・on は、追跡オフ・オンの履歴で出すか
+const TABLE_ROWS: TableRow[] = [
+  {
+    label: '配達済みなら届いた日と出どころ',
+    entries: () => [shipmentWithDelivery({ deliveryStatus: 'delivered', deliveredAt: DELIVERED_AT, deliveredSource: 'manual' })],
+    probe: () => screen.queryByText('お届け日 10月21日（手で）'),
+    off: true, on: true,
+  },
+  {
+    label: '伝票番号の直しの記録',
+    entries: () => [shipmentWithDelivery(), trackingChangeEntry()],
+    probe: () => screen.queryByText('伝票番号を直した（1回目）'),
+    off: true, on: true,
+  },
+  {
+    label: '今の配送の状況と最後に変わった時刻',
+    entries: () => [shipmentWithDelivery({ deliveryStatus: 'attempted_delivery' })],
+    probe: () => screen.queryByText('最後の更新 2026/10/21 12:00'),
+    off: false, on: true,
+  },
+  {
+    label: '移り変わり（状況と細かい状況）',
+    entries: () => [shipmentWithDelivery(), deliveryEvent()],
+    probe: () => screen.queryByText('InTransit_PickedUp'),
+    off: true, on: true,
+  },
+  {
+    label: '追跡の登録の状態',
+    entries: () => [shipmentWithDelivery()],
+    probe: () => screen.queryByText('追跡中'),
+    off: false, on: true,
+  },
+  {
+    label: 'ボタン「伝票番号を直す」',
+    entries: () => [shipmentWithDelivery()],
+    probe: () => screen.queryByRole('button', { name: '伝票番号を直す' }),
+    off: true, on: true,
+  },
+  {
+    label: 'ボタン「配達済みにする」',
+    entries: () => [shipmentWithDelivery()],
+    probe: () => screen.queryByRole('button', { name: '配達済みにする' }),
+    off: true, on: true,
+  },
+];
+
+function tableCases(): Array<[string, string, boolean, boolean, TableRow]> {
+  return TABLE_ROWS.flatMap((row): Array<[string, string, boolean, boolean, TableRow]> => [
+    [row.label, 'オフ', false, row.off, row],
+    [row.label, 'オン', true, row.on, row],
+  ]);
+}
+
+describe('OrderHistoryDialog の配送の表示（設計書 6-1 の表）', () => {
+  it.each(tableCases())('「%s」は、追跡%sの履歴で出す物か', async (_label, _mode, enabled, shown, row) => {
+    await openDeliveryHistory(row.entries(), { enabled });
+
+    if (shown) {
+      expect(row.probe()).toBeVisible();
+    } else {
+      expect(row.probe()).not.toBeInTheDocument();
+    }
+  });
+
+  it('追跡のオン・オフを窓口が返さない昔の見本は、オフとして読む（現在の状況も登録の状態も出さない）', async () => {
+    await openDeliveryHistory([shipmentWithDelivery({ deliveryStatus: 'attempted_delivery' })]);
+
+    expect(screen.queryByText('最後の更新 2026/10/21 12:00')).not.toBeInTheDocument();
+    expect(screen.queryByText('追跡中')).not.toBeInTheDocument();
+    expect(screen.queryByText('不在で持ち帰り')).not.toBeInTheDocument();
+  });
+
+  it('OFFの履歴にも配達済みと直しと過去の移り変わりを出す', async () => {
+    await openDeliveryHistory(
+      [
+        shipmentWithDelivery({ deliveryStatus: 'delivered', deliveredAt: DELIVERED_AT, deliveredSource: 'manual' }),
+        trackingChangeEntry(),
+        deliveryEvent({ status: 'delivered', source: 'manual', providerSubStatus: null, actorEmail: 'admin@example.com' }),
+      ],
+      { enabled: false },
+    );
+
+    expect(screen.getByText('お届け日 10月21日（手で）')).toBeVisible();
+    expect(screen.getByText('伝票番号を直した（1回目）')).toBeVisible();
+    expect(screen.getByText('配送の状況（1回目）')).toBeVisible();
+    expect(screen.queryByText('追跡中')).not.toBeInTheDocument();
+    expect(screen.queryByText(/最後の更新/)).not.toBeInTheDocument();
+  });
+
+  it('ONは現在の状況・最後の更新・登録・細かい記号を出す', async () => {
+    await openDeliveryHistory(
+      [
+        shipmentWithDelivery({ deliveryStatus: 'attempted_delivery', deliveryStatusAt: '2026-10-21T03:00:00.000Z' }),
+        deliveryEvent({ status: 'attempted_delivery', providerSubStatus: 'Exception_Absent' }),
+      ],
+      { enabled: true },
+    );
+
+    expect(screen.getAllByText('不在で持ち帰り')).toHaveLength(2);
+    expect(screen.getByText('最後の更新 2026/10/21 12:00')).toBeVisible();
+    expect(screen.getByText('追跡中')).toBeVisible();
+    expect(screen.getByText('Exception_Absent')).toBeVisible();
+    expect(screen.getAllByText('配送の状況（1回目）')).toHaveLength(2);
+  });
+
+  it.each([
+    ['confirmed', '受付済み'],
+    ['in_transit', '輸送中'],
+    ['out_for_delivery', '配達中'],
+    ['attempted_delivery', '不在で持ち帰り'],
+    ['ready_for_pickup', '受け取り待ち'],
+    ['delivered', '配達済み'],
+    ['delayed', '遅れ'],
+    ['failure', '問題あり'],
+  ] as const)('追跡オンの現在の状況 %s は「%s」と出す', async (status, label) => {
+    await openDeliveryHistory([shipmentWithDelivery({ deliveryStatus: status })], { enabled: true });
+
+    expect(screen.getByText(label, { selector: 'span' })).toBeVisible();
+  });
+
+  it.each([
+    ['pending', '登録待ち'],
+    ['registered', '追跡中'],
+    ['stopped', '止めた'],
+    ['failed', '登録できない'],
+  ] as const)('追跡オンの登録の状態 %s は「%s」と出す', async (state, label) => {
+    await openDeliveryHistory(
+      [shipmentWithDelivery({ registration: { state, failureKind: null, stopReason: null, expiresAt: '2026-11-09T02:00:00.000Z' } })],
+      { enabled: true },
+    );
+
+    expect(screen.getByText(label)).toBeVisible();
+  });
+
+  it('追跡オンでも、登録の行が無い発送には登録の状態を出さない', async () => {
+    await openDeliveryHistory([shipmentWithDelivery({ registration: null })], { enabled: true });
+
+    for (const label of ['登録待ち', '追跡中', '止めた', '登録できない']) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
+  });
+
+  it('追跡で配達済みになった発送は「（追跡）」の出どころを出す。届いた日が無い発送には出さない', async () => {
+    await openDeliveryHistory(
+      [
+        shipmentWithDelivery({ deliveryStatus: 'delivered', deliveredAt: DELIVERED_AT, deliveredSource: 'tracking' }),
+        shipmentWithDelivery({ fulfillmentId: 'fulfillment-2', number: 2 }),
+      ],
+      { enabled: true },
+    );
+
+    expect(screen.getByText('お届け日 10月21日（追跡）')).toBeVisible();
+    expect(screen.getAllByText(/お届け日/)).toHaveLength(1);
+  });
+
+  it('届いた日は日本時間の日付で出す（世界時の前日でも、日本時間で翌日なら翌日）', async () => {
+    await openDeliveryHistory(
+      [shipmentWithDelivery({ deliveryStatus: 'delivered', deliveredAt: '2026-10-20T16:30:00.000Z', deliveredSource: 'manual' })],
+    );
+
+    expect(screen.getByText('お届け日 10月21日（手で）')).toBeVisible();
+  });
+
+  it('取り消した発送には、現在の状況も登録の状態も、2つのボタンも出さない', async () => {
+    await openDeliveryHistory(
+      [shipmentWithDelivery({ cancelledAt: '2026-10-11T00:00:00.000Z', deliveryStatus: 'in_transit' })],
+      { enabled: true },
+    );
+
+    expect(screen.queryByText(/最後の更新/)).not.toBeInTheDocument();
+    expect(screen.queryByText('追跡中')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '伝票番号を直す' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'この発送を取り消す' })).not.toBeInTheDocument();
+  });
+
+  it('取消には2つのボタン無し、配達済みには直すだけ', async () => {
+    await openDeliveryHistory(
+      [
+        shipmentWithDelivery({ deliveryStatus: 'delivered', deliveredAt: DELIVERED_AT, deliveredSource: 'tracking' }),
+      ],
+    );
+
+    expect(screen.getByRole('button', { name: '伝票番号を直す' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
+  });
+
+  it('管理の権限（canManageDelivery）が無い人には、2つのボタンを出さない（省いた時も同じ）', async () => {
+    const { dialog } = await openDeliveryHistory([shipmentWithDelivery()], { canManage: false });
+    expect(within(dialog).queryByRole('button', { name: '伝票番号を直す' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
+    cleanup();
+
+    mockClientFetch.mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()] })));
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    await screen.findByText('宛先: hanako@example.com');
+    expect(screen.queryByRole('button', { name: '伝票番号を直す' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
+    // 取り消す操作は今までどおり（配送の権限とは別）
+    expect(screen.getByRole('button', { name: 'この発送を取り消す' })).toBeVisible();
+  });
+
+  it('窓口が配送の現在値を付けなかった昔の見本の発送には、2つのボタンを出さない', async () => {
+    await openDeliveryHistory([fulfillmentEntry()]);
+
+    expect(screen.queryByRole('button', { name: '伝票番号を直す' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
+  });
+});
+
+describe('OrderHistoryDialog の配送の出来事と伝票番号の直しの行', () => {
+  it('出来事の行は、日時・「配送の状況（n回目）」・状況・細かい状況を決まった言葉で出す。した人がいれば「操作:」も出す。ボタンは出さない', async () => {
+    const { items } = await openDeliveryHistory([
+      deliveryEvent({ status: 'delivered', source: 'manual', providerSubStatus: null, actorEmail: 'admin@example.com' }, 2),
+      deliveryEvent({ id: 'event-2', status: 'failure', providerSubStatus: 'Exception_Other', happenedAt: '2026-10-11T02:00:00.000Z' }),
+    ]);
+
+    expect(items[0]).toHaveTextContent('2026/10/12 11:00');
+    expect(items[0]).toHaveTextContent('配送の状況（2回目）');
+    expect(items[0]).toHaveTextContent('配達済み');
+    expect(items[0]).toHaveTextContent('操作: admin@example.com');
+    expect(items[0]).not.toHaveTextContent('InTransit');
+    expect(items[1]).toHaveTextContent('配送の状況（1回目）');
+    expect(items[1]).toHaveTextContent('問題あり');
+    expect(items[1]).toHaveTextContent('Exception_Other');
+    expect(items[1]).not.toHaveTextContent('操作:');
+    for (const item of items) {
+      expect(within(item).queryAllByRole('button')).toHaveLength(0);
+    }
+  });
+
+  it('出来事の細かい状況は、HTML としては読まず、文字のまま出す', async () => {
+    const { dialog } = await openDeliveryHistory([
+      deliveryEvent({ providerSubStatus: '<img src=x onerror=alert(1)>', actorEmail: '<b>admin</b>@example.com' }),
+    ]);
+
+    expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeVisible();
+    expect(dialog.querySelector('img')).toBeNull();
+    expect(dialog.querySelector('b')).toBeNull();
+  });
+
+  it('伝票番号を直した行は、題・前の値 → 新しい値・メールの状態・した人を決まった言葉で出す', async () => {
+    const [item] = (await openDeliveryHistory([trackingChangeEntry({}, 2)])).items;
+
+    expect(item).toHaveTextContent('2026/10/13 11:00');
+    expect(item).toHaveTextContent('伝票番号を直した（2回目）');
+    expect(within(item).getByText('ヤマト運輸 1234-5678 → 佐川急便 AB-99')).toBeVisible();
+    expect(item).toHaveTextContent('お客様へのメール：送信済み');
+    expect(item).toHaveTextContent('操作: admin@example.com');
+    expect(within(item).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('前の値が空の直しは「記録なし」と出す（配送業者だけ・番号だけが空でも、空の側だけを省く）', async () => {
+    const items = (await openDeliveryHistory([
+      trackingChangeEntry({ id: 'change-1', fromCarrier: null, fromTrackingNumber: null, toCarrier: 'japanpost', toTrackingNumber: '9999' }),
+      trackingChangeEntry({ id: 'change-2', fromCarrier: null, fromTrackingNumber: '1234', toCarrier: 'yamato', toTrackingNumber: '5678', changedAt: '2026-10-12T02:00:00.000Z' }),
+    ])).items;
+
+    expect(within(items[0]).getByText('記録なし → 日本郵便 9999')).toBeVisible();
+    expect(within(items[1]).getByText('1234 → ヤマト運輸 5678')).toBeVisible();
+  });
+
+  it.each<[OrderEmailStatus | null, string]>([
+    ['sent', '送信済み'],
+    ['pending', '送信待ち'],
+    ['sending', '送信待ち'],
+    ['retry_wait', '送信待ち'],
+    ['dead', '送れなかった'],
+    ['skipped', '送らない'],
+    [null, '送らない'],
+  ])('メールの状態 %s は「お客様へのメール：%s」と出す', async (emailStatus, label) => {
+    const [item] = (await openDeliveryHistory([trackingChangeEntry({ emailStatus, notifyCustomer: emailStatus !== null })])).items;
+
+    expect(within(item).getByText(`お客様へのメール：${label}`)).toBeVisible();
+  });
+
+  it('伝票番号の欄は、390px の狭い画面でも長い番号が折り返せる（はみ出さない）', async () => {
+    await openDeliveryHistory([shipmentWithDelivery({ trackingNumber: 'A'.repeat(64) }, { trackingNumber: 'A'.repeat(64) }), trackingChangeEntry({ toTrackingNumber: 'B'.repeat(64) })]);
+
+    expect(screen.getByText(`配送業者: ヤマト運輸 / 伝票番号: ${'A'.repeat(64)}`)).toHaveClass('break-all');
+    expect(screen.getByText(`ヤマト運輸 1234-5678 → 佐川急便 ${'B'.repeat(64)}`)).toHaveClass('break-all');
+  });
+
+  it('配達済みのお知らせなど、配送のメールの行には再送のボタンを出さない（窓口が再送できないと決めた行）', async () => {
+    const { items } = await openDeliveryHistory([
+      sentEmailEntry({ emailId: 'email-delivered', kind: 'delivered', kindLabel: '配達済みのお知らせ', resendable: false, canViewContent: true }),
+      deliveryEvent({ status: 'delivered', source: 'tracking' }),
+    ]);
+
+    expect(items[0]).toHaveTextContent('配達済みのお知らせのメール');
+    expect(within(items[0]).queryByRole('button', { name: 'お客様へ再送' })).not.toBeInTheDocument();
+    expect(within(items[1]).queryByRole('button', { name: 'お客様へ再送' })).not.toBeInTheDocument();
+  });
+
+  it('出来事・直しの行が並んでも、行の key が重ならず、警告を出さない', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { items } = await openDeliveryHistory([
+        shipmentWithDelivery(),
+        deliveryEvent({ id: 'event-1' }),
+        deliveryEvent({ id: 'event-2', status: 'out_for_delivery' }),
+        trackingChangeEntry({ id: 'change-1' }),
+        trackingChangeEntry({ id: 'change-2' }),
+      ]);
+
+      expect(items).toHaveLength(5);
+      expect(error.mock.calls.some(([message]) => String(message).includes('same key'))).toBe(false);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
+describe('OrderHistoryDialog の伝票番号を直す・配達済みにする画面', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  /** 履歴へ戻った後の読み直しの返事を待つ（待たずに終えると、終わった後の描き直しが act の外になる） */
+  const flush = () => act(async () => {});
+
+  const submitIn = (name: string) => within(screen.getByRole('dialog', { name })).getByRole('button', { name });
+
+  it('「伝票番号を直す」で直す画面へ移る。履歴のダイアログは重ねず、最初の入力へフォーカスが移り、追跡オンの説明を出す', async () => {
+    await openDeliveryHistory([shipmentWithDelivery()], { enabled: true });
+
+    press(screen.getByRole('button', { name: '伝票番号を直す' }));
+
+    const dialog = screen.getByRole('dialog', { name: '伝票番号を直す' });
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.queryByRole('dialog', { name: 'この注文の履歴' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('配送業者')).toHaveFocus();
+    expect(screen.getByLabelText('伝票番号')).toHaveValue('1234-5678');
+    expect(dialog).toHaveTextContent('直すと配送の状況は受付済みに戻り、新しい伝票番号で追跡します。チェックを外すと、この先の配達中・配達済みのメールも送りません');
+  });
+
+  it('追跡オフの履歴から開いた直す画面と配達済みの画面には、オフの説明を出す', async () => {
+    await openDeliveryHistory([shipmentWithDelivery()], { enabled: false });
+    mockClientFetch.mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()], deliveryTrackingEnabled: false })));
+
+    press(screen.getByRole('button', { name: '伝票番号を直す' }));
+    expect(screen.getByText('チェックを外すと、この先の配達済みのメールも送りません')).toBeVisible();
+    press(screen.getByRole('button', { name: '戻る' }));
+    await flush();
+    press(screen.getByRole('button', { name: '配達済みにする' }));
+
+    expect(screen.getByRole('dialog', { name: '配達済みにする' })).toBeInTheDocument();
+    expect(screen.getByText('お客様に届いたことが分かった時に使います。返品の期限は、この日から数えます')).toBeVisible();
+  });
+
+  it('配達済みの発送を直す画面には、返品の期限の警告を出す', async () => {
+    await openDeliveryHistory([
+      shipmentWithDelivery({ deliveryStatus: 'delivered', deliveredAt: DELIVERED_AT, deliveredSource: 'manual' }),
+    ]);
+
+    press(screen.getByRole('button', { name: '伝票番号を直す' }));
+
+    expect(screen.getByText('配達済みの記録が消え、返品の期限は新しい届いた日から数え直します')).toBeVisible();
+  });
+
+  it('「戻る」で履歴へ戻ると、開いた行のボタンへフォーカスが返り、履歴を読み直す。親には知らせない', async () => {
+    const entries = [shipmentWithDelivery({ fulfillmentId: 'fulfillment-2', number: 2 }), shipmentWithDelivery()];
+    const onChanged = jest.fn();
+    await openDeliveryHistory(entries, { onChanged });
+    mockClientFetch.mockResolvedValueOnce(json(history({ entries })));
+
+    press(screen.getAllByRole('button', { name: '伝票番号を直す' })[1]);
+    press(screen.getByRole('button', { name: '戻る' }));
+
+    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '伝票番号を直す' })[1]).toHaveFocus();
+    expect(mockClientFetch).toHaveBeenCalledTimes(2);
+    expect(mockClientFetch).toHaveBeenNthCalledWith(2, HISTORY_URL, { cache: 'no-store' });
+    expect(onChanged).not.toHaveBeenCalled();
+    await flush();
+    expect(screen.getAllByRole('button', { name: '伝票番号を直す' })[1]).toHaveFocus();
+  });
+
+  it('配達済みの画面から「戻る」でも、その行の「配達済みにする」へフォーカスが返る', async () => {
+    const entries = [shipmentWithDelivery({ fulfillmentId: 'fulfillment-2', number: 2 }), shipmentWithDelivery()];
+    await openDeliveryHistory(entries);
+    mockClientFetch.mockResolvedValueOnce(json(history({ entries })));
+
+    press(screen.getAllByRole('button', { name: '配達済みにする' })[1]);
+    expect(screen.getByRole('dialog', { name: '配達済みにする' })).toBeInTheDocument();
+    press(screen.getByRole('button', { name: '戻る' }));
+
+    expect(screen.getAllByRole('button', { name: '配達済みにする' })[1]).toHaveFocus();
+    await flush();
+  });
+
+  it('Escape では、履歴ごと閉じずに、直す画面だけを閉じて履歴へ戻る', async () => {
+    const { onClose } = await openDeliveryHistory([shipmentWithDelivery()]);
+    mockClientFetch.mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()] })));
+
+    press(screen.getByRole('button', { name: '伝票番号を直す' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '伝票番号を直す' })).toHaveFocus();
+    await flush();
+  });
+
+  it('直せたら、窓口へ送り、履歴を読み直し、親に知らせ、成功の知らせを出す。フォーカスは同じ行のボタンへ戻る', async () => {
+    const onChanged = jest.fn();
+    await openDeliveryHistory([shipmentWithDelivery()], { enabled: true, onChanged });
+    mockClientFetch
+      .mockResolvedValueOnce(json({ data: { trackingChangeId: 'change-9', trackingVersion: 2, replayed: false } }))
+      .mockResolvedValueOnce(json(history({
+        entries: [trackingChangeEntry({ id: 'change-9' }), shipmentWithDelivery({ carrier: 'sagawa', trackingNumber: 'AB-99', trackingVersion: 2, deliveryStatus: 'confirmed' })],
+        deliveryTrackingEnabled: true,
+      })));
+
+    press(screen.getByRole('button', { name: '伝票番号を直す' }));
+    fireEvent.change(screen.getByLabelText('配送業者'), { target: { value: 'sagawa' } });
+    fireEvent.change(screen.getByLabelText('伝票番号'), { target: { value: 'AB-99' } });
+    press(submitIn('伝票番号を直す'));
+
+    expect(await screen.findByText('伝票番号を直しました。')).toBeInTheDocument();
+    expect(mockClientFetch).toHaveBeenNthCalledWith(2, TRACKING_POST_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: expect.any(String),
+    });
+    const body = JSON.parse((mockClientFetch.mock.calls[1][1] as RequestInit).body as string) as Record<string, unknown>;
+    expect(body).toEqual({ requestKey: expect.any(String), carrier: 'sagawa', trackingNumber: 'AB-99', notifyCustomer: true });
+    expect(mockClientFetch).toHaveBeenNthCalledWith(3, HISTORY_URL, { cache: 'no-store' });
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status')).toHaveTextContent('伝票番号を直しました。');
+    expect(screen.getByRole('alert')).toBeEmptyDOMElement();
+    await waitFor(() => expect(screen.getByText('伝票番号を直した（1回目）')).toBeVisible());
+    expect(screen.getByRole('button', { name: '伝票番号を直す' })).toHaveFocus();
+  });
+
+  it('配達済みにできたら、窓口へ送り、履歴を読み直し、親に知らせ、成功の知らせを出す。消えたボタンではなくパネルにフォーカスが留まる', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-21T03:00:00.000Z'));
+    const onChanged = jest.fn();
+    await openDeliveryHistory([shipmentWithDelivery()], { onChanged });
+    mockClientFetch
+      .mockResolvedValueOnce(json({ data: { eventId: 'event-9', deliveredAt: '2026-10-15T03:00:00.000Z', replayed: false } }))
+      .mockResolvedValueOnce(json(history({
+        entries: [shipmentWithDelivery({ deliveryStatus: 'delivered', deliveredAt: '2026-10-15T03:00:00.000Z', deliveredSource: 'manual' })],
+      })));
+
+    press(screen.getByRole('button', { name: '配達済みにする' }));
+    fireEvent.change(screen.getByLabelText('届いた日'), { target: { value: '2026-10-15' } });
+    press(submitIn('配達済みにする'));
+
+    expect(await screen.findByText('配達済みにしました。')).toBeInTheDocument();
+    expect(mockClientFetch).toHaveBeenNthCalledWith(2, DELIVERED_POST_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: expect.any(String),
+    });
+    const body = JSON.parse((mockClientFetch.mock.calls[1][1] as RequestInit).body as string) as Record<string, unknown>;
+    expect(body).toEqual({ requestKey: expect.any(String), deliveredOn: '2026-10-15', notifyCustomer: true });
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status')).toHaveTextContent('配達済みにしました。');
+    await waitFor(() => expect(screen.getByText('お届け日 10月15日（手で）')).toBeVisible());
+    expect(screen.queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toHaveFocus();
+  });
+
+  it('結果が分からないまま戻ると、履歴を読み直し、親にも知らせるが、成功の知らせは出さない', async () => {
+    const onChanged = jest.fn();
+    await openDeliveryHistory([shipmentWithDelivery()], { onChanged });
+    mockClientFetch
+      .mockResolvedValueOnce(json({}, 503))
+      .mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()] })));
+
+    press(screen.getByRole('button', { name: '伝票番号を直す' }));
+    fireEvent.change(screen.getByLabelText('伝票番号'), { target: { value: 'AB-99' } });
+    press(submitIn('伝票番号を直す'));
+    await screen.findByText('結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。');
+    press(screen.getByRole('button', { name: '戻る' }));
+
+    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
+    expect(mockClientFetch).toHaveBeenNthCalledWith(3, HISTORY_URL, { cache: 'no-store' });
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    await flush();
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    expect(screen.getByRole('alert')).toBeEmptyDOMElement();
+  });
+
+  it('断られた間は直す画面に留まり、親には知らせない', async () => {
+    const onChanged = jest.fn();
+    await openDeliveryHistory([shipmentWithDelivery()], { onChanged });
+    mockClientFetch.mockResolvedValueOnce(json({ error: '取り消した発送は変更できません。', code: 'DELIVERY_FULFILLMENT_CANCELLED' }, 409));
+
+    press(screen.getByRole('button', { name: '伝票番号を直す' }));
+    fireEvent.change(screen.getByLabelText('伝票番号'), { target: { value: 'AB-99' } });
+    press(submitIn('伝票番号を直す'));
+
+    expect(await screen.findByText('取り消した発送は変更できません。')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '伝票番号を直す' })).toBeInTheDocument();
+    expect(onChanged).not.toHaveBeenCalled();
   });
 });

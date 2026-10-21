@@ -10,6 +10,7 @@ import { PARTIALLY_SHIPPED_LABEL, type OrderProgressKey } from '@/lib/orders/ord
 import { PAYMENT_STATUS_LABELS, REFUND_FAILED_BADGE, REFUND_PENDING_BADGE, type PaymentStatusKey } from '@/lib/orders/payment-status';
 import { RETURN_DISPLAY_STATUS_LABELS, RETURN_MARK_LABELS } from '@/lib/orders/returns/return-messages';
 import type { OrderReturnSummary, ReturnDisplayStatus, ReturnNextAction } from '@/lib/orders/returns/return-types';
+import { DELIVERY_ATTENTION_LABELS } from '@/lib/orders/tracking/delivery-messages';
 import { cn } from '@/lib/utils';
 
 /** 返品の交換で足された品の行の印（購入商品の欄に付ける。C-5） */
@@ -87,6 +88,11 @@ export type OrderItem = {
 	returnSummary?: OrderReturnSummary;
 	/** 開いているキャンセルの申し込みがある（操作の列に「キャンセルの申し込み」のボタンを出す）。窓口が付けない昔の形は、無い注文と同じに扱う */
 	cancelRequestOpen?: boolean;
+	/**
+	 * 開いている配送の要対応の印（進み具合の列に1つだけ出す）。いくつもある時の優先順（問題あり・不在で持ち帰り・追跡できない）は窓口が決めて
+	 * 1つにして返す。追跡オフの間は要対応が閉じるので付かない。窓口が付けない昔の形は、印の無い注文と同じに扱う
+	 */
+	deliveryAttention?: 'failure' | 'attempted_delivery' | 'untrackable' | null;
 };
 
 interface OrderSectionProps {
@@ -134,6 +140,13 @@ const STATUS_CLASSES: Record<OrderStatus, string> = {
 	放棄: 'bg-gray-100 text-[#474747]',
 	キャンセル: 'bg-gray-100 text-gray-500',
 	キャンセルの手続き中: 'bg-gray-100 text-[#474747]',
+};
+
+// 「進み具合」の列の配送の印の言葉（C-5）。追跡できない = 伝票番号で荷物が見つからない・追跡の登録ができない・配達済みにならない
+const DELIVERY_ATTENTION_MARKS: Record<NonNullable<OrderItem['deliveryAttention']>, string> = {
+	failure: DELIVERY_ATTENTION_LABELS.delivery_failure,
+	attempted_delivery: DELIVERY_ATTENTION_LABELS.attempted_delivery,
+	untrackable: '追跡できない',
 };
 
 // 「支払い」の列の言葉の色。進み具合の言葉と並べて読むので、色の使い方をそろえる
@@ -342,6 +355,9 @@ export default function OrderSection({
 								) : null}
 								{order.needsReview ? (
 									<TagLabel variant="outline" size="2xs">要確認</TagLabel>
+								) : null}
+								{order.deliveryAttention ? (
+									<TagLabel variant="outline" size="2xs">{DELIVERY_ATTENTION_MARKS[order.deliveryAttention]}</TagLabel>
 								) : null}
 							</div>
 						),
