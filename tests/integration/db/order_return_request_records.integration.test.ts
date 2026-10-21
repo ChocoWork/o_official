@@ -1284,6 +1284,7 @@ describeLocalDb('integration: 返品の申し込みの記録と守り（移行 D
       expect(Object.keys(first)).toEqual([
         'email_id', 'order_id', 'kind', 'variant', 'origin', 'attempts', 'lease_token', 'subject', 'body_text',
         'payment_expired_sent', 'fulfillment_id', 'refund_id', 'return_id', 'return_receipt_id', 'cancel_request_id',
+        'tracking_version', 'tracking_change_id',
       ]);
 
       const second = (await db().query('select * from public.claim_order_email(300)')).rows[0];

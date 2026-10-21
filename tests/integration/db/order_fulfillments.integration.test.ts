@@ -111,6 +111,14 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
       const actor = await createActor(db());
       const fulfillmentId = await insertFulfillment(db(), orderId, [{ orderItemId: stockItemId, quantity: 1 }]);
 
+      const delivery = await db().query(
+        'select delivery_status, delivered_at, tracking_version, request_fingerprint from public.order_fulfillments where id = $1',
+        [fulfillmentId],
+      );
+      expect(delivery.rows).toEqual([{
+        delivery_status: 'confirmed', delivered_at: null, tracking_version: 1, request_fingerprint: null,
+      }]);
+
       await expectRejected(db(), 'update public.order_fulfillment_lines set quantity = 2 where fulfillment_id = $1', [fulfillmentId], { code: '55000' });
       await expectRejected(db(), 'delete from public.order_fulfillment_lines where fulfillment_id = $1', [fulfillmentId], { code: '55000' });
       await expectRejected(db(), 'delete from public.order_fulfillments where id = $1', [fulfillmentId], { code: '55000' });

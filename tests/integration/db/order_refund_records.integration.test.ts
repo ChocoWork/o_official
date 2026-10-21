@@ -1072,6 +1072,9 @@ describeLocalDb('integration: 返金の記録と数え方（移行 A）', (db) =
           auto_cancel_amount_mismatch: false,
           auto_cancel_amount_mismatch_updated_by: null,
           auto_cancel_amount_mismatch_updated_at: null,
+          delivery_tracking_enabled: false,
+          delivery_tracking_updated_at: null,
+          delivery_tracking_updated_by: null,
         },
       ]);
       await expectRejected(db(), 'insert into public.shop_settings (id) values (2)', [], { code: '23514' });
