@@ -183,6 +183,7 @@ function parseRegistration(value: unknown, operation: string): DeliveryRegistrat
     state: enumValue(result.state, TRACKING_STATES, operation),
     failureKind: nullableEnum(result.failure_kind, TRACKING_FAILURE_KINDS, operation),
     stopReason: nullableEnum(result.stop_reason, TRACKING_STOP_REASONS, operation), expiresAt: timestamp(result.expires_at, operation),
+    everRegistered: boolean(result.ever_registered, operation),
   };
 }
 

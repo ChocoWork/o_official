@@ -76,7 +76,7 @@ const FULFILLMENT_ROW = {
   fulfillment_id: FULFILLMENT_ID, number: 1, carrier: 'sagawa', tracking_number: 'New-123',
   notify_customer: false, shipped_at: AT, cancelled_at: null, tracking_version: 2,
   delivery_status: 'confirmed', delivery_status_at: AT, delivered_at: null, delivered_source: null,
-  registration: { state: 'registered', failure_kind: null, stop_reason: null, expires_at: EXPIRES_AT },
+  registration: { state: 'registered', failure_kind: null, stop_reason: null, expires_at: EXPIRES_AT, ever_registered: true },
   events: [{
     id: EVENT_ID, tracking_version: 1, status: 'confirmed', happened_at: AT, recorded_at: AT,
     source: 'shipment', provider_sub_status: null, actor_email: null,
@@ -91,7 +91,7 @@ const FULFILLMENT = {
   fulfillmentId: FULFILLMENT_ID, number: 1, carrier: 'sagawa', trackingNumber: 'New-123',
   notifyCustomer: false, shippedAt: AT, cancelledAt: null, trackingVersion: 2,
   deliveryStatus: 'confirmed', deliveryStatusAt: AT, deliveredAt: null, deliveredSource: null,
-  registration: { state: 'registered', failureKind: null, stopReason: null, expiresAt: EXPIRES_AT },
+  registration: { state: 'registered', failureKind: null, stopReason: null, expiresAt: EXPIRES_AT, everRegistered: true },
   events: [{
     id: EVENT_ID, trackingVersion: 1, status: 'confirmed', happenedAt: AT, recordedAt: AT,
     source: 'shipment', providerSubStatus: null, actorEmail: null,
@@ -164,6 +164,17 @@ describe('管理操作と読み出しの snake_case 契約', () => {
     const { store, rpc } = storeWith({ enabled: true, fulfillments: [FULFILLMENT_ROW] });
     await expect(getOrderDeliveryDetail(store, ORDER_ID)).resolves.toEqual({ enabled: true, fulfillments: [FULFILLMENT] });
     expect(rpc).toHaveBeenCalledWith('get_order_delivery_detail', { _order_id: ORDER_ID });
+  });
+
+  test.each([true, false])('登録の ever_registered=%s を everRegistered として読む（一度も登録できずに止まった行を区別する）', async (everRegistered) => {
+    const registration = { state: 'stopped', failure_kind: null, stop_reason: 'expired', expires_at: EXPIRES_AT, ever_registered: everRegistered };
+    const { store } = storeWith({ enabled: true, fulfillments: [{ ...FULFILLMENT_ROW, registration }] });
+
+    const detail = await getOrderDeliveryDetail(store, ORDER_ID);
+
+    expect(detail.fulfillments[0].registration).toEqual({
+      state: 'stopped', failureKind: null, stopReason: 'expired', expiresAt: EXPIRES_AT, everRegistered,
+    });
   });
 
   test('発送なしの jsonb は配列を保つ', async () => {
@@ -457,9 +468,14 @@ describe('壊れた返却値を成功にしない', () => {
     ['delivery_status', 'future'], ['delivered_source', 'future'], ['delivery_status_at', 'invalid-time'], ['shipped_at', null],
     ['tracking_version', 0], ['number', -1], ['notify_customer', null],
     ['events', null], ['tracking_changes', {}],
-    ['registration', { state: 'future', failure_kind: null, stop_reason: null, expires_at: EXPIRES_AT }],
-    ['registration', { state: 'failed', failure_kind: 'future', stop_reason: null, expires_at: EXPIRES_AT }],
-    ['registration', { state: 'stopped', failure_kind: null, stop_reason: 'future', expires_at: EXPIRES_AT }],
+    ['registration', { state: 'future', failure_kind: null, stop_reason: null, expires_at: EXPIRES_AT, ever_registered: true }],
+    ['registration', { state: 'failed', failure_kind: 'future', stop_reason: null, expires_at: EXPIRES_AT, ever_registered: false }],
+    ['registration', { state: 'stopped', failure_kind: null, stop_reason: 'future', expires_at: EXPIRES_AT, ever_registered: true }],
+    // ever_registered は欠けていても真偽値でなくても StoreError（お客様の画面の出し分けに使うので、推測で補わない）
+    ['registration', { state: 'stopped', failure_kind: null, stop_reason: 'expired', expires_at: EXPIRES_AT }],
+    ['registration', { state: 'stopped', failure_kind: null, stop_reason: 'expired', expires_at: EXPIRES_AT, ever_registered: null }],
+    ['registration', { state: 'stopped', failure_kind: null, stop_reason: 'expired', expires_at: EXPIRES_AT, ever_registered: 'true' }],
+    ['registration', { state: 'stopped', failure_kind: null, stop_reason: 'expired', expires_at: EXPIRES_AT, ever_registered: 1 }],
     ['events', [{ ...FULFILLMENT_ROW.events[0], source: 'future' }]],
     ['events', [{ ...FULFILLMENT_ROW.events[0], status: 'future' }]],
     ['events', [{ ...FULFILLMENT_ROW.events[0], happened_at: 'invalid-time' }]],

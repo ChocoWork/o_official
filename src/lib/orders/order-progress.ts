@@ -88,7 +88,7 @@ export function deriveOrderProgress(
     key = 'in_production';
   } else if (sumOf(lines, (line) => line.readyUnshipped) > 0) {
     key = 'ready';
-  } else if (options?.delivery && options.delivery.activeCount > 0 && options.delivery.deliveredCount === options.delivery.activeCount) {
+  } else if (shipped > 0 && options?.delivery && options.delivery.activeCount > 0 && options.delivery.deliveredCount === options.delivery.activeCount) {
     key = 'delivered';
   } else if (shipped > 0) {
     key = 'in_transit';

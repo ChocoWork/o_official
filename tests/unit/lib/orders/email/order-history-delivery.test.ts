@@ -7,7 +7,7 @@ function detail(): FulfillmentDeliveryDetail {
     fulfillmentId: 'f-1', number: 1, carrier: 'sagawa', trackingNumber: 'NEW-1', notifyCustomer: false,
     shippedAt: '2026-10-20T00:00:00Z', cancelledAt: AT, trackingVersion: 2, deliveryStatus: 'confirmed',
     deliveryStatusAt: AT, deliveredAt: null, deliveredSource: null,
-    registration: { state: 'pending', failureKind: null, stopReason: null, expiresAt: '2026-11-20T00:00:00Z' },
+    registration: { state: 'pending', failureKind: null, stopReason: null, expiresAt: '2026-11-20T00:00:00Z', everRegistered: false },
     events: [{ id: 'e-1', trackingVersion: 2, status: 'confirmed', happenedAt: AT, recordedAt: AT, source: 'tracking_edit', providerSubStatus: null, actorEmail: 'actor@example.test' }],
     trackingChanges: [{ id: 'c-1', fromCarrier: 'yamato', fromTrackingNumber: 'OLD', toCarrier: 'sagawa', toTrackingNumber: 'NEW-1',
       trackingVersion: 2, notifyCustomer: true, changedAt: AT, actorEmail: 'actor@example.test', emailStatus: 'pending' }],

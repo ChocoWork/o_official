@@ -1102,7 +1102,8 @@ BEGIN
                      'state', r.state,
                      'failure_kind', r.failure_kind,
                      'stop_reason', r.stop_reason,
-                     'expires_at', r.expires_at
+                     'expires_at', r.expires_at,
+                     'ever_registered', r.ever_registered
                    )
             FROM private.fulfillment_tracking_registrations AS r
             WHERE r.fulfillment_id = f.id

@@ -197,6 +197,11 @@ describe('deriveOrderProgress の配達済み（グループ E-4 設計書 7-2�
     expect(deriveOrderProgress('paid', [STOCK_REFUNDED], { hasOpenRefund: true, ...delivered(1, 1) }).key).toBe('cancel_pending');
   });
 
+  it('発送した品が1つも数に無い（商品の行が空・全部未発送）のに集計だけが全部配達済みという壊れた答えでは、配達済みにしない', () => {
+    expect(deriveOrderProgress('shipped', [], delivered(1, 1)).key).toBe('ready');
+    expect(deriveOrderProgress('paid', [BACKORDER_REFUNDED], delivered(1, 1)).key).toBe('ready');
+  });
+
   it('集計を渡さない・delivery を省いた呼び出しは、従来どおり「配送中」', () => {
     expect(deriveOrderProgress('shipped', [STOCK_SHIPPED]).key).toBe('in_transit');
     expect(deriveOrderProgress('shipped', [STOCK_SHIPPED], {}).key).toBe('in_transit');

@@ -47,6 +47,8 @@ export type TrackingChange = {
 };
 export type DeliveryRegistration = {
   state: TrackingState; failureKind: TrackingFailureKind | null; stopReason: TrackingStopReason | null; expiresAt: string;
+  /** 一度でも 17TRACK に登録できたか。止めた行がこの値で「追跡した発送」と「一度も追跡しなかった発送」に分かれる（お客様の画面の出し分け） */
+  everRegistered: boolean;
 };
 export type FulfillmentDeliveryDetail = {
   fulfillmentId: string; number: number; carrier: string | null; trackingNumber: string | null; notifyCustomer: boolean;

@@ -597,7 +597,7 @@ describe('GET /api/orders/[id]', () => {
 			delivery_status_at: '2026-04-05T03:00:00+00:00',
 			delivered_at: '2026-04-05T03:00:00+00:00',
 			delivered_source: 'tracking',
-			registration: { state: 'stopped', failure_kind: null, stop_reason: 'delivered', expires_at: '2026-05-02T01:00:00+00:00' },
+			registration: { state: 'stopped', failure_kind: null, stop_reason: 'delivered', expires_at: '2026-05-02T01:00:00+00:00', ever_registered: true },
 			events: [
 				{
 					id: 'e1b2c3d4-1111-4222-8333-44445555aaa1', tracking_version: 2, status: 'delivered', happened_at: '2026-04-05T03:00:00+00:00',
@@ -693,6 +693,31 @@ describe('GET /api/orders/[id]', () => {
 			expect(body.shipments[0].deliveredAt).toBe('2026-04-05T03:00:00+00:00');
 			expect(body.shipments[0]).not.toHaveProperty('delivery');
 			expect(body.shipments[0].trackingUrl).toContain('1234-5678-9012');
+		});
+
+		test('一度も登録できずに止まった発送（ever_registered が偽）は、delivery を返さず、配達済みの時刻だけ返す', async () => {
+			process.env.TRACKING_17TRACK_API_KEY = 'test-only-key';
+			delete process.env.TRACKING_17TRACK_BASE_URL;
+			const neverRegistered = { ...DETAIL_FULFILLMENT, registration: { ...DETAIL_FULFILLMENT.registration, stop_reason: 'expired', ever_registered: false } };
+			arrange({ get_order_delivery_detail: { data: { enabled: true, fulfillments: [neverRegistered] }, error: null } });
+
+			const { response, body } = await getDetail();
+
+			expect(response.status).toBe(200);
+			expect(body.shipments[0]).not.toHaveProperty('delivery');
+			expect(body.shipments[0].deliveredAt).toBe('2026-04-05T03:00:00+00:00');
+		});
+
+		test('ever_registered が無い・真偽値でない答えは読めない答えとして 500 にする（推測で出し分けない）', async () => {
+			process.env.TRACKING_17TRACK_API_KEY = 'test-only-key';
+			const registration = Object.fromEntries(Object.entries(DETAIL_FULFILLMENT.registration).filter(([key]) => key !== 'ever_registered'));
+			arrange({ get_order_delivery_detail: { data: { enabled: true, fulfillments: [{ ...DETAIL_FULFILLMENT, registration }] }, error: null } });
+			const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+			const { response } = await getDetail();
+
+			expect(response.status).toBe(500);
+			consoleError.mockRestore();
 		});
 
 		test('鍵が無い間は、追跡オンで記録済みでも delivery を返さない', async () => {

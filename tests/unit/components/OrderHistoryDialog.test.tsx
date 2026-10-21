@@ -1346,7 +1346,7 @@ function deliveryDetail(overrides: Partial<FulfillmentDeliveryDetail> = {}): Ful
     fulfillmentId: FULFILLMENT_ID, number: 1, carrier: 'yamato', trackingNumber: '1234-5678', notifyCustomer: true,
     shippedAt: '2026-10-10T02:00:00.000Z', cancelledAt: null, trackingVersion: 1, deliveryStatus: 'in_transit',
     deliveryStatusAt: DELIVERED_AT, deliveredAt: null, deliveredSource: null,
-    registration: { state: 'registered', failureKind: null, stopReason: null, expiresAt: '2026-11-09T02:00:00.000Z' },
+    registration: { state: 'registered', failureKind: null, stopReason: null, expiresAt: '2026-11-09T02:00:00.000Z', everRegistered: true },
     events: [], trackingChanges: [],
     ...overrides,
   };
@@ -1540,7 +1540,7 @@ describe('OrderHistoryDialog の配送の表示（設計書 6-1 の表）', () =
     ['failed', '登録できない'],
   ] as const)('追跡オンの登録の状態 %s は「%s」と出す', async (state, label) => {
     await openDeliveryHistory(
-      [shipmentWithDelivery({ registration: { state, failureKind: null, stopReason: null, expiresAt: '2026-11-09T02:00:00.000Z' } })],
+      [shipmentWithDelivery({ registration: { state, failureKind: null, stopReason: null, expiresAt: '2026-11-09T02:00:00.000Z', everRegistered: state === 'registered' } })],
       { enabled: true },
     );
 

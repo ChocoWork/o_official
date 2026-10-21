@@ -49,7 +49,7 @@ type OrderShipment = {
   trackingUrl: string | null;
   /** 配達済みの時刻（追跡のオン・オフによらず、窓口がいつも付ける）。届いていなければ null。古い形の答えには無い（省ける） */
   deliveredAt?: string | null;
-  /** 配送の状況。追跡オンで鍵があり、追跡中か止めた発送だけ窓口が付ける。条件に合わない時はキーごと無い */
+  /** 配送の状況。追跡オンで鍵があり、追跡中か、一度でも登録できてから止めた発送だけ窓口が付ける。条件に合わない時はキーごと無い */
   delivery?: CustomerDelivery;
   items: Array<{
     orderItemId: string;

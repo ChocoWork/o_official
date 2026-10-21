@@ -970,12 +970,13 @@ describe('GET /api/orders/[id] の配送の状況と配達済み（グループ 
     };
   }
 
-  function registrationOf(state: string | null) {
+  // everRegistered の既定は、追跡中（registered）と、追跡してから止めた（stopped）が真、登録待ち・登録できないが偽
+  function registrationOf(state: string | null, everRegistered: boolean = state === 'registered' || state === 'stopped') {
     return state === null
       ? null
       : {
           state, failureKind: state === 'failed' ? 'invalid_number' : null, stopReason: state === 'stopped' ? 'expired' : null,
-          expiresAt: '2026-11-06T00:00:00.000Z',
+          expiresAt: '2026-11-06T00:00:00.000Z', everRegistered,
         };
   }
 
@@ -1065,6 +1066,8 @@ describe('GET /api/orders/[id] の配送の状況と配達済み（グループ 
       key: boolean;
       /** 現版の登録の状態（登録なしは null） */
       state: string | null;
+      /** 一度でも登録できたか（省くと、registered と stopped は真、ほかは偽） */
+      everRegistered?: boolean;
       deliveredAt: string | null;
       /** delivery のキーを付けるか */
       hasDelivery: boolean;
@@ -1079,20 +1082,25 @@ describe('GET /api/orders/[id] の配送の状況と配達済み（グループ 
       { name: 'ON・鍵あり・pending', enabled: true, key: true, state: 'pending', deliveredAt: null, hasDelivery: false },
       { name: 'ON・鍵あり・failed', enabled: true, key: true, state: 'failed', deliveredAt: null, hasDelivery: false },
       { name: 'ON・鍵あり・registered', enabled: true, key: true, state: 'registered', deliveredAt: null, hasDelivery: true },
-      { name: 'ON・鍵あり・stopped', enabled: true, key: true, state: 'stopped', deliveredAt: null, hasDelivery: true },
+      { name: 'ON・鍵あり・stopped（一度でも登録できた）', enabled: true, key: true, state: 'stopped', everRegistered: true, deliveredAt: null, hasDelivery: true },
+      // 一度も登録できずに止まった行（登録前に期限切れ・オフで止めた後に期限切れ など）は、ずっと「受付済み」に見えるので出さない
+      { name: 'ON・鍵あり・stopped（一度も登録できていない）', enabled: true, key: true, state: 'stopped', everRegistered: false, deliveredAt: null, hasDelivery: false },
+      { name: 'ON・鍵あり・registered（登録の記録の値が偽でも追跡中は出す）', enabled: true, key: true, state: 'registered', everRegistered: false, deliveredAt: null, hasDelivery: true },
       { name: 'OFF・配達済みの時刻あり', enabled: false, key: true, state: 'registered', deliveredAt: DELIVERED_AT, hasDelivery: false },
       { name: 'ON・鍵なし・配達済みの時刻あり', enabled: true, key: false, state: 'stopped', deliveredAt: DELIVERED_AT, hasDelivery: false },
       { name: 'ON・鍵あり・pending・配達済みの時刻あり', enabled: true, key: true, state: 'pending', deliveredAt: DELIVERED_AT, hasDelivery: false },
       { name: 'ON・鍵あり・登録なし・配達済みの時刻あり', enabled: true, key: true, state: null, deliveredAt: DELIVERED_AT, hasDelivery: false },
-      { name: 'ON・鍵あり・stopped・配達済みの時刻あり', enabled: true, key: true, state: 'stopped', deliveredAt: DELIVERED_AT, hasDelivery: true },
+      { name: 'ON・鍵あり・stopped（一度でも登録できた）・配達済みの時刻あり', enabled: true, key: true, state: 'stopped', everRegistered: true, deliveredAt: DELIVERED_AT, hasDelivery: true },
+      // 一度も追跡しなかった発送を手で配達済みにした場合は、お届け日だけを出し、状況・移り変わりは出さない
+      { name: 'ON・鍵あり・stopped（一度も登録できていない）・配達済みの時刻あり', enabled: true, key: true, state: 'stopped', everRegistered: false, deliveredAt: DELIVERED_AT, hasDelivery: false },
     ];
 
-    it.each(rows)('$name → deliveredAt は常に値のまま、delivery のキーは付く: $hasDelivery', async ({ enabled, key, state, deliveredAt, hasDelivery }) => {
+    it.each(rows)('$name → deliveredAt は常に値のまま、delivery のキーは付く: $hasDelivery', async ({ enabled, key, state, everRegistered, deliveredAt, hasDelivery }) => {
       setupDelivery({
         enabled,
         key,
         details: [deliveryDetail({
-          registration: registrationOf(state),
+          registration: registrationOf(state, everRegistered),
           deliveredAt,
           deliveredSource: deliveredAt ? 'tracking' : null,
           deliveryStatus: deliveredAt ? 'delivered' : 'in_transit',

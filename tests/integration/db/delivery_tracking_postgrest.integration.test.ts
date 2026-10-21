@@ -235,7 +235,9 @@ describeLocalDb('integration: 配送の関数を実際の PostgREST に通す', 
       notifyCustomer: true, shippedAt: raw.fulfillments[0].shipped_at, cancelledAt: null, trackingVersion: 2,
       deliveryStatus: 'delivered', deliveryStatusAt: delivered.deliveredAt, deliveredAt: delivered.deliveredAt,
       deliveredSource: 'manual', registration: {
+        // 17TRACK に一度も登録しないまま手で配達済みにしたので everRegistered は偽
         state: 'stopped', failureKind: null, stopReason: 'delivered', expiresAt: raw.fulfillments[0].registration.expires_at,
+        everRegistered: false,
       },
       events: expect.arrayContaining([
         expect.objectContaining({ id: delivered.eventId, trackingVersion: 2, status: 'delivered', source: 'manual', actorEmail: actor.email }),

@@ -639,7 +639,8 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
       expect.objectContaining({ tracking_version: 2, source: 'manual', actor_email: target.actorEmail }),
     ]));
     expect(fulfillment.tracking_changes).toEqual([expect.objectContaining({ id: change.tracking_change_id, actor_email: target.actorEmail, email_status: 'pending' })]);
-    expect(fulfillment.registration).toMatchObject({ state: 'stopped', stop_reason: 'delivered' });
+    // 一度も 17TRACK に登録しないまま手で配達済みにしたので ever_registered は偽
+    expect(fulfillment.registration).toMatchObject({ state: 'stopped', stop_reason: 'delivered', ever_registered: false });
     // C-2 の DeliveryEvent・TrackingChange・DeliveryRegistration を snake_case にした字だけを返す。
     for (const event of fulfillment.events) {
       expect(Object.keys(event).sort()).toEqual(['id', 'tracking_version', 'status', 'happened_at', 'recorded_at', 'source',
@@ -647,12 +648,27 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     }
     expect(Object.keys(fulfillment.tracking_changes[0]).sort()).toEqual(['id', 'from_carrier', 'from_tracking_number', 'to_carrier',
       'to_tracking_number', 'tracking_version', 'notify_customer', 'changed_at', 'actor_email', 'email_status'].sort());
-    expect(Object.keys(fulfillment.registration).sort()).toEqual(['state', 'failure_kind', 'stop_reason', 'expires_at'].sort());
+    expect(Object.keys(fulfillment.registration).sort()).toEqual(['state', 'failure_kind', 'stop_reason', 'expires_at', 'ever_registered'].sort());
     expect((await settings(db())).updated_by_email).toBe(target.actorEmail);
     const empty = await createDeliveryOrder(db());
     expect(await detail(db(), empty.orderId)).toEqual({ enabled: true, fulfillments: [] });
     await expectDeliveryRejected(db(), () => detail(db(), randomUUID()), 'ORDER_NOT_FOUND', 'P0002');
     // 顧客への非公開項目の射影はTask 12。ここはservice_role専用の管理材料を固定する。
+  });
+
+  test('登録の ever_registered を返す（一度も登録できずに止まった行と、追跡してから止めた行を区別する）', async () => {
+    const cases = [
+      { name: 'never', input: { state: 'stopped', stopReason: 'expired', everRegistered: false } as const, expected: false },
+      { name: 'tracked', input: { state: 'stopped', stopReason: 'expired', everRegistered: true } as const, expected: true },
+      { name: 'active', input: { state: 'registered', everRegistered: true } as const, expected: true },
+      { name: 'pending', input: { state: 'pending' } as const, expected: false },
+    ];
+    for (const { name, input, expected } of cases) {
+      const target = await deliveryShipment(db());
+      await insertDeliveryRegistration(db(), target.fulfillmentId, input);
+      const registration = (await detail(db(), target.orderId)).fulfillments[0].registration;
+      expect({ name, everRegistered: registration.ever_registered }).toEqual({ name, everRegistered: expected });
+    }
   });
 
   test('要対応のtotalはlimit前で、集計の優先はfailure→attempted→追跡できない', async () => {

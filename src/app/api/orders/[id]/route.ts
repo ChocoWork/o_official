@@ -162,7 +162,8 @@ function toCustomerDelivery(detail: FulfillmentDeliveryDetail): CustomerDelivery
  * 操作した管理者のメールなど内側の情報は、名指しで選んだ項目以外は渡さない。
  * 前からの記録で配送業者・伝票番号が空でも、知らない配送業者の記号でも、落とさずに空で返す。
  * 配達済みの時刻 deliveredAt は、追跡のオン・オフや鍵の有無によらずいつも付ける（手で付けた配達済みも出す）。
- * 配送の状況 delivery は、追跡オンで鍵があり、その発送の現版の登録が追跡中か止めた時だけ付け、合わない時は null ではなくキーごと省く
+ * 配送の状況 delivery は、追跡オンで鍵があり、その発送の現版の登録が追跡中（registered）か、一度でも登録できてから止めた（stopped かつ ever_registered）時だけ付け、
+ * 合わない時は null ではなくキーごと省く
  * （登録待ち・登録できない発送が、ずっと「受付済み」や止まった「輸送中」に見えるのを防ぐ。設計書 7-1）。
  */
 function toShipments(
@@ -188,7 +189,12 @@ function toShipments(
 				? SHIPPING_CARRIERS[fulfillment.shippingCarrier]
 				: null;
 			const delivery = deliveryByFulfillment.get(fulfillment.fulfillmentId);
-			const registrationState = delivery?.registration?.state;
+			const registration = delivery?.registration;
+			// 追跡中（registered）か、一度でも登録できてから止めた（stopped かつ everRegistered）発送だけ。
+			// 一度も登録できずに止まった行（登録前に期限切れ・オフで止めた後に期限切れ など）は、出来事が発送の時の「受付済み」だけで
+			// ずっと「受付済み」に見えるので、追跡のリンクだけにする（設計書 7-1）
+			const trackedByProvider =
+				registration?.state === 'registered' || (registration?.state === 'stopped' && registration.everRegistered);
 
 			return {
 				id: fulfillment.fulfillmentId,
@@ -200,9 +206,7 @@ function toShipments(
 				trackingUrl:
 					carrier && fulfillment.trackingNumber ? carrier.trackingUrl(fulfillment.trackingNumber) : null,
 				deliveredAt: delivery?.deliveredAt ?? null,
-				...(canShowDelivery && delivery && (registrationState === 'registered' || registrationState === 'stopped')
-					? { delivery: toCustomerDelivery(delivery) }
-					: {}),
+				...(canShowDelivery && delivery && trackedByProvider ? { delivery: toCustomerDelivery(delivery) } : {}),
 				items: fulfillment.lines.flatMap((line) => {
 					const item = itemById.get(line.orderItemId);
 					return item
