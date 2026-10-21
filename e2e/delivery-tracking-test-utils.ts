@@ -34,7 +34,13 @@ import type {
   FulfillmentDeliveryDetail,
   OrderDeliveryDetail,
 } from '@/lib/orders/tracking/delivery-types';
-import { E2E_FAKE_17TRACK_CONTRACT, E2E_FAKE_17TRACK_KEY, E2E_FAKE_17TRACK_URL, isLocalUrl } from '../scripts/e2e/environment';
+import {
+  E2E_FAKE_17TRACK_CONTRACT,
+  E2E_FAKE_17TRACK_KEY,
+  E2E_FAKE_17TRACK_URL,
+  computeFake17TrackBuild,
+  isLocalUrl,
+} from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import {
   createFulfillment,
@@ -90,6 +96,10 @@ async function assertFakeHealthy(): Promise<void> {
   if (typeof body !== 'object' || body === null || (body as { fake?: unknown }).fake !== E2E_FAKE_17TRACK_CONTRACT) {
     throw new Error('17TRACK の作り物が4017番で動いていない（scripts/e2e-server.mjs が起こす。別のプロセスが4017番にいないか確かめる）');
   }
+  // 作り物のコードや見本が今のファイルと違う古い作り物では、試験の合否があてにならない。使い回さずに止める
+  if ((body as { build?: unknown }).build !== computeFake17TrackBuild()) {
+    throw new Error('4017番の 17TRACK の作り物のコードが、今のファイルと違う（古い作り物）。作り物を止めて、scripts/e2e-server.mjs に起こし直させる');
+  }
 }
 
 async function fakeControl(method: string, pathAndQuery: string, body?: unknown): Promise<Response> {
@@ -102,7 +112,12 @@ async function fakeControl(method: string, pathAndQuery: string, body?: unknown)
   });
 }
 
-type ScenarioState = { numberPrefix: string; touched: Map<string, TrackingPair> };
+type ScenarioState = {
+  numberPrefix: string;
+  touched: Map<string, TrackingPair>;
+  /** 管理画面の橋渡しが開いた専用の接続・窓口の差し替えを閉じる処理（場面の片づけの最初に呼ぶ） */
+  bridgeClosers: Array<() => Promise<void>>;
+};
 let activeScenario: ScenarioState | null = null;
 
 const pairKey = (pair: TrackingPair) => `${pair.carrier}:${pair.number.toUpperCase()}`;
@@ -350,7 +365,11 @@ export async function withDeliveryScenario<T>(
   assertFakeEnv();
   const client = new Client({ connectionString: LOCAL_DB_URL });
   await client.connect();
-  const state: ScenarioState = { numberPrefix: `E2E${randomBytes(5).toString('hex').toUpperCase()}`, touched: new Map() };
+  const state: ScenarioState = {
+    numberPrefix: `E2E${randomBytes(5).toString('hex').toUpperCase()}`,
+    touched: new Map(),
+    bridgeClosers: [],
+  };
   let locked = false;
   let original: SettingsRow | null = null;
   let failure: unknown = null;
@@ -377,7 +396,11 @@ export async function withDeliveryScenario<T>(
     }
   };
   const db = client as unknown as PgClient;
+  // 橋渡しの窓口の差し替えと専用の接続を、最初に閉じる（片づけの間に、画面の要求が場面の取引の中へ入らないように）
+  for (const close of state.bridgeClosers) await attempt(close);
   if (locked) {
+    // 先に自分の登録を止める。作り物の組を先に消すと、その間に別の呼び出しが自分の登録を借りて、作り物に新しい組ができて残る
+    await attempt(() => neutralizeScenarioRows(db, state.numberPrefix));
     await attempt(async () => {
       const registered = (
         await db.query(
@@ -393,7 +416,6 @@ export async function withDeliveryScenario<T>(
       }
       for (const pair of state.touched.values()) await deleteFakeTracking(pair);
     });
-    await attempt(() => neutralizeScenarioRows(db, state.numberPrefix));
     await attempt(async () => {
       if (!original) return;
       const current = await readSettingsRow(db);
@@ -793,6 +815,7 @@ export function newDeliveryBridgeLog(): DeliveryBridgeLog {
 }
 
 export type DeliveryBridgeContext = {
+  /** 場面の接続。橋渡しは問い合わせの重なりを避けるため、これは使わず専用の接続を開く（指示書の宣言の形を保つために受け取る） */
   client: PgClient;
   /** 橋渡しが扱ってよい注文。これ以外の注文の窓口は 404 にする */
   orderIds: string[];
@@ -1081,12 +1104,46 @@ async function answerDeliveryFailure(route: Route, error: unknown): Promise<numb
 }
 
 /**
+ * 橋渡し専用の DB の接続。問い合わせは、前の問い合わせが終わってから1本ずつ流す（同じ接続の上で重ねない）。
+ * 場面の片づけ（またはページが閉じた時）に、窓口の差し替えを外してから接続を閉じる。場面の接続とは別の接続なので、
+ * 場面の側で書いたもの（自動のコミット）は読め、橋渡しが書いたものも場面の側から読める。
+ */
+async function openBridgeConnection(page: Page): Promise<PgClient> {
+  if (!isLocalUrl(LOCAL_DB_URL)) throw new Error('手元の DB 以外では橋渡しを作らない');
+  const raw = new Client({ connectionString: LOCAL_DB_URL });
+  await raw.connect();
+  let tail: Promise<unknown> = Promise.resolve();
+  const db: PgClient = {
+    query: (text, params) => {
+      const run = tail.then(() => raw.query(text, params));
+      tail = run.catch(() => undefined);
+      return run as unknown as ReturnType<PgClient['query']>;
+    },
+    end: () => raw.end(),
+  };
+  let closed = false;
+  const close = async () => {
+    if (closed) return;
+    closed = true;
+    // 処理中の窓口の答えを待ってから、差し替えを外す。ページがもう閉じていても構わない
+    await page.unrouteAll({ behavior: 'wait' }).catch(() => undefined);
+    await tail.catch(() => undefined);
+    await raw.end();
+  };
+  activeScenario?.bridgeClosers.push(close);
+  page.once('close', () => void close());
+  return db;
+}
+
+/**
  * 管理画面の橋渡し。管理者のログイン・CSRF・権限は差し替え（P22）、注文の一覧・要対応・履歴・設定の読み出しは DB の本物の結果を
  * 画面の形へ写し、書く3つの操作（伝票番号を直す・配達済みにする・要対応を閉じる）と設定の配送の切り替えは本物の DB の関数を呼ぶ。
  * 許した orderIds 以外の注文は扱わない。
  */
 export async function mockAdminDeliveryBridge(page: Page, context: DeliveryBridgeContext): Promise<void> {
-  const { client } = context;
+  // 画面は窓口を同時に何本も呼ぶので、場面の接続（context.client）は使わず、橋渡しの専用の接続を1本開いて、問い合わせを1本ずつに並べる。
+  // 同じ接続の上で問い合わせを重ねると pg の非推奨の警告が出る（pg@9 では誤りになる）うえ、場面の取引（設定を戻す begin → commit）の中へ入りうる
+  const client = await openBridgeConnection(page);
   const allowedIds = new Set(context.orderIds);
   const allowed = (orderId: string) => allowedIds.has(orderId);
   const log = context.log ?? newDeliveryBridgeLog();
@@ -1110,9 +1167,11 @@ export async function mockAdminDeliveryBridge(page: Page, context: DeliveryBridg
 
   await page.route((url) => url.pathname === '/api/admin/orders', async (route) => {
     log.listReads += 1;
-    const rows = (await Promise.all(context.orderIds.map((orderId) => bridgeOrderRow(client, orderId)))).filter(
-      (row): row is OrderItem => row !== null,
-    );
+    const rows: OrderItem[] = [];
+    for (const orderId of context.orderIds) {
+      const row = await bridgeOrderRow(client, orderId);
+      if (row !== null) rows.push(row);
+    }
     await fulfillJson(route, { data: rows, pagination: { page: 1, pageSize: 20, total: rows.length, totalPages: 1 } });
   });
 

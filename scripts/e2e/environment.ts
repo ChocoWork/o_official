@@ -8,6 +8,8 @@
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import * as path from 'node:path';
 
 export type EnvRecord = Record<string, string | undefined>;
 
@@ -34,6 +36,19 @@ export const E2E_FAKE_17TRACK_PORT = 4017;
 export const E2E_FAKE_17TRACK_URL = `http://127.0.0.1:${E2E_FAKE_17TRACK_PORT}/track/v2.4`;
 export const E2E_FAKE_17TRACK_KEY = 'e2e-fake-17track-key-0123456789';
 export const E2E_FAKE_17TRACK_CONTRACT = '17track-v2.4';
+
+/**
+ * 作り物のコード（scripts/e2e/fake-17track.mjs）と、答えの元の見本（tests/fixtures/17track/v2.4.json）の内容から作る短いハッシュ。
+ * 作り物の /__health の build、scripts/e2e-server.mjs の使い回しの判断、サーバーの fingerprint が同じ値を使う
+ * （作り物のコードや見本を直したのに、古い作り物で通ってしまうのを防ぐ。計算は fake-17track.mjs・e2e-server.mjs の computeFakeBuild と同じで、単体の試験が一致を確かめる）。
+ */
+export function computeFake17TrackBuild(): string {
+  const hash = createHash('sha256');
+  hash.update(readFileSync(path.resolve(__dirname, 'fake-17track.mjs')));
+  hash.update('\0');
+  hash.update(readFileSync(path.resolve(__dirname, '../../tests/fixtures/17track/v2.4.json')));
+  return hash.digest('hex').slice(0, 16);
+}
 
 /** E2E だけで使う固定の値。本番の値ではない。 */
 export const E2E_FIXED_ENV: Readonly<Record<string, string>> = {
@@ -158,12 +173,13 @@ export function assertSafeE2EEnv(env: EnvRecord): void {
 
 /**
  * 3000番のアプリが「この設定で起動した E2E 用のもの」かを見分ける印。秘密は含めない。
- * 作り物の 17TRACK の URL と契約版も入れる（変われば、前の設定で起動したアプリを使い回さない）。
+ * 作り物の 17TRACK の URL・契約版・コードのハッシュも入れる（変われば、前の設定で起動したアプリを使い回さない）。
  */
 export function computeServerFingerprint(
   env: EnvRecord,
   mode: E2EServerMode,
   fakeContract: string = E2E_FAKE_17TRACK_CONTRACT,
+  fakeBuild: string = computeFake17TrackBuild(),
 ): string {
   const material = JSON.stringify({
     v: 3,
@@ -172,7 +188,7 @@ export function computeServerFingerprint(
     mailProvider: env.MAIL_PROVIDER ?? '',
     mailUrl: env.MAIL_LOCAL_URL ?? '',
     stripeKeyPrefix: (env.STRIPE_SECRET_KEY ?? '').slice(0, 8),
-    fake17track: { url: env.TRACKING_17TRACK_BASE_URL ?? '', contract: fakeContract },
+    fake17track: { url: env.TRACKING_17TRACK_BASE_URL ?? '', contract: fakeContract, build: fakeBuild },
     fixed: Object.fromEntries(Object.keys(E2E_FIXED_ENV).sort().map((key) => [key, env[key] ?? null])),
   });
   return createHash('sha256').update(material).digest('hex').slice(0, 32);

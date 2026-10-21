@@ -137,7 +137,7 @@ for (const viewport of deliveryViewports) {
     });
 
     // FREQ-491-AC-02, FREQ-492-AC-02
-    test('同じ知らせの再送でも出来事とメールは各1回', async ({ request }) => {
+    test('同じ知らせの再送でも出来事とメールは各1回', async ({ page, request }) => {
       test.setTimeout(420_000);
       await withDeliveryScenario(async ({ client, numberPrefix }) => {
         const actor = await createAdminActor(client);
@@ -203,6 +203,15 @@ for (const viewport of deliveryViewports) {
         expect(await readRegistration(client, fulfillmentId)).toMatchObject({ state: 'stopped', stop_reason: 'delivered' });
         expect(callMethods(settled)).not.toContain('stoptrack');
         expect(callMethods(settled)).not.toContain('retrack');
+
+        // 管理画面の履歴にも、出来事が1回ずつだけ出る（受付済み・配達中・配達済みの3行＋発送の行の現在の状況）。各幅ではみ出し・見切れが無い
+        await mockAdminDeliveryBridge(page, { client, orderIds: [fx.orderId], actor, log: newDeliveryBridgeLog() });
+        await openOrderTab(page);
+        const dialog = await openOrderHistory(page, fx.orderId);
+        await expect(fulfillmentRow(dialog, 1).getByText('止めた', { exact: true })).toBeVisible();
+        await expect(dialog.getByRole('listitem').filter({ hasText: '配送の状況（1回目）' })).toHaveCount(4);
+        await expectNoHorizontalOverflow(page);
+        await expectDialogFits(page, dialog);
       });
     });
   });

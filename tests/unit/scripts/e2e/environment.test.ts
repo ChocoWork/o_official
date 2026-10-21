@@ -10,6 +10,7 @@ import {
   E2E_FAKE_17TRACK_URL,
   E2E_FIXED_ENV,
   buildE2EOverrides,
+  computeFake17TrackBuild,
   computeServerFingerprint,
   decideServerReuse,
   findUnsafeE2ESettings,
@@ -432,6 +433,8 @@ describe('prepareE2EEnvironment', () => {
       mode: 'start' as const, strict: false, isWorker: false, baseUrl, readStatus, probe: () => ({ kind: 'down' as const }),
     };
     expect(() => prepareE2EEnvironment(unsafeInput)).toThrow('17TRACK');
+    // 止める時は、手元の Supabase の状態も読まない（上書きの前に止めている）
+    expect(readStatus).not.toHaveBeenCalled();
   });
 
   it('17TRACK の URL を省いた環境には、作り物の URL と鍵を入れてから検査する', () => {
@@ -531,6 +534,13 @@ describe('17TRACK の作り物への見張り', () => {
     expect(otherUrl).not.toBe(fingerprintA);
     expect(otherContract).not.toBe(fingerprintA);
     expect(computeServerFingerprint(safeEnv, 'start', E2E_FAKE_17TRACK_CONTRACT)).toBe(fingerprintA);
+  });
+
+  it('作り物のコードと見本の内容のハッシュが変われば fingerprint が変わる（古い作り物で動いたアプリを使い回さない）', () => {
+    const fingerprintA = computeServerFingerprint(safeEnv, 'start');
+    expect(computeServerFingerprint(safeEnv, 'start', E2E_FAKE_17TRACK_CONTRACT, computeFake17TrackBuild())).toBe(fingerprintA);
+    expect(computeServerFingerprint(safeEnv, 'start', E2E_FAKE_17TRACK_CONTRACT, '0000000000000000')).not.toBe(fingerprintA);
+    expect(computeFake17TrackBuild()).toMatch(/^[0-9a-f]{16}$/);
   });
 
   it('契約版の定数は共通の見本（tests/fixtures/17track/v2.4.json）の契約版と同じ', () => {

@@ -9,7 +9,6 @@ import type { OrderHistoryResponse } from '@/lib/orders/email/order-history';
 import type { FulfillmentMaterialLine, FulfillmentMaterials } from '@/lib/orders/fulfillment/fulfillment-types';
 import type { OrderStatus } from '@/lib/orders/order-payment-types';
 import type { OrderProgress } from '@/lib/orders/order-progress';
-import type { FulfillmentDeliveryDetail } from '@/lib/orders/tracking/delivery-types';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 
 export const viewports = [
@@ -153,29 +152,5 @@ export function historyOf(
     sendPaused: null,
     entries,
     deliveryTrackingEnabled: options.deliveryTrackingEnabled ?? false,
-  };
-}
-
-/**
- * 発送の行に付く配送の現在値（delivery）の見本（グループ E-4）。既定は、受付済みでまだ届いていない・追跡の登録なし・出来事と直しの記録なし。
- * 履歴の発送の行に `delivery` を付けると、管理画面は「伝票番号を直す」「配達済みにする」を出す（店長とサポートの人だけ）
- */
-export function deliveryOf(overrides: Partial<FulfillmentDeliveryDetail> & { fulfillmentId: string }): FulfillmentDeliveryDetail {
-  return {
-    number: 1,
-    carrier: 'yamato',
-    trackingNumber: '1234-5678-9012',
-    notifyCustomer: true,
-    shippedAt: '2026-10-10T03:00:00.000Z',
-    cancelledAt: null,
-    trackingVersion: 1,
-    deliveryStatus: 'confirmed',
-    deliveryStatusAt: '2026-10-10T03:00:00.000Z',
-    deliveredAt: null,
-    deliveredSource: null,
-    registration: null,
-    events: [],
-    trackingChanges: [],
-    ...overrides,
   };
 }

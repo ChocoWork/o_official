@@ -14,11 +14,17 @@
  *   POST   /__control/state                       { carrier, number, responseKey, happenedAt?, deliveredAt? }
  *   GET    /__control/calls?carrier=&number=      その組への呼び出し [{ path, number, carrier }]
  *   DELETE /__control/state?carrier=&number=      その組の状態と記録を消す
+ *   POST   /__control/shutdown                    この作り物を止める（作り物のコードが変わった時に、scripts/e2e-server.mjs が古い作り物を入れ替えるため。
+ *                                                 x-e2e-control が作り物の鍵の時だけ。ほかのプロセスはこの口を持たないので、止められない）
+ * GET /__health は { fake: 契約版, build: このファイルと見本の内容の短いハッシュ } を返す。使い回す時は、契約版だけでなく build も同じ物だけ使う
+ * （scripts/e2e-server.mjs・scripts/e2e/environment.ts と同じ計算。作り物のコードや見本を直したのに古い作り物で通ってしまうのを防ぐ）。
  * responseKey は見本の responses の名前。見本に無い failure（Exception_Other）・attemptedDelivery（DeliveryFailure_NoBody）は、
  * inTransit の複製に状況の記号だけを替えた作り物の物（src/lib/orders/tracking/seventeen-track-status.ts の対応表に合わせる）。
  */
+import { createHash } from 'node:crypto';
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const HOST = '127.0.0.1';
 const PORT = 4017;
@@ -26,7 +32,19 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const CARRIERS = new Set([100062, 100040, 10021]);
 const NUMBER_PATTERN = /^[0-9A-Za-z-]{1,64}$/;
 
-const fixture = JSON.parse(readFileSync(new URL('../../tests/fixtures/17track/v2.4.json', import.meta.url), 'utf8'));
+/** 作り物のコード（このファイル）と、答えの元の見本の内容から、短いハッシュを作る。scripts/e2e-server.mjs・scripts/e2e/environment.ts と同じ計算 */
+function computeFakeBuild(scriptPath, fixturePath) {
+  const hash = createHash('sha256');
+  hash.update(readFileSync(scriptPath));
+  hash.update('\0');
+  hash.update(readFileSync(fixturePath));
+  return hash.digest('hex').slice(0, 16);
+}
+
+const FIXTURE_PATH = fileURLToPath(new URL('../../tests/fixtures/17track/v2.4.json', import.meta.url));
+// 起動した時の内容のハッシュ（起動した後にファイルを直しても変わらない。今動いているコードの印になる）
+const BUILD = computeFakeBuild(fileURLToPath(import.meta.url), FIXTURE_PATH);
+const fixture = JSON.parse(readFileSync(FIXTURE_PATH, 'utf8'));
 const KEY = process.env.TRACKING_17TRACK_API_KEY;
 if (!KEY) {
   console.error('[fake-17track] TRACKING_17TRACK_API_KEY（E2E 用の作り物の鍵）が無いので起動しない');
@@ -252,6 +270,15 @@ async function handleControl(req, res, url) {
     sendJson(res, 200, { ok: true });
     return;
   }
+  if (req.method === 'POST' && url.pathname === '/__control/shutdown') {
+    // 答えを返してから止める。止めるのはこの作り物のプロセスだけ
+    res.on('finish', () => {
+      server.close();
+      setTimeout(() => process.exit(0), 200).unref();
+    });
+    sendJson(res, 200, { ok: true });
+    return;
+  }
   sendJson(res, 404, { error: 'not found' });
 }
 
@@ -262,7 +289,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
   const run = async () => {
     if (req.method === 'GET' && url.pathname === '/__health') {
-      sendJson(res, 200, { fake: fixture.contract });
+      sendJson(res, 200, { fake: fixture.contract, build: BUILD });
       return;
     }
     if (url.pathname.startsWith('/__control/')) {

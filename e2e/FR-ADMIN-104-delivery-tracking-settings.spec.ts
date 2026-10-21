@@ -9,6 +9,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import {
+  callMethods,
   createAdminActor,
   createShippedFixture,
   deferOtherRegistrations,
@@ -22,6 +23,7 @@ import {
   pollWithMinuteJob,
   readAttention,
   readEvents,
+  readFakeTrackingCalls,
   readFulfillment,
   readRegistration,
   setFakeTracking,
@@ -137,6 +139,8 @@ for (const viewport of deliveryViewports) {
         // オフ: 登録は止め（外へ停止は送らない）、開いた要対応は自動で閉じ、記録した状況と出来事は残る
         for (const fx of [a, b]) {
           expect(await readRegistration(client, fx.shipment.fulfillmentId)).toMatchObject({ state: 'stopped', stop_reason: 'disabled' });
+          // 外（17TRACK）へ停止は送らない（オフにした時の停止は、こちらの記録だけ）
+          expect(callMethods(await readFakeTrackingCalls(fx.shipment.pair))).not.toContain('stoptrack');
         }
         const attention = await readAttention(client, a.shipment.fulfillmentId);
         expect(attention).toHaveLength(1);

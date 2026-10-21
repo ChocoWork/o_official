@@ -17,10 +17,12 @@
  * E2E_STRICT=1 のときは、印が合っても起動済みのアプリを使い回さない。
  *
  * 配送の追跡（グループ E-4）の E2E は、本物の 17TRACK ではなく手元の作り物（scripts/e2e/fake-17track.mjs。127.0.0.1:4017 だけ）を使う。
- * 作り物もアプリと同じく「親子関係を切って」起動し、テスト後も動いたまま残る。4017番の /__health が、契約版まで合う作り物の印を返す時だけ
- * 使い回し、別のプロセスが4017番にいれば止めずに失敗にする。ビルドの前に確かめる。
+ * 作り物もアプリと同じく「親子関係を切って」起動し、テスト後も動いたまま残る。4017番の /__health が、契約版と build（作り物のコードと見本の
+ * 内容のハッシュ）まで合う作り物の印を返す時だけ使い回す。別のプロセスが4017番にいれば止めずに失敗にする。コードが変わった古い作り物は、
+ * E2E_STRICT=1 なら失敗にし、そうでなければ作り物自身の止める口で止めて新しく起こす。ビルドの前に確かめる。
  */
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -162,10 +164,28 @@ function startDetached(script) {
   spawn("npm", ["run", script], { stdio: "ignore", detached: true, env: SERVER_ENV }).unref();
 }
 
-/** 4017番の答えから、作り物を起こす・使い回す・止めるを決める。作り物の印（/__health の fake）が契約版まで合う時だけ使い回す。 */
-function decideFake(probe, contract) {
+/** 作り物のコード（scripts/e2e/fake-17track.mjs）と、答えの元の見本の内容から、短いハッシュを作る。fake-17track.mjs・scripts/e2e/environment.ts と同じ計算 */
+function computeFakeBuild(scriptPath, fixturePath) {
+  const hash = createHash("sha256");
+  hash.update(readFileSync(scriptPath));
+  hash.update("\0");
+  hash.update(readFileSync(fixturePath));
+  return hash.digest("hex").slice(0, 16);
+}
+
+/**
+ * 4017番の答えから、作り物を起こす・使い回す・入れ替える・止めるを決める。
+ * - 空き: start
+ * - 作り物の印（/__health の fake）が契約版まで合わない・印が無い（別のプロセス）: conflict（止めずに失敗にする）
+ * - 契約版が合い、build（作り物のコードと見本の内容のハッシュ）も今のファイルと同じ: reuse
+ * - 契約版は合うが build が違う（コードや見本を直す前の古い作り物。build を返さない古い作り物も）: 黙って使い回さない。
+ *   E2E_STRICT=1 なら stale（止めずに失敗にする）、そうでなければ replace（作り物自身の止める口で止めて、新しく起こす）
+ */
+function decideFake(probe, contract, build, strict) {
   if (probe.kind === "down") return "start";
-  return probe.fake === contract ? "reuse" : "conflict";
+  if (probe.fake !== contract) return "conflict";
+  if (probe.build === build) return "reuse";
+  return strict ? "stale" : "replace";
 }
 
 /** 接続拒否（その port に何もいない）だけを「空き」とする。isUp と同じ分類 */
@@ -180,14 +200,38 @@ function isRefused(error) {
   return cause.code === "ECONNREFUSED";
 }
 
-/** 4017番の /__health を読む。作り物の印を返さないもの（別のプロセス）は fake が null */
+/** 4017番の /__health を読む。作り物の印を返さないもの（別のプロセス）は fake が null、build を返さない古い作り物は build が null */
 async function probeFake() {
   try {
     const res = await fetch(`${FAKE_ORIGIN}/__health`, { signal: AbortSignal.timeout(2000) });
-    const body = res.ok ? await res.json().catch(() => null) : null;
-    return { kind: "up", fake: body !== null && typeof body === "object" && typeof body.fake === "string" ? body.fake : null };
+    // 本文は必ず読み切る（読まずに終了すると、Windows の Node が終了の時に落ちることがある）
+    const body = res.ok ? await res.json().catch(() => null) : await res.arrayBuffer().then(() => null, () => null);
+    const isBody = body !== null && typeof body === "object";
+    return {
+      kind: "up",
+      fake: isBody && typeof body.fake === "string" ? body.fake : null,
+      build: isBody && typeof body.build === "string" ? body.build : null,
+    };
   } catch (error) {
-    return isRefused(error) ? { kind: "down" } : { kind: "up", fake: null };
+    return isRefused(error) ? { kind: "down" } : { kind: "up", fake: null, build: null };
+  }
+}
+
+/**
+ * 古い作り物に、作り物自身の止める口（POST /__control/shutdown。作り物の鍵が要る）で止めてもらう。
+ * この口を持つのは作り物だけなので、別のプロセスは止められない（プロセス番号で止めることはしない）。止まった印が無ければ false
+ */
+async function requestFakeShutdown() {
+  try {
+    const res = await fetch(`${FAKE_ORIGIN}/__control/shutdown`, {
+      method: "POST",
+      headers: { "x-e2e-control": FAKE_17TRACK_KEY },
+      signal: AbortSignal.timeout(3000),
+    });
+    await res.arrayBuffer().catch(() => undefined);
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 
@@ -201,36 +245,63 @@ function startFakeDetached() {
   spawn(process.execPath, [script], { stdio: "ignore", detached: true, env: SERVER_ENV }).unref();
 }
 
-function failFake(reason) {
+async function failFake(reason) {
   console.error(`[e2e-server] 見張り: ${reason}`);
+  // 通信の後始末が済んでから終了する（すぐ終了すると、Windows の Node が終了の時に落ちることがある）
+  await sleep(100);
   process.exit(1);
 }
 
-/** 作り物の 17TRACK を使える状態にする。別のプロセスが4017番にいれば、止めずに失敗にする */
+/**
+ * 作り物の 17TRACK を使える状態にする。
+ * - 別のプロセスが4017番にいれば、止めずに失敗にする。
+ * - 作り物のコードや見本が今のファイルと違う古い作り物（/__health の build が違う）は、黙って使い回さない。
+ *   E2E_STRICT=1 なら失敗にし、そうでなければ作り物自身の止める口で止めて、新しく起こす（止める口を持たない古い作り物なら、失敗にする）。
+ */
 async function ensureFake() {
+  const fixturePath = fileURLToPath(new URL("../tests/fixtures/17track/v2.4.json", import.meta.url));
+  const scriptPath = fileURLToPath(new URL("./e2e/fake-17track.mjs", import.meta.url));
   // 共通の見本と同じ契約版を、作り物の印として使う（作り物もこの見本を読む）
-  const contract = JSON.parse(
-    readFileSync(fileURLToPath(new URL("../tests/fixtures/17track/v2.4.json", import.meta.url)), "utf8"),
-  ).contract;
+  const contract = JSON.parse(readFileSync(fixturePath, "utf8")).contract;
+  const build = computeFakeBuild(scriptPath, fixturePath);
+  const strict = process.env.E2E_STRICT === "1";
+  const stopByHand =
+    `${FAKE_17TRACK_PORT}番の 17TRACK の作り物のコードが、今のファイルと違う（build の印が合わない）。古い作り物は使い回さない。` +
+    "この E2E の作り物だけを止めてから流して（Get-NetTCPConnection -LocalPort 4017 -State Listen で持ち主を確かめ、scripts/e2e/fake-17track.mjs を動かしている node だけを止める）。";
   const conflict = `${FAKE_17TRACK_PORT}番で、この E2E の 17TRACK の作り物ではないプロセスが動いている（契約版が違う古い作り物かもしれない）。止めてから流して。`;
-  const first = decideFake(await probeFake(), contract);
-  if (first === "conflict") failFake(conflict);
-  if (first === "reuse") {
+  const decide = async () => decideFake(await probeFake(), contract, build, strict);
+
+  let action = await decide();
+  if (action === "conflict") await failFake(conflict);
+  if (action === "stale") await failFake(`E2E_STRICT=1 では古い作り物を使い回さない。${stopByHand}`);
+  if (action === "replace") {
+    console.log("17TRACK の作り物のコードが変わっている。古い作り物を止めて、新しく起こす。");
+    if (!(await requestFakeShutdown())) await failFake(stopByHand);
+    let down = false;
+    for (let attempt = 0; attempt < 20 && !down; attempt += 1) {
+      down = (await probeFake()).kind === "down";
+      if (!down) await sleep(250);
+    }
+    if (!down) await failFake(stopByHand);
+    action = "start";
+  }
+  if (action === "reuse") {
     console.log(`17TRACK の作り物は起動済み（${FAKE_ORIGIN}）。そのまま使う。`);
     return;
   }
   startFakeDetached();
   const deadline = Date.now() + FAKE_READY_TIMEOUT_SECONDS * 1000;
   while (Date.now() < deadline) {
-    const next = decideFake(await probeFake(), contract);
+    const next = await decide();
     if (next === "reuse") {
       console.log(`17TRACK の作り物を起動した（${FAKE_ORIGIN}）。テスト後も起動したまま残る。`);
       return;
     }
-    if (next === "conflict") failFake(conflict);
+    if (next === "conflict") await failFake(conflict);
+    if (next === "stale" || next === "replace") await failFake(stopByHand);
     await sleep(250);
   }
-  failFake(`17TRACK の作り物が ${FAKE_READY_TIMEOUT_SECONDS} 秒以内に ${FAKE_ORIGIN} で応答しなかった。`);
+  await failFake(`17TRACK の作り物が ${FAKE_READY_TIMEOUT_SECONDS} 秒以内に ${FAKE_ORIGIN} で応答しなかった。`);
 }
 
 if (await isUp()) {

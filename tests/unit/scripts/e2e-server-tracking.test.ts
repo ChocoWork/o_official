@@ -1,11 +1,13 @@
 /** @jest-environment node */
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { runInNewContext } from 'node:vm';
 import {
   E2E_FAKE_17TRACK_KEY,
+  computeFake17TrackBuild,
   E2E_FAKE_17TRACK_PORT,
   E2E_FAKE_17TRACK_URL,
 } from '@/../scripts/e2e/environment';
@@ -97,20 +99,67 @@ describe('scripts/e2e-server.mjs の 17TRACK の見張り（純粋な関数）',
 });
 
 describe('作り物の 17TRACK を起こすか使い回すかの決め方', () => {
-  const decide = (probe: unknown, contract: string): string =>
-    runInNewContext(`${extract('decideFake')}\ndecideFake(probe, contract)`, { probe, contract }) as string;
+  const CONTRACT = '17track-v2.4';
+  const BUILD = 'aaaaaaaaaaaaaaaa';
+  const decide = (probe: unknown, strict = false, build = BUILD): string =>
+    runInNewContext(`${extract('decideFake')}\ndecideFake(probe, contract, build, strict)`, {
+      probe, contract: CONTRACT, build, strict,
+    }) as string;
 
   it('4017番が空いていれば起こす', () => {
-    expect(decide({ kind: 'down' }, '17track-v2.4')).toBe('start');
+    expect(decide({ kind: 'down' })).toBe('start');
+    expect(decide({ kind: 'down' }, true)).toBe('start');
   });
 
-  it('作り物の印（契約版まで同じ）を返すものだけ使い回す', () => {
-    expect(decide({ kind: 'up', fake: '17track-v2.4' }, '17track-v2.4')).toBe('reuse');
+  it('作り物の印（契約版と build まで同じ）を返すものだけ使い回す。E2E_STRICT=1 でも、今のコードの作り物は使い回せる', () => {
+    expect(decide({ kind: 'up', fake: CONTRACT, build: BUILD })).toBe('reuse');
+    expect(decide({ kind: 'up', fake: CONTRACT, build: BUILD }, true)).toBe('reuse');
   });
 
-  it('契約版が違う作り物・印の無いもの（別のプロセス）は止めずに失敗にする', () => {
-    expect(decide({ kind: 'up', fake: '17track-v2.3' }, '17track-v2.4')).toBe('conflict');
-    expect(decide({ kind: 'up', fake: null }, '17track-v2.4')).toBe('conflict');
+  it('契約版が違う作り物・印の無いもの（別のプロセス）は止めずに失敗にする。E2E_STRICT=1 でも同じ', () => {
+    for (const strict of [false, true]) {
+      expect(decide({ kind: 'up', fake: '17track-v2.3', build: BUILD }, strict)).toBe('conflict');
+      expect(decide({ kind: 'up', fake: null, build: null }, strict)).toBe('conflict');
+    }
+  });
+
+  it('契約版は同じでも build が違う古い作り物（build を返さない古い作り物を含む）は、黙って使い回さない', () => {
+    // 通常: 作り物自身の止める口で入れ替える
+    expect(decide({ kind: 'up', fake: CONTRACT, build: 'bbbbbbbbbbbbbbbb' })).toBe('replace');
+    expect(decide({ kind: 'up', fake: CONTRACT, build: null })).toBe('replace');
+    // E2E_STRICT=1: 使い回さず、止めずに失敗にする
+    expect(decide({ kind: 'up', fake: CONTRACT, build: 'bbbbbbbbbbbbbbbb' }, true)).toBe('stale');
+    expect(decide({ kind: 'up', fake: CONTRACT, build: null }, true)).toBe('stale');
+  });
+
+  it('ファイルの内容から作る build は、environment.ts と e2e-server.mjs と fake-17track.mjs で同じ値になる', () => {
+    const fakePath = path.resolve('scripts/e2e/fake-17track.mjs');
+    const fixturePath = path.resolve('tests/fixtures/17track/v2.4.json');
+    // 試験が自分で計算した値（ハッシュの作り方は、作り物のコードと見本の内容を \0 でつないだ sha256 の先頭16字）
+    const expected = createHash('sha256')
+      .update(readFileSync(fakePath))
+      .update('\0')
+      .update(readFileSync(fixturePath))
+      .digest('hex')
+      .slice(0, 16);
+    expect(computeFake17TrackBuild()).toBe(expected);
+    const fakeSource = readFileSync(fakePath, 'utf8');
+    for (const [label, source] of [['e2e-server.mjs', serverSource], ['fake-17track.mjs', fakeSource]] as const) {
+      const body = source.match(/function computeFakeBuild\([^)]*\) \{[\s\S]*?\r?\n\}/)?.[0];
+      if (!body) throw new Error(`${label} に computeFakeBuild が見つかりません`);
+      const value = runInNewContext(`${body}\ncomputeFakeBuild(scriptPath, fixturePath)`, { createHash, readFileSync, scriptPath: fakePath, fixturePath }) as string;
+      expect({ label, value }).toEqual({ label, value: expected });
+    }
+  });
+
+  it('作り物は /__health で build を返し、作り物の鍵で止める口（POST /__control/shutdown）を持つ。e2e-server.mjs は同じ口で古い作り物を止める', () => {
+    const fakeSource = readFileSync(path.resolve('scripts/e2e/fake-17track.mjs'), 'utf8');
+    expect(fakeSource).toMatch(/sendJson\(res, 200, \{ fake: fixture\.contract, build: BUILD \}\)/);
+    expect(fakeSource).toContain("url.pathname === '/__control/shutdown'");
+    expect(serverSource).toContain('/__control/shutdown');
+    // 止める口を使う時は、作り物の鍵を付ける。プロセス番号で止める処理（kill）は持たない
+    expect(serverSource).toMatch(/"x-e2e-control": FAKE_17TRACK_KEY/);
+    expect(serverSource).not.toMatch(/process\.kill|taskkill|Stop-Process/);
   });
 });
 
