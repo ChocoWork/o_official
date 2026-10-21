@@ -38,6 +38,15 @@ jest.mock('@/lib/orders/email/order-email-delivery', () => ({
 
 import { runWebhookWorker, WORKER_TIME_BUDGET_MS } from '@/lib/stripe/webhook-worker';
 import type { OpsAlertMail } from '@/lib/ops/ops-alert-mail';
+import { ORDER_EMAIL_WORKER_BUDGET_MS } from '@/lib/orders/email/order-email-worker';
+
+const mockTracking = jest.fn();
+jest.mock('@/lib/orders/tracking/delivery-worker', () => ({
+  DELIVERY_TRACKING_BUDGET_MS: 8000,
+  DELIVERY_TRACKING_MIN_BUDGET_MS: 3000,
+  runDeliveryTrackingWorker: (...args: unknown[]) => mockTracking(...args),
+}));
+const TRACKING = { registered: 0, read: 0, stopped: 0, expired: 0, stoppedBy: 'empty' };
 
 const CHECKS = { backlogAlerted: false, deadNotified: 0, staleAlerted: [], failedChecks: [] };
 const EMAILS = { sent: 1, skipped: 0, failed: 0, stoppedBy: 'empty' };
@@ -51,6 +60,7 @@ describe('runWebhookWorker', () => {
     mockRunOrderEmailWorker.mockResolvedValue(EMAILS);
     mockRunOrderEmailOpsChecks.mockResolvedValue(EMAIL_CHECKS);
     mockRunOrderEmailDeliveryCheckIfDue.mockResolvedValue('not_due');
+    mockTracking.mockReset().mockResolvedValue(TRACKING);
   });
 
   it('Stripe の知らせに35秒、注文のメールに10秒を使い、成功を記録して両方を点検する', async () => {
@@ -70,7 +80,7 @@ describe('runWebhookWorker', () => {
     expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockStore, 'webhook_worker', true, null);
     expect(mockRunOpsChecks).toHaveBeenCalledWith(expect.objectContaining({ store: mockStore }));
     expect(mockRunOrderEmailOpsChecks).toHaveBeenCalledWith(expect.objectContaining({ store: mockStore }));
-    expect(result).toEqual({ processed: 2, failed: 0, stoppedBy: 'empty', checks: CHECKS, emails: EMAILS, emailChecks: EMAIL_CHECKS });
+    expect(result).toEqual({ processed: 2, failed: 0, stoppedBy: 'empty', checks: CHECKS, emails: EMAILS, emailChecks: EMAIL_CHECKS, deliveryTracking: TRACKING });
   });
 
   it('注文のメールの worker が投げても、点検まで続ける', async () => {
@@ -99,7 +109,7 @@ describe('runWebhookWorker', () => {
     try {
       const result = await runWebhookWorker({ requestUrl: 'http://localhost/x' });
 
-      expect(result).toEqual({ processed: 0, failed: 0, stoppedBy: 'empty', checks: CHECKS, emails: EMAILS, emailChecks: EMAIL_CHECKS });
+      expect(result).toEqual({ processed: 0, failed: 0, stoppedBy: 'empty', checks: CHECKS, emails: EMAILS, emailChecks: EMAIL_CHECKS, deliveryTracking: TRACKING });
       // 例外の文（boom）は出さず、例外の名前だけを残す
       expect(error).toHaveBeenCalledWith('[stripe-webhook-worker] Delivery check failed', 'Error');
     } finally {
@@ -152,7 +162,7 @@ describe('runWebhookWorker', () => {
     const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
       await expect(runWebhookWorker({ requestUrl: 'http://localhost/x' })).resolves.toEqual({
-        processed: 1, failed: 0, stoppedBy: 'empty', checks: CHECKS, emails: EMAILS, emailChecks: EMAIL_CHECKS,
+        processed: 1, failed: 0, stoppedBy: 'empty', checks: CHECKS, emails: EMAILS, emailChecks: EMAIL_CHECKS, deliveryTracking: TRACKING,
       });
       expect(mockRunOpsChecks).toHaveBeenCalled();
       expect(mockRunOrderEmailOpsChecks).toHaveBeenCalled();
@@ -160,5 +170,57 @@ describe('runWebhookWorker', () => {
     } finally {
       error.mockRestore();
     }
+  });
+});
+
+describe('毎分の配送の枠', () => {
+  beforeEach(() => {
+    jest.resetAllMocks(); jest.useFakeTimers(); jest.setSystemTime(0);
+    jest.requireMock('@/lib/supabase/server').createServiceRoleClient.mockResolvedValue(mockStore);
+    mockDrain.mockResolvedValue({ processed: 0, failed: 0, stoppedBy: 'empty' });
+    mockRunOrderEmailWorker.mockResolvedValue(EMAILS); mockTracking.mockResolvedValue(TRACKING);
+    mockRecordHeartbeat.mockResolvedValue(undefined); mockRunOpsChecks.mockResolvedValue(CHECKS);
+    mockRunOrderEmailOpsChecks.mockResolvedValue(EMAIL_CHECKS);
+  });
+  afterEach(() => { jest.useRealTimers(); jest.restoreAllMocks(); });
+  test('順番はStripe、メール、配送、点検、メールの配信の見回り', async () => {
+    const calls: string[] = [];
+    mockDrain.mockImplementation(async () => { calls.push('stripe'); return { stoppedBy: 'empty' }; });
+    mockRunOrderEmailWorker.mockImplementation(async () => { calls.push('mail'); return EMAILS; });
+    mockTracking.mockImplementation(async () => { calls.push('tracking'); return TRACKING; });
+    mockRunOpsChecks.mockImplementation(async () => { calls.push('ops'); return CHECKS; });
+    mockRunOrderEmailOpsChecks.mockImplementation(async () => { calls.push('mailOps'); return EMAIL_CHECKS; });
+    mockRunOrderEmailDeliveryCheckIfDue.mockImplementation(async () => { calls.push('mailDelivery'); });
+    await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+    expect(calls).toEqual(['stripe', 'mail', 'tracking', 'ops', 'mailOps', 'mailDelivery']);
+  });
+  test('Stripe35秒とメール10秒は変えない', () => {
+    expect(WORKER_TIME_BUDGET_MS).toBe(35000); expect(ORDER_EMAIL_WORKER_BUDGET_MS).toBe(10000);
+  });
+  test.each([[8000, 8000], [5000, 5000], [3000, 3000], [2999, 0]])('残り%smsの配送の枠は%sms', async (remaining, budget) => {
+    mockRunOrderEmailWorker.mockImplementation(async () => { jest.setSystemTime(45000 - remaining); return EMAILS; });
+    const result = await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+    if (budget) expect(mockTracking).toHaveBeenCalledWith({ budgetMs: budget });
+    else { expect(mockTracking).not.toHaveBeenCalled(); expect(result.deliveryTracking).toBeNull(); }
+  });
+  test('予算で飛ばしてもdelivery_trackingの心拍を残す', async () => {
+    mockRunOrderEmailWorker.mockImplementation(async () => { jest.setSystemTime(50000); return EMAILS; });
+    await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+    expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockStore, 'delivery_tracking', true, null);
+  });
+  test('最初のDB接続に使った時間も数え、8秒を上限にする', async () => {
+    const { createServiceRoleClient } = jest.requireMock('@/lib/supabase/server');
+    createServiceRoleClient.mockImplementationOnce(async () => { jest.setSystemTime(40000); return mockStore; });
+    await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+    expect(mockTracking).toHaveBeenCalledWith({ budgetMs: 5000 });
+  });
+  test('HTTP timeoutやDB失敗でworkerが投げても次の点検へ進む', async () => {
+    mockTracking.mockRejectedValue(new Error('raw本文 key signature number'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await runWebhookWorker({ requestUrl: 'http://localhost/x' });
+    expect(result.deliveryTracking).toBeNull(); expect(mockRunOpsChecks).toHaveBeenCalled();
+    expect(mockRunOrderEmailOpsChecks).toHaveBeenCalled(); expect(mockRunOrderEmailDeliveryCheckIfDue).toHaveBeenCalled();
+    expect(mockRecordHeartbeat).toHaveBeenCalledWith(mockStore, 'delivery_tracking', false, 'delivery_tracking_error');
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/raw本文|signature|number/);
   });
 });

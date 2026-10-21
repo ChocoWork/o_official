@@ -68,6 +68,24 @@ function heartbeat(job: string, lastSucceededAt: string | null) {
 }
 
 describe('runOpsChecks', () => {
+  it.each([899, 900, 901])('配送の心拍が%s秒前なら15分から1日1回知らせる', async (seconds) => {
+    const state = emptyState();
+    state.heartbeats = [heartbeat('delivery_tracking', new Date(NOW.getTime() - seconds * 1000).toISOString())];
+    const { store, calls } = fakeStore(state); const send = jest.fn().mockResolvedValue(true);
+    const first = await runOpsChecks({ store, send, now: () => NOW });
+    expect(first.staleAlerted).toEqual(seconds < 900 ? [] : ['delivery_tracking']);
+    await runOpsChecks({ store, send, now: () => NOW });
+    expect(send).toHaveBeenCalledTimes(seconds < 900 ? 0 : 1);
+    if (seconds >= 900) expect(calls.find((c) => c.name === 'claim_ops_alert')?.params).toEqual({ _alert_key: 'job_stale_delivery_tracking', _cooldown_seconds: 86400 });
+  });
+  it('配送がまだ一度も成功していなければ対象外、送信失敗ならclaimを返す', async () => {
+    const state = emptyState(); state.heartbeats = [heartbeat('delivery_tracking', null)];
+    const { store, calls } = fakeStore(state); const send = jest.fn().mockResolvedValue(false);
+    await runOpsChecks({ store, send, now: () => NOW }); expect(send).not.toHaveBeenCalled();
+    state.heartbeats = [heartbeat('delivery_tracking', '2026-10-05T11:00:00Z')];
+    await runOpsChecks({ store, send, now: () => NOW });
+    expect(calls.some((c) => c.name === 'release_ops_alert')).toBe(true);
+  });
   afterEach(() => {
     jest.restoreAllMocks();
   });

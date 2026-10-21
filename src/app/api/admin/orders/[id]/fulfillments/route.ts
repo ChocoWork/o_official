@@ -6,6 +6,7 @@ import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { logAudit } from '@/lib/audit';
 import { SHIPPING_CARRIER_IDS } from '@/lib/orders/shipping-carriers';
 import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
+import { scheduleDeliveryTracking } from '@/lib/orders/tracking/delivery-schedule';
 import { loadFulfillmentMaterials } from '@/lib/orders/fulfillment/fulfillment-materials';
 import {
   FULFILLMENT_ERROR_MESSAGES,
@@ -143,6 +144,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // 発送のメール（知らせる時だけ）の行は DB の関数が同じ取引で書いた。返事の後に送る。
     // 送り直し（replayed）でも動かす: 前の呼び出しが worker を動かす前に止まっていても、メールが送られるように
     scheduleOrderEmailDelivery();
+    scheduleDeliveryTracking();
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof FulfillmentOperationError) {

@@ -33,7 +33,12 @@ export type OpsAlertKind =
   | 'order_email_paused'
   | 'order_email_backlog'
   | 'order_email_dead'
-  | 'order_email_delivery_problem';
+  | 'order_email_delivery_problem'
+  | 'delivery_tracking_account_error'
+  | 'delivery_tracking_key_missing'
+  | 'delivery_tracking_signature_invalid'
+  | 'delivery_tracking_read_failed'
+  | 'delivery_tracking_unknown_status';
 
 export type OpsAlertMail = { kind: OpsAlertKind; subject: string; lines: string[] };
 
@@ -64,6 +69,7 @@ const FAILURE_CAUSES: readonly WebhookFailureCause[] = [
 ];
 
 const STALE_JOBS = {
+  delivery_tracking: { label: '配送の追跡', threshold: '15分', runbook: RUNBOOK, section: '定期処理が止まったとき' },
   order_sweep: { label: '毎時の見回り', threshold: '2時間', runbook: RUNBOOK, section: '定期処理が止まったとき' },
   stripe_reconcile: { label: '毎晩の照合', threshold: '25時間', runbook: RUNBOOK, section: '定期処理が止まったとき' },
   order_email_worker: { label: '注文のメールの送信', threshold: '15分', runbook: ORDER_EMAIL_RUNBOOK, section: 'worker の停止' },

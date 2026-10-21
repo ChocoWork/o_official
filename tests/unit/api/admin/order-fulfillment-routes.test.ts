@@ -22,6 +22,10 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
 const mockSchedule = jest.fn();
+const mockScheduleTracking = jest.fn();
+jest.mock('@/lib/orders/tracking/delivery-schedule', () => ({
+  scheduleDeliveryTracking: (...args: unknown[]) => mockScheduleTracking(...args),
+}));
 jest.mock('@/lib/orders/email/order-email-schedule', () => ({
   scheduleOrderEmailDelivery: (...args: unknown[]) => mockSchedule(...args),
 }));
@@ -90,6 +94,27 @@ beforeEach(() => {
   mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1', role: 'admin', actorEmail: 'admin@example.com' });
   mockRequireCsrf.mockResolvedValue(undefined);
   mockEnforceRateLimit.mockResolvedValue(undefined);
+});
+
+describe('発送成功後の配送worker', () => {
+  it.each([false, true])('作成のreplayed=%sでも配送を予約する', async (replayed) => {
+    rpcReturns({ admin_create_fulfillment: { data: [{ ...CREATED_ROW, replayed }] } });
+    expect((await postFulfillment(createRequest(CREATE_BODY), ORDER_CONTEXT)).status).toBe(200);
+    expect(mockScheduleTracking).toHaveBeenCalledTimes(1);
+    expect(mockRpc.mock.invocationCallOrder[0]).toBeLessThan(mockScheduleTracking.mock.invocationCallOrder[0]);
+  });
+  it.each(['cancelled', 'already_cancelled'])('取消%sでも配送を予約する', async (outcome) => {
+    rpcReturns({ admin_cancel_fulfillment: { data: [{ outcome, order_status: 'paid' }] } });
+    expect((await postCancel(cancelRequest(), CANCEL_CONTEXT)).status).toBe(200);
+    expect(mockScheduleTracking).toHaveBeenCalledTimes(1);
+  });
+  it('拒否とDB失敗では配送を予約しない', async () => {
+    mockAuthorize.mockResolvedValueOnce({ ok: false, response: DENIED });
+    await postFulfillment(createRequest(CREATE_BODY), ORDER_CONTEXT);
+    rpcReturns({ admin_cancel_fulfillment: { data: null, error: { message: 'ORDER_NOT_FOUND', code: 'P0002' } } });
+    await postCancel(cancelRequest(), CANCEL_CONTEXT);
+    expect(mockScheduleTracking).not.toHaveBeenCalled();
+  });
 });
 
 // 書く窓口はどれも、権限 → CSRF → 回数の制限（送信元ごと・管理者ごと）の順に確かめる（今の再送の窓口と同じ）

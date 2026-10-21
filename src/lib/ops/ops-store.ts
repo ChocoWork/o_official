@@ -19,7 +19,7 @@ export type OpsStore = {
   rpc(name: OpsRpcName, params?: Record<string, unknown>): Promise<{ data: unknown; error: QueryError }>;
 };
 
-export type OpsJob = 'webhook_worker' | 'order_sweep' | 'stripe_reconcile' | 'order_email_worker' | 'order_email_delivery_check' | 'return_photo_purge';
+export type OpsJob = 'webhook_worker' | 'order_sweep' | 'stripe_reconcile' | 'order_email_worker' | 'order_email_delivery_check' | 'return_photo_purge' | 'delivery_tracking';
 
 export type OpsAlertKey =
   | 'webhook_backlog'
@@ -33,7 +33,13 @@ export type OpsAlertKey =
   | 'order_email_dead'
   | 'order_email_delivery_problem'
   | 'job_stale_order_email_worker'
-  | 'job_stale_return_photo_purge';
+  | 'job_stale_return_photo_purge'
+  | 'delivery_tracking_account_error'
+  | 'delivery_tracking_key_missing'
+  | 'delivery_tracking_signature_invalid'
+  | 'delivery_tracking_read_failed'
+  | 'delivery_tracking_unknown_status'
+  | 'job_stale_delivery_tracking';
 
 export type Heartbeat = { lastSucceededAt: Date | null; lastFailedAt: Date | null; lastErrorCode: string | null };
 

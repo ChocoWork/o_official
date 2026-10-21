@@ -35,6 +35,11 @@ function deadEvent(n: number): DeadEvent {
 }
 
 describe('店への知らせのメールの文面', () => {
+  it('配送の追跡の心拍停止は15分と正しい名前を書く', () => {
+    const mail = staleJobMail('delivery_tracking', new Date('2026-10-21T00:00:00Z'));
+    expect(mail.subject).toBe('【要確認】定期処理が止まっています（配送の追跡）');
+    expect(mail.lines).toContain('配送の追跡が、15分以上成功していません。');
+  });
   it('溜まり: 状態ごとの件数・いちばん古い受け取り・原因の記号を書く', () => {
     const mail = backlogAlertMail([
       { status: 'failed', count: 2, oldestReceivedAt: new Date('2026-10-05T00:00:00Z'), lastErrors: ['stripe_unavailable'] },

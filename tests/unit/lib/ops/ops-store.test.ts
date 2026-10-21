@@ -18,6 +18,17 @@ function storeReturning(data: unknown, error: { message?: string } | null = null
 }
 
 describe('ops-store（知らせと定期処理の記録の関数の呼び出し）', () => {
+  it('配送の心拍と6つのalert keyをDBへそのまま渡す', async () => {
+    const { store, rpc } = storeReturning(null);
+    await recordHeartbeat(store, 'delivery_tracking', false, 'key_missing');
+    expect(rpc).toHaveBeenCalledWith('record_ops_heartbeat', { _job: 'delivery_tracking', _succeeded: false, _error_code: 'key_missing' });
+    const keys = ['delivery_tracking_account_error', 'delivery_tracking_key_missing', 'delivery_tracking_signature_invalid',
+      'delivery_tracking_read_failed', 'delivery_tracking_unknown_status', 'job_stale_delivery_tracking'] as const;
+    for (const key of keys) {
+      await claimAlert(store, key, 86400);
+      expect(rpc).toHaveBeenCalledWith('claim_ops_alert', { _alert_key: key, _cooldown_seconds: 86400 });
+    }
+  });
   it('最後の成功を読み、定期処理ごとにまとめる', async () => {
     const { store, rpc } = storeReturning([
       { job: 'order_sweep', last_succeeded_at: '2026-10-05T00:00:00Z', last_failed_at: null, last_error_code: null },

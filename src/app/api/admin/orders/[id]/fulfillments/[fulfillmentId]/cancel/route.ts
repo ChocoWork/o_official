@@ -4,6 +4,7 @@ import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { logAudit } from '@/lib/audit';
+import { scheduleDeliveryTracking } from '@/lib/orders/tracking/delivery-schedule';
 import {
   FULFILLMENT_ERROR_MESSAGES,
   INVALID_REQUEST_BODY,
@@ -94,6 +95,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         order_status: result.orderStatus,
       },
     );
+    scheduleDeliveryTracking();
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof FulfillmentOperationError) {
