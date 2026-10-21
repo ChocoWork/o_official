@@ -3,6 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import {
+  createDeliveryOrder, deliveryShipment, insertDeliveryFixture,
+  markDeliveryDelivered, updateDeliveryTracking,
+} from './helpers/delivery-tracking-fixtures';
+import {
   addItemVariant,
   createShippedOrderFixture,
   insertRefundRecord,
@@ -2292,6 +2296,93 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
       // 最後の発送を取り消すと、残った発送の日から数える
       await db().query('update public.order_fulfillments set cancelled_at = now() where id = $1', [order.second]);
       expect(await deadlines()).toEqual(['2026-10-11']);
+    });
+  });
+
+  describe('届いた日からの返品の期限（E-4 移行 B）', () => {
+    const zones = ['UTC', 'Asia/Tokyo', 'America/Los_Angeles', 'Europe/London'];
+
+    test.each(zones)('delivered_atのJST日付＋window_daysを使い目安は足さない（%s）', async (zone) => {
+      await db().query("select set_config('TimeZone',$1,true)", [zone]);
+      for (const [deliveredAt, expected] of [
+        ['2026-10-12T14:59:59Z', '2026-10-19'],
+        ['2026-10-12T15:00:00Z', '2026-10-20'],
+        ['2026-10-31T15:00:00Z', '2026-11-08'],
+      ]) {
+        const order = await createDeliveryOrder(db(), 1);
+        const fulfillment = await insertDeliveryFixture(db(), {
+          orderId: order.orderId, shippedAt: '2026-10-10T03:00:00Z', deliveredAt,
+        });
+        await db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)',
+          [fulfillment.fulfillmentId, order.orderItemId]);
+        expect((await shipmentLinesOf(db(), order.orderId)).map((line) => line.deadline_date)).toEqual([expected]);
+        await db().query('update public.shop_return_settings set delivery_buffer_days=14 where id=1');
+        expect((await shipmentLinesOf(db(), order.orderId)).map((line) => line.deadline_date)).toEqual([expected]);
+      }
+    });
+
+    test('届いた日ありとNULLの目安を品ごとに数え、last_itemと無制限と取消除外を保つ', async () => {
+      const order = await createDeliveryOrder(db(), 4);
+      const first = await insertDeliveryFixture(db(), {
+        orderId: order.orderId, shippedAt: '2026-10-01T03:00:00Z', deliveredAt: '2026-10-05T15:00:00Z',
+      });
+      const second = await insertDeliveryFixture(db(), { orderId: order.orderId, shippedAt: '2026-10-10T03:00:00Z' });
+      const cancelled = await insertDeliveryFixture(db(), {
+        orderId: order.orderId, shippedAt: '2026-10-20T03:00:00Z', deliveredAt: '2026-10-25T03:00:00Z',
+      });
+      for (const [fulfillment, quantity] of [[first, 1], [second, 2], [cancelled, 1]] as const) {
+        await db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,$3)',
+          [fulfillment.fulfillmentId, order.orderItemId, quantity]);
+      }
+      await db().query('update public.order_fulfillments set cancelled_at=now() where id=$1', [cancelled.fulfillmentId]);
+      const deadlines = async () => (await shipmentLinesOf(db(), order.orderId)).map((line) => line.deadline_date);
+      expect(await deadlines()).toEqual(['2026-10-13', '2026-10-20']);
+      await db().query("update public.shop_return_settings set window_start='last_item' where id=1");
+      expect(await deadlines()).toEqual(['2026-10-20', '2026-10-20']);
+      await db().query('update public.order_fulfillments set cancelled_at=now() where id=$1', [second.fulfillmentId]);
+      expect(await deadlines()).toEqual(['2026-10-13']);
+      await db().query('update public.shop_return_settings set window_days=null where id=1');
+      expect(await deadlines()).toEqual([null]);
+      expect((await shipmentLinesOf(db(), order.orderId))[0]).toMatchObject({ quantity: 1, in_returns: 0, missing: 0, returnable: 1 });
+    });
+
+    test('番号を直すと目安へ戻り、既存の返品と申し込みの記録は変更0行', async () => {
+      const target = await deliveryShipment(db(), { quantity: 3, shippedQuantity: 3 });
+      for (const status of ['open', 'requested'] as const) {
+        await insertReturnRecord(db(), { orderId: target.orderId, status,
+          lines: [{ fulfillmentId: target.fulfillmentId, orderItemId: target.orderItemId, quantity: 1 }] });
+      }
+      // 全列の写しで、状態・日付・申込内容を変更していないことも比較する。
+      const snapshot = async () => (await db().query(`select jsonb_build_object(
+        'returns',(select jsonb_agg(to_jsonb(r) order by r.id) from public.order_returns r where r.order_id=$1),
+        'lines',(select jsonb_agg(to_jsonb(l) order by l.id) from public.order_return_lines l
+          join public.order_returns r on r.id=l.return_id where r.order_id=$1)) as records`, [target.orderId])).rows[0].records;
+      const before = await snapshot();
+      const addDays = (date: string, days: number) => new Date(new Date(`${date}T00:00:00Z`).getTime() + days * 86400000).toISOString().slice(0, 10);
+      await markDeliveryDelivered(db(), { ...target, requestKey: crypto.randomUUID(), deliveredOn: target.clock.yesterday, notifyCustomer: false });
+      expect((await shipmentLinesOf(db(), target.orderId))[0]).toMatchObject({
+        deadline_date: addDays(target.clock.yesterday, 7), quantity: 3, in_returns: 2, returnable: 1,
+      });
+      expect(await snapshot()).toEqual(before);
+      await updateDeliveryTracking(db(), { ...target, requestKey: crypto.randomUUID(), carrier: 'sagawa', trackingNumber: 'Return-corrected-456', notifyCustomer: false });
+      expect((await shipmentLinesOf(db(), target.orderId))[0].deadline_date).toBe(addDays(target.clock.two_days_ago, 10));
+      expect(await snapshot()).toEqual(before);
+      expect((await db().query(`select count(*)::integer as n from public.order_fulfillments
+        where order_id=$1 and delivered_at is not null`, [target.orderId])).rows[0].n).toBe(0);
+    });
+
+    test('届いた日の期限はJSTの日の終わりまで同じ日付を返す', async () => {
+      const order = await createDeliveryOrder(db(), 1);
+      const target = await insertDeliveryFixture(db(), {
+        orderId: order.orderId, shippedAt: '2026-10-01T03:00:00Z', deliveredAt: '2026-10-10T15:00:00Z',
+      });
+      await db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)', [target.fulfillmentId, order.orderItemId]);
+      const row = (await shipmentLinesOf(db(), order.orderId))[0];
+      expect(row.deadline_date).toBe('2026-10-18');
+      const boundary = (await db().query(`select
+        ('2026-10-18T14:59:59Z'::timestamptz at time zone 'Asia/Tokyo')::date <= $1::date as at_end,
+        ('2026-10-18T15:00:00Z'::timestamptz at time zone 'Asia/Tokyo')::date <= $1::date as next_day`, [row.deadline_date])).rows[0];
+      expect(boundary).toEqual({ at_end: true, next_day: false });
     });
   });
 
