@@ -620,17 +620,16 @@ describeLocalDb('integration: 配送の追跡の関数（移行 C）', (db) => {
     });
   });
 
-  test('番号の大文字・小文字だけを直した時（abc-1→ABC-1）は、新しい版を含めて止めていない行があるので外への停止を借りず、印を外す', async () => {
+  test('番号の大文字・小文字だけの直し（abc-1→ABC-1）は断り、登録は止めず、外への停止も借りない', async () => {
     await enableDeliveryTracking(db());
     const base = uniqueNumber('abc');
     const target = await trackedShipment(db(), { trackingNumber: base.toLowerCase(), state: 'registered', everRegistered: true });
-    await updateDeliveryTracking(db(), editOf(target, { carrier: 'yamato', trackingNumber: base.toUpperCase() }));
-    // 直す時は、新しい版の行がまだ無いので、直す前の版に外への停止の印が立つ（移行 B の決まり）
-    expect(await deliveryRegistration(db(), target.fulfillmentId, 1)).toMatchObject({ state: 'stopped', stop_reason: 'replaced', provider_stop_pending: true });
-    expect(await deliveryRegistration(db(), target.fulfillmentId, 2)).toMatchObject({ state: 'pending', tracking_number: base.toUpperCase() });
+    // 17TRACK から見れば同じ番号なので、移行 B は大小だけの違いを「変わっていない」として断る
+    await expectDeliveryRejected(db(), () => updateDeliveryTracking(db(), editOf(target, { carrier: 'yamato', trackingNumber: base.toUpperCase() })), 'DELIVERY_TRACKING_UNCHANGED', '22023');
+    expect(await deliveryRegistration(db(), target.fulfillmentId, 1)).toMatchObject({ state: 'registered', provider_stop_pending: false });
+    expect(await deliveryRegistration(db(), target.fulfillmentId, 2)).toBeUndefined();
     const claims = await claimDeliveryFor(db(), [target.fulfillmentId]);
     expect(claims.filter((claim) => claim.action === 'stop')).toEqual([]);
-    expect(await deliveryRegistration(db(), target.fulfillmentId, 1)).toMatchObject({ state: 'stopped', stop_reason: 'replaced', provider_stop_pending: false });
   });
 
   test('別の発送が同じ組を追っている間は、直した発送の外への停止を借りず、残っていた印も外す', async () => {
