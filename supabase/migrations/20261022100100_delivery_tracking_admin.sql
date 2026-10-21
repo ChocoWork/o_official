@@ -67,6 +67,66 @@ AS $$
     AND a.resolved_at IS NULL
 $$;
 
+-- 3b. 直し・取消でその発送の登録を止める。止まっていない行（state <> 'stopped'）だけを replaced / cancelled にし、
+--     すでに止まっている行（delivered・expired・disabled・provider_stopped・前の replaced）の理由と時刻は変えない。
+--     新しく止めた行のうち、一度でも登録できた（ever_registered）行で、同じ（配送業者, 番号）の止めていない行がほかの発送に
+--     無いものだけ、外への停止の印（provider_stop_pending）を立てて今すぐ処理できる時刻にする。
+--     delivered・expired・disabled で止める時はこの関数を使わないので、印は付かない。実際の停止は移行 C の借りる関数が
+--     同じ組をもう一度確かめてから行う。呼ぶ側が注文 → 発送の鍵を持っている。組の鍵は P9 の順（配送業者, 番号）で取る。
+--     登録の番号は CHECK で大文字にそろっているので、組の比べは等しいかどうかでよい（大文字小文字の違う入力も同じ組になる）。
+CREATE OR REPLACE FUNCTION private.stop_fulfillment_registrations(_fulfillment_id uuid, _reason text)
+RETURNS void
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_pair record;
+BEGIN
+  IF _reason IS NULL OR _reason NOT IN ('replaced', 'cancelled') THEN
+    RAISE EXCEPTION 'DELIVERY_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  FOR v_pair IN
+    SELECT DISTINCT r.carrier, r.tracking_number
+    FROM private.fulfillment_tracking_registrations AS r
+    WHERE r.fulfillment_id = _fulfillment_id
+      AND r.state <> 'stopped'
+      AND r.ever_registered
+    ORDER BY r.carrier, r.tracking_number
+  LOOP
+    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(v_pair.carrier || ':' || v_pair.tracking_number, 0));
+  END LOOP;
+
+  -- この発送の止めていない行は全部ここで止まるので、「ほかに止めていない行」はほかの発送の行だけを見る
+  WITH stopping AS (
+    SELECT r.tracking_version,
+           r.ever_registered AND NOT EXISTS (
+             SELECT 1
+             FROM private.fulfillment_tracking_registrations AS o
+             WHERE o.carrier = r.carrier
+               AND o.tracking_number = r.tracking_number
+               AND o.fulfillment_id <> _fulfillment_id
+               AND o.state <> 'stopped'
+           ) AS stop_at_provider
+    FROM private.fulfillment_tracking_registrations AS r
+    WHERE r.fulfillment_id = _fulfillment_id
+      AND r.state <> 'stopped'
+  )
+  UPDATE private.fulfillment_tracking_registrations AS r
+  SET state = 'stopped',
+      stop_reason = _reason,
+      stopped_at = pg_catalog.now(),
+      failure_kind = NULL,
+      lease_token = NULL,
+      lease_expires_at = NULL,
+      provider_stop_pending = s.stop_at_provider,
+      next_run_at = CASE WHEN s.stop_at_provider THEN pg_catalog.now() ELSE r.next_run_at END
+  FROM stopping AS s
+  WHERE r.fulfillment_id = _fulfillment_id
+    AND r.tracking_version = s.tracking_version;
+END;
+$$;
+
 -- 4. 追跡をオンにした時の取り込み対象。設定の件数とオンの取り込みが同じ SELECT を使う。
 --    登録が無い現版と、期限内でオフにして止めた（disabled）現版が対象。期限は、行があればその値、無ければ始点＋30日。
 --    始点は版1が発送した時刻、版2以上は直した時刻。
@@ -374,7 +434,7 @@ $$;
 
 -- 7. 発送の取消。最新（20261013000456_order_return_actions.sql）の本文から次の差だけを入れる。
 --    ・設定の行を FOR SHARE で先に取り、発送の行を FOR UPDATE にする
---    ・その発送の登録を全部 cancelled で止め、開いた要対応を自動で閉じる（外への停止は移行 C 以降）
+--    ・止めていない登録を cancelled で止め（外への停止の印は 3b の決まり）、開いた要対応を自動で閉じる
 CREATE OR REPLACE FUNCTION public.admin_cancel_fulfillment(_order_id uuid, _fulfillment_id uuid, _actor_id uuid)
 RETURNS TABLE (outcome text, order_status public.order_status)
 LANGUAGE plpgsql
@@ -444,15 +504,9 @@ BEGIN
       cancelled_by = _actor_id
   WHERE f.id = _fulfillment_id;
 
-  -- 登録は全部 cancelled で止める（借りの印も無効にして、途中の結果を書かせない）
-  UPDATE private.fulfillment_tracking_registrations AS r
-  SET state = 'stopped',
-      stop_reason = 'cancelled',
-      stopped_at = COALESCE(r.stopped_at, pg_catalog.now()),
-      failure_kind = NULL,
-      lease_token = NULL,
-      lease_expires_at = NULL
-  WHERE r.fulfillment_id = _fulfillment_id;
+  -- 止めていない登録だけを cancelled で止める（借りの印も無効にして、途中の結果を書かせない。
+  -- すでに止まっている行の理由は変えない）。外への停止の印は 3b の決まりで付ける
+  PERFORM private.stop_fulfillment_registrations(_fulfillment_id, 'cancelled');
   PERFORM private.close_delivery_attention(_fulfillment_id);
 
   SELECT COALESCE(pg_catalog.sum(l.unshipped), 0)::integer INTO v_unshipped
@@ -614,16 +668,9 @@ BEGIN
   INSERT INTO public.order_fulfillment_events (fulfillment_id, tracking_version, status, happened_at, source)
   VALUES (_fulfillment_id, v_version, 'confirmed', v_now, 'tracking_edit');
 
-  -- 前の版の登録は全部 replaced にする（配達済みで止めた行も、届いた記録が消えるので replaced に付け替える）
-  UPDATE private.fulfillment_tracking_registrations AS r
-  SET state = 'stopped',
-      stop_reason = 'replaced',
-      stopped_at = COALESCE(r.stopped_at, v_now),
-      failure_kind = NULL,
-      lease_token = NULL,
-      lease_expires_at = NULL
-  WHERE r.fulfillment_id = _fulfillment_id
-    AND r.tracking_version < v_version;
+  -- 前の版の止めていない登録だけを replaced にする（配達済みなどですでに止まっている行の理由は変えない）。
+  -- 外への停止の印は 3b の決まりで付ける。新しい版の登録は、この後に作る
+  PERFORM private.stop_fulfillment_registrations(_fulfillment_id, 'replaced');
 
   IF COALESCE(v_enabled, false) THEN
     INSERT INTO private.fulfillment_tracking_registrations (fulfillment_id, tracking_version, carrier, tracking_number, expires_at)
@@ -1311,6 +1358,7 @@ $$;
 REVOKE ALL ON FUNCTION private.fulfillment_lines_json(uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.fulfillment_create_fingerprint(uuid, text, text, boolean, jsonb) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.close_delivery_attention(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.stop_fulfillment_registrations(uuid, text) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.delivery_tracking_backfill_targets() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.enqueue_delivery_email(uuid, integer, text, uuid) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION private.fulfillment_line_returnable(uuid) FROM PUBLIC, anon, authenticated, service_role;
@@ -1338,6 +1386,9 @@ GRANT EXECUTE ON FUNCTION public.list_order_delivery_summaries(uuid[]) TO servic
 GRANT EXECUTE ON FUNCTION public.get_order_delivery_detail(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.list_delivery_attention(integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.skip_order_email(uuid, uuid, text) TO service_role;
+
+-- 移行 A を当ててからこの移行を当てるまでの間に、古い作成の関数で作られた発送にも最初の出来事を補う（何度流しても同じ）。
+SELECT private.backfill_delivery_events();
 
 NOTIFY pgrst, 'reload schema';
 

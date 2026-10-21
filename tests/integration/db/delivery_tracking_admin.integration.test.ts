@@ -229,7 +229,8 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
       to_tracking_number: 'Corrected-456', tracking_version: 2, changed_by: target.actorId });
     expect(iso(updated.delivery_status_at)).toBe(iso(change.changed_at));
     const [oldRegistration, newRegistration] = await deliveryRegistrations(db(), target.fulfillmentId);
-    expect(oldRegistration).toMatchObject({ state: 'stopped', stop_reason: 'replaced' });
+    // 配達済みで止まっていた版は、直しの後も delivered のまま。外への停止の印も付かない
+    expect(oldRegistration).toMatchObject({ state: 'stopped', stop_reason: 'delivered', provider_stop_pending: false });
     expect(newRegistration).toMatchObject({ state: 'pending', tracking_version: 2, tracking_number: 'CORRECTED-456' });
     expect((await deliveryEvents(db(), target.fulfillmentId)).filter((row) => row.source === 'tracking_edit')).toMatchObject([
       { status: 'confirmed', tracking_version: 2 },
@@ -392,8 +393,6 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
       const result = (await markDeliveryDelivered(db(), manualOf(target, { deliveredOn: clock.two_days_ago }))).rows[0];
       const clampedNoonJst = iso(`${clock.two_days_ago}T${hour === '15:00:00' ? hour : '12:00:00'}+09:00`);
       expect(iso(result.delivered_at)).toBe(clampedNoonJst);
-      const sql = (await db().query(`select greatest($1::timestamptz,least(($2::date+time '12:00') at time zone 'Asia/Tokyo',now())) as expected`, [target.shippedAt, clock.two_days_ago])).rows[0];
-      expect(iso(result.delivered_at)).toBe(iso(sql.expected));
     }
     const today = await deliveryShipment(db(), { shippedAt: `${clock.today}T00:00:00+09:00` });
     const result = (await markDeliveryDelivered(db(), manualOf(today, { deliveredOn: clock.today }))).rows[0];
@@ -406,17 +405,8 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
   test('手の正午を発送と今で挟む', async () => { await expectClampedManualNoon('UTC'); });
   test.each(ZONES.slice(1))('JSTの日付と上下限はDB timezone=%sでも変わらない', async (zone) => { await expectClampedManualNoon(zone); });
 
-  test.each([
-    ['発送日の午前', '09:00:00', '2026-10-22T09:00:00+09:00', '2026-10-21T12:00:00+09:00'],
-    ['発送日の午後', '15:00:00', '2026-10-22T09:00:00+09:00', '2026-10-21T15:00:00+09:00'],
-    ['今日の午前', '08:00:00', '2026-10-21T09:00:00+09:00', '2026-10-21T09:00:00+09:00'],
-    ['今日の午後', '08:00:00', '2026-10-21T15:00:00+09:00', '2026-10-21T12:00:00+09:00'],
-  ])('手の正午の式を固定時計でも照合する: %s', async (_name, hour, now, expected) => {
-    // 実RPCの now() は変えられないため、午前/午後両方の式の境界は独立したSQL fixtureでも照合する。
-    const shippedAt = `2026-10-21T${hour}+09:00`;
-    const row = (await db().query(`select greatest($1::timestamptz,least('2026-10-21T12:00:00+09:00'::timestamptz,$2::timestamptz)) as at`, [shippedAt, now])).rows[0];
-    expect(iso(row.at)).toBe(iso(expected));
-  });
+  // 関数の now() は変えられないので、発送日の午前（正午が下限より後）と午後（発送した時刻が下限）は発送の時刻で、
+  // 今日（正午と今の小さい方）は DB の now() で、本物の関数の結果を JS の期待と照らす（上の expectClampedManualNoon）。
 
   test.each(ZONES)('未来日・発送日前・実在しない日付を断る（DB timezone=%s）', async (zone) => {
     await db().query("select set_config('TimeZone',$1,true)", [zone]);
@@ -529,6 +519,7 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     await insertDeliveryRegistration(db(), target.fulfillmentId, { state: 'registered', everRegistered: true });
     await insertDeliveryAttention(db(), target.fulfillmentId);
     const change = (await updateDeliveryTracking(db(), editOf(target, { notifyCustomer: false }))).rows[0];
+    const replacedBefore = (await deliveryRegistrations(db(), target.fulfillmentId))[0];
     await insertDeliveryRegistration(db(), target.fulfillmentId, { version: 2 });
     await insertDeliveryAttention(db(), target.fulfillmentId, 'tracking_stalled');
     for (const [index, kind] of DELIVERY_KINDS.entries()) {
@@ -539,13 +530,79 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     const eventsBefore = await deliveryEvents(db(), target.fulfillmentId);
     const result = (await db().query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [target.orderId, target.fulfillmentId, target.actorId])).rows[0];
     expect(result).toMatchObject({ outcome: 'cancelled', order_status: 'paid' });
-    for (const registration of await deliveryRegistrations(db(), target.fulfillmentId)) expect(registration).toMatchObject({ state: 'stopped', stop_reason: 'cancelled', lease_token: null, lease_expires_at: null });
+    // 直しで止めた版1は replaced のまま（取消で付け替えない）。取消で止めたのは、止めていなかった版2だけ
+    const [replaced, cancelled] = await deliveryRegistrations(db(), target.fulfillmentId);
+    expect(replaced).toEqual(replacedBefore);
+    expect(replaced).toMatchObject({ state: 'stopped', stop_reason: 'replaced', lease_token: null, lease_expires_at: null });
+    expect(cancelled).toMatchObject({ state: 'stopped', stop_reason: 'cancelled', lease_token: null, lease_expires_at: null, provider_stop_pending: false });
     for (const row of await attention(db(), target.fulfillmentId)) expect(row).toMatchObject({ resolution: 'auto', resolved_by: null });
     const queued = await emails(db(), target.fulfillmentId);
     expect(queued).toHaveLength(3);
     for (const row of queued) expect(row).toMatchObject({ status: 'skipped', last_error_code: 'fulfillment_cancelled' });
     expect(await deliveryEvents(db(), target.fulfillmentId)).toEqual(eventsBefore);
     expect((await db().query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [target.orderId, target.fulfillmentId, target.actorId])).rows[0].outcome).toBe('already_cancelled');
+  });
+
+  // 直し・取消が止めるのは、止めていない行だけ。外への停止の印は、一度でも登録できた行で、
+  // 同じ（配送業者, 番号）の止めていない行がほかの発送に無い時だけ立てる。
+  describe.each(['直し', '取消'] as const)('登録の止め方（%s）', (operation) => {
+    const reason = operation === '直し' ? 'replaced' : 'cancelled';
+    const stopBy = async (target: Awaited<ReturnType<typeof deliveryShipment>>) => {
+      if (operation === '直し') await updateDeliveryTracking(db(), editOf(target, { notifyCustomer: false }));
+      else await db().query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [target.orderId, target.fulfillmentId, target.actorId]);
+    };
+
+    test.each(['delivered', 'expired', 'disabled', 'provider_stopped'])('すでに%sで止まった行は理由も時刻も変えず、印を付けない', async (stopReason) => {
+      const target = await deliveryShipment(db());
+      await insertDeliveryRegistration(db(), target.fulfillmentId, { state: 'stopped', stopReason, everRegistered: true });
+      const before = await deliveryRegistrations(db(), target.fulfillmentId);
+      await stopBy(target);
+      const after = await deliveryRegistrations(db(), target.fulfillmentId);
+      expect(after).toEqual(before);
+      expect(after[0]).toMatchObject({ state: 'stopped', stop_reason: stopReason, provider_stop_pending: false });
+    });
+
+    test('登録済みの止めていない行は理由を付けて止め、外への停止の印を立てて借りの印を消す', async () => {
+      const target = await deliveryShipment(db());
+      await insertDeliveryRegistration(db(), target.fulfillmentId, { state: 'registered', everRegistered: true });
+      await db().query(`update private.fulfillment_tracking_registrations set lease_token=gen_random_uuid(),
+        lease_expires_at=now()+interval '5 minutes',next_run_at=now()+interval '6 hours' where fulfillment_id=$1`, [target.fulfillmentId]);
+      await stopBy(target);
+      const [row] = await deliveryRegistrations(db(), target.fulfillmentId);
+      expect(row).toMatchObject({ state: 'stopped', stop_reason: reason, provider_stop_pending: true, lease_token: null, lease_expires_at: null });
+      expect(iso(row.stopped_at)).toBe(iso(target.clock.now));
+      expect(iso(row.next_run_at)).toBe(iso(target.clock.now));
+    });
+
+    test('同じ配送業者で大文字小文字だけ違う番号の止めていない行がほかの発送にあれば、印を立てない', async () => {
+      const target = await deliveryShipment(db(), { trackingNumber: 'SHARED-ab-1' });
+      const other = await deliveryShipment(db(), { trackingNumber: 'shared-AB-1' });
+      for (const shipment of [target, other]) await insertDeliveryRegistration(db(), shipment.fulfillmentId, { state: 'registered', everRegistered: true });
+      await stopBy(target);
+      expect((await deliveryRegistrations(db(), target.fulfillmentId))[0]).toMatchObject({ state: 'stopped', stop_reason: reason, provider_stop_pending: false });
+      expect((await deliveryRegistrations(db(), other.fulfillmentId))[0]).toMatchObject({ state: 'registered', provider_stop_pending: false });
+    });
+
+    test.each([
+      ['ほかの発送の行がすでに止まっている', { state: 'stopped' as const, stopReason: 'delivered', carrier: 'yamato' as const }],
+      ['ほかの発送の行が配送業者の違う同じ番号', { state: 'registered' as const, carrier: 'sagawa' as const }],
+    ])('%sなら印を立てる', async (_name, shape) => {
+      const target = await deliveryShipment(db(), { trackingNumber: 'SHARED-ab-2' });
+      const other = await deliveryShipment(db(), { trackingNumber: 'shared-AB-2', carrier: shape.carrier });
+      await insertDeliveryRegistration(db(), target.fulfillmentId, { state: 'registered', everRegistered: true });
+      await insertDeliveryRegistration(db(), other.fulfillmentId, { state: shape.state, stopReason: 'stopReason' in shape ? shape.stopReason : undefined, everRegistered: true });
+      await stopBy(target);
+      expect((await deliveryRegistrations(db(), target.fulfillmentId))[0]).toMatchObject({ state: 'stopped', stop_reason: reason, provider_stop_pending: true });
+    });
+
+    test('一度も登録できていない行は止めるが、印を立てない', async () => {
+      const target = await deliveryShipment(db());
+      await insertDeliveryRegistration(db(), target.fulfillmentId, { state: 'pending' });
+      await stopBy(target);
+      expect((await deliveryRegistrations(db(), target.fulfillmentId))[0]).toMatchObject({
+        state: 'stopped', stop_reason: reason, provider_stop_pending: false, ever_registered: false,
+      });
+    });
   });
 
   test('要対応の手の解決の再送は別の新しいattentionを閉じない', async () => {

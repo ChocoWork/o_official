@@ -175,6 +175,9 @@ export async function waitForDeliveryLock(observer: PgClient, waitingPid: number
  * 設定（オフ・更新者と時刻は空）、登録の表（空）、配送3種類のメール（無し）は、ほかのファイルの試験が
  * 「最初は…」と全体で確かめる。注文・発送・出来事は消せない記録なので残す（ほかの試験も確定した注文を残している）。
  * 登録の表は削除を拒むトリガーを、この取引の間だけ外す（ownerの接続。本番では使わない）。
+ * 前提: DB 結合の試験は --runInBand で流す（並列だと、ほかのファイルの途中の行まで消す）。
+ * 配送の行（登録・配送メール・設定の配送3列）を commit する試験を足すファイルは、自分で後始末をすること。
+ * 設定は、その試験の前の値でなく「最初の状態」（オフ・更新者と時刻は空）に戻す。
  */
 export async function restoreCommittedDeliveryState(client: PgClient) {
   await client.query('begin');
@@ -204,10 +207,11 @@ export async function withDeliveryConnections<T>(action: (first: PgClient, secon
       (await second.query('select pg_backend_pid() as pid')).rows[0].pid as number];
     return await action(first, second, pids);
   } finally {
+    // 先に鍵を持つ接続を戻し、待っていた SQL が終わってからもう片方を閉じる。
+    // rollback が投げても共有の状態の後始末は必ず通し、最初に起きた誤りを隠さない。
     try {
-      // 先に鍵を持つ接続を戻し、待っていた SQL が終わってからもう片方を閉じる。
-      await first.query('rollback');
-      if (second) await second.query('rollback');
+      await first.query('rollback').catch(() => undefined);
+      if (second) await second.query('rollback').catch(() => undefined);
       await restoreCommittedDeliveryState(first);
     } finally {
       await first.end();

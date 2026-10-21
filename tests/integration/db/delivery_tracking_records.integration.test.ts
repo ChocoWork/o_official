@@ -322,6 +322,26 @@ describeLocalDb('integration: 配送の記録と守り（移行 A）', (db) => {
     expect((await sqlError(db(), "update public.order_fulfillments set delivery_status = 'in_transit', delivered_at = null where id = $1", [active.fulfillmentId])).code).toBe('55000');
   });
 
+  test('版が増えない直し・手や追跡で版を変える更新・印なしの取消と配送列の同時更新はownerも拒む', async () => {
+    const { fulfillmentId } = await createShipment(db());
+    // 直しの印でも、版を1つ増やさない更新は拒む
+    await db().query("select set_config('app.fulfillment_change', 'tracking_edit', true)");
+    expect((await sqlError(db(), "update public.order_fulfillments set tracking_number = 'EDIT-123' where id = $1", [fulfillmentId])).code).toBe('55000');
+    expect((await sqlError(db(), "update public.order_fulfillments set tracking_number = 'EDIT-123', tracking_version = 1 where id = $1", [fulfillmentId])).code).toBe('55000');
+    // 手・追跡の印は、版を変えられない
+    for (const operation of ['manual', 'tracking']) {
+      await db().query("select set_config('app.fulfillment_change', $1, true)", [operation]);
+      expect((await sqlError(db(), "update public.order_fulfillments set tracking_version = 2 where id = $1", [fulfillmentId])).code).toBe('55000');
+      expect((await sqlError(db(), "update public.order_fulfillments set tracking_version = 2, delivery_status = 'in_transit', delivery_status_at = now() where id = $1", [fulfillmentId])).code).toBe('55000');
+    }
+    // 印が無ければ、取消の2列と配送の列を同じ更新で変えることもできない
+    await db().query("select set_config('app.fulfillment_change', '', true)");
+    expect((await sqlError(db(),
+      "update public.order_fulfillments set cancelled_at = now(), cancelled_by = gen_random_uuid(), delivery_status = 'in_transit' where id = $1", [fulfillmentId])).code).toBe('55000');
+    const row = (await db().query('select tracking_version, tracking_number, delivery_status, cancelled_at from public.order_fulfillments where id = $1', [fulfillmentId])).rows[0];
+    expect(row).toEqual({ tracking_version: 1, tracking_number: 'DELIVERY-123', delivery_status: 'confirmed', cancelled_at: null });
+  });
+
   test('作成時の指紋はlegacyのNULLをtracking_editで一度だけ補え、その後は変更もNULL化もできない', async () => {
     const { fulfillmentId } = await createShipment(db());
     await db().query("select set_config('app.fulfillment_change', 'manual', true)");

@@ -2378,11 +2378,8 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
       });
       await db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)', [target.fulfillmentId, order.orderItemId]);
       const row = (await shipmentLinesOf(db(), order.orderId))[0];
+      // 関数は日付だけを返し、日の終わりは使う側が日本時間で比べる。ここでは関数の日付が、届いた日（日本時間 10/11）＋7日であることを見る。
       expect(row.deadline_date).toBe('2026-10-18');
-      const boundary = (await db().query(`select
-        ('2026-10-18T14:59:59Z'::timestamptz at time zone 'Asia/Tokyo')::date <= $1::date as at_end,
-        ('2026-10-18T15:00:00Z'::timestamptz at time zone 'Asia/Tokyo')::date <= $1::date as next_day`, [row.deadline_date])).rows[0];
-      expect(boundary).toEqual({ at_end: true, next_day: false });
     });
   });
 
