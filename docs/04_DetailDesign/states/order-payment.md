@@ -376,3 +376,23 @@ stateDiagram-v2
 _actor_can_refund = false でも、source = 'customer_request' AND return_method <> 'not_required' の時だけ今返金を許す。額・送料・交換の上書きは許さない。DB の計算額を E-2 の返金の記録として作り、Stripe の重複防止キーは order-refund-{記録の番号} のまま。確かめ中の返金があれば受け取りごと取り消す。相談なら受け取りを残し、記録の選択が consult の時だけ店への返金待ちを予定する。今返金・0円・返金の品0点では予定しない。
 
 E-3 段2の移行 D・E・F は、2026-10-21 に本番へ適用済み（20261020144439・20261020144842・20261020150415）。Stripe の実際の返金、本番の Storage・配達は開店前に別途確認する。
+
+## 配送の状態と処理（E-4 / FREQ-488〜497）
+
+[配送の詳細設計](../../superpowers/specs/2026-10-21-delivery-status-design.md)・[実装計画](../../superpowers/plans/2026-10-21-delivery-status.md)を参照。以下は実装後の契約であり、既存の決定の本文は履歴として残す。
+
+配送は発送ごとの独立属性であり、注文の `orders.status` / `order_status` の列挙は増やさない。Stripeの入金、Webhookキューの処理、メールの配達は荷物の配達と別の状態。
+
+| 対象 | 状態・遷移 |
+| --- | --- |
+| 配送の8状態 | `confirmed`（受付済み）・`in_transit`（輸送中）・`out_for_delivery`（配達中）・`attempted_delivery`（不在で持ち帰り）・`ready_for_pickup`（受け取り待ち）・`delivered`（配達済み）・`delayed`（遅れ）・`failure`（問題あり） |
+| 出どころ | `shipment`・`tracking`・`manual`・`tracking_edit`。状況と時刻だけを追記、場所・配送会社の文は保存しない |
+| 番号の直し | 版+1、confirmed、届いた時刻NULL、旧版の未停止登録だけ停止。新版の期限は直した時刻から30日。同値は拒否、再送は元の結果 |
+| 手の配達済み | manualを追記してdelivered、登録停止と要対応の自動閉鎖。選べる日は発送の日〜今日、JST正午を発送時刻と今で挟む |
+| 読み直し | 同版のtrackingの出来事だけで時刻比較。未知は現状を保持。未来は読取時刻で頭打ちし、届いた時刻は発送時刻を下限にする。delivered後は同版を動かさず停止 |
+| 登録 | pending → registered／failed／stopped。失敗はinvalid_number・repeated_error、停止理由はdelivered・expired・replaced・cancelled・provider_stopped・disabled |
+| 設定 | 初期オフ。オンの対象は現版・期限内・取消なし・未配達。オフはdisabledにして要対応をautoで閉じ記録を保持、外へstopしない。再オンは期限内disabledを同じ行で再開 |
+
+`deriveOrderProgress` は、生産中・準備中の品がなく発送数が1以上、取消でない `activeCount>0` で `deliveredCount===activeCount` の場合だけ注文の表示を「配達済み」にする。一部配達済みは「配送中」。DB状態のfilterは維持する。
+
+返品は `delivered_at` があればそのJST日付を起点とし、NULLなら発送のJST日付＋目安の日数。品ごと／最後の品・日数・日の終わり・無制限・既存の返品と申し込みは変えない。番号の直しで届いた時刻を消すと、未作成分の期限判定は目安に戻る。

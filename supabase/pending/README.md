@@ -45,3 +45,13 @@ npx supabase migration new schedule_return_photo_purge
 `npx supabase db reset` ではこのフォルダは流れない。Webhookのローカル動作確認ではキューmigrationを先に適用し、DBから到達できるアプリURLと`cron_secret`をVaultに用意してからworkerジョブを登録する。ジョブを登録しなくても、受信ルートは保存の後に`after()`でworkerを1回動かす（`src/app/api/webhook/stripe/route.ts`）ので、受信したイベントは通常その場で処理される。その場の実行が失敗したイベントだけが`queued`・`failed`・`processing`のまま残り、再試行は、別のイベントを受信してその場の実行が走るか、ジョブが登録されるまで起きない。結合テスト`tests/integration/db/stripe_webhook_queue.integration.test.ts`はキューmigrationをローカルDBに適用し、ジョブ登録だけはトランザクションをロールバックして検証する。未入金注文の掃除ジョブは`tests/integration/db/expire_pending_orders_job.integration.test.ts`で、照合の登録は`tests/integration/db/stripe_reconcile_job.integration.test.ts`で検証する。
 
 Webhook受信ルートは`enqueue_stripe_webhook_event`が無ければ5xxになる。キューRPC、worker、Cronジョブを先に準備・確認してから受信ルートを公開する。失敗・滞留は`stripe_webhook_events`の`processing_status`（`dead`は9回目の試行も失敗して退避したもの）、`attempt_count`、`next_attempt_at`、`received_at`、`last_error`（原因の記号）と、`ops_job_heartbeats`（定期処理ごとの最後の成功）、`cron.job_run_details`、`net._http_response`を確認する。調べ方は[手順書](../../docs/06_Operations/webhook-queue-operations.md)。
+
+## 配送の追跡の公開準備（E-4 / FREQ-496）
+
+[配送の詳細設計](../../docs/superpowers/specs/2026-10-21-delivery-status-design.md)・[実装計画](../../docs/superpowers/plans/2026-10-21-delivery-status.md)を参照。以下は実装後の契約であり、既存の決定の本文は履歴として残す。
+
+配送の新しいcron登録は不要。既存の毎分process-stripe-webhooksに配送処理を同居させ、メール送出の後・運用点検の前にmin(8秒,残り)、3秒未満はskipでもdelivery_tracking心拍を残す。Stripe・メールの予算は維持する。
+
+DBの3移行は `20261022100000_delivery_tracking_records.sql` → `20261022100100_delivery_tracking_admin.sql` → `20261022100200_delivery_tracking_sync.sql`（migrations配下）。初期オフのため17TRACKの設定なしで運用でき、オンにする前だけ口座・鍵・受け口・3社の実番号・gettrackinfoの消費・署名・retrack・購入・privacy・佐川の復旧をユーザーが確認する。controllerは値を受け取らず手順と安全な結果だけ用意する。
+
+心拍、5種類の運用通知、手元の作り物（127.0.0.1:4017）とE2Eの見張り、開店前の担当表は [Webhookと定期処理の運用手順](../../docs/06_Operations/webhook-queue-operations.md)の配送の節を参照。この文書更新ではDB適用やジョブ登録を行わない。

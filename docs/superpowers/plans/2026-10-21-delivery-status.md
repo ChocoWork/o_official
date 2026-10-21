@@ -404,6 +404,12 @@ worker は登録/読み直しの間隔を DB に任せ、外への HTTP 直前�
 
 `OrderAttention` に `deliveries?: DeliveryAttentionItem[]`・`counts.deliveries?: number`、管理注文の行に `deliveryAttention?: 'failure'|'attempted_delivery'|'untrackable'|null`。窓口は必ず返す。任意なのは Task 10/13 前の見本とコミット時の型を保つため。
 
+実装後の追加型（Task 10・12のレビューによる記録）:
+
+- `OrderHistoryResponse.deliveryTrackingEnabled?: boolean`: 管理履歴の追跡オン・オフ。無い古い見本はオフとして扱う。
+- `DeliveryDialogProps.onUncertain?: () => void`: 結果不明を一度でも経た後、履歴を読み直すための通知。
+- `DeliveryRegistration.everRegistered: boolean`: 一度でも登録できたか。お客様の状況はregistered、またはstoppedかつtrueの時だけ返す。
+
 ### C-3 窓口
 
 書く管理窓口は未知キーを拒否し、uuid・carrier・trim後 `^[0-9A-Za-z-]{1,64}$`・boolean・実在する日付を検査。認証と CSRF の前に DB を読まない。rate limit は送信元と `subject:authz.userId` の両方。

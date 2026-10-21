@@ -4,7 +4,7 @@
 
 ## 概要
 
-現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。124ファイル、明示exportされた163組（E2E 用の `/api/e2e/server-info` を除く123ファイル・162組を本書で記す）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
+現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。128ファイル、明示exportされた167組（E2E 用の `/api/e2e/server-info` を除く127ファイル・166組を本書で記す）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
 
 | 読み方 | 内容 |
 | --- | --- |
@@ -249,7 +249,7 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | `GET /api/admin/orders` | RBAC `admin.orders.read` | Query O（querySchema。下記） | 200 `{data:管理注文[],pagination:{page,pageSize,total,totalPages}}` | 400 query; 500 DB/例外 | Stripe状態/返金残額/操作可否/レビュー要否を付加。商品の行ごとの数（service_role で読む）から、注文の言葉（status）・DB の状態（orderStatus）・言葉の記号（progressKey）・一部発送済みか・仕上がりを記録できるかを返す（グループ E-1）。返金のボタンの判定（canRefund）は Stripe を読まず、受け取った額と返金の記録（list_order_refund_summaries）で決め、支払いの言葉（paymentStatusKey・paymentStatus）・返金の手続き中（refundPending）・返金の失敗（refundFailed）・返金済みの額（refundedAmountLabel）・取消の種類（cancelKind: unpaid・paid・null）を返す。canCancel は未入金の今の条件、または支払い済みで1つも発送していなくて返せる額がある注文（グループ E-2）。返品（グループ E-3）: 各注文に returnSummary（displayStatus・marks・nextAction・hasReturnable・refundWaitingReturns・requestedReturns。返品の無い注文は displayStatus が null）、各商品に lineKind（order・exchange）を足し、答えに returnAttention（`{requested,refundWaiting}`。返品がある注文の数で、今のページの数ではなく全体の数）を足す。問い `return=requested&#124;in_progress&#124;refund_waiting&#124;returned` で絞る（新しい注文から500件まで。ほかの絞り込みと「かつ」。4つ以外は400）。itemCount と商品数は交換の品の行を数えない [実装](../../../src/app/api/admin/orders/route.ts) |
 | `GET /api/admin/orders/[id]/history` | RBAC `admin.orders.read` | Path UUID | 200 `{order:{id,orderNumber,statusLabel,recipient},sendPaused,entries}`。本文は返さない | 400 id; 404 order; 500 DB/例外 | 受付・状態の変化（返金を含む）・発送・発送の取消・仕上がり・仕上がりの取消（グループ E-1）・返金（1件ごと）・返金の失敗の確保し直し（グループ E-2）・メールを新しい順、送信の一時停止、no-store。発送のメールは何回目の発送かを付ける。見出しの statusLabel は DB の状態の言葉（決済完了・発送済みなど）のまま。返品の行（type は return。返品を作った・返品の受け取り（細目つき）・「届かない」として返品を終えた・検品を終えた・返品を取り消した・返品を開き直した・交換の品を足した・手数料の受け取りを記録した・手数料をいただかないことにした・支払いを待たずに送れるようにした・返金しないで終えた。題 title と細目 details は窓口が組み立てる。した人 actorEmail は、作った・受け取り・検品・届かないで終えた・開き直した・返金しないで終えたは返品の一覧から、取り消した・手数料の受け取り・いただかないことにした・支払いを待たずに送れるようにしたは返品の記録から、交換の品を足したは同じ時刻の受け取りをした人から出し、分からない行は null）と、返金の行の sourceLabel「返品（{番号}）」を足す。手数料の行の額は決着した額（`fee_settled_amount`）で、言葉は最後の `fee_waived` で決まる（決着の記録は最後の1回分だけなので、次の手数料が付いている間は前の決着の行は出ない。限界は [管理画面の詳細設計](../../04_DetailDesign/pages/16_admin.md) の「限界」）（グループ E-3） [実装](../../../src/app/api/admin/orders/%5Bid%5D/history/route.ts) |
 | `GET /api/admin/orders/[id]/emails/[emailId]` | RBAC `admin.orders.read` | Path: id/emailIdともUUID | 200 `{status:"available",subject,bodyText,sentAt}` 又は `{status:"erased",sentAt}` | 400 id; 404 対象なし/未送信; 500 DB/例外 | 送信済みだけ。45日を過ぎた本文を毎日の片付けで消した後はerased、no-store [実装](../../../src/app/api/admin/orders/%5Bid%5D/emails/%5BemailId%5D/route.ts) |
-| `POST /api/admin/orders/[id]/emails/resend` | RBAC `admin.orders.manage` + CSRF C、送信元・管理者ごと10分に30回 | Path UUID、JSON `{kind,fulfillmentId?}`（注文のメール16種類。発送のメールは発送の番号 fulfillmentId が要る。返金のお知らせ refund と返品のメール4種類（グループ E-3）は再送できず、DB の言葉 RESEND_NOT_ALLOWED を窓口が409にする。申し込みのメール6種類（返品の申し込み3つ・キャンセルの申し込み3つ。グループ E-3 段2）も再送できず、DB を呼ぶ前に窓口が同じく409にする。再送できるのは paid・awaiting_payment・payment_expired・canceled・shipped の5種類だけ。取消のメールの再送は、最後に送った、または送るのをあきらめた（`sent` か `dead`）取消の行のうち返金が失敗・エラーでない行（返金の番号が無い行を含む）の書き分けと返金の番号を写し、写せる行が無ければ同じく RESEND_NOT_ALLOWED の409） | 200 `{success:true,emailId}` | 400 id/body（発送のメールに fulfillmentId が無い・発送のメール以外に fulfillmentId がある、を含む）; 404 order; 409 送信待ちの再送あり/状態不適合/再送元なし/発送がその注文の物でない・取り消し済み; 429 回数; 503 制限DB障害; 500 DB/例外 | 手の再送の行を足し、監査、応答後after()でworker [実装](../../../src/app/api/admin/orders/%5Bid%5D/emails/resend/route.ts) |
+| `POST /api/admin/orders/[id]/emails/resend` | RBAC `admin.orders.manage` + CSRF C、送信元・管理者ごと10分に30回 | Path UUID、JSON `{kind,fulfillmentId?}`（注文のメール19種類。発送のメールは発送の番号 fulfillmentId が要る。返金のお知らせ refund と返品のメール4種類（グループ E-3）は再送できず、DB の言葉 RESEND_NOT_ALLOWED を窓口が409にする。申し込みのメール6種類（返品の申し込み3つ・キャンセルの申し込み3つ。グループ E-3 段2）も再送できず、DB を呼ぶ前に窓口が同じく409にする。配送の3種類（out_for_delivery・delivered・shipping_update。E-4）もDBを呼ぶ前に409で断る。再送できるのは paid・awaiting_payment・payment_expired・canceled・shipped の5種類だけ。取消のメールの再送は、最後に送った、または送るのをあきらめた（`sent` か `dead`）取消の行のうち返金が失敗・エラーでない行（返金の番号が無い行を含む）の書き分けと返金の番号を写し、写せる行が無ければ同じく RESEND_NOT_ALLOWED の409） | 200 `{success:true,emailId}` | 400 id/body（発送のメールに fulfillmentId が無い・発送のメール以外に fulfillmentId がある、を含む）; 404 order; 409 送信待ちの再送あり/状態不適合/再送元なし/発送がその注文の物でない・取り消し済み; 429 回数; 503 制限DB障害; 500 DB/例外 | 手の再送の行を足し、監査、応答後after()でworker [実装](../../../src/app/api/admin/orders/%5Bid%5D/emails/resend/route.ts) |
 | `GET /api/admin/orders/[id]/refund` | RBAC `admin.orders.refund` | Path UUID | 200 `RefundMaterials`（`{order:{id,orderNumber,status,paymentMethod,totalAmount,shippingAmount,discountAmount,paidAmount,succeededAmount,openAmount,refundableAmount,refundedShipping,refundableShipping,shippedTotal,unshippedTotal},lines,awaitingRefund}`）。linesは商品ごとの `{orderItemId,name,color,size,fulfillmentType,itemPrice,quantity,lineTotal,shipped,unshipped,refundedBeforeShipment,refundedAfterShipment,shippedRefundable,restockable,lineDiscount,refundedUnits}`、awaitingRefundは返事待ちの返金 `{id,amount,createdAt}` 又は null。Cache-Control: no-store | 400 id; 404 order; 500 DB/例外 | 返金の画面の材料。service_role で、注文の金額・返せる額・返せる送料・商品ごとの数と割り振った割引・返事待ちの返金（`load_order_refund_materials`）と、支払い方法（`checkout_drafts.payment_method`）を読む。状態変更はしない（グループ E-2）。lines に exchangePaidAmount（交換の品の行だけ数、ほかは null）を足し、shippedRefundable は、返品中・返金待ち・交換にした品を除いた数になる（お返しした品は除かない）（グループ E-3） [実装](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) |
 | `POST /api/admin/orders/[id]/refund` | RBAC `admin.orders.refund` + CSRF C、送信元・管理者ごと10分に30回 | Path UUID、JSON O-refund（下記） | 200 `{refundId,status:"pending"&#124;"succeeded",amount,replayed}` | 400 id/body; 404 order; 409 DBの断り（返せる額・送料・数の超過、返事待ちの返金あり、全額なのに未発送が選ばれていない、中身の違う同じ番号 など）; 422 `{error,code:"stripe_rejected",refundId}`（Stripe が受け付けず、記録をエラーにした）; 502 `{error,code:"unknown_outcome",refundId}`（答えが分からない）; 429 回数; 503 制限DB障害; 500 `{error,code:"failed"}` | 返金の記録を「返事待ち」で作ってから Stripe に頼み（重複防止キー `order-refund-{記録の番号}`、印 order_id・refund_id と実行した人）、結果を1回の処理で書く（在庫・メールの予定・要対応・注文の額と状態）。監査 `admin.orders.refund.create`（記録の番号・額・数・道・状態だけ）、応答の後に after() で worker。同じ二重防止の番号の送り直しは前の記録（`replayed:true`）。コンビニ払いの返金だけ、注文の連絡先のメールを Stripe の `instructions_email` に渡す（監査とログには入れない）（グループ E-2。R-03） [実装](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) |
 | `POST /api/admin/orders/[id]/refund/confirm` | RBAC `admin.orders.refund` + CSRF C、送信元・管理者ごと10分に30回（返金の窓口と同じ数に数える） | Path UUID、JSON `{refundId:UUID}` | 200 `{refundId,status:"pending"&#124;"succeeded",amount,replayed}` | 400 id/body; 404 order（記録がその注文の物でない時を含む）; 409 DBの断り; 422 `{error,code:"stripe_rejected",refundId}`; 502 `{error,code:"unknown_outcome",refundId}`; 429 回数; 503 制限DB障害; 500 `{error,code:"failed"}` | 返事待ちの記録を、記録の番号で確かめ直す（画面を開き直した時の「もう一度確かめる」）。Stripe には最初と同じ中身（額・理由・印・コンビニ払いの案内メールの有無）と同じ重複防止キーで頼み直し（支払いの種類が読めない時は Stripe を呼ばず、答えが分からない扱いにする）、作ってから23時間を超えた記録は頼み直さず（Stripe が重複防止キーを24時間以上で消してよいため、時計のずれの余裕を置く）、印で探す。監査 `admin.orders.refund.confirm`（グループ E-2） [実装](../../../src/app/api/admin/orders/%5Bid%5D/refund/confirm/route.ts) |
@@ -767,3 +767,49 @@ export type CustomerRequestedCancel = { cancelRequestId: string; status: 'reques
 監査の action は admin.orders.return.approve・admin.orders.return.decline・admin.orders.cancel_request.decline・admin.orders.cancel_request.close・admin.orders.cancel_request.resolve・account.orders.return.request・account.orders.cancel_request.create・orders.return_photos.purge。番号・数・状態・記号だけを記録し、写真の送り先の窓口は監査を書かない。メール・氏名・住所・詳しい内容・メッセージ・写真の場所と署名つきのリンクを記録しない。
 
 検証: お客様の窓口は本物の手元の DB・Storage を通す E2E。管理画面は窓口を差し替える E2E、窓口の単体、DB 結合と PostgREST の照合を分ける。Stripe の実際の返金・本番 Storage・本番の配達は別途開店前に確認する。
+
+## 配送の状況（E-4 / FREQ-488〜497）
+
+[配送の詳細設計](../../superpowers/specs/2026-10-21-delivery-status-design.md)・[実装計画](../../superpowers/plans/2026-10-21-delivery-status.md)を参照。以下は実装後の契約であり、既存の決定の本文は履歴として残す。
+
+C-2〜C-5を実装済み。3管理POSTと1webhookを追加し、既存の設定・履歴・要対応・顧客の応答を拡張した。注文のDB状態は増やさない。
+
+| method/path | 権限と回数（送信元・管理者のそれぞれ） | 入力 → 応答の data |
+| --- | --- | --- |
+| POST `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/tracking` | `admin.orders.manage` → CSRF → IP → actor、`admin:orders:fulfillment-tracking` 60回/600秒 | `{requestKey,carrier,trackingNumber,notifyCustomer}` → `{trackingChangeId,trackingVersion,replayed}` |
+| POST `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/delivered` | 同じ順、`admin:orders:fulfillment-delivered` 30回/600秒 | `{requestKey,deliveredOn:'YYYY-MM-DD',notifyCustomer}` → `{eventId,deliveredAt,replayed}` |
+| POST `/api/admin/order-attention/deliveries/[attentionId]/resolve` | 同じ順、`admin:orders:delivery-resolve` 60回/600秒 | `{}` → `{outcome:'resolved' または 'already_resolved'}` |
+| POST `/api/webhook/17track` | ログイン・CSRFなし。本文の署名で認証 | objectまたは配列 → `{received:true}`（dataで包まない） |
+
+管理POSTは未知のキーを拒否し、UUID・業者・boolean・trim後の番号 `^[0-9A-Za-z-]{1,64}$`・実在日付を検証する。認可とCSRFの前にDBを読まない。同じrequestKeyと入力は元の結果を返し、異なる入力は409。発送作成の再送でも直した番号を戻さない。成功後はメールworker、番号の直しでは配送workerも `after()` で起動する。
+
+| 既存窓口 | E-4の追加契約 |
+| --- | --- |
+| GET `/api/admin/orders/[id]/history` | `admin.orders.read`。発送行に `delivery`、`delivery_event`・`tracking_change`、`deliveryTrackingEnabled?: boolean` を返す。`Cache-Control: no-store` |
+| GET `/api/admin/orders` | `deliveryAttention` は `failure` → `attempted_delivery` → `untrackable` の優先順。DB状態の絞り込みは維持 |
+| GET `/api/admin/order-attention` | `admin.orders.read`。`deliveries:DeliveryAttentionItem[]` と `counts.deliveries:number`。横の印と上の帯の合計にも配送を加える |
+| GET・PUT `/api/admin/settings/shop` | `admin.settings.manage`（店長のみ）。PUTはCSRF・IP・actor、既存 `admin:settings:shop-update` 30回/600秒。既存2boolean `autoRefundCancelledOrderPayment`・`autoCancelAmountMismatch` は必須、`returns` と `deliveryTracking?:{enabled:boolean}` は任意。最上位も未知のキーを拒否 |
+| 設定の応答 | `deliveryTracking:{enabled,updatedAt,updatedByEmail,keyConfigured,backfillCount}`。鍵の値は返さず有無のみ。`backfillCount` はGET時点の正確な対象数。PUTで配送を渡した時だけ `data.backfilledCount:number`（実際の件数）。GET/PUTはno-store |
+| GET `/api/orders/[id]` | 本人以外は既存の404 `{error:'Order not found'}`。取消済み発送を除き各shipmentに `deliveredAt:string または null`。追跡オン・鍵あり・現版の `registered` または `stopped` かつ `everRegistered=true` の時だけ `delivery:{status,statusAt,events:[{status,happenedAt}]}`。条件外はキー自体を返さない |
+| GET `/api/orders` | `progress` に `delivered` を選べる。発送の集計は取消済みを除く。管理者名・providerの細かい状況・登録状態を顧客へ返さない |
+
+設定ONの鍵確認は返品・既存トグルの保存より前。保存は返品 → 既存トグル → 配送の別取引であり、部分保存の監査を維持する。画面は保存の直前に設定を読み直す。失敗なら送らず、鍵が消えた場合は未設定表示に戻す。初期オフでは外部通信なし。設定住所はhttpsまたは手元のhttp（127.0.0.1・localhost・[::1]）だけで、それ以外は鍵なしと同じ扱い。
+
+17TRACKの受付は鍵なし503 → 本文上限1MiB（1048576 bytes）超過413 → `sign` 不一致401 → UTF-8/JSON/形の不正400 → オフ200／設定・合図のDB失敗500 → 200とafter()。`sign` は本文の生バイト＋`/`＋鍵のSHA-256の16進を時間差の出ない方法で比較する。署名が合っても状況を直接保存せず、`gettrackinfo` の読み直しの合図だけを残す。アプリのIP制限は足さない。200以外ならproviderが10分・30分・60分後に再送する。署名不正が10分に5件で1日1回運用通知。鍵・署名・本文・場所はログに出さない。
+
+| 記号 | HTTP | 文言 |
+| --- | --- | --- |
+| `ORDER_NOT_FOUND` | 404 | 注文が見つかりません。 |
+| `FULFILLMENT_NOT_FOUND` | 404 | 発送の記録が見つかりません。 |
+| `DELIVERY_ARGUMENT_INVALID` | 400 | 入力を確かめてください。 |
+| `DELIVERY_REQUEST_MISMATCH` | 409 | 操作の内容が変わりました。画面を開き直してください。 |
+| `DELIVERY_FULFILLMENT_CANCELLED` | 409 | 取り消した発送は変更できません。 |
+| `DELIVERY_TRACKING_UNCHANGED` | 409 | 配送業者か伝票番号を直してください。 |
+| `DELIVERY_ALREADY_DELIVERED` | 409 | すでに配達済みです。履歴を読み直してください。 |
+| `DELIVERY_DATE_INVALID` | 400 | 届いた日は、発送の日から今日までの日を選んでください。 |
+| `DELIVERY_TRACKING_KEY_MISSING` | 409 | 17TRACK の鍵を設定してください。 |
+| `DELIVERY_ATTENTION_NOT_FOUND` | 404 | 配送の要対応が見つかりません。 |
+
+管理の未知の失敗は500「配送の記録を保存できませんでした。時間をおいて、もう一度お試しください。」、読取は500「配送の記録を読み込めませんでした。」。既存認証・CSRF・429は維持し、生のDB例外を返さない。監査actionは `admin.orders.fulfillment.tracking_update`・`admin.orders.fulfillment.delivered`・`admin.orders.delivery_attention.resolve`。番号の直しは発送ID・版・業者・番号・notify・replayed、手の配達済みは発送ID・日付・replayed、対応済みはattentionId・outcomeを記録し、氏名・住所・連絡先は含めない。
+
+メールは19種類。`out_for_delivery`・`delivered`・`shipping_update` は `variant=null`、再送不可。顧客向けのメールと、接続の異常を `SHOP_ALERT_EMAIL` に送る運用通知は別系統。

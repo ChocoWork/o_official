@@ -487,3 +487,39 @@ order by kind, status, last_error_code;
 ```
 
 宛先・本文・署名つきリンクは照会結果にも報告にも出さない。Mailpit の確認は手元の到達の証拠で、本番の Resend の配達の証拠ではない。開店前の2節の確認で種類・履歴・送り先の役割を確認する。
+
+## 11. 配送のメール（E-4 / FREQ-492）
+
+[配送の詳細設計](../superpowers/specs/2026-10-21-delivery-status-design.md)・[実装計画](../superpowers/plans/2026-10-21-delivery-status.md)を参照。以下は実装後の契約であり、既存の決定の本文は履歴として残す。
+
+kindの正は19種類（16→19）: `paid`・`awaiting_payment`・`payment_expired`・`canceled`・`shipped`・`refund`・`return_accepted`・`return_received`・`return_sent_back`・`return_refund_pending_shop`・`return_requested`・`return_declined`・`return_request_shop`・`cancel_request_received`・`cancel_request_declined`・`cancel_request_shop`・`out_for_delivery`・`delivered`・`shipping_update`。
+
+| 種類・履歴の名前 | 件名 | 予定に入れる条件 |
+| --- | --- | --- |
+| `out_for_delivery`・配達中のお知らせ | 【Le Fil des Heures】商品を配達中です（{注文番号}） | オンの追跡結果が配達中で、発送notify_customerがオン |
+| `delivered`・配達済みのお知らせ | 【Le Fil des Heures】商品をお届けしました（{注文番号}） | 手または追跡で配達済み。手は発送と操作の両notifyがオン、追跡は発送notifyがオン |
+| `shipping_update`・発送の更新 | 【Le Fil des Heures】発送の情報を更新しました（{注文番号}） | 番号/業者の直しのnotifyがオン。追跡オフでも送る |
+
+3種類ともvariantはNULL、再送不可。窓口がDBより先に409「今の注文の状態では、このメールは再送できません。」で断り、履歴も再送ボタンを出さない。配送の誤りは先に番号や届いた日を直す。配達中・配達済みは（発送・tracking_version・kind）、更新はtracking_change_idで1通。次の版は別の通知として扱う。
+
+旧版の配達中/配達済み・取り消した発送・配達済み後の配達中は送信直前にskipし、保存済み本文があっても送らずに終える。通知の選択は直した時の値がこの先にも効く。商品の行はその発送の品と数量だけで値段は書かず、既存 `formatShipmentItemLines` の ` x{数}` をそのまま使う（計画C-6の乗算記号は写し間違いという台帳の決定が正）。
+
+### 本文と返品の日数
+
+既存 `greeting`・`formatShipmentItemLines`・`contactLine`・`SHOP_NAME` を使う。以下の順に行を並べ、`空行` は空文字1行、末尾は店名（勝手に末尾の空行を増やさない）。商品はその発送の行だけ、`・{品名}（{色} / {サイズ}） x{数}`、値段は書かない。色・サイズの片方/両方が無い時の書き方は既存の関数と同じ。
+
+| kind | 件名 |
+|---|---|
+| `out_for_delivery` | `【Le Fil des Heures】商品を配達中です（{注文番号}）` |
+| `delivered` | `【Le Fil des Heures】商品をお届けしました（{注文番号}）` |
+| `shipping_update` | `【Le Fil des Heures】発送の情報を更新しました（{注文番号}）` |
+
+- 配達中: 宛名 → 空行 → `ご注文の商品を配達中です。` → 空行 → `注文番号: {注文番号}` → 空行 → `配達中の商品:` → 商品の行 → 空行 → `配送業者: {配送業者}` → `追跡番号: {伝票番号}` → `追跡はこちら: {追跡のリンク}` → 空行 → 問い合わせの案内 → 空行 → 店名。
+- 配達済み: 宛名 → 空行 → `ご注文の商品をお届けしました。` → 空行 → `注文番号: {注文番号}` → `お届け日: {M月D日}` → 空行 → `お届けした商品:` → 商品の行 → 空行 → `商品に不具合がございましたら、到着から {N} 日以内にご注文の画面またはお問い合わせからご連絡ください` → 空行 → `ご注文の確認はこちら: {注文の画面のリンク}` → 空行 → 問い合わせの案内 → 空行 → 店名。N は材料を読む時の `shop_return_settings.window_days`、NULL なら案内とその直後の空行を出さない。
+- 発送の更新: 宛名 → 空行 → `ご注文の発送の情報を更新しました。` → 空行 → `注文番号: {注文番号}` → 空行 → `発送した商品:` → 商品の行 → 空行 → `配送業者: {新しい配送業者}` → `追跡番号: {新しい伝票番号}` → `追跡はこちら: {追跡のリンク}` → 空行 → `先にお知らせした伝票番号は使えません` → 空行 → 問い合わせの案内 → 空行 → 店名。
+
+shipping_update は直しの行の新しい値、配達中/配達済みは claim の版の発送を使う。古い版や取消の判定は保存済みの本文があっても送る直前に行う。17TRACK の細かい状況・場所・文をメールへ入れない。付録の見本は説明書の写しであり、本物の HTTP・署名・課金・3社の追跡を確認済みと扱わない。
+
+配達済みの案内の日数は材料取得時の `shop_return_settings.window_days`。無制限（NULL）は案内文と直後の空行を出さない。顧客への状況通知と、追跡接続の異常を `SHOP_ALERT_EMAIL` に1日1回送る店への運用通知は別系統。メール配達のdeliveredはメールが届いた状態であり、荷物のdeliveredではない。
+
+19種類の型・再送拒否・旧版skip・本文はDB/単体/E2Eの別々の検証対象。本物の17TRACK・本番メール・実番号の確認は開店前の手順で実施し、この文書更新で確認済みとは扱わない。

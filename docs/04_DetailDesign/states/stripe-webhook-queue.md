@@ -57,3 +57,15 @@ payload検査は保存行とのID・type一致、dataがobjectであることと
 ## 未確認事項
 
 本番のキューmigration適用と配信状況、Cronの登録・接続・実起動は未確認。`supabase/pending/`のschedule案を稼働済みの証拠として使わない。
+
+## 配送の状態と処理（E-4 / FREQ-488〜497）
+
+[配送の詳細設計](../../superpowers/specs/2026-10-21-delivery-status-design.md)・[実装計画](../../superpowers/plans/2026-10-21-delivery-status.md)を参照。以下は実装後の契約であり、既存の決定の本文は履歴として残す。
+
+既存のStripeの `queued/processing/failed/completed/dead` と再試行は変更しない。17TRACKの知らせは配送の読み直しの合図であり、Stripeキューのイベントに追加しない。配送の登録状態 `pending/registered/stopped/failed` はprivateの登録表で持ち、出来事の追記とメール予定をDBの同一取引で書く。
+
+毎分の順はStripe35秒 → 注文メール10秒 → 配送min(8秒,残り) → 運用点検とメール配達の見回り。残りの計算は入口60秒から後続用15秒を確保、3秒未満は配送を飛ばしても `delivery_tracking` 心拍を残す。新しいcron登録は不要。after()も同じlease付き処理を呼ぶ。
+
+登録はすぐ・5分・15分・1時間・6時間の5回、その後は日次回復。invalid_numberとretrackの2回目（-18019905）は再試行しない。読み直しは6時間ごと、失敗は5分・15分・1時間、その後6時間。情報なしは登録から72時間、番号不正は直ちにnot_foundの要対応。版1は発送時刻、直した版は直した時刻から30日で期限切れ。一度でも登録できた行だけtracking_stalledを開き、それ以外はstopped/expiredだけ。
+
+口座全体の失敗はpendingの予定を保ち、個別の失敗数・要対応を増やさず1日1回の運用通知。lease・版・取消・設定で古い結果を拒否し、signal_revisionで処理中の合図を保持する。Webhookの200やキューcompleted、メールのsent/deliveredを荷物の配達済みの証拠にしない。

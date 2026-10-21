@@ -4,10 +4,14 @@
 
 ## 概要
 
-現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。E-3 段2を含め、Route Handler は124ファイル・163メソッド（自動の HEAD・OPTIONS は数えない）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は123行・162メソッド。
+現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。E-4 を含め、Route Handler は128ファイル・167メソッド（自動の HEAD・OPTIONS は数えない）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は127行・166メソッド。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |
+| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/tracking` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/tracking/route.ts) |
+| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/delivered` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/delivered/route.ts) |
+| `/api/admin/order-attention/deliveries/[attentionId]/resolve` | `POST` | [route.ts](../../../src/app/api/admin/order-attention/deliveries/%5BattentionId%5D/resolve/route.ts) |
+| `/api/webhook/17track` | `POST` | [route.ts](../../../src/app/api/webhook/17track/route.ts) |
 | `/api/orders/[id]/return-request` | `GET`, `POST` | [route.ts](../../../src/app/api/orders/%5Bid%5D/return-request/route.ts) |
 | `/api/orders/[id]/return-request/photos` | `POST` | [route.ts](../../../src/app/api/orders/%5Bid%5D/return-request/photos/route.ts) |
 | `/api/orders/[id]/cancel-request` | `POST` | [route.ts](../../../src/app/api/orders/%5Bid%5D/cancel-request/route.ts) |
@@ -139,3 +143,9 @@
 ## 更新と検証
 
 ルートを追加・削除した場合はこの一覧を再生成し、API の主要契約と関連テストを更新する。動的セグメント（`[id]` 等）は Next.js のファイル名のまま表記した。ここに列挙したことは、実行時にその API が成功することを意味しない。
+
+## 配送の状況（E-4 / FREQ-488〜497）
+
+[配送の詳細設計](../../superpowers/specs/2026-10-21-delivery-status-design.md)・[実装計画](../../superpowers/plans/2026-10-21-delivery-status.md)を参照。以下は実装後の契約であり、既存の決定の本文は履歴として残す。
+
+管理POST 3本と17TRACKのPOST 1本の計4パス・4メソッドを追加。ソースの静的集計は128ファイル・167メソッド、E2E用の1本を除いた表は127行・166メソッド。新しいページURLは0。詳細はAPI仕様の配送の節と計画 C-3。
