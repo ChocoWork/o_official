@@ -11,9 +11,12 @@ const clientFetchMock = jest.fn();
 const mockAttention = jest.fn();
 // 役割は試験ごとに変える（既定は店長。サポートの人の試験だけ supporter にする）
 let mockUserRole: 'admin' | 'supporter' = 'admin';
+// 開くタブ（既定は ORDER。KPI の帯を見る試験だけ KPI にする）と、サイドナビへ渡された件数の印
+let mockTab = 'ORDER';
+let mockSideNavBadges: Record<string, number> | undefined;
 
 jest.mock('next/navigation', () => ({
-  useSearchParams: () => new URLSearchParams('tab=ORDER'),
+  useSearchParams: () => new URLSearchParams(`tab=${mockTab}`),
 }));
 jest.mock('@/contexts/LoginContext', () => ({
   useLogin: () => ({
@@ -29,7 +32,10 @@ jest.mock('@/lib/client-fetch', () => ({
       ? mockAttention(...args)
       : clientFetchMock(...args),
 }));
-jest.mock('@/components/AdminSideNav', () => () => null);
+jest.mock('@/components/AdminSideNav', () => (props: { badges?: Record<string, number> }) => {
+  mockSideNavBadges = props.badges;
+  return null;
+});
 jest.mock('@/components/KpiSection', () => () => null);
 jest.mock('@/components/AccountingSection', () => () => null);
 jest.mock('@/components/NewsSection', () => () => null);
@@ -973,7 +979,80 @@ describe('管理画面の配送（一覧の印・要対応の配送の組・直�
 
   afterEach(() => {
     mockUserRole = 'admin';
+    mockTab = 'ORDER';
+    mockSideNavBadges = undefined;
     jest.restoreAllMocks();
+  });
+
+  it('配送の要対応だけが2件ある時も、サイドナビの ORDER の印は2になり、KPI の帯に「配送 2件」を出す', async () => {
+    mockTab = 'KPI';
+    mockAttention.mockImplementation(() => ok(attentionWith([
+      DELIVERY_ATTENTION_ITEM,
+      { ...DELIVERY_ATTENTION_ITEM, id: 'a0a0a0a0-1111-2222-8333-444455556667', kind: 'tracking_stalled' },
+    ])));
+    render(<AdminPage />);
+
+    expect(await screen.findByText('要対応0件・要確認0件・配送 2件（ORDER で確認）')).toBeVisible();
+    expect(mockSideNavBadges).toEqual({ ORDER: 2 });
+  });
+
+  it('要対応・要確認と配送が並ぶ時は、印の数に足し合わせ、帯に3つの数を出す', async () => {
+    mockTab = 'KPI';
+    mockAttention.mockImplementation(() => ok({ data: {
+      exceptions: [{}], reviews: [{}, {}], deliveries: [DELIVERY_ATTENTION_ITEM],
+      counts: { exceptions: 1, reviews: 2, deliveries: 1 },
+    } }));
+    render(<AdminPage />);
+
+    expect(await screen.findByText('要対応1件・要確認2件・配送 1件（ORDER で確認）')).toBeVisible();
+    expect(mockSideNavBadges).toEqual({ ORDER: 4 });
+  });
+
+  it.each([
+    ['配送が0件', { exceptions: [{}], reviews: [], deliveries: [], counts: { exceptions: 1, reviews: 0, deliveries: 0 } }],
+    ['配送の項目が無い昔の形', { exceptions: [{}], reviews: [], counts: { exceptions: 1, reviews: 0 } }],
+  ])('%s の時は、帯の文に配送を付けず、印は今までの数のまま', async (_label, data) => {
+    mockTab = 'KPI';
+    mockAttention.mockImplementation(() => ok({ data }));
+    render(<AdminPage />);
+
+    expect(await screen.findByText('要対応1件・要確認0件（ORDER で確認）')).toBeVisible();
+    expect(screen.queryByText(/配送/)).not.toBeInTheDocument();
+    expect(mockSideNavBadges).toEqual({ ORDER: 1 });
+  });
+
+  it('要対応・要確認・配送のどれも無い時は、帯を出さず、印は0', async () => {
+    mockTab = 'KPI';
+    render(<AdminPage />);
+
+    await waitFor(() => expect(mockAttention).toHaveBeenCalled());
+    await waitFor(() => expect(mockSideNavBadges).toEqual({ ORDER: 0 }));
+    expect(screen.queryByText(/ORDER で確認/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['配送の「対応済みにする」', '/resolve', '対応済みにする'],
+    ['要確認の「確認済みにする」（同じ catch を通る既存の操作）', '/review', '確認済みにする'],
+  ])('%s の通信が切れた時は、英語の Failed to fetch ではなく、日本語の文を出し、押し直せる', async (_label, suffix, buttonName) => {
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockAttention.mockImplementation(() => ok({ data: {
+      exceptions: [],
+      reviews: [{
+        orderId: ORDER_ID, orderNumber: 'ORD-A1B2C3D4', orderStatus: 'paid', reviewReason: 'stock_not_reserved',
+        reviewReasonLabel: '在庫を確保できませんでした', reviewMarkedAt: null,
+      }],
+      deliveries: [DELIVERY_ATTENTION_ITEM],
+      counts: { exceptions: 0, reviews: 1, deliveries: 1 },
+    } }));
+    postAnswer = (url) => (url.endsWith(suffix) ? Promise.reject(new TypeError('Failed to fetch')) : ok({}));
+    render(<AdminPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: buttonName }));
+
+    expect(await screen.findByText('通信できませんでした。一覧を更新してください。')).toBeVisible();
+    expect(screen.queryByText('Failed to fetch')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: buttonName })).toBeEnabled();
+    expect(logged).toHaveBeenCalled();
   });
 
   it('配送の要対応のある注文に、一覧の進み具合の列の印を出す', async () => {

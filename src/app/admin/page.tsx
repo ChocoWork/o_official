@@ -91,6 +91,9 @@ const PAID_CANCEL_NOTICES = {
 // 取消・解決で Stripe の状態を確かめられなかった（503）。一覧を更新しても直らないので、再試行を案内する
 const STRIPE_UNAVAILABLE_MESSAGE = 'Stripe の状態を確認できませんでした。時間をおいて再試行してください。';
 
+// 要対応・要確認の操作で、通信が切れた時の文（fetch の英語の文を出さない。届いたか分からないので、欄を読み直させる）
+const ATTENTION_NETWORK_ERROR_MESSAGE = '通信できませんでした。一覧を更新してください。';
+
 // 品を外して解決を待つ申し込み（「品を外す」で画面を開いてから、返金・キャンセルが受け付けられるまで）。
 // 画面を閉じた時と、一覧の「返金」などの別の操作を始めた時は外す（後で別の返金をしても、この申し込みを解決しないため）
 type PendingCancelResolve = {
@@ -460,7 +463,10 @@ function AdminPageContent() {
     void fetchAttention();
   }, [activeTab, canAccessAdmin, isMfaVerified, fetchAttention]);
 
-  const attentionTotal = (attention?.counts.exceptions ?? 0) + (attention?.counts.reviews ?? 0);
+  // 配送の要対応も店が動く物なので、サイドナビの印と KPI の帯の数に入れる（窓口が付けない昔の形は 0 件）
+  const deliveryAttentionCount = attention?.counts.deliveries ?? 0;
+  const attentionTotal =
+    (attention?.counts.exceptions ?? 0) + (attention?.counts.reviews ?? 0) + deliveryAttentionCount;
 
   useEffect(() => {
     if (!canAccessAdmin || userRole !== 'admin' || !isMfaVerified) {
@@ -737,7 +743,10 @@ function AdminPageContent() {
       await Promise.all([fetchAttention(), fetchOrdersRef.current()]);
     } catch (error) {
       console.error('Failed to update order attention:', error);
-      setAttentionErrorMessage(error instanceof Error ? error.message : '操作に失敗しました。');
+      // 通信が切れた（fetch の TypeError。英語の文）時は日本語の文にする。要対応・要確認のどの操作も、この catch を通る
+      setAttentionErrorMessage(
+        error instanceof TypeError ? ATTENTION_NETWORK_ERROR_MESSAGE : error instanceof Error ? error.message : '操作に失敗しました。',
+      );
     } finally {
       setProcessingAttentionIds((prev) => prev.filter((itemId) => itemId !== id));
     }
@@ -1129,7 +1138,7 @@ function AdminPageContent() {
               <BannerAlert
                 variant="warning"
                 className="mb-6"
-                message={`要対応${attention?.counts.exceptions ?? 0}件・要確認${attention?.counts.reviews ?? 0}件（ORDER で確認）`}
+                message={`要対応${attention?.counts.exceptions ?? 0}件・要確認${attention?.counts.reviews ?? 0}件${deliveryAttentionCount > 0 ? `・配送 ${deliveryAttentionCount}件` : ''}（ORDER で確認）`}
               />
             ) : null}
             <KpiSection data={kpiData} isLoading={isKpiLoading} errorMessage={kpiErrorMessage} onRetry={fetchKpi} />

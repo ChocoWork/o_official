@@ -1,10 +1,10 @@
 'use client';
 
-import { useId, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button/Button';
 import { Checkbox } from '@/components/ui/Checkbox/Checkbox';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
-import type { DeliveryDialogProps } from '@/components/OrderTrackingEditDialog';
+import type { DeliveryDialogProps, DeliveryFormProps } from '@/components/OrderTrackingEditDialog';
 import { DELIVERY_FORM_TEXT, submitManualDelivered, useDeliverySubmission } from '@/lib/orders/tracking/delivery-client';
 import { DELIVERY_ERROR_MESSAGES } from '@/lib/orders/tracking/delivery-messages';
 import type { MarkDeliveredInput, MarkDeliveredResult } from '@/lib/orders/tracking/delivery-types';
@@ -12,7 +12,7 @@ import type { MarkDeliveredInput, MarkDeliveredResult } from '@/lib/orders/track
 type DeliveredBody = Pick<MarkDeliveredInput, 'requestKey' | 'deliveredOn' | 'notifyCustomer'>;
 
 // 画面の言葉は計画の C-5・C-4 のとおり（句点を足し引きしない）
-const TITLE = '配達済みにする';
+export const DELIVERED_TITLE = '配達済みにする';
 const NOTIFY_LABEL = 'お客様に配達済みのメールを送る';
 const EXPLANATION_OFF = 'お客様に届いたことが分かった時に使います。返品の期限は、この日から数えます';
 const EXPLANATION_ON = '追跡で配達済みにならない時に使います。この後、この伝票番号の追跡は止まります';
@@ -51,17 +51,31 @@ function isRealDate(value: string): boolean {
  * 二重防止の番号と今日の日付は、画面を開いた時に決まる。
  */
 export default function OrderDeliveredDialog({ open, ...rest }: DeliveryDialogProps): React.JSX.Element {
-  return <>{open ? <DeliveredBody key={rest.fulfillment.fulfillmentId} {...rest} /> : null}</>;
+  return <>{open ? <DeliveredFrame key={rest.fulfillment.fulfillmentId} {...rest} /> : null}</>;
 }
 
-function DeliveredBody({
+/** 単独で開く時のダイアログの枠 */
+function DeliveredFrame(props: Omit<DeliveryDialogProps, 'open'>) {
+  const closeRef = useRef<(() => void) | null>(null);
+  const registerClose = useCallback((close: (() => void) | null) => {
+    closeRef.current = close;
+  }, []);
+  return (
+    <Dialog open onClose={() => closeRef.current?.()} title={DELIVERED_TITLE}>
+      <DeliveredForm {...props} registerClose={registerClose} />
+    </Dialog>
+  );
+}
+
+export function DeliveredForm({
   orderId,
   fulfillment,
   trackingEnabled,
   onClose,
   onChanged,
   onUncertain,
-}: Omit<DeliveryDialogProps, 'open'>) {
+  registerClose,
+}: DeliveryFormProps) {
   const dateId = useId();
   // 開いた時の今日。開いている間に日付をまたいでも、上限は開いた時の今日のまま（窓口が最後に今日までかを確かめる）
   const [today] = useState(() => jstDate(Date.now()));
@@ -78,8 +92,13 @@ function DeliveredBody({
     onClose,
     onUncertain,
   });
-  const { busy, uncertain, message, setMessage } = submission;
+  const { busy, uncertain, message, setMessage, close } = submission;
   const locked = busy || uncertain;
+
+  useEffect(() => {
+    registerClose(close);
+    return () => registerClose(null);
+  });
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -98,55 +117,53 @@ function DeliveredBody({
   };
 
   return (
-    <Dialog open onClose={submission.close} title={TITLE}>
-      <form className="space-y-3" onSubmit={handleSubmit} noValidate>
-        <p className="font-acumin lk-text-3xs text-[#474747]">{trackingEnabled ? EXPLANATION_ON : EXPLANATION_OFF}</p>
-        <div>
-          <label htmlFor={dateId} className="block font-acumin lk-text-3xs text-[#474747]">
-            届いた日
-          </label>
-          <input
-            id={dateId}
-            type="date"
-            min={minDate}
-            max={today}
-            value={deliveredOn}
-            disabled={locked}
-            onChange={(event) => setDeliveredOn(event.target.value)}
-            className={FIELD_CLASS}
-          />
+    <form className="space-y-3" onSubmit={handleSubmit} noValidate>
+      <p className="font-acumin lk-text-3xs text-[#474747]">{trackingEnabled ? EXPLANATION_ON : EXPLANATION_OFF}</p>
+      <div>
+        <label htmlFor={dateId} className="block font-acumin lk-text-3xs text-[#474747]">
+          届いた日
+        </label>
+        <input
+          id={dateId}
+          type="date"
+          min={minDate}
+          max={today}
+          value={deliveredOn}
+          disabled={locked}
+          onChange={(event) => setDeliveredOn(event.target.value)}
+          className={FIELD_CLASS}
+        />
+      </div>
+      {fulfillment.notifyCustomer ? (
+        <Checkbox
+          label={NOTIFY_LABEL}
+          checked={notifyCustomer}
+          disabled={locked}
+          onChange={(event) => setNotifyCustomer(event.target.checked)}
+        />
+      ) : null}
+
+      {message || uncertain ? (
+        <div role="alert" className="space-y-1 font-acumin lk-text-3xs text-red-700">
+          {message ? <p>{message}</p> : null}
+          {uncertain ? <p>{DELIVERY_FORM_TEXT.unknown}</p> : null}
         </div>
-        {fulfillment.notifyCustomer ? (
-          <Checkbox
-            label={NOTIFY_LABEL}
-            checked={notifyCustomer}
-            disabled={locked}
-            onChange={(event) => setNotifyCustomer(event.target.checked)}
-          />
-        ) : null}
+      ) : null}
 
-        {message || uncertain ? (
-          <div role="alert" className="space-y-1 font-acumin lk-text-3xs text-red-700">
-            {message ? <p>{message}</p> : null}
-            {uncertain ? <p>{DELIVERY_FORM_TEXT.unknown}</p> : null}
-          </div>
-        ) : null}
-
-        <div className="flex gap-2 pt-1">
-          <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={busy} onClick={submission.close}>
-            {DELIVERY_FORM_TEXT.back}
+      <div className="flex gap-2 pt-1">
+        <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={busy} onClick={close}>
+          {DELIVERY_FORM_TEXT.back}
+        </Button>
+        {uncertain ? (
+          <Button variant="primary" size="sm" className="w-full font-acumin" disabled={busy} onClick={submission.checkAgain}>
+            {DELIVERY_FORM_TEXT.checkAgain}
           </Button>
-          {uncertain ? (
-            <Button variant="primary" size="sm" className="w-full font-acumin" disabled={busy} onClick={submission.checkAgain}>
-              {DELIVERY_FORM_TEXT.checkAgain}
-            </Button>
-          ) : (
-            <Button type="submit" variant="primary" size="sm" className="w-full font-acumin" disabled={busy}>
-              {busy ? DELIVERY_FORM_TEXT.saving : TITLE}
-            </Button>
-          )}
-        </div>
-      </form>
-    </Dialog>
+        ) : (
+          <Button type="submit" variant="primary" size="sm" className="w-full font-acumin" disabled={busy}>
+            {busy ? DELIVERY_FORM_TEXT.saving : DELIVERED_TITLE}
+          </Button>
+        )}
+      </div>
+    </form>
   );
 }

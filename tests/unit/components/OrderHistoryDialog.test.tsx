@@ -1848,6 +1848,86 @@ describe('OrderHistoryDialog の伝票番号を直す・配達済みにする画
     expect(screen.getByRole('button', { name: '伝票番号を直す' })).toHaveFocus();
   });
 
+  it('直す画面は履歴と同じダイアログ（同じパネル）の中で切り替わる。重ねず、戻っても作り直さない', async () => {
+    await openDeliveryHistory([shipmentWithDelivery()], { enabled: true });
+    mockClientFetch.mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()], deliveryTrackingEnabled: true })));
+    const panel = screen.getByRole('dialog', { name: 'この注文の履歴' });
+
+    press(screen.getByRole('button', { name: '伝票番号を直す' }));
+    expect(screen.getByRole('dialog', { name: '伝票番号を直す' })).toBe(panel);
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    press(screen.getByRole('button', { name: '戻る' }));
+
+    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBe(panel);
+    await flush();
+  });
+
+  it('成功の知らせの入れ物（status・alert）は、直す画面を開いて閉じても作り直されず、同じ要素の中に文字が入る', async () => {
+    await openDeliveryHistory([shipmentWithDelivery()], { enabled: true });
+    const status = screen.getByRole('status');
+    const historyAlert = screen.getByRole('alert');
+    mockClientFetch
+      .mockResolvedValueOnce(json({ data: { trackingChangeId: 'change-9', trackingVersion: 2, replayed: false } }))
+      .mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()], deliveryTrackingEnabled: true })));
+
+    press(screen.getByRole('button', { name: '伝票番号を直す' }));
+    // 直す画面を開いている間も、同じ入れ物が残っている
+    expect(screen.getByRole('status')).toBe(status);
+    expect(status).toBeEmptyDOMElement();
+    fireEvent.change(screen.getByLabelText('伝票番号'), { target: { value: 'AB-99' } });
+    press(submitIn('伝票番号を直す'));
+
+    expect(await screen.findByText('伝票番号を直しました。')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toBe(status);
+    expect(status).toHaveTextContent('伝票番号を直しました。');
+    expect(screen.getByRole('alert')).toBe(historyAlert);
+    expect(historyAlert).toBeEmptyDOMElement();
+  });
+
+  it('配達済みにできた後の成功の知らせは、履歴のパネルへフォーカスを移した後の描画で、残っている入れ物に入る', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-21T03:00:00.000Z'));
+    await openDeliveryHistory([shipmentWithDelivery()]);
+    const status = screen.getByRole('status');
+    const panel = screen.getByRole('dialog', { name: 'この注文の履歴' });
+    mockClientFetch
+      .mockResolvedValueOnce(json({ data: { eventId: 'event-9', deliveredAt: '2026-10-21T03:00:00.000Z', replayed: false } }))
+      .mockResolvedValueOnce(json(history({
+        entries: [shipmentWithDelivery({ deliveryStatus: 'delivered', deliveredAt: '2026-10-21T03:00:00.000Z', deliveredSource: 'manual' })],
+      })));
+
+    press(screen.getByRole('button', { name: '配達済みにする' }));
+    const textsAtFocus: string[] = [];
+    panel.addEventListener('focus', () => { textsAtFocus.push(status.textContent ?? ''); });
+    press(submitIn('配達済みにする'));
+
+    expect(await screen.findByText('配達済みにしました。')).toBeInTheDocument();
+    expect(textsAtFocus).toEqual(['']);
+    expect(panel).toHaveFocus();
+    expect(screen.getByRole('status')).toBe(status);
+    expect(status).toHaveTextContent('配達済みにしました。');
+  });
+
+  it('直す画面で背景を押しても、履歴ごとは閉じず、直す画面だけを閉じる。送っている間は閉じない', async () => {
+    const post = deferredResponse();
+    const { onClose } = await openDeliveryHistory([shipmentWithDelivery()]);
+    mockClientFetch
+      .mockReturnValueOnce(post.promise)
+      .mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()] })));
+
+    press(screen.getByRole('button', { name: '伝票番号を直す' }));
+    fireEvent.change(screen.getByLabelText('伝票番号'), { target: { value: 'AB-99' } });
+    press(submitIn('伝票番号を直す'));
+    const overlay = screen.getByRole('dialog', { name: '伝票番号を直す' }).parentElement as HTMLElement;
+    fireEvent.click(overlay);
+    expect(screen.getByRole('dialog', { name: '伝票番号を直す' })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => { post.resolve(json({ data: { trackingChangeId: 'change-9', trackingVersion: 2, replayed: false } })); });
+    await flush();
+    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('配達済みにできたら、窓口へ送り、履歴を読み直し、親に知らせ、成功の知らせを出す。消えたボタンではなくパネルにフォーカスが留まる', async () => {
     jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-21T03:00:00.000Z'));
     const onChanged = jest.fn();

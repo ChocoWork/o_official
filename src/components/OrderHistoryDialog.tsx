@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import OrderDeliveredDialog from '@/components/OrderDeliveredDialog';
-import OrderTrackingEditDialog from '@/components/OrderTrackingEditDialog';
+import { DELIVERED_TITLE, DeliveredForm } from '@/components/OrderDeliveredDialog';
+import { TRACKING_EDIT_TITLE, TrackingEditForm } from '@/components/OrderTrackingEditDialog';
 import { Button } from '@/components/ui/Button/Button';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { StatusBadge, type StatusBadgeTone } from '@/components/ui/StatusBadge/StatusBadge';
@@ -37,7 +37,7 @@ type View =
   | { name: 'content'; entry: OrderHistoryEmailEntry; content: OrderEmailContentResponse | null; error: string | null }
   | { name: 'confirm'; entry: OrderHistoryEmailEntry }
   | { name: 'cancel'; entry: CancelTarget }
-  // 直す画面（tracking）か配達済みの画面（delivered）。履歴のダイアログと入れ替えて出す
+  // 直す画面（tracking）か配達済みの画面（delivered）。履歴と同じダイアログの中で切り替える
   | { name: 'tracking' | 'delivered'; entry: DeliveryTarget };
 
 /** 直す画面か配達済みの画面を開いている時の View */
@@ -177,8 +177,9 @@ function formatItems(items: Array<{ name: string; quantity: number }>): string {
  * 発送と仕上がりの取消の確かめを同じダイアログの中で切り替える（ダイアログを重ねると、Escape で外側も閉じるため）。
  * 再送や取消ができるかは窓口が決めた値に従う。
  * 配送（グループ E-4）: 発送の行に届いた日・現在の状況・登録の状態、出来事と伝票番号の直しの行を出し、「伝票番号を直す」
- * 「配達済みにする」は、それぞれの画面（OrderTrackingEditDialog・OrderDeliveredDialog）で行う。その画面は履歴のダイアログと
- * 入れ替えて出す（ダイアログを重ねると、Escape で外側も閉じ、Tab の囲いも二重になるため）。閉じる・戻ると履歴へ戻り、履歴を読み直す。
+ * 「配達済みにする」は、それぞれの画面の中身（OrderTrackingEditDialog・OrderDeliveredDialog の TrackingEditForm・DeliveredForm）で行う。
+ * その中身は同じダイアログの中で切り替える（ダイアログを重ねると、Escape で外側も閉じ、Tab の囲いも二重になる。
+ * 履歴のダイアログを作り直すと、知らせの入れ物も作り直されて読み上げられにくい）。戻ると履歴へ戻り、履歴を読み直す。
  *
  * 開くたびに中身を作り直す（key に注文を使う）。前の注文の履歴や画面の切り替えを残したまま開くと、
  * ダイアログが先に中の先頭のボタンへ移したフォーカスが、その後の状態の消去でボタンごと外れてしまう。
@@ -203,6 +204,11 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
   const returnFocus = useRef<{ id: string; action: HistoryAction } | null>(null);
   // 直す画面・配達済みの画面で記録できたか。履歴へ戻る時に、消えるボタンへフォーカスを戻さないために持つ
   const deliveryDone = useRef(false);
+  // 直す画面・配達済みの画面の「閉じる」。画面が表示している間だけ登録する（Escape や背景の押しをつなぐため）
+  const deliveryClose = useRef<(() => void) | null>(null);
+  const registerClose = useCallback((close: (() => void) | null) => {
+    deliveryClose.current = close;
+  }, []);
 
   const load = useCallback(async (id: string) => {
     setLoadError(null);
@@ -238,7 +244,11 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
           .find((button) => button.dataset.historyId === target.id && button.dataset.historyAction === target.action && !button.disabled)
       : null;
     returnFocus.current = null;
-    (opener ?? panel)?.focus();
+    // 直す画面・配達済みの画面は入力の画面なので、最初の入力へ移す（単独のダイアログで開いた時と同じ）
+    const firstField = view.name === 'tracking' || view.name === 'delivered'
+      ? viewRef.current?.querySelector<HTMLElement>('select:not([disabled]), input:not([disabled])')
+      : null;
+    (opener ?? firstField ?? panel)?.focus();
   }, [view.name]);
 
   // 焦点の移動と polite の文の挿入が同じ描画だと読み上げが落ちるため、上の移動の後の描画で文を入れる。
@@ -386,7 +396,11 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
         ? 'お客様へ再送'
         : view.name === 'cancel'
           ? (view.entry.type === 'fulfillment' ? 'この発送を取り消す' : 'この仕上がりを取り消す')
-          : 'この注文の履歴';
+          : view.name === 'tracking'
+            ? TRACKING_EDIT_TITLE
+            : view.name === 'delivered'
+              ? DELIVERED_TITLE
+              : 'この注文の履歴';
   const statusText = notice?.tone === 'success' ? notice.text : null;
   const failureText = notice?.tone === 'failure' ? notice.text : null;
 
@@ -677,23 +691,22 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
     );
   };
 
-  // 直す画面・配達済みの画面は、履歴のダイアログと入れ替えて出す（重ねない）。閉じると、履歴のダイアログが作り直されて戻る
-  if (view.name === 'tracking' || view.name === 'delivered') {
-    const dialogProps = {
-      open: true,
-      orderId,
-      fulfillment: view.entry.delivery,
-      trackingEnabled,
-      onClose: () => closeDelivery(view),
-      onChanged: () => deliveryChanged(view),
-      // 結果が分からないまま閉じた。記録されたかもしれないので、親が一覧と要対応を読み直す（成功の知らせは出さない）
-      onUncertain: () => onChanged?.(),
-    };
-    return view.name === 'tracking' ? <OrderTrackingEditDialog {...dialogProps} /> : <OrderDeliveredDialog {...dialogProps} />;
-  }
+  // 直す画面・配達済みの画面は、履歴と同じダイアログの中で切り替える（ダイアログを重ねず、知らせの入れ物も作り直さない）。
+  // その画面で Escape や背景を押した時は、履歴ごと閉じず、その画面の「閉じる」（送っている間は閉じない）につなぐ
+  const handleDialogClose = () => {
+    if (view.name !== 'tracking' && view.name !== 'delivered') {
+      onClose();
+      return;
+    }
+    if (deliveryClose.current) {
+      deliveryClose.current();
+    } else {
+      closeDelivery(view);
+    }
+  };
 
   return (
-    <Dialog open onClose={onClose} title={title}>
+    <Dialog open onClose={handleDialogClose} title={title}>
       {/*
         再送・取消の結果と履歴の読み込みの誤りの知らせ。画面を切り替えても履歴を読み直しても消えない入れ物を最初から置き、
         中の文字だけを変える（後から差し込んだ入れ物は、読み上げられない環境が多い）。受け付けは status、断り・失敗は alert
@@ -727,6 +740,37 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
           <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={onClose}>
             閉じる
           </Button>
+        </div>
+      ) : null}
+
+      {view.name === 'tracking' ? (
+        <div ref={viewRef}>
+          <TrackingEditForm
+            key={view.entry.fulfillmentId}
+            orderId={orderId}
+            fulfillment={view.entry.delivery}
+            trackingEnabled={trackingEnabled}
+            onClose={() => closeDelivery(view)}
+            onChanged={() => deliveryChanged(view)}
+            // 結果が分からないまま閉じた。記録されたかもしれないので、親が一覧と要対応を読み直す（成功の知らせは出さない）
+            onUncertain={() => onChanged?.()}
+            registerClose={registerClose}
+          />
+        </div>
+      ) : null}
+
+      {view.name === 'delivered' ? (
+        <div ref={viewRef}>
+          <DeliveredForm
+            key={view.entry.fulfillmentId}
+            orderId={orderId}
+            fulfillment={view.entry.delivery}
+            trackingEnabled={trackingEnabled}
+            onClose={() => closeDelivery(view)}
+            onChanged={() => deliveryChanged(view)}
+            onUncertain={() => onChanged?.()}
+            registerClose={registerClose}
+          />
         </div>
       ) : null}
 

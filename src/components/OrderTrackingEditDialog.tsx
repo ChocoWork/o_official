@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button/Button';
 import { Checkbox } from '@/components/ui/Checkbox/Checkbox';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
@@ -28,10 +28,19 @@ export type DeliveryDialogProps = {
   onUncertain?: () => void;
 };
 
+/**
+ * 画面の中身（ダイアログの枠は含まない）が受け取る値。履歴のダイアログは、この中身を自分の枠の中に出す
+ * （ダイアログを重ねず、知らせの入れ物も作り直さないため）。枠の Escape・背景の押しは、registerClose で受け取った
+ * 「閉じる」（送っている間は閉じない。結果が分からないまま閉じる時は親に読み直しを頼む）につなぐ。中身は、表示している間だけ登録する。
+ */
+export type DeliveryFormProps = Omit<DeliveryDialogProps, 'open'> & {
+  registerClose: (close: (() => void) | null) => void;
+};
+
 type TrackingBody = Pick<UpdateTrackingInput, 'requestKey' | 'carrier' | 'trackingNumber' | 'notifyCustomer'>;
 
 // 画面の言葉は計画の C-5 のとおり（句点を足し引きしない）
-const TITLE = '伝票番号を直す';
+export const TRACKING_EDIT_TITLE = '伝票番号を直す';
 const NOTIFY_LABEL = 'お客様に発送の更新のメールを送る';
 const EXPLANATION_ON =
   '直すと配送の状況は受付済みに戻り、新しい伝票番号で追跡します。チェックを外すと、この先の配達中・配達済みのメールも送りません';
@@ -50,17 +59,31 @@ const FIELD_CLASS =
  * （開くたびに中身を作り直すので、入力も番号も開くたびに新しくなる）。
  */
 export default function OrderTrackingEditDialog({ open, ...rest }: DeliveryDialogProps): React.JSX.Element {
-  return <>{open ? <TrackingEditBody key={rest.fulfillment.fulfillmentId} {...rest} /> : null}</>;
+  return <>{open ? <TrackingEditFrame key={rest.fulfillment.fulfillmentId} {...rest} /> : null}</>;
 }
 
-function TrackingEditBody({
+/** 単独で開く時のダイアログの枠 */
+function TrackingEditFrame(props: Omit<DeliveryDialogProps, 'open'>) {
+  const closeRef = useRef<(() => void) | null>(null);
+  const registerClose = useCallback((close: (() => void) | null) => {
+    closeRef.current = close;
+  }, []);
+  return (
+    <Dialog open onClose={() => closeRef.current?.()} title={TRACKING_EDIT_TITLE}>
+      <TrackingEditForm {...props} registerClose={registerClose} />
+    </Dialog>
+  );
+}
+
+export function TrackingEditForm({
   orderId,
   fulfillment,
   trackingEnabled,
   onClose,
   onChanged,
   onUncertain,
-}: Omit<DeliveryDialogProps, 'open'>) {
+  registerClose,
+}: DeliveryFormProps) {
   const carrierId = useId();
   const numberId = useId();
   const [carrier, setCarrier] = useState<ShippingCarrierId | ''>(isShippingCarrierId(fulfillment.carrier) ? fulfillment.carrier : '');
@@ -76,9 +99,14 @@ function TrackingEditBody({
     onClose,
     onUncertain,
   });
-  const { busy, uncertain, message, setMessage } = submission;
+  const { busy, uncertain, message, setMessage, close } = submission;
   // 送っている間と、結果が分からない間は、入力を止める
   const locked = busy || uncertain;
+
+  useEffect(() => {
+    registerClose(close);
+    return () => registerClose(null);
+  });
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -97,77 +125,75 @@ function TrackingEditBody({
   };
 
   return (
-    <Dialog open onClose={submission.close} title={TITLE}>
-      <form className="space-y-3" onSubmit={handleSubmit} noValidate>
-        <p className="font-acumin lk-text-3xs text-[#474747]">{trackingEnabled ? EXPLANATION_ON : EXPLANATION_OFF}</p>
-        {fulfillment.deliveredAt !== null ? (
-          <p className="font-acumin lk-text-3xs text-amber-800">{DELIVERED_WARNING}</p>
-        ) : null}
-        <div>
-          <label htmlFor={carrierId} className="block font-acumin lk-text-3xs text-[#474747]">
-            配送業者
-          </label>
-          <select
-            id={carrierId}
-            value={carrier}
-            disabled={locked}
-            onChange={(event) => {
-              if (isShippingCarrierId(event.target.value)) setCarrier(event.target.value);
-            }}
-            className={FIELD_CLASS}
-          >
-            {/* 配送業者が分からない昔の発送だけ。選ぶまでは送れない */}
-            {carrier === '' ? <option value="" /> : null}
-            {SHIPPING_CARRIER_IDS.map((id) => (
-              <option key={id} value={id}>
-                {SHIPPING_CARRIERS[id].label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor={numberId} className="block font-acumin lk-text-3xs text-[#474747]">
-            伝票番号
-          </label>
-          <input
-            id={numberId}
-            type="text"
-            value={trackingNumber}
-            disabled={locked}
-            onChange={(event) => setTrackingNumber(event.target.value)}
-            placeholder="1234-5678-9012"
-            className={FIELD_CLASS}
-          />
-        </div>
-        <Checkbox
-          label={NOTIFY_LABEL}
-          checked={notifyCustomer}
+    <form className="space-y-3" onSubmit={handleSubmit} noValidate>
+      <p className="font-acumin lk-text-3xs text-[#474747]">{trackingEnabled ? EXPLANATION_ON : EXPLANATION_OFF}</p>
+      {fulfillment.deliveredAt !== null ? (
+        <p className="font-acumin lk-text-3xs text-amber-800">{DELIVERED_WARNING}</p>
+      ) : null}
+      <div>
+        <label htmlFor={carrierId} className="block font-acumin lk-text-3xs text-[#474747]">
+          配送業者
+        </label>
+        <select
+          id={carrierId}
+          value={carrier}
           disabled={locked}
-          onChange={(event) => setNotifyCustomer(event.target.checked)}
+          onChange={(event) => {
+            if (isShippingCarrierId(event.target.value)) setCarrier(event.target.value);
+          }}
+          className={FIELD_CLASS}
+        >
+          {/* 配送業者が分からない昔の発送だけ。選ぶまでは送れない */}
+          {carrier === '' ? <option value="" /> : null}
+          {SHIPPING_CARRIER_IDS.map((id) => (
+            <option key={id} value={id}>
+              {SHIPPING_CARRIERS[id].label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label htmlFor={numberId} className="block font-acumin lk-text-3xs text-[#474747]">
+          伝票番号
+        </label>
+        <input
+          id={numberId}
+          type="text"
+          value={trackingNumber}
+          disabled={locked}
+          onChange={(event) => setTrackingNumber(event.target.value)}
+          placeholder="1234-5678-9012"
+          className={FIELD_CLASS}
         />
+      </div>
+      <Checkbox
+        label={NOTIFY_LABEL}
+        checked={notifyCustomer}
+        disabled={locked}
+        onChange={(event) => setNotifyCustomer(event.target.checked)}
+      />
 
-        {message || uncertain ? (
-          <div role="alert" className="space-y-1 font-acumin lk-text-3xs text-red-700">
-            {message ? <p>{message}</p> : null}
-            {uncertain ? <p>{DELIVERY_FORM_TEXT.unknown}</p> : null}
-          </div>
-        ) : null}
-
-        <div className="flex gap-2 pt-1">
-          <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={busy} onClick={submission.close}>
-            {DELIVERY_FORM_TEXT.back}
-          </Button>
-          {uncertain ? (
-            <Button variant="primary" size="sm" className="w-full font-acumin" disabled={busy} onClick={submission.checkAgain}>
-              {DELIVERY_FORM_TEXT.checkAgain}
-            </Button>
-          ) : (
-            <Button type="submit" variant="primary" size="sm" className="w-full font-acumin" disabled={busy}>
-              {busy ? DELIVERY_FORM_TEXT.saving : TITLE}
-            </Button>
-          )}
+      {message || uncertain ? (
+        <div role="alert" className="space-y-1 font-acumin lk-text-3xs text-red-700">
+          {message ? <p>{message}</p> : null}
+          {uncertain ? <p>{DELIVERY_FORM_TEXT.unknown}</p> : null}
         </div>
-      </form>
-    </Dialog>
+      ) : null}
+
+      <div className="flex gap-2 pt-1">
+        <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={busy} onClick={close}>
+          {DELIVERY_FORM_TEXT.back}
+        </Button>
+        {uncertain ? (
+          <Button variant="primary" size="sm" className="w-full font-acumin" disabled={busy} onClick={submission.checkAgain}>
+            {DELIVERY_FORM_TEXT.checkAgain}
+          </Button>
+        ) : (
+          <Button type="submit" variant="primary" size="sm" className="w-full font-acumin" disabled={busy}>
+            {busy ? DELIVERY_FORM_TEXT.saving : TRACKING_EDIT_TITLE}
+          </Button>
+        )}
+      </div>
+    </form>
   );
 }
