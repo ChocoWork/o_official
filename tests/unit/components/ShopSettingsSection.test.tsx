@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import ShopSettingsSection from '@/components/ShopSettingsSection';
 import { clientFetch } from '@/lib/client-fetch';
 import type { ShopSettingToggle, ShopSettings } from '@/lib/orders/refund/refund-types';
+import type { DeliveryTrackingSettings } from '@/lib/orders/tracking/delivery-types';
 import { buildShopReturnSettings } from './shop-return-settings-test-fixtures';
 
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: jest.fn() }));
@@ -910,5 +911,570 @@ describe('ShopSettingsSection の返品の欄の段2の欄', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('入力を確かめてください。');
     expect(screen.getByLabelText('申し込みの画面の注意書き')).toBeInvalid();
     expect(mockedFetch).toHaveBeenCalledTimes(1); // 開く時の読み込みだけ
+  });
+});
+
+// ここから下は、グループ E-4 の Task 11（ショップの設定の「配送の追跡」の欄）で足した試験。窓口の答えに deliveryTracking が付く
+
+const DELIVERY_SWITCH_NAME = '配送の追跡（17TRACK）を使う';
+const DELIVERY_EXPLANATIONS = [
+  'オンにすると、発送した荷物の配送状況（配達中・配達済みなど）を 17TRACK から受け取り、お客様の注文の画面に出し、配達中・配達済みのメールを送ります。17TRACK には配送業者と伝票番号だけを渡します',
+  '17TRACK の利用料がかかります（最初の200件は無料。その後は年払い）。佐川急便の荷物は、佐川急便の追跡が止まっている間は追えません',
+  'オフの間も、伝票番号の直しと、手で配達済みにすることはできます',
+];
+const DELIVERY_ON_CONFIRM_TITLE = '配送の追跡を使う';
+const DELIVERY_OFF_CONFIRM_TITLE = '配送の追跡を止める';
+const DELIVERY_OFF_CONFIRM = '追跡を止め、配送の要対応を閉じます。記録した配送状況は残ります';
+const DELIVERY_REREAD_FAILED = '設定を保存できませんでした。現在の設定を読み直しました。';
+const KEY_MISSING_HINT = '17TRACK の鍵を設定してください';
+const CHECKING_COUNT = '件数を確かめています…';
+
+const deliveryOnConfirm = (count: number) =>
+  `30日以内に発送した配達済みでない発送（${count}件）も 17TRACK に登録します。1件ごとに 17TRACK の件数を使います`;
+
+/** 窓口の答えの deliveryTracking。既定はオフ・鍵あり・件数0・まだ誰も変えていない */
+function delivery(overrides: Partial<DeliveryTrackingSettings> = {}): DeliveryTrackingSettings {
+  return { enabled: false, updatedAt: null, updatedByEmail: null, keyConfigured: true, backfillCount: 0, ...overrides };
+}
+
+/** 配送の設定（と任意の返品の設定）が付いた窓口の答え。形の違う値も渡せるよう unknown にする */
+type AnswerWithDelivery = ShopSettings & { returns?: unknown; deliveryTracking?: unknown; backfilledCount?: number };
+
+function withDelivery(
+  deliveryTracking: unknown = delivery(),
+  toggles: ShopSettings = settings(),
+  returns?: unknown,
+): AnswerWithDelivery {
+  return { ...toggles, deliveryTracking, ...(returns === undefined ? {} : { returns }) };
+}
+
+const deliveryRegion = () => screen.getByRole('region', { name: '配送の追跡' });
+const deliverySwitch = () => screen.getByRole('switch', { name: DELIVERY_SWITCH_NAME });
+
+/** 配送の欄が出す保存の知らせ・失敗の文（欄の中。自動の返金と返品の結果の文は別の入れ物） */
+const deliveryStatus = () => within(deliveryRegion()).getByRole('status');
+
+/** ON の確かめを開く: 押す → 直前の読み直し（GET）の答え → 確かめの画面 */
+async function openDeliveryOnConfirm(latest: AnswerWithDelivery) {
+  serveReread(latest);
+  fireEvent.click(deliverySwitch());
+  return screen.findByRole('dialog', { name: DELIVERY_ON_CONFIRM_TITLE });
+}
+
+describe('ShopSettingsSection の「配送の追跡」の欄の表示', () => {
+  it('自動の返金、配送の追跡、返品の順に出す', async () => {
+    await renderLoaded(withDelivery(delivery(), settings(), buildShopReturnSettings()));
+
+    const sectionNames = screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent);
+    expect(sectionNames).toEqual(['自動の返金', '配送の追跡', '返品']);
+    // 見た目の並びは CSS の order。配送の欄は返品の欄を包む入れ物（order-3）と同じ番号で、DOM では返品の前に置く
+    expect(deliveryRegion()).toHaveClass('order-3');
+    expect(deliverySwitch()).not.toBeChecked();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('答えに deliveryTracking が無い（古い窓口の形の）時は、配送の欄を出さず、ほかの欄はそのまま出す', async () => {
+    await renderLoaded(withReturns());
+
+    expect(screen.queryByRole('region', { name: '配送の追跡' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: DELIVERY_SWITCH_NAME })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '返品', level: 3 })).toBeInTheDocument();
+  });
+
+  it.each<[string, unknown]>([
+    ['null', null],
+    ['オンかどうかが真偽でない', delivery({ enabled: 'yes' as unknown as boolean })],
+    ['鍵の有無が無い', { ...delivery(), keyConfigured: undefined }],
+    ['件数が文字', delivery({ backfillCount: '3' as unknown as number })],
+    ['件数が負', delivery({ backfillCount: -1 })],
+    ['件数が小数', delivery({ backfillCount: 1.5 })],
+    ['最後に変えた時刻が数', delivery({ updatedAt: 5 as unknown as string })],
+    ['最後に変えた人が数', delivery({ updatedByEmail: 5 as unknown as string })],
+  ])('deliveryTracking の形が違う時（%s）は、読み込めなかった旨を出し、トグルは出さない', async (_label, deliveryTracking) => {
+    mockedFetch.mockResolvedValueOnce(json({ data: withDelivery(deliveryTracking) }));
+
+    render(<ShopSettingsSection />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(LOAD_FAILED);
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+  });
+
+  it.each<[string, boolean]>([
+    ['鍵が設定済み', true],
+    ['鍵が未設定', false],
+  ])('説明の3文は全文を、%sでも出す', async (_label, keyConfigured) => {
+    await renderLoaded(withDelivery(delivery({ keyConfigured })));
+
+    for (const sentence of DELIVERY_EXPLANATIONS) {
+      expect(within(deliveryRegion()).getByText(sentence)).toBeVisible();
+    }
+  });
+
+  it('鍵が設定済みなら「鍵：設定済み」を出し、トグルは押せる。「鍵を設定してください」は出さない', async () => {
+    await renderLoaded(withDelivery(delivery({ keyConfigured: true })));
+
+    expect(screen.getByText('鍵：設定済み')).toBeVisible();
+    expect(screen.queryByText('鍵：未設定')).not.toBeInTheDocument();
+    expect(screen.queryByText(KEY_MISSING_HINT)).not.toBeInTheDocument();
+    expect(deliverySwitch()).toBeEnabled();
+  });
+
+  it('鍵の値は出さず未設定ならトグルを押せない。「鍵：未設定」と「17TRACK の鍵を設定してください」を出し、押しても何も呼ばない', async () => {
+    // 窓口が鍵の値を余計に返しても、画面には出さない（読むのは5つの項目だけ）
+    await renderLoaded(withDelivery({ ...delivery({ keyConfigured: false }), apiKey: 'sk-live-secret-value' }));
+
+    expect(deliverySwitch()).toBeDisabled();
+    expect(screen.getByText('鍵：未設定')).toBeVisible();
+    expect(screen.getByText(KEY_MISSING_HINT)).toBeVisible();
+    expect(document.body).not.toHaveTextContent('sk-live-secret-value');
+    fireEvent.click(deliverySwitch());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockedFetch).toHaveBeenCalledTimes(1); // 開く時の読み込みだけ
+    // 鍵を入れる欄は作らない
+    expect(within(deliveryRegion()).queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('すでにオンで鍵が無くなった時は、オフへ戻す操作を許す（トグルは押せる）。「鍵：未設定」と案内は出す', async () => {
+    await renderLoaded(withDelivery(delivery({ enabled: true, keyConfigured: false })));
+
+    expect(deliverySwitch()).toBeChecked();
+    expect(deliverySwitch()).toBeEnabled();
+    expect(screen.getByText('鍵：未設定')).toBeVisible();
+    expect(screen.getByText(KEY_MISSING_HINT)).toBeVisible();
+  });
+
+  it('最後に変えた人と時刻を「最後の変更：{日時}・{人}」で、配送の欄の中だけに出す', async () => {
+    await renderLoaded(withDelivery(delivery({ enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'owner@example.com' })));
+
+    const line = screen.getByTestId('shop-setting-delivery-tracking-updated');
+    expect(line).toHaveTextContent(`最後の変更：${screenTime(CHANGED_AT)}・owner@example.com`);
+    expect(line).toHaveTextContent('10:30'); // 日本時間
+    expect(deliveryRegion()).toContainElement(line);
+  });
+
+  it('時刻があって人が空の時は「不明」と出す', async () => {
+    await renderLoaded(withDelivery(delivery({ updatedAt: CHANGED_AT, updatedByEmail: null })));
+
+    expect(screen.getByTestId('shop-setting-delivery-tracking-updated')).toHaveTextContent(
+      `最後の変更：${screenTime(CHANGED_AT)}・不明`,
+    );
+  });
+
+  it('時刻が空（まだ誰も変えていない）の時は、行を出さない', async () => {
+    await renderLoaded(withDelivery(delivery({ updatedAt: null, updatedByEmail: 'owner@example.com' })));
+
+    expect(screen.queryByTestId('shop-setting-delivery-tracking-updated')).not.toBeInTheDocument();
+    expect(screen.queryByText(/最後の変更/)).not.toBeInTheDocument();
+  });
+});
+
+describe('ShopSettingsSection の配送の追跡をオンにする時の確かめ', () => {
+  it('ON前にGETで件数を読み直しN件を確認する。確かめの間は保存せず、トグルはオフのまま', async () => {
+    await renderLoaded(withDelivery(delivery({ backfillCount: 3 })));
+
+    const dialog = await openDeliveryOnConfirm(withDelivery(delivery({ backfillCount: 12 })));
+
+    expect(within(dialog).getByText(deliveryOnConfirm(12))).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'オンにする' })).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: '戻る' })).toBeEnabled();
+    expect(screen.queryByText(deliveryOnConfirm(3))).not.toBeInTheDocument();
+    expect(callOrder()).toEqual(['GET', 'GET']);
+    expect(mockedFetch).toHaveBeenNthCalledWith(2, SETTINGS_URL, { cache: 'no-store' });
+    expect(putCalls()).toHaveLength(0);
+    expect(deliverySwitch()).not.toBeChecked();
+    expect(screen.queryByText(CHECKING_COUNT)).not.toBeInTheDocument();
+  });
+
+  it('読み直している間は「件数を確かめています…」を出し、確かめの画面はまだ出さない。押し直しても読み直しは増えない', async () => {
+    await renderLoaded(withDelivery(delivery({ backfillCount: 3 })));
+    const { held, release } = hold();
+    mockedFetch.mockImplementationOnce(() => held);
+
+    fireEvent.click(deliverySwitch());
+
+    expect(screen.getByText(CHECKING_COUNT)).toBeVisible();
+    expect(screen.getByRole('region', { name: 'ショップの設定' })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.click(deliverySwitch());
+    fireEvent.click(autoRefundSwitch());
+    fireEvent.click(autoCancelSwitch());
+    expect(callOrder()).toEqual(['GET', 'GET']);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    release(json({ data: withDelivery(delivery({ backfillCount: 12 })) }));
+
+    expect(await screen.findByRole('dialog', { name: DELIVERY_ON_CONFIRM_TITLE })).toBeInTheDocument();
+    expect(screen.queryByText(CHECKING_COUNT)).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'ショップの設定' })).toHaveAttribute('aria-busy', 'false');
+    expect(callOrder()).toEqual(['GET', 'GET']);
+  });
+
+  it('0件でも確かめを出す（0件と書いて、オンにできる）', async () => {
+    await renderLoaded(withDelivery(delivery({ backfillCount: 5 })));
+
+    const dialog = await openDeliveryOnConfirm(withDelivery(delivery({ backfillCount: 0 })));
+
+    expect(within(dialog).getByText(deliveryOnConfirm(0))).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'オンにする' })).toBeEnabled();
+  });
+
+  it('読み直した鍵・自動の返金の2つの値で画面を取り直す（別のタブで②がオンになっていたら、確かめの時点で②もオンに見せる）', async () => {
+    await renderLoaded(withDelivery(delivery(), settings()));
+    expect(autoCancelSwitch()).not.toBeChecked();
+
+    await openDeliveryOnConfirm(
+      withDelivery(delivery(), settings({ autoCancel: { enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'staff@example.com' } })),
+    );
+
+    expect(autoCancelSwitch()).toBeChecked();
+    expect(screen.getByTestId('shop-setting-auto-cancel-updated')).toHaveTextContent('最後に変えた人: staff@example.com');
+  });
+
+  it('確認を戻るとPUTしない。トグルはオフのまま、フォーカスはトグルへ戻る', async () => {
+    await renderLoaded(withDelivery(delivery({ backfillCount: 2 })));
+    const toggle = deliverySwitch();
+    toggle.focus();
+    const dialog = await openDeliveryOnConfirm(withDelivery(delivery({ backfillCount: 2 })));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(putCalls()).toHaveLength(0);
+    expect(deliverySwitch()).not.toBeChecked();
+    expect(deliveryStatus()).toBeEmptyDOMElement();
+    await waitFor(() => expect(toggle).toHaveFocus());
+  });
+
+  it('Escape でも「戻る」と同じに、保存せずに閉じる', async () => {
+    await renderLoaded(withDelivery());
+    await openDeliveryOnConfirm(withDelivery());
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(putCalls()).toHaveLength(0);
+    expect(deliverySwitch()).not.toBeChecked();
+  });
+
+  it('「オンにする」で、確かめを開く前に読み直した2つのトグルと配送だけをPUTし、返品の設定は送らない。保存の答えで画面を置き換え、確認中に件数が増えても失敗にしない', async () => {
+    const earlier = withDelivery(delivery({ backfillCount: 3 }), settings(), buildShopReturnSettings());
+    await renderLoaded(earlier);
+    // 確かめを開く前に読み直した値: 別のタブで②がオンになっていた。件数は12
+    const staffToggle = { enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'staff@example.com' };
+    const latest = withDelivery(delivery({ backfillCount: 12 }), settings({ autoCancel: staffToggle }), buildShopReturnSettings());
+    const dialog = await openDeliveryOnConfirm(latest);
+    // 確かめている間に新しい発送が増え、保存で取り込んだ実数は14件だった
+    mockedFetch.mockResolvedValueOnce(
+      json({
+        data: {
+          ...withDelivery(
+            delivery({ enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'owner@example.com', backfillCount: 0 }),
+            settings({ autoCancel: staffToggle }),
+            buildShopReturnSettings(),
+          ),
+          backfilledCount: 14,
+        },
+      }),
+    );
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
+
+    await waitFor(() => expect(deliverySwitch()).toBeChecked());
+    // 開く時の読み込み・確かめの前の読み直し・保存。保存の直前の読み直しは足さない（件数を見せた時点の2トグルを送る）
+    expect(callOrder()).toEqual(['GET', 'GET', 'PUT']);
+    expect(putCalls()[0][0]).toBe(SETTINGS_URL);
+    expect(putCalls()[0][1]).toMatchObject({ method: 'PUT', headers: { 'Content-Type': 'application/json' } });
+    const body = putBody();
+    expect(body).toEqual({
+      autoRefundCancelledOrderPayment: true,
+      autoCancelAmountMismatch: true,
+      deliveryTracking: { enabled: true },
+    });
+    expect(body).not.toHaveProperty('returns');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(deliveryStatus()).toHaveTextContent(SAVED);
+    expect(within(deliveryRegion()).queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByTestId('shop-setting-delivery-tracking-updated')).toHaveTextContent(
+      `最後の変更：${screenTime(CHANGED_AT)}・owner@example.com`,
+    );
+    expect(autoCancelSwitch()).toBeChecked();
+  });
+
+  it('確かめの画面から保存している間は、2つのボタンを押せず、Escape でも閉じず、二重に送らない。済むと閉じる', async () => {
+    await renderLoaded(withDelivery());
+    const dialog = await openDeliveryOnConfirm(withDelivery());
+    const { held, release } = hold();
+    mockedFetch.mockImplementationOnce(() => held);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
+
+    expect(within(dialog).getByRole('button', { name: 'オンにする' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: '戻る' })).toBeDisabled();
+    await waitFor(() => expect(putCalls()).toHaveLength(1));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(autoRefundSwitch());
+    expect(screen.getByRole('dialog', { name: DELIVERY_ON_CONFIRM_TITLE })).toBeInTheDocument();
+    expect(callOrder()).toEqual(['GET', 'GET', 'PUT']);
+
+    release(json({ data: withDelivery(delivery({ enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'owner@example.com' })) }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(deliverySwitch()).toBeChecked();
+    expect(callOrder()).toEqual(['GET', 'GET', 'PUT']);
+  });
+
+  it('確かめの前の読み直しで鍵が消えていたら、確かめを出さずに「鍵：未設定」へ替え、トグルを押せなくする', async () => {
+    await renderLoaded(withDelivery(delivery({ keyConfigured: true })));
+
+    serveReread(withDelivery(delivery({ keyConfigured: false })));
+    fireEvent.click(deliverySwitch());
+
+    await waitFor(() => expect(deliverySwitch()).toBeDisabled());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('鍵：未設定')).toBeVisible();
+    expect(screen.getByText(KEY_MISSING_HINT)).toBeVisible();
+    expect(putCalls()).toHaveLength(0);
+    expect(deliverySwitch()).not.toBeChecked();
+  });
+
+  it.each<[string, () => Promise<Response>]>([
+    ['窓口が断った', () => Promise.resolve(json({ error: 'x', code: 'failed' }, 500))],
+    ['通信が切れた', () => Promise.reject(new TypeError('Failed to fetch'))],
+    ['答えに deliveryTracking が無い', () => Promise.resolve(json({ data: settings() }))],
+  ])('確かめの前の読み直しができなかった時（%s）は、確かめを出さず、読み込めなかった旨を欄に出す。保存はしない', async (_label, answer) => {
+    await renderLoaded(withDelivery());
+    mockedFetch.mockImplementationOnce(answer);
+
+    fireEvent.click(deliverySwitch());
+
+    expect(await within(deliveryRegion()).findByRole('alert')).toHaveTextContent(LOAD_FAILED);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(putCalls()).toHaveLength(0);
+    expect(deliverySwitch()).not.toBeChecked();
+    expect(screen.queryByText(CHECKING_COUNT)).not.toBeInTheDocument();
+  });
+});
+
+describe('ShopSettingsSection の配送の追跡をオフにする時の確かめ', () => {
+  it('オンのトグルを押すと、読み直さずに確かめを出す（題と全文とボタン）。まだ保存しない', async () => {
+    await renderLoaded(withDelivery(delivery({ enabled: true })));
+
+    fireEvent.click(deliverySwitch());
+
+    const dialog = await screen.findByRole('dialog', { name: DELIVERY_OFF_CONFIRM_TITLE });
+    expect(within(dialog).getByText(DELIVERY_OFF_CONFIRM)).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'オフにする' })).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: '戻る' })).toBeEnabled();
+    expect(deliverySwitch()).toBeChecked();
+    expect(callOrder()).toEqual(['GET']);
+  });
+
+  it('「戻る」では保存せずに閉じ、トグルはオンのまま', async () => {
+    await renderLoaded(withDelivery(delivery({ enabled: true })));
+    fireEvent.click(deliverySwitch());
+    const dialog = await screen.findByRole('dialog', { name: DELIVERY_OFF_CONFIRM_TITLE });
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+    expect(deliverySwitch()).toBeChecked();
+  });
+
+  it('OFF確認と保存は配送だけを変える。保存の直前に読み直した2つのトグルと配送のオフだけを送り、返品の設定は送らない', async () => {
+    await renderLoaded(withDelivery(delivery({ enabled: true }), settings(), buildShopReturnSettings()));
+    fireEvent.click(deliverySwitch());
+    const dialog = await screen.findByRole('dialog', { name: DELIVERY_OFF_CONFIRM_TITLE });
+    // 保存の直前の読み直しでは、別のタブで②がオンになっていた
+    const staffToggle = { enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'staff@example.com' };
+    serveSave(
+      withDelivery(delivery({ enabled: true }), settings({ autoCancel: staffToggle })),
+      withDelivery(
+        delivery({ enabled: false, updatedAt: CHANGED_AT, updatedByEmail: 'owner@example.com' }),
+        settings({ autoCancel: staffToggle }),
+        buildShopReturnSettings(),
+      ),
+    );
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オフにする' }));
+
+    await waitFor(() => expect(deliverySwitch()).not.toBeChecked());
+    expect(callOrder()).toEqual(['GET', 'GET', 'PUT']);
+    const body = putBody();
+    expect(body.deliveryTracking).toEqual({ enabled: false });
+    expect(body).not.toHaveProperty('returns');
+    expect(body).toEqual({
+      autoRefundCancelledOrderPayment: true,
+      autoCancelAmountMismatch: true,
+      deliveryTracking: { enabled: false },
+    });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(deliveryStatus()).toHaveTextContent(SAVED);
+    expect(screen.getByTestId('shop-setting-delivery-tracking-updated')).toHaveTextContent(
+      `最後の変更：${screenTime(CHANGED_AT)}・owner@example.com`,
+    );
+    expect(autoCancelSwitch()).toBeChecked();
+  });
+
+  it('オンのまま鍵が無くなった店でも、オフへ戻せる（確かめも保存も通る）', async () => {
+    await renderLoaded(withDelivery(delivery({ enabled: true, keyConfigured: false })));
+    fireEvent.click(deliverySwitch());
+    const dialog = await screen.findByRole('dialog', { name: DELIVERY_OFF_CONFIRM_TITLE });
+    serveSave(
+      withDelivery(delivery({ enabled: true, keyConfigured: false })),
+      withDelivery(delivery({ enabled: false, keyConfigured: false, updatedAt: CHANGED_AT, updatedByEmail: 'owner@example.com' })),
+    );
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オフにする' }));
+
+    await waitFor(() => expect(deliverySwitch()).not.toBeChecked());
+    expect(putBody().deliveryTracking).toEqual({ enabled: false });
+    // オフになった後は、鍵が無いのでオンへは押せない
+    expect(deliverySwitch()).toBeDisabled();
+  });
+
+  it('保存の直前の読み直しができなかった時は、保存の窓口を呼ばずに、保存できなかった旨を欄に出す。確かめは閉じる', async () => {
+    await renderLoaded(withDelivery(delivery({ enabled: true })));
+    fireEvent.click(deliverySwitch());
+    const dialog = await screen.findByRole('dialog', { name: DELIVERY_OFF_CONFIRM_TITLE });
+    mockedFetch.mockResolvedValueOnce(json({ error: 'x', code: 'failed' }, 500));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オフにする' }));
+
+    expect(await within(deliveryRegion()).findByRole('alert')).toHaveTextContent(SAVE_FAILED);
+    expect(putCalls()).toHaveLength(0);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(deliverySwitch()).toBeChecked();
+    expect(callOrder()).toEqual(['GET', 'GET']);
+  });
+});
+
+describe('ShopSettingsSection の配送の追跡の保存の失敗', () => {
+  it.each<[string, () => Promise<Response>]>([
+    ['500', () => Promise.resolve(json({ error: 'x', code: 'failed' }, 500))],
+    ['鍵が無い（409）', () => Promise.resolve(json({ error: '17TRACK の鍵を設定してください。', code: 'DELIVERY_TRACKING_KEY_MISSING' }, 409))],
+    ['403', () => Promise.resolve(json({ error: 'Forbidden' }, 403))],
+    ['429', () => Promise.resolve(json({ error: 'Too many requests' }, 429))],
+    ['通信が切れた', () => Promise.reject(new TypeError('Failed to fetch'))],
+    ['答えに deliveryTracking が無い', () => Promise.resolve(json({ data: settings() }))],
+  ])('途中の失敗（PUT が%s）はGETし直し、部分保存した値を反映して、読み直した旨を出す', async (_label, answer) => {
+    await renderLoaded(withDelivery(delivery({ backfillCount: 3 })));
+    const dialog = await openDeliveryOnConfirm(withDelivery(delivery({ backfillCount: 12 })));
+    // PUT は失敗したが、先に保存した②のオンは残り、鍵はその間に消えた。読み直した値が画面の正
+    const staffToggle = { enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'staff@example.com' };
+    mockedFetch.mockImplementationOnce(answer);
+    mockedFetch.mockResolvedValueOnce(
+      json({ data: withDelivery(delivery({ keyConfigured: false, backfillCount: 0 }), settings({ autoCancel: staffToggle })) }),
+    );
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
+
+    expect(await within(deliveryRegion()).findByRole('alert')).toHaveTextContent(DELIVERY_REREAD_FAILED);
+    expect(screen.getByText(DELIVERY_REREAD_FAILED)).toBeVisible();
+    expect(callOrder()).toEqual(['GET', 'GET', 'PUT', 'GET']);
+    expect(mockedFetch).toHaveBeenNthCalledWith(4, SETTINGS_URL, { cache: 'no-store' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(deliverySwitch()).not.toBeChecked();
+    expect(deliverySwitch()).toBeDisabled();
+    expect(screen.getByText('鍵：未設定')).toBeVisible();
+    expect(autoCancelSwitch()).toBeChecked();
+    expect(deliveryStatus()).toBeEmptyDOMElement();
+    expect(screen.queryByText('Too many requests')).not.toBeInTheDocument();
+  });
+
+  it('失敗の後の読み直しでオンになっていたら、オンで出す（保存が実は届いていた場合）', async () => {
+    await renderLoaded(withDelivery());
+    const dialog = await openDeliveryOnConfirm(withDelivery());
+    mockedFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    mockedFetch.mockResolvedValueOnce(
+      json({ data: withDelivery(delivery({ enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'owner@example.com' })) }),
+    );
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
+
+    expect(await within(deliveryRegion()).findByRole('alert')).toHaveTextContent(DELIVERY_REREAD_FAILED);
+    expect(deliverySwitch()).toBeChecked();
+    expect(screen.getByTestId('shop-setting-delivery-tracking-updated')).toHaveTextContent('owner@example.com');
+  });
+
+  it('失敗の後の読み直しもできなかった時は、読み直したとは言わず、保存できなかった旨だけを出す。画面の値は変えない', async () => {
+    await renderLoaded(withDelivery());
+    const dialog = await openDeliveryOnConfirm(withDelivery());
+    mockedFetch.mockResolvedValueOnce(json({ error: 'x', code: 'failed' }, 500));
+    mockedFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
+
+    expect(await within(deliveryRegion()).findByRole('alert')).toHaveTextContent(SAVE_FAILED);
+    expect(screen.queryByText(DELIVERY_REREAD_FAILED)).not.toBeInTheDocument();
+    expect(callOrder()).toEqual(['GET', 'GET', 'PUT', 'GET']);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(deliverySwitch()).not.toBeChecked();
+    expect(deliverySwitch()).toBeEnabled();
+  });
+
+  it('失敗の後にもう一度保存できると、失敗の文は消えて、欄に保存の知らせが出る', async () => {
+    await renderLoaded(withDelivery());
+    let dialog = await openDeliveryOnConfirm(withDelivery());
+    mockedFetch.mockResolvedValueOnce(json({ error: 'x', code: 'failed' }, 500));
+    serveReread(withDelivery());
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
+    expect(await within(deliveryRegion()).findByRole('alert')).toHaveTextContent(DELIVERY_REREAD_FAILED);
+
+    dialog = await openDeliveryOnConfirm(withDelivery());
+    mockedFetch.mockResolvedValueOnce(json({ data: withDelivery(delivery({ enabled: true })) }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
+
+    await waitFor(() => expect(deliveryStatus()).toHaveTextContent(SAVED));
+    expect(within(deliveryRegion()).queryByRole('alert')).not.toBeInTheDocument();
+    expect(deliverySwitch()).toBeChecked();
+    expect(putCalls()).toHaveLength(2);
+  });
+});
+
+describe('ShopSettingsSection の配送の追跡と、ほかの欄の保存の分担', () => {
+  it('返品の保存は配送の入力を送らない（自動の返金の2つと returns だけ）。配送の欄はそのまま残る', async () => {
+    await renderLoaded(withDelivery(delivery({ enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'owner@example.com' }), settings(), buildShopReturnSettings()));
+    // 返品の保存の答えに deliveryTracking が無くても、配送の欄は消さない
+    serveSave(withDelivery(delivery({ enabled: true }), settings()), withReturns(buildShopReturnSettings(), settings()));
+
+    fireEvent.click(saveReturnsButton());
+
+    expect(await screen.findByText(SAVED)).toBeInTheDocument();
+    expect(putCalls()).toHaveLength(1);
+    const body = putBody();
+    expect(Object.keys(body).sort()).toEqual(['autoCancelAmountMismatch', 'autoRefundCancelledOrderPayment', 'returns']);
+    expect(body).not.toHaveProperty('deliveryTracking');
+    expect(screen.getByTestId('shop-setting-delivery-tracking-updated')).toHaveTextContent('owner@example.com');
+    expect(deliverySwitch()).toBeChecked();
+  });
+
+  it('自動の返金のトグルの保存は配送の入力を送らず、答えの deliveryTracking で配送の欄を置き換える', async () => {
+    await renderLoaded(withDelivery(delivery({ enabled: false })));
+    serveSave(
+      withDelivery(delivery({ enabled: false })),
+      withDelivery(delivery({ enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'staff@example.com' }), settings({ autoRefund: { enabled: false } })),
+    );
+
+    fireEvent.click(autoRefundSwitch());
+
+    await waitFor(() => expect(autoRefundSwitch()).not.toBeChecked());
+    expect(putBody()).toEqual({ autoRefundCancelledOrderPayment: false, autoCancelAmountMismatch: false });
+    expect(deliverySwitch()).toBeChecked();
+    expect(screen.getByTestId('shop-setting-delivery-tracking-updated')).toHaveTextContent('staff@example.com');
+  });
+
+  it('配送の保存の知らせが出ている時に自動の返金を保存すると、配送の欄の知らせは消える（古い知らせを残さない）', async () => {
+    await renderLoaded(withDelivery());
+    const dialog = await openDeliveryOnConfirm(withDelivery());
+    mockedFetch.mockResolvedValueOnce(json({ data: withDelivery(delivery({ enabled: true })) }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
+    await waitFor(() => expect(deliveryStatus()).toHaveTextContent(SAVED));
+
+    serveSave(withDelivery(delivery({ enabled: true })), withDelivery(delivery({ enabled: true }), settings({ autoRefund: { enabled: false } })));
+    fireEvent.click(autoRefundSwitch());
+
+    await waitFor(() => expect(autoRefundSwitch()).not.toBeChecked());
+    expect(deliveryStatus()).toBeEmptyDOMElement();
   });
 });

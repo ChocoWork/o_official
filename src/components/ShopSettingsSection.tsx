@@ -14,6 +14,7 @@ import {
   type ShopReturnSettings,
   type ShopReturnSettingsUpdate,
 } from '@/lib/orders/returns/return-types';
+import type { DeliveryTrackingSettings } from '@/lib/orders/tracking/delivery-types';
 import { cn } from '@/lib/utils';
 
 const SETTINGS_URL = '/api/admin/settings/shop';
@@ -48,18 +49,50 @@ const AUTO_CANCEL_TOGGLE: ToggleDefinition = {
 
 const TOGGLES: readonly ToggleDefinition[] = [AUTO_REFUND_TOGGLE, AUTO_CANCEL_TOGGLE];
 
+// 「配送の追跡」の欄の言葉（グループ E-4 の計画 C-5。一字も変えない）
+const DELIVERY_TOGGLE_NAME = '配送の追跡（17TRACK）を使う';
+const DELIVERY_EXPLANATIONS = [
+  'オンにすると、発送した荷物の配送状況（配達中・配達済みなど）を 17TRACK から受け取り、お客様の注文の画面に出し、配達中・配達済みのメールを送ります。17TRACK には配送業者と伝票番号だけを渡します',
+  '17TRACK の利用料がかかります（最初の200件は無料。その後は年払い）。佐川急便の荷物は、佐川急便の追跡が止まっている間は追えません',
+  'オフの間も、伝票番号の直しと、手で配達済みにすることはできます',
+] as const;
+const DELIVERY_KEY_CONFIGURED = '鍵：設定済み';
+const DELIVERY_KEY_MISSING = '鍵：未設定';
+const DELIVERY_KEY_MISSING_HINT = '17TRACK の鍵を設定してください';
+const DELIVERY_CHECKING_COUNT = '件数を確かめています…';
+const DELIVERY_ON_CONFIRM_TITLE = '配送の追跡を使う';
+const DELIVERY_OFF_CONFIRM_TITLE = '配送の追跡を止める';
+const DELIVERY_OFF_CONFIRM_MESSAGE = '追跡を止め、配送の要対応を閉じます。記録した配送状況は残ります';
+const DELIVERY_REREAD_MESSAGE = '設定を保存できませんでした。現在の設定を読み直しました。';
+const deliveryOnConfirmMessage = (count: number) =>
+  `30日以内に発送した配達済みでない発送（${count}件）も 17TRACK に登録します。1件ごとに 17TRACK の件数を使います`;
+
 /**
- * 窓口が返した設定。returns は返品の欄の設定。窓口の答えに無い間（E-2 の窓口の形）は null で、返品の欄を出さない
- * （returns があるのに形が違う答えは null でなく、読み込めなかった扱いにする）
+ * 窓口が返した設定。returns は返品の欄の設定、deliveryTracking は配送の追跡の欄の設定。窓口の答えに無い間
+ * （returns は E-2 の窓口の形、deliveryTracking は E-4 より前の形・古い見本）は null で、その欄を出さない
+ * （あるのに形が違う答えは null でなく、読み込めなかった扱いにする。実際の窓口の答えには必ず付く）
  */
-type LoadedSettings = { settings: ShopSettings; returns: ShopReturnSettings | null };
+type LoadedSettings = {
+  settings: ShopSettings;
+  returns: ShopReturnSettings | null;
+  deliveryTracking: DeliveryTrackingSettings | null;
+};
 
 type LoadState = { kind: 'loading' } | { kind: 'error' } | ({ kind: 'ready' } & LoadedSettings);
 
 type SettingsResult = ({ ok: true } & LoadedSettings) | { ok: false };
 
-/** 窓口へ送る中身。自動の返金の2つは必ず送り、returns は返品の欄を保存する時だけ付ける */
-type SettingsRequest = UpdateShopSettingsRequest & { returns?: ShopReturnSettingsUpdate };
+/** 窓口へ送る中身。自動の返金の2つは必ず送り、returns は返品の欄を、deliveryTracking は配送の欄を保存する時だけ付ける */
+type SettingsRequest = UpdateShopSettingsRequest & {
+  returns?: ShopReturnSettingsUpdate;
+  deliveryTracking?: { enabled: boolean };
+};
+
+/** 配送の欄の確かめ。オンは「確かめを開く前に読み直した」件数と2つのトグルを持ち、保存はその2つを送る。オフは件数を使わない */
+type DeliveryConfirm = { kind: 'on'; count: number; toggles: ShopSettings } | { kind: 'off' };
+
+/** 配送の欄の中に出す保存の結果。自動の返金・返品の結果の文（欄の外の入れ物）とは別に、欄のすぐ下で見せる */
+type DeliveryMessage = { kind: 'saved' | 'error'; text: string };
 
 function formatJst(value: string): string {
   const date = new Date(value);
@@ -166,19 +199,56 @@ function isShopReturnSettings(value: unknown): value is ShopReturnSettings {
   );
 }
 
+/** 配送の追跡の設定の形を確かめる（C-2 の DeliveryTrackingSettings の5項目。件数は0以上の整数） */
+function isDeliveryTrackingSettings(value: unknown): value is DeliveryTrackingSettings {
+  return (
+    isRecord(value) &&
+    typeof value.enabled === 'boolean' &&
+    isNullableString(value.updatedAt) &&
+    isNullableString(value.updatedByEmail) &&
+    typeof value.keyConfigured === 'boolean' &&
+    isInteger(value.backfillCount) &&
+    value.backfillCount >= 0
+  );
+}
+
 /**
- * 窓口の答えの中身（data）を読む。自動の返金の2つは今までどおり必ず要る。returns が無い（undefined）答えは返品の欄なしとして読み、
- * returns があるのに形が違う答え（null を含む）は失敗にする。
+ * 窓口の答えの中身（data）を読む。自動の返金の2つは今までどおり必ず要る。returns・deliveryTracking が無い（undefined）答えは
+ * その欄なしとして読み、あるのに形が違う答え（null を含む）は失敗にする。
+ * 配送の設定は5項目だけを写し取る（窓口が余計な項目を返しても、鍵に当たる物を画面の状態に持たない）。
  */
 function parseSettings(data: unknown): SettingsResult {
   if (!isShopSettings(data)) {
     return { ok: false };
   }
-  const returns: unknown = 'returns' in data ? data.returns : undefined;
-  if (returns === undefined) {
-    return { ok: true, settings: data, returns: null };
+  const rawReturns: unknown = 'returns' in data ? data.returns : undefined;
+  const rawDelivery: unknown = 'deliveryTracking' in data ? data.deliveryTracking : undefined;
+  let returns: ShopReturnSettings | null = null;
+  if (rawReturns !== undefined) {
+    if (!isShopReturnSettings(rawReturns)) {
+      return { ok: false };
+    }
+    returns = rawReturns;
   }
-  return isShopReturnSettings(returns) ? { ok: true, settings: data, returns } : { ok: false };
+  let deliveryTracking: DeliveryTrackingSettings | null = null;
+  if (rawDelivery !== undefined) {
+    if (!isDeliveryTrackingSettings(rawDelivery)) {
+      return { ok: false };
+    }
+    deliveryTracking = {
+      enabled: rawDelivery.enabled,
+      updatedAt: rawDelivery.updatedAt,
+      updatedByEmail: rawDelivery.updatedByEmail,
+      keyConfigured: rawDelivery.keyConfigured,
+      backfillCount: rawDelivery.backfillCount,
+    };
+  }
+  // 自動の返金の2つだけを写し取る（答えに付いてくる returns・deliveryTracking の生の値を、設定の状態に持ち越さない）
+  const settings: ShopSettings = {
+    autoRefundCancelledOrderPayment: data.autoRefundCancelledOrderPayment,
+    autoCancelAmountMismatch: data.autoCancelAmountMismatch,
+  };
+  return { ok: true, settings, returns, deliveryTracking };
 }
 
 /**
@@ -238,15 +308,28 @@ function keepingToggles(settings: ShopSettings): UpdateShopSettingsRequest {
  * 返品の欄の入力は欄の部品が持つので、自動の返金のトグルを保存しても消えない。
  * 保存の結果の文は、トグルを保存した時は自動の返金の欄の直後、返品の欄を保存した時は返品の欄の直後に見せる
  * （入れ物は1つずつのまま、CSS の order で位置だけ動かす。T12-13）。
+ *
+ * グループ E-4 で、自動の返金と返品の間に「配送の追跡」の欄を足した（設計書 6-7）。窓口の答えに deliveryTracking が付いている時だけ出す。
+ * トグルは切り替えるたびに確かめの画面を出す。オンにする前は、確かめを開く直前に設定を読み直し、登録する件数・鍵・自動の返金の2つを
+ * 取り直す（件数は開いた後に変わりうるため、確かめに出すのは直前の数。保存で取り込んだ実数が違っても失敗にしない）。
+ * 保存は「自動の返金の2つ（その読み直した値）＋配送」だけを送り、返品の設定は送らない。
+ * 鍵が未設定の間は、オフからオンへは押せない。すでにオンの店で鍵が無くなった時は、止める道を残すためオフへ戻す操作を許す。
+ * 鍵の値は窓口が返さず、この画面も持たない（出すのは「設定済み／未設定」だけ）。
+ * 配送の欄の保存の結果の文は、欄の中に出す（自動の返金・返品の結果の文の位置は変えない）。
  */
 export default function ShopSettingsSection() {
   const titleId = useId();
   const groupId = useId();
+  const deliveryGroupId = useId();
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' });
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // 配送の欄: 確かめの画面（null は閉じている）、オンにする前の件数の読み直し中、欄の中に出す保存の結果
+  const [deliveryConfirm, setDeliveryConfirm] = useState<DeliveryConfirm | null>(null);
+  const [checkingCount, setCheckingCount] = useState(false);
+  const [deliveryMessage, setDeliveryMessage] = useState<DeliveryMessage | null>(null);
   // 保存の結果の文（role="status"・role="alert"）を見せる位置。入れ物は1つずつのまま、CSS の order で動かす（T12-13）。
   // 自動の返金のトグルの保存の結果は自動の返金の欄の直後、返品の欄の保存の結果は返品の欄の直後に見せる
   const [resultPlace, setResultPlace] = useState<'toggles' | 'returns'>('returns');
@@ -255,7 +338,11 @@ export default function ShopSettingsSection() {
     let active = true;
     void loadSettings().then((result) => {
       if (active) {
-        setLoad(result.ok ? { kind: 'ready', settings: result.settings, returns: result.returns } : { kind: 'error' });
+        setLoad(
+          result.ok
+            ? { kind: 'ready', settings: result.settings, returns: result.returns, deliveryTracking: result.deliveryTracking }
+            : { kind: 'error' },
+        );
       }
     });
     return () => {
@@ -269,6 +356,7 @@ export default function ShopSettingsSection() {
     setSaving(true);
     setNotice(null);
     setSaveError(null);
+    setDeliveryMessage(null);
     // 画面を開いた後に別のタブ・別の人が変えた値を、古い画面の値で黙って戻さない。変えない方のトグルは、
     // 読み直した値を送る（別のタブでオフにした②を、確かめ無しでオンに戻さない）。読み直せなければ保存しない（T13-4）
     const latest = await loadSettings();
@@ -278,11 +366,12 @@ export default function ShopSettingsSection() {
     setSaving(false);
     setConfirming(false);
     if (result.ok) {
-      // 自動の返金の保存の答えに返品の設定が無くても、返品の欄は消さない
+      // 自動の返金の保存の答えに返品・配送の設定が無くても、その欄は消さない
       setLoad((current) => ({
         kind: 'ready',
         settings: result.settings,
         returns: result.returns ?? (current.kind === 'ready' ? current.returns : null),
+        deliveryTracking: result.deliveryTracking ?? (current.kind === 'ready' ? current.deliveryTracking : null),
       }));
       setNotice(SAVED_MESSAGE);
       return;
@@ -304,13 +393,21 @@ export default function ShopSettingsSection() {
     setSaving(true);
     setNotice(null);
     setSaveError(null);
+    setDeliveryMessage(null);
     const latest = await loadSettings();
     const result = latest.ok ? await saveSettings({ ...keepingToggles(latest.settings), returns: input }) : latest;
     setSaving(false);
     if (result.ok && result.returns) {
-      setLoad({ kind: 'ready', settings: result.settings, returns: result.returns });
+      const { settings, returns } = result;
+      // 返品の保存の答えに配送の設定が無くても、配送の欄は消さない
+      setLoad((current) => ({
+        kind: 'ready',
+        settings,
+        returns,
+        deliveryTracking: result.deliveryTracking ?? (current.kind === 'ready' ? current.deliveryTracking : null),
+      }));
       setNotice(SAVED_MESSAGE);
-      return result.returns;
+      return returns;
     }
     setSaveError(REFUND_FAILURE_MESSAGES.settings_update);
     return null;
@@ -339,6 +436,98 @@ export default function ShopSettingsSection() {
   const closeConfirm = () => {
     if (!saving) {
       setConfirming(false);
+    }
+  };
+
+  /**
+   * 配送の追跡のトグル。オフにする時は件数が要らないので、すぐ確かめを出す。オンにする時は、確かめを出す直前に設定を読み直す
+   * （件数・鍵・自動の返金の2つを取り直す。読み直せなければ確かめを出さない）。読み直しで鍵が無くなっていた・もうオンになっていた
+   * 時も確かめは出さず、取り直した値で欄を替える（鍵が無いとトグルは押せなくなる）。
+   */
+  const handleDeliveryToggle = async (enabled: boolean) => {
+    if (saving || load.kind !== 'ready' || !load.deliveryTracking) {
+      return;
+    }
+    setNotice(null);
+    setSaveError(null);
+    setDeliveryMessage(null);
+    if (!enabled) {
+      setDeliveryConfirm({ kind: 'off' });
+      return;
+    }
+    if (!load.deliveryTracking.keyConfigured) {
+      return;
+    }
+    setSaving(true);
+    setCheckingCount(true);
+    const latest = await loadSettings();
+    setSaving(false);
+    setCheckingCount(false);
+    if (!latest.ok || !latest.deliveryTracking) {
+      setDeliveryMessage({ kind: 'error', text: REFUND_FAILURE_MESSAGES.settings });
+      return;
+    }
+    const { settings, deliveryTracking } = latest;
+    // 返品の欄は読み直した値に替えない（返品の欄の入力は欄の部品が持ち、この確かめは返品を保存しない）
+    setLoad((current) => (current.kind === 'ready' ? { ...current, settings, deliveryTracking } : current));
+    if (deliveryTracking.enabled || !deliveryTracking.keyConfigured) {
+      return;
+    }
+    setDeliveryConfirm({ kind: 'on', count: deliveryTracking.backfillCount, toggles: settings });
+  };
+
+  /**
+   * 確かめの「オンにする」「オフにする」。送るのは、自動の返金の2つ（オンは確かめを開く直前に読み直した値、オフは保存の直前に
+   * 読み直した値）と配送だけで、返品の設定は送らない。窓口は返品 → 自動の返金 → 配送の順に別々に保存するので、途中で失敗すると
+   * 前の分だけ保存済みになりうる。失敗した時は、どこまで保存されたか分からないので設定を読み直して画面を合わせ、そう伝える。
+   * 確かめの画面は答えが返ってから閉じる（成功でも失敗でも）。
+   */
+  const confirmDelivery = async () => {
+    if (saving || !deliveryConfirm) {
+      return;
+    }
+    const enabled = deliveryConfirm.kind === 'on';
+    setSaving(true);
+    setNotice(null);
+    setSaveError(null);
+    setDeliveryMessage(null);
+    let toggles: ShopSettings | null = deliveryConfirm.kind === 'on' ? deliveryConfirm.toggles : null;
+    if (!toggles) {
+      const latest = await loadSettings();
+      toggles = latest.ok ? latest.settings : null;
+    }
+    const result = toggles ? await saveSettings({ ...keepingToggles(toggles), deliveryTracking: { enabled } }) : null;
+    if (result?.ok && result.deliveryTracking) {
+      const { settings, deliveryTracking } = result;
+      // 保存の答え（保存後の実際の設定）で画面を置き換える。確かめの間に増えた件数との差は、失敗にしない
+      setLoad((current) => ({
+        kind: 'ready',
+        settings,
+        returns: result.returns ?? (current.kind === 'ready' ? current.returns : null),
+        deliveryTracking,
+      }));
+      setSaving(false);
+      setDeliveryConfirm(null);
+      setDeliveryMessage({ kind: 'saved', text: SAVED_MESSAGE });
+      return;
+    }
+    // 読み直せなくて保存の窓口を呼んでいない時は、読み直しを重ねない
+    const reread = toggles ? await loadSettings() : null;
+    if (reread?.ok && reread.deliveryTracking) {
+      const { settings, deliveryTracking } = reread;
+      setLoad((current) => (current.kind === 'ready' ? { ...current, settings, deliveryTracking } : current));
+      setDeliveryMessage({ kind: 'error', text: DELIVERY_REREAD_MESSAGE });
+    } else {
+      setDeliveryMessage({ kind: 'error', text: REFUND_FAILURE_MESSAGES.settings_update });
+    }
+    setSaving(false);
+    setDeliveryConfirm(null);
+  };
+
+  // 保存の間は閉じない（Escape・背景・「戻る」）
+  const closeDeliveryConfirm = () => {
+    if (!saving) {
+      setDeliveryConfirm(null);
     }
   };
 
@@ -390,6 +579,58 @@ export default function ShopSettingsSection() {
         </section>
       ) : null}
 
+      {/* 配送の追跡の欄。DOM では自動の返金と返品の間に置き、見た目の並びは返品の欄を包む入れ物と同じ order-3
+          （同じ番号は DOM の順。自動の返金のトグルの結果の文は order-2 なので、この欄の前に出る）。
+          この欄の保存の結果の文は、欄の中に置く */}
+      {load.kind === 'ready' && load.deliveryTracking ? (
+        <section aria-labelledby={deliveryGroupId} className="order-3 space-y-2 border border-black/15 p-4">
+          <h3 id={deliveryGroupId} className="font-acumin lk-text-3xs tracking-widest text-[#474747]">
+            配送の追跡
+          </h3>
+          <div className="space-y-1 py-3">
+            {/* 鍵が未設定の間は、オフからオンへは押せない。すでにオンならオフへ戻せる（鍵が無くなった店の追跡を止める道） */}
+            <SwitchToggle
+              label={DELIVERY_TOGGLE_NAME}
+              checked={load.deliveryTracking.enabled}
+              disabled={!load.deliveryTracking.enabled && !load.deliveryTracking.keyConfigured}
+              fullWidth
+              size="sm"
+              onChange={(enabled) => void handleDeliveryToggle(enabled)}
+            />
+            {DELIVERY_EXPLANATIONS.map((sentence) => (
+              <p key={sentence} className="font-acumin lk-text-3xs text-[#474747]">
+                {sentence}
+              </p>
+            ))}
+            <p className="font-acumin lk-text-3xs text-[#474747]">
+              {load.deliveryTracking.keyConfigured ? DELIVERY_KEY_CONFIGURED : DELIVERY_KEY_MISSING}
+            </p>
+            {load.deliveryTracking.keyConfigured ? null : (
+              <p className="font-acumin lk-text-3xs text-red-700">{DELIVERY_KEY_MISSING_HINT}</p>
+            )}
+            {load.deliveryTracking.updatedAt ? (
+              <p data-testid="shop-setting-delivery-tracking-updated" className="font-acumin lk-text-3xs text-[#474747]">
+                {`最後の変更：${formatJst(load.deliveryTracking.updatedAt)}・${load.deliveryTracking.updatedByEmail || '不明'}`}
+              </p>
+            ) : null}
+            {checkingCount ? <p className="font-acumin lk-text-3xs text-[#474747]">{DELIVERY_CHECKING_COUNT}</p> : null}
+          </div>
+          {/* 後から差し込むと読み上げられない環境が多いので、保存の知らせの入れ物は最初から置く（空の間は場所を取らない） */}
+          <p
+            role="status"
+            aria-live="polite"
+            className={cn('font-acumin lk-text-sm text-[#474747]', deliveryMessage?.kind !== 'saved' && 'sr-only')}
+          >
+            {deliveryMessage?.kind === 'saved' ? deliveryMessage.text : null}
+          </p>
+          {deliveryMessage?.kind === 'error' ? (
+            <p role="alert" className="font-acumin lk-text-sm text-red-700">
+              {deliveryMessage.text}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       {load.kind === 'ready' && load.returns ? (
         <div className="order-3">
           <ShopReturnSettingsSection
@@ -400,6 +641,7 @@ export default function ShopSettingsSection() {
               // 入力の誤りで保存しなかった時は、前の保存の知らせと窓口の失敗の文を残さない（誤りのまとめの文と並べない）
               setNotice(null);
               setSaveError(null);
+              setDeliveryMessage(null);
             }}
           />
         </div>
@@ -430,6 +672,33 @@ export default function ShopSettingsSection() {
           </Button>
           <Button variant="primary" size="sm" className="w-full font-acumin" disabled={saving} onClick={confirmAutoCancel}>
             オンにする
+          </Button>
+        </div>
+      </Dialog>
+
+      {/* 配送の追跡の確かめ。オンは直前に読み直した件数を、オフは止める旨を出す。2つのボタンは自分で置く（上の確かめと同じ） */}
+      <Dialog
+        open={deliveryConfirm !== null}
+        onClose={closeDeliveryConfirm}
+        title={deliveryConfirm?.kind === 'off' ? DELIVERY_OFF_CONFIRM_TITLE : DELIVERY_ON_CONFIRM_TITLE}
+        description={
+          deliveryConfirm?.kind === 'on'
+            ? deliveryOnConfirmMessage(deliveryConfirm.count)
+            : DELIVERY_OFF_CONFIRM_MESSAGE
+        }
+      >
+        <div className="flex gap-2 pt-1">
+          <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={saving} onClick={closeDeliveryConfirm}>
+            戻る
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            className="w-full font-acumin"
+            disabled={saving}
+            onClick={() => void confirmDelivery()}
+          >
+            {deliveryConfirm?.kind === 'off' ? 'オフにする' : 'オンにする'}
           </Button>
         </div>
       </Dialog>
