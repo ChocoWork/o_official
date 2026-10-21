@@ -108,7 +108,9 @@ const CODE_CASES = [
 ] as const;
 
 describe.each(['top', 'rejected', 'rejected carrier 0'] as const)('%sのエラーコード', (source) => {
-  const cases = CODE_CASES.map(([code, outcome]) => [code, source === 'top' && outcome === 'registered' ? 'transient' : outcome] as const);
+  const cases = CODE_CASES.map(([code, outcome]) => [code,
+    source === 'top' && outcome !== 'account' && outcome !== 'invalid_number' ? 'transient' : outcome,
+  ] as const);
   test.each(cases)('%s → %s', async (code, outcome) => {
     const row = { ...rejected(code), ...(source === 'rejected carrier 0' ? { carrier: 0 } : {}) };
     const body = source === 'top' ? { code, message: '捨てる本文' } : envelope([], [row]);
@@ -116,14 +118,15 @@ describe.each(['top', 'rejected', 'rejected carrier 0'] as const)('%sのエラ�
     expect((await client.retrack([PAIR]))[0]).toEqual({ pair: PAIR, outcome, errorCode: String(code), read: null });
   });
 
-  test.each(['getTrackInfo', 'stopTrack'] as const)('-18019902 / %s → not_registered', async (method) => {
+  test.each(['getTrackInfo', 'stopTrack'] as const)('-18019902 / %sは拒否行だけnot_registered、topはtransient', async (method) => {
     const body = source === 'top' ? { code: -18019902 }
       : source === 'rejected' ? envelope([], [rejected(-18019902)]) : fixture.responses.notRegistered;
     const { client } = rig(body);
     const [result] = await client[method]([PAIR]);
-    expect(result).toMatchObject({ pair: PAIR, outcome: 'not_registered', errorCode: '-18019902' });
+    const outcome = source === 'top' ? 'transient' : 'not_registered';
+    expect(result).toMatchObject({ pair: PAIR, outcome, errorCode: '-18019902' });
     expect(result.read).toEqual(method === 'getTrackInfo' ? {
-      outcome: 'not_registered', status: null, providerStatus: null, providerSubStatus: null,
+      outcome, status: null, providerStatus: null, providerSubStatus: null,
       happenedAt: null, deliveredAt: null, readAt: READ_AT, errorCode: '-18019902',
     } : null);
   });
@@ -144,12 +147,25 @@ describe.each(['top', 'rejected', 'rejected carrier 0'] as const)('%sのエラ�
   });
 });
 
-describe.each(METHODS)('%sのトップレベル成功codeを推測しない', (method) => {
-  test.each([-18019901, -18019904, -18019906])('code %sは複数の組もtransient', async (code) => {
+describe.each(METHODS)('%sのトップレベル番号別codeを全組へ適用しない', (method) => {
+  test.each([-18019901, -18019902, -18019904, -18019905, -18019906, -18019909])('code %sは複数の組もtransient', async (code) => {
     const results = await rig({ code }).client[method]([PAIR, OTHER]);
     expect(results.map((result) => result.outcome)).toEqual(['transient', 'transient']);
     expect(results.map((result) => result.errorCode)).toEqual([String(code), String(code)]);
   });
+});
+
+test('トップレベルの口座エラーはHTTP 401と同じく大文字番号が重なる要求にもaccountを返す', async () => {
+  const pairs = [PAIR, { ...PAIR, number: 'ab-1' }];
+  const topResults = await rig({ code: -18019908 }).client.getTrackInfo(pairs);
+  const httpResults = await rig(undefined, 401).client.getTrackInfo(pairs);
+  expect(topResults).toEqual(pairs.map((pair) => ({
+    pair, outcome: 'account', errorCode: '-18019908', read: {
+      outcome: 'account', status: null, providerStatus: null, providerSubStatus: null,
+      happenedAt: null, deliveredAt: null, readAt: READ_AT, errorCode: '-18019908',
+    },
+  })));
+  expect(httpResults.map((result) => result.outcome)).toEqual(['account', 'account']);
 });
 
 describe('HTTP・通信・応答の境界', () => {
@@ -419,13 +435,13 @@ describe('ためた配送状況の必要な値だけを読む', () => {
   });
 
   test.each([
-    [fixture.responses.noInformation, 'not_found'],
-    [trackingPayload(trackInfo('NotFound')), 'registered'],
-    [{ code: -18019909 }, 'not_found'],
-  ])('情報なしはnot_foundで出来事と配達時刻をnullにする（外側 %s/%s）', async (body, outcome) => {
+    [fixture.responses.noInformation, 'not_found', 'not_found'],
+    [trackingPayload(trackInfo('NotFound')), 'registered', 'not_found'],
+    [{ code: -18019909 }, 'transient', 'transient'],
+  ])('情報なしの項目とトップレベルを区別する（%s / 外側 %s / read %s）', async (body, outcome, readOutcome) => {
     const [result] = await rig(body).client.getTrackInfo([PAIR]);
     expect(result.outcome).toBe(outcome);
-    expect(result.read).toMatchObject({ outcome: 'not_found', status: null, happenedAt: null, deliveredAt: null, readAt: READ_AT });
+    expect(result.read).toMatchObject({ outcome: readOutcome, status: null, happenedAt: null, deliveredAt: null, readAt: READ_AT });
   });
 
   test('getのaccepted NotFoundも外側のoutcomeはregistered', async () => {

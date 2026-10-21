@@ -127,9 +127,9 @@ function parseResponse(value: unknown, pairs: ProviderPair[], method: Method, re
   if (!envelope || typeof envelope.code !== 'number' || !Number.isInteger(envelope.code)) return pairs.map(invalid);
   if (envelope.code !== 0) {
     const code = envelope.code;
-    const outcome = code === -18019901 || code === -18019904 || code === -18019906
-      ? 'transient' : codeOutcome(code, method);
-    return pairs.map((pair) => requestedCounts.get(pairKey(pair)) !== 1
+    const outcome = ACCOUNT_CODES.has(code) ? 'account'
+      : INVALID_NUMBER_CODES.has(code) ? 'invalid_number' : 'transient';
+    return pairs.map((pair) => outcome !== 'account' && requestedCounts.get(pairKey(pair)) !== 1
       ? invalid(pair) : failure(pair, method, outcome, String(code), readAt));
   }
   const data = object(envelope.data);
