@@ -4,6 +4,7 @@
  * 古い注文詳細の写しに足して使う。形は共通の約束（実装計画 C-2、Task 8・Task 14）に合わせる。
  */
 import type { OrderProgressKey, OrderProgressStep, OrderProgressStepKey } from '@/lib/orders/order-progress';
+import type { DeliveryStatus } from '@/lib/orders/tracking/delivery-types';
 
 export type DetailProgress = {
   key: OrderProgressKey;
@@ -20,6 +21,12 @@ export type DetailShipment = {
   carrierLabel: string | null;
   trackingNumber: string | null;
   trackingUrl: string | null;
+  /** 配達済みの時刻（グループ E-4）。窓口は追跡のオン・オフによらずいつも付ける。届いていなければ null */
+  deliveredAt: string | null;
+  /**
+   * 配送の状況。追跡がオンで、鍵があり、追跡中（または一度は登録できてから止めた）発送にだけ窓口が付ける。付けない時はキーごと無い
+   */
+  delivery?: { status: DeliveryStatus; statusAt: string; events: Array<{ status: DeliveryStatus; happenedAt: string }> };
   items: Array<{ orderItemId: string; name: string; color: string | null; size: string | null; quantity: number }>;
 };
 
@@ -75,6 +82,8 @@ export function shipmentOf(overrides: Partial<DetailShipment> & { number: number
     carrierLabel: 'ヤマト運輸',
     trackingNumber: '1234-5678-9012',
     trackingUrl: 'https://toi.kuronekoyamato.co.jp/cgi-bin/tneko?number=1234-5678-9012',
+    // 既定は未配達（delivery のキーも無い）。届いた発送は deliveredAt を渡す
+    deliveredAt: null,
     items: [{ orderItemId: 'item-1', name: 'シルクブラウス', color: 'ホワイト', size: 'M', quantity: 1 }],
     ...overrides,
   };

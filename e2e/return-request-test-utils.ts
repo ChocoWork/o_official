@@ -661,6 +661,8 @@ export async function settingsScene(page: Page) {
       autoRefundCancelledOrderPayment: { enabled: true, updatedAt: null, updatedByEmail: null },
       autoCancelAmountMismatch: { enabled: false, updatedAt: null, updatedByEmail: null },
       returns: state.settings,
+      // 窓口は配送の追跡の設定も必ず返す（グループ E-4）。最初はオフ・鍵あり
+      deliveryTracking: { enabled: false, updatedAt: null, updatedByEmail: null, keyConfigured: true, backfillCount: 0 },
     } });
   });
   await page.goto('/admin');

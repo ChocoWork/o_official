@@ -180,6 +180,9 @@ for (const viewport of viewports) {
       await expect(second.getByRole('link', { name: '配送状況を確認する' })).toHaveAttribute('href', /k2k\.sagawa-exp\.co\.jp/);
       await expect(second.getByText('プリーツスカート')).toBeVisible();
       await expect(second.getByText('シルクブラウス')).toHaveCount(0);
+      // 届いた時刻の無い発送（見本の既定）は、未配達のまま。配達済みの表示も、配送の状況の札も出ない（グループ E-4）
+      await expect(page.getByTestId('shipment-delivered')).toHaveCount(0);
+      await expect(page.getByTestId('shipment-delivery-status')).toHaveCount(0);
       await page.screenshot({ path: `test-results/group-e1/account-order-shipments-${viewport.width}.png`, fullPage: true, animations: 'disabled' });
     });
 
@@ -229,6 +232,64 @@ for (const viewport of viewports) {
       });
       await expect(page.getByRole('list', { name: '配送ステータス' })).toHaveCount(0);
       await expect(page.getByRole('region', { name: /^配送情報/ })).toHaveCount(0);
+    });
+
+    test('全部の発送が配達済みなら、進み具合は配達済みで全部の段が済みになり、各発送に届いた日が出る', async ({ page }) => {
+      // FREQ-444-AC-01, FREQ-444-AC-02（グループ E-4: 配達済みの到達）
+      await openDetail(page, {
+        ...BASE,
+        status: 'shipped',
+        progress: progressOf({ key: 'delivered', label: '配達済み', current: 'delivered' }),
+        shipments: [
+          // 2026-10-09T03:00Z は日本時間の10月9日12時。お届け日は日本時間の日付で出す
+          shipmentOf({ number: 1, deliveredAt: '2026-10-09T03:00:00.000Z' }),
+          shipmentOf({
+            number: 2,
+            carrier: 'sagawa',
+            carrierLabel: '佐川急便',
+            trackingNumber: 'SG-777-888',
+            trackingUrl: 'https://k2k.sagawa-exp.co.jp/p/web/okurijosearch.do?okurijoNo=SG-777-888',
+            deliveredAt: '2026-10-10T14:30:00.000Z',
+          }),
+        ],
+        items: [line({ id: 'item-1', name: 'シルクブラウス', quantity: 2, shippedQuantity: 2 })],
+      });
+      await expect(page.getByTestId('order-progress-status')).toContainText('配達済み');
+      const steps = page.getByRole('list', { name: '配送ステータス' });
+      expect(await stepLabelsOf(steps)).toEqual(['お支払い', '発送準備中', '配送中', '配達済み']);
+      // 配達済みは最後の段。届いたら全部の段が済み（text-black）になる
+      for (const label of ['お支払い', '発送準備中', '配送中', '配達済み']) {
+        await expect(steps.getByText(label, { exact: true })).toHaveClass(/text-black/);
+      }
+      // 日本時間の日付: 2026-10-10T14:30Z は日本時間の10月10日23時30分
+      await expect(page.getByRole('region', { name: '配送情報（1回目）' }).getByTestId('shipment-delivered')).toContainText('お届け日 10月9日');
+      await expect(page.getByRole('region', { name: '配送情報（2回目）' }).getByTestId('shipment-delivered')).toContainText('お届け日 10月10日');
+      // 追跡のリンクと伝票番号は今までどおり出る
+      await expect(page.getByRole('region', { name: '配送情報（1回目）' }).getByRole('link', { name: '配送状況を確認する' })).toBeVisible();
+      const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+      expect(hasHorizontalOverflow).toBe(false);
+    });
+
+    test('一部の発送だけが配達済みなら、進み具合は配送中のままで、届いた日はその発送にだけ出る', async ({ page }) => {
+      // FREQ-444-AC-01, FREQ-444-AC-02（グループ E-4: 一部だけ配達済み）
+      await openDetail(page, {
+        ...BASE,
+        status: 'shipped',
+        progress: progressOf({ key: 'in_transit', label: '配送中', current: 'in_transit' }),
+        shipments: [
+          shipmentOf({ number: 1, deliveredAt: '2026-10-09T03:00:00.000Z' }),
+          shipmentOf({ number: 2, trackingNumber: 'E2E-SECOND' }),
+        ],
+        items: [line({ id: 'item-1', name: 'シルクブラウス', quantity: 2, shippedQuantity: 2 })],
+      });
+      await expect(page.getByTestId('order-progress-status')).toContainText('配送中');
+      await expect(page.getByTestId('order-progress-status')).not.toContainText('配達済み');
+      const steps = page.getByRole('list', { name: '配送ステータス' });
+      await expect(steps.getByText('配送中', { exact: true })).toHaveClass(/text-black/);
+      await expect(steps.getByText('配達済み', { exact: true })).toHaveClass(/text-\[#999\]/);
+      await expect(page.getByRole('region', { name: '配送情報（1回目）' }).getByTestId('shipment-delivered')).toContainText('お届け日 10月9日');
+      await expect(page.getByRole('region', { name: '配送情報（2回目）' }).getByTestId('shipment-delivered')).toHaveCount(0);
+      await expect(page.getByTestId('shipment-delivered')).toHaveCount(1);
     });
 
     test('5段の進み具合と2回分の配送情報でも、段のラベルが1行で並び、横方向のページスクロールが発生しない', async ({ page }) => {

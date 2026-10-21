@@ -44,6 +44,8 @@ type PutBody = {
   autoRefundCancelledOrderPayment: boolean;
   autoCancelAmountMismatch: boolean;
   returns?: ShopReturnSettingsUpdate;
+  /** 配送の追跡の欄（グループ E-4）。返品の欄の保存には付かない（任意の項目） */
+  deliveryTracking?: { enabled: boolean };
 };
 
 type SettingsState = {
@@ -81,6 +83,8 @@ async function mockSettingsApis(page: Page, options: { putFails?: boolean; holdP
       autoRefundCancelledOrderPayment: { enabled: true, updatedAt: null, updatedByEmail: null },
       autoCancelAmountMismatch: { enabled: false, updatedAt: null, updatedByEmail: null },
       returns: state.returns,
+      // 窓口は配送の追跡の設定も必ず返す（グループ E-4）。最初はオフ・鍵あり
+      deliveryTracking: { enabled: false, updatedAt: null, updatedByEmail: null, keyConfigured: true, backfillCount: 0 },
     },
   });
   await mockAdminSessionAs(page, 'admin');
@@ -142,6 +146,13 @@ for (const viewport of viewports) {
       // 自動の返金の欄は、これまでどおり出る
       await expect(page.getByRole('heading', { name: '自動の返金', level: 3 })).toBeVisible();
       await expect(page.getByRole('switch', { name: '取り消した注文に届いた入金を、自動で全額返金する', exact: true })).toBeVisible();
+      // 配送の追跡の欄（グループ E-4）は、自動の返金と返品の間に出る。返品の6つのまとまりには混ざらない
+      expect(await page.getByRole('region', { name: 'ショップの設定', exact: true }).getByRole('heading', { level: 3 }).allTextContents()).toEqual([
+        '自動の返金',
+        '配送の追跡',
+        '返品',
+      ]);
+      await expect(page.getByRole('switch', { name: '配送の追跡（17TRACK）を使う', exact: true })).toHaveAttribute('aria-checked', 'false');
     });
 
     test('返送のまとまりに返送先の4つの入力が出て、4つとも空の間は「返品の受付のお知らせに載せます。空の間は、返品を作れません。」の説明が出る', async ({ page }) => {
@@ -231,9 +242,12 @@ for (const viewport of viewports) {
       const buffer = period.getByLabel('届いた日がわからない時の目安（日）', { exact: true });
 
       await expect(buffer).toHaveValue('3');
-      await expect(period.getByText('配達の記録ができるまでは、発送の日にこの日数を足した日を届いた日とみなします。')).toBeVisible();
+      // 配送の追跡（グループ E-4）で、説明は「配達済みの記録が無い発送は…」に変わった（句点なし。計画 C-5）
+      await expect(period.getByText('配達済みの記録が無い発送は、発送の日に目安の日数を足した日を届いた日とみなします', { exact: true })).toBeVisible();
       await buffer.fill('5');
       expect(await save(page, state)).toMatchObject({ deliveryBufferDays: 5 });
+      // 返品の欄の保存は、配送の追跡を送らない（任意の項目）
+      expect(state.puts[state.puts.length - 1].deliveryTracking).toBeUndefined();
     });
 
     test('理由ごとの設定に10の理由が決まった順に並び、理由ごとの「返送料の負担」と「在庫の無い交換」が最初の値で出る。変えた値が保存で届く', async ({ page }) => {

@@ -25,6 +25,16 @@ export type ServerProbe = { kind: 'down' } | { kind: 'up'; fingerprint: string |
 
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
+/**
+ * 作り物の 17TRACK（scripts/e2e/fake-17track.mjs。グループ E-4）。手元の 127.0.0.1:4017 だけで動き、本物の 17TRACK へは転送しない。
+ * 鍵は試験用の決まった文字列で、本物の鍵ではない。scripts/e2e-server.mjs にも同じ port・鍵が書いてある（二重の見張り。ずれは単体の試験が見つける）。
+ * 契約版は共通の見本 tests/fixtures/17track/v2.4.json の contract と同じ。
+ */
+export const E2E_FAKE_17TRACK_PORT = 4017;
+export const E2E_FAKE_17TRACK_URL = `http://127.0.0.1:${E2E_FAKE_17TRACK_PORT}/track/v2.4`;
+export const E2E_FAKE_17TRACK_KEY = 'e2e-fake-17track-key-0123456789';
+export const E2E_FAKE_17TRACK_CONTRACT = '17track-v2.4';
+
 /** E2E だけで使う固定の値。本番の値ではない。 */
 export const E2E_FIXED_ENV: Readonly<Record<string, string>> = {
   MAIL_PROVIDER: 'local',
@@ -38,6 +48,8 @@ export const E2E_FIXED_ENV: Readonly<Record<string, string>> = {
   RESEND_WEBHOOK_SECRET: 'whsec_ZTJlLWxvY2FsLXJlc2VuZC13ZWJob29rLW9ubHk=',
   STRIPE_WEBHOOK_SECRET: 'whsec_e2e_local_only',
   CRON_SECRET: 'e2e-local-cron-secret-0123456789abcdef',
+  TRACKING_17TRACK_BASE_URL: E2E_FAKE_17TRACK_URL,
+  TRACKING_17TRACK_API_KEY: E2E_FAKE_17TRACK_KEY,
 };
 
 export function isLocalUrl(raw: string | undefined): boolean {
@@ -47,6 +59,36 @@ export function isLocalUrl(raw: string | undefined): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * 17TRACK の接続先が、手元の作り物（http・loopback・4017番・/track/v2.4 だけ）かを見る。安全なら null、そうでなければ止める理由。
+ * 省略（アプリは本物の https://api.17track.net へ向かう）・本番・手元でない住所・別の道・別の port・URL の中の認証情報を拒む。
+ * 理由には URL の中身を出さない（認証情報が入りうるため）。
+ */
+function findUnsafeTrackingUrl(raw: string | undefined): string | null {
+  if (!raw || raw.trim() === '') {
+    return 'TRACKING_17TRACK_BASE_URL が無い（省略すると本番の 17TRACK へ向かう）';
+  }
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return 'TRACKING_17TRACK_BASE_URL が URL ではない（17TRACK の作り物の住所だけを受け付ける）';
+  }
+  if (url.username !== '' || url.password !== '') {
+    return 'TRACKING_17TRACK_BASE_URL に認証情報が入っている';
+  }
+  if (url.protocol !== 'http:' || !LOCAL_HOSTNAMES.has(url.hostname)) {
+    return 'TRACKING_17TRACK_BASE_URL が手元の 17TRACK の作り物（http の loopback）ではない';
+  }
+  if (url.port !== String(E2E_FAKE_17TRACK_PORT)) {
+    return `TRACKING_17TRACK_BASE_URL が 17TRACK の作り物の port（${E2E_FAKE_17TRACK_PORT}番）ではない`;
+  }
+  if (url.pathname.replace(/\/+$/, '') !== '/track/v2.4' || url.search !== '' || url.hash !== '') {
+    return 'TRACKING_17TRACK_BASE_URL が 17TRACK の作り物の道（/track/v2.4）ではない';
+  }
+  return null;
 }
 
 /** `npx supabase status -o json` の出力から、E2E に要る値だけを取り出す。 */
@@ -98,6 +140,12 @@ export function findUnsafeE2ESettings(env: EnvRecord): string[] {
   if (env.MAIL_PROVIDER !== 'local') problems.push('MAIL_PROVIDER が local ではない');
   if (!isLocalUrl(env.MAIL_LOCAL_URL)) problems.push('MAIL_LOCAL_URL が手元（localhost）ではない');
   if (env.RESEND_API_KEY) problems.push('RESEND_API_KEY が空ではない');
+  const trackingUrlProblem = findUnsafeTrackingUrl(env.TRACKING_17TRACK_BASE_URL);
+  if (trackingUrlProblem) problems.push(trackingUrlProblem);
+  // 17TRACK の鍵は、作り物の鍵だけ。本物の鍵を作り物へ（まして本物の 17TRACK へ）送らない。理由に鍵の値は出さない
+  if (env.TRACKING_17TRACK_API_KEY !== E2E_FAKE_17TRACK_KEY) {
+    problems.push('TRACKING_17TRACK_API_KEY が E2E 用の作り物の鍵ではない（本物の 17TRACK の鍵かもしれない）');
+  }
   return problems;
 }
 
@@ -108,15 +156,23 @@ export function assertSafeE2EEnv(env: EnvRecord): void {
   }
 }
 
-/** 3000番のアプリが「この設定で起動した E2E 用のもの」かを見分ける印。秘密は含めない。 */
-export function computeServerFingerprint(env: EnvRecord, mode: E2EServerMode): string {
+/**
+ * 3000番のアプリが「この設定で起動した E2E 用のもの」かを見分ける印。秘密は含めない。
+ * 作り物の 17TRACK の URL と契約版も入れる（変われば、前の設定で起動したアプリを使い回さない）。
+ */
+export function computeServerFingerprint(
+  env: EnvRecord,
+  mode: E2EServerMode,
+  fakeContract: string = E2E_FAKE_17TRACK_CONTRACT,
+): string {
   const material = JSON.stringify({
-    v: 2,
+    v: 3,
     mode,
     supabaseUrl: env.NEXT_PUBLIC_SUPABASE_URL ?? '',
     mailProvider: env.MAIL_PROVIDER ?? '',
     mailUrl: env.MAIL_LOCAL_URL ?? '',
     stripeKeyPrefix: (env.STRIPE_SECRET_KEY ?? '').slice(0, 8),
+    fake17track: { url: env.TRACKING_17TRACK_BASE_URL ?? '', contract: fakeContract },
     fixed: Object.fromEntries(Object.keys(E2E_FIXED_ENV).sort().map((key) => [key, env[key] ?? null])),
   });
   return createHash('sha256').update(material).digest('hex').slice(0, 32);
@@ -205,6 +261,18 @@ export function prepareE2EEnvironment(options: {
     // Playwright の worker は設定を読み直す。本体のプロセスが上書きした値を受け継いでいるので、確かめるだけにする。
     assertSafeE2EEnv(options.baseEnv);
     return { env: {} };
+  }
+
+  // 17TRACK の接続先が明示されているなら、作り物の URL で上書きして隠す前に確かめる（本番の URL を書いたまま流しても、気づけるように止める）。
+  // 省略されている時は下で作り物の URL を入れるので、ここでは止めない（入れた後の検査で必ず確かめる）
+  const explicitTrackingUrl = options.baseEnv.TRACKING_17TRACK_BASE_URL;
+  if (explicitTrackingUrl !== undefined && explicitTrackingUrl.trim() !== '') {
+    const problem = findUnsafeTrackingUrl(explicitTrackingUrl);
+    if (problem) {
+      throw new Error(
+        `E2E の見張り: 本番につながるおそれがあるので止めました。\n- ${problem}\n（E2E では 17TRACK の接続先を指定しないか、手元の作り物の URL にしてください）`,
+      );
+    }
   }
 
   const overrides = buildE2EOverrides((options.readStatus ?? readLocalSupabaseStatus)());

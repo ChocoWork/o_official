@@ -42,12 +42,13 @@ export async function mockAdminBackgroundApis(page: Page): Promise<void> {
     }),
   );
 
-  // ORDER タブと KPI 画面の要対応・要確認（src/components/AttentionInbox.tsx）。未処理なしを返す
+  // ORDER タブと KPI 画面の要対応・要確認（src/components/AttentionInbox.tsx）。未処理なしを返す。
+  // 窓口は配送の要対応（グループ E-4）も必ず返す。追跡がオフの間は空で、件数は 0
   await page.route('**/api/admin/order-attention', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ data: { exceptions: [], reviews: [], counts: { exceptions: 0, reviews: 0 } } }),
+      body: JSON.stringify({ data: { exceptions: [], reviews: [], deliveries: [], counts: { exceptions: 0, reviews: 0, deliveries: 0 } } }),
     }),
   );
 }

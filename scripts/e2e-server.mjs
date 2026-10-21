@@ -15,12 +15,23 @@
  * 起動を待つときも、応答ではなく印の一致で「起動した」と判断する。確かめ終わったら
  * 「[e2e-server] ready」を出し、playwright.config.ts の webServer.wait がそれを待つ。
  * E2E_STRICT=1 のときは、印が合っても起動済みのアプリを使い回さない。
+ *
+ * 配送の追跡（グループ E-4）の E2E は、本物の 17TRACK ではなく手元の作り物（scripts/e2e/fake-17track.mjs。127.0.0.1:4017 だけ）を使う。
+ * 作り物もアプリと同じく「親子関係を切って」起動し、テスト後も動いたまま残る。4017番の /__health が、契約版まで合う作り物の印を返す時だけ
+ * 使い回し、別のプロセスが4017番にいれば止めずに失敗にする。ビルドの前に確かめる。
  */
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
 const BASE_URL = "http://localhost:3000";
 const READY_TIMEOUT_SECONDS = 180;
+// 作り物の 17TRACK。port と鍵は scripts/e2e/environment.ts と同じ値（ずれは単体の試験が見つける）
+const FAKE_17TRACK_PORT = 4017;
+const FAKE_17TRACK_KEY = "e2e-fake-17track-key-0123456789";
+const FAKE_ORIGIN = `http://127.0.0.1:${FAKE_17TRACK_PORT}`;
+const FAKE_READY_TIMEOUT_SECONDS = 20;
 const useDevServer = process.env.E2E_DEV_SERVER === "1";
 
 // E2E 用のサーバーにだけ渡す環境変数。
@@ -40,9 +51,35 @@ function isLocalUrl(raw) {
 }
 
 /**
+ * 17TRACK の接続先が、手元の作り物（http・loopback・4017番・/track/v2.4 だけ）かを見る。安全なら null、そうでなければ止める理由。
+ * 省略（アプリは本物の https://api.17track.net へ向かう）・本番・手元でない住所・別の道・別の port・URL の中の認証情報を拒む。
+ * 理由には URL の中身を出さない（認証情報が入りうるため）。scripts/e2e/environment.ts の同名の見張りと同じ条件。
+ */
+function findUnsafeTrackingUrl(raw) {
+  if (!raw || raw.trim() === "") return "TRACKING_17TRACK_BASE_URL が無い（省略すると本番の 17TRACK へ向かう）";
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return "TRACKING_17TRACK_BASE_URL が URL ではない（17TRACK の作り物の住所だけを受け付ける）";
+  }
+  if (url.username !== "" || url.password !== "") return "TRACKING_17TRACK_BASE_URL に認証情報が入っている";
+  if (url.protocol !== "http:" || !LOCAL_HOSTNAMES.has(url.hostname)) {
+    return "TRACKING_17TRACK_BASE_URL が手元の 17TRACK の作り物（http の loopback）ではない";
+  }
+  if (url.port !== String(FAKE_17TRACK_PORT)) {
+    return `TRACKING_17TRACK_BASE_URL が 17TRACK の作り物の port（${FAKE_17TRACK_PORT}番）ではない`;
+  }
+  if (url.pathname.replace(/\/+$/, "") !== "/track/v2.4" || url.search !== "" || url.hash !== "") {
+    return "TRACKING_17TRACK_BASE_URL が 17TRACK の作り物の道（/track/v2.4）ではない";
+  }
+  return null;
+}
+
+/**
  * 見張り（設計書 2026-10-05 グループ B の 7-3）。playwright.config.ts と同じ条件のうち、
- * 本番の DB・外へのメールにつながるものを、ビルドの前にもう一度確かめる。
- * playwright.config.ts を通さずにこのスクリプトを直接動かしたときの守りでもある。
+ * 本番の DB・外へのメール・本物の 17TRACK につながるものを、ビルドの前にもう一度確かめる。
+ * playwright.config.ts を通さずにこのスクリプトを直接動かしたときの守りでもある（17TRACK の接続先の省略もここで拒む）。
  */
 function findUnsafeSettings(env) {
   const problems = [];
@@ -52,6 +89,12 @@ function findUnsafeSettings(env) {
   if (env.MAIL_PROVIDER !== "local") problems.push("MAIL_PROVIDER が local ではない");
   if (!isLocalUrl(env.MAIL_LOCAL_URL)) problems.push("MAIL_LOCAL_URL が手元（localhost）ではない");
   if (env.RESEND_API_KEY) problems.push("RESEND_API_KEY が空ではない");
+  const trackingUrlProblem = findUnsafeTrackingUrl(env.TRACKING_17TRACK_BASE_URL);
+  if (trackingUrlProblem) problems.push(trackingUrlProblem);
+  // 鍵の値は理由に出さない
+  if (env.TRACKING_17TRACK_API_KEY !== FAKE_17TRACK_KEY) {
+    problems.push("TRACKING_17TRACK_API_KEY が E2E 用の作り物の鍵ではない（本物の 17TRACK の鍵かもしれない）");
+  }
   if (!env.E2E_SERVER_FINGERPRINT) problems.push("E2E_SERVER_FINGERPRINT が無い（playwright.config.ts を通さずに起動した）");
   return problems;
 }
@@ -119,6 +162,77 @@ function startDetached(script) {
   spawn("npm", ["run", script], { stdio: "ignore", detached: true, env: SERVER_ENV }).unref();
 }
 
+/** 4017番の答えから、作り物を起こす・使い回す・止めるを決める。作り物の印（/__health の fake）が契約版まで合う時だけ使い回す。 */
+function decideFake(probe, contract) {
+  if (probe.kind === "down") return "start";
+  return probe.fake === contract ? "reuse" : "conflict";
+}
+
+/** 接続拒否（その port に何もいない）だけを「空き」とする。isUp と同じ分類 */
+function isRefused(error) {
+  const cause = error && typeof error === "object" ? error.cause : null;
+  if (!cause || typeof cause !== "object") return false;
+  if (cause instanceof AggregateError) {
+    return cause.errors.length > 0 && cause.errors.every(
+      (item) => item && typeof item === "object" && item.code === "ECONNREFUSED",
+    );
+  }
+  return cause.code === "ECONNREFUSED";
+}
+
+/** 4017番の /__health を読む。作り物の印を返さないもの（別のプロセス）は fake が null */
+async function probeFake() {
+  try {
+    const res = await fetch(`${FAKE_ORIGIN}/__health`, { signal: AbortSignal.timeout(2000) });
+    const body = res.ok ? await res.json().catch(() => null) : null;
+    return { kind: "up", fake: body !== null && typeof body === "object" && typeof body.fake === "string" ? body.fake : null };
+  } catch (error) {
+    return isRefused(error) ? { kind: "down" } : { kind: "up", fake: null };
+  }
+}
+
+/** アプリと同じく Playwright のプロセスツリー kill から外れるように、作り物を隠れた別プロセスで起こす（本物の 17TRACK へは転送しない） */
+function startFakeDetached() {
+  const script = fileURLToPath(new URL("./e2e/fake-17track.mjs", import.meta.url));
+  if (process.platform === "win32") {
+    spawn("cmd", ["/c", "start", "/b", "node", script], { stdio: "ignore", windowsHide: true, env: SERVER_ENV }).unref();
+    return;
+  }
+  spawn(process.execPath, [script], { stdio: "ignore", detached: true, env: SERVER_ENV }).unref();
+}
+
+function failFake(reason) {
+  console.error(`[e2e-server] 見張り: ${reason}`);
+  process.exit(1);
+}
+
+/** 作り物の 17TRACK を使える状態にする。別のプロセスが4017番にいれば、止めずに失敗にする */
+async function ensureFake() {
+  // 共通の見本と同じ契約版を、作り物の印として使う（作り物もこの見本を読む）
+  const contract = JSON.parse(
+    readFileSync(fileURLToPath(new URL("../tests/fixtures/17track/v2.4.json", import.meta.url)), "utf8"),
+  ).contract;
+  const conflict = `${FAKE_17TRACK_PORT}番で、この E2E の 17TRACK の作り物ではないプロセスが動いている（契約版が違う古い作り物かもしれない）。止めてから流して。`;
+  const first = decideFake(await probeFake(), contract);
+  if (first === "conflict") failFake(conflict);
+  if (first === "reuse") {
+    console.log(`17TRACK の作り物は起動済み（${FAKE_ORIGIN}）。そのまま使う。`);
+    return;
+  }
+  startFakeDetached();
+  const deadline = Date.now() + FAKE_READY_TIMEOUT_SECONDS * 1000;
+  while (Date.now() < deadline) {
+    const next = decideFake(await probeFake(), contract);
+    if (next === "reuse") {
+      console.log(`17TRACK の作り物を起動した（${FAKE_ORIGIN}）。テスト後も起動したまま残る。`);
+      return;
+    }
+    if (next === "conflict") failFake(conflict);
+    await sleep(250);
+  }
+  failFake(`17TRACK の作り物が ${FAKE_READY_TIMEOUT_SECONDS} 秒以内に ${FAKE_ORIGIN} で応答しなかった。`);
+}
+
 if (await isUp()) {
   if (process.env.E2E_STRICT === "1") {
     console.error(
@@ -132,8 +246,11 @@ if (await isUp()) {
     );
     process.exit(1);
   }
+  await ensureFake();
   console.log(`${BASE_URL} は E2E 用に起動済み。そのまま使う。`);
 } else {
+  // 長いビルドの前に、4017番の状態を確かめる（別のプロセスがいれば、ビルドせずに失敗にする）
+  await ensureFake();
   if (!useDevServer) await run("build");
   startDetached(useDevServer ? "dev" : "start");
 

@@ -35,6 +35,11 @@ const ORDERS = [
   adminOrder({
     id: 'order-cancelled', customerName: '取消 六郎', status: 'キャンセル', orderStatus: 'cancelled', progressKey: 'cancelled', canShip: false,
   }),
+  // グループ E-4: 取り消していない発送の全部が配達済みの注文は「配達済み」（DB の状態は shipped のまま）
+  adminOrder({
+    id: 'order-delivered', customerName: '配達 七郎', status: '配達済み', orderStatus: 'shipped', progressKey: 'delivered', canShip: false,
+    items: [orderLine({ id: 'd1000000-0000-4000-8000-000000000005', name: 'リネンシャツ', quantity: 1, shipped: 1, readyUnshipped: 0 })],
+  }),
 ];
 
 const CHIPS = [
@@ -89,6 +94,7 @@ async function openCustomerOrders(page: Page): Promise<void> {
           customerOrder('order-2', 'LFH-261005-00002', '発送準備中'),
           customerOrder('order-3', 'LFH-261005-00003', '配送中'),
           customerOrder('order-4', 'LFH-261005-00004', '未決済'),
+          customerOrder('order-5', 'LFH-261005-00005', '配達済み'),
         ],
       }),
     }));
@@ -115,6 +121,7 @@ for (const viewport of viewports) {
         ['order-ready', '発送準備中'],
         ['order-partial', '受注生産中'],
         ['order-transit', '配送中'],
+        ['order-delivered', '配達済み'],
         ['order-cancelled', 'キャンセル'],
       ];
       for (const [id, word] of words) {
@@ -126,9 +133,13 @@ for (const viewport of viewports) {
       }
       // 「一部発送済み」の印は、一部だけ送った注文にだけ付く
       await expect(orderRow(page, 'order-partial').getByText('一部発送済み', { exact: true })).toBeVisible();
-      for (const id of ['order-unpaid', 'order-production', 'order-ready', 'order-transit', 'order-cancelled']) {
+      for (const id of ['order-unpaid', 'order-production', 'order-ready', 'order-transit', 'order-delivered', 'order-cancelled']) {
         await expect(orderRow(page, id).getByText('一部発送済み', { exact: true })).toHaveCount(0);
       }
+      // 配達済みの注文の商品の欄は、発送済みの数だけを括弧の中に出す（グループ E-4 の言葉が増えても、数の書き方は変わらない）
+      await expect(orderRow(page, 'order-delivered')).toContainText(/リネンシャツ.*×\s*1/);
+      await expect(orderRow(page, 'order-delivered')).toContainText('発送済み 1');
+      await expect(orderRow(page, 'order-delivered').getByText('配送中', { exact: true })).toHaveCount(0);
       // 商品の欄は、0でない数だけを括弧の中に出す
       await expect(orderRow(page, 'order-partial')).toContainText(/ウールコート（ホワイト \/ M）\s*×\s*2/);
       await expect(orderRow(page, 'order-partial')).toContainText('受注生産中 1・発送済み 1');
@@ -164,14 +175,15 @@ for (const viewport of viewports) {
       await expect.poll(() => lastUrl(list.urls)).not.toContain('status=');
       await expect(orderRow(page, 'order-unpaid')).toHaveCount(0);
       await expect(orderRow(page, 'order-cancelled')).toHaveCount(0);
-      for (const id of ['order-production', 'order-ready', 'order-partial', 'order-transit']) {
+      for (const id of ['order-production', 'order-ready', 'order-partial', 'order-transit', 'order-delivered']) {
         await expect(orderRow(page, id)).toBeVisible();
       }
 
-      // 発送済みだけにすると、配送中の注文だけが残り、窓口には status=shipped を送る
+      // 発送済みだけにすると、配送中と配達済みの注文だけが残り（どちらも DB の状態は shipped）、窓口には status=shipped を送る
       await waiting.click();
       await expect.poll(() => lastUrl(list.urls)).toContain('status=shipped');
       await expect(orderRow(page, 'order-transit')).toBeVisible();
+      await expect(orderRow(page, 'order-delivered')).toBeVisible();
       await expect(orderRow(page, 'order-ready')).toHaveCount(0);
     });
 
@@ -184,6 +196,7 @@ for (const viewport of viewports) {
         ['LFH-261005-00002', '発送準備中'],
         ['LFH-261005-00003', '配送中'],
         ['LFH-261005-00004', '未決済'],
+        ['LFH-261005-00005', '配達済み'],
       ];
       for (const [orderNumber, word] of expected) {
         const row = page.getByRole('link', { name: new RegExp(orderNumber) });

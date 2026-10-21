@@ -81,7 +81,9 @@ async function mockAdminApis(page: Page, state: AttentionState): Promise<void> {
         data: {
           exceptions: state.exceptions,
           reviews: state.reviews,
-          counts: { exceptions: state.exceptions.length, reviews: state.reviews.length },
+          // 窓口は配送の要対応（グループ E-4）も必ず返す。追跡がオフの間は空で、件数は 0（欄の見出しに「配送」を足さない）
+          deliveries: [],
+          counts: { exceptions: state.exceptions.length, reviews: state.reviews.length, deliveries: 0 },
         },
       }),
     }),
@@ -141,7 +143,9 @@ for (const viewport of viewports) {
       await mockAdminApis(page, { exceptions: [EXCEPTION], reviews: [REVIEW], resolveBody: null });
       await openOrders(page);
 
-      await expect(page.getByRole('heading', { name: '要対応 1件・要確認 1件' })).toBeVisible();
+      // 配送の要対応が0件（追跡オフ）の間は、見出しに「・配送 n件」を足さず、「配送」の組も出さない
+      await expect(page.getByRole('heading', { name: '要対応 1件・要確認 1件', exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: '配送', exact: true })).toHaveCount(0);
       await expect(page.getByText('注文を作れない支払い')).toBeVisible();
       await expect(page.getByText('在庫を確保できなかった注文（ORD-A1B2C3D4）')).toBeVisible();
     });

@@ -39,6 +39,9 @@ function initialSettings(): ShopSettings {
   };
 }
 
+/** 窓口の答えに付く配送の追跡の設定（グループ E-4）。最初はオフ・鍵あり。自動の返金の保存では変わらない */
+const DELIVERY_TRACKING = { enabled: false, updatedAt: null, updatedByEmail: null, keyConfigured: true, backfillCount: 0 } as const;
+
 type SettingsState = {
   settings: ShopSettings;
   puts: UpdateShopSettingsRequest[];
@@ -62,7 +65,7 @@ async function mockApis(
         await fulfillJson(route, { error: 'Internal Server Error' }, 500);
         return;
       }
-      await fulfillJson(route, { data: state.settings });
+      await fulfillJson(route, { data: { ...state.settings, deliveryTracking: DELIVERY_TRACKING } });
       return;
     }
     const body = route.request().postDataJSON() as UpdateShopSettingsRequest;
@@ -79,7 +82,7 @@ async function mockApis(
           ? current.autoCancelAmountMismatch
           : { enabled: body.autoCancelAmountMismatch, updatedAt: CHANGED_AT, updatedByEmail: 'admin@example.com' },
     };
-    await fulfillJson(route, { data: state.settings });
+    await fulfillJson(route, { data: { ...state.settings, deliveryTracking: DELIVERY_TRACKING } });
   });
   return state;
 }
@@ -133,6 +136,10 @@ for (const viewport of viewports) {
       await expect(page.getByText(AUTO_REFUND_HINT)).toBeVisible();
       await expect(page.getByText(AUTO_CANCEL_HINT)).toBeVisible();
       await expect(page.getByText('まだ変えていません')).toHaveCount(2);
+      // 窓口の答えに配送の追跡の設定が付いていれば（グループ E-4）、その欄は自動の返金の下に出る。最初はオフで、変えた人の行は無い
+      await expect(page.getByRole('heading', { name: '配送の追跡', level: 3 })).toBeVisible();
+      await expect(page.getByRole('switch', { name: '配送の追跡（17TRACK）を使う', exact: true })).toHaveAttribute('aria-checked', 'false');
+      await expect(page.getByTestId('shop-setting-delivery-tracking-updated')).toHaveCount(0);
       // ダイアログではないので、動きは無い。目で見るための写し
       await page.screenshot({ path: `test-results/group-e2/shop-settings-${viewport.width}.png`, fullPage: true, animations: 'disabled' });
     });
@@ -152,6 +159,8 @@ for (const viewport of viewports) {
       // 変えていない②は、まだ変えていないまま
       await expect(autoCancelSwitch(page)).toHaveAttribute('aria-checked', 'false');
       await expect(page.getByText('まだ変えていません')).toHaveCount(1);
+      // 配送の追跡の欄は、自動の返金の保存では送られず（上の本文に deliveryTracking が無い）、保存の後も変わらず出る
+      await expect(page.getByRole('switch', { name: '配送の追跡（17TRACK）を使う', exact: true })).toHaveAttribute('aria-checked', 'false');
 
       // キーボード（focus → Space）でも切り替わり、保存が済んだ後もフォーカスはそのトグルにある
       // （保存の間 disabled にすると、ブラウザがフォーカスを body へ移し、戻らない）

@@ -5,6 +5,9 @@ import * as path from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { ModuleKind, transpileModule } from 'typescript';
 import {
+  E2E_FAKE_17TRACK_CONTRACT,
+  E2E_FAKE_17TRACK_KEY,
+  E2E_FAKE_17TRACK_URL,
   E2E_FIXED_ENV,
   buildE2EOverrides,
   computeServerFingerprint,
@@ -420,5 +423,118 @@ describe('prepareE2EEnvironment', () => {
     expect(() =>
       prepareE2EEnvironment({ baseEnv: dotEnvLocal, mode: 'start', strict: false, isWorker: true, baseUrl }),
     ).toThrow('E2E の見張り');
+  });
+
+  it('明示の危険な 17TRACK の URL は、安全な URL で上書きする前にも拒む', () => {
+    const readStatus = jest.fn(() => status);
+    const unsafeInput = {
+      baseEnv: { ...dotEnvLocal, TRACKING_17TRACK_BASE_URL: 'https://api.17track.net/track/v2.4' },
+      mode: 'start' as const, strict: false, isWorker: false, baseUrl, readStatus, probe: () => ({ kind: 'down' as const }),
+    };
+    expect(() => prepareE2EEnvironment(unsafeInput)).toThrow('17TRACK');
+  });
+
+  it('17TRACK の URL を省いた環境には、作り物の URL と鍵を入れてから検査する', () => {
+    const result = prepareE2EEnvironment({
+      baseEnv: dotEnvLocal, mode: 'start', strict: false, isWorker: false, baseUrl,
+      readStatus: () => status, probe: () => ({ kind: 'down' }),
+    });
+    expect(result.env.TRACKING_17TRACK_BASE_URL).toBe(E2E_FAKE_17TRACK_URL);
+    expect(result.env.TRACKING_17TRACK_API_KEY).toBe(E2E_FAKE_17TRACK_KEY);
+  });
+
+  it('作り物の URL を明示していても、手元の作り物の場合は止めない', () => {
+    expect(() => prepareE2EEnvironment({
+      baseEnv: { ...dotEnvLocal, TRACKING_17TRACK_BASE_URL: E2E_FAKE_17TRACK_URL }, mode: 'start', strict: false,
+      isWorker: false, baseUrl, readStatus: () => status, probe: () => ({ kind: 'down' }),
+    })).not.toThrow();
+  });
+
+  it('worker が 17TRACK の本番の URL や省略を受け継いでいたら止める', () => {
+    for (const url of ['https://api.17track.net/track/v2.4', undefined]) {
+      expect(() => prepareE2EEnvironment({
+        baseEnv: { ...safeEnv, TRACKING_17TRACK_BASE_URL: url }, mode: 'start', strict: false, isWorker: true, baseUrl,
+      })).toThrow('17TRACK');
+    }
+  });
+});
+
+describe('17TRACK の作り物への見張り', () => {
+  it('E2E の固定の値に、作り物の URL（127.0.0.1:4017）と試験用の鍵が入る', () => {
+    expect(E2E_FIXED_ENV.TRACKING_17TRACK_BASE_URL).toBe('http://127.0.0.1:4017/track/v2.4');
+    expect(E2E_FIXED_ENV.TRACKING_17TRACK_API_KEY).toBe(E2E_FAKE_17TRACK_KEY);
+    expect(buildE2EOverrides(status)).toMatchObject({
+      TRACKING_17TRACK_BASE_URL: E2E_FAKE_17TRACK_URL,
+      TRACKING_17TRACK_API_KEY: E2E_FAKE_17TRACK_KEY,
+    });
+  });
+
+  it('E2E は 17TRACK の本番 URL と省略の fallback を拒む', () => {
+    expect(
+      findUnsafeE2ESettings({ ...safeEnv, TRACKING_17TRACK_BASE_URL: 'https://api.17track.net/track/v2.4' }),
+    ).not.toEqual([]);
+    expect(findUnsafeE2ESettings({ ...safeEnv, TRACKING_17TRACK_BASE_URL: undefined })).not.toEqual([]);
+    expect(findUnsafeE2ESettings({ ...safeEnv, TRACKING_17TRACK_BASE_URL: '' })).not.toEqual([]);
+    expect(findUnsafeE2ESettings({ ...safeEnv, TRACKING_17TRACK_BASE_URL: undefined }).join('\n')).toContain('17TRACK');
+  });
+
+  it('作り物の URL（末尾の / や localhost・[::1] を含む手元の同じ道）は受け付ける', () => {
+    for (const url of [
+      'http://127.0.0.1:4017/track/v2.4',
+      'http://127.0.0.1:4017/track/v2.4/',
+      'http://localhost:4017/track/v2.4',
+      'http://[::1]:4017/track/v2.4',
+    ]) {
+      expect({ url, problems: findUnsafeE2ESettings({ ...safeEnv, TRACKING_17TRACK_BASE_URL: url }) }).toEqual({ url, problems: [] });
+    }
+  });
+
+  it('localhost でも別 path・別 port・https・URL 内の認証情報は拒む', () => {
+    const unsafePaths = [
+      'http://127.0.0.1:4017/',
+      'http://127.0.0.1:4017/track/v2.3',
+      'http://127.0.0.1:4017/track/v2.4/register',
+      'http://localhost:4017/track/v2.4/../v2.3',
+      'http://127.0.0.1:4017/track/v2.4?token=1',
+      'http://127.0.0.1:4017/track/v2.4#hash',
+      'http://127.0.0.1:4018/track/v2.4',
+      'https://127.0.0.1:4017/track/v2.4',
+      'http://user:pass@127.0.0.1:4017/track/v2.4',
+      'http://user@localhost:4017/track/v2.4',
+      'http://192.168.0.10:4017/track/v2.4',
+      'http://api.17track.net:4017/track/v2.4',
+      'not a url',
+    ];
+    expect(unsafePaths.every((url) => findUnsafeE2ESettings({ ...safeEnv, TRACKING_17TRACK_BASE_URL: url }).length > 0)).toBe(true);
+  });
+
+  it('止める理由に URL の中身（認証情報）を出さない', () => {
+    const message = findUnsafeE2ESettings({
+      ...safeEnv, TRACKING_17TRACK_BASE_URL: 'http://secret-user:secret-pass@127.0.0.1:4017/track/v2.4',
+    }).join('\n');
+    expect(message).toContain('17TRACK');
+    expect(message).not.toContain('secret-user');
+    expect(message).not.toContain('secret-pass');
+  });
+
+  it('作り物の鍵と違う鍵（本物の鍵かもしれない）は拒み、鍵の値は理由に出さない', () => {
+    const message = findUnsafeE2ESettings({ ...safeEnv, TRACKING_17TRACK_API_KEY: 'real-looking-key-value' }).join('\n');
+    expect(message).toContain('TRACKING_17TRACK_API_KEY');
+    expect(message).not.toContain('real-looking-key-value');
+    expect(findUnsafeE2ESettings({ ...safeEnv, TRACKING_17TRACK_API_KEY: undefined })).not.toEqual([]);
+  });
+
+  it('fake の URL や契約版が変われば fingerprint が変わる', () => {
+    const fingerprintA = computeServerFingerprint(safeEnv, 'start');
+    const otherUrl = computeServerFingerprint({ ...safeEnv, TRACKING_17TRACK_BASE_URL: 'http://127.0.0.1:4018/track/v2.4' }, 'start');
+    const otherContract = computeServerFingerprint(safeEnv, 'start', '17track-v9.9');
+    expect(otherUrl).not.toBe(fingerprintA);
+    expect(otherContract).not.toBe(fingerprintA);
+    expect(computeServerFingerprint(safeEnv, 'start', E2E_FAKE_17TRACK_CONTRACT)).toBe(fingerprintA);
+  });
+
+  it('契約版の定数は共通の見本（tests/fixtures/17track/v2.4.json）の契約版と同じ', () => {
+    const fixture = JSON.parse(readFileSync(path.resolve('tests/fixtures/17track/v2.4.json'), 'utf8')) as { contract: string };
+    expect(E2E_FAKE_17TRACK_CONTRACT).toBe(fixture.contract);
   });
 });

@@ -9,6 +9,7 @@ import type { OrderHistoryResponse } from '@/lib/orders/email/order-history';
 import type { FulfillmentMaterialLine, FulfillmentMaterials } from '@/lib/orders/fulfillment/fulfillment-types';
 import type { OrderStatus } from '@/lib/orders/order-payment-types';
 import type { OrderProgress } from '@/lib/orders/order-progress';
+import type { FulfillmentDeliveryDetail } from '@/lib/orders/tracking/delivery-types';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 
 export const viewports = [
@@ -138,11 +139,43 @@ export function shipMaterials(input: {
   };
 }
 
-/** GET /api/admin/orders/[id]/history の答え */
-export function historyOf(orderId: string, entries: OrderHistoryResponse['entries']): OrderHistoryResponse {
+/**
+ * GET /api/admin/orders/[id]/history の答え。窓口は配送の追跡のオン・オフ（deliveryTrackingEnabled）を必ず付ける（グループ E-4）。
+ * 既定はオフ（現在の状況と登録の状態を出さない）。オンにしたい試験は options で渡す
+ */
+export function historyOf(
+  orderId: string,
+  entries: OrderHistoryResponse['entries'],
+  options: { deliveryTrackingEnabled?: boolean } = {},
+): OrderHistoryResponse {
   return {
     order: { id: orderId, orderNumber: orderNumberOf(orderId), statusLabel: '決済完了', recipient: 'hanako@example.com' },
     sendPaused: null,
     entries,
+    deliveryTrackingEnabled: options.deliveryTrackingEnabled ?? false,
+  };
+}
+
+/**
+ * 発送の行に付く配送の現在値（delivery）の見本（グループ E-4）。既定は、受付済みでまだ届いていない・追跡の登録なし・出来事と直しの記録なし。
+ * 履歴の発送の行に `delivery` を付けると、管理画面は「伝票番号を直す」「配達済みにする」を出す（店長とサポートの人だけ）
+ */
+export function deliveryOf(overrides: Partial<FulfillmentDeliveryDetail> & { fulfillmentId: string }): FulfillmentDeliveryDetail {
+  return {
+    number: 1,
+    carrier: 'yamato',
+    trackingNumber: '1234-5678-9012',
+    notifyCustomer: true,
+    shippedAt: '2026-10-10T03:00:00.000Z',
+    cancelledAt: null,
+    trackingVersion: 1,
+    deliveryStatus: 'confirmed',
+    deliveryStatusAt: '2026-10-10T03:00:00.000Z',
+    deliveredAt: null,
+    deliveredSource: null,
+    registration: null,
+    events: [],
+    trackingChanges: [],
+    ...overrides,
   };
 }

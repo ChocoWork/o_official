@@ -25,6 +25,9 @@ for (const viewport of viewports) {
       });
       await expect(region.getByText(/最後に変えた人: admin@example.com/)).toBeVisible();
       await expect(page.getByRole('region', { name: '返送', exact: true }).getByText('まだ変えていません', { exact: true })).toBeVisible();
+      // 窓口の答えには配送の追跡の設定（グループ E-4）も付く。返品の欄の保存の後も欄は残り、保存の本文（17項目）には混ざらない
+      await expect(page.getByRole('heading', { name: '配送の追跡', level: 3 })).toBeVisible();
+      await expect(page.getByRole('switch', { name: '配送の追跡（17TRACK）を使う', exact: true })).toHaveAttribute('aria-checked', 'false');
       await noOverflow(page);
     });
 
