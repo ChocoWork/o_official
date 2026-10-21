@@ -136,6 +136,11 @@ describe('配送メールのC-6の件名と本文', () => {
     expect(compose('delivered', material({ deliveredAt }))).toBeNull();
   });
 
+  it.each(['http://', 'https://[broken'])('サイトの住所%sが壊れていても例外を投げず、配達済みの材料不足として扱う', (siteUrl) => {
+    process.env.NEXT_PUBLIC_SITE_URL = siteUrl;
+    expect(compose('delivered', material({ deliveryStatus: 'delivered' }))).toBeNull();
+  });
+
   it.each(['out_for_delivery', 'delivered', 'shipping_update'] as const)('%sは配送材料が無ければ作らない', (kind) => {
     const source = material();
     delete source.delivery;

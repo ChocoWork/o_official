@@ -96,6 +96,27 @@ test('40ACごとのE2E対応が指示書と一致し空欄はDBと単体だけ�
   });
 });
 
+test('FREQ-496-AC-03は接続先が空の時の準備とその後の拒否を区別する', () => {
+  const acceptance = rows().flatMap((line) => line.split('|')[6].split('<br>'))
+    .find((item) => item.includes('FREQ-496-AC-03:'))!;
+  expect(acceptance).toMatch(/空または省略[\s\S]*準備の段階で作り物の住所を入れ[\s\S]*その後の確かめ[\s\S]*省略と本番の接続先を拒否/);
+});
+
+test('E-4の担当Taskの全角括弧の前に余分な半角空白を置かない', () => {
+  rows().forEach((line) => expect(line).not.toMatch(/担当 Task[^<]*\d （/));
+});
+
+test('17TRACKの知らせの図は合う行がある時だけafterで起動する', () => {
+  const sequence = e4Section(read('docs/04_DetailDesign/sequence/stripe-webhooks.md'));
+  expect(sequence).toMatch(/opt 合図した行が1件以上ある\s+Route--\)Worker: after\(\) で起動/);
+  contains(sequence, '知らせの中身が0件なら合図を書かない');
+});
+
+test('配送追跡はStripe受け口のafterからも借りの印とprovider枠で動くと記録する', () => {
+  const ops = e4Section(read('docs/06_Operations/webhook-queue-operations.md'));
+  expect(ops).toMatch(/Stripeの受け口のafter\(\)[^\n]*runWebhookWorker[^\n]*借りの印[^\n]*providerの枠/);
+});
+
 test('E2EのACコメントが要求表に存在し対応するspecだけを指す', () => {
   const known = new Set(rows().flatMap((line) => line.split('|')[5].match(/FREQ-\d+-AC-\d+/g) ?? []));
   const specs = walk('e2e').filter((file) => /FR-(ADMIN-10[0-4]|ACCOUNT-04[1-3])-.*\.spec\.ts$/.test(file));

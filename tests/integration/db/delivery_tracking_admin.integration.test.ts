@@ -462,6 +462,32 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     }
   });
 
+  test.each([true, false])('abc123 → ABC123はDELIVERY_TRACKING_UNCHANGEDで断り、版・出来事・直しの記録・メールを増やさない（通知%s）', async (notifyCustomer) => {
+    const target = await deliveryShipment(db(), { trackingNumber: 'abc123', notifyCustomer: true });
+    await setDeliveryTracking(db(), true, target.actorId);
+    await markDeliveryDelivered(db(), manualOf(target, { notifyCustomer: true }));
+    const changes = async () => (await db().query(
+      'select * from public.order_fulfillment_tracking_changes where fulfillment_id=$1 order by changed_at,id', [target.fulfillmentId],
+    )).rows;
+    const before = {
+      record: await deliveryRecord(db(), target.fulfillmentId),
+      events: await deliveryEvents(db(), target.fulfillmentId),
+      changes: await changes(),
+      emails: await emails(db(), target.fulfillmentId),
+      registrations: await deliveryRegistrations(db(), target.fulfillmentId),
+    };
+    expect(before.record).toMatchObject({ tracking_number: 'abc123', tracking_version: 1, delivery_status: 'delivered' });
+    expect(before.record.delivered_at).not.toBeNull();
+    await expectDeliveryRejected(db(), () => updateDeliveryTracking(db(), editOf(target, {
+      carrier: 'yamato', trackingNumber: 'ABC123', notifyCustomer,
+    })), 'DELIVERY_TRACKING_UNCHANGED', '22023');
+    expect(await deliveryRecord(db(), target.fulfillmentId)).toEqual(before.record);
+    expect(await deliveryEvents(db(), target.fulfillmentId)).toEqual(before.events);
+    expect(await changes()).toEqual(before.changes);
+    expect(await emails(db(), target.fulfillmentId)).toEqual(before.emails);
+    expect(await deliveryRegistrations(db(), target.fulfillmentId)).toEqual(before.registrations);
+  });
+
   test('新しい管理操作はNULLと不正な業者・番号をC-4で断る', async () => {
     const target = await deliveryShipment(db());
     const tracking: unknown[] = [target.orderId, target.fulfillmentId, target.actorId, randomUUID(), 'sagawa', 'Valid-123', true];

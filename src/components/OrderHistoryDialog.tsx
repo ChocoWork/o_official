@@ -443,7 +443,7 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
           {DELIVERY_STATUS_LABELS[entry.event.status]}
         </StatusBadge>
       </div>
-      {entry.event.providerSubStatus ? <p className="break-all text-[11px] text-[#474747]">{entry.event.providerSubStatus}</p> : null}
+      {entry.event.providerSubStatus ? <p className="break-all lk-text-4xs text-[#474747]">{entry.event.providerSubStatus}</p> : null}
       {entry.event.actorEmail ? <p className="text-[#474747]">操作: {entry.event.actorEmail}</p> : null}
     </li>
   );

@@ -1638,6 +1638,7 @@ describe('OrderHistoryDialog の配送の出来事と伝票番号の直しの行
     expect(items[1]).toHaveTextContent('配送の状況（1回目）');
     expect(items[1]).toHaveTextContent('問題あり');
     expect(items[1]).toHaveTextContent('Exception_Other');
+    expect(within(items[1]).getByText('Exception_Other')).toHaveClass('lk-text-4xs');
     expect(items[1]).not.toHaveTextContent('操作:');
     for (const item of items) {
       expect(within(item).queryAllByRole('button')).toHaveLength(0);

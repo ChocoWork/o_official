@@ -282,7 +282,7 @@ Stripeの受け口と独立した `POST /api/webhook/17track` を追加する。
 | 順序 | 17TRACKの処理 |
 | --- | --- |
 | 1 | 鍵なし503 → 1MiB超413 → signのSHA-256を時間差なしで照合し不一致401 → JSON/形不正400 |
-| 2 | 設定オフなら200で終わる。設定読取・合図のDB失敗は500。それ以外は合図を記録し200、after()で共通worker |
+| 2 | 設定オフなら200で終わる。設定読取・合図のDB失敗は500。知らせの中身が0件なら合図を書かず200。それ以外は合図を記録し200、合図した行が1件以上ある時だけafter()で共通worker |
 | 3 | （carrier・大文字の番号）が合うregistered全行へsignal_revisionを足す。共有番号でも全行が対象 |
 | 4 | workerが版・lease_token付きでclaimし、providerの枠を取ってgettrackinfo。署名済み本文は状況の正として採用しない |
 | 5 | 注文 → 発送をlockし、設定・取消・版・leaseを再確認。同一取引で状況・出来事・要対応・メール予定を書き、古い結果は捨てる |
@@ -305,25 +305,30 @@ sequenceDiagram
   alt 追跡オフ
     Route-->>Provider: 200
   else 追跡オン
-    Route->>DB: 業者と大文字の番号が合う追跡中の全行へ合図を追加
-    DB-->>Route: signal_revision を更新
-    Route-->>Provider: 200
-    Route--)Worker: after() で起動（毎分も同じ処理）
-    Worker->>DB: 版と借りの印を付けて予定を借り、呼び出し枠を取得
-    Worker->>Provider: gettrackinfo でためた結果を読み直す
-    Provider-->>Worker: 読み直し結果
-    Worker->>DB: 版・lease_token と結果を渡す
-    rect rgb(240, 245, 250)
-      Note over DB: 1回の取引で注文から発送の順に鍵を取得
-      DB->>DB: 設定・取消・版・借りの印と借りの期限を再確認
-      alt 保存条件が一致
-        DB->>DB: 状況・出来事・要対応・メール予定を保存
-      else 古い処理結果
-        DB->>DB: 結果を捨てる
-      end
+    Note over Route,DB: 知らせの中身が0件なら合図を書かない
+    opt 知らせに業者と番号がある
+      Route->>DB: 業者と大文字の番号が合う追跡中の全行へ合図を追加
+      DB-->>Route: signal_revision を更新した行の数
     end
-    DB-->>Worker: 適用結果を返す
-    Note over DB,Worker: 借りた後に増えた合図は次回へ残す。同じ結果を再送しても二重記録しない
+    Route-->>Provider: 200
+    opt 合図した行が1件以上ある
+      Route--)Worker: after() で起動（毎分も同じ処理）
+      Worker->>DB: 版と借りの印を付けて予定を借り、呼び出し枠を取得
+      Worker->>Provider: gettrackinfo でためた結果を読み直す
+      Provider-->>Worker: 読み直し結果
+      Worker->>DB: 版・lease_token と結果を渡す
+      rect rgb(240, 245, 250)
+        Note over DB: 1回の取引で注文から発送の順に鍵を取得
+        DB->>DB: 設定・取消・版・借りの印と借りの期限を再確認
+        alt 保存条件が一致
+          DB->>DB: 状況・出来事・要対応・メール予定を保存
+        else 古い処理結果
+          DB->>DB: 結果を捨てる
+        end
+      end
+      DB-->>Worker: 適用結果を返す
+      Note over DB,Worker: 借りた後に増えた合図は次回へ残す。同じ結果を再送しても二重記録しない
+    end
   end
 ```
 

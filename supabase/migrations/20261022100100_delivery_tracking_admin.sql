@@ -622,7 +622,7 @@ BEGIN
   END IF;
   -- 通知のチェックだけの変更は断る（届いた記録と期限を、番号が同じまま消す操作にしない）
   IF v_fulfillment.shipping_carrier IS NOT DISTINCT FROM _shipping_carrier
-     AND v_fulfillment.tracking_number IS NOT DISTINCT FROM _tracking_number THEN
+     AND pg_catalog.upper(v_fulfillment.tracking_number) IS NOT DISTINCT FROM pg_catalog.upper(_tracking_number) THEN
     RAISE EXCEPTION 'DELIVERY_TRACKING_UNCHANGED' USING ERRCODE = '22023';
   END IF;
 

@@ -309,6 +309,8 @@ from public.list_return_photo_purge_targets(500);
 
 新しいcron登録は不要。既存の毎分 `process-stripe-webhooks`（`POST /api/cron/process-stripe-webhooks`）に同居する。Stripe 35秒 → 注文メール10秒 → 配送追跡 → 運用点検とメール配達の見回りの順。入口60秒から後続用15秒を残して計算し、配送はmin(8秒,残り)、3秒未満は飛ばす。Stripeとメールの既存予算は変えず、飛ばした時も `delivery_tracking` の心拍を残す。発送作成・番号の直し・17TRACKの知らせのafter()も同じlease付きworkerを呼ぶ。
 
+Stripeの受け口のafter()からも、`runWebhookWorker`内にある配送追跡が動き、借りの印とproviderの枠で同時実行を守る。
+
 DBはA（記録）→B（管理）→C（追跡）の3移行。ファイルと権限/17列claimはERの配送の節。最初のオフと既存記録の補完はSQLに含まれ、定期処理を新たに登録するSQLは作らない。
 
 ### 接続・再試行・止め方

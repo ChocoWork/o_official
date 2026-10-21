@@ -1738,6 +1738,13 @@ function composeDelivery(material: OrderEmailMaterial, kind: DeliveryEmailKind):
   if (kind === 'delivered') {
     const date = delivery.deliveredAt ? new Date(delivery.deliveredAt) : null;
     if (!date || !Number.isFinite(date.getTime())) return null;
+    let orderUrl: string;
+    try {
+      orderUrl = new URL(`/account/orders/${order.id}`, getSiteUrl()).toString();
+    } catch {
+      // 設定の誤りは材料不足として返し、ほかのメールの処理を続ける。
+      return null;
+    }
     const deliveredOn = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', month: 'long', day: 'numeric' }).format(date);
     return {
       subject: `【${SHOP_NAME}】商品をお届けしました（${orderNumber}）`,
@@ -1747,7 +1754,7 @@ function composeDelivery(material: OrderEmailMaterial, kind: DeliveryEmailKind):
         ...(delivery.windowDays === null ? [] : [
           `商品に不具合がございましたら、到着から ${delivery.windowDays} 日以内にご注文の画面またはお問い合わせからご連絡ください`, '',
         ]),
-        `ご注文の確認はこちら: ${new URL(`/account/orders/${order.id}`, getSiteUrl()).toString()}`, '',
+        `ご注文の確認はこちら: ${orderUrl}`, '',
         contactLine(order.id), '', SHOP_NAME,
       ].join('\n'),
     };
