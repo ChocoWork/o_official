@@ -2,6 +2,12 @@ import type { DeliveryStatus } from '@/lib/orders/tracking/delivery-types';
 
 export const SEVENTEEN_TRACK_CARRIERS = { yamato: 100062, sagawa: 100040, japanpost: 10021 } as const;
 
+export function isSeventeenTrackCarrier(value: unknown): value is 100062 | 100040 | 10021 {
+  return value === SEVENTEEN_TRACK_CARRIERS.yamato
+    || value === SEVENTEEN_TRACK_CARRIERS.sagawa
+    || value === SEVENTEEN_TRACK_CARRIERS.japanpost;
+}
+
 const PRIMARY_STATUSES = new Map<string, DeliveryStatus | 'not_found'>([
   ['InfoReceived', 'confirmed'], ['NotFound', 'not_found'], ['InTransit', 'in_transit'],
   ['OutForDelivery', 'out_for_delivery'], ['AvailableForPickup', 'ready_for_pickup'],

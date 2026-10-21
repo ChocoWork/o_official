@@ -1,7 +1,7 @@
 import 'server-only';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { TrackingSignal } from '@/lib/orders/tracking/delivery-types';
-import { SEVENTEEN_TRACK_CARRIERS } from '@/lib/orders/tracking/seventeen-track-status';
+import { isSeventeenTrackCarrier } from '@/lib/orders/tracking/seventeen-track-status';
 
 export function verifySeventeenTrackSignature(raw: Uint8Array, sign: string | null, key: string): boolean {
   if (typeof sign !== 'string' || sign.length !== 64 || !/^[0-9a-f]+$/i.test(sign)) return false;
@@ -28,9 +28,7 @@ export function parseTrackingSignals(value: unknown): TrackingSignal[] {
     if (typeof data.carrier !== 'number' || !Number.isInteger(data.carrier)) {
       throw new TypeError('Invalid tracking signal');
     }
-    if (data.carrier !== SEVENTEEN_TRACK_CARRIERS.yamato
-      && data.carrier !== SEVENTEEN_TRACK_CARRIERS.sagawa
-      && data.carrier !== SEVENTEEN_TRACK_CARRIERS.japanpost) continue;
+    if (!isSeventeenTrackCarrier(data.carrier)) continue;
     if (typeof data.number !== 'string' || !data.number.trim()) throw new TypeError('Invalid tracking signal');
 
     // track_info・param・tagは読み直しにも保存する値にも使わない。

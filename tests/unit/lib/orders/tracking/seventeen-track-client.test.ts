@@ -107,15 +107,18 @@ const CODE_CASES = [
   [-99999999, 'transient'], [-18019909, 'not_found'],
 ] as const;
 
-describe.each(['top', 'rejected'] as const)('%sのエラーコード', (source) => {
-  test.each(CODE_CASES)('%s → %s', async (code, outcome) => {
-    const body = source === 'top' ? { code, message: '捨てる本文' } : envelope([], [rejected(code)]);
+describe.each(['top', 'rejected', 'rejected carrier 0'] as const)('%sのエラーコード', (source) => {
+  const cases = CODE_CASES.map(([code, outcome]) => [code, source === 'top' && outcome === 'registered' ? 'transient' : outcome] as const);
+  test.each(cases)('%s → %s', async (code, outcome) => {
+    const row = { ...rejected(code), ...(source === 'rejected carrier 0' ? { carrier: 0 } : {}) };
+    const body = source === 'top' ? { code, message: '捨てる本文' } : envelope([], [row]);
     const { client } = rig(body);
     expect((await client.retrack([PAIR]))[0]).toEqual({ pair: PAIR, outcome, errorCode: String(code), read: null });
   });
 
   test.each(['getTrackInfo', 'stopTrack'] as const)('-18019902 / %s → not_registered', async (method) => {
-    const body = source === 'top' ? { code: -18019902 } : fixture.responses.notRegistered;
+    const body = source === 'top' ? { code: -18019902 }
+      : source === 'rejected' ? envelope([], [rejected(-18019902)]) : fixture.responses.notRegistered;
     const { client } = rig(body);
     const [result] = await client[method]([PAIR]);
     expect(result).toMatchObject({ pair: PAIR, outcome: 'not_registered', errorCode: '-18019902' });
@@ -125,15 +128,27 @@ describe.each(['top', 'rejected'] as const)('%sのエラーコード', (source) 
     } : null);
   });
 
-  test('-18019906 / stop → stopped', async () => {
-    const { client } = rig(source === 'top' ? { code: -18019906 } : envelope([], [rejected(-18019906)]));
-    expect(await client.stopTrack([PAIR])).toEqual([{ pair: PAIR, outcome: 'stopped', errorCode: '-18019906', read: null }]);
+  test('-18019906 / stopはrejectedだけを成功とする', async () => {
+    const row = { ...rejected(-18019906), ...(source === 'rejected carrier 0' ? { carrier: 0 } : {}) };
+    const { client } = rig(source === 'top' ? { code: -18019906 } : envelope([], [row]));
+    expect(await client.stopTrack([PAIR])).toEqual([{
+      pair: PAIR, outcome: source === 'top' ? 'transient' : 'stopped', errorCode: '-18019906', read: null,
+    }]);
   });
 
-  test('-18019904は大文字・小文字だけを直したretrackでも成功', async () => {
+  test.each(['ab-1', 'AB-1'])('-18019904のretrack応答番号 %s（トップレベルはtransient）', async (number) => {
     const pair: ProviderPair = { ...PAIR, number: 'ab-1' };
-    const { client } = rig(source === 'top' ? { code: -18019904 } : envelope([], [rejected(-18019904, pair)]));
-    expect((await client.retrack([pair]))[0]).toMatchObject({ pair, outcome: 'registered' });
+    const row = { ...rejected(-18019904, { ...pair, number }), ...(source === 'rejected carrier 0' ? { carrier: 0 } : {}) };
+    const { client } = rig(source === 'top' ? { code: -18019904 } : envelope([], [row]));
+    expect((await client.retrack([pair]))[0]).toMatchObject({ pair, outcome: source === 'top' ? 'transient' : 'registered' });
+  });
+});
+
+describe.each(METHODS)('%sのトップレベル成功codeを推測しない', (method) => {
+  test.each([-18019901, -18019904, -18019906])('code %sは複数の組もtransient', async (code) => {
+    const results = await rig({ code }).client[method]([PAIR, OTHER]);
+    expect(results.map((result) => result.outcome)).toEqual(['transient', 'transient']);
+    expect(results.map((result) => result.errorCode)).toEqual([String(code), String(code)]);
   });
 });
 
@@ -141,6 +156,27 @@ describe('HTTP・通信・応答の境界', () => {
   test.each([[401, 'account'], [429, 'transient'], [500, 'transient'], [503, 'transient']] as const)('HTTP %s → %s（本文のacceptedより優先）', async (status, outcome) => {
     const { client } = rig(fixture.responses.registered, status);
     expect((await client.register([PAIR]))[0]).toMatchObject({ outcome, errorCode: String(status) });
+  });
+
+  test.each(['ok', 'reject', 'throw'] as const)('HTTP失敗は本文をcancelし、cancelの失敗 %s は無視する', async (mode) => {
+    const { client, fetchMock } = rig();
+    const response = new Response('捨てる本文', { status: 503 });
+    const cancel = jest.fn(() => {
+      if (mode === 'throw') throw new Error('捨てるcancelの失敗');
+      return mode === 'reject' ? Promise.reject(new Error('捨てるcancelの失敗')) : Promise.resolve();
+    });
+    Object.defineProperty(response, 'body', { value: { cancel } });
+    fetchMock.mockResolvedValueOnce(response);
+    expect(await client.register([PAIR])).toEqual([{ pair: PAIR, outcome: 'transient', errorCode: '503', read: null }]);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  test('HTTP失敗の本文がnullでも分類を保つ', async () => {
+    const { client, fetchMock } = rig();
+    const response = new Response(null, { status: 401 });
+    Object.defineProperty(response, 'body', { value: null });
+    fetchMock.mockResolvedValueOnce(response);
+    expect((await client.register([PAIR]))[0]).toMatchObject({ outcome: 'account', errorCode: '401' });
   });
 
   test.each([301, 302, 307, 308])('HTTP %sを成功扱いしない', async (status) => {
@@ -262,9 +298,55 @@ describe('番号とcarrierの組の照合', () => {
     expect((await client.register([PAIR, OTHER])).map((item) => item.outcome)).toEqual(['registered', 'transient']);
   });
 
-  test('番号の大文字・小文字を勝手に変えて照合しない', async () => {
-    const { client } = rig(envelope([{ ...PAIR, number: 'ab-1' }]));
+  test('ab-1を頼みAB-1の応答でも照合し、pairは頼んだ時のまま返す', async () => {
+    const pair = { ...PAIR, number: 'ab-1' };
+    const { client } = rig(envelope([PAIR]));
+    expect(await client.register([pair])).toEqual([{ pair, outcome: 'registered', errorCode: null, read: null }]);
+  });
+
+  test.each([false, true])('同じ番号でcarrier違いの要求へのcarrier 0の拒否は両方transient（accepted併存 %s）', async (withAccepted) => {
+    const { client } = rig(envelope(withAccepted ? [PAIR, OTHER] : [], [{ ...rejected(-18019901), carrier: 0 }]));
+    expect((await client.register([PAIR, OTHER])).map((item) => item.outcome)).toEqual(['transient', 'transient']);
+  });
+
+  test.each([0, undefined, 999, null, '100062'])('rejectedのcarrier %j は大文字の番号が一意なら照合する', async (carrier) => {
+    const row = { ...rejected(-18019910), carrier };
+    const pair = { ...PAIR, number: 'ab-1' };
+    const { client } = rig(envelope([], [row]));
+    expect(await client.register([pair])).toEqual([{ pair, outcome: 'invalid_number', errorCode: '-18019910', read: null }]);
+  });
+
+  test.each([0, undefined, 999])('acceptedのcarrier %j は番号だけで補完しない', async (carrier) => {
+    const { client } = rig(envelope([{ ...PAIR, carrier }]));
     expect((await client.register([PAIR]))[0].outcome).toBe('transient');
+  });
+
+  test('既知carrierのrejectedは同じ番号の別carrierへ当てない', async () => {
+    const { client } = rig(envelope([], [rejected(-18019910, OTHER)]));
+    expect((await client.register([PAIR]))[0].outcome).toBe('transient');
+  });
+
+  test('既知carrierのrejectedは大文字の番号とcarrierの組で照合する', async () => {
+    const lower = { ...PAIR, number: 'ab-1' };
+    const { client } = rig(envelope([OTHER], [rejected(-18019910)]));
+    expect(await client.register([lower, OTHER])).toEqual([
+      { pair: lower, outcome: 'invalid_number', errorCode: '-18019910', read: null },
+      { pair: OTHER, outcome: 'registered', errorCode: null, read: null },
+    ]);
+  });
+
+  test.each(['AB-1', 'ab-1'])('要求の正規化後の組が重複したら両方transient（%s）', async (number) => {
+    const duplicate = { ...PAIR, number };
+    const third: ProviderPair = { number: 'JP-3', carrier: 10021 };
+    const { client } = rig(envelope([PAIR, third]));
+    const results = await client.register([PAIR, duplicate, third]);
+    expect(results.map((item) => item.pair)).toEqual([PAIR, duplicate, third]);
+    expect(results.map((item) => item.outcome)).toEqual(['transient', 'transient', 'registered']);
+  });
+
+  test('carrier 0の拒否に対応する番号が無くても別のacceptedを保つ', async () => {
+    const { client } = rig(envelope([PAIR], [{ ...rejected(-18019910), carrier: 0, number: 'UNREQUESTED' }]));
+    expect((await client.register([PAIR]))[0].outcome).toBe('registered');
   });
 });
 
@@ -297,6 +379,7 @@ describe('ためた配送状況の必要な値だけを読む', () => {
 
   test.each([
     [{ time_utc: '2026-10-21 02:03:04' }, '2026-10-21T02:03:04.000Z'],
+    [{ time_utc: '2026-10-21T02:03:04Z' }, '2026-10-21T02:03:04.000Z'],
     [{ time_iso: '2026-10-21T03:04:05-05:00' }, '2026-10-21T08:04:05.000Z'],
     [{ time_iso: '2026-10-21T03:04:05Z' }, '2026-10-21T03:04:05.000Z'],
     [{ time_iso: '2026-10-21T03:04:05', time_utc: '2026-10-21 02:03:04' }, '2026-10-21T02:03:04.000Z'],

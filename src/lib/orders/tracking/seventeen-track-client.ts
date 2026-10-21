@@ -1,6 +1,6 @@
 import 'server-only';
 import type { DeliveryReadResult, RegistrationOutcome } from '@/lib/orders/tracking/delivery-types';
-import { mapSeventeenTrackStatus, SEVENTEEN_TRACK_CARRIERS } from '@/lib/orders/tracking/seventeen-track-status';
+import { isSeventeenTrackCarrier, mapSeventeenTrackStatus } from '@/lib/orders/tracking/seventeen-track-status';
 
 export type ProviderPair = { number: string; carrier: 100062 | 100040 | 10021 };
 export type ProviderItemResult = {
@@ -56,6 +56,7 @@ function failure(pair: ProviderPair, method: Method, outcome: Outcome, errorCode
 /** offsetのないISOは採用しない。time_utcだけを明示的なUTCに変える。 */
 function timestamp(value: unknown, utc: boolean): string | null {
   if (typeof value !== 'string') return null;
+  if (utc && value.endsWith('Z')) return timestamp(value, false);
   const pattern = utc
     ? /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/
     : /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
@@ -101,34 +102,52 @@ function readTracking(value: unknown, readAt: string): DeliveryReadResult | null
 }
 
 function pairKey(pair: ProviderPair): string {
-  return JSON.stringify([pair.number, pair.carrier]);
+  return JSON.stringify([pair.number.toUpperCase(), pair.carrier]);
 }
 
 function responsePair(row: Record<string, unknown>): ProviderPair | null {
   if (typeof row.number !== 'string' || !row.number.trim()) return null;
-  if (row.carrier !== SEVENTEEN_TRACK_CARRIERS.yamato
-    && row.carrier !== SEVENTEEN_TRACK_CARRIERS.sagawa
-    && row.carrier !== SEVENTEEN_TRACK_CARRIERS.japanpost) return null;
+  if (!isSeventeenTrackCarrier(row.carrier)) return null;
   return { number: row.number, carrier: row.carrier };
 }
 
 function parseResponse(value: unknown, pairs: ProviderPair[], method: Method, readAt: string): ProviderItemResult[] {
   const invalid = (pair: ProviderPair) => failure(pair, method, 'transient', 'invalid_response', readAt);
+  const requestedCounts = new Map<string, number>();
+  const requestedByNumber = new Map<string, ProviderPair[]>();
+  for (const pair of pairs) {
+    const key = pairKey(pair);
+    requestedCounts.set(key, (requestedCounts.get(key) ?? 0) + 1);
+    const number = pair.number.toUpperCase();
+    const candidates = requestedByNumber.get(number) ?? [];
+    candidates.push(pair);
+    requestedByNumber.set(number, candidates);
+  }
   const envelope = object(value);
   if (!envelope || typeof envelope.code !== 'number' || !Number.isInteger(envelope.code)) return pairs.map(invalid);
   if (envelope.code !== 0) {
     const code = envelope.code;
-    return pairs.map((pair) => failure(pair, method, codeOutcome(code, method), String(code), readAt));
+    const outcome = code === -18019901 || code === -18019904 || code === -18019906
+      ? 'transient' : codeOutcome(code, method);
+    return pairs.map((pair) => requestedCounts.get(pairKey(pair)) !== 1
+      ? invalid(pair) : failure(pair, method, outcome, String(code), readAt));
   }
   const data = object(envelope.data);
   if (!data || !Array.isArray(data.accepted) || !Array.isArray(data.rejected)) return pairs.map(invalid);
 
   const rows = new Map<string, ResponseRow[]>();
+  const ambiguousKeys = new Set<string>();
   for (const [accepted, entries] of [[true, data.accepted], [false, data.rejected]] as const) {
     for (const entry of entries) {
       const row = object(entry);
-      const pair = row && responsePair(row);
-      if (!row || !pair) continue;
+      if (!row || typeof row.number !== 'string' || !row.number.trim()) continue;
+      let pair = responsePair(row);
+      if (!accepted && !isSeventeenTrackCarrier(row.carrier)) {
+        const candidates = requestedByNumber.get(row.number.toUpperCase()) ?? [];
+        if (candidates.length === 1) pair = candidates[0];
+        else for (const candidate of candidates) ambiguousKeys.add(pairKey(candidate));
+      }
+      if (!pair) continue;
       const key = pairKey(pair);
       const group = rows.get(key) ?? [];
       group.push({ accepted, row });
@@ -137,9 +156,10 @@ function parseResponse(value: unknown, pairs: ProviderPair[], method: Method, re
   }
 
   return pairs.map((pair) => {
-    const group = rows.get(pairKey(pair));
+    const key = pairKey(pair);
+    const group = rows.get(key);
     // 欠落・同じ組の複数の答えを成功に推測せず、その組だけ再試行へ戻す。
-    if (!group || group.length !== 1) return invalid(pair);
+    if (requestedCounts.get(key) !== 1 || ambiguousKeys.has(key) || !group || group.length !== 1) return invalid(pair);
     const { accepted, row } = group[0];
     if (!accepted) {
       const code = object(row.error)?.code;
@@ -171,6 +191,11 @@ export function createSeventeenTrackClient(input: {
         body: JSON.stringify(requested), signal: controller.signal, redirect: 'error', cache: 'no-store',
       });
       if (!response.ok) {
+        try {
+          void response.body?.cancel().catch(() => {});
+        } catch {
+          // 本文を破棄できなくてもHTTPの分類は変えない。
+        }
         const outcome = response.status === 401 ? 'account' : 'transient';
         const readAt = input.now().toISOString();
         return requested.map((pair) => failure(pair, method, outcome, String(response.status), readAt));

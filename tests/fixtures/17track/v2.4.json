@@ -2,12 +2,12 @@
   "contract": "17track-v2.4",
   "responses": {
     "registered": { "code": 0, "data": { "accepted": [{ "number": "AB-1", "carrier": 100062 }], "rejected": [] } },
-    "alreadyRegistered": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 100062, "error": { "code": -18019901, "message": "捨てる試験用の文" } }] } },
-    "invalidNumber": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 100062, "error": { "code": -18019910, "message": "捨てる試験用の文" } }] } },
-    "accountQuota": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 100062, "error": { "code": -18019908, "message": "捨てる試験用の文" } }] } },
-    "notRegistered": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 100062, "error": { "code": -18019902, "message": "捨てる試験用の文" } }] } },
-    "noInformation": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 100062, "error": { "code": -18019909, "message": "捨てる試験用の文" } }] } },
-    "retrackExhausted": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 100062, "error": { "code": -18019905, "message": "捨てる試験用の文" } }] } },
+    "alreadyRegistered": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 0, "error": { "code": -18019901, "message": "捨てる試験用の文" } }] } },
+    "invalidNumber": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 0, "error": { "code": -18019910, "message": "捨てる試験用の文" } }] } },
+    "accountQuota": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 0, "error": { "code": -18019908, "message": "捨てる試験用の文" } }] } },
+    "notRegistered": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 0, "error": { "code": -18019902, "message": "捨てる試験用の文" } }] } },
+    "noInformation": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 0, "error": { "code": -18019909, "message": "捨てる試験用の文" } }] } },
+    "retrackExhausted": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 0, "error": { "code": -18019905, "message": "捨てる試験用の文" } }] } },
     "inTransit": {
       "code": 0,
       "data": {

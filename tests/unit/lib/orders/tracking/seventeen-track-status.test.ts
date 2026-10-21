@@ -1,4 +1,5 @@
 import {
+  isSeventeenTrackCarrier,
   mapSeventeenTrackStatus,
   SEVENTEEN_TRACK_CARRIERS,
 } from '@/lib/orders/tracking/seventeen-track-status';
@@ -61,5 +62,12 @@ describe('17TRACK の状況の対応', () => {
 
   test('運送会社の番号は承認した3社だけ', () => {
     expect(SEVENTEEN_TRACK_CARRIERS).toEqual({ yamato: 100062, sagawa: 100040, japanpost: 10021 });
+  });
+
+  test.each([
+    [100062, true], [100040, true], [10021, true],
+    [0, false], [999, false], ['100062', false], [null, false], [undefined, false], [{}, false],
+  ])('carrierの型ガード %j → %s', (value, expected) => {
+    expect(isSeventeenTrackCarrier(value)).toBe(expected);
   });
 });
