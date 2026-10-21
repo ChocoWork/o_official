@@ -1,7 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { loadFulfillmentMaterials } from '@/lib/orders/fulfillment/fulfillment-materials';
 import { FulfillmentStoreError } from '@/lib/orders/fulfillment/fulfillment-store';
+import { DeliveryStoreError } from '@/lib/orders/tracking/delivery-store';
 import { returnDetail } from '../returns/order-return-detail-fixture';
+
+// delivery-store は server-only。この試験は配送の集計の RPC を差し替えた client で、本物の読み出しを通す
+jest.mock('server-only', () => ({}), { virtual: true });
 
 // 返品の一覧（Task 4 の return-store の listOrderReturns）は、窓口の形で差し替える。交換の品の行がある時だけ呼ばれる
 const mockListOrderReturns = jest.fn();
@@ -236,6 +240,61 @@ describe('loadFulfillmentMaterials', () => {
       const { client } = stubClient(options);
 
       await expect(loadFulfillmentMaterials(client, ORDER_ID)).rejects.toBeInstanceOf(FulfillmentStoreError);
+    });
+
+    it('配送の集計の読み取りが失敗したら DeliveryStoreError を投げる（偽の「配送中」や「配達済み」で進み具合を作らない）', async () => {
+      const { client } = stubClient({ rpc: { list_order_delivery_summaries: { data: null, error: { message: 'down', code: '08006' } } } });
+
+      await expect(loadFulfillmentMaterials(client, ORDER_ID)).rejects.toBeInstanceOf(DeliveryStoreError);
+    });
+  });
+
+  describe('配達済みの進み具合（グループ E-4 設計書 7-2）', () => {
+    const SHIPPED_COUNT_ROWS = [
+      { ...COUNT_ROWS[0], shipped: 2, ready_unshipped: 0, unshipped: 0 },
+      { ...COUNT_ROWS[1], shipped: 1, completed: 1, in_production: 0, ready_unshipped: 0, unshipped: 0 },
+    ];
+    const summaryRow = (activeCount: number, deliveredCount: number) => ({
+      order_id: ORDER_ID, active_count: activeCount, delivered_count: deliveredCount, attention_kind: null,
+    });
+
+    it('取り消していない発送が全部配達済みなら progress は配達済み。集計は注文の番号で1回読む', async () => {
+      const { client, rpc } = stubClient({
+        order: { data: { ...ORDER_ROW, status: 'shipped' }, error: null },
+        rpc: {
+          list_order_line_fulfillment: { data: SHIPPED_COUNT_ROWS, error: null },
+          list_order_delivery_summaries: { data: [summaryRow(2, 2)], error: null },
+        },
+      });
+
+      const materials = await loadFulfillmentMaterials(client, ORDER_ID);
+
+      expect(materials?.order.progress).toEqual({ key: 'delivered', label: '配達済み', partiallyShipped: false });
+      expect(rpc.mock.calls.filter(([name]) => name === 'list_order_delivery_summaries')).toEqual([
+        ['list_order_delivery_summaries', { _order_ids: [ORDER_ID] }],
+      ]);
+    });
+
+    it('一部だけ配達済みなら配送中のまま', async () => {
+      const { client } = stubClient({
+        order: { data: { ...ORDER_ROW, status: 'shipped' }, error: null },
+        rpc: {
+          list_order_line_fulfillment: { data: SHIPPED_COUNT_ROWS, error: null },
+          list_order_delivery_summaries: { data: [summaryRow(2, 1)], error: null },
+        },
+      });
+
+      const materials = await loadFulfillmentMaterials(client, ORDER_ID);
+
+      expect(materials?.order.progress.key).toBe('in_transit');
+    });
+
+    it('発送準備中や受注生産中の品が残っていれば、配達済みの発送があっても先の段のまま', async () => {
+      const { client } = stubClient({ rpc: { list_order_delivery_summaries: { data: [summaryRow(1, 1)], error: null } } });
+
+      const materials = await loadFulfillmentMaterials(client, ORDER_ID);
+
+      expect(materials?.order.progress.key).toBe('in_production');
     });
   });
   describe('交換の品の印と、手数料のお支払い待ちで送れない数（グループ E-3 設計書 7-1）', () => {

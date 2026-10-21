@@ -561,7 +561,7 @@ export default function ShopReturnSettingsSection({ settings, saving, onSave, on
           />
           {renderText('deliveryBufferDays', '届いた日がわからない時の目安（日）', {
             numeric: true,
-            helperText: '配達の記録ができるまでは、発送の日にこの日数を足した日を届いた日とみなします。',
+            helperText: '配達済みの記録が無い発送は、発送の日に目安の日数を足した日を届いた日とみなします',
           })}
         </Group>
 

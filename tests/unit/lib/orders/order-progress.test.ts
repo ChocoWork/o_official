@@ -134,8 +134,79 @@ describe('deriveOrderProgress の「キャンセルの手続き中」（グル�
   );
 });
 
+describe('deriveOrderProgress の配達済み（グループ E-4 設計書 7-2）', () => {
+  /** DB の集計（取り消した発送は除いてある）。取り消していない発送のうち配達済みの数 */
+  const delivered = (activeCount: number, deliveredCount: number) => ({ delivery: { activeCount, deliveredCount } });
+
+  it('全部の取消でない発送が配達済みなら配達済み。進み具合の段は全部済み', () => {
+    const lines = [STOCK_SHIPPED];
+
+    const progress = deriveOrderProgress('shipped', lines, delivered(1, 1));
+    const steps = buildOrderProgressSteps(progress, lines);
+
+    expect(progress.key).toBe('delivered');
+    expect(progress.label).toBe('配達済み');
+    expect(progress.partiallyShipped).toBe(false);
+    expect(steps).toHaveLength(4);
+    expect(steps?.every((step) => step.state === 'done')).toBe(true);
+  });
+
+  it('受注生産の品を含む注文も、全部の発送が配達済みなら5段が全部済み', () => {
+    const lines = [STOCK_SHIPPED, BACKORDER_SHIPPED];
+
+    const progress = deriveOrderProgress('shipped', lines, delivered(2, 2));
+    const steps = buildOrderProgressSteps(progress, lines);
+
+    expect(progress.key).toBe('delivered');
+    expect(steps).toHaveLength(5);
+    expect(steps?.every((step) => step.state === 'done')).toBe(true);
+  });
+
+  it('状態が paid のままでも、商品が全部送り済みで発送が全部配達済みなら配達済み（今の「配送中」と同じ決まり）', () => {
+    expect(deriveOrderProgress('paid', [STOCK_SHIPPED], delivered(1, 1)).key).toBe('delivered');
+  });
+
+  it('一部だけ配達済みと発送0件は配達済みにしない', () => {
+    const partial = deriveOrderProgress('shipped', [STOCK_SHIPPED], delivered(2, 1));
+    const empty = deriveOrderProgress('shipped', [STOCK_SHIPPED], delivered(0, 0));
+    const none = deriveOrderProgress('shipped', [STOCK_SHIPPED], delivered(2, 0));
+
+    expect(partial.key).toBe('in_transit');
+    expect(partial.label).toBe('配送中');
+    expect(empty.key).not.toBe('delivered');
+    expect(empty.key).toBe('in_transit');
+    expect(none.key).toBe('in_transit');
+  });
+
+  it('発送準備中か受注生産中の品が残れば先の段を保つ', () => {
+    const ready = deriveOrderProgress('paid', [STOCK_READY, STOCK_SHIPPED], delivered(1, 1));
+    const making = deriveOrderProgress('paid', [STOCK_SHIPPED, BACKORDER_IN_PRODUCTION], delivered(1, 1));
+    const makingAndReady = deriveOrderProgress('paid', [STOCK_READY, BACKORDER_IN_PRODUCTION], delivered(1, 1));
+
+    expect(ready.key).toBe('ready');
+    expect(ready.partiallyShipped).toBe(true);
+    expect(making.key).toBe('in_production');
+    expect(making.partiallyShipped).toBe(true);
+    expect(makingAndReady.key).toBe('in_production');
+  });
+
+  it('固定の言葉（未決済・失敗・放棄・キャンセル）と、キャンセルの手続き中は、配達済みの集計を渡されても変えない', () => {
+    for (const status of ['payment_in_progress', 'pending', 'failed', 'abandoned', 'cancelled'] as const) {
+      expect(deriveOrderProgress(status, [STOCK_SHIPPED], delivered(1, 1))).toEqual(deriveOrderProgress(status, [STOCK_SHIPPED]));
+    }
+    expect(deriveOrderProgress('paid', [STOCK_REFUNDED], { hasOpenRefund: true, ...delivered(1, 1) }).key).toBe('cancel_pending');
+  });
+
+  it('集計を渡さない・delivery を省いた呼び出しは、従来どおり「配送中」', () => {
+    expect(deriveOrderProgress('shipped', [STOCK_SHIPPED]).key).toBe('in_transit');
+    expect(deriveOrderProgress('shipped', [STOCK_SHIPPED], {}).key).toBe('in_transit');
+    expect(deriveOrderProgress('shipped', [STOCK_SHIPPED], { hasOpenRefund: false }).key).toBe('in_transit');
+    expect(deriveOrderProgress('shipped', [STOCK_SHIPPED], { delivery: undefined }).key).toBe('in_transit');
+  });
+});
+
 describe('buildOrderProgressSteps', () => {
-  const stepsOf = (status: (typeof ORDER_STATUSES)[number], lines: readonly OrderLineProgressCounts[]) =>
+  const stepsOf =(status: (typeof ORDER_STATUSES)[number], lines: readonly OrderLineProgressCounts[]) =>
     buildOrderProgressSteps(deriveOrderProgress(status, lines), lines);
   const view = (steps: ReturnType<typeof buildOrderProgressSteps>) => steps?.map((step) => `${step.label}:${step.state}`);
 
@@ -178,7 +249,7 @@ describe('buildOrderProgressSteps', () => {
     expect(stepsOf('paid', [STOCK_READY])?.map((step) => step.key)).toEqual(['payment', 'ready', 'in_transit', 'delivered']);
   });
 
-  it('配達済みは、4段でも5段でも全部の段が済み（E-4 で配達の状況が入るまで、窓口は出さない言葉）', () => {
+  it('配達済みは、4段でも5段でも全部の段が済む', () => {
     const delivered: OrderProgress = { key: 'delivered', label: '配達済み', partiallyShipped: false };
 
     expect(view(buildOrderProgressSteps(delivered, [STOCK_SHIPPED]))).toEqual(['お支払い:done', '発送準備中:done', '配送中:done', '配達済み:done']);
@@ -193,7 +264,9 @@ describe('画面からも読めること', () => {
     const source = fs.readFileSync(path.join(process.cwd(), 'src/lib/orders/order-progress.ts'), 'utf8');
     const specifiers = [...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]);
 
-    expect(specifiers).toEqual(['@/lib/orders/order-payment-types']);
+    // delivery-types は画面からも読める型だけの置き場（server-only の delivery-store ではない）
+    expect(specifiers).toEqual(['@/lib/orders/order-payment-types', '@/lib/orders/tracking/delivery-types']);
     expect(source).toMatch(/import type \{ OrderStatus \} from/);
+    expect(source).toMatch(/import type \{ OrderDeliverySummary \} from '@\/lib\/orders\/tracking\/delivery-types'/);
   });
 });

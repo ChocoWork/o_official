@@ -37,6 +37,9 @@ import { createCatalogFixture, insertOrderWithLines, uniqueSuffix } from './help
 
 jest.setTimeout(30000);
 
+// 発送の材料（fulfillment-materials）が進み具合のために配送の集計（server 専用の delivery-store）を読むため、試験の場では server-only の印を空にする
+jest.mock('server-only', () => ({}), { virtual: true });
+
 const LOCAL_API_URL = process.env.LOCAL_SUPABASE_URL;
 const LOCAL_SERVICE_ROLE_KEY = process.env.LOCAL_SUPABASE_SERVICE_ROLE_KEY;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

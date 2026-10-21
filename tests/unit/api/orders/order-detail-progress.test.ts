@@ -47,6 +47,15 @@ jest.mock('@/lib/orders/refund/refund-store', () => ({
   listOrderRefunds: (...args: unknown[]) => mockListRefunds(...args),
 }));
 
+// 配送の集計と注文1件の配送の記録（グループ E-4）。実物の読み出し（DB の関数）は使わず、答えを差し替える
+jest.mock('server-only', () => ({}), { virtual: true });
+const mockListDeliverySummaries = jest.fn();
+const mockGetDeliveryDetail = jest.fn();
+jest.mock('@/lib/orders/tracking/delivery-store', () => ({
+  listOrderDeliverySummaries: (...args: unknown[]) => mockListDeliverySummaries(...args),
+  getOrderDeliveryDetail: (...args: unknown[]) => mockGetDeliveryDetail(...args),
+}));
+
 // 返品・交換の欄（グループ E-3 段2）。実物の読み出し（DB の関数）は使わず、答えを差し替える
 const mockLoadCustomerOrderReturns = jest.fn();
 jest.mock('@/lib/orders/returns/customer-return-store', () => ({
@@ -159,6 +168,25 @@ function setup(options: { order?: unknown; lines?: unknown[]; fulfillments?: unk
   mockListRefunds.mockResolvedValue(refunds);
 }
 
+const ORIGINAL_TRACKING_ENV = {
+  key: process.env.TRACKING_17TRACK_API_KEY,
+  baseUrl: process.env.TRACKING_17TRACK_BASE_URL,
+};
+
+function restoreTrackingEnv() {
+  for (const [name, value] of [['TRACKING_17TRACK_API_KEY', ORIGINAL_TRACKING_ENV.key], ['TRACKING_17TRACK_BASE_URL', ORIGINAL_TRACKING_ENV.baseUrl]] as const) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
+
+/** 17TRACK の鍵が「ある／無い」を環境の値で決める（値は試験用の作り物。本物の鍵ではない） */
+function setTrackingKey(configured: boolean) {
+  delete process.env.TRACKING_17TRACK_BASE_URL;
+  if (configured) process.env.TRACKING_17TRACK_API_KEY = 'test-only-key';
+  else delete process.env.TRACKING_17TRACK_API_KEY;
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockOwnerQuery.select.mockReturnValue(mockOwnerQuery);
@@ -166,7 +194,14 @@ beforeEach(() => {
   mockOwnerQuery.not.mockReturnValue(mockOwnerQuery);
   mockCreateServiceRoleClient.mockResolvedValue(mockServiceClient);
   mockLoadCustomerOrderReturns.mockResolvedValue(null);
+  // 既定は、追跡オフで発送の記録なし（従来の画面と同じ）
+  mockListDeliverySummaries.mockImplementation(async (_store: unknown, orderIds: string[]) =>
+    new Map(orderIds.map((id) => [id, { activeCount: 0, deliveredCount: 0, attentionKind: null }])));
+  mockGetDeliveryDetail.mockResolvedValue({ enabled: false, fulfillments: [] });
+  setTrackingKey(false);
 });
+
+afterAll(restoreTrackingEnv);
 
 describe('GET /api/orders/[id] の発送と進み具合（グループ E-1）', () => {
   it('持ち主の確かめを通った注文だけ、同じ service_role の client で数と発送を読む', async () => {
@@ -333,6 +368,8 @@ describe('GET /api/orders/[id] の発送と進み具合（グループ E-1）', 
       carrierLabel: 'ヤマト運輸',
       trackingNumber: '1234-5678-9012',
       trackingUrl: 'https://toi.kuronekoyamato.co.jp/cgi-bin/tneko?number=1234-5678-9012',
+      // 配達済みの時刻は、追跡のオン・オフに関係なくいつも付く（配達済みの記録が無ければ null）
+      deliveredAt: null,
       items: [{ orderItemId: 'line-stock', name: 'リネンシャツ', color: '白', size: 'M', quantity: 2, lineKind: 'order' }],
     });
     expect(body.shipments[1]).toMatchObject({
@@ -380,7 +417,7 @@ describe('GET /api/orders/[id] の発送と進み具合（グループ E-1）', 
 
     expect(JSON.stringify(body)).not.toContain('admin@example.com');
     expect(Object.keys(body.shipments[0]).sort()).toEqual([
-      'carrier', 'carrierLabel', 'id', 'items', 'number', 'shippedAt', 'trackingNumber', 'trackingUrl',
+      'carrier', 'carrierLabel', 'deliveredAt', 'id', 'items', 'number', 'shippedAt', 'trackingNumber', 'trackingUrl',
     ]);
   });
 
@@ -914,5 +951,397 @@ describe('GET /api/orders/[id] の交換の品の行と返品の返金（グル�
         status: 'completed', customerActionDeadline: null,
       },
     ]);
+  });
+});
+
+describe('GET /api/orders/[id] の配送の状況と配達済み（グループ E-4 設計書 7）', () => {
+  const DELIVERED_AT = '2026-10-20T15:30:00.000Z';
+  // 現版（2回目）の出来事は 10-07 の 00:00 と 01:00。旧版（1回目）の出来事は 10-05・10-06 で、お客様には出さない
+  const CURRENT_EVENTS = [
+    { status: 'in_transit', happenedAt: '2026-10-07T01:00:00.000Z' },
+    { status: 'confirmed', happenedAt: '2026-10-07T00:00:00.000Z' },
+  ];
+
+  function deliveryEvent(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'event-x', trackingVersion: 2, status: 'in_transit', happenedAt: '2026-10-07T01:00:00.000Z',
+      recordedAt: '2026-10-07T01:00:05.000Z', source: 'tracking', providerSubStatus: 'InTransit_Other', actorEmail: null,
+      ...overrides,
+    };
+  }
+
+  function registrationOf(state: string | null) {
+    return state === null
+      ? null
+      : {
+          state, failureKind: state === 'failed' ? 'invalid_number' : null, stopReason: state === 'stopped' ? 'expired' : null,
+          expiresAt: '2026-11-06T00:00:00.000Z',
+        };
+  }
+
+  // get_order_delivery_detail の1発送。お客様に出さない内側の情報（管理者のメール・17TRACK の細かい状況・登録の状態・番号の直しの記録）も入れておく
+  function deliveryDetail(overrides: Record<string, unknown> = {}) {
+    return {
+      fulfillmentId: 'ful-1', number: 1, carrier: 'yamato', trackingNumber: '1234-5678-9012', notifyCustomer: true,
+      shippedAt: '2026-10-05T15:30:00.000Z', cancelledAt: null, trackingVersion: 2,
+      deliveryStatus: 'in_transit', deliveryStatusAt: '2026-10-07T01:00:00.000Z', deliveredAt: null, deliveredSource: null,
+      registration: registrationOf('registered'),
+      events: [
+        deliveryEvent({ id: 'e-v2-confirmed', status: 'confirmed', happenedAt: '2026-10-07T00:00:00.000Z', source: 'tracking_edit', providerSubStatus: null, actorEmail: 'admin@example.com' }),
+        deliveryEvent({ id: 'e-v1-transit', trackingVersion: 1, status: 'in_transit', happenedAt: '2026-10-06T01:00:00.000Z', providerSubStatus: 'InTransit_OldNumber' }),
+        deliveryEvent({ id: 'e-v2-transit' }),
+        deliveryEvent({ id: 'e-v1-confirmed', trackingVersion: 1, status: 'confirmed', happenedAt: '2026-10-05T16:11:11.000Z', source: 'shipment', providerSubStatus: null }),
+      ],
+      trackingChanges: [{
+        id: 'change-1', fromCarrier: 'sagawa', fromTrackingNumber: 'OLD-0001', toCarrier: 'yamato', toTrackingNumber: '1234-5678-9012',
+        trackingVersion: 2, notifyCustomer: true, changedAt: '2026-10-07T00:00:00.000Z', actorEmail: 'admin@example.com', emailStatus: 'sent',
+      }],
+      ...overrides,
+    };
+  }
+
+  function setupDelivery(options: {
+    enabled: boolean;
+    key?: boolean;
+    details?: unknown[];
+    fulfillments?: unknown[];
+    summary?: { activeCount: number; deliveredCount: number };
+    lines?: unknown[];
+    order?: unknown;
+  }) {
+    setTrackingKey(options.key ?? true);
+    setup({
+      // order: null は「持ち主の確かめで見つからない」（?? だと既定の注文に置き換わってしまう）
+      order: options.order === undefined ? orderRow({ status: 'shipped', order_items: [STOCK_ITEM] }) : options.order,
+      lines: options.lines ?? [stockLine({ shipped: 2, readyUnshipped: 0, unshipped: 0 })],
+      fulfillments: options.fulfillments ?? [fulfillment()],
+    });
+    mockGetDeliveryDetail.mockResolvedValue({ enabled: options.enabled, fulfillments: options.details ?? [deliveryDetail()] });
+    if (options.summary) {
+      mockListDeliverySummaries.mockResolvedValue(new Map([[ORDER_ID, { ...options.summary, attentionKind: null }]]));
+    }
+  }
+
+  // 内側の情報の名前。お客様の答えのどこにも（入れ子の中にも）出さない
+  const INTERNAL_KEYS = ['actorEmail', 'providerSubStatus', 'registration', 'trackingChanges', 'createdBy', 'leaseToken'];
+  function keysOf(value: unknown): string[] {
+    if (Array.isArray(value)) return value.flatMap(keysOf);
+    if (value !== null && typeof value === 'object') {
+      return Object.entries(value as Record<string, unknown>).flatMap(([key, inner]) => [key, ...keysOf(inner)]);
+    }
+    return [];
+  }
+
+  const BASE_SHIPMENT_KEYS = ['carrier', 'carrierLabel', 'deliveredAt', 'id', 'items', 'number', 'shippedAt', 'trackingNumber', 'trackingUrl'];
+
+  it('持ち主の確かめを通った注文だけ、同じ service_role の client で配送の集計と配送の記録を読む', async () => {
+    setupDelivery({ enabled: true });
+
+    const response = await getDetail();
+
+    expect(response.status).toBe(200);
+    expect(mockCreateServiceRoleClient).toHaveBeenCalledTimes(1);
+    expect(mockListDeliverySummaries).toHaveBeenCalledWith(mockServiceClient, [ORDER_ID]);
+    expect(mockGetDeliveryDetail).toHaveBeenCalledWith(mockServiceClient, ORDER_ID);
+  });
+
+  it('他のお客様の注文（持ち主の確かめで見つからない）は 404 で、配送の集計も配送の記録も読まない', async () => {
+    setupDelivery({ enabled: true, order: null });
+
+    const response = await getDetail();
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: 'Order not found' });
+    expect(mockListDeliverySummaries).not.toHaveBeenCalled();
+    expect(mockGetDeliveryDetail).not.toHaveBeenCalled();
+  });
+
+  describe('delivery のキーを付ける条件（サーバーが決める）', () => {
+    type Row = {
+      name: string;
+      /** 追跡の設定（ショップの設定のオン） */
+      enabled: boolean;
+      /** 17TRACK の鍵がある */
+      key: boolean;
+      /** 現版の登録の状態（登録なしは null） */
+      state: string | null;
+      deliveredAt: string | null;
+      /** delivery のキーを付けるか */
+      hasDelivery: boolean;
+    };
+    const rows: Row[] = [
+      { name: 'OFF・鍵あり・registered', enabled: false, key: true, state: 'registered', deliveredAt: null, hasDelivery: false },
+      { name: 'OFF・鍵あり・stopped', enabled: false, key: true, state: 'stopped', deliveredAt: null, hasDelivery: false },
+      { name: 'OFF・鍵なし・registered', enabled: false, key: false, state: 'registered', deliveredAt: null, hasDelivery: false },
+      { name: 'ON・鍵なし・registered', enabled: true, key: false, state: 'registered', deliveredAt: null, hasDelivery: false },
+      { name: 'ON・鍵なし・stopped', enabled: true, key: false, state: 'stopped', deliveredAt: null, hasDelivery: false },
+      { name: 'ON・鍵あり・登録なし', enabled: true, key: true, state: null, deliveredAt: null, hasDelivery: false },
+      { name: 'ON・鍵あり・pending', enabled: true, key: true, state: 'pending', deliveredAt: null, hasDelivery: false },
+      { name: 'ON・鍵あり・failed', enabled: true, key: true, state: 'failed', deliveredAt: null, hasDelivery: false },
+      { name: 'ON・鍵あり・registered', enabled: true, key: true, state: 'registered', deliveredAt: null, hasDelivery: true },
+      { name: 'ON・鍵あり・stopped', enabled: true, key: true, state: 'stopped', deliveredAt: null, hasDelivery: true },
+      { name: 'OFF・配達済みの時刻あり', enabled: false, key: true, state: 'registered', deliveredAt: DELIVERED_AT, hasDelivery: false },
+      { name: 'ON・鍵なし・配達済みの時刻あり', enabled: true, key: false, state: 'stopped', deliveredAt: DELIVERED_AT, hasDelivery: false },
+      { name: 'ON・鍵あり・pending・配達済みの時刻あり', enabled: true, key: true, state: 'pending', deliveredAt: DELIVERED_AT, hasDelivery: false },
+      { name: 'ON・鍵あり・登録なし・配達済みの時刻あり', enabled: true, key: true, state: null, deliveredAt: DELIVERED_AT, hasDelivery: false },
+      { name: 'ON・鍵あり・stopped・配達済みの時刻あり', enabled: true, key: true, state: 'stopped', deliveredAt: DELIVERED_AT, hasDelivery: true },
+    ];
+
+    it.each(rows)('$name → deliveredAt は常に値のまま、delivery のキーは付く: $hasDelivery', async ({ enabled, key, state, deliveredAt, hasDelivery }) => {
+      setupDelivery({
+        enabled,
+        key,
+        details: [deliveryDetail({
+          registration: registrationOf(state),
+          deliveredAt,
+          deliveredSource: deliveredAt ? 'tracking' : null,
+          deliveryStatus: deliveredAt ? 'delivered' : 'in_transit',
+        })],
+      });
+
+      const { status, body } = await getDetail();
+
+      expect(status).toBe(200);
+      const shipment = body.shipments[0];
+      expect(shipment.deliveredAt).toBe(deliveredAt);
+      if (hasDelivery) {
+        expect(Object.keys(shipment).sort()).toEqual([...BASE_SHIPMENT_KEYS, 'delivery'].sort());
+      } else {
+        expect(shipment).not.toHaveProperty('delivery');
+        expect(Object.keys(shipment).sort()).toEqual(BASE_SHIPMENT_KEYS);
+      }
+    });
+
+    it('鍵が無い間は記録済みの輸送中も返さない', async () => {
+      setupDelivery({ enabled: true, key: false, details: [deliveryDetail({ registration: registrationOf('registered'), deliveryStatus: 'in_transit' })] });
+
+      const { body } = await getDetail();
+
+      const shipment = body.shipments[0];
+      expect(shipment).not.toHaveProperty('delivery');
+      expect(shipment.deliveredAt).toBeNull();
+      // 追跡のリンクだけは今までどおり出す
+      expect(shipment.trackingUrl).toBe('https://toi.kuronekoyamato.co.jp/cgi-bin/tneko?number=1234-5678-9012');
+      expect(JSON.stringify(body)).not.toContain('2026-10-07T01:00:00.000Z');
+    });
+
+    it('OFFでも配達済みとお届け日の時刻は残す', async () => {
+      setupDelivery({
+        enabled: false,
+        details: [deliveryDetail({ deliveredAt: DELIVERED_AT, deliveredSource: 'manual', deliveryStatus: 'delivered' })],
+      });
+
+      const { body } = await getDetail();
+
+      expect(body.shipments[0].deliveredAt).toBe(DELIVERED_AT);
+      expect(body.shipments[0]).not.toHaveProperty('delivery');
+    });
+
+    it('配送の記録が読めた発送が無い（読む間に増えた発送）は、deliveredAt を null にして delivery を付けない', async () => {
+      setupDelivery({ enabled: true, details: [] });
+
+      const { status, body } = await getDetail();
+
+      expect(status).toBe(200);
+      expect(body.shipments[0].deliveredAt).toBeNull();
+      expect(body.shipments[0]).not.toHaveProperty('delivery');
+    });
+  });
+
+  describe('delivery の中身', () => {
+    it('今の状況・最後に変わった時刻・現版の出来事だけを、新しい順に、状況と時刻の2項目で返す', async () => {
+      setupDelivery({ enabled: true });
+
+      const { body } = await getDetail();
+
+      expect(body.shipments[0].delivery).toEqual({
+        status: 'in_transit',
+        statusAt: '2026-10-07T01:00:00.000Z',
+        events: CURRENT_EVENTS,
+      });
+    });
+
+    it('同じ時刻の出来事は、後から記録した物を先にする', async () => {
+      setupDelivery({
+        enabled: true,
+        details: [deliveryDetail({
+          events: [
+            deliveryEvent({ id: 'older', status: 'in_transit', happenedAt: '2026-10-07T01:00:00.000Z', recordedAt: '2026-10-07T01:00:01.000Z' }),
+            deliveryEvent({ id: 'newer', status: 'out_for_delivery', happenedAt: '2026-10-07T01:00:00.000Z', recordedAt: '2026-10-07T01:00:09.000Z' }),
+          ],
+        })],
+      });
+
+      const { body } = await getDetail();
+
+      expect(body.shipments[0].delivery.events.map((event: Json) => event.status)).toEqual(['out_for_delivery', 'in_transit']);
+    });
+
+    it('問題あり・遅れの状況も、状況の記号だけを返す（一文は画面が出す）', async () => {
+      setupDelivery({ enabled: true, details: [deliveryDetail({ deliveryStatus: 'failure' })] });
+
+      const { body } = await getDetail();
+
+      expect(body.shipments[0].delivery.status).toBe('failure');
+    });
+
+    it('管理者の名前・17TRACK の細かい状況・登録の状態・番号の直しの記録・借りの印は、答えのどこにも出さない', async () => {
+      setupDelivery({ enabled: true });
+
+      const { body } = await getDetail();
+
+      expect(body.shipments[0]).toHaveProperty('delivery');
+      const keys = keysOf(body);
+      for (const name of INTERNAL_KEYS) {
+        expect(keys).not.toContain(name);
+      }
+      const json = JSON.stringify(body);
+      expect(json).not.toContain('admin@example.com');
+      expect(json).not.toContain('InTransit_Other');
+      expect(json).not.toContain('InTransit_OldNumber');
+      expect(json).not.toContain('OLD-0001');
+    });
+
+    it('旧版（直す前の伝票番号）の出来事は返さない', async () => {
+      setupDelivery({ enabled: true });
+
+      const { body } = await getDetail();
+
+      const json = JSON.stringify(body.shipments[0].delivery);
+      expect(json).not.toContain('2026-10-06T01:00:00.000Z');
+      expect(json).not.toContain('2026-10-05T16:11:11.000Z');
+    });
+
+    it('取り消した発送は、発送の行にも配達済みの時刻にも出来事にも出さない', async () => {
+      setupDelivery({
+        enabled: true,
+        fulfillments: [
+          fulfillment({ fulfillmentId: 'ful-9', number: 2, cancelledAt: '2026-10-08T00:00:00.000Z', cancelledByEmail: 'admin@example.com' }),
+          fulfillment(),
+        ],
+        details: [
+          deliveryDetail({
+            fulfillmentId: 'ful-9', number: 2, cancelledAt: '2026-10-08T00:00:00.000Z', deliveredAt: '2026-10-09T09:09:09.000Z',
+            deliveryStatus: 'delivered', events: [deliveryEvent({ id: 'cancelled-event', happenedAt: '2026-10-09T09:09:09.000Z' })],
+          }),
+          deliveryDetail(),
+        ],
+      });
+
+      const { body } = await getDetail();
+
+      expect(body.shipments.map((shipment: Json) => shipment.id)).toEqual(['ful-1']);
+      expect(JSON.stringify(body)).not.toContain('2026-10-09T09:09:09.000Z');
+    });
+
+    it('発送ごとに、その発送の記録を付ける（別の発送の記録を混ぜない）', async () => {
+      setupDelivery({
+        enabled: true,
+        fulfillments: [
+          fulfillment({ fulfillmentId: 'ful-2', number: 2, shippingCarrier: 'sagawa', trackingNumber: 'AB-123' }),
+          fulfillment(),
+        ],
+        details: [
+          deliveryDetail({ fulfillmentId: 'ful-2', number: 2, carrier: 'sagawa', deliveredAt: DELIVERED_AT, deliveryStatus: 'delivered', deliveredSource: 'manual' }),
+          deliveryDetail(),
+        ],
+      });
+
+      const { body } = await getDetail();
+
+      expect(body.shipments.map((shipment: Json) => [shipment.id, shipment.deliveredAt, shipment.delivery?.status])).toEqual([
+        ['ful-1', null, 'in_transit'],
+        ['ful-2', DELIVERED_AT, 'delivered'],
+      ]);
+    });
+
+    it('前からの発送（配送業者・伝票番号が空）と知らない配送業者は、従来の表示のまま。登録が無ければ delivery を付けず、配達済みの時刻は残す', async () => {
+      setupDelivery({
+        enabled: true,
+        fulfillments: [
+          fulfillment({ fulfillmentId: 'ful-2', number: 2, shippingCarrier: 'newcarrier' }),
+          fulfillment({ legacy: true, shippingCarrier: null, trackingNumber: null }),
+        ],
+        details: [
+          deliveryDetail({ fulfillmentId: 'ful-2', number: 2, carrier: 'newcarrier', registration: null }),
+          deliveryDetail({ carrier: null, trackingNumber: null, registration: null, deliveredAt: DELIVERED_AT, deliveryStatus: 'delivered', deliveredSource: 'manual' }),
+        ],
+      });
+
+      const { status, body } = await getDetail();
+
+      expect(status).toBe(200);
+      expect(body.shipments[0]).toMatchObject({ id: 'ful-1', carrier: null, carrierLabel: null, trackingNumber: null, trackingUrl: null, deliveredAt: DELIVERED_AT });
+      expect(body.shipments[1]).toMatchObject({ id: 'ful-2', carrier: 'newcarrier', carrierLabel: null, trackingUrl: null, deliveredAt: null });
+      expect(body.shipments[0]).not.toHaveProperty('delivery');
+      expect(body.shipments[1]).not.toHaveProperty('delivery');
+    });
+  });
+
+  describe('注文の進み具合に配達済みを渡す', () => {
+    it('取り消していない発送が全部配達済みなら「配達済み」で、段は全部済み', async () => {
+      setupDelivery({ enabled: false, summary: { activeCount: 1, deliveredCount: 1 } });
+
+      const { body } = await getDetail();
+
+      expect(body.status).toBe('shipped');
+      expect(body.progress).toEqual({
+        key: 'delivered',
+        label: '配達済み',
+        partiallyShipped: false,
+        steps: [
+          { key: 'payment', label: 'お支払い', state: 'done' },
+          { key: 'ready', label: '発送準備中', state: 'done' },
+          { key: 'in_transit', label: '配送中', state: 'done' },
+          { key: 'delivered', label: '配達済み', state: 'done' },
+        ],
+      });
+    });
+
+    it('一部だけ配達済みなら「配送中」のまま', async () => {
+      setupDelivery({ enabled: false, summary: { activeCount: 2, deliveredCount: 1 } });
+
+      const { body } = await getDetail();
+
+      expect(body.progress).toMatchObject({ key: 'in_transit', label: '配送中' });
+    });
+
+    it('発送準備中の品が残っていれば、配達済みの発送があっても「発送準備中」', async () => {
+      setupDelivery({
+        enabled: false,
+        order: orderRow({ order_items: [STOCK_ITEM] }),
+        lines: [stockLine({ quantity: 2, shipped: 1, readyUnshipped: 1, unshipped: 1 })],
+        summary: { activeCount: 1, deliveredCount: 1 },
+      });
+
+      const { body } = await getDetail();
+
+      expect(body.progress).toMatchObject({ key: 'ready', label: '発送準備中', partiallyShipped: true });
+    });
+  });
+
+  describe('DB の読み取りが失敗した時（空の履歴で偽の配達済みや配送中にしない）', () => {
+    it.each([
+      ['配送の集計', () => mockListDeliverySummaries],
+      ['配送の記録', () => mockGetDeliveryDetail],
+    ])('%s の読み取りが失敗したら 500（no-store）で、中身を返さない。ログは名前・code・operation だけ', async (_name, pick) => {
+      setupDelivery({ enabled: true });
+      pick().mockRejectedValue(
+        Object.assign(new Error('delivery store failed: get_order_delivery_detail', { cause: { message: 'DB-MESSAGE 〒1500001 神宮前1-2-3' } }), {
+          name: 'DeliveryStoreError', code: '57014', operation: 'get_order_delivery_detail',
+        }),
+      );
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const response = await getDetail();
+
+      expect(response.status).toBe(500);
+      expect(response.headers['Cache-Control']).toBe('no-store');
+      expect(response.body).toEqual({ error: 'Failed to fetch order detail' });
+      expect(consoleError).toHaveBeenCalledWith('Order fulfillment fetch error:', 'DeliveryStoreError', '57014', 'get_order_delivery_detail');
+      expect(loggedText(consoleError)).not.toContain('DB-MESSAGE');
+      expect(loggedText(consoleError)).not.toContain('神宮前');
+      consoleError.mockRestore();
+    });
   });
 });

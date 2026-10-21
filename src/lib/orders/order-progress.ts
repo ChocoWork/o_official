@@ -1,4 +1,5 @@
 import type { OrderStatus } from '@/lib/orders/order-payment-types';
+import type { OrderDeliverySummary } from '@/lib/orders/tracking/delivery-types';
 
 /**
  * 注文の言葉と進み具合の段（グループ E-1 設計書 4 章）。管理画面・お客様の画面・窓口が同じ言葉を出すので、
@@ -62,15 +63,16 @@ function sumOf(lines: readonly OrderLineProgressCounts[], pick: (line: OrderLine
 }
 
 /**
- * 注文の言葉。paid・shipped は、商品の段階のうちいちばん手前（受注生産中 → 発送準備中 → 配送中）にそろえる。
- * 配達済みは配送の状況を持つ E-4 から。E-1 では、発送した品は全部「配送中」になる。
+ * 注文の言葉。paid・shipped は、商品の段階のうちいちばん手前（受注生産中 → 発送準備中 → 配送中 → 配達済み）にそろえる。
+ * 配達済みは、受注生産中・発送準備中の品が無く、取り消していない発送が1つ以上あり、その全部が配達済みの時だけ（E-4 設計書 7-2）。
+ * 発送ごとの集計（delivery）は DB が出す（取り消した発送は除いてある）。渡さない呼び出しは、発送した品を全部「配送中」にする。
  * paid で、送った品も未発送の品も無く（発送前に全部返金した）、返金のお金がまだ戻っていない（hasOpenRefund）間は
  * 「キャンセルの手続き中」（E-2 設計書 5-3）。返金が成功すれば注文が cancelled になり、この言葉は「キャンセル」に変わる。
  */
 export function deriveOrderProgress(
   status: OrderStatus,
   lines: readonly OrderLineProgressCounts[],
-  options?: { hasOpenRefund?: boolean },
+  options?: { hasOpenRefund?: boolean; delivery?: Pick<OrderDeliverySummary, 'activeCount' | 'deliveredCount'> },
 ): OrderProgress {
   if (status !== 'paid' && status !== 'shipped') {
     const key = FIXED_PROGRESS_KEYS[status];
@@ -86,6 +88,8 @@ export function deriveOrderProgress(
     key = 'in_production';
   } else if (sumOf(lines, (line) => line.readyUnshipped) > 0) {
     key = 'ready';
+  } else if (options?.delivery && options.delivery.activeCount > 0 && options.delivery.deliveredCount === options.delivery.activeCount) {
+    key = 'delivered';
   } else if (shipped > 0) {
     key = 'in_transit';
   }

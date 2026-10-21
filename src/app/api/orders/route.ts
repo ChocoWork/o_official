@@ -7,6 +7,8 @@ import { HIDDEN_ORDER_STATUS_FILTER } from '@/lib/orders/order-payment-types';
 import { deriveOrderProgress } from '@/lib/orders/order-progress';
 import { listOrderLineFulfillment, type OrderLineFulfillmentRow } from '@/lib/orders/fulfillment/fulfillment-store';
 import { listOrderRefundSummaries, type OrderRefundSummary } from '@/lib/orders/refund/refund-store';
+import { listOrderDeliverySummaries } from '@/lib/orders/tracking/delivery-store';
+import type { OrderDeliverySummary } from '@/lib/orders/tracking/delivery-types';
 
 const NO_STORE_HEADERS = {
 	'Cache-Control': 'no-store',
@@ -158,12 +160,27 @@ export async function GET(request: NextRequest) {
 		return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500, headers: NO_STORE_HEADERS });
 	}
 
+	// 全部の発送が配達済みの注文は「配達済み」と出す。発送ごとの集計も一覧の分を1回で読み、読めない時は 500 にする（偽の「配送中」を出さない）
+	let deliverySummaries: Map<string, OrderDeliverySummary>;
+	try {
+		deliverySummaries = await listOrderDeliverySummaries(serviceSupabase, orders.map((order) => order.id));
+	} catch (deliveryError) {
+		console.error(
+			'Orders delivery fetch error:',
+			deliveryError instanceof Error ? deliveryError.name : 'UnknownError',
+			(deliveryError as { code?: unknown })?.code ?? null,
+			(deliveryError as { operation?: unknown })?.operation ?? null,
+		);
+		return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500, headers: NO_STORE_HEADERS });
+	}
+
 	const response = await Promise.all(orders.map(async (order) => ({
 		id: order.id,
 		orderNumber: toOrderNumber(order.id),
 		orderDate: formatOrderDate(order.created_at),
 		status: deriveOrderProgress(order.status, lineRowsByOrder.get(order.id) ?? [], {
 			hasOpenRefund: refundSummaries.get(order.id)?.hasOpenRefund ?? false,
+			delivery: deliverySummaries.get(order.id),
 		}).label,
 		totalAmount: formatCurrency(order.total_amount, order.currency),
 		itemCount: (order.order_items ?? []).reduce((sum, item) => sum + item.quantity, 0),

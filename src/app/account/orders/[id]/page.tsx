@@ -18,6 +18,8 @@ import {
 import { useReorder } from "@/features/account/hooks/useReorder";
 import { OrderReturnsSection } from "@/features/account/returns/OrderReturnsSection";
 import type { CustomerOrderReturns } from "@/lib/orders/returns/customer-return-types";
+import { DELIVERY_STATUS_LABELS } from "@/lib/orders/tracking/delivery-messages";
+import type { CustomerDelivery } from "@/lib/orders/tracking/delivery-types";
 import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import "../../account.css";
 
@@ -45,6 +47,10 @@ type OrderShipment = {
   carrierLabel: string | null;
   trackingNumber: string | null;
   trackingUrl: string | null;
+  /** 配達済みの時刻（追跡のオン・オフによらず、窓口がいつも付ける）。届いていなければ null。古い形の答えには無い（省ける） */
+  deliveredAt?: string | null;
+  /** 配送の状況。追跡オンで鍵があり、追跡中か止めた発送だけ窓口が付ける。条件に合わない時はキーごと無い */
+  delivery?: CustomerDelivery;
   items: Array<{
     orderItemId: string;
     name: string;
@@ -108,6 +114,44 @@ function formatShippedDate(value: string): string {
     timeZone: "Asia/Tokyo",
   }).format(date);
 }
+
+/** 日本時間の「M月D日」（0詰めなし）。お届け日は日本時間の日付で出す（窓口は時刻のまま返す） */
+function formatMonthDay(value: string): string {
+  const time = Date.parse(value);
+  if (Number.isNaN(time)) {
+    return "-";
+  }
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tokyo",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(new Date(time));
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  return month && day ? `${month}月${day}日` : "-";
+}
+
+/** 日本時間の年月日と時分（窓口は時刻のまま返す） */
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Tokyo",
+  }).format(date);
+}
+
+/** 問題あり・遅れの時に添える一文（C-5）。細かい中身は出さず、配送業者のページへ誘う */
+const DELIVERY_TROUBLE_NOTICE =
+  "配送に遅れや問題が出ています。詳しくは配送業者のページをご確認ください";
 
 /** 「名前（色 / サイズ）」の形。色もサイズも無い古い明細は名前だけ */
 function describeItem(
@@ -354,6 +398,45 @@ export default function AccountOrderDetailPage() {
                 <h2 className="mb-2 text-[#474747] tracking-wider">
                   {`配送情報（${shipment.number}回目）`}
                 </h2>
+                {/* 配達済みの時刻があれば、追跡のオン・オフや状況によらず「配達済み」とお届け日を出す（手で付けた配達済みも）。
+                    状況の札は、配達済みの時刻が無い発送だけ（あれば配達済みを優先し、二重に出さない） */}
+                {shipment.deliveredAt || shipment.delivery ? (
+                  <div className="mb-3 space-y-1 lk-text-sm">
+                    {shipment.deliveredAt ? (
+                      <div
+                        className="flex flex-wrap items-center gap-2"
+                        data-testid="shipment-delivered"
+                      >
+                        <span className="account-status account-status-sm">
+                          配達済み
+                        </span>
+                        <span className="tabular-nums">
+                          {`お届け日 ${formatMonthDay(shipment.deliveredAt)}`}
+                        </span>
+                      </div>
+                    ) : shipment.delivery ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className="account-status account-status-sm"
+                          data-testid="shipment-delivery-status"
+                        >
+                          {DELIVERY_STATUS_LABELS[shipment.delivery.status]}
+                        </span>
+                      </div>
+                    ) : null}
+                    {shipment.delivery &&
+                    !shipment.deliveredAt &&
+                    (shipment.delivery.status === "failure" ||
+                      shipment.delivery.status === "delayed") ? (
+                      <p>{DELIVERY_TROUBLE_NOTICE}</p>
+                    ) : null}
+                    {shipment.delivery ? (
+                      <p className="text-[#474747]">
+                        {`最後の更新 ${formatDateTime(shipment.delivery.statusAt)}`}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <dl className="space-y-1 lk-text-sm">
                   <div className="flex gap-2">
                     <dt className="text-[#707070]">発送日</dt>
@@ -383,6 +466,28 @@ export default function AccountOrderDetailPage() {
                   >
                     配送状況を確認する
                   </a>
+                ) : null}
+                {/* 移り変わりは窓口が新しい順に返す。状況と時刻だけ（問題の細かい中身は窓口が返さない） */}
+                {shipment.delivery && shipment.delivery.events.length > 0 ? (
+                  <div className="mt-3">
+                    <h3 className="mb-1 text-[#474747] tracking-wider">
+                      配送の移り変わり
+                    </h3>
+                    <ul className="space-y-1 lk-text-sm">
+                      {shipment.delivery.events.map((event, index) => (
+                        <li
+                          key={`${event.happenedAt}-${index}`}
+                          data-testid="shipment-delivery-event"
+                          className="flex flex-wrap gap-x-2"
+                        >
+                          <span>{DELIVERY_STATUS_LABELS[event.status]}</span>
+                          <span className="text-[#707070] tabular-nums">
+                            {formatDateTime(event.happenedAt)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ) : null}
                 <ul className="mt-2 space-y-1 lk-text-sm">
                   {shipment.items.map((line) => (

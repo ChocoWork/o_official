@@ -17,6 +17,9 @@ jest.mock('@/lib/storage/item-images', () => ({
   signItemImageUrl: jest.fn(async (_client: unknown, url: string | null) => url),
 }));
 
+// 注文の窓口が読む配送の集計（delivery-store）は server-only。この試験は集計を読む所まで進まない
+jest.mock('server-only', () => ({}), { virtual: true });
+
 const mockNot = jest.fn();
 
 function orderQuery() {

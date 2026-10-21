@@ -18,6 +18,14 @@ import { konbiniDeadlineLastDay } from '@/lib/orders/refund/refund-messages';
 import { mapPaymentMethodLabel } from '@/features/checkout/services/payment-method.service';
 import { loadCustomerOrderReturns } from '@/lib/orders/returns/customer-return-store';
 import type { CustomerOrderReturns } from '@/lib/orders/returns/customer-return-types';
+import { isDeliveryTrackingKeyConfigured } from '@/lib/orders/tracking/delivery-config';
+import { getOrderDeliveryDetail, listOrderDeliverySummaries } from '@/lib/orders/tracking/delivery-store';
+import type {
+	CustomerDelivery,
+	FulfillmentDeliveryDetail,
+	OrderDeliveryDetail,
+	OrderDeliverySummary,
+} from '@/lib/orders/tracking/delivery-types';
 
 const NO_STORE_HEADERS = {
 	'Cache-Control': 'no-store',
@@ -135,12 +143,42 @@ function toShippingAddress(order: OrderDetailRow) {
 }
 
 /**
+ * お客様に見せる配送の状況。現版（今の伝票番号）の出来事だけを、新しい順に、状況と時刻の2項目で返す。
+ * 管理者のメール・17TRACK の細かい状況・登録の状態・旧版の出来事は、名指しで選んだ項目に入らないので渡らない。
+ */
+function toCustomerDelivery(detail: FulfillmentDeliveryDetail): CustomerDelivery {
+	return {
+		status: detail.deliveryStatus,
+		statusAt: detail.deliveryStatusAt,
+		events: detail.events
+			.filter((event) => event.trackingVersion === detail.trackingVersion)
+			.sort((a, b) => Date.parse(b.happenedAt) - Date.parse(a.happenedAt) || Date.parse(b.recordedAt) - Date.parse(a.recordedAt))
+			.map((event) => ({ status: event.status, happenedAt: event.happenedAt })),
+	};
+}
+
+/**
  * お客様に見せる発送。取り消していない分だけを、1回目から古い順に返す。
  * 操作した管理者のメールなど内側の情報は、名指しで選んだ項目以外は渡さない。
  * 前からの記録で配送業者・伝票番号が空でも、知らない配送業者の記号でも、落とさずに空で返す。
+ * 配達済みの時刻 deliveredAt は、追跡のオン・オフや鍵の有無によらずいつも付ける（手で付けた配達済みも出す）。
+ * 配送の状況 delivery は、追跡オンで鍵があり、その発送の現版の登録が追跡中か止めた時だけ付け、合わない時は null ではなくキーごと省く
+ * （登録待ち・登録できない発送が、ずっと「受付済み」や止まった「輸送中」に見えるのを防ぐ。設計書 7-1）。
  */
-function toShipments(fulfillments: readonly OrderFulfillmentHistoryRow[], items: readonly OrderItemRow[]) {
+function toShipments(
+	fulfillments: readonly OrderFulfillmentHistoryRow[],
+	items: readonly OrderItemRow[],
+	deliveryDetail: OrderDeliveryDetail,
+	trackingKeyConfigured: boolean,
+) {
 	const itemById = new Map<string, OrderItemRow>(items.map((item) => [item.id, item]));
+	// 取り消した発送の記録は、2回の読み取りの間に取り消された場合も含めて、使わない
+	const deliveryByFulfillment = new Map<string, FulfillmentDeliveryDetail>(
+		deliveryDetail.fulfillments
+			.filter((detail) => detail.cancelledAt === null)
+			.map((detail) => [detail.fulfillmentId, detail]),
+	);
+	const canShowDelivery = deliveryDetail.enabled && trackingKeyConfigured;
 
 	return fulfillments
 		.filter((fulfillment) => fulfillment.cancelledAt === null)
@@ -149,6 +187,8 @@ function toShipments(fulfillments: readonly OrderFulfillmentHistoryRow[], items:
 			const carrier = isShippingCarrierId(fulfillment.shippingCarrier)
 				? SHIPPING_CARRIERS[fulfillment.shippingCarrier]
 				: null;
+			const delivery = deliveryByFulfillment.get(fulfillment.fulfillmentId);
+			const registrationState = delivery?.registration?.state;
 
 			return {
 				id: fulfillment.fulfillmentId,
@@ -159,6 +199,10 @@ function toShipments(fulfillments: readonly OrderFulfillmentHistoryRow[], items:
 				trackingNumber: fulfillment.trackingNumber,
 				trackingUrl:
 					carrier && fulfillment.trackingNumber ? carrier.trackingUrl(fulfillment.trackingNumber) : null,
+				deliveredAt: delivery?.deliveredAt ?? null,
+				...(canShowDelivery && delivery && (registrationState === 'registered' || registrationState === 'stopped')
+					? { delivery: toCustomerDelivery(delivery) }
+					: {}),
 				items: fulfillment.lines.flatMap((line) => {
 					const item = itemById.get(line.orderItemId);
 					return item
@@ -270,13 +314,20 @@ export async function GET(
 
 	let lineRows: OrderLineFulfillmentRow[];
 	let fulfillments: OrderFulfillmentHistoryRow[];
+	let deliverySummary: OrderDeliverySummary | undefined;
+	let deliveryDetail: OrderDeliveryDetail;
 	try {
-		const [lineRowsByOrder, fulfillmentRows] = await Promise.all([
+		// 配送の集計と配送の記録も同じ client で読む。読めない時は 500 にする（空の履歴で偽の「配送中」や「配達済み」にしない）
+		const [lineRowsByOrder, fulfillmentRows, deliverySummaries, deliveryRows] = await Promise.all([
 			listOrderLineFulfillment(serviceSupabase, [data.id]),
 			listOrderFulfillments(serviceSupabase, data.id),
+			listOrderDeliverySummaries(serviceSupabase, [data.id]),
+			getOrderDeliveryDetail(serviceSupabase, data.id),
 		]);
 		lineRows = lineRowsByOrder.get(data.id) ?? [];
 		fulfillments = fulfillmentRows;
+		deliverySummary = deliverySummaries.get(data.id);
+		deliveryDetail = deliveryRows;
 	} catch (fulfillmentError) {
 		// DB の文には宛先などが混ざりうるので、エラーの中身は出さず、名前・code・operation だけを残す
 		console.error(
@@ -306,7 +357,7 @@ export async function GET(
 
 	// 返事待ち・保留の返金がある間は、全部の商品を返金した注文を「キャンセルの手続き中」と出す
 	const hasOpenRefund = refundRows.some((row) => row.status === 'awaiting_response' || row.status === 'pending');
-	const progress = deriveOrderProgress(data.status, lineRows, { hasOpenRefund });
+	const progress = deriveOrderProgress(data.status, lineRows, { hasOpenRefund, delivery: deliverySummary });
 	const lineByItemId = new Map<string, OrderLineFulfillmentRow>(lineRows.map((row) => [row.orderItemId, row]));
 	const showStages = STAGE_VISIBLE_STATUSES.includes(data.status);
 	const { refunds, refundTotal } = toCustomerRefunds(refundRows, data.currency);
@@ -352,7 +403,7 @@ export async function GET(
 		shippingEmail: data.shipping_email ?? '',
 		shippingPhone: data.shipping_phone ?? '',
 		shippingAddress: toShippingAddress(data),
-		shipments: toShipments(fulfillments, data.order_items ?? []),
+		shipments: toShipments(fulfillments, data.order_items ?? [], deliveryDetail, isDeliveryTrackingKeyConfigured(process.env)),
 		refunds,
 		refundTotal,
 		returnSection,

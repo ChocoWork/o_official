@@ -19,6 +19,9 @@ jest.mock('@/lib/storage/item-images', () => ({
 	signItemImageUrl: jest.fn(),
 }));
 
+// 配送の集計と配送の記録の読み出し（delivery-store）は server-only。本物の読み出しを、差し替えた DB の答えで通す
+jest.mock('server-only', () => ({}), { virtual: true });
+
 jest.mock('next/server', () => ({
 	NextResponse: {
 		json: (body: unknown, init?: { status?: number; headers?: HeadersInit }) => {
@@ -46,6 +49,11 @@ jest.mock('next/server', () => ({
 const { createClient, createServiceRoleClient } = require('@/lib/supabase/server');
 const { authenticateRequest } = require('@/lib/auth/authenticate');
 const { signItemImageUrl } = require('@/lib/storage/item-images');
+
+// 配送の集計・配送の記録の読み出し（delivery-store）は、注文の番号と発送の番号に uuid の形を求める
+const DELIVERED_ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455556666';
+const PARTIAL_ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455557777';
+const FULFILLMENT_ID = 'd1b2c3d4-1111-4222-8333-444455556661';
 
 // private.order_line_fulfillment の1行（在庫の品1点が仕上がり済みで未発送 = 発送準備中）
 const READY_LINE_ROW = {
@@ -151,6 +159,101 @@ describe('GET /api/orders', () => {
 		});
 		expect(rpc).toHaveBeenCalledWith('list_order_line_fulfillment', { _order_ids: ['order-1'] });
 		expect(rpc).toHaveBeenCalledWith('list_order_refund_summaries', { _order_ids: ['order-1'] });
+		expect(rpc).toHaveBeenCalledWith('list_order_delivery_summaries', { _order_ids: ['order-1'] });
+	});
+
+	test('取り消していない発送が全部配達済みの注文は、一覧の言葉が「配達済み」になる（配送の集計を DB の行から読む）', async () => {
+		const orderQuery = {
+			select: jest.fn().mockReturnThis(),
+			eq: jest.fn().mockReturnThis(),
+			not: jest.fn().mockReturnThis(),
+			order: jest.fn().mockResolvedValue({
+				data: [
+					{
+						id: DELIVERED_ORDER_ID,
+						created_at: '2026-04-01T00:00:00.000Z',
+						status: 'shipped',
+						total_amount: 12000,
+						currency: 'jpy',
+						order_items: [],
+					},
+					{
+						id: PARTIAL_ORDER_ID,
+						created_at: '2026-04-02T00:00:00.000Z',
+						status: 'shipped',
+						total_amount: 12000,
+						currency: 'jpy',
+						order_items: [],
+					},
+				],
+				error: null,
+			}),
+		};
+		createClient.mockResolvedValue({ from: jest.fn().mockReturnValue(orderQuery) });
+
+		const rpc = jest.fn().mockImplementation(async (name: string) => {
+			if (name === 'list_order_line_fulfillment') {
+				return {
+					data: [
+						{ ...READY_LINE_ROW, order_id: DELIVERED_ORDER_ID, shipped: 1, ready_unshipped: 0, unshipped: 0 },
+						{ ...READY_LINE_ROW, order_id: PARTIAL_ORDER_ID, shipped: 1, ready_unshipped: 0, unshipped: 0 },
+					],
+					error: null,
+				};
+			}
+			if (name === 'list_order_delivery_summaries') {
+				return {
+					data: [
+						{ order_id: DELIVERED_ORDER_ID, active_count: 1, delivered_count: 1, attention_kind: null },
+						{ order_id: PARTIAL_ORDER_ID, active_count: 2, delivered_count: 1, attention_kind: 'attempted_delivery' },
+					],
+					error: null,
+				};
+			}
+			return { data: [], error: null };
+		});
+		createServiceRoleClient.mockResolvedValue({ rpc });
+
+		const { GET } = require('@/app/api/orders/route');
+		const response: { status: number; json: () => Promise<{ data: Array<{ id: string; status: string }> }> } = await GET(
+			new Request('http://localhost/api/orders'),
+		);
+		const body = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(body.data.map((order) => [order.id, order.status])).toEqual([
+			[DELIVERED_ORDER_ID, '配達済み'],
+			[PARTIAL_ORDER_ID, '配送中'],
+		]);
+		// 要対応の種類などの内側の情報は、お客様の一覧に出さない
+		expect(JSON.stringify(body)).not.toContain('attempted_delivery');
+		expect(rpc).toHaveBeenCalledWith('list_order_delivery_summaries', { _order_ids: [DELIVERED_ORDER_ID, PARTIAL_ORDER_ID] });
+	});
+
+	test('配送の集計の読み取りが失敗したら 500（no-store）で、偽の「配送中」を返さない', async () => {
+		const orderQuery = {
+			select: jest.fn().mockReturnThis(),
+			eq: jest.fn().mockReturnThis(),
+			not: jest.fn().mockReturnThis(),
+			order: jest.fn().mockResolvedValue({
+				data: [{ id: DELIVERED_ORDER_ID, created_at: '2026-04-01T00:00:00.000Z', status: 'shipped', total_amount: 12000, currency: 'jpy', order_items: [] }],
+				error: null,
+			}),
+		};
+		createClient.mockResolvedValue({ from: jest.fn().mockReturnValue(orderQuery) });
+		const rpc = jest.fn().mockImplementation(async (name: string) =>
+			name === 'list_order_delivery_summaries'
+				? { data: null, error: { message: 'down', code: '08006' } }
+				: { data: name === 'list_order_line_fulfillment' ? [{ ...READY_LINE_ROW, order_id: DELIVERED_ORDER_ID, shipped: 1, ready_unshipped: 0, unshipped: 0 }] : [], error: null });
+		createServiceRoleClient.mockResolvedValue({ rpc });
+		const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+		const { GET } = require('@/app/api/orders/route');
+		const response: { status: number; headers: Map<string, string> } = await GET(new Request('http://localhost/api/orders'));
+
+		expect(response.status).toBe(500);
+		expect(response.headers.get('Cache-Control')).toBe('no-store');
+		consoleError.mockRestore();
 	});
 
 
@@ -327,6 +430,8 @@ describe('GET /api/orders/[id]', () => {
 					error: null,
 				};
 			}
+			// 配送の記録（追跡オフ・発送なし）。配列のままだと「答えが読めない」誤りになり、窓口が 500 にする
+			if (name === 'get_order_delivery_detail') return { data: { enabled: false, fulfillments: [] }, error: null };
 			return { data: [], error: null };
 		});
 
@@ -411,6 +516,8 @@ describe('GET /api/orders/[id]', () => {
 		});
 		expect(rpc).toHaveBeenCalledWith('list_order_refunds', { _order_id: 'order-1' });
 		expect(rpc).toHaveBeenCalledWith('get_customer_order_returns', { _order_id: 'order-1', _customer_id: 'user-1' });
+		expect(rpc).toHaveBeenCalledWith('list_order_delivery_summaries', { _order_ids: ['order-1'] });
+		expect(rpc).toHaveBeenCalledWith('get_order_delivery_detail', { _order_id: 'order-1' });
 		// 操作した人のメールなど内側の情報は、DB の行にあっても、お客様に返さない
 		expect(JSON.stringify(body)).not.toContain('admin@example.com');
 		expect(body).not.toHaveProperty('shippedAt');
@@ -436,5 +543,179 @@ describe('GET /api/orders/[id]', () => {
 
 		expect(response.status).toBe(404);
 		expect(response.headers.get('Cache-Control')).toBe('no-store');
+	});
+
+	describe('配達済みと配送の状況（グループ E-4）', () => {
+		const originalKey = process.env.TRACKING_17TRACK_API_KEY;
+		const originalBaseUrl = process.env.TRACKING_17TRACK_BASE_URL;
+
+		afterEach(() => {
+			for (const [name, value] of [['TRACKING_17TRACK_API_KEY', originalKey], ['TRACKING_17TRACK_BASE_URL', originalBaseUrl]] as const) {
+				if (value === undefined) delete process.env[name];
+				else process.env[name] = value;
+			}
+		});
+
+		const SHIPPED_ORDER = {
+			id: DELIVERED_ORDER_ID,
+			created_at: '2026-04-01T00:00:00.000Z',
+			status: 'shipped',
+			payment_intent_id: null,
+			subtotal_amount: 12000,
+			shipping_amount: 0,
+			discount_amount: 0,
+			total_amount: 12000,
+			currency: 'jpy',
+			order_items: [
+				{ id: 'line-1', item_id: 10, item_name: 'Silk Blouse', item_image_url: null, color: 'Black', size: 'M', quantity: 1, line_total: 12000 },
+			],
+		};
+		const FULFILLMENT_ROW = {
+			fulfillment_id: FULFILLMENT_ID,
+			number: 1,
+			shipping_carrier: 'yamato',
+			tracking_number: '1234-5678-9012',
+			notify_customer: true,
+			completes_order: true,
+			shipped_at: '2026-04-02T01:00:00+00:00',
+			created_by_email: 'admin@example.com',
+			cancelled_at: null,
+			cancelled_by_email: null,
+			legacy: false,
+			lines: [{ order_item_id: 'line-1', quantity: 1 }],
+		};
+		const DETAIL_FULFILLMENT = {
+			fulfillment_id: FULFILLMENT_ID,
+			number: 1,
+			carrier: 'yamato',
+			tracking_number: '1234-5678-9012',
+			notify_customer: true,
+			shipped_at: '2026-04-02T01:00:00+00:00',
+			cancelled_at: null,
+			tracking_version: 2,
+			delivery_status: 'delivered',
+			delivery_status_at: '2026-04-05T03:00:00+00:00',
+			delivered_at: '2026-04-05T03:00:00+00:00',
+			delivered_source: 'tracking',
+			registration: { state: 'stopped', failure_kind: null, stop_reason: 'delivered', expires_at: '2026-05-02T01:00:00+00:00' },
+			events: [
+				{
+					id: 'e1b2c3d4-1111-4222-8333-44445555aaa1', tracking_version: 2, status: 'delivered', happened_at: '2026-04-05T03:00:00+00:00',
+					recorded_at: '2026-04-05T03:00:05+00:00', source: 'tracking', provider_sub_status: 'Delivered_Other', actor_email: null,
+				},
+				{
+					id: 'e1b2c3d4-1111-4222-8333-44445555aaa2', tracking_version: 1, status: 'in_transit', happened_at: '2026-04-03T01:00:00+00:00',
+					recorded_at: '2026-04-03T01:00:05+00:00', source: 'tracking', provider_sub_status: 'InTransit_Old', actor_email: null,
+				},
+				{
+					id: 'e1b2c3d4-1111-4222-8333-44445555aaa3', tracking_version: 2, status: 'confirmed', happened_at: '2026-04-04T01:00:00+00:00',
+					recorded_at: '2026-04-04T01:00:05+00:00', source: 'tracking_edit', provider_sub_status: null, actor_email: 'admin@example.com',
+				},
+			],
+			tracking_changes: [],
+		};
+
+		function arrange(answers: Record<string, unknown>) {
+			createClient.mockResolvedValue({
+				from: jest.fn().mockReturnValue({
+					select: jest.fn().mockReturnThis(),
+					eq: jest.fn().mockReturnThis(),
+					not: jest.fn().mockReturnThis(),
+					maybeSingle: jest.fn().mockResolvedValue({ data: SHIPPED_ORDER, error: null }),
+				}),
+			});
+			const rpc = jest.fn().mockImplementation(async (name: string) => {
+				if (name in answers) return answers[name];
+				if (name === 'list_order_line_fulfillment') {
+					return { data: [{ ...READY_LINE_ROW, order_id: DELIVERED_ORDER_ID, shipped: 1, ready_unshipped: 0, unshipped: 0 }], error: null };
+				}
+				if (name === 'list_order_fulfillments') return { data: [FULFILLMENT_ROW], error: null };
+				if (name === 'get_customer_order_returns') {
+					return { data: { returns: [], cancel_requests: [], availability: { returns: 'none', ended_on: null, cancel: false } }, error: null };
+				}
+				if (name === 'list_order_delivery_summaries') {
+					return { data: [{ order_id: DELIVERED_ORDER_ID, active_count: 1, delivered_count: 1, attention_kind: null }], error: null };
+				}
+				return { data: [], error: null };
+			});
+			createServiceRoleClient.mockResolvedValue({ rpc });
+			return rpc;
+		}
+
+		async function getDetail() {
+			const { GET } = require('@/app/api/orders/[id]/route');
+			const response: { status: number; json: () => Promise<any>; headers: Map<string, string> } = await GET(
+				new Request(`http://localhost/api/orders/${DELIVERED_ORDER_ID}`),
+				{ params: Promise.resolve({ id: DELIVERED_ORDER_ID }) },
+			);
+			return { response, body: await response.json() };
+		}
+
+		test('追跡オンで鍵あり・追跡中（止めた）の配達済みの発送は、deliveredAt と delivery（現版の出来事だけ・状況と時刻だけ）を返し、進み具合は「配達済み」', async () => {
+			process.env.TRACKING_17TRACK_API_KEY = 'test-only-key';
+			delete process.env.TRACKING_17TRACK_BASE_URL;
+			const rpc = arrange({ get_order_delivery_detail: { data: { enabled: true, fulfillments: [DETAIL_FULFILLMENT] }, error: null } });
+
+			const { response, body } = await getDetail();
+
+			expect(response.status).toBe(200);
+			expect(body.progress).toMatchObject({ key: 'delivered', label: '配達済み' });
+			expect(body.progress.steps.every((step: { state: string }) => step.state === 'done')).toBe(true);
+			expect(body.shipments).toEqual([
+				expect.objectContaining({
+					id: FULFILLMENT_ID,
+					deliveredAt: '2026-04-05T03:00:00+00:00',
+					delivery: {
+						status: 'delivered',
+						statusAt: '2026-04-05T03:00:00+00:00',
+						events: [
+							{ status: 'delivered', happenedAt: '2026-04-05T03:00:00+00:00' },
+							{ status: 'confirmed', happenedAt: '2026-04-04T01:00:00+00:00' },
+						],
+					},
+				}),
+			]);
+			const json = JSON.stringify(body);
+			for (const secret of ['admin@example.com', 'Delivered_Other', 'InTransit_Old', 'actorEmail', 'providerSubStatus', 'trackingChanges']) {
+				expect(json).not.toContain(secret);
+			}
+			expect(rpc).toHaveBeenCalledWith('list_order_delivery_summaries', { _order_ids: [DELIVERED_ORDER_ID] });
+			expect(rpc).toHaveBeenCalledWith('get_order_delivery_detail', { _order_id: DELIVERED_ORDER_ID });
+		});
+
+		test('追跡オフでも、配達済みの時刻は返し、delivery は返さない（追跡のリンクだけ）', async () => {
+			process.env.TRACKING_17TRACK_API_KEY = 'test-only-key';
+			arrange({ get_order_delivery_detail: { data: { enabled: false, fulfillments: [DETAIL_FULFILLMENT] }, error: null } });
+
+			const { response, body } = await getDetail();
+
+			expect(response.status).toBe(200);
+			expect(body.shipments[0].deliveredAt).toBe('2026-04-05T03:00:00+00:00');
+			expect(body.shipments[0]).not.toHaveProperty('delivery');
+			expect(body.shipments[0].trackingUrl).toContain('1234-5678-9012');
+		});
+
+		test('鍵が無い間は、追跡オンで記録済みでも delivery を返さない', async () => {
+			delete process.env.TRACKING_17TRACK_API_KEY;
+			arrange({ get_order_delivery_detail: { data: { enabled: true, fulfillments: [DETAIL_FULFILLMENT] }, error: null } });
+
+			const { body } = await getDetail();
+
+			expect(body.shipments[0]).not.toHaveProperty('delivery');
+			expect(body.shipments[0].deliveredAt).toBe('2026-04-05T03:00:00+00:00');
+		});
+
+		test('配送の記録の読み取りが失敗したら 500（no-store）で、空の履歴の偽の画面を返さない', async () => {
+			process.env.TRACKING_17TRACK_API_KEY = 'test-only-key';
+			arrange({ get_order_delivery_detail: { data: null, error: { message: 'down', code: '08006' } } });
+			const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+			const { response, body } = await getDetail();
+
+			expect(response.status).toBe(500);
+			expect(response.headers.get('Cache-Control')).toBe('no-store');
+			expect(body).toEqual({ error: 'Failed to fetch order detail' });
+			consoleError.mockRestore();
+		});
 	});
 });

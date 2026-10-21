@@ -26,6 +26,11 @@ let returnFilterError: unknown = null;
 let returnSummaryOverrides: Record<string, Partial<OrderReturnSummary>> = {};
 const listOrderReturnSummariesMock = jest.fn();
 const countReturnAttentionMock = jest.fn();
+// 配送の集計（Task 4 の delivery-store の listOrderDeliverySummaries）を、注文の番号ごとに上書きする。
+// 書かなかった注文は、発送の記録が無い集計（Map に入れない）になる
+type DeliverySummary = { activeCount: number; deliveredCount: number; attentionKind: string | null };
+let deliverySummaryOverrides: Record<string, DeliverySummary> = {};
+const listOrderDeliverySummariesMock = jest.fn();
 // キャンセルの申し込みの印・一行の数・絞り込みの読み出し（Task 8 の cancel-request-reads）を、窓口の形で差し替える
 const listOrderIdsWithOpenCancelRequestMock = jest.fn();
 const findOrderIdsWithOpenCancelRequestMock = jest.fn();
@@ -91,7 +96,7 @@ jest.mock('@/lib/orders/returns/cancel-request-reads', () => ({
 // 注文の一覧が読む配送の集計（グループ E-4 Task 9）は、この試験の対象ではないので空で差し替える
 jest.mock('server-only', () => ({}), { virtual: true });
 jest.mock('@/lib/orders/tracking/delivery-store', () => ({
-  listOrderDeliverySummaries: async () => new Map(),
+  listOrderDeliverySummaries: (...args: unknown[]) => listOrderDeliverySummariesMock(...args),
 }));
 
 // 返品の要約と一行の数（Task 4 の return-store）は、窓口の形で差し替える
@@ -131,6 +136,11 @@ describe('GET /api/admin/orders statutory search', () => {
     returnFilterRows = [];
     returnFilterError = null;
     returnSummaryOverrides = {};
+    deliverySummaryOverrides = {};
+    listOrderDeliverySummariesMock.mockReset();
+    listOrderDeliverySummariesMock.mockImplementation(async (_store: unknown, orderIds: string[]) =>
+      new Map(orderIds.flatMap((orderId): Array<[string, DeliverySummary]> =>
+        deliverySummaryOverrides[orderId] ? [[orderId, deliverySummaryOverrides[orderId]]] : [])));
     listOrderReturnSummariesMock.mockReset();
     listOrderReturnSummariesMock.mockImplementation(async (_store: unknown, orderIds: string[]) =>
       new Map(orderIds.map((orderId): [string, OrderReturnSummary] => [orderId, returnSummaryOf(orderId, returnSummaryOverrides[orderId])])));
@@ -625,6 +635,82 @@ describe('GET /api/admin/orders statutory search', () => {
       expect(rows[0]).toMatchObject({
         status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', partiallyShipped: false, canShip: false, canRecordCompletion: false,
       });
+    });
+
+    // 配達済みへの進み具合（グループ E-4 設計書 7-2）。DB の集計（取り消した発送は除く）を渡す。DB の状態と絞り込みは変えない
+    const SENT_LINES = () => [
+      lineRow({ order_id: 'order-1', order_item_id: 'item-stock', quantity: 2, shipped: 2, completed: 2, ready_unshipped: 0, unshipped: 0 }),
+      lineRow({ order_id: 'order-1', order_item_id: 'item-coat', fulfillment_type: 'backorder', quantity: 1, shipped: 1, completed: 1, ready_unshipped: 0, unshipped: 0 }),
+    ];
+    const SHIPPED_ORDER = () => paidOrderRow({ status: 'shipped', shipped_at: '2026-10-10T01:00:00.000Z', shipping_carrier: 'yamato', tracking_number: '1234' });
+    const SHIPPED_ORDER_2 = () => paidOrderRow({ id: 'order-2', status: 'shipped', shipped_at: '2026-10-10T01:00:00.000Z', shipping_carrier: 'yamato', tracking_number: '5678' });
+
+    it('取り消していない発送が全部配達済みの注文は「配達済み」（progressKey は delivered）。DB の状態は shipped のままで、発送も仕上がりの記録もできない', async () => {
+      lineFulfillmentRows = SENT_LINES();
+      deliverySummaryOverrides = { 'order-1': { activeCount: 2, deliveredCount: 2, attentionKind: null } };
+
+      const { rows } = await listOrders([SHIPPED_ORDER()]);
+
+      expect(rows[0]).toMatchObject({
+        status: '配達済み', orderStatus: 'shipped', progressKey: 'delivered', partiallyShipped: false, canShip: false, canRecordCompletion: false,
+      });
+    });
+
+    it.each([
+      ['一部だけ配達済み', { activeCount: 2, deliveredCount: 1, attentionKind: null }],
+      ['配達済みが無い', { activeCount: 2, deliveredCount: 0, attentionKind: null }],
+      ['発送の集計が0件', { activeCount: 0, deliveredCount: 0, attentionKind: null }],
+    ])('%s の注文は「配送中」のまま', async (_name, summary) => {
+      lineFulfillmentRows = SENT_LINES();
+      deliverySummaryOverrides = { 'order-1': summary };
+
+      const { rows } = await listOrders([SHIPPED_ORDER()]);
+
+      expect(rows[0]).toMatchObject({ status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit' });
+    });
+
+    it('集計が無い注文（Map に入っていない）も「配送中」のまま。配達済みの印は集計がある注文にだけ付く', async () => {
+      lineFulfillmentRows = [
+        ...SENT_LINES(),
+        lineRow({ order_id: 'order-2', order_item_id: 'item-stock', quantity: 2, shipped: 2, completed: 2, ready_unshipped: 0, unshipped: 0 }),
+      ];
+      deliverySummaryOverrides = { 'order-1': { activeCount: 1, deliveredCount: 1, attentionKind: null } };
+
+      const { rows } = await listOrders([SHIPPED_ORDER(), SHIPPED_ORDER_2()]);
+
+      expect(rows.map((row) => [row.id, row.status])).toEqual([['order-1', '配達済み'], ['order-2', '配送中']]);
+    });
+
+    it('発送準備中の品が残る注文は、配達済みの発送があっても「発送準備中」。配送の集計は一覧の注文を1回で読む', async () => {
+      lineFulfillmentRows = [
+        lineRow({ order_id: 'order-1', order_item_id: 'item-stock', quantity: 2, shipped: 1, completed: 2, ready_unshipped: 1, unshipped: 1 }),
+      ];
+      deliverySummaryOverrides = { 'order-1': { activeCount: 1, deliveredCount: 1, attentionKind: null } };
+
+      const { rows } = await listOrders([paidOrderRow()]);
+
+      expect(rows[0]).toMatchObject({ status: '発送準備中', progressKey: 'ready' });
+      expect(listOrderDeliverySummariesMock).toHaveBeenCalledTimes(1);
+      expect(listOrderDeliverySummariesMock).toHaveBeenCalledWith(expect.anything(), ['order-1']);
+    });
+
+    it('配送の集計を読めなかった時は 500 にする（偽の「配送中」を出さない）。ログは名前・code・operation だけ', async () => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      listOrderDeliverySummariesMock.mockRejectedValue(
+        Object.assign(new Error('SECRET-MESSAGE'), { name: 'DeliveryStoreError', code: '57014', operation: 'list_order_delivery_summaries' }),
+      );
+      queryResult = { data: [paidOrderRow()], count: 1, error: null };
+
+      try {
+        const { GET } = await import('@/app/api/admin/orders/route');
+        const response = await GET(new Request('http://localhost/api/admin/orders'));
+
+        expect(response.status).toBe(500);
+        expect(consoleError).toHaveBeenCalledWith('GET /api/admin/orders error:', 'DeliveryStoreError', '57014', 'list_order_delivery_summaries');
+        expect(inspect(consoleError.mock.calls, { depth: null })).not.toContain('SECRET');
+      } finally {
+        consoleError.mockRestore();
+      }
     });
 
     it('数を読むのは支払い済みと発送済みの注文だけ。ほかの注文は数を 0 にして、言葉は状態のまま', async () => {

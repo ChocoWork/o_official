@@ -240,6 +240,236 @@ describe('お客様の注文の画面（グループ E-1）', () => {
   });
 });
 
+describe('お客様の注文の画面の配送の状況と配達済み（グループ E-4 設計書 7-1）', () => {
+  beforeEach(() => {
+    mockClientFetch.mockReset();
+  });
+
+  const STEPS_DELIVERED = [
+    { key: 'payment', label: 'お支払い', state: 'done' },
+    { key: 'ready', label: '発送準備中', state: 'done' },
+    { key: 'in_transit', label: '配送中', state: 'done' },
+    { key: 'delivered', label: '配達済み', state: 'done' },
+  ];
+
+  function shipment(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'f1', number: 1, shippedAt: '2026-10-05T15:30:00.000Z', carrier: 'yamato', carrierLabel: 'ヤマト運輸',
+      trackingNumber: '1234-5678-9012',
+      trackingUrl: 'https://toi.kuronekoyamato.co.jp/cgi-bin/tneko?number=1234-5678-9012',
+      items: [{ orderItemId: 'line-1', name: 'リネンシャツ', color: '白', size: 'M', quantity: 2 }],
+      deliveredAt: null,
+      ...overrides,
+    };
+  }
+
+  // 窓口が追跡オン・鍵あり・追跡中の発送に付ける delivery（新しい順の出来事）
+  function delivery(overrides: Record<string, unknown> = {}) {
+    return {
+      status: 'in_transit',
+      statusAt: '2026-10-07T01:00:00.000Z',
+      events: [
+        { status: 'in_transit', happenedAt: '2026-10-07T01:00:00.000Z' },
+        { status: 'confirmed', happenedAt: '2026-10-05T15:30:00.000Z' },
+      ],
+      ...overrides,
+    };
+  }
+
+  function shippedOrder(shipments: unknown[], overrides: Record<string, unknown> = {}) {
+    return order({
+      status: 'shipped',
+      progress: {
+        key: 'in_transit', label: '配送中', partiallyShipped: false,
+        steps: [
+          { key: 'payment', label: 'お支払い', state: 'done' },
+          { key: 'ready', label: '発送準備中', state: 'done' },
+          { key: 'in_transit', label: '配送中', state: 'current' },
+          { key: 'delivered', label: '配達済み', state: 'todo' },
+        ],
+      },
+      shipments,
+      items: [item({ shippedQuantity: 2 })],
+      ...overrides,
+    });
+  }
+
+  const sectionOf = (number: number) => screen.getByRole('region', { name: `配送情報（${number}回目）` });
+
+  it('OFFでも配達済みとお届け日は残す（deliveredAt だけがあり delivery が無い発送）', async () => {
+    await renderPage(shippedOrder([shipment({ deliveredAt: '2026-10-20T15:30:00.000Z' })]));
+
+    const section = sectionOf(1);
+    expect(screen.getByText('お届け日 10月21日')).toBeVisible();
+    expect(within(section).getByTestId('shipment-delivered')).toHaveTextContent('配達済み');
+    // 追跡のリンクと伝票番号は今までどおり出る。状況・最後の更新・移り変わりは出さない
+    expect(within(section).getByRole('link', { name: '配送状況を確認する' })).toBeInTheDocument();
+    expect(section).toHaveTextContent('1234-5678-9012');
+    expect(section).not.toHaveTextContent('最後の更新');
+    expect(within(section).queryByText('配送の移り変わり')).not.toBeInTheDocument();
+    expect(within(section).queryByTestId('shipment-delivery-status')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['日本時間では翌日にあたる時刻', '2026-10-20T15:30:00.000Z', 'お届け日 10月21日'],
+    ['日本時間の日の終わり', '2026-10-21T14:59:59.000Z', 'お届け日 10月21日'],
+    ['日本時間の日の初め', '2026-10-21T15:00:00.000Z', 'お届け日 10月22日'],
+    ['日本時間では翌月にあたる時刻', '2026-10-31T15:30:00.000Z', 'お届け日 11月1日'],
+    ['日本時間の日の途中', '2026-10-21T03:00:00.000Z', 'お届け日 10月21日'],
+  ])('お届け日は日本時間の「M月D日」で出す（%s）', async (_name, deliveredAt, text) => {
+    await renderPage(shippedOrder([shipment({ deliveredAt })]));
+
+    expect(screen.getByText(text)).toBeVisible();
+  });
+
+  it('配達済みの発送だけに「配達済み」とお届け日を出す。配達済みでない発送には出さない', async () => {
+    await renderPage(
+      shippedOrder([
+        shipment({ deliveredAt: '2026-10-20T15:30:00.000Z' }),
+        shipment({ id: 'f2', number: 2, trackingNumber: 'AB-123', trackingUrl: null }),
+      ]),
+    );
+
+    expect(within(sectionOf(1)).getByTestId('shipment-delivered')).toBeInTheDocument();
+    expect(within(sectionOf(2)).queryByTestId('shipment-delivered')).not.toBeInTheDocument();
+    expect(within(sectionOf(2)).queryByText(/お届け日/)).not.toBeInTheDocument();
+  });
+
+  it('delivery がある発送は、今の状況・最後の更新（日本時間）・配送の移り変わり（窓口が返した新しい順）を出す', async () => {
+    await renderPage(shippedOrder([shipment({ delivery: delivery() })]));
+
+    const section = sectionOf(1);
+    expect(within(section).getByTestId('shipment-delivery-status')).toHaveTextContent('輸送中');
+    // 01:00（UTC）は日本時間の 10:00
+    expect(within(section).getByText('最後の更新 2026/10/07 10:00')).toBeVisible();
+    expect(within(section).getByRole('heading', { name: '配送の移り変わり' })).toBeInTheDocument();
+    const events = within(section).getAllByTestId('shipment-delivery-event');
+    expect(events).toHaveLength(2);
+    expect(events[0]).toHaveTextContent('輸送中');
+    expect(events[0]).toHaveTextContent('2026/10/07 10:00');
+    expect(events[1]).toHaveTextContent('受付済み');
+    // 15:30（UTC）は日本時間の翌日 0:30
+    expect(events[1]).toHaveTextContent('2026/10/06 00:30');
+    // 追跡のリンクは、状況があっても今までどおり出る
+    expect(within(section).getByRole('link', { name: '配送状況を確認する' })).toBeInTheDocument();
+  });
+
+  it('追跡オフ・登録待ち・鍵なしなどで delivery が無い発送は、今までどおり追跡のリンクだけ（状況・最後の更新・移り変わり・一文を出さない）', async () => {
+    await renderPage(shippedOrder([shipment()]));
+
+    const section = sectionOf(1);
+    expect(within(section).getByRole('link', { name: '配送状況を確認する' })).toBeInTheDocument();
+    expect(within(section).queryByTestId('shipment-delivery-status')).not.toBeInTheDocument();
+    expect(section).not.toHaveTextContent('最後の更新');
+    expect(within(section).queryByText('配送の移り変わり')).not.toBeInTheDocument();
+    expect(section).not.toHaveTextContent('配送に遅れや問題が出ています');
+  });
+
+  it('配達済みの時刻と delivery が両方ある発送は、配達済みを1回だけ出す（状況の札は出さず、お届け日が優先）', async () => {
+    await renderPage(
+      shippedOrder([
+        shipment({
+          deliveredAt: '2026-10-20T15:30:00.000Z',
+          delivery: delivery({
+            status: 'delivered',
+            statusAt: '2026-10-20T15:30:00.000Z',
+            events: [{ status: 'delivered', happenedAt: '2026-10-20T15:30:00.000Z' }, { status: 'in_transit', happenedAt: '2026-10-19T01:00:00.000Z' }],
+          }),
+        }),
+      ]),
+    );
+
+    const section = sectionOf(1);
+    expect(within(section).getAllByTestId('shipment-delivered')).toHaveLength(1);
+    expect(within(section).queryByTestId('shipment-delivery-status')).not.toBeInTheDocument();
+    expect(screen.getByText('お届け日 10月21日')).toBeVisible();
+    expect(within(section).getAllByTestId('shipment-delivery-event')).toHaveLength(2);
+  });
+
+  it.each([
+    ['問題あり', 'failure'],
+    ['遅れ', 'delayed'],
+  ])('状況が%sの時は「配送に遅れや問題が出ています。詳しくは配送業者のページをご確認ください」の一文を出す', async (label, status) => {
+    await renderPage(
+      shippedOrder([shipment({ delivery: delivery({ status, events: [{ status, happenedAt: '2026-10-07T01:00:00.000Z' }] }) })]),
+    );
+
+    const section = sectionOf(1);
+    expect(within(section).getByText('配送に遅れや問題が出ています。詳しくは配送業者のページをご確認ください')).toBeVisible();
+    expect(within(section).getByTestId('shipment-delivery-status')).toHaveTextContent(label);
+  });
+
+  it.each(['confirmed', 'in_transit', 'out_for_delivery', 'attempted_delivery', 'ready_for_pickup'])(
+    '状況が %s の時は、遅れや問題の一文を出さない',
+    async (status) => {
+      await renderPage(shippedOrder([shipment({ delivery: delivery({ status, events: [{ status, happenedAt: '2026-10-07T01:00:00.000Z' }] }) })]));
+
+      expect(sectionOf(1)).not.toHaveTextContent('配送に遅れや問題が出ています');
+    },
+  );
+
+  it.each([
+    ['confirmed', '受付済み'],
+    ['in_transit', '輸送中'],
+    ['out_for_delivery', '配達中'],
+    ['attempted_delivery', '不在で持ち帰り'],
+    ['ready_for_pickup', '受け取り待ち'],
+    ['delayed', '遅れ'],
+    ['failure', '問題あり'],
+  ])('状況 %s は「%s」と書く', async (status, label) => {
+    await renderPage(shippedOrder([shipment({ delivery: delivery({ status, events: [] }) })]));
+
+    expect(within(sectionOf(1)).getByTestId('shipment-delivery-status')).toHaveTextContent(label);
+    // 出来事が無ければ、移り変わりの見出しも出さない
+    expect(within(sectionOf(1)).queryByText('配送の移り変わり')).not.toBeInTheDocument();
+  });
+
+  it('前からの発送（配送業者・伝票番号が空）と知らない配送業者は、従来の表示のまま。配達済みなら配達済みとお届け日は出る', async () => {
+    await renderPage(
+      shippedOrder([
+        shipment({
+          carrier: null, carrierLabel: null, trackingNumber: null, trackingUrl: null, deliveredAt: '2026-10-20T15:30:00.000Z',
+        }),
+        shipment({ id: 'f2', number: 2, carrier: 'newcarrier', carrierLabel: null, trackingUrl: null }),
+      ]),
+    );
+
+    const legacy = sectionOf(1);
+    expect(legacy).not.toHaveTextContent('配送業者');
+    expect(legacy).not.toHaveTextContent('追跡番号');
+    expect(within(legacy).queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByText('お届け日 10月21日')).toBeVisible();
+    const unknown = sectionOf(2);
+    expect(unknown).not.toHaveTextContent('配送業者');
+    expect(unknown).toHaveTextContent('1234-5678-9012');
+    expect(within(unknown).queryByRole('link')).not.toBeInTheDocument();
+    expect(within(unknown).queryByTestId('shipment-delivered')).not.toBeInTheDocument();
+  });
+
+  it('deliveredAt を持たない古い形の答えでも、配達済みの欄を出さずに画面が出る', async () => {
+    const legacyShipment = Object.fromEntries(Object.entries(shipment()).filter(([key]) => key !== 'deliveredAt'));
+
+    await renderPage(shippedOrder([legacyShipment]));
+
+    expect(within(sectionOf(1)).queryByTestId('shipment-delivered')).not.toBeInTheDocument();
+    expect(sectionOf(1)).toHaveTextContent('1234-5678-9012');
+  });
+
+  it('全部の発送が配達済みの注文は、状態の言葉が「配達済み」で、進み具合の段は全部済み（今の段の印は付かない）', async () => {
+    await renderPage(
+      shippedOrder([shipment({ deliveredAt: '2026-10-20T15:30:00.000Z' })], {
+        progress: { key: 'delivered', label: '配達済み', partiallyShipped: false, steps: STEPS_DELIVERED },
+      }),
+    );
+
+    expect(screen.getByTestId('order-progress-status')).toHaveTextContent('配達済み');
+    const steps = stepItems();
+    expect(steps).toHaveLength(4);
+    steps.forEach((step) => expect(step).not.toHaveAttribute('aria-current'));
+    expect(within(steps[3]).getByText('配達済み')).toHaveClass('text-black');
+  });
+});
+
 describe('お客様の注文の画面の返金（グループ E-2）', () => {
   beforeEach(() => {
     mockClientFetch.mockReset();

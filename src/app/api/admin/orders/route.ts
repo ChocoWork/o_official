@@ -540,7 +540,7 @@ export async function GET(request: Request) {
       const refundSummary = refundSummaries.get(order.id);
       const hasOpenRefund = refundSummary?.hasOpenRefund ?? false;
       const refundableAmount = refundSummary?.refundableAmount ?? 0;
-      const progress = deriveOrderProgress(order.status, lineCounts, { hasOpenRefund });
+      const progress = deriveOrderProgress(order.status, lineCounts, { hasOpenRefund, delivery: deliverySummaries.get(order.id) });
       const paymentStatusKey = derivePaymentStatus({
         status: order.status,
         paidAmount: refundSummary?.paidAmount ?? null,

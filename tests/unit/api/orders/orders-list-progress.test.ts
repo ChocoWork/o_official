@@ -44,6 +44,13 @@ jest.mock('@/lib/orders/refund/refund-store', () => ({
   listOrderRefundSummaries: (...args: unknown[]) => mockListRefundSummaries(...args),
 }));
 
+// 配送の集計（グループ E-4）。実物の読み出し（DB の関数）は使わず、答えを差し替える
+jest.mock('server-only', () => ({}), { virtual: true });
+const mockListDeliverySummaries = jest.fn();
+jest.mock('@/lib/orders/tracking/delivery-store', () => ({
+  listOrderDeliverySummaries: (...args: unknown[]) => mockListDeliverySummaries(...args),
+}));
+
 import { NextRequest } from 'next/server';
 import { GET } from '@/app/api/orders/route';
 
@@ -97,6 +104,9 @@ beforeEach(() => {
   mockOrdersQuery.eq.mockReturnValue(mockOrdersQuery);
   mockOrdersQuery.not.mockReturnValue(mockOrdersQuery);
   mockListRefundSummaries.mockResolvedValue(new Map());
+  // 既定は、発送の記録なし（従来の言葉と同じ）
+  mockListDeliverySummaries.mockImplementation(async (_store: unknown, orderIds: string[]) =>
+    new Map(orderIds.map((id) => [id, { activeCount: 0, deliveredCount: 0, attentionKind: null }])));
 });
 
 describe('GET /api/orders の言葉（グループ E-1）', () => {
@@ -280,6 +290,92 @@ describe('GET /api/orders の言葉と返金（グループ E-2）', () => {
     );
     expect(loggedText(consoleError)).not.toContain('DB-MESSAGE');
     expect(loggedText(consoleError)).not.toContain('神宮前');
+    consoleError.mockRestore();
+  });
+});
+
+describe('GET /api/orders の言葉と配達済み（グループ E-4 設計書 7-2）', () => {
+  const sentLine = (orderId: string) => line(orderId, { shipped: 1, readyUnshipped: 0, unshipped: 0 });
+  const summary = (activeCount: number, deliveredCount: number) => ({ activeCount, deliveredCount, attentionKind: null });
+
+  it('取り消していない発送が全部配達済みの注文は「配達済み」。一部だけ・発送0件は「配送中」。配送の集計は一覧の全部の注文を1回で読む', async () => {
+    mockOrdersQuery.order.mockResolvedValue({
+      data: [orderRow('order-delivered', 'shipped'), orderRow('order-partial', 'shipped'), orderRow('order-empty', 'shipped'), orderRow('order-pending', 'pending')],
+      error: null,
+    });
+    mockListLines.mockResolvedValue(
+      new Map([
+        ['order-delivered', [sentLine('order-delivered')]],
+        ['order-partial', [sentLine('order-partial')]],
+        ['order-empty', [sentLine('order-empty')]],
+        ['order-pending', [line('order-pending')]],
+      ]),
+    );
+    mockListDeliverySummaries.mockResolvedValue(
+      new Map([
+        ['order-delivered', summary(2, 2)],
+        ['order-partial', summary(2, 1)],
+        ['order-empty', summary(0, 0)],
+        ['order-pending', summary(1, 1)],
+      ]),
+    );
+
+    const { status, body } = await getList();
+
+    expect(status).toBe(200);
+    expect(body.data.map((order: Json) => order.status)).toEqual(['配達済み', '配送中', '配送中', '未決済']);
+    expect(mockListDeliverySummaries).toHaveBeenCalledTimes(1);
+    expect(mockListDeliverySummaries).toHaveBeenCalledWith(mockServiceClient, [
+      'order-delivered', 'order-partial', 'order-empty', 'order-pending',
+    ]);
+  });
+
+  it('発送準備中の品が残る注文は、配達済みの発送があっても「発送準備中」のまま', async () => {
+    mockOrdersQuery.order.mockResolvedValue({ data: [orderRow('order-mixed', 'paid')], error: null });
+    mockListLines.mockResolvedValue(
+      new Map([['order-mixed', [sentLine('order-mixed'), line('order-mixed', { orderItemId: 'order-mixed-line-2' })]]]),
+    );
+    mockListDeliverySummaries.mockResolvedValue(new Map([['order-mixed', summary(1, 1)]]));
+
+    const { body } = await getList();
+
+    expect(body.data[0].status).toBe('発送準備中');
+  });
+
+  it('配送の集計の読み取りが失敗したら 500（no-store）で、中身を返さない。ログは名前・code・operation だけ', async () => {
+    mockOrdersQuery.order.mockResolvedValue({ data: [orderRow('order-1', 'shipped')], error: null });
+    mockListLines.mockResolvedValue(new Map([['order-1', [sentLine('order-1')]]]));
+    mockListDeliverySummaries.mockRejectedValue(
+      Object.assign(
+        new Error('delivery store failed: list_order_delivery_summaries', { cause: { message: 'DB-MESSAGE 〒1500001 神宮前1-2-3' } }),
+        { name: 'DeliveryStoreError', code: '57014', operation: 'list_order_delivery_summaries' },
+      ),
+    );
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await getList();
+
+    expect(response.status).toBe(500);
+    expect(response.headers['Cache-Control']).toBe('no-store');
+    expect(response.body).toEqual({ error: 'Failed to fetch orders' });
+    expect(consoleError).toHaveBeenCalledWith(
+      'Orders delivery fetch error:',
+      'DeliveryStoreError',
+      '57014',
+      'list_order_delivery_summaries',
+    );
+    expect(loggedText(consoleError)).not.toContain('DB-MESSAGE');
+    expect(loggedText(consoleError)).not.toContain('神宮前');
+    consoleError.mockRestore();
+  });
+
+  it('一覧の読み取りが失敗したら、配送の集計を読まない', async () => {
+    mockOrdersQuery.order.mockResolvedValue({ data: null, error: { message: 'down' } });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    await getList();
+
+    expect(mockListDeliverySummaries).not.toHaveBeenCalled();
     consoleError.mockRestore();
   });
 });

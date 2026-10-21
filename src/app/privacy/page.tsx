@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import React from "react";
 import Link from "next/link";
+import { connection } from "next/server";
+import { createServiceRoleClient } from "@/lib/supabase/server";
+import { getDeliveryTrackingSettings } from "@/lib/orders/tracking/delivery-store";
 
 const pageTitleStyle: React.CSSProperties = { fontSize: "var(--lk-size-5xl)" };
 const sectionTitleStyle: React.CSSProperties = {
@@ -31,7 +34,16 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function PrivacyPage() {
+/** 配送の追跡（17TRACK）をオンにしている間だけ、委託の一覧に出す一文（グループ E-4 設計書 15） */
+const DELIVERY_TRACKING_OUTSOURCING =
+  "配送状況の確認業務（配送追跡サービス 17TRACK。配送事業者名と伝票番号のみを提供し、お名前・ご住所・ご連絡先は提供しません）";
+
+export default async function PrivacyPage() {
+  // ショップの設定（配送の追跡のオン・オフ）を、ビルド時ではなく request のたびに読む。
+  // 読めない時は、一文を黙って出し分けずにページの失敗として扱う（古い方針のまま公開し続けないため）
+  await connection();
+  const deliveryTracking = await getDeliveryTrackingSettings(await createServiceRoleClient());
+
   return (
     <div className="w-full max-w-3xl mx-auto">
       <h1 className="mb-10" style={pageTitleStyle}>
@@ -127,6 +139,9 @@ export default function PrivacyPage() {
             style={bodyTextStyle}
           >
             <li>商品の配送業務（配送事業者）</li>
+            {deliveryTracking.enabled ? (
+              <li>{DELIVERY_TRACKING_OUTSOURCING}</li>
+            ) : null}
             <li>決済処理業務（Stripe, Inc.）</li>
             <li>サーバー及びシステムの運用・保守業務</li>
           </ul>

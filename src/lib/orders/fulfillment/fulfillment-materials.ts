@@ -15,6 +15,7 @@ import type {
 } from '@/lib/orders/fulfillment/fulfillment-types';
 import { listOrderReturns } from '@/lib/orders/returns/return-store';
 import type { OrderReturnDetail } from '@/lib/orders/returns/return-types';
+import { listOrderDeliverySummaries } from '@/lib/orders/tracking/delivery-store';
 
 type MaterialOrderRow = {
   id: string;
@@ -63,7 +64,7 @@ export async function loadFulfillmentMaterials(client: SupabaseClient, orderId: 
   }
 
   // ここから先は、呼び出し側が渡した文字ではなく、DB が返した番号（小文字）で引く
-  const [itemsResult, exceptionsResult, countsByOrder, fulfillmentRows] = await Promise.all([
+  const [itemsResult, exceptionsResult, countsByOrder, fulfillmentRows, deliverySummaries] = await Promise.all([
     // 同じ注文の商品は同じ時刻に登録されるので、id を足して並びを決める
     client
       .from('order_items')
@@ -80,6 +81,8 @@ export async function loadFulfillmentMaterials(client: SupabaseClient, orderId: 
       .is('resolved_at', null),
     listOrderLineFulfillment(client, [order.id]),
     listOrderFulfillments(client, order.id),
+    // 進み具合の「配達済み」に使う集計（取り消した発送は DB が除く）。読めない時は投げる（偽の「配送中」にしない）
+    listOrderDeliverySummaries(client, [order.id]),
   ]);
   if (itemsResult.error) {
     throw new FulfillmentStoreError('load_order_items', itemsResult.error);
@@ -120,7 +123,7 @@ export async function loadFulfillmentMaterials(client: SupabaseClient, orderId: 
   const paymentReviewOpen = (exceptionsResult.data ?? []).length > 0;
 
   return {
-    order: { id: order.id, orderNumber: toOrderNumber(order.id), status: order.status, progress: deriveOrderProgress(order.status, lines) },
+    order: { id: order.id, orderNumber: toOrderNumber(order.id), status: order.status, progress: deriveOrderProgress(order.status, lines, { delivery: deliverySummaries.get(order.id) }) },
     blockedReason: blockedReasonOf(order, paymentReviewOpen),
     lines,
     fulfillments: fulfillmentRows.map((row) => ({
