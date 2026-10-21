@@ -88,6 +88,12 @@ jest.mock('@/lib/orders/returns/cancel-request-reads', () => ({
   countOrdersWithOpenCancelRequest: (...args: unknown[]) => countOrdersWithOpenCancelRequestMock(...args),
 }));
 
+// 注文の一覧が読む配送の集計（グループ E-4 Task 9）は、この試験の対象ではないので空で差し替える
+jest.mock('server-only', () => ({}), { virtual: true });
+jest.mock('@/lib/orders/tracking/delivery-store', () => ({
+  listOrderDeliverySummaries: async () => new Map(),
+}));
+
 // 返品の要約と一行の数（Task 4 の return-store）は、窓口の形で差し替える
 jest.mock('@/lib/orders/returns/return-store', () => ({
   listOrderReturnSummaries: (...args: unknown[]) => listOrderReturnSummariesMock(...args),

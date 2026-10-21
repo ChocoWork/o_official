@@ -1,3 +1,4 @@
+jest.mock('server-only', () => ({}), { virtual: true });
 jest.mock('next/server', () => ({
   NextResponse: {
     json: (body: unknown, init?: { status?: number }) => ({ status: init?.status ?? 200, body }),
@@ -99,6 +100,14 @@ jest.mock('@/lib/orders/email/order-email-schedule', () => ({
   scheduleOrderEmailDelivery: (...args: unknown[]) => mockScheduleOrderEmailDelivery(...args),
 }));
 
+const mockDeliverySettings = jest.fn();
+const mockDeliveryAttention = jest.fn();
+jest.mock('@/lib/orders/tracking/delivery-store', () => ({
+  ...jest.requireActual('@/lib/orders/tracking/delivery-store'),
+  getDeliveryTrackingSettings: () => mockDeliverySettings(),
+  listDeliveryAttention: (...args: unknown[]) => mockDeliveryAttention(...args),
+}));
+
 import { GET as getAttention } from '@/app/api/admin/order-attention/route';
 import { POST as postReview } from '@/app/api/admin/orders/[id]/review/route';
 import { POST as postResolve } from '@/app/api/admin/payment-exceptions/[id]/resolve/route';
@@ -107,6 +116,24 @@ import { ReconcileTransientError } from '@/lib/stripe/checkout-payment-reader';
 import { ORDER_EMAIL_ERROR_LABELS } from '@/lib/orders/email/order-email-types';
 
 type RouteResponse = { status: number; body: Record<string, any> };
+
+describe('配送の要対応', () => {
+  test('配送だけある時も他の組の既存値を保ち、limit前の数を返す', async () => {
+    const item = { id: 'attention-1', orderId: 'order-1', kind: 'delivery_failure' };
+    mockDeliveryAttention.mockResolvedValue({ items: [item], total: 101 });
+    const response = await getAttention(new Request('http://localhost/api/admin/order-attention')) as unknown as RouteResponse;
+    expect(response.body.data).toMatchObject({ exceptions: [], reviews: [], deliveries: [item], counts: { exceptions: 0, reviews: 0, deliveries: 101 } });
+    expect(mockDeliveryAttention).toHaveBeenCalledWith(mockServiceClient, 100);
+    expect(mockRequireCsrf).not.toHaveBeenCalled();
+  });
+  test('OFFならdeliveries空/count0（古い開いた行も返さない）', async () => {
+    mockDeliverySettings.mockResolvedValue({ enabled: false });
+    mockDeliveryAttention.mockResolvedValue({ items: [{ id: 'old' }], total: 100 });
+    const response = await getAttention(new Request('http://localhost/api/admin/order-attention')) as unknown as RouteResponse;
+    expect(response.body.data).toMatchObject({ deliveries: [], counts: { deliveries: 0 } });
+    expect(mockDeliveryAttention).not.toHaveBeenCalled();
+  });
+});
 
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
 const EXCEPTION_ID = 'b1b2c3d4-1111-2222-8333-444455556666';
@@ -139,6 +166,8 @@ async function review(id = ORDER_ID): Promise<RouteResponse> {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockDeliverySettings.mockReset().mockResolvedValue({ enabled: true });
+  mockDeliveryAttention.mockReset().mockResolvedValue({ items: [], total: 0 });
   mockSelectColumns.length = 0;
   exceptionRows = [];
   reviewRows = [];
@@ -182,7 +211,7 @@ describe('GET /api/admin/order-attention', () => {
       const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse;
       expect(res.status).toBe(200);
       expect(res.body.data.emailSending).toBeNull();
-      expect(res.body.data.counts).toEqual({ exceptions: 0, reviews: 1 });
+      expect(res.body.data.counts).toEqual({ exceptions: 0, reviews: 1, deliveries: 0 });
       expect(res.body.data.reviews).toHaveLength(1);
       expect(warn.mock.calls).toEqual([['[admin.order-attention] Failed to fetch email sending state', 'OrderEmailStoreError', '08006']]);
     } finally {
@@ -253,7 +282,7 @@ describe('GET /api/admin/order-attention', () => {
     const res = (await getAttention(new Request('http://localhost/api/admin/order-attention'))) as unknown as RouteResponse;
 
     expect(res.status).toBe(200);
-    expect(res.body.data.counts).toEqual({ exceptions: 2, reviews: 1 });
+    expect(res.body.data.counts).toEqual({ exceptions: 2, reviews: 1, deliveries: 0 });
     expect(res.body.data.exceptions[0]).toEqual({
       id: EXCEPTION_ID,
       reason: 'order_not_creatable',

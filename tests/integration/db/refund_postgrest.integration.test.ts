@@ -32,6 +32,8 @@ jest.mock('next/server', () => ({
 jest.mock('@/lib/auth/admin-rbac', () => ({ authorizeAdminPermission: jest.fn(async () => ({ ok: true })) }));
 let mockRouteClient: unknown;
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn(async () => mockRouteClient) }));
+// 要対応の窓口が配送の要対応の読み込み（server 専用の部品）を使うため、試験の場では server-only の印を空にする
+jest.mock('server-only', () => ({}), { virtual: true });
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { GET as getOrderAttention } from '@/app/api/admin/order-attention/route';

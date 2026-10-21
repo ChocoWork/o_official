@@ -123,5 +123,6 @@ export type AttentionReview = {
 export type OrderAttention = {
   exceptions: AttentionException[];
   reviews: AttentionReview[];
-  counts: { exceptions: number; reviews: number };
+  deliveries?: import('@/lib/orders/tracking/delivery-types').DeliveryAttentionItem[];
+  counts: { exceptions: number; reviews: number; deliveries?: number };
 };

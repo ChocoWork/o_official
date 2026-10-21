@@ -290,6 +290,8 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged }: OrderHistoryDia
   const failureText = notice?.tone === 'failure' ? notice.text : null;
 
   const renderEntry = (entry: OrderHistoryEntry, index: number) => {
+    // 配送の新しい行は Task 10 で表示する。既存のメール行には渡さない。
+    if (entry.type === 'delivery_event' || entry.type === 'tracking_change') return null;
     if (entry.type === 'created') {
       return (
         <li key={`created-${index}`} className="font-acumin lk-text-3xs text-black">

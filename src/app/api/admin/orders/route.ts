@@ -17,6 +17,7 @@ import {
 import { countReturnAttention, listOrderReturnSummaries } from '@/lib/orders/returns/return-store';
 import { RETURN_DISPLAY_STATUSES, type OrderReturnSummary, type ReturnDisplayStatus } from '@/lib/orders/returns/return-types';
 import { findMissingShippingFields } from '@/features/checkout/services/checkout-draft.service';
+import { listOrderDeliverySummaries } from '@/lib/orders/tracking/delivery-store';
 
 type OrderRow = {
   id: string;
@@ -494,6 +495,7 @@ export async function GET(request: Request) {
       returnAttention,
       cancelRequestOrderIds,
       cancelRequestAttention,
+      deliverySummaries,
     ] =
       await Promise.all([
         fetchPaymentIntentMap(paymentIntentIds),
@@ -504,9 +506,13 @@ export async function GET(request: Request) {
         fetchReturnAttention(),
         fetchCancelRequestMarks(orderRows),
         fetchCancelRequestAttention(),
+        createServiceRoleClient().then((store) => listOrderDeliverySummaries(store, orderRows.map((order) => order.id))),
       ]);
 
     const responseData = orderRows.map((order) => {
+      const deliveryKind = deliverySummaries.get(order.id)?.attentionKind ?? null;
+      const deliveryAttention = deliveryKind === 'delivery_failure' ? 'failure'
+        : deliveryKind === 'attempted_delivery' ? 'attempted_delivery' : deliveryKind ? 'untrackable' : null;
       const lineCounts = lineCountsByOrder.get(order.id) ?? [];
       const countsByItem = new Map(lineCounts.map((row) => [row.orderItemId, row]));
       const items = (order.order_items ?? []).map((item) => {
@@ -600,6 +606,7 @@ export async function GET(request: Request) {
         refundedAmountLabel: order.refunded_amount > 0 ? toCurrencyLabel(order.refunded_amount, order.currency) : '-',
         // 返品の列・小さな印・ボタンの名前・「返品できる品」の有無。DB の要約をそのまま写す（返品の無い注文は displayStatus が null）
         returnSummary: returnSummaries.get(order.id) ?? emptyReturnSummary(order.id),
+        deliveryAttention,
         // 開いているキャンセルの申し込みがあるか。画面は「キャンセルの申し込み」のボタンを出す（グループ E-3 段2、決め事 P11）
         cancelRequestOpen: cancelRequestOrderIds.has(order.id),
         shippedAt: order.shipped_at,

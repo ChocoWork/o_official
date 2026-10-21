@@ -27,6 +27,7 @@ import { listOrderRefunds, RefundStoreError } from '@/lib/orders/refund/refund-s
 import { listOrderCancelRequests } from '@/lib/orders/returns/cancel-request-store';
 import { listOrderReturns } from '@/lib/orders/returns/return-store';
 import type { OrderReturnDetail } from '@/lib/orders/returns/return-types';
+import { DeliveryStoreError, getOrderDeliveryDetail } from '@/lib/orders/tracking/delivery-store';
 
 type HistoryOrderRow = { id: string; status: OrderStatus; shipping_email: string | null; created_at: string };
 type HistoryItemRow = {
@@ -204,7 +205,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const store = supabase as unknown as OrderEmailStore;
-    const [statusRows, emailRows, sendState, fulfillments, completions, refunds, returns, cancelRequests, lines] = await Promise.all([
+    const [statusRows, emailRows, sendState, fulfillments, completions, refunds, returns, cancelRequests, lines, delivery] = await Promise.all([
       listOrderStatusHistory(store, order.id),
       listOrderEmailHistory(store, order.id),
       getOrderEmailSendState(store),
@@ -214,6 +215,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       listOrderReturns(supabase, order.id),
       listOrderCancelRequests(supabase, order.id),
       loadHistoryLines(supabase, order.id),
+      getOrderDeliveryDetail(supabase, order.id),
     ]);
     // 受け取りの細目と、返品の記録（取消などをした人と手数料をいただかない印）は、返品の一覧で番号が分かってから読む
     const [returnReceiptLines, returnRecords] = await Promise.all([
@@ -235,13 +237,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         returnRecords,
         cancelRequests,
         lines,
+        delivery,
       }),
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
     console.error('[admin.orders.history] Failed to load history', error instanceof Error ? error.name : 'UnknownError',
-      ...((error instanceof OrderEmailStoreError || error instanceof FulfillmentStoreError || error instanceof RefundStoreError)
+      ...((error instanceof OrderEmailStoreError || error instanceof FulfillmentStoreError || error instanceof RefundStoreError || error instanceof DeliveryStoreError)
         && error.code ? [error.code] : []));
+    if (error instanceof DeliveryStoreError) {
+      return NextResponse.json({ error: '配送の記録を読み込めませんでした。' }, { status: 500 });
+    }
     return NextResponse.json({ error: 'Failed to load history' }, { status: 500 });
   }
 }

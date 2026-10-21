@@ -1,4 +1,5 @@
 /** @jest-environment node */
+jest.mock('server-only', () => ({}), { virtual: true });
 
 // jest の共通の初期設定（tests/setupRequestPolyfill.js）が Response を node-fetch のものに差し替え、静的な json() が無い。NextResponse.json が内部で使うため補う
 if (typeof (Response as unknown as { json?: unknown }).json !== 'function') {
@@ -61,6 +62,12 @@ jest.mock('@/lib/supabase/server', () => ({
   })),
 }));
 
+const mockGetDeliveryDetail = jest.fn();
+jest.mock('@/lib/orders/tracking/delivery-store', () => ({
+  ...jest.requireActual('@/lib/orders/tracking/delivery-store'),
+  getOrderDeliveryDetail: (...args: unknown[]) => mockGetDeliveryDetail(...args),
+}));
+
 import { GET as getHistory } from '@/app/api/admin/orders/[id]/history/route';
 import { GET as getContent } from '@/app/api/admin/orders/[id]/emails/[emailId]/route';
 import { POST as postResend } from '@/app/api/admin/orders/[id]/emails/resend/route';
@@ -85,6 +92,7 @@ function rpcReturns(map: Record<string, { data: unknown; error?: unknown }>) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockGetDeliveryDetail.mockReset().mockResolvedValue({ enabled: false, fulfillments: [] });
   mockRpc.mockReset();
   mockMaybeSingle.mockReset();
   mockOrderItems.mockReset();
@@ -107,6 +115,25 @@ beforeEach(() => {
 describe('GET /api/admin/orders/[id]/history', () => {
   const context = { params: Promise.resolve({ id: ORDER_ID }) };
   const request = () => new Request(`http://localhost/api/admin/orders/${ORDER_ID}/history`);
+
+  it('管理用deliveryを必ず読み、出来事と番号変更を独立した履歴で返す', async () => {
+    mockMaybeSingle.mockResolvedValue({ data: { id: ORDER_ID, status: 'paid', shipping_email: null, created_at: '2026-10-20T00:00:00Z' }, error: null });
+    rpcReturns({ get_order_email_send_state: { data: [{ paused: false, reason: null }] } });
+    mockGetDeliveryDetail.mockResolvedValue({ enabled: false, fulfillments: [{
+      fulfillmentId: FULFILLMENT_ID, number: 1, events: [{ id: 'e-1', happenedAt: '2026-10-21T00:00:00Z', source: 'manual', actorEmail: 'admin@example.test' }],
+      trackingChanges: [{ id: 'c-1', changedAt: '2026-10-21T00:00:00Z', notifyCustomer: true, emailStatus: 'retry_wait' }],
+    }] });
+    const response = await getHistory(request(), context);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(mockGetDeliveryDetail).toHaveBeenCalledWith(expect.anything(), ORDER_ID);
+    expect(body.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'delivery_event', event: expect.objectContaining({ actorEmail: 'admin@example.test' }) }),
+      expect.objectContaining({ type: 'tracking_change', change: expect.objectContaining({ emailStatus: 'retry_wait' }) }),
+    ]));
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mockRequireCsrf).not.toHaveBeenCalled(); expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+  });
 
   it('注文を見る権限で、履歴を新しい順に返す', async () => {
     mockMaybeSingle.mockResolvedValue({

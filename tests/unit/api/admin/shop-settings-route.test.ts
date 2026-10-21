@@ -1,4 +1,5 @@
 /** @jest-environment node */
+jest.mock('server-only', () => ({}), { virtual: true });
 
 // jest の共通の初期設定（tests/setupRequestPolyfill.js）が Response を node-fetch のものに差し替え、静的な json() が無い。NextResponse.json が内部で使うため補う
 if (typeof (Response as unknown as { json?: unknown }).json !== 'function') {
@@ -41,6 +42,16 @@ jest.mock('@/lib/orders/returns/return-store', () => ({
   updateShopReturnSettings: (...args: unknown[]) => mockUpdateShopReturnSettings(...args),
 }));
 
+const mockGetDeliverySettings = jest.fn();
+const mockSetDeliveryTracking = jest.fn();
+const mockKeyConfigured = jest.fn();
+jest.mock('@/lib/orders/tracking/delivery-store', () => ({
+  ...jest.requireActual('@/lib/orders/tracking/delivery-store'),
+  getDeliveryTrackingSettings: (...args: unknown[]) => mockGetDeliverySettings(...args),
+  setDeliveryTracking: (...args: unknown[]) => mockSetDeliveryTracking(...args),
+}));
+jest.mock('@/lib/orders/tracking/delivery-config', () => ({ isDeliveryTrackingKeyConfigured: () => mockKeyConfigured() }));
+
 import { GET, PUT } from '@/app/api/admin/settings/shop/route';
 import { RefundOperationError, RefundStoreError, type ShopSettingsRow } from '@/lib/orders/refund/refund-store';
 import { ReturnStoreError } from '@/lib/orders/returns/return-store';
@@ -62,6 +73,89 @@ const AFTER: ShopSettingsRow = {
   refundLedgerStartedAt: '2026-10-11T00:00:00.000Z',
 };
 const NEXT = { autoRefundCancelledOrderPayment: false, autoCancelAmountMismatch: true };
+const DELIVERY = { enabled: false, updatedAt: null, updatedByEmail: null, backfillCount: 1001 };
+
+describe('配送の設定', () => {
+  beforeEach(() => {
+    mockGetShopSettings.mockResolvedValue(BEFORE);
+    mockUpdateShopSettings.mockResolvedValue(AFTER);
+    mockUpdateShopReturnSettings.mockResolvedValue(RETURNS_AFTER);
+  });
+  test('ONの鍵なしは他の設定も書く前に409', async () => {
+    mockKeyConfigured.mockReturnValue(false);
+    const response = await PUT(putRequest({ ...withReturns(), deliveryTracking: { enabled: true } }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: '17TRACK の鍵を設定してください。', code: 'DELIVERY_TRACKING_KEY_MISSING' });
+    for (const write of [mockUpdateShopSettings, mockUpdateShopReturnSettings, mockSetDeliveryTracking]) expect(write).not.toHaveBeenCalled();
+  });
+  test('deliveryTrackingを省いたPUTは配送を変えない', async () => {
+    expect((await PUT(putRequest(NEXT))).status).toBe(200);
+    expect(mockSetDeliveryTracking).not.toHaveBeenCalled();
+  });
+  test('settingsは鍵の有無とlimit前の件数だけ返す', async () => {
+    const fakeSecret = 'FAKE-SECRET-NEVER-RETURN';
+    // 許した5項目だけを返す。設定の値や内部値が混ざっても答えへ広げない。
+    mockGetDeliverySettings.mockResolvedValue({ ...DELIVERY, apiKey: fakeSecret, baseUrl: fakeSecret });
+    const response = await GET(getRequest()); const data = (await response.json()).data;
+    expect(data.deliveryTracking).toEqual({ ...DELIVERY, keyConfigured: true });
+    expect(JSON.stringify(data)).not.toContain(fakeSecret);
+    expect(mockRequireCsrf).not.toHaveBeenCalled(); expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+  });
+  test('ON中に鍵が無くなってもOFFにできる（P24）', async () => {
+    mockKeyConfigured.mockReturnValue(false);
+    mockGetDeliverySettings.mockResolvedValue({ ...DELIVERY, enabled: true });
+    mockSetDeliveryTracking.mockResolvedValue({ enabled: false, updatedAt: null, updatedBy: null, backfilledCount: 0 });
+    const response = await PUT(putRequest({ ...NEXT, deliveryTracking: { enabled: false } }));
+    expect(response.status).toBe(200);
+    expect(mockSetDeliveryTracking).toHaveBeenCalledWith(mockServiceClient, { enabled: false, actorId: 'admin-1' });
+    expect((await response.json()).data.deliveryTracking.keyConfigured).toBe(false);
+  });
+  test('サポートは配送を直せて設定は変えられない（設定403）', async () => {
+    mockAuthorize.mockImplementation(async (permission: string) => permission === 'admin.settings.manage'
+      ? { ok: false, response: DENIED } : { ok: true, userId: 'supporter-1', role: 'supporter' });
+    expect((await PUT(putRequest({ ...NEXT, deliveryTracking: { enabled: true } }))).status).toBe(403);
+    expect(mockSetDeliveryTracking).not.toHaveBeenCalled();
+  });
+  test('返品→旧toggle→配送の順で保存し、GET件数とPUT実数を分ける', async () => {
+    mockGetDeliverySettings.mockResolvedValueOnce(DELIVERY).mockResolvedValueOnce({ ...DELIVERY, enabled: true, backfillCount: 0 });
+    const response = await PUT(putRequest({ ...withReturns(), deliveryTracking: { enabled: true } }));
+    expect(response.status).toBe(200); const data = (await response.json()).data;
+    expect(data.deliveryTracking).toEqual({ ...DELIVERY, enabled: true, backfillCount: 0, keyConfigured: true });
+    expect(data.backfilledCount).toBe(1002);
+    expect(mockUpdateShopReturnSettings.mock.invocationCallOrder[0]).toBeLessThan(mockUpdateShopSettings.mock.invocationCallOrder[0]);
+    expect(mockUpdateShopSettings.mock.invocationCallOrder[0]).toBeLessThan(mockSetDeliveryTracking.mock.invocationCallOrder[0]);
+    expect(mockUpdateShopSettings).toHaveBeenCalledWith(mockServiceClient, { ...NEXT, actorId: 'admin-1' });
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ metadata: {
+      changes: { auto_refund_cancelled_order_payment: false, auto_cancel_amount_mismatch: true },
+      returns_changed_groups: ['requests', 'shipping', 'window', 'reasons', 'fees', 'receiving'],
+      delivery_tracking_enabled: true, backfilled_count: 1002,
+    } }));
+  });
+  test.each(['returns', 'toggles', 'delivery', 'read_after_delivery'])('途中の失敗 %s は書けたまとまりだけ監査に残す', async (stage) => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const error = new Error('FAKE-PRIVATE-DB-MESSAGE');
+      if (stage === 'returns') mockUpdateShopReturnSettings.mockRejectedValue(error);
+      if (stage === 'toggles') mockUpdateShopSettings.mockRejectedValue(error);
+      if (stage === 'delivery') mockSetDeliveryTracking.mockRejectedValue(error);
+      if (stage === 'read_after_delivery') mockGetDeliverySettings.mockResolvedValueOnce(DELIVERY).mockRejectedValue(error);
+      const response = await PUT(putRequest({ ...withReturns(), deliveryTracking: { enabled: true } }));
+      expect(response.status).toBe(500);
+      const metadata = mockLogAudit.mock.calls.at(-1)?.[0].metadata;
+      expect(metadata).toEqual(stage === 'returns' ? null : {
+        returns_changed_groups: ['requests', 'shipping', 'window', 'reasons', 'fees', 'receiving'],
+        ...(stage === 'delivery' || stage === 'read_after_delivery' ? { changes: { auto_refund_cancelled_order_payment: false, auto_cancel_amount_mismatch: true } } : {}),
+        ...(stage === 'read_after_delivery' ? { delivery_tracking_enabled: true, backfilled_count: 1002 } : {}),
+      });
+      const data = await response.json();
+      expect(JSON.stringify([data, mockLogAudit.mock.calls, log.mock.calls])).not.toContain('FAKE-PRIVATE-DB-MESSAGE');
+    } finally { log.mockRestore(); }
+  });
+  test.each([null, {}, { enabled: 'true' }, { enabled: true, apiKey: 'fake' }])('配送設定の厳しいbody %j', async (deliveryTracking) => {
+    expect((await PUT(putRequest({ ...NEXT, deliveryTracking }))).status).toBe(400);
+    expect(mockSetDeliveryTracking).not.toHaveBeenCalled(); expect(mockUpdateShopSettings).not.toHaveBeenCalled();
+  });
+});
 
 const NEVER = { at: null, byEmail: null };
 const CHANGED = { at: '2026-10-12T04:00:00.000Z', byEmail: 'admin@example.com' };
@@ -208,6 +302,9 @@ function withReturns(change: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockGetDeliverySettings.mockReset().mockResolvedValue(DELIVERY);
+  mockSetDeliveryTracking.mockReset().mockResolvedValue({ enabled: true, updatedAt: null, updatedBy: null, backfilledCount: 1002 });
+  mockKeyConfigured.mockReset().mockReturnValue(true);
   mockAuthorize.mockReset();
   mockRequireCsrf.mockReset();
   mockEnforceRateLimit.mockReset();
@@ -236,6 +333,7 @@ describe('GET /api/admin/settings/shop', () => {
         autoRefundCancelledOrderPayment: BEFORE.autoRefundCancelledOrderPayment,
         autoCancelAmountMismatch: BEFORE.autoCancelAmountMismatch,
         returns: RETURNS_BEFORE,
+        deliveryTracking: { ...DELIVERY, keyConfigured: true },
       },
     });
     expect(JSON.stringify(body)).not.toContain('refundLedgerStartedAt');
@@ -370,6 +468,7 @@ describe('PUT /api/admin/settings/shop（自動の返金のトグル）', () => 
         autoRefundCancelledOrderPayment: AFTER.autoRefundCancelledOrderPayment,
         autoCancelAmountMismatch: AFTER.autoCancelAmountMismatch,
         returns: RETURNS_BEFORE,
+        deliveryTracking: { ...DELIVERY, keyConfigured: true },
       },
     });
     expect(mockGetShopSettings).toHaveBeenCalledWith(mockServiceClient);
@@ -595,6 +694,7 @@ describe('PUT /api/admin/settings/shop（返品の欄）', () => {
         autoRefundCancelledOrderPayment: AFTER.autoRefundCancelledOrderPayment,
         autoCancelAmountMismatch: AFTER.autoCancelAmountMismatch,
         returns: RETURNS_AFTER,
+        deliveryTracking: { ...DELIVERY, keyConfigured: true },
       },
     });
     expect(mockGetShopSettings).toHaveBeenCalledWith(mockServiceClient);

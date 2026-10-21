@@ -24,6 +24,7 @@ import {
 // 型だけを読む（実行時には何も読み込まない）。窓口が DB の関数から読んだ行を、そのまま渡してもらう
 import type { OrderCompletionHistoryRow, OrderFulfillmentHistoryRow } from '@/lib/orders/fulfillment/fulfillment-store';
 import type { OrderRefundRow } from '@/lib/orders/refund/refund-store';
+import type { DeliveryEvent, FulfillmentDeliveryDetail, OrderDeliveryDetail, TrackingChange } from '@/lib/orders/tracking/delivery-types';
 
 /**
  * 管理画面の「この注文の履歴」（グループ D 設計書 5-1、グループ E-1・E-2・E-3 設計書 9-2・8-1）。窓口と画面の両方が使うので、
@@ -137,6 +138,14 @@ export type OrderHistoryFulfillmentEntry = {
   cancelled: boolean;
   cancellable: boolean;
   legacy: boolean;
+  delivery?: FulfillmentDeliveryDetail;
+};
+
+export type OrderHistoryDeliveryEventEntry = {
+  type: 'delivery_event'; at: string; fulfillmentId: string; number: number; event: DeliveryEvent;
+};
+export type OrderHistoryTrackingChangeEntry = {
+  type: 'tracking_change'; at: string; fulfillmentId: string; number: number; change: TrackingChange;
 };
 
 export type OrderHistoryFulfillmentCancelEntry = {
@@ -259,7 +268,9 @@ export type OrderHistoryEntry =
   | OrderHistoryCompletionCancelEntry
   | OrderHistoryRefundEntry
   | OrderHistoryRefundRereserveEntry
-  | OrderHistoryReturnEntry;
+  | OrderHistoryReturnEntry
+  | OrderHistoryDeliveryEventEntry
+  | OrderHistoryTrackingChangeEntry;
 
 export type OrderHistoryResponse = {
   order: { id: string; orderNumber: string; statusLabel: string; recipient: string | null };
@@ -285,6 +296,7 @@ export type BuildOrderHistoryInput = {
   /** キャンセルの申し込み（Task 4 の listOrderCancelRequests の答え）。申し込み・お断り・解決済み・解決の行に使う（グループ E-3 段2） */
   cancelRequests: AdminCancelRequest[];
   lines: OrderHistoryLine[];
+  delivery?: OrderDeliveryDetail;
 };
 
 const OPEN_STATUSES: ReadonlySet<OrderEmailStatus> = new Set(['pending', 'sending', 'retry_wait']);
@@ -517,13 +529,17 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
   const {
     order, statusRows, emailRows, sendState, fulfillments, completions, refunds, returns, returnReceiptLines, returnRecords, cancelRequests, lines,
   } = input;
+  const deliveryById = new Map(input.delivery?.fulfillments.map((row) => [row.fulfillmentId, row] as const));
   const lineByItem = new Map(lines.map((line) => [line.orderItemId, line] as const));
   // 返品の返金の行の「どこから」に返品の番号を出すため、返金の番号から返品の番号を引けるようにする（返金の一覧は返品の番号を持たない）
   const returnLabelByRefundId = new Map(returns.flatMap((detail) => detail.refunds.map((refundOf) => [refundOf.id, detail.label] as const)));
   const itemsOf = (rows: ReadonlyArray<{ orderItemId: string; quantity: number }>) =>
     rows.map((row) => ({ name: lineByItem.get(row.orderItemId)?.name ?? UNKNOWN_ITEM_NAME, quantity: row.quantity }));
   const cancelledFulfillmentIds = new Set(
-    fulfillments.filter((row) => row.cancelledAt !== null).map((row) => row.fulfillmentId),
+    fulfillments.filter((row) => {
+      const delivery = deliveryById.get(row.fulfillmentId);
+      return (delivery ? delivery.cancelledAt : row.cancelledAt) !== null;
+    }).map((row) => row.fulfillmentId),
   );
   // 手の再送が送信待ちかは、種類と発送の組で見る（発送のメールは、発送ごとに別の再送を持てる）
   const resendKey = (row: OrderEmailHistoryRow) => `${row.kind}:${row.fulfillmentId ?? ''}`;
@@ -576,21 +592,24 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
   }));
 
   const fulfillmentEntries: OrderHistoryFulfillmentEntry[] = fulfillments.map((row) => {
-    const cancelled = row.cancelledAt !== null;
+    const delivery = deliveryById.get(row.fulfillmentId);
+    const cancelled = (delivery ? delivery.cancelledAt : row.cancelledAt) !== null;
+    const carrier = delivery ? delivery.carrier : row.shippingCarrier;
     return {
       type: 'fulfillment',
       at: row.shippedAt,
       fulfillmentId: row.fulfillmentId,
       number: row.number,
-      carrierLabel: isShippingCarrierId(row.shippingCarrier) ? SHIPPING_CARRIERS[row.shippingCarrier].label : null,
-      trackingNumber: row.trackingNumber,
+      carrierLabel: isShippingCarrierId(carrier) ? SHIPPING_CARRIERS[carrier].label : null,
+      trackingNumber: delivery ? delivery.trackingNumber : row.trackingNumber,
       items: itemsOf(row.lines),
       actorEmail: row.createdByEmail,
-      notifyCustomer: row.notifyCustomer,
+      notifyCustomer: delivery ? delivery.notifyCustomer : row.notifyCustomer,
       completesOrder: row.completesOrder,
       cancelled,
       cancellable: !cancelled && (order.status === 'paid' || order.status === 'shipped'),
       legacy: row.legacy,
+      ...(delivery ? { delivery } : {}),
     };
   });
 
@@ -689,6 +708,10 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
   const recordByReturn = new Map(returnRecords.map((row) => [row.returnId, row] as const));
   const returnEntries = returns.flatMap((detail) => returnHistoryEntries(detail, returnReceiptLines, recordByReturn.get(detail.id)));
   const cancelRequestEntries = cancelRequestHistoryEntries(cancelRequests);
+  const deliveryEvents: OrderHistoryDeliveryEventEntry[] = (input.delivery?.fulfillments ?? []).flatMap((row) =>
+    row.events.map((event) => ({ type: 'delivery_event', at: event.happenedAt, fulfillmentId: row.fulfillmentId, number: row.number, event })));
+  const trackingChanges: OrderHistoryTrackingChangeEntry[] = (input.delivery?.fulfillments ?? []).flatMap((row) =>
+    row.trackingChanges.map((change) => ({ type: 'tracking_change', at: change.changedAt, fulfillmentId: row.fulfillmentId, number: row.number, change })));
 
   // 同じ時刻（同じ取引で書いた行）は、結果が上に来る順に置く:
   // メール → 状態 → 取消 → 確保し直し → 交換の品を足した → 発送・仕上がり → 返金 → 返品の行（返金しないで終えた → 受け取り）→ 受付
@@ -704,9 +727,19 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
     ...refundEntries,
     ...returnEntries,
     ...cancelRequestEntries,
+    ...deliveryEvents,
+    ...trackingChanges,
     { type: 'created', at: order.createdAt },
   ];
-  entries.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  const typeOrder: Record<OrderHistoryEntry['type'], number> = {
+    email: 0, status: 1, fulfillment_cancel: 2, completion_cancel: 3, refund_rereserve: 4,
+    delivery_event: 5, tracking_change: 6, fulfillment: 7, completion: 8, refund: 9, return: 10, created: 11,
+  };
+  const deliveryEntryId = (entry: OrderHistoryEntry) => entry.type === 'delivery_event' ? entry.event.id
+    : entry.type === 'tracking_change' ? entry.change.id : '';
+  const priority = (entry: OrderHistoryEntry) => entry.type === 'return' && entry.kind === 'exchange_added' ? 4.5 : typeOrder[entry.type];
+  entries.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)
+    || priority(a) - priority(b) || deliveryEntryId(a).localeCompare(deliveryEntryId(b)));
 
   return {
     order: {

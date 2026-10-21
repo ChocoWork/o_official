@@ -7,6 +7,7 @@ import { ORDER_EMAIL_ERROR_LABELS } from '@/lib/orders/email/order-email-types';
 import { getOrderEmailSendState, OrderEmailStoreError, type OrderEmailStore } from '@/lib/orders/email/order-email-store';
 import { refundFailureReasonLabel } from '@/lib/orders/refund/refund-messages';
 import { listOrderRefundSummaries, type RefundStore } from '@/lib/orders/refund/refund-store';
+import { DeliveryStoreError, getDeliveryTrackingSettings, listDeliveryAttention } from '@/lib/orders/tracking/delivery-store';
 import {
   PAYMENT_EXCEPTION_REASON_LABELS,
   type AttentionException,
@@ -158,6 +159,8 @@ export async function GET(request: Request) {
 
   try {
     const supabase = await createServiceRoleClient();
+    const deliverySettings = await getDeliveryTrackingSettings(supabase);
+    const deliveryAttention = deliverySettings.enabled ? await listDeliveryAttention(supabase, MAX_ITEMS) : { items: [], total: 0 };
     const [exceptionsResult, reviewsResult] = await Promise.all([
       supabase
         .from('payment_exceptions')
@@ -246,15 +249,20 @@ export async function GET(request: Request) {
     const data: OrderAttention & { emailSending: { paused: boolean; reasonLabel: string | null } | null } = {
       exceptions,
       reviews,
+      deliveries: deliveryAttention.items,
       emailSending,
       counts: {
         exceptions: exceptionsResult.count ?? exceptions.length,
         reviews: reviewsResult.count ?? reviews.length,
+        deliveries: deliveryAttention.total,
       },
     };
     return NextResponse.json({ data });
   } catch (error) {
     console.error('GET /api/admin/order-attention error:', ...safeErrorFields(error));
+    if (error instanceof DeliveryStoreError) {
+      return NextResponse.json({ error: '配送の記録を読み込めませんでした。' }, { status: 500 });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

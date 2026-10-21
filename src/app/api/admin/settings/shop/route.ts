@@ -16,6 +16,10 @@ import {
 } from '@/lib/orders/returns/return-route-support';
 import { getShopReturnSettings, updateShopReturnSettings } from '@/lib/orders/returns/return-store';
 import { RETURN_REASONS, type ShopReturnSettings, type ShopReturnSettingsUpdate } from '@/lib/orders/returns/return-types';
+import { isDeliveryTrackingKeyConfigured } from '@/lib/orders/tracking/delivery-config';
+import { deliveryErrorReply } from '@/lib/orders/tracking/delivery-route-support';
+import { DeliveryOperationError, DeliveryStoreError, getDeliveryTrackingSettings, setDeliveryTracking } from '@/lib/orders/tracking/delivery-store';
+import type { DeliveryTrackingSettings } from '@/lib/orders/tracking/delivery-types';
 
 /**
  * 返品の欄の本文（Task 4 の return-types.ts の ShopReturnSettingsUpdate と同じ形。段1の欄は必須、段2の欄は任意）。
@@ -78,7 +82,8 @@ const bodySchema = z.object({
   autoRefundCancelledOrderPayment: z.boolean(),
   autoCancelAmountMismatch: z.boolean(),
   returns: returnSettingsSchema.optional(),
-});
+  deliveryTracking: z.object({ enabled: z.boolean() }).strict().optional(),
+}).strict();
 
 // 保存の前後を比べる部品は、画面が送る型（Task 4）で受ける。zod の形がこの型とずれたら、呼ぶ所（changedReturnGroups(…, returns)）が型の誤りになる
 type ReturnSettingsUpdate = ShopReturnSettingsUpdate;
@@ -86,11 +91,17 @@ type ReturnSettingsUpdate = ShopReturnSettingsUpdate;
 const RATE_LIMIT = { endpoint: 'admin:settings:shop-update', limit: 30, windowSeconds: 600 } as const;
 
 /** 画面に返すのは2つのトグルと返品の設定。切り替えの時刻（refundLedgerStartedAt）は店内の値 */
-function toShopSettings(row: ShopSettingsRow, returns: ShopReturnSettings): ShopSettings & { returns: ShopReturnSettings } {
+function toShopSettings(
+  row: ShopSettingsRow, returns: ShopReturnSettings, delivery: Omit<DeliveryTrackingSettings, 'keyConfigured'>,
+): ShopSettings & { returns: ShopReturnSettings; deliveryTracking: DeliveryTrackingSettings } {
   return {
     autoRefundCancelledOrderPayment: row.autoRefundCancelledOrderPayment,
     autoCancelAmountMismatch: row.autoCancelAmountMismatch,
     returns,
+    deliveryTracking: {
+      enabled: delivery.enabled, updatedAt: delivery.updatedAt, updatedByEmail: delivery.updatedByEmail,
+      backfillCount: delivery.backfillCount, keyConfigured: isDeliveryTrackingKeyConfigured(process.env),
+    },
   };
 }
 
@@ -190,10 +201,11 @@ export async function GET(request: Request) {
 
   try {
     const store = await createServiceRoleClient();
-    const [settings, returns] = await Promise.all([getShopSettings(store), getShopReturnSettings(store)]);
-    return NextResponse.json({ data: toShopSettings(settings, returns) }, { headers: { 'Cache-Control': 'no-store' } });
+    const [settings, returns, delivery] = await Promise.all([getShopSettings(store), getShopReturnSettings(store), getDeliveryTrackingSettings(store)]);
+    return NextResponse.json({ data: toShopSettings(settings, returns, delivery) }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[admin.settings.shop.read] Failed to load settings', ...returnErrorLogFields(error));
+    console.error('[admin.settings.shop.read] Failed to load settings', ...returnErrorLogFields(error),
+      ...(error instanceof DeliveryStoreError && error.code ? [error.code] : []));
     return NextResponse.json(refundFailureBody('settings'), { status: 500 });
   }
 }
@@ -245,13 +257,23 @@ export async function PUT(request: Request) {
     await audit('failure', 'Invalid request body');
     return NextResponse.json(INVALID_REQUEST_BODY, { status: 400 });
   }
-  const { returns, ...next } = parsedBody.data;
+  const { returns, deliveryTracking, ...next } = parsedBody.data;
+  // P6/P24: ON の鍵確認はすべての保存より先。鍵が失われた後も OFF は許す。
+  if (deliveryTracking?.enabled && !isDeliveryTrackingKeyConfigured(process.env)) {
+    const reply = deliveryErrorReply(new DeliveryOperationError('DELIVERY_TRACKING_KEY_MISSING'));
+    await audit('conflict', 'Shop settings refused');
+    return NextResponse.json(reply.body, { status: reply.status });
+  }
 
   // 返品の欄を保存できた後にトグルの保存が落ちても、変わったまとまりを監査に残す（返品の設定はもう変わっているため）
   let savedReturnGroups: string[] | null = null;
+  let savedToggleChanges: Record<string, boolean> | null = null;
+  let savedDelivery: { delivery_tracking_enabled: boolean; backfilled_count: number } | null = null;
   try {
     const store = await createServiceRoleClient();
-    const [beforeToggles, beforeReturns] = await Promise.all([getShopSettings(store), getShopReturnSettings(store)]);
+    const [beforeToggles, beforeReturns, beforeDelivery] = await Promise.all([
+      getShopSettings(store), getShopReturnSettings(store), getDeliveryTrackingSettings(store),
+    ]);
     // 返品の欄を先に保存する（DB が断る見込みが高いのは、こちら）。断られたらトグルは保存しない
     let savedReturns = beforeReturns;
     if (returns) {
@@ -259,13 +281,36 @@ export async function PUT(request: Request) {
       savedReturnGroups = changedReturnGroups(beforeReturns, returns);
     }
     const savedToggles = await updateShopSettings(store, { ...next, actorId: authz.userId });
+    savedToggleChanges = changedToggles(beforeToggles, next);
+    let delivery = beforeDelivery;
+    let backfilledCount: number | undefined;
+    if (deliveryTracking) {
+      const result = await setDeliveryTracking(store, { enabled: deliveryTracking.enabled, actorId: authz.userId });
+      backfilledCount = result.backfilledCount;
+      savedDelivery = { delivery_tracking_enabled: result.enabled, backfilled_count: result.backfilledCount };
+      // 更新者のメールと、保存後時点の正確な見込み件数は管理用の読取で取得する。
+      delivery = await getDeliveryTrackingSettings(store);
+    }
     await audit('success', 'Shop settings saved', {
-      changes: changedToggles(beforeToggles, next),
+      changes: savedToggleChanges,
       ...(savedReturnGroups ? { returns_changed_groups: savedReturnGroups } : {}),
+      ...savedDelivery,
     });
-    return NextResponse.json({ data: toShopSettings(savedToggles, savedReturns) });
+    return NextResponse.json({ data: {
+      ...toShopSettings(savedToggles, savedReturns, delivery),
+      ...(backfilledCount === undefined ? {} : { backfilledCount }),
+    } }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    const savedGroupsAudit = savedReturnGroups ? { returns_changed_groups: savedReturnGroups } : null;
+    const savedGroupsAudit = savedReturnGroups || savedToggleChanges || savedDelivery ? {
+      ...(savedReturnGroups ? { returns_changed_groups: savedReturnGroups } : {}),
+      ...(savedToggleChanges ? { changes: savedToggleChanges } : {}),
+      ...savedDelivery,
+    } : null;
+    if (error instanceof DeliveryOperationError) {
+      const reply = deliveryErrorReply(error);
+      await audit(reply.status === 409 ? 'conflict' : 'failure', 'Shop settings refused', savedGroupsAudit);
+      return NextResponse.json(reply.body, { status: reply.status });
+    }
     // DB の関数が決まった言葉で断った（設定の引数の誤り）。本文は上で確かめ済みなのでふつうは起きない
     const code = refusalCodeOf(error);
     if (code) {
@@ -273,7 +318,8 @@ export async function PUT(request: Request) {
       await audit(reply.audit.outcome, reply.audit.detail, { ...reply.audit.metadata, ...(savedGroupsAudit ?? {}) });
       return NextResponse.json(reply.body, { status: reply.status });
     }
-    console.error('[admin.settings.shop.update] Failed to save settings', ...returnErrorLogFields(error));
+    console.error('[admin.settings.shop.update] Failed to save settings', ...returnErrorLogFields(error),
+      ...(error instanceof DeliveryStoreError && error.code ? [error.code] : []));
     await audit('error', 'Failed to save shop settings', savedGroupsAudit);
     return NextResponse.json(refundFailureBody('settings_update'), { status: 500 });
   }
