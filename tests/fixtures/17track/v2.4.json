@@ -1,0 +1,64 @@
+{
+  "contract": "17track-v2.4",
+  "responses": {
+    "registered": { "code": 0, "data": { "accepted": [{ "number": "AB-1", "carrier": 100062 }], "rejected": [] } },
+    "alreadyRegistered": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 100062, "error": { "code": -18019901, "message": "捨てる試験用の文" } }] } },
+    "invalidNumber": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 100062, "error": { "code": -18019910, "message": "捨てる試験用の文" } }] } },
+    "accountQuota": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 100062, "error": { "code": -18019908, "message": "捨てる試験用の文" } }] } },
+    "notRegistered": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 100062, "error": { "code": -18019902, "message": "捨てる試験用の文" } }] } },
+    "noInformation": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 100062, "error": { "code": -18019909, "message": "捨てる試験用の文" } }] } },
+    "retrackExhausted": { "code": 0, "data": { "accepted": [], "rejected": [{ "number": "AB-1", "carrier": 100062, "error": { "code": -18019905, "message": "捨てる試験用の文" } }] } },
+    "inTransit": {
+      "code": 0,
+      "data": {
+        "accepted": [{
+          "number": "AB-1", "carrier": 100062,
+          "track_info": {
+            "latest_status": { "status": "InTransit", "sub_status": "InTransit_Other", "sub_status_descr": "捨てる細かい説明" },
+            "latest_event": {
+              "time_iso": "2026-10-21T09:00:00+09:00", "time_utc": "2026-10-21 01:00:00",
+              "description": "2026-10-21 の説明書 v2.4 からの写し。本物の返事・署名の鍵・課金・retrack は未確認",
+              "location": "捨てる試験用の場所"
+            },
+            "milestone": [{ "key_stage": "InTransit", "time_iso": "2026-10-20T09:00:00+09:00" }],
+            "tracking": { "providers": [{ "events": [{ "time_iso": "2026-10-25T09:00:00+09:00", "description": "捨てる過去の文", "location": "捨てる過去の場所" }] }] }
+          }
+        }],
+        "rejected": []
+      }
+    },
+    "outForDelivery": {
+      "code": 0,
+      "data": { "accepted": [{ "number": "AB-1", "carrier": 100062, "track_info": {
+        "latest_status": { "status": "OutForDelivery", "sub_status": null, "sub_status_descr": "捨てる細かい説明" },
+        "latest_event": { "time_iso": "2026-10-21T10:00:00+09:00", "description": "捨てる試験用の文", "location": "捨てる試験用の場所" },
+        "milestone": [], "tracking": { "providers": [] }
+      } }], "rejected": [] }
+    },
+    "delivered": {
+      "code": 0,
+      "data": { "accepted": [{ "number": "AB-1", "carrier": 100062, "track_info": {
+        "latest_status": { "status": "Delivered", "sub_status": null, "sub_status_descr": "捨てる細かい説明" },
+        "latest_event": { "time_iso": "2026-10-21T12:00:00+09:00", "description": "捨てる試験用の文", "location": "捨てる試験用の場所" },
+        "milestone": [{ "key_stage": "Delivered", "time_iso": "2026-10-21T10:00:00+09:00", "time_utc": "2026-10-21 02:00:00" }],
+        "tracking": { "providers": [{ "events": [{ "time_iso": "2026-10-25T09:00:00+09:00", "description": "捨てる過去の文", "location": "捨てる過去の場所" }] }] }
+      } }], "rejected": [] }
+    },
+    "stopped": { "code": 0, "data": { "accepted": [{ "number": "AB-1", "carrier": 100062 }], "rejected": [] } },
+    "unknownStatus": {
+      "code": 0,
+      "data": { "accepted": [{ "number": "AB-1", "carrier": 100062, "track_info": {
+        "latest_status": { "status": "FutureStatus", "sub_status": "FutureSubStatus", "sub_status_descr": "捨てる細かい説明" },
+        "latest_event": { "time_iso": "2026-10-21T09:00:00+09:00", "description": "捨てる試験用の文", "location": "捨てる試験用の場所" },
+        "milestone": [], "tracking": { "providers": [] }
+      } }], "rejected": [] }
+    }
+  },
+  "webhooks": {
+    "updated": { "event": "TRACKING_UPDATED", "data": {
+      "number": "AB-1", "carrier": 100062, "param": "捨てるparam", "tag": "捨てるtag",
+      "track_info": { "latest_status": { "status": "Delivered" }, "latest_event": { "description": "知らせの文は使わない", "location": "知らせの場所は使わない" } }
+    } },
+    "stopped": { "event": "TRACKING_STOPPED", "data": { "number": "AB-1", "carrier": 100062, "param": "捨てるparam", "tag": "捨てるtag" } }
+  }
+}
