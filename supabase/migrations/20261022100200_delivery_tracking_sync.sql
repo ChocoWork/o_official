@@ -96,7 +96,8 @@ SET search_path = ''
 AS $$
 DECLARE
   v_enabled boolean;
-  v_count integer;
+  v_target record;
+  v_count integer := 0;
 BEGIN
   IF _signals IS NULL OR pg_catalog.jsonb_typeof(_signals) <> 'array' THEN
     RAISE EXCEPTION 'DELIVERY_ARGUMENT_INVALID' USING ERRCODE = '22023';
@@ -107,7 +108,9 @@ BEGIN
     RETURN 0;
   END IF;
 
-  -- 同じ組が何回来ても、1回の呼び出しで合図の番号は1つだけ進める
+  -- 同じ組が何回来ても、1回の呼び出しで合図の番号は1つだけ進める。
+  -- 行の鍵は決まった順（配送業者, 番号, 発送, 版）で取ってから更新する。同じ組を含む知らせが2つ同時に来ても、逆順に取り合って落ちない
+  FOR v_target IN
   WITH parsed AS (
     SELECT CASE t.e ->> 'carrier'
              WHEN '100062' THEN 'yamato'
@@ -125,15 +128,24 @@ BEGIN
     WHERE p.carrier IS NOT NULL
     GROUP BY p.carrier, p.tracking_number
   )
-  UPDATE private.fulfillment_tracking_registrations AS r
-  SET signal_revision = r.signal_revision + 1,
-      next_run_at = pg_catalog.now(),
-      stop_signaled = r.stop_signaled OR w.stopped
-  FROM wanted AS w
-  WHERE r.carrier = w.carrier
-    AND r.tracking_number = w.tracking_number
-    AND r.state = 'registered';
-  GET DIAGNOSTICS v_count = ROW_COUNT;
+  SELECT r.fulfillment_id AS target_fulfillment_id,
+         r.tracking_version AS target_version,
+         w.stopped AS target_stopped
+  FROM private.fulfillment_tracking_registrations AS r
+  JOIN wanted AS w ON w.carrier = r.carrier AND w.tracking_number = r.tracking_number
+  WHERE r.state = 'registered'
+  ORDER BY r.carrier, r.tracking_number, r.fulfillment_id, r.tracking_version
+  FOR UPDATE OF r
+  LOOP
+    UPDATE private.fulfillment_tracking_registrations AS r
+    SET signal_revision = r.signal_revision + 1,
+        next_run_at = pg_catalog.now(),
+        stop_signaled = r.stop_signaled OR v_target.target_stopped
+    WHERE r.fulfillment_id = v_target.target_fulfillment_id
+      AND r.tracking_version = v_target.target_version
+      AND r.state = 'registered';
+    v_count := v_count + 1;
+  END LOOP;
 
   RETURN v_count;
 END;
@@ -141,7 +153,9 @@ $$;
 
 -- 5. 登録・読み直し・外への停止を借りる。追跡がオンの時だけ。
 --    候補（時刻が来た行・失効した借りだけ）を読む → 注文・発送を SKIP LOCKED → 組の advisory lock（try）→ 登録を SKIP LOCKED →
---    別の SQL 文で同じ組の有効な借りを再確認 → 借りの印を書く、の順。1行書くごとに次の候補を読むので、同じ回の中の共有番号も同時に借りない。
+--    別の SQL 文で同じ組の有効な借りを再確認 → 借りの印を書く、の順。同じ回の中の共有番号も、この再確認が自分の直前の書き込みを見るので同時に借りない。
+--    候補の一覧は最初に1回だけ（時刻順に上限つき）読み、1行ごとに鍵を取った後の値で確かめ直す。一覧を読み直さないのは、
+--    取引の途中で行が増減しても確かめ直しで足りるため。上限で届かなかった行は、次の借り出しで時刻順に先頭になる。
 --    action: pending/failed は register（止まった組を再び追う行は retrack）、registered は read、外への停止の印がある止めた行は stop。
 CREATE OR REPLACE FUNCTION public.claim_delivery_tracking(_limit integer, _lease_seconds integer)
 RETURNS TABLE (
@@ -392,6 +406,7 @@ BEGIN
         last_error_code = NULL,
         lease_token = NULL,
         lease_expires_at = NULL,
+        stop_signaled = false,
         next_run_at = pg_catalog.now()
     WHERE r.fulfillment_id = _fulfillment_id
       AND r.tracking_version = _tracking_version;
@@ -423,7 +438,10 @@ BEGIN
           next_run_at = pg_catalog.now() + interval '24 hours'
       WHERE r.fulfillment_id = _fulfillment_id
         AND r.tracking_version = _tracking_version;
-      PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_registration_failed', true);
+      -- 開くのは failed に変わった時（5回目の失敗）だけ（P19）。1日1回の試し直しの失敗では、店が閉じた後に開き直さない
+      IF v_r.state <> 'failed' THEN
+        PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_registration_failed', true);
+      END IF;
       RETURN QUERY SELECT true, 'failed'::text;
     ELSE
       UPDATE private.fulfillment_tracking_registrations AS r
@@ -460,7 +478,10 @@ BEGIN
         lease_expires_at = NULL
     WHERE r.fulfillment_id = _fulfillment_id
       AND r.tracking_version = _tracking_version;
-    PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_registration_failed', true);
+    -- すでに failed（毎日の試し直しの途中）だった行は、要対応が出ている（閉じた）ので開き直さない
+    IF v_r.state <> 'failed' THEN
+      PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_registration_failed', true);
+    END IF;
     RETURN QUERY SELECT true, 'failed'::text;
   END IF;
 END;
@@ -532,9 +553,19 @@ BEGIN
   IF v_read_at IS NULL THEN
     RAISE EXCEPTION 'DELIVERY_ARGUMENT_INVALID' USING ERRCODE = '22023';
   END IF;
+  -- provider の時刻は読んだ時刻より後にしない（時差の読み違いで未来の出来事ができ、その後の読み直しが全部「古い」扱いになるのを防ぐ）。
+  -- 時刻が無い（NULL）物は NULL のまま（LEAST は NULL を飛ばすので、そのままだと読んだ時刻に変わってしまう）
+  IF v_happened IS NOT NULL THEN
+    v_happened := LEAST(v_happened, v_read_at);
+  END IF;
+  IF v_delivered IS NOT NULL THEN
+    v_delivered := LEAST(v_delivered, v_read_at);
+  END IF;
   v_event_at := COALESCE(v_happened, v_read_at);
   v_provider_status := NULLIF(pg_catalog.left(_result ->> 'provider_status', 100), '');
   v_provider_sub := NULLIF(pg_catalog.left(_result ->> 'provider_sub_status', 100), '');
+  -- 形の正しくない error_code は、登録の結果・停止の結果のように断らず空にする。
+  -- error_code は診断のための記号で、17TRACK 側の癖で状況の記録まで止めないため
   v_error := _result ->> 'error_code';
   IF v_error IS NOT NULL AND v_error !~ '^[a-z0-9_-]{1,64}$' THEN
     v_error := NULL;
@@ -646,8 +677,9 @@ BEGIN
   v_advanced := v_r.signal_revision > COALESCE(v_r.claimed_signal_revision, 0);
   v_next := pg_catalog.now() + CASE WHEN v_advanced THEN interval '0 seconds' ELSE interval '6 hours' END;
 
-  IF v_outcome = 'ok' AND v_status IS NOT NULL THEN
-    -- 行7: 同じ版の tracking の出来事のうち一番新しい時刻より前なら、状況もイベントも変えない（発送・直しの時刻とは比べない）
+  IF v_outcome = 'ok' THEN
+    -- 行7: 同じ版の tracking の出来事のうち一番新しい時刻より前なら、状況もイベントも変えない（発送・直しの時刻とは比べない）。
+    -- 状況の無い ok（行6）も同じ比べ方で、古い読み直しの記号で新しい記号を上書きしない
     SELECT pg_catalog.max(e.happened_at) INTO v_newest
     FROM public.order_fulfillment_events AS e
     WHERE e.fulfillment_id = _fulfillment_id
@@ -655,7 +687,11 @@ BEGIN
       AND e.source = 'tracking';
     v_old := v_newest IS NOT NULL AND v_event_at < v_newest;
 
-    IF NOT v_old THEN
+    IF v_status IS NULL THEN
+      -- 行6: 未知の状態。17TRACK は情報を持っているので、荷物が見つからない要対応は閉じる。
+      -- 状況・出来事・メールは変えず、provider の記号と読んだ時刻だけを下で書く
+      PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_not_found', false);
+    ELSIF NOT v_old THEN
       IF v_status = v_f.delivery_status THEN
         -- 行8: 同じ状況。出来事は足さず、情報が出たので荷物が見つからない要対応だけ閉じる
         PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_not_found', false);
@@ -714,12 +750,25 @@ BEGIN
       END IF;
     END IF;
   ELSIF v_outcome = 'not_found' THEN
-    -- 行5: 前の状況を保つ。登録から72時間たっても情報が無ければ要対応（登録前の作成時刻からは数えない）
+    -- 行5: 前の状況を保つ。登録から72時間たっても情報が無ければ要対応（登録前の作成時刻からは数えない）。
+    -- 開くのは「新しい条件」の時だけ（P19）。次のどちらかの時:
+    --   ・前の読み直しで情報があった（provider_status が残っている）＝情報あり→なしに変わった
+    --   ・この登録の期間に、開いたまま、または店が手で閉じた「荷物が見つからない」が無い＝72時間を初めて越えた
+    -- 店が手で閉じた後に、同じ not_found を6時間ごとに読んでも開き直さない
     IF v_r.registered_at IS NOT NULL AND pg_catalog.now() >= v_r.registered_at + interval '72 hours' THEN
-      PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_not_found', true);
+      IF v_r.provider_status IS NOT NULL
+         OR NOT EXISTS (
+           SELECT 1
+           FROM public.order_fulfillment_attention AS a
+           WHERE a.fulfillment_id = _fulfillment_id
+             AND a.kind = 'tracking_not_found'
+             AND a.opened_at >= v_r.registered_at
+             AND (a.resolved_at IS NULL OR a.resolution = 'manual')
+         ) THEN
+        PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_not_found', true);
+      END IF;
     END IF;
   END IF;
-  -- 行6: 未知の状態（status が空の ok）は、下で provider の記号と読んだ時刻だけを書き、状況・出来事・メールは変えない
 
   -- 行12: STOPPED の合図を持つ成功した読み直しの後で未配達なら、provider_stopped で止めて tracking_stalled。
   -- 合図の消費は読み直しを借りた時の番号まで（借りている間に新しい合図が来ていたら、次の読み直しで止める）
@@ -728,8 +777,17 @@ BEGIN
   END IF;
 
   UPDATE private.fulfillment_tracking_registrations AS r
-  SET provider_status = CASE WHEN v_outcome = 'ok' AND NOT v_old THEN v_provider_status ELSE r.provider_status END,
-      provider_sub_status = CASE WHEN v_outcome = 'ok' AND NOT v_old THEN v_provider_sub ELSE r.provider_sub_status END,
+  -- provider の記号は「17TRACK に情報があるか」の目印にもなる。ok は（古くなければ）書き、not_found は空にする
+  SET provider_status = CASE
+        WHEN v_outcome = 'ok' AND NOT v_old THEN v_provider_status
+        WHEN v_outcome = 'not_found' THEN NULL
+        ELSE r.provider_status
+      END,
+      provider_sub_status = CASE
+        WHEN v_outcome = 'ok' AND NOT v_old THEN v_provider_sub
+        WHEN v_outcome = 'not_found' THEN NULL
+        ELSE r.provider_sub_status
+      END,
       last_read_at = v_read_at,
       read_attempts = 0,
       last_error_code = NULL,

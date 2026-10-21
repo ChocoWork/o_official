@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import {
   claimDelivery, claimDeliveryFor, createDeliveryActor, deliveryClock, deliveryEvents, deliveryRecord,
-  deliveryRegistration, deliveryRegistrations, deliveryShipment, enableDeliveryTracking, expectDeliveryRejected,
+  deferOtherDeliveryRegistrations, deliveryRegistration, deliveryRegistrations, deliveryShipment, enableDeliveryTracking,
+  expectDeliveryRejected,
   expireDelivery, insertDeliveryAttention, leaseDeliveryRegistration, markDeliveryDelivered, patchDeliveryRegistration,
   recordReadResult, recordRegistrationResult, recordStopResult, setDeliveryTracking, signalDelivery, trackedShipment,
   updateDeliveryTracking, withDeliveryConnectionPool, withDeliveryConnections,
@@ -415,7 +416,12 @@ const TABLE_ROWS: Array<[string, Scenario]> = [
     const waiting = await trackedShipment(client, { trackingNumber: uniqueNumber('WAIT'), state: 'pending' });
     const all = [yamato, sagawa, gone, waiting];
     for (const target of all) await patchDeliveryRegistration(client, target.fulfillmentId, "next_run_at=now()+interval '1 day'");
-    const snapshot = async () => Promise.all(all.map((target) => deliveryRegistration(client, target.fulfillmentId)));
+    // 1つの client で同時に query を投げない（pg の警告になる）。順に読む
+    const snapshot = async () => {
+      const rows = [] as Array<Awaited<ReturnType<typeof deliveryRegistration>>>;
+      for (const target of all) rows.push(await deliveryRegistration(client, target.fulfillmentId));
+      return rows;
+    };
     const before = await snapshot();
     const signal = (carrier: number, value: string, event: 'TRACKING_UPDATED' | 'TRACKING_STOPPED' = 'TRACKING_UPDATED') =>
       signalDelivery(client, [{ carrier, number: value, event }]);
@@ -845,6 +851,8 @@ describeLocalDb('integration: 配送の追跡の関数（移行 C）', (db) => {
     await setDeliveryTracking(db(), false, actor.id);
     expect(await openKindsOf(db(), target.fulfillmentId)).toEqual([]);
     await setDeliveryTracking(db(), true, actor.id);
+    // オンにした時の取り込みで増えた他の行を借り出しの邪魔にしない
+    await deferOtherDeliveryRegistrations(db(), [target.fulfillmentId]);
     expect(await deliveryRegistration(db(), target.fulfillmentId)).toMatchObject({
       state: 'pending', failure_kind: null, retry_allowed: true, attempts: 0,
     });
@@ -1000,6 +1008,193 @@ describeLocalDb('integration: 配送の追跡の関数（移行 C）', (db) => {
       expect(await expireDelivery(db(), 1000)).toBeGreaterThanOrEqual(1);
     }
     expect(await keep()).toEqual(before);
+  });
+
+  // ---------------- 要対応を開く条件（P19）・合図の鍵・時刻の切り詰め ----------------
+
+  test('荷物が見つからない要対応は72時間を越えた時に1回だけ開き、手で閉じた後の同じnot_foundでは開き直さず、情報あり→なしなら開き直す', async () => {
+    const actor = await enableDeliveryTracking(db());
+    const target = await trackedShipment(db(), { state: 'registered', shippedAt: await dbTime(db(), '-10 days') });
+    await patchDeliveryRegistration(db(), target.fulfillmentId, "registered_at=now()-interval '73 hours'");
+    const notFound = async () => recordReadResult(
+      db(), await leaseDeliveryRegistration(db(), target.fulfillmentId), readOf(await dbTime(db()), NOT_FOUND),
+    );
+    const rows = async () => (await attention(db(), target.fulfillmentId)).filter((row) => row.kind === 'tracking_not_found');
+
+    expect(await notFound()).toMatchObject({ applied: true, changed: false });
+    expect(await rows()).toHaveLength(1);
+    // 店が手で閉じた後、6時間ごとの同じ not_found では新しい行を開かない
+    await db().query('select * from public.admin_resolve_delivery_attention($1,$2)', [(await rows())[0].id, actor.id]);
+    await notFound();
+    await notFound();
+    expect(await rows()).toHaveLength(1);
+    expect(await openKindsOf(db(), target.fulfillmentId)).toEqual([]);
+
+    // 情報が出て（手で閉じた後なので閉じる物は無い）、また見つからなくなったら、新しい条件として1行開く
+    await readStatus(db(), target.fulfillmentId, 'in_transit', 2);
+    await notFound();
+    expect(await rows()).toHaveLength(2);
+    expect(await openKindsOf(db(), target.fulfillmentId)).toEqual(['tracking_not_found']);
+    await notFound();
+    expect(await rows()).toHaveLength(2);
+
+    // 情報が出て自動で閉じた後に、また見つからなくなった時も新しい行が開く
+    await readStatus(db(), target.fulfillmentId, 'out_for_delivery', 1);
+    expect(await openKindsOf(db(), target.fulfillmentId)).toEqual([]);
+    await notFound();
+    expect(await rows()).toHaveLength(3);
+    expect((await rows()).filter((row) => row.resolution === 'manual')).toHaveLength(1);
+    expect((await rows()).filter((row) => row.resolution === 'auto')).toHaveLength(1);
+  });
+
+  test('登録失敗の要対応は5回目の失敗とretrack_exhaustedで開き、手で閉じた後の毎日の失敗では開き直さない', async () => {
+    const actor = await enableDeliveryTracking(db());
+    const failures = async (id: string) => (await attention(db(), id)).filter((row) => row.kind === 'tracking_registration_failed');
+    const transient = async (id: string) => {
+      await patchDeliveryRegistration(db(), id, 'next_run_at=now()');
+      const [claim] = await claimDeliveryFor(db(), [id]);
+      return recordRegistrationResult(db(), claim, 'transient', 'http_503');
+    };
+
+    const target = await trackedShipment(db(), { state: 'pending' });
+    for (let round = 0; round < 4; round += 1) await transient(target.fulfillmentId);
+    expect(await failures(target.fulfillmentId)).toEqual([]);
+    expect(await transient(target.fulfillmentId)).toEqual({ applied: true, state: 'failed' });
+    expect(await failures(target.fulfillmentId)).toHaveLength(1);
+    await db().query('select * from public.admin_resolve_delivery_attention($1,$2)', [(await failures(target.fulfillmentId))[0].id, actor.id]);
+    // 1日1回の試し直しが失敗しても、状態は同じ failed のまま。新しい行は開かない
+    expect(await transient(target.fulfillmentId)).toEqual({ applied: true, state: 'failed' });
+    expect(await transient(target.fulfillmentId)).toEqual({ applied: true, state: 'failed' });
+    expect(await failures(target.fulfillmentId)).toHaveLength(1);
+    expect(await openKindsOf(db(), target.fulfillmentId)).toEqual([]);
+    // 試し直しが retrack の上限に当たっても、すでに failed の行は開き直さない
+    await patchDeliveryRegistration(db(), target.fulfillmentId, 'next_run_at=now()');
+    const [last] = await claimDeliveryFor(db(), [target.fulfillmentId]);
+    expect(await recordRegistrationResult(db(), last, 'retrack_exhausted', 'retrack_limit')).toEqual({ applied: true, state: 'failed' });
+    expect(await deliveryRegistration(db(), target.fulfillmentId)).toMatchObject({ state: 'failed', retry_allowed: false });
+    expect(await failures(target.fulfillmentId)).toHaveLength(1);
+    expect(await openKindsOf(db(), target.fulfillmentId)).toEqual([]);
+
+    // 開いている間に続けて失敗しても1行のまま。成功すると自動で閉じる
+    const open = await trackedShipment(db(), { state: 'pending' });
+    for (let round = 0; round < 5; round += 1) await transient(open.fulfillmentId);
+    await transient(open.fulfillmentId);
+    expect(await failures(open.fulfillmentId)).toHaveLength(1);
+    await patchDeliveryRegistration(db(), open.fulfillmentId, 'next_run_at=now()');
+    const [recovery] = await claimDeliveryFor(db(), [open.fulfillmentId]);
+    expect(await recordRegistrationResult(db(), recovery, 'registered')).toEqual({ applied: true, state: 'registered' });
+    expect(await failures(open.fulfillmentId)).toEqual([expect.objectContaining({ resolution: 'auto', resolved_by: null })]);
+  });
+
+  test('登録に成功するとSTOPPEDの印を下ろし（合図の番号は残し）、登録直後の読み直しで止まらない', async () => {
+    await enableDeliveryTracking(db());
+    const target = await trackedShipment(db(), { state: 'registered' });
+    expect(await signalDelivery(db(), [{ carrier: 100062, number: target.trackingNumber, event: 'TRACKING_STOPPED' }])).toBe(1);
+    // 読み直しで 17TRACK が登録を持っていないと分かり、登録待ちに戻る（合図の印は残る）
+    await recordReadResult(db(), await leaseDeliveryRegistration(db(), target.fulfillmentId), readOf(await dbTime(db()), {
+      outcome: 'not_registered', status: null, provider_status: null, provider_sub_status: null, happened_at: null,
+    }));
+    expect(await deliveryRegistration(db(), target.fulfillmentId)).toMatchObject({ state: 'pending', stop_signaled: true });
+    const [register] = await claimDeliveryFor(db(), [target.fulfillmentId]);
+    expect(register).toMatchObject({ action: 'register' });
+    expect(await recordRegistrationResult(db(), register, 'registered')).toEqual({ applied: true, state: 'registered' });
+    const row = await deliveryRegistration(db(), target.fulfillmentId);
+    expect(row).toMatchObject({ state: 'registered', stop_signaled: false });
+    expect(Number(row.signal_revision)).toBe(1);
+    // 登録直後の読み直しは、古い STOPPED の合図で provider_stopped にならない
+    const [read] = await claimDeliveryFor(db(), [target.fulfillmentId]);
+    expect(read).toMatchObject({ action: 'read' });
+    expect(await recordReadResult(db(), read, readOf(await dbTime(db())))).toMatchObject({ applied: true, stopped: false });
+    expect(await deliveryRegistration(db(), target.fulfillmentId)).toMatchObject({ state: 'registered' });
+    expect(await openKindsOf(db(), target.fulfillmentId)).toEqual([]);
+  });
+
+  test('同じ組を含む合図が同時に来ても、行の鍵を決まった順で取るのでデッドロックしない', async () => {
+    await withDeliveryConnections(async (first, second) => {
+      await first.query('begin');
+      await enableDeliveryTracking(first);
+      const targets = [] as Array<Awaited<ReturnType<typeof trackedShipment>>>;
+      for (let index = 0; index < 4; index += 1) targets.push(await trackedShipment(first, { state: 'registered', trackingNumber: uniqueNumber('SIG') }));
+      await first.query('commit');
+      const signals = targets.map((target) => ({ carrier: 100062, number: target.trackingNumber, event: 'TRACKING_UPDATED' as const }));
+      const rounds = 20;
+      for (let round = 0; round < rounds; round += 1) {
+        // 別々の client が、同じ4つの組を逆の順で同時に知らせる
+        const [forward, backward] = await Promise.all([signalDelivery(first, signals), signalDelivery(second, [...signals].reverse())]);
+        expect([forward, backward]).toEqual([4, 4]);
+      }
+      for (const target of targets) {
+        expect(Number((await deliveryRegistration(first, target.fulfillmentId)).signal_revision)).toBe(rounds * 2);
+      }
+    });
+  });
+
+  test('provider の時刻は読んだ時刻より後にしない（出来事・状況の時刻・届いた時刻）', async () => {
+    await enableDeliveryTracking(db());
+    const future = await dbTime(db(), '1 day');
+    const target = await trackedShipment(db(), { state: 'registered' });
+    const readAt = await dbTime(db(), '-2 hours');
+    expect(await recordReadResult(db(), await leaseDeliveryRegistration(db(), target.fulfillmentId), readOf(readAt, { happened_at: future })))
+      .toMatchObject({ applied: true, changed: true });
+    const events = await trackingEvents(db(), target.fulfillmentId);
+    expect(events.map((row) => iso(row.happened_at))).toEqual([readAt]);
+    expect(iso((await deliveryRecord(db(), target.fulfillmentId)).delivery_status_at)).toBe(readAt);
+    // 未来の時刻をそのまま受けると、この後の読み直しが全部「古い」扱いになる。切り詰めているので、次の読み直しは受ける
+    const now = await dbTime(db());
+    expect(await recordReadResult(db(), await leaseDeliveryRegistration(db(), target.fulfillmentId), readOf(now, { status: 'out_for_delivery', happened_at: now })))
+      .toMatchObject({ applied: true, changed: true });
+
+    // 届いた時刻だけが未来でも、読んだ時刻までにする。出来事の時刻（過去）はそのまま。下限は今までどおり発送した時刻
+    const delivered = await trackedShipment(db(), { state: 'registered' });
+    const happened = await dbTime(db(), '-30 minutes');
+    expect(await recordReadResult(db(), await leaseDeliveryRegistration(db(), delivered.fulfillmentId), readOf(now, {
+      status: 'delivered', happened_at: happened, delivered_at: future,
+    }))).toMatchObject({ applied: true, changed: true, stopped: true });
+    const record = await deliveryRecord(db(), delivered.fulfillmentId);
+    expect(iso(record.delivered_at)).toBe(now);
+    expect(iso(record.delivery_status_at)).toBe(now);
+    expect((await trackingEvents(db(), delivered.fulfillmentId)).map((row) => iso(row.happened_at))).toEqual([happened]);
+
+    // 届いた時刻も出来事の時刻も未来なら、どちらも読んだ時刻
+    const bothFuture = await trackedShipment(db(), { state: 'registered' });
+    await recordReadResult(db(), await leaseDeliveryRegistration(db(), bothFuture.fulfillmentId), readOf(now, {
+      status: 'delivered', happened_at: future, delivered_at: future,
+    }));
+    expect(iso((await deliveryRecord(db(), bothFuture.fulfillmentId)).delivered_at)).toBe(now);
+    expect((await trackingEvents(db(), bothFuture.fulfillmentId)).map((row) => iso(row.happened_at))).toEqual([now]);
+  });
+
+  test('状況の無いokは情報ありとして荷物が見つからない要対応をautoで閉じ、古ければ記号を上書きしない', async () => {
+    await enableDeliveryTracking(db());
+    const target = await trackedShipment(db(), { state: 'registered', shippedAt: await dbTime(db(), '-10 days') });
+    await patchDeliveryRegistration(db(), target.fulfillmentId, "registered_at=now()-interval '73 hours'");
+    await recordReadResult(db(), await leaseDeliveryRegistration(db(), target.fulfillmentId), readOf(await dbTime(db()), NOT_FOUND));
+    expect(await openKindsOf(db(), target.fulfillmentId)).toEqual(['tracking_not_found']);
+    const unknownStatus = (extra: ReadInput) => readOf(extra.read_at as string, {
+      status: null, provider_status: 'Mystery', provider_sub_status: 'Mystery_001', ...extra,
+    });
+    const now = await dbTime(db());
+    expect(await recordReadResult(db(), await leaseDeliveryRegistration(db(), target.fulfillmentId), unknownStatus({ read_at: now, happened_at: null })))
+      .toMatchObject({ applied: true, changed: false });
+    expect(await openKindsOf(db(), target.fulfillmentId)).toEqual([]);
+    expect(await attention(db(), target.fulfillmentId)).toEqual([
+      expect.objectContaining({ kind: 'tracking_not_found', resolution: 'auto', resolved_by: null }),
+    ]);
+    expect(await deliveryRegistration(db(), target.fulfillmentId)).toMatchObject({ provider_status: 'Mystery', provider_sub_status: 'Mystery_001' });
+    expect(await deliveryRecord(db(), target.fulfillmentId)).toMatchObject({ delivery_status: 'confirmed' });
+
+    // 同じ版の最後の tracking の出来事より古い時刻の未知の状態は、記号を上書きしない（読んだ時刻と次の予定だけ進む）
+    await readStatus(db(), target.fulfillmentId, 'in_transit', 1);
+    const afterEvent = await deliveryRegistration(db(), target.fulfillmentId);
+    expect(afterEvent).toMatchObject({ provider_status: 'InTransit' });
+    const olderThanEvent = await dbTime(db(), '-3 hours');
+    expect(await recordReadResult(db(), await leaseDeliveryRegistration(db(), target.fulfillmentId), {
+      ...unknownStatus({ read_at: now, happened_at: olderThanEvent }), provider_status: 'Older', provider_sub_status: 'Older_001',
+    })).toMatchObject({ applied: true, changed: false });
+    const after = await deliveryRegistration(db(), target.fulfillmentId);
+    expect(after).toMatchObject({ provider_status: 'InTransit', provider_sub_status: afterEvent.provider_sub_status, state: 'registered' });
+    expect(iso(after.next_run_at)).toBe(await dbTime(db(), '6 hours'));
+    expect(await deliveryRecord(db(), target.fulfillmentId)).toMatchObject({ delivery_status: 'in_transit' });
   });
 
   // 申し送り（Task 2 から）: 本文はそのまま

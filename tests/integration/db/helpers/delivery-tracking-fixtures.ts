@@ -232,11 +232,21 @@ export type DeliveryLease = Pick<DeliveryClaim, 'fulfillment_id' | 'tracking_ver
 /**
  * 追跡をオンにする。オンにした時の取り込みは、まだ登録の無い発送へ pending を作るので、
  * 試験が自分の登録を insertDeliveryRegistration で作る時は、発送を作る前に呼ぶ。
+ * 他の試験が commit して残した登録（オンにした時の取り込みで増えた物を含む）は1年先に送り、借り出しの試験が件数に左右されないようにする。
  */
 export async function enableDeliveryTracking(client: PgClient) {
   const actor = await createDeliveryActor(client);
   await setDeliveryTracking(client, true, actor.id);
+  await deferOtherDeliveryRegistrations(client);
   return actor;
+}
+
+/** keepFulfillmentIds 以外の登録の時刻を1年先へ送る（オフ→オンで取り込みが増えた後に、自分の発送を除いて呼び直す時に使う）。 */
+export async function deferOtherDeliveryRegistrations(client: PgClient, keepFulfillmentIds: string[] = []) {
+  await client.query(
+    "update private.fulfillment_tracking_registrations set next_run_at = now() + interval '1 year' where fulfillment_id <> all($1::uuid[])",
+    [keepFulfillmentIds],
+  );
 }
 
 /**
