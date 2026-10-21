@@ -69,7 +69,7 @@ export type ClaimedOrderEmail = {
   subject: string | null;
   bodyText: string | null;
   paymentExpiredSent: boolean;
-  /** 発送のメールだけ、どの発送のメールかを示す。ほかの種類は null（グループ E-1 設計書 8-1） */
+  /** 発送のメールと配送メール3種類は、どの発送かを示す。ほかの種類は null（E-1 8-1、E-4 8-1） */
   fulfillmentId: string | null;
   /** 返金のお知らせと、支払い済みのキャンセルのお知らせだけ、どの返金のお知らせかを示す。ほかの種類は null（グループ E-2 設計書 8-6） */
   refundId: string | null;
@@ -79,6 +79,9 @@ export type ClaimedOrderEmail = {
   returnReceiptId: string | null;
   /** キャンセルの申し込みのメール3種類だけ、どの申し込みのメールかを示す。ほかの種類は null（グループ E-3 段2） */
   cancelRequestId: string | null;
+  /** 配送メールの版と直しの番号。DBから読む時は値かnullを入れる（E-4 移行Aの17列claim） */
+  trackingVersion?: number | null;
+  trackingChangeId?: string | null;
 };
 
 export type OrderEmailLease = Pick<ClaimedOrderEmail, 'id' | 'leaseToken'>;
@@ -131,6 +134,8 @@ export async function claimOrderEmail(store: OrderEmailStore, leaseSeconds: numb
     subject: textOrNull(row.subject),
     bodyText: textOrNull(row.body_text),
     paymentExpiredSent: row.payment_expired_sent === true,
+    trackingVersion: numberOrNull(row.tracking_version),
+    trackingChangeId: textOrNull(row.tracking_change_id),
     // 古い形の答え（この列が無い）は null。キャンセルの申し込みのメール3種類の行だけ値を持つ
     cancelRequestId: textOrNull(row.cancel_request_id),
     fulfillmentId: textOrNull(row.fulfillment_id),

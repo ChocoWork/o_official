@@ -1,4 +1,5 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { loadDeliveryEmailMaterial } from '@/lib/orders/email/order-email-delivery-material';
 import { recordHeartbeat, type OpsStore } from '@/lib/ops/ops-store';
 import {
   composeOrderEmail,
@@ -28,6 +29,7 @@ import {
 } from '@/lib/orders/email/order-email-store';
 import {
   isRequestEmailKind,
+  isDeliveryEmailKind,
   isShopEmailKind,
   type OrderEmailPauseReason,
   type OrderEmailSkipReason,
@@ -68,6 +70,8 @@ export type OrderEmailWorkerDeps = {
   ) => Promise<OrderEmailMaterial | null>;
   /** 店あてのメール（返金待ち・返品の申し込み・キャンセルの申し込み）の送り先（SHOP_ALERT_EMAIL）。無ければ null */
   shopRecipient: () => string | null;
+  /** 配送メールは保存済み本文があっても必ず現在の版と状態を読む */
+  loadDeliveryMaterial?: (claim: ClaimedOrderEmail) => Promise<OrderEmailMaterial | null>;
   send: (message: OrderEmailMessage) => Promise<OrderEmailSendOutcome>;
   checkConfig: () => OrderEmailPauseReason | null;
   now: () => number;
@@ -125,10 +129,17 @@ export function recipientFor(
 
 /** 送る前に取りやめにする理由（設計書 4-1）。送ってよければ null */
 export function skipReasonFor(
-  claim: Pick<ClaimedOrderEmail, 'kind'>,
+  claim: Pick<ClaimedOrderEmail, 'kind' | 'trackingVersion'>,
   material: OrderEmailMaterial,
   shopRecipient: string | null = null,
 ): OrderEmailSkipReason | null {
+  if (isDeliveryEmailKind(claim.kind) && material.delivery) {
+    const delivery = material.delivery;
+    if (delivery.cancelled) return 'fulfillment_cancelled';
+    // 発送の更新は直した事実を知らせるので、旧版でも送る。
+    if (claim.kind !== 'shipping_update' && claim.trackingVersion !== delivery.currentTrackingVersion) return 'superseded';
+    if (claim.kind === 'out_for_delivery' && delivery.deliveryStatus === 'delivered') return 'superseded';
+  }
   if (!recipientFor(claim, material, shopRecipient)) return 'no_recipient';
   if (claim.kind === 'awaiting_payment' && material.order.status !== 'pending') return 'superseded';
   if (claim.kind === 'payment_expired' && (material.order.status === 'paid' || material.order.status === 'shipped')) {
@@ -171,17 +182,19 @@ async function recordFailure(
 async function deliver(deps: OrderEmailWorkerDeps, claim: ClaimedOrderEmail): Promise<DeliverOutcome> {
   let material: OrderEmailMaterial | null;
   try {
-    // 申し込みのメール6種類は、返品・キャンセルの申し込みの記録から読む。ほかの種類は、発送・返金・返品・受け取りの番号で読む
-    material = isRequestEmailKind(claim.kind)
-      ? await deps.loadRequestMaterial(claim.orderId, claim.kind, claim.returnId, claim.cancelRequestId)
-      : await deps.loadMaterial(claim.orderId, claim.fulfillmentId, claim.refundId, claim.returnId, claim.returnReceiptId);
+    // 配送3種類は現在の発送と版を読み直す。申し込み6種類は専用の記録、ほかは既存の材料を読む。
+    material = isDeliveryEmailKind(claim.kind)
+      ? await deps.loadDeliveryMaterial?.(claim) ?? null
+      : isRequestEmailKind(claim.kind)
+        ? await deps.loadRequestMaterial(claim.orderId, claim.kind, claim.returnId, claim.cancelRequestId)
+        : await deps.loadMaterial(claim.orderId, claim.fulfillmentId, claim.refundId, claim.returnId, claim.returnReceiptId);
   } catch {
     return recordFailure(deps, claim, { category: 'transient', code: 'db_unavailable', retryAfterSeconds: null });
   }
-  if (!material) {
+  if (!material || (isDeliveryEmailKind(claim.kind) && !material.delivery)) {
     // 注文・明細のほか、発送のメールの発送の記録・返金のお知らせの返金の記録・返品のメールの返品の記録が無い時もここに入る
-    // （グループ E-2 設計書 8-6、グループ E-3 設計書 9 章）
-    return recordFailure(deps, claim, { category: 'permanent', code: 'source_missing', retryAfterSeconds: null });
+    // （グループ E-2 設計書 8-6、グループ E-3 設計書 9 章）。配送メールの材料不足は再試行し、既存DBの上限でdeadにする。
+    return recordFailure(deps, claim, { category: isDeliveryEmailKind(claim.kind) ? 'transient' : 'permanent', code: 'source_missing', retryAfterSeconds: null });
   }
 
   const shopRecipient = deps.shopRecipient();
@@ -207,7 +220,7 @@ async function deliver(deps: OrderEmailWorkerDeps, claim: ClaimedOrderEmail): Pr
       paymentExpiredSent: claim.paymentExpiredSent,
     });
     if (!composed) {
-      return recordFailure(deps, claim, { category: 'permanent', code: 'source_missing', retryAfterSeconds: null });
+      return recordFailure(deps, claim, { category: isDeliveryEmailKind(claim.kind) ? 'transient' : 'permanent', code: 'source_missing', retryAfterSeconds: null });
     }
     // 控えられないまま送ると、やり直しの中身が変わって重複防止キーが使えなくなる。送らずにやり直す
     let saved: boolean;
@@ -298,6 +311,7 @@ export async function runOrderEmailWorker(options: { budgetMs?: number } = {}): 
       loadOrderEmailMaterial(client, orderId, fulfillmentId, refundId, returnId, returnReceiptId),
     loadRequestMaterial: (orderId, kind, returnId, cancelRequestId) =>
       loadRequestEmailMaterial(client, orderId, { kind, returnId, cancelRequestId }),
+    loadDeliveryMaterial: (claim) => loadDeliveryEmailMaterial(client, claim),
     shopRecipient: () => shopAlertRecipient(),
     send: (message) => sendOrderEmailMessage(message),
     checkConfig: () => checkOrderEmailSendConfig(),

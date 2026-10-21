@@ -26,13 +26,30 @@ const historyRow = {
 };
 
 describe('order-email-store', () => {
+  // 状態はDBの答えを模した物。実際の再試行回数/上限でのdead遷移はcontrollerのDB結合の証拠と分ける。
+  it.each(['retry_wait', 'dead'] as const)('配送材料不足のsource_missingはtransientを渡し、DBの%sを返す', async (status) => {
+    const { store, rpc } = storeReturning(status);
+    await expect(failOrderEmail(store, { id: 'delivery-email', leaseToken: 'lease-1' }, {
+      category: 'transient', code: 'source_missing', retryAfterSeconds: null,
+    })).resolves.toBe(status);
+    expect(rpc).toHaveBeenCalledWith('fail_order_email', {
+      _email_id: 'delivery-email', _lease_token: 'lease-1', _category: 'transient',
+      _error_code: 'source_missing', _retry_after_seconds: null,
+    });
+  });
+  it.each([
+    [2, 'change-1', 2, 'change-1'], [null, null, null, null], [undefined, undefined, null, null],
+  ])('claimの追加2列は値かnullで返す (%s, %s)', async (version, changeId, trackingVersion, trackingChangeId) => {
+    const { store } = storeReturning([{ ...claimRow, tracking_version: version, tracking_change_id: changeId }]);
+    await expect(claimOrderEmail(store, 300)).resolves.toMatchObject({ trackingVersion, trackingChangeId });
+  });
   it('取り出した行を名前を変えて返す。無ければ null', async () => {
     const { store, rpc } = storeReturning([claimRow]);
 
     await expect(claimOrderEmail(store, 300)).resolves.toEqual({
       id: 'email-1', orderId: 'order-1', kind: 'paid', variant: 'order_confirmed', origin: 'auto', attempts: 1,
       leaseToken: 'lease-1', subject: null, bodyText: null, paymentExpiredSent: false, fulfillmentId: null, refundId: null,
-      returnId: null, returnReceiptId: null, cancelRequestId: null,
+      returnId: null, returnReceiptId: null, cancelRequestId: null, trackingVersion: null, trackingChangeId: null,
     });
     expect(rpc).toHaveBeenCalledWith('claim_order_email', { _lease_seconds: 300 });
     await expect(claimOrderEmail(storeReturning([]).store, 300)).resolves.toBeNull();

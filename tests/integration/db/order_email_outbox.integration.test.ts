@@ -7,7 +7,7 @@ import {
   uniqueSuffix,
 } from './helpers/order-fixtures';
 import { ORDER_STATUSES } from '@/lib/orders/order-payment-types';
-import { isRequestEmailKind, ORDER_EMAIL_KINDS, RESENDABLE_ORDER_STATUSES } from '@/lib/orders/email/order-email-types';
+import { isDeliveryEmailKind, isRequestEmailKind, ORDER_EMAIL_KINDS, RESENDABLE_ORDER_STATUSES } from '@/lib/orders/email/order-email-types';
 
 /**
  * 注文のメールの表と関数（グループ D 設計書 3・4・6・7 章）。
@@ -53,13 +53,13 @@ async function enqueue(
 }
 
 /** 発送のメールは発送の記録が要る（グループ E-1）。再送の状態表だけを確かめる試験では、発送の関数を通さず直接書く */
-async function insertFulfillmentRecord(db: PgClient, orderId: string): Promise<string> {
+async function insertFulfillmentRecord(db: PgClient, orderId: string, trackingVersion = 1): Promise<string> {
   const res = await db.query(
     `insert into public.order_fulfillments
-       (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order)
-     values ($1, 1, gen_random_uuid(), 'yamato', '1234-5678', true, true)
+       (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, tracking_version)
+     values ($1, 1, gen_random_uuid(), 'yamato', '1234-5678', true, true, $2)
      returning id`,
-    [orderId],
+    [orderId, trackingVersion],
   );
   return res.rows[0].id as string;
 }
@@ -518,10 +518,39 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
         const orderId = await createOrder(db(), status);
         const variant = kind === 'paid' ? 'order_confirmed' : kind === 'canceled' ? 'pending' : kind === 'refund' ? 'standard' : null;
         // 発送のメールは発送ごとに送るので、発送の記録を用意して、その発送の行にする（グループ E-1）
-        const fulfillmentId = kind === 'shipped' ? await insertFulfillmentRecord(db(), orderId) : null;
+        const deliveryKind = isDeliveryEmailKind(kind);
+        const trackingVersion = kind === 'shipping_update' ? 2 : 1;
+        const fulfillmentId = kind === 'shipped' || deliveryKind ? await insertFulfillmentRecord(db(), orderId, trackingVersion) : null;
         // 返金のお知らせは返金ごとに送るので、Task 3 が同じファイルに足した道具で返金の記録を用意して、その返金の行にする（グループ E-2。再送は断られる）
         const refundId = kind === 'refund' ? await insertRefundRecord(db(), orderId, 1000) : null;
-        await enqueue(db(), orderId, kind, variant, fulfillmentId, refundId);
+        if (deliveryKind) {
+          // 注文状態ごとの再送可否だけを確かめる。通知を予定に入れる条件は別の配送DB試験に任せ、正しい形の行を直接用意する。
+          let trackingChangeId: string | null = null;
+          if (kind === 'shipping_update') {
+            const change = await db().query(
+              `insert into public.order_fulfillment_tracking_changes
+                 (fulfillment_id, from_carrier, from_tracking_number, to_carrier, to_tracking_number,
+                  tracking_version, notify_customer, request_key, request_fingerprint, changed_by)
+               values ($1, 'yamato', 'OLD-1234', 'yamato', '1234-5678', $2, true, gen_random_uuid(), 'fixture', $3)
+               returning id`,
+              [fulfillmentId, trackingVersion, actor.id],
+            );
+            trackingChangeId = change.rows[0].id as string;
+          }
+          const inserted = await db().query(
+            `insert into private.order_email_outbox
+               (order_id, kind, variant, origin, fulfillment_id, tracking_version, tracking_change_id)
+             values ($1, $2, null, 'auto', $3, $4, $5) returning id`,
+            [orderId, kind, fulfillmentId, trackingVersion, trackingChangeId],
+          );
+          expect(await emailRow(db(), inserted.rows[0].id)).toMatchObject({
+            order_id: orderId, kind, variant: null, origin: 'auto', status: 'pending',
+            fulfillment_id: fulfillmentId, tracking_version: trackingVersion, tracking_change_id: trackingChangeId,
+          });
+          expect(RESENDABLE_ORDER_STATUSES[kind]).toEqual([]);
+        } else {
+          await enqueue(db(), orderId, kind, variant, fulfillmentId, refundId);
+        }
         // 今の注文の状態に関係なく過去に送れた行を用意し、再送の状態表だけを確かめる
         await db().query("update private.order_email_outbox set status = 'sent', sent_at = now(), finished_at = now() where order_id = $1", [orderId]);
         const sql = 'select public.request_order_email_resend($1, $2, $3, $4) as email_id';
@@ -532,7 +561,10 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
             order_id: orderId, kind, status: 'pending', origin: 'manual', fulfillment_id: fulfillmentId,
           });
         } else {
-          await expectRejected(db(), sql, args, { code: '22023', message: expect.stringContaining('RESEND_NOT_ALLOWED') });
+          // 配送3種類は現行DBの再送関数の入力種類に無いので、状態の表を見る前に断られる。どの注文状態でも再送不可。
+          await expectRejected(db(), sql, args, {
+            code: '22023', message: deliveryKind ? 'INVALID_EMAIL_KIND' : expect.stringContaining('RESEND_NOT_ALLOWED'),
+          });
         }
       },
     );

@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getSiteUrl } from '@/lib/redirect';
+import type { OrderEmailDeliveryMaterial } from '@/lib/orders/email/order-email-delivery-material';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import {
   formatCurrency,
@@ -14,6 +16,7 @@ import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-ca
 import {
   isReturnRequestEmailKind,
   type CancelRequestEmailKind,
+  type DeliveryEmailKind,
   type OrderEmailKind,
   type OrderEmailVariant,
   type RefundEmailVariant,
@@ -264,7 +267,7 @@ export type OrderEmailRequestMaterial =
 export type OrderEmailMaterial = {
   order: OrderEmailMaterialRow;
   items: ConfirmationItem[];
-  /** 発送のメールの時だけ読む。ほかの種類は null */
+  /** 発送のメールと配送メール3種類の時に読む。ほかの種類は null */
   fulfillment: OrderEmailFulfillmentMaterial | null;
   /** 返金のお知らせと、支払い済みのキャンセルのお知らせの時だけ読む。ほかの種類は null */
   refund: OrderEmailRefundMaterial | null;
@@ -272,6 +275,8 @@ export type OrderEmailMaterial = {
   orderReturn: OrderEmailReturnMaterial | null;
   /** 申し込みのメール6種類の時だけ読む（loadRequestEmailMaterial）。ほかの種類は null（グループ E-3 段2） */
   request: OrderEmailRequestMaterial | null;
+  /** 配送メール3種類だけ、送る直前に現在の発送と版を読む（E-4 C-6） */
+  delivery?: OrderEmailDeliveryMaterial;
 };
 
 export type ComposeRequest = {
@@ -289,6 +294,7 @@ export type OrderEmailMaterialTable =
   | 'order_items'
   | 'order_fulfillments'
   | 'order_fulfillment_lines'
+  | 'order_fulfillment_tracking_changes'
   | 'order_refunds'
   | 'order_refund_lines'
   | 'list_order_line_fulfillment'
@@ -1722,6 +1728,46 @@ function composeShipped({ order, fulfillment }: OrderEmailMaterial): ComposedOrd
   };
 }
 
+/** 配送3種類の文面はE-4 C-6と同じ順・空行にする。 */
+function composeDelivery(material: OrderEmailMaterial, kind: DeliveryEmailKind): ComposedOrderEmail | null {
+  const { order, fulfillment, delivery } = material;
+  if (!delivery || !fulfillment || fulfillment.lines.length === 0) return null;
+  const orderNumber = toOrderNumber(order.id);
+  // controllerの決定に従い、数量も含めて既存の発送メールと同じ出力を使う。
+  const itemLines = formatShipmentItemLines(fulfillment.lines);
+  if (kind === 'delivered') {
+    const date = delivery.deliveredAt ? new Date(delivery.deliveredAt) : null;
+    if (!date || !Number.isFinite(date.getTime())) return null;
+    const deliveredOn = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', month: 'long', day: 'numeric' }).format(date);
+    return {
+      subject: `【${SHOP_NAME}】商品をお届けしました（${orderNumber}）`,
+      text: [
+        greeting(order.shipping_full_name), '', 'ご注文の商品をお届けしました。', '',
+        `注文番号: ${orderNumber}`, `お届け日: ${deliveredOn}`, '', 'お届けした商品:', ...itemLines, '',
+        ...(delivery.windowDays === null ? [] : [
+          `商品に不具合がございましたら、到着から ${delivery.windowDays} 日以内にご注文の画面またはお問い合わせからご連絡ください`, '',
+        ]),
+        `ご注文の確認はこちら: ${new URL(`/account/orders/${order.id}`, getSiteUrl()).toString()}`, '',
+        contactLine(order.id), '', SHOP_NAME,
+      ].join('\n'),
+    };
+  }
+  const trackingNumber = delivery.trackingNumber?.trim();
+  if (!isShippingCarrierId(delivery.carrier) || !trackingNumber) return null;
+  const carrier = SHIPPING_CARRIERS[delivery.carrier];
+  const updated = kind === 'shipping_update';
+  return {
+    subject: `【${SHOP_NAME}】${updated ? '発送の情報を更新しました' : '商品を配達中です'}（${orderNumber}）`,
+    text: [
+      greeting(order.shipping_full_name), '', updated ? 'ご注文の発送の情報を更新しました。' : 'ご注文の商品を配達中です。', '',
+      `注文番号: ${orderNumber}`, '', updated ? '発送した商品:' : '配達中の商品:', ...itemLines, '',
+      `配送業者: ${carrier.label}`, `追跡番号: ${trackingNumber}`, `追跡はこちら: ${carrier.trackingUrl(trackingNumber)}`, '',
+      ...(updated ? ['先にお知らせした伝票番号は使えません', ''] : []),
+      contactLine(order.id), '', SHOP_NAME,
+    ].join('\n'),
+  };
+}
+
 /** 色・サイズを「色 / サイズ」と書く。どちらも無ければ空文字（品名の後ろの括弧と同じ書き方） */
 function colorSizeLabel(variant: { color: string | null; size: string | null }): string {
   return [variant.color, variant.size].filter(Boolean).join(' / ');
@@ -1884,6 +1930,10 @@ export function composeOrderEmail(material: OrderEmailMaterial, request: Compose
       return composeCanceled(material, request.variant === 'payment_in_progress' ? 'payment_in_progress' : 'pending');
     case 'shipped':
       return composeShipped(material);
+    case 'out_for_delivery':
+    case 'delivered':
+    case 'shipping_update':
+      return composeDelivery(material, request.kind);
     case 'refund':
       return composeRefund(
         material,

@@ -9,6 +9,8 @@ import type { OrderStatus, PaidEmailVariant } from '@/lib/orders/order-payment-t
  * 申し込みのメール6種類（返品の申し込み3つ・キャンセルの申し込み3つ）の種類・書き分けは、それを足して作り直した段2の移行 20261020144439_order_return_request_records.sql と同じ
  * （グループ E-3 段2 計画 C-0 の7）。取り出しの関数の答えの列は、段2の移行 D が同じに作り直す。再送の関数は段1のままで、
  * 申し込みのメール6種類を種類として受けない（INVALID_EMAIL_KIND）ので、管理画面の再送の窓口が DB を呼ぶ前に断る。
+ * 配送メール3種類を足した種類・書き分けのCHECKと17列claimは E-4 移行 20261022100000_delivery_tracking_records.sql が正。
+ * 配送3種類も再送の窓口でDBより先に断り、取りやめの条件は 20261022100100_delivery_tracking_admin.sql と合わせる。
  */
 export const ORDER_EMAIL_KINDS = [
   'paid',
@@ -28,8 +30,19 @@ export const ORDER_EMAIL_KINDS = [
   'cancel_request_received',
   'cancel_request_declined',
   'cancel_request_shop',
+  'out_for_delivery',
+  'delivered',
+  'shipping_update',
 ] as const;
 export type OrderEmailKind = (typeof ORDER_EMAIL_KINDS)[number];
+
+/** 配送の状況と番号の直しのお知らせ（E-4 C-5/C-6）。3種類とも再送しない */
+export const DELIVERY_EMAIL_KINDS = ['out_for_delivery', 'delivered', 'shipping_update'] as const satisfies readonly OrderEmailKind[];
+export type DeliveryEmailKind = (typeof DELIVERY_EMAIL_KINDS)[number];
+
+export function isDeliveryEmailKind(kind: OrderEmailKind): kind is DeliveryEmailKind {
+  return (DELIVERY_EMAIL_KINDS as readonly string[]).includes(kind);
+}
 
 /** 返品の申し込みのメール3種類。返品ごと・種類ごとに1通（グループ E-3 段2 計画 P12）。材料は返品の申し込みの記録から読む */
 export const RETURN_REQUEST_EMAIL_KINDS = [
@@ -149,6 +162,9 @@ export const ORDER_EMAIL_KIND_LABELS: Record<OrderEmailKind, string> = {
   cancel_request_received: 'キャンセルのお申し込みの受付のお知らせ',
   cancel_request_declined: 'キャンセルのお申し込みについてのお知らせ',
   cancel_request_shop: '店への知らせ（キャンセルの申し込み）',
+  out_for_delivery: '配達中のお知らせ',
+  delivered: '配達済みのお知らせ',
+  shipping_update: '発送の更新',
 };
 
 /** 管理画面の履歴と店への知らせに出す原因（設計書 5-1） */
@@ -211,6 +227,9 @@ export const RESENDABLE_ORDER_STATUSES: Record<OrderEmailKind, readonly OrderSta
   cancel_request_received: [],
   cancel_request_declined: [],
   cancel_request_shop: [],
+  out_for_delivery: [],
+  delivered: [],
+  shipping_update: [],
 };
 
 export function isOrderEmailKind(value: unknown): value is OrderEmailKind {

@@ -4,7 +4,7 @@ import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { logAudit } from '@/lib/audit';
-import { isRequestEmailKind, ORDER_EMAIL_KINDS } from '@/lib/orders/email/order-email-types';
+import { isDeliveryEmailKind, isRequestEmailKind, ORDER_EMAIL_KINDS } from '@/lib/orders/email/order-email-types';
 import {
   OrderEmailResendError,
   OrderEmailStoreError,
@@ -13,7 +13,7 @@ import {
 } from '@/lib/orders/email/order-email-store';
 import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
 
-// 発送のメールだけが、どの発送のメールかを持つ（DB の表の CHECK `(kind = 'shipped') = (fulfillment_id IS NOT NULL)` と同じ決まり）。
+// 再送できる種類のうち、発送のメールだけが発送の番号を持つ。配送メール3種類は下で再送を断る。
 // null は「持たない」として受ける（画面が、発送の番号の無いメールも同じ形で送れるように）
 const bodySchema = z
   .object({ kind: z.enum(ORDER_EMAIL_KINDS), fulfillmentId: z.string().uuid().nullish() })
@@ -86,9 +86,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // 発送の番号は個人情報ではないので、どの発送のメールかを監査に残す
   const target = fulfillmentId ? { kind, fulfillment_id: fulfillmentId } : { kind };
 
-  // 申し込みのメール6種類（返品の申し込み・キャンセルの申し込み。グループ E-3 段2 計画 P12）は再送しない。
+  // 申し込みのメール6種類（E-3 段2 P12）と配送メール3種類（E-4 8-2）は再送しない。
   // DB の関数は段1のままで、これらを種類として受けず INVALID_EMAIL_KIND にする（500 になる）ので、DB を呼ぶ前に「再送できない」と断る
-  if (isRequestEmailKind(kind)) {
+  if (isRequestEmailKind(kind) || isDeliveryEmailKind(kind)) {
     await audit('conflict', 'Resend not allowed', target);
     return NextResponse.json({ error: MESSAGES.not_allowed }, { status: 409 });
   }

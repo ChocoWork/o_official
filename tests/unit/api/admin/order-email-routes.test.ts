@@ -839,6 +839,27 @@ describe('POST /api/admin/orders/[id]/emails/resend', () => {
     expect(mockSchedule).not.toHaveBeenCalled();
   });
 
+  it.each(['out_for_delivery', 'delivered', 'shipping_update'])('配送の%sは認証/CSRF後、DBの前に409で断る', async (kind) => {
+    const response = await postResend(request({ kind }), context);
+    expect(mockAuthorize).toHaveBeenCalled();
+    expect(mockRequireCsrf).toHaveBeenCalled();
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: '今の注文の状態では、このメールは再送できません。' });
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'conflict', detail: 'Resend not allowed', metadata: { kind } }));
+    expect(mockSchedule).not.toHaveBeenCalled();
+  });
+
+  it.each(['out_for_delivery', 'delivered', 'shipping_update'])('配送の%sも認証とCSRFを先に確認する', async (kind) => {
+    mockAuthorize.mockResolvedValueOnce({ ok: false, response: DENIED });
+    expect((await postResend(request({ kind }), context)).status).toBe(403);
+    expect(mockRequireCsrf).not.toHaveBeenCalled();
+    mockRequireCsrf.mockResolvedValueOnce(DENIED);
+    expect((await postResend(request({ kind }), context)).status).toBe(403);
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
   // 申し込みのメール6種類（グループ E-3 段2 計画 P12）は再送しない。DB の関数は段1のまま種類として受けない（INVALID_EMAIL_KIND）ので、窓口が DB を呼ぶ前に 409 で断る
   it.each([
     'return_requested', 'return_declined', 'return_request_shop',
