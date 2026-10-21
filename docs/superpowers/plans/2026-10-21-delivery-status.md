@@ -512,7 +512,7 @@ shipping_update は直しの行の新しい値、配達中/配達済みは claim
 - Consumes: `public.shop_settings`（id=1）、`public.order_fulfillments` と lines、段2 D の `private.enqueue_order_email(uuid,text,text,uuid,uuid):boolean`・`public.claim_order_email(integer)`、`describeLocalDb`・`PgClient`・既存 `order-fixtures.ts`。
 - Produces: C-0 の表・列・CHECK・索引と C-1 Task 1 の関数。`claim_order_email` は既存15列＋`tracking_version integer,tracking_change_id uuid` の17列。試験の道具 `insertDeliveryFixture(client:PgClient,input:{orderId:string;shippedAt:string;carrier?:ShippingCarrierId;trackingNumber?:string;notifyCustomer?:boolean}):Promise<{fulfillmentId:string}>`（本物の管理 RPC ではなく SQL で状態を作る）。
 
-- [ ] **Step 1: DB の記録と守りの落ちる試験を書く**
+- [x] **Step 1: DB の記録と守りの落ちる試験を書く**
 
 新しい records の試験では BEGIN/ROLLBACK、拒否の試験は SAVEPOINT。ロールを替えた試験は必ず戻す。バックフィルは migration が実際に呼ぶ `private.backfill_delivery_events()` を使い、取消でない/取消済み/legacy番号無しのfixtureへ1回目は対象の行数、2回目は0を返すことを照合する。
 
@@ -541,12 +541,12 @@ expect(columnNames.slice(-3)).toEqual(['cancel_request_id','tracking_version','t
 
 さらに outbox の新3種類の正しい組合せ・variant NULL、欠けた version/change の23514、2発送・2版は別行で同じ版は1行、既存 `paid/awaiting_payment/canceled/refund/return_requested/cancel_request_shop/shipped` の enqueue が `ON CONFLICT` の誤りを出さず各1回になる試験を書く。ops の7つの job と未知 job の23514、public 関数の EXECUTE は service_role だけ、private の PUBLIC EXECUTE 無しも確認する。
 
-- [ ] **Step 2: controller が RED を確かめる**
+- [x] **Step 2: controller が RED を確かめる**
 
 Run: Global Constraints のローカル DB の環境を渡し、`npx jest tests/integration/db/delivery_tracking_records.integration.test.ts --runInBand`。
 Expected: FAIL（表/列/17列の claim がまだ無い）。接続できない・skip は RED の証拠にしない。
 
-- [ ] **Step 3: C-0 と C-1 Task 1 を移行 A に書く**
+- [x] **Step 3: C-0 と C-1 Task 1 を移行 A に書く**
 
 関数の本文を長く複製せず、元の最新の本文を読み、指定の差だけを入れる。outbox の元は `20261020144439_order_return_request_records.sql:357–567`。claim は DROP→CREATE→revoke/grant、17列の3か所（宣言・RETURNING・SELECT）を揃える。
 
@@ -556,12 +556,12 @@ Expected: FAIL（表/列/17列の claim がまだ無い）。接続できない�
 
 新しい public 3表と private 2表の RLS/SELECT だけの grant、出来事と番号の直しの追記の守り、attention の1回の解決、登録と provider gate の削除禁止を作る。削除禁止と FK の確認では postgres の試験接続でも守りが効くことを確かめる。
 
-- [ ] **Step 4: controller が GREEN を確かめる**
+- [x] **Step 4: controller が GREEN を確かめる**
 
 Run: `npx supabase db reset` → Global Constraints の DB 環境で `npx jest tests/integration/db/delivery_tracking_records.integration.test.ts tests/integration/db/order_fulfillments.integration.test.ts tests/integration/db/order_refund_results.integration.test.ts --runInBand`。
 Expected: PASS、skip 0。旧試験の「直接番号を変えると拒否」は残す。claim の列数を固定している期待だけ17列へ直す。`npx tsc --noEmit` も誤り0。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add supabase/migrations/20261022100000_delivery_tracking_records.sql tests/integration/db/delivery_tracking_records.integration.test.ts tests/integration/db/helpers/delivery-tracking-fixtures.ts tests/integration/db/order_fulfillments.integration.test.ts tests/integration/db/order_refund_results.integration.test.ts
@@ -582,7 +582,7 @@ git commit -m "feat: 配送の記録と書き込みの守りを追加" -m "Co-Au
 - Consumes: Task 1 の C-0。最新 `admin_create_fulfillment` は `20261013001143_order_return_receipts.sql:1558`、最新 `admin_cancel_fulfillment` は `20261013000456_order_return_actions.sql:1962`、最新 `private.fulfillment_line_returnable(uuid)` は `20261012235910_order_return_records.sql:1039`、最新 skip は段1 C の859行。
 - Produces: C-1 Task 2 の関数。snake_case の `OrderDeliveryDetail`、`OrderDeliverySummary`、設定と要対応の答え。`request_fingerprint` の既存行への補完と新しい作成関数での必須値の書き込み。
 
-- [ ] **Step 1: 管理操作と読む物の落ちる試験を書く**
+- [x] **Step 1: 管理操作と読む物の落ちる試験を書く**
 
 ```ts
 test('追跡オフの発送はconfirmedの出来事だけ作る');
@@ -636,12 +636,12 @@ expect(summary.delivered_count).toBe(1001);
 | 読む物 | history の actor と sub_status は管理用だけ、limit前の total、priority failure→attempted→追跡できない |
 | 返品 | delivered_at の JST 日付＋window_days。NULLは shipped＋buffer。last_item/無制限/取消除外を維持。番号を直すと目安へ戻る。既存返品と申し込みは変更0行 |
 
-- [ ] **Step 2: controller が RED を確かめる**
+- [x] **Step 2: controller が RED を確かめる**
 
 Run: DB 環境を渡し、`npx jest tests/integration/db/delivery_tracking_admin.integration.test.ts --runInBand`。
 Expected: FAIL（新 RPC が無い、初回イベント/登録/指紋の再送がまだ無い）。
 
-- [ ] **Step 3: C-1 Task 2 を移行 B に書く**
+- [x] **Step 3: C-1 Task 2 を移行 B に書く**
 
 作成と取消は上の最新の本文を元にし、引数/答え・数量・住所・返品・返金・交換の保留・注文の状態・初回の発送メールの条件を維持する。共通の設定の行を `FOR SHARE` → 注文を `FOR UPDATE` → 発送を `FOR UPDATE`。toggle は settings を `FOR UPDATE` → 対象注文を id 昇順 → 発送の順にする（4-6 の注文→発送を逆にしない）。これで toggle と配送の書き込みを同時に通さない。
 
@@ -661,12 +661,12 @@ Expected: FAIL（新 RPC が無い、初回イベント/登録/指紋の再送�
 
 `private.enqueue_delivery_email` は fulfillment/order/version/change の所属を検査し、ONの out_for_delivery、manualの入力で制御する delivered、tracking_change のnotifyで shipping_update を書く。delivery_status が delivered の out_for_delivery は入れない。通知の消し方は Task 8 と同じ。`skip_order_email` は配送3種類の取消を許し、旧版の out_for_delivery/delivered と配達済みの out_for_delivery に限って superseded を許す。既存の skip の許す条件を広げすぎない。
 
-- [ ] **Step 4: controller が GREEN を確かめる**
+- [x] **Step 4: controller が GREEN を確かめる**
 
 Run: reset → DB 環境で `npx jest tests/integration/db/delivery_tracking_admin.integration.test.ts tests/integration/db/order_fulfillments.integration.test.ts tests/integration/db/order_return_records.integration.test.ts --runInBand`。
 Expected: PASS、skip0。旧 shipped＋3＋7 の期待は維持して届いた日の期待を追加。2接続の試験は別接続で準備を commit し、試験後は次の reset で捨てる。`npx tsc --noEmit` も誤り0。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add supabase/migrations/20261022100100_delivery_tracking_admin.sql tests/integration/db/delivery_tracking_admin.integration.test.ts tests/integration/db/helpers/delivery-tracking-fixtures.ts tests/integration/db/order_return_records.integration.test.ts
@@ -686,7 +686,7 @@ git commit -m "feat: 配送の直しと手の配達済みの関数を追加" -m 
 - Consumes: Task 1 の登録・イベント・attention と provider gate、Task 2 `private.enqueue_delivery_email(uuid,integer,text,uuid):boolean`、設定と注文→発送の鍵。
 - Produces: C-1 Task 3 の8関数。claim の action は `register/retrack/read/stop`、登録結果は `RegistrationOutcome`、読み直し結果は `DeliveryReadResult` の snake_case。状態/メール/attention を1取引に書く。
 
-- [ ] **Step 1: 借りる・結果・合図の落ちる試験を書く**
+- [x] **Step 1: 借りる・結果・合図の落ちる試験を書く**
 
 ```ts
 test('2接続のclaimは同じ行も同じ組も借りない');
@@ -739,12 +739,12 @@ expect(emailDelta).toBe(0);
 | 通知OFF / ONで2回out_for_delivery→delivered | OFFメール0、ON各1。別版はまた各1 |
 | 1秒のprovider枠を4接続が取る | 予約時刻の差が334ms以上、1秒に最大3開始 |
 
-- [ ] **Step 2: controller が RED を確かめる**
+- [x] **Step 2: controller が RED を確かめる**
 
 Run: DB 環境で `npx jest tests/integration/db/delivery_tracking_sync.integration.test.ts --runInBand`。
 Expected: FAIL（claim/record/signal が無い）。
 
-- [ ] **Step 3: C-1 Task 3 を移行 C に書く**
+- [x] **Step 3: C-1 Task 3 を移行 C に書く**
 
 claim は limit1〜40・lease30〜300秒（workerは60秒）、期限と時刻が来た行、失効leaseだけ。候補を読む→settingsのFOR SHARE→注文/発送をそれぞれFOR UPDATE SKIP LOCKED→組の `pg_try_advisory_xact_lock(hashtextextended(carrier||':'||upper(number),0))`→登録のFOR UPDATE SKIP LOCKED→別のSQL文で同じ組の有効leaseを再確認→tokenを書く、の順にする。単一SELECTのNOT EXISTSだけで同じ組の競合を防いだとしない。1行書くごとに次の候補を読み、同じbatch内の共有番号も同時に借りない。すべての書く関数がこの鍵の順序に従う。
 
@@ -780,12 +780,12 @@ claim の取引内で action を決め、tokenを渡す。止まった組を再�
 
 成功は read_attempts=0、通常は6時間後だが signal_revision がclaim時より進んでいれば今。STOPPEDの合図の消費もそのrevisionまで。expiry は ON時の期限を迎えた行を注文→発送→登録の順で取り、ever_registered だけattention。停止理由replaced/cancelledの外への停止は、同じ組の別の止めていない行を確認してから provider_stop_pending を設定し、workerのstop結果を記録する。disabled/delivered/expired はその印を付けない。
 
-- [ ] **Step 4: controller が GREEN を確かめる**
+- [x] **Step 4: controller が GREEN を確かめる**
 
 Run: reset → DB 環境で `npx jest tests/integration/db/delivery_tracking_sync.integration.test.ts tests/integration/db/delivery_tracking_admin.integration.test.ts --runInBand`。
 Expected: PASS、skip0、2接続の競合でハング無し。`npx tsc --noEmit` も誤り0。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add supabase/migrations/20261022100200_delivery_tracking_sync.sql tests/integration/db/delivery_tracking_sync.integration.test.ts tests/integration/db/helpers/delivery-tracking-fixtures.ts
@@ -810,7 +810,7 @@ git commit -m "feat: 配送の追跡の借り出しと結果の関数を追加" 
 - Consumes: C-1 の DB、既存 `ShippingCarrierId`・`OrderEmailStatus`・`SupabaseClient`。
 - Produces: C-2 の型/値の配列・`DeliveryStore` と15個の呼び出し・`DeliveryOperationError`・`DeliveryStoreError`、C-4/C-5 の `DELIVERY_ERROR_MESSAGES`・`DELIVERY_STATUS_LABELS`・`DELIVERY_ATTENTION_LABELS`・`TRACKING_STATE_LABELS`、`mapSeventeenTrackStatus` と `SEVENTEEN_TRACK_CARRIERS`。
 
-- [ ] **Step 1: 型・表・snake_case の落ちる試験を書く**
+- [x] **Step 1: 型・表・snake_case の落ちる試験を書く**
 
 ```ts
 test('状態と運送会社は承認した値だけ');
@@ -845,23 +845,23 @@ provider 対応表を test.each で固定する（細かい状況は主の値と
 
 主の値が既知でも、Exception/DeliveryFailure の未知の細かい状況はnull。配達中等の主だけで決まる種類は未知のsubでも主を使う。C-4 の各記号のHTTPと文を全件比較する。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx jest tests/unit/lib/orders/tracking/delivery-types.test.ts tests/unit/lib/orders/tracking/delivery-store.test.ts tests/unit/lib/orders/tracking/seventeen-track-status.test.ts --runInBand`。
 Expected: FAIL（module未作成）。
 
-- [ ] **Step 3: 指定のファイルへ C-2/C-4 の宣言と表を実装する**
+- [x] **Step 3: 指定のファイルへ C-2/C-4 の宣言と表を実装する**
 
 値を表1か所から引き、DB wrapper は正しい関数名・引数・列名と型を厳しく読む。未知のenum、欠けた必須値、不正時刻、負の数、結果が0行の管理操作は StoreError。`listOrderDeliverySummaries` は200注文ずつ、uuidの大小をそろえ、元のキーへ戻す。行数1000以上なら拒否。Map の空を理由に全部配達済みとしない。
 
 本物の PostgREST を通す試験ではローカル URL の守りを既存 `fulfillment_postgrest.integration.test.ts` と同じにし、全ての新 RPC の引数名を実際に渡して、snake_case→camelCase、JSONの配列、TABLEの配列、signalのinteger、slotのintegerを照合する。token/leaseの拒否も呼ぶ。モックのRPC試験だけで契約の一致を主張しない。
 
-- [ ] **Step 4: GREEN を確かめる**
+- [x] **Step 4: GREEN を確かめる**
 
 Run: Step 2 と同じ単体、`npx tsc --noEmit`。controller は reset後 DB環境で `npx jest tests/integration/db/delivery_tracking_postgrest.integration.test.ts --runInBand`。
 Expected: PASS、型の誤り0、DBのskip0。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add src/lib/orders/tracking/delivery-types.ts src/lib/orders/tracking/delivery-messages.ts src/lib/orders/tracking/delivery-store.ts src/lib/orders/tracking/seventeen-track-status.ts tests/unit/lib/orders/tracking/delivery-types.test.ts tests/unit/lib/orders/tracking/delivery-store.test.ts tests/unit/lib/orders/tracking/seventeen-track-status.test.ts tests/integration/db/delivery_tracking_postgrest.integration.test.ts
@@ -886,7 +886,7 @@ git commit -m "feat: 配送の型と言葉とDBの呼び出しを追加" -m "Co-
 - Consumes: Task 4 `mapSeventeenTrackStatus`・`ProviderPair` に使うcarrier番号、C-2 `RegistrationOutcome/DeliveryReadResult/TrackingSignal`。
 - Produces: C-2 の config・client・署名の5関数と `SeventeenTrackClient`。fixture は `{contract:'17track-v2.4',responses:Record<string,unknown>,webhooks:Record<string,unknown>}`。キーは `registered,alreadyRegistered,invalidNumber,accountQuota,notRegistered,noInformation,retrackExhausted,inTransit,outForDelivery,delivered,stopped,unknownStatus`。webhooks は `updated,stopped`。
 
-- [ ] **Step 1: 付録の見本と落ちる単体を書く**
+- [x] **Step 1: 付録の見本と落ちる単体を書く**
 
 ```ts
 test('v2.4へPOSTし番号とcarrierだけを渡す');
@@ -920,12 +920,12 @@ client の `test.each` は付録の全コードとHTTPを次のとおりに固�
 
 トップレベルの非0 code と rejected[].error.code の両方、accepted/rejected混在、順番違い、欠けた組、同じ組の矛盾、本文がJSONでない、41件と0件の呼び出し、HTTP timeoutを試す。1件の不正で別のacceptedを捨てない。signatureはraw bytesの日本語・改行・CRLFも固定する。配列webhook、未知event/未知carrierは無視、JSON構造自体が壊れた時は parse が `TypeError`（routeは400）にする。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx jest tests/unit/lib/orders/tracking/delivery-config.test.ts tests/unit/lib/orders/tracking/seventeen-track-client.test.ts tests/unit/lib/orders/tracking/seventeen-track-signature.test.ts --runInBand`。
 Expected: FAIL（module未作成）。本物のURLへは接続しない。
 
-- [ ] **Step 3: C-2 の宣言を実装する**
+- [x] **Step 3: C-2 の宣言を実装する**
 
 client/config は server-only、fetch注入、AbortControllerでtimeout（各callのoptionsがあればfactoryの既定より優先）、redirectを追わない。4つのpathは `/register`・`/retrack`・`/gettrackinfo`・`/stoptrack`。getquota は開店前の手順だけでworkerには実装しない。responseは `code,data.accepted[],data.rejected[].error.code` と accepted[].track_info の付録の形だけを読む。getのacceptedは `outcome='registered'` と `read.outcome='ok'|'not_found'` の組で返す。未知のmain/sub_statusはstatus=nullを返す。結果にはraw messageもpayloadも入れない。
 
@@ -933,12 +933,12 @@ client/config は server-only、fetch注入、AbortControllerでtimeout（各cal
 
 fixture/README に「2026-10-21 の説明書 v2.4 からの写し。本物の返事・署名の鍵・課金・retrackは未確認」を明記する。description/locationに試験用の捨てる文字を入れ、戻り値に残らない試験にする。
 
-- [ ] **Step 4: GREEN を確かめる**
+- [x] **Step 4: GREEN を確かめる**
 
 Run: Step 2 と同じ単体と `npx tsc --noEmit`。
 Expected: PASS、型の誤り0。ネットワーク呼び出しは注入したfetchだけ。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add src/lib/orders/tracking/delivery-config.ts src/lib/orders/tracking/seventeen-track-client.ts src/lib/orders/tracking/seventeen-track-signature.ts tests/fixtures/17track/v2.4.json tests/fixtures/17track/README.md tests/unit/lib/orders/tracking/delivery-config.test.ts tests/unit/lib/orders/tracking/seventeen-track-client.test.ts tests/unit/lib/orders/tracking/seventeen-track-signature.test.ts
@@ -972,7 +972,7 @@ git commit -m "feat: 17TRACKのやり取りと署名の確かめを追加" -m "C
 - Consumes: Task 4 の `DeliveryStore` と claim/result/slot、Task 5 `SeventeenTrackClient`、既存 `recordHeartbeat/claimAlert/releaseAlert/bumpSignal/sendOpsAlertMail`。
 - Produces: C-2 の worker/schedule/ops の宣言、`OpsJob` の `delivery_tracking`、`WorkerRunResult.deliveryTracking?:DeliveryWorkerResult|null`。`OpsAlertKey` に `delivery_tracking_account_error`・`delivery_tracking_key_missing`・`delivery_tracking_signature_invalid`・`delivery_tracking_read_failed`・`delivery_tracking_unknown_status`・`job_stale_delivery_tracking` を足す。
 
-- [ ] **Step 1: 時間・モード・回復と運用の落ちる単体を書く**
+- [x] **Step 1: 時間・モード・回復と運用の落ちる単体を書く**
 
 ```ts
 test('順番はStripe、メール、配送、点検、メールの配信の見回り');
@@ -1006,12 +1006,12 @@ expect(sentOnCount5).toBe(1);
 
 ops は送信失敗でclaimを返す、raw本文/鍵/署名/numberをログと運用メールへ入れない、連続5回の読み直し失敗と未知の状態は各1日1回、心拍15分で知らせる（まだ1度も成功していないjobは既存どおり対象外）。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx jest tests/unit/lib/orders/tracking/delivery-worker.test.ts tests/unit/lib/orders/tracking/delivery-schedule.test.ts tests/unit/lib/orders/tracking/delivery-ops.test.ts tests/unit/lib/stripe/webhook-worker.test.ts --runInBand`。
 Expected: FAIL（worker未作成、毎分の呼ぶ順番に配送が無い）。
 
-- [ ] **Step 3: C-2 の worker/schedule/ops を実装する**
+- [x] **Step 3: C-2 の worker/schedule/ops を実装する**
 
 `processDeliveryTracking` は注入した時計・wait・provider・DBだけを使う。run関数は設定を読み、OFFはdisabled、ONで鍵なしはkey_missingで戻り予定も期限も動かさない。設定と鍵を確かめてから expire→claim（60秒）→枠の予約→HTTP→tokenつき結果。claimをaction別にまとめ、stop→register→retrack→readの順で各40件以下を呼ぶ。各HTTPの直前にも設定を再確認し、OFFなら始めない。call optionsのtimeoutMsには `min(2500,残りms)` を渡す。stop失敗も結果を記録して先へ進む。HTTPはDB取引の外。進行中のHTTPの返事も、DBが再確認するOFF/版/tokenの条件に合わなければ捨てる。
 
@@ -1021,12 +1021,12 @@ Expected: FAIL（worker未作成、毎分の呼ぶ順番に配送が無い）。
 
 `reportDeliveryTrackingIssue` は `claimAlert(...,86400)` を直接使い、既存 `sendOnce`（1時間）を使わない。送信先の値は表示しない。心拍の追加で `OpsJob` を引く全Recordとswitch、staleの配列・結果の型・15分・メールの名前 `配送の追跡` を同じTaskで更新する。
 
-- [ ] **Step 4: GREEN を確かめる**
+- [x] **Step 4: GREEN を確かめる**
 
 Run: `npx jest tests/unit/lib/orders/tracking tests/unit/lib/stripe/webhook-worker.test.ts tests/unit/lib/ops tests/unit/api/admin/order-fulfillment-routes.test.ts --runInBand`、`npx tsc --noEmit`。
 Expected: PASS、型の誤り0。時間の試験はfake clock、HTTPは注入fetchで本物へ接続0。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add src/lib/orders/tracking/delivery-worker.ts src/lib/orders/tracking/delivery-schedule.ts src/lib/orders/tracking/delivery-ops.ts src/lib/stripe/webhook-worker.ts src/lib/ops/ops-store.ts src/lib/ops/ops-checks.ts src/lib/ops/ops-alert-mail.ts src/app/api/admin/orders/[id]/fulfillments/route.ts src/app/api/admin/orders/[id]/fulfillments/[fulfillmentId]/cancel/route.ts tests/unit/lib/orders/tracking/delivery-worker.test.ts tests/unit/lib/orders/tracking/delivery-schedule.test.ts tests/unit/lib/orders/tracking/delivery-ops.test.ts tests/unit/lib/stripe/webhook-worker.test.ts tests/unit/lib/ops/ops-store.test.ts tests/unit/lib/ops/ops-checks.test.ts tests/unit/lib/ops/ops-alert-mail.test.ts tests/unit/api/admin/order-fulfillment-routes.test.ts
@@ -1045,7 +1045,7 @@ git commit -m "feat: 毎分と発送直後に配送の追跡を進める" -m "Co
 - Consumes: Task 5 `verifySeventeenTrackSignature(raw,sign,key):boolean`・`parseTrackingSignals(value):TrackingSignal[]`、Task 4 `signalDeliveryTracking(store,signals):Promise<number>`、Task 6 `scheduleDeliveryTracking():void`・`reportDeliveryTrackingIssue(store,'signature_invalid')`。
 - Produces: `export async function POST(request:Request):Promise<Response>`、`runtime='nodejs'`、C-3の `{received:true}`。Node cryptoが使えるruntimeに固定する。
 
-- [ ] **Step 1: 5-2 の順番の落ちる単体を書く**
+- [x] **Step 1: 5-2 の順番の落ちる単体を書く**
 
 ```ts
 test('鍵なしは本文を読む前に503');
@@ -1070,21 +1070,21 @@ expect(schedule).not.toHaveBeenCalled();
 
 署名なし/形式不正、Content-Lengthなし/偽の小さい値/大きい値、分割streamで上限を越える、1件と配列、未知イベント/未知番号/止めた番号、TRACKING_STOPPED、空配列、途中のstream失敗400も加える。署名401の計数の失敗は401を500へ変えない。ログを検査しraw本文/鍵/署名が一切無い。認証/CSRF middlewareは呼ばない。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx jest tests/unit/api/webhook/17track-route.test.ts --runInBand`。
 Expected: FAIL（route未作成）。
 
-- [ ] **Step 3: 指定のPOSTを実装する**
+- [x] **Step 3: 指定のPOSTを実装する**
 
 順番はGlobal Constraintsの6段。本文はstreamを読みながら累計bytesを数えて上限でcancelし、上限以下のbytesだけ連結する。Content-Lengthだけを信用しない。署名後にUTF-8/JSONを読み、合図へ射影する。未知event/carrierの有効なJSONは200の無視、壊れた必須構造は400。設定のDB読取失敗も500。受け入れと無視の200は同じ `{received:true}` で未知番号の有無を漏らさない。
 
-- [ ] **Step 4: GREEN を確かめる**
+- [x] **Step 4: GREEN を確かめる**
 
 Run: Step 2 と同じ単体、`npx tsc --noEmit`。
 Expected: PASS、型の誤り0。署名と読み直しの順は外からのモックの呼ぶ順で確認する。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add src/app/api/webhook/17track/route.ts tests/unit/api/webhook/17track-route.test.ts
@@ -1130,7 +1130,7 @@ export function loadDeliveryEmailMaterial(
 
 `OrderEmailMaterial.delivery?:OrderEmailDeliveryMaterial` を足す。商品の行は既存 fulfillment の材料を使う。workerのdepsへ `loadDeliveryMaterial?:(claim:ClaimedOrderEmail)=>Promise<OrderEmailMaterial|null>`（非配送の既存depsは省略可）を足し、通常のrunは必ず渡す。`skipReasonFor` の claim は kind と任意のtrackingVersionを読める形に拡張する。
 
-- [ ] **Step 1: コピー・材料・送る直前の落ちる単体を書く**
+- [x] **Step 1: コピー・材料・送る直前の落ちる単体を書く**
 
 ```ts
 test('メールの種類はSQLの19種類と同じ順');
@@ -1155,23 +1155,23 @@ expect(skipReason).toBe('fulfillment_cancelled');
 
 件名と本文はC-6の全文を独立した期待文字列で比較し、価格/PII/providerの文/場所が無いこと、同じ品の部分発送だけの数、色サイズ無し、DeliveredのJST日付、windowDays=1/7/365/NULLを固定する。配達中/配達済みのmaterialは現在の版を検査し、shipping_updateはchangeの所属/order/versionと新しい値を読む。別注文のchangeやNULLの必須versionはsource_missingで再試行の後にdead（誤送信しない）。再送のrouteは認証/CSRF後、DB呼出しの前に3種類を既存の再送不可の本文で断る。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx jest tests/unit/lib/orders/email/order-email-compose-delivery.test.ts tests/unit/lib/orders/email/order-email-worker-delivery.test.ts tests/unit/lib/orders/email/order-email-delivery-material.test.ts tests/unit/lib/orders/email/order-email-types.test.ts --runInBand`。
 Expected: FAIL（19種類/配送材料/コピー/skipが未実装）。
 
-- [ ] **Step 3: 宣言とC-6のコピーを実装する**
+- [x] **Step 3: 宣言とC-6のコピーを実装する**
 
 kind unionを増やす同じTaskで labels・RESENDABLE_ORDER_STATUSES・compose の分岐・`OrderEmailMaterialTable` の追加表（`order_fulfillment_tracking_changes`）を更新する。typesのSQL照合先は移行Aの最新CHECKへ直す。16種類や10+6を固定する試験を19へ直し、返品4種類・申し込み6種類の部分集合の試験は変えない。
 
 新しいmaterial loaderは既存の注文/発送/商品の読み方を使い、注文と発送の所属を両方で絞る。senderとそのidempotency key `order-email/{outbox-row-id}` は変えない。保存済み本文の再利用より前に、現在の版・取消・現在のdeliveredを読み直しskipする。shipping_updateは旧版でも送る（直した事実のメール。8-2の旧版の抑止は配達中/配達済みだけ）。
 
-- [ ] **Step 4: GREEN を確かめる**
+- [x] **Step 4: GREEN を確かめる**
 
 Run: `npx jest tests/unit/lib/orders/email tests/unit/api/admin/order-email-routes.test.ts --runInBand`、`npx tsc --noEmit`。
 Expected: PASS、型の誤り0。DBの一意/skipの本物の証拠はTask 1〜3、ここは単体の証拠と分ける。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add src/lib/orders/email/order-email-types.ts src/lib/orders/email/order-email-store.ts src/lib/orders/email/order-email-compose.ts src/lib/orders/email/order-email-worker.ts src/lib/orders/email/order-email-delivery-material.ts src/app/api/admin/orders/[id]/emails/resend/route.ts tests/unit/lib/orders/email/order-email-types.test.ts tests/unit/lib/orders/email/order-email-store.test.ts tests/unit/lib/orders/email/order-email-compose-delivery.test.ts tests/unit/lib/orders/email/order-email-worker-delivery.test.ts tests/unit/lib/orders/email/order-email-delivery-material.test.ts tests/unit/api/admin/order-email-routes.test.ts
@@ -1203,7 +1203,7 @@ git commit -m "feat: 配達中と配達済みと発送の更新のメールを�
 - Consumes: Task 4 の管理4操作/設定/一覧/履歴のwrapper、Task 6 のschedule、Task 8の3種類のメール状態。
 - Produces: C-3の3 POSTと4 GET/PUTの追加、C-2の履歴2union・fulfillment.delivery・OrderAttentionと注文の印。共通の守りは `guardDeliveryAdminWrite(request:Request,endpoint:'tracking'|'delivered'|'resolve'):Promise<{ok:true;actorId:string}|{ok:false;response:Response}>`、断りは `deliveryErrorReply(error:unknown):{status:number;body:{error:string;code?:DeliveryErrorCode}}`。
 
-- [ ] **Step 1: 管理窓口の落ちる単体を書く**
+- [x] **Step 1: 管理窓口の落ちる単体を書く**
 
 ```ts
 test.each(['tracking','delivered','resolve'])('%sは権限→CSRF→IP→管理者の順');
@@ -1230,12 +1230,12 @@ expect(order.deliveryAttention).toBe('failure');
 
 settingsはreturns→旧toggle→配送の途中で失敗した3通りについて、書けたまとまりだけ監査に残ること、dataへ鍵が1文字も無いことを固定。historyの新しい行は時刻降順、同時刻はtypeとidで安定、直しのemailStatusを `sent/pending/retry_wait/dead/skipped/null` から返す。OFFでは登録の現在値を顧客用に流用しない。attentionはOFFならdeliveries空/count0、配送だけある時も他の組の既存値を保つ。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx jest tests/unit/api/admin/order-delivery-routes.test.ts tests/unit/api/admin/order-attention-route.test.ts tests/unit/api/admin/order-email-routes.test.ts tests/unit/api/admin/shop-settings-route.test.ts tests/unit/lib/orders/email/order-history-delivery.test.ts --runInBand`。
 Expected: FAIL（route/履歴の新union/設定の追加が無い）。
 
-- [ ] **Step 3: C-3 と新しい履歴の宣言を実装する**
+- [x] **Step 3: C-3 と新しい履歴の宣言を実装する**
 
 routeのparamsは既存と同じ `Promise<{id:string;fulfillmentId:string}>`、resolveは `Promise<{attentionId:string}>`。body検査の後、C-2のinputへ authz.userId を入れてDBを呼ぶ。callerが渡したactorIdを使わない。
 
@@ -1243,12 +1243,12 @@ historyは `getOrderDeliveryDetail` を読んで既存の `buildOrderHistory` �
 
 一覧の印は集計RPCから、`delivery_failure`→failure、`attempted_delivery`→attempted_delivery、残り3つ→untrackable。現行の状態の絞り込みとページの件数を保つ。進み具合deliveredへの接続はTask 12。settingsはP5/P6、GETの件数はDBの対象の正確な集計、PUTが返す実数は別のbackfilledCount。tracking用のkeyConfiguredはboolean以外を返さない。
 
-- [ ] **Step 4: GREEN を確かめる**
+- [x] **Step 4: GREEN を確かめる**
 
 Run: Step 2 と同じ単体、`npx tsc --noEmit`。
 Expected: PASS、型の誤り0。管理操作の認証/CSRF/回数/監査はここで証拠を残す。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add src/lib/orders/tracking/delivery-route-support.ts src/app/api/admin/orders/[id]/fulfillments/[fulfillmentId]/tracking/route.ts src/app/api/admin/orders/[id]/fulfillments/[fulfillmentId]/delivered/route.ts src/app/api/admin/order-attention/deliveries/[attentionId]/resolve/route.ts src/app/api/admin/order-attention/route.ts src/app/api/admin/orders/route.ts src/app/api/admin/orders/[id]/history/route.ts src/app/api/admin/settings/shop/route.ts src/lib/orders/email/order-history.ts src/lib/orders/order-payment-types.ts tests/unit/api/admin/order-delivery-routes.test.ts tests/unit/api/admin/order-attention-route.test.ts tests/unit/api/admin/order-email-routes.test.ts tests/unit/api/admin/shop-settings-route.test.ts tests/unit/lib/orders/email/order-history-delivery.test.ts
@@ -1290,7 +1290,7 @@ export function submitManualDelivered(orderId:string,fulfillmentId:string,body:P
 
 `OrderHistoryDialog` と内部bodyのpropsに `canManageDelivery?:boolean`（省略false）。`AttentionInbox` に `onOpenDeliveryHistory?:(orderId:string)=>void;onResolveDelivery?:(attentionId:string)=>void`。pageは `userRole==='admin'||userRole==='supporter'` の時だけ書くcallbackと管理ボタンの権限を渡す。既存のrefund権限を広げない。
 
-- [ ] **Step 1: コピー・表示条件・再送の落ちる部品試験を書く**
+- [x] **Step 1: コピー・表示条件・再送の落ちる部品試験を書く**
 
 ```ts
 test('OFFの履歴にも配達済みと直しと過去の移り変わりを出す');
@@ -1313,23 +1313,23 @@ expect(screen.getByRole('heading',{name:'配送'})).toBeVisible();
 
 OrderSectionの複数attentionの優先順、0件で配送の組を消す、配達済みの行に再送ボタン無し、ON/OFFの履歴の6-1表を行ごとにtest.each。role=dialogの名前、開く/戻る/閉じるのfocus、Escape、Tab、390px相当の狭い配置で番号が折り返すことも部品の属性/配置で確認する。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx jest tests/unit/components/OrderTrackingEditDialog.test.tsx tests/unit/components/OrderDeliveredDialog.test.tsx tests/unit/lib/orders/tracking/delivery-client.test.ts tests/unit/components/OrderHistoryDialog.test.tsx tests/unit/components/AttentionInbox.test.tsx --runInBand`。
 Expected: FAIL（dialog/配送の組/新しい履歴が無い）。
 
-- [ ] **Step 3: 宣言とC-5の画面を実装する**
+- [x] **Step 3: 宣言とC-5の画面を実装する**
 
 既存のDialog/Button/入力部品と `clientFetch` を使い、C-3のbody以外を送らない。requestKeyは画面を開いた時に `crypto.randomUUID()`。結果不明では一時保存した同じbodyを使い、入力は変えさせない。親の履歴の現在値と差し替えず、再送で前の結果を取ってから読み直す。
 
 履歴の現在の状況/登録はONだけ、配達済みと直しと記録済みの出来事はOFFでも出す。providerSubStatusは小さな字で文字として出す。配送の要対応の行はorderNumber/何回目/種類/開いた時刻/現在状況だけ。resolveはpageのcallbackがC-3を呼び、processingIdsにattentionIdを入れる。成功後のC-5のnoticeと、全部閉じた時の組の消失をつなぐ。
 
-- [ ] **Step 4: GREEN を確かめる**
+- [x] **Step 4: GREEN を確かめる**
 
 Run: Step 2 の対象＋`tests/unit/components/OrderSection.actions.test.tsx tests/unit/components/AdminOrderHistoryWiring.test.tsx`、`npx tsc --noEmit`。
 Expected: PASS、型の誤り0。部品の試験をDB/ブラウザの証拠としない。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add src/components/OrderTrackingEditDialog.tsx src/components/OrderDeliveredDialog.tsx src/lib/orders/tracking/delivery-client.ts src/components/OrderHistoryDialog.tsx src/components/OrderSection.tsx src/components/AttentionInbox.tsx src/app/admin/page.tsx tests/unit/components/OrderTrackingEditDialog.test.tsx tests/unit/components/OrderDeliveredDialog.test.tsx tests/unit/lib/orders/tracking/delivery-client.test.ts tests/unit/components/OrderHistoryDialog.test.tsx tests/unit/components/OrderSection.actions.test.tsx tests/unit/components/AttentionInbox.test.tsx tests/unit/components/AdminOrderHistoryWiring.test.tsx
@@ -1348,7 +1348,7 @@ git commit -m "feat: 配送の直しと配達済みと要対応の画面を追�
 - Consumes: Task 9 GET/PUT の `deliveryTracking:DeliveryTrackingSettings` と任意入力 `{deliveryTracking:{enabled:boolean}}`、既存必須2トグル・returns。
 - Produces: SETTINGS の自動の返金と返品の間のC-5の「配送の追跡」。既存の `ShopSettings` の2キーを増やさず、LoadedSettingsに `deliveryTracking:DeliveryTrackingSettings|null` を別に持つ（古い見本だけnullを許す。実際の答えは必須）。
 
-- [ ] **Step 1: トグル・件数・確認の落ちる部品試験を書く**
+- [x] **Step 1: トグル・件数・確認の落ちる部品試験を書く**
 
 ```ts
 test('自動の返金、配送の追跡、返品の順に出す');
@@ -1369,23 +1369,23 @@ expect(screen.getByText('設定を保存できませんでした。現在の設�
 
 説明3文の全文、ON/OFF確認の全文、0件の確認、GETの間に鍵が消えるケース（押せない/エラー）、metadataの人/時刻/NULL、待ちの二重押し、保存のbodyが直前にGETした既存2トグルを保つ、returnsの保存は配送入力を送らないことを試す。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx jest tests/unit/components/ShopSettingsSection.test.tsx --runInBand`。
 Expected: FAIL（配送のsectionが無い）。
 
-- [ ] **Step 3: C-5の欄と確認を実装する**
+- [x] **Step 3: C-5の欄と確認を実装する**
 
 鍵は未設定なら「オンにする」を禁止する。すでにONで鍵が消えた時もOFFにする操作は許す（P5のONだけ拒否と整合）。文中の「トグルを押せず」はOFF→ONの道に適用する。ON確認を開く直前にGETし、件数/鍵/2トグルを取り直し、確認後のPUTにその2トグルと配送だけを送る。保存成功の実数を現在の設定へ反映し、確認中に件数が増えた差を失敗にしない。
 
 説明は設定済み/未設定にかかわらず出す。鍵文字列を保持するstateやinputは作らない。最後に変えた人・時刻は既存トグルと同じ形。
 
-- [ ] **Step 4: GREEN を確かめる**
+- [x] **Step 4: GREEN を確かめる**
 
 Run: Step 2、`npx tsc --noEmit`。
 Expected: PASS、型の誤り0。既存の自動返金と返品の保存の試験も通る。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add src/components/ShopSettingsSection.tsx tests/unit/components/ShopSettingsSection.test.tsx
@@ -1419,7 +1419,7 @@ git commit -m "feat: 設定に配送の追跡の切り替えを追加" -m "Co-Au
 - Consumes: Task 4 の `OrderDeliverySummary/OrderDeliveryDetail/CustomerDelivery`、Task 5 のkeyConfigured、Task 2の返品の期限、既存 `OrderLineProgressCounts`。
 - Produces: `deriveOrderProgress(status:OrderStatus,lines:readonly OrderLineProgressCounts[],options?:{hasOpenRefund?:boolean;delivery?:Pick<OrderDeliverySummary,'activeCount'|'deliveredCount'>}):OrderProgress`。APIの `shipments[].deliveredAt:string|null;delivery?:CustomerDelivery`、既存のprogress/steps/list labelにdeliveredが到達する。`PrivacyPage` は asyncなrequest時のServer Component。
 
-- [ ] **Step 1: 表示の条件と進み具合の落ちる試験を書く**
+- [x] **Step 1: 表示の条件と進み具合の落ちる試験を書く**
 
 ```ts
 test('全部の取消でない発送が配達済みなら配達済み');
@@ -1455,12 +1455,12 @@ expect(onHtml).toContain('配送状況の確認業務（配送追跡サービス
 
 他人/無い/隠す状態は既存404、DB読取失敗は500（空の履歴で偽の配達済みにしない）。顧客JSONを再帰検査し `actorEmail/providerSubStatus/registration/trackingChanges/createdBy/leaseToken` がどこにも無い、取消発送と旧版イベントが無いことを固定する。顧客の配送イベントは新しい順、status/happenedAtだけ。日本時間の前日/翌日への表示、問題あり/遅れのC-5一文、unknown legacy carrierの従来の表示も試す。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx jest tests/unit/lib/orders/order-progress.test.ts tests/unit/api/orders/order-detail-progress.test.ts tests/unit/api/orders/orders-list-progress.test.ts tests/unit/components/AccountOrderDetailPage.test.tsx tests/unit/components/PrivacyPage.test.tsx --runInBand`。
 Expected: FAIL（deriveはまだdeliveredを選ばず、新しい射影/委託文が無い）。
 
-- [ ] **Step 3: 宣言・射影・C-5の表示を実装する**
+- [x] **Step 3: 宣言・射影・C-5の表示を実装する**
 
 deriveの固定payment/cancelled/failed等とhasOpenRefundの優先順を保ち、受注生産/発送準備の残りが無い場合にだけ `activeCount>0 && deliveredCount===activeCount` を選ぶ。渡さない既存の呼び出しは従来どおり。Task 12では全呼び出し元（顧客の一覧・詳細、管理の一覧、fulfillment-materials）へDBの集計を渡す。取消はDBの集計から除き、注文のstatusの列や絞り込みを変えない。
 
@@ -1470,12 +1470,12 @@ privacyはローカルguide `node_modules/next/dist/docs/01-app/03-api-reference
 
 返品の説明はC-5へ置き換え、窓口/画面で期限を独自計算しない。`tests/integration/api/orders.test.ts` の差し替えDBに新しい読取の答えを足し、既存のownerと返金/返品の試験を保つ。
 
-- [ ] **Step 4: GREEN を確かめる**
+- [x] **Step 4: GREEN を確かめる**
 
 Run: `npx jest tests/unit/lib/orders/order-progress.test.ts tests/unit/lib/orders/fulfillment/fulfillment-materials.test.ts tests/unit/api/orders tests/unit/api/admin/orders-search-route.test.ts tests/unit/components/AccountOrderDetailPage.test.tsx tests/unit/components/ShopReturnSettingsSection.test.tsx tests/unit/components/PrivacyPage.test.tsx tests/integration/api/orders.test.ts --runInBand`、`npx tsc --noEmit`。
 Expected: PASS、型の誤り0。ここは差し替えのAPI/部品試験。返品の期限のDB証拠はTask 2、画面からの一連の証拠はTask 13。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add src/lib/orders/order-progress.ts src/lib/orders/fulfillment/fulfillment-materials.ts src/app/api/orders/[id]/route.ts src/app/api/orders/route.ts src/app/api/admin/orders/route.ts src/app/account/orders/[id]/page.tsx src/app/privacy/page.tsx src/components/ShopReturnSettingsSection.tsx tests/unit/lib/orders/order-progress.test.ts tests/unit/lib/orders/fulfillment/fulfillment-materials.test.ts tests/unit/api/orders/order-detail-progress.test.ts tests/unit/api/orders/orders-list-progress.test.ts tests/unit/api/admin/orders-search-route.test.ts tests/unit/components/AccountOrderDetailPage.test.tsx tests/unit/components/ShopReturnSettingsSection.test.tsx tests/unit/components/PrivacyPage.test.tsx tests/integration/api/orders.test.ts
@@ -1542,7 +1542,7 @@ fake の受け口:
 
 controlの見出し `x-e2e-control` は作り物の鍵だけ、通常pathは `17token` を確かめる。fakeはloopbackだけにbindし、実APIへ転送する機能は作らない。
 
-- [ ] **Step 1: 環境の守りと新しい E2E の落ちる試験を書く**
+- [x] **Step 1: 環境の守りと新しい E2E の落ちる試験を書く**
 
 ```ts
 test('E2Eは17TRACKの本番URLと省略のfallbackを拒む');
@@ -1573,12 +1573,12 @@ expect(fingerprintA).not.toBe(fingerprintB);
 | ACCOUNT-042 | `配達中から配達済みと新しい順の移り変わりを出す`：現版の状況/最後の更新/日本時間/メール/届いた日/期限 | `直した番号だけを出し一部の配達済みは配送中のまま`：旧版履歴無し、新リンク、他の未配達/未発送の優先 |
 | ACCOUNT-043 | `登録待ちと失敗と鍵なしとオフで状況を隠す`：APIからキー無し、deliveredAtは常に保持、OFFで以前の輸送中を隠す | `オンだけ委託の文を出し顧客JSONに店内の情報を出さない`：privacy全文、owner404、actor/sub_status/登録のキー無し |
 
-- [ ] **Step 2: controller が RED を確かめる**
+- [x] **Step 2: controller が RED を確かめる**
 
 Run: `npx jest tests/unit/scripts/e2e/environment.test.ts tests/unit/scripts/e2e-server-tracking.test.ts --runInBand`。
 Expected: FAIL（URLの見張り/fake起動が無い）。新E2Eもcontrollerがローカル環境で流し、fake未作成による起動の失敗を控える（起動の失敗とアプリのassertionの失敗を区別）。
 
-- [ ] **Step 3: fakeと見張りと橋渡しを実装する**
+- [x] **Step 3: fakeと見張りと橋渡しを実装する**
 
 P14/P15のとおり `E2E_FIXED_ENV` に fake URL `http://127.0.0.1:4017/track/v2.4` と作り物の鍵を足す。baseEnvに明示の非local URLがあればoverrideで隠さず停止。未指定のbaseEnvにはfakeのoverrideを入れた後で必須検査する。workerは受け継いだ安全な値だけを検査。`scripts/e2e-server.mjs` の直起動は未指定も拒否する。
 
@@ -1592,12 +1592,12 @@ serverスクリプトはfakeを隠れた別プロセスで起こし、healthが�
 
 既存E2Eの直す所は確認済みの契約に限る。共通のadmin attention見本にdeliveries/count0、history見本にdelivery、顧客shipment見本にdeliveredAt、settings見本にdeliveryTrackingを追加。ADMIN-079/092/098のsection/説明と保存の期待を新しい任意fieldの形に合わせる。ACCOUNT-032/ADMIN-070の未配達の見本は未配達のままにし、新たにdeliveredの到達の期待を足す。全件の結果で別の破損が出た時はそのファイルを台帳に記し、所有Taskへ戻して直す。
 
-- [ ] **Step 4: controller が GREEN を確かめる**
+- [x] **Step 4: controller が GREEN を確かめる**
 
 Run: Step 2の単体、`npx tsc --noEmit`。reset後、3000/4017番の所有を確認して `PLAYWRIGHT_HTML_OPEN=never npx playwright test e2e/FR-ADMIN-100 e2e/FR-ADMIN-101 e2e/FR-ADMIN-102 e2e/FR-ADMIN-103 e2e/FR-ADMIN-104 e2e/FR-ACCOUNT-041 e2e/FR-ACCOUNT-042 e2e/FR-ACCOUNT-043`。
 Expected: 新8本48ケースが全てexpected、skip0。fakeのcallsに外のURLや名前/住所が無い。既存6本も同じlocal環境で流してexpected（前から失敗ならTask 15の前後比較で個別判定）。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add scripts/e2e/fake-17track.mjs scripts/e2e/environment.ts scripts/e2e-server.mjs tests/unit/scripts/e2e/environment.test.ts tests/unit/scripts/e2e-server-tracking.test.ts e2e/delivery-tracking-test-utils.ts e2e/FR-ADMIN-100-fulfillment-tracking-edit.spec.ts e2e/FR-ADMIN-101-fulfillment-delivered.spec.ts e2e/FR-ADMIN-102-delivery-tracking-sync.spec.ts e2e/FR-ADMIN-103-delivery-attention.spec.ts e2e/FR-ADMIN-104-delivery-tracking-settings.spec.ts e2e/FR-ACCOUNT-041-delivery-without-tracking.spec.ts e2e/FR-ACCOUNT-042-delivery-tracking.spec.ts e2e/FR-ACCOUNT-043-delivery-visibility.spec.ts e2e/admin-test-utils.ts e2e/order-fulfillment-test-utils.ts e2e/order-detail-fixtures.ts e2e/return-request-test-utils.ts e2e/FR-ADMIN-060-order-attention-inbox.spec.ts e2e/FR-ADMIN-070-order-progress-labels.spec.ts e2e/FR-ADMIN-079-shop-settings.spec.ts e2e/FR-ADMIN-092-shop-return-settings.spec.ts e2e/FR-ADMIN-098-return-request-settings.spec.ts e2e/FR-ACCOUNT-032-order-progress-and-shipments.spec.ts
@@ -1681,7 +1681,7 @@ AC表では `ADMIN-100` はTask 13の同じ番号のspec、`ACCOUNT-041`も同�
 | FREQ-497-AC-02 | 直接UPDATE/DELETE拒否、owner+操作印、注文→発送の鍵、二重防止 | 1/2/3 | — |
 | FREQ-497-AC-03 | 外へ番号とcarrierだけ、鍵/署名/本文/場所/氏名住所を漏らさない | 5/6/7/9/12 | ACCOUNT-043 |
 
-- [ ] **Step 1: ACと文書の落ちる静的試験を書く**
+- [x] **Step 1: ACと文書の落ちる静的試験を書く**
 
 `tests/unit/docs/delivery-status-traceability.test.ts` はローカルの文字だけを読む。アプリ/DB/ネットワークを使わない。
 
@@ -1698,12 +1698,12 @@ expect(envNames).toEqual(expect.arrayContaining(['TRACKING_17TRACK_API_KEY','TRA
 
 旧仕様書へ付ける参照のリンク先の実在、ERの3public表＋登録表＋provider枠、route-inventoryの3管理POST＋1webhook、環境の値の行が空の鍵/公知のbaseURLだけであることも確認する。reqの説明文中に繰り返すACは一意な番号の集合で数え、列の数を誤認しない。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx jest tests/unit/docs/delivery-status-traceability.test.ts --runInBand`。
 Expected: FAIL（要求行/AC/環境名/route文書がまだ無い）。
 
-- [ ] **Step 3: 上のAC表と最終のコードで文書を更新する**
+- [x] **Step 3: 上のAC表と最終のコードで文書を更新する**
 
 追加前に `rg -n '^\| FREQ-48[7-9] ' docs/02_Requirements/requirements.md` で最後が487を確認し、488以降が他作業で使われていたら番号を勝手にずらさず止めて報告する。Task 13のFR番号も同じ。要求は設計書と上の表の言葉で10行にまとめ、REQ番号/AC番号は既存の列の書式へ合わせる。
 
@@ -1728,12 +1728,12 @@ TRACKING_17TRACK_BASE_URL=https://api.17track.net/track/v2.4
 
 開店前の手順は設計書15をそのまま役割とともに残す: ユーザーが口座/鍵/受け口の登録、無料枠で3社の実番号、gettrackinfoの件数消費、本物の知らせの401無し、停止番号のretrack1回、200件前の購入、privacyの運営会社名/国の扱い、佐川の復旧を確認する。controllerは値を受け取らず手順と結果の記録を用意する。追跡を使わない店はこの設定無しで運用できる。
 
-- [ ] **Step 4: GREEN を確かめる**
+- [x] **Step 4: GREEN を確かめる**
 
 Run: Step 2、`npm run -s validate-docs`、`npx tsc --noEmit`、名指しの `git diff --check`。
 Expected: 静的試験PASS、今回追加したリンク/要求/routeの抜け0。既存の文書の失敗は実装前の一覧と照合して分ける。文書の合計の数だけを通すためにコードを増減しない。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
 git add docs/02_Requirements/requirements.md docs/03_BasicDesign/api/api-spec.md docs/03_BasicDesign/api/route-inventory.md docs/03_BasicDesign/data/er.md docs/03_BasicDesign/ui/screen-list.md docs/03_BasicDesign/ui/screen-flow.md docs/04_DetailDesign/pages/15_account.md docs/04_DetailDesign/pages/16_admin.md docs/04_DetailDesign/pages/17_privacy.md docs/04_DetailDesign/states/order-payment.md docs/04_DetailDesign/sequence/order-administration.md docs/04_DetailDesign/sequence/stripe-webhooks.md docs/04_DetailDesign/states/stripe-webhook-queue.md docs/06_Operations/order-email-operations.md docs/06_Operations/webhook-queue-operations.md supabase/pending/README.md docs/superpowers/specs/2026-10-10-group-e-overview-design.md docs/superpowers/specs/2026-10-10-partial-fulfillment-design.md docs/superpowers/specs/2026-10-09-order-email-outbox-design.md docs/superpowers/specs/2026-10-12-returns-design.md .env.example tests/unit/docs/delivery-status-traceability.test.ts
@@ -1754,7 +1754,7 @@ git commit -m "docs: 配送の要求と設計と運用手順を更新" -m "Co-Au
 - Consumes: Task 1〜14、C-0/C-1の全関数/表/索引、Task 14の40AC、新8本48ケース、前回の `.superpowers/sdd/2026-10-13-returns-stage2/e2e-results-group-e3-stage2.json`。
 - Produces: 実測RED/GREEN数と全体の結果、前回との比較、40ACの証拠、本番前後の同じ定義の指紋/ACL、ユーザーへの確認可能な報告、OFFから始める本番適用の記録。
 
-- [ ] **Step 1: 実装前に場と基準を確かめる（Task 1の前）**
+- [x] **Step 1: 実装前に場と基準を確かめる（Task 1の前）**
 
 controllerが普段のアプリが本番DBへつながる注意を伝え、実装中は使わない/手元へ向ける方針を控える。`git rev-parse HEAD` と `git status --short` を作業場に残し、既存の `.claude/CLAUDE.md`・`package.json` 等の変更を実装の物へ混ぜない。実装前のunit/tsc/lint/validate-docsの結果も控える。
 
@@ -1762,7 +1762,7 @@ controllerが普段のアプリが本番DBへつながる注意を伝え、実�
 
 前回のJSONは存在を読み、`stats.startTime` とテスト数/expected/unexpected/flaky/skippedを数えて写す。旧計画にある古い通過数を流用しない。`scripts/e2e/compare-baseline.ts` の `flattenPlaywrightJson` で `{tests:TestOutcome[]}` へ直し、作業場のe2e-baseline.jsonにする。元の前回JSONとmd5を保管し、`test-results/e2e-results.json` を基準にしない。元が無ければその場で報告し、代わりの基準をユーザーが指定するまで比較の証拠を作ったことにしない。
 
-- [ ] **Step 2: 全体の受け入れの RED と抜けを記録する**
+- [x] **Step 2: 全体の受け入れの RED と抜けを記録する**
 
 Task 14の静的試験を使い、各ACに単体/DB/E2Eの証拠のパスがあり、新8本が48ケースあるかを調べる。新しいケースの名前と要点の固定値:
 
@@ -1778,7 +1778,7 @@ expect(unexplainedRegressions).toEqual([]);
 
 この段階で未実施/失敗/対応無しがあればREDとして台帳へ書き、所有Taskで修正する。全て済んでいる場合はREDを作るための壊す変更をせず、これまでの各TaskのREDのログを参照する。
 
-- [ ] **Step 3: 単体とJestのほかの範囲、型・lint・文書を確かめる**
+- [x] **Step 3: 単体とJestのほかの範囲、型・lint・文書を確かめる**
 
 Run:
 
@@ -1792,19 +1792,19 @@ npm run -s validate-docs
 
 Expected: 今回の範囲の失敗0。前からのskip/警告/文書の失敗はStep 1の実測と分け、増加は直す。tests/unitだけでpre-pushのJest全部を通したとしない。件数は実測を台帳へ書く。
 
-- [ ] **Step 4: controller がDB結合を全件流す**
+- [x] **Step 4: controller がDB結合を全件流す**
 
 3000番のE2Eのアプリはcommand lineで所有を確かめてから止める。普段のnext devならユーザーの予定を確かめる。動いたアプリのworkerとDB試験に同じ予定を取り合せない。
 
 Run: `npx supabase db reset` → Global ConstraintsのDB環境の取得と `npx jest tests/integration/db --runInBand`。
 Expected: A→B→Cの順に適用、全件PASS、skip0。新4スイート（records/admin/sync/postgrest）だけでなく従来の発送/返金/返品/メールもPASS。RLSのロール、2接続、17列claim、既存メールenqueue、期限の旧期待も通る。
 
-- [ ] **Step 5: DBをもう一度作り直し、本番ビルドのE2E全件を流す**
+- [x] **Step 5: DBをもう一度作り直し、本番ビルドのE2E全件を流す**
 
 Run: `npx supabase db reset`、3000/4017番の確認、`PLAYWRIGHT_HTML_OPEN=never E2E_STRICT=1 npx playwright test`。
 Expected: `scripts/e2e-server.mjs` がfake→build→start、見張りが実URLを拒否。全体の実測を保存し、先に `test-results/e2e-results.json` を `.superpowers/sdd/2026-10-21-delivery-status/e2e-results-group-e4.json` へ写す。部分的な再実行で全件の結果を上書きしない。
 
-- [ ] **Step 6: 前のE2Eと比べる**
+- [x] **Step 6: 前のE2Eと比べる**
 
 Run:
 
@@ -1814,7 +1814,7 @@ npm run e2e:compare -- .superpowers/sdd/2026-10-21-delivery-status/e2e-baseline.
 
 Expected: 新48ケースexpectedのみ、skip0。前に通り後で通らない物、新しい失敗、前にあり後に無い物を1件ずつ説明する。新しい失敗と原因不明の回帰0。前にも失敗していた管理/注文/設定/privacyの画面はerror-contextを比べ、前と同じ原因か確かめる。今回触った画面の失敗を「前から失敗」だけで除外しない。単独の再実行の結果と理由を台帳へ別に残す。
 
-- [ ] **Step 7: 契約と守りと指紋を静的に確かめる**
+- [x] **Step 7: 契約と守りと指紋を静的に確かめる**
 
 C-0/C-1を元に `tmp/e4-fingerprint.sql` を用意する。読み取りだけ。関数は `pg_get_functiondef`、CHECK/FK/UNIQUEは `pg_get_constraintdef`、索引は `pg_get_indexdef`、triggerは `pg_get_triggerdef`、RLS/policy、全新列の型/NULL/default、ACL/SECURITY DEFINER/search_path、opsの7job、outboxの19kindを列挙する。`(kind,name,md5(def),acl)` をC順に並べて全体md5を出し、定義の行ごとの指紋も残す。対象の名前が1つでも無ければmissing>0で失敗とする。
 
@@ -1822,13 +1822,15 @@ C-0/C-1を元に `tmp/e4-fingerprint.sql` を用意する。読み取りだけ�
 
 新SQLの `\\u[0-9a-fA-F]{4}` を検索する。文字列をJSONからSQLへ貼って `\u` と16進4字が残っていれば、日本語そのものへ直す。UTF-8・LF・末尾改行・CR無しを確認し、A/B/C各ファイルのmd5とbytesを控える。秘密の値、運送会社の文/場所、署名、raw本文が差分に無いことを確認する。
 
-- [ ] **Step 8: 最後の Opus レビューと必要な修正**
+- [x] **Step 8: 最後の Opus レビューと必要な修正**
 
 全Task後のOpusの全体レビューを1回行う。設計書全節、P-list、C-0〜C-6、40AC、Review Focusの5行、A/B/Cの元本文との差、lease/shared番号/設定切り替え/メールの競合、実測の検証ログを渡す。単体だけで本物のprovider/本番を確認したことにしていないかも確認する。
 
 指摘は所有Taskで修正し、該当するRED→GREENを残す。コードを直した場合だけ影響する検証と全体の型/lintをやり直す。全件E2Eの結果に影響する修正ならreset→全件→比較を更新する。最終reviewで未解決の重大な指摘0。
 
-- [ ] **Step 9: GREENの報告を作り、検証の記録だけコミットする**
+- [x] **Step 9: GREENの報告を作り、検証の記録だけコミットする**
+
+実施の記録（2026-10-22、手元だけ）: 単体 9,146 件通過・DB 結合 1,551 件通過・既存データでの予行演習 26 項目と適用後 12 項目が違反 0・指紋 missing 0・E2E 全件 3,549 件中 3,324 件通過（新しい 48 件と直した既存 156 件は全部通過、E-4 が起こした失敗 0）。詳しくは [運用の文書](../../06_Operations/webhook-queue-operations.md) の「手元の確かめの結果」。本物の 17TRACK と本番の DB は未確認。
 
 `report-to-user.md` にunit/ほかのJest/DB/E2E/型/lint/文書の実測、前回比較、40AC、新48ケース、手元指紋、既存差分、未確認の本物の17TRACKの5点（返事/署名/課金/3社/retrack）を短く並べる。実装計画のチェックと運用文書へ手元の検証結果を記す。
 
