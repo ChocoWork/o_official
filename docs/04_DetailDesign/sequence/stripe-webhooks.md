@@ -289,3 +289,42 @@ Stripeの受け口と独立した `POST /api/webhook/17track` を追加する。
 | 6 | 処理中に増えた合図は次回へ残す。同じ結果の再送は冪等。毎分も同じ処理を使う |
 
 毎分 `process-stripe-webhooks` の順はStripe（35秒）→注文メール（10秒）→配送追跡（min(8秒,残り)、3秒未満ならskip）→運用点検・メール配達確認。入口60秒内に後続用15秒を残す計算を保ち、配送を飛ばしても `delivery_tracking` の心拍を記録する。荷物の配達完了とメール配達のdeliveredは別物。
+
+### 知らせから読み直しと記録まで
+
+```mermaid
+sequenceDiagram
+  participant Provider as 17TRACK
+  participant Route as 17TRACKの受け口
+  participant DB as DB関数
+  participant Worker as 共通の定期処理
+  Provider->>Route: 署名付きの知らせ
+  Route->>Route: 鍵、本文上限、署名、JSONの順に検証
+  Note over Route,DB: 検証失敗は503・413・401・400、設定や合図のDB失敗は500。以下は成功時
+  Route->>DB: 追跡の設定を読む
+  alt 追跡オフ
+    Route-->>Provider: 200
+  else 追跡オン
+    Route->>DB: 業者と大文字の番号が合う追跡中の全行へ合図を追加
+    DB-->>Route: signal_revision を更新
+    Route-->>Provider: 200
+    Route--)Worker: after() で起動（毎分も同じ処理）
+    Worker->>DB: 版と借りの印を付けて予定を借り、呼び出し枠を取得
+    Worker->>Provider: gettrackinfo でためた結果を読み直す
+    Provider-->>Worker: 読み直し結果
+    Worker->>DB: 版・lease_token と結果を渡す
+    rect rgb(240, 245, 250)
+      Note over DB: 1回の取引で注文から発送の順に鍵を取得
+      DB->>DB: 設定・取消・版・借りの印と借りの期限を再確認
+      alt 保存条件が一致
+        DB->>DB: 状況・出来事・要対応・メール予定を保存
+      else 古い処理結果
+        DB->>DB: 結果を捨てる
+      end
+    end
+    DB-->>Worker: 適用結果を返す
+    Note over DB,Worker: 借りた後に増えた合図は次回へ残す。同じ結果を再送しても二重記録しない
+  end
+```
+
+署名が正しい知らせでも状況の正には使わず、保存の根拠は読み直しの結果だけとする。

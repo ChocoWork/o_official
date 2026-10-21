@@ -4,7 +4,7 @@
 
 `supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 段1・段2・E-4の追記を反映した掲載対象は **85 テーブル（public 77、private 6、security 2）と 107 FK（public 起点 98、private 起点 9）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
 
-基準の確認日: **2026-10-03**。ソース基準コミット: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`。基準は [20260901102912_remote_schema.sql](../../../supabase/migrations/20260901102912_remote_schema.sql)、基準集計の最後の対象ファイルは [20260927100800_retire_legacy_order_rpcs.sql](../../../supabase/migrations/20260927100800_retire_legacy_order_rpcs.sql)。対象の 40 SQL ファイルの基準は59テーブル・63 FKで、後続の記載済みの追記を含む一覧は2026-10-09に数え直し、グループ E-1 の分を2026-10-10 に、グループ E-2 の分を2026-10-11 に、グループ E-3 の分を2026-10-13 に足した。本番 DB の適用状況は確認していない。
+基準の確認日: **2026-10-03**。ソース基準コミット: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`。基準は [20260901102912_remote_schema.sql](../../../supabase/migrations/20260901102912_remote_schema.sql)、基準集計の最後の対象ファイルは [20260927100800_retire_legacy_order_rpcs.sql](../../../supabase/migrations/20260927100800_retire_legacy_order_rpcs.sql)。対象の 40 SQL ファイルの基準は59テーブル・63 FKで、後続の記載済みの追記を含む一覧は2026-10-09に数え直し、グループ E-1 の分を2026-10-10 に、グループ E-2 の分を2026-10-11 に、グループ E-3 の分を2026-10-13 に足した。配送の入口・表は E-4 の変更を 2026-10-21 に反映。本番 DB の適用状況は確認していない。
 
 グループ C（2026-10-08）の [20261008055720_checkout_order_owner_binding.sql](../../../supabase/migrations/20261008055720_checkout_order_owner_binding.sql) は、`checkout_drafts` に列 `buyer_user_id` を 1 つ足し、トリガーを 2 つ足す（下書きの買い手の変更禁止、注文の持ち主の付け替え禁止）。テーブルと FK の数は変わらない。この移行は 2026-10-08 に本番へ適用済み（上の件数の集計には含めない）。内容は 2.4・5.1・5.2 に書く。
 
@@ -1298,12 +1298,6 @@ erDiagram
 
 [ビューの定義](../../../supabase/migrations/20260919065518_add_variant_backorder_summary.sql#L5)は `public.order_items` の `fulfillment_type = 'backorder'` かつ `variant_id IS NOT NULL` の行を `variant_id` で集計し、`variant_id` と `sum(quantity)::integer AS backorder_quantity` を返す。`security_invoker = true` の通常ビューであり、独立したテーブル、PK、FK は持たない。消す前は、[商品バリアント API](../../../src/app/api/admin/items/[id]/variants/route.ts) だけが参照していた。
 
-## 7. 関連ドキュメント
-
-- [システム構成](../architecture/system-overview.md)
-- [API](../api/api-spec.md)
-- [注文・決済の状態遷移](../../04_DetailDesign/states/order-payment.md)
-
 ## 配送の記録・列・権限（E-4 / FREQ-497）
 
 [配送の詳細設計](../../superpowers/specs/2026-10-21-delivery-status-design.md)・[実装計画](../../superpowers/plans/2026-10-21-delivery-status.md)を参照。以下は実装後の契約であり、既存の決定の本文は履歴として残す。
@@ -1311,6 +1305,55 @@ erDiagram
 追加は5表と5 FK。publicの出来事・番号の直し・要対応の3表、privateの登録表・providerの枠の2表。発送への4 FK（3public・1private）とoutboxから直しへの1 FK（private）を追加する。FKはすべて `ON DELETE RESTRICT`。実行者uuidはFKにしない。`orders.status` と `order_status` の値は増やさない。
 
 3移行はA → B → Cの順、各BEGIN〜COMMIT: [20261022100000_delivery_tracking_records.sql](../../../supabase/migrations/20261022100000_delivery_tracking_records.sql) → [20261022100100_delivery_tracking_admin.sql](../../../supabase/migrations/20261022100100_delivery_tracking_admin.sql) → [20261022100200_delivery_tracking_sync.sql](../../../supabase/migrations/20261022100200_delivery_tracking_sync.sql)。Aは記録・守り・outbox・claim・心拍、Bは管理操作・読み出し・返品期限、Cは追跡のclaim・結果・合図・期限・provider枠。本書はSQLの構造を記録し、本番適用を実施・確認した記録ではない。
+
+### 配送の5表と追加の外部キー
+
+主要列を示す。出来事・番号の直し・要対応は public、登録・呼び出し間隔の枠は private。5本の外部キーはすべて削除を拒否する（`ON DELETE RESTRICT`）。呼び出し間隔の枠は独立した1行で、外部キーを持たない。
+
+```mermaid
+erDiagram
+  ORDER_FULFILLMENTS {
+    uuid id PK
+  }
+  ORDER_FULFILLMENT_EVENTS {
+    uuid id PK
+    uuid fulfillment_id FK
+    integer tracking_version
+    text status
+    timestamptz happened_at
+  }
+  ORDER_FULFILLMENT_TRACKING_CHANGES {
+    uuid id PK
+    uuid fulfillment_id FK
+    integer tracking_version
+    uuid request_key UK
+  }
+  ORDER_FULFILLMENT_ATTENTION {
+    uuid id PK
+    uuid fulfillment_id FK
+    text kind
+    timestamptz resolved_at "NULL"
+  }
+  FULFILLMENT_TRACKING_REGISTRATIONS {
+    uuid fulfillment_id PK,FK
+    integer tracking_version PK
+    text state
+    timestamptz expires_at
+  }
+  DELIVERY_TRACKING_PROVIDER_GATE {
+    boolean id PK "true の1行"
+    timestamptz next_call_at
+  }
+  ORDER_EMAIL_OUTBOX {
+    uuid id PK
+    uuid tracking_change_id FK "NULL"
+  }
+  ORDER_FULFILLMENTS ||..o{ ORDER_FULFILLMENT_EVENTS : "fulfillment_id"
+  ORDER_FULFILLMENTS ||..o{ ORDER_FULFILLMENT_TRACKING_CHANGES : "fulfillment_id"
+  ORDER_FULFILLMENTS ||..o{ ORDER_FULFILLMENT_ATTENTION : "fulfillment_id"
+  ORDER_FULFILLMENTS ||--o{ FULFILLMENT_TRACKING_REGISTRATIONS : "fulfillment_id"
+  ORDER_FULFILLMENT_TRACKING_CHANGES |o..o{ ORDER_EMAIL_OUTBOX : "tracking_change_id"
+```
 
 ### 列・制約・索引と更新の守り
 
@@ -1393,7 +1436,7 @@ CHECK: `(state='failed') = (failure_kind IS NOT NULL)`、`(state='stopped') = (s
 
 CHECK `order_fulfillment_attention_resolution_check`: `(resolved_at IS NULL AND resolved_by IS NULL AND resolution IS NULL) OR (resolved_at IS NOT NULL AND resolution IS NOT NULL AND ((resolution='auto' AND resolved_by IS NULL) OR (resolution='manual' AND resolved_by IS NOT NULL)))`。部分一意索引 `order_fulfillment_attention_open_idx(fulfillment_id,kind) WHERE resolved_at IS NULL`、索引 `(opened_at,id) WHERE resolved_at IS NULL`。更新は開いた行の resolved の3列を一度だけ。削除/TRUNCATE は拒否。
 
-provider の枠だけの補助表 `private.delivery_tracking_provider_gate(id boolean PRIMARY KEY DEFAULT true CHECK(id), next_call_at timestamptz NOT NULL DEFAULT pg_catalog.now())`、最初の1行を作る。RLS・service_role SELECT のみ、関数だけ更新。17TRACK の情報を増やす表ではない。
+provider の枠だけの補助表 `private.delivery_tracking_provider_gate` は、下表の定義で最初の1行を作る。RLS・service_role SELECT のみ、関数だけ更新。17TRACK の情報を増やす表ではない。
 
 | provider枠の列 | 型・制約 |
 | --- | --- |
@@ -1428,3 +1471,9 @@ WHERE origin = 'auto' AND kind <> 'shipped' AND refund_id IS NULL
 再オンは期限内・現版・取消なし・配達済みでない `disabled` の行を同じ主キーのまま再開し、もうある登録を重ねない。登録成功では `tracking_registration_failed` と `tracking_not_found` の両方をautoで閉じる。手で閉じた要対応を同じ条件で開き直さず、いったん解消して新しい条件になった時だけ再発を開く。
 
 `claim_order_email` の戻りは17列（順序固定）: `email_id`・`order_id`・`kind`・`variant`・`origin`・`attempts`・`lease_token`・`subject`・`body_text`・`payment_expired_sent`・`fulfillment_id`・`refund_id`・`return_id`・`return_receipt_id`・`cancel_request_id`・`tracking_version`・`tracking_change_id`。最後の2列を足し、DROP/CREATEの後にEXECUTE権限を戻す。`get_order_delivery_detail` のregistrationは `ever_registered` も返す。TSでは `everRegistered` として顧客への表示条件に使う。
+
+## 7. 関連ドキュメント
+
+- [システム構成](../architecture/system-overview.md)
+- [API](../api/api-spec.md)
+- [注文・決済の状態遷移](../../04_DetailDesign/states/order-payment.md)

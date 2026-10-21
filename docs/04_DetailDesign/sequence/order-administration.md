@@ -855,3 +855,38 @@ E-3 段2は移行 D・E・F の順で先に DB を用意する。2026-10-21 に�
 番号の直しはnotifyをこの先にも反映し、オンならshipping_updateを直し1件につき1通。手の配達済みのメールは発送と操作の両notifyがオンの時だけ。同じ発送の作成を再送しても、変更済みの番号を元に戻さない。
 
 設定の操作は店長が確認の件数をGETし、保存の直前に再GETして既存2トグルと鍵の有無を確かめる。読取失敗や鍵なしならONを送らない。返品 → 既存トグル → 配送の別取引の保存と部分監査を維持する。
+
+### 番号の直しと手の配達済みの流れ
+
+```mermaid
+sequenceDiagram
+  actor Admin as 管理者
+  participant Dialog as 注文履歴のダイアログ
+  participant Route as 管理の窓口
+  participant DB as DB関数
+  participant Worker as 共通の定期処理
+  Admin->>Dialog: 番号の直し、または届いた日を入力
+  Dialog->>Route: requestKey と入力、メールの選択を送信
+  Route->>Route: 管理権限、CSRF、送信元・管理者の回数制限、入力を検証
+  Route->>DB: 番号の直し、または手の配達済みを依頼
+  DB->>DB: 設定を読み、注文から発送の順に鍵を取得
+  Note over Route,DB: 同じキー・入力は元の結果、異なる入力は409。以下は新しい操作の成功時
+  rect rgb(240, 245, 250)
+    Note over DB: 1回の取引で記録と予定を保存
+    alt 伝票番号の直し
+      DB->>DB: 版を1つ進め受付済みに戻す、届いた時刻を消す
+      DB->>DB: 変更を追記、旧版の未停止登録を止め、追跡オンなら新版を予定
+      DB->>DB: 要対応を閉じ、選択がオンなら発送の更新のメールを予定
+    else 手の配達済み
+      DB->>DB: 選んだ日の日本時間正午を発送時刻と今で挟む
+      DB->>DB: 手の出来事と配達済みを記録、追跡停止、要対応を閉じる
+      DB->>DB: 発送と操作の両方が通知オンなら配達済みのメールを予定
+    end
+  end
+  DB-->>Route: 記録のIDと再送かどうかを返す
+  Route->>Route: 監査を記録
+  Route-->>Dialog: 成功を応答
+  Route--)Worker: after() でメール、番号の直しでは追跡も起動
+  Dialog->>Route: 履歴と一覧を読み直す
+  Route-->>Dialog: 現在の記録を返す
+```

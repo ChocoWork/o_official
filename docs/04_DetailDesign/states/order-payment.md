@@ -393,6 +393,44 @@ E-3 段2の移行 D・E・F は、2026-10-21 に本番へ適用済み（20261020
 | 登録 | pending → registered／failed／stopped。失敗はinvalid_number・repeated_error、停止理由はdelivered・expired・replaced・cancelled・provider_stopped・disabled |
 | 設定 | 初期オフ。オンの対象は現版・期限内・取消なし・未配達。オフはdisabledにして要対応をautoで閉じ記録を保持、外へstopしない。再オンは期限内disabledを同じ行で再開 |
 
+### 追跡登録の状態
+
+移行Bの登録・停止・再開と、移行Cの登録結果・読み直し・期限の処理を示す。配送の8状況とは別に管理する。
+
+```mermaid
+stateDiagram-v2
+  state "登録待ち（pending）" as pending
+  state "追跡中（registered）" as registered
+  state "登録できない（failed）" as failed
+  state "止めた（stopped）" as stopped
+  [*] --> pending: 追跡オンの発送・対象の取り込み
+  pending --> registered: 登録成功
+  pending --> failed: 番号不正・一時失敗5回・やり直し上限
+  pending --> pending: 一時失敗の再試行・口座全体の失敗
+  failed --> registered: 再試行できる反復失敗の日次回復に成功
+  registered --> pending: 読み直しで外部に登録がない
+  registered --> failed: 読み直しで番号不正
+  pending --> stopped: 手の配達済み・期限・直し・取消・設定オフ
+  failed --> stopped: 手の配達済み・期限・直し・取消・設定オフ
+  registered --> stopped: 配達済み・期限・直し・取消・外部停止・設定オフ
+  stopped --> pending: 設定オフによる停止を期限内の現版で再開
+  note right of failed
+    invalid_number は再試行しない
+    repeated_error は日次回復
+    retrack の2回目は日次回復もしない
+  end note
+  note right of stopped
+    delivered（配達済み）
+    expired（30日の期限）
+    replaced（番号の直し）
+    cancelled（発送の取消）
+    provider_stopped（外部が停止）
+    disabled（設定オフ）
+  end note
+```
+
+設定による停止からの再開は、期限内・現在の版・取消なし・未配達の同じ行だけ。外部停止の合図は、古くない読み直しに成功し、処理中に新しい合図がなく、未配達なら停止へ進める。番号の直し・取消で外部へ停止を送るのは、一度でも登録でき、同じ業者・番号の未停止の行がほかに無い時だけ。配達済み・期限・設定オフでは外部へ停止を送らない。
+
 `deriveOrderProgress` は、生産中・準備中の品がなく発送数が1以上、取消でない `activeCount>0` で `deliveredCount===activeCount` の場合だけ注文の表示を「配達済み」にする。一部配達済みは「配送中」。DB状態のfilterは維持する。
 
 返品は `delivered_at` があればそのJST日付を起点とし、NULLなら発送のJST日付＋目安の日数。品ごと／最後の品・日数・日の終わり・無制限・既存の返品と申し込みは変えない。番号の直しで届いた時刻を消すと、未作成分の期限判定は目安に戻る。
