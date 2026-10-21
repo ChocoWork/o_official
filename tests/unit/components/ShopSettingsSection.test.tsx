@@ -1156,32 +1156,29 @@ describe('ShopSettingsSection の配送の追跡をオンにする時の確か�
     expect(deliverySwitch()).not.toBeChecked();
   });
 
-  it('「オンにする」で、確かめを開く前に読み直した2つのトグルと配送だけをPUTし、返品の設定は送らない。保存の答えで画面を置き換え、確認中に件数が増えても失敗にしない', async () => {
+  it('「オンにする」で、保存の直前に読み直した2つのトグルと配送だけをPUTし、返品の設定は送らない。保存の答えで画面を置き換え、確認中に件数が増えても失敗にしない', async () => {
     const earlier = withDelivery(delivery({ backfillCount: 3 }), settings(), buildShopReturnSettings());
     await renderLoaded(earlier);
-    // 確かめを開く前に読み直した値: 別のタブで②がオンになっていた。件数は12
+    // 確かめを開く前に読み直した値: 件数は12。②はオフのまま
+    const dialog = await openDeliveryOnConfirm(withDelivery(delivery({ backfillCount: 12 }), settings(), buildShopReturnSettings()));
+    // 確かめている間に別のタブで②がオンになり、新しい発送も増えた。保存の直前の読み直しは②オン。保存で取り込んだ実数は14件だった
     const staffToggle = { enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'staff@example.com' };
-    const latest = withDelivery(delivery({ backfillCount: 12 }), settings({ autoCancel: staffToggle }), buildShopReturnSettings());
-    const dialog = await openDeliveryOnConfirm(latest);
-    // 確かめている間に新しい発送が増え、保存で取り込んだ実数は14件だった
-    mockedFetch.mockResolvedValueOnce(
-      json({
-        data: {
-          ...withDelivery(
-            delivery({ enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'owner@example.com', backfillCount: 0 }),
-            settings({ autoCancel: staffToggle }),
-            buildShopReturnSettings(),
-          ),
-          backfilledCount: 14,
-        },
-      }),
-    );
+    const saved: AnswerWithDelivery = {
+      ...withDelivery(
+        delivery({ enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'owner@example.com', backfillCount: 0 }),
+        settings({ autoCancel: staffToggle }),
+        buildShopReturnSettings(),
+      ),
+      backfilledCount: 14,
+    };
+    serveSave(withDelivery(delivery({ backfillCount: 14 }), settings({ autoCancel: staffToggle }), buildShopReturnSettings()), saved);
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
 
     await waitFor(() => expect(deliverySwitch()).toBeChecked());
-    // 開く時の読み込み・確かめの前の読み直し・保存。保存の直前の読み直しは足さない（件数を見せた時点の2トグルを送る）
-    expect(callOrder()).toEqual(['GET', 'GET', 'PUT']);
+    // 開く時の読み込み・確かめの前の読み直し・保存の直前の読み直し・保存
+    expect(callOrder()).toEqual(['GET', 'GET', 'GET', 'PUT']);
+    expect(mockedFetch).toHaveBeenNthCalledWith(3, SETTINGS_URL, { cache: 'no-store' });
     expect(putCalls()[0][0]).toBe(SETTINGS_URL);
     expect(putCalls()[0][1]).toMatchObject({ method: 'PUT', headers: { 'Content-Type': 'application/json' } });
     const body = putBody();
@@ -1203,6 +1200,7 @@ describe('ShopSettingsSection の配送の追跡をオンにする時の確か�
   it('確かめの画面から保存している間は、2つのボタンを押せず、Escape でも閉じず、二重に送らない。済むと閉じる', async () => {
     await renderLoaded(withDelivery());
     const dialog = await openDeliveryOnConfirm(withDelivery());
+    serveReread(withDelivery()); // 保存の直前の読み直し
     const { held, release } = hold();
     mockedFetch.mockImplementationOnce(() => held);
 
@@ -1214,13 +1212,90 @@ describe('ShopSettingsSection の配送の追跡をオンにする時の確か�
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(autoRefundSwitch());
     expect(screen.getByRole('dialog', { name: DELIVERY_ON_CONFIRM_TITLE })).toBeInTheDocument();
-    expect(callOrder()).toEqual(['GET', 'GET', 'PUT']);
+    expect(callOrder()).toEqual(['GET', 'GET', 'GET', 'PUT']);
 
     release(json({ data: withDelivery(delivery({ enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'owner@example.com' })) }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(deliverySwitch()).toBeChecked();
-    expect(callOrder()).toEqual(['GET', 'GET', 'PUT']);
+    expect(callOrder()).toEqual(['GET', 'GET', 'GET', 'PUT']);
+  });
+
+  it('確かめを開いている間に別のタブで変わった自動の返金の値は、「オンにする」の保存で戻さない（保存の直前に読み直した値を送る）', async () => {
+    await renderLoaded(withDelivery());
+    const dialog = await openDeliveryOnConfirm(withDelivery()); // 開いた時は ①オン・②オフ
+    // 確かめを開いている間に、別のタブで①がオフ・②がオンになった
+    const offElsewhere = { enabled: false, updatedAt: CHANGED_AT, updatedByEmail: 'staff@example.com' };
+    const onElsewhere = { enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'staff@example.com' };
+    const changed = settings({ autoRefund: offElsewhere, autoCancel: onElsewhere });
+    serveSave(withDelivery(delivery(), changed), withDelivery(delivery({ enabled: true }), changed));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
+
+    await waitFor(() => expect(deliverySwitch()).toBeChecked());
+    expect(callOrder()).toEqual(['GET', 'GET', 'GET', 'PUT']);
+    expect(putBody()).toEqual({
+      autoRefundCancelledOrderPayment: false,
+      autoCancelAmountMismatch: true,
+      deliveryTracking: { enabled: true },
+    });
+    expect(autoRefundSwitch()).not.toBeChecked();
+    expect(autoCancelSwitch()).toBeChecked();
+  });
+
+  it('保存の直前の読み直しで鍵が消えていたら、保存せずに確かめを閉じ、「鍵：未設定」へ替えてトグルを押せなくする', async () => {
+    await renderLoaded(withDelivery());
+    const dialog = await openDeliveryOnConfirm(withDelivery());
+    serveReread(withDelivery(delivery({ keyConfigured: false })));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(putCalls()).toHaveLength(0);
+    expect(callOrder()).toEqual(['GET', 'GET', 'GET']);
+    expect(deliverySwitch()).toBeDisabled();
+    expect(deliverySwitch()).not.toBeChecked();
+    expect(screen.getByText('鍵：未設定')).toBeVisible();
+    expect(screen.getByText(KEY_MISSING_HINT)).toBeVisible();
+    expect(within(deliveryRegion()).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it.each<[string, () => Promise<Response>]>([
+    ['窓口が断った', () => Promise.resolve(json({ error: 'x', code: 'failed' }, 500))],
+    ['通信が切れた', () => Promise.reject(new TypeError('Failed to fetch'))],
+    ['答えに deliveryTracking が無い', () => Promise.resolve(json({ data: settings() }))],
+  ])('保存の直前の読み直しができなかった時（%s）は、保存せず、もう一度読み直して、読み直した旨を出す', async (_label, answer) => {
+    await renderLoaded(withDelivery());
+    const dialog = await openDeliveryOnConfirm(withDelivery());
+    const staffToggle = { enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'staff@example.com' };
+    mockedFetch.mockImplementationOnce(answer);
+    serveReread(withDelivery(delivery(), settings({ autoCancel: staffToggle })));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
+
+    expect(await within(deliveryRegion()).findByRole('alert')).toHaveTextContent(DELIVERY_REREAD_FAILED);
+    expect(putCalls()).toHaveLength(0);
+    expect(callOrder()).toEqual(['GET', 'GET', 'GET', 'GET']);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(deliverySwitch()).not.toBeChecked();
+    expect(autoCancelSwitch()).toBeChecked(); // もう一度読み直した値で合わせる
+  });
+
+  it('保存の直前の読み直しも、そのもう一度の読み直しもできなかった時は、読み直したとは言わず、保存できなかった旨だけを出す', async () => {
+    await renderLoaded(withDelivery());
+    const dialog = await openDeliveryOnConfirm(withDelivery());
+    mockedFetch.mockResolvedValueOnce(json({ error: 'x', code: 'failed' }, 500));
+    mockedFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
+
+    expect(await within(deliveryRegion()).findByRole('alert')).toHaveTextContent(SAVE_FAILED);
+    expect(screen.queryByText(DELIVERY_REREAD_FAILED)).not.toBeInTheDocument();
+    expect(putCalls()).toHaveLength(0);
+    expect(callOrder()).toEqual(['GET', 'GET', 'GET', 'GET']);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(deliverySwitch()).not.toBeChecked();
+    expect(deliverySwitch()).toBeEnabled();
   });
 
   it('確かめの前の読み直しで鍵が消えていたら、確かめを出さずに「鍵：未設定」へ替え、トグルを押せなくする', async () => {
@@ -1333,10 +1408,11 @@ describe('ShopSettingsSection の配送の追跡をオフにする時の確か�
     expect(deliverySwitch()).toBeDisabled();
   });
 
-  it('保存の直前の読み直しができなかった時は、保存の窓口を呼ばずに、保存できなかった旨を欄に出す。確かめは閉じる', async () => {
+  it('保存の直前の読み直しも、そのもう一度の読み直しもできなかった時は、保存の窓口を呼ばずに、保存できなかった旨を欄に出す。確かめは閉じる', async () => {
     await renderLoaded(withDelivery(delivery({ enabled: true })));
     fireEvent.click(deliverySwitch());
     const dialog = await screen.findByRole('dialog', { name: DELIVERY_OFF_CONFIRM_TITLE });
+    mockedFetch.mockResolvedValueOnce(json({ error: 'x', code: 'failed' }, 500));
     mockedFetch.mockResolvedValueOnce(json({ error: 'x', code: 'failed' }, 500));
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'オフにする' }));
@@ -1345,7 +1421,22 @@ describe('ShopSettingsSection の配送の追跡をオフにする時の確か�
     expect(putCalls()).toHaveLength(0);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(deliverySwitch()).toBeChecked();
-    expect(callOrder()).toEqual(['GET', 'GET']);
+    expect(callOrder()).toEqual(['GET', 'GET', 'GET']);
+  });
+
+  it('保存の直前の読み直しができなくても、もう一度の読み直しができれば、保存せずに読み直した旨を出して、その値で合わせる', async () => {
+    await renderLoaded(withDelivery(delivery({ enabled: true })));
+    fireEvent.click(deliverySwitch());
+    const dialog = await screen.findByRole('dialog', { name: DELIVERY_OFF_CONFIRM_TITLE });
+    mockedFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    serveReread(withDelivery(delivery({ enabled: false, updatedAt: CHANGED_AT, updatedByEmail: 'staff@example.com' })));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'オフにする' }));
+
+    expect(await within(deliveryRegion()).findByRole('alert')).toHaveTextContent(DELIVERY_REREAD_FAILED);
+    expect(putCalls()).toHaveLength(0);
+    expect(deliverySwitch()).not.toBeChecked();
+    expect(callOrder()).toEqual(['GET', 'GET', 'GET']);
   });
 });
 
@@ -1362,6 +1453,7 @@ describe('ShopSettingsSection の配送の追跡の保存の失敗', () => {
     const dialog = await openDeliveryOnConfirm(withDelivery(delivery({ backfillCount: 12 })));
     // PUT は失敗したが、先に保存した②のオンは残り、鍵はその間に消えた。読み直した値が画面の正
     const staffToggle = { enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'staff@example.com' };
+    serveReread(withDelivery(delivery({ backfillCount: 12 }))); // 保存の直前の読み直し（この時点では鍵あり）
     mockedFetch.mockImplementationOnce(answer);
     mockedFetch.mockResolvedValueOnce(
       json({ data: withDelivery(delivery({ keyConfigured: false, backfillCount: 0 }), settings({ autoCancel: staffToggle })) }),
@@ -1371,8 +1463,8 @@ describe('ShopSettingsSection の配送の追跡の保存の失敗', () => {
 
     expect(await within(deliveryRegion()).findByRole('alert')).toHaveTextContent(DELIVERY_REREAD_FAILED);
     expect(screen.getByText(DELIVERY_REREAD_FAILED)).toBeVisible();
-    expect(callOrder()).toEqual(['GET', 'GET', 'PUT', 'GET']);
-    expect(mockedFetch).toHaveBeenNthCalledWith(4, SETTINGS_URL, { cache: 'no-store' });
+    expect(callOrder()).toEqual(['GET', 'GET', 'GET', 'PUT', 'GET']);
+    expect(mockedFetch).toHaveBeenNthCalledWith(5, SETTINGS_URL, { cache: 'no-store' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(deliverySwitch()).not.toBeChecked();
     expect(deliverySwitch()).toBeDisabled();
@@ -1385,6 +1477,7 @@ describe('ShopSettingsSection の配送の追跡の保存の失敗', () => {
   it('失敗の後の読み直しでオンになっていたら、オンで出す（保存が実は届いていた場合）', async () => {
     await renderLoaded(withDelivery());
     const dialog = await openDeliveryOnConfirm(withDelivery());
+    serveReread(withDelivery()); // 保存の直前の読み直し
     mockedFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     mockedFetch.mockResolvedValueOnce(
       json({ data: withDelivery(delivery({ enabled: true, updatedAt: CHANGED_AT, updatedByEmail: 'owner@example.com' })) }),
@@ -1400,6 +1493,7 @@ describe('ShopSettingsSection の配送の追跡の保存の失敗', () => {
   it('失敗の後の読み直しもできなかった時は、読み直したとは言わず、保存できなかった旨だけを出す。画面の値は変えない', async () => {
     await renderLoaded(withDelivery());
     const dialog = await openDeliveryOnConfirm(withDelivery());
+    serveReread(withDelivery()); // 保存の直前の読み直し
     mockedFetch.mockResolvedValueOnce(json({ error: 'x', code: 'failed' }, 500));
     mockedFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
@@ -1407,7 +1501,7 @@ describe('ShopSettingsSection の配送の追跡の保存の失敗', () => {
 
     expect(await within(deliveryRegion()).findByRole('alert')).toHaveTextContent(SAVE_FAILED);
     expect(screen.queryByText(DELIVERY_REREAD_FAILED)).not.toBeInTheDocument();
-    expect(callOrder()).toEqual(['GET', 'GET', 'PUT', 'GET']);
+    expect(callOrder()).toEqual(['GET', 'GET', 'GET', 'PUT', 'GET']);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(deliverySwitch()).not.toBeChecked();
     expect(deliverySwitch()).toBeEnabled();
@@ -1416,13 +1510,14 @@ describe('ShopSettingsSection の配送の追跡の保存の失敗', () => {
   it('失敗の後にもう一度保存できると、失敗の文は消えて、欄に保存の知らせが出る', async () => {
     await renderLoaded(withDelivery());
     let dialog = await openDeliveryOnConfirm(withDelivery());
+    serveReread(withDelivery()); // 保存の直前の読み直し
     mockedFetch.mockResolvedValueOnce(json({ error: 'x', code: 'failed' }, 500));
     serveReread(withDelivery());
     fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
     expect(await within(deliveryRegion()).findByRole('alert')).toHaveTextContent(DELIVERY_REREAD_FAILED);
 
     dialog = await openDeliveryOnConfirm(withDelivery());
-    mockedFetch.mockResolvedValueOnce(json({ data: withDelivery(delivery({ enabled: true })) }));
+    serveSave(withDelivery(), withDelivery(delivery({ enabled: true })));
     fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
 
     await waitFor(() => expect(deliveryStatus()).toHaveTextContent(SAVED));
@@ -1467,7 +1562,7 @@ describe('ShopSettingsSection の配送の追跡と、ほかの欄の保存の�
   it('配送の保存の知らせが出ている時に自動の返金を保存すると、配送の欄の知らせは消える（古い知らせを残さない）', async () => {
     await renderLoaded(withDelivery());
     const dialog = await openDeliveryOnConfirm(withDelivery());
-    mockedFetch.mockResolvedValueOnce(json({ data: withDelivery(delivery({ enabled: true })) }));
+    serveSave(withDelivery(), withDelivery(delivery({ enabled: true })));
     fireEvent.click(within(dialog).getByRole('button', { name: 'オンにする' }));
     await waitFor(() => expect(deliveryStatus()).toHaveTextContent(SAVED));
 

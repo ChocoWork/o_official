@@ -88,8 +88,8 @@ type SettingsRequest = UpdateShopSettingsRequest & {
   deliveryTracking?: { enabled: boolean };
 };
 
-/** 配送の欄の確かめ。オンは「確かめを開く前に読み直した」件数と2つのトグルを持ち、保存はその2つを送る。オフは件数を使わない */
-type DeliveryConfirm = { kind: 'on'; count: number; toggles: ShopSettings } | { kind: 'off' };
+/** 配送の欄の確かめ。オンは「確かめを開く前に読み直した」件数を持つ（保存の自動の返金の2つは、保存の直前に読み直す）。オフは件数を使わない */
+type DeliveryConfirm = { kind: 'on'; count: number } | { kind: 'off' };
 
 /** 配送の欄の中に出す保存の結果。自動の返金・返品の結果の文（欄の外の入れ物）とは別に、欄のすぐ下で見せる */
 type DeliveryMessage = { kind: 'saved' | 'error'; text: string };
@@ -311,8 +311,9 @@ function keepingToggles(settings: ShopSettings): UpdateShopSettingsRequest {
  *
  * グループ E-4 で、自動の返金と返品の間に「配送の追跡」の欄を足した（設計書 6-7）。窓口の答えに deliveryTracking が付いている時だけ出す。
  * トグルは切り替えるたびに確かめの画面を出す。オンにする前は、確かめを開く直前に設定を読み直し、登録する件数・鍵・自動の返金の2つを
- * 取り直す（件数は開いた後に変わりうるため、確かめに出すのは直前の数。保存で取り込んだ実数が違っても失敗にしない）。
- * 保存は「自動の返金の2つ（その読み直した値）＋配送」だけを送り、返品の設定は送らない。
+ * 取り直す（確かめに出すのはその時点の数。保存で取り込んだ実数が違っても失敗にしない）。
+ * 確かめの「オンにする」「オフにする」では、自動の返金・返品と同じく保存の直前にもう一度読み直し、その自動の返金の2つ＋配送だけを送る
+ * （確かめを開いている間に別のタブで変わった値を、古い値で黙って戻さない。返品の設定は送らない）。
  * 鍵が未設定の間は、オフからオンへは押せない。すでにオンの店で鍵が無くなった時は、止める道を残すためオフへ戻す操作を許す。
  * 鍵の値は窓口が返さず、この画面も持たない（出すのは「設定済み／未設定」だけ）。
  * 配送の欄の保存の結果の文は、欄の中に出す（自動の返金・返品の結果の文の位置は変えない）。
@@ -473,14 +474,16 @@ export default function ShopSettingsSection() {
     if (deliveryTracking.enabled || !deliveryTracking.keyConfigured) {
       return;
     }
-    setDeliveryConfirm({ kind: 'on', count: deliveryTracking.backfillCount, toggles: settings });
+    setDeliveryConfirm({ kind: 'on', count: deliveryTracking.backfillCount });
   };
 
   /**
-   * 確かめの「オンにする」「オフにする」。送るのは、自動の返金の2つ（オンは確かめを開く直前に読み直した値、オフは保存の直前に
-   * 読み直した値）と配送だけで、返品の設定は送らない。窓口は返品 → 自動の返金 → 配送の順に別々に保存するので、途中で失敗すると
-   * 前の分だけ保存済みになりうる。失敗した時は、どこまで保存されたか分からないので設定を読み直して画面を合わせ、そう伝える。
-   * 確かめの画面は答えが返ってから閉じる（成功でも失敗でも）。
+   * 確かめの「オンにする」「オフにする」。保存の直前に設定を読み直し（確かめを開いている間に別のタブで変わった自動の返金の値を、
+   * 古い値で戻さないため。T13-4）、その自動の返金の2つと配送だけを送る。返品の設定は送らない。
+   * 読み直せなかった時は保存しない。オンにする時、読み直しで鍵が無くなっていたら、保存せずに確かめを閉じ、取り直した値で欄を替える
+   * （鍵が無いとトグルは押せなくなる）。
+   * 窓口は返品 → 自動の返金 → 配送の順に別々に保存するので、途中で失敗すると前の分だけ保存済みになりうる。保存しなかった・失敗した時は、
+   * どこまで保存されたか分からないので設定を読み直して画面を合わせ、そう伝える。確かめの画面は答えが返ってから閉じる（成功でも失敗でも）。
    */
   const confirmDelivery = async () => {
     if (saving || !deliveryConfirm) {
@@ -491,29 +494,35 @@ export default function ShopSettingsSection() {
     setNotice(null);
     setSaveError(null);
     setDeliveryMessage(null);
-    let toggles: ShopSettings | null = deliveryConfirm.kind === 'on' ? deliveryConfirm.toggles : null;
-    if (!toggles) {
-      const latest = await loadSettings();
-      toggles = latest.ok ? latest.settings : null;
+    const latest = await loadSettings();
+    if (latest.ok && latest.deliveryTracking) {
+      const { settings: freshToggles, deliveryTracking: freshDelivery } = latest;
+      if (enabled && !freshDelivery.keyConfigured) {
+        setLoad((current) =>
+          current.kind === 'ready' ? { ...current, settings: freshToggles, deliveryTracking: freshDelivery } : current,
+        );
+        setSaving(false);
+        setDeliveryConfirm(null);
+        return;
+      }
+      const result = await saveSettings({ ...keepingToggles(freshToggles), deliveryTracking: { enabled } });
+      if (result.ok && result.deliveryTracking) {
+        const { settings, deliveryTracking } = result;
+        // 保存の答え（保存後の実際の設定）で画面を置き換える。確かめの間に増えた件数との差は、失敗にしない
+        setLoad((current) => ({
+          kind: 'ready',
+          settings,
+          returns: result.returns ?? (current.kind === 'ready' ? current.returns : null),
+          deliveryTracking,
+        }));
+        setSaving(false);
+        setDeliveryConfirm(null);
+        setDeliveryMessage({ kind: 'saved', text: SAVED_MESSAGE });
+        return;
+      }
     }
-    const result = toggles ? await saveSettings({ ...keepingToggles(toggles), deliveryTracking: { enabled } }) : null;
-    if (result?.ok && result.deliveryTracking) {
-      const { settings, deliveryTracking } = result;
-      // 保存の答え（保存後の実際の設定）で画面を置き換える。確かめの間に増えた件数との差は、失敗にしない
-      setLoad((current) => ({
-        kind: 'ready',
-        settings,
-        returns: result.returns ?? (current.kind === 'ready' ? current.returns : null),
-        deliveryTracking,
-      }));
-      setSaving(false);
-      setDeliveryConfirm(null);
-      setDeliveryMessage({ kind: 'saved', text: SAVED_MESSAGE });
-      return;
-    }
-    // 読み直せなくて保存の窓口を呼んでいない時は、読み直しを重ねない
-    const reread = toggles ? await loadSettings() : null;
-    if (reread?.ok && reread.deliveryTracking) {
+    const reread = await loadSettings();
+    if (reread.ok && reread.deliveryTracking) {
       const { settings, deliveryTracking } = reread;
       setLoad((current) => (current.kind === 'ready' ? { ...current, settings, deliveryTracking } : current));
       setDeliveryMessage({ kind: 'error', text: DELIVERY_REREAD_MESSAGE });
