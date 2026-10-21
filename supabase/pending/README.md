@@ -52,6 +52,6 @@ Webhook受信ルートは`enqueue_stripe_webhook_event`が無ければ5xxにな�
 
 配送の新しいcron登録は不要。既存の毎分process-stripe-webhooksに配送処理を同居させ、メール送出の後・運用点検の前にmin(8秒,残り)、3秒未満はskipでもdelivery_tracking心拍を残す。Stripe・メールの予算は維持する。
 
-DBの3移行は `20261022100000_delivery_tracking_records.sql` → `20261022100100_delivery_tracking_admin.sql` → `20261022100200_delivery_tracking_sync.sql`（migrations配下）。初期オフのため17TRACKの設定なしで運用でき、オンにする前だけ口座・鍵・受け口・3社の実番号・gettrackinfoの消費・署名・retrack・購入・privacy・佐川の復旧をユーザーが確認する。controllerは値を受け取らず手順と安全な結果だけ用意する。
+DBの3移行は `20261021220816_delivery_tracking_records.sql` → `20261021221140_delivery_tracking_admin.sql` → `20261021221410_delivery_tracking_sync.sql`（migrations配下）。初期オフのため17TRACKの設定なしで運用でき、オンにする前だけ口座・鍵・受け口・3社の実番号・gettrackinfoの消費・署名・retrack・購入・privacy・佐川の復旧をユーザーが確認する。controllerは値を受け取らず手順と安全な結果だけ用意する。
 
 心拍、5種類の運用通知、手元の作り物（127.0.0.1:4017）とE2Eの見張り、開店前の担当表は [Webhookと定期処理の運用手順](../../docs/06_Operations/webhook-queue-operations.md)の配送の節を参照。この文書更新ではDB適用やジョブ登録を行わない。

@@ -16,9 +16,9 @@
 
 | Task | 作る物 | 主なファイル |
 |---|---|---|
-| 1 | 移行 A（記録と守り） | `supabase/migrations/20261022100000_delivery_tracking_records.sql` |
-| 2 | 移行 B（お店の関数・読む関数・返品の期限） | `supabase/migrations/20261022100100_delivery_tracking_admin.sql` |
-| 3 | 移行 C（追跡の関数） | `supabase/migrations/20261022100200_delivery_tracking_sync.sql` |
+| 1 | 移行 A（記録と守り） | `supabase/migrations/20261021220816_delivery_tracking_records.sql` |
+| 2 | 移行 B（お店の関数・読む関数・返品の期限） | `supabase/migrations/20261021221140_delivery_tracking_admin.sql` |
+| 3 | 移行 C（追跡の関数） | `supabase/migrations/20261021221410_delivery_tracking_sync.sql` |
 | 4 | TS の土台・状態の対応の表・DB の呼び出し | `src/lib/orders/tracking/delivery-*.ts` |
 | 5 | 17TRACK client・署名・共通の見本 | `src/lib/orders/tracking/seventeen-track-*.ts`・`tests/fixtures/17track/` |
 | 6 | 毎分と急ぎの道・運用の知らせ | `delivery-worker.ts`・`delivery-schedule.ts`・`delivery-ops.ts` |
@@ -95,7 +95,7 @@
 
 | ID | 決め事 | 理由 |
 |---|---|---|
-| P1 | 移行は指定の3本: `supabase/migrations/20261022100000_delivery_tracking_records.sql`・`supabase/migrations/20261022100100_delivery_tracking_admin.sql`・`supabase/migrations/20261022100200_delivery_tracking_sync.sql`。A は表・守り・outbox・claim の列・既存 enqueue の索引との整合、B はお店・読む関数・メールの補助・返品、C は追跡。適用後は MCP が返した版へファイルと文書を直す | 関数の依存順で分ける。最新の適用済み E-3 段2の3本を元にし、過去の移行を直さない |
+| P1 | 移行は指定の3本: `supabase/migrations/20261021220816_delivery_tracking_records.sql`・`supabase/migrations/20261021221140_delivery_tracking_admin.sql`・`supabase/migrations/20261021221410_delivery_tracking_sync.sql`。A は表・守り・outbox・claim の列・既存 enqueue の索引との整合、B はお店・読む関数・メールの補助・返品、C は追跡。適用後は MCP が返した版へファイルと文書を直す（2026-10-22 に本番へ当て、作業中の仮の版 20261022100000・20261022100100・20261022100200 から、当てた版 20261021220816・20261021221140・20261021221410 へ直した） | 関数の依存順で分ける。最新の適用済み E-3 段2の3本を元にし、過去の移行を直さない |
 | P2 | outbox に `tracking_version integer`・`tracking_change_id uuid` を足す。配達中・配達済みは `(fulfillment_id, tracking_version, kind)`、発送の更新は `(tracking_change_id)` の部分一意索引。既存の `order_email_outbox_auto_once_idx` から新3種類も外し、`private.enqueue_order_email` の最後の `ON CONFLICT` の述語を同じ字へ直す（C-0） | 段2 P12 と同じ。注文ごとの索引が残ると2発送目・次の版のメールが落ちる |
 | P3 | 手で配達済みの二重防止は `order_fulfillment_events` の `request_key`・`request_fingerprint`、番号の直しは tracking_changes の同名2列に持つ。発送の作成は fulfillment に不変の `request_fingerprint` を足して比較する。列は古いSQLのfixtureとの互換のためnullable、新しい作成関数は必ず入れる | 番号・notify は後から変わるので、現在値と作成時の再送を比べる今の方法を保てない（現コード `20261013001143_order_return_receipts.sql:1620`）。既存のSQL fixtureを一斉に変更しない |
 | P4 | 配送業者・番号がともに同じ修正は、メールのチェックだけ違っても `DELIVERY_TRACKING_UNCHANGED`。通知の選択は番号・業者の直しに伴って変える。空白は route が trim、保存は入力の大小を残し、外への送信・照合だけ大文字 | 4-6 の「同じ値は断る」に合わせる。通知だけで配達済みと期限を消す操作を作らない。番号の表示をむやみに変えない |
@@ -138,9 +138,9 @@
 
 | ファイル | 責務 | タスク |
 |---|---|---|
-| `supabase/migrations/20261022100000_delivery_tracking_records.sql` | 表・列・守り・outbox と claim の変更 | 1 |
-| `supabase/migrations/20261022100100_delivery_tracking_admin.sql` | 管理操作・読み出し・メール補助・返品の期限 | 2 |
-| `supabase/migrations/20261022100200_delivery_tracking_sync.sql` | claim・結果・合図・期限・provider の枠 | 3 |
+| `supabase/migrations/20261021220816_delivery_tracking_records.sql` | 表・列・守り・outbox と claim の変更 | 1 |
+| `supabase/migrations/20261021221140_delivery_tracking_admin.sql` | 管理操作・読み出し・メール補助・返品の期限 | 2 |
+| `supabase/migrations/20261021221410_delivery_tracking_sync.sql` | claim・結果・合図・期限・provider の枠 | 3 |
 | `tests/integration/db/delivery_tracking_{records,admin,sync,postgrest}.integration.test.ts`・`helpers/delivery-tracking-fixtures.ts` | DB の契約・ロール・競合・PostgREST | 1〜4 |
 | `tests/integration/db/order_fulfillments.integration.test.ts`・`order_refund_results.integration.test.ts`・`order_return_records.integration.test.ts` | 旧守り・claim列・旧期限の期待を保つ | 1〜2 |
 | `src/lib/orders/tracking/delivery-types.ts`・`delivery-messages.ts`・`delivery-store.ts`・`seventeen-track-status.ts` | ブラウザ可の型と言葉、server-only の RPC、状態の表 | 4 |
@@ -501,7 +501,7 @@ shipping_update は直しの行の新しい値、配達中/配達済みは claim
 
 **Files:**
 
-- Create: `supabase/migrations/20261022100000_delivery_tracking_records.sql`
+- Create: `supabase/migrations/20261021220816_delivery_tracking_records.sql`
 - Create: `tests/integration/db/delivery_tracking_records.integration.test.ts`
 - Create: `tests/integration/db/helpers/delivery-tracking-fixtures.ts`
 - Modify: `tests/integration/db/order_fulfillments.integration.test.ts`
@@ -564,7 +564,7 @@ Expected: PASS、skip 0。旧試験の「直接番号を変えると拒否」は
 - [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
-git add supabase/migrations/20261022100000_delivery_tracking_records.sql tests/integration/db/delivery_tracking_records.integration.test.ts tests/integration/db/helpers/delivery-tracking-fixtures.ts tests/integration/db/order_fulfillments.integration.test.ts tests/integration/db/order_refund_results.integration.test.ts
+git add supabase/migrations/20261021220816_delivery_tracking_records.sql tests/integration/db/delivery_tracking_records.integration.test.ts tests/integration/db/helpers/delivery-tracking-fixtures.ts tests/integration/db/order_fulfillments.integration.test.ts tests/integration/db/order_refund_results.integration.test.ts
 git commit -m "feat: 配送の記録と書き込みの守りを追加" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -572,7 +572,7 @@ git commit -m "feat: 配送の記録と書き込みの守りを追加" -m "Co-Au
 
 **Files:**
 
-- Create: `supabase/migrations/20261022100100_delivery_tracking_admin.sql`
+- Create: `supabase/migrations/20261021221140_delivery_tracking_admin.sql`
 - Create: `tests/integration/db/delivery_tracking_admin.integration.test.ts`
 - Modify: `tests/integration/db/helpers/delivery-tracking-fixtures.ts`
 - Modify: `tests/integration/db/order_return_records.integration.test.ts`
@@ -669,7 +669,7 @@ Expected: PASS、skip0。旧 shipped＋3＋7 の期待は維持して届いた�
 - [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
-git add supabase/migrations/20261022100100_delivery_tracking_admin.sql tests/integration/db/delivery_tracking_admin.integration.test.ts tests/integration/db/helpers/delivery-tracking-fixtures.ts tests/integration/db/order_return_records.integration.test.ts
+git add supabase/migrations/20261021221140_delivery_tracking_admin.sql tests/integration/db/delivery_tracking_admin.integration.test.ts tests/integration/db/helpers/delivery-tracking-fixtures.ts tests/integration/db/order_return_records.integration.test.ts
 git commit -m "feat: 配送の直しと手の配達済みの関数を追加" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -677,7 +677,7 @@ git commit -m "feat: 配送の直しと手の配達済みの関数を追加" -m 
 
 **Files:**
 
-- Create: `supabase/migrations/20261022100200_delivery_tracking_sync.sql`
+- Create: `supabase/migrations/20261021221410_delivery_tracking_sync.sql`
 - Create: `tests/integration/db/delivery_tracking_sync.integration.test.ts`
 - Modify: `tests/integration/db/helpers/delivery-tracking-fixtures.ts`
 
@@ -788,7 +788,7 @@ Expected: PASS、skip0、2接続の競合でハング無し。`npx tsc --noEmit`
 - [x] **Step 5: controller が名指しでコミットする**
 
 ```bash
-git add supabase/migrations/20261022100200_delivery_tracking_sync.sql tests/integration/db/delivery_tracking_sync.integration.test.ts tests/integration/db/helpers/delivery-tracking-fixtures.ts
+git add supabase/migrations/20261021221410_delivery_tracking_sync.sql tests/integration/db/delivery_tracking_sync.integration.test.ts tests/integration/db/helpers/delivery-tracking-fixtures.ts
 git commit -m "feat: 配送の追跡の借り出しと結果の関数を追加" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -1841,15 +1841,15 @@ git commit -m "docs: 配送の全体検証の結果を記録" -m "Co-Authored-By
 
 #### 本番への出し方（ここからは全確認後、ユーザーの許可を得てから）
 
-- [ ] **Step 10: pushの許可を得てから、3000番のアプリを止めてpushする**
+- [x] **Step 10: pushの許可を得てから、3000番のアプリを止めてpushする**
 
 実装差分・実測・未確認・移行3本を見せて許可を得る。pushの許可をDB適用の許可としない。作業ツリーをStep 1と比べ、無関係なファイルをstageしない。3000番が自分のE2Eアプリであることを確認して止め、`PLAYWRIGHT_HTML_OPEN=never git push o_official master`（リモートの名前は `o_official`）。pre-pushを通し、失敗なら記録して所有Taskへ戻る。`--no-verify` は使わない。
 
-- [ ] **Step 11: 本番を読む許可を得て、適用前の状態を確認する**
+- [x] **Step 11: 本番を読む許可を得て、適用前の状態を確認する**
 
 Supabase MCPの読み取りだけで、migration一覧・今回置き換える関数の存在/引数/現在の定義のmd5、既存CHECKと索引、shop_settings、発送/取消/メールの件数を読む。顧客情報と鍵は読まない。最新のE-3段2が揃うこと、E-4が二重適用でないことを確かめる。DBの定義が計画の元と違えば適用せず報告する。
 
-- [ ] **Step 12: Aを当てる許可を得て、全文を適用しmd5を比べる**
+- [x] **Step 12: Aを当てる許可を得て、全文を適用しmd5を比べる**
 
 名前 `delivery_tracking_records`・P1のAのファイル・bytesを見せ、`apply_migration` に全文を一字も変えず渡す許可を得る。直前に `\u` と4桁16進のscanをもう一度行う。適用後 `list_migrations` が返す版を控える。
 
@@ -1863,24 +1863,24 @@ where version = '<Aを当てた実際の版>';
 
 Expected: 手元ファイルのmd5/bytesと同じ、statement_count=1。違えば止めて報告し、黙ってBへ進まない。
 
-- [ ] **Step 13: B、Cをそれぞれ別の許可で当て、同じmd5確認をする**
+- [x] **Step 13: B、Cをそれぞれ別の許可で当て、同じmd5確認をする**
 
 Bの名前 `delivery_tracking_admin`、次にCの `delivery_tracking_sync`。各ファイル/bytesを見せ、1本ずつ `apply_migration` の許可を得る。前の1本のmd5一致が次の前提。同じSELECTのversionを実際のB/Cの版へ替え、各statement_count=1・bytes/md5一致を確認する。不一致は戻す操作をせず、差を説明して前へ進める移行を用意する。
 
-- [ ] **Step 14: 本番の指紋と守りとバックフィルを読む**
+- [x] **Step 14: 本番の指紋と守りとバックフィルを読む**
 
 Step 7と**同じ**fingerprint SQLを本番で実行する。missing=0、kindごとの件数と全体md5/ACLが手元と一致。差があれば行ごとに比べ、今回以外の既存の差も分けて報告する。新5表のRLS/deny/service_role SELECT、新/置換RPCの実行権限、17列claim、19kindと2つの新unique/作り直したonce索引、ops7jobを確認する。
 
 設定はOFF、取消でない既存発送ごとにconfirmedの最初のイベントが1行、登録0・配送attention0・新3種類outbox0。既存の注文/発送/返品/メールの件数が、意図したイベント追加以外で変わらない。届いた時刻の不正な行0。アプリでの本物の17TRACKの登録/手の配達済みなど、書く動作確認はこの読み取りの許可に含めない。
 
-- [ ] **Step 15: 実際の版へファイル名と参照を直してコミットする**
+- [x] **Step 15: 実際の版へファイル名と参照を直してコミットする**
 
 controllerは返された3版を `$appliedA`・`$appliedB`・`$appliedC` にそれぞれ `supabase/migrations/<実際の版>_delivery_tracking_records.sql`・`..._delivery_tracking_admin.sql`・`..._delivery_tracking_sync.sql` の**実際の1パスずつ**として置く。3パスがrepo内で既存と衝突しないことを確認してから `Move-Item -LiteralPath` で名前だけ直す。本文のbytes/md5は変えない。
 
 計画/ER/運用/SQL照合の単体にある仮名を実際の3名へ直し、`rg '20261022100[012]00_delivery_tracking' docs tests` の結果が0になることを確認（履歴として仮名を残す節には適用済みへの対応を明記）。静的単体と型を通し、本番の版・指紋一致・OFFの記録を追記する。名指しの対象は下記だけ（PowerShell、変数3つは上で確定したパス）。
 
 ```powershell
-git add -- supabase/migrations/20261022100000_delivery_tracking_records.sql supabase/migrations/20261022100100_delivery_tracking_admin.sql supabase/migrations/20261022100200_delivery_tracking_sync.sql $appliedA $appliedB $appliedC docs/superpowers/plans/2026-10-21-delivery-status.md docs/03_BasicDesign/data/er.md docs/06_Operations/webhook-queue-operations.md tests/unit/lib/orders/email/order-email-types.test.ts
+git add -- supabase/migrations/20261021220816_delivery_tracking_records.sql supabase/migrations/20261021221140_delivery_tracking_admin.sql supabase/migrations/20261021221410_delivery_tracking_sync.sql $appliedA $appliedB $appliedC docs/superpowers/plans/2026-10-21-delivery-status.md docs/03_BasicDesign/data/er.md docs/06_Operations/webhook-queue-operations.md tests/unit/lib/orders/email/order-email-types.test.ts
 git commit -m "docs: 配送の本番適用の版と確認結果を記録" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 

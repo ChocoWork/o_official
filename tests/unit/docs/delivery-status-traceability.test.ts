@@ -184,14 +184,14 @@ test('APIに設定と顧客の条件と全エラーを反映する', () => {
 
 test('ERに全新表の列と索引と3移行と17列claimを記録する', () => {
   const er = e4Section(read(files[2]));
-  const migration = read('supabase/migrations/20261022100000_delivery_tracking_records.sql');
+  const migration = read('supabase/migrations/20261021220816_delivery_tracking_records.sql');
   for (const table of ['order_fulfillment_events', 'order_fulfillment_tracking_changes', 'order_fulfillment_attention', 'fulfillment_tracking_registrations', 'delivery_tracking_provider_gate']) {
     contains(er, table);
     const body = new RegExp(`CREATE TABLE (?:IF NOT EXISTS )?(?:public|private)\\.${table}\\s*\\(([\\s\\S]*?)\\n\\);`, 'i').exec(migration)![1];
     for (const [, column] of body.matchAll(/^\s{2,}([a-z_]+)\s+(?:uuid|integer|bigint|text|boolean|timestamptz)\b/gm)) contains(er, `\`${column}\``);
   }
   for (const [, index] of migration.matchAll(/CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?(\w+)/g)) contains(er, index);
-  ['20261022100000_delivery_tracking_records.sql', '20261022100100_delivery_tracking_admin.sql', '20261022100200_delivery_tracking_sync.sql', '17列', 'lease_token', 'service_role', 'SELECT', 'RESTRICTIVE', '注文 → 発送'].forEach((word) => contains(er, word));
+  ['20261021220816_delivery_tracking_records.sql', '20261021221140_delivery_tracking_admin.sql', '20261021221410_delivery_tracking_sync.sql', '17列', 'lease_token', 'service_role', 'SELECT', 'RESTRICTIVE', '注文 → 発送'].forEach((word) => contains(er, word));
 });
 
 test('19メールと新3種類の再送不可と数量と旧版skipを運用へ記録する', () => {

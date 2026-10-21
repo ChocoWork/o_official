@@ -795,11 +795,11 @@ erDiagram
 
 | テーブル | PK | PK以外の一意性 | 物理FK接続 | 定義元 |
 | --- | --- | --- | --- | --- |
-| `public.order_fulfillment_events` | `(id)` | `(fulfillment_id,tracking_version,status,happened_at)`; manualの `(request_key)` | 参照元 0 / 参照先 1 | [E-4 移行 A](../../../supabase/migrations/20261022100000_delivery_tracking_records.sql) |
-| `public.order_fulfillment_tracking_changes` | `(id)` | `(request_key)`; `(fulfillment_id,tracking_version)` | 参照元 1 / 参照先 1 | [E-4 移行 A](../../../supabase/migrations/20261022100000_delivery_tracking_records.sql) |
-| `public.order_fulfillment_attention` | `(id)` | 未解決の `(fulfillment_id,kind)` | 参照元 0 / 参照先 1 | [E-4 移行 A](../../../supabase/migrations/20261022100000_delivery_tracking_records.sql) |
-| `private.fulfillment_tracking_registrations` | `(fulfillment_id,tracking_version)` | 組のUNIQUEは作らない | 参照元 0 / 参照先 1 | [E-4 移行 A](../../../supabase/migrations/20261022100000_delivery_tracking_records.sql) |
-| `private.delivery_tracking_provider_gate` | `(id)` | なし（1行） | なし（独立） | [E-4 移行 A](../../../supabase/migrations/20261022100000_delivery_tracking_records.sql) |
+| `public.order_fulfillment_events` | `(id)` | `(fulfillment_id,tracking_version,status,happened_at)`; manualの `(request_key)` | 参照元 0 / 参照先 1 | [E-4 移行 A](../../../supabase/migrations/20261021220816_delivery_tracking_records.sql) |
+| `public.order_fulfillment_tracking_changes` | `(id)` | `(request_key)`; `(fulfillment_id,tracking_version)` | 参照元 1 / 参照先 1 | [E-4 移行 A](../../../supabase/migrations/20261021220816_delivery_tracking_records.sql) |
+| `public.order_fulfillment_attention` | `(id)` | 未解決の `(fulfillment_id,kind)` | 参照元 0 / 参照先 1 | [E-4 移行 A](../../../supabase/migrations/20261021220816_delivery_tracking_records.sql) |
+| `private.fulfillment_tracking_registrations` | `(fulfillment_id,tracking_version)` | 組のUNIQUEは作らない | 参照元 0 / 参照先 1 | [E-4 移行 A](../../../supabase/migrations/20261021220816_delivery_tracking_records.sql) |
+| `private.delivery_tracking_provider_gate` | `(id)` | なし（1行） | なし（独立） | [E-4 移行 A](../../../supabase/migrations/20261021220816_delivery_tracking_records.sql) |
 
 E-4でorder_fulfillmentsを参照するFKは4本増える。outboxから番号の直しへのFKも1本増える。既存行の参照数表記は各段階時点の記録とし、列・索引と守りの最終契約は末尾の配送の節を参照する。
 
@@ -1304,7 +1304,7 @@ erDiagram
 
 追加は5表と5 FK。publicの出来事・番号の直し・要対応の3表、privateの登録表・providerの枠の2表。発送への4 FK（3public・1private）とoutboxから直しへの1 FK（private）を追加する。FKはすべて `ON DELETE RESTRICT`。実行者uuidはFKにしない。`orders.status` と `order_status` の値は増やさない。
 
-3移行はA → B → Cの順、各BEGIN〜COMMIT: [20261022100000_delivery_tracking_records.sql](../../../supabase/migrations/20261022100000_delivery_tracking_records.sql) → [20261022100100_delivery_tracking_admin.sql](../../../supabase/migrations/20261022100100_delivery_tracking_admin.sql) → [20261022100200_delivery_tracking_sync.sql](../../../supabase/migrations/20261022100200_delivery_tracking_sync.sql)。Aは記録・守り・outbox・claim・心拍、Bは管理操作・読み出し・返品期限、Cは追跡のclaim・結果・合図・期限・provider枠。本書はSQLの構造を記録し、本番適用を実施・確認した記録ではない。
+3移行はA → B → Cの順、各BEGIN〜COMMIT: [20261021220816_delivery_tracking_records.sql](../../../supabase/migrations/20261021220816_delivery_tracking_records.sql) → [20261021221140_delivery_tracking_admin.sql](../../../supabase/migrations/20261021221140_delivery_tracking_admin.sql) → [20261021221410_delivery_tracking_sync.sql](../../../supabase/migrations/20261021221410_delivery_tracking_sync.sql)。Aは記録・守り・outbox・claim・心拍、Bは管理操作・読み出し・返品期限、Cは追跡のclaim・結果・合図・期限・provider枠。本番には 2026-10-22 に A → B → C の順で続けて当て、当てた文の md5 と bytes がファイルと一致し、定義と権限の指紋（308 行）が手元と一致したことを読み取りで確かめた（作業中の仮の版は 20261022100000・20261022100100・20261022100200）。
 
 ### 配送の5表と追加の外部キー
 
