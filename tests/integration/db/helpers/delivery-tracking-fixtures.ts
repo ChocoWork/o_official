@@ -172,7 +172,7 @@ export async function waitForDeliveryLock(observer: PgClient, waitingPid: number
 
 /**
  * 2接続の試験が commit した共有の状態を、最初の状態へ戻す。
- * 設定（オフ・更新者と時刻は空）、登録の表（空）、配送3種類のメール（無し）は、ほかのファイルの試験が
+ * 設定（オフ・更新者と時刻は空）、登録の表（空）、配送3種類のメール（無し）、provider の枠（今から呼べる）は、ほかのファイルの試験が
  * 「最初は…」と全体で確かめる。注文・発送・出来事は消せない記録なので残す（ほかの試験も確定した注文を残している）。
  * 登録の表は削除を拒むトリガーを、この取引の間だけ外す（ownerの接続。本番では使わない）。
  * 前提: DB 結合の試験は --runInBand で流す（並列だと、ほかのファイルの途中の行まで消す）。
@@ -189,6 +189,7 @@ export async function restoreCommittedDeliveryState(client: PgClient) {
     await client.query('delete from private.fulfillment_tracking_registrations');
     await client.query('alter table private.fulfillment_tracking_registrations enable trigger fulfillment_tracking_registrations_no_delete');
     await client.query("delete from private.order_email_outbox where kind in ('out_for_delivery', 'delivered', 'shipping_update')");
+    await client.query('update private.delivery_tracking_provider_gate set next_call_at = pg_catalog.now()');
     await client.query('commit');
   } catch (error) {
     await client.query('rollback');
@@ -216,6 +217,120 @@ export async function withDeliveryConnections<T>(action: (first: PgClient, secon
     } finally {
       await first.end();
       if (second) await second.end();
+    }
+  }
+}
+
+/** claim_delivery_tracking の1行。bigint の signal_revision は pg が文字列で返す。 */
+export type DeliveryClaim = {
+  fulfillment_id: string; tracking_version: number; carrier: string; tracking_number: string; action: string;
+  lease_token: string; signal_revision: string; attempts: number; read_attempts: number; expires_at: Date;
+};
+/** 結果を書く関数に渡す、借りの印だけの形（借り出しの1行も、試験が置いた借りも同じ形で渡せる）。 */
+export type DeliveryLease = Pick<DeliveryClaim, 'fulfillment_id' | 'tracking_version' | 'lease_token'>;
+
+/**
+ * 追跡をオンにする。オンにした時の取り込みは、まだ登録の無い発送へ pending を作るので、
+ * 試験が自分の登録を insertDeliveryRegistration で作る時は、発送を作る前に呼ぶ。
+ */
+export async function enableDeliveryTracking(client: PgClient) {
+  const actor = await createDeliveryActor(client);
+  await setDeliveryTracking(client, true, actor.id);
+  return actor;
+}
+
+/**
+ * 発送と現版（版1）の登録を作る。伝票番号は他の試験が commit した行と同じ組にならないよう、既定で試験ごとの番号にする
+ * （同じ組に別の追跡中の行があると、借り出しの結果が変わるため）。登録の既定は registered・一度は登録できた行。
+ */
+export async function trackedShipment(client: PgClient, input: NonNullable<Parameters<typeof deliveryShipment>[1]> & {
+  state?: 'pending' | 'registered' | 'stopped' | 'failed'; stopReason?: string; everRegistered?: boolean; expiresAt?: string;
+} = {}) {
+  const { state, stopReason, everRegistered, expiresAt, ...shipment } = input;
+  const trackingNumber = shipment.trackingNumber ?? `SYNC-${randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`;
+  const carrier = shipment.carrier === undefined ? 'yamato' : shipment.carrier;
+  const target = await deliveryShipment(client, { ...shipment, trackingNumber, carrier });
+  const registrationState = state ?? 'registered';
+  await insertDeliveryRegistration(client, target.fulfillmentId, {
+    state: registrationState, stopReason, expiresAt, everRegistered: everRegistered ?? registrationState !== 'pending',
+  });
+  return { ...target, trackingNumber, carrier };
+}
+
+export async function deliveryRegistration(client: PgClient, fulfillmentId: string, version = 1) {
+  return (await client.query(
+    'select * from private.fulfillment_tracking_registrations where fulfillment_id=$1 and tracking_version=$2', [fulfillmentId, version],
+  )).rows[0];
+}
+
+/** 時刻の来た行・期限切れの行などを作るための直接の書き込み。set 句は試験が書く固定の文字列だけを渡し、値は params（$3 から）で渡す。 */
+export async function patchDeliveryRegistration(client: PgClient, fulfillmentId: string, setSql: string, version = 1, params: unknown[] = []) {
+  await client.query(
+    `update private.fulfillment_tracking_registrations set ${setSql} where fulfillment_id=$1 and tracking_version=$2`,
+    [fulfillmentId, version, ...params],
+  );
+}
+
+/** 借り出しを通さずに借りの印だけを置く（結果を書く関数を単独で試す時に使う）。 */
+export async function leaseDeliveryRegistration(client: PgClient, fulfillmentId: string, version = 1): Promise<DeliveryLease> {
+  const token = randomUUID();
+  await patchDeliveryRegistration(
+    client, fulfillmentId,
+    "lease_token=$3,lease_expires_at=now()+interval '5 minutes',claimed_signal_revision=signal_revision", version, [token],
+  );
+  return { fulfillment_id: fulfillmentId, tracking_version: version, lease_token: token };
+}
+
+/** 借り出し。同じ DB に残った別の試験の行も借りうるので、試験側は claimDeliveryFor で自分の発送だけを見る。 */
+export async function claimDelivery(client: PgClient, input: { limit?: number; leaseSeconds?: number } = {}) {
+  return (await client.query('select * from public.claim_delivery_tracking($1,$2)', [input.limit ?? 40, input.leaseSeconds ?? 60])).rows as DeliveryClaim[];
+}
+
+export async function claimDeliveryFor(client: PgClient, fulfillmentIds: string[], input: { limit?: number; leaseSeconds?: number } = {}) {
+  return (await claimDelivery(client, input)).filter((claim) => fulfillmentIds.includes(claim.fulfillment_id));
+}
+
+export async function recordRegistrationResult(client: PgClient, lease: DeliveryLease, outcome: string, errorCode: string | null = null) {
+  return (await client.query('select * from public.record_delivery_registration_result($1,$2,$3,$4,$5)', [
+    lease.fulfillment_id, lease.tracking_version, lease.lease_token, outcome, errorCode,
+  ])).rows[0] as { applied: boolean; state: string | null };
+}
+
+export async function recordReadResult(client: PgClient, lease: DeliveryLease, result: Record<string, unknown>) {
+  return (await client.query('select * from public.record_delivery_read_result($1,$2,$3,$4::jsonb)', [
+    lease.fulfillment_id, lease.tracking_version, lease.lease_token, JSON.stringify(result),
+  ])).rows[0] as { applied: boolean; changed: boolean; stopped: boolean };
+}
+
+export async function recordStopResult(client: PgClient, lease: DeliveryLease, succeeded: boolean, errorCode: string | null = null) {
+  return (await client.query('select public.record_delivery_stop_result($1,$2,$3,$4,$5) as applied', [
+    lease.fulfillment_id, lease.tracking_version, lease.lease_token, succeeded, errorCode,
+  ])).rows[0].applied as boolean;
+}
+
+export async function signalDelivery(client: PgClient, signals: Array<{ carrier: number; number: string; event: 'TRACKING_UPDATED' | 'TRACKING_STOPPED' }>) {
+  return (await client.query('select public.signal_delivery_tracking($1::jsonb) as matched', [JSON.stringify(signals)])).rows[0].matched as number;
+}
+
+export async function expireDelivery(client: PgClient, limit = 1000) {
+  return (await client.query('select public.expire_delivery_tracking($1) as stopped', [limit])).rows[0].stopped as number;
+}
+
+/** withDeliveryConnections と同じ後始末（先に全部 rollback → 共有の状態を戻す → 閉じる）で、2接続より多い試験に使う。 */
+export async function withDeliveryConnectionPool<T>(count: number, action: (clients: PgClient[], pids: number[]) => Promise<T>) {
+  const clients: PgClient[] = [];
+  try {
+    for (let index = 0; index < count; index += 1) clients.push(await connectLocalDb());
+    for (const client of clients) await client.query("set statement_timeout='8s'");
+    const pids: number[] = [];
+    for (const client of clients) pids.push((await client.query('select pg_backend_pid() as pid')).rows[0].pid as number);
+    return await action(clients, pids);
+  } finally {
+    try {
+      for (const client of clients) await client.query('rollback').catch(() => undefined);
+      if (clients.length > 0) await restoreCommittedDeliveryState(clients[0]);
+    } finally {
+      for (const client of clients) await client.end();
     }
   }
 }
