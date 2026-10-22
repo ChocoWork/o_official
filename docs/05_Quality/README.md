@@ -7,7 +7,8 @@
 | 場所 | 内容 | 扱い |
 | --- | --- | --- |
 | `docs/05_Quality/tests/test-spec.md` | テスト範囲、要件との対応、実施・判定方針 | 現行の方針 |
-| `docs/05_Quality/reviews/code/` | 日付付きコードレビュー | 作成時点の記録 |
+| [作業と指摘の台帳](reviews/code/2026-09-25-working-diff-security-review.md) | 決済・注文まわりのグループ A〜H の状態、指摘の今の状態、判断待ち、開店の準備 | 更新し続ける管理表（最後に調べた日を冒頭に書く） |
+| `docs/05_Quality/reviews/code/` | 日付付きコードレビュー | 作成時点の記録（上の台帳を除く） |
 | `docs/05_Quality/reviews/security/` | 画面・機能別セキュリティレビュー | 作成時点の記録 |
 | `docs/05_Quality/reviews/uiux/` | 画面別 UI/UX レビュー | 作成時点の記録 |
 | [要件ID参照状況](reports/traceability-report.md) | 現行の文字列参照集計。充足・実行結果ではない | 自動生成 |
