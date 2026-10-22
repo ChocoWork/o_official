@@ -26,7 +26,7 @@
 | 返品・キャンセル | 状態・品物と数・解決方法・返金額・店からの文・送り返した品 | `returns` の識別ID・返送先・元の配列indexに対応する送り返し番号 |
 | お届け先・連絡先 | 名前・住所・電話・メールのキーも取得しない | `shipping` の fullName/postalCode/address/phone、`contactEmail` |
 
-公開型 `CustomerOrderPublicView` と個人情報型 `CustomerOrderPrivateView` を分ける。[公開材料RPC](../../../supabase/migrations/20261023100000_order_status_links.sql)が列を名指しし、個人情報・支払方法・伝票番号・追跡URL・返送先・返金失敗の詳細・口座期限・内部メモを取得しない。取得後に削除する方式にはしない。
+公開型 `CustomerOrderPublicView` と個人情報型 `CustomerOrderPrivateView` を分ける。[公開材料RPC](../../../supabase/migrations/20261022084844_order_status_links.sql)が列を名指しし、個人情報・支払方法・伝票番号・追跡URL・返送先・返金失敗の詳細・口座期限・内部メモを取得しない。取得後に削除する方式にはしない。
 
 表示計算は [customer-order-view](../../../src/lib/orders/customer-order-view.ts) を会員APIと共有する。金額と日本時間の日時、配列順、取消・現版・配送非表示時のキー省略を維持する。壊れた日付は `-`。返品は `OrderReturnsSection`、品物は `OrderItemRow` の `readOnly:true` を使用し、申し込みボタン・フォーム・受付終了の操作案内を出さない。記録のない返品欄は出さない。返送先は個人情報欄だけで `accepted`・`partially_received` の間だけ表示する。
 

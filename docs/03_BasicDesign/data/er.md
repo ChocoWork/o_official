@@ -807,7 +807,7 @@ E-4でorder_fulfillmentsを参照するFKは4本増える。outboxから番号�
 
 | テーブル | PK | PK以外の一意性 | 物理FK接続 | 定義元 |
 | --- | --- | --- | --- | --- |
-| `private.order_status_links` | `(order_id)` | `(token)` | 参照元 0 / 参照先 1 | [E-5 移行 A](../../../supabase/migrations/20261023100000_order_status_links.sql) |
+| `private.order_status_links` | `(order_id)` | `(token)` | 参照元 0 / 参照先 1 | [E-5 移行 A](../../../supabase/migrations/20261022084844_order_status_links.sql) |
 
 E-5でordersを参照するFKが1本増える。既存行の参照数表記は各段階時点の記録とし、列・索引と権限の最終契約は末尾の注文状況のリンクの節を参照する。
 
@@ -1488,7 +1488,7 @@ WHERE origin = 'auto' AND kind <> 'shipped' AND refund_id IS NULL
 
 ## 注文状況のリンクと権限（E-5 / FREQ-505）
 
-[詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)を参照。[移行A](../../../supabase/migrations/20261023100000_order_status_links.sql) → [移行B](../../../supabase/migrations/20261023100100_order_status_returns.sql)の2本。既存の表の列・型は変えず、1表・1 FKを追加する。E-4までの85表・107 FKに足して、合わせて86表・108 FK。これはソース上の構造であり本番適用の証拠ではない。
+[詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)を参照。[移行A](../../../supabase/migrations/20261022084844_order_status_links.sql) → [移行B](../../../supabase/migrations/20261022084944_order_status_returns.sql)の2本。既存の表の列・型は変えず、1表・1 FKを追加する。E-4までの85表・107 FKに足して、合わせて86表・108 FK。これはソース上の構造であり本番適用の証拠ではない。
 
 ```mermaid
 erDiagram

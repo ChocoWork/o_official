@@ -238,7 +238,7 @@ test('1表の列とFKと索引と権限と2移行をERへ記録する', () => {
     'public.orders(id)', 'ON DELETE RESTRICT', 'order_status_links_token_key', 'order_status_links_token_check',
     'order_status_links_failed_attempts_check', 'order_status_links_deny_clients', 'RESTRICTIVE', 'service_role',
     'SELECT', 'SECURITY DEFINER', "search_path = ''", 'postgres', 'EXECUTE', '1注文1本',
-    '20261023100000_order_status_links.sql', '20261023100100_order_status_returns.sql', 'erDiagram',
+    '20261022084844_order_status_links.sql', '20261022084944_order_status_returns.sql', 'erDiagram',
   ]);
 });
 
@@ -295,12 +295,12 @@ test('環境の追加は空値のサーバー専用鍵1つで重複しない', (
 
 test('過去の移行は固定した内容のまま新2本だけに完全修飾と権限とNOTIFYがある', () => {
   const dir = 'supabase/migrations';
-  const old = readdirSync(path.join(root, dir)).filter((file) => file.endsWith('.sql') && file < '20261023100000_order_status_links.sql').sort();
+  const old = readdirSync(path.join(root, dir)).filter((file) => file.endsWith('.sql') && file < '20261022084844_order_status_links.sql').sort();
   expect(old).toHaveLength(oldMigrationCount);
   const hash = createHash('sha256');
   old.forEach((file) => { hash.update(file); hash.update('\0'); hash.update(readFileSync(path.join(root, dir, file))); hash.update('\0'); });
   expect(hash.digest('hex')).toBe(oldMigrationHash);
-  const migrations = ['20261023100000_order_status_links.sql', '20261023100100_order_status_returns.sql'];
+  const migrations = ['20261022084844_order_status_links.sql', '20261022084944_order_status_returns.sql'];
   for (const migration of migrations) {
     const sql = read(dir + '/' + migration);
     mustContain(sql, ['BEGIN;', 'COMMIT;', "NOTIFY pgrst, 'reload schema';", 'public.orders', "SET search_path = ''",

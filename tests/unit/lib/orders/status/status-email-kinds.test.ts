@@ -9,7 +9,7 @@ import { ORDER_EMAIL_KINDS, SHOP_EMAIL_KINDS } from '@/lib/orders/email/order-em
  * お客様向けの種類を片方だけに足すと、リンクは入るのに期限が進まないので、ここで落とす。
  */
 const migration = readFileSync(
-  path.resolve(__dirname, '../../../../../supabase/migrations/20261023100000_order_status_links.sql'),
+  path.resolve(__dirname, '../../../../../supabase/migrations/20261022084844_order_status_links.sql'),
   'utf8',
 );
 

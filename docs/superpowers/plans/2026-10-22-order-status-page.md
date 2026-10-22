@@ -106,7 +106,7 @@ P1〜P16 は controller の指定。P17以降は現行コードを読んで補�
 
 | ID | 決め事 | 理由 |
 |---|---|---|
-| P1 | A=`20261023100000_order_status_links.sql`、B=`20261023100100_order_status_returns.sql` の2本。前の移行を直さず、本番適用後に MCP が返した版へ改名する | E-4 と同じ適用履歴にそろえる |
+| P1 | A=`20261022084844_order_status_links.sql`、B=`20261022084944_order_status_returns.sql` の2本。前の移行を直さず、本番適用後に MCP が返した版へ改名する（2026-10-22 に本番へ適用し、仮の名前 A=20261023100000・B=20261023100100 から改名した。B の本文の注記に残る A の仮の名前は、本番に当てた文の md5 と合わせるため変えない） | E-4 と同じ適用履歴にそろえる |
 | P2 | SQL で32バイトの乱数を base64url の43文字にする。`+`→`-`、`/`→`_`、`=` を削除。CHECK は `^[A-Za-z0-9_-]{43}$`。呼ぶ名前は `extensions.gen_random_bytes(32)` と固定するが、既存移行に pgcrypto の配置の宣言が無いため X2 の前提確認を必須にする | 推測で別 schema の関数を呼ばない。Task 1 で配置を保証する |
 | P3 | `ensure_order_status_link` は無ければ `ON CONFLICT (order_id) DO NOTHING` で入れ、保存済みのトークンを読む。同時呼び出しも1本。メール材料の準備から service_role で呼ぶ | トークンを再発行しない |
 | P4 | お客様向けの種類の送信成功で `GREATEST(今の値, sent_at + interval '21 days')`。NULL は新しい期限へ。値が進んだ時だけ `failed_attempts=0`。リンク行が無ければ何もしない | 失敗・店向け・古い完了で期限やロックを変えない |
@@ -157,11 +157,11 @@ P1〜P16 は controller の指定。P17以降は現行コードを読んで補�
 
 | 作る・変えるファイル | 役目 | Task |
 |---|---|---|
-| `supabase/migrations/20261023100000_order_status_links.sql` | リンク表、確認、送信完了、公開材料の守り | 1 |
+| `supabase/migrations/20261022084844_order_status_links.sql` | リンク表、確認、送信完了、公開材料の守り | 1 |
 | `tests/integration/db/order_status_links.integration.test.ts` | リンク・期限・競合・権限・公開材料 | 1 |
 | `tests/integration/db/helpers/order-status-fixtures.ts` | 手元だけの注文とリンクの見本 | 1 |
 | `tests/integration/db/order_status_postgrest.integration.test.ts` | service_role RPC と anon/authenticated 拒否、JSONの境界 | 1/2 |
-| `supabase/migrations/20261023100100_order_status_returns.sql` | 既存返品RPCの共通化と注文番号による読み出し | 2 |
+| `supabase/migrations/20261022084944_order_status_returns.sql` | 既存返品RPCの共通化と注文番号による読み出し | 2 |
 | `tests/integration/db/order_status_returns.integration.test.ts` | 旧答えとの一致と公開・個人情報の分岐 | 2 |
 | `tests/integration/db/helpers/order-status-fixtures.ts` | 元の返品関数を試験の取引内だけに用意し、同じ材料で答えを比べる | 2 |
 | `src/lib/orders/customer-order-view-types.ts` | 共通の入力・会員返却型・公開型・個人情報型 | 3 |
@@ -557,7 +557,7 @@ readOnly の時は「返品・交換を申し込む」「キャンセルを申�
 
 **Files:**
 
-- Create: `supabase/migrations/20261023100000_order_status_links.sql`
+- Create: `supabase/migrations/20261022084844_order_status_links.sql`
 - Create: `tests/integration/db/order_status_links.integration.test.ts`
 - Create: `tests/integration/db/order_status_postgrest.integration.test.ts`
 - Create: `tests/integration/db/helpers/order-status-fixtures.ts`
@@ -634,7 +634,7 @@ Expected: PASS、skip0、型の誤り0。SQLの `AS $$` と `$$;`、UTF-8/LF/末
 - [x] **Step 5: controller が名指しでコミットする**
 
 ```powershell
-git add -- supabase/migrations/20261023100000_order_status_links.sql tests/integration/db/order_status_links.integration.test.ts tests/integration/db/order_status_postgrest.integration.test.ts tests/integration/db/helpers/order-status-fixtures.ts
+git add -- supabase/migrations/20261022084844_order_status_links.sql tests/integration/db/order_status_links.integration.test.ts tests/integration/db/order_status_postgrest.integration.test.ts tests/integration/db/helpers/order-status-fixtures.ts
 git commit -m "feat: 注文状況のリンクと本人確認を追加"
 ```
 
@@ -642,7 +642,7 @@ git commit -m "feat: 注文状況のリンクと本人確認を追加"
 
 **Files:**
 
-- Create: `supabase/migrations/20261023100100_order_status_returns.sql`
+- Create: `supabase/migrations/20261022084944_order_status_returns.sql`
 - Create: `tests/integration/db/order_status_returns.integration.test.ts`
 - Modify: `tests/integration/db/helpers/order-status-fixtures.ts`
 - Modify: `tests/integration/db/order_status_postgrest.integration.test.ts`
@@ -694,7 +694,7 @@ Expected: PASS、skip0、元の答えとの差0、旧RPCの権限・誤りの差
 - [x] **Step 5: controller が名指しでコミットする**
 
 ```powershell
-git add -- supabase/migrations/20261023100100_order_status_returns.sql tests/integration/db/order_status_returns.integration.test.ts tests/integration/db/order_status_postgrest.integration.test.ts tests/integration/db/helpers/order-status-fixtures.ts
+git add -- supabase/migrations/20261022084944_order_status_returns.sql tests/integration/db/order_status_returns.integration.test.ts tests/integration/db/order_status_postgrest.integration.test.ts tests/integration/db/helpers/order-status-fixtures.ts
 git commit -m "refactor: 返品の読み出しを共通化し注文状況用を追加"
 ```
 
@@ -1531,17 +1531,17 @@ git commit -m "docs: 注文状況の全体検証の結果を記録"
 
 #### 本番への出し方（ここからは全確認後、それぞれのユーザーの許可を得てから）
 
-- [ ] **Step 11: push の許可を得てから送る**
+- [x] **Step 11: push の許可を得てから送る**
 
 差分・全実測・未確認・移行A/Bの内容とbytes/md5を見せ、pushの許可を得る。DB適用の許可とは別。作業ツリーを開始時と比べ、指定ファイル以外をstageしない。3000番の自分のE2Eアプリを止め、`$env:PLAYWRIGHT_HTML_OPEN='never'` の環境で `git push o_official master`。pre-pushを通し、`--no-verify` を使わない。
 
-- [ ] **Step 12: 本番の読み取りの許可を得て前提を確かめる**
+- [x] **Step 12: 本番の読み取りの許可を得て前提を確かめる**
 
 Supabase MCPの読み取りだけ。適用版がE-4の `20261021221410` まで揃いE-5が未適用、元completeと元get_customer_order_returnsの定義/引数/ACL/md5が手元の前提と一致、pgcryptoがextensionsにあることを確認する。不一致なら当てずに報告する。
 
 既存の注文/発送/返品/メールの件数と、顧客向けの `subject IS NOT NULL AND body_text IS NOT NULL` の未完了（pending/retry_wait/sending）件数を種類/状態だけで数える。deadに保存済み本文がある数も別に数える。本文・宛先・電話・token・注文ごとの一覧は読まない。旧本文を維持し通常の再試行を続けるP28の影響を件数で報告する。値を書き換える実行はこの許可へ含めない。
 
-- [ ] **Step 13: A の適用の許可を得て全文と md5 を確かめる**
+- [x] **Step 13: A の適用の許可を得て全文と md5 を確かめる**
 
 適用名 `order_status_links`、P1のA、bytes/md5、X2の前提、リンクの一括作成無しを見せる。許可後にファイル全文を一字も変えず `apply_migration` へ渡す。直前にもunicode escapeと文字化けを検査する。MCPの `list_migrations` が返した実際の版を控え、次をその版に対して読む。
 
@@ -1555,24 +1555,24 @@ where version = '<Aを当てた実際の版>';
 
 Expected: 手元ファイルのUTF-8 bytes/md5と同じ、statement_count=1。違えば止めて報告し、Bへ進まない。A直後のリンク0件を確認するが、並行して新メールが本文を作った場合は増加を処理の時刻と件数で説明し、一括作成の証拠と混同しない。
 
-- [ ] **Step 14: B も別の許可で当て、同じ md5 を確認する**
+- [x] **Step 14: B も別の許可で当て、同じ md5 を確認する**
 
 適用名 `order_status_returns`、P1のB、bytes/md5を見せ別に許可を得る。Aのmd5一致が前提。全文を適用後に実版を控え、同じSELECTのversionをBへ替えてstatement_count=1とbytes/md5一致を確認する。差があっても戻すSQLを勝手に実行せず報告し、必要なら前へ進める修正移行を別途用意する。
 
-- [ ] **Step 15: 本番の指紋と権限と既存の件数を読む**
+- [x] **Step 15: 本番の指紋と権限と既存の件数を読む**
 
 Step 8と同じfingerprint SQLを使う。missing0、定義の全体md5/ACLと種類ごとの件数が手元と一致。不一致は行ごとの指紋で分け、今回の差と前からの差を区別する。既存の件数に意図しない差0、電話やメール本文の一括変更0、新しい一括リンク作成0。新表のRLS/拒否/SELECTだけ、新public5/置換public2の権限、新private3の外向けEXECUTE無しを確認する。
 
 ユーザー側の開店前の確認として、専用鍵の設定（空ならJWT_SECRET）、本番サイトURL、アクセスログ/解析のtoken付きpathの除外、実際のゲストの注文メール→ページ→下4桁の確認を残す。本物の注文やメールを作る操作はDBの読み取り許可に含めない。
 
-- [ ] **Step 16: 当てた版へファイル名と参照を直し記録する**
+- [x] **Step 16: 当てた版へファイル名と参照を直し記録する**
 
 controllerはMCPが返した版を使い、`$appliedA` と `$appliedB` へrepo内の実際の1パスずつを置く。末尾は `_order_status_links.sql`・`_order_status_returns.sql`。解決済み絶対パスがrepo内で、既存ファイルに衝突しないことを検査してから `Move-Item -LiteralPath` で名前だけ直す。本文のbytes/md5は変えない。
 
 計画・ER・運用・静的試験の仮の2名を実際の名へ直す。履歴として残すP1には仮名→適用名の対応を書き、実行手順の参照は実名へ替える。`rg '20261023100[01]00_order_status' docs tests` の残りが履歴の対応だけであることを確認。静的単体・型・validate-docsを通し、実版と指紋一致を記録する。
 
 ```powershell
-git add -- supabase/migrations/20261023100000_order_status_links.sql supabase/migrations/20261023100100_order_status_returns.sql $appliedA $appliedB docs/superpowers/plans/2026-10-22-order-status-page.md docs/03_BasicDesign/data/er.md docs/06_Operations/order-email-operations.md docs/06_Operations/webhook-queue-operations.md tests/unit/docs/order-status-traceability.test.ts
+git add -- supabase/migrations/20261022084844_order_status_links.sql supabase/migrations/20261022084944_order_status_returns.sql $appliedA $appliedB docs/superpowers/plans/2026-10-22-order-status-page.md docs/03_BasicDesign/data/er.md docs/06_Operations/order-email-operations.md docs/06_Operations/webhook-queue-operations.md tests/unit/docs/order-status-traceability.test.ts
 git commit -m "docs: 注文状況の本番適用の版と確認結果を記録"
 ```
 
