@@ -18,6 +18,8 @@
  */
 jest.mock('next/headers', () => ({ cookies: jest.fn(), headers: jest.fn() }));
 jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefined) }));
+// 返金の要対応がメールの worker の判定（状況のリンクの準備の server 専用の部品を含む）を使うため、試験の場では server-only の印を空にする
+jest.mock('server-only', () => ({}), { virtual: true });
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { ReconcilerMailer } from '@/lib/stripe/checkout-payment-reconciler';

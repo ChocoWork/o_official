@@ -1,3 +1,5 @@
+// 配達の確認がメールの worker の判定（状況のリンクの準備の server 専用の部品を含む）を使うため、試験の場では server-only の印を空にする
+jest.mock('server-only', () => ({}), { virtual: true });
 const mockResendGet = jest.fn();
 const mockResendConstructor = jest.fn();
 jest.mock('resend', () => ({

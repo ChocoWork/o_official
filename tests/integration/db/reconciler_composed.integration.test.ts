@@ -31,6 +31,8 @@ jest.mock('@/lib/mail', () => ({ __esModule: true, default: jest.fn().mockResolv
 jest.mock('next/headers', () => ({ cookies: jest.fn(), headers: jest.fn() }));
 // 監査ログは偽物にし、ローカル DB の audit_logs へも ALERT_AUDIT_URL へも書かない
 jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefined) }));
+// 照合がメールの worker の判定（状況のリンクの準備の server 専用の部品を含む）を使うため、試験の場では server-only の印を空にする
+jest.mock('server-only', () => ({}), { virtual: true });
 
 import { createClient } from '@supabase/supabase-js';
 import sendMail from '@/lib/mail';

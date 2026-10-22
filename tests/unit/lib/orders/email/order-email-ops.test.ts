@@ -1,3 +1,6 @@
+// 要対応の窓口がメールの worker の判定（状況のリンクの準備の server 専用の部品を含む）を使うため、試験の場では server-only の印を空にする
+jest.mock('server-only', () => ({}), { virtual: true });
+
 import { ORDER_EMAIL_OPS_LIMITS, runOrderEmailOpsChecks } from '@/lib/orders/email/order-email-ops';
 import type { OpsAlertMail } from '@/lib/ops/ops-alert-mail';
 

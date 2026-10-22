@@ -13,6 +13,11 @@ jest.mock('@/lib/orders/email/order-email-sender', () => ({
   checkOrderEmailSendConfig: () => null,
   sendOrderEmailMessage: (...args: unknown[]) => mockSend(...args),
 }));
+// 状況のリンクの準備（グループ E-5 計画 P21）。本物の実装は status-email の試験が確かめる
+const mockLoadStatusUrl = jest.fn();
+jest.mock('@/lib/orders/status/status-email', () => ({
+  loadOrderStatusEmailUrl: (...args: unknown[]) => mockLoadStatusUrl(...args),
+}));
 
 import { processOrderEmails, runOrderEmailWorker, skipReasonFor, type OrderEmailWorkerDeps } from '@/lib/orders/email/order-email-worker';
 import type { ClaimedOrderEmail } from '@/lib/orders/email/order-email-store';
@@ -21,6 +26,9 @@ import type { OrderEmailDeliveryMaterial } from '@/lib/orders/email/order-email-
 import type { DeliveryEmailKind } from '@/lib/orders/email/order-email-types';
 
 const KINDS = ['out_for_delivery', 'delivered', 'shipping_update'] as const;
+// 状況のURLの中のトークンは試験用の作り物
+const STATUS_URL = `https://shop.example.test/order-status/${'FAKE'.padEnd(43, '0')}`;
+const STATUS_LINE = `ご注文の状況はこちら: ${STATUS_URL}`;
 function material(overrides: Partial<OrderEmailDeliveryMaterial> = {}): OrderEmailMaterial {
   return {
     order: {
@@ -52,11 +60,12 @@ function harness(row: ClaimedOrderEmail, source: OrderEmailMaterial | null = mat
   const rpc = jest.fn(async (name: string) => ({ data: name === 'claim_order_email' ? rows.shift() ?? [] : true, error: null }));
   const deps: OrderEmailWorkerDeps = {
     store: { rpc }, loadMaterial: jest.fn(async () => null), loadRequestMaterial: jest.fn(async () => null),
-    loadDeliveryMaterial: jest.fn(async () => source), shopRecipient: () => null,
+    loadDeliveryMaterial: jest.fn(async () => source), loadStatusUrl: jest.fn(async (): Promise<string | null> => STATUS_URL),
+    shopRecipient: () => null,
     send: jest.fn(async () => ({ ok: true as const, providerMessageId: 'message-1' })), checkConfig: () => null,
     now: () => 0, budgetMs: 1000,
   };
-  return { deps, rpc };
+  return { deps, rpc, rpcCalls: () => rpc.mock.calls as unknown as Array<[string, Record<string, unknown> | undefined]> };
 }
 
 describe('配送メールを送る直前の判定', () => {
@@ -72,6 +81,8 @@ describe('配送メールを送る直前の判定', () => {
       expect(h.rpc).toHaveBeenCalledWith('skip_order_email', { _email_id: row.id, _lease_token: row.leaseToken, _reason: 'superseded' });
       expect(h.deps.send).not.toHaveBeenCalled();
       expect(h.rpc).not.toHaveBeenCalledWith('save_order_email_content', expect.anything());
+      // 送らない行のために状況のリンクを用意しない
+      expect(h.deps.loadStatusUrl).not.toHaveBeenCalled();
     }
   });
 
@@ -82,6 +93,7 @@ describe('配送メールを送る直前の判定', () => {
     const h = harness(row, source);
     await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ skipped: 1 });
     expect(h.deps.send).not.toHaveBeenCalled();
+    expect(h.deps.loadStatusUrl).not.toHaveBeenCalled();
   });
 
   it('取消は3種類ともfulfillment_cancelled', async () => {
@@ -93,6 +105,7 @@ describe('配送メールを送る直前の判定', () => {
       await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ skipped: 1, sent: 0 });
       expect(h.rpc).toHaveBeenCalledWith('skip_order_email', expect.objectContaining({ _reason: 'fulfillment_cancelled' }));
       expect(h.deps.send).not.toHaveBeenCalled();
+      expect(h.deps.loadStatusUrl).not.toHaveBeenCalled();
     }
   });
 
@@ -106,12 +119,58 @@ describe('配送メールを送る直前の判定', () => {
     expect(h.deps.send).toHaveBeenCalledWith(expect.objectContaining({ to: 'customer@example.com', idempotencyKey: 'order-email/email-1' }));
   });
 
-  it('発送の更新は旧版でも送る。本文の再利用前に必ず材料を読み直す', async () => {
+  it.each(KINDS)('%sの新しい本文は、状況のリンクを注文の番号で1回だけ用意して、問い合わせ文の直前に書く', async (kind) => {
+    const h = harness(claim(kind));
+    await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ sent: 1, failed: 0 });
+    expect(h.deps.loadStatusUrl).toHaveBeenCalledTimes(1);
+    expect(h.deps.loadStatusUrl).toHaveBeenCalledWith('order-1');
+    // 控える本文と送る本文は同じ
+    const saved = h.rpcCalls().find(([name]) => name === 'save_order_email_content')?.[1] as { _body_text: string };
+    expect(saved._body_text).toContain(`${STATUS_LINE}\nお問い合わせの際は、注文番号（ORD-ORDER-1）をお問い合わせフォームにご入力ください。`);
+    expect(h.deps.send).toHaveBeenCalledWith(expect.objectContaining({ text: saved._body_text }));
+  });
+
+  it('発送の更新は旧版でも送る。本文の再利用前に必ず材料を読み直す。保存済み本文ではリンクを用意せずそのまま送る', async () => {
     const row = claim('shipping_update', { subject: '保存した件名', bodyText: '保存した本文' });
     const h = harness(row, material({ currentTrackingVersion: 4, deliveryStatus: 'delivered' }));
     await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ sent: 1 });
     expect(h.deps.loadDeliveryMaterial).toHaveBeenCalled();
     expect(h.deps.send).toHaveBeenCalledWith(expect.objectContaining({ subject: row.subject, text: row.bodyText }));
+    expect(h.deps.loadStatusUrl).not.toHaveBeenCalled();
+  });
+
+  it.each(KINDS)('保存済み本文の%sはリンクを用意せず、古い本文のまま送る（本文の控えを作り直さない）', async (kind) => {
+    const savedOldText = '山田 様\n\n古い本文です。\n\n0311112222\n\nご注文の確認はこちら: https://shop.example.test/account/orders/x\n\nお問い合わせの際は、注文番号（ORD-ORDER-1）をお問い合わせフォームにご入力ください。\n\nLe Fil des Heures';
+    const h = harness(claim(kind, { subject: '保存した件名', bodyText: savedOldText }));
+    await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ sent: 1, failed: 0 });
+    expect(h.deps.loadStatusUrl).not.toHaveBeenCalled();
+    expect(h.rpc).not.toHaveBeenCalledWith('save_order_email_content', expect.anything());
+    const sentText = (h.deps.send as jest.Mock).mock.calls[0][0].text;
+    expect(sentText).toBe(savedOldText);
+  });
+
+  it.each(KINDS)('%sの状況のURLが作れなければ送らず、source_missing（再試行）にする', async (kind) => {
+    const h = harness(claim(kind));
+    h.deps.loadStatusUrl = jest.fn(async () => null);
+    await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ failed: 1, sent: 0, stoppedBy: 'empty' });
+    const failures = h.rpcCalls().filter(([name]) => name === 'fail_order_email').map(([, params]) => params);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ _error_code: 'source_missing', _category: 'transient' });
+    expect(h.deps.send).not.toHaveBeenCalled();
+    expect(h.rpc).not.toHaveBeenCalledWith('save_order_email_content', expect.anything());
+  });
+
+  it.each(KINDS)('%sの状況のリンク準備のDB失敗は、db_unavailable（再試行）にする。送らず、宛先や例外本文をログに出さない', async (kind) => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const h = harness(claim(kind));
+    h.deps.loadStatusUrl = jest.fn(async () => {
+      throw new Error('customer@example.com 秘密の本文');
+    });
+    await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ failed: 1, sent: 0 });
+    expect(h.rpc).toHaveBeenCalledWith('fail_order_email', expect.objectContaining({ _error_code: 'db_unavailable', _category: 'transient' }));
+    expect(h.deps.send).not.toHaveBeenCalled();
+    expect(h.rpc).not.toHaveBeenCalledWith('save_order_email_content', expect.anything());
+    expect(error).not.toHaveBeenCalled();
   });
 
   it.each(KINDS)('%sの材料不足は保存済み本文でもsource_missingで再試行する', async (kind) => {
@@ -119,6 +178,7 @@ describe('配送メールを送る直前の判定', () => {
     await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ failed: 1, sent: 0 });
     expect(h.rpc).toHaveBeenCalledWith('fail_order_email', expect.objectContaining({ _error_code: 'source_missing', _category: 'transient' }));
     expect(h.deps.send).not.toHaveBeenCalled();
+    expect(h.deps.loadStatusUrl).not.toHaveBeenCalled();
   });
 
   it('配送loaderの省略時に既存loaderへ逃がさずsource_missingにする', async () => {
@@ -127,6 +187,7 @@ describe('配送メールを送る直前の判定', () => {
     await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ failed: 1, sent: 0 });
     expect(h.deps.loadMaterial).not.toHaveBeenCalled();
     expect(h.rpc).toHaveBeenCalledWith('fail_order_email', expect.objectContaining({ _error_code: 'source_missing' }));
+    expect(h.deps.loadStatusUrl).not.toHaveBeenCalled();
   });
 
   it('配送材料のDB失敗はdb_unavailable。宛先や例外本文をログに出さない', async () => {
@@ -137,16 +198,21 @@ describe('配送メールを送る直前の判定', () => {
     expect(h.rpc).toHaveBeenCalledWith('fail_order_email', expect.objectContaining({ _error_code: 'db_unavailable', _category: 'transient' }));
     expect(h.deps.send).not.toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();
+    expect(h.deps.loadStatusUrl).not.toHaveBeenCalled();
   });
 
-  it.each(KINDS)('通常runも%sの配送loaderを必ず渡す', async (kind) => {
+  it.each(KINDS)('通常runも%sの配送loaderを必ず渡す。状況のリンクは同じservice_roleのstoreで準備する', async (kind) => {
     jest.replaceProperty(process, 'env', { NODE_ENV: 'test' });
     const h = harness(claim(kind));
     mockClientRpc.mockImplementation(h.rpc);
     mockLoadDelivery.mockReset().mockResolvedValue(material());
+    mockLoadStatusUrl.mockReset().mockResolvedValue(STATUS_URL);
     mockSend.mockReset().mockResolvedValue({ ok: true, providerMessageId: 'message-1' });
     await expect(runOrderEmailWorker()).resolves.toMatchObject({ sent: 1 });
     expect(mockLoadDelivery).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ kind, trackingVersion: 2 }));
+    expect(mockLoadStatusUrl).toHaveBeenCalledTimes(1);
+    expect(mockLoadStatusUrl).toHaveBeenCalledWith(mockLoadDelivery.mock.calls[0][0], 'order-1');
     expect(mockSend).toHaveBeenCalledTimes(1);
+    expect(mockSend.mock.calls[0][0].text).toContain(STATUS_LINE);
   });
 });

@@ -18,6 +18,9 @@ import { ORDER_EMAIL_KINDS } from '@/lib/orders/email/order-email-types';
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
 const CONTACT = 'お問い合わせの際は、注文番号（ORD-A1B2C3D4）をお問い合わせフォームにご入力ください。';
 const SHOP = 'Le Fil des Heures';
+// 状況のリンク（グループ E-5 計画 C-6）。URL の中のトークンは試験用の作り物
+const STATUS_URL = `https://shop.example.test/order-status/${'FAKE'.padEnd(43, '0')}`;
+const STATUS_LINE = `ご注文の状況はこちら: ${STATUS_URL}`;
 
 const RETURN_ACCEPTED = { kind: 'return_accepted', variant: null, paymentExpiredSent: false } as const;
 const RETURN_RECEIVED = { kind: 'return_received', variant: null, paymentExpiredSent: false } as const;
@@ -63,6 +66,7 @@ function material(overrides: Partial<OrderEmailMaterial> = {}): OrderEmailMateri
     refund: null,
     orderReturn: null,
     request: null,
+    orderStatusUrl: STATUS_URL,
     ...overrides,
   };
 }
@@ -158,11 +162,22 @@ describe('composeOrderEmail（返品の受付のお知らせ）', () => {
         '',
         '商品が届きましたら、確かめてご連絡いたします。',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
       ].join('\n'),
     });
+  });
+
+  it('返送先のお店の電話は消さない（お客様の電話を消すのは注文確認の本文だけ）', () => {
+    const shopReturnPhone = ADDRESS.phone;
+    const email = composeOrderEmail(withReturn(returnMaterial()), RETURN_ACCEPTED);
+
+    expect(email?.text.includes(shopReturnPhone)).toBe(true);
+    expect(email?.text.split('\n')).toContain(shopReturnPhone);
+    // 注文の電話（material の shipping_phone）は、元からこの本文に書かない
+    expect(email?.text).not.toContain('0311112222');
   });
 
   it('交換（在庫から・作って送る）と手数料3つがある返品は、返送のしかたの後に手数料の行を書く。作って送る行の末尾には注記を付ける', () => {
@@ -208,6 +223,7 @@ describe('composeOrderEmail（返品の受付のお知らせ）', () => {
         '',
         '商品が届きましたら、確かめてご連絡いたします。',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -234,6 +250,7 @@ describe('composeOrderEmail（返品の受付のお知らせ）', () => {
         '',
         '商品が届きましたら、確かめてご連絡いたします。',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -392,6 +409,7 @@ describe('composeOrderEmail（返品の受け取りのお知らせ）', () => {
         '交換の品をお送りします:',
         '・ワンピース（NAVY / M） × 1',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -425,6 +443,7 @@ describe('composeOrderEmail（返品の受け取りのお知らせ）', () => {
         '・ブラウス（BLACK / L） × 1',
         'お作りしてお送りします。',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -456,6 +475,7 @@ describe('composeOrderEmail（返品の受け取りのお知らせ）', () => {
         '',
         'ご返金の額は、確かめてから改めてご連絡いたします。',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -493,6 +513,7 @@ describe('composeOrderEmail（返品の受け取りのお知らせ）', () => {
         '',
         '交換の品は、手数料 ￥300 のお支払いを確かめてからお送りします。お支払いの方法は、別にご案内いたします。',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -537,6 +558,7 @@ describe('composeOrderEmail（返品の受け取りのお知らせ）', () => {
         '当店より:',
         'お返しします。',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -565,6 +587,7 @@ describe('composeOrderEmail（返品の受け取りのお知らせ）', () => {
         '',
         '交換の品は、手数料 ￥1,100 のお支払いを確かめてからお送りします。お支払いの方法は、別にご案内いたします。',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -609,6 +632,7 @@ describe('composeOrderEmail（返品の受け取りのお知らせ）', () => {
         '',
         '送り返しの伝票番号: ヤマト運輸 1234-5678-9012',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -654,6 +678,7 @@ describe('composeOrderEmail（返品の受け取りのお知らせ）', () => {
         '当店より:',
         'お返しします。',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -714,6 +739,7 @@ describe('composeOrderEmail（品物のお返しのお知らせ）', () => {
         '',
         '送り返しの伝票番号: 佐川急便 4321-8765',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -752,6 +778,7 @@ describe('composeOrderEmail（品物のお返しのお知らせ）', () => {
         '当店より:',
         'お返しします。',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -767,7 +794,7 @@ describe('composeOrderEmail（品物のお返しのお知らせ）', () => {
       RETURN_SENT_BACK,
     );
 
-    expect(email?.text).toContain(['当店より:', message, '', CONTACT].join('\n'));
+    expect(email?.text).toContain(['当店より:', message, '', STATUS_LINE, CONTACT].join('\n'));
   });
 
   it('お返しの品が無い・メッセージが無い・受け取りの材料が無ければ作らない', () => {
@@ -835,6 +862,7 @@ describe('composeOrderEmail（返金のお知らせの返品の書き分け）',
         '',
         CARD_TIMING,
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -858,6 +886,7 @@ describe('composeOrderEmail（返金のお知らせの返品の書き分け）',
         '',
         CARD_TIMING,
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -884,6 +913,7 @@ describe('composeOrderEmail（返金のお知らせの返品の書き分け）',
         '',
         CARD_TIMING,
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -981,6 +1011,9 @@ describe('composeOrderEmail（店への知らせ（返金待ち））', () => {
       expect(email?.subject).not.toContain(secret);
     }
     expect(email?.text).not.toContain(String.fromCharCode(0xa5));
+    // 店向けは、材料にURLがあってもリンクを書かない（グループ E-5 計画 C-6）
+    expect(email?.text).not.toContain('ご注文の状況はこちら');
+    expect(email?.text).not.toContain('order-status');
   });
 
   it('返品の番号は返品の番号（R の後の数）で書く', () => {
@@ -1023,6 +1056,7 @@ describe('composeOrderEmail（発送のお知らせの交換の一文）', () =>
         '',
         '※ 追跡情報は反映までに数時間かかる場合があります。',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,

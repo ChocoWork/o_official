@@ -19,6 +19,11 @@ jest.mock('@/lib/orders/email/order-email-compose', () => ({
   loadOrderEmailMaterial: (...args: unknown[]) => mockLoadMaterial(...args),
   loadRequestEmailMaterial: (...args: unknown[]) => mockLoadRequestMaterial(...args),
 }));
+// 状況のリンクの準備（グループ E-5 計画 P21）。本物の実装は status-email の試験が確かめる
+const mockLoadStatusUrl = jest.fn();
+jest.mock('@/lib/orders/status/status-email', () => ({
+  loadOrderStatusEmailUrl: (...args: unknown[]) => mockLoadStatusUrl(...args),
+}));
 
 import { recipientFor, runOrderEmailWorker, skipReasonFor } from '@/lib/orders/email/order-email-worker';
 import type { OrderEmailMaterial, OrderEmailRequestMaterial } from '@/lib/orders/email/order-email-compose';
@@ -30,6 +35,11 @@ import {
   type RequestEmailKind,
 } from '@/lib/orders/email/order-email-types';
 import { ORDER_STATUSES } from '@/lib/orders/order-payment-types';
+
+// 状況のURLの中のトークンは試験用の作り物
+const STATUS_URL = `https://shop.example.test/order-status/${'FAKE'.padEnd(43, '0')}`;
+const STATUS_LINE = `ご注文の状況はこちら: ${STATUS_URL}`;
+const CONTACT = 'お問い合わせの際は、注文番号（ORD-ORDER-1）をお問い合わせフォームにご入力ください。';
 
 const RETURN_REQUEST: OrderEmailRequestMaterial = {
   kind: 'return',
@@ -99,6 +109,7 @@ describe('runOrderEmailWorker（申し込みのメール）', () => {
     mockSend.mockReset().mockResolvedValue({ ok: true, providerMessageId: 're_1' });
     mockLoadMaterial.mockReset().mockResolvedValue(null);
     mockLoadRequestMaterial.mockReset();
+    mockLoadStatusUrl.mockReset().mockResolvedValue(STATUS_URL);
   });
   afterEach(() => jest.restoreAllMocks());
 
@@ -120,6 +131,10 @@ describe('runOrderEmailWorker（申し込みのメール）', () => {
     expect(mockSend).toHaveBeenCalledWith(
       expect.objectContaining({ to: 'hanako@example.com', subject, idempotencyKey: 'order-email/email-1' }),
     );
+    // 新しいお客様向けの本文は、状況のリンクを同じ注文の番号で用意して、問い合わせ文の直前に書く
+    expect(mockLoadStatusUrl).toHaveBeenCalledTimes(1);
+    expect(mockLoadStatusUrl).toHaveBeenCalledWith(expect.objectContaining({ rpc: expect.any(Function) }), 'order-1');
+    expect(mockSend.mock.calls[0][0].text).toContain(`${STATUS_LINE}\n${CONTACT}`);
   });
 
   it.each([
@@ -137,6 +152,8 @@ describe('runOrderEmailWorker（申し込みのメール）', () => {
     });
     expect(mockLoadMaterial).not.toHaveBeenCalled();
     expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({ to: 'hanako@example.com', subject }));
+    expect(mockLoadStatusUrl).toHaveBeenCalledWith(expect.objectContaining({ rpc: expect.any(Function) }), 'order-1');
+    expect(mockSend.mock.calls[0][0].text).toContain(`${STATUS_LINE}\n${CONTACT}`);
   });
 
   it.each([
@@ -152,6 +169,77 @@ describe('runOrderEmailWorker（申し込みのメール）', () => {
     expect(mockSend).toHaveBeenCalledTimes(1);
     expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({ to: 'shop-alert@example.com', subject }));
     expect(mockSend).not.toHaveBeenCalledWith(expect.objectContaining({ to: 'hanako@example.com' }));
+    expect(mockLoadStatusUrl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'return_request_shop',
+      { return_id: 'return-1' },
+      RETURN_REQUEST,
+      [
+        'お客様から返品の申し込みが届きました（返品番号 ORD-ORDER-1-R1）。',
+        '',
+        '申し込みの商品:',
+        '・コート × 1（理由: 破損・不良／ご希望: 返金／写真 1枚）',
+        '',
+        '管理画面の注文の一覧で「申し込みを確かめる」を押して、承認するかお断りしてください。',
+      ].join('\n'),
+    ],
+    [
+      'cancel_request_shop',
+      { cancel_request_id: 'cancel-1' },
+      CANCEL_REQUEST,
+      [
+        'お客様からキャンセルの申し込みが届きました。',
+        '',
+        '申し込みの商品:',
+        '・コート × 1',
+        '',
+        '管理画面の注文の一覧で「キャンセルの申し込み」を押して、品を外すかお断りしてください。',
+      ].join('\n'),
+    ],
+  ] as const)('%s はリンクを用意せず、本文も今までのまま', async (kind, ids, request, previousShopText) => {
+    jest.replaceProperty(process, 'env', { NODE_ENV: 'test', SHOP_ALERT_EMAIL: 'shop-alert@example.com' });
+    mockLoadRequestMaterial.mockResolvedValue(material(request));
+    queue(claimRow(kind, ids));
+
+    await expect(runOrderEmailWorker()).resolves.toMatchObject({ sent: 1, failed: 0 });
+
+    expect(mockLoadStatusUrl).not.toHaveBeenCalled();
+    expect(mockSend.mock.calls[0][0].text).toBe(previousShopText);
+  });
+
+  it('お客様あては、状況のURLが作れなければ（設定の誤り）送らず、永続の source_missing にする。次のメールを止めない', async () => {
+    jest.replaceProperty(process, 'env', { NODE_ENV: 'test' });
+    mockLoadRequestMaterial.mockResolvedValue(material(RETURN_REQUEST));
+    mockLoadStatusUrl.mockReset().mockResolvedValue(null);
+    queue(claimRow('return_requested', { return_id: 'return-1' }));
+
+    await expect(runOrderEmailWorker()).resolves.toMatchObject({ sent: 0, failed: 1, stoppedBy: 'empty' });
+
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockClientRpc).not.toHaveBeenCalledWith('save_order_email_content', expect.anything());
+    expect(mockClientRpc).toHaveBeenCalledWith('fail_order_email', {
+      _email_id: 'email-1', _lease_token: 'lease-1', _error_code: 'source_missing', _category: 'permanent', _retry_after_seconds: null,
+    });
+  });
+
+  it('お客様あては、状況のリンクの準備でDBが失敗したら、一時的な失敗としてやり直す。送らず、ログも出さない', async () => {
+    jest.replaceProperty(process, 'env', { NODE_ENV: 'test' });
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockLoadRequestMaterial.mockResolvedValue(material(CANCEL_REQUEST));
+    mockLoadStatusUrl.mockReset().mockRejectedValue(new Error('customer@example.com 秘密の本文'));
+    queue(claimRow('cancel_request_received', { cancel_request_id: 'cancel-1' }));
+
+    await expect(runOrderEmailWorker()).resolves.toMatchObject({ sent: 0, failed: 1 });
+
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockClientRpc).not.toHaveBeenCalledWith('save_order_email_content', expect.anything());
+    expect(mockClientRpc).toHaveBeenCalledWith('fail_order_email', {
+      _email_id: 'email-1', _lease_token: 'lease-1', _error_code: 'db_unavailable', _category: 'transient', _retry_after_seconds: null,
+    });
+    expect(error).not.toHaveBeenCalled();
   });
 
   it('店あては、お客様の宛先が空でも、店のアドレスへ送る（お客様に送るメールではない）', async () => {
@@ -199,6 +287,8 @@ describe('runOrderEmailWorker（申し込みのメール）', () => {
       _email_id: 'email-1', _lease_token: 'lease-1', _reason: 'no_recipient',
     });
     expect(warn).not.toHaveBeenCalled();
+    // 送らない行のために状況のリンクを用意しない
+    expect(mockLoadStatusUrl).not.toHaveBeenCalled();
   });
 
   it('申し込みの材料が無ければ、送れなかった（永続の source_missing）にする。送らない', async () => {
@@ -212,6 +302,7 @@ describe('runOrderEmailWorker（申し込みのメール）', () => {
     expect(mockClientRpc).toHaveBeenCalledWith('fail_order_email', {
       _email_id: 'email-1', _lease_token: 'lease-1', _error_code: 'source_missing', _category: 'permanent', _retry_after_seconds: null,
     });
+    expect(mockLoadStatusUrl).not.toHaveBeenCalled();
   });
 
   it('本文が作れなければ（お断りのメッセージが空）、送れなかった（永続の source_missing）にする', async () => {
@@ -250,6 +341,9 @@ describe('runOrderEmailWorker（申し込みのメール）', () => {
 
     expect(mockLoadMaterial).toHaveBeenCalledWith(expect.anything(), 'order-1', null, null, null, null);
     expect(mockLoadRequestMaterial).not.toHaveBeenCalled();
+    expect(mockLoadStatusUrl).toHaveBeenCalledTimes(1);
+    expect(mockLoadStatusUrl).toHaveBeenCalledWith(expect.objectContaining({ rpc: expect.any(Function) }), 'order-1');
+    expect(mockSend.mock.calls[0][0].text).toContain(`${STATUS_LINE}\n${CONTACT}`);
   });
 });
 

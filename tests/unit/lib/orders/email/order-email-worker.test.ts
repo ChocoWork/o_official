@@ -10,6 +10,8 @@ jest.mock('@/lib/orders/email/order-email-sender', () => ({
   ...jest.requireActual('@/lib/orders/email/order-email-sender'),
   checkOrderEmailSendConfig: () => null,
 }));
+// 本物の worker が状況のリンクの準備（server 専用の部品）を読み込むため、試験の場では server-only の印を空にする
+jest.mock('server-only', () => ({}), { virtual: true });
 
 import {
   orderEmailWorkerDisabledReason,
@@ -30,6 +32,11 @@ import {
 } from '@/lib/orders/email/order-email-compose';
 import { OrderEmailStoreError, type OrderEmailStore } from '@/lib/orders/email/order-email-store';
 import type { OrderEmailSendOutcome } from '@/lib/orders/email/order-email-sender';
+
+// 状況のURLの中のトークンは試験用の作り物
+const STATUS_URL = `https://shop.example.test/order-status/${'FAKE'.padEnd(43, '0')}`;
+const STATUS_LINE = `ご注文の状況はこちら: ${STATUS_URL}`;
+const CONTACT = 'お問い合わせの際は、注文番号（ORD-ORDER-1）をお問い合わせフォームにご入力ください。';
 
 type QueueRow = {
   email_id: string; order_id: string; kind: string; variant: string | null; origin: string; attempts: number;
@@ -117,6 +124,8 @@ function harness(queue: QueueRow[], options: {
   clock?: number[];
   /** 店への知らせ（返金待ち）の送り先。既定は店のアドレス、null は設定が無い */
   shopRecipient?: string | null;
+  /** 状況のURLの用意。既定は固定のURL。順に返す（足りなければ最後の値）。Error は DB の失敗 */
+  statusUrls?: Array<string | null | Error>;
 } = {}) {
   const calls: Array<{ name: string; params?: Record<string, unknown> }> = [];
   const pending = [...queue];
@@ -148,17 +157,24 @@ function harness(queue: QueueRow[], options: {
     return value;
   });
   const times = [...(options.clock ?? [])];
+  const statusUrls = [...(options.statusUrls ?? [STATUS_URL])];
+  const loadStatusUrl = jest.fn(async (): Promise<string | null> => {
+    const value = statusUrls.length > 1 ? (statusUrls.shift() as string | null | Error) : statusUrls[0];
+    if (value instanceof Error) throw value;
+    return value;
+  });
   const deps: OrderEmailWorkerDeps = {
     store: { rpc } as unknown as OrderEmailStore,
     loadMaterial,
     loadRequestMaterial: loadMaterial,
+    loadStatusUrl,
     shopRecipient: () => (options.shopRecipient === undefined ? 'shop-alert@example.com' : options.shopRecipient),
     send,
     checkConfig: options.config ?? (() => null),
     now: () => (times.length > 0 ? (times.shift() as number) : 0),
     budgetMs: 10_000,
   };
-  return { deps, calls, send, loadMaterial };
+  return { deps, calls, send, loadMaterial, loadStatusUrl, rpc };
 }
 
 const names = (calls: Array<{ name: string }>) => calls.map((call) => call.name);
@@ -431,6 +447,24 @@ describe('processOrderEmails', () => {
     expect(h.calls[2].params).toEqual({ _email_id: 'email-1', _lease_token: 'lease-1', _provider_message_id: 're_1' });
   });
 
+  it('新しいお客様向けの本文は、材料を読み取りやめを判定した後、控える前に状況のリンクを注文の番号で用意し、問い合わせ文の直前に書く', async () => {
+    const h = harness([row()]);
+
+    await processOrderEmails(h.deps);
+
+    expect(h.loadStatusUrl).toHaveBeenCalledTimes(1);
+    expect(h.loadStatusUrl).toHaveBeenCalledWith('order-1');
+    const saveIndex = h.calls.findIndex((call) => call.name === 'save_order_email_content');
+    const saved = h.calls[saveIndex].params as { _body_text: string };
+    expect(saved._body_text).toContain(`${STATUS_LINE}\n${CONTACT}`);
+    expect(saved._body_text).not.toContain('0311112222');
+    // 材料の読み込み → リンクの用意 → 控え の順
+    expect(h.loadMaterial.mock.invocationCallOrder[0]).toBeLessThan(h.loadStatusUrl.mock.invocationCallOrder[0]);
+    const saveCallOrder = h.rpc.mock.invocationCallOrder[saveIndex];
+    expect(h.loadStatusUrl.mock.invocationCallOrder[0]).toBeLessThan(saveCallOrder);
+    expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ text: saved._body_text }));
+  });
+
   it('控えがあれば作り直さず、控えた中身を同じ鍵で送る（送れた直後に落ちた後のやり直し）', async () => {
     const h = harness([row({ attempts: 2, subject: '控えた件名', body_text: '控えた本文' })]);
 
@@ -440,6 +474,22 @@ describe('processOrderEmails', () => {
     expect(h.send).toHaveBeenCalledWith({
       to: 'hanako@example.com', subject: '控えた件名', text: '控えた本文', idempotencyKey: 'order-email/email-1',
     });
+  });
+
+  it('保存済み本文ではリンクを用意せずそのまま送る（古い電話・旧リンクのある本文も書き換えない）', async () => {
+    const savedOldText = [
+      '山田 花子 様', '', 'お届け先:', '山田 花子 様', '〒1500001', '東京都渋谷区神宮前1-1-1', '0311112222', '',
+      'ご注文の確認はこちら: https://shop.example.test/account/orders/order-1', '',
+      CONTACT, '', 'Le Fil des Heures',
+    ].join('\n');
+    const h = harness([row({ attempts: 2, subject: '保存した件名', body_text: savedOldText })]);
+
+    await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ sent: 1, failed: 0 });
+
+    expect(h.loadStatusUrl).not.toHaveBeenCalled();
+    expect(names(h.calls)).not.toContain('save_order_email_content');
+    const sentText = (h.send.mock.calls[0] as unknown as [{ text: string }])[0].text;
+    expect(sentText).toBe(savedOldText);
   });
 
   it('入金待ちは、注文がもう入金待ちでなければ取りやめにし、送らない', async () => {
@@ -452,6 +502,8 @@ describe('processOrderEmails', () => {
     expect(h.calls.find((call) => call.name === 'skip_order_email')?.params).toEqual({
       _email_id: 'email-1', _lease_token: 'lease-1', _reason: 'superseded',
     });
+    // 送らない行のために状況のリンクを用意しない
+    expect(h.loadStatusUrl).not.toHaveBeenCalled();
   });
 
   it('宛先が無ければ取りやめにする', async () => {
@@ -461,6 +513,70 @@ describe('processOrderEmails', () => {
 
     expect(h.calls.find((call) => call.name === 'skip_order_email')?.params).toMatchObject({ _reason: 'no_recipient' });
     expect(h.send).not.toHaveBeenCalled();
+    expect(h.loadStatusUrl).not.toHaveBeenCalled();
+  });
+
+  it('住所を作れない時は材料不足で次のメールを続ける', async () => {
+    // 1通目はサイトの住所の設定の誤りで状況のURLが作れず、2通目は作れる
+    const h = harness([row(), row({ email_id: 'email-2', order_id: 'order-2', lease_token: 'lease-2' })], {
+      statusUrls: [null, STATUS_URL],
+    });
+
+    const result = await processOrderEmails(h.deps);
+
+    const failures = h.calls
+      .filter((call) => call.name === 'fail_order_email')
+      .map((call) => ({ code: call.params?._error_code, category: call.params?._category, emailId: call.params?._email_id }));
+    expect(failures).toEqual([{ code: 'source_missing', category: 'permanent', emailId: 'email-1' }]);
+    expect(failures[0].code).toBe('source_missing');
+    expect(result).toEqual({ sent: 1, skipped: 0, failed: 1, stoppedBy: 'empty' });
+    expect(h.loadStatusUrl).toHaveBeenCalledTimes(2);
+    expect(h.loadStatusUrl).toHaveBeenNthCalledWith(1, 'order-1');
+    expect(h.loadStatusUrl).toHaveBeenNthCalledWith(2, 'order-2');
+    // 1通目は控えも送りもしない。2通目だけ控えて送る
+    expect(h.calls.filter((call) => call.name === 'save_order_email_content')).toHaveLength(1);
+    expect(h.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('リンク準備のDB失敗はdb_unavailableとして再試行する', async () => {
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const h = harness([row(), row({ email_id: 'email-2', order_id: 'order-2', lease_token: 'lease-2' })], {
+      statusUrls: [new Error('hanako@example.com 秘密の本文'), STATUS_URL],
+    });
+
+    const result = await processOrderEmails(h.deps);
+
+    const failure = h.calls.find((call) => call.name === 'fail_order_email')?.params;
+    expect(failure).toMatchObject({ _email_id: 'email-1', _error_code: 'db_unavailable', _category: 'transient' });
+    expect(result).toEqual({ sent: 1, skipped: 0, failed: 1, stoppedBy: 'empty' });
+    expect(h.calls.filter((call) => call.name === 'save_order_email_content')).toHaveLength(1);
+    // 例外の文（宛先・本文を含みうる）はログに出さない
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it('店向け3種類の1つ（返金待ち）はリンクを用意せず本文も変えない', async () => {
+    const receipt = receiptMaterial({ pendingRefund: { items: [{ item_name: 'コート', color: null, size: null, quantity: 1 }], amount: 5000 } });
+    const h = harness(
+      [row({ kind: 'return_refund_pending_shop', variant: null, return_id: 'return-1', return_receipt_id: 'receipt-1' })],
+      { material: material({ status: 'shipped' }, null, null, returnMaterial({ items: [], receipt })) },
+    );
+
+    await expect(processOrderEmails(h.deps)).resolves.toMatchObject({ sent: 1, failed: 0 });
+
+    expect(h.loadStatusUrl).not.toHaveBeenCalled();
+    const previousShopText = [
+      '返品 ORD-ORDER-1-R1 の品を受け取りました（受け取った人: サポート）。',
+      '',
+      '受け取った返金の品:',
+      '・コート × 1',
+      '計算どおりの額: ￥5,000',
+      '',
+      '管理画面の注文の一覧で「額を決めて返金する」を押して、返金してください。',
+    ].join('\n');
+    const saved = h.calls.find((call) => call.name === 'save_order_email_content')?.params as { _body_text: string };
+    const actualShopText = saved._body_text;
+    expect(actualShopText).toBe(previousShopText);
+    expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ to: 'shop-alert@example.com', text: previousShopText }));
   });
 
   it('発送のメールは、行の発送の番号で材料を読み、その発送の商品と残りの案内を書いて送る', async () => {

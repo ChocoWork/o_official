@@ -14,6 +14,8 @@ const mockRpc = jest.fn();
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(async () => ({ rpc: (...args: unknown[]) => mockRpc(...args) })),
 }));
+// 配達の知らせの窓口がメールの worker の判定（状況のリンクの準備の server 専用の部品を含む）を使うため、試験の場では server-only の印を空にする
+jest.mock('server-only', () => ({}), { virtual: true });
 
 import { POST } from '@/app/api/webhook/resend-delivery/route';
 

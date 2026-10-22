@@ -20,6 +20,9 @@ import {
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
 const CONTACT = 'お問い合わせの際は、注文番号（ORD-A1B2C3D4）をお問い合わせフォームにご入力ください。';
 const SHOP = 'Le Fil des Heures';
+// 状況のリンク（グループ E-5 計画 C-6）。URL の中のトークンは試験用の作り物
+const STATUS_URL = `https://shop.example.test/order-status/${'FAKE'.padEnd(43, '0')}`;
+const STATUS_LINE = `ご注文の状況はこちら: ${STATUS_URL}`;
 
 const COAT_REFUND: OrderEmailReturnRequestLine = {
   item_name: 'コート', color: 'BLACK', size: 'M', quantity: 1,
@@ -79,6 +82,7 @@ function material(
     refund: null,
     orderReturn: null,
     request,
+    orderStatusUrl: STATUS_URL,
   };
 }
 
@@ -107,6 +111,7 @@ describe('composeOrderEmail（返品のお申し込みの受付）', () => {
         '',
         '内容を確かめて、ご連絡いたします。',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -159,6 +164,7 @@ describe('composeOrderEmail（返品のお申し込みについて）', () => {
         '当店より:',
         DECLINED,
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -182,6 +188,7 @@ describe('composeOrderEmail（返品のお申し込みについて）', () => {
         '',
         'またのご利用をお待ちしております。 ',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -227,7 +234,7 @@ describe('composeOrderEmail（店への知らせ（返品の申し込み））',
   it('お客様の氏名・メール・住所と、詳しい内容・ご連絡事項は書かない', () => {
     const email = compose('return_request_shop', returnRequest());
 
-    for (const text of ['山田', 'hanako@example.com', '1500001', '神宮前', '詳しい内容', CONTACT, SHOP]) {
+    for (const text of ['山田', 'hanako@example.com', '1500001', '神宮前', '詳しい内容', CONTACT, SHOP, 'ご注文の状況はこちら', 'order-status']) {
       expect(email?.text).not.toContain(text);
     }
   });
@@ -266,6 +273,7 @@ describe('composeOrderEmail（キャンセルのお申し込みの受付）', ()
         '',
         '内容を確かめて、ご連絡いたします。',
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -298,6 +306,7 @@ describe('composeOrderEmail（キャンセルのお申し込みについて）',
         '当店より:',
         DECLINED,
         '',
+        STATUS_LINE,
         CONTACT,
         '',
         SHOP,
@@ -308,7 +317,7 @@ describe('composeOrderEmail（キャンセルのお申し込みについて）',
   it('メッセージの改行・空行は、そのまま書く', () => {
     const email = compose('cancel_request_declined', cancelRequest({ declineMessage: `${DECLINED}\n\nご不明な点はお問い合わせください。`, lines: [] }));
 
-    expect(email?.text).toContain(['当店より:', DECLINED, '', 'ご不明な点はお問い合わせください。', '', CONTACT].join('\n'));
+    expect(email?.text).toContain(['当店より:', DECLINED, '', 'ご不明な点はお問い合わせください。', '', STATUS_LINE, CONTACT].join('\n'));
   });
 
   it.each([
@@ -342,7 +351,7 @@ describe('composeOrderEmail（店への知らせ（キャンセルの申し込�
   it('お客様の氏名・メール・住所は書かない', () => {
     const email = compose('cancel_request_shop', cancelRequest());
 
-    for (const text of ['山田', 'hanako@example.com', '1500001', '神宮前', CONTACT, SHOP]) {
+    for (const text of ['山田', 'hanako@example.com', '1500001', '神宮前', CONTACT, SHOP, 'ご注文の状況はこちら', 'order-status']) {
       expect(email?.text).not.toContain(text);
     }
   });
@@ -383,6 +392,27 @@ describe('composeOrderEmail（申し込みのメール6種類に共通の決ま�
       const shopMail = kind === 'return_request_shop' || kind === 'cancel_request_shop';
 
       expect(text.endsWith(`${CONTACT}\n\n${SHOP}`)).toBe(!shopMail);
+    }
+  });
+
+  it('お客様あての4種類は、問い合わせの案内の直前に状況のリンクを1回だけ書き、店あての2種類は書かない', () => {
+    for (const kind of REQUEST_EMAIL_KINDS) {
+      const text = compose(kind, requestFor(kind))?.text ?? '';
+      const shopMail = kind === 'return_request_shop' || kind === 'cancel_request_shop';
+
+      expect(text.split('ご注文の状況はこちら').length - 1).toBe(shopMail ? 0 : 1);
+      expect(text.includes(`${STATUS_LINE}\n${CONTACT}`)).toBe(!shopMail);
+    }
+  });
+
+  it('お客様あての4種類は、状況のURLが無ければ作らない。店あての2種類はURLが無くても作る', () => {
+    for (const kind of REQUEST_EMAIL_KINDS) {
+      const shopMail = kind === 'return_request_shop' || kind === 'cancel_request_shop';
+      const source = { ...material(requestFor(kind)), orderStatusUrl: null };
+
+      const email = composeOrderEmail(source, { kind, variant: null, paymentExpiredSent: false });
+
+      expect(email === null).toBe(!shopMail);
     }
   });
 

@@ -23,10 +23,17 @@ jest.mock('@/lib/orders/email/order-email-compose', () => ({
   ...jest.requireActual('@/lib/orders/email/order-email-compose'),
   loadOrderEmailMaterial: (...args: unknown[]) => mockLoadMaterial(...args),
 }));
+// 状況のリンクの準備（グループ E-5 計画 P21）。本物の実装は status-email の試験が確かめる
+const mockLoadStatusUrl = jest.fn();
+jest.mock('@/lib/orders/status/status-email', () => ({
+  loadOrderStatusEmailUrl: (...args: unknown[]) => mockLoadStatusUrl(...args),
+}));
 
 import { runOrderEmailWorker } from '@/lib/orders/email/order-email-worker';
 import type { OrderEmailMaterial } from '@/lib/orders/email/order-email-compose';
 
+// 状況のURLの中のトークンは試験用の作り物
+const STATUS_URL = `https://shop.example.test/order-status/${'FAKE'.padEnd(43, '0')}`;
 const COAT = { item_name: 'コート', color: null, size: null, quantity: 1 };
 
 /** サポートの受け取りで返金待ちになった返品の材料（店への知らせも、お客様へのお受け取りのメールも作れる） */
@@ -76,6 +83,7 @@ describe('runOrderEmailWorker の送り先（返品のメール）', () => {
     mockClientRpc.mockReset();
     mockSend.mockReset().mockResolvedValue({ ok: true, providerMessageId: 're_1' });
     mockLoadMaterial.mockReset().mockResolvedValue(MATERIAL);
+    mockLoadStatusUrl.mockReset().mockResolvedValue(STATUS_URL);
   });
   afterEach(() => jest.restoreAllMocks());
 
@@ -96,7 +104,26 @@ describe('runOrderEmailWorker の送り先（返品のメール）', () => {
     );
   });
 
-  it('返品のお客様あてのメールは、環境変数 SHOP_ALERT_EMAIL があっても、お客様の宛先へ送る', async () => {
+  it('店への知らせ（返金待ち）は、状況のリンクを用意せず、本文も変えない', async () => {
+    jest.replaceProperty(process, 'env', { NODE_ENV: 'test', SHOP_ALERT_EMAIL: 'shop-alert@example.com' });
+    queue('return_refund_pending_shop');
+
+    await expect(runOrderEmailWorker()).resolves.toMatchObject({ sent: 1, stoppedBy: 'empty' });
+
+    expect(mockLoadStatusUrl).not.toHaveBeenCalled();
+    const previousShopText = [
+      '返品 ORD-ORDER-1-R1 の品を受け取りました（受け取った人: サポート）。',
+      '',
+      '受け取った返金の品:',
+      '・コート × 1',
+      '計算どおりの額: ￥5,000',
+      '',
+      '管理画面の注文の一覧で「額を決めて返金する」を押して、返金してください。',
+    ].join('\n');
+    expect(mockSend.mock.calls[0][0].text).toBe(previousShopText);
+  });
+
+  it('返品のお客様あてのメールは、環境変数 SHOP_ALERT_EMAIL があっても、お客様の宛先へ送る。状況のリンクは同じ注文の番号で用意する', async () => {
     jest.replaceProperty(process, 'env', { NODE_ENV: 'test', SHOP_ALERT_EMAIL: 'shop-alert@example.com' });
     queue('return_received');
 
@@ -104,6 +131,11 @@ describe('runOrderEmailWorker の送り先（返品のメール）', () => {
 
     expect(mockSend).toHaveBeenCalledWith(
       expect.objectContaining({ to: 'hanako@example.com', subject: '【Le Fil des Heures】返品をお受け取りしました（ORD-ORDER-1）' }),
+    );
+    expect(mockLoadStatusUrl).toHaveBeenCalledTimes(1);
+    expect(mockLoadStatusUrl).toHaveBeenCalledWith(expect.objectContaining({ rpc: expect.any(Function) }), 'order-1');
+    expect(mockSend.mock.calls[0][0].text).toContain(
+      `ご注文の状況はこちら: ${STATUS_URL}\nお問い合わせの際は、注文番号（ORD-ORDER-1）をお問い合わせフォームにご入力ください。`,
     );
   });
 

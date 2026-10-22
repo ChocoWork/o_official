@@ -1,3 +1,6 @@
+// 返金の要対応が注文のメールの worker の判定（状況のリンクの準備の server 専用の部品を含む）を使うため、試験の場では server-only の印を空にする
+jest.mock('server-only', () => ({}), { virtual: true });
+
 import { ReconcileTransientError } from '@/lib/stripe/checkout-payment-reader';
 import type { ReconcilerDatabase, ReconcilerMailer } from '@/lib/stripe/checkout-payment-reconciler';
 import { raiseRefundFailureWithoutOrder } from '@/lib/stripe/refund-failure-exception';

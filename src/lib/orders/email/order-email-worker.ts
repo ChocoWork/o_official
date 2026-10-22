@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { loadDeliveryEmailMaterial } from '@/lib/orders/email/order-email-delivery-material';
+import { loadOrderStatusEmailUrl } from '@/lib/orders/status/status-email';
 import { recordHeartbeat, type OpsStore } from '@/lib/ops/ops-store';
 import {
   composeOrderEmail,
@@ -72,6 +73,8 @@ export type OrderEmailWorkerDeps = {
   shopRecipient: () => string | null;
   /** 配送メールは保存済み本文があっても必ず現在の版と状態を読む */
   loadDeliveryMaterial?: (claim: ClaimedOrderEmail) => Promise<OrderEmailMaterial | null>;
+  /** 新しいお客様向け本文の「ご注文の状況はこちら」のURL。作れなければ null、DB の失敗は例外（E-5 P21） */
+  loadStatusUrl: (orderId: string) => Promise<string | null>;
   send: (message: OrderEmailMessage) => Promise<OrderEmailSendOutcome>;
   checkConfig: () => OrderEmailPauseReason | null;
   now: () => number;
@@ -214,7 +217,18 @@ async function deliver(deps: OrderEmailWorkerDeps, claim: ClaimedOrderEmail): Pr
 
   let content = claim.subject !== null && claim.bodyText !== null ? { subject: claim.subject, text: claim.bodyText } : null;
   if (!content) {
-    const composed = composeOrderEmail(material, {
+    // 状況のリンクは、送ると決まった新しいお客様向けの本文を作る時だけ用意する（E-5 計画 P21）。
+    // 保存済みの本文・店向けのメール・取りやめの行のためには用意せず、保存済みの本文を作り直さない。
+    // URL が作れなければ（null）composer が作らず、下の材料不足（source_missing）に入る。DB の失敗は一時的な失敗としてやり直す
+    let composeMaterial = material;
+    if (!isShopEmailKind(claim.kind)) {
+      try {
+        composeMaterial = { ...material, orderStatusUrl: await deps.loadStatusUrl(claim.orderId) };
+      } catch {
+        return recordFailure(deps, claim, { category: 'transient', code: 'db_unavailable', retryAfterSeconds: null });
+      }
+    }
+    const composed = composeOrderEmail(composeMaterial, {
       kind: claim.kind,
       variant: claim.variant,
       paymentExpiredSent: claim.paymentExpiredSent,
@@ -312,6 +326,8 @@ export async function runOrderEmailWorker(options: { budgetMs?: number } = {}): 
     loadRequestMaterial: (orderId, kind, returnId, cancelRequestId) =>
       loadRequestEmailMaterial(client, orderId, { kind, returnId, cancelRequestId }),
     loadDeliveryMaterial: (claim) => loadDeliveryEmailMaterial(client, claim),
+    // 状況のリンクの準備は同じ service_role の client で行う
+    loadStatusUrl: (orderId) => loadOrderStatusEmailUrl(client, orderId),
     shopRecipient: () => shopAlertRecipient(),
     send: (message) => sendOrderEmailMessage(message),
     checkConfig: () => checkOrderEmailSendConfig(),

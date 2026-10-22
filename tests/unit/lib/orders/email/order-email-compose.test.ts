@@ -2,14 +2,25 @@ import {
   composeOrderEmail,
   loadOrderEmailMaterial,
   OrderEmailMaterialError,
+  type ComposeRequest,
   type OrderEmailFulfillmentMaterial,
   type OrderEmailMaterial,
   type OrderEmailRefundMaterial,
+  type OrderEmailRequestMaterial,
+  type OrderEmailReturnItem,
+  type OrderEmailReturnMaterial,
+  type OrderEmailReturnReceipt,
 } from '@/lib/orders/email/order-email-compose';
+import type { OrderEmailDeliveryMaterial } from '@/lib/orders/email/order-email-delivery-material';
+import { ORDER_EMAIL_KINDS } from '@/lib/orders/email/order-email-types';
 
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
 const FULFILLMENT_ID = 'f1b2c3d4-1111-2222-8333-444455556666';
 const REFUND_ID = 'e1b2c3d4-1111-2222-8333-444455556666';
+// 状況のリンク（グループ E-5 計画 C-6）。URL の中のトークンは試験用の作り物。期待値は実装の定数を使わず文で書く
+const STATUS_URL = `https://shop.example.test/order-status/${'FAKE'.padEnd(43, '0')}`;
+const STATUS_LINE = `ご注文の状況はこちら: ${STATUS_URL}`;
+const CONTACT = 'お問い合わせの際は、注文番号（ORD-A1B2C3D4）をお問い合わせフォームにご入力ください。';
 const SPLIT_SHIPMENT_NOTICE = '在庫の品を先にお送りし、受注生産の品は仕上がり次第お送りします。';
 const REMAINING_ITEMS_NOTICE = '残りの商品は、準備ができ次第お送りします。';
 const SHIPPED = { kind: 'shipped', variant: null, paymentExpiredSent: false } as const;
@@ -53,6 +64,7 @@ function material(overrides: Partial<OrderEmailMaterial['order']> = {}): OrderEm
     fulfillment: null,
     refund: null,
     orderReturn: null, request: null,
+    orderStatusUrl: STATUS_URL,
   };
 }
 
@@ -123,9 +135,9 @@ describe('composeOrderEmail', () => {
         '山田 花子 様',
         '〒1500001',
         '東京都渋谷区神宮前1-1-1',
-        '0311112222',
         '',
-        'お問い合わせの際は、注文番号（ORD-A1B2C3D4）をお問い合わせフォームにご入力ください。',
+        STATUS_LINE,
+        CONTACT,
         '',
         'Le Fil des Heures',
       ].join('\n'),
@@ -237,7 +249,8 @@ describe('composeOrderEmail', () => {
         '',
         '※ 追跡情報は反映までに数時間かかる場合があります。',
         '',
-        'お問い合わせの際は、注文番号（ORD-A1B2C3D4）をお問い合わせフォームにご入力ください。',
+        STATUS_LINE,
+        CONTACT,
         '',
         'Le Fil des Heures',
       ].join('\n'),
@@ -269,7 +282,7 @@ describe('composeOrderEmail', () => {
       ['発送した商品:', '・コート（BLACK / M） x2', '・ストール x1', '', '配送業者: ヤマト運輸'].join('\n'),
     );
     expect(email?.text).toContain(
-      ['※ 追跡情報は反映までに数時間かかる場合があります。', REMAINING_ITEMS_NOTICE, '', 'お問い合わせの際は'].join('\n'),
+      ['※ 追跡情報は反映までに数時間かかる場合があります。', REMAINING_ITEMS_NOTICE, '', STATUS_LINE, CONTACT].join('\n'),
     );
     // まだ送らない品の名前と、値段は書かない
     expect(email?.text).not.toContain('ブーツ');
@@ -323,7 +336,8 @@ describe('composeOrderEmail（返金のお知らせ）', () => {
         '',
         CARD_TIMING,
         '',
-        'お問い合わせの際は、注文番号（ORD-A1B2C3D4）をお問い合わせフォームにご入力ください。',
+        STATUS_LINE,
+        CONTACT,
         '',
         'Le Fil des Heures',
       ].join('\n'),
@@ -567,7 +581,8 @@ describe('composeOrderEmail（支払い済みのキャンセルのお知らせ�
         '',
         '合計: ￥10,000',
         '',
-        'お問い合わせの際は、注文番号（ORD-A1B2C3D4）をお問い合わせフォームにご入力ください。',
+        STATUS_LINE,
+        CONTACT,
         '',
         'Le Fil des Heures',
       ].join('\n'),
@@ -622,6 +637,227 @@ describe('composeOrderEmail（支払い済みのキャンセルのお知らせ�
       ['お支払い待ちのご注文を取り消しました。', 'お支払いは発生していません。', '', '注文番号: ORD-A1B2C3D4'].join('\n'),
     );
     expect(email?.text).not.toContain('返金');
+  });
+});
+
+// ---- 状況のリンクと電話番号（グループ E-5 計画 C-6）----
+
+/** C-6 の対象のお客様向け16種類と店向け3種類。実装側の判定ではなく、計画の種類を明示して持つ */
+const CUSTOMER_STATUS_MAIL_KINDS = [
+  'paid', 'awaiting_payment', 'payment_expired', 'canceled', 'shipped', 'refund',
+  'return_accepted', 'return_received', 'return_sent_back',
+  'return_requested', 'return_declined', 'cancel_request_received', 'cancel_request_declined',
+  'out_for_delivery', 'delivered', 'shipping_update',
+] as const;
+const SHOP_MAIL_KINDS = ['return_refund_pending_shop', 'return_request_shop', 'cancel_request_shop'] as const;
+
+const COAT_ITEM: OrderEmailReturnItem = { item_name: 'コート', color: 'BLACK', size: 'M', quantity: 1 };
+const SHOP_RETURN_PHONE = '03-1234-5678';
+const RETURN_BASE: OrderEmailReturnMaterial = {
+  number: 1, returnMethod: 'customer_ships', returnShippingPayer: 'shop', returnShippingFee: 0, restockingFeePercent: 0,
+  exchangeFee: 0, exchangeShippingFee: 0, feeWaitingAmount: 0,
+  returnAddress: { name: 'Le Fil des Heures 返品係', postalCode: '150-0001', address: '東京都渋谷区神宮前1-2-3', phone: SHOP_RETURN_PHONE },
+  items: [COAT_ITEM], exchangePlan: [], hasRefundLines: true, receipt: null,
+};
+const RECEIPT_BASE: OrderEmailReturnReceipt = {
+  refundChoice: 'none', received: [COAT_ITEM], sentBack: [], sentBackMessage: null, sentBackCarrier: null,
+  sentBackTrackingNumber: null, exchanges: [], pendingRefund: null, refundWaived: false, refundNotAccepted: false,
+};
+const RETURN_REQUEST: OrderEmailRequestMaterial = {
+  kind: 'return', number: 1, declineMessage: null,
+  lines: [{ ...COAT_ITEM, reason: 'defective', requestedResolution: 'refund', requestedExchange: null, photoCount: 0 }],
+};
+const CANCEL_REQUEST: OrderEmailRequestMaterial = { kind: 'cancel', declineMessage: null, lines: [COAT_ITEM] };
+
+function deliveryMaterial(overrides: Partial<OrderEmailDeliveryMaterial> = {}): OrderEmailMaterial {
+  return {
+    ...material({ status: 'shipped' }),
+    fulfillment: shipment({ completesOrder: false }),
+    delivery: {
+      fulfillmentId: 'fulfillment-1', trackingVersion: 2, currentTrackingVersion: 2, cancelled: false,
+      deliveryStatus: 'delivered', deliveredAt: '2026-10-20T15:01:00.000Z', windowDays: 7, carrier: 'sagawa',
+      trackingNumber: 'NEW-1234', ...overrides,
+    },
+  };
+}
+
+const request = (kind: ComposeRequest['kind'], variant: ComposeRequest['variant'] = null, paymentExpiredSent = false): ComposeRequest => ({
+  kind, variant, paymentExpiredSent,
+});
+
+/** お客様向け16種類と、その書き分け・返送方法・返品日数の有無。[試験の名前, 材料, 依頼] */
+const CUSTOMER_MAIL_CASES: Array<[string, OrderEmailMaterial, ComposeRequest]> = [
+  ['paid（通常）', material(), request('paid', 'order_confirmed')],
+  ['paid（期限後の入金）', material(), request('paid', 'payment_received_after_expiry', true)],
+  ['awaiting_payment', material({ status: 'pending' }), request('awaiting_payment')],
+  ['payment_expired', material({ status: 'failed' }), request('payment_expired')],
+  ['canceled（手続き中）', material({ status: 'cancelled' }), request('canceled', 'payment_in_progress')],
+  ['canceled（入金待ち）', material({ status: 'cancelled' }), request('canceled', 'pending')],
+  ['canceled（支払い済み）', { ...material({ status: 'cancelled' }), refund: refundMaterial() }, request('canceled', 'paid')],
+  ['shipped', { ...material({ status: 'shipped' }), fulfillment: shipment() }, request('shipped')],
+  ['refund（通常）', { ...material(), refund: refundMaterial() }, request('refund', 'standard')],
+  ['refund（取消後）', { ...material({ status: 'cancelled' }), refund: refundMaterial() }, request('refund', 'after_cancel')],
+  [
+    'refund（返品）',
+    { ...material(), refund: refundMaterial(), orderReturn: { ...RETURN_BASE, items: [], receipt: RECEIPT_BASE } },
+    request('refund', 'return'),
+  ],
+  ['return_accepted（お客様が送る）', { ...material(), orderReturn: RETURN_BASE }, request('return_accepted')],
+  [
+    'return_accepted（お店の送り状）',
+    { ...material(), orderReturn: { ...RETURN_BASE, returnMethod: 'shop_label', returnShippingPayer: 'customer', returnShippingFee: 800 } },
+    request('return_accepted'),
+  ],
+  [
+    'return_accepted（返送不要）',
+    { ...material(), orderReturn: { ...RETURN_BASE, returnMethod: 'not_required', returnAddress: null } },
+    request('return_accepted'),
+  ],
+  ['return_received', { ...material(), orderReturn: { ...RETURN_BASE, items: [], receipt: RECEIPT_BASE } }, request('return_received')],
+  [
+    'return_sent_back',
+    {
+      ...material(),
+      orderReturn: {
+        ...RETURN_BASE, items: [],
+        receipt: { ...RECEIPT_BASE, received: [], sentBack: [COAT_ITEM], sentBackMessage: 'お返しします。' },
+      },
+    },
+    request('return_sent_back'),
+  ],
+  ['return_requested', { ...material(), request: RETURN_REQUEST }, request('return_requested')],
+  ['return_declined', { ...material(), request: { ...RETURN_REQUEST, declineMessage: 'お受けできませんでした。' } }, request('return_declined')],
+  ['cancel_request_received', { ...material(), request: CANCEL_REQUEST }, request('cancel_request_received')],
+  [
+    'cancel_request_declined',
+    { ...material(), request: { ...CANCEL_REQUEST, declineMessage: 'お受けできませんでした。' } },
+    request('cancel_request_declined'),
+  ],
+  ['out_for_delivery', deliveryMaterial({ deliveryStatus: 'out_for_delivery' }), request('out_for_delivery')],
+  ['delivered（返品の日数あり）', deliveryMaterial({ windowDays: 7 }), request('delivered')],
+  ['delivered（無制限）', deliveryMaterial({ windowDays: null }), request('delivered')],
+  ['shipping_update', deliveryMaterial({ deliveryStatus: 'confirmed' }), request('shipping_update')],
+];
+
+describe('composeOrderEmail（状況のリンク。グループ E-5 計画 C-6）', () => {
+  it('お客様向けは16種類、店向けは3種類で、合わせて全種類になる。試験が確かめる種類も16種類すべて', () => {
+    expect(CUSTOMER_STATUS_MAIL_KINDS).toHaveLength(16);
+    expect(SHOP_MAIL_KINDS).toHaveLength(3);
+    expect([...CUSTOMER_STATUS_MAIL_KINDS, ...SHOP_MAIL_KINDS].sort()).toEqual([...ORDER_EMAIL_KINDS].sort());
+    expect(new Set(CUSTOMER_MAIL_CASES.map(([, , composeRequest]) => composeRequest.kind))).toEqual(new Set(CUSTOMER_STATUS_MAIL_KINDS));
+  });
+
+  test.each(CUSTOMER_MAIL_CASES)('%sのリンクはお問い合わせ文の直前に1回だけ', (_label, source, composeRequest) => {
+    const text = composeOrderEmail(source, composeRequest)?.text ?? '';
+
+    expect(text.split(STATUS_LINE).length - 1).toBe(1);
+    expect(text.split(STATUS_URL).length - 1).toBe(1);
+    expect(text.split(CONTACT).length - 1).toBe(1);
+    // 空行を挟まず、問い合わせ文の直前。新しい末尾は「空行 → リンク → 問い合わせ文 → 空行 → 店の名前」
+    expect(text.includes(`${STATUS_LINE}\n${CONTACT}`)).toBe(true);
+    expect(text.endsWith(`\n\n${STATUS_LINE}\n${CONTACT}\n\nLe Fil des Heures`)).toBe(true);
+  });
+
+  test.each(CUSTOMER_MAIL_CASES)('%sは状況のURLが無い・使えない材料なら作らない（例外も投げない）', (_label, source, composeRequest) => {
+    const unusable = [
+      undefined, null, '', ' ', 'not a url', '/order-status/relative', 'ftp://shop.example.test/order-status/x',
+      'javascript:alert(1)', `${STATUS_URL}\nBcc: x@example.com`, ` ${STATUS_URL}`, `${STATUS_URL} `,
+    ];
+
+    expect(composeOrderEmail({ ...source, orderStatusUrl: STATUS_URL }, composeRequest)).not.toBeNull();
+    for (const orderStatusUrl of unusable) {
+      expect(composeOrderEmail({ ...source, orderStatusUrl }, composeRequest)).toBeNull();
+    }
+  });
+
+  it('リンクは材料のURLをそのまま使い、サイトの設定など材料以外から作らない。http の手元のURLも使える', () => {
+    jest.replaceProperty(process, 'env', { NODE_ENV: 'test', NEXT_PUBLIC_SITE_URL: 'https://other.example.test' });
+    try {
+      const local = 'http://localhost:3000/order-status/' + 'FAKE'.padEnd(43, '0');
+      const text = composeOrderEmail({ ...material(), orderStatusUrl: local }, request('payment_expired'))?.text ?? '';
+
+      expect(text).toContain(`ご注文の状況はこちら: ${local}\n${CONTACT}`);
+      expect(text).not.toContain('other.example.test');
+    } finally {
+      jest.restoreAllMocks();
+    }
+  });
+
+  it('店向け3種類はリンクを用意せず本文も変えない（URLがあっても無くても同じで、今までの本文のまま）', () => {
+    const shopMails: Array<[OrderEmailMaterial, ComposeRequest, string]> = [
+      [
+        { ...material(), orderReturn: { ...RETURN_BASE, items: [], receipt: { ...RECEIPT_BASE, pendingRefund: { items: [COAT_ITEM], amount: 5000 } } } },
+        request('return_refund_pending_shop'),
+        [
+          '返品 ORD-A1B2C3D4-R1 の品を受け取りました（受け取った人: サポート）。',
+          '',
+          '受け取った返金の品:',
+          '・コート（BLACK / M） × 1',
+          '計算どおりの額: ￥5,000',
+          '',
+          '管理画面の注文の一覧で「額を決めて返金する」を押して、返金してください。',
+        ].join('\n'),
+      ],
+      [
+        { ...material(), request: RETURN_REQUEST },
+        request('return_request_shop'),
+        [
+          'お客様から返品の申し込みが届きました（返品番号 ORD-A1B2C3D4-R1）。',
+          '',
+          '申し込みの商品:',
+          '・コート（BLACK / M） × 1（理由: 破損・不良／ご希望: 返金／写真 0枚）',
+          '',
+          '管理画面の注文の一覧で「申し込みを確かめる」を押して、承認するかお断りしてください。',
+        ].join('\n'),
+      ],
+      [
+        { ...material(), request: CANCEL_REQUEST },
+        request('cancel_request_shop'),
+        [
+          'お客様からキャンセルの申し込みが届きました。',
+          '',
+          '申し込みの商品:',
+          '・コート（BLACK / M） × 1',
+          '',
+          '管理画面の注文の一覧で「キャンセルの申し込み」を押して、品を外すかお断りしてください。',
+        ].join('\n'),
+      ],
+    ];
+
+    expect(shopMails.map(([, composeRequest]) => composeRequest.kind)).toEqual([...SHOP_MAIL_KINDS]);
+    for (const [source, composeRequest, previousShopText] of shopMails) {
+      for (const orderStatusUrl of [STATUS_URL, null, undefined, 'not a url']) {
+        const actualShopText = composeOrderEmail({ ...source, orderStatusUrl }, composeRequest)?.text;
+
+        expect(actualShopText).toBe(previousShopText);
+        expect(actualShopText).not.toContain('ご注文の状況はこちら');
+        expect(actualShopText).not.toContain('order-status');
+      }
+    }
+  });
+
+  it.each([
+    ['paid', 'paid', 'order_confirmed'],
+    ['awaiting_payment', 'pending', null],
+  ] as const)('%sにお客様の電話が無く住所と名前は残る', (kind, status, variant) => {
+    const customerPhone = '09099998888';
+    const text =
+      composeOrderEmail(
+        material({ status, shipping_phone: customerPhone, shipping_building: 'テストビル301' }),
+        request(kind, variant),
+      )?.text ?? '';
+
+    expect(text.includes(customerPhone)).toBe(false);
+    expect(text.includes('090-9999-8888')).toBe(false);
+    // お届け先の名前・郵便番号・住所・建物は残り、その直後は空行とリンク
+    const customerAddress = ['お届け先:', '山田 花子 様', '〒1500001', '東京都渋谷区神宮前1-1-1', 'テストビル301', '', STATUS_LINE].join('\n');
+    expect(text.includes(customerAddress)).toBe(true);
+  });
+
+  it('電話が無い注文のお届け先は、これまでどおり空の行を作らない', () => {
+    const text = composeOrderEmail(material({ shipping_phone: null }), request('paid', 'order_confirmed'))?.text ?? '';
+
+    expect(text.includes(['東京都渋谷区神宮前1-1-1', '', STATUS_LINE].join('\n'))).toBe(true);
   });
 });
 

@@ -3,6 +3,9 @@ import type { OrderEmailDeliveryMaterial } from '@/lib/orders/email/order-email-
 import type { DeliveryEmailKind } from '@/lib/orders/email/order-email-types';
 
 const ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455556666';
+// 状況のリンク（グループ E-5 計画 C-6）。URL の中のトークンは試験用の作り物
+const STATUS_URL = `https://shop.example.test/order-status/${'FAKE'.padEnd(43, '0')}`;
+const STATUS_LINE = `ご注文の状況はこちら: ${STATUS_URL}`;
 
 function material(overrides: Partial<OrderEmailDeliveryMaterial> = {}): OrderEmailMaterial {
   return {
@@ -21,7 +24,7 @@ function material(overrides: Partial<OrderEmailDeliveryMaterial> = {}): OrderEma
       number: 2, carrier: 'yamato', trackingNumber: 'OLD-NUMBER', completesOrder: false, cancelled: false,
       lines: [{ item_name: 'コート', color: 'BLACK', size: 'M', quantity: 1 }],
     },
-    refund: null, orderReturn: null, request: null,
+    refund: null, orderReturn: null, request: null, orderStatusUrl: STATUS_URL,
     delivery: {
       fulfillmentId: 'fulfillment-1', trackingVersion: 2, currentTrackingVersion: 2, cancelled: false,
       deliveryStatus: 'out_for_delivery', deliveredAt: '2026-10-20T15:01:00.000Z', windowDays: 7,
@@ -47,6 +50,7 @@ const OUT_FOR_DELIVERY = `テスト 太郎 様
 追跡番号: NEW-1234
 追跡はこちら: https://k2k.sagawa-exp.co.jp/p/web/okurijosearch.do?okurijoNo=NEW-1234
 
+${STATUS_LINE}
 お問い合わせの際は、注文番号（ORD-A1B2C3D4）をお問い合わせフォームにご入力ください。
 
 Le Fil des Heures`;
@@ -66,6 +70,7 @@ const SHIPPING_UPDATE = `テスト 太郎 様
 
 先にお知らせした伝票番号は使えません
 
+${STATUS_LINE}
 お問い合わせの際は、注文番号（ORD-A1B2C3D4）をお問い合わせフォームにご入力ください。
 
 Le Fil des Heures`;
@@ -80,8 +85,7 @@ const deliveredText = (days: number | null) => `テスト 太郎 様
 お届けした商品:
 ・コート（BLACK / M） x1
 
-${days === null ? '' : `商品に不具合がございましたら、到着から ${days} 日以内にご注文の画面またはお問い合わせからご連絡ください\n\n`}ご注文の確認はこちら: https://shop.example.com/account/orders/a1b2c3d4-1111-4222-8333-444455556666
-
+${days === null ? '' : `商品に不具合がございましたら、到着から ${days} 日以内にご注文の画面またはお問い合わせからご連絡ください\n\n`}${STATUS_LINE}
 お問い合わせの際は、注文番号（ORD-A1B2C3D4）をお問い合わせフォームにご入力ください。
 
 Le Fil des Heures`;
@@ -136,10 +140,40 @@ describe('配送メールのC-6の件名と本文', () => {
     expect(compose('delivered', material({ deliveredAt }))).toBeNull();
   });
 
-  it.each(['http://', 'https://[broken'])('サイトの住所%sが壊れていても例外を投げず、配達済みの材料不足として扱う', (siteUrl) => {
-    process.env.NEXT_PUBLIC_SITE_URL = siteUrl;
-    expect(compose('delivered', material({ deliveryStatus: 'delivered' }))).toBeNull();
+  it('deliveredの会員用リンクを消しほかの配達済みの文を保つ', () => {
+    for (const windowDays of [7, null]) {
+      const text = compose('delivered', material({ deliveryStatus: 'delivered', windowDays }))?.text ?? '';
+
+      expect(text.includes('/account/orders/')).toBe(false);
+      expect(text.includes('ご注文の確認はこちら:')).toBe(false);
+      // 旧リンクとその後の空行だけが消え、配達済みの冒頭・お届け日・商品・返品の案内・問い合わせ文・店の名前は残る
+      for (const kept of [
+        'ご注文の商品をお届けしました。', '注文番号: ORD-A1B2C3D4', 'お届け日: 10月21日', 'お届けした商品:', '・コート（BLACK / M） x1',
+        'お問い合わせの際は、注文番号（ORD-A1B2C3D4）をお問い合わせフォームにご入力ください。', 'Le Fil des Heures',
+      ]) {
+        expect(text.split('\n')).toContain(kept);
+      }
+      expect(text.includes('到着から')).toBe(windowDays !== null);
+      // 新しい末尾は「空行 → 状況のリンク → 問い合わせ文 → 空行 → 店の名前」。連続した空行は作らない
+      expect(text.endsWith(`\n\n${STATUS_LINE}\nお問い合わせの際は、注文番号（ORD-A1B2C3D4）をお問い合わせフォームにご入力ください。\n\nLe Fil des Heures`)).toBe(true);
+      expect(text.includes('\n\n\n')).toBe(false);
+    }
   });
+
+  it.each(['out_for_delivery', 'delivered', 'shipping_update'] as const)(
+    '%sは状況のURLが無い・使えない材料なら作らない（サイトの設定は読まず、材料のURLだけを使う）',
+    (kind) => {
+      const source = material({ deliveryStatus: kind === 'delivered' ? 'delivered' : 'out_for_delivery' });
+      for (const orderStatusUrl of [undefined, null, '', 'not a url', 'ftp://shop.example.test/order-status/x', 'javascript:alert(1)']) {
+        expect(compose(kind, { ...source, orderStatusUrl })).toBeNull();
+      }
+      // 以前は配達済みだけがサイトの住所から旧リンクを作っていた。今は設定が壊れていても材料のURLがあれば作れる
+      for (const siteUrl of ['http://', 'https://[broken']) {
+        process.env.NEXT_PUBLIC_SITE_URL = siteUrl;
+        expect(compose(kind, source)?.text).toContain(STATUS_LINE);
+      }
+    },
+  );
 
   it.each(['out_for_delivery', 'delivered', 'shipping_update'] as const)('%sは配送材料が無ければ作らない', (kind) => {
     const source = material();

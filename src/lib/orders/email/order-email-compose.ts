@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getSiteUrl } from '@/lib/redirect';
 import type { OrderEmailDeliveryMaterial } from '@/lib/orders/email/order-email-delivery-material';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import {
@@ -15,6 +14,7 @@ import type { CancelReason, OrderStatus } from '@/lib/orders/order-payment-types
 import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import {
   isReturnRequestEmailKind,
+  isShopEmailKind,
   type CancelRequestEmailKind,
   type DeliveryEmailKind,
   type OrderEmailKind,
@@ -46,6 +46,8 @@ import {
  * 返品の返金のお知らせ（返金の書き分け return）は、返金の記録が指す返品と、その返金を始めた受け取りも読む（グループ E-3 設計書 9 章）。
  * 申し込みのメール6種類（返品のお申し込みの受付・お断り・店への知らせ、キャンセルのお申し込みの受付・お断り・店への知らせ）は、
  * 返品・キャンセルの申し込みの記録から読む。お客様の詳しい内容・ご連絡事項と写真は読まない（グループ E-3 段2 計画 C-6）。
+ * お客様向け16種類は、末尾の問い合わせ文の直前に状況のリンク（material.orderStatusUrl）を1行足す。店向け3種類は変えない。
+ * 注文確認・入金待ちのお届け先に、お客様の電話番号は書かない（グループ E-5 計画 C-6）。
  */
 const SHOP_NAME = 'Le Fil des Heures';
 
@@ -277,6 +279,8 @@ export type OrderEmailMaterial = {
   request: OrderEmailRequestMaterial | null;
   /** 配送メール3種類だけ、送る直前に現在の発送と版を読む（E-4 C-6） */
   delivery?: OrderEmailDeliveryMaterial;
+  /** 状況のリンクのURL（E-5 P12・P21）。worker が新しいお客様向け本文の時だけ足す */
+  orderStatusUrl?: string | null;
 };
 
 export type ComposeRequest = {
@@ -1272,13 +1276,12 @@ function composeConfirmation(
   const itemLines = formatItemLines(items, order.currency, { withFulfillment: canPromiseDelivery });
   const showSplitShipmentNotice = canPromiseDelivery && hasStockAndBackorder(items);
 
-  // 空の項目で空行が出ないよう、値のある行だけを積む。
+  // 空の項目で空行が出ないよう、値のある行だけを積む。お客様の電話番号は書かない（状況の頁の本人の確かめに使うため。E-5 計画 C-6）
   const shippingLines = [
     order.shipping_full_name ? `${order.shipping_full_name} 様` : null,
     order.shipping_postal_code ? `〒${order.shipping_postal_code}` : null,
     [order.shipping_prefecture, order.shipping_city, order.shipping_address].filter(Boolean).join('') || null,
     order.shipping_building || null,
-    order.shipping_phone || null,
   ].filter((line): line is string => Boolean(line));
 
   // 注文確定の RPC の COALESCE と同じく、取れないときは 0 として扱う。
@@ -1738,13 +1741,6 @@ function composeDelivery(material: OrderEmailMaterial, kind: DeliveryEmailKind):
   if (kind === 'delivered') {
     const date = delivery.deliveredAt ? new Date(delivery.deliveredAt) : null;
     if (!date || !Number.isFinite(date.getTime())) return null;
-    let orderUrl: string;
-    try {
-      orderUrl = new URL(`/account/orders/${order.id}`, getSiteUrl()).toString();
-    } catch {
-      // 設定の誤りは材料不足として返し、ほかのメールの処理を続ける。
-      return null;
-    }
     const deliveredOn = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', month: 'long', day: 'numeric' }).format(date);
     return {
       subject: `【${SHOP_NAME}】商品をお届けしました（${orderNumber}）`,
@@ -1754,7 +1750,6 @@ function composeDelivery(material: OrderEmailMaterial, kind: DeliveryEmailKind):
         ...(delivery.windowDays === null ? [] : [
           `商品に不具合がございましたら、到着から ${delivery.windowDays} 日以内にご注文の画面またはお問い合わせからご連絡ください`, '',
         ]),
-        `ご注文の確認はこちら: ${orderUrl}`, '',
         contactLine(order.id), '', SHOP_NAME,
       ].join('\n'),
     };
@@ -1916,8 +1911,60 @@ function composeCancelRequestShop(material: OrderEmailMaterial): ComposedOrderEm
   };
 }
 
-/** 件名と本文を作る。材料が足りなければ null */
+/** 状況のリンクの行（グループ E-5 計画 C-6）。「ご注文の状況はこちら: {URL}」 */
+const ORDER_STATUS_LINK_LABEL = 'ご注文の状況はこちら: ';
+
+/**
+ * 状況のリンクの行を作る。使えるのは worker が DB で用意した http/https の絶対URLだけ（正規の書き方のまま）。
+ * 空白・改行を含む、相対、ほかの方式、正規でない書き方は使わず null（本文に差し込まない）
+ */
+function orderStatusLinkLine(url: string | null | undefined): string | null {
+  if (typeof url !== 'string') {
+    return null;
+  }
+  try {
+    const parsed = new URL(url);
+    if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.toString() !== url) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  return `${ORDER_STATUS_LINK_LABEL}${url}`;
+}
+
+/**
+ * お客様向けの本文の末尾「問い合わせ文 → 空行 → 店の名前」の直前に、状況のリンクを1行足す（空行は挟まない）。
+ * 位置は末尾の3行で決める（本文の途中に店が書いた文があっても影響されない）。URL が使えない・末尾が想定と違えば null
+ */
+function withOrderStatusLink(
+  composed: ComposedOrderEmail,
+  orderId: string,
+  orderStatusUrl: string | null | undefined,
+): ComposedOrderEmail | null {
+  const linkLine = orderStatusLinkLine(orderStatusUrl);
+  const lines = composed.text.split('\n');
+  const tail = lines.length - 3;
+  if (!linkLine || tail < 0 || lines[tail] !== contactLine(orderId) || lines[tail + 1] !== '' || lines[tail + 2] !== SHOP_NAME) {
+    return null;
+  }
+  lines.splice(tail, 0, linkLine);
+  return { ...composed, text: lines.join('\n') };
+}
+
+/**
+ * 件名と本文を作る。材料が足りなければ null。
+ * お客様向け16種類は、状況のURL（material.orderStatusUrl）が使えなければ作らない。店向け3種類はURLを見ず、本文も変えない
+ */
 export function composeOrderEmail(material: OrderEmailMaterial, request: ComposeRequest): ComposedOrderEmail | null {
+  const composed = composeEmailBody(material, request);
+  if (!composed || isShopEmailKind(request.kind)) {
+    return composed;
+  }
+  return withOrderStatusLink(composed, material.order.id, material.orderStatusUrl);
+}
+
+function composeEmailBody(material: OrderEmailMaterial, request: ComposeRequest): ComposedOrderEmail | null {
   switch (request.kind) {
     case 'awaiting_payment':
       return composeConfirmation(material, 'awaiting_payment', AWAITING_LEAD);
