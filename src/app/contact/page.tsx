@@ -6,6 +6,7 @@ import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { SingleSelect } from "@/components/ui/SingleSelect/SingleSelect";
 import { TextAreaField } from "@/components/ui/TextAreaField/TextAreaField";
 import { TextField } from "@/components/ui/TextField/TextField";
+import { parseContactPrefill } from "@/features/contact/contact-prefill";
 
 type ContactFormData = {
   name: string;
@@ -44,6 +45,28 @@ export default function ContactPage() {
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [showThanksModal, setShowThanksModal] = useState(false);
   const thanksDialogRef = useRef<HTMLDivElement>(null);
+  const prefillAppliedRef = useRef(false);
+  const prefillEditedRef = useRef({ inquiryType: false, orderNumber: false });
+
+  useEffect(() => {
+    if (prefillAppliedRef.current) return;
+    prefillAppliedRef.current = true;
+    const prefill = parseContactPrefill(window.location.search);
+    if (prefill.inquiryType === undefined && prefill.orderNumber === undefined) return;
+
+    // 初期反映より前の入力と、利用者が空に戻した欄も守る。
+    setFormData((prev) => ({
+      ...prev,
+      inquiryType:
+        !prefillEditedRef.current.inquiryType && prev.inquiryType === ""
+          ? (prefill.inquiryType ?? prev.inquiryType)
+          : prev.inquiryType,
+      orderNumber:
+        !prefillEditedRef.current.orderNumber && prev.orderNumber === ""
+          ? (prefill.orderNumber ?? prev.orderNumber)
+          : prev.orderNumber,
+    }));
+  }, []);
 
   const messageCount = formData.message.length;
 
@@ -164,6 +187,9 @@ export default function ContactPage() {
     fieldName: keyof ContactFormData,
     value: string,
   ) => {
+    if (fieldName === "inquiryType" || fieldName === "orderNumber") {
+      prefillEditedRef.current[fieldName] = true;
+    }
     setFormData((prev) => ({ ...prev, [fieldName]: value }));
     setErrors((prev) => ({ ...prev, [fieldName]: undefined }));
   };
