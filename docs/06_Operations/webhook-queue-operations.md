@@ -406,3 +406,18 @@ controllerは値を受け取らず、手順と結果の記録を用意する。�
 | 署名の合わない知らせ | 合わない要求ごとに DB へ数を書く。送信元ごとの回数の制限か、記録をまとめる |
 | 発送の行の守り | manual・tracking の印でも配送業者・番号を変えられる。印ごとに許す列を分ける |
 | 配達済みのメールの住所の設定の誤り | サイトの住所の設定が壊れていると、配達済みのメールは店への知らせなしで送れないまま終わる。運用通知かログを足す |
+
+
+## 9. 注文状況の適用とログの確認（E-5 / FREQ-498〜505）
+
+[詳細設計](../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../superpowers/plans/2026-10-22-order-status-page.md)・[メール運用](order-email-operations.md)を参照。Task 11の手順であり、今回の実施済み記録ではない。本番DB、サービス起動停止、reset、DB結合、E2E、Graphify更新はcontrollerの担当。
+
+1. 適用前にpgcryptoの配置と `extensions.gen_random_bytes(integer)` の存在を読むだけで確認する。移行Aはextensionsへの作成と存在検査を持ち、別schemaなら `ORDER_STATUS_CRYPTO_UNAVAILABLE` で停止する。別の関数へ切り替えたり移設したりしない。
+2. [移行A](../../supabase/migrations/20261023100000_order_status_links.sql) と [移行B](../../supabase/migrations/20261023100100_order_status_returns.sql) を A → B の順に適用してからアプリを公開する。各BEGIN/COMMIT、完全修飾・所有者・RLS・RESTRICTIVE拒否・service_roleのSELECTだけ・public関数のEXECUTEとprivate補助の拒否、NOTIFYを照合する。過去の移行は変えず、実際の版の記録はTask 11で行う。
+3. `ORDER_STATUS_SESSION_SECRET`（空なら `JWT_SECRET`）と、本番の `NEXT_PUBLIC_SITE_URL` を確認する。鍵の値は受け取らず出力しない。URL未設定ではlocalhostを使い得るため必須設定とする。保存済み本文の誤ったリンクは設定変更後も直らない。
+4. 適用前の保存済み未完了本文をメール運用のSQLで件数だけ確認する。本文・電話・宛先・tokenは表示しない。P28に従い本文を変えず通常の再試行を続ける。リンク一括作成と一斉再送はしない。
+5. 本番のアクセスログ・解析・外部監視の設定でtoken付きpathを記録しないことを確認する。ホスティング/CDN、アプリのログ、解析SDK、例外監視の全収集経路でページとAPIのpathを除外または収集前に伏せる。元のURLが収集基盤に残ってから表示だけ伏せる方式では足りない。
+6. controllerが手元の合成リンクで収集抑止を確認し、設定の名称・記録されないこと・件数だけを記録する。実token・Cookie・下4桁・署名・鍵・個人情報をログ・監査・エラー・queryや報告へ出さない。既存のno-referrer、APIのno-store、metadataの検索拒否も確認する。
+7. controllerがDB結合後にresetを挟み、本番ビルドと手元Supabase/Mailpit・3幅390/768/1280で新10spec/30ケースと既存回帰を確認する。17TRACKはE-4の手元fakeだけ。今回の文書・静的試験の成功を実DB・メール・ブラウザ・本番の成功とは扱わない。
+
+注文状況のための新しいcron登録や期限での全件削除は作らない。21日の更新は既存の `complete_order_email` の送信成功と同じ取引、24時間の印は専用APIで管理する。

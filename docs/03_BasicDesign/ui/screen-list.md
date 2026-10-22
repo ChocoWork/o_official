@@ -1,12 +1,12 @@
 # 画面一覧
 
-> 状態: 全画面ルートと導線・表示条件をレビュー | 確認日: 2026-10-03（購入の行は2026-10-07に再確認） | 根拠: `src/app/**/page.tsx` 38件
+> 状態: 全画面ルートと導線・表示条件をレビュー | 確認日: 2026-10-03（購入の行は2026-10-07、E-5は2026-10-22に反映） | 根拠: `src/app/**/page.tsx` 39件
 
 ## 概要
 
 `page.tsx` が定義する画面ルートを1ルート1行で示す。[画面遷移図](screen-flow.md)と対応し、リンクの入口・出口、同じルート内の状態、現在の表示条件を記録する。角括弧の `[id]` は実行時の識別子に置き換わる。ルートの存在と、画面表示・API操作の許可はそれぞれの実装で確認する。
 
-## 顧客向け画面（17ルート）
+## 顧客向け画面（18ルート）
 
 | パス | 画面・役割 | 導線・同一画面内の状態 | 実装 |
 | --- | --- | --- | --- |
@@ -20,6 +20,7 @@
 | `/look/[id]` | LOOK詳細 | 一覧、関連商品、前後のLOOKへ移動。対象LOOKがない場合は同じルートに未存在表示 | [[id]/page.tsx](../../../src/app/look/%5Bid%5D/page.tsx) |
 | `/stockist` | 取扱店 | `pref` の都道府県複数選択で絞り込み。住所のGoogle Maps、電話の `tel:` リンク | [page.tsx](../../../src/app/stockist/page.tsx) |
 | `/contact` | お問い合わせ | 入力・送信エラー、送信完了メッセージと通知モーダルを同画面に表示 | [page.tsx](../../../src/app/contact/page.tsx) |
+| `/order-status/[token]` | ご注文の状況 | メールから公開情報を表示。認可後だけ個人情報。登録・問い合わせ・会員の注文へ案内 | [page.tsx](../../../src/app/order-status/%5Btoken%5D/page.tsx)、[ページ仕様](../../04_DetailDesign/pages/20_order_status.md) |
 | `/search` | サイト内検索 | `q`・`tab` を更新し同じルートで検索。結果から商品・LOOK・NEWS詳細へ移動。LOAD MOREは同画面の追加表示 | [page.tsx](../../../src/app/search/page.tsx) |
 | `/wishlist` | ウィッシュリスト | 商品詳細へ移動。保存解除・カート追加は同画面。空状態から商品一覧へ移動 | [page.tsx](../../../src/app/wishlist/page.tsx) |
 | `/cart` | カート | 数量変更・削除は同画面。商品詳細、商品一覧、購入手続きへ移動。空状態からも商品一覧へ移動 | [page.tsx](../../../src/app/cart/page.tsx) |
@@ -132,3 +133,17 @@ E-4 の新しいページURLは0。既存の38画面ルートを維持し、以�
 | `/privacy` | ショップの追跡オンの時だけ17TRACKの委託の文 |
 
 dialogから戻った時は履歴の操作位置へフォーカスを戻し、保存や結果不明では履歴・一覧を再取得する。詳細な表示条件はaccount/admin/privacyの設計とAPI仕様を参照。
+
+
+## 注文の状況の画面（E-5 / FREQ-498〜505）
+
+[詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)・[ページ仕様](../../04_DetailDesign/pages/20_order_status.md)を参照。
+
+新しい `/order-status/[token]` を顧客向けへ1ルート追加し、全39ルート・顧客向け18ルート。公開情報の後に専用GETで個人情報を追加する同一画面内の状態を持つ。確認期限後も公開は残す。取り消した注文は表示し、隠す2状態と存在しない注文は同じ404。
+
+| 対象 | 行き先 |
+| --- | --- |
+| ログイン | `/login` |
+| 持ち主以外の登録 | `/login?tab=register`。同じメールで登録しメール確認 |
+| 問い合わせ | `/contact?type=order&order={orderNumber}`。入力済みで開き編集可能 |
+| 持ち主の申し込み | `/account/orders/{id}`。このページは返品・キャンセルの記録だけを表示 |

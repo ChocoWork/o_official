@@ -124,7 +124,9 @@ test('E2EのACコメントが要求表に存在し対応するspecだけを指�
   const unknownComments: string[] = [];
   specs.forEach((file) => {
     const id = /FR-((?:ADMIN|ACCOUNT)-\d+)/.exec(file)![1];
-    const comments = read(file).split('\n').filter((line) => line.trim().startsWith('//')).flatMap((line) => line.match(/FREQ-\d+-AC-\d+/g) ?? []);
+    // E-4 の範囲（FREQ-488〜497）だけを見る。あとのグループが同じ spec に足した AC は、そのグループの静的試験が見る。
+    const comments = read(file).split('\n').filter((line) => line.trim().startsWith('//')).flatMap((line) => line.match(/FREQ-\d+-AC-\d+/g) ?? [])
+      .filter((ac) => /^FREQ-(48[89]|49[0-7])-/.test(ac));
     expect(comments.length).toBeGreaterThan(0);
     comments.forEach((ac) => {
       if (!known.has(ac) || !e2eByAc[expectedAcs.indexOf(ac)]?.includes(id)) unknownComments.push(`${file}: ${ac}`);
@@ -164,14 +166,14 @@ test('3管理POSTと1webhookをAPIと入口一覧に記録し総数が実コー�
   });
   const routes = walk('src/app/api').filter((file) => file.endsWith('/route.ts'));
   const methods = routes.flatMap((file) => [...read(file).matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b|export\s+const\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g)]);
-  expect(routes).toHaveLength(128); expect(methods).toHaveLength(167);
-  contains(api, '128ファイル'); contains(api, '167組');
-  contains(api, 'HEAD/OPTIONSは167組に含めない');
+  expect(routes).toHaveLength(130); expect(methods).toHaveLength(169);
+  contains(api, '130ファイル'); contains(api, '169組');
+  contains(api, 'HEAD/OPTIONSは169組に含めない');
   for (const file of files.slice(0, 3)) contains(read(file), '配送の入口・表は E-4 の変更を 2026-10-21 に反映');
-  contains(inventory, '128ファイル・167メソッド');
+  contains(inventory, '130ファイル・169メソッド');
   const entries = inventory.split('\n').filter((line) => /^\| `\/api\//.test(line));
-  expect(entries).toHaveLength(127);
-  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(166);
+  expect(entries).toHaveLength(129);
+  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(168);
 });
 
 test('APIに設定と顧客の条件と全エラーを反映する', () => {

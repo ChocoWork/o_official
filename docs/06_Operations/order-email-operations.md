@@ -517,3 +517,45 @@ shipping_update は直しの行の新しい値、配達中/配達済みは claim
 配達済みの案内の日数は材料取得時の `shop_return_settings.window_days`。無制限（NULL）は案内文と直後の空行を出さない。顧客への状況通知と、追跡接続の異常を `SHOP_ALERT_EMAIL` に1日1回送る店への運用通知は別系統。メール配達のdeliveredはメールが届いた状態であり、荷物のdeliveredではない。
 
 19種類の型・再送拒否・旧版skip・本文はDB/単体/E2Eの別々の検証対象。本物の17TRACK・本番メール・実番号の確認は開店前の手順で実施し、この文書更新で確認済みとは扱わない。
+
+
+## 12. 注文状況リンクと確認期限（E-5 / FREQ-500・503）
+
+[詳細設計](../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../superpowers/plans/2026-10-22-order-status-page.md)・[ページ仕様](../04_DetailDesign/pages/20_order_status.md)を参照。以下は運用の手順であり、本番の件数・設定・ログを今回取得した記録ではない。
+
+### 対象メールと本文
+
+お客様向け16種類は `paid`・`awaiting_payment`・`payment_expired`・`canceled`・`shipped`・`refund`・`return_accepted`・`return_received`・`return_sent_back`・`return_requested`・`return_declined`・`cancel_request_received`・`cancel_request_declined`・`out_for_delivery`・`delivered`・`shipping_update`。店向け3種類 `return_refund_pending_shop`・`return_request_shop`・`cancel_request_shop` は変更しない。
+
+新しいお客様向け本文だけ、末尾を「空行 → `ご注文の状況はこちら: {orderStatusUrl}` → `お問い合わせの際は、注文番号（{orderNumber}）をお問い合わせフォームにご入力ください。` → 空行 → Le Fil des Heures」とする。リンクと問い合わせ文の間に空行を挟まない。deliveredの旧会員リンクとその空行は置き換える。paid/awaiting_paymentのお届け先からお客様の電話だけを削除し、名前・郵便番号・住所・建物と、返品先のお店の電話は残す。件名やその他の文を変更しない。
+
+新本文の材料は `loadStatusUrl(orderId)` が用意し、`new URL('/order-status/' + token, getSiteUrl())` で絶対URLを作る。URLを作れない時は `source_missing`（配送3種類はtransient、ほかはpermanent）、DB失敗は `db_unavailable/transient`。1通の失敗でほかのメール処理を止めない。
+
+### 21日と24時間と20回
+
+`complete_order_email` のlease一致の成功でsentとなった `sent_at` に21日を足し、`GREATEST` で期限を戻さない。対象16種類だけが更新し、店向け・失敗・取りやめでは更新しない。本文の内容やoriginでは種類の判定を変えない。リンク行が無ければ何もしない。期限が進んだ時だけ不一致の合計20回を0に戻す。同時刻・古い完了・正解・429では戻さない。
+
+確認印は24時間とverify_untilの早い方までで、21日間有効なCookieではない。延長メールが成功しても古い印のexpは延ばさない。期限NULL・過去・電話が短い場合は入力欄を出さず、持ち主のログインかお問い合わせを案内する。公開部分は期限後も同じリンクで見られる。
+
+### 旧本文と送り直し待ちの確認
+
+保存済みの `subject/body_text` は送り直しでも書き換えない。古いお客様の電話や旧会員リンクが残る場合がある。保存済み本文ではリンクを準備せずそのまま送る。既存注文へのリンクの一括作成・送信済みメールの一斉再送は行わず、次の新しい本文からリンクを作る。
+
+Task 11でcontrollerが適用前に次の読むだけのSQLを実行し、状態ごとの件数だけを記録する。本文・宛先・token・注文IDを出力しない。旧本文を消去・書換え・一括skippedにせず、通常の再試行を継続する。これは上の過去の公開手順とは別のE-5の扱い（P28）。
+
+```sql
+SELECT status, count(*) AS saved_body_count
+FROM private.order_email_outbox
+WHERE status IN ('pending', 'sending', 'retry_wait')
+  AND subject IS NOT NULL AND body_text IS NOT NULL
+GROUP BY status
+ORDER BY status;
+```
+
+### 本番URL・鍵・ログ
+
+本番では `NEXT_PUBLIC_SITE_URL` の設定が必須。未設定だと16種類のメールに `http://localhost:3000/order-status/…` が入り、保存済みの本文は後から直らない。実装のgetSiteUrlにはNEXT_PUBLIC_BASE_URL・BASE_URL・NEXT_PUBLIC_VERCEL_URLの代替もあるが、それらも無い時はlocalhostへフォールバックし、URLの構文検査だけでは止められない。運用では代替に頼らず本番のNEXT_PUBLIC_SITE_URLを設定し、公開前に正しいhttpsのサイトを指すことを値を報告へ転記せず確認する。
+
+`ORDER_STATUS_SESSION_SECRET` はサーバー専用で、空なら非空の `JWT_SECRET` を使用する。両方無いと確認印を発行できない。鍵をログへ出さず、公開環境変数へ移さない。`.env.example` に足すのは空の専用鍵と説明の2行だけ。
+
+本番のアクセスログ・解析・外部監視でtoken付きpathを記録しない設定を確認する。CDN/ホスティング・アプリ・解析の収集先ごとに `/order-status/*` と `/api/order-status/*` を除外するか、送信前にpathを伏せる。queryだけの削除では足りない。新しい合成リンクで確認し、リンク値・電話・Cookie・署名・秘密値・本文を確認結果や添付へ残さない。結果は記録の有無と件数だけにし、実URLを検索欄や報告へ貼らない。詳細は [適用と運用の確認](webhook-queue-operations.md)。

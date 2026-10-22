@@ -890,3 +890,40 @@ sequenceDiagram
   Dialog->>Route: 履歴と一覧を読み直す
   Route-->>Dialog: 現在の記録を返す
 ```
+
+
+## 注文状況のメールと閲覧（E-5 / FREQ-498〜505）
+
+[詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)・[ページ仕様](../pages/20_order_status.md)を参照。既存の管理の状態更新とメール予定の作成は変えず、新しい本文の用意からリンクを作る。
+
+```mermaid
+sequenceDiagram
+  participant Worker as メールworker
+  participant DB as DB関数
+  participant User as お客様のブラウザ
+  participant Page as 公開ページ
+  participant API as 専用窓口
+  opt 新しいお客様向け本文だけ
+    Worker->>DB: ensure_order_status_link
+    DB-->>Worker: 同じ注文のリンク
+  end
+  Worker->>User: 保存した本文で送信
+  Worker->>DB: complete_order_email
+  Note over DB: 対象16種類の成功時刻から21日へ進める
+  User->>Page: メールのリンクを開く
+  Page->>DB: 公開材料と公開返品だけ
+  Page-->>User: 公開の表示
+  User->>API: GET 個人情報
+  API-->>User: 認可に応じてmemberまたはverifiedまたはnone
+  opt 電話で確認可能
+    User->>API: POST 下4桁
+    API->>DB: verify_order_status_phone
+    DB-->>API: 比較結果
+    API-->>User: 一致の時だけ確認印
+    Note over API,User: 24時間とDB期限の早い方
+    User->>API: GET 個人情報を再取得
+    API-->>User: 認可後だけ指定の個人情報
+  end
+```
+
+送信期限の更新はlease一致の成功と同じ取引。保存済み本文ではリンク準備・本文再生成をせず、そのまま送る。個人情報の認可は有効な印が先で、無ければ持ち主の認証。公開ページではCookieを書かず、未認可の普通のゲストは200のnone。

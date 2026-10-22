@@ -23,3 +23,14 @@
 | FR-CONTACT-011 | 公開問い合わせ API に同一オリジン検証・Bot 対策・レート制限を適用し悪用を抑止する | IMPL-CONTACT-011 | `src/app/api/contact/route.ts`, `src/app/contact/page.tsx`, `e2e/FR-CONTACT-011-security-controls.spec.ts` | `Origin/Referer` 検証、IP 単位（1時間20回）とメールアドレス単位（小文字にしたアドレスで1時間5回、FREQ-360）のレート制限、honeypot フィールド検証を実装 | 済 |
 | FR-CONTACT-012 | 問い合わせ本文を監査ログから分離し、audit_logs の記録を最小化する | IMPL-CONTACT-012 | `src/app/api/contact/route.ts`, `migrations/041_create_contact_inquiries.sql` | 本文は `contact_inquiries` に保存し、`audit_logs` には `inquiry_id` と最小分類情報のみ記録 | 済 |
 | FR-CONTACT-013 | 送信回数が上限に達したとき、しばらく時間をおいてからあらためて問い合わせるよう案内する | IMPL-CONTACT-013 | `src/app/contact/page.tsx`, `e2e/FR-CONTACT-013-rate-limit-message.spec.ts` | 応答が 429 のとき本文に依存せず案内文を `role=alert` で表示し、入力内容を残す（FREQ-361） | 済 |
+
+
+## 注文状況からの初期入力（E-5 / FREQ-504）
+
+[詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)・[注文状況ページ](20_order_status.md)を参照。
+
+`/contact?type=order&order={orderNumber}` から「ご注文について」と注文番号を入力済みで開く。[contact-prefill](../../../src/features/contact/contact-prefill.ts)は `type` を `product/order/other` だけ許可し、`order` は前後の空白を取るtrim・大文字化の後に `^ORD-[0-9A-F]{8}$` だけ受け付ける。設計書7章の「英数字8文字」を P13 で細かく決めた。承認済み設計書は変更しない。
+
+同名queryが重複すれば同じ値でもその項目を無視し、種別と注文番号は独立に検証する。subjectなど他のqueryは読まない。mount時のURLを初回だけ読み、空かつ未編集の欄へ入力する。利用者の編集・消去後は再描画で戻さず、その編集値で従来の送信JSONを作る。入力を終えた後のURL変更にも追従しない。
+
+queryは入力補助だけで注文の持ち主や認可を決めない。送信APIのメール照合・注文関連付け・注文番号最大32文字の検証は従来どおり。現行画面の注文番号欄にはmaxLengthが無く、今回その制限は追加していない。

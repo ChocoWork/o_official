@@ -4,7 +4,7 @@
 
 ## 概要
 
-現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。128ファイル、明示exportされた167組（E2E 用の `/api/e2e/server-info` を除く127ファイル・166組を本書で記す）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
+現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。130ファイル、明示exportされた169組（E2E 用の `/api/e2e/server-info` を除く129ファイル・168組を本書で記す）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
 
 | 読み方 | 内容 |
 | --- | --- |
@@ -13,7 +13,7 @@
 | 入出力定義 | I/N/L/S/T/O/F/Pなどの再利用schema、応答の詳細と根拠へのリンク |
 | 入口の所在 | [APIルート一覧](route-inventory.md)（所在表） |
 
-表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは167組に含めない。
+表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは169組に含めない。
 
 ## 共通境界
 
@@ -813,3 +813,51 @@ C-2〜C-5を実装済み。3管理POSTと1webhookを追加し、既存の設定�
 管理の未知の失敗は500「配送の記録を保存できませんでした。時間をおいて、もう一度お試しください。」、読取は500「配送の記録を読み込めませんでした。」。既存認証・CSRF・429は維持し、生のDB例外を返さない。監査actionは `admin.orders.fulfillment.tracking_update`・`admin.orders.fulfillment.delivered`・`admin.orders.delivery_attention.resolve`。番号の直しは発送ID・版・業者・番号・notify・replayed、手の配達済みは発送ID・日付・replayed、対応済みはattentionId・outcomeを記録し、氏名・住所・連絡先は含めない。
 
 メールは19種類。`out_for_delivery`・`delivered`・`shipping_update` は `variant=null`、再送不可。顧客向けのメールと、接続の異常を `SHOP_ALERT_EMAIL` に送る運用通知は別系統。
+
+
+## 注文の状況の窓口（E-5 / FREQ-498〜505）
+
+[詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)・[ページ](../../04_DetailDesign/pages/20_order_status.md)を参照。公開部分はServer Componentから公開専用RPCを読む。公開APIは作らない。以下の2本だけを追加し、全体は130ファイル・169組、E2E専用を除き129ファイル・168組。
+
+### 入力・正常応答
+
+| 方法・パス | 入力 | 正常 |
+| --- | --- | --- |
+| `POST /api/order-status/[token]/verify` | JSON `{lastFour:string}` だけ。文字列1〜64字。全角数字を半角化し記号を除いた数字4桁ちょうど。余分なキー・配列・壊れたJSONは400 | `200 {ok:true,expiresAt:ISO文字列}`。成功だけに確認Cookieを発行。expiresAtは印のexp |
+| `GET /api/order-status/[token]/private` | 本文無し。queryから認可情報を受け取らない | `200 {access:'none',verifiable,reason}` はdataキー無し。`access:'member'` はdataとexpiresAt:null。`access:'verified'` はdataと印のexpiresAt |
+
+両方 `runtime='nodejs'`、`params:Promise<{token:string}>` をawaitする。全応答（成功・拒否・例外）は `Cache-Control:no-store` と `Referrer-Policy:no-referrer`。Origin拒否のproxy応答にもこのAPI配下だけ同じヘッダーを付ける。
+
+### 確認POSTの順序と上限
+
+Origin → CSRF → IP枠 → token形・存在 → 注文枠 → JSON・入力 → DB比較 → Cookie。ゲストにログインを必須にしない。Originは既存proxy、CSRFは `denyIfCsrfInvalid()`。refresh Cookieが無いゲストの送信元もproxyで検査する。
+
+endpointは両枠とも `order-status:verify`。送信元は10分に30回、注文は15分に5回でsubjectはDBから得た注文UUID。形不正・存在しないtokenはIP枠だけを数えて404。入力不正は短い枠を使うがDBの合計は増やさない。DB内の不一致だけが合計20回まで増え、20回目は400 mismatchとreason:locked、次は423。正解・429・不正入力では合計を消さない。期限が進んだメール送信成功の時だけ0に戻す。
+
+### 個人情報GETの認可（X1）
+
+X1は承認済み設計書5-2の401より controller の P8・P25 を優先する。有効な確認印 → 持ち主の認証 → noneの順。ログイン印も有効な確認印も無いゲストは認証を呼ばず200のnone。ゲストの通常閲覧で不要なrefreshや未ログインへの描き直しを起こさない。
+
+`extractAuthToken(request)` または `sb-refresh-token` の持ち込みがあり、その検証がmissing/invalid/revokedの時だけ401と `{access:'none',verifiable,reason,error:'Unauthorized',code:'ORDER_STATUS_AUTH_REQUIRED'}`。refreshだけが残る時も401。認証サービスのunavailableは503と `Retry-After:30`。有効な確認印なら古いログイン印があっても200のverifiedで認証を呼ばない。別会員のログインだけではnone、その注文の有効な確認印があればverified。持ち主は21日の確認期限後もmember。
+
+個人情報のselectは認可後だけ。noneにはdata・customerId・failedAttempts・DB期限を含めない。reasonはexpired/unavailable/locked/nullだけ。印の無効だけでは401にしない。認可後に注文が無い／隠れた場合は404、読取失敗は500で空の成功を作らない。
+
+### 固定エラーとHTTP
+
+| code | HTTP | error |
+| --- | --- | --- |
+| `ORDER_STATUS_NOT_FOUND` | 404 | このページは見つかりません |
+| `ORDER_STATUS_INPUT_INVALID` | 400 | 電話番号の下4桁を入れてください。 |
+| `ORDER_STATUS_MISMATCH` | 400 | 電話番号の下4桁が一致しません。もう一度確かめてください。 |
+| `ORDER_STATUS_LOCKED` | 423 | 確認できる回数を超えました。ログインするか、お問い合わせください。 |
+| `ORDER_STATUS_UNAVAILABLE` | 409 | ログインするか、お問い合わせください |
+| `ORDER_STATUS_EXPIRED` | 410 | 電話番号で確認できる期間が過ぎました。ログインするか、お問い合わせください。 |
+| `ORDER_STATUS_RATE_LIMITED` | 429 | しばらくしてから、もう一度お試しください。 |
+| `ORDER_STATUS_FORBIDDEN` | 403 | 画面を開き直して、もう一度お試しください。 |
+| `ORDER_STATUS_AUTH_REQUIRED` | 401 | Unauthorized |
+| `ORDER_STATUS_TEMPORARILY_UNAVAILABLE` | 503 | ただいま確認できません。時間をおいて、もう一度お試しください。 |
+| `ORDER_STATUS_FAILED` | 500 | ご注文の状況を読み込めませんでした。時間をおいて、もう一度お試しください。 |
+
+不一致19回以下は `verifiable:true,reason:null`、20回目は `verifiable:false,reason:'locked'`。423/409/410もfalseと対応するreasonを返す。無い・隠す2状態・形不正は同じ404本文。Origin拒否403だけは `{error:'Forbidden origin'}` を維持。429と制限不能503は既存のRetry-Afterを保持し、制限の障害で無制限に続けない。DB・鍵・予期しない失敗は500。
+
+DB専用 `ORDER_STATUS_ARGUMENT_INVALID`/22023は400、`ORDER_NOT_FOUND`/P0002は404へ写す。元のDB文・SQLSTATEは返さず、ログは固定codeだけ。印の署名・Cookieの属性はページとERの契約を参照する。

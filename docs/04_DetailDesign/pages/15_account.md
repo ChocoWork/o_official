@@ -210,3 +210,14 @@ E2E は FR-ACCOUNT-035-return-request.spec.ts・036-return-request-photos.spec.t
 `deriveOrderProgress` は受注生産中・発送準備中の品がなく、発送した数が1以上、取消でない発送の `activeCount>0` かつ `deliveredCount===activeCount` なら「配達済み」。一部だけなら「配送中」。追跡オフでも全部を手で配達済みにすれば同じ。
 
 返品期限の起点は `deliveredAt` の日本時間の日付。NULLなら発送の日本時間の日付＋目安の日数に戻す。最後の品・受付の日数・日の終わり・無制限・既存の返品と申し込みは維持する。番号を直すと届いた時刻が消え、未作成の返品・申し込みの判定は目安へ戻る。
+
+
+## 注文状況ページとの表示共有（E-5 / FREQ-501・502）
+
+[詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)・[注文状況ページ](20_order_status.md)を参照。
+
+会員にも同じ注文状況リンクを送る。持ち主のログインは確認期限後も個人情報を認可し、`/account/orders/{id}` から従来の返品・キャンセルを申し込める。別会員のログインだけでは認可しない。
+
+`buildCustomerOrderDetailView` へ表示計算だけを共有し、会員APIの認証・所有者条件・エラー・JSONのキー/値/null/省略/配列順を維持する。返品だけの読取失敗は `returnSection:null` のまま。会員APIの口座期限や完全な返品の既存位置も変えない。
+
+`OrderItemRow` と `OrderReturnsSection` の `readOnly:true` は注文状況の表示用。省略した会員側は既存の操作・ボタン・フォーム・送り返しの業者と番号の表記を維持する。公開の枝へダミーの個人情報やcallbackを渡さない。

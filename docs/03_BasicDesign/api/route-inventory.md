@@ -4,7 +4,7 @@
 
 ## 概要
 
-現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。E-4 を含め、Route Handler は128ファイル・167メソッド（自動の HEAD・OPTIONS は数えない）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は127行・166メソッド。
+現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。E-4 を含め、Route Handler は130ファイル・169メソッド（自動の HEAD・OPTIONS は数えない）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は129行・168メソッド。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |
@@ -125,6 +125,8 @@
 | `/api/items/[id]` | `GET` | [route.ts](../../../src/app/api/items/%5Bid%5D/route.ts) |
 | `/api/items` | `GET` | [route.ts](../../../src/app/api/items/route.ts) |
 | `/api/news` | `GET` | [route.ts](../../../src/app/api/news/route.ts) |
+| `/api/order-status/[token]/private` | `GET` | [route.ts](../../../src/app/api/order-status/%5Btoken%5D/private/route.ts) |
+| `/api/order-status/[token]/verify` | `POST` | [route.ts](../../../src/app/api/order-status/%5Btoken%5D/verify/route.ts) |
 | `/api/orders/[id]` | `GET` | [route.ts](../../../src/app/api/orders/%5Bid%5D/route.ts) |
 | `/api/orders` | `GET` | [route.ts](../../../src/app/api/orders/route.ts) |
 | `/api/profile/addresses` | `GET`, `PUT` | [route.ts](../../../src/app/api/profile/addresses/route.ts) |
@@ -148,4 +150,11 @@
 
 [配送の詳細設計](../../superpowers/specs/2026-10-21-delivery-status-design.md)・[実装計画](../../superpowers/plans/2026-10-21-delivery-status.md)を参照。以下は実装後の契約であり、既存の決定の本文は履歴として残す。
 
-管理POST 3本と17TRACKのPOST 1本の計4パス・4メソッドを追加。ソースの静的集計は128ファイル・167メソッド、E2E用の1本を除いた表は127行・166メソッド。新しいページURLは0。詳細はAPI仕様の配送の節と計画 C-3。
+管理POST 3本と17TRACKのPOST 1本の計4パス・4メソッドを追加。ソースの静的集計は130ファイル・169メソッド、E2E用の1本を除いた表は129行・168メソッド。新しいページURLは0。詳細はAPI仕様の配送の節と計画 C-3。
+
+
+## 注文の状況の入口（E-5 / FREQ-498〜505）
+
+[詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)・[APIの契約](api-spec.md)を参照。
+
+個人情報GETと確認POSTの2ファイル・2メソッドを追加。実ソースを数え直した全体は130ファイル・169メソッド、E2E専用1本を除く一覧表は129行・168メソッド。公開APIは作らず、公開ページがサーバーから読む。認可・Origin・CSRF・全エラーはAPI仕様のE-5節に記録する。

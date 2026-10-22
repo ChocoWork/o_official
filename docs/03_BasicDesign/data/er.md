@@ -1477,3 +1477,49 @@ WHERE origin = 'auto' AND kind <> 'shipped' AND refund_id IS NULL
 - [システム構成](../architecture/system-overview.md)
 - [API](../api/api-spec.md)
 - [注文・決済の状態遷移](../../04_DetailDesign/states/order-payment.md)
+
+
+## 注文状況のリンクと権限（E-5 / FREQ-505）
+
+[詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)を参照。[移行A](../../../supabase/migrations/20261023100000_order_status_links.sql) → [移行B](../../../supabase/migrations/20261023100100_order_status_returns.sql)の2本。既存の表の列・型は変えず、1表・1 FKを追加する。E-4までの85表・107 FKに加え、86表・108 FK。これはソース上の構造であり本番適用の証拠ではない。
+
+```mermaid
+erDiagram
+  orders ||--o| order_status_links : "1注文1本"
+  orders {
+    uuid id PK
+  }
+  order_status_links {
+    uuid order_id PK,FK
+    text token UK
+    timestamptz verify_until
+    integer failed_attempts
+    timestamptz created_at
+  }
+```
+
+| 列 | 型・制約 |
+| --- | --- |
+| `order_id` | uuid PRIMARY KEY、`REFERENCES public.orders(id) ON DELETE RESTRICT` |
+| `token` | text NOT NULL。`order_status_links_token_key UNIQUE(token)`、`order_status_links_token_check` は `^[A-Za-z0-9_-]{43}$` |
+| `verify_until` | timestamptz NULL、既定NULL |
+| `failed_attempts` | integer NOT NULL DEFAULT 0。`order_status_links_failed_attempts_check` は0〜20 |
+| `created_at` | timestamptz NOT NULL DEFAULT pg_catalog.now() |
+
+表名は `private.order_status_links`。PKとtokenの一意索引だけで検索し、期限の全件検索用索引や定期削除は作らない。RLSを有効化し、`order_status_links_deny_clients` は `AS RESTRICTIVE FOR ALL TO anon, authenticated USING(false) WITH CHECK(false)`。PUBLIC・anon・authenticated・service_roleから全権限を外した後、service_roleへSELECTだけを与える。直接書き込みは許可しない。private schemaのUSAGEを顧客へ増やさない。
+
+publicのRPCは完全修飾名・`SECURITY DEFINER`・`SET search_path = ''`・所有者postgres。PUBLIC/anon/authenticatedのEXECUTEを外しservice_roleだけへ付与。privateの補助はSECURITY INVOKER、同じ空search_pathと所有者で、service_roleを含め直接EXECUTEを与えない。
+
+| 関数 | 契約 |
+| --- | --- |
+| `public.ensure_order_status_link(_order_id uuid)` | 無ければON CONFLICTで作成し既存tokenを返す。1注文1本で再発行しない |
+| `public.get_order_status_link(_token text)` | order_id/customer_id/verify_until/failed_attempts/phone_availableだけ。形不正・無い・隠す状態は0行 |
+| `public.verify_order_status_phone(_token text,_last_four text)` | 行ロック内で存在 → expired → unavailable → locked → 固定4回の照合。ok/mismatch/locked/unavailable/expired。電話は返さない |
+| `public.get_order_status_public_material(_order_id uuid)` | 個人情報や番号を取得しない公開専用JSON。無い・隠す状態はSQL NULL |
+| `public.complete_order_email(_email_id uuid,_lease_token uuid,_provider_message_id text)` | 既存のlease・pause・booleanを維持。成功UPDATEのRETURNINGだけから期限を進める |
+| `private.order_status_phone_last_four` / `private.order_status_four_equal` | 全角数字をそろえ末尾4桁。4回のASCII/XOR/OR比較。DB内だけ |
+| `private.build_customer_order_returns(_order public.orders,_include_private boolean)` | 既存JSONの共有。falseは返送先・送り返しの業者/番号のキーと取得を省く |
+| `public.get_customer_order_returns(_order_id uuid,_customer_id uuid)` | 既存の持ち主条件と拒否を維持して芯をtrueで呼ぶ |
+| `public.get_order_status_returns(_order_id uuid,_include_private boolean DEFAULT false)` | 所有者条件なし。無い・NULL・隠す状態はSQL NULL、trueだけ個人情報を含む。NULLの真偽引数は22023 |
+
+移行は各BEGIN〜COMMIT、最後に `NOTIFY pgrst, 'reload schema';`。過去の移行は変更しない。乱数は `extensions.gen_random_bytes(32)`。配置が違うpgcryptoを勝手に移設せず `ORDER_STATUS_CRYPTO_UNAVAILABLE` で止める。
