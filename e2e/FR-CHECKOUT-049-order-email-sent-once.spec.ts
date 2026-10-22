@@ -15,7 +15,9 @@ import {
   seedCart,
   stubPostalCode,
 } from './checkout-flow-helpers';
-import { mailsTo, runWorkerOnce, withLocalDb } from './order-email-test-utils';
+import { mailBodies, mailsTo, runWorkerOnce, withLocalDb } from './order-email-test-utils';
+
+test.use({ trace: 'off', video: 'off', screenshot: 'off' });
 
 const CONFIRMATION_SUBJECT = 'ご注文ありがとうございます';
 
@@ -40,7 +42,7 @@ test.describe('FR-CHECKOUT-049 注文確認のメールは1通だけ届く', () 
       await expect(page.getByRole('heading', { name: 'Thank you for your order' })).toBeVisible({ timeout: 90_000 });
 
       // 決済の完了の窓口が書いた送る予定を、返事の後の worker が送る（FREQ-434-AC-01）
-      await expect.poll(confirmations, { timeout: 60_000, message: `${email} へ注文確認のメールが届くこと` }).toBe(1);
+      await expect.poll(confirmations, { timeout: 60_000, message: '注文確認のメールが届くこと' }).toBe(1);
 
       const order = await withLocalDb(async (db) =>
         (await db.query('select id, checkout_session_id, payment_intent_id from public.orders where shipping_email = $1', [email])).rows[0]);
@@ -85,6 +87,13 @@ test.describe('FR-CHECKOUT-049 注文確認のメールは1通だけ届く', () 
       // worker は10秒の予算で止まり、別の起動が取った行は飛ばすので、1回の終了だけでは送り切った証拠にならない。
       // 直前の DB の確かめで、自動の行が送信済みの1行だけ（送信後に記録）と分かるので、固定の時間を待たずに数え直せる
       expect(await confirmations()).toBe(1);
+      // FREQ-503-AC-02
+      const body = (await mailBodies(request, email, CONFIRMATION_SUBJECT))[0]?.Text ?? '';
+      const phone = await withLocalDb(async (db) =>
+        (await db.query('select shipping_phone from public.orders where id=$1', [order.id])).rows[0]?.shipping_phone as string | null);
+      expect(Boolean(phone)).toBe(true);
+      expect(Boolean(phone && body.includes(phone))).toBe(false);
+      expect(body.includes('ご注文の状況はこちら: http://localhost:3000/order-status/[ORDER_STATUS_LINK]')).toBe(true);
     });
   }
 });

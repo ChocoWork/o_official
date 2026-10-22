@@ -27,6 +27,8 @@ import {
 import { orderNumberOf, viewports } from './order-fulfillment-test-utils';
 import { MAIL_TEXT, formatYen } from './refund-test-utils';
 
+test.use({ trace: 'off', video: 'off', screenshot: 'off' });
+
 const CANCEL_SUBJECT = 'ご注文取消のお知らせ';
 const REFUND_SUBJECT = 'ご返金のお知らせ';
 const STOCK_LEAD = '商品をご用意できなくなったため、ご注文を取り消しました。';
@@ -88,6 +90,7 @@ function cancelMailBody(orderId: string, lead: string): string {
     '',
     `合計: ${formatYen(PRICE)}`,
     '',
+    'ご注文の状況はこちら: http://localhost:3000/order-status/[ORDER_STATUS_LINK]',
     `お問い合わせの際は、注文番号（${orderNumber}）をお問い合わせフォームにご入力ください。`,
     '',
     'Le Fil des Heures',
@@ -124,15 +127,15 @@ for (const viewport of viewports) {
         expect(rows.refund).toEqual([]);
 
         const mails = await mailBodies(request, email, CANCEL_SUBJECT);
-        expect(mails).toHaveLength(1);
+        expect(mails.length).toBe(1);
         expect(mails[0].Subject).toBe(`【Le Fil des Heures】${CANCEL_SUBJECT}（${orderNumberOf(orderId)}）`);
-        expect(mails[0].Text).toContain(cancelMailBody(orderId, lead));
+        expect(mails[0].Text.includes(cancelMailBody(orderId, lead)), '取消のお知らせの指定本文が一致する').toBe(true);
         // 未入金の取消のお知らせだけに残る文は、お支払いが発生している支払い済みのキャンセルには入らない
-        expect(mails[0].Text).not.toContain(MAIL_TEXT.unpaidCancel);
+        expect(mails[0].Text.includes(MAIL_TEXT.unpaidCancel)).toBe(false);
         // 不正の疑い・その他でも、お客様に理由は書かない。店内のメモも書かない
-        expect(mails[0].Text).not.toContain('不正');
-        if (note) expect(mails[0].Text).not.toContain(note);
-        expect(await mailBodies(request, email, REFUND_SUBJECT)).toEqual([]);
+        expect(mails[0].Text.includes('不正')).toBe(false);
+        if (note) expect(mails[0].Text.includes(note)).toBe(false);
+        expect((await mailBodies(request, email, REFUND_SUBJECT)).length).toBe(0);
       });
     }
 
@@ -187,9 +190,9 @@ for (const viewport of viewports) {
 
       // 2通届く。1通目は在庫切れの文、2通目はお客様の依頼の文
       const mails = await mailBodies(request, email, CANCEL_SUBJECT);
-      expect(mails).toHaveLength(2);
-      expect(mails.filter((mail) => mail.Text.includes(STOCK_LEAD))).toHaveLength(1);
-      expect(mails.filter((mail) => mail.Text.includes(REQUEST_LEAD))).toHaveLength(1);
+      expect(mails.length).toBe(2);
+      expect(mails.filter((mail) => mail.Text.includes(STOCK_LEAD)).length).toBe(1);
+      expect(mails.filter((mail) => mail.Text.includes(REQUEST_LEAD)).length).toBe(1);
       const rows = await withLocalDb((db) => refundOutboxRows(db, first.orderId, 'canceled'));
       expect(rows.map((row) => row.refund_id).sort()).toEqual([first.refundId, secondRefundId].sort());
       for (const row of rows) {

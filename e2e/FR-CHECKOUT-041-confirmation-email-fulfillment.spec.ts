@@ -8,7 +8,7 @@
  * API の形は Mailpit の公式仕様に合わせる: https://mailpit.axllent.org/docs/api-v1/
  */
 import { expect, test } from '@playwright/test';
-import { isLocalUrl } from '../scripts/e2e/environment';
+import { mailBodies } from './order-email-test-utils';
 import {
   CHECKOUT_VIEWPORTS,
   fillShippingForm,
@@ -18,13 +18,9 @@ import {
   stubPostalCode,
 } from './checkout-flow-helpers';
 
+test.use({ trace: 'off', video: 'off', screenshot: 'off' });
+
 const FULFILLMENT_TEXT = '受注生産・発送まで数週間〜2か月以上（目安）';
-
-type MailpitSearchResponse = {
-  messages: Array<{ ID: string; Subject: string }>;
-};
-
-type MailpitMessage = { Text: string };
 
 test.describe('FR-CHECKOUT-041 確定メールに明細ごとのお届けの目安を添える', () => {
   test.describe.configure({ timeout: 180_000 });
@@ -35,8 +31,6 @@ test.describe('FR-CHECKOUT-041 確定メールに明細ごとのお届けの目�
       page,
       request,
     }) => {
-      const mailUrl = process.env.MAIL_LOCAL_URL;
-      if (!mailUrl || !isLocalUrl(mailUrl)) throw new Error('手元のメール受け（MAIL_LOCAL_URL）が無い');
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       const seeded = await seedCart(page);
       test.skip(!seeded.ok, seeded.ok ? '' : seeded.reason);
@@ -51,27 +45,11 @@ test.describe('FR-CHECKOUT-041 確定メールに明細ごとのお届けの目�
 
       // FREQ-422-AC-01。非同期のメールが届かない場合も、目安が無い場合も時間切れで落とす。
       await expect.poll(async () => {
-        const searchResponse = await request.get(new URL('/api/v1/search', mailUrl).toString(), {
-          params: { query: `to:${email}` },
-          timeout: 5_000,
-        });
-        await expect(searchResponse).toBeOK();
-        const search = (await searchResponse.json()) as MailpitSearchResponse;
-        const confirmation = search.messages.find((message) => message.Subject.includes('ご注文ありがとうございます'));
-        if (!confirmation) {
-          return '';
-        }
-
-        const messageResponse = await request.get(new URL(`/api/v1/message/${encodeURIComponent(confirmation.ID)}`, mailUrl).toString(), {
-          timeout: 5_000,
-        });
-        await expect(messageResponse).toBeOK();
-        const message = (await messageResponse.json()) as MailpitMessage;
-        return message.Text;
+        return (await mailBodies(request, email, 'ご注文ありがとうございます')).some((mail) => mail.Text.includes(FULFILLMENT_TEXT));
       }, {
         timeout: 60_000,
-        message: `${email} 宛ての確定メールにお届けの目安が届くこと`,
-      }).toContain(FULFILLMENT_TEXT);
+        message: '確定メールにお届けの目安が届くこと',
+      }).toBe(true);
     });
   }
 });

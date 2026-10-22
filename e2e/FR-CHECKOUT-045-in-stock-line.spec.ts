@@ -9,6 +9,9 @@ import { expect, test } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { FINAL_FULFILLMENT_LABELS, FULFILLMENT_HEADINGS } from '../src/features/checkout/utils/fulfillment-labels';
 import { CHECKOUT_VIEWPORTS, fillShippingForm, placeOrderWithTestCard, proceedToFinal, stubPostalCode } from './checkout-flow-helpers';
+import { mailBodies } from './order-email-test-utils';
+
+test.use({ trace: 'off', video: 'off', screenshot: 'off' });
 
 type StockVariant = {
   id: number;
@@ -18,7 +21,6 @@ type StockVariant = {
   color: { name: string };
   size: { label: string };
 };
-type MailpitSearch = { messages: Array<{ ID: string; Subject: string }> };
 const STOCK_TEXT = `${FULFILLMENT_HEADINGS.stock}・${FINAL_FULFILLMENT_LABELS.stock}`;
 
 test.describe('FR-CHECKOUT-045 在庫ありの注文と確定メール', () => {
@@ -73,8 +75,6 @@ test.describe('FR-CHECKOUT-045 在庫ありの注文と確定メール', () => {
   for (const viewport of CHECKOUT_VIEWPORTS) {
     test(`${viewport.name}（${viewport.width}px）在庫ありの明細を注文すると、確定メールにも在庫ありの目安が出る`, async ({ page, request }) => {
       if (!variant) throw new Error('一時在庫のバリアントが未準備');
-      const mailUrl = process.env.MAIL_LOCAL_URL;
-      if (!mailUrl || !isLocalUrl(mailUrl)) throw new Error('手元のメール受け（MAIL_LOCAL_URL）が無い');
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto('/');
       // カートの窓口はバリアントの番号で受ける。DB から選んだこのバリアントの番号（variant.id）をそのまま送る
@@ -99,16 +99,8 @@ test.describe('FR-CHECKOUT-045 在庫ありの注文と確定メール', () => {
 
       // FR-CHECKOUT-041 と同じ Mailpit の読み方。宛先をテストごとに分け、確定メールが届くまで条件で待つ。
       await expect.poll(async () => {
-        const searchResponse = await request.get(new URL('/api/v1/search', mailUrl).toString(), { params: { query: `to:${email}` }, timeout: 5_000 });
-        await expect(searchResponse).toBeOK();
-        const search = await searchResponse.json() as MailpitSearch;
-        const confirmation = search.messages.find((message) => message.Subject.includes('ご注文ありがとうございます'));
-        if (!confirmation) return '';
-        const messageResponse = await request.get(new URL(`/api/v1/message/${encodeURIComponent(confirmation.ID)}`, mailUrl).toString(), { timeout: 5_000 });
-        await expect(messageResponse).toBeOK();
-        const message = await messageResponse.json() as { Text: string };
-        return message.Text;
-      }, { timeout: 60_000, message: '在庫ありの目安を含む確定メールが届くこと' }).toContain(STOCK_TEXT);
+        return (await mailBodies(request, email, 'ご注文ありがとうございます')).some((mail) => mail.Text.includes(STOCK_TEXT));
+      }, { timeout: 60_000, message: '在庫ありの目安を含む確定メールが届くこと' }).toBe(true);
     });
   }
 });

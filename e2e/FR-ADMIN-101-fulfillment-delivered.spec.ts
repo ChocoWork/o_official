@@ -38,6 +38,8 @@ import {
 import { cancelFulfillment, expectDbError } from './order-email-test-utils';
 import { openOrderTab } from './order-fulfillment-test-utils';
 
+test.use({ trace: 'off', video: 'off', screenshot: 'off' });
+
 const EXPLANATION_OFF = 'お客様に届いたことが分かった時に使います。返品の期限は、この日から数えます';
 const NOTIFY_LABEL = 'お客様に配達済みのメールを送る';
 const DATE_INVALID = '届いた日は、発送の日から今日までの日を選んでください。';
@@ -118,15 +120,16 @@ for (const viewport of deliveryViewports) {
         const mails = await pollMails(request, fx.email, DELIVERED_SUBJECT, 1);
         expect(mails[0].Subject).toBe(`【Le Fil des Heures】${DELIVERED_SUBJECT}（${fx.orderNumber}）`);
         const text = mails[0].Text;
-        expect(text).toContain('ご注文の商品をお届けしました。');
-        expect(text).toContain(`お届け日: ${jstMonthDay(deliveredAt)}`);
-        expect(text).toContain('・E2E配送のシャツ（ホワイト / M） x1');
-        expect(text).toMatch(new RegExp(`ご注文の確認はこちら: \\S+/account/orders/${fx.orderId}`));
+        expect(text.includes('ご注文の商品をお届けしました。')).toBe(true);
+        expect(text.includes(`お届け日: ${jstMonthDay(deliveredAt)}`)).toBe(true);
+        expect(text.includes('・E2E配送のシャツ（ホワイト / M） x1')).toBe(true);
+        // FREQ-503-AC-01
+        expect(text.includes('ご注文の状況はこちら: http://localhost:3000/order-status/[ORDER_STATUS_LINK]')).toBe(true);
         const guidance = (days: number) => `商品に不具合がございましたら、到着から ${days} 日以内にご注文の画面またはお問い合わせからご連絡ください`;
         if (settings.windowDays === null) {
-          expect(text).not.toContain('商品に不具合がございましたら');
+          expect(text.includes('商品に不具合がございましたら')).toBe(false);
         } else {
-          expect(text).toContain(guidance(settings.windowDays));
+          expect(text.includes(guidance(settings.windowDays))).toBe(true);
         }
         await expectMailCountStays(request, fx.email, DELIVERED_SUBJECT, 1);
         expect(await readOutbox(client, fx.orderId, ['delivered'])).toMatchObject([{ status: 'sent', fulfillment_id: fulfillmentId }]);

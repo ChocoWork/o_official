@@ -20,11 +20,16 @@ const LOCAL_DB_URL = process.env.E2E_LOCAL_DB_URL ?? 'postgresql://postgres:post
 export async function withLocalDb<T>(fn: (db: PgClient) => Promise<T>): Promise<T> {
   if (!isLocalUrl(LOCAL_DB_URL)) throw new Error('手元の DB 以外では注文を作らない');
   const client = new Client({ connectionString: LOCAL_DB_URL });
-  await client.connect();
+  try { await client.connect(); }
+  catch {
+    await client.end().catch(() => undefined);
+    throw new Error('手元の試験DBへ接続できない');
+  }
   try {
     return await fn(client as unknown as PgClient);
   } finally {
-    await client.end();
+    try { await client.end(); }
+    catch { throw new Error('手元の試験DBの接続を閉じられない'); }
   }
 }
 
@@ -62,7 +67,7 @@ export async function runWorkerOnce(request: APIRequestContext): Promise<void> {
   const response = await request.post('/api/cron/process-stripe-webhooks', {
     headers: { authorization: `Bearer ${secret}` },
     timeout: 90_000,
-  });
+  }).catch(() => { throw new Error('手元のworkerを呼び出せない'); });
   expect(response.status()).toBe(200);
 }
 
@@ -75,15 +80,20 @@ export async function mailsTo(request: APIRequestContext, email: string): Promis
   const response = await request.get(new URL('/api/v1/search', mailUrl).toString(), {
     params: { query: `to:${email}` },
     timeout: 5_000,
-  });
+  }).catch(() => { throw new Error('手元のメール一覧を取得できない'); });
   expect(response.ok()).toBe(true);
-  const body = (await response.json()) as { messages?: MailpitMessage[] };
+  const body = (await response.json().catch(() => { throw new Error('手元のメール一覧を読めない'); })) as { messages?: MailpitMessage[] };
   return body.messages ?? [];
 }
 
 // ---- ここから下がグループ E-1 で足した物 ----
 
 export type MailBody = { Subject: string; Text: string };
+
+/** P30: 読んだ後の値だけを伏せ、送る本文と DB の保存済み本文には触れない。 */
+export function maskOrderStatusMailLinks(text: string): string {
+  return text.replace(/(\/order-status\/)[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g, '$1[ORDER_STATUS_LINK]');
+}
 
 /** その宛先へのメールを、本文つきで読む。件名に含む文字で絞れる（Mailpit は1通ごとに本文の API が別） */
 export async function mailBodies(request: APIRequestContext, email: string, subjectIncludes = ''): Promise<MailBody[]> {
@@ -94,11 +104,11 @@ export async function mailBodies(request: APIRequestContext, email: string, subj
   for (const message of found) {
     const response = await request.get(new URL(`/api/v1/message/${encodeURIComponent(message.ID)}`, mailUrl).toString(), {
       timeout: 5_000,
-    });
+    }).catch(() => { throw new Error('手元のメールを取得できない'); });
     expect(response.ok()).toBe(true);
-    const body = (await response.json()) as MailBody;
+    const body = (await response.json().catch(() => { throw new Error('手元のメールを読めない'); })) as MailBody;
     // 返金・キャンセルのお知らせは、行の並びを続けて確かめる。メール受けが CRLF で返しても、LF にそろえる
-    bodies.push({ Subject: body.Subject, Text: body.Text.replace(/\r\n/g, '\n') });
+    bodies.push({ Subject: body.Subject, Text: maskOrderStatusMailLinks(body.Text.replace(/\r\n/g, '\n')) });
   }
   return bodies;
 }

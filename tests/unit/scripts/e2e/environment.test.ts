@@ -116,6 +116,22 @@ describe('readLocalSupabaseStatus', () => {
 });
 
 describe('buildE2EOverrides', () => {
+  it('環境の専用鍵とサイトURLは親環境より優先する', () => {
+    const prepared = prepareE2EEnvironment({
+      baseEnv: { ...dotEnvLocal, ORDER_STATUS_SESSION_SECRET: 'parent-only-key', NEXT_PUBLIC_SITE_URL: 'https://parent.example.invalid' },
+      mode: 'start', strict: false, isWorker: false, baseUrl: 'http://localhost:3000',
+      readStatus: () => status, probe: () => ({ kind: 'down' }),
+    }).env;
+    expect(prepared.ORDER_STATUS_SESSION_SECRET).toBe('e2e-order-status-session-secret-only');
+    expect(prepared.NEXT_PUBLIC_SITE_URL).toBe('http://localhost:3000');
+  });
+
+  it.each(['ORDER_STATUS_SESSION_SECRET', 'NEXT_PUBLIC_SITE_URL'])('%s の変更はサーバーの印を変える', (key) => {
+    const env = { ...safeEnv, ORDER_STATUS_SESSION_SECRET: 'e2e-order-status-session-secret-only', NEXT_PUBLIC_SITE_URL: 'http://localhost:3000' };
+    expect(computeServerFingerprint({ ...env, [key]: 'different-test-value' }, 'start'))
+      .not.toBe(computeServerFingerprint(env, 'start'));
+  });
+
   it('手元の住所と鍵・E2E の固定値を返し、Resend の鍵は空にする', () => {
     const overrides = buildE2EOverrides(status);
     expect(overrides).toMatchObject({

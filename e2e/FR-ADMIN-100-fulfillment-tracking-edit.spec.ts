@@ -38,6 +38,8 @@ import {
 } from './delivery-tracking-test-utils';
 import { openOrderTab, orderNumberOf } from './order-fulfillment-test-utils';
 
+test.use({ trace: 'off', video: 'off', screenshot: 'off' });
+
 const EXPLANATION_OFF = 'チェックを外すと、この先の配達済みのメールも送りません';
 const DELIVERED_WARNING = '配達済みの記録が消え、返品の期限は新しい届いた日から数え直します';
 const NOTIFY_LABEL = 'お客様に発送の更新のメールを送る';
@@ -62,6 +64,7 @@ function shippingUpdateText(input: { orderId: string; carrierLabel: string; trac
     '',
     '先にお知らせした伝票番号は使えません',
     '',
+    'ご注文の状況はこちら: http://localhost:3000/order-status/[ORDER_STATUS_LINK]',
     `お問い合わせの際は、注文番号（${orderNumber}）をお問い合わせフォームにご入力ください。`,
     '',
     'Le Fil des Heures',
@@ -149,14 +152,13 @@ for (const viewport of deliveryViewports) {
         // 発送の更新のメールが1通（発送のメールとは別）。全文は計画 C-6 のとおり
         const mails = await pollMails(request, fx.email, SHIPPING_UPDATE_SUBJECT, 1);
         expect(mails[0].Subject).toBe(`【Le Fil des Heures】${SHIPPING_UPDATE_SUBJECT}（${fx.orderNumber}）`);
-        expect(mails[0].Text.trim()).toBe(
-          shippingUpdateText({
+        const expectedText = shippingUpdateText({
             orderId: fx.orderId,
             carrierLabel: '佐川急便',
             trackingNumber: newNumber,
             trackingUrl: `https://k2k.sagawa-exp.co.jp/p/web/okurijosearch.do?okurijoNo=${encodeURIComponent(newNumber)}`,
-          }),
-        );
+          });
+        expect(mails[0].Text.trim() === expectedText, '発送の更新の本文が指定の全文と一致する').toBe(true);
         await pollMails(request, fx.email, '商品を発送いたしました', 1);
         await expectMailCountStays(request, fx.email, SHIPPING_UPDATE_SUBJECT, 1);
         const outbox = await readOutbox(client, fx.orderId, ['shipping_update']);
