@@ -567,7 +567,7 @@ readOnly の時は「返品・交換を申し込む」「キャンセルを申�
 - Consumes: C-0/C-1のA、既存 `complete_order_email(uuid,uuid,text):boolean`（元の全文は `20261009095633_order_email_outbox.sql:354-392`）、`private.order_line_fulfillment(uuid)`、E-4の3移行、`describeLocalDb`・`connectLocalDb`・`PgClient`、既存 `helpers/order-fixtures.ts`。
 - Produces: C-0の1表とC-1のAの7関数（private2・新public4・置換public1）。試験用 `createOrderStatusFixture(db:PgClient,input?:{status?:OrderStatus;phone?:string|null;customerId?:string|null}):Promise<{orderId:string;orderItemId:string}>`、`setOrderStatusLinkState(db:PgClient,input:{orderId:string;verifyUntil:string|null;failedAttempts:number}):Promise<void>`。後者は試験用postgres接続でだけ使用。
 
-- [ ] **Step 1: DB の記録・守り・比較・公開材料の落ちる試験を書く**
+- [x] **Step 1: DB の記録・守り・比較・公開材料の落ちる試験を書く**
 
 1接続の試験はBEGIN/ROLLBACK、拒否の後はSAVEPOINTへ戻す。2接続の試験は確定した合成注文を使い、両接続をfinallyで閉じる。接続不可やskipをREDに数えない。
 
@@ -613,25 +613,25 @@ expect(deniedSqlStates.every(code=>code==='42501')).toBe(true);
 
 さらに token形のCHECK23514、重複token23505、注文FK23503、失敗数-1/21の23514、初期NULL/0、0行の3種類、cancelledの可視、正解でカウンター非リセット、期限が進む時だけ0、進まない未来の期限の保持、送信pauseの再開を試す。`complete_order_email` の送った時刻と21日後の差をDB内で比較する。PostgRESTは手元のservice_roleで各新RPCの引数と返り方を確認し、anon/authenticatedのexecuteと表への直接操作を拒む。
 
-- [ ] **Step 2: controller が前提と RED を確かめる**
+- [x] **Step 2: controller が前提と RED を確かめる**
 
 最初に手元catalogの `pg_extension`・`pg_namespace`・`to_regprocedure('extensions.gen_random_bytes(integer)')` を読み、schema名と関数の有無だけ控える。別schemaに既にある場合はX2として止め、配置変更を実装者に判断させない。まだpgcryptoが無ければP26で作る前提を確認する。
 
 Run: Task 11の手元DB環境で `npx.cmd jest tests/integration/db/order_status_links.integration.test.ts tests/integration/db/order_status_postgrest.integration.test.ts --runInBand`。
 Expected: FAIL（表とRPCが無い）。実測の失敗数を記録。PostgRESTの接続設定無しによるskipは別記する。
 
-- [ ] **Step 3: C-0/C-1 A の署名と指定値を実装する**
+- [x] **Step 3: C-0/C-1 A の署名と指定値を実装する**
 
 P26の拡張前提 → 表/制約/守り → privateの抽出/比較 → 新public4関数 → completeの置換 → revoke/grant → NOTIFY の順。`ensure` は挿入後に別のSELECTで保存値を読む。tokenの一意衝突だけは新しい乱数で最大3回試し、なお衝突なら固定の `ORDER_STATUS_TOKEN_COLLISION`（SQLSTATE23505）で止める。注文ごとの競合はトークン衝突として数えない。
 
 `verify` はリンク行をFOR UPDATEした後に現在の注文状態と電話を確かめ、P19順に答える。トークンの期限は延長する以外の書き換えを作らず、既存注文への一括INSERTは書かない。公開材料はC-1の選択列だけ。配送の内部RPCを呼んでからJSONのキーを消す代用はしない。
 
-- [ ] **Step 4: controller が GREEN を確かめる**
+- [x] **Step 4: controller が GREEN を確かめる**
 
 Run: `npx.cmd supabase db reset --local` → 同じ2スイートと `tests/integration/db/order_email_outbox.integration.test.ts` を `--runInBand` → `npx.cmd tsc --noEmit --incremental false`。
 Expected: PASS、skip0、型の誤り0。SQLの `AS $$` と `$$;`、UTF-8/LF/末尾改行、関数と権限の漏れ0を確認する。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```powershell
 git add -- supabase/migrations/20261023100000_order_status_links.sql tests/integration/db/order_status_links.integration.test.ts tests/integration/db/order_status_postgrest.integration.test.ts tests/integration/db/helpers/order-status-fixtures.ts
@@ -652,7 +652,7 @@ git commit -m "feat: 注文状況のリンクと本人確認を追加"
 - Consumes: Task 1、既存 `public.get_customer_order_returns(uuid,uuid):jsonb`（`20261020144842_order_return_customer_requests.sql:1079-1286`）、`private.customer_order_for_request(uuid,uuid,boolean):public.orders`、`private.customer_return_availability(public.orders)`。
 - Produces: C-1 B の3関数。試験用 `installLegacyCustomerReturns(db:PgClient):Promise<void>` は元移行の当該CREATE文だけを読み、名前だけ `pg_temp.customer_returns_before` へ替えて同じ取引内に作る。関数本体の写しを新しい見本ファイルへ固定しない。
 
-- [ ] **Step 1: 旧関数との答えの一致と公開の分離の試験を書く**
+- [x] **Step 1: 旧関数との答えの一致と公開の分離の試験を書く**
 
 ```ts
 test('既存の持ち主用RPCは元のSQLのJSONと完全に一致する');
@@ -675,23 +675,23 @@ expect(deniedCodes.every(code=>code==='42501')).toBe(true);
 
 合成fixtureは requested/open/closed/declined/cancelled、交換希望/確定交換、部分受取、検品待ち、費用待ち、返金待ち、返金済み、返送先設定あり/なし、送り返しの番号あり/なし、キャンセル4状態を作る。旧関数と新関数を同じ取引時刻・同じ設定・同じ行で比較し、期限を含め全キーとnullを比べる。古い関数を「無い時NULL」と思い込まず、実際のP0002を比較する。
 
-- [ ] **Step 2: controller が RED を確かめる**
+- [x] **Step 2: controller が RED を確かめる**
 
 Run: `npx.cmd jest tests/integration/db/order_status_returns.integration.test.ts --runInBand`（Task 11の手元環境）。
 Expected: 新RPC未定義でFAIL。旧関数の基準との比較自体は通ることを先に確かめる。
 
-- [ ] **Step 3: C-1 B の3つの署名を実装する**
+- [x] **Step 3: C-1 B の3つの署名を実装する**
 
 元のJSONを組む部分をprivateの芯へ移す。既存公開関数の入口の所有者・隠す状態の確かめと例外は一字も変えない。`_order_id` で参照していた箇所は芯の `_order.id` へ機械的にそろえる。trueのJSON式の変更はそれだけ。
 
 新しい公開関数は注文の `id,status` だけを名指しして `_order public.orders` の同じフィールドへ入れる。公開falseのために電話・住所を読む必要は無い。`_include_private IS NULL` は `ORDER_STATUS_ARGUMENT_INVALID/22023`。falseのJSONでは `return_address` と sent_backの `carrier/tracking_number` のキーを作らず、その値を読むSELECTをfalse時に実行しない。お店のメモや理由の記号は元から足さない。
 
-- [ ] **Step 4: controller が GREEN と既存DB試験を確かめる**
+- [x] **Step 4: controller が GREEN と既存DB試験を確かめる**
 
 Run: reset → `npx.cmd jest tests/integration/db/order_status_returns.integration.test.ts tests/integration/db/order_status_postgrest.integration.test.ts tests/integration/db/order_return_customer_requests.integration.test.ts --runInBand` → 型。
 Expected: PASS、skip0、元の答えとの差0、旧RPCの権限・誤りの差0。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```powershell
 git add -- supabase/migrations/20261023100100_order_status_returns.sql tests/integration/db/order_status_returns.integration.test.ts tests/integration/db/order_status_postgrest.integration.test.ts tests/integration/db/helpers/order-status-fixtures.ts
@@ -714,7 +714,7 @@ git commit -m "refactor: 返品の読み出しを共通化し注文状況用を�
 - Consumes: 現行会員APIのJSON・ローカル型・`toShipments/toCustomerDelivery/toCustomerRefunds`、`deriveOrderProgress/buildOrderProgressSteps`、`mapPaymentMethodLabel`、`signItemImageUrl`、既存store群。
 - Produces: C-2 表示の全型と `buildCustomerOrderPublicView`・`buildCustomerOrderPrivateView`・`buildCustomerOrderDetailView` の3署名。後続はAPIのexportしていない関数をimportしない。
 
-- [ ] **Step 1: 会員の答えを固定し、公開の型の試験を書く**
+- [x] **Step 1: 会員の答えを固定し、公開の型の試験を書く**
 
 先に既存会員fixtureのJSON全文期待を現状で通して保存する。画像署名は固定文字列のmockにし、署名の実値を記録しない。
 
@@ -738,21 +738,21 @@ expect(Object.keys(privateView)).toEqual(['shipping','contactEmail','paymentMeth
 
 追加する境界は、NULL画像/unknown carrier/番号無し、交換の0円、全部返金の手続き中、在庫と受注生産の段、割引0と正数、無効な日時、空住所、未知の支払方法、返品だけの失敗。会員APIの認証失敗・404・配送/返金500・返品失敗だけnullが現状どおりであることも既存試験で固定する。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx.cmd jest tests/unit/lib/orders/customer-order-view.test.ts tests/unit/api/orders/order-detail-progress.test.ts --runInBand`。
 Expected: 新しい表示関数の未定義でFAIL。既存JSONの基準試験は共通化前にPASS。実測を分けて記録する。
 
-- [ ] **Step 3: C-2 の型と3署名を実装し、API の組み立てだけを移す**
+- [x] **Step 3: C-2 の型と3署名を実装し、API の組み立てだけを移す**
 
 読む順・認証・所有者フィルタ・service_roleを作る時点は動かさない。API末尾のキー順も含めて `buildCustomerOrderDetailView` で復元する。共通の配送/返金/進み具合の計算を1か所へ移し、公開版では個人情報の入力を必要にしない。member wrapperは既存の口座期限と返品全項目を戻す。新しい公開型のために会員ページの表示を変更しない。
 
-- [ ] **Step 4: GREEN と既存の API の試験を確かめる**
+- [x] **Step 4: GREEN と既存の API の試験を確かめる**
 
 Run: Step 2の2スイート → `npx.cmd jest tests/integration/api/orders.test.ts tests/unit/components/AccountOrderDetailPage.test.tsx --runInBand` → 型。
 Expected: PASS、会員JSONの文字列差0、型の誤り0。これはmockによるAPI/単体の証拠でありDBや画面の実行結果とは区別する。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```powershell
 git add -- src/lib/orders/customer-order-view-types.ts src/lib/orders/customer-order-view.ts "src/app/api/orders/[id]/route.ts" tests/unit/lib/orders/customer-order-view.test.ts tests/unit/api/orders/order-detail-progress.test.ts tests/integration/api/orders.test.ts
@@ -781,7 +781,7 @@ git commit -m "refactor: 注文の表示を共有し会員の返却値を維持"
 - Consumes: C-1のRPC名と引数、C-2表示型、既存 `customer-return-store.ts` の変換、`login-2fa-session.ts` の署名と検証のパターン。実際の2FA用関数は呼ばない。
 - Produces: C-2 土台の全署名と型、C-4/C-5の固定文。`loadOrderStatusPrivateInput` は認可を内包しないので、後続はTask 5の認可後だけ呼ぶ。
 
-- [ ] **Step 1: 形・期限・取得列・署名の落ちる試験を書く**
+- [x] **Step 1: 形・期限・取得列・署名の落ちる試験を書く**
 
 ```ts
 test('トークンは43文字のbase64urlだけを受ける');
@@ -810,23 +810,23 @@ expect(error.message.includes(secretSentinel)).toBe(false);
 
 入力fixtureは `1234,１２３４,(12) 34,123,12345,空文字,非文字列`。署名の異常はpayload改変・署名改変・違う長さ・不正base64url・違うpurpose・違う注文・違うtoken・未来iat・小数・exp過大・期限NULL・期限短縮・異常JSON・余分なsegment。Cookie属性はpath/strict/httpOnly/secure/maxAge/expires/Domain無しを全て比較する。2注文へ同じCookie値を移しても拒否する。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx.cmd jest tests/unit/lib/orders/status --runInBand`。
 Expected: 未定義モジュールでFAIL。新しい試験の件数を記録する。
 
-- [ ] **Step 3: C-2 の署名・固定値・変換を実装する**
+- [x] **Step 3: C-2 の署名・固定値・変換を実装する**
 
 SQL側の判定結果をTSで電話と比べ直さない。`getOrderStatusLink` は期限・phoneAvailable・数だけから利用可否を作る。公開材料RPCの項目を名指しして厳密に変換する。返品parserは既存変換を共有するが、公開型へ非公開のキーをNULLで生やさない。`loadCustomerOrderReturns` の引数/RPC/例外処理と既存答えは保つ。
 
 `loadOrderStatusPrivateInput` の返送先は返送の案内を出す `accepted/partially_received` の返品だけが後段に残るようにする。発送は取消を除き番号昇順。送り返しは元の配列indexでひも付ける。署名鍵を関数呼び出し時に読み、import時のenv固定をしない。単体の固定時計で境界を確かめる。
 
-- [ ] **Step 4: GREEN と既存返品parserを確かめる**
+- [x] **Step 4: GREEN と既存返品parserを確かめる**
 
 Run: Step 2 → `npx.cmd jest tests/unit/lib/orders/returns/customer-return-store.test.ts --runInBand` → 型。
 Expected: PASS、秘密値のログ0、型の誤り0。DBに実在することの証拠はTask 1/2と区別する。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```powershell
 git add -- src/lib/orders/status/status-types.ts src/lib/orders/status/status-token.ts src/lib/orders/status/status-phone.ts src/lib/orders/status/status-session.ts src/lib/orders/status/status-store.ts src/lib/orders/status/status-messages.ts src/lib/orders/returns/customer-return-store.ts tests/unit/lib/orders/status/status-token.test.ts tests/unit/lib/orders/status/status-phone.test.ts tests/unit/lib/orders/status/status-session.test.ts tests/unit/lib/orders/status/status-store.test.ts tests/unit/lib/orders/returns/customer-return-store.test.ts
@@ -849,7 +849,7 @@ git commit -m "feat: 注文状況の確認印と読み出しの土台を追加"
 - Consumes: Task 4のstore/session、`denyIfCsrfInvalid():Promise<NextResponse|null>`、`enforceRateLimit({request,endpoint,limit,windowSeconds,subject?}):Promise<Response|undefined>`、`extractAuthToken(request)`、`authenticateRequest(request)`、Task 3 `buildCustomerOrderPrivateView`。
 - Produces: C-3 の2署名と答え。ブラウザはC-4のcodeを用い、HTTPステータスだけでmismatchと期限切れを混同しない。
 
-- [ ] **Step 1: 守りの順と返却の落ちる試験を書く**
+- [x] **Step 1: 守りの順と返却の落ちる試験を書く**
 
 ```ts
 test('verifyはCSRFからIP、存在、注文枠、入力、DB比較の順');
@@ -883,23 +883,23 @@ expect(cacheControls.every(value=>value==='no-store')).toBe(true);
 
 Origin保護はproxyを直接試し、許可元・別の元・Origin/Referer両方無し・Referer退避を既存の条件どおり確認する。新APIのOrigin403にもno-store/no-referrer、他APIの403は前と同じであることを追加する。CSRF拒否・IP超過・注文超過・入力不正の後はDB比較0回、auth unavailable503でrefreshを誘わないこと、GET404の3種類同文、完全なP9の答え、ログが固定codeのみ、署名鍵無しの500も試す。制限のsubjectはlinkのUUIDでありtokenでないことをmockの引数で確認する。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx.cmd jest tests/unit/api/order-status tests/unit/middleware/proxy-origin.test.ts --runInBand`。
 Expected: 新Handler未定義でFAIL。既存proxyの拒否の試験はPASS。
 
-- [ ] **Step 3: C-3 の Handler 2本を実装する**
+- [x] **Step 3: C-3 の Handler 2本を実装する**
 
 `await context.params`、Node runtime、no-storeの全経路を守る。verifyはログインを必須にせずP20順。CSRF/制限の既存Responseは新しいJSONへ写し、Retry-Afterを保持する。GETはP25のOR認可。ログインの持ち込み有無は未検証claimsから判断しない。会員が持ち主ならCookieの期限に関係なくmember。noneにdataの空オブジェクトや電話の有無以外の情報を足さない。
 
 proxyは既存 `matchesPathSegment(request.nextUrl.pathname,'/api/order-status')` で新APIの配下を見分け、Origin拒否のJSONにP31の2ヘッダーだけを足す。検査順・許可リスト・除外ルートは変えない。
 
-- [ ] **Step 4: GREEN と守りの既存試験を確かめる**
+- [x] **Step 4: GREEN と守りの既存試験を確かめる**
 
 Run: Step 2 → `npx.cmd jest tests/unit/lib/client-fetch.test.ts tests/unit/lib/csrf.middleware.test.ts --runInBand` → 型。
 Expected: PASS、ログイン共通処理への変更0、型の誤り0。Originはproxy、CSRFは既存helperの意味を保つ。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```powershell
 git add -- "src/app/api/order-status/[token]/verify/route.ts" "src/app/api/order-status/[token]/private/route.ts" src/proxy.ts tests/unit/api/order-status/verify.test.ts tests/unit/api/order-status/private.test.ts tests/unit/middleware/proxy-origin.test.ts
@@ -950,7 +950,7 @@ git commit -m "feat: 注文状況の本人確認と個人情報の窓口を追�
 | 既存 `OrderReturnsSection` | 操作ありの既存propsに `readOnly?:false` を足す枝と、`{orderId:string;section:PublicCustomerOrderReturns;readOnly:true;cancelLines?:never;onChanged?:never}` のunion |
 | 同ファイル `OrderReturnPrivateDetails` | `({orderReturn,details}:{orderReturn:PublicCustomerOrderReturn;details:OrderStatusPrivateReturn}):React.JSX.Element|null`。既存HowToReturnの文と条件、送り返しの番号の表示を共有する |
 
-- [ ] **Step 1: 公開の範囲と状態の変化の部品試験を書く**
+- [x] **Step 1: 公開の範囲と状態の変化の部品試験を書く**
 
 ```tsx
 test('ページはconnectionの後で公開材料を読み個人情報を呼ばない');
@@ -982,12 +982,12 @@ expect(literalMessageVisible).toBe(true);
 
 ほかに、C-5の全ラベル、公開返品の全8状態、キャンセル4状態、登録と問い合わせのhref、持ち主だけの会員注文リンク、返送先の状態条件、番号無しは行を出さない、入力全角/3桁/5桁/二重押し、mismatch/locked/expired/429/500/503/通信失敗、Retry後の復帰、401後の公開維持と無限再読込無しを試す。Jestのfake timersで24時間の境界を進め、実際に待たない。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx.cmd jest tests/unit/components/OrderStatusPage.test.tsx tests/unit/features/order-status tests/unit/components/OrderItemRow.test.tsx tests/unit/features/account/returns/OrderReturnsSection.test.tsx --runInBand`。
 Expected: 新しい頁・部品未定義でFAIL。既存の操作ありの試験は現状でPASS。
 
-- [ ] **Step 3: 上表の署名と C-5 の画面を実装する**
+- [x] **Step 3: 上表の署名と C-5 の画面を実装する**
 
 ページは `await params` → token形検査 → `await connection()` → service_role作成 → link/公開材料/公開返品 → 公開組み立て → JSX。形違いはDB無しでnotFound、NULLの公開材料もnotFound。返品だけの失敗はnullで続け、それ以外は固定codeだけを記録して固定エラーへ送る。公開propsへlinkを丸ごと渡さない。
 
@@ -999,12 +999,12 @@ VerifyFormは label関連付け、`type='text' inputMode='numeric' autoComplete=
 
 公開の返品欄はreadOnly。送り返しの品と店の文はそこに出し、返送先/番号は `OrderReturnPrivateDetails` を個人情報欄から呼ぶ。新しい操作の枝は作らない。guest/verifiedの案内は2つの道、memberは会員の注文リンクだけ。新しい404とerrorにもC-5の固定文以外を出さない。
 
-- [ ] **Step 4: GREEN と共有部品の既存試験を確かめる**
+- [x] **Step 4: GREEN と共有部品の既存試験を確かめる**
 
 Run: Step 2 → `npx.cmd jest tests/unit/components/AccountOrderDetailPage.test.tsx --runInBand` → 型 → `npm.cmd run lint`。
 Expected: PASS、型/lintの新しい誤り0。3画面幅の実寸と本当のCookieの運搬はTask 9まで未検証。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```powershell
 git add -- "src/app/order-status/[token]/page.tsx" "src/app/order-status/[token]/not-found.tsx" "src/app/order-status/[token]/error.tsx" src/features/order-status/components/OrderStatusPublic.tsx src/features/order-status/components/OrderStatusAccess.tsx src/features/order-status/components/OrderStatusVerifyForm.tsx src/features/order-status/components/OrderStatusPrivate.tsx src/features/order-status/components/OrderStatusGuidance.tsx src/features/order-status/status-client.ts src/features/account/components/OrderItemRow.tsx src/features/account/returns/OrderReturnsSection.tsx tests/unit/components/OrderStatusPage.test.tsx tests/unit/features/order-status/OrderStatusPublic.test.tsx tests/unit/features/order-status/OrderStatusAccess.test.tsx tests/unit/features/order-status/OrderStatusVerifyForm.test.tsx tests/unit/features/order-status/OrderStatusPrivate.test.tsx tests/unit/features/order-status/OrderStatusGuidance.test.tsx tests/unit/features/order-status/status-client.test.tsx tests/unit/components/OrderItemRow.test.tsx tests/unit/features/account/returns/OrderReturnsSection.test.tsx
@@ -1033,7 +1033,7 @@ git commit -m "feat: 注文状況のページと確認の欄を追加"
 - Consumes: `ensureOrderStatusLink(store,orderId):Promise<string>`、`getSiteUrl()`、`isShopEmailKind(kind)`、既存 `OrderEmailMaterial/OrderEmailWorkerDeps`、保存済みsubject/bodyの優先と `order-email/{claim.id}` の重複防止キー。
 - Produces: C-2 `loadOrderStatusEmailUrl`、任意の材料 `orderStatusUrl?:string|null`、必須のdeps `loadStatusUrl`、C-6の全文。loadOrderEmailMaterial/loadRequestEmailMaterial/loadDeliveryEmailMaterialの既存引数は変えない。
 
-- [ ] **Step 1: 16種類と全書き分け、旧本文の試験を先に書く**
+- [x] **Step 1: 16種類と全書き分け、旧本文の試験を先に書く**
 
 ```ts
 test.each(CUSTOMER_STATUS_MAIL_KINDS)('%sのリンクはお問い合わせ文の直前に1回だけ');
@@ -1062,23 +1062,23 @@ expect(failure).toMatchObject({code:'db_unavailable',category:'transient'});
 
 `CUSTOMER_STATUS_MAIL_KINDS` は試験内でC-6の16種類を明示して定義し、実装側の判定だけを正にしない。paid通常/期限後、canceledの3書き分け、refundの3書き分け、return_acceptedの返送方法3通り、deliveredの返品日数あり/無制限を既存全文期待で確認する。URL無しは全16種類null、店向けはURL無しでも既存どおり。合成の電話値以外を失敗時のdiffへ出さない。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx.cmd jest tests/unit/lib/orders/email/order-email-compose tests/unit/lib/orders/status/status-email.test.ts --runInBand`。
 Expected: 旧本文のため新しいリンク/電話削除の期待でFAIL。単にfixtureのURLが無いことによるnullだけをREDの根拠にしない。
 
-- [ ] **Step 3: C-6 の行と材料の準備の署名を実装する**
+- [x] **Step 3: C-6 の行と材料の準備の署名を実装する**
 
 workerは既存の材料loader → 既存の取りやめ判定 → 保存済み本文の有無 → 新しいお客様向けなら `loadStatusUrl(claim.orderId)` → compose/save/send の順。送信対象でない注文・店向け・保存済み本文のためにリンクを作らない。depsの本番実装は既存service_role clientを共有する。URL設定の失敗nullとDB失敗throwを分ける。
 
 composerは全16種類の既存本文を作ってから共通の末尾へ1行を追加する形にそろえてよいが、deliveredの旧リンクと電話以外の行・空行は変えない。共通化の前提として問い合わせ文が1回であることを全種類で確かめる。URLはhelperから得たhttp/httpsの絶対URLだけを使う。材料のURLを `getSiteUrl()` とトークン以外の入力から作らない。
 
-- [ ] **Step 4: GREEN と全メール単体を確かめる**
+- [x] **Step 4: GREEN と全メール単体を確かめる**
 
 Run: `npx.cmd jest tests/unit/lib/orders/email tests/unit/lib/orders/status/status-email.test.ts --runInBand` → 型。
 Expected: PASS。新depsを作る4つのworker試験の全harnessへ固定の `loadStatusUrl` を足す。実メール送信の証拠はTask 9のMailpitまで未確認。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```powershell
 git add -- src/lib/orders/status/status-email.ts src/lib/orders/email/order-email-compose.ts src/lib/orders/email/order-email-worker.ts tests/unit/lib/orders/status/status-email.test.ts tests/unit/lib/orders/email/order-email-compose.test.ts tests/unit/lib/orders/email/order-email-compose-returns.test.ts tests/unit/lib/orders/email/order-email-compose-requests.test.ts tests/unit/lib/orders/email/order-email-compose-delivery.test.ts tests/unit/lib/orders/email/order-email-worker.test.ts tests/unit/lib/orders/email/order-email-worker-recipient.test.ts tests/unit/lib/orders/email/order-email-worker-requests.test.ts tests/unit/lib/orders/email/order-email-worker-delivery.test.ts
@@ -1099,7 +1099,7 @@ git commit -m "feat: 注文メールに状況のリンクを追加し電話を�
 - Consumes: P13/P23、既存フォームの `inquiryType/orderNumber` のstateと値 `product/order/other`、現行送信API。
 - Produces: C-2 `ContactPrefill` と `parseContactPrefill(search:string):ContactPrefill`。変更するstateは2つだけ。件名・氏名・メール・本文をURLから埋めない。
 
-- [ ] **Step 1: 値の検証と編集を守る試験を書く**
+- [x] **Step 1: 値の検証と編集を守る試験を書く**
 
 ```tsx
 test('種別と小文字の注文番号を受け取り大文字で返す');
@@ -1120,21 +1120,21 @@ expect(submitted.orderNumber).toBe('ORD-11112222');
 
 product/other、trim、大文字化、空文字、8桁未満/超過、`ORD-ZZZZZZZZ`、同名のorder重複、queryのsubject・token・emailを無視するケースも固定する。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx.cmd jest tests/unit/features/contact/contact-prefill.test.ts tests/unit/components/ContactPage.test.tsx --runInBand`。
 Expected: helper未定義と初期値無しでFAIL。
 
-- [ ] **Step 3: parse の署名と mount 時の初期値だけ実装する**
+- [x] **Step 3: parse の署名と mount 時の初期値だけ実装する**
 
 `URLSearchParams` で各キーを `getAll` し、1個の時だけ検証する。typeの大小は変えず小文字3値だけ。orderだけtrim・大文字化。contactのeffectは1回だけとし、現在の欄が空で利用者が触っていない時に値を入れる。送信時の `resolveLinkedOrderId`、メールの照合、入力の最大32文字、既存ラベルを変えない。
 
-- [ ] **Step 4: GREEN と既存お問い合わせAPI単体を確かめる**
+- [x] **Step 4: GREEN と既存お問い合わせAPI単体を確かめる**
 
 Run: Step 2 → `npx.cmd jest tests/unit/api/contact/route.test.ts --runInBand` → 型。
 Expected: PASS、API変更0、型の誤り0。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```powershell
 git add -- src/features/contact/contact-prefill.ts src/app/contact/page.tsx tests/unit/features/contact/contact-prefill.test.ts tests/unit/components/ContactPage.test.tsx
@@ -1180,7 +1180,7 @@ git commit -m "feat: お問い合わせの種別と注文番号をURLから入�
 | `readOrderStatusUrlFromMail(request:APIRequestContext,email:string):Promise<URL>` | Mailpitのraw本文から該当行を1つ抽出。originはlocalhost:3000、pathは43文字のtokenだけと確かめ、query/hash無し。URLと本文は出力しない |
 | 既存道具へ追加 `maskOrderStatusMailLinks(text:string):string` | P30の置換。`mailBodies`はLF化後にこれを通す。新006のraw読取だけ独立させる |
 
-- [ ] **Step 1: 30ケースの名前と期待、環境の単体を先に書く**
+- [x] **Step 1: 30ケースの名前と期待、環境の単体を先に書く**
 
 下表の名前の先頭へviewport名と幅を付け、各specで3幅をforループする。ブラウザプロジェクトを増やしてケース数を倍にしない。
 
@@ -1216,12 +1216,12 @@ expect(prepared.NEXT_PUBLIC_SITE_URL).toBe('http://localhost:3000');
 
 トークンや本文を値とする `expect(actual).toEqual(expected)` を使わず、形や一致のbooleanを比べる。新status specとACCOUNT-044は `test.use({trace:'off',video:'off',screenshot:'off'})`。DBの値を戻すのはfinally、設定を変える008は既存 `withDeliveryScenario` の共通の鍵と復旧を使う。
 
-- [ ] **Step 2: controller が RED とケース数を確かめる**
+- [x] **Step 2: controller が RED とケース数を確かめる**
 
 Run: 3000番の所有確認 → 手元DB reset → `$env:PLAYWRIGHT_HTML_OPEN='never'; $env:E2E_STRICT='1'` を別々の行で設定 → `npx.cmd playwright test e2e/FR-ORDER-001-public-view.spec.ts e2e/FR-ORDER-002-verify-private.spec.ts e2e/FR-ORDER-003-verify-limits.spec.ts e2e/FR-ORDER-004-expiry.spec.ts e2e/FR-ORDER-005-returns-guidance.spec.ts e2e/FR-ORDER-006-email-link.spec.ts e2e/FR-ORDER-007-not-found-security.spec.ts e2e/FR-ORDER-008-delivery-refund-visibility.spec.ts e2e/FR-CONTACT-014-order-status-prefill.spec.ts e2e/FR-ACCOUNT-044-order-status-member-access.spec.ts`。
 Expected: 道具がまだ無ければその未定義でFAIL。これはE2E道具のREDであり製品の欠陥の証明とは記さない。既に動く道具で全てPASSなら無理に壊さず、Task 1〜8の実測REDを参照する。登録されたケース数は30、skip0。
 
-- [ ] **Step 3: 試験の道具と既存の依存だけ直す**
+- [x] **Step 3: 試験の道具と既存の依存だけ直す**
 
 新helperは全DB接続にloopback検査。各試験で `isolateCustomerApiIp` を使い、別試験が同じIP枠を使い切らないようにする。raw本文は006のメモリ内でだけ読み、画面・URLを添付しない。21日・24時間・15分の `waitForTimeout` を作らない。refreshは `loginCustomer` で実際のログインを作り、access Cookieだけを壊して有効なrefreshを残す。
 
@@ -1231,12 +1231,12 @@ FR-ORDER-007のCSRF拒否は、`loginCustomer` でrefresh Cookieのある状態�
 
 `E2E_FIXED_ENV` の2値を加え、既存 `computeServerFingerprint` のfixed-key集計へ自然に含める。環境の単体で親の専用鍵/本番URLを上書きすることを確認する。SupabaseやMailpitの接続先を省略して本番へ戻す変更はしない。
 
-- [ ] **Step 4: controller が GREEN と既存の対象を確かめる**
+- [x] **Step 4: controller が GREEN と既存の対象を確かめる**
 
 Run: 環境のJest → 型 → reset → 3000番のE2Eアプリを止めてStep 2の新10本と、既存FR-ADMIN-101・FR-CHECKOUT-041/045/049を本番ビルドで実行。
 Expected: 新30ケース全てexpected、skip0。既存もPASS。メール本文の伏せにより既存のassert失敗ログに43文字のトークンが無いことを合成失敗の単体で確認するのではなく、mask関数の戻り値と各読取経路の静的確認で点検する。全件比較はTask 11。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```powershell
 git add -- e2e/order-status-test-utils.ts e2e/FR-ORDER-001-public-view.spec.ts e2e/FR-ORDER-002-verify-private.spec.ts e2e/FR-ORDER-003-verify-limits.spec.ts e2e/FR-ORDER-004-expiry.spec.ts e2e/FR-ORDER-005-returns-guidance.spec.ts e2e/FR-ORDER-006-email-link.spec.ts e2e/FR-ORDER-007-not-found-security.spec.ts e2e/FR-ORDER-008-delivery-refund-visibility.spec.ts e2e/FR-CONTACT-014-order-status-prefill.spec.ts e2e/FR-ACCOUNT-044-order-status-member-access.spec.ts e2e/FR-ADMIN-101-fulfillment-delivered.spec.ts e2e/FR-CHECKOUT-049-order-email-sent-once.spec.ts e2e/order-email-test-utils.ts e2e/FR-CHECKOUT-041-confirmation-email-fulfillment.spec.ts e2e/FR-CHECKOUT-045-in-stock-line.spec.ts scripts/e2e/environment.ts tests/unit/scripts/e2e/environment.test.ts
@@ -1339,7 +1339,7 @@ git commit -m "test: 注文状況と問い合わせのE2Eを追加"
 
 ACにE2Eがある行の文章は、requirementsへ書く時に原則 `3つの画面幅（mobile 390px・tablet 768px・desktop 1280px）で、` を先頭へ添える。DBだけの比較・全16種類などは括弧で証拠の範囲を明記する。505-AC-04は既にその文があるので二重に付けない。新spec全ての `// FREQ-505-AC-04` コメントも忘れない。
 
-- [ ] **Step 1: 32 AC とコメント対応の静的試験を先に書く**
+- [x] **Step 1: 32 AC とコメント対応の静的試験を先に書く**
 
 ```ts
 test('FREQ-498から505の8行と32ACが一意で日本語の確かめられる文を持つ');
@@ -1359,12 +1359,12 @@ expect(migrationContractGaps).toEqual([]);
 
 静的試験が検証するのは定義と対応であり、30ケースを実行して通した証拠にはしない。API一覧は現行128ファイル/167メソッド（E2E専用を含む）から新2ファイル/2メソッド分を足すが、実装時のソースから数え直す。今の一覧表はE2E専用を除くため、現状維持なら129行/168メソッド、全体は130ファイル/169メソッドとなる。
 
-- [ ] **Step 2: RED を確かめる**
+- [x] **Step 2: RED を確かめる**
 
 Run: `npx.cmd jest tests/unit/docs/order-status-traceability.test.ts --runInBand`。
 Expected: 要求8行・新文書・環境値の注記が無いためFAIL。既存最大番号が497でない場合は採番衝突として止める。
 
-- [ ] **Step 3: 要求の行と C-0〜C-6 の契約を文書へ写す**
+- [x] **Step 3: 要求の行と C-0〜C-6 の契約を文書へ写す**
 
 新しい頁の文書は概要・公開/個人情報の表・2段のMermaid・固定文・エラー・テスト対応。ERは1表とFK。APIはC-3の全ステータスとnone/401/503の違い。画面の一覧と流れへtoken頁と登録/問い合わせ/会員注文の行き先を足す。状態の文書は注文のenumを変えないこと、個人情報の表示状態を別に持つことを明記する。
 
@@ -1379,12 +1379,12 @@ ORDER_STATUS_SESSION_SECRET=
 
 承認済みのE-5設計書はこのTaskでも変更しない。X1の優先する決定はAPI/頁の文書に明記する。既存の章全体を置換せず、E-5節と必要なリンク/目次だけを加える。
 
-- [ ] **Step 4: GREEN と文書の検証を確かめる**
+- [x] **Step 4: GREEN と文書の検証を確かめる**
 
 Run: Step 2 → `npx.cmd jest tests/unit/docs/delivery-status-traceability.test.ts --runInBand` → `npm.cmd run -s validate-docs` → 型。
 Expected: PASS、相対リンク切れ0、Mermaid構文の誤り0、既存E-4の静的試験もPASS。絵文字無し、H4まで、UTF-8、文字化け無しを確認する。
 
-- [ ] **Step 5: controller が名指しでコミットする**
+- [x] **Step 5: controller が名指しでコミットする**
 
 ```powershell
 git add -- tests/unit/docs/order-status-traceability.test.ts docs/04_DetailDesign/pages/20_order_status.md docs/02_Requirements/requirements.md docs/03_BasicDesign/api/api-spec.md docs/03_BasicDesign/api/route-inventory.md docs/03_BasicDesign/data/er.md docs/03_BasicDesign/ui/screen-list.md docs/03_BasicDesign/ui/screen-flow.md docs/04_DetailDesign/pages/09_contact.md docs/04_DetailDesign/pages/15_account.md docs/04_DetailDesign/states/order-payment.md docs/04_DetailDesign/sequence/order-administration.md docs/06_Operations/order-email-operations.md docs/06_Operations/webhook-queue-operations.md .env.example
@@ -1406,7 +1406,7 @@ git commit -m "docs: 注文状況の要求と設計と運用を記録"
 - Produces: 実測RED/GREEN、全Jest/DB/E2E/型/lint/文書の結果、既存データでの予行演習、前回比較、32ACの証拠、手元/本番の同じ定義のmd5とACL、許可を得たpush/適用/改名の記録。
 - 予行演習の道具の入口は `runOrderStatusRehearsal(phase:'seed'|'apply-a'|'apply-b'|'check'):Promise<void>`。CLIは `npx.cmd tsx tmp/e5/rehearsal.ts --phase seed` の形。DBは `postgresql://postgres:postgres@127.0.0.1:54322/postgres` だけを許す。SQL適用はファイルをUTF-8で読み全文を1回queryし、値を出力しない。
 
-- [ ] **Step 1: 実装前に場と前回の基準を控える（Task 1 より先）**
+- [x] **Step 1: 実装前に場と前回の基準を控える（Task 1 より先）**
 
 controllerは `git rev-parse HEAD` と `git --no-optional-locks status --short` を控える。既存の `.claude/CLAUDE.md`・`package.json`・`.superpowers/` 等の変更を混ぜない。実装前の単体/ほかのJest/型/lint/validate-docsの結果を測り、前からの失敗・skipを分ける。前回JSONは存在・時刻・md5と実測のexpected/unexpected/flaky/skippedを読み、E-4計画の古い合格数を流用しない。
 
@@ -1420,7 +1420,7 @@ Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
 
 controllerが手元Supabase/MailpitとE-4のfakeを用意する。既存のE2E用アプリだけ、プロセスのcommand lineで所有を確認して止める。普段のアプリを勝手に止めない。DockerやOSの保護設定を勝手に変更しない。X2は手元catalogで解消した記録を残す。
 
-- [ ] **Step 2: 全体の受け入れの RED と未実施を記録する**
+- [x] **Step 2: 全体の受け入れの RED と未実施を記録する**
 
 Task 10の静的試験で8行/32ACと対応を調べ、各TaskのREDログとGREENログへリンクする。未実施を「通過」に変えない。既に全て通る場合はREDを作るための変更をせず、先行Taskの実測REDを参照する。
 
@@ -1434,7 +1434,7 @@ expect(coveredAcIds.size).toBe(32);
 expect(unexplainedRegressions).toEqual([]);
 ```
 
-- [ ] **Step 3: 全単体・ほかの Jest・型・lint・文書を確かめる**
+- [x] **Step 3: 全単体・ほかの Jest・型・lint・文書を確かめる**
 
 Run:
 
@@ -1448,7 +1448,7 @@ npm.cmd run -s validate-docs
 
 Expected: 今回による失敗0。実装前の失敗/skip/警告との差を1件ずつ区別する。単体だけを全Jestと呼ばない。静的なSQL文字列の確認を、SQLの実行の合格と呼ばない。
 
-- [ ] **Step 4: controller が DB 結合を全件流す**
+- [x] **Step 4: controller が DB 結合を全件流す**
 
 E2E用アプリ/workerを動かしたままDB結合を流さない。reset後に環境を次の形でプロセスの中へ渡す。statusのJSONや鍵を出力・ログ保存しない。
 
@@ -1463,7 +1463,7 @@ npx.cmd jest tests/integration/db --runInBand
 
 実行前にAPI_URLもlocalhost/127.0.0.1/::1であることを検査する。Expected: A→B適用、全件PASS、skip0。新3スイートだけでなく、既存のメール・返品・返金・発送もPASS。読み取り権限、2接続の競合、旧JSON比較、PostgRESTの引数、同じ時刻の期限リセットを確認する。
 
-- [ ] **Step 5: E-4 までの既存データで A/B を当てる予行演習**
+- [x] **Step 5: E-4 までの既存データで A/B を当てる予行演習**
 
 `tmp/e5/rehearsal.ts` を上記署名で用意する。実施前にCLIの `db reset --help` で `--version` が利用可能なことを確認し、使えない時に無指定resetで代用しない。実施コマンドは次の順。
 
@@ -1483,7 +1483,7 @@ apply-bはB適用直前/直後に同じ合成の持ち主用JSONを読み、全�
 
 Expected: 全検査の違反0。resetだけの新規DBへの適用成功で、既存データを使った適用成功を代用しない。予行演習後はこのDBをE2Eへ流用しない。
 
-- [ ] **Step 6: DB を作り直し本番ビルドの E2E 全件を流す**
+- [x] **Step 6: DB を作り直し本番ビルドの E2E 全件を流す**
 
 3000番の所有を確かめ、コード変更後の古いE2Eアプリだけを止める。Run:
 
@@ -1496,7 +1496,7 @@ npx.cmd playwright test
 
 Expected: 見張りを通り、fake→build→start。新30ケースは全てexpected、skip0。全件の実測を先に `.superpowers/sdd/2026-10-22-order-status-page/e2e-results-group-e5.json` へコピーし、部分再実行で上書きしない。実値を含むCookieやrawメール本文は記録へ添付しない。
 
-- [ ] **Step 7: 前回の E2E と全件で比べる**
+- [x] **Step 7: 前回の E2E と全件で比べる**
 
 ```powershell
 npm.cmd run e2e:compare -- .superpowers/sdd/2026-10-22-order-status-page/e2e-baseline.json .superpowers/sdd/2026-10-22-order-status-page/e2e-results-group-e5.json
@@ -1504,7 +1504,7 @@ npm.cmd run e2e:compare -- .superpowers/sdd/2026-10-22-order-status-page/e2e-bas
 
 Expected: 新しい失敗/skip/欠落と説明のない回帰0。前はexpectedで今回そうでない物を1件ずつ説明する。既存の失敗と同じだという主張には前後のerror-contextと単独再実行の証拠を付ける。retriesを上げて通さない。今回触った会員・返品・お問い合わせ・メールを「前から失敗」の一言で除外しない。
 
-- [ ] **Step 8: DB 定義の指紋と秘密の境界を確かめる**
+- [x] **Step 8: DB 定義の指紋と秘密の境界を確かめる**
 
 `tmp/e5/fingerprint.sql` は読み取りだけ。C-0の1表の全列/NULL/default/CHECK/FK/UNIQUE/索引/RLS/policy/ACL、C-1の10関数の引数/戻り値/owner/SECURITY DEFINER/STABLEまたはIMMUTABLE/search_path/ACL/`pg_get_functiondef`、pgcryptoのschemaを列挙する。`(kind,name,md5(def),acl)` をC順で並べ全体md5を出す。無い名前はmissingとして数え、存在しない物を飛ばしてmd5を作らない。
 
@@ -1512,13 +1512,15 @@ Expected: 新しい失敗/skip/欠落と説明のない回帰0。前はexpected�
 
 SQL全文にJSON由来の `\u` と16進4字が残っていないこと、A/Bの `AS $$` と `$$;`、UTF-8/LF/末尾改行、各ファイルのbytes/md5を確認。元移行の変更0を開始commitとのdiffで確認する。トークン・電話・秘密の実値がソース差分/ログ/証拠/クエリへ混ざらないことを確認する。E2Eの合成値は秘密の本番値の検証ではない。
 
-- [ ] **Step 9: Opus の全体の最終レビューと必要な修正**
+- [x] **Step 9: Opus の全体の最終レビューと必要な修正**
+
+実施の記録（2026-10-22、手元だけ）: 単体 9,588 件通過・DB 結合 1,574 件通過・既存データでの予行演習 98 項目の違反0・指紋 missing 0・E2E 全件 3,579 件中 3,355 件通過（新しい30ケースは全部通過、前回から新しく落ちたのは全件の負荷での商品詳細2件だけ）・Opus の全体の最終レビューは Critical 0・Important 0。詳しくは [運用の文書](../../06_Operations/webhook-queue-operations.md) の 9.1。本番の DB・本物のメール・本番のログの設定は未確認。
 
 全体の最終レビューは `.claude/CLAUDE.md` の指定どおり `claude Opus5.5` を使う。これは後日の実装controllerの手順であり、下書きの作成中に他の係を呼ぶ指示ではない。設計書全13章、X1〜X4、P1〜P31、C-0〜C-6、32AC、Review Focus5項目、元SQLとの差、実測ログ、旧本文/競合/認証更新/公開経路を渡す。
 
 指摘は所有Taskへ戻し、必要なRED→GREENを記録する。直した部分と影響する既存の検証をやり直す。E2Eに影響する変更ならreset→全件→比較を更新する。重大な未解決0を確認する。現在の実行環境で指定モデルを利用できない時はcontrollerがユーザーへ不足を報告し、別モデルの結果をOpusレビューと呼ばない。
 
-- [ ] **Step 10: 全体の結果を報告し検証記録だけコミットする**
+- [x] **Step 10: 全体の結果を報告し検証記録だけコミットする**
 
 `report-to-user.md` に各範囲の実測件数、skip、前回比較、32AC、新30ケース、予行演習、missing/指紋、既存差分、未確認の本番環境/本物のメール経路を短く書く。手元Mailpitの結果を本番の受信箱への到着証拠にしない。計画のチェックと運用文書へ実測だけ追記する。
 
