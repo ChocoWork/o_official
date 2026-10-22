@@ -64,6 +64,8 @@ jest.mock('@/lib/orders/returns/customer-return-store', () => ({
 
 import { NextRequest } from 'next/server';
 import { GET } from '@/app/api/orders/[id]/route';
+import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
+import { signItemImageUrl } from '@/lib/storage/item-images';
 import type { CustomerOrderReturns } from '@/lib/orders/returns/customer-return-types';
 
 type Json = Record<string, any>;
@@ -189,6 +191,7 @@ function setTrackingKey(configured: boolean) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(authenticateRequest).mockResolvedValue({ ok: true, claims: { sub: 'user-1' } } as Awaited<ReturnType<typeof authenticateRequest>>);
   mockOwnerQuery.select.mockReturnValue(mockOwnerQuery);
   mockOwnerQuery.eq.mockReturnValue(mockOwnerQuery);
   mockOwnerQuery.not.mockReturnValue(mockOwnerQuery);
@@ -204,6 +207,29 @@ beforeEach(() => {
 afterAll(restoreTrackingEnv);
 
 describe('GET /api/orders/[id] の発送と進み具合（グループ E-1）', () => {
+  test('会員のJSONは共通化の前後で文字列として同じ', async () => {
+    setup({ order: orderRow({ order_items: [STOCK_ITEM, MADE_ITEM, EXCHANGE_ITEM] }),
+      lines: [stockLine(), madeLine(), exchangeLine()], fulfillments: [fulfillment()], refunds: [refundRow()] });
+    jest.mocked(signItemImageUrl).mockResolvedValueOnce('fixed-image').mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    const expectedJsonBeforeRefactor = '{"id":"a1b2c3d4-1111-4222-8333-444455556666","orderNumber":"ORD-A1B2C3D4","orderDate":"2026/10/01 09:00","status":"paid","progress":{"key":"in_production","label":"受注生産中","partiallyShipped":false,"steps":[{"key":"payment","label":"お支払い","state":"done"},{"key":"in_production","label":"受注生産中","state":"current"},{"key":"ready","label":"発送準備中","state":"todo"},{"key":"in_transit","label":"配送中","state":"todo"},{"key":"delivered","label":"配達済み","state":"todo"}]},"subtotalAmount":"￥82,000","shippingAmount":"￥0","discountAmount":"￥0","totalAmount":"￥82,000","paymentMethod":"-","shippingFullName":"山田 花子","shippingEmail":"hanako@example.com","shippingPhone":"090-1111-2222","shippingAddress":"〒1500001 東京都 渋谷区 神宮前1-2-3","shipments":[{"id":"ful-1","number":1,"shippedAt":"2026-10-05T15:30:00.000Z","carrier":"yamato","carrierLabel":"ヤマト運輸","trackingNumber":"1234-5678-9012","trackingUrl":"https://toi.kuronekoyamato.co.jp/cgi-bin/tneko?number=1234-5678-9012","deliveredAt":null,"items":[{"orderItemId":"line-stock","name":"リネンシャツ","color":"白","size":"M","quantity":2,"lineKind":"order"}]}],"refunds":[{"id":"refund-1","date":"2026/10/12","amount":"￥12,000","status":"completed","customerActionDeadline":null}],"refundTotal":null,"returnSection":null,"items":[{"id":"line-stock","itemId":10,"variantId":101,"name":"リネンシャツ","imageUrl":"fixed-image","color":"白","size":"M","quantity":2,"amount":"￥24,000","lineKind":"order","shippedQuantity":0,"refundedQuantity":0,"readyQuantity":2,"inProductionQuantity":0},{"id":"line-made","itemId":11,"variantId":111,"name":"ウールコート","imageUrl":null,"color":"黒","size":"L","quantity":1,"amount":"￥58,000","lineKind":"order","shippedQuantity":0,"refundedQuantity":0,"readyQuantity":0,"inProductionQuantity":1},{"id":"line-exchange","itemId":10,"variantId":102,"name":"リネンシャツ","imageUrl":null,"color":"白","size":"L","quantity":1,"amount":"￥0","lineKind":"exchange","shippedQuantity":0,"refundedQuantity":0,"readyQuantity":1,"inProductionQuantity":0}]}';
+    const { body: actual } = await getDetail();
+    expect(JSON.stringify(actual)).toBe(expectedJsonBeforeRefactor);
+  });
+
+  test.each(['missing', 'invalid', 'unavailable'] as const)('認証失敗 %s は既存の応答を返し所有者とservice_roleを読まない', async (reason) => {
+    setup();
+    jest.mocked(authenticateRequest).mockResolvedValue({ ok: false, reason });
+    const failure = { status: reason === 'unavailable' ? 503 : 401, body: { error: 'fixed-auth-failure' }, headers: { 'Cache-Control': 'no-store' } };
+    jest.mocked(authFailureResponse).mockReturnValueOnce(failure as unknown as ReturnType<typeof authFailureResponse>);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(await getDetail()).toBe(failure);
+      expect(authFailureResponse).toHaveBeenCalledWith(reason, { 'Cache-Control': 'no-store' });
+      expect(mockOwnerQuery.select).not.toHaveBeenCalled();
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+    } finally { warn.mockRestore(); }
+  });
+
   it('持ち主の確かめを通った注文だけ、同じ service_role の client で数と発送を読む', async () => {
     setup();
 
