@@ -52,15 +52,21 @@ test('形違いと無い注文と隠す状態は同じnotFound', async () => {
   expect(notFound).toHaveBeenCalledTimes(3);
 });
 
-test('返品だけの失敗はnullで続け、それ以外は固定codeだけ記録する', async () => {
+test('返品だけの失敗はnullで続け固定codeを1回だけ記録し、それ以外も固定codeだけ記録して投げる', async () => {
   const log = jest.spyOn(console, 'error').mockImplementation(() => undefined);
   try {
-    jest.mocked(loadOrderStatusReturns).mockRejectedValueOnce(new Error('opaque'));
-    await OrderStatusPage({ params: Promise.resolve({ token }) });
+    const failure = Object.assign(new Error('PRIVATE_SENTINEL'), { digest: 'PRIVATE_SENTINEL', code: 'PRIVATE_SENTINEL' });
+    jest.mocked(loadOrderStatusReturns).mockRejectedValueOnce(failure);
+    render(await OrderStatusPage({ params: Promise.resolve({ token }) }));
+    expect(screen.getByRole('heading', { name: 'ご注文の状況' })).toBeVisible();
     expect(jest.mocked(buildCustomerOrderPublicView).mock.calls[0]?.[0].returnSection).toBeNull();
-    jest.mocked(loadOrderStatusPublicMaterial).mockRejectedValueOnce(new Error('opaque'));
+    // 固定の記号が1回・引数1つだけ。エラーの中身・digest・トークンは出さない
+    expect(log.mock.calls).toEqual([['ORDER_STATUS_FAILED']]);
+
+    log.mockClear();
+    jest.mocked(loadOrderStatusPublicMaterial).mockRejectedValueOnce(failure);
     await expect(OrderStatusPage({ params: Promise.resolve({ token }) })).rejects.toThrow('ORDER_STATUS_FAILED');
-    expect(log.mock.calls.every((args) => args.length === 1 && args[0] === 'ORDER_STATUS_FAILED')).toBe(true);
+    expect(log.mock.calls).toEqual([['ORDER_STATUS_FAILED']]);
   } finally { log.mockRestore(); }
 });
 

@@ -332,6 +332,13 @@ describeLocalDb('integration: 注文状況のリンク・本人確認・公開�
     expect(material.delivery_summary).toEqual({ active_count: 1, delivered_count: 1 });
     expect(material.refund_rows).toHaveLength(2);
     for (const row of material.refund_rows) expect(keys(row)).toEqual(['refund_id', 'created_at', 'amount', 'status'].sort());
+    // 同じ取引で入れた2件は created_at が同じ。同時刻の並びは会員の窓口（created_at DESC, id DESC）と同じ id の降順になる。
+    const refundIds: string[] = material.refund_rows.map((row: { refund_id: string }) => row.refund_id);
+    expect(material.refund_rows[0].created_at).toBe(material.refund_rows[1].created_at);
+    expect(refundIds).toEqual([...refundIds].sort().reverse());
+    expect(refundIds).toEqual((await db().query(
+      'select refund_id from public.list_order_refunds($1::uuid)', [order.orderId],
+    )).rows.map((row: { refund_id: string }) => row.refund_id));
 
     const forbidden = new Set([
       'user_id', 'customer_id', 'shipping_full_name', 'shipping_postal_code', 'shipping_prefecture', 'shipping_city',

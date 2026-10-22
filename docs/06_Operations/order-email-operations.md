@@ -112,11 +112,12 @@ returning 'ORD-' || upper(left(e.order_id::text, 8)) as order_number, e.kind, e.
 | 順 | やること | 誰が | 確かめ方 |
 |---|---|---|---|
 | 0 | 1-1 の移行の照合と、1-2 の公開前の送信待ちの確かめを済ませる。試しの行の取りやめは明示の承認の後だけ | ユーザーと Claude | 移行前後の種類別件数が同じ8行・2注文で、公開前の試しの送信待ちが残っていない |
-| 1 | Vercel の環境変数 `MAIL_PROVIDER` を `resend`（小文字）にし、`RESEND_API_KEY`・`MAIL_FROM_ADDRESS`（確かめ済みのドメインのアドレス）・`SHOP_ALERT_EMAIL` を入れる。`RESEND_API_KEY` は Full access にする（送信専用の鍵だと、配達の見回りが「鍵の設定」で止まる。送信と Webhook は動く） | ユーザー | 5 の「送信の一時停止」で `paused` が false |
+| 1 | Vercel の環境変数 `MAIL_PROVIDER` を `resend`（小文字）にし、`RESEND_API_KEY`・`MAIL_FROM_ADDRESS`（確かめ済みのドメインのアドレス）・`SHOP_ALERT_EMAIL` を入れる。`RESEND_API_KEY` は Full access にする（送信専用の鍵だと、配達の見回りが「鍵の設定」で止まる。送信と Webhook は動く） | ユーザー | この文書の5節（状態を確かめる）の SQL「送信の一時停止」で `paused` が false（この表の順5とは別） |
 | 2 | Resend の管理画面の Webhooks で宛先 `<公開した URL>/api/webhook/resend-delivery` を作り、`email.delivered`・`email.delivery_delayed`・`email.bounced`・`email.complained`・`email.suppressed`・`email.failed` の6つを選ぶ。出た署名の鍵（`whsec_` で始まる）を Vercel の `RESEND_DELIVERY_WEBHOOK_SECRET` に入れて出し直す。お問い合わせの返信の宛先（`/api/contact/inbound`・`RESEND_WEBHOOK_SECRET`）とは別の宛先・別の鍵にする | ユーザー | Resend の管理画面で宛先が有効 |
 | 3 | 2 の通しの確かめ | ユーザー（試しの注文）、Claude（確かめる） | 2 の表 |
 | 4 | Vercel の「System Environment Variables を自動で公開」が有効なことを確かめる | ユーザー | `VERCEL_ENV` が実行時に見える。見えないと preview でも環境の門を通って動く |
-| 5 | Vercel の環境変数 `NEXT_PUBLIC_SITE_URL` に本番の https のサイトを入れる（E-5 以降の注文メールの状況ページのリンクの元。未設定だと `http://localhost:3000/order-status/…` が入り、保存済みの本文は後から直らない）。詳しくは12節の「本番URL・鍵・ログ」 | ユーザー | 値を報告へ転記せず、正しい https のサイトを指すことを確かめる |
+| 5 | Vercel の環境変数 `NEXT_PUBLIC_SITE_URL` に本番の https のサイトを入れる（E-5 以降の注文メールの状況ページのリンクの元。未設定だと `http://localhost:3000/order-status/…` が入り、保存済みの本文は後から直らない）。`NEXT_PUBLIC_*` はビルドの時に埋め込まれるので、本番のビルドの前に設定する。詳しくは12節の「本番URL・鍵・ログ」 | ユーザー | 値を報告へ転記せず、正しい https のサイトを指すことを確かめる |
+| 6 | Resend のクリック追跡（Click Tracking）を注文のメールで有効にしない（有効だとトークン入りの状況ページの URL が追跡用の URL に置き換わり、Resend 側にも残る）。詳しくは12節の「本番URL・鍵・ログ」 | ユーザー | Resend の管理画面で、注文のメールを送るドメインのクリック追跡が無効なこと |
 
 - 本番の `MAIL_PROVIDER` は `resend`（小文字）を入れる。これは送り手を選ぶ設定の値で、秘密ではない。`resolveMailProvider` は大文字小文字まで完全一致で見るので、`Resend` と入れると送信を止め、店への知らせも届かない。ほかの送り手でも注文のメールは送らずに止める（重複防止キーの無い送り手で送らないため）。手元のメール受け（`local`）は手元の Supabase とだけ使い、ほかの DB と組み合わせると `config_provider` で一時停止する。
 - 宛先を登録するまでの間も、読み取り権限のある鍵なら1時間ごとの見回りが配達の状態を拾う（6）。
@@ -556,7 +557,9 @@ ORDER BY status;
 
 ### 本番URL・鍵・ログ
 
-本番では `NEXT_PUBLIC_SITE_URL` の設定が必須。未設定だと16種類のメールに `http://localhost:3000/order-status/…` が入り、保存済みの本文は後から直らない。実装のgetSiteUrlにはNEXT_PUBLIC_BASE_URL・BASE_URL・NEXT_PUBLIC_VERCEL_URLの代替もあるが、それらも無い時はlocalhostへフォールバックし、URLの構文検査だけでは止められない。運用では代替に頼らず本番のNEXT_PUBLIC_SITE_URLを設定し、公開前に正しいhttpsのサイトを指すことを値を報告へ転記せず確認する。
+本番では `NEXT_PUBLIC_SITE_URL` の設定が必須。未設定だと16種類のメールに `http://localhost:3000/order-status/…` が入り、保存済みの本文は後から直らない。実装のgetSiteUrlにはNEXT_PUBLIC_BASE_URL・BASE_URL・NEXT_PUBLIC_VERCEL_URLの代替もあるが、それらも無い時はlocalhostへフォールバックし、URLの構文検査だけでは止められない。運用では代替に頼らず本番のNEXT_PUBLIC_SITE_URLを設定し、公開前に正しいhttpsのサイトを指すことを値を報告へ転記せず確認する。`NEXT_PUBLIC_*` の値はビルドの時にコードへ埋め込まれるので、本番のビルドの前に設定する。ビルドの後に環境変数だけを足しても、すでにできたビルドには入らず、設定してから再ビルド・再デプロイが要る。
+
+Resendのクリック追跡（Click Tracking）は注文のメールで有効にしない。有効だと、本文のトークン入りの状況ページのURLが追跡用のURLに置き換わり、トークンが外部（Resend）の記録に残る。今の注文のメールは文だけでリンクの書き換えは起きないが、HTMLのメールを足す時に効くので、有効でないことを確かめてから公開する。
 
 `ORDER_STATUS_SESSION_SECRET` はサーバー専用で、空なら非空の `JWT_SECRET` を使用する。両方無いと確認印を発行できない。鍵をログへ出さず、公開環境変数へ移さない。`.env.example` に足すのは空の専用鍵と説明の2行だけ。
 

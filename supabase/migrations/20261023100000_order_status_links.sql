@@ -353,7 +353,7 @@ BEGIN
     'refund_rows', COALESCE((
       SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
         'refund_id', r.id, 'created_at', r.created_at, 'amount', r.amount, 'status', r.status
-      ) ORDER BY r.created_at DESC, r.id)
+      ) ORDER BY r.created_at DESC, r.id DESC)
       FROM public.order_refunds AS r
       WHERE r.order_id = _order_id
     ), '[]'::jsonb)

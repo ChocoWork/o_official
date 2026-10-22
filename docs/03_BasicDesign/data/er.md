@@ -803,6 +803,14 @@ erDiagram
 
 E-4でorder_fulfillmentsを参照するFKは4本増える。outboxから番号の直しへのFKも1本増える。既存行の参照数表記は各段階時点の記録とし、列・索引と守りの最終契約は末尾の配送の節を参照する。
 
+#### 注文状況のリンクの追加1表（E-5）
+
+| テーブル | PK | PK以外の一意性 | 物理FK接続 | 定義元 |
+| --- | --- | --- | --- | --- |
+| `private.order_status_links` | `(order_id)` | `(token)` | 参照元 0 / 参照先 1 | [E-5 移行 A](../../../supabase/migrations/20261023100000_order_status_links.sql) |
+
+E-5でordersを参照するFKが1本増える。既存行の参照数表記は各段階時点の記録とし、列・索引と権限の最終契約は末尾の注文状況のリンクの節を参照する。
+
 #### 発送と仕上がりの列・索引（2026-10-10）
 
 | 表 | 列と制約 |
@@ -1158,6 +1166,12 @@ CHECK (
 | `public.order_fulfillment_attention.fulfillment_id` | `public.order_fulfillments.id` | 不可 | 0..多 | RESTRICT |
 | `private.fulfillment_tracking_registrations.fulfillment_id` | `public.order_fulfillments.id` | 不可 | 0..多 | RESTRICT |
 | `private.order_email_outbox.tracking_change_id` | `public.order_fulfillment_tracking_changes.id` | 可 | 0..多（autoは部分一意） | RESTRICT |
+
+### 4.3.3 注文状況のリンクの追加1 FK（E-5）
+
+| 参照元 | 参照先 | NULL | 親からの多重度 | 削除動作 |
+| --- | --- | --- | --- | --- |
+| `private.order_status_links.order_id` | `public.orders.id` | 不可 | 0..1（PKのため1注文1本） | RESTRICT |
 
 ### 4.4 決済記録・Checkout 下書き
 

@@ -32,7 +32,11 @@ export default async function OrderStatusPage({ params }: { params: Promise<{ to
       const material = await loadOrderStatusPublicMaterial(store, link.orderId);
       if (!material) return null;
       const returnSection = await loadOrderStatusReturns(store, { orderId: link.orderId, includePrivate: false })
-        .catch(() => null);
+        .catch(() => {
+          // 返品の欄だけが消える障害に運用で気づけるよう、固定の記号だけ残す（エラーの中身・トークン・値は出さない）
+          console.error('ORDER_STATUS_FAILED');
+          return null;
+        });
       return await buildCustomerOrderPublicView({
         ...material, returnSection, trackingKeyConfigured: isDeliveryTrackingKeyConfigured(process.env),
         signImage: (path) => signItemImageUrl(store, path),
