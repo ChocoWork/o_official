@@ -125,6 +125,7 @@ for (const viewport of deliveryViewports) {
         expect(text.includes('・E2E配送のシャツ（ホワイト / M） x1')).toBe(true);
         // FREQ-503-AC-01
         expect(text.includes('ご注文の状況はこちら: http://localhost:3000/order-status/[ORDER_STATUS_LINK]')).toBe(true);
+        expect(text.includes('ご注文の確認はこちら')).toBe(false); // 旧会員リンクの行は置き換わった。
         const guidance = (days: number) => `商品に不具合がございましたら、到着から ${days} 日以内にご注文の画面またはお問い合わせからご連絡ください`;
         if (settings.windowDays === null) {
           expect(text.includes('商品に不具合がございましたら')).toBe(false);

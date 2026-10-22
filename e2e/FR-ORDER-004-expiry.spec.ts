@@ -25,7 +25,13 @@ for (const viewport of orderStatusViewports) {
       await setOrderStatusSessionForTest(page, { orderId: order.orderId, token, issuedAt: now, verifyUntil: future });
       await openOrderStatusPage(page, token);
       await expectOrderStatusPrivateVisible(page);
-      for (const verifyUntil of [null, new Date(now.getTime() - 1_000).toISOString()]) {
+      for (const [index, verifyUntil] of [null, new Date(now.getTime() - 1_000).toISOString()].entries()) {
+        if (index > 0) {
+          // 1回目で公開だけの画面になっている。期限を戻して個人情報が見えることを確かめてから過去にする。
+          await setOrderStatusTestState(db, { orderId: order.orderId, verifyUntil: future.toISOString() });
+          await reloadOrderStatusPage(page);
+          await expectOrderStatusPrivateVisible(page);
+        }
         await setOrderStatusTestState(db, { orderId: order.orderId, verifyUntil });
         // Cookie はブラウザに残し、DB の期限が切れた時の再取得で消えることを確かめる。
         expect((await page.context().cookies()).some((cookie) => cookie.name === 'sb-order-status')).toBe(true);

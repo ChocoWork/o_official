@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { expectNoHorizontalOverflow } from './delivery-tracking-test-utils';
 import {
-  createOrderStatusScenario, expectOrderStatusPrivateVisible, isolateOrderStatusApiIp,
-  openOrderStatusPage, orderStatusViewports, prepareOrderStatusTestLink, readOrderStatusPrivate,
+  createOrderStatusScenario, expectOrderStatusPrivateVisible, inspectOrderStatusPublicTransport,
+  isolateOrderStatusApiIp, openOrderStatusPage, orderStatusViewports, prepareOrderStatusTestLink, readOrderStatusPrivate,
   reloadOrderStatusPage, verifyOrderStatusInPage, withOrderStatusDb,
   setOrderStatusTestState,
 } from './order-status-test-utils';
@@ -19,12 +19,15 @@ for (const viewport of orderStatusViewports) {
     await page.setViewportSize(viewport);
     await isolateOrderStatusApiIp(page);
     await withOrderStatusDb(async (db) => {
-      const first = await createOrderStatusScenario(db, { kind: 'returns', phone: '+８１ (９０) １２３４-５６７８' });
+      const phone = '+８１ (９０) １２３４-５６７８';
+      const first = await createOrderStatusScenario(db, { kind: 'returns', phone });
       const token = await prepareOrderStatusTestLink(db, first.orderId);
       await openOrderStatusPage(page, token);
+      // 確認の前は、返送先・送り返しの伝票番号を含めて個人情報が公開の HTML/RSC に出ない。
+      expect(await inspectOrderStatusPublicTransport(page, token)).toEqual({ htmlPrivate: false, rscPrivate: false, rsc: true });
       await verifyOrderStatusInPage(page, '５６７８');
       expect((await readOrderStatusPrivate(page, token)).body.access).toBe('verified');
-      await expectOrderStatusPrivateVisible(page, { returns: true });
+      await expectOrderStatusPrivateVisible(page, { returns: true, phone });
       const cookies = (await page.context().cookies()).filter((cookie) => cookie.name === 'sb-order-status');
       const cookie = cookies.find((value) => value.path === `/api/order-status/${token}`);
       expect(Boolean(cookie)).toBe(true);
@@ -35,7 +38,7 @@ for (const viewport of orderStatusViewports) {
       expect((cookie?.expires ?? Infinity) <= Date.now() / 1000 + 86_402).toBe(true);
       expect(await page.evaluate(() => document.cookie.includes('sb-order-status='))).toBe(false);
       await reloadOrderStatusPage(page);
-      await expectOrderStatusPrivateVisible(page, { returns: true });
+      await expectOrderStatusPrivateVisible(page, { returns: true, phone });
       await expectNoHorizontalOverflow(page);
 
       const second = await createOrderStatusScenario(db, { kind: 'public' });

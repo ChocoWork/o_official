@@ -199,7 +199,7 @@ for (const viewport of viewports) {
         expect(row).toMatchObject({ variant: 'paid', origin: 'auto', status: 'sent' });
       }
       // 失敗した1通目の返金には、返金のお知らせを出さない
-      expect(await mailBodies(request, email, REFUND_SUBJECT)).toEqual([]);
+      expect((await mailBodies(request, email, REFUND_SUBJECT)).length).toBe(0);
     });
   });
 }

@@ -10,6 +10,7 @@ import {
 import { insertDeliveryFixture, insertDeliveryRegistration } from '../tests/integration/db/helpers/delivery-tracking-fixtures';
 import { expectNoHorizontalOverflow, isolateCustomerApiIp } from './delivery-tracking-test-utils';
 import { mailsTo, uniqueEmail, withLocalDb } from './order-email-test-utils';
+import { ensureReturnSettings, RETURN_ADDRESS } from './return-test-utils';
 
 export const orderStatusViewports = [
   { width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 900 },
@@ -18,17 +19,30 @@ export const STATUS_PRIVATE = {
   name: 'E5_PRIVATE_NAME', address: 'E5_PRIVATE_ADDRESS', postalCode: '9999999',
   phone: '09012345678', emailPrefix: 'e2e-order-email-e5-private-',
   tracking: 'E5-PRIVATE-TRACKING', sentBack: 'E5-PRIVATE-SENT-BACK',
-  returnAddress: 'E5_PRIVATE_RETURN_ADDRESS',
+  // 返送先の設定は既存の返品の試験と共有する1行。同じ値を書く既存の約束（ensureReturnSettings）に合わせる。
+  returnAddress: RETURN_ADDRESS.address,
 } as const;
 export const STATUS_SHOP_MESSAGE = '<b data-e5-shop-html="yes">店からのご案内</b>';
 const ORIGIN = 'http://localhost:3000';
 const ENDPOINT = 'order-status:verify';
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 const checkedClients = new WeakSet<PgClient>();
-type ReturnSettings = { name: string | null; postal: string | null; address: string | null; phone: string | null };
-type Scope = { orders: Set<string>; ips: Set<string>; returnSettings?: ReturnSettings };
+type Scope = { orders: Set<string>; ips: Set<string> };
 const scopes = new WeakMap<PgClient, Scope>();
 const isolatedIps = new Set<string>();
+
+/** 失敗の文に添える手がかり。例外の種類（name と、Playwright が包む内側の *Error）だけで、メッセージ本体は出さない。 */
+function errorKind(error: unknown): string {
+  if (!(error instanceof Error)) return typeof error;
+  const inner = /^[\w.]+: ([A-Z][A-Za-z]*Error)\b/.exec(error.message)?.[1];
+  return inner ? `${error.name}/${inner}` : error.name;
+}
+
+/** DB の SQLSTATE（5文字）だけを取り出す。メッセージや値は出さない。 */
+function sqlState(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : '-';
+}
 
 /** 接続済みの実際の接続先も確認する。URLだけを検査して、渡された別接続を信用しない。 */
 async function localPostgres(db: PgClient): Promise<PgClient> {
@@ -45,7 +59,10 @@ async function localPostgres(db: PgClient): Promise<PgClient> {
   const safe: PgClient = {
     query: async (sql, params) => {
       try { return await db.query(sql, params); }
-      catch { throw new Error('注文状況の試験DBの操作に失敗した'); }
+      catch (error) {
+        // 操作の種類（先頭の語）と SQLSTATE だけ添える。SQL 本体・値は出さない。
+        throw new Error(`注文状況の試験DBの操作に失敗した (${sql.trimStart().split(/\s+/, 1)[0].toLowerCase()} ${sqlState(error)})`);
+      }
     },
     end: () => db.end(),
   };
@@ -55,7 +72,7 @@ async function localPostgres(db: PgClient): Promise<PgClient> {
 
 function remember(db: PgClient, orderId: string): void { scopes.get(db)?.orders.add(orderId); }
 
-/** 新10本の設定変更を直列化し、自分のリンク・メール・枠と返送先を finally で片づける。注文は次のresetで捨てる。 */
+/** 自分のリンク・メール・枠を finally で片づける。注文は次のresetで捨てる。共有の設定は書き換えないので、直列化の鍵は取らない。 */
 export async function withOrderStatusDb<T>(run: (db: PgClient) => Promise<T>): Promise<T> {
   const configured = process.env.E2E_LOCAL_DB_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
   let url: URL;
@@ -68,16 +85,9 @@ export async function withOrderStatusDb<T>(run: (db: PgClient) => Promise<T>): P
     const scope: Scope = { orders: new Set(), ips: new Set(isolatedIps) };
     isolatedIps.clear();
     scopes.set(db, scope);
-    await db.query('select pg_advisory_lock($1::bigint)', [940498]);
     try { return await run(db); }
     finally {
       try {
-        if (scope.returnSettings) {
-          const settings = scope.returnSettings;
-          await db.query(`update public.shop_return_settings set return_address_name=$1,
-            return_address_postal_code=$2,return_address_line=$3,return_address_phone=$4 where id=1`,
-          [settings.name, settings.postal, settings.address, settings.phone]);
-        }
         const ids = [...scope.orders];
         await db.query(`update private.fulfillment_tracking_registrations set state='stopped',stop_reason='expired',
           stopped_at=now(),failure_kind=null,expires_at=now()-interval '1 minute',lease_token=null,
@@ -91,21 +101,9 @@ export async function withOrderStatusDb<T>(run: (db: PgClient) => Promise<T>): P
         [[...scope.ips], ENDPOINT, subjects]);
       } finally {
         scopes.delete(db);
-        await db.query('select pg_advisory_unlock($1::bigint)', [940498]);
       }
     }
   });
-}
-
-async function returnSettings(db: PgClient): Promise<void> {
-  const scope = scopes.get(db);
-  if (!scope) throw new Error('返送先の試験は復旧する場面の中だけ');
-  if (scope.returnSettings) return;
-  scope.returnSettings = (await db.query(`select return_address_name as name,return_address_postal_code as postal,
-    return_address_line as address,return_address_phone as phone from public.shop_return_settings where id=1`)).rows[0];
-  if (!scope.returnSettings) throw new Error('試験の返送先設定が無い');
-  await db.query(`update public.shop_return_settings set return_address_name=$1,return_address_postal_code='9999999',
-    return_address_line=$1,return_address_phone='0300000000' where id=1`, [STATUS_PRIVATE.returnAddress]);
 }
 
 type Scenario = { orderId: string; orderItemId: string; lastFour: string | null };
@@ -149,7 +147,7 @@ export async function createOrderStatusScenario(db: PgClient, input: ScenarioInp
   db = await localPostgres(db);
   const order = await createBase(db, input);
   if (input.kind === 'returns') {
-    await returnSettings(db);
+    await ensureReturnSettings(db);
     const fulfillmentId = await ship(db, order);
     await insertReturnRecord(db, { orderId: order.orderId, lines: [{ fulfillmentId, orderItemId: order.orderItemId, quantity: 1 }] });
     const back = await insertReturnRecord(db, { orderId: order.orderId,
@@ -173,7 +171,7 @@ export async function createOrderStatusReturnCase(db: PgClient,
   state: 'requested' | 'accepted' | 'partially_received' | 'inspecting' | 'awaiting_fee' | 'refund_preparing' | 'returned' | 'declined',
 ): Promise<Scenario> {
   db = await localPostgres(db);
-  await returnSettings(db);
+  await ensureReturnSettings(db);
   const order = await createBase(db, { kind: 'returns' });
   const fulfillmentId = await ship(db, order);
   const record = await insertReturnRecord(db, { orderId: order.orderId,
@@ -343,20 +341,40 @@ export async function verifyOrderStatusInPage(page: Page, lastFour: string): Pro
   await expect(page.getByRole('heading', { name: 'お届け先', exact: true })).toBeVisible();
 }
 
-export async function expectOrderStatusPrivateVisible(page: Page, input: { returns?: boolean } = {}): Promise<void> {
+/** 確認後の個人情報を項目ごとに見る（値は出さず、項目名つきの true/false だけ）。phone は注文に入れた電話の元の文字。 */
+export async function expectOrderStatusPrivateVisible(page: Page, input: { returns?: boolean; phone?: string } = {}): Promise<void> {
   await expect(page.getByRole('heading', { name: 'お届け先', exact: true })).toBeVisible();
-  const present = await page.evaluate((values) => {
-    const text = document.body.textContent ?? '';
-    return text.includes(values.name) && text.includes(values.address) && text.includes(values.postalCode)
-      && text.includes(values.emailPrefix) && text.includes('クレジットカード') && text.normalize('NFKC').includes('5678');
-  }, STATUS_PRIVATE);
-  expect(present, '認可された住所・連絡先・支払方法が表示される').toBe(true);
+  const found = await page.evaluate((values) => {
+    // 項目は見出しごとの欄の中だけで探す（注文番号や金額に偶然入った文字で通らないようにする）。
+    const section = (heading: string): Element | undefined =>
+      [...document.querySelectorAll('section')].find((node) => node.querySelector('h2')?.textContent === heading);
+    const text = (heading: string): string => section(heading)?.textContent ?? '';
+    const phoneLabel = [...(section('お届け先')?.querySelectorAll('dt') ?? [])].find((node) => node.textContent === '電話番号');
+    const shipping = text('お届け先');
+    const returns = text('返品の返送先・送り返しの伝票番号');
+    return {
+      name: shipping.includes(values.name),
+      postalCode: shipping.includes(values.postalCode),
+      address: shipping.includes(values.address),
+      phone: (phoneLabel?.nextElementSibling?.textContent ?? '').normalize('NFKC') === values.phone.normalize('NFKC'),
+      email: text('ご連絡先').includes(values.emailPrefix),
+      payment: text('お支払い方法').includes('クレジットカード'),
+      tracking: text('伝票番号').includes(values.tracking),
+      sentBack: returns.includes(values.sentBack),
+      returnAddress: returns.includes(values.returnAddress),
+    };
+  }, { ...STATUS_PRIVATE, phone: input.phone ?? STATUS_PRIVATE.phone });
+  expect(found.name, 'お届け先に氏名が表示される').toBe(true);
+  expect(found.postalCode, 'お届け先に郵便番号が表示される').toBe(true);
+  expect(found.address, 'お届け先に住所が表示される').toBe(true);
+  expect(found.phone, 'お届け先に電話番号が元の形で表示される').toBe(true);
+  expect(found.email, 'ご連絡先にメールアドレスが表示される').toBe(true);
+  expect(found.payment, 'お支払い方法にクレジットカードが表示される').toBe(true);
   if (input.returns) {
     await expect(page.getByRole('heading', { name: '返品の返送先・送り返しの伝票番号', exact: true })).toBeVisible();
-    expect(await page.evaluate((values) => {
-      const text = document.body.textContent ?? '';
-      return text.includes(values.tracking) && text.includes(values.sentBack) && text.includes(values.returnAddress);
-    }, STATUS_PRIVATE), '発送と送り返しの番号・返送先が表示される').toBe(true);
+    expect(found.tracking, '発送の伝票番号が表示される').toBe(true);
+    expect(found.sentBack, '送り返しの伝票番号が表示される').toBe(true);
+    expect(found.returnAddress, '返品の返送先が表示される').toBe(true);
   }
   await expectNoHorizontalOverflow(page);
 }
@@ -379,7 +397,7 @@ export async function inspectOrderStatusPublicTransport(page: Page, token: strin
       return { text: await response.text(), rsc: response.headers.get('content-type')?.includes('text/x-component') ?? false };
     }, token);
     return { htmlPrivate, rscPrivate: privateMaterial(result.text), rsc: result.rsc };
-  } catch { throw new Error('注文状況の公開の応答を調べられない'); }
+  } catch (error) { throw new Error(`注文状況の公開の応答を調べられない (${errorKind(error)})`); }
 }
 
 /** 生本文を読むのは006だけ。本文・URL・元の例外は一切報告へ渡さない。 */

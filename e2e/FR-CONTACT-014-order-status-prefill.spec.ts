@@ -41,10 +41,14 @@ for (const viewport of orderStatusViewports) {
         ['type=order&order=ORD-ABCDEF12&name=ignored&email=ignored&subject=ignored&message=ignored', 'ご注文について', 'ORD-ABCDEF12'],
       ]) {
         await page.goto(`/contact?${query}`);
+        // 入力の書き込みは画面が組み上がった後に1回でまとめて入る。値が入る側を先に待ってから、無視される側（初期のまま）を見る。
+        if (expectedOrder !== '') await expect(orderNumber).toHaveValue(expectedOrder);
+        else await expect(type).toContainText(expectedType);
         await expect(type).toContainText(expectedType);
         await expect(orderNumber).toHaveValue(expectedOrder);
         for (const name of ['name', 'email', 'subject', 'message']) await expect(page.locator(`[name="${name}"]`)).toHaveValue('');
-        expect(await page.locator('input[name="orderNumber"] b').count()).toBe(0);
+        // HTML のような値は要素にも文字にもならない。
+        expect(await page.locator('main').evaluate((node) => node.querySelector('b') === null && !(node.textContent ?? '').includes('<b>'))).toBe(true);
         await expectNoHorizontalOverflow(page);
       }
       let submitted: Record<string, unknown> | null = null;

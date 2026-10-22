@@ -32,7 +32,12 @@ for (const viewport of orderStatusViewports) {
       expect((await readOrderStatusTestState(db, order.orderId)).failedAttempts).toBe(5);
       await expireOrderStatusTestBuckets(db, { ip, orderId: order.orderId });
       expect((await send()).body.code).toBe('ORDER_STATUS_MISMATCH');
-      // 入力不正も短い枠を使うが、失敗の合計には入らない。注文を替えて IP の30回だけを観測する。
+      // 入力の誤り（下4桁が4桁に満たない）は 400 で、失敗の合計（今は6）を増やさない。
+      const invalidInput = await postOrderStatusVerify(request, token, '12', { ip });
+      expect(invalidInput.status).toBe(400);
+      expect(invalidInput.body.code).toBe('ORDER_STATUS_INPUT_INVALID');
+      expect((await readOrderStatusTestState(db, order.orderId)).failedAttempts).toBe(6);
+      // 存在しないトークンの 404 も IP の枠を使う。枠を移した後の30回で IP の上限に届き、別の注文でも次は 429 になる。
       await expireOrderStatusTestBuckets(db, { ip, orderId: order.orderId });
       const invalidToken = randomBytes(32).toString('base64url');
       for (let n = 0; n < 30; n += 1) expect((await postOrderStatusVerify(request, invalidToken, wrong, { ip })).status).toBe(404);

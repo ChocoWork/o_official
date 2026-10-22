@@ -28,6 +28,7 @@ for (const viewport of orderStatusViewports) {
         const current = page.getByRole('region', { name: '配送情報（1回目）', exact: true });
         const delivered = page.getByRole('region', { name: '配送情報（3回目）', exact: true });
         await expect(current.getByText('輸送中', { exact: true }).first()).toBeVisible();
+        await expect(current.getByText('配送の移り変わり', { exact: true })).toBeVisible(); // 追跡オンの時だけ出る。
         await expect(page.getByText('一部発送済み', { exact: true })).toBeVisible();
         await expect(page.getByText('発送準備中', { exact: true }).first()).toBeVisible();
         await expect(current.getByText('不在で持ち帰り', { exact: true })).toHaveCount(0); // 旧版だけの出来事。
@@ -47,6 +48,7 @@ for (const viewport of orderStatusViewports) {
         await setTrackingFlagDirect(client, false);
         await reloadOrderStatusPage(page);
         await expect(current.getByText('配送の移り変わり', { exact: true })).toHaveCount(0);
+        await expect(current.getByText('輸送中', { exact: true })).toHaveCount(0);
         await expect(delivered.getByText(/^お届け日 /)).toBeVisible();
         await expectNoHorizontalOverflow(page);
         await setTrackingFlagDirect(client, true);
@@ -55,6 +57,7 @@ for (const viewport of orderStatusViewports) {
           where fulfillment_id in (select id from public.order_fulfillments where order_id=$1)`, [order.orderId]);
         await reloadOrderStatusPage(page);
         await expect(current.getByText('配送の移り変わり', { exact: true })).toHaveCount(0);
+        await expect(current.getByText('輸送中', { exact: true })).toHaveCount(0);
         await expect(delivered.getByText(/^お届け日 /)).toBeVisible();
         await verifyOrderStatusInPage(page, order.lastFour!);
         await expect(page.getByRole('heading', { name: '伝票番号', exact: true })).toBeVisible();
