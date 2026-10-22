@@ -1,15 +1,148 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import type { OrderStatus } from '@/lib/orders/order-payment-types';
 import type { OrderEmailKind } from '@/lib/orders/email/order-email-types';
 import { connectLocalDb, type PgClient } from './local-db';
-import { insertDeliveryFixture } from './delivery-tracking-fixtures';
+import { createDeliveryActor, insertDeliveryFixture } from './delivery-tracking-fixtures';
 import {
-  createCatalogFixture, insertCancelRequest, insertRefundRecord, insertReturnReceipt, insertReturnRecord,
+  addItemVariant, createCatalogFixture, createShippedOrderFixture, insertCancelRequest, insertRefundRecord,
+  insertReturnReceipt, insertReturnRecord, insertReturnRefund,
   PRICE, uniqueSuffix,
 } from './order-fixtures';
 
 /** 実在の顧客の値を使わず、公開材料への混入だけを検出する。 */
 export const ORDER_STATUS_PRIVATE_SENTINEL = 'ORDER-STATUS-PRIVATE-SENTINEL';
+
+export const ORDER_STATUS_INTERNAL_SENTINEL = 'ORDER-STATUS-INTERNAL-SENTINEL';
+
+/** 元の CREATE 文だけを取り出す。本文と属性はそのまま、名前だけを取引内の一時関数へ替える。 */
+export async function installLegacyCustomerReturns(db: PgClient): Promise<void> {
+  const source = await readFile(resolve(process.cwd(),
+    'supabase/migrations/20261020144842_order_return_customer_requests.sql'), 'utf8');
+  const statements = [...source.matchAll(
+    /^CREATE OR REPLACE FUNCTION public\.get_customer_order_returns\(_order_id uuid, _customer_id uuid\)\r?\n[\s\S]*?^\$\$;/gm,
+  )];
+  if (statements.length !== 1) throw new Error('ORDER_STATUS_LEGACY_CREATE_COUNT_MISMATCH');
+  const statement = statements[0][0].replace('public.get_customer_order_returns', 'pg_temp.customer_returns_before');
+  await db.query(statement);
+}
+
+/** 各試験の取引内だけで使う。実在の返送先を読まず、設定と期限を明示する。 */
+export async function setOrderStatusReturnSettings(db: PgClient, hasAddress: boolean): Promise<void> {
+  const result = await db.query(
+    `update public.shop_return_settings
+     set requests_enabled=true,request_types='returns_and_cancellations',window_days=7,
+         window_start='each_item',delivery_buffer_days=3,
+         return_address_name=$1,return_address_postal_code=$2,return_address_line=$1,return_address_phone=$3
+     where id=1`,
+    [hasAddress ? ORDER_STATUS_PRIVATE_SENTINEL : null, hasAddress ? '9999999' : null,
+      hasAddress ? '03-0000-0000' : null],
+  );
+  if (result.rowCount !== 1) throw new Error('ORDER_STATUS_RETURN_SETTINGS_MISSING');
+}
+
+export type OrderStatusReturnScenario =
+  | 'requested' | 'accepted' | 'closed' | 'declined' | 'cancelled'
+  | 'exchange_pending' | 'exchange_shipped' | 'partially_received' | 'inspecting'
+  | 'awaiting_fee' | 'awaiting_fee_and_partial' | 'refund_preparing' | 'refund_pending' | 'returned' | 'sent_back';
+
+/** 既存の表の守りを通して、旧 JSON の全分岐に使う合成の返品を作る。設定は呼び出し側が決める。 */
+export async function createOrderStatusReturnsFixture(
+  db: PgClient,
+  scenario: OrderStatusReturnScenario = 'accepted',
+  options: { guest?: boolean; shippedDaysAgo?: number } = {},
+) {
+  const shippedAt = (await db.query(
+    "select (pg_catalog.now()-$1::integer*interval '1 day')::text as value", [options.shippedDaysAgo ?? 0],
+  )).rows[0].value as string;
+  const order = await createShippedOrderFixture(db, {
+    lines: scenario === 'sent_back' ? [{ quantity: 4 }, { quantity: 2 }] : [{ quantity: 4 }],
+    shipments: [{ lines: scenario === 'sent_back' ? [{ lineIndex: 0, quantity: 4 }, { lineIndex: 1, quantity: 2 }]
+      : [{ lineIndex: 0, quantity: 4 }], shippedAt }],
+  });
+  const customerId = options.guest ? null : (await createDeliveryActor(db)).id;
+  if (customerId) await db.query('update public.orders set user_id=$1 where id=$2', [customerId, order.orderId]);
+  const status = ['requested', 'closed', 'declined', 'cancelled'].includes(scenario)
+    ? scenario as 'requested' | 'closed' | 'declined' | 'cancelled' : scenario === 'returned' ? 'closed' : 'open';
+  const created = await insertReturnRecord(db, {
+    orderId: order.orderId, status, lines: [],
+    feeDueAmount: scenario === 'awaiting_fee' || scenario === 'awaiting_fee_and_partial' ? 500 : 0,
+  });
+  if (scenario === 'declined') {
+    await db.query('update public.order_returns set decline_message=$2 where id=$1', [created.returnId, '返品のお断りのご案内']);
+  }
+  const exchange = ['requested', 'exchange_pending', 'exchange_shipped'].includes(scenario);
+  const requestedVariant = exchange ? (await addItemVariant(db, {
+    itemId: order.itemIds[0], colorName: 'WHITE', sizeLabel: 'L',
+  })).variantId : null;
+  const confirmedVariant = scenario.startsWith('exchange_') ? (await addItemVariant(db, {
+    itemId: order.itemIds[0], colorName: 'BLUE', sizeLabel: 'S',
+  })).variantId : requestedVariant;
+  const lineIds: string[] = [];
+  for (const [index, orderItemId] of order.orderItemIds.entries()) {
+    const line = await db.query(
+      `insert into public.order_return_lines
+         (return_id,fulfillment_id,order_item_id,quantity,reason,reason_note,customer_note,
+          requested_resolution,requested_exchange_variant_id,resolution,exchange_variant_id,exchange_method)
+       values ($1,$2,$3,$4,'defective',$5,$5,$6,$7,$6,$8,$9) returning id`,
+      [created.returnId, order.fulfillments[0].id, orderItemId, scenario === 'sent_back' ? 1 : 2,
+        ORDER_STATUS_INTERNAL_SENTINEL, exchange ? 'exchange' : 'refund', requestedVariant, confirmedVariant,
+        exchange ? 'stock' : null],
+    );
+    lineIds.push(line.rows[0].id as string);
+    if (scenario === 'sent_back') {
+      const receipt = await db.query(
+        `insert into public.order_return_receipts
+           (return_id,request_key,request_fingerprint,kind,refund_choice,sent_back_message,
+            sent_back_carrier,sent_back_tracking_number,note,actor_id,created_at)
+         values ($1,pg_catalog.gen_random_uuid(),'fixture','receive','none',$2,$3,$4,$5,
+                 pg_catalog.gen_random_uuid(),pg_catalog.now()+$6::integer*interval '1 second') returning id`,
+        [created.returnId, index === 0 ? '返送のご案内' : null, index === 0 ? 'yamato' : null,
+          index === 0 ? ORDER_STATUS_PRIVATE_SENTINEL : null, ORDER_STATUS_INTERNAL_SENTINEL, index],
+      );
+      await db.query(
+        `insert into public.order_return_receipt_lines (receipt_id,return_line_id,disposition,quantity)
+         values ($1,$2,'sent_back',1)`, [receipt.rows[0].id, lineIds[index]],
+      );
+    }
+  }
+  if (['partially_received', 'awaiting_fee_and_partial', 'inspecting', 'refund_preparing', 'refund_pending', 'returned'].includes(scenario)) {
+    await insertReturnReceipt(db, {
+      returnId: created.returnId,
+      lines: [{ returnLineId: lineIds[0], disposition: scenario === 'inspecting' ? 'pending_inspection' : 'restocked',
+        quantity: scenario === 'partially_received' || scenario === 'awaiting_fee_and_partial' ? 1 : 2 }],
+    });
+  }
+  if (scenario === 'refund_pending' || scenario === 'returned') {
+    await insertReturnRefund(db, {
+      orderId: order.orderId, returnId: created.returnId, status: scenario === 'returned' ? 'succeeded' : 'pending',
+      amount: 8000, lines: [{ orderItemId: order.orderItemIds[0], quantity: 2, amount: 8000 }],
+    });
+  }
+  if (scenario.startsWith('exchange_')) {
+    await insertReturnReceipt(db, { returnId: created.returnId,
+      lines: [{ returnLineId: lineIds[0], disposition: 'restocked', quantity: 2 }] });
+    const item = await db.query(
+      `insert into public.order_items
+         (order_id,item_id,variant_id,item_name,item_price,color,size,quantity,line_total,fulfillment_type,
+          line_kind,exchange_return_line_id,exchange_paid_amount)
+       values ($1,$2,$3,'交換の試験商品',0,'BLUE','S',2,0,'stock','exchange',$4,10000) returning id`,
+      [order.orderId, order.itemIds[0], confirmedVariant, lineIds[0]],
+    );
+    if (scenario === 'exchange_shipped') {
+      const shipment = await db.query(
+        `insert into public.order_fulfillments
+           (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at)
+         values ($1,2,pg_catalog.gen_random_uuid(),'yamato','EXCHANGE-123',false,false,pg_catalog.now()) returning id`,
+        [order.orderId],
+      );
+      await db.query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,2)',
+        [shipment.rows[0].id, item.rows[0].id]);
+    }
+  }
+  return { ...order, customerId, returnId: created.returnId, lineIds };
+}
 
 /** 配送先は後から変更できないので、電話と持ち主は INSERT 時に決める。 */
 export async function createOrderStatusFixture(

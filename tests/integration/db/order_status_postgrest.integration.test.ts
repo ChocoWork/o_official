@@ -3,7 +3,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb, isLocalDatabase } from './helpers/local-db';
 import {
-  createOrderStatusFixture, orderStatusClock, readOrderStatusPause, restoreCommittedOrderStatusState,
+  createOrderStatusFixture, createOrderStatusReturnsFixture, orderStatusClock, ORDER_STATUS_PRIVATE_SENTINEL,
+  readOrderStatusPause, restoreCommittedOrderStatusState,
   setOrderStatusLinkState, type OrderStatusPause,
 } from './helpers/order-status-fixtures';
 
@@ -85,6 +86,34 @@ describeLocalDb('integration: 注文状況の新RPCを実際のPostgRESTに通�
     expect(/shipping_phone|shipping_email|shipping_full_name|payment_method|tracking_number|return_address|ORDER-STATUS-PRIVATE-SENTINEL/.test(serialized)).toBe(false);
   });
 
+  test('service_roleで返品RPCのtrue・false・省略を呼びゲストのJSONを分離する', async () => {
+    const order = await createOrderStatusReturnsFixture(db(), 'sent_back', { guest: true });
+    orderIds.push(order.orderId);
+    const privateResult = await rpc('get_order_status_returns', { _order_id: order.orderId, _include_private: true });
+    const publicWithFalse = await rpc('get_order_status_returns', { _order_id: order.orderId, _include_private: false });
+    const publicWithDefault = await rpc('get_order_status_returns', { _order_id: order.orderId });
+    expect(Object.keys(privateResult).sort()).toEqual(['availability', 'cancel_requests', 'returns']);
+    expect(privateResult.returns).toHaveLength(1);
+    expect(privateResult.returns[0].id).toBe(order.returnId);
+    expect(Object.hasOwn(privateResult.returns[0], 'return_address')).toBe(true);
+    expect(privateResult.returns[0].sent_back).toHaveLength(2);
+    expect(privateResult.returns[0].sent_back[0]).toMatchObject({ carrier: 'yamato', tracking_number: ORDER_STATUS_PRIVATE_SENTINEL });
+    expect(privateResult.returns[0].sent_back[1]).toMatchObject({ message: null, carrier: null, tracking_number: null });
+    expect(publicWithFalse).toEqual(publicWithDefault);
+    expect(publicWithFalse).toEqual({
+      ...privateResult,
+      returns: privateResult.returns.map((entry: Record<string, any>) => ({
+        ...Object.fromEntries(Object.entries(entry).filter(([key]) => key !== 'return_address')),
+        sent_back: entry.sent_back.map((sent: Record<string, unknown>) =>
+          Object.fromEntries(Object.entries(sent).filter(([key]) => !['carrier', 'tracking_number'].includes(key)))),
+      })),
+    });
+    const serialized = JSON.stringify(publicWithFalse);
+    expect(/return_address|tracking_number|"carrier"/.test(serialized)).toBe(false);
+    expect(serialized.includes(ORDER_STATUS_PRIVATE_SENTINEL)).toBe(false);
+    expect(serialized.includes('ORDER-STATUS-INTERNAL-SENTINEL')).toBe(false);
+  });
+
   test('PostgRESTでも0行とSQL NULLとcancelledの可視を保つ', async () => {
     for (const token of ['bad-token', 'Z'.repeat(43)]) {
       expect(await rpc('get_order_status_link', { _token: token })).toEqual([]);
@@ -92,6 +121,8 @@ describeLocalDb('integration: 注文状況の新RPCを実際のPostgRESTに通�
     }
     for (const orderId of [null, randomUUID()]) {
       expect(await rpc('get_order_status_public_material', { _order_id: orderId })).toBeNull();
+      for (const args of [{ _order_id: orderId }, { _order_id: orderId, _include_private: false },
+        { _order_id: orderId, _include_private: true }]) expect(await rpc('get_order_status_returns', args)).toBeNull();
     }
     for (const status of ['payment_in_progress', 'abandoned'] as const) {
       const order = await fixture({ status });
@@ -99,6 +130,8 @@ describeLocalDb('integration: 注文状況の新RPCを実際のPostgRESTに通�
       expect(await rpc('get_order_status_link', { _token: token })).toEqual([]);
       expect(await rpc('verify_order_status_phone', { _token: token, _last_four: '5678' })).toEqual([]);
       expect(await rpc('get_order_status_public_material', { _order_id: order.orderId })).toBeNull();
+      for (const args of [{ _order_id: order.orderId }, { _order_id: order.orderId, _include_private: false },
+        { _order_id: order.orderId, _include_private: true }]) expect(await rpc('get_order_status_returns', args)).toBeNull();
     }
     const cancelled = await fixture({ status: 'cancelled' });
     const token = await rpc('ensure_order_status_link', { _order_id: cancelled.orderId });
@@ -109,6 +142,10 @@ describeLocalDb('integration: 注文状況の新RPCを実際のPostgRESTに通�
       { result: 'ok', verify_until: expect.any(String), failed_attempts: 0 },
     ]);
     expect((await rpc('get_order_status_public_material', { _order_id: cancelled.orderId })).order.status).toBe('cancelled');
+    for (const args of [{ _order_id: cancelled.orderId }, { _order_id: cancelled.orderId, _include_private: false },
+      { _order_id: cancelled.orderId, _include_private: true }]) {
+      expect(await rpc('get_order_status_returns', args)).toMatchObject({ returns: [], cancel_requests: [] });
+    }
   });
 
   test('PostgRESTの拒否は固定のSQLSTATEと記号で返す', async () => {
@@ -128,6 +165,9 @@ describeLocalDb('integration: 注文状況の新RPCを実際のPostgRESTに通�
     }
     const state = await rpc('get_order_status_link', { _token: token });
     expect(state[0].failed_attempts).toBe(0);
+    const invalidReturns = await client.rpc('get_order_status_returns', { _order_id: order.orderId, _include_private: null });
+    expect(invalidReturns.error?.code).toBe('22023');
+    expect(invalidReturns.error?.message === 'ORDER_STATUS_ARGUMENT_INVALID').toBe(true);
   });
 
   const testClientRoles = LOCAL_ANON_KEY ? test : test.skip;
@@ -152,6 +192,9 @@ describeLocalDb('integration: 注文状況の新RPCを実際のPostgRESTに通�
         ['get_order_status_link', { _token: token }],
         ['verify_order_status_phone', { _token: token, _last_four: '5678' }],
         ['get_order_status_public_material', { _order_id: order.orderId }],
+        ['get_order_status_returns', { _order_id: order.orderId }],
+        ['get_order_status_returns', { _order_id: order.orderId, _include_private: false }],
+        ['get_order_status_returns', { _order_id: order.orderId, _include_private: true }],
         ['complete_order_email', { _email_id: randomUUID(), _lease_token: randomUUID(), _provider_message_id: null }],
       ];
       for (const [name, args] of calls) await rpc(name, args);
