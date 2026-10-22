@@ -107,6 +107,54 @@ const STATUS_CASES: Array<[CustomerReturnStatus, string, string | null]> = [
   ['declined', 'お受けできませんでした', null],
 ];
 
+test('readOnlyの共用部品は申し込みと購入の操作を出さない', () => {
+  render(<OrderReturnsSection orderId={ORDER_ID} section={{ returns: [customerReturn()], cancelRequests: [], availability: availability({ returns: 'available', cancel: true }) }} readOnly />);
+  expect(screen.queryByRole('button', { name: 'キャンセルを申し込む' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: '返品・交換を申し込む' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '再度購入' })).not.toBeInTheDocument();
+  expect(screen.queryByTestId('order-return-address')).not.toBeInTheDocument();
+});
+
+test.each(STATUS_CASES)('readOnlyの公開返品%sも固定の言葉と添える文を保つ', (customerStatus, label, note) => {
+  const { returnAddress: _address, sentBack: _sentBack, ...publicRow } = customerReturn({ customerStatus });
+  void _address; void _sentBack;
+  render(<OrderReturnsSection orderId={ORDER_ID} section={{ returns: [{ ...publicRow, sentBack: [] }], cancelRequests: [], availability: availability() }} readOnly />);
+  expect(screen.getByTestId('order-return-status').textContent).toBe(label);
+  if (note) expect(screen.getByTestId('order-return-note').textContent).toBe(note);
+  expect(screen.queryByTestId('order-return-how-to')).not.toBeInTheDocument();
+});
+
+test.each([
+  ['requested', 'キャンセルのお申し込み中'], ['declined', 'キャンセルのお申し込みをお受けできませんでした'],
+  ['resolved', 'キャンセルのお申し込みのお手続きが済みました'], ['closed', 'キャンセルのお申し込みのお手続きが済みました'],
+] as const)('readOnlyのキャンセル%sも固定の言葉を保つ', (status, label) => {
+  render(<OrderReturnsSection orderId={ORDER_ID} section={{ returns: [], cancelRequests: [cancelRequest({ status })], availability: availability() }} readOnly />);
+  expect(screen.getByText(label)).toBeVisible();
+});
+
+test('店の文章はHTMLとして実行せず文字として表示する', () => {
+  const message = '<b>店の文章</b>';
+  const { returnAddress: _address, sentBack: _sentBack, ...publicRow } = customerReturn({ customerStatus: 'declined', declineMessage: message });
+  void _address; void _sentBack;
+  const { container } = render(<OrderReturnsSection orderId={ORDER_ID} section={{ returns: [{ ...publicRow, sentBack: [{ itemName: '品', color: null, size: null, quantity: 1, message }] }], cancelRequests: [], availability: availability() }} readOnly />);
+  expect(container.querySelector('b') !== null).toBe(false);
+  expect(screen.getAllByText(message).length === 2).toBe(true);
+  expect(screen.getByText('品 × 1')).toBeVisible();
+});
+
+test('readOnlyは記録の無い欄と受付終了の案内を出さない', () => {
+  const { container } = render(<OrderReturnsSection orderId={ORDER_ID} section={{ returns: [], cancelRequests: [], availability: availability({ returns: 'ended', endedOn: '2026-10-22', cancel: true }) }} readOnly />);
+  expect(container.childElementCount).toBe(0);
+});
+
+test('readOnlyは余分な返送先と番号が来ても表示しない', () => {
+  const row = customerReturn({ sentBack: [{ itemName: '品', color: null, size: null, quantity: 1, message: '店の文章', carrier: null, trackingNumber: 'SYNTHETIC-RETURN' }] });
+  render(<OrderReturnsSection orderId={ORDER_ID} section={{ returns: [row], cancelRequests: [], availability: availability() }} readOnly />);
+  expect(document.body.textContent?.includes('SYNTHETIC-RETURN')).toBe(false);
+  expect(screen.queryByTestId('order-return-address')).not.toBeInTheDocument();
+  expect(screen.getByText('店の文章')).toBeVisible();
+});
+
 describe('OrderReturnsSection の返品（状態の言葉と添える文）', () => {
   it.each(STATUS_CASES)('状態 %s は、言葉「%s」を出す', (customerStatus, label, note) => {
     renderSection({ returns: [customerReturn({ customerStatus })] });

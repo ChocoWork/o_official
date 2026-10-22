@@ -1,5 +1,7 @@
+// File: src/features/account/components/OrderItemRow.tsx
 import Image from "next/image";
 import { Button } from "@/components/ui/Button/Button";
+import { ORDER_STATUS_TEXT } from "@/lib/orders/status/status-messages";
 
 // 注文商品1行の共通表示（購入履歴タブ・注文詳細で共有）。
 // account.css の .account-order-* スタイルを利用する。
@@ -28,14 +30,16 @@ export function OrderItemRow({
   item,
   isReordering,
   onReorder,
+  readOnly,
 }: {
   item: OrderLineItem;
   isReordering: boolean;
   onReorder: (item: OrderLineItem) => void;
-}) {
+  readOnly?: false;
+} | { item: OrderLineItem; readOnly: true; isReordering?: never; onReorder?: never }): React.JSX.Element {
   // モバイル(情報列内)と sm+(右端)の2箇所に出し分けるため関数化
   const renderAction = () => {
-    if (!item.itemId) {
+    if (readOnly || !item.itemId) {
       return null;
     }
     if (item.stockStatus === "sold_out") {
@@ -69,7 +73,7 @@ export function OrderItemRow({
   const isExchange = item.lineKind === "exchange";
 
   return (
-    <div className="account-order-item">
+    <div className="account-order-item min-w-0 break-words">
       {item.imageUrl ? (
         <Image
           src={item.imageUrl}
@@ -83,15 +87,15 @@ export function OrderItemRow({
         <p className="account-value">{item.name}</p>
         <div>
           <p className="account-label">
-            {item.color} / {item.size}
+            {ORDER_STATUS_TEXT.items.colorSize(item.color ?? "", item.size ?? "")}
           </p>
-          <p className="account-label">数量: {item.quantity}</p>
+          <p className="account-label">{ORDER_STATUS_TEXT.items.quantity(item.quantity)}</p>
           {isExchange ? (
             <span
               className="account-status account-status-sm mt-1 mr-1"
               data-testid="order-item-exchange"
             >
-              交換の品
+              {ORDER_STATUS_TEXT.items.exchange}
             </span>
           ) : null}
           {refundedQuantity > 0 ? (
@@ -99,12 +103,12 @@ export function OrderItemRow({
               className="account-status account-status-sm mt-1"
               data-testid="order-item-refunded"
             >
-              {`返金済み ${refundedQuantity}点`}
+              {ORDER_STATUS_TEXT.items.refunded(refundedQuantity)}
             </span>
           ) : null}
         </div>
         {/* 交換の品の行は値段が 0。「¥0」と出すと無料で買った品に見えるので「—」にする */}
-        <p className="account-value">{isExchange ? "—" : item.amount}</p>
+        <p className="account-value">{isExchange ? ORDER_STATUS_TEXT.items.exchangeAmount : item.amount}</p>
         {action ? <div className="mt-1 sm:hidden">{action}</div> : null}
       </div>
       {action ? (

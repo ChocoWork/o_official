@@ -1,4 +1,5 @@
 "use client";
+// File: src/features/account/returns/OrderReturnsSection.tsx
 
 import React from "react";
 import { Button } from "@/components/ui/Button/Button";
@@ -21,6 +22,8 @@ import type {
   CustomerOrderReturns,
 } from "@/lib/orders/returns/customer-return-types";
 import { RETURN_CARRIER_LABELS } from "@/lib/orders/returns/return-messages";
+import type { OrderStatusPrivateReturn, PublicCustomerOrderReturn, PublicCustomerOrderReturns } from "@/lib/orders/customer-order-view-types";
+import { ORDER_STATUS_TEXT } from "@/lib/orders/status/status-messages";
 
 // 見出しは注文の画面のカードの見出し（h2）と同じ書体にする（見出しの既定の書体は明朝）
 const acuminFont = { fontFamily: "acumin-pro, sans-serif" } as const;
@@ -86,7 +89,7 @@ function resolutionLine(line: ReturnLine, isWish: boolean): string | null {
  * 返送料の文。お店の負担を先に見る（返品の受付のメールの返送のしかたと同じ順）。
  * お客様の負担で、お店の送り状（shop_label）の時だけ、返送料を返金から差し引く
  */
-function shippingSentence(orderReturn: CustomerOrderReturn): string {
+function shippingSentence(orderReturn: PublicCustomerOrderReturn): string {
   if (orderReturn.returnShippingPayer === "shop") {
     return SHIPPING_SHOP_PAYS;
   }
@@ -126,8 +129,7 @@ function SmallHeading({ children }: { children: React.ReactNode }) {
 }
 
 /** 返送のしかた。返送が要るのに返送先を読めない時は、見出しだけの空の欄を出さない */
-function HowToReturn({ orderReturn }: { orderReturn: CustomerOrderReturn }) {
-  const address = orderReturn.returnAddress;
+function HowToReturn({ orderReturn, address }: { orderReturn: PublicCustomerOrderReturn; address: CustomerOrderReturn["returnAddress"] }) {
   if (orderReturn.returnMethod === "not_required") {
     return (
       <div className="space-y-2 lk-text-sm" data-testid="order-return-how-to">
@@ -159,7 +161,12 @@ function HowToReturn({ orderReturn }: { orderReturn: CustomerOrderReturn }) {
   );
 }
 
-function SentBack({ items }: { items: CustomerOrderReturn["sentBack"] }) {
+function SentBackTracking({ trackingNumber, carrier }: { trackingNumber: string | null; carrier?: CustomerOrderReturn["sentBack"][number]["carrier"] }): React.JSX.Element | null {
+  if (!trackingNumber) return null;
+  return <p className="break-words">{ORDER_STATUS_TEXT.private.sentBackTracking(`${carrier ? `${RETURN_CARRIER_LABELS[carrier]} ` : ""}${trackingNumber}`)}</p>;
+}
+
+function SentBack({ items, readOnly }: { items: PublicCustomerOrderReturn["sentBack"] | CustomerOrderReturn["sentBack"]; readOnly?: boolean }) {
   return (
     <div className="space-y-2 lk-text-sm" data-testid="order-return-sent-back">
       <SmallHeading>{SENT_BACK_HEADING}</SmallHeading>
@@ -170,11 +177,7 @@ function SentBack({ items }: { items: CustomerOrderReturn["sentBack"] }) {
               {`${itemLabel(item.itemName, item.color, item.size)} × ${item.quantity}`}
             </p>
             {item.message ? <ShopMessage message={item.message} /> : null}
-            {item.trackingNumber ? (
-              <p className="break-words">
-                {`送り返しの伝票番号: ${item.carrier ? `${RETURN_CARRIER_LABELS[item.carrier]} ` : ""}${item.trackingNumber}`}
-              </p>
-            ) : null}
+            {!readOnly && "trackingNumber" in item ? <SentBackTracking trackingNumber={item.trackingNumber} carrier={item.carrier} /> : null}
           </li>
         ))}
       </ul>
@@ -182,7 +185,7 @@ function SentBack({ items }: { items: CustomerOrderReturn["sentBack"] }) {
   );
 }
 
-function ReturnCard({ orderReturn }: { orderReturn: CustomerOrderReturn }) {
+function ReturnCard({ orderReturn, readOnly }: { orderReturn: CustomerOrderReturn | PublicCustomerOrderReturn; readOnly?: boolean }) {
   const status = orderReturn.customerStatus;
   const text = CUSTOMER_RETURN_STATUS_TEXT[status];
   const number = `返品番号 ${orderReturn.label}`;
@@ -238,9 +241,9 @@ function ReturnCard({ orderReturn }: { orderReturn: CustomerOrderReturn }) {
         </p>
       ) : null}
 
-      {showHowTo ? <HowToReturn orderReturn={orderReturn} /> : null}
+      {showHowTo && !readOnly && "returnAddress" in orderReturn ? <HowToReturn orderReturn={orderReturn} address={orderReturn.returnAddress} /> : null}
       {orderReturn.sentBack.length > 0 ? (
-        <SentBack items={orderReturn.sentBack} />
+        <SentBack items={orderReturn.sentBack} readOnly={readOnly} />
       ) : null}
       {status === "declined" && orderReturn.declineMessage ? (
         <ShopMessage
@@ -284,6 +287,7 @@ function CancelRequestCard({ request }: { request: CustomerCancelRequest }) {
 }
 
 export type OrderReturnsSectionProps = {
+  readOnly?: false;
   orderId: string;
   /** 注文の窓口の答えの returnSection（計画の冒頭 C-2 の CustomerOrderReturns） */
   section: CustomerOrderReturns;
@@ -291,19 +295,49 @@ export type OrderReturnsSectionProps = {
   cancelLines: CancelableLine[];
   /** キャンセルのお申し込みが受け付けられた時と、結果が分からないまま閉じた時。注文の画面が答えを読み直す */
   onChanged: () => void;
-};
+} | { orderId: string; section: PublicCustomerOrderReturns; readOnly: true; cancelLines?: never; onChanged?: never };
+
+/** 公開の記録は操作用の値やダミーの個人情報を受け取らない。 */
+export function OrderReturnsSection(props: OrderReturnsSectionProps): React.JSX.Element | null {
+  if (!props.readOnly) return <InteractiveOrderReturnsSection {...props} />;
+  const { returns, cancelRequests } = props.section;
+  if (returns.length === 0 && cancelRequests.length === 0) return null;
+  return (
+    <section aria-label={SECTION_HEADING} data-testid="order-returns-section" className="border border-black/10 p-5 sm:p-8 space-y-4 min-w-0 break-words">
+      <h2 style={acuminFont}>{SECTION_HEADING}</h2>
+      {returns.map((orderReturn) => <ReturnCard key={orderReturn.id} orderReturn={orderReturn} readOnly />)}
+      {cancelRequests.map((request) => <CancelRequestCard key={request.id} request={request} />)}
+    </section>
+  );
+}
+
+/** 返送先と番号だけを、公開の返品とID・配列位置で結び付ける。 */
+export function OrderReturnPrivateDetails({ orderReturn, details }: { orderReturn: PublicCustomerOrderReturn; details: OrderStatusPrivateReturn }): React.JSX.Element | null {
+  if (orderReturn.id !== details.id) return null;
+  const showHowTo = orderReturn.customerStatus === "accepted" || orderReturn.customerStatus === "partially_received";
+  const showAddress = showHowTo && (orderReturn.returnMethod === "not_required" || details.returnAddress !== null);
+  const tracked = details.sentBack.filter((item) => Number.isInteger(item.index) && item.index >= 0 && orderReturn.sentBack[item.index] && item.trackingNumber);
+  if (!showAddress && tracked.length === 0) return null;
+  return (
+    <section className="space-y-3 min-w-0 break-words">
+      <h3 style={acuminFont}>{`返品番号 ${orderReturn.label}`}</h3>
+      {showAddress ? <HowToReturn orderReturn={orderReturn} address={details.returnAddress} /> : null}
+      {tracked.map((item) => <SentBackTracking key={item.index} trackingNumber={item.trackingNumber} />)}
+    </section>
+  );
+}
 
 /**
  * お客様の注文の画面の「返品・交換」の欄（グループ E-3 段2。計画の冒頭 C-5・仕様書 8-2）。
  * 返品ごとの状態の言葉と添える文、申し込みのボタンか受付の終わりの文、キャンセルの申し込みの状態と入口を出す。
  * 出す物が何も無い時は、空のカードを出さずに null を返す。
  */
-export function OrderReturnsSection({
+function InteractiveOrderReturnsSection({
   orderId,
   section,
   cancelLines,
   onChanged,
-}: OrderReturnsSectionProps) {
+}: Extract<OrderReturnsSectionProps, { readOnly?: false }>) {
   const headingRef = React.useRef<HTMLHeadingElement>(null);
   const formWasOpenRef = React.useRef(false);
   const [cancelOpen, setCancelOpen] = React.useState(false);

@@ -20,6 +20,14 @@ function renderRow(overrides: Partial<OrderLineItem> = {}) {
   render(<OrderItemRow item={lineItem(overrides)} isReordering={false} onReorder={jest.fn()} />);
 }
 
+test('readOnlyの商品は購入と予約注文を出さない', () => {
+  const { rerender } = render(<OrderItemRow item={lineItem()} readOnly />);
+  expect(screen.queryByRole('button', { name: '再度購入' })).not.toBeInTheDocument();
+  rerender(<OrderItemRow item={lineItem({ stockStatus: 'sold_out' })} readOnly />);
+  expect(screen.queryByRole('link', { name: '予約注文' })).not.toBeInTheDocument();
+  expect(screen.getByText('リネンシャツ')).toBeVisible();
+});
+
 describe('OrderItemRow の返金済みの印（グループ E-2）', () => {
   it('返金した数が1以上なら、数量の下に「返金済み n点」の印を出す', () => {
     renderRow({ refundedQuantity: 2 });
