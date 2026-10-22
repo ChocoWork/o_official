@@ -211,7 +211,6 @@ E2E は FR-ACCOUNT-035-return-request.spec.ts・036-return-request-photos.spec.t
 
 返品期限の起点は `deliveredAt` の日本時間の日付。NULLなら発送の日本時間の日付＋目安の日数に戻す。最後の品・受付の日数・日の終わり・無制限・既存の返品と申し込みは維持する。番号を直すと届いた時刻が消え、未作成の返品・申し込みの判定は目安へ戻る。
 
-
 ## 注文状況ページとの表示共有（E-5 / FREQ-501・502）
 
 [詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)・[注文状況ページ](20_order_status.md)を参照。

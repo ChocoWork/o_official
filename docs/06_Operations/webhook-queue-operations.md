@@ -407,7 +407,6 @@ controllerは値を受け取らず、手順と結果の記録を用意する。�
 | 発送の行の守り | manual・tracking の印でも配送業者・番号を変えられる。印ごとに許す列を分ける |
 | 配達済みのメールの住所の設定の誤り | サイトの住所の設定が壊れていると、配達済みのメールは店への知らせなしで送れないまま終わる。運用通知かログを足す |
 
-
 ## 9. 注文状況の適用とログの確認（E-5 / FREQ-498〜505）
 
 [詳細設計](../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../superpowers/plans/2026-10-22-order-status-page.md)・[メール運用](order-email-operations.md)を参照。Task 11の手順であり、今回の実施済み記録ではない。本番DB、サービス起動停止、reset、DB結合、E2E、Graphify更新はcontrollerの担当。

@@ -435,7 +435,6 @@ stateDiagram-v2
 
 返品は `delivered_at` があればそのJST日付を起点とし、NULLなら発送のJST日付＋目安の日数。品ごと／最後の品・日数・日の終わり・無制限・既存の返品と申し込みは変えない。番号の直しで届いた時刻を消すと、未作成分の期限判定は目安に戻る。
 
-
 ## 注文状況の閲覧状態（E-5 / FREQ-498〜502）
 
 [詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)・[ページ仕様](../pages/20_order_status.md)を参照。注文のenumと決済・発送・返金・返品の状態遷移は変更しない。

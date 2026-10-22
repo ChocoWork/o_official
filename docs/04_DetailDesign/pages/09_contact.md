@@ -24,7 +24,6 @@
 | FR-CONTACT-012 | 問い合わせ本文を監査ログから分離し、audit_logs の記録を最小化する | IMPL-CONTACT-012 | `src/app/api/contact/route.ts`, `migrations/041_create_contact_inquiries.sql` | 本文は `contact_inquiries` に保存し、`audit_logs` には `inquiry_id` と最小分類情報のみ記録 | 済 |
 | FR-CONTACT-013 | 送信回数が上限に達したとき、しばらく時間をおいてからあらためて問い合わせるよう案内する | IMPL-CONTACT-013 | `src/app/contact/page.tsx`, `e2e/FR-CONTACT-013-rate-limit-message.spec.ts` | 応答が 429 のとき本文に依存せず案内文を `role=alert` で表示し、入力内容を残す（FREQ-361） | 済 |
 
-
 ## 注文状況からの初期入力（E-5 / FREQ-504）
 
 [詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)・[注文状況ページ](20_order_status.md)を参照。

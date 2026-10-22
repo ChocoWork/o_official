@@ -295,7 +295,6 @@ flowchart LR
 
 取り消した発送の操作を出さず、配達済みの発送は番号の直しだけを許す。結果不明の「もう一度確かめる」は同じキーと本文を再送する。新規の内部ページや新規の設定ページへは遷移しない。
 
-
 ## 注文の状況からの遷移（E-5 / FREQ-498〜505）
 
 [詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)・[ページ仕様](../../04_DetailDesign/pages/20_order_status.md)を参照。従来の38ルートへ1ルートを加えた39ルート。下図は追加の導線で、個人情報の確認は同じページの状態。

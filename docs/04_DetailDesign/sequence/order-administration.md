@@ -891,7 +891,6 @@ sequenceDiagram
   Route-->>Dialog: 現在の記録を返す
 ```
 
-
 ## 注文状況のメールと閲覧（E-5 / FREQ-498〜505）
 
 [詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)・[ページ仕様](../pages/20_order_status.md)を参照。既存の管理の状態更新とメール予定の作成は変えず、新しい本文の用意からリンクを作る。

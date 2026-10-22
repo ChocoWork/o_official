@@ -116,6 +116,7 @@ returning 'ORD-' || upper(left(e.order_id::text, 8)) as order_number, e.kind, e.
 | 2 | Resend の管理画面の Webhooks で宛先 `<公開した URL>/api/webhook/resend-delivery` を作り、`email.delivered`・`email.delivery_delayed`・`email.bounced`・`email.complained`・`email.suppressed`・`email.failed` の6つを選ぶ。出た署名の鍵（`whsec_` で始まる）を Vercel の `RESEND_DELIVERY_WEBHOOK_SECRET` に入れて出し直す。お問い合わせの返信の宛先（`/api/contact/inbound`・`RESEND_WEBHOOK_SECRET`）とは別の宛先・別の鍵にする | ユーザー | Resend の管理画面で宛先が有効 |
 | 3 | 2 の通しの確かめ | ユーザー（試しの注文）、Claude（確かめる） | 2 の表 |
 | 4 | Vercel の「System Environment Variables を自動で公開」が有効なことを確かめる | ユーザー | `VERCEL_ENV` が実行時に見える。見えないと preview でも環境の門を通って動く |
+| 5 | Vercel の環境変数 `NEXT_PUBLIC_SITE_URL` に本番の https のサイトを入れる（E-5 以降の注文メールの状況ページのリンクの元。未設定だと `http://localhost:3000/order-status/…` が入り、保存済みの本文は後から直らない）。詳しくは12節の「本番URL・鍵・ログ」 | ユーザー | 値を報告へ転記せず、正しい https のサイトを指すことを確かめる |
 
 - 本番の `MAIL_PROVIDER` は `resend`（小文字）を入れる。これは送り手を選ぶ設定の値で、秘密ではない。`resolveMailProvider` は大文字小文字まで完全一致で見るので、`Resend` と入れると送信を止め、店への知らせも届かない。ほかの送り手でも注文のメールは送らずに止める（重複防止キーの無い送り手で送らないため）。手元のメール受け（`local`）は手元の Supabase とだけ使い、ほかの DB と組み合わせると `config_provider` で一時停止する。
 - 宛先を登録するまでの間も、読み取り権限のある鍵なら1時間ごとの見回りが配達の状態を拾う（6）。
@@ -492,6 +493,8 @@ order by kind, status, last_error_code;
 
 [配送の詳細設計](../superpowers/specs/2026-10-21-delivery-status-design.md)・[実装計画](../superpowers/plans/2026-10-21-delivery-status.md)を参照。以下は実装後の契約であり、既存の決定の本文は履歴として残す。
 
+E-5 以降に作る新しいお客様向け本文は12節に従う。下の配達済みの `ご注文の確認はこちら: {注文の画面のリンク}` の行は、12節で `ご注文の状況はこちら: {orderStatusUrl}` の行に置き換えた（E-4 の時点の並びは履歴として残す）。
+
 kindの正は19種類（16→19）: `paid`・`awaiting_payment`・`payment_expired`・`canceled`・`shipped`・`refund`・`return_accepted`・`return_received`・`return_sent_back`・`return_refund_pending_shop`・`return_requested`・`return_declined`・`return_request_shop`・`cancel_request_received`・`cancel_request_declined`・`cancel_request_shop`・`out_for_delivery`・`delivered`・`shipping_update`。
 
 | 種類・履歴の名前 | 件名 | 予定に入れる条件 |
@@ -517,7 +520,6 @@ shipping_update は直しの行の新しい値、配達中/配達済みは claim
 配達済みの案内の日数は材料取得時の `shop_return_settings.window_days`。無制限（NULL）は案内文と直後の空行を出さない。顧客への状況通知と、追跡接続の異常を `SHOP_ALERT_EMAIL` に1日1回送る店への運用通知は別系統。メール配達のdeliveredはメールが届いた状態であり、荷物のdeliveredではない。
 
 19種類の型・再送拒否・旧版skip・本文はDB/単体/E2Eの別々の検証対象。本物の17TRACK・本番メール・実番号の確認は開店前の手順で実施し、この文書更新で確認済みとは扱わない。
-
 
 ## 12. 注文状況リンクと確認期限（E-5 / FREQ-500・503）
 

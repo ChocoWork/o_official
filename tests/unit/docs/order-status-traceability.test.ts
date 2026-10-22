@@ -107,7 +107,12 @@ test('ACごとのE2Eと単体DBの対応が指示書の定数と一致する', (
     expect(links.filter((p) => p.startsWith('e2e/')).sort()).toEqual([...ac.e2e].sort());
     expect(links.filter((p) => p.startsWith('tests/unit/'))).toEqual(ac.unit);
     expect(links.filter((p) => p.startsWith('tests/integration/'))).toEqual(ac.db);
-    if (!ac.e2e.length) expect(item).toContain('E2E —（DB 結合・単体で検証）');
+    if (!ac.e2e.length) {
+      // 503-AC-03 だけは DB 結合の試験が無いので、指示書の表の「—（単体で検証）」を使う。ほかは一般の決まり。
+      const noE2e = ac.id === 'FREQ-503-AC-03' ? 'E2E —（単体で検証）' : 'E2E —（DB 結合・単体で検証）';
+      expect(item).toContain(noE2e);
+      if (ac.id === 'FREQ-503-AC-03') expect(item).not.toContain('E2E —（DB 結合・単体で検証）');
+    }
     if (ac.unit.length) expect(item).toContain('単体 [');
     if (ac.db.length) expect(item).toContain('DB 結合 [');
     for (const p of [...ac.unit, ...ac.db, ...ac.e2e]) expect(existsSync(path.join(root, p))).toBe(true);
@@ -115,6 +120,9 @@ test('ACごとのE2Eと単体DBの対応が指示書の定数と一致する', (
       expect(item).toContain('範囲: ' + ac.scope);
     }
     if (ac.id === 'FREQ-503-AC-04') expect(item).toContain('Task 11予行演習');
+    // 証拠の範囲の注記: DB だけの比較が、制限そのものや全種類を確かめたと読めないようにする。
+    if (ac.id === 'FREQ-500-AC-02') expect(item).toContain('order_status_links.integration.test.ts)（カウンター非更新）');
+    if (ac.id === 'FREQ-503-AC-01') expect(item).toContain('order_status_links.integration.test.ts)（1注文1本）');
   });
 });
 
@@ -125,6 +133,22 @@ test('新10specのACコメントは要求の対応と完全一致する', () => 
     const comments = read(file).split(/\r?\n/).filter((line) => line.trim().startsWith('//'))
       .flatMap((line) => line.match(/FREQ-\d+-AC-\d+/g) ?? []);
     expect(comments.sort()).toEqual(expectedAcMap.filter((ac) => ac.e2e.includes(file)).map((ac) => ac.id).sort());
+    expect(new Set(comments).size).toBe(comments.length);
+  }
+});
+
+test('既存2本のE2EにあるE-5のACコメントは要求の対応と完全一致する', () => {
+  // 503-AC-01 の FR-ADMIN-101 と 503-AC-02 の FR-CHECKOUT-049。E-4 までの AC コメントは別の試験が見るので E-5 の範囲だけ比べる。
+  const existingSpecs = ['e2e/FR-ADMIN-101-fulfillment-delivered.spec.ts', 'e2e/FR-CHECKOUT-049-order-email-sent-once.spec.ts'];
+  const referenced = [...new Set(expectedAcMap.flatMap((ac) => ac.e2e))].filter((file) => !newSpecFiles.includes(file)).sort();
+  expect(referenced).toEqual(existingSpecs);
+  for (const file of existingSpecs) {
+    const comments = read(file).split(/\r?\n/).filter((line) => line.trim().startsWith('//'))
+      .flatMap((line) => line.match(/FREQ-\d+-AC-\d+/g) ?? [])
+      .filter((id) => /^FREQ-(49[89]|50[0-5])-/.test(id));
+    const expected = expectedAcMap.filter((ac) => ac.e2e.includes(file)).map((ac) => ac.id);
+    expect(expected).toHaveLength(1);
+    expect(comments.sort()).toEqual(expected.sort());
     expect(new Set(comments).size).toBe(comments.length);
   }
 });

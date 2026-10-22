@@ -2,9 +2,9 @@
 
 ## 概要
 
-`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 段1・段2・E-4の追記を反映した掲載対象は **85 テーブル（public 77、private 6、security 2）と 107 FK（public 起点 98、private 起点 9）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
+`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 段1・段2・E-4・E-5の追記を反映した掲載対象は **86 テーブル（public 77、private 7、security 2）と 108 FK（public 起点 98、private 起点 10）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
 
-基準の確認日: **2026-10-03**。ソース基準コミット: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`。基準は [20260901102912_remote_schema.sql](../../../supabase/migrations/20260901102912_remote_schema.sql)、基準集計の最後の対象ファイルは [20260927100800_retire_legacy_order_rpcs.sql](../../../supabase/migrations/20260927100800_retire_legacy_order_rpcs.sql)。対象の 40 SQL ファイルの基準は59テーブル・63 FKで、後続の記載済みの追記を含む一覧は2026-10-09に数え直し、グループ E-1 の分を2026-10-10 に、グループ E-2 の分を2026-10-11 に、グループ E-3 の分を2026-10-13 に足した。配送の入口・表は E-4 の変更を 2026-10-21 に反映。本番 DB の適用状況は確認していない。
+基準の確認日: **2026-10-03**。ソース基準コミット: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`。基準は [20260901102912_remote_schema.sql](../../../supabase/migrations/20260901102912_remote_schema.sql)、基準集計の最後の対象ファイルは [20260927100800_retire_legacy_order_rpcs.sql](../../../supabase/migrations/20260927100800_retire_legacy_order_rpcs.sql)。対象の 40 SQL ファイルの基準は59テーブル・63 FKで、後続の記載済みの追記を含む一覧は2026-10-09に数え直し、グループ E-1 の分を2026-10-10 に、グループ E-2 の分を2026-10-11 に、グループ E-3 の分を2026-10-13 に足した。配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文状況のリンクの表は E-5 の変更を 2026-10-22 に反映。本番 DB の適用状況は確認していない。
 
 グループ C（2026-10-08）の [20261008055720_checkout_order_owner_binding.sql](../../../supabase/migrations/20261008055720_checkout_order_owner_binding.sql) は、`checkout_drafts` に列 `buyer_user_id` を 1 つ足し、トリガーを 2 つ足す（下書きの買い手の変更禁止、注文の持ち主の付け替え禁止）。テーブルと FK の数は変わらない。この移行は 2026-10-08 に本番へ適用済み（上の件数の集計には含めない）。内容は 2.4・5.1・5.2 に書く。
 
@@ -711,7 +711,7 @@ erDiagram
 
 ## 3. 全テーブルとキーの一覧
 
-以下は掲載対象の85テーブル・107 FKの定義元とキーの一覧。FK の有無は入出両方向で判定する。`audit_logs_backups.id` は主キーではなく nullable の通常列である。
+以下は掲載対象の86テーブル・108 FKの定義元とキーの一覧。FK の有無は入出両方向で判定する。`audit_logs_backups.id` は主キーではなく nullable の通常列である。
 
 ### 3.1 認証・利用者
 
@@ -1254,7 +1254,7 @@ CHECK (
 
 ### 6.1 現行マイグレーション列にない 3 テーブル
 
-以下の 3 テーブルは現行の `.from()` 呼び出しに存在するが、`supabase/migrations/` の基準 SQL と後続変更には CREATE TABLE がない。定義は旧 `migrations/` に存在するため、**現行コードの依存と旧 SQL の構造**として示す。第 2〜4 節とE-4追記の85テーブル・107 FKには加算していない。実 DB に存在するか、旧 SQL のとおりの制約があるかは未確認である。
+以下の 3 テーブルは現行の `.from()` 呼び出しに存在するが、`supabase/migrations/` の基準 SQL と後続変更には CREATE TABLE がない。定義は旧 `migrations/` に存在するため、**現行コードの依存と旧 SQL の構造**として示す。第 2〜4 節とE-4・E-5追記の86テーブル・108 FKには加算していない。実 DB に存在するか、旧 SQL のとおりの制約があるかは未確認である。
 
 | 現行コードの参照テーブル | 旧 SQL の PK / UNIQUE | 旧 SQL の FK | 定義元 / 現行の参照元 |
 | --- | --- | --- | --- |
@@ -1472,16 +1472,9 @@ WHERE origin = 'auto' AND kind <> 'shipped' AND refund_id IS NULL
 
 `claim_order_email` の戻りは17列（順序固定）: `email_id`・`order_id`・`kind`・`variant`・`origin`・`attempts`・`lease_token`・`subject`・`body_text`・`payment_expired_sent`・`fulfillment_id`・`refund_id`・`return_id`・`return_receipt_id`・`cancel_request_id`・`tracking_version`・`tracking_change_id`。最後の2列を足し、DROP/CREATEの後にEXECUTE権限を戻す。`get_order_delivery_detail` のregistrationは `ever_registered` も返す。TSでは `everRegistered` として顧客への表示条件に使う。
 
-## 7. 関連ドキュメント
-
-- [システム構成](../architecture/system-overview.md)
-- [API](../api/api-spec.md)
-- [注文・決済の状態遷移](../../04_DetailDesign/states/order-payment.md)
-
-
 ## 注文状況のリンクと権限（E-5 / FREQ-505）
 
-[詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)を参照。[移行A](../../../supabase/migrations/20261023100000_order_status_links.sql) → [移行B](../../../supabase/migrations/20261023100100_order_status_returns.sql)の2本。既存の表の列・型は変えず、1表・1 FKを追加する。E-4までの85表・107 FKに加え、86表・108 FK。これはソース上の構造であり本番適用の証拠ではない。
+[詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)を参照。[移行A](../../../supabase/migrations/20261023100000_order_status_links.sql) → [移行B](../../../supabase/migrations/20261023100100_order_status_returns.sql)の2本。既存の表の列・型は変えず、1表・1 FKを追加する。E-4までの85表・107 FKに足して、合わせて86表・108 FK。これはソース上の構造であり本番適用の証拠ではない。
 
 ```mermaid
 erDiagram
@@ -1523,3 +1516,9 @@ publicのRPCは完全修飾名・`SECURITY DEFINER`・`SET search_path = ''`・�
 | `public.get_order_status_returns(_order_id uuid,_include_private boolean DEFAULT false)` | 所有者条件なし。無い・NULL・隠す状態はSQL NULL、trueだけ個人情報を含む。NULLの真偽引数は22023 |
 
 移行は各BEGIN〜COMMIT、最後に `NOTIFY pgrst, 'reload schema';`。過去の移行は変更しない。乱数は `extensions.gen_random_bytes(32)`。配置が違うpgcryptoを勝手に移設せず `ORDER_STATUS_CRYPTO_UNAVAILABLE` で止める。
+
+## 7. 関連ドキュメント
+
+- [システム構成](../architecture/system-overview.md)
+- [API](../api/api-spec.md)
+- [注文・決済の状態遷移](../../04_DetailDesign/states/order-payment.md)

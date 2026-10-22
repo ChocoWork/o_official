@@ -134,7 +134,6 @@ E-4 の新しいページURLは0。既存の38画面ルートを維持し、以�
 
 dialogから戻った時は履歴の操作位置へフォーカスを戻し、保存や結果不明では履歴・一覧を再取得する。詳細な表示条件はaccount/admin/privacyの設計とAPI仕様を参照。
 
-
 ## 注文の状況の画面（E-5 / FREQ-498〜505）
 
 [詳細設計](../../superpowers/specs/2026-10-22-order-status-page-design.md)・[実装計画](../../superpowers/plans/2026-10-22-order-status-page.md)・[ページ仕様](../../04_DetailDesign/pages/20_order_status.md)を参照。
