@@ -16,6 +16,8 @@ if (typeof (Response as unknown as { json?: unknown }).json !== 'function') {
 // 「既知のターゲットオリジンとの照合」になっていなかった。
 
 const ALLOWED = 'https://shop.example.com';
+// 試験用の作り物のトークン（43文字）
+const STATUS_TOKEN = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCde';
 
 function makeRequest(
   url: string,
@@ -144,6 +146,110 @@ describe('proxy の Origin 検査', () => {
 
       expect(res.status).not.toBe(403);
     });
+
+    // グループ E-5（注文の状況の窓口）。検査の順・許可リスト・除外は他の API と同じで、
+    // 拒否の応答（Handler より前に返る）にだけ no-store と no-referrer を足す。
+    describe('注文の状況の窓口 /api/order-status の Origin 検査', () => {
+      const VERIFY_URL = `${ALLOWED}/api/order-status/${STATUS_TOKEN}/verify`;
+
+      test('許可オリジンからの POST は通す', async () => {
+        const proxy = await loadProxy();
+        const res = proxy(makeRequest(VERIFY_URL, { origin: ALLOWED }));
+
+        expect(res.status).not.toBe(403);
+      });
+
+      test('別のオリジンは 403。本文は前のままで、no-store と no-referrer が付く', async () => {
+        const proxy = await loadProxy();
+        const res = proxy(makeRequest(VERIFY_URL, { origin: 'https://evil.example' }));
+
+        expect(res.status).toBe(403);
+        expect(await res.json()).toEqual({ error: 'Forbidden origin' });
+        expect(res.headers.get('Cache-Control')).toBe('no-store');
+        expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
+      });
+
+      test('X-Forwarded-Host を細工しても、許可リストに無いオリジンは 403（ヘッダーも付く）', async () => {
+        const proxy = await loadProxy();
+        const res = proxy(
+          makeRequest(VERIFY_URL, {
+            origin: 'https://evil.example',
+            'x-forwarded-host': 'evil.example',
+            'x-forwarded-proto': 'https',
+          }),
+        );
+
+        expect(res.status).toBe(403);
+        expect(res.headers.get('Cache-Control')).toBe('no-store');
+        expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
+      });
+
+      test('Origin も Referer も無い POST は 403 で、同じヘッダーが付く', async () => {
+        const proxy = await loadProxy();
+        const res = proxy(makeRequest(VERIFY_URL, {}));
+
+        expect(res.status).toBe(403);
+        expect(await res.json()).toEqual({ error: 'Forbidden origin' });
+        expect(res.headers.get('Cache-Control')).toBe('no-store');
+        expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
+      });
+
+      test('Origin が無くても Referer が許可オリジンなら通す', async () => {
+        const proxy = await loadProxy();
+        const res = proxy(makeRequest(VERIFY_URL, { referer: `${ALLOWED}/order-status/${STATUS_TOKEN}` }));
+
+        expect(res.status).not.toBe(403);
+      });
+
+      test('Referer が別のオリジンなら 403 で、同じヘッダーが付く', async () => {
+        const proxy = await loadProxy();
+        const res = proxy(makeRequest(VERIFY_URL, { referer: 'https://evil.example/page' }));
+
+        expect(res.status).toBe(403);
+        expect(res.headers.get('Cache-Control')).toBe('no-store');
+        expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
+      });
+
+      test('GET は検査しない（private の読み出し）', async () => {
+        const proxy = await loadProxy();
+        const res = proxy(
+          makeRequest(`${ALLOWED}/api/order-status/${STATUS_TOKEN}/private`, { origin: 'https://evil.example' }, 'GET'),
+        );
+
+        expect(res.status).not.toBe(403);
+      });
+
+      test('/api/order-status そのものも窓口の配下として扱う', async () => {
+        const proxy = await loadProxy();
+        const res = proxy(makeRequest(`${ALLOWED}/api/order-status`, { origin: 'https://evil.example' }));
+
+        expect(res.status).toBe(403);
+        expect(res.headers.get('Cache-Control')).toBe('no-store');
+        expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
+      });
+
+      test('他の API の 403 は前と同じ（no-store も no-referrer も足さない）', async () => {
+        const proxy = await loadProxy();
+        for (const path of ['/api/cart/change', '/api/orders', '/api/contact/threads/abc/reply']) {
+          const res = proxy(makeRequest(`${ALLOWED}${path}`, { origin: 'https://evil.example' }));
+
+          expect(res.status).toBe(403);
+          expect(await res.json()).toEqual({ error: 'Forbidden origin' });
+          expect(res.headers.get('Cache-Control')).toBeNull();
+          expect(res.headers.get('Referrer-Policy')).toBeNull();
+        }
+      });
+
+      // 前方一致はセグメント境界。似た名前の API に、窓口の拒否ヘッダーを足さない。
+      test('/api/order-statusfoo は窓口の配下ではなく、検査は他の API と同じ（ヘッダーは足さない）', async () => {
+        const proxy = await loadProxy();
+        const res = proxy(makeRequest(`${ALLOWED}/api/order-statusfoo/x`, { origin: 'https://evil.example' }));
+
+        expect(res.status).toBe(403);
+        expect(res.headers.get('Cache-Control')).toBeNull();
+        expect(res.headers.get('Referrer-Policy')).toBeNull();
+      });
+    });
   });
 
   describe('許可オリジンが未設定のとき', () => {
@@ -185,6 +291,22 @@ describe('proxy の Origin 検査', () => {
       );
 
       expect(res.status).toBe(403);
+      warn.mockRestore();
+    });
+
+    // 注文の状況の窓口（グループ E-5）も、退避の検査は他の API と同じ。拒否にだけ no-store と no-referrer が付く。
+    test('退避時の注文の状況の窓口: 一致すれば通し、別オリジンは 403 でヘッダーが付く', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const proxy = await loadProxy();
+      const url = `http://localhost:3000/api/order-status/${STATUS_TOKEN}/verify`;
+
+      const allowed = proxy(makeRequest(url, { origin: 'http://localhost:3000', host: 'localhost:3000' }));
+      expect(allowed.status).not.toBe(403);
+
+      const denied = proxy(makeRequest(url, { origin: 'https://evil.example', host: 'localhost:3000' }));
+      expect(denied.status).toBe(403);
+      expect(denied.headers.get('Cache-Control')).toBe('no-store');
+      expect(denied.headers.get('Referrer-Policy')).toBe('no-referrer');
       warn.mockRestore();
     });
   });

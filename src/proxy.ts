@@ -25,6 +25,9 @@ const ORIGIN_CHECK_EXEMPT_PREFIXES = [
   '/api/contact/inbound', // Resend: Svix 署名検証
   '/api/cron',            // スケジューラ: Bearer シークレット
 ] as const;
+// 注文の状況の窓口（グループ E-5）。この配下の Origin 拒否にだけ、応答を残さず Referrer を出さないヘッダーを足す。
+// 検査の順・許可リスト・除外は他の API と同じ（Handler より前に拒否を返すので、Handler では補えない）
+const ORDER_STATUS_API_PATH_PREFIX = '/api/order-status';
 
 /**
  * パスの前方一致をセグメント境界で判定する。
@@ -201,7 +204,12 @@ function isAllowedOriginRequest(request: NextRequest): boolean {
 
 export function proxy(request: NextRequest) {
   if (isProtectedStateChangingApiRequest(request) && !isAllowedOriginRequest(request)) {
-    return NextResponse.json({ error: 'Forbidden origin' }, { status: 403 });
+    const rejection = NextResponse.json({ error: 'Forbidden origin' }, { status: 403 });
+    if (matchesPathSegment(request.nextUrl.pathname, ORDER_STATUS_API_PATH_PREFIX)) {
+      rejection.headers.set('Cache-Control', 'no-store');
+      rejection.headers.set('Referrer-Policy', 'no-referrer');
+    }
+    return rejection;
   }
 
   const nonce = generateNonce();
