@@ -64,16 +64,22 @@ test('返品だけの失敗はnullで続け、それ以外は固定codeだけ記
   } finally { log.mockRestore(); }
 });
 
-test('404とerrorは固定文を出し、errorの内容を表示も記録もしない', () => {
+test('404とerrorは固定文を出し、errorの内容を表示も記録せずretryで読み直す', () => {
   const log = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-  const reset = jest.fn();
+  const retry = jest.fn();
+  const errorProps = {
+    error: Object.assign(new Error('PRIVATE_SENTINEL'), { digest: 'PRIVATE_SENTINEL' }),
+    reset: jest.fn(),
+    retry,
+  };
   const { unmount } = render(<OrderStatusNotFound />);
   expect(screen.getByRole('heading', { name: 'このページは見つかりません' })).toBeVisible();
   expect(screen.getByRole('link', { name: 'トップページへ' })).toHaveAttribute('href', '/');
   unmount();
-  render(<OrderStatusError error={Object.assign(new Error('PRIVATE_SENTINEL'), { digest: 'PRIVATE_SENTINEL' })} reset={reset} />);
+  render(<OrderStatusError {...errorProps} />);
   expect(document.body.textContent?.includes('PRIVATE_SENTINEL')).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: 'もう一度読み込む' }));
-  expect(reset).toHaveBeenCalledTimes(1);
+  expect(retry).toHaveBeenCalledTimes(1);
+  expect(errorProps.reset).not.toHaveBeenCalled();
   expect(log).not.toHaveBeenCalled(); log.mockRestore();
 });
