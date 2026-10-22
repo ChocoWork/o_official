@@ -7,6 +7,8 @@ import {
   createCustomerReturnPhotoUpload,
   loadCustomerOrderReturns,
   loadCustomerReturnRequestMaterials,
+  parseCustomerOrderReturns,
+  parsePublicCustomerOrderReturns,
   requestCustomerCancel,
   requestCustomerReturn,
 } from '@/lib/orders/returns/customer-return-store';
@@ -552,6 +554,88 @@ describe('loadCustomerOrderReturns', () => {
     const { store } = storeWith({ get_customer_order_returns: { error: { message: 'ORDER_NOT_FOUND', code: 'P0002' } } });
 
     await expect(loadCustomerOrderReturns(store, OWNER)).resolves.toBeNull();
+  });
+
+  // E-5（注文の状況の頁）の公開・個人情報の読み出しも、この変換を共有する
+  describe('共有の変換（parseCustomerOrderReturns・parsePublicCustomerOrderReturns）', () => {
+    const without = (object: Record<string, unknown>, keys: string[]) =>
+      Object.fromEntries(Object.entries(object).filter(([key]) => !keys.includes(key)));
+    // 公開の答え（DB が返送先と送り返しの業者・伝票番号のキーを作らない形）
+    const PUBLIC_JSON = {
+      ...RETURNS_JSON,
+      returns: RETURNS_JSON.returns.map((row) => ({
+        ...without(row, ['return_address']),
+        sent_back: row.sent_back.map((item) => without(item, ['carrier', 'tracking_number'])),
+      })),
+    };
+    const PUBLIC_RETURNS = {
+      ...RETURNS,
+      returns: RETURNS.returns.map((row) => ({
+        ...without(row, ['returnAddress']),
+        sentBack: row.sentBack.map((item) => without(item, ['carrier', 'trackingNumber'])),
+      })),
+    };
+
+    it('parseCustomerOrderReturns は loadCustomerOrderReturns と同じ答えを返す', () => {
+      expect(parseCustomerOrderReturns(RETURNS_JSON, ORDER_ID)).toEqual(RETURNS);
+    });
+
+    it('オブジェクトでない値は null。配列に包まれた1つは今までどおり読む', () => {
+      for (const value of [null, undefined, 'text', 5, true, []]) {
+        expect(parseCustomerOrderReturns(value, ORDER_ID)).toBeNull();
+        expect(parsePublicCustomerOrderReturns(value, ORDER_ID)).toBeNull();
+      }
+      expect(parseCustomerOrderReturns([RETURNS_JSON], ORDER_ID)).toEqual(RETURNS);
+      expect(parsePublicCustomerOrderReturns([PUBLIC_JSON], ORDER_ID)).toEqual(PUBLIC_RETURNS);
+    });
+
+    it('会員の答えのキーの並びを変えない（JSON の文字列で比べる）', async () => {
+      const { store } = storeWith({ get_customer_order_returns: { data: RETURNS_JSON } });
+
+      const result = await loadCustomerOrderReturns(store, OWNER);
+
+      expect(Object.keys(result ?? {})).toEqual(['returns', 'cancelRequests', 'availability']);
+      expect(Object.keys(result?.returns[0] ?? {})).toEqual([
+        'id', 'number', 'label', 'status', 'customerStatus', 'returnMethod', 'returnShippingPayer', 'returnShippingFee',
+        'returnAddress', 'requestedAt', 'closedAt', 'lines', 'refundAmount', 'sentBack', 'declineMessage', 'exchangeShipping',
+      ]);
+      expect(Object.keys(result?.returns[0].sentBack[0] ?? {})).toEqual(['itemName', 'color', 'size', 'quantity', 'message', 'carrier', 'trackingNumber']);
+      expect(JSON.stringify(result)).toBe(JSON.stringify(RETURNS));
+    });
+
+    it('公開の変換は返送先と送り返しの業者・伝票番号のキーを持たない（null で生やさない）', () => {
+      const result = parsePublicCustomerOrderReturns(PUBLIC_JSON, ORDER_ID);
+
+      expect(result).toEqual(PUBLIC_RETURNS);
+      for (const entry of result?.returns ?? []) {
+        expect(entry).not.toHaveProperty('returnAddress');
+        for (const sent of entry.sentBack) {
+          expect(sent).not.toHaveProperty('carrier');
+          expect(sent).not.toHaveProperty('trackingNumber');
+        }
+      }
+      const text = JSON.stringify(result);
+      for (const key of ['returnAddress', 'carrier', 'trackingNumber']) {
+        expect(text).not.toContain(`"${key}"`);
+      }
+    });
+
+    it('DB が非公開のキーを返してしまっても、公開の変換は写さない', () => {
+      const result = parsePublicCustomerOrderReturns(RETURNS_JSON, ORDER_ID);
+
+      expect(result).toEqual(PUBLIC_RETURNS);
+      const text = JSON.stringify(result);
+      for (const secret of ['AB-9999', 'yamato', '150-0001', '03-1234-5678', 'Le Fil des Heures 返品係']) {
+        expect(text).not.toContain(secret);
+      }
+    });
+
+    it('公開の変換も、お客様の状態などが表に無い記号なら黙って別の状態にせず RefundStoreError（今までの変換と同じ許容）', () => {
+      const broken = { ...PUBLIC_JSON, returns: [{ ...PUBLIC_JSON.returns[0], customer_status: 'weird' }] };
+
+      expect(() => parsePublicCustomerOrderReturns(broken, ORDER_ID)).toThrow(RefundStoreError);
+      expect(() => parseCustomerOrderReturns({ ...RETURNS_JSON, returns: [{ ...RETURNS_JSON.returns[0], customer_status: 'weird' }] }, ORDER_ID)).toThrow(RefundStoreError);
+    });
   });
 });
 

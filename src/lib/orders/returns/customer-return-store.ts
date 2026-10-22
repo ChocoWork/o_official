@@ -1,3 +1,4 @@
+import type { PublicCustomerOrderReturn, PublicCustomerOrderReturns } from '@/lib/orders/customer-order-view-types';
 import type { OrderStatus } from '@/lib/orders/order-payment-types';
 import { RefundStoreError } from '@/lib/orders/refund/refund-store';
 import {
@@ -50,6 +51,7 @@ import {
  * DB の関数の jsonb は snake_case。camelCase への直しはこのファイルが行う。お客様に出さない物（店のメモ・お断りの理由の記号・
  * した人のメール・返金の失敗の中身）は、DB が返しても写さない（P19。型にも無い）。
  * サーバーだけで使う（画面から読まない）。単体テストが直接読むので、サーバー専用の印（server-only）は付けない。
+ * 返品の欄の変換（parseCustomerOrderReturns・parsePublicCustomerOrderReturns）だけは、注文の状況の頁（E-5）の読み出しも共有する。
  */
 
 /** 注文が無い・持ち主でない・お客様に隠す状態だった（DB の ORDER_NOT_FOUND）。持ち主でない注文の有無を漏らさないため、理由は分けない */
@@ -284,7 +286,11 @@ function exchangeShippingOf(value: unknown): CustomerOrderReturn['exchangeShippi
   return value === 'pending' || value === 'shipped' ? value : 'none';
 }
 
-function toCustomerReturn(row: JsonObject, orderId: string): CustomerOrderReturn {
+// includePrivate が false（注文の状況の頁の公開の読み出し）の時は、返送先（returnAddress）と送り返しの業者・伝票番号（carrier・trackingNumber）の
+// キーそのものを作らない（null で生やさない）。true の時は、今までの会員の答えとキーの並びまで同じ
+function toCustomerReturn(row: JsonObject, orderId: string, includePrivate: true): CustomerOrderReturn;
+function toCustomerReturn(row: JsonObject, orderId: string, includePrivate: false): PublicCustomerOrderReturn;
+function toCustomerReturn(row: JsonObject, orderId: string, includePrivate: boolean): CustomerOrderReturn | PublicCustomerOrderReturn {
   const operation = 'get_customer_order_returns';
   const address = jsonObjectOf(row.return_address);
   const number = Number(row.number);
@@ -298,14 +304,18 @@ function toCustomerReturn(row: JsonObject, orderId: string): CustomerOrderReturn
     returnMethod: row.return_method as ReturnMethod,
     returnShippingPayer: row.return_shipping_payer as ShippingPayer,
     returnShippingFee: Number(row.return_shipping_fee),
-    returnAddress: address
+    ...(includePrivate
       ? {
-          name: String(address.name),
-          postalCode: String(address.postal_code),
-          address: String(address.address),
-          phone: String(address.phone),
+          returnAddress: address
+            ? {
+                name: String(address.name),
+                postalCode: String(address.postal_code),
+                address: String(address.address),
+                phone: String(address.phone),
+              }
+            : null,
         }
-      : null,
+      : {}),
     requestedAt: textOrNull(row.requested_at),
     closedAt: textOrNull(row.closed_at),
     lines: objectsOf(row.lines).map((line) => ({
@@ -325,8 +335,9 @@ function toCustomerReturn(row: JsonObject, orderId: string): CustomerOrderReturn
       size: textOrNull(item.size),
       quantity: Number(item.quantity),
       message: textOrNull(item.message),
-      carrier: textOrNull(item.carrier) as ReturnCarrier | null,
-      trackingNumber: textOrNull(item.tracking_number),
+      ...(includePrivate
+        ? { carrier: textOrNull(item.carrier) as ReturnCarrier | null, trackingNumber: textOrNull(item.tracking_number) }
+        : {}),
     })),
     declineMessage: textOrNull(row.decline_message),
     exchangeShipping: exchangeShippingOf(row.exchange_shipping),
@@ -348,6 +359,49 @@ function toCustomerCancelRequest(row: JsonObject): CustomerCancelRequest {
   };
 }
 
+/** 返品の欄のうち、返送先・送り返しの番号の有無に関わらない部分（キャンセルの申し込みと受付の有無） */
+function toRequestsAndAvailability(root: JsonObject) {
+  const availability = objectOf(root.availability);
+  return {
+    cancelRequests: objectsOf(root.cancel_requests).map(toCustomerCancelRequest),
+    availability: {
+      returns: availabilityOf(availability.returns),
+      endedOn: textOrNull(availability.ended_on),
+      cancel: availability.cancel === true,
+    },
+  };
+}
+
+function toCustomerOrderReturns(root: JsonObject, orderId: string): CustomerOrderReturns {
+  return {
+    returns: objectsOf(root.returns).map((row) => toCustomerReturn(row, orderId, true)),
+    ...toRequestsAndAvailability(root),
+  };
+}
+
+/**
+ * 返品の欄の jsonb（返送先と送り返しの業者・伝票番号つき）を、会員の画面と同じ形に直す。オブジェクト（配列に包まれた1つも可）でなければ null。
+ * 注文の状況の頁の個人情報の読み出しも、この変換を使う。許容の範囲は loadCustomerOrderReturns と同じ
+ */
+export function parseCustomerOrderReturns(value: unknown, orderId: string): CustomerOrderReturns | null {
+  const root = jsonObjectOf(value);
+  return root ? toCustomerOrderReturns(root, orderId) : null;
+}
+
+/**
+ * 返品の欄の公開の jsonb（返送先と送り返しの業者・伝票番号を DB が作らない形）を直す。結果にも、その3つのキーを作らない。
+ * 注文の状況の頁の公開の読み出しだけが使う。オブジェクトでなければ null
+ */
+export function parsePublicCustomerOrderReturns(value: unknown, orderId: string): PublicCustomerOrderReturns | null {
+  const root = jsonObjectOf(value);
+  return root
+    ? {
+        returns: objectsOf(root.returns).map((row) => toCustomerReturn(row, orderId, false)),
+        ...toRequestsAndAvailability(root),
+      }
+    : null;
+}
+
 /**
  * お客様の注文の画面の返品の欄（返品・キャンセルの申し込み・受付の有無）。注文が無い・持ち主でない時は null。
  * 返品は新しい順で、取消の返品は DB が入れない。返送先は受付中の間だけ DB が入れる。番号の文字（label）はここで付ける
@@ -363,14 +417,5 @@ export async function loadCustomerOrderReturns(
   if (!root) {
     return null;
   }
-  const availability = objectOf(root.availability);
-  return {
-    returns: objectsOf(root.returns).map((row) => toCustomerReturn(row, input.orderId)),
-    cancelRequests: objectsOf(root.cancel_requests).map(toCustomerCancelRequest),
-    availability: {
-      returns: availabilityOf(availability.returns),
-      endedOn: textOrNull(availability.ended_on),
-      cancel: availability.cancel === true,
-    },
-  };
+  return toCustomerOrderReturns(root, input.orderId);
 }
