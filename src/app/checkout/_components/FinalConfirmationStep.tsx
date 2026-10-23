@@ -397,6 +397,7 @@ function FinalConfirmationContent({
               <PaymentElement
                 options={{
                   layout: { type: "accordion", defaultCollapsed: false, radios: "always", spacedAccordionItems: false },
+                  paymentMethodOrder: ["card", "paypay"],
                 }}
                 onChange={(event) => setSelectedPaymentType(event.value?.type ?? null)}
               />

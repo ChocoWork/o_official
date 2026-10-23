@@ -15,12 +15,15 @@ jest.mock('@stripe/stripe-js', () => ({ loadStripe: jest.fn(() => Promise.resolv
 
 const mockConfirm = jest.fn();
 let mockCheckoutState: any = { type: 'loading' };
+// PaymentElement が最後に受け取った options（支払い方法の並びと見せ方を確かめる）
+let mockPaymentElementOptions: any;
 jest.mock('@stripe/react-stripe-js/checkout', () => ({
   CheckoutProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   // 押すと支払い方法を PayPay に選んだことにする（onChange の形は Stripe の PaymentElement と同じ）
-  PaymentElement: ({ onChange }: any) => (
-    <button type="button" data-testid="payment-element" onClick={() => onChange?.({ value: { type: 'paypay' } })} />
-  ),
+  PaymentElement: ({ onChange, options }: any) => {
+    mockPaymentElementOptions = options;
+    return <button type="button" data-testid="payment-element" onClick={() => onChange?.({ value: { type: 'paypay' } })} />;
+  },
   useCheckout: () => mockCheckoutState,
 }));
 
@@ -88,6 +91,20 @@ describe('FinalConfirmationStep（設計書 2-3・第4章）', () => {
     jest.clearAllMocks();
     window.sessionStorage.clear();
     mockCheckoutState = { type: 'loading' };
+    mockPaymentElementOptions = undefined;
+  });
+
+  test('支払い方法の欄はカード → PayPay の順に並べ、見せ方（開いたアコーディオン・いつも丸の選択肢）は変えない（J-11）', () => {
+    setReady();
+    renderStep();
+
+    expect(mockPaymentElementOptions.paymentMethodOrder).toEqual(['card', 'paypay']);
+    expect(mockPaymentElementOptions.layout).toEqual({
+      type: 'accordion',
+      defaultCollapsed: false,
+      radios: 'always',
+      spacedAccordionItems: false,
+    });
   });
 
   test('表題と、特定商取引法の項目（支払いの時期・方法、明細ごとのお届けの時期、返品）を出す', () => {
