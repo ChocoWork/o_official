@@ -8,19 +8,9 @@ import { logAudit } from '@/lib/audit';
 // PUBLIC: 未認証でも 200 を返す。ログアウトが 401 だと「まだ有効なセッション」を漏らすため。
 // 実際の失効は verifyAccessToken(allowExpired) で取れた session_id を使い、CSRF トークンも要求する。
 
-type CsrfDenyResponse = {
-  status: number;
-  _body: unknown;
-  headers?: Record<string, string>;
-};
-
 type CsrfRotateResult = {
   rotatedCsrfToken: string;
 };
-
-function isCsrfDenyResponse(value: unknown): value is CsrfDenyResponse {
-  return typeof value === 'object' && value !== null && 'status' in value && '_body' in value;
-}
 
 function hasRotatedCsrfToken(value: unknown): value is CsrfRotateResult {
   return typeof value === 'object' && value !== null && 'rotatedCsrfToken' in value;
@@ -113,7 +103,8 @@ export async function POST() {
         // CSRF が有効な場合のみサーバ側セッションを失効させる。
         // 失効可否に関わらず Cookie は必ずクリアし、ユーザーが確実にログアウトできるようにする
         // （ログアウトは冪等で、CSRF 拒否でも Cookie が残らないようにする）。
-        if (!isCsrfDenyResponse(csrfResult)) {
+        // 拒否は本物の Response（403 か照合の DB の失敗の500）で返ってくる（R-22）。
+        if (!(csrfResult instanceof Response)) {
           const { data: revokedRows } = await service
             .from('sessions')
             .update({ revoked_at: new Date().toISOString() })

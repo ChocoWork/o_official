@@ -38,6 +38,17 @@ const { authenticateRequest } = require('@/lib/auth/authenticate');
 const { requireCsrfOrDeny } = require('@/lib/csrfMiddleware');
 const handler = require('@/app/api/profile/route');
 
+const CSRF_DENIALS = [
+	{ label: '403（なりすまし）', status: 403, body: { error: 'Forbidden', reason: 'CSRF validation failed' } },
+	{ label: '500（照合の DB の失敗）', status: 500, body: { error: 'Internal server error' } },
+];
+
+// requireCsrfOrDeny が返す本物の NextResponse。試験の環境の Response（node-fetch）には静的な json が無いので直接作る
+function realCsrfDenyResponse(status: number, body: unknown) {
+	const { NextResponse: RealNextResponse } = jest.requireActual('next/server');
+	return new RealNextResponse(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+}
+
 function createProfileQueryBuilder(results: Array<{ data: unknown; error: unknown }>) {
 	const maybeSingle = jest.fn();
 	for (const result of results) {
@@ -174,9 +185,12 @@ describe('GET /api/profile', () => {
 		expect(body).toMatchObject({ phone: '090-1234-5678' });
 	});
 
-	test('POST は CSRF 検証に失敗すると 403 を返す', async () => {
-		requireCsrfOrDeny.mockResolvedValue({ status: 403, _body: { error: 'Forbidden' } });
-		createClient.mockResolvedValue({ from: jest.fn() });
+	// requireCsrfOrDeny は本物の Response（403 か DB の失敗の500）を返す（R-22）
+	test.each(CSRF_DENIALS)('POST は CSRF で断られたら（$label）その応答をそのまま返し、本文の読み取りと保存に進まない', async ({ status, body }) => {
+		const denyResponse = realCsrfDenyResponse(status, body);
+		requireCsrfOrDeny.mockResolvedValue(denyResponse);
+		const from = jest.fn();
+		createClient.mockResolvedValue({ from });
 		authenticateRequest.mockResolvedValue({ ok: true, claims: { sub: 'user-1', session_id: 'session-1', email: 'user@example.com' } });
 
 		const req = new Request('http://localhost/api/profile', {
@@ -184,12 +198,15 @@ describe('GET /api/profile', () => {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ fullName: '山田 花子' }),
 		});
+		const readBody = jest.spyOn(req, 'json');
 
 		const res: any = await handler.POST(req);
-		const body = await res.json();
 
-		expect(res.status).toBe(403);
-		expect(body).toEqual({ error: 'Forbidden' });
+		expect(res).toBe(denyResponse);
+		expect(res.status).toBe(status);
+		expect(await res.json()).toEqual(body);
+		expect(readBody).not.toHaveBeenCalled();
+		expect(from).not.toHaveBeenCalled();
 	});
 
 	test('POST は CSRF ローテーションを受けて CSRF cookie を返す', async () => {
@@ -217,9 +234,11 @@ describe('GET /api/profile', () => {
 		expect(res.cookies.get('sb-csrf-token')?.value).toBe('new-csrf-token');
 	});
 
-	test('DELETE は CSRF 検証に失敗すると 403 を返す', async () => {
-		requireCsrfOrDeny.mockResolvedValue({ status: 403, _body: { error: 'Forbidden' } });
-		createClient.mockResolvedValue({ from: jest.fn() });
+	test.each(CSRF_DENIALS)('DELETE は CSRF で断られたら（$label）その応答をそのまま返し、消去に進まない', async ({ status, body }) => {
+		const denyResponse = realCsrfDenyResponse(status, body);
+		requireCsrfOrDeny.mockResolvedValue(denyResponse);
+		const from = jest.fn();
+		createClient.mockResolvedValue({ from });
 		authenticateRequest.mockResolvedValue({ ok: true, claims: { sub: 'user-1', session_id: 'session-1', email: 'user@example.com' } });
 
 		const req = new Request('http://localhost/api/profile', {
@@ -227,9 +246,9 @@ describe('GET /api/profile', () => {
 		});
 
 		const res: any = await handler.DELETE(req);
-		const body = await res.json();
 
-		expect(res.status).toBe(403);
-		expect(body).toEqual({ error: 'Forbidden' });
+		expect(res).toBe(denyResponse);
+		expect(res.status).toBe(status);
+		expect(from).not.toHaveBeenCalled();
 	});
 });

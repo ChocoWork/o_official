@@ -41,19 +41,9 @@ type SupabaseRouteError = {
 	hint?: string;
 };
 
-type CsrfDenyResponse = {
-	status: number;
-	_body: unknown;
-	headers?: Record<string, string>;
-};
-
 type CsrfRotateResult = {
 	rotatedCsrfToken: string;
 };
-
-function isCsrfDenyResponse(value: unknown): value is CsrfDenyResponse {
-	return typeof value === 'object' && value !== null && 'status' in value && '_body' in value;
-}
 
 function hasRotatedCsrfToken(value: unknown): value is CsrfRotateResult {
 	return typeof value === 'object' && value !== null && 'rotatedCsrfToken' in value;
@@ -203,14 +193,9 @@ export async function PUT(request: NextRequest) {
 
 	const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
 	const csrfResult = await requireCsrfOrDeny();
-	if (isCsrfDenyResponse(csrfResult)) {
-		const denyResponse = NextResponse.json(csrfResult._body, { status: csrfResult.status });
-		if (csrfResult.headers) {
-			for (const [key, value] of Object.entries(csrfResult.headers)) {
-				denyResponse.headers.set(key, value);
-			}
-		}
-		return denyResponse;
+	// 拒否は本物の Response（403 か照合の DB の失敗の500）で返ってくる。そのまま返し、後ろに進まない（R-22）
+	if (csrfResult instanceof Response) {
+		return csrfResult;
 	}
 
 	const rawBody = await request.json().catch(() => null);

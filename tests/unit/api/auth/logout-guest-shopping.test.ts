@@ -122,18 +122,33 @@ describe('POST /api/auth/logout: ゲストのカート・お気に入りの印',
     expect(res.cookies.get('wishlist')).toMatchObject({ name: 'wishlist', ...CLEARED });
   });
 
-  test('CSRF が拒否されても、cart と wishlist の Cookie は消す', async () => {
+  // requireCsrfOrDeny は本物の Response（403 か DB の失敗の500）を返す（R-22）。
+  // ログアウトは拒否でも200と Cookie の消去を返し、サーバー側のログインの取り消しだけをしない。
+  test.each([
+    { label: '403（なりすまし）', status: 403, body: { error: 'Forbidden', reason: 'CSRF validation failed' } },
+    { label: '500（照合の DB の失敗）', status: 500, body: { error: 'Internal server error' } },
+  ])('CSRF が拒否されても（$label）200 で Cookie は消し、サーバー側のログインは取り消さない', async ({ status, body }) => {
     mockedCookies.mockReturnValue({
       get: jest.fn().mockReturnValue({ value: 'old-refresh' }),
       getAll: jest.fn().mockReturnValue([]),
     });
-    mockedCreateServiceRoleClient.mockResolvedValue({ from: jest.fn(), rpc: jest.fn() });
-    mockedRequireCsrfOrDeny.mockResolvedValue({ status: 403, _body: { error: 'Forbidden' } });
+    const from = jest.fn();
+    const rpc = jest.fn();
+    mockedCreateServiceRoleClient.mockResolvedValue({ from, rpc });
+    // 試験の環境の Response（node-fetch）には静的な json が無いので、本物の NextResponse を直接作る
+    const { NextResponse: RealNextResponse } = jest.requireActual('next/server');
+    mockedRequireCsrfOrDeny.mockResolvedValue(
+      new RealNextResponse(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }),
+    );
 
     const res = await POST();
 
     expect(res.status).toBe(200);
-    expect(res.cookies.get('cart')).toMatchObject({ name: 'cart', ...CLEARED });
-    expect(res.cookies.get('wishlist')).toMatchObject({ name: 'wishlist', ...CLEARED });
+    expect(from).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+    expect(mockedVerifyAccessToken).not.toHaveBeenCalled();
+    for (const name of ['sb-refresh-token', 'sb-access-token', 'session_id', 'cart', 'wishlist']) {
+      expect(res.cookies.get(name)).toMatchObject({ name, ...CLEARED });
+    }
   });
 });

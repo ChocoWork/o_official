@@ -548,21 +548,32 @@ describe("POST /api/checkout/create-session", () => {
     expect(mockLogAudit).not.toHaveBeenCalled();
   });
 
-  it("CSRF で断られたら買い手を確かめず、本文・カート・DB・Stripe に進まない", async () => {
-    mockRequireCsrfOrDeny.mockResolvedValue({ status: 403, _body: { error: "csrf_failed" } });
+  // requireCsrfOrDeny は本物の Response（403 か DB の失敗の500）を返す（R-22）
+  it.each([
+    { label: "403（なりすまし）", status: 403, body: { error: "Forbidden", reason: "CSRF validation failed" } },
+    { label: "500（照合の DB の失敗）", status: 500, body: { error: "Internal server error" } },
+  ])("CSRF で断られたら（$label）その応答をそのまま返し、買い手を確かめず、本文・カート・DB・Stripe に進まない", async ({ status, body }) => {
+    // 試験の環境の Response（node-fetch）には静的な json が無いので、本物の NextResponse を直接作る
+    const { NextResponse: RealNextResponse } = jest.requireActual("next/server");
+    const denyResponse = new RealNextResponse(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+    mockRequireCsrfOrDeny.mockResolvedValue(denyResponse);
     const req = makeRequest({});
     const readBody = jest.spyOn(req, "json");
 
-    const res = (await POST(req)) as unknown as { status: number; body: unknown };
+    const res = await POST(req);
 
-    expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: "csrf_failed" });
+    expect(res).toBe(denyResponse);
+    expect(res.status).toBe(status);
     expect(mockResolveCheckoutBuyer).not.toHaveBeenCalled();
     expect(readBody).not.toHaveBeenCalled();
     expect(mockFindCartIdForBuyer).not.toHaveBeenCalled();
     expect(mockFrom).not.toHaveBeenCalled();
     expect(mockRpc).not.toHaveBeenCalled();
     expect(getStripeServerClient).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   it("payment_method_types を送らない（ダッシュボード設定に従う）", async () => {
