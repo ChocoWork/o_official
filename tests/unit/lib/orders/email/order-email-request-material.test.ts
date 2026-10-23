@@ -27,7 +27,7 @@ const ORDER_ROW = {
   shipping_address: '神宮前1-1-1',
   shipping_building: null,
   shipping_phone: '0311112222',
-  review_reason: null,
+  review_reason: null, cancel_reason: null,
 };
 
 const DECLINE_MESSAGE = '受付の期限を過ぎているため、お受けできませんでした。';
@@ -155,6 +155,7 @@ describe('loadRequestEmailMaterial（返品のお申し込みの受付）', () =
     expect(material).toMatchObject({ order: ORDER_ROW, items: [], fulfillment: null, refund: null, orderReturn: null });
     expect(db.tablesRead()).toEqual(['orders', 'order_returns', 'order_return_lines', 'order_items', 'item_variants']);
     expect(db.queryOf('orders').filters).toEqual([['eq', 'id', ORDER_ID]]);
+    expect(db.queryOf('orders').columns.split(',').map((column) => column.trim())).toContain('cancel_reason');
     // 返品は注文の番号でも絞って読む
     expect(db.queryOf('order_returns')).toEqual({
       table: 'order_returns',

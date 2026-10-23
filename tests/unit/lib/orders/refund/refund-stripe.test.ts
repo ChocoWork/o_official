@@ -199,6 +199,12 @@ describe('createStripeRefund', () => {
     expect(params).not.toHaveProperty('reason');
   });
 
+  it.each(['requested_by_customer', 'fraudulent'] as const)('取消で伝える理由 %s はそのまま送る', async (stripeReason) => {
+    const { stripe, create } = stripeWithCreate();
+    await createStripeRefund(stripe, { ...INPUT, stripeReason });
+    expect(create.mock.calls[0][0]).toHaveProperty('reason', stripeReason);
+  });
+
   it('instructions_email は、渡した時だけ（コンビニ払いだけ）送る。お客様のメールは印に入れない', async () => {
     const withoutEmail = stripeWithCreate();
     await createStripeRefund(withoutEmail.stripe, INPUT);

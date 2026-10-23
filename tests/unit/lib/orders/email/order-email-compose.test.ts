@@ -57,7 +57,7 @@ function material(overrides: Partial<OrderEmailMaterial['order']> = {}): OrderEm
       shipping_address: '神宮前1-1-1',
       shipping_building: null,
       shipping_phone: '0311112222',
-      review_reason: null,
+      review_reason: null, cancel_reason: null,
       ...overrides,
     },
     items: [{ item_name: 'コート', color: 'BLACK', size: 'M', quantity: 1, line_total: 10000, fulfillment_type: 'backorder' }],
@@ -569,7 +569,7 @@ describe('composeOrderEmail（支払い済みのキャンセルのお知らせ�
       text: [
         '山田 花子 様',
         '',
-        '商品をご用意できなくなったため、ご注文を取り消しました。',
+        '商品をご用意できなくなったため、ご注文を取り消しました。ご迷惑をおかけし、申し訳ございません。',
         'お支払いいただいた ￥10,000（全額）を返金いたします。',
         '',
         CARD_TIMING,
@@ -610,7 +610,9 @@ describe('composeOrderEmail（支払い済みのキャンセルのお知らせ�
   });
 
   it.each([
-    ['在庫切れ', 'stock_unavailable', '商品をご用意できなくなったため、ご注文を取り消しました。'],
+    ['在庫切れ', 'stock_unavailable', '商品をご用意できなくなったため、ご注文を取り消しました。ご迷惑をおかけし、申し訳ございません。'],
+    ['支払いの拒否', 'payment_declined', 'お支払いを確認できなかったため、ご注文を取り消しました。'],
+    ['お店の誤り', 'shop_error', '当店の不手際により、ご注文を取り消しました。ご迷惑をおかけし、誠に申し訳ございません。'],
     ['お客様の依頼', 'customer_request', 'ご依頼により、ご注文を取り消しました。'],
     ['不正の疑い（理由は書かない）', 'suspected_fraud', 'ご注文を取り消しました。'],
     ['その他（理由は書かない）', 'other', 'ご注文を取り消しました。'],
@@ -625,6 +627,25 @@ describe('composeOrderEmail（支払い済みのキャンセルのお知らせ�
       ['山田 花子 様', '', lead, 'お支払いいただいた ￥3,000（全額）を返金いたします。'].join('\n'),
     );
     expect(email?.text).not.toContain('不正');
+  });
+
+  describe.each(['payment_in_progress', 'pending'] as const)('未入金の取消: 前状態 %s', (variant) => {
+    it.each([
+      ['customer_request', null],
+      ['payment_declined', 'お支払いを確認できなかったため、ご注文を取り消しました。'],
+      ['suspected_fraud', null],
+      ['stock_unavailable', '商品をご用意できなくなったため、ご注文を取り消しました。ご迷惑をおかけし、申し訳ございません。'],
+      ['shop_error', '当店の不手際により、ご注文を取り消しました。ご迷惑をおかけし、誠に申し訳ございません。'],
+      ['other', null],
+      [null, null],
+    ] as const)('理由 %s の冒頭と未課金の案内を表示する', (cancelReason, replacement) => {
+      const order = { status: 'cancelled', cancel_reason: cancelReason } as const;
+      const email = composeOrderEmail(material(order), { kind: 'canceled', variant, paymentExpiredSent: false });
+      const previousLead = variant === 'pending' ? 'お支払い待ちのご注文を取り消しました。' : 'お手続き中のご注文を取り消しました。';
+      expect(email?.text).toContain(`${replacement ?? previousLead}\nお支払いは発生していません。`);
+      expect(email?.text).not.toContain('不正');
+      expect(email?.text).not.toContain('返金');
+    });
   });
 
   it('未入金の取消のお知らせは今のまま。お支払いは発生していないと書き、返金の文は書かない', () => {
@@ -1002,7 +1023,7 @@ describe('loadOrderEmailMaterial', () => {
     expect(columns).toEqual([
       'id', 'status', 'shipping_email', 'shipping_full_name', 'subtotal_amount', 'shipping_amount', 'discount_amount',
       'total_amount', 'paid_amount', 'currency', 'shipping_postal_code', 'shipping_prefecture', 'shipping_city', 'shipping_address',
-      'shipping_building', 'shipping_phone', 'review_reason',
+      'shipping_building', 'shipping_phone', 'review_reason', 'cancel_reason',
     ]);
     expect(db.itemSelect).toHaveBeenCalledWith('item_name, color, size, quantity, line_total, fulfillment_type');
     // 発送の番号も返金の番号も返品の番号も無い種類は、発送・返金・返品の表も DB の数え方も読まない

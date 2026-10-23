@@ -389,7 +389,7 @@ export async function outboxRows(db: PgClient, orderId: string, kind = 'shipped'
 // ---- ここから下がグループ E-2 で足した物 ----
 
 export type E2eRefundSource = 'admin' | 'order_cancel' | 'auto_cancelled_order_payment' | 'auto_amount_mismatch';
-export type E2eCancelReason = 'stock_unavailable' | 'customer_request' | 'suspected_fraud' | 'other';
+export type E2eCancelReason = 'customer_request' | 'payment_declined' | 'suspected_fraud' | 'stock_unavailable' | 'shop_error' | 'other';
 export type E2eStripeReason = 'requested_by_customer' | 'duplicate' | 'fraudulent';
 export type E2eStripeStatus = 'pending' | 'requires_action' | 'succeeded' | 'failed' | 'canceled';
 export type E2eRefundLine = { orderItemId: string; quantity: number; beforeShipment: boolean };

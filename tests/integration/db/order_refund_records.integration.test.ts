@@ -259,6 +259,7 @@ describeLocalDb('integration: 返金の記録と数え方（移行 A）', (db) =
         ['order_refunds_cancel_reason_check', { source: "'order_cancel'", request_key: uuid, request_fingerprint: "'f'" }],
         ['order_refunds_cancel_reason_check', { source: "'auto_amount_mismatch'" }],
         ['order_refunds_cancel_reason_check', { source: "'admin'", request_key: uuid, request_fingerprint: "'f'", cancel_reason: "'other'" }],
+        ['order_refunds_cancel_reason_value_check', { source: "'order_cancel'", request_key: uuid, request_fingerprint: "'f'", cancel_reason: "'unknown_reason'" }],
         // 写しは、在庫もメールも動かさない
         ['order_refunds_legacy_check', { source: "'legacy'", stripe_refund_id: stripeId(), notify_customer: 'true' }],
         ['order_refunds_legacy_check', { source: "'legacy'", stripe_refund_id: stripeId(), stock_applied_at: 'now()' }],
@@ -272,7 +273,9 @@ describeLocalDb('integration: 返金の記録と数え方（移行 A）', (db) =
 
       const accepted: Array<Record<string, string>> = [
         { source: "'admin'", request_key: uuid, request_fingerprint: "'f'" },
-        { source: "'order_cancel'", request_key: uuid, request_fingerprint: "'f'", cancel_reason: "'stock_unavailable'" },
+        ...['customer_request', 'payment_declined', 'suspected_fraud', 'stock_unavailable', 'shop_error', 'other'].map((reason) => ({
+          source: "'order_cancel'", request_key: uuid, request_fingerprint: "'f'", cancel_reason: `'${reason}'`,
+        })),
         { source: "'stripe_dashboard'", stripe_refund_id: stripeId() },
         { source: "'auto_cancelled_order_payment'" },
         { source: "'auto_amount_mismatch'", cancel_reason: "'other'" },
@@ -283,6 +286,8 @@ describeLocalDb('integration: 返金の記録と数え方（移行 A）', (db) =
       }
       const count = await db().query('select count(*)::int as n from public.order_refunds where order_id = $1', [orderId]);
       expect(count.rows[0].n).toBe(accepted.length);
+      const reasons = await db().query("select cancel_reason from public.order_refunds where order_id = $1 and source = 'order_cancel' order by cancel_reason", [orderId]);
+      expect(reasons.rows.map((row) => row.cancel_reason)).toEqual(['customer_request', 'other', 'payment_declined', 'shop_error', 'stock_unavailable', 'suspected_fraud']);
     });
 
     test('Stripe の返金の番号の形: 2〜4字の小文字・下線・英数字だけ。re_ のほか、カード以外の支払いの返金の番号（pyr_ など）も通す（P29）', async () => {

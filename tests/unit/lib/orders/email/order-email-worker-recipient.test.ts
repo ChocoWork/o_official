@@ -42,7 +42,7 @@ const MATERIAL: OrderEmailMaterial = {
     id: 'order-1', status: 'shipped', shipping_email: 'hanako@example.com', shipping_full_name: '山田 花子',
     subtotal_amount: 5000, shipping_amount: 0, discount_amount: 0, total_amount: 5000, currency: 'jpy',
     shipping_postal_code: '1500001', shipping_prefecture: '東京都', shipping_city: '渋谷区', shipping_address: '神宮前1-1-1',
-    shipping_building: null, shipping_phone: '0311112222', review_reason: null,
+    shipping_building: null, shipping_phone: '0311112222', review_reason: null, cancel_reason: null,
   },
   items: [{ item_name: 'コート', color: null, size: null, quantity: 1, line_total: 5000, fulfillment_type: 'stock' }],
   fulfillment: null,

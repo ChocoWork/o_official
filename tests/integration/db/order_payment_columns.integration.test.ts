@@ -27,6 +27,14 @@ async function insertOrder(
 }
 
 describeLocalDb('integration: 注文の列と制約', (db) => {
+  test.each(['customer_request', 'payment_declined', 'suspected_fraud', 'stock_unavailable', 'shop_error', 'other', null])(
+    '取消理由 %s はコードを変えず保存して読める', async (reason) => {
+      const orderId = await insertOrder(db(), { status: 'paid', paymentIntentId: `pi_${suffix()}` });
+      await db().query('update public.orders set cancel_reason = $2 where id = $1', [orderId, reason]);
+      const saved = await db().query('select cancel_reason from public.orders where id = $1', [orderId]);
+      expect(saved.rows[0].cancel_reason).toBe(reason);
+    },
+  );
   test('PaymentIntent が空の支払い手続き中の注文を作れる', async () => {
     const orderId = await insertOrder(db(), { status: 'payment_in_progress', checkoutSessionId: `cs_${suffix()}` });
     const res = await db().query('select payment_intent_id from public.orders where id = $1', [orderId]);

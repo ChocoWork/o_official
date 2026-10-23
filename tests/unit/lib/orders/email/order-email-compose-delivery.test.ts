@@ -13,7 +13,7 @@ function material(overrides: Partial<OrderEmailDeliveryMaterial> = {}): OrderEma
       id: ORDER_ID, status: 'shipped', shipping_email: 'customer@example.com', shipping_full_name: 'テスト 太郎',
       subtotal_amount: 98765, shipping_amount: 1234, discount_amount: 0, total_amount: 99999, currency: 'jpy',
       shipping_postal_code: '1234567', shipping_prefecture: '非表示県', shipping_city: '非表示市',
-      shipping_address: '秘密の住所', shipping_building: '秘密の建物', shipping_phone: '0312345678', review_reason: null,
+      shipping_address: '秘密の住所', shipping_building: '秘密の建物', shipping_phone: '0312345678', review_reason: null, cancel_reason: null,
     },
     // 同じ品を3個注文して1個だけ発送した。価格・注文全体の数・別発送の商品は出さない。
     items: [

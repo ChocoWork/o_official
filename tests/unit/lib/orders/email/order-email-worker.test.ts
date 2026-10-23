@@ -63,7 +63,7 @@ function material(
       id: 'order-1', status: 'paid', shipping_email: 'hanako@example.com', shipping_full_name: '山田 花子',
       subtotal_amount: 5000, shipping_amount: 0, discount_amount: 0, total_amount: 5000, currency: 'jpy',
       shipping_postal_code: '1500001', shipping_prefecture: '東京都', shipping_city: '渋谷区', shipping_address: '神宮前1-1-1',
-      shipping_building: null, shipping_phone: '0311112222', review_reason: null,
+      shipping_building: null, shipping_phone: '0311112222', review_reason: null, cancel_reason: null,
       ...overrides,
     },
     items: [{ item_name: 'コート', color: null, size: null, quantity: 1, line_total: 5000, fulfillment_type: 'stock' }],
@@ -675,6 +675,18 @@ describe('processOrderEmails', () => {
     expect(saved._body_text).toContain('お支払いいただいた ￥5,000（全額）を返金いたします。');
     expect(saved._body_text).not.toContain('お支払いは発生していません。');
     expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'order-email/email-1' }));
+  });
+
+  it.each([
+    ['payment_declined', 'お支払いを確認できなかったため、ご注文を取り消しました。'],
+    ['shop_error', '当店の不手際により、ご注文を取り消しました。ご迷惑をおかけし、誠に申し訳ございません。'],
+    ['stock_unavailable', '商品をご用意できなくなったため、ご注文を取り消しました。ご迷惑をおかけし、申し訳ございません。'],
+  ] as const)('未入金の取消理由 %s の本文を保存する', async (cancel_reason, lead) => {
+    const order = { status: 'cancelled', cancel_reason } as const;
+    const h = harness([row({ kind: 'canceled', variant: 'pending' })], { material: material(order) });
+    await processOrderEmails(h.deps);
+    const saved = h.calls.find((call) => call.name === 'save_order_email_content')?.params as { _body_text: string };
+    expect(saved._body_text).toContain(`${lead}\nお支払いは発生していません。`);
   });
 
   it('未入金の取消のお知らせは今のまま。返金の番号を渡さずに材料を読み、お支払いは発生していないと書く', async () => {

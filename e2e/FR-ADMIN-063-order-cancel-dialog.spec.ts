@@ -88,6 +88,9 @@ for (const viewport of viewports) {
 
       await page.getByRole('row', { name: /order-progress/ }).getByRole('button', { name: 'キャンセル' }).click();
       const dialog = page.getByRole('dialog', { name: '注文を取り消す' });
+      await expect(dialog.getByLabel('取消の理由').getByRole('option')).toHaveText([
+        '選んでください', 'お客様の都合', '支払いの拒否', '不正', '在庫切れ', 'お店の誤り', 'その他',
+      ]);
       await expect(dialog.getByRole('button', { name: '取り消す' })).toBeDisabled();
 
       await dialog.getByLabel('取消の理由').selectOption('customer_request');

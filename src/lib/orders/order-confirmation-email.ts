@@ -3,6 +3,7 @@
  * メールの組み立てと送信は src/lib/orders/email/ が行う（グループ D。送る予定の表と worker）。
  */
 import { FINAL_FULFILLMENT_LABELS, FULFILLMENT_HEADINGS } from '@/features/checkout/utils/fulfillment-labels';
+import type { CancelReason } from '@/lib/orders/order-payment-types';
 
 export type ConfirmationItem = {
   item_name: string;
@@ -82,4 +83,5 @@ export type OrderEmailRow = {
   shipping_building: string | null;
   shipping_phone: string | null;
   review_reason: string | null;
+  cancel_reason: CancelReason | null;
 };

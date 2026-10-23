@@ -213,6 +213,9 @@ for (const viewport of viewports) {
       const submit = dialog.getByRole('button', { name: CANCEL_BUTTON, exact: true });
       await expect(submit).toBeDisabled();
       const reason = dialog.getByLabel('取消の理由');
+      await expect(reason.getByRole('option')).toHaveText([
+        '選んでください', 'お客様の都合', '支払いの拒否', '不正', '在庫切れ', 'お店の誤り', 'その他',
+      ]);
       await reason.selectOption('other');
       await expect(dialog.getByLabel('メモ（必須・店内のみ）')).toBeVisible();
       await expect(submit).toBeDisabled();

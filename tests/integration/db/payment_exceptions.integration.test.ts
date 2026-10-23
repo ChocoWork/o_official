@@ -161,6 +161,25 @@ describeLocalDb('integration: 要対応・要確認', (db) => {
     ]);
   });
 
+  test.each(['payment_declined', 'shop_error'])('要対応と失敗注文の取消に新理由 %s が残り、不正値は拒否する', async (cancelReason) => {
+    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const unpaid = await insertOrderWithStockLine(db(), {
+      status: 'payment_in_progress', itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: true,
+    });
+    const failed = await insertOrderWithStockLine(db(), {
+      status: 'failed', itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: false,
+    });
+    const exception = await record(db(), { ref: `cs_${uniqueSuffix()}`, reason: 'unexpected_state', orderId: unpaid.orderId });
+    const resolveSql = 'select * from public.resolve_payment_exception($1::uuid, $2::uuid, $3::text, true, $4::text, true)';
+    const failedSql = 'select * from public.admin_cancel_failed_order($1::uuid, $2::uuid, $3::text, null)';
+    await expect(db().query(resolveSql, [exception.exception_id, ACTOR, '確認済み', 'unknown_reason'])).rejects.toMatchObject({ code: '22023' });
+    await expect(db().query(failedSql, [failed.orderId, ACTOR, 'unknown_reason'])).rejects.toMatchObject({ code: '22023' });
+    await db().query(resolveSql, [exception.exception_id, ACTOR, '確認済み', cancelReason]);
+    await db().query(failedSql, [failed.orderId, ACTOR, cancelReason]);
+    expect(await orderRow(db(), unpaid.orderId)).toMatchObject({ status: 'cancelled', cancel_reason: cancelReason });
+    expect(await orderRow(db(), failed.orderId)).toMatchObject({ status: 'cancelled', cancel_reason: cancelReason, cancel_notify_customer: false });
+  });
+
   test('「注文を取り消して解決」はメモが要り、入金済みの注文では使えない', async () => {
     const fx = await createCatalogFixture(db(), { stock: 1 });
     const unpaid = await insertOrderWithStockLine(db(), {

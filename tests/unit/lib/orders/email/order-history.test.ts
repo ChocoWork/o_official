@@ -123,7 +123,7 @@ describe('buildOrderHistory', () => {
       }],
     }));
 
-    expect(history.entries[0]).toMatchObject({ fromLabel: '未決済', toLabel: 'キャンセル', detail: '理由: お客様の依頼' });
+    expect(history.entries[0]).toMatchObject({ fromLabel: '未決済', toLabel: 'キャンセル', detail: '理由: お客様の都合' });
   });
 
   it('返金の同期で変わった状態は、全額返金・返金の取り消しと説明する', () => {
@@ -430,6 +430,13 @@ describe('buildOrderHistory - 並び順', () => {
 });
 
 describe('buildOrderHistory - 返金', () => {
+  it.each([
+    ['customer_request', 'お客様の都合'], ['payment_declined', '支払いの拒否'], ['suspected_fraud', '不正'],
+    ['stock_unavailable', '在庫切れ'], ['shop_error', 'お店の誤り'], ['other', 'その他'], [null, null],
+  ] as const)('保存した取消コード %s は履歴に %s と表示する', (cancelReason, cancelReasonLabel) => {
+    const history = buildOrderHistory(input({ refunds: [refund({ source: 'order_cancel', cancelReason })] }));
+    expect(entriesOf(history.entries, 'refund')[0]).toMatchObject({ cancelReasonLabel });
+  });
   it('返金の行は、どこから・額・送料・商品と数・在庫に戻した数・操作した人・メモ・Stripe に伝えた理由・照会番号・状態の移り変わりを持つ', () => {
     const history = buildOrderHistory(input({
       refunds: [refund({

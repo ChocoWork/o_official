@@ -136,6 +136,20 @@ describeLocalDb('integration: 注文 ID で引いて在庫を戻す', (db) => {
       await db().query('DELETE FROM auth.users WHERE id = $1', [ACTOR]);
     });
 
+    test.each(['payment_declined', 'shop_error'])('新理由 %s は保存し、未知の理由は拒否する', async (cancelReason) => {
+      for (const expected of ['payment_in_progress', 'pending']) {
+        const fx = await createCatalogFixture(db(), { stock: 1 });
+        const { orderId } = await insertOrderWithStockLine(db(), {
+          status: expected, itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: true,
+        });
+        await expect(release(db(), { orderId, expected, next: 'cancelled', actor: ACTOR, cancelReason: 'unknown_reason' }))
+          .rejects.toMatchObject({ code: '22023' });
+        await release(db(), { orderId, expected, next: 'cancelled', actor: ACTOR, cancelReason, notify: true });
+        expect(await orderRow(db(), orderId)).toMatchObject({ status: 'cancelled', cancel_reason: cancelReason });
+        expect(await variantStock(db(), fx.variantId)).toBe(1);
+      }
+    });
+
     test('取消は実行者と理由が要り、理由・メモ・お知らせの有無と実行者が残る', async () => {
       const fx = await createCatalogFixture(db(), { stock: 2 });
       const { orderId } = await insertOrderWithStockLine(db(), {

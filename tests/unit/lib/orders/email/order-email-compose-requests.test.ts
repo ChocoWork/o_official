@@ -75,6 +75,7 @@ function material(
       shipping_building: null,
       shipping_phone: '0311112222',
       review_reason: null,
+      cancel_reason: null,
       ...orderOverrides,
     },
     items: [],

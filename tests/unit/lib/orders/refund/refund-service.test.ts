@@ -669,9 +669,11 @@ describe('同じ二重防止の番号の送り直し（Review Focus 1）', () =>
 describe('submitPaidOrderCancel（支払い済みの注文のキャンセル）', () => {
   it.each([
     ['suspected_fraud', 'fraudulent'],
-    ['stock_unavailable', 'requested_by_customer'],
+    ['stock_unavailable', null],
     ['customer_request', 'requested_by_customer'],
-    ['other', 'requested_by_customer'],
+    ['payment_declined', null],
+    ['shop_error', null],
+    ['other', null],
   ] as const)('取消の理由 %s は、Stripe に %s と伝える。額と送料は DB が決める', async (reason, stripeReason) => {
     const { deps, create } = setup();
 
@@ -693,7 +695,10 @@ describe('submitPaidOrderCancel（支払い済みの注文のキャンセル）'
       notifyCustomer: true,
       actorId: ACTOR_ID,
     });
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ reason: stripeReason }), {
+    const stripeParams = create.mock.calls[0][0];
+    if (stripeReason === null) expect(stripeParams).not.toHaveProperty('reason');
+    else expect(stripeParams.reason).toBe(stripeReason);
+    expect(create).toHaveBeenCalledWith(expect.anything(), {
       idempotencyKey: `order-refund-${REFUND_ID}`,
     });
   });

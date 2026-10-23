@@ -21,14 +21,16 @@ export const HIDDEN_ORDER_STATUSES = ['payment_in_progress', 'abandoned'] as con
 /** PostgREST の not.in に渡す形。`.not('status', 'in', HIDDEN_ORDER_STATUS_FILTER)` */
 export const HIDDEN_ORDER_STATUS_FILTER = `(${HIDDEN_ORDER_STATUSES.join(',')})`;
 
-export const CANCEL_REASONS = ['stock_unavailable', 'customer_request', 'suspected_fraud', 'other'] as const;
+export const CANCEL_REASONS = ['customer_request', 'payment_declined', 'suspected_fraud', 'stock_unavailable', 'shop_error', 'other'] as const;
 
 export type CancelReason = (typeof CANCEL_REASONS)[number];
 
 export const CANCEL_REASON_LABELS: Record<CancelReason, string> = {
+  customer_request: 'お客様の都合',
+  payment_declined: '支払いの拒否',
+  suspected_fraud: '不正',
   stock_unavailable: '在庫切れ',
-  customer_request: 'お客様の依頼',
-  suspected_fraud: '不正の疑い',
+  shop_error: 'お店の誤り',
   other: 'その他',
 };
 

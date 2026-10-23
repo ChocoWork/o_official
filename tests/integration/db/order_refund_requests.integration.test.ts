@@ -712,6 +712,18 @@ describeLocalDb('integration: 返金を始める関数と読み出しの関数�
   });
 
   describe('支払い済みの注文のキャンセル（イ）', () => {
+    test.each(['customer_request', 'payment_declined', 'suspected_fraud', 'stock_unavailable', 'shop_error', 'other'])(
+      'core経由で取消理由 %s を保存し、未知の理由は拒否する', async (cancelReason) => {
+        const actor = await createActor(db());
+        const order = await createValueAOrder(db());
+        const input = { source: 'order_cancel', actorId: actor.id, cancelReason, note: '確認済み' };
+        await expectRejected(db(), BEGIN_SQL, beginParams(order.orderId, { ...input, cancelReason: 'unknown_reason' }), {
+          code: '22023', message: 'REFUND_ARGUMENT_INVALID',
+        });
+        const res = await beginRefund(db(), order.orderId, input);
+        expect(await refundRow(db(), res.rows[0].refund_id)).toMatchObject({ source: 'order_cancel', cancel_reason: cancelReason });
+      },
+    );
     test('残りの未発送の商品を全部、送料と返せる額の全部で返す。呼ぶ側の送料と額は使わない', async () => {
       const actor = await createActor(db());
       const order = await createValueAOrder(db());

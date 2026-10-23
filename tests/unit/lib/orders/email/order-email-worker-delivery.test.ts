@@ -35,7 +35,7 @@ function material(overrides: Partial<OrderEmailDeliveryMaterial> = {}): OrderEma
       id: 'order-1', status: 'shipped', shipping_email: 'customer@example.com', shipping_full_name: null,
       subtotal_amount: 1000, shipping_amount: 0, discount_amount: 0, total_amount: 1000, currency: 'jpy',
       shipping_postal_code: null, shipping_prefecture: null, shipping_city: null, shipping_address: null,
-      shipping_building: null, shipping_phone: null, review_reason: null,
+      shipping_building: null, shipping_phone: null, review_reason: null, cancel_reason: null,
     },
     items: [], fulfillment: { number: 1, carrier: 'yamato', trackingNumber: '1234', completesOrder: true, cancelled: false,
       lines: [{ item_name: 'コート', color: null, size: null, quantity: 1 }] },

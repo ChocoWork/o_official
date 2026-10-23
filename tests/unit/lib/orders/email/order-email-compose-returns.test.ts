@@ -60,6 +60,7 @@ function material(overrides: Partial<OrderEmailMaterial> = {}): OrderEmailMateri
       shipping_building: null,
       shipping_phone: '0311112222',
       review_reason: null,
+      cancel_reason: null,
     },
     items: [{ item_name: 'コート', color: 'BLACK', size: 'M', quantity: 1, line_total: 10000, fulfillment_type: 'stock' }],
     fulfillment: null,

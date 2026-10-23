@@ -700,6 +700,19 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
     expect(mockRpc).not.toHaveBeenCalled();
   });
 
+  it.each(['payment_declined', 'shop_error'])('要対応の取消は新理由 %s をRPCへ渡す', async (cancelReason) => {
+    attachedOrder = IN_PROGRESS_ORDER;
+    cancelResolved();
+    const res = await resolve({ cancelOrder: true, cancelReason, note: '確認済み' });
+    expect(res.status).toBe(200);
+    expect(mockRpc).toHaveBeenCalledWith('resolve_payment_exception', expect.objectContaining({ _cancel_reason: cancelReason }));
+  });
+
+  it('知らない取消理由は400でRPCを呼ばない', async () => {
+    expect((await resolve({ cancelOrder: true, cancelReason: 'unknown_reason', note: '確認済み' })).status).toBe(400);
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
   it.each([true, false])('注文を取り消して解決するとき、取消のお知らせを送るか（notifyCustomer=%s）を DB に渡し、メールの送信を1回予約する', async (notifyCustomer) => {
     attachedOrder = IN_PROGRESS_ORDER;
     mockRpc.mockResolvedValue({ data: [{ resolved: true, order_id: ORDER_ID, cancelled_from: 'payment_in_progress' }], error: null });

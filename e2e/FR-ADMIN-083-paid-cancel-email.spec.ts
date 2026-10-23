@@ -31,14 +31,16 @@ test.use({ trace: 'off', video: 'off', screenshot: 'off' });
 
 const CANCEL_SUBJECT = 'ご注文取消のお知らせ';
 const REFUND_SUBJECT = 'ご返金のお知らせ';
-const STOCK_LEAD = '商品をご用意できなくなったため、ご注文を取り消しました。';
+const STOCK_LEAD = '商品をご用意できなくなったため、ご注文を取り消しました。ご迷惑をおかけし、申し訳ございません。';
 const REQUEST_LEAD = 'ご依頼により、ご注文を取り消しました。';
 
 /** 取消の理由ごとの書き出しの文（Global Constraints）。不正の疑い・その他は、お客様に理由を書かない。メモは店内だけ（その他は必須） */
 const CASES: Array<{ reason: E2eCancelReason; note?: string; lead: string }> = [
   { reason: 'stock_unavailable', lead: STOCK_LEAD },
   { reason: 'customer_request', lead: REQUEST_LEAD },
+  { reason: 'payment_declined', lead: 'お支払いを確認できなかったため、ご注文を取り消しました。' },
   { reason: 'suspected_fraud', lead: 'ご注文を取り消しました。' },
+  { reason: 'shop_error', lead: '当店の不手際により、ご注文を取り消しました。ご迷惑をおかけし、誠に申し訳ございません。' },
   { reason: 'other', note: '店の都合で取り消し', lead: 'ご注文を取り消しました。' },
 ];
 

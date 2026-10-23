@@ -24,6 +24,19 @@ function renderDialog(overrides: Partial<Parameters<typeof OrderCancelDialog>[0]
 }
 
 describe('OrderCancelDialog', () => {
+  it('取消の理由は決定した6つの順番', () => {
+    renderDialog();
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      '選んでください', 'お客様の都合', '支払いの拒否', '不正', '在庫切れ', 'お店の誤り', 'その他',
+    ]);
+  });
+
+  it.each(['payment_declined', 'shop_error'])('新しい理由 %s はメモなしで送れる', (reason) => {
+    const { onSubmit } = renderDialog();
+    fireEvent.change(screen.getByRole('combobox', { name: '取消の理由' }), { target: { value: reason } });
+    fireEvent.click(screen.getByRole('button', { name: '取り消す' }));
+    expect(onSubmit).toHaveBeenCalledWith({ reason, note: '', notifyCustomer: true });
+  });
   it('理由を選ぶまで「取り消す」を押せない', () => {
     renderDialog();
 

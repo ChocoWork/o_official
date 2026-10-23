@@ -53,7 +53,7 @@ const SHOP_NAME = 'Le Fil des Heures';
 
 // 配送業者と伝票番号は注文の行から読まない。注文の行の組は「全部を送った時の値」で、一部だけ送った間は空になるため
 const MATERIAL_ORDER_COLUMNS =
-  'id, status, shipping_email, shipping_full_name, subtotal_amount, shipping_amount, discount_amount, total_amount, paid_amount, currency, shipping_postal_code, shipping_prefecture, shipping_city, shipping_address, shipping_building, shipping_phone, review_reason';
+  'id, status, shipping_email, shipping_full_name, subtotal_amount, shipping_amount, discount_amount, total_amount, paid_amount, currency, shipping_postal_code, shipping_prefecture, shipping_city, shipping_address, shipping_building, shipping_phone, review_reason, cancel_reason';
 
 const MATERIAL_FULFILLMENT_COLUMNS = 'number, shipping_carrier, tracking_number, completes_order, cancelled_at';
 // line_kind は、交換の品の行に（交換の品）の印を付けるために読む（グループ E-3 設計書 9-1 の7）
@@ -119,9 +119,11 @@ const refundTimingKonbini = (deadline: string) =>
 /** 支払い済みのキャンセルのお知らせの理由の文（グループ E-2 設計書 8-2）。不正の疑いは相手に知らせないため、その他と同じ文にする */
 const PAID_CANCEL_LEAD_DEFAULT = 'ご注文を取り消しました。';
 const PAID_CANCEL_LEADS: Record<CancelReason, string> = {
-  stock_unavailable: '商品をご用意できなくなったため、ご注文を取り消しました。',
   customer_request: 'ご依頼により、ご注文を取り消しました。',
+  payment_declined: 'お支払いを確認できなかったため、ご注文を取り消しました。',
   suspected_fraud: PAID_CANCEL_LEAD_DEFAULT,
+  stock_unavailable: '商品をご用意できなくなったため、ご注文を取り消しました。ご迷惑をおかけし、申し訳ございません。',
+  shop_error: '当店の不手際により、ご注文を取り消しました。ご迷惑をおかけし、誠に申し訳ございません。',
   other: PAID_CANCEL_LEAD_DEFAULT,
 };
 
@@ -1342,9 +1344,11 @@ function canceledSubject(orderId: string): string {
 function composeCanceled(material: OrderEmailMaterial, previousStatus: 'payment_in_progress' | 'pending'): ComposedOrderEmail {
   const { order } = material;
   const lead =
-    previousStatus === 'payment_in_progress'
-      ? 'お手続き中のご注文を取り消しました。'
-      : 'お支払い待ちのご注文を取り消しました。';
+    order.cancel_reason === 'payment_declined' || order.cancel_reason === 'stock_unavailable' || order.cancel_reason === 'shop_error'
+      ? PAID_CANCEL_LEADS[order.cancel_reason]
+      : previousStatus === 'payment_in_progress'
+        ? 'お手続き中のご注文を取り消しました。'
+        : 'お支払い待ちのご注文を取り消しました。';
   return {
     subject: canceledSubject(order.id),
     text: [

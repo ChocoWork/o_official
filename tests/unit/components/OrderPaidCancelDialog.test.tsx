@@ -160,14 +160,16 @@ describe('OrderPaidCancelDialog の材料と入力', () => {
     ).toBeInTheDocument();
   });
 
-  it('理由を選ぶまでキャンセルのボタンを押せない。理由は今の4つ', async () => {
+  it('理由を選ぶまでキャンセルのボタンを押せない。理由は決定した6つの順番', async () => {
     const { dialog } = await openDialog();
 
     expect(within(reasonSelect(dialog)).getAllByRole('option').map((option) => option.textContent)).toEqual([
       '選んでください',
+      'お客様の都合',
+      '支払いの拒否',
+      '不正',
       '在庫切れ',
-      'お客様の依頼',
-      '不正の疑い',
+      'お店の誤り',
       'その他',
     ]);
     expect(submitButton(dialog)).toBeDisabled();

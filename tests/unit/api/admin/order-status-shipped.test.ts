@@ -186,6 +186,34 @@ describe('POST /api/admin/orders/[id]/status - 発送', () => {
 });
 
 describe('POST /api/admin/orders/[id]/status - 取消', () => {
+  test.each(['payment_declined', 'shop_error'])('新理由 %s を未入金の照合へ渡す', async (reason) => {
+    currentOrder('payment_in_progress', { payment_intent_id: null });
+    expect((await post({ ...CANCEL, reason })).status).toBe(200);
+    expect(mockReconcile).toHaveBeenCalledWith(mockDeps, expect.objectContaining({
+      adminCancel: expect.objectContaining({ reason }),
+    }));
+  });
+
+  test.each(['payment_declined', 'shop_error'])('新理由 %s を失敗注文のRPCへ渡す', async (reason) => {
+    currentOrder('failed');
+    mockRpc.mockResolvedValue({ data: [{ id: ORDER_ID, status: 'cancelled' }], error: null });
+    expect((await post({ ...CANCEL, reason })).status).toBe(200);
+    expect(mockRpc).toHaveBeenCalledWith('admin_cancel_failed_order', expect.objectContaining({ _cancel_reason: reason }));
+  });
+
+  test('知らない取消理由は400で、DBを読まない', async () => {
+    expect((await post({ ...CANCEL, reason: 'unknown_reason' })).status).toBe(400);
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  test.each(['payment_declined', 'shop_error'])('新理由 %s を支払済みキャンセルへ渡す', async (reason) => {
+    currentOrder('paid');
+    mockSubmitPaidOrderCancel.mockResolvedValue({ kind: 'accepted', refundId: 'refund-1', status: 'pending', amount: 1000, replayed: false });
+    expect((await post({ status: 'cancelled', requestKey: '10000000-0000-4000-8000-000000000001', restock: true, reason })).status).toBe(200);
+    expect(mockSubmitPaidOrderCancel).toHaveBeenCalledWith(mockRefundDeps, expect.objectContaining({
+      request: expect.objectContaining({ reason }),
+    }));
+  });
   test('取消の理由が無ければ 400 を返す', async () => {
     expect((await post({ status: 'cancelled' })).status).toBe(400);
     expect(mockFrom).not.toHaveBeenCalled();

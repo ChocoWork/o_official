@@ -178,6 +178,27 @@ describeLocalDb('integration: 状態を変える関数が注文のメールの�
     expect(await emailsOf(db(), silent)).toEqual([]);
   });
 
+  test.each(['payment_declined', 'shop_error'])('新理由 %s でも前状態と通知選択どおりに取消メールを予定する', async (cancelReason) => {
+    const actor = await createActor(db());
+    for (const from of ['payment_in_progress', 'pending']) {
+      for (const notify of [true, false]) {
+        const orderId = await createOrder(db(), from);
+        await expect(db().query(
+          "select released from public.release_stock_for_unpaid_order($1, $2::public.order_status, 'cancelled', 'admin_cancel', $3, null, 'unknown_reason', null, $4)",
+          [orderId, from, actor, notify],
+        )).rejects.toMatchObject({ code: '22023' });
+        expect(await emailsOf(db(), orderId)).toEqual([]);
+        await db().query(
+          "select released from public.release_stock_for_unpaid_order($1, $2::public.order_status, 'cancelled', 'admin_cancel', $3, null, $4, null, $5)",
+          [orderId, from, actor, cancelReason, notify],
+        );
+        expect(await emailsOf(db(), orderId)).toEqual(notify ? [{ kind: 'canceled', variant: from, origin: 'auto', status: 'pending' }] : []);
+        const saved = await db().query('select cancel_reason from public.orders where id = $1', [orderId]);
+        expect(saved.rows[0].cancel_reason).toBe(cancelReason);
+      }
+    }
+  });
+
   test('発送は「発送のメールを送る」の時だけ、その発送の行を書き、履歴に配送業者と伝票番号が出る', async () => {
     const actor = await createActor(db());
     const notified = await createShippableOrder(db());

@@ -683,6 +683,25 @@ describeLocalDb('integration: 返金の結果を書く関数・外からの返�
   });
 
   describe('注文の額と状態', () => {
+    test.each(['payment_declined', 'shop_error'])('新理由 %s を注文と履歴へ写し、返金失敗時に注文の理由を戻す', async (cancelReason) => {
+      const actor = await createActor(db());
+      const order = await createOrder(db(), { lines: [{ quantity: 2 }] });
+      await db().query('savepoint invalid_cancel_reason');
+      await expect(insertRefund(db(), order.orderId, { source: 'order_cancel', cancelReason: 'unknown_reason', amount: 10000 }))
+        .rejects.toMatchObject({ code: '23514', constraint: 'order_refunds_cancel_reason_value_check' });
+      await db().query('rollback to savepoint invalid_cancel_reason');
+      const refundId = await insertRefund(db(), order.orderId, {
+        source: 'order_cancel', cancelReason, actorId: actor.id, amount: 10000,
+        lines: [{ orderItemId: order.itemIds[0], quantity: 2, amount: 10000 }],
+      });
+      await record(db(), refundId, { status: 'succeeded' });
+      expect(await orderState(db(), order.orderId)).toMatchObject({ status: 'cancelled', cancel_reason: cancelReason });
+      const history = await db().query('select cancel_reason from public.list_order_status_history($1)', [order.orderId]);
+      expect(history.rows).toEqual([expect.objectContaining({ cancel_reason: cancelReason })]);
+      await record(db(), refundId, { status: 'failed', failureReason: 'declined' });
+      expect(await orderState(db(), order.orderId)).toMatchObject({ status: 'paid', cancel_reason: null });
+      expect(await refundRow(db(), refundId)).toMatchObject({ cancel_reason: cancelReason });
+    });
     /** 在庫の品2つの注文を、支払い済みのキャンセル（order_cancel）の全額の返金で取り消す */
     async function cancelPaidOrder() {
       const actor = await createActor(db());

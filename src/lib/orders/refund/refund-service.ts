@@ -101,8 +101,8 @@ export async function submitPaidOrderCancel(
     shippingAmount: 0,
     amount: 0,
     note: request.note,
-    // 不正の疑いの時だけ、Stripe にも伝える（Stripe がそのカードとメールアドレスを拒否の一覧に入れる）
-    stripeReason: request.reason === 'suspected_fraud' ? 'fraudulent' : 'requested_by_customer',
+    // お客様の都合と不正だけ、Stripe に理由を伝える。ほかの理由は項目ごと省く
+    stripeReason: request.reason === 'suspected_fraud' ? 'fraudulent' : request.reason === 'customer_request' ? 'requested_by_customer' : null,
     cancelReason: request.reason,
     notifyCustomer: request.notifyCustomer,
     actorId,
