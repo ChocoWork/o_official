@@ -9,6 +9,9 @@ import { uniqueSuffix } from '../tests/integration/db/helpers/order-fixtures';
 // 手元の DB の見本の商品4（Nagi Cotton Shirt・色 Clay・サイズ 1。ほかの E2E が使わない商品）に、試験だけの色を足してから外す。
 // 外すのは本物の道（items.colors の書き換え → items のトリガー → 同期の関数）。外した後に在庫を入れ、止めた組み合わせの在庫が
 // 「在庫あり」の判定に入らないことも見る。試験の色の行と組み合わせは消さない（止めたまま残る。消さないのが今回の決まり）。
+// ゲストのカートの Cookie を、失敗時の通信記録に残さないため（ファイルの先頭でしか指定できない）。
+test.use({ trace: 'off' });
+
 const ITEM_ID = 4;
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
@@ -61,7 +64,6 @@ async function retireTemporaryColor(
 test.describe('FR-ITEM-DETAIL-067 商品から外した色・サイズの組み合わせを止める', () => {
   // 同じ見本の商品の色を書き換えるので、3つの画面幅を順番に流す。
   test.describe.configure({ mode: 'serial' });
-  test.use({ trace: 'off' });
 
   for (const viewport of viewports) {
     test(`FREQ-517-AC-01・FREQ-517-AC-02: 外した色は商品の詳細に出ず、再度購入では断られる (${viewport.name})`, async ({ page }) => {
