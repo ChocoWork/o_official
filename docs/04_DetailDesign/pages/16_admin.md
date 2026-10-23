@@ -4,7 +4,7 @@
 
 ## 概要
 
-本書は「1.16 管理画面（ADMIN）詳細設計」の既存設計を記録する。要件IDと設計意図を保持しているが、表中の実装状況は現在のコードと一括再照合していない。E-3 段2の承認・お断り・写真・キャンセルの申し込み、設定の残りと商品の返品不可を末尾に記す。
+本書は「1.16 管理画面（ADMIN）詳細設計」の既存設計を記録する。要件IDと設計意図を保持しているが、表中の実装状況は現在のコードと一括再照合していない。E-3 段2の承認・お断り・写真・キャンセルの申し込み、設定の残りと商品の返品不可、G-0 の権限画面を末尾に記す。
 
 ## 機能要件対応表
 
@@ -765,3 +765,40 @@ E2E は e2e/ の同名の spec、DB 結合は tests/integration/db/ の同名、
 | 保存失敗 | 「設定を保存できませんでした。現在の設定を読み直しました。」 |
 
 確認のN件はGET時点の正確な対象数、保存した実数はPUTのbackfilledCount。取消・配達済み・期限切れを除き、現版の起点から30日以内の対象だけを取り込む。再オンでは期限内のdisabledを同じ行で再開する。「オンにする」を押した後、保存の直前に設定をGETし、その時点の既存2トグルを送る。読取失敗や鍵が消えた時はPUTしない。既存トグル・returnsの省略と部分保存はAPIの契約を維持する。オフは登録をdisabled・要対応をautoにし、外へのstopは呼ばず、記録と配達済みは残す。
+
+## 権限画面（G-0 / FREQ-519・FREQ-540 の G-0 部分）
+
+SETTINGS のショップ設定の前に `nav aria-label="設定メニュー"` と「権限」リンクを置く。リンク先は `/admin/settings/permissions`、戻るリンク「管理画面に戻る」は `/admin?tab=SETTINGS`。独立ページは Server Component、[RolePermissionsSection](../../../src/components/RolePermissionsSection.tsx) は Client Component。直URLでも `GET /api/admin/permissions` の成功前に表を出さない。店長が固定2コード以外を全解除しても、この画面と戻るリンクを使える。既存管理メニューは役割名で表示を決め、サポーターは ORDER だけ。画面に「管理メニューの表示は、権限の設定ではなく役割名で決まります。」を表示する。
+
+表は列「操作」「店長」「サポーター」、共有 [ROLE_PERMISSION_CATALOG](../../../src/lib/auth/role-permission-catalog.ts) の30コードを分野ごとにまとめる。`user` は編集対象外。`table` と列・行の `th`、分野ごとの `tbody` と `scope="rowgroup"` を使う。見出し「権限の表」で名付けた、キーボードで焦点を当てられるスクロール領域に表を入れる。390/768px は表内だけ横スクロール、1280px は全列が収まる幅とする（実表示の検証は Task 4）。
+
+| 行・表示 | 契約 |
+| --- | --- |
+| 固定2行 | `admin.users.manage`・`admin.permissions.manage` は両役割欄をまたぐ「店長のみ・変更不可」。switch は置かない。DB関数と行トリガーでも解除・他役割への付与を拒否する |
+| その他28行 | 役割ごとに switch。名前は `${roleLabel}：${operationLabel}`。操作ラベルは行見出しにだけ出し、共通 SwitchToggle の `ariaLabel` を使う |
+| 新業務9行 | 「この権限は、対応する画面の公開後に使われます。」 |
+| 依存不足 | 役割別に「操作に必要な権限が不足しています：{不足コードの操作ラベルを「、」で結合}。」。共有関数で重複除去・コード辞書順。権限を自動追加せず、保存も禁止しない |
+
+切替では値を変えず「権限を変更する」を開き、「{役割}の「{操作}」を許可/解除します。変更しますか？」を表示する。「戻る」は送信しない。「変更する」で UUID を1回生成し、その役割の取得済み一覧に1コードだけ差分を加えた `RolePermissionChange`（`roleCode`・`permissionCodes`・文字列の `expectedVersion`・`requestKey`）を `POST /api/admin/role-permissions` へ送る。30コード外は扱わない。CSRF は既存 `clientFetch` に任せる。
+
+`Dialog fullScreenOnMobile` の children に確認・戻るボタンを置き、組込み `onConfirm` の自動closeを使わない。保存中は全switch・確認・戻るを disabled にし、共通 `onClose` は何もしないため Esc・モバイル×・backdrop でも閉じない。応答の role と版を採用してから閉じ、「権限を保存しました。」を `role="status"` に表示し、元の switch へ焦点を戻す。
+
+```mermaid
+flowchart TD
+  A[GET成功・編集可能] --> B[1トグルを確認]
+  B -->|戻る| A
+  B -->|変更する・新UUID| C[期待版付きPOST・閉じ止め]
+  C -->|成功roleと版を採用| A
+  C -->|通信例外・保存5xx| D[結果不明・本文とキーと版を保持]
+  D -->|同じ変更を再送| C
+  C -->|版・要求キー競合409| E[編集停止]
+  D -->|現在の設定を読み直す| F[GETし直す]
+  E -->|現在の設定を読み直す| F
+  F -->|成功・自動再保存なし| A
+```
+
+結果不明では「保存結果を確認できませんでした。同じ変更を再送するか、現在の設定を読み直してください。」と再送・再読込を出す。再送は本文全体を保持し、新UUIDを作らない。版/要求キー競合409と未知の409は再読込まで編集を止め、新しい変更には取得し直した版と新UUIDで再確認が要る。再読込に失敗した時は表を出さず「再読み込み」を出す。再読込より遅れた応答やアンマウント後の応答は採用しない。
+
+拒否の表示は GET/POST 共通で、既知の `code` →既知の `reason`（MFA/CSRF）→status の固定文の順。`ROLE_PERMISSION_FIXED` と MFA が同時でも code の文を使う。未知の code/reason や `body.error` は表示しない。plain 403 は「アクセス権限がありません」、読込5xxは「権限を読み込めませんでした。」。読み書きの認可は DB ACL・active session・aal2 の `admin.permissions.manage` で毎回確認する。
+
+検証: 単体 [画面](../../../tests/unit/components/RolePermissionsSection.test.tsx)・[独立ページ](../../../tests/unit/components/RolePermissionsPage.test.tsx)・[メニュー](../../../tests/unit/components/AdminSettingsMenu.test.tsx)・[SwitchToggle](../../../tests/unit/components/SwitchToggle.test.tsx) は Task 3。DB [権限](../../../tests/integration/db/role_permissions.integration.test.ts)・[別接続競合](../../../tests/integration/db/role_permissions_concurrency.integration.test.ts) は Task 1 / controller。E2E [FR-ADMIN-109](../../../e2e/FR-ADMIN-109-permission-settings.spec.ts)・[FR-ADMIN-123](../../../e2e/FR-ADMIN-123-group-g-permissions.spec.ts) は Task 4（予定・本Task時点で未作成/未実行）。G-0 は発送2コードを保存・再読込するところまでで、旧発送/在庫APIの新権限への切替は G-1〜G-3 に残る。

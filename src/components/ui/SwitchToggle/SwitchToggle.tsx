@@ -7,6 +7,7 @@ export function SwitchToggle({
   checked,
   onChange,
   label,
+  ariaLabel,
   disabled = false,
   fullWidth = false,
   size = 'md',
@@ -19,11 +20,12 @@ export function SwitchToggle({
       data-ui-switch-fullwidth={fullWidth ? 'true' : undefined}
       data-ui-size={size}
     >
-      {label ? <span data-ui-switch-label="">{label}</span> : null}
+      {ariaLabel === undefined && label ? <span data-ui-switch-label="">{label}</span> : null}
       <button
         type="button"
         data-ui-switch-track=""
         role="switch"
+        aria-label={ariaLabel}
         aria-checked={checked}
         onClick={() => onChange(!checked)}
         disabled={disabled}

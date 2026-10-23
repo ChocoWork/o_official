@@ -27,10 +27,10 @@ const USERS = [
   },
 ];
 
-function mockUsersThenPatch(patchResponse: { ok: boolean; status: number }) {
+function mockUsersThenPatch(patchResponse: { ok: boolean; status: number }, body: unknown = {}) {
   mockClientFetch.mockImplementation(async (_url, init) => {
     if (init?.method === 'PATCH') {
-      return { ...patchResponse, json: async () => ({}) } as Response;
+      return { ...patchResponse, json: async () => body } as Response;
     }
     return { ok: true, status: 200, json: async () => ({ data: USERS }) } as Response;
   });
@@ -92,5 +92,29 @@ describe('UserSection の役割の選択欄（FREQ-515）', () => {
     expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({ userId: 'user-1', role: 'admin' });
     expect(consoleError).toHaveBeenCalledWith('Failed to update role:', expect.any(Error));
     consoleError.mockRestore();
+  });
+
+  it.each<[string, number, string]>([
+    ['LAST_ADMIN_REQUIRED', 409, '店長を1人以上残してください。'],
+    ['SELF_ROLE_CHANGE_FORBIDDEN', 403, '自分自身の役割は変更できません。'],
+    ['UNKNOWN_CODE', 403, '権限変更は管理者のみ実行できます。'],
+  ])('拒否code=%sなら指定文を出し、元の役割と操作可能な状態へ戻す', async (code, status, message) => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockUsersThenPatch({ ok: false, status }, { code, error: 'ignored server text' });
+      render(<UserSection />);
+
+      const combobox = await chooseRole('Admin');
+
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(screen.queryByText('ignored server text')).not.toBeInTheDocument();
+      expect(combobox).toHaveTextContent('User');
+      await waitFor(() => expect(combobox).not.toBeDisabled());
+      const patchCalls = mockClientFetch.mock.calls.filter(([, init]) => init?.method === 'PATCH');
+      expect(patchCalls).toHaveLength(1);
+      expect(JSON.parse(String(patchCalls[0][1]?.body))).toEqual({ userId: 'user-1', role: 'admin' });
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

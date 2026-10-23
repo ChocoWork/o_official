@@ -86,6 +86,9 @@ describe('管理画面の左のメニューの SETTINGS', () => {
 
     expect(await screen.findByRole('heading', { name: 'ショップの設定' })).toBeInTheDocument();
     expect(await screen.findByRole('switch', { name: AUTO_REFUND_NAME })).toBeInTheDocument();
+    const settingsMenu = screen.getByRole('navigation', { name: '設定メニュー' });
+    expect(within(settingsMenu).getByRole('link', { name: '権限' })).toHaveAttribute('href', '/admin/settings/permissions');
+    expect(settingsMenu.compareDocumentPosition(screen.getByRole('heading', { name: 'ショップの設定' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(clientFetchMock).toHaveBeenCalledWith(SETTINGS_URL, { cache: 'no-store' });
     expect(screen.getByRole('button', { name: 'SETTINGS' })).toHaveAttribute('aria-current', 'page');
   });
@@ -105,6 +108,7 @@ describe('管理画面の左のメニューの SETTINGS', () => {
 
     expect(menuLabels(nav)).toEqual(['ORDER']);
     expect(screen.queryByRole('button', { name: 'SETTINGS' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '権限' })).not.toBeInTheDocument();
   });
 
   it('サポートの人が tab=SETTINGS で開いても、ORDER に戻され、設定の窓口は読まない', async () => {

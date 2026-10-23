@@ -126,6 +126,16 @@ export default function UserSection() {
       });
 
       if (!response.ok) {
+        const body: unknown = await response.json().catch(() => null);
+        if (typeof body === "object" && body !== null && "code" in body) {
+          if (body.code === "LAST_ADMIN_REQUIRED") {
+            throw new Error("店長を1人以上残してください。");
+          }
+          if (body.code === "SELF_ROLE_CHANGE_FORBIDDEN") {
+            throw new Error("自分自身の役割は変更できません。");
+          }
+        }
+
         if (response.status === 403) {
           throw new Error("権限変更は管理者のみ実行できます。");
         }

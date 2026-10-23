@@ -1165,7 +1165,14 @@ function AdminPageContent() {
         return <UserSection />;
       case 'SETTINGS':
         if (userRole !== 'admin') return null;
-        return <ShopSettingsSection />;
+        return (
+          <div className="space-y-6">
+            <nav aria-label="設定メニュー">
+              <Button href="/admin/settings/permissions" variant="secondary">権限</Button>
+            </nav>
+            <ShopSettingsSection />
+          </div>
+        );
       case 'ORDER':
         return (
           <div className="space-y-4">
