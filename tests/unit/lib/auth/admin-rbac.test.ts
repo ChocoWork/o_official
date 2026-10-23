@@ -82,6 +82,18 @@ describe('authorizeAdminPermission', () => {
     }
   });
 
+  it('権限管理のACLが空ならtoken adminでも拒否し、次の要求でACLを再取得する', async () => {
+    mockQuery.or.mockResolvedValueOnce({ data: [], error: null });
+    const denied = await authorizeAdminPermission('admin.permissions.manage', mockRequest);
+    expect(denied.ok).toBe(false);
+    if (!denied.ok) expect(denied.response.status).toBe(403);
+    grantPermission('admin.permissions.manage');
+    expect((await authorizeAdminPermission('admin.permissions.manage', mockRequest)).ok).toBe(true);
+    expect(mockQuery.or).toHaveBeenCalledTimes(2);
+    expect(mockQuery.eq).toHaveBeenCalledWith('active', true);
+    expect(mockQuery.or).toHaveBeenCalledWith(expect.stringMatching(/^expires_at.is.null,expires_at.gt\./));
+  });
+
   describe('監査ログの権限 admin.audit.read', () => {
     it.each([
       ['admin', 'admin.audit.read', true],
@@ -255,6 +267,15 @@ describe('authorizeAdminPermission', () => {
 });
 
 describe('legacyPermissionMap', () => {
+  it('初期値は店長30・サポーター指定8・一般0だけ', () => {
+    expect(legacyPermissionMap.admin.size).toBe(30);
+    expect([...legacyPermissionMap.supporter].sort()).toEqual([
+      'admin.contact.manage', 'admin.contact.read', 'admin.orders.manage', 'admin.orders.read',
+      'admin.orders.return', 'admin.shipping.manage', 'admin.shipping.read', 'admin.users.read',
+    ]);
+    expect(legacyPermissionMap.user.size).toBe(0);
+    expect(legacyPermissionMap.admin.has('admin.permissions.manage')).toBe(true);
+  });
   it.each([
     ['admin', true],
     ['supporter', false],

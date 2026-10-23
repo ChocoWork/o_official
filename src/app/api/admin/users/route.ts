@@ -3,6 +3,9 @@ import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
+import { requireCsrfOrDeny } from '@/lib/csrfMiddleware';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
+import { RolePermissionStoreError, setUserRole } from '@/lib/auth/role-permission-store';
 
 const roleSchema = z.enum(['admin', 'supporter', 'user']);
 
@@ -168,200 +171,79 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: Request): Promise<Response> {
+  const noStore = (response: Response): Response => {
+    response.headers.set('Cache-Control', 'no-store');
+    return response;
+  };
   try {
-    const authResult = await authorizeAdminPermission('admin.users.manage', request);
-    if (!authResult.ok) {
-      return authResult.response;
-    }
+    const authz = await authorizeAdminPermission('admin.users.manage', request);
+    if (!authz.ok) return noStore(authz.response);
+    const csrfResult = await requireCsrfOrDeny();
+    if (csrfResult instanceof Response) return noStore(csrfResult);
+    const rateLimit = { endpoint: 'admin:users:role-update', limit: 30, windowSeconds: 600 };
+    const ipLimited = await enforceRateLimit({ request, ...rateLimit });
+    if (ipLimited) return noStore(ipLimited);
+    const actorLimited = await enforceRateLimit({ request, ...rateLimit, subject: authz.userId });
+    if (actorLimited) return noStore(actorLimited);
 
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
-    const userAgent = request.headers.get('user-agent') ?? null;
-
-    const body = await request.json().catch(() => ({}));
-    const parsed = patchBodySchema.safeParse(body);
-    const requestedRole = typeof body?.role === 'string' ? body.role : null;
-    const requestedUserId = typeof body?.userId === 'string' ? body.userId : null;
-
+    let targetUserId: string | null = null;
+    const audit = async (outcome: string, detail: string, metadata: Record<string, unknown>): Promise<void> => {
+      try {
+        await logAudit({
+          action: 'admin.users.role.update', actor_id: authz.userId,
+          resource: 'users', resource_id: targetUserId, outcome, detail,
+          ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+          user_agent: request.headers.get('user-agent') ?? null,
+          metadata,
+        });
+      } catch {
+        console.error('[admin.permissions] operation failed');
+      }
+    };
+    const parsed = patchBodySchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
-      await logAudit({
-        action: 'admin.users.role.update',
-        actor_id: authResult.userId,
-        resource: 'users',
-        resource_id: requestedUserId ?? null,
-        outcome: 'failure',
-        detail: 'Invalid request body',
-        ip: clientIp,
-        user_agent: userAgent,
-        metadata: {
-          requested_role: requestedRole,
-          requested_user_id: requestedUserId,
-        },
-      });
-
-      return NextResponse.json(
-        {
-          error: 'Invalid request',
-          details: parsed.error.flatten(),
-        },
-        { status: 400 },
-      );
+      await audit('failure', 'Invalid request body', {});
+      return noStore(NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 }));
     }
 
     const { userId, role } = parsed.data;
-    const supabase = await createServiceRoleClient();
-
-    const { data: userData, error: getUserError } = await supabase.auth.admin.getUserById(userId);
-    if (getUserError || !userData.user) {
-      console.error('Failed to get user by id:', getUserError);
-      await logAudit({
-        action: 'admin.users.role.update',
-        actor_id: authResult.userId,
-        resource: 'users',
-        resource_id: userId,
-        outcome: 'failure',
-        detail: 'User not found',
-        ip: clientIp,
-        user_agent: userAgent,
-        metadata: {
-          requested_role: role,
-          requested_user_id: userId,
-        },
+    targetUserId = userId;
+    try {
+      const client = await createServiceRoleClient();
+      // DB が最後の店長・自己変更を判定し、ACL と metadata を同時に保存する。
+      const result = await setUserRole(client, authz.userId, userId, role);
+      await audit('success', 'User role updated', {
+        previous_role: result.previousRole, requested_role: role, assigned_by: authz.userId,
       });
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      return noStore(NextResponse.json({ success: true }, { status: 200 }));
+    } catch (error) {
+      const code = error instanceof RolePermissionStoreError ? error.code : null;
+      if (code === 'LAST_ADMIN_REQUIRED' || code === 'SELF_ROLE_CHANGE_FORBIDDEN') {
+        const status = code === 'LAST_ADMIN_REQUIRED' ? 409 : 403;
+        await audit(status === 409 ? 'conflict' : 'failure', 'User role change refused', {
+          requested_role: role, result_code: code,
+        });
+        return noStore(NextResponse.json({
+          error: code === 'LAST_ADMIN_REQUIRED' ? '店長を1人以上残してください。' : '自分自身の役割は変更できません。', code,
+        }, { status }));
+      }
+      if (code === 'USER_NOT_FOUND') {
+        await audit('failure', 'User not found', { requested_role: role, requested_user_id: userId });
+        return noStore(NextResponse.json({ error: 'User not found' }, { status: 404 }));
+      }
+      if (code === 'ROLE_PERMISSION_FORBIDDEN' || code === 'ROLE_PERMISSION_ARGUMENT_INVALID') {
+        await audit('failure', 'User role change refused', { requested_role: role, result_code: code });
+        return noStore(NextResponse.json({ error: code === 'ROLE_PERMISSION_FORBIDDEN' ? 'Forbidden' : 'Invalid request' }, {
+          status: code === 'ROLE_PERMISSION_FORBIDDEN' ? 403 : 400,
+        }));
+      }
+      console.error('[admin.permissions] operation failed');
+      await audit('error', 'Failed to update user role', { requested_role: role });
+      return noStore(NextResponse.json({ error: 'Internal server error' }, { status: 500 }));
     }
-
-    const currentAppMetadata = userData.user.app_metadata ?? {};
-    const previousRole = typeof currentAppMetadata.role === 'string' ? currentAppMetadata.role : 'unknown';
-
-    const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
-      app_metadata: {
-        ...currentAppMetadata,
-        role,
-      },
-    });
-
-    if (updateError) {
-      console.error('Failed to update user role:', updateError);
-      await logAudit({
-        action: 'admin.users.role.update',
-        actor_id: authResult.userId,
-        resource: 'users',
-        resource_id: userId,
-        outcome: 'error',
-        detail: 'Failed to update auth metadata',
-        ip: clientIp,
-        user_agent: userAgent,
-        metadata: {
-          previous_role: previousRole,
-          requested_role: role,
-        },
-      });
-      return NextResponse.json({ error: 'Failed to update role' }, { status: 500 });
-    }
-
-    const { data: roleRow, error: roleError } = await supabase
-      .from('roles')
-      .select('id')
-      .eq('code', role)
-      .single();
-
-    if (roleError || !roleRow) {
-      console.error('Failed to resolve role id:', roleError);
-      await logAudit({
-        action: 'admin.users.role.update',
-        actor_id: authResult.userId,
-        resource: 'users',
-        resource_id: userId,
-        outcome: 'error',
-        detail: 'Failed to resolve role id',
-        ip: clientIp,
-        user_agent: userAgent,
-        metadata: {
-          previous_role: previousRole,
-          requested_role: role,
-        },
-      });
-      return NextResponse.json({ error: 'Failed to update ACL role' }, { status: 500 });
-    }
-
-    const { error: deactivateError } = await supabase
-      .from('user_roles')
-      .update({ active: false })
-      .eq('user_id', userId)
-      .eq('active', true);
-
-    if (deactivateError) {
-      console.error('Failed to deactivate existing ACL roles:', deactivateError);
-      await logAudit({
-        action: 'admin.users.role.update',
-        actor_id: authResult.userId,
-        resource: 'users',
-        resource_id: userId,
-        outcome: 'error',
-        detail: 'Failed to deactivate existing ACL roles',
-        ip: clientIp,
-        user_agent: userAgent,
-        metadata: {
-          previous_role: previousRole,
-          requested_role: role,
-        },
-      });
-      return NextResponse.json({ error: 'Failed to update ACL role' }, { status: 500 });
-    }
-
-    const { error: upsertAclError } = await supabase
-      .from('user_roles')
-      .upsert(
-        {
-          user_id: userId,
-          role_id: roleRow.id,
-          active: true,
-          assigned_by: authResult.userId,
-          assigned_at: new Date().toISOString(),
-          expires_at: null,
-        },
-        { onConflict: 'user_id,role_id' },
-      );
-
-    if (upsertAclError) {
-      console.error('Failed to upsert ACL role:', upsertAclError);
-      await logAudit({
-        action: 'admin.users.role.update',
-        actor_id: authResult.userId,
-        resource: 'users',
-        resource_id: userId,
-        outcome: 'error',
-        detail: 'Failed to write ACL role',
-        ip: clientIp,
-        user_agent: userAgent,
-        metadata: {
-          previous_role: previousRole,
-          requested_role: role,
-        },
-      });
-      return NextResponse.json({ error: 'Failed to update ACL role' }, { status: 500 });
-    }
-
-    await logAudit({
-      action: 'admin.users.role.update',
-      actor_id: authResult.userId,
-      resource: 'users',
-      resource_id: userId,
-      outcome: 'success',
-      detail: 'User role updated',
-      ip: clientIp,
-      user_agent: userAgent,
-      metadata: {
-        previous_role: previousRole,
-        requested_role: role,
-        assigned_by: authResult.userId,
-      },
-    });
-
-    return NextResponse.json({ success: true }, { status: 200 });
-  } catch (error) {
-    console.error('PATCH /api/admin/users error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  } catch {
+    console.error('[admin.permissions] operation failed');
+    return noStore(NextResponse.json({ error: 'Internal server error' }, { status: 500 }));
   }
 }

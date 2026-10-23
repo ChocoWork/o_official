@@ -23,7 +23,17 @@ export type PermissionCode =
   | 'admin.audit.read'
   | 'admin.orders.refund'
   | 'admin.settings.manage'
-  | 'admin.orders.return';
+  | 'admin.orders.return'
+  | 'admin.stock.read'
+  | 'admin.stock.manage'
+  | 'admin.orders.allocate'
+  | 'admin.purchase_orders.read'
+  | 'admin.purchase_orders.manage'
+  | 'admin.receiving.manage'
+  | 'admin.shipping.read'
+  | 'admin.shipping.manage'
+  | 'admin.shipping.correct_date'
+  | 'admin.permissions.manage';
 
 type AuthzSuccess = {
   ok: true;
@@ -65,6 +75,16 @@ export const legacyPermissionMap: Record<AppRole, Set<PermissionCode>> = {
     'admin.settings.manage',
     // 返品は店長とサポートの両方が扱う（額を決める返金は admin.orders.refund のまま店長だけ。グループ E-3 設計書 10-2）
     'admin.orders.return',
+    'admin.stock.read',
+    'admin.stock.manage',
+    'admin.orders.allocate',
+    'admin.purchase_orders.read',
+    'admin.purchase_orders.manage',
+    'admin.receiving.manage',
+    'admin.shipping.read',
+    'admin.shipping.manage',
+    'admin.shipping.correct_date',
+    'admin.permissions.manage',
   ]),
   supporter: new Set<PermissionCode>([
     'admin.orders.read',
@@ -74,6 +94,8 @@ export const legacyPermissionMap: Record<AppRole, Set<PermissionCode>> = {
     'admin.contact.manage',
     // 返品を作る・受け取る・取消・開き直し・検品はサポートもできる（グループ E-3 設計書 10-2）
     'admin.orders.return',
+    'admin.shipping.read',
+    'admin.shipping.manage',
   ]),
   user: new Set<PermissionCode>([]),
 };
