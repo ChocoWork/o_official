@@ -188,8 +188,8 @@ export default function UserSection() {
                 variant="dropdown"
                 className={`w-35 tracking-widest font-acumin ${roleSelectClassMap[user.roleValue]}`}
                 value={user.roleValue}
-                onChange={(event) =>
-                  handleRoleChange(user.id, event.target.value as UserRoleValue)
+                onValueChange={(value) =>
+                  handleRoleChange(user.id, value as UserRoleValue)
                 }
                 disabled={savingUserId === user.id}
                 options={[

@@ -1,5 +1,6 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { NewsForm } from '@/app/admin/news/NewsForm';
 
 /**
@@ -113,5 +114,60 @@ describe('NewsForm 画像アップロード (FREQ-252)', () => {
 
     await waitFor(() => expect(mockClientFetch).toHaveBeenCalled());
     expect(screen.queryByText('画像を添付してください')).not.toBeInTheDocument();
+  });
+});
+
+describe('NewsForm のカテゴリーの選択欄（FREQ-515）', () => {
+  // jsdom は canvas の getContext を実装せず「Not implemented」を console.error に出す（SingleSelect が文字の幅を測るために呼ぶ）。
+  // jsdom の答えも null なので、動きは変えずに null を返す差し替えにして雑音だけを消す
+  let getContextSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    getContextSpy = jest.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    mockClientFetch.mockResolvedValue({ ok: true, json: async () => ({}) } as Response);
+  });
+
+  afterEach(() => {
+    getContextSpy.mockRestore();
+  });
+
+  async function chooseCategory(label: string) {
+    const user = userEvent.setup();
+    const combobox = screen.getByRole('combobox', { name: 'カテゴリー' });
+    await user.click(combobox);
+    const listbox = await screen.findByRole('listbox');
+    await user.click(within(listbox).getByRole('option', { name: label }));
+    expect(combobox).toHaveTextContent(label);
+  }
+
+  async function submittedCategory(container: HTMLElement) {
+    fireEvent.submit(container.querySelector('form')!);
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalled());
+    const body = mockClientFetch.mock.calls[0][1]?.body as FormData;
+    return body.get('category');
+  }
+
+  test('作成モード: 選んだカテゴリーを送る', async () => {
+    // FREQ-515-AC-03
+    const { container } = render(<NewsForm submitUrl="/api/admin/news" submitMethod="POST" />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [makeFile('a.png', 'image/png')] },
+    });
+
+    await chooseCategory('EVENT');
+
+    expect(await submittedCategory(container)).toBe('EVENT');
+  });
+
+  test('編集モード: 選んだカテゴリーを送る', async () => {
+    // FREQ-515-AC-03
+    const { container } = render(
+      <NewsForm submitUrl="/api/admin/news/1" submitMethod="PUT" initialValues={EDIT_VALUES} />,
+    );
+
+    await chooseCategory('STORE');
+
+    expect(await submittedCategory(container)).toBe('STORE');
   });
 });

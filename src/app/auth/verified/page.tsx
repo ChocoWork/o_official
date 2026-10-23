@@ -360,7 +360,7 @@ export default function VerifiedPage() {
             label="認証要素"
             block
             value={selectedFactorId ?? ''}
-            onValueChange={(value) => setSelectedFactorId(value || null)}
+            onChange={(event) => setSelectedFactorId(event.target.value || null)}
             options={verifiedFactors.map((factor) => ({ value: factor.id, label: factor.label }))}
           />
         ) : null}

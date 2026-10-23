@@ -212,7 +212,9 @@ export function NewsForm({
               name="category"
               variant="dropdown"
               value={formData.category}
-              onChange={handleInputChange}
+              onValueChange={(category) =>
+                setFormData((previous) => ({ ...previous, category: category as NewsFormData['category'] }))
+              }
               className="font-acumin"
               options={NEWS_CATEGORY_OPTIONS.map((option) => ({
                 value: option.value,

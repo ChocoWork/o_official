@@ -117,6 +117,8 @@ async function openRecordTab(page: Page) {
 for (const viewport of viewports) {
   test.describe(`FR-ADMIN-018 monthly record input (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
+      // 初期シーズンは今日の日付（JST の4〜9月=SS）で決まる。モックの 2026SS と合うよう、ページを開く前に日付を SS の期間に固定する
+      await page.clock.setFixedTime(new Date('2026-06-15T03:00:00Z'));
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
