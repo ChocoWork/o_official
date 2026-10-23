@@ -83,6 +83,7 @@ export default function RolePermissionsSection(): React.JSX.Element {
   // 再読込・アンマウントを越えた遅い応答を採用しない。refは同一描画内の連打も止める。
   const generation = useRef(0);
   const saving = useRef(false);
+  const recoveryRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
     const current = ++generation.current;
@@ -116,6 +117,13 @@ export default function RolePermissionsSection(): React.JSX.Element {
     void load();
     return () => { generation.current += 1; };
   }, [load]);
+
+  // 保存が止まるとdialogが閉じ、戻し先のswitchは無効なので、表示中の回復ボタンへ焦点を移す。
+  useEffect(() => {
+    if (isSaving || failure === null || failure.recovery === null) return;
+    const target = failure.recovery === 'resend' && pending !== null ? 'resend' : 'reload';
+    recoveryRef.current?.querySelector<HTMLButtonElement>(`[data-recovery="${target}"]`)?.focus();
+  }, [failure, isSaving, pending]);
 
   const send = async (change: RolePermissionChange): Promise<void> => {
     if (saving.current) return;
@@ -185,14 +193,14 @@ export default function RolePermissionsSection(): React.JSX.Element {
       {notice ? <p role="status">{notice}</p> : null}
       {failure ? (
         <div className="space-y-3">
-          <p role="alert">{failure.message}</p>
-          <div className="flex flex-wrap gap-3">
+          {isSaving ? null : <p role="alert">{failure.message}</p>}
+          <div ref={recoveryRef} className="flex flex-wrap gap-3">
             {matrix === null && !isLoading ? <Button onClick={() => void load()}>再読み込み</Button> : null}
             {matrix !== null && failure.recovery === 'resend' && pending ? (
-              <Button disabled={isSaving} onClick={() => void send(pending)}>同じ変更を再送</Button>
+              <Button data-recovery="resend" disabled={isSaving} onClick={() => void send(pending)}>同じ変更を再送</Button>
             ) : null}
             {matrix !== null && failure.recovery !== null ? (
-              <Button variant="secondary" onClick={() => void load()}>現在の設定を読み直す</Button>
+              <Button data-recovery="reload" variant="secondary" disabled={isSaving} onClick={() => void load()}>現在の設定を読み直す</Button>
             ) : null}
           </div>
         </div>

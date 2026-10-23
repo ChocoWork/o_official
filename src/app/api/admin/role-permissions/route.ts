@@ -37,8 +37,22 @@ function noStore(response: Response): Response {
   return response;
 }
 
-/** actor は認可結果のみから取り、保存の前に副作用のない検証を済ませる。 */
+function updateFailed(): Response {
+  return noStore(NextResponse.json({ error: '権限を保存できませんでした。', code: 'PERMISSION_UPDATE_FAILED' }, { status: 500 }));
+}
+
+/** 認可・CSRF・回数制限の例外も固定500・no-storeにする。認可前の失敗は監査しない従来の規則を保つ。 */
 export async function POST(request: Request): Promise<Response> {
+  try {
+    return await savePermissions(request);
+  } catch {
+    console.error('[admin.permissions] operation failed');
+    return updateFailed();
+  }
+}
+
+/** actor は認可結果のみから取り、保存の前に副作用のない検証を済ませる。 */
+async function savePermissions(request: Request): Promise<Response> {
   const authz = await authorizeAdminPermission('admin.permissions.manage', request);
   if (!authz.ok) return noStore(authz.response);
   const csrfResult = await requireCsrfOrDeny();
@@ -85,6 +99,6 @@ export async function POST(request: Request): Promise<Response> {
     }
     console.error('[admin.permissions] operation failed');
     await audit('error', 'Failed to save role permissions', 'PERMISSION_UPDATE_FAILED');
-    return noStore(NextResponse.json({ error: '権限を保存できませんでした。', code: 'PERMISSION_UPDATE_FAILED' }, { status: 500 }));
+    return updateFailed();
   }
 }

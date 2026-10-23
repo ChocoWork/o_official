@@ -71,6 +71,20 @@ test.each(['csrf', 'ip', 'actor'] as const)('%sの拒否Responseを保持し、R
   expect(read).not.toHaveBeenCalled(); expect(rpc).not.toHaveBeenCalled(); expect(logAudit).not.toHaveBeenCalled();
 });
 
+test.each(['authz', 'csrf', 'ip', 'actor'] as const)('%sの例外は固定500・no-store、本文を読まずRPC・監査0回', async (stage) => {
+  const thrown = new Error('PRIVATE');
+  if (stage === 'authz') (authorizeAdminPermission as jest.Mock).mockRejectedValue(thrown);
+  else if (stage === 'csrf') (requireCsrfOrDeny as jest.Mock).mockRejectedValue(thrown);
+  else if (stage === 'ip') (enforceRateLimit as jest.Mock).mockRejectedValueOnce(thrown);
+  else (enforceRateLimit as jest.Mock).mockResolvedValueOnce(undefined).mockRejectedValueOnce(thrown);
+  const req = request(); const read = jest.spyOn(req, 'json'); const response = await POST(req);
+  expect(response.status).toBe(500); expect(response.headers.get('cache-control')).toBe('no-store');
+  expect(await response.json()).toEqual({ error: '権限を保存できませんでした。', code: 'PERMISSION_UPDATE_FAILED' });
+  expect(read).not.toHaveBeenCalled(); expect(rpc).not.toHaveBeenCalled(); expect(logAudit).not.toHaveBeenCalled();
+  expect(console.error).toHaveBeenCalledWith('[admin.permissions] operation failed');
+  expect(JSON.stringify(jest.mocked(console.error).mock.calls)).not.toContain('PRIVATE');
+});
+
 test.each([
   null, [], {}, { ...CHANGE, actorId: 'spoof' }, { ...CHANGE, roleId: 1 }, { ...CHANGE, extra: true },
   { ...CHANGE, roleCode: 'user' }, { ...CHANGE, roleCode: 'other' },

@@ -263,7 +263,21 @@ describe('再送・競合・依存不足', () => {
     expect(body(1)).toMatchObject({ expectedVersion: '9007199254741000', requestKey: KEY2 });
   });
 
-  test('再送の遅い応答は再読込の新しい一覧・版を上書きしない', async () => {
+  test.each([
+    ['通信例外', '同じ変更を再送'],
+    ['ROLE_PERMISSION_VERSION_CONFLICT', '現在の設定を読み直す'],
+    ['ROLE_PERMISSION_REQUEST_KEY_CONFLICT', '現在の設定を読み直す'],
+  ])('保存が%sで止まったら、焦点を表示中の「%s」へ移す', async (kind, target) => {
+    await loaded();
+    if (kind === '通信例外') fetchMock.mockRejectedValueOnce(new Error('network'));
+    else fetchMock.mockResolvedValueOnce(json({ code: kind }, 409));
+    open(); confirm();
+    await screen.findByRole('alert');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: target })).toHaveFocus();
+  });
+
+  test('再送中は前の失敗文を消して保存中だけを出し、読み直しは押せない。再び失敗したら失敗文と焦点を戻す', async () => {
     await loaded();
     fetchMock.mockRejectedValueOnce(new Error('network'));
     open(); confirm();
@@ -271,17 +285,40 @@ describe('再送・競合・依存不足', () => {
     const late = hold();
     fetchMock.mockReturnValueOnce(late.promise);
     fireEvent.click(screen.getByRole('button', { name: '同じ変更を再送' }));
-    fetchMock.mockResolvedValueOnce(json({ data: matrix([], '55') }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(UNKNOWN)).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/^保存しています\.\.\.$/);
+    const reload = screen.getByRole('button', { name: '現在の設定を読み直す' });
+    expect(reload).toBeDisabled();
+    fireEvent.click(reload);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await act(async () => late.release(json({ code: 'PERMISSION_UPDATE_FAILED' }, 500)));
+    expect(screen.getByRole('alert')).toHaveTextContent(UNKNOWN);
+    expect(screen.queryByText('保存しています...')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '現在の設定を読み直す' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '同じ変更を再送' })).toHaveFocus();
+    expect(postCalls()).toHaveLength(2);
+    expect(postCalls()[1][1]?.body).toBe(postCalls()[0][1]?.body);
+  });
+
+  test('再送中に「現在の設定を読み直す」を押してもGETせず、再送の応答を採用して次の版で保存する', async () => {
+    await loaded();
+    fetchMock.mockRejectedValueOnce(new Error('network'));
+    open(); confirm();
+    await screen.findByRole('alert');
+    const late = hold();
+    fetchMock.mockReturnValueOnce(late.promise);
+    fireEvent.click(screen.getByRole('button', { name: '同じ変更を再送' }));
     fireEvent.click(screen.getByRole('button', { name: '現在の設定を読み直す' }));
-    await waitFor(() => expect(screen.getByRole('switch', { name: SHIP })).toBeEnabled());
-    await act(async () => late.release(json({ data: { role: savedRole(SUPPORTER_CODES, '9'), changedCount: 0 } })));
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/admin/permissions')).toHaveLength(1);
+    await act(async () => late.release(json({ data: { role: savedRole(SUPPORTER_CODES.filter((c) => c !== 'admin.shipping.read'), '9'), changedCount: 1 } })));
+    expect(screen.getByRole('status')).toHaveTextContent('権限を保存しました。');
     expect(screen.getByRole('switch', { name: SHIP })).not.toBeChecked();
-    expect(screen.queryByText('権限を保存しました。')).not.toBeInTheDocument();
     open();
-    fetchMock.mockResolvedValueOnce(json({ data: { role: savedRole(['admin.shipping.read'], '56'), changedCount: 1 } }));
+    fetchMock.mockResolvedValueOnce(json({ data: { role: savedRole(SUPPORTER_CODES, '10'), changedCount: 1 } }));
     confirm();
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(body(2).expectedVersion).toBe('55');
+    expect(body(2).expectedVersion).toBe('9');
   });
 
   test('再読込失敗では古い一覧で再編集できず、再読み込み成功後に解除される', async () => {
