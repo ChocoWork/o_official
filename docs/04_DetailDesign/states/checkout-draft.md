@@ -20,7 +20,7 @@
 | --- | --- |
 | `created` | 下書きが存在し、注文への変換が未完了。Session IDがあるかどうかは別属性 |
 | `completed` | `place_order_from_checkout_draft`が注文と明細を作り、下書きを完了に更新した |
-| `failed` | 作成済みSessionの失効を確認し、未完了の下書きをretireした |
+| `failed` | 未完了の下書きをretireした。作成済みSessionの失効を確認した場合（ST-DRAFT-03）と、Stripe が Session を作れなかった Session 未添付の下書きの場合（ST-DRAFT-06）がある |
 | 削除済み | 清掃により行が存在しない論理状態。DBに `deleted` や `expired` を保存するわけではない |
 
 ```mermaid
@@ -29,6 +29,7 @@ stateDiagram-v2
     [*] --> created: ST-DRAFT-01 / 下書きINSERT
     created --> completed: ST-DRAFT-02 / 注文作成（「注文する」の受け付け）
     created --> failed: ST-DRAFT-03 / Session失効後のretire（新しい「確認へ進む」で閉じた場合を含む）
+    created --> failed: ST-DRAFT-06 / Session作成のStripeエラー後のretire（Session未添付）
     created --> created: ST-DRAFT-05 / 受け付けの断り（注文を作らない）
     created --> Deleted: ST-DRAFT-04 / 保持期間の清掃
     failed --> Deleted: ST-DRAFT-04 / 保持期間の清掃
@@ -43,6 +44,7 @@ stateDiagram-v2
 | ST-DRAFT-03 | 次のどちらか。(a) create-sessionが、claimした下書きの既存Sessionを失効済みと確認、または開いていても残り15分未満で閉じた。(b) 新しい「確認へ進む」が、同じCookieのほかの下書き（24時間以内）の開いているSessionを閉じた。`created` の下書きなら、`retire_expired_checkout_draft`がdraft ID・所有session・Session ID・`created`、request version/fingerprintのNULLを含む一致を確認 | `status=failed`。既存のSession IDはNULLにしない。この下書きを作り直して再利用する遷移ではない。(b)で受け付け済みの下書き（`completed`）のSessionを閉じたときは、下書きを変えず、照合器が注文を放棄の扱いにして在庫を戻す | [create-session](../../../src/app/api/checkout/create-session/route.ts)、[決済の画面の後始末](../../../src/features/checkout/services/checkout-session-lifecycle.service.ts)、[retire RPC](../../../supabase/migrations/20260925000132_add_checkout_session_claim_rpcs.sql) |
 | ST-DRAFT-04 | `created/failed`、`created_at`が30日より前 | 行をDELETE。`completed`はこの清掃の対象外 | [保持期間job](../../../supabase/migrations/20260911235714_add_checkout_drafts_retention_job.sql) |
 | ST-DRAFT-05 | 「注文する」の受け付け（place-order）で、受付RPCが `zero_amount`・`currency_mismatch`・`amount_mismatch`・`item_unavailable`・`price_changed`・`stock_changed`・`login_changed` のどれかを返す。`price_changed`・`stock_changed`・`login_changed` は、引数（空の配列を含む）を渡したときだけ返る。空の配列でも価格の変化と買い手の食い違いを検査する。`NULL`（照合器の予備処理）はこの3つの検査を行わない。place-order がRPCの前に買い手の食い違い（409 `login_changed`）で断る場合も同じ | `status=created` のまま。注文も在庫の確保も作らず、下書きも書き換えない。画面はカート・入力画面・決済の画面の作り直しへ移す（`login_changed` は入力画面へ戻し、案内を出す）。`draft_not_found`（下書きが `created` でない・結び付きが違う）も状態を変えない | [place-order](../../../src/app/api/checkout/place-order/route.ts)、[受付RPC（引数追加）](../../../supabase/migrations/20261007133711_checkout_final_screen_place_order.sql)、[受付RPC（買い手の引数を足した作り直し）](../../../supabase/migrations/20261008055720_checkout_order_owner_binding.sql) |
+| ST-DRAFT-06 | create-sessionで `stripe.checkout.sessions.create` が投げた（波2 K-5）。ただしエラーの code が `idempotency_key_in_use`（同じキーの要求が先に進行中）の時は除く。`retire_unattached_checkout_draft` がdraft ID・所有session・request version・fingerprintの一致、`status=created`、`checkout_session_id IS NULL` を確認。claim・期限予約・attachのDBの失敗は対象外 | `status=failed`。次の「確認へ進む」のclaimは `created` の行が無いので新しい下書き（新しいdraft ID）を作り、新しいStripeの冪等キーで Session を作り直す（約15秒待たずに済む）。retireの失敗は飲み込み、監査に `checkout_draft_retire_failed` だけ残す。お客様への応答は元のStripeエラーの分類のまま | [create-session](../../../src/app/api/checkout/create-session/route.ts)、[retire RPC（Session未添付）](../../../supabase/migrations/20261023072409_retire_unattached_checkout_draft.sql) |
 
 ## 独立属性と競合
 
