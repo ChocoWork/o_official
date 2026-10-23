@@ -279,7 +279,7 @@ sequenceDiagram
     end
 ```
 
-解決済みの再検出は検出回数・最終時刻を更新するが未解決には戻さない。メモは最大500字で、返金の失敗の手動解決だけ必須、ほかの理由は任意（FREQ-507）。返金の失敗では「メモ（必須・店内のみ）」と「返金の失敗を解決するときは、確かめた内容をメモに入力してください。」を表示し、空・空白だけでは送信できない。API は追加の読み取りをせず、RPC の `RESOLUTION_NOTE_REQUIRED` を400と同じ案内に変換する。解決済みの行への再送は従来どおり何も変更せず、自動解決のメモは任意のまま。未解決paid_amount_mismatchを解決すると発送の関数（`admin_create_fulfillment`）のその拒否条件（`PAYMENT_REVIEW_REQUIRED`）がなくなるが、解決記録自体はStripeの金額訂正をしない。根拠は[resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts)と[例外RPC](../../../supabase/migrations/20261023033507_payment_exception_refund_failed_note.sql)。
+解決済みの再検出は検出回数・最終時刻を更新するが未解決には戻さない。メモは最大500字で、返金の失敗の手動解決だけ必須、ほかの理由は任意（FREQ-507）。返金の失敗では「メモ（必須・店内のみ）」と「返金の失敗を解決するときは、確かめた内容をメモに入力してください。」を表示し、空・空白だけでは送信できない。API は追加の読み取りをせず、RPC の `RESOLUTION_NOTE_REQUIRED` を400と同じ案内に変換する。解決済みの行への再送は従来どおり何も変更せず、自動解決のメモは任意のまま。未解決paid_amount_mismatchを解決すると発送の関数（`admin_create_fulfillment`）のその拒否条件（`PAYMENT_REVIEW_REQUIRED`）がなくなるが、解決記録自体はStripeの金額訂正をしない。根拠は[resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts)と[例外RPC](../../../supabase/migrations/20261023061434_payment_exception_refund_failed_note.sql)。
 
 ## SQ-ADMIN-05: 未入金注文を取り消して要対応を解決する
 
