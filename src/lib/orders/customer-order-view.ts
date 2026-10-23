@@ -109,7 +109,7 @@ export async function buildCustomerOrderPublicView(input: CustomerOrderPublicInp
   return {
     id: order.id, orderNumber: toOrderNumber(order.id), orderDate: formatOrderDateTime(order.created_at), status: order.status,
     progress: { ...progress, steps: buildOrderProgressSteps(progress, lineRows) },
-    subtotalAmount: formatCurrency(order.subtotal_amount, order.currency), shippingAmount: formatCurrency(order.shipping_amount, order.currency),
+    subtotalAmount: formatCurrency(order.subtotal_amount, order.currency), shippingAmount: order.shipping_amount > 0 ? formatCurrency(order.shipping_amount, order.currency) : '無料',
     discountAmount: order.discount_amount > 0 ? `-${formatCurrency(order.discount_amount, order.currency)}` : formatCurrency(0, order.currency),
     totalAmount: formatCurrency(order.total_amount, order.currency),
     shipments: toShipments(input), refunds, refundTotal, returnSection: toPublicReturns(input.returnSection),

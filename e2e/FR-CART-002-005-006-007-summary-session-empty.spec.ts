@@ -15,7 +15,7 @@ test.describe('FR-CART-002/005/006/007 cart summary session empty', () => {
 
     await expect(page.getByText('Order Summary')).toBeVisible();
     await expect(page.getByText('小計')).toBeVisible();
-    await expect(page.getByText('配送料')).toBeVisible();
+    await expect(page.getByText('送料', { exact: true })).toBeVisible();
     await expect(page.getByText('無料')).toBeVisible();
     await expect(page.getByText('合計')).toBeVisible();
     await expect(page.getByPlaceholder('コードを入力')).toBeVisible();

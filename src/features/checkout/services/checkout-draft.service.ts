@@ -305,29 +305,6 @@ export function mapStripePaymentMethodType(
   return value || 'stripe_card';
 }
 
-export function calculateCheckoutAmounts(
-  cartRows: CheckoutCartSnapshotRow[],
-  itemMap: Map<number, CheckoutItemSnapshotRow>
-): {
-  subtotalAmount: number;
-  shippingAmount: number;
-  totalAmount: number;
-} {
-  const subtotalAmount = cartRows.reduce((sum, cartItem) => {
-    const price = itemMap.get(cartItem.item_id)?.price ?? 0;
-    return sum + price * cartItem.quantity;
-  }, 0);
-
-  const shippingAmount = subtotalAmount === 0 ? 0 : 500;
-  const totalAmount = subtotalAmount + shippingAmount;
-
-  return {
-    subtotalAmount,
-    shippingAmount,
-    totalAmount,
-  };
-}
-
 export function getDraftIdFromStripeMetadata(
   metadata: Record<string, string> | null | undefined
 ): string | null {

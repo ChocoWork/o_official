@@ -91,7 +91,7 @@ export default function TermsPage() {
             第4条（支払方法）
           </h2>
           <p className="text-[#474747] mb-2" style={bodyTextStyle}>
-            ユーザーは、商品代金及び送料等を、以下のいずれかの方法により支払うものとします：
+            ユーザーは、商品代金を、以下のいずれかの方法により支払うものとします：
           </p>
           <ul
             className="list-disc list-inside text-[#474747]"

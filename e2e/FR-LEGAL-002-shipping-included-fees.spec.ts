@@ -24,7 +24,7 @@ for (const vp of viewports) {
       const value = page
         .locator('dt', { hasText: /^商品以外の必要代金$/ })
         .locator('xpath=following-sibling::dd[1]');
-      await expect(value).toContainText('送料は無料');
+      await expect(value).toContainText('無料（商品価格に含みます）');
       await expect(value).toContainText('コンビニ決済手数料');
       await expect(value).toContainText('試着サービス');
     });

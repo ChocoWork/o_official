@@ -287,6 +287,17 @@ test('返品だけ失敗のnullを保持し他の表示を保つ', async () => {
   expect(await buildCustomerOrderPublicView(pub)).toMatchObject({ items: [], returnSection: null });
 });
 
+test.each([
+  [0, '無料'],
+  [500, '￥500'],
+  [800, '￥800'],
+])('送料%iは「%s」と出し、会員の詳細も同じ字を返す（FREQ-516）', async (shippingAmount, expected) => {
+  const pub = publicInput(); pub.order.shipping_amount = shippingAmount;
+  expect((await buildCustomerOrderPublicView(pub)).shippingAmount).toBe(expected);
+  const member = detailInput(); member.order.shipping_amount = shippingAmount;
+  expect((await buildCustomerOrderDetailView(member)).shippingAmount).toBe(expected);
+});
+
 test('入力の配列順を変えず発送を古い番号順に組み立てる', async () => {
   const input = publicInput();
   input.fulfillments.unshift({ ...input.fulfillments[0], fulfillmentId: 'ful-2', number: 2 });

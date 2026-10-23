@@ -235,7 +235,7 @@ export default function Page() {
       key: "shipping",
       title: "配送について",
       content:
-        "国内配送は通常3-5営業日でお届けします。送料は全国一律¥500、¥10,000以上のご購入で送料無料となります。",
+        "国内配送は通常3-5営業日でお届けします。送料は無料です（商品価格に含みます）。",
     },
     {
       key: "returns",
@@ -1524,7 +1524,7 @@ export default function Page() {
                 <BannerAlert
                   variant="warning"
                   icon={<i className="ri-gift-line lk-text-4xl text-black"></i>}
-                  message="¥10,000以上のご購入で送料無料"
+                  message="送料無料（商品価格に含みます）"
                   dismissible
                   onDismiss={() => setShowPromoBanner(false)}
                   size={demoSize}
