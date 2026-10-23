@@ -26,7 +26,7 @@ test.describe('FR-CART-002/005/006/007 cart summary session empty', () => {
 
     await page.goto('/cart');
 
-    await expect(page.getByText('カートは空です')).toBeVisible();
+    await expect(page.getByText('YOUR CART IS EMPTY', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'CONTINUE SHOPPING' })).toHaveAttribute('href', '/item');
   });
 });
