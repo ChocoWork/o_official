@@ -146,6 +146,10 @@ describeLocalDb('integration: G0 role permissions', (db) => {
     await fixtureGuard(async () => {
       for (const role of ['supporter', 'user']) for (const code of fixed) await grant(role, code);
     });
+    // Production-like gaps: admin lacks non-fixed G0 grants, supporter lacks the shipping pair.
+    await db().query(`delete from public.role_permissions rp using public.roles r, public.permissions p
+      where rp.role_id=r.id and rp.permission_id=p.id and p.code=any($1::text[]) and not (p.code=any($2::text[]))
+        and (r.code='admin' or (r.code='supporter' and p.code like 'admin.shipping.%'))`, [catalog, fixed]);
     await db().query(seed);
     await db().query(seed); // seed reconciliation remains idempotent, with the fixed guard enabled.
     const grants = (await db().query(`select r.code,array_agg(p.code order by p.code) as codes
@@ -362,6 +366,13 @@ describeLocalDb('integration: G0 role permissions', (db) => {
           await rejected(() => asRole(role, () => db().query(sql)), 'ROLE_PERMISSION_IMMUTABLE', '55000');
         }
       }
+    }
+  });
+
+  test('keeps the PostgREST pre-request hook callable', async () => {
+    for (const role of ['anon', 'authenticated']) {
+      expect((await db().query("select has_schema_privilege($1,'private','USAGE') as allowed", [role])).rows[0].allowed).toBe(true);
+      await asRole(role, () => db().query('select private.set_request_context()'));
     }
   });
 

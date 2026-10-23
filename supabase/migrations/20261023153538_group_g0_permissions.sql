@@ -149,9 +149,6 @@ DROP POLICY IF EXISTS "acl user_roles managed insert" ON public.user_roles;
 DROP POLICY IF EXISTS "acl user_roles managed update" ON public.user_roles;
 DROP POLICY IF EXISTS "acl user_roles managed delete" ON public.user_roles;
 
-REVOKE ALL ON SCHEMA private FROM PUBLIC, anon, authenticated;
-GRANT USAGE ON SCHEMA private TO service_role;
-
 CREATE FUNCTION private.guard_fixed_role_permissions() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $$
