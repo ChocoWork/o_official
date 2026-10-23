@@ -271,13 +271,17 @@ function orderEmailErrorLabel(code: string | null): string {
 }
 
 export function orderEmailPausedMail(state: Pick<OrderEmailSendState, 'reason' | 'pausedAt' | 'nextProbeAt'>): OpsAlertMail {
+  // サイトの住所が正しくない間は worker が1件も取り出さないので、試す時刻を書かない（住所の値も書かない）
+  const siteUrl = state.reason === 'config_site_url';
   return {
     kind: 'order_email_paused',
     subject: '【要対応】注文のメールの送信を止めています',
     lines: [
-      `送信サービスの設定の問題で、お客様への注文のメールの送信を止めています（${orderEmailErrorLabel(state.reason)}）。`,
+      siteUrl
+        ? 'サイトの住所の設定が本番向けに正しくないため、お客様への注文のメールの送信を止めています。'
+        : `送信サービスの設定の問題で、お客様への注文のメールの送信を止めています（${orderEmailErrorLabel(state.reason)}）。`,
       ...(state.pausedAt ? [`止めた時刻: ${formatJst(state.pausedAt)}`] : []),
-      ...(state.nextProbeAt ? [`次に1件だけ試す時刻: ${formatJst(state.nextProbeAt)}`] : []),
+      ...(state.nextProbeAt && !siteUrl ? [`次に1件だけ試す時刻: ${formatJst(state.nextProbeAt)}`] : []),
       '設定が直ると、試した1件が送れた時点で自動で再開します。止めている間のメールは消えずに残ります。',
       '',
       `次にやること: ${ORDER_EMAIL_RUNBOOK}の「送信の一時停止」に沿って、設定を確かめてください。`,

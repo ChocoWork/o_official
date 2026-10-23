@@ -137,7 +137,7 @@ describe('注文のメールの種類と名前', () => {
     const canceledVariants: Record<CanceledEmailVariant, true> = { payment_in_progress: true, pending: true, paid: true };
     const refundVariants: Record<RefundEmailVariant, true> = { standard: true, after_cancel: true, return: true };
     const variants: Record<OrderEmailVariant, true> = { ...paidVariants, ...canceledVariants, ...refundVariants };
-    const pauseReasons: Record<OrderEmailPauseReason | 'config_site_url', true> = {
+    const pauseReasons: Record<OrderEmailPauseReason, true> = {
       config_api_key: true, config_sender_domain: true, config_provider: true, config_site_url: true, quota_daily: true, quota_monthly: true,
     };
     // 書き分けは、最新の移行 A の CHECK（order_email_outbox_variant_check）から、種類ごとに読む。

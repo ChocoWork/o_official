@@ -364,6 +364,22 @@ describe('店への知らせのメールの文面', () => {
       expect(mail.lines.join('\n')).toContain('docs/06_Operations/order-email-operations.md）の「送信の一時停止」');
     });
 
+    it('一時停止（サイトの住所）: 住所の設定が本番向けに正しくないと書き、試す時刻を書かない。他の理由の文は変えない', () => {
+      const siteUrl = orderEmailPausedMail({
+        reason: 'config_site_url', pausedAt: new Date('2026-10-09T01:00:00Z'), nextProbeAt: new Date('2026-10-10T00:00:00Z'),
+      });
+      expect(siteUrl.lines[0]).toBe('サイトの住所の設定が本番向けに正しくないため、お客様への注文のメールの送信を止めています。');
+      expect(siteUrl.lines.join('\n')).not.toContain('次に1件だけ試す時刻');
+      expect(siteUrl.lines.join('\n')).not.toMatch(/https?:|localhost/);
+      expect(siteUrl.lines.join('\n')).toContain('止めた時刻: ');
+
+      const other = orderEmailPausedMail({
+        reason: 'config_api_key', pausedAt: new Date('2026-10-09T01:00:00Z'), nextProbeAt: new Date('2026-10-10T00:00:00Z'),
+      });
+      expect(other.lines[0]).toBe('送信サービスの設定の問題で、お客様への注文のメールの送信を止めています（送信の鍵の設定）。');
+      expect(other.lines.join('\n')).toContain('次に1件だけ試す時刻: ');
+    });
+
     it('溜まり: 状態ごとの件数と原因の名前を書く', () => {
       const mail = orderEmailBacklogMail([
         { status: 'retry_wait', count: 2, oldestCreatedAt: new Date('2026-10-09T01:00:00Z'), lastErrors: ['provider_unavailable', 'Error: x@example.com'] },

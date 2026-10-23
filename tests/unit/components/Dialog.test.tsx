@@ -602,4 +602,13 @@ describe('Dialog の fullScreenOnMobile の「×」', () => {
     expect(hiddenByDefault?.[1] ?? '').toContain('display: none;');
     expect(shownOnMobile?.[1] ?? '').toContain('display: inline-flex;');
   });
+
+  it('× の押せる広さは 44×44 CSS px 以上（アイコンの大きさは変えない）', () => {
+    const css = fs.readFileSync(path.join(process.cwd(), 'src/components/ui/Dialog/Dialog.css'), 'utf8').replace(/\r\n/g, '\n');
+    const rule = css.match(/\n\.dialog-panel__close \{([^}]*)\}/)?.[1] ?? '';
+
+    expect(rule).toContain('min-width: 44px;');
+    expect(rule).toContain('min-height: 44px;');
+    expect(rule).toContain('font-size: var(--dialog-title-size);');
+  });
 });

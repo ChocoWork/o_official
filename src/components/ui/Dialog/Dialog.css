@@ -159,6 +159,9 @@
   /* 押せる広さ＝見出しの1行の高さ（font × φ × √φ） */
   width: calc(var(--dialog-title-size) * var(--sqrt-phi, 1.272));
   height: calc(var(--dialog-title-size) * var(--sqrt-phi, 1.272));
+  /* 指で押せる最小の広さ（WCAG 2.5.5 の 44×44 CSS px）。アイコンの大きさは font-size のまま */
+  min-width: 44px;
+  min-height: 44px;
   margin: 0;
   padding: 0;
   border: none;
