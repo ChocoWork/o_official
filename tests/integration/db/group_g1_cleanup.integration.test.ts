@@ -15,10 +15,18 @@ import { createOrderStatusEmail } from './helpers/order-status-fixtures';
  * G-1 Task 1: 清掃節の原子性と、本番相当の材料での結果。
  * 実行は controller の使い捨てローカル DB（G-0 の版へ seed なしで reset した直後）に限る。
  * SQL 原文（自身の BEGIN/COMMIT を含む）を専用の接続で流し、外側の BEGIN で包んで成功扱いにしない。
- * 成功版は全注文・台帳を消して commit するので、この suite は単独で流す。
+ *
+ * 流し方（必ずこの順で、このファイルだけを単独で流す。合図 G1_CLEANUP_SUITE=1 が無ければ DB の試験は飛ばす）:
+ *   npx.cmd supabase db reset --version 20261023175712 --no-seed
+ *   $env:G1_CLEANUP_SUITE='1'; npx.cmd jest tests/integration/db/group_g1_cleanup.integration.test.ts --runInBand
+ * 成功版は全注文・台帳を消して commit する。G-1 を当てた DB（ふつうの reset の後）では本体の CREATE が 42P07 で落ちるので、
+ * ふつうの DB 結合の全件では飛ばし、合図がある時は beforeAll で G-0 までの版だけの DB かを確かめ、違えば材料を作る前に止める。
  */
 
 type Row = Record<string, unknown>;
+
+const G0_VERSION = '20261023175712';
+const G1_VERSION = '20261023211425';
 
 const MIGRATION_DIRECTORY = path.join(process.cwd(), 'supabase/migrations');
 const MIGRATION_FILES = fs.readdirSync(MIGRATION_DIRECTORY).filter((name) => name.endsWith('_group_g1_allocation.sql'));
@@ -199,8 +207,34 @@ function injectedFailureSql(): string {
   );
 }
 
-/** SQL 全文を専用の接続で流す。失敗した時は中断した取引を戻して、SQLSTATE と記号だけを返す */
-async function runFullSql(sql: string): Promise<{ code?: string; message?: string; elapsedMs: number } | null> {
+/** 原文の本体節の末尾に 1 文を足す（最後の確かめが本当に止めるかを試すための違反の注入） */
+function injectedBodySql(statement: string): string {
+  const body = sectionBetween(MIGRATION_SQL, '-- G1_BODY_BEGIN', '-- G1_BODY_END');
+  return replaceBetween(MIGRATION_SQL, '-- G1_BODY_BEGIN', '-- G1_BODY_END', `${body.trim()}\n${statement}`);
+}
+
+/**
+ * G-0 までの版だけの DB で流していることを確かめる（単独で流す合図 G1_CLEANUP_SUITE=1 がある時だけ動く）。
+ */
+async function assertIsolatedG0Database(db: PgClient): Promise<void> {
+  const versions = await db.query(
+    `select pg_catalog.count(*) filter (where version = $1)::int as g0,
+            pg_catalog.count(*) filter (where version = $2)::int as g1,
+            pg_catalog.count(*) filter (where version > $1)::int as later
+     from supabase_migrations.schema_migrations`,
+    [G0_VERSION, G1_VERSION],
+  );
+  const row = versions.rows[0];
+  if (row.g0 !== 1 || row.g1 !== 0 || row.later !== 0) {
+    throw new Error(
+      `DB が G-0（${G0_VERSION}）までの版ではない（G-1 ${G1_VERSION} を当てた DB では本体が 42P07 で落ちる）。`
+      + `npx.cmd supabase db reset --version ${G0_VERSION} --no-seed の直後に、このファイルだけを流すこと`,
+    );
+  }
+}
+
+/** SQL 全文を専用の接続で流す。失敗した時は中断した取引を戻して、SQLSTATE と記号と確かめの名前（DETAIL）だけを返す */
+async function runFullSql(sql: string): Promise<{ code?: string; message?: string; detail?: string; elapsedMs: number } | null> {
   const client = await connectLocalDb();
   const started = Date.now();
   try {
@@ -209,9 +243,9 @@ async function runFullSql(sql: string): Promise<{ code?: string; message?: strin
       await client.query(sql);
       return null;
     } catch (error) {
-      const failure = error as { code?: string; message?: string };
+      const failure = error as { code?: string; message?: string; detail?: string };
       await client.query('rollback');
-      return { code: failure.code, message: failure.message, elapsedMs: Date.now() - started };
+      return { code: failure.code, message: failure.message, detail: failure.detail, elapsedMs: Date.now() - started };
     }
   } finally {
     await client.end();
@@ -584,7 +618,13 @@ describe('G-1 の移行の形（DB なしで読む）', () => {
   });
 });
 
-describeLocalDb('integration: G-1 の清掃節（本番相当の材料・全文の実行・故障注入）', (db) => {
+const describeCleanupDb: typeof describeLocalDb = process.env.G1_CLEANUP_SUITE === '1'
+  ? describeLocalDb
+  : (name) => describe(name, () => {
+    test.skip('G1_CLEANUP_SUITE=1 で単独に流す時だけ動かす（全注文を消して commit するため）', () => {});
+  });
+
+describeCleanupDb('integration: G-1 の清掃節（本番相当の材料・全文の実行・故障注入）', (db) => {
   jest.setTimeout(180_000);
 
   let fixture: Fixture;
@@ -626,6 +666,7 @@ describeLocalDb('integration: G-1 の清掃節（本番相当の材料・全文�
   }
 
   beforeAll(async () => {
+    await assertIsolatedG0Database(db());
     fixture = await buildFixture(db());
     const allWebhookIds = [...fixture.w, ...Object.values(fixture.controls)];
     before = {
@@ -689,6 +730,26 @@ describeLocalDb('integration: G-1 の清掃節（本番相当の材料・全文�
   test('故障注入: 最後の確かめで止めると、清掃も本体の新しい表も全部戻る', async () => {
     const failure = await runFullSql(injectedFailureSql());
     expect(failure).toMatchObject({ code: '55000', message: 'GROUP_G_TEST_INJECTED_FAILURE' });
+
+    await expectUnchangedSinceFixture();
+    expect(await webhookRows(db(), Object.keys(before.webhooks))).toEqual(before.webhooks);
+  });
+
+  test.each([
+    {
+      name: '在庫が 0 でない variant',
+      statement: 'UPDATE public.item_variants SET stock_quantity = 1 WHERE id = (SELECT pg_catalog.min(id) FROM public.item_variants);',
+      detail: 'item_variants_stock',
+    },
+    {
+      name: 'queued に戻した W',
+      statement: `UPDATE public.stripe_webhook_events SET processing_status = 'queued'
+WHERE id = (SELECT pg_catalog.min(id) FROM pg_temp.group_g_cleanup_webhook_ids);`,
+      detail: 'webhook_terminalized',
+    },
+  ])('最後の確かめは本体節で入れた違反（$name）を $detail で止め、全部戻す', async ({ statement, detail }) => {
+    const failure = await runFullSql(injectedBodySql(statement));
+    expect(failure).toMatchObject({ code: '55000', message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', detail });
 
     await expectUnchangedSinceFixture();
     expect(await webhookRows(db(), Object.keys(before.webhooks))).toEqual(before.webhooks);
@@ -783,10 +844,12 @@ describeLocalDb('integration: G-1 の清掃節（本番相当の材料・全文�
 
     // 定義: 新しい表・関数は作らず（本体は空）、前からあるトリガー・制約・関数・ACL はそのまま
     const catalog = await catalogSnapshot(db());
-    expect(catalog.triggers).toEqual(expect.arrayContaining(before.catalog.triggers));
-    expect(catalog.constraints).toEqual(expect.arrayContaining(before.catalog.constraints));
-    expect(catalog.functions).toEqual(expect.arrayContaining(before.catalog.functions));
-    expect(catalog.relations).toEqual(expect.arrayContaining(before.catalog.relations));
+    // Task 1 の本体は空なので、新しい object は 1 つも無く、定義の集合は清掃の前と完全に同じ。
+    // 本体が埋まったら、Task 14 がここを最終 SQL の完全な期待集合（新 4 表・関数など）との比較に置き換える
+    expect(catalog.triggers).toEqual(before.catalog.triggers);
+    expect(catalog.constraints).toEqual(before.catalog.constraints);
+    expect(catalog.functions).toEqual(before.catalog.functions);
+    expect(catalog.relations).toEqual(before.catalog.relations);
     const userTriggersOnCleanup = catalog.triggers.filter((trigger) => CLEANUP_TABLES.includes(trigger.relation as string)
       || CLEANUP_TABLES.includes(`public.${trigger.relation as string}`));
     for (const trigger of userTriggersOnCleanup) expect(trigger.enabled).toBe('O');
