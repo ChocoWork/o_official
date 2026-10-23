@@ -4,7 +4,7 @@
 
 ## 概要
 
-現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。130ファイル、明示exportされた169組（E2E 用の `/api/e2e/server-info` を除く129ファイル・168組を本書で記す）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
+現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。132ファイル、明示exportされた171組（E2E 用の `/api/e2e/server-info` を除く131ファイル・170組を本書で記す。G-0 の2入口を 2026-10-24 に反映）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
 
 | 読み方 | 内容 |
 | --- | --- |
@@ -13,7 +13,7 @@
 | 入出力定義 | I/N/L/S/T/O/F/Pなどの再利用schema、応答の詳細と根拠へのリンク |
 | 入口の所在 | [APIルート一覧](route-inventory.md)（所在表） |
 
-表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは169組に含めない。
+表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは171組に含めない。
 
 ## 共通境界
 
@@ -192,7 +192,9 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | `POST /api/admin/revoke-user-sessions` | RBAC `admin.users.manage` | JSON: `{user_id:1文字以上}`（UUID制約なし） | 200 `{ok:true}` | 400 body; 500 revoke/例外 | sessionsを失効（revoke_sessions_for_user RPC等） [実装](../../../src/app/api/admin/revoke-user-sessions/route.ts) |
 | `POST /api/admin/users/mfa/reset` | RBAC `admin.users.manage` | JSON: `{userId:UUID,reason:trim後10〜500文字,confirm:"RESET_MFA"}` | 200 `{success:true,deletedFactorCount,message}` | 400 body/自身/非特権対象; 404 user; 500 factor取得/削除/例外 | 特権対象のMFA factorsを削除しsessions失効 [実装](../../../src/app/api/admin/users/mfa/reset/route.ts) |
 | `GET /api/admin/users` | RBAC `admin.users.read` | 本文なし | 200 `{data:[{id,name,email,role,roleValue,lastLogin,status}]}` | 500 Auth/ACL/profile取得/例外 | Authユーザーをページ走査、ACLのroleを表示へ反映 [実装](../../../src/app/api/admin/users/route.ts) |
-| `PATCH /api/admin/users` | RBAC `admin.users.manage` | JSON: `{userId:UUID,role:"admin"&#124;"supporter"&#124;"user"}` | 200 `{success:true}` | 400 body; 404 user; 500 metadata/ACL更新/例外 | Auth metadataとDB ACLを更新、sessions失効 [実装](../../../src/app/api/admin/users/route.ts) |
+| `PATCH /api/admin/users` | RBAC `admin.users.manage`、C、IP・実行者ごとに10分30回 | JSON: `{userId:UUID,role:"admin"&#124;"supporter"&#124;"user"}` | 200 `{success:true}` | 400 body; 403 `SELF_ROLE_CHANGE_FORBIDDEN`（自分の役割）; 404 user; 409 `LAST_ADMIN_REQUIRED`（有効な店長が0人になる）; 429; 500 例外 | DB関数 `admin_set_user_role` が共通lockの中でuser_rolesとAuth metadataのroleを同じ取引で更新（G-0）。操作監査。no-store [実装](../../../src/app/api/admin/users/route.ts) |
+| `GET /api/admin/permissions` | RBAC `admin.permissions.manage`（店長のみ・固定） | 本文なし | 200 `{data:{permissions:[{code,area,label,requires,fixed,upcoming}],roles:[{code:"admin"&#124;"supporter",label,version:文字列,permissionCodes}]}}`（30コード・2役割だけ） | 403 `ROLE_PERMISSION_FORBIDDEN`; 500 `PERMISSION_LOAD_FAILED` | DB関数 `admin_get_permissions` が実行者を再確認。全応答 no-store（G-0） [実装](../../../src/app/api/admin/permissions/route.ts) |
+| `POST /api/admin/role-permissions` | RBAC `admin.permissions.manage`、C、IP・実行者ごとに10分30回 | JSON strict: `{roleCode:"admin"&#124;"supporter",permissionCodes:30コード内・重複なし,expectedVersion:10進文字列,requestKey:UUID}` | 200 `{data:{role,changedCount}}` | 400 `ROLE_PERMISSION_ARGUMENT_INVALID`; 403 `ROLE_PERMISSION_FORBIDDEN`・`ROLE_PERMISSION_FIXED`; 409 `ROLE_PERMISSION_VERSION_CONFLICT`・`ROLE_PERMISSION_REQUEST_KEY_CONFLICT`; 429; 500 `PERMISSION_UPDATE_FAILED` | DB関数 `admin_set_role_permissions` が差分・`role_permission_events`・受付記録を同じ取引で保存。同じ要求番号の再送は最初の結果。操作監査。全応答 no-store（G-0） [実装](../../../src/app/api/admin/role-permissions/route.ts) |
 
 ## 管理:商品・LOOK・NEWS・STOCKIST
 
