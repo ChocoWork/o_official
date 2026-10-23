@@ -169,6 +169,53 @@ const PRESERVED_TABLES = [
   'private.delivery_tracking_provider_gate',
 ];
 
+/**
+ * 本体節（G-1 Task 2）が足す object。public の表は `public.` を外した名前で持つ（regclass の文字は search_path で変わるため）。
+ * Task 14 が最終 SQL の完全な期待集合に置き換える
+ */
+const G1_BODY_RELATIONS = [
+  'private.group_g_operations', 'private.group_g_operations_pkey', 'private.group_g_operations_operation_request_key_key',
+  'public.order_item_allocations', 'public.order_item_allocations_pkey', 'public.order_item_allocations_variant_kind_item_idx',
+  'public.order_item_allocations_item_id_idx',
+  'public.order_item_allocation_events', 'public.order_item_allocation_events_pkey',
+  'public.order_item_allocation_events_operation_key', 'public.order_item_allocation_events_stock_movement_id_key',
+  'public.order_item_allocation_events_reverses_event_id_key', 'public.order_item_allocation_events_allocation_created_idx',
+  'public.order_item_state_events', 'public.order_item_state_events_pkey', 'public.order_item_state_events_operation_key',
+  'public.order_item_state_events_item_version_idx',
+];
+const G1_BODY_FUNCTIONS = [
+  'private.check_group_g_allocation_bounds()',
+  'private.ensure_group_g_payment_review_hold(uuid,text,text,text,uuid)',
+  'private.guard_group_g_allocation_change()',
+  'private.reject_group_g_event_mutation()',
+];
+const G1_BODY_TRIGGERS = [
+  ...['order_item_allocation_events', 'order_item_state_events', 'private.group_g_operations'].flatMap((table) => {
+    const prefix = table.replace(/^private\./, '');
+    return ['no_update', 'no_delete', 'no_truncate'].map((suffix) => `${table}|${prefix}_${suffix}`);
+  }),
+  'order_item_allocations|order_item_allocations_change_guard',
+  'order_item_allocations|group_g_allocation_bounds',
+  'order_item_allocation_events|group_g_allocation_bounds',
+];
+const G1_BODY_CONSTRAINTS = [
+  ...['pkey', 'operation_request_key_key', 'exception_id_fkey', 'fingerprint_check', 'exception_check', 'review_hold_check']
+    .map((name) => `private.group_g_operations|group_g_operations_${name}`),
+  ...['pkey', 'order_item_id_fkey', 'variant_id_fkey', 'operation_id_fkey', 'quantity_check', 'remaining_check',
+    'kind_check', 'version_check'].map((name) => `order_item_allocations|order_item_allocations_${name}`),
+  'order_item_allocations|group_g_allocation_bounds',
+  ...['pkey', 'allocation_id_fkey', 'counterpart_allocation_id_fkey', 'reverses_event_id_fkey', 'stock_movement_id_fkey',
+    'operation_id_fkey', 'operation_key', 'stock_movement_id_key', 'reverses_event_id_key', 'event_type_check',
+    'quantity_check', 'sequence_check', 'counterpart_check', 'reverses_check', 'movement_check']
+    .map((name) => `order_item_allocation_events|order_item_allocation_events_${name}`),
+  'order_item_allocation_events|group_g_allocation_bounds',
+  ...['pkey', 'order_item_id_fkey', 'operation_id_fkey', 'operation_key', 'unit_from_check', 'unit_to_check',
+    'from_status_check', 'to_status_check', 'transition_check', 'sequence_check', 'version_check']
+    .map((name) => `order_item_state_events|order_item_state_events_${name}`),
+  'stock_movements|stock_movements_allocation_operation_id_fkey',
+];
+const G1_BODY_CHANGED_CONSTRAINTS = ['stock_movements|stock_movements_reason_check'];
+
 const WEBHOOK_COLUMNS = `id,event_type,raw_payload,processing_status,attempt_count,processed_at,received_at,next_attempt_at,
   claim_token,lease_expires_at,completed_at,last_error,dead_at,dead_notified_at`;
 
@@ -842,14 +889,29 @@ WHERE id = (SELECT pg_catalog.min(id) FROM pg_temp.group_g_cleanup_webhook_ids);
     }
     for (const control of Object.values(fixture.controls)) expect(webhooks[control]).toEqual(before.webhooks[control]);
 
-    // 定義: 新しい表・関数は作らず（本体は空）、前からあるトリガー・制約・関数・ACL はそのまま
+    // 定義: 本体が足した object は決まった一覧だけで、前からあるトリガー・制約・関数・ACL はそのまま
+    // （台帳の理由の CHECK だけは allocation_release を足して作り直す）。
+    // Task 14 がここを最終 SQL の完全な期待集合（新 4 表・関数など）との比較に置き換える
     const catalog = await catalogSnapshot(db());
-    // Task 1 の本体は空なので、新しい object は 1 つも無く、定義の集合は清掃の前と完全に同じ。
-    // 本体が埋まったら、Task 14 がここを最終 SQL の完全な期待集合（新 4 表・関数など）との比較に置き換える
-    expect(catalog.triggers).toEqual(before.catalog.triggers);
-    expect(catalog.constraints).toEqual(before.catalog.constraints);
-    expect(catalog.functions).toEqual(before.catalog.functions);
-    expect(catalog.relations).toEqual(before.catalog.relations);
+    const split = <T extends Row>(rows: T[], keyOf: (row: T) => string, added: string[], changed: string[] = []) => ({
+      kept: rows.filter((row) => !added.includes(keyOf(row)) && !changed.includes(keyOf(row))),
+      added: rows.filter((row) => added.includes(keyOf(row))).map(keyOf).sort(),
+    });
+    const relationKey = (row: Row) => `${(row.relation as string).replace(/^public\./, '')}|${row.name as string}`;
+    const triggers = split(catalog.triggers, relationKey, G1_BODY_TRIGGERS);
+    expect(triggers.kept).toEqual(before.catalog.triggers);
+    expect(triggers.added).toEqual([...G1_BODY_TRIGGERS].sort());
+    const constraints = split(catalog.constraints, relationKey, G1_BODY_CONSTRAINTS, G1_BODY_CHANGED_CONSTRAINTS);
+    expect(constraints.kept).toEqual(split(before.catalog.constraints, relationKey, [], G1_BODY_CHANGED_CONSTRAINTS).kept);
+    expect(constraints.added).toEqual([...G1_BODY_CONSTRAINTS].sort());
+    const reasonCheck = catalog.constraints.find((row) => relationKey(row) === 'stock_movements|stock_movements_reason_check');
+    expect(reasonCheck?.definition).toContain("'allocation_release'::text");
+    const functions = split(catalog.functions, (row) => row.signature as string, G1_BODY_FUNCTIONS);
+    expect(functions.kept).toEqual(before.catalog.functions);
+    expect(functions.added).toEqual([...G1_BODY_FUNCTIONS].sort());
+    const relations = split(catalog.relations, (row) => row.name as string, G1_BODY_RELATIONS);
+    expect(relations.kept).toEqual(before.catalog.relations);
+    expect(relations.added).toEqual([...G1_BODY_RELATIONS].sort());
     const userTriggersOnCleanup = catalog.triggers.filter((trigger) => CLEANUP_TABLES.includes(trigger.relation as string)
       || CLEANUP_TABLES.includes(`public.${trigger.relation as string}`));
     for (const trigger of userTriggersOnCleanup) expect(trigger.enabled).toBe('O');

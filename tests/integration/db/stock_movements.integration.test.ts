@@ -177,8 +177,12 @@ describe('integration: stock_movements', () => {
         [variantId],
       );
 
+      // G-1 で割当の履歴が台帳を外部キーで指すので、台帳だけの TRUNCATE はトリガーの前に外部キーで断られる。
+      // 指す側の表を後ろに並べ、台帳の文のトリガーが先に断ることを確かめる。
+      // 台帳の操作の外部キー（G-1）は遅延なので、追記の確かめが残っていると TRUNCATE はトリガーの前に断られる。先に流しておく
+      await client.query('SET CONSTRAINTS ALL IMMEDIATE');
       await expect(
-        client.query(`TRUNCATE public.stock_movements`),
+        client.query(`TRUNCATE public.stock_movements, public.order_item_allocation_events`),
       ).rejects.toThrow(/append-only/i);
     } finally {
       await client.query('ROLLBACK');
