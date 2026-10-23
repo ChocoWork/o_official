@@ -1,4 +1,21 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
+
+/**
+ * 画面いっぱいに開く Dialog（fullScreenOnMobile）の見出しの行の「×」（J-12）。
+ * 768px 未満の時だけ見え、読み上げの名前は「閉じる」。768px 以上では CSS で隠れる（DOM には残る）
+ */
+export function dialogHeaderClose(dialog: Locator): Locator {
+  return dialog.locator('[data-ui-dialog-close]');
+}
+
+/**
+ * 画面の下の「閉じる」。768px 未満では見出しの行の × と読み上げの名前が同じになるので、× を外して探す
+ */
+export function dialogFooterClose(dialog: Locator): Locator {
+  return dialog
+    .getByRole('button', { name: '閉じる', exact: true })
+    .and(dialog.locator('button:not([data-ui-dialog-close])'));
+}
 
 /**
  * 管理画面が裏で読む API と、セッション更新（refresh）を固定する。

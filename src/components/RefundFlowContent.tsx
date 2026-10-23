@@ -35,16 +35,17 @@ export function RefundFlowContent({ flow, backLabel, submitLabel, canSubmit, chi
         </p>
       ) : null}
 
+      {/* 何もせずに閉じるボタンは、どの状態でも「戻る」（読み込めなかった時・確かめ中・答えが分からない時も） */}
       {flow.loadError ? (
         <div className="flex gap-2 pt-1">
           <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={flow.close}>
-            閉じる
+            戻る
           </Button>
         </div>
       ) : flow.awaiting || flow.uncertain ? (
         <div className="flex gap-2 pt-1">
           <Button variant="secondary" size="sm" className="w-full font-acumin" disabled={flow.busy} onClick={flow.close}>
-            閉じる
+            戻る
           </Button>
           <Button variant="primary" size="sm" className="w-full font-acumin" disabled={flow.busy} onClick={flow.checkAgain}>
             もう一度確かめる

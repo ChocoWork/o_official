@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import { createCatalogFixture } from '../tests/integration/db/helpers/order-fixtures';
+import { dialogFooterClose } from './admin-test-utils';
 import { expectDbError, runWorkerUntil, withLocalDb } from './order-email-test-utils';
 import {
   UUID_PATTERN,
@@ -106,7 +107,7 @@ for (const viewport of viewports) {
       await expect(dialog.getByText(RETURN_TEXT.empty)).toBeVisible();
       await expect(dialog.getByText(RETURN_TEXT.remaining(3))).toBeVisible();
       await expect(dialog.getByRole('button', { name: '返品を作る', exact: true })).toBeEnabled();
-      await expect(dialog.getByRole('button', { name: '閉じる', exact: true })).toBeVisible();
+      await expect(dialogFooterClose(dialog)).toBeVisible();
     });
 
     test('作る画面は発送ごとに見出しと受付の期限を出し、期限を過ぎた発送の品も数を入れて作れる（警告だけ）', async ({ page }) => {

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { dialogButtons, footerCloseButton } from './dialog-test-helpers';
 import type { OrderReturnDetail, OrderReturnLineDetail } from '@/lib/orders/returns/return-types';
 
 const mockClientFetch = jest.fn();
@@ -172,7 +173,7 @@ describe('OrderReturnReceiveDialog の読み込み', () => {
 
     const loading = screen.getByRole('dialog', { name: '受け取る' });
     expect(within(loading).getByText('読み込み中です...')).toBeInTheDocument();
-    expect(within(loading).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる']);
+    expect(dialogButtons(loading).map((button) => button.textContent)).toEqual(['閉じる']);
     expect(mockClientFetch).toHaveBeenCalledWith(RETURNS_URL, { cache: 'no-store' });
 
     resolveGet(returnsAnswer(returnDetail()));
@@ -186,7 +187,7 @@ describe('OrderReturnReceiveDialog の読み込み', () => {
     const onUncertain = jest.fn();
     render(<OrderReturnReceiveDialog orderId={ORDER_ID} returnId={RETURN_ID} onClose={onClose} onDone={jest.fn()} onUncertain={onUncertain} />);
 
-    fireEvent.click(screen.getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(document.body));
 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onUncertain).not.toHaveBeenCalled();
@@ -203,10 +204,10 @@ describe('OrderReturnReceiveDialog の読み込み', () => {
 
     const dialog = await screen.findByRole('dialog', { name: '受け取る' });
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(message);
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる']);
+    expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる']);
     expect(within(dialog).queryByRole('list', { name: '受け取る品' })).not.toBeInTheDocument();
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -217,7 +218,7 @@ describe('OrderReturnReceiveDialog の読み込み', () => {
 
     const dialog = await screen.findByRole('dialog', { name: '受け取る' });
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('返品が見つかりません。');
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる']);
+    expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる']);
   });
 
   it('1つの注文に返品が2つ以上ある時は、returnId の返品を開く', async () => {
@@ -1353,10 +1354,10 @@ it.each([
     expect(within(dialog).getByRole('alert')).toHaveTextContent(RECEIPT_RECORDED_NOTE);
     expect(onDone).not.toHaveBeenCalled();
     // 同じ受け取りを新しい番号で送ると、まだ届いていない2点目まで受け取ったことになるので、確定のボタンを出さない
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる']);
+    expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる']);
     expect(primaryButton(dialog)).toBeNull();
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onUncertain).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(calledUrls()).toEqual([RETURNS_URL, RECEIVE_URL]);
@@ -1447,8 +1448,8 @@ describe('OrderReturnReceiveDialog の答えが分からない時（今返金を
       expect(within(dialog).getByRole('radio', { name: '額を相談してから返金する' })).toBeDisabled();
       expect(within(dialog).getByRole('checkbox', { name: 'お客様に知らせる' })).toBeDisabled();
       // 操作は「もう一度確かめる」と「閉じる」だけ
-      expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
-      expect(within(dialog).getByRole('button', { name: '閉じる' })).toBeEnabled();
+      expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
+      expect(footerCloseButton(dialog)).toBeEnabled();
 
       fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
 
@@ -1478,7 +1479,7 @@ describe('OrderReturnReceiveDialog の答えが分からない時（今返金を
     // 断りの文の後ろに、答えが分からない時の文を続けて出す（取り消せない操作の結果が分からないことを、断りの文で隠さない）
     await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(`${message}${UNKNOWN_RECEIVE}`));
     expect(amountInput(dialog)).toBeDisabled();
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
+    expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
     expect(calledUrls()).toHaveLength(3);
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
@@ -1533,7 +1534,7 @@ describe('OrderReturnReceiveDialog の答えが分からない時（今返金を
 
     expect(within(dialog).getByRole('alert')).toHaveTextContent(UNKNOWN_RECEIVE);
     expect(onDone).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onUncertain).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -1564,7 +1565,7 @@ describe('OrderReturnReceiveDialog の答えが分からない時（今返金を
     fireEvent.click(within(dialog).getByRole('button', { name: '返品を終える' }));
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(UNKNOWN_RECEIVE);
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
+    expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
     fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
 
     await waitFor(() => expect(onDone).toHaveBeenCalledWith(NOTICE_CLOSED_MISSING));

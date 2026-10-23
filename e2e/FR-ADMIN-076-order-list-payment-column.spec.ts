@@ -12,6 +12,7 @@ import {
   mockAdminSession,
   mockOrderList,
   openOrderTab,
+  orderNumberOf,
   viewports,
 } from './order-fulfillment-test-utils';
 import {
@@ -205,7 +206,7 @@ for (const viewport of viewports) {
 
       const refundDialog = await openRefundDialog(page, 'order-paid');
       await expect(refundDialog.getByRole('region', { name: '発送前の商品', exact: true })).toBeVisible();
-      await refundDialog.getByRole('button', { name: 'キャンセル', exact: true }).click();
+      await refundDialog.getByRole('button', { name: '戻る', exact: true }).click();
       await expect(page.getByRole('dialog')).toHaveCount(0);
 
       const cancelDialog = await openPaidCancelDialog(page, 'order-paid');
@@ -214,7 +215,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('dialog')).toHaveCount(0);
 
       await rowOf(page, 'order-unpaid').getByRole('button', { name: 'キャンセル', exact: true }).click();
-      await expect(page.getByRole('dialog', { name: '注文を取り消す', exact: true })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: `注文を取り消す（注文 ${orderNumberOf('order-unpaid')}）`, exact: true })).toBeVisible();
     });
 
     test('CSV の見出しは11列で、発送待ちの注文の行に、進み具合・支払い・返金額を書く（返品の無い行の返品は空）', async ({ page }) => {

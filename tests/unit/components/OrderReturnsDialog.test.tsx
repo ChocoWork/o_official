@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { dialogButtons, footerCloseButton } from './dialog-test-helpers';
 import type { OrderReturnsData } from '@/components/OrderReturnsDialog';
 import type { OrderReturnDetail, OrderReturnLineDetail } from '@/lib/orders/returns/return-types';
 
@@ -137,7 +138,7 @@ async function openDialog(body: { data: OrderReturnsData } = returnsBody(), { ca
 }
 
 const card = (dialog: HTMLElement, label = LABEL) => within(dialog).getByRole('group', { name: label });
-const buttonNames = (scope: HTMLElement) => within(scope).queryAllByRole('button').map((button) => button.textContent);
+const buttonNames = (scope: HTMLElement) => dialogButtons(scope).map((button) => button.textContent);
 
 beforeEach(() => {
   mockClientFetch.mockReset();
@@ -159,7 +160,7 @@ describe('OrderReturnsDialog の返品の一覧', () => {
     expect(within(first).queryByText(/受け取り済み|届かない|お返し|お支払い待ち/)).not.toBeInTheDocument();
     expect(within(dialog).getByText('返品できる品: あと3点')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: '返品を作る' })).toBeEnabled();
-    expect(within(dialog).getByRole('button', { name: '閉じる' })).toBeEnabled();
+    expect(footerCloseButton(dialog)).toBeEnabled();
   });
 
   it('返品の状態と小さな印は、返品ごとに言葉を変えて出す', async () => {
@@ -363,7 +364,7 @@ describe('OrderReturnsDialog の返品の一覧', () => {
     expect(buttonNames(dialog)).toEqual(['閉じる']);
     expect(within(dialog).queryByText(/返品できる品/)).not.toBeInTheDocument();
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -391,7 +392,7 @@ describe('OrderReturnsDialog の返品の一覧', () => {
 
     expect(dialog.closest('[data-ui-dialog]')).toHaveAttribute('data-ui-dialog-fullscreen', 'mobile');
     fireEvent.keyDown(document, { key: 'Escape' });
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 });

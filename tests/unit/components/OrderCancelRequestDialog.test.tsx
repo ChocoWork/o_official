@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { dialogButtons, footerCloseButton } from './dialog-test-helpers';
 import type { OrderStatus } from '@/lib/orders/order-payment-types';
 import type { AdminCancelRequest } from '@/lib/orders/returns/return-types';
 
@@ -115,9 +116,10 @@ describe('OrderCancelRequestDialog の中身', () => {
     expect(within(dialog).getByText('申し込み: 2026/10/12 10:00')).toBeInTheDocument();
     expect(within(dialog).getByText('シルクブラウス（白 / M） × 1（未発送 2）')).toBeInTheDocument();
     expect(within(dialog).getByText('ご連絡事項: 色違いを頼みたい')).toBeInTheDocument();
-    for (const name of [REMOVE_LABEL, 'お断りする', '解決済みにする', '閉じる']) {
+    for (const name of [REMOVE_LABEL, 'お断りする', '解決済みにする']) {
       expect(within(dialog).getByRole('button', { name })).toBeEnabled();
     }
+    expect(footerCloseButton(dialog)).toBeEnabled();
   });
 
   it('色もサイズも無い品は品名だけ。複数の品は1行ずつ。ご連絡事項が無い申し込みは、その行を出さない', async () => {
@@ -210,7 +212,7 @@ describe('OrderCancelRequestDialog の中身', () => {
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(expected);
     expect(within(dialog).queryByTestId('cancel-request-item')).not.toBeInTheDocument();
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる']);
+    expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる']);
   });
 
   it('申し込みが1つも無い時は、見つからない旨を出す', async () => {
@@ -224,7 +226,7 @@ describe('OrderCancelRequestDialog の中身', () => {
   it('「閉じる」と Escape で onClose を呼ぶ', async () => {
     const { dialog, onClose } = await openList();
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onClose).toHaveBeenCalledTimes(1);
 
     fireEvent.keyDown(document, { key: 'Escape' });

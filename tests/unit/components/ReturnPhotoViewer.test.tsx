@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { footerCloseButton } from './dialog-test-helpers';
 import ReturnPhotoViewer, {
   PHOTO_LOAD_FAILURE_TEXT,
   PHOTO_PURGED_TEXT,
@@ -84,7 +85,7 @@ describe('ReturnPhotoViewer', () => {
   it('「閉じる」と Esc で閉じる', () => {
     const { onClose } = renderViewer();
 
-    fireEvent.click(screen.getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(document.body));
     expect(onClose).toHaveBeenCalledTimes(1);
 
     fireEvent.keyDown(document, { key: 'Escape' });

@@ -7,6 +7,8 @@ jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mo
 import OrderRefundDialog from '@/components/OrderRefundDialog';
 
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
+/** 見出しに注文番号（ORD- と ID の先頭8文字の大文字）を入れる。お客様の名前は出さない（J-12） */
+const TITLE = '返金（注文 ORD-A1B2C3D4）';
 const REFUND_URL = `/api/admin/orders/${ORDER_ID}/refund`;
 const CONFIRM_URL = `${REFUND_URL}/confirm`;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -116,9 +118,19 @@ async function openDialog(loaded: RefundMaterials = materials()) {
   mockClientFetch.mockResolvedValueOnce(json(loaded));
   const props = { onClose: jest.fn(), onRefunded: jest.fn(), onUncertain: jest.fn() };
   const utils = render(<OrderRefundDialog orderId={ORDER_ID} {...props} />);
-  const dialog = await screen.findByRole('dialog', { name: '返金' });
+  const dialog = await screen.findByRole('dialog', { name: TITLE });
   await waitFor(() => expect(within(dialog).queryByText('読み込み中です...')).not.toBeInTheDocument());
   return { ...utils, ...props, props, dialog };
+}
+
+/**
+ * 画面の中のボタンの読み上げの名前（並びの順）。先頭の「閉じる」は見出しの行の ×（jsdom は CSS を読まないので、幅に関係なく出る）
+ */
+function buttonNames(dialog: HTMLElement, { enabledOnly = false } = {}): Array<string | null> {
+  return within(dialog)
+    .getAllByRole('button')
+    .filter((button) => !enabledOnly || !(button as HTMLButtonElement).disabled)
+    .map((button) => button.getAttribute('aria-label') ?? button.textContent);
 }
 
 /** n 番目（0 始まり）の呼び出しが窓口へ送った本文 */
@@ -185,8 +197,31 @@ describe('OrderRefundDialog の材料と画面', () => {
     expect(within(dialog).getByRole('checkbox', { name: 'お客様に返金のメールを送る' })).toBeChecked();
     expect(within(dialog).getByText('返金は取り消せません。')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'すべて選ぶ' })).toBeEnabled();
-    expect(within(dialog).getByRole('button', { name: 'キャンセル' })).toBeEnabled();
+    // 何もせずに閉じるボタンは「戻る」（J-10。支払い済みのキャンセルの画面とそろえる）
+    expect(within(dialog).getByRole('button', { name: '戻る' })).toBeEnabled();
+    expect(within(dialog).queryByRole('button', { name: 'キャンセル' })).not.toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: '￥0 を返金する' })).toBeDisabled();
+  });
+
+  it('見出しは、材料を読む前（読み込み中）から「返金（注文 ORD-XXXXXXXX）」。お客様の名前は出さない', async () => {
+    // 材料の返事を返さないまま（読み込み中）
+    mockClientFetch.mockImplementationOnce(() => new Promise<Response>(() => {}));
+    render(<OrderRefundDialog orderId={ORDER_ID} onClose={jest.fn()} onRefunded={jest.fn()} />);
+
+    const dialog = await screen.findByRole('dialog', { name: TITLE });
+    expect(within(dialog).getByRole('heading', { name: TITLE })).toBeInTheDocument();
+    expect(within(dialog).getByText('読み込み中です...')).toBeInTheDocument();
+  });
+
+  it('見出しの行の ×（読み上げは「閉じる」）は、「戻る」と同じく送らずに閉じる', async () => {
+    const { dialog, onClose, onRefunded, onUncertain } = await openDialog();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onUncertain).not.toHaveBeenCalled();
+    expect(onRefunded).not.toHaveBeenCalled();
+    expect(mockClientFetch).toHaveBeenCalledTimes(1);
   });
 
   it('発送前の商品と発送済みの商品に分けて並べる。両方に数がある商品は両方に出る', async () => {
@@ -311,7 +346,7 @@ describe('OrderRefundDialog の材料と画面', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     mockClientFetch.mockResolvedValueOnce(json(materials())).mockResolvedValueOnce(json(accepted()));
     rerender(<OrderRefundDialog orderId={ORDER_ID} {...props} />);
-    const reopened = await screen.findByRole('dialog', { name: '返金' });
+    const reopened = await screen.findByRole('dialog', { name: TITLE });
     await waitFor(() => expect(within(reopened).queryByText('読み込み中です...')).not.toBeInTheDocument());
 
     expect(mockClientFetch).toHaveBeenCalledTimes(3);
@@ -625,10 +660,10 @@ describe('OrderRefundDialog の返金', () => {
     expect(requestBodyOf(1)).toMatchObject({ restock: true, shippingAmount: 0, amount: 45000 });
   });
 
-  it('「キャンセル」では送らずに閉じる（答えが分からない状態ではないので、一覧の読み直しは頼まない）', async () => {
+  it('「戻る」では送らずに閉じる（答えが分からない状態ではないので、一覧の読み直しは頼まない）', async () => {
     const { dialog, onClose, onRefunded, onUncertain } = await openDialog();
     fireEvent.change(blouseBefore(dialog), { target: { value: '1' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'キャンセル' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onUncertain).not.toHaveBeenCalled();
@@ -652,15 +687,17 @@ describe('OrderRefundDialog の返金', () => {
     await waitFor(() => expect(onRefunded).toHaveBeenCalledTimes(1));
   });
 
-  it('送っている間は画面を閉じられない（キャンセルも Esc も背景も効かない）。返事が来たら親へ渡す', async () => {
+  it('送っている間は画面を閉じられない（戻るも見出しの × も Esc も背景も効かない）。返事が来たら親へ渡す', async () => {
     const { dialog, onClose, onRefunded, onUncertain } = await openDialog();
     let resolvePost: (value: Response) => void = () => {};
     mockClientFetch.mockImplementationOnce(() => new Promise<Response>((resolve) => { resolvePost = resolve; }));
     fireEvent.change(blouseBefore(dialog), { target: { value: '1' } });
     fireEvent.click(within(dialog).getByRole('button', { name: '￥12,000 を返金する' }));
 
-    expect(within(dialog).getByRole('button', { name: 'キャンセル' })).toBeDisabled();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'キャンセル' }));
+    expect(within(dialog).getByRole('button', { name: '戻る' })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
+    // × は押せるが、画面の閉じ止め（送っている間は閉じない）を通るので閉じない
+    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(dialog.closest('[data-ui-dialog]') as HTMLElement);
     expect(onClose).not.toHaveBeenCalled();
@@ -787,7 +824,7 @@ describe('OrderRefundDialog の答えが分からない時', () => {
     expect(blouseBefore(dialog)).toBeDisabled();
     expect(within(dialog).getByRole('textbox', { name: 'メモ（お客様には見えません）' })).toBeDisabled();
     expect(within(dialog).queryByRole('button', { name: /を返金する$/ })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: '閉じる' })).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: '戻る' })).toBeEnabled();
     expect(mockClientFetch).toHaveBeenCalledTimes(3);
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
@@ -800,7 +837,7 @@ describe('OrderRefundDialog の答えが分からない時', () => {
     expect(onUncertain).not.toHaveBeenCalled();
   });
 
-  it('答えが分からない間の再送が429で断られても、回数の制限の文と答えが分からない時の文の両方を出す。番号と中身は同じまま、押せるのは「閉じる」と「もう一度確かめる」だけ', async () => {
+  it('答えが分からない間の再送が429で断られても、回数の制限の文と答えが分からない時の文の両方を出す。番号と中身は同じまま、押せるのは ×・「戻る」・「もう一度確かめる」だけ', async () => {
     const { dialog, onRefunded } = await openDialog();
     mockClientFetch
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
@@ -814,11 +851,7 @@ describe('OrderRefundDialog の答えが分からない時', () => {
     await waitFor(() => expect(alert).toHaveTextContent(`${RATE_LIMITED}${UNKNOWN_OUTCOME}`));
     // 取り消せない操作の結果が分からないのに「記録に失敗しました」（失敗した）と読ませない
     expect(alert).not.toHaveTextContent('返金の記録に失敗しました。');
-    const enabledButtons = within(dialog)
-      .getAllByRole('button')
-      .filter((button) => !(button as HTMLButtonElement).disabled)
-      .map((button) => button.textContent);
-    expect(enabledButtons).toEqual(['閉じる', 'もう一度確かめる']);
+    expect(buttonNames(dialog, { enabledOnly: true })).toEqual(['閉じる', '戻る', 'もう一度確かめる']);
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
     await waitFor(() => expect(onRefunded).toHaveBeenCalledWith(accepted({ replayed: true })));
@@ -837,13 +870,13 @@ describe('OrderRefundDialog の答えが分からない時', () => {
     fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
     await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent('この操作の権限がありません。'));
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
     expect(onUncertain).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it.each(UNKNOWN_ANSWERS)(
-    '%s時は、入力を止めて「もう一度確かめる」と「閉じる」だけを出し、同じ二重防止の番号・同じ中身で確かめ直す',
+    '%s時は、入力を止めて「もう一度確かめる」と「戻る」だけを出し、同じ二重防止の番号・同じ中身で確かめ直す',
     async (_label, firstAnswer) => {
       const { dialog, onRefunded, onClose, onUncertain } = await openDialog();
       mockClientFetch.mockImplementationOnce(firstAnswer).mockResolvedValueOnce(json(accepted({ replayed: true })));
@@ -861,10 +894,10 @@ describe('OrderRefundDialog の答えが分からない時', () => {
       expect(within(dialog).getByRole('checkbox', { name: 'お客様に返金のメールを送る' })).toBeDisabled();
       expect(within(dialog).getByRole('checkbox', { name: '在庫に戻す' })).toBeDisabled();
       expect(within(dialog).getByRole('button', { name: 'すべて選ぶ' })).toBeDisabled();
-      // 操作は「もう一度確かめる」と「閉じる」だけ
+      // 操作は「もう一度確かめる」と「戻る」だけ
       expect(within(dialog).queryByRole('button', { name: 'キャンセル' })).not.toBeInTheDocument();
       expect(within(dialog).queryByRole('button', { name: /を返金する$/ })).not.toBeInTheDocument();
-      expect(within(dialog).getByRole('button', { name: '閉じる' })).toBeEnabled();
+      expect(within(dialog).getByRole('button', { name: '戻る' })).toBeEnabled();
 
       fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
       await waitFor(() => expect(onRefunded).toHaveBeenCalledWith(accepted({ replayed: true })));
@@ -875,7 +908,7 @@ describe('OrderRefundDialog の答えが分からない時', () => {
     },
   );
 
-  it('確かめ直しても分からない時は、そのまま止まる。「閉じる」で閉じる時に、一覧の読み直しを親に頼む', async () => {
+  it('確かめ直しても分からない時は、そのまま止まる。「戻る」で閉じる時に、一覧の読み直しを親に頼む', async () => {
     const { dialog, onRefunded, onClose, onUncertain } = await openDialog();
     mockClientFetch
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
@@ -890,7 +923,7 @@ describe('OrderRefundDialog の答えが分からない時', () => {
 
     expect(within(dialog).getByRole('alert')).toHaveTextContent(UNKNOWN_OUTCOME);
     expect(onRefunded).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
     expect(onUncertain).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -970,21 +1003,22 @@ describe('OrderRefundDialog の材料を読めない時と確かめ中の返金'
     [404, { error: '注文が見つかりません。', code: 'order_not_found' }, '注文が見つかりません。'],
     [403, { error: 'Forbidden' }, 'この操作の権限がありません。'],
     [500, { error: 'x', code: 'failed' }, '返金の材料を読み込めませんでした。'],
-  ])('材料を読めなかった時（%i）は理由と「閉じる」だけを出す', async (status, body, message) => {
+  ])('材料を読めなかった時（%i）は理由と ×・「戻る」だけを出す。見出しの注文番号はそのまま', async (status, body, message) => {
     mockClientFetch.mockResolvedValueOnce(json(body, status));
     const onClose = jest.fn();
     render(<OrderRefundDialog orderId={ORDER_ID} onClose={onClose} onRefunded={jest.fn()} onUncertain={jest.fn()} />);
 
-    const dialog = await screen.findByRole('dialog', { name: '返金' });
+    const dialog = await screen.findByRole('dialog', { name: TITLE });
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(message);
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる']);
+    expect(buttonNames(dialog)).toEqual(['閉じる', '戻る']);
     expect(within(dialog).queryByLabelText('返金額')).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: TITLE })).toBeInTheDocument();
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('確かめ中の返金がある注文は、入力を出さず、文と「もう一度確かめる」「閉じる」だけを出す。確かめ直しの窓口へ記録の番号を送る', async () => {
+  it('確かめ中の返金がある注文は、入力を出さず、文と「もう一度確かめる」「戻る」だけを出す。確かめ直しの窓口へ記録の番号を送る', async () => {
     const { dialog, onRefunded } = await openDialog(
       materials({ awaitingRefund: { id: 'refund-awaiting', amount: 12000, createdAt: '2026-10-11T01:00:00.000Z' } }),
     );
@@ -992,7 +1026,7 @@ describe('OrderRefundDialog の材料を読めない時と確かめ中の返金'
     expect(within(dialog).getByText('確かめ中の返金があります（￥12,000）。')).toBeInTheDocument();
     expect(within(dialog).queryByLabelText('返金額')).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('region', { name: BEFORE })).not.toBeInTheDocument();
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
+    expect(buttonNames(dialog)).toEqual(['閉じる', '戻る', 'もう一度確かめる']);
 
     mockClientFetch.mockResolvedValueOnce(json(accepted({ refundId: 'refund-awaiting', replayed: true })));
     fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
@@ -1021,7 +1055,7 @@ describe('OrderRefundDialog の材料を読めない時と確かめ中の返金'
     expect(await within(dialog).findByLabelText('返金額')).toBeInTheDocument();
     expect(within(dialog).getByRole('alert')).toHaveTextContent(rejected);
     expect(within(dialog).queryByText(/確かめ中の返金があります/)).not.toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'キャンセル' })).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: '戻る' })).toBeEnabled();
     expect(mockClientFetch).toHaveBeenNthCalledWith(3, REFUND_URL, { cache: 'no-store' });
     expect(onRefunded).not.toHaveBeenCalled();
   });

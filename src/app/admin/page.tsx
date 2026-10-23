@@ -31,6 +31,7 @@ import { DateTimePicker } from '@/components/ui/DateTimePicker/DateTimePicker';
 import { SearchField } from '@/components/ui/SearchField/SearchField';
 import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 import { COMPLETION_RECORDED_MESSAGE } from '@/lib/orders/fulfillment/fulfillment-client';
+import { toOrderNumber } from '@/lib/orders/order-number';
 import { PAYMENT_STATUS_LABELS } from '@/lib/orders/payment-status';
 import type { OrderAttention, OrderStatus } from '@/lib/orders/order-payment-types';
 import type { RefundAcceptedResponse } from '@/lib/orders/refund/refund-types';
@@ -1396,7 +1397,7 @@ function AdminPageContent() {
             ) : null}
             <OrderCancelDialog
               open={cancelTarget !== null}
-              title="注文を取り消す"
+              title={cancelTarget ? `注文を取り消す（注文 ${toOrderNumber(cancelTarget.id)}）` : '注文を取り消す'}
               targetLabel={cancelTarget?.id ?? ''}
               showNotifyOption={cancelTarget?.status !== '決済失敗'}
               noteRequired={false}

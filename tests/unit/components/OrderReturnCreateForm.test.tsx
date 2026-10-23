@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { dialogButtons, footerCloseButton } from './dialog-test-helpers';
 import type { CreateReturnResponse } from '@/components/OrderReturnCreateForm';
 import type { ReturnCreateMaterials } from '@/lib/orders/returns/return-types';
 
@@ -869,7 +870,7 @@ describe('OrderReturnCreateForm の答えが分からない時', () => {
       // 操作は「もう一度確かめる」と「閉じる」だけ
       expect(within(dialog).queryByRole('button', { name: CREATE })).not.toBeInTheDocument();
       expect(within(dialog).queryByRole('button', { name: '戻る' })).not.toBeInTheDocument();
-      expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
+      expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
 
       fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
       await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created({ replayed: true }).data, 'customer_ships'));
@@ -896,7 +897,7 @@ describe('OrderReturnCreateForm の答えが分からない時', () => {
 
     await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(`${message}${UNKNOWN_OUTCOME}`));
     expect(within(pants(dialog)).getByLabelText('返品する数')).toBeDisabled();
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
+    expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
@@ -919,7 +920,7 @@ describe('OrderReturnCreateForm の答えが分からない時', () => {
 
     expect(within(dialog).getByRole('alert')).toHaveTextContent(UNKNOWN_OUTCOME);
     expect(onCreated).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onUncertain).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -995,10 +996,10 @@ describe('OrderReturnCreateForm の材料を読めない時', () => {
 
     const dialog = await screen.findByRole('dialog', { name: TITLE });
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(message);
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる']);
+    expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる']);
     expect(within(dialog).queryByLabelText('返品する数')).not.toBeInTheDocument();
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

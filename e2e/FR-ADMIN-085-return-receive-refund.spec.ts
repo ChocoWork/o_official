@@ -8,6 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
+import { dialogFooterClose } from './admin-test-utils';
 import {
   expectDbError,
   markRefundError,
@@ -220,7 +221,7 @@ for (const viewport of viewports) {
       await expect(dialog.getByRole('alert')).toContainText(RETURN_TEXT.unknownReceive);
       await expect(confirmButton(dialog, RETURN_TEXT.receiveAll(formatYen(5_000)))).toHaveCount(0);
       await expect(dialog.getByRole('button', { name: 'もう一度確かめる', exact: true })).toBeVisible();
-      await expect(dialog.getByRole('button', { name: '閉じる', exact: true })).toBeVisible();
+      await expect(dialogFooterClose(dialog)).toBeVisible();
       await expect(dialog.getByRole('combobox', { name: '品の状態', exact: true })).toBeDisabled();
 
       await dialog.getByRole('button', { name: 'もう一度確かめる', exact: true }).click();

@@ -288,10 +288,20 @@ export async function mockAdminSessionAs(page: Page, role: 'admin' | 'supporter'
 
 // ---- 画面の操作と読み方 ----
 
+/** 返金の画面の見出し（読み上げの名前）。注文番号を入れる（J-12） */
+export function refundDialogTitle(orderId: string): string {
+  return `返金（注文 ${orderNumberOf(orderId)}）`;
+}
+
+/** 支払い済みのキャンセルの画面の見出し（読み上げの名前）。注文番号を入れる（J-12） */
+export function paidCancelDialogTitle(orderId: string): string {
+  return `注文をキャンセルする（注文 ${orderNumberOf(orderId)}）`;
+}
+
 /** 一覧のその注文の行の「返金」を押して、返金の画面を開く */
 export async function openRefundDialog(page: Page, orderId: string): Promise<Locator> {
   await page.getByRole('row', { name: new RegExp(orderId) }).getByRole('button', { name: '返金', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '返金', exact: true });
+  const dialog = page.getByRole('dialog', { name: refundDialogTitle(orderId), exact: true });
   await expect(dialog).toBeVisible();
   return dialog;
 }
@@ -302,7 +312,7 @@ export async function openPaidCancelDialog(page: Page, orderId: string): Promise
     .getByRole('row', { name: new RegExp(orderId) })
     .getByRole('button', { name: 'キャンセル', exact: true })
     .click();
-  const dialog = page.getByRole('dialog', { name: '注文をキャンセルする', exact: true });
+  const dialog = page.getByRole('dialog', { name: paidCancelDialogTitle(orderId), exact: true });
   await expect(dialog).toBeVisible();
   return dialog;
 }

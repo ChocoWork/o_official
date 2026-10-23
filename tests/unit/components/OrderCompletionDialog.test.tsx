@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { footerCloseButton } from './dialog-test-helpers';
 import type { FulfillmentMaterialLine, FulfillmentMaterials } from '@/lib/orders/fulfillment/fulfillment-types';
 
 const mockClientFetch = jest.fn();
@@ -238,7 +239,7 @@ describe('OrderCompletionDialog の記録', () => {
     expect(quantityInput(dialog, 'ウールコート（黒 / L）')).toBeDisabled();
     expect(within(dialog).queryByRole('button', { name: '記録する' })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: 'キャンセル' })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: '閉じる' })).toBeEnabled();
+    expect(footerCloseButton(dialog)).toBeEnabled();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
     await waitFor(() => expect(onRecorded).toHaveBeenCalledTimes(1));
@@ -252,7 +253,7 @@ describe('OrderCompletionDialog の記録', () => {
     mockClientFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     fireEvent.change(quantityInput(dialog, 'ウールコート（黒 / L）'), { target: { value: '1' } });
     fireEvent.click(within(dialog).getByRole('button', { name: '記録する' }));
-    fireEvent.click(await within(dialog).findByRole('button', { name: '閉じる' }));
+    fireEvent.click(await waitFor(() => footerCloseButton(dialog)));
 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onRecorded).not.toHaveBeenCalled();

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { dialogButtons, footerCloseButton } from './dialog-test-helpers';
 import type { OrderReturnDetail, OrderReturnLineDetail } from '@/lib/orders/returns/return-types';
 
 const mockClientFetch = jest.fn();
@@ -119,7 +120,7 @@ describe('5つの画面に共通の読み込み', () => {
 
     const loading = screen.getByRole('dialog', { name: title });
     expect(within(loading).getByText('読み込み中です...')).toBeInTheDocument();
-    expect(within(loading).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる']);
+    expect(dialogButtons(loading).map((button) => button.textContent)).toEqual(['閉じる']);
     expect(mockClientFetch).toHaveBeenCalledWith(RETURNS_URL, { cache: 'no-store' });
 
     resolveGet(returnsAnswer(returnDetail()));
@@ -134,9 +135,9 @@ describe('5つの画面に共通の読み込み', () => {
 
     const dialog = await screen.findByRole('dialog', { name: title });
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('返品の情報を読み込めませんでした。');
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる']);
+    expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる']);
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onUncertain).not.toHaveBeenCalled();
   });
@@ -147,7 +148,7 @@ describe('5つの画面に共通の読み込み', () => {
 
     const dialog = await screen.findByRole('dialog', { name: title });
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('返品が見つかりません。');
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる']);
+    expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる']);
   });
 
   it.each(DIALOGS)('%s: スマホの幅（768px 未満）では画面いっぱいに開く指定を付ける', async (_name, Dialog, _loadingTitle, title) => {
@@ -253,7 +254,7 @@ describe('OrderReturnCancelDialog（返品の取消）', () => {
       fireEvent.click(within(dialog).getByRole('button', { name: '返品を取り消す' }));
 
       expect(await within(dialog).findByRole('alert')).toHaveTextContent(UNKNOWN_ACTION);
-      expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
+      expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
 
       fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
 
@@ -270,7 +271,7 @@ describe('OrderReturnCancelDialog（返品の取消）', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: '返品を取り消す' }));
     await within(dialog).findByRole('button', { name: 'もう一度確かめる' });
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
 
     expect(onUncertain).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -436,7 +437,7 @@ describe('OrderReturnInspectDialog（検品を終える）', () => {
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(UNKNOWN_ACTION);
     expect(within(rowsOf(dialog)[0]).getByRole('combobox', { name: '品の状態' })).toBeDisabled();
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
+    expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
 
@@ -506,7 +507,7 @@ describe('OrderReturnFeePaymentDialog（手数料の受け取りを記録する�
   it('ボタンは、見た目の上から「受け取りを記録する」「いただかないで終える」「戻る」の順（入れ物が縦の逆順なので、並びの順は逆）', async () => {
     const { dialog } = await openDialog(OrderReturnFeePaymentDialog, TITLE, feeDetail());
 
-    const buttons = within(dialog).getAllByRole('button');
+    const buttons = dialogButtons(dialog);
     expect(buttons.map((button) => button.textContent)).toEqual(['戻る', 'いただかないで終える', '受け取りを記録する']);
     // 3つとも同じ入れ物（縦の逆順）の中にあるので、見た目は C-5 の順になる。フォームの送信は確定だけ
     const container = buttons[0].parentElement as HTMLElement;
@@ -545,7 +546,7 @@ describe('OrderReturnFeePaymentDialog（手数料の受け取りを記録する�
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(UNKNOWN_ACTION);
     // 確かめ直す間は、別の操作に替えて送らせない（「いただかないで終える」も「受け取りを記録する」も出さない）
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
+    expect(dialogButtons(dialog).map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
     fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
 
     await waitFor(() => expect(onDone).toHaveBeenCalledWith('手数料をいただかないことにしました。'));

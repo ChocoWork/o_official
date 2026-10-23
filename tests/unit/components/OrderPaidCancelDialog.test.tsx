@@ -7,6 +7,8 @@ jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mo
 import OrderPaidCancelDialog from '@/components/OrderPaidCancelDialog';
 
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
+/** 見出しに注文番号（ORD- と ID の先頭8文字の大文字）を入れる。お客様の名前は出さない（J-12） */
+const TITLE = '注文をキャンセルする（注文 ORD-A1B2C3D4）';
 const REFUND_URL = `/api/admin/orders/${ORDER_ID}/refund`;
 const CONFIRM_URL = `${REFUND_URL}/confirm`;
 const STATUS_URL = `/api/admin/orders/${ORDER_ID}/status`;
@@ -63,9 +65,19 @@ async function openDialog(loaded: RefundMaterials = materials()) {
   mockClientFetch.mockResolvedValueOnce(json(loaded));
   const props = { onClose: jest.fn(), onCancelled: jest.fn(), onUncertain: jest.fn() };
   const utils = render(<OrderPaidCancelDialog orderId={ORDER_ID} {...props} />);
-  const dialog = await screen.findByRole('dialog', { name: '注文をキャンセルする' });
+  const dialog = await screen.findByRole('dialog', { name: TITLE });
   await waitFor(() => expect(within(dialog).queryByText('読み込み中です...')).not.toBeInTheDocument());
   return { ...utils, ...props, props, dialog };
+}
+
+/**
+ * 画面の中のボタンの読み上げの名前（並びの順）。先頭の「閉じる」は見出しの行の ×（jsdom は CSS を読まないので、幅に関係なく出る）
+ */
+function buttonNames(dialog: HTMLElement, { enabledOnly = false } = {}): Array<string | null> {
+  return within(dialog)
+    .getAllByRole('button')
+    .filter((button) => !enabledOnly || !(button as HTMLButtonElement).disabled)
+    .map((button) => button.getAttribute('aria-label') ?? button.textContent);
 }
 
 /** n 番目（0 始まり）の呼び出しが窓口へ送った本文 */
@@ -261,6 +273,26 @@ describe('OrderPaidCancelDialog のキャンセル', () => {
     expect(requestBodyOf(1)).not.toHaveProperty('note');
   });
 
+  it('見出しは、材料を読む前（読み込み中）から「注文をキャンセルする（注文 ORD-XXXXXXXX）」', async () => {
+    // 材料の返事を返さないまま（読み込み中）
+    mockClientFetch.mockImplementationOnce(() => new Promise<Response>(() => {}));
+    render(<OrderPaidCancelDialog orderId={ORDER_ID} onClose={jest.fn()} onCancelled={jest.fn()} />);
+
+    const dialog = await screen.findByRole('dialog', { name: TITLE });
+    expect(within(dialog).getByRole('heading', { name: TITLE })).toBeInTheDocument();
+    expect(within(dialog).getByText('読み込み中です...')).toBeInTheDocument();
+  });
+
+  it('見出しの行の ×（読み上げは「閉じる」）は、「戻る」と同じく送らずに閉じる', async () => {
+    const { dialog, onClose, onCancelled, onUncertain } = await openDialog();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onUncertain).not.toHaveBeenCalled();
+    expect(onCancelled).not.toHaveBeenCalled();
+  });
+
   it('「戻る」では送らずに閉じる（答えが分からない状態ではないので、一覧の読み直しは頼まない）', async () => {
     const { dialog, onClose, onCancelled, onUncertain } = await openDialog();
     chooseReason(dialog, 'customer_request');
@@ -283,6 +315,8 @@ describe('OrderPaidCancelDialog のキャンセル', () => {
     expect(reasonSelect(dialog)).toBeDisabled();
     expect(within(dialog).getByRole('button', { name: '戻る' })).toBeDisabled();
     fireEvent.click(submitButton(dialog));
+    // × は押せるが、画面の閉じ止め（送っている間は閉じない）を通るので閉じない
+    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(mockClientFetch).toHaveBeenCalledTimes(2);
     expect(onClose).not.toHaveBeenCalled();
@@ -369,7 +403,7 @@ describe('OrderPaidCancelDialog の処理前の断りと再送後の読み直し
     expect(reasonSelect(dialog)).toBeDisabled();
     expect(within(dialog).getByRole('textbox', { name: 'メモ（任意・店内のみ）' })).toBeDisabled();
     expect(within(dialog).queryByRole('button', { name: SUBMIT })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: '閉じる' })).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: '戻る' })).toBeEnabled();
     expect(mockClientFetch).toHaveBeenCalledTimes(3);
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
@@ -382,7 +416,7 @@ describe('OrderPaidCancelDialog の処理前の断りと再送後の読み直し
     expect(onUncertain).not.toHaveBeenCalled();
   });
 
-  it('答えが分からない間の再送が429で断られても、回数の制限の文と答えが分からない時の文の両方を出す。番号と中身は同じまま、押せるのは「閉じる」と「もう一度確かめる」だけ', async () => {
+  it('答えが分からない間の再送が429で断られても、回数の制限の文と答えが分からない時の文の両方を出す。番号と中身は同じまま、押せるのは ×・「戻る」・「もう一度確かめる」だけ', async () => {
     const { dialog, onCancelled } = await openDialog();
     mockClientFetch
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
@@ -396,11 +430,7 @@ describe('OrderPaidCancelDialog の処理前の断りと再送後の読み直し
     await waitFor(() => expect(alert).toHaveTextContent(`${RATE_LIMITED}${UNKNOWN_OUTCOME}`));
     // 取り消せない操作の結果が分からないのに「キャンセルに失敗しました」（失敗した）と読ませない
     expect(alert).not.toHaveTextContent('注文のキャンセルに失敗しました。');
-    const enabledButtons = within(dialog)
-      .getAllByRole('button')
-      .filter((button) => !(button as HTMLButtonElement).disabled)
-      .map((button) => button.textContent);
-    expect(enabledButtons).toEqual(['閉じる', 'もう一度確かめる']);
+    expect(buttonNames(dialog, { enabledOnly: true })).toEqual(['閉じる', '戻る', 'もう一度確かめる']);
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
     await waitFor(() => expect(onCancelled).toHaveBeenCalledWith(accepted({ replayed: true })));
@@ -419,7 +449,7 @@ describe('OrderPaidCancelDialog の処理前の断りと再送後の読み直し
     fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
     await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent('この操作の権限がありません。'));
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
     expect(onUncertain).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -480,7 +510,7 @@ describe('OrderPaidCancelDialog の処理前の断りと再送後の読み直し
 
 describe('OrderPaidCancelDialog の答えが分からない時', () => {
   it.each(UNKNOWN_ANSWERS)(
-    '%s時は、入力を止めて「もう一度確かめる」と「閉じる」だけを出し、同じ二重防止の番号・同じ中身で確かめ直す',
+    '%s時は、入力を止めて「もう一度確かめる」と「戻る」だけを出し、同じ二重防止の番号・同じ中身で確かめ直す',
     async (_label, firstAnswer) => {
       const { dialog, onCancelled, onClose, onUncertain } = await openDialog();
       mockClientFetch.mockImplementationOnce(firstAnswer).mockResolvedValueOnce(json(accepted({ replayed: true })));
@@ -494,10 +524,10 @@ describe('OrderPaidCancelDialog の答えが分からない時', () => {
       expect(within(dialog).getByRole('textbox', { name: 'メモ（任意・店内のみ）' })).toBeDisabled();
       expect(within(dialog).getByRole('checkbox', { name: '在庫に戻す' })).toBeDisabled();
       expect(within(dialog).getByRole('checkbox', { name: 'お客様にキャンセルのお知らせを送る' })).toBeDisabled();
-      // 操作は「もう一度確かめる」と「閉じる」だけ
-      expect(within(dialog).queryByRole('button', { name: '戻る' })).not.toBeInTheDocument();
+      // 操作は ×・「もう一度確かめる」・「戻る」だけ（「戻る」は1つ）
+      expect(buttonNames(dialog)).toEqual(['閉じる', '戻る', 'もう一度確かめる']);
       expect(within(dialog).queryByRole('button', { name: SUBMIT })).not.toBeInTheDocument();
-      expect(within(dialog).getByRole('button', { name: '閉じる' })).toBeEnabled();
+      expect(within(dialog).getByRole('button', { name: '戻る' })).toBeEnabled();
 
       fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
       await waitFor(() => expect(onCancelled).toHaveBeenCalledWith(accepted({ replayed: true })));
@@ -508,7 +538,7 @@ describe('OrderPaidCancelDialog の答えが分からない時', () => {
     },
   );
 
-  it('確かめ直しても分からない時は、そのまま止まる。「閉じる」で閉じる時に、一覧の読み直しを親に頼む', async () => {
+  it('確かめ直しても分からない時は、そのまま止まる。「戻る」で閉じる時に、一覧の読み直しを親に頼む', async () => {
     const { dialog, onCancelled, onClose, onUncertain } = await openDialog();
     mockClientFetch
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
@@ -523,7 +553,7 @@ describe('OrderPaidCancelDialog の答えが分からない時', () => {
 
     expect(within(dialog).getByRole('alert')).toHaveTextContent(UNKNOWN_OUTCOME);
     expect(onCancelled).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
     expect(onUncertain).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -534,28 +564,29 @@ describe('OrderPaidCancelDialog の材料を読めない時と確かめ中の返
     [404, { error: '注文が見つかりません。', code: 'order_not_found' }, '注文が見つかりません。'],
     [403, { error: 'Forbidden' }, 'この操作の権限がありません。'],
     [500, { error: 'x', code: 'failed' }, '返金の材料を読み込めませんでした。'],
-  ])('材料を読めなかった時（%i）は理由と「閉じる」だけを出す', async (status, body, message) => {
+  ])('材料を読めなかった時（%i）は理由と ×・「戻る」だけを出す。見出しの注文番号はそのまま', async (status, body, message) => {
     mockClientFetch.mockResolvedValueOnce(json(body, status));
     const onClose = jest.fn();
     render(<OrderPaidCancelDialog orderId={ORDER_ID} onClose={onClose} onCancelled={jest.fn()} onUncertain={jest.fn()} />);
 
-    const dialog = await screen.findByRole('dialog', { name: '注文をキャンセルする' });
+    const dialog = await screen.findByRole('dialog', { name: TITLE });
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(message);
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる']);
+    expect(buttonNames(dialog)).toEqual(['閉じる', '戻る']);
     expect(within(dialog).queryByRole('combobox', { name: '取消の理由' })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: TITLE })).toBeInTheDocument();
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('確かめ中の返金がある注文は、入力を出さず、文と「もう一度確かめる」「閉じる」だけを出す。確かめ直しの窓口へ記録の番号を送る', async () => {
+  it('確かめ中の返金がある注文は、入力を出さず、文と「もう一度確かめる」「戻る」だけを出す。確かめ直しの窓口へ記録の番号を送る', async () => {
     const { dialog, onCancelled } = await openDialog(
       materials({ awaitingRefund: { id: 'refund-awaiting', amount: 54800, createdAt: '2026-10-11T01:00:00.000Z' } }),
     );
 
     expect(within(dialog).getByText('確かめ中の返金があります（￥54,800）。')).toBeInTheDocument();
     expect(within(dialog).queryByRole('combobox', { name: '取消の理由' })).not.toBeInTheDocument();
-    expect(within(dialog).getAllByRole('button').map((button) => button.textContent)).toEqual(['閉じる', 'もう一度確かめる']);
+    expect(buttonNames(dialog)).toEqual(['閉じる', '戻る', 'もう一度確かめる']);
 
     mockClientFetch.mockResolvedValueOnce(json(accepted({ refundId: 'refund-awaiting', replayed: true })));
     fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));

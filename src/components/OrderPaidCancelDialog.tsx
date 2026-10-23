@@ -7,6 +7,7 @@ import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
 import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
 import { blockEnterSubmit, useRefundSubmission } from '@/hooks/useRefundSubmission';
+import { toOrderNumber } from '@/lib/orders/order-number';
 import {
   ADMIN_NOTE_MAX_LENGTH,
   CANCEL_REASON_LABELS,
@@ -97,7 +98,8 @@ function OrderPaidCancelDialogBody({ orderId, onClose, onCancelled, onUncertain 
   };
 
   return (
-    <Dialog open onClose={flow.close} title="注文をキャンセルする" fullScreenOnMobile>
+    // 見出しの注文番号は、開いた時から持っている注文の ID で作る（読み込み中・読めなかった時も同じ見出し）
+    <Dialog open onClose={flow.close} title={`注文をキャンセルする（注文 ${toOrderNumber(orderId)}）`} fullScreenOnMobile>
       <form className="space-y-3" onSubmit={handleSubmit} onKeyDown={blockEnterSubmit}>
         <RefundFlowContent
           flow={flow}

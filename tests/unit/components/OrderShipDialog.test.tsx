@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { footerCloseButton } from './dialog-test-helpers';
 import type {
   CreateFulfillmentResponse,
   FulfillmentMaterialLine,
@@ -341,7 +342,7 @@ describe('OrderShipDialog の答えが分からない時', () => {
     // 操作は「もう一度確かめる」と「閉じる」だけ
     expect(within(dialog).queryByRole('button', { name: '発送する' })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: 'キャンセル' })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: '閉じる' })).toBeEnabled();
+    expect(footerCloseButton(dialog)).toBeEnabled();
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'もう一度確かめる' }));
     await waitFor(() => expect(onShipped).toHaveBeenCalledWith(shipped({ replayed: true })));
@@ -365,7 +366,7 @@ describe('OrderShipDialog の答えが分からない時', () => {
 
     expect(within(dialog).getByRole('alert')).toHaveTextContent(UNKNOWN_OUTCOME);
     expect(onShipped).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

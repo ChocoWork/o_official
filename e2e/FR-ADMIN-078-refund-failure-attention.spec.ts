@@ -131,7 +131,7 @@ for (const viewport of viewports) {
       const readsBefore = attention.reads;
 
       await page.getByRole('button', { name: 'もう一度返金する', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: '返金', exact: true });
+      const dialog = page.getByRole('dialog', { name: `返金（注文 ${ORDER_NUMBER}）`, exact: true });
       await expect(dialog.getByRole('region', { name: '発送前の商品', exact: true })).toBeVisible();
       expect(refund.materialsReads).toBe(1);
 

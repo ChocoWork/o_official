@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { dialogButtons, footerCloseButton } from './dialog-test-helpers';
 import { RETURN_DECLINE_MESSAGE_PREFILL } from '@/lib/orders/returns/return-messages';
 import type { OrderReturnDetail } from '@/lib/orders/returns/return-types';
 import {
@@ -79,7 +80,7 @@ function postedBodies(url: string): string[] {
 }
 
 const postedBody = (url: string): Record<string, unknown> => JSON.parse(postedBodies(url)[0]) as Record<string, unknown>;
-const buttonNames = (scope: HTMLElement) => within(scope).queryAllByRole('button').map((button) => button.textContent);
+const buttonNames = (scope: HTMLElement) => dialogButtons(scope).map((button) => button.textContent);
 const approveButton = (scope: HTMLElement) => within(scope).getByRole('button', { name: '承認する' });
 const reasonSelect = (scope: HTMLElement) => within(scope).getByRole('combobox', { name: 'お断りの理由（お客様には見えません）' });
 const messageBox = (scope: HTMLElement) => within(scope).getByRole('textbox', { name: 'お客様へのメッセージ（必須・お客様に届きます）' });
@@ -187,7 +188,7 @@ describe('OrderReturnReviewDialog の写真', () => {
 
     fireEvent.click(await within(dialog).findByRole('button', { name: '写真 2 を大きく見る' }));
     const viewer = await screen.findByRole('dialog', { name: '写真（2／2）' });
-    fireEvent.click(within(viewer).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(viewer));
 
     const back = await screen.findByRole('dialog', { name: TITLE });
     expect(within(back).getByRole('textbox', { name: 'メモ（お客様には見えません）' })).toHaveValue('先に電話する');
@@ -678,7 +679,7 @@ describe('OrderReturnReviewDialog の断りと、答えが分からない時', (
     expect(onApproved).not.toHaveBeenCalled();
 
     // 送信を試みた後に閉じる時は、親に一覧の読み直しを頼んでから閉じる
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onUncertain).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -702,7 +703,7 @@ describe('OrderReturnReviewDialog の断りと、答えが分からない時', (
     expect(await screen.findByRole('alert')).toHaveTextContent(STATE_CONFLICT);
     await waitFor(() => expect(screen.queryByRole('button', { name: 'お断りする' })).not.toBeInTheDocument());
     expect(screen.getByRole('dialog', { name: TITLE })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '閉じる' })).toBeEnabled();
+    expect(footerCloseButton(document.body)).toBeEnabled();
     expect(onDone).not.toHaveBeenCalled();
   });
 
@@ -754,7 +755,7 @@ describe('OrderReturnReviewDialog の断りと、答えが分からない時', (
     expect(approveButton(dialog)).toBeEnabled();
     expect(onApproved).not.toHaveBeenCalled();
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onUncertain).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -766,7 +767,7 @@ describe('OrderReturnReviewDialog の断りと、答えが分からない時', (
     expect(within(dialog).queryByText('承認する時の内容')).not.toBeInTheDocument();
     expect(buttonNames(dialog)).toEqual(['閉じる']);
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onClose).toHaveBeenCalledTimes(1);
     // 何も送っていないので、親に読み直しは頼まない
     expect(onUncertain).not.toHaveBeenCalled();
@@ -781,7 +782,7 @@ describe('OrderReturnReviewDialog の断りと、答えが分からない時', (
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('返品が見つかりません。');
     expect(buttonNames(dialog)).toEqual(['閉じる']);
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(footerCloseButton(dialog));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

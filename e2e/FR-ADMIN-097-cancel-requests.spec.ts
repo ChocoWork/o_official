@@ -46,7 +46,7 @@ for (const viewport of viewports) {
       await expect(request.getByTestId('cancel-request-item')).toHaveAttribute('data-request-id', requestId);
       await expect(request).toContainText('E2Eシャツ（ホワイト / M） × 1（未発送 2）');
       await request.getByRole('button', { name: '品を外す（返金・キャンセルの画面を開く）', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: '返金', exact: true });
+      const dialog = page.getByRole('dialog', { name: '返金（注文 ' + orderNumberOf(fx.orderId) + '）', exact: true });
       await expect(quantityInput(dialog, '発送前の商品', 'E2Eシャツ（ホワイト / M）')).toHaveValue('1');
       await expect(quantityInput(dialog, '発送済みの商品', 'E2Eシャツ（ホワイト / M）')).toHaveValue('0');
       // 「品を外す」は行き先のための返金の材料の読み出しをしない。返金の画面が開いた後の自分の1回だけ（上で数が入るのを待った後）
@@ -114,7 +114,8 @@ for (const viewport of viewports) {
         }));
         await mockRefundRoutes(page, fx.orderId, refund);
         await (await openCancel(page, fx.orderId)).getByRole('button', { name: '品を外す（返金・キャンセルの画面を開く）', exact: true }).click();
-        const dialog = page.getByRole('dialog', { name: title, exact: true });
+        // 見出しには注文番号が付く（J-12）
+        const dialog = page.getByRole('dialog', { name: title + '（注文 ' + orderNumberOf(fx.orderId) + '）', exact: true });
         await expect(dialog).toBeVisible();
         // 行き先は申し込みの窓口の答え（shippedUnits・unshippedUnits）だけで決まり、「品を外す」は返金の材料を読まない。
         // 返金の画面と支払い済みのキャンセルの画面は、開いた後に自分で1回だけ読む。読み終えるのを待ってから数える
@@ -132,7 +133,8 @@ for (const viewport of viewports) {
       // FREQ-481-AC-07
       const { fx, requestId, state } = await refundScene(page, rr, true);
       await (await openCancel(page, fx.orderId)).getByRole('button', { name: '品を外す（返金・キャンセルの画面を開く）', exact: true }).click();
-      await page.getByRole('dialog', { name: '返金', exact: true }).getByRole('button', { name: '￥5,000 を返金する', exact: true }).click();
+      await page.getByRole('dialog', { name: '返金（注文 ' + orderNumberOf(fx.orderId) + '）', exact: true })
+        .getByRole('button', { name: '￥5,000 を返金する', exact: true }).click();
       await expect(page.getByRole('alert').filter({
         hasText: '返金・キャンセルは記録しましたが、申し込みを解決済みにできませんでした。キャンセルの申し込みの画面で「解決済みにする」を押してください。',
       })).toBeVisible();

@@ -67,7 +67,7 @@ async function openDialog(prefill?: Array<{ orderItemId: string; quantity: numbe
   mockClientFetch.mockResolvedValueOnce(json(loaded));
   const props = { onClose: jest.fn(), onRefunded: jest.fn(), onUncertain: jest.fn() };
   render(<OrderRefundDialog orderId={ORDER_ID} prefillBeforeShipment={prefill} {...props} />);
-  const dialog = await screen.findByRole('dialog', { name: '返金' });
+  const dialog = await screen.findByRole('dialog', { name: '返金（注文 ORD-A1B2C3D4）' });
   await waitFor(() => expect(within(dialog).queryByText('読み込み中です...')).not.toBeInTheDocument());
   return { dialog, ...props };
 }

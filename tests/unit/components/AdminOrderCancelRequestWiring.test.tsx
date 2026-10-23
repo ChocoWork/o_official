@@ -388,7 +388,7 @@ describe('管理画面の「品を外す」（返金の画面。mode=refund）',
 
     removeItems({ cancelRequestId: CANCEL_REQUEST_ID, mode: 'refund', lines: [{ orderItemId: 'item-1', quantity: 1 }] });
 
-    const dialog = await screen.findByRole('dialog', { name: '返金' });
+    const dialog = await screen.findByRole('dialog', { name: '返金（注文 ORD-A1B2C3D4）' });
     expect(screen.queryByRole('dialog', { name: STUB_NAME })).not.toBeInTheDocument();
     const group = await within(dialog).findByRole('group', { name: 'シルクブラウス（白 / M）' });
     expect(within(group).getByLabelText('返金する数')).toHaveValue(1);
@@ -399,7 +399,7 @@ describe('管理画面の「品を外す」（返金の画面。mode=refund）',
   it('返金が受け付けられたら（保留）、返金の番号で解決の窓口を呼び、返金の知らせに続けて解決の知らせを出し、一覧を読み直す', async () => {
     await openRequestDialog();
     removeItems({ cancelRequestId: CANCEL_REQUEST_ID, mode: 'refund', lines: [{ orderItemId: 'item-1', quantity: 1 }] });
-    const dialog = await screen.findByRole('dialog', { name: '返金' });
+    const dialog = await screen.findByRole('dialog', { name: '返金（注文 ORD-A1B2C3D4）' });
     await within(dialog).findByRole('group', { name: 'シルクブラウス（白 / M）' });
 
     fireEvent.click(within(dialog).getByRole('button', { name: '￥10,000 を返金する' }));
@@ -419,7 +419,7 @@ describe('管理画面の「品を外す」（返金の画面。mode=refund）',
     postAnswer = (url) => (url.endsWith('/resolve') ? refused(500, { error: 'x' }) : ok(accepted()));
     await openRequestDialog();
     removeItems({ cancelRequestId: CANCEL_REQUEST_ID, mode: 'refund', lines: [{ orderItemId: 'item-1', quantity: 1 }] });
-    const dialog = await screen.findByRole('dialog', { name: '返金' });
+    const dialog = await screen.findByRole('dialog', { name: '返金（注文 ORD-A1B2C3D4）' });
     await within(dialog).findByRole('group', { name: 'シルクブラウス（白 / M）' });
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
@@ -439,14 +439,14 @@ describe('管理画面の「品を外す」（返金の画面。mode=refund）',
   it('返金の画面を閉じた（返金しなかった）ら、解決の窓口を呼ばない。そのあと一覧の「返金」から返金しても、申し込みの数は入らず、解決の窓口も呼ばない', async () => {
     await openRequestDialog();
     removeItems({ cancelRequestId: CANCEL_REQUEST_ID, mode: 'refund', lines: [{ orderItemId: 'item-1', quantity: 1 }] });
-    const first = await screen.findByRole('dialog', { name: '返金' });
+    const first = await screen.findByRole('dialog', { name: '返金（注文 ORD-A1B2C3D4）' });
     await within(first).findByRole('group', { name: 'シルクブラウス（白 / M）' });
-    fireEvent.click(within(first).getByRole('button', { name: 'キャンセル' }));
+    fireEvent.click(within(first).getByRole('button', { name: '戻る' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '返金' }));
 
-    const second = await screen.findByRole('dialog', { name: '返金' });
+    const second = await screen.findByRole('dialog', { name: '返金（注文 ORD-A1B2C3D4）' });
     const group = await within(second).findByRole('group', { name: 'シルクブラウス（白 / M）' });
     expect(within(group).getByLabelText('返金する数')).toHaveValue(0);
     fireEvent.change(within(group).getByLabelText('返金する数'), { target: { value: '2' } });
@@ -461,13 +461,13 @@ describe('管理画面の「品を外す」（返金の画面。mode=refund）',
       url.endsWith('/refund') ? refused(409, { error: '返せる額を超えています。', code: 'exceeds_refundable' }) : defaultPostAnswer(url);
     await openRequestDialog();
     removeItems({ cancelRequestId: CANCEL_REQUEST_ID, mode: 'refund', lines: [{ orderItemId: 'item-1', quantity: 1 }] });
-    const dialog = await screen.findByRole('dialog', { name: '返金' });
+    const dialog = await screen.findByRole('dialog', { name: '返金（注文 ORD-A1B2C3D4）' });
     await within(dialog).findByRole('group', { name: 'シルクブラウス（白 / M）' });
 
     fireEvent.click(within(dialog).getByRole('button', { name: '￥10,000 を返金する' }));
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('返せる額を超えています。');
-    expect(screen.getByRole('dialog', { name: '返金' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '返金（注文 ORD-A1B2C3D4）' })).toBeInTheDocument();
     expect(postedBody('/resolve')).toBeUndefined();
   });
 });
@@ -476,7 +476,7 @@ describe('管理画面の「品を外す」（支払い済みのキャンセル�
   it('キャンセルが受け付けられたら（保留）、返金の番号で解決の窓口を呼び、キャンセルの知らせに続けて解決の知らせを出す', async () => {
     await openRequestDialog();
     removeItems({ cancelRequestId: CANCEL_REQUEST_ID, mode: 'paid_cancel', lines: [{ orderItemId: 'item-1', quantity: 2 }] });
-    const dialog = await screen.findByRole('dialog', { name: '注文をキャンセルする' });
+    const dialog = await screen.findByRole('dialog', { name: '注文をキャンセルする（注文 ORD-A1B2C3D4）' });
     expect(screen.queryByRole('dialog', { name: STUB_NAME })).not.toBeInTheDocument();
     await within(dialog).findByText('返金する額: ￥20,000（全額）');
     fireEvent.change(within(dialog).getByRole('combobox', { name: '取消の理由' }), { target: { value: 'customer_request' } });
@@ -500,7 +500,7 @@ describe('管理画面の「品を外す」（取消の画面。mode=unpaid_canc
   it('取消の画面を開き（返金の材料は読まない）、取り消せたら、orderCancelled: true で解決の窓口を呼び、取消の知らせに続けて解決の知らせを出す', async () => {
     await openRequestDialog();
     removeItems({ cancelRequestId: CANCEL_REQUEST_ID, mode: 'unpaid_cancel', lines: [{ orderItemId: 'item-1', quantity: 2 }] });
-    const dialog = await screen.findByRole('dialog', { name: '注文を取り消す' });
+    const dialog = await screen.findByRole('dialog', { name: '注文を取り消す（注文 ORD-A1B2C3D4）' });
     expect(screen.queryByRole('dialog', { name: STUB_NAME })).not.toBeInTheDocument();
     expect(clientFetchMock.mock.calls.some(([url]) => String(url).endsWith('/refund'))).toBe(false);
     fireEvent.change(within(dialog).getByRole('combobox', { name: '取消の理由' }), { target: { value: 'customer_request' } });
@@ -520,7 +520,7 @@ describe('管理画面の「品を外す」（取消の画面。mode=unpaid_canc
     postAnswer = (url) => (url.endsWith('/status') ? refused(409, { error: '払込票が有効な間は取り消せません。' }) : defaultPostAnswer(url));
     await openRequestDialog();
     removeItems({ cancelRequestId: CANCEL_REQUEST_ID, mode: 'unpaid_cancel', lines: [{ orderItemId: 'item-1', quantity: 2 }] });
-    const dialog = await screen.findByRole('dialog', { name: '注文を取り消す' });
+    const dialog = await screen.findByRole('dialog', { name: '注文を取り消す（注文 ORD-A1B2C3D4）' });
     fireEvent.change(within(dialog).getByRole('combobox', { name: '取消の理由' }), { target: { value: 'customer_request' } });
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
@@ -561,14 +561,14 @@ describe('管理画面の解決を待つ申し込みを外す場面（画面を�
   it('支払い済みのキャンセルの画面を閉じたら、解決の窓口を呼ばない。そのあと一覧の「キャンセル」から受け付けても解決しない', async () => {
     await openRequestDialog();
     removeItems({ cancelRequestId: CANCEL_REQUEST_ID, mode: 'paid_cancel', lines: [{ orderItemId: 'item-1', quantity: 2 }] });
-    const first = await screen.findByRole('dialog', { name: '注文をキャンセルする' });
+    const first = await screen.findByRole('dialog', { name: '注文をキャンセルする（注文 ORD-A1B2C3D4）' });
     await within(first).findByText('返金する額: ￥20,000（全額）');
     fireEvent.click(within(first).getByRole('button', { name: '戻る' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     fireEvent.click(within(orderRowElement()).getByRole('button', { name: 'キャンセル' }));
 
-    const second = await screen.findByRole('dialog', { name: '注文をキャンセルする' });
+    const second = await screen.findByRole('dialog', { name: '注文をキャンセルする（注文 ORD-A1B2C3D4）' });
     await within(second).findByText('返金する額: ￥20,000（全額）');
     fireEvent.change(within(second).getByRole('combobox', { name: '取消の理由' }), { target: { value: 'customer_request' } });
     fireEvent.click(within(second).getByRole('button', { name: PAID_CANCEL_SUBMIT }));
@@ -580,13 +580,13 @@ describe('管理画面の解決を待つ申し込みを外す場面（画面を�
     orderRows = [orderRow({ status: '未決済', orderStatus: 'pending', canRefund: false, cancelKind: 'unpaid' })];
     await openRequestDialog();
     removeItems({ cancelRequestId: CANCEL_REQUEST_ID, mode: 'unpaid_cancel', lines: [{ orderItemId: 'item-1', quantity: 2 }] });
-    const first = await screen.findByRole('dialog', { name: '注文を取り消す' });
+    const first = await screen.findByRole('dialog', { name: '注文を取り消す（注文 ORD-A1B2C3D4）' });
     fireEvent.click(within(first).getByRole('button', { name: '戻る' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     fireEvent.click(within(orderRowElement()).getByRole('button', { name: 'キャンセル' }));
 
-    const second = await screen.findByRole('dialog', { name: '注文を取り消す' });
+    const second = await screen.findByRole('dialog', { name: '注文を取り消す（注文 ORD-A1B2C3D4）' });
     fireEvent.change(within(second).getByRole('combobox', { name: '取消の理由' }), { target: { value: 'customer_request' } });
     fireEvent.click(within(second).getByRole('button', { name: '取り消す' }));
     expect(await screen.findByText(UNPAID_CANCEL_NOTICE)).toBeInTheDocument();
@@ -597,12 +597,12 @@ describe('管理画面の解決を待つ申し込みを外す場面（画面を�
     postAnswer = (url) => (url.endsWith('/refund') ? refused(500, { error: 'x' }) : defaultPostAnswer(url));
     await openRequestDialog();
     removeItems({ cancelRequestId: CANCEL_REQUEST_ID, mode: 'refund', lines: [{ orderItemId: 'item-1', quantity: 1 }] });
-    const dialog = await screen.findByRole('dialog', { name: '返金' });
+    const dialog = await screen.findByRole('dialog', { name: '返金（注文 ORD-A1B2C3D4）' });
     await within(dialog).findByRole('group', { name: 'シルクブラウス（白 / M）' });
     fireEvent.click(within(dialog).getByRole('button', { name: '￥10,000 を返金する' }));
     await within(dialog).findByRole('button', { name: 'もう一度確かめる' });
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await waitFor(() => expect(listRequests()).toHaveLength(2));

@@ -236,7 +236,7 @@ for (const viewport of viewports) {
       const returns = page.getByRole('dialog', { name: returnsDialogName(ORDER_ID), exact: true });
       await expect(returns).toBeVisible();
       await expect(returnCard(returns, LABEL).getByRole('button', { name: '額を決めて返金する', exact: true })).toBeVisible();
-      await expect(page.getByRole('dialog', { name: '返金', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('dialog', { name: `返金（注文 ${orderNumberOf(ORDER_ID)}）`, exact: true })).toHaveCount(0);
 
       // サポートの人には返金の権限が無いので、返品の返金の失敗にも「もう一度返金する」を出さない（「解決済みにする」は出る）
       await openList(page, [waitingReturn()], { role: 'supporter', failures: [RETURN_REFUND_FAILURE] });

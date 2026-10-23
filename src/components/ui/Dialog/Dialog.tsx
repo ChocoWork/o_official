@@ -26,6 +26,9 @@ function focusableIn(panel: HTMLElement): HTMLElement[] {
   return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(isRendered);
 }
 
+// 見出しの行の「×」（fullScreenOnMobile の時だけ）。開いた時の最初のフォーカスには選ばない
+const CLOSE_BUTTON_ATTR = "data-ui-dialog-close";
+
 export function Dialog({
   open,
   onClose,
@@ -66,7 +69,8 @@ export function Dialog({
     const previous = document.activeElement;
     const opener = previous instanceof HTMLElement && !panel.contains(previous) ? previous : null;
     if (!panel.contains(previous)) {
-      (focusableIn(panel)[0] ?? panel).focus();
+      // 「×」は見出しの行（中身より前）にあるが、開いた時は今までどおり中身の最初の要素へ移す
+      (focusableIn(panel).find((element) => !element.hasAttribute(CLOSE_BUTTON_ATTR)) ?? panel).focus();
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -162,7 +166,25 @@ export function Dialog({
         tabIndex={-1}
       >
         <div className="dialog-panel__body">
-          <h3 className="dialog-panel__title">{title}</h3>
+          {fullScreenOnMobile ? (
+            // 画面いっぱいに開く（768px 未満）と背景を押して閉じられないので、見出しの行の右に「×」を置く。
+            // 768px 以上では Dialog.css で隠す（隠れている間は isRendered が Tab の閉じ込めから外す）。
+            // 押すと呼ぶ側の onClose を通るので、送っている間は閉じない等の閉じ止めがそのまま効く
+            <div className="dialog-panel__header">
+              <h3 className="dialog-panel__title">{title}</h3>
+              <button
+                type="button"
+                className="dialog-panel__close"
+                aria-label="閉じる"
+                onClick={onClose}
+                data-ui-dialog-close=""
+              >
+                <i className="ri-close-line" aria-hidden="true" />
+              </button>
+            </div>
+          ) : (
+            <h3 className="dialog-panel__title">{title}</h3>
+          )}
           {description ? (
             <p className="dialog-panel__description">{description}</p>
           ) : null}

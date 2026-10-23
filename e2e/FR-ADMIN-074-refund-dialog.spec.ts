@@ -390,7 +390,7 @@ for (const viewport of viewports) {
         state.materials = partlyShipped(method);
         const dialog = await openRefundDialog(page, ORDER_ID);
         await expect(dialog.getByText(TIMING_NOTES[method], { exact: true })).toBeVisible();
-        await dialog.getByRole('button', { name: 'キャンセル', exact: true }).click();
+        await dialog.getByRole('button', { name: '戻る', exact: true }).click();
         await expect(page.getByRole('dialog')).toHaveCount(0);
       }
     });
@@ -409,10 +409,10 @@ for (const viewport of viewports) {
         await dialog.getByRole('button', { name: `${formatYen(12_000)} を返金する`, exact: true }).click();
 
         await expect(dialog.getByRole('alert')).toHaveText(REFUND_TEXT.unknownOutcome);
-        // 押せるボタンは「閉じる」と「もう一度確かめる」だけ。入力は全部止まる
-        await expect(dialog.locator('button:not([disabled])')).toHaveCount(2);
+        // 押せるボタンは「戻る」と「もう一度確かめる」だけ（ほかに、768px 未満では見出しの行の ×）。入力は全部止まる
+        await expect(dialog.locator('button:not([disabled]):not([data-ui-dialog-close])')).toHaveCount(2);
         await expect(dialog.getByRole('button', { name: 'もう一度確かめる', exact: true })).toBeEnabled();
-        await expect(dialog.getByRole('button', { name: '閉じる', exact: true })).toBeEnabled();
+        await expect(dialog.getByRole('button', { name: '戻る', exact: true })).toBeEnabled();
         await expect(dialog.locator('input:not([disabled]), select:not([disabled]), textarea:not([disabled])')).toHaveCount(0);
         expect(state.refundPosts).toHaveLength(1);
 
@@ -430,7 +430,7 @@ for (const viewport of viewports) {
       });
     }
 
-    test('答えが分からないまま「閉じる」を押すと、閉じて一覧を読み直す。返金を受け付けた知らせは出さない', async ({ page }) => {
+    test('答えが分からないまま「戻る」を押すと、閉じて一覧を読み直す。返金を受け付けた知らせは出さない', async ({ page }) => {
       // FREQ-448-AC-05（Review Focus 1）
       const { state, list } = await mockApis(page, partlyShipped());
       state.answerRefund = async (route) => {
@@ -443,7 +443,7 @@ for (const viewport of viewports) {
       await expect(dialog.getByRole('alert')).toHaveText(REFUND_TEXT.unknownOutcome);
       const readsBefore = list.urls.length;
 
-      await dialog.getByRole('button', { name: '閉じる', exact: true }).click();
+      await dialog.getByRole('button', { name: '戻る', exact: true }).click();
 
       await expect(page.getByRole('dialog')).toHaveCount(0);
       await expect.poll(() => list.urls.length).toBeGreaterThan(readsBefore);
@@ -469,7 +469,7 @@ for (const viewport of viewports) {
       await submit.click();
 
       await expect.poll(() => state.refundPosts.length).toBe(1);
-      await expect(dialog.getByRole('button', { name: 'キャンセル', exact: true })).toBeDisabled();
+      await expect(dialog.getByRole('button', { name: '戻る', exact: true })).toBeDisabled();
       await expect(submit).toBeDisabled();
       await page.keyboard.press('Escape');
       await expect(dialog).toBeVisible();
@@ -479,7 +479,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('status').filter({ hasText: REFUND_TEXT.noticePending })).toBeVisible();
     });
 
-    test('確かめ中の返金がある注文は、入力を出さず「もう一度確かめる」と「閉じる」だけを出し、記録の番号で確かめ直す', async ({ page }) => {
+    test('確かめ中の返金がある注文は、入力を出さず「もう一度確かめる」と「戻る」だけを出し、記録の番号で確かめ直す', async ({ page }) => {
       // FREQ-448-AC-05
       const { state } = await mockApis(
         page,
@@ -496,8 +496,9 @@ for (const viewport of viewports) {
 
       await expect(dialog.getByText(`確かめ中の返金があります（${formatYen(12_800)}）。`)).toBeVisible();
       await expect(dialog.locator('input, select, textarea')).toHaveCount(0);
-      await expect(dialog.locator('button:not([disabled])')).toHaveCount(2);
-      await expect(dialog.getByRole('button', { name: '閉じる', exact: true })).toBeEnabled();
+      // 見出しの行の ×（768px 未満だけ見える）を除いた押せるボタン
+      await expect(dialog.locator('button:not([disabled]):not([data-ui-dialog-close])')).toHaveCount(2);
+      await expect(dialog.getByRole('button', { name: '戻る', exact: true })).toBeEnabled();
 
       await dialog.getByRole('button', { name: 'もう一度確かめる', exact: true }).click();
 

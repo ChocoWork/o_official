@@ -1,4 +1,5 @@
 import { listOrderReturns } from '@/lib/orders/returns/return-store';
+import { dialogFooterClose } from './admin-test-utils';
 import { addVariant, returnLabelOf } from './return-test-utils';
 import {
   test, expect, viewports, shipped, line, requestDb, photoFiles, directUpload,
@@ -32,7 +33,7 @@ for (const viewport of viewports) {
       await viewer.getByRole('button', { name: '次の写真', exact: true }).click();
       await expect(page.getByRole('dialog', { name: '写真（2／2）', exact: true })).toBeVisible();
       await page.getByRole('dialog').getByRole('button', { name: '前の写真', exact: true }).click();
-      await page.getByRole('dialog').getByRole('button', { name: '閉じる', exact: true }).click();
+      await dialogFooterClose(page.getByRole('dialog')).click();
       dialog = page.getByRole('dialog', { name: '返品の申し込みを確かめる（' + returnLabelOf(fx.orderId, ret.number) + '）', exact: true });
       const resolution = dialog.getByRole('group', { name: 'E2Eシャツ（ホワイト / M）の解決', exact: true });
       await resolution.getByRole('combobox', { name: '解決の方法', exact: true }).selectOption('exchange');

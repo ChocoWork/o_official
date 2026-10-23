@@ -444,3 +444,162 @@ describe('Dialog の fullScreenOnMobile', () => {
     expect(declarations).toContain('border-radius: 0;');
   });
 });
+
+// 画面いっぱいに開いた時（768px 未満）の右上の「×」（J-12）。jsdom は CSS を読まないので、
+// ここでは × が常に描画される前提で、付く条件・押した時・フォーカスの扱いを確かめる。768px 以上で隠れることは CSS と E2E が持つ
+describe('Dialog の fullScreenOnMobile の「×」', () => {
+  const closeButton = () => screen.getByRole('button', { name: '閉じる' });
+
+  it('fullScreenOnMobile の時だけ、読み上げの名前「閉じる」の type="button" のボタンが付く', () => {
+    const { rerender } = render(
+      <Dialog open onClose={jest.fn()} title="確認">
+        <button type="button">先頭</button>
+      </Dialog>,
+    );
+    expect(screen.queryByRole('button', { name: '閉じる' })).not.toBeInTheDocument();
+
+    rerender(
+      <Dialog open onClose={jest.fn()} title="確認" fullScreenOnMobile>
+        <button type="button">先頭</button>
+      </Dialog>,
+    );
+    expect(closeButton()).toHaveAttribute('type', 'button');
+    // 見た目は既存の × のアイコン（Sheet・BannerAlert と同じ）。アイコンは読み上げない
+    const icon = closeButton().querySelector('i.ri-close-line');
+    expect(icon).not.toBeNull();
+    expect(icon).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('× は見出しと同じ行（見出しの後ろ）に置く', () => {
+    render(
+      <Dialog open onClose={jest.fn()} title="確認" fullScreenOnMobile>
+        <button type="button">先頭</button>
+      </Dialog>,
+    );
+
+    const heading = screen.getByRole('heading', { name: '確認' });
+    expect(heading.parentElement).toBe(closeButton().parentElement);
+    expect(heading.compareDocumentPosition(closeButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('× を押すと onClose を1回呼ぶ（背景の click としては数えない）', () => {
+    const onClose = jest.fn();
+    render(
+      <Dialog open onClose={onClose} title="確認" fullScreenOnMobile>
+        <button type="button">先頭</button>
+      </Dialog>,
+    );
+
+    fireEvent.pointerDown(closeButton());
+    fireEvent.pointerUp(closeButton());
+    fireEvent.click(closeButton());
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('開いた時の最初のフォーカスは × ではなく、今までと同じ中の最初の要素', () => {
+    render(
+      <Dialog open onClose={jest.fn()} title="確認" fullScreenOnMobile>
+        <button type="button">先頭</button>
+        <button type="button">末尾</button>
+      </Dialog>,
+    );
+
+    expect(screen.getByRole('button', { name: '先頭' })).toHaveFocus();
+  });
+
+  it('既定のボタンだけの時は、今までどおり CANCEL へ移る', () => {
+    render(<Dialog open onClose={jest.fn()} title="確認" fullScreenOnMobile />);
+
+    expect(screen.getByRole('button', { name: 'CANCEL' })).toHaveFocus();
+  });
+
+  it('中に操作できる要素が × しか無い時は、今までどおりパネル自身へ移る', () => {
+    render(
+      <Dialog open onClose={jest.fn()} title="確認" fullScreenOnMobile>
+        <p>読み込み中です...</p>
+      </Dialog>,
+    );
+
+    expect(screen.getByRole('dialog', { name: '確認' })).toHaveFocus();
+  });
+
+  it('見えている × は Tab の閉じ込めの端に入る（最後の要素の次は ×、× の前は最後の要素）', () => {
+    render(
+      <Dialog open onClose={jest.fn()} title="確認" fullScreenOnMobile>
+        <button type="button">A</button>
+        <button type="button">C</button>
+      </Dialog>,
+    );
+    const c = screen.getByRole('button', { name: 'C' });
+
+    c.focus();
+    expect(fireEvent.keyDown(c, { key: 'Tab' })).toBe(false);
+    expect(closeButton()).toHaveFocus();
+
+    expect(fireEvent.keyDown(closeButton(), { key: 'Tab', shiftKey: true })).toBe(false);
+    expect(c).toHaveFocus();
+  });
+
+  it('CSS で隠れた × （768px 以上）は Tab の閉じ込めに数えない', () => {
+    render(
+      <Dialog open onClose={jest.fn()} title="確認" fullScreenOnMobile>
+        <button type="button">A</button>
+        <button type="button">C</button>
+      </Dialog>,
+    );
+    // 768px 以上の Dialog.css と同じく display:none にする
+    closeButton().style.display = 'none';
+    const a = screen.getByRole('button', { name: 'A' });
+    const c = screen.getByRole('button', { name: 'C' });
+
+    c.focus();
+    expect(fireEvent.keyDown(c, { key: 'Tab' })).toBe(false);
+    expect(a).toHaveFocus();
+
+    expect(fireEvent.keyDown(a, { key: 'Tab', shiftKey: true })).toBe(false);
+    expect(c).toHaveFocus();
+  });
+
+  it('Escape で閉じ、× で閉じた後も開く前の要素へフォーカスを戻す', () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            開く
+          </button>
+          <Dialog open={open} onClose={() => setOpen(false)} title="確認" fullScreenOnMobile>
+            <button type="button">先頭</button>
+          </Dialog>
+        </>
+      );
+    }
+    render(<Harness />);
+    const opener = screen.getByRole('button', { name: '開く' });
+
+    opener.focus();
+    fireEvent.click(opener);
+    expect(screen.getByRole('button', { name: '先頭' })).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+
+    fireEvent.click(opener);
+    fireEvent.click(closeButton());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
+  it('× は 768px 未満の画面いっぱいの時だけ見える（それ以外は CSS で隠す）', () => {
+    const css = fs.readFileSync(path.join(process.cwd(), 'src/components/ui/Dialog/Dialog.css'), 'utf8').replace(/\r\n/g, '\n');
+    const hiddenByDefault = css.match(/\n\.dialog-panel__close \{([^}]*)\}/);
+    const media = css.match(/@media \(max-width: 767\.98px\) \{([\s\S]*?)\n\}/);
+    const shownOnMobile = media?.[1].match(
+      /\[data-ui-dialog\]\[data-ui-dialog-fullscreen="mobile"\] \.dialog-panel__close \{([^}]*)\}/,
+    );
+
+    expect(hiddenByDefault?.[1] ?? '').toContain('display: none;');
+    expect(shownOnMobile?.[1] ?? '').toContain('display: inline-flex;');
+  });
+});

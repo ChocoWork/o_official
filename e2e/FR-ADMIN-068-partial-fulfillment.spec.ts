@@ -13,6 +13,7 @@ import type {
   CreateFulfillmentResponse,
   FulfillmentErrorResponse,
 } from '@/lib/orders/fulfillment/fulfillment-types';
+import { dialogFooterClose } from './admin-test-utils';
 import {
   createActor,
   createFulfillment,
@@ -262,9 +263,10 @@ for (const viewport of viewports) {
         await dialog.getByRole('button', { name: '発送する' }).click();
 
         await expect(dialog.getByText(UNKNOWN_OUTCOME)).toBeVisible();
-        await expect(dialog.getByRole('button')).toHaveCount(2);
+        // 見出しの行の ×（768px 未満だけ見える）を除いた画面の中のボタン
+        await expect(dialog.getByRole('button').and(dialog.locator(':not([data-ui-dialog-close])'))).toHaveCount(2);
         await expect(dialog.getByRole('button', { name: 'もう一度確かめる' })).toBeVisible();
-        await expect(dialog.getByRole('button', { name: '閉じる' })).toBeVisible();
+        await expect(dialogFooterClose(dialog)).toBeVisible();
         await expect(dialog.locator('input:not([disabled]), select:not([disabled])')).toHaveCount(0);
 
         // 同じ重複防止キーの送り直しには、前の結果（replayed）が返る

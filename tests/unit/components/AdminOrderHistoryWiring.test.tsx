@@ -924,7 +924,7 @@ describe('管理画面の要対応「返金の失敗」の細目と「もう一�
 
     fireEvent.click(retry);
 
-    expect(await screen.findByRole('dialog', { name: '返金' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: '返金（注文 ORD-A1B2C3D4）' })).toBeInTheDocument();
     expect(clientFetchMock.mock.calls.some(([url]) => String(url) === `/api/admin/orders/${ORDER_ID}/refund`)).toBe(true);
   });
 });

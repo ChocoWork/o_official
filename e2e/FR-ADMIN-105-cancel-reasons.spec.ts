@@ -4,7 +4,7 @@
  * controllerが本番ビルドと手元Supabaseで実行する。実Stripeは呼ばない。
  */
 import { expect, test } from '@playwright/test';
-import { adminOrder, mockAdminSession, mockOrderList, openOrderTab, viewports } from './order-fulfillment-test-utils';
+import { adminOrder, mockAdminSession, mockOrderList, openOrderTab, orderNumberOf, viewports } from './order-fulfillment-test-utils';
 import { materialLineOf, mockRefundRoutes, newRefundRouteState, openPaidCancelDialog, refundMaterialsOf } from './refund-test-utils';
 import { createActor, createOrderWithLines, mailBodies, runWorkerUntil, sentOutboxCount, uniqueEmail, withLocalDb } from './order-email-test-utils';
 
@@ -41,7 +41,7 @@ for (const viewport of viewports) {
       await mockRefundRoutes(page, PAID_ID, newRefundRouteState(materials));
       await openOrderTab(page);
       await page.getByRole('row', { name: new RegExp(UNPAID_ID) }).getByRole('button', { name: 'キャンセル', exact: true }).click();
-      const unpaid = page.getByRole('dialog', { name: '注文を取り消す', exact: true });
+      const unpaid = page.getByRole('dialog', { name: `注文を取り消す（注文 ${orderNumberOf(UNPAID_ID)}）`, exact: true });
       expect(await unpaid.getByLabel('取消の理由').getByRole('option').evaluateAll((options) =>
         options.map((option) => ({ value: (option as HTMLOptionElement).value, label: option.textContent })),
       )).toEqual(OPTIONS);

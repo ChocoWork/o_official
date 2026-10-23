@@ -17,6 +17,7 @@ import {
   mockOrderList,
   openOrderTab,
   orderLine,
+  orderNumberOf,
   viewports,
 } from './order-fulfillment-test-utils';
 import {
@@ -29,6 +30,7 @@ import {
   mockRefundRoutes,
   newRefundRouteState,
   openPaidCancelDialog,
+  paidCancelDialogTitle,
   refundErrorMessage,
   refundMaterialsOf,
   refuseRefund,
@@ -171,13 +173,13 @@ for (const viewport of viewports) {
 
       // 未入金の注文は、今までの取消の画面
       await cancelButton(UNPAID_ID).click();
-      await expect(page.getByRole('dialog', { name: '注文を取り消す', exact: true })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: `注文を取り消す（注文 ${orderNumberOf(UNPAID_ID)}）`, exact: true })).toBeVisible();
       await page.getByRole('button', { name: '戻る', exact: true }).click();
       await expect(page.getByRole('dialog')).toHaveCount(0);
 
       // 支払い済みの注文は、返金を伴う新しい画面
       await cancelButton(PAID_ID).click();
-      await expect(page.getByRole('dialog', { name: '注文をキャンセルする', exact: true })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: paidCancelDialogTitle(PAID_ID), exact: true })).toBeVisible();
     });
 
     test('サポートの人の一覧には、支払い済みの注文の「キャンセル」と「返金」が出ず、未入金の注文の取消は出る', async ({ page }) => {
@@ -366,7 +368,8 @@ for (const viewport of viewports) {
       await dialog.getByRole('button', { name: CANCEL_BUTTON, exact: true }).click();
 
       await expect(dialog.getByRole('alert')).toHaveText(REFUND_TEXT.unknownOutcome);
-      await expect(dialog.locator('button:not([disabled])')).toHaveCount(2);
+      // 見出しの行の ×（768px 未満だけ見える）を除いた押せるボタン（「戻る」と「もう一度確かめる」）
+      await expect(dialog.locator('button:not([disabled]):not([data-ui-dialog-close])')).toHaveCount(2);
       await expect(dialog.locator('input:not([disabled]), select:not([disabled]), textarea:not([disabled])')).toHaveCount(0);
 
       state.answerStatus = async (route) => {

@@ -173,7 +173,7 @@ function postedBody(suffix: string): Record<string, unknown> | undefined {
 async function openRefundDialog() {
   render(<AdminPage />);
   fireEvent.click(await screen.findByRole('button', { name: '返金 order-1' }));
-  const dialog = await screen.findByRole('dialog', { name: '返金' });
+  const dialog = await screen.findByRole('dialog', { name: '返金（注文 ORD-ORDER-1）' });
   await within(dialog).findByRole('group', { name: 'シルクブラウス（白 / M）' });
   return dialog;
 }
@@ -188,7 +188,7 @@ function submitFullRefund(dialog: HTMLElement) {
 async function openPaidCancelDialog() {
   render(<AdminPage />);
   fireEvent.click(await screen.findByRole('button', { name: '一覧のキャンセル order-1' }));
-  const dialog = await screen.findByRole('dialog', { name: '注文をキャンセルする' });
+  const dialog = await screen.findByRole('dialog', { name: '注文をキャンセルする（注文 ORD-ORDER-1）' });
   await within(dialog).findByText('返金する額: ￥10,000（全額）');
   return dialog;
 }
@@ -260,7 +260,7 @@ describe('管理画面の返金の画面', () => {
     submitFullRefund(dialog);
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('返せる額を超えています。');
-    expect(screen.getByRole('dialog', { name: '返金' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '返金（注文 ORD-ORDER-1）' })).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(listRequests()).toHaveLength(1);
   });
@@ -272,7 +272,7 @@ describe('管理画面の返金の画面', () => {
     await within(dialog).findByRole('button', { name: 'もう一度確かめる' });
     expect(listRequests()).toHaveLength(1);
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await waitFor(() => expect(listRequests()).toHaveLength(2));
@@ -332,7 +332,7 @@ describe('管理画面の支払い済みの注文のキャンセル', () => {
 
     expect(clientFetchMock).toHaveBeenCalledWith('/api/admin/orders/order-1/refund', { cache: 'no-store' });
     expect(within(dialog).getByRole('button', { name: PAID_CANCEL_SUBMIT })).toBeDisabled();
-    expect(screen.queryByRole('dialog', { name: '注文を取り消す' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '注文を取り消す（注文 ORD-ORDER-1）' })).not.toBeInTheDocument();
   });
 
   it('キャンセルを受け付けたら（保留）、状態の窓口へ送り、画面を閉じ、知らせを出して、一覧を読み直す', async () => {
@@ -374,7 +374,7 @@ describe('管理画面の支払い済みの注文のキャンセル', () => {
     await within(dialog).findByRole('button', { name: 'もう一度確かめる' });
     expect(listRequests()).toHaveLength(1);
 
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await waitFor(() => expect(listRequests()).toHaveLength(2));
@@ -386,8 +386,8 @@ describe('管理画面の支払い済みの注文のキャンセル', () => {
     render(<AdminPage />);
     fireEvent.click(await screen.findByRole('button', { name: '一覧のキャンセル order-1' }));
 
-    expect(await screen.findByRole('dialog', { name: '注文を取り消す' })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: '注文をキャンセルする' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: '注文を取り消す（注文 ORD-ORDER-1）' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '注文をキャンセルする（注文 ORD-ORDER-1）' })).not.toBeInTheDocument();
     expect(clientFetchMock.mock.calls.some(([url]) => String(url).endsWith('/refund'))).toBe(false);
   });
 
@@ -396,7 +396,7 @@ describe('管理画面の支払い済みの注文のキャンセル', () => {
     render(<AdminPage />);
     fireEvent.click(await screen.findByRole('button', { name: '一覧のキャンセル order-1' }));
 
-    expect(await screen.findByRole('dialog', { name: '注文を取り消す' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: '注文を取り消す（注文 ORD-ORDER-1）' })).toBeInTheDocument();
     expect(clientFetchMock.mock.calls.some(([url]) => String(url).endsWith('/refund'))).toBe(false);
   });
 

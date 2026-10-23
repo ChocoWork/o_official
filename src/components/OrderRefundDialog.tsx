@@ -10,6 +10,7 @@ import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
 import { TextAreaField } from '@/components/ui/TextAreaField/TextAreaField';
 import { blockEnterSubmit, useRefundSubmission } from '@/hooks/useRefundSubmission';
 import { clampQuantity, lineLabel } from '@/lib/orders/fulfillment/fulfillment-client';
+import { toOrderNumber } from '@/lib/orders/order-number';
 import { ADMIN_NOTE_MAX_LENGTH } from '@/lib/orders/order-payment-types';
 import { estimateRefund, selectsAllUnshipped, type RefundSelection } from '@/lib/orders/refund/refund-allocation';
 import {
@@ -282,11 +283,12 @@ function OrderRefundDialogBody({ orderId, onClose, onRefunded, onUncertain, pref
   };
 
   return (
-    <Dialog open onClose={flow.close} title="返金" fullScreenOnMobile>
+    // 見出しの注文番号は、開いた時から持っている注文の ID で作る（読み込み中・読めなかった時も同じ見出し）
+    <Dialog open onClose={flow.close} title={`返金（注文 ${toOrderNumber(orderId)}）`} fullScreenOnMobile>
       <form className="space-y-3" onSubmit={handleSubmit} onKeyDown={blockEnterSubmit}>
         <RefundFlowContent
           flow={flow}
-          backLabel="キャンセル"
+          backLabel="戻る"
           submitLabel={`${formatYen(amount)} を返金する`}
           canSubmit={canSubmit}
         >
