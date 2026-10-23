@@ -49,6 +49,16 @@ const CART_CHECKOUT_RPCS_SQL = fs.readFileSync(
   ),
   "utf8",
 );
+// K-5: Stripe のエラーの後に画面の番号の無い下書きを片付ける関数。CLEANUP_SQL では消さないので、当てるのは最初の1回だけ
+const RETIRE_UNATTACHED_SQL = fs.readFileSync(
+  path.join(
+    process.cwd(),
+    "supabase/migrations",
+    fs.readdirSync(path.join(process.cwd(), "supabase/migrations"))
+      .find((name: string) => name.endsWith("_retire_unattached_checkout_draft.sql")),
+  ),
+  "utf8",
+);
 const CLEANUP_SQL = `
 BEGIN;
 DROP FUNCTION IF EXISTS public.claim_checkout_draft(
@@ -98,6 +108,7 @@ describe("integration: Checkout Session draft claim", () => {
     await clientA.query(CLEANUP_SQL);
     await clientA.query(COMPAT_SQL);
     await clientA.query(HARDENING_SQL);
+    await clientA.query(RETIRE_UNATTACHED_SQL);
   });
 
   afterEach(async () => {
@@ -306,6 +317,123 @@ describe("integration: Checkout Session draft claim", () => {
         { id: replacement.rows[0].id, status: "created" },
       ]),
     );
+  });
+
+  function retireUnattached(
+    draftId: string | null,
+    sessionId: string,
+    requestVersion: number,
+    fingerprint: string,
+  ) {
+    return clientA.query(
+      `select public.retire_unattached_checkout_draft(
+         $1::uuid, $2::text, $3::smallint, $4::text
+       ) as changed`,
+      [draftId, sessionId, requestVersion, fingerprint],
+    );
+  }
+
+  test("画面の番号の無い片付けは4つが一致したcreated行だけを変更し、押し直しのclaimは新しいdraftを作る", async () => {
+    const row = fixture();
+    const otherSession = fixture();
+    const claimed = await claim(clientA, row);
+    const draftId = claimed.rows[0].id;
+    const otherClaimed = await claim(clientA, otherSession);
+    const otherDraftId = otherClaimed.rows[0].id;
+
+    const wrongFingerprint = await retireUnattached(draftId, row.sessionId, 1, `v1:${"b".repeat(64)}`);
+    const wrongSession = await retireUnattached(draftId, otherSession.sessionId, 1, row.fingerprint);
+    const wrongVersion = await retireUnattached(draftId, row.sessionId, 2, row.fingerprint);
+    expect(wrongFingerprint.rows[0].changed).toBe(false);
+    expect(wrongSession.rows[0].changed).toBe(false);
+    expect(wrongVersion.rows[0].changed).toBe(false);
+
+    const retired = await retireUnattached(draftId, row.sessionId, 1, row.fingerprint);
+    expect(retired.rows[0].changed).toBe(true);
+    const retiredAgain = await retireUnattached(draftId, row.sessionId, 1, row.fingerprint);
+    expect(retiredAgain.rows[0].changed).toBe(false);
+
+    const replacement = await claim(clientA, row);
+    expect(replacement.rows[0].id).not.toBe(draftId);
+    expect(replacement.rows[0].claim_created).toBe(true);
+
+    const statuses = await clientA.query(
+      `select id, status
+       from public.checkout_drafts
+       where session_id = any($1::text[])`,
+      [[row.sessionId, otherSession.sessionId]],
+    );
+    expect(statuses.rows).toHaveLength(3);
+    expect(statuses.rows).toEqual(
+      expect.arrayContaining([
+        { id: draftId, status: "failed" },
+        { id: replacement.rows[0].id, status: "created" },
+        { id: otherDraftId, status: "created" },
+      ]),
+    );
+  });
+
+  test("画面の番号の無い片付けは、画面の番号の入った下書きを変えない", async () => {
+    const row = fixture();
+    const claimed = await claim(clientA, row);
+    const draftId = claimed.rows[0].id;
+    await clientA.query(
+      `select * from public.attach_checkout_session_to_draft(
+         $1::uuid, $2::text, 1::smallint, $3::text, 'cs_attached'::text
+       )`,
+      [draftId, row.sessionId, row.fingerprint],
+    );
+
+    const result = await retireUnattached(draftId, row.sessionId, 1, row.fingerprint);
+    expect(result.rows[0].changed).toBe(false);
+
+    const persisted = await clientA.query(
+      "select status, checkout_session_id from public.checkout_drafts where id = $1",
+      [draftId],
+    );
+    expect(persisted.rows[0]).toEqual({ status: "created", checkout_session_id: "cs_attached" });
+  });
+
+  test("画面の番号の無い片付けは、空の引数を拒否する", async () => {
+    const row = fixture();
+
+    await expect(retireUnattached(null, row.sessionId, 1, row.fingerprint)).rejects.toMatchObject({
+      code: "22023",
+      message: expect.stringContaining("INVALID_UNATTACHED_DRAFT_RETIREMENT"),
+    });
+  });
+
+  test("画面の番号の無い片付けの関数はservice role専用", async () => {
+    const privileges = await clientA.query(
+      `select
+         has_function_privilege(
+           'anon',
+           'public.retire_unattached_checkout_draft(uuid,text,smallint,text)',
+           'EXECUTE'
+         ) as anon_can_retire,
+         has_function_privilege(
+           'authenticated',
+           'public.retire_unattached_checkout_draft(uuid,text,smallint,text)',
+           'EXECUTE'
+         ) as authenticated_can_retire,
+         has_function_privilege(
+           'service_role',
+           'public.retire_unattached_checkout_draft(uuid,text,smallint,text)',
+           'EXECUTE'
+         ) as service_can_retire,
+         p.prosecdef as security_definer,
+         p.proconfig as config
+       from pg_proc p
+       where p.oid = 'public.retire_unattached_checkout_draft(uuid,text,smallint,text)'::regprocedure`,
+    );
+
+    expect(privileges.rows[0]).toEqual({
+      anon_can_retire: false,
+      authenticated_can_retire: false,
+      service_can_retire: true,
+      security_definer: true,
+      config: ['search_path=""'],
+    });
   });
 
   test("許可していない支払方法はservice-role RPCでも拒否する", async () => {

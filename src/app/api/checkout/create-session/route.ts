@@ -340,6 +340,54 @@ async function retireExpiredDraft(params: {
   return data === true;
 }
 
+/**
+ * Stripe が決済の画面を作れなかった時、画面の番号の無い下書きを failed にする（K-5）。
+ * 押し直しでは claim が新しい下書きを作るので、新しい重複防止キーですぐ作り直せる。
+ * 片付けの失敗は飲み込み、監査に固定の記号だけ残す（元の Stripe のエラーの応答を変えない）。
+ */
+async function retireUnattachedDraft(params: {
+  draftId: string;
+  sessionId: string;
+  requestVersion: number;
+  requestFingerprint: string;
+  ip: string | null;
+  userAgent: string | null;
+}): Promise<void> {
+  let failed: boolean;
+  try {
+    const { error } = await supabase.rpc("retire_unattached_checkout_draft", {
+      _draft_id: params.draftId,
+      _session_id: params.sessionId,
+      _request_version: params.requestVersion,
+      _request_fingerprint: params.requestFingerprint,
+    });
+    failed = Boolean(error);
+  } catch {
+    failed = true;
+  }
+
+  if (!failed) {
+    return;
+  }
+
+  console.error("Failed to retire unattached checkout draft:", params.draftId);
+  try {
+    await logAudit({
+      action: "checkout.session.create",
+      outcome: "error",
+      detail: "checkout_draft_retire_failed",
+      ip: params.ip,
+      user_agent: params.userAgent,
+      metadata: {
+        session_id: params.sessionId,
+        draft_id: params.draftId,
+      },
+    });
+  } catch (logAuditError) {
+    console.error("Failed to log checkout draft retirement error:", logAuditError);
+  }
+}
+
 async function expireConflictingOpenSession(
   stripe: Stripe,
   session: Stripe.Checkout.Session,
@@ -1039,9 +1087,30 @@ export async function POST(req: NextRequest) {
       ui_mode: "custom",
     };
 
-    const session = await stripe.checkout.sessions.create(sessionParams, {
-      idempotencyKey: checkoutSessionIdempotencyKey(createdDraft.id, checkoutSessionExpiresAt),
-    });
+    let session: Stripe.Checkout.Session;
+    try {
+      session = await stripe.checkout.sessions.create(sessionParams, {
+        idempotencyKey: checkoutSessionIdempotencyKey(createdDraft.id, checkoutSessionExpiresAt),
+      });
+    } catch (stripeError) {
+      // 同時に押した時（idempotency_key_in_use）は先の方が作っている最中なので、片付けて先の方の成功を潰さない
+      if (
+        !(
+          stripeError instanceof Stripe.errors.StripeError &&
+          stripeError.code === "idempotency_key_in_use"
+        )
+      ) {
+        await retireUnattachedDraft({
+          draftId: createdDraft.id,
+          sessionId: createdDraft.session_id,
+          requestVersion: createdDraft.checkout_request_version,
+          requestFingerprint: createdDraft.checkout_request_fingerprint,
+          ip: clientIp,
+          userAgent,
+        });
+      }
+      throw stripeError;
+    }
 
     const stored = await storeCheckoutSessionIdOnDraft({
       draftId: createdDraft.id,

@@ -146,6 +146,7 @@ jest.mock("@/lib/audit", () => ({
   logAudit: (...args: unknown[]) => mockLogAudit(...args),
 }));
 
+import Stripe from "stripe";
 import { POST } from "@/app/api/checkout/create-session/route";
 import { calculateCheckoutAmountsFromSubtotal } from "@/features/checkout/services/checkout-pricing.service";
 import { getStripeServerClient } from "@/lib/stripe/server";
@@ -1586,6 +1587,175 @@ describe("POST /api/checkout/create-session", () => {
     );
     expect(res.status).toBe(200);
     expect(Object.keys(res.body)).toEqual(["confirmation"]);
+  });
+
+  // K-5: Stripe が決済の画面を作れなかった時は、画面の番号の無い下書きを片付け、押し直しで新しい下書き・新しいキーにする
+  describe("Stripe のエラーの後の下書きの片付け（K-5）", () => {
+    type RouteResponse = { status: number; body: Record<string, unknown> };
+    const UNAVAILABLE_MESSAGE = "決済サービスに接続できませんでした。時間をおいて再度お試しください。";
+    const apiError = () =>
+      new Stripe.errors.StripeAPIError({ type: "api_error", message: "internal error", statusCode: 500 });
+    const retireCalls = () =>
+      mockRpc.mock.calls.filter(([functionName]) => functionName === "retire_unattached_checkout_draft");
+    const claimFingerprint = () =>
+      (mockRpc.mock.calls.find(([functionName]) => functionName === "claim_checkout_draft")?.[1] as {
+        _request_fingerprint: string;
+      })._request_fingerprint;
+
+    let retireUnattachedResult: { data: unknown; error: unknown } | Error;
+    let retired: boolean;
+    let consoleError: jest.SpyInstance;
+
+    beforeEach(() => {
+      retireUnattachedResult = { data: true, error: null };
+      retired = false;
+      consoleError = jest.spyOn(console, "error").mockImplementation(() => undefined);
+      const baseRpc = mockRpc.getMockImplementation()!;
+      // 片付けた後の claim は、created の行が無いので新しい下書き（新しい番号）を作る（DB の動きを写す）
+      mockRpc.mockImplementation((functionName: string, params: Record<string, unknown>) => {
+        if (functionName === "retire_unattached_checkout_draft") {
+          if (retireUnattachedResult instanceof Error) return Promise.reject(retireUnattachedResult);
+          retired = retireUnattachedResult.data === true;
+          return Promise.resolve(retireUnattachedResult);
+        }
+        if (functionName === "claim_checkout_draft" && retired) {
+          return Promise.resolve({ data: [makeClaimedDraft(params, { id: "draft-456" })], error: null });
+        }
+        return baseRpc(functionName, params);
+      });
+    });
+
+    afterEach(() => {
+      consoleError.mockRestore();
+    });
+
+    it.each([
+      ["StripeAPIError", 503, apiError],
+      [
+        "StripeConnectionError",
+        503,
+        () => new Stripe.errors.StripeConnectionError({ type: "api_error", message: "socket hang up" }),
+      ],
+      [
+        "StripeRateLimitError",
+        429,
+        () => new Stripe.errors.StripeRateLimitError({ type: "rate_limit_error", message: "slow down", statusCode: 429 }),
+      ],
+    ] as const)("sessions.create が %s を投げたら、画面の番号の無い下書きを片付けて今と同じ %i を返す", async (_label, status, makeError) => {
+      mockCreate.mockRejectedValueOnce(makeError());
+
+      const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as RouteResponse;
+
+      expect(res.status).toBe(status);
+      expect(res.body).toMatchObject({ error: "checkout_session_failed", retryable: true });
+      expect(retireCalls()).toEqual([
+        [
+          "retire_unattached_checkout_draft",
+          {
+            _draft_id: "draft-123",
+            _session_id: "sess-abc",
+            _request_version: 3,
+            _request_fingerprint: claimFingerprint(),
+          },
+        ],
+      ]);
+      expect(mockRpc).not.toHaveBeenCalledWith("attach_checkout_session_to_draft", expect.anything());
+    });
+
+    it("片付けた後の押し直しは、新しい下書きの番号の重複防止キーで決済の画面を作る", async () => {
+      mockCreate
+        .mockRejectedValueOnce(apiError())
+        .mockResolvedValueOnce({ id: "cs_new", status: "open", client_secret: "secret_new" });
+
+      const failed = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as RouteResponse;
+      const retried = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as RouteResponse;
+
+      expect(failed.status).toBe(503);
+      expect(retried.status).toBe(200);
+      expect(mockCreate.mock.calls.map((call) => call[1])).toEqual([
+        { idempotencyKey: "checkout-session:create:v3:draft-123:1790001830" },
+        { idempotencyKey: "checkout-session:create:v3:draft-456:1790001830" },
+      ]);
+    });
+
+    it.each([
+      ["DB の関数がエラーを返す", () => ({ data: null, error: { code: "57P01", message: "db down" } })],
+      ["DB の関数が投げる", () => new Error("connection reset")],
+    ] as const)("片付けが失敗しても（%s）同じ 503 を返し、監査には固定の記号だけ残す", async (_label, makeResult) => {
+      retireUnattachedResult = makeResult();
+      mockCreate.mockRejectedValueOnce(apiError());
+
+      const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as RouteResponse;
+
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({
+        error: "checkout_session_failed",
+        message: UNAVAILABLE_MESSAGE,
+        correlationId: expect.any(String),
+        retryable: true,
+      });
+      expect(retireCalls()).toHaveLength(1);
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "checkout.session.create",
+          outcome: "error",
+          detail: "checkout_draft_retire_failed",
+          metadata: { session_id: "sess-abc", draft_id: "draft-123" },
+        }),
+      );
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          detail: "Checkout session creation error",
+          metadata: expect.objectContaining({ stripe_type: "StripeAPIError", stripe_status: 500 }),
+        }),
+      );
+    });
+
+    it("同時に押した時の idempotency_key_in_use では片付けない（先の方の成功を潰さない）", async () => {
+      mockCreate.mockRejectedValueOnce(
+        new Stripe.errors.StripeInvalidRequestError({
+          type: "invalid_request_error",
+          code: "idempotency_key_in_use",
+          message: "There is currently another in-progress request using this Idempotent Key",
+          statusCode: 409,
+        }),
+      );
+
+      const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as RouteResponse;
+
+      expect(res.status).toBe(500);
+      expect(res.body).toMatchObject({ error: "checkout_session_failed", retryable: false });
+      expect(retireCalls()).toEqual([]);
+    });
+
+    it("決済の画面を作れた時は片付けない", async () => {
+      mockCreate.mockResolvedValueOnce({ id: "cs_new", status: "open", client_secret: "secret_new" });
+
+      const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as RouteResponse;
+
+      expect(res.status).toBe(200);
+      expect(retireCalls()).toEqual([]);
+    });
+
+    it("失効の時刻を決める DB の失敗は対象外（Stripe を呼ばず、片付けない）", async () => {
+      mockReserveExpiryResult = { data: null, error: { message: "db down" } };
+
+      const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as RouteResponse;
+
+      expect(res.status).toBe(500);
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(retireCalls()).toEqual([]);
+    });
+
+    it("決済の画面を下書きに書けない DB の失敗は対象外（片付けない）", async () => {
+      mockAttachResult = { data: null, error: { message: "db down" } };
+      mockCreate.mockResolvedValueOnce({ id: "cs_new", status: "open", client_secret: "secret_new" });
+
+      const res = (await POST(makeRequest({ uiMode: "custom" }))) as unknown as RouteResponse;
+
+      expect(res.status).toBe(500);
+      expect(retireCalls()).toEqual([]);
+    });
   });
 });
 
