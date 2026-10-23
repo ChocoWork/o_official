@@ -96,7 +96,7 @@ docs\1_RequirementsDifinition\brand.md に私の服のブランドのコンセ�
 
 ユーザーから機能・UI の変更・追加依頼を受けたら、実装と同時に以下をセットで作成する。
 
-**1. docs\2_Specs\spec.md に追記**
+**1. docs\02_Requirements\requirements.md に追記**
 
 トレーサビリティテーブルに1行追加：
 
