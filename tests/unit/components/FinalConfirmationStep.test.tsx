@@ -98,12 +98,10 @@ describe('FinalConfirmationStep（設計書 2-3・第4章）', () => {
     setReady();
     renderStep();
 
-    expect(mockPaymentElementOptions.paymentMethodOrder).toEqual(['card', 'paypay']);
-    expect(mockPaymentElementOptions.layout).toEqual({
-      type: 'accordion',
-      defaultCollapsed: false,
-      radios: 'always',
-      spacedAccordionItems: false,
+    // options 全体を比べる（ほかの指定が足されたら気づけるように）
+    expect(mockPaymentElementOptions).toEqual({
+      layout: { type: 'accordion', defaultCollapsed: false, radios: 'always', spacedAccordionItems: false },
+      paymentMethodOrder: ['card', 'paypay'],
     });
   });
 

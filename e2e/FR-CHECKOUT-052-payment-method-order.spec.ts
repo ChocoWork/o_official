@@ -41,12 +41,18 @@ test.describe('FR-CHECKOUT-052 支払い方法の並び', () => {
       await expect(card).toBeVisible({ timeout: 30_000 });
       await expect(paypay).toBeVisible({ timeout: 30_000 });
 
-      await expect(frame.locator('button[aria-expanded]').first()).toHaveAccessibleName('カード');
-      const cardBox = await card.boundingBox();
-      const paypayBox = await paypay.boundingBox();
-      expect(cardBox).not.toBeNull();
-      expect(paypayBox).not.toBeNull();
-      expect(cardBox!.y).toBeLessThan(paypayBox!.y);
+      // 役割がボタンで開閉の状態を持つ、見えている最初の項目（selectPaymentMethod・fillTestCard と同じ役割の見方）
+      await expect(frame.getByRole('button').and(frame.locator('[aria-expanded]')).first()).toHaveAccessibleName(
+        'カード',
+      );
+      // Stripe の描き直しの途中で位置が取れない（null）ことがあるので、取れるまで比べ直す
+      await expect
+        .poll(async () => {
+          const cardBox = await card.boundingBox();
+          const paypayBox = await paypay.boundingBox();
+          return cardBox !== null && paypayBox !== null && cardBox.y < paypayBox.y;
+        })
+        .toBe(true);
     });
   }
 });
