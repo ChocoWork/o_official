@@ -552,12 +552,12 @@ DB ACL・active session・`aal2` を確認し、UIの非表示やTSのrole一覧
 
 ### 9-2 権限設定（G-0）とコード
 
-`/admin/settings/permissions` に既存とGの権限を分野別に並べ、店長が役割ごとの許可を切り替えて保存する。`admin.permissions.manage` だけは店長専用の固定権限で、切替欄を出さず「店長のみ・変更不可」と表示する。Shopify S9の「ユーザー/役割管理自体は付与可能な権限ではない」を参照した裁定である。役割は店長 `admin`・サポーター `supporter` のまま増やさず、ユーザーへの役割割当の変更はGに含めない。
+`/admin/settings/permissions` に既存とGの権限を分野別に並べ、店長が役割ごとの許可を切り替えて保存する。`admin.permissions.manage` と `admin.users.manage` は店長専用の固定権限で、どちらも切替欄を出さず「店長のみ・変更不可」と表示する。Shopify S9の「ユーザー/役割管理自体は付与可能な権限ではない」を参照した裁定である。役割は店長 `admin`・サポーター `supporter` のまま増やさない。新しい役割割当画面は作らないが、G-0で既存の役割変更窓口の昇格・ロックアウト防止を含める。
 
 | 画面・操作 | コード | 店長の初期値 | サポーターの初期値 |
 | --- | --- | --- | --- |
 | 利用者の閲覧 | 既存 `admin.users.read` | 可 | 可 |
-| 利用者の管理 | 既存 `admin.users.manage` | 可 | 不可 |
+| 利用者の管理 | 既存 `admin.users.manage` | 常に可、解除不可 | 常に不可、付与不可 |
 | 商品の閲覧 | 既存 `admin.items.read` | 可 | 不可 |
 | 商品の管理 | 既存 `admin.items.manage` | 可 | 不可 |
 | お知らせの閲覧 | 既存 `admin.news.read` | 可 | 不可 |
@@ -591,9 +591,11 @@ DB ACL・active session・`aal2` を確認し、UIの非表示やTSのrole一覧
 
 必要な権限の組は、在庫更新＝stock.manage＋stock.read、割当入替＝orders.allocate＋orders.read、発注更新＝purchase_orders.manage＋purchase_orders.read、受取＝receiving.manage＋purchase_orders.read、発送閲覧＝shipping.read＋orders.read、発送操作＝shipping.manage＋shipping.read＋orders.manage＋orders.read、出荷日訂正＝shipping.correct_date＋shipping.read＋orders.readとする。各コードには `admin.` を付ける。支払い済み取消・返金を伴う承認・返品の返金額決定/実行は既存どおりorders.refundも必要。
 
-G-0で表の全コードを登録して初期値を設定するため、サポーターの発送2コードもこの時に付与する。後続migrationで追加する新権限は店長にだけ `ON CONFLICT DO NOTHING` で初期付与し、既存コードの権限行を再投入して店長が画面で設定した値を戻さない。固定のadmin.permissions.manageだけは店長の付与・他役割の非付与を常に強制する。
+G-0で表の全コードを登録して初期値を設定するため、サポーターの発送2コードもこの時に付与する。後続migrationで追加する新権限は店長にだけ `ON CONFLICT DO NOTHING` で初期付与し、既存コードの権限行を再投入して店長が画面で設定した値を戻さない。固定のadmin.permissions.manage・admin.users.manageは店長の付与・他役割の非付与を常に強制する。
 
-保存は `SECURITY DEFINER` の専用関数 `private.admin_set_role_permissions` で `public.role_permissions` を一括更新する。DBで実行者が店長であること、有効なACLと `admin.permissions.manage`、対象の既存2役割、登録済みコードを検証する。店長からadmin.permissions.manageを外す要求、サポーターを含む店長以外へ同コードを与える要求は全体拒否する。画面を介さない関数呼出しでも同じである。
+保存は `SECURITY DEFINER` の専用関数 `private.admin_set_role_permissions` で `public.role_permissions` を一括更新する。DBで実行者が店長であること、有効なACLと `admin.permissions.manage`、対象の既存2役割、登録済みコードを検証する。店長からadmin.permissions.manageまたはadmin.users.manageを外す要求、サポーターを含む店長以外へいずれかのコードを与える要求は全体拒否する。画面を介さない関数呼出しでも同じである。
+
+G-0では `public.user_roles` のINSERT/UPDATE/DELETEをanon・authenticatedから剥がし、service_roleの権限を維持する（基底schema:4224のGRANT、:3798-3812の管理policyを確認する）。既存の `PATCH /api/admin/users` は、変更後の有効な店長（activeかつexpires_atがNULLまたは未来）が0人になる変更を `LAST_ADMIN_REQUIRED`・409で拒否し、自分自身の役割変更も拒否する。DB結合と単体で、サポーターのuser_roles直接書込みによる昇格拒否・最後の店長の除去拒否・自己変更拒否を確認する。
 
 権限行の直接INSERT/UPDATE/DELETEは許可せず、grant/revokeの差分ごとに `role_permission_events` へ対象役割・コード・実行者・時刻・request_keyを同じ取引で追記する。追記に失敗すれば権限変更も全て取り消す。イベント表のUPDATE/DELETE/TRUNCATEは8-1のトリガーで拒否する。再送と同時編集の版を検証し、保存後の認可は更新済みACLで判定する。
 
@@ -754,7 +756,7 @@ flowchart LR
 
 | 段階 | 出荷する範囲 | 依存・適用条件 | 主な検証 |
 | --- | --- | --- | --- |
-| G-0 | 分野別の権限設定画面、役割別切替、専用関数、role_permission_events、権限管理の店長固定 | 既存ACLを使用。新役割なし。9-2の全コードを登録し、サポーターの現行発送能力を発送2コードへ対応。固定権限は切替不可 | FREQ-519・540、FR-ADMIN-109・123。権限差分とイベントの一括性・UPDATE/DELETE/TRUNCATE拒否 |
+| G-0 | 分野別の権限設定画面、役割別切替、専用関数、role_permission_events、権限管理と利用者管理の店長固定、既存役割変更窓口の保護 | 既存ACLを使用。新役割なし。9-2の全コードを登録し、サポーターの現行発送能力を発送2コードへ対応。固定2権限は切替不可。anon/authenticatedのuser_roles直接書込みを剥奪 | FREQ-519・540、FR-ADMIN-109・123。権限差分とイベントの一括性・UPDATE/DELETE/TRUNCATE拒否、最後の店長の除去・自己役割変更・直接書込みによる昇格の拒否 |
 | G-1 | データモデル・割当/状態/履歴、FIFO、初回paid_at、入金/解放/返品戻し/交換等の接続、手動仕上がり停止、旧発送/取消/伝票訂正/手動配達済みの4RPC停止・旧操作入口撤去 | G-0。本番適用前に11章の件数提示と明示確認を済ませ、清掃とG-1 migrationを同時適用。旧行なしを前提にする。G-3まで管理画面の発送/取消/伝票訂正/手動配達済みは利用不可 | FREQ-520〜524・535の基盤・540〜541。主に単体・DB結合/並行試験で全体ロック順・F/A/H・FIFO/保留/NULL・paid_at・旧4RPC拒否。123追加（旧配送操作入口の停止）。E2Eは13-3の削除/書換/停止を反映 |
 | G-2 | 全商品在庫一覧、既存管理在庫窓口をadmin.items.manageからadmin.stock.manage＋admin.stock.readへ切替、発注入力/確認/確定、数量確定・打切り、受取、原本添付/検索 | G-1の在庫・割当に接続。在庫読取もadmin.stock.readへ統一。DBと原本の片側失敗を回復。旧配送4操作の停止を継続 | FREQ-525〜530・540、FR-ADMIN-111・113〜115・119、123追加。在庫権限切替・数量式・後日受取・一括性・添付/履歴トリガー |
 | G-3 | 荷作り表、発送票、同梱、注文別メール、追跡親、出荷日と訂正履歴。管理画面の発送/取消/伝票訂正/手動配達済みを新しい票単位の流れで再開 | G-1の割当/paid_atとG-2の入庫を使用。発送は荷作り表から開始。伝票訂正・手動配達済みはadmin.shipping.manage必須で票内全注文へ一括反映し、旧4RPCは再開しない | FREQ-531〜535・540〜541、FR-ADMIN-116〜118・120、123追加。停止E2Eを新契約へ書換・再開。一括rollback・二重発送・同梱拒否・メール・日付/返品期限・票単位/権限の迂回拒否 |
@@ -777,3 +779,4 @@ flowchart LR
 | 2026-10-23 | 決定済みの補足を反映。段階別E2E作成時期と既存E2Eの削除/書換/停止表、G-1のDB結合主体、NULL variantの要確認、添付/履歴の拒否トリガー、F/A/Hの式、台帳理由/在庫履歴、交換の通常FIFOと手数料待ち除外、後続権限の店長のみの追加と設定保持、postgres所有を明記 |
 | 2026-10-23 | D06・D12は公式根拠のない独自判断、D26・D28は比較の対象外へ修正。S5を補い17TRACKを調査本文のv2.4 URLへ統一。指定調査3点を未変更で2026-10-23-group-g-researchへコピーし、本書の一時資料参照を永続コピーへ変更。未決なしを維持 |
 | 2026-10-23 | 第3改訂の裁定を反映。G-1の停止対象へ旧伝票訂正/手動配達済みRPCを加え、旧配送4RPCをLEGACY_FULFILLMENT_DISABLEDで拒否、G-3でadmin.shipping.manage必須の票内全注文への操作へ統一。123のG-1追加と段階別内容、13-3の停止/移設を整合。既存在庫窓口の新権限切替はG-2、返品/返金/キャンセル申請行のロックは割当行の後の固定順と明記 |
+| 2026-10-24 | controller裁定1を反映。admin.users.manageも店長固定とし、G-0でanon/authenticatedのuser_roles直接書込みを剥奪、既存PATCHの最後の店長の除去（LAST_ADMIN_REQUIRED・409）と自己役割変更を拒否。初期値表とG-0段階表を更新 |
