@@ -45,6 +45,8 @@ describe('authorizeAdminPermission', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
 
     (createServiceRoleClient as jest.Mock).mockResolvedValue({
       from: jest.fn().mockReturnValue(mockQuery),
@@ -52,6 +54,8 @@ describe('authorizeAdminPermission', () => {
     (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: true, claims: adminClaims });
     (checkAuthSessionLiveness as jest.Mock).mockResolvedValue('active');
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   it('grants when ACL permission exists and token role is admin', async () => {
     grantPermission('admin.users.manage');
@@ -76,6 +80,50 @@ describe('authorizeAdminPermission', () => {
       expect(result.response.status).toBe(403);
       expect((result.response as unknown as { body: { error: string } }).body.error).toBe('Forbidden');
     }
+  });
+
+  describe('監査ログの権限 admin.audit.read', () => {
+    it.each([
+      ['admin', 'admin.audit.read', true],
+      ['supporter', 'admin.orders.read', false],
+      ['user', null, false],
+    ] as const)('%s の ACL（%s）では監査ログの許可=%s', async (role, permission, allowed) => {
+      (verifyAccessToken as jest.Mock).mockResolvedValue({
+        ok: true,
+        claims: { ...adminClaims, app_metadata: { role } },
+      });
+      if (permission) {
+        grantPermission(permission);
+      } else {
+        mockQuery.or.mockResolvedValue({ data: [], error: null });
+      }
+
+      const result = await authorizeAdminPermission('admin.audit.read', mockRequest);
+
+      expect(result.ok).toBe(allowed);
+      if (!result.ok) {
+        expect(result.response.status).toBe(403);
+        expect((result.response as unknown as { body: unknown }).body).toEqual({
+          error: 'Forbidden', permission: 'admin.audit.read', role,
+        });
+      }
+      expect(mockQuery.eq).toHaveBeenCalledWith('user_id', 'user-1');
+      expect(mockQuery.eq).toHaveBeenCalledWith('active', true);
+    });
+
+    it('店長でも DB の ACL に監査ログの権限がなければ拒否する', async () => {
+      mockQuery.or.mockResolvedValue({ data: [], error: null });
+
+      const result = await authorizeAdminPermission('admin.audit.read', mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.response.status).toBe(403);
+        expect((result.response as unknown as { body: unknown }).body).toEqual({
+          error: 'Forbidden', permission: 'admin.audit.read', role: 'admin',
+        });
+      }
+    });
   });
 
   // トークン自体が通らない場合は 401。失効確認まで進まないので DB も触らない。
@@ -207,6 +255,14 @@ describe('authorizeAdminPermission', () => {
 });
 
 describe('legacyPermissionMap', () => {
+  it.each([
+    ['admin', true],
+    ['supporter', false],
+    ['user', false],
+  ] as const)('監査ログの権限は %s の組で %s', (role, allowed) => {
+    expect(legacyPermissionMap[role].has('admin.audit.read')).toBe(allowed);
+  });
+
   it('店長の組には返金とショップの設定の権限が入り、サポートの人の組には入らない', () => {
     expect(legacyPermissionMap.admin.has('admin.orders.refund')).toBe(true);
     expect(legacyPermissionMap.admin.has('admin.settings.manage')).toBe(true);

@@ -24,6 +24,20 @@ describe('Admin audit logs endpoint', () => {
 
     expect(res.status).toBe(401);
     expect(res._body.error).toBe('Unauthorized');
+    expect(authorizeAdminPermission).toHaveBeenCalledWith('admin.audit.read', req);
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+  });
+
+  test('returns 403 without reading audit logs when the audit permission is denied', async () => {
+    const deniedResponse = { status: 403, _body: { error: 'Forbidden', permission: 'admin.audit.read' } };
+    authorizeAdminPermission.mockResolvedValue({ ok: false, response: deniedResponse });
+
+    const req = new Request('http://localhost/api/admin/audit-logs', { method: 'GET' });
+    const res = await handler.GET(req);
+
+    expect(res).toBe(deniedResponse);
+    expect(authorizeAdminPermission).toHaveBeenCalledWith('admin.audit.read', req);
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
   });
 
   test('returns 200 with audit logs when authorized', async () => {
@@ -38,5 +52,7 @@ describe('Admin audit logs endpoint', () => {
 
     expect(res.status).toBe(200);
     expect(body.data).toEqual(fakeData);
+    expect(authorizeAdminPermission).toHaveBeenCalledWith('admin.audit.read', req);
+    expect(fromMock).toHaveBeenCalledWith('audit_logs');
   });
 });
