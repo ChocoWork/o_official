@@ -17,6 +17,7 @@ import { randomUUID } from 'node:crypto';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { RolePermissionChange } from '@/lib/auth/role-permission-types';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
+import { withLocalDb } from './order-email-test-utils';
 import { mockOrderList, viewports } from './order-fulfillment-test-utils';
 import {
   countPermissionRequests,
@@ -93,6 +94,10 @@ test('ログインしていない本物の GET /api/admin/permissions と POST /
     expect(saved.status()).toBe(401);
     expect(saved.headers()['cache-control']).toBe('no-store');
     expect(await saved.json()).toEqual({ error: 'Unauthorized' });
+    await withLocalDb(async (client) => {
+      expect(await readPermissionEvents(client, [change.requestKey])).toEqual([]);
+      expect(await countPermissionRequests(client, [change.requestKey])).toBe(0);
+    });
   } finally {
     await api.dispose();
   }
@@ -104,7 +109,7 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('サポーターの管理メニューは ORDER だけで設定の入口が無く、権限の画面を直に開いても表は出ない。画面から自分に権限管理を付ける保存も DB の関数が断り、何も変わらない', async ({ page }) => {
+    test('サポーターの管理メニューには ORDER があり SETTINGS（設定の入口）が無く、権限の画面を直に開いても表は出ない。画面から自分に権限管理を付ける保存も DB の関数が断り、何も変わらない', async ({ page }) => {
       // FREQ-540-AC-01・AC-02（サポーターの昇格を断る）
       await withPermissionScenario(async (client) => {
         const actorId = await createPermissionActor(client, 'supporter');
@@ -112,7 +117,7 @@ for (const viewport of viewports) {
         await mockOrderList(page, () => []);
         await mockPermissionUiBridge(page, client, actorId);
 
-        // 管理メニューは役割名で決まる: サポーターは ORDER だけ
+        // 管理メニューは役割名で決まる: サポーターには ORDER があり、SETTINGS が無い
         await page.goto('/admin');
         await expect(adminMenu(page).getByRole('button', { name: 'ORDER', exact: true })).toBeVisible();
         await expect(adminMenu(page).getByRole('button', { name: 'SETTINGS', exact: true })).toHaveCount(0);
