@@ -1422,6 +1422,23 @@ describeLocalDb('integration: 返金の結果を書く関数・外からの返�
       expect((await db().query('select * from public.list_order_refund_summaries(null::uuid[])')).rows).toEqual([]);
     });
 
+    test('返金の失敗の自動解決はメモがNULLでも成功し、実行者とメモは空のまま', async () => {
+      const order = await createOrder(db(), { lines: [{ quantity: 1 }] });
+      const exception = await db().query(
+        "select exception_id from public.record_payment_exception($1::text, 'refund_failed', 'declined', null, null, null, $2::uuid)",
+        [`re_${uniqueSuffix()}`, order.orderId],
+      );
+      const id = exception.rows[0].exception_id as string;
+      // _note は NULL 可だが既定値が無いため、引数自体は省略しない。
+      const sql = 'select public.resolve_payment_exception_by_system($1::uuid, $2::text) as closed';
+
+      expect((await db().query(sql, [id, null])).rows[0].closed).toBe(true);
+      const saved = await db().query('select resolved_at, resolved_by, resolution_note from public.payment_exceptions where id = $1', [id]);
+      expect(saved.rows[0].resolved_at).not.toBeNull();
+      expect(saved.rows[0]).toMatchObject({ resolved_by: null, resolution_note: null });
+      expect((await db().query(sql, [id, null])).rows[0].closed).toBe(false);
+    });
+
     test('要対応の自動の解決: 開いている要対応を閉じ（解決した人は空）、閉じ済みは false。空の番号と長すぎるメモは断る', async () => {
       const order = await createOrder(db(), { lines: [{ quantity: 1 }] });
       const exception = await db().query(

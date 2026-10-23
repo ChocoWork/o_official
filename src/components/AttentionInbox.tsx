@@ -63,6 +63,8 @@ export default function AttentionInbox({
   const [resolving, setResolving] = useState<AttentionException | null>(null);
   const [cancelling, setCancelling] = useState<AttentionException | null>(null);
   const [note, setNote] = useState('');
+  const noteRequired = resolving?.reason === 'refund_failed';
+  const noteMissing = noteRequired && note.trim().length === 0;
 
   // 配送の組は、開いている行が無ければ出さない（追跡オフの間は窓口が空で返す）。窓口が付けない昔の形は、無い組と同じに扱う
   const deliveries = attention?.deliveries ?? [];
@@ -226,7 +228,7 @@ export default function AttentionInbox({
           className="space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!resolving) {
+            if (!resolving || noteMissing) {
               return;
             }
             onResolve({ exceptionId: resolving.id, note: note.trim() });
@@ -237,7 +239,9 @@ export default function AttentionInbox({
             返金やお客様への連絡を済ませてから、解決済みにしてください。
           </p>
           <TextAreaField
-            label="メモ（任意・店内のみ）"
+            label={noteRequired ? 'メモ（必須・店内のみ）' : 'メモ（任意・店内のみ）'}
+            required={noteRequired}
+            helperText={noteRequired ? '返金の失敗を解決するときは、確かめた内容をメモに入力してください。' : undefined}
             value={note}
             rows={3}
             maxLength={ADMIN_NOTE_MAX_LENGTH}
@@ -247,7 +251,7 @@ export default function AttentionInbox({
             <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={() => setResolving(null)}>
               戻る
             </Button>
-            <Button type="submit" variant="primary" size="sm" className="w-full font-acumin">
+            <Button type="submit" variant="primary" size="sm" className="w-full font-acumin" disabled={noteMissing}>
               解決する
             </Button>
           </div>

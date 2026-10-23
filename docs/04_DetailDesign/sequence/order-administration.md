@@ -251,7 +251,7 @@ sequenceDiagram
 
 ## SQ-ADMIN-04: 要対応記録を解決済みにする
 
-目的は人による対応完了の記録。事前条件は管理認可、CSRF検証、UUID・本文検証を通り、cancelOrder=falseであること。終了結果は解決済みの200、不存在・既解決等の409、RPC失敗の500。Stripe操作、返金、注文取消は実行しない。
+目的は人による対応完了の記録。事前条件は管理認可、CSRF検証、UUID・本文検証を通り、cancelOrder=falseであること。終了結果は解決済みの200、返金の失敗でメモが空白なら400、不存在・既解決等の409、RPC失敗の500。Stripe操作、返金、注文取消は実行しない。
 
 ```mermaid
 sequenceDiagram
@@ -263,10 +263,15 @@ sequenceDiagram
     API->>DB: resolve_payment_exception(cancel_order=false)
     DB->>DB: 対象例外をFOR UPDATEで取得
     alt 存在し未解決
-        DB->>DB: resolved_at・resolved_by・resolution_noteを保存
-        DB-->>API: resolved=true
-        API->>DB: 解決成功の監査
-        API-->>Admin: 200 orderCancelled=false
+        alt 返金の失敗でメモが空白
+            DB-->>API: RESOLUTION_NOTE_REQUIRED
+            API-->>Admin: 400 メモの入力案内
+        else メモあり、または他の理由
+            DB->>DB: resolved_at・resolved_by・resolution_noteを保存
+            DB-->>API: resolved=true
+            API->>DB: 解決成功の監査
+            API-->>Admin: 200 orderCancelled=false
+        end
     else 不存在または既解決
         DB-->>API: resolved=false
         API->>DB: 競合の監査
@@ -274,7 +279,7 @@ sequenceDiagram
     end
 ```
 
-解決済みの再検出は検出回数・最終時刻を更新するが未解決には戻さない。メモは任意で最大500字。未解決paid_amount_mismatchを解決すると発送の関数（`admin_create_fulfillment`）のその拒否条件（`PAYMENT_REVIEW_REQUIRED`）がなくなるが、解決記録自体はStripeの金額訂正をしない。根拠は[resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts)と[例外RPC](../../../supabase/migrations/20260927100500_payment_exceptions.sql)。
+解決済みの再検出は検出回数・最終時刻を更新するが未解決には戻さない。メモは最大500字で、返金の失敗の手動解決だけ必須、ほかの理由は任意（FREQ-507）。返金の失敗では「メモ（必須・店内のみ）」と「返金の失敗を解決するときは、確かめた内容をメモに入力してください。」を表示し、空・空白だけでは送信できない。API は追加の読み取りをせず、RPC の `RESOLUTION_NOTE_REQUIRED` を400と同じ案内に変換する。解決済みの行への再送は従来どおり何も変更せず、自動解決のメモは任意のまま。未解決paid_amount_mismatchを解決すると発送の関数（`admin_create_fulfillment`）のその拒否条件（`PAYMENT_REVIEW_REQUIRED`）がなくなるが、解決記録自体はStripeの金額訂正をしない。根拠は[resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts)と[例外RPC](../../../supabase/migrations/20261023033507_payment_exception_refund_failed_note.sql)。
 
 ## SQ-ADMIN-05: 未入金注文を取り消して要対応を解決する
 

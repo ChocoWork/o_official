@@ -210,6 +210,12 @@ export async function POST(
     });
 
     if (error) {
+      if (error.message?.includes('RESOLUTION_NOTE_REQUIRED')) {
+        return NextResponse.json(
+          { error: '返金の失敗を解決するときは、確かめた内容をメモに入力してください。' },
+          { status: 400 },
+        );
+      }
       if (error.message?.includes('ORDER_NOT_CANCELLABLE')) {
         return NextResponse.json({ error: '未入金の注文だけ取り消せます。' }, { status: 409 });
       }

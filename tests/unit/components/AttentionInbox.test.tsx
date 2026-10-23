@@ -304,6 +304,64 @@ describe('AttentionInbox', () => {
   });
 });
 
+describe.each([
+  ['通常返金', REFUND_FAILED_ATTENTION, 'exception-refund'],
+  ['返品返金', RETURN_REFUND_FAILED_ATTENTION, 'exception-return-refund'],
+] as const)('返金の失敗の解決メモ（%s）', (_kind, attention, exceptionId) => {
+  function openResolution() {
+    const handlers = renderInbox(attention);
+    fireEvent.click(screen.getAllByRole('button', { name: '解決済みにする' })[0]);
+    const dialog = screen.getByRole('dialog', { name: '解決済みにする' });
+    return { ...handlers, dialog, note: within(dialog).getByRole('textbox', { name: /メモ/ }) };
+  }
+
+  it('メモを必須と表示し、欄の下に確かめた内容を入力する案内を出す', () => {
+    const { dialog, note } = openResolution();
+
+    expect(note).toHaveAccessibleName('メモ（必須・店内のみ）');
+    expect(note).toBeRequired();
+    expect(note).toHaveAccessibleDescription('返金の失敗を解決するときは、確かめた内容をメモに入力してください。');
+    expect(within(dialog).getByText('返金の失敗を解決するときは、確かめた内容をメモに入力してください。')).toBeVisible();
+  });
+
+  it.each(['', '   ', '\t\n　'])('空・空白だけのメモ（%j）では押せず、直接 submit しても送信しない', (value) => {
+    const { dialog, note, onResolve } = openResolution();
+    fireEvent.change(note, { target: { value } });
+
+    expect(within(dialog).getByRole('button', { name: '解決する' })).toBeDisabled();
+    const form = note.closest('form');
+    if (!form) throw new Error('解決メモのフォームがありません');
+    fireEvent.submit(form);
+
+    expect(onResolve).not.toHaveBeenCalled();
+    expect(dialog).toBeInTheDocument();
+  });
+
+  it.each([1, 500])('%i文字のメモを trim して送信でき、上限は500文字のまま', (length) => {
+    const { dialog, note, onResolve } = openResolution();
+    const value = '確'.repeat(length);
+    expect(note).toHaveAttribute('maxlength', '500');
+    fireEvent.change(note, { target: { value: length === 1 ? ` ${value} ` : value } });
+    expect(within(dialog).getByRole('button', { name: '解決する' })).toBeEnabled();
+    fireEvent.click(within(dialog).getByRole('button', { name: '解決する' }));
+
+    expect(onResolve).toHaveBeenCalledWith({ exceptionId, note: value });
+  });
+});
+
+it.each([0, 1])('返金の失敗以外（行%i）はメモが任意のままで、空でも解決できる', (index) => {
+  const { onResolve } = renderInbox();
+  fireEvent.click(screen.getAllByRole('button', { name: '解決済みにする' })[index]);
+  const dialog = screen.getByRole('dialog', { name: '解決済みにする' });
+  const note = within(dialog).getByRole('textbox', { name: 'メモ（任意・店内のみ）' });
+  expect(note).not.toBeRequired();
+  expect(within(dialog).queryByText('返金の失敗を解決するときは、確かめた内容をメモに入力してください。')).not.toBeInTheDocument();
+  expect(within(dialog).getByRole('button', { name: '解決する' })).toBeEnabled();
+  fireEvent.click(within(dialog).getByRole('button', { name: '解決する' }));
+
+  expect(onResolve).toHaveBeenCalledWith({ exceptionId: ATTENTION.exceptions[index].id, note: '' });
+});
+
 describe('AttentionInbox の返品の返金の失敗（グループ E-3 の P21）', () => {
   it('失敗した返金が返品の返金（refundFailure.returnId あり）の「もう一度返金する」は、返品の画面を開く処理に注文の番号を渡し、ふつうの返金の画面を開く処理は呼ばない', () => {
     const { onRetryRefund, onRetryReturnRefund } = renderInbox(RETURN_REFUND_FAILED_ATTENTION);

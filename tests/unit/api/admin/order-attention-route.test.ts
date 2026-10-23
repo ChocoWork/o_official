@@ -686,6 +686,40 @@ describe('POST /api/admin/payment-exceptions/:id/resolve', () => {
     expect(mockScheduleOrderEmailDelivery).not.toHaveBeenCalled();
   });
 
+  it.each([{}, { note: '' }, { note: '   ' }])('RPC がメモ必須を返したら400と指定の案内を返す（%j）', async (body) => {
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      mockRpc.mockResolvedValue({ data: null, error: { code: '22023', message: 'RPC: RESOLUTION_NOTE_REQUIRED' } });
+
+      const res = await resolve(body);
+
+      expect(res).toEqual({
+        status: 400,
+        body: { error: '返金の失敗を解決するときは、確かめた内容をメモに入力してください。' },
+      });
+      expect(mockRpc).toHaveBeenCalledWith('resolve_payment_exception', expect.objectContaining({ _note: null, _cancel_order: false }));
+      expect(mockSelectColumns).toHaveLength(0);
+      expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
+      expect(mockReadCheckoutPayment).not.toHaveBeenCalled();
+      expect(mockScheduleOrderEmailDelivery).not.toHaveBeenCalled();
+      expect(errorLog).not.toHaveBeenCalled();
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
+  it.each([{}, { note: '   ' }, { note: 'あ'.repeat(500) }])('RPC が許可する非取消の解決は追加の読み取りをせず成功する（ケース%#）', async (body) => {
+    mockRpc.mockResolvedValue({ data: [{ resolved: true, order_id: null, cancelled_from: null }], error: null });
+
+    const res = await resolve(body);
+
+    expect(res).toEqual({ status: 200, body: { success: true, orderCancelled: false } });
+    expect(mockRpc).toHaveBeenCalledWith('resolve_payment_exception', expect.objectContaining({ _note: body.note?.trim() || null }));
+    expect(mockSelectColumns).toHaveLength(0);
+    expect(mockReadCheckoutPayment).not.toHaveBeenCalled();
+    expect(mockExpireOpenCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it('別の管理者が先に解決していたら 409(二重に取り消さない)', async () => {
     mockRpc.mockResolvedValue({ data: [{ resolved: false, order_id: ORDER_ID, cancelled_from: null }], error: null });
 

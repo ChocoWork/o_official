@@ -106,6 +106,52 @@ describeLocalDb('integration: 要対応・要確認', (db) => {
     expect(await exceptionRow(db(), id)).toMatchObject({ resolved_by: ACTOR, resolution_note: 'Stripe で確認済み' });
   });
 
+  test.each([null, '', '   ', '\t\r\n'])('返金の失敗の手動解決は空のメモ（%j）を拒否し、未解決のまま残す', async (note) => {
+    const { exception_id: id } = await record(db(), { ref: `re_${uniqueSuffix()}`, reason: 'refund_failed' });
+
+    await expect(db().query(
+      'select resolved from public.resolve_payment_exception($1::uuid, $2::uuid, $3::text)',
+      [id, ACTOR, note],
+    )).rejects.toMatchObject({ code: '22023', message: expect.stringContaining('RESOLUTION_NOTE_REQUIRED') });
+
+    expect(await exceptionRow(db(), id)).toMatchObject({ resolved_at: null, resolved_by: null, resolution_note: null });
+  });
+
+  test.each([1, 500])('返金の失敗は%i文字のメモを保存でき、解決済みへの空メモ再送は何も変えない', async (length) => {
+    const { exception_id: id } = await record(db(), { ref: `re_${uniqueSuffix()}`, reason: 'refund_failed' });
+    const note = '確'.repeat(length);
+    const sql = 'select resolved from public.resolve_payment_exception($1::uuid, $2::uuid, $3::text)';
+
+    expect((await db().query(sql, [id, ACTOR, length === 1 ? ` ${note} ` : note])).rows[0].resolved).toBe(true);
+    const saved = await exceptionRow(db(), id);
+    expect(saved).toMatchObject({ resolved_by: ACTOR, resolution_note: note });
+    expect(saved.resolved_at).not.toBeNull();
+    expect((await db().query(sql, [id, ACTOR, null])).rows[0].resolved).toBe(false);
+    expect(await exceptionRow(db(), id)).toEqual(saved);
+  });
+
+  test('返金の失敗の手動解決も501文字のメモを拒否する', async () => {
+    const { exception_id: id } = await record(db(), { ref: `re_${uniqueSuffix()}`, reason: 'refund_failed' });
+
+    await expect(db().query(
+      'select resolved from public.resolve_payment_exception($1::uuid, $2::uuid, $3::text)',
+      [id, ACTOR, '確'.repeat(501)],
+    )).rejects.toMatchObject({ code: '22023', message: expect.stringContaining('RESOLUTION_NOTE_TOO_LONG') });
+    expect((await exceptionRow(db(), id)).resolved_at).toBeNull();
+  });
+
+  test.each([
+    'order_not_creatable', 'paid_amount_mismatch', 'cancelled_order_paid',
+    'state_conflict', 'unexpected_state', 'stripe_object_missing',
+  ])('返金の失敗以外（%s）はメモ無しの手動解決ができる', async (reason) => {
+    const { exception_id: id } = await record(db(), { ref: `cs_${uniqueSuffix()}`, reason });
+
+    const res = await db().query('select resolved from public.resolve_payment_exception($1::uuid, $2::uuid)', [id, ACTOR]);
+
+    expect(res.rows[0].resolved).toBe(true);
+    expect(await exceptionRow(db(), id)).toMatchObject({ resolved_by: ACTOR, resolution_note: null });
+  });
+
   test('解決済みの要対応は、再び検知しても開き直さない', async () => {
     const ref = `cs_${uniqueSuffix()}`;
     const { exception_id: id } = await record(db(), { ref, reason: 'stripe_object_missing' });
