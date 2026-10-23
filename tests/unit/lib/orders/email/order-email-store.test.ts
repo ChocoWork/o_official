@@ -26,6 +26,10 @@ const historyRow = {
 };
 
 describe('order-email-store', () => {
+  it('サイトの住所による一時停止の理由を捨てずに返す', async () => {
+    const { store } = storeReturning([{ paused: true, reason: 'config_site_url', paused_at: '2026-10-23T00:00:00Z', next_probe_at: '2026-10-23T00:15:00Z' }]);
+    expect((await getOrderEmailSendState(store)).reason).toBe('config_site_url');
+  });
   // 状態はDBの答えを模した物。実際の再試行回数/上限でのdead遷移はcontrollerのDB結合の証拠と分ける。
   it.each(['retry_wait', 'dead'] as const)('配送材料不足のsource_missingはtransientを渡し、DBの%sを返す', async (status) => {
     const { store, rpc } = storeReturning(status);

@@ -1,5 +1,5 @@
 import 'server-only';
-import { getSiteUrl } from '@/lib/redirect';
+import { checkSiteUrlForEmail } from '@/lib/site-url-guard';
 import { ensureOrderStatusLink, type OrderStatusStore } from '@/lib/orders/status/status-store';
 
 /**
@@ -20,8 +20,10 @@ export async function loadOrderStatusEmailUrl(store: OrderStatusStore, orderId: 
 }
 
 function siteOrigin(): URL | null {
+  const checked = checkSiteUrlForEmail();
+  if (!checked.ok) return null;
   try {
-    const site = new URL(getSiteUrl());
+    const site = new URL(checked.origin);
     return site.protocol === 'http:' || site.protocol === 'https:' ? site : null;
   } catch {
     return null;

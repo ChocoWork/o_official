@@ -1,4 +1,5 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { checkSiteUrlForEmail } from '@/lib/site-url-guard';
 import { loadDeliveryEmailMaterial } from '@/lib/orders/email/order-email-delivery-material';
 import { loadOrderStatusEmailUrl } from '@/lib/orders/status/status-email';
 import { recordHeartbeat, type OpsStore } from '@/lib/ops/ops-store';
@@ -276,7 +277,9 @@ export async function processOrderEmails(deps: OrderEmailWorkerDeps): Promise<Or
   const startedAt = deps.now();
   const result: OrderEmailWorkerResult = { sent: 0, skipped: 0, failed: 0, stoppedBy: 'budget' };
 
-  const configError = deps.checkConfig();
+  // claim 前に止め、使えないリンクを含む本文を保存しない。行は既存の probe まで待つ。
+  const siteUrl = checkSiteUrlForEmail();
+  const configError = siteUrl.ok ? deps.checkConfig() : siteUrl.code;
   if (configError) {
     try {
       await pauseOrderEmailSending(deps.store, configError);

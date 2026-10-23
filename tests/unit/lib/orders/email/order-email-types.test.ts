@@ -55,6 +55,9 @@ function readMigration(fileName: string): string {
 const returnReceiptsMigration = readMigration('20261013001143_order_return_receipts.sql');
 const deliveryRecordsMigration = readMigration('20261021220816_delivery_tracking_records.sql');
 const deliveryAdminMigration = readMigration('20261021221140_delivery_tracking_admin.sql');
+const siteUrlMigrationName = fs.readdirSync(path.join(process.cwd(), 'supabase/migrations'))
+  .find((file) => file.endsWith('_order_email_site_url_pause.sql'));
+const pauseMigration = siteUrlMigrationName ? readMigration(siteUrlMigrationName) : outboxMigration;
 
 function sqlValues(pattern: RegExp, sql = outboxMigration): string[] {
   const values = sql.match(pattern)?.[1];
@@ -134,8 +137,8 @@ describe('注文のメールの種類と名前', () => {
     const canceledVariants: Record<CanceledEmailVariant, true> = { payment_in_progress: true, pending: true, paid: true };
     const refundVariants: Record<RefundEmailVariant, true> = { standard: true, after_cancel: true, return: true };
     const variants: Record<OrderEmailVariant, true> = { ...paidVariants, ...canceledVariants, ...refundVariants };
-    const pauseReasons: Record<OrderEmailPauseReason, true> = {
-      config_api_key: true, config_sender_domain: true, config_provider: true, quota_daily: true, quota_monthly: true,
+    const pauseReasons: Record<OrderEmailPauseReason | 'config_site_url', true> = {
+      config_api_key: true, config_sender_domain: true, config_provider: true, config_site_url: true, quota_daily: true, quota_monthly: true,
     };
     // 書き分けは、最新の移行 A の CHECK（order_email_outbox_variant_check）から、種類ごとに読む。
     // 返品のメール4種類と申し込みのメール6種類は書き分けを持たない（variant IS NULL の枝なので集めない）
@@ -146,7 +149,23 @@ describe('注文のメールの種類と名前', () => {
       refund: Object.keys(refundVariants).sort(),
     });
     expect(Object.keys(variants).sort()).toEqual(Object.values(sqlVariants).flat().sort());
-    expect(Object.keys(pauseReasons).sort()).toEqual(sqlValues(/reason IN \(([^)]+)\)/));
+    expect(Object.keys(pauseReasons).sort()).toEqual(sqlValues(/reason IN \(([^)]+)\)/, pauseMigration));
+    expect(Object.keys(pauseReasons).sort()).toEqual(sqlValues(/_reason NOT IN \(([^)]+)\)/, functionBody(pauseMigration, 'private.set_order_email_pause')));
+  });
+
+  it('サイトの住所の設定は原因の記号と日本語の名前を持つ', () => {
+    expect(isOrderEmailErrorCode('config_site_url')).toBe(true);
+    expect(ORDER_EMAIL_ERROR_LABELS).toHaveProperty('config_site_url', 'サイトの住所の設定');
+  });
+
+  it('一時停止の関数は最新の元の定義の許可値だけを広げ、権限を保つ', () => {
+    expect(siteUrlMigrationName).toBeDefined();
+    const rawPauseMigration = siteUrlMigrationName
+      ? fs.readFileSync(path.join(process.cwd(), 'supabase/migrations', siteUrlMigrationName), 'utf8') : '';
+    expect(functionBody(rawPauseMigration, 'private.set_order_email_pause').replace(", 'config_site_url'", '')).toBe(
+      functionBody(outboxMigration, 'private.set_order_email_pause'),
+    );
+    expect(pauseMigration).toContain('REVOKE ALL ON FUNCTION private.set_order_email_pause(text) FROM PUBLIC;');
   });
 
   it('取りやめの理由・失敗の分類は DB の関数の入力制限と同じ値', () => {

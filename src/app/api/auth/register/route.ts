@@ -6,6 +6,8 @@ import { getRequestOrigin, sanitizeRedirectPath } from '@/lib/redirect';
 import { logAudit } from '@/lib/audit';
 import { RegisterRequestSchema } from '@/features/auth/schemas/register';
 import { formatZodError } from '@/features/auth/schemas/common';
+import { isEmailOriginAllowed } from '@/lib/site-url-guard';
+import { notifySiteUrlInvalid } from '@/lib/ops/site-url-alert';
 
 /**
  * 登録済みかどうかに関わらず同じ応答を返す（アカウント列挙対策）。
@@ -111,6 +113,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Bot detection failed" }, { status: 403 });
       }
 
+      const origin = getRequestOrigin(request);
+      if (!isEmailOriginAllowed(origin)) {
+        after(() => notifySiteUrlInvalid());
+        return NextResponse.json({ error: 'ただいま会員登録を受け付けられません。時間をおいてお試しください。' }, { status: 503 });
+      }
+
       // 漏洩済みパスワードを弾く。Supabase の leaked password protection は
       // Pro プラン以上でしか使えないため、同等の制御をここに置く（FREQ-323）。
       const pwned = await checkPwnedPassword(password);
@@ -139,12 +147,11 @@ export async function POST(request: Request) {
       if (lookup.status === "found") {
         // 応答は新規登録時と同一。存在は本人へのメールだけで伝える。
         await logAudit({ action: "register", actor_email: email, outcome: "conflict", detail: "already_registered_notified" });
-        notifyAlreadyRegistered(email, new URL('/login', getRequestOrigin(request)).toString());
+        notifyAlreadyRegistered(email, new URL('/login', origin).toString());
         return acceptedResponse();
       }
 
       const client = await createClient();
-      const origin = getRequestOrigin(request);
       const confirmUrl = new URL('/api/auth/confirm', origin);
       confirmUrl.searchParams.set('redirect_to', redirectPath);
 
@@ -164,7 +171,7 @@ export async function POST(request: Request) {
           // ここに来るのは find_auth_user_id_by_email の除外条件（SSO / banned /
           // 論理削除）に当たったアドレス。上の found と同じ応答に揃える。
           await logAudit({ action: 'register', actor_email: email, outcome: 'conflict', detail: error.message });
-          notifyAlreadyRegistered(email, new URL('/login', getRequestOrigin(request)).toString());
+          notifyAlreadyRegistered(email, new URL('/login', origin).toString());
           return acceptedResponse();
         }
         await logAudit({ action: 'register', actor_email: email, outcome: 'error', detail: error.message });

@@ -1,4 +1,5 @@
 export {};
+jest.mock('server-only', () => ({}), { virtual: true });
 
 // FREQ-320: 登録済みかどうかを応答で判別できないこと（アカウント列挙対策）
 //

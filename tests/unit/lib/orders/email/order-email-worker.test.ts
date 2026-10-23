@@ -430,6 +430,27 @@ describe('runOrderEmailWorker', () => {
 describe('processOrderEmails', () => {
   afterEach(() => jest.restoreAllMocks());
 
+  it.each([false, true])('本番の住所が不正なら保存済み本文の有無によらず claim・材料・本文保存・送信の前に一時停止する (%s)', async (saved) => {
+    jest.replaceProperty(process, 'env', { NODE_ENV: 'test', VERCEL_ENV: 'production' });
+    const h = harness([row(saved ? { subject: 'saved', body_text: 'saved body' } : {})]);
+    expect((await processOrderEmails(h.deps)).stoppedBy).toBe('paused');
+    expect(h.calls).toEqual([{ name: 'pause_order_email_sending', params: { _reason: 'config_site_url' } }]);
+    expect(h.loadMaterial).not.toHaveBeenCalled();
+    expect(h.loadStatusUrl).not.toHaveBeenCalled();
+    expect(h.send).not.toHaveBeenCalled();
+  });
+
+  it('住所の設定が直った後は残した行を既存の経路で送り、同じ行のキーを使う', async () => {
+    jest.replaceProperty(process, 'env', { NODE_ENV: 'test', VERCEL_ENV: 'production' });
+    const h = harness([row()]);
+    expect((await processOrderEmails(h.deps)).stoppedBy).toBe('paused');
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://shop.example.test';
+    expect((await processOrderEmails(h.deps)).sent).toBe(1);
+    expect(h.send).toHaveBeenCalledTimes(1);
+    expect(h.send).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'order-email/email-1' }));
+    expect(h.calls.some((call) => call.name === 'complete_order_email')).toBe(true);
+  });
+
   it('中身を作って送る前に控え、行の番号の重複防止キーで送り、送信済みにする', async () => {
     const h = harness([row()]);
 

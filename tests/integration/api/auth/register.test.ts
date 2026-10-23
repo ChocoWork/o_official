@@ -1,4 +1,5 @@
 export {};
+jest.mock('server-only', () => ({}), { virtual: true });
 
 // Ensure ADMIN_API_KEY exists so public flow is reachable (route expects env var)
 process.env.ADMIN_API_KEY = process.env.ADMIN_API_KEY || 'test-admin-key';

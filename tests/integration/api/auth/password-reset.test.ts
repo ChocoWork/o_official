@@ -1,3 +1,5 @@
+jest.mock('server-only', () => ({}), { virtual: true });
+
 /**
  * Password Reset API Integration Tests
  * タスク: [AUTH-01-09]

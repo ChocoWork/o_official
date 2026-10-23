@@ -428,6 +428,32 @@ describeLocalDb('integration: 注文のメールの表と関数', (db) => {
   });
 
   describe('送信の一時停止', () => {
+    test('サイトの住所の設定で pending と空の本文を保ち、試す時刻を延ばさず、probe 成功で再開する', async () => {
+      const first = await createOrder(db(), 'paid');
+      const second = await createOrder(db(), 'paid');
+      await enqueue(db(), first, 'paid', 'order_confirmed');
+      await enqueue(db(), second, 'paid', 'order_confirmed');
+      const newly = await db().query("select public.pause_order_email_sending('config_site_url') as newly");
+      expect(newly.rows[0].newly).toBe(true);
+      expect(await sendState(db())).toMatchObject({ paused: true, reason: 'config_site_url' });
+      expect(await claim(db())).toBeNull();
+      const pending = await db().query('select status, subject, body_text, attempts from private.order_email_outbox');
+      expect(pending.rows).toHaveLength(2);
+      for (const row of pending.rows) expect(row).toMatchObject({ status: 'pending', subject: null, body_text: null, attempts: 0 });
+
+      await db().query("update private.order_email_send_pause set next_probe_at = now() - interval '1 minute'");
+      const again = await db().query("select public.pause_order_email_sending('config_site_url') as newly");
+      expect(again.rows[0].newly).toBe(false);
+      const kept = await db().query("select next_probe_at = now() - interval '1 minute' as kept from public.get_order_email_send_state()");
+      expect(kept.rows[0].kept).toBe(true);
+      const tried = await claim(db());
+      expect(tried).not.toBeNull();
+      expect(await claim(db())).toBeNull();
+      await complete(db(), tried!);
+      expect(await sendState(db())).toMatchObject({ paused: false, reason: null });
+      expect(await claim(db())).not.toBeNull();
+    });
+
     test('設定の問題は回数を数えずに戻し、送信全体を止め、15分後に1件だけ試す', async () => {
       const first = await createOrder(db(), 'paid');
       const second = await createOrder(db(), 'paid');

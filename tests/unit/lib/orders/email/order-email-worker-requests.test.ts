@@ -1,3 +1,5 @@
+// 本物の worker がサイトの住所の見張り（server 専用の部品）を読み込むため、試験の場では server-only の印を空にする
+jest.mock('server-only', () => ({}), { virtual: true });
 const mockRecordHeartbeat = jest.fn();
 jest.mock('@/lib/ops/ops-store', () => ({
   recordHeartbeat: (...args: unknown[]) => mockRecordHeartbeat(...args),

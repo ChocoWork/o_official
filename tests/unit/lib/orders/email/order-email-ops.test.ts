@@ -85,14 +85,15 @@ describe('runOrderEmailOpsChecks', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('送信を止めていれば知らせ、1時間以内はもう知らせない', async () => {
+  it.each(['config_api_key', 'config_site_url'])('送信を止めていれば知らせ、1時間以内はもう知らせない (%s)', async (reason) => {
     const state = emptyState();
-    state.sendState = [{ paused: true, reason: 'config_api_key', paused_at: '2026-10-09T11:50:00Z', next_probe_at: '2026-10-09T12:05:00Z' }];
+    state.sendState = [{ paused: true, reason, paused_at: '2026-10-09T11:50:00Z', next_probe_at: '2026-10-09T12:05:00Z' }];
     const { store } = fakeStore(state);
     const send = jest.fn<Promise<boolean>, [OpsAlertMail]>().mockResolvedValue(true);
 
     expect((await runOrderEmailOpsChecks({ store, send, now: () => NOW })).pausedAlerted).toBe(true);
     expect(send.mock.calls[0][0].kind).toBe('order_email_paused');
+    if (reason === 'config_site_url') expect(send.mock.calls[0][0].lines.join('\n')).toContain('サイトの住所の設定');
     expect((await runOrderEmailOpsChecks({ store, send, now: () => NOW })).pausedAlerted).toBe(false);
     expect(send).toHaveBeenCalledTimes(1);
   });

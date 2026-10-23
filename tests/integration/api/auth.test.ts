@@ -1,4 +1,6 @@
 export {};
+jest.mock('server-only', () => ({}), { virtual: true });
+jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefined) }));
 
 // 漏洩パスワード検査は外部 API（HaveIBeenPwned）を叩く。テストからネットワークへ出さない。
 // 検査そのものの挙動は tests/unit/lib/pwned-password.test.ts が担当する。

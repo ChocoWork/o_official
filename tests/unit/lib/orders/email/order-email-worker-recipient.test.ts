@@ -4,6 +4,8 @@
  * 材料の読み込みと送信は偽物に替える（読み込みの中身は order-email-return-material.test.ts、本文は order-email-compose-returns.test.ts が確かめる）。
  * アドレスの値は、この試験の作り物（example.com）だけ
  */
+// 本物の worker がサイトの住所の見張り（server 専用の部品）を読み込むため、試験の場では server-only の印を空にする
+jest.mock('server-only', () => ({}), { virtual: true });
 const mockRecordHeartbeat = jest.fn();
 jest.mock('@/lib/ops/ops-store', () => ({
   recordHeartbeat: (...args: unknown[]) => mockRecordHeartbeat(...args),

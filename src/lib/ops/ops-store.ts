@@ -22,6 +22,7 @@ export type OpsStore = {
 export type OpsJob = 'webhook_worker' | 'order_sweep' | 'stripe_reconcile' | 'order_email_worker' | 'order_email_delivery_check' | 'return_photo_purge' | 'delivery_tracking';
 
 export type OpsAlertKey =
+  | 'site_url_invalid'
   | 'webhook_backlog'
   | 'webhook_dead'
   | 'webhook_signature_invalid'

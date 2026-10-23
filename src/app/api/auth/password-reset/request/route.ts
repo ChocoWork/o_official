@@ -6,6 +6,8 @@ import { logAudit } from '@/lib/audit';
 import { ResetRequestSchema } from '@/features/auth/schemas/password-reset';
 import { formatZodError } from '@/features/auth/schemas/common';
 import { getRequestOrigin } from '@/lib/redirect';
+import { isEmailOriginAllowed } from '@/lib/site-url-guard';
+import { notifySiteUrlInvalid } from '@/lib/ops/site-url-alert';
 
 // PUBLIC: パスワードを忘れた利用者の入口なので認証は掛けられない。
 // 濫用対策はレート制限と、登録有無で応答を変えないこと（OWASP Forgot Password CS）。
@@ -46,6 +48,12 @@ export async function POST(request: Request) {
       if (rlAccount) return rlAccount;
     } catch (e) {
       console.error('Rate limit middleware error (password-reset-account):', e);
+    }
+    const origin = getRequestOrigin(request);
+    if (!isEmailOriginAllowed(origin)) {
+      after(() => notifySiteUrlInvalid());
+      // 登録の有無によらず同じ返事にし、期限のある鍵も作らない。
+      return NextResponse.json({ ok: true }, { status: 200 });
     }
     const supabase = await createServiceRoleClient();
 
@@ -107,7 +115,7 @@ export async function POST(request: Request) {
       // メールのリンク先は副作用のない確認ページ。トークンを焼くのは
       // パスワードを実際に変えたときだけ（confirm）。リンクを開いた時点で焼くと、
       // 企業メールのリンクスキャナが先に踏んで潰し、利用者が再設定できなくなる。
-      const resetUrl = new URL('/auth/password-reset/verify', getRequestOrigin(request));
+      const resetUrl = new URL('/auth/password-reset/verify', origin);
       resetUrl.searchParams.set('token', token);
 
       // SMTP の往復を応答経路から外す（レスポンスを待たせない）。

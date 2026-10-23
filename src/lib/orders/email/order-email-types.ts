@@ -123,6 +123,7 @@ export const ORDER_EMAIL_ERROR_CODES = [
   'config_api_key',
   'config_sender_domain',
   'config_provider',
+  'config_site_url',
   'quota_daily',
   'quota_monthly',
   'invalid_message',
@@ -140,7 +141,7 @@ export type OrderEmailErrorCode = (typeof ORDER_EMAIL_ERROR_CODES)[number];
 export type OrderEmailFailureCategory = 'transient' | 'config' | 'permanent';
 export type OrderEmailPauseReason = Extract<
   OrderEmailErrorCode,
-  'config_api_key' | 'config_sender_domain' | 'config_provider' | 'quota_daily' | 'quota_monthly'
+  'config_api_key' | 'config_sender_domain' | 'config_provider' | 'config_site_url' | 'quota_daily' | 'quota_monthly'
 >;
 export type OrderEmailSkipReason = Extract<OrderEmailErrorCode, 'superseded' | 'no_recipient' | 'fulfillment_cancelled'>;
 
@@ -178,6 +179,7 @@ export const ORDER_EMAIL_ERROR_LABELS: Record<OrderEmailErrorCode, string> = {
   config_api_key: '送信の鍵の設定',
   config_sender_domain: '送信元のドメインの設定',
   config_provider: '送信サービスの設定',
+  config_site_url: 'サイトの住所の設定',
   quota_daily: '1日の送信の上限',
   quota_monthly: '1か月の送信の上限',
   invalid_message: '宛先の形が不正',

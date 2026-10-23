@@ -23,6 +23,7 @@ import type {
  * 宛先は SHOP_ALERT_EMAIL（今の要対応のメールと同じ）。お客様の名前・住所・メールアドレスは入れない。
  */
 export type OpsAlertKind =
+  | 'site_url_invalid'
   | 'webhook_backlog'
   | 'webhook_dead'
   | 'job_stale'
@@ -52,6 +53,20 @@ export type RecoveredOrderSummary = {
 
 const RUNBOOK = '手順書（docs/06_Operations/webhook-queue-operations.md）';
 export const ORDER_EMAIL_RUNBOOK = '手順書（docs/06_Operations/order-email-operations.md）';
+
+/** 設定値・要求の origin を含まない、認証メールの停止の知らせ。 */
+export function siteUrlInvalidMail(): OpsAlertMail {
+  return {
+    kind: 'site_url_invalid',
+    subject: '【要対応】サイトの住所の設定を確かめてください',
+    lines: [
+      'サイトの住所の設定に問題があるため、パスワードの再設定と会員登録のメールを送っていません。',
+      'Vercel の本番のサイトの住所の環境変数を正しい https の住所に直し、再デプロイしてください。',
+      'これらのメールは自動で送り直しません。設定を直した後、お客様にもう一度お手続きをお願いしてください。',
+      `次にやること: ${ORDER_EMAIL_RUNBOOK}の「送信の一時停止」を確かめてください。`,
+    ],
+  };
+}
 
 const STATUS_LABELS: Record<BacklogRow['status'], string> = {
   queued: '処理待ち',

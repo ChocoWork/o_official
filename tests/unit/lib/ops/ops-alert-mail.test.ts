@@ -14,6 +14,7 @@ import {
   reconcileFindingsMail,
   recoveredOrdersMail,
   sendOpsAlertMail,
+  siteUrlInvalidMail,
   signatureAlertMail,
   staleJobMail,
 } from '@/lib/ops/ops-alert-mail';
@@ -35,6 +36,20 @@ function deadEvent(n: number): DeadEvent {
 }
 
 describe('店への知らせのメールの文面', () => {
+  it('サイトの住所の問題の知らせは固定の件名と本文で、URLやリクエストを受け取らない', () => {
+    const previous = process.env;
+    process.env = { NODE_ENV: 'test', VERCEL_ENV: 'production', NEXT_PUBLIC_SITE_URL: 'https://localhost' };
+    try {
+      const mail = siteUrlInvalidMail();
+      expect(mail.kind).toBe('site_url_invalid');
+      expect(mail.subject).toBe('【要対応】サイトの住所の設定を確かめてください');
+      expect(mail.lines.join('\n')).toContain('Vercel');
+      expect(mail.lines.join('\n')).toContain('再デプロイ');
+      expect(JSON.stringify(mail).includes('://')).toBe(false);
+    } finally {
+      process.env = previous;
+    }
+  });
   it('配送の追跡の心拍停止は15分と正しい名前を書く', () => {
     const mail = staleJobMail('delivery_tracking', new Date('2026-10-21T00:00:00Z'));
     expect(mail.subject).toBe('【要確認】定期処理が止まっています（配送の追跡）');
@@ -431,6 +446,18 @@ describe('sendOpsAlertMail', () => {
       subject: '【要確認】署名の合わない Stripe の知らせが届いています',
       text: signatureAlertMail(5).lines.join('\n'),
     });
+  });
+
+  it('本番のサイトの住所が不正でも店への知らせ自体は送る', async () => {
+    const previous = process.env;
+    process.env = { NODE_ENV: 'test', VERCEL_ENV: 'production', SHOP_ALERT_EMAIL: 'shop-alert@e2e.test', MAIL_FROM_ADDRESS: 'no-reply@e2e.test' };
+    try {
+      mockSendMail.mockResolvedValueOnce({});
+      await expect(sendOpsAlertMail(siteUrlInvalidMail())).resolves.toBe(true);
+      expect(mockSendMail).toHaveBeenCalledTimes(1);
+    } finally {
+      process.env = previous;
+    }
   });
 
   it('宛先か差出人が無ければ送らずに false', async () => {

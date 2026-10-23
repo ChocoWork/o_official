@@ -39,6 +39,13 @@ describe('loadOrderStatusEmailUrl', () => {
     jest.restoreAllMocks();
   });
 
+  it('本番でサイトの住所が不正ならリンクのDB関数を呼ばず null を返す', async () => {
+    jest.replaceProperty(process, 'env', { NODE_ENV: 'test', VERCEL_ENV: 'production' });
+    const { store, rpc } = makeStore({ data: TOKEN });
+    expect(await loadOrderStatusEmailUrl(store, ORDER_ID) === null).toBe(true);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it('DBの関数でリンクを用意し、サイトの住所を基にした /order-status/{トークン} の絶対URLを返す', async () => {
     const { store, rpc, from } = makeStore({ data: TOKEN });
 
