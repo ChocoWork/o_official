@@ -47,6 +47,27 @@ for (const viewport of viewports) {
 
 		test('購入履歴の注文行全体が注文詳細ページへのリンクで、押すとその注文の詳細へ移る', async ({ page }) => {
 			await mockOtpAuthentication(page);
+			// ACCOUNT は会員情報と配送先も取得する。実 API の 401 → refresh で認証モックが失効しないよう固定する（FR-ACCOUNT-023 と同じ）
+			await page.route('**/api/profile/addresses', async (route) => {
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({ addresses: [] }),
+				});
+			});
+			await page.route('**/api/profile', async (route) => {
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({
+						email: 'user@example.com',
+						fullName: '山田 花子',
+						kanaName: 'ヤマダ ハナコ',
+						phone: '090-1111-2222',
+						address: {},
+					}),
+				});
+			});
 
 			await page.route('**/api/orders', async (route) => {
 				await route.fulfill({
@@ -97,7 +118,10 @@ for (const viewport of viewports) {
 			// AC-02: 行を押すとその注文の詳細へ移る
 			await orderRow.click();
 			await expect(page).toHaveURL(/\/account\/orders\/order-1$/);
-			await expect(page.getByRole('heading', { name: '注文詳細' })).toBeVisible();
+			// ログイン中の注文詳細ページに「注文詳細」の見出しは無い（ログインしていない時の案内にだけある）。
+			// 詳細ページの「購入履歴へ戻る」と、押した注文の番号・配送先が出ることで、その注文の詳細に移ったと確かめる
+			await expect(page.getByRole('link', { name: '購入履歴へ戻る' })).toBeVisible();
+			await expect(page.getByText('ORD-0001', { exact: true })).toBeVisible();
 			await expect(page.getByText('東京都渋谷区神宮前1-2-3 青山ハイツ 101')).toBeVisible();
 		});
 	});

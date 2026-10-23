@@ -139,7 +139,8 @@ for (const viewport of viewports) {
         await openOrderTab(page);
         const dialog = await openRefundDialog(page, ORDER_ID);
         await quantityInput(dialog, '発送前の商品', BLOUSE_LABEL).fill('1');
-        await dialog.getByRole('button', { name: `${formatYen(12_000)} を返金する`, exact: true }).click();
+        // 未発送の商品を全部返すので、送料 800 も全部返す（FR-ADMIN-074 の unshipped と同じ）。返金額は ￥12,800
+        await dialog.getByRole('button', { name: `${formatYen(12_800)} を返金する`, exact: true }).click();
         await expect.poll(() => state.refundPosts.length).toBe(1);
 
         await dialog.getByRole('button', { name: '閉じる', exact: true }).click();

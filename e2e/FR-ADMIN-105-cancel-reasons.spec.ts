@@ -47,6 +47,8 @@ for (const viewport of viewports) {
       )).toEqual(OPTIONS);
       await unpaid.getByRole('button', { name: '戻る', exact: true }).click();
       const paid = await openPaidCancelDialog(page, PAID_ID);
+      // 支払い済みの画面は見出しを先に出し、返金の材料を読み込んでから理由の選択欄を出す。出るのを待ってから中身を読む
+      await expect(paid.getByLabel('取消の理由')).toBeVisible();
       expect(await paid.getByLabel('取消の理由').getByRole('option').evaluateAll((options) =>
         options.map((option) => ({ value: (option as HTMLOptionElement).value, label: option.textContent })),
       )).toEqual(OPTIONS);
