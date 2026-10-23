@@ -271,6 +271,13 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
                     <span data-testid="variant-size">{variant.sizeLabel ?? "—"}</span>
                   </span>
 
+                  {/* 商品から外した色・サイズの組み合わせ。隠さずに出す（在庫が残っていると合計を見誤るため。FREQ-517） */}
+                  {!variant.isActive && (
+                    <span data-testid="variant-retired" className="lk-text-2xs text-black/60">
+                      止めた
+                    </span>
+                  )}
+
                   <span className="lk-text-2xs text-black">
                     <span className="text-black/50">すぐ出せる数 </span>
                     <span data-testid="variant-stock" className="font-medium">

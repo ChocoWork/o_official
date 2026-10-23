@@ -47,6 +47,28 @@ function place(
   );
 }
 
+/** 「注文する」の経路（最終確認画面で在庫ありと見せたバリアントの配列を渡す。ゲストなので買い手は空） */
+function placeWithShown(
+  db: PgClient,
+  args: { draftId: string; checkoutSessionId: string; cartSessionId: string; amountTotal: number },
+  shownInStockVariantIds: number[],
+) {
+  return db.query(
+    `select order_id, order_status::text as order_status, created, rejection
+     from public.place_order_from_checkout_draft(
+       _draft_id => $1::uuid,
+       _checkout_session_id => $2::text,
+       _cart_session_id => $3::text,
+       _stripe_amount_total => $4::integer,
+       _stripe_amount_discount => 0,
+       _stripe_currency => 'jpy',
+       _checkout_session_created_at => $5::timestamptz,
+       _payment_intent_id => null,
+       _shown_in_stock_variant_ids => $6::bigint[])`,
+    [args.draftId, args.checkoutSessionId, args.cartSessionId, args.amountTotal, SESSION_CREATED_AT, shownInStockVariantIds],
+  );
+}
+
 async function draftRow(db: PgClient, draftId: string) {
   const res = await db.query(
     'select status, total_amount, discount_amount, payment_intent_id from public.checkout_drafts where id = $1',
@@ -335,7 +357,8 @@ describeLocalDb('integration: 受付 RPC', (db) => {
     expect(await variantStock(db(), fx.variantId)).toBe(2);
   });
 
-  test('停止中のバリアントは在庫があっても受注生産にする', async () => {
+  // 照合の経路（引数8つ。お金が動いた後）は、止めた組み合わせでも断らずに注文を作る（FREQ-517 の後も同じ）
+  test('照合の経路では、停止中のバリアントは在庫があっても受注生産にして注文を作る', async () => {
     const fx = await createCatalogFixture(db(), { stock: 5, isActive: false });
     const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
 
@@ -353,7 +376,7 @@ describeLocalDb('integration: 受付 RPC', (db) => {
     expect(await variantStock(db(), fx.variantId)).toBe(5);
   });
 
-  test('対応するバリアントが無い色・サイズは variant_id が空のまま注文になる', async () => {
+  test('照合の経路では、対応するバリアントが無い色・サイズは variant_id が空のまま注文になる', async () => {
     const fx = await createCatalogFixture(db(), { stock: 5 });
     const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1, colorName: 'WHITE', sizeLabel: 'L' });
 
@@ -368,6 +391,54 @@ describeLocalDb('integration: 受付 RPC', (db) => {
       res.rows[0].order_id,
     ]);
     expect(lines.rows).toEqual([{ variant_id: null, fulfillment_type: 'backorder' }]);
+  });
+
+  // FREQ-517: 「注文する」の経路はお金が動く前なので、商品から外した色・サイズの組み合わせを断る（照合の経路は上の2つのとおり作る）
+  test('「注文する」の経路では、止めた組み合わせは item_unavailable で断り、注文・在庫・下書きを変えない', async () => {
+    const fx = await createCatalogFixture(db(), { stock: 5, isActive: false });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+
+    const res = await placeWithShown(
+      db(),
+      {
+        draftId: draft.draftId,
+        checkoutSessionId: draft.checkoutSessionId,
+        cartSessionId: draft.cartSessionId,
+        amountTotal: draft.totalAmount,
+      },
+      [],
+    );
+
+    expect(res.rows[0]).toMatchObject({ order_id: null, created: false, rejection: 'item_unavailable' });
+    const count = await db().query('select count(*)::int as n from public.orders where checkout_session_id = $1', [
+      draft.checkoutSessionId,
+    ]);
+    expect(count.rows[0].n).toBe(0);
+    expect((await draftRow(db(), draft.draftId)).status).toBe('created');
+    expect(await movementsOf(db(), fx.variantId)).toEqual([{ delta: 5, reason: 'restock' }]);
+  });
+
+  test('「注文する」の経路では、組み合わせが引けない明細は item_unavailable で断る', async () => {
+    const fx = await createCatalogFixture(db(), { stock: 5 });
+    const draft = await createDraft(db(), {
+      itemId: fx.itemId,
+      lines: [{ quantity: 1 }, { quantity: 1, colorName: 'WHITE', sizeLabel: 'L' }],
+    });
+
+    const res = await placeWithShown(
+      db(),
+      {
+        draftId: draft.draftId,
+        checkoutSessionId: draft.checkoutSessionId,
+        cartSessionId: draft.cartSessionId,
+        amountTotal: draft.totalAmount,
+      },
+      [fx.variantId],
+    );
+
+    expect(res.rows[0]).toMatchObject({ order_id: null, created: false, rejection: 'item_unavailable' });
+    expect((await draftRow(db(), draft.draftId)).status).toBe('created');
+    expect(await movementsOf(db(), fx.variantId)).toEqual([{ delta: 5, reason: 'restock' }]);
   });
 
   test('受付で確保した分は、在庫を戻す処理でそのまま台帳へ戻る（確保と戻しの往復）', async () => {

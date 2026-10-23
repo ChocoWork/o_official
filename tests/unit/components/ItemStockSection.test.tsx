@@ -141,6 +141,22 @@ describe('ItemStockSection の4つの数と履歴（グループ E-1）', () => 
   });
 });
 
+describe('ItemStockSection の止めた組み合わせ（FREQ-517）', () => {
+  beforeEach(() => {
+    mockedFetch.mockReset();
+  });
+
+  // 商品から外した色・サイズの組み合わせは隠さず、「止めた」と分かるように出す（在庫が残っていると合計を見誤るため）
+  it('止めた組み合わせの行には「止めた」を出し、有効な行には出さない', async () => {
+    await renderLoaded({ variants: [VARIANT, { ...VARIANT, id: 12, colorName: 'IVORY', isActive: false }] });
+
+    expect(within(screen.getByTestId('variant-row-12')).getByText('止めた')).toBeInTheDocument();
+    expect(within(screen.getByTestId('variant-row-11')).queryByText('止めた')).not.toBeInTheDocument();
+    // 止めた行も在庫の数はそのまま出す
+    expect(within(screen.getByTestId('variant-row-12')).getByTestId('variant-stock')).toHaveTextContent(/^4$/);
+  });
+});
+
 describe('ItemStockSection の返金で動いた履歴の行（グループ E-2）', () => {
   const REFUND_ID = 'e1e1e1e1-1111-4222-8333-444455556666';
 
