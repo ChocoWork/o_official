@@ -14,7 +14,7 @@ export function OrderStatusPrivate({ data, publicReturns }: { data: CustomerOrde
     const orderReturn = publicReturns.find((item) => item.id === details.id);
     if (!orderReturn) return [];
     const showHowTo = (orderReturn.customerStatus === 'accepted' || orderReturn.customerStatus === 'partially_received')
-      && (orderReturn.returnMethod === 'not_required' || details.returnAddress !== null);
+      && orderReturn.returnMethod !== 'not_required' && details.returnAddress !== null;
     const tracked = details.sentBack.some((item) => Number.isInteger(item.index) && item.index >= 0 && orderReturn.sentBack[item.index] && item.trackingNumber);
     return showHowTo || tracked ? [{ orderReturn, details }] : [];
   });

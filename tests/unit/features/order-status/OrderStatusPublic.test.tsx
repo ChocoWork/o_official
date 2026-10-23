@@ -1,7 +1,8 @@
 import React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { OrderStatusPublic } from '@/features/order-status/components/OrderStatusPublic';
-import type { CustomerOrderPublicView } from '@/lib/orders/customer-order-view-types';
+import { OrderStatusPrivate } from '@/features/order-status/components/OrderStatusPrivate';
+import type { CustomerOrderPrivateView, CustomerOrderPublicView, PublicCustomerOrderReturn } from '@/lib/orders/customer-order-view-types';
 import { DELIVERY_STATUS_LABELS } from '@/lib/orders/tracking/delivery-messages';
 import { ORDER_PROGRESS_LABELS } from '@/lib/orders/order-progress';
 
@@ -47,6 +48,49 @@ test.each(Object.entries(ORDER_PROGRESS_LABELS).filter(([key]) => !['payment_in_
   render(<OrderStatusPublic view={data} />);
   expect(screen.getAllByText(label).length > 0).toBe(true);
   expect(screen.queryByRole('list', { name: '配送ステータス' })).not.toBeInTheDocument();
+});
+
+function returnRow(overrides: Partial<PublicCustomerOrderReturn> = {}): PublicCustomerOrderReturn {
+  return { id: 'ret', number: 1, label: 'ORD-1234ABCD-R1', status: 'open', customerStatus: 'accepted', returnMethod: 'not_required', returnShippingPayer: 'shop', returnShippingFee: 0,
+    requestedAt: '2026-10-22T00:00:00Z', closedAt: null, lines: [], refundAmount: null, sentBack: [], declineMessage: null, exchangeShipping: 'none', ...overrides };
+}
+function withReturns(returns: PublicCustomerOrderReturn[]): CustomerOrderPublicView {
+  return { ...view(), returnSection: { returns, cancelRequests: [], availability: { returns: 'none', endedOn: null, cancel: false } } };
+}
+const privateData = (returnAddress: CustomerOrderPrivateView['returns'][number]['returnAddress']): CustomerOrderPrivateView => ({
+  shipping: { fullName: 'PRIVATE_SENTINEL', postalCode: '', address: '', phone: '' }, contactEmail: '', paymentMethod: '', shipments: [],
+  returns: [{ id: 'ret', returnAddress, sentBack: [] }],
+});
+const ADDRESS = { name: '返品係', postalCode: 'SYNTHETIC-POST', address: 'SYNTHETIC-ADDRESS', phone: 'SYNTHETIC-PHONE' };
+
+test('確かめる前も返送不要の返品には「品物のご返送は不要です。」を1回だけ出す（J-15）', () => {
+  render(<OrderStatusPublic view={withReturns([returnRow()])} />);
+  expect(screen.getAllByText('品物のご返送は不要です。')).toHaveLength(1);
+  expect(screen.getByRole('heading', { name: '返送のしかた' })).toBeVisible();
+});
+
+test('確かめた後も「品物のご返送は不要です。」は公開と個人情報を合わせて1回だけ（J-15）', () => {
+  const data = withReturns([returnRow()]);
+  render(<><OrderStatusPublic view={data} /><OrderStatusPrivate data={privateData(null)} publicReturns={data.returnSection?.returns ?? []} /></>);
+  expect(screen.getAllByText('品物のご返送は不要です。')).toHaveLength(1);
+});
+
+test('返送が要る返品は、確かめる前に返送先・返送料・伝票番号を出さず、確かめた後だけ返送先を出す（J-15）', () => {
+  const data = withReturns([returnRow({ returnMethod: 'customer_ships' })]);
+  const { rerender } = render(<OrderStatusPublic view={data} />);
+  expect(screen.queryByText('品物のご返送は不要です。')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('order-return-how-to')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('order-return-shipping')).not.toBeInTheDocument();
+  expect(document.body.textContent?.includes('SYNTHETIC-ADDRESS')).toBe(false);
+  rerender(<><OrderStatusPublic view={data} /><OrderStatusPrivate data={privateData(ADDRESS)} publicReturns={data.returnSection?.returns ?? []} /></>);
+  expect(within(screen.getByTestId('order-return-address')).getByText('SYNTHETIC-ADDRESS', { exact: false })).toBeVisible();
+  expect(screen.getAllByTestId('order-return-how-to')).toHaveLength(1);
+  expect(screen.queryByText('品物のご返送は不要です。')).not.toBeInTheDocument();
+});
+
+test('返送不要でも、受付済み・一部お受け取り以外の状態では文を出さない（J-15）', () => {
+  render(<OrderStatusPublic view={withReturns([returnRow({ id: 'a', customerStatus: 'inspecting' }), returnRow({ id: 'b', customerStatus: 'returned' }), returnRow({ id: 'c', customerStatus: 'requested' })])} />);
+  expect(screen.queryByText('品物のご返送は不要です。')).not.toBeInTheDocument();
 });
 
 test('届いた日を優先し、空の区分と返金と返品は出さず、壊れた日付はハイフン', () => {

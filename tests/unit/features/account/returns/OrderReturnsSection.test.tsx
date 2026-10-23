@@ -147,6 +147,49 @@ test('readOnlyは記録の無い欄と受付終了の案内を出さない', () 
   expect(container.childElementCount).toBe(0);
 });
 
+/** 公開の形（返送先と送り返しの番号を持たない）の返品 */
+function publicReturn(overrides: Partial<CustomerOrderReturn> = {}) {
+  const { returnAddress: _address, sentBack: _sentBack, ...publicRow } = customerReturn(overrides);
+  void _address; void _sentBack;
+  return { ...publicRow, sentBack: [] };
+}
+
+test.each(['accepted', 'partially_received'] as const)('readOnlyでも%sで返送不要なら「品物のご返送は不要です。」を1回だけ出す（J-15）', (customerStatus) => {
+  render(<OrderReturnsSection orderId={ORDER_ID} section={{ returns: [publicReturn({ customerStatus, returnMethod: 'not_required' })], cancelRequests: [], availability: availability() }} readOnly />);
+  const howTo = screen.getByTestId('order-return-how-to');
+  expect(within(howTo).getByRole('heading', { name: '返送のしかた' })).toBeInTheDocument();
+  expect(screen.getAllByText('品物のご返送は不要です。')).toHaveLength(1);
+  expect(screen.queryByTestId('order-return-address')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('order-return-shipping')).not.toBeInTheDocument();
+});
+
+test('readOnlyで返送が要る返品は、返送のしかた・返送先・返送料の文を出さない（J-15）', () => {
+  render(<OrderReturnsSection orderId={ORDER_ID} section={{ returns: [
+    publicReturn({ id: 'r1', returnMethod: 'customer_ships' }),
+    publicReturn({ id: 'r2', returnMethod: 'shop_label', returnShippingPayer: 'customer', returnShippingFee: 650 }),
+  ], cancelRequests: [], availability: availability() }} readOnly />);
+  expect(screen.queryByTestId('order-return-how-to')).not.toBeInTheDocument();
+  expect(screen.queryByText('品物のご返送は不要です。')).not.toBeInTheDocument();
+  expect(screen.queryByText('下記の返送先へお送りください。')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('order-return-shipping')).not.toBeInTheDocument();
+});
+
+test('readOnlyで返送不要でも、受付済み・一部お受け取り以外の状態では出さない（J-15）', () => {
+  const others: CustomerReturnStatus[] = ['requested', 'inspecting', 'awaiting_fee', 'refund_preparing', 'returned', 'declined'];
+  render(<OrderReturnsSection orderId={ORDER_ID} section={{ returns: others.map((customerStatus, index) => publicReturn({ id: `r-${index}`, customerStatus, returnMethod: 'not_required' })), cancelRequests: [], availability: availability() }} readOnly />);
+  expect(screen.getAllByTestId('order-return')).toHaveLength(6);
+  expect(screen.queryByTestId('order-return-how-to')).not.toBeInTheDocument();
+  expect(screen.queryByText('品物のご返送は不要です。')).not.toBeInTheDocument();
+});
+
+test('readOnlyで返送不要の時に余分な返送先が来ても、住所を読まない（J-15）', () => {
+  const row = customerReturn({ returnMethod: 'not_required' });
+  render(<OrderReturnsSection orderId={ORDER_ID} section={{ returns: [row], cancelRequests: [], availability: availability() }} readOnly />);
+  expect(screen.getAllByText('品物のご返送は不要です。')).toHaveLength(1);
+  expect(screen.queryByTestId('order-return-address')).not.toBeInTheDocument();
+  expect(document.body.textContent?.includes(ADDRESS.address)).toBe(false);
+});
+
 test('readOnlyは余分な返送先と番号が来ても表示しない', () => {
   const row = customerReturn({ sentBack: [{ itemName: '品', color: null, size: null, quantity: 1, message: '店の文章', carrier: null, trackingNumber: 'SYNTHETIC-RETURN' }] });
   render(<OrderReturnsSection orderId={ORDER_ID} section={{ returns: [row], cancelRequests: [], availability: availability() }} readOnly />);

@@ -16,7 +16,7 @@ import type { OrderStatusErrorCode, OrderStatusPrivateResponse, OrderStatusVerif
 
 type AccessState = {
   response: OrderStatusPrivateResponse | null; loading: boolean; error: OrderStatusErrorCode | null;
-  context?: { isLoggedIn: boolean; orderId: string };
+  context?: { token: string; isLoggedIn: boolean; orderId: string };
 };
 const LOADING: AccessState = { response: null, loading: true, error: null };
 
@@ -32,15 +32,24 @@ export function OrderStatusAccess({ token, orderId, orderNumber, publicReturns }
   useEffect(() => {
     let alive = true;
     let controller: AbortController | null = null;
+    // 表示中の答えの確認の期限。読み直しの間も止めずに見張る（期限が来たら答えを待たずに消す）。
     let timer: ReturnType<typeof setTimeout> | undefined;
-    function invalidate(): void {
+    let shownExpiry: number | null = null;
+    function forgetExpiry(): void { clearTimeout(timer); timer = undefined; shownExpiry = null; }
+    function invalidate(keep: boolean): void {
       generation.current += 1;
       controller?.abort();
-      clearTimeout(timer);
+      // 同じ文脈（同じリンク・注文・ログインの状態）の読み直しは、答えが来るまで今の表示と下4桁の欄を残す。
+      // ただし表示中の期限が既に過ぎていれば（端末が眠っていてtimerが遅れた時など）残さない。
+      if (keep && (shownExpiry === null || Date.now() < shownExpiry)) {
+        setState((previous) => ({ ...previous, loading: true }));
+        return;
+      }
+      forgetExpiry();
       setState(LOADING);
     }
-    async function read(): Promise<void> {
-      invalidate();
+    async function read(keep: boolean): Promise<void> {
+      invalidate(keep && isAuthResolved);
       if (!isAuthResolved) return;
       controller = new AbortController();
       const current = generation.current;
@@ -49,6 +58,8 @@ export function OrderStatusAccess({ token, orderId, orderNumber, publicReturns }
         const response = await fetchOrderStatusPrivate(token, signal);
         const body = await response.json() as OrderStatusPrivateResponse;
         if (!alive || current !== generation.current || signal.aborted) return;
+        // 新しい答えが表示を置き換える。前の答えの期限の見張りはここで外す。
+        forgetExpiry();
         if (response.status === 401 && body.access === 'none') {
           setState({ response: body, loading: false, error: 'ORDER_STATUS_AUTH_REQUIRED' });
           return;
@@ -66,29 +77,35 @@ export function OrderStatusAccess({ token, orderId, orderNumber, publicReturns }
             setState({ response: { access: 'none', verifiable: false, reason: 'expired' }, loading: false, error: null });
             return;
           }
-          timer = setTimeout(() => { void read(); }, remaining);
+          shownExpiry = Date.now() + remaining;
+          timer = setTimeout(() => { void read(false); }, remaining);
         }
-        setState({ response: body, loading: false, error: null, context: { isLoggedIn, orderId } });
+        setState({ response: body, loading: false, error: null, context: { token, isLoggedIn, orderId } });
       } catch {
-        if (alive && current === generation.current && !signal.aborted) setState({ response: null, loading: false, error: 'ORDER_STATUS_FAILED' });
+        if (alive && current === generation.current && !signal.aborted) {
+          forgetExpiry();
+          setState({ response: null, loading: false, error: 'ORDER_STATUS_FAILED' });
+        }
       }
     }
-    const reload = () => { void read(); };
-    const onVisible = () => { if (document.visibilityState === 'visible') reload(); };
-    readAgain.current = reload;
-    reload();
-    window.addEventListener(SESSION_EXPIRED_EVENT, reload);
+    // 初めて開いた時とセッション切れは、今の表示を残さずに読み直す。
+    const reset = () => { void read(false); };
+    const refresh = () => { void read(true); };
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    readAgain.current = refresh;
+    reset();
+    window.addEventListener(SESSION_EXPIRED_EVENT, reset);
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       alive = false; generation.current += 1; controller?.abort(); clearTimeout(timer);
       readAgain.current = null;
-      window.removeEventListener(SESSION_EXPIRED_EVENT, reload);
+      window.removeEventListener(SESSION_EXPIRED_EVENT, reset);
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [token, orderId, isAuthResolved, isLoggedIn]);
 
   // ログイン状態は認可には使わず、読取時から文脈が変わった答えを描画する前に捨てる。
-  const currentContext = isAuthResolved && state.context?.isLoggedIn === isLoggedIn && state.context.orderId === orderId;
+  const currentContext = isAuthResolved && state.context?.isLoggedIn === isLoggedIn && state.context.orderId === orderId && state.context.token === token;
   const response = state.response?.access !== 'none' && !currentContext ? null : state.response;
   const access = response?.access ?? 'none';
   const verification = response?.access === 'none' ? response : null;
@@ -102,8 +119,9 @@ export function OrderStatusAccess({ token, orderId, orderNumber, publicReturns }
       <LiveMessage>{state.error ? ERR[state.error] : null}</LiveMessage>
       <LiveMessage>{unavailableCode ? ERR[unavailableCode] : null}</LiveMessage>
       {response && response.access !== 'none' ? <OrderStatusPrivate data={response.data} publicReturns={publicReturns} /> : null}
-      {verification?.verifiable ? <OrderStatusVerifyForm token={token} onVerified={() => { setVerifiedNotice(true); readAgain.current?.(); }} onUnavailable={onUnavailable} /> : null}
-      {!state.loading && access === 'none' ? <Button href={TEXT.login.href} variant="secondary">{TEXT.login.label}</Button> : null}
+      {/* 文脈ごとに別の欄にする。リンク・注文・ログインの状態が変わると入れた数字を持ち越さず、古い欄の遅い確認の答えも捨てる */}
+      {verification?.verifiable ? <OrderStatusVerifyForm key={`${token}|${orderId}|${String(isLoggedIn)}`} token={token} onVerified={() => { setVerifiedNotice(true); readAgain.current?.(); }} onUnavailable={onUnavailable} /> : null}
+      {(!state.loading || response !== null) && access === 'none' ? <Button href={TEXT.login.href} variant="secondary">{TEXT.login.label}</Button> : null}
       {!state.loading && state.error && state.error !== 'ORDER_STATUS_AUTH_REQUIRED' ? <Button type="button" variant="secondary" onClick={() => readAgain.current?.()}>{TEXT.reload}</Button> : null}
       <OrderStatusGuidance access={access} orderId={orderId} orderNumber={orderNumber} />
     </div>

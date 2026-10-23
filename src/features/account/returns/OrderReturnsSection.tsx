@@ -242,6 +242,8 @@ function ReturnCard({ orderReturn, readOnly }: { orderReturn: CustomerOrderRetur
       ) : null}
 
       {showHowTo && !readOnly && "returnAddress" in orderReturn ? <HowToReturn orderReturn={orderReturn} address={orderReturn.returnAddress} /> : null}
+      {/* 公開の記録では、返送不要の固定文だけを出す（住所は読まない）。返送が要る時の案内は確かめた後の欄に任せる */}
+      {showHowTo && readOnly && orderReturn.returnMethod === "not_required" ? <HowToReturn orderReturn={orderReturn} address={null} /> : null}
       {orderReturn.sentBack.length > 0 ? (
         <SentBack items={orderReturn.sentBack} readOnly={readOnly} />
       ) : null}
@@ -315,7 +317,8 @@ export function OrderReturnsSection(props: OrderReturnsSectionProps): React.JSX.
 export function OrderReturnPrivateDetails({ orderReturn, details }: { orderReturn: PublicCustomerOrderReturn; details: OrderStatusPrivateReturn }): React.JSX.Element | null {
   if (orderReturn.id !== details.id) return null;
   const showHowTo = orderReturn.customerStatus === "accepted" || orderReturn.customerStatus === "partially_received";
-  const showAddress = showHowTo && (orderReturn.returnMethod === "not_required" || details.returnAddress !== null);
+  // 返送不要の文は公開の記録が出すので、ここでは返送が要る時の返送先だけを出す（文を2回出さない）
+  const showAddress = showHowTo && orderReturn.returnMethod !== "not_required" && details.returnAddress !== null;
   const tracked = details.sentBack.filter((item) => Number.isInteger(item.index) && item.index >= 0 && orderReturn.sentBack[item.index] && item.trackingNumber);
   if (!showAddress && tracked.length === 0) return null;
   return (

@@ -169,12 +169,13 @@ export async function createOrderStatusStateCase(db: PgClient, status: 'payment_
 
 export async function createOrderStatusReturnCase(db: PgClient,
   state: 'requested' | 'accepted' | 'partially_received' | 'inspecting' | 'awaiting_fee' | 'refund_preparing' | 'returned' | 'declined',
+  options: { returnMethod?: 'customer_ships' | 'shop_label' | 'not_required' } = {},
 ): Promise<Scenario> {
   db = await localPostgres(db);
   await ensureReturnSettings(db);
   const order = await createBase(db, { kind: 'returns' });
   const fulfillmentId = await ship(db, order);
-  const record = await insertReturnRecord(db, { orderId: order.orderId,
+  const record = await insertReturnRecord(db, { orderId: order.orderId, returnMethod: options.returnMethod,
     status: state === 'requested' || state === 'declined' ? state : state === 'returned' ? 'closed' : 'open',
     feeDueAmount: state === 'awaiting_fee' ? 500 : 0,
     lines: [{ fulfillmentId, orderItemId: order.orderItemId, quantity: 2 }] });

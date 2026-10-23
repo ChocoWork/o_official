@@ -136,6 +136,159 @@ test('画面へ戻った時に読み直し、unmountで購読と読取を外す'
   expect(fetchOrderStatusPrivate).toHaveBeenCalledTimes(2); expect(signal?.aborted).toBe(true);
 });
 
+// ---- J-16: 同じ文脈の読み直しでは表示と下4桁の欄を残し、文脈が変わる・期限が来る時はすぐ消す ----
+const TOKEN_B = 'u'.repeat(43);
+const at = (token = 't'.repeat(43), orderId = 'order') => <><h1>公開注文</h1><OrderStatusAccess token={token} orderId={orderId} orderNumber="ORD-1234ABCD" publicReturns={[]} /></>;
+const member = () => response({ access: 'member', data: privateData, expiresAt: null });
+function deferred<T>() { let resolve: (value: T) => void = () => undefined; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
+async function showAgain(): Promise<void> {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+  await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+}
+const typedDigits = () => (document.querySelector('input[name="lastFour"]') as HTMLInputElement | null)?.value ?? '';
+
+test('同じ文脈の読み直しの答え待ちの間は個人情報を残し、答えのnoneに従って消す（J-16）', async () => {
+  jest.mocked(fetchOrderStatusPrivate).mockResolvedValueOnce(member());
+  render(element()); await screen.findByRole('heading', { name: 'お届け先' });
+  const later = deferred<Response>(); jest.mocked(fetchOrderStatusPrivate).mockImplementationOnce(() => later.promise);
+  await showAgain();
+  expect(fetchOrderStatusPrivate).toHaveBeenCalledTimes(2);
+  expect(privatePresent()).toBe(true);
+  await act(async () => { later.resolve(response(none)); });
+  expect(privatePresent()).toBe(false); expect(screen.getByRole('textbox')).toBeVisible();
+});
+
+test('読み直しの答え待ちの間と答えの後も、下4桁の欄は同じ要素で入力した数字を残す（J-16）', async () => {
+  render(element()); const input = await screen.findByRole('textbox');
+  fireEvent.change(input, { target: { value: '56' } });
+  const later = deferred<Response>(); jest.mocked(fetchOrderStatusPrivate).mockImplementationOnce(() => later.promise);
+  await showAgain();
+  expect(fetchOrderStatusPrivate).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('textbox')).toBe(input); expect(input).toHaveValue('56');
+  expect(screen.getByRole('link', { name: 'ログインする' })).toBeVisible();
+  await act(async () => { later.resolve(response(none)); });
+  expect(screen.getByRole('textbox')).toBe(input); expect(input).toHaveValue('56');
+});
+
+test.each([
+  ['401', () => Promise.resolve(response({ ...none, code: 'ORDER_STATUS_AUTH_REQUIRED' }, 401))],
+  ['locked', () => Promise.resolve(response({ access: 'none', verifiable: false, reason: 'locked' }))],
+  ['expired', () => Promise.resolve(response({ access: 'none', verifiable: false, reason: 'expired' }))],
+  ['unavailable', () => Promise.resolve(response({ access: 'none', verifiable: false, reason: 'unavailable' }))],
+  ['503', () => Promise.resolve(response({ error: 'opaque' }, 503))],
+  ['network', () => Promise.reject(new TypeError('opaque'))],
+] as const)('読み直しの答えが%sなら残していた個人情報を消す（J-16）', async (_kind, reply) => {
+  jest.mocked(fetchOrderStatusPrivate).mockResolvedValueOnce(member());
+  render(element()); await screen.findByRole('heading', { name: 'お届け先' });
+  jest.mocked(fetchOrderStatusPrivate).mockImplementationOnce(reply);
+  await showAgain();
+  expect(privatePresent()).toBe(false);
+  expect(screen.getByRole('heading', { name: '公開注文' })).toBeVisible();
+});
+
+test('読み直しの答え待ちの間に確認の期限が来たら、個人情報をすぐ消す（J-16）', async () => {
+  jest.useFakeTimers(); jest.setSystemTime(new Date('2026-10-22T00:00:00Z'));
+  jest.mocked(fetchOrderStatusPrivate).mockResolvedValueOnce(response({ access: 'verified', data: privateData, expiresAt: '2026-10-22T00:01:00Z' }));
+  render(element()); await act(async () => undefined); expect(privatePresent()).toBe(true);
+  await act(async () => { jest.advanceTimersByTime(30000); });
+  jest.mocked(fetchOrderStatusPrivate).mockImplementation(() => new Promise(() => undefined));
+  await showAgain(); expect(privatePresent()).toBe(true);
+  await act(async () => { jest.advanceTimersByTime(29999); }); expect(privatePresent()).toBe(true);
+  await act(async () => { jest.advanceTimersByTime(1); }); expect(privatePresent()).toBe(false);
+  expect(fetchOrderStatusPrivate).toHaveBeenCalledTimes(3);
+});
+
+test('画面へ戻った時に表示中の確認の期限が既に過ぎていれば、読み直しの答えを待たずに消す（J-16）', async () => {
+  jest.useFakeTimers(); jest.setSystemTime(new Date('2026-10-22T00:00:00Z'));
+  jest.mocked(fetchOrderStatusPrivate).mockResolvedValueOnce(response({ access: 'verified', data: privateData, expiresAt: '2026-10-22T00:01:00Z' }));
+  render(element()); await act(async () => undefined); expect(privatePresent()).toBe(true);
+  // 端末が眠っている間は期限のtimerが進まないことがある。時計だけ進めて戻る。
+  jest.setSystemTime(new Date('2026-10-22T00:02:00Z'));
+  jest.mocked(fetchOrderStatusPrivate).mockImplementation(() => new Promise(() => undefined));
+  await showAgain();
+  expect(privatePresent()).toBe(false);
+});
+
+test('読み直しの答え待ちの間にログアウトしたら、effectより前の描画から個人情報を含まない（J-16）', async () => {
+  mockAuth.isLoggedIn = true;
+  jest.mocked(fetchOrderStatusPrivate).mockResolvedValueOnce(member());
+  let presentAtCommit = true;
+  function InspectCommit() { useLayoutEffect(() => { presentAtCommit = privatePresent(); }); return null; }
+  const mounted = render(<>{element()}<InspectCommit /></>);
+  await screen.findByRole('heading', { name: 'お届け先' });
+  jest.mocked(fetchOrderStatusPrivate).mockImplementation(() => new Promise(() => undefined));
+  await showAgain(); expect(privatePresent()).toBe(true);
+  mockAuth.isLoggedIn = false;
+  mounted.rerender(<>{element()}<InspectCommit /></>);
+  expect(presentAtCommit).toBe(false); expect(privatePresent()).toBe(false);
+});
+
+test('読み直しの答え待ちの間にセッションが切れたら、個人情報をすぐ消す（J-16）', async () => {
+  jest.mocked(fetchOrderStatusPrivate).mockResolvedValueOnce(member());
+  render(element()); await screen.findByRole('heading', { name: 'お届け先' });
+  jest.mocked(fetchOrderStatusPrivate).mockImplementation(() => new Promise(() => undefined));
+  await showAgain(); expect(privatePresent()).toBe(true);
+  act(() => { window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT)); });
+  expect(privatePresent()).toBe(false);
+});
+
+test.each([
+  ['別のtoken', () => at(TOKEN_B)],
+  ['別の注文', () => at(undefined, 'other-order')],
+] as const)('%sへ変わった描画は、読み直し中でもeffectより前から個人情報を含まない（J-16）', async (_kind, next) => {
+  jest.mocked(fetchOrderStatusPrivate).mockResolvedValueOnce(member());
+  let presentAtCommit = true;
+  function InspectCommit() { useLayoutEffect(() => { presentAtCommit = privatePresent(); }); return null; }
+  const mounted = render(<>{at()}<InspectCommit /></>);
+  await screen.findByRole('heading', { name: 'お届け先' });
+  jest.mocked(fetchOrderStatusPrivate).mockImplementation(() => new Promise(() => undefined));
+  await showAgain(); expect(privatePresent()).toBe(true);
+  mounted.rerender(<>{next()}<InspectCommit /></>);
+  expect(presentAtCommit).toBe(false); expect(privatePresent()).toBe(false);
+});
+
+test('別のtokenへ変わった描画は、effectより前から個人情報も入力した数字も含まない（J-16）', async () => {
+  jest.mocked(fetchOrderStatusPrivate).mockResolvedValueOnce(member());
+  let atCommit = { present: true, digits: 'unset' };
+  function InspectCommit() { useLayoutEffect(() => { atCommit = { present: privatePresent(), digits: typedDigits() }; }); return null; }
+  const mounted = render(<>{at()}<InspectCommit /></>);
+  await screen.findByRole('heading', { name: 'お届け先' });
+  jest.mocked(fetchOrderStatusPrivate).mockImplementation(() => new Promise(() => undefined));
+  mounted.rerender(<>{at(TOKEN_B)}<InspectCommit /></>);
+  expect(atCommit.present).toBe(false);
+  // 下4桁の欄: 古いリンクで入れた数字を新しいリンクへ持ち越さない
+  jest.mocked(fetchOrderStatusPrivate).mockResolvedValue(response(none));
+  mounted.rerender(<>{at()}<InspectCommit /></>);
+  fireEvent.change(await screen.findByRole('textbox'), { target: { value: '56' } });
+  jest.mocked(fetchOrderStatusPrivate).mockImplementation(() => new Promise(() => undefined));
+  mounted.rerender(<>{at(TOKEN_B)}<InspectCommit /></>);
+  expect(atCommit.digits).toBe('');
+});
+
+test('古いtokenの読取の返事が後から届いても、新しいリンクへ個人情報を出さない（J-16）', async () => {
+  const first = deferred<Response>(); jest.mocked(fetchOrderStatusPrivate).mockImplementationOnce(() => first.promise);
+  const mounted = render(at()); const signal = jest.mocked(fetchOrderStatusPrivate).mock.calls[0][1];
+  mounted.rerender(at(TOKEN_B)); await screen.findByRole('textbox');
+  await act(async () => { first.resolve(member()); });
+  expect(privatePresent()).toBe(false); expect(screen.getByRole('textbox')).toBeVisible(); expect(signal?.aborted).toBe(true);
+});
+
+test.each([
+  ['成功', () => response({ ok: true, expiresAt: '2026-10-23T00:00:00Z' })],
+  ['ロック', () => response({ code: 'ORDER_STATUS_MISMATCH', verifiable: false, reason: 'locked' }, 400)],
+] as const)('古い文脈の確認のPOSTの%sが後から届いても、新しい文脈へ反映しない（J-16）', async (_kind, reply) => {
+  const mounted = render(at()); const input = await screen.findByRole('textbox');
+  const post = deferred<Response>(); jest.mocked(submitOrderStatusLastFour).mockImplementationOnce(() => post.promise);
+  fireEvent.change(input, { target: { value: '1234' } }); fireEvent.click(screen.getByRole('button', { name: '確かめる' }));
+  mounted.rerender(at(TOKEN_B)); await screen.findByRole('textbox');
+  const calls = jest.mocked(fetchOrderStatusPrivate).mock.calls.length;
+  await act(async () => { post.resolve(reply()); });
+  expect(jest.mocked(fetchOrderStatusPrivate).mock.calls.length).toBe(calls);
+  expect(screen.getByRole('textbox')).toBeVisible();
+  expect(screen.queryByText('確認できました。')).not.toBeInTheDocument();
+  expect(screen.queryByText(ERR.ORDER_STATUS_LOCKED)).not.toBeInTheDocument();
+});
+
 test('確認成功でGETし直し、20回目の不一致ではロック文へ切り替える', async () => {
   jest.mocked(submitOrderStatusLastFour).mockResolvedValueOnce(response({ ok: true, expiresAt: '2026-10-23T00:00:00Z' }));
   const { unmount } = render(element()); const input = await screen.findByRole('textbox');
