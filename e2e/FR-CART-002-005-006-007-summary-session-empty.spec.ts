@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { mockCartApis, sampleCartItem } from './shop-test-utils';
 
 test.describe('FR-CART-002/005/006/007 cart summary session empty', () => {
-  test('session_id cookie を払い出し、注文サマリーとプロモーション UI を表示する', async ({ page }) => {
+  test('session_id cookie を払い出し、注文サマリーを表示する', async ({ page }) => {
     await mockCartApis(page, [sampleCartItem({ quantity: 2 })]);
 
     await page.goto('/cart');
@@ -18,9 +18,7 @@ test.describe('FR-CART-002/005/006/007 cart summary session empty', () => {
     await expect(page.getByText('送料', { exact: true })).toBeVisible();
     await expect(page.getByText('無料')).toBeVisible();
     await expect(page.getByText('合計')).toBeVisible();
-    await expect(page.getByPlaceholder('コードを入力')).toBeVisible();
-    await expect(page.getByRole('button', { name: '適用' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '購入手続きへ進む' })).toHaveAttribute('href', '/checkout');
+    await expect(page.getByRole('link', { name: 'ご購入手続きへ' })).toHaveAttribute('href', '/checkout');
   });
 
   test('空カートでは EmptyCart と継続購入リンクを表示する', async ({ page }) => {
