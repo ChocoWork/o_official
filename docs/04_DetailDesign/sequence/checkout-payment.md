@@ -101,7 +101,7 @@ sequenceDiagram
 | 支払い済みの画面の買い手（グループ C） | 見つかった支払い済みの画面の下書きの買い手が今の買い手と違う・下書きが無い時は、その画面を照合して仕上げ（持ち主は付けない）、監査ログ（`reason:login_changed`）を残して409 `login_changed`で断る。別の買い手に決済の画面の ID を渡さない |
 | Session作成期限 | DBに期限を予約してStripeへ渡す。既存の期限を再利用する条件は[下書き状態設計](../states/checkout-draft.md)に記載 |
 | Stripe読取り失敗 | expiredとみなしてSessionを追加作成しない。取得の失敗として応答 |
-| Session作成のStripeエラー（波2 K-5） | `checkout.sessions.create` が投げたら、エラーの code が `idempotency_key_in_use` でない時だけ `retire_unattached_checkout_draft` でSession未添付の下書きを `failed` にし（[下書き状態設計](../states/checkout-draft.md)のST-DRAFT-06）、元のエラーを分類どおりに返す。retireの失敗は監査に `checkout_draft_retire_failed` だけ残して同じ応答。claim・期限予約・attachのDBの失敗は対象外。根拠: [create-session](../../../src/app/api/checkout/create-session/route.ts)、[retire RPC](../../../supabase/migrations/20261023072409_retire_unattached_checkout_draft.sql) |
+| Session作成のStripeエラー（波2 K-5） | `checkout.sessions.create` が投げたら、エラーの code が `idempotency_key_in_use` でない時だけ `retire_unattached_checkout_draft` でSession未添付の下書きを `failed` にし（[下書き状態設計](../states/checkout-draft.md)のST-DRAFT-06）、元のエラーを分類どおりに返す。retireの失敗は監査に `checkout_draft_retire_failed` だけ残して同じ応答。claim・期限予約・attachのDBの失敗は対象外。根拠: [create-session](../../../src/app/api/checkout/create-session/route.ts)、[retire RPC](../../../supabase/migrations/20261023082752_retire_unattached_checkout_draft.sql) |
 | attachの競合とDBエラー | 競合は新しいopen Sessionをexpireする補償を試みる。DBエラーではexpireせず500。補償の成功を保証しない |
 | hosted・旧API | uiModeはcustomのみ（既定custom）。hostedは廃止して400。[旧PaymentIntent API](../../../src/app/api/checkout/payment-intent/route.ts)はrate limit通過後に410を返す廃止入口。制限応答429/503が先行し得る |
 
