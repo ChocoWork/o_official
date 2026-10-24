@@ -276,5 +276,7 @@ describe('OrderReturnReceiveDialog のサポートの受け取り（お客様の
     receiveAll(dialog);
 
     expect(within(dialog).getByText(`お支払い待ち ${formatYen(3000)}（交換の品は、お支払いを確かめてから送ります）`)).toBeInTheDocument();
+    expect(within(dialog).getByText('手数料のお支払い待ちのため、交換品の割り当てを保留します。')).toBeInTheDocument();
+    expect(within(dialog).getByText('交換品は、在庫から注文の古い順に割り当てます。')).toBeInTheDocument();
   });
 });

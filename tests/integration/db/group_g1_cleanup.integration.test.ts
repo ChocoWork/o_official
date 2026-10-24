@@ -235,6 +235,11 @@ const G1_BODY_FUNCTIONS = [
   'private.admin_approve_return(uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
   'private.admin_decline_return(uuid,uuid,text,text)',
   'private.admin_cancel_return(uuid,uuid)',
+  'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)',
+  'private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)',
+  'private.admin_close_return_missing(uuid,uuid,uuid)',
+  'private.admin_reopen_return(uuid,uuid,uuid)',
+  'private.admin_inspect_return(uuid,uuid,uuid,jsonb)',
 ];
 const G1_BODY_TRIGGERS = [
   ...['order_item_allocation_events', 'order_item_state_events', 'private.group_g_operations'].flatMap((table) => {
@@ -980,7 +985,11 @@ WHERE id = (SELECT pg_catalog.min(id) FROM pg_temp.group_g_cleanup_webhook_ids);
       'private.lock_order_return(uuid)', 'customer_request_return(uuid,uuid,uuid,jsonb)',
       'admin_create_return(uuid,uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
       'admin_approve_return(uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
-      'admin_decline_return(uuid,uuid,text,text)', 'admin_cancel_return(uuid,uuid)'];
+      'admin_decline_return(uuid,uuid,text,text)', 'admin_cancel_return(uuid,uuid)',
+      'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)',
+      'admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)',
+      'admin_close_return_missing(uuid,uuid,uuid)', 'admin_reopen_return(uuid,uuid,uuid)',
+      'admin_inspect_return(uuid,uuid,uuid,jsonb)', 'private.refresh_order_return_status(uuid)'];
     const functions = split(catalog.functions, (row) => row.signature as string, G1_BODY_FUNCTIONS, changedFunctions);
     expect(functions.kept).toEqual(split(before.catalog.functions, (row) => row.signature as string, [], changedFunctions).kept);
     expect(functions.added).toEqual([...G1_BODY_FUNCTIONS].sort());

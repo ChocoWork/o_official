@@ -658,10 +658,15 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     await fails(db(),()=>db().query("select public.skip_order_email($1,$2,'superseded')",[mail.email_id,mail.lease_token]),'SUPERSEDE_NOT_ALLOWED');
   });
   test('この受け取りで同じ色・サイズを在庫に戻す数は、交換の在庫不足の判定に入れない（03-2）',async()=>{
-    const f=await fixture(db(),{exchange:true,stock:0});
+    // 方法選択だけを確かめる材料。G-1 の通常FIFOによる消費は手数料待ちで保留する。
+    // 保留しない make も通常割当することは group_g1_return_exchange の実公開経路で別途検証する。
+    const f=await fixture(db(),{exchange:true,stock:0,fee:500});
     await fails(db(),()=>receive(db(),f,{choice:'none',disposition:'restocked'}),'RETURN_EXCHANGE_OUT_OF_STOCK');
     const r=await receive(db(),f,{choice:'none',disposition:'restocked',overrides:[{return_line_id:f.lineId,action:'make'}]});
     expect((await db().query('select fulfillment_type from public.order_items where id=$1',[r.exchange_order_item_ids[0]])).rows[0].fulfillment_type).toBe('backorder');
+    expect(r.fee_due_amount).toBe(500);
+    expect((await db().query('select count(*)::int n from public.order_item_allocations where order_item_id=$1',
+      [r.exchange_order_item_ids[0]])).rows[0].n).toBe(0);
     expect(await variantStock(db(),f.variantId)).toBe(1);
   });
   test('同じ商品の返金を2行に分けて受け取っても数を合算して1回計算し、Task 2 の商品ごとの見込みと同じ額になる（03-7・04-1・02-2）',async()=>{

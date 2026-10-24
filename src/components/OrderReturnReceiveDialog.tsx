@@ -205,7 +205,7 @@ function processedLabels(line: OrderReturnLineDetail): string[] {
 }
 
 function exchangeMethodText(exchange: ExchangeInfo, method: 'stock' | 'make'): string {
-  if (method === 'stock') return `在庫から（在庫 ${exchange.stockQuantity}）`;
+  if (method === 'stock') return `在庫から（空き在庫 ${exchange.stockQuantity}・割り当ては注文順）`;
   return exchange.madeToOrderLeadDays === null ? '作って送る' : `作って送る（お届けの目安 ${exchange.madeToOrderLeadDays}日）`;
 }
 
@@ -317,7 +317,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
 
   const keptOf = (line: OrderReturnLineDetail) => tally[line.id]?.kept ?? 0;
   // GET の lines の順を保つ（Task 2: fulfillment_number, item_created_at, order_item_id, resolution, id）。
-  // DB（Task 3）も同じ返品の行の順で在庫を前から割り当てる（Global Constraints の「返品の行の並び」）
+  // DB も同じ返品の行順で受取前の空き在庫を数えて方法を選び、受取後に注文順で割り当てる。
   const availableByLine = new Map<string, number>();
   const shortageByLine = new Map<string, Shortage>();
   const leftByVariant = new Map<number, number>();
@@ -411,7 +411,10 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
   const feesTotal = preview.fees.returnShipping + preview.fees.restocking + preview.fees.exchange + preview.fees.exchangeShipping;
   const feeDuePreview = effectiveChoice === 'now' ? preview.feeDue : effectiveChoice === 'none' ? feesTotal : 0;
   const feeDueNotice = feeDuePreview > 0
-    ? <p className="font-acumin lk-text-sm text-black">{`お支払い待ち ${formatYen(feeDuePreview)}（交換の品は、お支払いを確かめてから送ります）`}</p>
+    ? <>
+        <p className="font-acumin lk-text-sm text-black">{`お支払い待ち ${formatYen(feeDuePreview)}（交換の品は、お支払いを確かめてから送ります）`}</p>
+        {exchangeUnits > 0 ? <p className="font-acumin lk-text-sm text-black">手数料のお支払い待ちのため、交換品の割り当てを保留します。</p> : null}
+      </>
     : null;
 
   const trimmedMessage = sentBackMessage.trim();
@@ -611,6 +614,7 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
                   <h4 id="return-receive-exchange-heading" className="font-acumin lk-text-sm text-black">
                     交換の品
                   </h4>
+                  <p className="font-acumin lk-text-sm text-black">交換品は、在庫から注文の古い順に割り当てます。</p>
                   {exchangeBlocks.map(({ line, exchange, count }) => {
                     const shortage = shortageOf(line);
                     const override = overrideOf(line);

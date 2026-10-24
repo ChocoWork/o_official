@@ -170,6 +170,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     prepare?: string;
     cancelRequestId?: string;
     returnId?: string;
+    receiptId?: string;
     exchangeVariants?: number[];
   };
   const TASK6_ENTRIES: Array<{ name: string; setup: () => Promise<Task6Material>; check: (rows: any[]) => void }> = [
@@ -404,6 +405,59 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
           : { status: name === 'admin_approve_return' ? 'open' : name === 'admin_decline_return' ? 'declined' : 'cancelled' }]),
     }));
 
+  const TASK11_ENTRIES: Array<{ name: string; setup: () => Promise<Task6Material>; check: (rows: any[]) => void }> =
+    ['admin_receive_return', 'admin_inspect_return', 'admin_close_return_missing', 'admin_reopen_return', 'admin_refund_return'].map(name => ({
+      name: `public.${name}`, setup: async () => {
+        const actor = await actorId();
+        const material = await withGroupG1FixtureTransaction(db(), async () => {
+          const f = await createShippedOrderFixture(db(), { lines: [{ quantity: 1 }] });
+          const exchange = name === 'admin_receive_return'
+            ? await addItemVariant(db(), { itemId: f.itemIds[0], colorName: 'WHITE', sizeLabel: 'L', stock: 0 }) : undefined;
+          const neighbour = exchange ? await insertOrderWithLines(db(), { status: 'paid', lines: [{
+            itemId: f.itemIds[0], variantId: exchange.variantId, quantity: 1, fulfillmentType: 'backorder', reserved: false,
+          }] }) : undefined;
+          const refund = await insertRefundRecord(db(), { orderId: f.orderId, status: 'failed',
+            lines: [{ orderItemId: f.orderItemIds[0], quantity: 1, beforeShipment: false }] });
+          const ret = await insertReturnRecord(db(), { orderId: f.orderId, lines: [{
+            fulfillmentId: f.fulfillments[0].id, orderItemId: f.orderItemIds[0], quantity: 1,
+            resolution: exchange ? 'exchange' : 'refund', exchangeVariantId: exchange?.variantId, exchangeMethod: exchange ? 'make' : undefined,
+          }] });
+          let receiptId: string | undefined;
+          if (name === 'admin_inspect_return') {
+            const receipt = await insertReturnReceipt(db(), { returnId: ret.returnId, lines: [{
+              returnLineId: ret.lineIds[0], quantity: 1, disposition: 'pending_inspection',
+            }] });
+            receiptId = receipt.receiptId;
+          } else if (name === 'admin_refund_return') {
+            const receipt = (await db().query(`select * from public.admin_receive_return($1::uuid,$2::uuid,true,$3::uuid,
+              $4::jsonb,'[]'::jsonb,'consult',null,0,null,false,null,null,null)`, [ret.returnId, actor, randomUUID(),
+            JSON.stringify([{ return_line_id: ret.lineIds[0], quantity: 1, disposition: 'not_restocked' }])])).rows[0];
+            receiptId = receipt.receipt_id as string;
+          }
+          if (name === 'admin_reopen_return') await db().query('select * from public.admin_close_return_missing($1,$2,$3)',
+            [ret.returnId, actor, randomUUID()]);
+          return { f, ret, receiptId, refund, exchange, neighbour };
+        });
+        const { f, ret } = material;
+        const params: unknown[] = [ret.returnId, actor, randomUUID()];
+        let sql = `select replayed from public.${name}($1::uuid,$2::uuid,$3::uuid)`;
+        if (name === 'admin_receive_return') {
+          sql = `select replayed from public.admin_receive_return($1::uuid,$2::uuid,true,$3::uuid,$4::jsonb,
+            '[]'::jsonb,'consult',null,0,null,false,null,null,null)`;
+          params.push(JSON.stringify([{ return_line_id: ret.lineIds[0], quantity: 1, disposition: 'restocked' }]));
+        } else if (name === 'admin_inspect_return') {
+          sql = 'select replayed from public.admin_inspect_return($1::uuid,$2::uuid,$3::uuid,$4::jsonb)';
+          params.push(JSON.stringify([{ return_line_id: ret.lineIds[0], restocked: 1, not_restocked: 0 }]));
+        } else if (name === 'admin_refund_return') {
+          sql = 'select replayed from public.admin_refund_return($1::uuid,$2::uuid,$3::uuid,0,0,null,false)';
+        }
+        return { sql, params, itemId: f.itemIds[0], variantId: f.variantIds[0],
+          orderIds: [f.orderId, ...(material.neighbour ? [material.neighbour.orderId] : [])].sort(), returnId: ret.returnId,
+          receiptId: material.receiptId, refundId: material.refund.refundId,
+          exchangeVariants: material.exchange ? [material.exchange.variantId] : [] };
+      }, check: rows => expect(rows).toEqual([{ replayed: false }]),
+    }));
+
   let actor: string | undefined;
   async function actorId() {
     actor ??= (await db().query(`insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
@@ -418,7 +472,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     )).rows[0].order_id as string;
   }
 
-  test.each([...TASK6_ENTRIES, ...TASK7_ENTRIES, ...TASK8_ENTRIES, ...TASK9_ENTRIES, ...TASK10_ENTRIES])('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
+  test.each([...TASK6_ENTRIES, ...TASK7_ENTRIES, ...TASK8_ENTRIES, ...TASK9_ENTRIES, ...TASK10_ENTRIES, ...TASK11_ENTRIES])('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
     const material = await setup();
     const a = await client();
     const b = await client();
@@ -456,6 +510,10 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       if (material.returnId) {
         probes.push(['select id from public.order_returns where id=$1 for update nowait', [material.returnId]]);
         probes.push(['select id from public.order_return_lines where return_id=$1 for update nowait', [material.returnId]]);
+      }
+      if (material.receiptId) {
+        probes.push(['select id from public.order_return_receipts where id=$1 for update nowait', [material.receiptId]]);
+        probes.push(['select id from public.order_return_receipt_lines where receipt_id=$1 for update nowait', [material.receiptId]]);
       }
       if (material.exchangeVariants?.length) probes.push([
         'select id from public.item_variants where id=any($1::bigint[]) for update nowait', [material.exchangeVariants],
@@ -656,6 +714,83 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       if (second) await second.catch(() => {});
       await b.query('rollback');
       await Promise.all([a.end(), b.end()]);
+    }
+  });
+
+  test.each([
+    ['payment', true], ['payment', false], ['fifo', true], ['fifo', false],
+  ] as const)('return receipt vs %s (return first=%s): no double restock, nonnegative F, oldest waiting wins', async (peer, returnFirst) => {
+    const fx = await withGroupG1FixtureTransaction(db(), async () => {
+      const f = await createShippedOrderFixture(db(), { lines: [{ quantity: 1, extraStock: 1 }] });
+      const owner = await actorId();
+      await db().query(`insert into public.user_roles(user_id,role_id)
+        select $1,id from public.roles where code='admin' on conflict do nothing`, [owner]);
+      const ret = await insertReturnRecord(db(), { orderId: f.orderId, lines: [{
+        fulfillmentId: f.fulfillments[0].id, orderItemId: f.orderItemIds[0], quantity: 1,
+      }] });
+      const older = await insertOrderWithLines(db(), { status: 'paid', createdAt: '2026-01-01', lines: [{
+        itemId: f.itemIds[0], variantId: f.variantIds[0], quantity: 1, fulfillmentType: 'backorder', reserved: false,
+      }] });
+      const newer = await insertOrderWithLines(db(), { status: 'paid', createdAt: '2026-02-01', lines: [{
+        itemId: f.itemIds[0], variantId: f.variantIds[0], quantity: 1, fulfillmentType: 'backorder', reserved: false,
+      }] });
+      const draft = await createDraft(db(), { itemId: f.itemIds[0], quantity: 1 });
+      const paymentOrderId = await placeOrder(draft);
+      const paidAt = (await db().query('select paid_at from public.orders where id=$1', [f.orderId])).rows[0].paid_at;
+      return { f, ret, owner, older, newer, draft, paymentOrderId, paidAt };
+    });
+    const key = randomUUID();
+    const receive = (c: PgClient) => c.query(`select replayed from public.admin_receive_return($1::uuid,$2::uuid,true,$3::uuid,
+      $4::jsonb,'[]'::jsonb,'consult',null,0,null,false,null,null,null)`, [fx.ret.returnId, fx.owner, key,
+    JSON.stringify([{ return_line_id: fx.ret.lineIds[0], quantity: 1, disposition: 'restocked' }])]);
+    const other = (c: PgClient) => peer === 'fifo'
+      ? c.query(`select public.admin_record_stock_movement($1::bigint,$2::bigint,1,'restock',null,$3::uuid,$4::uuid,null) as result`,
+        [fx.f.itemIds[0], fx.f.variantIds[0], fx.owner, randomUUID()])
+      : c.query(`select updated,amount_matches from public.mark_order_paid($1::uuid,'payment_in_progress',
+        $2::text,$3::integer,'jpy',true,'order_confirmed',null)`,
+      [fx.paymentOrderId, `pi_${randomUUID().replaceAll('-', '')}`, fx.draft.totalAmount]);
+    const a = await client(); const b = await client();
+    let second: Promise<unknown> | undefined;
+    try {
+      const [blocker, waiter] = [await pid(a), await pid(b)];
+      await a.query('begin'); await b.query('begin');
+      const first = returnFirst ? await receive(a) : await other(a);
+      if (returnFirst) expect(first.rows).toEqual([{ replayed: false }]);
+      else if (peer === 'payment') expect(first.rows).toEqual([{ updated: true, amount_matches: true }]);
+      else expect(first.rows[0].result).toMatchObject({ allocatedQuantity: 1, replayed: false });
+      second = returnFirst ? other(b) : receive(b);
+      void second.catch(() => {});
+      await waitForAdvisory(db(), waiter, blocker);
+      await a.query('commit');
+      const completed = await second as Awaited<ReturnType<PgClient['query']>>;
+      if (!returnFirst) expect(completed.rows).toEqual([{ replayed: false }]);
+      else if (peer === 'payment') expect(completed.rows).toEqual([{ updated: true, amount_matches: true }]);
+      else expect(completed.rows[0].result).toMatchObject({ allocatedQuantity: 1, replayed: false });
+      expect((await receive(b)).rows).toEqual([{ replayed: true }]);
+      await b.query('set constraints all immediate'); await b.query('commit');
+      const quantities = (await db().query(`select oi.order_id,a.kind,sum(a.remaining_quantity)::int n
+        from public.order_items oi join public.order_item_allocations a on a.order_item_id=oi.id
+        where oi.order_id=any($1::uuid[]) and a.remaining_quantity>0 group by oi.order_id,a.kind order by oi.order_id`,
+      [[fx.f.orderId, fx.older.orderId, fx.newer.orderId, fx.paymentOrderId]])).rows;
+      const expected = [
+        { order_id: fx.older.orderId, kind: 'paid', n: 1 },
+        { order_id: fx.paymentOrderId, kind: peer === 'payment' ? 'paid' : 'payment_hold', n: 1 },
+        ...(peer === 'fifo' ? [{ order_id: fx.newer.orderId, kind: 'paid', n: 1 }] : []),
+      ].sort((x, y) => x.order_id.localeCompare(y.order_id));
+      expect(quantities).toEqual(expected);
+      const free = Number((await db().query('select stock_quantity from public.item_variants where id=$1', [fx.f.variantIds[0]])).rows[0].stock_quantity);
+      expect(free).toBe(0);
+      expect(quantities.reduce((sum, row) => sum + row.n, free)).toBe(peer === 'fifo' ? 3 : 2);
+      expect((await db().query("select count(*)::int n,sum(delta)::int delta from public.stock_movements where return_id=$1 and reason='return'",
+        [fx.ret.returnId])).rows).toEqual([{ n: 1, delta: 1 }]);
+      expect((await db().query("select count(*)::int n from private.group_g_operations where operation='admin_receive_return' and request_key=$1",
+        [key])).rows).toEqual([{ n: 1 }]);
+      expect((await db().query('select paid_at from public.orders where id=$1', [fx.f.orderId])).rows[0].paid_at).toEqual(fx.paidAt);
+      expect((await db().query('select * from public.verify_stock_integrity() where variant_id=$1', [fx.f.variantIds[0]])).rows).toEqual([]);
+    } finally {
+      await a.query('rollback');
+      if (second) await second.catch(() => {});
+      await b.query('rollback'); await Promise.all([a.end(), b.end()]);
     }
   });
 

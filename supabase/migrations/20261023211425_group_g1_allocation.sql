@@ -6895,6 +6895,989 @@ BEGIN
 END;
 $g1_return_request_assert$;
 
+-- Task 11: receipt / inspection / amount decision / missing / reopen and ordinary exchange FIFO.
+-- Last bodies: receive=20261020150415, refund=20261013001143, actions=20261013000456.
+
+CREATE OR REPLACE FUNCTION private.refresh_order_return_status(_return_id uuid)
+RETURNS text
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_return public.order_returns;
+  v_blocked boolean;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted) THEN
+    RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
+  END IF;
+  SELECT r.* INTO v_return FROM public.order_returns AS r WHERE r.id = _return_id;
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+  IF v_return.status <> 'open' THEN
+    RETURN v_return.status;
+  END IF;
+
+  SELECT EXISTS (
+           SELECT 1
+           FROM private.order_return_line_states(v_return.order_id) AS s
+           WHERE s.return_id = v_return.id
+             AND (s.unprocessed > 0 OR s.pending_inspection > 0 OR s.refund_waiting > 0)
+         )
+         OR (v_return.fee_due_amount > 0 AND v_return.fee_received_at IS NULL)
+  INTO v_blocked;
+
+  IF v_blocked THEN
+    RETURN v_return.status;
+  END IF;
+
+  UPDATE public.order_returns AS r
+  SET status = 'closed',
+      closed_at = pg_catalog.now()
+  WHERE r.id = v_return.id;
+  RETURN 'closed';
+END;
+$$;
+ALTER FUNCTION private.refresh_order_return_status(uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.refresh_order_return_status(uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION private.admin_receive_return(
+  _return_id uuid, _actor_id uuid, _actor_can_refund boolean, _request_key uuid,
+  _units jsonb, _exchange_overrides jsonb, _refund_choice text, _refund_amount integer,
+  _refund_shipping_amount integer, _note text, _notify_customer boolean,
+  _sent_back_message text, _sent_back_carrier text, _sent_back_tracking_number text
+) RETURNS TABLE(receipt_id uuid,return_status text,refund_id uuid,refund_amount integer,
+  refund_status text,exchange_order_item_ids uuid[],fee_due_amount integer,shop_notice_enqueued boolean,replayed boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+#variable_conflict use_column
+DECLARE
+  v_order uuid; v_return public.order_returns%ROWTYPE; v_old public.order_return_receipts%ROWTYPE;
+  v_units jsonb; v_effective jsonb; v_overrides jsonb; v_fp text; v_j jsonb; v_id uuid; v_n integer; v_seen text[]:=ARRAY[]::text[];
+  v_receipt uuid:=pg_catalog.gen_random_uuid(); v_refund uuid; v_amount integer; v_status text; v_choice text;
+  v_lines jsonb:='[]'::jsonb; v_goods integer:=0; v_exchange integer:=0; v_sent integer:=0;
+  v_fees integer:=0; v_due integer:=0; v_pending integer:=0; v_shop boolean:=false;
+  v_first_goods boolean; v_first_exchange boolean; v_line record; v_action text; v_available integer;
+  v_exchange_ids uuid[]:=ARRAY[]::uuid[]; v_item uuid; v_offset integer; v_paid integer; v_waived boolean:=false;
+  v_free_by_variant jsonb;
+  v_orders uuid[];
+  v_variants bigint[] := ARRAY[]::bigint[];
+  v_order_id uuid;
+  v_before jsonb;
+  v_middle jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _return_id IS NULL OR _actor_id IS NULL OR _actor_can_refund IS NULL OR _request_key IS NULL
+    OR _notify_customer IS NULL OR _refund_choice IS NULL OR _refund_choice NOT IN ('now','consult','none')
+    OR _refund_shipping_amount IS NULL OR _refund_shipping_amount<0
+    OR (_refund_amount IS NOT NULL AND _refund_amount<0) OR pg_catalog.char_length(_note)>500
+    OR pg_catalog.char_length(_sent_back_message)>1000
+    OR (_sent_back_carrier IS NOT NULL AND _sent_back_carrier NOT IN ('yamato','sagawa','japanpost','other'))
+    OR (_sent_back_tracking_number IS NOT NULL AND _sent_back_tracking_number !~ '^[0-9A-Za-z-]{1,64}$')
+    OR pg_catalog.jsonb_typeof(_units) IS DISTINCT FROM 'array'
+    OR pg_catalog.jsonb_typeof(_exchange_overrides) IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023';
+  END IF;
+  IF pg_catalog.jsonb_array_length(_units) NOT BETWEEN 1 AND 100
+    OR pg_catalog.jsonb_array_length(_exchange_overrides)>100 THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023';
+  END IF;
+  IF NOT _actor_can_refund AND (_refund_amount IS NOT NULL
+      OR _refund_shipping_amount<>0 OR pg_catalog.jsonb_array_length(_exchange_overrides)>0) THEN
+    RAISE EXCEPTION 'RETURN_FORBIDDEN' USING ERRCODE='22023';
+  END IF;
+  IF _refund_choice<>'now' AND (_refund_amount IS NOT NULL OR _refund_shipping_amount<>0) THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023';
+  END IF;
+  FOR v_j IN SELECT x.value FROM pg_catalog.jsonb_array_elements(_units) AS x(value) LOOP
+    IF pg_catalog.jsonb_typeof(v_j) IS DISTINCT FROM 'object'
+      OR pg_catalog.jsonb_typeof(v_j->'return_line_id') IS DISTINCT FROM 'string'
+      OR pg_catalog.jsonb_typeof(v_j->'quantity') IS DISTINCT FROM 'number'
+      OR (v_j->>'quantity') !~ '^[1-9][0-9]{0,2}$'
+      OR COALESCE(v_j->>'disposition','') NOT IN ('restocked','not_restocked','pending_inspection','sent_back') THEN
+      RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023';
+    END IF;
+    BEGIN v_id:=(v_j->>'return_line_id')::uuid;
+    EXCEPTION WHEN invalid_text_representation THEN RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END;
+    IF (v_id::text||':'||(v_j->>'disposition'))=ANY(v_seen) THEN
+      RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+    v_seen:=v_seen||(v_id::text||':'||(v_j->>'disposition'));
+  END LOOP;
+  v_seen:=ARRAY[]::text[];
+  FOR v_j IN SELECT x.value FROM pg_catalog.jsonb_array_elements(_exchange_overrides) AS x(value) LOOP
+    IF pg_catalog.jsonb_typeof(v_j) IS DISTINCT FROM 'object'
+      OR pg_catalog.jsonb_typeof(v_j->'return_line_id') IS DISTINCT FROM 'string'
+      OR COALESCE(v_j->>'action','') NOT IN ('make','refund') THEN
+      RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+    BEGIN v_id:=(v_j->>'return_line_id')::uuid;
+    EXCEPTION WHEN invalid_text_representation THEN RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END;
+    IF v_id::text=ANY(v_seen) THEN RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+    v_seen:=v_seen||v_id::text;
+  END LOOP;
+  SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('return_line_id',x.return_line_id,'disposition',x.disposition,'quantity',x.quantity)
+    ORDER BY x.return_line_id,x.disposition) INTO v_units
+  FROM pg_catalog.jsonb_to_recordset(_units) AS x(return_line_id uuid,disposition text,quantity integer);
+  SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('return_line_id',x.return_line_id,'action',x.action)
+    ORDER BY x.return_line_id),'[]'::jsonb) INTO v_overrides
+  FROM pg_catalog.jsonb_to_recordset(_exchange_overrides) AS x(return_line_id uuid,action text);
+  v_fp:=pg_catalog.md5(pg_catalog.jsonb_build_object('return_id',_return_id,'units',v_units,'exchange_overrides',v_overrides,
+    'refund_choice',_refund_choice,'refund_amount',_refund_amount,'refund_shipping_amount',_refund_shipping_amount,
+    'note',_note,'notify_customer',_notify_customer,'sent_back_message',_sent_back_message,
+    'sent_back_carrier',_sent_back_carrier,'sent_back_tracking_number',_sent_back_tracking_number,
+    'actor_can_refund',_actor_can_refund)::text);
+  -- The outer body takes the advisory and complete row closure before the return helper.
+  SELECT r.order_id INTO v_order_id FROM public.order_returns AS r WHERE r.id = _return_id;
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
+  v_orders := private.lock_group_g_inventory(v_variants, ARRAY[v_order_id], NULL);
+  v_return := private.lock_order_return(_return_id);
+  v_order:=v_return.order_id;
+  SELECT rr.* INTO v_old FROM public.order_return_receipts AS rr WHERE rr.request_key=_request_key;
+  IF FOUND THEN
+    IF v_old.return_id<>_return_id OR v_old.kind<>'receive' OR v_old.request_fingerprint<>v_fp THEN
+      RAISE EXCEPTION 'RETURN_REQUEST_MISMATCH' USING ERRCODE='22023'; END IF;
+    -- 交換の行の番号は受け取りと返品の行から決まるので、再送で新しい行を作る必要がない。
+    RETURN QUERY SELECT v_old.id,v_return.status,r.id,
+      CASE WHEN EXISTS(SELECT 1 FROM public.order_return_receipt_lines AS w WHERE w.receipt_id=v_old.id AND w.disposition='refund_waived') THEN 0 ELSE r.amount END,
+      CASE WHEN EXISTS(SELECT 1 FROM public.order_return_receipt_lines AS w WHERE w.receipt_id=v_old.id AND w.disposition='refund_waived') THEN 'waived' ELSE r.status END,
+      COALESCE((SELECT pg_catalog.array_agg(DISTINCT oi.id ORDER BY oi.id) FROM public.order_return_receipt_lines AS u
+        JOIN public.order_items AS oi ON oi.id=private.return_exchange_item_id(v_old.id,u.return_line_id,u.exchange_method)
+        WHERE u.receipt_id=v_old.id),ARRAY[]::uuid[]),v_return.fee_due_amount,
+      EXISTS(SELECT 1 FROM private.order_email_outbox AS e WHERE e.return_receipt_id=v_old.id AND e.kind='return_refund_pending_shop'),true
+    FROM (SELECT 1) AS singleton LEFT JOIN public.order_refunds AS r ON r.id=v_old.refund_id;
+    RETURN;
+  END IF;
+  IF NOT _actor_can_refund AND _refund_choice='now' AND NOT (v_return.source='customer_request' AND v_return.return_method<>'not_required') THEN RAISE EXCEPTION 'RETURN_FORBIDDEN' USING ERRCODE='22023'; END IF;
+  IF v_return.status<>'open' THEN RAISE EXCEPTION 'RETURN_STATE_CONFLICT' USING ERRCODE='22023'; END IF;
+  IF EXISTS(SELECT 1 FROM pg_catalog.jsonb_to_recordset(v_units) AS x(return_line_id uuid,quantity integer)
+    WHERE NOT EXISTS(SELECT 1 FROM public.order_return_lines AS l WHERE l.id=x.return_line_id AND l.return_id=_return_id)) THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+  IF EXISTS(SELECT 1 FROM pg_catalog.jsonb_to_recordset(v_units) AS x(return_line_id uuid,quantity integer)
+    JOIN private.order_return_line_progress(_return_id) AS g ON g.return_line_id=x.return_line_id
+    GROUP BY x.return_line_id,g.unprocessed HAVING pg_catalog.sum(x.quantity)>g.unprocessed) THEN
+    RAISE EXCEPTION 'RETURN_RECEIPT_EXCEEDS' USING ERRCODE='22023'; END IF;
+  SELECT COALESCE(pg_catalog.sum(x.quantity),0)::integer INTO v_sent
+  FROM pg_catalog.jsonb_to_recordset(v_units) AS x(disposition text,quantity integer) WHERE x.disposition='sent_back';
+  IF v_sent>0 AND NULLIF(pg_catalog.btrim(_sent_back_message),'') IS NULL THEN
+    RAISE EXCEPTION 'RETURN_SENT_BACK_MESSAGE_REQUIRED' USING ERRCODE='22023'; END IF;
+  -- お返しのメッセージは必ず届ける（仕様書 6-1・9-1）
+  IF v_sent>0 AND NOT _notify_customer THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+
+  IF EXISTS(SELECT 1 FROM pg_catalog.jsonb_to_recordset(v_units) AS x(disposition text) WHERE x.disposition='pending_inspection')
+    AND NOT (SELECT s.inspection_enabled FROM public.shop_return_settings AS s WHERE s.id=1) THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+  -- 上書きの形（C-1）: この返品の、交換（在庫から）の予定の行で、今回受け取る点（お返しでない）がある行だけ。
+  -- 理由の設定が decline の行は make・refund、make の行は refund だけ（何も送らなければ自動で作って送る。仕様書 6-5）。
+  -- 在庫不足の行かどうかは、下の割り当ての中で確かめる（在庫が足りる行への上書きは RETURN_ARGUMENT_INVALID）
+  IF EXISTS(SELECT 1 FROM pg_catalog.jsonb_to_recordset(v_overrides) AS x(return_line_id uuid,action text)
+    LEFT JOIN public.order_return_lines AS l ON l.id=x.return_line_id
+    LEFT JOIN public.shop_return_reason_settings AS rs ON rs.reason=l.reason
+    WHERE l.return_id IS DISTINCT FROM _return_id OR l.resolution IS DISTINCT FROM 'exchange'
+      OR l.exchange_method IS DISTINCT FROM 'stock' OR rs.out_of_stock_exchange IS NULL
+      OR (rs.out_of_stock_exchange='make' AND x.action<>'refund')
+      OR NOT EXISTS(SELECT 1 FROM pg_catalog.jsonb_to_recordset(v_units) AS u(return_line_id uuid,disposition text,quantity integer)
+        WHERE u.return_line_id=l.id AND u.disposition<>'sent_back')) THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+  -- 返品行の予定は不変。上書きは今回受け取る数だけの実際の解決方法として保持する。
+  SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('return_line_id',u.return_line_id,
+      'disposition',u.disposition,'quantity',u.quantity,
+      'resolution',CASE WHEN u.disposition='sent_back' THEN NULL WHEN x.action='refund' THEN 'refund' ELSE l.resolution END,
+      'exchange_method',CASE WHEN u.disposition='sent_back' OR l.resolution='refund' OR x.action='refund' THEN NULL
+        WHEN x.action='make' THEN 'make' ELSE l.exchange_method END) ORDER BY u.return_line_id,u.disposition)
+    INTO v_effective
+  FROM pg_catalog.jsonb_to_recordset(v_units) AS u(return_line_id uuid,disposition text,quantity integer)
+  JOIN public.order_return_lines AS l ON l.id=u.return_line_id
+  LEFT JOIN pg_catalog.jsonb_to_recordset(v_overrides) AS x(return_line_id uuid,action text) ON x.return_line_id=l.id;
+  -- Select methods from pre-receipt F in the existing line order, without reserving stock.
+  -- Fees and receipt rows are final before ordinary FIFO can allocate any exchange line.
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  SELECT COALESCE(pg_catalog.jsonb_object_agg(v.id::text, v.stock_quantity), '{}'::jsonb)
+    INTO v_free_by_variant FROM public.item_variants AS v WHERE v.id = ANY(v_variants);
+  FOR v_line IN SELECT l.*,pg_catalog.sum(x.quantity)::integer AS picked,ov.action AS override_action
+    FROM pg_catalog.jsonb_to_recordset(v_units) AS x(return_line_id uuid,disposition text,quantity integer)
+    JOIN public.order_return_lines AS l ON l.id=x.return_line_id
+    JOIN public.order_fulfillments AS f ON f.id=l.fulfillment_id
+    JOIN public.order_items AS oi ON oi.id=l.order_item_id
+    LEFT JOIN pg_catalog.jsonb_to_recordset(v_overrides) AS ov(return_line_id uuid,action text) ON ov.return_line_id=l.id
+    WHERE l.resolution='exchange' AND x.disposition<>'sent_back'
+    GROUP BY l.id,f.number,oi.created_at,ov.action
+    ORDER BY f.number,oi.created_at,l.order_item_id,l.id
+  LOOP
+    IF v_line.exchange_method='make' THEN
+      v_action:='make';
+    ELSE
+      v_available := COALESCE((v_free_by_variant->>v_line.exchange_variant_id::text)::integer, 0);
+      IF v_available>=v_line.picked THEN
+        -- 在庫が足りる行は在庫から。上書きは在庫不足の行だけ（C-1）
+        IF v_line.override_action IS NOT NULL THEN RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+        v_action:='stock';
+        v_free_by_variant := pg_catalog.jsonb_set(v_free_by_variant, ARRAY[v_line.exchange_variant_id::text],
+          pg_catalog.to_jsonb(v_available-v_line.picked));
+      ELSIF v_line.override_action IS NOT NULL THEN
+        v_action:=v_line.override_action;
+      ELSIF (SELECT rs.out_of_stock_exchange FROM public.shop_return_reason_settings AS rs WHERE rs.reason=v_line.reason)='make' THEN
+        v_action:='make';
+      ELSE
+        RAISE EXCEPTION 'RETURN_EXCHANGE_OUT_OF_STOCK' USING ERRCODE='22023';
+      END IF;
+    END IF;
+    -- 返金に変えた行は交換の品を作らない（上の v_effective で返金の品になっていて、下の返金の数に入る）
+    CONTINUE WHEN v_action='refund';
+    SELECT COALESCE(pg_catalog.sum(e.quantity),0)::integer INTO v_offset FROM public.order_items AS e
+    JOIN public.order_return_lines AS old ON old.id=e.exchange_return_line_id WHERE old.order_item_id=v_line.order_item_id;
+    v_paid:=private.return_units_amount(v_line.order_item_id,v_line.picked,v_offset);
+    -- 自動の make と店長の選択を含む実際の送り方だけを、受け取り明細へ保存する。
+    SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('return_line_id',u.return_line_id,'disposition',u.disposition,
+        'quantity',u.quantity,'resolution',u.resolution,'exchange_method',CASE WHEN u.return_line_id=v_line.id
+          AND u.resolution='exchange' THEN v_action ELSE u.exchange_method END) ORDER BY u.return_line_id,u.disposition)
+      INTO v_effective
+    FROM pg_catalog.jsonb_to_recordset(v_effective) AS u(return_line_id uuid,disposition text,quantity integer,resolution text,exchange_method text);
+    v_item:=private.return_exchange_item_id(v_receipt,v_line.id,v_action);
+    INSERT INTO public.order_items(id,order_id,item_id,variant_id,item_name,item_price,color,size,quantity,line_total,
+      fulfillment_type,line_kind,exchange_return_line_id,exchange_paid_amount)
+    SELECT v_item,v_order,v.item_id,v.id,i.name,0,c.name,z.label,v_line.picked,0,
+      CASE WHEN v_action='stock' THEN 'stock' ELSE 'backorder' END,'exchange',v_line.id,v_paid
+    FROM public.item_variants AS v JOIN public.items AS i ON i.id=v.item_id
+    LEFT JOIN public.item_colors AS c ON c.id=v.color_id LEFT JOIN public.item_sizes AS z ON z.id=v.size_id
+    WHERE v.id=v_line.exchange_variant_id;
+    v_exchange_ids:=v_exchange_ids||v_item;v_exchange:=v_exchange+v_line.picked;
+  END LOOP;
+  -- Preserve the original restock rejection before any refund validation or fee decision.
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.jsonb_to_recordset(v_units) AS x(return_line_id uuid,disposition text)
+    JOIN public.order_return_lines AS l ON l.id=x.return_line_id
+    JOIN public.order_items AS oi ON oi.id=l.order_item_id
+    WHERE x.disposition='restocked' AND oi.variant_id IS NULL
+  ) THEN RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+  -- 受け取り後にこの返品のrwが増える数だけを返金する。rfと開き直した品への優先の覆いも、移行Aの本体で数える。
+  -- 未保存の明細を本体に渡すため、追記専用の受け取りは返金IDをINSERT時に確定したまま書ける。
+  WITH before_receive AS (
+    SELECT s.order_item_id, pg_catalog.sum(s.refund_waiting)::integer AS waiting
+    FROM private.order_return_line_states(v_order) AS s
+    WHERE s.return_id=_return_id GROUP BY s.order_item_id
+  ), after_receive AS (
+    SELECT s.order_item_id, pg_catalog.sum(s.refund_waiting)::integer AS waiting
+    FROM private.order_return_line_states_core(v_order,v_effective) AS s
+    WHERE s.return_id=_return_id GROUP BY s.order_item_id
+  )
+  SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('order_item_id',t.order_item_id,'before_shipment',false,'quantity',t.quantity)
+      ORDER BY t.order_item_id) FILTER(WHERE t.quantity>0),'[]'::jsonb),
+    COALESCE(pg_catalog.sum(private.return_units_amount(t.order_item_id,t.quantity)) FILTER(WHERE t.quantity>0),0)::integer
+    INTO v_lines,v_goods FROM (
+      SELECT l.order_item_id,LEAST(pg_catalog.sum(x.quantity)::integer,
+        GREATEST(a.waiting-b.waiting,0)) AS quantity
+      FROM pg_catalog.jsonb_to_recordset(v_effective) AS x(return_line_id uuid,disposition text,quantity integer,resolution text,exchange_method text)
+      JOIN public.order_return_lines AS l ON l.id=x.return_line_id
+      JOIN before_receive AS b ON b.order_item_id=l.order_item_id
+      JOIN after_receive AS a ON a.order_item_id=l.order_item_id
+      WHERE x.resolution='refund'
+      GROUP BY l.order_item_id,a.waiting,b.waiting
+    ) AS t;
+  -- 先にふつうの返金で返した品（覆い）があると、画面の見込みより返金する品が少なくなる。
+  -- 店長が見込みから直した額や送料をそのまま付けると多く返りうるため、計算どおりか相談で受け取り直してもらう。
+  -- 全部が覆われて返金する品が0点の時も、入れた額や送料を黙って捨てずに同じ断りにする。
+  IF _refund_choice='now' AND (_refund_amount IS NOT NULL OR _refund_shipping_amount<>0)
+    AND (SELECT COALESCE(pg_catalog.sum(x.quantity),0)
+      FROM pg_catalog.jsonb_to_recordset(v_lines) AS x(quantity integer))
+      < (SELECT COALESCE(pg_catalog.sum(x.quantity),0)
+        FROM pg_catalog.jsonb_to_recordset(v_effective) AS x(resolution text,quantity integer)
+        WHERE x.resolution='refund') THEN
+    RAISE EXCEPTION 'RETURN_STATE_CONFLICT' USING ERRCODE='22023';
+  END IF;
+  IF _refund_choice='none' AND pg_catalog.jsonb_array_length(v_lines)>0 THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+  -- この受け取りで返金する品が無い時（覆われた品だけ・交換だけ・お返しだけ）は、相談・今返金を選んでも返金は起きない。
+  -- 記録・履歴・メールを実際と合わせるため none で残す。指紋は入力から作るので、同じ入力の送り直しは前の結果を返す。
+  v_choice:=CASE WHEN pg_catalog.jsonb_array_length(v_lines)=0 THEN 'none' ELSE _refund_choice END;
+  v_first_goods:=NOT EXISTS(SELECT 1 FROM public.order_return_receipts AS rr
+    JOIN public.order_return_receipt_lines AS u ON u.receipt_id=rr.id
+    WHERE rr.return_id=_return_id AND rr.kind='receive' AND u.resolution IN ('refund','exchange'));
+  v_first_exchange:=NOT EXISTS(SELECT 1 FROM public.order_items AS e
+    JOIN public.order_return_lines AS l ON l.id=e.exchange_return_line_id
+    WHERE l.return_id=_return_id AND NOT (e.id=ANY(v_exchange_ids)));
+  v_fees:=(v_goods::bigint*v_return.restocking_fee_percent/100)::integer
+    +CASE WHEN v_first_goods AND (pg_catalog.jsonb_array_length(v_lines)>0 OR v_exchange>0) AND v_return.return_method='shop_label'
+      THEN v_return.return_shipping_fee ELSE 0 END
+    +CASE WHEN v_first_exchange AND v_exchange>0 THEN v_return.exchange_fee+v_return.exchange_shipping_fee ELSE 0 END;
+  IF _refund_choice='consult' AND pg_catalog.jsonb_array_length(v_lines)>0 THEN v_pending:=v_fees;
+  ELSIF _refund_choice='now' AND pg_catalog.jsonb_array_length(v_lines)>0 THEN
+    v_amount:=GREATEST(v_goods-v_fees,0)+_refund_shipping_amount;
+    -- 店長が直した額の上限は返せる額（E-2 の値。仕様書 6-3・P8）。計算との差は core が adjustment_amount に残す
+    IF _refund_amount IS NOT NULL THEN
+      IF _refund_amount<_refund_shipping_amount
+        OR _refund_amount>(SELECT a.refundable_amount FROM private.order_refund_amounts(v_order) AS a) THEN
+        RAISE EXCEPTION 'RETURN_REFUND_AMOUNT_INVALID' USING ERRCODE='22023'; END IF;
+      v_amount:=_refund_amount;
+    END IF;
+    v_due:=GREATEST(v_fees-v_goods,0);
+    IF v_amount=0 THEN v_waived:=true;v_status:='waived';
+    ELSE v_refund:=pg_catalog.gen_random_uuid(); END IF;
+  ELSE v_due:=v_fees;
+  END IF;
+  -- 非0円の返金を頼めない注文には受け取りを残さない。0円と受け取りだけの道は Stripe を必要としない。
+  IF v_refund IS NOT NULL AND NOT EXISTS(
+    SELECT 1 FROM public.orders AS o WHERE o.id=v_order AND o.status IN ('paid','shipped','cancelled')
+      AND o.paid_amount IS NOT NULL AND o.paid_amount>0
+      AND pg_catalog.left(o.payment_intent_id,3)='pi_' AND pg_catalog.char_length(o.payment_intent_id)>3
+  ) THEN RAISE EXCEPTION 'ORDER_NOT_REFUNDABLE' USING ERRCODE='22023'; END IF;
+  BEGIN
+    INSERT INTO public.order_return_receipts(id,return_id,request_key,request_fingerprint,kind,refund_choice,refund_id,
+      notify_customer,sent_back_message,sent_back_carrier,sent_back_tracking_number,note,actor_id,actor_can_refund)
+    VALUES(v_receipt,_return_id,_request_key,v_fp,'receive',v_choice,v_refund,_notify_customer,
+      _sent_back_message,_sent_back_carrier,_sent_back_tracking_number,_note,_actor_id,_actor_can_refund);
+  EXCEPTION WHEN unique_violation THEN RAISE EXCEPTION 'RETURN_REQUEST_MISMATCH' USING ERRCODE='22023'; END;
+  INSERT INTO public.order_return_receipt_lines(receipt_id,return_line_id,disposition,quantity,resolution,exchange_method)
+  SELECT v_receipt,x.return_line_id,x.disposition,x.quantity,x.resolution,x.exchange_method
+  FROM pg_catalog.jsonb_to_recordset(v_effective) AS x(return_line_id uuid,disposition text,quantity integer,resolution text,exchange_method text);
+  IF v_waived THEN
+    -- 0円で終える数は、今回の実際の返金の数だけ。普通の返金で既に覆われた数は再び覆わない。
+    INSERT INTO public.order_return_receipt_lines(receipt_id,return_line_id,disposition,quantity,resolution,exchange_method)
+    SELECT v_receipt,w.return_line_id,'refund_waived',w.waived,NULL,NULL FROM (
+      SELECT u.return_line_id,LEAST(u.quantity,GREATEST(c.quantity-COALESCE(pg_catalog.sum(u.quantity) OVER(
+          PARTITION BY u.order_item_id ORDER BY u.return_line_id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0)::integer,0)) AS waived
+      FROM (
+        SELECT x.return_line_id,l.order_item_id,pg_catalog.sum(x.quantity)::integer AS quantity
+        FROM pg_catalog.jsonb_to_recordset(v_effective) AS x(return_line_id uuid,resolution text,quantity integer)
+        JOIN public.order_return_lines AS l ON l.id=x.return_line_id
+        WHERE x.resolution='refund' GROUP BY x.return_line_id,l.order_item_id
+      ) AS u JOIN pg_catalog.jsonb_to_recordset(v_lines) AS c(order_item_id uuid,quantity integer) ON c.order_item_id=u.order_item_id
+    ) AS w WHERE w.waived>0;
+  END IF;
+  IF v_refund IS NOT NULL THEN
+    SELECT r.refund_id,r.amount,r.status INTO v_refund,v_amount,v_status
+    FROM private.begin_order_refund_core(v_order,'return',_request_key,v_lines,false,_refund_shipping_amount,v_amount,
+      _note,'requested_by_customer',NULL,_notify_customer,_actor_id,_refund_amount,_return_id,LEAST(v_fees,v_goods)) AS r;
+  END IF;
+  -- 新たに付く未収手数料は前の免除に含まれないため、受領を戻す時は免除の印も外す。
+  UPDATE public.order_returns AS rt SET fee_due_amount=rt.fee_due_amount+v_due,
+    fee_pending_deduction=rt.fee_pending_deduction+v_pending,
+    fee_waived=CASE WHEN v_due>0 THEN false ELSE rt.fee_waived END,
+    fee_received_at=CASE WHEN v_due>0 THEN NULL ELSE rt.fee_received_at END,
+    fee_received_by=CASE WHEN v_due>0 THEN NULL ELSE rt.fee_received_by END,
+    fee_received_note=CASE WHEN v_due>0 THEN NULL ELSE rt.fee_received_note END WHERE rt.id=_return_id;
+  -- Restock after method selection; receipt rows and fees precede ordinary FIFO.
+  FOR v_line IN SELECT l.order_item_id,oi.variant_id,pg_catalog.sum(x.quantity)::integer AS quantity
+    FROM pg_catalog.jsonb_to_recordset(v_units) AS x(return_line_id uuid,disposition text,quantity integer)
+    JOIN public.order_return_lines AS l ON l.id=x.return_line_id JOIN public.order_items AS oi ON oi.id=l.order_item_id
+    WHERE x.disposition='restocked' GROUP BY l.order_item_id,oi.variant_id ORDER BY oi.variant_id,l.order_item_id
+  LOOP
+    IF v_line.variant_id IS NULL THEN RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+    INSERT INTO public.stock_movements(variant_id,delta,reason,order_id,order_item_id,created_by,return_id)
+    VALUES(v_line.variant_id,v_line.quantity,'return',v_order,v_line.order_item_id,_actor_id,_return_id);
+  END LOOP;
+  IF v_exchange>0 THEN
+    PERFORM pg_catalog.set_config('app.order_actor_id',_actor_id::text,true);
+    PERFORM pg_catalog.set_config('app.order_change_reason','return_exchange_added',true);
+    PERFORM pg_catalog.set_config('app.order_source_event_id','',true);
+    UPDATE public.orders AS o SET status='paid',shipped_at=NULL,shipping_carrier=NULL,tracking_number=NULL
+    WHERE o.id=v_order AND o.status='shipped';
+  END IF;
+  IF NOT _actor_can_refund AND v_choice='consult' THEN
+    v_shop:=private.enqueue_return_email(v_order,'return_refund_pending_shop',_return_id,v_receipt);
+  END IF;
+  IF _notify_customer AND v_refund IS NULL THEN
+    PERFORM private.enqueue_return_email(v_order,CASE WHEN v_sent=(SELECT pg_catalog.sum(x.quantity)
+      FROM pg_catalog.jsonb_to_recordset(v_units) AS x(quantity integer)) THEN 'return_sent_back' ELSE 'return_received' END,_return_id,v_receipt);
+  END IF;
+  return_status:=private.refresh_order_return_status(_return_id);
+  SELECT rt.fee_due_amount INTO fee_due_amount FROM public.order_returns AS rt WHERE rt.id=_return_id;
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'admin_receive_return', _actor_id);
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (v_operation, 'admin_receive_return', _request_key,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'admin_receive_return', 'return_id', _return_id, 'request_fingerprint', v_fp)::text, 'UTF8')), 'hex'),
+    'order_return', _return_id::text, _actor_id,
+    pg_catalog.jsonb_build_object('return_id', _return_id, 'order_id', v_order_id));
+  v_middle := private.capture_group_g_item_states(v_orders);
+  PERFORM private.allocate_group_g_fifo(v_variants, v_operation, _actor_id);
+  PERFORM private.record_group_g_item_state_changes(v_middle, v_orders, v_operation, 2, 'fifo', _actor_id);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT v_receipt,return_status,v_refund,v_amount,v_status,
+    ARRAY(SELECT x FROM pg_catalog.unnest(v_exchange_ids) AS x ORDER BY x),fee_due_amount,v_shop,false;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_receive_return(
+  _return_id uuid, _actor_id uuid, _actor_can_refund boolean, _request_key uuid,
+  _units jsonb, _exchange_overrides jsonb, _refund_choice text, _refund_amount integer,
+  _refund_shipping_amount integer, _note text, _notify_customer boolean,
+  _sent_back_message text, _sent_back_carrier text, _sent_back_tracking_number text
+) RETURNS TABLE(receipt_id uuid,return_status text,refund_id uuid,refund_amount integer,
+  refund_status text,exchange_order_item_ids uuid[],fee_due_amount integer,shop_notice_enqueued boolean,replayed boolean)
+LANGUAGE sql SECURITY INVOKER SET search_path = '' AS $$
+  SELECT * FROM private.admin_receive_return(_return_id, _actor_id, _actor_can_refund, _request_key, _units, _exchange_overrides, _refund_choice, _refund_amount, _refund_shipping_amount, _note, _notify_customer, _sent_back_message, _sent_back_carrier, _sent_back_tracking_number);
+$$;
+ALTER FUNCTION public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text) TO service_role;
+
+CREATE FUNCTION private.admin_refund_return(
+  _return_id uuid,_actor_id uuid,_request_key uuid,_amount integer,
+  _shipping_amount integer,_note text,_notify_customer boolean
+) RETURNS TABLE(refund_id uuid,amount integer,status text,replayed boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+#variable_conflict use_column
+DECLARE
+  v_return public.order_returns%ROWTYPE;v_order uuid;v_fp text;v_old public.order_refunds%ROWTYPE;
+  v_lines jsonb;v_goods integer;v_cap integer;v_amount integer;v_result record;v_receipt public.order_return_receipts%ROWTYPE;
+  v_orders uuid[];
+  v_variants bigint[] := ARRAY[]::bigint[];
+  v_order_id uuid;
+  v_before jsonb;
+  v_middle jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _return_id IS NULL OR _actor_id IS NULL OR _request_key IS NULL OR _notify_customer IS NULL
+    OR _shipping_amount IS NULL OR _shipping_amount<0 OR (_amount IS NOT NULL AND _amount<0)
+    OR pg_catalog.char_length(_note)>500 THEN RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE='22023'; END IF;
+  v_fp:=pg_catalog.md5(pg_catalog.jsonb_build_object('return_id',_return_id,'amount',_amount,
+    'shipping_amount',_shipping_amount,'note',_note,'notify_customer',_notify_customer)::text);
+  -- The outer body takes the advisory and complete row closure before the return helper.
+  SELECT r.order_id INTO v_order_id FROM public.order_returns AS r WHERE r.id = _return_id;
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
+  v_orders := private.lock_group_g_inventory(v_variants, ARRAY[v_order_id], NULL);
+  v_return := private.lock_order_return(_return_id);
+  v_order:=v_return.order_id;
+  SELECT r.* INTO v_old FROM public.order_refunds AS r WHERE r.request_key=_request_key;
+  IF FOUND THEN
+    IF v_old.return_id IS DISTINCT FROM _return_id OR v_old.request_fingerprint IS DISTINCT FROM v_fp THEN
+      RAISE EXCEPTION 'RETURN_REQUEST_MISMATCH' USING ERRCODE='22023'; END IF;
+    RETURN QUERY SELECT v_old.id,v_old.amount,v_old.status,true;RETURN;
+  END IF;
+  SELECT rr.* INTO v_receipt FROM public.order_return_receipts AS rr WHERE rr.request_key=_request_key;
+  IF FOUND THEN
+    IF v_receipt.return_id IS DISTINCT FROM _return_id OR v_receipt.kind<>'waive_refund'
+      OR v_receipt.request_fingerprint IS DISTINCT FROM v_fp THEN
+      RAISE EXCEPTION 'RETURN_REQUEST_MISMATCH' USING ERRCODE='22023'; END IF;
+    RETURN QUERY SELECT NULL::uuid,0,'waived'::text,true;RETURN;
+  END IF;
+  -- closed の失敗した返金も受け直せる。P19 の保存した状態を巻き戻す必要はない。
+  IF v_return.status NOT IN ('open','closed') THEN RAISE EXCEPTION 'RETURN_STATE_CONFLICT' USING ERRCODE='22023'; END IF;
+  SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('order_item_id',t.order_item_id,
+      'before_shipment',false,'quantity',t.quantity) ORDER BY t.order_item_id),'[]'::jsonb),
+    COALESCE(pg_catalog.sum(private.return_units_amount(t.order_item_id,t.quantity)),0)::integer
+    INTO v_lines,v_goods FROM (
+      SELECT l.order_item_id,pg_catalog.sum(g.refund_waiting)::integer AS quantity
+      FROM private.order_return_line_progress(_return_id) AS g JOIN public.order_return_lines AS l ON l.id=g.return_line_id
+      WHERE g.refund_waiting>0 GROUP BY l.order_item_id
+    ) AS t;
+  IF pg_catalog.jsonb_array_length(v_lines)=0 THEN RAISE EXCEPTION 'RETURN_NOTHING_TO_REFUND' USING ERRCODE='22023'; END IF;
+  -- 計算どおり（相談の手数料を引いた額）が既定。店長が直した額の上限は返せる額（E-2 の値。仕様書 6-3・P8）で、
+  -- 計算との差は core が adjustment_amount に残す
+  v_cap:=GREATEST(v_goods-v_return.fee_pending_deduction,0)+_shipping_amount;
+  v_amount:=COALESCE(_amount,v_cap);
+  IF v_amount<_shipping_amount
+    OR (_amount IS NOT NULL AND _amount>(SELECT a.refundable_amount FROM private.order_refund_amounts(v_order) AS a)) THEN
+    RAISE EXCEPTION 'RETURN_REFUND_AMOUNT_INVALID' USING ERRCODE='22023'; END IF;
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  IF v_amount=0 THEN
+    -- 返金の記録もメールも作らず、支払いの移動を伴わない処理済みの数を追記する。
+    BEGIN
+      INSERT INTO public.order_return_receipts(return_id,request_key,request_fingerprint,kind,refund_choice,refund_id,
+        notify_customer,note,actor_id,actor_can_refund)
+      VALUES(_return_id,_request_key,v_fp,'waive_refund',NULL,NULL,_notify_customer,_note,_actor_id,true)
+      RETURNING * INTO v_receipt;
+    EXCEPTION WHEN unique_violation THEN RAISE EXCEPTION 'RETURN_REQUEST_MISMATCH' USING ERRCODE='22023'; END;
+    INSERT INTO public.order_return_receipt_lines(receipt_id,return_line_id,disposition,quantity,resolution,exchange_method)
+    SELECT v_receipt.id,g.return_line_id,'refund_waived',g.refund_waiting,NULL,NULL
+    FROM private.order_return_line_progress(_return_id) AS g WHERE g.refund_waiting>0;
+  ELSE
+    IF NOT EXISTS(SELECT 1 FROM public.orders AS o WHERE o.id=v_order AND o.status IN ('paid','shipped','cancelled')
+      AND o.paid_amount IS NOT NULL AND o.paid_amount>0 AND pg_catalog.left(o.payment_intent_id,3)='pi_'
+      AND pg_catalog.char_length(o.payment_intent_id)>3) THEN
+      RAISE EXCEPTION 'ORDER_NOT_REFUNDABLE' USING ERRCODE='22023'; END IF;
+  SELECT r.* INTO v_result FROM private.begin_order_refund_core(v_order,'return',_request_key,v_lines,false,
+    _shipping_amount,v_amount,_note,'requested_by_customer',NULL,_notify_customer,_actor_id,_amount,_return_id,
+    LEAST(v_return.fee_pending_deduction,v_goods)) AS r;
+  END IF;
+  -- 新たに付く未収手数料は前の免除に含まれないため、受領を戻す時は免除の印も外す。
+  UPDATE public.order_returns AS rt SET fee_pending_deduction=0,
+    fee_due_amount=rt.fee_due_amount+GREATEST(v_return.fee_pending_deduction-v_goods,0),
+    fee_waived=CASE WHEN v_return.fee_pending_deduction>v_goods THEN false ELSE rt.fee_waived END,
+    fee_received_at=CASE WHEN v_return.fee_pending_deduction>v_goods THEN NULL ELSE rt.fee_received_at END,
+    fee_received_by=CASE WHEN v_return.fee_pending_deduction>v_goods THEN NULL ELSE rt.fee_received_by END,
+    fee_received_note=CASE WHEN v_return.fee_pending_deduction>v_goods THEN NULL ELSE rt.fee_received_note END
+  WHERE rt.id=_return_id;
+  PERFORM private.refresh_order_return_status(_return_id);
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'admin_refund_return', _actor_id);
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (v_operation, 'admin_refund_return', _request_key,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'admin_refund_return', 'return_id', _return_id, 'request_fingerprint', v_fp)::text, 'UTF8')), 'hex'),
+    'order_return', _return_id::text, _actor_id,
+    pg_catalog.jsonb_build_object('return_id', _return_id, 'order_id', v_order_id));
+  v_middle := private.capture_group_g_item_states(v_orders);
+  PERFORM private.allocate_group_g_fifo(v_variants, v_operation, _actor_id);
+  PERFORM private.record_group_g_item_state_changes(v_middle, v_orders, v_operation, 2, 'fifo', _actor_id);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  IF v_amount=0 THEN RETURN QUERY SELECT NULL::uuid,0,'waived'::text,false;
+  ELSE RETURN QUERY SELECT v_result.refund_id,v_result.amount,v_result.status,v_result.replayed; END IF;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_refund_return(
+  _return_id uuid,_actor_id uuid,_request_key uuid,_amount integer,
+  _shipping_amount integer,_note text,_notify_customer boolean
+) RETURNS TABLE(refund_id uuid,amount integer,status text,replayed boolean)
+LANGUAGE sql SECURITY INVOKER SET search_path = '' AS $$
+  SELECT * FROM private.admin_refund_return(_return_id, _actor_id, _request_key, _amount, _shipping_amount, _note, _notify_customer);
+$$;
+ALTER FUNCTION public.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean) TO service_role;
+
+CREATE FUNCTION private.admin_close_return_missing(_return_id uuid, _actor_id uuid, _request_key uuid)
+RETURNS TABLE (receipt_id uuid, return_status text, replayed boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_return public.order_returns;
+  v_fingerprint text;
+  v_receipt_id uuid;
+  v_units jsonb;
+  v_status text;
+  v_orders uuid[];
+  v_variants bigint[] := ARRAY[]::bigint[];
+  v_order_id uuid;
+  v_before jsonb;
+  v_middle jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _return_id IS NULL OR _actor_id IS NULL OR _request_key IS NULL THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  v_fingerprint := pg_catalog.md5(
+    pg_catalog.jsonb_build_object('return_id', _return_id, 'kind', 'close_missing')::text
+  );
+
+  SELECT r.order_id INTO v_order_id FROM public.order_returns AS r WHERE r.id = _return_id;
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
+  v_orders := private.lock_group_g_inventory(v_variants, ARRAY[v_order_id], NULL);
+  v_return := private.lock_order_return(_return_id);
+
+  v_receipt_id := private.find_return_receipt(_request_key, _return_id, v_fingerprint);
+  IF v_receipt_id IS NOT NULL THEN
+    RETURN QUERY SELECT v_receipt_id, v_return.status, true;
+    RETURN;
+  END IF;
+
+  -- 未処理の数を先に読む（書く表を、書きながら読まない）
+  SELECT COALESCE(
+           pg_catalog.jsonb_agg(
+             pg_catalog.jsonb_build_object('return_line_id', p.return_line_id, 'quantity', p.unprocessed)
+           ),
+           '[]'::jsonb
+         )
+  INTO v_units
+  FROM private.order_return_line_progress(_return_id) AS p
+  WHERE p.unprocessed > 0;
+
+  IF v_return.status <> 'open' OR pg_catalog.jsonb_array_length(v_units) = 0 THEN
+    RAISE EXCEPTION 'RETURN_STATE_CONFLICT' USING ERRCODE = '22023';
+  END IF;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  v_receipt_id := private.insert_return_receipt(_return_id, _request_key, v_fingerprint, 'close_missing', _actor_id);
+
+  INSERT INTO public.order_return_receipt_lines (receipt_id, return_line_id, disposition, quantity)
+  SELECT v_receipt_id, x.return_line_id, 'missing', x.quantity
+  FROM pg_catalog.jsonb_to_recordset(v_units) AS x(return_line_id uuid, quantity integer);
+
+  v_status := private.refresh_order_return_status(_return_id);
+
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'admin_close_return_missing', _actor_id);
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (v_operation, 'admin_close_return_missing', _request_key,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'admin_close_return_missing', 'return_id', _return_id, 'request_fingerprint', v_fingerprint)::text, 'UTF8')), 'hex'),
+    'order_return', _return_id::text, _actor_id,
+    pg_catalog.jsonb_build_object('return_id', _return_id, 'order_id', v_order_id));
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT v_receipt_id, v_status, false;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_close_return_missing(uuid,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_close_return_missing(uuid,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_close_return_missing(uuid,uuid,uuid) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_close_return_missing(_return_id uuid, _actor_id uuid, _request_key uuid)
+RETURNS TABLE (receipt_id uuid, return_status text, replayed boolean)
+LANGUAGE sql SECURITY INVOKER SET search_path = '' AS $$
+  SELECT * FROM private.admin_close_return_missing(_return_id, _actor_id, _request_key);
+$$;
+ALTER FUNCTION public.admin_close_return_missing(uuid,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_close_return_missing(uuid,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_close_return_missing(uuid,uuid,uuid) TO service_role;
+
+CREATE FUNCTION private.admin_reopen_return(_return_id uuid, _actor_id uuid, _request_key uuid)
+RETURNS TABLE (receipt_id uuid, return_status text, replayed boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_return public.order_returns;
+  v_fingerprint text;
+  v_receipt_id uuid;
+  v_units jsonb;
+  v_orders uuid[];
+  v_variants bigint[] := ARRAY[]::bigint[];
+  v_order_id uuid;
+  v_before jsonb;
+  v_middle jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _return_id IS NULL OR _actor_id IS NULL OR _request_key IS NULL THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  v_fingerprint := pg_catalog.md5(
+    pg_catalog.jsonb_build_object('return_id', _return_id, 'kind', 'reopen')::text
+  );
+
+  SELECT r.order_id INTO v_order_id FROM public.order_returns AS r WHERE r.id = _return_id;
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
+  v_orders := private.lock_group_g_inventory(v_variants, ARRAY[v_order_id], NULL);
+  v_return := private.lock_order_return(_return_id);
+
+  v_receipt_id := private.find_return_receipt(_request_key, _return_id, v_fingerprint);
+  IF v_receipt_id IS NOT NULL THEN
+    RETURN QUERY SELECT v_receipt_id, v_return.status, true;
+    RETURN;
+  END IF;
+
+  SELECT COALESCE(
+           pg_catalog.jsonb_agg(
+             pg_catalog.jsonb_build_object('return_line_id', p.return_line_id, 'quantity', p.missing)
+           ),
+           '[]'::jsonb
+         )
+  INTO v_units
+  FROM private.order_return_line_progress(_return_id) AS p
+  WHERE p.missing > 0;
+
+  IF v_return.status <> 'closed' OR pg_catalog.jsonb_array_length(v_units) = 0 THEN
+    RAISE EXCEPTION 'RETURN_STATE_CONFLICT' USING ERRCODE = '22023';
+  END IF;
+
+  -- 開き直す数は、その発送の行が今空けている数（行の数 − 返品が指す数 + 届かなかった数）を超えられない
+  IF EXISTS (
+    SELECT 1
+    FROM (
+      SELECT l.fulfillment_id, l.order_item_id, pg_catalog.sum(x.quantity)::integer AS reopening
+      FROM pg_catalog.jsonb_to_recordset(v_units) AS x(return_line_id uuid, quantity integer)
+      JOIN public.order_return_lines AS l ON l.id = x.return_line_id
+      GROUP BY l.fulfillment_id, l.order_item_id
+    ) AS g
+    LEFT JOIN private.fulfillment_line_returnable(v_return.order_id) AS fr
+      ON fr.fulfillment_id = g.fulfillment_id AND fr.order_item_id = g.order_item_id
+    WHERE g.reopening > COALESCE(fr.returnable, 0)
+  ) THEN
+    RAISE EXCEPTION 'RETURN_QUANTITY_EXCEEDS' USING ERRCODE = '22023';
+  END IF;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  v_receipt_id := private.insert_return_receipt(_return_id, _request_key, v_fingerprint, 'reopen', _actor_id);
+
+  INSERT INTO public.order_return_receipt_lines (receipt_id, return_line_id, disposition, quantity)
+  SELECT v_receipt_id, x.return_line_id, 'missing_reopened', x.quantity
+  FROM pg_catalog.jsonb_to_recordset(v_units) AS x(return_line_id uuid, quantity integer);
+
+  UPDATE public.order_returns AS r
+  SET status = 'open',
+      reopened_at = pg_catalog.now(),
+      reopened_by = _actor_id
+  WHERE r.id = _return_id;
+
+  -- 開き直すと未処理の数が戻って同じ商品の上限が下がり、ほかの返品の返金待ちが覆われることがある。
+  -- 返金待ちも未処理も無い返品が受付中のまま固まらないよう、注文の鍵の下でほかの受付中を id の順（ふつうの返金と同じ）に確かめ直す。
+  PERFORM private.refresh_order_return_status(rt.id)
+  FROM public.order_returns AS rt
+  WHERE rt.order_id = v_return.order_id AND rt.id <> _return_id AND rt.status = 'open'
+  ORDER BY rt.id;
+
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'admin_reopen_return', _actor_id);
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (v_operation, 'admin_reopen_return', _request_key,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'admin_reopen_return', 'return_id', _return_id, 'request_fingerprint', v_fingerprint)::text, 'UTF8')), 'hex'),
+    'order_return', _return_id::text, _actor_id,
+    pg_catalog.jsonb_build_object('return_id', _return_id, 'order_id', v_order_id));
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT v_receipt_id, 'open'::text, false;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_reopen_return(uuid,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_reopen_return(uuid,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_reopen_return(uuid,uuid,uuid) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_reopen_return(_return_id uuid, _actor_id uuid, _request_key uuid)
+RETURNS TABLE (receipt_id uuid, return_status text, replayed boolean)
+LANGUAGE sql SECURITY INVOKER SET search_path = '' AS $$
+  SELECT * FROM private.admin_reopen_return(_return_id, _actor_id, _request_key);
+$$;
+ALTER FUNCTION public.admin_reopen_return(uuid,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_reopen_return(uuid,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_reopen_return(uuid,uuid,uuid) TO service_role;
+
+CREATE FUNCTION private.admin_inspect_return(
+  _return_id uuid,
+  _actor_id uuid,
+  _request_key uuid,
+  _lines jsonb
+)
+RETURNS TABLE (receipt_id uuid, return_status text, replayed boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_return public.order_returns;
+  v_fingerprint text;
+  v_receipt_id uuid;
+  v_status text;
+  v_orders uuid[];
+  v_variants bigint[] := ARRAY[]::bigint[];
+  v_order_id uuid;
+  v_before jsonb;
+  v_middle jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _return_id IS NULL OR _actor_id IS NULL OR _request_key IS NULL THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  v_fingerprint := pg_catalog.md5(
+    pg_catalog.jsonb_build_object(
+      'return_id', _return_id,
+      'kind', 'inspect',
+      'lines', COALESCE((
+        SELECT pg_catalog.jsonb_agg(
+                 pg_catalog.jsonb_build_object(
+                   'return_line_id', p.return_line_id,
+                   'restocked', p.restocked,
+                   'not_restocked', p.not_restocked
+                 )
+                 ORDER BY p.return_line_id
+               )
+        FROM private.parse_return_inspect_lines(_lines) AS p
+      ), '[]'::jsonb)
+    )::text
+  );
+
+  SELECT r.order_id INTO v_order_id FROM public.order_returns AS r WHERE r.id = _return_id;
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
+  v_orders := private.lock_group_g_inventory(v_variants, ARRAY[v_order_id], NULL);
+  v_return := private.lock_order_return(_return_id);
+
+  v_receipt_id := private.find_return_receipt(_request_key, _return_id, v_fingerprint);
+  IF v_receipt_id IS NOT NULL THEN
+    RETURN QUERY SELECT v_receipt_id, v_return.status, true;
+    RETURN;
+  END IF;
+
+  IF v_return.status <> 'open' THEN
+    RAISE EXCEPTION 'RETURN_STATE_CONFLICT' USING ERRCODE = '22023';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM private.parse_return_inspect_lines(_lines) AS p
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM public.order_return_lines AS l
+      WHERE l.id = p.return_line_id
+        AND l.return_id = _return_id
+    )
+  ) THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM private.parse_return_inspect_lines(_lines) AS p
+    LEFT JOIN private.order_return_line_progress(_return_id) AS g ON g.return_line_id = p.return_line_id
+    WHERE p.restocked + p.not_restocked > COALESCE(g.pending_inspection, 0)
+  ) THEN
+    RAISE EXCEPTION 'RETURN_RECEIPT_EXCEEDS' USING ERRCODE = '22023';
+  END IF;
+
+  -- 色・サイズの無い古い商品は在庫に戻せない（受け取りの「在庫に戻す」と同じ断り）。戻さない検品なら決められる
+  IF EXISTS (
+    SELECT 1
+    FROM private.parse_return_inspect_lines(_lines) AS p
+    JOIN public.order_return_lines AS l ON l.id = p.return_line_id
+    JOIN public.order_items AS oi ON oi.id = l.order_item_id
+    WHERE p.restocked > 0
+      AND oi.variant_id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  v_receipt_id := private.insert_return_receipt(_return_id, _request_key, v_fingerprint, 'inspect', _actor_id);
+
+  INSERT INTO public.order_return_receipt_lines (receipt_id, return_line_id, disposition, quantity)
+  SELECT v_receipt_id, p.return_line_id, 'inspected_restocked', p.restocked
+  FROM private.parse_return_inspect_lines(_lines) AS p
+  WHERE p.restocked > 0
+  UNION ALL
+  SELECT v_receipt_id, p.return_line_id, 'inspected_not_restocked', p.not_restocked
+  FROM private.parse_return_inspect_lines(_lines) AS p
+  WHERE p.not_restocked > 0;
+
+  -- 台帳のメモ（note）は書かない（NULL。受け取りの台帳と同じ。在庫の履歴の画面は理由の言葉だけを出す。英字の記号を入れると画面にそのまま出る）
+  INSERT INTO public.stock_movements
+    (variant_id, delta, reason, order_id, order_item_id, note, created_by, return_id)
+  SELECT oi.variant_id, p.restocked, 'return', v_return.order_id, l.order_item_id,
+         NULL, _actor_id, _return_id
+  FROM private.parse_return_inspect_lines(_lines) AS p
+  JOIN public.order_return_lines AS l ON l.id = p.return_line_id
+  JOIN public.order_items AS oi ON oi.id = l.order_item_id
+  WHERE p.restocked > 0
+    AND oi.variant_id IS NOT NULL
+  ORDER BY oi.variant_id, l.order_item_id;
+
+  v_status := private.refresh_order_return_status(_return_id);
+
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'admin_inspect_return', _actor_id);
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (v_operation, 'admin_inspect_return', _request_key,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'admin_inspect_return', 'return_id', _return_id, 'request_fingerprint', v_fingerprint)::text, 'UTF8')), 'hex'),
+    'order_return', _return_id::text, _actor_id,
+    pg_catalog.jsonb_build_object('return_id', _return_id, 'order_id', v_order_id));
+  v_middle := private.capture_group_g_item_states(v_orders);
+  PERFORM private.allocate_group_g_fifo(v_variants, v_operation, _actor_id);
+  PERFORM private.record_group_g_item_state_changes(v_middle, v_orders, v_operation, 2, 'fifo', _actor_id);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT v_receipt_id, v_status, false;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_inspect_return(uuid,uuid,uuid,jsonb) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_inspect_return(uuid,uuid,uuid,jsonb) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_inspect_return(uuid,uuid,uuid,jsonb) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_inspect_return(
+  _return_id uuid,
+  _actor_id uuid,
+  _request_key uuid,
+  _lines jsonb
+)
+RETURNS TABLE (receipt_id uuid, return_status text, replayed boolean)
+LANGUAGE sql SECURITY INVOKER SET search_path = '' AS $$
+  SELECT * FROM private.admin_inspect_return(_return_id, _actor_id, _request_key, _lines);
+$$;
+ALTER FUNCTION public.admin_inspect_return(uuid,uuid,uuid,jsonb) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_inspect_return(uuid,uuid,uuid,jsonb) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_inspect_return(uuid,uuid,uuid,jsonb) TO service_role;
+
+DO $g1_return_exchange_assert$
+DECLARE v_signature text; v_oid oid; v_schema text;
+BEGIN
+  FOREACH v_signature IN ARRAY ARRAY[
+    'admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)',
+    'admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)',
+    'admin_close_return_missing(uuid,uuid,uuid)',
+    'admin_reopen_return(uuid,uuid,uuid)',
+    'admin_inspect_return(uuid,uuid,uuid,jsonb)'
+  ] LOOP
+    FOREACH v_schema IN ARRAY ARRAY['public', 'private'] LOOP
+      v_oid := pg_catalog.to_regprocedure(v_schema || '.' || v_signature);
+      IF v_oid IS NULL OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc AS p
+        WHERE p.oid = v_oid AND p.proowner = 'postgres'::regrole
+          AND p.prosecdef = (v_schema = 'private') AND 'search_path=""' = ANY(p.proconfig))
+        OR pg_catalog.has_function_privilege('anon', v_oid, 'EXECUTE')
+        OR pg_catalog.has_function_privilege('authenticated', v_oid, 'EXECUTE')
+        OR NOT pg_catalog.has_function_privilege('service_role', v_oid, 'EXECUTE') THEN
+        RAISE EXCEPTION 'GROUP_G_RETURN_EXCHANGE_ACL_INVALID' USING ERRCODE = '55000';
+      END IF;
+    END LOOP;
+  END LOOP;
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_proc AS p WHERE p.oid = 'private.refresh_order_return_status(uuid)'::regprocedure
+    AND (p.prosecdef OR p.proowner <> 'postgres'::regrole OR NOT 'search_path=""' = ANY(p.proconfig)))
+    OR pg_catalog.has_function_privilege('anon', 'private.refresh_order_return_status(uuid)', 'EXECUTE')
+    OR pg_catalog.has_function_privilege('authenticated', 'private.refresh_order_return_status(uuid)', 'EXECUTE')
+    OR pg_catalog.has_function_privilege('service_role', 'private.refresh_order_return_status(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'GROUP_G_RETURN_EXCHANGE_ACL_INVALID' USING ERRCODE = '55000';
+  END IF;
+END;
+$g1_return_exchange_assert$;
+
 DO $g1_model_assert$
 DECLARE
   v_failed text;

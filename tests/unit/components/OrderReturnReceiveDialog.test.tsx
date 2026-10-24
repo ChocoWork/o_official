@@ -624,6 +624,7 @@ describe('OrderReturnReceiveDialog のお支払い待ちの見込み', () => {
     const { dialog } = await openDialog(returnDetail({ returnMethod: 'shop_label', fees, lines: [exchangeLine()] }));
     receiveAll(dialog, 'restocked');
     const notice = within(dialog).getByText(NOTICE('￥4,300'));
+    expect(within(dialog).getByText('手数料のお支払い待ちのため、交換品の割り当てを保留します。')).toBeInTheDocument();
     const terms = within(dialog).getByText('交換の送料').closest('dl') as HTMLElement;
     expect(terms.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(dialog).queryByRole('spinbutton')).not.toBeInTheDocument();
@@ -663,7 +664,8 @@ describe('OrderReturnReceiveDialog の交換の品', () => {
 
     const exchange = within(dialog).getByRole('region', { name: '交換の品' });
     const row = within(exchange).getByRole('group', { name: 'ウールコート（黒 / XL） × 1' });
-    expect(within(row).getByText('在庫から（在庫 3）')).toBeInTheDocument();
+    expect(within(row).getByText('在庫から（空き在庫 3・割り当ては注文順）')).toBeInTheDocument();
+    expect(within(exchange).getByText('交換品は、在庫から注文の古い順に割り当てます。')).toBeInTheDocument();
     expect(within(dialog).queryByRole('group', { name: '返金' })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument();
     expect(primaryButton(dialog)).toHaveTextContent(/^すべて受け取り、交換の品を発送待ちにする$/);
