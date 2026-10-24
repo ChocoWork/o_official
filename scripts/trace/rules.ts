@@ -3,6 +3,7 @@
 
 import { kindOf, type TraceItem, type TraceKind } from './model';
 import type { CodeUnit } from './parse-code';
+import type { BadHeading } from './parse-docs';
 import type { TestLevel, TestRef } from './parse-tests';
 
 export interface Violation { rule: string; message: string; file: string; line: number }
@@ -10,6 +11,8 @@ export interface TraceModel {
   items: TraceItem[]; units: CodeUnit[]; tests: TestRef[];
   /** 範囲外の文書（docs/ 全体）に文字として現れる ID。 */
   knownIdsOutsideScope: Set<string>;
+  /** ID に似ているのに形の合わない見出し（項目にならないので、ここから bad-id で落とす）。 */
+  badHeadings?: BadHeading[];
 }
 
 const STRUCT: readonly TraceKind[] = ['ARC', 'SCR', 'FLOW', 'STATE', 'API', 'DATA'];
@@ -40,9 +43,9 @@ const TEST_KINDS: Record<TestLevel, (k: TraceKind | null) => boolean> = {
 
 const BOILERPLATE = ['仕様のため', '要件のため', '仕様どおり', '必要なため'];
 
+/** 句読点と空白で切り、どの切れも決まり文句なら（切れが無ければ）根拠が無いとみなす。 */
 function isEmptyRationale(rationale: string): boolean {
-  const s = rationale.replace(/[\s。．.、]/g, '');
-  return s === '' || BOILERPLATE.includes(s);
+  return rationale.split(/[\s。．.、，,]+/).filter((s) => s !== '').every((s) => BOILERPLATE.includes(s));
 }
 
 const at = (rule: string, message: string, where: { file: string; line: number }): Violation => ({
@@ -61,6 +64,7 @@ export function checkModel(model: TraceModel): Violation[] {
   const childrenOf = (id: string) => model.items.filter((c) => live(c) && c.parents.includes(id));
   const testsOf = (id: string, level: TestLevel) => model.tests.filter((t) => t.id === id && t.level === level);
 
+  for (const h of model.badHeadings ?? []) out.push(at('bad-id', `見出しの ${h.heading} は ID の形に合わない`, h));
   for (const it of model.items) {
     if (kindOf(it.id) === null) out.push(at('bad-id', `${it.id} は ID の形に合わない`, it));
     if (it.status === '') out.push(at('missing-status', `${it.id} の状態が空`, it));
@@ -85,7 +89,10 @@ export function checkModel(model: TraceModel): Violation[] {
       if (!byId.has(p)) out.push(at('unknown-parent', `${it.id} の上位 ${p} が範囲内に無い`, it));
     }
     for (const p of it.outOfScopeParents) {
-      if (!model.knownIdsOutsideScope.has(p)) out.push(at('unknown-parent', `${it.id} の上位 ${p}（範囲外）がほかの文書に無い`, it));
+      // 読み込む領域が増えると範囲外の文書が範囲内に入るので、範囲内の定義も見る。
+      if (!byId.has(p) && !model.knownIdsOutsideScope.has(p)) {
+        out.push(at('unknown-parent', `${it.id} の上位 ${p}（範囲外）が範囲内にもほかの文書にも無い`, it));
+      }
     }
 
     if (live(it)) {
@@ -108,7 +115,7 @@ export function checkModel(model: TraceModel): Violation[] {
       case 'AC': need(testsOf(it.id, 'e2e').length > 0, 'e2e テスト'); break;
       case 'THR': need(has((k) => k === 'SEC'), 'SEC'); break;
       case 'SEC': need(has((k) => k === 'AC' || k === 'DD' || isStruct(k)), 'AC・構造設計・DD のどれか'); break;
-      case 'DRV': need(has((k) => k === 'DD' || isStruct(k)), '構造設計・DD のどれか'); break;
+      case 'DRV': need(has(isStruct), '構造設計'); break;
       case 'ADR': need(has(isStruct), '構造設計'); break;
       case 'DD':
         need(testsOf(it.id, 'unit').length > 0, '単体テスト');

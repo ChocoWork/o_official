@@ -2,7 +2,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadModel, loadScope } from '@/../scripts/trace/load';
+import { loadModel, loadScope, type AreaScope } from '@/../scripts/trace/load';
+import { checkModel } from '@/../scripts/trace/rules';
 
 let root: string;
 
@@ -18,7 +19,7 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'trace-load-'));
   put(
     'scope.json',
-    '﻿' +
+    '\uFEFF' +
       JSON.stringify([
         {
           area: 'NEWS',
@@ -78,5 +79,31 @@ describe('loadModel', () => {
   it('docs/ の範囲外の文書に現れる ID を knownIdsOutsideScope に入れる', () => {
     const { knownIdsOutsideScope } = loadModel(loadScope(path.join(root, 'scope.json')), root);
     expect([...knownIdsOutsideScope].sort()).toEqual(['API-HOME-001', 'FR-NEWS-ALL-001', 'SEC-001']);
+  });
+
+  it('作業の記録（docs/superpowers）と生成物（docs/05_Quality/reports）の ID は入れない', () => {
+    put('docs/superpowers/plans/p.md', 'SEC-999 を例に書く\n');
+    put('docs/05_Quality/reports/r.md', 'SEC-888\n');
+    const { knownIdsOutsideScope } = loadModel(loadScope(path.join(root, 'scope.json')), root);
+    expect(knownIdsOutsideScope.has('SEC-999')).toBe(false);
+    expect(knownIdsOutsideScope.has('SEC-888')).toBe(false);
+    expect(knownIdsOutsideScope.has('SEC-001')).toBe(true);
+  });
+
+  it('形の合わない ID の見出しは bad-id で落ちる', () => {
+    put('docs/dec/bad.md', '# 題\n\n### DD-NEWS-003: 題\n\n| 属性 | 値 |\n| --- | --- |\n| 状態 | 現行 |\n');
+    const v = checkModel(loadModel(loadScope(path.join(root, 'scope.json')), root)).filter((x) => x.rule === 'bad-id');
+    expect(v).toEqual([{ rule: 'bad-id', message: expect.stringContaining('DD-NEWS-003:'), file: 'docs/dec/bad.md', line: 3 }]);
+  });
+
+  it('範囲外の印の上位は、読み込む領域の数によらず同じ結果になる', () => {
+    put('docs/news/s.md', DOC('SEC-NEWS-001'));
+    put('docs/home/h.md', '### API-HOME-002 題\n\n| 属性 | 値 |\n| --- | --- |\n| 上位 | SEC-NEWS-001（範囲外） |\n');
+    const news: AreaScope = { area: 'NEWS', docs: ['docs/news/s.md'], src: [], tests: [], e2e: [] };
+    const home: AreaScope = { area: 'HOME', docs: ['docs/home/h.md'], src: [], tests: [], e2e: [] };
+    for (const areas of [[home], [news, home]]) {
+      const v = checkModel(loadModel(areas, root)).filter((x) => x.rule === 'unknown-parent');
+      expect(v).toEqual([]);
+    }
   });
 });

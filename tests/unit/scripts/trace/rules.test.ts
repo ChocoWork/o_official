@@ -84,6 +84,12 @@ describe('checkModel', () => {
     expect(rulesOf(withItem('DD-NEWS-001', { rationale: '仕様のため。下書きを外へ出さない' }))).not.toContain('missing-rationale');
   });
 
+  it('missing-rationale: 決まり文句を並べただけでも落とす', () => {
+    for (const r of ['要件のため。仕様どおり。', '仕様のため 必要なため', '仕様のため、要件のため']) {
+      expect(rulesOf(withItem('DD-NEWS-001', { rationale: r }))).toContain('missing-rationale');
+    }
+  });
+
   it('missing-parent: 上位が空なら落とし、REQUEST・DRV・THR は除く', () => {
     expect(rulesOf(withItem('DD-NEWS-001', { parents: [] }))).toContain('missing-parent');
     expect(rulesOf(withItem('FR-NEWS-ALL-001', { parents: [] }))).toContain('missing-parent');
@@ -106,6 +112,11 @@ describe('checkModel', () => {
     expect(ok.filter((v) => v.rule === 'unknown-parent')).toEqual([]);
     const ng = checkModel({ ...base, items: [item({ id: 'API-NEWS-001', kind: 'API', parents: [], outOfScopeParents: ['SEC-999'] })], knownIdsOutsideScope: new Set() });
     expect(ng.map((v) => v.rule)).toContain('unknown-parent');
+  });
+
+  it('範囲外の印の ID が範囲内に在っても通す', () => {
+    const m = withItem('DD-NEWS-001', { parents: [], outOfScopeParents: ['API-NEWS-001'] });
+    expect(rulesOf(m)).not.toContain('unknown-parent');
   });
 
   it('unknown-parent: 範囲内に無い上位を落とす', () => {
@@ -144,6 +155,28 @@ describe('checkModel', () => {
     ]);
   });
 
+  it('missing-child: REQUEST・THR・SEC・DRV・ADR に要る子が無ければ落とす', () => {
+    const missingOf = (m: TraceModel, id: string) =>
+      checkModel(m).filter((v) => v.rule === 'missing-child' && v.message.startsWith(`${id} `));
+    const apiParents = (drop: string) => withItem('API-NEWS-001', {
+      parents: ['FR-NEWS-ALL-001', 'SEC-NEWS-001', 'DRV-NEWS-001', 'ADR-0001'].filter((p) => p !== drop),
+    });
+    expect(missingOf(withItem('FR-NEWS-ALL-001', { parents: [] }), 'SR-NEWS-001')).toHaveLength(1);
+    expect(missingOf(withItem('SEC-NEWS-001', { parents: [] }), 'THR-NEWS-001')).toHaveLength(1);
+    expect(missingOf(apiParents('SEC-NEWS-001'), 'SEC-NEWS-001')).toHaveLength(1);
+    expect(missingOf(apiParents('DRV-NEWS-001'), 'DRV-NEWS-001')).toHaveLength(1);
+    expect(missingOf(apiParents('ADR-0001'), 'ADR-0001')).toHaveLength(1);
+    expect(missingOf(validModel(), 'SR-NEWS-001')).toEqual([]);
+  });
+
+  it('missing-child: DRV の子は構造設計だけで、DD では満たさない', () => {
+    const m = withItem('API-NEWS-001', { parents: ['FR-NEWS-ALL-001', 'SEC-NEWS-001', 'ADR-0001'] });
+    m.items = m.items.map((x) => (x.id === 'DD-NEWS-001' ? { ...x, parents: ['API-NEWS-001', 'DRV-NEWS-001'] } : x));
+    expect(checkModel(m).filter((v) => v.rule === 'missing-child').map((v) => v.message)).toEqual([
+      expect.stringMatching(/^DRV-NEWS-001 /),
+    ]);
+  });
+
   it('missing-child: SEC の子は AC だけでも満たす', () => {
     const m = validModel();
     m.items = m.items.map((x) =>
@@ -172,10 +205,17 @@ describe('checkModel', () => {
   });
 
   it('bad-design-link: @design が1つでない・DD でない・範囲内に無いなら落とす', () => {
-    for (const designIds of [[], ['DD-NEWS-001', 'DD-NEWS-002'], ['API-NEWS-001'], ['DD-NEWS-999']]) {
+    const cases: Array<[string[], string]> = [
+      [[], '1つでない（0 個）'],
+      [['DD-NEWS-001', 'DD-NEWS-002'], '1つでない（2 個）'],
+      [['API-NEWS-001'], 'API-NEWS-001 が DD でない'],
+      [['DD-NEWS-999'], 'DD-NEWS-999 が範囲内に無い'],
+    ];
+    for (const [designIds, fragment] of cases) {
       const m = validModel();
       m.units = [unit({ designIds }), unit({ implId: 'IMPL-NEWS-102' })];
-      expect(rulesOf(m)).toContain('bad-design-link');
+      const v = checkModel(m).filter((x) => x.rule === 'bad-design-link');
+      expect(v.map((x) => x.message)).toEqual([expect.stringContaining(fragment)]);
     }
   });
 

@@ -1,5 +1,5 @@
 /** @jest-environment node */
-import { parseDocItems } from '@/../scripts/trace/parse-docs';
+import { parseBadHeadings, parseDocItems } from '@/../scripts/trace/parse-docs';
 
 describe('parseDocItems', () => {
   it('見出しと属性の表から項目を読む（BOM・CRLF でも）', () => {
@@ -80,5 +80,26 @@ describe('parseDocItems', () => {
 
   it('ID でない語で始まる見出しは項目にしない', () => {
     expect(parseDocItems('x.md', '### 5-2 項目の書き方\n\n| 属性 | 値 |\n| --- | --- |\n| 状態 | 現行 |\n')).toEqual([]);
+  });
+});
+
+describe('parseBadHeadings', () => {
+  const TABLE = '\n\n| 属性 | 値 |\n| --- | --- |\n| 状態 | 現行 |\n';
+  it('ID に似ているが形の合わない見出しで、表が続くものを返す', () => {
+    const md = [
+      `### FR-NEWS-ALL-001-AC-1a 題${TABLE}`,
+      `#### DD-NEWS-003: 題${TABLE}`,
+      `### \`DD-NEWS-004\` 題${TABLE}`,
+      `### DD-NEWS-005 正しい${TABLE}`,
+      '### DD-NEWS-00x 表なし\n\n本文\n',
+      `### 5-2 項目の書き方${TABLE}`,
+      `## DD-NEWS-00y 段が違う${TABLE}`,
+      `\`\`\`markdown\n### DD-NEWS-00z 囲み${TABLE}\`\`\`\n`,
+    ].join('\n');
+    expect(parseBadHeadings('x.md', md)).toEqual([
+      { heading: 'FR-NEWS-ALL-001-AC-1a', file: 'x.md', line: 1 },
+      { heading: 'DD-NEWS-003:', file: 'x.md', line: 7 },
+      { heading: '`DD-NEWS-004`', file: 'x.md', line: 13 },
+    ]);
   });
 });

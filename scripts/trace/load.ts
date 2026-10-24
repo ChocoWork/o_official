@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { kindOf } from './model';
 import { parseCodeUnits } from './parse-code';
-import { parseDocItems } from './parse-docs';
+import { parseBadHeadings, parseDocItems } from './parse-docs';
 import { parseTestRefs } from './parse-tests';
 import type { TraceModel } from './rules';
 
@@ -13,9 +13,11 @@ export interface AreaScope { area: string; docs: string[]; src: string[]; tests:
 // fs.globSync は Node 22 から在るが、手元の @types/node（20）には型が無い。
 const globSync = (fs as unknown as { globSync(pattern: string, options: { cwd: string }): string[] }).globSync;
 const ID_TOKEN = /[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+/g;
+// 作業の記録と生成物は ID を定義せずに書く（例の SEC-999 など）ので、範囲外の定義に数えない。
+const NOT_DEFINITIONS = ['docs/superpowers/', 'docs/05_Quality/reports/'];
 
 export function loadScope(file = 'scripts/trace/scope.json'): AreaScope[] {
-  return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')) as AreaScope[];
+  return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')) as AreaScope[];
 }
 
 /** パターンに合うファイルを、root からの `/` 区切りで、重なりを除いて返す（パターンごとに名前順）。 */
@@ -36,7 +38,7 @@ export function loadModel(areas: AreaScope[], root = process.cwd()): TraceModel 
   const inScope = new Set(docs);
   const knownIdsOutsideScope = new Set<string>();
   for (const f of collect(['docs/**/*.md'], root)) {
-    if (inScope.has(f) || f.split('/').includes('graphify-out')) continue;
+    if (inScope.has(f) || f.split('/').includes('graphify-out') || NOT_DEFINITIONS.some((d) => f.startsWith(d))) continue;
     for (const m of read(f).matchAll(ID_TOKEN)) {
       if (kindOf(m[0]) !== null) knownIdsOutsideScope.add(m[0]);
     }
@@ -47,5 +49,6 @@ export function loadModel(areas: AreaScope[], root = process.cwd()): TraceModel 
     units: src.flatMap((f) => parseCodeUnits(f, read(f))),
     tests: tests.flatMap((f) => parseTestRefs(f, read(f))),
     knownIdsOutsideScope,
+    badHeadings: docs.flatMap((f) => parseBadHeadings(f, read(f))),
   };
 }
