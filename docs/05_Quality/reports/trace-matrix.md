@@ -1798,7 +1798,7 @@ LOOK の要件・脅威・構造設計・ADR・詳細設計を書く中で見つ
 
 | 区分 | 番号 | 件数 | 中身 |
 | --- | --- | --- | --- |
-| 文書とコードの食い違い | TM-STOCKIST-01〜TM-STOCKIST-36、TM-STOCKIST-61 | 37 | 要件・設計・ADR・詳細設計・旧文書・テストと、今のコードの動きが合わない所 |
+| 文書とコードの食い違い | TM-STOCKIST-01〜TM-STOCKIST-36、TM-STOCKIST-61、TM-STOCKIST-62 | 38 | 要件・設計・ADR・詳細設計・旧文書・テストと、今のコードの動きが合わない所 |
 | セキュリティ要件を満たさない所 | TM-STOCKIST-37〜TM-STOCKIST-57 | 21 | `SEC-STOCKIST-001〜021` が求める事を今のコードが満たさない所。試すテストだけが無い物（001・005・006・016・017）を含む。中身は各 `SEC-` の項目に書いた |
 | 書き方の判断待ち | TM-STOCKIST-58〜TM-STOCKIST-60 | 3 | 検査の決まりと文書の置き方で、ユーザーの確認が要る所 |
 
@@ -1847,6 +1847,7 @@ LOOK の要件・脅威・構造設計・ADR・詳細設計を書く中で見つ
 | TM-STOCKIST-35 | 取り出しの失敗の見せ方。取扱店は空の一覧として出し、NEWS は失敗の文を出す（ADR-0017） | `getPublicStockists` は取り出しの誤りを記録して空の配列を返す。公開の0件と失敗が同じ表示 | ADR-0253、DRV-STOCKIST-007、DD-STOCKIST-003 | ユーザー |
 | TM-STOCKIST-36 | FREQ-540（範囲外）は「DB の ACL・有効な session・2要素認証で管理操作を守る」。`stockists` の表を含むかが書かれていない | `stockists` の管理の RLS の方針は ACL（`has_permission`）だけを見て、aal2 も session の生存も見ない。SEC-STOCKIST-003 の行を参照。DATA-STOCKIST-002 は `has_permission` の役の近道を外して DB の ACL にそろえた所（FREQ-540-AC-03（範囲外））だけを受け継ぎ、FREQ-540-REQ-01（範囲外）は上位にしていない。aal2 と session の生存を DB が見ない所は SEC-STOCKIST-003 に書いてある | DATA-STOCKIST-002、ADR-0258 | ユーザー |
 | TM-STOCKIST-61 | 回数の制限の数え方。SEC-STOCKIST-007 は「600 秒に 20 回（読みは 120 回）」を求める | 共有の `enforceRateLimit` は時刻を 600 秒で割った境で区切った固定の窓で数える（`rateLimit.ts` の `bucketTs`）。区切りをまたぐと最大で枠の2倍まで通り、またぐ21回目は 429 にならない。受け入れ条件は「同じ 600 秒の区切りの中で」と書いた。動く窓にするかは共有の部品の判断で、取扱店以外にも響く | SEC-STOCKIST-007、SEC-STOCKIST-007-AC-01、SEC-STOCKIST-020-AC-01、ARC-STOCKIST-003、DD-STOCKIST-038、ADR-0259 | ユーザー |
+| TM-STOCKIST-62 | DATA-STOCKIST-002 と設計は「`admin.stockists.manage` を持つ人は店を追加・更新できる」と読める | `admin.stockists.read` を持たず manage だけの人は、SELECT の方針（`status='published'` か `admin.stockists.read`）で非公開の行が見えない。WHERE 付きの UPDATE と RETURNING 付きの INSERT は SELECT の権利も要り、更新後・追加後の行も SELECT の方針で確かめられる。DB の段では、RETURNING の無い素の INSERT は非公開の行も通るが、公開の店を非公開に変える UPDATE は RLS の違反（42501）で断られ、行は公開のまま残る。管理の窓口は service role でなく、`createClient(request)`（`src/lib/supabase/server.ts`）の利用者の JWT の client で表を書くので、窓口では次のようになる。(1) `src/app/api/admin/stockists/route.ts` の `POST` は `.select('id')` で RETURNING を付けるので、非公開の店の作成は 42501 で断られ、作成の失敗になる（公開の店は作れる）。(2) `src/app/api/admin/stockists/[id]/route.ts` の `PUT`・`PATCH` で公開から非公開へは 42501 で断られる。(3) 同じ `PUT`・`PATCH`・`DELETE` で既に非公開の店を対象にすると、行が見えないので0件のまま `error` が無く、窓口は件数を見ないので成功を返し、成功として監査に残る（THR-STOCKIST-013 の「0件で 200」と同じ形）。窓口の認可は PUT・PATCH・DELETE に manage だけを求める（GET が read）。read 無しの manage だけの役を作ると、非公開の店を作れず、編集・公開・削除もできないまま成功に見える。試験は `tests/integration/db/stockist_rls.integration.test.ts`（「現状の記録」。DB の段の素の INSERT と UPDATE の断りだけを見る） | DATA-STOCKIST-002、API-STOCKIST-002、API-STOCKIST-004、API-STOCKIST-005、API-STOCKIST-006、THR-STOCKIST-013 | ユーザー |
 
 #### セキュリティ要件を満たさない所
 

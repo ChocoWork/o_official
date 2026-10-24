@@ -292,19 +292,17 @@ describeLocalDb('integration: stockists の RLS と付与', (db) => {
     expect(await statusOf(publishedStore)).toBeUndefined();
   });
 
-  test('DATA-STOCKIST-002 admin.stockists.manage だけの会員は追加・更新できるが、非公開は読めない', async () => {
+  // WHERE 付きの UPDATE は SELECT の権利も要り、更新後の行も SELECT の方針で確かめられる。read の無い人には非公開の行が見えない。
+  test('DATA-STOCKIST-002 現状の記録: admin.stockists.manage だけの会員は追加できるが、公開の店を非公開には変えられない', async () => {
     const actor: Actor = { role: 'authenticated', sub: manageOnly };
     const name = `${marker} manage-only insert`;
 
     const inserted = await runAs(actor, insertSql, [name]);
-    const updated = await runAs(actor, setStatusSql, [publishedStore, 'private']);
 
     expect(inserted.rowCount).toBe(1);
     expect(await countByName(name)).toBe(1);
-    expect(updated.rowCount).toBe(1);
-    expect(await statusOf(publishedStore)).toBe('private');
-    // 公開の店を非公開にした後なので、読める店は無い
-    expect(await visibleStores(actor)).toEqual([]);
+    expect(await errorCodeAs(actor, setStatusSql, [publishedStore, 'private'])).toBe('42501');
+    expect(await statusOf(publishedStore)).toBe('published');
   });
 
   test('DATA-STOCKIST-002 DB は aal を見ないので、aal1 の JWT でも権限があれば非公開を読み書きできる', async () => {

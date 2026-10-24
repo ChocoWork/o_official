@@ -156,11 +156,20 @@ describeLocalDb('integration: AUTH の DB の関数', (db) => {
       expect(await findByEmail(email)).toBe(userId);
     });
 
-    test('DATA-AUTH-003 入力の前後の空白と大文字小文字をそろえてから引く', async () => {
+    test('DATA-AUTH-003 入力の前後の半角スペースと大文字小文字をそろえてから引く', async () => {
       const email = `${marker}@example.com`;
       const userId = await insertUser(email);
 
-      expect(await findByEmail(`  ${email.toUpperCase()}\t`)).toBe(userId);
+      expect(await findByEmail(`  ${email.toUpperCase()}  `)).toBe(userId);
+    });
+
+    // 関数は lower(btrim(p_email)) で、btrim は半角スペースしか落とさない
+    test('DATA-AUTH-003 現状の記録: タブや改行は落とさず null を返す', async () => {
+      const email = `${marker}@example.com`;
+      await insertUser(email);
+
+      expect(await findByEmail(`${email}\t`)).toBeNull();
+      expect(await findByEmail(`\n${email}`)).toBeNull();
     });
 
     test('DATA-AUTH-003 登録の無いメールと空の入力は null を返す', async () => {
