@@ -77,7 +77,7 @@ test.describe('FR-SEARCH-012 フォーム圧縮とタブ下線', () => {
 
     // FREQ-193: letter-spacing は最後の文字の右にも字間を作るため、
     // 幅 100% のままだと下線が右へはみ出す。
-    test(`FREQ-193 ${vp.name} 下線が文字の真下に揃う`, async ({ page }) => {
+    test(`FREQ-193-AC-01 ${vp.name} 下線が文字の真下に揃う`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/search');
       await expect(page.getByRole('tab', { name: 'ALL' })).toBeVisible();

@@ -10,7 +10,7 @@ const VIEWPORTS = [
 ] as const;
 
 test.describe('FR-SEARCH-013 下線と候補リストの端揃え', () => {
-  test('FREQ-194 ヘッダーナビの下線が文字幅に揃う', async ({ page }) => {
+  test('FREQ-194-AC-01 ヘッダーナビの下線が文字幅に揃う（右端・左端とも 1px 以内）', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/');
     await expect(page.locator('nav.header-nav-position a').first()).toBeVisible();
@@ -54,7 +54,7 @@ test.describe('FR-SEARCH-013 下線と候補リストの端揃え', () => {
   });
 
   for (const vp of VIEWPORTS) {
-    test(`FREQ-195 ${vp.name} 候補リストが背後の「ALL」を覆う`, async ({ page }) => {
+    test(`FREQ-195-AC-01 ${vp.name} 候補リストが背後の「ALL」を覆う`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/search');
 

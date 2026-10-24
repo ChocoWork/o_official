@@ -111,7 +111,7 @@ FR-SEARCH-001、DRV-SEARCH-009、NFR-SEO-003（範囲外。canonical は出さ�
 #### 正常フロー
 
 1. metadata の関数は待つ処理も分岐も持たず、固定の値を返す（`src/app/search/page.tsx`）
-2. 既定の書き出しの頁の関数は `Suspense` で `SearchPageClient` を包んで返す。`SearchPageClient` が `useSearchParams` を使うので、静的な描画の時に区切りが要る（推定）
+2. 既定の書き出しの頁の関数は `Suspense` で `SearchPageClient` を包んで返す。`SearchPageClient` が `useSearchParams` を使うので、静的な描画の時に区切りが要る（Next.js 16.3.6 は静的な描画で `useSearchParams` を区切りの外で使うとビルドの誤り `missing-suspense-with-csr-bailout` にする。`node_modules/next` の実行時の中で確かめた）
 
 #### 異常フロー
 

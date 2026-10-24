@@ -1,3 +1,14 @@
+/**
+ * 横断検索の窓口（src/app/api/search/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-SEARCH-121
+ * @design DD-SEARCH-004
+ * @remarks 窓口は外から来る値が取り出しの関数へ渡る境目なので、取り出しの前に引数の形を確かめ、
+ * 外れたら 400 で断る。1回の検索で3つの DB の関数・人気商品・画像の署名を呼ぶため、
+ * 取り出しの前に送り元ごとの回数の制限を通し、プレビューは別の枠と少ない件数で数える。
+ * 例外の中身（接続先や SQL の断片）を応答に出すと内部の構成が外へ漏れるので、固定の文だけを返す。
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { executeSearch } from '@/features/search/services/search.service';

@@ -186,7 +186,7 @@ flowchart LR
 | 出どころ | 実装から推定（`src/app/search/page.tsx`、`src/features/search/components/SearchPageClient.tsx`） |
 
 - メタ: title「Search \| Le Fil des Heures」、description「Le Fil des Heures の商品・ルック・ニュースを横断検索できるページです。」、OG の画像 `/mainphoto.png`（DRV-SEARCH-009）。canonical と robots は返さない
-- 殻: `Suspense` の間は「読み込み中...」を出す（`useSearchParams` を使う部品のため、推定）
+- 殻: `Suspense` の間は「読み込み中...」を出す（`useSearchParams` を使う部品のため。Next.js 16.3.6 は静的な描画で `useSearchParams` を区切りの外で使うとビルドの誤り `missing-suspense-with-csr-bailout` にする。`node_modules/next` の実行時の中で確かめた）
 - 枠: 最小の高さは画面の高さから 6.5rem（sm 7.25rem・md 8rem・lg 8.75rem・xl 9rem）を引いた値。md 以上は 38.2 対 61.8 の2列、md 未満は縦積み
 - 左のカラム: md 以上はヘッダーの下（3.5rem）に画面の高さで留め、中身を縦の中央に置く。md 未満の間隔は 1.5rem
 - 見出し: h1「SEARCH」。md 未満は `sr-only`、md 以上は見せる

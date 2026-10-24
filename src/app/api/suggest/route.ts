@@ -1,3 +1,13 @@
+/**
+ * 検索候補の窓口（src/app/api/suggest/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-SEARCH-122
+ * @design DD-SEARCH-005
+ * @remarks 候補は入力のたびに呼ばれるので、取り出しの前に送り元ごとの回数の制限を通す。
+ * 制御文字を含む語は DB の関数へ渡す前に断ち、不正な値を DB に届けない。
+ * 例外の中身（接続先や SQL の断片）を応答に出すと内部の構成が外へ漏れるので、固定の文だけを返す。
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getSearchSuggestions } from '@/features/search/services/search.service';

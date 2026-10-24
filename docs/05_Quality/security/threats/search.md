@@ -76,7 +76,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 非公開の商品・ルック・ニュース |
 | 脅威 | 管理の読み取りの権限を持つ人の session（2要素認証を済ませていない `aal1` を含む）を手に入れた者が、検索の関数から下書きを引く |
-| 起こり方 | 検索は利用者の Cookie の session で client を作り（`src/lib/supabase/server.ts:15-60`、`src/features/search/services/search.service.ts:206,333`）、関数は呼び手の権限で動く。authenticated の表の RLS は `status='published'` か `has_permission('admin.items.read')`・`admin.looks.read` のどちらかで通す（`remote_schema.sql:3489-3492,3562-3565`）。`has_permission` は ACL だけを見て `aal` を見ない。だから管理の session では、関数の中の絞り（`remote_schema.sql:2163,2197,2230`）だけが下書きを止めている |
+| 起こり方 | 検索は利用者の Cookie の session で client を作り（`src/lib/supabase/server.ts:15-60`、`src/features/search/services/search.service.ts:218,353`）、関数は呼び手の権限で動く。authenticated の表の RLS は `status='published'` か `has_permission('admin.items.read')`・`admin.looks.read` のどちらかで通す（`remote_schema.sql:3489-3492,3562-3565`）。`has_permission` は ACL だけを見て `aal` を見ない。だから管理の session では、関数の中の絞り（`remote_schema.sql:2163,2197,2230`）だけが下書きを止めている |
 | 影響 | 関数の中の絞りが外れる・書き換わると、管理の session でパスワードだけを得た者が、画面からでも PostgREST からでも下書きを引ける |
 | 対策 | SEC-SEARCH-002 |
 | ASVS | V4.3.1（当てはめは推定） |
@@ -90,7 +90,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | DB の検索の条件と、DB の中の公開していない列・行 |
 | 脅威 | 閲覧者が、`q` に PostgREST のフィルタの記号（`,().`）や ILIKE の記号（`%`・`_`）、SQL の字を入れて、条件を広げる・別の条件を足す |
-| 起こり方 | 2026-04-18 の時点では、入力を `.or(...)` のフィルタの文字列につないでいた。今は `search_items`・`search_looks`・`search_news` に引数として渡し（`src/features/search/services/search.service.ts:210-214,336-340`）、関数の中で `%`・`_` を逃がして `ESCAPE '\'` を付ける（`remote_schema.sql:2165-2167,2199-2200,2232-2234`）。`\` そのものは逃がさないので、語の `\%`・`\_` は置き換えの後に `\\%`・`\\_`（字の `\` の後に生きたワイルドカード）になり、`\` を含む行に広く当たる。語の末尾の `\` は後ろの `%` を字に変えて模様を変える。SQL の差し込みにはならないが、ワイルドカードの差し込みは限られた形で残る（2026-10-24 に移行を読んで推定） |
+| 起こり方 | 2026-04-18 の時点では、入力を `.or(...)` のフィルタの文字列につないでいた。今は `search_items`・`search_looks`・`search_news` に引数として渡し（`src/features/search/services/search.service.ts:222-226,356-360`）、関数の中で `%`・`_` を逃がして `ESCAPE '\'` を付ける（`remote_schema.sql:2165-2167,2199-2200,2232-2234`）。`\` そのものは逃がさないので、語の `\%`・`\_` は置き換えの後に `\\%`・`\\_`（字の `\` の後に生きたワイルドカード）になり、`\` を含む行に広く当たる。語の末尾の `\` は後ろの `%` を字に変えて模様を変える。SQL の差し込みにはならないが、ワイルドカードの差し込みは限られた形で残る（2026-10-24 に移行を読んで推定） |
 | 影響 | 条件を書き換えられると、公開していない行や列に届く。ワイルドカードで全件の一致になる。今の `\` の道で広がるのは、公開済みの行の中の一致だけ |
 | 対策 | SEC-SEARCH-003 |
 | ASVS | V5.3.4 |
@@ -104,7 +104,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 入口の守りの正しさと、守りの思い違いを防ぐこと |
 | 脅威 | 閲覧者が、サジェストでは断られる値（制御文字）を検索の窓口に送り、DB の関数まで届かせる |
-| 起こり方 | `/api/search` の `q` は前後の空白を落として100字までを確かめるだけ（`src/app/api/search/route.ts:7`）。`/api/suggest` は制御文字も断る（`src/app/api/suggest/route.ts:8,15-17`）。サジェストのコメントは `,().` も断ると書くが、正規表現は制御文字だけを見る（`suggest/route.ts:5-8`）。`tab` は4つの値に絞る（`route.ts:8`） |
+| 起こり方 | `/api/search` の `q` は前後の空白を落として100字までを確かめるだけ（`src/app/api/search/route.ts:18`）。`/api/suggest` は制御文字も断る（`src/app/api/suggest/route.ts:18,25-27`）。サジェストのコメントは `,().` も断ると書くが、正規表現は制御文字だけを見る（`suggest/route.ts:15-18`）。`tab` は4つの値に絞る（`route.ts:19`） |
 | 影響 | 差し込みにはならない（THR-SEARCH-003 の守りがある）。ただ守りの層の数を読み違え、コメントを信じて引数の渡し方を変えると守りが消える |
 | 対策 | SEC-SEARCH-004 |
 | ASVS | V5.1.3（当てはめは推定） |
@@ -118,7 +118,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | DB・画像の署名の処理・回数の制限の数えの表の余力（使える状態） |
 | 脅威 | 自動の道具が、公開の検索とサジェストを続けて叩く。普通の利用者の操作でも呼び出しが多い |
-| 起こり方 | 窓口は回数の制限を通す（`search:public` 120回・`search:preview` 20回・`suggest:public` 200回、どれも600秒、`src/app/api/search/route.ts:29-39`、`src/app/api/suggest/route.ts:32-42`）。制限の DB が落ちると 503 で閉じる（`src/features/auth/middleware/rateLimit.ts:45-64`）。1回の検索で3つの関数と、人気商品の関数・最大28枚の署名を呼ぶ（`search.service.ts:190-191,210-214,302-306`）。`preview` を決めるのは呼ぶ側で、2つの数えは別々なので、1つの送り元で合わせて140回使える（`route.ts:32-33`）。`tab` はサーバーで結果を絞らないのに、画面はタブを切り替えるたびに検索を呼び直す（`search.service.ts:187,310`、`src/features/search/components/SearchPageClient.tsx:275-308`）。サジェストは1文字ごとに待たずに呼ぶ（`SearchPageClient.tsx:310-347`） |
+| 起こり方 | 窓口は回数の制限を通す（`search:public` 120回・`search:preview` 20回・`suggest:public` 200回、どれも600秒、`src/app/api/search/route.ts:40-50`、`src/app/api/suggest/route.ts:42-52`）。制限の DB が落ちると 503 で閉じる（`src/features/auth/middleware/rateLimit.ts:45-64`）。1回の検索で3つの関数と、人気商品の関数・最大28枚の署名を呼ぶ（`search.service.ts:202-203,222-226,314-318`）。`preview` を決めるのは呼ぶ側で、2つの数えは別々なので、1つの送り元で合わせて140回使える（`route.ts:43-44`）。`tab` はサーバーで結果を絞らないのに、画面はタブを切り替えるたびに検索を呼び直す（`search.service.ts:199,322`、`src/features/search/components/SearchPageClient.tsx:287-320`）。サジェストは1文字ごとに待たずに呼ぶ（`SearchPageClient.tsx:322-359`） |
 | 影響 | DB と署名の呼び出しが増え、画面が遅くなる・止まる。普通の利用者が速く打つと 200回に届き、サジェストが出なくなる（推定） |
 | 対策 | SEC-SEARCH-005 |
 | ASVS | V11.1.4 |
@@ -132,7 +132,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 検索とサジェストの回数の制限の効き目と、数えの表の大きさ |
 | 脅威 | 自動の道具が、送るたびに `x-forwarded-for` を変えて別の送り元のふりをする |
-| 起こり方 | 回数の制限は送り元を `x-forwarded-for` の先頭、無ければ `x-real-ip` から無条件に取る（`src/features/auth/middleware/rateLimit.ts:4-16`）。検索とサジェストは `subject` を渡さない（`src/app/api/search/route.ts:30-35`、`src/app/api/suggest/route.ts:33-38`）。呼ばれるたびに数えの行を DB に足す（`rateLimit.ts:26`） |
+| 起こり方 | 回数の制限は送り元を `x-forwarded-for` の先頭、無ければ `x-real-ip` から無条件に取る（`src/features/auth/middleware/rateLimit.ts:4-16`）。検索とサジェストは `subject` を渡さない（`src/app/api/search/route.ts:41-46`、`src/app/api/suggest/route.ts:43-48`）。呼ばれるたびに数えの行を DB に足す（`rateLimit.ts:26`） |
 | 影響 | THR-SEARCH-005 の制限が効かない。偽った送り元の数だけ数えの行が増え、DB を圧迫する |
 | 対策 | SEC-SEARCH-006 |
 | ASVS | V11.1.4 |
@@ -174,7 +174,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 商品ごとの購入数（売れ行き）と、注文の表の行 |
 | 脅威 | 閲覧者が、人気商品の応答や関数から購入数を読む。権限の強い client を公開の道で使うので、作りの誤りが注文の表に届く |
-| 起こり方 | `get_popular_items` は SECURITY DEFINER で注文の表を集め、購入数の列を返す（`supabase/migrations/20261013001143_order_return_receipts.sql:1753-1765`）。EXECUTE は service_role だけ（`order_return_receipts.sql:2233-2234`）。検索の窓口は匿名の要求でも毎回 service role の client を作って呼び（`src/features/search/services/search.service.ts:190-191`）、購入数を落とすのは `mapPopularItem` の写し方だけ（`search.service.ts:133-143`） |
+| 起こり方 | `get_popular_items` は SECURITY DEFINER で注文の表を集め、購入数の列を返す（`supabase/migrations/20261013001143_order_return_receipts.sql:1753-1765`）。EXECUTE は service_role だけ（`order_return_receipts.sql:2233-2234`）。検索の窓口は匿名の要求でも毎回 service role の client を作って呼び（`src/features/search/services/search.service.ts:202-203`）、購入数を落とすのは `mapPopularItem` の写し方だけ（`search.service.ts:133-143`） |
 | 影響 | 購入数が出ると、商品ごとの売れ行きが競合や第三者に知られる。service role の client を別の取り出しに使い回すと、RLS を通らずに注文の表を読む道ができる |
 | 対策 | SEC-SEARCH-009 |
 | ASVS | V4.1.3 |
@@ -188,7 +188,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 利用者の検索語と、応答に入る署名つき URL（ITEM は7日有効） |
 | 脅威 | 中継の CDN・共有のキャッシュが応答を保ち、別の利用者に古い応答・検索語・署名つき URL を渡す |
-| 起こり方 | `/api/search` の成功の応答（`src/app/api/search/route.ts:47-52`）と失敗の応答（`route.ts:26,55`）、`/api/suggest` の応答（`src/app/api/suggest/route.ts:29,45,48`）、回数の制限の 429・503（`src/features/auth/middleware/rateLimit.ts:30-31,50-54`）に `Cache-Control` が無い。画面の fetch は `cache: 'no-store'` を付ける（`src/features/search/components/SearchPageClient.tsx:278,322`）が、これは利用者の端末の側だけの指定 |
+| 起こり方 | `/api/search` の成功の応答（`src/app/api/search/route.ts:58-63`）と失敗の応答（`route.ts:37,66`）、`/api/suggest` の応答（`src/app/api/suggest/route.ts:39,55,58`）、回数の制限の 429・503（`src/features/auth/middleware/rateLimit.ts:30-31,50-54`）に `Cache-Control` が無い。画面の fetch は `cache: 'no-store'` を付ける（`src/features/search/components/SearchPageClient.tsx:290,334`）が、これは利用者の端末の側だけの指定 |
 | 影響 | 誰かの検索語や途中まで打った語が別の利用者に見える。非公開にした商品の署名つき URL が残る。429 が残ると別の利用者まで断られる |
 | 対策 | SEC-SEARCH-010 |
 | ASVS | V8.2.1 |
@@ -202,7 +202,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 利用者の検索語（個人の関心・名前などを含みうる） |
 | 脅威 | 同じ端末を使う人や、URL を受け取った人が、前の利用者の検索語を見る |
-| 起こり方 | 検索語は `/search?q=` に書き換えて残す（`src/features/search/components/SearchPageClient.tsx:349-368`）。ブラウザの履歴・共有した URL・中継の記録に残る。以前は検索の履歴を `search.history` として localStorage に平文で残していたが、FREQ-189 で撤去した（今の `SearchPageClient.tsx` に localStorage は無い） |
+| 起こり方 | 検索語は `/search?q=` に書き換えて残す（`src/features/search/components/SearchPageClient.tsx:361-380`）。ブラウザの履歴・共有した URL・中継の記録に残る。以前は検索の履歴を `search.history` として localStorage に平文で残していたが、FREQ-189 で撤去した（今の `SearchPageClient.tsx` に localStorage は無い） |
 | 影響 | 共有の端末で検索語が残る。URL を共有すると検索語も渡る |
 | 対策 | SEC-SEARCH-011 |
 | ASVS | V8.3.1（当てはめは推定） |
@@ -230,7 +230,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 閲覧者の端末と session |
 | 脅威 | 商品・ルック・ニュースの題や本文に HTML を入れた者（管理の権限を持つ人か乗っ取った者）、または `q` に HTML を入れた URL を踏ませた者が、閲覧者の端末でスクリプトを動かす |
-| 起こり方 | 結果の題と候補のラベルは、検索語で区切って `mark`・`span` の中に React の文字として出す（`src/features/search/components/SearchPageClient.tsx:92-116,139-158,191`）。区切りの正規表現は語を逃がしてから作る（`SearchPageClient.tsx:88-90,98,145`）。`dangerouslySetInnerHTML` は使わない。結果のリンクは id から作り（`search.service.ts:242,264,285`）、候補のリンクは `encodeURIComponent` で語を入れる（`search.service.ts:351,358,365`）。ホームの窓は応答の題を文字として出す |
+| 起こり方 | 結果の題と候補のラベルは、検索語で区切って `mark`・`span` の中に React の文字として出す（`src/features/search/components/SearchPageClient.tsx:104-128,151-170,203`）。区切りの正規表現は語を逃がしてから作る（`SearchPageClient.tsx:100-102,110,157`）。`dangerouslySetInnerHTML` は使わない。結果のリンクは id から作り（`search.service.ts:254,276,297`）、候補のリンクは `encodeURIComponent` で語を入れる（`search.service.ts:371,378,385`）。ホームの窓は応答の題を文字として出す |
 | 影響 | 閲覧者の session の乗っ取り・偽の画面 |
 | 対策 | SEC-SEARCH-013 |
 | ASVS | V5.3.3 |
@@ -244,7 +244,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 非公開にした・消した商品とルックの画像 |
 | 脅威 | 前に検索の応答を受け取った者が、商品を非公開にした後も画像を開く |
-| 起こり方 | 検索の結果の画像は種別ごとの関数で署名する（`src/features/search/services/search.service.ts:147-169`）。ITEM の署名つき URL は7日有効で、同じ道筋なら作った URL をサーバーの記憶に持って誰にでも使い回す（`src/lib/storage/item-images.ts:4-7,55-81`）。LOOK と NEWS は1時間（`src/lib/storage/look-images.ts:14`、`src/lib/storage/news-images.ts:4`）。署名つき URL は取り消せない。画面は `next/image` に渡すので、最適化の画像のキャッシュにも残りうる（`SearchPageClient.tsx:175-181`、中継の設定は THR-NEWS-022（範囲外）） |
+| 起こり方 | 検索の結果の画像は種別ごとの関数で署名する（`src/features/search/services/search.service.ts:147-169`）。ITEM の署名つき URL は7日有効で、同じ道筋なら作った URL をサーバーの記憶に持って誰にでも使い回す（`src/lib/storage/item-images.ts:4-7,55-81`）。LOOK と NEWS は1時間（`src/lib/storage/look-images.ts:14`、`src/lib/storage/news-images.ts:4`）。署名つき URL は取り消せない。画面は `next/image` に渡すので、最適化の画像のキャッシュにも残りうる（`SearchPageClient.tsx:187-193`、中継の設定は THR-NEWS-022（範囲外）） |
 | 影響 | 誤って公開した商品を戻しても、最大7日（キャッシュに残ればそれ以上）画像が見える |
 | 対策 | SEC-SEARCH-014 |
 | ASVS | ASVS 未対応付け |
@@ -272,7 +272,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 置き場 `item-images`・`look-images` の中の、公開の画像でない物 |
 | 脅威 | 商品・ルックの行の画像の値を書き換えられる者（管理の権限を持つ人、または THR-SEARCH-002 の道）が、置き場の別の物の署名つき URL を検索の応答に出させる |
-| 起こり方 | 署名の前に、道筋が決まった場所の下にあるか、URL のホストが自分の Supabase かを確かめない（`src/lib/storage/item-images.ts:9-53`、`src/lib/storage/look-images.ts:21-57`）。service role で署名するので、置き場の RLS も効かない（`search.service.ts:190,302-306`） |
+| 起こり方 | 署名の前に、道筋が決まった場所の下にあるか、URL のホストが自分の Supabase かを確かめない（`src/lib/storage/item-images.ts:9-53`、`src/lib/storage/look-images.ts:21-57`）。service role で署名するので、置き場の RLS も効かない（`search.service.ts:202,314-318`） |
 | 影響 | 置き場に公開の画像以外の物を置いた時に、それが検索の応答から配られる |
 | 対策 | SEC-SEARCH-016 |
 | ASVS | ASVS 未対応付け |
@@ -286,7 +286,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 障害・RLS の崩れ・権限の誤りに気づく力と、検索の使える状態 |
 | 脅威 | DB・関数・権限の障害が起きても、画面は「検索結果はありません」と見せ、誰も気づかない |
-| 起こり方 | 検索は3つの関数の失敗を記録だけして、0件として続ける（`src/features/search/services/search.service.ts:216-228`）。サジェストは関数の失敗を見ず、記録もしない（`search.service.ts:342-344`）。人気商品の失敗も空の一覧にする（`search.service.ts:177-180`）。応答は 200 で `empty: true` になる（`search.service.ts:316`） |
+| 起こり方 | 検索は3つの関数の失敗を記録だけして、0件として続ける（`src/features/search/services/search.service.ts:228-240`）。サジェストは関数の失敗を見ず、記録もしない（`search.service.ts:362-364`）。人気商品の失敗も空の一覧にする（`search.service.ts:177-180`）。応答は 200 で `empty: true` になる（`search.service.ts:328`） |
 | 影響 | 障害や、関数の EXECUTE を誤って外した時（THR-SEARCH-007 の直し方を誤った時を含む）に、長く見過ごされる。利用者は「無い」と思って離れる |
 | 対策 | SEC-SEARCH-017 |
 | ASVS | ASVS 未対応付け |
@@ -300,7 +300,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 利用者の検索語と、DB の構造・SQL の情報 |
 | 脅威 | 記録を読める者（ホスティングの記録の閲覧者など）が、利用者の検索語や DB の内部の情報を得る |
-| 起こり方 | 窓口と検索のサービスは、例外や Supabase の誤りを丸ごと `console.error` に渡す（`src/app/api/search/route.ts:54`、`src/app/api/suggest/route.ts:47`、`src/features/search/services/search.service.ts:178,217,220,223`）。応答の本文は固定の文なので、応答からは漏れない（`route.ts:55`、`suggest/route.ts:48`）。2026-04-18 には Cookie・token の断片を記録に書いていた |
+| 起こり方 | 窓口と検索のサービスは、例外や Supabase の誤りを丸ごと `console.error` に渡す（`src/app/api/search/route.ts:65`、`src/app/api/suggest/route.ts:57`、`src/features/search/services/search.service.ts:178,229,232,235`）。応答の本文は固定の文なので、応答からは漏れない（`route.ts:66`、`suggest/route.ts:58`）。2026-04-18 には Cookie・token の断片を記録に書いていた |
 | 影響 | 記録から検索語や DB の構造・失敗の中身が分かる |
 | 対策 | SEC-SEARCH-018 |
 | ASVS | V7.1.2（当てはめは推定） |
@@ -314,7 +314,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | サーバーの内部の状態（処理の重さ） |
 | 脅威 | 攻撃者が、応答の見出しの処理時間を見て、重い語や DB の負荷の具合を探る |
-| 起こり方 | `/api/search` の成功の応答に `x-search-duration-ms` を付ける（`src/app/api/search/route.ts:49-51`） |
+| 起こり方 | `/api/search` の成功の応答に `x-search-duration-ms` を付ける（`src/app/api/search/route.ts:60-62`） |
 | 影響 | 直接の漏れではない。THR-SEARCH-005・007 の重い語を選ぶ手がかりになる |
 | 対策 | SEC-SEARCH-019 |
 | ASVS | ASVS 未対応付け |
@@ -328,7 +328,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | ほかの利用者の検索・サジェスト・ホームのプレビューが使える状態 |
 | 脅威 | 攻撃者が、狙った利用者と同じ送り元として数えられる呼び出しを続けて送り、その利用者の分の回数を使い切らせる |
-| 起こり方 | 回数の制限は送り元の IP だけで数え、`subject` を持たない（`src/features/auth/middleware/rateLimit.ts:4-16`、`src/app/api/search/route.ts:30-35`、`src/app/api/suggest/route.ts:33-38`）。攻撃者は `x-forwarded-for` に相手の IP を書いて `search:preview` を21回（上限20）、`search:public` を121回（上限120）送れる。同じ IP の後ろの利用者（携帯の CGNAT・会社）は1つの数えを分け合う。GET は送り元の確かめ（Origin）の対象外なので（`src/proxy.ts:11-12`）、外のサイトの頁が `<img src="/api/search?preview=true&q=x">` のような呼び出しを閲覧者の端末から送らせ、閲覧者の分を使える |
+| 起こり方 | 回数の制限は送り元の IP だけで数え、`subject` を持たない（`src/features/auth/middleware/rateLimit.ts:4-16`、`src/app/api/search/route.ts:41-46`、`src/app/api/suggest/route.ts:43-48`）。攻撃者は `x-forwarded-for` に相手の IP を書いて `search:preview` を21回（上限20）、`search:public` を121回（上限120）送れる。同じ IP の後ろの利用者（携帯の CGNAT・会社）は1つの数えを分け合う。GET は送り元の確かめ（Origin）の対象外なので（`src/proxy.ts:11-12`）、外のサイトの頁が `<img src="/api/search?preview=true&q=x">` のような呼び出しを閲覧者の端末から送らせ、閲覧者の分を使える |
 | 影響 | 狙われた利用者は600秒、ホームのプレビューと検索が 429 で出なくなる（画面は失敗の文か、プレビューの区画が消えるだけ） |
 | 対策 | SEC-SEARCH-020 |
 | ASVS | V11.1.4（当てはめは推定） |
@@ -342,7 +342,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | ブランドのホームの文の信頼（閲覧者が店の知らせだと思う文） |
 | 脅威 | 攻撃者が、休業・返金・お詫びなどの偽の文を `q` に入れた `/?q=` のリンクを配り、ホームの上に攻撃者の選んだ文を出す |
-| 起こり方 | ホームのプレビューは、URL の `q` を前後の空白を除いてそのまま「「{語}」に関連する結果をホーム上で即時プレビューしています。」の文に埋める（`src/features/search/components/SearchHomePreview.tsx:10,61`）。窓口が 400 を返す100字を超える語では区画ごと出ないので、出せるのは100字まで。React は字を逃がすのでスクリプトは動かない（THR-SEARCH-013）が、文としては出る。検索のページの0件の見出し「「{語}」の検索結果はありません」（`src/features/search/components/SearchPageClient.tsx:692-697`）も同じ形で語を出す |
+| 起こり方 | ホームのプレビューは、URL の `q` を前後の空白を除いてそのまま「「{語}」に関連する結果をホーム上で即時プレビューしています。」の文に埋める（`src/features/search/components/SearchHomePreview.tsx:20,71`）。窓口が 400 を返す100字を超える語では区画ごと出ないので、出せるのは100字まで。React は字を逃がすのでスクリプトは動かない（THR-SEARCH-013）が、文としては出る。検索のページの0件の見出し「「{語}」の検索結果はありません」（`src/features/search/components/SearchPageClient.tsx:704-709`）も同じ形で語を出す |
 | 影響 | 閲覧者が偽の知らせを店の文と思い、偽の連絡先や手続きに誘われる。ブランドの信頼を落とす |
 | 対策 | SEC-SEARCH-021 |
 | ASVS | ASVS 未対応付け |

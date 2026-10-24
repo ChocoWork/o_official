@@ -182,6 +182,18 @@ async function getPopularItems(supabase: SupabaseClient, limit: number): Promise
   return ((data ?? []) as SearchItemRow[]).map(mapPopularItem);
 }
 
+/**
+ * 人気商品と ITEM・LOOK・NEWS の検索結果を点の順に並べ、画像を署名つき URL にして返す。
+ *
+ * @impl IMPL-SEARCH-123
+ * @design DD-SEARCH-006
+ * @remarks 語は DB の関数の引数で渡し、フィルタの文字列に組まないので語で条件を書き換えられない。
+ * 検索の関数は利用者の session の client で呼び、関数の中の公開の絞りに任せて下書きを返さない。
+ * DB は部分一致で新しい順に返すだけなので、題の頭に語がある物を先に出す点と説明の切り出しはここで付ける。
+ * 注文の表を数える人気商品の関数は service role の client から呼ぶ。商品ごとの売れ行きは外へ出さない情報なので、
+ * 並びだけを人気の目安にして購入数は応答に写さない（SEC-SEARCH-009）。
+ * 画像の置き場は非公開なので、応答を作るたびに種別ごとの関数で署名つき URL に置き換える。
+ */
 export async function executeSearch(options: SearchExecutionOptions): Promise<SearchResultsResponse> {
   const query = options.query.trim();
   const tab = options.tab ?? 'all';
@@ -324,6 +336,14 @@ function labelContainsQuery(label: string, query: string): boolean {
   return normalizeText(label).includes(normalizeText(query));
 }
 
+/**
+ * 入力語をラベルに含む候補だけを、重なりを除いて点の順に返す。
+ *
+ * @impl IMPL-SEARCH-124
+ * @design DD-SEARCH-007
+ * @remarks ラベルに語が現れない候補は、なぜ出たのか利用者に分からず強調も当たらないので、ラベルに語を含む物だけを出す（ADR-0307）。
+ * 語は DB の関数の引数で渡し、公開済みの絞りは関数に任せる（SEC-SEARCH-003・SEC-SEARCH-001）。
+ */
 export async function getSearchSuggestions(query: string, limit = 8): Promise<SearchSuggestion[]> {
   const normalizedQuery = query.trim();
   if (normalizedQuery.length === 0) {
@@ -383,6 +403,13 @@ export async function getSearchSuggestions(query: string, limit = 8): Promise<Se
   }));
 }
 
+/**
+ * 検索結果の種別の表示名を返す。
+ *
+ * @impl IMPL-SEARCH-125
+ * @design DD-SEARCH-008
+ * @remarks 置いた理由の記録は無く、どこからも呼ばれない。画面の部品は自分の中に同じ写しを持つ（DD-SEARCH-008）。
+ */
 export function getResultTypeLabel(type: SearchResultType): string {
   switch (type) {
     case 'item':
