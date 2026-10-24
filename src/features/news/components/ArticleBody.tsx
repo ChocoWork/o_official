@@ -1,9 +1,17 @@
+/**
+ * 軽量 Markdown レンダラー（記事本文用、src/features/news/components/ArticleBody.tsx）。
+ * 対応: 見出し(#/##/###)、箇条書き(-,*,+)、画像(![alt](url))、リンク([text](url))、
+ * 強調(**bold** / *italic*)、段落。
+ *
+ * @packageDocumentation
+ * @impl IMPL-NEWS-126
+ * @design DD-NEWS-034
+ * @remarks 管理で書いた HTML を閲覧者の端末で動かさないため、生 HTML は描かず JSX だけを作る。リンク・画像の URL の種類は確かめない。javascript: などもそのまま href・src に渡るので、本文を書けるのが管理者だけであることに頼っており、入力元を広げる時は URL の種類を確かめる必要がある。
+ * 消すかが決まるまで範囲内の単位として残す（ARC-NEWS-005）。
+ */
 import React from 'react';
 
-// 軽量 Markdown レンダラー（記事本文用）。
-// 対応: 見出し(#/##/###)、箇条書き(-,*,+)、画像(![alt](url))、リンク([text](url))、
-//       強調(**bold** / *italic*)、段落。生 HTML は描画しないため XSS 安全（JSX のみ生成）。
-
+// 正規表現はモジュールで共有するので、parseInline の頭で lastIndex を 0 に戻す
 const INLINE_PATTERN =
   /!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_/g;
 

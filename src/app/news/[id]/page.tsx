@@ -1,3 +1,13 @@
+/**
+ * ニュース詳細の頁（src/app/news/[id]/page.tsx）。記事1件と前後の記事、一覧へ戻るリンクを描く。
+ *
+ * @packageDocumentation
+ * @impl IMPL-NEWS-125
+ * @design DD-NEWS-030
+ * @remarks 一覧で選んだ分類を URL の category で受け取り前後と戻りのリンクに引き継ぐのは、詳細を挟んでも同じ絞り込みへ戻れるようにするため（FLOW-NEWS-001）。
+ * 取り出しが非公開の記事を null にするので、無い記事と同じ 404 にして有無を知らせない（SEC-NEWS-001）。
+ * 本文は Markdown や HTML として解釈せず文字のまま段落に分け、管理で書いた HTML を閲覧者の端末で動かさない（SEC-NEWS-013）。
+ */
 import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";

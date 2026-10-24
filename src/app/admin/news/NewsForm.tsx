@@ -1,3 +1,13 @@
+/**
+ * 記事の作成と編集で共有するフォーム（src/app/admin/news/NewsForm.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-NEWS-142
+ * @design DD-NEWS-061
+ * @remarks 作成と編集で欄と画像の決まりを1か所にするため、1つのフォームを送り方（POST か PUT）で切り替える。
+ * 画像の種類と 5MB の上限は窓口でも確かめるが、断られるだけの大きな送信を減らすため送る前にも確かめる。
+ * 保存できたことを文で見せてから一覧へ戻すため、移る前に少し待つ。
+ */
 'use client';
 
 import { useEffect, useRef, useState } from 'react';

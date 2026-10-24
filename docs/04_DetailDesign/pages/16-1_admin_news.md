@@ -384,6 +384,7 @@ API-NEWS-002、API-NEWS-003、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、DATA-
 | POST | 置き場への書き込みに失敗 | 監査 `admin.news.create.upload_failed`（failure、`resource_id` なし）、500 `Failed to upload image` |
 | POST | 表への insert に失敗 | 監査 `admin.news.create.db_insert_failed`（failure）、500 `Failed to save news article`。上げた画像は消さない（SEC-NEWS-018） |
 | POST | insert の結果に `id` が無い | 監査の `resource_id` を `null` にして続ける |
+| POST | insert が `data=null`・`error=null` を返す（隠れた不具合。`.single()` は0行で error を返すので実際は起きない、推定） | 先に監査 `admin.news.create`（success、`resource_id` なし）を残し、その後の `data.id` の読みで例外になり 500 `Internal server error` を返す。成功の監査と 500 が食い違う。試験が今の動きを固定している |
 | POST | multipart を読めないなどの例外 | 500 `Internal server error`（multipart でない要求も 400 ではなく 500、推定） |
 | GET | 表の読み出しに失敗 | 500 `Failed to fetch news articles` |
 | GET | 結果が `null` | 空の配列として返す |

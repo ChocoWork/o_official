@@ -1,3 +1,14 @@
+/**
+ * 公開済みのニュースを JSON で返す窓口 /api/news（src/app/api/news/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-NEWS-103
+ * @design DD-NEWS-004
+ * @remarks 認証の無い窓口なので、続けて叩かれても DB と署名の負荷が増えないよう、回数の制限（10分に60回）と件数の上限（20件）をここで掛ける（SEC-NEWS-009）。
+ * 数え場所が落ちた時の応答もそのまま返し、制限が外れた状態で開けない。
+ * 失敗の応答は固定の文にして内部の情報を出さない。
+ * 返す記事を公開済みだけに絞るのは取り出しの関数に任せる（SEC-NEWS-001）。
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { getPublishedNews } from '@/features/news/services/public';
 

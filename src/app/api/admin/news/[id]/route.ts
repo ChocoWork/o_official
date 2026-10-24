@@ -1,3 +1,11 @@
+/**
+ * 管理の記事1件の読み（GET）・更新（PUT）・公開の切り替え（PATCH）・削除（DELETE）の窓口（src/app/api/admin/news/[id]/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-NEWS-162
+ * @design DD-NEWS-065
+ * @remarks 表の読み書きは利用者の JWT の client で RLS に通し、窓口の認可が崩れても DB が断るようにする（SEC-NEWS-015、DATA-NEWS-002）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新の PUT と分ける（API-NEWS-006、STATE-NEWS-001）。直すたびに画像を付け直させないよう、PUT の画像は任意にする（API-NEWS-005）。変える操作は誰が何をしたかを追えるよう、成功も失敗も監査に残す。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';

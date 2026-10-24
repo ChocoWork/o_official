@@ -1,3 +1,13 @@
+/**
+ * 管理画面の NEWS タブで記事を一覧し、公開の切り替えと削除を行う部品（src/components/NewsSection.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-NEWS-141
+ * @design DD-NEWS-060
+ * @remarks 部品では権限を確かめない。描くかどうかは親の管理画面が店長の役で決め、守りは窓口の認可と DB の RLS に置くため。
+ * 切り替えと削除の後は表示を先に変えず一覧を読み直し、窓口が保存した状態だけを見せる。
+ * 消した記事は戻せないので、削除は送る前に確かめのダイアログを挟む。
+ */
 'use client';
 
 import Image from 'next/image';

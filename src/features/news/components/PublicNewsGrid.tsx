@@ -1,3 +1,14 @@
+/**
+ * 公開済みのニュースを一覧（catalog）とホームの区画（home）の2つの形で並べる部品（src/features/news/components/PublicNewsGrid.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-NEWS-101
+ * @design DD-NEWS-001
+ * @remarks 分類の選択を操作に合わせてすぐ描き直すため、利用者の端末で動かす。
+ * 選んだ分類を URL の category に書き戻すのは、共有した URL・ブラウザの戻る・詳細からの戻りで同じ絞り込みを開けるようにするため。
+ * 一覧とホームでカードの中身をそろえるため、1つの部品を2つの形で使う。
+ * 題と概要は React の文字として出し、管理で書いた文字を HTML として解釈させない（SEC-NEWS-013）。
+ */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";

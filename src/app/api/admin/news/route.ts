@@ -1,3 +1,11 @@
+/**
+ * 管理の記事の一覧（GET）と作成（POST）の窓口（src/app/api/admin/news/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-NEWS-161
+ * @design DD-NEWS-064
+ * @remarks 表の読み書きは利用者の JWT の client で RLS に通し、窓口の認可が崩れても DB が断るようにする（SEC-NEWS-015、DATA-NEWS-002）。置き場は非公開なので、書き込みと署名だけ service role を使い、表には署名前の道を残して読むたびに署名する（ARC-NEWS-003、DATA-NEWS-004）。作成は表と置き場の両方を変えるので、成功も失敗も監査に残す（SEC-NEWS-016）。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';

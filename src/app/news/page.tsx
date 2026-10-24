@@ -1,3 +1,13 @@
+/**
+ * ニュースの一覧のページ（src/app/news/page.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-NEWS-102
+ * @design DD-NEWS-002
+ * @remarks ページを作るサーバーの中で取り出し、自分の API への往復をせずに記事を入れた HTML を返す。
+ * URL の category は外から来る値なので、分類の一覧にある1つの値だけを取り出しの絞りに渡し、それ以外は ALL にする。
+ * 一覧の title と description は記事に左右されないので固定の文にする。
+ */
 import type { Metadata } from 'next';
 import { PublicNewsGrid } from '@/features/news/components/PublicNewsGrid';
 import { getPublishedNews } from '@/features/news/services/public';

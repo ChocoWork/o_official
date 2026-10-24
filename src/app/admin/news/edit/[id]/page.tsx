@@ -1,3 +1,12 @@
+/**
+ * 記事の編集のページ（src/app/admin/news/edit/[id]/page.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-NEWS-144
+ * @design DD-NEWS-063
+ * @remarks URL の記事の今の値を窓口から読んでフォームに詰め、送り方を PUT にするだけにして欄の決まりをフォームと共有する。
+ * 読めない時はフォームを出さずに文を出し、空のフォームで記事を上書きさせない。
+ */
 'use client';
 
 import { useEffect, useState } from 'react';
