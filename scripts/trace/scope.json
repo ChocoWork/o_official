@@ -1,0 +1,34 @@
+[
+  {
+    "area": "NEWS",
+    "docs": [
+      "docs/02_Requirements/areas/news.md",
+      "docs/05_Quality/security/threats/news.md",
+      "docs/03_BasicDesign/areas/news.md",
+      "docs/03_BasicDesign/decisions/*.md",
+      "docs/04_DetailDesign/pages/02_news_list.md",
+      "docs/04_DetailDesign/pages/03_news_detail.md",
+      "docs/04_DetailDesign/pages/16-1_admin_news.md"
+    ],
+    "src": [
+      "src/app/news/**/*.{ts,tsx}",
+      "src/app/api/news/**/*.ts",
+      "src/app/api/admin/news/**/*.ts",
+      "src/app/admin/news/**/*.{ts,tsx}",
+      "src/app/actions/news.ts",
+      "src/components/NewsSection.tsx",
+      "src/features/news/**/*.{ts,tsx}",
+      "src/lib/news-data.ts",
+      "src/lib/storage/news-images.ts",
+      "src/types/news.ts"
+    ],
+    "tests": [
+      "tests/unit/**/*news*.test.{ts,tsx}",
+      "tests/unit/**/*News*.test.{ts,tsx}",
+      "tests/integration/**/*news*.test.{ts,tsx}",
+      "tests/unit/**/news/**/*.test.{ts,tsx}",
+      "tests/integration/**/news/**/*.test.{ts,tsx}"
+    ],
+    "e2e": ["e2e/FR-NEWS-*.spec.ts"]
+  }
+]

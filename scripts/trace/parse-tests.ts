@@ -18,10 +18,10 @@ const LEAD_TOKEN = /^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+/;
 const TEST_FNS = new Set(['test', 'it']);
 const MODIFIERS = new Set(['only', 'skip']);
 
-/** 置き場で段を決める。e2e/ は e2e、tests/integration/ は integration、ほかは unit。 */
+/** 置き場で段を決める。e2e/ で始まれば e2e、tests/integration/ は integration、ほかは unit。 */
 export function levelOf(file: string): TestLevel {
   const path = file.replace(/\\/g, '/');
-  if (/(?:^|\/)e2e\//.test(path)) return 'e2e';
+  if (/^e2e\//.test(path)) return 'e2e';
   if (/(?:^|\/)tests\/integration\//.test(path)) return 'integration';
   return 'unit';
 }

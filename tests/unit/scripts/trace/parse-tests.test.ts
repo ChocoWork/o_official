@@ -51,4 +51,8 @@ describe('levelOf', () => {
     expect(levelOf('e2e\\a.spec.ts')).toBe('e2e');
     expect(levelOf('tests\\integration\\db\\x.test.ts')).toBe('integration');
   });
+
+  it('e2e/ で始まる置き場だけを e2e にする', () => {
+    expect(levelOf('tests/unit/scripts/e2e/x.test.ts')).toBe('unit');
+  });
 });
