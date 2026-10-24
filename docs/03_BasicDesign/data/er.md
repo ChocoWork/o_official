@@ -1,10 +1,10 @@
 # ER 図（現行リポジトリの実装）
 
-> 状態: 現行のソース（グループ G-1 の4表・2列・12 FK を 2026-10-24 に追記。G-1 は本番へ未適用） | 確認日: 2026-10-24 | 対象: `supabase/migrations/` の基準スキーマと後続変更
+> 状態: 現行のソース（グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・21 FK を 2026-10-25 に追記。G-2 は本番へ未適用） | 確認日: 2026-10-25 | 対象: `supabase/migrations/` の基準スキーマと後続変更
 
 ## 概要
 
-`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 段1・段2・E-4・E-5・G-1の追記を反映した掲載対象は **90 テーブル（public 80、private 8、security 2）と 120 FK（public 起点 109、private 起点 11）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
+`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 段1・段2・E-4・E-5・G-1・G-2（発注書の9表）の追記を反映した掲載対象は **99 テーブル（public 89、private 8、security 2）と 141 FK（public 起点 130、private 起点 11）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
 
 基準の確認日: **2026-10-03**。ソース基準コミット: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`。基準は [20260901102912_remote_schema.sql](../../../supabase/migrations/20260901102912_remote_schema.sql)、基準集計の最後の対象ファイルは [20260927100800_retire_legacy_order_rpcs.sql](../../../supabase/migrations/20260927100800_retire_legacy_order_rpcs.sql)。対象の 40 SQL ファイルの基準は59テーブル・63 FKで、後続の記載済みの追記を含む一覧は2026-10-09に数え直し、グループ E-1 の分を2026-10-10 に、グループ E-2 の分を2026-10-11 に、グループ E-3 の分を2026-10-13 に足した。配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文状況のリンクの表は E-5 の変更を 2026-10-22 に反映。本番 DB の適用状況は確認していない。
 
@@ -26,12 +26,14 @@ E-3 段2（FREQ-475〜486）: [移行 D](../../../supabase/migrations/2026102014
 
 2026-10-24 追記（グループ G-1、FREQ-520〜524・535・540〜541）: 1本の移行 `supabase/migrations/20261023211425_group_g1_allocation.sql`（先頭の節が本番のテスト用の注文と関連記録を消す清掃、続く本体が下の追加、末尾が全部の確かめ。まとめて 1 取引で当てる）で、`private.group_g_operations`（操作の受付。追記だけ）・`public.order_item_allocations`（割当の現在値。仮確保 H と入金済みの割当 A）・`public.order_item_allocation_events`（割当の履歴。追記だけ）・`public.order_item_state_events`（品物ごとの状態の履歴。追記だけ）を足し、`public.orders.paid_at`（初めて入金を DB に記録した時刻。一度だけ書く）と `public.stock_movements.allocation_operation_id`（台帳の行を割当の操作に結ぶ）を足し、台帳の理由に `allocation_release` を足した。4表は RLS を有効にして表の権限を外し、service_role は public の3表を読むだけ（private の受付表は読むこともできない）、書くのは共通の在庫の鍵（advisory (190521,1)）を最初に取る private の SECURITY DEFINER の DB の関数だけにした。差分はテーブル +4（public +3、private +1）、物理 FK +12（public 起点 +11、private 起点 +1。実行した人の列 `actor_id` は外部キーにしない）で、前の追記の86テーブル・108 FK から **90テーブル・120 FK** になる。本番へは未適用（適用の手順と記録は [DB マイグレーション運用](../../06_Operations/db-migrations.md)）。内容は 2.10・3.3・4.3.4・5.1・5.2 と末尾の「在庫の割当と品物の状態の履歴」に書く。
 
-図は領域別に分割する。PK・FK と関係を読むための列だけを載せ、全列、CHECK、RLS、トリガー、RPC、Storage オブジェクトの一覧は SQL に委ねる（グループ E-1 の3つの表と `private.order_email_outbox` の追加の列だけは例外で、全列・CHECK・索引・RLS・トリガー・書く関数を第 3 節の「発送と仕上がりの列・索引」に書く。グループ E-2 の返金の2つの表・ショップの設定・切り替えの時刻の表と、追加の列も同じ例外で、第 3 節の「返金の列・索引」に書く。グループ E-3 の返品の4つの表・返品の設定の2つの表と、追加の列も同じ例外で、第 3 節の「返品の列・索引」に書く）。E-3 段2の追加4表も全列・CHECK・索引・RLS・守りを第3節に記す。グループ G-1 の追加4表と追加の2列も同じ例外で、全列・CHECK・索引・RLS・守り・書く関数を末尾の「在庫の割当と品物の状態の履歴」に書く。旧 `migrations/` と `supabase/pending/` は主な集計の基準に含めず、現行コードが依存する旧定義だけを補足する。
+2026-10-25 追記（グループ G-2、FREQ-526〜530・540）: 移行 `supabase/migrations/20261024153505_group_g2_purchasing_foundation.sql`（Task 1 の基盤の移行に Task 2 が本体と末尾の確かめを足す。本番へは未適用。適用の手順と記録は [DB マイグレーション運用](../../06_Operations/db-migrations.md)）で、発注書の9表 `public.purchase_orders`（発注書）・`public.purchase_order_lines`（発注書の行）・`public.purchase_order_revisions`（数量・単価・発注先の履歴。追記だけ）・`public.purchase_order_short_closures`（残りの打切り。追記だけ）・`public.purchase_order_receipts`（受け取りの操作。追記だけ）・`public.purchase_order_receipt_lines`（受け取りの商品と数。取消・訂正は負の行で相殺。追記だけ）・`public.purchase_order_attachment_reservations`（原本の置き場の予約。追記だけ）・`public.purchase_order_attachments`（原本。追記だけ）・`public.purchase_order_attachment_revisions`（原本の取引の記録と訂正。追記だけ）と、非公開の置き場 `purchase-order-documents`（`storage.buckets` の1行）を足した。9表は RLS を有効にして表の権限を外し、service_role は原本と予約の2表の `SELECT` だけ（保存キーの照会用）、書くのは後の Task の共通の鍵を最初に取る SECURITY DEFINER の DB の関数だけ。差分はテーブル +9（public +9）、物理 FK +21（`public` 起点 +21。操作の受付 `private.group_g_operations` への5本は遅延、`item_variants` と `stock_movements` への各1本を含む。実行した人の列 `created_by`・`actor_id`・`uploaded_by` は外部キーにしない）で、前の追記の90テーブル・120 FK から **99テーブル・141 FK** になる。内容は 2.11・3.3・4.3.5 と末尾の「発注書・受け取り・原本の添付」に書く。
+
+図は領域別に分割する。PK・FK と関係を読むための列だけを載せ、全列、CHECK、RLS、トリガー、RPC、Storage オブジェクトの一覧は SQL に委ねる（グループ E-1 の3つの表と `private.order_email_outbox` の追加の列だけは例外で、全列・CHECK・索引・RLS・トリガー・書く関数を第 3 節の「発送と仕上がりの列・索引」に書く。グループ E-2 の返金の2つの表・ショップの設定・切り替えの時刻の表と、追加の列も同じ例外で、第 3 節の「返金の列・索引」に書く。グループ E-3 の返品の4つの表・返品の設定の2つの表と、追加の列も同じ例外で、第 3 節の「返品の列・索引」に書く）。E-3 段2の追加4表も全列・CHECK・索引・RLS・守りを第3節に記す。グループ G-1 の追加4表と追加の2列も同じ例外で、全列・CHECK・索引・RLS・守り・書く関数を末尾の「在庫の割当と品物の状態の履歴」に書く。グループ G-2 の発注書の9表も同じ例外で、全列・CHECK・索引・RLS・守りを末尾の「発注書・受け取り・原本の添付」に書く。旧 `migrations/` と `supabase/pending/` は主な集計の基準に含めず、現行コードが依存する旧定義だけを補足する。
 
 | 領域 | 内容 |
 | --- | --- |
 | 認証・権限・利用者データ | セッション、権限中間表、プロフィール、カート、お気に入り |
-| 商品・LOOK・在庫・注文 | 商品バリアント、在庫台帳、注文と改訂、注文のメール（送る予定・送信の一時停止・配達の知らせの受付済み）、発送と仕上がりの記録、返金の記録・ショップの設定、返品と受け取りの記録・返品の設定、在庫の割当・品物の状態の履歴・操作の受付 |
+| 商品・LOOK・在庫・注文 | 商品バリアント、在庫台帳、注文と改訂、注文のメール（送る予定・送信の一時停止・配達の知らせの受付済み）、発送と仕上がりの記録、返金の記録・ショップの設定、返品と受け取りの記録・返品の設定、在庫の割当・品物の状態の履歴・操作の受付、発注書・発注の受け取り・原本の添付 |
 | 決済・会計・問い合わせ | Stripe 記録、証憑、固定資産、原価配賦、年度締め、問い合わせ |
 | 独立したテーブル | KPI、監査、アーカイブ、コンテンツ、キャッシュ、レート制限 |
 
@@ -743,9 +745,50 @@ erDiagram
 
 12本の外部キーはすべて `ON DELETE RESTRICT`。実行した人の `actor_id` と、原因の `cause_id`（text）は物理 FK にしない（5.1）。
 
+### 2.11 発注書・受け取り・原本の添付の関係（G-2）
+
+```mermaid
+erDiagram
+  purchase_orders ||--o{ purchase_order_lines : purchase_order_id
+  item_variants ||--o{ purchase_order_lines : variant_id
+  purchase_orders ||--o{ purchase_order_revisions : purchase_order_id
+  purchase_order_lines o|--o{ purchase_order_revisions : line_id
+  purchase_order_lines ||--o{ purchase_order_short_closures : line_id
+  purchase_order_revisions ||--o| purchase_order_short_closures : revision_id
+  purchase_orders ||--o{ purchase_order_receipts : purchase_order_id
+  purchase_order_receipts ||--o{ purchase_order_receipt_lines : receipt_id
+  purchase_order_lines ||--o{ purchase_order_receipt_lines : line_id
+  purchase_order_receipt_lines o|--o| purchase_order_receipt_lines : reverses_receipt_line_id
+  stock_movements ||--o| purchase_order_receipt_lines : stock_movement_id
+  purchase_orders ||--o{ purchase_order_attachment_reservations : purchase_order_id
+  purchase_orders ||--o{ purchase_order_attachments : purchase_order_id
+  purchase_order_attachment_reservations ||--o| purchase_order_attachments : reservation_id
+  purchase_order_attachments ||--o{ purchase_order_attachment_revisions : attachment_id
+  purchase_order_attachments o|--o{ purchase_order_attachment_revisions : replaces_attachment_id
+  group_g_operations ||--o{ purchase_order_revisions : operation_id
+  group_g_operations ||--o{ purchase_order_receipts : operation_id
+  group_g_operations ||--o{ purchase_order_attachment_reservations : operation_id
+  group_g_operations ||--o{ purchase_order_attachments : operation_id
+  group_g_operations ||--o{ purchase_order_attachment_revisions : operation_id
+```
+
+`group_g_operations` だけが `private`、ほかは `public`。線の意味は次のとおり。
+
+| 線 | 意味 |
+| --- | --- |
+| 発注書 → 行 | 1つの発注書が1〜100行を持つ。同じ発注書の中で variant も `line_no`（入力の並び順）も重複しない。行は発注時の商品名・色・サイズの写しを持つ |
+| 行・発注書 → 履歴 | 数量・単価・発注先・メモの変更ごとに1行を足す（行ごとの変更は `line_id` あり、発注書全体は空）。`revision_no` はその操作の後の発注書の版 |
+| 行・履歴 → 打切り | 残りを打ち切った数・理由・人を1行（履歴 1 に打切り 0 または 1） |
+| 発注書 → 受け取り → 受け取りの行 | 受け取りの1回の操作が1行。良品の受取は正の行、取消・数量訂正は負の行で相殺し（`reverses_receipt_line_id` が元の正の行を指す）、元の行は直さない |
+| 台帳 → 受け取りの行 | 受け取りの行は台帳 `stock_movements` の無タグの行を1つ指す（正は `restock`、負は `adjustment`）。同じ台帳の行を2つの受け取りの行は指せない |
+| 発注書 → 予約・原本 → 取引の記録 | 予約は保存キーを先に取り分ける。原本は予約を1つだけ使う（`reservation_id` UNIQUE）。取引の記録は原本ごとに版を積み、差し替えは新しい原本が元を指す（`replaces_attachment_id`） |
+| 操作の受付 → 履歴・受け取り・予約・原本・取引の記録 | 1回の操作の番号。先に作り、受付の行は処理の終わりに1度だけ書く。参照は取引の終わりに確かめる（`DEFERRABLE INITIALLY DEFERRED`） |
+
+21本の外部キーはすべて `ON DELETE RESTRICT`。実行した人の `created_by`・`actor_id`・`uploaded_by` は物理 FK にしない（利用者の削除が追記だけの履歴を更新しないため。5.1）。
+
 ## 3. 全テーブルとキーの一覧
 
-以下は掲載対象の90テーブル・120 FKの定義元とキーの一覧。FK の有無は入出両方向で判定する。`audit_logs_backups.id` は主キーではなく nullable の通常列である。
+以下は掲載対象の99テーブル・141 FKの定義元とキーの一覧。FK の有無は入出両方向で判定する。`audit_logs_backups.id` は主キーではなく nullable の通常列である。
 
 ### 3.1 認証・利用者
 
@@ -855,6 +898,22 @@ E-5でordersを参照するFKが1本増える。既存行の参照数表記は�
 | `public.order_item_state_events` | `(id)` | `(operation_id, order_item_id, sequence, unit_from)` | 参照元 0 / 参照先 2 | 同上 |
 
 G-1で `order_items`（+2）・`item_variants`（+1）・`stock_movements`（+1）・`payment_exceptions`（+1）を参照するFKが増え、`stock_movements` の参照先が1本増える。既存行の参照数表記は各段階時点の記録とし、列・索引・守りの最終契約は末尾の「在庫の割当と品物の状態の履歴」の節を参照する。
+
+#### 発注書の追加9表（G-2）
+
+| テーブル | PK | PK以外の一意性 | 物理FK接続 | 定義元 |
+| --- | --- | --- | --- | --- |
+| `public.purchase_orders` | `(id)` | `(number)` | 参照元 5 / 参照先 0 | G-2 移行（`20261024153505_group_g2_purchasing_foundation`） |
+| `public.purchase_order_lines` | `(id)` | `(purchase_order_id, variant_id)`; `(purchase_order_id, line_no)` | 参照元 3 / 参照先 2 | 同上 |
+| `public.purchase_order_revisions` | `(id)` | `(purchase_order_id, revision_no, line_id, kind)`（NULLS NOT DISTINCT） | 参照元 1 / 参照先 3 | 同上 |
+| `public.purchase_order_short_closures` | `(id)` | `(revision_id)` | 参照元 0 / 参照先 2 | 同上 |
+| `public.purchase_order_receipts` | `(id)` | なし | 参照元 1 / 参照先 2 | 同上 |
+| `public.purchase_order_receipt_lines` | `(id)` | `(stock_movement_id)`; `(receipt_id, line_id)` | 参照元 1（自表） / 参照先 4 | 同上 |
+| `public.purchase_order_attachment_reservations` | `(id)` | `(storage_path)` | 参照元 1 / 参照先 2 | 同上 |
+| `public.purchase_order_attachments` | `(id)` | `(reservation_id)`; `(storage_path)` | 参照元 2 / 参照先 3 | 同上 |
+| `public.purchase_order_attachment_revisions` | `(id)` | `(attachment_id, revision_no)` | 参照元 0 / 参照先 3 | 同上 |
+
+G-2で `item_variants`（+1）・`stock_movements`（+1）・`private.group_g_operations`（+5）を参照するFKが増える。既存行の参照数表記は各段階時点の記録とし、列・索引・守りの最終契約は末尾の「発注書・受け取り・原本の添付」の節を参照する。
 
 #### 発送と仕上がりの列・索引（2026-10-10）
 
@@ -1237,6 +1296,34 @@ CHECK (
 
 「遅延」は `DEFERRABLE INITIALLY DEFERRED`。操作の番号を先に作り、受付の行を処理の終わりに書く順を許すため、参照は取引の終わりに確かめる。
 
+### 4.3.5 発注書の追加21 FK（G-2）
+
+| 参照元 | 参照先 | NULL | 親からの多重度 | 削除動作 |
+| --- | --- | --- | --- | --- |
+| `public.purchase_order_lines.purchase_order_id` | `public.purchase_orders.id` | 不可 | 1..100 | RESTRICT |
+| `public.purchase_order_lines.variant_id` | `public.item_variants.id` | 不可 | 0..多 | RESTRICT |
+| `public.purchase_order_revisions.purchase_order_id` | `public.purchase_orders.id` | 不可 | 0..多 | RESTRICT |
+| `public.purchase_order_revisions.line_id` | `public.purchase_order_lines.id` | 可（発注書全体の変更の行は空） | 0..多 | RESTRICT |
+| `public.purchase_order_revisions.operation_id` | `private.group_g_operations.id` | 不可 | 0..多 | RESTRICT（遅延） |
+| `public.purchase_order_short_closures.line_id` | `public.purchase_order_lines.id` | 不可 | 0..多 | RESTRICT |
+| `public.purchase_order_short_closures.revision_id` | `public.purchase_order_revisions.id` | 不可 | 0..1（UNIQUE） | RESTRICT |
+| `public.purchase_order_receipts.purchase_order_id` | `public.purchase_orders.id` | 不可 | 0..多 | RESTRICT |
+| `public.purchase_order_receipts.operation_id` | `private.group_g_operations.id` | 不可 | 0..多 | RESTRICT（遅延） |
+| `public.purchase_order_receipt_lines.receipt_id` | `public.purchase_order_receipts.id` | 不可 | 0..多 | RESTRICT |
+| `public.purchase_order_receipt_lines.line_id` | `public.purchase_order_lines.id` | 不可 | 0..多 | RESTRICT |
+| `public.purchase_order_receipt_lines.reverses_receipt_line_id` | `public.purchase_order_receipt_lines.id` | 可（負の行〔相殺〕だけが持つ） | 0..多 | RESTRICT |
+| `public.purchase_order_receipt_lines.stock_movement_id` | `public.stock_movements.id` | 不可 | 0..1（UNIQUE） | RESTRICT |
+| `public.purchase_order_attachment_reservations.purchase_order_id` | `public.purchase_orders.id` | 不可 | 0..多 | RESTRICT |
+| `public.purchase_order_attachment_reservations.operation_id` | `private.group_g_operations.id` | 不可 | 0..多 | RESTRICT（遅延） |
+| `public.purchase_order_attachments.purchase_order_id` | `public.purchase_orders.id` | 不可 | 0..多 | RESTRICT |
+| `public.purchase_order_attachments.reservation_id` | `public.purchase_order_attachment_reservations.id` | 不可 | 0..1（UNIQUE） | RESTRICT |
+| `public.purchase_order_attachments.operation_id` | `private.group_g_operations.id` | 不可 | 0..多 | RESTRICT（遅延） |
+| `public.purchase_order_attachment_revisions.attachment_id` | `public.purchase_order_attachments.id` | 不可 | 0..多 | RESTRICT |
+| `public.purchase_order_attachment_revisions.replaces_attachment_id` | `public.purchase_order_attachments.id` | 可（差し替えの新しい原本の版 1 だけが持つ） | 0..多 | RESTRICT |
+| `public.purchase_order_attachment_revisions.operation_id` | `private.group_g_operations.id` | 不可 | 0..多 | RESTRICT（遅延） |
+
+「遅延」は 4.3.4 と同じ。親からの多重度の 1..100 は発注書ごとの行数の上限（関数が確かめる。DB の制約は行番号が 1 以上であることと、variant・行番号の重複の拒否）。
+
 ### 4.4 決済記録・Checkout 下書き
 
 | 子テーブル.FK 列 | 参照先 | 型 / NULL可 | 親あたりの子 | ON DELETE | 定義元 |
@@ -1309,6 +1396,7 @@ CHECK (
 | `order_refunds.actor_id`、`shop_settings` の `auto_refund_cancelled_order_payment_updated_by`・`auto_cancel_amount_mismatch_updated_by` | UUID の通常列（実行した人・設定を最後に変えた人の `auth.users` の番号）。`auth.users` への FK はない。`order_refunds.actor_id` は、消した人を空にする `ON DELETE SET NULL` が更新として動き、返金の記録の「進めてよい列」の守りとぶつかるため（`stock_movements.created_by` と同じ）。設定の2つの列も同じく通常列 | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
 | `order_returns` の `requested_by`・`approved_by`・`declined_by`・`fee_received_by`・`exchange_released_by`・`created_by`・`cancelled_by`・`reopened_by`、`order_return_receipts.actor_id`、`shop_return_settings` の `{requests\|window\|shipping\|reasons\|fees\|receiving}_updated_by` | UUID の通常列（実行した人・設定を最後に変えた人の `auth.users` の番号）。`auth.users` への FK はない。理由は E-2 の `order_refunds.actor_id` と同じ（消した人を空にする `ON DELETE SET NULL` が更新として動き、記録を直させない守りとぶつかるため） | [E-3 移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) |
 | `group_g_operations.actor_id`、`order_item_allocation_events.actor_id`、`order_item_state_events.actor_id`、`group_g_operations.cause_id` | `actor_id` は UUID の通常列（操作した人の `auth.users` の番号。システムの処理は空）で、`auth.users` への FK はない。追記だけの履歴を、利用者の削除の `ON DELETE SET NULL` が更新として動いて壊さないため（E-2 の `order_refunds.actor_id` と同じ理由）。`cause_id` は原因（注文・要対応・返金・返品・variant など）の番号を持つ text で、`cause_type` と組で読む。表への FK はない | G-1 移行（`20261023211425_group_g1_allocation`） |
+| `purchase_orders.created_by`、`purchase_order_revisions.actor_id`、`purchase_order_short_closures.actor_id`、`purchase_order_receipts.actor_id`、`purchase_order_attachment_reservations.created_by`、`purchase_order_attachments.uploaded_by`、`purchase_order_attachment_revisions.actor_id`、`purchase_order_attachments.storage_path`・`purchase_order_attachment_reservations.storage_path` | 実行した人の列は UUID の通常列（NOT NULL。操作した人の `auth.users` の番号の写し）で、`auth.users` への FK はない。追記だけの履歴を、利用者の削除が更新として動いて壊さないため（G-1 の `actor_id` と同じ理由）。`storage_path` は置き場 `purchase-order-documents` の中の場所の文字列で、`storage.objects` への FK はない（一意なだけ） | G-2 移行（`20261024153505_group_g2_purchasing_foundation`） |
 | `admin_finance_entry_revisions.entry_id`、`admin_finance_entry_review_acks.entry_ref` | bigint / text の履歴参照。経費・注文への FK はない。実行者列の FK は別途存在する | [改訂](../../../supabase/migrations/20260901102912_remote_schema.sql#L108) / [確認記録](../../../supabase/migrations/20260901102912_remote_schema.sql#L91) |
 | 経費・テンプレートの `partner` | 相手先名称の text。`admin_finance_partners` への FK はない | [経費](../../../supabase/migrations/20260901102912_remote_schema.sql#L173) / [テンプレート](../../../supabase/migrations/20260901102912_remote_schema.sql#L145) |
 | KPI の `season_key` / `kpi_key`、`item_cost_history.season_key`、`legal_archive_runs.fiscal_year` | 通常列または複合一意キー。会計のシーズン・年度・KPI 表間の FK はない | [KPI](../../../supabase/migrations/20260901102912_remote_schema.sql#L347) / [商品原価履歴](../../../supabase/migrations/20260901102912_remote_schema.sql#L557) / [保存実行](../../../supabase/migrations/20260901102912_remote_schema.sql#L605) |
@@ -1740,6 +1828,61 @@ publicのRPCは完全修飾名・`SECURITY DEFINER`・`SET search_path = ''`・�
 
 - 旧の発送4関数（`admin_create_fulfillment`・`admin_cancel_fulfillment`・`admin_update_fulfillment_tracking`・`admin_mark_fulfillment_delivered`）は `LEGACY_FULFILLMENT_DISABLED`、仕上がりの手動記録2関数（`admin_record_completion`・`admin_cancel_completion`）は `MANUAL_COMPLETION_DISABLED`（どちらも 55000）で、引数の検証や行の鍵より前に断る固定の定義に置き換えた。戻り型と service_role の実行権限は変えない。G-3 の発送票まで再開しない。
 - 全ての更新の入口は、共通の鍵（advisory `(190521, 1)`）を最初に取る。行の鍵の順は advisory → `checkout_drafts`（注文作成時だけ）→ `items`（KEY SHARE）→ `item_variants` → `orders` → `order_items` → 割当 → 返品 → 返品の行 → 受け取り → 受け取りの行 → 返金 → 返金の行 → キャンセルの申し込み → 申し込みの行 → 補助の行。配送の追跡の設定（`shop_settings`）だけは advisory の直後・`orders` の前に取る例外。詳しくは [在庫の割当の流れ](../../04_DetailDesign/sequence/inventory-allocation.md) の「共通の鍵と行の鍵の順」。
+
+## 発注書・受け取り・原本の添付（G-2 / FREQ-526〜530・540）
+
+[設計書 8章](../../superpowers/specs/2026-10-23-group-g-design.md)・[実装計画](../../superpowers/plans/2026-10-24-group-g2-purchasing.md)の Task 2 を参照。移行は1本 `supabase/migrations/20261024153505_group_g2_purchasing_foundation.sql`（本番へ適用した後は、MCP が記録した版にファイル名を直す。リンクにしないのはそのため）。先頭の `BEGIN;`〜末尾の `COMMIT;` を1組だけ持ち、本体（`-- G2A_BODY_BEGIN`〜`-- G2A_BODY_END`。Task 1 の権限の切替・G-1 の持ち越し・公開関数11本の実行権の剥奪の後に、以下の9表・守り・置き場）と末尾の確かめ（`-- G2A_FINAL_ASSERT_BEGIN`〜`-- G2A_FINAL_ASSERT_END`）を1取引で当てる。**データを変える文は無い**（変更はスキーマと `storage.buckets` の1行だけ）。本番へは未適用。適用の手順と記録は [DB マイグレーション運用](../../06_Operations/db-migrations.md)。
+
+差分はテーブル +9（public +9）、物理 FK +21、置き場 +1。G-1 までの90テーブル・120 FKに足して、合わせて99テーブル・141 FK。図は 2.11、FK の一覧は 4.3.5。新しい sequence は作らない（主キーは `uuid DEFAULT gen_random_uuid()`）。
+
+### 値の範囲
+
+| 項目 | 範囲 |
+| --- | --- |
+| 発注番号 `number` | `PO-` + 日付8桁 + `-` + 4桁（`^PO-[0-9]{8}-[0-9]{4}$`）、一意。採番は後の Task の関数が共通の鍵の下で行う |
+| 発注先 `supplier_name` | 1〜100文字。メモ `memo` は空（NULL）か500文字まで |
+| 段階 `stage` | `ordered`（発注確定直後。数量は仮）か `quantity_confirmed`。既定は `ordered`。ほかの段階（一部受取・受取済み・打切り済み）は保存せず、読み出しが導出する |
+| 版 `version` | 1 以上。発注書も行も、変わる更新ごとにちょうど +1 |
+| 仮数量 `provisional_quantity` | 1〜99999。確定数量 `confirmed_quantity` は NULL（未確定）か 0〜99999。納品済み `received_quantity` は 0 以上で、確定数量以下、未確定の間は 0 |
+| 未納 `outstanding_quantity` | `confirmed_quantity - received_quantity` の生成列（`GENERATED ALWAYS AS … STORED`）。未確定は NULL |
+| 単価 `unit_price_yen` | NULL（未登録）か 0〜9999999。NULL と 0 円は別の値として保存する |
+| 理由 `reason` | 空（NULL）か 1〜200文字。打切りの理由は必須。受け取りの `kind = 'reverse'` は理由が必須、`receive` は NULL |
+| 受取行の数量 `quantity` | 0 以外で -99999〜99999。正は良品の受取、負は相殺。負の行だけが相殺元 `reverses_receipt_line_id` を持つ |
+| 原本 | `kind` は `quote`（見積書）か `invoice`（請求書）。ファイル名 1〜255文字。`mime_type` は `application/pdf`・`image/jpeg`・`image/png`、`size_bytes` は 1〜20971520（20 MiB）、`sha256` は64桁の小文字16進、`sha256_source` は `browser` か `server` |
+| 取引の記録 | `transaction_date` は 2000-01-01 以後、`amount_yen` は 0〜99999999999、`currency` は大文字3字（`^[A-Z]{3}$`）、`counterparty` は 1〜100文字。版 2 以降と無効化（`voided`）は理由が必須。差し替えの元 `replaces_attachment_id` は版 1 だけが持つ |
+
+### 9表の列
+
+実行した人の列（`created_by`・`actor_id`・`uploaded_by`）は uuid NOT NULL で FK なし。`id` は uuid PRIMARY KEY DEFAULT gen_random_uuid()、`created_at` は timestamptz NOT NULL DEFAULT now()（全表）。
+
+| 表 | 列（`id`・`created_at` 以外） | 索引 |
+| --- | --- | --- |
+| `purchase_orders` | `number`、`supplier_name`、`memo`、`stage`、`version`、`ordered_at`（NOT NULL DEFAULT now()。変えない）、`created_by`、`updated_at` | なし（`number` の一意だけ） |
+| `purchase_order_lines` | `purchase_order_id`、`line_no`（入力の並び順。一覧・詳細はこの順）、`variant_id`、`item_name`・`color_name`・`size_label`（発注時の写し。色・サイズは NULL 可）、`provisional_quantity`、`confirmed_quantity`、`received_quantity`、`unit_price_yen`、`outstanding_quantity`、`version`、`updated_at` | `purchase_order_lines_variant_outstanding_idx (variant_id) WHERE outstanding_quantity > 0` |
+| `purchase_order_revisions` | `purchase_order_id`、`line_id`（NULL 可）、`revision_no`、`kind`（`order`・`header`・`quantity`・`short_close`）、`before_quantity`・`after_quantity`、`before_unit_price_yen`・`after_unit_price_yen`、`before_supplier_name`・`after_supplier_name`、`before_memo`・`after_memo`、`reason`、`actor_id`、`operation_id` | なし（一意 `(purchase_order_id, revision_no, line_id, kind)` が NULLS NOT DISTINCT） |
+| `purchase_order_short_closures` | `line_id`、`revision_id`、`closed_quantity`（打ち切った未納数。0 より大きい）、`reason`（NOT NULL）、`actor_id` | なし |
+| `purchase_order_receipts` | `purchase_order_id`、`kind`（`receive`・`reverse`。既定 `receive`）、`received_on`（date。相殺は操作した日の日本時間）、`memo`（200文字まで）、`reason`、`actor_id`、`operation_id` | なし |
+| `purchase_order_receipt_lines` | `receipt_id`、`line_id`、`quantity`、`reverses_receipt_line_id`、`stock_movement_id` | `purchase_order_receipt_lines_line_idx (line_id)`、`purchase_order_receipt_lines_reverses_idx (reverses_receipt_line_id) WHERE reverses_receipt_line_id IS NOT NULL` |
+| `purchase_order_attachment_reservations` | `purchase_order_id`、`kind`、`original_file_name`、`storage_path`（一意）、`created_by`、`operation_id`、`expires_at`。予約が使われたかは原本側の `reservation_id` で決まり、予約の行は変えない | なし |
+| `purchase_order_attachments` | `purchase_order_id`、`reservation_id`（一意）、`kind`、`original_file_name`、`storage_path`（予約と同じ値。一意）、`mime_type`、`size_bytes`、`sha256`、`sha256_source`、`uploaded_by`、`operation_id` | なし |
+| `purchase_order_attachment_revisions` | `attachment_id`、`revision_no`、`transaction_date`、`amount_yen`、`currency`、`counterparty`、`voided`（既定 false）、`reason`、`replaces_attachment_id`、`actor_id`、`operation_id` | `purchase_order_attachment_revisions_search_idx (transaction_date, amount_yen, counterparty)`、`purchase_order_attachment_revisions_attachment_idx (attachment_id, revision_no DESC)` |
+
+制約の名前は `<表>_<列>_check`・`_key`・`_fkey` の形で、列の範囲の CHECK と組の CHECK（`purchase_order_lines_confirmed_received_check`・`purchase_order_lines_unconfirmed_received_check`・`purchase_order_receipts_kind_reason_check`・`purchase_order_receipt_lines_reverses_check`・`purchase_order_attachment_revisions_revision_reason_check`・`…_voided_reason_check`・`…_replaces_check`）を含め、移行の末尾の確かめが87本を名前・種類・列で突き合わせる。
+
+### 発注書の守り
+
+| 守り | 内容 |
+| --- | --- |
+| 追記専用の7表 | `purchase_order_revisions`・`purchase_order_short_closures`・`purchase_order_receipts`・`purchase_order_receipt_lines`・`purchase_order_attachment_reservations`・`purchase_order_attachments`・`purchase_order_attachment_revisions` に `<表>_no_update`・`_no_delete`（行）・`_no_truncate`（文）。G-1 の履歴と同じ `private.reject_group_g_event_mutation()` が `GROUP_G_HISTORY_IMMUTABLE`（55000）で断る（所有者の通常の SQL も、service_role に権限を足しても同じ）。TRUNCATE は外部キーの確かめが先に走るので、指す側の表を同じ文に並べない限りトリガーに届かない |
+| `purchase_orders`・`purchase_order_lines` | 削除と TRUNCATE は同じ関数で断る（`*_no_delete`・`*_no_truncate`）。UPDATE は `private.guard_group_g_purchase_order_change()`（`*_change_guard`、BEFORE UPDATE の行）が守る: 識別の列（発注書は `id`・`number`・`ordered_at`・`created_by`・`created_at`、行は `id`・`purchase_order_id`・`line_no`・`variant_id`・発注時の3つの写し・`provisional_quantity`・`created_at`）の変更は `GROUP_G_PURCHASE_ORDER_GUARD`（55000、`DETAIL = immutable_column`）。何も変わらない更新は通す。何かが変わる更新は `version = 旧 + 1`（違えば同じ例外で `DETAIL = version`）と、この接続が共通の鍵（advisory `(190521, 1)`）を持っていること（無ければ `GROUP_G_INVENTORY_LOCK_REQUIRED`、55000） |
+| 受取行の台帳との突き合わせ | `private.check_purchase_order_receipt_line()`（`purchase_order_receipt_lines_check_line`、BEFORE INSERT の行、SECURITY DEFINER）。受取行が結ぶ台帳の行は、その明細と同じ variant、`delta = quantity`、理由は正なら `restock`・負なら `adjustment`、`allocation_operation_id IS NULL`（G-1 の整合トリガーが見る「タグ付き」の行とぶつからない無タグの行）。受け取りと明細は同じ発注書。負の行の相殺元は、同じ発注書・同じ明細の、種類 `receive` の受け取りの中の正の行。違えば `GROUP_G_PO_RECEIPT_LINE_MISMATCH`（23514、`DETAIL` は `movement`・`line_order`・`reverses`） |
+| 納品数の確かめ | `private.check_purchase_order_line_received()`（`group_g_po_line_received`、`purchase_order_lines` の INSERT／UPDATE と `purchase_order_receipt_lines` の INSERT の遅延トリガー、`DEFERRABLE INITIALLY DEFERRED`、SECURITY DEFINER）。commit の時に、触れた明細の `received_quantity` が受取行の合計と等しいこと（違えば `GROUP_G_PO_RECEIVED_MISMATCH`、23514）と、1つの正の行への相殺の合計が元の数量を超えないこと（超えれば `GROUP_G_PO_REVERSE_EXCEEDS_RECEIVED`、23514）を確かめる |
+| 表の権限 | 9表とも RLS を有効にし、anon・authenticated の全操作を `RESTRICTIVE` の方針 `"deny direct client access"`（`USING (false) WITH CHECK (false)`）で拒否。PUBLIC・anon・authenticated・service_role の全権限（PostgreSQL 17 の `MAINTAIN` を含む）を外し、service_role には `purchase_order_attachments` と `purchase_order_attachment_reservations` の `SELECT` だけを与える（保存キーの照会用。他の7表は service_role も読めない）。所有者は postgres。新しい関数は PUBLIC・anon・authenticated・service_role の実行権限を外す。`private` スキーマの `USAGE` と `private.set_request_context()` の実行権限には触れない |
+| 移行の末尾の確かめ | `$g2a_final_objects$`（9表の存在・空・RLS・所有者・方針・列・制約・索引・トリガー〔30本。名前・時機・関数・有効〕・3関数の所有者／`search_path`／実行権・置き場の値と方針）と `$g2a_final_table_acl$`（表の権限を意味で比べる。本番の既定の権限で別の付与先が付いても問わず、「要る」と「無い」だけを見る）。違えば `GROUP_G_MIGRATION_ASSERTION_FAILED`（55000、`DETAIL` が項目名）で全部戻る |
+
+### 置き場 `purchase-order-documents`
+
+`storage.buckets` に1行（`INSERT … ON CONFLICT (id) DO NOTHING`）: `public = false`、`file_size_limit = 20971520`（20 MiB）、`allowed_mime_types = {application/pdf, image/jpeg, image/png}`。`storage.objects` の方針は作らない（anon・authenticated は何もできず、読み書きは service_role と署名つきの送り先・リンクだけ）。同じ id の置き場が別の設定で既にある場合は、末尾の確かめが止める。物の削除は置き場の窓口（Storage API）で行う（SQL で消すと中身が残る）。
 
 ## 7. 関連ドキュメント
 

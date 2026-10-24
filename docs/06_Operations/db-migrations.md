@@ -1,6 +1,6 @@
 ﻿# DB マイグレーション運用
 
-> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記） | 確認日: 2026-10-25 | 本番適用状況は未確認（G-1 の移行は 2026-10-24 に適用済み。G-2 の移行は未適用）
+> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表まで） | 確認日: 2026-10-25 | 本番適用状況は未確認（G-1 の移行は 2026-10-24 に適用済み。G-2 の移行は未適用）
 
 ## 概要
 
@@ -403,7 +403,7 @@ CI（DB）とホスティング（アプリ）のどちらが先に終わるか�
 
 ## グループ G-2 発注・受け取りの移行（20261024153505〜）
 
-[設計書](../superpowers/specs/2026-10-23-group-g-design.md)と[実装計画](../superpowers/plans/2026-10-24-group-g2-purchasing.md)に従う。移行は2本（Task 1 の基盤と Task 4 の発注・受け取り）。ここには Task 1 の基盤の移行を書き、Task 4 の移行は Task 4 が同じ節に足す。**どちらも本番へは未適用**（controller が全体の検証の後に当てる）。
+[設計書](../superpowers/specs/2026-10-23-group-g-design.md)と[実装計画](../superpowers/plans/2026-10-24-group-g2-purchasing.md)に従う。移行は2本（Task 1 で作り Task 2 以降が足す基盤と、Task 4 の発注・受け取り）。ここには基盤の移行を書き（Task 1 の分と Task 2 の発注書の9表）、Task 4 の移行は Task 4 が同じ節に足す。**どちらも本番へは未適用**（controller が全体の検証の後に当てる）。基盤のファイルは1本を 100,000 バイト未満に保つ（本番は `npx supabase db push --linked` でファイルごとに1取引で当てる）。
 
 ### 記録（Task 1 の基盤）
 
@@ -424,7 +424,13 @@ G-1 の適用済みの移行は変えず、新しい移行の本体で次を行�
 | 4 | `private.list_group_g_variant_inventory` の受注生産の数え方を、そのバリアントを持った全注文でなく、2で足した先絞りが返す注文だけに投影を掛ける（`CREATE OR REPLACE`）。先絞りが上位集合なので、絞らない投影と同じ数になる（試験が variant ごとに比べる）。`lock_group_g_inventory` は変えない（その閉包は、割当も保留も残らない閉じた注文を入れないが、`pending`・`payment_in_progress`・期限切れでない失敗の注文と、割当か保留が残る注文〔状態に関わらず〕は入れる） |
 | 5 | `private.guard_group_g_paid_at` に、`orders.paid_at` の最初の値（NULL から値）は共通の鍵 `(190521,1)` を持つ接続だけが書ける、という確かめを足す（`GROUP_G_INVENTORY_LOCK_REQUIRED`／55000）。値から別の値・NULL は今までどおり `GROUP_G_PAID_AT_IMMUTABLE` |
 | 6 | 認証・会計の公開関数11本の EXECUTE を `PUBLIC`・`anon`・`authenticated` から外す（`GRANT` は足さない。`service_role` と `postgres` は触らない） |
-| 7 | 末尾の確かめ（`GROUP_G_MIGRATION_ASSERTION_FAILED`／55000、`DETAIL` は `public_function_acl`）。11本が存在し、anon・authenticated・PUBLIC（有効な ACL で見る。`proacl` が NULL なら既定の ACL）が EXECUTE できず、service_role が EXECUTE できることを確かめる。違えば全部戻る。続けて `NOTIFY pgrst, 'reload schema'`、`COMMIT` |
+| 7 | 発注書の9表を作る（Task 2。`purchase_orders`・`purchase_order_lines`・`purchase_order_revisions`・`purchase_order_short_closures`・`purchase_order_receipts`・`purchase_order_receipt_lines`・`purchase_order_attachment_reservations`・`purchase_order_attachments`・`purchase_order_attachment_revisions`。すべて public・所有者 postgres・主キー uuid。外部キー21本はすべて `ON DELETE RESTRICT`、操作の受付 `private.group_g_operations` への5本だけ遅延）。データを入れる文は無い |
+| 8 | 追記専用の7表に `*_no_update`・`*_no_delete`・`*_no_truncate` を付け（G-1 と同じ `private.reject_group_g_event_mutation()`）、`purchase_orders`・`purchase_order_lines` の削除と TRUNCATE を同じ関数で断る |
+| 9 | `private.guard_group_g_purchase_order_change()` を `purchase_orders`・`purchase_order_lines` の BEFORE UPDATE に付ける（識別の列の変更を断る・変わる更新は `version` +1 と共通の鍵の保持を要る） |
+| 10 | `private.check_purchase_order_receipt_line()`（受取行の BEFORE INSERT。台帳の無タグの行との突き合わせと相殺元の確かめ）と `private.check_purchase_order_line_received()`（納品数と受取行の合計・相殺の超過を commit の時に確かめる遅延トリガー）を足す |
+| 11 | 9表の RLS・拒否だけの `RESTRICTIVE` の方針・全権限の剥奪。service_role に `SELECT` を残すのは `purchase_order_attachments` と `purchase_order_attachment_reservations` だけ |
+| 12 | 非公開の置き場 `purchase-order-documents`（20 MiB・PDF／JPEG／PNG）を `storage.buckets` に1行足す（`ON CONFLICT (id) DO NOTHING`）。`storage.objects` の方針は作らない |
+| 13 | 末尾の確かめ（`GROUP_G_MIGRATION_ASSERTION_FAILED`／55000、`DETAIL` が項目名）。Task 1 の `public_function_acl`（11本が存在し、anon・authenticated・PUBLIC〔有効な ACL で見る。`proacl` が NULL なら既定の ACL〕が EXECUTE できず、service_role が EXECUTE できる）に、Task 2 の `$g2a_final_objects$`（9表の空・RLS・所有者・方針・列・制約87本・索引25本・トリガー30本・3関数・置き場の値と方針の無さ。`purchase_tables`・`purchase_table_rows`・`purchase_table_policies`・`purchase_table_columns`・`purchase_table_constraints`・`purchase_table_indexes`・`purchase_table_triggers`・`purchase_functions`・`purchase_bucket`・`purchase_bucket_policies`）と `$g2a_final_table_acl$`（`purchase_table_acl`。表の権限を意味で比べ、PostgreSQL 17 以降は `MAINTAIN` も「無い」の一覧に入れる）を足した。違えば全部戻る。続けて `NOTIFY pgrst, 'reload schema'`、`COMMIT` |
 
 ### 6 の公開関数11本の EXECUTE について（セキュリティ）
 
@@ -432,6 +438,13 @@ G-1 の適用済みの移行は変えず、新しい移行の本体で次を行�
 
 呼び出し元は全て `createServiceRoleClient`（service_role）で、anon・authenticated のクライアントから呼ぶ箇所は無い（2026-10-25 に再確認: `revoke_auth_sessions_for_user` は password-reset の confirm・logout・admin の revoke-user-sessions、`revoke_auth_session` は logout、`is_auth_session_active` は `authenticate.ts`、`find_auth_user_id_by_email` は register と password-reset の request・link、`increment_rate_limit_counter` は `features/auth/ratelimit`、`replace_` と `clear_admin_expense_cost_allocations` は accounting の product-costs。`cleanup_password_reset_tokens` は src に呼び手が無く、`create_profile_for_new_auth_user` と `record_admin_finance_entry_revision` はトリガー関数で、PostgreSQL はトリガー関数の EXECUTE を作成時にしか確かめないので発火に影響しない）。新しいコードを前提にする移行ではなく、権限を狭めるだけの移行なので、アプリの順序の制約（「権限を狭めるマイグレーションの順序」）は、呼び手が全て service_role のため本番では満たされている。
 
+### 7〜13 の発注書の9表について（Task 2）
+
+- **本番への影響**: 新しい表・関数・トリガー・方針と `storage.buckets` の1行を足すだけで、既存の表・行は変えない。データを変える文（清掃・補完・権限行の再投入）は無いので、適用の前の owner 確認は要らない。構造と列・制約・索引・トリガー・権限は移行の末尾の確かめが全部見る。
+- **適用の直前に読み取って確かめる**: `storage.buckets` に `purchase-order-documents` がまだ無いこと。既にあって設定が違うと（`public = true`・上限・種類）、`ON CONFLICT (id) DO NOTHING` は何も変えず、末尾の確かめ（`purchase_bucket`）が移行全体を戻す。その時は置き場の設定を確かめてから決める（黙って直さない）。
+- **外部キーと TRUNCATE**: 追記専用の表の TRUNCATE は、PostgreSQL が外部キーの確かめをトリガーより先に行うので、その表を指す表を同じ文に並べない限りトリガーに届かない（届かなくても全消しはできない）。G-1 の `group_g1_model`（操作の受付の全消し）と `stock_movements`（台帳の全消し）の試験は、新しく指す表を同じ文に足して「追記専用」の拒否を確かめ続けた。操作の受付 `private.group_g_operations` を指す外部キーは 4 本から 9 本（遅延）になった。
+- **大きさ**: 基盤の移行は Task 2 の後で約 76 KB（100,000 バイト未満）。後の Task が足す関数と確かめは、超える前に controller が 3 本目に分けるか決める。バイト数と MD5 は適用の直前に固定して記録する。
+
 ### 試験
 
-DB 結合は `group_g2_stock_permissions`・`group_g2_g1_followups`・`group_g2_public_function_acl`（共通の確認は `db reset` の後に PostgREST の smoke → 上の3本と、`admin_revoke_sessions_function`・`auth_db_functions`・`rate_limit_counters`・G-1 の `group_g1_stock_api`・`group_g1_inventory_reads`・`group_g1_payment`・`group_g1_exchange_fee`・`group_g1_concurrency`・`group_g1_fifo`）。対応は[試験仕様](../05_Quality/tests/test-spec.md)の「グループ G-2 のテスト」。
+DB 結合は `group_g2_stock_permissions`・`group_g2_g1_followups`・`group_g2_public_function_acl`・`group_g2_purchase_model`（共通の確認は `db reset` の後に PostgREST の smoke → 上の4本と、`admin_revoke_sessions_function`・`auth_db_functions`・`rate_limit_counters`・G-1 の `group_g1_stock_api`・`group_g1_inventory_reads`・`group_g1_payment`・`group_g1_exchange_fee`・`group_g1_concurrency`・`group_g1_fifo`・`group_g1_model`・`group_g1_writer_inventory`・`stock_movements`）。対応は[試験仕様](../05_Quality/tests/test-spec.md)の「グループ G-2 のテスト」。

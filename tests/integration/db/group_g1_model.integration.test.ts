@@ -31,6 +31,12 @@ const OPERATION_FKEYS = [
   ['order_item_allocations', 'order_item_allocations_operation_id_fkey'],
   ['order_item_state_events', 'order_item_state_events_operation_id_fkey'],
   ['stock_movements', 'stock_movements_allocation_operation_id_fkey'],
+  // G-2 Task 2: 発注書の追記専用の表のうち、操作の受付に結ぶ 5 つ
+  ['purchase_order_revisions', 'purchase_order_revisions_operation_id_fkey'],
+  ['purchase_order_receipts', 'purchase_order_receipts_operation_id_fkey'],
+  ['purchase_order_attachment_reservations', 'purchase_order_attachment_reservations_operation_id_fkey'],
+  ['purchase_order_attachments', 'purchase_order_attachments_operation_id_fkey'],
+  ['purchase_order_attachment_revisions', 'purchase_order_attachment_revisions_operation_id_fkey'],
 ];
 
 type DbFailure = { code?: string; message?: string; detail?: string; constraint?: string };
@@ -394,14 +400,22 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
       const truncates = [
         'truncate public.order_item_allocation_events',
         'truncate public.order_item_state_events',
-        // 操作の表は 4 つの表から外部キーで指されるので、指す側を後ろに並べて操作の表の文のトリガーを先に発火させる
+        // 操作の表は G-1 の 4 つの表と G-2 の発注書の 5 つの表から外部キーで指されるので、指す側（それを指す表も）を後ろに並べて
+        // 操作の表の文のトリガーを先に発火させる
         `truncate private.group_g_operations, public.order_item_allocations, public.order_item_allocation_events,
-           public.order_item_state_events, public.stock_movements`,
+           public.order_item_state_events, public.stock_movements, public.purchase_order_revisions,
+           public.purchase_order_short_closures, public.purchase_order_receipts, public.purchase_order_receipt_lines,
+           public.purchase_order_attachment_reservations, public.purchase_order_attachments,
+           public.purchase_order_attachment_revisions`,
       ];
 
       for (const role of ['postgres', 'service_role']) {
         if (role === 'service_role') {
-          for (const table of [...rows.map(([table]) => table), 'public.order_item_allocations', 'public.stock_movements']) {
+          for (const table of [
+            ...rows.map(([table]) => table), 'public.order_item_allocations', 'public.stock_movements',
+            ...['revisions', 'short_closures', 'receipts', 'receipt_lines', 'attachment_reservations', 'attachments', 'attachment_revisions']
+              .map((name) => `public.purchase_order_${name}`),
+          ]) {
             await db().query(`grant select, insert, update, delete, truncate on ${table} to service_role`);
           }
         }
