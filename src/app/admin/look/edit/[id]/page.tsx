@@ -1,3 +1,12 @@
+/**
+ * 管理画面の LOOK の編集の頁（src/app/admin/look/edit/[id]/page.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-LOOK-128
+ * @design DD-LOOK-062
+ * @remarks 今の値と画像を入れて始め、直す欄だけを触ればよいようにするため、頁が1件を取り出して初めの値に詰める。
+ * 取り出しに失敗した時は、フォームは出さず頁に誤りの文だけを出して留まる（FLOW-LOOK-002）。
+ */
 'use client';
 
 import { useEffect, useState } from 'react';

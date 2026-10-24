@@ -1,3 +1,11 @@
+/**
+ * LOOK 一覧のページ（src/app/look/page.tsx）。URL の season を直し、公開の LOOK を全部取って格子に渡す。
+ *
+ * @packageDocumentation
+ * @impl IMPL-LOOK-102
+ * @design DD-LOOK-002
+ * @remarks シーズンの絞り込みは画面の上で行うので、サーバーでは件数の上限を付けずに全部取る。URL の season は利用者が書き換えられるので、不正な値は誤りにせず ALL に直して一覧を空にしない。
+ */
 import type { Metadata } from 'next';
 import { PublicLookGrid } from '@/features/look/components/PublicLookGrid';
 import { resolveLookSeasonFilter } from '@/lib/look/public';

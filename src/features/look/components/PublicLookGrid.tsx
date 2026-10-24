@@ -1,3 +1,11 @@
+/**
+ * ホームの LOOK の区画と /look の一覧の格子・カード・シーズンの絞り込みを描く部品（src/features/look/components/PublicLookGrid.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-LOOK-101
+ * @design DD-LOOK-001
+ * @remarks 一覧の絞り込みは URL の season と引き出しの開閉を端末の上で持つため、利用者の端末で動かす。ホームは 2xl 未満 6 件・2xl 8 件を CSS で出し分けるので、常に 8 件分を描く。
+ */
 "use client";
 
 import Image from "next/image";

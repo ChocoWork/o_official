@@ -1,3 +1,13 @@
+/**
+ * LOOK 詳細の画像のギャラリー（src/features/look/components/LookImageGallery.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-LOOK-125
+ * @design DD-LOOK-031
+ * @remarks 選んだ画像の添字は操作に合わせてすぐ変わるので、利用者の端末で動かす。
+ * 3つの幅の見方を ITEM 詳細ページとそろえる要求（FREQ-179）のため、幅ごとに画像の見せ方を切り替える。
+ * 画像が無い LOOK でも枠が崩れないよう、代わりの画像を1枚出す。
+ */
 "use client";
 
 import { useMemo, useRef, useState } from "react";
@@ -19,9 +29,6 @@ type LookImageGalleryProps = {
 const CAROUSEL_ARROW_ICON_CLASS =
   "h-[clamp(1rem,4.5cqw,1.625rem)] w-[clamp(1rem,4.5cqw,1.625rem)]";
 
-// FREQ-179: 画像ギャラリーの3ビューポート仕様を ITEM 詳細ページと統一する。
-// mobile: フルブリード・ピーク付きスワイプカルーセル / tablet: スワイプ + 前後送りボタン /
-// desktop: 左サムネイル縦列 + メイン画像。全ビューポートで画像下にセグメント線インジケータ。
 export function LookImageGallery({ theme, imageUrls }: LookImageGalleryProps) {
   const normalizedImages = useMemo(() => {
     if (imageUrls.length === 0) {

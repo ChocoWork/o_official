@@ -1,3 +1,15 @@
+/**
+ * 管理の LOOK 1件の取り出し・全体の更新・公開の状態の切り替え・削除の窓口（src/app/api/admin/looks/[id]/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-LOOK-142
+ * @design DD-LOOK-064
+ * @remarks 取り出しは読む権限、表を変える3つの操作は管理の権限と、操作ごとに権限を分けて窓口で確かめる（SEC-LOOK-019）。
+ * 変更は種類ごとに送り元と操作者の2段の回数を数える（SEC-LOOK-011）。
+ * 更新は画像を付けた時だけ全部を差し替え、文字だけの直しで画像を上げ直させない。
+ * 公開の切り替えで他の欄と画像に触れず、送り直しの手間と上書きの事故を避けるため、状態の列だけを変える。
+ * 失敗の監査は認可が通って操作者が分かった後だけ残す。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';

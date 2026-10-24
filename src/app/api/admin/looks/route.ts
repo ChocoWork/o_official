@@ -1,3 +1,15 @@
+/**
+ * 管理の LOOK 一覧の取り出しと作成の窓口（src/app/api/admin/looks/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-LOOK-141
+ * @design DD-LOOK-063
+ * @remarks 非公開を含む一覧は読む権限、作成は管理の権限と、操作ごとに権限を分けて窓口で確かめる（SEC-LOOK-019）。
+ * 作成は表と非公開の置き場の両方を変えるので、送り元と操作者の2段の回数と画像の量に上限をかけ（SEC-LOOK-011）、
+ * 形の悪い要求は DB と置き場に触れる前に入口で断る。
+ * 関連の保存に失敗したら作った LOOK の行を消し、商品の関連が無い LOOK を残さない。
+ * 失敗の監査は認可が通って操作者が分かった後だけ残す。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';

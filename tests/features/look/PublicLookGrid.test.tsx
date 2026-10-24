@@ -60,32 +60,32 @@ describe('PublicLookGrid', () => {
   const viewAllWrapper = () =>
     screen.getByTestId('home-section-view-all').parentElement;
 
-  it('VIEW ALL LOOKS のリンクを描画する', () => {
+  it('DD-LOOK-001 VIEW ALL LOOKS のリンクを描画する', () => {
     render(<PublicLookGrid variant="home" looks={createLooks(7)} totalCount={7} />);
 
     expect(screen.getByLabelText('VIEW ALL LOOKS')).toBeInTheDocument();
   });
 
-  it('総数が7件なら 2xl 未満でのみ VIEW ALL を出す', () => {
+  it('DD-LOOK-001 総数が7件なら 2xl 未満でのみ VIEW ALL を出す', () => {
     render(<PublicLookGrid variant="home" looks={createLooks(7)} totalCount={7} />);
 
     // 6 件表示の帯域では溢れるので出す。8 件表示の 2xl では出さない。
     expect(viewAllWrapper()).toHaveClass('flex', '2xl:hidden');
   });
 
-  it('総数が6件ならどの帯域でも VIEW ALL を出さない', () => {
+  it('DD-LOOK-001 総数が6件ならどの帯域でも VIEW ALL を出さない', () => {
     render(<PublicLookGrid variant="home" looks={createLooks(6)} totalCount={6} />);
 
     expect(viewAllWrapper()).toHaveClass('hidden', '2xl:hidden');
   });
 
-  it('総数が全帯域を上回れば常に VIEW ALL を出す', () => {
+  it('DD-LOOK-001 総数が全帯域を上回れば常に VIEW ALL を出す', () => {
     render(<PublicLookGrid variant="home" looks={createLooks(8)} totalCount={20} />);
 
     expect(viewAllWrapper()).toHaveClass('flex', '2xl:flex');
   });
 
-  it('7件目以降は 2xl 以上でのみ表示する', () => {
+  it('DD-LOOK-001 7件目以降は 2xl 以上でのみ表示する', () => {
     const { container } = render(
       <PublicLookGrid variant="home" looks={createLooks(8)} totalCount={20} />,
     );

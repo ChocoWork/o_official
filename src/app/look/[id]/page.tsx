@@ -1,3 +1,13 @@
+/**
+ * LOOK の詳細のページ（src/app/look/[id]/page.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-LOOK-124
+ * @design DD-LOOK-030
+ * @remarks 前後の LOOK は一覧と同じ並びで決めるので、公開の LOOK の全部を取ってその中の位置で選ぶ。
+ * 取り出しは公開済みだけを返す関数に任せ、非公開と無い LOOK は同じ知らせにして有無を外へ出さない。
+ * テーマと説明文は React の文字として出し、HTML としては解釈させない。
+ */
 import "./look-detail.css";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";

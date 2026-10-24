@@ -114,7 +114,7 @@ describe('admin look audit logging', () => {
     });
   });
 
-  test('POST logs successful look creation', async () => {
+  test('DD-LOOK-065 POST logs successful look creation', async () => {
     mockCreateServiceRoleClient.mockResolvedValue(createLooksServiceMock());
 
     const formData = new FormData();
@@ -157,7 +157,7 @@ describe('admin look audit logging', () => {
     );
   });
 
-  test('PUT logs successful look update', async () => {
+  test('DD-LOOK-065 PUT logs successful look update', async () => {
     mockCreateServiceRoleClient.mockResolvedValue(
       createLooksServiceMock({
         existingLook: { id: '12', status: 'private', image_urls: [] },
@@ -200,7 +200,7 @@ describe('admin look audit logging', () => {
     );
   });
 
-  test('PATCH logs successful status update', async () => {
+  test('DD-LOOK-065 PATCH logs successful status update', async () => {
     mockCreateServiceRoleClient.mockResolvedValue(
       createLooksServiceMock({
         existingLook: { id: '12', status: 'private', image_urls: [] },
@@ -232,7 +232,7 @@ describe('admin look audit logging', () => {
     );
   });
 
-  test('DELETE logs failure when look does not exist', async () => {
+  test('DD-LOOK-065 DELETE logs failure when look does not exist', async () => {
     mockCreateServiceRoleClient.mockResolvedValue(
       createLooksServiceMock({
         existingLook: null,
@@ -258,5 +258,141 @@ describe('admin look audit logging', () => {
         detail: 'Look not found',
       }),
     );
+  });
+});
+
+describe('logAdminLookAudit', () => {
+  const { logAdminLookAudit } = require('@/features/look/services/admin-audit');
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    mockLogAudit.mockResolvedValue(undefined);
+  });
+
+  test('DD-LOOK-065 全部の値を resource look に固定して logAudit へ渡す', async () => {
+    const request = new Request('http://localhost/api/admin/looks', {
+      headers: { 'user-agent': 'jest-agent' },
+    });
+
+    await logAdminLookAudit({
+      request,
+      actorId: 'admin-user',
+      actorEmail: 'admin@example.com',
+      action: 'admin.look.create',
+      outcome: 'success',
+      detail: 'Look created',
+      resourceId: 5,
+      metadata: { status: 'published' },
+    });
+
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action: 'admin.look.create',
+      actor_id: 'admin-user',
+      actor_email: 'admin@example.com',
+      resource: 'look',
+      resource_id: '5',
+      outcome: 'success',
+      detail: 'Look created',
+      user_agent: 'jest-agent',
+      metadata: { status: 'published' },
+    });
+  });
+
+  test('DD-LOOK-065 resourceId・metadata・user-agent が無い時は null にそろえる', async () => {
+    const request = new Request('http://localhost/api/admin/looks');
+
+    await logAdminLookAudit({
+      request,
+      actorId: 'admin-user',
+      actorEmail: null,
+      action: 'admin.look.delete',
+      outcome: 'failure',
+      detail: 'Look not found',
+    });
+
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action: 'admin.look.delete',
+      actor_id: 'admin-user',
+      actor_email: null,
+      resource: 'look',
+      resource_id: null,
+      outcome: 'failure',
+      detail: 'Look not found',
+      user_agent: null,
+      metadata: null,
+    });
+  });
+
+  test('DD-LOOK-065 resourceId が null の時は resource_id を null にする', async () => {
+    const request = new Request('http://localhost/api/admin/looks', {
+      headers: { 'user-agent': 'jest-agent' },
+    });
+
+    await logAdminLookAudit({
+      request,
+      actorId: 'admin-user',
+      actorEmail: 'admin@example.com',
+      action: 'admin.look.create',
+      outcome: 'failure',
+      detail: 'Failed',
+      resourceId: null,
+    });
+
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ resource_id: null, user_agent: 'jest-agent' }),
+    );
+  });
+
+  test('DD-LOOK-065 user-agent が空の時は null にし、文字の resourceId はそのまま渡す', async () => {
+    const request = new Request('http://localhost/api/admin/looks', {
+      headers: { 'user-agent': '' },
+    });
+
+    await logAdminLookAudit({
+      request,
+      actorId: 'admin-user',
+      actorEmail: 'admin@example.com',
+      action: 'admin.look.update',
+      outcome: 'success',
+      detail: 'Look updated',
+      resourceId: 'abc',
+    });
+
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ resource_id: 'abc', user_agent: null }),
+    );
+  });
+
+  test('DD-LOOK-065 resourceId が 0 でも null にせず文字の 0 にする', async () => {
+    const request = new Request('http://localhost/api/admin/looks');
+
+    await logAdminLookAudit({
+      request,
+      actorId: 'admin-user',
+      actorEmail: null,
+      action: 'admin.look.update',
+      outcome: 'success',
+      detail: 'Look updated',
+      resourceId: 0,
+    });
+
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ resource_id: '0' }));
+  });
+
+  test('DD-LOOK-065 logAudit の戻り値をそのまま返す', async () => {
+    mockLogAudit.mockResolvedValue('logged');
+    const request = new Request('http://localhost/api/admin/looks');
+
+    await expect(
+      logAdminLookAudit({
+        request,
+        actorId: 'admin-user',
+        actorEmail: null,
+        action: 'admin.look.create',
+        outcome: 'success',
+        detail: 'ok',
+      }),
+    ).resolves.toBe('logged');
   });
 });

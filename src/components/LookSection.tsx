@@ -1,3 +1,13 @@
+/**
+ * 管理画面の LOOK タブの一覧（src/components/LookSection.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-LOOK-126
+ * @design DD-LOOK-060
+ * @remarks 画面は利用者の端末で動き、守りは持たない。権限・回数の制限・監査は窓口（/api/admin/looks）が受け持つ。
+ * 作った LOOK を直さずに出し入れできるよう、公開の切り替えは状態だけを反転して送る。
+ * 消した LOOK は戻せないので押し間違いを防ぐ確かめを挟み、変更の後は一覧を取り直して窓口の結果を画面に映す。
+ */
 "use client";
 
 import Image from "next/image";

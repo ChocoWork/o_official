@@ -33,6 +33,13 @@ type ItemRow = {
   image_url: string;
 };
 
+/**
+ * 公開の LOOK を新しい順に取り、関連商品と署名つきの画像を付けて返す。
+ *
+ * @impl IMPL-LOOK-103
+ * @design DD-LOOK-003
+ * @remarks 公開の印は匿名の鍵で読んで RLS で絞り、アプリでも公開の印を付けて二重に絞る（SEC-LOOK-001）。画像の署名だけを service role で行う（private なバケットのため）。取り出しの失敗は空の配列にして、ページを落とさない。
+ */
 export async function getPublishedLooks(limit?: number): Promise<PublicLook[]> {
   const supabase = await createPublicClient();
 
@@ -58,7 +65,13 @@ export async function getPublishedLooks(limit?: number): Promise<PublicLook[]> {
   return hydrateLooks(lookRows as LookRow[]);
 }
 
-// FREQ-148: ホームの VIEW ALL 表示判定用に公開 LOOK の総数を返す
+/**
+ * 公開の LOOK の総数を返す。
+ *
+ * @impl IMPL-LOOK-104
+ * @design DD-LOOK-004
+ * @remarks FREQ-148: ホームの VIEW ALL を出すかの判定に使う。失敗は 0 にして VIEW ALL を出さない側に倒す。
+ */
 export async function getPublishedLooksCount(): Promise<number> {
   const supabase = await createPublicClient();
 
@@ -75,6 +88,13 @@ export async function getPublishedLooksCount(): Promise<number> {
   return count ?? 0;
 }
 
+/**
+ * 1件の公開の LOOK を、公開中の関連商品と署名つきの画像付きで返す。無い・非公開なら null。
+ *
+ * @impl IMPL-LOOK-105
+ * @design DD-LOOK-032
+ * @remarks 一覧と同じく公開の印は匿名の鍵で絞り、署名だけを service role で行う。関連の取り出しの失敗は LOOK 本体を落とさず、関連なしで返す。
+ */
 export async function getPublishedLookById(
   id: number,
 ): Promise<PublicLook | null> {
