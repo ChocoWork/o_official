@@ -27,7 +27,7 @@ PRIVACY の領域の要求・要件・受け入れ条件・派生要件を、追
 | 写した元 | `docs/02_Requirements/requirements.md`（「1.17 プライバシーポリシーページ（PRIVACY）」節と、「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-100・FREQ-101 の行）。元の行は消していない |
 | 要求の出どころ | `docs/02_Requirements/stakeholder-requirements.md` の「2. 目標」、`requirements.md` の LEGAL-001、個人情報の保護に関する法律 |
 | 対象のコード | `src/app/privacy/page.tsx`（範囲の src はこの1本だけ） |
-| 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない） |
+| 調べた時点 | 2026-10-24 の作業ツリー（コードを読んで起こした。単体テストと DB を使わない結合テストは流して通した。E2E と DB の結合テストは流していない） |
 | 持ち主 | FREQ-100・FREQ-101・FR-PRIVACY-001・002 はほかの領域が触れない（領域ごとの持ち主の割り当てによる）。FREQ-540 は誰も定義していない（在庫の作業が書き直し中）ので、根拠に `（範囲外）` 付きで挙げるだけにした |
 
 ### 写した行と写さなかった行
@@ -266,7 +266,7 @@ FREQ-101 は範囲外の `/terms` にもかかるが、範囲の E2E（`e2e/FR-P
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3。実装から推定 |
 | 優先度 | MUST |
 
-`get_delivery_tracking_settings` の実行と `shop_settings` の読み取りは service role だけに許す。service role も表には読み取り（SELECT）しか持たず、書き込みは所有者の権限で動く関数（SECURITY DEFINER）の中だけで起きる（DATA-PRIVACY-002）。今のコードは満たす（`supabase/migrations/20261021221140_delivery_tracking_admin.sql`、`supabase/migrations/20261011222930_order_refund_records.sql`）。権限は結合テストが確かめる（`tests/integration/db/delivery_tracking_admin.integration.test.ts`）。PostgREST の経路で試す E2E は無い。
+`get_delivery_tracking_settings` の実行と `shop_settings` の読み取りは service role だけに許す。service role も表には読み取り（SELECT）しか持たず、書き込みは所有者の権限で動く関数（SECURITY DEFINER）の中だけで起きる（DATA-PRIVACY-002）。今のコードは満たす（`supabase/migrations/20261021221140_delivery_tracking_admin.sql`、`supabase/migrations/20261011222930_order_refund_records.sql`）。権限は結合テストが確かめる（範囲外の `tests/integration/db/delivery_tracking_admin.integration.test.ts` と、DATA-PRIVACY-002 の `tests/integration/db/privacy_settings_permissions.integration.test.ts`。後者は書いただけで、手元の DB では流していない）。PostgREST の経路で試す E2E は無い。
 
 #### SEC-PRIVACY-001-AC-01 anon と一般会員の鍵で設定の関数を呼べない
 
@@ -378,7 +378,7 @@ anon の鍵と一般会員の JWT の select が断られるか、行が0件で�
 | 出どころ | OWASP ASVS 4.0.3 V8.3.3。`src/app/privacy/page.tsx` |
 | 優先度 | MUST |
 
-設定を読めない時と service role の client を作れない時は、委託の一覧を描かずに頁の失敗にする。今のコードは満たす（`src/app/privacy/page.tsx`、単体テスト `tests/unit/components/PrivacyPage.test.tsx`）。E2E は無い。
+設定を読めない時と service role の client を作れない時は、委託の一覧を描かずに頁の失敗にする。今のコードは満たす（`src/app/privacy/page.tsx`、単体テスト `tests/unit/components/PrivacyPage.test.tsx`、結合テスト `tests/integration/ui/privacy-request-time-render.test.tsx`・`privacy-tracking-clause-state.test.tsx`）。E2E は無い。
 
 #### SEC-PRIVACY-005-AC-01 設定を読めない時に委託の一覧が表示されない
 

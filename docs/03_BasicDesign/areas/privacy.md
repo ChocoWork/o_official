@@ -28,7 +28,7 @@ PRIVACY の領域の構成・画面・画面遷移・状態遷移・データを
 | 対象のコード | `src/app/privacy/page.tsx`（範囲の src はこの1本だけ） |
 | 対象の DB | `supabase/migrations/20261011222930_order_refund_records.sql`（`shop_settings` の表と権限）、`supabase/migrations/20261021220816_delivery_tracking_records.sql`（追跡の列）、`supabase/migrations/20261021221140_delivery_tracking_admin.sql`（設定の関数と権限） |
 | 関連文書 | `docs/03_BasicDesign/ui/screen-list.md`、`docs/03_BasicDesign/ui/screen-flow.md`、`docs/04_DetailDesign/pages/17_privacy.md`（範囲外。文言を試験が固定している） |
-| 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない） |
+| 調べた時点 | 2026-10-24 の作業ツリー（コードを読んで起こした。単体テストと DB を使わない結合テストは流して通した。E2E と DB の結合テストは流していない） |
 
 範囲外の共有部品とほかの領域の部品は ID を持たないので、項目の根拠と本文にファイルの道で書く。
 
@@ -81,7 +81,7 @@ sequenceDiagram
 - 失敗: try/catch は無い。client を作れない時も、関数が失敗した時も、返り値の形が合わない時も、例外がそのまま出て頁の描画が失敗する。`src/app/privacy` にも `src/app` の直下にも `error.tsx`・`global-error.tsx` は無く、Next.js の既定の誤りの頁になる。誤りの頁が中身を伏せるか（SEC-PRIVACY-008）と、方針を知る道を残すか（SEC-PRIVACY-009）は、その SEC の項目を参照
 - 重さ・受け取る欄・回数の制限・応答の `Cache-Control` は、SEC-PRIVACY-002・003・004・007 を参照
 - 依存: 配送の追跡の部品（`delivery-store.ts`）の返り値の形が変わると、頁と単体テスト `tests/unit/components/PrivacyPage.test.tsx` の差し替えも直す必要が出る。在庫の作業の計画は頁を「維持」としている（`docs/superpowers/plans/2026-10-24-group-g1-allocation.md`）
-- 試験: 単体テスト `tests/unit/components/PrivacyPage.test.tsx` が、connection の後に読むこと・読めない時に失敗にすることを確かめる。結合テストは無い
+- 試験: 結合テスト `tests/integration/ui/privacy-request-time-render.test.tsx` が、connection を待つ間は DB に触れないこと・request のたびに読み直すこと・service role の鍵で作った client の rpc で読むこと・読めない時（鍵や URL が無い、rpc の誤り、返り値の形が合わない、connection の失敗）に頁の描画が失敗することを確かめる。単体テスト `tests/unit/components/PrivacyPage.test.tsx` も、connection の後に読むことと読めない時に失敗にすることを確かめる
 
 ### ARC-PRIVACY-002 共有の proxy と layout が、頁に守りの見出しと殻をかける
 
@@ -98,7 +98,7 @@ sequenceDiagram
 - Cookie: Cookie の無い閲覧者には `session_id` を発行する（`src/proxy.ts`）。SEC-PRIVACY-015 を参照
 - 殻: root の layout が `Providers` で包み、Header と Footer を出す。`/privacy` の時だけ `CartProvider` を止める（`Providers.tsx`）。どの要件にも無い共有部品の判断で、上位につないでいない
 - ログインの状態: `LoginContext.tsx` が全頁で `/api/auth/me` を呼ぶ。応答にメールを載せない形は SEC-PRIVACY-016 を参照
-- `/privacy` の応答で見出しを試す E2E も結合テストも無い
+- 試験: 結合テスト `tests/integration/api/privacy-proxy-headers.test.ts` が、`/privacy` を通した proxy の応答に枠の禁止・HSTS・`nosniff`・CSP（nonce）が付くこと、`session_id` の発行、proxy が `/privacy` にキャッシュの指定を足さないこと、proxy の対象が全部の道で `/privacy` も外れないことを確かめる。本番ビルドの応答で見出しを試す E2E は無い
 
 ## 画面
 
@@ -121,7 +121,7 @@ sequenceDiagram
 - 末尾: 「制定日：2026年6月20日」「最終改定日：2026年7月11日」を固定の字で出す。委託の一覧が切り替わっても変わらない（SEC-PRIVACY-012）
 - 9節の外部サービスは Stripe だけで、委託・外部サービスに Resend・Supabase・Cloudflare Turnstile の名前は無い。2節・3節はメールマガジンを書くが機能は無い（SEC-PRIVACY-011）
 - メタ: title「Privacy Policy | Le Fil des Heures」、description は固定の文、og:title・og:description は同じ字、og:image は `/mainphoto.png`
-- 試験: E2E `e2e/FR-PRIVACY-001`〜`004`（見出し・メタ・足した節・字の大きさ）、単体テスト `tests/unit/components/PrivacyPage.test.tsx`（委託の一覧と、ほかの節の文言）。画面の結合テスト（`tests/integration/ui/`）は無い
+- 試験: E2E `e2e/FR-PRIVACY-001`〜`004`（見出し・メタ・足した節・字の大きさ）、単体テスト `tests/unit/components/PrivacyPage.test.tsx`（委託の一覧と、ほかの節の文言）、結合テスト `tests/integration/ui/privacy-policy-screen.test.tsx`（h1・13の h2・section の作り・字の大きさ・日付・窓口・metadata）
 
 ## 画面遷移
 
@@ -146,6 +146,7 @@ flowchart LR
 - 出口: 12節の「お問い合わせフォーム」は `next/link` で `/contact`（範囲外の CONTACT）へ移る。外のサイトへのリンクとメールの宛先へのリンクは無い
 - 失敗: 設定を読めない時は頁の代わりに誤りの頁になり、窓口の節にも届かない（ARC-PRIVACY-001、SEC-PRIVACY-009）
 - 戻る道はブラウザの戻ると、Header・Footer のリンクだけ
+- 試験: 結合テスト `tests/integration/ui/privacy-contact-flow.test.tsx` が、フッターのリンクが `a` 要素の素の `href`、12節のリンクが `next/link` で `/contact`、頁のリンクは `/contact` の1つだけ、設定を読めない時に窓口の節へ届かないことを確かめる
 
 ## 状態遷移
 
@@ -180,7 +181,7 @@ stateDiagram-v2
 - 頁は状態を持たない。request のたびに読み直すので、保存の後に開いた時から一覧が変わる（共有のキャッシュが無いことは確かめていない。SEC-PRIVACY-007）
 - 「読めない」は保存された状態ではなく、その request だけの結果
 - どの状態でも「最終改定日」は変わらない（SEC-PRIVACY-012）
-- 試験: 単体テスト `tests/unit/components/PrivacyPage.test.tsx`。オン・オフを実際の DB で切り替えて見る E2E は、範囲外の `e2e/FR-ACCOUNT-043-delivery-visibility.spec.ts` だけ（FREQ-495-AC-05（範囲外））
+- 試験: 結合テスト `tests/integration/ui/privacy-tracking-clause-state.test.tsx`（オフ3項目・オン4項目・enabled だけで決まること・切り替えが次の request から届くこと・最終改定日が変わらないこと・読めない状態が保存されないこと）、単体テスト `tests/unit/components/PrivacyPage.test.tsx`。オン・オフを実際の DB で切り替えて見る E2E は、範囲外の `e2e/FR-ACCOUNT-043-delivery-visibility.spec.ts` だけ（FREQ-495-AC-05（範囲外））
 
 ## データ
 
@@ -224,7 +225,7 @@ stateDiagram-v2
 
 - 表は `id=1` の1行だけ（CHECK）。書き換えは SECURITY DEFINER の関数の中だけで行い、service role にも表の UPDATE は付けていない
 - 公開の頁が service role を使うのは、この付与のため（ARC-PRIVACY-001）。service role は RLS を素通りするので、頁が受け取る欄の絞り込みは頁の側の決まりになる（SEC-PRIVACY-002）
-- 権限は範囲外の結合テスト `tests/integration/db/delivery_tracking_admin.integration.test.ts` が確かめる。PRIVACY の範囲の結合テストは無い。PostgREST の経路の E2E は無い
+- 試験: 返り値の形と列の元は結合テスト `tests/integration/db/privacy_settings_function.integration.test.ts`（DATA-PRIVACY-001）、権限は `tests/integration/db/privacy_settings_permissions.integration.test.ts`（DATA-PRIVACY-002）が確かめる。どちらも手元の Supabase の DB を使う試験で、書いただけで流していない。範囲外の `tests/integration/db/delivery_tracking_admin.integration.test.ts` も権限を確かめる。PostgREST の経路の E2E は無い
 
 ## 未確認事項
 

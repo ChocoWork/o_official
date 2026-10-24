@@ -1,3 +1,14 @@
+/**
+ * プライバシーポリシーの頁（src/app/privacy/page.tsx）。前置きと 1〜12 の節を並べ、メタデータを返す。
+ *
+ * @packageDocumentation
+ * @impl IMPL-PRIVACY-101
+ * @design DD-PRIVACY-001
+ * @remarks 店長が切り替える配送の追跡の設定を、委託の一覧へすぐ届けるため、ビルド時でなく request のたびに描いて設定を読む。
+ * 設定の関数は未ログインの閲覧者・一般会員から取り上げてあるので、サービスロールの client で読む。更新者のメールや遡りの件数を公開の頁へ出さないよう、使うのは有効かどうかだけにする。
+ * 設定が読めない時に一文を黙って出し分けると誤った方針を公表し続けるので、例外をそのまま出して頁を失敗にする。
+ * 守りの見出しは頁ごとに書くと書き忘れが出るので、頁では重ねず共有の proxy に任せる。
+ */
 import type { Metadata } from "next";
 import React from "react";
 import Link from "next/link";

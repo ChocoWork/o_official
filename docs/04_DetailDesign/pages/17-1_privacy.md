@@ -13,7 +13,7 @@
 
 - 結論: 頁は Server Component で、request のたびに描く。service role の client でショップの配送の追跡の設定を読み、オンの時だけ「5. 個人情報の取扱いの委託」の一覧に 17TRACK の一文を足す。読めない時は例外を握りつぶさず、頁の描画を失敗にする
 - 範囲の単位は `.tsx` のファイル1つだけなので、詳細設計も1項目にまとめた。前の版の `IMPL-PRIVACY-001`（本文の表示）と `IMPL-PRIVACY-002`（metadata）は、どちらもこの項目の「旧番号」に移した
-- 分岐は委託の一覧の三項1つだけで、今の単体テストが両側を通す。テストの名前に `DD-PRIVACY-001` を付ければ、分岐の網羅は 100% になる見込み（推定）
+- 分岐は委託の一覧の三項1つだけで、今の単体テストが両側を通す。単体テストの名前は全部 `DD-PRIVACY-001` で始まり、範囲の網羅（`jest.trace.config.cjs`）は文・分岐・関数・行とも 100%（2026-10-24 実測）
 
 ## 範囲と根拠
 
@@ -24,7 +24,7 @@
 | 関連文書 | [PRIVACY の脅威](../../05_Quality/security/threats/privacy.md)、[ADR-0350](../../03_BasicDesign/decisions/ADR-0350-privacy-request-time-render-fail-closed.md)・[ADR-0351](../../03_BasicDesign/decisions/ADR-0351-privacy-tracking-clause-by-shop-setting.md)・[ADR-0352](../../03_BasicDesign/decisions/ADR-0352-privacy-contact-email-text-and-form.md) |
 | 対象のコード | 「実装の単位」の表の1単位 |
 | 引き継いだ文書 | [1.17 プライバシーポリシーページ（PRIVACY）詳細設計](17_privacy.md) の「機能要件対応表」の `IMPL-PRIVACY-001`・`IMPL-PRIVACY-002`。元の文書は、`tests/unit/docs/delivery-status-traceability.test.ts` が配送の追跡の追加の節の文言を固定しているので変えていない |
-| 調べた時点 | 2026-10-24 の作業ツリー。コードは読んだだけで、動かしての確かめはしていない |
+| 調べた時点 | 2026-10-24 の作業ツリー。コードを読んで起こした。単体テストの網羅（文・分岐・関数・行とも 100%）は実測した。E2E と DB の結合テストは流していない |
 
 範囲外の共有部品とほかの領域の部品は ID を持たないので、上位に書かず本文にファイルの道で書く。
 
@@ -46,7 +46,7 @@
 
 - `.tsx` はファイル全体で1つの単位なので、中の metadata の関数・既定の書き出しの頁の関数・字の大きさの定数・委託の一文の定数は、この単位に含める
 - 新しい `@impl` は `IMPL-PRIVACY-101` から振る（前の版の最大が `IMPL-PRIVACY-002` のため）。ファイルの単位のコメントは、1行目の import より前に置く（委託の一文の定数のコメントは単位のコメントとして読まれない）
-- 今は `@impl`・`@design` が無い（`missing-impl`・`bad-design-link`）。コメントを足すのは、在庫の作業が `delivery-store.ts` の形を変え終えてからにする
+- ファイルの先頭に `@packageDocumentation`・`@impl IMPL-PRIVACY-101`・`@design DD-PRIVACY-001` を、import より前に付けた。コメントだけの変更で、動きは変えていない
 
 ## 詳細設計
 
@@ -118,12 +118,12 @@
 | 6 | 設定を読めない時は、頁の関数が同じ例外で失敗する | 設定を読む式の異常 | 在る（「設定を読めない時は、一文を黙って出し分けずにページの失敗として扱う」） |
 | 7 | client を作れない時は、頁の関数が失敗し、設定を読まない | client を作る式の異常 | 在る（「service_role の client を作れない時も、ページの失敗として扱う」） |
 | 8 | 7節の見出し・窓口のメール・最終改定日の字が残る | 7節・12節・末尾の日付の固定の字 | 在る（「ほかの節の文言は変えない…」） |
-| 9 | connection が投げた時は、頁の関数が失敗し、client を作らない | 最初の `await connection()` の異常 | 無い（分岐の網羅には要らない） |
-| 10 | `generateMetadata` が title・description・og:title・og:description・og:image を返す | `generateMetadata` の返り値 | 無い（分岐が無いので網羅には要らない。関数の網羅のため足す候補） |
-| 11 | h1 と13の h2 が決まった順で並び、窓口のメールが `a` 要素でなく、「お問い合わせフォーム」の `href` が `/contact` | 頁の関数の描画の全体 | 無い（字の並びは E2E `e2e/FR-PRIVACY-001`・`003` が一部を見る） |
+| 9 | connection が投げた時は、頁の関数が失敗し、client を作らず設定も読まない | 最初の `await connection()` の異常 | 在る（「connection() が投げた時は、ページの失敗として扱い、client も作らず設定も読まない」） |
+| 10 | `generateMetadata` が title・description・og:title・og:description・og:image を返す | `generateMetadata` の返り値 | 在る（「generateMetadata が title・description・og:title・og:description・og:image を返す」） |
+| 11 | h1 と13の h2 が決まった順で並び、窓口のメールが `a` 要素でなく、「お問い合わせフォーム」の `href` が `/contact` | 頁の関数の描画の全体 | 在る（「h1 と13の h2 が決まった順で並び、窓口のメールはリンクにせず、お問い合わせフォームは /contact …」） |
 
-- 分岐は表の2つだけで、1〜3・5 が両側を通す。今のテストの名前には ID が無い（`untagged-test`）。名前の先頭に `DD-PRIVACY-001` を付けると範囲の網羅に数えられる
-- `generateMetadata` を呼ぶ単体テストは無いが、範囲の網羅（`jest.trace.config.cjs`）は分岐だけを見るので落ちない
+- 分岐は表の2つだけで、1〜3・5 が両側を通す。観点 1〜11 の単体テストは、名前の先頭が全部 `DD-PRIVACY-001`。範囲の網羅は文・分岐・関数・行とも 100%（2026-10-24 実測）で、届かない分岐は無い
+- 観点 9〜11 は、分岐の網羅には要らないが、関数（`generateMetadata`）と描画の全体の網羅のために足した
 
 ## 未確認事項
 
