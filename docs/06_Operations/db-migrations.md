@@ -1,6 +1,6 @@
 ﻿# DB マイグレーション運用
 
-> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に追記） | 確認日: 2026-10-24 | 本番適用状況は未確認（G-1 の移行は未適用）
+> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に追記） | 確認日: 2026-10-24 | 本番適用状況は未確認（G-1 の移行は 2026-10-24 に適用済み）
 
 ## 概要
 
@@ -332,17 +332,18 @@ CI（DB）とホスティング（アプリ）のどちらが先に終わるか�
 
 ## グループ G-1 在庫の割当の移行（20261023211425）
 
-[設計書](../superpowers/specs/2026-10-23-group-g-design.md)の11章（切り替え）と[実装計画](../superpowers/plans/2026-10-24-group-g1-allocation.md)の Task 1・14・19 に従う。2026-10-24 時点で本番へ未適用。内容は[ER 図](../03_BasicDesign/data/er.md)の「在庫の割当と品物の状態の履歴」、流れは[在庫の割当の流れ](../04_DetailDesign/sequence/inventory-allocation.md)に書く。
+[設計書](../superpowers/specs/2026-10-23-group-g-design.md)の11章（切り替え）と[実装計画](../superpowers/plans/2026-10-24-group-g1-allocation.md)の Task 1・14・19 に従う。**2026-10-24 21:35（日本時間）に本番へ適用済み**。内容は[ER 図](../03_BasicDesign/data/er.md)の「在庫の割当と品物の状態の履歴」、流れは[在庫の割当の流れ](../04_DetailDesign/sequence/inventory-allocation.md)に書く。
 
-### 記録（適用後に埋める）
+### 記録
 
 | 項目 | 値 |
 | --- | --- |
-| 移行ファイル | `supabase/migrations/20261023211425_group_g1_allocation.sql`（適用前の仮の版。1本。先頭の `BEGIN;` と末尾の `COMMIT;` を1組だけ持つ） |
-| 本番適用版 | （本番適用版: Task 19 Step 11 で記入） |
-| 清掃件数 | （清掃件数: オーナー確認後に記入） |
+| 移行ファイル | `supabase/migrations/20261023211425_group_g1_allocation.sql`（1本。先頭の `BEGIN;` と末尾の `COMMIT;` を1組だけ持つ。528,284 バイト、MD5 `7ecf481abdb351fb4b126e68c5746360`） |
+| 本番適用版 | `20261023211425`（2026-10-24 21:35 JST、Supabase CLI の `db push --linked` で適用。CLI はファイルの版のまま記録するので改名なし） |
+| 清掃件数 | オーナーが確認した件数（適用の直前に2回読み、同じ値）: `orders` 16、`order_items` 18、`order_revisions` 13、`checkout_drafts` 140、`private.order_email_outbox` 8、ほかの26の対象は0。`item_variants` は21行すべて元から在庫0（変化なし）。Webhook の `dead` への移し0、payout の計算し直し0、問い合わせの関連の解除0 |
+| 適用後の照合 | 履歴の文 591個と、その連結の MD5 がローカルの `db reset` の履歴と一致。関数328（本文・所有者・設定）・トリガー108・列983 もローカルと一致。清掃の対象は全部0 |
 
-適用が終わったら、上の2行を実際の値で置き換える。ファイル名の時刻部分を適用版に直した時は、この文書と、移行ファイル名を文字で書いている文書（ER 図・シーケンス・状態・テスト仕様）の仮の版も同じ版に直す。件数は表名・条件・件数だけを書き、ID・メール・本文は書かない。
+件数は表名・条件・件数だけを書き、ID・メール・本文は書かない。
 
 ### 何をするか
 
@@ -371,7 +372,7 @@ CI（DB）とホスティング（アプリ）のどちらが先に終わるか�
 
 ### 当て方
 
-Supabase MCP の `apply_migration` で、ファイル全文を **1回だけ**当てる（`name` は `group_g1_allocation`）。清掃だけ・本体だけの個別適用と、移行履歴への手の INSERT はしない。スクリプトからの本番接続はなく、DB のパスワードは扱わない。読み取りは MCP の `execute_sql`。
+計画では Supabase MCP の `apply_migration` でファイル全文を1回だけ当てる予定だった。実際は、ファイルが 528KB と大きく1回の呼び出しで渡せないため、オーナーの指示で **Supabase CLI の `db push --linked`** で当てた（ローカルの `db reset` と同じ仕組みでファイルをそのまま1取引で当てる。CLI はログイン済みの印で一時的な役割を作って接続し、DB のパスワードは扱っていない）。清掃だけ・本体だけの個別適用と、移行履歴への手の INSERT はしない。読み取りは MCP の `execute_sql`。
 
 | 順 | 内容 |
 | --- | --- |
@@ -382,9 +383,9 @@ Supabase MCP の `apply_migration` で、ファイル全文を **1回だけ**当
 | 5 | 手元で動くアプリと worker を止める（3000番の E2E 用のアプリも）。止めたことを棚卸しで確かめ、master の対象コミットだけを push する |
 | 6 | 適用の直前に、writer（アプリ・worker）、cron の登録（jobname・schedule・active・関数名だけ。command の本文は出さない）、31表の件数を読み直す。**前回より多くても少なくても止めて**原因を確かめ、連続2回の読み取りが一致する安定した件数を作る。cron の設定は変えない |
 | 7 | オーナーに31表の条件と件数を示し、**明示の確認**を取る（一般の実装の承認や時間経過では代えない）。確認後に件数や時間枠が変わったら 6 に戻る |
-| 8 | `apply_migration` を1回呼ぶ |
-| 9 | 当てた文を照合する。`md5(statements[1])`・`octet_length(statements[1])`・文の数（1）が、手順4で固定した値と一致すること。新しい表・列・関数・権限、旧入口の停止、31表の結果（件数・全 variant が0・Webhook の `dead`・未通知の一覧が0・総行数）、`private` スキーマの `USAGE` と PostgREST の前処理の保持、G-0 の保持を読み取りで確かめる。本番で試験の注文は作らない |
-| 10 | ファイル名の時刻部分だけを、MCP が記録した版に直す（上の「MCP の apply_migration で当てた場合」。名前の後ろと本文は変えない）。上の記録の2行を埋めてコミットし、push する |
+| 8 | `supabase migration list --linked` で本番に無いのが G-1 だけであることを、`supabase db push --linked --dry-run` で当てるのが G-1 の1本だけ（seed・役割なし）であることを確かめ、`supabase db push --linked` を1回流す |
+| 9 | 当てた文を照合する。CLI は文ごとに分けて記録するので、`array_length(statements,1)` と `md5(array_to_string(statements, E'\n'))` を、ローカルで `db reset` した履歴の同じ値と比べる。新しい表・列・関数・権限、旧入口の停止、31表の結果（件数・全 variant が0・Webhook の `dead`）、`private` スキーマの `USAGE`、G-0 の保持を読み取りで確かめる。本番で試験の注文は作らない |
+| 10 | 版はファイルのまま記録されるので改名しない。上の記録を埋めてコミットし、push する |
 
 ### 失敗したとき・戻すとき
 
@@ -395,3 +396,7 @@ Supabase MCP の `apply_migration` で、ファイル全文を **1回だけ**当
 ### 適用後に残る作業
 
 - 旧の発送4関数と仕上がりの2関数は、G-3 の発送票まで再開しない。
+- 適用の前後の読み比べで、G-1 と関係のない前からの差が2つ見つかった（G-1 は触っていない）。後でどちらに揃えるかを決める。
+  - 11の関数（`cleanup_password_reset_tokens`・`clear_admin_expense_cost_allocations`・`create_profile_for_new_auth_user`・`find_auth_user_id_by_email`・`increment_rate_limit_counter` の2つ・`is_auth_session_active`・`record_admin_finance_entry_revision`・`replace_admin_expense_cost_allocations`・`revoke_auth_session`・`revoke_auth_sessions_for_user`）の EXECUTE 権限が、本番は `postgres`・`service_role` だけ、ローカル（移行ファイル）は `anon`・`authenticated` にも付く。本番の方が狭い。
+  - `admin_finance_summary_options` の2つの CHECK 制約の定義の括弧の付き方が違う（意味は同じ）。
+  - 7つの関数の本文の改行（CR の有無）が違う（CR を除くと同じ）。
