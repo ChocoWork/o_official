@@ -89,4 +89,12 @@ describeLocalDb('G-1 Task 16: 表の ACL の確かめは意味で比べる', (db
     await db().query(grant);
     expect(await runAssertion()).toEqual(FAILED);
   });
+
+  test.each(['anon', 'authenticated', 'service_role'])('PG17 の MAINTAIN が %s に付くと止まる（PG17 より前の版では権限名が無いので見ない）', async (role) => {
+    const version = Number((await db().query("select current_setting('server_version_num') as v")).rows[0].v);
+    if (version < 170000) return; // MAINTAIN does not exist before PG17; the assertion skips it there too.
+    expect(await runAssertion()).toBeNull();
+    await db().query(`grant maintain on table public.order_item_allocations to ${role}`);
+    expect(await runAssertion()).toEqual(FAILED);
+  });
 });

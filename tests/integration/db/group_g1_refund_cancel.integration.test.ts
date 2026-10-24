@@ -151,6 +151,30 @@ describeLocalDb('G-1 Task 8: refunds and the FIFO allocations', (db) => {
     expect(transitions).toEqual([{ from_status: 'awaiting_response', to_status: 'pending' }, { from_status: 'pending', to_status: 'succeeded' }]);
   });
 
+  test('保留→保留（状態の変わらない報告）は品物の状態・割当の履歴を書かず、操作を使い回す（review M9）', async () => {
+    const fx = await catalog({ stock: 3 });
+    const waiting = await paidOrder({ stock: 0, quantity: 1, reserved: false, createdAt: '2026-01-01', variant: fx });
+    const target = await paidOrder({ stock: 0, quantity: 2, createdAt: '2026-02-01', variant: fx });
+    const { refundId } = await insertRefundRecord(db(), { orderId: target.orderId, lines: [{ orderItemId: target.itemId, quantity: 1 }] });
+    expect(await record(refundId, 'pending')).toMatchObject({ status: 'pending', newly_accepted: true });
+    const ops = await operations('record_order_refund_result', refundId);
+    expect(ops).toHaveLength(1);
+    const snapshot = async () => (await db().query(`select
+      (select count(*)::int from public.order_item_state_events e join public.order_items oi on oi.id = e.order_item_id
+        where oi.order_id = any($1::uuid[])) as state_events,
+      (select count(*)::int from public.order_item_allocation_events e join public.order_item_allocations a on a.id = e.allocation_id
+        where a.variant_id = $2) as allocation_events,
+      (select count(*)::int from public.stock_movements where variant_id = $2) as movements`,
+    [[target.orderId, waiting.orderId], fx.variantId])).rows[0];
+    const before = await snapshot();
+
+    expect(await record(refundId, 'pending')).toMatchObject({ status: 'pending', newly_accepted: false });
+
+    expect(await snapshot()).toEqual(before);
+    expect(await operations('record_order_refund_result', refundId)).toEqual(ops);
+    expect(await states(target.orderId)).toEqual({ cancelled: 1, ready: 1 });
+  });
+
   test('no_restock は refund/+n と adjustment/-n を同じ返金で対にし、間で FIFO を動かさない（古い待ち注文は A 0 のまま）', async () => {
     const fx = await catalog({ stock: 2 });
     const waiting = await paidOrder({ stock: 0, quantity: 1, reserved: false, createdAt: '2026-01-01', variant: fx });

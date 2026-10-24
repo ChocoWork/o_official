@@ -2308,9 +2308,12 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
       await db().query("update public.shop_return_settings set window_start = 'last_item' where id = 1");
       expect(await deadlines()).toEqual(['2026-10-20', '2026-10-20']);
 
-      // 最後の発送を取り消すと、残った発送の日から数える
-      await db().query('update public.order_fulfillments set cancelled_at = now() where id = $1', [order.second]);
-      expect(await deadlines()).toEqual(['2026-10-11']);
+      // 最後の発送が取り消されていれば、残った発送の日から数える。G-1 には割当を戻す取消がまだ無い（G-3）ので、
+      // 生きた発送を後から UPDATE で取り消さず、同じ形の注文を「最後の発送が最初から取消済み」で作って比べる
+      const withCancelled = await createTwoShipments([
+        { shippedAt: '2026-10-01T03:00:00Z' }, { shippedAt: '2026-10-10T03:00:00Z', cancelled: true },
+      ]);
+      expect((await shipmentLinesOf(db(), withCancelled.orderId)).map((line) => line.deadline_date)).toEqual(['2026-10-11']);
     });
   });
 
@@ -2358,11 +2361,24 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
       expect(await deadlines()).toEqual(['2026-10-13', '2026-10-20']);
       await db().query("update public.shop_return_settings set window_start='last_item' where id=1");
       expect(await deadlines()).toEqual(['2026-10-20', '2026-10-20']);
-      await db().query('update public.order_fulfillments set cancelled_at=now() where id=$1', [second.fulfillmentId]);
-      expect(await deadlines()).toEqual(['2026-10-13']);
+      // 届いていない2回目も取り消されていれば、届いた1回目の日から数える。生きた発送を後から UPDATE で取り消さず
+      // （割当を戻す取消は G-3）、同じ形の注文を「2回目が最初から取消済み」で作って比べる
+      const other = await createDeliveryOrder(db(), 4);
+      const otherFirst = await insertDeliveryFixture(db(), {
+        orderId: other.orderId, shippedAt: '2026-10-01T03:00:00Z', deliveredAt: '2026-10-05T15:00:00Z',
+      });
+      await withFixtureConsumption(db(), { orderId: other.orderId, lines: [{ order_item_id: other.orderItemId, quantity: 1 }] },
+        () => db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)',
+          [otherFirst.fulfillmentId, other.orderItemId]));
+      for (const [shippedAt, quantity] of [['2026-10-10T03:00:00Z', 2], ['2026-10-20T03:00:00Z', 1]] as const) {
+        await seedGroupG1Shipment(db(), { orderId: other.orderId, lines: [{ orderItemId: other.orderItemId, quantity }],
+          shippedAt, cancelledAt: '2026-10-26T03:00:00Z' });
+      }
+      const otherDeadlines = async () => (await shipmentLinesOf(db(), other.orderId)).map((line) => line.deadline_date);
+      expect(await otherDeadlines()).toEqual(['2026-10-13']);
       await db().query('update public.shop_return_settings set window_days=null where id=1');
-      expect(await deadlines()).toEqual([null]);
-      expect((await shipmentLinesOf(db(), order.orderId))[0]).toMatchObject({ quantity: 1, in_returns: 0, missing: 0, returnable: 1 });
+      expect(await otherDeadlines()).toEqual([null]);
+      expect((await shipmentLinesOf(db(), other.orderId))[0]).toMatchObject({ quantity: 1, in_returns: 0, missing: 0, returnable: 1 });
     });
 
     test('番号を直すと目安へ戻り、既存の返品と申し込みの記録は変更0行', async () => {

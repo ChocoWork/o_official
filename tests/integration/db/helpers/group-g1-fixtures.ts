@@ -17,6 +17,9 @@ function assertLocal(client: PgClient): asserts client is FixtureClient {
  * statement sent after the caller's BEGIN differs, while an autocommit statement does not. Read-only; it does
  * not depend on node-pg internals and never probes with a failing statement. An aborted transaction makes it
  * throw (the caller's state is already broken).
+ * Limit (review M8): BEGIN must be its own query. If a caller sent `BEGIN; select ...` in one simple-protocol message,
+ * the check statement could start in the same microsecond as the transaction and report false; the suites always
+ * send `begin` as a separate query.
  */
 export async function isInTransaction(client: PgClient): Promise<boolean> {
   return (await client.query(
@@ -24,7 +27,8 @@ export async function isInTransaction(client: PgClient): Promise<boolean> {
   )).rows[0].in_transaction as boolean;
 }
 
-async function holdsCommonLock(client: PgClient): Promise<boolean> {
+/** Whether this connection holds the common advisory (190521,1) now. Read-only. */
+export async function holdsCommonLock(client: PgClient): Promise<boolean> {
   return (await client.query(`select exists(select 1 from pg_catalog.pg_locks
     where pid=pg_backend_pid() and locktype='advisory' and classid=190521 and objid=1
       and objsubid=2 and mode='ExclusiveLock' and granted) as held`)).rows[0].held as boolean;

@@ -3,7 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
-import { createCatalogFixture, createDraft, insertCancelRequest, insertOrderWithLines, shipFixtureOrder } from './helpers/order-fixtures';
+import {
+  createCatalogFixture, createDraft, createShippedOrderFixture, insertCancelRequest, insertOrderWithLines, insertReturnRecord,
+  shipFixtureOrder,
+} from './helpers/order-fixtures';
 import { cancelDeliveryFixture } from './helpers/delivery-tracking-fixtures';
 import { setOrderStatusForFixture } from './helpers/group-g1-fixtures';
 
@@ -164,6 +167,71 @@ describeLocalDb('G-1 Task 16: J-19（状態の変更の理由と移り方）を�
       [request.cancelRequestId, actor, refundId])).rows[0]).toEqual({ status: 'resolved' });
     await refundResult(refundId, 'succeeded');
     expect(await status(o.orderId)).toBe('cancelled');
+    await flush();
+  });
+
+  // Review M3: the remaining refund / return writers, including the J-19-gated shipped -> paid reasons.
+  test('返金のエラー・外からの全額の返金', async () => {
+    const errored = await placed();
+    await markPaid(errored.orderId, 'payment_in_progress', errored.draft.totalAmount);
+    const refundId = await fullRefund(errored.orderId);
+    expect((await db().query(`select outcome from public.mark_order_refund_error($1::uuid,'not_found_in_stripe',true)`, [refundId])).rows)
+      .toEqual([{ outcome: 'errored' }]);
+    expect(await status(errored.orderId)).toBe('paid');
+
+    const external = await placed();
+    await markPaid(external.orderId, 'payment_in_progress', external.draft.totalAmount);
+    expect((await db().query(`select created, status from public.record_external_order_refund($1::uuid,$2::text,$3::integer,'succeeded',
+      null,null,null,'card',null,null,null,now())`, [external.orderId, `re_${randomUUID().replaceAll('-', '')}`, external.draft.totalAmount])).rows)
+      .toEqual([{ created: true, status: 'succeeded' }]);
+    expect(await status(external.orderId)).toBe('cancelled');
+    await flush();
+  });
+
+  test('発送前の返金の失敗で、発送済みの注文が入金済みへ戻る（refund_failed_reopened）', async () => {
+    const o = await placed(2);
+    await markPaid(o.orderId, 'payment_in_progress', o.draft.totalAmount);
+    const refundId = (await db().query(`select refund_id from public.begin_order_refund($1::uuid,'admin',$2::uuid,$3::jsonb,true,0,
+      5000,null,null,null,false,$4::uuid,null)`, [o.orderId, randomUUID(),
+      JSON.stringify([{ order_item_id: o.orderItemId, quantity: 1, before_shipment: true }]), actor])).rows[0].refund_id as string;
+    expect(await refundResult(refundId, 'succeeded')).toEqual({ status: 'succeeded' });
+    expect(await status(o.orderId)).toBe('paid');
+    expect(await shipFixtureOrder(db(), { orderId: o.orderId, actorId: actor, lines: [{ order_item_id: o.orderItemId, quantity: 1 }] }))
+      .toMatchObject({ completes_order: true, order_status: 'shipped' });
+    expect(await refundResult(refundId, 'failed')).toEqual({ status: 'failed' });
+    expect(await status(o.orderId)).toBe('paid');
+    expect((await db().query(`select reason from public.order_revisions where order_id = $1 order by id desc limit 1`, [o.orderId])).rows)
+      .toEqual([{ reason: 'refund_failed_reopened' }]);
+    await flush();
+  });
+
+  test('返品の受取で交換の品を足すと、発送済みの注文が入金済みへ戻る（return_exchange_added）。返品の返金も通る', async () => {
+    await db().query('update public.shop_return_settings set inspection_enabled=true where id=1');
+    await db().query("update public.shop_return_reason_settings set out_of_stock_exchange='make' where reason='defective'");
+    const exchange = await createShippedOrderFixture(db(), { lines: [{ quantity: 1, extraStock: 1 }] });
+    expect(await status(exchange.orderId)).toBe('shipped');
+    const exchangeReturn = await insertReturnRecord(db(), { orderId: exchange.orderId, lines: [{ fulfillmentId: exchange.fulfillments[0].id,
+      orderItemId: exchange.orderItemIds[0], quantity: 1, resolution: 'exchange', exchangeVariantId: exchange.variantIds[0], exchangeMethod: 'stock' }] });
+    const received = (await db().query(`select * from public.admin_receive_return($1::uuid,$2::uuid,true,$3::uuid,
+      $4::jsonb,'[]'::jsonb,'none',null,0,null,true,'fixture',null,null)`, [exchangeReturn.returnId, actor, randomUUID(),
+      JSON.stringify([{ return_line_id: exchangeReturn.lineIds[0], disposition: 'restocked', quantity: 1 }])])).rows[0];
+    expect(received.exchange_order_item_ids).toHaveLength(1);
+    expect(await status(exchange.orderId)).toBe('paid');
+    expect((await db().query(`select reason from public.order_revisions where order_id = $1 order by id desc limit 1`, [exchange.orderId])).rows)
+      .toEqual([{ reason: 'return_exchange_added' }]);
+
+    const refunded = await createShippedOrderFixture(db(), { lines: [{ quantity: 1 }] });
+    const refundReturn = await insertReturnRecord(db(), { orderId: refunded.orderId, lines: [{ fulfillmentId: refunded.fulfillments[0].id,
+      orderItemId: refunded.orderItemIds[0], quantity: 1, resolution: 'refund' }] });
+    await db().query(`select * from public.admin_receive_return($1::uuid,$2::uuid,true,$3::uuid,
+      $4::jsonb,'[]'::jsonb,'consult',null,0,null,true,'fixture',null,null)`, [refundReturn.returnId, actor, randomUUID(),
+      JSON.stringify([{ return_line_id: refundReturn.lineIds[0], disposition: 'restocked', quantity: 1 }])]);
+    const decided = (await db().query('select * from public.admin_refund_return($1::uuid,$2::uuid,$3::uuid,$4::integer,0,null,false)',
+      [refundReturn.returnId, actor, randomUUID(), 5000])).rows[0];
+    expect(decided.refund_id).toEqual(expect.any(String));
+    expect(await refundResult(decided.refund_id, 'succeeded')).toEqual({ status: 'succeeded' });
+    // 1点の注文を返品で全額返金すると、既存の決まりどおり注文は取消になる（J-19 の下でも通る）
+    expect(await status(refunded.orderId)).toBe('cancelled');
     await flush();
   });
 

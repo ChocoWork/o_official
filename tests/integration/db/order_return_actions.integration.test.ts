@@ -3021,6 +3021,8 @@ describeLocalDb('integration: 返品を作る操作と発送の取消・ほか�
 
     await db().query('begin');
     try {
+      // The synthetic cancel needs the caller's common advisory first (it never takes it late itself).
+      await db().query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
       await cancelFulfillment(db(), order.orderId, order.fulfillmentIds[1], order.actorId);
       const creating = createReturn(other, order.orderId, {
         actorId: order.actorId,

@@ -468,7 +468,10 @@ describeLocalDb('G-1 exclusive item states and interval history', (db) => {
     expect(await events(f)).toEqual([]); await assertStates(f, { in_production: 6 });
   });
 
-  test('newly visible units use NULL; leaving visibility uses NULL; old history is never a baseline', async () => {
+  // Review M4: the leaving half runs on a second order, so the same-item version continuity (version 2 after an earlier
+  // null -> unpaid row) is no longer asserted here. J-19 allows no visible -> hidden transition for one order, and the
+  // recorder's version counter per item is already covered by 'one operation records payment then FIFO separately'.
+  test('newly visible units use NULL; leaving visibility (second order, J-19-safe) uses NULL; old history is never a baseline', async () => {
     const f = await fixture('payment_in_progress'); const hidden = await capture(f); const op = await operation();
     await setOrderStatusForFixture(db(), [f.orderId], 'pending');
     expect(await record(f, hidden, op, 1)).toBe(1);

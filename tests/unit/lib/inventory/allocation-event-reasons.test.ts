@@ -49,8 +49,15 @@ describe('割当の履歴の理由の決まった値', () => {
   });
 
   test('移行の割当の履歴への INSERT が書く文字の理由は、すべて決まった値', () => {
-    const inserts = [...MIGRATION_SQL.matchAll(/INSERT INTO public\.order_item_allocation_events[\s\S]*?;/g)].map((m) => m[0]);
+    // `--` comments are removed first: a `;` inside a comment would otherwise end the INSERT early (review M1).
+    const withoutComments = MIGRATION_SQL.replace(/--[^\n]*/g, '');
+    const inserts = [...withoutComments.matchAll(/INSERT INTO public\.order_item_allocation_events[\s\S]*?;/g)].map((m) => m[0]);
     expect(inserts.length).toBeGreaterThanOrEqual(6);
+    // The CASE of release_group_g_payment_holds (the codes it passes through and its status_change fallback) is scanned.
+    const holdRelease = inserts.filter((sql) => sql.includes("THEN _reason ELSE 'status_change' END"));
+    expect(holdRelease).toHaveLength(1);
+    for (const code of ['stripe_checkout_expired', 'stripe_voucher_expired', 'admin_cancel', 'admin_cancel_failed_order',
+      'resolve_payment_exception', 'status_change']) expect(holdRelease[0]).toContain(`'${code}'`);
     const literals = inserts.flatMap((sql) => [...sql.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]));
     // event_type の値と、理由を選ぶ CASE の比べの値（返金の行の restock_type = 'cancel'）は理由ではない
     const notReasons = ['hold', 'promote', 'allocate', 'release', 'consume', 'restore', 'transfer', 'paid', 'cancel'];

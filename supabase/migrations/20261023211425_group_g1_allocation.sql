@@ -9481,9 +9481,14 @@ $g1_final_objects$;
 --   要る: 所有者 postgres の全権限、service_role の SELECT（group_g_operations を除く 3 表）
 --   無い: PUBLIC の権限、anon・authenticated の全権限（列の権限も）、service_role の SELECT 以外（列の権限も）と
 --         group_g_operations の SELECT
+--   PG17 の MAINTAIN も、その版の時だけ「無い」の一覧に足す（古い版では権限名が無く has_table_privilege が断るため）
 DO $g1_final_table_acl$
 DECLARE
   v_failed text;
+  v_maintain text[] := CASE WHEN pg_catalog.current_setting('server_version_num')::integer >= 170000
+    THEN ARRAY['MAINTAIN'] ELSE ARRAY[]::text[] END;
+  v_all text[] := ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] || v_maintain;
+  v_service_forbidden text[] := ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] || v_maintain;
 BEGIN
   IF EXISTS (
     SELECT 1
@@ -9503,12 +9508,12 @@ BEGIN
        OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE((SELECT c.relacl FROM pg_catalog.pg_class AS c WHERE c.oid = t.r),
                     pg_catalog.acldefault('r', 'postgres'::regrole))) AS x WHERE x.grantee = 0)
        OR EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['anon', 'authenticated']) AS g(role)
-                  CROSS JOIN pg_catalog.unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) AS p(priv)
+                  CROSS JOIN pg_catalog.unnest(v_all) AS p(priv)
                   WHERE pg_catalog.has_table_privilege(g.role, t.r, p.priv))
        OR EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['anon', 'authenticated']) AS g(role)
                   CROSS JOIN pg_catalog.unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']) AS p(priv)
                   WHERE pg_catalog.has_any_column_privilege(g.role, t.r, p.priv))
-       OR EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) AS p(priv)
+       OR EXISTS (SELECT 1 FROM pg_catalog.unnest(v_service_forbidden) AS p(priv)
                   WHERE pg_catalog.has_table_privilege('service_role', t.r, p.priv))
        OR EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['INSERT', 'UPDATE', 'REFERENCES']) AS p(priv)
                   WHERE pg_catalog.has_any_column_privilege('service_role', t.r, p.priv))

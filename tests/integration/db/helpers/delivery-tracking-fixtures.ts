@@ -1,6 +1,6 @@
 import type { ShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import { randomUUID } from 'node:crypto';
-import { isInTransaction, withGroupG1FixtureTransaction } from './group-g1-fixtures';
+import { holdsCommonLock, isInTransaction, withGroupG1FixtureTransaction } from './group-g1-fixtures';
 import { connectLocalDb, type PgClient } from './local-db';
 import { createCatalogFixture, insertOrderWithLines, shipFixtureOrder, uniqueSuffix, withFixtureConsumption } from './order-fixtures';
 
@@ -91,9 +91,10 @@ async function syntheticDeliveryChange<T>(
   input: { orderId: string; fulfillmentId: string; actorId: string | null; operation: string },
   write: () => Promise<T>,
 ): Promise<T> {
-  if (await isInTransaction(client)) {
-    await client.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
-  }
+  // Review M5: never take the common advisory late here. Inside the caller's transaction the caller must already hold
+  // it (checked before any row lock, GROUP_G_INVENTORY_LOCK_REQUIRED otherwise); without one, the helper opens a
+  // transaction and takes it first.
+  if (await isInTransaction(client) && !(await holdsCommonLock(client))) throw new Error('GROUP_G_INVENTORY_LOCK_REQUIRED');
   return withGroupG1FixtureTransaction(client, async () => {
     await client.query('select id from public.orders where id=$1 for update', [input.orderId]);
     await client.query('select id from public.order_fulfillments where order_id=$1 order by id for update', [input.orderId]);
