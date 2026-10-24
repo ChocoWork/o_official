@@ -1,3 +1,12 @@
+/**
+ * 管理者・サポーターの TOTP コードを確かめて aal2 へ上げる窓口（src/app/api/auth/mfa/verify/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-205
+ * @design DD-AUTH-031
+ * @remarks 確認が通ると Supabase が aal2 のトークン対を返す。Cookie と sessions 行へ書き戻さないとブラウザは aal1 のままで、認可側の判定を通れない。書き戻しの保存に失敗しても、aal2 はトークン自体が持つので配る。
+ */
+
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { cookies } from 'next/headers';

@@ -119,7 +119,7 @@ describe('POST /api/auth/otp/verify - Integration Tests', () => {
     });
   });
 
-  test('[SECURITY] verifyOtp は type: email で 1 回だけ呼ばれる', async () => {
+  test('API-AUTH-002 [SECURITY] verifyOtp は type: email で 1 回だけ呼ばれる', async () => {
     const res: any = await otpVerifyHandler(buildOtpRequest());
 
     expect(res.status).toBe(200);
@@ -131,7 +131,7 @@ describe('POST /api/auth/otp/verify - Integration Tests', () => {
     });
   });
 
-  test('cart の Cookie の印をセッション保存へ渡し、ログイン後の引き継ぎに使う', async () => {
+  test('API-AUTH-002 cart の Cookie の印をセッション保存へ渡し、ログイン後の引き継ぎに使う', async () => {
     const cartToken = 'c'.repeat(43);
     const request = buildOtpRequest();
     request.headers.set('cookie', `sb-login-2fa-session=synthetic; cart=${cartToken}`);
@@ -143,7 +143,7 @@ describe('POST /api/auth/otp/verify - Integration Tests', () => {
     );
   });
 
-  test('[SECURITY] 本文に email を混ぜても宛先の判定に影響しない', async () => {
+  test('API-AUTH-002 [SECURITY] 本文に email を混ぜても宛先の判定に影響しない', async () => {
     // 宛先の判定材料をクライアントから受け取らない。偽装しうる入力そのものを無くす。
     const res: any = await otpVerifyHandler(
       buildOtpRequest(VALID_CODE, { email: 'attacker@example.com' }),
@@ -157,7 +157,7 @@ describe('POST /api/auth/otp/verify - Integration Tests', () => {
     });
   });
 
-  test('[SECURITY] アカウント単位の制限は Cookie 由来の宛先で 5 回 / 600 秒', async () => {
+  test('API-AUTH-002 [SECURITY] アカウント単位の制限は Cookie 由来の宛先で 5 回 / 600 秒', async () => {
     await otpVerifyHandler(buildOtpRequest());
 
     const calls = enforceRateLimit.mock.calls.map((c: any[]) => c[0]);
@@ -170,7 +170,7 @@ describe('POST /api/auth/otp/verify - Integration Tests', () => {
     expect(accountCall.windowSeconds).toBe(600);
   });
 
-  test('[SECURITY] Cookie が無効ならアカウント単位の枠を消費しない', async () => {
+  test('API-AUTH-002 [SECURITY] Cookie が無効ならアカウント単位の枠を消費しない', async () => {
     // 制限が Cookie 検証より前にあると、Cookie を持たない相手が
     // 他人のアカウントの枠を故意に潰せる。
     readLoginTwoFactorSessionFromCookieHeader.mockReturnValue(null);
@@ -182,7 +182,7 @@ describe('POST /api/auth/otp/verify - Integration Tests', () => {
     expect(calls.filter((c: any) => c.subject)).toHaveLength(0);
   });
 
-  test('[SECURITY] 上限到達で 429 を返し、2FA Cookie を破棄する', async () => {
+  test('API-AUTH-002 [SECURITY] 上限到達で 429 を返し、2FA Cookie を破棄する', async () => {
     enforceRateLimit.mockImplementation(async (args: any) =>
       args.subject
         ? new Response(JSON.stringify({ error: 'Too many requests' }), {
@@ -210,7 +210,7 @@ describe('POST /api/auth/otp/verify - Integration Tests', () => {
     );
   });
 
-  test('[ERROR] コードが誤っていれば 401', async () => {
+  test('API-AUTH-002 [ERROR] コードが誤っていれば 401', async () => {
     __mockVerifyOtp.mockResolvedValue({
       data: null,
       error: { message: 'invalid otp' },
@@ -221,7 +221,7 @@ describe('POST /api/auth/otp/verify - Integration Tests', () => {
     expect(res.status).toBe(401);
   });
 
-  test('[SECURITY] 失敗しても他の type へ総当たりしない', async () => {
+  test('API-AUTH-002 [SECURITY] 失敗しても他の type へ総当たりしない', async () => {
     // 総当たりは 1 回の入力で Supabase 側の検証を最大 3 回消費し、
     // signup / magiclink など別目的のトークンまで第 2 要素として受理しうる。
     __mockVerifyOtp.mockResolvedValue({

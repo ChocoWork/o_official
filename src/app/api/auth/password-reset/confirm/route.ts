@@ -1,3 +1,13 @@
+/**
+ * パスワード再設定の確定の窓口（src/app/api/auth/password-reset/confirm/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-184
+ * @design DD-AUTH-025
+ * @remarks 再設定フローの終端なので認証は掛けられず、認証の代わりに署名済み Cookie と
+ * 未消費トークン行の両方を検証する（どちらか一方だけを能力にしない）。
+ */
+
 import { NextResponse, after } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import sendMail from '@/lib/mail';
@@ -16,9 +26,6 @@ import {
   refreshCookieName,
 } from '@/lib/cookie';
 import { readPasswordResetSessionFromCookieHeader } from '@/features/auth/services/password-reset-session';
-
-// PUBLIC: 再設定フローの終端。認証の代わりに署名済み Cookie と未消費トークン行の
-// 両方を検証する（どちらか一方だけを能力にしない）。
 
 /**
  * パスワード変更後は既存セッションを全て切る。

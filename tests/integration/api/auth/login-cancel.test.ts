@@ -68,7 +68,7 @@ describe('POST /api/auth/login/cancel - Integration Tests', () => {
     });
   });
 
-  test('[SUCCESS] 2FA Cookie を破棄して 200 を返す', async () => {
+  test('API-AUTH-004 [SUCCESS] 2FA Cookie を破棄して 200 を返す', async () => {
     const res: any = await cancelHandler(buildRequest());
 
     expect(res.status).toBe(200);
@@ -77,7 +77,7 @@ describe('POST /api/auth/login/cancel - Integration Tests', () => {
     expect(cleared.maxAge).toBe(0);
   });
 
-  test('[AUDIT] 中断を監査ログに残す', async () => {
+  test('API-AUTH-004 [AUDIT] 中断を監査ログに残す', async () => {
     await cancelHandler(buildRequest());
 
     expect(logAudit).toHaveBeenCalledWith(
@@ -89,7 +89,7 @@ describe('POST /api/auth/login/cancel - Integration Tests', () => {
     );
   });
 
-  test('Cookie が無くても 200 で破棄指示を返す', async () => {
+  test('API-AUTH-004 Cookie が無くても 200 で破棄指示を返す', async () => {
     // 既に切れている状態で押されても、利用者から見た結果は同じにする。
     readLoginTwoFactorSessionFromCookieHeader.mockReturnValue(null);
 

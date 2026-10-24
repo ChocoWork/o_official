@@ -1,3 +1,13 @@
+/**
+ * Google のログインの戻りの窓口（src/app/api/auth/oauth/callback/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-166
+ * @design DD-AUTH-021
+ * @remarks 交換の相手になる PKCE の検証の値は、開始の窓口が Cookie に溜めているので要求から読み直す。
+ * 既定の送り先は管理の役割の TOTP の画面なので、一般の会員をそこへ着けず会員の画面へ振り替える。
+ * 保存に失敗しても交換は済んでライブラリが Cookie を溜めているため、それを付けた応答を返して利用者を行き止まりにせず、失敗は監査に残す。
+ */
 import { NextResponse } from 'next/server';
 import type { CookieOptions } from '@supabase/ssr';
 import { createServerClient } from '@supabase/ssr';

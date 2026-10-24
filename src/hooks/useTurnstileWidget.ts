@@ -16,18 +16,23 @@ declare global {
   }
 }
 
-/**
- * Cloudflare Turnstile ウィジェットを明示的にレンダリングするフック。
- * 自動レンダリング（class="cf-turnstile"）はスクリプト読み込み時にしか走らないため、
- * タブ切り替え等でコンポーネントが再マウントされるとウィジェットが表示されない。
- * containerRef を対象の div に、renderWidget を Script の onReady に渡すこと。
- * window.onTurnstileSuccess は E2E テストがトークンを注入するためのフック。
- */
-
 // Turnstile の iframe は幅 300px を下回れない。size:'flexible' はコンテナ幅に追従するが、
 // それも 300px までで、それより狭いコンテナでは溢れて隣接要素の幅まで押し広げる。
 const TURNSTILE_MIN_WIDTH = 300;
 
+/**
+ * Cloudflare Turnstile ウィジェットを明示的にレンダリングするフック。
+ *
+ * containerRef を対象の div に、renderWidget を Script の onReady に渡すこと。
+ * 戻り値の resetWidget で、送信のたびに新しいトークンを発行させる。
+ *
+ * @impl IMPL-AUTH-143
+ * @design DD-AUTH-012
+ * @remarks 自動レンダリング（class="cf-turnstile"）はスクリプト読み込み時にしか走らないため、
+ * タブ切り替え等でコンポーネントが再マウントされるとウィジェットが表示されない。明示的に描画する（ARC-AUTH-005）。
+ * window.onTurnstileSuccess は E2E がトークンを注入するための口。サイトキーが無い環境はウィジェットを出さず
+ * トークンも使わないので、口も置かない。
+ */
 export function useTurnstileWidget(siteKey: string, onToken: (token: string) => void) {
   // コンテナは条件付きレンダリングで付け外しされることがある（例: 送信完了画面から
   // 再送信へ戻る）。RefObject だと要素が差し替わっても effect の依存が変わらず、

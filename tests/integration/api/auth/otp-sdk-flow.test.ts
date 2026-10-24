@@ -72,7 +72,7 @@ describe('OTP route with real SDK, session persistence, audit and rate limiter',
     return response;
   }
 
-  test('OTP success persists hashed credentials and issues cookies; subsequent resend remains usable', async () => {
+  test('API-AUTH-002 OTP success persists hashed credentials and issues cookies; subsequent resend remains usable', async () => {
     const response = await verifyRequest();
     expect(response.status).toBe(200);
     expect(response.cookies.get(accessCookieName)?.value).toBe('fake-user-token');
@@ -89,7 +89,7 @@ describe('OTP route with real SDK, session persistence, audit and rate limiter',
       .every(item => item.authorization === 'Bearer fake-service-key')).toBe(true);
   });
 
-  test('session save failure does not issue login cookies', async () => {
+  test('API-AUTH-002 session save failure does not issue login cookies', async () => {
     failSessions = true;
     const response = await verifyRequest();
     expect(response.status).toBe(500);
@@ -97,7 +97,7 @@ describe('OTP route with real SDK, session persistence, audit and rate limiter',
     expect(response.cookies.get(refreshCookieName)).toBeUndefined();
   });
 
-  test('audit failure does not undo successful login', async () => {
+  test('API-AUTH-002 audit failure does not undo successful login', async () => {
     failAudit = true;
     const response = await verifyRequest();
     expect(response.status).toBe(200);
@@ -105,7 +105,7 @@ describe('OTP route with real SDK, session persistence, audit and rate limiter',
     expect(console.warn).toHaveBeenCalledWith('Failed to write audit log');
   });
 
-  test('rate limiter failure returns 503 without sending email', async () => {
+  test('API-AUTH-003 rate limiter failure returns 503 without sending email', async () => {
     failLimiter = true;
     const response = await resend(request('/api/auth/login/resend'));
     expect(response.status).toBe(503);

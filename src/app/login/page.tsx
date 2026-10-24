@@ -1,3 +1,14 @@
+/**
+ * ログイン・会員登録の頁（src/app/login/page.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-101
+ * @design DD-AUTH-001
+ * @remarks 認証コードの入力の途中で戻ってきた人に資格情報のフォームを見せると、
+ * もう一度ログインを押して2通目のコードを送り、アカウント単位の枠を無駄に使う。
+ * そのため保留の Cookie が有効なら描く前にサーバーで転送する。
+ * 初めのタブとメールを問い合わせで受けるのは、ゲストの注文の完了画面などが会員登録への案内にその二つを付けて来るため。
+ */
 import type { Metadata } from 'next';
 import React from "react";
 import { cookies } from "next/headers";

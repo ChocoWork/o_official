@@ -1,3 +1,13 @@
+/**
+ * パスワード再設定リンクの確かめの窓口（src/app/api/auth/password-reset/link/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-182
+ * @design DD-AUTH-023
+ * @remarks メール内リンクからの到達点なので認証は掛けられず、代わりにワンタイムトークンを検証する。
+ * リンクスキャナが踏んでも利用者のトークンを潰さないよう、ここでは消費しない。
+ */
+
 import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { logAudit } from '@/lib/audit';
@@ -5,8 +15,6 @@ import { cookieOptionsForPasswordReset, passwordResetSessionCookieName } from '@
 import { createPasswordResetSessionToken, passwordResetSessionMaxAgeSeconds } from '@/features/auth/services/password-reset-session';
 import { getRequestOrigin } from '@/lib/redirect';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-
-// PUBLIC: メール内リンクからの到達点。認証の代わりにワンタイムトークンを検証する。
 
 const PASSWORD_RESET_PAGE_PATH = '/auth/password-reset';
 const PASSWORD_RESET_VERIFY_PATH = '/auth/password-reset/verify';

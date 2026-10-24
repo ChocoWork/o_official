@@ -1,11 +1,19 @@
+/**
+ * ログインの1段目の窓口。メールとパスワードを確かめ、通ったらメールの確認コードを送る（src/app/api/auth/login/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-145
+ * @design DD-AUTH-014
+ * @remarks セッションはここでは発行せず、確認コードの検証に成功した時に確定する（/api/auth/otp/verify）。
+ * そのためパスワードを通った印は短命の署名つき Cookie にだけ持たせる。
+ * 各段の順番と送り先の設定の理由は、その行のコメントに書いた。
+ */
 import { NextResponse } from 'next/server';
 import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { LoginRequestSchema } from '@/features/auth/schemas/login';
 import { formatZodError } from '@/features/auth/schemas/common';
 
-// ステップ1: メール + パスワードを検証し、成功したらメール OTP を送信する。
-// セッションはまだ発行せず、OTP 検証成功時（/api/auth/otp/verify）に確定する。
 export async function POST(request: Request) {
   try {
     // Enforce IP-level rate limit for login attempts

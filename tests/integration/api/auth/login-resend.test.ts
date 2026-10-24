@@ -102,7 +102,7 @@ describe('POST /api/auth/login/resend - Integration Tests', () => {
     });
   });
 
-  test('[SECURITY] 宛先は Cookie 由来で、本文の email を無視する', async () => {
+  test('API-AUTH-003 [SECURITY] 宛先は Cookie 由来で、本文の email を無視する', async () => {
     // 本文の宛先を信じると、他人の宛先へ当社ドメインからメールを送らせる導線になる。
     const res: any = await resendHandler(
       buildRequest({ email: 'attacker@example.com' }),
@@ -116,7 +116,7 @@ describe('POST /api/auth/login/resend - Integration Tests', () => {
     });
   });
 
-  test('[SECURITY] 2FA Cookie が無ければ 401 で、メールを送らない', async () => {
+  test('API-AUTH-003 [SECURITY] 2FA Cookie が無ければ 401 で、メールを送らない', async () => {
     readLoginTwoFactorSessionFromCookieHeader.mockReturnValue(null);
 
     const res: any = await resendHandler(buildRequest());
@@ -125,7 +125,7 @@ describe('POST /api/auth/login/resend - Integration Tests', () => {
     expect(__mockSignInWithOtp).not.toHaveBeenCalled();
   });
 
-  test('[SECURITY] レート制限の枠を /api/auth/login と共有する', async () => {
+  test('API-AUTH-003 [SECURITY] レート制限の枠を /api/auth/login と共有する', async () => {
     await resendHandler(buildRequest());
 
     const calls = enforceRateLimit.mock.calls.map((c: any[]) => c[0]);
@@ -139,7 +139,7 @@ describe('POST /api/auth/login/resend - Integration Tests', () => {
     expect(accountCall.windowSeconds).toBe(600);
   });
 
-  test('[SECURITY] IP 単位の制限も掛ける（/api/auth/login と同じ二段）', async () => {
+  test('API-AUTH-003 [SECURITY] IP 単位の制限も掛ける（/api/auth/login と同じ二段）', async () => {
     await resendHandler(buildRequest());
 
     const calls = enforceRateLimit.mock.calls.map((c: any[]) => c[0]);
@@ -151,7 +151,7 @@ describe('POST /api/auth/login/resend - Integration Tests', () => {
     expect(ipCall.windowSeconds).toBe(600);
   });
 
-  test('[SECURITY] IP 単位が上限ならメールを送らない', async () => {
+  test('API-AUTH-003 [SECURITY] IP 単位が上限ならメールを送らない', async () => {
     enforceRateLimit.mockImplementation(async (args: any) =>
       args.subject
         ? undefined
@@ -166,7 +166,7 @@ describe('POST /api/auth/login/resend - Integration Tests', () => {
     expect(__mockSignInWithOtp).not.toHaveBeenCalled();
   });
 
-  test('[SECURITY] 再発行トークンは元の iat を引き継ぐ', async () => {
+  test('API-AUTH-003 [SECURITY] 再発行トークンは元の iat を引き継ぐ', async () => {
     // 引き継がないと絶対上限の起点がリセットされ、再送を繰り返す限り
     // 保留状態を延ばせてしまう。
     await resendHandler(buildRequest());
@@ -176,7 +176,7 @@ describe('POST /api/auth/login/resend - Integration Tests', () => {
     );
   });
 
-  test('[SUCCESS] 成功時に 2FA Cookie を再発行して期限を延ばす', async () => {
+  test('API-AUTH-003 [SUCCESS] 成功時に 2FA Cookie を再発行して期限を延ばす', async () => {
     const res: any = await resendHandler(buildRequest());
 
     const cookie = res.cookies.get('sb-login-2fa-session');
@@ -185,7 +185,7 @@ describe('POST /api/auth/login/resend - Integration Tests', () => {
     expect(cookie.maxAge).toBe(300);
   });
 
-  test('[ERROR] 送信に失敗したら 500 で、Cookie を延ばさない', async () => {
+  test('API-AUTH-003 [ERROR] 送信に失敗したら 500 で、Cookie を延ばさない', async () => {
     __mockSignInWithOtp.mockResolvedValue({
       data: null,
       error: { message: 'smtp down' },

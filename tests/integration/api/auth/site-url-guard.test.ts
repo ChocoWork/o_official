@@ -33,7 +33,8 @@ function request(path: string, origin = 'https://unlisted.example.test') {
   });
 }
 
-describe('認証メールに実際に入る origin の確認', () => {
+// ARC-AUTH-007 の住所の見張り。会員登録は 503、再設定の申請は同じ 200 を返して、どちらも送らず運用へ知らせる
+describe('ARC-AUTH-007 認証メールに実際に入る origin の確認', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAfter.length = 0;
@@ -48,7 +49,7 @@ describe('認証メールに実際に入る origin の確認', () => {
   afterEach(() => jest.restoreAllMocks());
   async function flush() { for (const callback of mockAfter.splice(0)) await callback(); }
 
-  it.each([null, 'existing-user'])('再設定は本番の不正な origin で同じ200を返し、送らず知らせる (case %#)', async (userId) => {
+  it.each([null, 'existing-user'])('ARC-AUTH-007 再設定は本番の不正な origin で同じ200を返し、送らず知らせる (case %#)', async (userId) => {
     mockRpc.mockResolvedValue({ data: userId, error: null });
     const response = await reset(request('password-reset/request'));
     await flush();
@@ -59,7 +60,7 @@ describe('認証メールに実際に入る origin の確認', () => {
     expect(notifySiteUrlInvalid).toHaveBeenCalledTimes(1);
   });
 
-  it.each([null, 'existing-user'])('登録は本番の不正な origin で503。確認・登録済み通知を送らずアカウントも作らない (case %#)', async (userId) => {
+  it.each([null, 'existing-user'])('ARC-AUTH-007 登録は本番の不正な origin で503。確認・登録済み通知を送らずアカウントも作らない (case %#)', async (userId) => {
     mockRpc.mockResolvedValue({ data: userId, error: null });
     const response = await register(request('register'));
     await flush();
@@ -72,7 +73,7 @@ describe('認証メールに実際に入る origin の確認', () => {
     expect(notifySiteUrlInvalid).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['register', 'password-reset/request'])('設定が正常でも実際の origin が http なら送らない (%s)', async (path) => {
+  it.each(['register', 'password-reset/request'])('ARC-AUTH-007 設定が正常でも実際の origin が http なら送らない (%s)', async (path) => {
     process.env.NEXT_PUBLIC_SITE_URL = 'https://shop.example.test';
     process.env.APP_ALLOWED_ORIGINS = 'http://allowed.example.test';
     const response = await (path === 'register' ? register : reset)(request(path, 'http://allowed.example.test'));
@@ -83,7 +84,7 @@ describe('認証メールに実際に入る origin の確認', () => {
     expect(notifySiteUrlInvalid).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['register', 'password-reset/request'])('設定が未設定でも実際の origin が許可済みの https なら送る (%s)', async (path) => {
+  it.each(['register', 'password-reset/request'])('ARC-AUTH-007 設定が未設定でも実際の origin が許可済みの https なら送る (%s)', async (path) => {
     const origin = 'https://allowed.example.test';
     process.env.APP_ALLOWED_ORIGINS = origin;
     if (path !== 'register') mockRpc.mockResolvedValue({ data: 'existing-user', error: null });
@@ -94,7 +95,7 @@ describe('認証メールに実際に入る origin の確認', () => {
     expect(notifySiteUrlInvalid).not.toHaveBeenCalled();
   });
 
-  it.each(['register', 'password-reset/request'])('手元の localhost は従来どおり送れる (%s)', async (path) => {
+  it.each(['register', 'password-reset/request'])('ARC-AUTH-007 手元の localhost は従来どおり送れる (%s)', async (path) => {
     delete process.env.VERCEL_ENV;
     if (path !== 'register') mockRpc.mockResolvedValue({ data: 'existing-user', error: null });
     const response = await (path === 'register' ? register : reset)(request(path, 'http://localhost:3000'));

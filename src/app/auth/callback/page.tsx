@@ -1,3 +1,12 @@
+/**
+ * 未使用（削除の判断待ち）。Google のログインの戻りを画面で受けて窓口へ渡す古い頁（src/app/auth/callback/page.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-122
+ * @design DD-AUTH-006
+ * @remarks 今の Google の流れは戻り先を窓口に直に向けるので、ここへは来ない。残っているのは削除の判断待ちのため。
+ * 削除の判断待ちのため `next` の検査は直していない。使い続けるなら SEC-AUTH-026 を先に満たすこと。
+ */
 "use client";
 
 import React, { Suspense, useEffect, useMemo, useState } from 'react';

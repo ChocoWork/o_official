@@ -87,7 +87,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/app/api/auth/mfa/verify/route.ts` | `<file>` | DD-AUTH-031 |
 
 - `src/app/` の `page`・`route` と `.tsx` はファイル全体で1つの単位なので、中の metadata の関数・Route Handler の関数・小さな関数・定数はその単位に含める。`.ts` の `useTurnstileWidget` と `formatResendCountdown` だけが関数の単位
-- 新しい `@impl` は `IMPL-AUTH-101` から振る（前の版の `IMPL-AUTH-SEC-009` などと字の上で混ざらないようにするため）。今はどの単位にも `@impl`・`@design` が無い（`missing-impl`・`bad-design-link`）
+- 新しい `@impl` は `IMPL-AUTH-101` から振る（前の版の `IMPL-AUTH-SEC-009` などと字の上で混ざらないようにするため）。33 の単位すべてに `@impl`（`IMPL-AUTH-101`〜`205`）と `@design` を付けた
 - コメントを足す時の注意: `e2e/FR-LOGIN-022-auth-layout-hierarchy.spec.ts` が `LoginModal.tsx`・`RegisterModal.tsx` を字として読み、`e2e/FR-UI-003-lk-text-scale.spec.ts` が `src` の全部をコメントごと字として読む。TSDoc に字の大きさの指定の形（クラスの名前や数の px の指定）を書かない。`src/lib/format-countdown.ts` には既に JSDoc があり、`@impl`・`@design` を足す形になる
 
 ## 画面と部品の詳細設計

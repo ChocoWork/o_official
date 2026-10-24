@@ -1,3 +1,12 @@
+/**
+ * 管理者・サポーターの TOTP 要素を登録する窓口（src/app/api/auth/mfa/enroll-totp/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-204
+ * @design DD-AUTH-030
+ * @remarks 検証済みの要素が既にある時は、再取得を許すと乗っ取られた通常セッションで要素を差し替えられるため断る（再設定は aal2 のセッションが要る）。QR は画面がそのまま画像の src に入れるため、SVG の文字列は data URI に直して返す。
+ */
+
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';

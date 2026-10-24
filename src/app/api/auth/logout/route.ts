@@ -1,12 +1,18 @@
+/**
+ * ログアウトの窓口（src/app/api/auth/logout/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-202
+ * @design DD-AUTH-028
+ * @remarks 未認証でも 200 を返す。401 にすると「まだ有効なセッション」の有無が漏れるため。実際の失効は、CSRF トークンが通った時だけ、期限切れでも署名を検証した JWT の session_id（取れない時は自前 sessions 行の user_id）で行う。失効の成否に関わらず Cookie は必ず消し、CSRF 拒否でも認証の印が端末に残らないようにする。
+ */
+
 import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { verifyAccessToken } from '@/lib/auth/authenticate';
 import { logAudit } from '@/lib/audit';
-
-// PUBLIC: 未認証でも 200 を返す。ログアウトが 401 だと「まだ有効なセッション」を漏らすため。
-// 実際の失効は verifyAccessToken(allowExpired) で取れた session_id を使い、CSRF トークンも要求する。
 
 type CsrfRotateResult = {
   rotatedCsrfToken: string;

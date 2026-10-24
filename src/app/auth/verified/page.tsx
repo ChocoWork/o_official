@@ -1,3 +1,14 @@
+/**
+ * ログイン後の役割の振り分けと、管理者・サポーターの TOTP の登録・確認を行う頁（src/app/auth/verified/page.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-121
+ * @design DD-AUTH-005
+ * @remarks 一般の会員を管理者用の確認に通さず、管理者とサポーターは aal2 になるまで管理画面へ送らない
+ * （SEC-AUTH-008）。振り分けは認証の窓口が返す役割で決め、画面側の判定は表示だけ（SEC-AUTH-028）。
+ * 確認が通ったら全体のログインの状態を同期し直してから移る。省くと管理画面が古い確認済みの印を読み、
+ * 「2要素認証が必要です」を誤って出す。
+ */
 "use client";
 
 import React, { useEffect, useState } from 'react';

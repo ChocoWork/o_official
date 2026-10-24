@@ -1,3 +1,11 @@
+/**
+ * ログインの認証コードの再送の窓口（src/app/api/auth/login/resend/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-161
+ * @design DD-AUTH-016
+ * @remarks 公開の窓口でパスワードは要求しない。パスワード検証を通ったことは 2FA Cookie が既に証明しているため、宛先は Cookie から取り、リクエスト本文は一切見ない。本文の email を信じると、他人の宛先へ当社ドメインからメールを送らせる導線になる。
+ */
 import { NextResponse } from 'next/server';
 import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
@@ -11,11 +19,6 @@ import {
   readLoginTwoFactorSessionFromCookieHeader,
 } from '@/features/auth/services/login-2fa-session';
 
-// PUBLIC: 認証コードの再送。パスワードは要求しない。
-//
-// パスワード検証を通ったことは 2FA Cookie が既に証明しているため、宛先は Cookie から
-// 取り、リクエスト本文は一切見ない。本文の email を信じると、他人の宛先へ当社ドメイン
-// からメールを送らせる導線になる。
 export async function POST(request: Request) {
   const pending = readLoginTwoFactorSessionFromCookieHeader(
     request.headers.get('cookie'),
@@ -31,10 +34,9 @@ export async function POST(request: Request) {
     );
   }
 
-  // /api/auth/login と同じ二段にする。IP 段が無いと、複数アカウントの
-  // パスワードを持つ相手が 1 つの IP から並行に送信を回せる。
-  // 枠（endpoint 名）も login と共有する。抑えたいのは 1 アカウントへ送る
-  // メールの総量なので、分けるとログイン 5 通 + 再送 5 通で 10 通送れてしまう。
+  // /api/auth/login と同じ二段（IP と宛先）にする。IP 段が無いと、複数アカウントのパスワードを持つ相手が
+  // 1 つの IP から並行に送信を回せる。枠（endpoint 名）もログインと共有する。抑えたいのは 1 アカウントへ
+  // 送るメールの総量なので、分けるとログイン 5 通と再送 5 通で 10 通送れてしまう。
   try {
     const { enforceRateLimit } = await import(
       '@/features/auth/middleware/rateLimit'

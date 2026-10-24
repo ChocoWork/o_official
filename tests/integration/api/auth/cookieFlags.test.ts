@@ -36,6 +36,12 @@ jest.mock('next/headers', () => ({
 
 const { cookies } = require('next/headers');
 
+// ログアウトの失効は JWT の session_id の有無で経路が分かれる。署名の検証（外の JWKS）だけを差し替える。
+jest.mock('@/lib/auth/authenticate', () => ({
+  verifyAccessToken: jest.fn(),
+}));
+const { verifyAccessToken } = require('@/lib/auth/authenticate');
+
 // Bypass CSRF middleware checks in this integration test suite to avoid
 // dependencies on header hashing and DB state. Individual CSRF unit tests
 // cover the middleware behavior.
@@ -69,7 +75,7 @@ describe('Auth cookie flags (integration, mocked)', () => {
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue(undefined) });
   });
 
-  test('login (step 1) sets pending-2FA cookie HttpOnly=true, SameSite=strict and issues no session cookies', async () => {
+  test('DATA-AUTH-004 login (step 1) sets pending-2FA cookie HttpOnly=true, SameSite=strict and issues no session cookies', async () => {
     (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
     process.env.JWT_SECRET = 'test-jwt-secret';
 
@@ -97,7 +103,7 @@ describe('Auth cookie flags (integration, mocked)', () => {
     expect(res.cookies.get('sb-access-token')).toBeUndefined();
   });
 
-  test('refresh sets new refresh cookie and csrf cookie with proper flags', async () => {
+  test('DATA-AUTH-004 refresh sets new refresh cookie and csrf cookie with proper flags', async () => {
     (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
     // Provide existing cookie
     cookies.mockReturnValue({ get: jest.fn().mockReturnValue({ value: 'old-refresh' }) });
@@ -148,7 +154,7 @@ describe('Auth cookie flags (integration, mocked)', () => {
     (global.fetch as jest.MockedFunction<any>).mockRestore?.();
   });
 
-  test('logout clears cookies (maxAge=0) and clear cookie options preserve httpOnly flag for refresh cookie', async () => {
+  test('DATA-AUTH-004 logout clears cookies (maxAge=0) and clear cookie options preserve httpOnly flag for refresh cookie', async () => {
     // provide cookie so logout triggers revoke path
     // logout は @supabase/ssr の sb-*-auth-token も一括クリアするため getAll を使う。
     cookies.mockReturnValue({
@@ -160,12 +166,21 @@ describe('Auth cookie flags (integration, mocked)', () => {
     });
 
     const { createServiceRoleClient } = require('@/lib/supabase/server');
-    const fromMock = jest.fn(() => ({
-      update: jest.fn().mockReturnValue({ eq: jest.fn().mockResolvedValue({}) }),
-    }));
-    createServiceRoleClient.mockResolvedValue({ from: fromMock });
+    verifyAccessToken.mockResolvedValue({ ok: false, reason: 'missing' });
+    const revokedUpdate = jest.fn().mockReturnValue({
+      eq: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue({ data: [{ user_id: 'u-1' }], error: null }),
+      }),
+    });
+    const rpcMock = jest.fn().mockResolvedValue({ error: null });
+    const fromMock = jest.fn(() => ({ update: revokedUpdate }));
+    createServiceRoleClient.mockResolvedValue({ from: fromMock, rpc: rpcMock });
 
     const res: any = await logoutHandler();
+
+    // 失効が走ったうえで Cookie が消える（失敗の道に落ちて Cookie だけ消えた、ではない）。
+    expect(revokedUpdate).toHaveBeenCalledWith({ revoked_at: expect.any(String) });
+    expect(rpcMock).toHaveBeenCalledWith('revoke_auth_sessions_for_user', { p_user_id: 'u-1' });
 
     const refreshCookie = res.cookies.get('sb-refresh-token');
     const accessCookie = res.cookies.get('sb-access-token');

@@ -1,3 +1,13 @@
+/**
+ * ログインと会員登録を1つの画面で切り替えるタブ（src/components/AuthTabs.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-141
+ * @design DD-AUTH-010
+ * @remarks ログインと会員登録を別ページにすると導線が分かれるため、タブで切り替える（ADR-0410）。
+ * 切り替えても URL は `/login` のままにする（FREQ-63-REQ-01）ので、履歴を積まず置き換える。
+ * 左右の矢印で隣のタブへ移れる tablist にして、キーボードだけでも操作できるようにする。
+ */
 "use client";
 
 import React, { useRef, useState } from "react";

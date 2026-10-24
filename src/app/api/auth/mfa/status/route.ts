@@ -1,3 +1,12 @@
+/**
+ * 管理者・サポーターの 2 要素認証の状況を答える窓口（src/app/api/auth/mfa/status/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-203
+ * @design DD-AUTH-029
+ * @remarks 自分の MFA の状態を返すだけの窓口で、管理機能の認可には使わない。役割の読み方の理由は、その行のコメントに書いた。
+ */
+
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';

@@ -1,3 +1,14 @@
+/**
+ * パスワード再設定の頁。申請・新しいパスワード・結果を1つの道で出し分ける（src/app/auth/password-reset/page.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-104
+ * @design DD-AUTH-003
+ * @remarks どの段かは HttpOnly の再設定の Cookie で決まり、画面から直接は読めないため窓口に聞く。
+ * 窓口が失敗理由を問い合わせで返すのは、無言で戻すと期限切れか使用済みか分からず同じ操作を繰り返させるため。理由を出したら URL から外す。
+ * 新しいパスワードの見せ方では宛先の欄を出さない。読み取り専用の欄を残すと、入力すべき欄が分かりにくくなる。
+ * Turnstile のトークンは送った時点で使われるので、成否によらず引き直す。
+ */
 "use client";
 
 import React, { useEffect, useState } from "react";

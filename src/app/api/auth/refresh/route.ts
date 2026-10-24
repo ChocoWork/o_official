@@ -1,3 +1,12 @@
+/**
+ * ログイン中の利用者の access token を更新する窓口（src/app/api/auth/refresh/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-201
+ * @design DD-AUTH-027
+ * @remarks access token は寿命が短いので、Supabase の token 交換で新しい対へ替える。門番は Supabase の token 交換で、自前の sessions 表は補助に留める。それぞれの理由は、その行のコメントに書いた。
+ */
+
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { logAudit } from '@/lib/audit';

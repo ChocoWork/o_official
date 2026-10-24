@@ -173,7 +173,7 @@ describe('Password Reset API - Integration Tests', () => {
 
   describe('POST /api/auth/password-reset/request', () => {
     describe('正常系', () => {
-      test('[SUCCESS] メール送信リクエストで 200 OK', async () => {
+      test('API-AUTH-009 [SUCCESS] メール送信リクエストで 200 OK', async () => {
         const req = new Request('http://localhost/api/auth/password-reset/request', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -209,7 +209,7 @@ describe('Password Reset API - Integration Tests', () => {
         );
       });
 
-      test('[SECURITY] 存在しないメールでは 200 を返すがメールは送らない', async () => {
+      test('API-AUTH-009 [SECURITY] 存在しないメールでは 200 を返すがメールは送らない', async () => {
         mockRpcImplementation = jest.fn().mockResolvedValue({ data: null, error: null });
 
         const req = new Request('http://localhost/api/auth/password-reset/request', {
@@ -230,7 +230,7 @@ describe('Password Reset API - Integration Tests', () => {
         expect(sendMail).not.toHaveBeenCalled();
       });
 
-      test('[SUCCESS] トークンがハッシュ化されて保存される', async () => {
+      test('API-AUTH-009 [SUCCESS] トークンがハッシュ化されて保存される', async () => {
         const chain = makeChain({ data: null, error: null });
         mockFromImplementation = () => chain;
 
@@ -254,7 +254,7 @@ describe('Password Reset API - Integration Tests', () => {
         );
       });
 
-      test('[SECURITY] リンクの有効期限は 10 分で、メール本文にも明記する', async () => {
+      test('API-AUTH-009 [SECURITY] リンクの有効期限は 10 分で、メール本文にも明記する', async () => {
         // 消費を confirm へ移したので TTL がそのまま漏洩窓になる。
         // OWASP ASVS v4.0.3 V2.7.2 の 10 分に合わせる。
         const chain = makeChain({ data: null, error: null });
@@ -280,7 +280,7 @@ describe('Password Reset API - Integration Tests', () => {
         expect(mail.html).toContain('10分間有効');
       });
 
-      test('[SECURITY] 新規発行前に同じ宛先の未使用トークンを無効化する', async () => {
+      test('API-AUTH-009 [SECURITY] 新規発行前に同じ宛先の未使用トークンを無効化する', async () => {
         const chain = makeChain({ data: null, error: null });
         mockFromImplementation = () => chain;
 
@@ -299,7 +299,7 @@ describe('Password Reset API - Integration Tests', () => {
     });
 
     describe('異常系', () => {
-      test('[ERROR] トークン保存に失敗したらメールを送らず 500', async () => {
+      test('API-AUTH-009 [ERROR] トークン保存に失敗したらメールを送らず 500', async () => {
         mockFromImplementation = () => makeChain({ data: null, error: { message: 'insert failed' } });
 
         const req = new Request('http://localhost/api/auth/password-reset/request', {
@@ -315,7 +315,7 @@ describe('Password Reset API - Integration Tests', () => {
         expect(sendMail).not.toHaveBeenCalled();
       });
 
-      test('[ERROR] Turnstile 検証失敗で 403 Forbidden', async () => {
+      test('API-AUTH-009 [ERROR] Turnstile 検証失敗で 403 Forbidden', async () => {
         const { verifyTurnstile } = require('@/lib/turnstile');
         verifyTurnstile.mockResolvedValue({ ok: false, error: 'Invalid token' });
 
@@ -334,7 +334,7 @@ describe('Password Reset API - Integration Tests', () => {
         verifyTurnstile.mockResolvedValue({ ok: true });
       });
 
-      test('[VALIDATION] 不正なメールフォーマットで 400 Bad Request', async () => {
+      test('API-AUTH-009 [VALIDATION] 不正なメールフォーマットで 400 Bad Request', async () => {
         const req = new Request('http://localhost/api/auth/password-reset/request', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -347,7 +347,7 @@ describe('Password Reset API - Integration Tests', () => {
     });
 
     describe('セキュリティ', () => {
-      test('[SECURITY] レート制限チェックが実行されている', async () => {
+      test('API-AUTH-009 [SECURITY] レート制限チェックが実行されている', async () => {
         const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 
         const req = new Request('http://localhost/api/auth/password-reset/request', {
@@ -357,13 +357,43 @@ describe('Password Reset API - Integration Tests', () => {
         });
 
         await requestHandler(req);
-        expect(enforceRateLimit).toHaveBeenCalled();
+        expect(enforceRateLimit).toHaveBeenCalledWith({
+          request: req,
+          endpoint: 'auth:password_reset_request',
+          limit: 10,
+          windowSeconds: 3600,
+        });
+        expect(enforceRateLimit).toHaveBeenCalledWith({
+          request: req,
+          endpoint: 'auth:password_reset_request',
+          limit: 5,
+          windowSeconds: 3600,
+          subject: 'test@example.com',
+        });
+      });
+
+      test('API-AUTH-009 [SECURITY] IP の制限に当たったらその応答を返し、Turnstile の確かめへ進まない', async () => {
+        const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
+        const { verifyTurnstile } = require('@/lib/turnstile');
+        const limited = { status: 429 };
+        (verifyTurnstile as jest.Mock).mockClear();
+        (enforceRateLimit as jest.Mock).mockResolvedValueOnce(limited);
+
+        const req = new Request('http://localhost/api/auth/password-reset/request', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: 'test@example.com', turnstileToken: 'valid-token' }),
+        });
+
+        const res: any = await requestHandler(req);
+        expect(res).toBe(limited);
+        expect(verifyTurnstile).not.toHaveBeenCalled();
       });
     });
   });
 
   describe('GET /api/auth/password-reset/link', () => {
-    test('[SECURITY] トークンを消費せず確認ページへ 303 リダイレクトする', async () => {
+    test('API-AUTH-010 [SECURITY] トークンを消費せず確認ページへ 303 リダイレクトする', async () => {
       const chain = makeChain({ data: null, error: null });
       mockFromImplementation = () => chain;
 
@@ -384,7 +414,7 @@ describe('Password Reset API - Integration Tests', () => {
       expect(chain.update).not.toHaveBeenCalled();
     });
 
-    test('[ERROR] token がなければ理由付きでリダイレクトする', async () => {
+    test('API-AUTH-010 [ERROR] token がなければ理由付きでリダイレクトする', async () => {
       const req = new Request('http://localhost/api/auth/password-reset/link', { method: 'GET' });
       const res: any = await linkGetHandler(req);
 
@@ -394,7 +424,7 @@ describe('Password Reset API - Integration Tests', () => {
   });
 
   describe('POST /api/auth/password-reset/link', () => {
-    test('[SUCCESS] トークンを消費せず検証だけ行い reset-session cookie を張る', async () => {
+    test('API-AUTH-010 [SUCCESS] トークンを消費せず検証だけ行い reset-session cookie を張る', async () => {
       const chain = makeChain({
         data: { id: 'token-123', user_id: 'user-123', email: 'test@example.com' },
         error: null,
@@ -429,7 +459,7 @@ describe('Password Reset API - Integration Tests', () => {
       );
     });
 
-    test('[ERROR] 使用済み・期限切れなら 400 link_expired', async () => {
+    test('API-AUTH-010 [ERROR] 使用済み・期限切れなら 400 link_expired', async () => {
       mockFromImplementation = () => makeChain({ data: null, error: null });
 
       const req = new Request('http://localhost/api/auth/password-reset/link', {
@@ -459,7 +489,7 @@ describe('Password Reset API - Integration Tests', () => {
       });
     }
 
-    test('[SUCCESS] reset-session cookie でパスワード更新 200 OK', async () => {
+    test('API-AUTH-012 [SUCCESS] reset-session cookie でパスワード更新 200 OK', async () => {
       mockFromImplementation = () => makeChain({ data: { id: 'token-123' }, error: null });
       const sessionToken = await buildSessionCookie();
 
@@ -499,7 +529,7 @@ describe('Password Reset API - Integration Tests', () => {
       );
     });
 
-    test('[SECURITY] 消費はここで初めて行う（used=false を条件に確保する）', async () => {
+    test('API-AUTH-012 [SECURITY] 消費はここで初めて行う（used=false を条件に確保する）', async () => {
       const chains: any[] = [];
       mockFromImplementation = () => {
         const chain = makeChain({ data: { id: 'token-123' }, error: null });
@@ -527,7 +557,7 @@ describe('Password Reset API - Integration Tests', () => {
       expect(claim.eq).toHaveBeenCalledWith('used', false);
     });
 
-    test('[SECURITY] 確保に負けたら 400 で、パスワードを更新しない', async () => {
+    test('API-AUTH-012 [SECURITY] 確保に負けたら 400 で、パスワードを更新しない', async () => {
       // 1 回目は事前確認（増幅対策）、2 回目が確保。0 行なら他が先に取っている。
       let call = 0;
       mockFromImplementation = () => {
@@ -563,7 +593,7 @@ describe('Password Reset API - Integration Tests', () => {
       );
     });
 
-    test('[SECURITY] 更新後に全セッションを失効させる', async () => {
+    test('API-AUTH-012 [SECURITY] 更新後に全セッションを失効させる', async () => {
       const rpcCalls: Array<{ name: string; params: any }> = [];
       mockFromImplementation = () => makeChain({ data: { id: 'token-123' }, error: null });
       mockRpcImplementation = (name: string, params: any) => {
@@ -590,7 +620,7 @@ describe('Password Reset API - Integration Tests', () => {
       );
     });
 
-    test('[SECURITY] updateUserById が error を返したら 500（成功として返さない）', async () => {
+    test('API-AUTH-012 [SECURITY] updateUserById が error を返したら 500（成功として返さない）', async () => {
       mockFromImplementation = () => makeChain({ data: { id: 'token-123' }, error: null });
       mockUpdateUserByIdImplementation = jest.fn().mockResolvedValue({
         data: { user: null },
@@ -614,7 +644,7 @@ describe('Password Reset API - Integration Tests', () => {
       expect(body.error).toBe('Failed to update password');
     });
 
-    test('[SECURITY] 消費済みトークン行が無ければ 400', async () => {
+    test('API-AUTH-012 [SECURITY] 消費済みトークン行が無ければ 400', async () => {
       mockFromImplementation = () => makeChain({ data: null, error: null });
 
       const sessionToken = await buildSessionCookie();
@@ -631,7 +661,7 @@ describe('Password Reset API - Integration Tests', () => {
       expect(res.status).toBe(400);
     });
 
-    test('[ERROR] reset-session cookie が無ければ 400', async () => {
+    test('API-AUTH-012 [ERROR] reset-session cookie が無ければ 400', async () => {
       const req = new Request('http://localhost/api/auth/password-reset/confirm', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -642,7 +672,7 @@ describe('Password Reset API - Integration Tests', () => {
       expect(res.status).toBe(400);
     });
 
-    test('[VALIDATION] パスワードが短すぎる場合 400 Bad Request', async () => {
+    test('API-AUTH-012 [VALIDATION] パスワードが短すぎる場合 400 Bad Request', async () => {
       mockFromImplementation = () => makeChain({ data: { id: 'token-123' }, error: null });
       const sessionToken = await buildSessionCookie();
 
@@ -661,7 +691,7 @@ describe('Password Reset API - Integration Tests', () => {
   });
 
   describe('GET /api/auth/password-reset/session', () => {
-    test('[SUCCESS] 有効な reset-session を返す', async () => {
+    test('API-AUTH-011 [SUCCESS] 有効な reset-session を返す', async () => {
       const { createPasswordResetSessionToken } = await import(
         '@/features/auth/services/password-reset-session'
       );

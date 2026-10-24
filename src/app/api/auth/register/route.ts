@@ -1,3 +1,11 @@
+/**
+ * 会員登録の窓口（src/app/api/auth/register/route.ts）。公開の登録と管理の経路の両方を受ける。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-163
+ * @design DD-AUTH-018
+ * @remarks 登録済みかどうかに関わらず同じ応答を返す。409 を返すと任意のアドレスを投げるだけで会員かどうかを判別でき、会員だけを狙った標的型フィッシングや漏洩した組の絞り込みに使われる（OWASP WSTG-IDNT-04、ASVS 2.1）。登録済みなら本人にメールで伝える。各段の順番と運用上の前提の理由は、その行のコメントに書いた。
+ */
 import { NextResponse, after } from 'next/server';
 import sendMail from '@/lib/mail';
 import { checkPwnedPassword, PWNED_PASSWORD_MESSAGE } from '@/lib/pwned-password';

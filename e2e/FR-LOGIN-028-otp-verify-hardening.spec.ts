@@ -9,7 +9,7 @@ const viewports = [
 ];
 
 for (const viewport of viewports) {
-  test(`FR-LOGIN-028 上限到達で 2FA Cookie が破棄される (${viewport.name})`, async ({
+  test(`FREQ-335-AC-02 上限到達で 2FA Cookie が破棄される (${viewport.name})`, async ({
     page,
   }) => {
     await page.setViewportSize({

@@ -1,3 +1,14 @@
+/**
+ * 全頁共通のヘッダーと、分類を先に選べるドロワー（src/components/Header.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-123
+ * @design DD-AUTH-007
+ * @remarks 長い頁で画面の上を占めないよう、下へ動くと隠し上へ動くとすぐ出す（STATE-AUTH-005）。
+ * 同じ状態を `html` の印にも書き、他の領域の固定の部品がヘッダーの下に付いて動けるようにする（ARC-AUTH-008）。
+ * 管理の入口は役割で出すが表示だけで、入れるかはサーバーが決める（SEC-AUTH-028）。
+ * 管理画面では管理の板との重なり順を合わせるため、地の板を分ける。
+ */
 "use client";
 
 import Link from "next/link";

@@ -46,7 +46,7 @@ describe('CSRF integration (mocked)', () => {
 
   // ローテーションはログイン・セッション更新に限定した。ミューテーションのたびに
   // 回すと、失敗した要求でも Cookie と DB がずれて以降が全部 403 になるため。
-  test('logout with valid CSRF header passes without rotating', async () => {
+  test('ARC-AUTH-001 logout with valid CSRF header passes without rotating', async () => {
     // Prepare header token and hash storage
     const headerToken = 'csrf-old-token';
     headers.mockReturnValue({ get: jest.fn().mockReturnValue(headerToken) });
@@ -73,7 +73,7 @@ describe('CSRF integration (mocked)', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  test('logout without CSRF header returns 403', async () => {
+  test('ARC-AUTH-001 logout without CSRF header returns 403', async () => {
     headers.mockReturnValue({ get: jest.fn().mockReturnValue(undefined) });
     const result: any = await requireCsrfOrDeny();
     expect(result.status).toBe(403);

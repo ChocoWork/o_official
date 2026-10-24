@@ -1,3 +1,13 @@
+/**
+ * ログインの2段目の窓口。メールの確認コードを確かめ、通ったらセッションを確定する（src/app/api/auth/otp/verify/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-146
+ * @design DD-AUTH-015
+ * @remarks ログイン確定前の入口なので、パスワードを通った印の署名つき Cookie と確認コードの両方を必須とする。
+ * Cookie が無いと確認コード単独でのログインを許してしまい、パスワードを迂回できる。
+ * 各段の順番と回数制限の理由は、その行のコメントに書いた。
+ */
 import { NextResponse } from 'next/server';
 import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
@@ -5,7 +15,6 @@ import { OtpVerifyRequestSchema } from '@/features/auth/schemas/otp';
 import { formatZodError } from '@/features/auth/schemas/common';
 import { linkGuestOrdersByEmail } from '@/lib/orders/link-guest-orders';
 
-// PUBLIC: ログイン確定前の入口。署名済みパスワード検証 Cookie と OTP を必須とする。
 export async function POST(request: Request) {
   try {
     try {

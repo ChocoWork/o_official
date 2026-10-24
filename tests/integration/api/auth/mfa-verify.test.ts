@@ -105,7 +105,7 @@ const { authenticateRequest } = require('@/lib/auth/authenticate');
     createServiceRoleClient.mockResolvedValue({ from: fromMock });
   });
 
-  test('昇格したセッションを Cookie に書き戻す', async () => {
+  test('API-AUTH-018 昇格したセッションを Cookie と sessions の行に書き戻す', async () => {
     const res: any = await verifyHandler(makeRequest());
     const body = await res.json();
 
@@ -124,7 +124,7 @@ const { authenticateRequest } = require('@/lib/auth/authenticate');
     ]);
   });
 
-  test('セッション永続化に失敗しても発行済みトークンは配る', async () => {
+  test('API-AUTH-018 行の保存に失敗しても発行済みトークンは配り、監査に残す', async () => {
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     createServiceRoleClient.mockResolvedValue({
       from: jest.fn(() => ({

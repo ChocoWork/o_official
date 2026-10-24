@@ -1,3 +1,12 @@
+/**
+ * ログインの状態を答える窓口（src/app/api/auth/me/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-185
+ * @design DD-AUTH-026
+ * @remarks 画面の表示と API の認可が食い違わないよう、認可側と同じ根拠（失効の確認と MFA の判定）で答える。
+ */
+
 import { NextResponse } from 'next/server';
 import { authenticateRequest } from '@/lib/auth/authenticate';
 

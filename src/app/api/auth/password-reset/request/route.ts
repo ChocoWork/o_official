@@ -1,3 +1,13 @@
+/**
+ * パスワード再設定の申請の窓口（src/app/api/auth/password-reset/request/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-181
+ * @design DD-AUTH-022
+ * @remarks パスワードを忘れた利用者の入口なので認証は掛けられない。濫用対策は
+ * レート制限と、登録の有無で応答を変えないこと（OWASP Forgot Password CS）。
+ */
+
 import { NextResponse, after } from 'next/server';
 import crypto from 'crypto';
 import { createServiceRoleClient } from '@/lib/supabase/server';
@@ -8,9 +18,6 @@ import { formatZodError } from '@/features/auth/schemas/common';
 import { getRequestOrigin } from '@/lib/redirect';
 import { isEmailOriginAllowed } from '@/lib/site-url-guard';
 import { notifySiteUrlInvalid } from '@/lib/ops/site-url-alert';
-
-// PUBLIC: パスワードを忘れた利用者の入口なので認証は掛けられない。
-// 濫用対策はレート制限と、登録有無で応答を変えないこと（OWASP Forgot Password CS）。
 
 // OWASP ASVS v4.0.3 V2.7.2「out of band ... tokens after 10 minutes」に合わせる。
 // 消費は再設定完了時なので、この TTL がそのままリンクの漏洩窓になる。

@@ -1,3 +1,13 @@
+/**
+ * ログインの1段目（メール・パスワード・Turnstile）のフォーム（src/components/LoginModal.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-124
+ * @design DD-AUTH-008
+ * @remarks 通ったら認証コードの専用の画面へ置き換えて移る。履歴に残すと戻るで資格情報のフォームへ戻れ、
+ * 生きた保留の Cookie のまま2通目のコードを送れてしまう。Turnstile のトークンは送った時点で使われるので、
+ * 成否によらず引き直す（ARC-AUTH-005、ADR-0411）。
+ */
 "use client";
 
 import React, { useState } from "react";

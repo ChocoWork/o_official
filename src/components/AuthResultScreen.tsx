@@ -1,3 +1,13 @@
+/**
+ * 認証フローの「この画面ですることは終わった」結果を出す共通画面と、その図（src/components/AuthResultScreen.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-142
+ * @design DD-AUTH-011
+ * @remarks 再設定のメールを送った後とパスワードを変えた後の結果を、図・題・詳細・注意書き・操作の
+ * 階層で一目で読めるようにする（SCR-AUTH-005、FREQ-331-REQ-01〜07）。結果はフォームと入れ替わって
+ * 出て押したボタンが消えるので、見出しへフォーカスを移して読ませる（FREQ-377）。
+ */
 "use client";
 
 import React, { useEffect, useRef } from "react";

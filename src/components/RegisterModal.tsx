@@ -1,3 +1,13 @@
+/**
+ * 会員登録のフォーム（メール・パスワード・確認・Turnstile）（src/components/RegisterModal.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-125
+ * @design DD-AUTH-009
+ * @remarks 登録済みかどうかを画面で判らせないため、送った後は誰にでも同じ確認メールの案内を出す
+ * （ARC-AUTH-006）。送るとフォームごと入れ替わって押したボタンが消えるので、完了の文へフォーカスを移して読ませる。
+ * Turnstile は送るたびに引き直す（ARC-AUTH-005、ADR-0411）。
+ */
 "use client";
 
 import React, { useState } from "react";

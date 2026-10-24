@@ -1,3 +1,11 @@
+/**
+ * Google のログインの開始の窓口（src/app/api/auth/oauth/start/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-165
+ * @design DD-AUTH-020
+ * @remarks PKCE の検証の値はライブラリが Cookie に溜めるため、応答のリダイレクトに付け直す。戻り先の画面の指定は共有の整形を通し、外部の住所へ飛ばさない。
+ */
 import { NextResponse } from 'next/server';
 import type { CookieOptions } from '@supabase/ssr';
 import { createServerClient } from '@supabase/ssr';

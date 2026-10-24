@@ -65,7 +65,7 @@ describe('Auth API integration (mocked supabase)', () => {
 
   afterEach(() => jest.resetAllMocks());
 
-  test('login (step 1) verifies password, sends OTP and returns step=otp', async () => {
+  test('ARC-AUTH-001 login (step 1) verifies password, sends OTP and returns step=otp', async () => {
     const { createPublicClient } = require('@/lib/supabase/server');
     const signInWithOtp = jest.fn().mockResolvedValue({ error: null });
     const fakeClient = {
@@ -90,7 +90,7 @@ describe('Auth API integration (mocked supabase)', () => {
     expect(res.cookies.get('sb-login-2fa-session')).toBeDefined();
   });
 
-  test('login invalid credentials returns 401', async () => {
+  test('ARC-AUTH-001 login invalid credentials returns 401', async () => {
     const { createPublicClient } = require('@/lib/supabase/server');
     const fakeClient = {
       auth: {
@@ -106,7 +106,7 @@ describe('Auth API integration (mocked supabase)', () => {
     expect(res.status).toBe(401);
   });
 
-  test('register success (admin) returns 201', async () => {
+  test('ARC-AUTH-001 register success (admin) returns 201', async () => {
     process.env.ADMIN_API_KEY = 'adm';
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     const fakeService = {
@@ -122,7 +122,7 @@ describe('Auth API integration (mocked supabase)', () => {
     expect(body.email).toBe('new@example.com');
   });
 
-  test('register unauthorized without admin token returns 401', async () => {
+  test('ARC-AUTH-001 register unauthorized without admin token returns 401', async () => {
     delete process.env.ADMIN_API_KEY;
     const req = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'new@example.com', password: 'password123456789' }) });
 
@@ -130,7 +130,7 @@ describe('Auth API integration (mocked supabase)', () => {
     expect(res.status).toBe(500); // because server misconfiguration when ADMIN_API_KEY not configured
   });
 
-  test('password reset request inserts token and returns 200', async () => {
+  test('ARC-AUTH-001 password reset request inserts token and returns 200', async () => {
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     const insertMock = jest.fn().mockResolvedValue({});
     const chain: any = { insert: insertMock, select: jest.fn().mockReturnThis(), update: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis(), maybeSingle: jest.fn().mockResolvedValue({ data: null }) };
@@ -148,7 +148,7 @@ describe('Auth API integration (mocked supabase)', () => {
     expect(insertMock).toHaveBeenCalled();
   });
 
-  test('password reset confirm with reset session updates password and returns 200', async () => {
+  test('ARC-AUTH-001 password reset confirm with reset session updates password and returns 200', async () => {
     const { createServiceRoleClient } = require('@/lib/supabase/server');
     const { createPasswordResetSessionToken } = require('@/features/auth/services/password-reset-session');
 

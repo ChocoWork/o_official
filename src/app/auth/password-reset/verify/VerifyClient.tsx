@@ -1,3 +1,14 @@
+/**
+ * リンクの確認を到達時に自動で済ませ、新しいパスワードの入力へ送る部品（src/app/auth/password-reset/verify/VerifyClient.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-106
+ * @design DD-AUTH-004
+ * @remarks 以前はここに「パスワードを再設定する」ボタンを置いていた。トークンを開いた時点で
+ * 消費していたため、リンクスキャナの GET から守るのにワンクリックが要ったため。
+ * 消費を confirm（実際にパスワードを変えたとき）へ移したので、この POST に副作用は無く、
+ * 画面を挟む理由も無くなった。
+ */
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -11,14 +22,6 @@ type Props = {
   token: string;
 };
 
-/**
- * リンクの確認を到達時に自動で済ませ、新しいパスワードの入力へ送る。
- *
- * 以前はここに「パスワードを再設定する」ボタンを置いていた。トークンを開いた時点で
- * 消費していたため、リンクスキャナの GET から守るのにワンクリックが要ったため。
- * 消費を confirm（実際にパスワードを変えたとき）へ移したので、この POST に副作用は無く、
- * 画面を挟む理由も無くなった。
- */
 export default function VerifyClient({ token }: Props) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);

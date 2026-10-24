@@ -53,7 +53,13 @@ jest.mock('@/features/auth/services/session', () => ({
   findSessionByRefreshHash: jest.fn(),
 }));
 
-const { cookies } = require('next/headers');
+// ログアウトの失効は、期限切れでも JWT から session_id を取れるかで経路が分かれる。署名の検証（外の JWKS）だけを差し替える。
+jest.mock('@/lib/auth/authenticate', () => ({
+  verifyAccessToken: jest.fn(),
+}));
+
+const { cookies, headers } = require('next/headers');
+const { verifyAccessToken } = require('@/lib/auth/authenticate');
 const { logAudit } = require('@/lib/audit');
 const sessionService = require('@/features/auth/services/session');
 
@@ -83,7 +89,7 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     sessionService.findSessionByRefreshHash.mockResolvedValue({ id: 'session-1', user_id: 'u-seq', revoked_at: null });
   });
 
-  test('register -> login -> refresh -> logout sequence', async () => {
+  test('ARC-AUTH-001 register -> login -> refresh -> logout sequence', async () => {
     // REGISTER (admin create user)
     process.env.ADMIN_API_KEY = 'adm';
     const fakeServiceAdmin = { auth: { admin: { createUser: jest.fn().mockResolvedValue({ data: { user: { id: 'u-seq', email: 'seq@example.com' } }, error: null }) } }, from: jest.fn() };
@@ -185,10 +191,37 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
       get: jest.fn().mockReturnValue({ value: newCookie.value }),
       getAll: jest.fn().mockReturnValue([{ name: 'sb-abcdefgh-auth-token', value: 'x' }]),
     });
+    // 本物の CSRF の確かめを通す: 見出しの値のハッシュが sessions 行の csrf_token_hash と合う。
+    const { tokenHashSha256 } = require('@/lib/hash');
+    const csrfValue = 'csrf-value-of-seq';
+    const csrfHash = await tokenHashSha256(csrfValue);
+    headers.mockReturnValue(new Map([['x-csrf-token', csrfValue]]));
+    const revokedUpdate = jest.fn().mockReturnValue({
+      eq: jest.fn().mockReturnValue({
+        select: jest.fn().mockResolvedValue({ data: [{ user_id: 'u-seq' }], error: null }),
+      }),
+    });
+    verifyAccessToken.mockResolvedValue({ ok: false, reason: 'missing' });
+    const logoutRpc = jest.fn().mockResolvedValue({ error: null });
+    createServiceRoleClient.mockResolvedValue({
+      from: jest.fn(() => ({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            maybeSingle: jest.fn().mockResolvedValue({ data: { csrf_token_hash: csrfHash }, error: null }),
+          }),
+        }),
+        update: revokedUpdate,
+      })),
+      rpc: logoutRpc,
+    });
+
     const logoutRes: any = await logoutHandler();
     const logoutBody = await logoutRes.json();
     expect(logoutRes.status).toBe(200);
     expect(logoutBody.ok).toBe(true);
+    // サーバ側のセッションの失効が走る（Cookie を消すだけで終わらない）。
+    expect(revokedUpdate).toHaveBeenCalledWith({ revoked_at: expect.any(String) });
+    expect(logoutRpc).toHaveBeenCalledWith('revoke_auth_sessions_for_user', { p_user_id: 'u-seq' });
     const clearedCookie = logoutRes.cookies.get('sb-refresh-token');
     expect(clearedCookie.maxAge).toBe(0);
   });

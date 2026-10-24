@@ -99,7 +99,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
   });
 
   describe('正常系', () => {
-    test('[SUCCESS] 正しいメール・パスワードで 200 + OTP 送信 + pending Cookie', async () => {
+    test('API-AUTH-001 [SUCCESS] 正しいメール・パスワードで 200 + OTP 送信 + pending Cookie', async () => {
       const mockUser = { id: 'user-123', email: 'test@example.com' };
       __mockSignInWithPassword.mockResolvedValue({
         data: { session: validSession, user: mockUser },
@@ -145,7 +145,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
   });
 
   describe('異常系', () => {
-    test('[ERROR] 誤ったパスワードで 401（OTP は送信しない）', async () => {
+    test('API-AUTH-001 [ERROR] 誤ったパスワードで 401（OTP は送信しない）', async () => {
       __mockSignInWithPassword.mockResolvedValue({
         data: { session: null, user: null },
         error: { message: 'Invalid login credentials' },
@@ -172,7 +172,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
       });
     });
 
-    test('[ERROR] 存在しないメールで 401', async () => {
+    test('API-AUTH-001 [ERROR] 存在しないメールで 401', async () => {
       __mockSignInWithPassword.mockResolvedValue({
         data: { session: null, user: null },
         error: { message: 'Invalid login credentials' },
@@ -191,7 +191,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
       expect(body.error).toBe('メールアドレスまたはパスワードが正しくありません。');
     });
 
-    test('[VALIDATION] 不正なメールフォーマットで 400', async () => {
+    test('API-AUTH-001 [VALIDATION] 不正なメールフォーマットで 400', async () => {
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -202,7 +202,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
       expect(res.status).toBe(400);
     });
 
-    test('[VALIDATION] パスワードが短すぎる場合 400', async () => {
+    test('API-AUTH-001 [VALIDATION] パスワードが短すぎる場合 400', async () => {
       const req = new Request('http://localhost/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -213,7 +213,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
       expect(res.status).toBe(400);
     });
 
-    test('[ERROR] セッションなしで 401', async () => {
+    test('API-AUTH-001 [ERROR] セッションなしで 401', async () => {
       __mockSignInWithPassword.mockResolvedValue({
         data: { session: null, user: { id: 'user-789', email: 'test@example.com' } },
         error: null,
@@ -229,7 +229,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
       expect(res.status).toBe(401);
     });
 
-    test('[ERROR] OTP 送信失敗で 500', async () => {
+    test('API-AUTH-001 [ERROR] OTP 送信失敗で 500', async () => {
       __mockSignInWithPassword.mockResolvedValue({
         data: { session: validSession, user: { id: 'user-123', email: 'test@example.com' } },
         error: null,
@@ -249,7 +249,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
   });
 
   describe('セキュリティ', () => {
-    test('[SECURITY] レート制限チェックが実行されている', async () => {
+    test('API-AUTH-001 [SECURITY] レート制限チェックが実行されている', async () => {
       const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 
       __mockSignInWithPassword.mockResolvedValue({
@@ -281,10 +281,27 @@ describe('POST /api/auth/login - Integration Tests', () => {
       });
     });
 
+    test('API-AUTH-001 [SECURITY] IP の制限に当たったらその応答を返し、パスワード検証へ進まない', async () => {
+      const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
+      const limited = { status: 429 };
+      (enforceRateLimit as jest.Mock).mockResolvedValueOnce(limited);
+
+      const req = new Request('http://localhost/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'test@example.com', password: 'Password123456789!' }),
+      });
+
+      const res: any = await loginHandler(req);
+
+      expect(res).toBe(limited);
+      expect(__mockSignInWithPassword).not.toHaveBeenCalled();
+    });
+
     // Turnstile が本番で未設定なら、ログインも fail-closed で止まること。
     // 以前は NEXT_PUBLIC_TURNSTILE_SITE_KEY の有無でこの検証ごと飛ばしていたため、
     // 設定漏れが「Bot 対策が無言で無効」という検知不能な状態になっていた。
-    test('[SECURITY] 本番で Turnstile 未設定なら 403 で止まり、パスワード検証まで進まない', async () => {
+    test('API-AUTH-001 [SECURITY] 本番で Turnstile 未設定なら 403 で止まり、パスワード検証まで進まない', async () => {
       const originalNodeEnv = process.env.NODE_ENV;
       (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
       delete process.env.TURNSTILE_SECRET_KEY;
@@ -307,7 +324,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
 
     // ボット判定を通っていない要求でアカウント単位の枠を消費すると、他人のメールアドレスを
     // 送るだけでその人を締め出せる（OWASP Authentication Cheat Sheet: ロックアウトの DoS 悪用）。
-    test('[SECURITY] Turnstile に失敗した要求はアカウント単位の回数に数えない', async () => {
+    test('API-AUTH-001 [SECURITY] Turnstile に失敗した要求はアカウント単位の回数に数えない', async () => {
       const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
       const originalNodeEnv = process.env.NODE_ENV;
       (process.env as Record<string, string | undefined>).NODE_ENV = 'production';

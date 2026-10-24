@@ -1,3 +1,11 @@
+/**
+ * 確認のメールのリンクの窓口（src/app/api/auth/confirm/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-164
+ * @design DD-AUTH-019
+ * @remarks メールのリンクは未ログインの端末で開かれるので、認証は求めず token_hash の検証だけを根拠にセッションを発行する。
+ */
 import { NextResponse } from 'next/server';
 import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
@@ -23,7 +31,6 @@ function buildRedirectResponse(origin: string, redirectPath: string) {
   return res;
 }
 
-// PUBLIC: メール確認の入口。Supabase が token_hash を検証してからセッションを発行する。
 export async function GET(request: Request) {
   try {
     const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
@@ -91,8 +98,7 @@ export async function GET(request: Request) {
       return res;
     }
 
-    // ゲストのまま買った注文をこの会員へ引き継ぐ。
-    // 失敗しても紐付けは冪等なので、次回ログインで再試行される。
+    // ゲストのまま買った注文をこの会員へ引き継ぐ。失敗しても紐付けは冪等なので、次回ログインで再試行される。
     await linkGuestOrdersByEmail({
       userId: data.user.id,
       email: data.user.email ?? '',

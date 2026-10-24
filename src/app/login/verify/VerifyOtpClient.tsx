@@ -1,3 +1,16 @@
+/**
+ * 認証コードを入力してログインを確定する部品（src/app/login/verify/VerifyOtpClient.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-AUTH-103
+ * @design DD-AUTH-002
+ * @remarks 以前はログイン / 会員登録タブの中の一状態だった。state だけで持っていたため、
+ * リロードすると資格情報フォームへ戻る一方でサーバー側の 2FA Cookie は生きており、
+ * 再ログインすると 2 通目の OTP が飛んでアカウント制限を 1 回消費していた。
+ * 状態を Cookie だけに寄せ、画面を独立させることでこの経路を閉じている。
+ * 再送がパスワードも宛先も送らないのは、パスワード検証を通ったことを 2FA Cookie が証明しているため。
+ * やり直しでサーバーに保留を捨てさせるのは、画面の状態を戻しただけでは Cookie が残るため。
+ */
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -23,14 +36,6 @@ type AuthMeResponse = {
 const isPrivilegedRole = (role: unknown): boolean =>
   role === "admin" || role === "supporter";
 
-/**
- * 認証コードの入力画面。
- *
- * 以前はログイン / 会員登録タブの中の一状態だった。state だけで持っていたため、
- * リロードすると資格情報フォームへ戻る一方でサーバー側の 2FA Cookie は生きており、
- * 再ログインすると 2 通目の OTP が飛んでアカウント制限を 1 回消費していた。
- * 状態を Cookie だけに寄せ、画面を独立させることでこの経路を閉じている。
- */
 export default function VerifyOtpClient({ email }: { email: string }) {
   const router = useRouter();
   const { verifyOtp } = useLogin();
