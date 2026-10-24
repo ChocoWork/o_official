@@ -37,6 +37,14 @@ const rows: readonly (readonly [PermissionCode, string, string])[] = [
   ['admin.permissions.manage', '権限管理', '権限設定の閲覧・保存'],
 ];
 
+// 画面に「対応する画面の公開後に使われます。」と出す権限（割り当て入れ替えと発送の4つ）。在庫はG-2 Task 1で窓口が使い始めた。発注・受け取りの権限は窓口が後の Task で作られるが、印は付けない
+const UPCOMING_PERMISSION_CODES: ReadonlySet<PermissionCode> = new Set<PermissionCode>([
+  'admin.orders.allocate',
+  'admin.shipping.read',
+  'admin.shipping.manage',
+  'admin.shipping.correct_date',
+]);
+
 const dependencies: Partial<Record<PermissionCode, PermissionCode[]>> = {
   'admin.stock.manage': ['admin.stock.read'],
   'admin.orders.allocate': ['admin.orders.read'],
@@ -47,13 +55,13 @@ const dependencies: Partial<Record<PermissionCode, PermissionCode[]>> = {
   'admin.shipping.correct_date': ['admin.shipping.read', 'admin.orders.read'],
 };
 
-export const ROLE_PERMISSION_CATALOG: readonly PermissionDefinition[] = rows.map(([code, area, label], index) => ({
+export const ROLE_PERMISSION_CATALOG: readonly PermissionDefinition[] = rows.map(([code, area, label]) => ({
   code,
   area,
   label,
   requires: dependencies[code] ?? [],
   fixed: FIXED_PERMISSION_CODES.some((fixed) => fixed === code),
-  upcoming: index >= 20 && code !== 'admin.permissions.manage',
+  upcoming: UPCOMING_PERMISSION_CODES.has(code),
 }));
 
 /** 依存不足は表示用。保存入力に権限を足したり、保存を拒否したりしない。 */

@@ -1,10 +1,10 @@
 ﻿# テスト仕様
 
-> 状態: 現行の方針（グループ G-1 のテストの節は 2026-10-24 に追記） | 確認日: 2026-10-24 | 対象: 要件からテストへの追跡、テストの層、開始・終了条件
+> 状態: 現行の方針（グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記） | 確認日: 2026-10-25 | 対象: 要件からテストへの追跡、テストの層、開始・終了条件
 
 ## 概要
 
-この文書は、要件からテストへの追跡方法、実行するテストの層、判定と記録の方法を定める。下表のテストファイルはリポジトリで確認した例であり、ここに列挙したことは実行・成功を意味しない。グループ G-1（在庫の割当）のテストは、層の説明の後の「グループ G-1（在庫の割当）のテスト」にファイル単位でまとめる。
+この文書は、要件からテストへの追跡方法、実行するテストの層、判定と記録の方法を定める。下表のテストファイルはリポジトリで確認した例であり、ここに列挙したことは実行・成功を意味しない。グループ G-1（在庫の割当）のテストは、層の説明の後の「グループ G-1（在庫の割当）のテスト」にファイル単位でまとめる。グループ G-2（発注・受け取り）のテストはその後の「グループ G-2（発注・受け取り）のテスト」にまとめる。
 
 ## 記録形式と追跡
 
@@ -78,6 +78,29 @@ Playwright は `http://localhost:3000` を使い、手元の Supabase に対し�
 | `e2e/FR-ADMIN-123-group-g-permissions.spec.ts`（G-1 の部分） | E2E | FREQ-524-AC-03、FREQ-540-AC-05 | 旧配送・手動仕上がりの窓口7メソッドが、ログインなしで 401、お客様で 403（410 には届かない）。店長とサポーターの注文の一覧と履歴に旧の入口が無く、固定の停止文が出て、取消・返金・返品・履歴の読み取りは残る（3幅）。認可済みの 410 の本文は差し替えの形の確認で、HTTP の証拠は窓口の単体と DB 結合 |
 
 同じファイルの G-0 の部分（権限の画面と保存）は FREQ-540-AC-01〜04 の対応で、この節では扱わない。全件の E2E は最新の基準と比較し、停止・削除・追加と未確認の範囲を分けて記録する（FREQ-541-AC-02）。
+
+## グループ G-2（発注・受け取り）のテスト
+
+対象要件は FREQ-525〜530・540（[要件](../../02_Requirements/requirements.md)の各受け入れ条件）。設計は[実装計画](../../superpowers/plans/2026-10-24-group-g2-purchasing.md)。実行の前提は G-1 の節の「実行の前提」と同じ（DB 結合は `npx.cmd supabase db reset` の直後と PostgREST の smoke の後に流す）。この節は Task 1（在庫の窓口の権限の切替、G-1 から持ち越した2件、公開関数11本の実行権）の分で、後の Task が同じ節に足す。
+
+### DB 結合（`tests/integration/db/`）
+
+| テスト | 対応する受け入れ条件 | 確認する振る舞い |
+| --- | --- | --- |
+| `group_g2_stock_permissions.integration.test.ts` | FREQ-540-AC-06 | `admin.items.read/manage` だけの実行者の入荷は `GROUP_G_FORBIDDEN`／42501 で、台帳・在庫・操作が増えない。`admin.stock.manage` だけ・`admin.stock.read` だけもどちらも断られ、両方で入荷できる（`supporter` に取引内で `role_permissions` を足し、最後に rollback）。2つの役割に権限が分かれて付いても有効な役割の和集合で通り、無効・期限切れの役割は数えない。実行者の無効・期限切れ・役割なし・権限の欠落を毎回確かめる。公開 `admin_record_stock_movement` は service_role だけが EXECUTE でき、所有者 postgres・`search_path` 空・SQL の INVOKER のまま。部品 `group_g_actor_has_permissions` の真偽表（NULL・空配列・未登録・重複・和集合）と、誰にも EXECUTE を付けないこと |
+| `group_g2_g1_followups.integration.test.ts` | FREQ-525-AC-03、FREQ-535-AC-01 | `group_g_open_work_order_ids`（受注生産の数がありうる注文の先絞り）が、閉じた注文12件（取消・期限切れの失敗・放棄・発送済みで未解決なし・解決済みの返金／返品／取消申請）と、入金の記録が無い `pending`／`failed`／`payment_in_progress` を返さず、`paid`・入金の記録（`paid_at`／`paid_amount`）がある `pending`／`failed`・未解決の返金／返品／申請／発送前返金の失敗がある `shipped` の11件を昇順で返す（NULL は全バリアント、空配列は空）。発送済みの注文は、未発送で取り消されていない数がある時（発送の記録が無いものを含む）か未解決の作業がある時だけ残り、全部発送済み・残りが発送前返金で覆われたものは外れる（発送か割当のある取消の注文は残す既知の費用）。`lock_group_g_inventory` は G-2 の移行が置き換えず、その閉包は閉じた注文12件を入れず、開いた注文11件に加えて `pending`・`payment_in_progress`・期限切れでない失敗の4件を入れる（割当か保留が残る注文は状態に関わらず入る）。先絞りは投影が受注生産と数える注文の上位集合で、`list_group_g_variant_inventory` の `waiting` は、絞らない投影（`group_g_item_state_ranges` を variant の全注文に掛けたもの）と variant ごとに同じ数（paid・一部割当・入金済みの pending／failed・割当だけ／発送だけの入金記録なしの注文・取消の後の割当や発送・取消申請・発送前返金の失敗・発送の記録が無い発送済み・取消／放棄／支払い手続き中・全部発送済み・発送前返金で覆われた発送済みの注文を混ぜる）。置換した関数の署名・所有者・ACL・戻り型・volatility が G-1 のまま。`orders.paid_at` の最初の値は共通の鍵を持たない接続（共有モード・別の鍵も含む）では `GROUP_G_INVENTORY_LOCK_REQUIRED`、持てば通り、値から別の値・NULL は `GROUP_G_PAID_AT_IMMUTABLE`（service_role の役も）。`mark_order_paid` は押さえの無い取引から呼んでも自分で取って書く |
+| `group_g2_public_function_acl.integration.test.ts` | FREQ-540-AC-09 | 公開関数11本（`increment_rate_limit_counter` は2つの overload を別々に）が、reset 直後の DB で anon / authenticated に EXECUTE を許さず `proacl` に PUBLIC も無く、service_role と postgres は保つ。anon / authenticated の役で `revoke_auth_sessions_for_user`・`revoke_auth_session`・`is_auth_session_active`・`find_auth_user_id_by_email` を呼ぶと SQLSTATE 42501 で何も消えない。service_role の役では `is_auth_session_active`・`revoke_auth_session` が動く。移行の末尾の確かめ（`public_function_acl`）が、anon／authenticated／PUBLIC の付与・service_role の剥奪・関数の欠落で止まる。移行の形（11本の REVOKE が1文、11本への GRANT なし、private スキーマの USAGE を触らない）も DB なしで確かめる |
+| `group_g1_stock_api.integration.test.ts`（G-2 で変更） | FREQ-540-AC-06 | 在庫の窓口の権限の事例を `admin.stock.manage` を外す・`admin.stock.read` を外すに変えた（G-1 では `admin.items.manage`） |
+
+### 単体・E2E
+
+| テスト | 層 | 対応する受け入れ条件 | 確認する振る舞い |
+| --- | --- | --- | --- |
+| `tests/unit/lib/auth/admin-rbac.test.ts`（`authorizeAdminPermissions`） | 単体 | FREQ-540-AC-06 | 要るコードを全部持つ時だけ通し、有効な全ての役割の和集合で数える。403 の `permission` は足りない最初のコード（渡した並び順）。MFA（aal2）が無い時の本文は既存と同じで `permission` は先頭の要るコード。トークンの不通過は401、失効は401、確認不能は503、空の一覧は500。`authorizeAdminPermission` は `authorizeAdminPermissions([code])` と同じ結果 |
+| `tests/unit/lib/auth/role-permission-catalog.test.ts` | 単体 | FREQ-540-AC-06 | 30コードの順・分野・ラベルは同じで、`upcoming`（準備中）は未使用の4コードだけ |
+| `tests/unit/api/admin/item-variants-route.test.ts` | 単体 | FREQ-540-AC-06 | GET は `admin.stock.read`、POST は `admin.stock.manage` ＋ `admin.stock.read`。`items.read/manage` だけは GET・POST とも403（`permission` は stock 側）、`stock.read` だけは GET 200・POST 403、`stock.manage` だけは POST 403（`permission:'admin.stock.read'`）、両方で POST が進む。認可 → CSRF → IP → actor → 検証 → RPC の順は変えない |
+| `tests/unit/components/ItemStockSection.test.tsx` | 単体 | FREQ-540-AC-06 | 読み込みの403は「在庫を見る権限がありません。」、記録の403は「在庫を変更する権限がありません。」を `role="alert"` で出し、Forbidden や一般の失敗の文は出さない。403 以外は今までの文のまま |
+| `tests/unit/components/RolePermissionsSection.test.tsx`・`e2e/FR-ADMIN-109-permission-settings.spec.ts` | 単体・E2E | FREQ-540-AC-06 | 権限画面の「準備中」の印が4件になった（G-0 では9件） |
 
 ## リスクに応じた優先順位
 

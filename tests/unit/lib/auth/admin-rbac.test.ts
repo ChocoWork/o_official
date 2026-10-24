@@ -4,7 +4,7 @@ jest.mock('next/server', () => ({
   },
 }));
 
-import { authorizeAdminPermission, legacyPermissionMap } from '@/lib/auth/admin-rbac';
+import { authorizeAdminPermission, authorizeAdminPermissions, legacyPermissionMap } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { checkAuthSessionLiveness, verifyAccessToken } from '@/lib/auth/authenticate';
 
@@ -262,6 +262,110 @@ describe('authorizeAdminPermission', () => {
       const result = await authorizeAdminPermission('admin.orders.refund', mockRequest);
 
       expect(result.ok).toBe(false);
+    });
+  });
+
+  // 在庫の入荷・棚卸は admin.stock.manage と admin.stock.read の両方が要る（グループ G-2）。
+  // 複数の権限を要る操作は、全部を持つ時だけ通す。持つ権限は有効な全ての役割の和集合で数える
+  describe('authorizeAdminPermissions（FREQ-540-AC-06）', () => {
+    const REQUIRED = ['admin.stock.manage', 'admin.stock.read'] as const;
+    const grantRoles = (...roles: string[][]) => {
+      mockQuery.or.mockResolvedValue({
+        data: roles.map((codes) => ({ roles: { role_permissions: codes.map((code) => ({ permissions: { code } })) } })),
+        error: null,
+      });
+    };
+    const bodyOf = (result: Awaited<ReturnType<typeof authorizeAdminPermissions>>) =>
+      (result as unknown as { response: { body: unknown } }).response.body;
+
+    it('FREQ-540-AC-06: 要るコードを全部持てば通り、1つの役割にそろっていなくても有効な役割の和集合で数える', async () => {
+      grantRoles(['admin.stock.manage', 'admin.stock.read']);
+      const together = await authorizeAdminPermissions(REQUIRED, mockRequest);
+      expect(together).toEqual({ ok: true, userId: 'user-1', role: 'admin', actorEmail: 'user@example.com' });
+
+      grantRoles(['admin.stock.manage'], ['admin.stock.read', 'admin.orders.read']);
+      const split = await authorizeAdminPermissions(REQUIRED, mockRequest);
+      expect(split.ok).toBe(true);
+    });
+
+    it.each([
+      ['どちらも持たない', [['admin.items.read', 'admin.items.manage']], 'admin.stock.manage'],
+      ['admin.stock.read だけ', [['admin.stock.read']], 'admin.stock.manage'],
+      ['admin.stock.manage だけ', [['admin.stock.manage']], 'admin.stock.read'],
+      ['役割が無い', [], 'admin.stock.manage'],
+    ] as const)('FREQ-540-AC-06: %s なら 403 で、足りない最初のコードを permission に入れる', async (_name, roles, missing) => {
+      grantRoles(...roles.map((codes) => [...codes]));
+
+      const result = await authorizeAdminPermissions(REQUIRED, mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(403);
+      expect(bodyOf(result)).toEqual({ error: 'Forbidden', permission: missing, role: 'admin' });
+    });
+
+    it('要るコードの並びが足りない最初のコードを決める（持っていないコードのうち、先に渡した方）', async () => {
+      grantRoles([]);
+
+      const result = await authorizeAdminPermissions(['admin.stock.read', 'admin.stock.manage'], mockRequest);
+
+      expect(bodyOf(result)).toEqual({ error: 'Forbidden', permission: 'admin.stock.read', role: 'admin' });
+    });
+
+    it('全部持っていても MFA（aal2）でなければ、既存と同じ本文で 403。permission は先頭の必要コード', async () => {
+      (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: true, claims: { ...adminClaims, aal: 'aal1' } });
+      grantRoles(['admin.stock.manage', 'admin.stock.read']);
+
+      const result = await authorizeAdminPermissions(REQUIRED, mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(403);
+      expect(bodyOf(result)).toEqual({ error: 'Forbidden', reason: 'MFA required', permission: 'admin.stock.manage', role: 'admin' });
+    });
+
+    it('足りないコードがあれば、MFA でなくても先に権限の 403 を返す（既存の単独版と同じ順）', async () => {
+      (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: true, claims: { ...adminClaims, aal: 'aal1' } });
+      grantRoles(['admin.stock.read']);
+
+      const result = await authorizeAdminPermissions(REQUIRED, mockRequest);
+
+      expect(bodyOf(result)).toEqual({ error: 'Forbidden', permission: 'admin.stock.manage', role: 'admin' });
+    });
+
+    it.each(['missing', 'invalid'] as const)('トークンが通らない（%s）なら 401 で、DB は触らない', async (reason) => {
+      (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: false, reason });
+
+      const result = await authorizeAdminPermissions(REQUIRED, mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(401);
+      expect(createServiceRoleClient).not.toHaveBeenCalled();
+    });
+
+    it.each([['revoked', 401], ['unavailable', 503]] as const)('セッションが %s なら %i', async (liveness, status) => {
+      (checkAuthSessionLiveness as jest.Mock).mockResolvedValue(liveness);
+      grantRoles(['admin.stock.manage', 'admin.stock.read']);
+
+      const result = await authorizeAdminPermissions(REQUIRED, mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(status);
+    });
+
+    it('要るコードの一覧が空なら、誰にも通さず 500（権限の確認なしで通る道を作らない）', async () => {
+      grantRoles(['admin.stock.manage', 'admin.stock.read']);
+
+      const result = await authorizeAdminPermissions([], mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(500);
+    });
+
+    it('authorizeAdminPermission(code) は authorizeAdminPermissions([code]) と同じ結果を返す', async () => {
+      grantRoles(['admin.orders.read']);
+      expect(await authorizeAdminPermission('admin.orders.read', mockRequest))
+        .toEqual(await authorizeAdminPermissions(['admin.orders.read'], mockRequest));
+      expect(bodyOf(await authorizeAdminPermission('admin.orders.manage', mockRequest)))
+        .toEqual(bodyOf(await authorizeAdminPermissions(['admin.orders.manage'], mockRequest)));
     });
   });
 });

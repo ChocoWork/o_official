@@ -142,8 +142,8 @@
 | `/api/admin/returns/:returnId/inspect` | POST | 検品待ちの品を、戻す・戻さないに決める（FREQ-463） | `admin.orders.return` |
 | `/api/admin/returns/:returnId/fee-payment` | POST | 手数料の受け取りを記録する。`waive: true` はいただかないで終える（FREQ-467） | `admin.orders.return` と `admin.orders.refund` |
 | `/api/admin/returns/:returnId/release-exchange` | POST | 手数料のお支払いを待たずに、交換の品を送れるようにする（FREQ-465・467） | `admin.orders.return` と `admin.orders.refund` |
-| `/api/admin/items/:id/variants` | GET | 色 × サイズの一覧（すぐ出せる数・引き当て済み・手元の数・受注生産）と、動かした人・注文・変わった後の数つきの台帳の履歴（FREQ-399・445）。返品で動いた行（理由 `return`・`exchange`）には、返品の番号 returnId と、{注文番号}-R{n} の returnNumber を付ける（グループ E-3。FREQ-474） | `admin.items.read` |
-| `/api/admin/items/:id/variants` | POST | 在庫台帳への追記（入荷 / 棚卸調整） | `admin.items.manage` |
+| `/api/admin/items/:id/variants` | GET | 色 × サイズの一覧（すぐ出せる数・引き当て済み・手元の数・受注生産）と、動かした人・注文・変わった後の数つきの台帳の履歴（FREQ-399・445）。返品で動いた行（理由 `return`・`exchange`）には、返品の番号 returnId と、{注文番号}-R{n} の returnNumber を付ける（グループ E-3。FREQ-474） | `admin.stock.read`（G-2 から。FREQ-540-AC-06） |
+| `/api/admin/items/:id/variants` | POST | 在庫台帳への追記（入荷 / 棚卸調整） | `admin.stock.manage` と `admin.stock.read` の両方（G-2 から。FREQ-540-AC-06） |
 | `/api/admin/order-attention` | GET | 未処理の要対応・要確認の一覧と件数（お客様の個人情報は返さない）。返金の失敗の行には「もう一度返金する」を出せるか（canRetryRefund）と細目（refundFailure）を付ける（FREQ-457）。細目には、失敗した返金が返品の返金の時だけ、その返品の番号 returnId を付ける（「もう一度返金する」は返品の画面を開く。グループ E-3） | `admin.orders.read` |
 | `/api/admin/orders/:id/review` | POST | 要確認を確認済みにする | `admin.orders.manage` |
 | `/api/admin/payment-exceptions/:id/resolve` | POST | 要対応を解決済みにする。未入金の注文が付いていれば取り消して解決もできる。先に解決されていれば409 | `admin.orders.manage` |
@@ -560,6 +560,7 @@ E2E は、管理画面の窓口を差し替えて画面を確かめ、DB の動�
 - 在庫が 0 を下回る追記は `item_variants.stock_quantity >= 0` の CHECK で弾かれる。API は 409 と「在庫が足りない」旨を返し、画面に出す
 - 他の商品のバリアントに入れられないよう、`variant_id` は `item_id` と合わせて引く（BOLA 対策）
 - 追記は成否どちらも監査ログ（`admin.items.stock.move`）に残し、`created_by` に実行者を入れる
+- **権限（グループ G-2 / FREQ-540-AC-06）**: 在庫の読取は `admin.stock.read`、入荷・棚卸は `admin.stock.manage` と `admin.stock.read` の両方（以前の `admin.items.read` / `admin.items.manage` では通らない）。窓口と DB の関数 `admin_record_stock_movement` の両方で確かめ、持つ権限は有効な全ての役割の和集合で数える。権限が無い時、この欄は英語の Forbidden でなく、読み込みで「在庫を見る権限がありません。」、記録で「在庫を変更する権限がありません。」を出す
 
 在庫数は「すぐ出せる数」であって「売れる数」ではない。0 でも受注生産として注文は通る（ブランドの前提）。
 
@@ -780,7 +781,7 @@ SETTINGS のショップ設定の前に `nav aria-label="設定メニュー"` �
 | --- | --- |
 | 固定2行 | `admin.users.manage`・`admin.permissions.manage` は両役割欄をまたぐ「店長のみ・変更不可」。switch は置かない。DB関数と行トリガーでも解除・他役割への付与を拒否する |
 | その他28行 | 役割ごとに switch。名前は `${roleLabel}：${operationLabel}`。操作ラベルは行見出しにだけ出し、共通 SwitchToggle の `ariaLabel` を使う |
-| 新業務9行 | 「この権限は、対応する画面の公開後に使われます。」 |
+| 準備中の行 | 「この権限は、対応する画面の公開後に使われます。」。G-0 では新業務9行に付けたが、G-2 Task 1 から `ROLE_PERMISSION_CATALOG` の `upcoming`（未使用の4コード `admin.orders.allocate`・`admin.shipping.read`・`admin.shipping.manage`・`admin.shipping.correct_date`）だけに付く（在庫の権限は G-2 Task 1 で在庫の窓口が使い始めたので外れる。発注・受け取りの3権限は、窓口が G-2 の後の Task で作られるまで画面では使われないが、「準備中」の印は付けない。FREQ-540-AC-06） |
 | 依存不足 | 役割別に「操作に必要な権限が不足しています：{不足コードの操作ラベルを「、」で結合}。」。共有関数で重複除去・コード辞書順。権限を自動追加せず、保存も禁止しない |
 
 切替では値を変えず「権限を変更する」を開き、「{役割}の「{操作}」を許可/解除します。変更しますか？」を表示する。「戻る」は送信しない。「変更する」で UUID を1回生成し、その役割の取得済み一覧に1コードだけ差分を加えた `RolePermissionChange`（`roleCode`・`permissionCodes`・文字列の `expectedVersion`・`requestKey`）を `POST /api/admin/role-permissions` へ送る。30コード外は扱わない。CSRF は既存 `clientFetch` に任せる。

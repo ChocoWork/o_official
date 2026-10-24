@@ -185,12 +185,13 @@ describeLocalDb('G-1 stock RPC', (db) => {
     expect(await counts()).toEqual(before);
   });
 
-  test.each(['inactive','expired','permission'])('requires the current actor ACL: %s', async (change) => {
+  // G-2: the stock entry needs admin.stock.manage AND admin.stock.read (was admin.items.manage in G-1)
+  test.each(['inactive','expired','admin.stock.manage','admin.stock.read'])('requires the current actor ACL: %s', async (change) => {
     const c = await createCatalogFixture(db(), { stock: 0 });
     if (change === 'inactive') await db().query('update public.user_roles set active=false where user_id=$1', [actor]);
     if (change === 'expired') await db().query("update public.user_roles set expires_at=now()-interval '1 second' where user_id=$1", [actor]);
-    if (change === 'permission') await db().query(`delete from public.role_permissions where role_id=(select id from public.roles where code='admin')
-      and permission_id=(select id from public.permissions where code='admin.items.manage')`);
+    if (change.startsWith('admin.stock.')) await db().query(`delete from public.role_permissions where role_id=(select id from public.roles where code='admin')
+      and permission_id=(select id from public.permissions where code=$1)`, [change]);
     expect(await rejected(() => move(c.itemId,c.variantId,1))).toEqual({ message: 'GROUP_G_FORBIDDEN', code: '42501' });
     expect(await variantStock(db(),c.variantId)).toBe(0);
   });

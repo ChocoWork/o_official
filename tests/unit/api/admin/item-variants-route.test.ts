@@ -27,9 +27,27 @@ jest.mock('@/lib/supabase/server', () => ({
 }));
 
 const mockAuthorize = jest.fn();
+const mockAuthorizeMany = jest.fn();
 jest.mock('@/lib/auth/admin-rbac', () => ({
   authorizeAdminPermission: (...args: unknown[]) => mockAuthorize(...args),
+  authorizeAdminPermissions: (...args: unknown[]) => mockAuthorizeMany(...args),
 }));
+
+/**
+ * 実際の認可（src/lib/auth/admin-rbac.ts）と同じ規則の代役: 要るコードを全部持つ時だけ通し、
+ * 足りない最初のコードを 403 の permission に入れる。窓口が正しいコードを要求しているかを確かめるのに使う
+ * （認可そのものの試験は tests/unit/lib/auth/admin-rbac.test.ts）
+ */
+function useAcl(granted: readonly string[]) {
+  const decide = (required: readonly string[]) => {
+    const missing = required.find((code) => !granted.includes(code));
+    return missing === undefined
+      ? { ok: true, userId: 'admin-1' }
+      : { ok: false, response: { status: 403, body: { error: 'Forbidden', permission: missing, role: 'admin' } } };
+  };
+  mockAuthorize.mockImplementation(async (code: string) => decide([code]));
+  mockAuthorizeMany.mockImplementation(async (codes: readonly string[]) => decide(codes));
+}
 
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/lib/audit', () => ({
@@ -153,10 +171,31 @@ describe('GET /api/admin/items/[id]/variants', () => {
     setupReads();
   });
 
-  it('admin.items.read を要求する', async () => {
+  it('FREQ-540-AC-06: admin.stock.read を要求する（admin.items.read は要求しない）', async () => {
     await GET(makeRequest(), params());
 
-    expect(mockAuthorize).toHaveBeenCalledWith('admin.items.read', expect.anything());
+    expect(mockAuthorize).toHaveBeenCalledTimes(1);
+    expect(mockAuthorize).toHaveBeenCalledWith('admin.stock.read', expect.anything());
+    expect(mockAuthorizeMany).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-540-AC-06: admin.items.read/manage だけでは読めず、403 の permission は admin.stock.read。DB には触らない', async () => {
+    useAcl(['admin.items.read', 'admin.items.manage']);
+
+    const res = (await GET(makeRequest(), params())) as unknown as { status: number; body: unknown };
+
+    expect(res).toEqual({ status: 403, body: { error: 'Forbidden', permission: 'admin.stock.read', role: 'admin' } });
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it('FREQ-540-AC-06: admin.stock.read だけで読める', async () => {
+    useAcl(['admin.stock.read']);
+
+    const res = await callGet();
+
+    expect(res.status).toBe(200);
+    expect(res.body.variants).toHaveLength(1);
   });
 
   it('権限が無ければ認可側の応答をそのまま返す', async () => {
@@ -496,14 +535,16 @@ async function post(body: unknown = postBody) {
 describe('POST /api/admin/items/[id]/variants', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1' });
+    mockAuthorize.mockReset();
+    mockAuthorizeMany.mockReset().mockResolvedValue({ ok: true, userId: 'admin-1' });
     mockCsrf.mockResolvedValue(undefined);
     mockRateLimit.mockResolvedValue(null);
     mockRpc.mockReset().mockResolvedValue({ data: { movementId: '5', releasedQuantity: 0, allocatedQuantity: 1, replayed: false }, error: null });
   });
   it('uses one RPC, no direct INSERT, the authorized actor and audits the result', async () => {
     expect(await post({ ...postBody, actorId: 'forged' })).toEqual({ status: 201, body: { success: true } });
-    expect(mockAuthorize).toHaveBeenCalledWith('admin.items.manage', expect.anything());
+    expect(mockAuthorizeMany).toHaveBeenCalledWith(['admin.stock.manage', 'admin.stock.read'], expect.anything());
+    expect(mockAuthorize).not.toHaveBeenCalled();
     expect(mockCsrf).toHaveBeenCalledTimes(1);
     expect(mockRateLimit).toHaveBeenCalledTimes(2);
     expect(mockRateLimit).toHaveBeenNthCalledWith(2, expect.objectContaining({ subject: 'admin-1' }));
@@ -516,10 +557,47 @@ describe('POST /api/admin/items/[id]/variants', () => {
   });
   it.each([401,403])('preserves authorization/MFA denial %i before CSRF', async (status) => {
     const response = { status, body: { error: 'Denied' } };
-    mockAuthorize.mockResolvedValue({ ok: false, response });
+    mockAuthorizeMany.mockResolvedValue({ ok: false, response });
     expect(await post()).toBe(response);
     expect(mockCsrf).not.toHaveBeenCalled();
     expect(mockRpc).not.toHaveBeenCalled();
+  });
+  it('FREQ-540-AC-06: admin.items.read/manage だけでは書けず、403 の permission は admin.stock.manage。CSRF・制限・RPC には進まない', async () => {
+    useAcl(['admin.items.read', 'admin.items.manage']);
+    expect(await post()).toEqual({ status: 403, body: { error: 'Forbidden', permission: 'admin.stock.manage', role: 'admin' } });
+    expect(mockCsrf).not.toHaveBeenCalled();
+    expect(mockRateLimit).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+  it('FREQ-540-AC-06: admin.stock.read だけでは書けず、403 の permission は admin.stock.manage', async () => {
+    useAcl(['admin.stock.read']);
+    expect(await post()).toEqual({ status: 403, body: { error: 'Forbidden', permission: 'admin.stock.manage', role: 'admin' } });
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+  it('FREQ-540-AC-06: admin.stock.manage だけでも書けず、403 の permission は admin.stock.read', async () => {
+    useAcl(['admin.stock.manage']);
+    expect(await post()).toEqual({ status: 403, body: { error: 'Forbidden', permission: 'admin.stock.read', role: 'admin' } });
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+  it('FREQ-540-AC-06: admin.stock.manage と admin.stock.read の両方があれば進み、台帳の RPC を1回呼ぶ', async () => {
+    useAcl(['admin.stock.manage', 'admin.stock.read']);
+    expect(await post()).toEqual({ status: 201, body: { success: true } });
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+  });
+  it('認可 → CSRF → IP の回数制限 → actor の回数制限 → 検証 → RPC の順は変えない', async () => {
+    const order: string[] = [];
+    mockAuthorizeMany.mockImplementation(async () => { order.push('authorize'); return { ok: true, userId: 'admin-1' }; });
+    mockCsrf.mockImplementation(async () => { order.push('csrf'); });
+    mockRateLimit.mockImplementation(async (arg: { subject?: string }) => { order.push(arg.subject ? 'rate:actor' : 'rate:ip'); return null; });
+    mockRpc.mockImplementation(async () => { order.push('rpc'); return { data: { movementId: '5', releasedQuantity: 0, allocatedQuantity: 0, replayed: false }, error: null }; });
+
+    expect((await post()).status).toBe(201);
+    expect(order).toEqual(['authorize', 'csrf', 'rate:ip', 'rate:actor', 'rpc']);
+
+    order.length = 0;
+    expect((await post({ ...postBody, delta: 0 })).status).toBe(400);
+    expect(order).toEqual(['authorize', 'csrf', 'rate:ip', 'rate:actor']);
   });
   it('preserves a real CSRF Response and stops before limits', async () => {
     const response = new Response('Denied', { status: 403 });
@@ -570,7 +648,7 @@ describe('POST /api/admin/items/[id]/variants', () => {
     } finally { log.mockRestore(); }
   });
   it('an unexpected throw outside the RPC logs only the error name and code, then returns the fixed 500', async () => {
-    mockAuthorize.mockRejectedValue(Object.assign(new TypeError('PRIVATE-MARKER'), { code: 'XX000', details: 'PRIVATE-MARKER' }));
+    mockAuthorizeMany.mockRejectedValue(Object.assign(new TypeError('PRIVATE-MARKER'), { code: 'XX000', details: 'PRIVATE-MARKER' }));
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});
     try {
       expect(await post()).toEqual({ status: 500, body: { error: '在庫の記録に失敗しました' } });

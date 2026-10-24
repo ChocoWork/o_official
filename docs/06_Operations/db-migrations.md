@@ -1,10 +1,10 @@
 ﻿# DB マイグレーション運用
 
-> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に追記） | 確認日: 2026-10-24 | 本番適用状況は未確認（G-1 の移行は 2026-10-24 に適用済み）
+> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記） | 確認日: 2026-10-25 | 本番適用状況は未確認（G-1 の移行は 2026-10-24 に適用済み。G-2 の移行は未適用）
 
 ## 概要
 
-本書はデータベースマイグレーションの現行手順と過去の移行記録をまとめる。実際の適用対象は `supabase/migrations/` と `.github/workflows/db-migrations.yml` で確認し、本番台帳は実行前に読み直す。グループ G-1 の移行（本番のテスト用の注文を消す清掃を含む1本）の内容・当て方・記録は末尾の「グループ G-1 在庫の割当の移行」に書く。
+本書はデータベースマイグレーションの現行手順と過去の移行記録をまとめる。実際の適用対象は `supabase/migrations/` と `.github/workflows/db-migrations.yml` で確認し、本番台帳は実行前に読み直す。グループ G-1 の移行（本番のテスト用の注文を消す清掃を含む1本）の内容・当て方・記録は「グループ G-1 在庫の割当の移行」に書く。グループ G-2 の移行（発注・受け取り・原本の添付）は末尾の「グループ G-2 発注・受け取りの移行」に書く。
 
 本番 Supabase（`pjidrgofvaglnuuznnyj`）へのスキーマ適用手順と、
 マイグレーションの書き方の規約。
@@ -397,6 +397,41 @@ CI（DB）とホスティング（アプリ）のどちらが先に終わるか�
 
 - 旧の発送4関数と仕上がりの2関数は、G-3 の発送票まで再開しない。
 - 適用の前後の読み比べで、G-1 と関係のない前からの差が2つ見つかった（G-1 は触っていない）。後でどちらに揃えるかを決める。
-  - 11の関数（`cleanup_password_reset_tokens`・`clear_admin_expense_cost_allocations`・`create_profile_for_new_auth_user`・`find_auth_user_id_by_email`・`increment_rate_limit_counter` の2つ・`is_auth_session_active`・`record_admin_finance_entry_revision`・`replace_admin_expense_cost_allocations`・`revoke_auth_session`・`revoke_auth_sessions_for_user`）の EXECUTE 権限が、本番は `postgres`・`service_role` だけ、ローカル（移行ファイル）は `anon`・`authenticated` にも付く。本番の方が狭い。
+  - 11の関数（`cleanup_password_reset_tokens`・`clear_admin_expense_cost_allocations`・`create_profile_for_new_auth_user`・`find_auth_user_id_by_email`・`increment_rate_limit_counter` の2つ・`is_auth_session_active`・`record_admin_finance_entry_revision`・`replace_admin_expense_cost_allocations`・`revoke_auth_session`・`revoke_auth_sessions_for_user`）の EXECUTE 権限が、本番は `postgres`・`service_role` だけ、ローカル（移行ファイル）は `anon`・`authenticated` にも付く。本番の方が狭い。**G-2 の最初の移行（`20261024153505_group_g2_purchasing_foundation.sql`）が、ローカル側の `anon`・`authenticated`・PUBLIC の EXECUTE を外して本番に揃える**（下の「グループ G-2 発注・受け取りの移行」）。
   - `admin_finance_summary_options` の2つの CHECK 制約の定義の括弧の付き方が違う（意味は同じ）。
   - 7つの関数の本文の改行（CR の有無）が違う（CR を除くと同じ）。
+
+## グループ G-2 発注・受け取りの移行（20261024153505〜）
+
+[設計書](../superpowers/specs/2026-10-23-group-g-design.md)と[実装計画](../superpowers/plans/2026-10-24-group-g2-purchasing.md)に従う。移行は2本（Task 1 の基盤と Task 4 の発注・受け取り）。ここには Task 1 の基盤の移行を書き、Task 4 の移行は Task 4 が同じ節に足す。**どちらも本番へは未適用**（controller が全体の検証の後に当てる）。
+
+### 記録（Task 1 の基盤）
+
+| 項目 | 値 |
+| --- | --- |
+| 移行ファイル | `supabase/migrations/20261024153505_group_g2_purchasing_foundation.sql`（先頭の `BEGIN;` と末尾の `COMMIT;` を1組だけ持つ。本体は `-- G2A_BODY_BEGIN`〜`-- G2A_BODY_END`、末尾の確かめは `-- G2A_FINAL_ASSERT_BEGIN`〜`-- G2A_FINAL_ASSERT_END`。UTF-8・BOMなし・LF） |
+| 本番適用版 | 未適用（適用の直前に、バイト数と MD5 を固定して記録する） |
+
+### 何をするか
+
+G-1 の適用済みの移行は変えず、新しい移行の本体で次を行う。
+
+| 順 | 内容 |
+| --- | --- |
+| 1 | 内部の部品 `private.group_g_actor_has_permissions(_actor_id, _codes)` を足す。実行者の有効な（`active` かつ期限なしか未来の）全ての役割の権限の**和集合**が `_codes` を全て含む時だけ true（窓口の `authorizeAdminPermissions` と同じ意味）。NULL・空配列・未登録コードは false。誰にも EXECUTE を付けない（G-2 の DB 関数の権限の確かめはこれ1つ） |
+| 2 | 内部の部品 `private.group_g_open_work_order_ids(_variant_ids)` を足す。そのバリアントを含み、受注生産の数がありうる注文の id を昇順で返す先絞り（NULL は全バリアント）。投影（`group_g_item_state_ranges`）が受注生産と数えうる注文の**上位集合**で、外すのは数えようのない注文だけ: `payment_in_progress`・`abandoned`（投影が隠す）、未発送で取り消されていない数（明細の数 − 取り消していない発送の数 − 発送前返金の数〔`awaiting_response`・`pending`・`succeeded`〕が正）が無く、未解決の返品・返金・取消申請・発送前返金の失敗も無い `shipped`（投影の「残り > 取消」と同じ条件）、入金の記録（`paid_at`・`paid_amount`）も paid の割当も発送も無い `pending`・`failed`、割当も発送も無い `cancelled`（G-1 の規則で全部が取消の数）。`paid`・上の条件を満たす `shipped`（発送の記録が無い発送済みの注文を含む）・入金の記録か paid の割当か発送がある `pending`・`failed` は残す。発送か割当のある `cancelled` は、投影が何も数えない形でも残す（既知の費用。先絞りは上位集合のままにして、決めるのは投影）。誰にも EXECUTE を付けない |
+| 3 | `private.admin_record_stock_movement` の権限の確かめだけを `admin.items.manage` から `admin.stock.manage` ＋ `admin.stock.read`（1で足した部品）へ替える。ほかは G-1 のまま（`CREATE OR REPLACE`。署名・所有者・ACL・戻り型は同じ） |
+| 4 | `private.list_group_g_variant_inventory` の受注生産の数え方を、そのバリアントを持った全注文でなく、2で足した先絞りが返す注文だけに投影を掛ける（`CREATE OR REPLACE`）。先絞りが上位集合なので、絞らない投影と同じ数になる（試験が variant ごとに比べる）。`lock_group_g_inventory` は変えない（その閉包は、割当も保留も残らない閉じた注文を入れないが、`pending`・`payment_in_progress`・期限切れでない失敗の注文と、割当か保留が残る注文〔状態に関わらず〕は入れる） |
+| 5 | `private.guard_group_g_paid_at` に、`orders.paid_at` の最初の値（NULL から値）は共通の鍵 `(190521,1)` を持つ接続だけが書ける、という確かめを足す（`GROUP_G_INVENTORY_LOCK_REQUIRED`／55000）。値から別の値・NULL は今までどおり `GROUP_G_PAID_AT_IMMUTABLE` |
+| 6 | 認証・会計の公開関数11本の EXECUTE を `PUBLIC`・`anon`・`authenticated` から外す（`GRANT` は足さない。`service_role` と `postgres` は触らない） |
+| 7 | 末尾の確かめ（`GROUP_G_MIGRATION_ASSERTION_FAILED`／55000、`DETAIL` は `public_function_acl`）。11本が存在し、anon・authenticated・PUBLIC（有効な ACL で見る。`proacl` が NULL なら既定の ACL）が EXECUTE できず、service_role が EXECUTE できることを確かめる。違えば全部戻る。続けて `NOTIFY pgrst, 'reload schema'`、`COMMIT` |
+
+### 6 の公開関数11本の EXECUTE について（セキュリティ）
+
+ベースの移行（`20260901102912_remote_schema.sql`）は、この11本について `PUBLIC` を外して `postgres`・`service_role` に付けただけで、Supabase の既定の権限が付けた `anon`・`authenticated` の直接の EXECUTE が残った。移行から作った DB（ローカルの `db reset` など）では、anon が `revoke_auth_sessions_for_user` などを呼び、他の利用者のセッションを消せた。**本番は 2026-10-24 の読み取りで `postgres`・`service_role` だけが持つことを確かめてあり、本番の状態は変わらない**（適用の直前にもう一度読み取って確かめる）。
+
+呼び出し元は全て `createServiceRoleClient`（service_role）で、anon・authenticated のクライアントから呼ぶ箇所は無い（2026-10-25 に再確認: `revoke_auth_sessions_for_user` は password-reset の confirm・logout・admin の revoke-user-sessions、`revoke_auth_session` は logout、`is_auth_session_active` は `authenticate.ts`、`find_auth_user_id_by_email` は register と password-reset の request・link、`increment_rate_limit_counter` は `features/auth/ratelimit`、`replace_` と `clear_admin_expense_cost_allocations` は accounting の product-costs。`cleanup_password_reset_tokens` は src に呼び手が無く、`create_profile_for_new_auth_user` と `record_admin_finance_entry_revision` はトリガー関数で、PostgreSQL はトリガー関数の EXECUTE を作成時にしか確かめないので発火に影響しない）。新しいコードを前提にする移行ではなく、権限を狭めるだけの移行なので、アプリの順序の制約（「権限を狭めるマイグレーションの順序」）は、呼び手が全て service_role のため本番では満たされている。
+
+### 試験
+
+DB 結合は `group_g2_stock_permissions`・`group_g2_g1_followups`・`group_g2_public_function_acl`（共通の確認は `db reset` の後に PostgREST の smoke → 上の3本と、`admin_revoke_sessions_function`・`auth_db_functions`・`rate_limit_counters`・G-1 の `group_g1_stock_api`・`group_g1_inventory_reads`・`group_g1_payment`・`group_g1_exchange_fee`・`group_g1_concurrency`・`group_g1_fifo`）。対応は[試験仕様](../05_Quality/tests/test-spec.md)の「グループ G-2 のテスト」。

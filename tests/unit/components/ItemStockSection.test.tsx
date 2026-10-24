@@ -260,6 +260,76 @@ describe('ItemStockSection の読み込みの失敗（店主は英語が読め�
   });
 });
 
+// 在庫の窓口は G-2 から admin.stock.read / admin.stock.manage を要る。権限が無い時は窓口の英語（Forbidden）ではなく、日本語の固定の文を出す
+describe('ItemStockSection の権限が無い時（FREQ-540-AC-06）', () => {
+  let consoleError: jest.SpyInstance;
+
+  beforeEach(() => {
+    mockedFetch.mockReset();
+    consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleError.mockRestore();
+  });
+
+  it('FREQ-540-AC-06: 読み込みが 403 なら「在庫を見る権限がありません。」を role=alert で出し、Forbidden も取得失敗の文も出さない', async () => {
+    mockedFetch.mockResolvedValue(json({ error: 'Forbidden', permission: 'admin.stock.read', role: 'admin' }, 403));
+    render(<ItemStockSection itemId="7" />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/^在庫を見る権限がありません。$/);
+    expect(screen.queryByText(/Forbidden/)).not.toBeInTheDocument();
+    expect(screen.queryByText('在庫の取得に失敗しました。')).not.toBeInTheDocument();
+    expect(screen.queryByText('まだ記録がありません。')).not.toBeInTheDocument();
+  });
+
+  it('FREQ-540-AC-06: 記録が 403 なら「在庫を変更する権限がありません。」を role=alert で出し、Forbidden も一般の失敗の文も出さない', async () => {
+    mockedFetch.mockResolvedValue(json({ variants: [VARIANT], movements: [PURCHASE, RESTOCK] }));
+    render(<ItemStockSection itemId="7" />);
+    await screen.findByRole('heading', { name: '履歴' });
+    mockedFetch.mockResolvedValueOnce(json({ error: 'Forbidden', permission: 'admin.stock.manage', role: 'admin' }, 403));
+
+    await userEvent.type(screen.getByTestId('variant-delta'), '3');
+    await userEvent.click(screen.getByTestId('variant-submit'));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/^在庫を変更する権限がありません。$/);
+    expect(screen.queryByText(/Forbidden/)).not.toBeInTheDocument();
+    expect(screen.queryByText('在庫の記録に失敗しました')).not.toBeInTheDocument();
+    // 記録の POST だけ。権限が無いのに読み直さない
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('DB の関数が権限で断った時（本文が日本語の 403）も、同じ固定の文を出す', async () => {
+    mockedFetch.mockResolvedValue(json({ variants: [VARIANT], movements: [PURCHASE, RESTOCK] }));
+    render(<ItemStockSection itemId="7" />);
+    await screen.findByRole('heading', { name: '履歴' });
+    mockedFetch.mockResolvedValueOnce(json({ code: 'GROUP_G_FORBIDDEN', error: '在庫を変更する権限がありません。' }, 403));
+
+    await userEvent.type(screen.getByTestId('variant-delta'), '3');
+    await userEvent.click(screen.getByTestId('variant-submit'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^在庫を変更する権限がありません。$/);
+  });
+
+  it('403 以外の失敗は、これまでの文のまま（読み込みは取得失敗、記録は窓口の日本語の文）', async () => {
+    mockedFetch.mockResolvedValue(json({ error: 'x' }, 500));
+    const { unmount } = render(<ItemStockSection itemId="7" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^在庫の取得に失敗しました。$/);
+    unmount();
+
+    mockedFetch.mockReset();
+    mockedFetch.mockResolvedValue(json({ variants: [VARIANT], movements: [PURCHASE, RESTOCK] }));
+    render(<ItemStockSection itemId="7" />);
+    await screen.findByRole('heading', { name: '履歴' });
+    mockedFetch.mockResolvedValueOnce(json({ error: '在庫の記録に失敗しました' }, 500));
+    await userEvent.type(screen.getByTestId('variant-delta'), '3');
+    await userEvent.click(screen.getByTestId('variant-submit'));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^在庫の記録に失敗しました$/);
+  });
+});
+
 describe('G-1 stock confirmation and allocation history', () => {
   beforeEach(() => mockedFetch.mockReset());
   const confirmation = (n: number) => json({ code: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED',

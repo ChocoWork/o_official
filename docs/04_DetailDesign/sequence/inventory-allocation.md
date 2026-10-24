@@ -1,6 +1,6 @@
 # 在庫の割当と共通の鍵の流れ（G-1）
 
-> 状態: 現行のソース（グループ G-1。2026-10-24 に本番へ適用済み） | 確認日: 2026-10-24 | 対象: 注文の受付・入金・入荷・解放・返金・返品・配送の反映で在庫を動かす処理の順序と、全入口に共通の鍵の順
+> 状態: 現行のソース（グループ G-1。2026-10-24 に本番へ適用済み。在庫の窓口の権限は G-2 Task 1 の変更を 2026-10-25 に反映） | 確認日: 2026-10-25 | 対象: 注文の受付・入金・入荷・解放・返金・返品・配送の反映で在庫を動かす処理の順序と、全入口に共通の鍵の順
 
 ## 概要
 
@@ -122,7 +122,7 @@ sequenceDiagram
 
 ## 入荷・棚卸（在庫の窓口）
 
-管理者が `POST /api/admin/items/[id]/variants` で在庫を増減する。経路は既存どおり認可（`admin.items.manage`）→ CSRF → 回数制限 → 入力の検証 → `admin_record_stock_movement` → 監査。`GET` は `admin.items.read` のまま。
+管理者が `POST /api/admin/items/[id]/variants` で在庫を増減する。経路は既存どおり認可（G-2 から `admin.stock.manage` と `admin.stock.read` の両方。G-1 では `admin.items.manage`）→ CSRF → 回数制限 → 入力の検証 → `admin_record_stock_movement`（DB も同じ組を `private.group_g_actor_has_permissions` で確かめる）→ 監査。`GET` は G-2 から `admin.stock.read`（G-1 では `admin.items.read`）。
 
 ```mermaid
 sequenceDiagram

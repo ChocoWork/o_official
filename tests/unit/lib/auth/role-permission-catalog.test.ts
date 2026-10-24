@@ -34,11 +34,23 @@ const ROWS = [
   ['権限管理', '権限設定の閲覧・保存', 'admin.permissions.manage'],
 ] as const;
 
-test('全30行の表示順・分野・ラベルと固定2件・準備中9件を返す', () => {
+test('全30行の表示順・分野・ラベルと固定2件・準備中4件を返す', () => {
+  expect(ROLE_PERMISSION_CATALOG).toHaveLength(30);
   expect(ROLE_PERMISSION_CATALOG.map(({ area, label, code }) => [area, label, code])).toEqual(ROWS);
   expect(FIXED_PERMISSION_CODES).toEqual(['admin.users.manage', 'admin.permissions.manage']);
   expect(ROLE_PERMISSION_CATALOG.filter((p) => p.fixed).map((p) => p.code)).toEqual(['admin.users.manage', 'admin.permissions.manage']);
-  expect(ROLE_PERMISSION_CATALOG.filter((p) => p.upcoming).map((p) => p.code)).toEqual(ROWS.slice(20, 29).map((r) => r[2]));
+});
+
+// 在庫（stock）の権限は G-2 Task 1 で窓口が使い始めたので「準備中」から外れる。発注・受け取りの3権限は窓口が G-2 の後の Task で作られるが、印は付けない。「準備中」は割り当て入替と発送の 4 コードだけ
+test('FREQ-540-AC-06: upcoming（準備中）は未使用の4コードだけで、並びは表の順', () => {
+  expect(ROLE_PERMISSION_CATALOG.filter((p) => p.upcoming).map((p) => p.code)).toEqual([
+    'admin.orders.allocate', 'admin.shipping.read', 'admin.shipping.manage', 'admin.shipping.correct_date',
+  ]);
+  expect(ROLE_PERMISSION_CATALOG.filter((p) => !p.upcoming)).toHaveLength(26);
+  for (const code of ['admin.stock.read', 'admin.stock.manage', 'admin.purchase_orders.read', 'admin.purchase_orders.manage',
+    'admin.receiving.manage', 'admin.permissions.manage']) {
+    expect(ROLE_PERMISSION_CATALOG.find((p) => p.code === code)?.upcoming).toBe(false);
+  }
 });
 
 test('依存のある7行だけに指定順の必要コードを表示する', () => {

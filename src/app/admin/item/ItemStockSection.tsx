@@ -85,6 +85,9 @@ const STOCK_TERMS_EXPLANATION =
 
 // 読み込みの失敗は、窓口の英語の文を出さずにこの文にする（店主は英語が読めない）。記録の直後の読み直しの失敗も同じ
 const LOAD_ERROR_MESSAGE = "在庫の取得に失敗しました。";
+// 窓口が 403 を返した時（admin.stock.read / admin.stock.manage が無い）は、英語の Forbidden を出さずにこの文にする
+const READ_FORBIDDEN_MESSAGE = "在庫を見る権限がありません。";
+const WRITE_FORBIDDEN_MESSAGE = "在庫を変更する権限がありません。";
 
 // 管理画面から打てる理由。注文の処理が書くものは含めない（API 側でも拒否する）。
 const ADMIN_REASONS = [
@@ -133,7 +136,7 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
     try {
       const response = await clientFetch(`/api/admin/items/${itemId}/variants`);
       if (!response.ok) {
-        setLoadError(LOAD_ERROR_MESSAGE);
+        setLoadError(response.status === 403 ? READ_FORBIDDEN_MESSAGE : LOAD_ERROR_MESSAGE);
         return;
       }
       const json = await response.json().catch(() => null);
@@ -190,7 +193,7 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
           setConfirmation({ variant, delta, reason, quantity: json.releasedQuantity, note });
         } else {
           if (response.status < 500) retries.current.delete(variant.id);
-          setActionError(json?.error ?? "在庫の記録に失敗しました");
+          setActionError(response.status === 403 ? WRITE_FORBIDDEN_MESSAGE : (json?.error ?? "在庫の記録に失敗しました"));
         }
         return;
       }

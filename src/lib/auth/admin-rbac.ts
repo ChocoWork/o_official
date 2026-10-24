@@ -176,7 +176,20 @@ async function resolveAclPermissions(userId: string): Promise<Set<PermissionCode
 }
 
 export async function authorizeAdminPermission(requiredPermission: PermissionCode, request?: Request): Promise<AuthzResult> {
+  return authorizeAdminPermissions([requiredPermission], request);
+}
+
+/**
+ * 要るコードを全部持つ時だけ通す。持つコードは有効な全ての役割の和集合で数える（1つの役割に全部そろっていなくてよい）。
+ * 403 の permission は、渡した並びで足りない最初のコード。MFA（aal2）が無い時の 403 の permission は先頭の要るコード。
+ * 空の一覧は権限の確認なしで通る道になるので、通さずに 500 にする。
+ */
+export async function authorizeAdminPermissions(required: readonly PermissionCode[], request?: Request): Promise<AuthzResult> {
   try {
+    if (required.length === 0) {
+      throw new Error('authorizeAdminPermissions requires at least one permission code');
+    }
+    const firstRequired = required[0];
     // ここだけ authenticateRequest を使わず内訳を展開している。
     // verifyAccessToken は JWKS によるローカル検証で往復が無いため、claims を得た後の
     // 「セッション失効の確認」と「ACL の照会」は互いに独立で同時に投げられる。
@@ -225,12 +238,13 @@ export async function authorizeAdminPermission(requiredPermission: PermissionCod
       };
     }
 
-    if (!aclPermissions.has(requiredPermission)) {
-      console.warn(`[RBAC] Permission denied for ${userId}: ${requiredPermission}`);
+    const missingPermission = required.find((code) => !aclPermissions.has(code));
+    if (missingPermission !== undefined) {
+      console.warn(`[RBAC] Permission denied for ${userId}: ${missingPermission}`);
       return {
         ok: false,
         response: NextResponse.json(
-          { error: 'Forbidden', permission: requiredPermission, role: tokenRole },
+          { error: 'Forbidden', permission: missingPermission, role: tokenRole },
           { status: 403 }
         ),
       };
@@ -239,11 +253,11 @@ export async function authorizeAdminPermission(requiredPermission: PermissionCod
     // MFA はセッション単位の性質。app_metadata のフラグはユーザー単位で永続してしまうため、
     // JWT の aal クレーム（Supabase 標準）で判定する。
     if (claims.aal !== 'aal2') {
-      console.warn(`[RBAC] MFA required for ${userId}: ${requiredPermission}`);
+      console.warn(`[RBAC] MFA required for ${userId}: ${firstRequired}`);
       return {
         ok: false,
         response: NextResponse.json(
-          { error: 'Forbidden', reason: 'MFA required', permission: requiredPermission, role: tokenRole },
+          { error: 'Forbidden', reason: 'MFA required', permission: firstRequired, role: tokenRole },
           { status: 403 }
         ),
       };

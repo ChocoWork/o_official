@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
+import { authorizeAdminPermission, authorizeAdminPermissions } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
@@ -74,7 +74,7 @@ function describeErrorForLog(error: unknown): [name: string, code: unknown] {
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const authz = await authorizeAdminPermission('admin.items.read', request);
+    const authz = await authorizeAdminPermission('admin.stock.read', request);
     if (!authz.ok) {
       return authz.response;
     }
@@ -197,7 +197,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const authz = await authorizeAdminPermission('admin.items.manage', request);
+    // 在庫の入荷・棚卸は stock.manage に加えて stock.read も要る（DB の関数 admin_record_stock_movement も同じ組を確かめる）
+    const authz = await authorizeAdminPermissions(['admin.stock.manage', 'admin.stock.read'], request);
     if (!authz.ok) {
       return authz.response;
     }
