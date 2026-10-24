@@ -245,7 +245,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         ...(failure.releasedQuantity !== undefined ? { releasedQuantity: failure.releasedQuantity } : {}) },
       { status: failure.status });
     }
-  } catch {
+  } catch (error) {
+    // 名前と code だけを残す（message・details は出さない）
+    console.error('POST /api/admin/items/:id/variants error:', ...describeErrorForLog(error));
     return NextResponse.json({ error: '在庫の記録に失敗しました' }, { status: 500 });
   }
 }

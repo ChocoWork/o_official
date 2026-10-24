@@ -84,6 +84,42 @@ describeLocalDb('G-1 FIFO, ledger and minimal synthetic fixtures', (db) => {
     expect((await db().query('select * from public.verify_stock_integrity() where variant_id=$1', [c.variantId])).rows).toEqual([]);
   });
 
+  test('a unit back to waiting after a failed pre-shipment refund on a shipped order is locked and allocated first', async () => {
+    const c = await createCatalogFixture(db(), { stock: 0 });
+    // 2 units: 1 refunded before shipment (the refund later failed), the other shipped -> the order is shipped.
+    const shipped = await insertOrderWithLines(db(), { status: 'shipped', createdAt: '2026-01-01', paidAmount: 10000,
+      shipped: { carrier: 'yamato', trackingNumber: 'G1-FAILED-REFUND' },
+      lines: [{ itemId: c.itemId, variantId: c.variantId, quantity: 2, fulfillmentType: 'stock', reserved: false }] });
+    const line = shipped.orderItemIds[0];
+    await db().query(`insert into public.stock_movements (variant_id,delta,reason) values ($1,1,'restock')`, [c.variantId]);
+    await seedGroupG1Allocation(db(), { orderItemId: line, quantity: 1, kind: 'paid' });
+    await seedGroupG1Shipment(db(), { orderId: shipped.orderId, lines: [{ orderItemId: line, quantity: 1 }], shippedAt: '2026-01-02T00:00:00Z' });
+    await insertRefundRecord(db(), { orderId: shipped.orderId, status: 'failed', lines: [{ orderItemId: line, quantity: 1 }] });
+    const young = await order(c.itemId, c.variantId, 1, '2026-03-01');
+    await flush();
+
+    const locked = (await db().query('select private.lock_group_g_inventory($1,$2) as ids', [[c.variantId], []])).rows[0].ids;
+    expect(locked).toEqual(expect.arrayContaining([shipped.orderId, young.id]));
+    const { count } = await allocate([c.variantId], 1);
+
+    expect(count).toBe(1);
+    expect([await quantity(line), await quantity(young.line)]).toEqual([1, 0]);
+    expect(await totals(c.variantId)).toEqual({ f: 0, a: 1, h: 0, onHand: 1 });
+  });
+
+  test('refund materials count the restockable units as the unshipped remaining reservation (no second shipped subtraction)', async () => {
+    const c = await createCatalogFixture(db(), { stock: 3 });
+    const partial = await insertOrderWithLines(db(), { status: 'paid', paidAmount: 15000,
+      lines: [{ itemId: c.itemId, variantId: c.variantId, quantity: 3, fulfillmentType: 'stock' }] });
+    await seedGroupG1Shipment(db(), { orderId: partial.orderId, lines: [{ orderItemId: partial.orderItemIds[0], quantity: 1 }],
+      shippedAt: '2026-01-02T00:00:00Z' });
+    await flush();
+
+    const lines = (await db().query('select lines from public.load_order_refund_materials($1)', [partial.orderId])).rows[0].lines;
+    expect(lines).toEqual([expect.objectContaining({ shipped: 1, unshipped: 2, restockable: 2 })]);
+    expect(await quantity(partial.orderItemIds[0])).toBe(2);
+  });
+
   test('equal dates use order UUID and then item UUID; duplicate variant input never double allocates', async () => {
     const c = await createCatalogFixture(db(), { stock: 0 });
     const one = await order(c.itemId, c.variantId, 1);

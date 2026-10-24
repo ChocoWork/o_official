@@ -1330,7 +1330,15 @@ BEGIN
           EXISTS (SELECT 1 FROM public.order_returns AS r WHERE r.order_id = o.id AND r.status IN ('requested', 'open'))
           OR EXISTS (SELECT 1 FROM public.order_refunds AS r WHERE r.order_id = o.id AND r.status IN ('awaiting_response', 'pending', 'error'))
           OR EXISTS (SELECT 1 FROM public.order_cancel_requests AS r WHERE r.order_id = o.id AND r.status = 'requested')
+          -- A failed/error pre-shipment refund returns its units to waiting on a shipped order.
+          OR (EXISTS (SELECT 1 FROM public.order_refund_lines AS rl JOIN public.order_refunds AS r ON r.id = rl.refund_id
+                WHERE r.order_id = o.id AND rl.before_shipment AND r.status IN ('error', 'failed'))
+              AND EXISTS (SELECT 1 FROM private.order_line_fulfillment(o.id) AS f
+                WHERE f.variant_id = ANY(v_variants) AND f.in_production > 0))
         ))
+        -- Whoever still holds a remaining A/H on a target variant is a target, whatever its status.
+        OR EXISTS (SELECT 1 FROM public.order_item_allocations AS a JOIN public.order_items AS oi ON oi.id = a.order_item_id
+          WHERE oi.order_id = o.id AND a.variant_id = ANY(v_variants) AND a.remaining_quantity > 0)
     ) AS x;
     EXIT WHEN v_variants = v_previous_variants AND v_orders = v_previous_orders;
   END LOOP;
@@ -1413,7 +1421,9 @@ BEGIN
         AND (o.status = 'paid'
           OR EXISTS (SELECT 1 FROM public.order_returns AS r WHERE r.order_id = o.id AND r.status IN ('requested', 'open'))
           OR EXISTS (SELECT 1 FROM public.order_refunds AS r WHERE r.order_id = o.id AND r.status IN ('awaiting_response', 'pending', 'error'))
-          OR EXISTS (SELECT 1 FROM public.order_cancel_requests AS r WHERE r.order_id = o.id AND r.status = 'requested'))
+          OR EXISTS (SELECT 1 FROM public.order_cancel_requests AS r WHERE r.order_id = o.id AND r.status = 'requested')
+          OR EXISTS (SELECT 1 FROM public.order_refund_lines AS rl JOIN public.order_refunds AS r ON r.id = rl.refund_id
+            WHERE r.order_id = o.id AND rl.before_shipment AND r.status IN ('error', 'failed')))
         AND EXISTS (SELECT 1 FROM private.order_line_fulfillment(o.id) AS f
           WHERE f.variant_id = ANY(_variant_ids) AND f.in_production > 0)
     )
@@ -1717,7 +1727,8 @@ DECLARE
   v_note text := NULLIF(pg_catalog.regexp_replace(_note, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '');
   v_fingerprint text;
   v_existing private.group_g_operations%ROWTYPE;
-  v_inventory record;
+  v_free integer;
+  v_paid integer;
   v_allocation record;
   v_release integer := 0;
   v_remaining integer;
@@ -1753,12 +1764,17 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.item_variants AS v WHERE v.id = _variant_id AND v.item_id = _item_id) THEN
     RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
   END IF;
-  SELECT s.* INTO v_inventory FROM private.list_group_g_variant_inventory(ARRAY[_variant_id]) AS s;
+  -- F and the releasable A are read directly under the lock (no projection of historical orders).
+  -- Only allocations of locked orders count, so the release loop below never touches an unlocked order.
+  SELECT v.stock_quantity INTO v_free FROM public.item_variants AS v WHERE v.id = _variant_id;
+  SELECT COALESCE(pg_catalog.sum(a.remaining_quantity), 0)::integer INTO v_paid
+  FROM public.order_item_allocations AS a JOIN public.order_items AS oi ON oi.id = a.order_item_id
+  WHERE a.variant_id = _variant_id AND a.kind = 'paid' AND a.remaining_quantity > 0 AND oi.order_id = ANY(v_orders);
   IF _delta < 0 THEN
-    IF -_delta::bigint > v_inventory.free::bigint + v_inventory.paid_allocated THEN
+    IF -_delta::bigint > v_free::bigint + v_paid THEN
       RAISE EXCEPTION 'GROUP_G_STOCK_INSUFFICIENT' USING ERRCODE = '23514';
     END IF;
-    v_release := GREATEST(-_delta::bigint - v_inventory.free, 0)::integer;
+    v_release := GREATEST(-_delta::bigint - v_free, 0)::integer;
     IF (v_release > 0 AND _expected_release_quantity IS NULL)
       OR (_expected_release_quantity IS NOT NULL AND _expected_release_quantity <> v_release) THEN
       RAISE EXCEPTION 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED' USING ERRCODE = '55000',
@@ -1775,7 +1791,7 @@ BEGIN
     SELECT a.id, a.remaining_quantity, a.order_item_id, oi.order_id
     FROM public.order_item_allocations AS a JOIN public.order_items AS oi ON oi.id = a.order_item_id
     JOIN public.orders AS o ON o.id = oi.order_id
-    WHERE a.variant_id = _variant_id AND a.kind = 'paid' AND a.remaining_quantity > 0
+    WHERE a.variant_id = _variant_id AND a.kind = 'paid' AND a.remaining_quantity > 0 AND oi.order_id = ANY(v_orders)
     ORDER BY o.created_at DESC, o.id DESC, oi.id DESC, a.id DESC
   LOOP
     EXIT WHEN v_remaining = 0;
@@ -1815,6 +1831,937 @@ AS $$ SELECT private.admin_record_stock_movement(_item_id, _variant_id, _delta, 
 ALTER FUNCTION public.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer) TO service_role;
+
+-- Task 6: order intake (H only), awaiting payment, unpaid release/cancel and guest order linking.
+-- Each public entry keeps its last signature/defaults/return and delegates (SECURITY INVOKER) to a
+-- private body that takes the common advisory before any row lock. Last definitions:
+-- place_order 20261023082740_item_variant_retire.sql:166, awaiting 20261009095736_order_email_enqueue.sql:147,
+-- release/admin_cancel 20261023061408_order_cancel_reasons.sql:63/:12.
+CREATE FUNCTION private.place_order_from_checkout_draft(
+  _draft_id uuid,
+  _checkout_session_id text,
+  _cart_session_id text,
+  _stripe_amount_total integer,
+  _stripe_amount_discount integer,
+  _stripe_currency text,
+  _checkout_session_created_at timestamptz,
+  _payment_intent_id text DEFAULT NULL,
+  _shown_in_stock_variant_ids bigint[] DEFAULT NULL,
+  _buyer_user_id uuid DEFAULT NULL
+)
+RETURNS TABLE (order_id uuid, order_status public.order_status, created boolean, rejection text)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  draft_row public.checkout_drafts%ROWTYPE;
+  existing_id uuid;
+  existing_status public.order_status;
+  existing_owner uuid;
+  inserted_id uuid;
+  v_snapshot jsonb;
+  v_variants bigint[];
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+  v_line record;
+  v_movement bigint;
+  v_allocation uuid;
+  v_held integer := 0;
+BEGIN
+  IF _draft_id IS NULL
+     OR NULLIF(pg_catalog.btrim(_checkout_session_id), '') IS NULL
+     OR NULLIF(pg_catalog.btrim(_cart_session_id), '') IS NULL
+     OR _stripe_amount_total IS NULL
+     OR _stripe_amount_discount IS NULL
+     OR _stripe_amount_discount < 0
+     OR NULLIF(pg_catalog.btrim(_stripe_currency), '') IS NULL
+     OR _checkout_session_created_at IS NULL
+     OR (_buyer_user_id IS NOT NULL AND _shown_in_stock_variant_ids IS NULL) THEN
+    RAISE EXCEPTION 'PLACE_ORDER_ARGUMENT_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  -- The reconciler gets the existing order of the same Session back without any lock (read only).
+  SELECT o.id, o.status INTO existing_id, existing_status
+  FROM public.orders AS o WHERE o.checkout_session_id = _checkout_session_id;
+  IF existing_id IS NOT NULL AND _shown_in_stock_variant_ids IS NULL THEN
+    RETURN QUERY SELECT existing_id, existing_status, false, NULL::text;
+    RETURN;
+  END IF;
+
+  -- Close the variant set by an unlocked read of the draft, then take the common advisory first,
+  -- the draft next, then items/variants/waiting orders in the global order (Task 4 helper).
+  SELECT d.items_snapshot INTO v_snapshot FROM public.checkout_drafts AS d WHERE d.id = _draft_id;
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT r.variant_id ORDER BY r.variant_id), ARRAY[]::bigint[]) INTO v_variants
+  FROM public.resolve_checkout_item_variants(COALESCE(v_snapshot, '[]'::jsonb)) AS r
+  WHERE r.variant_id IS NOT NULL;
+  PERFORM private.lock_group_g_inventory(v_variants, ARRAY[]::uuid[], _draft_id);
+
+  SELECT d.* INTO draft_row FROM public.checkout_drafts AS d WHERE d.id = _draft_id;
+  -- A variant resolved only after the lock was taken cannot be locked any more in the global order.
+  IF EXISTS (
+    SELECT 1 FROM public.resolve_checkout_item_variants(COALESCE(draft_row.items_snapshot, '[]'::jsonb)) AS r
+    WHERE r.variant_id IS NOT NULL AND NOT (r.variant_id = ANY (v_variants))
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_LOCK_SET_CHANGED' USING ERRCODE = '40001';
+  END IF;
+
+  -- 「注文する」の経路では、「確認へ進む」の時の買い手と今の買い手が同じ時だけ進む（グループ C 設計書 5-3）。
+  IF _shown_in_stock_variant_ids IS NOT NULL
+     AND draft_row.id IS NOT NULL
+     AND draft_row.checkout_session_id IS NOT DISTINCT FROM _checkout_session_id
+     AND draft_row.session_id IS NOT DISTINCT FROM _cart_session_id
+     AND draft_row.buyer_user_id IS DISTINCT FROM _buyer_user_id THEN
+    RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'login_changed'::text;
+    RETURN;
+  END IF;
+
+  -- ロックを待つ間に、並行した受付が同じ Session の注文を作っていれば、それを返す。
+  SELECT o.id, o.status, o.user_id INTO existing_id, existing_status, existing_owner
+  FROM public.orders AS o WHERE o.checkout_session_id = _checkout_session_id;
+
+  IF existing_id IS NOT NULL THEN
+    IF _shown_in_stock_variant_ids IS NOT NULL
+       AND (draft_row.id IS NULL
+            OR draft_row.checkout_session_id IS DISTINCT FROM _checkout_session_id
+            OR draft_row.session_id IS DISTINCT FROM _cart_session_id)
+       AND existing_owner IS DISTINCT FROM _buyer_user_id THEN
+      RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'login_changed'::text;
+      RETURN;
+    END IF;
+    IF _shown_in_stock_variant_ids IS NOT NULL
+       AND existing_status = 'payment_in_progress'::public.order_status
+       AND private.checkout_cart_lines_gone(draft_row.cart_id, draft_row.items_snapshot) THEN
+      RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'cart_changed'::text;
+      RETURN;
+    END IF;
+    RETURN QUERY SELECT existing_id, existing_status, false, NULL::text;
+    RETURN;
+  END IF;
+
+  IF draft_row.id IS NULL
+     OR draft_row.session_id IS DISTINCT FROM _cart_session_id
+     OR draft_row.checkout_session_id IS DISTINCT FROM _checkout_session_id
+     OR draft_row.status IS DISTINCT FROM 'created' THEN
+    RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'draft_not_found'::text;
+    RETURN;
+  END IF;
+
+  IF _stripe_amount_total <= 0 THEN
+    RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'zero_amount'::text;
+    RETURN;
+  END IF;
+
+  IF pg_catalog.lower(draft_row.currency) <> pg_catalog.lower(_stripe_currency) THEN
+    RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'currency_mismatch'::text;
+    RETURN;
+  END IF;
+
+  IF draft_row.total_amount + COALESCE(draft_row.discount_amount, 0)
+     <> _stripe_amount_total + _stripe_amount_discount THEN
+    RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'amount_mismatch'::text;
+    RETURN;
+  END IF;
+
+  -- Items of resolved variants are already FOR KEY SHARE (R-42) and variants FOR UPDATE by the helper.
+  -- A line whose variant does not resolve is only read here; its order_items FK takes KEY SHARE on insert.
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.jsonb_array_elements(draft_row.items_snapshot) AS e(value)
+    LEFT JOIN public.items AS i ON i.id = (e.value->>'item_id')::bigint
+    WHERE i.id IS NULL OR i.status IS DISTINCT FROM 'published'
+  ) THEN
+    RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'item_unavailable'::text;
+    RETURN;
+  END IF;
+
+  IF _shown_in_stock_variant_ids IS NOT NULL THEN
+    IF EXISTS (
+      SELECT 1
+      FROM public.resolve_checkout_item_variants(draft_row.items_snapshot) AS r
+      LEFT JOIN public.item_variants AS v ON v.id = r.variant_id
+      WHERE v.id IS NULL OR NOT v.is_active
+    ) THEN
+      RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'item_unavailable'::text;
+      RETURN;
+    END IF;
+
+    IF private.checkout_cart_lines_gone(draft_row.cart_id, draft_row.items_snapshot) THEN
+      RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'cart_changed'::text;
+      RETURN;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM pg_catalog.jsonb_array_elements(draft_row.items_snapshot) AS e(value)
+      JOIN public.items AS i ON i.id = (e.value->>'item_id')::bigint
+      WHERE i.price IS DISTINCT FROM (e.value->>'item_price')::integer
+    ) THEN
+      RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'price_changed'::text;
+      RETURN;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM public.preview_checkout_fulfillment(draft_row.items_snapshot) AS p
+      WHERE p.variant_id = ANY (_shown_in_stock_variant_ids)
+        AND p.fulfillment = 'backorder'
+    ) THEN
+      RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'stock_changed'::text;
+      RETURN;
+    END IF;
+  END IF;
+
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+
+  BEGIN
+    INSERT INTO public.orders (
+      session_id, user_id, checkout_session_id, payment_intent_id, status,
+      subtotal_amount, shipping_amount, discount_amount, total_amount, currency,
+      shipping_email, shipping_full_name, shipping_postal_code, shipping_prefecture, shipping_city,
+      shipping_address, shipping_building, shipping_phone, shipping_kana, checkout_session_created_at
+    ) VALUES (
+      draft_row.session_id,
+      CASE WHEN _shown_in_stock_variant_ids IS NOT NULL THEN draft_row.buyer_user_id ELSE NULL END,
+      _checkout_session_id,
+      _payment_intent_id,
+      'payment_in_progress'::public.order_status,
+      draft_row.subtotal_amount,
+      draft_row.shipping_amount,
+      _stripe_amount_discount,
+      _stripe_amount_total,
+      draft_row.currency,
+      draft_row.shipping_snapshot->>'email',
+      draft_row.shipping_snapshot->>'fullName',
+      draft_row.shipping_snapshot->>'postalCode',
+      draft_row.shipping_snapshot->>'prefecture',
+      draft_row.shipping_snapshot->>'city',
+      draft_row.shipping_snapshot->>'address',
+      draft_row.shipping_snapshot->>'building',
+      draft_row.shipping_snapshot->>'phone',
+      draft_row.shipping_snapshot->>'kanaName',
+      _checkout_session_created_at
+    )
+    RETURNING id INTO inserted_id;
+  EXCEPTION
+    WHEN unique_violation THEN
+      SELECT o.id, o.status, o.user_id INTO existing_id, existing_status, existing_owner
+      FROM public.orders AS o WHERE o.checkout_session_id = _checkout_session_id;
+      IF existing_id IS NOT NULL THEN
+        PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+        IF _shown_in_stock_variant_ids IS NOT NULL AND existing_owner IS DISTINCT FROM _buyer_user_id THEN
+          RETURN QUERY SELECT NULL::uuid, NULL::public.order_status, false, 'login_changed'::text;
+          RETURN;
+        END IF;
+        RETURN QUERY SELECT existing_id, existing_status, false, NULL::text;
+        RETURN;
+      END IF;
+      RAISE;
+  END;
+
+  -- 明細を写しから作る。同じ variant の合計が空き在庫で全部賄える時だけ在庫の明細にする（今までの規則）。
+  WITH resolved AS (
+    SELECT * FROM public.resolve_checkout_item_variants(draft_row.items_snapshot)
+  ),
+  needed AS (
+    SELECT r.variant_id, pg_catalog.sum(r.quantity)::integer AS quantity
+    FROM resolved AS r WHERE r.variant_id IS NOT NULL GROUP BY r.variant_id
+  ),
+  covered AS (
+    SELECT n.variant_id FROM needed AS n
+    JOIN public.item_variants AS v ON v.id = n.variant_id
+    WHERE v.is_active AND v.stock_quantity >= n.quantity
+  )
+  INSERT INTO public.order_items (
+    order_id, item_id, item_name, item_price, item_image_url, color, size,
+    quantity, line_total, variant_id, fulfillment_type
+  )
+  SELECT inserted_id, r.item_id, r.item_name, r.item_price, r.item_image_url, r.color, r.size,
+         r.quantity, r.line_total, r.variant_id,
+         CASE WHEN r.variant_id IS NOT NULL AND EXISTS (SELECT 1 FROM covered AS c WHERE c.variant_id = r.variant_id)
+           THEN 'stock' ELSE 'backorder' END
+  FROM resolved AS r
+  ORDER BY r.line_no;
+
+  -- Each stock line takes its purchase/-n and exactly one payment hold (H) in this operation. No A before payment.
+  FOR v_line IN
+    SELECT oi.id AS order_item_id, oi.variant_id, oi.quantity
+    FROM public.order_items AS oi
+    WHERE oi.order_id = inserted_id AND oi.fulfillment_type = 'stock' AND oi.variant_id IS NOT NULL AND oi.quantity > 0
+    ORDER BY oi.variant_id, oi.id
+  LOOP
+    INSERT INTO public.stock_movements (variant_id, delta, reason, order_id, order_item_id, allocation_operation_id)
+    VALUES (v_line.variant_id, -v_line.quantity, 'purchase', inserted_id, v_line.order_item_id, v_operation)
+    RETURNING id INTO v_movement;
+    INSERT INTO public.order_item_allocations (order_item_id, variant_id, quantity, remaining_quantity, kind, operation_id)
+    VALUES (v_line.order_item_id, v_line.variant_id, v_line.quantity, v_line.quantity, 'payment_hold', v_operation)
+    RETURNING id INTO v_allocation;
+    INSERT INTO public.order_item_allocation_events
+      (allocation_id, event_type, quantity, operation_id, sequence, stock_movement_id, reason)
+    VALUES (v_allocation, 'hold', v_line.quantity, v_operation, 1, v_movement, 'checkout');
+    v_held := v_held + v_line.quantity;
+  END LOOP;
+
+  -- 下書きは受付済みにする。割引額だけを書き戻し、合計は割引前のまま残す（R-26）。カートは消さない。
+  UPDATE public.checkout_drafts AS d
+  SET status = 'completed',
+      discount_amount = _stripe_amount_discount,
+      payment_intent_id = COALESCE(d.payment_intent_id, _payment_intent_id)
+  WHERE d.id = _draft_id;
+
+  -- payment_in_progress is not displayed (0 ranges); the before/after call keeps one recorder per operation.
+  PERFORM private.record_group_g_item_state_changes('[]'::jsonb, ARRAY[inserted_id], v_operation, 1,
+    'place_order_from_checkout_draft', NULL);
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    v_operation,
+    'place_order_from_checkout_draft',
+    pg_catalog.md5('place_order_from_checkout_draft:' || inserted_id::text)::uuid,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'place_order_from_checkout_draft', 'order_id', inserted_id, 'draft_id', _draft_id,
+      'checkout_session_id', _checkout_session_id)::text, 'UTF8')), 'hex'),
+    'order',
+    inserted_id::text,
+    NULL,
+    pg_catalog.jsonb_build_object('order_id', inserted_id, 'held_quantity', v_held)
+  );
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT inserted_id, 'payment_in_progress'::public.order_status, true, NULL::text;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)
+  TO service_role;
+
+CREATE OR REPLACE FUNCTION public.place_order_from_checkout_draft(
+  _draft_id uuid,
+  _checkout_session_id text,
+  _cart_session_id text,
+  _stripe_amount_total integer,
+  _stripe_amount_discount integer,
+  _stripe_currency text,
+  _checkout_session_created_at timestamptz,
+  _payment_intent_id text DEFAULT NULL,
+  _shown_in_stock_variant_ids bigint[] DEFAULT NULL,
+  _buyer_user_id uuid DEFAULT NULL
+)
+RETURNS TABLE (order_id uuid, order_status public.order_status, created boolean, rejection text)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT * FROM private.place_order_from_checkout_draft(_draft_id, _checkout_session_id, _cart_session_id,
+    _stripe_amount_total, _stripe_amount_discount, _stripe_currency, _checkout_session_created_at,
+    _payment_intent_id, _shown_in_stock_variant_ids, _buyer_user_id);
+$$;
+ALTER FUNCTION public.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)
+  TO service_role;
+
+CREATE FUNCTION private.mark_order_awaiting_payment(
+  _order_id uuid,
+  _payment_intent_id text,
+  _source_event_id text DEFAULT NULL
+)
+RETURNS TABLE (updated boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  target public.orders%ROWTYPE;
+  v_before jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _order_id IS NULL OR NULLIF(pg_catalog.btrim(_payment_intent_id), '') IS NULL THEN
+    RAISE EXCEPTION 'MARK_AWAITING_ARGUMENT_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[_order_id], NULL);
+  SELECT o.* INTO target FROM public.orders AS o WHERE o.id = _order_id;
+
+  IF target.id IS NULL OR target.status IS DISTINCT FROM 'payment_in_progress'::public.order_status THEN
+    RETURN QUERY SELECT false;
+    RETURN;
+  END IF;
+
+  IF target.payment_intent_id IS NOT NULL AND target.payment_intent_id <> _payment_intent_id THEN
+    RAISE EXCEPTION 'PAYMENT_INTENT_MISMATCH' USING ERRCODE = '22023';
+  END IF;
+
+  v_before := private.capture_group_g_item_states(ARRAY[_order_id]);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  PERFORM pg_catalog.set_config('app.order_actor_id', '', true);
+  PERFORM pg_catalog.set_config('app.order_change_reason', 'stripe_payment_awaiting', true);
+  PERFORM pg_catalog.set_config('app.order_source_event_id', COALESCE(_source_event_id, ''), true);
+
+  -- The order keeps its H (no A before payment); only the status and its item states change.
+  UPDATE public.orders AS o
+  SET status = 'pending'::public.order_status,
+      payment_intent_id = COALESCE(o.payment_intent_id, _payment_intent_id)
+  WHERE o.id = _order_id;
+
+  UPDATE public.checkout_drafts AS d
+  SET payment_intent_id = COALESCE(d.payment_intent_id, _payment_intent_id)
+  WHERE target.checkout_session_id IS NOT NULL
+    AND d.checkout_session_id = target.checkout_session_id;
+
+  PERFORM private.clear_cart_for_order(_order_id);
+  PERFORM private.enqueue_order_email(_order_id, 'awaiting_payment', NULL);
+
+  PERFORM private.record_group_g_item_state_changes(v_before, ARRAY[_order_id], v_operation, 1,
+    'stripe_payment_awaiting', NULL);
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    v_operation,
+    'mark_order_awaiting_payment',
+    CASE WHEN NULLIF(pg_catalog.btrim(_source_event_id), '') IS NOT NULL
+      THEN pg_catalog.md5('stripe:' || _source_event_id)::uuid
+      ELSE pg_catalog.md5('mark_order_awaiting_payment:' || _order_id::text || ':' || _payment_intent_id)::uuid END,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'mark_order_awaiting_payment', 'order_id', _order_id, 'payment_intent_id', _payment_intent_id,
+      'source_event_id', _source_event_id)::text, 'UTF8')), 'hex'),
+    'order',
+    _order_id::text,
+    NULL,
+    pg_catalog.jsonb_build_object('order_id', _order_id, 'status', 'pending', 'source_event_id', _source_event_id)
+  );
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT true;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.mark_order_awaiting_payment(uuid,text,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.mark_order_awaiting_payment(uuid,text,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.mark_order_awaiting_payment(uuid,text,text) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.mark_order_awaiting_payment(
+  _order_id uuid,
+  _payment_intent_id text,
+  _source_event_id text DEFAULT NULL
+)
+RETURNS TABLE (updated boolean)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.mark_order_awaiting_payment(_order_id, _payment_intent_id, _source_event_id); $$;
+ALTER FUNCTION public.mark_order_awaiting_payment(uuid,text,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.mark_order_awaiting_payment(uuid,text,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.mark_order_awaiting_payment(uuid,text,text) TO service_role;
+
+-- Internal core shared by the unpaid release and the failed-order cancel: release every remaining H of
+-- one order (cancel/+n and one release event per allocation) under the caller's prelock. Idempotent:
+-- an order whose H is already released writes nothing. No lock acquisition, FIFO or public RPC here.
+CREATE FUNCTION private.release_group_g_payment_holds(_order_id uuid, _operation_id uuid, _reason text, _actor_id uuid)
+RETURNS TABLE (released_variant_ids bigint[], released_quantity integer)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_hold record;
+  v_movement bigint;
+  v_variants bigint[] := ARRAY[]::bigint[];
+  v_released integer := 0;
+BEGIN
+  IF _order_id IS NULL OR _operation_id IS NULL THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
+  END IF;
+  FOR v_hold IN
+    SELECT a.id, a.variant_id, a.order_item_id, a.remaining_quantity
+    FROM public.order_item_allocations AS a
+    JOIN public.order_items AS oi ON oi.id = a.order_item_id
+    WHERE oi.order_id = _order_id AND a.kind = 'payment_hold' AND a.remaining_quantity > 0
+    ORDER BY a.variant_id, a.order_item_id, a.id
+  LOOP
+    UPDATE public.order_item_allocations AS a
+    SET remaining_quantity = 0, version = a.version + 1, updated_at = pg_catalog.now()
+    WHERE a.id = v_hold.id;
+    INSERT INTO public.stock_movements
+      (variant_id, delta, reason, order_id, order_item_id, note, created_by, allocation_operation_id)
+    VALUES (v_hold.variant_id, v_hold.remaining_quantity, 'cancel', _order_id, v_hold.order_item_id,
+      _reason, _actor_id, _operation_id)
+    RETURNING id INTO v_movement;
+    INSERT INTO public.order_item_allocation_events
+      (allocation_id, event_type, quantity, operation_id, sequence, stock_movement_id, reason, actor_id)
+    VALUES (v_hold.id, 'release', v_hold.remaining_quantity, _operation_id, 1, v_movement, _reason, _actor_id);
+    v_released := v_released + v_hold.remaining_quantity;
+    IF NOT (v_hold.variant_id = ANY (v_variants)) THEN
+      v_variants := v_variants || v_hold.variant_id;
+    END IF;
+  END LOOP;
+  RETURN QUERY SELECT v_variants, v_released;
+END;
+$$;
+ALTER FUNCTION private.release_group_g_payment_holds(uuid,uuid,text,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.release_group_g_payment_holds(uuid,uuid,text,uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION private.release_stock_for_unpaid_order(
+  _order_id uuid,
+  _expected_status public.order_status,
+  _next_status public.order_status,
+  _change_reason text,
+  _actor_id uuid DEFAULT NULL,
+  _source_event_id text DEFAULT NULL,
+  _cancel_reason text DEFAULT NULL,
+  _cancel_note text DEFAULT NULL,
+  _notify_customer boolean DEFAULT NULL
+)
+RETURNS TABLE (released boolean, order_id uuid, status public.order_status)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  updated_id uuid;
+  v_orders uuid[];
+  v_before jsonb;
+  v_middle jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+  v_variants bigint[] := ARRAY[]::bigint[];
+  v_released integer := 0;
+  v_allocated integer := 0;
+BEGIN
+  IF _order_id IS NULL OR _change_reason IS NULL OR pg_catalog.btrim(_change_reason) = '' THEN
+    RAISE EXCEPTION 'RELEASE_ARGUMENT_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  IF _expected_status IS NULL
+     OR _expected_status NOT IN ('payment_in_progress'::public.order_status, 'pending'::public.order_status) THEN
+    RAISE EXCEPTION 'INVALID_EXPECTED_STATUS:%', _expected_status USING ERRCODE = '22023';
+  END IF;
+
+  IF _next_status IS NULL
+     OR _next_status NOT IN (
+       'failed'::public.order_status, 'abandoned'::public.order_status, 'cancelled'::public.order_status
+     ) THEN
+    RAISE EXCEPTION 'INVALID_NEXT_STATUS:%', _next_status USING ERRCODE = '22023';
+  END IF;
+
+  -- 放棄は「決済画面が一度も完了しなかった」注文だけ。払込票を発行した入金待ちは放棄にしない。
+  IF _next_status = 'abandoned'::public.order_status
+     AND _expected_status <> 'payment_in_progress'::public.order_status THEN
+    RAISE EXCEPTION 'ABANDON_REQUIRES_PAYMENT_IN_PROGRESS' USING ERRCODE = '22023';
+  END IF;
+
+  -- 取消は人の判断なので、実行者と理由を必ず残す（R-18）。「その他」はメモも要る（設計書 5-2）。
+  IF _next_status = 'cancelled'::public.order_status
+     AND (_actor_id IS NULL
+          OR _cancel_reason IS NULL
+          OR _cancel_reason NOT IN ('customer_request', 'payment_declined', 'suspected_fraud', 'stock_unavailable', 'shop_error', 'other')) THEN
+    RAISE EXCEPTION 'CANCEL_REQUIRES_ACTOR_AND_REASON' USING ERRCODE = '22023';
+  END IF;
+
+  IF _next_status = 'cancelled'::public.order_status
+     AND _cancel_reason = 'other'
+     AND NULLIF(pg_catalog.btrim(_cancel_note), '') IS NULL THEN
+    RAISE EXCEPTION 'CANCEL_NOTE_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  -- The order, its variants and every waiting order of those variants are locked for the FIFO below.
+  v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[_order_id], NULL);
+
+  -- Replays and other states change nothing (CAS); no operation is recorded for them.
+  IF NOT EXISTS (SELECT 1 FROM public.orders AS o WHERE o.id = _order_id AND o.status = _expected_status) THEN
+    RETURN QUERY SELECT false, _order_id, o.status FROM public.orders AS o WHERE o.id = _order_id;
+    RETURN;
+  END IF;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  PERFORM pg_catalog.set_config('app.order_actor_id', COALESCE(_actor_id::text, ''), true);
+  PERFORM pg_catalog.set_config('app.order_change_reason', _change_reason, true);
+  PERFORM pg_catalog.set_config('app.order_source_event_id', COALESCE(_source_event_id, ''), true);
+
+  UPDATE public.orders AS o
+  SET status = _next_status,
+      cancel_reason = CASE
+        WHEN _next_status = 'cancelled'::public.order_status THEN _cancel_reason ELSE o.cancel_reason
+      END,
+      cancel_note = CASE
+        WHEN _next_status = 'cancelled'::public.order_status
+          THEN NULLIF(pg_catalog.btrim(_cancel_note), '')
+        ELSE o.cancel_note
+      END,
+      cancel_notify_customer = CASE
+        WHEN _next_status = 'cancelled'::public.order_status THEN _notify_customer ELSE o.cancel_notify_customer
+      END
+  WHERE o.id = _order_id
+    AND o.status = _expected_status
+  RETURNING o.id INTO updated_id;
+
+  -- Only the existing H is released (cancel/+n, one event per allocation). Untracked legacy ledger rows stay (R-41).
+  SELECT h.released_variant_ids, h.released_quantity INTO v_variants, v_released
+  FROM private.release_group_g_payment_holds(updated_id, v_operation, _change_reason, _actor_id) AS h;
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, _change_reason, _actor_id);
+
+  -- The released units go to the oldest waiting orders of the same variants (separate state sequence).
+  IF pg_catalog.cardinality(v_variants) > 0 THEN
+    v_middle := private.capture_group_g_item_states(v_orders);
+    v_allocated := private.allocate_group_g_fifo(v_variants, v_operation, _actor_id);
+    PERFORM private.record_group_g_item_state_changes(v_middle, v_orders, v_operation, 2, 'fifo', _actor_id);
+  END IF;
+
+  IF _next_status = 'failed'::public.order_status THEN
+    PERFORM private.enqueue_order_email(updated_id, 'payment_expired', NULL);
+  ELSIF _next_status = 'cancelled'::public.order_status AND COALESCE(_notify_customer, false) THEN
+    PERFORM private.enqueue_order_email(updated_id, 'canceled', _expected_status::text);
+  END IF;
+
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    v_operation,
+    'release_stock_for_unpaid_order',
+    pg_catalog.md5('release_stock_for_unpaid_order:' || _order_id::text || ':' || _expected_status::text || ':'
+      || _next_status::text || ':' || COALESCE(_source_event_id, ''))::uuid,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'release_stock_for_unpaid_order', 'order_id', _order_id, 'expected_status', _expected_status,
+      'next_status', _next_status, 'change_reason', _change_reason, 'actor_id', _actor_id,
+      'source_event_id', _source_event_id, 'cancel_reason', _cancel_reason, 'cancel_note', _cancel_note,
+      'notify_customer', _notify_customer)::text, 'UTF8')), 'hex'),
+    'order',
+    _order_id::text,
+    _actor_id,
+    pg_catalog.jsonb_build_object('order_id', _order_id, 'status', _next_status,
+      'released_quantity', v_released, 'allocated_quantity', v_allocated)
+  );
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT true, updated_id, _next_status;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.release_stock_for_unpaid_order(uuid,public.order_status,public.order_status,text,uuid,text,text,text,boolean)
+  OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.release_stock_for_unpaid_order(uuid,public.order_status,public.order_status,text,uuid,text,text,text,boolean)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.release_stock_for_unpaid_order(uuid,public.order_status,public.order_status,text,uuid,text,text,text,boolean)
+  TO service_role;
+
+CREATE OR REPLACE FUNCTION public.release_stock_for_unpaid_order(
+  _order_id uuid,
+  _expected_status public.order_status,
+  _next_status public.order_status,
+  _change_reason text,
+  _actor_id uuid DEFAULT NULL,
+  _source_event_id text DEFAULT NULL,
+  _cancel_reason text DEFAULT NULL,
+  _cancel_note text DEFAULT NULL,
+  _notify_customer boolean DEFAULT NULL
+)
+RETURNS TABLE (released boolean, order_id uuid, status public.order_status)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT * FROM private.release_stock_for_unpaid_order(_order_id, _expected_status, _next_status, _change_reason,
+    _actor_id, _source_event_id, _cancel_reason, _cancel_note, _notify_customer);
+$$;
+ALTER FUNCTION public.release_stock_for_unpaid_order(uuid,public.order_status,public.order_status,text,uuid,text,text,text,boolean)
+  OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.release_stock_for_unpaid_order(uuid,public.order_status,public.order_status,text,uuid,text,text,text,boolean)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.release_stock_for_unpaid_order(uuid,public.order_status,public.order_status,text,uuid,text,text,text,boolean)
+  TO service_role;
+
+CREATE FUNCTION private.admin_cancel_failed_order(
+  _order_id uuid,
+  _actor_id uuid,
+  _cancel_reason text,
+  _note text DEFAULT NULL
+)
+RETURNS TABLE (id uuid, status public.order_status)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_id uuid;
+  v_status public.order_status;
+  v_orders uuid[];
+  v_before jsonb;
+  v_middle jsonb;
+  v_variants bigint[] := ARRAY[]::bigint[];
+  v_released integer := 0;
+  v_allocated integer := 0;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _actor_id IS NULL THEN
+    RAISE EXCEPTION 'ACTOR_ID_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  IF _cancel_reason IS NULL
+     OR _cancel_reason NOT IN ('customer_request', 'payment_declined', 'suspected_fraud', 'stock_unavailable', 'shop_error', 'other') THEN
+    RAISE EXCEPTION 'CANCEL_REASON_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  IF _cancel_reason = 'other' AND NULLIF(pg_catalog.btrim(_note), '') IS NULL THEN
+    RAISE EXCEPTION 'CANCEL_NOTE_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  IF _note IS NOT NULL AND pg_catalog.char_length(_note) > 500 THEN
+    RAISE EXCEPTION 'CANCEL_NOTE_TOO_LONG' USING ERRCODE = '22023';
+  END IF;
+
+  v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[_order_id], NULL);
+  -- Only failed orders are cancelled here (CAS). Their H is normally released when they failed.
+  IF NOT EXISTS (SELECT 1 FROM public.orders AS o WHERE o.id = _order_id AND o.status = 'failed'::public.order_status) THEN
+    RETURN;
+  END IF;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  PERFORM pg_catalog.set_config('app.order_actor_id', _actor_id::text, true);
+  PERFORM pg_catalog.set_config('app.order_change_reason', 'admin_cancel_failed_order', true);
+  PERFORM pg_catalog.set_config('app.order_source_event_id', '', true);
+
+  UPDATE public.orders AS o
+  SET status = 'cancelled'::public.order_status,
+      cancel_reason = _cancel_reason,
+      cancel_note = NULLIF(pg_catalog.btrim(_note), ''),
+      cancel_notify_customer = false
+  WHERE o.id = _order_id
+    AND o.status = 'failed'::public.order_status
+  RETURNING o.id, o.status INTO v_id, v_status;
+
+  -- Leak guard: any H still left on the order is released (0 rows when already released), then FIFO.
+  SELECT h.released_variant_ids, h.released_quantity INTO v_variants, v_released
+  FROM private.release_group_g_payment_holds(_order_id, v_operation, 'admin_cancel_failed_order', _actor_id) AS h;
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1,
+    'admin_cancel_failed_order', _actor_id);
+  IF pg_catalog.cardinality(v_variants) > 0 THEN
+    v_middle := private.capture_group_g_item_states(v_orders);
+    v_allocated := private.allocate_group_g_fifo(v_variants, v_operation, _actor_id);
+    PERFORM private.record_group_g_item_state_changes(v_middle, v_orders, v_operation, 2, 'fifo', _actor_id);
+  END IF;
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    v_operation,
+    'admin_cancel_failed_order',
+    pg_catalog.md5('admin_cancel_failed_order:' || _order_id::text)::uuid,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'admin_cancel_failed_order', 'order_id', _order_id, 'actor_id', _actor_id,
+      'cancel_reason', _cancel_reason, 'note', _note)::text, 'UTF8')), 'hex'),
+    'order',
+    _order_id::text,
+    _actor_id,
+    pg_catalog.jsonb_build_object('order_id', _order_id, 'status', v_status,
+      'released_quantity', v_released, 'allocated_quantity', v_allocated)
+  );
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT v_id, v_status;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_cancel_failed_order(uuid,uuid,text,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_cancel_failed_order(uuid,uuid,text,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_cancel_failed_order(uuid,uuid,text,text) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_cancel_failed_order(
+  _order_id uuid,
+  _actor_id uuid,
+  _cancel_reason text,
+  _note text DEFAULT NULL
+)
+RETURNS TABLE (id uuid, status public.order_status)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.admin_cancel_failed_order(_order_id, _actor_id, _cancel_reason, _note); $$;
+ALTER FUNCTION public.admin_cancel_failed_order(uuid,uuid,text,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_cancel_failed_order(uuid,uuid,text,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_cancel_failed_order(uuid,uuid,text,text) TO service_role;
+
+-- Guest orders are linked under the common advisory and in id order (replaces the unordered bulk UPDATE
+-- of src/lib/orders/link-guest-orders.ts). No stock/variant row is touched. The e-mail is compared
+-- case-insensitively as plain text, so %, _ and \ are ordinary characters.
+CREATE FUNCTION private.link_guest_orders(_user_id uuid, _email text)
+RETURNS TABLE (id uuid, shipping_full_name text, shipping_postal_code text, shipping_prefecture text,
+  shipping_city text, shipping_address text, shipping_building text, created_at timestamptz)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_email text := pg_catalog.lower(pg_catalog.btrim(_email));
+  v_ids uuid[];
+  v_id uuid;
+BEGIN
+  IF _user_id IS NULL OR v_email IS NULL OR v_email = '' THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  -- Non-locking read of the account; only a confirmed owner of the same address may link.
+  IF NOT EXISTS (
+    SELECT 1 FROM auth.users AS u
+    WHERE u.id = _user_id AND u.email_confirmed_at IS NOT NULL AND pg_catalog.lower(u.email) = v_email
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+
+  PERFORM pg_catalog.pg_advisory_xact_lock(190521, 1);
+  SELECT COALESCE(pg_catalog.array_agg(t.id ORDER BY t.id), ARRAY[]::uuid[]) INTO v_ids
+  FROM (
+    SELECT o.id FROM public.orders AS o
+    WHERE o.user_id IS NULL AND pg_catalog.lower(o.shipping_email) = v_email
+    ORDER BY o.id
+    FOR UPDATE
+  ) AS t;
+
+  -- Same id order; re-check user_id so another owner is never replaced.
+  FOREACH v_id IN ARRAY v_ids LOOP
+    RETURN QUERY
+    UPDATE public.orders AS o SET user_id = _user_id
+    WHERE o.id = v_id AND o.user_id IS NULL
+    RETURNING o.id, o.shipping_full_name, o.shipping_postal_code, o.shipping_prefecture, o.shipping_city,
+      o.shipping_address, o.shipping_building, o.created_at;
+  END LOOP;
+END;
+$$;
+ALTER FUNCTION private.link_guest_orders(uuid,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.link_guest_orders(uuid,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.link_guest_orders(uuid,text) TO service_role;
+
+CREATE FUNCTION public.link_guest_orders(_user_id uuid, _email text)
+RETURNS TABLE (id uuid, shipping_full_name text, shipping_postal_code text, shipping_prefecture text,
+  shipping_city text, shipping_address text, shipping_building text, created_at timestamptz)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.link_guest_orders(_user_id, _email); $$;
+ALTER FUNCTION public.link_guest_orders(uuid,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.link_guest_orders(uuid,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.link_guest_orders(uuid,text) TO service_role;
+
+-- Task 5 review fix: reserved is now the remaining A+H after shipment consumption, so the restockable
+-- count no longer subtracts the shipped quantity again. Last definition:
+-- 20261013001143_order_return_receipts.sql:494; only the restockable expression changes.
+CREATE OR REPLACE FUNCTION public.load_order_refund_materials(_order_id uuid)
+RETURNS TABLE (
+  order_id uuid,
+  order_status public.order_status,
+  total_amount integer,
+  shipping_amount integer,
+  discount_amount integer,
+  paid_amount integer,
+  succeeded_amount integer,
+  open_amount integer,
+  refundable_amount integer,
+  refunded_shipping integer,
+  refundable_shipping integer,
+  shipped_total integer,
+  unshipped_total integer,
+  awaiting_refund_id uuid,
+  awaiting_refund_amount integer,
+  awaiting_refund_created_at timestamptz,
+  lines jsonb
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT o.id,
+         o.status,
+         o.total_amount,
+         o.shipping_amount,
+         o.discount_amount,
+         a.paid_amount,
+         a.succeeded_amount,
+         a.open_amount,
+         a.refundable_amount,
+         a.refunded_shipping,
+         a.refundable_shipping,
+         c.shipped_total,
+         c.unshipped_total,
+         w.id,
+         w.amount,
+         w.created_at,
+         c.lines
+  FROM public.orders AS o
+  CROSS JOIN LATERAL private.order_refund_amounts(o.id) AS a
+  CROSS JOIN LATERAL (
+    SELECT COALESCE(pg_catalog.sum(f.shipped), 0)::integer AS shipped_total,
+           COALESCE(pg_catalog.sum(f.unshipped), 0)::integer AS unshipped_total,
+           COALESCE(
+             pg_catalog.jsonb_agg(
+               pg_catalog.jsonb_build_object(
+                 'order_item_id', f.order_item_id,
+                 'fulfillment_type', f.fulfillment_type,
+                 'item_price', oi.item_price,
+                 'quantity', f.quantity,
+                 'line_total', oi.line_total,
+                 'exchange_paid_amount', oi.exchange_paid_amount,
+                 'shipped', f.shipped,
+                 'unshipped', f.unshipped,
+                 'refunded_before_shipment', f.refunded_before_shipment,
+                 'refunded_after_shipment', f.refunded_after_shipment,
+                 'shipped_refundable', rc.refundable_after_shipment,
+                 -- 在庫に戻せる数は、残っている確保（発送で使った分は既に引かれている）まで。確保の無い古い商品と受注生産は0
+                 'restockable', CASE
+                   WHEN f.fulfillment_type = 'stock' THEN LEAST(f.unshipped, r.reserved)
+                   ELSE 0
+                 END,
+                 'line_discount', d.line_discount,
+                 'refunded_units', f.refunded_before_shipment + f.refunded_after_shipment
+               )
+               ORDER BY oi.created_at, oi.id
+             ),
+             '[]'::jsonb
+           ) AS lines
+    FROM private.order_line_fulfillment(o.id) AS f
+    JOIN private.order_line_return_counts(o.id) AS rc ON rc.order_item_id=f.order_item_id
+    JOIN public.order_items AS oi ON oi.id = f.order_item_id
+    JOIN private.order_line_reservations(o.id) AS r ON r.order_item_id = f.order_item_id
+    JOIN private.order_line_discounts(o.id) AS d ON d.order_item_id = f.order_item_id
+  ) AS c
+  LEFT JOIN LATERAL (
+    SELECT ar.id, ar.amount, ar.created_at
+    FROM public.order_refunds AS ar
+    WHERE ar.order_id = o.id
+      AND ar.status = 'awaiting_response'
+    ORDER BY ar.created_at DESC, ar.id DESC
+    LIMIT 1
+  ) AS w ON true
+  WHERE o.id = _order_id
+$$;
+ALTER FUNCTION public.load_order_refund_materials(uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.load_order_refund_materials(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.load_order_refund_materials(uuid) TO service_role;
+
+DO $g1_checkout_assert$
+BEGIN
+  IF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p WHERE p.oid IN (
+    pg_catalog.to_regprocedure('private.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)'),
+    pg_catalog.to_regprocedure('private.mark_order_awaiting_payment(uuid,text,text)'),
+    pg_catalog.to_regprocedure('private.release_stock_for_unpaid_order(uuid,public.order_status,public.order_status,text,uuid,text,text,text,boolean)'),
+    pg_catalog.to_regprocedure('private.admin_cancel_failed_order(uuid,uuid,text,text)'),
+    pg_catalog.to_regprocedure('private.link_guest_orders(uuid,text)')
+  ) AND p.proowner = 'postgres'::regrole AND p.prosecdef AND p.proconfig @> ARRAY['search_path=""']) <> 5
+  OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p WHERE p.oid IN (
+    pg_catalog.to_regprocedure('public.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)'),
+    pg_catalog.to_regprocedure('public.mark_order_awaiting_payment(uuid,text,text)'),
+    pg_catalog.to_regprocedure('public.release_stock_for_unpaid_order(uuid,public.order_status,public.order_status,text,uuid,text,text,text,boolean)'),
+    pg_catalog.to_regprocedure('public.admin_cancel_failed_order(uuid,uuid,text,text)'),
+    pg_catalog.to_regprocedure('public.link_guest_orders(uuid,text)')
+  ) AND p.proowner = 'postgres'::regrole AND NOT p.prosecdef AND p.proconfig @> ARRAY['search_path=""']
+    AND NOT pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+    AND NOT pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    AND pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')) <> 5 THEN
+    RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'g1_checkout_functions';
+  END IF;
+END;
+$g1_checkout_assert$;
 
 DO $g1_model_assert$
 DECLARE

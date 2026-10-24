@@ -1,4 +1,4 @@
-export {};
+import { seedGroupG1Allocation } from './helpers/group-g1-fixtures';
 
 const { Pool } = require('pg');
 
@@ -120,12 +120,22 @@ describe('integration: order_items variant columns', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const orderId = await createOrder(client);
+      // G-1: 共通の在庫の押さえを最初に取る（割当の材料を同じ取引で作るため）
+      await client.query('SELECT pg_catalog.pg_advisory_xact_lock(190521, 1)');
+      // G-1 の受注生産の数は、入金済みでまだ割り当てのない数（管理の「受注生産中」）。未入金の注文は数えない
+      const order = await client.query(
+        `INSERT INTO public.orders (session_id, payment_intent_id, subtotal_amount, total_amount, status)
+         VALUES ($1, $2, 3000, 3000, 'paid')
+         RETURNING id`,
+        [`sess-${Date.now()}`, `pi_${Date.now()}`],
+      );
+      const orderId = order.rows[0].id;
       const { itemId, variantId } = await createVariant(client);
-      await client.query(
+      const stockLine = await client.query(
         `INSERT INTO public.order_items
            (order_id, item_id, variant_id, item_name, item_price, quantity, line_total, fulfillment_type)
-         VALUES ($1, $2, $3, 'x', 1000, 1, 1000, 'stock')`,
+         VALUES ($1, $2, $3, 'x', 1000, 1, 1000, 'stock')
+         RETURNING id`,
         [orderId, itemId, variantId],
       );
       await client.query(
@@ -134,13 +144,37 @@ describe('integration: order_items variant columns', () => {
          VALUES ($1, $2, $3, 'x', 1000, 2, 2000, 'backorder')`,
         [orderId, itemId, variantId],
       );
+      // 在庫の明細は入荷した1点を割り当て済み（A）。受注生産の明細だけが待っている
+      await client.query(
+        `INSERT INTO public.stock_movements (variant_id, delta, reason, note) VALUES ($1, 1, 'restock', 'fixture')`,
+        [variantId],
+      );
+      await seedGroupG1Allocation(client, { orderItemId: stockLine.rows[0].id, quantity: 1, kind: 'paid' });
 
-      // 注文は既定の状態（未決済）。未決済と決済完了の、まだ仕上がっていない受注生産の数を数える
       const res = await client.query(
-        'SELECT backorder FROM public.list_variant_stock_states($1::bigint[])',
+        'SELECT committed, backorder FROM public.list_variant_stock_states($1::bigint[])',
         [[variantId]],
       );
-      expect(res.rows[0].backorder).toBe(2);
+      expect(res.rows[0]).toEqual({ committed: 1, backorder: 2 });
+
+      // G-1 Task 5 の決め事: 未入金（pending）の注文の数は「未払い」で、受注生産には数えない
+      const unpaid = await client.query(
+        `INSERT INTO public.orders (session_id, payment_intent_id, subtotal_amount, total_amount, status)
+         VALUES ($1, $2, 2000, 2000, 'pending')
+         RETURNING id`,
+        [`sess-unpaid-${Date.now()}`, `pi_unpaid_${Date.now()}`],
+      );
+      await client.query(
+        `INSERT INTO public.order_items
+           (order_id, item_id, variant_id, item_name, item_price, quantity, line_total, fulfillment_type)
+         VALUES ($1, $2, $3, 'x', 1000, 2, 2000, 'backorder')`,
+        [unpaid.rows[0].id, itemId, variantId],
+      );
+      const afterUnpaid = await client.query(
+        'SELECT committed, backorder FROM public.list_variant_stock_states($1::bigint[])',
+        [[variantId]],
+      );
+      expect(afterUnpaid.rows[0]).toEqual({ committed: 1, backorder: 2 });
     } finally {
       await client.query('ROLLBACK');
       client.release();

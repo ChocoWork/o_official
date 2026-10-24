@@ -375,4 +375,16 @@ describe('G-1 stock confirmation and allocation history', () => {
     expect(row).toHaveTextContent('割当 1点');
     expect(screen.queryByText('まだ記録がありません。')).not.toBeInTheDocument();
   });
+  it.each([
+    ['fifo', '古い注文から順の自動割当'], ['checkout', '注文の受付'], ['stripe_checkout_expired', '決済画面の期限切れ'],
+    ['stripe_voucher_expired', '支払い期限切れ'], ['admin_cancel', '管理者による取消'],
+    ['admin_cancel_failed_order', '管理者による取消'], ['unknown_internal_reason', 'システム'], ['toString', 'システム'],
+  ])('shows the allocation reason %s only through its Japanese label', async (reason, label) => {
+    await renderLoaded({ movements:[],allocationEvents:[{ id:'standalone',allocationId:'allocation',orderId:PURCHASE.orderId,
+      orderItemId:'line',variantId:11,type:'consume',quantity:1,operationId:'operation',counterpartAllocationId:null,
+      reversesEventId:null,stockMovementId:null,reason,actorId:null,createdAt:PURCHASE.createdAt }] });
+    const row = screen.getByTestId('allocation-event-standalone');
+    expect(within(row).getByTestId('allocation-event-reason')).toHaveTextContent(new RegExp(`^${label}$`));
+    expect(row).not.toHaveTextContent(reason);
+  });
 });

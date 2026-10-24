@@ -109,28 +109,22 @@ export async function linkGuestOrdersByEmail(params: {
 
   try {
     const supabase = await createServiceRoleClient();
-    // user_id IS NULL が所有権の一方向性を担保する。
-    // 既に誰かのものになった注文は決して移さない。
-    // 注文時のメールは大文字が混ざりうるので eq では取りこぼす。ilike で
-    // 大文字小文字を無視するが、値に含まれる _ と % は ilike のワイルドカード
-    // として解釈されるため必ずエスケープする。john_doe@example.com が
-    // johnxdoe@example.com の注文にも一致してしまう。
-    const escapedEmail = normalizedEmail
-      .replace(/\\/g, '\\\\')
-      .replace(/%/g, '\\%')
-      .replace(/_/g, '\\_');
-    const { data, error } = await supabase
-      .from('orders')
-      .update({ user_id: params.userId })
-      .ilike('shipping_email', escapedEmail)
-      .is('user_id', null)
-      .select('id, shipping_full_name, shipping_postal_code, shipping_prefecture, shipping_city, shipping_address, shipping_building, created_at');
+    // DB 関数が共通の在庫 lock を先に取り、user_id IS NULL の注文だけを id 順に
+    // 紐付ける（グループ G-1）。既に誰かのものになった注文は決して移さない。
+    // メールは大文字小文字だけを無視した完全一致で、_ や % も文字そのもの。
+    // profiles のコピーと監査は、DB 関数の取引が終わった後に行う。
+    const { data, error } = await supabase.rpc('link_guest_orders', {
+      _user_id: params.userId,
+      _email: normalizedEmail,
+    });
 
     if (error) throw error;
+    if (!Array.isArray(data)) throw new Error('GROUP_G_LINK_GUEST_ORDERS_FAILED');
 
-    const linked = data?.length ?? 0;
+    const rows = data as LinkedOrderRow[];
+    const linked = rows.length;
     if (linked > 0) {
-      await copyGuestProfileFromOrder(supabase, params.userId, data as LinkedOrderRow[]);
+      await copyGuestProfileFromOrder(supabase, params.userId, rows);
       await logAudit({
         action: 'orders.link_guest_orders',
         outcome: 'success',
@@ -140,14 +134,15 @@ export async function linkGuestOrdersByEmail(params: {
       });
     }
     return linked;
-  } catch (error) {
-    console.error('Failed to link guest orders to user:', error);
+  } catch {
+    // 生のエラーにはメールや住所が混ざりうるので、決まった文だけを残す。
+    console.error('GROUP_G_LINK_GUEST_ORDERS_FAILED');
     await logAudit({
       action: 'orders.link_guest_orders',
       outcome: 'error',
       resource: 'orders',
       resource_id: params.userId,
-      detail: error instanceof Error ? error.message : String(error),
+      detail: 'GROUP_G_LINK_GUEST_ORDERS_FAILED',
     });
     return 0;
   }

@@ -435,7 +435,9 @@ describeLocalDb('integration: 返金の結果を書く関数・外からの返�
       expect(res).toMatchObject({ newly_accepted: true, order_status: 'paid' });
       expect(await movementsOf(db(), order.variantIds[0])).toEqual([{ delta: 2, reason: 'restock' }, { delta: -2, reason: 'purchase' }]);
       expect(await lineRows(db(), refundId)).toEqual([expect.objectContaining({ released_quantity: 0, restocked_quantity: 0 })]);
-      expect(await reservedOf(db(), order.orderId)).toEqual([2]);
+      // G-1 Task 5 の決め事: 確保は「発送で使っていない A」の残り。2点のうち1点は発送で使ったので1。
+      // 発送後の返金の行はこの残りを外さない（外していれば 0 になる）
+      expect(await reservedOf(db(), order.orderId)).toEqual([1]);
     });
 
     test('同じ結果を2回書いても、台帳もメールの予定も増えない。保留から成功へ進んでも在庫は動かさない', async () => {

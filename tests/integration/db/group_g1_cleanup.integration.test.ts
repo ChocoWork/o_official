@@ -204,6 +204,13 @@ const G1_BODY_FUNCTIONS = [
   'private.record_group_g_item_state_changes(jsonb,uuid[],uuid,integer,text,uuid)',
   'private.reject_group_g_event_mutation()',
   'list_admin_order_item_states(uuid[])',
+  'private.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamp with time zone,text,bigint[],uuid)',
+  'private.mark_order_awaiting_payment(uuid,text,text)',
+  'private.release_stock_for_unpaid_order(uuid,order_status,order_status,text,uuid,text,text,text,boolean)',
+  'private.admin_cancel_failed_order(uuid,uuid,text,text)',
+  'private.link_guest_orders(uuid,text)',
+  'private.release_group_g_payment_holds(uuid,uuid,text,uuid)',
+  'link_guest_orders(uuid,text)',
 ];
 const G1_BODY_TRIGGERS = [
   ...['order_item_allocation_events', 'order_item_state_events', 'private.group_g_operations'].flatMap((table) => {
@@ -926,7 +933,11 @@ WHERE id = (SELECT pg_catalog.min(id) FROM pg_temp.group_g_cleanup_webhook_ids);
     expect(reasonCheck?.definition).toContain("'allocation_release'::text");
     const changedFunctions = ['apply_stock_movement()', 'private.order_line_reservations(uuid)',
       'private.order_line_fulfillment(uuid)', 'private.check_order_line_fulfillment_bounds()',
-      'list_variant_stock_states(bigint[])', 'list_item_stock_history(bigint,integer)'];
+      'list_variant_stock_states(bigint[])', 'list_item_stock_history(bigint,integer)',
+      'place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamp with time zone,text,bigint[],uuid)',
+      'mark_order_awaiting_payment(uuid,text,text)',
+      'release_stock_for_unpaid_order(uuid,order_status,order_status,text,uuid,text,text,text,boolean)',
+      'admin_cancel_failed_order(uuid,uuid,text,text)', 'load_order_refund_materials(uuid)'];
     const functions = split(catalog.functions, (row) => row.signature as string, G1_BODY_FUNCTIONS, changedFunctions);
     expect(functions.kept).toEqual(split(before.catalog.functions, (row) => row.signature as string, [], changedFunctions).kept);
     expect(functions.added).toEqual([...G1_BODY_FUNCTIONS].sort());

@@ -5,7 +5,8 @@ import { addItemVariant, createCatalogFixture, createDraft, createShippedOrderFi
   insertReturnRecord, insertReturnReceipt, insertRefundRecord, insertCancelRequest } from './helpers/order-fixtures';
 import { withGroupG1FixtureTransaction } from './helpers/group-g1-fixtures';
 
-// This inventory is Task 4's entry point. Tasks 5-13 must add their public writers to the same boundary test.
+// This inventory is Task 4's entry point. Tasks 5-13 must add their public writers to the same boundary test
+// (Task 6's checkout/awaiting/release/admin cancel/guest link writers are in TASK6_ENTRIES below).
 const ENTRIES = [{ name: 'private.lock_group_g_inventory(bigint[],uuid[],uuid)',
   sql: 'select private.lock_group_g_inventory($1::bigint[],$2::uuid[],$3::uuid)' }];
 
@@ -158,6 +159,105 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       await observer.query('rollback');
       await holder.query('rollback');
       await Promise.all([holder.end(), observer.end()]);
+    }
+  });
+
+  // Task 6 public writers: B waits on the advisory with valid input while C can still take every existing row.
+  type Task6Material = { sql: string; params: unknown[]; draftId?: string; itemId: number; variantId: number; orderIds: string[] };
+  const TASK6_ENTRIES: Array<{ name: string; setup: () => Promise<Task6Material>; check: (rows: any[]) => void }> = [
+    { name: 'public.place_order_from_checkout_draft', setup: async () => {
+      const fx = await createCatalogFixture(db(), { stock: 3 });
+      const held = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+      const heldOrder = await placeOrder(held);
+      const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+      return { sql: `select * from public.place_order_from_checkout_draft($1::uuid,$2::text,$3::text,$4::integer,0,'jpy',now(),null::text)`,
+        params: [draft.draftId, draft.checkoutSessionId, draft.cartSessionId, draft.totalAmount], draftId: draft.draftId,
+        itemId: fx.itemId, variantId: fx.variantId, orderIds: [heldOrder] };
+    }, check: (rows) => expect(rows[0]).toMatchObject({ created: true, rejection: null }) },
+    { name: 'public.mark_order_awaiting_payment', setup: async () => {
+      const fx = await createCatalogFixture(db(), { stock: 3 });
+      const orderId = await placeOrder(await createDraft(db(), { itemId: fx.itemId, quantity: 1 }));
+      return { sql: 'select * from public.mark_order_awaiting_payment($1::uuid,$2::text,null)', params: [orderId, `pi_${randomUUID()}`],
+        itemId: fx.itemId, variantId: fx.variantId, orderIds: [orderId] };
+    }, check: (rows) => expect(rows).toEqual([{ updated: true }]) },
+    { name: 'public.release_stock_for_unpaid_order', setup: async () => {
+      const fx = await createCatalogFixture(db(), { stock: 3 });
+      const orderId = await placeOrder(await createDraft(db(), { itemId: fx.itemId, quantity: 1 }));
+      return { sql: `select released from public.release_stock_for_unpaid_order($1::uuid,'payment_in_progress','abandoned','stripe_checkout_expired')`,
+        params: [orderId], itemId: fx.itemId, variantId: fx.variantId, orderIds: [orderId] };
+    }, check: (rows) => expect(rows).toEqual([{ released: true }]) },
+    { name: 'public.admin_cancel_failed_order', setup: async () => {
+      const fx = await createCatalogFixture(db(), { stock: 3 });
+      const orderId = await placeOrder(await createDraft(db(), { itemId: fx.itemId, quantity: 1 }));
+      await db().query(`select released from public.release_stock_for_unpaid_order($1::uuid,'payment_in_progress','failed','stripe_payment_failed')`, [orderId]);
+      return { sql: `select status::text as status from public.admin_cancel_failed_order($1::uuid,$2::uuid,'customer_request',null)`,
+        params: [orderId, await actorId()], itemId: fx.itemId, variantId: fx.variantId, orderIds: [orderId] };
+    }, check: (rows) => expect(rows).toEqual([{ status: 'cancelled' }]) },
+    { name: 'public.link_guest_orders', setup: async () => {
+      const fx = await createCatalogFixture(db(), { stock: 3 });
+      const email = `g1-link-lock-${randomUUID()}@example.com`;
+      const user = (await db().query(`insert into auth.users (id, email, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
+        values (gen_random_uuid(), $1, now(), '{}'::jsonb, now(), now()) returning id`, [email])).rows[0].id as string;
+      const orders = [];
+      for (let i = 0; i < 2; i++) {
+        orders.push((await insertOrderWithLines(db(), { status: 'pending', shippingEmail: email, lines: [
+          { itemId: fx.itemId, variantId: fx.variantId, quantity: 1, fulfillmentType: 'stock' },
+        ] })).orderId);
+      }
+      return { sql: 'select id from public.link_guest_orders($1::uuid,$2::text)', params: [user, email],
+        itemId: fx.itemId, variantId: fx.variantId, orderIds: orders.sort() };
+    }, check: (rows) => expect(rows).toHaveLength(2) },
+  ];
+
+  let actor: string | undefined;
+  async function actorId() {
+    actor ??= (await db().query(`insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+      values (gen_random_uuid(), $1, '{}'::jsonb, now(), now()) returning id`, [`g1-lock-${randomUUID()}@example.com`])).rows[0].id as string;
+    return actor;
+  }
+
+  async function placeOrder(draft: { draftId: string; checkoutSessionId: string; cartSessionId: string; totalAmount: number }) {
+    return (await db().query(
+      `select order_id from public.place_order_from_checkout_draft($1::uuid,$2::text,$3::text,$4::integer,0,'jpy',now(),null::text)`,
+      [draft.draftId, draft.checkoutSessionId, draft.cartSessionId, draft.totalAmount],
+    )).rows[0].order_id as string;
+  }
+
+  test.each(TASK6_ENTRIES)('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
+    const material = await setup();
+    const a = await client();
+    const b = await client();
+    const c = await client();
+    let pending: Promise<{ rows: any[] }> | undefined;
+    try {
+      const [blocker, waiter] = [await pid(a), await pid(b)];
+      await a.query('begin');
+      await a.query('select pg_advisory_xact_lock(190521,1)');
+      await b.query('begin');
+      pending = b.query(material.sql, material.params);
+      void pending.catch(() => {});
+      await waitForAdvisory(c, waiter, blocker);
+      await c.query('begin');
+      const probes: Array<[string, unknown[]]> = [
+        ['select id from public.items where id=$1 for update nowait', [material.itemId]],
+        ['select id from public.item_variants where id=$1 for update nowait', [material.variantId]],
+        ['select id from public.orders where id=any($1::uuid[]) for update nowait', [material.orderIds]],
+        ['select id from public.order_items where order_id=any($1::uuid[]) for update nowait', [material.orderIds]],
+        [`select a.id from public.order_item_allocations a join public.order_items oi on oi.id=a.order_item_id
+          where oi.order_id=any($1::uuid[]) for update of a nowait`, [material.orderIds]],
+      ];
+      if (material.draftId) probes.unshift(['select id from public.checkout_drafts where id=$1 for update nowait', [material.draftId]]);
+      for (const [probe, params] of probes) expect((await c.query(probe, params)).rowCount).toBeGreaterThan(0);
+      await c.query('rollback');
+      await a.query('rollback');
+      check((await pending).rows);
+      await b.query('set constraints all immediate');
+    } finally {
+      await a.query('rollback');
+      if (pending) await pending.catch(() => {});
+      await b.query('rollback');
+      await c.query('rollback');
+      await Promise.all([a.end(), b.end(), c.end()]);
     }
   });
 

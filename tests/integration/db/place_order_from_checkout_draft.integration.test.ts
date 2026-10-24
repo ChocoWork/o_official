@@ -77,6 +77,14 @@ async function draftRow(db: PgClient, draftId: string) {
   return res.rows[0];
 }
 
+async function holdsOf(db: PgClient, orderId: string) {
+  return (await db.query(
+    `select a.kind, a.quantity, a.remaining_quantity
+     from public.order_item_allocations a join public.order_items oi on oi.id = a.order_item_id
+     where oi.order_id = $1 order by oi.id, a.id`, [orderId],
+  )).rows;
+}
+
 async function cartLineExists(db: PgClient, cartLineId: string | null): Promise<boolean> {
   if (cartLineId === null) return false;
   const res = await db.query('select 1 from public.cart_lines where id = $1', [cartLineId]);
@@ -124,6 +132,8 @@ describeLocalDb('integration: 受付 RPC', (db) => {
     expect(await variantStock(db(), fx.variantId)).toBe(3);
     expect((await draftRow(db(), draft.draftId)).status).toBe('completed');
     expect(await cartLineExists(db(), draft.cartLineId)).toBe(true);
+    // G-1: the reservation is one payment hold (H) tied to that purchase row; nothing is allocated (A) before payment.
+    expect(await holdsOf(db(), res.rows[0].order_id)).toEqual([{ kind: 'payment_hold', quantity: 2, remaining_quantity: 2 }]);
   });
 
   test('同じ Session で2回呼んでも注文は1件、在庫の確保も1回（二重送信・再読込）', async () => {
@@ -167,6 +177,7 @@ describeLocalDb('integration: 受付 RPC', (db) => {
     // 受注生産でも、明細はバリアントに結ばれたまま（variant_id は bigint なので文字列で返る）
     expect(lines.rows).toEqual([{ variant_id: String(fx.variantId), fulfillment_type: 'backorder' }]);
     expect(await variantStock(db(), fx.variantId)).toBe(1);
+    expect(await holdsOf(db(), res.rows[0].order_id)).toEqual([]);
   });
 
   test('割引は Stripe の値で注文に入れ、下書きは割引額だけを書き戻す（R-26）', async () => {
@@ -466,6 +477,8 @@ describeLocalDb('integration: 受付 RPC', (db) => {
       { delta: 2, reason: 'cancel' },
     ]);
     expect(await variantStock(db(), fx.variantId)).toBe(5);
+    // G-1: the H made at intake is the one that is released (remaining 0), not an untracked ledger guess.
+    expect(await holdsOf(db(), res.rows[0].order_id)).toEqual([{ kind: 'payment_hold', quantity: 2, remaining_quantity: 0 }]);
   });
 
   test('受注生産の注文を放棄にしても、台帳には何も書かない', async () => {

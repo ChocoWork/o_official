@@ -278,6 +278,22 @@ describeLocalDb('integration: 受付 RPC の在庫と価格の確かめ', (db) =
     expect(await movementsOf(db(), fx.variantId)).toEqual([{ delta: 1, reason: 'restock' }]);
     expect(await variantStock(db(), fx.variantId)).toBe(1);
     expect(await draftStatus(db(), draft.draftId)).toBe('created');
+    // G-1: no payment hold is taken for a rejected intake.
+    const held = await db().query('select count(*)::int as n from public.order_item_allocations where variant_id = $1', [fx.variantId]);
+    expect(held.rows[0].n).toBe(0);
+  });
+
+  test('在庫ありと見せたバリアントを在庫で受け付けると、在庫の明細ごとに支払い前の仮確保（H）を1つ作る', async () => {
+    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 2 });
+
+    const res = await placeWithShown(db(), draft, [fx.variantId]);
+
+    const holds = await db().query(
+      `select a.kind, a.quantity, a.remaining_quantity from public.order_item_allocations a
+       join public.order_items oi on oi.id = a.order_item_id where oi.order_id = $1`, [res.rows[0].order_id],
+    );
+    expect(holds.rows).toEqual([{ kind: 'payment_hold', quantity: 2, remaining_quantity: 2 }]);
   });
 
   test('在庫ありと見せたバリアントの在庫が足りれば、今までどおり在庫で受け付ける', async () => {

@@ -569,4 +569,14 @@ describe('POST /api/admin/items/[id]/variants', () => {
       expect(JSON.stringify([log.mock.calls, mockLogAudit.mock.calls])).not.toContain('PRIVATE-MARKER');
     } finally { log.mockRestore(); }
   });
+  it('an unexpected throw outside the RPC logs only the error name and code, then returns the fixed 500', async () => {
+    mockAuthorize.mockRejectedValue(Object.assign(new TypeError('PRIVATE-MARKER'), { code: 'XX000', details: 'PRIVATE-MARKER' }));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await post()).toEqual({ status: 500, body: { error: '在庫の記録に失敗しました' } });
+      expect(log).toHaveBeenCalledWith('POST /api/admin/items/:id/variants error:', 'TypeError', 'XX000');
+      expect(inspect(log.mock.calls, { depth: null })).not.toContain('PRIVATE-MARKER');
+      expect(mockRpc).not.toHaveBeenCalled();
+    } finally { log.mockRestore(); }
+  });
 });

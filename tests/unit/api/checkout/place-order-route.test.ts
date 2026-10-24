@@ -177,6 +177,24 @@ describe('POST /api/checkout/place-order', () => {
     process.env.STRIPE_SECRET_KEY = ORIGINAL_KEY;
   });
 
+  test('受付 RPC の GROUP_G_LOCK_SET_CHANGED（40001）は、DB の文を出さず「時間をおいてもう一度」の 500 にする', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'GROUP_G_LOCK_SET_CHANGED', code: '40001', details: 'PRIVATE-MARKER' } });
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const res = await POST(makeRequest(VALID_BODY));
+      expect(res.status).toBe(500);
+      const body = await res.json();
+      expect(body).toEqual({
+        error: 'place_order_failed',
+        message: 'ご注文を受け付けられませんでした。少し時間をおいてから、もう一度お試しください。',
+      });
+      expect(JSON.stringify(body)).not.toContain('GROUP_G_LOCK_SET_CHANGED');
+      expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('PRIVATE-MARKER');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   test('守りで断られたら、その応答を返す', async () => {
     const denied = new Response(null, { status: 429 });
     mockGuard.mockResolvedValue({ ok: false, response: denied });

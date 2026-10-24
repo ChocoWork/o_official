@@ -219,17 +219,18 @@ describe('integration: 商品行のロック順', () => {
   }, 120000);
 
   /**
-   * 在庫復元は items を書かなくなったのでロックも取らない（FREQ-401）。
-   * 在庫の正はバリアントなので、戻すのは台帳への追記だけ。
+   * 在庫復元は items を書かない（FREQ-401）。在庫の正はバリアントなので、戻すのは台帳への追記だけ。
+   * G-1 の在庫の押さえ（設計 7-3）は商品行を KEY SHARE で取るので、商品の通常の編集（キー列を変えない UPDATE が取る
+   * FOR NO KEY UPDATE）とはぶつからない。商品の削除・キー列の変更（FOR UPDATE）だけは待たせる（意図した守り）。
    */
-  test('在庫復元は商品行をロックしない', async () => {
+  test('在庫復元は商品の通常の編集を待たない', async () => {
     const ids = await createItems(ITEM_COUNT);
     const orderId = await createPendingOrder(ids);
 
-    // 別の接続で全商品行を占有したまま在庫復元を呼び、待たずに終わることを確かめる。
+    // 別の接続で全商品行を「通常の編集」と同じ強さで押さえたまま在庫復元を呼び、待たずに終わることを確かめる。
     try {
       await blocker.query('BEGIN');
-      await blocker.query(`select id from public.items where id = any($1::bigint[]) for update`, [ids]);
+      await blocker.query(`select id from public.items where id = any($1::bigint[]) for no key update`, [ids]);
 
       const released = await runner.query(
         `select released from public.release_stock_for_unpaid_order(

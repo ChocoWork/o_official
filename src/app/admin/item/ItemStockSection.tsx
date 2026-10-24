@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button/Button";
 import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import { Dialog } from "@/components/ui/Dialog/Dialog";
-import { ALLOCATION_EVENT_LABELS, type AllocationHistoryEvent } from "@/lib/inventory/allocation-types";
+import { ALLOCATION_EVENT_LABELS, allocationEventReasonLabel, type AllocationHistoryEvent } from "@/lib/inventory/allocation-types";
 import { toOrderNumber } from "@/lib/orders/order-number";
 import { clientFetch } from "@/lib/client-fetch";
 
@@ -411,7 +411,7 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
                 <span data-testid="allocation-event-balance">—</span>
                 <span>{event.actorId === null ? "自動処理" : "管理者"}</span>
                 <span>{toOrderNumber(event.orderId)}</span>
-                {event.reason && <span>{event.reason}</span>}
+                {event.reason && <span data-testid="allocation-event-reason">{allocationEventReasonLabel(event.reason)}</span>}
               </li>;
             }
             const movement = entry.movement;

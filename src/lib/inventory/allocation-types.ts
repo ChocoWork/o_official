@@ -8,6 +8,22 @@ export const ALLOCATION_EVENT_LABELS = {
   transfer: '割当の入替',
 } as const;
 
+/** 割当の履歴の理由（DB の決まった値）。知らない値は「システム」と見せ、DB の文をそのまま出さない */
+export const ALLOCATION_EVENT_REASON_LABELS: Readonly<Record<string, string>> = {
+  fifo: '古い注文から順の自動割当',
+  checkout: '注文の受付',
+  stripe_checkout_expired: '決済画面の期限切れ',
+  stripe_voucher_expired: '支払い期限切れ',
+  admin_cancel: '管理者による取消',
+  admin_cancel_failed_order: '管理者による取消',
+};
+
+export function allocationEventReasonLabel(reason: string): string {
+  return Object.prototype.hasOwnProperty.call(ALLOCATION_EVENT_REASON_LABELS, reason)
+    ? ALLOCATION_EVENT_REASON_LABELS[reason]
+    : 'システム';
+}
+
 export type AllocationHistoryEvent = {
   id: string;
   allocationId: string;

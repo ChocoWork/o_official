@@ -47,6 +47,18 @@ function release(
   );
 }
 
+/** G-1: each H of the order with its remaining quantity and its release event's ledger row. */
+async function holdReleasesOf(db: PgClient, orderId: string) {
+  return (await db.query(
+    `select a.remaining_quantity, e.quantity as released, m.reason as movement_reason, m.delta::int as movement_delta
+     from public.order_item_allocations a
+     join public.order_items oi on oi.id = a.order_item_id
+     left join public.order_item_allocation_events e on e.allocation_id = a.id and e.event_type = 'release'
+     left join public.stock_movements m on m.id = e.stock_movement_id
+     where oi.order_id = $1 and a.kind = 'payment_hold' order by a.id, e.id`, [orderId],
+  )).rows;
+}
+
 describeLocalDb('integration: 注文 ID で引いて在庫を戻す', (db) => {
   test('支払い手続き中を放棄にし、確保した分だけ台帳へ戻して、履歴に理由と起因イベントを残す', async () => {
     const fx = await createCatalogFixture(db(), { stock: 5 });
@@ -66,6 +78,10 @@ describeLocalDb('integration: 注文 ID で引いて在庫を戻す', (db) => {
     ]);
     expect(await revisionsOf(db(), orderId)).toEqual([
       { reason: 'stripe_checkout_expired', sourceEventId: 'evt_expired_1', changedBy: null },
+    ]);
+    // G-1: the order's H is the source of the return; it is released once, linked to the cancel row.
+    expect(await holdReleasesOf(db(), orderId)).toEqual([
+      { remaining_quantity: 0, released: 2, movement_reason: 'cancel', movement_delta: 2 },
     ]);
   });
 
@@ -98,6 +114,14 @@ describeLocalDb('integration: 注文 ID で引いて在庫を戻す', (db) => {
       { delta: -1, reason: 'purchase' },
       { delta: 1, reason: 'cancel' },
     ]);
+    expect(await holdReleasesOf(db(), orderId)).toEqual([
+      { remaining_quantity: 0, released: 1, movement_reason: 'cancel', movement_delta: 1 },
+    ]);
+    const operations = await db().query(
+      `select count(*)::int as n from private.group_g_operations where operation = 'release_stock_for_unpaid_order' and cause_id = $1`,
+      [orderId],
+    );
+    expect(operations.rows[0].n).toBe(1);
   });
 
   test('入金待ちからは放棄にできない（払込票を発行済みのため）', async () => {

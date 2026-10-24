@@ -126,6 +126,15 @@ describe('createSupabaseReconcilerDatabase', () => {
     ).rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'db_unavailable' });
   });
 
+  it('受付 RPC の GROUP_G_LOCK_SET_CHANGED（40001）は一時的な失敗（db_unavailable）にして再試行させる', async () => {
+    const { client } = fakeClient({ rpc: () => ({ data: null, error: { message: 'GROUP_G_LOCK_SET_CHANGED', code: '40001' } }) });
+
+    await expect(createSupabaseReconcilerDatabase(client).placeOrder({
+      draftId: 'draft-1', checkoutSessionId: 'cs_1', cartSessionId: 'cart-1', amountTotal: 4000, amountDiscount: 0,
+      currency: 'jpy', sessionCreatedAt: new Date('2026-10-24T00:00:00.000Z'), paymentIntentId: null,
+    })).rejects.toMatchObject({ name: 'ReconcileTransientError', code: 'db_unavailable' });
+  });
+
   it('恒久的なエラー（関数が無い 42883 など）は一時的な失敗にせず、元のエラーのまま投げる', async () => {
     const dbError = { message: 'function public.mark_order_awaiting_payment does not exist', code: '42883' };
     const { client } = fakeClient({ rpc: () => ({ data: null, error: dbError }) });
