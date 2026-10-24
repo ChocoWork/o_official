@@ -242,6 +242,7 @@ const G1_BODY_FUNCTIONS = [
   'private.admin_inspect_return(uuid,uuid,uuid,jsonb)',
   'private.admin_record_return_fee_payment(uuid,uuid,text,boolean)',
   'private.admin_release_return_exchange(uuid,uuid)',
+  'private.record_delivery_read_result(uuid,integer,uuid,jsonb)',
 ];
 const G1_BODY_TRIGGERS = [
   ...['order_item_allocation_events', 'order_item_state_events', 'private.group_g_operations'].flatMap((table) => {
@@ -992,7 +993,9 @@ WHERE id = (SELECT pg_catalog.min(id) FROM pg_temp.group_g_cleanup_webhook_ids);
       'admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)',
       'admin_close_return_missing(uuid,uuid,uuid)', 'admin_reopen_return(uuid,uuid,uuid)',
       'admin_inspect_return(uuid,uuid,uuid,jsonb)', 'private.refresh_order_return_status(uuid)',
-      'admin_record_return_fee_payment(uuid,uuid,text,boolean)', 'admin_release_return_exchange(uuid,uuid)'];
+      'admin_record_return_fee_payment(uuid,uuid,text,boolean)', 'admin_release_return_exchange(uuid,uuid)',
+      'record_delivery_read_result(uuid,integer,uuid,jsonb)',
+      'private.apply_tracking_status(uuid,text,timestamp with time zone,timestamp with time zone)'];
     const functions = split(catalog.functions, (row) => row.signature as string, G1_BODY_FUNCTIONS, changedFunctions);
     expect(functions.kept).toEqual(split(before.catalog.functions, (row) => row.signature as string, [], changedFunctions).kept);
     expect(functions.added).toEqual([...G1_BODY_FUNCTIONS].sort());

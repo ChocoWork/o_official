@@ -4,6 +4,8 @@ import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-
 import { addItemVariant, createCatalogFixture, createDraft, createShippedOrderFixture, insertOrderWithLines,
   insertReturnRecord, insertReturnReceipt, insertRefundRecord, insertCancelRequest } from './helpers/order-fixtures';
 import { withGroupG1FixtureTransaction } from './helpers/group-g1-fixtures';
+import { enableDeliveryTracking, leaseDeliveryRegistration, restoreCommittedDeliveryState, trackedShipment,
+  waitForDeliveryLock } from './helpers/delivery-tracking-fixtures';
 
 // This inventory is Task 4's entry point. Tasks 5-13 must add their public writers to the same boundary test
 // (Task 6's checkout/awaiting/release/admin cancel/guest link writers are in TASK6_ENTRIES below).
@@ -1044,6 +1046,122 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       if (second) await second.catch(() => {});
       await b.query('rollback');
       await Promise.all([a.end(), b.end()]);
+    }
+  });
+
+  // Task 13: delivery reflection. Material is committed (tracking on, a registered and leased shipment);
+  // the shared delivery state is restored afterwards, as the delivery suites do.
+  async function deliveryMaterial() {
+    const material = await withGroupG1FixtureTransaction(db(), async () => {
+      await enableDeliveryTracking(db());
+      const target = await trackedShipment(db(), { state: 'registered' });
+      const lease = await leaseDeliveryRegistration(db(), target.fulfillmentId);
+      return { target, lease };
+    });
+    const at = new Date((await db().query('select now() as at')).rows[0].at).toISOString();
+    return {
+      ...material,
+      sql: 'select applied, changed, stopped from public.record_delivery_read_result($1::uuid,$2::integer,$3::uuid,$4::jsonb)',
+      params: [material.target.fulfillmentId, 1, material.lease.lease_token, JSON.stringify({
+        outcome: 'ok', status: 'delivered', provider_status: 'Delivered', provider_sub_status: 'Delivered_001',
+        happened_at: at, delivered_at: at, read_at: at, error_code: null,
+      })],
+    };
+  }
+
+  test('public.record_delivery_read_result waits for advisory before locking any business, delivery or settings row', async () => {
+    const m = await deliveryMaterial();
+    const a = await client();
+    const b = await client();
+    const c = await client();
+    let pending: Promise<{ rows: any[] }> | undefined;
+    try {
+      const [blocker, waiter] = [await pid(a), await pid(b)];
+      await a.query('begin');
+      await a.query('select pg_advisory_xact_lock(190521,1)');
+      await b.query('begin');
+      pending = b.query(m.sql, m.params);
+      void pending.catch(() => {});
+      await waitForAdvisory(c, waiter, blocker);
+      await c.query('begin');
+      const probes: Array<[string, unknown[]]> = [
+        ['select id from public.shop_settings where id=1 for update nowait', []],
+        ['select id from public.orders where id=$1 for update nowait', [m.target.orderId]],
+        ['select id from public.order_items where order_id=$1 for update nowait', [m.target.orderId]],
+        [`select a.id from public.order_item_allocations a join public.order_items oi on oi.id=a.order_item_id
+          where oi.order_id=$1 for update of a nowait`, [m.target.orderId]],
+        ['select id from public.order_fulfillments where order_id=$1 for update nowait', [m.target.orderId]],
+        ['select fulfillment_id from private.fulfillment_tracking_registrations where fulfillment_id=$1 for update nowait',
+          [m.target.fulfillmentId]],
+      ];
+      for (const [probe, params] of probes) expect((await c.query(probe, params)).rowCount).toBeGreaterThan(0);
+      await c.query('rollback');
+      await a.query('rollback');
+      expect((await pending).rows).toEqual([{ applied: true, changed: true, stopped: true }]);
+      await b.query('set constraints all immediate');
+      expect((await b.query(`select count(*)::integer as n from private.group_g_operations
+        where operation='delivery_reflect' and cause_id=$1`, [m.target.fulfillmentId])).rows[0].n).toBe(1);
+      // The completed body holds the settings row (share), the order, the fulfillment and the registration.
+      await c.query('begin');
+      for (const [sql, params] of [
+        ['select id from public.shop_settings where id=1 for update nowait', []],
+        ['select id from public.orders where id=$1 for update nowait', [m.target.orderId]],
+        ['select id from public.order_fulfillments where id=$1 for update nowait', [m.target.fulfillmentId]],
+        ['select fulfillment_id from private.fulfillment_tracking_registrations where fulfillment_id=$1 for update nowait',
+          [m.target.fulfillmentId]],
+      ] as Array<[string, unknown[]]>) {
+        await c.query('savepoint delivery_locked');
+        await expect(c.query(sql, params)).rejects.toMatchObject({ code: '55P03' });
+        await c.query('rollback to savepoint delivery_locked');
+        await c.query('release savepoint delivery_locked');
+      }
+      await c.query('rollback');
+    } finally {
+      await a.query('rollback');
+      if (pending) await pending.catch(() => {});
+      await b.query('rollback');
+      await c.query('rollback');
+      await Promise.all([a.end(), b.end(), c.end()]);
+      await restoreCommittedDeliveryState(db());
+    }
+  });
+
+  test('delivery reflection takes settings before order rows, so a toggle-ordered settings holder can still lock the order', async () => {
+    const m = await deliveryMaterial();
+    const a = await client();
+    const b = await client();
+    const t = await client();
+    const c = await client();
+    let pending: Promise<{ rows: any[] }> | undefined;
+    try {
+      const [blocker, waiter, toggle] = [await pid(a), await pid(b), await pid(t)];
+      await a.query('begin');
+      await a.query('select pg_advisory_xact_lock(190521,1)');
+      await b.query('begin');
+      pending = b.query(m.sql, m.params);
+      void pending.catch(() => {});
+      await waitForAdvisory(c, waiter, blocker);
+      // admin_set_delivery_tracking's order: settings FOR UPDATE -> orders -> fulfillments.
+      await t.query('begin');
+      await t.query('select id from public.shop_settings where id=1 for update');
+      await a.query('rollback');
+      await waitForDeliveryLock(c, waiter, toggle);
+      expect((await c.query(`select exists(select 1 from pg_catalog.pg_locks where pid=$1::int and locktype='advisory'
+        and classid=190521 and objid=1 and objsubid=2 and mode='ExclusiveLock' and granted) as held`, [waiter])).rows[0].held).toBe(true);
+      // B holds the common advisory but no order, fulfillment or registration row while it waits on the settings row.
+      expect((await t.query('select id from public.orders where id=$1 for update nowait', [m.target.orderId])).rowCount).toBe(1);
+      expect((await t.query('select id from public.order_fulfillments where id=$1 for update nowait', [m.target.fulfillmentId])).rowCount).toBe(1);
+      expect((await t.query(`select fulfillment_id from private.fulfillment_tracking_registrations
+        where fulfillment_id=$1 for update nowait`, [m.target.fulfillmentId])).rowCount).toBe(1);
+      await t.query('rollback');
+      expect((await pending).rows).toEqual([{ applied: true, changed: true, stopped: true }]);
+    } finally {
+      await a.query('rollback');
+      await t.query('rollback');
+      if (pending) await pending.catch(() => {});
+      await b.query('rollback');
+      await Promise.all([a.end(), b.end(), t.end(), c.end()]);
+      await restoreCommittedDeliveryState(db());
     }
   });
 });

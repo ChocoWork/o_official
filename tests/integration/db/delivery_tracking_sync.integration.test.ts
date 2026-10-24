@@ -2,10 +2,11 @@
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import {
-  claimDelivery, claimDeliveryFor, createDeliveryActor, deliveryClock, deliveryEvents, deliveryRecord,
+  cancelDeliveryFixture, claimDelivery, claimDeliveryFor, correctDeliveryTrackingFixture, createDeliveryActor, deliveryClock,
+  deliveryEvents, deliveryRecord,
   deferOtherDeliveryRegistrations, deliveryRegistration, deliveryRegistrations, deliveryShipment, enableDeliveryTracking,
   expectDeliveryRejected,
-  expireDelivery, insertDeliveryAttention, leaseDeliveryRegistration, markDeliveryDelivered, patchDeliveryRegistration,
+  expireDelivery, insertDeliveryAttention, leaseDeliveryRegistration, markDeliveredFixture, patchDeliveryRegistration,
   recordReadResult, recordRegistrationResult, recordStopResult, setDeliveryTracking, signalDelivery, trackedShipment,
   updateDeliveryTracking, withDeliveryConnectionPool, withDeliveryConnections,
   type DeliveryClaim, type ManualDelivery, type TrackingEdit,
@@ -87,8 +88,9 @@ async function readStatus(client: PgClient, fulfillmentId: string, status: strin
   }));
 }
 
+/** 発送の取消は合成の材料で作る（旧の admin_cancel_fulfillment は Task 14 で止まる）。 */
 async function cancelFulfillment(client: PgClient, target: Parent) {
-  await client.query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [target.orderId, target.fulfillmentId, target.actorId]);
+  await cancelDeliveryFixture(client, target);
 }
 
 type Scenario = (client: PgClient) => Promise<void>;
@@ -128,9 +130,9 @@ const TABLE_ROWS: Array<[string, Scenario]> = [
         const target = await trackedShipment(client, { state: kind === 'read' ? 'registered' : 'pending', notifyCustomer: true });
         const [claim] = await claimDeliveryFor(client, [target.fulfillmentId]);
         expect(claim).toMatchObject({ action: kind, tracking_version: 1 });
-        if (cause === '旧版') await updateDeliveryTracking(client, editOf(target, { notifyCustomer: true }));
+        if (cause === '旧版') await correctDeliveryTrackingFixture(client, editOf(target, { notifyCustomer: true }));
         else if (cause === '取消') await cancelFulfillment(client, target);
-        else await markDeliveryDelivered(client, manualOf(target, { notifyCustomer: true }));
+        else await markDeliveredFixture(client, manualOf(target, { notifyCustomer: true }));
         const before = await observe(client, target.fulfillmentId);
         if (kind === 'read') {
           expect(await recordReadResult(client, claim, readOf(await dbTime(client), { status: 'out_for_delivery' })))
@@ -340,7 +342,7 @@ const TABLE_ROWS: Array<[string, Scenario]> = [
         const at = await dbTime(client, '-1 hours');
         await recordReadResult(client, await leaseDeliveryRegistration(client, target.fulfillmentId),
           readOf(await dbTime(client), { status: 'delivered', happened_at: at, delivered_at: at }));
-      } else if (cause === '直し') await updateDeliveryTracking(client, editOf(target));
+      } else if (cause === '直し') await correctDeliveryTrackingFixture(client, editOf(target));
       else if (cause === '取消') await cancelFulfillment(client, target);
       else await setDeliveryTracking(client, false, actor.id);
       const rows = await attention(client, target.fulfillmentId);
@@ -485,7 +487,7 @@ const TABLE_ROWS: Array<[string, Scenario]> = [
       await run(1, 9);
       expect(await mailsOf('out_for_delivery')).toEqual(notify ? [1] : []);
       expect(await mailsOf('delivered')).toEqual(notify ? [1] : []);
-      await updateDeliveryTracking(client, editOf(target, { notifyCustomer: notify }));
+      await correctDeliveryTrackingFixture(client, editOf(target, { notifyCustomer: notify }));
       await patchDeliveryRegistration(client, target.fulfillmentId, "state='registered',ever_registered=true,registered_at=now()", 2);
       await run(2, 5);
       expect(await mailsOf('out_for_delivery')).toEqual(notify ? [1, 2] : []);
@@ -610,8 +612,8 @@ describeLocalDb('integration: 配送の追跡の関数（移行 C）', (db) => {
   test.each(['直し', '取消'] as const)('配達済みで止めた版を%sても、外への停止は借りない', async (operation) => {
     await enableDeliveryTracking(db());
     const target = await trackedShipment(db(), { state: 'registered' });
-    await markDeliveryDelivered(db(), manualOf(target));
-    if (operation === '直し') await updateDeliveryTracking(db(), editOf(target));
+    await markDeliveredFixture(db(), manualOf(target));
+    if (operation === '直し') await correctDeliveryTrackingFixture(db(), editOf(target));
     else await cancelFulfillment(db(), target);
     const claims = await claimDeliveryFor(db(), [target.fulfillmentId]);
     expect(claims.filter((claim) => claim.action === 'stop')).toEqual([]);
@@ -639,7 +641,7 @@ describeLocalDb('integration: 配送の追跡の関数（移行 C）', (db) => {
     const other = await trackedShipment(db(), { trackingNumber: base.toLowerCase(), state: 'registered', everRegistered: true });
     await patchDeliveryRegistration(db(), other.fulfillmentId, "next_run_at=now()+interval '1 day'");
     // 別の発送が同じ組を追っている間に、1発送だけ直す。外への停止の印は立たない（移行 B）
-    await updateDeliveryTracking(db(), editOf(target));
+    await correctDeliveryTrackingFixture(db(), editOf(target));
     expect(await deliveryRegistration(db(), target.fulfillmentId, 1)).toMatchObject({ provider_stop_pending: false });
     // 別の発送の行の印が残っていても借り出しで外れる（行が増えた後の確かめ直し）
     await patchDeliveryRegistration(db(), target.fulfillmentId, 'provider_stop_pending=true');
@@ -806,11 +808,11 @@ describeLocalDb('integration: 配送の追跡の関数（移行 C）', (db) => {
     const first = uniqueNumber('abc');
     const target = await trackedShipment(db(), { trackingNumber: first, state: 'registered', everRegistered: true });
     // 番号を直して、前の番号の外への停止を1回済ませてから、元の番号へ戻す
-    await updateDeliveryTracking(db(), editOf(target, { carrier: 'yamato', trackingNumber: uniqueNumber('def') }));
+    await correctDeliveryTrackingFixture(db(), editOf(target, { carrier: 'yamato', trackingNumber: uniqueNumber('def') }));
     const stops = (await claimDeliveryFor(db(), [target.fulfillmentId])).filter((claim) => claim.action === 'stop');
     expect(stops).toHaveLength(1);
     expect(await recordStopResult(db(), stops[0], true)).toBe(true);
-    await updateDeliveryTracking(db(), editOf(target, { carrier: 'yamato', trackingNumber: first }));
+    await correctDeliveryTrackingFixture(db(), editOf(target, { carrier: 'yamato', trackingNumber: first }));
     const [retrack] = await claimDeliveryFor(db(), [target.fulfillmentId]);
     expect(retrack).toMatchObject({ action: 'retrack', tracking_version: 3, tracking_number: first.toUpperCase() });
     expect(await recordRegistrationResult(db(), retrack, 'retrack_exhausted', 'retrack_limit')).toEqual({ applied: true, state: 'failed' });
@@ -874,7 +876,7 @@ describeLocalDb('integration: 配送の追跡の関数（移行 C）', (db) => {
     const newestOfVersion1 = await dbTime(db(), '-1 hours');
     expect(await recordReadResult(db(), await leaseDeliveryRegistration(db(), target.fulfillmentId), readOf(newestOfVersion1)))
       .toMatchObject({ applied: true, changed: true });
-    await updateDeliveryTracking(db(), editOf(target));
+    await correctDeliveryTrackingFixture(db(), editOf(target));
     const edited = await deliveryRecord(db(), target.fulfillmentId);
     expect(edited).toMatchObject({ tracking_version: 2, delivery_status: 'confirmed' });
     expect(iso(edited.delivery_status_at)).toBe(await dbTime(db()));
@@ -981,7 +983,7 @@ describeLocalDb('integration: 配送の追跡の関数（移行 C）', (db) => {
     });
     let version = 1;
     if (operation === '読み直し（版2・輸送中）') {
-      await updateDeliveryTracking(db(), editOf(target, { carrier: 'sagawa', trackingNumber: `${mixed}-2`, notifyCustomer: true }));
+      await correctDeliveryTrackingFixture(db(), editOf(target, { carrier: 'sagawa', trackingNumber: `${mixed}-2`, notifyCustomer: true }));
       await patchDeliveryRegistration(db(), target.fulfillmentId, "state='registered',ever_registered=true,registered_at=now()", 2);
       version = 2;
     }
@@ -1278,16 +1280,21 @@ describeLocalDb('integration: 配送の追跡の関数（移行 C）', (db) => {
       'public.record_delivery_stop_result(uuid,integer,uuid,boolean,text)',
       'public.take_delivery_provider_slot()',
     ];
-    for (const signature of signatures) {
+    // G-1 Task 13: 読み直しの結果の公開口は SECURITY INVOKER の委譲だけで、本体は private の SECURITY DEFINER
+    const readResult = 'public.record_delivery_read_result(uuid,integer,uuid,jsonb)';
+    const readResultBody = 'private.record_delivery_read_result(uuid,integer,uuid,jsonb)';
+    for (const signature of [...signatures, readResultBody]) {
       const definition = (await db().query('select prosecdef,proconfig from pg_proc where oid=$1::regprocedure', [signature])).rows[0];
-      expect(definition.prosecdef).toBe(true);
+      expect(definition.prosecdef).toBe(signature !== readResult);
       expect(definition.proconfig).toContain('search_path=""');
       for (const role of ['anon', 'authenticated', 'service_role']) {
         expect((await db().query('select has_function_privilege($1::text,$2::text,\'EXECUTE\') as allowed', [role, signature])).rows[0].allowed).toBe(role === 'service_role');
       }
     }
-    for (const role of ['anon', 'authenticated', 'service_role']) {
-      expect((await db().query('select has_function_privilege($1::text,$2::text,\'EXECUTE\') as allowed', [role, 'private.set_delivery_attention(uuid,text,boolean)'])).rows[0].allowed).toBe(false);
+    for (const helper of ['private.set_delivery_attention(uuid,text,boolean)', 'private.apply_tracking_status(uuid,text,timestamptz,timestamptz)']) {
+      for (const role of ['anon', 'authenticated', 'service_role']) {
+        expect((await db().query('select has_function_privilege($1::text,$2::text,\'EXECUTE\') as allowed', [role, helper])).rows[0].allowed).toBe(false);
+      }
     }
   });
 

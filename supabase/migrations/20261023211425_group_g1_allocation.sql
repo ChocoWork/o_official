@@ -8123,6 +8123,453 @@ BEGIN
 END;
 $g1_exchange_fee_assert$;
 
+-- Task 13. Delivery reflection. Last definitions: 20261021221410_delivery_tracking_sync.sql:35 (apply_tracking_status)
+-- and :493 (record_delivery_read_result). The E-4 decision table, the lease/version/cancel/notification contract,
+-- the argument checks, the argument names and the return type are kept.
+-- Lock order of the private body: common advisory -> delivery settings (FOR SHARE) -> the fulfillment's order rows
+-- (order -> order_items -> allocations -> returns ... cancel request lines, id order) -> its fulfillments (id order)
+-- -> the registration. The settings row precedes the order rows because the unchanged admin_set_delivery_tracking
+-- takes settings FOR UPDATE before orders; no G-1 writer takes the settings row, so it cannot close a cycle.
+-- Delivery reflection changes no stock, allocation or FIFO, so only this order is a target (no variant closure).
+-- Only the delivered transition changes item states: it is one delivery_reflect operation keyed by
+-- fulfillment + tracking version + event, recorded with its state history in the same transaction.
+CREATE OR REPLACE FUNCTION private.apply_tracking_status(
+  _fulfillment_id uuid,
+  _status text,
+  _status_at timestamptz,
+  _delivered_at timestamptz
+)
+RETURNS void
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_previous text;
+BEGIN
+  -- Internal helper: the caller already holds the common lock and the order/fulfillment rows. It takes no lock.
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted) THEN
+    RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
+  END IF;
+  v_previous := pg_catalog.current_setting('app.fulfillment_change', true);
+  PERFORM pg_catalog.set_config('app.fulfillment_change', 'tracking', true);
+  UPDATE public.order_fulfillments AS f
+  SET delivery_status = _status,
+      delivery_status_at = _status_at,
+      delivered_at = _delivered_at
+  WHERE f.id = _fulfillment_id;
+  PERFORM pg_catalog.set_config('app.fulfillment_change', COALESCE(v_previous, ''), true);
+END;
+$$;
+ALTER FUNCTION private.apply_tracking_status(uuid,text,timestamptz,timestamptz) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.apply_tracking_status(uuid,text,timestamptz,timestamptz) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION private.record_delivery_read_result(
+  _fulfillment_id uuid,
+  _tracking_version integer,
+  _lease_token uuid,
+  _result jsonb
+)
+RETURNS TABLE (applied boolean, changed boolean, stopped boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_enabled boolean;
+  v_order_id uuid;
+  v_f public.order_fulfillments;
+  v_r private.fulfillment_tracking_registrations;
+  v_outcome text;
+  v_status text;
+  v_provider_status text;
+  v_provider_sub text;
+  v_error text;
+  v_happened timestamptz;
+  v_delivered timestamptz;
+  v_read_at timestamptz;
+  v_event_at timestamptz;
+  v_newest timestamptz;
+  v_delivered_at timestamptz;
+  v_attempts integer;
+  v_advanced boolean;
+  v_next timestamptz;
+  v_old boolean := false;
+  v_changed boolean := false;
+  v_stop boolean := false;
+  v_request_key uuid;
+  v_record boolean := false;
+  v_before jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _fulfillment_id IS NULL OR _tracking_version IS NULL OR _tracking_version < 1 OR _lease_token IS NULL
+     OR _result IS NULL OR pg_catalog.jsonb_typeof(_result) <> 'object' THEN
+    RAISE EXCEPTION 'DELIVERY_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  v_outcome := _result ->> 'outcome';
+  IF v_outcome IS NULL OR v_outcome NOT IN ('ok', 'not_found', 'not_registered', 'invalid_number', 'transient', 'account') THEN
+    RAISE EXCEPTION 'DELIVERY_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  v_status := NULLIF(_result ->> 'status', '');
+  IF v_status IS NOT NULL
+     AND v_status NOT IN ('confirmed', 'in_transit', 'out_for_delivery', 'attempted_delivery', 'ready_for_pickup', 'delivered', 'delayed', 'failure') THEN
+    RAISE EXCEPTION 'DELIVERY_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF v_outcome <> 'ok' THEN
+    v_status := NULL;
+  END IF;
+
+  BEGIN
+    v_read_at := (_result ->> 'read_at')::timestamptz;
+    v_happened := (_result ->> 'happened_at')::timestamptz;
+    v_delivered := (_result ->> 'delivered_at')::timestamptz;
+  EXCEPTION WHEN SQLSTATE '22007' OR SQLSTATE '22008' THEN
+    RAISE EXCEPTION 'DELIVERY_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END;
+  IF v_read_at IS NULL THEN
+    RAISE EXCEPTION 'DELIVERY_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF v_happened IS NOT NULL THEN
+    v_happened := LEAST(v_happened, v_read_at);
+  END IF;
+  IF v_delivered IS NOT NULL THEN
+    v_delivered := LEAST(v_delivered, v_read_at);
+  END IF;
+  v_event_at := COALESCE(v_happened, v_read_at);
+  v_provider_status := NULLIF(pg_catalog.left(_result ->> 'provider_status', 100), '');
+  v_provider_sub := NULLIF(pg_catalog.left(_result ->> 'provider_sub_status', 100), '');
+  v_error := _result ->> 'error_code';
+  IF v_error IS NOT NULL AND v_error !~ '^[a-z0-9_-]{1,64}$' THEN
+    v_error := NULL;
+  END IF;
+
+  -- Reads only until the common advisory is held (the fulfillment's order never changes).
+  SELECT f.order_id INTO v_order_id FROM public.order_fulfillments AS f WHERE f.id = _fulfillment_id;
+  PERFORM pg_catalog.pg_advisory_xact_lock(190521, 1);
+
+  -- Row 1: tracking off, unknown fulfillment, other version, cancelled, other token or expired lease write nothing.
+  SELECT s.delivery_tracking_enabled INTO v_enabled FROM public.shop_settings AS s WHERE s.id = 1 FOR SHARE;
+  IF NOT COALESCE(v_enabled, false) THEN
+    RETURN QUERY SELECT false, false, false;
+    RETURN;
+  END IF;
+  IF v_order_id IS NULL THEN
+    RETURN QUERY SELECT false, false, false;
+    RETURN;
+  END IF;
+
+  PERFORM o.id FROM public.orders AS o WHERE o.id = v_order_id FOR UPDATE;
+  PERFORM oi.id FROM public.order_items AS oi WHERE oi.order_id = v_order_id ORDER BY oi.id FOR UPDATE;
+  PERFORM a.id FROM public.order_item_allocations AS a
+    WHERE a.order_item_id IN (SELECT oi.id FROM public.order_items AS oi WHERE oi.order_id = v_order_id)
+    ORDER BY a.id FOR UPDATE;
+  PERFORM r.id FROM public.order_returns AS r WHERE r.order_id = v_order_id ORDER BY r.id FOR UPDATE;
+  PERFORM l.id FROM public.order_return_lines AS l
+    WHERE l.return_id IN (SELECT r.id FROM public.order_returns AS r WHERE r.order_id = v_order_id)
+    ORDER BY l.id FOR UPDATE;
+  PERFORM r.id FROM public.order_return_receipts AS r
+    WHERE r.return_id IN (SELECT x.id FROM public.order_returns AS x WHERE x.order_id = v_order_id)
+    ORDER BY r.id FOR UPDATE;
+  PERFORM l.id FROM public.order_return_receipt_lines AS l
+    WHERE l.receipt_id IN (SELECT r.id FROM public.order_return_receipts AS r
+      JOIN public.order_returns AS x ON x.id = r.return_id WHERE x.order_id = v_order_id)
+    ORDER BY l.id FOR UPDATE;
+  PERFORM r.id FROM public.order_refunds AS r WHERE r.order_id = v_order_id ORDER BY r.id FOR UPDATE;
+  PERFORM l.id FROM public.order_refund_lines AS l
+    WHERE l.refund_id IN (SELECT r.id FROM public.order_refunds AS r WHERE r.order_id = v_order_id)
+    ORDER BY l.id FOR UPDATE;
+  PERFORM r.id FROM public.order_cancel_requests AS r WHERE r.order_id = v_order_id ORDER BY r.id FOR UPDATE;
+  PERFORM l.id FROM public.order_cancel_request_lines AS l
+    WHERE l.cancel_request_id IN (SELECT r.id FROM public.order_cancel_requests AS r WHERE r.order_id = v_order_id)
+    ORDER BY l.id FOR UPDATE;
+  PERFORM f.id FROM public.order_fulfillments AS f WHERE f.order_id = v_order_id ORDER BY f.id FOR UPDATE;
+  SELECT f.* INTO v_f FROM public.order_fulfillments AS f WHERE f.id = _fulfillment_id;
+
+  SELECT r.* INTO v_r
+  FROM private.fulfillment_tracking_registrations AS r
+  WHERE r.fulfillment_id = _fulfillment_id
+    AND r.tracking_version = _tracking_version
+  FOR UPDATE;
+  IF NOT FOUND
+     OR v_r.lease_token IS DISTINCT FROM _lease_token
+     OR v_r.lease_expires_at IS NULL
+     OR v_r.lease_expires_at <= pg_catalog.now()
+     OR v_r.state <> 'registered'
+     OR v_f.cancelled_at IS NOT NULL
+     OR v_f.tracking_version <> _tracking_version THEN
+    RETURN QUERY SELECT false, false, false;
+    RETURN;
+  END IF;
+
+  -- Row 2: already delivered. Keep the status; only stop the registration as delivered.
+  IF v_f.delivered_at IS NOT NULL THEN
+    UPDATE private.fulfillment_tracking_registrations AS r
+    SET state = 'stopped',
+        stop_reason = 'delivered',
+        stopped_at = pg_catalog.now(),
+        failure_kind = NULL,
+        lease_token = NULL,
+        lease_expires_at = NULL,
+        stop_signaled = false,
+        provider_stop_pending = false
+    WHERE r.fulfillment_id = _fulfillment_id
+      AND r.tracking_version = _tracking_version;
+    PERFORM private.close_delivery_attention(_fulfillment_id);
+    RETURN QUERY SELECT true, false, true;
+    RETURN;
+  END IF;
+
+  -- Row 3: 17TRACK has no registration yet. Back to pending and register now (ever_registered/registered_at kept).
+  IF v_outcome = 'not_registered' THEN
+    UPDATE private.fulfillment_tracking_registrations AS r
+    SET state = 'pending',
+        last_read_at = v_read_at,
+        last_error_code = NULL,
+        lease_token = NULL,
+        lease_expires_at = NULL,
+        next_run_at = pg_catalog.now()
+    WHERE r.fulfillment_id = _fulfillment_id
+      AND r.tracking_version = _tracking_version;
+    RETURN QUERY SELECT true, false, false;
+    RETURN;
+  END IF;
+
+  -- Row 3a: invalid number. Same classification as registration; open tracking_not_found at once.
+  IF v_outcome = 'invalid_number' THEN
+    UPDATE private.fulfillment_tracking_registrations AS r
+    SET state = 'failed',
+        failure_kind = 'invalid_number',
+        retry_allowed = false,
+        last_read_at = v_read_at,
+        last_error_code = v_error,
+        lease_token = NULL,
+        lease_expires_at = NULL
+    WHERE r.fulfillment_id = _fulfillment_id
+      AND r.tracking_version = _tracking_version;
+    PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_not_found', true);
+    RETURN QUERY SELECT true, false, false;
+    RETURN;
+  END IF;
+
+  -- Row 4: transient/account failure. Keep the status; back off.
+  IF v_outcome IN ('transient', 'account') THEN
+    v_attempts := CASE WHEN v_outcome = 'transient' THEN v_r.read_attempts + 1 ELSE v_r.read_attempts END;
+    UPDATE private.fulfillment_tracking_registrations AS r
+    SET read_attempts = v_attempts,
+        last_error_code = v_error,
+        lease_token = NULL,
+        lease_expires_at = NULL,
+        next_run_at = pg_catalog.now() + CASE
+          WHEN v_outcome = 'account' THEN interval '6 hours'
+          WHEN v_attempts <= 1 THEN interval '5 minutes'
+          WHEN v_attempts = 2 THEN interval '15 minutes'
+          WHEN v_attempts = 3 THEN interval '1 hour'
+          ELSE interval '6 hours'
+        END
+    WHERE r.fulfillment_id = _fulfillment_id
+      AND r.tracking_version = _tracking_version;
+    RETURN QUERY SELECT true, false, false;
+    RETURN;
+  END IF;
+
+  v_advanced := v_r.signal_revision > COALESCE(v_r.claimed_signal_revision, 0);
+  v_next := pg_catalog.now() + CASE WHEN v_advanced THEN interval '0 seconds' ELSE interval '6 hours' END;
+
+  IF v_outcome = 'ok' THEN
+    -- Row 7: older than the newest tracking event of the same version changes neither status nor events.
+    SELECT pg_catalog.max(e.happened_at) INTO v_newest
+    FROM public.order_fulfillment_events AS e
+    WHERE e.fulfillment_id = _fulfillment_id
+      AND e.tracking_version = _tracking_version
+      AND e.source = 'tracking';
+    v_old := v_newest IS NOT NULL AND v_event_at < v_newest;
+
+    IF v_status IS NULL THEN
+      -- Row 6: unknown status. 17TRACK has information, so close tracking_not_found.
+      PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_not_found', false);
+    ELSIF NOT v_old THEN
+      IF v_status = v_f.delivery_status THEN
+        -- Row 8: same status.
+        PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_not_found', false);
+      ELSE
+        -- Rows 9/10: a different status adds one event (UNIQUE on version, status and time).
+        INSERT INTO public.order_fulfillment_events (fulfillment_id, tracking_version, status, happened_at, source, provider_sub_status)
+        VALUES (_fulfillment_id, _tracking_version, v_status, v_event_at, 'tracking', v_provider_sub)
+        ON CONFLICT ON CONSTRAINT order_fulfillment_events_once_key DO NOTHING;
+        PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_not_found', false);
+
+        IF v_status = 'delivered' THEN
+          -- Row 10: delivered at no earlier than shipped. Stop the registration, close all attention,
+          -- one delivered email when notifying. The item states move with it in the same transaction.
+          v_delivered_at := GREATEST(COALESCE(v_delivered, v_event_at), v_f.shipped_at);
+          v_request_key := pg_catalog.md5('delivery:' || _fulfillment_id::text || ':' || _tracking_version::text || ':' || 'delivered')::uuid;
+          -- A recorded reflection of the same version and event adds nothing.
+          v_record := NOT EXISTS (SELECT 1 FROM private.group_g_operations AS g
+            WHERE g.operation = 'delivery_reflect' AND g.request_key = v_request_key);
+          IF v_record THEN
+            v_before := private.capture_group_g_item_states(ARRAY[v_order_id]);
+            PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+          END IF;
+          PERFORM private.apply_tracking_status(_fulfillment_id, 'delivered', v_delivered_at, v_delivered_at);
+          UPDATE private.fulfillment_tracking_registrations AS r
+          SET state = 'stopped',
+              stop_reason = 'delivered',
+              stopped_at = pg_catalog.now(),
+              failure_kind = NULL,
+              provider_status = v_provider_status,
+              provider_sub_status = v_provider_sub,
+              last_read_at = v_read_at,
+              read_attempts = 0,
+              last_error_code = NULL,
+              lease_token = NULL,
+              lease_expires_at = NULL,
+              stop_signaled = false,
+              provider_stop_pending = false
+          WHERE r.fulfillment_id = _fulfillment_id
+            AND r.tracking_version = _tracking_version;
+          PERFORM private.close_delivery_attention(_fulfillment_id);
+          PERFORM private.enqueue_delivery_email(_fulfillment_id, _tracking_version, 'delivered');
+          IF v_record THEN
+            PERFORM private.record_group_g_item_state_changes(v_before, ARRAY[v_order_id], v_operation, 1,
+              'delivery_reflect', NULL);
+            INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+            VALUES (v_operation, 'delivery_reflect', v_request_key,
+              pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+                'operation', 'delivery_reflect', 'fulfillment_id', _fulfillment_id, 'tracking_version', _tracking_version,
+                'event', 'delivered', 'delivered_at', v_delivered_at)::text, 'UTF8')), 'hex'),
+              'fulfillment', _fulfillment_id::text, NULL,
+              pg_catalog.jsonb_build_object('fulfillment_id', _fulfillment_id, 'order_id', v_order_id,
+                'tracking_version', _tracking_version, 'event', 'delivered', 'delivered_at', v_delivered_at));
+            PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+          END IF;
+          RETURN QUERY SELECT true, true, true;
+          RETURN;
+        END IF;
+
+        PERFORM private.apply_tracking_status(_fulfillment_id, v_status, v_event_at, NULL);
+        v_changed := true;
+
+        -- P19: only on a status change, open that status's attention and close the others.
+        IF v_status = 'failure' THEN
+          PERFORM private.set_delivery_attention(_fulfillment_id, 'delivery_failure', true);
+        ELSE
+          PERFORM private.set_delivery_attention(_fulfillment_id, 'delivery_failure', false);
+        END IF;
+        IF v_status = 'attempted_delivery' THEN
+          PERFORM private.set_delivery_attention(_fulfillment_id, 'attempted_delivery', true);
+        ELSE
+          PERFORM private.set_delivery_attention(_fulfillment_id, 'attempted_delivery', false);
+        END IF;
+
+        -- Row 11: out for delivery sends one email while notifying and not yet delivered.
+        IF v_status = 'out_for_delivery' THEN
+          PERFORM private.enqueue_delivery_email(_fulfillment_id, _tracking_version, 'out_for_delivery');
+        END IF;
+      END IF;
+    END IF;
+  ELSIF v_outcome = 'not_found' THEN
+    -- Row 5: keep the status. Open tracking_not_found 72 hours after registration, only on a new condition (P19).
+    IF v_r.registered_at IS NOT NULL AND pg_catalog.now() >= v_r.registered_at + interval '72 hours' THEN
+      IF v_r.provider_status IS NOT NULL
+         OR NOT EXISTS (
+           SELECT 1
+           FROM public.order_fulfillment_attention AS a
+           WHERE a.fulfillment_id = _fulfillment_id
+             AND a.kind = 'tracking_not_found'
+             AND a.opened_at >= v_r.registered_at
+             AND (a.resolved_at IS NULL OR a.resolution = 'manual')
+         ) THEN
+        PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_not_found', true);
+      END IF;
+    END IF;
+  END IF;
+
+  -- Row 12: a STOPPED signal consumed by a successful read of an undelivered version stops as provider_stopped.
+  IF NOT v_old AND v_r.stop_signaled AND NOT v_advanced THEN
+    v_stop := true;
+  END IF;
+
+  UPDATE private.fulfillment_tracking_registrations AS r
+  SET provider_status = CASE
+        WHEN v_outcome = 'ok' AND NOT v_old THEN v_provider_status
+        WHEN v_outcome = 'not_found' THEN NULL
+        ELSE r.provider_status
+      END,
+      provider_sub_status = CASE
+        WHEN v_outcome = 'ok' AND NOT v_old THEN v_provider_sub
+        WHEN v_outcome = 'not_found' THEN NULL
+        ELSE r.provider_sub_status
+      END,
+      last_read_at = v_read_at,
+      read_attempts = 0,
+      last_error_code = NULL,
+      next_run_at = CASE WHEN v_stop THEN r.next_run_at ELSE v_next END,
+      lease_token = NULL,
+      lease_expires_at = NULL,
+      state = CASE WHEN v_stop THEN 'stopped' ELSE r.state END,
+      stop_reason = CASE WHEN v_stop THEN 'provider_stopped' ELSE r.stop_reason END,
+      stopped_at = CASE WHEN v_stop THEN pg_catalog.now() ELSE r.stopped_at END,
+      stop_signaled = CASE WHEN v_stop THEN false ELSE r.stop_signaled END,
+      provider_stop_pending = CASE WHEN v_stop THEN false ELSE r.provider_stop_pending END
+  WHERE r.fulfillment_id = _fulfillment_id
+    AND r.tracking_version = _tracking_version;
+
+  IF v_stop THEN
+    PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_stalled', true);
+  END IF;
+
+  RETURN QUERY SELECT true, v_changed, v_stop;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.record_delivery_read_result(uuid,integer,uuid,jsonb) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.record_delivery_read_result(uuid,integer,uuid,jsonb) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.record_delivery_read_result(uuid,integer,uuid,jsonb) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.record_delivery_read_result(
+  _fulfillment_id uuid,
+  _tracking_version integer,
+  _lease_token uuid,
+  _result jsonb
+)
+RETURNS TABLE (applied boolean, changed boolean, stopped boolean)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.record_delivery_read_result(_fulfillment_id, _tracking_version, _lease_token, _result); $$;
+ALTER FUNCTION public.record_delivery_read_result(uuid,integer,uuid,jsonb) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.record_delivery_read_result(uuid,integer,uuid,jsonb) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.record_delivery_read_result(uuid,integer,uuid,jsonb) TO service_role;
+
+DO $g1_delivery_assert$
+DECLARE v_oid oid; v_schema text;
+BEGIN
+  FOREACH v_schema IN ARRAY ARRAY['public', 'private'] LOOP
+    v_oid := pg_catalog.to_regprocedure(v_schema || '.record_delivery_read_result(uuid,integer,uuid,jsonb)');
+    IF v_oid IS NULL OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc AS p
+      WHERE p.oid = v_oid AND p.proowner = 'postgres'::regrole
+        AND p.prosecdef = (v_schema = 'private') AND 'search_path=""' = ANY(p.proconfig))
+      OR pg_catalog.has_function_privilege('anon', v_oid, 'EXECUTE')
+      OR pg_catalog.has_function_privilege('authenticated', v_oid, 'EXECUTE')
+      OR NOT pg_catalog.has_function_privilege('service_role', v_oid, 'EXECUTE') THEN
+      RAISE EXCEPTION 'GROUP_G_DELIVERY_ACL_INVALID' USING ERRCODE = '55000';
+    END IF;
+  END LOOP;
+  v_oid := pg_catalog.to_regprocedure('private.apply_tracking_status(uuid,text,timestamptz,timestamptz)');
+  IF v_oid IS NULL OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc AS p
+    WHERE p.oid = v_oid AND p.proowner = 'postgres'::regrole AND NOT p.prosecdef
+      AND 'search_path=""' = ANY(p.proconfig))
+    OR pg_catalog.has_function_privilege('anon', v_oid, 'EXECUTE')
+    OR pg_catalog.has_function_privilege('authenticated', v_oid, 'EXECUTE')
+    OR pg_catalog.has_function_privilege('service_role', v_oid, 'EXECUTE') THEN
+    RAISE EXCEPTION 'GROUP_G_DELIVERY_ACL_INVALID' USING ERRCODE = '55000';
+  END IF;
+END;
+$g1_delivery_assert$;
+
 DO $g1_model_assert$
 DECLARE
   v_failed text;

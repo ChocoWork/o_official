@@ -1,5 +1,6 @@
 import type { ShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import { randomUUID } from 'node:crypto';
+import { withGroupG1FixtureTransaction } from './group-g1-fixtures';
 import { connectLocalDb, type PgClient } from './local-db';
 import { createCatalogFixture, insertOrderWithLines, shipFixtureOrder, uniqueSuffix, withFixtureConsumption } from './order-fixtures';
 
@@ -79,6 +80,169 @@ export function markDeliveryDelivered(client: PgClient, input: ManualDelivery) {
   return client.query('select * from public.admin_mark_fulfillment_delivered($1,$2,$3,$4,$5::date,$6)', [
     input.orderId, input.fulfillmentId, input.actorId, input.requestKey, input.deliveredOn, input.notifyCustomer,
   ]);
+}
+
+/**
+ * 合成の材料（訂正・手で配達済み・発送の取消）の共通の枠。旧の3関数は Task 14 で止まるので呼ばない。
+ * 共通の鍵 → 注文 → その注文の発送（id 順）の順に取ってから書き、品物の状態の差分を fixture の操作として同じ取引に残す。
+ */
+async function syntheticDeliveryChange<T>(
+  client: PgClient,
+  input: { orderId: string; fulfillmentId: string; actorId: string | null; operation: string },
+  write: () => Promise<T>,
+): Promise<T> {
+  if ((client as PgClient & { _txStatus?: string })._txStatus === 'T') {
+    await client.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
+  }
+  return withGroupG1FixtureTransaction(client, async () => {
+    await client.query('select id from public.orders where id=$1 for update', [input.orderId]);
+    await client.query('select id from public.order_fulfillments where order_id=$1 order by id for update', [input.orderId]);
+    const before = (await client.query('select private.capture_group_g_item_states($1) as states', [[input.orderId]])).rows[0].states;
+    const result = await write();
+    const operationId = randomUUID();
+    await client.query(`insert into private.group_g_operations (id,operation,request_key,fingerprint,cause_type,cause_id,actor_id,result)
+      values ($1,$2,gen_random_uuid(),repeat('e',64),'fulfillment',$3,$4,'{}')`,
+    [operationId, input.operation, input.fulfillmentId, input.actorId]);
+    await client.query('select private.record_group_g_item_state_changes($1,$2,$3,1,$4,$5)',
+      [JSON.stringify(before), [input.orderId], operationId, input.operation, input.actorId]);
+    return result;
+  });
+}
+
+/**
+ * 伝票番号の訂正の合成（旧の admin_update_fulfillment_tracking の成功を確かめる物ではない）。
+ * 見える結果は旧の関数と同じにする: 直しの記録・版+1・受付済みへ戻す（届いた時刻は空）・tracking_edit の出来事・
+ * 前の版の止めていない登録を replaced（外への停止の印も同じ private 関数で付ける）・追跡オンなら新しい版の pending・
+ * 要対応を閉じる・全部を送った発送なら注文の写し・通知オンなら shipping_update のメール。
+ */
+export async function correctDeliveryTrackingFixture(client: PgClient, input: TrackingEdit) {
+  return syntheticDeliveryChange(client, { ...input, operation: 'fixture_tracking_correction' }, async () => {
+    const current = (await client.query(
+      `select shipping_carrier, tracking_number, tracking_version, cancelled_at, completes_order
+       from public.order_fulfillments where id=$1 and order_id=$2`, [input.fulfillmentId, input.orderId],
+    )).rows[0];
+    if (!current || current.cancelled_at !== null || (current.shipping_carrier === input.carrier
+      && String(current.tracking_number ?? '').toUpperCase() === input.trackingNumber.toUpperCase())) {
+      throw new Error('GROUP_G_FIXTURE_TRACKING_CORRECTION_INVALID');
+    }
+    const version = Number(current.tracking_version) + 1;
+    const changeId = (await client.query(
+      `insert into public.order_fulfillment_tracking_changes
+         (fulfillment_id, from_carrier, to_carrier, from_tracking_number, to_tracking_number, tracking_version,
+          notify_customer, request_key, request_fingerprint, changed_by, changed_at)
+       select f.id, f.shipping_carrier, $2::text, f.tracking_number, $3::text, f.tracking_version + 1, $4::boolean, $5::uuid,
+         md5(jsonb_build_object('order_id', f.order_id, 'fulfillment_id', f.id, 'shipping_carrier', $2::text,
+           'tracking_number', $3::text, 'notify_customer', $4::boolean)::text), $6::uuid, now()
+       from public.order_fulfillments f where f.id = $1 returning id`,
+      [input.fulfillmentId, input.carrier, input.trackingNumber, input.notifyCustomer, input.requestKey, input.actorId],
+    )).rows[0].id as string;
+    await client.query("select set_config('app.fulfillment_change', 'tracking_edit', true)");
+    await client.query(
+      `update public.order_fulfillments set shipping_carrier=$2::text, tracking_number=$3::text, notify_customer=$4::boolean,
+         delivery_status='confirmed', delivery_status_at=now(), delivered_at=null, tracking_version=tracking_version+1
+       where id=$1`, [input.fulfillmentId, input.carrier, input.trackingNumber, input.notifyCustomer],
+    );
+    await client.query("select set_config('app.fulfillment_change', '', true)");
+    await client.query(
+      `insert into public.order_fulfillment_events (fulfillment_id, tracking_version, status, happened_at, source)
+       values ($1, $2, 'confirmed', now(), 'tracking_edit')`, [input.fulfillmentId, version],
+    );
+    await client.query("select private.stop_fulfillment_registrations($1, 'replaced')", [input.fulfillmentId]);
+    await client.query(
+      `insert into private.fulfillment_tracking_registrations (fulfillment_id, tracking_version, carrier, tracking_number, expires_at)
+       select $1, $2, $3::text, upper($4::text), now() + interval '30 days'
+       from public.shop_settings where id = 1 and delivery_tracking_enabled`,
+      [input.fulfillmentId, version, input.carrier, input.trackingNumber],
+    );
+    await client.query('select private.close_delivery_attention($1)', [input.fulfillmentId]);
+    if (current.completes_order) {
+      await client.query("select set_config('app.order_actor_id', $1::text, true)", [input.actorId]);
+      await client.query("select set_config('app.order_change_reason', 'admin_update_fulfillment_tracking', true)");
+      await client.query(
+        "update public.orders set shipping_carrier=$2::text, tracking_number=$3::text where id=$1 and status='shipped'",
+        [input.orderId, input.carrier, input.trackingNumber],
+      );
+    }
+    if (input.notifyCustomer) {
+      await client.query("select private.enqueue_delivery_email($1, $2, 'shipping_update', $3)", [input.fulfillmentId, version, changeId]);
+    }
+    return { tracking_change_id: changeId, tracking_version: version };
+  });
+}
+
+/**
+ * 手で配達済みにする操作の合成（旧の admin_mark_fulfillment_delivered の成功を確かめる物ではない）。
+ * 届いた日の日本時間の正午を発送した時刻と今で挟み、manual の出来事・今の版の登録を delivered で止める・要対応を閉じる・
+ * 発送と入力の通知が両方オンなら配達済みのメール、を旧の関数と同じに残す。
+ */
+export async function markDeliveredFixture(client: PgClient, input: ManualDelivery) {
+  return syntheticDeliveryChange(client, { ...input, operation: 'fixture_manual_delivery' }, async () => {
+    const current = (await client.query(
+      `select tracking_version, notify_customer, cancelled_at, delivered_at,
+         greatest(shipped_at, least(($3::date + time '12:00') at time zone 'Asia/Tokyo', now())) as delivered_at_next
+       from public.order_fulfillments where id=$1 and order_id=$2`, [input.fulfillmentId, input.orderId, input.deliveredOn],
+    )).rows[0];
+    if (!current || current.cancelled_at !== null || current.delivered_at !== null) throw new Error('GROUP_G_FIXTURE_DELIVERY_INVALID');
+    await client.query("select set_config('app.fulfillment_change', 'manual', true)");
+    await client.query(
+      `update public.order_fulfillments set delivery_status='delivered', delivery_status_at=$2::timestamptz, delivered_at=$2::timestamptz
+       where id=$1`, [input.fulfillmentId, current.delivered_at_next],
+    );
+    await client.query("select set_config('app.fulfillment_change', '', true)");
+    const eventId = (await client.query(
+      `insert into public.order_fulfillment_events
+         (fulfillment_id, tracking_version, status, happened_at, source, created_by, request_key, request_fingerprint)
+       values ($1::uuid, $2, 'delivered', $3::timestamptz, 'manual', $4::uuid, $5::uuid,
+         md5(jsonb_build_object('order_id', $6::uuid, 'fulfillment_id', $1::uuid, 'delivered_on', $7::date,
+           'notify_customer', $8::boolean)::text))
+       returning id`,
+      [input.fulfillmentId, current.tracking_version, current.delivered_at_next, input.actorId, input.requestKey,
+        input.orderId, input.deliveredOn, input.notifyCustomer],
+    )).rows[0].id as string;
+    await client.query(
+      `update private.fulfillment_tracking_registrations set state='stopped', stop_reason='delivered', stopped_at=now(),
+         failure_kind=null, lease_token=null, lease_expires_at=null
+       where fulfillment_id=$1 and tracking_version=$2 and state<>'stopped'`, [input.fulfillmentId, current.tracking_version],
+    );
+    await client.query('select private.close_delivery_attention($1)', [input.fulfillmentId]);
+    if (current.notify_customer && input.notifyCustomer) {
+      await client.query("select private.enqueue_delivery_email($1, $2, 'delivered')", [input.fulfillmentId, current.tracking_version]);
+    }
+    return { event_id: eventId, delivered_at: current.delivered_at_next as Date };
+  });
+}
+
+/**
+ * 発送の取消の合成（旧の admin_cancel_fulfillment の成功を確かめる物ではない）。取消の印・止めていない登録を cancelled・
+ * 要対応を閉じる・未発送が戻った発送済みの注文を決済完了へ・送る前の発送のメールの取りやめ、を旧の関数と同じに残す。
+ */
+export async function cancelDeliveryFixture(client: PgClient, input: DeliveryTarget) {
+  return syntheticDeliveryChange(client, { ...input, operation: 'fixture_fulfillment_cancel' }, async () => {
+    const current = (await client.query(
+      'select cancelled_at from public.order_fulfillments where id=$1 and order_id=$2', [input.fulfillmentId, input.orderId],
+    )).rows[0];
+    if (!current || current.cancelled_at !== null) throw new Error('GROUP_G_FIXTURE_CANCEL_INVALID');
+    await client.query('update public.order_fulfillments set cancelled_at=now(), cancelled_by=$2 where id=$1', [input.fulfillmentId, input.actorId]);
+    await client.query("select private.stop_fulfillment_registrations($1, 'cancelled')", [input.fulfillmentId]);
+    await client.query('select private.close_delivery_attention($1)', [input.fulfillmentId]);
+    const order = (await client.query(
+      `select o.status::text as status,
+         (select coalesce(sum(l.unshipped), 0)::integer from private.order_line_fulfillment(o.id) as l) as unshipped
+       from public.orders as o where o.id=$1`, [input.orderId],
+    )).rows[0];
+    if (order.status === 'shipped' && Number(order.unshipped) > 0) {
+      await client.query("select set_config('app.order_actor_id', $1::text, true)", [input.actorId]);
+      await client.query("select set_config('app.order_change_reason', 'admin_cancel_fulfillment', true)");
+      await client.query(
+        "update public.orders set status='paid', shipped_at=null, shipping_carrier=null, tracking_number=null where id=$1", [input.orderId],
+      );
+    }
+    await client.query(
+      `update private.order_email_outbox set status='skipped', finished_at=now(), subject=null, body_text=null,
+         body_erased_at=case when subject is not null then now() else body_erased_at end, last_error_code='fulfillment_cancelled'
+       where fulfillment_id=$1 and status in ('pending', 'retry_wait')`, [input.fulfillmentId],
+    );
+  });
 }
 
 export async function setDeliveryTracking(client: PgClient, enabled: boolean, actorId: string) {
