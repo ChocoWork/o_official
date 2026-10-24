@@ -6,7 +6,7 @@
 > 前提: 個人事業（青色申告）で始め、後で法人にする（ユーザー、2026-10-22）。受注生産が中心で、代金は注文の時に全額受け取る。送料は価格に含む。一部は在庫品
 > ユーザーが決めたこと（2026-10-22）: 帳簿の売上は出荷した日。先に受け取った代金は前受金。現金主義の特例は使わない。管理画面は「受注高」を別に見せる
 > 調べた元: 所得税法・法人税法・消費税法・電子帳簿保存法・国税通則法と各施行令・施行規則（e-Gov 法令検索）、国税庁の基本通達・タックスアンサー・質疑応答、裁判所の判例、国税不服審判所の裁決、企業会計基準委員会（ASBJ）の収益認識の基準と適用指針、中小企業の会計に関する基本要領・指針、Stripe と Shopify の公式の説明
-> レビュー: [第三者レビュー（1 回目）](./revenue-recognition-policy-review.md)、[再レビュー（2 回目）](./revenue-recognition-policy-review-2.md)、[最終確認（3 回目）](./revenue-recognition-policy-review-3.md)、[独立レビュー（4 回目）](./revenue-recognition-policy-review-4.md)、[改訂の確かめ（5 回目）](./revenue-recognition-policy-review-5.md)（出典ごとの確認結果と URL はそこにある）
+> レビュー: [第三者レビュー（1 回目）](../05_Quality/reviews/accounting/revenue-recognition-policy-review.md)、[再レビュー（2 回目）](../05_Quality/reviews/accounting/revenue-recognition-policy-review-2.md)、[最終確認（3 回目）](../05_Quality/reviews/accounting/revenue-recognition-policy-review-3.md)、[独立レビュー（4 回目）](../05_Quality/reviews/accounting/revenue-recognition-policy-review-4.md)、[改訂の確かめ（5 回目）](../05_Quality/reviews/accounting/revenue-recognition-policy-review-5.md)（出典ごとの確認結果と URL はそこにある）
 > 注意: これは法令と公表された資料から組み立てた方針で、税理士の確認を受けたものではない。4 回の第三者レビューと 5 回目の確かめはどれも AI によるもので、資格を持つ税理士ではない。申告と決算に使う前に、資格を持つ税理士に確かめる（9章）
 
 ---
@@ -503,7 +503,7 @@ flowchart LR
 
 ### 11-1 1回目のレビュー（2026-10-22）
 
-2026-10-23。第三者レビュー（[revenue-recognition-policy-review.md](./revenue-recognition-policy-review.md)）の指摘 13 点と節ごとの直しを反映した。
+2026-10-23。第三者レビュー（[revenue-recognition-policy-review.md](../05_Quality/reviews/accounting/revenue-recognition-policy-review.md)）の指摘 13 点と節ごとの直しを反映した。
 
 | レビュー | 直したこと | 章 |
 | --- | --- | --- |
@@ -532,7 +532,7 @@ flowchart LR
 
 ### 11-2 2回目のレビュー（2026-10-23）
 
-2026-10-23。再レビュー（[revenue-recognition-policy-review-2.md](./revenue-recognition-policy-review-2.md)）の「必ず直す点」4つと、「直すとよい点」11点のうち、一次資料で確かめたとされた物を反映した。確かめていない物は9章の「資料で確かめきれていない点」に入れた。
+2026-10-23。再レビュー（[revenue-recognition-policy-review-2.md](../05_Quality/reviews/accounting/revenue-recognition-policy-review-2.md)）の「必ず直す点」4つと、「直すとよい点」11点のうち、一次資料で確かめたとされた物を反映した。確かめていない物は9章の「資料で確かめきれていない点」に入れた。
 
 | レビュー | 直したこと | 章 |
 | --- | --- | --- |
@@ -560,7 +560,7 @@ flowchart LR
 
 ### 11-3 3回目のレビュー（2026-10-23）
 
-2026-10-23。最終確認（[revenue-recognition-policy-review-3.md](./revenue-recognition-policy-review-3.md)）は「妥当。必ず直す点は残りなし」。必-1〜必-4 は直ったと確かめられ、指示の外で足した「前受金／未払金」の振り替えも正しいとされた。「直すとよい点」4つを反映した。
+2026-10-23。最終確認（[revenue-recognition-policy-review-3.md](../05_Quality/reviews/accounting/revenue-recognition-policy-review-3.md)）は「妥当。必ず直す点は残りなし」。必-1〜必-4 は直ったと確かめられ、指示の外で足した「前受金／未払金」の振り替えも正しいとされた。「直すとよい点」4つを反映した。
 
 | レビュー | 直したこと | 章 |
 | --- | --- | --- |
@@ -576,7 +576,7 @@ flowchart LR
 
 ### 11-4 4回目のレビュー（2026-10-23）
 
-2026-10-23。独立レビュー（[revenue-recognition-policy-review-4.md](./revenue-recognition-policy-review-4.md)）は「条件付きで妥当」。税法とずれる所が 2 つ、抜けが 3 つ、正確さを上げる所が 7 つで、直すべき点は合わせて 12。ユーザーの承認を得て、12 点すべてを反映した。核の 4 つ（出荷基準・前受金・現金主義の特例を使わない・受注高）は変えていない。
+2026-10-23。独立レビュー（[revenue-recognition-policy-review-4.md](../05_Quality/reviews/accounting/revenue-recognition-policy-review-4.md)）は「条件付きで妥当」。税法とずれる所が 2 つ、抜けが 3 つ、正確さを上げる所が 7 つで、直すべき点は合わせて 12。ユーザーの承認を得て、12 点すべてを反映した。核の 4 つ（出荷基準・前受金・現金主義の特例を使わない・受注高）は変えていない。
 
 | レビュー | 直したこと | 章 |
 | --- | --- | --- |
@@ -604,7 +604,7 @@ flowchart LR
 
 ### 11-5 5回目の確かめ（2026-10-23）
 
-2026-10-23。[revenue-recognition-policy-review-5.md](./revenue-recognition-policy-review-5.md) は、4回目の指摘 12 点が「反映できている」とし、軽い直し 5 点を挙げた。5 点とも反映した。核は変えていない。
+2026-10-23。[revenue-recognition-policy-review-5.md](../05_Quality/reviews/accounting/revenue-recognition-policy-review-5.md) は、4回目の指摘 12 点が「反映できている」とし、軽い直し 5 点を挙げた。5 点とも反映した。核は変えていない。
 
 | 確かめ | 直したこと | 章 |
 | --- | --- | --- |

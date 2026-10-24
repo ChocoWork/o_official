@@ -11,6 +11,7 @@
 | `docs/05_Quality/reviews/code/` | 日付付きコードレビュー | 作成時点の記録（上の台帳を除く） |
 | `docs/05_Quality/reviews/security/` | 画面・機能別セキュリティレビュー | 作成時点の記録 |
 | `docs/05_Quality/reviews/uiux/` | 画面別 UI/UX レビュー | 作成時点の記録 |
+| `docs/05_Quality/reviews/accounting/` | 会計・税務の方針文書のレビュー（[売上の計上の方針](../01_Planning/revenue-recognition-policy.md)の AI レビュー1〜5回目） | 作成時点の記録 |
 | [要件ID参照状況](reports/traceability-report.md) | 現行の文字列参照集計。充足・実行結果ではない | 自動生成 |
 | `docs/05_Quality/reports/coverage-report-2026-02-01.md` | 2026-02-01 の旧カバレッジ出力 | 履歴。現行の網羅率ではない |
 

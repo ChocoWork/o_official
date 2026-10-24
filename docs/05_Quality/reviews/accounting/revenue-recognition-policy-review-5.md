@@ -2,7 +2,7 @@
 
 > 確かめた日: 2026-10-23
 > 確かめた物: `docs/01_Planning/revenue-recognition-policy.md`（11-4 までの改訂を含む版、602 行）
-> 照らした物: `docs/01_Planning/revenue-recognition-policy-review-4.md` の「直すべき点（重さ順、書き換え案つき）」#1〜#12
+> 照らした物: `docs/05_Quality/reviews/accounting/revenue-recognition-policy-review-4.md` の「直すべき点（重さ順、書き換え案つき）」#1〜#12
 > 確かめた者: AI（Claude）。**資格を持つ税理士ではない**
 > 一次資料の取り方: 法令は e-Gov 法令検索の API（`https://laws.e-gov.go.jp/api/2/law_data/{法令ID}`）から条文を取り出した（消費税法 363AC0000000108、同施行令 363CO0000000360、所得税法 340AC0000000033、民法 129AC0000000089）。国税庁・国税不服審判所のページは元の文字コード（Shift_JIS）のまま取り出して文字に直した。引用は取り出した原文のまま
 > 注意: 前の版はファイルが git に入っていないので、前の版との差は、方針の 11-4 の記録と 4 回目のレビューから判断した
