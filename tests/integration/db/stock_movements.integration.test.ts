@@ -1,4 +1,4 @@
-export {};
+import { isLocalDatabase } from './helpers/local-db';
 
 const { Pool } = require('pg');
 
@@ -8,6 +8,10 @@ describe('integration: stock_movements', () => {
 
   if (!DATABASE_URL) {
     test.skip('skipping DB integration tests because DATABASE_URL is not set', () => {});
+    return;
+  }
+  if (!isLocalDatabase(DATABASE_URL)) {
+    test('localhost DB only', () => { throw new Error('LOCAL_DB_REQUIRED'); });
     return;
   }
 
@@ -20,6 +24,7 @@ describe('integration: stock_movements', () => {
   });
 
   async function createVariant(client: any): Promise<string> {
+    await client.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
     const item = await client.query(
       `INSERT INTO public.items (name, description, price, category, image_url, status)
        VALUES ('movement test', 'desc', 1000, 'TOPS', '/images/test.jpg', 'published')
@@ -133,13 +138,12 @@ describe('integration: stock_movements', () => {
       );
       const movementId = inserted.rows[0].id;
 
-      await expect(
-        client.query(`UPDATE public.stock_movements SET delta = 99 WHERE id = $1`, [movementId]),
-      ).rejects.toThrow();
-
-      await expect(
-        client.query(`DELETE FROM public.stock_movements WHERE id = $1`, [movementId]),
-      ).rejects.toThrow();
+      for (const sql of ['UPDATE public.stock_movements SET delta = 99 WHERE id = $1', 'DELETE FROM public.stock_movements WHERE id = $1']) {
+        await client.query('savepoint mutation');
+        await expect(client.query(sql, [movementId])).rejects.toThrow(/append-only/i);
+        await client.query('rollback to savepoint mutation');
+        await client.query('release savepoint mutation');
+      }
     } finally {
       await client.query('ROLLBACK');
       client.release();
@@ -201,14 +205,37 @@ describe('integration: stock_movements', () => {
       );
 
       await client.query(`SET LOCAL ROLE service_role`);
-      await expect(
-        client.query(`DELETE FROM public.stock_movements`),
-      ).rejects.toThrow();
-      await expect(
-        client.query(`UPDATE public.stock_movements SET delta = 5`),
-      ).rejects.toThrow();
+      for (const sql of ['DELETE FROM public.stock_movements', 'UPDATE public.stock_movements SET delta = 5']) {
+        await client.query('savepoint mutation');
+        await expect(client.query(sql)).rejects.toMatchObject({ code: '42501' });
+        await client.query('rollback to savepoint mutation');
+        await client.query('release savepoint mutation');
+      }
     } finally {
       await client.query('ROLLBACK');
+      client.release();
+    }
+  });
+
+  test('service_role は読取だけで、直接 INSERT と sequence USAGE はできない', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      const variantId = await createVariant(client);
+      expect((await client.query(`select
+        has_table_privilege('service_role','public.stock_movements','SELECT') as read,
+        has_table_privilege('service_role','public.stock_movements','INSERT') as write,
+        has_sequence_privilege('service_role','public.stock_movements_id_seq','USAGE') as sequence`)).rows[0])
+        .toEqual({ read: true, write: false, sequence: false });
+      await client.query('set local role service_role');
+      await client.query('savepoint direct_insert');
+      await expect(client.query(`insert into public.stock_movements(variant_id,delta,reason) values($1,1,'restock')`, [variantId]))
+        .rejects.toMatchObject({ code: '42501' });
+      await client.query('rollback to savepoint direct_insert');
+      await client.query('release savepoint direct_insert');
+      expect((await client.query('select count(*)::int as n from public.stock_movements where variant_id=$1', [variantId])).rows[0].n).toBe(0);
+    } finally {
+      await client.query('rollback');
       client.release();
     }
   });

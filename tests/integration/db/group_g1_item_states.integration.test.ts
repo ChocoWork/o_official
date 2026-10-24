@@ -238,6 +238,40 @@ describeLocalDb('G-1 exclusive item states and interval history', (db) => {
     await assertStates(f, { returned: 4, return_in_progress: 2 });
   });
 
+  test.each(['pending', 'awaiting_response'])('inspection waiting with refund %s keeps quantities and marks refund_processing', async (status) => {
+    const f = await fixture(); const s = await ship(f, 6); const r = await returned(f, s, 6);
+    await receive(r, 6, 'pending_inspection', 'now');
+    await assertStates(f, { return_in_progress: 6 });
+    expect((await ranges(f))[0].blocked_reasons).toEqual([]);
+    await refund(f, 6, status, false, r.id);
+    await assertStates(f, { return_in_progress: 6 });
+    expect(await ranges(f)).toEqual([{ status: 'return_in_progress', unit_from: 0, unit_to: 6,
+      blocked_reasons: ['refund_processing'] }]);
+    expect((await db().query(`select status,quantity,blocked_reasons from public.list_admin_order_item_states($1)
+      where order_item_id=$2`, [[f.orderId], f.itemId])).rows)
+      .toEqual([{ status: 'return_in_progress', quantity: 6, blocked_reasons: ['refund_processing'] }]);
+  });
+
+  test('only the pending-refund portion of inspection waiting is marked, without changing status quantities', async () => {
+    const f = await fixture(); const s = await ship(f, 6); const r = await returned(f, s, 4);
+    await receive(r, 4, 'pending_inspection', 'now');
+    await assertStates(f, { return_in_progress: 4, shipped: 2 });
+    await refund(f, 2, 'pending', false, r.id);
+    await assertStates(f, { return_in_progress: 4, shipped: 2 });
+    expect(await ranges(f)).toEqual([
+      { status: 'return_in_progress', unit_from: 0, unit_to: 2, blocked_reasons: ['refund_processing'] },
+      { status: 'return_in_progress', unit_from: 2, unit_to: 4, blocked_reasons: [] },
+      { status: 'shipped', unit_from: 4, unit_to: 6, blocked_reasons: [] },
+    ]);
+  });
+
+  test('inspection waiting after a succeeded refund remains in progress without refund_processing', async () => {
+    const f = await fixture(); const s = await ship(f, 6); const r = await returned(f, s, 6);
+    await receive(r, 6, 'pending_inspection', 'now'); await refund(f, 6, 'succeeded', false, r.id);
+    await assertStates(f, { return_in_progress: 6 });
+    expect((await ranges(f))[0].blocked_reasons).toEqual([]);
+  });
+
   test('inspection of exchange units does not subtract consultation of refund units', async () => {
     const f = await fixture(); const s = await ship(f, 6); const r = await returned(f, s, 6);
     await receive(r, 2, 'pending_inspection', 'none', true);
@@ -274,12 +308,65 @@ describeLocalDb('G-1 exclusive item states and interval history', (db) => {
     expect((await ranges(f)).every((r) => r.blocked_reasons.includes('payment_review'))).toBe(true);
   });
 
+  test('payment-review hold on an unallocated non-NULL variant yields payment_review without stock_shortage', async () => {
+    await db().query('select pg_advisory_xact_lock(190521,1)');
+    const f = await fixture();
+    expect((await ranges(f))[0].blocked_reasons).toEqual(['stock_shortage']);
+    await db().query(`select private.ensure_group_g_payment_review_hold($1,'g1-test',null,null,null)`, [f.orderId]);
+    await assertStates(f, { in_production: 6 });
+    const rows = await ranges(f);
+    expect(rows).toEqual([{ status: 'in_production', unit_from: 0, unit_to: 6, blocked_reasons: ['payment_review'] }]);
+    expect(rows.every((r) => !r.blocked_reasons.includes('stock_shortage'))).toBe(true);
+    expect((await db().query(`select blocked_reasons from public.list_admin_order_item_states($1)
+      where order_item_id=$2`, [[f.orderId], f.itemId])).rows).toEqual([{ blocked_reasons: ['payment_review'] }]);
+  });
+
   const capture = async (f: Fx) => (await db().query('select private.capture_group_g_item_states($1) as value', [[f.orderId]])).rows[0].value;
   const record = async (f: Fx, before: unknown, op: string, sequence: number, reason = 'test') =>
     (await db().query('select private.record_group_g_item_state_changes($1::jsonb,$2,$3,$4,$5,$6) as n',
       [JSON.stringify(before), [f.orderId], op, sequence, reason, null])).rows[0].n as number;
   const events = async (f: Fx) => (await db().query(`select unit_from,unit_to,quantity,from_status,to_status,
     sequence,version::int,reason from public.order_item_state_events where order_item_id=$1 order by version`, [f.itemId])).rows;
+
+  test('projection and capture/record accept 201 real orders; only the read entry points retain the 200-order limit', async () => {
+    await db().query('select pg_advisory_xact_lock(190521,1)');
+    const catalog = await createCatalogFixture(db(), { stock: 0 });
+    const ids: string[] = [];
+    for (let i = 0; i < 201; i++) {
+      const o = await insertOrderWithLines(db(), { status: 'pending', lines: [{ itemId: catalog.itemId,
+        variantId: catalog.variantId, quantity: 1, fulfillmentType: 'stock', reserved: false }] });
+      ids.push(o.orderId);
+    }
+    const locked = (await db().query('select private.lock_group_g_inventory($1,$2) as ids', [[catalog.variantId], ids])).rows[0].ids;
+    expect(locked).toEqual([...ids].sort());
+    expect((await db().query('select count(*)::int as n from private.group_g_item_state_ranges($1)', [ids])).rows[0].n).toBe(201);
+    const before = (await db().query('select private.capture_group_g_item_states($1) as states', [ids])).rows[0].states;
+    expect(before).toHaveLength(201);
+    expect(before.every((r: { status: string }) => r.status === 'unpaid')).toBe(true);
+    const op = await operation();
+    await db().query(`update public.orders set status='paid' where id=any($1::uuid[])`, [ids]);
+    const params = [JSON.stringify(before), ids, op, 1, 'payment_201_test', null];
+    const recordSql = 'select private.record_group_g_item_state_changes($1::jsonb,$2,$3,$4,$5,$6) as n';
+    expect((await db().query(recordSql, params)).rows[0].n).toBe(201);
+    expect((await db().query(recordSql, params)).rows[0].n).toBe(0);
+    expect((await db().query(`select from_status,to_status,count(*)::int as n,sum(quantity)::int as quantity,
+      count(distinct order_item_id)::int as items,min(version)::int as first_version,max(version)::int as last_version
+      from public.order_item_state_events where operation_id=$1 group by from_status,to_status`, [op])).rows)
+      .toEqual([{ from_status: 'unpaid', to_status: 'in_production', n: 201, quantity: 201, items: 201, first_version: 1, last_version: 1 }]);
+    const after = (await db().query('select private.capture_group_g_item_states($1) as states', [ids])).rows[0].states;
+    expect(after).toHaveLength(201);
+    expect(after.every((r: { status: string }) => r.status === 'in_production')).toBe(true);
+    expect((await db().query('select count(*)::int as n from public.list_admin_order_item_states($1)', [ids.slice(0, 200)])).rows[0].n).toBe(200);
+    for (const sql of ['select * from private.list_admin_order_item_states($1)', 'select * from public.list_admin_order_item_states($1)']) {
+      await db().query('savepoint read_limit');
+      try { await expect(db().query(sql, [ids])).rejects.toMatchObject({ code: '22023', message: 'TOO_MANY_ORDERS' }); }
+      finally {
+        await db().query('rollback to savepoint read_limit');
+        await db().query('release savepoint read_limit');
+      }
+    }
+    await db().query('set constraints all immediate');
+  }, 20000);
 
   test('no backfill, no-op zero, changed intersections only, adjacent transitions merged, retry zero', async () => {
     const f = await fixture(); const before = await capture(f); const op = await operation();

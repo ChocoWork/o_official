@@ -914,9 +914,6 @@ AS $$
 #variable_conflict use_column
 BEGIN
   IF _order_ids IS NULL OR pg_catalog.cardinality(_order_ids) = 0 THEN RETURN; END IF;
-  IF pg_catalog.cardinality(_order_ids) > 200 THEN
-    RAISE EXCEPTION 'TOO_MANY_ORDERS' USING ERRCODE = '22023';
-  END IF;
   RETURN QUERY
   WITH orders AS MATERIALIZED (
     SELECT o.id, o.status, o.paid_at, o.paid_amount,
@@ -1017,6 +1014,10 @@ BEGIN
            GREATEST(s.refund_covered - s.succeeded_by_return
              - LEAST(s.covered_extra, GREATEST(COALESCE(r.succeeded, 0) - s.previous_extra, 0))
              - GREATEST(s.pending_refund_inspection - s.refund_waiting, 0), 0) AS processing,
+           -- The overlap stays in inspection's status quantity, but retains its active-refund reason.
+           LEAST(s.pending_inspection, GREATEST(s.pending_refund_inspection - s.refund_waiting, 0),
+             GREATEST(s.refund_covered - s.succeeded_by_return
+               - LEAST(s.covered_extra, GREATEST(COALESCE(r.succeeded, 0) - s.previous_extra, 0)), 0)) AS inspection_processing,
            LEAST(GREATEST(s.fixed_refund_units - s.refund_covered, 0),
                  GREATEST(s.refund_waiting - s.pending_refund_inspection, 0)) AS fixed_processing
     FROM return_extra AS s LEFT JOIN refunds AS r ON r.order_item_id = s.order_item_id
@@ -1032,6 +1033,7 @@ BEGIN
   ), shipping_counts AS (
     SELECT sh.*, COALESCE(x.done, 0)::integer AS done, COALESCE(x.waiting, 0)::integer AS waiting,
            COALESCE(x.working, 0)::integer AS working, COALESCE(x.processing, 0)::integer AS processing,
+           COALESCE(x.inspection_processing, 0)::integer AS inspection_processing,
            COALESCE(x.failed_refund, 0)::integer AS failed_refund,
            COALESCE(x.requested, 0)::integer AS requested, COALESCE(x.declined, 0)::integer AS declined
     FROM shipments AS sh
@@ -1040,6 +1042,7 @@ BEGIN
              pg_catalog.sum(s.waiting) FILTER (WHERE s.return_status IN ('open', 'closed')) AS waiting,
              pg_catalog.sum(s.unprocessed + s.pending_inspection) FILTER (WHERE s.return_status IN ('open', 'closed')) AS working,
              pg_catalog.sum(s.active_refund) FILTER (WHERE s.return_status IN ('open', 'closed')) AS processing,
+             pg_catalog.sum(s.inspection_processing) FILTER (WHERE s.return_status IN ('open', 'closed')) AS inspection_processing,
              pg_catalog.sum(s.failed_refund) FILTER (WHERE s.return_status IN ('open', 'closed')) AS failed_refund,
              pg_catalog.sum(s.quantity) FILTER (WHERE s.return_status = 'requested') AS requested,
              -- 同じ品の申請を繰り返し却下しても実配達の数量を増やさない。
@@ -1052,10 +1055,11 @@ BEGIN
     FROM shipping_counts AS sh CROSS JOIN LATERAL (VALUES
       (1, 'returned'::text, sh.done, false), (2, 'refund_waiting', sh.waiting, false),
       (3, 'return_in_progress', sh.processing, true), (4, 'return_in_progress', sh.failed_refund, false),
-      (5, 'return_in_progress', sh.working, false), (6, 'return_requested', sh.requested, false),
-      (7, 'delivered', sh.declined, false),
-      (8, 'delivered', CASE WHEN sh.delivered_at IS NOT NULL THEN sh.quantity ELSE 0 END, false),
-      (9, 'shipped', sh.quantity, false)
+      (5, 'return_in_progress', sh.inspection_processing, true),
+      (6, 'return_in_progress', sh.working - sh.inspection_processing, false),
+      (7, 'return_requested', sh.requested, false), (8, 'delivered', sh.declined, false),
+      (9, 'delivered', CASE WHEN sh.delivered_at IS NOT NULL THEN sh.quantity ELSE 0 END, false),
+      (10, 'shipped', sh.quantity, false)
     ) AS b(priority, status, quantity, processing)
   ), shipping_positioned AS (
     SELECT b.*, COALESCE(pg_catalog.sum(b.quantity) OVER (
@@ -1139,12 +1143,19 @@ REVOKE ALL ON FUNCTION private.group_g_item_state_ranges(uuid[]) FROM PUBLIC, an
 
 CREATE FUNCTION private.list_admin_order_item_states(_order_ids uuid[])
 RETURNS TABLE (order_id uuid, order_item_id uuid, status text, quantity integer, blocked_reasons text[])
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
+BEGIN
+  -- Bound only the service-role read entry; inventory/history cores accept the complete lock set.
+  IF pg_catalog.cardinality(_order_ids) > 200 THEN
+    RAISE EXCEPTION 'TOO_MANY_ORDERS' USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
   SELECT r.order_id, r.order_item_id, r.status, pg_catalog.sum(r.unit_to - r.unit_from)::integer, r.blocked_reasons
   FROM private.group_g_item_state_ranges(_order_ids) AS r
   GROUP BY r.order_id, r.order_item_id, r.status, r.blocked_reasons
-  ORDER BY r.order_id, r.order_item_id, r.status, r.blocked_reasons
+  ORDER BY r.order_id, r.order_item_id, r.status, r.blocked_reasons;
+END;
 $$;
 ALTER FUNCTION private.list_admin_order_item_states(uuid[]) OWNER TO postgres;
 REVOKE ALL ON FUNCTION private.list_admin_order_item_states(uuid[]) FROM PUBLIC, anon, authenticated, service_role;
@@ -1252,6 +1263,225 @@ $g1_states_assert$;
 
 -- 11. Task 2 の確かめ: 新しい 4 表（空・RLS・所有者）、足した 2 列、操作への遅延の外部キー、台帳の理由、12 のトリガー。
 --     違えば GROUP_G_MIGRATION_ASSERTION_FAILED / 55000 で全部を戻す（全体の期待一覧は最後の確かめが Task 14 で持つ）
+-- Task 4. Every business writer calls this once, before any row write/lock.
+-- Close the target set by reads only; never discover another variant after locking orders.
+CREATE FUNCTION private.lock_group_g_inventory(
+  _variant_ids bigint[], _order_ids uuid[], _draft_id uuid DEFAULT NULL
+) RETURNS uuid[]
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_variants bigint[] := ARRAY[]::bigint[];
+  v_orders uuid[] := ARRAY[]::uuid[];
+  v_previous_variants bigint[];
+  v_previous_orders uuid[];
+BEGIN
+  PERFORM pg_catalog.pg_advisory_xact_lock(190521, 1);
+  IF _draft_id IS NOT NULL THEN
+    PERFORM d.id FROM public.checkout_drafts AS d WHERE d.id = _draft_id FOR UPDATE;
+  END IF;
+  SELECT COALESCE(pg_catalog.array_agg(v.id ORDER BY v.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM public.item_variants AS v WHERE v.id = ANY(_variant_ids);
+  SELECT COALESCE(pg_catalog.array_agg(o.id ORDER BY o.id), ARRAY[]::uuid[]) INTO v_orders
+  FROM public.orders AS o WHERE o.id = ANY(_order_ids);
+  LOOP
+    v_previous_variants := v_variants;
+    v_previous_orders := v_orders;
+    SELECT COALESCE(pg_catalog.array_agg(x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+    FROM (
+      SELECT pg_catalog.unnest(v_variants) AS id
+      UNION SELECT oi.variant_id FROM public.order_items AS oi WHERE oi.order_id = ANY(v_orders) AND oi.variant_id IS NOT NULL
+      UNION SELECT a.variant_id FROM public.order_item_allocations AS a
+        JOIN public.order_items AS oi ON oi.id = a.order_item_id WHERE oi.order_id = ANY(v_orders)
+      UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l
+        JOIN public.order_returns AS r ON r.id = l.return_id
+        WHERE r.order_id = ANY(v_orders) AND l.exchange_variant_id IS NOT NULL
+      UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l
+        JOIN public.order_returns AS r ON r.id = l.return_id
+        WHERE r.order_id = ANY(v_orders) AND l.requested_exchange_variant_id IS NOT NULL
+    ) AS x;
+    SELECT COALESCE(pg_catalog.array_agg(x.id ORDER BY x.id), ARRAY[]::uuid[]) INTO v_orders
+    FROM (
+      SELECT pg_catalog.unnest(v_orders) AS id
+      UNION SELECT oi.order_id FROM public.order_items AS oi WHERE oi.variant_id = ANY(v_variants)
+      UNION SELECT oi.order_id FROM public.order_item_allocations AS a
+        JOIN public.order_items AS oi ON oi.id = a.order_item_id WHERE a.variant_id = ANY(v_variants)
+      UNION SELECT r.order_id FROM public.order_return_lines AS l
+        JOIN public.order_returns AS r ON r.id = l.return_id
+        WHERE l.exchange_variant_id = ANY(v_variants) OR l.requested_exchange_variant_id = ANY(v_variants)
+    ) AS x;
+    EXIT WHEN v_variants = v_previous_variants AND v_orders = v_previous_orders;
+  END LOOP;
+
+  PERFORM i.id FROM public.items AS i
+    WHERE i.id IN (SELECT v.item_id FROM public.item_variants AS v WHERE v.id = ANY(v_variants)
+                   UNION SELECT oi.item_id FROM public.order_items AS oi WHERE oi.order_id = ANY(v_orders))
+    ORDER BY i.id FOR KEY SHARE;
+  PERFORM v.id FROM public.item_variants AS v WHERE v.id = ANY(v_variants) ORDER BY v.id FOR UPDATE;
+  PERFORM o.id FROM public.orders AS o WHERE o.id = ANY(v_orders) ORDER BY o.id FOR UPDATE;
+  PERFORM oi.id FROM public.order_items AS oi WHERE oi.order_id = ANY(v_orders) ORDER BY oi.id FOR UPDATE;
+  PERFORM a.id FROM public.order_item_allocations AS a
+    WHERE a.order_item_id IN (SELECT oi.id FROM public.order_items AS oi WHERE oi.order_id = ANY(v_orders))
+    ORDER BY a.id FOR UPDATE;
+  PERFORM r.id FROM public.order_returns AS r WHERE r.order_id = ANY(v_orders) ORDER BY r.id FOR UPDATE;
+  PERFORM l.id FROM public.order_return_lines AS l
+    WHERE l.return_id IN (SELECT r.id FROM public.order_returns AS r WHERE r.order_id = ANY(v_orders))
+    ORDER BY l.id FOR UPDATE;
+  PERFORM r.id FROM public.order_return_receipts AS r
+    WHERE r.return_id IN (SELECT x.id FROM public.order_returns AS x WHERE x.order_id = ANY(v_orders))
+    ORDER BY r.id FOR UPDATE;
+  PERFORM l.id FROM public.order_return_receipt_lines AS l
+    WHERE l.receipt_id IN (SELECT r.id FROM public.order_return_receipts AS r
+      JOIN public.order_returns AS x ON x.id = r.return_id WHERE x.order_id = ANY(v_orders))
+    ORDER BY l.id FOR UPDATE;
+  PERFORM r.id FROM public.order_refunds AS r WHERE r.order_id = ANY(v_orders) ORDER BY r.id FOR UPDATE;
+  PERFORM l.id FROM public.order_refund_lines AS l
+    WHERE l.refund_id IN (SELECT r.id FROM public.order_refunds AS r WHERE r.order_id = ANY(v_orders))
+    ORDER BY l.id FOR UPDATE;
+  PERFORM r.id FROM public.order_cancel_requests AS r WHERE r.order_id = ANY(v_orders) ORDER BY r.id FOR UPDATE;
+  PERFORM l.id FROM public.order_cancel_request_lines AS l
+    WHERE l.cancel_request_id IN (SELECT r.id FROM public.order_cancel_requests AS r WHERE r.order_id = ANY(v_orders))
+    ORDER BY l.id FOR UPDATE;
+
+  -- Auxiliary rows follow the complete inventory/return/refund/request set.
+  PERFORM f.id FROM public.order_fulfillments AS f WHERE f.order_id = ANY(v_orders) ORDER BY f.id FOR UPDATE;
+  PERFORM e.id FROM public.payment_exceptions AS e WHERE e.order_id = ANY(v_orders) ORDER BY e.id FOR UPDATE;
+  RETURN v_orders;
+END;
+$$;
+ALTER FUNCTION private.lock_group_g_inventory(bigint[],uuid[],uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.lock_group_g_inventory(bigint[],uuid[],uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+-- Internal core: the caller already owns the entire row set. No lock acquisition, public RPC or I/O here.
+CREATE FUNCTION private.allocate_group_g_fifo(_variant_ids bigint[], _operation_id uuid, _actor_id uuid)
+RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_line record;
+  v_free integer;
+  v_quantity integer;
+  v_allocation uuid;
+  v_movement bigint;
+  v_total integer := 0;
+BEGIN
+  IF _operation_id IS NULL THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
+  END IF;
+  FOR v_line IN
+    SELECT o.id AS order_id, oi.id AS order_item_id, oi.variant_id, oi.exchange_return_line_id,
+           pg_catalog.sum(s.unit_to - s.unit_from)::integer AS unallocated
+    FROM public.orders AS o JOIN public.order_items AS oi ON oi.order_id = o.id
+    CROSS JOIN LATERAL private.group_g_item_state_ranges(ARRAY[o.id]) AS s
+    WHERE oi.variant_id = ANY(_variant_ids) AND o.status IN ('paid', 'shipped')
+      AND s.order_item_id = oi.id AND s.status = 'in_production'
+      AND s.blocked_reasons = ARRAY['stock_shortage']::text[]
+      AND NOT EXISTS (SELECT 1 FROM public.order_item_allocations AS h
+                      WHERE h.order_item_id = oi.id AND h.kind = 'payment_hold' AND h.remaining_quantity > 0)
+    GROUP BY o.id, o.created_at, oi.id
+    ORDER BY o.created_at, o.id, oi.id
+  LOOP
+    SELECT v.stock_quantity INTO v_free FROM public.item_variants AS v WHERE v.id = v_line.variant_id;
+    v_quantity := LEAST(v_line.unallocated, v_free);
+    CONTINUE WHEN v_quantity IS NULL OR v_quantity <= 0;
+    INSERT INTO public.stock_movements (variant_id, delta, reason, order_id, order_item_id, allocation_operation_id, created_by)
+    VALUES (v_line.variant_id, -v_quantity,
+      CASE WHEN v_line.exchange_return_line_id IS NULL THEN 'purchase' ELSE 'exchange' END,
+      v_line.order_id, v_line.order_item_id, _operation_id, _actor_id)
+    RETURNING id INTO v_movement;
+    INSERT INTO public.order_item_allocations (order_item_id, variant_id, quantity, remaining_quantity, kind, operation_id)
+    VALUES (v_line.order_item_id, v_line.variant_id, v_quantity, v_quantity, 'paid', _operation_id)
+    RETURNING id INTO v_allocation;
+    INSERT INTO public.order_item_allocation_events
+      (allocation_id, event_type, quantity, operation_id, sequence, stock_movement_id, reason, actor_id)
+    VALUES (v_allocation, 'allocate', v_quantity, _operation_id, 1, v_movement, 'fifo', _actor_id);
+    v_total := v_total + v_quantity;
+  END LOOP;
+  RETURN v_total;
+END;
+$$;
+ALTER FUNCTION private.allocate_group_g_fifo(bigint[],uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.allocate_group_g_fifo(bigint[],uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+-- Only the existing ledger trigger changes F. The caller must prelock before INSERT;
+-- neither this core nor its trigger wrapper takes a late advisory/explicit row lock or calls FIFO.
+CREATE FUNCTION private.apply_group_g_stock_movement(_variant_id bigint, _delta integer) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  UPDATE public.item_variants AS v
+  SET stock_quantity = v.stock_quantity + _delta, updated_at = pg_catalog.now()
+  WHERE v.id = _variant_id;
+END;
+$$;
+ALTER FUNCTION private.apply_group_g_stock_movement(bigint,integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.apply_group_g_stock_movement(bigint,integer) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.apply_stock_movement() RETURNS trigger
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+BEGIN
+  PERFORM private.apply_group_g_stock_movement(NEW.variant_id, NEW.delta);
+  RETURN NEW;
+END;
+$$;
+ALTER FUNCTION public.apply_stock_movement() OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.apply_stock_movement() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE INSERT ON TABLE public.stock_movements FROM service_role;
+REVOKE USAGE ON SEQUENCE public.stock_movements_id_seq FROM service_role;
+
+-- Reverse link: every tagged ledger row has exactly one event (the existing UNIQUE
+-- stock_movement_id supplies at most one). Check the final transaction, including its item.
+-- Ordinary receipts use allocation_operation_id=NULL; their separate purchase/exchange is tagged.
+CREATE FUNCTION private.check_group_g_stock_movement_consistency() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.allocation_operation_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.order_item_allocation_events AS e
+    JOIN public.order_item_allocations AS a ON a.id = e.allocation_id
+    JOIN public.order_items AS oi ON oi.id = a.order_item_id
+    WHERE e.stock_movement_id = NEW.id AND e.operation_id = NEW.allocation_operation_id
+      AND a.variant_id = NEW.variant_id AND a.order_item_id = NEW.order_item_id
+      AND (NEW.order_id IS NULL OR NEW.order_id = oi.order_id)
+      AND ((e.event_type IN ('hold', 'allocate', 'restore') AND NEW.delta = -e.quantity AND NEW.reason IN ('purchase', 'exchange'))
+        OR (e.event_type = 'release' AND NEW.delta = e.quantity AND NEW.reason IN ('cancel', 'refund', 'allocation_release')))
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_ALLOCATION_BOUNDS' USING ERRCODE = '23514', DETAIL = 'stock_movement';
+  END IF;
+  RETURN NULL;
+END;
+$$;
+ALTER FUNCTION private.check_group_g_stock_movement_consistency() OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.check_group_g_stock_movement_consistency() FROM PUBLIC, anon, authenticated, service_role;
+CREATE CONSTRAINT TRIGGER group_g_stock_movement_consistency AFTER INSERT ON public.stock_movements
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION private.check_group_g_stock_movement_consistency();
+
+DO $g1_fifo_assert$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger AS t
+    WHERE t.tgrelid = 'public.stock_movements'::regclass AND t.tgname = 'stock_movements_apply'
+      AND t.tgfoid = 'public.apply_stock_movement()'::regprocedure AND t.tgtype = 5 AND t.tgenabled = 'O')
+    OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger AS t
+      WHERE t.tgrelid = 'public.stock_movements'::regclass AND t.tgname = 'group_g_stock_movement_consistency'
+        AND t.tgdeferrable AND t.tginitdeferred AND t.tgenabled = 'O')
+    OR pg_catalog.has_table_privilege('service_role', 'public.stock_movements', 'INSERT')
+    OR pg_catalog.has_sequence_privilege('service_role', 'public.stock_movements_id_seq', 'USAGE')
+    OR (SELECT p.prosecdef FROM pg_catalog.pg_proc AS p WHERE p.oid = 'public.apply_stock_movement()'::regprocedure)
+  THEN
+    RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'g1_fifo';
+  END IF;
+END;
+$g1_fifo_assert$;
+
 DO $g1_model_assert$
 DECLARE
   v_failed text;

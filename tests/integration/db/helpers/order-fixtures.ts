@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import type { PgClient } from './local-db';
+import { seedGroupG1Allocation, seedGroupG1Shipment, withGroupG1FixtureTransaction } from './group-g1-fixtures';
 
 /** DB 結合テストの試験データ。本計画の Task 3〜7・21 が使う。 */
 export const PRICE = 5000;
@@ -268,7 +269,7 @@ export async function revisionsOf(
 
 export type FixtureLine = {
   itemId: number;
-  variantId: number;
+  variantId: number | null;
   quantity: number;
   fulfillmentType: 'stock' | 'backorder';
   /** 在庫の品で、台帳に確保（purchase）を入れるか。既定は入れる */
@@ -302,6 +303,8 @@ export async function insertOrderWithLines(
     paymentIntentId?: string | null;
     /** 返金済みの額 orders.refunded_amount（既定 0） */
     refundedAmount?: number;
+    /** FIFO fixtures set the immutable order date at INSERT time. */
+    createdAt?: string;
   },
 ): Promise<{ orderId: string; orderItemIds: string[] }> {
   const suffix = uniqueSuffix();
@@ -315,11 +318,11 @@ export async function insertOrderWithLines(
         subtotal_amount, shipping_amount, discount_amount, total_amount, currency,
         paid_amount, refunded_amount, refunded_at,
         shipping_email, shipping_full_name, shipping_postal_code, shipping_prefecture,
-        shipping_city, shipping_address, shipping_phone, shipped_at, shipping_carrier, tracking_number)
+        shipping_city, shipping_address, shipping_phone, shipped_at, shipping_carrier, tracking_number, created_at)
      values ($1, $2, $3, $4::public.order_status,
              $5, $6, $7, $8, 'jpy',
              $9, $10, case when $10::integer > 0 then now() else null end,
-             $11, '山田 花子', '1500001', '東京都', '渋谷区', '神宮前1-1-1', '0311112222', $12, $13, $14)
+             $11, '山田 花子', '1500001', '東京都', '渋谷区', '神宮前1-1-1', '0311112222', $12, $13, $14, coalesce($15::timestamptz,now()))
      returning id`,
     [
       `fx-order-${suffix}`,
@@ -336,6 +339,7 @@ export async function insertOrderWithLines(
       options.shipped ? new Date().toISOString() : null,
       options.shipped?.carrier ?? null,
       options.shipped?.trackingNumber ?? null,
+      options.createdAt ?? null,
     ],
   );
   const orderId = order.rows[0].id as string;
@@ -453,87 +457,107 @@ export async function createShippedOrderFixture(
     shipments?: ShippedOrderShipment[];
     shippingAmount?: number;
     discountAmount?: number;
+    createdAt?: string;
   } = {},
 ): Promise<ShippedOrderFixture> {
-  const lines = options.lines ?? [{ quantity: 3 }];
-  const shipments =
-    options.shipments ?? [{ lines: lines.map((line, lineIndex) => ({ lineIndex, quantity: line.quantity })) }];
-  const typeOf = (line: ShippedOrderLine) => line.fulfillmentType ?? 'stock';
+  // The cleanup suite deliberately builds its baseline on G-0, before these objects exist.
+  const groupG = (await db.query("select to_regclass('public.order_item_allocations') is not null as present")).rows[0].present as boolean;
+  // Legacy suites already own BEGIN. Acquire the common lock before this material's first write;
+  // the strict nested helper below still verifies the lock and never commits the caller.
+  if (groupG && (db as PgClient & { _txStatus?: string })._txStatus === 'T') {
+    await db.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
+  }
+  const run = async (): Promise<ShippedOrderFixture> => {
+    const lines = options.lines ?? [{ quantity: 3 }];
+    const shipments =
+      options.shipments ?? [{ lines: lines.map((line, lineIndex) => ({ lineIndex, quantity: line.quantity })) }];
+    const typeOf = (line: ShippedOrderLine) => line.fulfillmentType ?? 'stock';
 
-  const itemIds: number[] = [];
-  const variantIds: number[] = [];
-  for (const line of lines) {
-    const fx = await createCatalogFixture(db, {
-      stock: (typeOf(line) === 'stock' ? line.quantity : 0) + (line.extraStock ?? 0),
+    const itemIds: number[] = [];
+    const variantIds: number[] = [];
+    for (const line of lines) {
+      const fx = await createCatalogFixture(db, {
+        stock: (groupG || typeOf(line) === 'stock' ? line.quantity : 0) + (line.extraStock ?? 0),
+      });
+      itemIds.push(fx.itemId);
+      variantIds.push(fx.variantId);
+    }
+
+    const shippedByLine = lines.map(() => 0);
+    for (const shipment of shipments) {
+      if (shipment.cancelled) continue;
+      for (const shipped of shipment.lines) shippedByLine[shipped.lineIndex] += shipped.quantity;
+    }
+    const allShipped = lines.every((line, index) => shippedByLine[index] === line.quantity);
+
+    const shippingAmount = options.shippingAmount ?? 0;
+    const discountAmount = options.discountAmount ?? 0;
+    const subtotal = lines.reduce((sum, line) => sum + (line.itemPrice ?? PRICE) * line.quantity, 0);
+    const { orderId, orderItemIds } = await insertOrderWithLines(db, {
+      status: allShipped ? 'shipped' : 'paid',
+      shipped: allShipped ? { carrier: 'yamato', trackingNumber: '1234-5678-9012' } : undefined,
+      shippingAmount,
+      discountAmount,
+      paidAmount: subtotal + shippingAmount - discountAmount,
+      paymentIntentId: `pi_${uniqueSuffix()}`,
+      createdAt: options.createdAt,
+      lines: lines.map((line, index) => ({
+        itemId: itemIds[index],
+        variantId: variantIds[index],
+        quantity: line.quantity,
+        fulfillmentType: typeOf(line),
+        itemPrice: line.itemPrice,
+        reserved: !groupG,
+      })),
     });
-    itemIds.push(fx.itemId);
-    variantIds.push(fx.variantId);
-  }
 
-  const shippedByLine = lines.map(() => 0);
-  for (const shipment of shipments) {
-    if (shipment.cancelled) continue;
-    for (const shipped of shipment.lines) shippedByLine[shipped.lineIndex] += shipped.quantity;
-  }
-  const allShipped = lines.every((line, index) => shippedByLine[index] === line.quantity);
-
-  const shippingAmount = options.shippingAmount ?? 0;
-  const discountAmount = options.discountAmount ?? 0;
-  const subtotal = lines.reduce((sum, line) => sum + (line.itemPrice ?? PRICE) * line.quantity, 0);
-  const { orderId, orderItemIds } = await insertOrderWithLines(db, {
-    status: allShipped ? 'shipped' : 'paid',
-    shipped: allShipped ? { carrier: 'yamato', trackingNumber: '1234-5678-9012' } : undefined,
-    shippingAmount,
-    discountAmount,
-    paidAmount: subtotal + shippingAmount - discountAmount,
-    paymentIntentId: `pi_${uniqueSuffix()}`,
-    lines: lines.map((line, index) => ({
-      itemId: itemIds[index],
-      variantId: variantIds[index],
-      quantity: line.quantity,
-      fulfillmentType: typeOf(line),
-      itemPrice: line.itemPrice,
-    })),
-  });
-
-  // 受注生産の品は、発送の数の守り（発送 ≤ 仕上がり）のために、先に全部仕上げておく
-  for (const [index, line] of lines.entries()) {
-    if (typeOf(line) === 'backorder') {
-      await db.query(
-        `insert into public.order_item_completions (order_id, order_item_id, quantity, request_key)
-         values ($1, $2, $3, gen_random_uuid())`,
-        [orderId, orderItemIds[index], line.quantity],
-      );
+    if (groupG) {
+      for (const [index, line] of lines.entries()) {
+        await seedGroupG1Allocation(db, { orderItemId: orderItemIds[index], quantity: line.quantity, kind: 'paid' });
+      }
     }
-  }
 
-  const fulfillments: ShippedOrderFixture['fulfillments'] = [];
-  for (const [index, shipment] of shipments.entries()) {
-    const created = await db.query(
-      `insert into public.order_fulfillments
-         (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, shipped_at)
-       values ($1, $2, gen_random_uuid(), 'yamato', '1234-5678-9012', false, false, coalesce($3::timestamptz, now()))
-       returning id`,
-      [orderId, index + 1, shipment.shippedAt ?? null],
-    );
-    const id = created.rows[0].id as string;
-    for (const shipped of shipment.lines) {
-      await db.query(
-        'insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, $3)',
-        [id, orderItemIds[shipped.lineIndex], shipped.quantity],
-      );
+    // Task 5 replaces the legacy fulfillment projection/guard. Until then its backorder material
+    // still needs the existing completion row; the synthetic shipment itself never creates one.
+    for (const [index, line] of lines.entries()) {
+      if (typeOf(line) === 'backorder') {
+        await db.query(
+          `insert into public.order_item_completions (order_id, order_item_id, quantity, request_key)
+           values ($1, $2, $3, gen_random_uuid())`,
+          [orderId, orderItemIds[index], line.quantity],
+        );
+      }
     }
-    if (shipment.cancelled) {
-      await db.query('update public.order_fulfillments set cancelled_at = now() where id = $1', [id]);
-    }
-    fulfillments.push({
-      id,
-      number: index + 1,
-      lines: shipment.lines.map((shipped) => ({ orderItemId: orderItemIds[shipped.lineIndex], quantity: shipped.quantity })),
-    });
-  }
 
-  return { orderId, orderItemIds, itemIds, variantIds, fulfillments };
+    const fulfillments: ShippedOrderFixture['fulfillments'] = [];
+    for (const [index, shipment] of shipments.entries()) {
+      let id: string;
+      if (groupG) id = await seedGroupG1Shipment(db, {
+        orderId,
+        lines: shipment.lines.map((line) => ({ orderItemId: orderItemIds[line.lineIndex], quantity: line.quantity })),
+        shippedAt: shipment.shippedAt ?? new Date().toISOString(),
+        cancelledAt: shipment.cancelled ? new Date().toISOString() : undefined,
+        carrier: 'yamato', trackingNumber: '1234-5678-9012', notifyCustomer: false,
+      });
+      else {
+        id = (await db.query(`insert into public.order_fulfillments
+          (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at)
+          values($1,$2,gen_random_uuid(),'yamato','1234-5678-9012',false,false,coalesce($3::timestamptz,now())) returning id`,
+        [orderId, index + 1, shipment.shippedAt ?? null])).rows[0].id as string;
+        for (const line of shipment.lines) await db.query(`insert into public.order_fulfillment_lines
+          (fulfillment_id,order_item_id,quantity) values($1,$2,$3)`, [id, orderItemIds[line.lineIndex], line.quantity]);
+        if (shipment.cancelled) await db.query('update public.order_fulfillments set cancelled_at=now() where id=$1', [id]);
+      }
+      fulfillments.push({
+        id,
+        number: index + 1,
+        lines: shipment.lines.map((shipped) => ({ orderItemId: orderItemIds[shipped.lineIndex], quantity: shipped.quantity })),
+      });
+    }
+
+    return { orderId, orderItemIds, itemIds, variantIds, fulfillments };
+  };
+  return groupG ? withGroupG1FixtureTransaction(db, run) : run();
 }
 
 /**

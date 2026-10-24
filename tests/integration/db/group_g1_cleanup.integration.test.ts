@@ -184,6 +184,10 @@ const G1_BODY_RELATIONS = [
   'public.order_item_state_events_item_version_idx',
 ];
 const G1_BODY_FUNCTIONS = [
+  'private.lock_group_g_inventory(bigint[],uuid[],uuid)',
+  'private.allocate_group_g_fifo(bigint[],uuid,uuid)',
+  'private.apply_group_g_stock_movement(bigint,integer)',
+  'private.check_group_g_stock_movement_consistency()',
   'private.capture_group_g_item_states(uuid[])',
   'private.check_group_g_allocation_bounds()',
   'private.ensure_group_g_payment_review_hold(uuid,text,text,text,uuid)',
@@ -202,6 +206,7 @@ const G1_BODY_TRIGGERS = [
   'order_item_allocations|order_item_allocations_change_guard',
   'order_item_allocations|group_g_allocation_bounds',
   'order_item_allocation_events|group_g_allocation_bounds',
+  'stock_movements|group_g_stock_movement_consistency',
 ];
 const G1_BODY_CONSTRAINTS = [
   ...['pkey', 'operation_request_key_key', 'exception_id_fkey', 'fingerprint_check', 'exception_check', 'review_hold_check']
@@ -218,6 +223,7 @@ const G1_BODY_CONSTRAINTS = [
     'from_status_check', 'to_status_check', 'transition_check', 'sequence_check', 'version_check']
     .map((name) => `order_item_state_events|order_item_state_events_${name}`),
   'stock_movements|stock_movements_allocation_operation_id_fkey',
+  'stock_movements|group_g_stock_movement_consistency',
 ];
 const G1_BODY_CHANGED_CONSTRAINTS = ['stock_movements|stock_movements_reason_check'];
 
@@ -911,11 +917,25 @@ WHERE id = (SELECT pg_catalog.min(id) FROM pg_temp.group_g_cleanup_webhook_ids);
     expect(constraints.added).toEqual([...G1_BODY_CONSTRAINTS].sort());
     const reasonCheck = catalog.constraints.find((row) => relationKey(row) === 'stock_movements|stock_movements_reason_check');
     expect(reasonCheck?.definition).toContain("'allocation_release'::text");
-    const functions = split(catalog.functions, (row) => row.signature as string, G1_BODY_FUNCTIONS);
-    expect(functions.kept).toEqual(before.catalog.functions);
+    const changedFunctions = ['apply_stock_movement()'];
+    const functions = split(catalog.functions, (row) => row.signature as string, G1_BODY_FUNCTIONS, changedFunctions);
+    expect(functions.kept).toEqual(split(before.catalog.functions, (row) => row.signature as string, [], changedFunctions).kept);
     expect(functions.added).toEqual([...G1_BODY_FUNCTIONS].sort());
+    expect((await db().query(`select p.prosecdef,p.proconfig,p.prosrc from pg_proc p
+      where p.oid='public.apply_stock_movement()'::regprocedure`)).rows[0]).toEqual({
+      prosecdef: false, proconfig: ['search_path=""'], prosrc: `
+BEGIN
+  PERFORM private.apply_group_g_stock_movement(NEW.variant_id, NEW.delta);
+  RETURN NEW;
+END;
+`,
+    });
     const relations = split(catalog.relations, (row) => row.name as string, G1_BODY_RELATIONS);
-    expect(relations.kept).toEqual(before.catalog.relations);
+    expect(relations.kept).toEqual(before.catalog.relations.map((row) => {
+      const remove = row.name === 'public.stock_movements' ? 'a' : row.name === 'public.stock_movements_id_seq' ? 'U' : null;
+      return remove ? { ...row, acl: (row.acl as string).replace(/(service_role=)([^/]*)/,
+        (_match, prefix: string, privileges: string) => prefix + privileges.replaceAll(remove, '')) } : row;
+    }));
     expect(relations.added).toEqual([...G1_BODY_RELATIONS].sort());
     const userTriggersOnCleanup = catalog.triggers.filter((trigger) => CLEANUP_TABLES.includes(trigger.relation as string)
       || CLEANUP_TABLES.includes(`public.${trigger.relation as string}`));

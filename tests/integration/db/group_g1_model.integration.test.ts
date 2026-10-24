@@ -114,11 +114,11 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
     );
   }
 
-  async function movement(variantId: number, delta: number, reason: string, operationId: string | null): Promise<string> {
+  async function movement(variantId: number, delta: number, reason: string, operationId: string | null, orderItemId: string | null = null): Promise<string> {
     const res = await db().query(
-      `insert into public.stock_movements (variant_id, delta, reason, allocation_operation_id)
-       values ($1, $2, $3, $4) returning id`,
-      [variantId, delta, reason, operationId],
+      `insert into public.stock_movements (variant_id, delta, reason, allocation_operation_id, order_item_id)
+       values ($1, $2, $3, $4, $5) returning id`,
+      [variantId, delta, reason, operationId, orderItemId],
     );
     return String(res.rows[0].id);
   }
@@ -150,7 +150,7 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
     const eventType = options.eventType ?? (kind === 'paid' ? 'allocate' : 'hold');
     const movementId = eventType === 'transfer'
       ? null
-      : await movement(options.variantId, -options.quantity, 'purchase', options.operationId);
+      : await movement(options.variantId, -options.quantity, 'purchase', options.operationId, options.orderItemId);
     const allocation = await db().query(
       `insert into public.order_item_allocations (order_item_id, variant_id, quantity, remaining_quantity, kind, operation_id)
        values ($1, $2, $3, $3, $4, $5) returning id`,
@@ -445,7 +445,7 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
       await decrease(allocationId, 1);
       await insertEvent({
         allocationId, eventType: 'release', quantity: 1, operationId: release,
-        stockMovementId: await movement(f.variantId, 1, 'allocation_release', release),
+        stockMovementId: await movement(f.variantId, 1, 'allocation_release', release, f.items[0]),
       });
       await insertOperation(release);
       await flush();
@@ -471,7 +471,7 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
           await decrease(paid.allocationId, 1);
           await insertEvent({
             allocationId: paid.allocationId, eventType: 'release', quantity: 1, operationId,
-            stockMovementId: await movement(variantId, delta, reason, operationId),
+            stockMovementId: await movement(variantId, delta, reason, operationId, f.items[0]),
           });
           await insertOperation(operationId);
         }, 'stock_movement');
@@ -481,7 +481,7 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
       await decrease(paid.allocationId, 1);
       await insertEvent({
         allocationId: paid.allocationId, eventType: 'release', quantity: 1, operationId: release,
-        stockMovementId: await movement(f.variantId, 1, 'allocation_release', release),
+        stockMovementId: await movement(f.variantId, 1, 'allocation_release', release, f.items[0]),
       });
       await insertOperation(release);
       const promote = randomUUID();
@@ -545,7 +545,7 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
         const { allocationId } = await createAllocation({ orderItemId: f.items[0], variantId: f.variantId, quantity: 1, operationId });
         await insertEvent({
           allocationId, eventType: 'allocate', quantity: 1, operationId, sequence: 2,
-          stockMovementId: await movement(f.variantId, -1, 'purchase', operationId),
+          stockMovementId: await movement(f.variantId, -1, 'purchase', operationId, f.items[0]),
         });
         await insertOperation(operationId);
       }, 'creation_event');
@@ -595,7 +595,7 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
 
       // 発送の取消: 戻し（restock +2）と再確保（purchase −2）の対で、手元の在庫だけ 1 回戻る
       const operationId = randomUUID();
-      await movement(f.variantId, 2, 'restock', operationId);
+      await movement(f.variantId, 2, 'restock', null);
       const restored = await createAllocation({
         orderItemId: f.items[0], variantId: f.variantId, quantity: 2, operationId,
         eventType: 'restore', reversesEventId: consumeEventId,
@@ -608,7 +608,7 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
       // 同じ consume を二度戻さない
       await violated(async () => {
         const again = randomUUID();
-        await movement(f.variantId, 2, 'restock', again);
+        await movement(f.variantId, 2, 'restock', null);
         await createAllocation({
           orderItemId: f.items[0], variantId: f.variantId, quantity: 2, operationId: again,
           eventType: 'restore', reversesEventId: consumeEventId,
@@ -698,6 +698,7 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
     let operationId: string | null = null;
     try {
       await client.query('begin');
+      await client.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
       const catalog = await createCatalogFixture(client, { stock: 5 });
       itemId = catalog.itemId;
       const order = await insertOrderWithLines(client, {
@@ -706,9 +707,9 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
       });
       operationId = randomUUID();
       const moved = await client.query(
-        `insert into public.stock_movements (variant_id, delta, reason, allocation_operation_id)
-         values ($1, -2, 'purchase', $2) returning id`,
-        [catalog.variantId, operationId],
+        `insert into public.stock_movements (variant_id, delta, reason, allocation_operation_id, order_item_id)
+         values ($1, -2, 'purchase', $2, $3) returning id`,
+        [catalog.variantId, operationId, order.orderItemIds[0]],
       );
       const allocation = await client.query(
         `insert into public.order_item_allocations (order_item_id, variant_id, quantity, remaining_quantity, kind, operation_id)

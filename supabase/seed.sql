@@ -4,6 +4,9 @@
 -- 画像の中身は scripts/e2e/seed-storage.ts が E2E の前に Storage へ置く（ここでは bucket と行だけ作る）。
 -- 画像のパスを変えたら、scripts/e2e/seed-storage.ts の一覧も変える（tests/unit/scripts/e2e/seed-storage.test.ts が食い違いを止める）。
 
+BEGIN;
+SELECT pg_catalog.pg_advisory_xact_lock(190521, 1);
+
 INSERT INTO storage.buckets (id, name, public) VALUES
   ('item-images', 'item-images', false),
   ('look-images', 'look-images', false),
@@ -188,3 +191,4 @@ SELECT setval(pg_get_serial_sequence('public.stockists', 'id'), (SELECT max(id) 
 -- 入っているが移行には無いので、手元でも同じにする（2026-10-06 に本番の設定を読んで確認）。
 ALTER ROLE authenticator SET pgrst.db_pre_request TO 'private.set_request_context';
 NOTIFY pgrst, 'reload config';
+COMMIT;

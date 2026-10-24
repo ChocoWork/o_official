@@ -1,4 +1,4 @@
-export {};
+import { createCatalogFixture } from './helpers/order-fixtures';
 
 const { Pool } = require('pg');
 
@@ -286,22 +286,22 @@ describe('integration: item_variants', () => {
     }
   });
 
-  test('台帳経由なら service_role でも在庫が動く', async () => {
+  test('台帳で作った材料の在庫は service_role でも読めるが直接 INSERT は拒否する', async () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const itemId = await createItem(client);
-      const variant = await client.query(
-        `INSERT INTO public.item_variants (item_id) VALUES ($1) RETURNING id`,
-        [itemId],
-      );
-      const variantId = variant.rows[0].id;
+      await client.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
+      // Synthetic material is owner-only; the public restock RPC adapter arrives in Task 5.
+      const { variantId } = await createCatalogFixture(client, { stock: 6 });
 
       await client.query(`SET LOCAL ROLE service_role`);
-      await client.query(
-        `INSERT INTO public.stock_movements (variant_id, delta, reason) VALUES ($1, 6, 'restock')`,
+      await client.query('SAVEPOINT direct_ledger_insert');
+      await expect(client.query(
+        `INSERT INTO public.stock_movements (variant_id, delta, reason) VALUES ($1, 1, 'restock')`,
         [variantId],
-      );
+      )).rejects.toMatchObject({ code: '42501' });
+      await client.query('ROLLBACK TO SAVEPOINT direct_ledger_insert');
+      await client.query('RELEASE SAVEPOINT direct_ledger_insert');
 
       const res = await client.query(
         `SELECT stock_quantity FROM public.item_variants WHERE id = $1`,
