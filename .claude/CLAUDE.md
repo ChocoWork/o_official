@@ -165,7 +165,7 @@ docs\1_RequirementsDifinition\brand.md に私の服のブランドのコンセ�
 | DB スキーマ | `docs/03_BasicDesign/data/er.md` |
 | 処理の流れ・状態遷移 | `docs/04_DetailDesign/sequence/`、`docs/04_DetailDesign/states/` |
 | 構成・認証・権限 | `docs/03_BasicDesign/architecture/` |
-| テストの追加・変更 | `docs/05_Quality/tests/test-spec.md`、`docs/05_Quality/reports/traceability-report.md` |
+| テストの追加・変更 | `docs/05_Quality/tests/test-spec.md`（手で書く）。`docs/05_Quality/reports/traceability-report.md` は自動生成なので手で直さず、`npm run report:traceability` で作り直す |
 
 - 書式は `docs/README.md` の「共通フォーマット」に従い、文書冒頭の確認日を更新する
 - 該当する文書がなければ新規作成し、`docs/README.md` または各工程の README から相対リンクを張る
