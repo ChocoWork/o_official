@@ -86,7 +86,7 @@ flowchart LR
 
 **全体ロック順（全Taskの更新関数に適用）**
 
-`pg_catalog.pg_advisory_xact_lock(190521, 1)` → 注文作成時だけ `checkout_drafts FOR UPDATE` → `items FOR KEY SHARE` id昇順 → `item_variants FOR UPDATE` id昇順 → `orders FOR UPDATE` id昇順 → `order_items FOR UPDATE` id昇順 → `order_item_allocations FOR UPDATE` id昇順 → `order_returns` → `order_return_lines` → `order_return_receipts` → `order_return_receipt_lines` → `order_refunds` → `order_refund_lines` → `order_cancel_requests` → `order_cancel_request_lines`。後段で必要になった行もこの順で事前取得し、不要な表だけを省く。将来の発注書→発送票はこの後。既存の配送/例外/設定等の補助行は上記の後で取り、そこから前段へ戻らない。FIFOで `SKIP LOCKED` を使わない。
+`pg_catalog.pg_advisory_xact_lock(190521, 1)` → 注文作成時だけ `checkout_drafts FOR UPDATE` → `items FOR KEY SHARE` id昇順 → `item_variants FOR UPDATE` id昇順 → `orders FOR UPDATE` id昇順 → `order_items FOR UPDATE` id昇順 → `order_item_allocations FOR UPDATE` id昇順 → `order_returns` → `order_return_lines` → `order_return_receipts` → `order_return_receipt_lines` → `order_refunds` → `order_refund_lines` → `order_cancel_requests` → `order_cancel_request_lines`。後段で必要になった行もこの順で事前取得し、不要な表だけを省く。将来の発注書→発送票はこの後。既存の配送/例外/設定等の補助行は上記の後で取り、そこから前段へ戻らない。ただし配送の追跡の設定の行（`shop_settings`）だけは、共通advisoryの直後・`orders`の前に取る（2026-10-24 Task 13 で決定。変えない `admin_set_delivery_tracking` が「設定 FOR UPDATE → 注文」の順のため、注文の後に設定を待つと deadlock になる）。FIFOで `SKIP LOCKED` を使わない。
 
 公開更新入口のprivate本体が一度だけ全対象を事前ロックする。内部のrefund core/apply/refresh/FIFOは取得済み行で動き、入れ子から公開RPCやlock helperを呼ばない。操作IDの受渡しは取引ローカルの `app.group_g_operation_id` を使い、外側が設定/復帰する。これは認可やlock済み判定には使わず、公開入口は設定値にかかわらず必ずロックを取る。状態before/afterを記録する責任も外側に一つだけ置く。
 
