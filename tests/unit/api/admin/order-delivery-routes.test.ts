@@ -153,6 +153,14 @@ describe.each(stopped)('%s（G-1 で停止）', (endpoint) => {
     expect(JSON.stringify(mockAudit.mock.calls)).not.toContain('ABC-123');
     expect(JSON.stringify(mockAudit.mock.calls)).not.toContain('2026-10-21');
   });
+  test('注文番号が UUID でなければ監査の resource_id は null。410 は変わらない', async () => {
+    await expectDisabled(await post(endpoint, bodies[endpoint], 'bad'));
+    noWork();
+    expect(mockAudit.mock.calls).toEqual([[expect.objectContaining({
+      action, actor_id: 'actor-from-auth', resource: 'orders', resource_id: null, outcome: 'failure',
+      metadata: { code: 'LEGACY_FULFILLMENT_DISABLED' },
+    })]]);
+  });
   test.each([
     ['uuidの誤り', 'bad', FULFILLMENT, bodies[endpoint]],
     ['発送uuidの誤り', ORDER, 'bad', bodies[endpoint]],

@@ -51,7 +51,7 @@ export const deliveryDate = z.string().refine((value) => {
 });
 
 /** C-3 の操作名と許可した metadata だけを各窓口から受け取る。本文や例外の文は渡さない。 */
-export function createDeliveryAudit(request: Request, actorId: string, endpoint: Endpoint, resourceId: string) {
+export function createDeliveryAudit(request: Request, actorId: string, endpoint: Endpoint, resourceId: string | null) {
   return (outcome: 'success' | 'failure' | 'conflict' | 'error', metadata: Record<string, unknown> | null = null) => logAudit({
     action: ACTIONS[endpoint], actor_id: actorId,
     resource: endpoint === 'resolve' ? 'order_fulfillment_attention' : 'orders', resource_id: resourceId,

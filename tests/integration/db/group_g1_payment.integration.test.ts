@@ -215,6 +215,47 @@ describeLocalDb('G-1 Task 7: payment, H->A and the first paid_at', (db) => {
       .toEqual({ status: 'cancelled', paid_amount: PRICE });
   });
 
+  test('取消後の入金とエの自動の返金: 取消済みのまま。状態の履歴は増えず、受注生産は0 (paid_at や paid_amount で入金済みに戻さない)', async () => {
+    const c = await createCatalogFixture(db(), { stock: 0 });
+    const o = await insertOrderWithLines(db(), { status: 'cancelled',
+      lines: [{ itemId: c.itemId, variantId: c.variantId, quantity: 2, fulfillmentType: 'stock', reserved: false }] });
+    const stateEvents = async () => (await db().query(`select count(*)::int as n from public.order_item_state_events e
+      join public.order_items oi on oi.id = e.order_item_id where oi.order_id = $1`, [o.orderId])).rows[0].n as number;
+    const waiting = async () => (await db().query('select waiting from public.list_group_g_variant_inventory($1)',
+      [[c.variantId]])).rows[0].waiting as number;
+    const view = async () => (await states(o.orderId)).map((r) => ({ status: r.status, quantity: r.quantity, blocked_reasons: r.blocked_reasons }));
+    const cancelled = [{ status: 'cancelled', quantity: 2, blocked_reasons: [] }];
+
+    expect(await view()).toEqual(cancelled);
+    expect(await waiting()).toBe(0);
+    const events = await stateEvents();
+
+    // 取消後に届いた入金: 受け取った額と paid_at が付いても、未発送で割当の無い分は取消済みのまま
+    expect((await db().query('select public.record_cancelled_order_paid_amount($1::uuid,$2::text,$3::integer) as written',
+      [o.orderId, pi(), PRICE * 2])).rows[0].written).toBe(true);
+    await flush();
+    expect(await paidAt(o.orderId)).not.toBeNull();
+    expect(await view()).toEqual(cancelled);
+    expect(await waiting()).toBe(0);
+    expect(await stateEvents()).toBe(events);
+
+    // エ: 取消済みの注文への入金の自動の全額返金（行なし）は、返事待ちでも成功の後でも取消済みのまま
+    const refundId = (await db().query(`select refund_id from public.begin_order_refund(
+      $1::uuid, 'auto_cancelled_order_payment', null::uuid, '[]'::jsonb, true, 0, 0, null::text, null::text, null::text, true,
+      null::uuid, $2::integer)`, [o.orderId, PRICE * 2])).rows[0].refund_id as string;
+    await flush();
+    expect(await view()).toEqual(cancelled);
+    expect(await waiting()).toBe(0);
+    expect(await stateEvents()).toBe(events);
+
+    await db().query(`select * from public.record_order_refund_result($1::uuid, $2::text, 'succeeded', null, null, null,
+      'card', null, null)`, [refundId, `re_${refundId.replaceAll('-', '')}`]);
+    await flush();
+    expect(await view()).toEqual(cancelled);
+    expect(await waiting()).toBe(0);
+    expect(await stateEvents()).toBe(events);
+  });
+
   test('NULL variant: 既存の要確認（stock_not_reserved）にし、確認済みにしても variant_missing のまま FIFO の外', async () => {
     const actor = (await db().query(`insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
       values (gen_random_uuid(), $1, '{}'::jsonb, now(), now()) returning id`, [`g1-payment-${randomUUID()}@example.com`])).rows[0].id;

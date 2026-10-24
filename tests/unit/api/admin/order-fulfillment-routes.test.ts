@@ -188,6 +188,22 @@ describe('POST /api/admin/orders/[id]/fulfillments/[fulfillmentId]/cancel（発�
   });
 });
 
+describe('止めた窓口の監査の resource_id（G-1）', () => {
+  it.each([
+    ['発送する', 'admin.orders.fulfillment.create', () => postFulfillment(createRequest(CREATE_BODY), { params: Promise.resolve({ id: 'x' }) })],
+    ['発送の取消', 'admin.orders.fulfillment.cancel',
+      () => postCancel(cancelRequest(), { params: Promise.resolve({ id: 'x', fulfillmentId: FULFILLMENT_ID }) })],
+  ] as const)('%s: URL の注文番号が UUID でなければ resource_id は null。410 は変わらない', async (_name, action, call) => {
+    await expectDisabled(await call());
+
+    expect(mockLogAudit.mock.calls).toEqual([[expect.objectContaining({
+      action, actor_id: 'admin-1', resource: 'orders', resource_id: null, outcome: 'failure',
+      metadata: { code: 'LEGACY_FULFILLMENT_DISABLED' },
+    })]]);
+    expectNoSideEffects();
+  });
+});
+
 describe('GET /api/admin/orders/[id]/fulfillments（発送の材料、G-1 で停止）', () => {
   const request = () => new Request(`http://localhost/api/admin/orders/${ORDER_ID}/fulfillments`);
 

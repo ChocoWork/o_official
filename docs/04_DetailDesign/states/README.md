@@ -1,6 +1,6 @@
 # 状態設計の案内と記載方針
 
-> 状態: 現行ソースとの同期方針 | 確認日: 2026-10-04 | 対象: 注文・購入下書き・Webhook・要対応記録
+> 状態: 現行ソースとの同期方針 | 確認日: 2026-10-24（在庫の割当の行は2026-10-24に確認） | 対象: 注文・購入下書き・Webhook・要対応記録・在庫の割当
 
 ## 概要
 
@@ -28,6 +28,7 @@
 | [購入下書き](checkout-draft.md) | `checkout_drafts.status`、Session作成claim | create-session・claim/retire・注文受付RPC・保持期間の清掃 |
 | [Webhookキュー](stripe-webhook-queue.md) | `stripe_webhook_events.processing_status` | enqueue・claim・complete・fail RPC、Cron worker |
 | [決済の要対応](payment-exception.md) | `payment_exceptions.resolved_at`等 | 検出upsert・通知claim・管理解決RPC |
+| [在庫の割当（G-1）](inventory-allocation.md) | `order_item_allocations` の `kind` と `remaining_quantity`、支払額の違いの保留、`orders.paid_at` | 注文受付・入金・FIFO・解放・返金の各RPC（共通の在庫の鍵の下） |
 
 ## 共通フォーマット
 

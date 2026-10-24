@@ -3,7 +3,7 @@ import {
   LEGACY_FULFILLMENT_DISABLED,
   legacyFulfillmentDisabledBody,
 } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
-import { createDeliveryAudit, guardDeliveryAdminWrite } from '@/lib/orders/tracking/delivery-route-support';
+import { createDeliveryAudit, deliveryUuid, guardDeliveryAdminWrite } from '@/lib/orders/tracking/delivery-route-support';
 
 /**
  * 手動の配達済み（停止前: グループ E-4）。G-1 で止めた（G-3 の新しい発送票へ移る）。
@@ -14,7 +14,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const guard = await guardDeliveryAdminWrite(request, 'delivered');
   if (!guard.ok) return guard.response;
   const routeParams = await params;
-  await createDeliveryAudit(request, guard.actorId, 'delivered', routeParams.id)('failure', { code: LEGACY_FULFILLMENT_DISABLED });
+  const parsedId = deliveryUuid.safeParse(routeParams.id);
+  await createDeliveryAudit(request, guard.actorId, 'delivered', parsedId.success ? parsedId.data : null)('failure', { code: LEGACY_FULFILLMENT_DISABLED });
   return NextResponse.json(legacyFulfillmentDisabledBody(LEGACY_FULFILLMENT_DISABLED), {
     status: 410,
     headers: { 'Cache-Control': 'no-store' },

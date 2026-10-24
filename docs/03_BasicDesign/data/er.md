@@ -1,8 +1,10 @@
 # ER 図（現行リポジトリの実装）
 
+> 状態: 現行のソース（グループ G-1 の4表・2列・12 FK を 2026-10-24 に追記。G-1 は本番へ未適用） | 確認日: 2026-10-24 | 対象: `supabase/migrations/` の基準スキーマと後続変更
+
 ## 概要
 
-`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 段1・段2・E-4・E-5の追記を反映した掲載対象は **86 テーブル（public 77、private 7、security 2）と 108 FK（public 起点 98、private 起点 10）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
+`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 段1・段2・E-4・E-5・G-1の追記を反映した掲載対象は **90 テーブル（public 80、private 8、security 2）と 120 FK（public 起点 109、private 起点 11）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
 
 基準の確認日: **2026-10-03**。ソース基準コミット: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`。基準は [20260901102912_remote_schema.sql](../../../supabase/migrations/20260901102912_remote_schema.sql)、基準集計の最後の対象ファイルは [20260927100800_retire_legacy_order_rpcs.sql](../../../supabase/migrations/20260927100800_retire_legacy_order_rpcs.sql)。対象の 40 SQL ファイルの基準は59テーブル・63 FKで、後続の記載済みの追記を含む一覧は2026-10-09に数え直し、グループ E-1 の分を2026-10-10 に、グループ E-2 の分を2026-10-11 に、グループ E-3 の分を2026-10-13 に足した。配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文状況のリンクの表は E-5 の変更を 2026-10-22 に反映。本番 DB の適用状況は確認していない。
 
@@ -22,12 +24,14 @@
 
 E-3 段2（FREQ-475〜486）: [移行 D](../../../supabase/migrations/20261020144439_order_return_request_records.sql)・[移行 E](../../../supabase/migrations/20261020144842_order_return_customer_requests.sql)・[移行 F](../../../supabase/migrations/20261020150415_order_return_request_reviews.sql) で、写真の送り先・写真・キャンセルの申し込み・行の4表、items.return_ineligible、outbox.cancel_request_id、承認の更新の守りと6種類のメールの索引を足す。76表・94 FK に public 4表・public 起点7 FK・private 起点1 FK を足して80表・102 FK。2026-10-21 に本番へ適用済み（20261020144439・20261020144842・20261020150415）。
 
-図は領域別に分割する。PK・FK と関係を読むための列だけを載せ、全列、CHECK、RLS、トリガー、RPC、Storage オブジェクトの一覧は SQL に委ねる（グループ E-1 の3つの表と `private.order_email_outbox` の追加の列だけは例外で、全列・CHECK・索引・RLS・トリガー・書く関数を第 3 節の「発送と仕上がりの列・索引」に書く。グループ E-2 の返金の2つの表・ショップの設定・切り替えの時刻の表と、追加の列も同じ例外で、第 3 節の「返金の列・索引」に書く。グループ E-3 の返品の4つの表・返品の設定の2つの表と、追加の列も同じ例外で、第 3 節の「返品の列・索引」に書く）。E-3 段2の追加4表も全列・CHECK・索引・RLS・守りを第3節に記す。旧 `migrations/` と `supabase/pending/` は主な集計の基準に含めず、現行コードが依存する旧定義だけを補足する。
+2026-10-24 追記（グループ G-1、FREQ-520〜524・535・540〜541）: 1本の移行 `supabase/migrations/20261023211425_group_g1_allocation.sql`（先頭の節が本番のテスト用の注文と関連記録を消す清掃、続く本体が下の追加、末尾が全部の確かめ。まとめて 1 取引で当てる）で、`private.group_g_operations`（操作の受付。追記だけ）・`public.order_item_allocations`（割当の現在値。仮確保 H と入金済みの割当 A）・`public.order_item_allocation_events`（割当の履歴。追記だけ）・`public.order_item_state_events`（品物ごとの状態の履歴。追記だけ）を足し、`public.orders.paid_at`（初めて入金を DB に記録した時刻。一度だけ書く）と `public.stock_movements.allocation_operation_id`（台帳の行を割当の操作に結ぶ）を足し、台帳の理由に `allocation_release` を足した。4表は RLS を有効にして表の権限を外し、service_role は public の3表を読むだけ（private の受付表は読むこともできない）、書くのは共通の在庫の鍵（advisory (190521,1)）を最初に取る private の SECURITY DEFINER の DB の関数だけにした。差分はテーブル +4（public +3、private +1）、物理 FK +12（public 起点 +11、private 起点 +1。実行した人の列 `actor_id` は外部キーにしない）で、前の追記の86テーブル・108 FK から **90テーブル・120 FK** になる。本番へは未適用（適用の手順と記録は [DB マイグレーション運用](../../06_Operations/db-migrations.md)）。内容は 2.10・3.3・4.3.4・5.1・5.2 と末尾の「在庫の割当と品物の状態の履歴」に書く。
+
+図は領域別に分割する。PK・FK と関係を読むための列だけを載せ、全列、CHECK、RLS、トリガー、RPC、Storage オブジェクトの一覧は SQL に委ねる（グループ E-1 の3つの表と `private.order_email_outbox` の追加の列だけは例外で、全列・CHECK・索引・RLS・トリガー・書く関数を第 3 節の「発送と仕上がりの列・索引」に書く。グループ E-2 の返金の2つの表・ショップの設定・切り替えの時刻の表と、追加の列も同じ例外で、第 3 節の「返金の列・索引」に書く。グループ E-3 の返品の4つの表・返品の設定の2つの表と、追加の列も同じ例外で、第 3 節の「返品の列・索引」に書く）。E-3 段2の追加4表も全列・CHECK・索引・RLS・守りを第3節に記す。グループ G-1 の追加4表と追加の2列も同じ例外で、全列・CHECK・索引・RLS・守り・書く関数を末尾の「在庫の割当と品物の状態の履歴」に書く。旧 `migrations/` と `supabase/pending/` は主な集計の基準に含めず、現行コードが依存する旧定義だけを補足する。
 
 | 領域 | 内容 |
 | --- | --- |
 | 認証・権限・利用者データ | セッション、権限中間表、プロフィール、カート、お気に入り |
-| 商品・LOOK・在庫・注文 | 商品バリアント、在庫台帳、注文と改訂、注文のメール（送る予定・送信の一時停止・配達の知らせの受付済み）、発送と仕上がりの記録、返金の記録・ショップの設定、返品と受け取りの記録・返品の設定 |
+| 商品・LOOK・在庫・注文 | 商品バリアント、在庫台帳、注文と改訂、注文のメール（送る予定・送信の一時停止・配達の知らせの受付済み）、発送と仕上がりの記録、返金の記録・ショップの設定、返品と受け取りの記録・返品の設定、在庫の割当・品物の状態の履歴・操作の受付 |
 | 決済・会計・問い合わせ | Stripe 記録、証憑、固定資産、原価配賦、年度締め、問い合わせ |
 | 独立したテーブル | KPI、監査、アーカイブ、コンテンツ、キャッシュ、レート制限 |
 
@@ -709,9 +713,39 @@ erDiagram
 
 `customer_id`・`requested_by`・操作した人の UUID は物理 FK にしない。`storage_path` は Storage の場所の文字列であり物理 FK ではない。新しい8本はすべて ON DELETE RESTRICT。写真の実体は非公開の Storage に置き、DB には場所と消去の印を残す。
 
+### 2.10 在庫の割当と品物の状態の履歴の関係（G-1）
+
+```mermaid
+erDiagram
+  order_items ||--o{ order_item_allocations : order_item_id
+  item_variants ||--o{ order_item_allocations : variant_id
+  order_item_allocations ||--o{ order_item_allocation_events : allocation_id
+  order_item_allocations o|--o{ order_item_allocation_events : counterpart_allocation_id
+  order_item_allocation_events o|--o| order_item_allocation_events : reverses_event_id
+  stock_movements o|--o| order_item_allocation_events : stock_movement_id
+  order_items ||--o{ order_item_state_events : order_item_id
+  group_g_operations ||--o{ order_item_allocations : operation_id
+  group_g_operations ||--o{ order_item_allocation_events : operation_id
+  group_g_operations ||--o{ order_item_state_events : operation_id
+  group_g_operations o|--o{ stock_movements : allocation_operation_id
+  payment_exceptions o|--o{ group_g_operations : exception_id
+```
+
+`group_g_operations` だけが `private`、ほかは `public`。線の意味は次のとおり。
+
+| 線 | 意味 |
+| --- | --- |
+| 明細 → 割当 | 1つの注文の商品の行が、仮確保 H・入金済みの割当 A を何本も持てる。variant は明細の variant と同じ（制約で確かめる）。variant が空の明細は割り当てない |
+| 割当 → 割当の履歴 | 割当の1本が、作る・種類を変える・減らす履歴を持つ。`counterpart_allocation_id` は入替（`transfer`）の両側が互いを指す。`reverses_event_id` は発送の消費（`consume`）を戻す履歴（`restore`）が元の消費を指す |
+| 台帳 → 割当の履歴 | 在庫の台帳を動かす履歴（`hold`・`allocate`・`restore`・`release`）だけが、台帳の行を1つ指す。台帳の側の `allocation_operation_id` を持つ行は、履歴がちょうど1つ対応する |
+| 操作の受付 → 割当・履歴・状態の履歴・台帳 | 1回の操作の番号。先に作り、受付の行は処理の終わりに1度だけ書く。参照は取引の終わりに確かめる（`DEFERRABLE INITIALLY DEFERRED`） |
+| 要対応 → 操作の受付 | 支払額の違いの保留（`operation = 'payment_review_hold'`）だけが要対応を指す。保留は割当の H とは別物（割当を動かさず、FIFO が割り当てるのを止める印） |
+
+12本の外部キーはすべて `ON DELETE RESTRICT`。実行した人の `actor_id` と、原因の `cause_id`（text）は物理 FK にしない（5.1）。
+
 ## 3. 全テーブルとキーの一覧
 
-以下は掲載対象の86テーブル・108 FKの定義元とキーの一覧。FK の有無は入出両方向で判定する。`audit_logs_backups.id` は主キーではなく nullable の通常列である。
+以下は掲載対象の90テーブル・120 FKの定義元とキーの一覧。FK の有無は入出両方向で判定する。`audit_logs_backups.id` は主キーではなく nullable の通常列である。
 
 ### 3.1 認証・利用者
 
@@ -810,6 +844,17 @@ E-4でorder_fulfillmentsを参照するFKは4本増える。outboxから番号�
 | `private.order_status_links` | `(order_id)` | `(token)` | 参照元 0 / 参照先 1 | [E-5 移行 A](../../../supabase/migrations/20261022084844_order_status_links.sql) |
 
 E-5でordersを参照するFKが1本増える。既存行の参照数表記は各段階時点の記録とし、列・索引と権限の最終契約は末尾の注文状況のリンクの節を参照する。
+
+#### 在庫の割当と品物の状態の履歴の追加4表（G-1）
+
+| テーブル | PK | PK以外の一意性 | 物理FK接続 | 定義元 |
+| --- | --- | --- | --- | --- |
+| `private.group_g_operations` | `(id)` | `(operation, request_key)` | 参照元 4 / 参照先 1 | G-1 移行（`20261023211425_group_g1_allocation`） |
+| `public.order_item_allocations` | `(id)` | なし | 参照元 2 / 参照先 3 | 同上 |
+| `public.order_item_allocation_events` | `(id)` | `(operation_id, allocation_id, event_type, sequence)`; `(stock_movement_id)`; `(reverses_event_id)` | 参照元 1 / 参照先 5 | 同上 |
+| `public.order_item_state_events` | `(id)` | `(operation_id, order_item_id, sequence, unit_from)` | 参照元 0 / 参照先 2 | 同上 |
+
+G-1で `order_items`（+2）・`item_variants`（+1）・`stock_movements`（+1）・`payment_exceptions`（+1）を参照するFKが増え、`stock_movements` の参照先が1本増える。既存行の参照数表記は各段階時点の記録とし、列・索引・守りの最終契約は末尾の「在庫の割当と品物の状態の履歴」の節を参照する。
 
 #### 発送と仕上がりの列・索引（2026-10-10）
 
@@ -1173,6 +1218,25 @@ CHECK (
 | --- | --- | --- | --- | --- |
 | `private.order_status_links.order_id` | `public.orders.id` | 不可 | 0..1（PKのため1注文1本） | RESTRICT |
 
+### 4.3.4 在庫の割当と品物の状態の履歴の追加12 FK（G-1）
+
+| 参照元 | 参照先 | NULL | 親からの多重度 | 削除動作 |
+| --- | --- | --- | --- | --- |
+| `private.group_g_operations.exception_id` | `public.payment_exceptions.id` | 可（`payment_review_hold` の行だけが持つ） | 0..多 | RESTRICT |
+| `public.order_item_allocations.order_item_id` | `public.order_items.id` | 不可 | 0..多 | RESTRICT |
+| `public.order_item_allocations.variant_id` | `public.item_variants.id` | 不可 | 0..多 | RESTRICT |
+| `public.order_item_allocations.operation_id` | `private.group_g_operations.id` | 不可 | 0..多 | RESTRICT（遅延） |
+| `public.order_item_allocation_events.allocation_id` | `public.order_item_allocations.id` | 不可 | 0..多 | RESTRICT |
+| `public.order_item_allocation_events.counterpart_allocation_id` | `public.order_item_allocations.id` | 可（`transfer` の行だけが持つ） | 0..多 | RESTRICT |
+| `public.order_item_allocation_events.reverses_event_id` | `public.order_item_allocation_events.id` | 可（`restore` の行だけが持つ） | 0..1（UNIQUE） | RESTRICT |
+| `public.order_item_allocation_events.stock_movement_id` | `public.stock_movements.id` | 可（`hold`・`allocate`・`restore`・`release` だけが持つ） | 0..1（UNIQUE） | RESTRICT |
+| `public.order_item_allocation_events.operation_id` | `private.group_g_operations.id` | 不可 | 0..多 | RESTRICT（遅延） |
+| `public.order_item_state_events.order_item_id` | `public.order_items.id` | 不可 | 0..多 | RESTRICT |
+| `public.order_item_state_events.operation_id` | `private.group_g_operations.id` | 不可 | 0..多 | RESTRICT（遅延） |
+| `public.stock_movements.allocation_operation_id` | `private.group_g_operations.id` | 可（割当に結ぶ行だけが持つ） | 0..多 | RESTRICT（遅延） |
+
+「遅延」は `DEFERRABLE INITIALLY DEFERRED`。操作の番号を先に作り、受付の行を処理の終わりに書く順を許すため、参照は取引の終わりに確かめる。
+
 ### 4.4 決済記録・Checkout 下書き
 
 | 子テーブル.FK 列 | 参照先 | 型 / NULL可 | 親あたりの子 | ON DELETE | 定義元 |
@@ -1244,6 +1308,7 @@ CHECK (
 | `payment_exceptions.draft_id`、`resolved_by`、`orders.reviewed_by`、`stock_movements.created_by` | UUID の通常列。`checkout_drafts` / `auth.users` への FK はない | [例外表](../../../supabase/migrations/20260927100500_payment_exceptions.sql#L6) / [注文変更](../../../supabase/migrations/20260927100100_order_payment_columns.sql#L23) / [在庫台帳の理由コメント](../../../supabase/migrations/20260919065355_add_stock_movements.sql#L15) |
 | `order_refunds.actor_id`、`shop_settings` の `auto_refund_cancelled_order_payment_updated_by`・`auto_cancel_amount_mismatch_updated_by` | UUID の通常列（実行した人・設定を最後に変えた人の `auth.users` の番号）。`auth.users` への FK はない。`order_refunds.actor_id` は、消した人を空にする `ON DELETE SET NULL` が更新として動き、返金の記録の「進めてよい列」の守りとぶつかるため（`stock_movements.created_by` と同じ）。設定の2つの列も同じく通常列 | [E-2 移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) |
 | `order_returns` の `requested_by`・`approved_by`・`declined_by`・`fee_received_by`・`exchange_released_by`・`created_by`・`cancelled_by`・`reopened_by`、`order_return_receipts.actor_id`、`shop_return_settings` の `{requests\|window\|shipping\|reasons\|fees\|receiving}_updated_by` | UUID の通常列（実行した人・設定を最後に変えた人の `auth.users` の番号）。`auth.users` への FK はない。理由は E-2 の `order_refunds.actor_id` と同じ（消した人を空にする `ON DELETE SET NULL` が更新として動き、記録を直させない守りとぶつかるため） | [E-3 移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) |
+| `group_g_operations.actor_id`、`order_item_allocation_events.actor_id`、`order_item_state_events.actor_id`、`group_g_operations.cause_id` | `actor_id` は UUID の通常列（操作した人の `auth.users` の番号。システムの処理は空）で、`auth.users` への FK はない。追記だけの履歴を、利用者の削除の `ON DELETE SET NULL` が更新として動いて壊さないため（E-2 の `order_refunds.actor_id` と同じ理由）。`cause_id` は原因（注文・要対応・返金・返品・variant など）の番号を持つ text で、`cause_type` と組で読む。表への FK はない | G-1 移行（`20261023211425_group_g1_allocation`） |
 | `admin_finance_entry_revisions.entry_id`、`admin_finance_entry_review_acks.entry_ref` | bigint / text の履歴参照。経費・注文への FK はない。実行者列の FK は別途存在する | [改訂](../../../supabase/migrations/20260901102912_remote_schema.sql#L108) / [確認記録](../../../supabase/migrations/20260901102912_remote_schema.sql#L91) |
 | 経費・テンプレートの `partner` | 相手先名称の text。`admin_finance_partners` への FK はない | [経費](../../../supabase/migrations/20260901102912_remote_schema.sql#L173) / [テンプレート](../../../supabase/migrations/20260901102912_remote_schema.sql#L145) |
 | KPI の `season_key` / `kpi_key`、`item_cost_history.season_key`、`legal_archive_runs.fiscal_year` | 通常列または複合一意キー。会計のシーズン・年度・KPI 表間の FK はない | [KPI](../../../supabase/migrations/20260901102912_remote_schema.sql#L347) / [商品原価履歴](../../../supabase/migrations/20260901102912_remote_schema.sql#L557) / [保存実行](../../../supabase/migrations/20260901102912_remote_schema.sql#L605) |
@@ -1262,13 +1327,14 @@ CHECK (
 - [グループ E-2 の移行 A](../../../supabase/migrations/20261011222930_order_refund_records.sql) は、返金を `order_refunds`・`order_refund_lines` に1件ずつ持つ。`orders.refunded_amount`（成功した返金の合計）の意味は変えず、全額の判定は受け取った額 `orders.paid_amount` で行い（支払額が注文の合計と違う注文でも、全部返す・全額でキャンセルする、を正しく決めるため）、状態の移り方（返金の合計が全額に届いたらキャンセル）だけは、受け取った額が0か空の注文を注文の合計で比べる（`COALESCE(NULLIF(paid_amount, 0), total_amount)`。返金が0円のままキャンセルにならないため）。CHECK `orders_refunded_amount_range` の上限は `GREATEST(total_amount, COALESCE(paid_amount, 0))` にした。`private.order_email_outbox.refund_id` は、種類が `refund` の行と、返金に結び付く支払い済みのキャンセルのお知らせ（種類 `canceled`・書き分け `paid`）の行だけが持つ。前の返金の関数 `public.apply_order_refund_projection` は [移行 C](../../../supabase/migrations/20261011223453_order_refund_results.sql) で消し、結果を書く関数に置き換えた。
 - [グループ E-3 の移行 A](../../../supabase/migrations/20261012235910_order_return_records.sql) は、返品を `order_returns`・`order_return_lines` に、受け取りを `order_return_receipts`・`order_return_receipt_lines` に持つ。返品の行（`order_return_lines`）は数・理由・詳しい内容・ご希望を変えず、親が requested の間だけ承認で解決の3列を変えられ、open の後は変えない、実際に決まった解決（在庫不足で作って送るに変えた・店長が返金に変えた）は受け取りの商品の扱い（`resolution`・`exchange_method`）に残す。商品ごとの返品できる数は `private.order_line_return_counts` の1か所で数え、E-2 の返金の発送後に返せる数も `s − ra − rq − op − rw − ex` にした。返金待ち（rw）と覆いは、返品の行ごとの数を出す本体 `private.order_return_line_states_core` の1か所で数える（未保存の受け取りの明細も足して数えられるので、受け取りの関数は受け取りの前後の返金待ちの差を「この受け取りで返金待ちが増える数」として出す。保存済みの記録だけを数える `private.order_return_line_states` は、これを空の明細で呼ぶ）。「届かない」で閉じた後に開き直して受け取った返金の品は、その品が「届かない」だった間（届かないの記録から次の開き直しまで、両端を含む）に作ったふつうの返金（道が `return` 以外の発送後の返金）だけの当て先として先に数える（二重の返金を避ける側。返し足りない時は、ふつうの返金の画面で選べる数が同じだけ増える）。ふつうの返金を始めた後・結果を書いた後・エラーにした後も、その注文の受付中の返品の状態を確かめ直す（鍵の順は注文 → 返品 → 返金）。交換の品は `order_items` に値段0の行（`line_kind = 'exchange'`）として足し、元の支払額を `exchange_paid_amount` に持つ。`private.order_email_outbox` の自動の行の一意の索引は、返品の4つの種類を外して作り直した（1つの注文に返品が何回もあるため）。2026-10-13 に本番へ適用済み（20261012235910・20261013000456・20261013001143）。
 - E-3 段2の最終構造は、4表と items.return_ineligible、outbox.cancel_request_id、承認の1回だけの更新、返品ごと・種類ごと／キャンセルの申し込みごと・種類ごとのメールの索引、非公開 return-photos を含む。写真の実体の消去は Storage API、DB の行は消さない。2026-10-21 に本番へ適用済み（20261020144439・20261020144842・20261020150415）。
+- グループ G-1 の移行は、空き在庫の数 F（`item_variants.stock_quantity`）と追記だけの台帳 `stock_movements` を、割当の現在値と履歴で補う（F + A + H = 手元の在庫。A は入金済みの割当、H は未入金の仮確保）。割当・状態・操作の履歴の3表は追記だけで、更新・削除・全消しをトリガーが断る。割当の現在値は削除できず、変えられるのは「H から A への種類の変更」と「残数量が減ること」だけで、そのたびに `version` を 1 進める。`orders.paid_at` は初めて入金を DB に記録した時刻で、書いたら変えられない（`orders_paid_at_once`、例外 `GROUP_G_PAID_AT_IMMUTABLE`）。品物の状態の保存列は `orders`・`order_items` に足さず、原本から投影した値を `order_item_state_events` に変化した数量だけ追記する。移行は旧の発送4関数と仕上がりの手動記録2関数を即拒否する定義に置き換え、仕上がりの表への書込みを止める。旧の写しの関数2本（`private.backfill_legacy_fulfillments`・`private.link_legacy_shipped_emails`）は消す。本番へは未適用。
 - 2026-10-03 の基準範囲にはテーブルの DROP や FK の DROP / 差し替えはない。2026-10-08 の移行 A は旧カート・お気に入りの表を作り直す。一方、CHECK、通常列、UNIQUE、RPC の変更はあるため、基準 SQL だけでは最終構造を表せない。
 
 ## 6. 現行コードの追加依存とビュー
 
 ### 6.1 現行マイグレーション列にない 3 テーブル
 
-以下の 3 テーブルは現行の `.from()` 呼び出しに存在するが、`supabase/migrations/` の基準 SQL と後続変更には CREATE TABLE がない。定義は旧 `migrations/` に存在するため、**現行コードの依存と旧 SQL の構造**として示す。第 2〜4 節とE-4・E-5追記の86テーブル・108 FKには加算していない。実 DB に存在するか、旧 SQL のとおりの制約があるかは未確認である。
+以下の 3 テーブルは現行の `.from()` 呼び出しに存在するが、`supabase/migrations/` の基準 SQL と後続変更には CREATE TABLE がない。定義は旧 `migrations/` に存在するため、**現行コードの依存と旧 SQL の構造**として示す。第 2〜4 節とE-4・E-5・G-1追記の90テーブル・120 FKには加算していない。実 DB に存在するか、旧 SQL のとおりの制約があるかは未確認である。
 
 | 現行コードの参照テーブル | 旧 SQL の PK / UNIQUE | 旧 SQL の FK | 定義元 / 現行の参照元 |
 | --- | --- | --- | --- |
@@ -1531,8 +1597,155 @@ publicのRPCは完全修飾名・`SECURITY DEFINER`・`SET search_path = ''`・�
 
 移行は各BEGIN〜COMMIT、最後に `NOTIFY pgrst, 'reload schema';`。過去の移行は変更しない。乱数は `extensions.gen_random_bytes(32)`。配置が違うpgcryptoを勝手に移設せず `ORDER_STATUS_CRYPTO_UNAVAILABLE` で止める。
 
+## 在庫の割当と品物の状態の履歴（G-1 / FREQ-520〜524・535・540〜541）
+
+[設計書 6〜8章](../../superpowers/specs/2026-10-23-group-g-design.md)・[実装計画](../../superpowers/plans/2026-10-24-group-g1-allocation.md)を参照。移行は1本 `supabase/migrations/20261023211425_group_g1_allocation.sql`（本番へ適用した後は、MCP が記録した版にファイル名を直す。リンクにしないのはそのため）。先頭の `BEGIN;`〜末尾の `COMMIT;` を1組だけ持ち、清掃（本番のテスト用の注文と関連記録の削除）・本体（以下）・末尾の全部の確かめを1取引で当てる。ソース上の構造であり、本番へは未適用。適用の手順と記録は [DB マイグレーション運用](../../06_Operations/db-migrations.md)。
+
+差分はテーブル +4（public +3、private +1）、物理 FK +12、追加の列 2、台帳の理由 +1。E-5 までの86テーブル・108 FKに足して、合わせて90テーブル・120 FK。図は 2.10、FK の一覧は 4.3.4。
+
+### 数の保存と書く者
+
+| 記号 | 意味 | 持ち方 |
+| --- | --- | --- |
+| F | 空き在庫 | `item_variants.stock_quantity`。割当・仮確保に取り分けた数を含まない。動かすのは台帳 `stock_movements` のトリガーだけ（意味は変えない） |
+| A | 入金済みの割当 | `order_item_allocations` のうち `kind = 'paid'` の `remaining_quantity` の和 |
+| H | 未入金の仮確保 | 同じく `kind = 'payment_hold'` の和 |
+| 手元の在庫 | `F + A + H` | A と H は排他（同じ明細が両方の残りを持たない）。H から A への切替は F も手元の在庫も変えず、台帳の行も足さない |
+
+書けるのは、共通の在庫の鍵（advisory `(190521, 1)`）を取った private の SECURITY DEFINER の DB の関数だけ。順序と流れは [在庫の割当の流れ](../../04_DetailDesign/sequence/inventory-allocation.md)、割当の状態は [在庫の割当の状態](../../04_DetailDesign/states/inventory-allocation.md) に書く。
+
+| 守り | 内容 |
+| --- | --- |
+| 表の権限 | 4表とも RLS を有効にし、anon・authenticated の全操作を `RESTRICTIVE` の方針（`*_deny_all`、`USING (false) WITH CHECK (false)`）で拒否。PUBLIC・anon・authenticated・service_role の全権限を外し、service_role には public の3表の `SELECT` だけを与える。private の `group_g_operations` は誰にも権限を与えない（service_role も読めない）。新しい sequence は作らない |
+| 台帳 | `stock_movements` の `INSERT` と `stock_movements_id_seq` の `USAGE` を service_role から外した。台帳のトリガー `stock_movements_apply` の本体（`private.apply_group_g_stock_movement`）は共通の鍵を持たない書込みを `GROUP_G_INVENTORY_LOCK_REQUIRED`（55000）で断る |
+| private の関数 | 新しい関数は所有者 postgres・`SECURITY DEFINER SET search_path = ''`・完全修飾名。PUBLIC・anon・authenticated・service_role の実行権限を外し、公開の入口（service_role 専用の `SECURITY INVOKER` の委譲）に必要な関数にだけ service_role の `EXECUTE` を与える。`private` スキーマの `USAGE` と `private.set_request_context()` の実行権限には触れない |
+| 書き手の閉じた一覧 | `private.group_g_writer_allowlist()` が56関数の OID の集合を返す。移行の末尾の確かめは、この集合が期待と一致することを見る。4表・`stock_movements`・`order_fulfillments`・`order_item_completions` への書込みと `item_variants.stock_quantity` の更新を持つ関数が、この集合の中だけであることは `tests/integration/db/group_g1_writer_inventory.integration.test.ts` が `pg_proc.prosrc` を走査して確かめる（動的 SQL で参照する未審査の関数も断る） |
+
+### 4表の列と制約
+
+#### `private.group_g_operations`（操作の受付）
+
+| 列 | 型・制約 |
+| --- | --- |
+| `id` | uuid PRIMARY KEY。呼ぶ側が先に決める |
+| `operation` | text NOT NULL。操作の種類（例: `place_order_from_checkout_draft`・`mark_order_paid`・`stock_move`・`payment_review_hold`・`payment_review_release`・`payment_exception_dispatch`） |
+| `request_key` | uuid NOT NULL。再送のキー。`group_g_operations_operation_request_key_key` UNIQUE `(operation, request_key)` |
+| `fingerprint` | text NOT NULL。入力の SHA-256（64桁の小文字16進、`group_g_operations_fingerprint_check`）。同じキーで中身が違う再送は断る（在庫の窓口は `GROUP_G_REQUEST_KEY_CONFLICT`、23505） |
+| `cause_type`・`cause_id` | text NOT NULL。原因の種類と番号（注文・要対応・variant など。FK なし） |
+| `exception_id` | uuid NULL、`payment_exceptions(id)` へ `RESTRICT`。`group_g_operations_exception_check` で `(operation = 'payment_review_hold') = (exception_id IS NOT NULL)` |
+| `actor_id` | uuid NULL（FK なし） |
+| `result` | jsonb NOT NULL。結果の写し（再送の応答に使う）。保留の行は `group_g_operations_review_hold_check` で `cause_type = 'payment_exception'`・`cause_id = exception_id`・`result.active = true`・`result.order_id` が文字列 |
+| `created_at` | timestamptz NOT NULL DEFAULT now() |
+
+支払額の違いの保留（`payment_review_hold`）は、要対応の行が必ず要る。解除は `payment_review_release` の行を足して表す（保留の行は直さない）。要対応の最初の通知・返金の権利は `payment_exception_dispatch` の行を1つ足して表す（要対応ごとに1つ）。追記だけ。
+
+#### `public.order_item_allocations`（割当の現在値）
+
+| 列 | 型・制約 |
+| --- | --- |
+| `id` | uuid PRIMARY KEY DEFAULT gen_random_uuid() |
+| `order_item_id` | uuid NOT NULL、`order_items(id)` へ `RESTRICT` |
+| `variant_id` | bigint NOT NULL、`item_variants(id)` へ `RESTRICT`。明細の variant と同じ（遅延の確かめ） |
+| `quantity` | integer NOT NULL、0 より大きい。作った時の数量で、変えない |
+| `remaining_quantity` | integer NOT NULL、0 以上 `quantity` 以下。減るだけ（戻す時は `restore` で新しい行を作る） |
+| `kind` | text NOT NULL、`payment_hold`（H）か `paid`（A）。変えられるのは H から A だけ |
+| `operation_id` | uuid NOT NULL、操作の受付へ `RESTRICT`（遅延）。作った操作で、変えない |
+| `version` | bigint NOT NULL DEFAULT 0、0 以上。残数量か種類が変わるたびにちょうど +1、変わらない更新では変えない |
+| `created_at`・`updated_at` | timestamptz NOT NULL DEFAULT now() |
+
+索引: `order_item_allocations_variant_kind_item_idx (variant_id, kind, order_item_id)`、`order_item_allocations_item_id_idx (order_item_id, id)`。行は削除できない。
+
+#### `public.order_item_allocation_events`（割当の履歴）
+
+| 列 | 型・制約 |
+| --- | --- |
+| `id` | uuid PRIMARY KEY DEFAULT gen_random_uuid() |
+| `allocation_id` | uuid NOT NULL、割当へ `RESTRICT` |
+| `event_type` | text NOT NULL。下の7値 |
+| `quantity` | integer NOT NULL、0 より大きい |
+| `operation_id` | uuid NOT NULL、操作の受付へ `RESTRICT`（遅延） |
+| `sequence` | integer NOT NULL、0 より大きい。同じ操作の中の順。`order_item_allocation_events_operation_key` UNIQUE `(operation_id, allocation_id, event_type, sequence)` |
+| `counterpart_allocation_id` | uuid NULL、割当へ `RESTRICT`。`(event_type = 'transfer')` と同時に非空、自分自身は不可 |
+| `reverses_event_id` | uuid NULL、自表の履歴へ `RESTRICT`、UNIQUE。`(event_type = 'restore')` と同時に非空 |
+| `stock_movement_id` | bigint NULL、`stock_movements(id)` へ `RESTRICT`、UNIQUE。`hold`・`allocate`・`restore`・`release` と同時に非空 |
+| `reason` | text NULL。下の15値のどれか |
+| `actor_id` | uuid NULL（FK なし） |
+| `created_at` | timestamptz NOT NULL DEFAULT now() |
+
+索引: `order_item_allocation_events_allocation_created_idx (allocation_id, created_at, id)`。追記だけ。
+
+| `event_type` | 意味 | 台帳（`stock_movements`） | G-1 で書く関数 |
+| --- | --- | --- | --- |
+| `hold` | H を作る | `purchase`、負数 | 注文の受付 |
+| `promote` | H を A に変える（数量は変えない） | なし | 入金 |
+| `allocate` | A を作る | `purchase`（交換の品は `exchange`）、負数 | FIFO |
+| `release` | 残数量を減らして空きへ戻す | `cancel`・`refund`・`allocation_release`、正数 | 未入金の解放・取消・返金・在庫を減らす操作 |
+| `consume` | 発送で使う（A だけ） | なし | なし（G-3 が書く。制約は受け付ける） |
+| `restore` | 発送の消費を戻した新しい A | `purchase`・`exchange`、負数 | なし（G-3） |
+| `transfer` | 同じ variant の割当の入替（両側が対） | なし | なし（G-4） |
+
+履歴の理由 `reason` は、次の15値だけ（`order_item_allocation_events_reason_check`）。`src/lib/inventory/allocation-types.ts` の `ALLOCATION_EVENT_REASON_CODES` と同じ集合で、単体試験が突き合わせる。管理者のメモのような自由な文は台帳の `note` に残し、ここには書かない。
+
+| 値 | 場面 |
+| --- | --- |
+| `checkout` | 注文の受付で H を作る |
+| `stripe_payment_paid` | 入金で H を A に変える |
+| `fifo` | FIFO で A を作る |
+| `stock_adjustment` | 在庫を減らす操作で、足りない分の A を外す |
+| `refund_restock` / `refund_release` | 返金で割当を外す（在庫へ戻す / 在庫へ戻さずに外す） |
+| `stripe_checkout_expired` / `stripe_voucher_expired` | 未入金の支払い期限切れで H を外す |
+| `admin_cancel` / `admin_cancel_failed_order` | 店の取消（未入金・失敗した注文）で H を外す |
+| `resolve_payment_exception` | 要対応の解決（取消）で H を外す |
+| `status_change` | 上のどれにも当たらない状態変更の理由 |
+| `fixture_allocation` / `fixture_release` / `fixture_shipment` | 手元の試験の材料だけが書く |
+
+#### `public.order_item_state_events`（品物ごとの状態の履歴）
+
+| 列 | 型・制約 |
+| --- | --- |
+| `id` | uuid PRIMARY KEY DEFAULT gen_random_uuid() |
+| `order_item_id` | uuid NOT NULL、`order_items(id)` へ `RESTRICT` |
+| `unit_from`・`unit_to` | integer NOT NULL。0 始まりの半開区間 `[unit_from, unit_to)`。`unit_from >= 0`、`unit_to > unit_from` |
+| `quantity` | integer、`unit_to - unit_from` の生成列（`GENERATED ALWAYS AS … STORED`） |
+| `from_status`・`to_status` | text NULL。12の状態のどれか（`unpaid`・`payment_expired`・`in_production`・`ready`・`shipped`・`delivered`・`cancel_requested`・`cancelled`・`return_requested`・`return_in_progress`・`refund_waiting`・`returned`）。新しく表に出た数量だけ `from_status` が空、表から外れた数量だけ `to_status` が空。両方空と同じ状態への変化は不可 |
+| `operation_id` | uuid NOT NULL、操作の受付へ `RESTRICT`（遅延） |
+| `sequence` | integer NOT NULL、0 より大きい。`order_item_state_events_operation_key` UNIQUE `(operation_id, order_item_id, sequence, unit_from)` |
+| `reason` | text NULL（変化の原因の短い名前。例: `place_order_from_checkout_draft`・`stripe_payment_paid`・`fifo`・`stock_move`）。`actor_id` uuid NULL（FK なし）。`created_at` timestamptz NOT NULL DEFAULT now() |
+| `version` | bigint NOT NULL、0 より大きい。明細ごとに履歴が積まれる順 |
+
+索引: `order_item_state_events_item_version_idx (order_item_id, version, id)`。追記だけ。現在の状態は保存せず、原本（入金・割当・発送・配送・取消申請・返品・返金）から `private.group_g_item_state_ranges(uuid[])` が数量の重ならない区間に投影する。履歴は原因と同じ取引で、変化した数量だけ `private.record_group_g_item_state_changes` が足す。読み出しは `public.list_admin_order_item_states(uuid[])`（service_role 専用、一度に200注文まで）。
+
+### 追加の2列と台帳の理由
+
+| 対象 | 内容 |
+| --- | --- |
+| `public.orders.paid_at` | timestamptz NULL。初めて入金を DB に記録した時刻（`clock_timestamp()`）。Stripe のイベント時刻や注文日時で代用しない。金額が違う入金でも設定し、書いたら変えられない（トリガー `orders_paid_at_once`、例外 `GROUP_G_PAID_AT_IMMUTABLE`）。列の権限は後から足した列に及ばないので、お客様の Data API からは隠れる店内だけの列 |
+| `public.stock_movements.allocation_operation_id` | uuid NULL、操作の受付へ `RESTRICT`（遅延）。割当の履歴に結ぶ台帳の行だけが持つ。持つ行は `hold`・`allocate`・`restore`・`release` の履歴がちょうど1つ対応する（遅延のトリガー `group_g_stock_movement_consistency`） |
+| `stock_movements_reason_check` | 理由に `allocation_release`（割当の解放。正数）を足し、`purchase`・`restock`・`adjustment`・`cancel`・`refund`・`return`・`exchange`・`allocation_release` の8値にした |
+
+### トリガーと数の確かめ
+
+| 名前 | 表 | 内容 |
+| --- | --- | --- |
+| `*_no_update`・`*_no_delete`・`*_no_truncate`（9本） | 割当の履歴・状態の履歴・操作の受付 | 更新・削除・全消しを `GROUP_G_HISTORY_IMMUTABLE`（55000）で断る（所有者の通常の SQL も同じ） |
+| `order_item_allocations_change_guard` | 割当の現在値 | 削除と、`id`・明細・variant・数量・作った操作・作った時刻の変更を断る。種類は H から A だけ、残数量は増やせない、`version` は変化があった時にちょうど +1 |
+| `group_g_allocation_bounds`（遅延、割当と割当の履歴の2本） | 割当・割当の履歴 | commit の時に触れた割当と相手の割当を確かめ、違反は `GROUP_G_ALLOCATION_BOUNDS`（23514）、`DETAIL` に違反の種類（`variant_mismatch`・`creation_event`・`kind_history`・`remaining_events`・`consume_kind`・`stock_movement`・`restore`・`transfer_pair`・`hold_paid_overlap`・`item_bounds`）を入れる |
+| `group_g_stock_movement_consistency`（遅延） | 台帳 | 操作の番号を持つ台帳の行は、同じ variant・明細・数量・操作の履歴が1つ対応すること |
+| `orders_paid_at_once` | 注文 | `paid_at` を書いた後の変更を断る |
+| `order_item_completions_disabled` | 仕上がりの表 | 新しい INSERT・UPDATE を `MANUAL_COMPLETION_DISABLED`（55000）で断る。service_role の書込み権限も外した |
+
+数の確かめ（`group_g_allocation_bounds`）が見るもの: 履歴の作る行がちょうど1つで数量・操作が行と一致する／H で作った行だけが `promote` を1回持てる／残数量は `release`・`consume`・入替の出し手の合計を数量から引いた値／`consume` は A だけ／台帳の行は同じ variant・同じ操作で、作る履歴は負数・`release` は正数／`restore` は別の割当の同じ明細・同じ variant・同じ数量の `consume` を1回だけ戻す／入替は両側の履歴が対になり、両側とも A／1つの明細で H と A の残りを同時に持たない／A と H の残数量の和は、明細の数量から取り消していない発送の数量を引いた値以下。
+
+### 旧の発送・仕上がりの停止と共通の鍵
+
+- 旧の発送4関数（`admin_create_fulfillment`・`admin_cancel_fulfillment`・`admin_update_fulfillment_tracking`・`admin_mark_fulfillment_delivered`）は `LEGACY_FULFILLMENT_DISABLED`、仕上がりの手動記録2関数（`admin_record_completion`・`admin_cancel_completion`）は `MANUAL_COMPLETION_DISABLED`（どちらも 55000）で、引数の検証や行の鍵より前に断る固定の定義に置き換えた。戻り型と service_role の実行権限は変えない。G-3 の発送票まで再開しない。
+- 全ての更新の入口は、共通の鍵（advisory `(190521, 1)`）を最初に取る。行の鍵の順は advisory → `checkout_drafts`（注文作成時だけ）→ `items`（KEY SHARE）→ `item_variants` → `orders` → `order_items` → 割当 → 返品 → 返品の行 → 受け取り → 受け取りの行 → 返金 → 返金の行 → キャンセルの申し込み → 申し込みの行 → 補助の行。配送の追跡の設定（`shop_settings`）だけは advisory の直後・`orders` の前に取る例外。詳しくは [在庫の割当の流れ](../../04_DetailDesign/sequence/inventory-allocation.md) の「共通の鍵と行の鍵の順」。
+
 ## 7. 関連ドキュメント
 
 - [システム構成](../architecture/system-overview.md)
 - [API](../api/api-spec.md)
 - [注文・決済の状態遷移](../../04_DetailDesign/states/order-payment.md)
+- [在庫の割当の流れ（G-1）](../../04_DetailDesign/sequence/inventory-allocation.md)
+- [在庫の割当の状態（G-1）](../../04_DetailDesign/states/inventory-allocation.md)
+- [DB マイグレーション運用](../../06_Operations/db-migrations.md)

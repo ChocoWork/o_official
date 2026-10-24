@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { logAudit } from '@/lib/audit';
@@ -36,11 +37,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const rawParams = await params;
+  const parsedId = z.string().uuid().safeParse(rawParams.id);
   await logAudit({
     action: 'admin.orders.completion.cancel',
     actor_id: authz.userId,
     resource: 'orders',
-    resource_id: rawParams.id,
+    resource_id: parsedId.success ? parsedId.data : null,
     outcome: 'failure',
     detail: 'Manual completion disabled',
     ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,

@@ -1,10 +1,10 @@
 ﻿# DB マイグレーション運用
 
-> 状態: 運用方針 | 本番適用状況は未確認
+> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に追記） | 確認日: 2026-10-24 | 本番適用状況は未確認（G-1 の移行は未適用）
 
 ## 概要
 
-本書はデータベースマイグレーションの現行手順と過去の移行記録をまとめる。実際の適用対象は `supabase/migrations/` と `.github/workflows/db-migrations.yml` で確認し、本番台帳は実行前に読み直す。
+本書はデータベースマイグレーションの現行手順と過去の移行記録をまとめる。実際の適用対象は `supabase/migrations/` と `.github/workflows/db-migrations.yml` で確認し、本番台帳は実行前に読み直す。グループ G-1 の移行（本番のテスト用の注文を消す清掃を含む1本）の内容・当て方・記録は末尾の「グループ G-1 在庫の割当の移行」に書く。
 
 本番 Supabase（`pjidrgofvaglnuuznnyj`）へのスキーマ適用手順と、
 マイグレーションの書き方の規約。
@@ -329,3 +329,69 @@ CI（DB）とホスティング（アプリ）のどちらが先に終わるか�
 
 - 権限を広げる変更を先に出し、狭める変更は次のリリースへ回す（2 段階デプロイ）
 - メンテナンス時間を取って、アプリのデプロイ完了を確認してから `db push` を手で流す
+
+## グループ G-1 在庫の割当の移行（20261023211425）
+
+[設計書](../superpowers/specs/2026-10-23-group-g-design.md)の11章（切り替え）と[実装計画](../superpowers/plans/2026-10-24-group-g1-allocation.md)の Task 1・14・19 に従う。2026-10-24 時点で本番へ未適用。内容は[ER 図](../03_BasicDesign/data/er.md)の「在庫の割当と品物の状態の履歴」、流れは[在庫の割当の流れ](../04_DetailDesign/sequence/inventory-allocation.md)に書く。
+
+### 記録（適用後に埋める）
+
+| 項目 | 値 |
+| --- | --- |
+| 移行ファイル | `supabase/migrations/20261023211425_group_g1_allocation.sql`（適用前の仮の版。1本。先頭の `BEGIN;` と末尾の `COMMIT;` を1組だけ持つ） |
+| 本番適用版 | （本番適用版: Task 19 Step 11 で記入） |
+| 清掃件数 | （清掃件数: オーナー確認後に記入） |
+
+適用が終わったら、上の2行を実際の値で置き換える。ファイル名の時刻部分を適用版に直した時は、この文書と、移行ファイル名を文字で書いている文書（ER 図・シーケンス・状態・テスト仕様）の仮の版も同じ版に直す。件数は表名・条件・件数だけを書き、ID・メール・本文は書かない。
+
+### 何をするか
+
+1本のファイルが次の順に1取引で動く。途中までの適用はしない。
+
+| 順 | 内容 |
+| --- | --- |
+| 1 | `SET LOCAL lock_timeout = '15s'`、共通の鍵 `pg_advisory_xact_lock(190521, 1)`、清掃の31表の `ACCESS EXCLUSIVE` ロック。cron の設定は変えず、この鍵と表のロックで cron・worker と直列にする。ロックごとに15秒が掛かるので、全体が15秒で必ず終わるとは言わない。取れなければ SQLSTATE `55P03` で全部戻る |
+| 2 | **清掃**。開始時に削除対象の表のユーザートリガーが通常有効か、法定保存の2つの削除保護（`protect_legal_order_delete`・`protect_legal_order_item_delete`）があるか、循環 FK の形が想定どおりかを確かめ、違えば `GROUP_G_CLEANUP_PRECONDITION`（55000）で始めない。確かめた後、この取引の中だけユーザートリガーを無効にして消し、同じ取引の中で有効に戻す。循環 FK `order_items_exchange_return_line_id_fkey` は一時的に外し、同名・同じ列・`ON DELETE RESTRICT` で戻す |
+| 3 | **本体**。4表・2列・台帳の理由・割当の鍵と FIFO・状態の投影と履歴・各入口の置き換え（受付・入金・解放・返金・申し込み・返品・交換・配送）・書き手の閉じた一覧。詳細は ER 図 |
+| 4 | **旧入口の停止**。旧の発送4関数と仕上がりの手動記録2関数を、処理せず拒否する定義に置き換える（SQLSTATE 55000）。仕上がりの表への書込みを止める。旧の写しの関数2本を消す。**G-3 の発送票が出るまで、管理画面から発送・発送の取消・伝票番号の訂正・手動の配達済み・仕上がりの記録はできない** |
+| 5 | **末尾の確かめ**（3つのブロック）。清掃後の状態、新しい表・列・制約・トリガー・関数・権限の期待、書き手の集合を比べる。1つでも違えば `GROUP_G_MIGRATION_ASSERTION_FAILED`（55000）で、清掃も本体も含めて全部戻る（全部成功か何も起きないか）。続けて `NOTIFY pgrst, 'reload schema'`、`COMMIT` |
+
+清掃で消す・直すもの（31の永続表）:
+
+| 操作 | 表 |
+| --- | --- |
+| 全件削除（25表） | `private.order_email_outbox`・`private.order_status_links`・`private.fulfillment_tracking_registrations`、`public` の `order_fulfillment_attention`・`order_fulfillment_events`・`order_fulfillment_tracking_changes`・`order_return_photos`・`order_return_photo_uploads`・`order_cancel_request_lines`・`order_cancel_requests`・`order_return_receipt_lines`・`order_return_receipts`・`order_refund_lines`・`stock_movements`・`order_refunds`・`order_return_lines`・`order_fulfillment_lines`・`order_item_completions`・`order_items`・`order_fulfillments`・`order_returns`・`order_revisions`・`payment_exceptions`・`checkout_drafts`・`orders`（削除の順は外部キーに従い、`stripe_refunds`・`stripe_balance_transactions` の注文に結ぶ行を先に消してから `orders` を消す） |
+| 注文に結ぶ行だけ削除（2表） | `stripe_refunds`・`stripe_balance_transactions`（消す注文に結ぶ行） |
+| 関連だけ外す（1表） | `contact_inquiries.order_id` を空にする。本文と子メッセージは残す |
+| 在庫を0にする（1表） | `item_variants.stock_quantity`（無効な variant も含む全部）。**適用後は全商品が、再入荷を記録するまで売り切れ表示になる** |
+| 集計を直す（1表） | `stripe_payouts`。影響を受ける payout だけ、残る balance の net の合計で `reconciled_net` を計算し直し、照合状態を `pending` に戻す（行は残す） |
+| 終端にする（1表） | `stripe_webhook_events`。消す注文に結ぶ未完了のイベントだけ `dead` にし、理由 `group_g1_test_data_cleanup` と通知済み時刻を同じ更新で入れる（削除しない。テストデータについて知らせのメールは送らない） |
+
+商品・variant・色・サイズ、利用者と全 ACL・G-0 の履歴、問い合わせの本文、注文に結ばない Stripe の写し、payout の行、Resend の重複防止の記録、Webhook の全行、監査ログ、Storage の全オブジェクトは残す。写真は注文に結ぶ DB の行だけを消す。条件の正確な文は計画の Task 1 の表が唯一の正本で、本書はその要約。
+
+### 当て方
+
+Supabase MCP の `apply_migration` で、ファイル全文を **1回だけ**当てる（`name` は `group_g1_allocation`）。清掃だけ・本体だけの個別適用と、移行履歴への手の INSERT はしない。スクリプトからの本番接続はなく、DB のパスワードは扱わない。読み取りは MCP の `execute_sql`。
+
+| 順 | 内容 |
+| --- | --- |
+| 1 | 全体検証（型・単体・DB 結合・E2E を最新の基準と比較・最終レビュー）を終える |
+| 2 | MCP で件数だけを読む（31表の条件別の件数、全 variant の件数と在庫の合計、削除する balance の件数、影響する payout の件数、問い合わせの解除件数、未完了の Webhook の件数）。ID・メール・本文は読まない。本番とローカルの関数の指紋・所有者・`search_path`・権限・トリガー・FK も読み比べ、差があれば止める |
+| 3 | 適用前に次を確かめる（最終レビューの推奨）。(a) `anon`・`authenticated`・`service_role` の `pg_auth_members` と `pg_write_all_data`・`pg_read_all_data`・`pg_maintain` の所属（所属があると台帳の INSERT 権限の確かめが落ちて全部戻る）。(b) 清掃の対象27表のユーザートリガーの `tgenabled`（`O` 以外があると開始時に止まる。安全側だが時間枠を無駄にする）。(c) 本番にだけある関数の有無（本番とローカルの関数の集合を両方向で比べる） |
+| 4 | 移行ファイルの文字を固定する（UTF-8・BOMなし・LF、全角空白 U+3000 と CR が0、ドル引用の外のトップレベルの `BEGIN`・`COMMIT` が各1）。MD5（小文字）とバイト数を保存し、以後ファイルを変えたら検証・レビュー・この固定からやり直す |
+| 5 | 手元で動くアプリと worker を止める（3000番の E2E 用のアプリも）。止めたことを棚卸しで確かめ、master の対象コミットだけを push する |
+| 6 | 適用の直前に、writer（アプリ・worker）、cron の登録（jobname・schedule・active・関数名だけ。command の本文は出さない）、31表の件数を読み直す。**前回より多くても少なくても止めて**原因を確かめ、連続2回の読み取りが一致する安定した件数を作る。cron の設定は変えない |
+| 7 | オーナーに31表の条件と件数を示し、**明示の確認**を取る（一般の実装の承認や時間経過では代えない）。確認後に件数や時間枠が変わったら 6 に戻る |
+| 8 | `apply_migration` を1回呼ぶ |
+| 9 | 当てた文を照合する。`md5(statements[1])`・`octet_length(statements[1])`・文の数（1）が、手順4で固定した値と一致すること。新しい表・列・関数・権限、旧入口の停止、31表の結果（件数・全 variant が0・Webhook の `dead`・未通知の一覧が0・総行数）、`private` スキーマの `USAGE` と PostgREST の前処理の保持、G-0 の保持を読み取りで確かめる。本番で試験の注文は作らない |
+| 10 | ファイル名の時刻部分だけを、MCP が記録した版に直す（上の「MCP の apply_migration で当てた場合」。名前の後ろと本文は変えない）。上の記録の2行を埋めてコミットし、push する |
+
+### 失敗したとき・戻すとき
+
+- `55P03`（15秒でロックが取れない）、`40P01`（deadlock）を含む失敗は、全部戻る。移行履歴にも残らないことを読み取りで確かめる。個別の節の適用や、すぐの強制再試行はしない。後の時間枠で 2 からやり直す。cron の設定を変えて通さない。
+- 適用に成功した後の巻き戻しは用意しない。清掃で消したテスト用の注文と関連記録は戻せない。後からの直しは新しい移行で行う。
+- 適用の前に、ローカルの DB でも同じ全文を、故障を注入して実行する試験（`group_g1_cleanup.integration.test.ts`）があり、末尾の確かめが失敗したときに清掃・新しい表・列・関数がすべて戻ることを確かめている。本番での実行を意味しない。
+
+### 適用後に残る作業
+
+- 旧の発送4関数と仕上がりの2関数は、G-3 の発送票まで再開しない。

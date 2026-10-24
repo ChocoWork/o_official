@@ -131,6 +131,22 @@ describe.each([
   });
 });
 
+describe('止めた窓口の監査の resource_id（G-1）', () => {
+  it.each([
+    ['仕上がりの記録', 'admin.orders.completion.record', () => postCompletion(recordRequest(RECORD_BODY), { params: Promise.resolve({ id: 'x' }) })],
+    ['仕上がりの取消', 'admin.orders.completion.cancel',
+      () => postCancel(cancelRequest(), { params: Promise.resolve({ id: 'x', completionId: COMPLETION_ID }) })],
+  ] as const)('%s: URL の注文番号が UUID でなければ resource_id は null。410 は変わらない', async (_name, action, call) => {
+    await expectDisabled(await call());
+
+    expect(mockLogAudit.mock.calls).toEqual([[expect.objectContaining({
+      action, actor_id: 'admin-1', resource: 'orders', resource_id: null, outcome: 'failure',
+      metadata: { code: 'MANUAL_COMPLETION_DISABLED' },
+    })]]);
+    expectNoSideEffects();
+  });
+});
+
 describe('入力にかかわらず同じ 410', () => {
   it.each([
     ['注文番号の形の誤り', () => postCompletion(recordRequest(RECORD_BODY), { params: Promise.resolve({ id: 'x' }) })],

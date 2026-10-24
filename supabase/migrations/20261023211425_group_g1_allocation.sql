@@ -1103,7 +1103,9 @@ BEGIN
       WHERE l.order_item_id = i.order_item_id
     ) AS c
   ), unshipped_counts AS (
-    SELECT u.*, CASE WHEN u.order_status = 'cancelled' AND NOT u.paid AND u.shipped = 0 AND u.allocated = 0
+    -- 取消済みの注文は、割当も発送も残らない未発送分を入金の有無によらず取消とする。
+    -- 取消後に届いた入金 (record_cancelled_order_paid_amount, auto_cancelled_order_payment) で受注生産へ戻さない。
+    SELECT u.*, CASE WHEN u.order_status = 'cancelled' AND u.shipped = 0 AND u.allocated = 0
                       THEN u.remaining ELSE LEAST(u.remaining, u.refunded) END AS cancelled,
            (u.paid OR u.shipped > 0 OR u.allocated > 0) AS is_paid
     FROM unshipped AS u
