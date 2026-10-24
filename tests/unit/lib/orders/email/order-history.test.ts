@@ -7,7 +7,7 @@ import {
   type OrderHistoryReturnReceiptLine,
   type OrderHistoryReturnRecord,
 } from '@/lib/orders/email/order-history';
-import type { OrderCompletionHistoryRow, OrderFulfillmentHistoryRow } from '@/lib/orders/fulfillment/fulfillment-store';
+import type { OrderFulfillmentHistoryRow } from '@/lib/orders/fulfillment/fulfillment-store';
 import type { OrderRefundLineRow, OrderRefundRow } from '@/lib/orders/refund/refund-store';
 import { returnDetail } from '../returns/order-return-detail-fixture';
 
@@ -42,13 +42,6 @@ function fulfillment(overrides: Partial<OrderFulfillmentHistoryRow> = {}): Order
   };
 }
 
-function completion(overrides: Partial<OrderCompletionHistoryRow> = {}): OrderCompletionHistoryRow {
-  return {
-    completionId: 'c-1', orderItemId: PANTS, quantity: 1, createdAt: '2026-10-10T01:00:00.000Z', createdByEmail: 'admin@example.com',
-    cancelledAt: null, cancelledByEmail: null, legacy: false, ...overrides,
-  };
-}
-
 const REFUND_CREATED_AT = '2026-10-11T01:00:00.000Z'; // 返金の記録を作った（返事待ち）
 const REFUND_ACCEPTED_AT = '2026-10-11T01:00:03.000Z'; // Stripe が受け付けた
 const REFUND_SUCCEEDED_AT = '2026-10-11T01:05:00.000Z'; // 成功した
@@ -74,7 +67,7 @@ function refund(overrides: Partial<OrderRefundRow> = {}): OrderRefundRow {
 
 function input(overrides: Partial<BuildOrderHistoryInput> = {}): BuildOrderHistoryInput {
   return {
-    order: ORDER, statusRows: [], emailRows: [], sendState: NOT_PAUSED, fulfillments: [], completions: [], refunds: [], returns: [],
+    order: ORDER, statusRows: [], emailRows: [], sendState: NOT_PAUSED, fulfillments: [], refunds: [], returns: [],
     returnReceiptLines: [], returnRecords: [], cancelRequests: [], lines: [],
     ...overrides,
   };
@@ -266,29 +259,6 @@ describe('buildOrderHistory - 発送', () => {
   });
 });
 
-// G-1 Task 14: 手動の仕上がりは終了した。仕上がりの一覧を渡されても、仕上がりの行・取消の行は作らない（読みも合成もしない）
-describe('buildOrderHistory - 仕上がり（G-1 で終了）', () => {
-  it('仕上がり・取り消した仕上がりを渡しても、仕上がりの行も取消の行も作らず、ほかの行は渡さない時と同じ', () => {
-    const base = input({ fulfillments: [fulfillment()], lines: LINES });
-    const withCompletions = buildOrderHistory({
-      ...base,
-      completions: [
-        completion(),
-        completion({ completionId: 'c-2', cancelledAt: '2026-10-11T04:00:00.000Z', cancelledByEmail: 'owner@example.com' }),
-      ],
-    });
-
-    expect(withCompletions.entries.some((entry) => entry.type === 'completion' || entry.type === 'completion_cancel')).toBe(false);
-    expect(withCompletions).toEqual(buildOrderHistory(base));
-  });
-
-  it('仕上がりの一覧を渡さなくても履歴を作れる', () => {
-    const withoutCompletions: BuildOrderHistoryInput = input({ lines: LINES });
-    delete withoutCompletions.completions;
-    expect(buildOrderHistory(withoutCompletions).entries.map((entry) => entry.type)).toEqual(['created']);
-  });
-});
-
 describe('buildOrderHistory - 発送ごとのメール', () => {
   it('発送のメールの行は「発送（n回目）」と出し、どの発送かを返す。発送の番号が無い行は「発送」', () => {
     const history = buildOrderHistory(input({
@@ -348,7 +318,7 @@ describe('buildOrderHistory - 発送ごとのメール', () => {
 });
 
 describe('buildOrderHistory - 並び順', () => {
-  it('同じ時刻の行は、結果が上になる順（メール → 状態 → 取消 → 発送 → 受付）に置く（仕上がりの行は G-1 で作らない）', () => {
+  it('同じ時刻の行は、結果が上になる順（メール → 状態 → 取消 → 発送 → 受付）に置く', () => {
     const at = '2026-10-10T02:00:00.000Z';
     const history = buildOrderHistory(input({
       order: { ...ORDER, status: 'shipped' },
@@ -358,7 +328,6 @@ describe('buildOrderHistory - 並び順', () => {
       }],
       emailRows: [email({ kind: 'shipped', fulfillmentId: 'f-1', fulfillmentNumber: 1, createdAt: at })],
       fulfillments: [fulfillment({ shippedAt: at, cancelledAt: at, cancelledByEmail: 'owner@example.com' })],
-      completions: [completion({ createdAt: at, cancelledAt: at, cancelledByEmail: 'owner@example.com' })],
       lines: LINES,
     }));
 
@@ -367,7 +336,7 @@ describe('buildOrderHistory - 並び順', () => {
     ]);
   });
 
-  it('発送・メール・状態を、時刻の新しい順に混ぜる（仕上がりは渡しても行にしない）', () => {
+  it('発送・メール・状態を、時刻の新しい順に混ぜる', () => {
     const history = buildOrderHistory(input({
       statusRows: [{
         changedAt: '2026-10-09T01:00:00.000Z', fromStatus: 'payment_in_progress', toStatus: 'paid', changeReason: 'stripe_payment_paid',
@@ -375,7 +344,6 @@ describe('buildOrderHistory - 並び順', () => {
       }],
       emailRows: [email({ kind: 'shipped', fulfillmentId: 'f-1', fulfillmentNumber: 1, createdAt: '2026-10-10T02:00:00.000Z' })],
       fulfillments: [fulfillment({ shippedAt: '2026-10-10T02:00:00.000Z' })],
-      completions: [completion({ createdAt: '2026-10-09T05:00:00.000Z' })],
       lines: LINES,
     }));
 
@@ -755,7 +723,6 @@ describe('buildOrderHistory - 返金のお知らせと並び順', () => {
       }],
       emailRows: [email({ kind: 'shipped', fulfillmentId: 'f-1', fulfillmentNumber: 1, createdAt: at })],
       fulfillments: [fulfillment({ shippedAt: at, cancelledAt: at, cancelledByEmail: 'owner@example.com' })],
-      completions: [completion({ createdAt: at, cancelledAt: at, cancelledByEmail: 'owner@example.com' })],
       refunds: [refund({
         status: 'failed', stripeStatus: 'failed', createdAt: at, acceptedAt: at, succeededAt: null, failedAt: at,
         lines: [refundLine({ rereservedQuantity: 1 })],

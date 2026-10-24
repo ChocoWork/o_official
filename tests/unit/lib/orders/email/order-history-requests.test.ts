@@ -20,7 +20,7 @@ const ORDER = { id: ORDER_ID, status: 'paid' as const, shippingEmail: 'hanako@ex
 
 function input(overrides: Partial<BuildOrderHistoryInput> = {}): BuildOrderHistoryInput {
   return {
-    order: ORDER, statusRows: [], emailRows: [], sendState: NOT_PAUSED, fulfillments: [], completions: [], refunds: [], returns: [],
+    order: ORDER, statusRows: [], emailRows: [], sendState: NOT_PAUSED, fulfillments: [], refunds: [], returns: [],
     returnReceiptLines: [], returnRecords: [], cancelRequests: [], lines: [],
     ...overrides,
   };

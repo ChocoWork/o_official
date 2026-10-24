@@ -135,6 +135,7 @@ for (const viewport of deliveryViewports) {
 
     // FREQ-494-AC-02, FREQ-494-AC-05
     test('直した番号だけを出し一部の配達済みは配送中のまま', async ({ page }) => {
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/118/120で新票へ書換・再開');
       test.setTimeout(420_000);
       await withDeliveryScenario(async ({ client, numberPrefix }) => {
         const actor = await createAdminActor(client);

@@ -6,6 +6,7 @@
  * 管理画面の絞り込みは DB の状態で働く（窓口は status=paid・status=shipped、2つ以上選んだ時は画面が orderStatus で絞る）。
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { MANUAL_COMPLETION_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import { mockOtpAuthentication } from './account-test-utils';
 import { adminOrder, mockAdminSession, mockOrderList, openOrderTab, orderLine, viewports } from './order-fulfillment-test-utils';
 
@@ -16,7 +17,7 @@ const ORDERS = [
     canShip: false,
   }),
   adminOrder({
-    id: 'order-production', customerName: '受注 次郎', status: '受注生産中', progressKey: 'in_production', canRecordCompletion: true,
+    id: 'order-production', customerName: '受注 次郎', status: '受注生産中', progressKey: 'in_production',
     items: [orderLine({ id: 'd1000000-0000-4000-8000-000000000001', name: 'ウールコート', fulfillmentType: 'backorder', quantity: 2, inProduction: 2, readyUnshipped: 0 })],
   }),
   adminOrder({
@@ -25,7 +26,6 @@ const ORDERS = [
   }),
   adminOrder({
     id: 'order-partial', customerName: '一部 四郎', status: '受注生産中', progressKey: 'in_production', partiallyShipped: true,
-    canRecordCompletion: true,
     items: [orderLine({ id: 'd1000000-0000-4000-8000-000000000003', name: 'ウールコート', fulfillmentType: 'backorder', quantity: 2, shipped: 1, inProduction: 1, readyUnshipped: 0 })],
   }),
   adminOrder({
@@ -143,9 +143,13 @@ for (const viewport of viewports) {
       // 商品の欄は、0でない数だけを括弧の中に出す
       await expect(orderRow(page, 'order-partial')).toContainText(/ウールコート（ホワイト \/ M）\s*×\s*2/);
       await expect(orderRow(page, 'order-partial')).toContainText('受注生産中 1・発送済み 1');
-      // 受注生産中の数がある注文にだけ「仕上がりを記録する」が出る
-      await expect(orderRow(page, 'order-production').getByRole('button', { name: '仕上がりを記録する' })).toBeVisible();
+      // G-1: 手動の仕上がりの記録は終了した。受注生産中の数がある注文にも「仕上がりを記録する」は出ず、固定の停止文を表の外に1回出す。
+      // 受注生産の品は入荷の自動の割当（入金済みの割当 A）で発送準備中になる。管理の12状態の言葉の画面は G-4 FR-ADMIN-110
+      await expect(orderRow(page, 'order-production').getByRole('button', { name: '仕上がりを記録する' })).toHaveCount(0);
+      await expect(orderRow(page, 'order-partial').getByRole('button', { name: '仕上がりを記録する' })).toHaveCount(0);
       await expect(orderRow(page, 'order-ready').getByRole('button', { name: '仕上がりを記録する' })).toHaveCount(0);
+      await expect(page.getByText(MANUAL_COMPLETION_DISABLED_TEXT, { exact: true })).toHaveCount(1);
+      await expect(page.getByText(MANUAL_COMPLETION_DISABLED_TEXT, { exact: true })).toBeVisible();
       await page.screenshot({ path: `test-results/group-e1/order-list-labels-${viewport.width}.png`, fullPage: true, animations: 'disabled' });
     });
 

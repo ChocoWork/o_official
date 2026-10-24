@@ -7,6 +7,7 @@
  * 2026-10-10（グループ E-1）: 発送の画面は商品と数を選ぶ画面になり、窓口は POST /api/admin/orders/[id]/fulfillments に、
  * 発送の関数は admin_create_fulfillment に変わった。発送のメールの行は、その発送の自動の1行になる。
  * 発送の画面（チェックが見える所）は、目で見るために3つの画面幅の写しを test-results/group-d/ に残す。
+ * G-1: 旧の発送の画面と発送の関数は停止した。この spec の2つのケースは、G-3 の発送票（FR-ADMIN-116・120）で書き換えて再開するまで止める。
  */
 import { expect, test, type Page } from '@playwright/test';
 import type { CreateFulfillmentRequest, CreateFulfillmentResponse } from '@/lib/orders/fulfillment/fulfillment-types';
@@ -90,6 +91,7 @@ for (const viewport of viewports) {
 
     test('発送の画面の「お客様に発送のメールを送る」は最初から入っていて、外すと「送らない」を送る', async ({ page }) => {
       // FREQ-438-AC-01
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116/120で新票へ書換・再開');
       const bodies: CreateFulfillmentRequest[] = [];
       await mockAdminApis(page, bodies);
       await openOrderTab(page);
@@ -116,6 +118,9 @@ for (const viewport of viewports) {
 
     test('「送らない」で発送した注文には発送のメールが届かず、「送る」なら1通届く（手元の DB と Mailpit）', async ({ request }) => {
       // FREQ-438-AC-02, FREQ-442-AC-04
+      // 「送る・送らない」を決める旧の発送の操作は停止した。ここで発送の材料を作る createFulfillment は合成（メールの予定も材料として足すだけ）で、
+      // 発送の操作の成功の証拠にならないので、発送票の通知（G-3）で書き換えるまで止める
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116/120で新票へ書換・再開');
       // worker の入口は Stripe の知らせの処理と注文のメールの送信を続けて動かすので、既定の30秒では足りないことがある
       test.setTimeout(120_000);
       const silentEmail = uniqueEmail(`ship-silent-${viewport.name}`);

@@ -22,7 +22,7 @@ import {
   type OrderEmailStatus,
 } from '@/lib/orders/email/order-email-types';
 // 型だけを読む（実行時には何も読み込まない）。窓口が DB の関数から読んだ行を、そのまま渡してもらう
-import type { OrderCompletionHistoryRow, OrderFulfillmentHistoryRow } from '@/lib/orders/fulfillment/fulfillment-store';
+import type { OrderFulfillmentHistoryRow } from '@/lib/orders/fulfillment/fulfillment-store';
 import type { OrderRefundRow } from '@/lib/orders/refund/refund-store';
 import type { DeliveryEvent, FulfillmentDeliveryDetail, OrderDeliveryDetail, TrackingChange } from '@/lib/orders/tracking/delivery-types';
 
@@ -156,24 +156,6 @@ export type OrderHistoryFulfillmentCancelEntry = {
   actorEmail: string | null;
 };
 
-export type OrderHistoryCompletionEntry = {
-  type: 'completion';
-  at: string;
-  completionId: string;
-  items: Array<{ name: string; quantity: number }>;
-  actorEmail: string | null;
-  cancelled: boolean;
-  cancellable: boolean;
-  legacy: boolean;
-};
-
-export type OrderHistoryCompletionCancelEntry = {
-  type: 'completion_cancel';
-  at: string;
-  completionId: string;
-  actorEmail: string | null;
-};
-
 /** 返金1件の行（グループ E-2 設計書 9-2）。状態の移り変わり（返事待ち → 保留 → 成功・失敗など）を時刻つきで持つ。at は作った時刻 */
 export type OrderHistoryRefundEntry = {
   type: 'refund';
@@ -264,8 +246,6 @@ export type OrderHistoryEntry =
   | OrderHistoryEmailEntry
   | OrderHistoryFulfillmentEntry
   | OrderHistoryFulfillmentCancelEntry
-  | OrderHistoryCompletionEntry
-  | OrderHistoryCompletionCancelEntry
   | OrderHistoryRefundEntry
   | OrderHistoryRefundRereserveEntry
   | OrderHistoryReturnEntry
@@ -290,12 +270,6 @@ export type BuildOrderHistoryInput = {
   emailRows: OrderEmailHistoryRow[];
   sendState: { paused: boolean; reason: OrderEmailErrorCode | null };
   fulfillments: OrderFulfillmentHistoryRow[];
-  /**
-   * G-1 Task 14: 手動の仕上がりは終了した。渡されても履歴の行にしない（読みも合成もしない）。
-   * 画面の参照は G-1 Task 15 で外した。E2E（e2e/delivery-tracking-test-utils.ts・FR-ADMIN-069。G-1 Task 18 の担当）が
-   * この入力と仕上がりの行の型を参照するので、型の検査を通すために Task 18 まで残す。
-   */
-  completions?: OrderCompletionHistoryRow[];
   refunds: OrderRefundRow[];
   returns: OrderReturnDetail[];
   returnReceiptLines: OrderHistoryReturnReceiptLine[];
@@ -716,14 +690,13 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
     ...trackingChanges,
     { type: 'created', at: order.createdAt },
   ];
-  const typeOrder: Record<Exclude<OrderHistoryEntry['type'], 'completion' | 'completion_cancel'>, number> = {
+  const typeOrder: Record<OrderHistoryEntry['type'], number> = {
     email: 0, status: 1, fulfillment_cancel: 2, refund_rereserve: 4,
     delivery_event: 5, tracking_change: 6, fulfillment: 7, refund: 9, return: 10, created: 11,
   };
   const deliveryEntryId = (entry: OrderHistoryEntry) => entry.type === 'delivery_event' ? entry.event.id
     : entry.type === 'tracking_change' ? entry.change.id : '';
-  const priority = (entry: OrderHistoryEntry) => entry.type === 'return' && entry.kind === 'exchange_added' ? 4.5
-    : entry.type === 'completion' || entry.type === 'completion_cancel' ? Number.POSITIVE_INFINITY : typeOrder[entry.type];
+  const priority = (entry: OrderHistoryEntry) => entry.type === 'return' && entry.kind === 'exchange_added' ? 4.5 : typeOrder[entry.type];
   entries.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)
     || priority(a) - priority(b) || deliveryEntryId(a).localeCompare(deliveryEntryId(b)));
 

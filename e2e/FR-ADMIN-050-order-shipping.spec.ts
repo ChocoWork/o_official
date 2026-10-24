@@ -1,14 +1,11 @@
 import { test, expect, Page } from '@playwright/test';
-import type { CreateFulfillmentResponse } from '@/lib/orders/fulfillment/fulfillment-types';
+import { LEGACY_FULFILLMENT_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import {
   adminOrder,
-  fulfillJson,
-  materialLine,
   mockAdminSession,
   mockOrderList,
   openOrderTab,
   orderLine,
-  shipMaterials,
   viewports,
 } from './order-fulfillment-test-utils';
 
@@ -16,18 +13,12 @@ import {
 // 2026-10-10（FREQ-439）: 発送は商品と数を選ぶ1回ごとの記録になった。発送の画面は、開く時に
 // GET /api/admin/orders/[id]/fulfillments で材料を読み、POST で発送する。一覧の言葉は、送る前は「発送準備中」、全部を送ると「配送中」。
 // FREQ-267-AC-01/02/03 は FREQ-439-AC-01/03/04 に引き継いだ（requirements.md の注記）。
+// G-1: 旧の発送の画面（「発送済みにする」）は撤去した。発送の画面の入力・成功の経路（旧の発送の窓口を差し替えた成功）は、
+// G-3 の発送票（FR-ADMIN-116）で書き換えて再開する。入口が出ないことと固定の停止文・HTTP 410 の確認は FR-ADMIN-123 が持つ。
 
 const LINE_ID = 'c1000000-0000-4000-8000-000000000001';
 
 const PAID = adminOrder({ id: 'order-paid', items: [orderLine({ id: LINE_ID })] });
-const PAID_SHIPPED = adminOrder({
-  id: 'order-paid',
-  status: '配送中',
-  orderStatus: 'shipped',
-  progressKey: 'in_transit',
-  canShip: false,
-  items: [orderLine({ id: LINE_ID, shipped: 1, readyUnshipped: 0 })],
-});
 const OTHERS = [
   adminOrder({
     id: 'order-missing-shipping',
@@ -61,23 +52,8 @@ const OTHERS = [
 ];
 
 async function mockAdminApis(page: Page): Promise<void> {
-  let shipped = false;
   await mockAdminSession(page);
-  await mockOrderList(page, () => [shipped ? PAID_SHIPPED : PAID, ...OTHERS]);
-  await page.route('**/api/admin/orders/*/fulfillments', async (route) => {
-    if (route.request().method() === 'GET') {
-      await fulfillJson(route, shipMaterials({ orderId: 'order-paid', lines: [materialLine({ orderItemId: LINE_ID })] }));
-      return;
-    }
-    shipped = true;
-    await fulfillJson(route, {
-      fulfillmentId: 'f0000000-0000-4000-8000-000000000001',
-      number: 1,
-      completesOrder: true,
-      orderStatus: 'shipped',
-      replayed: false,
-    } satisfies CreateFulfillmentResponse);
-  });
+  await mockOrderList(page, () => [PAID, ...OTHERS]);
 }
 
 for (const viewport of viewports) {
@@ -87,29 +63,26 @@ for (const viewport of viewports) {
       await mockAdminApis(page);
     });
 
-    test('配送先が揃った決済完了注文にだけ発送ボタンが出る', async ({ page }) => {
+    test('配送先が揃った決済完了注文にだけ発送ボタンが出る', async () => {
       // FREQ-267-AC-01 / AC-02, FREQ-365-AC-09
-      await openOrderTab(page);
-
-      await expect(page.getByRole('button', { name: '発送済みにする' })).toHaveCount(1);
-      await expect(page.getByText('配送先要確認')).toBeVisible();
+      // 発送ボタンの出る条件は、発送票の画面（G-3）で書き換えて再開する。配送先要確認の表示は、下の別のケースが引き続き確かめる
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116で新票へ書換・再開');
     });
 
-    test('配送業者と追跡番号を入力して発送できる', async ({ page }) => {
+    test('配送業者と追跡番号を入力して発送できる', async () => {
       // FREQ-267-AC-02 / AC-03, FREQ-439-AC-03
+      // 旧の発送の画面（配送業者・追跡番号の入力と発送）は撤去した。発送票で書き換えて再開する
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116で新票へ書換・再開');
+    });
+
+    test('配送先が足りない注文に「配送先要確認」が出て、旧の発送の入口はどの注文にも出ず、固定の停止文が1回出る', async ({ page }) => {
+      // FREQ-365-AC-09（G-1: 配送先の確認の表示は残る。発送ボタンは窓口が canShip=true と答えても出さない）
       await openOrderTab(page);
 
-      await page.getByRole('button', { name: '発送済みにする' }).click();
-      // 発送の画面は材料を読み終えてから入力する
-      await expect(page.getByLabel('今回送る数')).toHaveCount(1);
-      await expect(page.getByLabel('配送業者')).toBeVisible();
-      await page.getByLabel('配送業者').selectOption('yamato');
-      await page.getByLabel('追跡番号').fill('1234-5678-9012');
-      await page.getByRole('button', { name: '発送する' }).click();
-
-      await expect(page.getByRole('row', { name: /order-paid/ }).getByText('配送中', { exact: true })).toBeVisible();
-      await expect(page.getByRole('row', { name: /order-shipped/ }).getByText('配送中', { exact: true })).toBeVisible();
+      await expect(page.getByText('配送先要確認')).toBeVisible();
       await expect(page.getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
+      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toHaveCount(1);
+      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toBeVisible();
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

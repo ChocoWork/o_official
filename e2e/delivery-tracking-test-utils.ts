@@ -24,6 +24,7 @@ import {
   type OrderStatusHistoryRow,
 } from '@/lib/orders/email/order-history';
 import type { OrderFulfillmentHistoryRow } from '@/lib/orders/fulfillment/fulfillment-store';
+import { LEGACY_FULFILLMENT_DISABLED, legacyFulfillmentDisabledBody } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import type { OrderStatus } from '@/lib/orders/order-payment-types';
 import { ORDER_PROGRESS_LABELS, deriveOrderProgress, type OrderLineProgressCounts } from '@/lib/orders/order-progress';
 import type { ShippingCarrierId } from '@/lib/orders/shipping-carriers';
@@ -989,7 +990,6 @@ async function bridgeHistory(client: PgClient, orderId: string) {
     emailRows,
     sendState: { paused: false, reason: null },
     fulfillments,
-    completions: [],
     refunds: [],
     returns: [],
     returnReceiptLines: [],
@@ -1154,8 +1154,9 @@ async function openBridgeConnection(page: Page): Promise<PgClient> {
 
 /**
  * 管理画面の橋渡し。管理者のログイン・CSRF・権限は差し替え（P22）、注文の一覧・要対応・履歴・設定の読み出しは DB の本物の結果を
- * 画面の形へ写し、書く3つの操作（伝票番号を直す・配達済みにする・要対応を閉じる）と設定の配送の切り替えは本物の DB の関数を呼ぶ。
- * 許した orderIds 以外の注文は扱わない。
+ * 画面の形へ写し、書く操作（要対応を閉じる）と設定の配送の切り替えは本物の DB の関数を呼ぶ。
+ * G-1: 伝票番号を直す・配達済みにするの窓口は停止したので、DB を呼ばずに固定の 410（実際の窓口と同じ本文）を返す。
+ * 許した orderIds 以外の注文は扱わない（その2つの停止した窓口を除く）。
  */
 export async function mockAdminDeliveryBridge(page: Page, context: DeliveryBridgeContext): Promise<void> {
   // 画面は窓口を同時に何本も呼ぶので、場面の接続（context.client）は使わず、橋渡しの専用の接続を1本開いて、問い合わせを1本ずつに並べる。
@@ -1233,40 +1234,19 @@ export async function mockAdminDeliveryBridge(page: Page, context: DeliveryBridg
     await fulfillJson(route, await bridgeHistory(client, orderId));
   });
 
+  // G-1: 伝票番号の訂正と手動の配達済みは停止した。実際の窓口と同じく、DB の旧の関数は呼ばず、入力を見ずに固定の 410 を返す
+  // （窓口の guard・DB には届かない差し替えで、窓口から DB までの完全な経路ではない。本物の拒否は Task 14 の単体・DB 結合が確かめる）
   await page.route(/\/api\/admin\/orders\/([^/]+)\/fulfillments\/([^/]+)\/(tracking|delivered)$/, async (route) => {
     const match = /\/orders\/([^/]+)\/fulfillments\/([^/]+)\/(tracking|delivered)$/.exec(new URL(route.request().url()).pathname);
     const [, orderId = '', fulfillmentId = '', operation = ''] = match ?? [];
     const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
-    const record = (status: number) =>
-      (operation === 'tracking' ? log.trackingPosts : log.deliveredPosts).push({ orderId, fulfillmentId, body, status });
-    if (!allowed(orderId)) {
-      record(404);
-      await fulfillJson(route, { error: DELIVERY_ERROR_MESSAGES.ORDER_NOT_FOUND.message }, 404);
-      return;
-    }
-    try {
-      if (operation === 'tracking') {
-        const row = (
-          await client.query('select * from public.admin_update_fulfillment_tracking($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::text, $6::text, $7::boolean)', [
-            orderId, fulfillmentId, actor.id, body.requestKey, body.carrier, body.trackingNumber, body.notifyCustomer,
-          ])
-        ).rows[0];
-        record(200);
-        await fulfillJson(route, {
-          data: { trackingChangeId: row.tracking_change_id, trackingVersion: Number(row.tracking_version), replayed: row.replayed },
-        });
-        return;
-      }
-      const row = (
-        await client.query('select * from public.admin_mark_fulfillment_delivered($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::date, $6::boolean)', [
-          orderId, fulfillmentId, actor.id, body.requestKey, body.deliveredOn, body.notifyCustomer,
-        ])
-      ).rows[0];
-      record(200);
-      await fulfillJson(route, { data: { eventId: row.event_id, deliveredAt: iso(row.delivered_at), replayed: row.replayed } });
-    } catch (error) {
-      record(await answerDeliveryFailure(route, error));
-    }
+    (operation === 'tracking' ? log.trackingPosts : log.deliveredPosts).push({ orderId, fulfillmentId, body, status: 410 });
+    await route.fulfill({
+      status: 410,
+      contentType: 'application/json',
+      headers: { 'cache-control': 'no-store' },
+      body: JSON.stringify(legacyFulfillmentDisabledBody(LEGACY_FULFILLMENT_DISABLED)),
+    });
   });
 
   await page.route('**/api/admin/settings/shop', async (route) => {

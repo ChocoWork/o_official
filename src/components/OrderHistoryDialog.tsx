@@ -394,8 +394,6 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
         </li>
       );
     }
-    // G-1: 手動の仕上がりは終了し、窓口は仕上がりの行を作らない。昔の形の行が来ても出さない（互換の表示は作らない）
-    if (entry.type === 'completion' || entry.type === 'completion_cancel') return null;
     if (entry.type === 'refund') {
       const current = entry.steps.at(-1);
       // 在庫に戻せるのは発送前の商品だけ。「戻さない」の返金にも 0 を出して、戻さなかったことを履歴で確かめられるようにする

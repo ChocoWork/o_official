@@ -9,6 +9,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { PRICE } from '../tests/integration/db/helpers/order-fixtures';
+import type { AllocationHistoryEvent } from '@/lib/inventory/allocation-types';
 import type { OrderHistoryFulfillmentEntry, OrderHistoryRefundEntry } from '@/lib/orders/email/order-history';
 import {
   beginRefund,
@@ -176,6 +177,8 @@ for (const viewport of viewports) {
 
     test('申し込み・受付中・完了の返品が指す発送は取り消せず、取消の返品しか指さない発送は取り消せる（手元の DB）', async () => {
       // FREQ-471-AC-01
+      // 発送の取消の DB の関数は G-1 で止まった（成功も FULFILLMENT_HAS_RETURN も返さない）。新しい発送票の取消で書き換えて再開する
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/120で新票へ書換・再開');
       await withLocalDb(async (db) => {
         const fx = await createShippedOrder(
           db,
@@ -214,6 +217,8 @@ for (const viewport of viewports) {
 
     test('履歴から発送の取消が断られると、「返品のある発送は取り消せません。」が確かめの画面の中に出て、発送の行は残る', async ({ page }) => {
       // FREQ-471-AC-02
+      // 「この発送を取り消す」の入口は G-1 で撤去した。新しい発送票の取消・通知で書き換えて再開する
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/120で新票へ書換・再開');
       const fulfillmentId = 'f3b2c3d4-0000-4000-8000-000000000001';
       const shipment = {
         type: 'fulfillment',
@@ -439,6 +444,22 @@ for (const viewport of viewports) {
 
     test('在庫の履歴の理由の言葉が、返品の受け取りは「返品の受け取り」、交換の品の確保は「交換の品の確保」になり、その行の注文の欄には返品の番号（{注文番号}-R{n}）が出る。返品の UUID は出さない', async ({ page }) => {
       // FREQ-474-AC-03
+      const exchangeAllocationEvent: AllocationHistoryEvent = {
+        id: 'e3b2c3d4-0000-4000-8000-0000000000e1',
+        allocationId: 'a3b2c3d4-0000-4000-8000-0000000000e1',
+        orderId: MOVEMENT_ORDER,
+        orderItemId: 'c3b2c3d4-0000-4000-8000-0000000000e1',
+        variantId: 11,
+        type: 'allocate',
+        quantity: 1,
+        operationId: 'b3b2c3d4-0000-4000-8000-0000000000e1',
+        counterpartAllocationId: null,
+        reversesEventId: null,
+        stockMovementId: '12',
+        reason: 'fifo',
+        actorId: null,
+        createdAt: '2026-10-12T05:00:12Z',
+      };
       const movements = [
         movement({ id: 12, delta: -1, reason: 'exchange', balanceAfter: 1, returnId: RETURN_ID, returnNumber: MOVEMENT_RETURN_LABEL, orderId: MOVEMENT_ORDER }),
         movement({ id: 11, delta: 2, reason: 'return', balanceAfter: 2, returnId: RETURN_ID, returnNumber: MOVEMENT_RETURN_LABEL, orderId: MOVEMENT_ORDER }),
@@ -471,14 +492,18 @@ for (const viewport of viewports) {
             { id: 11, colorName: 'BLACK', colorHex: '#000000', sizeLabel: 'M', sku: null, stockQuantity: 1, isActive: true, committedQuantity: 0, onHandQuantity: 1, backorderQuantity: 0 },
           ],
           movements,
+          // G-1: 交換品の確保（台帳の行 12）は古い順の自動割当（FIFO）の出来事に結び付き、台帳の行の中に並ぶ（別の1行にはならない）
+          allocationEvents: [exchangeAllocationEvent],
         }));
       await page.goto(`/admin/item/edit/${ITEM_ID}`);
 
       const rows = page.getByTestId('stock-movement-row');
       await expect(rows).toHaveCount(3);
-      await expect(rows.nth(0).getByTestId('stock-movement-reason')).toHaveText('交換の品の確保');
+      await expect(rows.nth(0).getByTestId('stock-movement-reason')).toHaveText('交換品への確保');
       await expect(rows.nth(1).getByTestId('stock-movement-reason')).toHaveText('返品の受け取り');
       await expect(rows.nth(2).getByTestId('stock-movement-reason')).toHaveText('棚卸調整');
+      await expect(rows.nth(0)).toContainText('注文への割当');
+      await expect(page.getByTestId(`allocation-event-${exchangeAllocationEvent.id}`)).toHaveCount(0);
       // 注文の欄: 返品で動いた行は返品の番号（注文番号に -R{n}）、ふつうの行は注文の番号。注文に結び付かない行には欄が無い
       await expect(rows.nth(0).getByTestId('stock-movement-order')).toHaveText(MOVEMENT_RETURN_LABEL);
       await expect(rows.nth(1).getByTestId('stock-movement-order')).toHaveText(MOVEMENT_RETURN_LABEL);
@@ -509,18 +534,31 @@ for (const viewport of viewports) {
           notify: false,
         });
 
+        // G-1: 交換先の在庫は、古い注文から順の自動割当（FIFO）が「交換品への確保」（exchange -1）を1行書く。
+        // 履歴が返した配列を並べ替えずにそのまま確かめる（台帳の番号の大きい順）。原因の返品の番号は FIFO の行でも変わらない
         const history = (
-          await db.query('select reason, delta, return_id from public.list_item_stock_history($1::bigint, 50)', [fx.itemId])
+          await db.query('select movement_id, reason, delta, return_id from public.list_item_stock_history($1::bigint, 50)', [fx.itemId])
         ).rows;
-        const movesOf = (returnId: string | null) =>
-          history
-            .filter((row) => row.return_id === returnId)
-            .map((row) => [row.reason as string, Number(row.delta)])
-            .sort();
-        expect(movesOf(a.returnId)).toEqual([['return', 1]]);
-        expect(movesOf(b.returnId)).toEqual([['exchange', -1]]);
-        // 返品に結び付かない行（入荷・販売）には返品の番号が付かない
-        expect(movesOf(null)).toEqual([['purchase', -2], ['restock', 2], ['restock', 2]].sort());
+        const movementIds = history.map((row) => BigInt(row.movement_id as string));
+        expect(movementIds.every((id, index) => index === 0 || movementIds[index - 1] > id), '台帳の番号の降順').toBe(true);
+        expect(history.map((row) => [row.reason as string, Number(row.delta)])).toEqual([
+          ['exchange', -1], ['return', 1], ['restock', 2], ['purchase', -2], ['restock', 2],
+        ]);
+        // 返品に結び付かない行（入荷・購入）には返品の番号が付かない
+        expect(history.map((row) => row.return_id as string | null)).toEqual([b.returnId, a.returnId, null, null, null]);
+
+        // 割当の出来事は別の配列。交換品の確保の行（台帳の番号を持つ）に、古い順の自動割当（fifo）の出来事が1つ結び付く
+        const events = (
+          await db.query(
+            'select event_type, quantity, stock_movement_id, reason from public.list_item_allocation_history($1::bigint, 50)',
+            [fx.itemId],
+          )
+        ).rows;
+        expect(
+          events
+            .filter((row) => String(row.stock_movement_id) === String(history[0].movement_id))
+            .map((row) => [row.event_type as string, Number(row.quantity), row.reason as string]),
+        ).toEqual([['allocate', 1, 'fifo']]);
       });
     });
 

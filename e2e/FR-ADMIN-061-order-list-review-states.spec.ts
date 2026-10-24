@@ -1,5 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import type { OrderItem } from '@/components/OrderSection';
+import { LEGACY_FULFILLMENT_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 
 // FREQ-412: 注文一覧に支払い手続き中・放棄・要確認の印・発送止めの理由を出し、要確認のみ・状態で絞り込める。
@@ -58,6 +59,17 @@ const ORDERS = [
     progressKey: 'ready',
     canShip: false,
     shipBlockedReason: '支払額の確認が必要です（要対応）',
+  },
+  {
+    // G-1: 確認済み（要確認の印なし）で窓口が canShip=true と答える行。旧の発送の入口は、要確認の行と同じく出さない
+    ...BASE,
+    id: 'order-confirmed',
+    customerName: '確認済み 三郎',
+    status: '発送準備中',
+    orderStatus: 'paid',
+    progressKey: 'ready',
+    canShip: true,
+    needsReview: false,
   },
 ] satisfies OrderItem[];
 
@@ -190,7 +202,12 @@ for (const viewport of viewports) {
       const blocked = page.getByRole('row', { name: /order-blocked/ });
       await expect(blocked.getByText('支払額の確認が必要です（要対応）')).toBeVisible();
       await expect(blocked.getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
-      await expect(page.getByRole('row', { name: /order-review/ }).getByRole('button', { name: '発送済みにする' })).toBeVisible();
+      // G-1: 窓口が canShip=true と答える要確認の行・確認済みの行でも、旧の「発送済みにする」は出さず、固定の配送停止文を表の外に1回だけ出す
+      // （発送できる行とできない行の差は G-3 FR-ADMIN-116 で新票へ書換）
+      await expect(page.getByRole('row', { name: /order-review/ }).getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
+      await expect(page.getByRole('row', { name: /order-confirmed/ }).getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
+      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toHaveCount(1);
+      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toBeVisible();
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {

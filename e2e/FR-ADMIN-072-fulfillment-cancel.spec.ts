@@ -4,6 +4,9 @@
  *
  * 履歴の画面の操作は窓口を差し替えて確かめる（実装計画 P11）。取消が数・注文の状態・送る前のメールに及ぶこと（AC-03・AC-04）は、
  * 手元の DB の関数・worker の定期処理の入口・Mailpit で確かめる。履歴の画面は、目で見るために3つの画面幅の写しを test-results/group-e1/ に残す。
+ *
+ * G-1: 発送の取消（履歴の「この発送を取り消す」と DB の関数）は停止した。取消の3つのケースは、G-3 の発送票の取消（FR-ADMIN-117）で書き換えて
+ * 再開するまで止める。履歴の画面が横にはみ出さないことの確かめだけが続く。
  */
 import { expect, test, type Page } from '@playwright/test';
 import type {
@@ -13,6 +16,7 @@ import type {
   OrderHistoryResponse,
 } from '@/lib/orders/email/order-history';
 import type { CancelFulfillmentResponse, FulfillmentErrorResponse } from '@/lib/orders/fulfillment/fulfillment-types';
+import { seedE2eRestock } from './group-g1-test-utils';
 import {
   cancelFulfillment,
   createActor,
@@ -22,7 +26,6 @@ import {
   mailsTo,
   orderState,
   outboxRows,
-  recordCompletion,
   runWorkerOnce,
   runWorkerUntil,
   uniqueEmail,
@@ -153,6 +156,7 @@ for (const viewport of viewports) {
 
     test('履歴の発送の行から取り消すと、取消の行が履歴に残り、取り消した発送には取消もメールの再送も出ず、一覧が読み直される', async ({ page }) => {
       // FREQ-443-AC-01
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117で新票へ書換・再開');
       const { state, listUrls } = await mockCancelApis(page);
       await openOrderTab(page);
       const row = page.getByRole('row', { name: new RegExp(ORDER_ID) });
@@ -185,6 +189,7 @@ for (const viewport of viewports) {
 
     test('「やめる」では取り消さず、窓口が取消を断った時は理由が確かめの画面の中に出る', async ({ page }) => {
       // FREQ-443-AC-02
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117で新票へ書換・再開');
       const { state } = await mockCancelApis(page);
       await openOrderTab(page);
       const dialog = await openHistory(page);
@@ -222,6 +227,7 @@ for (const viewport of viewports) {
 
     test('発送を取り消すと商品が発送準備中に戻り、全部送っていた注文は決済完了に戻り、送る前のメールは取りやめになり、取消のメールは行かない（手元の DB と Mailpit）', async ({ request }) => {
       // FREQ-443-AC-03, FREQ-443-AC-04
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117で新票へ書換・再開');
       test.setTimeout(180_000);
       const email = uniqueEmail(`ship-cancel-${viewport.name}`);
       const setup = await withLocalDb(async (db) => {
@@ -231,7 +237,8 @@ for (const viewport of viewports) {
           { name: 'E2E取消のコート', quantity: 1, fulfillmentType: 'backorder' },
         ]);
         const [shirt, coat] = order.orderItemIds;
-        await recordCompletion(db, order.orderId, actorId, [{ orderItemId: coat, quantity: 1 }]);
+        // 受注生産のコートは、入荷（本物の入口）の自動の割当で発送準備中になる
+        await seedE2eRestock(db, { itemId: order.itemId, variantId: order.variantId, quantity: 1 });
         const first = await createFulfillment(db, order.orderId, actorId, {
           trackingNumber: 'E2E-CANCEL-1',
           lines: [{ orderItemId: shirt, quantity: 2 }],

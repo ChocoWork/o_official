@@ -6,14 +6,20 @@
  * 手数料のお支払い待ち・メールは、窓口が呼ぶのと同じ DB の関数を手元の DB に直に呼んで確かめる（実装計画 P11）。
  * 交換の色・サイズは、同じ商品の別の色・サイズを手元の DB に足して使う（addVariant）。理由は、その理由の設定の「在庫の無い交換」で選ぶ
  * （最初の値: 破損・不良は作って送る、サイズが小さいは受けない。試験は設定を書き換えない）。
+ *
+ * G-1: 旧の発送の画面と発送の関数は停止し、仕上がりの手動の記録は終了した。発送の材料は合成の発送（createFulfillment。入金済みの割当 A を消費）で、
+ * 作って送る品・手数料待ちの交換の品は、A が付くまで受注生産中として止まる（A が付くのは入荷の自動の割当、手数料の受け取り・支払いを待たずに送るの後）。
+ * 実際の発送の画面の確かめは G-3 FR-ADMIN-116・120 で新しい発送票へ書き換えて再開する。
  */
 import { expect, test, type Page, type Route } from '@playwright/test';
+import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { PRICE } from '../tests/integration/db/helpers/order-fixtures';
+import { seedE2eRestock } from './group-g1-test-utils';
 import {
   createFulfillment,
   expectDbError,
+  lineCounts,
   orderState,
-  recordCompletion,
   runWorkerUntil,
   variantStockState,
   withLocalDb,
@@ -84,6 +90,16 @@ const RECEIPT = {
   createdAt: '2026-10-11T01:00:00.000Z',
   actorEmail: 'admin@example.com',
 };
+
+/** 品物の状態と止めの理由（窓口が読むのと同じ DB の関数）。手数料待ちの交換の品は in_production で exchange_fee_waiting、A が付けば ready */
+async function itemState(db: PgClient, orderId: string, orderItemId: string): Promise<{ status: string; reasons: string[] }> {
+  const res = await db.query(
+    'select status, blocked_reasons from public.list_admin_order_item_states(array[$1::uuid]) where order_item_id = $2',
+    [orderId, orderItemId],
+  );
+  expect(res.rows, '品物の状態は1行').toHaveLength(1);
+  return { status: res.rows[0].status as string, reasons: res.rows[0].blocked_reasons as string[] };
+}
 
 /** 一覧の窓口と返品の窓口を差し替えて、ORDER タブを開く */
 async function openList(page: Page, returns: ReturnType<typeof returnDetailOf>[], summary: Parameters<typeof returnSummaryOf>[0]): Promise<ReturnRouteState> {
@@ -239,6 +255,7 @@ for (const viewport of viewports) {
 
     test('発送の画面で交換の品に「交換の品」の印と手数料待ちの知らせが出て、手数料待ちの断りの文は発送の画面の中に出る', async ({ page }) => {
       // FREQ-465-AC-03
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116/120で新票へ書換・再開');
       const state = { onHold: 1, posts: 0 };
       await mockAdminSessionAs(page, 'admin');
       await mockOrderList(page, () => [
@@ -396,7 +413,7 @@ for (const viewport of viewports) {
         const shirt = fx.orderItemIds[0];
         const variantL = await addVariant(db, fx.itemId, { color: 'ホワイト', size: 'L', stock: 0 });
 
-        // 最初から「作って送る」: 台帳は動かず、受注生産の行になる。仕上がりを記録してから送れる
+        // 最初から「作って送る」: 台帳は動かず、受注生産の行になる。G-1: 手動の仕上がりの記録は終了したので、入荷の自動の割当（A）が付くまで送れない
         const planned = await createReturnInDb(db, fx, {
           lines: [{ orderItemId: shirt, quantity: 1, exchange: { variantId: variantL, method: 'make' } }],
         });
@@ -407,11 +424,13 @@ for (const viewport of viewports) {
         const [made] = await exchangeItemRows(db, fx.orderId);
         expect(made).toMatchObject({ id: first.exchangeOrderItemIds[0], fulfillment_type: 'backorder', line_kind: 'exchange' });
         expect(await returnLedger(db, fx.orderId)).toEqual([]);
-        await expectDbError(
-          createFulfillment(db, fx.orderId, fx.actorId, { trackingNumber: 'E2E-MAKE-0', notify: false, lines: [{ orderItemId: made.id, quantity: 1 }] }),
-          'QUANTITY_EXCEEDS_READY',
-        );
-        await recordCompletion(db, fx.orderId, fx.actorId, [{ orderItemId: made.id, quantity: 1 }]);
+        expect((await lineCounts(db, fx.orderId))[made.id]).toMatchObject({ completed: 0, inProduction: 1, readyUnshipped: 0, shipped: 0 });
+        // 入荷（本物の入口）の余りが、最も古い入金済みの待ち（この交換の品）へ自動で割り当てられ、発送準備中になる。
+        // 台帳には交換の確保が1行だけ書かれ、原因の返品の番号を持つ。送ると発送済みに進む（合成の発送）
+        await seedE2eRestock(db, { itemId: fx.itemId, variantId: variantL, quantity: 1 });
+        expect((await lineCounts(db, fx.orderId))[made.id]).toMatchObject({ completed: 1, inProduction: 0, readyUnshipped: 1, shipped: 0 });
+        const allocated = [{ reason: 'exchange', delta: -1, return_id: planned.returnId, variant_id: variantL }];
+        expect(await returnLedger(db, fx.orderId)).toEqual(allocated);
         expect(
           await createFulfillment(db, fx.orderId, fx.actorId, { trackingNumber: 'E2E-MAKE-1', notify: false, lines: [{ orderItemId: made.id, quantity: 1 }] }),
         ).toMatchObject({ completesOrder: true, orderStatus: 'shipped' });
@@ -429,7 +448,8 @@ for (const viewport of viewports) {
         expect(await receiptUnitRows(db, second.receiptId)).toEqual([
           { disposition: 'not_restocked', quantity: 1, resolution: 'exchange', exchange_method: 'make' },
         ]);
-        expect(await returnLedger(db, fx.orderId)).toEqual([]);
+        // 自動で作って送るになった品は台帳を動かさない（台帳は先の入荷で割り当てた1行のまま）
+        expect(await returnLedger(db, fx.orderId)).toEqual(allocated);
       });
     });
 
@@ -498,10 +518,20 @@ for (const viewport of viewports) {
         expect(await returnRowOf(db, a.returnId)).toMatchObject({ fee_due_amount: 800, fee_received_at: null, exchange_released_at: null });
         expect((await returnSummaryRow(db, fx.orderId)).marks).toContain('awaiting_fee');
         const itemA = receivedA.exchangeOrderItemIds[0];
-        await expectDbError(ship(itemA, 'E2E-HOLD-A'), 'FULFILLMENT_EXCHANGE_ON_HOLD');
+        // G-1: 手数料待ちの交換の品は、通常の自動の割当（FIFO）に参加せず、割当 A が 0 のまま「手数料待ち」で止まる。
+        // 在庫の台帳は動かず、空きの在庫（4）はそのまま。A が無いので送れない（旧の発送の関数の断りではなく、品物の状態で確かめる）
+        expect((await lineCounts(db, fx.orderId))[itemA]).toMatchObject({ completed: 0, inProduction: 1, readyUnshipped: 0, shipped: 0 });
+        expect(await itemState(db, fx.orderId, itemA)).toEqual({ status: 'in_production', reasons: ['exchange_fee_waiting'] });
+        expect(await returnLedger(db, fx.orderId)).toEqual([]);
+        expect((await variantStockState(db, variantL)).stock).toBe(4);
 
-        // 手数料の受け取りを記録すると、送れて、返品は完了する
+        // 手数料の受け取りを記録すると、通常の自動の割当で A が付いて送れ、返品は完了する（台帳に交換の確保が1行、空きの在庫は 4 → 3）
         await recordFeePaymentInDb(db, a.returnId, fx.actorId, '銀行振込');
+        expect(await itemState(db, fx.orderId, itemA)).toEqual({ status: 'ready', reasons: [] });
+        expect(await returnLedger(db, fx.orderId)).toEqual([
+          { reason: 'exchange', delta: -1, return_id: a.returnId, variant_id: variantL },
+        ]);
+        expect((await variantStockState(db, variantL)).stock).toBe(3);
         expect(await returnRowOf(db, a.returnId)).toMatchObject({ status: 'closed' });
         expect((await returnRowOf(db, a.returnId)).fee_received_at).not.toBeNull();
         expect(await ship(itemA, 'E2E-HOLD-A')).toMatchObject({ completesOrder: true, orderStatus: 'shipped' });
@@ -516,8 +546,10 @@ for (const viewport of viewports) {
           choice: 'none',
         });
         const itemB = receivedB.exchangeOrderItemIds[0];
-        await expectDbError(ship(itemB, 'E2E-HOLD-B'), 'FULFILLMENT_EXCHANGE_ON_HOLD');
+        expect(await itemState(db, fx.orderId, itemB)).toEqual({ status: 'in_production', reasons: ['exchange_fee_waiting'] });
+        expect((await lineCounts(db, fx.orderId))[itemB]).toMatchObject({ readyUnshipped: 0, inProduction: 1 });
         await releaseExchangeInDb(db, b.returnId, fx.actorId);
+        expect(await itemState(db, fx.orderId, itemB)).toEqual({ status: 'ready', reasons: [] });
         expect(await ship(itemB, 'E2E-HOLD-B')).toMatchObject({ completesOrder: true, orderStatus: 'shipped' });
         const rowB = await returnRowOf(db, b.returnId);
         expect(rowB).toMatchObject({ status: 'open', fee_due_amount: 800, fee_received_at: null });
@@ -537,8 +569,9 @@ for (const viewport of viewports) {
           choice: 'none',
         });
         const itemC = receivedC.exchangeOrderItemIds[0];
-        await expectDbError(ship(itemC, 'E2E-HOLD-C'), 'FULFILLMENT_EXCHANGE_ON_HOLD');
+        expect(await itemState(db, fx.orderId, itemC)).toEqual({ status: 'in_production', reasons: ['exchange_fee_waiting'] });
         expect(await recordFeePaymentInDb(db, c.returnId, fx.actorId, '常連のお客様のため', true)).toBe('closed');
+        expect(await itemState(db, fx.orderId, itemC)).toEqual({ status: 'ready', reasons: [] });
         const rowC = await returnRowOf(db, c.returnId);
         expect(rowC).toMatchObject({ status: 'closed', fee_due_amount: 0, fee_settled_amount: 800, fee_waived: true });
         expect(rowC.fee_received_at).not.toBeNull();

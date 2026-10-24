@@ -129,7 +129,7 @@ export const RETURN_TEXT = {
   refundAmountLabel: (yen: string) => `返金額（返せる額: ${yen}）`,
   shippingAmountLabel: (yen: string) => `送料（返せる送料: ${yen}）`,
   refundButton: (yen: string) => `${yen} を返金する`,
-  stockOf: (count: number) => `在庫から（在庫 ${count}）`,
+  stockOf: (count: number) => `在庫から（空き在庫 ${count}・割り当ては注文順）`,
   makeOf: (days: number) => `作って送る（お届けの目安 ${days}日）`,
 } as const;
 

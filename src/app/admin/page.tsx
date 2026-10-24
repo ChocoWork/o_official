@@ -209,7 +209,8 @@ function AdminPageContent() {
 
   const canAccessAdmin = visibleTabs.length > 0;
 
-  // 伝票番号を直す・配達済みにする・配送の要対応を閉じる（窓口の権限は admin.orders.manage）。店長とサポートの人だけ。
+  // 配送の要対応を閉じる（窓口の権限は admin.orders.manage）。店長とサポートの人だけ。
+  // 伝票番号の訂正・手動の配達済み・発送・発送の取消・仕上がりの手動記録の入口は G-1 で撤去した（G-3 の発送票まで再開しない）。
   // 返金の権限（店長だけ）とは別に決め、返金の入口は広げない
   const canManageDelivery = userRole === 'admin' || userRole === 'supporter';
 

@@ -16,7 +16,7 @@ function detail(): FulfillmentDeliveryDetail {
 function input(fulfillment = detail(), enabled = true): BuildOrderHistoryInput {
   return {
     order: { id: 'a1111111-1111-4111-8111-111111111111', status: 'shipped', shippingEmail: null, createdAt: '2026-10-19T00:00:00Z' },
-    statusRows: [], emailRows: [], sendState: { paused: false, reason: null }, completions: [], refunds: [], returns: [],
+    statusRows: [], emailRows: [], sendState: { paused: false, reason: null }, refunds: [], returns: [],
     returnReceiptLines: [], returnRecords: [], cancelRequests: [], lines: [],
     fulfillments: [{ fulfillmentId: 'f-1', number: 1, shippingCarrier: 'yamato', trackingNumber: 'OLD', notifyCustomer: true,
       completesOrder: true, shippedAt: fulfillment.shippedAt, createdByEmail: null, cancelledAt: null, cancelledByEmail: null, legacy: false, lines: [] }],

@@ -4,8 +4,12 @@
  *
  * 管理画面の発送の操作の代わりに、手元の DB の発送の関数を直に呼び、worker の定期処理の入口を叩き、
  * 手元のメール受け（Mailpit）に届いたメールを数えて確かめる（実装計画 P11。FR-ADMIN-066 と同じやり方）。
+ *
+ * G-1: 旧の発送の関数は停止した。発送ごとのお知らせは、G-3 の発送票の通知（FR-ADMIN-116・120）で書き換えて再開するまで、2つのケースとも止める。
+ * 受注生産の品は、手動の仕上がりではなく、入荷の自動の割当（入金済みの割当 A）で発送準備中になる。
  */
 import { expect, test } from '@playwright/test';
+import { seedE2eRestock } from './group-g1-test-utils';
 import {
   createActor,
   createFulfillment,
@@ -13,7 +17,6 @@ import {
   mailBodies,
   mailsTo,
   outboxRows,
-  recordCompletion,
   runWorkerOnce,
   runWorkerUntil,
   uniqueEmail,
@@ -34,6 +37,7 @@ for (const viewport of viewports) {
   test.describe(`FR-ADMIN-071 fulfillment shipping email (${viewport.name})`, () => {
     test('発送ごとに発送のメールが1通届き、その発送の商品と数だけが書いてあり、残りの案内は最初の発送のメールにだけ入る（手元の DB と Mailpit）', async ({ request }) => {
       // FREQ-442-AC-01, FREQ-442-AC-02, FREQ-442-AC-03
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116/120で新票へ書換・再開');
       // worker の入口は Stripe の知らせの処理と注文のメールの送信を続けて動かすので、既定の30秒では足りないことがある
       test.setTimeout(180_000);
       const email = uniqueEmail(`ship-split-${viewport.name}`);
@@ -44,7 +48,8 @@ for (const viewport of viewports) {
           { name: 'E2E受注生産のコート', quantity: 1, fulfillmentType: 'backorder' },
         ]);
         const [shirt, coat] = order.orderItemIds;
-        await recordCompletion(db, order.orderId, actorId, [{ orderItemId: coat, quantity: 1 }]);
+        // 受注生産のコートは、入荷（本物の入口）の自動の割当で発送準備中になる
+        await seedE2eRestock(db, { itemId: order.itemId, variantId: order.variantId, quantity: 1 });
         // 1回目: 在庫のシャツだけ。コートが残る
         const first = await createFulfillment(db, order.orderId, actorId, {
           trackingNumber: 'E2E-SPLIT-1',
@@ -105,6 +110,7 @@ for (const viewport of viewports) {
 
     test('知らせない発送にはメールが届かず、知らせる発送の分だけ1通届く（手元の DB と Mailpit）', async ({ request }) => {
       // FREQ-442-AC-04
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116/120で新票へ書換・再開');
       test.setTimeout(180_000);
       const email = uniqueEmail(`ship-mixed-${viewport.name}`);
       const { orderId, notified } = await withLocalDb(async (db) => {

@@ -4,6 +4,9 @@
  *
  * 管理画面の窓口だけを差し替え（実装計画 P22）、配達済みにする操作は手元の DB の本物の関数、
  * 配達済みのメールは起動したアプリの毎分の定期処理と Mailpit で確かめる。追跡はオフのまま（手の操作はオフでもできる）。
+ *
+ * G-1: 手動の配達済み（履歴の「配達済みにする」と DB の関数）と発送の取消は停止した。2つのケースは、G-3 の発送票（FR-ADMIN-117・118・120）で
+ * 書き換えて再開するまで止める。停止の確認は FR-ADMIN-123（入口 0・固定の停止文・HTTP 410）が持つ。
  */
 import { expect, test } from '@playwright/test';
 import {
@@ -53,6 +56,7 @@ for (const viewport of deliveryViewports) {
 
     // FREQ-489-AC-01, FREQ-489-AC-02, FREQ-492-AC-01, FREQ-493-AC-01
     test('届いた日を選び手で配達済みとメールと期限を記録する', async ({ page, request }) => {
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/118/120で新票へ書換・再開');
       test.setTimeout(420_000);
       await withDeliveryScenario(async ({ client, numberPrefix }) => {
         await setTrackingFlagDirect(client, false);
@@ -145,6 +149,7 @@ for (const viewport of deliveryViewports) {
 
     // FREQ-489-AC-01, FREQ-489-AC-02, FREQ-489-AC-03
     test('取消と配達済みの操作を出さず通知オフを保つ', async ({ page, request }) => {
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/118/120で新票へ書換・再開');
       test.setTimeout(420_000);
       await withDeliveryScenario(async ({ client, numberPrefix }) => {
         await setTrackingFlagDirect(client, false);

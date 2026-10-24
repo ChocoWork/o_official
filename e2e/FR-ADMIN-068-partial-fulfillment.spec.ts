@@ -5,6 +5,11 @@
  * 画面は窓口を差し替えて確かめる（実装計画 P11）。窓口の答えは共通の約束（C-2）の形。
  * 発送の関数が数を守ること（AC-06）は、手元の DB の関数を直に呼んで確かめる。
  * 発送の画面は、目で見るために3つの画面幅の写しを test-results/group-e1/ に残す。
+ *
+ * G-1: 旧の発送の画面（「発送済みにする」）と発送の関数（admin_create_fulfillment）は停止した（LEGACY_FULFILLMENT_DISABLED）。
+ * 発送の操作を成功の前提にするこの spec の全ケースは、G-3 の発送票（FR-ADMIN-116・117）で書き換えて再開するまで停止する。
+ * 数の基準は、仕上がりの手動の記録ではなく、入荷の自動の割当（入金済みの割当 A・支払い前の仮確保 H）に変わった。
+ * 停止の確認は FR-ADMIN-123（入口 0・固定の停止文・HTTP 410）が持つ。
  */
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Page, type Route } from '@playwright/test';
@@ -43,7 +48,7 @@ const LINES = [
   { id: BLOUSE, name: 'シルクブラウス', quantity: 3 },
   { id: SKIRT, name: 'プリーツスカート', quantity: 2 },
 ];
-const EXCEEDS_READY = '発送する数が発送準備中の数を超えています。受注生産の品は、先に仕上がりを記録してください。';
+const EXCEEDS_READY = '発送する数が発送準備中の数を超えています。';
 const UNKNOWN_OUTCOME = '結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。';
 
 /** 窓口の向こうの記録の代わり。商品ごとに送った数を持ち、一覧と発送の材料の答えをそこから作る */
@@ -145,6 +150,7 @@ for (const viewport of viewports) {
 
     test('発送の画面に商品ごとの印と数が並び、今回送る数は発送準備中の全部が最初から入る', async ({ page }) => {
       // FREQ-439-AC-01
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116/117で新票へ書換・再開');
       await mockShipApis(page);
       await openOrderTab(page);
       const dialog = await openShipDialog(page);
@@ -167,6 +173,7 @@ for (const viewport of viewports) {
 
     test('数を減らして一部だけ発送すると「一部発送済み」と残りを送るボタンが出て、残りを全部発送すると「配送中」になる', async ({ page }) => {
       // FREQ-439-AC-02, FREQ-439-AC-03
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116/117で新票へ書換・再開');
       const { state, listUrls } = await mockShipApis(page);
       await openOrderTab(page);
       const row = page.getByRole('row', { name: new RegExp(ORDER_ID) });
@@ -218,6 +225,7 @@ for (const viewport of viewports) {
 
     test('送る数の合計が0なら送らずに理由を出し、他の人が先に発送した時の断りの言葉を画面の中に出す', async ({ page }) => {
       // FREQ-439-AC-04
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116/117で新票へ書換・再開');
       const { state } = await mockShipApis(page);
       await openOrderTab(page);
       const dialog = await openShipDialog(page);
@@ -249,6 +257,7 @@ for (const viewport of viewports) {
     for (const failure of failures) {
       test(`${failure.name}時は、入力を止めて「もう一度確かめる」だけを出し、同じ重複防止キーで確かめ直す`, async ({ page }) => {
         // FREQ-439-AC-05
+        test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116/117で新票へ書換・再開');
         const { state } = await mockShipApis(page);
         // サーバーは1回目を記録していたのに、答えが届かなかった
         state.answer = async (route, body) => {
@@ -290,6 +299,8 @@ for (const viewport of viewports) {
 
     test('発送の関数は、発送準備中の数を超える数・注文に無い商品・中身の違う同じ重複防止キーを断り、同じ中身の送り直しは二重にならず、同時の2つの発送は片方だけが通る（手元の DB）', async () => {
       // FREQ-439-AC-06
+      // 旧の発送の関数の守り（超過・無い商品・同じキーの再送・中身違い・同時の2つ）は止めた。createFulfillment の材料は合成の発送で、守りを持たない
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116/117で新票へ書換・再開');
       const { orderId, actorId, skirt } = await withLocalDb(async (db) => {
         const actor = await createActor(db);
         const order = await createOrderWithLines(db, uniqueEmail(`ship-guard-${viewport.name}`), [
@@ -374,6 +385,7 @@ for (const viewport of viewports) {
     });
 
     test('発送の画面を開いても横方向のページスクロールが発生しない', async ({ page }) => {
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116/117で新票へ書換・再開');
       await mockShipApis(page);
       await openOrderTab(page);
       const dialog = await openShipDialog(page);

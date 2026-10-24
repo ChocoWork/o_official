@@ -4,10 +4,15 @@
  *
  * 画面（発送の画面・履歴・一覧）は窓口を差し替えて確かめ、数や注文の状態が DB の関数で正しく動くことは、手元の DB の関数を直に呼んで
  * 確かめる（実装計画 P16。FR-ADMIN-068・072 と同じやり方）。発送の画面の材料は、DB の本物の数（返金を引いた未発送の数）から作る。
+ *
+ * G-1: 旧の発送の画面・発送の関数・発送の取消（画面と DB の関数）は停止した。それらに頼る3つのケース（AC-01 の1つと AC-02 の2つ）は、
+ * G-3 の発送票（FR-ADMIN-116・117・120）で書き換えて再開するまで止める。返金で数と注文の状態が動くこと（実返金の投影・一覧の読み直し・
+ * 受注生産の品の発送前返金が在庫の台帳を動かさないこと）は続ける。発送の材料は合成の発送（createFulfillment）。
  */
 import { expect, test } from '@playwright/test';
 import { PRICE } from '../tests/integration/db/helpers/order-fixtures';
 import type { OrderHistoryFulfillmentEntry } from '@/lib/orders/email/order-history';
+import { LEGACY_FULFILLMENT_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import {
   beginRefund,
   cancelFulfillment,
@@ -17,7 +22,6 @@ import {
   expectDbError,
   lineCounts,
   orderState,
-  recordCompletion,
   recordRefundResult,
   stockLedger,
   uniqueEmail,
@@ -58,6 +62,7 @@ for (const viewport of viewports) {
 
     test('発送前に返金した商品は発送の画面に出ず、発送の関数も送らせない。残りの商品は今までどおり送れる（DB の数から作った発送の画面と手元の DB）', async ({ page }) => {
       // FREQ-454-AC-01
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116/120で新票へ書換・再開');
       const setup = await withLocalDb(async (db) => {
         const actorId = await createActor(db);
         const order = await createOrderWithLines(
@@ -135,6 +140,7 @@ for (const viewport of viewports) {
 
     test('発送の取消の関数は、発送後に返金した数を下回る取消を断り、下回らない取消は通る（手元の DB）', async () => {
       // FREQ-454-AC-02
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/120で新票へ書換・再開');
       await withLocalDb(async (db) => {
         const actorId = await createActor(db);
         const order = await createOrderWithLines(
@@ -182,6 +188,7 @@ for (const viewport of viewports) {
 
     test('履歴から発送の取消が断られると、断りの文が確かめの画面の中に出て、発送の行は残る', async ({ page }) => {
       // FREQ-454-AC-02
+      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/120で新票へ書換・再開');
       const orderId = 'a2b2c3d4-1111-2222-8333-444455556666';
       const fulfillmentId = 'f2b2c3d4-0000-4000-8000-000000000001';
       const shipment = {
@@ -276,8 +283,9 @@ for (const viewport of viewports) {
       });
     });
 
-    test('一覧の「発送済みにする」が残っている注文で、残りの商品を全部返金すると、一覧を読み直して「配送中」になる', async ({ page }) => {
+    test('残りの商品を全部返金すると一覧を読み直して「配送中」になり、旧発送入口は表示しない', async ({ page }) => {
       // FREQ-454-AC-03
+      // G-1: 窓口が canShip=true と答えても、返金の前後とも「発送済みにする」は出さず、固定の停止文を1回だけ出す
       const orderId = 'a2b2c3d4-2222-2222-8333-444455556666';
       const blouse = 'b2b2c3d4-0000-4000-8000-0000000000a1';
       const skirt = 'b2b2c3d4-0000-4000-8000-0000000000a2';
@@ -330,7 +338,9 @@ for (const viewport of viewports) {
       const row = page.getByRole('row', { name: new RegExp(orderId) });
       await expect(row.getByText('発送準備中', { exact: true })).toBeVisible();
       await expect(row.getByText('一部発送済み', { exact: true })).toBeVisible();
-      await expect(row.getByRole('button', { name: '発送済みにする' })).toBeVisible();
+      await expect(row.getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
+      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toHaveCount(1);
+      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toBeVisible();
 
       // 発送前のスカート1つ（残りの商品の全部）を返金する
       const dialog = await openRefundDialog(page, orderId);
@@ -342,11 +352,14 @@ for (const viewport of viewports) {
       await expect(row.getByText('配送中', { exact: true })).toBeVisible();
       await expect(row.getByText('一部発送済み', { exact: true })).toHaveCount(0);
       await expect(row.getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
+      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toHaveCount(1);
+      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toBeVisible();
       await expect(row.getByText('一部返金', { exact: true })).toBeVisible();
     });
 
-    test('受注生産の品の返金は、まだ作っていない数から先に減り、仕上がりの記録は減った後の数までになる。在庫の台帳は動かない（手元の DB）', async () => {
+    test('Aがない受注生産品の発送前返金は在庫台帳を動かさない（手元のDB）', async () => {
       // FREQ-454-AC-04
+      // G-1: 手動の仕上がりの記録は終了した。数量2・F0・A0の受注生産品は、返金した数だけ「作らずに済む数」が減り、在庫の台帳と有効な A は動かない
       await withLocalDb(async (db) => {
         const actorId = await createActor(db);
         const order = await createOrderWithLines(
@@ -368,16 +381,13 @@ for (const viewport of viewports) {
         expect((await lineCounts(db, order.orderId))[coat]).toMatchObject({
           refundedBeforeShipment: 1, inProduction: 1, readyUnshipped: 0, unshipped: 1,
         });
-        // 受注生産の品は在庫を確保していないので、返金しても在庫の台帳は動かない
-        expect(await stockLedger(db, order.orderId)).toEqual([]);
-
-        // 仕上がりの記録は、まだ作っていない数（1）までにしか記録できない
-        await expectDbError(
-          recordCompletion(db, order.orderId, actorId, [{ orderItemId: coat, quantity: 2 }]),
-          'QUANTITY_EXCEEDS_IN_PRODUCTION',
+        // 受注生産の品は在庫を確保していない（有効な A は 0）ので、返金しても在庫の台帳は動かない
+        const allocated = await db.query(
+          "select coalesce(sum(remaining_quantity), 0)::integer as n from public.order_item_allocations where order_item_id = $1 and kind = 'paid'",
+          [coat],
         );
-        await recordCompletion(db, order.orderId, actorId, [{ orderItemId: coat, quantity: 1 }]);
-        expect((await lineCounts(db, order.orderId))[coat]).toMatchObject({ inProduction: 0, readyUnshipped: 1, unshipped: 1 });
+        expect(Number(allocated.rows[0].n)).toBe(0);
+        expect(await stockLedger(db, order.orderId)).toEqual([]);
       });
     });
   });

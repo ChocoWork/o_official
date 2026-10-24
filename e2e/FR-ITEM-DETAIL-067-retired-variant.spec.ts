@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { mockOtpAuthentication } from './account-test-utils';
 import { withReadyProgress } from './order-detail-fixtures';
+import { seedE2eRestock } from './group-g1-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { uniqueSuffix } from '../tests/integration/db/helpers/order-fixtures';
@@ -51,11 +52,9 @@ async function retireTemporaryColor(
 
   // 色を外す（元の色に戻す）。その色の組み合わせが止まる
   await setColors(db, originalColors);
-  // 止めた後に在庫を入れる（止めた組み合わせの在庫は「在庫あり」に数えない）
-  await db.query(
-    `insert into public.stock_movements (variant_id, delta, reason, note) values ($1, 2, 'restock', 'FR-ITEM-DETAIL-067')`,
-    [variantId],
-  );
+  // 止めた後に在庫を入れる（止めた組み合わせの在庫は「在庫あり」に数えない）。
+  // G-1: 台帳へ直に書かず、本物の入荷の入口（admin_record_stock_movement。鍵・FIFO・履歴を通る）で入れる。組み合わせは止めたまま
+  await seedE2eRestock(db, { itemId: ITEM_ID, variantId, quantity: 2 });
   const state = await db.query('select is_active from public.item_variants where id = $1', [variantId]);
   expect(state.rows[0].is_active).toBe(false);
   return { colorName, variantId };
