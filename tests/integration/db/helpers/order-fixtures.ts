@@ -22,6 +22,54 @@ async function lockGroupGFixture(db: PgClient): Promise<void> {
 }
 
 /**
+ * G-1 Task 14: the ledger trigger refuses a stock change without the common advisory. A plain restock row
+ * (allocation_operation_id NULL, no FIFO) is written under it. Inside the caller's transaction the same key
+ * is taken as a session lock only around the INSERT (inside a savepoint) and released at once, so the
+ * material does not leave the caller holding the advisory (suites assert GROUP_G_INVENTORY_LOCK_REQUIRED
+ * and lock waits afterwards). Outside a transaction, a one-statement transaction is opened.
+ * The advisory is harmless on the G-0 cleanup schema.
+ */
+export async function insertRestockMovement(db: PgClient, variantId: number, quantity: number, note = 'fixture'): Promise<void> {
+  await withLedgerLock(db, () => db.query(
+    `insert into public.stock_movements (variant_id, delta, reason, note) values ($1, $2, 'restock', $3)`,
+    [variantId, quantity, note],
+  ));
+}
+
+/**
+ * Runs one direct ledger write under the common advisory without leaving the caller holding it (see above).
+ * A failing write is rolled back to its own savepoint and rethrown, so callers can still assert the refusal.
+ */
+export async function withLedgerLock<T>(db: PgClient, write: () => Promise<T>): Promise<T> {
+  const status = (db as PgClient & { _txStatus?: string })._txStatus;
+  if (status === 'T') {
+    await db.query('savepoint g1_fixture_ledger');
+    await db.query('select pg_catalog.pg_advisory_lock(190521,1)');
+    try {
+      const result = await write();
+      await db.query('release savepoint g1_fixture_ledger');
+      return result;
+    } catch (error) {
+      await db.query('rollback to savepoint g1_fixture_ledger');
+      throw error;
+    } finally {
+      await db.query('select pg_catalog.pg_advisory_unlock(190521,1)');
+    }
+  }
+  if (status !== 'I') throw new Error('GROUP_G_FIXTURE_TRANSACTION_STATE_REQUIRED');
+  await db.query('begin');
+  try {
+    await db.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
+    const result = await write();
+    await db.query('commit');
+    return result;
+  } catch (error) {
+    await db.query('rollback');
+    throw error;
+  }
+}
+
+/**
  * G-1 reads count only A/H. A reserved stock line of a paid order is therefore one real allocation
  * with its purchase/-n movement (A); an unpaid order holds H. A shipped/closed order's reservation
  * is already consumed or released, so it keeps only the historical ledger row.
@@ -36,11 +84,11 @@ async function reserveFixtureLine(
     await seedGroupG1Allocation(db, { orderItemId: input.orderItemId, quantity: input.quantity, kind });
     return;
   }
-  await db.query(
+  await withLedgerLock(db, () => db.query(
     `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id)
      values ($1, $2, 'purchase', $3, $4)`,
     [input.variantId, -input.quantity, input.orderId, input.orderItemId],
-  );
+  ));
 }
 
 /** Suite-owned order material: the reserved stock line becomes A (paid/shipped) or H (unpaid). */
@@ -280,10 +328,7 @@ export async function createCatalogFixture(
   );
   const variantId = Number(variant.rows[0].id);
   if (options.stock > 0) {
-    await db.query(
-      `insert into public.stock_movements (variant_id, delta, reason, note) values ($1, $2, 'restock', 'fixture')`,
-      [variantId, options.stock],
-    );
+    await insertRestockMovement(db, variantId, options.stock);
   }
   return { itemId, variantId, colorName, sizeLabel };
 }
@@ -821,10 +866,7 @@ export async function addItemVariant(
   );
   const variantId = Number(variant.rows[0].id);
   if ((options.stock ?? 0) > 0) {
-    await db.query(
-      `insert into public.stock_movements (variant_id, delta, reason, note) values ($1, $2, 'restock', 'fixture')`,
-      [variantId, options.stock],
-    );
+    await insertRestockMovement(db, variantId, options.stock as number);
   }
   return { variantId };
 }

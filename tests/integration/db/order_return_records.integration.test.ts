@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import {
   createDeliveryOrder, deliveryShipment, insertDeliveryFixture,
-  markDeliveryDelivered, updateDeliveryTracking,
+  markDeliveredFixture, correctDeliveryTrackingFixture,
 } from './helpers/delivery-tracking-fixtures';
 import {
   addItemVariant,
@@ -2380,12 +2380,13 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
           join public.order_returns r on r.id=l.return_id where r.order_id=$1)) as records`, [target.orderId])).rows[0].records;
       const before = await snapshot();
       const addDays = (date: string, days: number) => new Date(new Date(`${date}T00:00:00Z`).getTime() + days * 86400000).toISOString().slice(0, 10);
-      await markDeliveryDelivered(db(), { ...target, requestKey: crypto.randomUUID(), deliveredOn: target.clock.yesterday, notifyCustomer: false });
+      // 旧の手動の配達済み・伝票番号の訂正は G-1 Task 14 で止めたので、合成の材料で配達済み・訂正を作る
+      await markDeliveredFixture(db(), { ...target, requestKey: crypto.randomUUID(), deliveredOn: target.clock.yesterday, notifyCustomer: false });
       expect((await shipmentLinesOf(db(), target.orderId))[0]).toMatchObject({
         deadline_date: addDays(target.clock.yesterday, 7), quantity: 3, in_returns: 2, returnable: 1,
       });
       expect(await snapshot()).toEqual(before);
-      await updateDeliveryTracking(db(), { ...target, requestKey: crypto.randomUUID(), carrier: 'sagawa', trackingNumber: 'Return-corrected-456', notifyCustomer: false });
+      await correctDeliveryTrackingFixture(db(), { ...target, requestKey: crypto.randomUUID(), carrier: 'sagawa', trackingNumber: 'Return-corrected-456', notifyCustomer: false });
       expect((await shipmentLinesOf(db(), target.orderId))[0].deadline_date).toBe(addDays(target.clock.two_days_ago, 10));
       expect(await snapshot()).toEqual(before);
       expect((await db().query(`select count(*)::integer as n from public.order_fulfillments

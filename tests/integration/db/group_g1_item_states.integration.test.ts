@@ -27,6 +27,8 @@ describeLocalDb('G-1 exclusive item states and interval history', (db) => {
   }
 
   async function allocate(f: Fx, quantity: number, kind = 'paid') {
+    // G-1 Task 14: the ledger trigger requires the common advisory (the material writes in the test's transaction)
+    await db().query('select pg_advisory_xact_lock(190521,1)');
     const op = await operation();
     const m = (await db().query(`insert into public.stock_movements
       (variant_id,delta,reason,order_item_id,allocation_operation_id) values ($1,$2,'purchase',$3,$4) returning id`,

@@ -4,13 +4,13 @@
  * fulfillment_postgrest.integration.test.ts と同じく、接続先未設定は skip、非ローカルは失敗させる。
  * SQL の準備も PostgREST の書き込みも commit される。--runInBand 専用で、毎回共有の配送状態を戻す。
  * 注文・発送・出来事の追記記録は消さず、controller の次の reset で捨てる。
+ * G-1 Task 14: 旧の作成・取消・伝票番号の訂正・手動の配達済みの関数は PostgREST を通しても LEGACY_FULFILLMENT_DISABLED（55000）で断り、
+ * 窓口（store）は PostgREST を呼ぶ前に LegacyFulfillmentDisabledError を投げる。読み出しの形は、合成の訂正・配達済み（fixture）を材料に確かめる。
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
-import {
-  createFulfillment,
-  FulfillmentOperationError,
-} from '@/lib/orders/fulfillment/fulfillment-store';
+import { createFulfillment } from '@/lib/orders/fulfillment/fulfillment-store';
+import { LegacyFulfillmentDisabledError } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import {
   claimDeliveryTracking,
   expireDeliveryTracking,
@@ -32,12 +32,15 @@ import {
 import type { DeliveryReadResult, TrackingClaim } from '@/lib/orders/tracking/delivery-types';
 import { describeLocalDb, isLocalDatabase } from './helpers/local-db';
 import {
+  correctDeliveryTrackingFixture,
   createDeliveryActor,
+  createDeliveryFulfillment,
   createDeliveryOrder,
   deferOtherDeliveryRegistrations,
   deliveryShipment,
   insertDeliveryAttention,
   leaseDeliveryRegistration,
+  markDeliveredFixture,
   patchDeliveryRegistration,
   restoreCommittedDeliveryState,
   trackedShipment,
@@ -150,28 +153,32 @@ describeLocalDb('integration: 配送の関数を実際の PostgREST に通す', 
     });
   });
 
-  test('別の注文の番号をRPCへ混ぜず17個のclaim列を読む', async () => {
+  test('止めた伝票番号の訂正は PostgREST でも LEGACY_FULFILLMENT_DISABLED で断り、合成の訂正のメールで17個のclaim列を読む', async () => {
     const target = await deliveryShipment(db(), { notifyCustomer: true, trackingNumber: `OLD-${randomUUID()}` });
     const other = await deliveryShipment(db(), { trackingNumber: `OTHER-${randomUUID()}` });
     const input = {
       orderId: target.orderId, fulfillmentId: target.fulfillmentId, actorId: actor.id, requestKey: randomUUID(),
       carrier: 'japanpost' as const, trackingNumber: `NEW-${randomUUID()}`, notifyCustomer: true,
     };
-    const changed = await updateFulfillmentTracking(store, input);
-    expect(changed).toEqual({ trackingChangeId: expect.stringMatching(UUID_PATTERN), trackingVersion: 2, replayed: false });
-    expect(reply('admin_update_fulfillment_tracking')).toEqual({
-      name: 'admin_update_fulfillment_tracking', args: {
-        _order_id: target.orderId, _fulfillment_id: target.fulfillmentId, _actor_id: actor.id,
-        _request_key: input.requestKey, _shipping_carrier: 'japanpost',
-        _tracking_number: input.trackingNumber, _notify_customer: true,
-      }, data: [{ tracking_change_id: changed.trackingChangeId, tracking_version: 2, replayed: false }],
+    // 窓口は PostgREST を呼ばない。PostgREST を直に通しても固定の拒否
+    await expect(updateFulfillmentTracking(store, input)).rejects.toBeInstanceOf(LegacyFulfillmentDisabledError);
+    expect(replies).toEqual([]);
+    const raw = await client.rpc('admin_update_fulfillment_tracking', {
+      _order_id: input.orderId, _fulfillment_id: input.fulfillmentId, _actor_id: input.actorId, _request_key: input.requestKey,
+      _shipping_carrier: input.carrier, _tracking_number: input.trackingNumber, _notify_customer: input.notifyCustomer,
     });
-    expect(await updateFulfillmentTracking(store, input)).toEqual({ ...changed, replayed: true });
+    expect(raw.data).toBeNull();
+    expect(raw.error).toMatchObject({ message: 'LEGACY_FULFILLMENT_DISABLED', code: '55000' });
+    expect((await getOrderDeliveryDetail(store, target.orderId)).fulfillments[0].trackingVersion).toBe(1);
+
+    const changed = await correctDeliveryTrackingFixture(db(), { ...input, carrier: 'japanpost' });
+    expect(changed.tracking_version).toBe(2);
     expect((await getOrderDeliveryDetail(store, other.orderId)).fulfillments[0].trackingVersion).toBe(1);
+    const changedTrackingChangeId = changed.tracking_change_id;
 
     const emailId = (await db().query(
       "select id from private.order_email_outbox where tracking_change_id=$1 and kind='shipping_update'",
-      [changed.trackingChangeId],
+      [changedTrackingChangeId],
     )).rows[0].id as string;
     // 他ファイルが残した送信待ちは変えずに SKIP LOCKED の対象にして、自分のメールだけを借りる。
     await db().query('begin');
@@ -189,7 +196,7 @@ describeLocalDb('integration: 配送の関数を実際の PostgREST に通す', 
       email_id: emailId, order_id: target.orderId, kind: 'shipping_update', variant: null, origin: 'auto', attempts: 1,
       lease_token: expect.stringMatching(UUID_PATTERN), subject: null, body_text: null, payment_expired_sent: false,
       fulfillment_id: target.fulfillmentId, refund_id: null, return_id: null, return_receipt_id: null,
-      cancel_request_id: null, tracking_version: 2, tracking_change_id: changed.trackingChangeId,
+      cancel_request_id: null, tracking_version: 2, tracking_change_id: changedTrackingChangeId,
     });
     const refused = await client.rpc('skip_order_email', {
       _email_id: emailId, _lease_token: claimed[0].lease_token, _reason: 'superseded',
@@ -202,11 +209,11 @@ describeLocalDb('integration: 配送の関数を実際の PostgREST に通す', 
     await db().query('rollback');
   });
 
-  test('手で配達済みの TABLE と詳細の JSON の出来事・直し・登録の配列を読む', async () => {
+  test('止めた手動の配達済みは PostgREST でも断り、合成の配達済みの後の詳細の JSON の出来事・直し・登録の配列を読む', async () => {
     const originalTrackingNumber = `DETAIL-${randomUUID()}`;
     const target = await deliveryShipment(db(), { notifyCustomer: true, trackingNumber: originalTrackingNumber });
     await setDeliveryTracking(store, { enabled: true, actorId: actor.id });
-    const changed = await updateFulfillmentTracking(store, {
+    const changed = await correctDeliveryTrackingFixture(db(), {
       orderId: target.orderId, fulfillmentId: target.fulfillmentId, actorId: actor.id, requestKey: randomUUID(),
       carrier: 'sagawa', trackingNumber: `DETAIL-NEW-${randomUUID()}`, notifyCustomer: true,
     });
@@ -214,15 +221,15 @@ describeLocalDb('integration: 配送の関数を実際の PostgREST に通す', 
       orderId: target.orderId, fulfillmentId: target.fulfillmentId, actorId: actor.id,
       requestKey: randomUUID(), deliveredOn: target.clock.today, notifyCustomer: true,
     };
-    const delivered = await markFulfillmentDelivered(store, input);
-    expect(delivered).toEqual({ eventId: expect.stringMatching(UUID_PATTERN), deliveredAt: expect.any(String), replayed: false });
-    expect(reply('admin_mark_fulfillment_delivered')).toEqual({
-      name: 'admin_mark_fulfillment_delivered', args: {
-        _order_id: target.orderId, _fulfillment_id: target.fulfillmentId, _actor_id: actor.id,
-        _request_key: input.requestKey, _delivered_on: target.clock.today, _notify_customer: true,
-      }, data: [{ event_id: delivered.eventId, delivered_at: delivered.deliveredAt, replayed: false }],
+    replies = [];
+    await expect(markFulfillmentDelivered(store, input)).rejects.toBeInstanceOf(LegacyFulfillmentDisabledError);
+    expect(replies).toEqual([]);
+    const refused = await client.rpc('admin_mark_fulfillment_delivered', {
+      _order_id: input.orderId, _fulfillment_id: input.fulfillmentId, _actor_id: input.actorId,
+      _request_key: input.requestKey, _delivered_on: input.deliveredOn, _notify_customer: input.notifyCustomer,
     });
-    expect(await markFulfillmentDelivered(store, input)).toEqual({ ...delivered, replayed: true });
+    expect(refused.error).toMatchObject({ message: 'LEGACY_FULFILLMENT_DISABLED', code: '55000' });
+    const delivered = await markDeliveredFixture(db(), input);
     const detail = await getOrderDeliveryDetail(store, target.orderId);
     const raw = reply('get_order_delivery_detail').data as { enabled: boolean; fulfillments: Array<Record<string, any>> };
     expect(reply('get_order_delivery_detail').args).toEqual({ _order_id: target.orderId });
@@ -233,23 +240,24 @@ describeLocalDb('integration: 配送の関数を実際の PostgREST に通す', 
     expect(row).toEqual({
       fulfillmentId: target.fulfillmentId, number: 1, carrier: 'sagawa', trackingNumber: raw.fulfillments[0].tracking_number,
       notifyCustomer: true, shippedAt: raw.fulfillments[0].shipped_at, cancelledAt: null, trackingVersion: 2,
-      deliveryStatus: 'delivered', deliveryStatusAt: delivered.deliveredAt, deliveredAt: delivered.deliveredAt,
+      deliveryStatus: 'delivered', deliveryStatusAt: raw.fulfillments[0].delivered_at, deliveredAt: raw.fulfillments[0].delivered_at,
       deliveredSource: 'manual', registration: {
         // 17TRACK に一度も登録しないまま手で配達済みにしたので everRegistered は偽
         state: 'stopped', failureKind: null, stopReason: 'delivered', expiresAt: raw.fulfillments[0].registration.expires_at,
         everRegistered: false,
       },
       events: expect.arrayContaining([
-        expect.objectContaining({ id: delivered.eventId, trackingVersion: 2, status: 'delivered', source: 'manual', actorEmail: actor.email }),
+        expect.objectContaining({ id: delivered.event_id, trackingVersion: 2, status: 'delivered', source: 'manual', actorEmail: actor.email }),
         expect.objectContaining({ trackingVersion: 2, status: 'confirmed', source: 'tracking_edit' }),
       ]),
       trackingChanges: [{
-        id: changed.trackingChangeId, fromCarrier: 'yamato', fromTrackingNumber: originalTrackingNumber,
+        id: changed.tracking_change_id, fromCarrier: 'yamato', fromTrackingNumber: originalTrackingNumber,
         toCarrier: 'sagawa', toTrackingNumber: raw.fulfillments[0].tracking_number, trackingVersion: 2,
         notifyCustomer: true, changedAt: raw.fulfillments[0].tracking_changes[0].changed_at,
         actorEmail: actor.email, emailStatus: 'pending',
       }],
     });
+    expect(new Date(raw.fulfillments[0].delivered_at).getTime()).toBe(new Date(delivered.delivered_at).getTime());
     expect(row.events).toHaveLength(2);
     expect(raw.fulfillments[0].events).toHaveLength(2);
     expect(raw.fulfillments[0].tracking_changes).toHaveLength(1);
@@ -421,21 +429,34 @@ describeLocalDb('integration: 配送の関数を実際の PostgREST に通す', 
     expect(next).toBeGreaterThanOrEqual(0);
   });
 
-  test('既存の作成 RPC の再送不一致は今の発送窓口どおり操作拒否', async () => {
+  test('止めた作成・取消は、再送・不一致・合成の発送でも PostgREST の LEGACY_FULFILLMENT_DISABLED（55000）で断る', async () => {
     const order = await createDeliveryOrder(db());
     const input = {
       orderId: order.orderId, actorId: actor.id, requestKey: randomUUID(), carrier: 'yamato' as const,
       trackingNumber: `CREATE-${randomUUID()}`, notifyCustomer: false,
       lines: [{ orderItemId: order.orderItemId, quantity: 1 }],
     };
-    const created = await createFulfillment(client, input);
-    expect(await createFulfillment(client, input)).toEqual({ ...created, replayed: true });
-    const refusal: unknown = await createFulfillment(client, { ...input, trackingNumber: 'DIFFERENT-123' })
-      .catch((error: unknown) => error);
-    expect(refusal).toBeInstanceOf(FulfillmentOperationError);
-    expect(refusal).toMatchObject({ code: 'fulfillment_request_mismatch' });
-    expect(await rawRpc('admin_cancel_fulfillment', {
-      _order_id: order.orderId, _fulfillment_id: created.fulfillmentId, _actor_id: actor.id,
-    })).toEqual([{ outcome: 'cancelled', order_status: 'paid' }]);
+    for (const changed of [{}, {}, { trackingNumber: 'DIFFERENT-123' }]) {
+      await expect(createFulfillment(client, { ...input, ...changed })).rejects.toMatchObject({
+        name: 'LegacyFulfillmentDisabledError', code: 'LEGACY_FULFILLMENT_DISABLED', sqlstate: '55000',
+      });
+      const raw = await client.rpc('admin_create_fulfillment', {
+        _order_id: input.orderId, _actor_id: input.actorId, _request_key: input.requestKey, _shipping_carrier: input.carrier,
+        _tracking_number: (changed as { trackingNumber?: string }).trackingNumber ?? input.trackingNumber,
+        _notify_customer: input.notifyCustomer, _lines: [{ order_item_id: order.orderItemId, quantity: 1 }],
+      });
+      expect(raw.error).toMatchObject({ message: 'LEGACY_FULFILLMENT_DISABLED', code: '55000' });
+    }
+    expect((await db().query('select count(*)::int as n from public.order_fulfillments where order_id = $1', [order.orderId])).rows[0].n).toBe(0);
+    const created = (await createDeliveryFulfillment(db(), {
+      orderId: order.orderId, actorId: actor.id, trackingNumber: input.trackingNumber,
+      lines: [{ order_item_id: order.orderItemId, quantity: 1 }],
+    })).rows[0];
+    const cancel = await client.rpc('admin_cancel_fulfillment', {
+      _order_id: order.orderId, _fulfillment_id: created.fulfillment_id, _actor_id: actor.id,
+    });
+    expect(cancel.error).toMatchObject({ message: 'LEGACY_FULFILLMENT_DISABLED', code: '55000' });
+    expect((await db().query('select cancelled_at from public.order_fulfillments where id = $1', [created.fulfillment_id])).rows)
+      .toEqual([{ cancelled_at: null }]);
   });
 });

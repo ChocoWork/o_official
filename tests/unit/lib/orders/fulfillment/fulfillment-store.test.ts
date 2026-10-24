@@ -14,6 +14,7 @@ import {
   type FulfillmentStore,
 } from '@/lib/orders/fulfillment/fulfillment-store';
 import { FULFILLMENT_ERROR_CODES, type FulfillmentErrorCode } from '@/lib/orders/fulfillment/fulfillment-types';
+import { LegacyFulfillmentDisabledError } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 
 const ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455556666';
 const OTHER_ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455557777';
@@ -103,8 +104,10 @@ describe('toFulfillmentErrorCode', () => {
   });
 });
 
-describe('createFulfillment', () => {
-  const INPUT = {
+// G-1 Task 14: 旧の発送・発送取消・仕上がりの記録・取消は止めた。どの入力でも RPC を1回も呼ばず、
+// 発送の2つは LEGACY_FULFILLMENT_DISABLED、仕上がりの2つは MANUAL_COMPLETION_DISABLED を SQLSTATE 55000 で投げる
+describe('止めた書く関数（G-1）', () => {
+  const CREATE = {
     orderId: ORDER_ID,
     actorId: ACTOR_ID,
     requestKey: REQUEST_KEY,
@@ -113,159 +116,32 @@ describe('createFulfillment', () => {
     notifyCustomer: true,
     lines: [{ orderItemId: ITEM_1, quantity: 2 }, { orderItemId: ITEM_2, quantity: 1 }],
   };
+  const CALLS = [
+    ['createFulfillment', 'LEGACY_FULFILLMENT_DISABLED', (store: FulfillmentStore) => createFulfillment(store, CREATE)],
+    ['createFulfillment（空の行）', 'LEGACY_FULFILLMENT_DISABLED', (store: FulfillmentStore) => createFulfillment(store, { ...CREATE, lines: [] })],
+    ['cancelFulfillment', 'LEGACY_FULFILLMENT_DISABLED',
+      (store: FulfillmentStore) => cancelFulfillment(store, { orderId: ORDER_ID, fulfillmentId: FULFILLMENT_ID, actorId: ACTOR_ID })],
+    ['recordCompletion', 'MANUAL_COMPLETION_DISABLED',
+      (store: FulfillmentStore) => recordCompletion(store, { orderId: ORDER_ID, actorId: ACTOR_ID, requestKey: REQUEST_KEY, lines: [{ orderItemId: ITEM_1, quantity: 2 }] })],
+    ['cancelCompletion', 'MANUAL_COMPLETION_DISABLED',
+      (store: FulfillmentStore) => cancelCompletion(store, { orderId: ORDER_ID, completionId: COMPLETION_ID, actorId: ACTOR_ID })],
+  ] as const;
 
-  it('DB の関数の引数名のとおりに渡し、1行の答えを窓口の形に直す', async () => {
+  it.each(CALLS)('%s は RPC を呼ばずに %s を投げる（DB が成功を返す形でも）', async (_name, code, call) => {
     const { store, rpc } = storeWith({
-      admin_create_fulfillment: {
-        data: [{ fulfillment_id: FULFILLMENT_ID, number: 2, completes_order: false, order_status: 'paid', replayed: false }],
-      },
+      admin_create_fulfillment: { data: [{ fulfillment_id: FULFILLMENT_ID, number: 1, completes_order: false, order_status: 'paid', replayed: false }] },
+      admin_cancel_fulfillment: { data: [{ outcome: 'cancelled', order_status: 'paid' }] },
+      admin_record_completion: { data: [{ completion_id: COMPLETION_ID, order_item_id: ITEM_1, quantity: 2, replayed: false }] },
+      admin_cancel_completion: { data: [{ outcome: 'cancelled' }] },
     });
 
-    await expect(createFulfillment(store, INPUT)).resolves.toEqual({
-      fulfillmentId: FULFILLMENT_ID, number: 2, completesOrder: false, orderStatus: 'paid', replayed: false,
-    });
+    const error: unknown = await call(store).catch((caught: unknown) => caught);
 
-    expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith('admin_create_fulfillment', {
-      _order_id: ORDER_ID,
-      _actor_id: ACTOR_ID,
-      _request_key: REQUEST_KEY,
-      _shipping_carrier: 'yamato',
-      _tracking_number: '1234-5678-9012',
-      _notify_customer: true,
-      _lines: [{ order_item_id: ITEM_1, quantity: 2 }, { order_item_id: ITEM_2, quantity: 1 }],
-    });
-  });
-
-  it('全部送った発送は completesOrder と発送済みを返す。同じ番号の送り直しは replayed が true', async () => {
-    const { store } = storeWith({
-      admin_create_fulfillment: {
-        // PostgREST は行を1つのオブジェクトで返すこともある
-        data: { fulfillment_id: FULFILLMENT_ID, number: 3, completes_order: true, order_status: 'shipped', replayed: true },
-      },
-    });
-
-    await expect(createFulfillment(store, { ...INPUT, notifyCustomer: false })).resolves.toEqual({
-      fulfillmentId: FULFILLMENT_ID, number: 3, completesOrder: true, orderStatus: 'shipped', replayed: true,
-    });
-  });
-
-  it('DB が決まった言葉で断れば、記号を持つ FulfillmentOperationError', async () => {
-    const { store } = storeWith({
-      admin_create_fulfillment: { error: { message: 'QUANTITY_EXCEEDS_READY', code: '22023' } },
-    });
-
-    const error = await createFulfillment(store, INPUT).catch((caught: unknown) => caught);
-
-    expect(error).toBeInstanceOf(FulfillmentOperationError);
-    expect(error).toMatchObject({ code: 'quantity_exceeds_ready' });
-  });
-
-  it('知らない DB の失敗は FulfillmentStoreError。DB の文はメッセージに入れず、cause にだけ残す', async () => {
-    const dbError = { message: '宛先・氏名を含む DB の文', code: '08006' };
-    const { store } = storeWith({ admin_create_fulfillment: { error: dbError } });
-
-    const error = (await createFulfillment(store, INPUT).catch((caught: unknown) => caught)) as FulfillmentStoreError;
-
-    expect(error).toBeInstanceOf(FulfillmentStoreError);
+    expect(error).toBeInstanceOf(LegacyFulfillmentDisabledError);
+    expect(error).toMatchObject({ code, sqlstate: '55000', message: code, name: 'LegacyFulfillmentDisabledError' });
     expect(error).not.toBeInstanceOf(FulfillmentOperationError);
-    expect(error.message).toBe('fulfillment store failed: admin_create_fulfillment');
-    expect(error.operation).toBe('admin_create_fulfillment');
-    expect(error.code).toBe('08006');
-    expect(error.cause).toEqual(dbError);
-  });
-
-  it('行が返らなければ FulfillmentStoreError', async () => {
-    const { store } = storeWith({ admin_create_fulfillment: { data: [] } });
-
-    await expect(createFulfillment(store, INPUT)).rejects.toBeInstanceOf(FulfillmentStoreError);
-  });
-});
-
-describe('cancelFulfillment', () => {
-  const INPUT = { orderId: ORDER_ID, fulfillmentId: FULFILLMENT_ID, actorId: ACTOR_ID };
-
-  it('DB の関数の引数名のとおりに渡し、取り消した結果と注文の状態を返す', async () => {
-    const { store, rpc } = storeWith({ admin_cancel_fulfillment: { data: [{ outcome: 'cancelled', order_status: 'paid' }] } });
-
-    await expect(cancelFulfillment(store, INPUT)).resolves.toEqual({ outcome: 'cancelled', orderStatus: 'paid' });
-
-    expect(rpc).toHaveBeenCalledWith('admin_cancel_fulfillment', {
-      _order_id: ORDER_ID, _fulfillment_id: FULFILLMENT_ID, _actor_id: ACTOR_ID,
-    });
-  });
-
-  it('もう取り消してあれば already_cancelled', async () => {
-    const { store } = storeWith({ admin_cancel_fulfillment: { data: [{ outcome: 'already_cancelled', order_status: 'paid' }] } });
-
-    await expect(cancelFulfillment(store, INPUT)).resolves.toEqual({ outcome: 'already_cancelled', orderStatus: 'paid' });
-  });
-
-  it('DB の言葉は記号に直し、知らない結果の言葉は FulfillmentStoreError', async () => {
-    const refused = storeWith({ admin_cancel_fulfillment: { error: { message: 'FULFILLMENT_CANCEL_NOT_ALLOWED', code: '22023' } } });
-    await expect(cancelFulfillment(refused.store, INPUT)).rejects.toMatchObject({ code: 'fulfillment_cancel_not_allowed' });
-
-    const unknown = storeWith({ admin_cancel_fulfillment: { data: [{ outcome: 'weird', order_status: 'paid' }] } });
-    await expect(cancelFulfillment(unknown.store, INPUT)).rejects.toBeInstanceOf(FulfillmentStoreError);
-  });
-});
-
-describe('recordCompletion', () => {
-  const INPUT = { orderId: ORDER_ID, actorId: ACTOR_ID, requestKey: REQUEST_KEY, lines: [{ orderItemId: ITEM_1, quantity: 2 }] };
-
-  it('DB の関数の引数名のとおりに渡し、記録した行の番号を集める', async () => {
-    const { store, rpc } = storeWith({
-      admin_record_completion: {
-        data: [
-          { completion_id: COMPLETION_ID, order_item_id: ITEM_1, quantity: 2, replayed: false },
-          { completion_id: 'e1b2c3d4-1111-4222-8333-444455556667', order_item_id: ITEM_2, quantity: 1, replayed: false },
-        ],
-      },
-    });
-
-    await expect(recordCompletion(store, INPUT)).resolves.toEqual({
-      completionIds: [COMPLETION_ID, 'e1b2c3d4-1111-4222-8333-444455556667'], replayed: false,
-    });
-
-    expect(rpc).toHaveBeenCalledWith('admin_record_completion', {
-      _order_id: ORDER_ID, _actor_id: ACTOR_ID, _request_key: REQUEST_KEY, _lines: [{ order_item_id: ITEM_1, quantity: 2 }],
-    });
-  });
-
-  it('同じ番号の送り直しは、全部の行が replayed のとき replayed が true', async () => {
-    const { store } = storeWith({
-      admin_record_completion: { data: [{ completion_id: COMPLETION_ID, order_item_id: ITEM_1, quantity: 2, replayed: true }] },
-    });
-
-    await expect(recordCompletion(store, INPUT)).resolves.toEqual({ completionIds: [COMPLETION_ID], replayed: true });
-  });
-
-  it('DB の言葉は記号に直し、行が返らなければ FulfillmentStoreError', async () => {
-    const refused = storeWith({ admin_record_completion: { error: { message: 'QUANTITY_EXCEEDS_IN_PRODUCTION', code: '22023' } } });
-    await expect(recordCompletion(refused.store, INPUT)).rejects.toMatchObject({ code: 'quantity_exceeds_in_production' });
-
-    const empty = storeWith({ admin_record_completion: { data: [] } });
-    await expect(recordCompletion(empty.store, INPUT)).rejects.toBeInstanceOf(FulfillmentStoreError);
-  });
-});
-
-describe('cancelCompletion', () => {
-  const INPUT = { orderId: ORDER_ID, completionId: COMPLETION_ID, actorId: ACTOR_ID };
-
-  it('DB の関数の引数名のとおりに渡し、結果を返す', async () => {
-    const { store, rpc } = storeWith({ admin_cancel_completion: { data: [{ outcome: 'cancelled' }] } });
-
-    await expect(cancelCompletion(store, INPUT)).resolves.toEqual({ outcome: 'cancelled' });
-
-    expect(rpc).toHaveBeenCalledWith('admin_cancel_completion', {
-      _order_id: ORDER_ID, _completion_id: COMPLETION_ID, _actor_id: ACTOR_ID,
-    });
-  });
-
-  it('送った数を下回る取消は、記号 completion_already_shipped で断る', async () => {
-    const { store } = storeWith({ admin_cancel_completion: { error: { message: 'COMPLETION_ALREADY_SHIPPED', code: '22023' } } });
-
-    await expect(cancelCompletion(store, INPUT)).rejects.toMatchObject({ code: 'completion_already_shipped' });
+    expect(error).not.toBeInstanceOf(FulfillmentStoreError);
+    expect(rpc).not.toHaveBeenCalled();
   });
 });
 

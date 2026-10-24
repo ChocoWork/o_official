@@ -19,7 +19,6 @@ import {
 } from '@/lib/orders/email/order-email-store';
 import {
   FulfillmentStoreError,
-  listOrderCompletions,
   listOrderFulfillments,
   listOrderLineFulfillment,
 } from '@/lib/orders/fulfillment/fulfillment-store';
@@ -205,12 +204,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const store = supabase as unknown as OrderEmailStore;
-    const [statusRows, emailRows, sendState, fulfillments, completions, refunds, returns, cancelRequests, lines, delivery] = await Promise.all([
+    // G-1 Task 14: 手動の仕上がりは終了したので、仕上がりの一覧は読まない
+    const [statusRows, emailRows, sendState, fulfillments, refunds, returns, cancelRequests, lines, delivery] = await Promise.all([
       listOrderStatusHistory(store, order.id),
       listOrderEmailHistory(store, order.id),
       getOrderEmailSendState(store),
       listOrderFulfillments(supabase, order.id),
-      listOrderCompletions(supabase, order.id),
       listOrderRefunds(supabase, order.id),
       listOrderReturns(supabase, order.id),
       listOrderCancelRequests(supabase, order.id),
@@ -230,7 +229,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         emailRows,
         sendState,
         fulfillments,
-        completions,
         refunds,
         returns,
         returnReceiptLines,

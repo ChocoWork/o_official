@@ -67,7 +67,7 @@ import {
 } from '@/lib/orders/returns/return-store';
 import { RETURN_REASONS } from '@/lib/orders/returns/return-types';
 import { describeLocalDb, isLocalDatabase, type PgClient } from './helpers/local-db';
-import { PRICE, createCatalogFixture, insertOrderWithLines, shipFixtureOrder, uniqueSuffix } from './helpers/order-fixtures';
+import { PRICE, createCatalogFixture, insertOrderWithLines, shipFixtureOrder, uniqueSuffix, withLedgerLock } from './helpers/order-fixtures';
 
 jest.setTimeout(30000);
 
@@ -250,7 +250,10 @@ async function addVariant(db: PgClient, itemId: number, colorName: string, sizeL
     [itemId, color.rows[0].id, size.rows[0].id],
   );
   const variantId = Number(variant.rows[0].id);
-  await db.query(`insert into public.stock_movements (variant_id, delta, reason, note) values ($1, $2, 'restock', 'fixture')`, [variantId, stock]);
+  // 台帳への書き込みは共通の押さえの下だけで通る（G-1）。材料の入荷も押さえを取って書く
+  await withLedgerLock(db, () => db.query(
+    `insert into public.stock_movements (variant_id, delta, reason, note) values ($1, $2, 'restock', 'fixture')`, [variantId, stock],
+  ));
   return variantId;
 }
 

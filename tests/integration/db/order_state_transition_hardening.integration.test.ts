@@ -216,6 +216,7 @@ describe('integration: order state transition hardening', () => {
     }
   });
 
+  // G-1 Task 14: the legacy shipping RPC is a service-role-only fixed refusal (LEGACY_FULFILLMENT_DISABLED / 55000)
   test('shipping and refund result RPCs execute with service-role-only transitions', async () => {
     await client.query('begin');
     try {
@@ -239,21 +240,20 @@ describe('integration: order state transition hardening', () => {
       );
 
       await client.query('set local role service_role');
-      const shipped = await client.query(
+      await client.query('savepoint legacy_ship');
+      await expect(client.query(
         `select * from public.admin_create_fulfillment(
            $1::uuid, $2::uuid, gen_random_uuid(), 'yamato'::text, 'TRACK-123'::text, false, $3::jsonb
          )`,
         [shippingOrderId, actorId, JSON.stringify([{ order_item_id: shippingItemId, quantity: 1 }])],
-      );
+      )).rejects.toMatchObject({ code: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' });
+      await client.query('rollback to savepoint legacy_ship');
       await recordRefundResult(firstRefundId, 'succeeded');
       const fullyRefunded = await recordRefundResult(secondRefundId, 'succeeded');
       const restored = await recordRefundResult(firstRefundId, 'failed');
       const unpaidRefunded = await recordRefundResult(unpaidRefundId, 'succeeded');
       await client.query('reset role');
 
-      expect(shipped.rows).toEqual([
-        expect.objectContaining({ completes_order: true, order_status: 'shipped', replayed: false }),
-      ]);
       expect(fullyRefunded.rows).toEqual([
         expect.objectContaining({ order_status: 'cancelled', refunded_amount: 1000 }),
       ]);
@@ -274,9 +274,9 @@ describe('integration: order state transition hardening', () => {
       expect(persisted.rows).toEqual(expect.arrayContaining([
         expect.objectContaining({
           id: shippingOrderId,
-          status: 'shipped',
-          shipping_carrier: 'yamato',
-          tracking_number: 'TRACK-123',
+          status: 'paid',
+          shipping_carrier: null,
+          tracking_number: null,
         }),
         expect.objectContaining({
           id: refundOrderId,
@@ -303,7 +303,7 @@ describe('integration: order state transition hardening', () => {
         [`shipping-hold-${Date.now()}@example.com`],
       );
 
-      // 発送の関数は断る（前の関数は0行を返していた）。断りで取引が止まらないよう、退避点の中で呼ぶ
+      // 旧の発送の関数は G-1 で止めた（住所の確かめより先に固定の拒否）。断りで取引が止まらないよう、退避点の中で呼ぶ
       await client.query('savepoint before_rpc_ship');
       await client.query('set local role service_role');
       await expect(
@@ -313,7 +313,7 @@ describe('integration: order state transition hardening', () => {
           )`,
           [orderId, actor.rows[0].id, JSON.stringify([{ order_item_id: orderItemId, quantity: 1 }])],
         ),
-      ).rejects.toMatchObject({ code: '22023', message: 'SHIPPING_ADDRESS_INCOMPLETE' });
+      ).rejects.toMatchObject({ code: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' });
       await client.query('rollback to savepoint before_rpc_ship');
 
       await client.query('savepoint before_direct_ship');
@@ -344,23 +344,39 @@ describe('integration: order state transition hardening', () => {
       const orderItemId = await insertOrderItem(orderId);
       const lines = JSON.stringify([{ order_item_id: orderItemId, quantity: 1 }]);
 
+      // 旧の発送・取消の関数は G-1 で止めた（G-3 の新しい発送票へ移る）。service_role から呼んでも固定の拒否
       await client.query('set local role service_role');
-      const shipped = await client.query(
-        `select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), 'yamato', 'TRACK-9', false, $3::jsonb)`,
-        [orderId, actorId, lines],
-      );
-      const cancelled = await client.query(
-        'select * from public.admin_cancel_fulfillment($1::uuid, $2::uuid, $3::uuid)',
-        [orderId, shipped.rows[0].fulfillment_id, actorId],
-      );
-      await client.query(
-        `select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), 'yamato', 'TRACK-10', false, $3::jsonb)`,
-        [orderId, actorId, lines],
-      );
+      for (const [sql, params] of [
+        [`select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), 'yamato', 'TRACK-9', false, $3::jsonb)`, [orderId, actorId, lines]],
+        ['select * from public.admin_cancel_fulfillment($1::uuid, $2::uuid, $3::uuid)', [orderId, crypto.randomUUID(), actorId]],
+      ] as const) {
+        await client.query('savepoint legacy_call');
+        await expect(client.query(sql, [...params])).rejects.toMatchObject({ code: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' });
+        await client.query('rollback to savepoint legacy_call');
+      }
       await client.query('reset role');
 
-      expect(shipped.rows).toEqual([expect.objectContaining({ completes_order: true, order_status: 'shipped' })]);
-      expect(cancelled.rows).toEqual([{ outcome: 'cancelled', order_status: 'paid' }]);
+      // 状態の守り（J-19）は理由で見る: 発送の理由で発送済みにし、発送の取消の理由でだけ決済完了へ戻せる
+      await client.query("select set_config('app.order_actor_id', $1::text, true)", [actorId]);
+      await client.query("select set_config('app.order_change_reason', 'admin_create_fulfillment', true)");
+      await client.query(
+        `update public.orders set status = 'shipped'::public.order_status, shipped_at = now(), shipping_carrier = 'yamato',
+           tracking_number = 'TRACK-9' where id = $1`,
+        [orderId],
+      );
+      await client.query("select set_config('app.order_change_reason', 'admin_cancel_fulfillment', true)");
+      await client.query(
+        `update public.orders set status = 'paid'::public.order_status, shipped_at = null, shipping_carrier = null,
+           tracking_number = null where id = $1`,
+        [orderId],
+      );
+      expect((await client.query('select status::text as status from public.orders where id = $1', [orderId])).rows[0].status).toBe('paid');
+      await client.query("select set_config('app.order_change_reason', 'admin_create_fulfillment', true)");
+      await client.query(
+        `update public.orders set status = 'shipped'::public.order_status, shipped_at = now(), shipping_carrier = 'yamato',
+           tracking_number = 'TRACK-10' where id = $1`,
+        [orderId],
+      );
 
       // ほかの理由で発送済みから決済完了へ戻すことはできない
       await client.query('savepoint direct_unship');

@@ -56,6 +56,7 @@ import {
   createDraft,
   movementsOf,
   revisionsOf,
+  shipFixtureOrder,
   uniqueSuffix,
   variantStock,
 } from './helpers/order-fixtures';
@@ -385,7 +386,7 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       await db().query('DELETE FROM auth.users WHERE id = $1', [ACTOR]);
     });
 
-    /** 注文の全部の商品を1回で送る（グループ E-1 の発送の関数） */
+    /** 注文の全部の商品を1回で送る旧の発送の関数（G-1 Task 14 で止めた。LEGACY_FULFILLMENT_DISABLED / 55000） */
     const shipPaidOrder = async (orderId: string) => {
       const items = await db().query('select id, quantity from public.order_items where order_id = $1 order by id', [orderId]);
       return db().query(
@@ -393,8 +394,21 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
         [orderId, ACTOR, JSON.stringify(items.rows.map((row) => ({ order_item_id: row.id, quantity: row.quantity })))],
       );
     };
+    /** 注文の品物に支払額の確認の保留（payment_review）が付いているか（G-1 の品物の状態の止まっている理由） */
+    const reviewBlocked = async (orderId: string) => (await db().query(
+      `select coalesce(bool_or('payment_review' = any(s.blocked_reasons)), false) as blocked
+       from private.group_g_item_state_ranges(array[$1::uuid]) as s`, [orderId],
+    )).rows[0].blocked as boolean;
+    /** 注文の全部の商品を1回で送る合成の発送（G-1 の割当を消費する。旧の関数の代わりの材料） */
+    const shipFixture = async (orderId: string) => {
+      const items = await db().query('select id, quantity from public.order_items where order_id = $1 order by id', [orderId]);
+      return shipFixtureOrder(db(), {
+        orderId, actorId: ACTOR, trackingNumber: '1234-5678', notifyCustomer: false,
+        lines: items.rows.map((row) => ({ order_item_id: row.id as string, quantity: Number(row.quantity) })),
+      });
+    };
 
-    test('金額の違い: 入金済みにして要対応に記録し、お客様への確認メールは出さず、解決するまで発送できない', async () => {
+    test('金額の違い: 入金済みにして要対応に記録し、お客様への確認メールは出さず、解決するまで品物を支払額の確認で止める', async () => {
       const draft = await newDraft();
       const orderId = await placeOrThrow(draft);
       const paymentIntentId = `pi_composed_${uniqueSuffix()}`;
@@ -444,8 +458,9 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
         { delta: 2, reason: 'restock' },
         { delta: -1, reason: 'purchase' },
       ]);
-      // 要対応が開いている間は発送できない
-      await expect(shipPaidOrder(orderId)).rejects.toMatchObject({ code: '22023', message: 'PAYMENT_REVIEW_REQUIRED' });
+      // 要対応が開いている間は、品物が支払額の確認で止まる（旧の発送の関数は G-1 で止めたので、いつも固定の拒否）
+      expect(await reviewBlocked(orderId)).toBe(true);
+      await expect(shipPaidOrder(orderId)).rejects.toMatchObject({ code: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' });
 
       // 同じ事実で照合し直すと、入金済み × 入金済みでも金額の違いを導き直して同じ要対応に数えるだけ。
       // 店への知らせは増えず、発送は止まったまま
@@ -458,9 +473,9 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       expect(readSettings).toHaveBeenCalledTimes(1);
       expect(await groupG('payment_review_hold', 'exception_id')).toBe(1);
       expect(await groupG('payment_exception_dispatch', 'cause_id')).toBe(1);
-      await expect(shipPaidOrder(orderId)).rejects.toMatchObject({ code: '22023', message: 'PAYMENT_REVIEW_REQUIRED' });
+      expect(await reviewBlocked(orderId)).toBe(true);
 
-      // 対照: 解決すれば発送できる。さっきの断りは、要対応が開いていたからである（配送先などほかの理由ではない）
+      // 対照: 解決すれば支払額の確認の止めが外れる。さっきの止めは、要対応が開いていたからである（配送先などほかの理由ではない）
       const resolved = await db().query(
         'select resolved from public.resolve_payment_exception($1::uuid, $2::uuid, $3::text)',
         [exception.id, ACTOR, '差額を返金'],
@@ -474,7 +489,10 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
              and r.cause_type = 'payment_review_hold' and r.cause_id = h.id::text)`,
         [exception.id],
       )).rows[0].n)).toBe(0);
-      expect((await shipPaidOrder(orderId)).rowCount).toBe(1);
+      expect(await reviewBlocked(orderId)).toBe(false);
+      await expect(shipPaidOrder(orderId)).rejects.toMatchObject({ code: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' });
+      // 発送は G-3 の新しい発送票で行う。ここでは G-1 の割当を消費する合成の発送で、送れる品が残っていることを見る
+      expect((await shipFixture(orderId)).completes_order).toBe(true);
       expect((await ordersOf(draft))[0]).toMatchObject({ id: orderId, status: 'shipped' });
     });
 

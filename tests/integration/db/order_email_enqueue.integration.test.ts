@@ -223,6 +223,7 @@ describeLocalDb('integration: 状態を変える関数が注文のメールの�
     expect(history.rows).toEqual([{ to_status: 'shipped', shipping_carrier: 'yamato', tracking_number: 'TRK-1' }]);
   });
 
+  // G-1 Task 14: 旧の発送の関数は引数の確かめより先に LEGACY_FULFILLMENT_DISABLED / 55000 で断る。引数の数の違いは関数の解決で断られる
   test('発送の関数は「送るか」を省くと断る', async () => {
     const actor = await createActor(db());
     const { orderId, orderItemId } = await createShippableOrder(db());
@@ -233,7 +234,7 @@ describeLocalDb('integration: 状態を変える関数が注文のメールの�
         "select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), 'yamato', 'TRK-3', null, $3::jsonb)",
         [orderId, actor, lines],
       ),
-    ).rejects.toMatchObject({ code: '22023', message: 'FULFILLMENT_ARGUMENT_INVALID' });
+    ).rejects.toMatchObject({ code: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' });
     await expect(
       db().query(
         "select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), 'yamato', 'TRK-3', $3::jsonb)",

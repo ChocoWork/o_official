@@ -622,12 +622,14 @@ describeLocalDb('integration: 配送の追跡の関数（移行 C）', (db) => {
     });
   });
 
+  // G-1 Task 14: 旧の伝票番号の訂正は止めた。大小だけの違いを「変わっていない」として断る契約（停止前の DELIVERY_TRACKING_UNCHANGED）は
+  // G-3 の新しい発送票で作り直す。ここでは、止めた関数が登録も外への停止も変えないことを見る
   test('番号の大文字・小文字だけの直し（abc-1→ABC-1）は断り、登録は止めず、外への停止も借りない', async () => {
     await enableDeliveryTracking(db());
     const base = uniqueNumber('abc');
     const target = await trackedShipment(db(), { trackingNumber: base.toLowerCase(), state: 'registered', everRegistered: true });
-    // 17TRACK から見れば同じ番号なので、移行 B は大小だけの違いを「変わっていない」として断る
-    await expectDeliveryRejected(db(), () => updateDeliveryTracking(db(), editOf(target, { carrier: 'yamato', trackingNumber: base.toUpperCase() })), 'DELIVERY_TRACKING_UNCHANGED', '22023');
+    // 17TRACK から見れば同じ番号。旧の訂正の関数は止めたので、引数の確かめより先に固定の拒否
+    await expectDeliveryRejected(db(), () => updateDeliveryTracking(db(), editOf(target, { carrier: 'yamato', trackingNumber: base.toUpperCase() })), 'LEGACY_FULFILLMENT_DISABLED', '55000');
     expect(await deliveryRegistration(db(), target.fulfillmentId, 1)).toMatchObject({ state: 'registered', provider_stop_pending: false });
     expect(await deliveryRegistration(db(), target.fulfillmentId, 2)).toBeUndefined();
     const claims = await claimDeliveryFor(db(), [target.fulfillmentId]);

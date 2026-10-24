@@ -5,6 +5,7 @@ import {
   insertOrderWithStockLine,
   orderRow,
   revisionsOf,
+  shipFixtureOrder,
   uniqueSuffix,
   variantStock,
 } from './helpers/order-fixtures';
@@ -267,7 +268,7 @@ describeLocalDb('integration: 要対応・要確認', (db) => {
     expect(await orderRow(db(), orderId)).toMatchObject({ reviewed_by: ACTOR });
   });
 
-  test('支払額の違いの要対応が開いている注文は発送できず、解決すると発送できる', async () => {
+  test('支払額の違いの要対応が開いている注文は品物が支払額の確認で止まり、解決すると止めが外れる（旧の発送の関数は G-1 で停止）', async () => {
     const fx = await createCatalogFixture(db(), { stock: 0 });
     const { orderId, orderItemId } = await insertOrderWithStockLine(db(), {
       status: 'paid', itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: false,
@@ -279,9 +280,20 @@ describeLocalDb('integration: 要対応・要確認', (db) => {
       [orderId, ACTOR, JSON.stringify([{ order_item_id: orderItemId, quantity: 1 }])],
     );
 
-    await expect(ship()).rejects.toMatchObject({ code: '22023', message: 'PAYMENT_REVIEW_REQUIRED' });
+    const reviewBlocked = async () => (await db().query(
+      `select coalesce(bool_or('payment_review' = any(s.blocked_reasons)), false) as blocked
+       from private.group_g_item_state_ranges(array[$1::uuid]) as s`, [orderId],
+    )).rows[0].blocked as boolean;
+
+    expect(await reviewBlocked()).toBe(true);
+    await expect(ship()).rejects.toMatchObject({ code: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' });
     await db().query('select resolved from public.resolve_payment_exception($1::uuid, $2::uuid, $3::text)', [id, ACTOR, '差額を返金']);
-    expect((await ship()).rows).toEqual([expect.objectContaining({ completes_order: true, order_status: 'shipped' })]);
+    expect(await reviewBlocked()).toBe(false);
+    // 旧の発送は解決の後も固定の拒否（発送は G-3 の新しい発送票）。解決で送れる品が戻ることは合成の発送で見る
+    await expect(ship()).rejects.toMatchObject({ code: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' });
+    expect(await shipFixtureOrder(db(), {
+      orderId, actorId: ACTOR, notifyCustomer: false, lines: [{ order_item_id: orderItemId, quantity: 1 }],
+    })).toMatchObject({ completes_order: true, order_status: 'shipped' });
   });
 
   test('失敗の注文の取消は理由とメモを残し、「その他」はメモが要る', async () => {

@@ -339,6 +339,8 @@ describe('integration: backfill_item_variants', () => {
         await client.query('BEGIN');
         const itemId = await createLegacyItem(client, [BLACK, IVORY], ['S', 'M']);
         const before = await variantsOf(client, itemId);
+        // G-1: 台帳は共通の押さえの下でだけ在庫を動かせる
+        await client.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
         await client.query(
           `INSERT INTO public.stock_movements (variant_id, delta, reason, note) VALUES ($1, 3, 'restock', 'fixture')`,
           [byKey(before, 'Ivory/S').id],

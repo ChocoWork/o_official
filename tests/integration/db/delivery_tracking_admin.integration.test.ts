@@ -3,17 +3,29 @@ import { randomUUID } from 'node:crypto';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { createCatalogFixture, createShippedOrderFixture, insertOrderWithLines, insertRefundRecord, insertReturnRecord } from './helpers/order-fixtures';
 import {
-  createDeliveryActor, createDeliveryOrder, createDeliveryFulfillment, deliveryClock, deliveryEvents,
-  deliveryRecord, deliveryRegistrations, deliveryShipment, expectDeliveryRejected, insertDeliveryAttention,
-  insertDeliveryFixture, insertDeliveryRegistration, markDeliveryDelivered, setDeliveryTracking,
-  updateDeliveryTracking, waitForDeliveryLock, withDeliveryConnections, type TrackingEdit, type ManualDelivery,
+  cancelDeliveryFixture, correctDeliveryTrackingFixture, createDeliveryActor, createDeliveryOrder, createDeliveryFulfillment,
+  deliveryClock, deliveryEvents, deliveryRecord, deliveryRegistrations, deliveryShipment, expectDeliveryRejected,
+  insertDeliveryAttention, insertDeliveryFixture, insertDeliveryRegistration, markDeliveredFixture, markDeliveryDelivered,
+  setDeliveryTracking, updateDeliveryTracking, withDeliveryConnections, type TrackingEdit, type ManualDelivery,
 } from './helpers/delivery-tracking-fixtures';
 
-/** 移行 B の管理操作・読み出しの契約。DB の実行と RED/GREEN の確認は controller が行う。 */
+/**
+ * 移行 B の管理操作・読み出しの契約。DB の実行と RED/GREEN の確認は controller が行う。
+ * G-1 Task 14: 旧の発送・発送取消・伝票番号の訂正・手動の配達済みの4関数（admin_create_fulfillment・admin_cancel_fulfillment・
+ * admin_update_fulfillment_tracking・admin_mark_fulfillment_delivered）は、引数の確かめ・lock・参照・再送の判定より先に
+ * LEGACY_FULFILLMENT_DISABLED / 55000 で断り、発送・出来事・直しの記録・登録・要対応・メール・注文を何も変えない。
+ * 停止前の契約（再送・指紋・日付・通知・交換の保留・登録の止め方）は G-3 の新しい発送票で作り直す（旧の関数は再開しない）。
+ * 設定・読み出し・登録の止め方（private.stop_fulfillment_registrations）・メールの取りやめの契約は、旧の関数の代わりに
+ * G-1 の割当を消費する合成の材料（createDeliveryFulfillment・correctDeliveryTrackingFixture・markDeliveredFixture・
+ * cancelDeliveryFixture）で確かめる。
+ */
 jest.setTimeout(30000);
 
+const LEGACY = 'LEGACY_FULFILLMENT_DISABLED';
 const ZONES = ['UTC', 'Asia/Tokyo', 'America/Los_Angeles', 'Europe/London'];
 const DELIVERY_KINDS = ['out_for_delivery', 'delivered', 'shipping_update'];
+const CREATE_SQL = 'select * from public.admin_create_fulfillment($1,$2,$3,$4,$5,$6,$7::jsonb)';
+const CANCEL_SQL = 'select * from public.admin_cancel_fulfillment($1,$2,$3)';
 const editOf = (target: { orderId: string; fulfillmentId: string; actorId: string }, extra: Partial<TrackingEdit> = {}): TrackingEdit => ({
   ...target, requestKey: randomUUID(), carrier: 'sagawa', trackingNumber: 'Corrected-456', notifyCustomer: true, ...extra,
 });
@@ -21,6 +33,21 @@ const manualOf = (target: { orderId: string; fulfillmentId: string; actorId: str
   ...target, requestKey: randomUUID(), deliveredOn: target.clock.yesterday, notifyCustomer: false, ...extra,
 });
 const iso = (value: Date | string) => new Date(value).toISOString();
+
+type CreateInput = {
+  orderId: string; actorId: string; requestKey?: string; carrier?: string; trackingNumber?: string;
+  notifyCustomer?: boolean; lines: Array<{ order_item_id: string; quantity: number }>;
+};
+
+/** 止めた旧の作成の関数をそのまま呼ぶ */
+function legacyCreate(client: PgClient, input: CreateInput) {
+  return client.query(CREATE_SQL, [input.orderId, input.actorId, input.requestKey ?? randomUUID(), input.carrier ?? 'yamato',
+    input.trackingNumber ?? 'Delivery-123', input.notifyCustomer ?? false, JSON.stringify(input.lines)]);
+}
+
+function legacyCancel(client: PgClient, target: { orderId: string; fulfillmentId: string; actorId: string }) {
+  return client.query(CANCEL_SQL, [target.orderId, target.fulfillmentId, target.actorId]);
+}
 
 async function emails(client: PgClient, fulfillmentId: string) {
   return (await client.query('select * from private.order_email_outbox where fulfillment_id=$1 order by kind,tracking_version', [fulfillmentId])).rows;
@@ -42,6 +69,36 @@ async function detail(client: PgClient, orderId: string) {
   return (await client.query('select public.get_order_delivery_detail($1) as detail', [orderId])).rows[0].detail;
 }
 
+/** 止めた関数が変えてはいけない物の写し（注文と、その注文の発送ごとの記録・出来事・直し・登録・要対応・メール・割当） */
+async function orderDeliveryState(client: PgClient, orderId: string) {
+  const fulfillments = (await client.query('select * from public.order_fulfillments where order_id=$1 order by id', [orderId])).rows;
+  const perFulfillment = [];
+  for (const f of fulfillments) {
+    perFulfillment.push({
+      record: f,
+      events: await deliveryEvents(client, f.id),
+      changes: (await client.query('select * from public.order_fulfillment_tracking_changes where fulfillment_id=$1 order by id', [f.id])).rows,
+      registrations: await deliveryRegistrations(client, f.id),
+      attention: await attention(client, f.id),
+      emails: await emails(client, f.id),
+    });
+  }
+  return {
+    order: (await client.query('select * from public.orders where id=$1', [orderId])).rows[0],
+    fulfillments: perFulfillment,
+    allocations: (await client.query(`select a.* from public.order_item_allocations a join public.order_items i on i.id=a.order_item_id
+      where i.order_id=$1 order by a.id`, [orderId])).rows,
+    emails: (await client.query('select id,kind,status from private.order_email_outbox where order_id=$1 order by id', [orderId])).rows,
+  };
+}
+
+/** 止めた旧の関数は固定の拒否だけを返し、注文の配送の状態を何も変えない */
+async function expectStopped(client: PgClient, orderId: string | null, action: () => Promise<unknown>) {
+  const before = orderId ? await orderDeliveryState(client, orderId) : null;
+  await expectDeliveryRejected(client, action, LEGACY, '55000');
+  if (orderId) expect(await orderDeliveryState(client, orderId)).toEqual(before);
+}
+
 /** 動いているメールを個別に用意し、別の試験の outbox を claim しない。 */
 async function sendingEmail(client: PgClient, target: { orderId: string; fulfillmentId: string }, kind: string, version: number, changeId: string | null = null) {
   const token = randomUUID();
@@ -58,13 +115,15 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
   beforeEach(async () => { await db().query('begin'); });
   afterEach(async () => { await db().query('rollback'); });
 
-  test('追跡オフの発送はconfirmedの出来事だけ作る', async () => {
+  test('追跡オフでは、旧の作成は止まり、合成の発送は confirmed の出来事だけ作る', async () => {
     const actor = await createDeliveryActor(db());
     await setDeliveryTracking(db(), false, actor.id);
     const order = await createDeliveryOrder(db());
-    const result = (await createDeliveryFulfillment(db(), {
-      ...order, actorId: actor.id, notifyCustomer: true, lines: [{ order_item_id: order.orderItemId, quantity: 1 }],
-    })).rows[0];
+    const input = { ...order, actorId: actor.id, notifyCustomer: true, lines: [{ order_item_id: order.orderItemId, quantity: 1 }] };
+    await expectStopped(db(), order.orderId, () => legacyCreate(db(), input));
+    expect((await db().query('select count(*)::int as n from public.order_fulfillments where order_id=$1', [order.orderId])).rows[0].n).toBe(0);
+
+    const result = (await createDeliveryFulfillment(db(), input)).rows[0];
     expect(Object.keys(result)).toEqual(['fulfillment_id', 'number', 'completes_order', 'order_status', 'replayed']);
     expect(result).toMatchObject({ number: 1, completes_order: false, order_status: 'paid', replayed: false });
     const fulfillment = await deliveryRecord(db(), result.fulfillment_id);
@@ -74,7 +133,7 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     expect(iso(events[0].happened_at)).toBe(iso(fulfillment.shipped_at));
     expect(iso(fulfillment.delivery_status_at)).toBe(iso(fulfillment.shipped_at));
     expect(fulfillment).toMatchObject({ tracking_version: 1, delivery_status: 'confirmed', delivered_at: null });
-    expect(fulfillment.request_fingerprint).toMatch(/^[0-9a-f]{32}$/);
+    // 作成の要求の指紋は旧の作成の関数の契約（停止前）。G-3 の新しい発送票が自分の再送の鍵を決める
     expect(await deliveryRegistrations(db(), fulfillment.id)).toHaveLength(0);
     expect((await emails(db(), fulfillment.id)).map((row) => row.kind)).toEqual(['shipped']);
   });
@@ -123,7 +182,8 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     const atBoundaryIncluded = targets.some((row) => row.fulfillment_id === boundary.fulfillmentId);
     expect(atBoundaryIncluded).toBe(false);
     expect(targets.some((row) => row.fulfillment_id === after.fulfillmentId)).toBe(false);
-    const updated = (await updateDeliveryTracking(db(), editOf(after))).rows[0];
+    // 直しの記録は合成の材料（旧の伝票番号の訂正は止まっている）
+    const updated = await correctDeliveryTrackingFixture(db(), editOf(after));
     const change = (await db().query('select * from public.order_fulfillment_tracking_changes where id=$1', [updated.tracking_change_id])).rows[0];
     await setDeliveryTracking(db(), true, before.actorId);
     const correctedVersion = (await deliveryRegistrations(db(), after.fulfillmentId)).find((row) => row.tracking_version === 2);
@@ -136,7 +196,7 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     const valid = await deliveryShipment(db());
     const delivered = await deliveryShipment(db(), { deliveredAt: `${valid.clock.yesterday}T12:00:00+09:00` });
     const cancelled = await deliveryShipment(db());
-    await db().query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [cancelled.orderId, cancelled.fulfillmentId, cancelled.actorId]);
+    await cancelDeliveryFixture(db(), cancelled);
     const noNumber = await deliveryShipment(db(), { trackingNumber: null });
     const noCarrier = await deliveryShipment(db(), { carrier: null });
     const existing = await deliveryShipment(db());
@@ -188,7 +248,7 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     await setDeliveryTracking(db(), true, target.actorId);
     const stopped = await deliveryShipment(db());
     await insertDeliveryRegistration(db(), stopped.fulfillmentId, { state: 'stopped', stopReason: 'delivered' });
-    await markDeliveryDelivered(db(), manualOf(target));
+    await markDeliveredFixture(db(), manualOf(target));
     const active = await deliveryShipment(db());
     await insertDeliveryRegistration(db(), active.fulfillmentId, { state: 'registered', everRegistered: true });
     await db().query(`update private.fulfillment_tracking_registrations set lease_token=gen_random_uuid(),
@@ -213,315 +273,248 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     expect(await deliveryRecord(db(), target.fulfillmentId)).toEqual(recordBefore);
   });
 
-  test('番号の直しは配達済みでも新しい版のconfirmedへ戻す', async () => {
+  test('配達済みの発送への旧の伝票番号の訂正は止まり、版・状況・登録・要対応・メールはそのまま', async () => {
     const target = await deliveryShipment(db(), { notifyCustomer: true });
     await setDeliveryTracking(db(), true, target.actorId);
-    await markDeliveryDelivered(db(), manualOf(target));
+    await markDeliveredFixture(db(), manualOf(target));
     await insertDeliveryAttention(db(), target.fulfillmentId, 'tracking_stalled');
-    const result = (await updateDeliveryTracking(db(), editOf(target))).rows[0];
-    expect(Object.keys(result)).toEqual(['tracking_change_id', 'tracking_version', 'replayed']);
-    expect(result).toMatchObject({ tracking_version: 2, replayed: false });
-    const updated = await deliveryRecord(db(), target.fulfillmentId);
-    expect(updated).toMatchObject({ tracking_version: 2, delivery_status: 'confirmed', delivered_at: null,
-      shipping_carrier: 'sagawa', tracking_number: 'Corrected-456', notify_customer: true });
-    const change = (await db().query('select * from public.order_fulfillment_tracking_changes where id=$1', [result.tracking_change_id])).rows[0];
-    expect(change).toMatchObject({ from_carrier: 'yamato', to_carrier: 'sagawa', from_tracking_number: 'DELIVERY-123',
-      to_tracking_number: 'Corrected-456', tracking_version: 2, changed_by: target.actorId });
-    expect(iso(updated.delivery_status_at)).toBe(iso(change.changed_at));
-    const [oldRegistration, newRegistration] = await deliveryRegistrations(db(), target.fulfillmentId);
-    // 配達済みで止まっていた版は、直しの後も delivered のまま。外への停止の印も付かない
-    expect(oldRegistration).toMatchObject({ state: 'stopped', stop_reason: 'delivered', provider_stop_pending: false });
-    expect(newRegistration).toMatchObject({ state: 'pending', tracking_version: 2, tracking_number: 'CORRECTED-456' });
-    expect((await deliveryEvents(db(), target.fulfillmentId)).filter((row) => row.source === 'tracking_edit')).toMatchObject([
-      { status: 'confirmed', tracking_version: 2 },
-    ]);
-    expect((await attention(db(), target.fulfillmentId))[0]).toMatchObject({ resolution: 'auto' });
-    const shippingUpdate = (await emails(db(), target.fulfillmentId)).filter((row) => row.kind === 'shipping_update');
-    const shippingUpdateCount = shippingUpdate.length;
-    expect(shippingUpdateCount).toBe(1);
-    expect(shippingUpdate[0]).toMatchObject({ tracking_change_id: result.tracking_change_id, tracking_version: 2, variant: null });
+    await expectStopped(db(), target.orderId, () => updateDeliveryTracking(db(), editOf(target)));
+    expect(await deliveryRecord(db(), target.fulfillmentId)).toMatchObject({ tracking_version: 1, delivery_status: 'delivered',
+      shipping_carrier: 'yamato', tracking_number: 'DELIVERY-123' });
+    expect((await attention(db(), target.fulfillmentId))[0]).toMatchObject({ resolution: null, resolved_at: null });
+    expect((await emails(db(), target.fulfillmentId)).filter((row) => row.kind === 'shipping_update')).toHaveLength(0);
   });
 
-  test('同じキーの再送は元の結果、違う入力はDELIVERY_REQUEST_MISMATCH', async () => {
+  test('旧の訂正の同じキーの再送も違う入力も、DELIVERY_REQUEST_MISMATCH に落ちず固定の拒否を返す', async () => {
     const target = await deliveryShipment(db());
     const input = editOf(target);
-    const first = (await updateDeliveryTracking(db(), input)).rows[0];
     const otherActor = await createDeliveryActor(db());
-    const replay = (await updateDeliveryTracking(db(), { ...input, actorId: otherActor.id })).rows[0];
-    expect(replay.replayed).toBe(true);
-    expect(replay).toEqual({ ...first, replayed: true });
-    for (const changed of [{ carrier: 'japanpost' }, { trackingNumber: 'Different-789' }, { notifyCustomer: false }]) {
-      await expectDeliveryRejected(db(), () => updateDeliveryTracking(db(), { ...input, ...changed }), 'DELIVERY_REQUEST_MISMATCH');
+    for (const changed of [{}, { actorId: otherActor.id }, { carrier: 'japanpost' }, { trackingNumber: 'Different-789' }, { notifyCustomer: false }]) {
+      await expectStopped(db(), target.orderId, () => updateDeliveryTracking(db(), { ...input, ...changed }));
     }
-    expect((await db().query('select * from public.order_fulfillment_tracking_changes where fulfillment_id=$1', [target.fulfillmentId])).rows).toHaveLength(1);
-    expect((await emails(db(), target.fulfillmentId)).filter((row) => row.kind === 'shipping_update')).toHaveLength(1);
-    // 現在の版と状態が変わっても、元の要求の答えは変えない。
-    await markDeliveryDelivered(db(), manualOf(target));
-    await updateDeliveryTracking(db(), editOf(target, { trackingNumber: 'Third-789' }));
-    expect((await updateDeliveryTracking(db(), input)).rows[0]).toEqual({ ...first, replayed: true });
+    expect((await db().query('select * from public.order_fulfillment_tracking_changes where fulfillment_id=$1', [target.fulfillmentId])).rows).toHaveLength(0);
+    expect((await emails(db(), target.fulfillmentId)).filter((row) => row.kind === 'shipping_update')).toHaveLength(0);
   });
 
-  test('発送の作成の再送は番号の直しの後も同じ発送を返す', async () => {
+  test('旧の作成の再送は、合成で直した後でも発送を返さず固定の拒否を返す（G-3 で再送の鍵を作り直す）', async () => {
     const order = await createDeliveryOrder(db(), 2);
     const actor = await createDeliveryActor(db());
     const input = { ...order, actorId: actor.id, requestKey: randomUUID(), carrier: 'yamato', trackingNumber: 'Original-123',
       notifyCustomer: true, lines: [{ order_item_id: order.orderItemId, quantity: 2 }] };
     const created = (await createDeliveryFulfillment(db(), input)).rows[0];
-    const original = await deliveryRecord(db(), created.fulfillment_id);
-    const correctedTrackingNumber = 'Corrected-456';
-    await updateDeliveryTracking(db(), editOf({ ...order, actorId: actor.id, fulfillmentId: created.fulfillment_id }, { trackingNumber: correctedTrackingNumber, notifyCustomer: false }));
-    const createReplay = (await createDeliveryFulfillment(db(), input)).rows[0];
-    expect(createReplay.fulfillment_id).toBe(created.fulfillment_id);
-    expect(createReplay).toEqual({ ...created, replayed: true });
-    const current = await deliveryRecord(db(), created.fulfillment_id);
-    expect(current.tracking_number).toBe(correctedTrackingNumber);
-    expect(current.request_fingerprint).toBe(original.request_fingerprint);
+    await correctDeliveryTrackingFixture(db(), editOf({ ...order, actorId: actor.id, fulfillmentId: created.fulfillment_id },
+      { trackingNumber: 'Corrected-456', notifyCustomer: false }));
+    await expectStopped(db(), order.orderId, () => legacyCreate(db(), input));
+    expect((await deliveryRecord(db(), created.fulfillment_id)).tracking_number).toBe('Corrected-456');
     expect((await db().query('select * from public.order_fulfillments where order_id=$1', [order.orderId])).rows).toHaveLength(1);
   });
 
-  test('古いNULL指紋は直す前に保存し、元の作成要求を再送できる', async () => {
+  test('古いNULL指紋の発送でも、旧の訂正と作成の再送は止まり、指紋は補わない', async () => {
     const target = await deliveryShipment(db());
     const before = await deliveryRecord(db(), target.fulfillmentId);
     expect(before.request_fingerprint).toBeNull();
-    await updateDeliveryTracking(db(), editOf(target));
-    const after = await deliveryRecord(db(), target.fulfillmentId);
-    expect(after.request_fingerprint).toMatch(/^[0-9a-f]{32}$/);
-    const replay = (await createDeliveryFulfillment(db(), {
+    await expectStopped(db(), target.orderId, () => updateDeliveryTracking(db(), editOf(target)));
+    await expectStopped(db(), target.orderId, () => legacyCreate(db(), {
       ...target, requestKey: before.request_key, trackingNumber: before.tracking_number,
       lines: [{ order_item_id: target.orderItemId, quantity: 1 }],
-    })).rows[0];
-    expect(replay).toMatchObject({ fulfillment_id: target.fulfillmentId, replayed: true });
-    expect((await deliveryRecord(db(), target.fulfillmentId)).tracking_number).toBe('Corrected-456');
+    }));
+    expect(await deliveryRecord(db(), target.fulfillmentId)).toEqual(before);
   });
 
-  test('作成の指紋は商品行の順とactorに左右されず、別注文や変更した入力を断る', async () => {
+  test('旧の作成は商品行の順・actor・別注文・変更した入力にかかわらず、FULFILLMENT_REQUEST_MISMATCH に落ちず固定の拒否を返す', async () => {
     const catalog = await createCatalogFixture(db(), { stock: 4 });
     const order = await insertOrderWithLines(db(), { status: 'paid', paidAmount: 20000,
       lines: [1, 2].map(() => ({ itemId: catalog.itemId, variantId: catalog.variantId, quantity: 2, fulfillmentType: 'stock' as const })) });
     const actor = await createDeliveryActor(db());
     const input = { ...order, actorId: actor.id, requestKey: randomUUID(), carrier: 'yamato', trackingNumber: 'Create-123', notifyCustomer: false,
       lines: order.orderItemIds.map((order_item_id) => ({ order_item_id, quantity: 1 })) };
-    const first = (await createDeliveryFulfillment(db(), input)).rows[0];
-    expect((await createDeliveryFulfillment(db(), { ...input, actorId: (await createDeliveryActor(db())).id, lines: [...input.lines].reverse() })).rows[0]).toEqual({ ...first, replayed: true });
+    await expectStopped(db(), order.orderId, () => legacyCreate(db(), input));
+    await expectStopped(db(), order.orderId, () => legacyCreate(db(), { ...input, actorId: actor.id, lines: [...input.lines].reverse() }));
     const other = await createDeliveryOrder(db());
     for (const changed of [
       { trackingNumber: 'Create-456' }, { notifyCustomer: true }, { carrier: 'sagawa' },
       { lines: [{ ...input.lines[0], quantity: 2 }, input.lines[1]] },
       { orderId: other.orderId, lines: [{ order_item_id: other.orderItemId, quantity: 1 }] },
-    ]) await expectDeliveryRejected(db(), () => createDeliveryFulfillment(db(), { ...input, ...changed }), 'FULFILLMENT_REQUEST_MISMATCH', '22023');
+    ]) await expectStopped(db(), (changed as { orderId?: string }).orderId ?? order.orderId, () => legacyCreate(db(), { ...input, ...changed }));
   });
 
-  test('手の再送は同じイベントを返し、日付や通知の違う入力を断る', async () => {
+  test('旧の手動の配達済みは、再送・日付や通知の違う入力・配達済みの発送でも固定の拒否を返す', async () => {
     const target = await deliveryShipment(db(), { notifyCustomer: true });
     const input = manualOf(target, { notifyCustomer: true });
-    const first = (await markDeliveryDelivered(db(), input)).rows[0];
-    expect(Object.keys(first)).toEqual(['event_id', 'delivered_at', 'replayed']);
     const actor = await createDeliveryActor(db());
-    expect((await markDeliveryDelivered(db(), { ...input, actorId: actor.id })).rows[0]).toEqual({ ...first, replayed: true });
-    for (const changed of [{ deliveredOn: target.clock.today }, { notifyCustomer: false }]) {
-      await expectDeliveryRejected(db(), () => markDeliveryDelivered(db(), { ...input, ...changed }), 'DELIVERY_REQUEST_MISMATCH');
+    for (const changed of [{}, { actorId: actor.id }, { deliveredOn: target.clock.today }, { notifyCustomer: false }, { requestKey: randomUUID() }]) {
+      await expectStopped(db(), target.orderId, () => markDeliveryDelivered(db(), { ...input, ...changed }));
     }
-    await expectDeliveryRejected(db(), () => markDeliveryDelivered(db(), { ...input, requestKey: randomUUID() }), 'DELIVERY_ALREADY_DELIVERED');
-    expect((await deliveryEvents(db(), target.fulfillmentId)).filter((row) => row.source === 'manual')).toHaveLength(1);
+    expect((await deliveryEvents(db(), target.fulfillmentId)).filter((row) => row.source === 'manual')).toHaveLength(0);
+    // 合成で配達済みにした後も同じ
+    await markDeliveredFixture(db(), input);
+    await expectStopped(db(), target.orderId, () => markDeliveryDelivered(db(), input));
     expect((await emails(db(), target.fulfillmentId)).filter((row) => row.kind === 'delivered')).toHaveLength(1);
-    await updateDeliveryTracking(db(), editOf(target));
-    expect((await markDeliveryDelivered(db(), input)).rows[0]).toEqual({ ...first, replayed: true });
-    expect(await deliveryRecord(db(), target.fulfillmentId)).toMatchObject({ delivery_status: 'confirmed', delivered_at: null, tracking_version: 2 });
   });
 
-  test.each(['別注文', '別発送'])('同じrequest_keyを%sで使っても他の結果を返さない', async (scope) => {
+  test.each(['別注文', '別発送'])('同じrequest_keyを%sで使っても、旧の訂正・手動の配達済みは固定の拒否だけを返す', async (scope) => {
     const first = await deliveryShipment(db());
     const second = scope === '別注文' ? await deliveryShipment(db()) : {
       ...first, ...await insertDeliveryFixture(db(), { orderId: first.orderId, shippedAt: first.shippedAt }),
     };
     const edit = editOf(first);
-    await updateDeliveryTracking(db(), edit);
-    await expectDeliveryRejected(db(), () => updateDeliveryTracking(db(), { ...edit, orderId: second.orderId, fulfillmentId: second.fulfillmentId }), 'DELIVERY_REQUEST_MISMATCH');
+    await expectStopped(db(), first.orderId, () => updateDeliveryTracking(db(), edit));
+    await expectStopped(db(), second.orderId, () => updateDeliveryTracking(db(), { ...edit, orderId: second.orderId, fulfillmentId: second.fulfillmentId }));
     const manual = manualOf(first);
-    await markDeliveryDelivered(db(), manual);
-    await expectDeliveryRejected(db(), () => markDeliveryDelivered(db(), { ...manual, orderId: second.orderId, fulfillmentId: second.fulfillmentId }), 'DELIVERY_REQUEST_MISMATCH');
+    await expectStopped(db(), first.orderId, () => markDeliveryDelivered(db(), manual));
+    await expectStopped(db(), second.orderId, () => markDeliveryDelivered(db(), { ...manual, orderId: second.orderId, fulfillmentId: second.fulfillmentId }));
     expect(await deliveryRecord(db(), second.fulfillmentId)).toMatchObject({ tracking_version: 1, delivery_status: 'confirmed', delivered_at: null });
   });
 
-  test.each([false, true])('completes_order=%sの発送の直しは注文の写しの条件を守る', async (complete) => {
+  test.each([false, true])('completes_order=%sの発送でも、旧の訂正は止まり注文の写しを変えない', async (complete) => {
     const order = await createDeliveryOrder(db(), 2);
     const actor = await createDeliveryActor(db());
     const created = (await createDeliveryFulfillment(db(), { ...order, actorId: actor.id,
       lines: [{ order_item_id: order.orderItemId, quantity: complete ? 2 : 1 }] })).rows[0];
     const before = (await db().query('select status,shipped_at,shipping_carrier,tracking_number from public.orders where id=$1', [order.orderId])).rows[0];
-    await updateDeliveryTracking(db(), editOf({ ...order, fulfillmentId: created.fulfillment_id, actorId: actor.id }));
+    await expectStopped(db(), order.orderId, () => updateDeliveryTracking(db(), editOf({ ...order, fulfillmentId: created.fulfillment_id, actorId: actor.id })));
     const after = (await db().query('select status,shipped_at,shipping_carrier,tracking_number from public.orders where id=$1', [order.orderId])).rows[0];
     expect(created.completes_order).toBe(complete);
-    expect(after).toEqual(complete ? { ...before, shipping_carrier: 'sagawa', tracking_number: 'Corrected-456' } : before);
+    expect(after).toEqual(before);
   });
 
-  test('全部送り終えた注文でも部分発送の直しは最後の発送の写しを変えない', async () => {
+  test('全部送り終えた注文でも、部分発送への旧の訂正は止まり最後の発送の写しを変えない', async () => {
     const order = await createDeliveryOrder(db(), 2);
     const actor = await createDeliveryActor(db());
     const input = { ...order, actorId: actor.id, lines: [{ order_item_id: order.orderItemId, quantity: 1 }] };
     const partial = (await createDeliveryFulfillment(db(), { ...input, trackingNumber: 'Partial-123' })).rows[0];
     await createDeliveryFulfillment(db(), { ...input, trackingNumber: 'Final-456' });
-    await updateDeliveryTracking(db(), editOf({ ...order, actorId: actor.id, fulfillmentId: partial.fulfillment_id }));
+    await expectStopped(db(), order.orderId, () => updateDeliveryTracking(db(), editOf({ ...order, actorId: actor.id, fulfillmentId: partial.fulfillment_id })));
     expect((await db().query('select status,shipping_carrier,tracking_number from public.orders where id=$1', [order.orderId])).rows[0])
       .toEqual({ status: 'shipped', shipping_carrier: 'yamato', tracking_number: 'Final-456' });
   });
 
-  test('版2の手の配達済みも配送業者・番号・版を変えない', async () => {
+  test('版2の発送への旧の手動の配達済みも止まり、配送業者・番号・版を変えない', async () => {
     const target = await deliveryShipment(db());
-    await updateDeliveryTracking(db(), editOf(target, { carrier: 'japanpost', trackingNumber: 'MixedCase-789', notifyCustomer: false }));
+    await correctDeliveryTrackingFixture(db(), editOf(target, { carrier: 'japanpost', trackingNumber: 'MixedCase-789', notifyCustomer: false }));
     const before = await deliveryRecord(db(), target.fulfillmentId);
-    await markDeliveryDelivered(db(), manualOf(target));
-    expect(await deliveryRecord(db(), target.fulfillmentId)).toMatchObject({ shipping_carrier: before.shipping_carrier,
-      tracking_number: before.tracking_number, tracking_version: 2, notify_customer: before.notify_customer, delivery_status: 'delivered' });
+    await expectStopped(db(), target.orderId, () => markDeliveryDelivered(db(), manualOf(target)));
+    expect(await deliveryRecord(db(), target.fulfillmentId)).toEqual(before);
+    expect(before).toMatchObject({ tracking_version: 2, delivery_status: 'confirmed', tracking_number: 'MixedCase-789' });
   });
 
-  test.each([false, true])('追跡%sで番号を直した時の通知選択と新しい登録を保存する', async (enabled) => {
+  test.each([false, true])('追跡%sでも、旧の訂正は止まり、通知の選択も新しい登録も保存しない', async (enabled) => {
     const target = await deliveryShipment(db(), { notifyCustomer: true });
     await setDeliveryTracking(db(), enabled, target.actorId);
-    await updateDeliveryTracking(db(), editOf(target, { notifyCustomer: false }));
-    expect((await deliveryRecord(db(), target.fulfillmentId)).notify_customer).toBe(false);
+    await expectStopped(db(), target.orderId, () => updateDeliveryTracking(db(), editOf(target, { notifyCustomer: false })));
+    expect((await deliveryRecord(db(), target.fulfillmentId)).notify_customer).toBe(true);
     expect((await emails(db(), target.fulfillmentId)).filter((row) => row.kind === 'shipping_update')).toHaveLength(0);
     const registrations = await deliveryRegistrations(db(), target.fulfillmentId);
-    expect(registrations.filter((row) => row.tracking_version === 2)).toHaveLength(enabled ? 1 : 0);
+    expect(registrations.filter((row) => row.tracking_version === 2)).toHaveLength(0);
   });
 
-  async function expectClampedManualNoon(zone: string) {
+  async function expectManualStoppedInZone(zone: string) {
     await db().query("select set_config('TimeZone',$1,true)", [zone]);
     const clock = await deliveryClock(db());
     for (const hour of ['09:00:00', '15:00:00']) {
       const target = await deliveryShipment(db(), { shippedAt: `${clock.two_days_ago}T${hour}+09:00` });
-      const result = (await markDeliveryDelivered(db(), manualOf(target, { deliveredOn: clock.two_days_ago }))).rows[0];
-      const clampedNoonJst = iso(`${clock.two_days_ago}T${hour === '15:00:00' ? hour : '12:00:00'}+09:00`);
-      expect(iso(result.delivered_at)).toBe(clampedNoonJst);
+      await expectStopped(db(), target.orderId, () => markDeliveryDelivered(db(), manualOf(target, { deliveredOn: clock.two_days_ago })));
     }
     const today = await deliveryShipment(db(), { shippedAt: `${clock.today}T00:00:00+09:00` });
-    const result = (await markDeliveryDelivered(db(), manualOf(today, { deliveredOn: clock.today }))).rows[0];
-    expect(iso(result.delivered_at)).toBe(new Date(Math.min(new Date(`${clock.today}T12:00:00+09:00`).getTime(), clock.now.getTime())).toISOString());
-    const record = await deliveryRecord(db(), today.fulfillmentId);
-    expect(iso(record.delivery_status_at)).toBe(iso(result.delivered_at));
-    expect(iso(record.delivered_at)).toBe(iso(result.delivered_at));
+    await expectStopped(db(), today.orderId, () => markDeliveryDelivered(db(), manualOf(today, { deliveredOn: clock.today })));
+    expect(await deliveryRecord(db(), today.fulfillmentId)).toMatchObject({ delivery_status: 'confirmed', delivered_at: null });
   }
 
-  test('手の正午を発送と今で挟む', async () => { await expectClampedManualNoon('UTC'); });
-  test.each(ZONES.slice(1))('JSTの日付と上下限はDB timezone=%sでも変わらない', async (zone) => { await expectClampedManualNoon(zone); });
+  // 停止前の契約（手の正午を発送と今で挟む・JST の日付）は G-3 の新しい発送票の手動の配達済みで作り直す
+  test('旧の手動の配達済みは日付の計算より先に断る', async () => { await expectManualStoppedInZone('UTC'); });
+  test.each(ZONES.slice(1))('DB timezone=%sでも旧の手動の配達済みは止まる', async (zone) => { await expectManualStoppedInZone(zone); });
 
-  // 関数の now() は変えられないので、発送日の午前（正午が下限より後）と午後（発送した時刻が下限）は発送の時刻で、
-  // 今日（正午と今の小さい方）は DB の now() で、本物の関数の結果を JS の期待と照らす（上の expectClampedManualNoon）。
-
-  test.each(ZONES)('未来日・発送日前・実在しない日付を断る（DB timezone=%s）', async (zone) => {
+  test.each(ZONES)('未来日・発送日前の日付も固定の拒否で、実在しない日付は引数の型で断る（DB timezone=%s）', async (zone) => {
     await db().query("select set_config('TimeZone',$1,true)", [zone]);
     const target = await deliveryShipment(db(), { shippedAt: `${(await deliveryClock(db())).yesterday}T09:00:00+09:00` });
     for (const deliveredOn of [target.clock.tomorrow, target.clock.two_days_ago]) {
-      await expectDeliveryRejected(db(), () => markDeliveryDelivered(db(), manualOf(target, { deliveredOn })), 'DELIVERY_DATE_INVALID', '22023');
+      await expectStopped(db(), target.orderId, () => markDeliveryDelivered(db(), manualOf(target, { deliveredOn })));
     }
-    // date引数へ届く前にPostgresが拒む値。routeでC-4へ訳す検証はTask 9の範囲。
+    // date引数へ届く前にPostgresが拒む値。関数の本体（停止）には届かない
     await db().query('savepoint invalid_delivery_date');
     await expect(markDeliveryDelivered(db(), manualOf(target, { deliveredOn: '2026-02-30' }))).rejects.toMatchObject({ code: '22008' });
     await db().query('rollback to savepoint invalid_delivery_date');
   });
 
-  test.each([[false, false, 0], [false, true, 0], [true, false, 0], [true, true, 1]] as const)(
-    '手の通知は発送notify=%sと入力notify=%sの両方だけ（%s通）', async (shipmentNotify, inputNotify, count) => {
+  test.each([[false, false], [false, true], [true, false], [true, true]] as const)(
+    '発送notify=%sと入力notify=%sでも、旧の手動の配達済みは止まり、メールも登録の停止もしない', async (shipmentNotify, inputNotify) => {
       const target = await deliveryShipment(db(), { notifyCustomer: shipmentNotify });
       await setDeliveryTracking(db(), true, target.actorId);
       await insertDeliveryAttention(db(), target.fulfillmentId);
-      const before = await deliveryRecord(db(), target.fulfillmentId);
-      const result = (await markDeliveryDelivered(db(), manualOf(target, { notifyCustomer: inputNotify }))).rows[0];
-      const after = await deliveryRecord(db(), target.fulfillmentId);
-      expect(after).toMatchObject({ delivery_status: 'delivered', shipping_carrier: before.shipping_carrier,
-        tracking_number: before.tracking_number, tracking_version: before.tracking_version, notify_customer: shipmentNotify });
-      const events = (await deliveryEvents(db(), target.fulfillmentId)).filter((row) => row.source === 'manual');
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({ id: result.event_id, created_by: target.actorId, status: 'delivered', tracking_version: 1 });
-      expect(events[0].request_key).toBeTruthy();
-      expect(events[0].request_fingerprint).toMatch(/^[0-9a-f]{32}$/);
-      expect((await deliveryRegistrations(db(), target.fulfillmentId))[0]).toMatchObject({ state: 'stopped', stop_reason: 'delivered' });
-      expect((await attention(db(), target.fulfillmentId))[0]).toMatchObject({ resolution: 'auto' });
-      expect((await emails(db(), target.fulfillmentId)).filter((row) => row.kind === 'delivered')).toHaveLength(count);
+      await expectStopped(db(), target.orderId, () => markDeliveryDelivered(db(), manualOf(target, { notifyCustomer: inputNotify })));
+      expect((await deliveryRegistrations(db(), target.fulfillmentId))[0]).toMatchObject({ state: 'pending' });
+      expect((await attention(db(), target.fulfillmentId))[0]).toMatchObject({ resolution: null });
+      expect((await emails(db(), target.fulfillmentId)).filter((row) => row.kind === 'delivered')).toHaveLength(0);
     },
   );
 
-  test.each(['直し', '手で配達済み'])('取り消した発送への%sはDELIVERY_FULFILLMENT_CANCELLED', async (operation) => {
+  test.each(['直し', '手で配達済み'])('取り消した発送への%sも、DELIVERY_FULFILLMENT_CANCELLED に落ちず固定の拒否を返す', async (operation) => {
     const target = await deliveryShipment(db());
-    await db().query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [target.orderId, target.fulfillmentId, target.actorId]);
+    await cancelDeliveryFixture(db(), target);
     const before = await deliveryRecord(db(), target.fulfillmentId);
-    await expectDeliveryRejected(db(), () => operation === '直し' ? updateDeliveryTracking(db(), editOf(target)) : markDeliveryDelivered(db(), manualOf(target)), 'DELIVERY_FULFILLMENT_CANCELLED');
+    await expectStopped(db(), target.orderId, () => operation === '直し' ? updateDeliveryTracking(db(), editOf(target)) : markDeliveryDelivered(db(), manualOf(target)));
     expect(await deliveryRecord(db(), target.fulfillmentId)).toEqual(before);
     expect(await deliveryEvents(db(), target.fulfillmentId)).toHaveLength(0);
   });
 
-  test('同じ値の番号は通知だけ変えても断り、所属と存在を先に確かめる', async () => {
+  test('同じ値の番号・別の注文・無い発送も、所属と存在を確かめる前に固定の拒否を返す', async () => {
     const target = await deliveryShipment(db());
     const other = await deliveryShipment(db());
-    await expectDeliveryRejected(db(), () => updateDeliveryTracking(db(), editOf(target, { carrier: 'yamato', trackingNumber: 'DELIVERY-123' })), 'DELIVERY_TRACKING_UNCHANGED');
+    await expectStopped(db(), target.orderId, () => updateDeliveryTracking(db(), editOf(target, { carrier: 'yamato', trackingNumber: 'DELIVERY-123' })));
     for (const operation of ['直し', '手で配達済み']) {
       const run = (extra: Partial<TrackingEdit & ManualDelivery>) => operation === '直し' ? updateDeliveryTracking(db(), editOf(target, extra)) : markDeliveryDelivered(db(), manualOf(target, extra));
-      await expectDeliveryRejected(db(), () => run({ orderId: randomUUID() }), 'ORDER_NOT_FOUND', 'P0002');
-      await expectDeliveryRejected(db(), () => run({ fulfillmentId: randomUUID() }), 'FULFILLMENT_NOT_FOUND', 'P0002');
-      await expectDeliveryRejected(db(), () => run({ fulfillmentId: other.fulfillmentId }), 'FULFILLMENT_NOT_FOUND', 'P0002');
+      await expectStopped(db(), target.orderId, () => run({ orderId: randomUUID() }));
+      await expectStopped(db(), target.orderId, () => run({ fulfillmentId: randomUUID() }));
+      await expectStopped(db(), other.orderId, () => run({ fulfillmentId: other.fulfillmentId }));
     }
   });
 
-  test.each([true, false])('abc123 → ABC123はDELIVERY_TRACKING_UNCHANGEDで断り、版・出来事・直しの記録・メールを増やさない（通知%s）', async (notifyCustomer) => {
+  test.each([true, false])('abc123 → ABC123の旧の訂正も止まり、版・出来事・直しの記録・メールを増やさない（通知%s）', async (notifyCustomer) => {
     const target = await deliveryShipment(db(), { trackingNumber: 'abc123', notifyCustomer: true });
     await setDeliveryTracking(db(), true, target.actorId);
-    await markDeliveryDelivered(db(), manualOf(target, { notifyCustomer: true }));
-    const changes = async () => (await db().query(
-      'select * from public.order_fulfillment_tracking_changes where fulfillment_id=$1 order by changed_at,id', [target.fulfillmentId],
-    )).rows;
-    const before = {
-      record: await deliveryRecord(db(), target.fulfillmentId),
-      events: await deliveryEvents(db(), target.fulfillmentId),
-      changes: await changes(),
-      emails: await emails(db(), target.fulfillmentId),
-      registrations: await deliveryRegistrations(db(), target.fulfillmentId),
-    };
-    expect(before.record).toMatchObject({ tracking_number: 'abc123', tracking_version: 1, delivery_status: 'delivered' });
-    expect(before.record.delivered_at).not.toBeNull();
-    await expectDeliveryRejected(db(), () => updateDeliveryTracking(db(), editOf(target, {
+    await markDeliveredFixture(db(), manualOf(target, { notifyCustomer: true }));
+    const before = await deliveryRecord(db(), target.fulfillmentId);
+    expect(before).toMatchObject({ tracking_number: 'abc123', tracking_version: 1, delivery_status: 'delivered' });
+    expect(before.delivered_at).not.toBeNull();
+    await expectStopped(db(), target.orderId, () => updateDeliveryTracking(db(), editOf(target, {
       carrier: 'yamato', trackingNumber: 'ABC123', notifyCustomer,
-    })), 'DELIVERY_TRACKING_UNCHANGED', '22023');
-    expect(await deliveryRecord(db(), target.fulfillmentId)).toEqual(before.record);
-    expect(await deliveryEvents(db(), target.fulfillmentId)).toEqual(before.events);
-    expect(await changes()).toEqual(before.changes);
-    expect(await emails(db(), target.fulfillmentId)).toEqual(before.emails);
-    expect(await deliveryRegistrations(db(), target.fulfillmentId)).toEqual(before.registrations);
+    })));
   });
 
-  test('新しい管理操作はNULLと不正な業者・番号をC-4で断る', async () => {
+  test('旧の管理操作はNULLと不正な業者・番号でも、C-4 の引数の確かめより先に固定の拒否を返す', async () => {
     const target = await deliveryShipment(db());
     const tracking: unknown[] = [target.orderId, target.fulfillmentId, target.actorId, randomUUID(), 'sagawa', 'Valid-123', true];
     const manual: unknown[] = [target.orderId, target.fulfillmentId, target.actorId, randomUUID(), target.clock.yesterday, false];
     for (const index of [0, 1, 2, 3, 4, 5, 6]) {
       const params = [...tracking];
       params[index] = null;
-      await expectDeliveryRejected(db(), () => db().query('select * from public.admin_update_fulfillment_tracking($1,$2,$3,$4,$5,$6,$7)', params), 'DELIVERY_ARGUMENT_INVALID', '22023');
+      await expectStopped(db(), target.orderId, () => db().query('select * from public.admin_update_fulfillment_tracking($1,$2,$3,$4,$5,$6,$7)', params));
     }
-    for (const index of [0, 1, 2, 3, 5]) {
+    for (const index of [0, 1, 2, 3, 4, 5]) {
       const params = [...manual];
       params[index] = null;
-      await expectDeliveryRejected(db(), () => db().query('select * from public.admin_mark_fulfillment_delivered($1,$2,$3,$4,$5::date,$6)', params), 'DELIVERY_ARGUMENT_INVALID', '22023');
+      await expectStopped(db(), target.orderId, () => db().query('select * from public.admin_mark_fulfillment_delivered($1,$2,$3,$4,$5::date,$6)', params));
     }
     for (const changed of [{ carrier: 'other' }, { trackingNumber: '' }, { trackingNumber: 'A'.repeat(65) }, { trackingNumber: '番号' }]) {
-      await expectDeliveryRejected(db(), () => updateDeliveryTracking(db(), editOf(target, changed)), 'DELIVERY_ARGUMENT_INVALID', '22023');
+      await expectStopped(db(), target.orderId, () => updateDeliveryTracking(db(), editOf(target, changed)));
     }
   });
 
-  test.each(['requested', 'open', 'closed'] as const)('取消は%sの返品がある発送を断る', async (status) => {
+  test.each(['requested', 'open', 'closed'] as const)('%sの返品がある発送への旧の取消も、FULFILLMENT_HAS_RETURN に落ちず固定の拒否を返す', async (status) => {
     const target = await deliveryShipment(db());
     await insertReturnRecord(db(), { orderId: target.orderId, status,
       lines: [{ fulfillmentId: target.fulfillmentId, orderItemId: target.orderItemId, quantity: 1 }] });
-    await expectDeliveryRejected(db(), () => db().query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [target.orderId, target.fulfillmentId, target.actorId]), 'FULFILLMENT_HAS_RETURN', '22023');
+    await expectStopped(db(), target.orderId, () => legacyCancel(db(), target));
     expect((await deliveryRecord(db(), target.fulfillmentId)).cancelled_at).toBeNull();
   });
 
-  test('取消は発送後の返金がある発送を断る', async () => {
+  test('発送後の返金がある発送への旧の取消も、FULFILLMENT_REFUNDED に落ちず固定の拒否を返す', async () => {
     const target = await deliveryShipment(db());
     await insertRefundRecord(db(), { orderId: target.orderId, lines: [{ orderItemId: target.orderItemId, quantity: 1, beforeShipment: false, amount: 1000 }] });
-    await expectDeliveryRejected(db(), () => db().query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [target.orderId, target.fulfillmentId, target.actorId]), 'FULFILLMENT_REFUNDED', '22023');
+    await expectStopped(db(), target.orderId, () => legacyCancel(db(), target));
   });
 
-  test('発送作成は交換の支払いの保留を保つ', async () => {
+  test('交換の支払い待ちの品にも、手数料を払った後にも、旧の作成は固定の拒否を返す（交換の保留の発送の守りは G-3）', async () => {
     const order = await createShippedOrderFixture(db(), { lines: [{ quantity: 1, extraStock: 1 }] });
     const actor = await createDeliveryActor(db());
     const returned = await insertReturnRecord(db(), { orderId: order.orderId, exchangeFee: 300,
@@ -533,19 +526,20 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     [returned.returnId, actor.id, randomUUID(), JSON.stringify([{ return_line_id: returned.lineIds[0], disposition: 'not_restocked', quantity: 1 }])])).rows[0];
     expect(received.fee_due_amount).toBe(300);
     const exchange = received.exchange_order_item_ids[0] as string;
-    await expectDeliveryRejected(db(), () => createDeliveryFulfillment(db(), { orderId: order.orderId, actorId: actor.id,
-      lines: [{ order_item_id: exchange, quantity: 1 }] }), 'FULFILLMENT_EXCHANGE_ON_HOLD', '22023');
+    await expectStopped(db(), order.orderId, () => legacyCreate(db(), { orderId: order.orderId, actorId: actor.id,
+      lines: [{ order_item_id: exchange, quantity: 1 }] }));
     await db().query('select * from public.admin_record_return_fee_payment($1,$2,null,false)', [returned.returnId, actor.id]);
-    expect((await createDeliveryFulfillment(db(), { orderId: order.orderId, actorId: actor.id,
-      lines: [{ order_item_id: exchange, quantity: 1 }] })).rows[0].replayed).toBe(false);
+    await expectStopped(db(), order.orderId, () => legacyCreate(db(), { orderId: order.orderId, actorId: actor.id,
+      lines: [{ order_item_id: exchange, quantity: 1 }] }));
+    expect((await db().query('select count(*)::int as n from public.order_fulfillments where order_id=$1', [order.orderId])).rows[0].n)
+      .toBe(order.fulfillments.length);
   });
 
-  test('取消成功は登録cancelled・attention auto・配送メールskippedを同時に残す', async () => {
+  test('旧の取消は止まり、登録・要対応・配送メールを1つも変えず、2回目も同じ', async () => {
     const target = await deliveryShipment(db());
     await insertDeliveryRegistration(db(), target.fulfillmentId, { state: 'registered', everRegistered: true });
     await insertDeliveryAttention(db(), target.fulfillmentId);
-    const change = (await updateDeliveryTracking(db(), editOf(target, { notifyCustomer: false }))).rows[0];
-    const replacedBefore = (await deliveryRegistrations(db(), target.fulfillmentId))[0];
+    const change = await correctDeliveryTrackingFixture(db(), editOf(target, { notifyCustomer: false }));
     await insertDeliveryRegistration(db(), target.fulfillmentId, { version: 2 });
     await insertDeliveryAttention(db(), target.fulfillmentId, 'tracking_stalled');
     for (const [index, kind] of DELIVERY_KINDS.entries()) {
@@ -553,29 +547,19 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
         (order_id,kind,origin,fulfillment_id,tracking_version,tracking_change_id,status)
         values ($1,$2,'auto',$3,2,$4,$5)`, [target.orderId, kind, target.fulfillmentId, kind === 'shipping_update' ? change.tracking_change_id : null, index === 1 ? 'retry_wait' : 'pending']);
     }
-    const eventsBefore = await deliveryEvents(db(), target.fulfillmentId);
-    const result = (await db().query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [target.orderId, target.fulfillmentId, target.actorId])).rows[0];
-    expect(result).toMatchObject({ outcome: 'cancelled', order_status: 'paid' });
-    // 直しで止めた版1は replaced のまま（取消で付け替えない）。取消で止めたのは、止めていなかった版2だけ
-    const [replaced, cancelled] = await deliveryRegistrations(db(), target.fulfillmentId);
-    expect(replaced).toEqual(replacedBefore);
-    expect(replaced).toMatchObject({ state: 'stopped', stop_reason: 'replaced', lease_token: null, lease_expires_at: null });
-    expect(cancelled).toMatchObject({ state: 'stopped', stop_reason: 'cancelled', lease_token: null, lease_expires_at: null, provider_stop_pending: false });
-    for (const row of await attention(db(), target.fulfillmentId)) expect(row).toMatchObject({ resolution: 'auto', resolved_by: null });
-    const queued = await emails(db(), target.fulfillmentId);
-    expect(queued).toHaveLength(3);
-    for (const row of queued) expect(row).toMatchObject({ status: 'skipped', last_error_code: 'fulfillment_cancelled' });
-    expect(await deliveryEvents(db(), target.fulfillmentId)).toEqual(eventsBefore);
-    expect((await db().query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [target.orderId, target.fulfillmentId, target.actorId])).rows[0].outcome).toBe('already_cancelled');
+    await expectStopped(db(), target.orderId, () => legacyCancel(db(), target));
+    await expectStopped(db(), target.orderId, () => legacyCancel(db(), target));
+    expect((await deliveryRecord(db(), target.fulfillmentId)).cancelled_at).toBeNull();
   });
 
   // 直し・取消が止めるのは、止めていない行だけ。外への停止の印は、一度でも登録できた行で、
   // 同じ（配送業者, 番号）の止めていない行がほかの発送に無い時だけ立てる。
+  // 止め方の本体 private.stop_fulfillment_registrations は G-3 の新しい発送票も使うので、合成の訂正・取消（同じ private 関数を呼ぶ）で確かめる
   describe.each(['直し', '取消'] as const)('登録の止め方（%s）', (operation) => {
     const reason = operation === '直し' ? 'replaced' : 'cancelled';
     const stopBy = async (target: Awaited<ReturnType<typeof deliveryShipment>>) => {
-      if (operation === '直し') await updateDeliveryTracking(db(), editOf(target, { notifyCustomer: false }));
-      else await db().query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [target.orderId, target.fulfillmentId, target.actorId]);
+      if (operation === '直し') await correctDeliveryTrackingFixture(db(), editOf(target, { notifyCustomer: false }));
+      else await cancelDeliveryFixture(db(), target);
     };
 
     test.each(['delivered', 'expired', 'disabled', 'provider_stopped'])('すでに%sで止まった行は理由も時刻も変えず、印を付けない', async (stopReason) => {
@@ -649,8 +633,8 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     await setDeliveryTracking(db(), true, target.actorId);
     await db().query(`insert into public.order_fulfillment_events (fulfillment_id,tracking_version,status,happened_at,source,provider_sub_status)
       values ($1,1,'failure',now()-interval '1 day','tracking','EXCEPTION_001')`, [target.fulfillmentId]);
-    const change = (await updateDeliveryTracking(db(), editOf(target))).rows[0];
-    await markDeliveryDelivered(db(), manualOf(target));
+    const change = await correctDeliveryTrackingFixture(db(), editOf(target));
+    await markDeliveredFixture(db(), manualOf(target));
     const result = await detail(db(), target.orderId);
     expect(Object.keys(result).sort()).toEqual(['enabled', 'fulfillments']);
     expect(result.enabled).toBe(true);
@@ -759,28 +743,31 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     await setDeliveryTracking(db(), true, target.actorId);
     expect(await enqueue('out_for_delivery')).toBe(true);
     expect(await enqueue('out_for_delivery')).toBe(false);
-    await markDeliveryDelivered(db(), manualOf(target));
+    await markDeliveredFixture(db(), manualOf(target));
     expect(await enqueue('out_for_delivery')).toBe(false);
     const other = await deliveryShipment(db());
-    const foreignChange = (await updateDeliveryTracking(db(), editOf(other))).rows[0];
+    const foreignChange = await correctDeliveryTrackingFixture(db(), editOf(other));
     await expectDeliveryRejected(db(), () => enqueue('shipping_update', 1, foreignChange.tracking_change_id), 'DELIVERY_ARGUMENT_INVALID', '22023');
     await expectDeliveryRejected(db(), () => enqueue('shipped'), 'DELIVERY_ARGUMENT_INVALID', '22023');
     const disabledNotify = await deliveryShipment(db(), { notifyCustomer: false });
     expect((await db().query("select private.enqueue_delivery_email($1,1,'out_for_delivery') as enqueued", [disabledNotify.fulfillmentId])).rows[0].enqueued).toBe(false);
   });
 
-  test('管理と読むpublic関数はservice_role専用でprivate補助を公開しない', async () => {
-    const signatures = [
+  test('管理と読むpublic関数はservice_role専用でprivate補助を公開しない（止めた4本は INVOKER の固定の拒否の入口）', async () => {
+    const stopped = [
       'public.admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb)', 'public.admin_cancel_fulfillment(uuid,uuid,uuid)',
       'public.admin_update_fulfillment_tracking(uuid,uuid,uuid,uuid,text,text,boolean)',
-      'public.admin_mark_fulfillment_delivered(uuid,uuid,uuid,uuid,date,boolean)', 'public.admin_set_delivery_tracking(boolean,uuid)',
+      'public.admin_mark_fulfillment_delivered(uuid,uuid,uuid,uuid,date,boolean)',
+    ];
+    const signatures = [
+      ...stopped, 'public.admin_set_delivery_tracking(boolean,uuid)',
       'public.admin_resolve_delivery_attention(uuid,uuid)', 'public.get_delivery_tracking_settings()',
       'public.list_order_delivery_summaries(uuid[])', 'public.get_order_delivery_detail(uuid)', 'public.list_delivery_attention(integer)',
       'public.skip_order_email(uuid,uuid,text)',
     ];
     for (const signature of signatures) {
       const definition = (await db().query('select prosecdef,proconfig from pg_proc where oid=$1::regprocedure', [signature])).rows[0];
-      expect(definition.prosecdef).toBe(true);
+      expect({ signature, definer: definition.prosecdef }).toEqual({ signature, definer: !stopped.includes(signature) });
       expect(definition.proconfig).toContain('search_path=""');
       for (const role of ['anon', 'authenticated', 'service_role']) {
         expect((await db().query('select has_function_privilege($1::text,$2::text,\'EXECUTE\') as allowed', [role, signature])).rows[0].allowed).toBe(role === 'service_role');
@@ -805,11 +792,11 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
 
   test.each(DELIVERY_KINDS)('配送メール%sの取消理由は取消済み発送だけ許す', async (kind) => {
     const target = await deliveryShipment(db());
-    const change = (await updateDeliveryTracking(db(), editOf(target, { notifyCustomer: false }))).rows[0];
+    const change = await correctDeliveryTrackingFixture(db(), editOf(target, { notifyCustomer: false }));
     const email = await sendingEmail(db(), target, kind, 2, kind === 'shipping_update' ? change.tracking_change_id : null);
     const skip = () => db().query('select public.skip_order_email($1,$2,$3) as skipped', [email.id, email.token, 'fulfillment_cancelled']);
     await expectDeliveryRejected(db(), skip, 'SKIP_REASON_NOT_ALLOWED', '22023');
-    await db().query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [target.orderId, target.fulfillmentId, target.actorId]);
+    await cancelDeliveryFixture(db(), target);
     expect((await skip()).rows[0].skipped).toBe(true);
   });
 
@@ -818,116 +805,84 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
     const email = await sendingEmail(db(), target, kind, 1);
     const skip = () => db().query('select public.skip_order_email($1,$2,\'superseded\') as skipped', [email.id, email.token]);
     await expectDeliveryRejected(db(), skip, 'SUPERSEDE_NOT_ALLOWED', '22023');
-    await updateDeliveryTracking(db(), editOf(target, { notifyCustomer: false }));
+    await correctDeliveryTrackingFixture(db(), editOf(target, { notifyCustomer: false }));
     expect((await skip()).rows[0].skipped).toBe(true);
   });
 
   test('配達済みの配達中だけsupersededを許し、発送の更新には許さない', async () => {
     const target = await deliveryShipment(db());
-    const change = (await updateDeliveryTracking(db(), editOf(target, { notifyCustomer: false }))).rows[0];
+    const change = await correctDeliveryTrackingFixture(db(), editOf(target, { notifyCustomer: false }));
     const out = await sendingEmail(db(), target, 'out_for_delivery', 2);
     const update = await sendingEmail(db(), target, 'shipping_update', 2, change.tracking_change_id);
-    await markDeliveryDelivered(db(), manualOf(target));
+    await markDeliveredFixture(db(), manualOf(target));
     expect((await db().query('select public.skip_order_email($1,$2,\'superseded\') as skipped', [out.id, out.token])).rows[0].skipped).toBe(true);
     await expectDeliveryRejected(db(), () => db().query('select public.skip_order_email($1,$2,\'superseded\')', [update.id, update.token]), 'SUPERSEDE_NOT_ALLOWED', '22023');
   });
 
-  describe('2接続の直列化（commitした見本は次のresetで捨てる）', () => {
+  describe('2接続（commitした見本は次のresetで捨てる）', () => {
+    // 停止前は作成・直しが設定の行を共有の鍵で取り、切り替えと直列になった。止めた関数は鍵を取らずに断るので、
+    // 切り替えの途中でも待たず、止めた関数の後でも設定の行はすぐ取れる
     const toggleCases = [false, true].flatMap((initial) => ['作成', '直し'].flatMap((operation) => [false, true].map((toggleFirst) => ({ initial, operation, toggleFirst }))));
-    test.each(toggleCases)('設定initial=$initial・$operation・toggle先=$toggleFirst', async ({ initial, operation, toggleFirst }) => {
-      await withDeliveryConnections(async (first, second, pids) => {
+    test.each(toggleCases)('設定initial=$initial・$operation・toggle先=$toggleFirst: 止めた関数は設定の鍵を取らず待たない', async ({ initial, operation, toggleFirst }) => {
+      await withDeliveryConnections(async (first, second) => {
         await first.query('begin');
         const target = await deliveryShipment(first);
         await setDeliveryTracking(first, initial, target.actorId);
         await first.query('commit');
-        let pending: Promise<{ rows: any[]; rowCount: number } | { error: unknown }> | undefined;
-        let writtenId = target.fulfillmentId;
-        const write = async (client: PgClient) => {
-          if (operation === '直し') return updateDeliveryTracking(client, editOf(target));
-          const result = await createDeliveryFulfillment(client, { ...target, lines: [{ order_item_id: target.orderItemId, quantity: 1 }] });
-          writtenId = result.rows[0].fulfillment_id;
-          return result;
-        };
+        const write = (client: PgClient) => operation === '直し' ? updateDeliveryTracking(client, editOf(target))
+          : legacyCreate(client, { ...target, lines: [{ order_item_id: target.orderItemId, quantity: 1 }] });
         try {
           await first.query('begin');
           await second.query('begin');
           if (toggleFirst) {
             await setDeliveryTracking(first, !initial, target.actorId);
-            pending = write(second).catch((error: unknown) => ({ error }));
+            await expect(write(second)).rejects.toMatchObject({ code: '55000', message: LEGACY });
           } else {
-            await write(first);
-            await db().query('savepoint delivery_settings_lock');
-            try {
-              await expect(db().query('select id from public.shop_settings where id=1 for update nowait'))
-                .rejects.toMatchObject({ code: '55P03' });
-            } finally {
-              await db().query('rollback to savepoint delivery_settings_lock');
-            }
-            pending = second.query('select * from public.admin_set_delivery_tracking($1,$2)', [!initial, target.actorId]).catch((error: unknown) => ({ error }));
+            await expect(write(first)).rejects.toMatchObject({ code: '55000', message: LEGACY });
+            await first.query('rollback');
+            await first.query('begin');
+            await expect(second.query('select id from public.shop_settings where id=1 for update nowait')).resolves.toBeTruthy();
           }
-          await waitForDeliveryLock(db(), pids[1], pids[0]);
-          await first.query('commit');
-          const result = await pending;
-          expect(result).not.toHaveProperty('error');
-          await second.query('commit');
-          const registrations = await deliveryRegistrations(db(), writtenId);
-          const currentVersion = (await deliveryRecord(db(), writtenId)).tracking_version;
-          if (!initial) expect(registrations.find((row) => row.tracking_version === currentVersion)).toMatchObject({ state: 'pending' });
-          else expect(registrations.filter((row) => row.state === 'pending')).toHaveLength(0);
-          expect((await settings(db())).enabled).toBe(!initial);
+          await first.query('rollback');
+          await second.query('rollback');
+          expect((await deliveryRegistrations(db(), target.fulfillmentId)).filter((row) => row.tracking_version === 2)).toHaveLength(0);
+          expect((await db().query('select count(*)::int as n from public.order_fulfillments where order_id=$1', [target.orderId])).rows[0].n).toBe(1);
+          expect((await settings(db())).enabled).toBe(initial);
         } finally {
           await first.query('rollback');
-          if (pending) await pending;
           await second.query('rollback');
           await setDeliveryTracking(first, false, target.actorId);
         }
       });
     });
 
-    test.each(['直しの同じキー', '配達済みの同じキー', '配達済みの別キー'])('%sは注文→発送の鍵で直列にする', async (operation) => {
-      await withDeliveryConnections(async (first, second, pids) => {
+    test.each(['直しの同じキー', '配達済みの同じキー', '配達済みの別キー'])('%s: 注文の行を別の接続が持っていても、止めた関数は待たずに断る', async (operation) => {
+      await withDeliveryConnections(async (first, second) => {
         await first.query('begin');
         const target = await deliveryShipment(first);
         await setDeliveryTracking(first, false, target.actorId);
         await first.query('commit');
         const edit = editOf(target);
         const manual = manualOf(target);
-        const write = (client: PgClient, isSecond: boolean) => operation === '直しの同じキー' ? updateDeliveryTracking(client, edit)
-          : markDeliveryDelivered(client, { ...manual, requestKey: isSecond && operation === '配達済みの別キー' ? randomUUID() : manual.requestKey });
+        const write = (client: PgClient) => operation === '直しの同じキー' ? updateDeliveryTracking(client, edit)
+          : markDeliveryDelivered(client, { ...manual, requestKey: operation === '配達済みの別キー' ? randomUUID() : manual.requestKey });
         await first.query('begin');
-        // 注文だけを先に持ち、後続が注文より先に発送を持たないことも確認する。
         await first.query('select id from public.orders where id=$1 for update', [target.orderId]);
-        await second.query('begin');
-        const pending = write(second, true).then((result) => ({ result, error: null }), (error: unknown) => ({ result: null, error }));
+        await first.query('select id from public.order_fulfillments where id=$1 for update', [target.fulfillmentId]);
         try {
-          await waitForDeliveryLock(db(), pids[1], pids[0]);
-          await first.query('select id from public.order_fulfillments where id=$1 for update nowait', [target.fulfillmentId]);
-          const original = (await write(first, false)).rows[0];
+          await expect(write(second)).rejects.toMatchObject({ code: '55000', message: LEGACY });
           await first.query('commit');
-          const result = await pending;
-          if (operation === '配達済みの別キー') {
-            expect(result.error).toMatchObject({ message: expect.stringContaining('DELIVERY_ALREADY_DELIVERED') });
-            await second.query('rollback');
-          } else {
-            expect(result.error).toBeNull();
-            expect(result.result?.rows[0]).toEqual({ ...original, replayed: true });
-            await second.query('commit');
-          }
-          if (operation === '直しの同じキー') {
-            expect((await deliveryRecord(db(), target.fulfillmentId)).tracking_version).toBe(2);
-            expect((await db().query('select * from public.order_fulfillment_tracking_changes where fulfillment_id=$1', [target.fulfillmentId])).rows).toHaveLength(1);
-            expect((await emails(db(), target.fulfillmentId)).filter((row) => row.kind === 'shipping_update')).toHaveLength(1);
-          } else expect((await deliveryEvents(db(), target.fulfillmentId)).filter((row) => row.source === 'manual')).toHaveLength(1);
+          expect(await deliveryRecord(db(), target.fulfillmentId)).toMatchObject({ tracking_version: 1, delivery_status: 'confirmed' });
+          expect((await deliveryEvents(db(), target.fulfillmentId)).filter((row) => row.source !== 'shipment')).toHaveLength(0);
         } finally {
           await first.query('rollback');
-          await pending;
           await second.query('rollback');
         }
       });
     });
 
-    test.each(['直しが先', '配達済みが先'])('直しと手で配達済みの同時操作（%s）', async (order) => {
-      await withDeliveryConnections(async (first, second, pids) => {
+    test.each(['直しが先', '配達済みが先'])('直しと手で配達済みの同時操作（%s）は、どちらも鍵を取らずに断る', async (order) => {
+      await withDeliveryConnections(async (first, second) => {
         await first.query('begin');
         const target = await deliveryShipment(first);
         await setDeliveryTracking(first, false, target.actorId);
@@ -936,25 +891,18 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
         await second.query('begin');
         const edit = editOf(target);
         const manual = manualOf(target);
-        if (order === '直しが先') await updateDeliveryTracking(first, edit);
-        else await markDeliveryDelivered(first, manual);
-        const pending = (order === '直しが先' ? markDeliveryDelivered(second, manual) : updateDeliveryTracking(second, edit))
-          .then((result) => ({ result, error: null }), (error: unknown) => ({ result: null, error }));
         try {
-          await waitForDeliveryLock(db(), pids[1], pids[0]);
-          await first.query('commit');
-          expect((await pending).error).toBeNull();
-          await second.query('commit');
-          expect(await deliveryRecord(db(), target.fulfillmentId)).toMatchObject({ tracking_version: 2,
-            shipping_carrier: 'sagawa', tracking_number: 'Corrected-456', delivery_status: order === '直しが先' ? 'delivered' : 'confirmed' });
-          const events = await deliveryEvents(db(), target.fulfillmentId);
-          expect(events.filter((row) => row.source === 'manual')).toEqual([
-            expect.objectContaining({ tracking_version: order === '直しが先' ? 2 : 1, status: 'delivered' }),
-          ]);
-          expect(events.filter((row) => row.source === 'tracking_edit')).toHaveLength(1);
+          const [a, b] = order === '直しが先'
+            ? [() => updateDeliveryTracking(first, edit), () => markDeliveryDelivered(second, manual)]
+            : [() => markDeliveryDelivered(first, manual), () => updateDeliveryTracking(second, edit)];
+          await expect(a()).rejects.toMatchObject({ code: '55000', message: LEGACY });
+          await expect(b()).rejects.toMatchObject({ code: '55000', message: LEGACY });
+          await first.query('rollback');
+          await second.query('rollback');
+          expect(await deliveryRecord(db(), target.fulfillmentId)).toMatchObject({ tracking_version: 1,
+            shipping_carrier: 'yamato', tracking_number: 'DELIVERY-123', delivery_status: 'confirmed' });
         } finally {
           await first.query('rollback');
-          await pending;
           await second.query('rollback');
         }
       });

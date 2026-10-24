@@ -290,7 +290,11 @@ export type BuildOrderHistoryInput = {
   emailRows: OrderEmailHistoryRow[];
   sendState: { paused: boolean; reason: OrderEmailErrorCode | null };
   fulfillments: OrderFulfillmentHistoryRow[];
-  completions: OrderCompletionHistoryRow[];
+  /**
+   * G-1 Task 14: 手動の仕上がりは終了した。渡されても履歴の行にしない（読みも合成もしない）。
+   * 画面の型を次の Task まで通すためだけに残し、Task 15 で最後の画面の参照と一緒に消す。
+   */
+  completions?: OrderCompletionHistoryRow[];
   refunds: OrderRefundRow[];
   returns: OrderReturnDetail[];
   returnReceiptLines: OrderHistoryReturnReceiptLine[];
@@ -529,7 +533,7 @@ function cancelRequestHistoryEntries(cancelRequests: readonly AdminCancelRequest
 
 export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryResponse {
   const {
-    order, statusRows, emailRows, sendState, fulfillments, completions, refunds, returns, returnReceiptLines, returnRecords, cancelRequests, lines,
+    order, statusRows, emailRows, sendState, fulfillments, refunds, returns, returnReceiptLines, returnRecords, cancelRequests, lines,
   } = input;
   const deliveryById = new Map(input.delivery?.fulfillments.map((row) => [row.fulfillmentId, row] as const));
   const lineByItem = new Map(lines.map((line) => [line.orderItemId, line] as const));
@@ -621,28 +625,6 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
       : [{ type: 'fulfillment_cancel', at: row.cancelledAt, fulfillmentId: row.fulfillmentId, number: row.number, actorEmail: row.cancelledByEmail }],
   );
 
-  const completionEntries: OrderHistoryCompletionEntry[] = completions.map((row) => {
-    const cancelled = row.cancelledAt !== null;
-    const line = lineByItem.get(row.orderItemId);
-    return {
-      type: 'completion',
-      at: row.createdAt,
-      completionId: row.completionId,
-      items: itemsOf([row]),
-      actorEmail: row.createdByEmail,
-      cancelled,
-      // 取り消しても、仕上がった数が送った数を下回らない時だけ（DB の関数も同じ決まりで断る）
-      cancellable: !cancelled && order.status === 'paid' && line !== undefined && line.completed - row.quantity >= line.shipped,
-      legacy: row.legacy,
-    };
-  });
-
-  const completionCancelEntries = completions.flatMap((row): OrderHistoryCompletionCancelEntry[] =>
-    row.cancelledAt === null
-      ? []
-      : [{ type: 'completion_cancel', at: row.cancelledAt, completionId: row.completionId, actorEmail: row.cancelledByEmail }],
-  );
-
   const refundEntries: OrderHistoryRefundEntry[] = refunds.map((row) => ({
     type: 'refund',
     at: row.createdAt,
@@ -716,16 +698,15 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
     row.trackingChanges.map((change) => ({ type: 'tracking_change', at: change.changedAt, fulfillmentId: row.fulfillmentId, number: row.number, change })));
 
   // 同じ時刻（同じ取引で書いた行）は、結果が上に来る順に置く:
-  // メール → 状態 → 取消 → 確保し直し → 交換の品を足した → 発送・仕上がり → 返金 → 返品の行（返金しないで終えた → 受け取り）→ 受付
+  // メール → 状態 → 取消 → 確保し直し → 交換の品を足した → 発送 → 返金 → 返品の行（返金しないで終えた → 受け取り）→ 受付
+  // （G-1 Task 14: 手動の仕上がりの行と取消の行は作らない）
   const entries: OrderHistoryEntry[] = [
     ...emailEntries,
     ...statusEntries,
     ...fulfillmentCancelEntries,
-    ...completionCancelEntries,
     ...refundRereserveEntries,
     ...exchangeAddedEntries,
     ...fulfillmentEntries,
-    ...completionEntries,
     ...refundEntries,
     ...returnEntries,
     ...cancelRequestEntries,
@@ -733,13 +714,14 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
     ...trackingChanges,
     { type: 'created', at: order.createdAt },
   ];
-  const typeOrder: Record<OrderHistoryEntry['type'], number> = {
-    email: 0, status: 1, fulfillment_cancel: 2, completion_cancel: 3, refund_rereserve: 4,
-    delivery_event: 5, tracking_change: 6, fulfillment: 7, completion: 8, refund: 9, return: 10, created: 11,
+  const typeOrder: Record<Exclude<OrderHistoryEntry['type'], 'completion' | 'completion_cancel'>, number> = {
+    email: 0, status: 1, fulfillment_cancel: 2, refund_rereserve: 4,
+    delivery_event: 5, tracking_change: 6, fulfillment: 7, refund: 9, return: 10, created: 11,
   };
   const deliveryEntryId = (entry: OrderHistoryEntry) => entry.type === 'delivery_event' ? entry.event.id
     : entry.type === 'tracking_change' ? entry.change.id : '';
-  const priority = (entry: OrderHistoryEntry) => entry.type === 'return' && entry.kind === 'exchange_added' ? 4.5 : typeOrder[entry.type];
+  const priority = (entry: OrderHistoryEntry) => entry.type === 'return' && entry.kind === 'exchange_added' ? 4.5
+    : entry.type === 'completion' || entry.type === 'completion_cancel' ? Number.POSITIVE_INFINITY : typeOrder[entry.type];
   entries.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)
     || priority(a) - priority(b) || deliveryEntryId(a).localeCompare(deliveryEntryId(b)));
 

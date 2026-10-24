@@ -167,7 +167,7 @@ describe('GET /api/admin/orders/[id]/history', () => {
     expect(JSON.stringify(body)).not.toContain('order_confirmed');
   });
 
-  it('発送・仕上がり・発送ごとのメールも新しい順に返し、商品の名前は「商品名（色 / サイズ）」で出す', async () => {
+  it('発送・発送ごとのメールも新しい順に返し、商品の名前は「商品名（色 / サイズ）」で出す。仕上がりは読まない（G-1 で終了）', async () => {
     mockMaybeSingle.mockResolvedValue({
       data: { id: ORDER_ID, status: 'paid', shipping_email: 'hanako@example.com', created_at: '2026-10-08T23:00:00.000Z' },
       error: null,
@@ -212,7 +212,7 @@ describe('GET /api/admin/orders/[id]/history', () => {
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.entries.map((entry: { type: string }) => entry.type)).toEqual(['email', 'fulfillment', 'completion', 'created']);
+    expect(body.entries.map((entry: { type: string }) => entry.type)).toEqual(['email', 'fulfillment', 'created']);
     expect(body.entries[0]).toMatchObject({
       kindLabel: '発送（1回目）', fulfillmentId: FULFILLMENT_ID, fulfillmentNumber: 1, resendable: true,
     });
@@ -220,9 +220,8 @@ describe('GET /api/admin/orders/[id]/history', () => {
       number: 1, carrierLabel: 'ヤマト運輸', trackingNumber: '1234-5678', cancellable: true,
       items: [{ name: 'シルクブラウス（白 / M）', quantity: 1 }], actorEmail: 'admin@example.com',
     });
-    expect(body.entries[2]).toMatchObject({ items: [{ name: 'リネンパンツ', quantity: 1 }], cancellable: true });
     expect(mockRpc).toHaveBeenCalledWith('list_order_fulfillments', { _order_id: ORDER_ID });
-    expect(mockRpc).toHaveBeenCalledWith('list_order_completions', { _order_id: ORDER_ID });
+    expect(mockRpc).not.toHaveBeenCalledWith('list_order_completions', expect.anything());
     expect(mockRpc).toHaveBeenCalledWith('list_order_line_fulfillment', { _order_ids: [ORDER_ID] });
   });
 

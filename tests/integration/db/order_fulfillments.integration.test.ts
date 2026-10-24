@@ -4,11 +4,17 @@ import { createCatalogFixture, insertOrderWithLines, uniqueSuffix, withFixtureCo
 
 /**
  * 発送と仕上がりの記録（グループ E-1 設計書 3・5・10・11 章、移行 A）。
- * 1件ごとに取引の中で動かし、終わったら戻す。発送の行は移行 B の関数がまだ無いので、試験では postgres で直接書く。
+ * G-1 Task 14: 手動の仕上がり（admin_record_completion・admin_cancel_completion）は MANUAL_COMPLETION_DISABLED / 55000 で
+ * 即座に断り、仕上がりの表への新しい INSERT・UPDATE もトリガー（order_item_completions_disabled）が同じ拒否で断る。
+ * 発送の準備ができた数は G-1 の入金済みの割当（A）から導く（品物は入荷から FIFO で自動に割り当てる）。
+ * 前からの写しの関数（private.backfill_legacy_fulfillments）は消した。
+ * 1件ごとに取引の中で動かし、終わったら戻す。発送の行は旧の関数が止まっているので、試験では postgres で直接書く。
  */
 jest.setTimeout(30000);
 
 type Row = Record<string, any>;
+
+const COMPLETION_DISABLED = { code: '55000', message: 'MANUAL_COMPLETION_DISABLED' };
 
 async function createActor(db: PgClient): Promise<{ id: string; email: string }> {
   const email = `fulfillment-admin-${uniqueSuffix()}@example.com`;
@@ -34,7 +40,7 @@ async function createMixedOrder(db: PgClient, status = 'paid', stock = 5) {
   return { orderId, stockItemId: orderItemIds[0], madeItemId: orderItemIds[1], stockFx, madeFx };
 }
 
-/** 移行 B の発送の関数の代わりに、発送の記録を直接書く */
+/** 旧の発送の関数の代わりに、発送の記録を直接書く */
 async function insertFulfillment(
   db: PgClient,
   orderId: string,
@@ -68,17 +74,33 @@ async function lineCounts(db: PgClient, orderId: string): Promise<Record<string,
   return Object.fromEntries(res.rows.map((row) => [row.order_item_id as string, row]));
 }
 
-function recordCompletion(db: PgClient, orderId: string, actorId: string, requestKey: string, lines: unknown) {
-  return db.query('select * from public.admin_record_completion($1, $2, $3, $4::jsonb)', [
-    orderId, actorId, requestKey, JSON.stringify(lines),
-  ]);
-}
+const RECORD_SQL = 'select * from public.admin_record_completion($1, $2, $3, $4::jsonb)';
+const CANCEL_SQL = 'select * from public.admin_cancel_completion($1, $2, $3)';
+const INSERT_COMPLETION_SQL = `insert into public.order_item_completions (order_id, order_item_id, quantity, request_key)
+  values ($1, $2, $3, gen_random_uuid())`;
 
 /** 取引の中で、失敗する文を流した後に続けられるようにする */
 async function expectRejected(db: PgClient, sql: string, params: unknown[], match: Record<string, unknown>) {
   await db.query('savepoint expect_rejected');
   await expect(db.query(sql, params)).rejects.toMatchObject(match);
   await db.query('rollback to savepoint expect_rejected');
+}
+
+/** 止めた仕上がりの関数が、注文の数・仕上がりの行・割当を何も変えないこと */
+async function expectCompletionStopped(db: PgClient, orderId: string, sql: string, params: unknown[]) {
+  const before = {
+    counts: await lineCounts(db, orderId),
+    completions: (await db.query('select count(*)::int as n from public.order_item_completions where order_id = $1', [orderId])).rows[0].n,
+    allocations: (await db.query(`select coalesce(json_agg(a.remaining_quantity order by a.id), '[]') as a
+      from public.order_item_allocations a join public.order_items i on i.id = a.order_item_id where i.order_id = $1`, [orderId])).rows[0].a,
+  };
+  await expectRejected(db, sql, params, COMPLETION_DISABLED);
+  expect({
+    counts: await lineCounts(db, orderId),
+    completions: (await db.query('select count(*)::int as n from public.order_item_completions where order_id = $1', [orderId])).rows[0].n,
+    allocations: (await db.query(`select coalesce(json_agg(a.remaining_quantity order by a.id), '[]') as a
+      from public.order_item_allocations a join public.order_items i on i.id = a.order_item_id where i.order_id = $1`, [orderId])).rows[0].a,
+  }).toEqual(before);
 }
 
 function newKey(): string {
@@ -109,9 +131,15 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
         await expect(db().query(`delete from public.${table}`)).rejects.toMatchObject({ code: '42501' });
         await db().query('rollback to savepoint role_check');
       }
+      // 仕上がりの表は service_role も書けない（G-1 Task 14）
+      const writable = await db().query(
+        `select has_table_privilege('service_role', 'public.order_item_completions', 'INSERT') as ins,
+                has_table_privilege('service_role', 'public.order_item_completions', 'UPDATE') as upd`,
+      );
+      expect(writable.rows[0]).toEqual({ ins: false, upd: false });
     });
 
-    test('発送の商品は追記だけ。発送と仕上がりは消せず、取消の2つの列だけ一度だけ変えられる', async () => {
+    test('発送の商品は追記だけ。発送は消せず、取消の2つの列だけ一度だけ変えられる。仕上がりは新しく書けない', async () => {
       const { orderId, stockItemId, madeItemId } = await createMixedOrder(db());
       const actor = await createActor(db());
       const fulfillmentId = await insertFulfillment(db(), orderId, [{ orderItemId: stockItemId, quantity: 1 }]);
@@ -132,11 +160,13 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
       await db().query('update public.order_fulfillments set cancelled_at = now(), cancelled_by = $2 where id = $1', [fulfillmentId, actor.id]);
       await expectRejected(db(), 'update public.order_fulfillments set cancelled_at = now() where id = $1', [fulfillmentId], { code: '55000' });
 
-      await recordCompletion(db(), orderId, actor.id, newKey(), [{ order_item_id: madeItemId, quantity: 1 }]);
-      await expectRejected(db(), 'delete from public.order_item_completions where order_id = $1', [orderId], { code: '55000' });
+      // 仕上がりは関数でも所有者の直接の SQL でも新しく書けない
+      await expectCompletionStopped(db(), orderId, RECORD_SQL,
+        [orderId, actor.id, newKey(), JSON.stringify([{ order_item_id: madeItemId, quantity: 1 }])]);
+      await expectRejected(db(), INSERT_COMPLETION_SQL, [orderId, madeItemId, 1], COMPLETION_DISABLED);
     });
 
-    test('ほかの注文の商品は発送の商品にできず、在庫の品は仕上がりにできない', async () => {
+    test('ほかの注文の商品は発送の商品にできず、仕上がりはどの商品にも書けない', async () => {
       const first = await createMixedOrder(db());
       const second = await createMixedOrder(db());
       const fulfillmentId = await insertFulfillment(db(), first.orderId, []);
@@ -147,13 +177,9 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
         [fulfillmentId, second.stockItemId],
         { code: '23514', message: 'FULFILLMENT_LINE_ORDER_MISMATCH' },
       );
-      await expectRejected(
-        db(),
-        `insert into public.order_item_completions (order_id, order_item_id, quantity, request_key)
-         values ($1, $2, 1, gen_random_uuid())`,
-        [first.orderId, first.stockItemId],
-        { code: '23514', message: 'COMPLETION_LINE_INVALID' },
-      );
+      // 在庫の品（前は COMPLETION_LINE_INVALID）も受注生産の品も、停止の拒否が先に当たる
+      await expectRejected(db(), INSERT_COMPLETION_SQL, [first.orderId, first.stockItemId, 1], COMPLETION_DISABLED);
+      await expectRejected(db(), INSERT_COMPLETION_SQL, [first.orderId, first.madeItemId, 1], COMPLETION_DISABLED);
     });
   });
 
@@ -170,10 +196,12 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
       });
     });
 
-    test('仕上がりと発送で数が動き、取り消した記録は数えない', async () => {
+    test('仕上がりの記録は止まり、入荷で割り当てた数の発送で数が動き、取り消した発送は数えない', async () => {
       const { orderId, stockItemId, madeItemId } = await createMixedOrder(db());
       const actor = await createActor(db());
-      await recordCompletion(db(), orderId, actor.id, newKey(), [{ order_item_id: madeItemId, quantity: 2 }]);
+      await expectCompletionStopped(db(), orderId, RECORD_SQL,
+        [orderId, actor.id, newKey(), JSON.stringify([{ order_item_id: madeItemId, quantity: 2 }])]);
+      // 受注生産の品は、入荷した1点を割り当ててから送る（材料が A を作って消費する）
       const shippedId = await insertFulfillment(db(), orderId, [
         { orderItemId: stockItemId, quantity: 2 },
         { orderItemId: madeItemId, quantity: 1 },
@@ -183,7 +211,7 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
 
       const counts = await lineCounts(db(), orderId);
       expect(counts[stockItemId]).toMatchObject({ shipped: 2, completed: 2, ready_unshipped: 0, unshipped: 0 });
-      expect(counts[madeItemId]).toMatchObject({ shipped: 1, completed: 2, in_production: 1, ready_unshipped: 1, unshipped: 2 });
+      expect(counts[madeItemId]).toMatchObject({ shipped: 1, completed: 1, in_production: 2, ready_unshipped: 0, unshipped: 2 });
       expect(shippedId).toBeTruthy();
     });
 
@@ -204,97 +232,68 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
       });
     });
 
-    test('数の関係（発送した数 ≤ 仕上がった数 ≤ 注文の数）は、直接書いてもトリガーが断る', async () => {
+    test('数の関係（発送した数 ≤ 注文の数）は直接書いてもトリガーが断り、仕上がりは直接も書けない', async () => {
       const { orderId, stockItemId, madeItemId } = await createMixedOrder(db());
-      const actor = await createActor(db());
       const fulfillmentId = await insertFulfillment(db(), orderId, []);
       const insertLine = 'insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, $3)';
 
-      // 仕上がっていない受注生産の品は送れない。在庫の品も注文の数を超えては送れない
-      await expectRejected(db(), insertLine, [fulfillmentId, madeItemId, 1], { code: '23514', message: 'FULFILLMENT_BOUNDS_VIOLATED' });
+      // 在庫の品は注文の数を超えては送れない
       await expectRejected(db(), insertLine, [fulfillmentId, stockItemId, 3], { code: '23514', message: 'FULFILLMENT_BOUNDS_VIOLATED' });
-      // 注文の数を超える仕上がりは書けない
-      await expectRejected(
-        db(),
-        'insert into public.order_item_completions (order_id, order_item_id, quantity, request_key) values ($1, $2, 4, gen_random_uuid())',
-        [orderId, madeItemId],
-        { code: '23514', message: 'FULFILLMENT_BOUNDS_VIOLATED' },
-      );
-      // 送った数を下回る仕上がりの取消は、直接変えても通らない
-      const done = await recordCompletion(db(), orderId, actor.id, newKey(), [{ order_item_id: madeItemId, quantity: 1 }]);
-      await db().query(insertLine, [fulfillmentId, madeItemId, 1]);
-      await expectRejected(
-        db(),
-        'update public.order_item_completions set cancelled_at = now() where id = $1',
-        [done.rows[0].completion_id],
-        { code: '23514', message: 'FULFILLMENT_BOUNDS_VIOLATED' },
-      );
+      // 受注生産の品の「仕上がっていない数は送れない」は、G-1 では入金済みの割当（A）の消費として発送と同じ取引で守る
+      // （G-3 の新しい発送票）。旧の仕上がりの数は書けない（注文の数を超える仕上がりも、停止の拒否が先に当たる）
+      await expectRejected(db(), INSERT_COMPLETION_SQL, [orderId, madeItemId, 4], COMPLETION_DISABLED);
+      await expectRejected(db(), INSERT_COMPLETION_SQL, [orderId, madeItemId, 1], COMPLETION_DISABLED);
+      expect((await lineCounts(db(), orderId))[madeItemId]).toMatchObject({ shipped: 0, completed: 0, in_production: 3 });
     });
   });
 
-  describe('仕上がりの記録', () => {
-    test('受注生産中の数を発送準備中に移し、同じ番号の送り直しは前の結果を返す', async () => {
+  describe('仕上がりの記録（G-1 で停止）', () => {
+    test('受注生産中の数を移す記録も、同じ番号の送り直しも、MANUAL_COMPLETION_DISABLED で断り何も残さない', async () => {
       const { orderId, madeItemId } = await createMixedOrder(db());
       const actor = await createActor(db());
       const key = newKey();
 
-      const first = await recordCompletion(db(), orderId, actor.id, key, [{ order_item_id: madeItemId, quantity: 2 }]);
-      expect(first.rows).toEqual([
-        expect.objectContaining({ order_item_id: madeItemId, quantity: 2, replayed: false }),
-      ]);
-
-      const again = await recordCompletion(db(), orderId, actor.id, key, [{ order_item_id: madeItemId, quantity: 2 }]);
-      expect(again.rows).toEqual([
-        expect.objectContaining({ completion_id: first.rows[0].completion_id, quantity: 2, replayed: true }),
-      ]);
+      await expectCompletionStopped(db(), orderId, RECORD_SQL,
+        [orderId, actor.id, key, JSON.stringify([{ order_item_id: madeItemId, quantity: 2 }])]);
+      await expectCompletionStopped(db(), orderId, RECORD_SQL,
+        [orderId, actor.id, key, JSON.stringify([{ order_item_id: madeItemId, quantity: 2 }])]);
 
       const counts = await lineCounts(db(), orderId);
-      expect(counts[madeItemId]).toMatchObject({ completed: 2, in_production: 1, ready_unshipped: 2 });
-      const rows = await db().query('select created_by, legacy from public.order_item_completions where order_id = $1', [orderId]);
-      expect(rows.rows).toEqual([{ created_by: actor.id, legacy: false }]);
+      expect(counts[madeItemId]).toMatchObject({ completed: 0, in_production: 3, ready_unshipped: 0 });
+      const rows = await db().query('select count(*)::int as n from public.order_item_completions where order_id = $1', [orderId]);
+      expect(rows.rows[0].n).toBe(0);
     });
 
-    test('同じ番号で中身が違えば断る', async () => {
+    test('同じ番号で中身が違っても、COMPLETION_REQUEST_MISMATCH に落ちず固定の拒否を返す', async () => {
       const { orderId, madeItemId } = await createMixedOrder(db());
       const actor = await createActor(db());
       const key = newKey();
-      await recordCompletion(db(), orderId, actor.id, key, [{ order_item_id: madeItemId, quantity: 1 }]);
-
-      await expectRejected(
-        db(),
-        'select * from public.admin_record_completion($1, $2, $3, $4::jsonb)',
-        [orderId, actor.id, key, JSON.stringify([{ order_item_id: madeItemId, quantity: 2 }])],
-        { code: '22023', message: 'COMPLETION_REQUEST_MISMATCH' },
-      );
+      for (const quantity of [1, 2]) {
+        await expectCompletionStopped(db(), orderId, RECORD_SQL,
+          [orderId, actor.id, key, JSON.stringify([{ order_item_id: madeItemId, quantity }])]);
+      }
     });
 
-    test('入金済みでない注文・在庫の品・受注生産中を超える数は断る', async () => {
+    test('入金済みでない注文・在庫の品・受注生産中を超える数・無い注文も、固定の拒否だけを返す', async () => {
       const unpaid = await createMixedOrder(db(), 'pending');
       const paid = await createMixedOrder(db());
       const actor = await createActor(db());
-      const sql = 'select * from public.admin_record_completion($1, $2, $3, $4::jsonb)';
 
-      await expectRejected(db(), sql, [unpaid.orderId, actor.id, newKey(), JSON.stringify([{ order_item_id: unpaid.madeItemId, quantity: 1 }])], {
-        code: '22023', message: 'ORDER_NOT_IN_PRODUCTION',
-      });
-      await expectRejected(db(), sql, [paid.orderId, actor.id, newKey(), JSON.stringify([{ order_item_id: paid.stockItemId, quantity: 1 }])], {
-        code: '22023', message: 'LINE_NOT_IN_PRODUCTION',
-      });
-      await expectRejected(db(), sql, [paid.orderId, actor.id, newKey(), JSON.stringify([{ order_item_id: unpaid.madeItemId, quantity: 1 }])], {
-        code: '22023', message: 'LINE_NOT_IN_PRODUCTION',
-      });
-      await expectRejected(db(), sql, [paid.orderId, actor.id, newKey(), JSON.stringify([{ order_item_id: paid.madeItemId, quantity: 4 }])], {
-        code: '22023', message: 'QUANTITY_EXCEEDS_IN_PRODUCTION',
-      });
-      await expectRejected(db(), sql, [crypto.randomUUID(), actor.id, newKey(), JSON.stringify([{ order_item_id: paid.madeItemId, quantity: 1 }])], {
-        code: 'P0002', message: 'ORDER_NOT_FOUND',
-      });
+      await expectCompletionStopped(db(), unpaid.orderId, RECORD_SQL,
+        [unpaid.orderId, actor.id, newKey(), JSON.stringify([{ order_item_id: unpaid.madeItemId, quantity: 1 }])]);
+      await expectCompletionStopped(db(), paid.orderId, RECORD_SQL,
+        [paid.orderId, actor.id, newKey(), JSON.stringify([{ order_item_id: paid.stockItemId, quantity: 1 }])]);
+      await expectCompletionStopped(db(), paid.orderId, RECORD_SQL,
+        [paid.orderId, actor.id, newKey(), JSON.stringify([{ order_item_id: unpaid.madeItemId, quantity: 1 }])]);
+      await expectCompletionStopped(db(), paid.orderId, RECORD_SQL,
+        [paid.orderId, actor.id, newKey(), JSON.stringify([{ order_item_id: paid.madeItemId, quantity: 4 }])]);
+      await expectRejected(db(), RECORD_SQL,
+        [crypto.randomUUID(), actor.id, newKey(), JSON.stringify([{ order_item_id: paid.madeItemId, quantity: 1 }])], COMPLETION_DISABLED);
     });
 
-    test('行の形が違えば断る', async () => {
+    test('行の形の誤り・空の値も、検証より先に固定の拒否を返す', async () => {
       const { orderId, madeItemId } = await createMixedOrder(db());
       const actor = await createActor(db());
-      const sql = 'select * from public.admin_record_completion($1, $2, $3, $4::jsonb)';
       const bad: unknown[] = [
         [],
         {},
@@ -307,51 +306,34 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
         [{ order_item_id: madeItemId, quantity: '1' }],
       ];
       for (const lines of bad) {
-        await expectRejected(db(), sql, [orderId, actor.id, newKey(), JSON.stringify(lines)], {
-          code: '22023', message: 'COMPLETION_ARGUMENT_INVALID',
-        });
+        await expectCompletionStopped(db(), orderId, RECORD_SQL, [orderId, actor.id, newKey(), JSON.stringify(lines)]);
       }
-      await expectRejected(db(), sql, [orderId, null, newKey(), JSON.stringify([{ order_item_id: madeItemId, quantity: 1 }])], {
-        code: '22023', message: 'COMPLETION_ARGUMENT_INVALID',
-      });
+      await expectCompletionStopped(db(), orderId, RECORD_SQL,
+        [orderId, null, newKey(), JSON.stringify([{ order_item_id: madeItemId, quantity: 1 }])]);
+      await expectRejected(db(), RECORD_SQL, [null, null, null, null], COMPLETION_DISABLED);
     });
 
-    test('取消: 受注生産中に戻る。2回目は already_cancelled。送った数を下回る取消は断る', async () => {
+    test('取消も MANUAL_COMPLETION_DISABLED で断り、発送した数・受注生産中の数は変わらない', async () => {
       const { orderId, madeItemId } = await createMixedOrder(db());
       const actor = await createActor(db());
-      const first = await recordCompletion(db(), orderId, actor.id, newKey(), [{ order_item_id: madeItemId, quantity: 1 }]);
-      const second = await recordCompletion(db(), orderId, actor.id, newKey(), [{ order_item_id: madeItemId, quantity: 1 }]);
       await insertFulfillment(db(), orderId, [{ orderItemId: madeItemId, quantity: 1 }]);
+      const before = await lineCounts(db(), orderId);
 
-      const cancelled = await db().query('select * from public.admin_cancel_completion($1, $2, $3)', [
-        orderId, first.rows[0].completion_id, actor.id,
-      ]);
-      expect(cancelled.rows).toEqual([{ outcome: 'cancelled' }]);
-      const again = await db().query('select * from public.admin_cancel_completion($1, $2, $3)', [
-        orderId, first.rows[0].completion_id, actor.id,
-      ]);
-      expect(again.rows).toEqual([{ outcome: 'already_cancelled' }]);
+      for (const completionId of [crypto.randomUUID(), crypto.randomUUID()]) {
+        await expectCompletionStopped(db(), orderId, CANCEL_SQL, [orderId, completionId, actor.id]);
+      }
 
-      // 残りの仕上がりは1つ、送ったのも1つ。これを取り消すと送った数を下回る
-      await expectRejected(db(), 'select * from public.admin_cancel_completion($1, $2, $3)', [orderId, second.rows[0].completion_id, actor.id], {
-        code: '22023', message: 'COMPLETION_ALREADY_SHIPPED',
-      });
-
-      const row = await db().query('select cancelled_by from public.order_item_completions where id = $1', [first.rows[0].completion_id]);
-      expect(row.rows[0].cancelled_by).toBe(actor.id);
-      const counts = await lineCounts(db(), orderId);
-      expect(counts[madeItemId]).toMatchObject({ completed: 1, shipped: 1, in_production: 2, ready_unshipped: 0 });
+      expect(await lineCounts(db(), orderId)).toEqual(before);
+      expect(before[madeItemId]).toMatchObject({ shipped: 1, completed: 1, in_production: 2, ready_unshipped: 0 });
     });
 
-    test('取消: ほかの注文の仕上がり・入金済みでない注文は断る', async () => {
-      const { orderId, madeItemId } = await createMixedOrder(db());
+    test('取消: ほかの注文・入金済みでない注文・空の値も固定の拒否だけを返す', async () => {
+      const { orderId } = await createMixedOrder(db());
       const other = await createMixedOrder(db());
       const actor = await createActor(db());
-      const done = await recordCompletion(db(), orderId, actor.id, newKey(), [{ order_item_id: madeItemId, quantity: 1 }]);
+      const completionId = crypto.randomUUID();
 
-      await expectRejected(db(), 'select * from public.admin_cancel_completion($1, $2, $3)', [other.orderId, done.rows[0].completion_id, actor.id], {
-        code: 'P0002', message: 'COMPLETION_NOT_FOUND',
-      });
+      await expectCompletionStopped(db(), other.orderId, CANCEL_SQL, [other.orderId, completionId, actor.id]);
       // 保留中の守り（order_state_transition_hardening の試験が手元の DB に当てる）が効いていても通る形にする:
       // 理由を付け、入金済みからの取消は全額返金と同じ更新で行う
       await db().query("select set_config('app.order_change_reason', 'integration_test', true)");
@@ -359,9 +341,8 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
         "update public.orders set status = 'cancelled', refunded_amount = total_amount, refunded_at = now() where id = $1",
         [orderId],
       );
-      await expectRejected(db(), 'select * from public.admin_cancel_completion($1, $2, $3)', [orderId, done.rows[0].completion_id, actor.id], {
-        code: '22023', message: 'ORDER_NOT_IN_PRODUCTION',
-      });
+      await expectCompletionStopped(db(), orderId, CANCEL_SQL, [orderId, completionId, actor.id]);
+      await expectRejected(db(), CANCEL_SQL, [null, null, null], COMPLETION_DISABLED);
     });
   });
 
@@ -384,20 +365,19 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
       expect(res.rows[1]).toMatchObject({ fulfillment_id: firstId, created_by_email: actor.email, cancelled_at: null });
     });
 
-    test('仕上がりの一覧は新しい順で、記録した人のメールを返す', async () => {
+    test('仕上がりの一覧は、記録が止まったので新しい注文では空', async () => {
       const { orderId, madeItemId } = await createMixedOrder(db());
       const actor = await createActor(db());
-      await recordCompletion(db(), orderId, actor.id, newKey(), [{ order_item_id: madeItemId, quantity: 1 }]);
+      await expectCompletionStopped(db(), orderId, RECORD_SQL,
+        [orderId, actor.id, newKey(), JSON.stringify([{ order_item_id: madeItemId, quantity: 1 }])]);
 
       const res = await db().query('select * from public.list_order_completions($1)', [orderId]);
-      expect(res.rows).toEqual([
-        expect.objectContaining({ order_item_id: madeItemId, quantity: 1, created_by_email: actor.email, cancelled_at: null, legacy: false }),
-      ]);
+      expect(res.rows).toEqual([]);
     });
   });
 
   describe('在庫の数', () => {
-    test('引き当て済みは確保して送っていない数、受注生産は未入金と入金済みのまだ仕上がっていない数', async () => {
+    test('引き当て済みは確保して送っていない数、受注生産は入金済みの割り当てていない数（仕上がりの記録では動かない）', async () => {
       const { orderId, stockItemId, madeItemId, stockFx, madeFx } = await createMixedOrder(db());
       const actor = await createActor(db());
 
@@ -406,11 +386,12 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
       expect(byVariant(states.rows)[stockFx.variantId]).toMatchObject({ committed: 2, backorder: 0 });
       expect(byVariant(states.rows)[madeFx.variantId]).toMatchObject({ committed: 0, backorder: 3 });
 
-      await recordCompletion(db(), orderId, actor.id, newKey(), [{ order_item_id: madeItemId, quantity: 1 }]);
+      await expectCompletionStopped(db(), orderId, RECORD_SQL,
+        [orderId, actor.id, newKey(), JSON.stringify([{ order_item_id: madeItemId, quantity: 1 }])]);
       await insertFulfillment(db(), orderId, [{ orderItemId: stockItemId, quantity: 2 }]);
       states = await db().query('select * from public.list_variant_stock_states($1::bigint[])', [[stockFx.variantId, madeFx.variantId]]);
       expect(byVariant(states.rows)[stockFx.variantId]).toMatchObject({ committed: 0 });
-      expect(byVariant(states.rows)[madeFx.variantId]).toMatchObject({ backorder: 2 });
+      expect(byVariant(states.rows)[madeFx.variantId]).toMatchObject({ committed: 0, backorder: 3 });
     });
 
     test('受注生産の数は、支払い手続き中・失敗・放棄・キャンセル・発送済みの注文を数えない', async () => {
@@ -450,6 +431,8 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
     test('在庫の履歴は新しい順で、変わった後の数・実行した人・注文を返す', async () => {
       const stockFx = await createCatalogFixture(db(), { stock: 5 });
       const actor = await createActor(db());
+      // 台帳は共通の押さえ（G-1）の下でだけ在庫を動かせる
+      await db().query('select pg_catalog.pg_advisory_xact_lock(190521, 1)');
       await db().query(
         `insert into public.stock_movements (variant_id, delta, reason, note, created_by) values ($1, -1, 'adjustment', '棚卸', $2)`,
         [stockFx.variantId, actor.id],
@@ -473,11 +456,16 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
     });
   });
 
-  describe('前からの写し', () => {
-    test('発送済みの注文に、全部の商品を1回で送った記録と、受注生産の品の仕上がりを作る。2回目は何もしない', async () => {
+  describe('前からの写し（G-1 で消した）', () => {
+    test('写しの関数は無く、発送の記録の無い発送済みの注文に発送や仕上がりを作らない', async () => {
+      const res = await db().query(
+        "select to_regprocedure('private.backfill_legacy_fulfillments()') as backfill",
+      );
+      expect(res.rows[0].backfill).toBeNull();
+
       const stockFx = await createCatalogFixture(db(), { stock: 5 });
       const madeFx = await createCatalogFixture(db(), { stock: 0 });
-      const { orderId, orderItemIds } = await insertOrderWithLines(db(), {
+      const { orderId } = await insertOrderWithLines(db(), {
         status: 'shipped',
         shipped: { carrier: 'sagawa', trackingNumber: 'SG-1' },
         lines: [
@@ -485,56 +473,17 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
           { itemId: madeFx.itemId, variantId: madeFx.variantId, quantity: 1, fulfillmentType: 'backorder' },
         ],
       });
-      // 移行 B の後は、発送のメールの行に発送の番号が要る。移行の前の行を再現するため、この取引の中だけ決まりを外す
-      await db().query('alter table private.order_email_outbox drop constraint order_email_outbox_fulfillment_check');
-      await db().query(
-        "insert into private.order_email_outbox (order_id, kind, origin, status) values ($1, 'shipped', 'auto', 'sent')",
+      const counts = await db().query(
+        `select (select count(*)::int from public.order_fulfillments where order_id = $1) as fulfillments,
+                (select count(*)::int from public.order_item_completions where order_id = $1) as completions`,
         [orderId],
       );
-
-      const created = await db().query('select private.backfill_legacy_fulfillments() as created');
-      expect(Number(created.rows[0].created)).toBeGreaterThanOrEqual(1);
-
-      const fulfillments = await db().query('select * from public.order_fulfillments where order_id = $1', [orderId]);
-      expect(fulfillments.rows).toEqual([
-        expect.objectContaining({
-          number: 1, shipping_carrier: 'sagawa', tracking_number: 'SG-1', notify_customer: true,
-          completes_order: true, legacy: true, cancelled_at: null,
-        }),
-      ]);
-      const lines = await db().query(
-        'select order_item_id, quantity from public.order_fulfillment_lines where fulfillment_id = $1 order by quantity desc',
-        [fulfillments.rows[0].id],
-      );
-      expect(lines.rows).toEqual([
-        { order_item_id: orderItemIds[0], quantity: 2 },
-        { order_item_id: orderItemIds[1], quantity: 1 },
-      ]);
-      const counts = await lineCounts(db(), orderId);
-      expect(counts[orderItemIds[1]]).toMatchObject({ shipped: 1, completed: 1, in_production: 0, unshipped: 0 });
-
-      await db().query('select private.backfill_legacy_fulfillments()');
-      const again = await db().query('select count(*)::int as n from public.order_fulfillments where order_id = $1', [orderId]);
-      expect(again.rows[0].n).toBe(1);
-      const completions = await db().query('select count(*)::int as n from public.order_item_completions where order_id = $1', [orderId]);
-      expect(completions.rows[0].n).toBe(1);
-    });
-
-    test('発送のメールの行が無い注文は、メールを送らなかった記録になる', async () => {
-      const stockFx = await createCatalogFixture(db(), { stock: 5 });
-      const { orderId } = await insertOrderWithLines(db(), {
-        status: 'shipped',
-        shipped: { carrier: 'yamato', trackingNumber: 'YM-1' },
-        lines: [{ itemId: stockFx.itemId, variantId: stockFx.variantId, quantity: 1, fulfillmentType: 'stock' }],
-      });
-      await db().query('select private.backfill_legacy_fulfillments()');
-      const res = await db().query('select notify_customer from public.order_fulfillments where order_id = $1', [orderId]);
-      expect(res.rows).toEqual([{ notify_customer: false }]);
+      expect(counts.rows[0]).toEqual({ fulfillments: 0, completions: 0 });
     });
   });
 
   describe('権限', () => {
-    test('関数を実行できるのは service_role だけ', async () => {
+    test('関数を実行できるのは service_role だけ（止めた仕上がりの関数は固定の拒否の入口）', async () => {
       const functions = [
         'public.list_order_line_fulfillment(uuid[])',
         'public.admin_record_completion(uuid, uuid, uuid, jsonb)',
@@ -555,13 +504,15 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
       }
       for (const fn of [
         'private.order_line_fulfillment(uuid)',
-        'private.backfill_legacy_fulfillments()',
         'private.parse_fulfillment_lines(jsonb, text)',
         'private.check_order_line_fulfillment_bounds()',
+        'private.reject_group_g_manual_completion()',
       ]) {
         const res = await db().query("select has_function_privilege('service_role', $1, 'execute') as service", [fn]);
         expect(res.rows[0].service).toBe(false);
       }
+      const dropped = await db().query("select to_regprocedure('private.backfill_legacy_fulfillments()') as fn");
+      expect(dropped.rows[0].fn).toBeNull();
     });
   });
 });

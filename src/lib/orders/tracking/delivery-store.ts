@@ -1,6 +1,10 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ORDER_EMAIL_STATUSES } from '@/lib/orders/email/order-email-types';
+import {
+  LEGACY_FULFILLMENT_DISABLED,
+  LegacyFulfillmentDisabledError,
+} from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import { SHIPPING_CARRIER_IDS } from '@/lib/orders/shipping-carriers';
 import {
   DELIVERY_ATTENTION_KINDS,
@@ -212,26 +216,17 @@ function parseAttention(value: unknown, operation: string): DeliveryAttentionIte
   };
 }
 
-export async function updateFulfillmentTracking(store: DeliveryStore, input: UpdateTrackingInput): Promise<UpdateTrackingResult> {
-  const operation = 'admin_update_fulfillment_tracking';
-  const result = singleRow(await callRpc(store, operation, {
-    _order_id: input.orderId, _fulfillment_id: input.fulfillmentId, _actor_id: input.actorId, _request_key: input.requestKey,
-    _shipping_carrier: input.carrier, _tracking_number: input.trackingNumber, _notify_customer: input.notifyCustomer,
-  }), operation);
-  return {
-    trackingChangeId: uuid(result.tracking_change_id, operation), trackingVersion: integer(result.tracking_version, operation, 2),
-    replayed: boolean(result.replayed, operation),
+// G-1 Task 14: 旧の伝票番号の訂正・手動の配達済みは止めた。引数を見ず、DB を呼ぶ前に LEGACY_FULFILLMENT_DISABLED を投げる
+// （DB の旧の関数も同じ記号で断る）。形は呼び手の型のために残し、G-3 の新しい発送票で置き換える。
+export const updateFulfillmentTracking: (store: DeliveryStore, input: UpdateTrackingInput) => Promise<UpdateTrackingResult> =
+  async () => {
+    throw new LegacyFulfillmentDisabledError(LEGACY_FULFILLMENT_DISABLED);
   };
-}
 
-export async function markFulfillmentDelivered(store: DeliveryStore, input: MarkDeliveredInput): Promise<MarkDeliveredResult> {
-  const operation = 'admin_mark_fulfillment_delivered';
-  const result = singleRow(await callRpc(store, operation, {
-    _order_id: input.orderId, _fulfillment_id: input.fulfillmentId, _actor_id: input.actorId,
-    _request_key: input.requestKey, _delivered_on: input.deliveredOn, _notify_customer: input.notifyCustomer,
-  }), operation);
-  return { eventId: uuid(result.event_id, operation), deliveredAt: timestamp(result.delivered_at, operation), replayed: boolean(result.replayed, operation) };
-}
+export const markFulfillmentDelivered: (store: DeliveryStore, input: MarkDeliveredInput) => Promise<MarkDeliveredResult> =
+  async () => {
+    throw new LegacyFulfillmentDisabledError(LEGACY_FULFILLMENT_DISABLED);
+  };
 
 export async function setDeliveryTracking(
   store: DeliveryStore, input: { enabled: boolean; actorId: string },

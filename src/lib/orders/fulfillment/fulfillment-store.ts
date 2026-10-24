@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { OrderStatus } from '@/lib/orders/order-payment-types';
 import type { ShippingCarrierId } from '@/lib/orders/shipping-carriers';
+import {
+  LEGACY_FULFILLMENT_DISABLED,
+  LegacyFulfillmentDisabledError,
+  MANUAL_COMPLETION_DISABLED,
+} from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import type {
   CancelCompletionResponse,
   CancelFulfillmentResponse,
@@ -74,10 +78,6 @@ export function toFulfillmentErrorCode(message: string | undefined): Fulfillment
 }
 
 type FulfillmentRpcName =
-  | 'admin_create_fulfillment'
-  | 'admin_cancel_fulfillment'
-  | 'admin_record_completion'
-  | 'admin_cancel_completion'
   | 'list_order_fulfillments'
   | 'list_order_completions'
   | 'list_order_line_fulfillment';
@@ -99,15 +99,6 @@ function rowsOf(data: unknown): Record<string, unknown>[] {
 
 function textOrNull(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
-}
-
-function outcomeOf(value: unknown): 'cancelled' | 'already_cancelled' | null {
-  return value === 'cancelled' || value === 'already_cancelled' ? value : null;
-}
-
-/** DB の関数の引数 _lines の形 */
-function toDbLines(lines: readonly FulfillmentLineQuantity[]): Array<{ order_item_id: string; quantity: number }> {
-  return lines.map((line) => ({ order_item_id: line.orderItemId, quantity: line.quantity }));
 }
 
 /** list_order_fulfillments の lines（jsonb の配列。商品の行が無ければ null になりうる）を窓口の形に直す */
@@ -188,8 +179,11 @@ export async function listOrderLineFulfillment(
   );
 }
 
-/** 発送を1回記録する。同じ requestKey の送り直しは前の結果を返す（replayed）。断りは FulfillmentOperationError */
-export async function createFulfillment(
+// G-1 Task 14: 旧の発送・発送取消・仕上がりの記録・取消は止めた。下の4つは引数を見ず、DB を呼ぶ前に
+// LegacyFulfillmentDisabledError を投げる（DB の旧の関数も同じ記号で断る）。形は呼び手の型のために残す（G-3 の新しい発送票で置き換える）。
+
+/** 止めた発送の記録。DB を呼ばずに LEGACY_FULFILLMENT_DISABLED を投げる */
+export const createFulfillment: (
   store: FulfillmentStore,
   input: {
     orderId: string;
@@ -200,89 +194,33 @@ export async function createFulfillment(
     notifyCustomer: boolean;
     lines: FulfillmentLineQuantity[];
   },
-): Promise<CreateFulfillmentResponse> {
-  const row = rowsOf(
-    await callRpc(store, 'admin_create_fulfillment', {
-      _order_id: input.orderId,
-      _actor_id: input.actorId,
-      _request_key: input.requestKey,
-      _shipping_carrier: input.carrier,
-      _tracking_number: input.trackingNumber,
-      _notify_customer: input.notifyCustomer,
-      _lines: toDbLines(input.lines),
-    }),
-  )[0];
-  if (!row) {
-    throw new FulfillmentStoreError('admin_create_fulfillment', null);
-  }
-  return {
-    fulfillmentId: String(row.fulfillment_id),
-    number: Number(row.number),
-    completesOrder: row.completes_order === true,
-    orderStatus: row.order_status as OrderStatus,
-    replayed: row.replayed === true,
-  };
-}
+) => Promise<CreateFulfillmentResponse> = async () => {
+  throw new LegacyFulfillmentDisabledError(LEGACY_FULFILLMENT_DISABLED);
+};
 
-/** 発送を取り消す。もう取り消してあれば already_cancelled（何度押しても同じ結果） */
-export async function cancelFulfillment(
+/** 止めた発送の取消。DB を呼ばずに LEGACY_FULFILLMENT_DISABLED を投げる */
+export const cancelFulfillment: (
   store: FulfillmentStore,
   input: { orderId: string; fulfillmentId: string; actorId: string },
-): Promise<CancelFulfillmentResponse> {
-  const row = rowsOf(
-    await callRpc(store, 'admin_cancel_fulfillment', {
-      _order_id: input.orderId,
-      _fulfillment_id: input.fulfillmentId,
-      _actor_id: input.actorId,
-    }),
-  )[0];
-  const outcome = outcomeOf(row?.outcome);
-  if (!outcome) {
-    throw new FulfillmentStoreError('admin_cancel_fulfillment', null);
-  }
-  return { outcome, orderStatus: row.order_status as OrderStatus };
-}
+) => Promise<CancelFulfillmentResponse> = async () => {
+  throw new LegacyFulfillmentDisabledError(LEGACY_FULFILLMENT_DISABLED);
+};
 
-/** 受注生産の品の仕上がりを記録する。1回の操作で複数の商品を記録でき、行ごとに番号が付く */
-export async function recordCompletion(
+/** 止めた仕上がりの記録。DB を呼ばずに MANUAL_COMPLETION_DISABLED を投げる */
+export const recordCompletion: (
   store: FulfillmentStore,
   input: { orderId: string; actorId: string; requestKey: string; lines: FulfillmentLineQuantity[] },
-): Promise<RecordCompletionResponse> {
-  const rows = rowsOf(
-    await callRpc(store, 'admin_record_completion', {
-      _order_id: input.orderId,
-      _actor_id: input.actorId,
-      _request_key: input.requestKey,
-      _lines: toDbLines(input.lines),
-    }),
-  );
-  if (rows.length === 0) {
-    throw new FulfillmentStoreError('admin_record_completion', null);
-  }
-  return {
-    completionIds: rows.map((row) => String(row.completion_id)),
-    replayed: rows.every((row) => row.replayed === true),
-  };
-}
+) => Promise<RecordCompletionResponse> = async () => {
+  throw new LegacyFulfillmentDisabledError(MANUAL_COMPLETION_DISABLED);
+};
 
-/** 仕上がりを取り消す。送った数を下回る取消は DB が断る（completion_already_shipped） */
-export async function cancelCompletion(
+/** 止めた仕上がりの取消。DB を呼ばずに MANUAL_COMPLETION_DISABLED を投げる */
+export const cancelCompletion: (
   store: FulfillmentStore,
   input: { orderId: string; completionId: string; actorId: string },
-): Promise<CancelCompletionResponse> {
-  const row = rowsOf(
-    await callRpc(store, 'admin_cancel_completion', {
-      _order_id: input.orderId,
-      _completion_id: input.completionId,
-      _actor_id: input.actorId,
-    }),
-  )[0];
-  const outcome = outcomeOf(row?.outcome);
-  if (!outcome) {
-    throw new FulfillmentStoreError('admin_cancel_completion', null);
-  }
-  return { outcome };
-}
+) => Promise<CancelCompletionResponse> = async () => {
+  throw new LegacyFulfillmentDisabledError(MANUAL_COMPLETION_DISABLED);
+};
 
 export type OrderFulfillmentHistoryRow = {
   fulfillmentId: string;

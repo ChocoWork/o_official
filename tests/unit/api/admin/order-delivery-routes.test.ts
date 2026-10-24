@@ -65,7 +65,13 @@ import { DeliveryOperationError, DeliveryStoreError } from '@/lib/orders/trackin
 import { DELIVERY_ERROR_MESSAGES } from '@/lib/orders/tracking/delivery-messages';
 import { DELIVERY_ERROR_CODES } from '@/lib/orders/tracking/delivery-types';
 import { deliveryErrorReply } from '@/lib/orders/tracking/delivery-route-support';
+import { LEGACY_FULFILLMENT_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 
+/**
+ * G-1 Task 14: 伝票番号の訂正（tracking）と手動の配達済み（delivered）は止めた。権限 → CSRF → 回数の制限の後、
+ * 入力を読まずに 410 と固定の本文（LEGACY_FULFILLMENT_DISABLED）を返す。配送の要対応の解決（resolve）と一覧の読取は今のまま。
+ */
+const DISABLED_BODY = { code: 'LEGACY_FULFILLMENT_DISABLED', error: LEGACY_FULFILLMENT_DISABLED_TEXT };
 const bodies = {
   tracking: { requestKey: KEY, carrier: 'yamato', trackingNumber: ' ABC-123 ', notifyCustomer: true },
   delivered: { requestKey: KEY, deliveredOn: '2026-10-21', notifyCustomer: false },
@@ -80,8 +86,14 @@ async function post(endpoint: Endpoint, body: unknown = bodies[endpoint], id = O
   return ({ tracking, delivered })[endpoint](request, { params: Promise.resolve({ id, fulfillmentId }) });
 }
 const endpoints: Endpoint[] = ['tracking', 'delivered', 'resolve'];
+const stopped = ['tracking', 'delivered'] as const;
 function noWork() {
   for (const mock of [mockCreateStore, mockUpdate, mockDelivered, mockResolve, mockMail, mockTracking]) expect(mock).not.toHaveBeenCalled();
+}
+async function expectDisabled(response: Response) {
+  expect(response.status).toBe(410);
+  expect(response.headers.get('cache-control')).toBe('no-store');
+  expect(await response.json()).toEqual(DISABLED_BODY);
 }
 beforeEach(() => {
   jest.resetAllMocks();
@@ -94,12 +106,12 @@ beforeEach(() => {
   mockSummaries.mockResolvedValue(new Map());
 });
 
-test.each(endpoints)('%sは権限→CSRF→IP→管理者の順', async (endpoint) => {
+test.each(endpoints)('%sは権限→CSRF→IP→管理者の順（止めた窓口はその後に 410）', async (endpoint) => {
   const checkOrder: string[] = [];
   mockAuthorize.mockImplementation(async (permission) => { checkOrder.push(permission); return { ok: true, userId: 'actor-from-auth' }; });
   mockCsrf.mockImplementation(async () => { checkOrder.push('csrf'); });
   mockLimit.mockImplementation(async (input) => { checkOrder.push(input.subject ? 'actor' : 'ip'); });
-  expect((await post(endpoint)).status).toBe(200);
+  expect((await post(endpoint)).status).toBe(endpoint === 'resolve' ? 200 : 410);
   expect(checkOrder).toEqual(['admin.orders.manage', 'csrf', 'ip', 'actor']);
   const names = { tracking: ['fulfillment-tracking', 60], delivered: ['fulfillment-delivered', 30], resolve: ['delivery-resolve', 60] };
   const [name, limit] = names[endpoint];
@@ -107,30 +119,61 @@ test.each(endpoints)('%sは権限→CSRF→IP→管理者の順', async (endpoin
     .toEqual([undefined, 'actor-from-auth'].map((subject) => ({ endpoint: `admin:orders:${name}`, limit, windowSeconds: 600, subject })));
 });
 
-describe.each(endpoints)('%sの拒否', (endpoint) => {
+describe.each(endpoints)('%sの守りの拒否', (endpoint) => {
   test.each([401, 403])('認証・権限の%sでDBとscheduleは0回', async (status) => {
     const response = new Response('denied', { status });
     mockAuthorize.mockResolvedValue({ ok: false, response });
     expect(await post(endpoint)).toBe(response);
     expect(mockCsrf).not.toHaveBeenCalled(); expect(mockLimit).not.toHaveBeenCalled(); noWork();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
   test('CSRF拒否で後続は0回', async () => {
     const response = new Response('csrf denied', { status: 403 }); mockCsrf.mockResolvedValue(response);
     expect(await post(endpoint)).toBe(response); expect(mockLimit).not.toHaveBeenCalled(); noWork();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
   test.each([0, 1])('回数制限%sで429をそのまま返す', async (index) => {
     const response = new Response('rate denied', { status: 429, headers: { 'Retry-After': '23' } });
     mockLimit.mockImplementation(async () => mockLimit.mock.calls.length === index + 1 ? response : undefined);
     expect(await post(endpoint)).toBe(response); expect(mockLimit).toHaveBeenCalledTimes(index + 1); noWork();
+    expect(mockAudit).not.toHaveBeenCalled();
   });
-  test('uuidの誤りはDBを呼ばない', async () => { expect((await post(endpoint, bodies[endpoint], 'bad')).status).toBe(400); noWork(); });
-  test.each([null, [], { ...bodies[endpoint], actorId: 'untrusted' }])('厳しいbody %j', async (body) => {
-    expect((await post(endpoint, body)).status).toBe(400); noWork();
+});
+
+describe.each(stopped)('%s（G-1 で停止）', (endpoint) => {
+  const action = endpoint === 'tracking' ? 'admin.orders.fulfillment.tracking_update' : 'admin.orders.fulfillment.delivered';
+  test('守りの後は 410 と固定の本文・no-store。DB・store・schedule は0回、監査は failure と固定の記号だけ', async () => {
+    await expectDisabled(await post(endpoint));
+    noWork();
+    expect(mockAudit.mock.calls).toEqual([[expect.objectContaining({
+      action, actor_id: 'actor-from-auth', resource: 'orders', resource_id: ORDER, outcome: 'failure',
+      metadata: { code: 'LEGACY_FULFILLMENT_DISABLED' },
+    })]]);
+    // 伝票番号・日付・入力を監査に入れない
+    expect(JSON.stringify(mockAudit.mock.calls)).not.toContain('ABC-123');
+    expect(JSON.stringify(mockAudit.mock.calls)).not.toContain('2026-10-21');
+  });
+  test.each([
+    ['uuidの誤り', 'bad', FULFILLMENT, bodies[endpoint]],
+    ['発送uuidの誤り', ORDER, 'bad', bodies[endpoint]],
+    ['body null', ORDER, FULFILLMENT, null],
+    ['body []', ORDER, FULFILLMENT, []],
+    ['未知の項目', ORDER, FULFILLMENT, { ...bodies[endpoint], actorId: 'untrusted' }],
+    ['不正な伝票番号・日付', ORDER, FULFILLMENT, { ...bodies[endpoint], trackingNumber: 'あいう', deliveredOn: '2026-02-30' }],
+  ] as const)('%sでも検証へ進まず同じ 410', async (_name, id, fulfillmentId, body) => {
+    await expectDisabled(await post(endpoint, body, id, fulfillmentId));
+    noWork();
+  });
+});
+
+describe('resolveの拒否（今のまま）', () => {
+  test('uuidの誤りはDBを呼ばない', async () => { expect((await post('resolve', bodies.resolve, 'bad')).status).toBe(400); noWork(); });
+  test.each([null, [], { actorId: 'untrusted' }])('厳しいbody %j', async (body) => {
+    expect((await post('resolve', body)).status).toBe(400); noWork();
   });
   test.each(DELIVERY_ERROR_CODES)('C-4 %s', async (code) => {
-    const error = new DeliveryOperationError(code);
-    ({ tracking: mockUpdate, delivered: mockDelivered, resolve: mockResolve })[endpoint].mockRejectedValue(error);
-    const response = await post(endpoint);
+    mockResolve.mockRejectedValue(new DeliveryOperationError(code));
+    const response = await post('resolve');
     const expected = DELIVERY_ERROR_MESSAGES[code];
     expect(response.status).toBe(expected.status);
     expect(await response.json()).toEqual({ error: expected.message, code });
@@ -139,8 +182,8 @@ describe.each(endpoints)('%sの拒否', (endpoint) => {
   test('想定外500はraw messageを返さず監査にも入れない', async () => {
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      ({ tracking: mockUpdate, delivered: mockDelivered, resolve: mockResolve })[endpoint].mockRejectedValue(new Error('RAW PRIVATE MESSAGE'));
-      const response = await post(endpoint);
+      mockResolve.mockRejectedValue(new Error('RAW PRIVATE MESSAGE'));
+      const response = await post('resolve');
       expect(response.status).toBe(500);
       expect(await response.json()).toEqual({ error: '配送の記録を保存できませんでした。時間をおいて、もう一度お試しください。' });
       expect(JSON.stringify([mockAudit.mock.calls, log.mock.calls])).not.toContain('RAW PRIVATE MESSAGE');
@@ -149,44 +192,11 @@ describe.each(endpoints)('%sの拒否', (endpoint) => {
   });
 });
 
-test.each(['', 'あいう', 'A B', 'A_1', 'A'.repeat(65)])('伝票番号の英数字ハイフン検査 %s', async (trackingNumber) => {
-  expect((await post('tracking', { ...bodies.tracking, trackingNumber })).status).toBe(400); noWork();
-});
-test.each([{ carrier: 'other' }, { notifyCustomer: 'true' }, { requestKey: 'bad' }, { notifyCustomer: undefined }])('trackingの入力 %j', async (change) => {
-  expect((await post('tracking', { ...bodies.tracking, ...change })).status).toBe(400); noWork();
-});
-test.each(['2026-02-30', '2025-02-29', '2026-13-01', '2026-1-01', '0000-01-01', '2026-10-21T00:00:00Z'])('無効な日付 %s', async (deliveredOn) => {
-  const response = await post('delivered', { ...bodies.delivered, deliveredOn });
-  expect(response.status).toBe(400); expect((await response.json()).code).toBe('DELIVERY_DATE_INVALID'); noWork();
-});
-test.each(['tracking', 'delivered'] as const)('%sの発送uuidも検査', async (endpoint) => {
-  expect((await post(endpoint, bodies[endpoint], ORDER, 'bad')).status).toBe(400); noWork();
-});
-test.each([false, true])('成功とreplay=%sでscheduleと監査の許す値だけ', async (replayed) => {
-  mockUpdate.mockResolvedValue({ trackingChangeId: KEY, trackingVersion: 2, replayed });
-  expect((await post('tracking')).status).toBe(200);
-  expect(mockUpdate).toHaveBeenCalledWith(mockStore, { ...bodies.tracking, trackingNumber: 'ABC-123', orderId: ORDER, fulfillmentId: FULFILLMENT, actorId: 'actor-from-auth' });
-  expect(mockMail).toHaveBeenCalledTimes(1); expect(mockTracking).toHaveBeenCalledTimes(1);
-  expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'admin.orders.fulfillment.tracking_update', actor_id: 'actor-from-auth',
-    metadata: { fulfillmentId: FULFILLMENT, trackingVersion: 2, carrier: 'yamato', trackingNumber: 'ABC-123', notifyCustomer: true, replayed } }));
-});
-test.each([false, true])('配達済みの成功/replay=%sはメールだけschedule', async (replayed) => {
-  mockDelivered.mockResolvedValue({ eventId: KEY, deliveredAt: '2026-10-21T03:00:00Z', replayed });
-  expect((await post('delivered')).status).toBe(200);
-  expect(mockDelivered).toHaveBeenCalledWith(mockStore, { ...bodies.delivered, orderId: ORDER, fulfillmentId: FULFILLMENT, actorId: 'actor-from-auth' });
-  expect(mockMail).toHaveBeenCalledTimes(1); expect(mockTracking).not.toHaveBeenCalled();
-  expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'admin.orders.fulfillment.delivered',
-    metadata: { fulfillmentId: FULFILLMENT, deliveredOn: bodies.delivered.deliveredOn, replayed } }));
-});
 test.each(['resolved', 'already_resolved'])('要対応%sもメールだけschedule', async (outcome) => {
   mockResolve.mockResolvedValue({ outcome }); expect((await post('resolve')).status).toBe(200);
   expect(mockResolve).toHaveBeenCalledWith(mockStore, { attentionId: ORDER, actorId: 'actor-from-auth' });
   expect(mockMail).toHaveBeenCalledTimes(1); expect(mockTracking).not.toHaveBeenCalled();
   expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'admin.orders.delivery_attention.resolve', metadata: { attentionId: ORDER, outcome } }));
-});
-test('所属違いはDBのFULFILLMENT_NOT_FOUNDで断る', async () => {
-  mockUpdate.mockRejectedValue(new DeliveryOperationError('FULFILLMENT_NOT_FOUND'));
-  expect((await post('tracking')).status).toBe(404); expect(mockMail).not.toHaveBeenCalled();
 });
 test('DBの記号や一般Errorのcodeを公開の断りと誤認しない', () => {
   for (const error of [new DeliveryStoreError('rpc', '08006'), { code: 'ORDER_NOT_FOUND', message: 'private' }]) {

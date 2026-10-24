@@ -229,12 +229,6 @@ async function ship(db: PgClient, orderId: string, actorId: string, lines: Array
   return { rows: [await shipFixtureOrder(db, { orderId, actorId, lines })] };
 }
 
-function recordCompletion(db: PgClient, orderId: string, actorId: string, lines: unknown) {
-  return db.query('select * from public.admin_record_completion($1, $2, $3, $4::jsonb)', [
-    orderId, actorId, crypto.randomUUID(), JSON.stringify(lines),
-  ]);
-}
-
 async function lineCounts(db: PgClient, orderId: string): Promise<Record<string, Row>> {
   const res = await db.query('select * from private.order_line_fulfillment($1)', [orderId]);
   return Object.fromEntries(res.rows.map((row) => [row.order_item_id as string, row]));
@@ -471,7 +465,7 @@ describeLocalDb('integration: 返金を始める関数と読み出しの関数�
       const actor = await createActor(db());
       const order = await createValueAOrder(db());
       const [x, y] = order.itemIds;
-      await recordCompletion(db(), order.orderId, actor.id, [{ order_item_id: y, quantity: 3 }]);
+      // 受注生産の品は、手動の仕上がり（G-1 で終了）の代わりに、発送の材料が入荷と割当を作ってから送る
       await ship(db(), order.orderId, actor.id, [{ order_item_id: x, quantity: 2 }, { order_item_id: y, quantity: 3 }]);
 
       const first = await beginRefund(db(), order.orderId, {
@@ -1758,16 +1752,14 @@ describeLocalDb('integration: 返金と発送の同時の操作（Review Focus 3
       // 3点のうち2点を発送前に返金する（返事待ち）。発送できるのは残りの1点だけになる
       await beginRefund(db(), order.orderId, { actorId: actor.id, lines: [refundBefore(item, 2)], amount: 9000 });
       // 断られる側の守りを確かめるので、旧の発送の関数のまま（書く前に断るので割当には触れない）
-      const shipping = other.query('select * from public.admin_create_fulfillment($1, $2, $3, $4, $5, $6, $7::jsonb)', [
+      // G-1 Task 14: 旧の発送の関数は止めたので、返金が注文の行の鍵を持っていても待たずに固定の拒否を返す
+      // （返金の後に送れる数が減ることは、G-3 の新しい発送票の試験で確かめる）
+      await expect(other.query('select * from public.admin_create_fulfillment($1, $2, $3, $4, $5, $6, $7::jsonb)', [
         order.orderId, actor.id, crypto.randomUUID(), 'yamato', '1234-5678-9012', false,
         JSON.stringify([{ order_item_id: item, quantity: 2 }]),
-      ]).then(
-        () => null,
-        (error: unknown) => error,
-      );
-      await waitUntilBlocked(db(), otherPid);
+      ])).rejects.toMatchObject({ code: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' });
+      expect(Number((await db().query('select count(*)::int as n from pg_locks where pid = $1 and not granted', [otherPid])).rows[0].n)).toBe(0);
       await db().query('commit');
-      expect(await shipping).toMatchObject({ code: '22023', message: 'QUANTITY_EXCEEDS_READY' });
     } catch (error) {
       await db().query('rollback');
       throw error;

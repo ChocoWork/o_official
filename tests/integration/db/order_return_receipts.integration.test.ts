@@ -151,7 +151,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect(await variantStock(db(),f.variantId)).toBe(0);
     expect((await db().query('select status,shipped_at,shipping_carrier,tracking_number from public.orders where id=$1',[f.orderId])).rows[0]).toEqual({status:'paid',shipped_at:null,shipping_carrier:null,tracking_number:null});
     expect(await revisionsOf(db(),f.orderId)).toContainEqual(expect.objectContaining({reason:'return_exchange_added',changedBy:f.actor}));
-    if(expected==='backorder') await db().query('select * from public.admin_record_completion($1,$2,$3,$4::jsonb)',[f.orderId,f.actor,randomUUID(),JSON.stringify([{order_item_id:line.id,quantity:1}])]);
+    // 作って送る交換の品は、手動の仕上がり（G-1 で終了）の代わりに、発送の材料が入荷と割当を作ってから送る
     await shipFixtureOrder(db(),{orderId:f.orderId,actorId:f.actor,trackingNumber:'TEST-2',lines:[{order_item_id:line.id,quantity:1}]});
     expect((await db().query('select status from public.orders where id=$1',[f.orderId])).rows[0].status).toBe('shipped');
   });
@@ -224,8 +224,13 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect(r.fee_due_amount).toBe(1000);const lines=JSON.stringify([{order_item_id:r.exchange_order_item_ids[0],quantity:1}]);
     // The exchange allocation is G-1 material until Task 11; the hold must be the refusal, not a missing A.
     await ensureFixturePaidAllocation(db(),[{order_item_id:r.exchange_order_item_ids[0],quantity:1}]);
-    await fails(db(),()=>db().query(`select * from public.admin_create_fulfillment($1,$2,$3,'yamato','TEST-3',false,$4::jsonb)`,[f.orderId,f.actor,randomUUID(),lines]),'FULFILLMENT_EXCHANGE_ON_HOLD');
+    // G-1: 支払い待ちの交換の品は「交換の手数料のお支払い待ち」で止まる（旧の発送の関数は G-1 Task 14 で止めた）
+    const feeBlocked=async()=>(await db().query(`select coalesce(bool_or('exchange_fee_waiting'=any(s.blocked_reasons)),false) blocked
+      from private.group_g_item_state_ranges(array[$1::uuid]) s where s.order_item_id=$2`,[f.orderId,r.exchange_order_item_ids[0]])).rows[0].blocked;
+    expect(await feeBlocked()).toBe(true);
+    await fails(db(),()=>db().query(`select * from public.admin_create_fulfillment($1,$2,$3,'yamato','TEST-3',false,$4::jsonb)`,[f.orderId,f.actor,randomUUID(),lines]),'LEGACY_FULFILLMENT_DISABLED');
     await db().query('select * from public.admin_record_return_fee_payment($1,$2,null,false)',[f.returnId,f.actor]);
+    expect(await feeBlocked()).toBe(false);
     await shipFixtureOrder(db(),{orderId:f.orderId,actorId:f.actor,trackingNumber:'TEST-3',lines:JSON.parse(lines)});
   });
   test('手数料をいただかないで終えた後、次の受け取りで新しい手数料が付くと免除と受領の印を外してお支払い待ちに戻る',async()=>{
@@ -755,6 +760,8 @@ describeLocalDb('最後の1点の購入と受け取りの競合（Review Focus 2
       await setup.query('begin');const f=await fixture(setup,{exchange:true,stock:1});
       await setup.query(`update public.shop_return_reason_settings set out_of_stock_exchange=$1 where reason='unknown'`,[policy]);await setup.query('commit');
       await purchase.query('begin');await receipt.query('begin');
+      // G-1: 購入側も共通の押さえ → 色・サイズの行の順に取り、台帳は押さえの下でだけ在庫を動かす（受け取りは押さえを待つ）
+      await purchase.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
       await purchase.query('select id from public.item_variants where id=$1 for update',[f.variantId]);
       await purchase.query(`insert into public.stock_movements(variant_id,delta,reason,note) values($1,-1,'purchase','別注文の確保')`,[f.variantId]);
       const pid=(await receipt.query('select pg_backend_pid() pid')).rows[0].pid;

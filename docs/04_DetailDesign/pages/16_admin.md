@@ -126,11 +126,11 @@
 | `/api/admin/orders/:id/refund` | GET | 返金の画面の材料（注文の金額・返せる額・商品ごとの数と割り振った割引・返事待ちの返金）（FREQ-448） | `admin.orders.refund` |
 | `/api/admin/orders/:id/refund` | POST | 返金を1件の記録にして Stripe に頼む（二重防止の番号・商品と数・送料・額・理由・知らせるか）。返せる額・数の超過は409、Stripe の断りは422、答えが分からない時は502（FREQ-447・448） | `admin.orders.refund` |
 | `/api/admin/orders/:id/refund/confirm` | POST | 返事待ちの返金を、記録の番号で確かめ直す（FREQ-448） | `admin.orders.refund` |
-| `/api/admin/orders/:id/fulfillments` | GET | 発送の画面と仕上がりの画面の材料（商品ごとの数・発送の一覧・発送できない理由）（FREQ-439・440）。返品の交換の品の行には lineKind と、手数料のお支払い待ちで送れない数 exchangeOnHold を付ける（グループ E-3。FREQ-465） | `admin.orders.manage` |
-| `/api/admin/orders/:id/fulfillments` | POST | 発送を1回分記録する（重複防止キー・配送業者・追跡番号・知らせるか・商品と数）。発送準備中の数を超えると409（FREQ-439）。手数料のお支払いを待っている交換の品を含むと409（窓口の記号 `fulfillment_exchange_on_hold`。DB の `FULFILLMENT_EXCHANGE_ON_HOLD`。グループ E-3。FREQ-465） | `admin.orders.manage` |
-| `/api/admin/orders/:id/fulfillments/:fulfillmentId/cancel` | POST | 発送の取消。送る前のその発送のメールを取りやめる（FREQ-443）。申し込み・受付中・完了の返品が指す発送は409（窓口の記号 `fulfillment_has_return`。DB の `FULFILLMENT_HAS_RETURN`。取消の返品しか指さない発送は取り消せる。グループ E-3。FREQ-471） | `admin.orders.manage` |
-| `/api/admin/orders/:id/completions` | POST | 受注生産の品の仕上がりを記録する（FREQ-440） | `admin.orders.manage` |
-| `/api/admin/orders/:id/completions/:completionId/cancel` | POST | 仕上がりの取消。もう発送した数を下回る取消は409（FREQ-440） | `admin.orders.manage` |
+| `/api/admin/orders/:id/fulfillments` | GET | **G-1停止**: 認可の後 410 `LEGACY_FULFILLMENT_DISABLED`（G-3の新発送票へ）。以下は停止前の契約: 発送の画面と仕上がりの画面の材料（商品ごとの数・発送の一覧・発送できない理由）（FREQ-439・440）。返品の交換の品の行には lineKind と、手数料のお支払い待ちで送れない数 exchangeOnHold を付ける（グループ E-3。FREQ-465） | `admin.orders.manage` |
+| `/api/admin/orders/:id/fulfillments` | POST | **G-1停止**: 認可・CSRF・回数制限の後 410 `LEGACY_FULFILLMENT_DISABLED`（G-3の新発送票へ）。以下は停止前の契約: 発送を1回分記録する（重複防止キー・配送業者・追跡番号・知らせるか・商品と数）。発送準備中の数を超えると409（FREQ-439）。手数料のお支払いを待っている交換の品を含むと409（窓口の記号 `fulfillment_exchange_on_hold`。DB の `FULFILLMENT_EXCHANGE_ON_HOLD`。グループ E-3。FREQ-465） | `admin.orders.manage` |
+| `/api/admin/orders/:id/fulfillments/:fulfillmentId/cancel` | POST | **G-1停止**: 認可・CSRF・回数制限の後 410 `LEGACY_FULFILLMENT_DISABLED`（G-3の新発送票へ）。以下は停止前の契約: 発送の取消。送る前のその発送のメールを取りやめる（FREQ-443）。申し込み・受付中・完了の返品が指す発送は409（窓口の記号 `fulfillment_has_return`。DB の `FULFILLMENT_HAS_RETURN`。取消の返品しか指さない発送は取り消せる。グループ E-3。FREQ-471） | `admin.orders.manage` |
+| `/api/admin/orders/:id/completions` | POST | **G-1停止**: 認可・CSRF・回数制限の後 410 `MANUAL_COMPLETION_DISABLED`（手動の仕上がりは終了）。以下は停止前の契約: 受注生産の品の仕上がりを記録する（FREQ-440） | `admin.orders.manage` |
+| `/api/admin/orders/:id/completions/:completionId/cancel` | POST | **G-1停止**: 認可・CSRF・回数制限の後 410 `MANUAL_COMPLETION_DISABLED`（手動の仕上がりは終了）。以下は停止前の契約: 仕上がりの取消。もう発送した数を下回る取消は409（FREQ-440） | `admin.orders.manage` |
 | `/api/admin/orders/:id/returns` | GET | 返品の画面の材料（返品の一覧と行ごとの進み具合・返金待ちの額の見込み・手数料・返せる額と送料・返品できる数の合計・要検品の設定）。取消・お断りの返品も返すが、画面は出さない（グループ E-3。FREQ-462・463） | `admin.orders.return` |
 | `/api/admin/orders/:id/returns/materials` | GET | 返品を作る画面の材料（発送ごとの品・返品できる数と期限・交換の色とサイズと在庫・理由ごとの設定・返送先の有無・使う手数料の設定）（FREQ-462） | `admin.orders.return` |
 | `/api/admin/orders/:id/returns` | POST | 返品を作る（二重防止の番号・品と数と理由と解決・返送・手数料・メモ・知らせるか）。返品できる数の超過・返送先なし・返品を作れない注文は409。知らせるを入れた時だけ、受付のお知らせの予定を書く（FREQ-462・469） | `admin.orders.return` |
@@ -232,6 +232,8 @@ DB変更は次の2段階で適用する。第1段階は本番適用済み、第2
 返金で状態が変わった行も履歴に含める。全額返金でキャンセルになった行は「理由: 全額返金」、返金が失敗して戻った行は「返金の取り消し」を出す。返金で発送済みになった行は「残りの商品を返金したため発送済み」、返金の失敗で支払い済みに戻った行は「返金の失敗で発送待ちに戻りました」を出す。返金そのものの行（額・商品・状態の移り変わり）と、確保し直しの行は、下の「一覧の支払いの列・履歴・要対応・在庫の履歴・ショップの設定」に書く（グループ E-2）。
 
 ### 発送と仕上がりの画面と、注文の言葉（FREQ-439〜443）
+
+G-1停止: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の新発送票まで利用できません。旧入口は認可後410を返します。以下のE-4記述は停止前の契約として保持します。手動の仕上がりの記録・取消も G-1 で終了した（品物は在庫の入荷から FIFO で自動に割り当てる）。止めた入口の答えは固定の文「発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票の公開まで利用できません。」と「仕上がりの手動記録・取消は終了しました。在庫の入荷から自動で割り当てます。」で、一覧の canShip・canRecordCompletion は false、注文の履歴は仕上がりの行を作らない。画面の入口の撤去と停止の文の表示は Task 15。下の表は停止前の契約。
 
 2026-10-10 から、発送は商品と数を選ぶ1回ごとの記録になり、受注生産の品は仕上がりを記録するまで送れない（[グループ E-1 設計書](../../superpowers/specs/2026-10-10-partial-fulfillment-design.md)）。DB の状態の値（`paid`・`shipped` など）は変えず、一覧の言葉は商品ごとの数から出す（[注文・決済の状態](../states/order-payment.md)、[order-progress.ts](../../../src/lib/orders/order-progress.ts)）。
 
@@ -717,6 +719,8 @@ E2E は e2e/ の同名の spec、DB 結合は tests/integration/db/ の同名、
 ## 配送の状況（E-4 / FREQ-488〜497）
 
 [配送の詳細設計](../../superpowers/specs/2026-10-21-delivery-status-design.md)・[実装計画](../../superpowers/plans/2026-10-21-delivery-status.md)を参照。以下は実装後の契約であり、既存の決定の本文は履歴として残す。
+
+G-1停止: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の新発送票まで利用できません。旧入口は認可後410を返します。以下のE-4記述は停止前の契約として保持します。伝票番号の訂正と手動の配達済みの窓口は、認可・CSRF・回数制限の後に固定の文「発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票の公開まで利用できません。」の 410 を返す。一覧の配送の印・要対応・ショップの設定（追跡のオン・オフ）は今のまま。
 
 ### 履歴と操作（設計6-1の実装後の表示）
 

@@ -8,7 +8,12 @@
  * 移行の NOTIFY pgrst による読み直しの誤りは、本番で店主が初めて押した時まで分からない。
  * ここでは service_role の本物の supabase-js の client で、窓口が呼ぶ関数を1回ずつ通し、答えの形と DB の行を確かめる。
  *
- * 後片付けはしない。試験の注文は削除禁止のトリガーで、発送・仕上がりの行は追記だけのトリガーで消せないので、ほかの DB 結合テストと
+ * G-1 Task 14: 旧の発送・発送取消（admin_create_fulfillment・admin_cancel_fulfillment）は LEGACY_FULFILLMENT_DISABLED、
+ * 手動の仕上がり（admin_record_completion・admin_cancel_completion）は MANUAL_COMPLETION_DISABLED で、PostgREST を通しても
+ * code 55000 で断る。窓口（store・材料）は PostgREST を呼ぶ前に LegacyFulfillmentDisabledError を投げる。
+ * 読み出し（商品ごとの数・発送の一覧・仕上がりの一覧・在庫）は、G-1 の割当を消費する合成の発送（shipFixtureOrder）を材料に確かめる。
+ *
+ * 後片付けはしない。試験の注文は削除禁止のトリガーで、発送の行は追記だけのトリガーで消せないので、ほかの DB 結合テストと
  * 同じく使い捨てのローカル DB でだけ動かす（DATABASE_URL・LOCAL_SUPABASE_URL が localhost 以外なら失敗させる）。
  * 注文は毎回新しく作り、決まった番号の行は使わない。残った行は次の npx supabase db reset で消える。
  *
@@ -21,7 +26,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { loadFulfillmentMaterials } from '@/lib/orders/fulfillment/fulfillment-materials';
 import {
-  FulfillmentOperationError,
   cancelCompletion,
   cancelFulfillment,
   createFulfillment,
@@ -32,8 +36,9 @@ import {
   toFulfillmentErrorCode,
   type OrderLineFulfillmentRow,
 } from '@/lib/orders/fulfillment/fulfillment-store';
+import { LegacyFulfillmentDisabledError } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import { describeLocalDb, isLocalDatabase, type PgClient } from './helpers/local-db';
-import { createCatalogFixture, insertOrderWithLines, uniqueSuffix } from './helpers/order-fixtures';
+import { createCatalogFixture, insertOrderWithLines, shipFixtureOrder, uniqueSuffix } from './helpers/order-fixtures';
 
 jest.setTimeout(30000);
 
@@ -42,7 +47,6 @@ jest.mock('server-only', () => ({}), { virtual: true });
 
 const LOCAL_API_URL = process.env.LOCAL_SUPABASE_URL;
 const LOCAL_SERVICE_ROLE_KEY = process.env.LOCAL_SUPABASE_SERVICE_ROLE_KEY;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const TRACKING_NUMBER = '1234-5678-9012';
 
 type Actor = { id: string; email: string };
@@ -76,6 +80,32 @@ type MixedOrder = Awaited<ReturnType<typeof createMixedOrder>>;
 /** 商品の行の番号 → 数。DB は商品の行を番号順に返すだけで、並びに意味は無い */
 function countsByItem(rows: OrderLineFulfillmentRow[] | undefined): Record<string, OrderLineFulfillmentRow> {
   return Object.fromEntries((rows ?? []).map((row) => [row.orderItemId, row]));
+}
+
+/** 呼ばれた PostgREST の操作を数える client（止めた窓口が1回も呼ばないことを見る） */
+function countingClient(client: SupabaseClient) {
+  const calls: string[] = [];
+  const proxy = new Proxy(client, {
+    get(target, property, receiver) {
+      if (property === 'rpc' || property === 'from') {
+        return (...args: unknown[]) => {
+          calls.push(`${String(property)}:${String(args[0])}`);
+          return (target[property] as (...inner: unknown[]) => unknown).apply(target, args);
+        };
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  return { client: proxy as SupabaseClient, calls };
+}
+
+async function storedCounts(db: PgClient, orderId: string) {
+  return (await db.query(
+    `select (select count(*)::int from public.order_fulfillments where order_id = $1) as fulfillments,
+            (select count(*)::int from public.order_item_completions where order_id = $1) as completions,
+            (select count(*)::int from private.order_email_outbox where order_id = $1) as emails`,
+    [orderId],
+  )).rows[0];
 }
 
 describeLocalDb('integration: 発送・仕上がり・在庫の関数を実際の PostgREST に通す', (db) => {
@@ -115,125 +145,80 @@ describeLocalDb('integration: 発送・仕上がり・在庫の関数を実際�
     };
   }
 
-  test('仕上がりの記録: 受注生産の品の仕上がりが一覧に出る。同じ requestKey の送り直しは replayed で、行は増えない', async () => {
-    const { orderId, madeItemId } = await createMixedOrder(db());
-    const input = {
-      orderId,
-      actorId: actor.id,
-      requestKey: crypto.randomUUID(),
-      lines: [{ orderItemId: madeItemId, quantity: 2 }],
-    };
-
-    const recorded = await recordCompletion(client, input);
-
-    expect(recorded).toEqual({ completionIds: [expect.stringMatching(UUID_PATTERN)], replayed: false });
-    const [completionId] = recorded.completionIds;
-    expect(await listOrderCompletions(client, orderId)).toEqual([
-      {
-        completionId,
-        orderItemId: madeItemId,
-        quantity: 2,
-        createdAt: expect.any(String),
-        createdByEmail: actor.email,
-        cancelledAt: null,
-        cancelledByEmail: null,
-        legacy: false,
-      },
-    ]);
-    const stored = await db().query(
-      `select order_item_id, quantity, created_by, cancelled_at is not null as cancelled
-       from public.order_item_completions where order_id = $1`,
-      [orderId],
-    );
-    expect(stored.rows).toEqual([{ order_item_id: madeItemId, quantity: 2, created_by: actor.id, cancelled: false }]);
-
-    expect(await recordCompletion(client, input)).toEqual({ completionIds: [completionId], replayed: true });
-    expect((await listOrderCompletions(client, orderId)).map((row) => row.completionId)).toEqual([completionId]);
-  });
-
-  test('仕上がりの取消: 発送した数を下回らない取消は cancelled、もう一度押すと already_cancelled', async () => {
-    const { orderId, madeItemId } = await createMixedOrder(db());
-    const {
-      completionIds: [completionId],
-    } = await recordCompletion(client, {
-      orderId,
-      actorId: actor.id,
-      requestKey: crypto.randomUUID(),
-      lines: [{ orderItemId: madeItemId, quantity: 2 }],
+  /** 在庫の品を全部送った合成の発送（G-1 の割当を消費する。通知あり） */
+  function shipStock(order: MixedOrder) {
+    return shipFixtureOrder(db(), {
+      orderId: order.orderId, actorId: actor.id, trackingNumber: TRACKING_NUMBER, notifyCustomer: true,
+      lines: [{ order_item_id: order.stockItemId, quantity: 2 }],
     });
-    const target = { orderId, completionId, actorId: actor.id };
+  }
 
-    expect(await cancelCompletion(client, target)).toEqual({ outcome: 'cancelled' });
-    expect(await cancelCompletion(client, target)).toEqual({ outcome: 'already_cancelled' });
+  test('仕上がりの記録: PostgREST でも MANUAL_COMPLETION_DISABLED（55000）で断り、窓口は呼ぶ前に止まる。行も一覧も増えない', async () => {
+    const order = await createMixedOrder(db());
+    const input = { orderId: order.orderId, actorId: actor.id, requestKey: crypto.randomUUID(), lines: [{ orderItemId: order.madeItemId, quantity: 2 }] };
 
-    expect(await listOrderCompletions(client, orderId)).toEqual([
-      expect.objectContaining({ completionId, cancelledAt: expect.any(String), cancelledByEmail: actor.email }),
-    ]);
-    const stored = await db().query(
-      'select cancelled_by, cancelled_at is not null as cancelled from public.order_item_completions where id = $1',
-      [completionId],
-    );
-    expect(stored.rows).toEqual([{ cancelled_by: actor.id, cancelled: true }]);
-    // 取り消した仕上がりは数に入らない
-    const counts = countsByItem((await listOrderLineFulfillment(client, [orderId])).get(orderId));
-    expect(counts[madeItemId]).toMatchObject({ completed: 0, inProduction: 3 });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const raw = await client.rpc('admin_record_completion', {
+        _order_id: input.orderId, _actor_id: input.actorId, _request_key: input.requestKey,
+        _lines: [{ order_item_id: order.madeItemId, quantity: 2 }],
+      });
+      expect(raw.data).toBeNull();
+      expect(raw.error).toMatchObject({ message: 'MANUAL_COMPLETION_DISABLED', code: '55000' });
+    }
+    const counting = countingClient(client);
+    await expect(recordCompletion(counting.client, input)).rejects.toBeInstanceOf(LegacyFulfillmentDisabledError);
+    expect(counting.calls).toEqual([]);
+
+    expect(await listOrderCompletions(client, order.orderId)).toEqual([]);
+    expect(await storedCounts(db(), order.orderId)).toEqual({ fulfillments: 0, completions: 0, emails: 0 });
   });
 
-  test('発送: 在庫の品だけを送ると completesOrder は false で、注文は決済完了のまま。同じ requestKey の送り直しは replayed', async () => {
+  test('仕上がりの取消: PostgREST でも MANUAL_COMPLETION_DISABLED（55000）で断り、受注生産中の数は変わらない', async () => {
+    const order = await createMixedOrder(db());
+    const target = { orderId: order.orderId, completionId: crypto.randomUUID(), actorId: actor.id };
+
+    const raw = await client.rpc('admin_cancel_completion', {
+      _order_id: target.orderId, _completion_id: target.completionId, _actor_id: target.actorId,
+    });
+    expect(raw.error).toMatchObject({ message: 'MANUAL_COMPLETION_DISABLED', code: '55000' });
+    const counting = countingClient(client);
+    await expect(cancelCompletion(counting.client, target)).rejects.toMatchObject({ code: 'MANUAL_COMPLETION_DISABLED', sqlstate: '55000' });
+    expect(counting.calls).toEqual([]);
+
+    const counts = countsByItem((await listOrderLineFulfillment(client, [order.orderId])).get(order.orderId));
+    expect(counts[order.madeItemId]).toMatchObject({ completed: 0, inProduction: 3 });
+  });
+
+  test('発送: PostgREST でも同じ requestKey の送り直しでも LEGACY_FULFILLMENT_DISABLED（55000）で断り、発送もメールも書かない', async () => {
     const order = await createMixedOrder(db());
     const input = shipStockInput(order);
+    const args = {
+      _order_id: input.orderId, _actor_id: input.actorId, _request_key: input.requestKey, _shipping_carrier: input.carrier,
+      _tracking_number: input.trackingNumber, _notify_customer: input.notifyCustomer,
+      _lines: [{ order_item_id: order.stockItemId, quantity: 2 }],
+    };
 
-    const created = await createFulfillment(client, input);
-
-    expect(created).toEqual({
-      fulfillmentId: expect.stringMatching(UUID_PATTERN),
-      number: 1,
-      completesOrder: false,
-      orderStatus: 'paid',
-      replayed: false,
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const raw = await client.rpc('admin_create_fulfillment', args);
+      expect(raw.data).toBeNull();
+      expect(raw.error).toMatchObject({ message: 'LEGACY_FULFILLMENT_DISABLED', code: '55000' });
+    }
+    const counting = countingClient(client);
+    await expect(createFulfillment(counting.client, input)).rejects.toMatchObject({
+      name: 'LegacyFulfillmentDisabledError', code: 'LEGACY_FULFILLMENT_DISABLED', sqlstate: '55000',
     });
-    expect(await createFulfillment(client, input)).toEqual({ ...created, replayed: true });
+    expect(counting.calls).toEqual([]);
 
-    // 送り直しで行は増えない。発送の行・商品・発送のメールの予定は、その発送に付く
-    const fulfillments = await db().query(
-      `select id, number, shipping_carrier, tracking_number, notify_customer, completes_order, created_by
-       from public.order_fulfillments where order_id = $1`,
-      [order.orderId],
-    );
-    expect(fulfillments.rows).toEqual([
-      {
-        id: created.fulfillmentId,
-        number: 1,
-        shipping_carrier: 'yamato',
-        tracking_number: TRACKING_NUMBER,
-        notify_customer: true,
-        completes_order: false,
-        created_by: actor.id,
-      },
-    ]);
-    const lines = await db().query(
-      'select order_item_id, quantity from public.order_fulfillment_lines where fulfillment_id = $1',
-      [created.fulfillmentId],
-    );
-    expect(lines.rows).toEqual([{ order_item_id: order.stockItemId, quantity: 2 }]);
-    const mails = await db().query(
-      "select status from private.order_email_outbox where fulfillment_id = $1 and kind = 'shipped'",
-      [created.fulfillmentId],
-    );
-    expect(mails.rows).toEqual([{ status: 'pending' }]);
+    expect(await storedCounts(db(), order.orderId)).toEqual({ fulfillments: 0, completions: 0, emails: 0 });
+    const counts = countsByItem((await listOrderLineFulfillment(client, [order.orderId])).get(order.orderId));
+    expect(counts[order.stockItemId]).toMatchObject({ shipped: 0, readyUnshipped: 2, unshipped: 2 });
   });
 
-  test('商品ごとの数: uuid[] で複数の注文を引き、数が合う。大文字の番号を渡しても、渡した文字のキーで引ける', async () => {
+  test('商品ごとの数: uuid[] で複数の注文を引き、合成の発送の後の数が合う。大文字の番号を渡しても、渡した文字のキーで引ける', async () => {
     const first = await createMixedOrder(db());
     const second = await createMixedOrder(db());
     const unknownOrderId = crypto.randomUUID();
-    await recordCompletion(client, {
-      orderId: first.orderId,
-      actorId: actor.id,
-      requestKey: crypto.randomUUID(),
-      lines: [{ orderItemId: first.madeItemId, quantity: 2 }],
-    });
-    await createFulfillment(client, shipStockInput(first));
+    await shipStock(first);
 
     const upperFirstId = first.orderId.toUpperCase();
     const counts = await listOrderLineFulfillment(client, [upperFirstId, second.orderId, unknownOrderId]);
@@ -257,6 +242,7 @@ describeLocalDb('integration: 発送・仕上がり・在庫の関数を実際�
       readyUnshipped: 0,
       unshipped: 0,
     });
+    // 受注生産の品は入荷で割り当てるまで受注生産中（手動の仕上がりは G-1 で終了）
     expect(firstRows[first.madeItemId]).toEqual({
       orderId: first.orderId,
       orderItemId: first.madeItemId,
@@ -264,11 +250,11 @@ describeLocalDb('integration: 発送・仕上がり・在庫の関数を実際�
       fulfillmentType: 'backorder',
       quantity: 3,
       shipped: 0,
-      completed: 2,
+      completed: 0,
       refundedBeforeShipment: 0,
       refundedAfterShipment: 0,
-      inProduction: 1,
-      readyUnshipped: 2,
+      inProduction: 3,
+      readyUnshipped: 0,
       unshipped: 3,
     });
     const secondRows = countsByItem(counts.get(second.orderId));
@@ -276,13 +262,13 @@ describeLocalDb('integration: 発送・仕上がり・在庫の関数を実際�
     expect(secondRows[second.madeItemId]).toMatchObject({ shipped: 0, completed: 0, inProduction: 3, unshipped: 3 });
   });
 
-  test('発送の一覧: 発送の行と商品が出る（実行した人のメールも）', async () => {
+  test('発送の一覧: 合成の発送の行と商品が出る（実行した人のメールも）', async () => {
     const order = await createMixedOrder(db());
-    const created = await createFulfillment(client, shipStockInput(order));
+    const created = await shipStock(order);
 
     expect(await listOrderFulfillments(client, order.orderId)).toEqual([
       {
-        fulfillmentId: created.fulfillmentId,
+        fulfillmentId: created.fulfillment_id,
         number: 1,
         shippingCarrier: 'yamato',
         trackingNumber: TRACKING_NUMBER,
@@ -298,67 +284,52 @@ describeLocalDb('integration: 発送・仕上がり・在庫の関数を実際�
     ]);
   });
 
-  test('発送の取消: cancelled、もう一度押すと already_cancelled。数は戻り、送る前の発送のメールは取りやめになる', async () => {
+  test('発送の取消: PostgREST でも LEGACY_FULFILLMENT_DISABLED（55000）で断り、発送・数・送る前の発送のメールはそのまま', async () => {
     const order = await createMixedOrder(db());
-    const created = await createFulfillment(client, shipStockInput(order));
-    const target = { orderId: order.orderId, fulfillmentId: created.fulfillmentId, actorId: actor.id };
+    const created = await shipStock(order);
+    const target = { orderId: order.orderId, fulfillmentId: created.fulfillment_id, actorId: actor.id };
 
-    expect(await cancelFulfillment(client, target)).toEqual({ outcome: 'cancelled', orderStatus: 'paid' });
-    expect(await cancelFulfillment(client, target)).toEqual({ outcome: 'already_cancelled', orderStatus: 'paid' });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const raw = await client.rpc('admin_cancel_fulfillment', {
+        _order_id: target.orderId, _fulfillment_id: target.fulfillmentId, _actor_id: target.actorId,
+      });
+      expect(raw.error).toMatchObject({ message: 'LEGACY_FULFILLMENT_DISABLED', code: '55000' });
+    }
+    const counting = countingClient(client);
+    await expect(cancelFulfillment(counting.client, target)).rejects.toBeInstanceOf(LegacyFulfillmentDisabledError);
+    expect(counting.calls).toEqual([]);
 
     expect(await listOrderFulfillments(client, order.orderId)).toEqual([
-      expect.objectContaining({
-        fulfillmentId: created.fulfillmentId,
-        cancelledAt: expect.any(String),
-        cancelledByEmail: actor.email,
-      }),
+      expect.objectContaining({ fulfillmentId: created.fulfillment_id, cancelledAt: null, cancelledByEmail: null }),
     ]);
     const counts = countsByItem((await listOrderLineFulfillment(client, [order.orderId])).get(order.orderId));
-    expect(counts[order.stockItemId]).toMatchObject({ shipped: 0, readyUnshipped: 2, unshipped: 2 });
+    expect(counts[order.stockItemId]).toMatchObject({ shipped: 2, readyUnshipped: 0, unshipped: 0 });
     const mails = await db().query(
       "select status, last_error_code from private.order_email_outbox where fulfillment_id = $1 and kind = 'shipped'",
-      [created.fulfillmentId],
+      [created.fulfillment_id],
     );
-    expect(mails.rows).toEqual([{ status: 'skipped', last_error_code: 'fulfillment_cancelled' }]);
+    expect(mails.rows).toEqual([{ status: 'pending', last_error_code: null }]);
   });
 
-  test('断り: 送れない数を送ると、DB の言葉が PostgREST を通っても quantity_exceeds_ready の記号に直る', async () => {
+  test('断り: 送れない数・無い注文でも、PostgREST の誤りは固定の停止の記号で、旧の断りの記号（quantity_exceeds_ready など）へ訳さない', async () => {
     const order = await createMixedOrder(db());
-    // 受注生産の品はまだ仕上がっていない（発送準備中が0）ので、1つも送れない
-    const madeLines = [{ orderItemId: order.madeItemId, quantity: 1 }];
-    const input: FulfillmentInput = { ...shipStockInput(order), lines: madeLines };
-
-    const refusal = await createFulfillment(client, input).then(
-      () => null,
-      (error: unknown) => error,
-    );
-    expect(refusal).toBeInstanceOf(FulfillmentOperationError);
-    expect(refusal).toMatchObject({ code: 'quantity_exceeds_ready' });
-
-    // 窓口が拾う前の、PostgREST の誤りの文から DB の言葉を拾えること
-    const raw = await client.rpc('admin_create_fulfillment', {
-      _order_id: input.orderId,
-      _actor_id: input.actorId,
-      _request_key: input.requestKey,
-      _shipping_carrier: input.carrier,
-      _tracking_number: input.trackingNumber,
-      _notify_customer: input.notifyCustomer,
-      _lines: [{ order_item_id: order.madeItemId, quantity: 1 }],
-    });
-    expect(raw.data).toBeNull();
-    expect(toFulfillmentErrorCode(raw.error?.message)).toBe('quantity_exceeds_ready');
-
-    // 存在しない注文は別の SQLSTATE（P0002）で止まるが、同じように記号に直る
-    await expect(createFulfillment(client, { ...input, orderId: crypto.randomUUID() })).rejects.toMatchObject({
-      name: 'FulfillmentOperationError',
-      code: 'order_not_found',
-    });
+    for (const orderId of [order.orderId, crypto.randomUUID()]) {
+      const raw = await client.rpc('admin_create_fulfillment', {
+        _order_id: orderId,
+        _actor_id: actor.id,
+        _request_key: crypto.randomUUID(),
+        _shipping_carrier: 'yamato',
+        _tracking_number: TRACKING_NUMBER,
+        _notify_customer: true,
+        _lines: [{ order_item_id: order.madeItemId, quantity: 1 }],
+      });
+      expect(raw.data).toBeNull();
+      expect(raw.error).toMatchObject({ message: 'LEGACY_FULFILLMENT_DISABLED', code: '55000' });
+      expect(toFulfillmentErrorCode(raw.error?.message)).toBeNull();
+    }
 
     // 断った発送は何も書かない
-    const stored = await db().query('select count(*)::int as count from public.order_fulfillments where order_id = $1', [
-      order.orderId,
-    ]);
-    expect(stored.rows[0].count).toBe(0);
+    expect(await storedCounts(db(), order.orderId)).toEqual({ fulfillments: 0, completions: 0, emails: 0 });
   });
 
   test('在庫の画面: list_variant_stock_states（bigint[]）と list_item_stock_history の列の名前と、数が number で来ること', async () => {
@@ -411,78 +382,21 @@ describeLocalDb('integration: 発送・仕上がり・在庫の関数を実際�
     expect(limited.data).toHaveLength(1);
   });
 
-  test('発送の画面の材料: 商品の行・発送・発送できない理由が出る。大文字の番号でも商品の行は空にならない', async () => {
+  test('発送の画面の材料: 大文字の番号・決済完了でない注文・無い注文でも、PostgREST を1回も呼ばずに LEGACY_FULFILLMENT_DISABLED を投げる', async () => {
     const order = await createMixedOrder(db());
-    const created = await createFulfillment(client, shipStockInput(order));
-
-    const materials = await loadFulfillmentMaterials(client, order.orderId.toUpperCase());
-
-    expect(materials).toEqual({
-      order: {
-        id: order.orderId,
-        orderNumber: `ORD-${order.orderId.slice(0, 8).toUpperCase()}`,
-        status: 'paid',
-        progress: { key: 'in_production', label: '受注生産中', partiallyShipped: true },
-      },
-      blockedReason: null,
-      // 商品の行の並びは作った時刻の順だが、ここでは中身だけを見る（並べ替えの指定を PostgREST が受け付けることは、答えが返ることで分かる）
-      lines: expect.arrayContaining([
-        {
-          orderItemId: order.stockItemId,
-          name: '照合テスト',
-          color: 'BLACK',
-          size: 'M',
-          fulfillmentType: 'stock',
-          quantity: 2,
-          shipped: 2,
-          inProduction: 0,
-          readyUnshipped: 0,
-          unshipped: 0,
-          lineKind: 'order',
-          exchangeOnHold: 0,
-        },
-        {
-          orderItemId: order.madeItemId,
-          name: '照合テスト',
-          color: 'BLACK',
-          size: 'M',
-          fulfillmentType: 'backorder',
-          quantity: 3,
-          shipped: 0,
-          inProduction: 3,
-          readyUnshipped: 0,
-          unshipped: 3,
-          lineKind: 'order',
-          exchangeOnHold: 0,
-        },
-      ]),
-      fulfillments: [
-        {
-          id: created.fulfillmentId,
-          number: 1,
-          carrier: 'yamato',
-          trackingNumber: TRACKING_NUMBER,
-          shippedAt: expect.any(String),
-          notifyCustomer: true,
-          completesOrder: false,
-          cancelledAt: null,
-          lines: [{ orderItemId: order.stockItemId, quantity: 2 }],
-        },
-      ],
-    });
-
-    expect(materials?.lines).toHaveLength(2);
-
-    // 決済完了でない注文は発送できない理由が出る。注文が無ければ null
+    await shipStock(order);
     const stock = await createCatalogFixture(db(), { stock: 1 });
     const { orderId: pendingOrderId } = await insertOrderWithLines(db(), {
       status: 'pending',
       lines: [{ itemId: stock.itemId, variantId: stock.variantId, quantity: 1, fulfillmentType: 'stock' }],
     });
-    expect(await loadFulfillmentMaterials(client, pendingOrderId)).toMatchObject({
-      blockedReason: 'not_shippable',
-      order: { status: 'pending', progress: { key: 'unpaid' } },
-    });
-    expect(await loadFulfillmentMaterials(client, crypto.randomUUID())).toBeNull();
+
+    for (const orderId of [order.orderId.toUpperCase(), pendingOrderId, crypto.randomUUID()]) {
+      const counting = countingClient(client);
+      const error: unknown = await loadFulfillmentMaterials(counting.client, orderId).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(LegacyFulfillmentDisabledError);
+      expect(error).toMatchObject({ code: 'LEGACY_FULFILLMENT_DISABLED', sqlstate: '55000' });
+      expect(counting.calls).toEqual([]);
+    }
   });
 });

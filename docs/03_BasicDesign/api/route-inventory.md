@@ -8,8 +8,8 @@
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |
-| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/tracking` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/tracking/route.ts) |
-| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/delivered` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/delivered/route.ts) |
+| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/tracking` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/tracking/route.ts) （G-1停止: 認可・CSRF・回数制限の後に 410 `LEGACY_FULFILLMENT_DISABLED`。G-3の新発送票へ移る） |
+| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/delivered` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/delivered/route.ts) （G-1停止: 認可・CSRF・回数制限の後に 410 `LEGACY_FULFILLMENT_DISABLED`。G-3の新発送票へ移る） |
 | `/api/admin/order-attention/deliveries/[attentionId]/resolve` | `POST` | [route.ts](../../../src/app/api/admin/order-attention/deliveries/%5BattentionId%5D/resolve/route.ts) |
 | `/api/webhook/17track` | `POST` | [route.ts](../../../src/app/api/webhook/17track/route.ts) |
 | `/api/orders/[id]/return-request` | `GET`, `POST` | [route.ts](../../../src/app/api/orders/%5Bid%5D/return-request/route.ts) |
@@ -54,12 +54,12 @@
 | `/api/admin/news/[id]` | `DELETE`, `GET`, `PATCH`, `PUT` | [route.ts](../../../src/app/api/admin/news/%5Bid%5D/route.ts) |
 | `/api/admin/news` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/news/route.ts) |
 | `/api/admin/order-attention` | `GET` | [route.ts](../../../src/app/api/admin/order-attention/route.ts) |
-| `/api/admin/orders/[id]/completions/[completionId]/cancel` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/completions/%5BcompletionId%5D/cancel/route.ts) |
-| `/api/admin/orders/[id]/completions` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/completions/route.ts) |
+| `/api/admin/orders/[id]/completions/[completionId]/cancel` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/completions/%5BcompletionId%5D/cancel/route.ts) （G-1停止: 認可・CSRF・回数制限の後に 410 `MANUAL_COMPLETION_DISABLED`。仕上がりの手動記録・取消は終了） |
+| `/api/admin/orders/[id]/completions` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/completions/route.ts) （G-1停止: 認可・CSRF・回数制限の後に 410 `MANUAL_COMPLETION_DISABLED`。仕上がりの手動記録・取消は終了） |
 | `/api/admin/orders/[id]/emails/[emailId]` | `GET` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/emails/%5BemailId%5D/route.ts) |
 | `/api/admin/orders/[id]/emails/resend` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/emails/resend/route.ts) |
-| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/cancel` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/cancel/route.ts) |
-| `/api/admin/orders/[id]/fulfillments` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts) |
+| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/cancel` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/cancel/route.ts) （G-1停止: 認可・CSRF・回数制限の後に 410 `LEGACY_FULFILLMENT_DISABLED`。G-3の新発送票へ移る） |
+| `/api/admin/orders/[id]/fulfillments` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts) （G-1停止: GET は認可の後、POST は認可・CSRF・回数制限の後に 410 `LEGACY_FULFILLMENT_DISABLED`。G-3の新発送票へ移る） |
 | `/api/admin/orders/[id]/history` | `GET` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/history/route.ts) |
 | `/api/admin/orders/[id]/refund/confirm` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/refund/confirm/route.ts) |
 | `/api/admin/orders/[id]/refund` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) |
@@ -144,6 +144,8 @@
 
 履歴・中身は `admin.orders.read`、再送は `admin.orders.manage`・CSRF・送信元と管理者ごと10分に30回。配達の受け口は公開で Svix 署名を確かめる。発送・発送の取消・仕上がり・仕上がりの取消は `admin.orders.manage`・CSRF・回数の制限（発送と仕上がりの記録は10分に60回、取消は30回）で、発送は `POST /api/admin/orders/[id]/fulfillments` の本文 `notifyCustomer`（真偽、既定 true）で知らせるかを選ぶ（グループ E-1。発送ごとに発送のメールを1通送る）。返金の材料の読み込み（`GET …/refund`）は `admin.orders.refund` だけ（読むだけなので CSRF と回数の制限は通さない）、返金（`POST …/refund`）と返事待ちの確かめ直し（`POST …/refund/confirm`）は `admin.orders.refund`・CSRF・回数の制限（10分に30回。確かめ直しも返金と同じ数に数える）、支払い済みの注文のキャンセル（`POST …/status` の支払い済みの道）は `admin.orders.manage` と `admin.orders.refund` の両方・CSRF・回数の制限（10分に30回）、ショップの設定（`GET`・`PUT /api/admin/settings/shop`）は `admin.settings.manage`（`PUT` は CSRF と回数の制限、10分に30回）で守る（グループ E-2。返金は返金ごとに返金のお知らせを1通、支払い済みのキャンセルはキャンセルのお知らせを1通送る）。返品の入口（グループ E-3）は、読む `GET …/returns`・`GET …/returns/materials` が `admin.orders.return`（読むだけなので CSRF と回数の制限は通さない）、書く `POST …/returns` と `POST /api/admin/returns/[returnId]/…` が `admin.orders.return`・CSRF・回数の制限（作る・受け取る・額を決めて返金するは10分に30回、取消・開き直し・届かないで終える・検品・手数料の受け取りの記録・支払いを待たずに送るは10分に60回）で守る。受け取りの今返金（お客様の申し込みで返送不要でない返品の計算どおりの場合を除く）・額の指定・送料・交換の選び直しと、額を決めて返金・手数料の受け取りの記録・支払いを待たずに送るは、`admin.orders.refund` も要る（店長だけ）。詳しい入力と応答は [APIの主要契約](api-spec.md)の「管理:注文・要対応」「管理:ショップの設定」「Webhook・Cron」に記す。段2の承認・お断り・写真・キャンセルの申し込みの4操作は admin.orders.return、商品の返品不可は admin.items.manage、設定は admin.settings.manage。お客様の書く窓口はログイン・CSRF・送信元とお客様ごとの制限で守る。
 
+G-1停止: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の新発送票まで利用できません。旧入口は認可後410を返します。以下のE-4記述は停止前の契約として保持します。上の6パス・7メソッド（発送の材料の GET・発送・発送の取消・伝票番号の訂正・手動の配達済み・仕上がりの記録と取消）は route ファイルとメソッドを残したまま、POST は既存の認可（MFA）・CSRF・回数制限の後、GET は認可の後に、入力を読まずに 410 の固定の本文（発送の5メソッドは `LEGACY_FULFILLMENT_DISABLED`、仕上がりの2メソッドは `MANUAL_COMPLETION_DISABLED`）と `Cache-Control: no-store` を返す。数は132ファイル・171メソッドのまま（G-1 Task 14）。
+
 ## 権限設定の入口（G-0 / FREQ-519・FREQ-540 の G-0 部分）
 
 | パス | 契約・認可 |
@@ -162,6 +164,8 @@ API単体 [GET](../../../tests/unit/api/admin/permissions-route.test.ts)・[POST
 ## 配送の状況（E-4 / FREQ-488〜497）
 
 [配送の詳細設計](../../superpowers/specs/2026-10-21-delivery-status-design.md)・[実装計画](../../superpowers/plans/2026-10-21-delivery-status.md)を参照。以下は実装後の契約であり、既存の決定の本文は履歴として残す。
+
+G-1停止: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の新発送票まで利用できません。旧入口は認可後410を返します。以下のE-4記述は停止前の契約として保持します。伝票番号の訂正（tracking）と手動の配達済み（delivered）の2本は今は 410 `LEGACY_FULFILLMENT_DISABLED` を返す。要対応の解決と17TRACKの受け口は今のまま。
 
 管理POST 3本と17TRACKのPOST 1本の計4パス・4メソッドを追加。ソースの静的集計は128ファイル・167メソッド、E2E用の1本を除いた表は127行・166メソッド。新しいページURLは0。詳細はAPI仕様の配送の節と計画 C-3。
 

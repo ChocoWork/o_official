@@ -1749,14 +1749,14 @@ describeLocalDb('integration: 返金の結果の同時の書き込み（Review F
     await db().query('begin');
     try {
       expect(await recordExternal(db(), order.orderId, { amount: order.total })).toMatchObject({ order_status: 'cancelled' });
-      // 断られる側の守りを確かめるので、旧の発送の関数のまま（書く前に断るので割当には触れない）
-      const shipped = other.query(
+      // G-1 Task 14: 旧の発送の関数は止めたので、返金が注文の行の鍵を持っていても待たずに固定の拒否を返す
+      // （取り消した注文を送れないことは、G-3 の新しい発送票の試験で確かめる）
+      await expect(other.query(
         'select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), $3, $4, false, $5::jsonb)',
         [order.orderId, actor.id, 'yamato', 'TRK-1', JSON.stringify([{ order_item_id: order.itemIds[0], quantity: 1 }])],
-      ).then(() => null, (error: unknown) => error);
-      await waitUntilBlocked(db(), otherPid);
+      )).rejects.toMatchObject({ code: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' });
+      expect(Number((await db().query('select count(*)::int as n from pg_locks where pid = $1 and not granted', [otherPid])).rows[0].n)).toBe(0);
       await db().query('commit');
-      expect(await shipped).toMatchObject({ code: '22023', message: 'ORDER_NOT_SHIPPABLE' });
     } catch (error) {
       await db().query('rollback');
       throw error;

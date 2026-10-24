@@ -271,67 +271,26 @@ describe('buildOrderHistory - 発送', () => {
   });
 });
 
-describe('buildOrderHistory - 仕上がり', () => {
-  it('仕上がりの行は、商品と数・操作した人を持ち、取り消せる', () => {
-    const history = buildOrderHistory(input({ completions: [completion()], lines: LINES }));
-
-    expect(entriesOf(history.entries, 'completion')).toEqual([{
-      type: 'completion', at: '2026-10-10T01:00:00.000Z', completionId: 'c-1', items: [{ name: 'リネンパンツ', quantity: 1 }],
-      actorEmail: 'admin@example.com', cancelled: false, cancellable: true, legacy: false,
-    }]);
-  });
-
-  it('仕上がりを取り消せるのは、取り消しても仕上がった数が送った数を下回らない時だけ', () => {
-    // ウールドレスは3つ仕上がり、2つ送った。2つの記録を取り消すと1つになって送った数を下回る。1つの記録なら2つ残る
-    const history = buildOrderHistory(input({
+// G-1 Task 14: 手動の仕上がりは終了した。仕上がりの一覧を渡されても、仕上がりの行・取消の行は作らない（読みも合成もしない）
+describe('buildOrderHistory - 仕上がり（G-1 で終了）', () => {
+  it('仕上がり・取り消した仕上がりを渡しても、仕上がりの行も取消の行も作らず、ほかの行は渡さない時と同じ', () => {
+    const base = input({ fulfillments: [fulfillment()], lines: LINES });
+    const withCompletions = buildOrderHistory({
+      ...base,
       completions: [
-        completion({ completionId: 'c-a', orderItemId: DRESS, quantity: 2 }),
-        completion({ completionId: 'c-b', orderItemId: DRESS, quantity: 1 }),
-        completion({ completionId: 'c-c', orderItemId: PANTS, quantity: 1 }),
+        completion(),
+        completion({ completionId: 'c-2', cancelledAt: '2026-10-11T04:00:00.000Z', cancelledByEmail: 'owner@example.com' }),
       ],
-      lines: LINES,
-    }));
-
-    expect(entriesOf(history.entries, 'completion').map((entry) => [entry.completionId, entry.cancellable])).toEqual([
-      ['c-a', false],
-      ['c-b', true],
-      ['c-c', true],
-    ]);
-  });
-
-  it.each([
-    ['payment_in_progress', false],
-    ['pending', false],
-    ['paid', true],
-    ['failed', false],
-    ['abandoned', false],
-    ['cancelled', false],
-    ['shipped', false],
-  ] as const)('注文が %s の時、仕上がりを取り消せるか=%s（決済完了の注文だけ）', (status, cancellable) => {
-    const history = buildOrderHistory(input({ order: { ...ORDER, status }, completions: [completion()], lines: LINES }));
-
-    expect(entriesOf(history.entries, 'completion')[0]).toMatchObject({ cancellable });
-  });
-
-  it('取り消した仕上がりは、取り消し済みの印を付けて取消の行を足す。もう取り消せない', () => {
-    const history = buildOrderHistory(input({
-      completions: [completion({ cancelledAt: '2026-10-11T04:00:00.000Z', cancelledByEmail: 'owner@example.com' })],
-      lines: LINES,
-    }));
-
-    expect(history.entries.map((entry) => entry.type)).toEqual(['completion_cancel', 'completion', 'created']);
-    expect(history.entries[0]).toEqual({
-      type: 'completion_cancel', at: '2026-10-11T04:00:00.000Z', completionId: 'c-1', actorEmail: 'owner@example.com',
     });
-    expect(history.entries[1]).toMatchObject({ type: 'completion', cancelled: true, cancellable: false });
+
+    expect(withCompletions.entries.some((entry) => entry.type === 'completion' || entry.type === 'completion_cancel')).toBe(false);
+    expect(withCompletions).toEqual(buildOrderHistory(base));
   });
 
-  it('商品の数が分からない仕上がり（前からの記録で商品が消えた等）は、取り消しの印を出さず、名前は「商品」', () => {
-    const history = buildOrderHistory(input({ completions: [completion({ legacy: true, createdByEmail: null })], lines: [] }));
-
-    expect(entriesOf(history.entries, 'completion')[0]).toMatchObject({
-      items: [{ name: '商品', quantity: 1 }], cancellable: false, legacy: true, actorEmail: null,
-    });
+  it('仕上がりの一覧を渡さなくても履歴を作れる', () => {
+    const withoutCompletions: BuildOrderHistoryInput = input({ lines: LINES });
+    delete withoutCompletions.completions;
+    expect(buildOrderHistory(withoutCompletions).entries.map((entry) => entry.type)).toEqual(['created']);
   });
 });
 
@@ -394,7 +353,7 @@ describe('buildOrderHistory - 発送ごとのメール', () => {
 });
 
 describe('buildOrderHistory - 並び順', () => {
-  it('同じ時刻の行は、結果が上になる順（メール → 状態 → 取消 → 発送・仕上がり → 受付）に置く', () => {
+  it('同じ時刻の行は、結果が上になる順（メール → 状態 → 取消 → 発送 → 受付）に置く（仕上がりの行は G-1 で作らない）', () => {
     const at = '2026-10-10T02:00:00.000Z';
     const history = buildOrderHistory(input({
       order: { ...ORDER, status: 'shipped' },
@@ -409,11 +368,11 @@ describe('buildOrderHistory - 並び順', () => {
     }));
 
     expect(history.entries.map((entry) => entry.type)).toEqual([
-      'email', 'status', 'fulfillment_cancel', 'completion_cancel', 'fulfillment', 'completion', 'created',
+      'email', 'status', 'fulfillment_cancel', 'fulfillment', 'created',
     ]);
   });
 
-  it('発送・仕上がり・メール・状態を、時刻の新しい順に混ぜる', () => {
+  it('発送・メール・状態を、時刻の新しい順に混ぜる（仕上がりは渡しても行にしない）', () => {
     const history = buildOrderHistory(input({
       statusRows: [{
         changedAt: '2026-10-09T01:00:00.000Z', fromStatus: 'payment_in_progress', toStatus: 'paid', changeReason: 'stripe_payment_paid',
@@ -425,7 +384,7 @@ describe('buildOrderHistory - 並び順', () => {
       lines: LINES,
     }));
 
-    expect(history.entries.map((entry) => entry.type)).toEqual(['email', 'fulfillment', 'completion', 'status', 'created']);
+    expect(history.entries.map((entry) => entry.type)).toEqual(['email', 'fulfillment', 'status', 'created']);
   });
 });
 
@@ -792,7 +751,7 @@ describe('buildOrderHistory - 返金のお知らせと並び順', () => {
     });
   });
 
-  it('同じ時刻の行は、結果が上になる順（メール → 状態 → 取消 → 確保し直し → 発送・仕上がり・返金 → 受付）に置く', () => {
+  it('同じ時刻の行は、結果が上になる順（メール → 状態 → 取消 → 確保し直し → 発送・返金 → 受付）に置く（仕上がりの行は G-1 で作らない）', () => {
     const at = '2026-10-10T02:00:00.000Z';
     const history = buildOrderHistory(input({
       statusRows: [{
@@ -810,7 +769,7 @@ describe('buildOrderHistory - 返金のお知らせと並び順', () => {
     }));
 
     expect(history.entries.map((entry) => entry.type)).toEqual([
-      'email', 'status', 'fulfillment_cancel', 'completion_cancel', 'refund_rereserve', 'fulfillment', 'completion', 'refund', 'created',
+      'email', 'status', 'fulfillment_cancel', 'refund_rereserve', 'fulfillment', 'refund', 'created',
     ]);
   });
 

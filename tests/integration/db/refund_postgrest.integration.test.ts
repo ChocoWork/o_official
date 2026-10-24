@@ -59,7 +59,7 @@ import {
   type StripeRefundFields,
 } from '@/lib/orders/refund/refund-store';
 import { describeLocalDb, isLocalDatabase, type PgClient } from './helpers/local-db';
-import { PRICE, createCatalogFixture, reserveFixtureAllocation, uniqueSuffix, variantStock } from './helpers/order-fixtures';
+import { PRICE, createCatalogFixture, reserveFixtureAllocation, uniqueSuffix, variantStock, withLedgerLock } from './helpers/order-fixtures';
 
 jest.setTimeout(30000);
 
@@ -635,10 +635,11 @@ describeLocalDb('integration: 返金の記録の窓口を実際の PostgREST に
       const variant = await db().query('select variant_id from public.order_items where id = $1', [stripeOrder.orderItemId]);
       const variantId = variant.rows[0].variant_id as number;
       const stockNow = await variantStock(db(), variantId);
-      await db().query(
+      // 台帳への書き込みは共通の押さえの下だけで通る（G-1）
+      await withLedgerLock(db(), () => db().query(
         "insert into public.stock_movements (variant_id, delta, reason, note) values ($1, $2, 'adjustment', 'sold elsewhere')",
         [variantId, -(stockNow - 1)],
-      );
+      ));
       const failed = await recordOrderRefundResult(client, stripeRefund.refundId, {
         ...accepted,
         stripeStatus: 'failed',

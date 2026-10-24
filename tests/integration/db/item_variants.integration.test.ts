@@ -108,6 +108,8 @@ describe('integration: item_variants', () => {
         `INSERT INTO public.item_variants (item_id) VALUES ($1) RETURNING id`,
         [itemId],
       );
+      // G-1: 台帳は共通の押さえの下でだけ在庫を動かせる
+      await client.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
       await client.query(
         `INSERT INTO public.stock_movements (variant_id, delta, reason) VALUES ($1, 5, 'restock')`,
         [variant.rows[0].id],

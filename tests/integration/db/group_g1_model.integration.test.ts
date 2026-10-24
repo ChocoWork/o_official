@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { connectLocalDb, describeLocalDb } from './helpers/local-db';
 import {
-  addItemVariant, createCatalogFixture, insertOrderWithLines, insertOrderWithStockLine, variantStock,
+  addItemVariant, createCatalogFixture, insertOrderWithLines, insertOrderWithStockLine, variantStock, withLedgerLock,
 } from './helpers/order-fixtures';
 
 /**
@@ -115,11 +115,12 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
   }
 
   async function movement(variantId: number, delta: number, reason: string, operationId: string | null, orderItemId: string | null = null): Promise<string> {
-    const res = await db().query(
+    // G-1 Task 14: 台帳のトリガーは共通の押さえを要る。押さえは書く間だけ持ち、試験の取引には残さない
+    const res = await withLedgerLock(db(), () => db().query(
       `insert into public.stock_movements (variant_id, delta, reason, allocation_operation_id, order_item_id)
        values ($1, $2, $3, $4, $5) returning id`,
       [variantId, delta, reason, operationId, orderItemId],
-    );
+    ));
     return String(res.rows[0].id);
   }
 

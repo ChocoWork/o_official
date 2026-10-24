@@ -1,4 +1,5 @@
 /** @jest-environment node */
+import { cancelDeliveryFixture } from './helpers/delivery-tracking-fixtures';
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
 import {
   createCatalogFixture,
@@ -233,9 +234,12 @@ function releaseExchange(db: PgClient, returnId: string | null, actorId: string 
   return db.query('select * from public.admin_release_return_exchange($1, $2)', [returnId, actorId]);
 }
 
+/** 発送の取消の材料（合成）。旧の admin_cancel_fulfillment は G-1 Task 14 で止めた（LEGACY_FULFILLMENT_DISABLED） */
 function cancelFulfillment(db: PgClient, orderId: string, fulfillmentId: string, actorId: string) {
-  return db.query('select * from public.admin_cancel_fulfillment($1, $2, $3)', [orderId, fulfillmentId, actorId]);
+  return cancelDeliveryFixture(db, { orderId, fulfillmentId, actorId });
 }
+
+const LEGACY_DISABLED = { code: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' };
 
 /** ふつうの返金（E-2）を返事待ちで始める。発送後の商品を1つ返す（restock なし・送料なし） */
 function beginOrdinaryRefund(db: PgClient, order: ShippedOrder, itemIndex: number, quantity: number, amount: number) {
@@ -2755,26 +2759,22 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
     });
   });
 
-  describe('発送の取消の返品の守り（admin_cancel_fulfillment）', () => {
-    test('申し込み・受付中・完了の返品が指す発送は FULFILLMENT_HAS_RETURN で取り消せず、返品の無い発送は今どおり取り消せる', async () => {
+  // G-1 Task 14: 旧の発送の取消は止めた。返品が指す発送を取り消さない守り（停止前の FULFILLMENT_HAS_RETURN）は G-3 の新しい発送票で作り直す
+  describe('発送の取消の返品の守り（admin_cancel_fulfillment、G-1 で停止）', () => {
+    test('申し込み・受付中・完了の返品が指す発送も、返品の無い発送も、旧の取消は固定の拒否で何も取り消さない', async () => {
       const order = await createShippedOrder(db(), { lines: [{ quantity: 3 }], shipments: [{ 0: 1 }, { 0: 1 }, { 0: 1 }] });
       const [first, second, third] = order.fulfillmentIds;
       await openReturn(db(), order, [line(order, 0, 1)]);
       const closedReturn = await openReturn(db(), order, [line(order, 0, 1, { fulfillment_id: second })]);
       await closeMissing(db(), closedReturn, order.actorId);
-      const blocked = { code: '22023', message: 'FULFILLMENT_HAS_RETURN' };
-
-      for (const fulfillmentId of [first, second]) {
-        await expectRejected(db(), 'select * from public.admin_cancel_fulfillment($1, $2, $3)', [order.orderId, fulfillmentId, order.actorId], blocked);
+      for (const fulfillmentId of [first, second, third]) {
+        await expectRejected(db(), 'select * from public.admin_cancel_fulfillment($1, $2, $3)', [order.orderId, fulfillmentId, order.actorId], LEGACY_DISABLED);
       }
-      const unchanged = await db().query('select id, cancelled_at from public.order_fulfillments where id = any($1::uuid[])', [[first, second]]);
-      expect(unchanged.rows.map((row) => row.cancelled_at)).toEqual([null, null]);
-
-      const cancelled = await cancelFulfillment(db(), order.orderId, third, order.actorId);
-      expect(cancelled.rows).toEqual([{ outcome: 'cancelled', order_status: 'paid' }]);
+      const unchanged = await db().query('select id, cancelled_at from public.order_fulfillments where id = any($1::uuid[])', [[first, second, third]]);
+      expect(unchanged.rows.map((row) => row.cancelled_at)).toEqual([null, null, null]);
     });
 
-    test('返品の申し込み（段2の形）が指す発送も取り消せない', async () => {
+    test('返品の申し込み（段2の形）が指す発送も、旧の取消は固定の拒否', async () => {
       const order = await createShippedOrder(db(), { lines: [{ quantity: 2 }] });
       await insertCustomerReturn(db(), order, 'requested');
 
@@ -2782,23 +2782,24 @@ describeLocalDb('integration: 返品の操作・読み出し・設定の関数�
         db(),
         'select * from public.admin_cancel_fulfillment($1, $2, $3)',
         [order.orderId, order.fulfillmentIds[0], order.actorId],
-        { code: '22023', message: 'FULFILLMENT_HAS_RETURN' },
+        LEGACY_DISABLED,
       );
     });
 
-    test('取消・お断りの返品しか指していない発送は、今と同じく取り消せる', async () => {
+    test('取消・お断りの返品しか指していない発送も、旧の取消は固定の拒否（取消は G-3 の新しい発送票）', async () => {
       const cancelledOrder = await createShippedOrder(db(), { lines: [{ quantity: 1 }] });
       await cancelReturn(db(), await openReturn(db(), cancelledOrder, [line(cancelledOrder, 0, 1)]), cancelledOrder.actorId);
-      expect((await cancelFulfillment(db(), cancelledOrder.orderId, cancelledOrder.fulfillmentIds[0], cancelledOrder.actorId)).rows).toEqual([
-        { outcome: 'cancelled', order_status: 'paid' },
-      ]);
+      await expectRejected(db(), 'select * from public.admin_cancel_fulfillment($1, $2, $3)',
+        [cancelledOrder.orderId, cancelledOrder.fulfillmentIds[0], cancelledOrder.actorId], LEGACY_DISABLED);
 
       // お断りの返品（段2の形。お客様の申し込みをお店がお断りした記録）
       const declinedOrder = await createShippedOrder(db(), { lines: [{ quantity: 1 }] });
       await insertCustomerReturn(db(), declinedOrder, 'declined');
-      expect((await cancelFulfillment(db(), declinedOrder.orderId, declinedOrder.fulfillmentIds[0], declinedOrder.actorId)).rows).toEqual([
-        { outcome: 'cancelled', order_status: 'paid' },
-      ]);
+      await expectRejected(db(), 'select * from public.admin_cancel_fulfillment($1, $2, $3)',
+        [declinedOrder.orderId, declinedOrder.fulfillmentIds[0], declinedOrder.actorId], LEGACY_DISABLED);
+      const rows = await db().query('select cancelled_at from public.order_fulfillments where id = any($1::uuid[])',
+        [[cancelledOrder.fulfillmentIds[0], declinedOrder.fulfillmentIds[0]]]);
+      expect(rows.rows).toEqual([{ cancelled_at: null }, { cancelled_at: null }]);
     });
   });
 
@@ -2989,7 +2990,7 @@ describeLocalDb('integration: 返品を作る操作と発送の取消・ほか�
     return createShippedOrder(db(), { lines: [{ quantity: 2 }], shipments: [{ 0: 1 }, { 0: 1 }] });
   }
 
-  test('返品を作るのが先: 発送の取消は注文の行の鍵を待ち、返品が確定した後に FULFILLMENT_HAS_RETURN で断られる。取り消せなかった発送は残る', async () => {
+  test('返品を作る取引が開いていても、旧の発送の取消は鍵を待たずに固定の拒否で、発送は残る（G-1 で停止）', async () => {
     const order = await createCommittedOrder();
     const otherPid = (await other.query('select pg_backend_pid() as pid')).rows[0].pid as number;
     let returnId = '';
@@ -2998,13 +2999,10 @@ describeLocalDb('integration: 返品を作る操作と発送の取消・ほか�
     try {
       // 確定したメールの予定を残さないよう、お客様に知らせない
       returnId = await openReturn(db(), order, [line(order, 0, 1)], { notify: false });
-      const cancelling = cancelFulfillment(other, order.orderId, order.fulfillmentIds[0], order.actorId).then(
-        () => null,
-        (error: unknown) => error,
-      );
-      await waitUntilBlocked(db(), otherPid);
+      await expect(other.query('select * from public.admin_cancel_fulfillment($1, $2, $3)',
+        [order.orderId, order.fulfillmentIds[0], order.actorId])).rejects.toMatchObject(LEGACY_DISABLED);
+      expect(Number((await db().query('select count(*)::int as n from pg_locks where pid = $1 and not granted', [otherPid])).rows[0].n)).toBe(0);
       await db().query('commit');
-      expect(await cancelling).toMatchObject({ code: '22023', message: 'FULFILLMENT_HAS_RETURN' });
     } catch (error) {
       await db().query('rollback');
       throw error;

@@ -170,8 +170,8 @@ const PRESERVED_TABLES = [
 ];
 
 /**
- * 本体節（G-1 Task 2）が足す object。public の表は `public.` を外した名前で持つ（regclass の文字は search_path で変わるため）。
- * Task 14 が最終 SQL の完全な期待集合に置き換える
+ * 本体節（G-1 Task 2〜14）が足す object の最終の期待集合。public の表は `public.` を外した名前で持つ（regclass の文字は search_path で変わるため）。
+ * 移行の末尾の確かめ（G1_FINAL_ASSERT の g1_final_objects）が同じ集合を catalog で確かめる
  */
 const G1_BODY_RELATIONS = [
   'private.group_g_operations', 'private.group_g_operations_pkey', 'private.group_g_operations_operation_request_key_key',
@@ -243,7 +243,12 @@ const G1_BODY_FUNCTIONS = [
   'private.admin_record_return_fee_payment(uuid,uuid,text,boolean)',
   'private.admin_release_return_exchange(uuid,uuid)',
   'private.record_delivery_read_result(uuid,integer,uuid,jsonb)',
+  // Task 14: 仕上がりの表の停止のトリガー関数と、書き手の閉じた一覧
+  'private.reject_group_g_manual_completion()',
+  'private.group_g_writer_allowlist()',
 ];
+/** 本体節（Task 14）が消す関数。CASCADE せずに消し、後で不在を確かめる */
+const G1_BODY_DROPPED_FUNCTIONS = ['private.backfill_legacy_fulfillments()', 'private.link_legacy_shipped_emails()'];
 const G1_BODY_TRIGGERS = [
   ...['order_item_allocation_events', 'order_item_state_events', 'private.group_g_operations'].flatMap((table) => {
     const prefix = table.replace(/^private\./, '');
@@ -254,6 +259,7 @@ const G1_BODY_TRIGGERS = [
   'order_item_allocation_events|group_g_allocation_bounds',
   'stock_movements|group_g_stock_movement_consistency',
   'orders|orders_paid_at_once',
+  'order_item_completions|order_item_completions_disabled',
 ];
 const G1_BODY_CONSTRAINTS = [
   ...['pkey', 'operation_request_key_key', 'exception_id_fkey', 'fingerprint_check', 'exception_check', 'review_hold_check']
@@ -949,7 +955,7 @@ WHERE id = (SELECT pg_catalog.min(id) FROM pg_temp.group_g_cleanup_webhook_ids);
 
     // 定義: 本体が足した object は決まった一覧だけで、前からあるトリガー・制約・関数・ACL はそのまま
     // （台帳の理由の CHECK だけは allocation_release を足して作り直す）。
-    // Task 14 がここを最終 SQL の完全な期待集合（新 4 表・関数など）との比較に置き換える
+    // 最終 SQL の完全な期待集合（新 4 表・トリガー・制約・関数・消した関数）との比較（Task 14）
     const catalog = await catalogSnapshot(db());
     const split = <T extends Row>(rows: T[], keyOf: (row: T) => string, added: string[], changed: string[] = []) => ({
       kept: rows.filter((row) => !added.includes(keyOf(row)) && !changed.includes(keyOf(row))),
@@ -995,10 +1001,21 @@ WHERE id = (SELECT pg_catalog.min(id) FROM pg_temp.group_g_cleanup_webhook_ids);
       'admin_inspect_return(uuid,uuid,uuid,jsonb)', 'private.refresh_order_return_status(uuid)',
       'admin_record_return_fee_payment(uuid,uuid,text,boolean)', 'admin_release_return_exchange(uuid,uuid)',
       'record_delivery_read_result(uuid,integer,uuid,jsonb)',
-      'private.apply_tracking_status(uuid,text,timestamp with time zone,timestamp with time zone)'];
+      'private.apply_tracking_status(uuid,text,timestamp with time zone,timestamp with time zone)',
+      // Task 14: 旧の発送4関数・手動の仕上がり2関数は、固定の拒否の入口に置き換えた
+      'admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb)', 'admin_cancel_fulfillment(uuid,uuid,uuid)',
+      'admin_update_fulfillment_tracking(uuid,uuid,uuid,uuid,text,text,boolean)',
+      'admin_mark_fulfillment_delivered(uuid,uuid,uuid,uuid,date,boolean)',
+      'admin_record_completion(uuid,uuid,uuid,jsonb)', 'admin_cancel_completion(uuid,uuid,uuid)'];
     const functions = split(catalog.functions, (row) => row.signature as string, G1_BODY_FUNCTIONS, changedFunctions);
-    expect(functions.kept).toEqual(split(before.catalog.functions, (row) => row.signature as string, [], changedFunctions).kept);
+    expect(functions.kept).toEqual(split(before.catalog.functions, (row) => row.signature as string, [],
+      [...changedFunctions, ...G1_BODY_DROPPED_FUNCTIONS]).kept);
     expect(functions.added).toEqual([...G1_BODY_FUNCTIONS].sort());
+    // 消した2本は前にはあり、後には無い
+    for (const signature of G1_BODY_DROPPED_FUNCTIONS) {
+      expect({ signature, before: before.catalog.functions.some((row) => row.signature === signature) }).toEqual({ signature, before: true });
+      expect({ signature, after: catalog.functions.some((row) => row.signature === signature) }).toEqual({ signature, after: false });
+    }
     expect((await db().query(`select p.prosecdef,p.proconfig,p.prosrc from pg_proc p
       where p.oid='public.apply_stock_movement()'::regprocedure`)).rows[0]).toEqual({
       prosecdef: false, proconfig: ['search_path=""'], prosrc: `

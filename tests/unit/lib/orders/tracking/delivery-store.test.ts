@@ -24,6 +24,7 @@ import type {
   TrackingClaim,
   UpdateTrackingInput,
 } from '@/lib/orders/tracking/delivery-types';
+import { LegacyFulfillmentDisabledError } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 
 jest.mock('server-only', () => ({}), { virtual: true });
 
@@ -107,31 +108,33 @@ const ATTENTION_ROW = {
   fulfillment_number: 1, kind: 'delivery_failure', opened_at: AT, status: 'failure',
 };
 
-describe('管理操作と読み出しの snake_case 契約', () => {
-  test('別の注文の番号をRPCへ混ぜない', async () => {
+// G-1 Task 14: 伝票番号の訂正と手動の配達済みは止めた。RPC を1回も呼ばず、固定の記号と SQLSTATE 55000 で断る
+describe('止めた管理操作（G-1）', () => {
+  const MANUAL = {
+    orderId: ORDER_ID, fulfillmentId: FULFILLMENT_ID, actorId: ACTOR_ID, requestKey: REQUEST_KEY,
+    deliveredOn: '2026-10-21', notifyCustomer: true,
+  };
+  test.each([
+    ['番号の直し', (store: DeliveryStore) => updateFulfillmentTracking(store, INPUT)],
+    ['手で配達済み', (store: DeliveryStore) => markFulfillmentDelivered(store, MANUAL)],
+    ['別の注文の番号', (store: DeliveryStore) => updateFulfillmentTracking(store, { ...INPUT, orderId: OTHER_ORDER_ID })],
+  ] as const)('%sは RPC を呼ばずに LEGACY_FULFILLMENT_DISABLED を投げる', async (_name, call) => {
     const { store, rpc } = storeWith([{ tracking_change_id: CHANGE_ID, tracking_version: 2, replayed: false }]);
-    await expect(updateFulfillmentTracking(store, INPUT)).resolves.toEqual({
-      trackingChangeId: CHANGE_ID, trackingVersion: 2, replayed: false,
-    });
-    const exactSnakeCaseInput = {
-      _order_id: ORDER_ID, _fulfillment_id: FULFILLMENT_ID, _actor_id: ACTOR_ID, _request_key: REQUEST_KEY,
-      _shipping_carrier: 'sagawa', _tracking_number: 'New-123', _notify_customer: false,
-    };
-    expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith('admin_update_fulfillment_tracking', exactSnakeCaseInput);
-    expect(rpc.mock.calls[0][1]._order_id).not.toBe(OTHER_ORDER_ID);
+    const error: unknown = await call(store).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(LegacyFulfillmentDisabledError);
+    expect(error).toMatchObject({ code: 'LEGACY_FULFILLMENT_DISABLED', sqlstate: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' });
+    expect(error).not.toBeInstanceOf(DeliveryOperationError);
+    expect(error).not.toBeInstanceOf(DeliveryStoreError);
+    expect(rpc).not.toHaveBeenCalled();
   });
+});
 
-  test('手で配達済みは日付と通知を渡し、event の1行を読む', async () => {
-    const { store, rpc } = storeWith([{ event_id: EVENT_ID, delivered_at: AT, replayed: true }]);
-    await expect(markFulfillmentDelivered(store, {
-      orderId: ORDER_ID, fulfillmentId: FULFILLMENT_ID, actorId: ACTOR_ID, requestKey: REQUEST_KEY,
-      deliveredOn: '2026-10-21', notifyCustomer: true,
-    })).resolves.toEqual({ eventId: EVENT_ID, deliveredAt: AT, replayed: true });
-    expect(rpc).toHaveBeenCalledWith('admin_mark_fulfillment_delivered', {
-      _order_id: ORDER_ID, _fulfillment_id: FULFILLMENT_ID, _actor_id: ACTOR_ID,
-      _request_key: REQUEST_KEY, _delivered_on: '2026-10-21', _notify_customer: true,
-    });
+describe('管理操作と読み出しの snake_case 契約', () => {
+  test('要対応の解決は自分の番号と actor だけを RPC へ渡す', async () => {
+    const { store, rpc } = storeWith([{ outcome: 'resolved' }]);
+    await resolveDeliveryAttention(store, { attentionId: ATTENTION_ID, actorId: ACTOR_ID });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('admin_resolve_delivery_attention', { _attention_id: ATTENTION_ID, _actor_id: ACTOR_ID });
   });
 
   test('設定変更は backfilled_count を読む', async () => {
@@ -336,22 +339,24 @@ const REFUSALS = [
   ['DELIVERY_ATTENTION_NOT_FOUND', 'P0002'],
 ] as const;
 
+// 断りの訳し方は全部の RPC で共通（callRpc）。止めた訂正の代わりに、今も RPC を呼ぶ要対応の解決で確かめる
+const RESOLVE_INPUT = { attentionId: ATTENTION_ID, actorId: ACTOR_ID };
 describe('DB の断りと障害', () => {
   test('DBの断りとDB障害と壊れた答えを分ける', async () => {
     const refused = storeWith(null, { message: 'DELIVERY_TRACKING_UNCHANGED', code: '22023' });
-    const refusal: unknown = await updateFulfillmentTracking(refused.store, INPUT).catch((error: unknown) => error);
+    const refusal: unknown = await resolveDeliveryAttention(refused.store, RESOLVE_INPUT).catch((error: unknown) => error);
     expect(refusal).toBeInstanceOf(DeliveryOperationError);
     expect(refusal).toMatchObject({ code: 'DELIVERY_TRACKING_UNCHANGED' });
     const unavailable = storeWith(null, { message: 'database unavailable', code: '08006' });
-    await expectStoreError(updateFulfillmentTracking(unavailable.store, INPUT), 'admin_update_fulfillment_tracking', '08006');
-    const broken = storeWith([{ tracking_change_id: CHANGE_ID }]);
-    const brokenResponse: unknown = await updateFulfillmentTracking(broken.store, INPUT).catch((error: unknown) => error);
+    await expectStoreError(resolveDeliveryAttention(unavailable.store, RESOLVE_INPUT), 'admin_resolve_delivery_attention', '08006');
+    const broken = storeWith([{}]);
+    const brokenResponse: unknown = await resolveDeliveryAttention(broken.store, RESOLVE_INPUT).catch((error: unknown) => error);
     expect(brokenResponse).toBeInstanceOf(DeliveryStoreError);
   });
 
   test.each(REFUSALS)('DB の %s（%s）は操作の断り', async (code, sqlstate) => {
     const { store } = storeWith(null, { message: `error: ${code} (detail)`, code: sqlstate });
-    const error: unknown = await updateFulfillmentTracking(store, INPUT).catch((caught: unknown) => caught);
+    const error: unknown = await resolveDeliveryAttention(store, RESOLVE_INPUT).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(DeliveryOperationError);
     expect(error).toMatchObject({ code });
   });
@@ -365,7 +370,7 @@ describe('DB の断りと障害', () => {
 
   test('作成の再送の FULFILLMENT_REQUEST_MISMATCH も操作拒否にそろえる', async () => {
     const { store } = storeWith(null, { message: 'FULFILLMENT_REQUEST_MISMATCH', code: '22023' });
-    const error: unknown = await updateFulfillmentTracking(store, INPUT).catch((caught: unknown) => caught);
+    const error: unknown = await resolveDeliveryAttention(store, RESOLVE_INPUT).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(DeliveryOperationError);
     expect(error).toMatchObject({ code: 'DELIVERY_REQUEST_MISMATCH' });
   });
@@ -373,17 +378,19 @@ describe('DB の断りと障害', () => {
   test.each([
     ['SUPERSEDE_NOT_ALLOWED', '22023'], ['DELIVERY_RECORD_APPEND_ONLY', '55000'],
     ['DELIVERY_RECORD_IMMUTABLE', '55000'], ['UNKNOWN_DB_ERROR', 'XX000'],
+    // DB の旧の関数の停止の記号は、画面用の断りへ訳さない（窓口は DB を呼ぶ前に 410 を返す）
+    ['LEGACY_FULFILLMENT_DISABLED', '55000'],
   ] as const)(
     '%s（%s）は画面用の断りへ訳さず StoreError', async (message, code) => {
       const { store } = storeWith(null, { message, code });
-      await expectStoreError(updateFulfillmentTracking(store, INPUT), 'admin_update_fulfillment_tracking', code);
+      await expectStoreError(resolveDeliveryAttention(store, RESOLVE_INPUT), 'admin_resolve_delivery_attention', code);
     },
   );
 
   test('StoreError の表の文には DB の本文を出さない', async () => {
     const marker = 'db-internal-diagnostic-marker';
     const { store } = storeWith(null, { message: marker, code: '23514' });
-    const error = await updateFulfillmentTracking(store, INPUT).catch((caught: unknown) => caught);
+    const error = await resolveDeliveryAttention(store, RESOLVE_INPUT).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(DeliveryStoreError);
     expect(String(error)).not.toContain(marker);
   });
@@ -391,11 +398,6 @@ describe('DB の断りと障害', () => {
 
 type StoreCall = (store: DeliveryStore) => Promise<unknown>;
 const SINGLE_ROW_CALLS: ReadonlyArray<readonly [string, StoreCall]> = [
-  ['admin_update_fulfillment_tracking', (store) => updateFulfillmentTracking(store, INPUT)],
-  ['admin_mark_fulfillment_delivered', (store) => markFulfillmentDelivered(store, {
-    orderId: ORDER_ID, fulfillmentId: FULFILLMENT_ID, actorId: ACTOR_ID, requestKey: REQUEST_KEY,
-    deliveredOn: '2026-10-21', notifyCustomer: true,
-  })],
   ['admin_set_delivery_tracking', (store) => setDeliveryTracking(store, { enabled: false, actorId: ACTOR_ID })],
   ['admin_resolve_delivery_attention', (store) => resolveDeliveryAttention(store, { attentionId: ATTENTION_ID, actorId: ACTOR_ID })],
   ['get_delivery_tracking_settings', (store) => getDeliveryTrackingSettings(store)],
@@ -425,22 +427,6 @@ describe('壊れた返却値を成功にしない', () => {
       const { store } = storeWith(value);
       await expectStoreError(call(store), operation);
     }
-  });
-
-  test.each([
-    ['tracking_change_id', null], ['tracking_version', 0], ['tracking_version', -1],
-    ['tracking_version', 1.5], ['replayed', 'false'],
-  ])('番号の直しの %s=%s は StoreError', async (key, value) => {
-    const { store } = storeWith([{ tracking_change_id: CHANGE_ID, tracking_version: 2, replayed: false, [key]: value }]);
-    await expectStoreError(updateFulfillmentTracking(store, INPUT), 'admin_update_fulfillment_tracking');
-  });
-
-  test('手で配達済みの不正時刻は StoreError', async () => {
-    const { store } = storeWith([{ event_id: EVENT_ID, delivered_at: 'invalid-time', replayed: false }]);
-    await expectStoreError(markFulfillmentDelivered(store, {
-      orderId: ORDER_ID, fulfillmentId: FULFILLMENT_ID, actorId: ACTOR_ID, requestKey: REQUEST_KEY,
-      deliveredOn: '2026-10-21', notifyCustomer: true,
-    }), 'admin_mark_fulfillment_delivered');
   });
 
   test('設定の負の件数と不正時刻・要対応の未知の outcome を拒む', async () => {

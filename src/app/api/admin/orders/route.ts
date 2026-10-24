@@ -532,10 +532,8 @@ export async function GET(request: Request) {
         };
       });
 
-      // 商品数は交換の品の行を外す。発送・受注生産の数（下の inProductionTotal・readyTotal）には交換の品も入る（本計画 P9）
+      // 商品数は交換の品の行を外す（本計画 P9）
       const totalQuantity = items.filter((item) => item.lineKind !== 'exchange').reduce((sum, item) => sum + item.quantity, 0);
-      const inProductionTotal = items.reduce((sum, item) => sum + item.inProduction, 0);
-      const readyTotal = items.reduce((sum, item) => sum + item.readyUnshipped, 0);
       // 要約が無い注文（来ないはずだが型の上ではありうる）は、受け取った額が無く、手続き中の返金も無い物として扱う
       const refundSummary = refundSummaries.get(order.id);
       const hasOpenRefund = refundSummary?.hasOpenRefund ?? false;
@@ -612,13 +610,9 @@ export async function GET(request: Request) {
         shippedAt: order.shipped_at,
         shippingCarrier: order.shipping_carrier,
         trackingNumber: order.tracking_number,
-        // 発送準備中か受注生産中の数があれば発送の画面を開ける（受注生産中の品は、画面の中で仕上がりを記録してから送る）
-        canShip:
-          order.status === 'paid'
-          && readyTotal + inProductionTotal > 0
-          && missingShippingFields.length === 0
-          && !shipBlockedReason,
-        canRecordCompletion: order.status === 'paid' && inProductionTotal > 0,
+        // G-1 Task 14: 旧の発送と手動の仕上がりは止めた（G-3 の新しい発送票へ移る）。入力にかかわらず false
+        canShip: false,
+        canRecordCompletion: false,
         missingShippingFields,
         shipBlockedReason,
         needsReview: order.review_reason !== null && order.reviewed_at === null,

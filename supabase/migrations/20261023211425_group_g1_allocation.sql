@@ -5288,6 +5288,9 @@ $g1_refund_assert$;
 
 -- Ownership is read without any lock first, so a stranger's call never waits on (or locks) somebody else's order.
 -- _lock=false stays a plain read. Task 10: _lock=true requires the caller's pre-acquired closure.
+-- 前提（Task 14）: _lock=true の呼び手は共通の押さえ（advisory）と、この注文の閉包（注文 → 明細 → 割当 → 返品 … 取消の申し込み）の
+-- 行の鍵をすでに持っている。ここでは advisory の有無しか確かめず、閉包は確かめない。呼び手の一覧は書き手の一覧
+-- （private.group_g_writer_allowlist）と group_g1_writer_inventory の構造の試験で固定する。
 CREATE OR REPLACE FUNCTION private.customer_order_for_request(_order_id uuid, _customer_id uuid, _lock boolean)
 RETURNS public.orders
 LANGUAGE plpgsql
@@ -5337,6 +5340,8 @@ REVOKE ALL ON FUNCTION private.customer_order_for_request(uuid,uuid,boolean) FRO
 
 -- The request row is read for update only after the caller locked the whole order closure under the advisory
 -- (the request rows come last in that order). It never goes back to the order row.
+-- 前提（Task 14）: 呼び手は共通の押さえ（advisory）と、申し込みの注文の閉包の行の鍵をすでに持っている。ここでは advisory の
+-- 有無しか確かめず、閉包は確かめない。呼び手は group_g1_writer_inventory の構造の試験で固定する。
 CREATE OR REPLACE FUNCTION private.lock_order_cancel_request(_cancel_request_id uuid)
 RETURNS public.order_cancel_requests
 LANGUAGE plpgsql SET search_path = '' AS $$
@@ -8232,6 +8237,8 @@ BEGIN
   IF v_read_at IS NULL THEN
     RAISE EXCEPTION 'DELIVERY_ARGUMENT_INVALID' USING ERRCODE = '22023';
   END IF;
+  -- provider の時刻は読んだ時刻より後にしない（時差の読み違いで未来の出来事ができ、その後の読み直しが全部「古い」扱いになるのを防ぐ）。
+  -- 時刻が無い（NULL）物は NULL のまま（LEAST は NULL を飛ばすので、そのままだと読んだ時刻に変わってしまう）
   IF v_happened IS NOT NULL THEN
     v_happened := LEAST(v_happened, v_read_at);
   END IF;
@@ -8241,6 +8248,8 @@ BEGIN
   v_event_at := COALESCE(v_happened, v_read_at);
   v_provider_status := NULLIF(pg_catalog.left(_result ->> 'provider_status', 100), '');
   v_provider_sub := NULLIF(pg_catalog.left(_result ->> 'provider_sub_status', 100), '');
+  -- 形の正しくない error_code は、登録の結果・停止の結果のように断らず空にする。
+  -- error_code は診断のための記号で、17TRACK 側の癖で状況の記録まで止めないため
   v_error := _result ->> 'error_code';
   IF v_error IS NOT NULL AND v_error !~ '^[a-z0-9_-]{1,64}$' THEN
     v_error := NULL;
@@ -8250,7 +8259,7 @@ BEGIN
   SELECT f.order_id INTO v_order_id FROM public.order_fulfillments AS f WHERE f.id = _fulfillment_id;
   PERFORM pg_catalog.pg_advisory_xact_lock(190521, 1);
 
-  -- Row 1: tracking off, unknown fulfillment, other version, cancelled, other token or expired lease write nothing.
+  -- 行1: 設定OFF・版違い・取消・token違い・lease失効 は何も書かない（無い発送も同じ）
   SELECT s.delivery_tracking_enabled INTO v_enabled FROM public.shop_settings AS s WHERE s.id = 1 FOR SHARE;
   IF NOT COALESCE(v_enabled, false) THEN
     RETURN QUERY SELECT false, false, false;
@@ -8304,7 +8313,7 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Row 2: already delivered. Keep the status; only stop the registration as delivered.
+  -- 行2: すでに配達済み。状況は動かさず、登録だけ delivered で止める
   IF v_f.delivered_at IS NOT NULL THEN
     UPDATE private.fulfillment_tracking_registrations AS r
     SET state = 'stopped',
@@ -8322,7 +8331,7 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Row 3: 17TRACK has no registration yet. Back to pending and register now (ever_registered/registered_at kept).
+  -- 行3: 17TRACK がまだ登録を持っていない。登録待ちへ戻し、今すぐ登録し直す（ever_registered・registered_at は保つ）
   IF v_outcome = 'not_registered' THEN
     UPDATE private.fulfillment_tracking_registrations AS r
     SET state = 'pending',
@@ -8337,7 +8346,7 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Row 3a: invalid number. Same classification as registration; open tracking_not_found at once.
+  -- 行3a: 番号が正しくない。登録時と同じ分類で、直ちに tracking_not_found を開く
   IF v_outcome = 'invalid_number' THEN
     UPDATE private.fulfillment_tracking_registrations AS r
     SET state = 'failed',
@@ -8354,7 +8363,7 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Row 4: transient/account failure. Keep the status; back off.
+  -- 行4: 一時の失敗・口座の失敗。前の状況を保つ。read_attempts は一時の失敗だけ加算（5分/15分/1時間/6時間）。口座は6時間
   IF v_outcome IN ('transient', 'account') THEN
     v_attempts := CASE WHEN v_outcome = 'transient' THEN v_r.read_attempts + 1 ELSE v_r.read_attempts END;
     UPDATE private.fulfillment_tracking_registrations AS r
@@ -8375,11 +8384,13 @@ BEGIN
     RETURN;
   END IF;
 
+  -- ここから成功した読み直し（ok・not_found）。借りている間に合図が進んでいたら次は今、そうでなければ6時間後
   v_advanced := v_r.signal_revision > COALESCE(v_r.claimed_signal_revision, 0);
   v_next := pg_catalog.now() + CASE WHEN v_advanced THEN interval '0 seconds' ELSE interval '6 hours' END;
 
   IF v_outcome = 'ok' THEN
-    -- Row 7: older than the newest tracking event of the same version changes neither status nor events.
+    -- 行7: 同じ版の tracking の出来事のうち一番新しい時刻より前なら、状況もイベントも変えない（発送・直しの時刻とは比べない）。
+    -- 状況の無い ok（行6）も同じ比べ方で、古い読み直しの記号で新しい記号を上書きしない
     SELECT pg_catalog.max(e.happened_at) INTO v_newest
     FROM public.order_fulfillment_events AS e
     WHERE e.fulfillment_id = _fulfillment_id
@@ -8388,22 +8399,23 @@ BEGIN
     v_old := v_newest IS NOT NULL AND v_event_at < v_newest;
 
     IF v_status IS NULL THEN
-      -- Row 6: unknown status. 17TRACK has information, so close tracking_not_found.
+      -- 行6: 未知の状態。17TRACK は情報を持っているので、荷物が見つからない要対応は閉じる。
+      -- 状況・出来事・メールは変えず、provider の記号と読んだ時刻だけを下で書く
       PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_not_found', false);
     ELSIF NOT v_old THEN
       IF v_status = v_f.delivery_status THEN
-        -- Row 8: same status.
+        -- 行8: 同じ状況。出来事は足さず、情報が出たので荷物が見つからない要対応だけ閉じる
         PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_not_found', false);
       ELSE
-        -- Rows 9/10: a different status adds one event (UNIQUE on version, status and time).
+        -- 行9/10: 違う状況。出来事を1行（同じ版・状況・時刻は UNIQUE で増えない）。状況は借りた順の結果を受ける
         INSERT INTO public.order_fulfillment_events (fulfillment_id, tracking_version, status, happened_at, source, provider_sub_status)
         VALUES (_fulfillment_id, _tracking_version, v_status, v_event_at, 'tracking', v_provider_sub)
         ON CONFLICT ON CONSTRAINT order_fulfillment_events_once_key DO NOTHING;
         PERFORM private.set_delivery_attention(_fulfillment_id, 'tracking_not_found', false);
 
         IF v_status = 'delivered' THEN
-          -- Row 10: delivered at no earlier than shipped. Stop the registration, close all attention,
-          -- one delivered email when notifying. The item states move with it in the same transaction.
+          -- 行10: 届いた時刻は発送した時刻より前にしない。登録は delivered で止め、要対応は全部閉じ、通知オンなら配達済みを1通
+          -- (G-1: the item states move with it in the same transaction.)
           v_delivered_at := GREATEST(COALESCE(v_delivered, v_event_at), v_f.shipped_at);
           v_request_key := pg_catalog.md5('delivery:' || _fulfillment_id::text || ':' || _tracking_version::text || ':' || 'delivered')::uuid;
           -- A recorded reflection of the same version and event adds nothing.
@@ -8452,7 +8464,7 @@ BEGIN
         PERFORM private.apply_tracking_status(_fulfillment_id, v_status, v_event_at, NULL);
         v_changed := true;
 
-        -- P19: only on a status change, open that status's attention and close the others.
+        -- P19: 状況が変わった時だけ、その状況の要対応を開き、ほかの状況の要対応を閉じる
         IF v_status = 'failure' THEN
           PERFORM private.set_delivery_attention(_fulfillment_id, 'delivery_failure', true);
         ELSE
@@ -8464,14 +8476,18 @@ BEGIN
           PERFORM private.set_delivery_attention(_fulfillment_id, 'attempted_delivery', false);
         END IF;
 
-        -- Row 11: out for delivery sends one email while notifying and not yet delivered.
+        -- 行11: 配達中は、通知オンでまだ配達済みでない時だけ1通（補助が条件を確かめる）
         IF v_status = 'out_for_delivery' THEN
           PERFORM private.enqueue_delivery_email(_fulfillment_id, _tracking_version, 'out_for_delivery');
         END IF;
       END IF;
     END IF;
   ELSIF v_outcome = 'not_found' THEN
-    -- Row 5: keep the status. Open tracking_not_found 72 hours after registration, only on a new condition (P19).
+    -- 行5: 前の状況を保つ。登録から72時間たっても情報が無ければ要対応（登録前の作成時刻からは数えない）。
+    -- 開くのは「新しい条件」の時だけ（P19）。次のどちらかの時:
+    --   ・前の読み直しで情報があった（provider_status が残っている）＝情報あり→なしに変わった
+    --   ・この登録の期間に、開いたまま、または店が手で閉じた「荷物が見つからない」が無い＝72時間を初めて越えた
+    -- 店が手で閉じた後に、同じ not_found を6時間ごとに読んでも開き直さない
     IF v_r.registered_at IS NOT NULL AND pg_catalog.now() >= v_r.registered_at + interval '72 hours' THEN
       IF v_r.provider_status IS NOT NULL
          OR NOT EXISTS (
@@ -8487,12 +8503,14 @@ BEGIN
     END IF;
   END IF;
 
-  -- Row 12: a STOPPED signal consumed by a successful read of an undelivered version stops as provider_stopped.
+  -- 行12: STOPPED の合図を持つ成功した読み直しの後で未配達なら、provider_stopped で止めて tracking_stalled。
+  -- 合図の消費は読み直しを借りた時の番号まで（借りている間に新しい合図が来ていたら、次の読み直しで止める）
   IF NOT v_old AND v_r.stop_signaled AND NOT v_advanced THEN
     v_stop := true;
   END IF;
 
   UPDATE private.fulfillment_tracking_registrations AS r
+  -- provider の記号は「17TRACK に情報があるか」の目印にもなる。ok は（古くなければ）書き、not_found は空にする
   SET provider_status = CASE
         WHEN v_outcome = 'ok' AND NOT v_old THEN v_provider_status
         WHEN v_outcome = 'not_found' THEN NULL
@@ -8667,6 +8685,238 @@ BEGIN
   END IF;
 END
 $g1_model_assert$;
+
+-- Task 14: 旧の発送4関数と手動の仕上がり2関数の停止、旧 helper 2本の削除、台帳の押さえの確かめ、書き手の一覧。
+-- 旧の発送・発送取消・伝票番号の訂正・手動の配達済みは G-3 の新しい発送票まで使えない（G-3 でも旧の関数は再開しない）。
+-- 手動の仕上がりは終わり（品物は在庫の入荷から FIFO で自動に割り当てる）。旧の本体は private へ移して残さず、
+-- service_role だけが呼べる公開 INVOKER の固定の拒否の入口だけを残す（引数の確かめ・lock・参照・再送の判定より先に断る）。
+-- 戻り型・引数名は最後の定義（旧4本 20261021221140_delivery_tracking_admin.sql:223/438/545/702、
+-- 仕上がり2本 20261010120303_order_fulfillments.sql:354/450）のまま。どれも設定の行（shop_settings）にも触れない。
+
+-- 1. 旧の発送4関数
+CREATE OR REPLACE FUNCTION public.admin_create_fulfillment(
+  _order_id uuid,
+  _actor_id uuid,
+  _request_key uuid,
+  _shipping_carrier text,
+  _tracking_number text,
+  _notify_customer boolean,
+  _lines jsonb
+)
+RETURNS TABLE (
+  fulfillment_id uuid,
+  number integer,
+  completes_order boolean,
+  order_status public.order_status,
+  replayed boolean
+)
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+BEGIN
+  RAISE EXCEPTION 'LEGACY_FULFILLMENT_DISABLED' USING ERRCODE = '55000';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_cancel_fulfillment(_order_id uuid, _fulfillment_id uuid, _actor_id uuid)
+RETURNS TABLE (outcome text, order_status public.order_status)
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+BEGIN
+  RAISE EXCEPTION 'LEGACY_FULFILLMENT_DISABLED' USING ERRCODE = '55000';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_update_fulfillment_tracking(
+  _order_id uuid,
+  _fulfillment_id uuid,
+  _actor_id uuid,
+  _request_key uuid,
+  _shipping_carrier text,
+  _tracking_number text,
+  _notify_customer boolean
+)
+RETURNS TABLE (tracking_change_id uuid, tracking_version integer, replayed boolean)
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+BEGIN
+  RAISE EXCEPTION 'LEGACY_FULFILLMENT_DISABLED' USING ERRCODE = '55000';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_mark_fulfillment_delivered(
+  _order_id uuid,
+  _fulfillment_id uuid,
+  _actor_id uuid,
+  _request_key uuid,
+  _delivered_on date,
+  _notify_customer boolean
+)
+RETURNS TABLE (event_id uuid, delivered_at timestamptz, replayed boolean)
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+BEGIN
+  RAISE EXCEPTION 'LEGACY_FULFILLMENT_DISABLED' USING ERRCODE = '55000';
+END;
+$$;
+
+-- 2. 手動の仕上がり2関数
+CREATE OR REPLACE FUNCTION public.admin_record_completion(
+  _order_id uuid,
+  _actor_id uuid,
+  _request_key uuid,
+  _lines jsonb
+)
+RETURNS TABLE (completion_id uuid, order_item_id uuid, quantity integer, replayed boolean)
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+BEGIN
+  RAISE EXCEPTION 'MANUAL_COMPLETION_DISABLED' USING ERRCODE = '55000';
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_cancel_completion(_order_id uuid, _completion_id uuid, _actor_id uuid)
+RETURNS TABLE (outcome text)
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+BEGIN
+  RAISE EXCEPTION 'MANUAL_COMPLETION_DISABLED' USING ERRCODE = '55000';
+END;
+$$;
+
+ALTER FUNCTION public.admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb) OWNER TO postgres;
+ALTER FUNCTION public.admin_cancel_fulfillment(uuid,uuid,uuid) OWNER TO postgres;
+ALTER FUNCTION public.admin_update_fulfillment_tracking(uuid,uuid,uuid,uuid,text,text,boolean) OWNER TO postgres;
+ALTER FUNCTION public.admin_mark_fulfillment_delivered(uuid,uuid,uuid,uuid,date,boolean) OWNER TO postgres;
+ALTER FUNCTION public.admin_record_completion(uuid,uuid,uuid,jsonb) OWNER TO postgres;
+ALTER FUNCTION public.admin_cancel_completion(uuid,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.admin_cancel_fulfillment(uuid,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.admin_update_fulfillment_tracking(uuid,uuid,uuid,uuid,text,text,boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.admin_mark_fulfillment_delivered(uuid,uuid,uuid,uuid,date,boolean) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.admin_record_completion(uuid,uuid,uuid,jsonb) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.admin_cancel_completion(uuid,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_cancel_fulfillment(uuid,uuid,uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_update_fulfillment_tracking(uuid,uuid,uuid,uuid,text,text,boolean) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_mark_fulfillment_delivered(uuid,uuid,uuid,uuid,date,boolean) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_record_completion(uuid,uuid,uuid,jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_cancel_completion(uuid,uuid,uuid) TO service_role;
+
+-- 3. 仕上がりの表への書込みを止める。service_role を含めて書込みの権限を外し、所有者の通常の SQL による
+--    新しい INSERT・UPDATE もトリガーで断る（削除は既存の no_delete トリガーが断る。G-1 の片付けの節は別）
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.order_item_completions FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION private.reject_group_g_manual_completion() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  RAISE EXCEPTION 'MANUAL_COMPLETION_DISABLED' USING ERRCODE = '55000';
+END;
+$$;
+ALTER FUNCTION private.reject_group_g_manual_completion() OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.reject_group_g_manual_completion() FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TRIGGER order_item_completions_disabled BEFORE INSERT OR UPDATE ON public.order_item_completions
+  FOR EACH ROW EXECUTE FUNCTION private.reject_group_g_manual_completion();
+
+-- 4. 旧の写しの helper 2本は消す（CASCADE しない。呼び手は過去の移行の一度きりの SELECT だけで、依存は無い）
+DROP FUNCTION private.backfill_legacy_fulfillments();
+DROP FUNCTION private.link_legacy_shipped_emails();
+
+-- 5. 台帳のトリガーの本体も共通の押さえ（advisory 190521,1）を持たない書込みを断る（FIFO と同じ pg_locks の確かめ）。
+--    書き手は全部この押さえの下へ移ったので、押さえの無い直接の INSERT は在庫を動かす前に止まる。
+--    行の鍵を後から取らず、FIFO も呼ばない（呼び手が先に取る）
+CREATE OR REPLACE FUNCTION private.apply_group_g_stock_movement(_variant_id bigint, _delta integer) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
+  END IF;
+  UPDATE public.item_variants AS v
+  SET stock_quantity = v.stock_quantity + _delta, updated_at = pg_catalog.now()
+  WHERE v.id = _variant_id;
+END;
+$$;
+ALTER FUNCTION private.apply_group_g_stock_movement(bigint,integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.apply_group_g_stock_movement(bigint,integer) FROM PUBLIC, anon, authenticated, service_role;
+
+-- 6. 書き手の閉じた一覧。stock_movements・order_fulfillments・order_item_completions・割当の3表・操作の受付への
+--    INSERT/UPDATE/DELETE/MERGE/TRUNCATE と item_variants.stock_quantity の UPDATE を持つ関数は、この一覧の中だけ
+--    （group_g1_writer_inventory が pg_proc.prosrc を走査して確かめる）。全体の押さえの監査のため、書かない入口
+--    （注文の関連付け・閉包を前提にする helper）も含める。設計の53本に、Task 7/8 で足した内部の書き手3本
+--    （record_group_g_payment_exception_row・record_group_g_refund_result・release_group_g_payment_holds）を足した56本。
+--    呼べるのは postgres（最後の確かめと DB の試験）だけ
+CREATE FUNCTION private.group_g_writer_allowlist() RETURNS pg_catalog.regprocedure[]
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT ARRAY[
+    'private.apply_group_g_stock_movement(bigint,integer)',
+    'private.allocate_group_g_fifo(bigint[],uuid,uuid)',
+    'private.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer)',
+    'private.record_group_g_item_state_changes(jsonb,uuid[],uuid,integer,text,uuid)',
+    'private.ensure_group_g_payment_review_hold(uuid,text,text,text,uuid)',
+    'private.release_group_g_payment_review_holds(uuid,uuid)',
+    'private.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)',
+    'private.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text)',
+    'private.mark_order_awaiting_payment(uuid,text,text)',
+    'private.release_stock_for_unpaid_order(uuid,public.order_status,public.order_status,text,uuid,text,text,text,boolean)',
+    'private.record_cancelled_order_paid_amount(uuid,text,integer)',
+    'private.admin_cancel_failed_order(uuid,uuid,text,text)',
+    'private.link_guest_orders(uuid,text)',
+    'private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)',
+    'private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)',
+    'private.apply_order_refund_state(uuid)',
+    'private.apply_return_refund_outcome(uuid,text)',
+    'private.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text)',
+    'private.mark_order_refund_error(uuid,text,boolean)',
+    'private.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)',
+    'private.mark_order_reviewed(uuid,uuid)',
+    'private.record_payment_exception(text,text,text,text,text,uuid,uuid)',
+    'private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)',
+    'private.resolve_payment_exception_by_system(uuid,text)',
+    'private.customer_order_for_request(uuid,uuid,boolean)',
+    'private.customer_request_cancel(uuid,uuid,uuid,jsonb,text)',
+    'private.lock_order_cancel_request(uuid)',
+    'private.admin_decline_cancel_request(uuid,uuid,text,text)',
+    'private.admin_close_cancel_request(uuid,uuid)',
+    'private.admin_resolve_cancel_request(uuid,uuid,uuid,boolean)',
+    'private.lock_order_return(uuid)',
+    'private.admin_create_return(uuid,uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
+    'private.admin_cancel_return(uuid,uuid)',
+    'private.customer_request_return(uuid,uuid,uuid,jsonb)',
+    'private.admin_approve_return(uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
+    'private.admin_decline_return(uuid,uuid,text,text)',
+    'private.admin_close_return_missing(uuid,uuid,uuid)',
+    'private.admin_reopen_return(uuid,uuid,uuid)',
+    'private.admin_inspect_return(uuid,uuid,uuid,jsonb)',
+    'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)',
+    'private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)',
+    'private.refresh_order_return_status(uuid)',
+    'private.admin_record_return_fee_payment(uuid,uuid,text,boolean)',
+    'private.admin_release_return_exchange(uuid,uuid)',
+    'private.record_delivery_read_result(uuid,integer,uuid,jsonb)',
+    'private.apply_tracking_status(uuid,text,timestamptz,timestamptz)',
+    'public.apply_stock_movement()',
+    'public.admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb)',
+    'public.admin_cancel_fulfillment(uuid,uuid,uuid)',
+    'public.admin_update_fulfillment_tracking(uuid,uuid,uuid,uuid,text,text,boolean)',
+    'public.admin_mark_fulfillment_delivered(uuid,uuid,uuid,uuid,date,boolean)',
+    'public.admin_record_completion(uuid,uuid,uuid,jsonb)',
+    'public.admin_cancel_completion(uuid,uuid,uuid)',
+    'private.record_group_g_payment_exception_row(text,text,text,text,text,uuid,uuid)',
+    'private.record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)',
+    'private.release_group_g_payment_holds(uuid,uuid,text,uuid)'
+  ]::pg_catalog.regprocedure[];
+$$;
+ALTER FUNCTION private.group_g_writer_allowlist() OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.group_g_writer_allowlist() FROM PUBLIC, anon, authenticated, service_role;
 -- G1_BODY_END
 
 -- G1_FINAL_ASSERT_BEGIN
@@ -8826,6 +9076,363 @@ BEGIN
   END IF;
 END
 $g1_final_assert$;
+
+-- 本体の期待 object の唯一の一覧（Task 14 で完成）。本体の節の各 Task の確かめ（g1_*_assert）は途中の段で残し、
+-- 最後の判定はこの一覧が持つ。不存在・型やトリガーの結合先の違い・ACL/所有者の違いは GROUP_G_MIGRATION_ASSERTION_FAILED / 55000
+DO $g1_final_objects$
+DECLARE
+  v_failed text;
+  v_tables regclass[] := ARRAY[
+    'private.group_g_operations'::regclass, 'public.order_item_allocations'::regclass,
+    'public.order_item_allocation_events'::regclass, 'public.order_item_state_events'::regclass
+  ];
+  v_writers text[] := ARRAY[
+    'private.apply_group_g_stock_movement(bigint,integer)',
+    'private.allocate_group_g_fifo(bigint[],uuid,uuid)',
+    'private.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer)',
+    'private.record_group_g_item_state_changes(jsonb,uuid[],uuid,integer,text,uuid)',
+    'private.ensure_group_g_payment_review_hold(uuid,text,text,text,uuid)',
+    'private.release_group_g_payment_review_holds(uuid,uuid)',
+    'private.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)',
+    'private.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text)',
+    'private.mark_order_awaiting_payment(uuid,text,text)',
+    'private.release_stock_for_unpaid_order(uuid,public.order_status,public.order_status,text,uuid,text,text,text,boolean)',
+    'private.record_cancelled_order_paid_amount(uuid,text,integer)',
+    'private.admin_cancel_failed_order(uuid,uuid,text,text)',
+    'private.link_guest_orders(uuid,text)',
+    'private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)',
+    'private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)',
+    'private.apply_order_refund_state(uuid)',
+    'private.apply_return_refund_outcome(uuid,text)',
+    'private.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text)',
+    'private.mark_order_refund_error(uuid,text,boolean)',
+    'private.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)',
+    'private.mark_order_reviewed(uuid,uuid)',
+    'private.record_payment_exception(text,text,text,text,text,uuid,uuid)',
+    'private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)',
+    'private.resolve_payment_exception_by_system(uuid,text)',
+    'private.customer_order_for_request(uuid,uuid,boolean)',
+    'private.customer_request_cancel(uuid,uuid,uuid,jsonb,text)',
+    'private.lock_order_cancel_request(uuid)',
+    'private.admin_decline_cancel_request(uuid,uuid,text,text)',
+    'private.admin_close_cancel_request(uuid,uuid)',
+    'private.admin_resolve_cancel_request(uuid,uuid,uuid,boolean)',
+    'private.lock_order_return(uuid)',
+    'private.admin_create_return(uuid,uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
+    'private.admin_cancel_return(uuid,uuid)',
+    'private.customer_request_return(uuid,uuid,uuid,jsonb)',
+    'private.admin_approve_return(uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
+    'private.admin_decline_return(uuid,uuid,text,text)',
+    'private.admin_close_return_missing(uuid,uuid,uuid)',
+    'private.admin_reopen_return(uuid,uuid,uuid)',
+    'private.admin_inspect_return(uuid,uuid,uuid,jsonb)',
+    'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)',
+    'private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)',
+    'private.refresh_order_return_status(uuid)',
+    'private.admin_record_return_fee_payment(uuid,uuid,text,boolean)',
+    'private.admin_release_return_exchange(uuid,uuid)',
+    'private.record_delivery_read_result(uuid,integer,uuid,jsonb)',
+    'private.apply_tracking_status(uuid,text,timestamptz,timestamptz)',
+    'public.apply_stock_movement()',
+    'public.admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb)',
+    'public.admin_cancel_fulfillment(uuid,uuid,uuid)',
+    'public.admin_update_fulfillment_tracking(uuid,uuid,uuid,uuid,text,text,boolean)',
+    'public.admin_mark_fulfillment_delivered(uuid,uuid,uuid,uuid,date,boolean)',
+    'public.admin_record_completion(uuid,uuid,uuid,jsonb)',
+    'public.admin_cancel_completion(uuid,uuid,uuid)',
+    'private.record_group_g_payment_exception_row(text,text,text,text,text,uuid,uuid)',
+    'private.record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)',
+    'private.release_group_g_payment_holds(uuid,uuid,text,uuid)'
+  ];
+BEGIN
+  -- 新 4 表: 行 0・RLS・所有者・列・制約・ACL・拒否だけの方針
+  IF EXISTS (SELECT 1 FROM pg_catalog.unnest(v_tables) AS t(r) WHERE pg_catalog.to_regclass(t.r::text) IS NULL) THEN
+    v_failed := 'tables';
+  ELSIF EXISTS (SELECT 1 FROM private.group_g_operations) OR EXISTS (SELECT 1 FROM public.order_item_allocations)
+     OR EXISTS (SELECT 1 FROM public.order_item_allocation_events) OR EXISTS (SELECT 1 FROM public.order_item_state_events) THEN
+    v_failed := 'table_rows';
+  ELSIF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_class AS c
+         WHERE c.oid = ANY (v_tables) AND c.relrowsecurity AND c.relowner = 'postgres'::regrole
+           AND c.relacl::text = CASE WHEN c.oid = 'private.group_g_operations'::regclass
+             THEN '{postgres=arwdDxtm/postgres}' ELSE '{postgres=arwdDxtm/postgres,service_role=r/postgres}' END) <> 4 THEN
+    v_failed := 'table_rls_owner_acl';
+  ELSIF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_policy AS p WHERE p.polrelid = ANY (v_tables)) <> 4
+     OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_policy AS p
+         WHERE p.polrelid = ANY (v_tables) AND NOT p.polpermissive AND p.polcmd = '*'
+           AND pg_catalog.pg_get_expr(p.polqual, p.polrelid) = 'false'
+           AND (SELECT pg_catalog.array_agg(r ORDER BY r) FROM pg_catalog.unnest(p.polroles) AS u(r))
+             = (SELECT pg_catalog.array_agg(r ORDER BY r) FROM pg_catalog.unnest(ARRAY['anon'::regrole::oid, 'authenticated'::regrole::oid]) AS u(r))) <> 4 THEN
+    v_failed := 'table_policies';
+  ELSIF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_attribute AS a
+         WHERE a.attrelid = ANY (v_tables) AND a.attnum > 0 AND NOT a.attisdropped) <> 45
+     OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_attribute AS a
+         JOIN (VALUES
+           ('private.group_g_operations', 'id', 'uuid', true), ('private.group_g_operations', 'operation', 'text', true),
+           ('private.group_g_operations', 'request_key', 'uuid', true), ('private.group_g_operations', 'fingerprint', 'text', true),
+           ('private.group_g_operations', 'cause_type', 'text', true), ('private.group_g_operations', 'cause_id', 'text', true),
+           ('private.group_g_operations', 'exception_id', 'uuid', false), ('private.group_g_operations', 'actor_id', 'uuid', false),
+           ('private.group_g_operations', 'result', 'jsonb', true),
+           ('private.group_g_operations', 'created_at', 'timestamp with time zone', true),
+           ('public.order_item_allocations', 'id', 'uuid', true), ('public.order_item_allocations', 'order_item_id', 'uuid', true),
+           ('public.order_item_allocations', 'variant_id', 'bigint', true), ('public.order_item_allocations', 'quantity', 'integer', true),
+           ('public.order_item_allocations', 'remaining_quantity', 'integer', true), ('public.order_item_allocations', 'kind', 'text', true),
+           ('public.order_item_allocations', 'operation_id', 'uuid', true), ('public.order_item_allocations', 'version', 'bigint', true),
+           ('public.order_item_allocations', 'created_at', 'timestamp with time zone', true),
+           ('public.order_item_allocations', 'updated_at', 'timestamp with time zone', true),
+           ('public.order_item_allocation_events', 'id', 'uuid', true),
+           ('public.order_item_allocation_events', 'allocation_id', 'uuid', true),
+           ('public.order_item_allocation_events', 'event_type', 'text', true),
+           ('public.order_item_allocation_events', 'quantity', 'integer', true),
+           ('public.order_item_allocation_events', 'operation_id', 'uuid', true),
+           ('public.order_item_allocation_events', 'sequence', 'integer', true),
+           ('public.order_item_allocation_events', 'counterpart_allocation_id', 'uuid', false),
+           ('public.order_item_allocation_events', 'reverses_event_id', 'uuid', false),
+           ('public.order_item_allocation_events', 'stock_movement_id', 'bigint', false),
+           ('public.order_item_allocation_events', 'reason', 'text', false),
+           ('public.order_item_allocation_events', 'actor_id', 'uuid', false),
+           ('public.order_item_allocation_events', 'created_at', 'timestamp with time zone', true),
+           ('public.order_item_state_events', 'id', 'uuid', true), ('public.order_item_state_events', 'order_item_id', 'uuid', true),
+           ('public.order_item_state_events', 'unit_from', 'integer', true), ('public.order_item_state_events', 'unit_to', 'integer', true),
+           ('public.order_item_state_events', 'quantity', 'integer', false),
+           ('public.order_item_state_events', 'from_status', 'text', false), ('public.order_item_state_events', 'to_status', 'text', false),
+           ('public.order_item_state_events', 'operation_id', 'uuid', true), ('public.order_item_state_events', 'sequence', 'integer', true),
+           ('public.order_item_state_events', 'reason', 'text', false), ('public.order_item_state_events', 'actor_id', 'uuid', false),
+           ('public.order_item_state_events', 'created_at', 'timestamp with time zone', true),
+           ('public.order_item_state_events', 'version', 'bigint', true)
+         ) AS e(rel, col, typ, required)
+           ON a.attrelid = e.rel::regclass AND a.attname = e.col
+          AND pg_catalog.format_type(a.atttypid, a.atttypmod) = e.typ AND a.attnotnull = e.required AND NOT a.attisdropped) <> 45 THEN
+    v_failed := 'table_columns';
+  ELSIF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint AS c WHERE c.conrelid = ANY (v_tables)) <> 42
+     OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint AS c
+         JOIN (VALUES
+           ('private.group_g_operations', 'group_g_operations_pkey', 'p', NULL),
+           ('private.group_g_operations', 'group_g_operations_operation_request_key_key', 'u', NULL),
+           ('private.group_g_operations', 'group_g_operations_exception_id_fkey', 'f', 'public.payment_exceptions'),
+           ('private.group_g_operations', 'group_g_operations_fingerprint_check', 'c', NULL),
+           ('private.group_g_operations', 'group_g_operations_exception_check', 'c', NULL),
+           ('private.group_g_operations', 'group_g_operations_review_hold_check', 'c', NULL),
+           ('public.order_item_allocations', 'order_item_allocations_pkey', 'p', NULL),
+           ('public.order_item_allocations', 'order_item_allocations_order_item_id_fkey', 'f', 'public.order_items'),
+           ('public.order_item_allocations', 'order_item_allocations_variant_id_fkey', 'f', 'public.item_variants'),
+           ('public.order_item_allocations', 'order_item_allocations_operation_id_fkey', 'f', 'private.group_g_operations'),
+           ('public.order_item_allocations', 'order_item_allocations_quantity_check', 'c', NULL),
+           ('public.order_item_allocations', 'order_item_allocations_remaining_check', 'c', NULL),
+           ('public.order_item_allocations', 'order_item_allocations_kind_check', 'c', NULL),
+           ('public.order_item_allocations', 'order_item_allocations_version_check', 'c', NULL),
+           ('public.order_item_allocations', 'group_g_allocation_bounds', 't', NULL),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_pkey', 'p', NULL),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_allocation_id_fkey', 'f', 'public.order_item_allocations'),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_counterpart_allocation_id_fkey', 'f', 'public.order_item_allocations'),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_reverses_event_id_fkey', 'f', 'public.order_item_allocation_events'),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_stock_movement_id_fkey', 'f', 'public.stock_movements'),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_operation_id_fkey', 'f', 'private.group_g_operations'),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_operation_key', 'u', NULL),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_stock_movement_id_key', 'u', NULL),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_reverses_event_id_key', 'u', NULL),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_event_type_check', 'c', NULL),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_quantity_check', 'c', NULL),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_sequence_check', 'c', NULL),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_counterpart_check', 'c', NULL),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_reverses_check', 'c', NULL),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_movement_check', 'c', NULL),
+           ('public.order_item_allocation_events', 'group_g_allocation_bounds', 't', NULL),
+           ('public.order_item_state_events', 'order_item_state_events_pkey', 'p', NULL),
+           ('public.order_item_state_events', 'order_item_state_events_order_item_id_fkey', 'f', 'public.order_items'),
+           ('public.order_item_state_events', 'order_item_state_events_operation_id_fkey', 'f', 'private.group_g_operations'),
+           ('public.order_item_state_events', 'order_item_state_events_operation_key', 'u', NULL),
+           ('public.order_item_state_events', 'order_item_state_events_unit_from_check', 'c', NULL),
+           ('public.order_item_state_events', 'order_item_state_events_unit_to_check', 'c', NULL),
+           ('public.order_item_state_events', 'order_item_state_events_from_status_check', 'c', NULL),
+           ('public.order_item_state_events', 'order_item_state_events_to_status_check', 'c', NULL),
+           ('public.order_item_state_events', 'order_item_state_events_transition_check', 'c', NULL),
+           ('public.order_item_state_events', 'order_item_state_events_sequence_check', 'c', NULL),
+           ('public.order_item_state_events', 'order_item_state_events_version_check', 'c', NULL)
+         ) AS e(rel, name, kind, target)
+           ON c.conrelid = e.rel::regclass AND c.conname = e.name AND c.contype = e.kind
+          AND c.confrelid = COALESCE(e.target::regclass::oid, 0::oid)
+          AND c.condeferrable = (COALESCE(e.target, '') = 'private.group_g_operations' OR e.kind = 't')) <> 42 THEN
+    v_failed := 'table_constraints';
+  -- 追加の 2 列（stock_movements の列は遅延の操作 FK 付き）
+  ELSIF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute AS a
+      WHERE a.attrelid = 'public.orders'::regclass AND a.attname = 'paid_at'
+        AND a.atttypid = 'timestamptz'::regtype AND NOT a.attnotnull AND NOT a.attisdropped)
+     OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute AS a
+      WHERE a.attrelid = 'public.stock_movements'::regclass AND a.attname = 'allocation_operation_id'
+        AND a.atttypid = 'uuid'::regtype AND NOT a.attnotnull AND NOT a.attisdropped)
+     OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_constraint AS c
+      WHERE c.conrelid = 'public.stock_movements'::regclass AND c.conname = 'stock_movements_allocation_operation_id_fkey'
+        AND c.contype = 'f' AND c.confrelid = 'private.group_g_operations'::regclass AND c.condeferrable AND c.condeferred) THEN
+    v_failed := 'added_columns';
+  -- 追記保護 9・割当 3・paid_at・旧仕上がり・台帳のトリガー（名前・表・関数・発火の時機・有効）
+  ELSIF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_trigger AS t
+         JOIN (VALUES
+           ('public.order_item_allocation_events', 'order_item_allocation_events_no_update', 'private.reject_group_g_event_mutation()', 19),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_no_delete', 'private.reject_group_g_event_mutation()', 11),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_no_truncate', 'private.reject_group_g_event_mutation()', 34),
+           ('public.order_item_state_events', 'order_item_state_events_no_update', 'private.reject_group_g_event_mutation()', 19),
+           ('public.order_item_state_events', 'order_item_state_events_no_delete', 'private.reject_group_g_event_mutation()', 11),
+           ('public.order_item_state_events', 'order_item_state_events_no_truncate', 'private.reject_group_g_event_mutation()', 34),
+           ('private.group_g_operations', 'group_g_operations_no_update', 'private.reject_group_g_event_mutation()', 19),
+           ('private.group_g_operations', 'group_g_operations_no_delete', 'private.reject_group_g_event_mutation()', 11),
+           ('private.group_g_operations', 'group_g_operations_no_truncate', 'private.reject_group_g_event_mutation()', 34),
+           ('public.order_item_allocations', 'order_item_allocations_change_guard', 'private.guard_group_g_allocation_change()', 27),
+           ('public.order_item_allocations', 'group_g_allocation_bounds', 'private.check_group_g_allocation_bounds()', 21),
+           ('public.order_item_allocation_events', 'group_g_allocation_bounds', 'private.check_group_g_allocation_bounds()', 21),
+           ('public.orders', 'orders_paid_at_once', 'private.guard_group_g_paid_at()', 19),
+           ('public.order_item_completions', 'order_item_completions_disabled', 'private.reject_group_g_manual_completion()', 23),
+           ('public.stock_movements', 'stock_movements_apply', 'public.apply_stock_movement()', 5)
+         ) AS e(rel, name, fn, kind)
+           ON t.tgrelid = e.rel::regclass AND t.tgname = e.name AND t.tgfoid = e.fn::regprocedure
+          AND t.tgtype = e.kind AND t.tgenabled = 'O' AND NOT t.tgisinternal) <> 15
+     OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_trigger AS t
+         WHERE t.tgname = 'group_g_allocation_bounds' AND t.tgconstraint <> 0 AND t.tgdeferrable AND t.tginitdeferred
+           AND t.tgrelid IN ('public.order_item_allocations'::regclass, 'public.order_item_allocation_events'::regclass)) <> 2 THEN
+    v_failed := 'triggers';
+  -- 書き手・停止の関数: 全部が解決し、一覧の関数がちょうど同じ集合
+  ELSIF EXISTS (SELECT 1 FROM pg_catalog.unnest(v_writers) AS w(s) WHERE pg_catalog.to_regprocedure(w.s) IS NULL)
+     OR (SELECT pg_catalog.count(DISTINCT pg_catalog.to_regprocedure(w.s)) FROM pg_catalog.unnest(v_writers) AS w(s)) <> 56
+     OR pg_catalog.to_regprocedure('private.group_g_writer_allowlist()') IS NULL THEN
+    v_failed := 'writer_functions_missing';
+  ELSIF (SELECT pg_catalog.array_agg(x::oid ORDER BY x::oid) FROM pg_catalog.unnest(private.group_g_writer_allowlist()) AS a(x))
+     IS DISTINCT FROM (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(w.s)::oid ORDER BY pg_catalog.to_regprocedure(w.s)::oid)
+                       FROM pg_catalog.unnest(v_writers) AS w(s)) THEN
+    v_failed := 'writer_allowlist';
+  -- 停止の 6 本は公開 INVOKER で、本体は固定の拒否だけ
+  ELSIF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p
+         JOIN (VALUES
+           ('public.admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb)', 'LEGACY_FULFILLMENT_DISABLED'),
+           ('public.admin_cancel_fulfillment(uuid,uuid,uuid)', 'LEGACY_FULFILLMENT_DISABLED'),
+           ('public.admin_update_fulfillment_tracking(uuid,uuid,uuid,uuid,text,text,boolean)', 'LEGACY_FULFILLMENT_DISABLED'),
+           ('public.admin_mark_fulfillment_delivered(uuid,uuid,uuid,uuid,date,boolean)', 'LEGACY_FULFILLMENT_DISABLED'),
+           ('public.admin_record_completion(uuid,uuid,uuid,jsonb)', 'MANUAL_COMPLETION_DISABLED'),
+           ('public.admin_cancel_completion(uuid,uuid,uuid)', 'MANUAL_COMPLETION_DISABLED')
+         ) AS e(sig, code) ON p.oid = pg_catalog.to_regprocedure(e.sig)
+         WHERE NOT p.prosecdef
+           AND pg_catalog.btrim(pg_catalog.regexp_replace(p.prosrc, '\s+', ' ', 'g'))
+             = 'BEGIN RAISE EXCEPTION ''' || e.code || ''' USING ERRCODE = ''55000''; END;') <> 6 THEN
+    v_failed := 'stopped_functions';
+  -- 書き手・停止・新しい関数の SECURITY・所有者・search_path・個別の EXECUTE
+  ELSIF EXISTS (
+    SELECT 1
+    FROM (VALUES
+      ('private.apply_group_g_stock_movement(bigint,integer)', true, false),
+      ('private.allocate_group_g_fifo(bigint[],uuid,uuid)', true, false),
+      ('private.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer)', true, true),
+      ('private.record_group_g_item_state_changes(jsonb,uuid[],uuid,integer,text,uuid)', true, false),
+      ('private.ensure_group_g_payment_review_hold(uuid,text,text,text,uuid)', true, false),
+      ('private.release_group_g_payment_review_holds(uuid,uuid)', true, false),
+      ('private.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)', true, true),
+      ('private.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text)', true, true),
+      ('private.mark_order_awaiting_payment(uuid,text,text)', true, true),
+      ('private.release_stock_for_unpaid_order(uuid,public.order_status,public.order_status,text,uuid,text,text,text,boolean)', true, true),
+      ('private.record_cancelled_order_paid_amount(uuid,text,integer)', true, true),
+      ('private.admin_cancel_failed_order(uuid,uuid,text,text)', true, true),
+      ('private.link_guest_orders(uuid,text)', true, true),
+      ('private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)', true, true),
+      ('private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)', false, false),
+      ('private.apply_order_refund_state(uuid)', false, false),
+      ('private.apply_return_refund_outcome(uuid,text)', false, false),
+      ('private.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text)', true, true),
+      ('private.mark_order_refund_error(uuid,text,boolean)', true, true),
+      ('private.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)', true, true),
+      ('private.mark_order_reviewed(uuid,uuid)', true, true),
+      ('private.record_payment_exception(text,text,text,text,text,uuid,uuid)', true, true),
+      ('private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)', true, true),
+      ('private.resolve_payment_exception_by_system(uuid,text)', true, true),
+      ('private.customer_order_for_request(uuid,uuid,boolean)', false, false),
+      ('private.customer_request_cancel(uuid,uuid,uuid,jsonb,text)', true, true),
+      ('private.lock_order_cancel_request(uuid)', false, false),
+      ('private.admin_decline_cancel_request(uuid,uuid,text,text)', true, true),
+      ('private.admin_close_cancel_request(uuid,uuid)', true, true),
+      ('private.admin_resolve_cancel_request(uuid,uuid,uuid,boolean)', true, true),
+      ('private.lock_order_return(uuid)', false, false),
+      ('private.admin_create_return(uuid,uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)', true, true),
+      ('private.admin_cancel_return(uuid,uuid)', true, true),
+      ('private.customer_request_return(uuid,uuid,uuid,jsonb)', true, true),
+      ('private.admin_approve_return(uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)', true, true),
+      ('private.admin_decline_return(uuid,uuid,text,text)', true, true),
+      ('private.admin_close_return_missing(uuid,uuid,uuid)', true, true),
+      ('private.admin_reopen_return(uuid,uuid,uuid)', true, true),
+      ('private.admin_inspect_return(uuid,uuid,uuid,jsonb)', true, true),
+      ('private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)', true, true),
+      ('private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)', true, true),
+      ('private.refresh_order_return_status(uuid)', false, false),
+      ('private.admin_record_return_fee_payment(uuid,uuid,text,boolean)', true, true),
+      ('private.admin_release_return_exchange(uuid,uuid)', true, true),
+      ('private.record_delivery_read_result(uuid,integer,uuid,jsonb)', true, true),
+      ('private.apply_tracking_status(uuid,text,timestamptz,timestamptz)', false, false),
+      ('public.apply_stock_movement()', false, false),
+      ('public.admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb)', false, true),
+      ('public.admin_cancel_fulfillment(uuid,uuid,uuid)', false, true),
+      ('public.admin_update_fulfillment_tracking(uuid,uuid,uuid,uuid,text,text,boolean)', false, true),
+      ('public.admin_mark_fulfillment_delivered(uuid,uuid,uuid,uuid,date,boolean)', false, true),
+      ('public.admin_record_completion(uuid,uuid,uuid,jsonb)', false, true),
+      ('public.admin_cancel_completion(uuid,uuid,uuid)', false, true),
+      ('private.record_group_g_payment_exception_row(text,text,text,text,text,uuid,uuid)', true, false),
+      ('private.record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)', true, false),
+      ('private.release_group_g_payment_holds(uuid,uuid,text,uuid)', true, false),
+      ('private.reject_group_g_event_mutation()', false, false),
+      ('private.guard_group_g_allocation_change()', false, false),
+      ('private.check_group_g_allocation_bounds()', true, false),
+      ('private.guard_group_g_paid_at()', false, false),
+      ('private.reject_group_g_manual_completion()', false, false),
+      ('private.check_group_g_stock_movement_consistency()', true, false),
+      ('private.lock_group_g_inventory(bigint[],uuid[],uuid)', true, false),
+      ('private.group_g_item_state_ranges(uuid[])', true, false),
+      ('private.list_admin_order_item_states(uuid[])', true, true),
+      ('public.list_admin_order_item_states(uuid[])', false, true),
+      ('private.capture_group_g_item_states(uuid[])', true, false),
+      ('private.list_group_g_variant_inventory(bigint[])', true, true),
+      ('public.list_group_g_variant_inventory(bigint[])', false, true),
+      ('private.list_item_allocation_history(bigint,integer)', true, true),
+      ('public.list_item_allocation_history(bigint,integer)', false, true),
+      ('private.group_g_writer_allowlist()', true, false),
+      ('public.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer)', false, true),
+      ('public.link_guest_orders(uuid,text)', false, true)
+    ) AS e(sig, definer, service)
+    LEFT JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(e.sig)
+    WHERE p.oid IS NULL
+       OR p.proowner <> 'postgres'::regrole
+       OR p.prosecdef <> e.definer
+       OR NOT ('search_path=""' = ANY (COALESCE(p.proconfig, ARRAY[]::text[])))
+       OR pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE') <> e.service
+       OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) AS x
+                  WHERE x.grantee = 0)
+  ) THEN
+    v_failed := 'function_acl';
+  -- 委譲の公開口は SQL の INVOKER（書込みを持たない）
+  ELSIF EXISTS (SELECT 1 FROM pg_catalog.pg_proc AS p JOIN pg_catalog.pg_language AS l ON l.oid = p.prolang
+      WHERE p.oid IN ('public.list_admin_order_item_states(uuid[])'::regprocedure,
+                      'public.list_group_g_variant_inventory(bigint[])'::regprocedure,
+                      'public.list_item_allocation_history(bigint,integer)'::regprocedure,
+                      'public.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer)'::regprocedure,
+                      'public.link_guest_orders(uuid,text)'::regprocedure)
+        AND (l.lanname <> 'sql' OR p.prosecdef)) THEN
+    v_failed := 'delegate_wrappers';
+  -- 仕上がりの表は service_role を含めて書けない
+  ELSIF pg_catalog.has_table_privilege('service_role', 'public.order_item_completions', 'INSERT')
+     OR pg_catalog.has_table_privilege('service_role', 'public.order_item_completions', 'UPDATE')
+     OR pg_catalog.has_table_privilege('service_role', 'public.order_item_completions', 'DELETE')
+     OR pg_catalog.has_table_privilege('service_role', 'public.order_item_completions', 'TRUNCATE')
+     OR pg_catalog.has_table_privilege('service_role', 'public.stock_movements', 'INSERT') THEN
+    v_failed := 'write_privileges';
+  -- 消した helper 2本は無い（finalize・admin_ship_paid_order・apply_order_refund_projection も戻さない）
+  ELSIF pg_catalog.to_regprocedure('private.backfill_legacy_fulfillments()') IS NOT NULL
+     OR pg_catalog.to_regprocedure('private.link_legacy_shipped_emails()') IS NOT NULL
+     OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc AS p JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
+       WHERE n.nspname IN ('public', 'private')
+         AND p.proname IN ('finalize_order_from_checkout_draft', 'admin_ship_paid_order', 'apply_order_refund_projection')) THEN
+    v_failed := 'dropped_functions';
+  END IF;
+
+  IF v_failed IS NOT NULL THEN
+    RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = v_failed;
+  END IF;
+END
+$g1_final_objects$;
 -- G1_FINAL_ASSERT_END
 
 NOTIFY pgrst, 'reload schema';

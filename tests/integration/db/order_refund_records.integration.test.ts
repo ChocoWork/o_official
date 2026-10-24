@@ -11,6 +11,7 @@ import {
   variantStock,
   ensureFixturePaidAllocation,
   releaseFixtureAllocation,
+  shipFixtureOrder,
   withFixtureConsumption,
   type RefundFixtureStatus,
 } from './helpers/order-fixtures';
@@ -580,7 +581,7 @@ describeLocalDb('integration: 返金の記録と数え方（移行 A）', (db) =
       expect(byItem[second.stockItemId]).toMatchObject({ refunded_before_shipment: 0, unshipped: 2 });
     });
 
-    test('返金で数が減った商品は、発送も仕上がりの記録も、減った後の数までしかできない', async () => {
+    test('返金で数が減った商品は、送れる数・受注生産中の数が減った後の数になる（旧の発送と手動の仕上がりは G-1 で停止）', async () => {
       const { orderId, stockItemId, madeItemId } = await createPaidOrder(db());
       await insertRefundRecord(db(), {
         orderId,
@@ -605,18 +606,26 @@ describeLocalDb('integration: 返金の記録と数え方（移行 A）', (db) =
         JSON.stringify([{ order_item_id: madeItemId, quantity }]),
       ];
 
-      // 在庫の品: 2点のうち1点を返金したので、送れるのは1点まで
-      await expectRejected(db(), shipSql, shipParams(2), { code: '22023', message: 'QUANTITY_EXCEEDS_READY' });
-      const shipped = await db().query(shipSql, shipParams(1));
-      expect(shipped.rows[0]).toMatchObject({ completes_order: false, replayed: false });
+      // 旧の発送の関数・手動の仕上がりの関数は、数にかかわらず固定の拒否（G-1 Task 14）
+      for (const quantity of [1, 2]) {
+        await expectRejected(db(), shipSql, shipParams(quantity), { code: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' });
+        await expectRejected(db(), completeSql, completeParams(quantity), { code: '55000', message: 'MANUAL_COMPLETION_DISABLED' });
+      }
 
-      // 受注生産の品: 3点のうち2点を返金したので、作るのは1点まで
-      await expectRejected(db(), completeSql, completeParams(2), { code: '22023', message: 'QUANTITY_EXCEEDS_IN_PRODUCTION' });
-      await db().query(completeSql, completeParams(1));
+      // 在庫の品: 2点のうち1点を返金したので、送れるのは1点まで。受注生産の品: 3点のうち2点を返金したので、作るのは1点まで
+      const before = await lineCounts(db(), orderId);
+      expect(before[stockItemId]).toMatchObject({ shipped: 0, refunded_before_shipment: 1, unshipped: 1, ready_unshipped: 1 });
+      expect(before[madeItemId]).toMatchObject({ completed: 0, refunded_before_shipment: 2, in_production: 1, ready_unshipped: 0, unshipped: 1 });
+
+      // 送れる1点を、G-1 の割当を消費する合成の発送で送る
+      const shipped = await shipFixtureOrder(db(), {
+        orderId, actorId: null, notifyCustomer: false, lines: [{ order_item_id: stockItemId, quantity: 1 }],
+      });
+      expect(shipped).toMatchObject({ completes_order: false, replayed: false });
 
       const counts = await lineCounts(db(), orderId);
       expect(counts[stockItemId]).toMatchObject({ shipped: 1, refunded_before_shipment: 1, unshipped: 0, ready_unshipped: 0 });
-      expect(counts[madeItemId]).toMatchObject({ completed: 1, refunded_before_shipment: 2, in_production: 0, ready_unshipped: 1, unshipped: 1 });
+      expect(counts[madeItemId]).toMatchObject({ completed: 0, refunded_before_shipment: 2, in_production: 1, ready_unshipped: 0, unshipped: 1 });
     });
 
     test('引き当て済みと受注生産の数: 返事待ちの間は受注生産だけが減り、台帳に返金の行が入ると引き当て済みも減る', async () => {

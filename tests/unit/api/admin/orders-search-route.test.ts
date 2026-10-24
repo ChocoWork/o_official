@@ -579,7 +579,8 @@ describe('GET /api/admin/orders statutory search', () => {
       expect(query.select.mock.calls[0][1]).toEqual({ count: 'exact' });
     });
 
-    it('一部を送って受注生産の品が残る注文は「受注生産中」＋一部発送済みで、発送も仕上がりの記録もできる', async () => {
+    // G-1 Task 14: 旧の発送と手動の仕上がりは止めたので、canShip・canRecordCompletion は数や状態にかかわらず false
+    it('一部を送って受注生産の品が残る注文は「受注生産中」＋一部発送済み。発送も仕上がりの記録も出さない（G-1 で停止）', async () => {
       lineFulfillmentRows = [
         lineRow({ order_id: 'order-1', order_item_id: 'item-stock', quantity: 2, shipped: 1, completed: 2, in_production: 0, ready_unshipped: 1, unshipped: 1 }),
         lineRow({ order_id: 'order-1', order_item_id: 'item-coat', fulfillment_type: 'backorder', quantity: 1, shipped: 0, completed: 0, in_production: 1, ready_unshipped: 0, unshipped: 1 }),
@@ -593,8 +594,8 @@ describe('GET /api/admin/orders statutory search', () => {
         orderStatus: 'paid',
         progressKey: 'in_production',
         partiallyShipped: true,
-        canShip: true,
-        canRecordCompletion: true,
+        canShip: false,
+        canRecordCompletion: false,
         itemCount: '3点',
       });
       expect(rows[0].items).toEqual([
@@ -609,7 +610,7 @@ describe('GET /api/admin/orders statutory search', () => {
       ]);
     });
 
-    it('全部の商品が発送準備中なら「発送準備中」で、仕上がりの記録は出さない', async () => {
+    it('全部の商品が発送準備中なら「発送準備中」。発送も仕上がりの記録も出さない（G-1 で停止）', async () => {
       lineFulfillmentRows = [
         lineRow({ order_id: 'order-1', order_item_id: 'item-stock', quantity: 2, completed: 2, ready_unshipped: 2, unshipped: 2 }),
         lineRow({ order_id: 'order-1', order_item_id: 'item-coat', fulfillment_type: 'backorder', quantity: 1, completed: 1, ready_unshipped: 1, unshipped: 1 }),
@@ -618,7 +619,7 @@ describe('GET /api/admin/orders statutory search', () => {
       const { rows } = await listOrders([paidOrderRow()]);
 
       expect(rows[0]).toMatchObject({
-        status: '発送準備中', orderStatus: 'paid', progressKey: 'ready', partiallyShipped: false, canShip: true, canRecordCompletion: false,
+        status: '発送準備中', orderStatus: 'paid', progressKey: 'ready', partiallyShipped: false, canShip: false, canRecordCompletion: false,
       });
     });
 
@@ -731,7 +732,7 @@ describe('GET /api/admin/orders statutory search', () => {
       expect(byId['order-failed']).toMatchObject({ status: '決済失敗', orderStatus: 'failed' });
       expect(byId['order-cancelled']).toMatchObject({ status: 'キャンセル', orderStatus: 'cancelled' });
       expect(byId['order-pending'].items.every((item: Record<string, number>) => item.shipped === 0 && item.inProduction === 0 && item.readyUnshipped === 0)).toBe(true);
-      expect(byId['order-paid']).toMatchObject({ status: '発送準備中', canShip: true });
+      expect(byId['order-paid']).toMatchObject({ status: '発送準備中', canShip: false, canRecordCompletion: false });
     });
 
     it('支払い済み・発送済みの注文が無い一覧は、数を読みに行かない', async () => {
@@ -741,7 +742,7 @@ describe('GET /api/admin/orders statutory search', () => {
       expect(rpcCallsOf('list_order_line_fulfillment')).toEqual([]);
     });
 
-    it('支払額の確認が残る注文は発送できないが、受注生産中の数があれば仕上がりは記録できる', async () => {
+    it('支払額の確認が残る注文は発送止めの理由を返す。受注生産中の数があっても仕上がりの記録は出さない（G-1 で終了）', async () => {
       shipBlockedRows = [{ order_id: 'order-1' }];
       lineFulfillmentRows = [
         lineRow({ order_id: 'order-1', order_item_id: 'item-coat', fulfillment_type: 'backorder', quantity: 1, completed: 0, in_production: 1, ready_unshipped: 0, unshipped: 1 }),
@@ -750,7 +751,7 @@ describe('GET /api/admin/orders statutory search', () => {
       const { rows } = await listOrders([paidOrderRow()]);
 
       expect(rows[0]).toMatchObject({
-        canShip: false, shipBlockedReason: '支払額の確認が必要です（要対応）', canRecordCompletion: true,
+        canShip: false, shipBlockedReason: '支払額の確認が必要です（要対応）', canRecordCompletion: false,
       });
     });
 
@@ -1139,7 +1140,7 @@ describe('GET /api/admin/orders statutory search', () => {
       ]);
     });
 
-    it('発送・受注生産の数（進み具合・発送と仕上がりのボタン）は、交換の品の行も数える', async () => {
+    it('発送・受注生産の数（進み具合）は、交換の品の行も数える。発送と仕上がりのボタンは G-1 で止めたので出さない', async () => {
       lineFulfillmentRows = [
         lineRow({ order_id: 'order-1', order_item_id: 'item-1', quantity: 2, shipped: 2, completed: 2, ready_unshipped: 0, unshipped: 0 }),
         lineRow({
@@ -1156,7 +1157,7 @@ describe('GET /api/admin/orders statutory search', () => {
       })]);
 
       expect(rows[0]).toMatchObject({
-        itemCount: '2点', status: '受注生産中', partiallyShipped: true, canShip: true, canRecordCompletion: true,
+        itemCount: '2点', status: '受注生産中', partiallyShipped: true, canShip: false, canRecordCompletion: false,
       });
     });
 
