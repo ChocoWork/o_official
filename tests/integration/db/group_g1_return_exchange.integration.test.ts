@@ -1,6 +1,6 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
-import { describeLocalDb, type PgClient } from './helpers/local-db';
+import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
 import { createShippedOrderFixture, insertOrderWithLines, insertReturnRecord, variantStock } from './helpers/order-fixtures';
 
 const WRITERS = [
@@ -285,5 +285,57 @@ describeLocalDb('G-1 return receipt, inspection, amount decision and exchange FI
     await db().query("select set_config('app.group_g_operation_id',$1,true)", [randomUUID()]);
     await refusal(db(), () => db().query('select private.refresh_order_return_status($1::uuid)', [randomUUID()]),
       'GROUP_G_INVENTORY_LOCK_REQUIRED', '55000');
+  });
+});
+
+// Task 11 M4: the receipt rollback above runs inside a SAVEPOINT. Here the failing receipt runs in its own top-level
+// transaction on a second connection (no savepoint) and is rolled back as a whole; this connection then reads the
+// committed state and finds nothing of it: no receipt, stock, ledger, exchange line, history, operation or trigger.
+describeLocalDb('G-1 return receipt failure without a savepoint (separate connection)', getDb => {
+  const db = () => getDb();
+  jest.setTimeout(30000);
+
+  test('受取の障害は取引ごと戻り、別の接続から見て何も残らない', async () => {
+    // Committed material (another connection must be able to read it): a shipped order and its open refund return.
+    const f = await createShippedOrderFixture(db(), { createdAt: '2026-01-02T00:00:00Z', lines: [{ quantity: 1 }] });
+    const r = await insertReturnRecord(db(), { orderId: f.orderId,
+      lines: [{ fulfillmentId: f.fulfillments[0].id, orderItemId: f.orderItemIds[0], quantity: 1, resolution: 'refund' }] });
+    const actor = (await db().query(`insert into auth.users(id,email,raw_user_meta_data,created_at,updated_at)
+      values(gen_random_uuid(),$1,'{}',now(),now()) returning id`, [`g1-receive-top-${randomUUID()}@example.com`])).rows[0].id as string;
+    const committed = async () => (await db().query(`select
+      (select stock_quantity from public.item_variants where id=$1::bigint) as free,
+      (select count(*)::int from public.stock_movements where variant_id=$1::bigint) as movements,
+      (select count(*)::int from public.order_items where order_id=$2::uuid) as items,
+      (select count(*)::int from public.order_return_receipts where return_id=$3::uuid) as receipts,
+      (select status from public.order_returns where id=$3::uuid) as return_status,
+      (select count(*)::int from private.group_g_operations where cause_id=$3::text) as operations,
+      (select count(*)::int from public.order_item_state_events e join public.order_items oi on oi.id=e.order_item_id
+        where oi.order_id=$2::uuid) as states,
+      (select count(*)::int from public.order_item_allocation_events e join public.order_item_allocations a on a.id=e.allocation_id
+        join public.order_items oi on oi.id=a.order_item_id where oi.order_id=$2::uuid) as allocations,
+      (select count(*)::int from private.order_email_outbox where order_id=$2::uuid) as emails,
+      (select count(*)::int from pg_trigger where tgname='g1_return_top_failure') as triggers`,
+    [f.variantIds[0], f.orderId, r.returnId])).rows[0];
+    const before = await committed();
+    expect(before).toMatchObject({ receipts: 0, return_status: 'open', triggers: 0 });
+
+    const other = await connectLocalDb();
+    try {
+      await other.query('begin');
+      await other.query('update public.shop_return_settings set inspection_enabled=true where id=1');
+      await other.query(`create function pg_temp.reject_return_top() returns trigger language plpgsql as
+        'begin raise exception ''G1_RETURN_TOP_FAILURE'' using errcode=''55000''; end'`);
+      await other.query(`create trigger g1_return_top_failure before insert on public.order_item_state_events
+        for each row execute function pg_temp.reject_return_top()`);
+      await expect(other.query(`select * from public.admin_receive_return($1::uuid,$2::uuid,true,$3::uuid,
+        $4::jsonb,'[]'::jsonb,'consult',null,0,null,true,'fixture sent back',null,null)`, [r.returnId, actor, randomUUID(),
+        JSON.stringify([{ return_line_id: r.lineIds[0], disposition: 'restocked', quantity: 1 }])]))
+        .rejects.toMatchObject({ code: '55000', message: 'G1_RETURN_TOP_FAILURE' });
+      await other.query('rollback');
+    } finally {
+      await other.end();
+    }
+
+    expect(await committed()).toEqual(before);
   });
 });

@@ -219,7 +219,7 @@ async function createActor(db: PgClient): Promise<Actor> {
  * 発送した在庫の品の注文（毎回新しく作る）。支払い済みの注文を作り、発送は共通の材料（shipFixtureOrder: G-1 の割当を
  * 共通の押さえの下で消費して発送の行を書く）で作る。旧の発送の窓口は G-1 で止めるので、材料には使わない（計画 Global Constraints 72行目）。
  */
-async function createShippedOrder(db: PgClient, _client: SupabaseClient, actor: Actor, quantity: number): Promise<ShippedOrder> {
+async function createShippedOrder(db: PgClient, actor: Actor, quantity: number): Promise<ShippedOrder> {
   const catalog = await createCatalogFixture(db, { stock: quantity });
   const { orderId, orderItemIds } = await insertOrderWithLines(db, {
     status: 'paid',
@@ -313,8 +313,8 @@ describeLocalDb('integration: 返品の窓口を実際の PostgREST に通す', 
     });
     actor = await createActor(db());
     saved = await saveReturnSettings(db());
-    order = await createShippedOrder(db(), client, actor, QUANTITY);
-    otherOrder = await createShippedOrder(db(), client, actor, 1);
+    order = await createShippedOrder(db(), actor, QUANTITY);
+    otherOrder = await createShippedOrder(db(), actor, 1);
     exchangeVariantId = await addVariant(db(), order.itemId, 'WHITE', 'L', 2);
   });
 

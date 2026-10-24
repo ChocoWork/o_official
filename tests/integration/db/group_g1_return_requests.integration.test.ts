@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
-import { createShippedOrderFixture, type ShippedOrderFixture } from './helpers/order-fixtures';
+import { addItemVariant, createShippedOrderFixture, type ShippedOrderFixture } from './helpers/order-fixtures';
 
 type Fx = ShippedOrderFixture & { owner: string; actor: string };
 const WRITERS = [
@@ -198,6 +198,88 @@ describeLocalDb('G-1 return request quantities, history and operations', getDb =
     expect(await stockSnapshot(f)).toEqual(before);
     await ranges(f, { shipped: 3, ready: 2 });
     await db().query('drop trigger g1_test_return_history on public.order_item_state_events');
+  });
+
+  // Task 10 M2: the history fault rolls back every writer, not only the customer request.
+  test.each(['admin_create_return', 'admin_approve_return', 'admin_decline_return', 'admin_cancel_return'])(
+    '履歴故障: %s も業務・メール・操作・在庫を同じSAVEPOINTへ全rollbackする', async (writer) => {
+      const f = await fixture();
+      let run: () => Promise<unknown>;
+      let expected: Record<string, number>;
+      if (writer === 'admin_create_return') {
+        run = () => create(f);
+        expected = { shipped: 3, ready: 2 };
+      } else if (writer === 'admin_cancel_return') {
+        const created = await create(f, 1);
+        run = () => db().query('select * from public.admin_cancel_return($1::uuid,$2::uuid)', [created.return_id, f.actor]);
+        expected = { return_in_progress: 1, shipped: 2, ready: 2 };
+      } else {
+        const requested = await request(f, 2);
+        run = writer === 'admin_approve_return'
+          ? () => approve(f, requested.return_id)
+          : () => db().query("select * from public.admin_decline_return($1::uuid,$2::uuid,'other','fixture')", [requested.return_id, f.actor]);
+        expected = { return_requested: 2, shipped: 1, ready: 2 };
+      }
+      const before = await stockSnapshot(f);
+      const count = async () => (await db().query(`select
+        (select count(*)::int from public.order_returns where order_id=$1::uuid) as returns,
+        (select string_agg(status, ',' order by id) from public.order_returns where order_id=$1::uuid) as statuses,
+        (select count(*)::int from public.order_return_lines l join public.order_returns r on r.id=l.return_id where r.order_id=$1::uuid) as lines,
+        (select count(*)::int from private.order_email_outbox where order_id=$1::uuid) as emails,
+        (select count(*)::int from private.group_g_operations) as operations,
+        (select count(*)::int from public.order_item_state_events where order_item_id=$2::uuid) as state_events`,
+      [f.orderId, f.orderItemIds[0]])).rows[0];
+      const counts = await count();
+      await db().query(`create function pg_temp.fail_g1_return_history() returns trigger language plpgsql as $$
+        begin raise exception 'G1_TEST_HISTORY_FAILURE' using errcode='55000'; end $$`);
+      await db().query(`create trigger g1_test_return_history before insert on public.order_item_state_events
+        for each row execute function pg_temp.fail_g1_return_history()`);
+      await refusal(db(), run, 'G1_TEST_HISTORY_FAILURE', '55000');
+      expect(await count()).toEqual(counts);
+      expect(await stockSnapshot(f)).toEqual(before);
+      await ranges(f, expected);
+      await db().query('drop trigger g1_test_return_history on public.order_item_state_events');
+    });
+
+  test('店作成の request_key 再送は操作・状態の履歴・メールの件数を変えない（Task 10 M2）', async () => {
+    const f = await fixture();
+    const key = randomUUID();
+    const r = await create(f, 1, key);
+    const count = async () => (await db().query(`select
+      (select count(*)::int from private.group_g_operations where cause_id=$1::text) as operations,
+      (select count(*)::int from public.order_item_state_events where order_item_id=$2::uuid) as state_events,
+      (select count(*)::int from private.order_email_outbox where order_id=$3::uuid) as emails,
+      (select count(*)::int from public.order_returns where order_id=$3::uuid) as returns`,
+    [r.return_id, f.orderItemIds[0], f.orderId])).rows[0];
+    const after = await count();
+    expect(after).toMatchObject({ operations: 1, returns: 1 });
+    expect(await create(f, 1, key)).toEqual({ ...r, replayed: true });
+    expect(await create(f, 1, key)).toEqual({ ...r, replayed: true });
+    expect(await count()).toEqual(after);
+    await ranges(f, { return_in_progress: 1, shipped: 2, ready: 2 });
+  });
+
+  test('交換を含む承認は、交換先を記録して同じ数だけ返品中にし、操作1件・在庫と割当は変えない（Task 10 M2）', async () => {
+    const f = await fixture();
+    const exchange = await addItemVariant(db(), { itemId: f.itemIds[0], colorName: 'WHITE', sizeLabel: 'L', stock: 1 });
+    const r = await request(f, 2);
+    const snapshot = await stockSnapshot(f);
+    const exchangeStock = async () => (await db().query('select stock_quantity from public.item_variants where id=$1', [exchange.variantId])).rows[0].stock_quantity;
+    const ls = (await db().query('select id from public.order_return_lines where return_id=$1 order by id', [r.return_id])).rows;
+    const approved = (await db().query(`select * from public.admin_approve_return($1::uuid,$2::uuid,$3::jsonb,
+      'customer_ships','shop',null,null,0,0,0,0,'private fixture',false)`, [r.return_id, f.actor,
+    JSON.stringify(ls.map(l => ({ return_line_id: l.id, resolution: 'exchange', exchange_variant_id: exchange.variantId,
+      exchange_method: 'stock' })))])).rows[0];
+    expect(approved).toEqual({ return_id: r.return_id, status: 'open' });
+    expect((await db().query('select resolution, exchange_variant_id, exchange_method from public.order_return_lines where return_id=$1',
+      [r.return_id])).rows).toEqual([{ resolution: 'exchange', exchange_variant_id: String(exchange.variantId), exchange_method: 'stock' }]);
+    await ranges(f, { return_in_progress: 2, shipped: 1, ready: 2 });
+    await operation(f, 'admin_approve_return', r.return_id, 'return_requested', 'return_in_progress', 2);
+    expect(await stockSnapshot(f)).toEqual(snapshot);
+    expect(await exchangeStock()).toBe(1);
+    expect((await db().query('select count(*)::int as n from public.order_items where order_id=$1', [f.orderId])).rows[0].n).toBe(1);
+    await refusal(db(), () => approve(f, r.return_id), 'RETURN_STATE_CONFLICT');
+    await operation(f, 'admin_approve_return', r.return_id, 'return_requested', 'return_in_progress', 2);
   });
 
   test('公開委譲/private本体の正確なACL・所有者・search_pathと内部coreの非再入を守る', async () => {

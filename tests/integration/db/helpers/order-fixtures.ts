@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import type { PgClient } from './local-db';
-import { seedGroupG1Allocation, seedGroupG1Shipment, withGroupG1FixtureTransaction } from './group-g1-fixtures';
+import { isInTransaction, seedGroupG1Allocation, seedGroupG1Shipment, withGroupG1FixtureTransaction } from './group-g1-fixtures';
 
 /** DB 結合テストの試験データ。本計画の Task 3〜7・21 が使う。 */
 export const PRICE = 5000;
@@ -14,9 +14,12 @@ async function groupGPresent(db: PgClient): Promise<boolean> {
   return (await db.query("select to_regclass('public.order_item_allocations') is not null as present")).rows[0].present as boolean;
 }
 
-/** Legacy suites already own BEGIN. Take the common lock before this material's next write. */
+/**
+ * Legacy suites already own BEGIN. This material's first statement takes the common lock (before it writes or
+ * locks a row); outside a transaction the G-1 fixture helper opens one and takes it first.
+ */
 async function lockGroupGFixture(db: PgClient): Promise<void> {
-  if ((db as PgClient & { _txStatus?: string })._txStatus === 'T') {
+  if (await isInTransaction(db)) {
     await db.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
   }
 }
@@ -41,8 +44,7 @@ export async function insertRestockMovement(db: PgClient, variantId: number, qua
  * A failing write is rolled back to its own savepoint and rethrown, so callers can still assert the refusal.
  */
 export async function withLedgerLock<T>(db: PgClient, write: () => Promise<T>): Promise<T> {
-  const status = (db as PgClient & { _txStatus?: string })._txStatus;
-  if (status === 'T') {
+  if (await isInTransaction(db)) {
     await db.query('savepoint g1_fixture_ledger');
     await db.query('select pg_catalog.pg_advisory_lock(190521,1)');
     try {
@@ -56,7 +58,6 @@ export async function withLedgerLock<T>(db: PgClient, write: () => Promise<T>): 
       await db.query('select pg_catalog.pg_advisory_unlock(190521,1)');
     }
   }
-  if (status !== 'I') throw new Error('GROUP_G_FIXTURE_TRANSACTION_STATE_REQUIRED');
   await db.query('begin');
   try {
     await db.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
@@ -749,7 +750,7 @@ export async function createShippedOrderFixture(
   const groupG = (await db.query("select to_regclass('public.order_item_allocations') is not null as present")).rows[0].present as boolean;
   // Legacy suites already own BEGIN. Acquire the common lock before this material's first write;
   // the strict nested helper below still verifies the lock and never commits the caller.
-  if (groupG && (db as PgClient & { _txStatus?: string })._txStatus === 'T') {
+  if (groupG && await isInTransaction(db)) {
     await db.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
   }
   const run = async (): Promise<ShippedOrderFixture> => {

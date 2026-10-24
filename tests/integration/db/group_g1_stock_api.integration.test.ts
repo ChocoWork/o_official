@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import { createCatalogFixture, insertOrderWithLines, variantStock } from './helpers/order-fixtures';
-import { seedGroupG1Allocation, seedGroupG1Restock, seedGroupG1Shipment } from './helpers/group-g1-fixtures';
+import { isInTransaction, seedGroupG1Allocation, seedGroupG1Restock, seedGroupG1Shipment } from './helpers/group-g1-fixtures';
 
 describeLocalDb('G-1 stock RPC', (db) => {
   let actor: string;
@@ -101,10 +101,13 @@ describeLocalDb('G-1 stock RPC', (db) => {
     expect((await db().query(`select id,remaining_quantity from public.order_item_allocations where id=any($1) order by id`, [[oldA, youngA, h]])).rows)
       .toEqual([{ id: oldA, remaining_quantity: 2 }, { id: youngA, remaining_quantity: 0 }, { id: h, remaining_quantity: 2 }].sort((a,b) => String(a.id).localeCompare(String(b.id))));
     expect(await inventory(c.variantId)).toMatchObject({ free: 0, paid_allocated: 2, payment_held: 2, on_hand: 4 });
-    const release = (await db().query(`select e.quantity,m.reason,m.delta,e.actor_id,m.note from public.order_item_allocation_events e
+    const release = (await db().query(`select e.quantity,m.reason,m.delta,e.actor_id,m.note,e.reason as event_reason
+      from public.order_item_allocation_events e
       join public.stock_movements m on m.id=e.stock_movement_id join private.group_g_operations op on op.id=e.operation_id
       where op.operation='stock_move' and e.event_type='release' order by e.quantity`)).rows;
-    expect(release).toEqual([1,2].map(quantity => ({ quantity, reason: 'allocation_release', delta: quantity, actor_id: actor, note: '棚卸' })));
+    // The admin memo stays on the ledger only; the allocation history holds the fixed code.
+    expect(release).toEqual([1,2].map(quantity => ({ quantity, reason: 'allocation_release', delta: quantity, actor_id: actor, note: '棚卸',
+      event_reason: 'stock_adjustment' })));
     expect((await db().query('select shipped,completed,ready_unshipped from private.order_line_fulfillment($1)', [young.id])).rows[0])
       .toEqual({ shipped: 1, completed: 1, ready_unshipped: 0 });
   });
@@ -221,7 +224,7 @@ describeLocalDb('G-1 stock RPC', (db) => {
     expect((await db().query('select reason,note from public.stock_movements where id=$1',[id])).rows[0])
       .toEqual({ reason: 'restock', note: 'E2E fixture restock' });
     expect((await db().query('select remaining_quantity from public.order_item_allocations where order_item_id=$1',[o.line])).rows[0].remaining_quantity).toBe(1);
-    expect((db() as { _txStatus?: string })._txStatus).toBe('T');
+    expect(await isInTransaction(db())).toBe(true);
   });
 
   test('service_role uses the public delegate and anonymous/authenticated callers cannot execute either entry', async () => {

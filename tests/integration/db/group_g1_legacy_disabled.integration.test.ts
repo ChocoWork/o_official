@@ -192,16 +192,86 @@ describeLocalDb('integration: G-1 で止めた旧の発送・仕上がりの関�
 
 describeLocalDb('integration: 止めた関数は共通の押さえも注文の行も待たない（2接続）', (db) => {
   let other: PgClient;
+  let otherPid: number;
   let target: Target;
 
+  // The other connection must see real committed rows (an uncommitted row is invisible and never makes it wait).
+  // Only the minimum is committed: one order and one fulfillment, with no items, stock, allocations or history,
+  // and they are removed again in afterAll (their delete-protection triggers are off only inside that transaction).
   beforeAll(async () => {
     other = await connectLocalDb();
     await other.query("set statement_timeout = '3s'");
-    target = await createTarget(db());
+    otherPid = (await other.query('select pg_backend_pid() as pid')).rows[0].pid as number;
+    await db().query('begin');
+    const orderId = (await db().query(`insert into public.orders
+      (session_id, checkout_session_id, status, subtotal_amount, shipping_amount, total_amount, currency,
+       shipping_email, shipping_full_name, shipping_postal_code, shipping_prefecture, shipping_city, shipping_address, shipping_phone)
+      values ($1, $2, 'paid', 5000, 0, 5000, 'jpy',
+        'fixture@example.com', '山田 花子', '1500001', '東京都', '渋谷区', '神宮前1-1-1', '0311112222') returning id`,
+    [`g1-legacy-wait-${uniqueSuffix()}`, `cs_g1_legacy_wait_${uniqueSuffix()}`])).rows[0].id as string;
+    const fulfillmentId = (await db().query(`insert into public.order_fulfillments
+      (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, shipped_at)
+      values ($1, 1, gen_random_uuid(), 'yamato', 'G1-LEGACY-WAIT', false, false, now()) returning id`, [orderId])).rows[0].id as string;
+    await db().query('commit');
+    target = { orderId, orderItemId: crypto.randomUUID(), fulfillmentId, actorId: crypto.randomUUID() };
   });
 
+  // The shared client of describeLocalDb is closed by its own afterAll first, so the cleanup uses `other`.
   afterAll(async () => {
-    await other.end();
+    try {
+      if (!target) return;
+      await other.query('begin');
+      try {
+        await other.query('alter table public.order_fulfillments disable trigger order_fulfillments_no_delete');
+        await other.query('alter table public.orders disable trigger protect_legal_order_delete');
+        await other.query('delete from public.order_fulfillments where id = $1', [target.fulfillmentId]);
+        await other.query('delete from public.orders where id = $1', [target.orderId]);
+        await other.query('alter table public.order_fulfillments enable trigger order_fulfillments_no_delete');
+        await other.query('alter table public.orders enable trigger protect_legal_order_delete');
+        await other.query('commit');
+      } catch (error) {
+        await other.query('rollback');
+        throw error;
+      }
+      expect((await other.query('select count(*)::int as n from public.orders where id = $1', [target.orderId])).rows[0].n).toBe(0);
+    } finally {
+      await other.end();
+    }
+  });
+
+  /** Watches the other connection from the lock holder while its call is still running; returns every blocked sample. */
+  async function watchWhileRunning(call: Promise<unknown>): Promise<{ samples: number; blocked: number }> {
+    let settled = false;
+    void call.then(() => { settled = true; }, () => { settled = true; });
+    let samples = 0;
+    let blocked = 0;
+    do {
+      const row = (await db().query(`select pg_catalog.cardinality(pg_catalog.pg_blocking_pids($1::int)) > 0
+          or exists(select 1 from pg_catalog.pg_locks where pid = $1::int and not granted) as waiting`, [otherPid])).rows[0];
+      samples++;
+      if (row.waiting) blocked++;
+    } while (!settled && samples < 1000);
+    return { samples, blocked };
+  }
+
+  test('見張りは、待っている相手を見つけられる（共通の押さえを待つ接続）', async () => {
+    await db().query('begin');
+    try {
+      await db().query('select pg_catalog.pg_advisory_xact_lock(190521, 1)');
+      await other.query('begin');
+      const waiting = other.query('select pg_catalog.pg_advisory_xact_lock(190521, 1)');
+      void waiting.catch(() => {});
+      let seen = false;
+      for (let i = 0; i < 1000 && !seen; i++) {
+        seen = (await db().query('select pg_catalog.cardinality(pg_catalog.pg_blocking_pids($1::int)) > 0 as w', [otherPid])).rows[0].w;
+      }
+      expect(seen).toBe(true);
+      await db().query('rollback');
+      await waiting;
+    } finally {
+      await db().query('rollback').catch(() => undefined);
+      await other.query('rollback');
+    }
   });
 
   test.each(STOPPED)('%s は、別の接続が共通の押さえと注文・発送の行を持っていても待たずに断る', async (signature, sql, match) => {
@@ -211,13 +281,14 @@ describeLocalDb('integration: 止めた関数は共通の押さえも注文の�
       await db().query('select id from public.orders where id = $1 for update', [target.orderId]);
       await db().query('select id from public.order_fulfillments where order_id = $1 for update', [target.orderId]);
       const started = Date.now();
-      await expect(other.query(sql, argumentSets(signature, target, crypto.randomUUID())[0])).rejects.toMatchObject(match);
+      const call = other.query(sql, argumentSets(signature, target, crypto.randomUUID())[0]);
+      void call.catch(() => {});
+      // Counted while the call is still in flight (not after it ended): it is never seen waiting on a lock.
+      const watched = await watchWhileRunning(call);
+      await expect(call).rejects.toMatchObject(match);
       expect(Date.now() - started).toBeLessThan(3000);
-      const locks = (await db().query(
-        'select count(*)::int as n from pg_locks where pid = (select pid from pg_stat_activity where pid = $1) and not granted',
-        [(await other.query('select pg_backend_pid() as pid')).rows[0].pid],
-      )).rows[0].n;
-      expect(locks).toBe(0);
+      expect(watched.samples).toBeGreaterThan(0);
+      expect(watched.blocked).toBe(0);
     } finally {
       await db().query('rollback');
     }

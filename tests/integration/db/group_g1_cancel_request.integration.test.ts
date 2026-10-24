@@ -253,6 +253,43 @@ describeLocalDb('G-1 Task 9: cancel requests and the FIFO allocations', (db) => 
     expect(await operations('admin_resolve_cancel_request', cancelId)).toHaveLength(1);
   });
 
+  test('承認（一部の返金で解決）: 申請2・返金1で未割当の残り1は、解決の FIFO が空き在庫から割り当てる（Task 9 M1）', async () => {
+    const owner = await user('owner');
+    const actor = await user('actor');
+    const fx = await createCatalogFixture(db(), { stock: 1 });
+    const order = await paidOrder({ variant: fx, quantity: 2, allocated: 0, owner });
+    const cancelId = (await request(owner, order, 2)).cancel_request_id as string;
+    expect(await states(order.orderId)).toEqual({ cancel_requested: 2 });
+    const refundId = (await db().query(`select refund_id from public.begin_order_refund($1::uuid,'admin',$2::uuid,$3::jsonb,true,0,
+      ${PRICE},null,null,null,false,$4::uuid,null)`, [order.orderId, randomUUID(),
+      JSON.stringify([{ order_item_id: order.itemId, quantity: 1, before_shipment: true }]), actor])).rows[0].refund_id as string;
+    await db().query(`select * from public.record_order_refund_result($1::uuid,$2::text,'pending',null,null,null,'card',null,null)`,
+      [refundId, `re_${refundId.replaceAll('-', '')}`]);
+    // Nothing was allocated, so the refund released nothing; the free unit still waits behind the open request.
+    expect(await allocated(order.itemId)).toBe(0);
+    expect(await variantStock(db(), fx.variantId)).toBe(1);
+    expect(await states(order.orderId)).toEqual({ cancelled: 1, cancel_requested: 1 });
+
+    expect((await db().query('select * from public.admin_resolve_cancel_request($1::uuid,$2::uuid,$3::uuid,false)',
+      [cancelId, actor, refundId])).rows).toEqual([{ cancel_request_id: cancelId, status: 'resolved' }]);
+
+    expect(await allocated(order.itemId)).toBe(1);
+    expect(await variantStock(db(), fx.variantId)).toBe(0);
+    expect(await states(order.orderId)).toEqual({ cancelled: 1, ready: 1 });
+    const ops = await operations('admin_resolve_cancel_request', cancelId);
+    expect(ops).toHaveLength(1);
+    expect(await stateEvents(ops[0].id, order.itemId)).toEqual([
+      { sequence: 1, from_status: 'cancel_requested', to_status: 'in_production', n: 1, reason: 'admin_resolve_cancel_request' },
+      { sequence: 2, from_status: 'in_production', to_status: 'ready', n: 1, reason: 'fifo' },
+    ]);
+    const allocation = (await db().query(`select e.event_type, e.quantity, e.reason, m.delta, m.reason as movement_reason
+      from public.order_item_allocation_events e join public.order_item_allocations a on a.id = e.allocation_id
+      join public.stock_movements m on m.id = e.stock_movement_id
+      where a.order_item_id = $1 and e.operation_id = $2`, [order.itemId, ops[0].id])).rows;
+    expect(allocation).toEqual([{ event_type: 'allocate', quantity: 1, reason: 'fifo', delta: -1, movement_reason: 'purchase' }]);
+    expect((await db().query('select * from public.verify_stock_integrity() where variant_id = $1', [fx.variantId])).rows).toEqual([]);
+  });
+
   test('承認（取消で解決）: 全額の返金で A を外した後の解決は在庫を足さない', async () => {
     const owner = await user('owner');
     const actor = await user('actor');

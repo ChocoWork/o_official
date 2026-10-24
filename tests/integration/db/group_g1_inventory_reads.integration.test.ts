@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import { createCatalogFixture, createShippedOrderFixture, insertOrderWithLines, insertRefundRecord,
   insertCancelRequest, insertReturnRecord, addItemVariant } from './helpers/order-fixtures';
-import { seedGroupG1Allocation, seedGroupG1Shipment } from './helpers/group-g1-fixtures';
+import { seedGroupG1Allocation, seedGroupG1Shipment, setOrderStatusForFixture } from './helpers/group-g1-fixtures';
 
 describeLocalDb('G-1 inventory and compatible reads', (db) => {
   beforeEach(async () => {
@@ -111,7 +111,7 @@ describeLocalDb('G-1 inventory and compatible reads', (db) => {
     const op = randomUUID();
     await db().query(`insert into private.group_g_operations(id,operation,request_key,fingerprint,cause_type,cause_id,result)
       values($1,'test_promote',$2,repeat('a',64),'order',$3,'{}')`,[op,randomUUID(),o.orderId]);
-    await db().query("update public.orders set status='paid' where id=$1",[o.orderId]);
+    await setOrderStatusForFixture(db(), [o.orderId], 'paid');
     await db().query("update public.order_item_allocations set kind='paid',version=version+1 where id=$1",[allocation]);
     await db().query(`insert into public.order_item_allocation_events(allocation_id,event_type,quantity,operation_id,sequence)
       values($1,'promote',2,$2,1)`,[allocation,op]);

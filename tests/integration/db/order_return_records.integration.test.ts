@@ -6,6 +6,7 @@ import {
   createDeliveryOrder, deliveryShipment, insertDeliveryFixture,
   markDeliveredFixture, correctDeliveryTrackingFixture,
 } from './helpers/delivery-tracking-fixtures';
+import { seedGroupG1Shipment } from './helpers/group-g1-fixtures';
 import {
   addItemVariant,
   createShippedOrderFixture,
@@ -2343,19 +2344,16 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
         orderId: order.orderId, shippedAt: '2026-10-01T03:00:00Z', deliveredAt: '2026-10-05T15:00:00Z',
       });
       const second = await insertDeliveryFixture(db(), { orderId: order.orderId, shippedAt: '2026-10-10T03:00:00Z' });
-      const cancelled = await insertDeliveryFixture(db(), {
-        orderId: order.orderId, shippedAt: '2026-10-20T03:00:00Z', deliveredAt: '2026-10-25T03:00:00Z',
-      });
-      // 届いた2発送は G-1 の割当を消費して作る。取り消した発送は、取り消した後に行を足す（割当は消費しない）
+      // 届いた2発送は G-1 の割当を消費して作る
       await withFixtureConsumption(db(), { orderId: order.orderId, lines: [{ order_item_id: order.orderItemId, quantity: 3 }] }, async () => {
         for (const [fulfillment, quantity] of [[first, 1], [second, 2]] as const) {
           await db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,$3)',
             [fulfillment.fulfillmentId, order.orderItemId, quantity]);
         }
       });
-      await db().query('update public.order_fulfillments set cancelled_at=now() where id=$1', [cancelled.fulfillmentId]);
-      await db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)',
-        [cancelled.fulfillmentId, order.orderItemId]);
+      // 取り消した発送は最初から取消済みで作る（割当の消費・戻し・在庫の動きは0件。Task 16 の cancelledAt）
+      await seedGroupG1Shipment(db(), { orderId: order.orderId, lines: [{ orderItemId: order.orderItemId, quantity: 1 }],
+        shippedAt: '2026-10-20T03:00:00Z', cancelledAt: '2026-10-26T03:00:00Z' });
       const deadlines = async () => (await shipmentLinesOf(db(), order.orderId)).map((line) => line.deadline_date);
       expect(await deadlines()).toEqual(['2026-10-13', '2026-10-20']);
       await db().query("update public.shop_return_settings set window_start='last_item' where id=1");

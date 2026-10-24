@@ -425,6 +425,16 @@ CREATE TABLE public.order_item_allocation_events (
   CONSTRAINT order_item_allocation_events_reverses_check CHECK ((event_type = 'restore') = (reverses_event_id IS NOT NULL)),
   CONSTRAINT order_item_allocation_events_movement_check CHECK (
     (event_type IN ('hold', 'allocate', 'restore', 'release')) = (stock_movement_id IS NOT NULL)
+  ),
+  -- 理由は決まった値だけ（管理者のメモなど自由な文は stock_movements.note に残す）。
+  -- この一覧は src/lib/inventory/allocation-types.ts の ALLOCATION_EVENT_REASON_CODES と同じ（単体試験が突き合わせる）。
+  -- fixture_* は手元の試験の材料だけが書く。
+  CONSTRAINT order_item_allocation_events_reason_check CHECK (
+    reason IS NULL OR reason IN (
+      'fifo', 'checkout', 'stripe_payment_paid', 'stock_adjustment', 'refund_restock', 'refund_release',
+      'stripe_checkout_expired', 'stripe_voucher_expired', 'admin_cancel', 'admin_cancel_failed_order',
+      'resolve_payment_exception', 'status_change', 'fixture_allocation', 'fixture_release', 'fixture_shipment'
+    )
   )
 );
 ALTER TABLE public.order_item_allocation_events OWNER TO postgres;
@@ -1806,7 +1816,7 @@ BEGIN
       VALUES(_variant_id, v_quantity, 'allocation_release', v_note, v_allocation.order_id, v_allocation.order_item_id, v_operation, _actor_id)
       RETURNING id INTO v_release_movement;
     INSERT INTO public.order_item_allocation_events(allocation_id, event_type, quantity, operation_id, sequence, stock_movement_id, reason, actor_id)
-      VALUES(v_allocation.id, 'release', v_quantity, v_operation, 1, v_release_movement, v_note, _actor_id);
+      VALUES(v_allocation.id, 'release', v_quantity, v_operation, 1, v_release_movement, 'stock_adjustment', _actor_id);
     v_remaining := v_remaining - v_quantity;
   END LOOP;
   INSERT INTO public.stock_movements(variant_id, delta, reason, note, created_by)
@@ -2301,7 +2311,13 @@ BEGIN
     RETURNING id INTO v_movement;
     INSERT INTO public.order_item_allocation_events
       (allocation_id, event_type, quantity, operation_id, sequence, stock_movement_id, reason, actor_id)
-    VALUES (v_hold.id, 'release', v_hold.remaining_quantity, _operation_id, 1, v_movement, _reason, _actor_id);
+    -- The ledger note keeps the caller's text; the allocation history keeps a fixed code only
+    -- (an unknown change reason, e.g. a future status-change text, is recorded as status_change).
+    VALUES (v_hold.id, 'release', v_hold.remaining_quantity, _operation_id, 1, v_movement,
+      CASE WHEN _reason IN ('stripe_checkout_expired', 'stripe_voucher_expired', 'admin_cancel',
+                            'admin_cancel_failed_order', 'resolve_payment_exception')
+           THEN _reason ELSE 'status_change' END,
+      _actor_id);
     v_released := v_released + v_hold.remaining_quantity;
     IF NOT (v_hold.variant_id = ANY (v_variants)) THEN
       v_variants := v_variants || v_hold.variant_id;
@@ -4515,6 +4531,16 @@ BEGIN
       JOIN public.order_items AS oi ON oi.id = rl.order_item_id
       WHERE rl.refund_id = v_refund.id AND rl.released_quantity > 0 AND oi.variant_id IS NOT NULL);
   END IF;
+  -- The first failure, and an awaiting refund marked error, drop the coverage: the covered units wait again by
+  -- their original order date (design 7-2), so FIFO also runs for the before-shipment lines' variants then.
+  -- (An error is reached only once from awaiting_response; a failure only once through failure_applied_at.)
+  IF v_failed OR (v_refund.source <> 'legacy' AND v_refund.status = 'error') THEN
+    v_fifo_variants := v_fifo_variants || ARRAY(
+      SELECT oi.variant_id
+      FROM public.order_refund_lines AS rl
+      JOIN public.order_items AS oi ON oi.id = rl.order_item_id
+      WHERE rl.refund_id = v_refund.id AND rl.before_shipment AND oi.variant_id IS NOT NULL);
+  END IF;
   SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_fifo_variants
   FROM pg_catalog.unnest(v_fifo_variants) AS x(id);
   IF pg_catalog.cardinality(v_fifo_variants) > 0 THEN
@@ -4728,9 +4754,19 @@ BEGIN
   END IF;
 
   v_request_key := pg_catalog.md5(_operation || ':' || _refund_id::text || ':' || v_current.status || ':' || v_next)::uuid;
-  SELECT op.id INTO v_operation
-  FROM private.group_g_operations AS op
-  WHERE op.operation = _operation AND op.request_key = v_request_key;
+  IF v_next = v_current.status THEN
+    -- A report that keeps the state (succeeded -> succeeded, a pending detail update) is a replay: it reuses the
+    -- refund's latest operation (preferring the one that reached this state) and adds no operation row.
+    SELECT op.id INTO v_operation
+    FROM private.group_g_operations AS op
+    WHERE op.cause_type = 'order_refund' AND op.cause_id = _refund_id::text
+    ORDER BY (op.result ->> 'to_status' IS NOT DISTINCT FROM v_current.status) DESC, op.created_at DESC, op.id DESC
+    LIMIT 1;
+  ELSE
+    SELECT op.id INTO v_operation
+    FROM private.group_g_operations AS op
+    WHERE op.operation = _operation AND op.request_key = v_request_key;
+  END IF;
   IF v_operation IS NULL THEN
     v_operation := pg_catalog.gen_random_uuid();
     INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
@@ -5136,8 +5172,9 @@ REVOKE ALL ON FUNCTION public.record_external_order_refund(uuid,text,integer,tex
 GRANT EXECUTE ON FUNCTION public.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)
   TO service_role;
 
--- 返事待ちだけをエラーにする（E-2 の本文のまま）。共通の lock の下で、覆いを外すだけ: 外していない A は持ったまま
--- 増やさず（FIFO を動かさない）、在庫・メールの予定・失敗の後始末は動かない。
+-- 返事待ちだけをエラーにする（E-2 の本文のまま）。共通の lock の下で、覆いを外す: 外していない A は持ったまま。
+-- 覆いを外した品は元の注文日の順で待ちに戻るので、その色・サイズの FIFO を動かす（設計書 7-2）。
+-- 在庫の解放・メールの予定・失敗の後始末は動かない。操作の記録は FIFO の前に書き、割当の元を返金にする。
 CREATE FUNCTION private.mark_order_refund_error(_refund_id uuid, _reason text, _raise_exception boolean)
 RETURNS TABLE (outcome text, order_id uuid, exception_id uuid)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
@@ -5195,18 +5232,7 @@ BEGIN
     ) AS x;
   END IF;
 
-  -- エラーの記録では、在庫・メールの予定・失敗の後始末は動かず、注文の状態だけが動く（E-2 のまま）
-  PERFORM 1 FROM private.apply_order_refund_state(_refund_id);
-
-  IF v_refund.return_id IS NOT NULL THEN
-    PERFORM private.apply_return_refund_outcome(_refund_id, 'awaiting_response');
-  ELSE
-    PERFORM private.refresh_order_return_status(rt.id) FROM public.order_returns AS rt
-    WHERE rt.order_id = v_order_id AND rt.status = 'open' ORDER BY rt.id;
-  END IF;
-
-  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'mark_order_refund_error',
-    v_refund.actor_id);
+  -- The operation row comes before FIFO so an allocation it makes keeps this refund as its origin.
   INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
   VALUES (
     v_operation,
@@ -5220,6 +5246,19 @@ BEGIN
     v_refund.actor_id,
     pg_catalog.jsonb_build_object('refund_id', _refund_id, 'order_id', v_order_id, 'exception_id', v_exception)
   );
+
+  -- エラーの記録では、在庫の解放・メールの予定・失敗の後始末は動かず、注文の状態と、覆いを外した品の FIFO だけが動く
+  PERFORM 1 FROM private.apply_order_refund_state(_refund_id);
+
+  IF v_refund.return_id IS NOT NULL THEN
+    PERFORM private.apply_return_refund_outcome(_refund_id, 'awaiting_response');
+  ELSE
+    PERFORM private.refresh_order_return_status(rt.id) FROM public.order_returns AS rt
+    WHERE rt.order_id = v_order_id AND rt.status = 'open' ORDER BY rt.id;
+  END IF;
+
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'mark_order_refund_error',
+    v_refund.actor_id);
   PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
 
   RETURN QUERY SELECT 'errored'::text, v_order_id, v_exception;
@@ -9151,11 +9190,10 @@ BEGIN
   ELSIF EXISTS (SELECT 1 FROM private.group_g_operations) OR EXISTS (SELECT 1 FROM public.order_item_allocations)
      OR EXISTS (SELECT 1 FROM public.order_item_allocation_events) OR EXISTS (SELECT 1 FROM public.order_item_state_events) THEN
     v_failed := 'table_rows';
+  -- 表の ACL は意味で比べる（下の $g1_final_table_acl$）。ここは RLS と所有者だけ
   ELSIF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_class AS c
-         WHERE c.oid = ANY (v_tables) AND c.relrowsecurity AND c.relowner = 'postgres'::regrole
-           AND c.relacl::text = CASE WHEN c.oid = 'private.group_g_operations'::regclass
-             THEN '{postgres=arwdDxtm/postgres}' ELSE '{postgres=arwdDxtm/postgres,service_role=r/postgres}' END) <> 4 THEN
-    v_failed := 'table_rls_owner_acl';
+         WHERE c.oid = ANY (v_tables) AND c.relrowsecurity AND c.relowner = 'postgres'::regrole) <> 4 THEN
+    v_failed := 'table_rls_owner';
   ELSIF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_policy AS p WHERE p.polrelid = ANY (v_tables)) <> 4
      OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_policy AS p
          WHERE p.polrelid = ANY (v_tables) AND NOT p.polpermissive AND p.polcmd = '*'
@@ -9203,7 +9241,7 @@ BEGIN
            ON a.attrelid = e.rel::regclass AND a.attname = e.col
           AND pg_catalog.format_type(a.atttypid, a.atttypmod) = e.typ AND a.attnotnull = e.required AND NOT a.attisdropped) <> 45 THEN
     v_failed := 'table_columns';
-  ELSIF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint AS c WHERE c.conrelid = ANY (v_tables)) <> 42
+  ELSIF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint AS c WHERE c.conrelid = ANY (v_tables)) <> 43
      OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_constraint AS c
          JOIN (VALUES
            ('private.group_g_operations', 'group_g_operations_pkey', 'p', NULL),
@@ -9236,6 +9274,7 @@ BEGIN
            ('public.order_item_allocation_events', 'order_item_allocation_events_counterpart_check', 'c', NULL),
            ('public.order_item_allocation_events', 'order_item_allocation_events_reverses_check', 'c', NULL),
            ('public.order_item_allocation_events', 'order_item_allocation_events_movement_check', 'c', NULL),
+           ('public.order_item_allocation_events', 'order_item_allocation_events_reason_check', 'c', NULL),
            ('public.order_item_allocation_events', 'group_g_allocation_bounds', 't', NULL),
            ('public.order_item_state_events', 'order_item_state_events_pkey', 'p', NULL),
            ('public.order_item_state_events', 'order_item_state_events_order_item_id_fkey', 'f', 'public.order_items'),
@@ -9251,7 +9290,7 @@ BEGIN
          ) AS e(rel, name, kind, target)
            ON c.conrelid = e.rel::regclass AND c.conname = e.name AND c.contype = e.kind
           AND c.confrelid = COALESCE(e.target::regclass::oid, 0::oid)
-          AND c.condeferrable = (COALESCE(e.target, '') = 'private.group_g_operations' OR e.kind = 't')) <> 42 THEN
+          AND c.condeferrable = (COALESCE(e.target, '') = 'private.group_g_operations' OR e.kind = 't')) <> 43 THEN
     v_failed := 'table_constraints';
   -- 追加の 2 列（stock_movements の列は遅延の操作 FK 付き）
   ELSIF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute AS a
@@ -9281,13 +9320,16 @@ BEGIN
            ('public.order_item_allocation_events', 'group_g_allocation_bounds', 'private.check_group_g_allocation_bounds()', 21),
            ('public.orders', 'orders_paid_at_once', 'private.guard_group_g_paid_at()', 19),
            ('public.order_item_completions', 'order_item_completions_disabled', 'private.reject_group_g_manual_completion()', 23),
-           ('public.stock_movements', 'stock_movements_apply', 'public.apply_stock_movement()', 5)
+           ('public.stock_movements', 'stock_movements_apply', 'public.apply_stock_movement()', 5),
+           ('public.stock_movements', 'group_g_stock_movement_consistency', 'private.check_group_g_stock_movement_consistency()', 5)
          ) AS e(rel, name, fn, kind)
            ON t.tgrelid = e.rel::regclass AND t.tgname = e.name AND t.tgfoid = e.fn::regprocedure
-          AND t.tgtype = e.kind AND t.tgenabled = 'O' AND NOT t.tgisinternal) <> 15
+          AND t.tgtype = e.kind AND t.tgenabled = 'O' AND NOT t.tgisinternal) <> 16
      OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_trigger AS t
-         WHERE t.tgname = 'group_g_allocation_bounds' AND t.tgconstraint <> 0 AND t.tgdeferrable AND t.tginitdeferred
-           AND t.tgrelid IN ('public.order_item_allocations'::regclass, 'public.order_item_allocation_events'::regclass)) <> 2 THEN
+         WHERE t.tgconstraint <> 0 AND t.tgdeferrable AND t.tginitdeferred AND NOT t.tgisinternal
+           AND ((t.tgname = 'group_g_allocation_bounds'
+                 AND t.tgrelid IN ('public.order_item_allocations'::regclass, 'public.order_item_allocation_events'::regclass))
+             OR (t.tgname = 'group_g_stock_movement_consistency' AND t.tgrelid = 'public.stock_movements'::regclass))) <> 3 THEN
     v_failed := 'triggers';
   -- 書き手・停止の関数: 全部が解決し、一覧の関数がちょうど同じ集合
   ELSIF EXISTS (SELECT 1 FROM pg_catalog.unnest(v_writers) AS w(s) WHERE pg_catalog.to_regprocedure(w.s) IS NULL)
@@ -9433,6 +9475,53 @@ BEGIN
   END IF;
 END
 $g1_final_objects$;
+
+-- 新 4 表の ACL を意味で比べる（文字列の完全一致にしない）。本番には既定の権限で別の grantee（supabase_admin 等）が
+-- 付くことがあり、それは問わない。見るのは役割ごとの「要る権限がある」と「要らない権限が無い」だけ:
+--   要る: 所有者 postgres の全権限、service_role の SELECT（group_g_operations を除く 3 表）
+--   無い: PUBLIC の権限、anon・authenticated の全権限（列の権限も）、service_role の SELECT 以外（列の権限も）と
+--         group_g_operations の SELECT
+DO $g1_final_table_acl$
+DECLARE
+  v_failed text;
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM (VALUES
+      ('private.group_g_operations', false),
+      ('public.order_item_allocations', true),
+      ('public.order_item_allocation_events', true),
+      ('public.order_item_state_events', true)
+    ) AS e(rel, service_select)
+    CROSS JOIN LATERAL (SELECT pg_catalog.to_regclass(e.rel) AS r) AS t
+    WHERE t.r IS NULL
+       -- 要る権限
+       OR EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) AS p(priv)
+                  WHERE NOT pg_catalog.has_table_privilege('postgres', t.r, p.priv))
+       OR pg_catalog.has_table_privilege('service_role', t.r, 'SELECT') <> e.service_select
+       -- 要らない権限
+       OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE((SELECT c.relacl FROM pg_catalog.pg_class AS c WHERE c.oid = t.r),
+                    pg_catalog.acldefault('r', 'postgres'::regrole))) AS x WHERE x.grantee = 0)
+       OR EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['anon', 'authenticated']) AS g(role)
+                  CROSS JOIN pg_catalog.unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) AS p(priv)
+                  WHERE pg_catalog.has_table_privilege(g.role, t.r, p.priv))
+       OR EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['anon', 'authenticated']) AS g(role)
+                  CROSS JOIN pg_catalog.unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']) AS p(priv)
+                  WHERE pg_catalog.has_any_column_privilege(g.role, t.r, p.priv))
+       OR EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) AS p(priv)
+                  WHERE pg_catalog.has_table_privilege('service_role', t.r, p.priv))
+       OR EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['INSERT', 'UPDATE', 'REFERENCES']) AS p(priv)
+                  WHERE pg_catalog.has_any_column_privilege('service_role', t.r, p.priv))
+       OR (NOT e.service_select AND pg_catalog.has_any_column_privilege('service_role', t.r, 'SELECT'))
+  ) THEN
+    v_failed := 'table_acl';
+  END IF;
+
+  IF v_failed IS NOT NULL THEN
+    RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = v_failed;
+  END IF;
+END
+$g1_final_table_acl$;
 -- G1_FINAL_ASSERT_END
 
 NOTIFY pgrst, 'reload schema';

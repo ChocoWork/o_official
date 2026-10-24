@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
 import { addItemVariant, createCatalogFixture, createShippedOrderFixture, insertOrderWithLines, insertRefundRecord,
   insertCancelRequest, insertReturnRecord, variantStock } from './helpers/order-fixtures';
-import { seedGroupG1Allocation, seedGroupG1Shipment, withGroupG1FixtureTransaction } from './helpers/group-g1-fixtures';
+import {
+  seedGroupG1Allocation, seedGroupG1Shipment, setOrderStatusForFixture, withGroupG1FixtureTransaction,
+} from './helpers/group-g1-fixtures';
 
 describeLocalDb('G-1 FIFO, ledger and minimal synthetic fixtures', (db) => {
   beforeEach(async () => {
@@ -211,7 +213,7 @@ describeLocalDb('G-1 FIFO, ledger and minimal synthetic fixtures', (db) => {
     expect(await totals(c.variantId)).toEqual({ f: 0, a: 0, h: 2, onHand: 2 });
     expect((await allocate([c.variantId])).count).toBe(0);
     const op = await operation();
-    await db().query(`update public.orders set status='paid' where id=$1`, [buyer.id]);
+    await setOrderStatusForFixture(db(), [buyer.id], 'paid');
     await db().query(`update public.order_item_allocations set kind='paid',version=version+1 where id=$1`, [a]);
     await db().query(`insert into public.order_item_allocation_events
       (allocation_id,event_type,quantity,operation_id,sequence) values ($1,'promote',2,$2,1)`, [a, op]);

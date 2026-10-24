@@ -17,8 +17,9 @@ const RUN = uniqueSuffix();
 
 /**
  * 入金済み・入金待ちにする RPC(設計書 4-1・4-5・⑤)。
- * 今の状態を条件にした更新で、先に動いていれば何もしない。在庫扱いで確保中が0の明細は確保し直し、
- * 足りなければ要確認にする。
+ * 今の状態を条件にした更新で、先に動いていれば何もしない。G-1 では入金で仮確保（H）を割当（A）へ切り替え、
+ * H の無い明細（失敗の後の入金など）は空き在庫からある分だけ割り当てる。足りない分は受注生産中の FIFO の待ちで、
+ * 要確認（stock_not_reserved）にはしない。
  */
 async function placeFromDraft(db: PgClient, options: { stock: number; quantity: number }) {
   const fx = await createCatalogFixture(db, { stock: options.stock });
@@ -190,7 +191,7 @@ describeLocalDb('integration: 入金済み・入金待ちにする', (db) => {
         markPaid(other, { orderId, expected: 'payment_in_progress', paymentIntentId: pi, amount: PRICE, event: `evt_concurrent_sweep_${RUN}` }),
       ]);
 
-      // 後の方は行ロックを待ち、先に入金済みになった注文を見て何もしない
+      // 後の方は共通の押さえ（advisory）を待ち、先に入金済みになった注文を見て何もしない
       expect([webhook.rows[0].updated, sweep.rows[0].updated].sort()).toEqual([false, true]);
       const winnerEvent = webhook.rows[0].updated ? `evt_concurrent_webhook_${RUN}` : `evt_concurrent_sweep_${RUN}`;
       expect((await orderRow(db(), orderId)).status).toBe('paid');

@@ -138,8 +138,12 @@ const CLEANUP_TARGETS: Array<[table: string, action: string, where: string]> = [
 const CLEANUP_TABLES = CLEANUP_TARGETS.map(([table]) => table);
 const DELETE_TABLES = CLEANUP_TARGETS.filter(([, action]) => action.startsWith('delete_')).map(([table]) => table);
 
-/** 本番の清掃前に owner へ見せる件数の読取（ID・秘密値を出さない）。temp 表を作らず、読取 CTE だけを使う */
-const CLEANUP_COUNT_SQL = `WITH group_g_cleanup_order_ids AS (SELECT id,checkout_session_id,payment_intent_id FROM public.orders),
+/**
+ * 本番の清掃前に owner へ見せる件数の読取（ID・秘密値を出さない）。temp 表を作らず、読取 CTE だけを使う。
+ * controller は Task 19 で同じファイル（COUNT_SQL_FILE）を本番に読取だけで流す。ここでは清掃の対象一覧から作った文と
+ * ファイルが同じであることを DB なしで確かめ、DB の試験はファイルの文を流す（一覧と本番に流す文がずれない）
+ */
+const GENERATED_CLEANUP_COUNT_SQL = `WITH group_g_cleanup_order_ids AS (SELECT id,checkout_session_id,payment_intent_id FROM public.orders),
 group_g_cleanup_payout_ids AS (SELECT DISTINCT payout_id AS id FROM public.stripe_balance_transactions WHERE order_id IN (SELECT id FROM group_g_cleanup_order_ids) AND payout_id IS NOT NULL),
 group_g_cleanup_webhook_ids AS (SELECT e.id FROM public.stripe_webhook_events e WHERE ${webhookCondition(ORDER_IDS)})
 SELECT x.table_name, x.action, x.affected_count, x.total_count, x.quantity_sum
@@ -157,6 +161,11 @@ ${[
 ].join('\n  UNION ALL\n')}
 ) x
 ORDER BY x.table_name COLLATE "C", x.action COLLATE "C"`;
+
+const COUNT_SQL_FILE = path.join(process.cwd(), 'tests/integration/db/sql/group_g1_cleanup_counts.sql');
+const COUNT_SQL_HEADER = '-- G-1 清掃の前の件数の読取（SELECT だけ。ID・メール・秘密値を出さない）。'
+  + 'tests/integration/db/group_g1_cleanup.integration.test.ts の清掃の対象一覧と同じ（試験が突き合わせる）\n';
+const CLEANUP_COUNT_SQL = fs.readFileSync(COUNT_SQL_FILE, 'utf8');
 
 const WEBHOOK_IDS_SQL = `WITH group_g_cleanup_order_ids AS (SELECT id,checkout_session_id,payment_intent_id FROM public.orders)
 SELECT e.id FROM public.stripe_webhook_events e WHERE ${webhookCondition(ORDER_IDS)} ORDER BY e.id`;
@@ -269,7 +278,7 @@ const G1_BODY_CONSTRAINTS = [
   'order_item_allocations|group_g_allocation_bounds',
   ...['pkey', 'allocation_id_fkey', 'counterpart_allocation_id_fkey', 'reverses_event_id_fkey', 'stock_movement_id_fkey',
     'operation_id_fkey', 'operation_key', 'stock_movement_id_key', 'reverses_event_id_key', 'event_type_check',
-    'quantity_check', 'sequence_check', 'counterpart_check', 'reverses_check', 'movement_check']
+    'quantity_check', 'sequence_check', 'counterpart_check', 'reverses_check', 'movement_check', 'reason_check']
     .map((name) => `order_item_allocation_events|order_item_allocation_events_${name}`),
   'order_item_allocation_events|group_g_allocation_bounds',
   ...['pkey', 'order_item_id_fkey', 'operation_id_fkey', 'operation_key', 'unit_from_check', 'unit_to_check',
@@ -687,6 +696,15 @@ describe('G-1 の移行の形（DB なしで読む）', () => {
 
   test('全角の空白・NBSP・BOM・CR を含まない', () => {
     expect(MIGRATION_SQL).not.toMatch(/[　 ﻿\r]/);
+  });
+
+  test('件数の読取のファイルは清掃の対象一覧から作った文と同じで、読取だけ', () => {
+    expect(CLEANUP_COUNT_SQL).toBe(`${COUNT_SQL_HEADER}${GENERATED_CLEANUP_COUNT_SQL};\n`);
+    expect(CLEANUP_COUNT_SQL).not.toMatch(/[　 ﻿\r]/);
+    const body = CLEANUP_COUNT_SQL.replace(/^--.*$/gm, '').replace(/'[^']*'/g, "''");
+    expect(body.trimStart().startsWith('WITH ')).toBe(true);
+    expect(body).not.toMatch(/\b(INSERT|UPDATE|DELETE|MERGE|TRUNCATE|ALTER|CREATE|DROP|GRANT|REVOKE|COPY|CALL|DO|SET|LOCK)\b/i);
+    expect(body.match(/;/g)).toHaveLength(1);
   });
 
   test('private の USAGE を触らず、清掃は TRUNCATE・複製の役割・RLS の変更・IF EXISTS を使わない', () => {

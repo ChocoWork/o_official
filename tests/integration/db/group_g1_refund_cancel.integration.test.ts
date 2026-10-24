@@ -2,8 +2,8 @@
 import { randomUUID } from 'node:crypto';
 import { connectLocalDb, describeLocalDb } from './helpers/local-db';
 import {
-  PRICE, createCatalogFixture, insertOrderWithLines, insertRefundRecord, movementsOf, reserveFixtureAllocation,
-  shipFixtureOrder, uniqueSuffix, variantStock,
+  PRICE, createCatalogFixture, insertOrderWithLines, insertRefundRecord, insertRestockMovement, movementsOf,
+  reserveFixtureAllocation, shipFixtureOrder, uniqueSuffix, variantStock,
 } from './helpers/order-fixtures';
 
 /**
@@ -18,13 +18,34 @@ jest.setTimeout(30000);
 type Row = Record<string, any>;
 
 describeLocalDb('G-1 Task 8: refunds and the FIFO allocations', (db) => {
+  /** Variants made by this test; every test ends with the ledger and the cached stock agreeing for them. */
+  let touched: number[] = [];
+
   beforeEach(async () => {
+    touched = [];
     await db().query('begin');
     await db().query('delete from private.order_email_outbox');
   });
   afterEach(async () => {
-    await db().query('rollback');
+    try {
+      // Every test ends with verify_stock_integrity() empty for its variants (T8-M2/M4).
+      expect((await db().query('select * from public.verify_stock_integrity() where variant_id = any($1::bigint[])',
+        [touched])).rows).toEqual([]);
+    } finally {
+      await db().query('rollback');
+    }
   });
+
+  async function catalog(options: { stock: number }) {
+    const fx = await createCatalogFixture(db(), options);
+    touched.push(fx.variantId);
+    return fx;
+  }
+
+  /** A plain restock row (no FIFO) under the common lock, as the made unit arriving. */
+  async function insertRestock(variantId: number, quantity: number) {
+    await insertRestockMovement(db(), variantId, quantity);
+  }
 
   async function actor(): Promise<string> {
     return (await db().query(`insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
@@ -35,7 +56,7 @@ describeLocalDb('G-1 Task 8: refunds and the FIFO allocations', (db) => {
   async function paidOrder(options: {
     stock: number; quantity: number; reserved?: boolean; createdAt?: string; variant?: { itemId: number; variantId: number };
   }) {
-    const fx = options.variant ?? await createCatalogFixture(db(), { stock: options.stock });
+    const fx = options.variant ?? await catalog({ stock: options.stock });
     const order = await insertOrderWithLines(db(), {
       status: 'paid', paidAmount: PRICE * options.quantity, createdAt: options.createdAt,
       lines: [{ itemId: fx.itemId, variantId: fx.variantId, quantity: options.quantity, fulfillmentType: 'stock',
@@ -121,12 +142,17 @@ describeLocalDb('G-1 Task 8: refunds and the FIFO allocations', (db) => {
     expect(await movementsOf(db(), fx.variantId)).toEqual(ledger);
     expect(await paidAllocated(itemId)).toBe(1);
     expect(await variantStock(db(), fx.variantId)).toBe(1);
-    // One operation per transition; the repeated succeeded report reuses its operation.
-    expect(await operations('record_order_refund_result', refundId)).toHaveLength(3);
+    // One operation per transition (awaiting -> pending, pending -> succeeded). A report that keeps the state
+    // (succeeded -> succeeded) is a replay and reuses the latest operation: no third row (T8-M1).
+    const resultOps = await operations('record_order_refund_result', refundId);
+    expect(resultOps).toHaveLength(2);
+    const transitions = (await db().query(`select result->>'from_status' as from_status, result->>'to_status' as to_status
+      from private.group_g_operations where id = any($1::uuid[]) order by 1`, [resultOps])).rows;
+    expect(transitions).toEqual([{ from_status: 'awaiting_response', to_status: 'pending' }, { from_status: 'pending', to_status: 'succeeded' }]);
   });
 
   test('no_restock は refund/+n と adjustment/-n を同じ返金で対にし、間で FIFO を動かさない（古い待ち注文は A 0 のまま）', async () => {
-    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const fx = await catalog({ stock: 2 });
     const waiting = await paidOrder({ stock: 0, quantity: 1, reserved: false, createdAt: '2026-01-01', variant: fx });
     const target = await paidOrder({ stock: 0, quantity: 2, createdAt: '2026-02-01', variant: fx });
     const { refundId } = await insertRefundRecord(db(), {
@@ -150,7 +176,7 @@ describeLocalDb('G-1 Task 8: refunds and the FIFO allocations', (db) => {
   });
 
   test('受注生産の行が FIFO で受けた A は、発送前の返金で在庫に戻り（調整で消さない）、次に古い待ち注文へ渡る。A の無い受注生産の行は何も足さない', async () => {
-    const fx = await createCatalogFixture(db(), { stock: 0 });
+    const fx = await catalog({ stock: 0 });
     const made = await insertOrderWithLines(db(), { status: 'paid', paidAmount: PRICE, createdAt: '2026-02-01',
       lines: [{ itemId: fx.itemId, variantId: fx.variantId, quantity: 1, fulfillmentType: 'backorder' }] });
     const waiting = await paidOrder({ stock: 0, quantity: 1, reserved: false, createdAt: '2026-03-01', variant: fx });
@@ -180,7 +206,7 @@ describeLocalDb('G-1 Task 8: refunds and the FIFO allocations', (db) => {
     expect(await variantStock(db(), fx.variantId)).toBe(0);
 
     // A backorder line that never received A: the refund adds nothing to stock.
-    const other = await createCatalogFixture(db(), { stock: 0 });
+    const other = await catalog({ stock: 0 });
     const unmade = await insertOrderWithLines(db(), { status: 'paid', paidAmount: PRICE,
       lines: [{ itemId: other.itemId, variantId: other.variantId, quantity: 1, fulfillmentType: 'backorder' }] });
     const { refundId: unmadeRefund } = await insertRefundRecord(db(), {
@@ -209,7 +235,7 @@ describeLocalDb('G-1 Task 8: refunds and the FIFO allocations', (db) => {
   });
 
   test('pending→failed: 解放した1点は古い待ち注文へ渡り、失敗はその A を奪わず不足と要確認に残す', async () => {
-    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const fx = await catalog({ stock: 2 });
     const older = await paidOrder({ stock: 0, quantity: 1, reserved: false, createdAt: '2026-01-01', variant: fx });
     const target = await paidOrder({ stock: 0, quantity: 2, createdAt: '2026-02-01', variant: fx });
     const { refundId } = await insertRefundRecord(db(), { orderId: target.orderId, lines: [{ orderItemId: target.itemId, quantity: 1 }] });
@@ -235,7 +261,7 @@ describeLocalDb('G-1 Task 8: refunds and the FIFO allocations', (db) => {
   });
 
   test('失敗の復元は元の注文日の通常 FIFO: 新しい待ち注文より先に元の注文へ割り当て、新しい注文の A は変えない', async () => {
-    const fx = await createCatalogFixture(db(), { stock: 2 });
+    const fx = await catalog({ stock: 2 });
     const target = await paidOrder({ stock: 0, quantity: 2, createdAt: '2026-02-01', variant: fx });
     const newer = await paidOrder({ stock: 0, quantity: 2, reserved: false, createdAt: '2026-03-01', variant: fx });
     const { refundId } = await insertRefundRecord(db(), { orderId: target.orderId, lines: [{ orderItemId: target.itemId, quantity: 1 }] });
@@ -256,7 +282,7 @@ describeLocalDb('G-1 Task 8: refunds and the FIFO allocations', (db) => {
     expect((await db().query('select review_reason from public.orders where id = $1', [target.orderId])).rows[0].review_reason).toBeNull();
   });
 
-  test('返事待ち→エラーは覆いを外すだけで、未解放の A を増やさず FIFO も動かさない', async () => {
+  test('返事待ち→エラーは覆いを外し、外していない A は持ったまま、待ちに戻った品は元の注文日の FIFO で割り当てる', async () => {
     const full = await paidOrder({ stock: 2, quantity: 2 });
     const { refundId: first } = await insertRefundRecord(db(), { orderId: full.orderId, lines: [{ orderItemId: full.itemId, quantity: 1 }] });
     expect(await states(full.orderId)).toEqual({ cancelled: 1, ready: 1 });
@@ -266,17 +292,84 @@ describeLocalDb('G-1 Task 8: refunds and the FIFO allocations', (db) => {
     expect(await paidAllocated(full.itemId)).toBe(2);
     expect(await operations('mark_order_refund_error', first)).toHaveLength(1);
 
-    // An order whose line is mostly unallocated: free stock is available, yet the error allocates nothing.
-    const fx = await createCatalogFixture(db(), { stock: 6 });
+    // An order whose line is mostly unallocated: the 2 covered units wait again and FIFO allocates them from free
+    // stock under the error's operation (T8-M3, design 7-2); the A the line already had is kept as it is.
+    const fx = await catalog({ stock: 6 });
     const partial = await paidOrder({ stock: 0, quantity: 3, reserved: false, variant: fx });
     await reserveFixtureAllocation(db(), { orderId: partial.orderId, orderItemId: partial.itemId, variantId: fx.variantId, quantity: 1, status: 'paid' });
     const { refundId: second } = await insertRefundRecord(db(), { orderId: partial.orderId, lines: [{ orderItemId: partial.itemId, quantity: 2 }] });
+    expect(await states(partial.orderId)).toEqual({ cancelled: 2, ready: 1 });
     const ledger = await movementsOf(db(), fx.variantId);
     await db().query(`select outcome from public.mark_order_refund_error($1::uuid,'stripe_rejected',true)`, [second]);
-    expect(await paidAllocated(partial.itemId)).toBe(1);
-    expect(await variantStock(db(), fx.variantId)).toBe(5);
+    expect(await paidAllocated(partial.itemId)).toBe(3);
+    expect(await variantStock(db(), fx.variantId)).toBe(3);
+    expect(await movementsOf(db(), fx.variantId)).toEqual([...ledger, { delta: -2, reason: 'purchase' }]);
+    expect(await states(partial.orderId)).toEqual({ ready: 3 });
+    const [errorOp] = await operations('mark_order_refund_error', second);
+    const fifo = (await db().query(`select m.refund_id, e.reason from public.stock_movements m
+      join public.order_item_allocation_events e on e.stock_movement_id = m.id
+      where m.allocation_operation_id = $1 and m.reason = 'purchase'`, [errorOp])).rows;
+    expect(fifo).toEqual([{ refund_id: second, reason: 'fifo' }]);
+  });
+
+  test('返事待ち→失敗: 覆っていた品は待ちに戻り、同じ失敗の FIFO が割り当てる（外していない A は持ったまま）', async () => {
+    const fx = await catalog({ stock: 4 });
+    const target = await paidOrder({ stock: 0, quantity: 3, reserved: false, variant: fx });
+    await reserveFixtureAllocation(db(), { orderId: target.orderId, orderItemId: target.itemId, variantId: fx.variantId, quantity: 1, status: 'paid' });
+    const { refundId } = await insertRefundRecord(db(), { orderId: target.orderId, lines: [{ orderItemId: target.itemId, quantity: 2 }] });
+    expect(await states(target.orderId)).toEqual({ cancelled: 2, ready: 1 });
+
+    expect(await record(refundId, 'failed')).toMatchObject({ status: 'failed', newly_failed: true, rereserve_shortage: 0 });
+
+    expect(await paidAllocated(target.itemId)).toBe(3);
+    expect(await variantStock(db(), fx.variantId)).toBe(1);
+    expect(await states(target.orderId)).toEqual({ ready: 3 });
+    expect(await line(refundId)).toMatchObject({ released_quantity: 0, rereserved_quantity: 0, rereserve_shortage: 0 });
+  });
+
+  test('成功→失敗: 外した1点は元の注文日の FIFO で戻り、ほかの注文の A は奪わない。再送は増分0', async () => {
+    const fx = await catalog({ stock: 2 });
+    const target = await paidOrder({ stock: 0, quantity: 2, createdAt: '2026-02-01', variant: fx });
+    const newer = await paidOrder({ stock: 0, quantity: 1, reserved: false, createdAt: '2026-03-01', variant: fx });
+    const { refundId } = await insertRefundRecord(db(), { orderId: target.orderId, lines: [{ orderItemId: target.itemId, quantity: 1 }] });
+    expect(await record(refundId, 'succeeded')).toMatchObject({ status: 'succeeded', newly_accepted: true });
+    expect(await paidAllocated(target.itemId)).toBe(1);
+    expect(await paidAllocated(newer.itemId)).toBe(1);
+    await insertRestock(fx.variantId, 1);
+
+    const failed = await record(refundId, 'failed');
+
+    expect(failed).toMatchObject({ status: 'failed', newly_failed: true, rereserve_shortage: 0 });
+    expect(await paidAllocated(target.itemId)).toBe(2);
+    expect(await paidAllocated(newer.itemId)).toBe(1);
+    expect(await variantStock(db(), fx.variantId)).toBe(0);
+    expect(await line(refundId)).toMatchObject({ released_quantity: 1, rereserved_quantity: 1, rereserve_shortage: 0 });
+    const ledger = await movementsOf(db(), fx.variantId);
+    const ops = await operations('record_order_refund_result', refundId);
+    expect(await record(refundId, 'failed')).toMatchObject({ status: 'failed', newly_failed: false });
     expect(await movementsOf(db(), fx.variantId)).toEqual(ledger);
-    expect(await states(partial.orderId)).toEqual({ in_production: 2, ready: 1 });
+    expect(await operations('record_order_refund_result', refundId)).toEqual(ops);
+  });
+
+  test('エラー→保留: Stripe で見つかった返金は保留になって初めて A を外し、エラーの時に割り当てた品も同じ規則で外す', async () => {
+    const { orderId, itemId, fx } = await paidOrder({ stock: 2, quantity: 2 });
+    const { refundId } = await insertRefundRecord(db(), { orderId, lines: [{ orderItemId: itemId, quantity: 1 }] });
+    await db().query(`select outcome from public.mark_order_refund_error($1::uuid,'not_found_in_stripe',true)`, [refundId]);
+    expect(await states(orderId)).toEqual({ ready: 2 });
+    expect(await paidAllocated(itemId)).toBe(2);
+    const exception = (await db().query(`select id from public.payment_exceptions
+      where payment_ref = $1 and reason = 'refund_failed' and resolved_at is null`, [refundId])).rows;
+    expect(exception).toHaveLength(1);
+
+    expect(await record(refundId, 'pending')).toMatchObject({ status: 'pending', newly_accepted: true });
+
+    expect(await states(orderId)).toEqual({ cancelled: 1, ready: 1 });
+    expect(await paidAllocated(itemId)).toBe(1);
+    expect(await variantStock(db(), fx.variantId)).toBe(1);
+    expect(await line(refundId)).toMatchObject({ released_quantity: 1, restocked_quantity: 1 });
+    expect((await db().query('select resolved_at is not null as resolved from public.payment_exceptions where id = $1',
+      [exception[0].id])).rows[0].resolved).toBe(true);
+    expect(await operations('record_order_refund_result', refundId)).toHaveLength(1);
   });
 
   test('結果の途中で失敗すると、返金の状態・注文の額・メールの予定・割当・台帳・操作・状態の履歴が全部戻る', async () => {
@@ -331,7 +424,8 @@ describeLocalDb('G-1 Task 8: refunds and the FIFO allocations', (db) => {
     const again = (await db().query(EXTERNAL, [orderId, stripeRefundId, PRICE * 2])).rows[0];
     expect(again).toMatchObject({ created: false, refund_id: first.refund_id, newly_accepted: false });
     expect(await movementsOf(db(), fx.variantId)).toEqual(ledger);
-    expect(await operations('record_external_order_refund', first.refund_id)).toHaveLength(2);
+    // The same external refund again keeps the state, so it reuses the first operation (T8-M1).
+    expect(await operations('record_external_order_refund', first.refund_id)).toHaveLength(1);
   });
 
   test('内部の core は共通の lock を持たない呼出しを断り、入れ子で公開 RPC や lock helper を呼ばない', async () => {

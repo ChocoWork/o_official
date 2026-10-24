@@ -2,13 +2,15 @@
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import { createCatalogFixture, insertOrderWithLines } from './helpers/order-fixtures';
+import { setOrderStatusForFixture } from './helpers/group-g1-fixtures';
 
 type Fx = { orderId: string; itemId: string; variantId: number; catalogId: number; quantity: number };
 type Range = { status: string; unit_from: number; unit_to: number; blocked_reasons: string[] };
 
 /** Controller only: reset + both real PostgREST pre-request smoke requests precede this suite. */
 describeLocalDb('G-1 exclusive item states and interval history', (db) => {
-  beforeEach(async () => { await db().query('begin'); });
+  // The test transaction takes the common advisory first, before any material locks a row (FK checks included).
+  beforeEach(async () => { await db().query('begin'); await db().query('select pg_advisory_xact_lock(190521,1)'); });
   afterEach(async () => { await db().query('rollback'); });
 
   async function fixture(status = 'paid', quantity = 6): Promise<Fx> {
@@ -310,6 +312,49 @@ describeLocalDb('G-1 exclusive item states and interval history', (db) => {
     expect((await ranges(f)).every((r) => r.blocked_reasons.includes('payment_review'))).toBe(true);
   });
 
+  // Task 3 M4: closed and cancelled returns, adjacent intervals that differ only by blocked reason, non-exchange NULL variant.
+  test('cancelled return gives its units back to the shipment state; a closed return keeps only what it finished', async () => {
+    const f = await fixture(); const s = await ship(f, 6, 1, true);
+    const cancelled = await returned(f, s, 2, 'open', 1);
+    await assertStates(f, { return_in_progress: 2, delivered: 4 });
+    await db().query(`update public.order_returns set status='cancelled', cancelled_at=now() where id=$1`, [cancelled.id]);
+    await assertStates(f, { delivered: 6 });
+    const closed = await returned(f, s, 3, 'open', 2);
+    await receive(closed, 2); await receive(closed, 1, 'missing');
+    await refund(f, 2, 'succeeded', false, closed.id);
+    await db().query(`update public.order_returns set status='closed', closed_at=now() where id=$1`, [closed.id]);
+    await assertStates(f, { returned: 3, delivered: 3 });
+  });
+
+  test('adjacent intervals that differ only by blocked reason stay separate, and a reason-only change records no event', async () => {
+    const f = await fixture('paid', 2);
+    const pending = await refund(f, 1, 'pending'); await refund(f, 1, 'succeeded');
+    const split = await ranges(f);
+    expect(split).toHaveLength(2);
+    expect(split.map((r) => r.status)).toEqual(['cancelled', 'cancelled']);
+    expect(split[0].unit_to).toBe(split[1].unit_from);
+    expect(split.map((r) => r.blocked_reasons).sort((a, b) => a.length - b.length)).toEqual([[], ['refund_processing']]);
+    const before = await capture(f); const op = await operation();
+    await db().query(`update public.order_refunds set status='succeeded', succeeded_at=now() where id=$1`, [pending]);
+    expect(await ranges(f)).toEqual([{ status: 'cancelled', unit_from: 0, unit_to: 2, blocked_reasons: [] }]);
+    expect(await record(f, before, op, 1)).toBe(0);
+    expect(await events(f)).toEqual([]);
+  });
+
+  test('a non-exchange line without a variant waits as variant_missing (never stock_shortage) and FIFO skips it', async () => {
+    const c = await createCatalogFixture(db(), { stock: 5 });
+    const o = await insertOrderWithLines(db(), { status: 'paid', paidAmount: 10000,
+      lines: [{ itemId: c.itemId, variantId: null, quantity: 2, fulfillmentType: 'stock', reserved: false }] });
+    const f: Fx = { orderId: o.orderId, itemId: o.orderItemIds[0], variantId: c.variantId, catalogId: c.itemId, quantity: 2 };
+    expect((await db().query(`select line_kind <> 'exchange' as ordinary, exchange_return_line_id, variant_id
+      from public.order_items where id=$1`, [f.itemId])).rows).toEqual([{ ordinary: true, exchange_return_line_id: null, variant_id: null }]);
+    await assertStates(f, { in_production: 2 });
+    expect(await ranges(f)).toEqual([{ status: 'in_production', unit_from: 0, unit_to: 2, blocked_reasons: ['variant_missing'] }]);
+    const op = await operation();
+    expect((await db().query('select private.allocate_group_g_fifo($1,$2,null) as n', [[c.variantId], op])).rows[0].n).toBe(0);
+    expect((await db().query('select stock_quantity from public.item_variants where id=$1', [c.variantId])).rows[0].stock_quantity).toBe(5);
+  });
+
   test('payment-review hold on an unallocated non-NULL variant yields payment_review without stock_shortage', async () => {
     await db().query('select pg_advisory_xact_lock(190521,1)');
     const f = await fixture();
@@ -346,7 +391,7 @@ describeLocalDb('G-1 exclusive item states and interval history', (db) => {
     expect(before).toHaveLength(201);
     expect(before.every((r: { status: string }) => r.status === 'unpaid')).toBe(true);
     const op = await operation();
-    await db().query(`update public.orders set status='paid' where id=any($1::uuid[])`, [ids]);
+    await setOrderStatusForFixture(db(), ids, 'paid');
     const params = [JSON.stringify(before), ids, op, 1, 'payment_201_test', null];
     const recordSql = 'select private.record_group_g_item_state_changes($1::jsonb,$2,$3,$4,$5,$6) as n';
     expect((await db().query(recordSql, params)).rows[0].n).toBe(201);
@@ -387,7 +432,7 @@ describeLocalDb('G-1 exclusive item states and interval history', (db) => {
 
   test('one operation records payment then FIFO separately; versions increment for each item event', async () => {
     const f = await fixture('pending'); const op = await operation(); const unpaid = await capture(f);
-    await db().query(`update public.orders set status='paid',paid_amount=30000 where id=$1`, [f.orderId]);
+    await setOrderStatusForFixture(db(), [f.orderId], 'paid', { paidAmount: 30000 });
     expect(await record(f, unpaid, op, 1)).toBe(1);
     const paid = await capture(f); await allocate(f, 2); expect(await record(f, paid, op, 2)).toBe(1);
     expect((await events(f)).map((r) => [r.from_status, r.to_status, r.sequence, r.version])).toEqual([
@@ -425,12 +470,24 @@ describeLocalDb('G-1 exclusive item states and interval history', (db) => {
 
   test('newly visible units use NULL; leaving visibility uses NULL; old history is never a baseline', async () => {
     const f = await fixture('payment_in_progress'); const hidden = await capture(f); const op = await operation();
-    await db().query(`update public.orders set status='pending' where id=$1`, [f.orderId]);
+    await setOrderStatusForFixture(db(), [f.orderId], 'pending');
     expect(await record(f, hidden, op, 1)).toBe(1);
     expect((await events(f))[0]).toMatchObject({ from_status: null, to_status: 'unpaid', version: 1 });
-    const before = await capture(f); await db().query(`update public.orders set status='abandoned' where id=$1`, [f.orderId]);
-    expect(await record(f, before, op, 2)).toBe(1);
-    expect((await events(f))[1]).toMatchObject({ from_status: 'unpaid', to_status: null, version: 2 });
+    // Leaving visibility: J-19 allows no visible -> hidden transition, so no trigger is bypassed. A second order in
+    // payment_in_progress becomes pending inside a savepoint only to capture its visible snapshot, is rolled back to
+    // hidden, and then takes the allowed payment_in_progress -> abandoned; the recorder compares that snapshot with
+    // the hidden result and writes the NULL target (with or without J-19).
+    const g = await fixture('payment_in_progress');
+    await db().query('savepoint visible_snapshot');
+    await setOrderStatusForFixture(db(), [g.orderId], 'pending');
+    const before = await capture(g);
+    expect(before.every((r: { status: string }) => r.status === 'unpaid')).toBe(true);
+    await db().query('rollback to savepoint visible_snapshot');
+    await setOrderStatusForFixture(db(), [g.orderId], 'abandoned');
+    expect(await ranges(g)).toEqual([]);
+    expect(await record(g, before, op, 2)).toBe(1);
+    expect(await events(g)).toEqual([expect.objectContaining({ from_status: 'unpaid', to_status: null, version: 1, sequence: 2 })]);
+    expect(await events(f)).toHaveLength(1);
   });
 
   test('declined return restores delivered with reason, without delivery timestamp or event fabrication', async () => {

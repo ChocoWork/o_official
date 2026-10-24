@@ -59,6 +59,24 @@ const RETIRE_UNATTACHED_SQL = fs.readFileSync(
   ),
   "utf8",
 );
+/**
+ * G-1 以後: 当て直す移行（グループ C・カートの引き継ぎ）は public.place_order_from_checkout_draft を古い本体で上書きする。
+ * 後に流れる試験と E2E が古い本体（G-1 の割当の前）に当たらないよう、最後にその関数を定義した移行の定義
+ * （CREATE OR REPLACE から、続く ALTER・REVOKE・GRANT まで）を当て直す。
+ */
+function latestPlaceOrderDefinition(): string {
+  const directory = path.join(process.cwd(), "supabase/migrations");
+  const header = "CREATE OR REPLACE FUNCTION public.place_order_from_checkout_draft(";
+  const files = fs.readdirSync(directory).filter((name: string) => name.endsWith(".sql")).sort();
+  const sql = files.map((name: string) => fs.readFileSync(path.join(directory, name), "utf8"))
+    .filter((text: string) => text.includes(header)).pop() as string;
+  const start = sql.lastIndexOf(header);
+  const bodyEnd = sql.indexOf("\n$$;", start);
+  const next = sql.indexOf("\nCREATE ", bodyEnd);
+  return sql.slice(start, next < 0 ? undefined : next);
+}
+const LATEST_PLACE_ORDER_SQL = latestPlaceOrderDefinition();
+
 const CLEANUP_SQL = `
 BEGIN;
 DROP FUNCTION IF EXISTS public.claim_checkout_draft(
@@ -121,6 +139,7 @@ describe("integration: Checkout Session draft claim", () => {
   });
 
   afterAll(async () => {
+    let restored: { rows: Array<{ prosrc: string }> } | undefined;
     if (clientA) {
       // 試験用に消した列と関数を、移行の後の状態（元の移行＋グループ C の移行＋カートの引き継ぎの決済の関数の移行）に戻す。
       // 戻さないと、後に走る DB 結合テストと E2E の「確認へ進む」が関数の無い DB に当たる。
@@ -130,9 +149,20 @@ describe("integration: Checkout Session draft claim", () => {
       await clientA.query(COMPAT_SQL);
       await clientA.query(OWNER_BINDING_SQL);
       await clientA.query(CART_CHECKOUT_RPCS_SQL);
+      // 上の2本が上書きした注文の受付の公開口を、最後の移行（G-1）の定義へ戻す
+      await clientA.query(LATEST_PLACE_ORDER_SQL);
+      restored = await clientA.query(
+        `select p.prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public' and p.proname = 'place_order_from_checkout_draft'`,
+      );
       await clientA.end();
     }
     if (clientB) await clientB.end();
+    // G-1 の公開口は private 本体へ委ねるだけ。古い本体のままなら、後の試験の前にここで止める
+    if (restored && (restored.rows.length !== 1
+      || !String(restored.rows[0].prosrc).includes("private.place_order_from_checkout_draft("))) {
+      throw new Error("place_order_from_checkout_draft was not restored to the latest migration definition");
+    }
   });
 
   function fixture() {

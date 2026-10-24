@@ -1,6 +1,6 @@
 import type { ShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import { randomUUID } from 'node:crypto';
-import { withGroupG1FixtureTransaction } from './group-g1-fixtures';
+import { isInTransaction, withGroupG1FixtureTransaction } from './group-g1-fixtures';
 import { connectLocalDb, type PgClient } from './local-db';
 import { createCatalogFixture, insertOrderWithLines, shipFixtureOrder, uniqueSuffix, withFixtureConsumption } from './order-fixtures';
 
@@ -91,7 +91,7 @@ async function syntheticDeliveryChange<T>(
   input: { orderId: string; fulfillmentId: string; actorId: string | null; operation: string },
   write: () => Promise<T>,
 ): Promise<T> {
-  if ((client as PgClient & { _txStatus?: string })._txStatus === 'T') {
+  if (await isInTransaction(client)) {
     await client.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
   }
   return withGroupG1FixtureTransaction(client, async () => {

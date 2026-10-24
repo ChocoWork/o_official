@@ -512,6 +512,11 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       await a.query('begin');
       await a.query('select pg_advisory_xact_lock(190521,1)');
       await b.query('begin');
+      // Why `prepare`: the request/return entries refuse with their defaults (requests off, no return address), so the
+      // valid input needs these shop settings. They are changed inside B's own transaction, not in the committed setup:
+      // committed, they would leak into later suites and the E2E data; here B's rollback undoes them. The UPDATE runs
+      // before B's entry starts, so the shop settings row (outside the G-1 lock order and never probed by C) is
+      // the only row B holds while it waits; every business row probed below must stay free.
       if (material.prepare) await b.query(material.prepare);
       pending = b.query(material.sql, material.params);
       void pending.catch(() => {});

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { PgClient } from './local-db';
 
-type FixtureClient = PgClient & { host?: string; _txStatus?: string };
+type FixtureClient = PgClient & { host?: string };
+/** Nesting of this helper is tracked here (per connection), never by node-pg internals or a failing statement. */
 const contexts = new WeakMap<PgClient, { depth: number; sequence: number }>();
 
 function assertLocal(client: PgClient): asserts client is FixtureClient {
@@ -11,33 +12,53 @@ function assertLocal(client: PgClient): asserts client is FixtureClient {
 }
 
 /**
- * Synthetic data only. Existing transactions must hold the advisory before their first row write/lock.
- * Callers lock the complete existing target set before writing; newly inserted rows are already owned.
- * node-pg ReadyForQuery supplies _txStatus (I/T/E); never probe nesting with a failing SQL statement.
+ * Whether the caller already opened a transaction block on this connection. PostgreSQL defines
+ * statement_timestamp() = transaction_timestamp() only for the first command of a transaction, so a
+ * statement sent after the caller's BEGIN differs, while an autocommit statement does not. Read-only; it does
+ * not depend on node-pg internals and never probes with a failing statement. An aborted transaction makes it
+ * throw (the caller's state is already broken).
+ */
+export async function isInTransaction(client: PgClient): Promise<boolean> {
+  return (await client.query(
+    'select pg_catalog.statement_timestamp() <> pg_catalog.transaction_timestamp() as in_transaction',
+  )).rows[0].in_transaction as boolean;
+}
+
+async function holdsCommonLock(client: PgClient): Promise<boolean> {
+  return (await client.query(`select exists(select 1 from pg_catalog.pg_locks
+    where pid=pg_backend_pid() and locktype='advisory' and classid=190521 and objid=1
+      and objsubid=2 and mode='ExclusiveLock' and granted) as held`)).rows[0].held as boolean;
+}
+
+/**
+ * Synthetic data only. Without a caller transaction: BEGIN -> common advisory (before any row lock) -> run -> COMMIT.
+ * Inside the caller's transaction: the caller must already hold the common advisory before its first row lock
+ * (checked, never taken late here); SAVEPOINT -> run -> RELEASE, and the caller's transaction is never committed.
+ * A failure rolls back only this helper's transaction or savepoint. Callers lock the complete existing target set
+ * before writing; newly inserted rows are already owned.
  */
 export async function withGroupG1FixtureTransaction<T>(client: PgClient, run: () => Promise<T>): Promise<T> {
+  return runGroupG1Fixture(client, () => run());
+}
+
+/** Same as withGroupG1FixtureTransaction; `owns` tells the body whether this call opened the transaction. */
+async function runGroupG1Fixture<T>(client: PgClient, run: (owns: boolean) => Promise<T>): Promise<T> {
   assertLocal(client);
   const prior = contexts.get(client);
-  if (!['I', 'T'].includes(client._txStatus ?? '')) throw new Error('GROUP_G_FIXTURE_TRANSACTION_STATE_REQUIRED');
-  const ownsTransaction = !prior && client._txStatus === 'I';
+  const ownsTransaction = !prior && !(await isInTransaction(client));
   const context = prior ?? { depth: 0, sequence: 0 };
   const savepoint = `g1_fixture_${++context.sequence}`;
   if (ownsTransaction) {
     await client.query('begin');
     await client.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
   } else {
-    if (!prior) {
-      const lock = (await client.query(`select exists(select 1 from pg_catalog.pg_locks
-        where pid=pg_backend_pid() and locktype='advisory' and classid=190521 and objid=1
-          and objsubid=2 and mode='ExclusiveLock' and granted) as held`)).rows[0].held;
-      if (!lock) throw new Error('GROUP_G_INVENTORY_LOCK_REQUIRED');
-    }
+    if (!prior && !(await holdsCommonLock(client))) throw new Error('GROUP_G_INVENTORY_LOCK_REQUIRED');
     await client.query(`savepoint ${savepoint}`);
   }
   context.depth++;
   contexts.set(client, context);
   try {
-    const result = await run();
+    const result = await run(ownsTransaction);
     await client.query(ownsTransaction ? 'commit' : `release savepoint ${savepoint}`);
     return result;
   } catch (error) {
@@ -48,6 +69,27 @@ export async function withGroupG1FixtureTransaction<T>(client: PgClient, run: ()
     context.depth--;
     if (!context.depth) contexts.delete(client);
   }
+}
+
+/**
+ * Test scaffolding that moves orders to a status directly, inside the caller's transaction. It always gives the
+ * change reason that J-19 (supabase/pending/harden_order_state_transitions.sql) requires, so suites pass with or
+ * without that pending SQL, and restores the previous reason afterwards. Transitions J-19 forbids are refused there
+ * as they would be in production; use a real RPC or an allowed transition instead.
+ */
+export async function setOrderStatusForFixture(
+  client: PgClient, orderIds: string[], status: string, extra: { paidAmount?: number } = {},
+): Promise<void> {
+  assertLocal(client);
+  if (!(await isInTransaction(client))) throw new Error('GROUP_G_FIXTURE_TRANSACTION_REQUIRED');
+  const previous = (await client.query(
+    "select coalesce(pg_catalog.current_setting('app.order_change_reason', true), '') as reason")).rows[0].reason as string;
+  await client.query("select pg_catalog.set_config('app.order_change_reason', 'fixture_status_change', true)");
+  // A refused update aborts the caller's transaction, so the reason is restored only after success.
+  await client.query(
+    `update public.orders set status=$2::public.order_status, paid_amount=coalesce($3::integer, paid_amount)
+     where id = any($1::uuid[])`, [orderIds, status, extra.paidAmount ?? null]);
+  await client.query("select pg_catalog.set_config('app.order_change_reason', $1, true)", [previous]);
 }
 
 async function operation(client: PgClient, name: string, causeId: string, input: object, actorId: string | null = null) {
@@ -90,8 +132,7 @@ export async function seedGroupG1Allocation(
   validQuantity(input.quantity, true);
   if (!['payment_hold', 'paid'].includes(input.kind)) throw new Error('GROUP_G_ARGUMENT_INVALID');
   if (!input.quantity) return null;
-  const standalone = client._txStatus === 'I';
-  return withGroupG1FixtureTransaction(client, async () => {
+  return runGroupG1Fixture(client, async (standalone) => {
     const item = (await client.query('select order_id,variant_id from public.order_items where id=$1', [input.orderItemId])).rows[0];
     if (!item?.variant_id) throw new Error('GROUP_G_ARGUMENT_INVALID');
     if (standalone) await client.query('select private.lock_group_g_inventory($1,$2)', [[item.variant_id], [item.order_id]]);
@@ -132,8 +173,7 @@ export async function seedGroupG1Shipment(client: PgClient, input: {
     || [input.shippedAt, input.deliveredAt, input.cancelledAt].some((date) => date !== undefined && !Number.isFinite(Date.parse(date)))
     || new Set(input.lines.map((l) => l.orderItemId)).size !== input.lines.length) throw new Error('GROUP_G_ARGUMENT_INVALID');
   for (const line of input.lines) validQuantity(line.quantity);
-  const standalone = client._txStatus === 'I';
-  return withGroupG1FixtureTransaction(client, async () => {
+  return runGroupG1Fixture(client, async (standalone) => {
     if (standalone) await client.query('select private.lock_group_g_inventory($1,$2)', [[], [input.orderId]]);
     const before = (await client.query('select private.capture_group_g_item_states($1) as states', [[input.orderId]])).rows[0].states;
     const lines = [...input.lines].sort((a, b) => a.orderItemId.localeCompare(b.orderItemId));
