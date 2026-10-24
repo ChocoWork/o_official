@@ -298,7 +298,8 @@ describeLocalDb('G-1 Task 9: cancel requests and the FIFO allocations', (db) => 
       { proname: 'admin_close_cancel_request', prosecdef: true, calls_public: false, locks: 1, service_role: true, client: false },
       { proname: 'admin_decline_cancel_request', prosecdef: true, calls_public: false, locks: 1, service_role: true, client: false },
       { proname: 'admin_resolve_cancel_request', prosecdef: true, calls_public: false, locks: 1, service_role: true, client: false },
-      { proname: 'customer_order_for_request', prosecdef: false, calls_public: false, locks: 1, service_role: false, client: false },
+      // Task 10: both request bodies own the closure; the shared helper must never reacquire it.
+      { proname: 'customer_order_for_request', prosecdef: false, calls_public: false, locks: 0, service_role: false, client: false },
       { proname: 'customer_request_cancel', prosecdef: true, calls_public: false, locks: 1, service_role: true, client: false },
       { proname: 'lock_order_cancel_request', prosecdef: false, calls_public: false, locks: 0, service_role: false, client: false },
     ]);
@@ -367,18 +368,22 @@ describeLocalDb('G-1 Task 9: the customer helper follows the common lock across 
         expect(Date.now() - started).toBeLessThan(3000);
       }
 
-      // The owner's update path (the legacy return request until Task 10) waits for the advisory first.
+      // Task 10: the helper is internal and requires the caller's closure; it must never lock on its own.
+      await expect(caller.query('select (private.customer_order_for_request($1::uuid,$2::uuid,true)).id',
+        [material.orderId, material.owner])).rejects.toMatchObject({ code: '55000', message: 'GROUP_G_INVENTORY_LOCK_REQUIRED' });
+      // Exercise the actual public update entry and retain both the pre-advisory and post-entry row-lock assertions.
       await caller.query('begin');
+      await caller.query(`update public.shop_return_settings set requests_enabled=true,
+        request_types='returns_and_cancellations' where id=1`);
       const waiter = await pid(caller);
-      pending = caller.query('select (private.customer_order_for_request($1::uuid,$2::uuid,true)).id as id',
-        [material.orderId, material.owner]);
+      pending = caller.query(REQUEST, [material.orderId, material.owner, randomUUID(), lines, null]);
       void pending.catch(() => {});
       await waitForAdvisory(waiter);
       await observer.query('begin');
       expect((await observer.query('select id from public.orders where id=$1 for update nowait', [material.orderId])).rowCount).toBe(1);
       await observer.query('rollback');
       await holder.query('rollback');
-      await expect(pending).resolves.toMatchObject({ rows: [{ id: material.orderId }] });
+      await expect(pending).resolves.toMatchObject({ rows: [{ status: 'requested', replayed: false }] });
       await observer.query('begin');
       await expect(observer.query('select id from public.orders where id=$1 for update nowait', [material.orderId]))
         .rejects.toMatchObject({ code: '55P03' });

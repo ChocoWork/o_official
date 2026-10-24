@@ -230,6 +230,11 @@ const G1_BODY_FUNCTIONS = [
   'private.admin_decline_cancel_request(uuid,uuid,text,text)',
   'private.admin_close_cancel_request(uuid,uuid)',
   'private.admin_resolve_cancel_request(uuid,uuid,uuid,boolean)',
+  'private.customer_request_return(uuid,uuid,uuid,jsonb)',
+  'private.admin_create_return(uuid,uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
+  'private.admin_approve_return(uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
+  'private.admin_decline_return(uuid,uuid,text,text)',
+  'private.admin_cancel_return(uuid,uuid)',
 ];
 const G1_BODY_TRIGGERS = [
   ...['order_item_allocation_events', 'order_item_state_events', 'private.group_g_operations'].flatMap((table) => {
@@ -971,7 +976,11 @@ WHERE id = (SELECT pg_catalog.min(id) FROM pg_temp.group_g_cleanup_webhook_ids);
       'mark_order_refund_error(uuid,text,boolean)',
       'private.customer_order_for_request(uuid,uuid,boolean)', 'customer_request_cancel(uuid,uuid,uuid,jsonb,text)',
       'private.lock_order_cancel_request(uuid)', 'admin_decline_cancel_request(uuid,uuid,text,text)',
-      'admin_close_cancel_request(uuid,uuid)', 'admin_resolve_cancel_request(uuid,uuid,uuid,boolean)'];
+      'admin_close_cancel_request(uuid,uuid)', 'admin_resolve_cancel_request(uuid,uuid,uuid,boolean)',
+      'private.lock_order_return(uuid)', 'customer_request_return(uuid,uuid,uuid,jsonb)',
+      'admin_create_return(uuid,uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
+      'admin_approve_return(uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
+      'admin_decline_return(uuid,uuid,text,text)', 'admin_cancel_return(uuid,uuid)'];
     const functions = split(catalog.functions, (row) => row.signature as string, G1_BODY_FUNCTIONS, changedFunctions);
     expect(functions.kept).toEqual(split(before.catalog.functions, (row) => row.signature as string, [], changedFunctions).kept);
     expect(functions.added).toEqual([...G1_BODY_FUNCTIONS].sort());

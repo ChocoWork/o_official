@@ -169,6 +169,8 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     /** Task 9: run on B (after BEGIN, before the entry) to open the cancel request settings for that transaction only. */
     prepare?: string;
     cancelRequestId?: string;
+    returnId?: string;
+    exchangeVariants?: number[];
   };
   const TASK6_ENTRIES: Array<{ name: string; setup: () => Promise<Task6Material>; check: (rows: any[]) => void }> = [
     { name: 'public.place_order_from_checkout_draft', setup: async () => {
@@ -347,6 +349,61 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     }, check: (rows) => expect(rows).toEqual([{ status: 'resolved' }]) },
   ];
 
+  // Task 10: input-only exchange variants must be part of the initial closure too.
+  const RETURN_SETTINGS = `update public.shop_return_settings set requests_enabled=true,
+    request_types='returns_and_cancellations',return_address_name='fixture',return_address_postal_code='1000001',
+    return_address_line='fixture',return_address_phone='0312345678' where id=1`;
+  const TASK10_ENTRIES: Array<{ name: string; setup: () => Promise<Task6Material>; check: (rows: any[]) => void }> =
+    ['customer_request_return', 'admin_create_return', 'admin_approve_return', 'admin_decline_return', 'admin_cancel_return'].map(name => ({
+      name: `public.${name}`, setup: async () => {
+        const fx = await withGroupG1FixtureTransaction(db(), async () => {
+          const f = await createShippedOrderFixture(db(), { lines: [{ quantity: 5 }],
+            shipments: [{ lines: [{ lineIndex: 0, quantity: 3 }] }] });
+          const owner = await actorId();
+          await db().query('update public.orders set user_id=$1 where id=$2', [owner, f.orderId]);
+          const exchange = await addItemVariant(db(), { itemId: f.itemIds[0], colorName: 'WHITE', sizeLabel: 'L', stock: 0 });
+          const waiting = await insertOrderWithLines(db(), { status: 'paid', lines: [{ itemId: f.itemIds[0],
+            variantId: exchange.variantId, quantity: 1, fulfillmentType: 'backorder', reserved: false }] });
+          const existing = name.startsWith('admin_') && name !== 'admin_create_return'
+            ? await insertReturnRecord(db(), { orderId: f.orderId,
+              status: name === 'admin_cancel_return' ? 'open' : 'requested',
+              lines: [{ fulfillmentId: f.fulfillments[0].id, orderItemId: f.orderItemIds[0], quantity: 1 }] }) : undefined;
+          return { f, owner, exchange, waiting, existing };
+        });
+        const base = { fulfillment_id: fx.f.fulfillments[0].id, order_item_id: fx.f.orderItemIds[0], quantity: 1, reason: 'defective' };
+        let sql: string;
+        let params: unknown[];
+        if (name === 'customer_request_return') {
+          sql = 'select status,replayed from public.customer_request_return($1::uuid,$2::uuid,$3::uuid,$4::jsonb)';
+          params = [fx.f.orderId, fx.owner, randomUUID(), JSON.stringify([{ ...base, customer_note: 'fixture',
+            requested_resolution: 'exchange', requested_exchange_variant_id: fx.exchange.variantId, photos: [] }])];
+        } else if (name === 'admin_create_return') {
+          sql = `select status,replayed from public.admin_create_return($1::uuid,$2::uuid,$3::uuid,$4::jsonb,
+            'customer_ships','shop',null,null,0,0,0,0,null,false)`;
+          params = [fx.f.orderId, fx.owner, randomUUID(), JSON.stringify([{ ...base, reason_note: null,
+            resolution: 'exchange', exchange_variant_id: fx.exchange.variantId, exchange_method: 'make' }])];
+        } else if (name === 'admin_approve_return') {
+          sql = `select status from public.admin_approve_return($1::uuid,$2::uuid,$3::jsonb,
+            'customer_ships','shop',null,null,0,0,0,0,null,false)`;
+          params = [fx.existing!.returnId, fx.owner, JSON.stringify([{ return_line_id: fx.existing!.lineIds[0],
+            resolution: 'exchange', exchange_variant_id: fx.exchange.variantId, exchange_method: 'make' }])];
+        } else {
+          sql = name === 'admin_decline_return'
+            ? `select status from public.admin_decline_return($1::uuid,$2::uuid,'other','fixture')`
+            : 'select status from public.admin_cancel_return($1::uuid,$2::uuid)';
+          params = [fx.existing!.returnId, fx.owner];
+        }
+        const usesExchange = ['customer_request_return', 'admin_create_return', 'admin_approve_return'].includes(name);
+        return { sql, params, prepare: `${RETURN_SETTINGS}; update public.shop_return_reason_settings set shown=true,
+          photo='optional',resolutions='refund_and_exchange',out_of_stock_exchange='make' where reason='defective'`,
+          itemId: fx.f.itemIds[0], variantId: fx.f.variantIds[0],
+          orderIds: usesExchange ? [fx.f.orderId, fx.waiting.orderId].sort() : [fx.f.orderId],
+          returnId: fx.existing?.returnId, exchangeVariants: usesExchange ? [fx.exchange.variantId] : [] };
+      }, check: rows => expect(rows).toEqual([name === 'customer_request_return' ? { status: 'requested', replayed: false }
+        : name === 'admin_create_return' ? { status: 'open', replayed: false }
+          : { status: name === 'admin_approve_return' ? 'open' : name === 'admin_decline_return' ? 'declined' : 'cancelled' }]),
+    }));
+
   let actor: string | undefined;
   async function actorId() {
     actor ??= (await db().query(`insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
@@ -361,7 +418,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     )).rows[0].order_id as string;
   }
 
-  test.each([...TASK6_ENTRIES, ...TASK7_ENTRIES, ...TASK8_ENTRIES, ...TASK9_ENTRIES])('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
+  test.each([...TASK6_ENTRIES, ...TASK7_ENTRIES, ...TASK8_ENTRIES, ...TASK9_ENTRIES, ...TASK10_ENTRIES])('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
     const material = await setup();
     const a = await client();
     const b = await client();
@@ -396,11 +453,30 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
         probes.push(['select id from public.order_cancel_request_lines where cancel_request_id=$1 for update nowait',
           [material.cancelRequestId]]);
       }
+      if (material.returnId) {
+        probes.push(['select id from public.order_returns where id=$1 for update nowait', [material.returnId]]);
+        probes.push(['select id from public.order_return_lines where return_id=$1 for update nowait', [material.returnId]]);
+      }
+      if (material.exchangeVariants?.length) probes.push([
+        'select id from public.item_variants where id=any($1::bigint[]) for update nowait', [material.exchangeVariants],
+      ]);
       for (const [probe, params] of probes) expect((await c.query(probe, params)).rowCount).toBeGreaterThan(0);
       await c.query('rollback');
       await a.query('rollback');
       check((await pending).rows);
       await b.query('set constraints all immediate');
+      // Verify input-only exchange rows and their waiting order are held by the completed body.
+      await c.query('begin');
+      for (const [sql, params] of [
+        ...(material.exchangeVariants ?? []).map(id => ['select id from public.item_variants where id=$1 for update nowait', [id]] as const),
+        ...material.orderIds.map(id => ['select id from public.orders where id=$1 for update nowait', [id]] as const),
+      ]) {
+        await c.query('savepoint closure_locked');
+        await expect(c.query(sql, [...params])).rejects.toMatchObject({ code: '55P03' });
+        await c.query('rollback to savepoint closure_locked');
+        await c.query('release savepoint closure_locked');
+      }
+      await c.query('rollback');
     } finally {
       await a.query('rollback');
       if (pending) await pending.catch(() => {});
@@ -416,6 +492,13 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
         await db().query(`update public.order_refunds set status='error', errored_at=now()
           where id=$1 and status='awaiting_response'`, [material.refundId]);
       }
+      if (material.returnId) await db().query(`update public.order_returns set
+        status=case when status='requested' then 'declined' else 'cancelled' end,
+        declined_at=case when status='requested' then now() else declined_at end,
+        decline_reason=case when status='requested' then 'other' else decline_reason end,
+        decline_message=case when status='requested' then 'fixture cleanup' else decline_message end,
+        cancelled_at=case when status='open' then now() else cancelled_at end
+        where id=$1 and status in ('requested','open')`, [material.returnId]);
     }
   });
 
@@ -568,6 +651,89 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       expect(free + Object.values(byOrder).reduce((sum, n) => sum + n, 0)).toBe(2);
       expect(free).toBe(0);
       expect((await db().query('select * from public.verify_stock_integrity() where variant_id=$1', [fx.variant])).rows).toEqual([]);
+    } finally {
+      await a.query('rollback');
+      if (second) await second.catch(() => {});
+      await b.query('rollback');
+      await Promise.all([a.end(), b.end()]);
+    }
+  });
+
+  test.each([
+    ['payment', true], ['payment', false], ['fifo', true], ['fifo', false],
+  ] as const)('return request vs %s (return first=%s): no deadlock, no double allocation, oldest waiting wins', async (peer, returnFirst) => {
+    const fx = await withGroupG1FixtureTransaction(db(), async () => {
+      // Restore only the settings this fixture's earlier version committed. Use the reset baseline from
+      // 20261012235910_order_return_records.sql:467-530; the competing RPCs below never change settings.
+      await db().query(`update public.shop_return_settings set requests_enabled=default,request_types=default,
+        return_address_name=null,return_address_postal_code=null,return_address_line=null,return_address_phone=null where id=1`);
+      await db().query(`update public.shop_return_reason_settings set shown=true,photo='required',
+        resolutions='refund_and_exchange',out_of_stock_exchange='make' where reason='defective'`);
+      const f = await createShippedOrderFixture(db(), { lines: [{ quantity: 5, extraStock: 1 }],
+        shipments: [{ lines: [{ lineIndex: 0, quantity: 3 }] }] });
+      const owner = await actorId();
+      await db().query(`insert into public.user_roles(user_id,role_id)
+        select $1,id from public.roles where code='admin' on conflict do nothing`, [owner]);
+      await db().query('update public.orders set user_id=$1 where id=$2', [owner, f.orderId]);
+      const older = await insertOrderWithLines(db(), { status: 'paid', createdAt: '2026-01-01', lines: [{
+        itemId: f.itemIds[0], variantId: f.variantIds[0], quantity: 1, fulfillmentType: 'backorder', reserved: false,
+      }] });
+      const newer = await insertOrderWithLines(db(), { status: 'paid', createdAt: '2026-02-01', lines: [{
+        itemId: f.itemIds[0], variantId: f.variantIds[0], quantity: 1, fulfillmentType: 'backorder', reserved: false,
+      }] });
+      const draft = await createDraft(db(), { itemId: f.itemIds[0], quantity: 1 });
+      const paymentOrderId = await placeOrder(draft);
+      return { f, owner, older, newer, draft, paymentOrderId };
+    });
+    const a = await client();
+    const b = await client();
+    let second: Promise<unknown> | undefined;
+    const request = async (c: PgClient) => {
+      const result = await c.query('select status,replayed from public.customer_request_return($1::uuid,$2::uuid,$3::uuid,$4::jsonb)',
+        [fx.f.orderId, fx.owner, randomUUID(), JSON.stringify([{ fulfillment_id: fx.f.fulfillments[0].id,
+          order_item_id: fx.f.orderItemIds[0], quantity: 1, reason: 'other', customer_note: 'fixture',
+          requested_resolution: 'refund', requested_exchange_variant_id: null, photos: [] }])]);
+      expect(result.rows).toEqual([{ status: 'requested', replayed: false }]);
+    };
+    const other = async (c: PgClient) => {
+      if (peer === 'fifo') expect((await c.query(`select public.admin_record_stock_movement($1::bigint,$2::bigint,
+        1,'restock',null,$3::uuid,$4::uuid,null) as result`,
+      [fx.f.itemIds[0], fx.f.variantIds[0], fx.owner, randomUUID()])).rows[0].result)
+        .toMatchObject({ allocatedQuantity: 1, releasedQuantity: 0, replayed: false });
+      else expect((await c.query(`select updated,amount_matches from public.mark_order_paid($1::uuid,'payment_in_progress',
+        $2::text,$3::integer,'jpy',true,'order_confirmed',null)`,
+      [fx.paymentOrderId, `pi_${randomUUID().replaceAll('-', '')}`, fx.draft.totalAmount])).rows)
+        .toEqual([{ updated: true, amount_matches: true }]);
+    };
+    try {
+      await a.query('begin');
+      await b.query('begin');
+      const [blocker, waiter] = [await pid(a), await pid(b)];
+      if (returnFirst) await request(a); else await other(a);
+      second = returnFirst ? other(b) : request(b);
+      void second.catch(() => {});
+      await waitForAdvisory(db(), waiter, blocker);
+      await a.query('commit');
+      await second;
+      await b.query('commit');
+      const quantities = (await db().query(`select oi.order_id,a.kind,sum(a.remaining_quantity)::int n
+        from public.order_items oi join public.order_item_allocations a on a.order_item_id=oi.id
+        where oi.order_id=any($1::uuid[]) and a.remaining_quantity>0 group by oi.order_id,a.kind`,
+      [[fx.f.orderId, fx.older.orderId, fx.newer.orderId, fx.paymentOrderId]])).rows;
+      const expected = [
+        { order_id: fx.f.orderId, kind: 'paid', n: 2 },
+        { order_id: fx.paymentOrderId, kind: peer === 'payment' ? 'paid' : 'payment_hold', n: 1 },
+        ...(peer === 'fifo' ? [{ order_id: fx.older.orderId, kind: 'paid', n: 1 }] : []),
+      ];
+      expect(quantities.sort((x, y) => x.order_id.localeCompare(y.order_id)))
+        .toEqual(expected.sort((x, y) => x.order_id.localeCompare(y.order_id)));
+      const free = Number((await db().query('select stock_quantity from public.item_variants where id=$1', [fx.f.variantIds[0]])).rows[0].stock_quantity);
+      expect(free).toBe(0);
+      expect(quantities.reduce((sum, row) => sum + row.n, free)).toBe(peer === 'fifo' ? 4 : 3);
+      expect((await db().query(`select status,sum(quantity)::int n from public.list_admin_order_item_states($1::uuid[])
+        group by status order by status`, [[fx.f.orderId]])).rows)
+        .toEqual([{ status: 'ready', n: 2 }, { status: 'return_requested', n: 1 }, { status: 'shipped', n: 2 }]);
+      expect((await db().query('select * from public.verify_stock_integrity() where variant_id=$1', [fx.f.variantIds[0]])).rows).toEqual([]);
     } finally {
       await a.query('rollback');
       if (second) await second.catch(() => {});

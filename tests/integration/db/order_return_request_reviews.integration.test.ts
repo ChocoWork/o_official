@@ -470,12 +470,13 @@ describeLocalDb('お店の申し込みの確認（移行 F）', getDb => {
     await fails(db(), () => db().query('select public.mark_return_photo_targets_purged($1,$2::uuid[])', ['invalid', []]), 'RETURN_ARGUMENT_INVALID');
   });
   test('公開関数は service_role だけが実行できる。キャンセルの鍵の補助（private）は SECURITY DEFINER でなく、だれも直接呼べない', async () => {
-    const names = ['admin_approve_return','admin_decline_return','list_return_photos','admin_receive_return',
+    const names = ['list_return_photos','admin_receive_return',
       'list_order_cancel_requests',
       'list_return_photo_purge_targets','mark_return_photo_targets_purged','get_order_return_materials'];
-    // G-1 Task 9: the cancel request writers are SECURITY INVOKER wrappers of private SECURITY DEFINER bodies
+    // G-1 Tasks 9-10: request writers are SECURITY INVOKER wrappers of private SECURITY DEFINER bodies
     // that take the common lock; both are executable by service_role only.
-    const cancelWriters = ['admin_decline_cancel_request','admin_close_cancel_request','admin_resolve_cancel_request'];
+    const cancelWriters = ['admin_decline_cancel_request','admin_close_cancel_request','admin_resolve_cancel_request',
+      'admin_approve_return','admin_decline_return'];
     for (const [schema, definer] of [['public', false], ['private', true]] as const) {
       const writers = (await db().query(`select p.oid,p.prosecdef,p.proconfig from pg_proc p join pg_namespace n on n.oid=p.pronamespace
         where n.nspname=$1 and p.proname=any($2::text[])`, [schema, cancelWriters])).rows;
