@@ -1,3 +1,11 @@
+/**
+ * 管理者が利用者のアカウントを作る窓口（src/app/api/admin/create-user/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-ADMIN-102
+ * @design DD-ADMIN-002
+ * @remarks Auth の利用者を作る機能は service role でしか呼べないので、権限と aal2 の確認を通した後にだけ使う。作れた・重なった・失敗したを監査に分けて残し、誰がいつ誰を作ったかをたどれるようにする。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';

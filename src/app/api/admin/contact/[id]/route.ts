@@ -1,3 +1,11 @@
+/**
+ * 問い合わせ1件とやり取りの取得、および状態の変更を管理者に提供する窓口（src/app/api/admin/contact/[id]/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-ADMIN-122
+ * @design DD-ADMIN-007
+ * @remarks 問い合わせの表は直接の読み書きを断っているので、権限を確かめた後に service role で扱う。読む権限と変える権限を分け、状態の変更だけを監査に残す。状態は表の CHECK と同じ4つの値だけを入口で受ける。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';

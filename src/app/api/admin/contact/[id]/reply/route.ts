@@ -1,3 +1,11 @@
+/**
+ * 問い合わせへの管理者の返信を保存し、お客様へメールで送る窓口（src/app/api/admin/contact/[id]/reply/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-ADMIN-123
+ * @design DD-ADMIN-008
+ * @remarks 店の答えを失わないよう保存を先にし、メールが送れなくても保存は取り消さず、結果を応答の mailSent と監査で分ける。Reply-To にスレッドの印付きの宛先を入れ、お客様のメール返信を同じスレッドへ取り込めるようにする。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import sendMail from '@/lib/mail';

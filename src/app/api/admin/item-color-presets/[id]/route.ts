@@ -1,3 +1,11 @@
+/**
+ * 商品の色見本を1件削除する管理者向けの窓口（src/app/api/admin/item-color-presets/[id]/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-ADMIN-142
+ * @design DD-ADMIN-012
+ * @remarks 誤って保存した色や使わなくなった色を一覧から外して選び間違いを減らすため。消せるのは商品を管理できる人だけにし、認可の後に service role で消す。
+ */
 import { NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';

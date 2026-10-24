@@ -27,7 +27,7 @@
 
 - 結論: 窓口は全部、頭で共有の認可（`authorizeAdminPermission`）を通し、通った後にだけ service role の client で表と Auth の管理の機能を使う。画面は利用者の作成の1つだけで、画面には守りが無い
 - 今のコードは、存在しない id への変更を 200 の成功として返す、本文の JSON が壊れていると 500 を返す（作成・強制失効・色見本の保存）、一部の DB の書き込みの誤りを見ない、などの動きを持つ。届かないセキュリティ要件は上位に書かず、本文では `SEC-ADMIN-NNN を参照` と指す（構造設計と同じ決め方）
-- 単体テストは `tests/unit/lib/auditCleanup.test.ts`（2件）にしかない。強制失効と監査ログの試験は `tests/integration/` にあり、分岐の網羅には数えない。分岐を全部通すのに要るテストを各項目の「テスト観点」に挙げた
+- 15 単位の全部に単体テスト（`tests/unit/`）がある。強制失効と監査ログの既存の結合試験（`tests/integration/api/admin/`）は、分岐の網羅には数えない。各項目の「テスト観点」は、分岐を全部通すのに要る確かめ
 
 ## 範囲と根拠
 
@@ -105,7 +105,7 @@
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SCR-ADMIN-001、ARC-ADMIN-002 |
-| 根拠 | 店長がその場でアカウントを用意する画面（SCR-ADMIN-001）。会員と同じ 16 文字の決まりを送る前に見せ、窓口に断られるだけの送信を減らす。画面は守りを持たず、作れるかは窓口の認可で決まる。送る時は CSRF の印を付けず、proxy の Origin の照合に任せる（ARC-ADMIN-002） |
+| 根拠 | 店長がその場でアカウントを用意する画面（SCR-ADMIN-001）。会員登録と同じ 16 文字の決まりを送る前に見せて、短い入力を早く直せるようにする（窓口の下限は 8 文字で、画面の方が厳しい）。画面は守りを持たず、作れるかは窓口の認可で決まる。送る時は CSRF の印を付けず、proxy の Origin の照合に任せる（ARC-ADMIN-002） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/admin/create-user/page.tsx`）、`docs/03_BasicDesign/ui/screen-list.md` |
@@ -140,7 +140,7 @@
 
 **認証認可:** 画面はログイン・役割・2要素を見ず、URL を直に打てば誰でも開ける。入口のリンクは無い。窓口が `admin.users.manage` と aal2 を確かめる。素の `fetch` なので CSRF の印（`x-csrf-token`）を付けず、401 の後の session の更新もしない（ARC-ADMIN-002。TM-ADMIN-33）。背景のパネルは範囲外の `src/app/admin/layout.tsx` が `/admin` だけに出すので、この画面には出ない。
 
-**テスト観点:**（新しい `tests/unit/app/admin/create-user-page.test.tsx`。`fetch` を差し替える）
+**テスト観点:**（`tests/unit/app/admin/create-user/create-user-page.test.tsx`。`fetch` を差し替える）
 
 - 3つの欄と「作成」のボタンが出て、初めは知らせが無い
 - メールが空の時、パスワードが空の時に「メールとパスワードを入力してください」が出て `fetch` を呼ばない
@@ -191,7 +191,7 @@
 
 **認証認可:** `admin.users.manage`（店長に固定。DATA-ADMIN-006）と aal2。CSRF は proxy の Origin の照合だけ。パスワードは 8 文字から通し、漏洩の照合もしない（SEC-ADMIN-012 を参照）。
 
-**テスト観点:**（新しい `tests/unit/api/admin/create-user-route.test.ts`）
+**テスト観点:**（`tests/unit/api/admin/create-user-route.test.ts`）
 
 - 認可が `ok:false` の時は認可の応答を返し、Auth の機能も監査も呼ばない
 - 本文が JSON でない時は 500 `Internal server error`
@@ -207,7 +207,7 @@
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-ADMIN-002、ARC-ADMIN-001、ARC-ADMIN-003、DATA-ADMIN-004、SEC-ADMIN-001 |
-| 根拠 | 自前の表だけを直しても Auth の session と出した token が生き残るので、自前の `sessions` と、service role だけが呼べる関数で Auth の session の両方を消す（API-ADMIN-002、DATA-ADMIN-004）。人の session を切る操作は悪用もできるので、権限の無い試みも IP とブラウザの情報付きで監査に残す（ARC-ADMIN-003）。認可は共有の部品に任せる（ARC-ADMIN-001、SEC-ADMIN-001） |
+| 根拠 | 自前の表だけを直しても Auth の session と出した token が生き残るので、自前の `sessions` の行には失効の時刻を入れ（行は消さない）、service role だけが呼べる関数で Auth の session も消す（API-ADMIN-002、DATA-ADMIN-004）。人の session を切る操作は悪用もできるので、権限の無い試みも IP とブラウザの情報付きで監査に残す（ARC-ADMIN-003）。認可は共有の部品に任せる（ARC-ADMIN-001、SEC-ADMIN-001） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/revoke-user-sessions/route.ts`）、`tests/integration/api/admin/revoke-user-sessions.test.ts` |
@@ -248,7 +248,7 @@
 
 **認証認可:** `admin.users.manage` と aal2。関数は postgres と service_role にだけ実行を付けてある（DATA-ADMIN-004）ので、この窓口の service role の道だけが呼べる。画面から呼ぶ所は無い。
 
-**テスト観点:**（新しい `tests/unit/api/admin/revoke-user-sessions-route.test.ts`。既存の `tests/integration/api/admin/revoke-user-sessions.test.ts` の4件は網羅に数えない）
+**テスト観点:**（`tests/unit/api/admin/revoke-user-sessions-route.test.ts`。既存の `tests/integration/api/admin/revoke-user-sessions.test.ts` の4件は網羅に数えない）
 
 - 認可が `ok:false` の時は、操作した人が空の `unauthorized` の監査を書いてから認可の応答を返す。`x-forwarded-for` が `"1.1.1.1, 2.2.2.2"` なら IP は `1.1.1.1`、見出しが無ければ IP とブラウザの情報は空
 - 本文が JSON でない時は 500 `Internal server error`
@@ -295,7 +295,7 @@
 
 **認証認可:** `admin.audit.read`（初めは店長だけ。DATA-ADMIN-006）と aal2。画面から呼ぶ所は無い（FREQ-508-AC-01 の画面は無い）。
 
-**テスト観点:**（新しい `tests/unit/api/admin/audit-logs-route.test.ts`。既存の `tests/integration/api/admin/audit-logs.test.ts` の3件は網羅に数えない）
+**テスト観点:**（`tests/unit/api/admin/audit-logs-route.test.ts`。既存の `tests/integration/api/admin/audit-logs.test.ts` の3件は網羅に数えない）
 
 - 認可が `ok:false` の時は認可の応答を返し、`createServiceRoleClient` を呼ばない
 - 成功の時は8列の文字で `select` し、`created_at` の降順・100 件で読み、200 `{data}`
@@ -307,7 +307,7 @@
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-ADMIN-004、ARC-ADMIN-001、ARC-ADMIN-003、SEC-ADMIN-001 |
-| 根拠 | 2要素の登録を消す機能は Auth の管理の機能で service role でしか呼べないので、`admin.users.manage` と aal2 を確かめてから呼ぶ（API-ADMIN-004、ARC-ADMIN-001、SEC-ADMIN-001）。取り返しがつかないので、確認の語と理由の文を求め、自分自身と一般の利用者を断り、全部の結果を IP とブラウザの情報付きで監査に残す。理由の文を書くのは、対象を引いた後の結果（対象なし・特権でない・一覧の誤り・消せない・成功）だけで、形の誤りと自分自身の行には無い。対象の役割は特権でない時と成功、対象のメールは成功だけに入る（ARC-ADMIN-003） |
+| 根拠 | 2要素の登録を消す機能は Auth の管理の機能で service role でしか呼べないので、`admin.users.manage` と aal2 を確かめてから呼ぶ（API-ADMIN-004、ARC-ADMIN-001、SEC-ADMIN-001）。取り返しがつかないので、確認の語と理由の文を求め、自分自身と一般の利用者を断り、判定の結果は IP とブラウザの情報付きで監査に残す（認可の失敗と外側の例外は監査を書かない）。理由の文を書くのは、対象を引いた後の結果（対象なし・特権でない・一覧の誤り・消せない・成功）だけで、形の誤りと自分自身の行には無い。対象の役割は特権でない時と成功、対象のメールは成功だけに入る（ARC-ADMIN-003） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/users/mfa/reset/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
@@ -351,7 +351,7 @@
 
 **認証認可:** `admin.users.manage` と aal2。対象の役割を DB の ACL でなく `app_metadata` で決める（SEC-ADMIN-014 を参照）。画面から呼ぶ所は無い。
 
-**テスト観点:**（新しい `tests/unit/api/admin/mfa-reset-route.test.ts`。Auth の管理の機能 `getUserById`・`mfa.listFactors`・`mfa.deleteFactor` を差し替える）
+**テスト観点:**（`tests/unit/api/admin/mfa-reset-route.test.ts`。Auth の管理の機能 `getUserById`・`mfa.listFactors`・`mfa.deleteFactor` を差し替える）
 
 - 認可が `ok:false` の時は認可の応答を返し、監査を書かない
 - 本文が JSON でない時、`confirm` が違う時、理由が 9 字の時、`userId` が UUID でない時は 400 で `details` を返し、監査に `failure`。`userId` が文字の時はそれを、数の時は空を控える
@@ -410,7 +410,7 @@
 
 **認証認可:** `admin.contact.read`（初めは店長とサポーター。DATA-ADMIN-006）と aal2。呼ぶのは使われない `src/components/ContactSection.tsx` だけ。
 
-**テスト観点:**（新しい `tests/unit/api/admin/admin-contact-route.test.ts`。PostgREST の組み立ての鎖を差し替える）
+**テスト観点:**（`tests/unit/api/admin/admin-contact-route.test.ts`。PostgREST の組み立ての鎖を差し替える）
 
 - 認可が `ok:false` の時は認可の応答を返す
 - クエリが無い時は 1 ページ目・20 件（`range(0, 19)`）で、絞りも or も付けない
@@ -473,7 +473,7 @@ PATCH:
 
 **認証認可:** GET は `admin.contact.read`、PATCH は `admin.contact.manage`（どちらも初めは店長とサポーター）と aal2。サポーターにも IP とブラウザの情報を返す（SEC-ADMIN-020 を参照）。呼ぶのは使われない `src/components/ContactSection.tsx` だけ。
 
-**テスト観点:**（新しい `tests/unit/api/admin/admin-contact-detail-route.test.ts`。`toOrderNumber` は本物か差し替え）
+**テスト観点:**（`tests/unit/api/admin/admin-contact-id-route.test.ts`。`toOrderNumber` は本物か差し替え）
 
 - GET: 認可が `ok:false` の時は認可の応答を返す
 - GET: 問い合わせの読みが誤りの時と、行が空の時は 404
@@ -535,7 +535,7 @@ PATCH:
 
 **認証認可:** `admin.contact.manage`（初めは店長とサポーター）と aal2。呼ぶのは使われない `src/components/ContactSection.tsx` だけ。
 
-**テスト観点:**（新しい `tests/unit/api/admin/admin-contact-reply-route.test.ts`。`@/lib/mail`・`@/lib/contact/reply-address` を差し替え、`MAIL_FROM_ADDRESS` を出し入れする）
+**テスト観点:**（`tests/unit/api/admin/admin-contact-reply-route.test.ts`。`@/lib/mail`・`@/lib/contact/reply-address` を差し替え、`MAIL_FROM_ADDRESS` を出し入れする）
 
 - 認可が `ok:false` の時は認可の応答を返す
 - 本文が JSON でない時、`body` が空白だけの時、5001 字の時は 400 で `details`
@@ -595,7 +595,7 @@ POST:
 
 **認証認可:** GET は `admin.contact.read`、POST は `admin.contact.manage` と aal2。呼ぶのは使われない `src/components/ContactSection.tsx` だけ。
 
-**テスト観点:**（新しい `tests/unit/api/admin/admin-contact-templates-route.test.ts`）
+**テスト観点:**（`tests/unit/api/admin/admin-contact-templates-route.test.ts`）
 
 - GET: 認可が `ok:false` の時は認可の応答を返す
 - GET: `sort_order` と `created_at` の昇順で読み、200 `{data}`。行が空の時は空の配列
@@ -655,7 +655,7 @@ DELETE:
 
 **認証認可:** `admin.contact.manage`（初めは店長とサポーター）と aal2。呼ぶのは使われない `src/components/ContactSection.tsx` だけ。
 
-**テスト観点:**（新しい `tests/unit/api/admin/admin-contact-template-id-route.test.ts`）
+**テスト観点:**（`tests/unit/api/admin/admin-contact-templates-id-route.test.ts`）
 
 - PUT・DELETE: 認可が `ok:false` の時は認可の応答を返す
 - PUT: 本文が JSON でない時と、本文が 5001 字の時は 400
@@ -717,7 +717,7 @@ POST:
 
 **認証認可:** GET は `admin.items.read`、POST は `admin.items.manage`（どちらも初めは店長だけ）と aal2。呼ぶのは範囲外の商品の編集 `src/app/admin/item/ItemForm.tsx`。
 
-**テスト観点:**（新しい `tests/unit/api/admin/item-color-presets-route.test.ts`）
+**テスト観点:**（`tests/unit/api/admin/item-color-presets-route.test.ts`）
 
 - GET: 認可が `ok:false` の時は認可の応答を返す
 - GET: `created_at` の降順で読み、200 `{data}`。読みが誤りを返した時は 500 `Failed to fetch color presets`
@@ -766,7 +766,7 @@ POST:
 
 **認証認可:** `admin.items.manage`（初めは店長だけ）と aal2。呼ぶのは範囲外の `src/app/admin/item/ItemForm.tsx`。
 
-**テスト観点:**（新しい `tests/unit/api/admin/item-color-presets-id-route.test.ts`）
+**テスト観点:**（`tests/unit/api/admin/item-color-presets-id-route.test.ts`）
 
 - 認可が `ok:false` の時は認可の応答を返す
 - `id` で消して 200 `{success:true}`
@@ -809,7 +809,7 @@ POST:
 
 **認証認可:** 持たない。鍵は環境変数だけにあり、宛先には印の先頭 16 字だけが出る。本番の2つの値は未設定（開店の準備で入れる予定）。
 
-**テスト観点:**（新しい `tests/unit/lib/contact/reply-address.test.ts`。環境変数を出し入れする）
+**テスト観点:**（`tests/unit/lib/contact/reply-address.test.ts`。環境変数を出し入れする）
 
 - ドメインと鍵がある時は `reply+<id>.<16 字>@<ドメイン>` の形を返し、印は base64url の字だけ
 - 同じ id では同じ印、違う id と違う鍵では違う印になる
@@ -857,7 +857,7 @@ POST:
 
 **認証認可:** 持たない。合否を見てスレッドに取り込むかを決めるのは呼ぶ側（範囲外の受信の窓口）。
 
-**テスト観点:**（新しい `tests/unit/lib/contact/reply-address.test.ts`。DD-ADMIN-013 で作った宛先を使う）
+**テスト観点:**（`tests/unit/lib/contact/reply-address.test.ts`。DD-ADMIN-013 で作った宛先を使う）
 
 - 鍵が無い時は空を返す
 - `reply+` の形が無い宛先、id が 35 字の宛先、`@` の無い宛先は空を返す
@@ -917,5 +917,4 @@ POST:
 - 2要素のリセットの一覧が、Supabase の返りで形の合わない要素を含むことがあるか（含むと消さずに成功を返す）
 - 存在しない利用者の強制失効で関数が 0 を返すか（動かして確かめていない）
 - 色見本の削除で、数でない `id` が DB の型の誤りになるか
-- 単体テストは `auditCleanup` の2件だけで、ほかの単位は「テスト観点」の試験がまだ無い（`validate-trace` は `DD-ADMIN-` の `missing-child` を出し続ける）
 - この文書の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

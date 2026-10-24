@@ -1,3 +1,11 @@
+/**
+ * 問い合わせの一覧を状態・種別・検索語で絞って管理者に返す窓口（src/app/api/admin/contact/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-ADMIN-121
+ * @design DD-ADMIN-006
+ * @remarks 問い合わせの表は直接の読みを断っているので、問い合わせの閲覧権限を確かめた後に service role で読む。検索語は PostgREST の or の条件に字のまま埋め込まれるため、区切りの字を空白にして長さを切ってから入れる。状態と種別は表の CHECK と同じ決まった値だけを絞りに使う。
+ */
 import { NextResponse } from 'next/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';

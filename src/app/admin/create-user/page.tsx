@@ -1,3 +1,11 @@
+/**
+ * 店長がその場で利用者のアカウントを作る画面（src/app/admin/create-user/page.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-ADMIN-101
+ * @design DD-ADMIN-001
+ * @remarks 入力欄と送信中の印を持つので利用者の端末で動かす。会員登録と同じ16文字の決まりを送る前に見せて、短い入力を早く直せるようにする（窓口の下限は8文字で、画面の方が厳しい）。画面は守りを持たず、作れるかは窓口の認可で決まる。CSRF の印は付けず、proxy の Origin の照合に任せる。
+ */
 "use client";
 
 import React, { useState } from 'react';

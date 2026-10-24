@@ -174,9 +174,9 @@ sequenceDiagram
 | 確かめ方 | レビュー |
 | 出どころ | 実装から推定（`src/lib/auditCleanup.ts`） |
 
-- `cleanupAuditLogs` が、指定の日数（既定 365 日）より前に作られた `audit_logs` の行を service role で消し、消した数と応答を返す。DB の誤りはそのまま投げる
+- `cleanupAuditLogs` が、指定の日数（既定 365 日）より前に作られた `audit_logs` の行を service role で消し、消した数と消した行を返す。DB の誤りはそのまま投げる
 - 写しを残さずに消す。NFR-SEC-011（範囲外。保持と改ざんの防止）と旧設計の保存期間（`docs/04_DetailDesign/pages/16_admin.md`）と合わない（TM-ADMIN-06。SEC-ADMIN-010 を参照）
-- src・scripts・定時の仕事のどこからも呼ばれない。試験 `tests/unit/lib/auditCleanup.test.ts` だけが呼ぶ
+- src・scripts・定時の仕事のどこからも呼ばれない。試験だけが呼ぶ（単体 `tests/unit/lib/auditCleanup.test.ts` の DD-ADMIN-015 と、結合 `tests/integration/api/admin-misc/admin-audit-cleanup-unused.test.ts` の ARC-ADMIN-005）
 
 ## 画面
 

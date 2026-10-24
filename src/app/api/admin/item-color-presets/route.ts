@@ -1,3 +1,11 @@
+/**
+ * 商品の色見本を一覧し、新しい色を保存する管理者向けの窓口（src/app/api/admin/item-color-presets/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-ADMIN-141
+ * @design DD-ADMIN-011
+ * @remarks item_color_presets は認可の後に service role で読み書きするため、先に商品の権限（一覧は閲覧、保存は管理）で確かめる。同じ名前と色の値の組は何度保存しても1行にし、既にあればその行を 200 で返して、画面が重なりの誤りを扱わずに済むようにする。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';

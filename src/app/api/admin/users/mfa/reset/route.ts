@@ -1,3 +1,11 @@
+/**
+ * 特権の利用者（管理者・サポート担当）の2要素の登録を管理者が消す窓口（src/app/api/admin/users/mfa/reset/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-ADMIN-105
+ * @design DD-ADMIN-005
+ * @remarks 2要素の登録を消す機能は Auth の管理の機能で service role でしか呼べないので、権限と aal2 の確認を通した後にだけ使う。取り返しがつかないため、確認の語と理由の文を求め、自分自身と一般の利用者を断り、判定の結果は IP とブラウザの情報付きで監査に残す。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';

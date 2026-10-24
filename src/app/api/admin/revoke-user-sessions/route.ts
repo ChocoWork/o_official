@@ -1,3 +1,11 @@
+/**
+ * 管理者が利用者のセッションを強制的に失効させる窓口（src/app/api/admin/revoke-user-sessions/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-ADMIN-103
+ * @design DD-ADMIN-003
+ * @remarks 自前の sessions 表だけを直しても Auth 側のセッションと発行済みのアクセストークンが生き残るので、自前の表に失効の時刻を入れ、Auth のセッションも消す。人のセッションを切る操作は悪用もできるため、権限の無い試みも IP とブラウザの情報付きで監査に残す。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';

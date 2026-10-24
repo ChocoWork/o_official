@@ -1,3 +1,11 @@
+/**
+ * 返信テンプレートの一覧の取得と作成を管理者に提供する窓口（src/app/api/admin/contact/templates/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-ADMIN-124
+ * @design DD-ADMIN-009
+ * @remarks テンプレートの表は直接の読み書きを断っているので、権限を確かめた後に service role で扱う。題・本文の長さと分類は表の CHECK とそろえて入口で決める。作った事は監査に残す。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';

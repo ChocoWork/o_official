@@ -1,3 +1,11 @@
+/**
+ * 返信テンプレートの更新と削除を管理者に提供する窓口（src/app/api/admin/contact/templates/[id]/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-ADMIN-125
+ * @design DD-ADMIN-010
+ * @remarks テンプレートの表は直接の読み書きを断っているので、権限を確かめた後に service role で書く。並び順を渡されなければ変えないよう、渡された時だけ書き換える。誰が変えたかを監査に残す。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
