@@ -165,6 +165,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
   // Task 6 public writers: B waits on the advisory with valid input while C can still take every existing row.
   type Task6Material = {
     sql: string; params: unknown[]; draftId?: string; itemId: number; variantId: number; orderIds: string[]; exceptionId?: string;
+    refundId?: string;
   };
   const TASK6_ENTRIES: Array<{ name: string; setup: () => Promise<Task6Material>; check: (rows: any[]) => void }> = [
     { name: 'public.place_order_from_checkout_draft', setup: async () => {
@@ -268,6 +269,40 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     }, check: (rows) => expect(rows).toEqual([{ reviewed: true }]) },
   ];
 
+  // Task 8 public writers (refund begin, refund result, external refund, refund error). The material is a paid
+  // order with its A; the refund rows already committed by the setup must also stay free for C.
+  async function awaitingRefund(p: Awaited<ReturnType<typeof paidOrder>>) {
+    return (await db().query(`select refund_id from public.begin_order_refund($1::uuid,'order_cancel',$2::uuid,'[]'::jsonb,true,
+      null,null,null,null,'customer_request',false,$3::uuid,null)`, [p.orderId, randomUUID(), await actorId()])).rows[0].refund_id as string;
+  }
+  const TASK8_ENTRIES: Array<{ name: string; setup: () => Promise<Task6Material>; check: (rows: any[]) => void }> = [
+    { name: 'public.begin_order_refund', setup: async () => {
+      const p = await paidOrder();
+      return { sql: `select status, replayed from public.begin_order_refund($1::uuid,'order_cancel',$2::uuid,'[]'::jsonb,true,
+          null,null,null,null,'customer_request',false,$3::uuid,null)`, params: [p.orderId, randomUUID(), await actorId()],
+        itemId: p.fx.itemId, variantId: p.fx.variantId, orderIds: [p.orderId] };
+    }, check: (rows) => expect(rows).toEqual([{ status: 'awaiting_response', replayed: false }]) },
+    { name: 'public.record_order_refund_result', setup: async () => {
+      const p = await paidOrder();
+      const refundId = await awaitingRefund(p);
+      return { sql: `select status, newly_accepted from public.record_order_refund_result($1::uuid,$2::text,'succeeded',
+          null,null,null,'card',null,null)`, params: [refundId, `re_${refundId.replaceAll('-', '')}`],
+        itemId: p.fx.itemId, variantId: p.fx.variantId, orderIds: [p.orderId], refundId };
+    }, check: (rows) => expect(rows).toEqual([{ status: 'succeeded', newly_accepted: true }]) },
+    { name: 'public.record_external_order_refund', setup: async () => {
+      const p = await paidOrder();
+      return { sql: `select created, status from public.record_external_order_refund($1::uuid,$2::text,$3::integer,'succeeded',
+          null,null,null,'card',null,null,null,now())`, params: [p.orderId, `re_${randomUUID().replaceAll('-', '')}`, 1000],
+        itemId: p.fx.itemId, variantId: p.fx.variantId, orderIds: [p.orderId] };
+    }, check: (rows) => expect(rows).toEqual([{ created: true, status: 'succeeded' }]) },
+    { name: 'public.mark_order_refund_error', setup: async () => {
+      const p = await paidOrder();
+      const refundId = await awaitingRefund(p);
+      return { sql: `select outcome from public.mark_order_refund_error($1::uuid,'not_found_in_stripe',false)`, params: [refundId],
+        itemId: p.fx.itemId, variantId: p.fx.variantId, orderIds: [p.orderId], refundId };
+    }, check: (rows) => expect(rows).toEqual([{ outcome: 'errored' }]) },
+  ];
+
   let actor: string | undefined;
   async function actorId() {
     actor ??= (await db().query(`insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
@@ -282,7 +317,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     )).rows[0].order_id as string;
   }
 
-  test.each([...TASK6_ENTRIES, ...TASK7_ENTRIES])('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
+  test.each([...TASK6_ENTRIES, ...TASK7_ENTRIES, ...TASK8_ENTRIES])('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
     const material = await setup();
     const a = await client();
     const b = await client();
@@ -307,6 +342,10 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       ];
       if (material.draftId) probes.unshift(['select id from public.checkout_drafts where id=$1 for update nowait', [material.draftId]]);
       if (material.exceptionId) probes.push(['select id from public.payment_exceptions where id=$1 for update nowait', [material.exceptionId]]);
+      if (material.refundId) {
+        probes.push(['select id from public.order_refunds where id=$1 for update nowait', [material.refundId]]);
+        probes.push(['select id from public.order_refund_lines where refund_id=$1 for update nowait', [material.refundId]]);
+      }
       for (const [probe, params] of probes) expect((await c.query(probe, params)).rowCount).toBeGreaterThan(0);
       await c.query('rollback');
       await a.query('rollback');
@@ -318,8 +357,52 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       await b.query('rollback');
       await c.query('rollback');
       await Promise.all([a.end(), b.end(), c.end()]);
+      // B rolled back: keep no committed awaiting refund in the global sweep lists.
+      if (material.refundId) {
+        await db().query(`update public.order_refunds set status='error', errored_at=now()
+          where id=$1 and status='awaiting_response'`, [material.refundId]);
+      }
     }
   });
+
+  // Task 7 carry-over: every public exception entry takes the common lock, whatever the reason.
+  test.each(['public.record_payment_exception', 'public.resolve_payment_exception_by_system'])(
+    '%s holds the common advisory lock for a non-mismatch reason', async (name) => {
+      const p = await paidOrder();
+      const ref = `re_${randomUUID().replaceAll('-', '')}`;
+      let exceptionId: string | undefined;
+      if (name === 'public.resolve_payment_exception_by_system') {
+        exceptionId = (await db().query(`insert into public.payment_exceptions (payment_ref, reason, detail, order_id)
+          values ($1, 'refund_failed', 'declined', $2) returning id`, [ref, p.orderId])).rows[0].id as string;
+      }
+      const b = await client();
+      const c = await client();
+      try {
+        await b.query('begin');
+        const waiter = await pid(b);
+        const rows = name === 'public.record_payment_exception'
+          ? (await b.query(`select is_new, is_resolved from public.record_payment_exception($1::text,'refund_failed','declined',
+              null,null,null,$2::uuid)`, [ref, p.orderId])).rows
+          : (await b.query(`select public.resolve_payment_exception_by_system($1::uuid,'auto') as resolved`, [exceptionId])).rows;
+        expect(rows).toEqual(name === 'public.record_payment_exception'
+          ? [{ is_new: true, is_resolved: false }] : [{ resolved: true }]);
+        const held = (await c.query(`select exists(select 1 from pg_catalog.pg_locks where pid=$1::int and locktype='advisory'
+          and classid=190521 and objid=1 and objsubid=2 and mode='ExclusiveLock' and granted) as held`, [waiter])).rows[0].held;
+        expect(held).toBe(true);
+        // The order closure is held too: another connection cannot take the order row.
+        await c.query('begin');
+        await expect(c.query('select id from public.orders where id=$1 for update nowait', [p.orderId]))
+          .rejects.toMatchObject({ code: '55P03' });
+      } finally {
+        await c.query('rollback');
+        await b.query('rollback');
+        await Promise.all([b.end(), c.end()]);
+        if (exceptionId) {
+          await db().query(`update public.payment_exceptions set resolved_at=now(), resolution_note='test cleanup'
+            where id=$1 and resolved_at is null`, [exceptionId]);
+        }
+      }
+    });
 
   async function waitingOrders(variants = 1) {
     return withGroupG1FixtureTransaction(db(), async () => {

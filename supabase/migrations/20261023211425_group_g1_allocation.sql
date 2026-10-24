@@ -3125,7 +3125,107 @@ GRANT EXECUTE ON FUNCTION public.record_cancelled_order_paid_amount(uuid,text,in
 -- A mismatch the payment already created (mark_paid) and that was never dispatched is the same detection: this
 -- call only fills empty columns and becomes its first dispatch (detection_count unchanged). is_new is true only
 -- for the first successful dispatch claim of an unresolved exception; later detections count +1 as before.
--- Other reasons never create a hold and keep the old lock-free row write (nested refund writers call this).
+-- Other reasons never create a hold. Their public entry still takes the common lock (Task 8: every public entry
+-- locks whatever the setting); the refund writers, which already own the lock, call the row core below directly.
+-- Internal core (Task 8): the plain exception row write and its first dispatch claim. The caller owns the common lock.
+CREATE FUNCTION private.record_group_g_payment_exception_row(
+  _payment_ref text,
+  _reason text,
+  _detail text,
+  _checkout_session_id text,
+  _payment_intent_id text,
+  _draft_id uuid,
+  _order_id uuid
+)
+RETURNS TABLE (exception_id uuid, is_new boolean, is_resolved boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_exception public.payment_exceptions%ROWTYPE;
+  v_claimed uuid;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
+  END IF;
+
+  INSERT INTO public.payment_exceptions (
+    payment_ref, reason, detail, checkout_session_id, payment_intent_id, draft_id, order_id
+  ) VALUES (
+    _payment_ref, _reason, _detail, _checkout_session_id, _payment_intent_id, _draft_id, _order_id
+  )
+  ON CONFLICT (payment_ref, reason) DO NOTHING
+  RETURNING * INTO v_exception;
+
+  IF v_exception.id IS NULL THEN
+    UPDATE public.payment_exceptions AS e
+    SET last_detected_at = pg_catalog.now(),
+        detection_count = e.detection_count + 1,
+        checkout_session_id = COALESCE(e.checkout_session_id, _checkout_session_id),
+        payment_intent_id = COALESCE(e.payment_intent_id, _payment_intent_id),
+        draft_id = COALESCE(e.draft_id, _draft_id),
+        order_id = COALESCE(e.order_id, _order_id)
+    WHERE e.payment_ref = _payment_ref
+      AND e.reason = _reason
+    RETURNING e.* INTO v_exception;
+  END IF;
+
+  IF v_exception.resolved_at IS NULL THEN
+    INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+    VALUES (
+      pg_catalog.gen_random_uuid(),
+      'payment_exception_dispatch',
+      pg_catalog.md5('exception-dispatch:' || v_exception.id::text)::uuid,
+      pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+        'operation', 'payment_exception_dispatch', 'exception_id', v_exception.id)::text, 'UTF8')), 'hex'),
+      'payment_exception',
+      v_exception.id::text,
+      NULL,
+      pg_catalog.jsonb_build_object('exception_id', v_exception.id, 'reason', v_exception.reason)
+    )
+    ON CONFLICT (operation, request_key) DO NOTHING
+    RETURNING id INTO v_claimed;
+  END IF;
+
+  RETURN QUERY SELECT v_exception.id, v_claimed IS NOT NULL, v_exception.resolved_at IS NOT NULL;
+END;
+$$;
+ALTER FUNCTION private.record_group_g_payment_exception_row(text,text,text,text,text,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.record_group_g_payment_exception_row(text,text,text,text,text,uuid,uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+-- Internal core (Task 8): resolve a reason that can carry no review hold. The caller owns the common lock.
+CREATE FUNCTION private.resolve_group_g_payment_exception_row(_exception_id uuid, _note text)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
+  END IF;
+  UPDATE public.payment_exceptions AS e
+  SET resolved_at = pg_catalog.now(),
+      resolved_by = NULL,
+      resolution_note = NULLIF(pg_catalog.btrim(_note), '')
+  WHERE e.id = _exception_id
+    AND e.resolved_at IS NULL;
+  RETURN FOUND;
+END;
+$$;
+ALTER FUNCTION private.resolve_group_g_payment_exception_row(uuid,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.resolve_group_g_payment_exception_row(uuid,text)
+  FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE FUNCTION private.record_payment_exception(
   _payment_ref text,
   _reason text,
@@ -3145,57 +3245,45 @@ DECLARE
   v_ref text;
   v_claimed uuid;
 BEGIN
-  IF _reason = 'paid_amount_mismatch' AND _order_id IS NOT NULL THEN
-    PERFORM private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[_order_id], NULL);
-    SELECT o.checkout_session_id INTO v_session FROM public.orders AS o WHERE o.id = _order_id;
-    v_ref := COALESCE(v_session, NULLIF(pg_catalog.btrim(_payment_intent_id), ''), NULLIF(pg_catalog.btrim(_payment_ref), ''));
-    SELECT e.* INTO v_exception
-    FROM public.payment_exceptions AS e
-    WHERE e.payment_ref = v_ref AND e.reason = 'paid_amount_mismatch';
+  IF NOT (_reason = 'paid_amount_mismatch' AND _order_id IS NOT NULL) THEN
+    -- Every reason holds the common lock (and the order's closure) at its public entry.
+    PERFORM private.lock_group_g_inventory(ARRAY[]::bigint[],
+      CASE WHEN _order_id IS NULL THEN ARRAY[]::uuid[] ELSE ARRAY[_order_id] END, NULL);
+    RETURN QUERY SELECT r.exception_id, r.is_new, r.is_resolved
+      FROM private.record_group_g_payment_exception_row(_payment_ref, _reason, _detail, _checkout_session_id,
+        _payment_intent_id, _draft_id, _order_id) AS r;
+    RETURN;
+  END IF;
 
-    IF v_exception.id IS NOT NULL AND NOT EXISTS (
-      SELECT 1 FROM private.group_g_operations AS d
-      WHERE d.operation = 'payment_exception_dispatch' AND d.cause_type = 'payment_exception'
-        AND d.cause_id = v_exception.id::text
-    ) THEN
-      IF v_exception.order_id IS DISTINCT FROM _order_id THEN
-        RAISE EXCEPTION 'GROUP_G_PAYMENT_REVIEW_CONFLICT' USING ERRCODE = '55000';
-      END IF;
-      UPDATE public.payment_exceptions AS e
-      SET checkout_session_id = COALESCE(e.checkout_session_id, _checkout_session_id),
-          payment_intent_id = COALESCE(e.payment_intent_id, _payment_intent_id),
-          draft_id = COALESCE(e.draft_id, _draft_id),
-          detail = COALESCE(e.detail, _detail)
-      WHERE e.id = v_exception.id
-      RETURNING e.* INTO v_exception;
-    ELSE
-      PERFORM private.ensure_group_g_payment_review_hold(_order_id, _payment_ref, _checkout_session_id, _payment_intent_id, _draft_id);
-      UPDATE public.payment_exceptions AS e
-      SET detail = COALESCE(e.detail, _detail)
-      WHERE e.payment_ref = v_ref AND e.reason = 'paid_amount_mismatch'
-      RETURNING e.* INTO v_exception;
+  -- paid_amount_mismatch with an order.
+  PERFORM private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[_order_id], NULL);
+  SELECT o.checkout_session_id INTO v_session FROM public.orders AS o WHERE o.id = _order_id;
+  v_ref := COALESCE(v_session, NULLIF(pg_catalog.btrim(_payment_intent_id), ''), NULLIF(pg_catalog.btrim(_payment_ref), ''));
+  SELECT e.* INTO v_exception
+  FROM public.payment_exceptions AS e
+  WHERE e.payment_ref = v_ref AND e.reason = 'paid_amount_mismatch';
+
+  IF v_exception.id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM private.group_g_operations AS d
+    WHERE d.operation = 'payment_exception_dispatch' AND d.cause_type = 'payment_exception'
+      AND d.cause_id = v_exception.id::text
+  ) THEN
+    IF v_exception.order_id IS DISTINCT FROM _order_id THEN
+      RAISE EXCEPTION 'GROUP_G_PAYMENT_REVIEW_CONFLICT' USING ERRCODE = '55000';
     END IF;
+    UPDATE public.payment_exceptions AS e
+    SET checkout_session_id = COALESCE(e.checkout_session_id, _checkout_session_id),
+        payment_intent_id = COALESCE(e.payment_intent_id, _payment_intent_id),
+        draft_id = COALESCE(e.draft_id, _draft_id),
+        detail = COALESCE(e.detail, _detail)
+    WHERE e.id = v_exception.id
+    RETURNING e.* INTO v_exception;
   ELSE
-    INSERT INTO public.payment_exceptions (
-      payment_ref, reason, detail, checkout_session_id, payment_intent_id, draft_id, order_id
-    ) VALUES (
-      _payment_ref, _reason, _detail, _checkout_session_id, _payment_intent_id, _draft_id, _order_id
-    )
-    ON CONFLICT (payment_ref, reason) DO NOTHING
-    RETURNING * INTO v_exception;
-
-    IF v_exception.id IS NULL THEN
-      UPDATE public.payment_exceptions AS e
-      SET last_detected_at = pg_catalog.now(),
-          detection_count = e.detection_count + 1,
-          checkout_session_id = COALESCE(e.checkout_session_id, _checkout_session_id),
-          payment_intent_id = COALESCE(e.payment_intent_id, _payment_intent_id),
-          draft_id = COALESCE(e.draft_id, _draft_id),
-          order_id = COALESCE(e.order_id, _order_id)
-      WHERE e.payment_ref = _payment_ref
-        AND e.reason = _reason
-      RETURNING e.* INTO v_exception;
-    END IF;
+    PERFORM private.ensure_group_g_payment_review_hold(_order_id, _payment_ref, _checkout_session_id, _payment_intent_id, _draft_id);
+    UPDATE public.payment_exceptions AS e
+    SET detail = COALESCE(e.detail, _detail)
+    WHERE e.payment_ref = v_ref AND e.reason = 'paid_amount_mismatch'
+    RETURNING e.* INTO v_exception;
   END IF;
 
   -- One dispatch per exception: the first caller of an unresolved exception owns the first notification/refund.
@@ -3422,8 +3510,8 @@ REVOKE ALL ON FUNCTION public.resolve_payment_exception(uuid,uuid,text,boolean,t
 GRANT EXECUTE ON FUNCTION public.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean) TO service_role;
 
 -- System resolve (automatic refund, refund found). A paid_amount_mismatch (the only reason that can carry a review
--- hold) takes the same locked path as the human resolve. Other reasons have no hold, so they keep the old
--- single-row update: the nested refund writers (refund_failed) still call this without a late advisory.
+-- hold) takes the same locked path as the human resolve. Other reasons have no hold: the common lock, then the
+-- single-row update (Task 8; the refund writers call that row core under their own lock).
 CREATE FUNCTION private.resolve_payment_exception_by_system(_exception_id uuid, _note text)
 RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
@@ -3451,13 +3539,11 @@ BEGIN
   SELECT e.order_id, e.reason INTO v_order_id, v_reason FROM public.payment_exceptions AS e WHERE e.id = _exception_id;
 
   IF v_reason IS DISTINCT FROM 'paid_amount_mismatch' THEN
-    UPDATE public.payment_exceptions AS e
-    SET resolved_at = pg_catalog.now(),
-        resolved_by = NULL,
-        resolution_note = NULLIF(pg_catalog.btrim(_note), '')
-    WHERE e.id = _exception_id
-      AND e.resolved_at IS NULL;
-    RETURN FOUND;
+    -- No hold to release, but the public entry still holds the common lock (Task 8). The refund writers that
+    -- already own it call the row core directly.
+    PERFORM private.lock_group_g_inventory(ARRAY[]::bigint[],
+      CASE WHEN v_order_id IS NULL THEN ARRAY[]::uuid[] ELSE ARRAY[v_order_id] END, NULL);
+    RETURN private.resolve_group_g_payment_exception_row(_exception_id, _note);
   END IF;
 
   v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[],
@@ -3625,6 +3711,1582 @@ BEGIN
   END IF;
 END;
 $g1_payment_assert$;
+
+-- Task 8: refund begin, results, external refunds and errors under the common lock; release and failure restore
+-- through FIFO. Last definitions replaced (signature/defaults/returns kept): begin_order_refund
+-- 20261013001143_order_return_receipts.sql:482, begin_order_refund_core 20261023061408_order_cancel_reasons.sql:181,
+-- apply_order_refund_state/apply_return_refund_outcome/record_order_refund_result/mark_order_refund_error
+-- 20261013001143_order_return_receipts.sql:922/1263/1309/1483, record_external_order_refund
+-- 20261011223453_order_refund_results.sql:973.
+-- Each public entry delegates (SECURITY INVOKER) to a private body that takes the common lock and the order closure
+-- before any row read, captures the item states, sets app.group_g_operation_id, runs the internal cores on the held
+-- rows (no nested public RPC, no lock helper), records the state changes once and writes the operation.
+
+-- Internal core. The G-1 entries own the common lock and the order closure, so the core only reads those rows.
+-- The return writers (admin_receive_return / admin_refund_return) still lock here until Task 11 moves them under
+-- the common lock; return refunds have no pre-shipment line, so they never touch an allocation.
+CREATE OR REPLACE FUNCTION private.begin_order_refund_core(
+  _order_id uuid,
+  _source text,
+  _request_key uuid,
+  _lines jsonb,
+  _restock boolean,
+  _shipping_amount integer,
+  _amount integer,
+  _note text,
+  _stripe_reason text,
+  _cancel_reason text,
+  _notify_customer boolean,
+  _actor_id uuid,
+  _received_amount integer,
+  _return_id uuid,
+  _return_fee_deduction integer
+)
+RETURNS TABLE (refund_id uuid, amount integer, status text, replayed boolean)
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_is_admin boolean;
+  v_is_auto boolean;
+  v_is_cancel boolean;
+  v_restock boolean;
+  v_notify boolean;
+  v_note text;
+  v_stripe_reason text;
+  v_cancel_reason text;
+  v_actor uuid;
+  v_fingerprint text;
+  v_order public.orders;
+  v_existing public.order_refunds;
+  v_refundable integer;
+  v_refundable_shipping integer;
+  v_shipped_total integer;
+  v_unshipped_total integer;
+  v_resolved jsonb;
+  v_included integer;
+  v_shipping integer;
+  v_amount integer;
+  v_priced jsonb;
+  v_lines_amount integer;
+  v_refund_id uuid;
+  v_constraint text;
+  v_prelocked boolean;
+BEGIN
+  -- 1. 引数
+  IF _order_id IS NULL
+     OR _source IS NULL
+     OR _source NOT IN ('admin', 'order_cancel', 'auto_cancelled_order_payment', 'auto_amount_mismatch', 'return')
+     OR ((_source = 'return') IS DISTINCT FROM (_return_id IS NOT NULL))
+     OR (_source = 'return' AND (_return_fee_deduction IS NULL OR _return_fee_deduction < 0))
+     OR (_source <> 'return' AND _return_fee_deduction IS NOT NULL)
+     OR _lines IS NULL
+     OR _restock IS NULL
+     OR _notify_customer IS NULL THEN
+    RAISE EXCEPTION 'REFUND_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF pg_catalog.jsonb_typeof(_lines) IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'REFUND_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  v_is_admin := _source IN ('admin', 'return');
+  v_is_auto := _source IN ('auto_cancelled_order_payment', 'auto_amount_mismatch');
+  v_is_cancel := _source IN ('order_cancel', 'auto_amount_mismatch');
+
+  -- 商品の行を渡してよいのはアだけ（イ・オは DB が残りの未発送を全部入れ、エは行なし）。ア・イには二重防止の番号と実行した人が要る
+  IF (NOT v_is_admin AND pg_catalog.jsonb_array_length(_lines) > 0)
+     OR (NOT v_is_auto AND (_request_key IS NULL OR _actor_id IS NULL))
+     OR (_note IS NOT NULL AND pg_catalog.char_length(_note) > 500)
+     OR (_stripe_reason IS NOT NULL AND _stripe_reason NOT IN ('requested_by_customer', 'duplicate', 'fraudulent')) THEN
+    RAISE EXCEPTION 'REFUND_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  -- アの送料と額は呼ぶ側が決める。「うち送料」が額を超える返金は作らない
+  IF v_is_admin AND (
+       _shipping_amount IS NULL OR _shipping_amount < 0
+       OR _amount IS NULL OR _amount < 1
+       OR _shipping_amount > _amount
+       OR _cancel_reason IS NOT NULL
+     ) THEN
+    RAISE EXCEPTION 'REFUND_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  -- イの取消の理由は6つ。「その他」はメモも要る（未入金の取消の CANCEL_NOTE_REQUIRED と同じ決まり）
+  IF _source = 'order_cancel' AND (
+       _cancel_reason IS NULL
+       OR _cancel_reason NOT IN ('customer_request', 'payment_declined', 'suspected_fraud', 'stock_unavailable', 'shop_error', 'other')
+       OR (_cancel_reason = 'other' AND NULLIF(pg_catalog.btrim(_note), '') IS NULL)
+     ) THEN
+    RAISE EXCEPTION 'REFUND_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  -- 自動の返金（エ・オ）は、呼ぶ側の値を使わず DB が決める。知らせる・Stripe に理由を伝えない。
+  -- オは在庫に戻し、取消の理由は other、メモは決まった文。実行した人は空
+  v_restock := CASE WHEN _source = 'auto_amount_mismatch' THEN true ELSE _restock END;
+  v_notify := CASE WHEN v_is_auto THEN true ELSE _notify_customer END;
+  v_note := CASE _source
+    WHEN 'auto_amount_mismatch' THEN '支払額の違いの自動の取消'
+    WHEN 'auto_cancelled_order_payment' THEN NULL
+    ELSE _note
+  END;
+  v_stripe_reason := CASE WHEN v_is_auto THEN NULL ELSE _stripe_reason END;
+  v_cancel_reason := CASE _source
+    WHEN 'order_cancel' THEN _cancel_reason
+    WHEN 'auto_amount_mismatch' THEN 'other'
+    ELSE NULL
+  END;
+  v_actor := CASE WHEN v_is_auto THEN NULL ELSE _actor_id END;
+
+  -- 二重防止の指紋（本計画 P2）: 呼ぶ側が渡した入力を、渡されたままの値で決まった順に並べた JSON の md5。
+  IF _request_key IS NOT NULL THEN
+    v_fingerprint := pg_catalog.md5(
+      pg_catalog.jsonb_build_object(
+        'order_id', _order_id,
+        'source', _source,
+        'lines', COALESCE((
+          SELECT pg_catalog.jsonb_agg(
+                   pg_catalog.jsonb_build_object(
+                     'order_item_id', p.order_item_id,
+                     'before_shipment', p.before_shipment,
+                     'quantity', p.quantity
+                   )
+                   ORDER BY p.order_item_id, p.before_shipment
+                 )
+          FROM private.parse_refund_lines(_lines) AS p
+        ), '[]'::jsonb),
+        'restock', _restock,
+        'shipping_amount', _shipping_amount,
+        'amount', _amount,
+        'note', _note,
+        'stripe_reason', _stripe_reason,
+        'cancel_reason', _cancel_reason,
+        'notify_customer', _notify_customer,
+        'received_amount', _received_amount
+      )::text
+    );
+  END IF;
+
+  -- 2. 注文の行。G-1 の入口は共通の在庫 lock と注文の閉包を先に持つので読むだけ。旧の返品の入口（Task 11 まで）はここで鍵を取る
+  v_prelocked := EXISTS (
+    SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted
+  );
+  IF v_prelocked THEN
+    SELECT o.* INTO v_order FROM public.orders AS o WHERE o.id = _order_id;
+  ELSE
+    SELECT o.* INTO v_order FROM public.orders AS o WHERE o.id = _order_id FOR UPDATE;
+  END IF;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ORDER_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+
+  IF _source = 'return' THEN
+    IF v_prelocked THEN
+      PERFORM 1 FROM public.order_returns AS r WHERE r.id=_return_id AND r.order_id=_order_id;
+    ELSE
+      PERFORM 1 FROM public.order_returns AS r WHERE r.id=_return_id AND r.order_id=_order_id FOR UPDATE;
+    END IF;
+    IF NOT FOUND THEN RAISE EXCEPTION 'RETURN_NOT_FOUND' USING ERRCODE='P0002'; END IF;
+    SELECT rr.request_fingerprint INTO v_fingerprint FROM public.order_return_receipts AS rr
+    WHERE rr.request_key=_request_key AND rr.return_id=_return_id AND rr.kind='receive';
+    IF NOT FOUND THEN
+      v_fingerprint:=pg_catalog.md5(pg_catalog.jsonb_build_object('return_id',_return_id,'amount',_received_amount,
+        'shipping_amount',_shipping_amount,'note',_note,'notify_customer',_notify_customer)::text);
+    END IF;
+  ELSIF NOT v_prelocked THEN
+    -- 普通の返金も返品のrwを覆うため、返金の行を書く前に、注文の次に受付中の返品をID順でロックする。
+    PERFORM 1 FROM public.order_returns AS rt
+    WHERE rt.order_id=_order_id AND rt.status='open' ORDER BY rt.id FOR UPDATE;
+  END IF;
+
+  -- 3. 同じ二重防止の番号の送り直し。同じ中身なら前の記録を返し、中身が違えば断る
+  IF _request_key IS NOT NULL THEN
+    SELECT r.* INTO v_existing FROM public.order_refunds AS r WHERE r.request_key = _request_key;
+    IF FOUND THEN
+      IF v_existing.order_id <> _order_id OR v_existing.request_fingerprint IS DISTINCT FROM v_fingerprint THEN
+        RAISE EXCEPTION USING MESSAGE=CASE WHEN _source='return' THEN 'RETURN_REQUEST_MISMATCH' ELSE 'REFUND_REQUEST_MISMATCH' END, ERRCODE='22023';
+      END IF;
+      RETURN QUERY SELECT v_existing.id, v_existing.amount, v_existing.status, true;
+      RETURN;
+    END IF;
+  END IF;
+
+  -- 4. エは取り消した注文だけ。受け取った額が空なら、入金を見つけた額を注文に書く
+  IF _source = 'auto_cancelled_order_payment' THEN
+    IF v_order.status <> 'cancelled'::public.order_status THEN
+      RAISE EXCEPTION 'ORDER_NOT_REFUNDABLE' USING ERRCODE = '22023';
+    END IF;
+    IF v_order.paid_amount IS NULL THEN
+      IF _received_amount IS NULL OR _received_amount < 1 THEN
+        RAISE EXCEPTION 'REFUND_ARGUMENT_INVALID' USING ERRCODE = '22023';
+      END IF;
+      PERFORM pg_catalog.set_config('app.order_actor_id', '', true);
+      PERFORM pg_catalog.set_config('app.order_change_reason', 'record_cancelled_order_payment', true);
+      PERFORM pg_catalog.set_config('app.order_source_event_id', '', true);
+      UPDATE public.orders AS o SET paid_amount = _received_amount WHERE o.id = _order_id;
+      v_order.paid_amount := _received_amount;
+    END IF;
+  END IF;
+
+  -- 5. 返金できる状態: 支払い済み・発送済み・取り消した注文で、受け取った額がある
+  IF v_order.status NOT IN ('paid'::public.order_status, 'shipped'::public.order_status, 'cancelled'::public.order_status)
+     OR v_order.paid_amount IS NULL
+     OR v_order.paid_amount < 1 THEN
+    RAISE EXCEPTION 'ORDER_NOT_REFUNDABLE' USING ERRCODE = '22023';
+  END IF;
+
+  -- 6. 返事待ちの返金がある注文には、新しい返金を作れない
+  IF EXISTS (
+    SELECT 1
+    FROM public.order_refunds AS r
+    WHERE r.order_id = _order_id
+      AND r.status = 'awaiting_response'
+  ) THEN
+    RAISE EXCEPTION 'AWAITING_REFUND_EXISTS' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT COALESCE(pg_catalog.sum(l.shipped), 0)::integer, COALESCE(pg_catalog.sum(l.unshipped), 0)::integer
+  INTO v_shipped_total, v_unshipped_total
+  FROM private.order_line_fulfillment(_order_id) AS l;
+
+  -- 7. キャンセルは、支払い済みで1つも発送していない注文だけ
+  IF v_is_cancel AND (v_order.status <> 'paid'::public.order_status OR v_shipped_total > 0) THEN
+    RAISE EXCEPTION 'ORDER_NOT_CANCELLABLE' USING ERRCODE = '22023';
+  END IF;
+
+  -- 8. 返せる額 = 受け取った額 − 返事待ち・保留・成功の返金。0なら何も返せない
+  SELECT a.refundable_amount, a.refundable_shipping INTO v_refundable, v_refundable_shipping
+  FROM private.order_refund_amounts(_order_id) AS a;
+  IF v_refundable IS NULL OR v_refundable < 1 THEN
+    RAISE EXCEPTION 'REFUND_EXCEEDS_REFUNDABLE' USING ERRCODE = '22023';
+  END IF;
+
+  -- 9. 商品の行。イ・オは残りの未発送を全部、発送前の行に入れる。エは行なし
+  IF v_is_admin THEN
+    v_resolved := _lines;
+  ELSIF v_is_cancel THEN
+    SELECT COALESCE(
+             pg_catalog.jsonb_agg(
+               pg_catalog.jsonb_build_object('order_item_id', l.order_item_id, 'before_shipment', true, 'quantity', l.unshipped)
+               ORDER BY l.order_item_id
+             ),
+             '[]'::jsonb
+           )
+    INTO v_resolved
+    FROM private.order_line_fulfillment(_order_id) AS l
+    WHERE l.unshipped > 0;
+  ELSE
+    v_resolved := '[]'::jsonb;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM private.parse_refund_lines(v_resolved) AS p
+    WHERE NOT EXISTS (
+      SELECT 1 FROM public.order_items AS oi WHERE oi.id = p.order_item_id AND oi.order_id = _order_id
+    )
+  ) THEN
+    RAISE EXCEPTION 'REFUND_LINE_NOT_IN_ORDER' USING ERRCODE = '22023';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM private.parse_refund_lines(v_resolved) AS p
+    JOIN private.order_line_fulfillment(_order_id) AS l ON l.order_item_id = p.order_item_id
+    WHERE p.before_shipment
+      AND p.quantity > l.unshipped
+  ) THEN
+    RAISE EXCEPTION 'REFUND_QUANTITY_EXCEEDS_UNSHIPPED' USING ERRCODE = '22023';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM private.parse_refund_lines(v_resolved) AS p
+    JOIN private.order_line_return_counts(_order_id) AS l ON l.order_item_id = p.order_item_id
+    WHERE NOT p.before_shipment AND _source <> 'return'
+      AND p.quantity > l.refundable_after_shipment
+  ) THEN
+    RAISE EXCEPTION 'REFUND_QUANTITY_EXCEEDS_SHIPPED' USING ERRCODE = '22023';
+  END IF;
+
+  -- 返品の返金は、受け取った返金の品で覆われていない数まで。発送前には使わせない。
+  IF _source='return' AND EXISTS (
+    SELECT 1 FROM private.parse_refund_lines(v_resolved) AS p
+    WHERE p.before_shipment OR p.quantity > COALESCE((
+      SELECT pg_catalog.sum(g.refund_waiting)::integer
+      FROM private.order_return_line_progress(_return_id) AS g
+      JOIN public.order_return_lines AS rl ON rl.id=g.return_line_id
+      WHERE rl.order_item_id=p.order_item_id
+    ),0)
+  ) THEN RAISE EXCEPTION 'RETURN_RECEIPT_EXCEEDS' USING ERRCODE='22023'; END IF;
+
+  -- 10. 送料と額。アは呼ぶ側の値。イ・エ・オは返せる額の全部で、送料はイ・オだけ返せる送料の全部
+  IF v_is_admin THEN
+    v_shipping := _shipping_amount;
+    v_amount := _amount;
+  ELSE
+    v_amount := v_refundable;
+    v_shipping := CASE
+      WHEN _source = 'auto_cancelled_order_payment' THEN 0
+      ELSE LEAST(v_refundable_shipping, v_refundable)
+    END;
+  END IF;
+  IF v_shipping > v_refundable_shipping THEN
+    RAISE EXCEPTION 'REFUND_SHIPPING_EXCEEDS' USING ERRCODE = '22023';
+  END IF;
+  IF v_amount > v_refundable THEN
+    RAISE EXCEPTION 'REFUND_EXCEEDS_REFUNDABLE' USING ERRCODE = '22023';
+  END IF;
+
+  -- 11. 全額の時の決まり（アだけ）
+  IF v_is_admin THEN
+    SELECT COALESCE(pg_catalog.sum(p.quantity) FILTER (WHERE p.before_shipment), 0)::integer INTO v_included
+    FROM private.parse_refund_lines(v_resolved) AS p;
+
+    IF v_amount = v_refundable AND v_unshipped_total - v_included > 0 THEN
+      RAISE EXCEPTION 'REFUND_MUST_INCLUDE_UNSHIPPED' USING ERRCODE = '22023';
+    END IF;
+    IF v_shipped_total = 0
+       AND v_included > 0
+       AND v_unshipped_total - v_included = 0
+       AND (v_shipping <> LEAST(v_refundable_shipping, v_refundable) OR v_amount <> v_refundable) THEN
+      RAISE EXCEPTION 'REFUND_MUST_BE_FULL' USING ERRCODE = '22023';
+    END IF;
+  END IF;
+
+  -- 12. 商品ごとの額（設計書 4-5）。在庫に戻すのは、発送前・在庫の品・チェックありの行だけ
+  SELECT COALESCE(
+           pg_catalog.jsonb_agg(
+             pg_catalog.jsonb_build_object(
+               'order_item_id', q.order_item_id,
+               'before_shipment', q.before_shipment,
+               'quantity', q.quantity,
+               'restock_type', CASE
+                 WHEN _source='return' THEN 'return'::text
+                 WHEN q.before_shipment AND q.fulfillment_type = 'stock' AND v_restock THEN 'cancel'::text
+                 ELSE 'no_restock'::text
+               END,
+               'amount', private.return_units_amount(q.order_item_id,q.quantity,q.earlier_in_refund)
+             )
+             ORDER BY q.order_item_id, q.before_shipment DESC
+           ),
+           '[]'::jsonb
+         )
+  INTO v_priced
+  FROM (
+    SELECT p.order_item_id,
+           p.before_shipment,
+           p.quantity,
+           l.fulfillment_type,
+           oi.item_price,
+           oi.quantity AS ordered,
+           d.line_discount,
+           l.refunded_before_shipment + l.refunded_after_shipment AS already_refunded,
+           COALESCE(pg_catalog.sum(p.quantity) OVER (
+             PARTITION BY p.order_item_id
+             ORDER BY p.before_shipment DESC
+             ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+           ), 0)::integer AS earlier_in_refund
+    FROM private.parse_refund_lines(v_resolved) AS p
+    JOIN public.order_items AS oi ON oi.id = p.order_item_id
+    JOIN private.order_line_fulfillment(_order_id) AS l ON l.order_item_id = p.order_item_id
+    JOIN private.order_line_discounts(_order_id) AS d ON d.order_item_id = p.order_item_id
+  ) AS q;
+
+  SELECT COALESCE(pg_catalog.sum(x.amount), 0)::integer INTO v_lines_amount
+  FROM pg_catalog.jsonb_to_recordset(v_priced)
+    AS x(order_item_id uuid, before_shipment boolean, quantity integer, restock_type text, amount integer);
+
+  -- 13. 記録。計算との差 = 返金額 − （行の額の合計 + 送料）
+  BEGIN
+    INSERT INTO public.order_refunds AS r
+      (id, return_id, order_id, source, request_key, request_fingerprint, status, amount, shipping_amount, adjustment_amount,
+       note, stripe_reason, cancel_reason, notify_customer, actor_id, return_fee_deduction)
+    VALUES
+      (COALESCE((SELECT rr.refund_id FROM public.order_return_receipts AS rr WHERE rr.return_id=_return_id AND rr.request_key=_request_key),pg_catalog.gen_random_uuid()),
+       _return_id, _order_id, _source, _request_key, v_fingerprint, 'awaiting_response', v_amount, v_shipping,
+       v_amount - (v_lines_amount + v_shipping), v_note, v_stripe_reason, v_cancel_reason, v_notify, v_actor, COALESCE(_return_fee_deduction, 0))
+    RETURNING r.id INTO v_refund_id;
+  EXCEPTION WHEN unique_violation THEN
+    GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
+    IF v_constraint = 'order_refunds_request_key_key' THEN
+      RAISE EXCEPTION USING MESSAGE=CASE WHEN _source='return' THEN 'RETURN_REQUEST_MISMATCH' ELSE 'REFUND_REQUEST_MISMATCH' END, ERRCODE='22023';
+    END IF;
+    RAISE;
+  END;
+
+  INSERT INTO public.order_refund_lines (refund_id, order_item_id, quantity, before_shipment, restock_type, amount)
+  SELECT v_refund_id, x.order_item_id, x.quantity, x.before_shipment, x.restock_type, x.amount
+  FROM pg_catalog.jsonb_to_recordset(v_priced)
+    AS x(order_item_id uuid, before_shipment boolean, quantity integer, restock_type text, amount integer);
+
+  IF _source <> 'return' THEN
+    -- 返金の行が覆った後の数で完了を確かめ、返品が操作できない受付中のまま残るのを防ぐ。
+    PERFORM private.refresh_order_return_status(rt.id) FROM public.order_returns AS rt
+    WHERE rt.order_id=_order_id AND rt.status='open' ORDER BY rt.id;
+  END IF;
+  RETURN QUERY SELECT v_refund_id, v_amount, 'awaiting_response'::text, false;
+END;
+$$;
+ALTER FUNCTION private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)
+  OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+-- begin: common lock and the order closure -> before -> core (awaiting_response: the coverage makes the units
+-- cancelled / not shippable, every A is kept) -> state seq 1 -> operation. A replay changes nothing.
+CREATE FUNCTION private.begin_order_refund(
+  _order_id uuid, _source text, _request_key uuid, _lines jsonb, _restock boolean,
+  _shipping_amount integer, _amount integer, _note text, _stripe_reason text, _cancel_reason text,
+  _notify_customer boolean, _actor_id uuid, _received_amount integer DEFAULT NULL
+) RETURNS TABLE (refund_id uuid, amount integer, status text, replayed boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_orders uuid[];
+  v_before jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+  v_result record;
+BEGIN
+  v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[],
+    CASE WHEN _order_id IS NULL THEN ARRAY[]::uuid[] ELSE ARRAY[_order_id] END, NULL);
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+
+  SELECT c.refund_id AS id, c.amount AS refund_amount, c.status AS refund_status, c.replayed AS was_replayed
+  INTO v_result
+  FROM private.begin_order_refund_core(_order_id, _source, _request_key, _lines, _restock, _shipping_amount,
+    _amount, _note, _stripe_reason, _cancel_reason, _notify_customer, _actor_id, _received_amount,
+    NULL::uuid, NULL::integer) AS c;
+
+  IF NOT v_result.was_replayed THEN
+    PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'begin_order_refund', _actor_id);
+    INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+    VALUES (
+      v_operation,
+      'begin_order_refund',
+      COALESCE(_request_key, pg_catalog.md5('begin_order_refund:' || v_result.id::text)::uuid),
+      pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+        'operation', 'begin_order_refund', 'order_id', _order_id, 'source', _source, 'request_key', _request_key,
+        'lines', _lines, 'restock', _restock, 'shipping_amount', _shipping_amount, 'amount', _amount, 'note', _note,
+        'stripe_reason', _stripe_reason, 'cancel_reason', _cancel_reason, 'notify_customer', _notify_customer,
+        'actor_id', _actor_id, 'received_amount', _received_amount, 'refund_id', v_result.id)::text, 'UTF8')), 'hex'),
+      'order_refund',
+      v_result.id::text,
+      _actor_id,
+      pg_catalog.jsonb_build_object('refund_id', v_result.id, 'order_id', _order_id, 'amount', v_result.refund_amount,
+        'status', v_result.refund_status)
+    );
+  END IF;
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT v_result.id, v_result.refund_amount, v_result.refund_status, v_result.was_replayed;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)
+  OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)
+  TO service_role;
+
+CREATE OR REPLACE FUNCTION public.begin_order_refund(
+  _order_id uuid, _source text, _request_key uuid, _lines jsonb, _restock boolean,
+  _shipping_amount integer, _amount integer, _note text, _stripe_reason text, _cancel_reason text,
+  _notify_customer boolean, _actor_id uuid, _received_amount integer DEFAULT NULL
+) RETURNS TABLE (refund_id uuid, amount integer, status text, replayed boolean)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT * FROM private.begin_order_refund(_order_id, _source, _request_key, _lines, _restock, _shipping_amount,
+    _amount, _note, _stripe_reason, _cancel_reason, _notify_customer, _actor_id, _received_amount);
+$$;
+ALTER FUNCTION public.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)
+  OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)
+  TO service_role;
+
+-- Internal core: the refund's money/notice state after a result. The caller owns the common lock, the order
+-- closure and the operation (app.group_g_operation_id). No lock, no nested public RPC, no I/O.
+--  2. First acceptance (pending/succeeded) only: each pre-shipment line releases only the A that the unshipped,
+--     not-yet-accepted units no longer need (unallocated units are covered first), from the line's A of any
+--     original kind. cancel (and a backorder line's A) -> refund/+n then FIFO; an in-stock no_restock line ->
+--     refund/+n paired with adjustment/-n (same refund, no FIFO in between). After-shipment lines never add stock.
+--  4. First failure: the coverage is gone; what the refund released returns to waiting and joins the normal FIFO
+--     by the original order date. Another order's A is never taken; the shortage stays on the line and marks the
+--     existing review (stock_not_reserved).
+CREATE OR REPLACE FUNCTION private.apply_order_refund_state(_refund_id uuid)
+RETURNS TABLE (
+  newly_accepted boolean,
+  newly_failed boolean,
+  order_status public.order_status,
+  refunded_amount integer,
+  rereserve_shortage integer,
+  email_enqueued boolean,
+  exception_id uuid
+)
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_refund public.order_refunds%ROWTYPE;
+  v_order public.orders%ROWTYPE;
+  v_operation uuid;
+  v_line record;
+  v_allocation record;
+  v_left integer;
+  v_take integer;
+  v_movement bigint;
+  v_accepted boolean := false;
+  v_failed boolean := false;
+  v_rereserve boolean := false;
+  v_email boolean := false;
+  v_exception uuid;
+  v_shortage integer := 0;
+  v_fifo_variants bigint[] := ARRAY[]::bigint[];
+  v_kind text;
+  v_variant text;
+  v_succeeded integer;
+  v_succeeded_at timestamptz;
+  v_full integer;
+  v_refunded integer;
+  v_unshipped integer;
+  v_shipped integer;
+  v_target public.order_status;
+  v_reason text := 'refund_projection';
+  v_cancel_reason text;
+  v_cancel_note text;
+  v_cancel_notify boolean;
+  v_shipped_at timestamptz;
+  v_carrier text;
+  v_tracking text;
+  v_last_shipped_at timestamptz;
+  v_last_carrier text;
+  v_last_tracking text;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
+  END IF;
+  v_operation := NULLIF(pg_catalog.current_setting('app.group_g_operation_id', true), '')::uuid;
+  IF v_operation IS NULL THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT r.* INTO v_refund FROM public.order_refunds AS r WHERE r.id = _refund_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'REFUND_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  SELECT o.* INTO v_order FROM public.orders AS o WHERE o.id = v_refund.order_id;
+  v_target := v_order.status;
+  v_refunded := v_order.refunded_amount;
+
+  -- 2. Stripe が受け付けた時（保留か成功に初めてなった時）の1回だけ、割当を外す。写しは動かさない
+  IF v_refund.source <> 'legacy'
+     AND v_refund.stock_applied_at IS NULL
+     AND v_refund.status IN ('pending', 'succeeded') THEN
+    FOR v_line IN
+      -- Controller ruling: an allocated unit is physical stock whatever the line's original kind. Only an in-stock
+      -- line whose refund chose not to restock writes its released A off; a backorder line's A goes back to stock
+      -- (its recorded no_restock only meant "nothing reserved"), and unallocated units add nothing.
+      SELECT rl.id AS line_id, rl.order_item_id, oi.variant_id,
+             CASE WHEN rl.restock_type = 'no_restock' AND oi.fulfillment_type = 'stock' THEN 'no_restock'
+                  ELSE 'cancel' END AS restock_type,
+             LEAST(rl.quantity, GREATEST(
+               COALESCE((SELECT pg_catalog.sum(a.remaining_quantity) FROM public.order_item_allocations AS a
+                         WHERE a.order_item_id = oi.id AND a.kind = 'paid'), 0)
+               - GREATEST(oi.quantity
+                   - COALESCE((SELECT pg_catalog.sum(fl.quantity) FROM public.order_fulfillment_lines AS fl
+                               JOIN public.order_fulfillments AS f ON f.id = fl.fulfillment_id
+                               WHERE fl.order_item_id = oi.id AND f.cancelled_at IS NULL), 0)
+                   - COALESCE((SELECT pg_catalog.sum(x.quantity) FROM public.order_refund_lines AS x
+                               JOIN public.order_refunds AS r ON r.id = x.refund_id
+                               WHERE x.order_item_id = oi.id AND x.before_shipment
+                                 AND r.status IN ('pending', 'succeeded')
+                                 AND (r.stock_applied_at IS NOT NULL OR r.id = v_refund.id)), 0), 0), 0))::integer
+               AS release_quantity
+      FROM public.order_refund_lines AS rl
+      JOIN public.order_items AS oi ON oi.id = rl.order_item_id
+      WHERE rl.refund_id = v_refund.id
+        AND rl.before_shipment
+        AND oi.variant_id IS NOT NULL
+      ORDER BY oi.variant_id, rl.order_item_id
+    LOOP
+      CONTINUE WHEN v_line.release_quantity <= 0;
+      v_left := v_line.release_quantity;
+      FOR v_allocation IN
+        SELECT a.id, a.remaining_quantity
+        FROM public.order_item_allocations AS a
+        WHERE a.order_item_id = v_line.order_item_id AND a.kind = 'paid' AND a.remaining_quantity > 0
+        ORDER BY a.created_at DESC, a.id DESC
+      LOOP
+        EXIT WHEN v_left = 0;
+        v_take := LEAST(v_left, v_allocation.remaining_quantity);
+        UPDATE public.order_item_allocations AS a
+        SET remaining_quantity = a.remaining_quantity - v_take, version = a.version + 1, updated_at = pg_catalog.now()
+        WHERE a.id = v_allocation.id;
+        INSERT INTO public.stock_movements
+          (variant_id, delta, reason, order_id, order_item_id, note, created_by, refund_id, allocation_operation_id)
+        VALUES
+          (v_line.variant_id, v_take, 'refund', v_order.id, v_line.order_item_id,
+           CASE WHEN v_line.restock_type = 'cancel' THEN 'refund_restock' ELSE 'refund_release' END,
+           v_refund.actor_id, v_refund.id, v_operation)
+        RETURNING id INTO v_movement;
+        INSERT INTO public.order_item_allocation_events
+          (allocation_id, event_type, quantity, operation_id, sequence, stock_movement_id, reason, actor_id)
+        VALUES
+          (v_allocation.id, 'release', v_take, v_operation, 1, v_movement,
+           CASE WHEN v_line.restock_type = 'cancel' THEN 'refund_restock' ELSE 'refund_release' END, v_refund.actor_id);
+        v_left := v_left - v_take;
+      END LOOP;
+      IF v_line.restock_type = 'no_restock' THEN
+        -- The written-off pair: free stock never rises between +n and -n, so FIFO does not run for it.
+        INSERT INTO public.stock_movements
+          (variant_id, delta, reason, order_id, order_item_id, note, created_by, refund_id)
+        VALUES
+          (v_line.variant_id, -v_line.release_quantity, 'adjustment', v_order.id, v_line.order_item_id,
+           'refund_no_restock', v_refund.actor_id, v_refund.id);
+      ELSE
+        v_fifo_variants := v_fifo_variants || v_line.variant_id;
+      END IF;
+      UPDATE public.order_refund_lines AS l
+      SET released_quantity = v_line.release_quantity,
+          restocked_quantity = CASE WHEN v_line.restock_type = 'cancel' THEN v_line.release_quantity ELSE 0 END
+      WHERE l.id = v_line.line_id;
+    END LOOP;
+
+    UPDATE public.order_refunds AS r SET stock_applied_at = pg_catalog.now() WHERE r.id = v_refund.id;
+    v_accepted := true;
+  END IF;
+
+  -- 3. お客様へのメールの予定（1回だけ）。残高不足の保留は、お金が動く成功まで待つ。写しは書かない
+  IF v_refund.source <> 'legacy'
+     AND v_refund.notify_customer
+     AND v_refund.email_enqueued_at IS NULL
+     AND (v_refund.status = 'succeeded'
+          OR (v_refund.status = 'pending' AND v_refund.stripe_pending_reason IS DISTINCT FROM 'insufficient_funds')) THEN
+    IF v_refund.source IN ('order_cancel', 'auto_amount_mismatch') THEN
+      v_kind := 'canceled';
+      v_variant := 'paid';
+    ELSIF v_refund.source = 'auto_cancelled_order_payment' THEN
+      v_kind := 'refund';
+      v_variant := 'after_cancel';
+    ELSIF v_refund.source = 'return' THEN
+      v_kind := 'refund';
+      v_variant := 'return';
+    ELSE
+      v_kind := 'refund';
+      v_variant := 'standard';
+    END IF;
+    PERFORM private.enqueue_order_email(v_order.id, v_kind, v_variant, NULL::uuid, v_refund.id);
+    UPDATE public.order_refunds AS r SET email_enqueued_at = pg_catalog.now() WHERE r.id = v_refund.id;
+    v_email := true;
+  END IF;
+
+  -- 4. 初めて失敗になった時の後始末（1回だけ）。写しは店へ知らせない
+  IF v_refund.source <> 'legacy'
+     AND v_refund.status = 'failed'
+     AND v_refund.failure_applied_at IS NULL THEN
+    -- 外した分は、注文の状態を戻した後の通常の FIFO で、元の注文日の順に確保し直す（下の 6）
+    v_rereserve := v_refund.stock_applied_at IS NOT NULL;
+
+    -- 要対応の支払いの印は Stripe の返金の番号。ただし、エラーにした後に受け付けられないまま失敗した記録は、
+    -- エラーの時の要対応と同じ行になるよう記録の番号にする（P23）。共通の lock の下なので行の core を直に呼ぶ
+    SELECT x.exception_id INTO v_exception
+    FROM private.record_group_g_payment_exception_row(
+      CASE
+        WHEN v_refund.errored_at IS NOT NULL AND v_refund.accepted_at IS NULL THEN v_refund.id::text
+        ELSE COALESCE(v_refund.stripe_refund_id, v_refund.id::text)
+      END,
+      'refund_failed',
+      COALESCE(v_refund.stripe_failure_reason, 'unknown'),
+      NULL::text,
+      v_order.payment_intent_id,
+      NULL::uuid,
+      v_order.id
+    ) AS x;
+
+    UPDATE public.order_refunds AS r SET failure_applied_at = pg_catalog.now() WHERE r.id = v_refund.id;
+    v_failed := true;
+  END IF;
+
+  -- 5. 注文の返金済みの額と状態（設計書 4-7）。支払い手続き中・未入金・失敗・放棄の注文は触らない
+  IF v_order.status IN ('paid', 'shipped', 'cancelled') THEN
+    SELECT COALESCE(pg_catalog.sum(r.amount), 0)::integer, pg_catalog.max(r.succeeded_at)
+    INTO v_succeeded, v_succeeded_at
+    FROM public.order_refunds AS r
+    WHERE r.order_id = v_order.id
+      AND r.status = 'succeeded';
+
+    v_full := COALESCE(NULLIF(v_order.paid_amount, 0), v_order.total_amount);
+    v_refunded := LEAST(v_succeeded, GREATEST(v_order.total_amount, COALESCE(v_order.paid_amount, 0)));
+
+    SELECT COALESCE(pg_catalog.sum(l.unshipped), 0)::integer, COALESCE(pg_catalog.sum(l.shipped), 0)::integer
+    INTO v_unshipped, v_shipped
+    FROM private.order_line_fulfillment(v_order.id) AS l;
+
+    IF v_order.status IN ('paid', 'shipped') AND v_succeeded >= v_full THEN
+      v_target := 'cancelled'::public.order_status;
+    ELSIF v_order.status = 'cancelled'
+          AND v_succeeded < v_full
+          AND private.order_cancelled_by_refund(v_order.id) THEN
+      v_target := CASE
+        WHEN v_unshipped = 0 AND v_shipped > 0 THEN 'shipped'::public.order_status
+        ELSE 'paid'::public.order_status
+      END;
+    ELSIF v_order.status = 'paid' AND v_unshipped = 0 AND v_shipped > 0 THEN
+      v_target := 'shipped'::public.order_status;
+      v_reason := 'refund_completed_order';
+    ELSIF v_order.status = 'shipped' AND v_unshipped > 0 THEN
+      v_target := 'paid'::public.order_status;
+      v_reason := 'refund_failed_reopened';
+    END IF;
+
+    v_cancel_reason := v_order.cancel_reason;
+    v_cancel_note := v_order.cancel_note;
+    v_cancel_notify := v_order.cancel_notify_customer;
+    IF v_target = 'cancelled'::public.order_status AND v_order.status <> 'cancelled'::public.order_status THEN
+      v_cancel_reason := v_refund.cancel_reason;
+      v_cancel_note := CASE
+        WHEN v_refund.cancel_reason IS NOT NULL THEN NULLIF(pg_catalog.btrim(v_refund.note), '')
+      END;
+      v_cancel_notify := CASE WHEN v_refund.cancel_reason IS NOT NULL THEN v_refund.notify_customer END;
+    ELSIF v_target <> 'cancelled'::public.order_status AND v_order.status = 'cancelled'::public.order_status THEN
+      v_cancel_reason := NULL;
+      v_cancel_note := NULL;
+      v_cancel_notify := NULL;
+    END IF;
+
+    v_shipped_at := v_order.shipped_at;
+    v_carrier := v_order.shipping_carrier;
+    v_tracking := v_order.tracking_number;
+    IF v_target = 'shipped'::public.order_status AND v_order.status <> 'shipped'::public.order_status THEN
+      SELECT f.shipped_at, f.shipping_carrier, f.tracking_number
+      INTO v_last_shipped_at, v_last_carrier, v_last_tracking
+      FROM public.order_fulfillments AS f
+      WHERE f.order_id = v_order.id
+        AND f.cancelled_at IS NULL
+      ORDER BY f.number DESC
+      LIMIT 1;
+      IF FOUND THEN
+        v_shipped_at := v_last_shipped_at;
+        v_carrier := v_last_carrier;
+        v_tracking := v_last_tracking;
+      END IF;
+    ELSIF v_target = 'paid'::public.order_status AND v_order.status <> 'paid'::public.order_status THEN
+      v_shipped_at := NULL;
+      v_carrier := NULL;
+      v_tracking := NULL;
+    END IF;
+
+    IF v_target <> v_order.status
+       OR v_refunded <> v_order.refunded_amount
+       OR v_succeeded_at IS DISTINCT FROM v_order.refunded_at THEN
+      PERFORM pg_catalog.set_config('app.order_actor_id', COALESCE(v_refund.actor_id::text, ''), true);
+      PERFORM pg_catalog.set_config('app.order_change_reason', v_reason, true);
+      PERFORM pg_catalog.set_config('app.order_source_event_id', '', true);
+
+      UPDATE public.orders AS o
+      SET status = v_target,
+          refunded_amount = v_refunded,
+          refunded_at = v_succeeded_at,
+          payment_status_updated_at = CASE
+            WHEN v_refunded <> o.refunded_amount THEN pg_catalog.now()
+            ELSE o.payment_status_updated_at
+          END,
+          cancel_reason = v_cancel_reason,
+          cancel_note = v_cancel_note,
+          cancel_notify_customer = v_cancel_notify,
+          shipped_at = v_shipped_at,
+          shipping_carrier = v_carrier,
+          tracking_number = v_tracking
+      WHERE o.id = v_order.id;
+    END IF;
+  END IF;
+
+  -- 6. FIFO after the order's status: released cancel stock goes to the oldest waiting orders, and a failed
+  --    refund's released units wait again by their original order date (no A is taken from another order).
+  IF v_rereserve THEN
+    v_fifo_variants := v_fifo_variants || ARRAY(
+      SELECT oi.variant_id
+      FROM public.order_refund_lines AS rl
+      JOIN public.order_items AS oi ON oi.id = rl.order_item_id
+      WHERE rl.refund_id = v_refund.id AND rl.released_quantity > 0 AND oi.variant_id IS NOT NULL);
+  END IF;
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_fifo_variants
+  FROM pg_catalog.unnest(v_fifo_variants) AS x(id);
+  IF pg_catalog.cardinality(v_fifo_variants) > 0 THEN
+    PERFORM private.allocate_group_g_fifo(v_fifo_variants, v_operation, v_refund.actor_id);
+  END IF;
+
+  -- 7. 失敗の確保し直しの結果を行に一度だけ書く。足りない時は既存の要確認（理由が空か確認済みの時だけ付け直す）
+  IF v_rereserve THEN
+    FOR v_line IN
+      SELECT rl.id AS line_id, rl.order_item_id, rl.released_quantity
+      FROM public.order_refund_lines AS rl
+      WHERE rl.refund_id = v_refund.id AND rl.released_quantity > 0
+      ORDER BY rl.order_item_id
+    LOOP
+      SELECT LEAST(v_line.released_quantity, COALESCE(pg_catalog.sum(a.quantity), 0))::integer INTO v_take
+      FROM public.order_item_allocations AS a
+      WHERE a.order_item_id = v_line.order_item_id AND a.operation_id = v_operation;
+      UPDATE public.order_refund_lines AS l
+      SET rereserved_quantity = v_take,
+          rereserve_shortage = v_line.released_quantity - v_take
+      WHERE l.id = v_line.line_id;
+      v_shortage := v_shortage + (v_line.released_quantity - v_take);
+    END LOOP;
+
+    IF v_shortage > 0 AND (v_order.review_reason IS NULL OR v_order.reviewed_at IS NOT NULL) THEN
+      PERFORM pg_catalog.set_config('app.order_actor_id', COALESCE(v_refund.actor_id::text, ''), true);
+      PERFORM pg_catalog.set_config('app.order_change_reason', v_reason, true);
+      PERFORM pg_catalog.set_config('app.order_source_event_id', '', true);
+      UPDATE public.orders AS o
+      SET review_reason = 'stock_not_reserved',
+          review_marked_at = pg_catalog.now(),
+          reviewed_at = NULL,
+          reviewed_by = NULL
+      WHERE o.id = v_order.id;
+    END IF;
+  END IF;
+
+  RETURN QUERY
+  SELECT v_accepted,
+         v_failed,
+         v_target,
+         v_refunded,
+         COALESCE((
+           SELECT pg_catalog.sum(rl.rereserve_shortage)
+           FROM public.order_refund_lines AS rl
+           WHERE rl.refund_id = v_refund.id
+         ), 0)::integer,
+         v_email,
+         v_exception;
+END;
+$$;
+ALTER FUNCTION private.apply_order_refund_state(uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.apply_order_refund_state(uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+-- 返品の返金の状態が変わった後の、返品の後始末（P25・P26）。中身は最後の定義のまま。呼ぶ側が共通の lock と
+-- 注文の閉包（返品・返金の行を含む）を持ち、返金の記録の状態を書いた後に、前の状態を渡して呼ぶ。
+CREATE OR REPLACE FUNCTION private.apply_return_refund_outcome(_refund_id uuid, _from_status text)
+RETURNS boolean
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_refund public.order_refunds%ROWTYPE;
+  v_receipt public.order_return_receipts%ROWTYPE;
+  v_from_covers boolean;
+  v_to_covers boolean;
+  v_enqueued boolean := false;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
+  END IF;
+  SELECT r.* INTO v_refund FROM public.order_refunds AS r WHERE r.id = _refund_id;
+  IF NOT FOUND OR v_refund.source <> 'return' OR v_refund.return_id IS NULL THEN
+    RETURN false;
+  END IF;
+  v_from_covers := _from_status IN ('awaiting_response', 'pending', 'succeeded');
+  v_to_covers := v_refund.status IN ('awaiting_response', 'pending', 'succeeded');
+
+  IF v_refund.return_fee_deduction > 0 AND v_from_covers AND NOT v_to_covers THEN
+    UPDATE public.order_returns AS rt
+    SET fee_pending_deduction = rt.fee_pending_deduction + v_refund.return_fee_deduction
+    WHERE rt.id = v_refund.return_id;
+  ELSIF v_refund.return_fee_deduction > 0 AND NOT v_from_covers AND v_to_covers THEN
+    UPDATE public.order_returns AS rt
+    SET fee_pending_deduction = GREATEST(rt.fee_pending_deduction - v_refund.return_fee_deduction, 0)
+    WHERE rt.id = v_refund.return_id;
+  END IF;
+
+  IF v_from_covers AND NOT v_to_covers
+     AND v_refund.accepted_at IS NULL
+     AND v_refund.email_enqueued_at IS NULL THEN
+    SELECT rr.* INTO v_receipt
+    FROM public.order_return_receipts AS rr
+    WHERE rr.refund_id = _refund_id
+      AND rr.kind = 'receive';
+    IF FOUND AND v_receipt.notify_customer THEN
+      v_enqueued := private.enqueue_return_email(v_refund.order_id, 'return_received', v_refund.return_id, v_receipt.id);
+    END IF;
+  END IF;
+
+  PERFORM private.refresh_order_return_status(v_refund.return_id);
+  RETURN v_enqueued;
+END;
+$$;
+ALTER FUNCTION private.apply_return_refund_outcome(uuid,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.apply_return_refund_outcome(uuid,text) FROM PUBLIC, anon, authenticated, service_role;
+
+-- Internal core shared by record_order_refund_result and record_external_order_refund. The caller has validated
+-- the Stripe fields, owns the common lock and the order closure, and captured the before-states. One operation per
+-- refund transition (from -> to): it is written before FIFO so a re-reserved allocation keeps the refund as its
+-- origin, and a repeated report of the same transition reuses it (the existing guards add nothing).
+CREATE FUNCTION private.record_group_g_refund_result(
+  _refund_id uuid,
+  _stripe_refund_id text,
+  _stripe_status text,
+  _stripe_pending_reason text,
+  _stripe_failure_reason text,
+  _customer_action_expires_at timestamptz,
+  _payment_method_type text,
+  _reference_number text,
+  _reference_type text,
+  _operation text,
+  _orders uuid[],
+  _before jsonb
+)
+RETURNS TABLE (
+  refund_id uuid,
+  order_id uuid,
+  status text,
+  newly_accepted boolean,
+  newly_failed boolean,
+  order_status public.order_status,
+  refunded_amount integer,
+  rereserve_shortage integer,
+  email_enqueued boolean,
+  exception_id uuid
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_current public.order_refunds%ROWTYPE;
+  v_next text;
+  v_request_key uuid;
+  v_operation uuid;
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+  v_error_exception uuid;
+  v_applied record;
+  v_return_email boolean := false;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
+  END IF;
+  SELECT r.* INTO v_current FROM public.order_refunds AS r WHERE r.id = _refund_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'REFUND_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- Stripe の返金の番号は、記録に1つだけ。別の記録がもう使っている番号も断る
+  IF (v_current.stripe_refund_id IS NOT NULL AND v_current.stripe_refund_id <> _stripe_refund_id)
+     OR (v_current.stripe_refund_id IS NULL AND EXISTS (
+       SELECT 1
+       FROM public.order_refunds AS x
+       WHERE x.stripe_refund_id = _stripe_refund_id
+         AND x.id <> _refund_id
+     )) THEN
+    RAISE EXCEPTION 'REFUND_STRIPE_ID_MISMATCH' USING ERRCODE = '22023';
+  END IF;
+
+  v_next := CASE
+    WHEN _stripe_status IN ('pending', 'requires_action') THEN 'pending'
+    WHEN _stripe_status = 'succeeded' THEN 'succeeded'
+    ELSE 'failed'
+  END;
+
+  -- 許す移り方。同じ状態のままの細目の更新も許す。許さない移り方は何も書かず今の値を返す（P22）
+  IF v_next <> v_current.status AND NOT (
+       (v_current.status = 'awaiting_response' AND v_next IN ('pending', 'succeeded', 'failed'))
+    OR (v_current.status = 'error' AND v_next IN ('pending', 'succeeded', 'failed'))
+    OR (v_current.status = 'pending' AND v_next IN ('succeeded', 'failed'))
+    OR (v_current.status = 'succeeded' AND v_next = 'failed')
+  ) THEN
+    RETURN QUERY
+    SELECT v_current.id,
+           v_current.order_id,
+           v_current.status,
+           false,
+           false,
+           o.status,
+           o.refunded_amount,
+           COALESCE((
+             SELECT pg_catalog.sum(rl.rereserve_shortage)
+             FROM public.order_refund_lines AS rl
+             WHERE rl.refund_id = v_current.id
+           ), 0)::integer,
+           false,
+           NULL::uuid
+    FROM public.orders AS o
+    WHERE o.id = v_current.order_id;
+    RETURN;
+  END IF;
+
+  v_request_key := pg_catalog.md5(_operation || ':' || _refund_id::text || ':' || v_current.status || ':' || v_next)::uuid;
+  SELECT op.id INTO v_operation
+  FROM private.group_g_operations AS op
+  WHERE op.operation = _operation AND op.request_key = v_request_key;
+  IF v_operation IS NULL THEN
+    v_operation := pg_catalog.gen_random_uuid();
+    INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+    VALUES (
+      v_operation,
+      _operation,
+      v_request_key,
+      pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+        'operation', _operation, 'refund_id', _refund_id, 'from_status', v_current.status,
+        'to_status', v_next)::text, 'UTF8')), 'hex'),
+      'order_refund',
+      _refund_id::text,
+      v_current.actor_id,
+      pg_catalog.jsonb_build_object('refund_id', _refund_id, 'order_id', v_current.order_id,
+        'from_status', v_current.status, 'to_status', v_next)
+    );
+  END IF;
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+
+  -- 番号・支払いの種類・時刻は、空から値へ1回だけ書く。細目は新しい値で上書きする
+  UPDATE public.order_refunds AS r
+  SET status = v_next,
+      stripe_refund_id = COALESCE(r.stripe_refund_id, _stripe_refund_id),
+      stripe_status = _stripe_status,
+      stripe_pending_reason = _stripe_pending_reason,
+      stripe_failure_reason = _stripe_failure_reason,
+      customer_action_expires_at = COALESCE(_customer_action_expires_at, r.customer_action_expires_at),
+      payment_method_type = COALESCE(r.payment_method_type, _payment_method_type),
+      reference_number = COALESCE(NULLIF(pg_catalog.btrim(_reference_number), ''), r.reference_number),
+      reference_type = COALESCE(_reference_type, r.reference_type),
+      accepted_at = CASE
+        WHEN v_next IN ('pending', 'succeeded') THEN COALESCE(r.accepted_at, pg_catalog.now())
+        ELSE r.accepted_at
+      END,
+      succeeded_at = CASE WHEN v_next = 'succeeded' THEN COALESCE(r.succeeded_at, pg_catalog.now()) ELSE r.succeeded_at END,
+      failed_at = CASE WHEN v_next = 'failed' THEN COALESCE(r.failed_at, pg_catalog.now()) ELSE r.failed_at END
+  WHERE r.id = _refund_id;
+
+  -- エラーにした記録が Stripe で見つかって保留・成功になった時は、エラーの時の要対応をシステムが閉じる（P23）。
+  -- 発送前の行の商品が全部 s + rb ≤ q を保つ時だけ（controller ruling）
+  IF v_current.status = 'error'
+     AND v_next IN ('pending', 'succeeded')
+     AND NOT EXISTS (
+       SELECT 1
+       FROM public.order_refund_lines AS rl
+       JOIN private.order_line_fulfillment(v_current.order_id) AS l ON l.order_item_id = rl.order_item_id
+       WHERE rl.refund_id = _refund_id
+         AND rl.before_shipment
+         AND l.shipped + l.refunded_before_shipment > l.quantity
+     ) THEN
+    SELECT e.id INTO v_error_exception
+    FROM public.payment_exceptions AS e
+    WHERE e.payment_ref = _refund_id::text
+      AND e.reason = 'refund_failed'
+      AND e.resolved_at IS NULL;
+    IF FOUND THEN
+      PERFORM private.resolve_group_g_payment_exception_row(v_error_exception, 'Stripe で返金が見つかったため自動で解決');
+    END IF;
+  END IF;
+
+  SELECT a.* INTO v_applied FROM private.apply_order_refund_state(_refund_id) AS a;
+  IF v_current.return_id IS NOT NULL THEN
+    v_return_email := private.apply_return_refund_outcome(_refund_id, v_current.status);
+  ELSE
+    -- 普通の返金の結果が書かれた後の覆いで、受付中の返品を確かめ直す。
+    PERFORM private.refresh_order_return_status(rt.id) FROM public.order_returns AS rt
+    WHERE rt.order_id = v_current.order_id AND rt.status = 'open' ORDER BY rt.id;
+  END IF;
+
+  PERFORM private.record_group_g_item_state_changes(_before, _orders, v_operation, 1, _operation, v_current.actor_id);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY
+  SELECT _refund_id,
+         v_current.order_id,
+         v_next,
+         v_applied.newly_accepted,
+         v_applied.newly_failed,
+         v_applied.order_status,
+         v_applied.refunded_amount,
+         v_applied.rereserve_shortage,
+         v_applied.email_enqueued OR v_return_email,
+         v_applied.exception_id;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)
+  OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION private.record_order_refund_result(
+  _refund_id uuid,
+  _stripe_refund_id text,
+  _stripe_status text,
+  _stripe_pending_reason text,
+  _stripe_failure_reason text,
+  _customer_action_expires_at timestamptz,
+  _payment_method_type text,
+  _reference_number text,
+  _reference_type text
+)
+RETURNS TABLE (
+  refund_id uuid,
+  order_id uuid,
+  status text,
+  newly_accepted boolean,
+  newly_failed boolean,
+  order_status public.order_status,
+  refunded_amount integer,
+  rereserve_shortage integer,
+  email_enqueued boolean,
+  exception_id uuid
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_order_id uuid;
+  v_orders uuid[];
+  v_before jsonb;
+BEGIN
+  IF _refund_id IS NULL
+     OR NOT private.refund_stripe_fields_valid(
+       _stripe_refund_id, _stripe_status, _stripe_pending_reason, _stripe_failure_reason,
+       _payment_method_type, _reference_number, _reference_type
+     ) THEN
+    RAISE EXCEPTION 'REFUND_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  -- The refund's order (immutable) is read without a lock; the common lock and its closure come first.
+  SELECT r.order_id INTO v_order_id FROM public.order_refunds AS r WHERE r.id = _refund_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'REFUND_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[v_order_id], NULL);
+  v_before := private.capture_group_g_item_states(v_orders);
+
+  RETURN QUERY
+  SELECT x.refund_id, x.order_id, x.status, x.newly_accepted, x.newly_failed, x.order_status, x.refunded_amount,
+         x.rereserve_shortage, x.email_enqueued, x.exception_id
+  FROM private.record_group_g_refund_result(_refund_id, _stripe_refund_id, _stripe_status, _stripe_pending_reason,
+    _stripe_failure_reason, _customer_action_expires_at, _payment_method_type, _reference_number, _reference_type,
+    'record_order_refund_result', v_orders, v_before) AS x;
+END;
+$$;
+ALTER FUNCTION private.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text)
+  TO service_role;
+
+CREATE OR REPLACE FUNCTION public.record_order_refund_result(
+  _refund_id uuid,
+  _stripe_refund_id text,
+  _stripe_status text,
+  _stripe_pending_reason text,
+  _stripe_failure_reason text,
+  _customer_action_expires_at timestamptz,
+  _payment_method_type text,
+  _reference_number text,
+  _reference_type text
+)
+RETURNS TABLE (
+  refund_id uuid,
+  order_id uuid,
+  status text,
+  newly_accepted boolean,
+  newly_failed boolean,
+  order_status public.order_status,
+  refunded_amount integer,
+  rereserve_shortage integer,
+  email_enqueued boolean,
+  exception_id uuid
+)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT * FROM private.record_order_refund_result(_refund_id, _stripe_refund_id, _stripe_status,
+    _stripe_pending_reason, _stripe_failure_reason, _customer_action_expires_at, _payment_method_type,
+    _reference_number, _reference_type);
+$$;
+ALTER FUNCTION public.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text)
+  TO service_role;
+
+-- 印の無い返金（Stripe の画面からの返金・前からの写し）。中身は最後の定義のまま、共通の lock の下で記録を作り、
+-- 結果は同じ取引の内部 core で書く（公開の結果の関数へ入れ子にしない）。
+CREATE FUNCTION private.record_external_order_refund(
+  _order_id uuid,
+  _stripe_refund_id text,
+  _amount integer,
+  _stripe_status text,
+  _stripe_pending_reason text,
+  _stripe_failure_reason text,
+  _customer_action_expires_at timestamptz,
+  _payment_method_type text,
+  _reference_number text,
+  _reference_type text,
+  _stripe_reason text,
+  _stripe_created_at timestamptz
+)
+RETURNS TABLE (
+  refund_id uuid,
+  created boolean,
+  source text,
+  status text,
+  newly_accepted boolean,
+  newly_failed boolean,
+  order_status public.order_status,
+  refunded_amount integer,
+  rereserve_shortage integer,
+  email_enqueued boolean,
+  exception_id uuid
+)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_orders uuid[];
+  v_before jsonb;
+  v_order public.orders%ROWTYPE;
+  v_existing public.order_refunds%ROWTYPE;
+  v_refund_id uuid;
+  v_created boolean := false;
+  v_source text;
+  v_started timestamptz;
+  v_open integer := 0;
+  v_open_shipping integer := 0;
+  v_lines jsonb := '[]'::jsonb;
+  v_lines_amount integer := 0;
+  v_shipping integer := 0;
+  v_applied record;
+BEGIN
+  IF _order_id IS NULL
+     OR _amount IS NULL
+     OR _amount < 1
+     OR _stripe_created_at IS NULL
+     OR NOT private.refund_stripe_fields_valid(
+       _stripe_refund_id, _stripe_status, _stripe_pending_reason, _stripe_failure_reason,
+       _payment_method_type, _reference_number, _reference_type
+     ) THEN
+    RAISE EXCEPTION 'REFUND_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[_order_id], NULL);
+  SELECT o.* INTO v_order FROM public.orders AS o WHERE o.id = _order_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ORDER_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  v_before := private.capture_group_g_item_states(v_orders);
+
+  SELECT r.* INTO v_existing FROM public.order_refunds AS r WHERE r.stripe_refund_id = _stripe_refund_id;
+  IF FOUND THEN
+    -- 同じ Stripe の返金は、ほかの注文の記録にならない
+    IF v_existing.order_id <> _order_id THEN
+      RAISE EXCEPTION 'REFUND_ARGUMENT_INVALID' USING ERRCODE = '22023';
+    END IF;
+    v_refund_id := v_existing.id;
+    v_source := v_existing.source;
+  ELSE
+    SELECT s.started_at INTO v_started FROM private.refund_ledger_state AS s WHERE s.id = 1;
+    v_source := CASE WHEN _stripe_created_at < v_started THEN 'legacy' ELSE 'stripe_dashboard' END;
+
+    -- 返事待ち・保留・成功の合計にこの額を足すと全額に届く時は、残りの未発送を全部発送前の行にする
+    IF v_source = 'stripe_dashboard'
+       AND _stripe_status IN ('pending', 'requires_action', 'succeeded')
+       AND v_order.status IN ('paid', 'shipped') THEN
+      SELECT COALESCE(pg_catalog.sum(r.amount), 0)::integer, COALESCE(pg_catalog.sum(r.shipping_amount), 0)::integer
+      INTO v_open, v_open_shipping
+      FROM public.order_refunds AS r
+      WHERE r.order_id = _order_id
+        AND r.status IN ('awaiting_response', 'pending', 'succeeded');
+
+      IF v_open + _amount >= COALESCE(NULLIF(v_order.paid_amount, 0), v_order.total_amount) THEN
+        SELECT COALESCE(pg_catalog.jsonb_agg(
+                 pg_catalog.jsonb_build_object(
+                   'order_item_id', x.order_item_id,
+                   'quantity', x.unshipped,
+                   'restock_type', x.restock_type,
+                   'amount', x.line_amount
+                 ) ORDER BY x.created_at, x.order_item_id
+               ), '[]'::jsonb)
+        INTO v_lines
+        FROM (
+          SELECT l.order_item_id,
+                 l.unshipped,
+                 CASE WHEN l.fulfillment_type = 'stock' THEN 'cancel' ELSE 'no_restock' END AS restock_type,
+                 oi.item_price * l.unshipped
+                   - (private.refund_units_discount(
+                        COALESCE(d.line_discount, 0), oi.quantity,
+                        l.refunded_before_shipment + l.refunded_after_shipment + l.unshipped
+                      )
+                      - private.refund_units_discount(
+                        COALESCE(d.line_discount, 0), oi.quantity,
+                        l.refunded_before_shipment + l.refunded_after_shipment
+                      )) AS line_amount,
+                 oi.created_at
+          FROM private.order_line_fulfillment(_order_id) AS l
+          JOIN public.order_items AS oi ON oi.id = l.order_item_id
+          LEFT JOIN private.order_line_discounts(_order_id) AS d ON d.order_item_id = l.order_item_id
+          WHERE l.unshipped > 0
+        ) AS x;
+
+        v_shipping := LEAST(GREATEST(v_order.shipping_amount - v_open_shipping, 0), _amount);
+      END IF;
+    END IF;
+
+    SELECT COALESCE(pg_catalog.sum((e.value ->> 'amount')::integer), 0)::integer
+    INTO v_lines_amount
+    FROM pg_catalog.jsonb_array_elements(v_lines) AS e(value);
+
+    INSERT INTO public.order_refunds AS r
+      (order_id, source, stripe_refund_id, status, amount, shipping_amount, adjustment_amount,
+       stripe_reason, notify_customer, created_at)
+    VALUES
+      (_order_id, v_source, _stripe_refund_id, 'awaiting_response', _amount, v_shipping,
+       _amount - v_lines_amount - v_shipping,
+       CASE WHEN _stripe_reason IN ('requested_by_customer', 'duplicate', 'fraudulent') THEN _stripe_reason END,
+       v_source <> 'legacy', _stripe_created_at)
+    RETURNING r.id INTO v_refund_id;
+
+    INSERT INTO public.order_refund_lines (refund_id, order_item_id, quantity, before_shipment, restock_type, amount)
+    SELECT v_refund_id,
+           (e.value ->> 'order_item_id')::uuid,
+           (e.value ->> 'quantity')::integer,
+           true,
+           e.value ->> 'restock_type',
+           (e.value ->> 'amount')::integer
+    FROM pg_catalog.jsonb_array_elements(v_lines) AS e(value);
+
+    v_created := true;
+  END IF;
+
+  SELECT x.* INTO v_applied
+  FROM private.record_group_g_refund_result(
+    v_refund_id, _stripe_refund_id, _stripe_status, _stripe_pending_reason, _stripe_failure_reason,
+    _customer_action_expires_at, _payment_method_type, _reference_number, _reference_type,
+    'record_external_order_refund', v_orders, v_before
+  ) AS x;
+
+  RETURN QUERY
+  SELECT v_refund_id,
+         v_created,
+         v_source,
+         v_applied.status,
+         v_applied.newly_accepted,
+         v_applied.newly_failed,
+         v_applied.order_status,
+         v_applied.refunded_amount,
+         v_applied.rereserve_shortage,
+         v_applied.email_enqueued,
+         v_applied.exception_id;
+END;
+$$;
+ALTER FUNCTION private.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)
+  OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)
+  TO service_role;
+
+CREATE OR REPLACE FUNCTION public.record_external_order_refund(
+  _order_id uuid,
+  _stripe_refund_id text,
+  _amount integer,
+  _stripe_status text,
+  _stripe_pending_reason text,
+  _stripe_failure_reason text,
+  _customer_action_expires_at timestamptz,
+  _payment_method_type text,
+  _reference_number text,
+  _reference_type text,
+  _stripe_reason text,
+  _stripe_created_at timestamptz
+)
+RETURNS TABLE (
+  refund_id uuid,
+  created boolean,
+  source text,
+  status text,
+  newly_accepted boolean,
+  newly_failed boolean,
+  order_status public.order_status,
+  refunded_amount integer,
+  rereserve_shortage integer,
+  email_enqueued boolean,
+  exception_id uuid
+)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT * FROM private.record_external_order_refund(_order_id, _stripe_refund_id, _amount, _stripe_status,
+    _stripe_pending_reason, _stripe_failure_reason, _customer_action_expires_at, _payment_method_type,
+    _reference_number, _reference_type, _stripe_reason, _stripe_created_at);
+$$;
+ALTER FUNCTION public.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)
+  OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)
+  TO service_role;
+
+-- 返事待ちだけをエラーにする（E-2 の本文のまま）。共通の lock の下で、覆いを外すだけ: 外していない A は持ったまま
+-- 増やさず（FIFO を動かさない）、在庫・メールの予定・失敗の後始末は動かない。
+CREATE FUNCTION private.mark_order_refund_error(_refund_id uuid, _reason text, _raise_exception boolean)
+RETURNS TABLE (outcome text, order_id uuid, exception_id uuid)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_order_id uuid;
+  v_orders uuid[];
+  v_before jsonb;
+  v_order public.orders%ROWTYPE;
+  v_refund public.order_refunds%ROWTYPE;
+  v_exception uuid;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _refund_id IS NULL
+     OR _raise_exception IS NULL
+     OR _reason IS NULL
+     OR _reason !~ '^[a-z0-9_]{1,64}$' THEN
+    RAISE EXCEPTION 'REFUND_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT r.order_id INTO v_order_id FROM public.order_refunds AS r WHERE r.id = _refund_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'REFUND_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[v_order_id], NULL);
+  SELECT o.* INTO v_order FROM public.orders AS o WHERE o.id = v_order_id;
+  SELECT r.* INTO v_refund FROM public.order_refunds AS r WHERE r.id = _refund_id;
+
+  IF v_refund.status <> 'awaiting_response' THEN
+    RETURN QUERY SELECT 'not_awaiting'::text, v_order_id, NULL::uuid;
+    RETURN;
+  END IF;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+
+  UPDATE public.order_refunds AS r
+  SET status = 'error',
+      stripe_failure_reason = _reason,
+      errored_at = pg_catalog.now()
+  WHERE r.id = _refund_id;
+
+  IF _raise_exception THEN
+    SELECT x.exception_id INTO v_exception
+    FROM private.record_group_g_payment_exception_row(
+      _refund_id::text,
+      'refund_failed',
+      _reason,
+      NULL::text,
+      v_order.payment_intent_id,
+      NULL::uuid,
+      v_order_id
+    ) AS x;
+  END IF;
+
+  -- エラーの記録では、在庫・メールの予定・失敗の後始末は動かず、注文の状態だけが動く（E-2 のまま）
+  PERFORM 1 FROM private.apply_order_refund_state(_refund_id);
+
+  IF v_refund.return_id IS NOT NULL THEN
+    PERFORM private.apply_return_refund_outcome(_refund_id, 'awaiting_response');
+  ELSE
+    PERFORM private.refresh_order_return_status(rt.id) FROM public.order_returns AS rt
+    WHERE rt.order_id = v_order_id AND rt.status = 'open' ORDER BY rt.id;
+  END IF;
+
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'mark_order_refund_error',
+    v_refund.actor_id);
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    v_operation,
+    'mark_order_refund_error',
+    pg_catalog.md5('mark_order_refund_error:' || _refund_id::text)::uuid,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'mark_order_refund_error', 'refund_id', _refund_id, 'reason', _reason,
+      'raise_exception', _raise_exception)::text, 'UTF8')), 'hex'),
+    'order_refund',
+    _refund_id::text,
+    v_refund.actor_id,
+    pg_catalog.jsonb_build_object('refund_id', _refund_id, 'order_id', v_order_id, 'exception_id', v_exception)
+  );
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT 'errored'::text, v_order_id, v_exception;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.mark_order_refund_error(uuid,text,boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.mark_order_refund_error(uuid,text,boolean) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.mark_order_refund_error(uuid,text,boolean) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.mark_order_refund_error(_refund_id uuid, _reason text, _raise_exception boolean)
+RETURNS TABLE (outcome text, order_id uuid, exception_id uuid)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.mark_order_refund_error(_refund_id, _reason, _raise_exception); $$;
+ALTER FUNCTION public.mark_order_refund_error(uuid,text,boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.mark_order_refund_error(uuid,text,boolean) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.mark_order_refund_error(uuid,text,boolean) TO service_role;
+
+DO $g1_refund_assert$
+BEGIN
+  IF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p WHERE p.oid IN (
+    pg_catalog.to_regprocedure('private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)'),
+    pg_catalog.to_regprocedure('private.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text)'),
+    pg_catalog.to_regprocedure('private.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)'),
+    pg_catalog.to_regprocedure('private.mark_order_refund_error(uuid,text,boolean)')
+  ) AND p.proowner = 'postgres'::regrole AND p.prosecdef AND p.proconfig @> ARRAY['search_path=""']
+    AND NOT pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+    AND NOT pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    AND pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')) <> 4
+  OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p WHERE p.oid IN (
+    pg_catalog.to_regprocedure('public.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)'),
+    pg_catalog.to_regprocedure('public.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text)'),
+    pg_catalog.to_regprocedure('public.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)'),
+    pg_catalog.to_regprocedure('public.mark_order_refund_error(uuid,text,boolean)')
+  ) AND p.proowner = 'postgres'::regrole AND NOT p.prosecdef AND p.proconfig @> ARRAY['search_path=""']
+    AND NOT pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+    AND NOT pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    AND pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')) <> 4
+  OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p WHERE p.oid IN (
+    pg_catalog.to_regprocedure('private.record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)'),
+    pg_catalog.to_regprocedure('private.record_group_g_payment_exception_row(text,text,text,text,text,uuid,uuid)'),
+    pg_catalog.to_regprocedure('private.resolve_group_g_payment_exception_row(uuid,text)'),
+    pg_catalog.to_regprocedure('private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)'),
+    pg_catalog.to_regprocedure('private.apply_order_refund_state(uuid)'),
+    pg_catalog.to_regprocedure('private.apply_return_refund_outcome(uuid,text)')
+  ) AND p.proowner = 'postgres'::regrole AND p.proconfig @> ARRAY['search_path=""']
+    AND NOT pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+    AND NOT pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    AND NOT pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')) <> 6 THEN
+    RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'g1_refund_functions';
+  END IF;
+END;
+$g1_refund_assert$;
 
 DO $g1_model_assert$
 DECLARE

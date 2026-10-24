@@ -1810,6 +1810,7 @@ describeLocalDb('integration: 返金と発送の同時の操作（Review Focus 3
 describeLocalDb('E-3: E-2 の返金開始の署名と返品の上限',db=>{
   beforeEach(async()=>{await db().query('begin');});
   afterEach(async()=>{await db().query('rollback');});
+  // G-1 Task 8: the public entry is a SECURITY INVOKER delegate to the private body (the private body is DEFINER).
   test('public の13引数と既定値と権限を保持し、core は15引数で直接実行できない',async()=>{
     const rows=await db().query(`select n.nspname,p.proname,p.pronargs,p.pronargdefaults,p.prosecdef,p.proconfig
       from pg_proc p join pg_namespace n on n.oid=p.pronamespace
@@ -1817,8 +1818,14 @@ describeLocalDb('E-3: E-2 の返金開始の署名と返品の上限',db=>{
          or (n.nspname='private' and p.proname='begin_order_refund_core') order by n.nspname`);
     expect(rows.rows).toEqual([
       {nspname:'private',proname:'begin_order_refund_core',pronargs:15,pronargdefaults:0,prosecdef:false,proconfig:['search_path=""']},
-      {nspname:'public',proname:'begin_order_refund',pronargs:13,pronargdefaults:1,prosecdef:true,proconfig:['search_path=""']},
+      {nspname:'public',proname:'begin_order_refund',pronargs:13,pronargdefaults:1,prosecdef:false,proconfig:['search_path=""']},
     ]);
+    const body=(await db().query(`select p.prosecdef,p.pronargdefaults,
+      has_function_privilege('service_role',p.oid,'execute') as service,
+      has_function_privilege('anon',p.oid,'execute') as anon,
+      has_function_privilege('authenticated',p.oid,'execute') as authenticated
+      from pg_proc p where p.oid='private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)'::regprocedure`)).rows;
+    expect(body).toEqual([{prosecdef:true,pronargdefaults:1,service:true,anon:false,authenticated:false}]);
     for(const role of ['anon','authenticated','service_role']) {
       const allowed=await db().query(`select has_function_privilege($1,'public.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)','execute') as api,
         has_function_privilege($1,'private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)','execute') as core`,[role]);

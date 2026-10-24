@@ -219,6 +219,13 @@ const G1_BODY_FUNCTIONS = [
   'private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)',
   'private.resolve_payment_exception_by_system(uuid,text)',
   'private.mark_order_reviewed(uuid,uuid)',
+  'private.record_group_g_payment_exception_row(text,text,text,text,text,uuid,uuid)',
+  'private.resolve_group_g_payment_exception_row(uuid,text)',
+  'private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)',
+  'private.record_group_g_refund_result(uuid,text,text,text,text,timestamp with time zone,text,text,text,text,uuid[],jsonb)',
+  'private.record_order_refund_result(uuid,text,text,text,text,timestamp with time zone,text,text,text)',
+  'private.record_external_order_refund(uuid,text,integer,text,text,text,timestamp with time zone,text,text,text,text,timestamp with time zone)',
+  'private.mark_order_refund_error(uuid,text,boolean)',
 ];
 const G1_BODY_TRIGGERS = [
   ...['order_item_allocation_events', 'order_item_state_events', 'private.group_g_operations'].flatMap((table) => {
@@ -951,7 +958,13 @@ WHERE id = (SELECT pg_catalog.min(id) FROM pg_temp.group_g_cleanup_webhook_ids);
       'record_cancelled_order_paid_amount(uuid,text,integer)',
       'record_payment_exception(text,text,text,text,text,uuid,uuid)',
       'resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)',
-      'resolve_payment_exception_by_system(uuid,text)', 'mark_order_reviewed(uuid,uuid)'];
+      'resolve_payment_exception_by_system(uuid,text)', 'mark_order_reviewed(uuid,uuid)',
+      'begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)',
+      'private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)',
+      'private.apply_order_refund_state(uuid)', 'private.apply_return_refund_outcome(uuid,text)',
+      'record_order_refund_result(uuid,text,text,text,text,timestamp with time zone,text,text,text)',
+      'record_external_order_refund(uuid,text,integer,text,text,text,timestamp with time zone,text,text,text,text,timestamp with time zone)',
+      'mark_order_refund_error(uuid,text,boolean)'];
     const functions = split(catalog.functions, (row) => row.signature as string, G1_BODY_FUNCTIONS, changedFunctions);
     expect(functions.kept).toEqual(split(before.catalog.functions, (row) => row.signature as string, [], changedFunctions).kept);
     expect(functions.added).toEqual([...G1_BODY_FUNCTIONS].sort());

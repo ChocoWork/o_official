@@ -59,7 +59,7 @@ import {
   type StripeRefundFields,
 } from '@/lib/orders/refund/refund-store';
 import { describeLocalDb, isLocalDatabase, type PgClient } from './helpers/local-db';
-import { PRICE, createCatalogFixture, uniqueSuffix, variantStock } from './helpers/order-fixtures';
+import { PRICE, createCatalogFixture, reserveFixtureAllocation, uniqueSuffix, variantStock } from './helpers/order-fixtures';
 
 jest.setTimeout(30000);
 
@@ -114,11 +114,10 @@ async function createPaidOrder(db: PgClient, options: { quantity: number; shippi
     [orderId, catalog.itemId, PRICE, options.quantity, subtotal, catalog.variantId],
   );
   const orderItemId = line.rows[0].id as string;
-  await db.query(
-    `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id)
-     values ($1, $2, 'purchase', $3, $4)`,
-    [catalog.variantId, -options.quantity, orderId, orderItemId],
-  );
+  // G-1: a paid order's reservation is a real paid allocation (A) with its purchase/-n movement, not a bare ledger row
+  await reserveFixtureAllocation(db, {
+    orderId, orderItemId, variantId: catalog.variantId, quantity: options.quantity, status: 'paid',
+  });
   return { orderId, orderItemId, paymentIntentId, totalAmount };
 }
 
