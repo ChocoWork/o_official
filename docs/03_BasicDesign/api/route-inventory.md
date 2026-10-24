@@ -1,10 +1,10 @@
 # APIルート一覧
 
-> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02（checkout の入口の変更は 2026-10-07、カートの入口の変更は 2026-10-08、発送・仕上がりの入口の変更は 2026-10-10、返金・ショップの設定の入口の変更は 2026-10-11 に、返品の入口の変更は 2026-10-13 に反映、配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文の状況の入口・表は E-5 の変更を 2026-10-22 に、在庫一覧表の入口は G-2 Task 3 の変更を、発注の作成の入口は G-2 Task 4 の変更を、発注一覧表・発注書の詳細の入口は G-2 Task 5 の変更を 2026-10-25 に反映） | 対象: `src/app/api/**/route.ts`
+> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02（checkout の入口の変更は 2026-10-07、カートの入口の変更は 2026-10-08、発送・仕上がりの入口の変更は 2026-10-10、返金・ショップの設定の入口の変更は 2026-10-11 に、返品の入口の変更は 2026-10-13 に反映、配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文の状況の入口・表は E-5 の変更を 2026-10-22 に、在庫一覧表の入口は G-2 Task 3 の変更を、発注の作成の入口は G-2 Task 4 の変更を、発注一覧表・発注書の詳細の入口は G-2 Task 5 の変更を、発注書の数量の確定・訂正・打切り・発注先の訂正の入口は G-2 Task 6 の変更を 2026-10-25 に反映） | 対象: `src/app/api/**/route.ts`
 
 ## 概要
 
-現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。G-0 の2入口と G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口（`GET /api/admin/purchase-orders`・`GET /api/admin/purchase-orders/[id]`）を含め、Route Handler は135ファイル・175メソッド（自動の HEAD・OPTIONS は数えない。2026-10-25 静的集計）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は134行・174メソッド。
+現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。G-0 の2入口と G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口（`GET /api/admin/purchase-orders`・`GET /api/admin/purchase-orders/[id]`）と Task 6 の発注先・メモの訂正・数量の確定と訂正・残りの打切りの入口（`PATCH /api/admin/purchase-orders/[id]`・`POST /api/admin/purchase-orders/[id]/quantities`・`POST /api/admin/purchase-orders/[id]/short-closures`）を含め、Route Handler は137ファイル・178メソッド（自動の HEAD・OPTIONS は数えない。2026-10-25 静的集計）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は136行・177メソッド。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |
@@ -35,7 +35,9 @@
 | `/api/admin/create-user` | `POST` | [route.ts](../../../src/app/api/admin/create-user/route.ts) |
 | `/api/admin/inventory` | `GET` | [route.ts](../../../src/app/api/admin/inventory/route.ts) （G-2: `admin.stock.read`。在庫一覧表。読むだけで `backfill_item_variants` は呼ばない） |
 | `/api/admin/purchase-orders` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/purchase-orders/route.ts) （G-2 Task 4: `POST` は `admin.purchase_orders.manage` ＋ `admin.purchase_orders.read`。発注書の作成。CSRF・回数制限 `admin.purchase_orders.create` の30回/600秒・監査 `admin.purchase_orders.confirm`。在庫は動かさない。G-2 Task 5: `GET` は `admin.purchase_orders.read`。発注一覧表。明細ごとの行を読むだけで、CSRF・回数制限・監査は無い） |
-| `/api/admin/purchase-orders/[id]` | `GET` | [route.ts](../../../src/app/api/admin/purchase-orders/%5Bid%5D/route.ts) （G-2 Task 5: `admin.purchase_orders.read`。発注書1件の詳細。読むだけ。id が uuid でなければ400、無ければ404） |
+| `/api/admin/purchase-orders/[id]` | `GET`, `PATCH` | [route.ts](../../../src/app/api/admin/purchase-orders/%5Bid%5D/route.ts) （G-2 Task 5: `GET` は `admin.purchase_orders.read`。発注書1件の詳細。読むだけ。id が uuid でなければ400、無ければ404。G-2 Task 6: `PATCH` は `admin.purchase_orders.manage` ＋ `admin.purchase_orders.read`。発注先・メモの訂正。理由が必須。CSRF・回数制限 `admin.purchase_orders.header.update` の30回/600秒・監査 `admin.purchase_orders.header.update`。版が古ければ409） |
+| `/api/admin/purchase-orders/[id]/quantities` | `POST` | [route.ts](../../../src/app/api/admin/purchase-orders/%5Bid%5D/quantities/route.ts) （G-2 Task 6: `admin.purchase_orders.manage` ＋ `admin.purchase_orders.read`。数量の確定（最初の確定）と訂正。全行を一度に送る。CSRF・回数制限 `admin.purchase_orders.quantity.confirm` の60回/600秒・監査 `admin.purchase_orders.quantity.confirm`。在庫は動かさない） |
+| `/api/admin/purchase-orders/[id]/short-closures` | `POST` | [route.ts](../../../src/app/api/admin/purchase-orders/%5Bid%5D/short-closures/route.ts) （G-2 Task 6: `admin.purchase_orders.manage` ＋ `admin.purchase_orders.read`。残りの打切りと、数量確定前の発注の取消（全行を渡す）。理由が必須。CSRF・回数制限 `admin.purchase_orders.short_close` の30回/600秒・監査 `admin.purchase_orders.short_close`。入庫は起こさない） |
 | `/api/admin/item-color-presets/[id]` | `DELETE` | [route.ts](../../../src/app/api/admin/item-color-presets/%5Bid%5D/route.ts) |
 | `/api/admin/item-color-presets` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/item-color-presets/route.ts) |
 | `/api/admin/items/[id]` | `DELETE`, `GET`, `PATCH`, `PUT` | [route.ts](../../../src/app/api/admin/items/%5Bid%5D/route.ts) |

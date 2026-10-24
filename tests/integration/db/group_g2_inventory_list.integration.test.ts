@@ -156,7 +156,7 @@ describeLocalDb('integration: G-2 在庫一覧表の読取', (db) => {
       [orderId, values.lineNo ?? 1, variantId, values.provisional ?? 10, values.confirmed ?? null, values.received ?? 0])).rows[0].id as string;
   }
 
-  /** 発注書の明細を更新する（共通の押さえを持つ接続・版 +1。Task 6 の関数が入るまでの材料） */
+  /** 発注書の明細を更新する（共通の押さえを持つ接続・版 +1。納品数は受取の関数（Task 7）が入るまでの材料。確定・打切りの材料は Task 6 の関数を通す試験もある） */
   async function updateLine(lineId: string, set: string) {
     await db().query(`update public.purchase_order_lines set ${set}, version = version + 1 where id = $1`, [lineId]);
   }
@@ -334,13 +334,17 @@ describeLocalDb('integration: G-2 在庫一覧表の読取', (db) => {
     const actor = await reader();
     const c = await createCatalogFixture(db(), { stock: 0 });
     await paidOrder(c.itemId, c.variantId, 5);
-    const lineId = await purchaseLine(await purchaseOrder(), c.variantId, { provisional: 10 });
+    // 発注書・数量の確定・打切りは Task 4・6 の関数で作る（受け取りの関数は Task 7 なので、受取だけが材料）
+    const created = (await db().query('select public.admin_create_purchase_order($1, null, $2::jsonb, $3, $4) as r',
+      ['Supplier A', JSON.stringify([{ variantId: c.variantId, quantity: 10 }]), actor, randomUUID()])).rows[0].r as { id: string; version: number };
+    const lineId = (await db().query('select id from public.purchase_order_lines where purchase_order_id = $1', [created.id])).rows[0].id as string;
 
     // 数量が未確定の行は仮数量 10 があっても数えない
     expect(numbers(await rowOf(actor, c.variantId))).toMatchObject({ order_quantity: 5, on_order: 0, required: 5 });
 
     // 数量を確定する: 未納 6 が発注済み。注文数 5 を超えるので発注必要数は 0
-    await updateLine(lineId, 'confirmed_quantity = 6');
+    const confirmed = (await db().query('select public.admin_confirm_purchase_order_quantities($1::uuid, $2::integer, $3::jsonb, null, $4::uuid, $5::uuid) as r',
+      [created.id, created.version, JSON.stringify([{ lineId, quantity: 6, unitPriceYen: null }]), actor, randomUUID()])).rows[0].r as { version: number };
     expect(numbers(await rowOf(actor, c.variantId))).toMatchObject({ on_order: 6, required: 0 });
 
     // 2 点を受け取る（台帳の入荷 + 納品数）: 在庫 2、未納 4。5 − 2 − 4 → 0
@@ -349,7 +353,9 @@ describeLocalDb('integration: G-2 在庫一覧表の読取', (db) => {
     expect(numbers(await rowOf(actor, c.variantId))).toMatchObject({ free: 2, on_hand: 2, order_quantity: 5, on_order: 4, required: 0 });
 
     // 打切り: 確定数量を納品数まで下げる。未納は 0 になり、発注必要数は 5 − 2 − 0 = 3 に戻って増える
-    await updateLine(lineId, 'confirmed_quantity = 2');
+    const closed = (await db().query('select public.admin_short_close_purchase_order($1::uuid, $2::integer, $3::uuid[], $4::text, $5::uuid, $6::uuid) as r',
+      [created.id, confirmed.version, [lineId], '残りを打ち切る', actor, randomUUID()])).rows[0].r as { closedQuantity: number };
+    expect(closed.closedQuantity).toBe(4);
     expect(numbers(await rowOf(actor, c.variantId))).toMatchObject({ on_hand: 2, order_quantity: 5, on_order: 0, required: 3 });
   });
 

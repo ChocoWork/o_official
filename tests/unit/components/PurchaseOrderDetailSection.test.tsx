@@ -1,4 +1,5 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import PurchaseOrderDetailSection from '@/components/PurchaseOrderDetailSection';
 import { clientFetch } from '@/lib/client-fetch';
 import type { PurchaseOrderDetail } from '@/lib/purchase-orders/purchase-order-types';
@@ -302,5 +303,300 @@ describe('PurchaseOrderDetailSection', () => {
     render(<PurchaseOrderDetailSection purchaseOrderId="a/b?c" />);
     await screen.findByRole('alert');
     expect(fetchMock).toHaveBeenCalledWith('/api/admin/purchase-orders/a%2Fb%3Fc', { cache: 'no-store' });
+  });
+});
+
+describe('PurchaseOrderDetailSection: 数量の確定・訂正・打切り・取消・発注先の訂正（Task 6）', () => {
+  const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST' || init?.method === 'PATCH');
+  const gets = () => fetchMock.mock.calls.filter(([, init]) => init?.method === undefined);
+  const bodyOf = (index: number) => JSON.parse(String(posts()[index][1]?.body)) as Record<string, unknown>;
+  const button = (name: string) => screen.getByRole('button', { name });
+  const queryButton = (name: string) => screen.queryByRole('button', { name });
+  /** 完了の表示段階の発注書（数量の確定は済み、未納がない行がある）。2行目だけ未納がある */
+  const oneOutstanding = (): PurchaseOrderDetail => {
+    const detail = confirmedDetail();
+    return {
+      ...detail,
+      lines: detail.lines.map((line) => (line.id === detail.lines[0].id ? { ...line, receivedQuantity: 5, outstandingQuantity: 0 } : line)),
+    };
+  };
+
+  test('FREQ-527-AC-01: 数量確定待ち（ordered）のボタンは「数量確定」「発注を取り消す」「発注先・メモを訂正」で、訂正と打切りは出ない', async () => {
+    await loaded(orderedDetail());
+    expect(button('数量確定')).toBeEnabled();
+    expect(button('発注を取り消す')).toBeEnabled();
+    expect(button('発注先・メモを訂正')).toBeEnabled();
+    for (const name of ['数量を訂正', '残りを打ち切る', '未納のある行をすべて選ぶ']) expect(queryButton(name)).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  test('FREQ-527-AC-01: 数量確定後のボタンは「数量を訂正」「発注先・メモを訂正」と「未納のある行をすべて選ぶ」。「数量確定」「発注を取り消す」は出ない。行を選ぶまで「残りを打ち切る」は出ない', async () => {
+    await loaded(confirmedDetail());
+    expect(button('数量を訂正')).toBeEnabled();
+    expect(button('発注先・メモを訂正')).toBeEnabled();
+    expect(button('未納のある行をすべて選ぶ')).toBeEnabled();
+    for (const name of ['数量確定', '発注を取り消す', '残りを打ち切る']) expect(queryButton(name)).not.toBeInTheDocument();
+  });
+
+  test('FREQ-528-AC-01: 未納のある行だけに選ぶ欄が出る（未納0の行には出ない）。表の列と各セルの文字は変わらない', async () => {
+    await loaded(oneOutstanding());
+    const rows = within(linesTable()).getAllByTestId('purchase-order-line');
+    expect(within(rows[0]).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(rows[1]).getByRole('checkbox', { name: 'パンツ を選ぶ' })).not.toBeChecked();
+    expect(within(linesTable()).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(LINE_HEADERS);
+    expect(within(rows[1]).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['パンツ', '—', '—', '4', '3', '0', '3', '未登録']);
+  });
+
+  test('FREQ-528-AC-01: 行を選ぶと「残りを打ち切る」が出て、外すと消える。「未納のある行をすべて選ぶ」は未納のある行を全部選ぶ', async () => {
+    const user = userEvent.setup();
+    await loaded(confirmedDetail());
+    await user.click(screen.getByRole('checkbox', { name: 'シャツ BLACK M を選ぶ' }));
+    expect(button('残りを打ち切る')).toBeEnabled();
+    await user.click(screen.getByRole('checkbox', { name: 'シャツ BLACK M を選ぶ' }));
+    expect(queryButton('残りを打ち切る')).not.toBeInTheDocument();
+    await user.click(button('未納のある行をすべて選ぶ'));
+    expect(screen.getAllByRole('checkbox').every((box) => (box as HTMLInputElement).checked)).toBe(true);
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+    expect(button('残りを打ち切る')).toBeEnabled();
+  });
+
+  test('FREQ-527-AC-01: 「数量確定」で「数量の確定」のダイアログが開き、「戻る」で閉じる（通信しない）。「数量を訂正」は「数量の訂正」', async () => {
+    const user = userEvent.setup();
+    await loaded(orderedDetail());
+    await user.click(button('数量確定'));
+    expect(screen.getByRole('dialog', { name: '数量の確定' })).toBeInTheDocument();
+    await user.click(button('戻る'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('FREQ-527-AC-01: 「数量を訂正」で「数量の訂正」のダイアログが開く', async () => {
+    const user = userEvent.setup();
+    await loaded(confirmedDetail());
+    await user.click(button('数量を訂正'));
+    expect(screen.getByRole('dialog', { name: '数量の訂正' })).toBeInTheDocument();
+  });
+
+  test('FREQ-528-AC-02: 「発注を取り消す」で「発注の取消」のダイアログが開く', async () => {
+    const user = userEvent.setup();
+    await loaded(orderedDetail());
+    await user.click(button('発注を取り消す'));
+    expect(screen.getByRole('dialog', { name: '発注の取消' })).toBeInTheDocument();
+  });
+
+  test('FREQ-528-AC-01: 「残りを打ち切る」で、選んだ行だけを並べた「残りを打ち切る」のダイアログが開く', async () => {
+    const user = userEvent.setup();
+    await loaded(confirmedDetail());
+    await user.click(screen.getByRole('checkbox', { name: 'パンツ を選ぶ' }));
+    await user.click(button('残りを打ち切る'));
+    const dialog = screen.getByRole('dialog', { name: '残りを打ち切る' });
+    expect(within(dialog).getAllByTestId('purchase-order-close-row')).toHaveLength(1);
+    expect(within(dialog).getByText('パンツ')).toBeInTheDocument();
+  });
+
+  test('FREQ-527-AC-01: 数量の確定が成功したら、ダイアログを閉じて「数量を確定しました。」を role=status で出し、発注書を読み直す（同じ id の GET をもう1回）', async () => {
+    const user = userEvent.setup();
+    await loaded(orderedDetail(), true);
+    expect(screen.getByRole('status')).toHaveTextContent('を作成しました');
+    await user.click(button('数量確定'));
+    fetchMock.mockResolvedValueOnce(json({ version: 2, changedLines: 0, replayed: false }, 201));
+    fetchMock.mockResolvedValueOnce(json({ purchaseOrder: confirmedDetail() }));
+    await user.click(button('確定する'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent(/^数量を確定しました。$/);
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    await waitFor(() => expect(gets()).toHaveLength(2));
+    expect(gets()[1]).toEqual([`/api/admin/purchase-orders/${ORDER_ID}`, { cache: 'no-store' }]);
+    // 読み直した発注書が出る（数量確定後のボタン）
+    expect(await screen.findByRole('button', { name: '数量を訂正' })).toBeInTheDocument();
+    expect(queryButton('数量確定')).not.toBeInTheDocument();
+    expect(posts()[0][0]).toBe(`/api/admin/purchase-orders/${ORDER_ID}/quantities`);
+  });
+
+  test.each([
+    ['訂正', '数量を訂正しました。'],
+  ])('FREQ-527-AC-01: 数量の%sが成功したら「%s」を出す', async (_name, notice) => {
+    const user = userEvent.setup();
+    await loaded(confirmedDetail());
+    await user.click(button('数量を訂正'));
+    fetchMock.mockResolvedValueOnce(json({ version: 3, changedLines: 1, replayed: false }, 201));
+    fetchMock.mockResolvedValueOnce(json({ purchaseOrder: { ...confirmedDetail(), version: 3 } }));
+    await user.type(screen.getByRole('textbox', { name: '理由' }), '訂正');
+    await user.clear(within(screen.getAllByTestId('purchase-order-quantity-row')[0]).getByRole('spinbutton', { name: '数量' }));
+    await user.type(within(screen.getAllByTestId('purchase-order-quantity-row')[0]).getByRole('spinbutton', { name: '数量' }), '4');
+    await user.click(button('確定する'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent(notice);
+  });
+
+  test('FREQ-528-AC-01: 打切りが成功したら、ダイアログを閉じて選びを解き、「残りを打ち切りました。」を出して発注書を読み直す', async () => {
+    const user = userEvent.setup();
+    await loaded(confirmedDetail());
+    await user.click(button('未納のある行をすべて選ぶ'));
+    await user.click(button('残りを打ち切る'));
+    fetchMock.mockResolvedValueOnce(json({ version: 3, closedQuantity: 6, replayed: false }, 201));
+    fetchMock.mockResolvedValueOnce(json({ purchaseOrder: { ...confirmedDetail(), version: 3, displayStage: 'closed' } }));
+    await user.type(screen.getByRole('textbox', { name: '理由' }), '工場の都合');
+    await user.click(button('打ち切る'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent(/^残りを打ち切りました。$/);
+    expect(posts()[0][0]).toBe(`/api/admin/purchase-orders/${ORDER_ID}/short-closures`);
+    expect(bodyOf(0)).toMatchObject({ expectedVersion: 2, lineIds: [confirmedDetail().lines[0].id, confirmedDetail().lines[1].id], reason: '工場の都合' });
+    await waitFor(() => expect(gets()).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByRole('checkbox').every((box) => !(box as HTMLInputElement).checked)).toBe(true));
+    expect(queryButton('残りを打ち切る')).not.toBeInTheDocument();
+  });
+
+  test('FREQ-528-AC-02: 確定前の取消が成功したら「発注を取り消しました。」を出す', async () => {
+    const user = userEvent.setup();
+    await loaded(orderedDetail());
+    await user.click(button('発注を取り消す'));
+    fetchMock.mockResolvedValueOnce(json({ version: 2, closedQuantity: 9, replayed: false }, 201));
+    fetchMock.mockResolvedValueOnce(json({ purchaseOrder: { ...confirmedDetail(), displayStage: 'closed' } }));
+    await user.type(screen.getByRole('textbox', { name: '理由' }), 'やめる');
+    await user.click(button('取り消す'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent(/^発注を取り消しました。$/);
+  });
+
+  test('FREQ-527-AC-02: ダイアログが版の競合（409）を受けたら、発注書を読み直す（GET をもう1回）。ダイアログは開いたまま、入力は保たれる', async () => {
+    const user = userEvent.setup();
+    await loaded(confirmedDetail());
+    await user.click(button('数量を訂正'));
+    await user.type(screen.getByRole('textbox', { name: '理由' }), '訂正');
+    fetchMock.mockResolvedValueOnce(json({ code: 'GROUP_G_PO_VERSION_CONFLICT', error: '発注書が更新されました。内容を確認して、もう一度送ってください。' }, 409));
+    fetchMock.mockResolvedValueOnce(json({ purchaseOrder: { ...confirmedDetail(), version: 7 } }));
+    await user.click(button('確定する'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('発注書が更新されました。内容を確認して、もう一度送ってください。');
+    await waitFor(() => expect(gets()).toHaveLength(2));
+    expect(screen.getByRole('dialog', { name: '数量の訂正' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '理由' })).toHaveDisplayValue('訂正');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    // 読み直した版（7）で送り直せる
+    fetchMock.mockResolvedValueOnce(json({ version: 8, changedLines: 1, replayed: false }, 201));
+    fetchMock.mockResolvedValueOnce(json({ purchaseOrder: { ...confirmedDetail(), version: 8 } }));
+    await user.clear(within(screen.getAllByTestId('purchase-order-quantity-row')[1]).getByRole('spinbutton', { name: '数量' }));
+    await user.type(within(screen.getAllByTestId('purchase-order-quantity-row')[1]).getByRole('spinbutton', { name: '数量' }), '2');
+    await user.click(button('確定する'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(bodyOf(1).expectedVersion).toBe(7);
+  });
+
+  test('FREQ-527-AC-01: 「発注先・メモを訂正」で、発注先とメモの現在の値を入れた「発注先・メモの訂正」のダイアログが開く。理由が必須で、空の間は「訂正する」を押せない', async () => {
+    const user = userEvent.setup();
+    await loaded(confirmedDetail());
+    await user.click(button('発注先・メモを訂正'));
+    expect(screen.getByRole('dialog', { name: '発注先・メモの訂正' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '発注先' })).toHaveDisplayValue('工場A');
+    expect(screen.getByRole('textbox', { name: 'メモ' })).toHaveDisplayValue('春の追加分');
+    expect(screen.getByRole('textbox', { name: '理由' })).toBeRequired();
+    expect(button('訂正する')).toBeDisabled();
+    await user.type(screen.getByRole('textbox', { name: '理由' }), '社名変更');
+    expect(button('訂正する')).toBeEnabled();
+    await user.clear(screen.getByRole('textbox', { name: '発注先' }));
+    expect(button('訂正する')).toBeDisabled();
+    await user.click(button('戻る'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(posts()).toHaveLength(0);
+  });
+
+  test('FREQ-527-AC-01: 発注先・メモの訂正は PATCH で expectedVersion・発注先・メモ・理由・requestKey を送り、成功したら「発注先・メモを訂正しました。」を出して発注書を読み直す。メモを空にすると memo は送らない', async () => {
+    const user = userEvent.setup();
+    await loaded(confirmedDetail());
+    await user.click(button('発注先・メモを訂正'));
+    fetchMock.mockResolvedValueOnce(json({ version: 3, replayed: false }));
+    fetchMock.mockResolvedValueOnce(json({ purchaseOrder: { ...confirmedDetail(), version: 3, supplierName: '工場B', memo: null } }));
+    await user.clear(screen.getByRole('textbox', { name: '発注先' }));
+    await user.type(screen.getByRole('textbox', { name: '発注先' }), ' 工場B ');
+    await user.clear(screen.getByRole('textbox', { name: 'メモ' }));
+    await user.type(screen.getByRole('textbox', { name: '理由' }), ' 社名変更 ');
+    await user.click(button('訂正する'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(posts()).toHaveLength(1);
+    expect(posts()[0][0]).toBe(`/api/admin/purchase-orders/${ORDER_ID}`);
+    expect(posts()[0][1]).toMatchObject({ method: 'PATCH', headers: { 'Content-Type': 'application/json' } });
+    expect(bodyOf(0)).toEqual({ expectedVersion: 2, supplierName: '工場B', reason: '社名変更', requestKey: expect.stringMatching(UUID_PATTERN) });
+    expect(screen.getByRole('status')).toHaveTextContent(/^発注先・メモを訂正しました。$/);
+    await waitFor(() => expect(screen.getByText('発注先').nextElementSibling).toHaveTextContent('工場B'));
+  });
+
+  test('FREQ-527-AC-01: 発注先・メモの訂正が通信の失敗や500のとき、再押下は同じ requestKey と本文。版の競合は読み直して入力を保つ', async () => {
+    const user = userEvent.setup();
+    await loaded(confirmedDetail());
+    await user.click(button('発注先・メモを訂正'));
+    await user.type(screen.getByRole('textbox', { name: '理由' }), '社名変更');
+    await user.type(screen.getByRole('textbox', { name: 'メモ' }), '追記');
+    fetchMock.mockResolvedValueOnce(json({ error: '発注の記録に失敗しました' }, 500));
+    await user.click(button('訂正する'));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^発注の記録に失敗しました$/);
+
+    fetchMock.mockResolvedValueOnce(json({ code: 'GROUP_G_PO_VERSION_CONFLICT', error: '発注書が更新されました。内容を確認して、もう一度送ってください。' }, 409));
+    fetchMock.mockResolvedValueOnce(json({ purchaseOrder: { ...confirmedDetail(), version: 6 } }));
+    await user.click(button('訂正する'));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('発注書が更新されました。'));
+    expect(posts()).toHaveLength(2);
+    expect(bodyOf(1)).toEqual(bodyOf(0));
+    await waitFor(() => expect(gets()).toHaveLength(2));
+    expect(screen.getByRole('textbox', { name: '理由' })).toHaveDisplayValue('社名変更');
+    expect(screen.getByRole('dialog', { name: '発注先・メモの訂正' })).toBeInTheDocument();
+  });
+
+  test('FREQ-527-AC-01: 作成直後の通知は、操作の通知が出たら入れ替わる（role=status は常に1つ）', async () => {
+    const user = userEvent.setup();
+    await loaded(orderedDetail(), true);
+    await user.click(button('発注先・メモを訂正'));
+    fetchMock.mockResolvedValueOnce(json({ version: 2, replayed: false }));
+    fetchMock.mockResolvedValueOnce(json({ purchaseOrder: { ...orderedDetail(), version: 2, supplierName: '工場B' } }));
+    await user.clear(screen.getByRole('textbox', { name: '発注先' }));
+    await user.type(screen.getByRole('textbox', { name: '発注先' }), '工場B');
+    await user.type(screen.getByRole('textbox', { name: '理由' }), '改称');
+    await user.click(button('訂正する'));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('発注先・メモを訂正しました。'));
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.queryByText(/を作成しました/)).not.toBeInTheDocument();
+  });
+
+  test('FREQ-527-AC-01: 数量の履歴の「変更」は、値が変わった項目だけを出す（単価だけの訂正は before_quantity = after_quantity なので数量は出さず、発注先が同じ訂正は発注先を出さない）', async () => {
+    const detail = confirmedDetail();
+    const base = detail.revisions[2];
+    await loaded({
+      ...detail,
+      revisions: [
+        ...detail.revisions,
+        { ...base, id: 'f0000000-0000-4000-8000-000000000004', revisionNo: 3, beforeQuantity: 3, afterQuantity: 3, beforeUnitPriceYen: null, afterUnitPriceYen: 500, reason: '単価の登録' },
+        { ...base, id: 'f0000000-0000-4000-8000-000000000005', revisionNo: 4, beforeQuantity: 3, afterQuantity: 3, beforeUnitPriceYen: 500, afterUnitPriceYen: 650, reason: '値上がり' },
+        {
+          ...base, id: 'f0000000-0000-4000-8000-000000000006', lineId: null, revisionNo: 5, kind: 'header', beforeQuantity: null, afterQuantity: null,
+          beforeSupplierName: '工場A', afterSupplierName: '工場A', beforeMemo: '春の追加分', afterMemo: null, reason: 'メモを消す',
+        },
+      ],
+    });
+    const table = screen.getByRole('table', { name: '数量の履歴' });
+    const rows = within(table).getAllByTestId('purchase-order-revision').map((row) => within(row).getAllByRole('cell').map((cell) => cell.textContent));
+    expect(rows.slice(3).map((cells) => [cells[0], cells[4], cells[5]])).toEqual([
+      ['3', '単価 500', '単価の登録'],
+      ['4', '単価 500 → 650', '値上がり'],
+      ['5', 'メモ 春の追加分 → —', 'メモを消す'],
+    ]);
+  });
+
+  test('FREQ-527-AC-01: 読み直しに失敗しても、いま見ている発注書と開いているダイアログは消えない', async () => {
+    const user = userEvent.setup();
+    await loaded(confirmedDetail());
+    await user.click(button('数量を訂正'));
+    await user.type(screen.getByRole('textbox', { name: '理由' }), '訂正');
+    fetchMock.mockResolvedValueOnce(json({ code: 'GROUP_G_PO_VERSION_CONFLICT', error: 'x' }, 409));
+    fetchMock.mockRejectedValueOnce(new TypeError('PRIVATE-MARKER'));
+    await user.click(button('確定する'));
+    await waitFor(() => expect(gets()).toHaveLength(2));
+    expect(screen.getByRole('dialog', { name: '数量の訂正' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: '発注書 PO-20261025-0001' })).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('PRIVATE-MARKER');
   });
 });

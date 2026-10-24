@@ -1,4 +1,5 @@
 import {
+  PURCHASE_ORDER_ACTION_TEXT,
   PURCHASE_ORDER_CREATED_QUERY,
   PURCHASE_ORDER_DETAIL_TEXT,
   PURCHASE_ORDER_DISPLAY_STAGE_LABELS,
@@ -7,6 +8,7 @@ import {
   PURCHASE_ORDER_LIST_TEXT,
   PURCHASE_ORDER_READ_FAILED,
   PURCHASE_ORDER_TEXT,
+  PURCHASE_ORDER_VERSION_CONFLICT_CODE,
   formatPurchaseOrderCreatedNotice,
   formatPurchaseOrderDate,
   formatPurchaseOrderDateTime,
@@ -17,6 +19,7 @@ import {
   parsePurchaseOrderDetail,
   parsePurchaseOrderListRow,
   purchaseOrderCreateFailureMessage,
+  purchaseOrderFailureMessage,
   type PurchaseOrderDisplayStage,
   type PurchaseOrderStage,
 } from '@/lib/purchase-orders/purchase-order-types';
@@ -91,6 +94,42 @@ describe('purchase-order-types', () => {
     expect(purchaseOrderCreateFailureMessage(500, null)).toBe('発注の記録に失敗しました');
     // 表に無い code の本文は出さない（生の文を画面へ流さない）
     expect(purchaseOrderCreateFailureMessage(500, { code: 'PRIVATE-MARKER', error: 'PRIVATE-MARKER' })).toBe('発注の記録に失敗しました');
+  });
+});
+
+describe('purchase-order-types: 数量の確定・訂正・打切り・発注先の訂正（Task 6）', () => {
+  test('FREQ-527-AC-01: DB エラー表に Task 6 の5つがあり、SQLSTATE・状態・本文は計画のとおり', () => {
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_PO_NOT_FOUND).toEqual(['P0002', 404, '発注書が見つかりません。']);
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_PO_VERSION_CONFLICT).toEqual(['55000', 409, '発注書が更新されました。内容を確認して、もう一度送ってください。']);
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_PO_REASON_REQUIRED).toEqual(['22023', 400, '理由を入力してください。']);
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_PO_QUANTITY_BELOW_RECEIVED).toEqual(['23514', 409, '納品済みの数より少ない数量には訂正できません。']);
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_PO_NOTHING_TO_CLOSE).toEqual(['55000', 409, '打ち切る未納がありません。']);
+    expect(PURCHASE_ORDER_VERSION_CONFLICT_CODE).toBe('GROUP_G_PO_VERSION_CONFLICT');
+  });
+
+  test('FREQ-527-AC-01: 操作のボタンの名前と成功の通知は計画のとおり', () => {
+    expect(PURCHASE_ORDER_ACTION_TEXT).toEqual({
+      confirmQuantities: '数量確定',
+      cancelOrder: '発注を取り消す',
+      correctQuantities: '数量を訂正',
+      correctHeader: '発注先・メモを訂正',
+      shortClose: '残りを打ち切る',
+      selectOutstanding: '未納のある行をすべて選ぶ',
+      quantitiesConfirmedNotice: '数量を確定しました。',
+      quantitiesCorrectedNotice: '数量を訂正しました。',
+      shortClosedNotice: '残りを打ち切りました。',
+      headerCorrectedNotice: '発注先・メモを訂正しました。',
+      cancelledNotice: '発注を取り消しました。',
+    });
+  });
+
+  test('FREQ-527-AC-01: 失敗の文は 作成と同じ関数で、Task 6 の code（版の競合・理由・納品済み未満・打切りなし）は表の本文を出す', () => {
+    expect(purchaseOrderCreateFailureMessage).toBe(purchaseOrderFailureMessage);
+    expect(purchaseOrderFailureMessage(409, { code: 'GROUP_G_PO_VERSION_CONFLICT', error: 'x' })).toBe('発注書が更新されました。内容を確認して、もう一度送ってください。');
+    expect(purchaseOrderFailureMessage(400, { code: 'GROUP_G_PO_REASON_REQUIRED' })).toBe('理由を入力してください。');
+    expect(purchaseOrderFailureMessage(409, { code: 'GROUP_G_PO_QUANTITY_BELOW_RECEIVED' })).toBe('納品済みの数より少ない数量には訂正できません。');
+    expect(purchaseOrderFailureMessage(409, { code: 'GROUP_G_PO_NOTHING_TO_CLOSE' })).toBe('打ち切る未納がありません。');
+    expect(purchaseOrderFailureMessage(404, { code: 'GROUP_G_PO_NOT_FOUND' })).toBe('発注書が見つかりません。');
   });
 });
 

@@ -810,7 +810,7 @@ flowchart TD
 
 ## 在庫一覧表・発注（G-2 / FREQ-525〜530）
 
-G-2 の画面は、管理メニューの INVENTORY から入る。この節は Task 3 で作った在庫一覧表と、Task 4 で足した発注（入力 → 確認 → 確定）と、Task 5 で足した発注一覧表・発注書の詳細（読むだけ）を記し、数量の確定・受け取り・原本の添付は、それぞれの Task が同じ節へ足す。
+G-2 の画面は、管理メニューの INVENTORY から入る。この節は Task 3 で作った在庫一覧表と、Task 4 で足した発注（入力 → 確認 → 確定）と、Task 5 で足した発注一覧表・発注書の詳細（読むだけ）と、Task 6 で足した発注書の頁の操作（数量の確定・訂正、残りの打切り、発注の取消、発注先・メモの訂正）を記し、受け取り・原本の添付は、それぞれの Task が同じ節へ足す。
 
 ### INVENTORY タブ
 
@@ -884,10 +884,25 @@ G-2 の画面は、管理メニューの INVENTORY から入る。この節は T
 | 概要 | 発注先・メモ（無ければ「—」）・発注日（日本時間 `YYYY/MM/DD`）・段階（表示段階の日本語。数量確定待ち／数量確定済み・受け取り待ち／一部受け取り済み／受け取り完了／完了（残りを打ち切り）） |
 | 旗と見込額 | **数量確定後（保存する段階が `quantity_confirmed`）だけ**、`flags.unitPriceMissing` が真なら「単価未登録」、`flags.documentMissing` が真なら「証憑未添付」のバッジ。単価がある行があれば「発注見込額 ¥6,000」の形（単価 × 確定数量の合計。単価のない行は含めない）と、隣に「税の扱いは書類に従います」。見込額が無い（全行が単価未登録）時は出さない。数量確定前は旗も見込額も出さない |
 | 明細の表 | `aria-label="明細"`。列は「商品名」「色」「サイズ」「仮数量」「発注数量」「納品済み」「未納」「単価（円）」の8つで、`line_no` 順（窓口の順）。数量確定前の行は「発注数量」と「未納」が「数量未確定」、単価が無ければ「未登録」、あれば3桁区切り（`1,200`） |
-| 数量の履歴 | h2「数量の履歴」。列は「版」「日時（日本時間 `YYYY/MM/DD HH:mm`）」「種類（発注／発注先・メモの訂正／数量の確定・訂正／打切り）」「対象（発注書／商品名 色 サイズ）」「変更（`数量 4 → 3`・`単価`・`発注先`・`メモ`を「・」でつなぐ。変更前が無ければ変更後だけ）」「理由」。窓口の順（版 → 発注書全体の行 → 明細番号 → 種類） |
+| 数量の履歴 | h2「数量の履歴」。列は「版」「日時（日本時間 `YYYY/MM/DD HH:mm`）」「種類（発注／発注先・メモの訂正／数量の確定・訂正／打切り）」「対象（発注書／商品名 色 サイズ）」「変更（`数量 4 → 3`・`単価`・`発注先`・`メモ`を「・」でつなぐ。変更前が無ければ変更後だけ。**前後の値が同じ項目は出さない**: 単価だけの訂正の履歴は前後の数量が同じなので `単価 500 → 650` だけ、発注先が同じ訂正は `メモ …` だけ）」「理由」。窓口の順（版 → 発注書全体の行 → 明細番号 → 種類） |
 | 受け取りの履歴 | h2「受け取りの履歴」。受け取りごとに「${日付} 受け取り」または「${日付} 受け取りの取消」、メモ、理由、受取行（商品名 色 サイズ と `+2`／`-1` の数量）。無ければ「受け取りの記録はありません。」。取り消せる数（`reversibleQuantity`）は後続の Task が使う |
 | 取引書類 | h2「取引書類」の見出しだけ。書類の一覧・無効の印・保存途中の予約（`pendingUploads`）・追加・表示・無効化・訂正は Task 8 が足す（窓口は書類と予約を既に返すが、この Task の画面は使わない） |
 
-操作のボタン（数量の確定・訂正、打切り、受け取り、書類）は後続の Task が足す。窓口の仕様は[API仕様](../../03_BasicDesign/api/api-spec.md)の `GET /api/admin/purchase-orders/[id]`、表示段階の導き方は[発注書の状態](../states/purchasing.md)。
+受け取りと書類のボタンは後続の Task が足す。窓口の仕様は[API仕様](../../03_BasicDesign/api/api-spec.md)の `GET /api/admin/purchase-orders/[id]`、表示段階の導き方は[発注書の状態](../states/purchasing.md)。
 
-検証: 単体 [画面](../../../tests/unit/components/PurchaseOrderDetailSection.test.tsx)・[頁](../../../tests/unit/components/PurchaseOrderDetailPage.test.tsx)・[窓口](../../../tests/unit/api/admin/purchase-order-detail-route.test.ts)・[store](../../../tests/unit/lib/purchase-orders/purchase-order-store.test.ts)・[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)。DB [発注の読取](../../../tests/integration/db/group_g2_purchase_reads.integration.test.ts)。3つの画面幅の確認は Task 10 の E2E。
+#### 発注書の頁の操作（Task 6 / FREQ-527・528）
+
+ボタンは概要の下に並べる（権限の有無では出し分けず、権限が無ければ 403 の文を示す）。成功したら通知を `role="status"` で出して発注書を読み直す（作成の通知が出ていれば入れ替わる。`role="status"` は常に1つ）。読み直しに失敗しても、いま見ている発注書と開いているダイアログは消さない。ダイアログは [Dialog](../../../src/components/ui/Dialog/Dialog.tsx)（768px 未満は画面いっぱい）で、送る流れ（二重送信の防止・同じ内容の再送は同じ requestKey・確定した 4xx の後は新しい requestKey・版の競合）は [usePurchaseOrderWrite](../../../src/hooks/usePurchaseOrderWrite.ts) が3つで共通に持つ。
+
+| 要素 | 内容 |
+| --- | --- |
+| ボタン | 数量確定待ち: 「数量確定」「発注を取り消す」。数量確定後: 「数量を訂正」。どちらも「発注先・メモを訂正」。数量確定後に未納のある行があれば「未納のある行をすべて選ぶ」、行を1つ以上選んだ時だけ「残りを打ち切る」 |
+| 行の選び | 数量確定後、未納のある行の「商品名」のセルの中にだけチェック欄（名前は `${商品名 色 サイズ} を選ぶ`）。列は増やさず、セルの文字は商品名のまま。未納0の行には出さない。読み直しで未納が無くなった行の選びは外す。「未納のある行をすべて選ぶ」が全体の取消に当たる |
+| 数量の確定／訂正（[PurchaseOrderQuantityDialog](../../../src/components/PurchaseOrderQuantityDialog.tsx)） | 見出し「数量の確定」（段階が数量確定待ち。訂正は「数量の訂正」）。説明「未入力は「単価未登録」、0 は 0 円として保存します。」。行ごとに商品名と「数量」（初期値は仮数量／確定数量。0〜99999）・「単価（円）」（初期値は登録済みの単価、無ければ空欄。0〜9999999。空欄は null、0 は 0 円）。「理由」は訂正で必須（確定は「理由（任意）」）。納品済み未満の数量はその行の下に「納品済みの数より少ない数量には訂正できません。」を出して送れない。範囲外・空の数量や単価、訂正の理由が空の間は「確定する」を押せない。ボタン「確定する」「戻る」。通知「数量を確定しました。」「数量を訂正しました。」。窓口は `POST /api/admin/purchase-orders/[id]/quantities` |
+| 残りを打ち切る（[PurchaseOrderShortCloseDialog](../../../src/components/PurchaseOrderShortCloseDialog.tsx)） | 見出し「残りを打ち切る」。説明「入庫は起こりません。打ち切った数は発注数量から引かれ、発注必要数が増えることがあります。」。選んだ行（発注書の行の並び）ごとに「未納 ${n} → 0」。「理由」必須。ボタン「打ち切る」「戻る」。通知「残りを打ち切りました。」。窓口は `POST /api/admin/purchase-orders/[id]/short-closures` |
+| 発注の取消（同じ部品の取消モード） | 数量確定待ちの「発注を取り消す」で開く。見出し「発注の取消」。説明「数量は確定していないため、全ての行を 0 にして完了にします。入庫は起こりません。」。行の一覧は出さず、同じ窓口に**発注書の全行**を渡す。「理由」必須。ボタン「取り消す」「戻る」。通知「発注を取り消しました。」 |
+| 発注先・メモの訂正（PurchaseOrderDetailSection の中のダイアログ） | 見出し「発注先・メモの訂正」。「発注先」（現在の値。必須・100字）・「メモ」（現在の値。500字。空にするとメモを空にする）・「理由」（必須・200字）。ボタン「訂正する」「戻る」。通知「発注先・メモを訂正しました。」。窓口は `PATCH /api/admin/purchase-orders/[id]` |
+| 送信中・失敗 | 送信中は入力・「確定する」などの実行ボタン・「戻る」を押せず、背景のクリックや Escape でも閉じない。失敗は `role="alert"` で表の本文（理由が要る・納品済み未満・打ち切る未納がありません・権限・版の競合など）か固定の失敗の文「発注の記録に失敗しました」（生の文は出さない）。通信の失敗・5xx・読めない成功の応答の後の再押下は、最初の本文（最初の版と requestKey）で送る。内容（数量・単価・理由・選んだ行）を変えるか、確定した 4xx を受けた後は新しい requestKey |
+| 版の競合 | 409 は表の本文「発注書が更新されました。内容を確認して、もう一度送ってください。」を出し、親が発注書を読み直す。ダイアログは開いたまま入力を保ち、次の送信は読み直した版で送る |
+
+検証: 単体 [画面](../../../tests/unit/components/PurchaseOrderDetailSection.test.tsx)・[頁](../../../tests/unit/components/PurchaseOrderDetailPage.test.tsx)・[数量のダイアログ](../../../tests/unit/components/PurchaseOrderQuantityDialog.test.tsx)・[打切りのダイアログ](../../../tests/unit/components/PurchaseOrderShortCloseDialog.test.tsx)・[窓口](../../../tests/unit/api/admin/purchase-order-detail-route.test.ts)・[発注先・メモの窓口](../../../tests/unit/api/admin/purchase-order-header-route.test.ts)・[数量の窓口](../../../tests/unit/api/admin/purchase-order-quantities-route.test.ts)・[打切りの窓口](../../../tests/unit/api/admin/purchase-order-short-closures-route.test.ts)・[store](../../../tests/unit/lib/purchase-orders/purchase-order-store.test.ts)・[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)。DB [発注の読取](../../../tests/integration/db/group_g2_purchase_reads.integration.test.ts)・[数量・打切り](../../../tests/integration/db/group_g2_purchase_quantities.integration.test.ts)。3つの画面幅の確認は Task 10 の E2E。

@@ -9,7 +9,13 @@ import {
   type PurchaseOrderCreateInput,
   type PurchaseOrderCreated,
   type PurchaseOrderDetail,
+  type PurchaseOrderHeaderUpdated,
+  type PurchaseOrderHeaderUpdateInput,
   type PurchaseOrderListRow,
+  type PurchaseOrderQuantitiesConfirmed,
+  type PurchaseOrderQuantitiesInput,
+  type PurchaseOrderShortClosed,
+  type PurchaseOrderShortCloseInput,
 } from './purchase-order-types';
 
 /**
@@ -71,6 +77,91 @@ export async function createPurchaseOrder(
     throw new PurchaseOrderError();
   }
   return { id: data.id, number: data.number, version: data.version, replayed: data.replayed };
+}
+
+const isVersion = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 1;
+const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0;
+
+/**
+ * 発注書の書込み（Task 6 の3つ）が共通で使う呼び出し。RPC を1回呼び、DB の誤りは表で分類し、戻りがオブジェクトでなければ固定の失敗にする。
+ * 戻りの項目の検査は呼び手が行う。
+ */
+async function callWriter(client: SupabaseClient, name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  let response;
+  try {
+    response = await client.rpc(name, args);
+  } catch {
+    throw new PurchaseOrderError();
+  }
+  if (response.error) throw classify(response.error);
+  const data: unknown = response.data;
+  if (!isObject(data)) throw new PurchaseOrderError();
+  return data;
+}
+
+/**
+ * 発注先・メモを訂正する（DB の関数 admin_update_purchase_order_header を1回呼ぶ。理由が必須で、版が違えば GROUP_G_PO_VERSION_CONFLICT）。
+ * 発注書の版が1つ進み、履歴（kind header）に前後の発注先とメモが残る。同じ requestKey と同じ内容の再送は同じ結果を replayed: true で返す。
+ */
+export async function updatePurchaseOrderHeader(
+  client: SupabaseClient,
+  actorId: string,
+  input: PurchaseOrderHeaderUpdateInput,
+): Promise<PurchaseOrderHeaderUpdated> {
+  const data = await callWriter(client, 'admin_update_purchase_order_header', {
+    _purchase_order_id: input.purchaseOrderId,
+    _expected_version: input.expectedVersion,
+    _supplier_name: input.supplierName,
+    _memo: input.memo,
+    _reason: input.reason,
+    _actor_id: actorId,
+    _request_key: input.requestKey,
+  });
+  if (!isVersion(data.version) || typeof data.replayed !== 'boolean') throw new PurchaseOrderError();
+  return { version: data.version, replayed: data.replayed };
+}
+
+/**
+ * 数量と単価を確定・訂正する（DB の関数 admin_confirm_purchase_order_quantities を1回呼ぶ）。lines は発注書の全行をちょうど1回ずつ。
+ * 数量確定待ちなら最初の確定（reason は任意）、確定後なら訂正（reason 必須。納品済み未満は GROUP_G_PO_QUANTITY_BELOW_RECEIVED）。
+ * unitPriceYen の null は「単価未登録」、0 は 0 円。在庫・台帳・受取は動かさない。
+ */
+export async function confirmPurchaseOrderQuantities(
+  client: SupabaseClient,
+  actorId: string,
+  input: PurchaseOrderQuantitiesInput,
+): Promise<PurchaseOrderQuantitiesConfirmed> {
+  const data = await callWriter(client, 'admin_confirm_purchase_order_quantities', {
+    _purchase_order_id: input.purchaseOrderId,
+    _expected_version: input.expectedVersion,
+    _lines: input.lines.map((line) => ({ lineId: line.lineId, quantity: line.quantity, unitPriceYen: line.unitPriceYen })),
+    _reason: input.reason,
+    _actor_id: actorId,
+    _request_key: input.requestKey,
+  });
+  if (!isVersion(data.version) || !isCount(data.changedLines) || typeof data.replayed !== 'boolean') throw new PurchaseOrderError();
+  return { version: data.version, changedLines: data.changedLines, replayed: data.replayed };
+}
+
+/**
+ * 残りを打ち切る（DB の関数 admin_short_close_purchase_order を1回呼ぶ。理由が必須）。数量確定後は選んだ行の確定数量を納品済みまで下げ、
+ * 数量確定前は全行を渡した時だけ、全行の確定数量を 0 にして取り消す。入庫・台帳・割当は動かさない。
+ */
+export async function shortClosePurchaseOrder(
+  client: SupabaseClient,
+  actorId: string,
+  input: PurchaseOrderShortCloseInput,
+): Promise<PurchaseOrderShortClosed> {
+  const data = await callWriter(client, 'admin_short_close_purchase_order', {
+    _purchase_order_id: input.purchaseOrderId,
+    _expected_version: input.expectedVersion,
+    _line_ids: input.lineIds,
+    _reason: input.reason,
+    _actor_id: actorId,
+    _request_key: input.requestKey,
+  });
+  if (!isVersion(data.version) || !isCount(data.closedQuantity) || typeof data.replayed !== 'boolean') throw new PurchaseOrderError();
+  return { version: data.version, closedQuantity: data.closedQuantity, replayed: data.replayed };
 }
 
 /** 読取の内部の失敗。DB の生の文も cause も持たない（窓口は固定の500にする）。 */

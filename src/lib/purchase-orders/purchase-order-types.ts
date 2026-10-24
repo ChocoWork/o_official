@@ -39,12 +39,17 @@ export const PURCHASE_ORDER_DISPLAY_STAGE_LABELS: Record<PurchaseOrderDisplaySta
 /**
  * DB が返す誤りの表。キーは message、値は [SQLSTATE, HTTP の状態, 利用者に見せる本文]。
  * store は message と SQLSTATE が両方そろった時だけこの表で分類し、表に無い物は生の文を出さない500にする。
- * 発注の作成が返し得る3つ。後続の Task が自分の窓口の誤りをここへ足す。
+ * 発注の作成が返し得る3つと、数量の確定・訂正、打切り、発注先・メモの訂正（Task 6）が返し得る5つ。後続の Task が自分の窓口の誤りをここへ足す。
  */
 export const PURCHASE_ORDER_ERRORS: Record<string, readonly [sqlstate: string, status: number, body: string]> = {
   GROUP_G_ARGUMENT_INVALID: ['22023', 400, '入力を確かめてください。'],
   GROUP_G_FORBIDDEN: ['42501', 403, '発注を扱う権限がありません。'],
   GROUP_G_REQUEST_KEY_CONFLICT: ['23505', 409, '同じ要求番号で異なる操作は実行できません。'],
+  GROUP_G_PO_NOT_FOUND: ['P0002', 404, '発注書が見つかりません。'],
+  GROUP_G_PO_VERSION_CONFLICT: ['55000', 409, '発注書が更新されました。内容を確認して、もう一度送ってください。'],
+  GROUP_G_PO_REASON_REQUIRED: ['22023', 400, '理由を入力してください。'],
+  GROUP_G_PO_QUANTITY_BELOW_RECEIVED: ['23514', 409, '納品済みの数より少ない数量には訂正できません。'],
+  GROUP_G_PO_NOTHING_TO_CLOSE: ['55000', 409, '打ち切る未納がありません。'],
 };
 
 export type PurchaseOrderCreateInput = {
@@ -55,6 +60,57 @@ export type PurchaseOrderCreateInput = {
 };
 
 export type PurchaseOrderCreated = { id: string; number: string; version: number; replayed: boolean };
+
+/** 発注先・メモの訂正（G-2 Task 6 / FREQ-527）。memo が null ならメモを空にする。 */
+export type PurchaseOrderHeaderUpdateInput = {
+  purchaseOrderId: string;
+  expectedVersion: number;
+  supplierName: string;
+  memo: string | null;
+  reason: string;
+  requestKey: string;
+};
+export type PurchaseOrderHeaderUpdated = { version: number; replayed: boolean };
+
+/** 数量の確定（最初の確定。reason は任意）と訂正（reason 必須）。lines は発注書の全行をちょうど1回ずつ。unitPriceYen null は単価未登録、0 は 0 円。 */
+export type PurchaseOrderQuantitiesInput = {
+  purchaseOrderId: string;
+  expectedVersion: number;
+  lines: { lineId: string; quantity: number; unitPriceYen: number | null }[];
+  reason: string | null;
+  requestKey: string;
+};
+export type PurchaseOrderQuantitiesConfirmed = { version: number; changedLines: number; replayed: boolean };
+
+/** 残りの打切り（確定後は未納のある行、確定前の取消は全行）。 */
+export type PurchaseOrderShortCloseInput = {
+  purchaseOrderId: string;
+  expectedVersion: number;
+  lineIds: string[];
+  reason: string;
+  requestKey: string;
+};
+export type PurchaseOrderShortClosed = { version: number; closedQuantity: number; replayed: boolean };
+
+/** 明細の呼び名: 商品名・色・サイズ。色・サイズが無ければ有る部分だけを並べる（詳細の表・履歴・ダイアログで同じ） */
+export function formatPurchaseOrderLineLabel(line: { itemName: string; colorName: string | null; sizeLabel: string | null }): string {
+  return [line.itemName, line.colorName, line.sizeLabel].filter((part): part is string => part !== null && part !== '').join(' ');
+}
+
+/** 発注書の詳細の操作（G-2 Task 6）の固定の文。ボタンの名前と、成功の通知。 */
+export const PURCHASE_ORDER_ACTION_TEXT = {
+  confirmQuantities: '数量確定',
+  cancelOrder: '発注を取り消す',
+  correctQuantities: '数量を訂正',
+  correctHeader: '発注先・メモを訂正',
+  shortClose: '残りを打ち切る',
+  selectOutstanding: '未納のある行をすべて選ぶ',
+  quantitiesConfirmedNotice: '数量を確定しました。',
+  quantitiesCorrectedNotice: '数量を訂正しました。',
+  shortClosedNotice: '残りを打ち切りました。',
+  headerCorrectedNotice: '発注先・メモを訂正しました。',
+  cancelledNotice: '発注を取り消しました。',
+} as const;
 
 /** 発注の固定の文。窓口は failed、画面は forbidden・supplierRequired・failed・invalidInput を使う。 */
 export const PURCHASE_ORDER_TEXT = {
@@ -81,16 +137,22 @@ export function isPurchaseOrderQuantity(value: string): boolean {
 }
 
 /**
- * 発注の作成が失敗した時に画面へ出す文。
+ * 発注の作成・数量の確定と訂正・打切り・発注先の訂正が失敗した時に画面へ出す文。
  * 表にある code はその本文、MFA の無い 403 は専用の文、401・403・400 はそれぞれの文、他は固定の失敗の文。
  * 窓口の本文の error は使わない（英語の検証の文や生の文を画面へ流さないため）。
  */
-export function purchaseOrderCreateFailureMessage(status: number, body: unknown): string {
+export function purchaseOrderFailureMessage(status: number, body: unknown): string {
   const { code } = (typeof body === 'object' && body !== null ? body : {}) as { code?: unknown };
   if (typeof code === 'string' && Object.hasOwn(PURCHASE_ORDER_ERRORS, code)) return PURCHASE_ORDER_ERRORS[code][2];
   return adminLoadFailureMessage(status, body, PURCHASE_ORDER_TEXT.forbidden,
     status === 400 ? PURCHASE_ORDER_TEXT.invalidInput : PURCHASE_ORDER_TEXT.failed);
 }
+
+/** 発注の作成の画面が使う名前（purchaseOrderFailureMessage と同じ関数） */
+export const purchaseOrderCreateFailureMessage = purchaseOrderFailureMessage;
+
+/** 発注書の版が古い（別の操作で更新された）時の code。画面は本文を出し、発注書を読み直す（入力は保つ） */
+export const PURCHASE_ORDER_VERSION_CONFLICT_CODE = 'GROUP_G_PO_VERSION_CONFLICT';
 
 // ---- 読取（発注一覧表と発注書の詳細 / G-2 Task 5・FREQ-526） ----
 

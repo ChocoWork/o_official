@@ -2,7 +2,8 @@
 jest.mock('server-only', () => ({}), { virtual: true });
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  createPurchaseOrder, getAdminPurchaseOrder, listAdminPurchaseOrderLines, PurchaseOrderError,
+  confirmPurchaseOrderQuantities, createPurchaseOrder, getAdminPurchaseOrder, listAdminPurchaseOrderLines, PurchaseOrderError,
+  shortClosePurchaseOrder, updatePurchaseOrderHeader,
 } from '@/lib/purchase-orders/purchase-order-store';
 import { PURCHASE_ORDER_ERRORS } from '@/lib/purchase-orders/purchase-order-types';
 import { confirmedDetail, dbListRow, LINE_2, listRow, ORDER_ID as READ_ORDER_ID } from './purchase-order-fixtures';
@@ -156,6 +157,131 @@ describe('createPurchaseOrder', () => {
     rpc.mockResolvedValue({ data: { ...dbResult, secret: 'PRIVATE-MARKER' }, error: null });
     const result = await createPurchaseOrder(client, 'actor-1', input);
     expect(Object.keys(result)).toEqual(['id', 'number', 'version', 'replayed']);
+  });
+});
+
+describe('発注書の書込み（Task 6）: updatePurchaseOrderHeader・confirmPurchaseOrderQuantities・shortClosePurchaseOrder', () => {
+  const LINE_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+  const LINE_B = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+  const base = { purchaseOrderId: ORDER_ID, expectedVersion: 3, requestKey: REQUEST_KEY };
+
+  const writers = [
+    {
+      name: 'updatePurchaseOrderHeader',
+      rpcName: 'admin_update_purchase_order_header',
+      call: () => updatePurchaseOrderHeader(client, 'actor-1', { ...base, supplierName: '工場B', memo: '新しいメモ', reason: '社名変更' }),
+      args: { _purchase_order_id: ORDER_ID, _expected_version: 3, _supplier_name: '工場B', _memo: '新しいメモ', _reason: '社名変更', _actor_id: 'actor-1', _request_key: REQUEST_KEY },
+      data: { version: 4, replayed: false },
+      keys: ['version', 'replayed'],
+      broken: [
+        ['null', null], ['配列', [{ version: 4, replayed: false }]], ['version が0', { version: 0, replayed: false }],
+        ['version が小数', { version: 1.5, replayed: false }], ['version が文字列', { version: '4', replayed: false }],
+        ['replayed が無い', { version: 4 }], ['replayed が文字列', { version: 4, replayed: 'false' }],
+      ] as Array<[string, unknown]>,
+    },
+    {
+      name: 'confirmPurchaseOrderQuantities',
+      rpcName: 'admin_confirm_purchase_order_quantities',
+      call: () => confirmPurchaseOrderQuantities(client, 'actor-1', {
+        ...base, lines: [{ lineId: LINE_A, quantity: 4, unitPriceYen: 1200 }, { lineId: LINE_B, quantity: 0, unitPriceYen: null }], reason: '工場の都合',
+      }),
+      args: {
+        _purchase_order_id: ORDER_ID, _expected_version: 3,
+        _lines: [{ lineId: LINE_A, quantity: 4, unitPriceYen: 1200 }, { lineId: LINE_B, quantity: 0, unitPriceYen: null }],
+        _reason: '工場の都合', _actor_id: 'actor-1', _request_key: REQUEST_KEY,
+      },
+      data: { version: 4, changedLines: 2, replayed: false },
+      keys: ['version', 'changedLines', 'replayed'],
+      broken: [
+        ['null', null], ['version が0', { version: 0, changedLines: 1, replayed: false }],
+        ['changedLines が負', { version: 4, changedLines: -1, replayed: false }], ['changedLines が小数', { version: 4, changedLines: 1.5, replayed: false }],
+        ['changedLines が無い', { version: 4, replayed: false }], ['replayed が無い', { version: 4, changedLines: 1 }],
+      ] as Array<[string, unknown]>,
+    },
+    {
+      name: 'shortClosePurchaseOrder',
+      rpcName: 'admin_short_close_purchase_order',
+      call: () => shortClosePurchaseOrder(client, 'actor-1', { ...base, lineIds: [LINE_B, LINE_A], reason: '残りを打ち切る' }),
+      args: { _purchase_order_id: ORDER_ID, _expected_version: 3, _line_ids: [LINE_B, LINE_A], _reason: '残りを打ち切る', _actor_id: 'actor-1', _request_key: REQUEST_KEY },
+      data: { version: 4, closedQuantity: 7, replayed: false },
+      keys: ['version', 'closedQuantity', 'replayed'],
+      broken: [
+        ['null', null], ['version が0', { version: 0, closedQuantity: 1, replayed: false }],
+        ['closedQuantity が負', { version: 4, closedQuantity: -1, replayed: false }], ['closedQuantity が文字列', { version: 4, closedQuantity: '7', replayed: false }],
+        ['closedQuantity が無い', { version: 4, replayed: false }], ['replayed が真偽値でない', { version: 4, closedQuantity: 1, replayed: 0 }],
+      ] as Array<[string, unknown]>,
+    },
+  ];
+
+  describe.each(writers)('$name', (writer) => {
+    test('FREQ-527-AC-01: RPC を引数名どおり・実行者つきで1回だけ呼び、DB の戻りをそのまま返す', async () => {
+      rpc.mockResolvedValue({ data: writer.data, error: null });
+      await expect(writer.call()).resolves.toEqual(writer.data);
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(rpc).toHaveBeenCalledWith(writer.rpcName, writer.args);
+    });
+
+    test('FREQ-527-AC-01: 再送された結果（replayed: true）はそのまま返し、戻りは決まった項目だけ（余分な項目は落とす）', async () => {
+      rpc.mockResolvedValue({ data: { ...writer.data, replayed: true, secret: 'PRIVATE-MARKER' }, error: null });
+      const result = await writer.call();
+      expect(result).toEqual({ ...writer.data, replayed: true });
+      expect(Object.keys(result)).toEqual(writer.keys);
+    });
+
+    test.each(Object.entries(PURCHASE_ORDER_ERRORS))(
+      'FREQ-527-AC-01: DB の %s は message と SQLSTATE が両方そろった時だけ、表の状態と固定の本文の PurchaseOrderError にする',
+      async (message, [sqlstate, status, body]) => {
+        rpc.mockResolvedValue({ data: null, error: { message, code: sqlstate, details: 'PRIVATE-MARKER', hint: 'PRIVATE-MARKER' } });
+        const error = await failureOf(writer.call);
+        expect({ status: error.status, code: error.code, message: error.message }).toEqual({ status, code: message, message: body });
+        expect(JSON.stringify(error)).not.toContain('PRIVATE-MARKER');
+        expect(error.cause).toBeUndefined();
+      },
+    );
+
+    test.each([
+      ['message は表にあるが SQLSTATE が違う', { message: 'GROUP_G_PO_VERSION_CONFLICT', code: '22023' }],
+      ['SQLSTATE は表と同じだが message が表に無い', { message: 'PRIVATE-MARKER', code: '55000' }],
+      ['message が無い', { code: '55000' }],
+      ['code が無い', { message: 'GROUP_G_PO_VERSION_CONFLICT' }],
+      ['message は継承した名前（toString）', { message: 'toString', code: '55000' }],
+      ['PostgREST の別の誤り', { message: 'PRIVATE-MARKER', code: 'PGRST202', details: 'PRIVATE-MARKER' }],
+    ])('FREQ-527-AC-01: 未知・不一致（%s）は500の固定の文で、生の文も code も出さない', async (_name, dbError) => {
+      rpc.mockResolvedValue({ data: null, error: dbError });
+      const error = await failureOf(writer.call);
+      expect({ status: error.status, code: error.code, message: error.message }).toEqual({ status: 500, code: undefined, message: '発注の記録に失敗しました' });
+      expect(JSON.stringify(error)).not.toContain('PRIVATE-MARKER');
+    });
+
+    test('FREQ-527-AC-01: 通信そのものの失敗（RPC が throw）も500の固定の文で、生の文を持たない', async () => {
+      rpc.mockRejectedValue(new TypeError('PRIVATE-MARKER'));
+      const error = await failureOf(writer.call);
+      expect({ status: error.status, code: error.code, message: error.message }).toEqual({ status: 500, code: undefined, message: '発注の記録に失敗しました' });
+      expect(JSON.stringify(error)).not.toContain('PRIVATE-MARKER');
+      expect(error.cause).toBeUndefined();
+    });
+
+    test.each(writer.broken)('FREQ-527-AC-01: 戻り値の型検査: %s は500の固定の文（成功として返さない）', async (_name, data) => {
+      rpc.mockResolvedValue({ data, error: null });
+      const error = await failureOf(writer.call);
+      expect({ status: error.status, code: error.code, message: error.message }).toEqual({ status: 500, code: undefined, message: '発注の記録に失敗しました' });
+    });
+  });
+
+  test('FREQ-527-AC-01: 発注先・メモの訂正でメモが null ならメモを空にする（null をそのまま渡す）', async () => {
+    rpc.mockResolvedValue({ data: { version: 4, replayed: false }, error: null });
+    await updatePurchaseOrderHeader(client, 'actor-1', { ...base, supplierName: '工場A', memo: null, reason: 'メモを消す' });
+    expect(rpc.mock.calls[0][1]._memo).toBeNull();
+  });
+
+  test('FREQ-527-AC-01: 数量の確定で理由が null なら null を渡す。明細は lineId・quantity・unitPriceYen の3項目だけで、単価 0 と null を区別して渡す', async () => {
+    rpc.mockResolvedValue({ data: { version: 2, changedLines: 0, replayed: false }, error: null });
+    const lines = [{ lineId: LINE_A, quantity: 5, unitPriceYen: 0, extra: 'x' }, { lineId: LINE_B, quantity: 3, unitPriceYen: null }] as unknown as Array<{ lineId: string; quantity: number; unitPriceYen: number | null }>;
+    await confirmPurchaseOrderQuantities(client, 'actor-1', { ...base, expectedVersion: 1, lines, reason: null });
+    const args = rpc.mock.calls[0][1];
+    expect(args._reason).toBeNull();
+    expect(args._lines).toEqual([{ lineId: LINE_A, quantity: 5, unitPriceYen: 0 }, { lineId: LINE_B, quantity: 3, unitPriceYen: null }]);
+    expect(Object.keys(args._lines[0])).toEqual(['lineId', 'quantity', 'unitPriceYen']);
   });
 });
 
