@@ -7038,6 +7038,14 @@ BEGIN
     UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
   ) AS x WHERE x.id IS NOT NULL;
   v_orders := private.lock_group_g_inventory(v_variants, ARRAY[v_order_id], NULL);
+  -- Approval may have changed the exchange target while this entry waited on the advisory.
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
   v_return := private.lock_order_return(_return_id);
   v_order:=v_return.order_id;
   SELECT rr.* INTO v_old FROM public.order_return_receipts AS rr WHERE rr.request_key=_request_key;
@@ -7360,6 +7368,14 @@ BEGIN
     UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
   ) AS x WHERE x.id IS NOT NULL;
   v_orders := private.lock_group_g_inventory(v_variants, ARRAY[v_order_id], NULL);
+  -- Approval may have changed the exchange target while this entry waited on the advisory.
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
   v_return := private.lock_order_return(_return_id);
   v_order:=v_return.order_id;
   SELECT r.* INTO v_old FROM public.order_refunds AS r WHERE r.request_key=_request_key;
@@ -7475,7 +7491,6 @@ DECLARE
   v_variants bigint[] := ARRAY[]::bigint[];
   v_order_id uuid;
   v_before jsonb;
-  v_middle jsonb;
   v_operation uuid := pg_catalog.gen_random_uuid();
   v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
 BEGIN
@@ -7496,6 +7511,14 @@ BEGIN
     UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
   ) AS x WHERE x.id IS NOT NULL;
   v_orders := private.lock_group_g_inventory(v_variants, ARRAY[v_order_id], NULL);
+  -- Approval may have changed the exchange target while this entry waited on the advisory.
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
   v_return := private.lock_order_return(_return_id);
 
   v_receipt_id := private.find_return_receipt(_request_key, _return_id, v_fingerprint);
@@ -7573,7 +7596,6 @@ DECLARE
   v_variants bigint[] := ARRAY[]::bigint[];
   v_order_id uuid;
   v_before jsonb;
-  v_middle jsonb;
   v_operation uuid := pg_catalog.gen_random_uuid();
   v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
 BEGIN
@@ -7594,6 +7616,14 @@ BEGIN
     UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
   ) AS x WHERE x.id IS NOT NULL;
   v_orders := private.lock_group_g_inventory(v_variants, ARRAY[v_order_id], NULL);
+  -- Approval may have changed the exchange target while this entry waited on the advisory.
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
   v_return := private.lock_order_return(_return_id);
 
   v_receipt_id := private.find_return_receipt(_request_key, _return_id, v_fingerprint);
@@ -7737,6 +7767,14 @@ BEGIN
     UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
   ) AS x WHERE x.id IS NOT NULL;
   v_orders := private.lock_group_g_inventory(v_variants, ARRAY[v_order_id], NULL);
+  -- Approval may have changed the exchange target while this entry waited on the advisory.
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
   v_return := private.lock_order_return(_return_id);
 
   v_receipt_id := private.find_return_receipt(_request_key, _return_id, v_fingerprint);
@@ -7877,6 +7915,213 @@ BEGIN
   END IF;
 END;
 $g1_return_exchange_assert$;
+
+-- Task 12: exchange fee payment / waiver and approval to ship before payment.
+-- Last public bodies: 20261013000456_order_return_actions.sql:1231/1272.
+-- Preserve the original no-key CAS (including RETURN_STATE_CONFLICT on repeats), fee accounting,
+-- arguments and return types. The private outer body owns the complete row closure and state history;
+-- lock_order_return / refresh / FIFO operate only on those held rows and never enter a public RPC.
+-- A settlement consumes the whole outstanding fee. Its prior fee_settled_amount distinguishes later
+-- valid debts on the same return; a call with nothing outstanding is refused before capture/operation/FIFO.
+-- This preserves the four-argument state-based contract, not request-key replay identity.
+CREATE FUNCTION private.admin_record_return_fee_payment(_return_id uuid, _actor_id uuid, _note text, _waive boolean)
+RETURNS TABLE (return_id uuid, return_status text)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_return public.order_returns;
+  v_status text;
+  v_order_id uuid;
+  v_orders uuid[];
+  v_variants bigint[];
+  v_before jsonb;
+  v_middle jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _return_id IS NULL
+     OR _actor_id IS NULL
+     OR _waive IS NULL
+     OR (_note IS NOT NULL AND pg_catalog.char_length(_note) > 500) THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  -- Reads only until the common advisory and the complete order/variant closure have been acquired.
+  SELECT r.order_id INTO v_order_id FROM public.order_returns AS r WHERE r.id = _return_id;
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
+  v_orders := private.lock_group_g_inventory(v_variants, ARRAY[v_order_id], NULL);
+  -- Approval may have changed the exchange target while this entry waited on the advisory.
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
+  v_return := private.lock_order_return(_return_id);
+
+  IF v_return.status <> 'open' OR v_return.fee_due_amount < 1 OR v_return.fee_received_at IS NOT NULL THEN
+    RAISE EXCEPTION 'RETURN_STATE_CONFLICT' USING ERRCODE = '22023';
+  END IF;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  UPDATE public.order_returns AS r
+  SET fee_received_at = pg_catalog.now(),
+      fee_received_by = _actor_id,
+      fee_received_note = NULLIF(pg_catalog.btrim(_note), ''),
+      fee_waived = _waive,
+      fee_settled_amount = r.fee_settled_amount + r.fee_due_amount,
+      fee_due_amount = 0
+  WHERE r.id = _return_id;
+
+  v_status := private.refresh_order_return_status(_return_id);
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1,
+    'admin_record_return_fee_payment', _actor_id);
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (v_operation, 'admin_record_return_fee_payment',
+    pg_catalog.md5('admin_record_return_fee_payment:' || _return_id::text
+      || CASE WHEN v_return.fee_settled_amount > 0 THEN ':' || v_return.fee_settled_amount::text ELSE '' END)::uuid,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'admin_record_return_fee_payment', 'return_id', _return_id, 'actor_id', _actor_id,
+      'note', _note, 'waive', _waive, 'prior_fee_settled_amount', v_return.fee_settled_amount,
+      'settled_fee_amount', v_return.fee_due_amount)::text, 'UTF8')), 'hex'),
+    'order_return', _return_id::text, _actor_id,
+    pg_catalog.jsonb_build_object('return_id', _return_id, 'order_id', v_order_id, 'return_status', v_status));
+  v_middle := private.capture_group_g_item_states(v_orders);
+  PERFORM private.allocate_group_g_fifo(v_variants, v_operation, _actor_id);
+  PERFORM private.record_group_g_item_state_changes(v_middle, v_orders, v_operation, 2, 'fifo', _actor_id);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT _return_id, v_status;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_record_return_fee_payment(uuid,uuid,text,boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_record_return_fee_payment(uuid,uuid,text,boolean) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_record_return_fee_payment(uuid,uuid,text,boolean) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_record_return_fee_payment(_return_id uuid, _actor_id uuid, _note text, _waive boolean)
+RETURNS TABLE (return_id uuid, return_status text)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.admin_record_return_fee_payment(_return_id, _actor_id, _note, _waive); $$;
+ALTER FUNCTION public.admin_record_return_fee_payment(uuid,uuid,text,boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_record_return_fee_payment(uuid,uuid,text,boolean) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_record_return_fee_payment(uuid,uuid,text,boolean) TO service_role;
+
+CREATE FUNCTION private.admin_release_return_exchange(_return_id uuid, _actor_id uuid)
+RETURNS TABLE (return_id uuid, return_status text)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_return public.order_returns;
+  v_order_id uuid;
+  v_orders uuid[];
+  v_variants bigint[];
+  v_before jsonb;
+  v_middle jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _return_id IS NULL OR _actor_id IS NULL THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT r.order_id INTO v_order_id FROM public.order_returns AS r WHERE r.id = _return_id;
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
+  v_orders := private.lock_group_g_inventory(v_variants, ARRAY[v_order_id], NULL);
+  -- Approval may have changed the exchange target while this entry waited on the advisory.
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM (
+    SELECT oi.variant_id AS id FROM public.order_return_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id WHERE l.return_id = _return_id
+    UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+    UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l WHERE l.return_id = _return_id
+  ) AS x WHERE x.id IS NOT NULL;
+  v_return := private.lock_order_return(_return_id);
+
+  IF v_return.status <> 'open'
+     OR v_return.fee_due_amount < 1
+     OR v_return.fee_received_at IS NOT NULL
+     OR v_return.exchange_released_at IS NOT NULL THEN
+    RAISE EXCEPTION 'RETURN_STATE_CONFLICT' USING ERRCODE = '22023';
+  END IF;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  UPDATE public.order_returns AS r
+  SET exchange_released_at = pg_catalog.now(),
+      exchange_released_by = _actor_id
+  WHERE r.id = _return_id;
+
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1,
+    'admin_release_return_exchange', _actor_id);
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (v_operation, 'admin_release_return_exchange',
+    pg_catalog.md5('admin_release_return_exchange:' || _return_id::text)::uuid,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'admin_release_return_exchange', 'return_id', _return_id, 'actor_id', _actor_id)::text, 'UTF8')), 'hex'),
+    'order_return', _return_id::text, _actor_id,
+    pg_catalog.jsonb_build_object('return_id', _return_id, 'order_id', v_order_id, 'return_status', v_return.status));
+  v_middle := private.capture_group_g_item_states(v_orders);
+  PERFORM private.allocate_group_g_fifo(v_variants, v_operation, _actor_id);
+  PERFORM private.record_group_g_item_state_changes(v_middle, v_orders, v_operation, 2, 'fifo', _actor_id);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT _return_id, v_return.status;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_release_return_exchange(uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_release_return_exchange(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_release_return_exchange(uuid,uuid) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_release_return_exchange(_return_id uuid, _actor_id uuid)
+RETURNS TABLE (return_id uuid, return_status text)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.admin_release_return_exchange(_return_id, _actor_id); $$;
+ALTER FUNCTION public.admin_release_return_exchange(uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_release_return_exchange(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_release_return_exchange(uuid,uuid) TO service_role;
+
+DO $g1_exchange_fee_assert$
+DECLARE v_signature text; v_oid oid; v_schema text;
+BEGIN
+  FOREACH v_signature IN ARRAY ARRAY[
+    'admin_record_return_fee_payment(uuid,uuid,text,boolean)', 'admin_release_return_exchange(uuid,uuid)'
+  ] LOOP
+    FOREACH v_schema IN ARRAY ARRAY['public', 'private'] LOOP
+      v_oid := pg_catalog.to_regprocedure(v_schema || '.' || v_signature);
+      IF v_oid IS NULL OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc AS p
+        WHERE p.oid = v_oid AND p.proowner = 'postgres'::regrole
+          AND p.prosecdef = (v_schema = 'private') AND 'search_path=""' = ANY(p.proconfig))
+        OR pg_catalog.has_function_privilege('anon', v_oid, 'EXECUTE')
+        OR pg_catalog.has_function_privilege('authenticated', v_oid, 'EXECUTE')
+        OR NOT pg_catalog.has_function_privilege('service_role', v_oid, 'EXECUTE') THEN
+        RAISE EXCEPTION 'GROUP_G_EXCHANGE_FEE_ACL_INVALID' USING ERRCODE = '55000';
+      END IF;
+    END LOOP;
+  END LOOP;
+END;
+$g1_exchange_fee_assert$;
 
 DO $g1_model_assert$
 DECLARE

@@ -458,6 +458,33 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       }, check: rows => expect(rows).toEqual([{ replayed: false }]),
     }));
 
+  const TASK12_ENTRIES: Array<{ name: string; setup: () => Promise<Task6Material>; check: (rows: any[]) => void }> =
+    ['admin_record_return_fee_payment', 'admin_release_return_exchange'].map(name => ({
+      name: `public.${name}`, setup: async () => {
+        const actor = await actorId();
+        const material = await withGroupG1FixtureTransaction(db(), async () => {
+          const f = await createShippedOrderFixture(db(), { lines: [{ quantity: 1, extraStock: 1 }] });
+          const ret = await insertReturnRecord(db(), { orderId: f.orderId, exchangeFee: 500, lines: [{
+            fulfillmentId: f.fulfillments[0].id, orderItemId: f.orderItemIds[0], quantity: 1,
+            resolution: 'exchange', exchangeVariantId: f.variantIds[0], exchangeMethod: 'stock',
+          }] });
+          const received = (await db().query(`select receipt_id from public.admin_receive_return($1::uuid,$2::uuid,true,$3::uuid,
+            $4::jsonb,'[]'::jsonb,'consult',null,0,null,false,null,null,null)`, [ret.returnId, actor, randomUUID(),
+          JSON.stringify([{ return_line_id: ret.lineIds[0], quantity: 1, disposition: 'not_restocked' }])])).rows[0];
+          const neighbour = await insertOrderWithLines(db(), { status: 'paid', lines: [{
+            itemId: f.itemIds[0], variantId: f.variantIds[0], quantity: 1, fulfillmentType: 'backorder', reserved: false,
+          }] });
+          return { f, ret, received, neighbour };
+        });
+        return { sql: name === 'admin_record_return_fee_payment'
+          ? 'select return_status from public.admin_record_return_fee_payment($1::uuid,$2::uuid,null,false)'
+          : 'select return_status from public.admin_release_return_exchange($1::uuid,$2::uuid)',
+        params: [material.ret.returnId, actor], itemId: material.f.itemIds[0], variantId: material.f.variantIds[0],
+        orderIds: [material.f.orderId, material.neighbour.orderId].sort(), returnId: material.ret.returnId,
+        receiptId: material.received.receipt_id as string };
+      }, check: rows => expect(rows).toEqual([{ return_status: name === 'admin_release_return_exchange' ? 'open' : 'closed' }]),
+    }));
+
   let actor: string | undefined;
   async function actorId() {
     actor ??= (await db().query(`insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
@@ -472,7 +499,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     )).rows[0].order_id as string;
   }
 
-  test.each([...TASK6_ENTRIES, ...TASK7_ENTRIES, ...TASK8_ENTRIES, ...TASK9_ENTRIES, ...TASK10_ENTRIES, ...TASK11_ENTRIES])('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
+  test.each([...TASK6_ENTRIES, ...TASK7_ENTRIES, ...TASK8_ENTRIES, ...TASK9_ENTRIES, ...TASK10_ENTRIES, ...TASK11_ENTRIES, ...TASK12_ENTRIES])('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
     const material = await setup();
     const a = await client();
     const b = await client();
@@ -714,6 +741,149 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       if (second) await second.catch(() => {});
       await b.query('rollback');
       await Promise.all([a.end(), b.end()]);
+    }
+  });
+
+  test('receive waiting behind approval uses the newly approved exchange variant for free stock and FIFO', async () => {
+    const fx = await withGroupG1FixtureTransaction(db(), async () => {
+      const f = await createShippedOrderFixture(db(), { createdAt: '2026-01-02', lines: [{ quantity: 1 }] });
+      const owner = await actorId();
+      const exchange = await addItemVariant(db(), { itemId: f.itemIds[0], colorName: 'WHITE', sizeLabel: 'L', stock: 2 });
+      const waiting = (date: string) => insertOrderWithLines(db(), { status: 'paid', createdAt: date, lines: [{
+        itemId: f.itemIds[0], variantId: exchange.variantId, quantity: 1, fulfillmentType: 'backorder', reserved: false,
+      }] });
+      const older = await waiting('2026-01-01'); const newer = await waiting('2026-01-03');
+      // B sees this old refund plan while A's approval of a different variant is still uncommitted.
+      const ret = await insertReturnRecord(db(), { orderId: f.orderId, status: 'requested', lines: [{
+        fulfillmentId: f.fulfillments[0].id, orderItemId: f.orderItemIds[0], quantity: 1,
+      }] });
+      const settings = (await db().query(`select return_address_name,return_address_postal_code,
+        return_address_line,return_address_phone from public.shop_return_settings where id=1`)).rows[0];
+      return { f, owner, exchange, older, newer, ret, settings };
+    });
+    const a = await client(); const b = await client();
+    let pending: Promise<Awaited<ReturnType<PgClient['query']>>> | undefined;
+    try {
+      await a.query('begin');
+      await a.query(`update public.shop_return_settings set return_address_name='fixture',return_address_postal_code='1000001',
+        return_address_line='fixture',return_address_phone='0312345678' where id=1`);
+      expect((await a.query(`select status from public.admin_approve_return($1::uuid,$2::uuid,$3::jsonb,
+        'customer_ships','shop',null,null,0,0,0,0,null,false)`, [fx.ret.returnId, fx.owner,
+      JSON.stringify([{ return_line_id: fx.ret.lineIds[0], resolution: 'exchange',
+        exchange_variant_id: fx.exchange.variantId, exchange_method: 'stock' }])])).rows).toEqual([{ status: 'open' }]);
+      await b.query('begin');
+      const [blocker, waiter] = [await pid(a), await pid(b)];
+      pending = b.query(`select exchange_order_item_ids from public.admin_receive_return($1::uuid,$2::uuid,true,$3::uuid,
+        $4::jsonb,'[]'::jsonb,'consult',null,0,null,false,null,null,null)`, [fx.ret.returnId, fx.owner, randomUUID(),
+      JSON.stringify([{ return_line_id: fx.ret.lineIds[0], quantity: 1, disposition: 'not_restocked' }])]);
+      void pending.catch(() => {});
+      await waitForAdvisory(db(), waiter, blocker);
+      await a.query('commit');
+      const result = await pending;
+      expect(result.rows[0].exchange_order_item_ids).toHaveLength(1);
+      const item = result.rows[0].exchange_order_item_ids[0] as string;
+      expect((await b.query('select variant_id::text,fulfillment_type from public.order_items where id=$1', [item])).rows)
+        .toEqual([{ variant_id: String(fx.exchange.variantId), fulfillment_type: 'stock' }]);
+      expect((await b.query(`select oi.id,coalesce(sum(al.remaining_quantity),0)::int n from public.order_items oi
+        left join public.order_item_allocations al on al.order_item_id=oi.id where oi.id=any($1::uuid[])
+        group by oi.id order by oi.id`, [[item, ...fx.older.orderItemIds, ...fx.newer.orderItemIds]])).rows).toEqual([
+        { id: fx.older.orderItemIds[0], n: 1 }, { id: item, n: 1 }, { id: fx.newer.orderItemIds[0], n: 0 },
+      ].sort((x, y) => x.id.localeCompare(y.id)));
+      await b.query('set constraints all immediate'); await b.query('commit');
+      expect((await db().query('select stock_quantity from public.item_variants where id=$1', [fx.exchange.variantId])).rows)
+        .toEqual([{ stock_quantity: 0 }]);
+      expect((await db().query('select * from public.verify_stock_integrity() where variant_id=$1', [fx.exchange.variantId])).rows).toEqual([]);
+    } finally {
+      await a.query('rollback');
+      if (pending) await pending.catch(() => {});
+      await b.query('rollback'); await Promise.all([a.end(), b.end()]);
+      await withGroupG1FixtureTransaction(db(), async () => {
+        await db().query(`update public.shop_return_settings set return_address_name=$1,return_address_postal_code=$2,
+          return_address_line=$3,return_address_phone=$4 where id=1`, [fx.settings.return_address_name,
+          fx.settings.return_address_postal_code, fx.settings.return_address_line, fx.settings.return_address_phone]);
+        await db().query(`update public.order_returns set status=case when status='requested' then 'declined' else 'cancelled' end,
+          declined_at=case when status='requested' then now() else declined_at end,
+          decline_reason=case when status='requested' then 'other' else decline_reason end,
+          decline_message=case when status='requested' then 'fixture cleanup' else decline_message end,
+          cancelled_at=case when status='open' then now() else cancelled_at end where id=$1 and status in ('requested','open')`, [fx.ret.returnId]);
+      });
+    }
+  });
+
+  test.each([
+    ['payment', true], ['payment', false], ['waiver', true], ['waiver', false], ['release', true], ['release', false],
+  ] as const)('exchange fee %s vs restock (fee first=%s): serialize and allocate to the oldest eligible orders', async (action, feeFirst) => {
+    const fx = await withGroupG1FixtureTransaction(db(), async () => {
+      const f = await createShippedOrderFixture(db(), { createdAt: '2026-01-02', lines: [{ quantity: 1 }] });
+      await db().query('update public.orders set paid_at=now() where id=$1 and paid_at is null', [f.orderId]);
+      const owner = await actorId();
+      await db().query(`insert into public.user_roles(user_id,role_id)
+        select $1,id from public.roles where code='admin' on conflict do nothing`, [owner]);
+      const ret = await insertReturnRecord(db(), { orderId: f.orderId, exchangeFee: 500, lines: [{
+        fulfillmentId: f.fulfillments[0].id, orderItemId: f.orderItemIds[0], quantity: 1,
+        resolution: 'exchange', exchangeVariantId: f.variantIds[0], exchangeMethod: 'make',
+      }] });
+      const received = (await db().query(`select exchange_order_item_ids from public.admin_receive_return(
+        $1::uuid,$2::uuid,true,$3::uuid,$4::jsonb,$5::jsonb,'consult',null,0,null,false,null,null,null)`,
+      [ret.returnId, owner, randomUUID(), JSON.stringify([{ return_line_id: ret.lineIds[0], quantity: 1, disposition: 'not_restocked' }]),
+        JSON.stringify([])])).rows[0];
+      const waiting = (date: string) => insertOrderWithLines(db(), { status: 'paid', createdAt: date, lines: [{
+        itemId: f.itemIds[0], variantId: f.variantIds[0], quantity: 1, fulfillmentType: 'backorder', reserved: false,
+      }] });
+      const older = await waiting('2026-01-01'); const newer = await waiting('2026-01-03');
+      const paidAt = (await db().query('select paid_at from public.orders where id=$1', [f.orderId])).rows[0].paid_at;
+      return { f, owner, ret, older, newer, exchangeId: received.exchange_order_item_ids[0] as string, paidAt };
+    });
+    const key = randomUUID();
+    const fee = (c: PgClient) => action === 'release'
+      ? c.query('select return_status from public.admin_release_return_exchange($1::uuid,$2::uuid)', [fx.ret.returnId, fx.owner])
+      : c.query('select return_status from public.admin_record_return_fee_payment($1::uuid,$2::uuid,null,$3::boolean)',
+        [fx.ret.returnId, fx.owner, action === 'waiver']);
+    const restock = (c: PgClient) => c.query(`select public.admin_record_stock_movement(
+      $1::bigint,$2::bigint,2,'restock',null,$3::uuid,$4::uuid,null) result`, [fx.f.itemIds[0], fx.f.variantIds[0], fx.owner, key]);
+    const checkFee = (r: { rows: any[] }) => expect(r.rows).toEqual([{ return_status: action === 'release' ? 'open' : 'closed' }]);
+    const a = await client(); const b = await client();
+    let second: Promise<Awaited<ReturnType<PgClient['query']>>> | undefined;
+    try {
+      const [blocker, waiter] = [await pid(a), await pid(b)];
+      await a.query('begin'); await b.query('begin');
+      if (feeFirst) checkFee(await fee(a));
+      else expect((await restock(a)).rows[0].result).toMatchObject({ allocatedQuantity: 2, replayed: false });
+      second = feeFirst ? restock(b) : fee(b);
+      void second.catch(() => {});
+      await waitForAdvisory(db(), waiter, blocker);
+      await a.query('commit');
+      const completed = await second;
+      if (feeFirst) expect(completed.rows[0].result).toMatchObject({ allocatedQuantity: 2, replayed: false });
+      else checkFee(completed);
+      await b.query('savepoint fee_repeat');
+      await expect(fee(b)).rejects.toMatchObject({ code: '22023', message: 'RETURN_STATE_CONFLICT' });
+      await b.query('rollback to savepoint fee_repeat'); await b.query('release savepoint fee_repeat');
+      expect((await restock(b)).rows[0].result).toMatchObject({ allocatedQuantity: 2, replayed: true });
+      await b.query('set constraints all immediate'); await b.query('commit');
+      const rows = (await db().query(`select oi.id,coalesce(sum(a.remaining_quantity),0)::int n from public.order_items oi
+        left join public.order_item_allocations a on a.order_item_id=oi.id where oi.id=any($1::uuid[])
+        group by oi.id order by oi.id`, [[fx.exchangeId, ...fx.older.orderItemIds, ...fx.newer.orderItemIds]])).rows;
+      expect(rows).toEqual([
+        { id: fx.older.orderItemIds[0], n: 1 }, { id: fx.exchangeId, n: feeFirst ? 1 : 0 },
+        { id: fx.newer.orderItemIds[0], n: feeFirst ? 0 : 1 },
+      ].sort((x, y) => x.id.localeCompare(y.id)));
+      const free = Number((await db().query('select stock_quantity from public.item_variants where id=$1', [fx.f.variantIds[0]])).rows[0].stock_quantity);
+      expect(free).toBe(0); expect(rows.reduce((n, row) => n + row.n, free)).toBe(2);
+      expect((await db().query(`select count(*)::int n from private.group_g_operations where operation=$1::text and cause_id=$2::text`,
+        [action === 'release' ? 'admin_release_return_exchange' : 'admin_record_return_fee_payment', fx.ret.returnId])).rows).toEqual([{ n: 1 }]);
+      expect((await db().query(`select count(*)::int n from public.stock_movements m join private.group_g_operations op
+        on m.id=(op.result->>'movementId')::bigint where op.operation='stock_move' and op.request_key=$1::uuid and m.delta=2`, [key])).rows).toEqual([{ n: 1 }]);
+      expect((await db().query('select paid_at from public.orders where id=$1', [fx.f.orderId])).rows[0].paid_at).toEqual(fx.paidAt);
+      expect((await db().query('select * from public.verify_stock_integrity() where variant_id=$1', [fx.f.variantIds[0]])).rows).toEqual([]);
+    } finally {
+      await a.query('rollback');
+      if (second) await second.catch(() => {});
+      await b.query('rollback'); await Promise.all([a.end(), b.end()]);
+      await withGroupG1FixtureTransaction(db(), async () => {
+        await db().query(`update public.order_returns set status='cancelled',cancelled_at=now()
+          where id=$1 and status='open'`, [fx.ret.returnId]);
+      });
     }
   });
 

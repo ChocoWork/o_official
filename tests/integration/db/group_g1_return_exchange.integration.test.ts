@@ -244,6 +244,20 @@ describeLocalDb('G-1 return receipt, inspection, amount decision and exchange FI
     expect((await db().query('select count(*)::int n from public.order_return_receipts where return_id=$1', [other.returnId])).rows[0].n).toBe(0);
   });
 
+  test.each(WRITERS)('%s re-reads variants under the common lock before using free stock or FIFO', async signature => {
+    const body = (await db().query('select prosrc from pg_proc where oid=$1::regprocedure', [`private.${signature}`])).rows[0].prosrc as string;
+    const lock = body.indexOf('private.lock_group_g_inventory(');
+    const refreshed = body.indexOf('INTO v_variants', lock);
+    expect(lock).toBeGreaterThan(-1); expect(refreshed).toBeGreaterThan(lock);
+    expect(body.slice(refreshed)).toContain('l.exchange_variant_id');
+    expect(body.slice(refreshed)).toContain('l.requested_exchange_variant_id');
+    for (const consumer of ['INTO v_free_by_variant', 'private.allocate_group_g_fifo(']) {
+      const use = body.indexOf(consumer, lock);
+      if (use !== -1) expect(use).toBeGreaterThan(refreshed);
+    }
+    if (/admin_(close_return_missing|reopen_return)\(/.test(signature)) expect(body).not.toContain('v_middle');
+  });
+
   test('公開は委譲のみ、private本体だけが閉包を取得、refresh/coreは取得済み専用でservice_roleから不可', async () => {
     for (const signature of WRITERS) {
       for (const [schema, definer] of [['public', false], ['private', true]] as const) {
