@@ -27,10 +27,14 @@ function fixtureModel(): TraceModel {
       item('DD-NEWS-001', 'DD', ['API-NEWS-001']),
       item('DD-NEWS-002', 'DD', ['API-NEWS-001']),
       item('DD-NEWS-003', 'DD', ['API-NEWS-001'], { status: '廃止' }),
+      item('DRV-NEWS-001', 'DRV', []),
+      item('API-NEWS-002', 'API', ['DRV-NEWS-001']),
+      item('DD-NEWS-005', 'DD', ['API-NEWS-002']),
     ],
     units: [
       unit('IMPL-NEWS-101', 'src/features/news/services/public.ts', 'fetchPublishedNews', ['DD-NEWS-001']),
       unit(undefined, 'src/app/news/page.tsx', '<file>', []),
+      unit('IMPL-NEWS-105', 'src/lib/storage/news-images.ts', 'sign', ['DD-NEWS-005']),
     ],
     tests: [
       test('FR-NEWS-ALL-001-AC-01', 'e2e', 'e2e/FR-NEWS-ALL-001-a.spec.ts', 6),
@@ -82,6 +86,16 @@ describe('renderMatrix', () => {
   });
 });
 
+describe('renderMatrix の派生要件', () => {
+  const md = renderMatrix(fixtureModel());
+  it('上位の無い派生要件（DRV）を要件の段に載せる', () => {
+    expect(section(md, '## 要求から下へ')).toMatch(/\| （派生要件） \| DRV-NEWS-001 [^|]*\| （なし） \| （なし） \|/);
+  });
+  it('下から上へで、DRV の下の単位は要件の列に DRV を出す', () => {
+    expect(section(md, '## 下から上へ')).toMatch(/\| `src\/lib\/storage\/news-images\.ts` の sign \| IMPL-NEWS-105 \| DD-NEWS-005 \| API-NEWS-002 \| DRV-NEWS-001 \| （なし） \|/);
+  });
+});
+
 describe('keepHandSection', () => {
   const gen = '# t\n\n## 生成\n\nA\n\n## 食い違い\n\n（手書き）\n';
   it('前の版の手書きの節を残す', () => {
@@ -93,6 +107,10 @@ describe('keepHandSection', () => {
     const prev = '## 食い違い\n\n手書き\n\n## 後ろ\n\n古い\n';
     expect(keepHandSection(g, prev, '## 食い違い')).toBe('# t\n\n## 生成\n\nA\n\n## 食い違い\n\n手書き\n\n## 後ろ\n\n新しい\n');
   });
+  it('手書きの節の中に人が書いた ## の見出しでは切らない', () => {
+    const prev = '# t\n\n## 食い違い\n\n- 一つ目\n\n## 人の見出し\n\n- 二つ目\n';
+    expect(keepHandSection(gen, prev, '## 食い違い')).toBe('# t\n\n## 生成\n\nA\n\n## 食い違い\n\n- 一つ目\n\n## 人の見出し\n\n- 二つ目\n');
+  });
   it('前の版が無いか節が無ければ生成のまま', () => {
     expect(keepHandSection(gen, undefined, '## 食い違い')).toBe(gen);
     expect(keepHandSection(gen, '# 古い\n', '## 食い違い')).toBe(gen);
@@ -100,6 +118,25 @@ describe('keepHandSection', () => {
 });
 
 describe('test-gaps', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('parseUncovered は読めない行を標準エラーに警告し、人の書いた ## でも切らない', () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const text = '## 届かない分岐\n\n（なし）\n- `src/a.ts:1` 理由\nsrc/b.ts の 3 行目は届かない\n## 人の見出し\n- `src/c.ts:2` 理由2\n';
+    expect(parseUncovered(text).map((u) => u.file)).toEqual(['src/a.ts', 'src/c.ts']);
+    expect(err.mock.calls.map((c) => String(c[0]))).toEqual([
+      expect.stringContaining('src/b.ts の 3 行目は届かない'),
+      expect.stringContaining('## 人の見出し'),
+    ]);
+  });
+
+  it('自分の出した「届かない分岐」の節では警告しない', () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    parseUncovered(renderTestGaps(fixtureModel(), []));
+    parseUncovered(renderTestGaps(fixtureModel(), [{ file: 'src/a.ts', line: 3, reason: 'r' }]));
+    expect(err).not.toHaveBeenCalled();
+  });
+
   it('parseUncovered は「届かない分岐」の節の file:line と理由を読む', () => {
     const text = '## 試験の足りない項目\n\n- `src/x.ts:1` 違う節\n\n## 届かない分岐\n\n- `src/features/news/services/public.ts:42` 型の上で null にならない。確認: 未\n- src/app/news/page.tsx:7 — Next.js が先に弾く。確認: 済\n';
     expect(parseUncovered(text)).toEqual([

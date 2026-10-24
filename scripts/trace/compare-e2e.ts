@@ -84,6 +84,9 @@ export function main(argv: string[]): number {
   list('前は失敗で後は通過', result.fixed);
   list('前にあり後に無い', result.missing);
   list('後にだけある', result.added);
+  if (result.missing.length > 0) {
+    console.error(`注意: 前にあり後に無いテストが ${result.missing.length} 件ある（名前の対応が付かなかったか、後で流していない）。終了コードには数えない`);
+  }
   return result.regressions.length + result.newFailures.length > 0 ? 1 : 0;
 }
 

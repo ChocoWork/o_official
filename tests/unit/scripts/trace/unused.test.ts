@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { TraceItem } from '@/../scripts/trace/model';
 import type { CodeUnit } from '@/../scripts/trace/parse-code';
 import type { TraceModel } from '@/../scripts/trace/rules';
-import { findUnused, renderUnused, type UnusedCandidate } from '@/../scripts/trace/unused';
+import { findUnused, renderUnused, seedNotes, type UnusedCandidate } from '@/../scripts/trace/unused';
 
 let root: string;
 function put(rel: string, text: string): void {
@@ -23,15 +23,25 @@ const unit = (file: string, symbol: string, designIds: string[] = []): CodeUnit 
 
 function model(): TraceModel {
   return {
-    items: [item('FREQ-31', 'REQUEST', []), item('FR-NEWS-ALL-001', 'REQ', ['FREQ-31']), item('API-NEWS-001', 'API', ['FR-NEWS-ALL-001']), item('DD-NEWS-001', 'DD', ['API-NEWS-001'])],
+    items: [
+      item('FREQ-31', 'REQUEST', []), item('FR-NEWS-ALL-001', 'REQ', ['FREQ-31']), item('API-NEWS-001', 'API', ['FR-NEWS-ALL-001']), item('DD-NEWS-001', 'DD', ['API-NEWS-001']),
+      // 上位が範囲外の構造設計だけの DD と、範囲外の ID を（範囲外）の印なしで上位に書いた DD。
+      { ...item('DD-NEWS-010', 'DD', []), outOfScopeParents: ['ARC-COMMON-001'] },
+      item('DD-NEWS-011', 'DD', ['API-HOME-001']),
+      item('DRV-NEWS-001', 'DRV', []), item('API-NEWS-002', 'API', ['DRV-NEWS-001']), item('DD-NEWS-012', 'DD', ['API-NEWS-002']),
+    ],
     units: [
       unit('src/app/news/page.tsx', '<file>', ['DD-NEWS-001']),
       unit('src/lib/news-data.ts', 'used', ['DD-NEWS-001']),
       unit('src/lib/news-data.ts', 'unusedExport', ['DD-NEWS-001']),
       unit('src/lib/news-data.ts', 'orphan', ['DD-NEWS-999']),
+      unit('src/lib/news-data.ts', 'viaCommon', ['DD-NEWS-010']),
+      unit('src/lib/news-data.ts', 'otherArea', ['DD-HOME-001']),
+      unit('src/lib/news-data.ts', 'viaHomeApi', ['DD-NEWS-011']),
+      unit('src/lib/news-data.ts', 'derived', ['DD-NEWS-012']),
     ],
     tests: [],
-    knownIdsOutsideScope: new Set(),
+    knownIdsOutsideScope: new Set(['DD-HOME-001', 'API-HOME-001']),
   };
 }
 
@@ -55,6 +65,7 @@ beforeEach(() => {
   put('docs/05_Quality/reports/unused-code.md', 'lib/dead\n');
   put('docs/superpowers/plans/p.md', 'lib/dead\n');
 });
+afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
 const keyOf = (c: UnusedCandidate) => `${c.file}|${c.symbol}|${c.finding}|${c.inScope ? 'in' : 'out'}`;
 
@@ -90,6 +101,27 @@ describe('findUnused', () => {
     expect(dead?.impact).not.toContain('superpowers');
     put('scripts/odd.js', "const x = 'src/lib/dead.ts';\n");
     expect(findUnused(root, model()).find((c) => c.file === 'src/lib/dead.ts')?.how).toContain('ほかのファイルに 1 件（scripts/odd.js）');
+  });
+
+  it('上へのつながりが範囲外へ出る単位は、届かないと決めつけずに載せない', () => {
+    const symbols = findUnused(root, model()).filter((c) => c.finding === '要件につながらない').map((c) => c.symbol);
+    // 範囲外の ARC-COMMON-001 の下・別の領域の DD・範囲外の API の下は載せない。DRV の下はつながっている。
+    expect(symbols).not.toContain('viaCommon');
+    expect(symbols).not.toContain('otherArea');
+    expect(symbols).not.toContain('viaHomeApi');
+    expect(symbols).not.toContain('derived');
+    expect(symbols).toEqual(['orphan']);
+  });
+
+  it('seedNotes: 最初の候補が参照されるようになった・無くなった時に知らせる', () => {
+    put('src/components/ContactSection.tsx', 'export function C() { return null; }\n');
+    put('src/app/x/page.tsx', "import { C } from '@/components/ContactSection';\nexport default C;\n");
+    put('src/lib/cache/redis-cache.ts', 'export const r = 1;\n');
+    const notes = seedNotes(findUnused(root, model()), root);
+    expect(notes).toEqual([
+      expect.stringContaining('src/components/ContactSection.tsx は今は参照されている'),
+      expect.stringContaining('src/utils/supabase/server.ts が見つからない'),
+    ]);
   });
 
   it('範囲外のファイルの export は調べない', () => {

@@ -59,7 +59,24 @@ describe('main', () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
   });
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => {
+    jest.restoreAllMocks();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('前にあり後に無いテストがあれば標準エラーに警告する', () => {
+    const before = write('before.json', [spec('公開日の新しい順', 'expected'), spec('消えた', 'expected', 9)]);
+    const after = write('after.json', [spec('FR-NEWS-ALL-001-AC-01 公開日の新しい順', 'expected')]);
+    expect(main([before, after])).toBe(0);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('前にあり後に無いテストが 2 件'));
+  });
+
+  it('前にあり後に無いテストが無ければ警告しない', () => {
+    const before = write('before.json', [spec('公開日の新しい順', 'expected')]);
+    const after = write('after.json', [spec('FR-NEWS-ALL-001-AC-01 公開日の新しい順', 'expected')]);
+    main([before, after]);
+    expect(console.error).not.toHaveBeenCalled();
+  });
 
   it('名前に ID を足しただけで通り続けていれば 0', () => {
     const before = write('before.json', [spec('公開日の新しい順', 'expected')]);

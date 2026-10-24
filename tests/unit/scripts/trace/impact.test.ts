@@ -1,5 +1,5 @@
 /** @jest-environment node */
-import { impactOf } from '@/../scripts/trace/impact';
+import { impactOf, startOf } from '@/../scripts/trace/impact';
 import type { TraceItem } from '@/../scripts/trace/model';
 import type { CodeUnit } from '@/../scripts/trace/parse-code';
 import type { TestRef } from '@/../scripts/trace/parse-tests';
@@ -24,17 +24,24 @@ function fixtureModel(): TraceModel {
       item('API-NEWS-001', 'API', ['FR-NEWS-ALL-001']),
       item('DD-NEWS-001', 'DD', ['API-NEWS-001']),
       item('DD-NEWS-002', 'DD', ['API-NEWS-001']),
+      item('DRV-NEWS-001', 'DRV', []),
+      item('DRV-NEWS-001-AC-01', 'AC', ['DRV-NEWS-001']),
+      item('API-NEWS-002', 'API', ['DRV-NEWS-001']),
+      item('DD-NEWS-004', 'DD', ['API-NEWS-002']),
+      item('SR-NEWS-009', 'REQUEST', []),
     ],
     units: [
       unit('IMPL-NEWS-101', 'src/features/news/services/public.ts', 'fetchPublishedNews', ['DD-NEWS-001']),
       unit('IMPL-NEWS-102', 'src/app/api/news/route.ts', '<file>', ['DD-NEWS-001']),
       unit('IMPL-NEWS-103', 'src/lib/news-data.ts', 'other', ['DD-NEWS-002']),
+      unit('IMPL-NEWS-104', 'src/lib/storage/news-images.ts', 'sign', ['DD-NEWS-004']),
     ],
     tests: [
       test('FR-NEWS-ALL-001-AC-01', 'e2e', 'e2e/FR-NEWS-ALL-001-a.spec.ts'),
       test('API-NEWS-001', 'integration', 'tests/integration/news.test.ts'),
       test('DD-NEWS-001', 'unit', 'tests/unit/news.test.ts'),
       test('DD-NEWS-002', 'unit', 'tests/unit/news-data.test.ts'),
+      test('DRV-NEWS-001-AC-01', 'e2e', 'e2e/drv.spec.ts'),
     ],
     knownIdsOutsideScope: new Set(),
   };
@@ -72,6 +79,18 @@ describe('impactOf', () => {
 
   it('ファイルの場所は \\ 区切りと ./ 始まりでも引ける', () => {
     expect(impactOf(fixtureModel(), '.\\src\\app\\api\\news\\route.ts').units.map((u) => u.implId)).toEqual(['IMPL-NEWS-102']);
+  });
+
+  it('派生要件（DRV）の下の単位からは DRV までたどり、DRV の受け入れ条件の E2E も出す', () => {
+    const r = impactOf(fixtureModel(), 'IMPL-NEWS-104');
+    expect(r.upstream.map((i) => i.id)).toEqual(['DD-NEWS-004', 'API-NEWS-002', 'DRV-NEWS-001']);
+    expect(r.tests.map((t) => t.id)).toEqual(['DRV-NEWS-001-AC-01']);
+  });
+
+  it('つながりの無い項目も対象として見つかる（startOf）', () => {
+    expect(startOf(fixtureModel(), 'SR-NEWS-009').items.map((i) => i.id)).toEqual(['SR-NEWS-009']);
+    expect(impactOf(fixtureModel(), 'SR-NEWS-009').upstream).toEqual([]);
+    expect(startOf(fixtureModel(), 'IMPL-NEWS-999')).toEqual({ items: [], units: [] });
   });
 
   it('見つからなければ全部空', () => {

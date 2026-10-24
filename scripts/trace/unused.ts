@@ -127,6 +127,7 @@ const listSome = (files: string[]) => (files.length <= 3 ? files.join('、') : `
 /**
  * 参照なし: src/ のファイルで、src/・tests/・e2e/・scripts/・直下の設定のどこからも指されない物（Next.js の決まった名前を除く）と、
  * 範囲内のファイルの export で、どこからも import されない物。要件につながらない: 範囲内の単位で、@design の先から上へたどっても要件に届かない物。
+ * たどる途中で範囲外の ID（（範囲外）の上位、または範囲内に無く knownIdsOutsideScope にある ID）に出た単位は、その先を追えないので載せない。
  * 範囲内かどうかは model の単位のファイルで決める（単位の無いファイルは範囲外とみなす）。
  */
 export function findUnused(root: string, model: TraceModel): UnusedCandidate[] {
@@ -192,7 +193,10 @@ export function findUnused(root: string, model: TraceModel): UnusedCandidate[] {
   for (const u of model.units) {
     const chain = ancestorsOf(model, u.designIds);
     const reaches = chain.some((i) => isRequirement(i.kind) || i.outOfScopeParents.some((p) => isRequirement(kindOf(p))));
-    if (reaches) continue;
+    // 範囲外へ出た先は追えないので、届かないとは言わない（載せない）。
+    const outside = (id: string) => !byId.has(id) && model.knownIdsOutsideScope.has(id);
+    const leavesScope = u.designIds.some(outside) || chain.some((i) => i.outOfScopeParents.length > 0 || i.parents.some(outside));
+    if (reaches || leavesScope) continue;
     const file = u.file.replace(/\\/g, '/');
     const refs = [...new Set((usedBy.get(file) ?? []).map((r) => r.from))];
     const missing = u.designIds.filter((d) => !byId.has(d));
@@ -204,6 +208,24 @@ export function findUnused(root: string, model: TraceModel): UnusedCandidate[] {
     });
   }
   return out.sort((a, b) => Number(b.inScope) - Number(a.inScope) || a.file.localeCompare(b.file) || a.symbol.localeCompare(b.symbol));
+}
+
+/** 2026-10-24 の調査で参照が無かった物（設計 8）。事実として載せるのではなく、生成のたびに調べ直した結果と比べる。 */
+export const SEEDED = ['src/components/ContactSection.tsx', 'src/lib/cache', 'src/utils/supabase/server.ts'];
+
+/** 最初の候補が今の「参照なし」の一覧に無い時の知らせ（黙って消えないように）。 */
+export function seedNotes(list: UnusedCandidate[], root: string): string[] {
+  const notes: string[] = [];
+  for (const seed of SEEDED) {
+    const listed = list.some((c) => c.finding === '参照なし' && c.symbol === '<file>' && (c.file === seed || c.file.startsWith(`${seed}/`)));
+    if (listed) continue;
+    notes.push(
+      fs.existsSync(path.join(root, seed))
+        ? `注意: 最初の候補 ${seed} は今は参照されている（一覧から外した）`
+        : `注意: 最初の候補 ${seed} が見つからない（消されたか移された）`,
+    );
+  }
+  return notes;
 }
 
 const HEADER = ['場所', '記号', '見つけ方', '確かめた方法', '消した時の影響', '範囲', '判断'];

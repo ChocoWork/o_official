@@ -3,7 +3,7 @@
 // 設計: docs/superpowers/specs/2026-10-24-traceability-design.md の 7。
 
 import { loadModel, loadScope } from './load';
-import type { TraceItem } from './model';
+import type { TraceItem, TraceKind } from './model';
 import type { CodeUnit } from './parse-code';
 import type { TestRef } from './parse-tests';
 import type { TraceModel } from './rules';
@@ -45,14 +45,24 @@ function descendantsOf(model: TraceModel, startIds: string[]): TraceItem[] {
   return out;
 }
 
+/** target に当たる項目と単位（項目の ID・単位の IMPL ID・文書かコードのファイルの場所）。 */
+export function startOf(model: TraceModel, target: string): { items: TraceItem[]; units: CodeUnit[] } {
+  const where = normalize(target);
+  return {
+    items: model.items.filter((i) => i.id === target || normalize(i.file) === where),
+    units: model.units.filter((u) => u.implId === target || normalize(u.file) === where),
+  };
+}
+
+/** 要件の段の種類。上にあれば、その受け入れ条件の E2E も影響を受けるとみなす。 */
+const REQUIREMENT_LEVEL: readonly TraceKind[] = ['REQ', 'SEC', 'DRV'];
+
 /**
- * target は項目の ID・単位の IMPL ID・ファイルの場所（文書かコード）のどれか。
- * テストは、たどった項目と、上の要件・セキュリティ要件の受け入れ条件を指す物（要件の振る舞いを確かめるため）。
+ * target は startOf と同じ。
+ * テストは、たどった項目と、上の要件・セキュリティ要件・派生要件の受け入れ条件を指す物（要件の振る舞いを確かめるため）。
  */
 export function impactOf(model: TraceModel, target: string): Impact {
-  const where = normalize(target);
-  const startItems = model.items.filter((i) => i.id === target || normalize(i.file) === where);
-  const startUnits = model.units.filter((u) => u.implId === target || normalize(u.file) === where);
+  const { items: startItems, units: startUnits } = startOf(model, target);
   const startIds = startItems.map((i) => i.id);
 
   const upstream = ancestorsOf(model, [...startItems.flatMap((i) => i.parents), ...startUnits.flatMap((u) => u.designIds)])
@@ -65,7 +75,7 @@ export function impactOf(model: TraceModel, target: string): Impact {
   const siblings = model.units.filter((u) => !units.includes(u) && u.designIds.some((d) => sharedDesigns.has(d)));
 
   const chain = new Set([...below, ...upstream.map((i) => i.id)]);
-  const upperReqs = new Set(upstream.filter((i) => i.kind === 'REQ' || i.kind === 'SEC').map((i) => i.id));
+  const upperReqs = new Set(upstream.filter((i) => REQUIREMENT_LEVEL.includes(i.kind)).map((i) => i.id));
   for (const ac of model.items) {
     if (ac.kind === 'AC' && ac.parents.some((p) => upperReqs.has(p))) chain.add(ac.id);
   }
@@ -87,12 +97,15 @@ function main(argv: string[]): number {
     console.error('使い方: npm run trace -- <ID かファイルの場所>');
     return 2;
   }
-  const r = impactOf(loadModel(loadScope()), target);
-  if (r.upstream.length + r.downstream.length + r.units.length + r.tests.length === 0) {
-    console.error(`${target} は scope.json の範囲の文書・コード・テストに見つからない`);
+  const model = loadModel(loadScope());
+  const start = startOf(model, target);
+  if (start.items.length + start.units.length === 0) {
+    console.error(`${target} は scope.json の範囲の文書・コードに見つからない`);
     return 1;
   }
+  const r = impactOf(model, target);
   console.log(`対象: ${target}`);
+  print('対象の項目', start.items.map(itemLine));
   print('上（要求まで）', r.upstream.map(itemLine));
   print('下', r.downstream.map(itemLine));
   print('コードの単位', r.units.map(unitLine));

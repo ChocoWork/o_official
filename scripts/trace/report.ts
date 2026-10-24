@@ -11,7 +11,7 @@ import { kindOf, type TraceItem, type TraceKind } from './model';
 import type { CodeUnit } from './parse-code';
 import type { TestLevel, TestRef } from './parse-tests';
 import type { TraceModel } from './rules';
-import { findUnused, renderUnused } from './unused';
+import { findUnused, renderUnused, seedNotes } from './unused';
 
 export interface UncoveredBranch { file: string; line: number; reason: string }
 
@@ -19,6 +19,10 @@ const STRUCT: readonly TraceKind[] = ['ARC', 'SCR', 'FLOW', 'STATE', 'API', 'DAT
 const NONE = '（なし）';
 const MISMATCH = '## 食い違い';
 const UNCOVERED = '## 届かない分岐';
+const GAPS = '## 試験の足りない項目';
+const UNTAGGED = '## 名前に ID の無い試験';
+const UNCOVERED_NOTE = '手書きの節。分岐の網羅で届かない所を、1行に1件「- `場所:行` 理由。確認: 未」の形で書く。生成し直しても残る。';
+const DERIVED = '（派生要件）';
 
 const cell = (s: string) => s.replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
 const row = (cells: string[]) => `| ${cells.map(cell).join(' | ')} |`;
@@ -55,10 +59,10 @@ function requirementRows(model: TraceModel): string[][] {
     if (reqs.length === 0) rows.push([named(top), NONE, NONE, NONE]);
     for (const req of reqs) addRequirement(named(top), req);
   }
-  // 範囲内の要求・脅威につながらない要件（範囲外の要求の下・上位なし）。
-  for (const req of live.filter((i) => (i.kind === 'REQ' || i.kind === 'SEC') && !shown.has(i.id))) {
+  // 範囲内の要求・脅威につながらない要件（範囲外の要求の下・上位なし）と、上位を持たない派生要件。
+  for (const req of live.filter((i) => (i.kind === 'REQ' || i.kind === 'SEC' || i.kind === 'DRV') && !shown.has(i.id))) {
     const tops = [...req.parents.filter((p) => !byId.has(p)), ...req.outOfScopeParents].map((p) => `${p}（範囲外）`);
-    addRequirement(or(tops), req);
+    addRequirement(req.kind === 'DRV' && tops.length === 0 ? DERIVED : or(tops), req);
   }
   return rows;
 }
@@ -130,27 +134,30 @@ export function renderTestGaps(model: TraceModel, uncovered: UncoveredBranch[]):
   );
   const untagged = model.tests.filter((t: TestRef) => t.id === null).map((t) => [t.level, where(t), t.title]);
   return [
-    '## 試験の足りない項目',
+    GAPS,
     '',
     gaps.length > 0 ? table(['項目', '足りない試験', '場所'], gaps) : `${NONE}\n`,
-    '## 名前に ID の無い試験',
+    UNTAGGED,
     '',
     untagged.length > 0 ? table(['段', '場所', '名前'], untagged) : `${NONE}\n`,
     UNCOVERED,
     '',
-    '手書きの節。分岐の網羅で届かない所を、1行に1件「- `場所:行` 理由。確認: 未」の形で書く。生成し直しても残る。',
+    UNCOVERED_NOTE,
     '',
     ...(uncovered.length > 0 ? uncovered.map((u) => `- ${where(u)} ${u.reason}`) : [NONE]),
     '',
   ].join('\n');
 }
 
-/** 見出し（`## …`）の行から、次の `## ` の手前までの範囲。無ければ null。 */
-function sectionOf(text: string, heading: string): { start: number; end: number } | null {
+/**
+ * 見出しの行から、次の生成の見出し（stops のどれか）の手前までの範囲。無ければ null。
+ * 手書きの節の中に人が書いた `## ` では切らない。
+ */
+function sectionOf(text: string, heading: string, stops: readonly string[]): { start: number; end: number } | null {
   const lines = text.split('\n');
   const at = lines.findIndex((l) => l.trimEnd() === heading);
   if (at < 0) return null;
-  const next = lines.findIndex((l, i) => i > at && l.startsWith('## '));
+  const next = lines.findIndex((l, i) => i > at && stops.includes(l.trimEnd()));
   const offset = (n: number) => lines.slice(0, n).reduce((sum, l) => sum + l.length + 1, 0);
   return { start: offset(at), end: next < 0 ? text.length : offset(next) };
 }
@@ -158,12 +165,16 @@ function sectionOf(text: string, heading: string): { start: number; end: number 
 /** 「届かない分岐」の節の「- `file:line` 理由」を読む。 */
 export function parseUncovered(text: string): UncoveredBranch[] {
   const normalized = text.replace(/\r\n/g, '\n');
-  const range = sectionOf(normalized, UNCOVERED);
+  const range = sectionOf(normalized, UNCOVERED, [GAPS, UNTAGGED]);
   if (!range) return [];
   const out: UncoveredBranch[] = [];
-  for (const line of normalized.slice(range.start, range.end).split('\n')) {
+  // 1行目は見出し。
+  for (const line of normalized.slice(range.start, range.end).split('\n').slice(1)) {
     const m = /^\s*[-*]\s+`?([^`\s]+?):(\d+)`?\s*(?:[—–-]\s*)?(.*)$/.exec(line);
     if (m) out.push({ file: m[1], line: Number(m[2]), reason: m[3].trim() });
+    else if (!['', UNCOVERED_NOTE, NONE].includes(line.trim())) {
+      console.error(`警告: 「届かない分岐」の節の次の行を読めない（生成し直すと消える）: ${line}`);
+    }
   }
   return out;
 }
@@ -171,8 +182,10 @@ export function parseUncovered(text: string): UncoveredBranch[] {
 /** generated の heading の節を、previous に同じ節があればその中身に差し替える。 */
 export function keepHandSection(generated: string, previous: string | undefined, heading: string): string {
   const prev = previous?.replace(/\r\n/g, '\n');
-  const from = prev ? sectionOf(prev, heading) : null;
-  const to = sectionOf(generated, heading);
+  // 生成が出す見出しだけで切る（前の版の中の、人が書いた見出しでは切らない）。
+  const stops = generated.split('\n').filter((l) => l.startsWith('## ') && l.trimEnd() !== heading).map((l) => l.trimEnd());
+  const from = prev ? sectionOf(prev, heading, stops) : null;
+  const to = sectionOf(generated, heading, stops);
   if (!prev || !from || !to) return generated;
   const rest = generated.slice(to.end);
   return generated.slice(0, to.start) + prev.slice(from.start, from.end).trimEnd() + '\n' + (rest ? '\n' : '') + rest;
@@ -208,6 +221,8 @@ function main(argv: string[]): number {
     ['test-gaps.md', head('試験の穴', '「届かない分岐」の節だけは手で書き、生成し直しても残る') + renderTestGaps(model, parseUncovered(previous('test-gaps.md') ?? ''))],
     ['unused-code.md', head('使われていないコードの候補', '「判断」の列だけはユーザーが書き、生成し直しても残る。候補は消さずに載せる') + renderUnused(unused, previous('unused-code.md'))],
   ];
+  for (const note of seedNotes(unused, root)) console.error(note);
+  fs.mkdirSync(path.join(root, REPORTS), { recursive: true });
   for (const [name, text] of outputs) {
     fs.writeFileSync(path.join(root, REPORTS, name), text);
     console.log(`${REPORTS}/${name} を書いた`);
