@@ -2,7 +2,7 @@
 import type { TraceItem } from '@/../scripts/trace/model';
 import type { CodeUnit } from '@/../scripts/trace/parse-code';
 import type { TestRef } from '@/../scripts/trace/parse-tests';
-import { keepHandSection, parseUncovered, renderMatrix, renderTestGaps } from '@/../scripts/trace/report';
+import { keepHandSection, parseUncovered, renderHead, renderMatrix, renderTestGaps } from '@/../scripts/trace/report';
 import type { TraceModel } from '@/../scripts/trace/rules';
 
 const item = (id: string, kind: TraceItem['kind'], parents: string[], o: Partial<TraceItem> = {}): TraceItem => ({
@@ -155,5 +155,18 @@ describe('test-gaps', () => {
     expect(gaps).not.toContain('DD-NEWS-003');
     expect(section(md, '## 名前に ID の無い試験')).toContain('`e2e/FR-NEWS-DETAIL-001-b.spec.ts:9`');
     expect(parseUncovered(md)).toEqual(uncovered);
+  });
+});
+
+describe('renderHead', () => {
+  const head = renderHead('追跡の一覧', '一覧の説明。', '「食い違い」の節だけは手で書く', ['NEWS', 'LOOK'], '2026-10-24');
+
+  it('題・メタの行・「## 概要」の節をこの順に出す（validate-docs が概要の節を要る）', () => {
+    expect(head).toMatch(/^# 追跡の一覧\n\n> 状態: 自動生成 \| 生成日: 2026-10-24 \| 対象: NEWS・LOOK\n\n## 概要\n\n一覧の説明。\n\n/);
+    expect(head).toMatch(/^## 概要\s*$/m);
+  });
+
+  it('手で直さない旨を概要の後に書く', () => {
+    expect(head).toContain('`npm run trace:report` が作る。手で直さない（「食い違い」の節だけは手で書く）。');
   });
 });

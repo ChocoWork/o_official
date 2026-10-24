@@ -191,6 +191,15 @@ export function keepHandSection(generated: string, previous: string | undefined,
   return generated.slice(0, to.start) + prev.slice(from.start, from.end).trimEnd() + '\n' + (rest ? '\n' : '') + rest;
 }
 
+/** 生成物の先頭（題・メタの行・概要）。概要の節が無いと validate-docs が落ちる。 */
+export function renderHead(title: string, summary: string, hand: string, areas: string[], date: string): string {
+  return (
+    `# ${title}\n\n> 状態: 自動生成 | 生成日: ${date} | 対象: ${areas.join('・')}\n\n` +
+    `## 概要\n\n${summary}\n\n` +
+    `\`npm run trace:report\` が作る。手で直さない（${hand}）。\n\n`
+  );
+}
+
 const REPORTS = 'docs/05_Quality/reports';
 
 function today(): string {
@@ -208,18 +217,17 @@ function main(argv: string[]): number {
   const areas = argv.length > 0 ? all.filter((a) => argv.includes(a.area)) : all;
   const root = process.cwd();
   const model = loadModel(areas, root);
-  const head = (title: string, hand: string) =>
-    `# ${title}\n\n> 状態: 自動生成 | 生成日: ${today()} | 対象: ${areas.map((a) => a.area).join('・')}\n\n` +
-    `\`npm run trace:report\` が作る。手で直さない（${hand}）。\n\n`;
+  const head = (title: string, summary: string, hand: string) =>
+    renderHead(title, summary, hand, areas.map((a) => a.area), today());
   const previous = (name: string) => {
     const file = path.join(root, REPORTS, name);
     return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n') : undefined;
   };
   const unused = findUnused(root, model);
   const outputs: [string, string][] = [
-    ['trace-matrix.md', keepHandSection(head('追跡の一覧', '「食い違い」の節だけは手で書き、生成し直しても残る') + renderMatrix(model), previous('trace-matrix.md'), MISMATCH)],
-    ['test-gaps.md', head('試験の穴', '「届かない分岐」の節だけは手で書き、生成し直しても残る') + renderTestGaps(model, parseUncovered(previous('test-gaps.md') ?? ''))],
-    ['unused-code.md', head('使われていないコードの候補', '「判断」の列だけはユーザーが書き、生成し直しても残る。候補は消さずに載せる') + renderUnused(unused, previous('unused-code.md'))],
+    ['trace-matrix.md', keepHandSection(head('追跡の一覧', '要求から受け入れ条件・E2E・構造設計・詳細設計・コードの単位・単体テストまでのつながりを、上から下と下から上の両方で並べた表。', '「食い違い」の節だけは手で書き、生成し直しても残る') + renderMatrix(model), previous('trace-matrix.md'), MISMATCH)],
+    ['test-gaps.md', head('試験の穴', '試験が足りない項目、名前に ID の無い試験、分岐の網羅で届かない所を並べた表。', '「届かない分岐」の節だけは手で書き、生成し直しても残る') + renderTestGaps(model, parseUncovered(previous('test-gaps.md') ?? ''))],
+    ['unused-code.md', head('使われていないコードの候補', 'どこからも呼ばれていないコードの候補と、残すか消すかの判断。', '「判断」の列だけはユーザーが書き、生成し直しても残る。候補は消さずに載せる') + renderUnused(unused, previous('unused-code.md'))],
   ];
   for (const note of seedNotes(unused, root)) console.error(note);
   fs.mkdirSync(path.join(root, REPORTS), { recursive: true });

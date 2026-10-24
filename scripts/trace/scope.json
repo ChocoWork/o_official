@@ -5,7 +5,7 @@
       "docs/02_Requirements/areas/news.md",
       "docs/05_Quality/security/threats/news.md",
       "docs/03_BasicDesign/areas/news.md",
-      "docs/03_BasicDesign/decisions/*.md",
+      "docs/03_BasicDesign/decisions/ADR-00*.md",
       "docs/04_DetailDesign/pages/02_news_list.md",
       "docs/04_DetailDesign/pages/03_news_detail.md",
       "docs/04_DetailDesign/pages/16-1_admin_news.md"
@@ -29,6 +29,265 @@
       "tests/unit/**/news/**/*.test.{ts,tsx}",
       "tests/integration/**/news/**/*.test.{ts,tsx}"
     ],
-    "e2e": ["e2e/FR-NEWS-*.spec.ts"]
+    "e2e": [
+      "e2e/FR-NEWS-*.spec.ts"
+    ]
+  },
+  {
+    "area": "HOME",
+    "docs": [
+      "docs/02_Requirements/areas/home.md",
+      "docs/05_Quality/security/threats/home.md",
+      "docs/03_BasicDesign/areas/home.md",
+      "docs/03_BasicDesign/decisions/ADR-01[0-4]*.md",
+      "docs/04_DetailDesign/pages/01_home.md"
+    ],
+    "src": [
+      "src/app/page.tsx",
+      "src/features/home/**/*.{ts,tsx}",
+      "src/components/animations/TextReveal.tsx"
+    ],
+    "tests": [
+      "tests/unit/**/*home-page*.test.{ts,tsx}",
+      "tests/unit/**/*home-section*.test.{ts,tsx}",
+      "tests/unit/**/*HomePage*.test.{ts,tsx}",
+      "tests/unit/**/*HomeSection*.test.{ts,tsx}",
+      "tests/unit/**/*text-reveal*.test.{ts,tsx}",
+      "tests/unit/**/*TextReveal*.test.{ts,tsx}",
+      "tests/unit/**/home/**/*.test.{ts,tsx}",
+      "tests/integration/**/*home-page*.test.{ts,tsx}",
+      "tests/integration/**/home/**/*.test.{ts,tsx}"
+    ],
+    "e2e": [
+      "e2e/FR-HOME-00*.spec.ts",
+      "e2e/FR-HOME-012-*.spec.ts",
+      "e2e/FR-HOME-013-*.spec.ts",
+      "e2e/FR-HOME-017-*.spec.ts",
+      "e2e/FR-HOME-018-*.spec.ts",
+      "e2e/FR-HOME-019-*.spec.ts",
+      "e2e/FR-HOME-02*.spec.ts",
+      "e2e/NFR-HOME-*.spec.ts"
+    ]
+  },
+  {
+    "area": "LOOK",
+    "docs": [
+      "docs/02_Requirements/areas/look.md",
+      "docs/05_Quality/security/threats/look.md",
+      "docs/03_BasicDesign/areas/look.md",
+      "docs/03_BasicDesign/decisions/ADR-01[5-9]*.md",
+      "docs/04_DetailDesign/pages/06_look_list.md",
+      "docs/04_DetailDesign/pages/07_look_detail.md",
+      "docs/04_DetailDesign/pages/16-3_admin_look.md"
+    ],
+    "src": [
+      "src/app/look/**/*.{ts,tsx}",
+      "src/app/api/admin/looks/**/*.ts",
+      "src/app/admin/look/create/page.tsx",
+      "src/app/admin/look/edit/**/*.tsx",
+      "src/app/admin/look/types.ts",
+      "src/components/LookSection.tsx",
+      "src/features/look/**/*.{ts,tsx}",
+      "src/lib/look/**/*.ts",
+      "src/lib/storage/look-images.ts"
+    ],
+    "tests": [
+      "tests/unit/**/*look*.test.{ts,tsx}",
+      "tests/unit/**/*Look*.test.{ts,tsx}",
+      "tests/integration/**/*look*.test.{ts,tsx}",
+      "tests/unit/**/look/**/*.test.{ts,tsx}",
+      "tests/integration/**/look/**/*.test.{ts,tsx}",
+      "tests/features/look/**/*.test.{ts,tsx}"
+    ],
+    "e2e": [
+      "e2e/FR-LOOK-*.spec.ts"
+    ]
+  },
+  {
+    "area": "ABOUT",
+    "docs": [
+      "docs/02_Requirements/areas/about.md",
+      "docs/05_Quality/security/threats/about.md",
+      "docs/03_BasicDesign/areas/about.md",
+      "docs/03_BasicDesign/decisions/ADR-02[0-4]*.md",
+      "docs/04_DetailDesign/pages/08_about.md"
+    ],
+    "src": [
+      "src/app/about/**/*.{ts,tsx}"
+    ],
+    "tests": [
+      "tests/unit/**/*about*.test.{ts,tsx}",
+      "tests/unit/**/*About*.test.{ts,tsx}",
+      "tests/integration/**/*about*.test.{ts,tsx}",
+      "tests/unit/**/about/**/*.test.{ts,tsx}",
+      "tests/integration/**/about/**/*.test.{ts,tsx}"
+    ],
+    "e2e": [
+      "e2e/FR-ABOUT-*.spec.ts"
+    ]
+  },
+  {
+    "area": "STOCKIST",
+    "docs": [
+      "docs/02_Requirements/areas/stockist.md",
+      "docs/05_Quality/security/threats/stockist.md",
+      "docs/03_BasicDesign/areas/stockist.md",
+      "docs/03_BasicDesign/decisions/ADR-02[5-9]*.md",
+      "docs/04_DetailDesign/pages/10_stockist.md",
+      "docs/04_DetailDesign/pages/16-4_admin_stockist.md"
+    ],
+    "src": [
+      "src/app/stockist/**/*.{ts,tsx}",
+      "src/app/admin/stockist/**/*.{ts,tsx}",
+      "src/app/api/admin/stockists/**/*.ts",
+      "src/components/StockistSection.tsx",
+      "src/features/stockist/**/*.{ts,tsx}"
+    ],
+    "tests": [
+      "tests/unit/**/*stockist*.test.{ts,tsx}",
+      "tests/unit/**/*Stockist*.test.{ts,tsx}",
+      "tests/integration/**/*stockist*.test.{ts,tsx}",
+      "tests/unit/**/stockist/**/*.test.{ts,tsx}",
+      "tests/integration/**/stockist/**/*.test.{ts,tsx}"
+    ],
+    "e2e": [
+      "e2e/FR-STOCKIST-*.spec.ts"
+    ]
+  },
+  {
+    "area": "SEARCH",
+    "docs": [
+      "docs/02_Requirements/areas/search.md",
+      "docs/05_Quality/security/threats/search.md",
+      "docs/03_BasicDesign/areas/search.md",
+      "docs/03_BasicDesign/decisions/ADR-03[0-4]*.md",
+      "docs/04_DetailDesign/pages/19_search.md"
+    ],
+    "src": [
+      "src/app/search/**/*.{ts,tsx}",
+      "src/app/api/search/**/*.ts",
+      "src/app/api/suggest/**/*.ts",
+      "src/features/search/**/*.{ts,tsx}"
+    ],
+    "tests": [
+      "tests/unit/**/search-*.test.{ts,tsx}",
+      "tests/unit/**/suggest-*.test.{ts,tsx}",
+      "tests/unit/**/SearchPage*.test.{ts,tsx}",
+      "tests/unit/**/SearchHome*.test.{ts,tsx}",
+      "tests/unit/**/search/**/*.test.{ts,tsx}",
+      "tests/integration/**/search-*.test.{ts,tsx}",
+      "tests/integration/**/suggest-*.test.{ts,tsx}",
+      "tests/integration/**/search/**/*.test.{ts,tsx}"
+    ],
+    "e2e": [
+      "e2e/FR-SEARCH-*.spec.ts"
+    ]
+  },
+  {
+    "area": "PRIVACY",
+    "docs": [
+      "docs/02_Requirements/areas/privacy.md",
+      "docs/05_Quality/security/threats/privacy.md",
+      "docs/03_BasicDesign/areas/privacy.md",
+      "docs/03_BasicDesign/decisions/ADR-03[5-9]*.md",
+      "docs/04_DetailDesign/pages/17-1_privacy.md"
+    ],
+    "src": [
+      "src/app/privacy/**/*.{ts,tsx}"
+    ],
+    "tests": [
+      "tests/unit/**/*privacy*.test.{ts,tsx}",
+      "tests/unit/**/*Privacy*.test.{ts,tsx}",
+      "tests/integration/**/*privacy*.test.{ts,tsx}",
+      "tests/unit/**/privacy/**/*.test.{ts,tsx}",
+      "tests/integration/**/privacy/**/*.test.{ts,tsx}"
+    ],
+    "e2e": [
+      "e2e/FR-PRIVACY-*.spec.ts"
+    ]
+  },
+  {
+    "area": "AUTH",
+    "docs": [
+      "docs/02_Requirements/areas/auth.md",
+      "docs/05_Quality/security/threats/auth.md",
+      "docs/03_BasicDesign/areas/auth.md",
+      "docs/03_BasicDesign/decisions/ADR-04[0-4]*.md",
+      "docs/04_DetailDesign/pages/14_login.md",
+      "docs/04_DetailDesign/sequence/auth-*.md"
+    ],
+    "src": [
+      "src/app/login/**/*.{ts,tsx}",
+      "src/app/auth/**/*.{ts,tsx}",
+      "src/app/api/auth/**/*.ts",
+      "src/components/Header.tsx",
+      "src/components/LoginModal.tsx",
+      "src/components/RegisterModal.tsx",
+      "src/components/AuthTabs.tsx",
+      "src/components/AuthResultScreen.tsx",
+      "src/hooks/useTurnstileWidget.ts",
+      "src/lib/format-countdown.ts"
+    ],
+    "tests": [
+      "tests/unit/components/{LoginModal,RegisterModal,AuthTabs,AuthResultScreen,VerifyOtpClient,Header}.test.tsx",
+      "tests/unit/**/{login-modal,register-modal,auth-tabs,auth-result-screen,verify-otp-client,site-header,use-turnstile-widget,format-countdown}*.test.{ts,tsx}",
+      "tests/unit/api/auth/**/*.test.{ts,tsx}",
+      "tests/unit/app/auth/**/*.test.{ts,tsx}",
+      "tests/unit/app/login/**/*.test.{ts,tsx}",
+      "tests/integration/api/auth/**/*.test.{ts,tsx}",
+      "tests/integration/api/auth.test.ts",
+      "tests/integration/auth-flow.test.ts"
+    ],
+    "e2e": [
+      "e2e/FR-LOGIN-*.spec.ts",
+      "e2e/FR-HEADER-*.spec.ts",
+      "e2e/FR-PWRESET-*.spec.ts",
+      "e2e/FR-SIGNUP-*.spec.ts",
+      "e2e/login-otp-resend-errors.spec.ts"
+    ]
+  },
+  {
+    "area": "ADMIN",
+    "docs": [
+      "docs/02_Requirements/areas/admin.md",
+      "docs/05_Quality/security/threats/admin.md",
+      "docs/03_BasicDesign/areas/admin.md",
+      "docs/03_BasicDesign/decisions/ADR-04[5-9]*.md",
+      "docs/04_DetailDesign/pages/16-2_admin_misc.md"
+    ],
+    "src": [
+      "src/app/api/admin/create-user/**/*.ts",
+      "src/app/api/admin/revoke-user-sessions/**/*.ts",
+      "src/app/api/admin/audit-logs/**/*.ts",
+      "src/app/api/admin/users/mfa/**/*.ts",
+      "src/app/api/admin/contact/**/*.ts",
+      "src/app/api/admin/item-color-presets/**/*.ts",
+      "src/app/admin/create-user/**/*.{ts,tsx}",
+      "src/lib/contact/**/*.ts",
+      "src/lib/auditCleanup.ts"
+    ],
+    "tests": [
+      "tests/unit/**/*create-user*.test.{ts,tsx}",
+      "tests/unit/**/*CreateUser*.test.{ts,tsx}",
+      "tests/unit/**/*revoke-user-sessions*.test.{ts,tsx}",
+      "tests/unit/**/*audit-logs*.test.{ts,tsx}",
+      "tests/unit/**/*auditCleanup*.test.{ts,tsx}",
+      "tests/unit/**/*mfa-reset*.test.{ts,tsx}",
+      "tests/unit/**/*admin-contact*.test.{ts,tsx}",
+      "tests/unit/**/*AdminContact*.test.{ts,tsx}",
+      "tests/unit/**/*item-color-preset*.test.{ts,tsx}",
+      "tests/unit/**/*ItemColorPreset*.test.{ts,tsx}",
+      "tests/unit/**/*reply-address*.test.{ts,tsx}",
+      "tests/unit/**/admin-misc/**/*.test.{ts,tsx}",
+      "tests/integration/**/*create-user*.test.{ts,tsx}",
+      "tests/integration/**/*revoke-user-sessions*.test.{ts,tsx}",
+      "tests/integration/**/*audit-logs*.test.{ts,tsx}",
+      "tests/integration/**/*admin-contact*.test.{ts,tsx}",
+      "tests/integration/**/*item-color-preset*.test.{ts,tsx}",
+      "tests/integration/**/admin-misc/**/*.test.{ts,tsx}"
+    ],
+    "e2e": [
+      "e2e/FR-ADMIN-MISC-*.spec.ts"
+    ]
   }
 ]

@@ -12,7 +12,7 @@
 | --- | --- |
 | ホーム・情報 | [HOME](pages/01_home.md)、[NEWS一覧](pages/02_news_list.md)、[NEWS詳細](pages/03_news_detail.md)、[ABOUT](pages/08_about.md)、[CONTACT](pages/09_contact.md)、[STOCKIST](pages/10_stockist.md) |
 | 商品・購入 | [ITEM一覧](pages/04_item_list.md)、[ITEM詳細](pages/05_item_detail.md)、[LOOK一覧](pages/06_look_list.md)、[LOOK詳細](pages/07_look_detail.md)、[WISHLIST](pages/11_wishlist.md)、[CART](pages/12_cart.md)、[CHECKOUT](pages/13_checkout.md) |
-| アカウント・管理 | [LOGIN](pages/14_login.md)、[ACCOUNT](pages/15_account.md)、[ADMIN](pages/16_admin.md) |
+| アカウント・管理 | [LOGIN](pages/14_login.md)、[ACCOUNT](pages/15_account.md)、[ADMIN](pages/16_admin.md)、[ADMIN NEWS](pages/16-1_admin_news.md) |
 | その他 | [PRIVACY](pages/17_privacy.md)、[TERMS](pages/18_terms.md)、[SEARCH](pages/19_search.md) |
 
 現行の全ルートは[画面一覧](../03_BasicDesign/ui/screen-list.md)を参照する。ページ別設計にない認証・管理下位ルートは、必要に応じて要件IDと実装根拠を確認して追加する。
