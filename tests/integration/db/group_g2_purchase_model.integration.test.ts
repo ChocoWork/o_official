@@ -71,7 +71,9 @@ describe('G-2 foundation migration の発注書の節（DB なし）', () => {
     expect(code).not.toMatch(/ON\s+storage\.objects/i);
     expect(code).not.toMatch(/ON SCHEMA\s+private/i);
     expect(code.match(/\bCREATE SEQUENCE\b/gi)).toBeNull();
-    expect(Buffer.byteLength(FOUNDATION_SQL)).toBeLessThan(100000);
+    // 1 本あたり 100,000 バイトの上限は外した（本番は CLI で当てるので大きなファイルも扱える）。形の確かめ（BOM・CR が無い）は残す
+    expect(FOUNDATION_SQL.charCodeAt(0)).not.toBe(0xfeff);
+    expect(FOUNDATION_SQL).not.toContain('\r');
   });
 
   test('FREQ-530-AC-01: 最後の確かめは $g2a_final_objects$ と $g2a_final_table_acl$ の 2 つを足し、同じ DETAIL の形で止める', () => {
@@ -281,7 +283,7 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
 
   // ---- 発注書と明細: 削除・TRUNCATE の拒否、UPDATE の守り ----
 
-  test('FREQ-526-AC-01: purchase_orders / purchase_order_lines は DELETE・TRUNCATE を拒否する', async () => {
+  test('FREQ-530-AC-01: purchase_orders / purchase_order_lines は DELETE・TRUNCATE を拒否する', async () => {
     const g = await graph();
     await flush();
 
@@ -293,7 +295,7 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
     ), HISTORY, '55000');
   });
 
-  test('FREQ-526-AC-01: purchase_orders の UPDATE は不変の列・version+1・共通 advisory の保持を守る', async () => {
+  test('FREQ-530-AC-01: purchase_orders の UPDATE は不変の列・version+1・共通 advisory の保持を守る', async () => {
     const g = await graph();
     expect(await commonLockHeld()).toBe(false);
     const update = (set: string) => db().query(`update public.purchase_orders set ${set} where id = $1`, [g.orderId]);
@@ -325,7 +327,7 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
     expect((await row()).version).toBe(3);
   });
 
-  test('FREQ-526-AC-01: purchase_order_lines の UPDATE は不変の列・version+1・共通 advisory の保持を守り、outstanding_quantity は生成列', async () => {
+  test('FREQ-530-AC-01: purchase_order_lines の UPDATE は不変の列・version+1・共通 advisory の保持を守り、outstanding_quantity は生成列', async () => {
     const g = await graph();
     const otherOrder = await order();
     const otherVariant = await addItemVariant(db(), { itemId: g.itemId, colorName: 'WHITE', sizeLabel: 'L', stock: 0 });
@@ -362,7 +364,7 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
 
   // ---- 行の制約 ----
 
-  test('FREQ-526-AC-01: 発注書の番号の書式・文字数・段階・版・番号の一意', async () => {
+  test('FREQ-530-AC-01: 発注書の番号の書式・文字数・段階・版・番号の一意', async () => {
     const insert = (values: Record<string, unknown>) => order(values);
 
     for (const bad of ['PO-2026102-0001', 'po-20261025-0001', 'PO-20261025-00001', 'XPO-20261025-0001', 'PO-20261025-0001X', 'PO-20261025-000A', '']) {
@@ -382,7 +384,7 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
     expect((await db().query('select memo from public.purchase_orders where id = $1', [noMemo])).rows[0]).toEqual({ memo: null });
   });
 
-  test('FREQ-527-AC-01: 明細の数量の範囲・確定は納品済み以上・未確定は納品 0・単価の NULL と 0 の区別・発注書内の重複拒否・生成列', async () => {
+  test('FREQ-530-AC-01: 明細の数量の範囲・確定は納品済み以上・未確定は納品 0・単価の NULL と 0 の区別・発注書内の重複拒否・生成列', async () => {
     const b = await base();
     const second = await addItemVariant(db(), { itemId: b.itemId, colorName: 'WHITE', sizeLabel: 'L', stock: 0 });
     const insert = (values: Record<string, unknown>) => line(b.orderId, b.variantId, values);
@@ -420,7 +422,7 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
     expect((await fetch(acceptedLine)).outstanding_quantity).toBe(3);
   });
 
-  test('FREQ-526-AC-01: 履歴（revisions・short_closures）の制約。revisions は NULL の line_id も同じ値として一意', async () => {
+  test('FREQ-530-AC-01: 履歴（revisions・short_closures）の制約。revisions は NULL の line_id も同じ値として一意', async () => {
     const b = await base();
     const lineA = await line(b.orderId, b.variantId);
     const other = await addItemVariant(db(), { itemId: b.itemId, colorName: 'WHITE', sizeLabel: 'L', stock: 0 });
@@ -463,7 +465,7 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
     await violated(() => closure({}), '23505', 'purchase_order_short_closures_revision_id_key');
   });
 
-  test('FREQ-529-AC-01: 受取（receipts）の種類と理由・受取行の数量と符号・一意', async () => {
+  test('FREQ-530-AC-01: 受取（receipts）の種類と理由・受取行の数量と符号・一意', async () => {
     const b = await base();
     const lineId = await line(b.orderId, b.variantId, { confirmed_quantity: 10 });
     const check = (name: string) => `purchase_order_receipts_${name}`;
@@ -491,10 +493,12 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
     const positiveWithOrigin = await movement(b.variantId, 1, 'restock');
     const third = await receipt(b.orderId, b.operationId);
     await violated(() => receiptLine(third, lineId, 1, positiveWithOrigin, originLine), '23514', 'purchase_order_receipt_lines_reverses_check');
+    // 負の行は相殺（reverse）の受取の中の行。相殺元が無い負の行は CHECK が断る（receive の受取の中の負の行は種類の確かめが先に断る）
     const negativeWithoutOrigin = await movement(b.variantId, -1, 'adjustment');
-    await violated(() => receiptLine(third, lineId, -1, negativeWithoutOrigin), '23514', 'purchase_order_receipt_lines_reverses_check');
-    // 数量 0 の台帳の行は作れないので、受取行の数量 0 は台帳との突き合わせが先に断る
-    await rejected(() => receiptLine(third, lineId, 0, small), MISMATCH, '23514');
+    const reversal = await reverseReceipt(b.orderId, b.operationId);
+    await violated(() => receiptLine(reversal, lineId, -1, negativeWithoutOrigin), '23514', 'purchase_order_receipt_lines_reverses_check');
+    // receive の受取の中の数量 0 の行は、受取の種類と行の符号の確かめ（DETAIL kind）が先に断る
+    await rejected(() => receiptLine(third, lineId, 0, small), MISMATCH, '23514', 'kind');
 
     // 同じ受取に同じ明細は 1 行。台帳の行は 1 つの受取行にだけ結べる
     const again = await movement(b.variantId, 1, 'restock');
@@ -601,7 +605,7 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
 
   // ---- 納品数と受取行の確かめ ----
 
-  test('FREQ-529-AC-01: received_quantity が受取行の合計と違うと commit（遅延の確かめ）で GROUP_G_PO_RECEIVED_MISMATCH / 23514', async () => {
+  test('FREQ-530-AC-01: received_quantity が受取行の合計と違うと commit（遅延の確かめ）で GROUP_G_PO_RECEIVED_MISMATCH / 23514', async () => {
     const b = await base();
     const mismatch = (run: () => Promise<unknown>) => rejected(async () => { await run(); await immediate(); }, 'GROUP_G_PO_RECEIVED_MISMATCH', '23514', 'received_quantity');
     const orderWithLine = async (values: Record<string, unknown>) => {
@@ -640,7 +644,7 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
     expect(await variantStock(db(), b.variantId)).toBe(20 + 2 + 3);
   });
 
-  test('FREQ-529-AC-01: 受取行は同 variant・同数量の無タグの台帳行（正は restock、負は adjustment）にしか結べず、そうでなければ GROUP_G_PO_RECEIPT_LINE_MISMATCH', async () => {
+  test('FREQ-530-AC-01: 受取行は同 variant・同数量の無タグの台帳行（正は restock、負は adjustment）にしか結べず、そうでなければ GROUP_G_PO_RECEIPT_LINE_MISMATCH', async () => {
     const b = await base();
     const other = await addItemVariant(db(), { itemId: b.itemId, colorName: 'WHITE', sizeLabel: 'L', stock: 20 });
     const lineId = await line(b.orderId, b.variantId, { confirmed_quantity: 10 });
@@ -672,7 +676,7 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
     await mismatch(async () => receiptLine(await reverseReceipt(b.orderId, b.operationId), lineId, -1, await movement(b.variantId, -1, 'adjustment', b.operationId), origin), 'movement');
   });
 
-  test('FREQ-529-AC-01: 負の受取行は同じ発注書の同じ明細の、受取（receive）の中の正の行にしか結べない', async () => {
+  test('FREQ-530-AC-01: 負の受取行は同じ発注書の同じ明細の、受取（receive）の中の正の行にしか結べない', async () => {
     const b = await base();
     const second = await addItemVariant(db(), { itemId: b.itemId, colorName: 'WHITE', sizeLabel: 'L', stock: 20 });
     const lineId = await line(b.orderId, b.variantId, { confirmed_quantity: 10 });
@@ -695,13 +699,30 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
     await mismatch(() => negative(valid));
     await mismatch(() => negative(randomUUID()));
 
-    // 相殺の受取（reverse）の中の正の行を相殺元にはできない
+    // 相殺の受取（reverse）には正の行を入れられない（M1）。だから相殺の受取の中に相殺元になる正の行は作れない
     const inReverse = await reverseReceipt(b.orderId, b.operationId);
-    const positiveInReverse = await receiptLine(inReverse, lineId, 1, await movement(b.variantId, 1, 'restock'));
-    await mismatch(() => negative(positiveInReverse));
+    await rejected(async () => receiptLine(inReverse, lineId, 1, await movement(b.variantId, 1, 'restock')), MISMATCH, '23514', 'kind');
   });
 
-  test('FREQ-529-AC-01: 1 つの正の行への相殺の合計が元の数量を超えると commit で GROUP_G_PO_REVERSE_EXCEEDS_RECEIVED / 23514', async () => {
+  test('FREQ-530-AC-01: 受取の種類と行の符号を結ぶ。receive の受取は正の行だけ、reverse の受取は負の行だけ（GROUP_G_PO_RECEIPT_LINE_MISMATCH / 23514 / kind）', async () => {
+    const b = await base();
+    const lineId = await line(b.orderId, b.variantId, { confirmed_quantity: 10 });
+    const kind = (run: () => Promise<unknown>) => rejected(run, MISMATCH, '23514', 'kind');
+
+    // receive の受取: 正の行は結べる。負の行（相殺元があり、台帳の行も adjustment で揃っていても）は結べない
+    const receiveReceipt = await receipt(b.orderId, b.operationId);
+    const origin = await receiptLine(receiveReceipt, lineId, 3, await movement(b.variantId, 3, 'restock'));
+    await kind(async () => receiptLine(receiveReceipt, lineId, -1, await movement(b.variantId, -1, 'adjustment'), origin));
+    await kind(async () => receiptLine(await receipt(b.orderId, b.operationId), lineId, -1, await movement(b.variantId, -1, 'adjustment'), origin));
+
+    // reverse の受取: 負の行は結べる。正の行（台帳の行が restock で揃っていても）は結べない
+    const reverse = await reverseReceipt(b.orderId, b.operationId);
+    await kind(async () => receiptLine(reverse, lineId, 1, await movement(b.variantId, 1, 'restock')));
+    await kind(async () => receiptLine(await reverseReceipt(b.orderId, b.operationId), lineId, 2, await movement(b.variantId, 2, 'restock'), origin));
+    expect(await receiptLine(reverse, lineId, -1, await movement(b.variantId, -1, 'adjustment'), origin)).toBeTruthy();
+  });
+
+  test('FREQ-530-AC-01: 1 つの正の行への相殺の合計が元の数量を超えると commit で GROUP_G_PO_REVERSE_EXCEEDS_RECEIVED / 23514', async () => {
     const b = await base();
     const exceeds = (run: () => Promise<unknown>) => rejected(async () => { await run(); await immediate(); }, 'GROUP_G_PO_REVERSE_EXCEEDS_RECEIVED', '23514', 'reverse');
 

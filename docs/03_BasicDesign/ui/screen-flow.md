@@ -1,10 +1,10 @@
 # 画面遷移図
 
-> 状態: 全画面ルートと現行ソースの導線をレビュー | 確認日: 2026-10-03（購入の導線は2026-10-07、E-5は2026-10-22、G-1 の旧配送の入口の撤去は2026-10-24に反映） | 対象: 39画面ルート
+> 状態: 全画面ルートと現行ソースの導線をレビュー | 確認日: 2026-10-03（購入の導線は2026-10-07、E-5は2026-10-22、G-1 の旧配送の入口の撤去は2026-10-24に、G-2 Task 3 の在庫一覧表の導線は2026-10-25に反映） | 対象: 41画面ルート（2026-10-25 に数え直し、G-0 の権限画面を足した）
 
 ## 概要
 
-[画面一覧](screen-list.md)の39ルートについて、ページと描画コンポーネントのリンク、自動遷移、認証・外部決済からの戻りを示す。従来の38ルートは全画面図、E-5の1ルートと導線は末尾の追加図に示す。タブ、絞り込み、フォームの結果は同じルート内の状態として扱う。API、メール、外部サービス、エラー境界は画面ルート数に含めない。
+[画面一覧](screen-list.md)の41ルートについて、ページと描画コンポーネントのリンク、自動遷移、認証・外部決済からの戻りを示す。従来の38ルートと、後から足した管理の2ルート（G-0 の権限画面・G-2 の在庫一覧表）は全画面図、E-5の1ルートと導線は末尾の追加図に示す。タブ、絞り込み、フォームの結果は同じルート内の状態として扱う。API、メール、外部サービス、エラー境界は画面ルート数に含めない。
 
 ## 図の読み方
 
@@ -12,7 +12,7 @@
 - 点線は同じルート内の状態・クエリ変更。詳細画面の前後移動・関連商品は `[id]` が変わるため実線で示す。
 - 共通ヘッダーとフッターは [Providers](../../../src/contexts/Providers.tsx) が全ページに配置する。各画面から共通ナビゲーションへ戻る線を繰り返さず、共通ノードにリンクを集約する。
 - ヘッダーの管理リンク表示条件と、遷移先ページ・操作 API の権限確認は別である。[画面一覧の表示条件](screen-list.md#画面表示と操作権限)を参照する。
-- 図内の区分は所在を探すための `subgraph` であり、全体で1つの遷移図である。38ルートと条件付き導線を含むため、詳細は拡大表示と下の補足表で確認する。
+- 図内の区分は所在を探すための `subgraph` であり、全体で1つの遷移図である。40ルートと条件付き導線を含むため、詳細は拡大表示と下の補足表で確認する。
 
 ## 全画面遷移図
 
@@ -62,10 +62,12 @@ flowchart LR
         OrderReturnRequest["/account/orders/[id]/return"]
     end
 
-    subgraph Management["管理・開発補助 (12ルート)"]
+    subgraph Management["管理・開発補助 (14ルート)"]
         direction TB
         Admin["/admin"]
         AdminCreateUser["/admin/create-user 専用入口未確認"]
+        AdminInventory["/admin/inventory"]
+        AdminPermissions["/admin/settings/permissions"]
         AdminItemCreate["/admin/item/create"]
         AdminItemEdit["/admin/item/edit/[id]"]
         AdminLookCreate["/admin/look/create"]
@@ -220,6 +222,10 @@ flowchart LR
     Admin --> AdminLookEdit
     Admin --> AdminStockistCreate
     Admin --> AdminStockistEdit
+    Admin -->|INVENTORY: 在庫一覧表| AdminInventory
+    AdminInventory -->|管理画面に戻る| Admin
+    Admin -->|SETTINGS: 権限| AdminPermissions
+    AdminPermissions -->|管理画面に戻る: SETTINGS| Admin
     AdminNewsCreate -->|保存 / キャンセル: NEWS| Admin
     AdminNewsEdit -->|保存 / キャンセル: NEWS| Admin
     AdminItemCreate -->|保存 / キャンセル: ITEM| Admin
@@ -249,7 +255,7 @@ flowchart LR
 | 決済 | `/checkout` の入力画面にStripeの部品を置かず、「確認へ進む」でSessionを作り、最終確認画面の `FinalConfirmationStep` に `CheckoutProvider` / `PaymentElement` を置く。「注文する」で受付・在庫確保の後に支払い、completeで完了表示する。外部認証からの復帰は `?session_id=...` をresumeで照会し、支払い済みならcomplete、開いていれば最終確認画面、ほかは入力画面へ進む。最終確認・完了の後もURLに`session_id`を残す（D9）。空カートでは同画面に案内を表示する |
 | 購入完了・注文詳細 | 完了表示の注文履歴リンクは `/account`。注文詳細の戻るリンクは `/account?tab=orders`。ゲスト登録カードは `/login?tab=register&email=...` でメール初期値を渡す。再度購入はカート追加後も注文詳細に留まる |
 | 注文商品の予約注文分岐 | [OrderItemRow](../../../src/features/account/components/OrderItemRow.tsx)には `itemId` があり `stockStatus=sold_out` の場合に `/contact?subject=予約注文：{商品名}` へ進む分岐がある。現行の注文詳細APIは `stockStatus` を返さないため、注文詳細での通常導線としては確認できない。contactはこのクエリから件名を初期入力しない |
-| 管理タブ・フォーム | admin は8タブ、supporter は ORDER のみ。`/admin?tab=...` は初期タブを指定するが、サイドナビ操作は表示状態だけを変更する。ITEM・LOOK・NEWS は保存成功・キャンセルで戻り、STOCKIST は保存成功時に戻る |
+| 管理タブ・フォーム | admin は10タブ（INVENTORY は ORDER の次、SETTINGS は最後）、supporter は ORDER と INVENTORY。INVENTORY タブは役割で出し分けず、「在庫一覧表」（`/admin/inventory`）と「発注一覧表」（`/admin/purchase-orders`。後続のTask）へのリンクを置く。在庫一覧表の「管理画面に戻る」は `/admin`。`/admin?tab=...` は初期タブを指定するが、サイドナビ操作は表示状態だけを変更する。ITEM・LOOK・NEWS は保存成功・キャンセルで戻り、STOCKIST は保存成功時に戻る |
 | `/admin/create-user` | 専用の入口リンクは未確認。作成成功後も同画面に留まる。共通ナビゲーションは利用できる |
 | Meta接続 | KPIの接続操作から外部OAuthへ進む。callbackは既定のAPIパスを環境設定で変更できる。通常の戻り先は `/admin?meta=connected` または `?meta=error&meta_reason=...` で、`tab` は付与しない |
 
@@ -268,7 +274,7 @@ flowchart LR
 
 | 対象 | 主な確認元 |
 | --- | --- |
-| 全38ルート・共通ナビゲーション | `src/app/**/page.tsx`、[Providers](../../../src/contexts/Providers.tsx)、[Header](../../../src/components/Header.tsx)、[Footer](../../../src/components/Footer.tsx) |
+| 全40ルート・共通ナビゲーション | `src/app/**/page.tsx`、[Providers](../../../src/contexts/Providers.tsx)、[Header](../../../src/components/Header.tsx)、[Footer](../../../src/components/Footer.tsx) |
 | ホーム・一覧・検索 | [ホーム](../../../src/app/page.tsx)、[公開商品一覧](../../../src/features/items/components/PublicItemGrid.tsx)、[公開LOOK一覧](../../../src/features/look/components/PublicLookGrid.tsx)、[公開NEWS一覧](../../../src/features/news/components/PublicNewsGrid.tsx)、[ホーム検索](../../../src/features/search/components/SearchHomePreview.tsx)、[検索画面](../../../src/features/search/components/SearchPageClient.tsx) |
 | 詳細・保存・取扱店 | [商品詳細](../../../src/app/item/%5Bid%5D/ItemDetailClient.tsx)、[関連商品](../../../src/features/items/components/RelatedItems.tsx)、[LOOK詳細](../../../src/app/look/%5Bid%5D/page.tsx)、[NEWS詳細](../../../src/app/news/%5Bid%5D/page.tsx)、[保存一覧](../../../src/app/wishlist/page.tsx)、[取扱店](../../../src/features/stockist/components/PublicStockistGrid.tsx) |
 | 購入 | [カート](../../../src/app/cart/page.tsx)、[注文概要](../../../src/app/cart/_components/OrderSummary.tsx)、[チェックアウト](../../../src/app/checkout/page.tsx)、[最終確認画面](../../../src/app/checkout/_components/FinalConfirmationStep.tsx)、[place-order](../../../src/app/api/checkout/place-order/route.ts)、[resume](../../../src/app/api/checkout/resume/route.ts)、[ゲスト登録案内](../../../src/features/checkout/components/GuestRegisterPrompt.tsx)、[エラー境界](../../../src/app/checkout/error.tsx) |
@@ -277,7 +283,7 @@ flowchart LR
 | 管理・開発補助 | [管理ページ](../../../src/app/admin/page.tsx)、[ITEMフォーム](../../../src/app/admin/item/ItemForm.tsx)、[LOOKフォーム](../../../src/app/admin/look/LookForm.tsx)、[NEWSフォーム](../../../src/app/admin/news/NewsForm.tsx)、[STOCKISTフォーム](../../../src/app/admin/stockist/StockistForm.tsx)、[ユーザー作成](../../../src/app/admin/create-user/page.tsx)、[UI](../../../src/app/ui/page.tsx)、[LOADING](../../../src/app/loading/page.tsx) |
 | Meta | [接続UI](../../../src/components/MetaKpiConnection.tsx)、[接続API](../../../src/app/api/admin/kpi/meta/connect/route.ts)、[callback API](../../../src/app/api/admin/kpi/meta/callback/route.ts) |
 
-今回のレビューはルート定義、描画されるコンポーネントの導線、関連APIの戻り先をソースで確認したもの。38ルートは図・画面一覧に各1件ずつ対応する。実環境の公開範囲、リンク先に実データが存在すること、全画面の実行時表示や外部サービス側の画面は実行検証していない。認証処理の詳細は[シーケンス図](../../04_DetailDesign/sequence/auth-login-mfa.md)、購入の状態は[注文・決済状態図](../../04_DetailDesign/states/order-payment.md)を参照する。
+今回のレビューはルート定義、描画されるコンポーネントの導線、関連APIの戻り先をソースで確認したもの。40ルートは図・画面一覧に各1件ずつ対応する（E-5 の1ルートは末尾の追加図）。実環境の公開範囲、リンク先に実データが存在すること、全画面の実行時表示や外部サービス側の画面は実行検証していない。認証処理の詳細は[シーケンス図](../../04_DetailDesign/sequence/auth-login-mfa.md)、購入の状態は[注文・決済状態図](../../04_DetailDesign/states/order-payment.md)を参照する。
 
 ## 配送の状況（E-4 / FREQ-488〜497）
 

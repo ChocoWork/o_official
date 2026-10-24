@@ -284,6 +284,36 @@ describe('ItemStockSection の権限が無い時（FREQ-540-AC-06）', () => {
     expect(screen.queryByText('まだ記録がありません。')).not.toBeInTheDocument();
   });
 
+  it('FREQ-540-AC-06: 読み込みが MFA なしの 403 なら「権限がありません」ではなく「2要素認証が必要です」を出す', async () => {
+    mockedFetch.mockResolvedValue(json({ error: 'Forbidden', reason: 'MFA required' }, 403));
+    render(<ItemStockSection itemId="7" />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/^2要素認証が必要です$/);
+    expect(screen.queryByText('在庫を見る権限がありません。')).not.toBeInTheDocument();
+    expect(screen.queryByText('在庫の取得に失敗しました。')).not.toBeInTheDocument();
+  });
+
+  it('FREQ-540-AC-06: 読み込みが 401 なら「ログインし直してください。」を出す', async () => {
+    mockedFetch.mockResolvedValue(json({ error: 'Unauthorized' }, 401));
+    render(<ItemStockSection itemId="7" />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^ログインし直してください。$/);
+    expect(screen.queryByText('在庫の取得に失敗しました。')).not.toBeInTheDocument();
+  });
+
+  it('FREQ-540-AC-06: 読み込みの本文が JSON でない 403・500 でも、権限の文・取得失敗の文に落ちる', async () => {
+    mockedFetch.mockResolvedValue({ ok: false, status: 403, json: async () => { throw new Error('not json'); } } as unknown as Response);
+    const { unmount } = render(<ItemStockSection itemId="7" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^在庫を見る権限がありません。$/);
+    unmount();
+
+    mockedFetch.mockReset();
+    mockedFetch.mockResolvedValue({ ok: false, status: 500, json: async () => { throw new Error('not json'); } } as unknown as Response);
+    render(<ItemStockSection itemId="7" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^在庫の取得に失敗しました。$/);
+  });
+
   it('FREQ-540-AC-06: 記録が 403 なら「在庫を変更する権限がありません。」を role=alert で出し、Forbidden も一般の失敗の文も出さない', async () => {
     mockedFetch.mockResolvedValue(json({ variants: [VARIANT], movements: [PURCHASE, RESTOCK] }));
     render(<ItemStockSection itemId="7" />);

@@ -40,8 +40,9 @@ type AdminOrderAttention = OrderAttention & {
 };
 
 // SETTINGS（ショップの設定）は店長だけ。サポートの人の supporterTabs には足さない（窓口も権限 admin.settings.manage で守る）
-const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'SETTINGS'];
-const supporterTabs: TabType[] = ['ORDER'];
+// INVENTORY（在庫一覧表・発注一覧表への入口）は店長とサポートの人の両方に同じ中身を出す。権限の無い人が開いた先は、各頁の権限の文（窓口と DB が守る）
+const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'SETTINGS'];
+const supporterTabs: TabType[] = ['ORDER', 'INVENTORY'];
 // 絞り込みは DB の状態で行う（段階で絞ると、ページを分けて読む作りが崩れる。設計書 4-4）。value は窓口の status にそのまま送る
 const ORDER_STATUS_FILTERS = [
   { label: 'すべて', value: 'all' },
@@ -278,7 +279,8 @@ function AdminPageContent() {
     }
 
     if (!visibleTabs.includes(activeTab)) {
-      setActiveTab(visibleTabs[0]);
+      // 関数で渡す。最初の描画では上の effect が URL の tab を先に積むので、その値（サポートの人の tab=INVENTORY など）を上書きしない
+      setActiveTab((current) => (visibleTabs.includes(current) ? current : visibleTabs[0]));
     }
   }, [activeTab, visibleTabs, canAccessAdmin]);
 
@@ -1129,6 +1131,13 @@ function AdminPageContent() {
       case 'USER':
         if (userRole !== 'admin') return null;
         return <UserSection />;
+      case 'INVENTORY':
+        return (
+          <nav aria-label="在庫・発注メニュー" className="flex flex-wrap gap-3">
+            <Button href="/admin/inventory" variant="secondary">在庫一覧表</Button>
+            <Button href="/admin/purchase-orders" variant="secondary">発注一覧表</Button>
+          </nav>
+        );
       case 'SETTINGS':
         if (userRole !== 'admin') return null;
         return (

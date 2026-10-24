@@ -72,11 +72,11 @@ beforeEach(() => {
 });
 
 describe('管理画面の左のメニューの SETTINGS', () => {
-  it('店長のメニューには、ORDER の次（最後）に SETTINGS が出る。印は細線の歯車', async () => {
+  it('FREQ-525-AC-01: 店長のメニューには、ORDER と INVENTORY の次（最後）に SETTINGS が出る。印は細線の歯車', async () => {
     render(<AdminPage />);
     const nav = await screen.findByRole('navigation', { name: '管理メニュー' });
 
-    expect(menuLabels(nav)).toEqual(['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'SETTINGS']);
+    expect(menuLabels(nav)).toEqual(['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'SETTINGS']);
     expect(within(nav).getByRole('button', { name: 'SETTINGS' }).querySelector('i')).toHaveClass('ri-settings-3-line');
   });
 
@@ -101,12 +101,12 @@ describe('管理画面の左のメニューの SETTINGS', () => {
     expect(screen.getByRole('heading', { name: 'ショップの設定' })).toBeInTheDocument();
   });
 
-  it('サポートの人のメニューは ORDER だけで、SETTINGS は出ない', async () => {
+  it('FREQ-525-AC-01: サポートの人のメニューは ORDER と INVENTORY で、SETTINGS は出ない', async () => {
     mockUserRole = 'supporter';
     render(<AdminPage />);
     const nav = await screen.findByRole('navigation', { name: '管理メニュー' });
 
-    expect(menuLabels(nav)).toEqual(['ORDER']);
+    expect(menuLabels(nav)).toEqual(['ORDER', 'INVENTORY']);
     expect(screen.queryByRole('button', { name: 'SETTINGS' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '権限' })).not.toBeInTheDocument();
   });
@@ -119,5 +119,52 @@ describe('管理画面の左のメニューの SETTINGS', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'ORDER' })).toHaveAttribute('aria-current', 'page'));
     expect(screen.queryByRole('heading', { name: 'ショップの設定' })).not.toBeInTheDocument();
     expect(clientFetchMock).not.toHaveBeenCalledWith(SETTINGS_URL, expect.anything());
+  });
+});
+
+/**
+ * 管理画面の左のメニューの INVENTORY（G-2 / FREQ-525。在庫一覧表と発注一覧表への入口）。
+ * 中身は役割で出し分けず、店長とサポーターの両方に同じ物を出す。権限の無い人が開いた先は各頁の権限の文（窓口と DB が守る）。
+ */
+describe('管理画面の左のメニューの INVENTORY', () => {
+  const MENU = '在庫・発注メニュー';
+
+  it.each(['admin', 'supporter'] as const)('FREQ-525-AC-01: %s が INVENTORY を押すと、在庫一覧表と発注一覧表へのリンクが並ぶ', async (role) => {
+    mockUserRole = role;
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'INVENTORY' }));
+
+    const menu = await screen.findByRole('navigation', { name: MENU });
+    const links = within(menu).getAllByRole('link');
+    expect(links.map((link) => link.textContent)).toEqual(['在庫一覧表', '発注一覧表']);
+    expect(within(menu).getByRole('link', { name: '在庫一覧表' })).toHaveAttribute('href', '/admin/inventory');
+    expect(within(menu).getByRole('link', { name: '発注一覧表' })).toHaveAttribute('href', '/admin/purchase-orders');
+    expect(screen.getByRole('button', { name: 'INVENTORY' })).toHaveAttribute('aria-current', 'page');
+    // 一覧そのものはリンク先の頁が読む。この画面は在庫の窓口を読まない
+    expect(clientFetchMock).not.toHaveBeenCalledWith('/api/admin/inventory', expect.anything());
+  });
+
+  it('FREQ-525-AC-01: INVENTORY の印は細線の箱で、店長のメニューでは ORDER の次（SETTINGS の前）に並ぶ', async () => {
+    render(<AdminPage />);
+    const nav = await screen.findByRole('navigation', { name: '管理メニュー' });
+    expect(within(nav).getByRole('button', { name: 'INVENTORY' }).querySelector('i')).toHaveClass('ri-archive-line');
+    expect(menuLabels(nav).slice(7, 9)).toEqual(['ORDER', 'INVENTORY']);
+  });
+
+  it.each(['admin', 'supporter'] as const)('FREQ-525-AC-01: %s は URL の tab=INVENTORY で直接開ける（サポーターは先頭の ORDER に戻されない）', async (role) => {
+    mockUserRole = role;
+    mockSearchParams = new URLSearchParams('tab=INVENTORY');
+    render(<AdminPage />);
+
+    expect(await screen.findByRole('navigation', { name: MENU })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'INVENTORY' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('FREQ-525-AC-01: INVENTORY の外（ORDER）では在庫・発注メニューを出さない', async () => {
+    mockUserRole = 'supporter';
+    render(<AdminPage />);
+    await screen.findByRole('navigation', { name: '管理メニュー' });
+
+    expect(screen.queryByRole('navigation', { name: MENU })).not.toBeInTheDocument();
   });
 });

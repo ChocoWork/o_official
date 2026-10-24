@@ -166,14 +166,14 @@ test('3管理POSTと1webhookをAPIと入口一覧に記録し総数が実コー�
   });
   const routes = walk('src/app/api').filter((file) => file.endsWith('/route.ts'));
   const methods = routes.flatMap((file) => [...read(file).matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b|export\s+const\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g)]);
-  expect(routes).toHaveLength(132); expect(methods).toHaveLength(171);
-  contains(api, '132ファイル'); contains(api, '171組');
-  contains(api, 'HEAD/OPTIONSは171組に含めない');
+  expect(routes).toHaveLength(133); expect(methods).toHaveLength(172);
+  contains(api, '133ファイル'); contains(api, '172組');
+  contains(api, 'HEAD/OPTIONSは172組に含めない');
   for (const file of files.slice(0, 3)) contains(read(file), '配送の入口・表は E-4 の変更を 2026-10-21 に反映');
-  contains(inventory, '132ファイル・171メソッド');
+  contains(inventory, '133ファイル・172メソッド');
   const entries = inventory.split('\n').filter((line) => /^\| `\/api\//.test(line));
-  expect(entries).toHaveLength(131);
-  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(170);
+  expect(entries).toHaveLength(132);
+  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(171);
 });
 
 test('APIに設定と顧客の条件と全エラーを反映する', () => {
@@ -273,9 +273,9 @@ test('G-1の要求8行（FREQ-520〜524・535・540・541）とFREQ-401の在庫
   const ids = lines.filter((line) => /^\| FREQ-(52[0-4]|535|54[01]) \|/.test(line)).map((line) => line.split('|')[1].trim());
   expect(ids).toEqual(['FREQ-520', 'FREQ-521', 'FREQ-522', 'FREQ-523', 'FREQ-524', 'FREQ-535', 'FREQ-540', 'FREQ-541']);
   const freq540 = lines.find((line) => line.startsWith('| FREQ-540 |'))!;
-  // G-1 の AC-01〜05 は先頭にそのまま並ぶ。その後ろは G-2 が足した AC だけで、今は AC-06 と AC-09。
-  // G-2 の Task が AC-07・AC-08 を足す時は、下の G2_FREQ_540_ADDITIONS をその Task が延ばす（黙って通さない）。
-  const G2_FREQ_540_ADDITIONS = ['FREQ-540-AC-06', 'FREQ-540-AC-09'];
+  // G-1 の AC-01〜05 は先頭にそのまま並ぶ。その後ろは G-2 が足した AC だけで、今は AC-06（Task 1）・AC-07（Task 3）・AC-09（Task 1）。
+  // G-2 の Task が AC-08 などを足す時は、下の G2_FREQ_540_ADDITIONS をその Task が延ばす（黙って通さない）。
+  const G2_FREQ_540_ADDITIONS = ['FREQ-540-AC-06', 'FREQ-540-AC-07', 'FREQ-540-AC-09'];
   const freq540Acs = freq540.split('|')[5].match(/FREQ-540-AC-\d+/g);
   expect(freq540Acs!.slice(0, 5)).toEqual(['FREQ-540-AC-01', 'FREQ-540-AC-02', 'FREQ-540-AC-03', 'FREQ-540-AC-04', 'FREQ-540-AC-05']);
   expect(freq540Acs!.slice(5)).toEqual(G2_FREQ_540_ADDITIONS);

@@ -807,3 +807,29 @@ flowchart TD
 拒否の表示は GET/POST 共通で、既知の `code` →既知の `reason`（MFA/CSRF）→status の固定文の順。`ROLE_PERMISSION_FIXED` と MFA が同時でも code の文を使う。未知の code/reason や `body.error` は表示しない。plain 403 は「アクセス権限がありません」、読込5xxは「権限を読み込めませんでした。」。読み書きの認可は DB ACL・active session・aal2 の `admin.permissions.manage` で毎回確認する。
 
 検証: 単体 [画面](../../../tests/unit/components/RolePermissionsSection.test.tsx)・[独立ページ](../../../tests/unit/components/RolePermissionsPage.test.tsx)・[メニュー](../../../tests/unit/components/AdminSettingsMenu.test.tsx)・[SwitchToggle](../../../tests/unit/components/SwitchToggle.test.tsx) は Task 3。DB [権限](../../../tests/integration/db/role_permissions.integration.test.ts)・[別接続競合](../../../tests/integration/db/role_permissions_concurrency.integration.test.ts) は Task 1 / controller。E2E [FR-ADMIN-109](../../../e2e/FR-ADMIN-109-permission-settings.spec.ts)・[FR-ADMIN-123](../../../e2e/FR-ADMIN-123-group-g-permissions.spec.ts) は Task 4（予定・本Task時点で未作成/未実行）。G-0 は発送2コードを保存・再読込するところまでで、旧発送/在庫APIの新権限への切替は G-1〜G-3 に残る。
+
+## 在庫一覧表・発注（G-2 / FREQ-525〜530）
+
+G-2 の画面は、管理メニューの INVENTORY から入る。この節は Task 3 で作った在庫一覧表を記し、発注一覧表・発注の詳細・受け取り・原本の添付は、それぞれの Task が同じ節へ足す。
+
+### INVENTORY タブ
+
+店長（`admin`）とサポーター（`supporter`）の両方のメニューに `INVENTORY` を出す（店長は `ORDER` の次、`SETTINGS` の前。サポーターは `ORDER` の次、最後）。印は細線の箱（`ri-archive-line`）。中身は役割で出し分けず、`nav aria-label="在庫・発注メニュー"` に「在庫一覧表」（`/admin/inventory`）と「発注一覧表」（`/admin/purchase-orders`。後続の Task）のリンクを置く。権限の無い人が開いた先は各頁の権限の文で、窓口と DB が守る。`/admin?tab=INVENTORY` で直接開ける（サポーターも）。サポーターのタブは以前 ORDER だけだったので表に出なかったが、先頭以外のタブを `tab` で指すと、最初の描画で「見えないタブなら先頭へ戻す」処理が URL の `tab` を上書きして ORDER に戻っていた。この処理を、直前に積まれた `tab` を上書きしない形（関数で渡す更新）に直した。
+
+### 在庫一覧表（`/admin/inventory` / FREQ-525）
+
+独立ページ [page.tsx](../../../src/app/admin/inventory/page.tsx) は `<main className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 md:px-8">` に [AdminInventorySection](../../../src/components/AdminInventorySection.tsx)（Client Component）を置くだけ。`GET /api/admin/inventory`（`admin.stock.read`。`cache: 'no-store'`）の返事で表示を決め、ページ側の表示ガードは持たない。
+
+| 要素 | 内容 |
+| --- | --- |
+| 見出し・戻る | h1「在庫一覧表」。リンク「管理画面に戻る」（`/admin`） |
+| 読込中 | 「読み込み中...」（`role="status"`） |
+| 失敗の文 | 共有の `adminLoadFailureMessage`（[admin-load-failure.ts](../../../src/lib/admin/admin-load-failure.ts)）で決める。順は、本文の `reason` が `MFA required` なら「2要素認証が必要です」、401 は「ログインし直してください。」、403 は「在庫一覧を見る権限がありません。」、それ以外と応答の形が崩れた時は「在庫一覧を読み込めませんでした。時間をおいて再度お試しください。」。`role="alert"` で出し、表とボタンは出さない（MFA なしの 403 を「権限がありません」と誤って出さない）。商品の在庫欄（ItemStockSection）の読込失敗も同じ関数を使う |
+| 空 | 「表示する商品がありません。」 |
+| 表 | 列見出しは「商品名」「色」「サイズ」「注文数」「在庫」「発注済み」「発注必要数」の7つをこの順（数の列は右寄せ）。色・サイズが無ければ「—」。止めた variant も他の行と同じ形で出し、特別な印は付けない |
+| 在庫の内訳 | 各行の「在庫」の欄に「在庫の内訳」ボタン。押すとその行の下に「空き ○・入金済みの割当 ○・支払い前の仮確保 ○」を開閉（`aria-expanded`・開いた時だけ `aria-controls`）。行そのものは押しても何も起きない |
+| 画面幅 | 表は `role="region"`（見出しで名付け、キーボードで焦点を当てられる）の `max-h-[70vh] overflow-auto` に入れ、見出し行は `sticky top-0`。390/768/1280px で頁全体が横にはみ出さない（表の最小幅 44rem より狭い時は領域の中だけ横スクロール）。実表示の検証は Task 10 の E2E |
+
+数の意味（DB の `list_admin_inventory(_actor_id)`。1つの snapshot）: 在庫は空き＋入金済みの割当＋支払い前の仮確保（G-1 の `on_hand` と同じ）。注文数は G-1 の投影で「受注生産中」と「仕上がり待ち」の数（未払い・取消申請中・返品申請中・取消済みは含めない）。発注済みは数量確定済みの発注の未納（`outstanding_quantity`）だけで、仮数量は数えない。発注必要数は `max(0, 注文数 − 在庫 − 発注済み)`。止めた variant は在庫・未納・注文数のどれかがある間だけ出る。並びは商品・色の位置・サイズの位置・variant の番号。
+
+検証: 単体 [式と読取](../../../tests/unit/lib/inventory/inventory-list.test.ts)・[窓口](../../../tests/unit/api/admin/inventory-route.test.ts)・[画面](../../../tests/unit/components/AdminInventorySection.test.tsx)・[管理メニュー](../../../tests/unit/components/AdminSettingsMenu.test.tsx)・[読込失敗の文](../../../tests/unit/lib/admin/admin-load-failure.test.ts)・[在庫の欄](../../../tests/unit/components/ItemStockSection.test.tsx)。DB [在庫一覧](../../../tests/integration/db/group_g2_inventory_list.integration.test.ts)。E2E [FR-ADMIN-029](../../../e2e/FR-ADMIN-029-accounting-tab.spec.ts)（管理メニューの並び）。3つの画面幅の頁全体の確認は Task 10。

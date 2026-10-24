@@ -106,8 +106,8 @@ for (const viewport of viewports) {
       await page.goto('/admin');
 
       const navButtons = page.getByRole('navigation', { name: '管理メニュー' }).getByRole('button');
-      // SETTINGS（ショップの設定）は店長のメニューの最後（グループ E-2）
-      await expect(navButtons).toHaveText(['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'SETTINGS']);
+      // INVENTORY（在庫一覧表・発注一覧表への入口。G-2）は ORDER の次、SETTINGS（ショップの設定）は店長のメニューの最後（グループ E-2）
+      await expect(navButtons).toHaveText(['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'SETTINGS']);
     });
 
     test('KPI タブのサブタブから「コスト & 利益」が消える', async ({ page }) => {

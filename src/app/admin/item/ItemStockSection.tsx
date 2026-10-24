@@ -7,6 +7,7 @@ import { Dialog } from "@/components/ui/Dialog/Dialog";
 import { ALLOCATION_EVENT_LABELS, allocationEventReasonLabel, type AllocationHistoryEvent } from "@/lib/inventory/allocation-types";
 import { toOrderNumber } from "@/lib/orders/order-number";
 import { clientFetch } from "@/lib/client-fetch";
+import { adminLoadFailureMessage } from "@/lib/admin/admin-load-failure";
 
 /**
  * 色 × サイズごとの在庫（FREQ-399）。
@@ -135,11 +136,12 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
   const load = useCallback(async () => {
     try {
       const response = await clientFetch(`/api/admin/items/${itemId}/variants`);
+      const json = await response.json().catch(() => null);
       if (!response.ok) {
-        setLoadError(response.status === 403 ? READ_FORBIDDEN_MESSAGE : LOAD_ERROR_MESSAGE);
+        // MFA なしの 403 を「権限がありません」と誤って出さない（本文の reason を先に見る）
+        setLoadError(adminLoadFailureMessage(response.status, json, READ_FORBIDDEN_MESSAGE, LOAD_ERROR_MESSAGE));
         return;
       }
-      const json = await response.json().catch(() => null);
       setLoadError(null);
       setVariants((json?.variants ?? []) as Variant[]);
       setMovements((json?.movements ?? []) as Movement[]);

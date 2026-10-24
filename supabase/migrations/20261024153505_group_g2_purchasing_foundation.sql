@@ -652,9 +652,10 @@ CREATE TRIGGER purchase_order_lines_change_guard BEFORE UPDATE ON public.purchas
 -- 10. A receipt row ties to exactly one ledger row of the stock_movements table, checked when the row is inserted:
 --     the same variant as the order line, delta = quantity, reason restock for a positive row and adjustment for a negative
 --     row, and allocation_operation_id IS NULL (an untagged row, so the G-1 consistency trigger of tagged rows never
---     applies to it). The receipt and the line belong to the same order. A negative row points at a positive row of the
+--     applies to it). The receipt and the line belong to the same order. A receipt of kind receive holds only positive rows
+--     and a receipt of kind reverse only negative rows (DETAIL kind). A negative row points at a positive row of the
 --     same line, in a receipt of kind receive of the same order. Violations are GROUP_G_PO_RECEIPT_LINE_MISMATCH / 23514
---     with a DETAIL of movement, line_order or reverses.
+--     with a DETAIL of movement, line_order, kind or reverses.
 CREATE FUNCTION private.check_purchase_order_receipt_line() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $$
@@ -673,9 +674,12 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'GROUP_G_PO_RECEIPT_LINE_MISMATCH' USING ERRCODE = '23514', DETAIL = 'line_order';
   END IF;
-  SELECT r.purchase_order_id INTO v_receipt FROM public.purchase_order_receipts AS r WHERE r.id = NEW.receipt_id;
+  SELECT r.purchase_order_id, r.kind INTO v_receipt FROM public.purchase_order_receipts AS r WHERE r.id = NEW.receipt_id;
   IF NOT FOUND OR v_receipt.purchase_order_id IS DISTINCT FROM v_line.purchase_order_id THEN
     RAISE EXCEPTION 'GROUP_G_PO_RECEIPT_LINE_MISMATCH' USING ERRCODE = '23514', DETAIL = 'line_order';
+  END IF;
+  IF (v_receipt.kind = 'receive' AND NEW.quantity <= 0) OR (v_receipt.kind = 'reverse' AND NEW.quantity >= 0) THEN
+    RAISE EXCEPTION 'GROUP_G_PO_RECEIPT_LINE_MISMATCH' USING ERRCODE = '23514', DETAIL = 'kind';
   END IF;
   IF v_movement.variant_id IS DISTINCT FROM v_line.variant_id
      OR v_movement.delta IS DISTINCT FROM NEW.quantity
@@ -786,6 +790,82 @@ GRANT SELECT ON TABLE public.purchase_order_attachment_reservations, public.purc
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES ('purchase-order-documents', 'purchase-order-documents', false, 20971520, ARRAY['application/pdf', 'image/jpeg', 'image/png'])
 ON CONFLICT (id) DO NOTHING;
+
+-- 14. Inventory list (G-2 Task 3, FREQ-525): one row per variant worth showing, read from one snapshot (a STABLE function
+--     shares the snapshot of the calling statement). The actor must hold admin.stock.read, otherwise GROUP_G_FORBIDDEN /
+--     42501 is raised before anything is read. It writes nothing and creates no variant.
+--       free / paid_allocated / payment_held / on_hand : the same numbers as list_group_g_variant_inventory (on_hand = F + A + H).
+--       order_quantity : units of the projection group_g_item_state_ranges that are in_production or ready, over the
+--         open-work orders of every variant. Unpaid, cancel-requested, returned and cancelled units are never counted.
+--       on_order : the outstanding quantity of purchase order lines whose quantity is confirmed (a provisional quantity
+--         is not counted; a short-closed line has no outstanding quantity left).
+--       required = max(0, order_quantity - on_hand - on_order).
+--     A variant is listed while it is active, or holds stock, or has an outstanding purchase, or has an order quantity
+--     (an inactive variant is listed only while one of these holds and is never made sellable again). Order: item id,
+--     color position, size position, variant id.
+CREATE FUNCTION private.list_admin_inventory(_actor_id uuid)
+RETURNS TABLE(variant_id bigint, item_id bigint, item_name text, color_name text, size_label text, is_active boolean,
+  free integer, paid_allocated integer, payment_held integer, on_hand integer, order_quantity integer, on_order integer,
+  required integer)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+BEGIN
+  IF NOT private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.stock.read']) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+  RETURN QUERY
+  WITH allocations AS (
+    SELECT a.variant_id,
+      COALESCE(pg_catalog.sum(a.remaining_quantity) FILTER (WHERE a.kind = 'paid'), 0)::integer AS paid,
+      COALESCE(pg_catalog.sum(a.remaining_quantity) FILTER (WHERE a.kind = 'payment_hold'), 0)::integer AS held
+    FROM public.order_item_allocations AS a
+    GROUP BY a.variant_id
+  ), production AS (
+    SELECT oi.variant_id, pg_catalog.sum(s.unit_to - s.unit_from)::integer AS quantity
+    FROM private.group_g_item_state_ranges(private.group_g_open_work_order_ids(NULL::bigint[])) AS s
+    JOIN public.order_items AS oi ON oi.id = s.order_item_id
+    WHERE s.status IN ('in_production', 'ready')
+    GROUP BY oi.variant_id
+  ), purchases AS (
+    SELECT l.variant_id, pg_catalog.sum(l.outstanding_quantity)::integer AS quantity
+    FROM public.purchase_order_lines AS l
+    WHERE l.confirmed_quantity IS NOT NULL AND l.outstanding_quantity > 0
+    GROUP BY l.variant_id
+  ), numbers AS (
+    SELECT v.id AS vid, v.item_id AS iid, i.name AS iname, c.name AS cname, s.label AS slabel, v.is_active AS active,
+      v.stock_quantity AS f, COALESCE(a.paid, 0) AS p, COALESCE(a.held, 0) AS h,
+      v.stock_quantity + COALESCE(a.paid, 0) + COALESCE(a.held, 0) AS oh,
+      COALESCE(pr.quantity, 0) AS oq, COALESCE(pu.quantity, 0) AS oo,
+      c.position AS cpos, s.position AS spos
+    FROM public.item_variants AS v
+    JOIN public.items AS i ON i.id = v.item_id
+    LEFT JOIN public.item_colors AS c ON c.id = v.color_id
+    LEFT JOIN public.item_sizes AS s ON s.id = v.size_id
+    LEFT JOIN allocations AS a ON a.variant_id = v.id
+    LEFT JOIN production AS pr ON pr.variant_id = v.id
+    LEFT JOIN purchases AS pu ON pu.variant_id = v.id
+  )
+  SELECT n.vid, n.iid, n.iname, n.cname, n.slabel, n.active, n.f, n.p, n.h, n.oh, n.oq, n.oo,
+    GREATEST(0, n.oq::bigint - n.oh - n.oo)::integer
+  FROM numbers AS n
+  WHERE n.active OR n.oh > 0 OR n.oo > 0 OR n.oq > 0
+  ORDER BY n.iid, n.cpos, n.spos, n.vid;
+END;
+$$;
+ALTER FUNCTION private.list_admin_inventory(uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.list_admin_inventory(uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.list_admin_inventory(uuid) TO service_role;
+
+CREATE FUNCTION public.list_admin_inventory(_actor_id uuid)
+RETURNS TABLE(variant_id bigint, item_id bigint, item_name text, color_name text, size_label text, is_active boolean,
+  free integer, paid_allocated integer, payment_held integer, on_hand integer, order_quantity integer, on_order integer,
+  required integer)
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.list_admin_inventory(_actor_id); $$;
+ALTER FUNCTION public.list_admin_inventory(uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.list_admin_inventory(uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.list_admin_inventory(uuid) TO service_role;
 
 -- G2A_BODY_END
 
@@ -1083,6 +1163,42 @@ BEGIN
   END IF;
 END
 $g2a_final_table_acl$;
+
+-- Task 3 expectation: the inventory list function and its public entrance. Owner postgres, search_path empty, STABLE,
+-- set-returning, exactly this argument and result shape; the private body is SECURITY DEFINER and the public entrance is a
+-- SQL SECURITY INVOKER delegate; anon / authenticated / PUBLIC cannot EXECUTE either (PUBLIC is read from the effective
+-- ACL) and service_role can.
+DO $g2a_final_inventory_list$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM (VALUES ('private.list_admin_inventory(uuid)', true), ('public.list_admin_inventory(uuid)', false)) AS e(sig, definer)
+    LEFT JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(e.sig)
+    WHERE p.oid IS NULL
+       OR p.proowner <> 'postgres'::regrole
+       OR p.prosecdef <> e.definer
+       OR p.provolatile <> 's'
+       OR NOT p.proretset
+       OR p.prolang <> (SELECT l.oid FROM pg_catalog.pg_language AS l
+                        WHERE l.lanname = CASE WHEN e.definer THEN 'plpgsql' ELSE 'sql' END)
+       OR NOT ('search_path=""' = ANY (COALESCE(p.proconfig, ARRAY[]::text[])))
+       OR p.proargnames IS DISTINCT FROM ARRAY['_actor_id', 'variant_id', 'item_id', 'item_name', 'color_name', 'size_label',
+            'is_active', 'free', 'paid_allocated', 'payment_held', 'on_hand', 'order_quantity', 'on_order', 'required']
+       OR p.proargmodes IS DISTINCT FROM ARRAY['i', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't']::"char"[]
+       OR p.proallargtypes IS DISTINCT FROM ARRAY['uuid'::regtype::oid, 'bigint'::regtype::oid, 'bigint'::regtype::oid,
+            'text'::regtype::oid, 'text'::regtype::oid, 'text'::regtype::oid, 'boolean'::regtype::oid,
+            'integer'::regtype::oid, 'integer'::regtype::oid, 'integer'::regtype::oid, 'integer'::regtype::oid,
+            'integer'::regtype::oid, 'integer'::regtype::oid, 'integer'::regtype::oid]
+       OR pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+       OR NOT pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')
+       OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) AS x
+                  WHERE x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'inventory_list_functions';
+  END IF;
+END;
+$g2a_final_inventory_list$;
 -- G2A_FINAL_ASSERT_END
 
 NOTIFY pgrst, 'reload schema';

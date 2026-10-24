@@ -18,6 +18,7 @@ const TAB_ICONS: Record<TabType, string> = {
   STOCKIST: "ri-map-pin-line",
   USER: "ri-user-line",
   ORDER: "ri-shopping-cart-line",
+  INVENTORY: "ri-archive-line",
   CONTACT: "ri-mail-line",
   SETTINGS: "ri-settings-3-line",
 };
