@@ -5,10 +5,14 @@ import { E2E_FIXED_ENV, isLocalUrl } from '../scripts/e2e/environment';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import {
   createCatalogFixture, createDraft, insertCancelRequest, insertReturnReceipt, insertReturnRecord,
-  insertReturnRefund, PRICE,
+  insertReturnRefund, PRICE, withFixtureConsumption,
 } from '../tests/integration/db/helpers/order-fixtures';
-import { insertDeliveryFixture, insertDeliveryRegistration } from '../tests/integration/db/helpers/delivery-tracking-fixtures';
+import { insertDeliveryRegistration } from '../tests/integration/db/helpers/delivery-tracking-fixtures';
 import { expectNoHorizontalOverflow, isolateCustomerApiIp } from './delivery-tracking-test-utils';
+import {
+  allocationKindOf, lockE2eInventory, releaseE2eUnpaidOrder, seedE2eAllocation, seedE2eRestock, seedE2eShipment,
+  withGroupG1Material,
+} from './group-g1-test-utils';
 import { mailsTo, uniqueEmail, withLocalDb } from './order-email-test-utils';
 import { ensureReturnSettings, RETURN_ADDRESS } from './return-test-utils';
 
@@ -56,7 +60,9 @@ async function localPostgres(db: PgClient): Promise<PgClient> {
   catch { throw new Error('注文状況の試験DBを確認できない'); }
   // Docker の DB 内の listen address は loopback とは限らない。接続先は上の client metadata で検査する。
   if (identity.role !== 'postgres') throw new Error('注文状況の試験DBは loopback の postgres 接続だけ');
-  const safe: PgClient = {
+  // host は G-1 の材料の見張り（localhost / 127.0.0.1 だけ）が読む。検査済みの接続先をそのまま渡す。
+  const safe: PgClient & { host?: string } = {
+    host: connection.host,
     query: async (sql, params) => {
       try { return await db.query(sql, params); }
       catch (error) {
@@ -108,46 +114,62 @@ export async function withOrderStatusDb<T>(run: (db: PgClient) => Promise<T>): P
 
 type Scenario = { orderId: string; orderItemId: string; lastFour: string | null };
 type ScenarioInput = { kind: 'public' | 'returns' | 'delivery'; customerId?: string | null; phone?: string | null };
-async function createBase(db: PgClient, input: ScenarioInput, status = 'paid'): Promise<Scenario> {
-  const catalog = await createCatalogFixture(db, { stock: 4, itemStatus: 'private' });
-  const draft = await createDraft(db, { itemId: catalog.itemId, quantity: 4 });
-  const paymentIntent = `pi_e5_${randomUUID().replaceAll('-', '')}`;
-  await db.query("update public.checkout_drafts set payment_intent_id=$2,payment_method='stripe_card' where id=$1", [draft.draftId, paymentIntent]);
-  const phone = input.phone === undefined ? STATUS_PRIVATE.phone : input.phone;
-  const order = (await db.query(`insert into public.orders
-    (session_id,checkout_session_id,payment_intent_id,user_id,status,subtotal_amount,shipping_amount,
-     discount_amount,total_amount,paid_amount,currency,shipping_email,shipping_full_name,shipping_postal_code,
-     shipping_prefecture,shipping_city,shipping_address,shipping_building,shipping_phone)
-    values ($1,$2,$3,$4,$5::public.order_status,$6,0,0,$6,$6,'jpy',$7,$8,$9,'東京都','試験区',$10,'試験棟',$11) returning id`,
-  [draft.cartSessionId, draft.checkoutSessionId, paymentIntent, input.customerId ?? null, status, PRICE * 4,
-    uniqueEmail('e5-private'), STATUS_PRIVATE.name, STATUS_PRIVATE.postalCode, STATUS_PRIVATE.address, phone])).rows[0];
-  const orderId = order.id as string;
-  remember(db, orderId);
-  const line = (await db.query(`insert into public.order_items
-    (order_id,item_id,variant_id,item_name,item_price,color,size,quantity,line_total,fulfillment_type)
-    values ($1,$2,$3,'公開用の試験商品',$4,'BLACK','M',4,$5,'stock') returning id`,
-  [orderId, catalog.itemId, catalog.variantId, PRICE, PRICE * 4])).rows[0];
-  await db.query(`insert into public.stock_movements (variant_id,delta,reason,order_id,order_item_id)
-    values ($1,-4,'purchase',$2,$3)`, [catalog.variantId, orderId, line.id]);
-  const digits = phone?.replace(/[０-９]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0))
-    .replace(/[^0-9]/g, '') ?? '';
-  return { orderId, orderItemId: line.id as string, lastFour: digits.length >= 4 ? digits.slice(-4) : null };
+type BaseStatus = 'paid' | 'payment_in_progress' | 'abandoned' | 'cancelled';
+/**
+ * G-1（Task 17）: 1つの G-1 の取引で、下書き → 本物の入荷の入口で4点 → 色・サイズを押さえ → 注文と明細 → 割当
+ * （入金済みは A、支払い手続き中は H）を作る。放棄・取消は H を作ってから同じ取引の本物の解放で H を0にして状態を決める。
+ */
+async function createBase(db: PgClient, input: ScenarioInput, status: BaseStatus = 'paid'): Promise<Scenario> {
+  return withGroupG1Material(db, async () => {
+    const released = status === 'abandoned' || status === 'cancelled';
+    const insertStatus = released ? 'payment_in_progress' : status;
+    const catalog = await createCatalogFixture(db, { stock: 0, itemStatus: 'private' });
+    // 下書きの行は、色・サイズより前に押さえる（共通の鍵 → 下書き → 商品 → 色・サイズ → 注文の順）
+    const draft = await createDraft(db, { itemId: catalog.itemId, quantity: 4 });
+    const paymentIntent = `pi_e5_${randomUUID().replaceAll('-', '')}`;
+    await db.query("update public.checkout_drafts set payment_intent_id=$2,payment_method='stripe_card' where id=$1", [draft.draftId, paymentIntent]);
+    await seedE2eRestock(db, { itemId: catalog.itemId, variantId: catalog.variantId, quantity: 4 });
+    await lockE2eInventory(db, { variantIds: [catalog.variantId] });
+    const phone = input.phone === undefined ? STATUS_PRIVATE.phone : input.phone;
+    const order = (await db.query(`insert into public.orders
+      (session_id,checkout_session_id,payment_intent_id,user_id,status,subtotal_amount,shipping_amount,
+       discount_amount,total_amount,paid_amount,currency,shipping_email,shipping_full_name,shipping_postal_code,
+       shipping_prefecture,shipping_city,shipping_address,shipping_building,shipping_phone)
+      values ($1,$2,$3,$4,$5::public.order_status,$6,0,0,$6,$6,'jpy',$7,$8,$9,'東京都','試験区',$10,'試験棟',$11) returning id`,
+    [draft.cartSessionId, draft.checkoutSessionId, paymentIntent, input.customerId ?? null, insertStatus, PRICE * 4,
+      uniqueEmail('e5-private'), STATUS_PRIVATE.name, STATUS_PRIVATE.postalCode, STATUS_PRIVATE.address, phone])).rows[0];
+    const orderId = order.id as string;
+    remember(db, orderId);
+    const line = (await db.query(`insert into public.order_items
+      (order_id,item_id,variant_id,item_name,item_price,color,size,quantity,line_total,fulfillment_type)
+      values ($1,$2,$3,'公開用の試験商品',$4,'BLACK','M',4,$5,'stock') returning id`,
+    [orderId, catalog.itemId, catalog.variantId, PRICE, PRICE * 4])).rows[0];
+    await seedE2eAllocation(db, { orderItemId: line.id as string, quantity: 4, kind: allocationKindOf(insertStatus) });
+    if (status === 'abandoned' || status === 'cancelled') await releaseE2eUnpaidOrder(db, { orderId, status });
+    const digits = phone?.replace(/[０-９]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0))
+      .replace(/[^0-9]/g, '') ?? '';
+    return { orderId, orderItemId: line.id as string, lastFour: digits.length >= 4 ? digits.slice(-4) : null };
+  });
 }
 
-async function ship(db: PgClient, order: Scenario, quantity = 4): Promise<string> {
-  const shippedAt = (await db.query("select (now()-interval '1 hour')::text as at")).rows[0].at as string;
-  const { fulfillmentId } = await insertDeliveryFixture(db, { orderId: order.orderId, shippedAt,
+/** 合成の発送（A を消費する。旧の関数は呼ばない）。cancelledAt を渡すと最初から取消済みで、消費しない */
+async function ship(db: PgClient, order: Scenario, quantity = 4, extra: { cancelledAt?: string } = {}): Promise<string> {
+  const shippedAt = (await db.query("select now()-interval '1 hour' as at")).rows[0].at as Date;
+  return seedE2eShipment(db, { orderId: order.orderId, shippedAt: shippedAt.toISOString(), cancelledAt: extra.cancelledAt,
+    lines: [{ orderItemId: order.orderItemId, quantity }],
     trackingNumber: `${STATUS_PRIVATE.tracking}-${randomUUID().slice(0, 8)}` });
-  await db.query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,$3)',
-    [fulfillmentId, order.orderItemId, quantity]);
-  return fulfillmentId;
 }
 
 export async function createOrderStatusScenario(db: PgClient, input: ScenarioInput): Promise<Scenario> {
   db = await localPostgres(db);
+  if (input.kind === 'returns') await ensureReturnSettings(db);
+  const target = db;
+  return withGroupG1Material(target, () => createOrderStatusScenarioInMaterial(target, input));
+}
+
+async function createOrderStatusScenarioInMaterial(db: PgClient, input: ScenarioInput): Promise<Scenario> {
   const order = await createBase(db, input);
   if (input.kind === 'returns') {
-    await ensureReturnSettings(db);
     const fulfillmentId = await ship(db, order);
     await insertReturnRecord(db, { orderId: order.orderId, lines: [{ fulfillmentId, orderItemId: order.orderItemId, quantity: 1 }] });
     const back = await insertReturnRecord(db, { orderId: order.orderId,
@@ -171,49 +193,62 @@ export async function createOrderStatusReturnCase(db: PgClient,
   state: 'requested' | 'accepted' | 'partially_received' | 'inspecting' | 'awaiting_fee' | 'refund_preparing' | 'returned' | 'declined',
   options: { returnMethod?: 'customer_ships' | 'shop_label' | 'not_required' } = {},
 ): Promise<Scenario> {
-  db = await localPostgres(db);
-  await ensureReturnSettings(db);
-  const order = await createBase(db, { kind: 'returns' });
-  const fulfillmentId = await ship(db, order);
-  const record = await insertReturnRecord(db, { orderId: order.orderId, returnMethod: options.returnMethod,
-    status: state === 'requested' || state === 'declined' ? state : state === 'returned' ? 'closed' : 'open',
-    feeDueAmount: state === 'awaiting_fee' ? 500 : 0,
-    lines: [{ fulfillmentId, orderItemId: order.orderItemId, quantity: 2 }] });
-  if (state === 'declined') await db.query('update public.order_returns set decline_message=$2 where id=$1', [record.returnId, STATUS_SHOP_MESSAGE]);
-  if (['partially_received', 'inspecting', 'refund_preparing', 'returned'].includes(state)) {
-    await insertReturnReceipt(db, { returnId: record.returnId, lines: [{ returnLineId: record.lineIds[0],
-      disposition: state === 'inspecting' ? 'pending_inspection' : 'restocked', quantity: state === 'partially_received' ? 1 : 2 }] });
-  }
-  if (state === 'returned') await insertReturnRefund(db, { orderId: order.orderId, returnId: record.returnId,
-    status: 'succeeded', amount: 8000, lines: [{ orderItemId: order.orderItemId, quantity: 2, amount: 8000 }] });
-  return order;
+  const target = await localPostgres(db);
+  await ensureReturnSettings(target);
+  return withGroupG1Material(target, async () => {
+    const order = await createBase(target, { kind: 'returns' });
+    const fulfillmentId = await ship(target, order);
+    const record = await insertReturnRecord(target, { orderId: order.orderId, returnMethod: options.returnMethod,
+      status: state === 'requested' || state === 'declined' ? state : state === 'returned' ? 'closed' : 'open',
+      feeDueAmount: state === 'awaiting_fee' ? 500 : 0,
+      lines: [{ fulfillmentId, orderItemId: order.orderItemId, quantity: 2 }] });
+    if (state === 'declined') await target.query('update public.order_returns set decline_message=$2 where id=$1', [record.returnId, STATUS_SHOP_MESSAGE]);
+    if (['partially_received', 'inspecting', 'refund_preparing', 'returned'].includes(state)) {
+      await insertReturnReceipt(target, { returnId: record.returnId, lines: [{ returnLineId: record.lineIds[0],
+        disposition: state === 'inspecting' ? 'pending_inspection' : 'restocked', quantity: state === 'partially_received' ? 1 : 2 }] });
+    }
+    if (state === 'returned') await insertReturnRefund(target, { orderId: order.orderId, returnId: record.returnId,
+      status: 'succeeded', amount: 8000, lines: [{ orderItemId: order.orderItemId, quantity: 2, amount: 8000 }] });
+    return order;
+  });
 }
 
 export async function createOrderStatusCancelCase(db: PgClient, status: 'requested' | 'declined' | 'resolved' | 'closed'): Promise<Scenario> {
-  db = await localPostgres(db);
-  const order = await createBase(db, { kind: 'public' });
-  await insertCancelRequest(db, { orderId: order.orderId, status, lines: [{ orderItemId: order.orderItemId, quantity: 1 }] });
-  return order;
+  const target = await localPostgres(db);
+  return withGroupG1Material(target, async () => {
+    const order = await createBase(target, { kind: 'public' });
+    await insertCancelRequest(target, { orderId: order.orderId, status, lines: [{ orderItemId: order.orderItemId, quantity: 1 }] });
+    return order;
+  });
 }
 
+/**
+ * 配送の材料（G-1）。追跡の版2・配送中の発送は合成の発送で表せないので、Task 16 の withFixtureConsumption で A を消費してから
+ * 行を書く。取消済みの発送は最初から cancelledAt 付き（消費しない）、配達済みは deliveredAt 付きの合成の発送。
+ */
 async function createDeliveryMaterial(db: PgClient, order: Scenario): Promise<void> {
-  const first = (await db.query(`insert into public.order_fulfillments
-    (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at,
-     tracking_version,delivery_status,delivery_status_at)
-    values ($1,1,gen_random_uuid(),'yamato',$2,false,false,now()-interval '2 hours',2,'in_transit',now()-interval '1 hour') returning id`,
-  [order.orderId, `${STATUS_PRIVATE.tracking}-${randomUUID().slice(0, 8)}`])).rows[0].id as string;
-  await db.query(`insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)`, [first, order.orderItemId]);
+  await lockE2eInventory(db, { orderIds: [order.orderId] });
+  const first = await withFixtureConsumption(db, { orderId: order.orderId, lines: [{ order_item_id: order.orderItemId, quantity: 1 }] },
+    async () => {
+      const id = (await db.query(`insert into public.order_fulfillments
+        (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at,
+         tracking_version,delivery_status,delivery_status_at)
+        values ($1,1,gen_random_uuid(),'yamato',$2,false,false,now()-interval '2 hours',2,'in_transit',now()-interval '1 hour') returning id`,
+      [order.orderId, `${STATUS_PRIVATE.tracking}-${randomUUID().slice(0, 8)}`])).rows[0].id as string;
+      await db.query(`insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)`, [id, order.orderItemId]);
+      return id;
+    });
   await db.query(`insert into public.order_fulfillment_events (fulfillment_id,tracking_version,status,happened_at,source)
     values ($1,1,'attempted_delivery',now()-interval '90 minutes','tracking'),
            ($1,2,'confirmed',now()-interval '2 hours','shipment'),
            ($1,2,'in_transit',now()-interval '1 hour','tracking')`, [first]);
   await insertDeliveryRegistration(db, first, { version: 2, state: 'stopped', stopReason: 'provider_stopped', everRegistered: true });
-  const cancelled = await ship(db, order, 1);
-  await db.query('update public.order_fulfillments set cancelled_at=now() where id=$1', [cancelled]);
-  const clock = (await db.query("select (now()-interval '2 hours')::text as shipped,(now()-interval '30 minutes')::text as delivered")).rows[0];
-  const delivered = await insertDeliveryFixture(db, { orderId: order.orderId, shippedAt: clock.shipped,
-    deliveredAt: clock.delivered, trackingNumber: `${STATUS_PRIVATE.tracking}-${randomUUID().slice(0, 8)}` });
-  await db.query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)', [delivered.fulfillmentId, order.orderItemId]);
+  const now = (await db.query('select now() as at')).rows[0].at as Date;
+  await ship(db, order, 1, { cancelledAt: now.toISOString() });
+  const clock = (await db.query("select now()-interval '2 hours' as shipped,now()-interval '30 minutes' as delivered")).rows[0];
+  await seedE2eShipment(db, { orderId: order.orderId, shippedAt: (clock.shipped as Date).toISOString(),
+    deliveredAt: (clock.delivered as Date).toISOString(), lines: [{ orderItemId: order.orderItemId, quantity: 1 }],
+    trackingNumber: `${STATUS_PRIVATE.tracking}-${randomUUID().slice(0, 8)}` });
   // 古い順でなく INSERT し、表示順と failed/error の除外を一緒に確かめる。
   for (const [status, amount, days] of [['succeeded', 2000, 1], ['pending', 1000, 2], ['failed', 3000, 3], ['error', 4000, 4]]) {
     await db.query(`insert into public.order_refunds

@@ -14,6 +14,15 @@ import {
   uniqueSuffix,
 } from '../tests/integration/db/helpers/order-fixtures';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
+import {
+  allocationKindOf,
+  lockE2eInventory,
+  releaseE2eUnpaidOrder,
+  seedE2eAllocation,
+  seedE2eRestock,
+  shipE2eOrder,
+  withGroupG1Material,
+} from './group-g1-test-utils';
 
 const LOCAL_DB_URL = process.env.E2E_LOCAL_DB_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 
@@ -41,13 +50,18 @@ export function uniqueEmail(label: string): string {
  * 入金済みの注文（在庫の明細1行）を、試験ごとの宛先で作る。
  * 商品は非公開にする。公開のままだと、同じ実行の中で並行して流れる他の購入 spec の seedCart が選ぶ
  * 「新しい順の最初の商品」が、この試験用の商品に入れ替わってしまう。
+ * G-1: 在庫は本物の入荷の入口で入れ、注文と A（入金済みの割当）を同じ取引で作る。
  */
 export async function createPaidOrder(db: PgClient, email: string): Promise<string> {
-  const fx = await createCatalogFixture(db, { stock: 1, itemStatus: 'private' });
-  const { orderId } = await insertOrderWithStockLine(db, {
-    status: 'paid', itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: true, shippingEmail: email,
+  return withGroupG1Material(db, async () => {
+    const fx = await createCatalogFixture(db, { stock: 0, itemStatus: 'private' });
+    await seedE2eRestock(db, { itemId: fx.itemId, variantId: fx.variantId, quantity: 1 });
+    await lockE2eInventory(db, { variantIds: [fx.variantId] });
+    const { orderId } = await insertOrderWithStockLine(db, {
+      status: 'paid', itemId: fx.itemId, variantId: fx.variantId, quantity: 1, reserved: true, shippingEmail: email,
+    });
+    return orderId;
   });
-  return orderId;
 }
 
 /** 再送と発送の関数は実行者（auth.users への外部キー）が要る */
@@ -156,8 +170,11 @@ export type E2eOrderLine = {
 export type E2eCreatedOrder = { orderId: string; orderItemIds: string[]; itemId: number; variantId: number; totalAmount: number };
 
 /**
- * 明細を自由に決めた注文を作る。在庫の明細は台帳に確保（purchase）も入れ、受注生産の明細は台帳を動かさない
- * （注文を受け付ける DB の関数と同じ形）。配送先は後から書き換えられないので、発送できる形で最初から入れる。
+ * 明細を自由に決めた注文を作る。配送先は後から書き換えられないので、発送できる形で最初から入れる。
+ * G-1（Task 17）: 1つの G-1 の取引で、在庫の明細の数を本物の入荷の入口で入れ → 色・サイズを押さえ → 注文と明細 →
+ * 在庫の明細ごとに割当（入金済みは A、未入金は H。台帳の purchase は割当と一緒に1組だけ）を作る。受注生産の明細は割り当てない。
+ * 取消（cancelled）は支払い手続き中で H を作り、同じ取引の本物の解放で H を0にしてから取消にする。
+ * 在庫を確保し直せなかった注文（reviewReason: stock_not_reserved）は意図した不足で、入荷も割当もしない。
  * 同じ色・サイズの在庫を複数の注文で使う時は、先の注文の itemId・variantId を catalog に渡す
  * （2件目からは在庫を足さないので、足りる数を最初の注文の在庫の明細で用意する）。
  * 商品は非公開にする（理由は createPaidOrder と同じ）。
@@ -169,20 +186,38 @@ export async function createOrderWithLines(
   db: PgClient,
   email: string,
   lines: E2eOrderLine[],
-  options: {
-    status?: 'paid' | 'pending' | 'payment_in_progress' | 'cancelled';
-    reviewReason?: 'stock_not_reserved';
-    catalog?: { itemId: number; variantId: number };
-    paidAmount?: number | 'total';
-    paymentIntentId?: string;
-    shippingAmount?: number;
-    userId?: string;
-  } = {},
+  options: E2eOrderOptions = {},
 ): Promise<E2eCreatedOrder> {
-  const stockQuantity = lines
-    .filter((line) => line.fulfillmentType === 'stock')
-    .reduce((sum, line) => sum + line.quantity, 0);
-  const catalog = options.catalog ?? (await createCatalogFixture(db, { stock: stockQuantity, itemStatus: 'private' }));
+  return withGroupG1Material(db, () => insertOrderWithLinesInMaterial(db, email, lines, options));
+}
+
+export type E2eOrderOptions = {
+  status?: 'paid' | 'pending' | 'payment_in_progress' | 'cancelled';
+  reviewReason?: 'stock_not_reserved';
+  catalog?: { itemId: number; variantId: number };
+  paidAmount?: number | 'total';
+  paymentIntentId?: string;
+  shippingAmount?: number;
+  userId?: string;
+};
+
+/** createOrderWithLines の本体。呼び手の G-1 の取引（共通の鍵の後）の中で流す */
+async function insertOrderWithLinesInMaterial(
+  db: PgClient,
+  email: string,
+  lines: E2eOrderLine[],
+  options: E2eOrderOptions,
+): Promise<E2eCreatedOrder> {
+  const status = options.status ?? 'paid';
+  const released = status === 'cancelled';
+  const insertStatus = released ? 'payment_in_progress' : status;
+  const reserves = (line: E2eOrderLine) => line.fulfillmentType === 'stock' && options.reviewReason !== 'stock_not_reserved';
+  const stockQuantity = lines.filter(reserves).reduce((sum, line) => sum + line.quantity, 0);
+  const catalog = options.catalog ?? (await createCatalogFixture(db, { stock: 0, itemStatus: 'private' }));
+  if (!options.catalog && stockQuantity > 0) {
+    await seedE2eRestock(db, { itemId: catalog.itemId, variantId: catalog.variantId, quantity: stockQuantity });
+  }
+  await lockE2eInventory(db, { variantIds: [catalog.variantId] });
   const suffix = uniqueSuffix();
   const subtotal = lines.reduce((sum, line) => sum + PRICE * line.quantity, 0);
   const shipping = options.shippingAmount ?? 0;
@@ -199,7 +234,7 @@ export async function createOrderWithLines(
              $10, '山田 花子', '1500001', '東京都', '渋谷区', '神宮前1-1-1', '0311112222', $11)
      returning id`,
     [
-      `e2e-lines-${suffix}`, `cs_e2e_${suffix}`, options.paymentIntentId ?? null, options.status ?? 'paid',
+      `e2e-lines-${suffix}`, `cs_e2e_${suffix}`, options.paymentIntentId ?? null, insertStatus,
       options.reviewReason ?? null, subtotal, shipping, total, paidAmount, email, options.userId ?? null,
     ],
   );
@@ -218,14 +253,11 @@ export async function createOrderWithLines(
     );
     const orderItemId = saved.rows[0].id as string;
     orderItemIds.push(orderItemId);
-    if (line.fulfillmentType === 'stock') {
-      await db.query(
-        `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id)
-         values ($1, $2, 'purchase', $3, $4)`,
-        [catalog.variantId, -line.quantity, orderId, orderItemId],
-      );
+    if (reserves(line)) {
+      await seedE2eAllocation(db, { orderItemId, quantity: line.quantity, kind: allocationKindOf(insertStatus) });
     }
   }
+  if (released) await releaseE2eUnpaidOrder(db, { orderId, status: 'cancelled' });
   return { orderId, orderItemIds, itemId: catalog.itemId, variantId: catalog.variantId, totalAmount: total };
 }
 
@@ -249,7 +281,11 @@ export type E2eFulfillment = {
   replayed: boolean;
 };
 
-/** 発送の DB の関数 admin_create_fulfillment。管理画面の発送の画面の代わりに、同じ関数を直に呼ぶ */
+/**
+ * 発送の材料。旧の発送の関数 admin_create_fulfillment は G-1 で止まった（LEGACY_FULFILLMENT_DISABLED）ので呼ばず、
+ * 合成の発送（group-g1-test-utils の shipE2eOrder）で A を消費して作る。A が足りなければ材料の失敗（入荷や purchase で補わない）。
+ * 業務の操作の成功の証拠ではない（replayed は常に false）。deliveredAt を渡すと、最初から配達済みの発送の材料にする。
+ */
 export async function createFulfillment(
   db: PgClient,
   orderId: string,
@@ -260,24 +296,20 @@ export async function createFulfillment(
     carrier?: 'yamato' | 'sagawa' | 'japanpost';
     notify?: boolean;
     requestKey?: string;
+    deliveredAt?: string;
   },
 ): Promise<E2eFulfillment> {
-  const res = await db.query(
-    `select * from public.admin_create_fulfillment(
-       $1::uuid, $2::uuid, $3::uuid, $4::text, $5::text, $6::boolean, $7::jsonb)`,
-    [
-      orderId, actorId, input.requestKey ?? randomUUID(), input.carrier ?? 'yamato',
-      input.trackingNumber, input.notify ?? true, dbLines(input.lines),
-    ],
-  );
-  const row = res.rows[0];
-  return {
-    fulfillmentId: row.fulfillment_id as string,
-    number: Number(row.number),
-    completesOrder: row.completes_order as boolean,
-    orderStatus: row.order_status as string,
-    replayed: row.replayed as boolean,
-  };
+  const shipment = await shipE2eOrder(db, {
+    orderId,
+    actorId,
+    lines: input.lines,
+    trackingNumber: input.trackingNumber,
+    carrier: input.carrier ?? 'yamato',
+    notify: input.notify ?? true,
+    requestKey: input.requestKey ?? randomUUID(),
+    deliveredAt: input.deliveredAt,
+  });
+  return { ...shipment, replayed: false };
 }
 
 /** 発送の取消の DB の関数 admin_cancel_fulfillment */

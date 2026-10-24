@@ -50,6 +50,7 @@ import {
   type E2eCreatedOrder,
   type MailBody,
 } from './order-email-test-utils';
+import { legacyFulfillmentDisabled, withGroupG1Material } from './group-g1-test-utils';
 import { createTestMember, loginAsMember, type TestMember } from './member-session-helpers';
 import { adminOrder, fulfillJson, mockAdminSession, orderNumberOf } from './order-fulfillment-test-utils';
 
@@ -456,27 +457,32 @@ export type PaidOrderFixture = E2eCreatedOrder & {
   actor: AdminActor;
 };
 
-/** 入金済みの注文（在庫の品1行・数 quantity）。会員の注文にしたい時は userId とそのメールを渡す */
+/**
+ * 入金済みの注文（在庫の品1行・数 quantity）。会員の注文にしたい時は userId とそのメールを渡す。
+ * G-1: 注文と A（入金済みの割当）は createOrderWithLines が1つの G-1 の取引で作る。
+ */
 export async function createPaidOrderFixture(
   client: PgClient,
   input: { label: string; quantity?: number; userId?: string; email?: string; actor?: AdminActor },
 ): Promise<PaidOrderFixture> {
-  const email = input.email ?? uniqueEmail(`dt-${input.label}`);
-  const quantity = input.quantity ?? 1;
-  const order = await createOrderWithLines(
-    client,
-    email,
-    [{ name: 'E2E配送のシャツ', quantity, fulfillmentType: 'stock' }],
-    { paidAmount: 'total', userId: input.userId },
-  );
-  return {
-    ...order,
-    orderItemId: order.orderItemIds[0],
-    quantity,
-    email,
-    orderNumber: orderNumberOf(order.orderId),
-    actor: input.actor ?? (await createAdminActor(client)),
-  };
+  return withGroupG1Material(client, async () => {
+    const email = input.email ?? uniqueEmail(`dt-${input.label}`);
+    const quantity = input.quantity ?? 1;
+    const order = await createOrderWithLines(
+      client,
+      email,
+      [{ name: 'E2E配送のシャツ', quantity, fulfillmentType: 'stock' }],
+      { paidAmount: 'total', userId: input.userId },
+    );
+    return {
+      ...order,
+      orderItemId: order.orderItemIds[0],
+      quantity,
+      email,
+      orderNumber: orderNumberOf(order.orderId),
+      actor: input.actor ?? (await createAdminActor(client)),
+    };
+  });
 }
 
 export type ShipmentFixture = {
@@ -497,11 +503,15 @@ export function pairFor(numberPrefix: string, tag: string, carrier: ShippingCarr
   return { carrier: TRACKING_CARRIER_IDS[carrier], number: `${numberPrefix}-${tag}`.toUpperCase() };
 }
 
-/** 注文へ発送を足す（DB の admin_create_fulfillment）。伝票番号は numberPrefix で始めて tag で分ける */
+/**
+ * 注文へ発送を足す。伝票番号は numberPrefix で始めて tag で分ける。
+ * G-1: 旧の発送の関数（admin_create_fulfillment）は止まったので、合成の発送の材料（createFulfillment。A を消費する）で作る。
+ * deliveredAt を渡すと、最初から配達済みの発送の材料にする（手で配達済みにする旧の関数の代わり。業務の操作の成功ではない）。
+ */
 export async function shipFixture(
   client: PgClient,
   order: PaidOrderFixture,
-  input: { numberPrefix: string; tag: string; carrier?: ShippingCarrierId; notify?: boolean; quantity?: number },
+  input: { numberPrefix: string; tag: string; carrier?: ShippingCarrierId; notify?: boolean; quantity?: number; deliveredAt?: string },
 ): Promise<ShipmentFixture> {
   const carrier = input.carrier ?? 'yamato';
   const trackingNumber = `${input.numberPrefix}-${input.tag}`;
@@ -510,6 +520,7 @@ export async function shipFixture(
     carrier,
     notify: input.notify ?? true,
     lines: [{ orderItemId: order.orderItemId, quantity: input.quantity ?? order.quantity }],
+    deliveredAt: input.deliveredAt,
   });
   return {
     fulfillmentId: shipment.fulfillmentId,
@@ -520,7 +531,10 @@ export async function shipFixture(
   };
 }
 
-/** 注文を作って、その全部を1つの発送で送る（数は quantity の全部） */
+/**
+ * 注文を作って、その全部を1つの発送で送る（数は quantity の全部）。G-1: 注文・A・発送（A の消費）は1つの G-1 の取引。
+ * deliveredAt を渡すと、最初から配達済みの発送の材料にする。
+ */
 export async function createShippedFixture(
   client: PgClient,
   input: {
@@ -533,30 +547,37 @@ export async function createShippedFixture(
     email?: string;
     /** 発送を作る管理者の代わりの利用者。省くと注文ごとに新しく作る（複数の注文で同じ人にしたい時に渡す） */
     actor?: AdminActor;
+    deliveredAt?: string;
   },
 ): Promise<PaidOrderFixture & { shipment: ShipmentFixture }> {
-  const quantity = input.quantity ?? 1;
-  const order = await createPaidOrderFixture(client, {
-    label: input.tag.toLowerCase(), quantity, userId: input.userId, email: input.email, actor: input.actor,
+  return withGroupG1Material(client, async () => {
+    const quantity = input.quantity ?? 1;
+    const order = await createPaidOrderFixture(client, {
+      label: input.tag.toLowerCase(), quantity, userId: input.userId, email: input.email, actor: input.actor,
+    });
+    const shipment = await shipFixture(client, order, { ...input, quantity });
+    return { ...order, shipment };
   });
-  const shipment = await shipFixture(client, order, { ...input, quantity });
-  return { ...order, shipment };
 }
 
-/** 手で配達済みにする DB の関数（admin_mark_fulfillment_delivered）。管理画面の「配達済みにする」と同じ関数 */
+/**
+ * 手で配達済みにする旧の DB の関数（admin_mark_fulfillment_delivered）は G-1 の Task 14 で止まった。
+ * 手での操作の成功を装わず、DB に触れずに LEGACY_FULFILLMENT_DISABLED（55000）で断る。配達済みを材料に使う試験は、
+ * shipFixture・createShippedFixture・createFulfillment の deliveredAt で最初から配達済みの発送を作る。
+ */
 export async function markDeliveredInDb(
   client: PgClient,
   input: { orderId: string; fulfillmentId: string; actorId: string; deliveredOn: string; notify: boolean; requestKey?: string },
 ): Promise<{ eventId: string; deliveredAt: Date; replayed: boolean }> {
-  const row = (
-    await client.query('select * from public.admin_mark_fulfillment_delivered($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::date, $6::boolean)', [
-      input.orderId, input.fulfillmentId, input.actorId, input.requestKey ?? randomUUID(), input.deliveredOn, input.notify,
-    ])
-  ).rows[0];
-  return { eventId: row.event_id as string, deliveredAt: row.delivered_at as Date, replayed: row.replayed as boolean };
+  void client;
+  void input;
+  return legacyFulfillmentDisabled();
 }
 
-/** 伝票番号を直す DB の関数（admin_update_fulfillment_tracking）。管理画面の「伝票番号を直す」と同じ関数 */
+/**
+ * 伝票番号を直す旧の DB の関数（admin_update_fulfillment_tracking）は G-1 の Task 14 で止まった。
+ * 手での操作の成功を装わず、DB に触れずに LEGACY_FULFILLMENT_DISABLED（55000）で断る。
+ */
 export async function editTrackingInDb(
   client: PgClient,
   input: {
@@ -569,13 +590,9 @@ export async function editTrackingInDb(
     requestKey?: string;
   },
 ): Promise<{ trackingChangeId: string; trackingVersion: number; replayed: boolean }> {
-  const row = (
-    await client.query(
-      'select * from public.admin_update_fulfillment_tracking($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::text, $6::text, $7::boolean)',
-      [input.orderId, input.fulfillmentId, input.actorId, input.requestKey ?? randomUUID(), input.carrier, input.trackingNumber, input.notify],
-    )
-  ).rows[0];
-  return { trackingChangeId: row.tracking_change_id as string, trackingVersion: Number(row.tracking_version), replayed: row.replayed as boolean };
+  void client;
+  void input;
+  return legacyFulfillmentDisabled();
 }
 
 /** 返品の設定のうち、届いた日からの期限に効く物 */

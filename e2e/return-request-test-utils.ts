@@ -16,6 +16,7 @@ import {
   withLocalDb, createOrderWithLines, createActor, mailBodies,
   runWorkerUntil, runWorkerOnce, recordRefundResult, type E2eOrderLine,
 } from './order-email-test-utils';
+import { seedE2eRestock, seedE2eShipment, withGroupG1Material } from './group-g1-test-utils';
 import { fulfillJson, openOrderTab, orderNumberOf, orderLine, viewports } from './order-fulfillment-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
 import {
@@ -138,37 +139,40 @@ export async function unshipped(rr: RR, status: 'pending' | 'paid' = 'paid', qua
   return { ...order, actorId: await createActor(rr.db) };
 }
 export async function expired(rr: RR): Promise<ReturnFixture> {
-  const fx = await createOrderWithLines(rr.db, rr.member.email,
-    [{ name: 'E2Eシャツ', quantity: 1, fulfillmentType: 'stock' }],
-    { userId: rr.member.userId, paidAmount: 'total', paymentIntentId: 'pi_e2e_' + randomUUID().replaceAll('-', '') });
-  // 発送の時刻は INSERT で古くする。注文の持ち主と発送の記録を書き換えない。
-  const shipment = (await rr.db.query(
-    'insert into public.order_fulfillments(order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at) ' +
-    "values($1,1,gen_random_uuid(),'yamato','E2E-OLD',false,false,now()-interval '40 days') returning id",
-    [fx.orderId],
-  )).rows[0].id as string;
-  await rr.db.query('insert into public.order_fulfillment_lines(fulfillment_id,order_item_id,quantity) values($1,$2,1)',
-    [shipment, fx.orderItemIds[0]]);
-  return {
-    orderId: fx.orderId, orderItemIds: fx.orderItemIds, itemId: fx.itemId, variantId: fx.variantId,
-    actorId: await createActor(rr.db), email: rr.member.email, fulfillmentId: shipment, fulfillmentIds: [shipment],
-  };
+  // G-1: 注文・A・発送（A の消費）を1つの取引で作る。発送の時刻は作る時に古くする（注文の持ち主と発送の記録を書き換えない）。
+  return withGroupG1Material(rr.db, async () => {
+    const fx = await createOrderWithLines(rr.db, rr.member.email,
+      [{ name: 'E2Eシャツ', quantity: 1, fulfillmentType: 'stock' }],
+      { userId: rr.member.userId, paidAmount: 'total', paymentIntentId: 'pi_e2e_' + randomUUID().replaceAll('-', '') });
+    const shippedAt = (await rr.db.query("select now()-interval '40 days' as at")).rows[0].at as Date;
+    const shipment = await seedE2eShipment(rr.db, {
+      orderId: fx.orderId, lines: [{ orderItemId: fx.orderItemIds[0], quantity: 1 }], shippedAt: shippedAt.toISOString(),
+      carrier: 'yamato', trackingNumber: 'E2E-OLD', notifyCustomer: false,
+    });
+    return {
+      orderId: fx.orderId, orderItemIds: fx.orderItemIds, itemId: fx.itemId, variantId: fx.variantId,
+      actorId: await createActor(rr.db), email: rr.member.email, fulfillmentId: shipment, fulfillmentIds: [shipment],
+    };
+  });
 }
-/** 同じ商品に、もうある色の別のサイズを足して番号を返す。色の名前は商品ごとに一意なので、addVariant で同じ色を2回は足せない */
+/**
+ * 同じ商品に、もうある色の別のサイズを足して番号を返す。色の名前は商品ごとに一意なので、addVariant で同じ色を2回は足せない。
+ * バリアントは在庫0で作り、在庫は本物の入荷の入口（実行者は手元の材料の管理者）で入れる。作成と入荷は1つの G-1 の取引。
+ */
 export async function addSizeVariant(db: PgClient, itemId: number, colorName: string, size: string, stock = 0): Promise<number> {
-  const color = (await db.query('select id from public.item_colors where item_id = $1 and name = $2', [itemId, colorName])).rows[0];
-  if (!color) throw new Error('試験の色が無い');
-  const label = (await db.query(
-    'insert into public.item_sizes (item_id, label, position) values ($1, $2, 1) returning id', [itemId, size],
-  )).rows[0];
-  const variant = Number((await db.query(
-    'insert into public.item_variants (item_id, color_id, size_id, is_active) values ($1, $2, $3, true) returning id',
-    [itemId, color.id, label.id],
-  )).rows[0].id);
-  if (stock > 0) {
-    await db.query("insert into public.stock_movements (variant_id, delta, reason, note) values ($1, $2, 'restock', 'fixture')", [variant, stock]);
-  }
-  return variant;
+  return withGroupG1Material(db, async () => {
+    const color = (await db.query('select id from public.item_colors where item_id = $1 and name = $2', [itemId, colorName])).rows[0];
+    if (!color) throw new Error('試験の色が無い');
+    const label = (await db.query(
+      'insert into public.item_sizes (item_id, label, position) values ($1, $2, 1) returning id', [itemId, size],
+    )).rows[0];
+    const variant = Number((await db.query(
+      'insert into public.item_variants (item_id, color_id, size_id, is_active) values ($1, $2, $3, true) returning id',
+      [itemId, color.id, label.id],
+    )).rows[0].id);
+    if (stock > 0) await seedE2eRestock(db, { itemId, variantId: variant, quantity: stock });
+    return variant;
+  });
 }
 export function line(fx: ReturnFixture, index = 0, extra: Partial<RequestLine> = {}): RequestLine {
   return {

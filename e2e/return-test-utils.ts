@@ -43,6 +43,7 @@ import {
   type E2eOrderLine,
   type MailBody,
 } from './order-email-test-utils';
+import { seedE2eRestock, withGroupG1Material } from './group-g1-test-utils';
 import { adminOrder, fulfillJson, materialLine, orderLine, orderNumberOf } from './order-fulfillment-test-utils';
 import { formatYen } from './refund-test-utils';
 
@@ -198,32 +199,34 @@ export async function ensureReturnSettings(db: PgClient): Promise<void> {
   );
 }
 
-/** 同じ商品の別の色・サイズを足して、番号を返す。在庫は台帳（restock）から入れる（バリアントは初期在庫を持てない） */
+/**
+ * 同じ商品の別の色・サイズを足して、番号を返す。バリアントは在庫0で作り、在庫は本物の入荷の入口（G-1 の FIFO・履歴を通る）で入れる。
+ * 実行者は手元の材料の管理者（group-g1-test-utils）。色・サイズの作成と入荷は1つの G-1 の取引。
+ */
 export async function addVariant(
   db: PgClient,
   itemId: number,
   input: { color: string; size: string; stock?: number; active?: boolean },
 ): Promise<number> {
-  const color = await db.query(
-    `insert into public.item_colors (item_id, name, hex, position) values ($1, $2, '#ffffff', 1) returning id`,
-    [itemId, input.color],
-  );
-  const size = await db.query(`insert into public.item_sizes (item_id, label, position) values ($1, $2, 1) returning id`, [
-    itemId,
-    input.size,
-  ]);
-  const variant = await db.query(
-    `insert into public.item_variants (item_id, color_id, size_id, is_active) values ($1, $2, $3, $4) returning id`,
-    [itemId, color.rows[0].id, size.rows[0].id, input.active ?? true],
-  );
-  const variantId = Number(variant.rows[0].id);
-  if ((input.stock ?? 0) > 0) {
-    await db.query(
-      `insert into public.stock_movements (variant_id, delta, reason, note) values ($1, $2, 'restock', 'fixture')`,
-      [variantId, input.stock],
+  return withGroupG1Material(db, async () => {
+    const color = await db.query(
+      `insert into public.item_colors (item_id, name, hex, position) values ($1, $2, '#ffffff', 1) returning id`,
+      [itemId, input.color],
     );
-  }
-  return variantId;
+    const size = await db.query(`insert into public.item_sizes (item_id, label, position) values ($1, $2, 1) returning id`, [
+      itemId,
+      input.size,
+    ]);
+    const variant = await db.query(
+      `insert into public.item_variants (item_id, color_id, size_id, is_active) values ($1, $2, $3, $4) returning id`,
+      [itemId, color.rows[0].id, size.rows[0].id, input.active ?? true],
+    );
+    const variantId = Number(variant.rows[0].id);
+    if ((input.stock ?? 0) > 0) {
+      await seedE2eRestock(db, { itemId, variantId, quantity: input.stock as number });
+    }
+    return variantId;
+  });
 }
 
 export type ReturnFixture = {
@@ -247,7 +250,9 @@ export type ReturnFixture = {
  * 全部の商品を発送した注文（発送済み。受け取った額は注文の合計と同じで、Stripe の支払いの番号つき）を作る。
  * 既定では全部を1回で送る。separate を付けると、商品ごとに1回ずつ送る（発送の取消の守りなど、発送が複数要る試験用）。
  * 受け取りで今返金する道は、支払いの番号（pi_ で始まる値）と受け取った額が無い注文を ORDER_NOT_REFUNDABLE で断るので、必ず付ける。
- * 返品の設定も、ここで整える（ensureReturnSettings）。
+ * 返品の設定も、ここで整える（ensureReturnSettings。共有の設定の1行なので、G-1 の取引の前に1文で書く）。
+ * G-1: 注文・割当（A）・発送（A の消費）を1つの G-1 の取引で作り、注文だけを先に確定しない。
+ * 発送は合成の材料（旧の発送の関数は止まった）。受注生産の行は A が無いので、送るには先に入荷（seedE2eRestock の FIFO）が要る。
  */
 export async function createShippedOrder(
   db: PgClient,
@@ -256,35 +261,37 @@ export async function createShippedOrder(
   options: { userId?: string; email?: string; separate?: boolean } = {},
 ): Promise<ReturnFixture> {
   await ensureReturnSettings(db);
-  const actorId = await createActor(db);
-  const email = options.email ?? uniqueEmail(label);
-  const order = await createOrderWithLines(db, email, lines, {
-    paidAmount: 'total',
-    paymentIntentId: `pi_e2e_${uniqueSuffix()}`,
-    userId: options.userId,
-  });
-  const batches = options.separate
-    ? order.orderItemIds.map((orderItemId, index) => [{ orderItemId, quantity: lines[index].quantity }])
-    : [order.orderItemIds.map((orderItemId, index) => ({ orderItemId, quantity: lines[index].quantity }))];
-  const fulfillmentIds: string[] = [];
-  for (const [index, batch] of batches.entries()) {
-    const shipment = await createFulfillment(db, order.orderId, actorId, {
-      trackingNumber: `E2E-RET-${uniqueSuffix()}-${index + 1}`,
-      notify: false,
-      lines: batch,
+  return withGroupG1Material(db, async () => {
+    const actorId = await createActor(db);
+    const email = options.email ?? uniqueEmail(label);
+    const order = await createOrderWithLines(db, email, lines, {
+      paidAmount: 'total',
+      paymentIntentId: `pi_e2e_${uniqueSuffix()}`,
+      userId: options.userId,
     });
-    fulfillmentIds.push(shipment.fulfillmentId);
-  }
-  return {
-    orderId: order.orderId,
-    email,
-    actorId,
-    itemId: order.itemId,
-    variantId: order.variantId,
-    orderItemIds: order.orderItemIds,
-    fulfillmentId: fulfillmentIds[0],
-    fulfillmentIds,
-  };
+    const batches = options.separate
+      ? order.orderItemIds.map((orderItemId, index) => [{ orderItemId, quantity: lines[index].quantity }])
+      : [order.orderItemIds.map((orderItemId, index) => ({ orderItemId, quantity: lines[index].quantity }))];
+    const fulfillmentIds: string[] = [];
+    for (const [index, batch] of batches.entries()) {
+      const shipment = await createFulfillment(db, order.orderId, actorId, {
+        trackingNumber: `E2E-RET-${uniqueSuffix()}-${index + 1}`,
+        notify: false,
+        lines: batch,
+      });
+      fulfillmentIds.push(shipment.fulfillmentId);
+    }
+    return {
+      orderId: order.orderId,
+      email,
+      actorId,
+      itemId: order.itemId,
+      variantId: order.variantId,
+      orderItemIds: order.orderItemIds,
+      fulfillmentId: fulfillmentIds[0],
+      fulfillmentIds,
+    };
+  });
 }
 
 export type E2eReturnLine = {
