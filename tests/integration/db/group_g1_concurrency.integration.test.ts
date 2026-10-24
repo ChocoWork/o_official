@@ -166,6 +166,9 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
   type Task6Material = {
     sql: string; params: unknown[]; draftId?: string; itemId: number; variantId: number; orderIds: string[]; exceptionId?: string;
     refundId?: string;
+    /** Task 9: run on B (after BEGIN, before the entry) to open the cancel request settings for that transaction only. */
+    prepare?: string;
+    cancelRequestId?: string;
   };
   const TASK6_ENTRIES: Array<{ name: string; setup: () => Promise<Task6Material>; check: (rows: any[]) => void }> = [
     { name: 'public.place_order_from_checkout_draft', setup: async () => {
@@ -303,6 +306,47 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     }, check: (rows) => expect(rows).toEqual([{ outcome: 'errored' }]) },
   ];
 
+  // Task 9 public writers (cancel request intake, decline, close, resolve). The committed request (and the resolving
+  // refund) must stay free for C while B waits; the request rows come after the refund rows in the closure.
+  async function requestedOrder() {
+    const p = await paidOrder();
+    const itemId = (await db().query('select id from public.order_items where order_id=$1', [p.orderId])).rows[0].id as string;
+    const request = await insertCancelRequest(db(), { orderId: p.orderId, lines: [{ orderItemId: itemId, quantity: 1 }] });
+    return { p, itemId, cancelRequestId: request.cancelRequestId };
+  }
+  const TASK9_ENTRIES: Array<{ name: string; setup: () => Promise<Task6Material>; check: (rows: any[]) => void }> = [
+    { name: 'public.customer_request_cancel', setup: async () => {
+      const p = await paidOrder();
+      const owner = (await db().query(`insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+        values (gen_random_uuid(), $1, '{}'::jsonb, now(), now()) returning id`, [`g1-cancel-${randomUUID()}@example.com`])).rows[0].id as string;
+      await db().query('update public.orders set user_id=$1 where id=$2', [owner, p.orderId]);
+      const itemId = (await db().query('select id from public.order_items where order_id=$1', [p.orderId])).rows[0].id as string;
+      return { sql: 'select status, replayed from public.customer_request_cancel($1::uuid,$2::uuid,$3::uuid,$4::jsonb,null)',
+        params: [p.orderId, owner, randomUUID(), JSON.stringify([{ order_item_id: itemId, quantity: 1 }])],
+        prepare: `update public.shop_return_settings set requests_enabled=true, request_types='returns_and_cancellations' where id=1`,
+        itemId: p.fx.itemId, variantId: p.fx.variantId, orderIds: [p.orderId] };
+    }, check: (rows) => expect(rows).toEqual([{ status: 'requested', replayed: false }]) },
+    { name: 'public.admin_decline_cancel_request', setup: async () => {
+      const r = await requestedOrder();
+      return { sql: `select status from public.admin_decline_cancel_request($1::uuid,$2::uuid,'other','受付できません。')`,
+        params: [r.cancelRequestId, await actorId()], itemId: r.p.fx.itemId, variantId: r.p.fx.variantId, orderIds: [r.p.orderId],
+        cancelRequestId: r.cancelRequestId };
+    }, check: (rows) => expect(rows).toEqual([{ status: 'declined' }]) },
+    { name: 'public.admin_close_cancel_request', setup: async () => {
+      const r = await requestedOrder();
+      return { sql: 'select status from public.admin_close_cancel_request($1::uuid,$2::uuid)',
+        params: [r.cancelRequestId, await actorId()], itemId: r.p.fx.itemId, variantId: r.p.fx.variantId, orderIds: [r.p.orderId],
+        cancelRequestId: r.cancelRequestId };
+    }, check: (rows) => expect(rows).toEqual([{ status: 'closed' }]) },
+    { name: 'public.admin_resolve_cancel_request', setup: async () => {
+      const r = await requestedOrder();
+      const refundId = await awaitingRefund(r.p);
+      return { sql: 'select status from public.admin_resolve_cancel_request($1::uuid,$2::uuid,$3::uuid,false)',
+        params: [r.cancelRequestId, await actorId(), refundId], itemId: r.p.fx.itemId, variantId: r.p.fx.variantId,
+        orderIds: [r.p.orderId], refundId, cancelRequestId: r.cancelRequestId };
+    }, check: (rows) => expect(rows).toEqual([{ status: 'resolved' }]) },
+  ];
+
   let actor: string | undefined;
   async function actorId() {
     actor ??= (await db().query(`insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
@@ -317,7 +361,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     )).rows[0].order_id as string;
   }
 
-  test.each([...TASK6_ENTRIES, ...TASK7_ENTRIES, ...TASK8_ENTRIES])('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
+  test.each([...TASK6_ENTRIES, ...TASK7_ENTRIES, ...TASK8_ENTRIES, ...TASK9_ENTRIES])('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
     const material = await setup();
     const a = await client();
     const b = await client();
@@ -328,6 +372,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       await a.query('begin');
       await a.query('select pg_advisory_xact_lock(190521,1)');
       await b.query('begin');
+      if (material.prepare) await b.query(material.prepare);
       pending = b.query(material.sql, material.params);
       void pending.catch(() => {});
       await waitForAdvisory(c, waiter, blocker);
@@ -346,6 +391,11 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
         probes.push(['select id from public.order_refunds where id=$1 for update nowait', [material.refundId]]);
         probes.push(['select id from public.order_refund_lines where refund_id=$1 for update nowait', [material.refundId]]);
       }
+      if (material.cancelRequestId) {
+        probes.push(['select id from public.order_cancel_requests where id=$1 for update nowait', [material.cancelRequestId]]);
+        probes.push(['select id from public.order_cancel_request_lines where cancel_request_id=$1 for update nowait',
+          [material.cancelRequestId]]);
+      }
       for (const [probe, params] of probes) expect((await c.query(probe, params)).rowCount).toBeGreaterThan(0);
       await c.query('rollback');
       await a.query('rollback');
@@ -357,7 +407,11 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       await b.query('rollback');
       await c.query('rollback');
       await Promise.all([a.end(), b.end(), c.end()]);
-      // B rolled back: keep no committed awaiting refund in the global sweep lists.
+      // B rolled back: keep no committed open cancel request or awaiting refund in the global sweep lists.
+      if (material.cancelRequestId) {
+        await db().query(`update public.order_cancel_requests set status='closed', closed_at=now(), closed_by=gen_random_uuid()
+          where id=$1 and status='requested'`, [material.cancelRequestId]);
+      }
       if (material.refundId) {
         await db().query(`update public.order_refunds set status='error', errored_at=now()
           where id=$1 and status='awaiting_response'`, [material.refundId]);
@@ -454,6 +508,66 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       for (const row of quantities) expect(row.n).toBe(row.order_id === fx.orders[0].orderId ? 2 : 0);
       expect((await db().query('select stock_quantity from public.item_variants where id=any($1::bigint[])', [fx.variants])).rows.map((r) => r.stock_quantity)).toEqual(fx.variants.map(() => 0));
       expect((await db().query('select * from public.verify_stock_integrity() where variant_id=any($1::bigint[])', [fx.variants])).rows).toEqual([]);
+    } finally {
+      await a.query('rollback');
+      if (second) await second.catch(() => {});
+      await b.query('rollback');
+      await Promise.all([a.end(), b.end()]);
+    }
+  });
+
+  // Task 9: a cancel request decline against a receipt of the same variant, in both orders. Neither waits on the
+  // other's rows in reverse order (both complete), and the units are conserved: F + A equals the received units.
+  test.each(['receipt first', 'decline first'])('cancel request decline vs receipt (%s): no reverse wait, quantities conserved', async (first) => {
+    const fx = await withGroupG1FixtureTransaction(db(), async () => {
+      const catalog = await createCatalogFixture(db(), { stock: 0 });
+      const line = (createdAt: string, quantity: number) => insertOrderWithLines(db(), { status: 'paid', createdAt, lines: [{
+        itemId: catalog.itemId, variantId: catalog.variantId, quantity, fulfillmentType: 'stock' as const, reserved: false,
+      }] });
+      const older = await line('2026-01-01', 2);
+      const newer = await line('2026-02-01', 1);
+      const request = await insertCancelRequest(db(), { orderId: older.orderId, lines: [{ orderItemId: older.orderItemIds[0], quantity: 2 }] });
+      return { variant: catalog.variantId, older, newer, cancelRequestId: request.cancelRequestId };
+    });
+    const who = await actorId();
+    const a = await client();
+    const b = await client();
+    let second: Promise<unknown> | undefined;
+    const decline = (c: PgClient) => c.query(`select status from public.admin_decline_cancel_request($1::uuid,$2::uuid,'other','受付できません。')`,
+      [fx.cancelRequestId, who]);
+    const twoReceipts = async (c: PgClient) => (await receipt(c, [fx.variant])) + (await receipt(c, [fx.variant]));
+    try {
+      await a.query('begin');
+      await b.query('begin');
+      const [blocker, waiter] = [await pid(a), await pid(b)];
+      if (first === 'receipt first') {
+        // The older order's units are requested: the first unit goes to the newer order, the second stays free.
+        expect(await twoReceipts(a)).toBe(1);
+        second = decline(b);
+      } else {
+        expect((await decline(a)).rows).toEqual([{ status: 'declined' }]);
+        second = twoReceipts(b);
+      }
+      void second.catch(() => {});
+      await waitForAdvisory(db(), waiter, blocker);
+      await a.query('commit');
+      if (first === 'receipt first') {
+        await expect(second).resolves.toMatchObject({ rows: [{ status: 'declined' }] });
+      } else {
+        // After the decline the older order is waiting again and, being older, takes both units.
+        await expect(second).resolves.toBe(2);
+      }
+      await b.query('commit');
+      const quantities = (await db().query(`select oi.order_id, coalesce(sum(al.remaining_quantity),0)::int as n
+        from public.order_items oi left join public.order_item_allocations al on al.order_item_id=oi.id and al.kind='paid'
+        where oi.order_id=any($1::uuid[]) group by oi.order_id`, [[fx.older.orderId, fx.newer.orderId]])).rows;
+      const byOrder: Record<string, number> = Object.fromEntries(quantities.map((row) => [row.order_id as string, Number(row.n)]));
+      expect(byOrder).toEqual(first === 'receipt first'
+        ? { [fx.older.orderId]: 1, [fx.newer.orderId]: 1 } : { [fx.older.orderId]: 2, [fx.newer.orderId]: 0 });
+      const free = Number((await db().query('select stock_quantity from public.item_variants where id=$1', [fx.variant])).rows[0].stock_quantity);
+      expect(free + Object.values(byOrder).reduce((sum, n) => sum + n, 0)).toBe(2);
+      expect(free).toBe(0);
+      expect((await db().query('select * from public.verify_stock_integrity() where variant_id=$1', [fx.variant])).rows).toEqual([]);
     } finally {
       await a.query('rollback');
       if (second) await second.catch(() => {});

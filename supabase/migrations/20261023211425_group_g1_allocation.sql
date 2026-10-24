@@ -5288,6 +5288,564 @@ BEGIN
 END;
 $g1_refund_assert$;
 
+-- Task 9: cancel request intake / decline / close / resolve under the common lock. Last definitions replaced
+-- (signature/defaults/returns kept): customer_order_for_request/customer_request_cancel
+-- 20261020144842_order_return_customer_requests.sql:22/922, lock_order_cancel_request/admin_decline_cancel_request/
+-- admin_close_cancel_request/admin_resolve_cancel_request 20261020150415_order_return_request_reviews.sql:937/980/1006/1026.
+-- A request only changes the state of the requested units and keeps every A (FIFO skips cancel_requested units).
+-- Decline/close return the units to waiting: the existing A becomes ready again and the unallocated units rejoin FIFO.
+-- Resolve releases nothing itself: the refund/cancel body already released once; it only reruns FIFO for the units
+-- the refund did not cover. The order closure (orders -> ... -> refunds -> cancel requests) is locked once by the
+-- private body before the request row is read for update, so no request -> refund reverse order remains.
+
+-- Ownership is read without any lock first, so a stranger's call never waits on (or locks) somebody else's order.
+-- _lock=false stays a plain read. _lock=true follows the common lock: the advisory comes first (taken here only when
+-- the caller does not hold it yet: the legacy return request until Task 10), then the order closure, then the re-read.
+CREATE OR REPLACE FUNCTION private.customer_order_for_request(_order_id uuid, _customer_id uuid, _lock boolean)
+RETURNS public.orders
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_order public.orders;
+BEGIN
+  IF _order_id IS NULL OR _customer_id IS NULL THEN
+    RAISE EXCEPTION 'ORDER_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+
+  SELECT o.* INTO v_order
+  FROM public.orders AS o
+  WHERE o.id = _order_id
+    AND o.user_id = _customer_id;
+  IF NOT FOUND
+     OR v_order.status IN ('payment_in_progress'::public.order_status, 'abandoned'::public.order_status) THEN
+    RAISE EXCEPTION 'ORDER_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  IF NOT COALESCE(_lock, false) THEN
+    RETURN v_order;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted
+  ) THEN
+    PERFORM private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[_order_id], NULL);
+  END IF;
+  -- The closure already holds this row; the re-read sees the state after any concurrent writer committed.
+  SELECT o.* INTO v_order
+  FROM public.orders AS o
+  WHERE o.id = _order_id
+    AND o.user_id = _customer_id
+  FOR UPDATE;
+  IF NOT FOUND
+     OR v_order.status IN ('payment_in_progress'::public.order_status, 'abandoned'::public.order_status) THEN
+    RAISE EXCEPTION 'ORDER_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  RETURN v_order;
+END;
+$$;
+ALTER FUNCTION private.customer_order_for_request(uuid,uuid,boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.customer_order_for_request(uuid,uuid,boolean) FROM PUBLIC, anon, authenticated, service_role;
+
+-- The request row is read for update only after the caller locked the whole order closure under the advisory
+-- (the request rows come last in that order). It never goes back to the order row.
+CREATE OR REPLACE FUNCTION private.lock_order_cancel_request(_cancel_request_id uuid)
+RETURNS public.order_cancel_requests
+LANGUAGE plpgsql SET search_path = '' AS $$
+DECLARE v_request public.order_cancel_requests;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
+  END IF;
+  SELECT r.* INTO v_request FROM public.order_cancel_requests AS r WHERE r.id = _cancel_request_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'CANCEL_REQUEST_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
+  RETURN v_request;
+END;
+$$;
+ALTER FUNCTION private.lock_order_cancel_request(uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.lock_order_cancel_request(uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+-- The customer's cancel request (E-3 body). Refusal order kept: arguments -> owner -> request key -> settings ->
+-- order status -> open request -> quantities. The owner check reads without a lock; the common lock comes next.
+-- Only the requested units change state (ready/in_production/unpaid -> cancel_requested); A/H stay, FIFO does not run.
+CREATE FUNCTION private.customer_request_cancel(
+  _order_id uuid,
+  _customer_id uuid,
+  _request_key uuid,
+  _lines jsonb,
+  _customer_note text
+)
+RETURNS TABLE (cancel_request_id uuid, status text, replayed boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  -- Trims half-width space, tab, CR, LF and the ideographic space U+3000 (as parse_customer_return_lines does).
+  v_note text := NULLIF(pg_catalog.btrim(_customer_note, E' \t\r\n\u3000'), '');
+  v_item jsonb;
+  v_item_id uuid;
+  v_quantity integer;
+  v_seen uuid[] := ARRAY[]::uuid[];
+  v_fingerprint text;
+  v_order public.orders;
+  v_existing public.order_cancel_requests;
+  v_settings public.shop_return_settings;
+  v_cancel_id uuid;
+  v_constraint text;
+  v_before jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _order_id IS NULL OR _customer_id IS NULL OR _request_key IS NULL THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF v_note IS NOT NULL AND pg_catalog.char_length(v_note) > 300 THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF _lines IS NULL OR pg_catalog.jsonb_typeof(_lines) <> 'array' THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF pg_catalog.jsonb_array_length(_lines) < 1 OR pg_catalog.jsonb_array_length(_lines) > 100 THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  FOR v_item IN SELECT e.value FROM pg_catalog.jsonb_array_elements(_lines) AS e(value) LOOP
+    IF pg_catalog.jsonb_typeof(v_item) <> 'object'
+       OR pg_catalog.jsonb_typeof(v_item -> 'order_item_id') IS DISTINCT FROM 'string'
+       OR pg_catalog.jsonb_typeof(v_item -> 'quantity') IS DISTINCT FROM 'number' THEN
+      RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+    END IF;
+    BEGIN
+      v_item_id := (v_item ->> 'order_item_id')::uuid;
+      v_quantity := (v_item ->> 'quantity')::integer;
+    EXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range THEN
+      RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+    END;
+    IF v_quantity < 1 OR v_quantity > 999 OR v_item_id = ANY (v_seen) THEN
+      RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+    END IF;
+    v_seen := v_seen || v_item_id;
+  END LOOP;
+
+  v_fingerprint := pg_catalog.md5(
+    pg_catalog.jsonb_build_object(
+      'order_id', _order_id,
+      'lines', (
+        SELECT pg_catalog.jsonb_agg(
+                 pg_catalog.jsonb_build_object('order_item_id', x.order_item_id, 'quantity', x.quantity)
+                 ORDER BY x.order_item_id
+               )
+        FROM pg_catalog.jsonb_to_recordset(_lines) AS x(order_item_id uuid, quantity integer)
+      ),
+      'customer_note', v_note
+    )::text
+  );
+
+  -- Owner (plain read, no lock) -> common advisory and the order closure -> owner again under the lock.
+  PERFORM private.customer_order_for_request(_order_id, _customer_id, false);
+  PERFORM private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[_order_id], NULL);
+  v_order := private.customer_order_for_request(_order_id, _customer_id, true);
+
+  -- The same request key replays the earlier request (no record, mail, state history or operation).
+  SELECT c.* INTO v_existing FROM public.order_cancel_requests AS c WHERE c.request_key = _request_key;
+  IF FOUND THEN
+    IF v_existing.order_id <> _order_id OR v_existing.request_fingerprint IS DISTINCT FROM v_fingerprint THEN
+      RAISE EXCEPTION 'RETURN_REQUEST_MISMATCH' USING ERRCODE = '22023';
+    END IF;
+    RETURN QUERY SELECT v_existing.id, 'requested'::text, true;
+    RETURN;
+  END IF;
+
+  SELECT s.* INTO v_settings FROM public.shop_return_settings AS s WHERE s.id = 1;
+  IF NOT v_settings.requests_enabled
+     OR v_settings.request_types NOT IN ('returns_and_cancellations', 'cancellations_only') THEN
+    RAISE EXCEPTION 'RETURN_REQUESTS_CLOSED' USING ERRCODE = '22023';
+  END IF;
+
+  IF v_order.status NOT IN ('pending'::public.order_status, 'paid'::public.order_status) THEN
+    RAISE EXCEPTION 'CANCEL_REQUEST_NOT_ELIGIBLE' USING ERRCODE = '22023';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.order_cancel_requests AS c
+    WHERE c.order_id = _order_id
+      AND c.status = 'requested'
+  ) THEN
+    RAISE EXCEPTION 'CANCEL_REQUEST_EXISTS' USING ERRCODE = '22023';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.jsonb_to_recordset(_lines) AS x(order_item_id uuid, quantity integer)
+    LEFT JOIN private.order_line_fulfillment(_order_id) AS f ON f.order_item_id = x.order_item_id
+    WHERE f.order_item_id IS NULL
+       OR x.quantity > f.unshipped
+  ) THEN
+    RAISE EXCEPTION 'CANCEL_REQUEST_QUANTITY_EXCEEDS' USING ERRCODE = '22023';
+  END IF;
+
+  v_before := private.capture_group_g_item_states(ARRAY[_order_id]);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+
+  BEGIN
+    INSERT INTO public.order_cancel_requests AS c
+      (order_id, status, request_key, request_fingerprint, customer_note, requested_by)
+    VALUES
+      (_order_id, 'requested', _request_key, v_fingerprint, v_note, _customer_id)
+    RETURNING c.id INTO v_cancel_id;
+  EXCEPTION WHEN unique_violation THEN
+    GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
+    IF v_constraint = 'order_cancel_requests_request_key_key' THEN
+      RAISE EXCEPTION 'RETURN_REQUEST_MISMATCH' USING ERRCODE = '22023';
+    END IF;
+    RAISE;
+  END;
+
+  INSERT INTO public.order_cancel_request_lines (cancel_request_id, order_item_id, quantity)
+  SELECT v_cancel_id, x.order_item_id, x.quantity
+  FROM pg_catalog.jsonb_to_recordset(_lines) AS x(order_item_id uuid, quantity integer);
+
+  PERFORM private.enqueue_cancel_request_email(_order_id, 'cancel_request_received', v_cancel_id);
+  PERFORM private.enqueue_cancel_request_email(_order_id, 'cancel_request_shop', v_cancel_id);
+
+  PERFORM private.record_group_g_item_state_changes(v_before, ARRAY[_order_id], v_operation, 1,
+    'customer_request_cancel', _customer_id);
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    v_operation,
+    'customer_request_cancel',
+    _request_key,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'customer_request_cancel', 'order_id', _order_id, 'customer_id', _customer_id,
+      'request_fingerprint', v_fingerprint)::text, 'UTF8')), 'hex'),
+    'order_cancel_request',
+    v_cancel_id::text,
+    _customer_id,
+    pg_catalog.jsonb_build_object('cancel_request_id', v_cancel_id, 'order_id', _order_id)
+  );
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT v_cancel_id, 'requested'::text, false;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.customer_request_cancel(uuid,uuid,uuid,jsonb,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.customer_request_cancel(uuid,uuid,uuid,jsonb,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.customer_request_cancel(uuid,uuid,uuid,jsonb,text) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.customer_request_cancel(
+  _order_id uuid,
+  _customer_id uuid,
+  _request_key uuid,
+  _lines jsonb,
+  _customer_note text
+)
+RETURNS TABLE (cancel_request_id uuid, status text, replayed boolean)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.customer_request_cancel(_order_id, _customer_id, _request_key, _lines, _customer_note); $$;
+ALTER FUNCTION public.customer_request_cancel(uuid,uuid,uuid,jsonb,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.customer_request_cancel(uuid,uuid,uuid,jsonb,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.customer_request_cancel(uuid,uuid,uuid,jsonb,text) TO service_role;
+
+-- Decline (E-3 body): the order is unchanged, the message mail is always queued. The requested units return to
+-- waiting (existing A -> ready, the rest -> in_production), then FIFO on the requested variants (sequence 2).
+CREATE FUNCTION private.admin_decline_cancel_request(
+  _cancel_request_id uuid, _actor_id uuid, _decline_reason text, _decline_message text
+) RETURNS TABLE (cancel_request_id uuid, status text)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+#variable_conflict use_column
+DECLARE
+  v_request public.order_cancel_requests;
+  v_message text := NULLIF(pg_catalog.btrim(_decline_message),'');
+  v_order_id uuid;
+  v_orders uuid[];
+  v_variants bigint[];
+  v_before jsonb;
+  v_middle jsonb;
+  v_allocated integer := 0;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _cancel_request_id IS NULL OR _actor_id IS NULL OR _decline_reason IS NULL
+    OR _decline_reason NOT IN ('window_passed','final_sale','other') THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF v_message IS NULL OR pg_catalog.char_length(v_message) NOT BETWEEN 1 AND 1000 THEN
+    RAISE EXCEPTION 'RETURN_DECLINE_MESSAGE_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+  SELECT r.order_id INTO v_order_id FROM public.order_cancel_requests AS r WHERE r.id = _cancel_request_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'CANCEL_REQUEST_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
+  v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[v_order_id], NULL);
+  v_request := private.lock_order_cancel_request(_cancel_request_id);
+  IF v_request.status <> 'requested' THEN
+    RAISE EXCEPTION 'CANCEL_REQUEST_STATE_CONFLICT' USING ERRCODE = '22023';
+  END IF;
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT oi.variant_id ORDER BY oi.variant_id), ARRAY[]::bigint[]) INTO v_variants
+  FROM public.order_cancel_request_lines AS l JOIN public.order_items AS oi ON oi.id = l.order_item_id
+  WHERE l.cancel_request_id = _cancel_request_id AND oi.variant_id IS NOT NULL;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  UPDATE public.order_cancel_requests AS r SET status='declined',declined_at=pg_catalog.now(),declined_by=_actor_id,
+    decline_reason=_decline_reason,decline_message=v_message WHERE r.id=_cancel_request_id;
+  PERFORM private.enqueue_cancel_request_email(v_request.order_id,'cancel_request_declined',_cancel_request_id);
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1,
+    'admin_decline_cancel_request', _actor_id);
+  IF pg_catalog.cardinality(v_variants) > 0 THEN
+    v_middle := private.capture_group_g_item_states(v_orders);
+    v_allocated := private.allocate_group_g_fifo(v_variants, v_operation, _actor_id);
+    PERFORM private.record_group_g_item_state_changes(v_middle, v_orders, v_operation, 2, 'fifo', _actor_id);
+  END IF;
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    v_operation,
+    'admin_decline_cancel_request',
+    pg_catalog.md5('admin_decline_cancel_request:' || _cancel_request_id::text)::uuid,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'admin_decline_cancel_request', 'cancel_request_id', _cancel_request_id, 'actor_id', _actor_id,
+      'decline_reason', _decline_reason, 'decline_message', v_message)::text, 'UTF8')), 'hex'),
+    'order_cancel_request',
+    _cancel_request_id::text,
+    _actor_id,
+    pg_catalog.jsonb_build_object('cancel_request_id', _cancel_request_id, 'order_id', v_order_id,
+      'status', 'declined', 'allocated_quantity', v_allocated)
+  );
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RETURN QUERY SELECT _cancel_request_id,'declined'::text;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_decline_cancel_request(uuid,uuid,text,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_decline_cancel_request(uuid,uuid,text,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_decline_cancel_request(uuid,uuid,text,text) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_decline_cancel_request(
+  _cancel_request_id uuid, _actor_id uuid, _decline_reason text, _decline_message text
+) RETURNS TABLE (cancel_request_id uuid, status text)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.admin_decline_cancel_request(_cancel_request_id, _actor_id, _decline_reason, _decline_message); $$;
+ALTER FUNCTION public.admin_decline_cancel_request(uuid,uuid,text,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_decline_cancel_request(uuid,uuid,text,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_decline_cancel_request(uuid,uuid,text,text) TO service_role;
+
+-- Close (E-3 body): no order change and no mail. The units return to waiting exactly as on decline.
+CREATE FUNCTION private.admin_close_cancel_request(_cancel_request_id uuid, _actor_id uuid)
+RETURNS TABLE (cancel_request_id uuid, status text)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+#variable_conflict use_column
+DECLARE
+  v_request public.order_cancel_requests;
+  v_order_id uuid;
+  v_orders uuid[];
+  v_variants bigint[];
+  v_before jsonb;
+  v_middle jsonb;
+  v_allocated integer := 0;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _cancel_request_id IS NULL OR _actor_id IS NULL THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  SELECT r.order_id INTO v_order_id FROM public.order_cancel_requests AS r WHERE r.id = _cancel_request_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'CANCEL_REQUEST_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
+  v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[v_order_id], NULL);
+  v_request := private.lock_order_cancel_request(_cancel_request_id);
+  IF v_request.status <> 'requested' THEN
+    RAISE EXCEPTION 'CANCEL_REQUEST_STATE_CONFLICT' USING ERRCODE = '22023';
+  END IF;
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT oi.variant_id ORDER BY oi.variant_id), ARRAY[]::bigint[]) INTO v_variants
+  FROM public.order_cancel_request_lines AS l JOIN public.order_items AS oi ON oi.id = l.order_item_id
+  WHERE l.cancel_request_id = _cancel_request_id AND oi.variant_id IS NOT NULL;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  UPDATE public.order_cancel_requests AS r SET status='closed',closed_at=pg_catalog.now(),closed_by=_actor_id
+  WHERE r.id=_cancel_request_id;
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1,
+    'admin_close_cancel_request', _actor_id);
+  IF pg_catalog.cardinality(v_variants) > 0 THEN
+    v_middle := private.capture_group_g_item_states(v_orders);
+    v_allocated := private.allocate_group_g_fifo(v_variants, v_operation, _actor_id);
+    PERFORM private.record_group_g_item_state_changes(v_middle, v_orders, v_operation, 2, 'fifo', _actor_id);
+  END IF;
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    v_operation,
+    'admin_close_cancel_request',
+    pg_catalog.md5('admin_close_cancel_request:' || _cancel_request_id::text)::uuid,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'admin_close_cancel_request', 'cancel_request_id', _cancel_request_id,
+      'actor_id', _actor_id)::text, 'UTF8')), 'hex'),
+    'order_cancel_request',
+    _cancel_request_id::text,
+    _actor_id,
+    pg_catalog.jsonb_build_object('cancel_request_id', _cancel_request_id, 'order_id', v_order_id,
+      'status', 'closed', 'allocated_quantity', v_allocated)
+  );
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RETURN QUERY SELECT _cancel_request_id,'closed'::text;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_close_cancel_request(uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_close_cancel_request(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_close_cancel_request(uuid,uuid) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_close_cancel_request(_cancel_request_id uuid, _actor_id uuid)
+RETURNS TABLE (cancel_request_id uuid, status text)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.admin_close_cancel_request(_cancel_request_id, _actor_id); $$;
+ALTER FUNCTION public.admin_close_cancel_request(uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_close_cancel_request(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_close_cancel_request(uuid,uuid) TO service_role;
+
+-- Resolve (E-3 body): exactly one ground (a later live refund of the same order, or the cancelled order). The
+-- refund/cancel body already released the A once; resolve releases nothing. The refund rows were locked by the
+-- closure before the request row, so the request -> refund reverse order of the old body is gone. Units the refund
+-- did not cover leave cancel_requested and rejoin FIFO (sequence 2).
+CREATE FUNCTION private.admin_resolve_cancel_request(
+  _cancel_request_id uuid, _actor_id uuid, _refund_id uuid, _order_cancelled boolean
+) RETURNS TABLE (cancel_request_id uuid, status text)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+#variable_conflict use_column
+DECLARE
+  v_request public.order_cancel_requests;
+  v_order_id uuid;
+  v_orders uuid[];
+  v_variants bigint[];
+  v_before jsonb;
+  v_middle jsonb;
+  v_allocated integer := 0;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _cancel_request_id IS NULL OR _actor_id IS NULL THEN
+    RAISE EXCEPTION 'RETURN_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF _order_cancelled IS NULL OR NOT ((_refund_id IS NOT NULL) <> _order_cancelled) THEN
+    RAISE EXCEPTION 'CANCEL_REQUEST_RESOLUTION_INVALID' USING ERRCODE = '22023';
+  END IF;
+  SELECT r.order_id INTO v_order_id FROM public.order_cancel_requests AS r WHERE r.id = _cancel_request_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'CANCEL_REQUEST_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
+  v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[v_order_id], NULL);
+  v_request := private.lock_order_cancel_request(_cancel_request_id);
+  IF v_request.status <> 'requested' THEN
+    RAISE EXCEPTION 'CANCEL_REQUEST_STATE_CONFLICT' USING ERRCODE = '22023';
+  END IF;
+  IF _refund_id IS NOT NULL THEN
+    -- Read only: a refund of this order is already held by the closure; any other refund cannot qualify.
+    IF NOT EXISTS (
+      SELECT 1 FROM public.order_refunds AS rf
+      WHERE rf.id=_refund_id AND rf.order_id=v_request.order_id AND rf.created_at>=v_request.requested_at
+        AND rf.status IN ('awaiting_response','pending','succeeded')
+    ) THEN
+      RAISE EXCEPTION 'CANCEL_REQUEST_RESOLUTION_INVALID' USING ERRCODE = '22023';
+    END IF;
+  ELSE
+    IF NOT EXISTS (SELECT 1 FROM public.orders AS o WHERE o.id=v_request.order_id AND o.status='cancelled') THEN
+      RAISE EXCEPTION 'CANCEL_REQUEST_RESOLUTION_INVALID' USING ERRCODE = '22023';
+    END IF;
+  END IF;
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT oi.variant_id ORDER BY oi.variant_id), ARRAY[]::bigint[]) INTO v_variants
+  FROM public.order_cancel_request_lines AS l JOIN public.order_items AS oi ON oi.id = l.order_item_id
+  WHERE l.cancel_request_id = _cancel_request_id AND oi.variant_id IS NOT NULL;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  UPDATE public.order_cancel_requests AS r SET status='resolved',resolved_at=pg_catalog.now(),resolved_by=_actor_id,
+    resolved_refund_id=_refund_id,resolved_by_cancel_at=CASE WHEN _order_cancelled THEN pg_catalog.now() ELSE NULL END
+  WHERE r.id=_cancel_request_id;
+  -- The refund/cancel mails were queued by the original operation; resolving queues none.
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1,
+    'admin_resolve_cancel_request', _actor_id);
+  IF pg_catalog.cardinality(v_variants) > 0 THEN
+    v_middle := private.capture_group_g_item_states(v_orders);
+    v_allocated := private.allocate_group_g_fifo(v_variants, v_operation, _actor_id);
+    PERFORM private.record_group_g_item_state_changes(v_middle, v_orders, v_operation, 2, 'fifo', _actor_id);
+  END IF;
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    v_operation,
+    'admin_resolve_cancel_request',
+    pg_catalog.md5('admin_resolve_cancel_request:' || _cancel_request_id::text)::uuid,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'admin_resolve_cancel_request', 'cancel_request_id', _cancel_request_id, 'actor_id', _actor_id,
+      'refund_id', _refund_id, 'order_cancelled', _order_cancelled)::text, 'UTF8')), 'hex'),
+    'order_cancel_request',
+    _cancel_request_id::text,
+    _actor_id,
+    pg_catalog.jsonb_build_object('cancel_request_id', _cancel_request_id, 'order_id', v_order_id,
+      'status', 'resolved', 'refund_id', _refund_id, 'allocated_quantity', v_allocated)
+  );
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RETURN QUERY SELECT _cancel_request_id,'resolved'::text;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_resolve_cancel_request(uuid,uuid,uuid,boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_resolve_cancel_request(uuid,uuid,uuid,boolean) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_resolve_cancel_request(uuid,uuid,uuid,boolean) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.admin_resolve_cancel_request(
+  _cancel_request_id uuid, _actor_id uuid, _refund_id uuid, _order_cancelled boolean
+) RETURNS TABLE (cancel_request_id uuid, status text)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.admin_resolve_cancel_request(_cancel_request_id, _actor_id, _refund_id, _order_cancelled); $$;
+ALTER FUNCTION public.admin_resolve_cancel_request(uuid,uuid,uuid,boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_resolve_cancel_request(uuid,uuid,uuid,boolean) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_resolve_cancel_request(uuid,uuid,uuid,boolean) TO service_role;
+
+DO $g1_cancel_request_assert$
+BEGIN
+  IF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p WHERE p.oid IN (
+    pg_catalog.to_regprocedure('private.customer_request_cancel(uuid,uuid,uuid,jsonb,text)'),
+    pg_catalog.to_regprocedure('private.admin_decline_cancel_request(uuid,uuid,text,text)'),
+    pg_catalog.to_regprocedure('private.admin_close_cancel_request(uuid,uuid)'),
+    pg_catalog.to_regprocedure('private.admin_resolve_cancel_request(uuid,uuid,uuid,boolean)')
+  ) AND p.proowner = 'postgres'::regrole AND p.prosecdef AND p.proconfig @> ARRAY['search_path=""']
+    AND NOT pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+    AND NOT pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    AND pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')) <> 4
+  OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p WHERE p.oid IN (
+    pg_catalog.to_regprocedure('public.customer_request_cancel(uuid,uuid,uuid,jsonb,text)'),
+    pg_catalog.to_regprocedure('public.admin_decline_cancel_request(uuid,uuid,text,text)'),
+    pg_catalog.to_regprocedure('public.admin_close_cancel_request(uuid,uuid)'),
+    pg_catalog.to_regprocedure('public.admin_resolve_cancel_request(uuid,uuid,uuid,boolean)')
+  ) AND p.proowner = 'postgres'::regrole AND NOT p.prosecdef AND p.proconfig @> ARRAY['search_path=""']
+    AND NOT pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+    AND NOT pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    AND pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')) <> 4
+  OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p WHERE p.oid IN (
+    pg_catalog.to_regprocedure('private.customer_order_for_request(uuid,uuid,boolean)'),
+    pg_catalog.to_regprocedure('private.lock_order_cancel_request(uuid)')
+  ) AND p.proowner = 'postgres'::regrole AND NOT p.prosecdef AND p.proconfig @> ARRAY['search_path=""']
+    AND NOT pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+    AND NOT pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    AND NOT pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')) <> 2 THEN
+    RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'g1_cancel_request_functions';
+  END IF;
+END;
+$g1_cancel_request_assert$;
+
 DO $g1_model_assert$
 DECLARE
   v_failed text;

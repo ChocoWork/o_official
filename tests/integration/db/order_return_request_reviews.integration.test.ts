@@ -471,8 +471,23 @@ describeLocalDb('お店の申し込みの確認（移行 F）', getDb => {
   });
   test('公開関数は service_role だけが実行できる。キャンセルの鍵の補助（private）は SECURITY DEFINER でなく、だれも直接呼べない', async () => {
     const names = ['admin_approve_return','admin_decline_return','list_return_photos','admin_receive_return',
-      'list_order_cancel_requests','admin_decline_cancel_request','admin_close_cancel_request','admin_resolve_cancel_request',
+      'list_order_cancel_requests',
       'list_return_photo_purge_targets','mark_return_photo_targets_purged','get_order_return_materials'];
+    // G-1 Task 9: the cancel request writers are SECURITY INVOKER wrappers of private SECURITY DEFINER bodies
+    // that take the common lock; both are executable by service_role only.
+    const cancelWriters = ['admin_decline_cancel_request','admin_close_cancel_request','admin_resolve_cancel_request'];
+    for (const [schema, definer] of [['public', false], ['private', true]] as const) {
+      const writers = (await db().query(`select p.oid,p.prosecdef,p.proconfig from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+        where n.nspname=$1 and p.proname=any($2::text[])`, [schema, cancelWriters])).rows;
+      expect(writers).toHaveLength(cancelWriters.length);
+      for (const p of writers) {
+        expect(p.prosecdef).toBe(definer); expect(p.proconfig.join(' ')).toContain('search_path=');
+        for (const role of ['anon','authenticated','service_role']) {
+          expect((await db().query(`select has_function_privilege($1,$2::oid,'EXECUTE') allowed`, [role, p.oid])).rows[0].allowed)
+            .toBe(role === 'service_role');
+        }
+      }
+    }
     const rows = (await db().query(`select p.oid,p.prosecdef,p.proconfig from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.proname=any($1::text[])`, [names])).rows;
     expect(rows).toHaveLength(names.length);
@@ -483,7 +498,7 @@ describeLocalDb('お店の申し込みの確認（移行 F）', getDb => {
           .toBe(role === 'service_role');
       }
     }
-    // private の補助は SECURITY DEFINER を付けず（C-1）、呼ぶのは上の公開関数（持ち主の権限）だけ。
+    // private の補助は SECURITY DEFINER を付けず（C-1）、呼ぶのは上の private 本体（持ち主の権限）だけ。
     const lock = (await db().query(`select p.oid,p.prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='private' and p.proname='lock_order_cancel_request'`)).rows;
     expect(lock).toHaveLength(1); expect(lock[0].prosecdef).toBe(false);

@@ -226,6 +226,10 @@ const G1_BODY_FUNCTIONS = [
   'private.record_order_refund_result(uuid,text,text,text,text,timestamp with time zone,text,text,text)',
   'private.record_external_order_refund(uuid,text,integer,text,text,text,timestamp with time zone,text,text,text,text,timestamp with time zone)',
   'private.mark_order_refund_error(uuid,text,boolean)',
+  'private.customer_request_cancel(uuid,uuid,uuid,jsonb,text)',
+  'private.admin_decline_cancel_request(uuid,uuid,text,text)',
+  'private.admin_close_cancel_request(uuid,uuid)',
+  'private.admin_resolve_cancel_request(uuid,uuid,uuid,boolean)',
 ];
 const G1_BODY_TRIGGERS = [
   ...['order_item_allocation_events', 'order_item_state_events', 'private.group_g_operations'].flatMap((table) => {
@@ -964,7 +968,10 @@ WHERE id = (SELECT pg_catalog.min(id) FROM pg_temp.group_g_cleanup_webhook_ids);
       'private.apply_order_refund_state(uuid)', 'private.apply_return_refund_outcome(uuid,text)',
       'record_order_refund_result(uuid,text,text,text,text,timestamp with time zone,text,text,text)',
       'record_external_order_refund(uuid,text,integer,text,text,text,timestamp with time zone,text,text,text,text,timestamp with time zone)',
-      'mark_order_refund_error(uuid,text,boolean)'];
+      'mark_order_refund_error(uuid,text,boolean)',
+      'private.customer_order_for_request(uuid,uuid,boolean)', 'customer_request_cancel(uuid,uuid,uuid,jsonb,text)',
+      'private.lock_order_cancel_request(uuid)', 'admin_decline_cancel_request(uuid,uuid,text,text)',
+      'admin_close_cancel_request(uuid,uuid)', 'admin_resolve_cancel_request(uuid,uuid,uuid,boolean)'];
     const functions = split(catalog.functions, (row) => row.signature as string, G1_BODY_FUNCTIONS, changedFunctions);
     expect(functions.kept).toEqual(split(before.catalog.functions, (row) => row.signature as string, [], changedFunctions).kept);
     expect(functions.added).toEqual([...G1_BODY_FUNCTIONS].sort());
