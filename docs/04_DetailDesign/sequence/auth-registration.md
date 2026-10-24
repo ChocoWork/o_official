@@ -1,6 +1,6 @@
 # 会員登録・確認シーケンス
 
-> 状態: 現行ソース照合済み | 確認日: 2026-10-04 | 対象: 公開登録、管理者作成、メール確認
+> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直した。ユーザーの確認は未） | 確認日: 2026-10-24 | 対象: 公開登録、管理者作成、メール確認
 
 ## 概要
 
@@ -12,10 +12,10 @@
 
 | 対象 | 実コード参照 |
 | --- | --- |
-| 登録受付 | [register API](../../../src/app/api/auth/register/route.ts) L40–243、[Schema](../../../src/features/auth/schemas/register.ts) |
-| メール確認 | [confirm API](../../../src/app/api/auth/confirm/route.ts) L27–110、[redirect検証](../../../src/lib/redirect.ts) |
-| ユーザー検索 | [検索サービス](../../../src/features/auth/services/auth-admin-user.ts)、[migration](../../../supabase/migrations/20260901102912_remote_schema.sql) L1705–1721 |
-| CookieとDB保存 | [初回保存](../../../src/features/auth/services/register.ts) L17–123、[Cookie](../../../src/lib/cookie.ts)、[ゲスト注文引継ぎ](../../../src/lib/orders/link-guest-orders.ts) |
+| 登録受付 | [register API](../../../src/app/api/auth/register/route.ts)、[Schema](../../../src/features/auth/schemas/register.ts) |
+| メール確認 | [confirm API](../../../src/app/api/auth/confirm/route.ts)、[redirect検証](../../../src/lib/redirect.ts) |
+| ユーザー検索 | [検索サービス](../../../src/features/auth/services/auth-admin-user.ts)、[migration](../../../supabase/migrations/20260901102912_remote_schema.sql) |
+| CookieとDB保存 | [初回保存](../../../src/features/auth/services/register.ts)、[Cookie](../../../src/lib/cookie.ts)、[ゲスト注文引継ぎ](../../../src/lib/orders/link-guest-orders.ts) |
 | UI・監査 | [RegisterModal](../../../src/components/RegisterModal.tsx)、[LoginContext](../../../src/contexts/LoginContext.tsx)、[audit helper](../../../src/lib/audit.ts) |
 
 POSTは[proxy](../../../src/proxy.ts)のOrigin検査を先に通る。register／confirmのレート制限は[共通helper](../../../src/features/auth/middleware/rateLimit.ts)で、429またはDB障害503とRetry-Afterを返す。
@@ -39,6 +39,10 @@ sequenceDiagram
   API->>DB: IP20回 / 3600秒
   API->>API: 入力検証・redirectパス検証
   API->>Bot: verifyTurnstile
+  opt サイトの住所が許可の一覧に無い
+    API->>API: afterでサイトの住所の誤りを通知
+    API-->>UI: 503（登録を受け付けない）
+  end
   API->>Check: checkPwnedPassword
   API->>DB: find_auth_user_id_by_email
   DB-->>API: found / not_found / error
@@ -77,6 +81,7 @@ sequenceDiagram
 | --- | --- |
 | 入力不正／Turnstile失敗／漏洩password | 400／403／400で止まる |
 | 漏洩照合サービス利用不可 | 監査して登録処理を続ける |
+| サイトの住所（Origin）が許可の一覧に無い | afterで管理側へ通知して503。漏洩照合・重複確認・signUpへ進まない（[register](../../../src/app/api/auth/register/route.ts) の Origin の許可の一覧を確かめる分岐） |
 | signupでalready／duplicate | 既登録通知を予約して202。他のsignupエラーは500 |
 | signupがsessionを返しuserなし | 500 |
 | 初回保存失敗 | 新しい500レスポンスを返す。準備した201を返さない。SSR adapterのCookie store書込みとは別であり、SDK Cookieの取消を保証しない |

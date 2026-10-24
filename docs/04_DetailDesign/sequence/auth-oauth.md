@@ -1,6 +1,6 @@
 # Google OAuthシーケンス
 
-> 状態: 現行ソース照合済み | 確認日: 2026-10-04 | 対象: Google開始・callback
+> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直した。ユーザーの確認は未） | 確認日: 2026-10-24 | 対象: Google開始・callback
 
 ## 概要
 
@@ -12,9 +12,9 @@ GoogleログインはSupabaseのPKCE対応SSR clientで開始し、callbackでco
 
 | 対象 | 実コード参照 |
 | --- | --- |
-| ボタンからの開始 | [LoginContext](../../../src/contexts/LoginContext.tsx) L205–214 |
-| OAuth開始 | [start API](../../../src/app/api/auth/oauth/start/route.ts) L43–128 |
-| callback・role別redirect | [callback API](../../../src/app/api/auth/oauth/callback/route.ts) L58–176 |
+| ボタンからの開始 | [LoginContext](../../../src/contexts/LoginContext.tsx) |
+| OAuth開始 | [start API](../../../src/app/api/auth/oauth/start/route.ts) |
+| callback・role別redirect | [callback API](../../../src/app/api/auth/oauth/callback/route.ts) |
 | 共通保存・戻り先検証 | [初回保存](../../../src/features/auth/services/register.ts)、[redirect helper](../../../src/lib/redirect.ts)、[Cookie属性](../../../src/lib/cookie.ts) |
 | 特権roleの後続画面 | [verifiedページ](../../../src/app/auth/verified/page.tsx)、[ログイン・TOTP](auth-login-mfa.md) |
 

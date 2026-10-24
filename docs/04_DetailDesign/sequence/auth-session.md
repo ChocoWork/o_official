@@ -1,6 +1,6 @@
 # セッション・API認可シーケンス
 
-> 状態: 現行ソース照合済み | 確認日: 2026-10-04 | 対象: 初期認証表示、refresh、logout、管理API認可
+> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直した。ユーザーの確認は未） | 確認日: 2026-10-24 | 対象: 初期認証表示、refresh、logout、管理API認可
 
 ## 概要
 
@@ -12,10 +12,10 @@
 
 | 対象 | 実コード参照 |
 | --- | --- |
-| refreshと更新保存 | [refresh API](../../../src/app/api/auth/refresh/route.ts) L18–135、[sessionサービス](../../../src/features/auth/services/session.ts) L20–124 |
-| logoutとCSRF | [logout API](../../../src/app/api/auth/logout/route.ts) L21–172、[CSRF helper](../../../src/lib/csrfMiddleware.ts) |
-| 認証とACL | [authenticate](../../../src/lib/auth/authenticate.ts) L87–195、[request token](../../../src/lib/auth/request-token.ts)、[admin RBAC](../../../src/lib/auth/admin-rbac.ts) L92–231 |
-| DBとCookie | [migration](../../../supabase/migrations/20260901102912_remote_schema.sql) L866–886、L1861–1876、L2105–2137、[Cookie helper](../../../src/lib/cookie.ts) |
+| refreshと更新保存 | [refresh API](../../../src/app/api/auth/refresh/route.ts)、[sessionサービス](../../../src/features/auth/services/session.ts) |
+| logoutとCSRF | [logout API](../../../src/app/api/auth/logout/route.ts)、[CSRF helper](../../../src/lib/csrfMiddleware.ts) |
+| 認証とACL | [authenticate](../../../src/lib/auth/authenticate.ts)、[request token](../../../src/lib/auth/request-token.ts)、[admin RBAC](../../../src/lib/auth/admin-rbac.ts) |
+| DBとCookie | [migration](../../../supabase/migrations/20260901102912_remote_schema.sql)、[Cookie helper](../../../src/lib/cookie.ts) |
 | 呼出元と認証表示 | [clientFetch](../../../src/lib/client-fetch.ts)、[LoginContext](../../../src/contexts/LoginContext.tsx)、[me API](../../../src/app/api/auth/me/route.ts) |
 
 状態変更APIには[proxy](../../../src/proxy.ts)のOrigin／Referer検査が先行する。認証失敗時の標準応答はmissing／invalid／revokedが401、session生存確認不能が503とRetry-After: 30。me APIはmissing等を200 `{authenticated:false}`、生存確認helperがunavailableを返した場合を503にする。meの外側catchに到達した予期しない例外は200 `{authenticated:false}`になる。
@@ -143,9 +143,9 @@ sequenceDiagram
     API->>CSRF: requireCsrfOrDeny
     CSRF->>DB: refresh hash一致行のCSRF hash照合
     CSRF-->>API: undefined またはResponse
-    alt statusかつ_bodyを持つ拒否形状
+    alt 戻り値がResponse（拒否）
       Note over API,DB: 失効処理を飛ばす分岐
-    else 拒否形状に一致しない
+    else Responseでない
       API->>DB: local sessionsをrefresh hashでrevoke
       API->>API: JWT署名検証（allowExpired=true）
       alt JWT session_idあり
@@ -157,18 +157,18 @@ sequenceDiagram
       end
     end
   end
-  API->>API: 独自6CookieとSSR auth Cookieを消去準備
+  API->>API: 独自8CookieとSSR auth Cookieを消去準備
   API-->>UI: 200 ok=true + Cookie消去
   UI->>UI: SDK signOutを試行、global認証表示をfalseへ
 ```
 
-独自6Cookieは`session_id`、`sb-refresh-token`、`sb-access-token`、`sb-csrf-token`、`sb-login-2fa-session`、`sb-password-reset-session`。SSR Cookieは`sb-.*-auth-token`と`.数字`の分割Cookieを消去する。DB側例外はログを残してCookie消去に進み、外側例外は500。SDK signOut失敗はUIが吸収する。
+独自8Cookieは`session_id`、`sb-refresh-token`、`sb-access-token`、`sb-csrf-token`、`sb-login-2fa-session`、`sb-password-reset-session`と、ゲストのカート・お気に入りの印`cart`・`wishlist`（[logout](../../../src/app/api/auth/logout/route.ts) の Cookie を消す一覧）。SSR Cookieは`sb-.*-auth-token`と`.数字`の分割Cookieを消去する。DB側例外はログを残してCookie消去に進み、外側例外は500。SDK signOut失敗はUIが吸収する。
 
 local sessions更新の戻り値errorをrouteは検査しない。JWTで特定できずlocal user_idも無い場合は監査のみ、失効RPC errorはログ・監査に残し、200へ進む。API非2xxや通信例外ではLoginContextは失敗を返し、上図のglobal認証表示の解除を実行しない。clientFetchが送信前refreshを試す場合は、その結果がlogoutへ渡るCookieに影響する。
 
 ### CSRF拒否判定の実コード上の注意
 
-`isCsrfDenyResponse`は`status`と`_body`の両プロパティを要求する。一方、CSRF helperは本物の`NextResponse.json`を返し、[logoutテスト](../../../tests/integration/api/auth/logout.test.ts)のmockだけが`_body`を付ける。インストール済み[NextResponse実装](../../../node_modules/next/dist/server/web/spec-extension/response.js)に`_body`の定義は見当たらない。したがって、図は判定条件をそのまま記し、「helperの403なら必ずサーバー失効を飛ばす」という保証にはしていない。今回runtimeでの検証・修正は行っていない。
+logoutは`requireCsrfOrDeny`の戻り値が`Response`のインスタンスかどうかで拒否を判定する（[logout](../../../src/app/api/auth/logout/route.ts) の CSRF の拒否の判定、R-22）。helperの拒否は本物の`Response`（403か、照合のDBの失敗の500）で返るので、拒否の時はサーバーの失効を飛ばし、Cookieの消去と200へ進む。前の版の`status`と`_body`の形での判定は今のコードに無い。
 
 CSRF helperはrefresh Cookie無しなら検査不要、ヘッダ欠落／hash不一致は403、例外は500。通常の戻り値はundefinedで、旧rotation用の型は残るが現在のhelperはrotationを返さない。
 

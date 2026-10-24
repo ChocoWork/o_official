@@ -1,6 +1,6 @@
 # ログイン・追加認証シーケンス
 
-> 状態: 現行ソース照合済み | 確認日: 2026-10-04 | 対象: パスワード、メールOTP、特権TOTP
+> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直した。ユーザーの確認は未） | 確認日: 2026-10-24 | 対象: パスワード、メールOTP、特権TOTP
 
 ## 概要
 
@@ -12,7 +12,7 @@
 
 | 対象 | 実コード参照 |
 | --- | --- |
-| パスワード、OTP検証 | [login API](../../../src/app/api/auth/login/route.ts) L9–88、[OTP API](../../../src/app/api/auth/otp/verify/route.ts) L9–133 |
+| パスワード、OTP検証 | [login API](../../../src/app/api/auth/login/route.ts)、[OTP API](../../../src/app/api/auth/otp/verify/route.ts) |
 | 再送、取消、保留Cookie | [resend API](../../../src/app/api/auth/login/resend/route.ts)、[cancel API](../../../src/app/api/auth/login/cancel/route.ts)、[保留Cookieサービス](../../../src/features/auth/services/login-2fa-session.ts) |
 | TOTP | [status API](../../../src/app/api/auth/mfa/status/route.ts)、[enroll API](../../../src/app/api/auth/mfa/enroll-totp/route.ts)、[verify API](../../../src/app/api/auth/mfa/verify/route.ts) |
 | セッション、認証ガード | [初回保存](../../../src/features/auth/services/register.ts)、[更新保存](../../../src/features/auth/services/session.ts)、[認証検証](../../../src/lib/auth/authenticate.ts)、[Cookie属性](../../../src/lib/cookie.ts) |

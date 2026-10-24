@@ -1,6 +1,6 @@
 # パスワード再設定シーケンス
 
-> 状態: 現行ソース照合済み | 確認日: 2026-10-04 | 対象: メール要求、リンク確認、再設定、画面再開
+> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直した。ユーザーの確認は未） | 確認日: 2026-10-24 | 対象: メール要求、リンク確認、再設定、画面再開
 
 ## 概要
 
@@ -12,12 +12,12 @@
 
 | 対象 | 実コード参照 |
 | --- | --- |
-| 再設定メール | [request API](../../../src/app/api/auth/password-reset/request/route.ts) L15–137 |
+| 再設定メール | [request API](../../../src/app/api/auth/password-reset/request/route.ts) |
 | リンク・画面再開 | [link API](../../../src/app/api/auth/password-reset/link/route.ts)、[session API](../../../src/app/api/auth/password-reset/session/route.ts) |
-| パスワード更新 | [confirm API](../../../src/app/api/auth/password-reset/confirm/route.ts) L30–189 |
+| パスワード更新 | [confirm API](../../../src/app/api/auth/password-reset/confirm/route.ts) |
 | 署名Cookie・Schema | [reset session](../../../src/features/auth/services/password-reset-session.ts)、[Schema](../../../src/features/auth/schemas/password-reset.ts)、[Cookie](../../../src/lib/cookie.ts) |
 | UI | [リンク確認](../../../src/app/auth/password-reset/verify/VerifyClient.tsx)、[再設定画面](../../../src/app/auth/password-reset/page.tsx) |
-| DB定義・RPC | [migration](../../../supabase/migrations/20260901102912_remote_schema.sql) L759–771、L1705–1721、L2122–2137 |
+| DB定義・RPC | [migration](../../../supabase/migrations/20260901102912_remote_schema.sql) |
 
 POSTは[proxy](../../../src/proxy.ts)のOrigin検査が先行する。レート制限は[共通helper](../../../src/features/auth/middleware/rateLimit.ts)の429／503とRetry-Afterを返す。
 
@@ -38,7 +38,12 @@ sequenceDiagram
   API->>DB: IP10回 / 3600秒
   API->>API: Schema検証
   API->>Bot: verifyTurnstile
-  API->>DB: email5回 / 3600秒、find_auth_user_id_by_email
+  API->>DB: email5回 / 3600秒
+  opt サイトの住所が許可の一覧に無い
+    API->>API: afterでサイトの住所の誤りを通知
+    API-->>UI: 200 ok=true（鍵を作らずメールも送らない）
+  end
+  API->>DB: find_auth_user_id_by_email
   DB-->>API: userId / 該当なし / error
   alt 検索エラー
     API-->>UI: 500
@@ -60,7 +65,7 @@ sequenceDiagram
   end
 ```
 
-入力Schema不正400、Turnstile失敗403、JSON解析を含む外側例外500。旧tokenの失効UPDATEと新tokenのINSERTは別のDB要求であり、同じemailの並列requestを直列化する処理はない。両要求のUPDATEが先に終わってから各INSERTが成功すると、未使用tokenが複数残りうる。旧token失効の戻り値errorもログのみで新規発行へ進むため、更新成功だけから「有効なリンクは最新の1本」と保証しない。confirmのclaim競合防止は同じtokenIdごとで、異なるtokenIdの並列更新をこの処理は排他しない。
+入力Schema不正400、Turnstile失敗403、JSON解析を含む外側例外500。サイトの住所（Origin）が許可の一覧に無い時は、afterで管理側へ通知し、アカウントの有無を引かずに同じ200を返す（[request](../../../src/app/api/auth/password-reset/request/route.ts) の Origin が許可の一覧に無い時の分岐）。旧tokenの失効UPDATEと新tokenのINSERTは別のDB要求であり、同じemailの並列requestを直列化する処理はない。両要求のUPDATEが先に終わってから各INSERTが成功すると、未使用tokenが複数残りうる。旧token失効の戻り値errorもログのみで新規発行へ進むため、更新成功だけから「有効なリンクは最新の1本」と保証しない。confirmのclaim競合防止は同じtokenIdごとで、異なるtokenIdの並列更新をこの処理は排他しない。
 
 送信先は`/auth/password-reset/verify?token=...`。afterのメール送信失敗は返した200を変えない。UI再送は同じrequest APIを呼び、成功後60秒待機、再送429ではRetry-After（読めなければ3600秒）で待機する。初回requestの429はエラー表示のみで、その再送用cooldownは開始しない。
 
