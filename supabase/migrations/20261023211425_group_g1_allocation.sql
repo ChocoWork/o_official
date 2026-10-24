@@ -917,11 +917,15 @@ BEGIN
   RETURN QUERY
   WITH orders AS MATERIALIZED (
     SELECT o.id, o.status, o.paid_at, o.paid_amount,
+           -- Task 7: the exact active-hold condition (never result.active alone).
            EXISTS (
-             SELECT 1 FROM private.group_g_operations AS g
-             JOIN public.payment_exceptions AS e ON e.id = g.exception_id
-             WHERE g.operation = 'payment_review_hold' AND g.result->>'order_id' = o.id::text
-               AND e.resolved_at IS NULL
+             SELECT 1 FROM private.group_g_operations AS h
+             JOIN public.payment_exceptions AS e ON e.id = h.exception_id
+             WHERE h.operation = 'payment_review_hold' AND e.reason = 'paid_amount_mismatch'
+               AND e.order_id = o.id AND e.resolved_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM private.group_g_operations AS r
+                 WHERE r.operation = 'payment_review_release' AND r.cause_type = 'payment_review_hold'
+                   AND r.cause_id = h.id::text)
            ) AS review_hold,
            (SELECT r.reason FROM public.order_revisions AS r
             WHERE r.order_id = o.id AND 'status' = ANY(r.changed_fields) AND r.after_data->>'status' = 'failed'
@@ -2762,6 +2766,865 @@ BEGIN
   END IF;
 END;
 $g1_checkout_assert$;
+
+-- Task 7: payment (H -> A, first paid_at), the payment-review hold and both resolvers.
+-- Last definitions replaced here (signature/defaults/returns kept): mark_order_paid
+-- 20261011222930_order_refund_records.sql:574, record_cancelled_order_paid_amount
+-- 20261011223147_order_refund_requests.sql:758, record_payment_exception/mark_order_reviewed
+-- 20260927100500_payment_exceptions.sql:53/:223, resolve_payment_exception
+-- 20261023061434_payment_exception_refund_failed_note.sql:5, resolve_payment_exception_by_system
+-- 20261011223453_order_refund_results.sql:1260.
+
+-- orders.paid_at is written once (first real payment) and never changed or cleared, by any role.
+CREATE FUNCTION private.guard_group_g_paid_at() RETURNS trigger
+LANGUAGE plpgsql SET search_path = ''
+AS $$
+BEGIN
+  IF OLD.paid_at IS NOT NULL AND NEW.paid_at IS DISTINCT FROM OLD.paid_at THEN
+    RAISE EXCEPTION 'GROUP_G_PAID_AT_IMMUTABLE' USING ERRCODE = '55000';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+ALTER FUNCTION private.guard_group_g_paid_at() OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.guard_group_g_paid_at() FROM PUBLIC, anon, authenticated, service_role;
+CREATE TRIGGER orders_paid_at_once BEFORE UPDATE ON public.orders
+  FOR EACH ROW EXECUTE FUNCTION private.guard_group_g_paid_at();
+
+-- Internal core: close every still-active review hold of one exception (one release row per hold, once).
+-- The caller owns the common lock and resolves the exception in the same transaction. No lock, FIFO or RPC.
+CREATE FUNCTION private.release_group_g_payment_review_holds(_exception_id uuid, _actor_id uuid)
+RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_hold record;
+  v_count integer := 0;
+BEGIN
+  IF _exception_id IS NULL THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2
+      AND l.mode = 'ExclusiveLock' AND l.granted
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
+  END IF;
+  FOR v_hold IN
+    SELECT h.id FROM private.group_g_operations AS h
+    WHERE h.operation = 'payment_review_hold' AND h.exception_id = _exception_id
+      AND NOT EXISTS (SELECT 1 FROM private.group_g_operations AS r
+        WHERE r.operation = 'payment_review_release' AND r.cause_type = 'payment_review_hold'
+          AND r.cause_id = h.id::text)
+    ORDER BY h.id
+  LOOP
+    INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+    VALUES (
+      pg_catalog.gen_random_uuid(),
+      'payment_review_release',
+      pg_catalog.md5('review-release:' || v_hold.id::text)::uuid,
+      pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+        'operation', 'payment_review_release', 'hold_id', v_hold.id, 'exception_id', _exception_id)::text, 'UTF8')), 'hex'),
+      'payment_review_hold',
+      v_hold.id::text,
+      _actor_id,
+      pg_catalog.jsonb_build_object('active', false)
+    )
+    ON CONFLICT (operation, request_key) DO NOTHING;
+    IF FOUND THEN
+      v_count := v_count + 1;
+    END IF;
+  END LOOP;
+  RETURN v_count;
+END;
+$$;
+ALTER FUNCTION private.release_group_g_payment_review_holds(uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.release_group_g_payment_review_holds(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+-- mark_paid: common lock -> H -> A (the buyer keeps its own hold) -> paid/paid_at/review -> on a mismatch the
+-- exception and its hold together -> state seq 1 -> FIFO for the order's variants (held lines are excluded by the
+-- projection) -> state seq 2 -> operation. The draft is no longer written back after payment.
+CREATE FUNCTION private.mark_order_paid(
+  _order_id uuid,
+  _expected_status public.order_status,
+  _payment_intent_id text,
+  _paid_amount integer,
+  _paid_currency text,
+  _notify_customer boolean,
+  _paid_email_variant text,
+  _source_event_id text DEFAULT NULL
+)
+RETURNS TABLE (updated boolean, amount_matches boolean, needs_review boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  target public.orders%ROWTYPE;
+  v_orders uuid[];
+  v_before jsonb;
+  v_middle jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+  v_matches boolean;
+  v_missing_variant boolean;
+  v_hold record;
+  v_promoted integer := 0;
+  v_variants bigint[];
+  v_allocated integer := 0;
+  v_draft_id uuid;
+  v_exception_id uuid;
+BEGIN
+  IF _order_id IS NULL
+     OR NULLIF(pg_catalog.btrim(_payment_intent_id), '') IS NULL
+     OR _paid_amount IS NULL
+     OR NULLIF(pg_catalog.btrim(_paid_currency), '') IS NULL
+     OR _notify_customer IS NULL THEN
+    RAISE EXCEPTION 'MARK_PAID_ARGUMENT_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  IF _paid_email_variant IS NULL
+     OR _paid_email_variant NOT IN ('order_confirmed', 'payment_received', 'payment_received_after_expiry') THEN
+    RAISE EXCEPTION 'INVALID_PAID_EMAIL_VARIANT' USING ERRCODE = '22023';
+  END IF;
+
+  IF _expected_status IS NULL
+     OR _expected_status NOT IN (
+       'payment_in_progress'::public.order_status,
+       'pending'::public.order_status,
+       'failed'::public.order_status
+     ) THEN
+    RAISE EXCEPTION 'INVALID_EXPECTED_STATUS:%', _expected_status USING ERRCODE = '22023';
+  END IF;
+
+  v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[_order_id], NULL);
+  SELECT o.* INTO target FROM public.orders AS o WHERE o.id = _order_id;
+
+  -- Replays and CAS mismatches change nothing (no paid_at, no operation).
+  IF target.id IS NULL OR target.status IS DISTINCT FROM _expected_status THEN
+    RETURN QUERY SELECT false, NULL::boolean, NULL::boolean;
+    RETURN;
+  END IF;
+
+  IF target.payment_intent_id IS NOT NULL AND target.payment_intent_id <> _payment_intent_id THEN
+    RAISE EXCEPTION 'PAYMENT_INTENT_MISMATCH' USING ERRCODE = '22023';
+  END IF;
+
+  v_matches := target.total_amount = _paid_amount
+    AND pg_catalog.lower(target.currency) = pg_catalog.lower(_paid_currency);
+  -- Only a line without a variant needs the existing review; a normal backorder shortage waits for FIFO.
+  SELECT EXISTS (
+    SELECT 1 FROM public.order_items AS oi WHERE oi.order_id = _order_id AND oi.variant_id IS NULL
+  ) INTO v_missing_variant;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  PERFORM pg_catalog.set_config('app.order_actor_id', '', true);
+  PERFORM pg_catalog.set_config('app.order_change_reason', 'stripe_payment_paid', true);
+  PERFORM pg_catalog.set_config('app.order_source_event_id', COALESCE(_source_event_id, ''), true);
+
+  -- The buyer's own H becomes A first (kept even when the amount differs).
+  FOR v_hold IN
+    SELECT a.id, a.remaining_quantity
+    FROM public.order_item_allocations AS a
+    JOIN public.order_items AS oi ON oi.id = a.order_item_id
+    WHERE oi.order_id = _order_id AND a.kind = 'payment_hold' AND a.remaining_quantity > 0
+    ORDER BY a.id
+  LOOP
+    UPDATE public.order_item_allocations AS a
+    SET kind = 'paid', version = a.version + 1, updated_at = pg_catalog.now()
+    WHERE a.id = v_hold.id;
+    INSERT INTO public.order_item_allocation_events
+      (allocation_id, event_type, quantity, operation_id, sequence, reason, actor_id)
+    VALUES (v_hold.id, 'promote', v_hold.remaining_quantity, v_operation, 1, 'stripe_payment_paid', NULL);
+    v_promoted := v_promoted + v_hold.remaining_quantity;
+  END LOOP;
+
+  UPDATE public.orders AS o
+  SET status = 'paid'::public.order_status,
+      payment_intent_id = COALESCE(o.payment_intent_id, _payment_intent_id),
+      paid_amount = _paid_amount,
+      paid_at = COALESCE(o.paid_at, pg_catalog.clock_timestamp()),
+      review_reason = CASE WHEN v_missing_variant THEN 'stock_not_reserved' ELSE o.review_reason END,
+      review_marked_at = CASE WHEN v_missing_variant THEN pg_catalog.now() ELSE o.review_marked_at END
+  WHERE o.id = _order_id;
+
+  -- A different amount: the exception and its hold are created together, before any new FIFO.
+  -- The payment reference is the one record_payment_exception resolves to (order Session, then PaymentIntent).
+  IF NOT v_matches THEN
+    SELECT d.id INTO v_draft_id
+    FROM public.checkout_drafts AS d
+    WHERE target.checkout_session_id IS NOT NULL AND d.checkout_session_id = target.checkout_session_id
+    ORDER BY d.id
+    LIMIT 1;
+    v_exception_id := private.ensure_group_g_payment_review_hold(
+      _order_id, _payment_intent_id, target.checkout_session_id, _payment_intent_id, v_draft_id);
+  END IF;
+
+  PERFORM private.clear_cart_for_order(_order_id);
+
+  -- A different amount is reviewed by the shop before the customer hears anything.
+  IF v_matches AND _notify_customer THEN
+    PERFORM private.enqueue_order_email(_order_id, 'paid', _paid_email_variant);
+  END IF;
+
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'stripe_payment_paid', NULL);
+
+  SELECT pg_catalog.array_agg(DISTINCT oi.variant_id ORDER BY oi.variant_id) INTO v_variants
+  FROM public.order_items AS oi
+  WHERE oi.order_id = _order_id AND oi.variant_id IS NOT NULL;
+  IF COALESCE(pg_catalog.cardinality(v_variants), 0) > 0 THEN
+    v_middle := private.capture_group_g_item_states(v_orders);
+    v_allocated := private.allocate_group_g_fifo(v_variants, v_operation, NULL);
+    PERFORM private.record_group_g_item_state_changes(v_middle, v_orders, v_operation, 2, 'fifo', NULL);
+  END IF;
+
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    v_operation,
+    'mark_order_paid',
+    CASE WHEN NULLIF(pg_catalog.btrim(_source_event_id), '') IS NOT NULL
+      THEN pg_catalog.md5('stripe:' || _source_event_id)::uuid
+      ELSE pg_catalog.md5('mark_order_paid:' || _order_id::text || ':' || _payment_intent_id)::uuid END,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'mark_order_paid', 'order_id', _order_id, 'expected_status', _expected_status,
+      'payment_intent_id', _payment_intent_id, 'paid_amount', _paid_amount, 'paid_currency', _paid_currency,
+      'notify_customer', _notify_customer, 'paid_email_variant', _paid_email_variant,
+      'source_event_id', _source_event_id)::text, 'UTF8')), 'hex'),
+    'order',
+    _order_id::text,
+    NULL,
+    pg_catalog.jsonb_build_object('order_id', _order_id, 'status', 'paid', 'amount_matches', v_matches,
+      'needs_review', v_missing_variant, 'promoted_quantity', v_promoted, 'allocated_quantity', v_allocated,
+      'exception_id', v_exception_id, 'source_event_id', _source_event_id)
+  );
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT true, v_matches, v_missing_variant;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.mark_order_paid(
+  _order_id uuid,
+  _expected_status public.order_status,
+  _payment_intent_id text,
+  _paid_amount integer,
+  _paid_currency text,
+  _notify_customer boolean,
+  _paid_email_variant text,
+  _source_event_id text DEFAULT NULL
+)
+RETURNS TABLE (updated boolean, amount_matches boolean, needs_review boolean)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT * FROM private.mark_order_paid(_order_id, _expected_status, _payment_intent_id, _paid_amount, _paid_currency,
+    _notify_customer, _paid_email_variant, _source_event_id);
+$$;
+ALTER FUNCTION public.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text) TO service_role;
+
+-- A payment that reached a cancelled order: the received amount and the first paid_at, once, under the common lock.
+CREATE FUNCTION private.record_cancelled_order_paid_amount(
+  _order_id uuid,
+  _payment_intent_id text,
+  _received_amount integer
+)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_order public.orders;
+  v_orders uuid[];
+  v_before jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+BEGIN
+  IF _order_id IS NULL
+     OR _received_amount IS NULL
+     OR _received_amount < 1
+     OR _payment_intent_id IS NULL
+     OR _payment_intent_id !~ '^pi_[A-Za-z0-9]+$' THEN
+    RAISE EXCEPTION 'REFUND_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[_order_id], NULL);
+  SELECT o.* INTO v_order FROM public.orders AS o WHERE o.id = _order_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ORDER_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- Not cancelled, already written, or another PaymentIntent: nothing is written (replay).
+  IF v_order.status <> 'cancelled'::public.order_status
+     OR v_order.paid_amount IS NOT NULL
+     OR (v_order.payment_intent_id IS NOT NULL AND v_order.payment_intent_id <> _payment_intent_id) THEN
+    RETURN false;
+  END IF;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  PERFORM pg_catalog.set_config('app.order_actor_id', '', true);
+  PERFORM pg_catalog.set_config('app.order_change_reason', 'record_cancelled_order_payment', true);
+  PERFORM pg_catalog.set_config('app.order_source_event_id', '', true);
+
+  UPDATE public.orders AS o
+  SET paid_amount = _received_amount,
+      payment_intent_id = COALESCE(o.payment_intent_id, _payment_intent_id),
+      paid_at = COALESCE(o.paid_at, pg_catalog.clock_timestamp())
+  WHERE o.id = _order_id;
+
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1,
+    'record_cancelled_order_payment', NULL);
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    v_operation,
+    'record_cancelled_order_paid_amount',
+    pg_catalog.md5('record_cancelled_order_paid_amount:' || _order_id::text)::uuid,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'record_cancelled_order_paid_amount', 'order_id', _order_id,
+      'payment_intent_id', _payment_intent_id, 'received_amount', _received_amount)::text, 'UTF8')), 'hex'),
+    'order',
+    _order_id::text,
+    NULL,
+    pg_catalog.jsonb_build_object('order_id', _order_id, 'paid_amount', _received_amount)
+  );
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RETURN true;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.record_cancelled_order_paid_amount(uuid,text,integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.record_cancelled_order_paid_amount(uuid,text,integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.record_cancelled_order_paid_amount(uuid,text,integer) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.record_cancelled_order_paid_amount(
+  _order_id uuid,
+  _payment_intent_id text,
+  _received_amount integer
+)
+RETURNS boolean
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.record_cancelled_order_paid_amount(_order_id, _payment_intent_id, _received_amount); $$;
+ALTER FUNCTION public.record_cancelled_order_paid_amount(uuid,text,integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.record_cancelled_order_paid_amount(uuid,text,integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.record_cancelled_order_paid_amount(uuid,text,integer) TO service_role;
+
+-- Record an exception. A paid_amount_mismatch with an order goes through the common lock and the Task 2 helper,
+-- so the exception and its hold are created together under one key (order Session, then PaymentIntent, then ref).
+-- A mismatch the payment already created (mark_paid) and that was never dispatched is the same detection: this
+-- call only fills empty columns and becomes its first dispatch (detection_count unchanged). is_new is true only
+-- for the first successful dispatch claim of an unresolved exception; later detections count +1 as before.
+-- Other reasons never create a hold and keep the old lock-free row write (nested refund writers call this).
+CREATE FUNCTION private.record_payment_exception(
+  _payment_ref text,
+  _reason text,
+  _detail text DEFAULT NULL,
+  _checkout_session_id text DEFAULT NULL,
+  _payment_intent_id text DEFAULT NULL,
+  _draft_id uuid DEFAULT NULL,
+  _order_id uuid DEFAULT NULL
+)
+RETURNS TABLE (exception_id uuid, is_new boolean, is_resolved boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_exception public.payment_exceptions%ROWTYPE;
+  v_session text;
+  v_ref text;
+  v_claimed uuid;
+BEGIN
+  IF _reason = 'paid_amount_mismatch' AND _order_id IS NOT NULL THEN
+    PERFORM private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[_order_id], NULL);
+    SELECT o.checkout_session_id INTO v_session FROM public.orders AS o WHERE o.id = _order_id;
+    v_ref := COALESCE(v_session, NULLIF(pg_catalog.btrim(_payment_intent_id), ''), NULLIF(pg_catalog.btrim(_payment_ref), ''));
+    SELECT e.* INTO v_exception
+    FROM public.payment_exceptions AS e
+    WHERE e.payment_ref = v_ref AND e.reason = 'paid_amount_mismatch';
+
+    IF v_exception.id IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM private.group_g_operations AS d
+      WHERE d.operation = 'payment_exception_dispatch' AND d.cause_type = 'payment_exception'
+        AND d.cause_id = v_exception.id::text
+    ) THEN
+      IF v_exception.order_id IS DISTINCT FROM _order_id THEN
+        RAISE EXCEPTION 'GROUP_G_PAYMENT_REVIEW_CONFLICT' USING ERRCODE = '55000';
+      END IF;
+      UPDATE public.payment_exceptions AS e
+      SET checkout_session_id = COALESCE(e.checkout_session_id, _checkout_session_id),
+          payment_intent_id = COALESCE(e.payment_intent_id, _payment_intent_id),
+          draft_id = COALESCE(e.draft_id, _draft_id),
+          detail = COALESCE(e.detail, _detail)
+      WHERE e.id = v_exception.id
+      RETURNING e.* INTO v_exception;
+    ELSE
+      PERFORM private.ensure_group_g_payment_review_hold(_order_id, _payment_ref, _checkout_session_id, _payment_intent_id, _draft_id);
+      UPDATE public.payment_exceptions AS e
+      SET detail = COALESCE(e.detail, _detail)
+      WHERE e.payment_ref = v_ref AND e.reason = 'paid_amount_mismatch'
+      RETURNING e.* INTO v_exception;
+    END IF;
+  ELSE
+    INSERT INTO public.payment_exceptions (
+      payment_ref, reason, detail, checkout_session_id, payment_intent_id, draft_id, order_id
+    ) VALUES (
+      _payment_ref, _reason, _detail, _checkout_session_id, _payment_intent_id, _draft_id, _order_id
+    )
+    ON CONFLICT (payment_ref, reason) DO NOTHING
+    RETURNING * INTO v_exception;
+
+    IF v_exception.id IS NULL THEN
+      UPDATE public.payment_exceptions AS e
+      SET last_detected_at = pg_catalog.now(),
+          detection_count = e.detection_count + 1,
+          checkout_session_id = COALESCE(e.checkout_session_id, _checkout_session_id),
+          payment_intent_id = COALESCE(e.payment_intent_id, _payment_intent_id),
+          draft_id = COALESCE(e.draft_id, _draft_id),
+          order_id = COALESCE(e.order_id, _order_id)
+      WHERE e.payment_ref = _payment_ref
+        AND e.reason = _reason
+      RETURNING e.* INTO v_exception;
+    END IF;
+  END IF;
+
+  -- One dispatch per exception: the first caller of an unresolved exception owns the first notification/refund.
+  IF v_exception.resolved_at IS NULL THEN
+    INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+    VALUES (
+      pg_catalog.gen_random_uuid(),
+      'payment_exception_dispatch',
+      pg_catalog.md5('exception-dispatch:' || v_exception.id::text)::uuid,
+      pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+        'operation', 'payment_exception_dispatch', 'exception_id', v_exception.id)::text, 'UTF8')), 'hex'),
+      'payment_exception',
+      v_exception.id::text,
+      NULL,
+      pg_catalog.jsonb_build_object('exception_id', v_exception.id, 'reason', v_exception.reason)
+    )
+    ON CONFLICT (operation, request_key) DO NOTHING
+    RETURNING id INTO v_claimed;
+  END IF;
+
+  RETURN QUERY SELECT v_exception.id, v_claimed IS NOT NULL, v_exception.resolved_at IS NOT NULL;
+END;
+$$;
+ALTER FUNCTION private.record_payment_exception(text,text,text,text,text,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.record_payment_exception(text,text,text,text,text,uuid,uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.record_payment_exception(text,text,text,text,text,uuid,uuid) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.record_payment_exception(
+  _payment_ref text,
+  _reason text,
+  _detail text DEFAULT NULL,
+  _checkout_session_id text DEFAULT NULL,
+  _payment_intent_id text DEFAULT NULL,
+  _draft_id uuid DEFAULT NULL,
+  _order_id uuid DEFAULT NULL
+)
+RETURNS TABLE (exception_id uuid, is_new boolean, is_resolved boolean)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT * FROM private.record_payment_exception(_payment_ref, _reason, _detail, _checkout_session_id,
+    _payment_intent_id, _draft_id, _order_id);
+$$;
+ALTER FUNCTION public.record_payment_exception(text,text,text,text,text,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.record_payment_exception(text,text,text,text,text,uuid,uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.record_payment_exception(text,text,text,text,text,uuid,uuid) TO service_role;
+
+-- Human resolve: non-locking read of the order -> common lock and the order closure -> the exception row ->
+-- (cancel through the held-row release core, no nested public RPC) -> close the review holds -> resolve ->
+-- state seq 1 -> FIFO -> state seq 2 -> operation, all in one transaction.
+CREATE FUNCTION private.resolve_payment_exception(
+  _exception_id uuid,
+  _actor_id uuid,
+  _note text DEFAULT NULL,
+  _cancel_order boolean DEFAULT false,
+  _cancel_reason text DEFAULT NULL,
+  _notify_customer boolean DEFAULT NULL
+)
+RETURNS TABLE (resolved boolean, order_id uuid, cancelled_from public.order_status)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+DECLARE
+  target public.payment_exceptions%ROWTYPE;
+  v_order_id uuid;
+  v_orders uuid[];
+  v_before jsonb;
+  v_middle jsonb;
+  v_cancel boolean := COALESCE(_cancel_order, false);
+  current_status public.order_status;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+  v_variants bigint[] := ARRAY[]::bigint[];
+  v_released integer := 0;
+  v_holds integer := 0;
+  v_allocated integer := 0;
+BEGIN
+  IF _exception_id IS NULL OR _actor_id IS NULL THEN
+    RAISE EXCEPTION 'RESOLVE_ARGUMENT_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  IF _note IS NOT NULL AND pg_catalog.char_length(_note) > 500 THEN
+    RAISE EXCEPTION 'RESOLUTION_NOTE_TOO_LONG' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT e.order_id INTO v_order_id FROM public.payment_exceptions AS e WHERE e.id = _exception_id;
+  v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[],
+    CASE WHEN v_order_id IS NULL THEN ARRAY[]::uuid[] ELSE ARRAY[v_order_id] END, NULL);
+  SELECT e.* INTO target FROM public.payment_exceptions AS e WHERE e.id = _exception_id FOR UPDATE;
+
+  IF target.id IS NULL OR target.resolved_at IS NOT NULL THEN
+    RETURN QUERY SELECT false, target.order_id, NULL::public.order_status;
+    RETURN;
+  END IF;
+
+  -- The order was attached after the non-locking read; it cannot be locked late.
+  IF target.order_id IS DISTINCT FROM v_order_id THEN
+    RAISE EXCEPTION 'GROUP_G_LOCK_SET_CHANGED' USING ERRCODE = '40001';
+  END IF;
+
+  IF target.reason = 'refund_failed' AND (_note IS NULL OR _note ~ '^[[:space:]]*$') THEN
+    RAISE EXCEPTION 'RESOLUTION_NOTE_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  IF v_cancel THEN
+    IF NULLIF(pg_catalog.btrim(_note), '') IS NULL THEN
+      RAISE EXCEPTION 'RESOLUTION_NOTE_REQUIRED' USING ERRCODE = '22023';
+    END IF;
+
+    SELECT o.status INTO current_status FROM public.orders AS o WHERE o.id = target.order_id;
+
+    IF current_status IS NULL
+       OR current_status NOT IN ('payment_in_progress'::public.order_status, 'pending'::public.order_status) THEN
+      RAISE EXCEPTION 'ORDER_NOT_CANCELLABLE' USING ERRCODE = '22023';
+    END IF;
+
+    -- The unpaid-release contract for a cancel (actor and one of the six reasons).
+    IF _cancel_reason IS NULL
+       OR _cancel_reason NOT IN ('customer_request', 'payment_declined', 'suspected_fraud', 'stock_unavailable', 'shop_error', 'other') THEN
+      RAISE EXCEPTION 'CANCEL_REQUIRES_ACTOR_AND_REASON' USING ERRCODE = '22023';
+    END IF;
+  END IF;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+
+  IF v_cancel THEN
+    PERFORM pg_catalog.set_config('app.order_actor_id', _actor_id::text, true);
+    PERFORM pg_catalog.set_config('app.order_change_reason', 'resolve_payment_exception', true);
+    PERFORM pg_catalog.set_config('app.order_source_event_id', '', true);
+
+    UPDATE public.orders AS o
+    SET status = 'cancelled'::public.order_status,
+        cancel_reason = _cancel_reason,
+        cancel_note = NULLIF(pg_catalog.btrim(_note), ''),
+        cancel_notify_customer = _notify_customer
+    WHERE o.id = target.order_id
+      AND o.status = current_status;
+
+    SELECT h.released_variant_ids, h.released_quantity INTO v_variants, v_released
+    FROM private.release_group_g_payment_holds(target.order_id, v_operation, 'resolve_payment_exception', _actor_id) AS h;
+
+    IF COALESCE(_notify_customer, false) THEN
+      PERFORM private.enqueue_order_email(target.order_id, 'canceled', current_status::text);
+    END IF;
+  END IF;
+
+  v_holds := private.release_group_g_payment_review_holds(_exception_id, _actor_id);
+
+  UPDATE public.payment_exceptions AS e
+  SET resolved_at = pg_catalog.now(),
+      resolved_by = _actor_id,
+      resolution_note = NULLIF(pg_catalog.btrim(_note), '')
+  WHERE e.id = _exception_id;
+
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1,
+    'resolve_payment_exception', _actor_id);
+
+  -- Released H goes to the oldest waiting orders; a released review hold lets the order rejoin FIFO
+  -- (the projection still excludes it while any other block remains).
+  IF v_holds > 0 AND target.order_id IS NOT NULL THEN
+    v_variants := v_variants || ARRAY(
+      SELECT oi.variant_id FROM public.order_items AS oi
+      WHERE oi.order_id = target.order_id AND oi.variant_id IS NOT NULL);
+  END IF;
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT x.id ORDER BY x.id), ARRAY[]::bigint[]) INTO v_variants
+  FROM pg_catalog.unnest(v_variants) AS x(id);
+  IF pg_catalog.cardinality(v_variants) > 0 THEN
+    v_middle := private.capture_group_g_item_states(v_orders);
+    v_allocated := private.allocate_group_g_fifo(v_variants, v_operation, _actor_id);
+    PERFORM private.record_group_g_item_state_changes(v_middle, v_orders, v_operation, 2, 'fifo', _actor_id);
+  END IF;
+
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    v_operation,
+    'resolve_payment_exception',
+    pg_catalog.md5('resolve_payment_exception:' || _exception_id::text)::uuid,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'resolve_payment_exception', 'exception_id', _exception_id, 'actor_id', _actor_id,
+      'note', _note, 'cancel_order', v_cancel, 'cancel_reason', _cancel_reason,
+      'notify_customer', _notify_customer)::text, 'UTF8')), 'hex'),
+    'payment_exception',
+    _exception_id::text,
+    _actor_id,
+    pg_catalog.jsonb_build_object('exception_id', _exception_id, 'order_id', target.order_id,
+      'cancelled_from', CASE WHEN v_cancel THEN current_status END, 'released_quantity', v_released,
+      'released_holds', v_holds, 'allocated_quantity', v_allocated)
+  );
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+
+  RETURN QUERY SELECT
+    true,
+    target.order_id,
+    CASE WHEN v_cancel THEN current_status ELSE NULL::public.order_status END;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.resolve_payment_exception(
+  _exception_id uuid,
+  _actor_id uuid,
+  _note text DEFAULT NULL,
+  _cancel_order boolean DEFAULT false,
+  _cancel_reason text DEFAULT NULL,
+  _notify_customer boolean DEFAULT NULL
+)
+RETURNS TABLE (resolved boolean, order_id uuid, cancelled_from public.order_status)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT * FROM private.resolve_payment_exception(_exception_id, _actor_id, _note, _cancel_order, _cancel_reason,
+    _notify_customer);
+$$;
+ALTER FUNCTION public.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean) TO service_role;
+
+-- System resolve (automatic refund, refund found). A paid_amount_mismatch (the only reason that can carry a review
+-- hold) takes the same locked path as the human resolve. Other reasons have no hold, so they keep the old
+-- single-row update: the nested refund writers (refund_failed) still call this without a late advisory.
+CREATE FUNCTION private.resolve_payment_exception_by_system(_exception_id uuid, _note text)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  target public.payment_exceptions%ROWTYPE;
+  v_order_id uuid;
+  v_reason text;
+  v_orders uuid[];
+  v_before jsonb;
+  v_middle jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+  v_variants bigint[];
+  v_holds integer := 0;
+  v_allocated integer := 0;
+BEGIN
+  IF _exception_id IS NULL THEN
+    RAISE EXCEPTION 'RESOLVE_ARGUMENT_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+  IF _note IS NOT NULL AND pg_catalog.char_length(_note) > 500 THEN
+    RAISE EXCEPTION 'RESOLUTION_NOTE_TOO_LONG' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT e.order_id, e.reason INTO v_order_id, v_reason FROM public.payment_exceptions AS e WHERE e.id = _exception_id;
+
+  IF v_reason IS DISTINCT FROM 'paid_amount_mismatch' THEN
+    UPDATE public.payment_exceptions AS e
+    SET resolved_at = pg_catalog.now(),
+        resolved_by = NULL,
+        resolution_note = NULLIF(pg_catalog.btrim(_note), '')
+    WHERE e.id = _exception_id
+      AND e.resolved_at IS NULL;
+    RETURN FOUND;
+  END IF;
+
+  v_orders := private.lock_group_g_inventory(ARRAY[]::bigint[],
+    CASE WHEN v_order_id IS NULL THEN ARRAY[]::uuid[] ELSE ARRAY[v_order_id] END, NULL);
+  SELECT e.* INTO target FROM public.payment_exceptions AS e WHERE e.id = _exception_id FOR UPDATE;
+  IF target.id IS NULL OR target.resolved_at IS NOT NULL THEN
+    RETURN false;
+  END IF;
+  IF target.order_id IS DISTINCT FROM v_order_id THEN
+    RAISE EXCEPTION 'GROUP_G_LOCK_SET_CHANGED' USING ERRCODE = '40001';
+  END IF;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+
+  v_holds := private.release_group_g_payment_review_holds(_exception_id, NULL);
+
+  UPDATE public.payment_exceptions AS e
+  SET resolved_at = pg_catalog.now(),
+      resolved_by = NULL,
+      resolution_note = NULLIF(pg_catalog.btrim(_note), '')
+  WHERE e.id = _exception_id;
+
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1,
+    'resolve_payment_exception_by_system', NULL);
+
+  IF v_holds > 0 AND target.order_id IS NOT NULL THEN
+    SELECT pg_catalog.array_agg(DISTINCT oi.variant_id ORDER BY oi.variant_id) INTO v_variants
+    FROM public.order_items AS oi
+    WHERE oi.order_id = target.order_id AND oi.variant_id IS NOT NULL;
+    IF COALESCE(pg_catalog.cardinality(v_variants), 0) > 0 THEN
+      v_middle := private.capture_group_g_item_states(v_orders);
+      v_allocated := private.allocate_group_g_fifo(v_variants, v_operation, NULL);
+      PERFORM private.record_group_g_item_state_changes(v_middle, v_orders, v_operation, 2, 'fifo', NULL);
+    END IF;
+  END IF;
+
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    v_operation,
+    'resolve_payment_exception_by_system',
+    pg_catalog.md5('resolve_payment_exception_by_system:' || _exception_id::text)::uuid,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'resolve_payment_exception_by_system', 'exception_id', _exception_id, 'note', _note)::text,
+      'UTF8')), 'hex'),
+    'payment_exception',
+    _exception_id::text,
+    NULL,
+    pg_catalog.jsonb_build_object('exception_id', _exception_id, 'order_id', target.order_id,
+      'released_holds', v_holds, 'allocated_quantity', v_allocated)
+  );
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RETURN true;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.resolve_payment_exception_by_system(uuid,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.resolve_payment_exception_by_system(uuid,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.resolve_payment_exception_by_system(uuid,text) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.resolve_payment_exception_by_system(_exception_id uuid, _note text)
+RETURNS boolean
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.resolve_payment_exception_by_system(_exception_id, _note); $$;
+ALTER FUNCTION public.resolve_payment_exception_by_system(uuid,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.resolve_payment_exception_by_system(uuid,text) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.resolve_payment_exception_by_system(uuid,text) TO service_role;
+
+-- Marking the review only confirms the existing review_reason. It never releases a mismatch hold and never
+-- repairs a NULL variant (that line stays outside FIFO).
+CREATE FUNCTION private.mark_order_reviewed(_order_id uuid, _actor_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_marked_at timestamptz;
+  v_cause text;
+BEGIN
+  IF _order_id IS NULL OR _actor_id IS NULL THEN
+    RAISE EXCEPTION 'REVIEW_ARGUMENT_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM private.lock_group_g_inventory(ARRAY[]::bigint[], ARRAY[_order_id], NULL);
+  PERFORM pg_catalog.set_config('app.order_actor_id', _actor_id::text, true);
+  PERFORM pg_catalog.set_config('app.order_change_reason', 'admin_mark_order_reviewed', true);
+  PERFORM pg_catalog.set_config('app.order_source_event_id', '', true);
+
+  UPDATE public.orders AS o
+  SET reviewed_at = pg_catalog.now(),
+      reviewed_by = _actor_id
+  WHERE o.id = _order_id
+    AND o.review_reason IS NOT NULL
+    AND o.reviewed_at IS NULL
+  RETURNING o.review_marked_at INTO v_marked_at;
+
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+
+  v_cause := _order_id::text || ':' || COALESCE(v_marked_at::text, '');
+  INSERT INTO private.group_g_operations (id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+  VALUES (
+    pg_catalog.gen_random_uuid(),
+    'mark_order_reviewed',
+    pg_catalog.md5('mark_order_reviewed:' || v_cause)::uuid,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+      'operation', 'mark_order_reviewed', 'order_id', _order_id, 'actor_id', _actor_id,
+      'review_marked_at', v_marked_at)::text, 'UTF8')), 'hex'),
+    'order_review',
+    v_cause,
+    _actor_id,
+    pg_catalog.jsonb_build_object('order_id', _order_id, 'reviewed', true)
+  )
+  ON CONFLICT (operation, request_key) DO NOTHING;
+  RETURN true;
+END;
+$$;
+ALTER FUNCTION private.mark_order_reviewed(uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.mark_order_reviewed(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.mark_order_reviewed(uuid,uuid) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.mark_order_reviewed(_order_id uuid, _actor_id uuid)
+RETURNS boolean
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.mark_order_reviewed(_order_id, _actor_id); $$;
+ALTER FUNCTION public.mark_order_reviewed(uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.mark_order_reviewed(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.mark_order_reviewed(uuid,uuid) TO service_role;
+
+DO $g1_payment_assert$
+BEGIN
+  IF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p WHERE p.oid IN (
+    pg_catalog.to_regprocedure('private.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text)'),
+    pg_catalog.to_regprocedure('private.record_cancelled_order_paid_amount(uuid,text,integer)'),
+    pg_catalog.to_regprocedure('private.record_payment_exception(text,text,text,text,text,uuid,uuid)'),
+    pg_catalog.to_regprocedure('private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)'),
+    pg_catalog.to_regprocedure('private.resolve_payment_exception_by_system(uuid,text)'),
+    pg_catalog.to_regprocedure('private.mark_order_reviewed(uuid,uuid)')
+  ) AND p.proowner = 'postgres'::regrole AND p.prosecdef AND p.proconfig @> ARRAY['search_path=""']
+    AND NOT pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+    AND NOT pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    AND pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')) <> 6
+  OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p WHERE p.oid IN (
+    pg_catalog.to_regprocedure('public.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text)'),
+    pg_catalog.to_regprocedure('public.record_cancelled_order_paid_amount(uuid,text,integer)'),
+    pg_catalog.to_regprocedure('public.record_payment_exception(text,text,text,text,text,uuid,uuid)'),
+    pg_catalog.to_regprocedure('public.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)'),
+    pg_catalog.to_regprocedure('public.resolve_payment_exception_by_system(uuid,text)'),
+    pg_catalog.to_regprocedure('public.mark_order_reviewed(uuid,uuid)')
+  ) AND p.proowner = 'postgres'::regrole AND NOT p.prosecdef AND p.proconfig @> ARRAY['search_path=""']
+    AND NOT pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+    AND NOT pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    AND pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')) <> 6
+  OR (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p WHERE p.oid IN (
+    pg_catalog.to_regprocedure('private.release_group_g_payment_review_holds(uuid,uuid)'),
+    pg_catalog.to_regprocedure('private.guard_group_g_paid_at()')
+  ) AND p.proowner = 'postgres'::regrole AND p.proconfig @> ARRAY['search_path=""']
+    AND NOT pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE')) <> 2
+  OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_trigger AS t
+    WHERE t.tgrelid = 'public.orders'::regclass AND t.tgname = 'orders_paid_at_once'
+      AND t.tgfoid = 'private.guard_group_g_paid_at()'::regprocedure AND t.tgtype = 19 AND t.tgenabled = 'O') THEN
+    RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'g1_payment_functions';
+  END IF;
+END;
+$g1_payment_assert$;
 
 DO $g1_model_assert$
 DECLARE

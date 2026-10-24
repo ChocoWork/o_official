@@ -383,6 +383,42 @@ describeLocalDb('integration: 照合の依存と見回りの候補を実際の P
     expect(await database.claimExceptionNotification(first.exceptionId, 'shop')).toBe(true);
   });
 
+  test('要対応: 入金の RPC が先に作った金額の違いを、照合の初めての記録が同じ行で is_new=true として受け取り、再送は false（G-1 Task 7）', async () => {
+    const draft = await newDraft();
+    const paymentIntentId = `pi_pgrst_${uniqueSuffix()}`;
+    const orderId = await placeOrThrow(database, draft, new Date());
+
+    expect(await database.markOrderPaid({
+      orderId,
+      expectedStatus: 'payment_in_progress',
+      paymentIntentId,
+      paidAmount: PRICE + 1,
+      paidCurrency: 'jpy',
+      notifyCustomer: true,
+      paidEmailVariant: 'order_confirmed',
+      sourceEventId: null,
+    })).toEqual({ updated: true, amountMatches: false, needsReview: false });
+    const created = (await db().query(
+      `select id, detection_count from public.payment_exceptions where order_id = $1 and reason = 'paid_amount_mismatch'`,
+      [orderId],
+    )).rows;
+    expect(created).toEqual([{ id: expect.any(String), detection_count: 1 }]);
+
+    const exception = {
+      paymentRef: draft.checkoutSessionId,
+      reason: 'paid_amount_mismatch' as const,
+      detail: null,
+      checkoutSessionId: draft.checkoutSessionId,
+      paymentIntentId,
+      draftId: draft.draftId,
+      orderId,
+    };
+    expect(await database.recordException(exception)).toEqual({ exceptionId: created[0].id, isNew: true, isResolved: false });
+    expect(await database.recordException(exception)).toEqual({ exceptionId: created[0].id, isNew: false, isResolved: false });
+    expect((await db().query('select detection_count, draft_id from public.payment_exceptions where id = $1', [created[0].id])).rows[0])
+      .toEqual({ detection_count: 2, draft_id: draft.draftId });
+  });
+
   test.each([
     ['一部', 1000, 'paid', 1],
     ['全額', PRICE, 'cancelled', 0],

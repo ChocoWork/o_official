@@ -1276,6 +1276,39 @@ describe('自動の返金①②（グループ E-2 設計書 6-4・本計画 P7�
       expect(sentAlert(h)).toMatchObject({ reason: 'paid_amount_mismatch', automation: 'auto_cancel_failed' });
     });
 
+    it('入金（DB）が先に作った要対応でも、照合の初めての記録（is_new=true）が自動の取消を1回だけ動かし、再送（false）では動かさない（G-1 Task 7）', async () => {
+      // 入金の RPC が要対応と保留を作った後、照合の初めての record_payment_exception が同じ行の dispatch を取る（DB と同じく1回目だけ true）
+      const h = harness({
+        stripe: snapshot(PAID),
+        order: order('payment_in_progress', { totalAmount: 4500 }),
+        amountMatches: false,
+        settings: shopSettings({ autoCancel: true }),
+      });
+      let recordings = 0;
+      jest.spyOn(h.database, 'recordException').mockImplementation(async () => {
+        recordings += 1;
+        return { exceptionId: 'exception-1', isNew: recordings === 1, isResolved: false };
+      });
+
+      const first = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+      const second = await reconcileCheckoutPayment(h.deps, { checkoutSessionId: 'cs_1' });
+
+      expect(first).toMatchObject({ kind: 'needs_action', reason: 'paid_amount_mismatch', exceptionId: 'exception-1' });
+      expect(second).toMatchObject({ kind: 'needs_action', reason: 'paid_amount_mismatch', exceptionId: 'exception-1' });
+      expect(h.database.markOrderPaid).toHaveBeenCalledTimes(1);
+      expect(h.database.recordException).toHaveBeenCalledTimes(2);
+      expect(h.database.recordException).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        paymentRef: 'cs_1', reason: 'paid_amount_mismatch', orderId: 'order-1', paymentIntentId: 'pi_1',
+      }));
+      expect(h.readShopSettings).toHaveBeenCalledTimes(1);
+      expect(mockStartAutomaticRefund).toHaveBeenCalledTimes(1);
+      expect(mockStartAutomaticRefund).toHaveBeenCalledWith(h.refund, {
+        orderId: 'order-1',
+        source: 'auto_amount_mismatch',
+        receivedAmount: null,
+      });
+    });
+
     it('初めての記録でない要対応では、設定がオンでも自動の取消を呼ばず、設定も読まない', async () => {
       const h = alreadyPaid(shopSettings({ autoCancel: true }));
       jest.spyOn(h.database, 'recordException').mockResolvedValue({ exceptionId: 'exception-9', isNew: false, isResolved: false });

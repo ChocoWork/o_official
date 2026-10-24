@@ -30,7 +30,6 @@
  *     npx jest tests/integration/db/return_postgrest --runInBand
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { createFulfillment } from '@/lib/orders/fulfillment/fulfillment-store';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { markOrderRefundError } from '@/lib/orders/refund/refund-store';
 import {
@@ -68,7 +67,7 @@ import {
 } from '@/lib/orders/returns/return-store';
 import { RETURN_REASONS } from '@/lib/orders/returns/return-types';
 import { describeLocalDb, isLocalDatabase, type PgClient } from './helpers/local-db';
-import { PRICE, createCatalogFixture, insertOrderWithLines, uniqueSuffix } from './helpers/order-fixtures';
+import { PRICE, createCatalogFixture, insertOrderWithLines, shipFixtureOrder, uniqueSuffix } from './helpers/order-fixtures';
 
 jest.setTimeout(30000);
 
@@ -217,10 +216,10 @@ async function createActor(db: PgClient): Promise<Actor> {
 }
 
 /**
- * 発送した在庫の品の注文（毎回新しく作る）。支払い済みの注文を作り、発送は本物の発送の窓口（createFulfillment）で記録する。
- * 返品の試験の道具は Task 1 が order-fixtures.ts に足すが、その名前に頼らず、この試験の中で作る（E-2 の refund_postgrest と同じ）。
+ * 発送した在庫の品の注文（毎回新しく作る）。支払い済みの注文を作り、発送は共通の材料（shipFixtureOrder: G-1 の割当を
+ * 共通の押さえの下で消費して発送の行を書く）で作る。旧の発送の窓口は G-1 で止めるので、材料には使わない（計画 Global Constraints 72行目）。
  */
-async function createShippedOrder(db: PgClient, client: SupabaseClient, actor: Actor, quantity: number): Promise<ShippedOrder> {
+async function createShippedOrder(db: PgClient, _client: SupabaseClient, actor: Actor, quantity: number): Promise<ShippedOrder> {
   const catalog = await createCatalogFixture(db, { stock: quantity });
   const { orderId, orderItemIds } = await insertOrderWithLines(db, {
     status: 'paid',
@@ -228,16 +227,15 @@ async function createShippedOrder(db: PgClient, client: SupabaseClient, actor: A
     paymentIntentId: `pi_pgrst_return_${uniqueSuffix()}`,
     lines: [{ itemId: catalog.itemId, variantId: catalog.variantId, quantity, fulfillmentType: 'stock' }],
   });
-  const shipped = await createFulfillment(client, {
+  const shipped = await shipFixtureOrder(db, {
     orderId,
     actorId: actor.id,
-    requestKey: crypto.randomUUID(),
     carrier: 'yamato',
     trackingNumber: TRACKING_NUMBER,
     notifyCustomer: false,
-    lines: [{ orderItemId: orderItemIds[0], quantity }],
+    lines: [{ order_item_id: orderItemIds[0], quantity }],
   });
-  return { orderId, orderItemId: orderItemIds[0], fulfillmentId: shipped.fulfillmentId, itemId: catalog.itemId, variantId: catalog.variantId };
+  return { orderId, orderItemId: orderItemIds[0], fulfillmentId: shipped.fulfillment_id, itemId: catalog.itemId, variantId: catalog.variantId };
 }
 
 /** 同じ商品に色違い・サイズ違いのバリアントを足す（交換の色・サイズ）。在庫は台帳の restock で入れる */
@@ -776,17 +774,16 @@ describeLocalDb('integration: 返品の窓口を実際の PostgREST に通す', 
       ],
     });
     await db().query('update public.orders set user_id = $1 where id = $2', [customerId, orderId]);
-    const shipped = await createFulfillment(client, {
+    const shipped = await shipFixtureOrder(db(), {
       orderId,
       actorId: actor.id,
-      requestKey: crypto.randomUUID(),
       carrier: 'yamato',
       trackingNumber: TRACKING_NUMBER,
       notifyCustomer: false,
-      lines: [{ orderItemId: orderItemIds[0], quantity: 2 }, { orderItemId: orderItemIds[1], quantity: 1 }],
+      lines: [{ order_item_id: orderItemIds[0], quantity: 2 }, { order_item_id: orderItemIds[1], quantity: 1 }],
     });
     return {
-      orderId, fulfillmentId: shipped.fulfillmentId, ineligibleItemId: ineligible.itemId,
+      orderId, fulfillmentId: shipped.fulfillment_id, ineligibleItemId: ineligible.itemId,
       ineligibleOrderItemId: orderItemIds[0], otherOrderItemId: orderItemIds[1],
     };
   }

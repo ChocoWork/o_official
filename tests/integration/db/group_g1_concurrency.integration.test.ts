@@ -163,7 +163,9 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
   });
 
   // Task 6 public writers: B waits on the advisory with valid input while C can still take every existing row.
-  type Task6Material = { sql: string; params: unknown[]; draftId?: string; itemId: number; variantId: number; orderIds: string[] };
+  type Task6Material = {
+    sql: string; params: unknown[]; draftId?: string; itemId: number; variantId: number; orderIds: string[]; exceptionId?: string;
+  };
   const TASK6_ENTRIES: Array<{ name: string; setup: () => Promise<Task6Material>; check: (rows: any[]) => void }> = [
     { name: 'public.place_order_from_checkout_draft', setup: async () => {
       const fx = await createCatalogFixture(db(), { stock: 3 });
@@ -209,6 +211,63 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     }, check: (rows) => expect(rows).toHaveLength(2) },
   ];
 
+  // Task 7 public writers (payment, cancelled-order payment, exception record, both resolvers, review mark).
+  async function paidOrder(amountDelta = 0) {
+    const fx = await createCatalogFixture(db(), { stock: 3 });
+    const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+    const orderId = await placeOrder(draft);
+    const pi = `pi_${randomUUID().replaceAll('-', '')}`;
+    await db().query(`select updated from public.mark_order_paid($1::uuid,'payment_in_progress',$2::text,$3::integer,
+      'jpy',true,'order_confirmed',null)`, [orderId, pi, draft.totalAmount + amountDelta]);
+    const exceptionId = (await db().query(
+      `select id from public.payment_exceptions where order_id=$1 and reason='paid_amount_mismatch'`, [orderId],
+    )).rows[0]?.id as string | undefined;
+    return { fx, draft, orderId, pi, exceptionId };
+  }
+  const TASK7_ENTRIES: Array<{ name: string; setup: () => Promise<Task6Material>; check: (rows: any[]) => void }> = [
+    { name: 'public.mark_order_paid', setup: async () => {
+      const fx = await createCatalogFixture(db(), { stock: 3 });
+      const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+      const orderId = await placeOrder(draft);
+      return { sql: `select updated, amount_matches, needs_review from public.mark_order_paid($1::uuid,'payment_in_progress',
+          $2::text,$3::integer,'jpy',true,'order_confirmed',null)`,
+        params: [orderId, `pi_${randomUUID()}`, draft.totalAmount], itemId: fx.itemId, variantId: fx.variantId, orderIds: [orderId] };
+    }, check: (rows) => expect(rows).toEqual([{ updated: true, amount_matches: true, needs_review: false }]) },
+    { name: 'public.record_cancelled_order_paid_amount', setup: async () => {
+      const fx = await createCatalogFixture(db(), { stock: 3 });
+      const draft = await createDraft(db(), { itemId: fx.itemId, quantity: 1 });
+      const orderId = await placeOrder(draft);
+      await db().query(`select released from public.release_stock_for_unpaid_order($1::uuid,'payment_in_progress','cancelled',
+        'admin_cancel',$2::uuid,null,'customer_request',null,false)`, [orderId, await actorId()]);
+      return { sql: 'select public.record_cancelled_order_paid_amount($1::uuid,$2::text,$3::integer) as written',
+        params: [orderId, `pi_${randomUUID().replaceAll('-', '')}`, draft.totalAmount],
+        itemId: fx.itemId, variantId: fx.variantId, orderIds: [orderId] };
+    }, check: (rows) => expect(rows).toEqual([{ written: true }]) },
+    { name: 'public.record_payment_exception', setup: async () => {
+      const p = await paidOrder();
+      return { sql: `select is_new, is_resolved from public.record_payment_exception($1::text,'paid_amount_mismatch',null,$1::text,
+          $2::text,null,$3::uuid)`, params: [p.draft.checkoutSessionId, p.pi, p.orderId],
+        itemId: p.fx.itemId, variantId: p.fx.variantId, orderIds: [p.orderId] };
+    }, check: (rows) => expect(rows).toEqual([{ is_new: true, is_resolved: false }]) },
+    { name: 'public.resolve_payment_exception', setup: async () => {
+      const p = await paidOrder(1);
+      return { sql: `select resolved from public.resolve_payment_exception($1::uuid,$2::uuid,'checked')`,
+        params: [p.exceptionId, await actorId()], itemId: p.fx.itemId, variantId: p.fx.variantId, orderIds: [p.orderId],
+        exceptionId: p.exceptionId };
+    }, check: (rows) => expect(rows).toEqual([{ resolved: true }]) },
+    { name: 'public.resolve_payment_exception_by_system', setup: async () => {
+      const p = await paidOrder(1);
+      return { sql: `select public.resolve_payment_exception_by_system($1::uuid,'auto') as resolved`,
+        params: [p.exceptionId], itemId: p.fx.itemId, variantId: p.fx.variantId, orderIds: [p.orderId], exceptionId: p.exceptionId };
+    }, check: (rows) => expect(rows).toEqual([{ resolved: true }]) },
+    { name: 'public.mark_order_reviewed', setup: async () => {
+      const p = await paidOrder();
+      await db().query(`update public.orders set review_reason='stock_not_reserved', review_marked_at=now() where id=$1`, [p.orderId]);
+      return { sql: 'select public.mark_order_reviewed($1::uuid,$2::uuid) as reviewed', params: [p.orderId, await actorId()],
+        itemId: p.fx.itemId, variantId: p.fx.variantId, orderIds: [p.orderId] };
+    }, check: (rows) => expect(rows).toEqual([{ reviewed: true }]) },
+  ];
+
   let actor: string | undefined;
   async function actorId() {
     actor ??= (await db().query(`insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
@@ -223,7 +282,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
     )).rows[0].order_id as string;
   }
 
-  test.each(TASK6_ENTRIES)('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
+  test.each([...TASK6_ENTRIES, ...TASK7_ENTRIES])('$name waits for advisory before locking any existing business row', async ({ setup, check }) => {
     const material = await setup();
     const a = await client();
     const b = await client();
@@ -247,6 +306,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
           where oi.order_id=any($1::uuid[]) for update of a nowait`, [material.orderIds]],
       ];
       if (material.draftId) probes.unshift(['select id from public.checkout_drafts where id=$1 for update nowait', [material.draftId]]);
+      if (material.exceptionId) probes.push(['select id from public.payment_exceptions where id=$1 for update nowait', [material.exceptionId]]);
       for (const [probe, params] of probes) expect((await c.query(probe, params)).rowCount).toBeGreaterThan(0);
       await c.query('rollback');
       await a.query('rollback');

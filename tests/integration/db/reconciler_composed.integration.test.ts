@@ -400,6 +400,8 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       const paymentIntentId = `pi_composed_${uniqueSuffix()}`;
       // 注文は PRICE。Stripe が受け取ったのは 1000 円多い額
       const stripe = fakeStripe(snapshotOf(draft, paymentIntentId, stripeState.paid(PRICE + 1000)));
+      // 店の設定は、要対応を初めて dispatch した時（is_new=true）だけ読む（自動の返金の権利は1回）
+      const readSettings = jest.spyOn(stripe.deps, 'readShopSettings');
 
       const first = await reconcile(stripe.deps, draft);
 
@@ -421,6 +423,14 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       });
       expect(first).toMatchObject({ exceptionId: exception.id });
       expect(await exceptionsOf(draft)).toHaveLength(1);
+      // G-1 Task 7: 入金（DB）が要対応と保留を先に作り、照合の初めての記録が同じ行の dispatch を1回だけ取る（回数は1のまま）
+      const groupG = async (operation: string, column: 'exception_id' | 'cause_id') => Number((await db().query(
+        `select count(*)::int as n from private.group_g_operations where operation = $1 and ${column}::text = $2`,
+        [operation, exception.id],
+      )).rows[0].n);
+      expect(await groupG('payment_review_hold', 'exception_id')).toBe(1);
+      expect(await groupG('payment_exception_dispatch', 'cause_id')).toBe(1);
+      expect(readSettings).toHaveBeenCalledTimes(1);
       // 注文確定メールは出さない（店が確かめてから連絡する）。出るのは店への要対応メールだけ
       expect(await queuedEmails(orderId)).toEqual([]);
       expect(sentMails()).toHaveLength(1);
@@ -444,6 +454,10 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
       expect(second).toMatchObject({ kind: 'needs_action', reason: 'paid_amount_mismatch', orderId, exceptionId: exception.id });
       expect(await exceptionsOf(draft)).toEqual([{ ...exception, detection_count: 2 }]);
       expect(sentMails()).toHaveLength(1);
+      // 再送は is_new=false（設定も読まず、自動の返金は動かない）。保留・dispatch は増えない
+      expect(readSettings).toHaveBeenCalledTimes(1);
+      expect(await groupG('payment_review_hold', 'exception_id')).toBe(1);
+      expect(await groupG('payment_exception_dispatch', 'cause_id')).toBe(1);
       await expect(shipPaidOrder(orderId)).rejects.toMatchObject({ code: '22023', message: 'PAYMENT_REVIEW_REQUIRED' });
 
       // 対照: 解決すれば発送できる。さっきの断りは、要対応が開いていたからである（配送先などほかの理由ではない）
@@ -452,6 +466,14 @@ describeLocalDb('integration: 照合関数と実際の DB の操作を組み合�
         [exception.id, ACTOR, '差額を返金'],
       );
       expect(resolved.rows[0].resolved).toBe(true);
+      // 人の解決と同じ取引で保留を外す（閉じた要対応に外していない保留が残らない）
+      expect(Number((await db().query(
+        `select count(*)::int as n from private.group_g_operations h
+         where h.operation = 'payment_review_hold' and h.exception_id = $1
+           and not exists (select 1 from private.group_g_operations r where r.operation = 'payment_review_release'
+             and r.cause_type = 'payment_review_hold' and r.cause_id = h.id::text)`,
+        [exception.id],
+      )).rows[0].n)).toBe(0);
       expect((await shipPaidOrder(orderId)).rowCount).toBe(1);
       expect((await ordersOf(draft))[0]).toMatchObject({ id: orderId, status: 'shipped' });
     });

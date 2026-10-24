@@ -12,6 +12,9 @@ import {
   variantStock,
 } from './helpers/order-fixtures';
 
+// Stripe の event ID は一意。committed の試験を同じ DB で流し直しても、操作の受付（md5('stripe:'||event)）がぶつからないよう実行ごとに変える
+const RUN = uniqueSuffix();
+
 /**
  * 入金済み・入金待ちにする RPC(設計書 4-1・4-5・⑤)。
  * 今の状態を条件にした更新で、先に動いていれば何もしない。在庫扱いで確保中が0の明細は確保し直し、
@@ -57,15 +60,16 @@ describeLocalDb('integration: 入金済み・入金待ちにする', (db) => {
     const { draft, orderId } = await placeFromDraft(db(), { stock: 2, quantity: 1 });
     const pi = `pi_${uniqueSuffix()}`;
 
-    const res = await markPaid(db(), { orderId, expected: 'payment_in_progress', paymentIntentId: pi, amount: PRICE, event: 'evt_paid_1' });
+    const res = await markPaid(db(), { orderId, expected: 'payment_in_progress', paymentIntentId: pi, amount: PRICE, event: `evt_paid_1_${RUN}` });
 
     expect(res.rows[0]).toEqual({ updated: true, amount_matches: true, needs_review: false });
     expect(await orderRow(db(), orderId)).toMatchObject({ status: 'paid', payment_intent_id: pi, review_reason: null });
     expect(await cartLineExists(db(), draft.cartLineId)).toBe(false);
+    // G-1 Task 7: 入金後は下書きへ支払いの番号を書き戻さない（入金の照合は注文の番号を正とする）
     const draftPi = await db().query('select payment_intent_id from public.checkout_drafts where id = $1', [draft.draftId]);
-    expect(draftPi.rows[0].payment_intent_id).toBe(pi);
+    expect(draftPi.rows[0].payment_intent_id).toBeNull();
     expect(await revisionsOf(db(), orderId)).toEqual([
-      { reason: 'stripe_payment_paid', sourceEventId: 'evt_paid_1', changedBy: null },
+      { reason: 'stripe_payment_paid', sourceEventId: `evt_paid_1_${RUN}`, changedBy: null },
     ]);
   });
 
@@ -112,9 +116,10 @@ describeLocalDb('integration: 入金済み・入金待ちにする', (db) => {
     ]);
   });
 
-  test('確保し直す在庫が足りなければ確保せず、要確認にする', async () => {
+  // G-1 Task 7: 在庫の不足は FIFO の待ちで、要確認（stock_not_reserved）にしない。ある分だけ割り当てる
+  test('確保し直す在庫が足りなければ、ある分だけ割り当て、残りは受注生産中で要確認にしない', async () => {
     const fx = await createCatalogFixture(db(), { stock: 1 });
-    const { orderId } = await insertOrderWithStockLine(db(), {
+    const { orderId, orderItemId } = await insertOrderWithStockLine(db(), {
       status: 'failed', itemId: fx.itemId, variantId: fx.variantId, quantity: 2, reserved: false,
       paymentIntentId: `pi_${uniqueSuffix()}`,
     });
@@ -122,9 +127,20 @@ describeLocalDb('integration: 入金済み・入金待ちにする', (db) => {
 
     const res = await markPaid(db(), { orderId, expected: 'failed', paymentIntentId: pi, amount: PRICE * 2 });
 
-    expect(res.rows[0]).toEqual({ updated: true, amount_matches: true, needs_review: true });
-    expect(await orderRow(db(), orderId)).toMatchObject({ status: 'paid', review_reason: 'stock_not_reserved' });
-    expect(await variantStock(db(), fx.variantId)).toBe(1);
+    expect(res.rows[0]).toEqual({ updated: true, amount_matches: true, needs_review: false });
+    expect(await orderRow(db(), orderId)).toMatchObject({ status: 'paid', review_reason: null });
+    expect(await variantStock(db(), fx.variantId)).toBe(0);
+    const allocated = await db().query(
+      `select kind, sum(remaining_quantity)::int as n from public.order_item_allocations
+       where order_item_id = $1 group by kind`,
+      [orderItemId],
+    );
+    expect(allocated.rows).toEqual([{ kind: 'paid', n: 1 }]);
+    const states = await db().query(
+      'select status, quantity from public.list_admin_order_item_states($1) order by status',
+      [[orderId]],
+    );
+    expect(states.rows).toEqual([{ status: 'in_production', quantity: 1 }, { status: 'ready', quantity: 1 }]);
   });
 
   test('注文の PaymentIntent と違う PaymentIntent では入金済みにしない', async () => {
@@ -142,7 +158,7 @@ describeLocalDb('integration: 入金済み・入金待ちにする', (db) => {
     const { draft, orderId } = await placeFromDraft(db(), { stock: 1, quantity: 1 });
     const pi = `pi_${uniqueSuffix()}`;
 
-    const first = await markAwaiting(db(), { orderId, paymentIntentId: pi, event: 'evt_awaiting_1' });
+    const first = await markAwaiting(db(), { orderId, paymentIntentId: pi, event: `evt_awaiting_1_${RUN}` });
     const second = await markAwaiting(db(), { orderId, paymentIntentId: pi });
 
     expect(first.rows[0].updated).toBe(true);
@@ -150,7 +166,7 @@ describeLocalDb('integration: 入金済み・入金待ちにする', (db) => {
     expect(await orderRow(db(), orderId)).toMatchObject({ status: 'pending', payment_intent_id: pi });
     expect(await cartLineExists(db(), draft.cartLineId)).toBe(false);
     expect(await revisionsOf(db(), orderId)).toEqual([
-      { reason: 'stripe_payment_awaiting', sourceEventId: 'evt_awaiting_1', changedBy: null },
+      { reason: 'stripe_payment_awaiting', sourceEventId: `evt_awaiting_1_${RUN}`, changedBy: null },
     ]);
   });
 
@@ -170,13 +186,13 @@ describeLocalDb('integration: 入金済み・入金待ちにする', (db) => {
     const other = await connectLocalDb();
     try {
       const [webhook, sweep] = await Promise.all([
-        markPaid(db(), { orderId, expected: 'payment_in_progress', paymentIntentId: pi, amount: PRICE, event: 'evt_concurrent_webhook' }),
-        markPaid(other, { orderId, expected: 'payment_in_progress', paymentIntentId: pi, amount: PRICE, event: 'evt_concurrent_sweep' }),
+        markPaid(db(), { orderId, expected: 'payment_in_progress', paymentIntentId: pi, amount: PRICE, event: `evt_concurrent_webhook_${RUN}` }),
+        markPaid(other, { orderId, expected: 'payment_in_progress', paymentIntentId: pi, amount: PRICE, event: `evt_concurrent_sweep_${RUN}` }),
       ]);
 
       // 後の方は行ロックを待ち、先に入金済みになった注文を見て何もしない
       expect([webhook.rows[0].updated, sweep.rows[0].updated].sort()).toEqual([false, true]);
-      const winnerEvent = webhook.rows[0].updated ? 'evt_concurrent_webhook' : 'evt_concurrent_sweep';
+      const winnerEvent = webhook.rows[0].updated ? `evt_concurrent_webhook_${RUN}` : `evt_concurrent_sweep_${RUN}`;
       expect((await orderRow(db(), orderId)).status).toBe('paid');
       expect(await revisionsOf(db(), orderId)).toEqual([
         { reason: 'stripe_payment_paid', sourceEventId: winnerEvent, changedBy: null },

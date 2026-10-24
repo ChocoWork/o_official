@@ -275,12 +275,12 @@ describeLocalDb('G-1 guest order linking across connections', (db) => {
         await first.query('commit');
         expect((await pending).rows).toEqual([{ released: true }]);
       } else {
-        // The payment RPC holds the order row first; the link takes the advisory and waits on that row only.
+        // Task 7: the payment RPC takes the common advisory first, so the link waits on the advisory (not on a row).
         await first.query(`select updated from public.mark_order_paid($1::uuid,'payment_in_progress',$2::text,5000,'jpy',true,'order_confirmed',null)`,
           [ids[0], `pi_${randomUUID()}`]);
         pending = link(second);
         void pending.catch(() => {});
-        await waitBlockedBy(db(), secondPid, firstPid, false);
+        await waitBlockedBy(db(), secondPid, firstPid, true);
         await first.query('commit');
         expect((await pending).rows.map((row) => row.id)).toEqual(ids);
       }

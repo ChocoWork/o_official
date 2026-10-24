@@ -211,6 +211,14 @@ const G1_BODY_FUNCTIONS = [
   'private.link_guest_orders(uuid,text)',
   'private.release_group_g_payment_holds(uuid,uuid,text,uuid)',
   'link_guest_orders(uuid,text)',
+  'private.guard_group_g_paid_at()',
+  'private.release_group_g_payment_review_holds(uuid,uuid)',
+  'private.mark_order_paid(uuid,order_status,text,integer,text,boolean,text,text)',
+  'private.record_cancelled_order_paid_amount(uuid,text,integer)',
+  'private.record_payment_exception(text,text,text,text,text,uuid,uuid)',
+  'private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)',
+  'private.resolve_payment_exception_by_system(uuid,text)',
+  'private.mark_order_reviewed(uuid,uuid)',
 ];
 const G1_BODY_TRIGGERS = [
   ...['order_item_allocation_events', 'order_item_state_events', 'private.group_g_operations'].flatMap((table) => {
@@ -221,6 +229,7 @@ const G1_BODY_TRIGGERS = [
   'order_item_allocations|group_g_allocation_bounds',
   'order_item_allocation_events|group_g_allocation_bounds',
   'stock_movements|group_g_stock_movement_consistency',
+  'orders|orders_paid_at_once',
 ];
 const G1_BODY_CONSTRAINTS = [
   ...['pkey', 'operation_request_key_key', 'exception_id_fkey', 'fingerprint_check', 'exception_check', 'review_hold_check']
@@ -937,7 +946,12 @@ WHERE id = (SELECT pg_catalog.min(id) FROM pg_temp.group_g_cleanup_webhook_ids);
       'place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamp with time zone,text,bigint[],uuid)',
       'mark_order_awaiting_payment(uuid,text,text)',
       'release_stock_for_unpaid_order(uuid,order_status,order_status,text,uuid,text,text,text,boolean)',
-      'admin_cancel_failed_order(uuid,uuid,text,text)', 'load_order_refund_materials(uuid)'];
+      'admin_cancel_failed_order(uuid,uuid,text,text)', 'load_order_refund_materials(uuid)',
+      'mark_order_paid(uuid,order_status,text,integer,text,boolean,text,text)',
+      'record_cancelled_order_paid_amount(uuid,text,integer)',
+      'record_payment_exception(text,text,text,text,text,uuid,uuid)',
+      'resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)',
+      'resolve_payment_exception_by_system(uuid,text)', 'mark_order_reviewed(uuid,uuid)'];
     const functions = split(catalog.functions, (row) => row.signature as string, G1_BODY_FUNCTIONS, changedFunctions);
     expect(functions.kept).toEqual(split(before.catalog.functions, (row) => row.signature as string, [], changedFunctions).kept);
     expect(functions.added).toEqual([...G1_BODY_FUNCTIONS].sort());

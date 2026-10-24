@@ -237,6 +237,36 @@ describe('createSupabaseReconcilerDatabase', () => {
     });
   });
 
+  it('要対応の記録 RPC に名前付きの引数を渡し、DB の初回の dispatch（is_new）と再送をそのまま返す（G-1 Task 7）', async () => {
+    const rows = [
+      { exception_id: 'exception-1', is_new: true, is_resolved: false },
+      { exception_id: 'exception-1', is_new: false, is_resolved: false },
+    ];
+    const { client, rpc } = fakeClient({ rpc: () => ({ data: [rows.shift()], error: null }) });
+    const database = createSupabaseReconcilerDatabase(client);
+    const args = {
+      paymentRef: 'cs_1',
+      reason: 'paid_amount_mismatch' as const,
+      detail: null,
+      checkoutSessionId: 'cs_1',
+      paymentIntentId: 'pi_1',
+      draftId: 'draft-1',
+      orderId: 'order-1',
+    };
+
+    expect(await database.recordException(args)).toEqual({ exceptionId: 'exception-1', isNew: true, isResolved: false });
+    expect(await database.recordException(args)).toEqual({ exceptionId: 'exception-1', isNew: false, isResolved: false });
+    expect(rpc).toHaveBeenCalledWith('record_payment_exception', {
+      _payment_ref: 'cs_1',
+      _reason: 'paid_amount_mismatch',
+      _detail: null,
+      _checkout_session_id: 'cs_1',
+      _payment_intent_id: 'pi_1',
+      _draft_id: 'draft-1',
+      _order_id: 'order-1',
+    });
+  });
+
   it('下書きの連絡先と配送先の欠落を読む', async () => {
     const { client } = fakeClient({
       select: () => ({
