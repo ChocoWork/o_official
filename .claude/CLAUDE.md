@@ -96,6 +96,8 @@ docs\1_RequirementsDifinition\brand.md に私の服のブランドのコンセ�
 
 ユーザーから機能・UI の変更・追加依頼を受けたら、実装と同時に以下をセットで作成する。
 
+`scripts/trace/scope.json` に挙がっている領域は、下の1（`requirements.md` への追記と `FREQ-` の番号）だけを `documentation-guide` スキルの ID の決まり（新しい要求は `SR-<AREA>-NNN`）と領域のファイル（`docs/02_Requirements/areas/<area>.md` など）に置き換える。2（E2E のファイルの名前と3つの幅）と、実装と同時にセットで作ることはそのまま守る。
+
 **1. docs\02_Requirements\requirements.md に追記**
 
 トレーサビリティテーブルに1行追加：
@@ -114,6 +116,61 @@ docs\1_RequirementsDifinition\brand.md に私の服のブランドのコンセ�
 - description: kebab-case の短い説明
 - テスト内容は受け付け基準（AC）を検証するコードにする
 - mobile（390px）/ tablet（768px）/ desktop（1280px）の3ビューポートでテストする
+
+### docs 文書の参照ルール（作業を始める前）
+
+新しい作業（実装・調査・バグ修正・設計）を始めるときは、コードより先に docs 配下で前提を確認する。
+
+1. `docs/README.md` の「工程別の入口」から、作業に関係する工程の文書を選ぶ
+2. 範囲（`scripts/trace/scope.json`）に入っている領域は、まず `npm run trace -- <ID かファイル>` で上下と影響範囲を出す。次の順で読み、調査の手掛かり（要件ID・対象コード・既知の判断・未確認事項）を集める
+   - 要件: 範囲内の領域は `docs/02_Requirements/areas/<area>.md`、ほかは `docs/02_Requirements/requirements.md`（対応する FREQ・AC）
+   - 設計: `docs/03_BasicDesign/`（画面・API・データ・構成。範囲内の領域は `areas/<area>.md` と設計判断の `decisions/`）、`docs/04_DetailDesign/`（シーケンス・状態・ページ）、範囲内の領域の脅威は `docs/05_Quality/security/threats/<area>.md`
+   - 品質: `docs/05_Quality/`（テスト仕様、過去のレビュー指摘）。作業と指摘の台帳は `docs/05_Quality/reviews/code/2026-09-25-working-diff-security-review.md`
+   - 運用: `docs/06_Operations/`（DB 移行、デプロイ、秘密情報、メール・Webhook の運用）
+   - 過去の設計案・計画: `docs/superpowers/specs/`、`docs/superpowers/plans/`
+3. 文書の各「未確認事項」と日付付き記録は当時の判断。現行の挙動はコード・テストで実測して確かめる
+4. 文書とコードが食い違っていたら、どちらが正しいか推測で決めず報告する
+
+### docs 文書の更新ルール（作業を終えるとき）
+
+タスクを1つ終えるごとに、変更内容に対応する docs 配下の正本を同じコミットで更新する。コードだけ変えて文書を残さない。
+
+書式は `documentation-guide` スキルに従う。コードを変えたら、その単位の `@impl`・`@design` と、つながる `DD-` を同じコミットで直す。範囲内の領域を変えたら `npm run validate-trace` と `npm run test:trace-coverage` を通す。
+
+どの領域でも更新する正本:
+
+| 変更したもの | 更新する文書 |
+| --- | --- |
+| DB のマイグレーション | `docs/06_Operations/db-migrations.md` |
+| レビュー指摘の対応・作業の進み具合 | 作業と指摘の台帳（上記）の状態欄 |
+| 運用手順・環境変数・外部サービス設定 | `docs/06_Operations/` の該当文書 |
+
+範囲（`scripts/trace/scope.json`）に入っている領域で、上に加えて更新する正本:
+
+| 変更したもの | 更新する文書 |
+| --- | --- |
+| 要求・要件・受け入れ条件・セキュリティ要件・派生要件 | `docs/02_Requirements/areas/<area>.md`（`requirements.md` には書き足さない） |
+| 脅威 | `docs/05_Quality/security/threats/<area>.md` |
+| 構成・画面・画面遷移・状態遷移・API・データ | `docs/03_BasicDesign/areas/<area>.md`（`api-spec.md` などには書き足さない） |
+| 設計判断 | `docs/03_BasicDesign/decisions/ADR-NNNN-<slug>.md` |
+| 処理の詳細 | `scope.json` に挙がっている `docs/04_DetailDesign/pages/` の頁の `DD-` |
+| テストの追加・変更 | テスト名の先頭の ID。`npm run trace:report -- <AREA>` で `docs/05_Quality/reports/` の一覧を作り直す |
+
+範囲に入っていない領域で、上に加えて更新する正本:
+
+| 変更したもの | 更新する文書 |
+| --- | --- |
+| 機能・UI の追加・変更 | `docs/02_Requirements/requirements.md`（要求管理ルール）、`docs/03_BasicDesign/ui/screen-list.md`・`screen-flow.md`、該当する `docs/04_DetailDesign/pages/` |
+| API・Route Handler・Server Action | `docs/03_BasicDesign/api/api-spec.md`、`route-inventory.md` |
+| DB スキーマ | `docs/03_BasicDesign/data/er.md` |
+| 処理の流れ・状態遷移 | `docs/04_DetailDesign/sequence/`、`docs/04_DetailDesign/states/` |
+| 構成・認証・権限 | `docs/03_BasicDesign/architecture/` |
+| テストの追加・変更 | `docs/05_Quality/tests/test-spec.md`、`docs/05_Quality/reports/traceability-report.md` |
+
+- 書式は `docs/README.md` の「共通フォーマット」に従い、文書冒頭の確認日を更新する
+- 該当する文書がなければ新規作成し、`docs/README.md` または各工程の README から相対リンクを張る
+- 文書を変えたら `npm.cmd run validate-docs` でリンクと Markdown を確認する
+- 更新不要と判断した場合は、その理由を完了報告に1行書く
 
 ### E2E 実行ルール
 
