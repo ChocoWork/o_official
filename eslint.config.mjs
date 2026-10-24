@@ -41,7 +41,7 @@ const eslintConfig = [
     },
   },
   {
-    files: ['tests/**/*.{ts,tsx,js,jsx}', 'jest.config.cjs'],
+    files: ['tests/**/*.{ts,tsx,js,jsx}', 'jest.config.cjs', 'jest.trace.config.cjs'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-require-imports': 'off',

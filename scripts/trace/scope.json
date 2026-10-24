@@ -116,9 +116,9 @@
       "src/app/about/**/*.{ts,tsx}"
     ],
     "tests": [
-      "tests/unit/**/*about*.test.{ts,tsx}",
+      "tests/unit/**/about-*.test.{ts,tsx}",
       "tests/unit/**/*About*.test.{ts,tsx}",
-      "tests/integration/**/*about*.test.{ts,tsx}",
+      "tests/integration/**/about-*.test.{ts,tsx}",
       "tests/unit/**/about/**/*.test.{ts,tsx}",
       "tests/integration/**/about/**/*.test.{ts,tsx}"
     ],
