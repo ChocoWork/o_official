@@ -906,6 +906,350 @@ GRANT SELECT ON TABLE public.order_item_allocations TO service_role;
 GRANT SELECT ON TABLE public.order_item_allocation_events TO service_role;
 GRANT SELECT ON TABLE public.order_item_state_events TO service_role;
 
+-- Task 3: 現在値は原本から投影する。数量を1点ずつ展開せず、発送内と未発送の半開区間を分割する。
+CREATE FUNCTION private.group_g_item_state_ranges(_order_ids uuid[])
+RETURNS TABLE (order_id uuid, order_item_id uuid, status text, unit_from integer, unit_to integer, blocked_reasons text[])
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+BEGIN
+  IF _order_ids IS NULL OR pg_catalog.cardinality(_order_ids) = 0 THEN RETURN; END IF;
+  IF pg_catalog.cardinality(_order_ids) > 200 THEN
+    RAISE EXCEPTION 'TOO_MANY_ORDERS' USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
+  WITH orders AS MATERIALIZED (
+    SELECT o.id, o.status, o.paid_at, o.paid_amount,
+           EXISTS (
+             SELECT 1 FROM private.group_g_operations AS g
+             JOIN public.payment_exceptions AS e ON e.id = g.exception_id
+             WHERE g.operation = 'payment_review_hold' AND g.result->>'order_id' = o.id::text
+               AND e.resolved_at IS NULL
+           ) AS review_hold,
+           (SELECT r.reason FROM public.order_revisions AS r
+            WHERE r.order_id = o.id AND 'status' = ANY(r.changed_fields) AND r.after_data->>'status' = 'failed'
+            ORDER BY r.changed_at DESC, r.id DESC LIMIT 1) AS failed_reason
+    FROM public.orders AS o
+    WHERE o.id = ANY(_order_ids) AND o.status NOT IN ('payment_in_progress', 'abandoned')
+  ), items AS MATERIALIZED (
+    SELECT o.id AS order_id, oi.id AS order_item_id, oi.quantity, oi.variant_id, o.status AS order_status,
+           o.failed_reason, o.review_hold,
+           (o.status IN ('paid', 'shipped') OR o.paid_at IS NOT NULL OR COALESCE(o.paid_amount, 0) > 0) AS paid,
+           EXISTS (
+             SELECT 1 FROM public.order_return_lines AS el
+             JOIN public.order_returns AS er ON er.id = el.return_id
+             WHERE el.id = oi.exchange_return_line_id AND er.fee_due_amount > 0
+               AND er.fee_received_at IS NULL AND er.exchange_released_at IS NULL
+           ) AS fee_waiting,
+           COALESCE((SELECT pg_catalog.sum(a.remaining_quantity) FROM public.order_item_allocations AS a
+                     WHERE a.order_item_id = oi.id AND a.kind = 'paid'), 0)::integer AS allocated
+    FROM orders AS o JOIN public.order_items AS oi ON oi.order_id = o.id
+  ), shipments AS MATERIALIZED (
+    SELECT i.order_id, i.order_item_id, f.id AS fulfillment_id, f.delivered_at, fl.quantity,
+           COALESCE(pg_catalog.sum(fl.quantity) OVER (
+             PARTITION BY i.order_item_id ORDER BY f.shipped_at, f.id, fl.order_item_id
+             ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0)::integer AS start_unit
+    FROM items AS i JOIN public.order_fulfillment_lines AS fl ON fl.order_item_id = i.order_item_id
+    JOIN public.order_fulfillments AS f ON f.id = fl.fulfillment_id AND f.cancelled_at IS NULL
+  ), refunds AS MATERIALIZED (
+    SELECT rl.order_item_id, r.return_id, rl.before_shipment,
+           pg_catalog.sum(rl.quantity)::integer AS covered,
+           COALESCE(pg_catalog.sum(rl.quantity) FILTER (WHERE r.status = 'succeeded'), 0)::integer AS succeeded,
+           COALESCE(pg_catalog.sum(rl.quantity) FILTER (WHERE r.status IN ('awaiting_response', 'pending')), 0)::integer AS processing
+    FROM items AS i JOIN public.order_refund_lines AS rl ON rl.order_item_id = i.order_item_id
+    JOIN public.order_refunds AS r ON r.id = rl.refund_id AND r.status IN ('awaiting_response', 'pending', 'succeeded')
+    GROUP BY rl.order_item_id, r.return_id, rl.before_shipment
+  ), failed_return_refunds AS MATERIALIZED (
+    -- 額を決めた返金の失敗は店長相談へ戻さない。同じ数量の再試行を重ねて足さない。
+    SELECT rl.order_item_id, r.return_id, pg_catalog.max(rl.quantity)::integer AS quantity
+    FROM items AS i JOIN public.order_refund_lines AS rl ON rl.order_item_id = i.order_item_id
+    JOIN public.order_refunds AS r ON r.id = rl.refund_id
+    WHERE NOT rl.before_shipment AND r.return_id IS NOT NULL AND r.status IN ('error', 'failed')
+    GROUP BY rl.order_item_id, r.return_id
+  ), return_states AS MATERIALIZED (
+    -- 最新の既存core（20261012235910）を使う。processed と refund_covered は足さない。
+    SELECT s.*, l.created_at, COALESCE(pi.refund_quantity, 0)::integer AS pending_refund_inspection,
+           COALESCE(pg_catalog.sum(s.refund_covered + s.refund_waiting) OVER (
+             PARTITION BY s.return_id, s.order_item_id ORDER BY l.created_at, l.id
+             ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0)::integer AS previous_refund_units
+    FROM orders AS o CROSS JOIN LATERAL private.order_return_line_states(o.id) AS s
+    JOIN public.order_return_lines AS l ON l.id = s.return_line_id
+    CROSS JOIN LATERAL (
+      -- 検品済みの記録はresolutionを持たない。受付順で検品を当て、残る検品待ちの返金分だけを求める。
+      SELECT pg_catalog.sum(GREATEST(p.quantity - GREATEST(t.inspected - p.previous_quantity, 0), 0))
+        FILTER (WHERE p.resolution = 'refund') AS refund_quantity
+      FROM (
+        SELECT x.quantity, x.resolution, COALESCE(pg_catalog.sum(x.quantity) OVER (
+          ORDER BY rc.created_at, rc.id, x.id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS previous_quantity
+        FROM public.order_return_receipt_lines AS x
+        JOIN public.order_return_receipts AS rc ON rc.id = x.receipt_id
+        WHERE x.return_line_id = s.return_line_id AND x.disposition = 'pending_inspection'
+      ) AS p
+      CROSS JOIN LATERAL (
+        SELECT COALESCE(pg_catalog.sum(x.quantity), 0) AS inspected FROM public.order_return_receipt_lines AS x
+        WHERE x.return_line_id = s.return_line_id AND x.disposition IN ('inspected_restocked', 'inspected_not_restocked')
+      ) AS t
+    ) AS pi
+  ), return_coverage AS (
+    SELECT s.*,
+           LEAST(s.refund_covered + s.refund_waiting,
+             GREATEST(COALESCE(r.covered, 0) - s.previous_refund_units, 0)) AS covered_by_return,
+           LEAST(s.refund_covered + s.refund_waiting,
+             GREATEST(COALESCE(r.succeeded, 0) - s.previous_refund_units, 0)) AS succeeded_by_return,
+           LEAST(s.refund_covered + s.refund_waiting,
+             GREATEST(COALESCE(f.quantity, 0) - s.previous_refund_units, 0)) AS fixed_refund_units
+    FROM return_states AS s LEFT JOIN refunds AS r ON r.order_item_id = s.order_item_id
+      AND r.return_id = s.return_id AND NOT r.before_shipment
+    LEFT JOIN failed_return_refunds AS f ON f.order_item_id = s.order_item_id AND f.return_id = s.return_id
+  ), return_extra AS (
+    SELECT s.*,
+           GREATEST(s.refund_covered - s.covered_by_return, 0) AS covered_extra,
+           COALESCE(pg_catalog.sum(GREATEST(s.refund_covered - s.covered_by_return, 0)) OVER (
+             PARTITION BY s.order_item_id ORDER BY s.return_number, s.created_at, s.return_line_id
+             ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0)::integer AS previous_extra
+    FROM return_coverage AS s
+  ), return_work AS (
+    SELECT s.*,
+           -- 検品待ちが金銭の覆いにも含まれる時は一度だけ数える。
+           LEAST(GREATEST(s.quantity - s.unprocessed - s.pending_inspection, 0),
+             GREATEST(s.refund_waiting - s.pending_refund_inspection
+               - GREATEST(s.fixed_refund_units - s.refund_covered, 0), 0)) AS waiting,
+           GREATEST(s.refund_covered - s.succeeded_by_return
+             - LEAST(s.covered_extra, GREATEST(COALESCE(r.succeeded, 0) - s.previous_extra, 0))
+             - GREATEST(s.pending_refund_inspection - s.refund_waiting, 0), 0) AS processing,
+           LEAST(GREATEST(s.fixed_refund_units - s.refund_covered, 0),
+                 GREATEST(s.refund_waiting - s.pending_refund_inspection, 0)) AS fixed_processing
+    FROM return_extra AS s LEFT JOIN refunds AS r ON r.order_item_id = s.order_item_id
+      AND r.return_id IS NULL AND NOT r.before_shipment
+  ), return_counts AS (
+    SELECT s.*,
+           LEAST(s.processing, GREATEST(s.quantity - s.unprocessed - s.pending_inspection - s.waiting, 0)) AS active_refund,
+           LEAST(s.fixed_processing,
+             GREATEST(s.quantity - s.unprocessed - s.pending_inspection - s.waiting - s.processing, 0)) AS failed_refund,
+           GREATEST(s.quantity - s.unprocessed - s.pending_inspection - s.waiting
+             - s.processing - s.fixed_processing, 0) AS done
+    FROM return_work AS s
+  ), shipping_counts AS (
+    SELECT sh.*, COALESCE(x.done, 0)::integer AS done, COALESCE(x.waiting, 0)::integer AS waiting,
+           COALESCE(x.working, 0)::integer AS working, COALESCE(x.processing, 0)::integer AS processing,
+           COALESCE(x.failed_refund, 0)::integer AS failed_refund,
+           COALESCE(x.requested, 0)::integer AS requested, COALESCE(x.declined, 0)::integer AS declined
+    FROM shipments AS sh
+    CROSS JOIN LATERAL (
+      SELECT pg_catalog.sum(s.done) FILTER (WHERE s.return_status IN ('open', 'closed')) AS done,
+             pg_catalog.sum(s.waiting) FILTER (WHERE s.return_status IN ('open', 'closed')) AS waiting,
+             pg_catalog.sum(s.unprocessed + s.pending_inspection) FILTER (WHERE s.return_status IN ('open', 'closed')) AS working,
+             pg_catalog.sum(s.active_refund) FILTER (WHERE s.return_status IN ('open', 'closed')) AS processing,
+             pg_catalog.sum(s.failed_refund) FILTER (WHERE s.return_status IN ('open', 'closed')) AS failed_refund,
+             pg_catalog.sum(s.quantity) FILTER (WHERE s.return_status = 'requested') AS requested,
+             -- 同じ品の申請を繰り返し却下しても実配達の数量を増やさない。
+             pg_catalog.max(s.quantity) FILTER (WHERE s.return_status = 'declined') AS declined
+      FROM return_counts AS s WHERE s.fulfillment_id = sh.fulfillment_id AND s.order_item_id = sh.order_item_id
+    ) AS x
+  ), shipping_buckets AS (
+    SELECT sh.order_id, sh.order_item_id, sh.fulfillment_id, sh.start_unit, sh.quantity AS domain_quantity,
+           b.priority, b.status, b.quantity, b.processing
+    FROM shipping_counts AS sh CROSS JOIN LATERAL (VALUES
+      (1, 'returned'::text, sh.done, false), (2, 'refund_waiting', sh.waiting, false),
+      (3, 'return_in_progress', sh.processing, true), (4, 'return_in_progress', sh.failed_refund, false),
+      (5, 'return_in_progress', sh.working, false), (6, 'return_requested', sh.requested, false),
+      (7, 'delivered', sh.declined, false),
+      (8, 'delivered', CASE WHEN sh.delivered_at IS NOT NULL THEN sh.quantity ELSE 0 END, false),
+      (9, 'shipped', sh.quantity, false)
+    ) AS b(priority, status, quantity, processing)
+  ), shipping_positioned AS (
+    SELECT b.*, COALESCE(pg_catalog.sum(b.quantity) OVER (
+      PARTITION BY b.order_item_id, b.fulfillment_id ORDER BY b.priority
+      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS previous_quantity
+    FROM shipping_buckets AS b
+  ), shipped_ranges AS (
+    SELECT b.order_id, b.order_item_id, b.status,
+           (b.start_unit + LEAST(b.domain_quantity, b.previous_quantity))::integer AS unit_from,
+           (b.start_unit + LEAST(b.domain_quantity, b.previous_quantity + b.quantity))::integer AS unit_to,
+           b.processing
+    FROM shipping_positioned AS b
+    WHERE b.quantity > 0 AND b.previous_quantity < b.domain_quantity
+  ), unshipped AS (
+    SELECT i.*, COALESCE(sh.quantity, 0)::integer AS shipped,
+           GREATEST(i.quantity - COALESCE(sh.quantity, 0), 0)::integer AS remaining,
+           COALESCE(r.covered, 0)::integer AS refunded, COALESCE(r.processing, 0)::integer AS processing,
+           COALESCE(c.quantity, 0)::integer AS requested
+    FROM items AS i
+    LEFT JOIN (SELECT s.order_item_id, pg_catalog.sum(s.quantity) AS quantity FROM shipments AS s GROUP BY s.order_item_id) AS sh
+      ON sh.order_item_id = i.order_item_id
+    LEFT JOIN (SELECT r.order_item_id, pg_catalog.sum(r.covered) AS covered, pg_catalog.sum(r.processing) AS processing
+               FROM refunds AS r WHERE r.before_shipment GROUP BY r.order_item_id) AS r ON r.order_item_id = i.order_item_id
+    CROSS JOIN LATERAL (
+      SELECT pg_catalog.sum(l.quantity) AS quantity FROM public.order_cancel_request_lines AS l
+      JOIN public.order_cancel_requests AS cr ON cr.id = l.cancel_request_id AND cr.status = 'requested'
+      WHERE l.order_item_id = i.order_item_id
+    ) AS c
+  ), unshipped_counts AS (
+    SELECT u.*, CASE WHEN u.order_status = 'cancelled' AND NOT u.paid AND u.shipped = 0 AND u.allocated = 0
+                      THEN u.remaining ELSE LEAST(u.remaining, u.refunded) END AS cancelled,
+           (u.paid OR u.shipped > 0 OR u.allocated > 0) AS is_paid
+    FROM unshipped AS u
+  ), unshipped_points AS (
+    SELECT u.*, p.point, pg_catalog.lead(p.point) OVER (PARTITION BY u.order_item_id ORDER BY p.point) AS next_point
+    FROM unshipped_counts AS u CROSS JOIN LATERAL (
+      SELECT DISTINCT v.point FROM (VALUES (0), (u.remaining), (u.cancelled),
+        (LEAST(u.cancelled, u.processing)), (LEAST(u.remaining, u.cancelled + u.requested)),
+        (GREATEST(u.remaining - u.allocated, 0))) AS v(point)
+    ) AS p
+  ), unshipped_ranges AS (
+    SELECT u.order_id, u.order_item_id,
+           CASE WHEN u.point < u.cancelled THEN 'cancelled'
+                WHEN u.point < u.cancelled + u.requested THEN 'cancel_requested'
+                WHEN NOT u.is_paid AND u.order_status = 'failed' AND u.failed_reason = 'stripe_voucher_expired' THEN 'payment_expired'
+                WHEN NOT u.is_paid THEN 'unpaid'
+                WHEN u.point >= GREATEST(u.remaining - u.allocated, 0) THEN 'ready'
+                ELSE 'in_production' END AS status,
+           (u.shipped + u.point)::integer AS unit_from, (u.shipped + u.next_point)::integer AS unit_to,
+           (u.point < LEAST(u.cancelled, u.processing)) AS processing
+    FROM unshipped_points AS u WHERE u.next_point > u.point
+  ), all_ranges AS (
+    SELECT * FROM shipped_ranges UNION ALL SELECT * FROM unshipped_ranges
+  ), blocked AS (
+    SELECT r.*, pg_catalog.array_remove(ARRAY[
+      CASE WHEN i.variant_id IS NULL THEN 'variant_missing' END,
+      CASE WHEN i.review_hold THEN 'payment_review' END,
+      CASE WHEN i.fee_waiting THEN 'exchange_fee_waiting' END,
+      CASE WHEN r.status = 'cancel_requested' THEN 'cancel_requested' END,
+      CASE WHEN r.processing THEN 'refund_processing' END,
+      CASE WHEN r.status = 'in_production' AND i.variant_id IS NOT NULL
+                  AND NOT i.review_hold AND NOT i.fee_waiting THEN 'stock_shortage' END
+    ]::text[], NULL) AS reasons
+    FROM all_ranges AS r JOIN items AS i ON i.order_item_id = r.order_item_id
+  ), marked AS (
+    SELECT b.*, CASE WHEN pg_catalog.lag(b.status) OVER w = b.status
+                         AND pg_catalog.lag(b.reasons) OVER w = b.reasons
+                         AND pg_catalog.lag(b.unit_to) OVER w = b.unit_from THEN 0 ELSE 1 END AS boundary
+    FROM blocked AS b WINDOW w AS (PARTITION BY b.order_item_id ORDER BY b.unit_from)
+  ), islands AS (
+    SELECT m.*, pg_catalog.sum(m.boundary) OVER (PARTITION BY m.order_item_id ORDER BY m.unit_from) AS island
+    FROM marked AS m
+  )
+  SELECT r.order_id, r.order_item_id, r.status, pg_catalog.min(r.unit_from), pg_catalog.max(r.unit_to), r.reasons
+  FROM islands AS r GROUP BY r.order_id, r.order_item_id, r.status, r.reasons, r.island
+  ORDER BY r.order_id, r.order_item_id, pg_catalog.min(r.unit_from);
+END;
+$$;
+ALTER FUNCTION private.group_g_item_state_ranges(uuid[]) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.group_g_item_state_ranges(uuid[]) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE FUNCTION private.list_admin_order_item_states(_order_ids uuid[])
+RETURNS TABLE (order_id uuid, order_item_id uuid, status text, quantity integer, blocked_reasons text[])
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT r.order_id, r.order_item_id, r.status, pg_catalog.sum(r.unit_to - r.unit_from)::integer, r.blocked_reasons
+  FROM private.group_g_item_state_ranges(_order_ids) AS r
+  GROUP BY r.order_id, r.order_item_id, r.status, r.blocked_reasons
+  ORDER BY r.order_id, r.order_item_id, r.status, r.blocked_reasons
+$$;
+ALTER FUNCTION private.list_admin_order_item_states(uuid[]) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.list_admin_order_item_states(uuid[]) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.list_admin_order_item_states(uuid[]) TO service_role;
+
+CREATE FUNCTION public.list_admin_order_item_states(_order_ids uuid[])
+RETURNS TABLE (order_id uuid, order_item_id uuid, status text, quantity integer, blocked_reasons text[])
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.list_admin_order_item_states(_order_ids) $$;
+ALTER FUNCTION public.list_admin_order_item_states(uuid[]) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.list_admin_order_item_states(uuid[]) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.list_admin_order_item_states(uuid[]) TO service_role;
+
+CREATE FUNCTION private.capture_group_g_item_states(_order_ids uuid[]) RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(r) ORDER BY r.order_id, r.order_item_id, r.unit_from), '[]'::jsonb)
+  FROM private.group_g_item_state_ranges(_order_ids) AS r
+$$;
+ALTER FUNCTION private.capture_group_g_item_states(uuid[]) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.capture_group_g_item_states(uuid[]) FROM PUBLIC, anon, authenticated, service_role;
+
+-- 呼出元が共通lockと全対象の事前lockを持ち、原因の変更と同じ取引でbefore/afterを一度だけ記録する。
+CREATE FUNCTION private.record_group_g_item_state_changes(
+  _before jsonb, _order_ids uuid[], _operation_id uuid, _sequence integer, _reason text, _actor_id uuid
+) RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_count integer;
+BEGIN
+  IF _operation_id IS NULL OR _sequence IS NULL OR _sequence <= 0
+     OR _before IS NULL OR pg_catalog.jsonb_typeof(_before) <> 'array' THEN
+    RAISE EXCEPTION 'GROUP_G_STATE_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  WITH before_ranges AS MATERIALIZED (
+    SELECT b.* FROM pg_catalog.jsonb_to_recordset(_before)
+      AS b(order_id uuid, order_item_id uuid, status text, unit_from integer, unit_to integer)
+    JOIN public.order_items AS oi ON oi.id = b.order_item_id AND oi.order_id = b.order_id
+    WHERE b.order_id = ANY(_order_ids)
+  ), after_ranges AS MATERIALIZED (
+    SELECT * FROM private.group_g_item_state_ranges(_order_ids)
+  ), points AS (
+    SELECT b.order_item_id, b.unit_from AS point FROM before_ranges AS b
+    UNION SELECT b.order_item_id, b.unit_to FROM before_ranges AS b
+    UNION SELECT a.order_item_id, a.unit_from FROM after_ranges AS a
+    UNION SELECT a.order_item_id, a.unit_to FROM after_ranges AS a
+  ), segments AS (
+    SELECT p.*, pg_catalog.lead(p.point) OVER (PARTITION BY p.order_item_id ORDER BY p.point) AS next_point
+    FROM points AS p
+  ), compared AS (
+    SELECT s.*, b.status AS from_status, a.status AS to_status
+    FROM segments AS s
+    LEFT JOIN before_ranges AS b ON b.order_item_id = s.order_item_id AND b.unit_from <= s.point AND b.unit_to > s.point
+    LEFT JOIN after_ranges AS a ON a.order_item_id = s.order_item_id AND a.unit_from <= s.point AND a.unit_to > s.point
+    WHERE s.next_point > s.point
+  ), marked AS (
+    SELECT c.*, CASE WHEN pg_catalog.lag(c.from_status) OVER w IS NOT DISTINCT FROM c.from_status
+                         AND pg_catalog.lag(c.to_status) OVER w IS NOT DISTINCT FROM c.to_status
+                         AND pg_catalog.lag(c.next_point) OVER w = c.point THEN 0 ELSE 1 END AS boundary
+    FROM compared AS c WHERE c.from_status IS DISTINCT FROM c.to_status
+    WINDOW w AS (PARTITION BY c.order_item_id ORDER BY c.point)
+  ), islands AS (
+    SELECT m.*, pg_catalog.sum(m.boundary) OVER (PARTITION BY m.order_item_id ORDER BY m.point) AS island
+    FROM marked AS m
+  ), changes AS (
+    SELECT i.order_item_id, i.from_status, i.to_status, pg_catalog.min(i.point) AS unit_from,
+           pg_catalog.max(i.next_point) AS unit_to
+    FROM islands AS i GROUP BY i.order_item_id, i.from_status, i.to_status, i.island
+  ), numbered AS (
+    SELECT c.*, COALESCE((SELECT pg_catalog.max(e.version) FROM public.order_item_state_events AS e
+                         WHERE e.order_item_id = c.order_item_id), 0)
+      + pg_catalog.row_number() OVER (PARTITION BY c.order_item_id ORDER BY c.unit_from) AS version
+    FROM changes AS c
+    WHERE NOT EXISTS (SELECT 1 FROM public.order_item_state_events AS e
+      WHERE e.operation_id = _operation_id AND e.order_item_id = c.order_item_id AND e.sequence = _sequence)
+  )
+  INSERT INTO public.order_item_state_events
+    (order_item_id, unit_from, unit_to, from_status, to_status, operation_id, sequence, reason, actor_id, version)
+  SELECT n.order_item_id, n.unit_from, n.unit_to, n.from_status, n.to_status, _operation_id, _sequence,
+         _reason, _actor_id, n.version
+  FROM numbered AS n ORDER BY n.order_item_id, n.unit_from;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+ALTER FUNCTION private.record_group_g_item_state_changes(jsonb,uuid[],uuid,integer,text,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.record_group_g_item_state_changes(jsonb,uuid[],uuid,integer,text,uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+-- 最終assert区間は触らず、Task 3の追加物はbody内で検査する。
+DO $g1_states_assert$
+BEGIN
+  IF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p WHERE p.oid IN (
+    pg_catalog.to_regprocedure('private.group_g_item_state_ranges(uuid[])'),
+    pg_catalog.to_regprocedure('private.list_admin_order_item_states(uuid[])'),
+    pg_catalog.to_regprocedure('public.list_admin_order_item_states(uuid[])'),
+    pg_catalog.to_regprocedure('private.capture_group_g_item_states(uuid[])'),
+    pg_catalog.to_regprocedure('private.record_group_g_item_state_changes(jsonb,uuid[],uuid,integer,text,uuid)')
+  ) AND p.proowner = 'postgres'::regrole AND p.proconfig @> ARRAY['search_path=""']) <> 5 THEN
+    RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'g1_states_functions';
+  END IF;
+END;
+$g1_states_assert$;
+
 -- 11. Task 2 の確かめ: 新しい 4 表（空・RLS・所有者）、足した 2 列、操作への遅延の外部キー、台帳の理由、12 のトリガー。
 --     違えば GROUP_G_MIGRATION_ASSERTION_FAILED / 55000 で全部を戻す（全体の期待一覧は最後の確かめが Task 14 で持つ）
 DO $g1_model_assert$

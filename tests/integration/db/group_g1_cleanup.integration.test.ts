@@ -184,10 +184,15 @@ const G1_BODY_RELATIONS = [
   'public.order_item_state_events_item_version_idx',
 ];
 const G1_BODY_FUNCTIONS = [
+  'private.capture_group_g_item_states(uuid[])',
   'private.check_group_g_allocation_bounds()',
   'private.ensure_group_g_payment_review_hold(uuid,text,text,text,uuid)',
+  'private.group_g_item_state_ranges(uuid[])',
   'private.guard_group_g_allocation_change()',
+  'private.list_admin_order_item_states(uuid[])',
+  'private.record_group_g_item_state_changes(jsonb,uuid[],uuid,integer,text,uuid)',
   'private.reject_group_g_event_mutation()',
+  'list_admin_order_item_states(uuid[])',
 ];
 const G1_BODY_TRIGGERS = [
   ...['order_item_allocation_events', 'order_item_state_events', 'private.group_g_operations'].flatMap((table) => {
