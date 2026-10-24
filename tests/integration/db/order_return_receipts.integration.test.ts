@@ -2,7 +2,8 @@
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
-import { PRICE, createCatalogFixture, insertOrderWithLines, variantStock, uniqueSuffix, revisionsOf } from './helpers/order-fixtures';
+import { PRICE, createCatalogFixture, insertOrderWithLines, variantStock, uniqueSuffix, revisionsOf,
+  ensureFixturePaidAllocation, shipFixtureOrder } from './helpers/order-fixtures';
 jest.setTimeout(30000);
 type Row = Record<string, any>;
 type Fx = { orderId:string; itemId:string; variantId:number; returnId:string; lineId:string; actor:string };
@@ -23,8 +24,8 @@ async function fixture(db:PgClient,o:{quantity?:number;returnQuantity?:number;ex
   const cat=await createCatalogFixture(db,{stock:q+(o.stock??1)});
   const order=await insertOrderWithLines(db,{status:'paid',lines:[{itemId:cat.itemId,variantId:cat.variantId,quantity:q,fulfillmentType:'stock'}],
     shippingAmount:o.orderShippingAmount??0,discountAmount:o.discount??0,paidAmount:o.paid===undefined?PRICE*q-(o.discount??0)+(o.orderShippingAmount??0):o.paid,paymentIntentId:o.paymentIntent===undefined?`pi_fx_${uniqueSuffix()}`:o.paymentIntent});
-  const ship=(await db.query(`select * from public.admin_create_fulfillment($1,$2,$3,'yamato','TEST-1',false,$4::jsonb)`,
-    [order.orderId,actor,randomUUID(),JSON.stringify([{order_item_id:order.orderItemIds[0],quantity:q}])])).rows[0];
+  const ship=await shipFixtureOrder(db,{orderId:order.orderId,actorId:actor,trackingNumber:'TEST-1',
+    lines:[{order_item_id:order.orderItemIds[0],quantity:q}]});
   await o.beforeReturn?.({orderId:order.orderId,itemId:order.orderItemIds[0],actor});
   const ret=(await db.query(`select * from public.admin_create_return($1,$2,$3,$4::jsonb,$5,'customer',null,null,$6,$7,$8,0,null,false)`,
     [order.orderId,actor,randomUUID(),JSON.stringify([{fulfillment_id:ship.fulfillment_id,order_item_id:order.orderItemIds[0],quantity:o.returnQuantity??q,reason:'unknown',reason_note:null,
@@ -96,8 +97,8 @@ async function twoExchangeLines(db:PgClient,stock:number,discount=0):Promise<Fx&
   const cat=await createCatalogFixture(db,{stock:2+stock});
   const order=await insertOrderWithLines(db,{status:'paid',discountAmount:discount,paidAmount:PRICE*2-discount,paymentIntentId:`pi_fx_${uniqueSuffix()}`,
     lines:[{itemId:cat.itemId,variantId:cat.variantId,quantity:2,fulfillmentType:'stock'}]});
-  const ship=(await db.query(`select * from public.admin_create_fulfillment($1,$2,$3,'yamato','TEST-T',false,$4::jsonb)`,
-    [order.orderId,actor,randomUUID(),JSON.stringify([{order_item_id:order.orderItemIds[0],quantity:2}])])).rows[0];
+  const ship=await shipFixtureOrder(db,{orderId:order.orderId,actorId:actor,trackingNumber:'TEST-T',
+    lines:[{order_item_id:order.orderItemIds[0],quantity:2}]});
   const line={fulfillment_id:ship.fulfillment_id,order_item_id:order.orderItemIds[0],quantity:1,reason:'unknown',reason_note:null,
     resolution:'exchange',exchange_variant_id:cat.variantId,exchange_method:'stock'};
   const ret=(await db.query(`select * from public.admin_create_return($1,$2,$3,$4::jsonb,'customer_ships','customer',null,null,0,0,0,0,null,false)`,
@@ -151,7 +152,7 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
     expect((await db().query('select status,shipped_at,shipping_carrier,tracking_number from public.orders where id=$1',[f.orderId])).rows[0]).toEqual({status:'paid',shipped_at:null,shipping_carrier:null,tracking_number:null});
     expect(await revisionsOf(db(),f.orderId)).toContainEqual(expect.objectContaining({reason:'return_exchange_added',changedBy:f.actor}));
     if(expected==='backorder') await db().query('select * from public.admin_record_completion($1,$2,$3,$4::jsonb)',[f.orderId,f.actor,randomUUID(),JSON.stringify([{order_item_id:line.id,quantity:1}])]);
-    await db().query(`select * from public.admin_create_fulfillment($1,$2,$3,'yamato','TEST-2',false,$4::jsonb)`,[f.orderId,f.actor,randomUUID(),JSON.stringify([{order_item_id:line.id,quantity:1}])]);
+    await shipFixtureOrder(db(),{orderId:f.orderId,actorId:f.actor,trackingNumber:'TEST-2',lines:[{order_item_id:line.id,quantity:1}]});
     expect((await db().query('select status from public.orders where id=$1',[f.orderId])).rows[0].status).toBe('shipped');
   });
   test.each(['make','refund'])('在庫不足 decline は店長の %s だけ受ける',async action=>{
@@ -221,9 +222,11 @@ describeLocalDb('返品の受け取りと返金（移行 C）',getDb=>{
   test('返金なしの交換の手数料は支払い待ちで発送を止め、支払い記録後に送れる',async()=>{
     const f=await fixture(db(),{exchange:true,fee:600,shippingFee:400});const r=await receive(db(),f,{choice:'none',disposition:'not_restocked'});
     expect(r.fee_due_amount).toBe(1000);const lines=JSON.stringify([{order_item_id:r.exchange_order_item_ids[0],quantity:1}]);
+    // The exchange allocation is G-1 material until Task 11; the hold must be the refusal, not a missing A.
+    await ensureFixturePaidAllocation(db(),[{order_item_id:r.exchange_order_item_ids[0],quantity:1}]);
     await fails(db(),()=>db().query(`select * from public.admin_create_fulfillment($1,$2,$3,'yamato','TEST-3',false,$4::jsonb)`,[f.orderId,f.actor,randomUUID(),lines]),'FULFILLMENT_EXCHANGE_ON_HOLD');
     await db().query('select * from public.admin_record_return_fee_payment($1,$2,null,false)',[f.returnId,f.actor]);
-    await db().query(`select * from public.admin_create_fulfillment($1,$2,$3,'yamato','TEST-3',false,$4::jsonb)`,[f.orderId,f.actor,randomUUID(),lines]);
+    await shipFixtureOrder(db(),{orderId:f.orderId,actorId:f.actor,trackingNumber:'TEST-3',lines:JSON.parse(lines)});
   });
   test('手数料をいただかないで終えた後、次の受け取りで新しい手数料が付くと免除と受領の印を外してお支払い待ちに戻る',async()=>{
     const f=await fixture(db(),{quantity:2,exchange:true,stock:0,shippingFee:6000,fee:600});
@@ -795,8 +798,8 @@ describeLocalDb('Task 4 の見込みの例 R1〜R4 と同じ入力で、受け�
       lines:[{itemId:x.itemId,variantId:x.variantId,quantity:2,fulfillmentType:'stock',itemPrice:3000,createdAt:'2026-10-12T00:00:00Z'},
              {itemId:y.itemId,variantId:y.variantId,quantity:3,fulfillmentType:'stock',itemPrice:1000,createdAt:'2026-10-12T00:00:01Z'}]});
     const [xItem,yItem]=order.orderItemIds;
-    const ship=(await db.query(`select * from public.admin_create_fulfillment($1,$2,$3,'yamato','TEST-A',false,$4::jsonb)`,
-      [order.orderId,actor,randomUUID(),JSON.stringify([{order_item_id:xItem,quantity:2},{order_item_id:yItem,quantity:3}])])).rows[0];
+    const ship=await shipFixtureOrder(db,{orderId:order.orderId,actorId:actor,trackingNumber:'TEST-A',
+      lines:[{order_item_id:xItem,quantity:2},{order_item_id:yItem,quantity:3}]});
     const target=o.item==='X'?{itemId:xItem,variantId:x.variantId}:{itemId:yItem,variantId:y.variantId};
     const ret=(await db.query(`select * from public.admin_create_return($1,$2,$3,$4::jsonb,$5,'customer',null,null,$6,$7,$8,$9,null,false)`,
       [order.orderId,actor,randomUUID(),JSON.stringify([{fulfillment_id:ship.fulfillment_id,order_item_id:target.itemId,quantity:o.quantity,reason:'unknown',

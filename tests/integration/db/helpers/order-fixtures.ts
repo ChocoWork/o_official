@@ -9,6 +9,245 @@ export function uniqueSuffix(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** G-0 cleanup material has no allocation table; it keeps the bare ledger reservation. */
+async function groupGPresent(db: PgClient): Promise<boolean> {
+  return (await db.query("select to_regclass('public.order_item_allocations') is not null as present")).rows[0].present as boolean;
+}
+
+/** Legacy suites already own BEGIN. Take the common lock before this material's next write. */
+async function lockGroupGFixture(db: PgClient): Promise<void> {
+  if ((db as PgClient & { _txStatus?: string })._txStatus === 'T') {
+    await db.query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
+  }
+}
+
+/**
+ * G-1 reads count only A/H. A reserved stock line of a paid order is therefore one real allocation
+ * with its purchase/-n movement (A); an unpaid order holds H. A shipped/closed order's reservation
+ * is already consumed or released, so it keeps only the historical ledger row.
+ */
+async function reserveFixtureLine(
+  db: PgClient, groupG: boolean,
+  input: { orderId: string; orderItemId: string; variantId: number; quantity: number; status: string },
+): Promise<void> {
+  const kind = input.status === 'paid' ? 'paid'
+    : ['pending', 'payment_in_progress', 'failed'].includes(input.status) ? 'payment_hold' : null;
+  if (groupG && kind) {
+    await seedGroupG1Allocation(db, { orderItemId: input.orderItemId, quantity: input.quantity, kind });
+    return;
+  }
+  await db.query(
+    `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id)
+     values ($1, $2, 'purchase', $3, $4)`,
+    [input.variantId, -input.quantity, input.orderId, input.orderItemId],
+  );
+}
+
+/** Suite-owned order material: the reserved stock line becomes A (paid/shipped) or H (unpaid). */
+export async function reserveFixtureAllocation(
+  db: PgClient, input: { orderId: string; orderItemId: string; variantId: number; quantity: number; status: string },
+): Promise<void> {
+  const groupG = await groupGPresent(db);
+  if (groupG) await lockGroupGFixture(db);
+  await reserveFixtureLine(db, groupG, input);
+}
+
+export type FixtureShipmentResult = {
+  fulfillment_id: string;
+  number: number;
+  completes_order: boolean;
+  order_status: string;
+  replayed: false;
+};
+
+/**
+ * Material for lines whose real allocating writer is converted in a later task (exchange lines,
+ * backorder lines): only the missing paid A is added. A short free stock is first restocked, as the
+ * made or returned unit arriving; existing A/H and the legacy ledger rows are left as they are.
+ */
+export async function ensureFixturePaidAllocation(
+  db: PgClient,
+  lines: Array<{ order_item_id: string; quantity: number }>,
+): Promise<void> {
+  await lockGroupGFixture(db);
+  await withGroupG1FixtureTransaction(db, async () => {
+    for (const line of lines) {
+      const row = (await db.query(
+        `select oi.variant_id, v.stock_quantity,
+                coalesce((select sum(a.remaining_quantity) from public.order_item_allocations as a
+                          where a.order_item_id = oi.id and a.kind = 'paid'), 0)::integer as paid
+         from public.order_items as oi join public.item_variants as v on v.id = oi.variant_id
+         where oi.id = $1`,
+        [line.order_item_id],
+      )).rows[0];
+      const shortage = line.quantity - Number(row.paid);
+      if (shortage <= 0) continue;
+      // Backorder material: the made unit arrives, then is allocated to this line.
+      if (Number(row.stock_quantity) < shortage) {
+        await db.query(
+          `insert into public.stock_movements (variant_id, delta, reason, note) values ($1, $2, 'restock', 'fixture')`,
+          [row.variant_id, shortage - Number(row.stock_quantity)],
+        );
+      }
+      await seedGroupG1Allocation(db, { orderItemId: line.order_item_id, quantity: shortage, kind: 'paid' });
+    }
+  });
+}
+
+/**
+ * Reservation release material (the refund/cancel writers move to FIFO in Task 8): the ledger row,
+ * the paid/held allocation decrease and its release event are one G-1 operation, followed by the
+ * item-state history. Returns the ledger row id.
+ */
+export async function releaseFixtureAllocation(
+  db: PgClient,
+  input: { orderId: string; orderItemId: string; quantity: number; reason: 'refund' | 'cancel'; refundId?: string | null },
+): Promise<string> {
+  await lockGroupGFixture(db);
+  return withGroupG1FixtureTransaction(db, async () => {
+    const before = (await db.query('select private.capture_group_g_item_states($1) as states', [[input.orderId]])).rows[0].states;
+    const op = (await db.query(`insert into private.group_g_operations
+      (id,operation,request_key,fingerprint,cause_type,cause_id,result)
+      values (gen_random_uuid(),'fixture_release',gen_random_uuid(),repeat('c',64),'order_item',$1::text,'{}') returning id`,
+    [input.orderItemId])).rows[0].id as string;
+    const allocation = (await db.query(`select id, variant_id from public.order_item_allocations
+      where order_item_id = $1 and remaining_quantity >= $2 order by id desc limit 1`, [input.orderItemId, input.quantity])).rows[0];
+    if (!allocation) throw new Error('GROUP_G_FIXTURE_ALLOCATION_REQUIRED');
+    const movement = (await db.query(
+      `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id, refund_id, allocation_operation_id)
+       values ($1, $2, $3, $4, $5, $6, $7) returning id`,
+      [allocation.variant_id, input.quantity, input.reason, input.orderId, input.orderItemId, input.refundId ?? null, op],
+    )).rows[0].id as string;
+    await db.query(`update public.order_item_allocations
+      set remaining_quantity = remaining_quantity - $2, version = version + 1, updated_at = now() where id = $1`,
+    [allocation.id, input.quantity]);
+    await db.query(`insert into public.order_item_allocation_events
+      (allocation_id, event_type, quantity, operation_id, sequence, stock_movement_id, reason)
+      values ($1, 'release', $2, $3, 1, $4, 'fixture_release')`, [allocation.id, input.quantity, op, movement]);
+    await db.query('select private.record_group_g_item_state_changes($1,$2,$3,1,$4,$5)',
+      [JSON.stringify(before), [input.orderId], op, 'fixture_release', null]);
+    return String(movement);
+  });
+}
+
+/**
+ * For suites that write their own fulfillment rows (legacy/NULL-carrier or delivered material that
+ * seedGroupG1Shipment cannot express): under the common lock, the shipped quantity's paid A is
+ * consumed in one operation before `write` inserts the fulfillment lines, and the item-state history
+ * is recorded afterwards, as one G-1 shipment.
+ */
+export async function withFixtureConsumption<T>(
+  db: PgClient,
+  input: { orderId: string; lines: Array<{ order_item_id: string; quantity: number }> },
+  write: () => Promise<T>,
+): Promise<T> {
+  await lockGroupGFixture(db);
+  return withGroupG1FixtureTransaction(db, async () => {
+    await ensureFixturePaidAllocation(db, input.lines);
+    const before = (await db.query('select private.capture_group_g_item_states($1) as states', [[input.orderId]])).rows[0].states;
+    const op = (await db.query(`insert into private.group_g_operations
+      (id,operation,request_key,fingerprint,cause_type,cause_id,result)
+      values (gen_random_uuid(),'fixture_shipment',gen_random_uuid(),repeat('d',64),'order',$1::text,'{}') returning id`,
+    [input.orderId])).rows[0].id as string;
+    let sequence = 0;
+    for (const line of [...input.lines].sort((a, b) => a.order_item_id.localeCompare(b.order_item_id))) {
+      let remaining = line.quantity;
+      const allocations = (await db.query(`select id, remaining_quantity from public.order_item_allocations
+        where order_item_id = $1 and kind = 'paid' and remaining_quantity > 0 order by id`, [line.order_item_id])).rows;
+      for (const allocation of allocations) {
+        if (!remaining) break;
+        const n = Math.min(remaining, Number(allocation.remaining_quantity));
+        await db.query(`update public.order_item_allocations
+          set remaining_quantity = remaining_quantity - $2, version = version + 1, updated_at = now() where id = $1`,
+        [allocation.id, n]);
+        await db.query(`insert into public.order_item_allocation_events
+          (allocation_id, event_type, quantity, operation_id, sequence, reason)
+          values ($1, 'consume', $2, $3, $4, 'fixture_shipment')`, [allocation.id, n, op, ++sequence]);
+        remaining -= n;
+      }
+    }
+    const result = await write();
+    await db.query('select private.record_group_g_item_state_changes($1,$2,$3,1,$4,$5)',
+      [JSON.stringify(before), [input.orderId], op, 'fixture_shipment', null]);
+    return result;
+  });
+}
+
+/**
+ * Shipping material without the legacy RPC (stopped in Task 14). Under the common lock it tops up
+ * paid A only where the line has none ready, consumes A through seedGroupG1Shipment, then keeps the
+ * legacy RPC's visible side effects: confirmed event, tracking registration, order shipped on the
+ * last unit and the shipped email when notifying.
+ */
+export async function shipFixtureOrder(
+  db: PgClient,
+  input: {
+    orderId: string;
+    actorId: string | null;
+    lines: Array<{ order_item_id: string; quantity: number }>;
+    carrier?: 'yamato' | 'sagawa' | 'japanpost';
+    trackingNumber?: string;
+    notifyCustomer?: boolean;
+    requestKey?: string;
+  },
+): Promise<FixtureShipmentResult> {
+  await lockGroupGFixture(db);
+  return withGroupG1FixtureTransaction(db, async () => {
+    const carrier = input.carrier ?? 'yamato';
+    const trackingNumber = input.trackingNumber ?? '1234-5678-9012';
+    await ensureFixturePaidAllocation(db, input.lines);
+    const unshipped = Number((await db.query(
+      'select coalesce(sum(unshipped), 0)::integer as n from private.order_line_fulfillment($1)', [input.orderId],
+    )).rows[0].n);
+    const requested = input.lines.reduce((sum, line) => sum + line.quantity, 0);
+    const completes = unshipped - requested === 0;
+    const shippedAt = (await db.query('select now() as t')).rows[0].t as Date;
+    const fulfillmentId = await seedGroupG1Shipment(db, {
+      orderId: input.orderId,
+      lines: input.lines.map((line) => ({ orderItemId: line.order_item_id, quantity: line.quantity })),
+      shippedAt: shippedAt.toISOString(),
+      actorId: input.actorId ?? undefined,
+      carrier,
+      trackingNumber,
+      notifyCustomer: input.notifyCustomer ?? false,
+      requestKey: input.requestKey,
+      completesOrder: completes,
+    });
+    await db.query(
+      `insert into public.order_fulfillment_events (fulfillment_id, tracking_version, status, happened_at, source)
+       values ($1, 1, 'confirmed', $2, 'shipment')`,
+      [fulfillmentId, shippedAt],
+    );
+    await db.query(
+      `insert into private.fulfillment_tracking_registrations (fulfillment_id, tracking_version, carrier, tracking_number, expires_at)
+       select $1, 1, $2, upper($3), $4::timestamptz + interval '30 days'
+       from public.shop_settings where id = 1 and delivery_tracking_enabled`,
+      [fulfillmentId, carrier, trackingNumber, shippedAt],
+    );
+    if (completes) {
+      if (input.actorId) await db.query("select set_config('app.order_actor_id', $1::text, true)", [input.actorId]);
+      await db.query("select set_config('app.order_change_reason', 'admin_create_fulfillment', true)");
+      await db.query(
+        `update public.orders set status = 'shipped', shipped_at = now(), shipping_carrier = $2, tracking_number = $3
+         where id = $1`,
+        [input.orderId, carrier, trackingNumber],
+      );
+    }
+    if (input.notifyCustomer) {
+      await db.query("select private.enqueue_order_email($1, 'shipped', null, $2)", [input.orderId, fulfillmentId]);
+    }
+    const result = (await db.query(
+      `select f.number, o.status::text as order_status from public.order_fulfillments as f
+       join public.orders as o on o.id = f.order_id where f.id = $1`,
+      [fulfillmentId],
+    )).rows[0];
+    return {
+      fulfillment_id: fulfillmentId, number: Number(result.number), completes_order: completes,
+      order_status: result.order_status, replayed: false,
+    };
+  });
+}
+
 /**
  * 商品・色・サイズ・バリアントを作り、在庫を台帳の restock で入れる。
  * バリアントは初期在庫を持てない（トリガーが拒否する）ので、在庫は台帳から入れる。
@@ -190,6 +429,8 @@ export async function insertOrderWithStockLine(
   },
 ): Promise<{ orderId: string; orderItemId: string }> {
   const suffix = uniqueSuffix();
+  const groupG = options.reserved && await groupGPresent(db);
+  if (groupG) await lockGroupGFixture(db);
   // 配送先は法定の不変条件で後から書き換えられないので、発送できる形で最初から入れる。
   const order = await db.query(
     `insert into public.orders
@@ -219,11 +460,9 @@ export async function insertOrderWithStockLine(
   );
   const orderItemId = line.rows[0].id as string;
   if (options.reserved) {
-    await db.query(
-      `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id)
-       values ($1, $2, 'purchase', $3, $4)`,
-      [options.variantId, -options.quantity, orderId, orderItemId],
-    );
+    await reserveFixtureLine(db, groupG, {
+      orderId, orderItemId, variantId: options.variantId, quantity: options.quantity, status: options.status,
+    });
   }
   return { orderId, orderItemId };
 }
@@ -312,6 +551,9 @@ export async function insertOrderWithLines(
   const shippingAmount = options.shippingAmount ?? 0;
   const discountAmount = options.discountAmount ?? 0;
   const subtotal = options.lines.reduce((sum, line) => sum + priceOf(line) * line.quantity, 0);
+  const reservedOf = (line: FixtureLine) => line.fulfillmentType === 'stock' && (line.reserved ?? true);
+  const groupG = options.lines.some(reservedOf) && await groupGPresent(db);
+  if (groupG) await lockGroupGFixture(db);
   const order = await db.query(
     `insert into public.orders
        (session_id, checkout_session_id, payment_intent_id, status,
@@ -355,12 +597,10 @@ export async function insertOrderWithLines(
     );
     const orderItemId = inserted.rows[0].id as string;
     orderItemIds.push(orderItemId);
-    if (line.fulfillmentType === 'stock' && (line.reserved ?? true)) {
-      await db.query(
-        `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id)
-         values ($1, $2, 'purchase', $3, $4)`,
-        [line.variantId, -line.quantity, orderId, orderItemId],
-      );
+    if (reservedOf(line)) {
+      await reserveFixtureLine(db, groupG, {
+        orderId, orderItemId, variantId: line.variantId as number, quantity: line.quantity, status: options.status,
+      });
     }
   }
   return { orderId, orderItemIds };
@@ -517,10 +757,9 @@ export async function createShippedOrderFixture(
       }
     }
 
-    // Task 5 replaces the legacy fulfillment projection/guard. Until then its backorder material
-    // still needs the existing completion row; the synthetic shipment itself never creates one.
+    // G-0 cleanup material keeps its original completion. G-1 derives preparation only from A.
     for (const [index, line] of lines.entries()) {
-      if (typeOf(line) === 'backorder') {
+      if (!groupG && typeOf(line) === 'backorder') {
         await db.query(
           `insert into public.order_item_completions (order_id, order_item_id, quantity, request_key)
            values ($1, $2, $3, gen_random_uuid())`,

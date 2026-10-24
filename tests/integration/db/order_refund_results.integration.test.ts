@@ -1,6 +1,6 @@
 /** @jest-environment node */
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
-import { PRICE, createCatalogFixture, movementsOf, uniqueSuffix, variantStock } from './helpers/order-fixtures';
+import { PRICE, createCatalogFixture, movementsOf, reserveFixtureAllocation, shipFixtureOrder, uniqueSuffix, variantStock } from './helpers/order-fixtures';
 
 /**
  * 返金の結果を書く関数・外からの返金・エラー・一覧の要約・要対応の自動の解決・注文のメールの表の変更（グループ E-2 設計書 4・6〜8章、移行 C）。
@@ -75,11 +75,9 @@ async function createOrder(
     );
     const itemId = inserted.rows[0].id as string;
     if (reserved > 0) {
-      await db.query(
-        `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id)
-         values ($1, $2, 'purchase', $3, $4)`,
-        [fx.variantId, -reserved, orderId, itemId],
-      );
+      await reserveFixtureAllocation(db, {
+        orderId, orderItemId: itemId, variantId: fx.variantId, quantity: reserved, status: options.status ?? 'paid',
+      });
     }
     itemIds.push(itemId);
     variantIds.push(fx.variantId);
@@ -213,10 +211,11 @@ function ship(
   tracking = 'TRK-1',
   carrier = 'yamato',
 ) {
-  return db.query(
-    'select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), $3, $4, false, $5::jsonb)',
-    [orderId, actorId, carrier, tracking, JSON.stringify(lines.map((line) => ({ order_item_id: line.itemId, quantity: line.quantity })))],
-  );
+  // 発送の材料は G-1 の割当を消費して作る（旧の発送の関数は Task 14 で止める）
+  return shipFixtureOrder(db, {
+    orderId, actorId, trackingNumber: tracking, carrier: carrier as 'yamato' | 'sagawa' | 'japanpost',
+    lines: lines.map((line) => ({ order_item_id: line.itemId, quantity: line.quantity })),
+  }).then((row) => ({ rows: [row] }));
 }
 
 async function ledgerStartedAt(db: PgClient): Promise<Date> {
@@ -1748,8 +1747,11 @@ describeLocalDb('integration: 返金の結果の同時の書き込み（Review F
     await db().query('begin');
     try {
       expect(await recordExternal(db(), order.orderId, { amount: order.total })).toMatchObject({ order_status: 'cancelled' });
-      const shipped = ship(other, order.orderId, actor.id, [{ itemId: order.itemIds[0], quantity: 1 }])
-        .then(() => null, (error: unknown) => error);
+      // 断られる側の守りを確かめるので、旧の発送の関数のまま（書く前に断るので割当には触れない）
+      const shipped = other.query(
+        'select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), $3, $4, false, $5::jsonb)',
+        [order.orderId, actor.id, 'yamato', 'TRK-1', JSON.stringify([{ order_item_id: order.itemIds[0], quantity: 1 }])],
+      ).then(() => null, (error: unknown) => error);
       await waitUntilBlocked(db(), otherPid);
       await db().query('commit');
       expect(await shipped).toMatchObject({ code: '22023', message: 'ORDER_NOT_SHIPPABLE' });

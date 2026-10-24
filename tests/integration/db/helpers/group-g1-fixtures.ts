@@ -66,6 +66,23 @@ function validQuantity(quantity: number, zero = false) {
   }
 }
 
+/** Local preparation follows the real stock entry, including its ACL, FIFO and state history. */
+export async function seedGroupG1Restock(client: PgClient, input: {
+  itemId: number; variantId: number; quantity: number; actorId: string; requestKey: string;
+}): Promise<string> {
+  assertLocal(client);
+  validQuantity(input.quantity);
+  return withGroupG1FixtureTransaction(client, async () => {
+    const result = (await client.query(`select public.admin_record_stock_movement(
+      $1,$2,$3,'restock','E2E fixture restock',$4,$5,NULL) as result`,
+    [input.itemId, input.variantId, input.quantity, input.actorId, input.requestKey])).rows[0].result as { movementId?: unknown };
+    if (typeof result?.movementId !== 'string' || !/^[1-9][0-9]*$/.test(result.movementId)) {
+      throw new Error('GROUP_G_FIXTURE_STOCK_RESULT_INVALID');
+    }
+    return result.movementId;
+  });
+}
+
 export async function seedGroupG1Allocation(
   client: PgClient, input: { orderItemId: string; quantity: number; kind: 'payment_hold' | 'paid' },
 ): Promise<string | null> {
@@ -107,6 +124,8 @@ export async function seedGroupG1Shipment(client: PgClient, input: {
   trackingNumber?: string;
   notifyCustomer?: boolean;
   requestKey?: string;
+  /** Legacy shipping material copies the order on its last unit; synthetic shipments default to false. */
+  completesOrder?: boolean;
 }): Promise<string> {
   assertLocal(client);
   if (!input.lines.length || (input.deliveredAt && input.cancelledAt)
@@ -143,11 +162,12 @@ export async function seedGroupG1Shipment(client: PgClient, input: {
     const f = (await client.query(`insert into public.order_fulfillments
       (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,
        shipped_at,delivered_at,cancelled_at,cancelled_by,created_by,delivery_status,delivery_status_at)
-      values($1,(select coalesce(max(number),0)+1 from public.order_fulfillments where order_id=$2),$3,$4,$5,$6,false,
+      values($1,(select coalesce(max(number),0)+1 from public.order_fulfillments where order_id=$2),$3,$4,$5,$6,$14,
         $7,$8,$9,$10,$11,$12,$13) returning id`, [input.orderId, input.orderId, input.requestKey ?? randomUUID(),
       input.carrier ?? 'yamato', input.trackingNumber ?? `G1-${randomUUID().replaceAll('-', '')}`, input.notifyCustomer ?? false,
       input.shippedAt, input.deliveredAt ?? null, input.cancelledAt ?? null, input.cancelledAt ? input.actorId ?? null : null,
-      input.actorId ?? null, input.deliveredAt ? 'delivered' : 'confirmed', input.deliveredAt ?? input.shippedAt])).rows[0].id as string;
+      input.actorId ?? null, input.deliveredAt ? 'delivered' : 'confirmed', input.deliveredAt ?? input.shippedAt,
+      input.completesOrder ?? false])).rows[0].id as string;
     for (const line of lines) await client.query(`insert into public.order_fulfillment_lines
       (fulfillment_id,order_item_id,quantity) values($1,$2,$3)`, [f, line.orderItemId, line.quantity]);
     if (op) await client.query('select private.record_group_g_item_state_changes($1,$2,$3,1,$4,$5)',

@@ -1,6 +1,6 @@
 /** @jest-environment node */
 import { describeLocalDb, type PgClient } from './helpers/local-db';
-import { PRICE, createCatalogFixture, insertOrderWithStockLine, uniqueSuffix } from './helpers/order-fixtures';
+import { PRICE, createCatalogFixture, insertOrderWithStockLine, shipFixtureOrder, uniqueSuffix } from './helpers/order-fixtures';
 
 /**
  * 注文の状態を変える DB の関数が、同じ取引で「注文のメール」の行を書く（グループ D 設計書 3-1・7-3）。
@@ -64,10 +64,11 @@ function shipAll(
   tracking: string,
   notify: boolean,
 ) {
-  return db.query(
-    'select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), $3, $4, $5, $6::jsonb)',
-    [order.orderId, actor, carrier, tracking, notify, JSON.stringify([{ order_item_id: order.orderItemId, quantity: 1 }])],
-  );
+  // 発送の材料は G-1 の割当を消費して作る（旧の発送の関数は Task 14 で止める）
+  return shipFixtureOrder(db, {
+    orderId: order.orderId, actorId: actor, trackingNumber: tracking, notifyCustomer: notify,
+    carrier: carrier as 'yamato' | 'sagawa' | 'japanpost', lines: [{ order_item_id: order.orderItemId, quantity: 1 }],
+  }).then((row) => ({ rows: [row] }));
 }
 
 describeLocalDb('integration: 状態を変える関数が注文のメールの行を書く', (db) => {

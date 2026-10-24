@@ -184,6 +184,13 @@ const G1_BODY_RELATIONS = [
   'public.order_item_state_events_item_version_idx',
 ];
 const G1_BODY_FUNCTIONS = [
+  'private.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer)',
+  'admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer)',
+  'private.list_group_g_variant_inventory(bigint[])',
+  'list_group_g_variant_inventory(bigint[])',
+  'private.list_item_allocation_history(bigint,integer)',
+  'list_item_allocation_history(bigint,integer)',
+  'private.list_item_stock_history(bigint,integer)',
   'private.lock_group_g_inventory(bigint[],uuid[],uuid)',
   'private.allocate_group_g_fifo(bigint[],uuid,uuid)',
   'private.apply_group_g_stock_movement(bigint,integer)',
@@ -917,7 +924,9 @@ WHERE id = (SELECT pg_catalog.min(id) FROM pg_temp.group_g_cleanup_webhook_ids);
     expect(constraints.added).toEqual([...G1_BODY_CONSTRAINTS].sort());
     const reasonCheck = catalog.constraints.find((row) => relationKey(row) === 'stock_movements|stock_movements_reason_check');
     expect(reasonCheck?.definition).toContain("'allocation_release'::text");
-    const changedFunctions = ['apply_stock_movement()'];
+    const changedFunctions = ['apply_stock_movement()', 'private.order_line_reservations(uuid)',
+      'private.order_line_fulfillment(uuid)', 'private.check_order_line_fulfillment_bounds()',
+      'list_variant_stock_states(bigint[])', 'list_item_stock_history(bigint,integer)'];
     const functions = split(catalog.functions, (row) => row.signature as string, G1_BODY_FUNCTIONS, changedFunctions);
     expect(functions.kept).toEqual(split(before.catalog.functions, (row) => row.signature as string, [], changedFunctions).kept);
     expect(functions.added).toEqual([...G1_BODY_FUNCTIONS].sort());

@@ -4,6 +4,7 @@ import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { insertDeliveryFixture } from './helpers/delivery-tracking-fixtures';
 import {
   createCatalogFixture, insertOrderWithLines, insertRefundRecord, insertReturnRecord, insertCancelRequest,
+  withFixtureConsumption,
 } from './helpers/order-fixtures';
 
 /** 移行 A だけで守る契約を試す。管理・追跡の RPC（移行 B/C）には依存させない。 */
@@ -75,11 +76,17 @@ async function createOrder(client: PgClient) {
 
 async function createShipment(client: PgClient) {
   const order = await createOrder(client);
-  const shipment = await insertDeliveryFixture(client, { orderId: order.orderId, shippedAt: SHIPPED_AT });
-  await client.query(
-    'insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, 1)',
-    [shipment.fulfillmentId, order.orderItemId],
-  );
+  // 発送した数の割当を G-1 で消費してから、発送の行を SQL で作る
+  const shipment = await withFixtureConsumption(client, {
+    orderId: order.orderId, lines: [{ order_item_id: order.orderItemId, quantity: 1 }],
+  }, async () => {
+    const inserted = await insertDeliveryFixture(client, { orderId: order.orderId, shippedAt: SHIPPED_AT });
+    await client.query(
+      'insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, 1)',
+      [inserted.fulfillmentId, order.orderItemId],
+    );
+    return inserted;
+  });
   return { ...order, ...shipment };
 }
 

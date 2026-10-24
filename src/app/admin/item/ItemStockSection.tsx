@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button/Button";
 import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
+import { Dialog } from "@/components/ui/Dialog/Dialog";
+import { ALLOCATION_EVENT_LABELS, type AllocationHistoryEvent } from "@/lib/inventory/allocation-types";
+import { toOrderNumber } from "@/lib/orders/order-number";
 import { clientFetch } from "@/lib/client-fetch";
 
 /**
@@ -59,20 +62,20 @@ type Movement = {
 const REASON_LABELS: Record<string, string> = {
   restock: "入荷",
   adjustment: "棚卸調整",
-  purchase: "販売",
+  purchase: "注文への確保",
   cancel: "取消",
   refund: "返金",
   return: "返品の受け取り",
-  exchange: "交換の品の確保",
+  exchange: "交換品への確保",
+  allocation_release: "割当の解放",
 };
 
 /**
- * 履歴の理由の言葉。返金で動いた行（refundId がある）の「棚卸調整」と「販売」は、ふつうの棚卸調整・販売と区別する:
- * 棚卸調整は「在庫に戻さない」を選んだ返金が手元の数を減らした行、販売は返金の失敗で確保し直した行。
+ * 返金に結び付く調整と再確保は、通常の棚卸と注文への確保から言葉を分ける。
  */
 function movementReasonLabel(movement: Movement): string {
   if (movement.refundId && movement.reason === "adjustment") return "棚卸調整（返金で在庫に戻さない）";
-  if (movement.refundId && movement.reason === "purchase") return "販売（返金の失敗で確保し直し）";
+  if (movement.refundId && movement.reason === "purchase") return "注文への確保（返金の失敗で再割当）";
   return REASON_LABELS[movement.reason] ?? movement.reason;
 }
 
@@ -114,6 +117,10 @@ function formatDelta(delta: number): string {
 
 export function ItemStockSection({ itemId }: { itemId: string }) {
   const [variants, setVariants] = useState<Variant[]>([]);
+  const [allocationEvents, setAllocationEvents] = useState<AllocationHistoryEvent[]>([]);
+  const [confirmation, setConfirmation] = useState<{ variant: Variant; delta: number; reason: string; quantity: number; note: string } | null>(null);
+  const sending = useRef(false);
+  const retries = useRef(new Map<number, { signature: string; body: string }>());
   const [movements, setMovements] = useState<Movement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -133,8 +140,9 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
       setLoadError(null);
       setVariants((json?.variants ?? []) as Variant[]);
       setMovements((json?.movements ?? []) as Movement[]);
-    } catch (error) {
-      console.error("Failed to fetch item variants:", error);
+      setAllocationEvents((json?.allocationEvents ?? []) as AllocationHistoryEvent[]);
+    } catch {
+      console.error("Failed to fetch item variants");
       setLoadError(LOAD_ERROR_MESSAGE);
     } finally {
       setIsLoading(false);
@@ -152,48 +160,68 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
     setDrafts((current) => ({ ...current, [variantId]: { ...draftOf(variantId), ...patch } }));
   };
 
-  const submit = async (variant: Variant) => {
-    const draft = draftOf(variant.id);
-    const delta = Number(draft.delta);
-
-    if (!Number.isInteger(delta) || delta === 0) {
-      setActionError("増減は 0 以外の整数で入力してください。");
+  const send = async (variant: Variant, delta: number, reason: string, note: string, expectedReleaseQuantity?: number) => {
+    if (sending.current) return;
+    if (expectedReleaseQuantity !== undefined && !note.trim()) {
+      setActionError("割り当てを外す理由を入力してください。");
       return;
     }
-
+    const payload = { variantId: variant.id, delta, reason, note: note.trim() || undefined, expectedReleaseQuantity };
+    const signature = JSON.stringify(payload);
+    // Retain the exact accepted body/key until a definite response or an edit changes the intent.
+    let retry = retries.current.get(variant.id);
+    if (retry?.signature !== signature) {
+      retry = { signature, body: JSON.stringify({ ...payload, requestKey: crypto.randomUUID() }) };
+      retries.current.set(variant.id, retry);
+    }
+    sending.current = true;
     setPendingVariantId(variant.id);
     setActionError(null);
     setNotice(null);
-
     try {
       const response = await clientFetch(`/api/admin/items/${itemId}/variants`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          variantId: variant.id,
-          delta,
-          reason: draft.reason,
-          note: draft.note.trim() || undefined,
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: retry.body,
       });
-
       if (!response.ok) {
         const json = await response.json().catch(() => null);
-        setActionError(json?.error ?? "在庫の記録に失敗しました");
+        if (response.status === 409 && json?.code === "GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED"
+          && Number.isInteger(json.releasedQuantity) && json.releasedQuantity >= 0 && json.releasedQuantity <= 2147483647) {
+          retries.current.delete(variant.id);
+          setConfirmation({ variant, delta, reason, quantity: json.releasedQuantity, note });
+        } else {
+          if (response.status < 500) retries.current.delete(variant.id);
+          setActionError(json?.error ?? "在庫の記録に失敗しました");
+        }
         return;
       }
-
+      retries.current.delete(variant.id);
+      setConfirmation(null);
       updateDraft(variant.id, { delta: "", note: "" });
       setNotice(`${variantLabel(variant)} の在庫を ${formatDelta(delta)} しました。`);
-      // 在庫数は台帳の追記結果。画面で足し引きせず、サーバの値を読み直す。
       await load();
-    } catch (error) {
-      console.error("Failed to record stock movement:", error);
+    } catch {
       setActionError("在庫の記録に失敗しました");
     } finally {
+      sending.current = false;
       setPendingVariantId(null);
     }
   };
+  const submit = async (variant: Variant) => {
+    const draft = draftOf(variant.id);
+    const delta = Number(draft.delta);
+    if (!Number.isInteger(delta) || delta === 0 || delta < -2147483648 || delta > 2147483647) {
+      setActionError("増減は 0 以外の整数で入力してください。");
+      return;
+    }
+    await send(variant, delta, draft.reason, draft.note);
+  };
+
+  const history = [
+    ...movements.map((movement) => ({ kind: 'movement' as const, id: String(movement.id), createdAt: movement.createdAt, movement })),
+    ...allocationEvents.filter((event) => event.stockMovementId === null)
+      .map((event) => ({ kind: 'event' as const, id: event.id, createdAt: event.createdAt, event })),
+  ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)
+    || (a.kind === 'movement' && b.kind === 'movement' ? Number(b.id) - Number(a.id) : b.id.localeCompare(a.id)));
 
   if (isLoading) {
     return (
@@ -230,7 +258,7 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
         </p>
       )}
 
-      {actionError && (
+      {actionError && !confirmation && (
         <p role="alert" data-testid="variant-stock-error" className="mt-4 lk-text-2xs text-red-600">
           {actionError}
         </p>
@@ -245,6 +273,7 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
           {variants.map((variant) => {
             const draft = draftOf(variant.id);
             const isPending = pendingVariantId === variant.id;
+            const disabled = pendingVariantId !== null || confirmation !== null;
 
             return (
               <li
@@ -306,6 +335,7 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
                     <span className="lk-text-3xs tracking-widest text-black/60">理由</span>
                     <select
                       data-testid="variant-reason"
+                      disabled={disabled}
                       className={FIELD_CLASS}
                       value={draft.reason}
                       onChange={(event) => updateDraft(variant.id, { reason: event.target.value })}
@@ -322,6 +352,7 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
                     <span className="lk-text-3xs tracking-widest text-black/60">増減</span>
                     <input
                       data-testid="variant-delta"
+                      disabled={disabled}
                       className={FIELD_CLASS}
                       type="number"
                       inputMode="numeric"
@@ -336,6 +367,7 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
                     <span className="lk-text-3xs tracking-widest text-black/60">備考（任意）</span>
                     <input
                       data-testid="variant-note"
+                      disabled={disabled}
                       className={FIELD_CLASS}
                       type="text"
                       maxLength={200}
@@ -348,7 +380,7 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
                     data-testid="variant-submit"
                     type="button"
                     variant="secondary"
-                    disabled={isPending}
+                    disabled={disabled}
                     onClick={() => submit(variant)}
                   >
                     {isPending ? "記録中..." : "記録する"}
@@ -361,16 +393,33 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
       )}
 
       <h3 className="mt-10 lk-text-3xs tracking-widest text-black/60">履歴</h3>
-      {movements.length === 0 && !loadError ? (
+      {history.length === 0 && !loadError ? (
         <p className="mt-3 lk-text-2xs text-black/60">まだ記録がありません。</p>
       ) : (
         <ul className="mt-3 flex flex-col gap-2">
-          {movements.map((movement) => {
+          {history.map((entry) => {
+            if (entry.kind === 'event') {
+              const event = entry.event;
+              const variant = variants.find((candidate) => candidate.id === event.variantId);
+              return <li key={`event-${event.id}`} data-testid={`allocation-event-${event.id}`}
+                className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-black/5 pb-2 lk-text-3xs text-black/70">
+                <span>{formatDateTime(event.createdAt)}</span>
+                {variant && <span>{variantLabel(variant)}</span>}
+                <span>{ALLOCATION_EVENT_LABELS[event.type]}</span>
+                <span>{`割当 ${event.quantity}点`}</span>
+                <span data-testid="allocation-event-delta">—</span>
+                <span data-testid="allocation-event-balance">—</span>
+                <span>{event.actorId === null ? "自動処理" : "管理者"}</span>
+                <span>{toOrderNumber(event.orderId)}</span>
+                {event.reason && <span>{event.reason}</span>}
+              </li>;
+            }
+            const movement = entry.movement;
             const variant = variants.find((candidate) => candidate.id === movement.variantId);
 
             return (
               <li
-                key={movement.id}
+                key={`movement-${movement.id}`}
                 data-testid="stock-movement-row"
                 className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-black/5 pb-2 lk-text-3xs text-black/70"
               >
@@ -386,11 +435,14 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
                 </span>
                 <span data-testid="stock-movement-balance">{`変わった後 ${movement.balanceAfter}`}</span>
                 {/* 記録した人が空の行は、注文や取消の処理が自動で書いたもの */}
-                <span data-testid="stock-movement-actor">{movement.actorEmail ?? "自動"}</span>
+                <span data-testid="stock-movement-actor">{movement.actorEmail ?? "自動処理"}</span>
                 {/* 返品で動いた行は、注文番号の代わりに返品の番号（{注文番号}-R{n}）を出す。どの注文のどの返品かが分かる */}
                 {(movement.returnNumber ?? movement.orderNumber) && (
                   <span data-testid="stock-movement-order">{movement.returnNumber ?? movement.orderNumber}</span>
                 )}
+                {allocationEvents.filter((event) => event.stockMovementId === String(movement.id)).map((event) => (
+                  <span key={event.id} data-allocation-event={event.id}>{ALLOCATION_EVENT_LABELS[event.type]}</span>
+                ))}
                 {movement.note && (
                   <span data-testid="stock-movement-note" className="text-black/50">
                     {movement.note}
@@ -401,6 +453,24 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
           })}
         </ul>
       )}
+      <Dialog open={confirmation !== null} title="在庫を減らす"
+        description={confirmation ? `割り当て済みの品を${confirmation.quantity}点外し、受注生産中に戻します。` : undefined}
+        onClose={() => { if (!sending.current) { if (confirmation) retries.current.delete(confirmation.variant.id); setConfirmation(null); setActionError(null); } }}>
+        {confirmation && <>
+          <label className="flex flex-col gap-1">
+            <span>割り当てを外す理由</span>
+            <input className={FIELD_CLASS} maxLength={200} disabled={pendingVariantId !== null}
+              value={confirmation.note} onChange={(event) => setConfirmation({ ...confirmation, note: event.target.value })} />
+          </label>
+          {actionError && <p role="alert" className="text-red-600">{actionError}</p>}
+          <div className="mt-4 flex gap-3">
+            <Button type="button" variant="secondary" disabled={pendingVariantId !== null}
+              onClick={() => { if (!sending.current) { retries.current.delete(confirmation.variant.id); setConfirmation(null); setActionError(null); } }}>戻る</Button>
+            <Button type="button" disabled={pendingVariantId !== null}
+              onClick={() => send(confirmation.variant, confirmation.delta, confirmation.reason, confirmation.note, confirmation.quantity)}>在庫を減らす</Button>
+          </div>
+        </>}
+      </Dialog>
     </section>
   );
 }

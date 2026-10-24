@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ItemStockSection } from '@/app/admin/item/ItemStockSection';
 import { clientFetch } from '@/lib/client-fetch';
@@ -65,11 +65,12 @@ const RESTOCK = {
   balanceAfter: 5,
 };
 
-async function renderLoaded(options: { variants?: unknown[]; movements?: unknown[] } = {}) {
+async function renderLoaded(options: { variants?: unknown[]; movements?: unknown[]; allocationEvents?: unknown[] } = {}) {
   mockedFetch.mockResolvedValue(
     json({
       variants: options.variants ?? [VARIANT],
       movements: options.movements ?? [PURCHASE, RESTOCK],
+      allocationEvents: options.allocationEvents ?? [],
     }),
   );
   render(<ItemStockSection itemId="7" />);
@@ -112,7 +113,7 @@ describe('ItemStockSection の4つの数と履歴（グループ E-1）', () => 
 
     expect(within(purchase).getByTestId('stock-movement-time')).toHaveTextContent(screenTime(PURCHASE.createdAt));
     expect(within(purchase).getByTestId('stock-movement-variant')).toHaveTextContent('BLACK / M');
-    expect(within(purchase).getByTestId('stock-movement-reason')).toHaveTextContent('販売');
+    expect(within(purchase).getByTestId('stock-movement-reason')).toHaveTextContent('注文への確保');
     expect(within(purchase).getByTestId('stock-movement-delta')).toHaveTextContent(/^-1$/);
     expect(within(purchase).getByTestId('stock-movement-balance')).toHaveTextContent('変わった後 4');
     expect(within(purchase).getByTestId('stock-movement-order')).toHaveTextContent('ORD-A1B2C3D4');
@@ -129,7 +130,7 @@ describe('ItemStockSection の4つの数と履歴（グループ E-1）', () => 
     await renderLoaded();
 
     const [purchase, restock] = screen.getAllByTestId('stock-movement-row');
-    expect(within(purchase).getByTestId('stock-movement-actor')).toHaveTextContent(/^自動$/);
+    expect(within(purchase).getByTestId('stock-movement-actor')).toHaveTextContent(/^自動処理$/);
     expect(within(restock).queryByTestId('stock-movement-order')).not.toBeInTheDocument();
   });
 
@@ -169,9 +170,9 @@ describe('ItemStockSection の返金で動いた履歴の行（グループ E-2�
   it.each<[string, string | null, string]>([
     ['refund', REFUND_ID, '返金'],
     ['adjustment', REFUND_ID, '棚卸調整（返金で在庫に戻さない）'],
-    ['purchase', REFUND_ID, '販売（返金の失敗で確保し直し）'],
+    ['purchase', REFUND_ID, '注文への確保（返金の失敗で再割当）'],
     ['adjustment', null, '棚卸調整'],
-    ['purchase', null, '販売'],
+    ['purchase', null, '注文への確保'],
   ])('理由 %s・返金の番号 %s の行は「%s」と出す', async (reason, refundId, label) => {
     await renderLoaded({ movements: [{ ...PURCHASE, reason, refundId }] });
 
@@ -191,7 +192,7 @@ describe('ItemStockSection の返品で動いた履歴の行（グループ E-3�
   // 言葉は理由で決め、注文の番号の欄には注文番号の代わりに返品の番号を出す（uuid は出さない）
   it.each<[string, number, string]>([
     ['return', 1, '返品の受け取り'],
-    ['exchange', -1, '交換の品の確保'],
+    ['exchange', -1, '交換品への確保'],
   ])('理由 %s の行（増減 %i）は「%s」と出し、注文の番号の欄には返品の番号を出す（uuid は出さない）', async (reason, delta, label) => {
     await renderLoaded({ movements: [{ ...PURCHASE, reason, delta, returnId: RETURN_ID, returnNumber: RETURN_NUMBER }] });
 
@@ -256,5 +257,122 @@ describe('ItemStockSection の読み込みの失敗（店主は英語が読め�
     expect(mockedFetch).toHaveBeenCalledTimes(3);
     expect(mockedFetch).toHaveBeenNthCalledWith(2, '/api/admin/items/7/variants', expect.objectContaining({ method: 'POST' }));
     expect(mockedFetch).toHaveBeenNthCalledWith(3, '/api/admin/items/7/variants');
+  });
+});
+
+describe('G-1 stock confirmation and allocation history', () => {
+  beforeEach(() => mockedFetch.mockReset());
+  const confirmation = (n: number) => json({ code: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED',
+    error: '割り当て済みの品を外す必要があります。数量を確認してください。', releasedQuantity: n }, 409);
+  const posts = () => mockedFetch.mock.calls.filter(([, init]) => init?.method === 'POST')
+    .map(([, init]) => JSON.parse(String(init?.body)) as Record<string, unknown>);
+  async function reduce() {
+    await renderLoaded();
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: '理由' }), 'adjustment');
+    await userEvent.type(screen.getByRole('spinbutton', { name: '増減' }), '-5');
+    mockedFetch.mockResolvedValueOnce(confirmation(2));
+    await userEvent.click(screen.getByRole('button', { name: '記録する' }));
+    return await screen.findByRole('dialog', { name: '在庫を減らす' });
+  }
+  it('requires a reason, uses a new key after confirmation, and reconfirms a changed count', async () => {
+    let dialog = await reduce();
+    expect(posts()).toHaveLength(1);
+    expect(posts()[0].requestKey).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(within(dialog).getByText('割り当て済みの品を2点外し、受注生産中に戻します。')).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: '在庫を減らす' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('割り当てを外す理由を入力してください。');
+    expect(posts()).toHaveLength(1);
+    await userEvent.type(within(dialog).getByRole('textbox', { name: '割り当てを外す理由' }), '棚卸差異');
+    mockedFetch.mockResolvedValueOnce(confirmation(3));
+    await userEvent.click(within(dialog).getByRole('button', { name: '在庫を減らす' }));
+    dialog = await screen.findByRole('dialog', { name: '在庫を減らす' });
+    expect(within(dialog).getByText('割り当て済みの品を3点外し、受注生産中に戻します。')).toBeInTheDocument();
+    expect(posts()[1]).toMatchObject({ expectedReleaseQuantity: 2, note: '棚卸差異' });
+    expect(posts()[1].requestKey).not.toBe(posts()[0].requestKey);
+    mockedFetch.mockResolvedValueOnce(json({ success: true }, 201));
+    await userEvent.click(within(dialog).getByRole('button', { name: '在庫を減らす' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(posts()[2]).toMatchObject({ expectedReleaseQuantity: 3, note: '棚卸差異' });
+    expect(posts()[2].requestKey).not.toBe(posts()[1].requestKey);
+  });
+  it('keeps an in-flight dialog open, blocks duplicates, and retries identical confirmed input with the same key', async () => {
+    const dialog = await reduce();
+    await userEvent.type(within(dialog).getByRole('textbox', { name: '割り当てを外す理由' }), '棚卸差異');
+    let reject: (error: Error) => void = () => {};
+    mockedFetch.mockImplementationOnce(() => new Promise<Response>((_resolve, rejectPromise) => { reject = rejectPromise; }));
+    await userEvent.click(within(dialog).getByRole('button', { name: '在庫を減らす' }));
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '在庫を減らす' })).toBeDisabled();
+    expect(posts()).toHaveLength(2);
+    await act(async () => reject(new Error('network')));
+    mockedFetch.mockResolvedValueOnce(json({ success: true }, 201));
+    await userEvent.click(within(dialog).getByRole('button', { name: '在庫を減らす' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(posts()[2]).toEqual(posts()[1]);
+  });
+  it('cancels confirmation without sending another request', async () => {
+    const dialog = await reduce();
+    await userEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(posts()).toHaveLength(1);
+  });
+  it('retries an uncertain initial send with the same key and body', async () => {
+    await renderLoaded();
+    await userEvent.type(screen.getByRole('spinbutton', { name: '増減' }), '3');
+    mockedFetch.mockRejectedValueOnce(new Error('network'));
+    await userEvent.click(screen.getByRole('button', { name: '記録する' }));
+    await screen.findByRole('alert');
+    mockedFetch.mockResolvedValueOnce(json({ success: true }, 201));
+    await userEvent.click(screen.getByRole('button', { name: '記録する' }));
+    await waitFor(() => expect(posts()).toHaveLength(2));
+    expect(posts()[1]).toEqual(posts()[0]);
+  });
+  it('retains an uncertain request for each variant while another variant is recorded', async () => {
+    await renderLoaded({ variants: [VARIANT,{ ...VARIANT,id:12 }] });
+    const first = within(screen.getByTestId('variant-row-11'));
+    const second = within(screen.getByTestId('variant-row-12'));
+    await userEvent.type(first.getByRole('spinbutton',{ name: '増減' }),'3');
+    mockedFetch.mockRejectedValueOnce(new Error('network'));
+    await userEvent.click(first.getByRole('button',{ name: '記録する' }));
+    await screen.findByRole('alert');
+    await userEvent.type(second.getByRole('spinbutton',{ name: '増減' }),'1');
+    mockedFetch.mockResolvedValueOnce(json({ success:true },201));
+    await userEvent.click(second.getByRole('button',{ name: '記録する' }));
+    await waitFor(() => expect(first.getByRole('button',{ name: '記録する' })).toBeEnabled());
+    mockedFetch.mockResolvedValueOnce(json({ success:true },201));
+    await userEvent.click(first.getByRole('button',{ name: '記録する' }));
+    await waitFor(() => expect(posts()).toHaveLength(3));
+    expect(posts()[2]).toEqual(posts()[0]);
+  });
+  it('links movement events once and displays promote separately with no free-stock delta or balance', async () => {
+    const base = { allocationId: 'allocation', orderId: PURCHASE.orderId, orderItemId: 'line', variantId: 11,
+      quantity: 2, operationId: 'operation', counterpartAllocationId: null, reversesEventId: null, reason: null,
+      actorId: null, createdAt: '2026-10-24T00:00:00Z' };
+    await renderLoaded({ allocationEvents: [{ ...base, id: 'linked', type: 'allocate', stockMovementId: String(PURCHASE.id) },
+      { ...base, id: 'promote', type: 'promote', stockMovementId: null }] });
+    expect(screen.getAllByTestId('stock-movement-row')).toHaveLength(2);
+    expect(screen.queryByTestId('allocation-event-linked')).not.toBeInTheDocument();
+    const row = screen.getByTestId('allocation-event-promote');
+    expect(row).toHaveTextContent('入金による割当への切替');
+    expect(row).toHaveTextContent('割当 2点');
+    expect(row).toHaveTextContent('ORD-A1B2C3D4');
+    expect(row).toHaveTextContent('自動処理');
+    expect(within(row).getByTestId('allocation-event-delta')).toHaveTextContent(/^—$/);
+    expect(within(row).getByTestId('allocation-event-balance')).toHaveTextContent(/^—$/);
+    expect(screen.queryByText('まだ記録がありません。')).not.toBeInTheDocument();
+  });
+  it.each([
+    ['hold','支払い前の仮確保'], ['allocate','注文への割当'], ['release','割当の解放'],
+    ['consume','発送による割当の消費'], ['restore','発送取消による割当の復元'], ['transfer','割当の入替'],
+  ])('displays the exact allocation label for %s', async (type,label) => {
+    await renderLoaded({ movements:[],allocationEvents:[{ id:'standalone',allocationId:'allocation',orderId:PURCHASE.orderId,
+      orderItemId:'line',variantId:11,type,quantity:1,operationId:'operation',counterpartAllocationId:null,
+      reversesEventId:null,stockMovementId:null,reason:null,actorId:null,createdAt:PURCHASE.createdAt }] });
+    const row = screen.getByTestId('allocation-event-standalone');
+    expect(row).toHaveTextContent(label);
+    expect(row).toHaveTextContent('割当 1点');
+    expect(screen.queryByText('まだ記録がありません。')).not.toBeInTheDocument();
   });
 });

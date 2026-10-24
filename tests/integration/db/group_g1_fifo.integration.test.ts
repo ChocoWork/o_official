@@ -110,6 +110,41 @@ describeLocalDb('G-1 FIFO, ledger and minimal synthetic fixtures', (db) => {
     expect((await db().query('select fulfillment_type from public.order_items where id=$1', [o.line])).rows[0].fulfillment_type).toBe('backorder');
   });
 
+  test('FIFO prefilters waiting quantities before invoking the detailed projection on shared-variant history', async () => {
+    const history = await createShippedOrderFixture(db(), { lines: [{ quantity: 1 }] });
+    const waiting = await order(history.itemIds[0], history.variantIds[0], 2);
+    await db().query('select private.lock_group_g_inventory($1,$2)', [[history.variantIds[0]], [waiting.id]]);
+    const definition = (await db().query(`select pg_get_functiondef('private.group_g_item_state_ranges(uuid[])'::regprocedure) as body`)).rows[0].body as string;
+    await db().query(definition.replace('private.group_g_item_state_ranges(', 'pg_temp.task4_saved_ranges('));
+    await db().query("select set_config('app.g1_closed_history_order',$1,true)", [history.orderId]);
+    // Guard the actual projection boundary; selecting closed history must fail rather than
+    // merely produce zero allocations. Both definitions roll back with the test transaction.
+    await db().query(`create or replace function private.group_g_item_state_ranges(_order_ids uuid[])
+      returns table(order_id uuid,order_item_id uuid,status text,unit_from integer,unit_to integer,blocked_reasons text[])
+      language plpgsql stable security definer set search_path='' as $$
+      begin
+        if pg_catalog.current_setting('app.g1_closed_history_order')::uuid=any(_order_ids) then
+          raise exception 'G1_CLOSED_HISTORY_PROJECTED' using errcode='P0001';
+        end if;
+        return query select * from pg_temp.task4_saved_ranges(_order_ids);
+      end $$`);
+    await db().query('savepoint projection_guard');
+    await expect(db().query('select * from private.group_g_item_state_ranges($1)', [[history.orderId]]))
+      .rejects.toMatchObject({ code: 'P0001', message: 'G1_CLOSED_HISTORY_PROJECTED' });
+    await db().query('rollback to savepoint projection_guard');
+    await db().query('release savepoint projection_guard');
+    const before = (await db().query('select private.capture_group_g_item_states($1) as states', [[waiting.id]])).rows[0].states;
+    const op = await operation();
+    await db().query("insert into public.stock_movements(variant_id,delta,reason) values($1,1,'restock')", [history.variantIds[0]]);
+    expect((await db().query('select private.allocate_group_g_fifo($1,$2,$3) as n', [[history.variantIds[0]], op, null])).rows[0].n).toBe(1);
+    await db().query('select private.record_group_g_item_state_changes($1,$2,$3,1,$4,$5)',
+      [JSON.stringify(before), [waiting.id], op, 'fifo', null]);
+    await flush();
+    expect(await quantity(waiting.line)).toBe(1);
+    expect(await quantity(history.orderItemIds[0])).toBe(0);
+    expect(await totals(history.variantIds[0])).toEqual({ f: 0, a: 1, h: 0, onHand: 1 });
+  });
+
   test('exchange fee waiting is excluded, then rejoins by the original order date and uses exchange ledger reason', async () => {
     const source = await createShippedOrderFixture(db(), { lines: [{ quantity: 1 }], createdAt: '2026-01-01' });
     const target = await addItemVariant(db(), { itemId: source.itemIds[0], colorName: 'WHITE', sizeLabel: 'L', stock: 0 });

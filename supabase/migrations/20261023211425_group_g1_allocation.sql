@@ -1277,9 +1277,7 @@ DECLARE
   v_previous_orders uuid[];
 BEGIN
   PERFORM pg_catalog.pg_advisory_xact_lock(190521, 1);
-  IF _draft_id IS NOT NULL THEN
-    PERFORM d.id FROM public.checkout_drafts AS d WHERE d.id = _draft_id FOR UPDATE;
-  END IF;
+  -- Discover the active closure using reads only, before taking even the draft row lock.
   SELECT COALESCE(pg_catalog.array_agg(v.id ORDER BY v.id), ARRAY[]::bigint[]) INTO v_variants
   FROM public.item_variants AS v WHERE v.id = ANY(_variant_ids);
   SELECT COALESCE(pg_catalog.array_agg(o.id ORDER BY o.id), ARRAY[]::uuid[]) INTO v_orders
@@ -1295,24 +1293,51 @@ BEGIN
         JOIN public.order_items AS oi ON oi.id = a.order_item_id WHERE oi.order_id = ANY(v_orders)
       UNION SELECT l.exchange_variant_id FROM public.order_return_lines AS l
         JOIN public.order_returns AS r ON r.id = l.return_id
-        WHERE r.order_id = ANY(v_orders) AND l.exchange_variant_id IS NOT NULL
+        WHERE r.order_id = ANY(v_orders) AND r.status IN ('requested', 'open') AND l.exchange_variant_id IS NOT NULL
       UNION SELECT l.requested_exchange_variant_id FROM public.order_return_lines AS l
         JOIN public.order_returns AS r ON r.id = l.return_id
-        WHERE r.order_id = ANY(v_orders) AND l.requested_exchange_variant_id IS NOT NULL
+        WHERE r.order_id = ANY(v_orders) AND r.status IN ('requested', 'open') AND l.requested_exchange_variant_id IS NOT NULL
     ) AS x;
+    -- A historical match on a variant does not make an order an inventory target.
+    -- Explicit targets remain in v_orders; only mutable neighbours may extend it.
+    WITH related AS MATERIALIZED (
+      SELECT oi.order_id AS id FROM public.order_items AS oi WHERE oi.variant_id = ANY(v_variants)
+      UNION SELECT oi.order_id FROM public.order_item_allocations AS a
+        JOIN public.order_items AS oi ON oi.id = a.order_item_id
+        WHERE a.variant_id = ANY(v_variants) AND a.remaining_quantity > 0
+      UNION SELECT r.order_id FROM public.order_return_lines AS l
+        JOIN public.order_returns AS r ON r.id = l.return_id
+        WHERE r.status IN ('requested', 'open')
+          AND (l.exchange_variant_id = ANY(v_variants) OR l.requested_exchange_variant_id = ANY(v_variants))
+    )
     SELECT COALESCE(pg_catalog.array_agg(x.id ORDER BY x.id), ARRAY[]::uuid[]) INTO v_orders
     FROM (
       SELECT pg_catalog.unnest(v_orders) AS id
-      UNION SELECT oi.order_id FROM public.order_items AS oi WHERE oi.variant_id = ANY(v_variants)
-      UNION SELECT oi.order_id FROM public.order_item_allocations AS a
-        JOIN public.order_items AS oi ON oi.id = a.order_item_id WHERE a.variant_id = ANY(v_variants)
-      UNION SELECT r.order_id FROM public.order_return_lines AS l
-        JOIN public.order_returns AS r ON r.id = l.return_id
-        WHERE l.exchange_variant_id = ANY(v_variants) OR l.requested_exchange_variant_id = ANY(v_variants)
+      UNION SELECT o.id FROM related AS target JOIN public.orders AS o ON o.id = target.id
+      WHERE o.status IN ('payment_in_progress', 'pending')
+        OR (o.status = 'failed' AND COALESCE((
+          SELECT r.reason FROM public.order_revisions AS r
+          WHERE r.order_id = o.id AND 'status' = ANY(r.changed_fields) AND r.after_data->>'status' = 'failed'
+          ORDER BY r.changed_at DESC, r.id DESC LIMIT 1
+        ), '') <> 'stripe_voucher_expired')
+        OR (o.status = 'paid' AND (
+          EXISTS (SELECT 1 FROM public.order_item_allocations AS a JOIN public.order_items AS oi ON oi.id = a.order_item_id
+            WHERE oi.order_id = o.id AND a.variant_id = ANY(v_variants) AND a.remaining_quantity > 0)
+          OR EXISTS (SELECT 1 FROM private.order_line_fulfillment(o.id) AS f
+            WHERE f.variant_id = ANY(v_variants) AND f.in_production > 0)
+        ))
+        OR (o.status = 'shipped' AND (
+          EXISTS (SELECT 1 FROM public.order_returns AS r WHERE r.order_id = o.id AND r.status IN ('requested', 'open'))
+          OR EXISTS (SELECT 1 FROM public.order_refunds AS r WHERE r.order_id = o.id AND r.status IN ('awaiting_response', 'pending', 'error'))
+          OR EXISTS (SELECT 1 FROM public.order_cancel_requests AS r WHERE r.order_id = o.id AND r.status = 'requested')
+        ))
     ) AS x;
     EXIT WHEN v_variants = v_previous_variants AND v_orders = v_previous_orders;
   END LOOP;
 
+  IF _draft_id IS NOT NULL THEN
+    PERFORM d.id FROM public.checkout_drafts AS d WHERE d.id = _draft_id FOR UPDATE;
+  END IF;
   PERFORM i.id FROM public.items AS i
     WHERE i.id IN (SELECT v.item_id FROM public.item_variants AS v WHERE v.id = ANY(v_variants)
                    UNION SELECT oi.item_id FROM public.order_items AS oi WHERE oi.order_id = ANY(v_orders))
@@ -1364,6 +1389,8 @@ DECLARE
   v_allocation uuid;
   v_movement bigint;
   v_total integer := 0;
+  v_refund_id uuid;
+  v_return_id uuid;
 BEGIN
   IF _operation_id IS NULL THEN
     RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
@@ -1377,9 +1404,23 @@ BEGIN
     RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
   END IF;
   FOR v_line IN
+    -- Canonical fulfillment quantities cheaply prefilter the waiting set. MATERIALIZED
+    -- prevents the detailed 12-state projection from running on closed order history.
+    WITH waiting_orders AS MATERIALIZED (
+      SELECT o.id FROM public.orders AS o
+      WHERE o.status IN ('paid', 'shipped')
+        AND EXISTS (SELECT 1 FROM public.order_items AS oi WHERE oi.order_id = o.id AND oi.variant_id = ANY(_variant_ids))
+        AND (o.status = 'paid'
+          OR EXISTS (SELECT 1 FROM public.order_returns AS r WHERE r.order_id = o.id AND r.status IN ('requested', 'open'))
+          OR EXISTS (SELECT 1 FROM public.order_refunds AS r WHERE r.order_id = o.id AND r.status IN ('awaiting_response', 'pending', 'error'))
+          OR EXISTS (SELECT 1 FROM public.order_cancel_requests AS r WHERE r.order_id = o.id AND r.status = 'requested'))
+        AND EXISTS (SELECT 1 FROM private.order_line_fulfillment(o.id) AS f
+          WHERE f.variant_id = ANY(_variant_ids) AND f.in_production > 0)
+    )
     SELECT o.id AS order_id, oi.id AS order_item_id, oi.variant_id, oi.exchange_return_line_id,
            pg_catalog.sum(s.unit_to - s.unit_from)::integer AS unallocated
-    FROM public.orders AS o JOIN public.order_items AS oi ON oi.order_id = o.id
+    FROM waiting_orders AS w JOIN public.orders AS o ON o.id = w.id
+    JOIN public.order_items AS oi ON oi.order_id = o.id
     CROSS JOIN LATERAL private.group_g_item_state_ranges(ARRAY[o.id]) AS s
     WHERE oi.variant_id = ANY(_variant_ids) AND o.status IN ('paid', 'shipped')
       AND s.order_item_id = oi.id AND s.status = 'in_production'
@@ -1392,10 +1433,22 @@ BEGIN
     SELECT v.stock_quantity INTO v_free FROM public.item_variants AS v WHERE v.id = v_line.variant_id;
     v_quantity := LEAST(v_line.unallocated, v_free);
     CONTINUE WHEN v_quantity IS NULL OR v_quantity <= 0;
-    INSERT INTO public.stock_movements (variant_id, delta, reason, order_id, order_item_id, allocation_operation_id, created_by)
+    -- A refund release can precede the final operation row; keep its tagged origin.
+    -- Exchange allocations also retain their original return when receipt/FIFO share an operation.
+    SELECT COALESCE(m.refund_id, r.id), COALESCE(m.return_id, ret.id, r.return_id, rl.return_id)
+      INTO v_refund_id, v_return_id
+    FROM (SELECT 1) AS source
+    LEFT JOIN LATERAL (SELECT x.refund_id, x.return_id FROM public.stock_movements AS x
+      WHERE x.allocation_operation_id = _operation_id AND (x.refund_id IS NOT NULL OR x.return_id IS NOT NULL)
+      ORDER BY x.id LIMIT 1) AS m ON true
+    LEFT JOIN private.group_g_operations AS op ON op.id = _operation_id
+    LEFT JOIN public.order_refunds AS r ON op.cause_type IN ('refund', 'order_refund') AND r.id::text = op.cause_id
+    LEFT JOIN public.order_return_lines AS rl ON rl.id = v_line.exchange_return_line_id
+    LEFT JOIN public.order_returns AS ret ON op.cause_type IN ('return', 'order_return') AND ret.id::text = op.cause_id;
+    INSERT INTO public.stock_movements (variant_id, delta, reason, order_id, order_item_id, allocation_operation_id, created_by, refund_id, return_id)
     VALUES (v_line.variant_id, -v_quantity,
       CASE WHEN v_line.exchange_return_line_id IS NULL THEN 'purchase' ELSE 'exchange' END,
-      v_line.order_id, v_line.order_item_id, _operation_id, _actor_id)
+      v_line.order_id, v_line.order_item_id, _operation_id, _actor_id, v_refund_id, v_return_id)
     RETURNING id INTO v_movement;
     INSERT INTO public.order_item_allocations (order_item_id, variant_id, quantity, remaining_quantity, kind, operation_id)
     VALUES (v_line.order_item_id, v_line.variant_id, v_quantity, v_quantity, 'paid', _operation_id)
@@ -1481,6 +1534,287 @@ BEGIN
   END IF;
 END;
 $g1_fifo_assert$;
+
+-- Task 5: canonical inventory snapshot, compatible projections, stock entry and history.
+CREATE FUNCTION private.list_group_g_variant_inventory(_variant_ids bigint[])
+RETURNS TABLE(variant_id bigint, free integer, paid_allocated integer, payment_held integer, on_hand integer, waiting integer)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  IF _variant_ids IS NULL OR pg_catalog.cardinality(_variant_ids) = 0 THEN RETURN; END IF;
+  IF pg_catalog.cardinality(_variant_ids) > 500 THEN
+    RAISE EXCEPTION 'TOO_MANY_VARIANTS' USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
+  WITH wanted AS MATERIALIZED (
+    SELECT v.id, v.stock_quantity FROM public.item_variants AS v WHERE v.id = ANY(_variant_ids)
+  ), allocations AS (
+    SELECT a.variant_id,
+      COALESCE(pg_catalog.sum(a.remaining_quantity) FILTER (WHERE a.kind = 'paid'), 0)::integer AS paid,
+      COALESCE(pg_catalog.sum(a.remaining_quantity) FILTER (WHERE a.kind = 'payment_hold'), 0)::integer AS held
+    FROM public.order_item_allocations AS a WHERE a.variant_id IN (SELECT w.id FROM wanted AS w)
+    GROUP BY a.variant_id
+  ), production AS (
+    SELECT oi.variant_id, pg_catalog.sum(s.unit_to - s.unit_from)::integer AS quantity
+    FROM private.group_g_item_state_ranges(ARRAY(
+      SELECT DISTINCT oi.order_id FROM public.order_items AS oi WHERE oi.variant_id IN (SELECT w.id FROM wanted AS w)
+    )) AS s JOIN public.order_items AS oi ON oi.id = s.order_item_id
+    WHERE s.status = 'in_production' GROUP BY oi.variant_id
+  )
+  SELECT w.id, w.stock_quantity, COALESCE(a.paid, 0), COALESCE(a.held, 0),
+    w.stock_quantity + COALESCE(a.paid, 0) + COALESCE(a.held, 0), COALESCE(p.quantity, 0)
+  FROM wanted AS w LEFT JOIN allocations AS a ON a.variant_id = w.id
+  LEFT JOIN production AS p ON p.variant_id = w.id ORDER BY w.id;
+END;
+$$;
+ALTER FUNCTION private.list_group_g_variant_inventory(bigint[]) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.list_group_g_variant_inventory(bigint[]) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.list_group_g_variant_inventory(bigint[]) TO service_role;
+
+CREATE FUNCTION public.list_group_g_variant_inventory(_variant_ids bigint[])
+RETURNS TABLE(variant_id bigint, free integer, paid_allocated integer, payment_held integer, on_hand integer, waiting integer)
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.list_group_g_variant_inventory(_variant_ids); $$;
+ALTER FUNCTION public.list_group_g_variant_inventory(bigint[]) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.list_group_g_variant_inventory(bigint[]) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.list_group_g_variant_inventory(bigint[]) TO service_role;
+
+-- Replace the last E-3 reservation and E-2 fulfillment definitions. Remaining A/H
+-- already exclude consumption; subtracting shipped again would undercount them.
+CREATE OR REPLACE FUNCTION private.order_line_reservations(_order_id uuid)
+RETURNS TABLE(order_item_id uuid, variant_id bigint, quantity integer, reserved integer)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT oi.id, oi.variant_id, oi.quantity, COALESCE(pg_catalog.sum(a.remaining_quantity), 0)::integer
+  FROM public.order_items AS oi LEFT JOIN public.order_item_allocations AS a ON a.order_item_id = oi.id
+  WHERE oi.order_id = _order_id GROUP BY oi.id;
+$$;
+ALTER FUNCTION private.order_line_reservations(uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.order_line_reservations(uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION private.order_line_fulfillment(_order_id uuid)
+RETURNS TABLE(order_item_id uuid, variant_id bigint, fulfillment_type text, quantity integer, shipped integer,
+  completed integer, refunded_before_shipment integer, refunded_after_shipment integer,
+  in_production integer, ready_unshipped integer, unshipped integer)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  WITH counted AS (
+    SELECT oi.id, oi.variant_id, oi.fulfillment_type, oi.quantity, o.status,
+      COALESCE((SELECT pg_catalog.sum(fl.quantity) FROM public.order_fulfillment_lines AS fl
+        JOIN public.order_fulfillments AS f ON f.id = fl.fulfillment_id
+        WHERE fl.order_item_id = oi.id AND f.cancelled_at IS NULL), 0)::integer AS shipped,
+      COALESCE((SELECT pg_catalog.sum(a.remaining_quantity) FROM public.order_item_allocations AS a
+        WHERE a.order_item_id = oi.id AND a.kind = 'paid'), 0)::integer AS paid,
+      COALESCE((SELECT pg_catalog.sum(rl.quantity) FROM public.order_refund_lines AS rl
+        JOIN public.order_refunds AS r ON r.id = rl.refund_id WHERE rl.order_item_id = oi.id
+        AND rl.before_shipment AND r.status IN ('awaiting_response', 'pending', 'succeeded')), 0)::integer AS refunded_before,
+      COALESCE((SELECT pg_catalog.sum(rl.quantity) FROM public.order_refund_lines AS rl
+        JOIN public.order_refunds AS r ON r.id = rl.refund_id WHERE rl.order_item_id = oi.id
+        AND NOT rl.before_shipment AND r.status IN ('awaiting_response', 'pending', 'succeeded')), 0)::integer AS refunded_after
+    FROM public.order_items AS oi JOIN public.orders AS o ON o.id = oi.order_id WHERE oi.order_id = _order_id
+  ), quantities AS (
+    SELECT c.*, GREATEST(c.quantity - c.shipped - c.refunded_before, 0) AS unshipped,
+      CASE WHEN c.status IN ('paid', 'shipped') THEN LEAST(c.paid, GREATEST(c.quantity - c.shipped - c.refunded_before, 0))
+        ELSE 0 END AS ready FROM counted AS c
+  )
+  SELECT c.id, c.variant_id, c.fulfillment_type, c.quantity, c.shipped, c.shipped + c.paid,
+    c.refunded_before, c.refunded_after,
+    CASE WHEN c.status IN ('paid', 'shipped') THEN c.unshipped - c.ready ELSE 0 END, c.ready, c.unshipped
+  FROM quantities AS c;
+$$;
+ALTER FUNCTION private.order_line_fulfillment(uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.order_line_fulfillment(uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION private.check_order_line_fulfillment_bounds() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE v_order_id uuid; v_broken boolean;
+BEGIN
+  SELECT oi.order_id INTO v_order_id FROM public.order_items AS oi WHERE oi.id = NEW.order_item_id;
+  SELECT NOT (l.shipped + l.refunded_before_shipment <= l.quantity
+    AND l.refunded_after_shipment <= l.shipped AND l.shipped <= l.completed AND l.completed <= l.quantity)
+    INTO v_broken FROM private.order_line_fulfillment(v_order_id) AS l WHERE l.order_item_id = NEW.order_item_id;
+  IF v_broken THEN RAISE EXCEPTION 'FULFILLMENT_BOUNDS_VIOLATED' USING ERRCODE = '23514'; END IF;
+  RETURN NULL;
+END;
+$$;
+ALTER FUNCTION private.check_order_line_fulfillment_bounds() OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.check_order_line_fulfillment_bounds() FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.list_variant_stock_states(_variant_ids bigint[])
+RETURNS TABLE(variant_id bigint, committed integer, backorder integer)
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $$ SELECT s.variant_id, s.paid_allocated + s.payment_held, s.waiting
+  FROM private.list_group_g_variant_inventory(_variant_ids) AS s; $$;
+ALTER FUNCTION public.list_variant_stock_states(bigint[]) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.list_variant_stock_states(bigint[]) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.list_variant_stock_states(bigint[]) TO service_role;
+
+CREATE FUNCTION private.list_item_stock_history(_item_id bigint, _limit integer)
+RETURNS TABLE(movement_id bigint, variant_id bigint, delta integer, reason text, note text, created_at timestamptz,
+  actor_email text, order_id uuid, balance_after integer, refund_id uuid, return_id uuid)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT h.id, h.variant_id, h.delta, h.reason, h.note, h.created_at, h.actor_email, h.order_id,
+    h.balance_after, h.refund_id, h.return_id
+  FROM (
+    SELECT m.id, m.variant_id, m.delta, m.reason, m.note, m.created_at, u.email::text AS actor_email, m.order_id,
+      (v.stock_quantity - COALESCE(pg_catalog.sum(m.delta) OVER (PARTITION BY m.variant_id ORDER BY m.id DESC
+        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0))::integer AS balance_after, m.refund_id, m.return_id
+    FROM public.stock_movements AS m JOIN public.item_variants AS v ON v.id = m.variant_id
+    LEFT JOIN auth.users AS u ON u.id = m.created_by WHERE v.item_id = _item_id
+  ) AS h ORDER BY h.id DESC LIMIT LEAST(GREATEST(COALESCE(_limit, 50), 1), 200);
+$$;
+ALTER FUNCTION private.list_item_stock_history(bigint,integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.list_item_stock_history(bigint,integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.list_item_stock_history(bigint,integer) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.list_item_stock_history(_item_id bigint, _limit integer)
+RETURNS TABLE(movement_id bigint, variant_id bigint, delta integer, reason text, note text, created_at timestamptz,
+  actor_email text, order_id uuid, balance_after integer, refund_id uuid, return_id uuid)
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.list_item_stock_history(_item_id, _limit); $$;
+ALTER FUNCTION public.list_item_stock_history(bigint,integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.list_item_stock_history(bigint,integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.list_item_stock_history(bigint,integer) TO service_role;
+
+CREATE FUNCTION private.list_item_allocation_history(_item_id bigint, _limit integer)
+RETURNS TABLE(event_id uuid, allocation_id uuid, order_id uuid, order_item_id uuid, variant_id bigint,
+  event_type text, quantity integer, operation_id uuid, counterpart_allocation_id uuid, reverses_event_id uuid,
+  stock_movement_id bigint, reason text, actor_id uuid, created_at timestamptz)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT e.id, e.allocation_id, oi.order_id, a.order_item_id, a.variant_id, e.event_type, e.quantity,
+    e.operation_id, e.counterpart_allocation_id, e.reverses_event_id, e.stock_movement_id, e.reason, e.actor_id, e.created_at
+  FROM public.order_item_allocation_events AS e JOIN public.order_item_allocations AS a ON a.id = e.allocation_id
+  JOIN public.order_items AS oi ON oi.id = a.order_item_id JOIN public.item_variants AS v ON v.id = a.variant_id
+  WHERE v.item_id = _item_id ORDER BY e.created_at DESC, e.id DESC
+  LIMIT LEAST(GREATEST(COALESCE(_limit, 50), 1), 200);
+$$;
+ALTER FUNCTION private.list_item_allocation_history(bigint,integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.list_item_allocation_history(bigint,integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.list_item_allocation_history(bigint,integer) TO service_role;
+
+CREATE FUNCTION public.list_item_allocation_history(_item_id bigint, _limit integer)
+RETURNS TABLE(event_id uuid, allocation_id uuid, order_id uuid, order_item_id uuid, variant_id bigint,
+  event_type text, quantity integer, operation_id uuid, counterpart_allocation_id uuid, reverses_event_id uuid,
+  stock_movement_id bigint, reason text, actor_id uuid, created_at timestamptz)
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.list_item_allocation_history(_item_id, _limit); $$;
+ALTER FUNCTION public.list_item_allocation_history(bigint,integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.list_item_allocation_history(bigint,integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.list_item_allocation_history(bigint,integer) TO service_role;
+
+CREATE FUNCTION private.admin_record_stock_movement(_item_id bigint, _variant_id bigint, _delta integer, _reason text,
+  _note text, _actor_id uuid, _request_key uuid, _expected_release_quantity integer) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_orders uuid[];
+  v_before jsonb;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+  v_note text := NULLIF(pg_catalog.regexp_replace(_note, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '');
+  v_fingerprint text;
+  v_existing private.group_g_operations%ROWTYPE;
+  v_inventory record;
+  v_allocation record;
+  v_release integer := 0;
+  v_remaining integer;
+  v_quantity integer;
+  v_release_movement bigint;
+  v_movement bigint;
+  v_allocated integer;
+  v_result jsonb;
+BEGIN
+  IF _item_id IS NULL OR _variant_id IS NULL OR _item_id <= 0 OR _variant_id <= 0 OR _delta IS NULL OR _delta = 0
+    OR _reason IS NULL OR _reason NOT IN ('restock', 'adjustment') OR (_reason = 'restock' AND _delta < 0)
+    OR _actor_id IS NULL OR _request_key IS NULL OR pg_catalog.length(v_note) > 200
+    OR _expected_release_quantity < 0 THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  v_orders := private.lock_group_g_inventory(ARRAY[_variant_id], ARRAY[]::uuid[], NULL);
+  IF NOT EXISTS (SELECT 1 FROM public.user_roles AS ur JOIN public.roles AS r ON r.id = ur.role_id
+    JOIN public.role_permissions AS rp ON rp.role_id = r.id JOIN public.permissions AS p ON p.id = rp.permission_id
+    WHERE ur.user_id = _actor_id AND ur.active AND (ur.expires_at IS NULL OR ur.expires_at > pg_catalog.now())
+      AND p.code = 'admin.items.manage') THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+  v_fingerprint := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+    'operation', 'stock_move', 'item_id', _item_id, 'variant_ids', ARRAY[_variant_id], 'delta', _delta,
+    'reason', _reason, 'note', v_note, 'actor_id', _actor_id, 'expected_release_quantity', _expected_release_quantity)::text, 'UTF8')), 'hex');
+  SELECT op.* INTO v_existing FROM private.group_g_operations AS op WHERE op.operation = 'stock_move' AND op.request_key = _request_key;
+  IF FOUND THEN
+    IF v_existing.fingerprint <> v_fingerprint THEN
+      RAISE EXCEPTION 'GROUP_G_REQUEST_KEY_CONFLICT' USING ERRCODE = '23505';
+    END IF;
+    RETURN v_existing.result || pg_catalog.jsonb_build_object('replayed', true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.item_variants AS v WHERE v.id = _variant_id AND v.item_id = _item_id) THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  SELECT s.* INTO v_inventory FROM private.list_group_g_variant_inventory(ARRAY[_variant_id]) AS s;
+  IF _delta < 0 THEN
+    IF -_delta::bigint > v_inventory.free::bigint + v_inventory.paid_allocated THEN
+      RAISE EXCEPTION 'GROUP_G_STOCK_INSUFFICIENT' USING ERRCODE = '23514';
+    END IF;
+    v_release := GREATEST(-_delta::bigint - v_inventory.free, 0)::integer;
+    IF (v_release > 0 AND _expected_release_quantity IS NULL)
+      OR (_expected_release_quantity IS NOT NULL AND _expected_release_quantity <> v_release) THEN
+      RAISE EXCEPTION 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED' USING ERRCODE = '55000',
+        DETAIL = pg_catalog.jsonb_build_object('releasedQuantity', v_release)::text;
+    END IF;
+    IF v_release > 0 AND v_note IS NULL THEN
+      RAISE EXCEPTION 'GROUP_G_STOCK_RELEASE_REASON_REQUIRED' USING ERRCODE = '22023';
+    END IF;
+  END IF;
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  v_remaining := v_release;
+  FOR v_allocation IN
+    SELECT a.id, a.remaining_quantity, a.order_item_id, oi.order_id
+    FROM public.order_item_allocations AS a JOIN public.order_items AS oi ON oi.id = a.order_item_id
+    JOIN public.orders AS o ON o.id = oi.order_id
+    WHERE a.variant_id = _variant_id AND a.kind = 'paid' AND a.remaining_quantity > 0
+    ORDER BY o.created_at DESC, o.id DESC, oi.id DESC, a.id DESC
+  LOOP
+    EXIT WHEN v_remaining = 0;
+    v_quantity := LEAST(v_remaining, v_allocation.remaining_quantity);
+    UPDATE public.order_item_allocations AS a SET remaining_quantity = a.remaining_quantity - v_quantity, version = a.version + 1
+      WHERE a.id = v_allocation.id;
+    INSERT INTO public.stock_movements(variant_id, delta, reason, note, order_id, order_item_id, allocation_operation_id, created_by)
+      VALUES(_variant_id, v_quantity, 'allocation_release', v_note, v_allocation.order_id, v_allocation.order_item_id, v_operation, _actor_id)
+      RETURNING id INTO v_release_movement;
+    INSERT INTO public.order_item_allocation_events(allocation_id, event_type, quantity, operation_id, sequence, stock_movement_id, reason, actor_id)
+      VALUES(v_allocation.id, 'release', v_quantity, v_operation, 1, v_release_movement, v_note, _actor_id);
+    v_remaining := v_remaining - v_quantity;
+  END LOOP;
+  INSERT INTO public.stock_movements(variant_id, delta, reason, note, created_by)
+    VALUES(_variant_id, _delta, _reason, v_note, _actor_id) RETURNING id INTO v_movement;
+  v_allocated := private.allocate_group_g_fifo(ARRAY[_variant_id], v_operation, _actor_id);
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'stock_move', _actor_id);
+  v_result := pg_catalog.jsonb_build_object('movementId', v_movement::text, 'releasedQuantity', v_release,
+    'allocatedQuantity', v_allocated, 'replayed', false);
+  INSERT INTO private.group_g_operations(id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+    VALUES(v_operation, 'stock_move', _request_key, v_fingerprint, 'variant', _variant_id::text, _actor_id, v_result);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RETURN v_result;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer) TO service_role;
+
+CREATE FUNCTION public.admin_record_stock_movement(_item_id bigint, _variant_id bigint, _delta integer, _reason text,
+  _note text, _actor_id uuid, _request_key uuid, _expected_release_quantity integer) RETURNS jsonb
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.admin_record_stock_movement(_item_id, _variant_id, _delta, _reason, _note, _actor_id, _request_key, _expected_release_quantity); $$;
+ALTER FUNCTION public.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer) TO service_role;
 
 DO $g1_model_assert$
 DECLARE

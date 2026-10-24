@@ -88,18 +88,76 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       await a.query('rollback');
       await expect(pending).resolves.toMatchObject({ rows: [{ lock_group_g_inventory: material.closedOrders }] });
       await b.query('set constraints all immediate');
-      // The exchange variant belongs to the closed target set even though it has no order item yet.
+      // The open return's exchange variant and the related waiting order's other variant
+      // belong to the active closure; closed historical orders must not extend it.
       await c.query('begin');
-      await c.query('savepoint locked_variant');
-      await expect(c.query('select id from public.item_variants where id=$1 for update nowait', [material.extraVariant]))
-        .rejects.toMatchObject({ code: '55P03' });
-      await c.query('rollback to savepoint locked_variant');
+      for (const variantId of [material.exchangeVariant, material.extraVariant]) {
+        await c.query('savepoint locked_variant');
+        await expect(c.query('select id from public.item_variants where id=$1 for update nowait', [variantId]))
+          .rejects.toMatchObject({ code: '55P03' });
+        await c.query('rollback to savepoint locked_variant');
+        await c.query('release savepoint locked_variant');
+      }
     } finally {
       await a.query('rollback');
       if (pending) await pending.catch(() => {});
       await b.query('rollback');
       await c.query('rollback');
       await Promise.all([a.end(), b.end(), c.end()]);
+    }
+  });
+
+  test('locks waiting orders without locking shared-variant closed history, unless that history is explicitly named', async () => {
+    const material = await withGroupG1FixtureTransaction(db(), async () => {
+      const historical = await createShippedOrderFixture(db(), { lines: [{ quantity: 1 }, { quantity: 1 }] });
+      const closedExchange = await createCatalogFixture(db(), { stock: 0 });
+      await insertReturnRecord(db(), { orderId: historical.orderId, status: 'closed', lines: [{
+        orderItemId: historical.orderItemIds[0], fulfillmentId: historical.fulfillments[0].id,
+        quantity: 1, resolution: 'exchange', exchangeVariantId: closedExchange.variantId,
+      }] });
+      const waiting = await insertOrderWithLines(db(), { status: 'paid', lines: [{
+        itemId: historical.itemIds[0], variantId: historical.variantIds[0], quantity: 1,
+        fulfillmentType: 'backorder', reserved: false,
+      }] });
+      return { historical, waiting, closedExchange };
+    });
+    const holder = await client();
+    const observer = await client();
+    try {
+      for (const explicitlyNamed of [false, true]) {
+        await holder.query('begin');
+        const result = await holder.query('select private.lock_group_g_inventory($1,$2) as ids',
+          [[material.historical.variantIds[0]], explicitlyNamed ? [material.historical.orderId] : []]);
+        expect(result.rows[0].ids).toEqual([
+          material.waiting.orderId, ...(explicitlyNamed ? [material.historical.orderId] : []),
+        ].sort());
+        await observer.query('begin');
+        if (!explicitlyNamed) {
+          // These succeed while the inventory transaction still owns advisory/variant locks.
+          expect((await observer.query('select id from public.orders where id=$1 for update nowait',
+            [material.historical.orderId])).rowCount).toBe(1);
+          expect((await observer.query('select id from public.order_items where order_id=$1 for update nowait',
+            [material.historical.orderId])).rowCount).toBe(2);
+          expect((await observer.query('select id from public.item_variants where id=$1 for update nowait',
+            [material.historical.variantIds[1]])).rowCount).toBe(1);
+        }
+        // Even an explicitly named history order does not expand through its closed return.
+        expect((await observer.query('select id from public.item_variants where id=$1 for update nowait',
+          [material.closedExchange.variantId])).rowCount).toBe(1);
+        for (const id of [material.waiting.orderId, ...(explicitlyNamed ? [material.historical.orderId] : [])]) {
+          await observer.query('savepoint locked_order');
+          await expect(observer.query('select id from public.orders where id=$1 for update nowait', [id]))
+            .rejects.toMatchObject({ code: '55P03' });
+          await observer.query('rollback to savepoint locked_order');
+          await observer.query('release savepoint locked_order');
+        }
+        await observer.query('rollback');
+        await holder.query('rollback');
+      }
+    } finally {
+      await observer.query('rollback');
+      await holder.query('rollback');
+      await Promise.all([holder.end(), observer.end()]);
     }
   });
 

@@ -1,6 +1,6 @@
 /** @jest-environment node */
 export {};
-import { createCatalogFixture, insertOrderWithLines } from './helpers/order-fixtures';
+import { createCatalogFixture, insertOrderWithLines, shipFixtureOrder } from './helpers/order-fixtures';
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -392,12 +392,10 @@ describe('integration: order state transition hardening', () => {
       const shippedItemId = await insertOrderItem(orderId);
       const refundedItemId = await insertOrderItem(orderId);
 
-      await client.query('set local role service_role');
-      await client.query(
-        `select * from public.admin_create_fulfillment($1::uuid, $2::uuid, gen_random_uuid(), 'yamato', 'TRACK-11', false, $3::jsonb)`,
-        [orderId, actorId, JSON.stringify([{ order_item_id: shippedItemId, quantity: 1 }])],
-      );
-      await client.query('reset role');
+      // 発送の材料は G-1 の割当を消費して作る（旧の発送の関数は Task 14 で止める）
+      await shipFixtureOrder(client, {
+        orderId, actorId, trackingNumber: 'TRACK-11', lines: [{ order_item_id: shippedItemId, quantity: 1 }],
+      });
       // 発送の後に、残りの1点を返す返事待ちの記録を所有者のまま直に入れる（先に入れると、返事待ちの品は送れないので発送が注文を完了にする）
       const refundId = await insertRefundRecord(orderId, 500, actorId);
       await client.query(
@@ -445,12 +443,12 @@ describe('integration: order state transition hardening', () => {
              return_address_line = '東京都渋谷区神宮前1-1-1', return_address_phone = '0311112222'
          where id = 1`,
       );
-      await client.query('set local role service_role');
-      const shipped = await client.query(
-        `select * from public.admin_create_fulfillment($1::uuid, $2::uuid, $3::uuid, 'yamato', 'RETURN-1', false, $4::jsonb)`,
-        [order.orderId, actorId, crypto.randomUUID(), JSON.stringify([{ order_item_id: orderItemId, quantity: 1 }])],
-      );
+      // 発送の材料は G-1 の割当を消費して作る（旧の発送の関数は Task 14 で止める）
+      const shipped = { rows: [await shipFixtureOrder(client, {
+        orderId: order.orderId, actorId, trackingNumber: 'RETURN-1', lines: [{ order_item_id: orderItemId, quantity: 1 }],
+      })] };
       expect(shipped.rows[0]).toMatchObject({ order_status: 'shipped', completes_order: true });
+      await client.query('set local role service_role');
       const created = await client.query(
         `select * from public.admin_create_return($1::uuid, $2::uuid, $3::uuid, $4::jsonb,
           'customer_ships', 'customer', null, null, 0, 0, 0, 0, null, false)`,

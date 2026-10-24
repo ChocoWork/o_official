@@ -1,6 +1,6 @@
 /** @jest-environment node */
 import { describeLocalDb, type PgClient } from './helpers/local-db';
-import { createCatalogFixture, insertOrderWithLines, uniqueSuffix } from './helpers/order-fixtures';
+import { createCatalogFixture, insertOrderWithLines, uniqueSuffix, withFixtureConsumption } from './helpers/order-fixtures';
 
 /**
  * 発送と仕上がりの記録（グループ E-1 設計書 3・5・10・11 章、移行 A）。
@@ -42,20 +42,25 @@ async function insertFulfillment(
   number = 1,
   createdBy: string | null = null,
 ): Promise<string> {
-  const res = await db.query(
-    `insert into public.order_fulfillments
-       (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, created_by)
-     values ($1, $2, gen_random_uuid(), 'yamato', '1234-5678-9012', true, false, $3) returning id`,
-    [orderId, number, createdBy],
-  );
-  const fulfillmentId = res.rows[0].id as string;
-  for (const line of lines) {
-    await db.query(
-      'insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, $3)',
-      [fulfillmentId, line.orderItemId, line.quantity],
+  // 発送した数の割当を G-1 で消費してから、発送の行を SQL で作る
+  return withFixtureConsumption(db, {
+    orderId, lines: lines.map((line) => ({ order_item_id: line.orderItemId, quantity: line.quantity })),
+  }, async () => {
+    const res = await db.query(
+      `insert into public.order_fulfillments
+         (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, created_by)
+       values ($1, $2, gen_random_uuid(), 'yamato', '1234-5678-9012', true, false, $3) returning id`,
+      [orderId, number, createdBy],
     );
-  }
-  return fulfillmentId;
+    const fulfillmentId = res.rows[0].id as string;
+    for (const line of lines) {
+      await db.query(
+        'insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, $3)',
+        [fulfillmentId, line.orderItemId, line.quantity],
+      );
+    }
+    return fulfillmentId;
+  });
 }
 
 async function lineCounts(db: PgClient, orderId: string): Promise<Record<string, Row>> {

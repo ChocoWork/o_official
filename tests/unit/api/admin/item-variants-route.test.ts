@@ -1,3 +1,8 @@
+jest.mock('server-only', () => ({}), { virtual: true });
+const mockCsrf = jest.fn();
+const mockRateLimit = jest.fn();
+jest.mock('@/lib/csrfMiddleware', () => ({ requireCsrfOrDeny: () => mockCsrf() }));
+jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: (...args: unknown[]) => mockRateLimit(...args) }));
 jest.mock('next/server', () => {
   const original = jest.requireActual('next/server');
   return {
@@ -76,9 +81,9 @@ function setupReads(options: {
   returnsError?: DbError | null;
 } = {}) {
   const {
-    variants = [variantRow(11, 4)],
+    variants = [variantRow(11, 999)],
     variantsError = null,
-    states = [{ variant_id: 11, committed: 3, backorder: 2 }],
+    states = [{ variant_id: 11, free: 4, paid_allocated: 2, payment_held: 1, on_hand: 7, waiting: 2 }],
     statesError = null,
     history = [
       {
@@ -120,12 +125,13 @@ function setupReads(options: {
   });
 
   mockRpc.mockImplementation(async (name: string) => {
-    if (name === 'list_variant_stock_states') {
+    if (name === 'list_group_g_variant_inventory') {
       return { data: statesError ? null : states, error: statesError };
     }
     if (name === 'list_item_stock_history') {
       return { data: historyError ? null : history, error: historyError };
     }
+    if (name === 'list_item_allocation_history') return { data: [], error: null };
     // backfill_item_variants
     return { data: null, error: null };
   });
@@ -133,7 +139,7 @@ function setupReads(options: {
 
 type GetResponse = {
   status: number;
-  body: { variants: Array<Record<string, unknown>>; movements: Array<Record<string, unknown>> };
+  body: { variants: Array<Record<string, unknown>>; movements: Array<Record<string, unknown>>; allocationEvents: unknown[] };
 };
 
 async function callGet(): Promise<GetResponse> {
@@ -196,22 +202,22 @@ describe('GET /api/admin/items/[id]/variants', () => {
     setupReads({
       variants: [variantRow(11, 4), variantRow(12, 0)],
       states: [
-        { variant_id: 12, committed: 1, backorder: 5 },
-        { variant_id: 11, committed: 3, backorder: 2 },
+        { variant_id: 12, free: 0, paid_allocated: 1, payment_held: 0, on_hand: 1, waiting: 5 },
+        { variant_id: 11, free: 4, paid_allocated: 2, payment_held: 1, on_hand: 7, waiting: 2 },
       ],
     });
 
     const res = await callGet();
 
-    expect(mockRpc).toHaveBeenCalledWith('list_variant_stock_states', { _variant_ids: [11, 12] });
+    expect(mockRpc).toHaveBeenCalledWith('list_group_g_variant_inventory', { _variant_ids: [11, 12] });
     expect(res.body.variants).toEqual([
       expect.objectContaining({ id: 11, committedQuantity: 3, onHandQuantity: 7, backorderQuantity: 2 }),
       expect.objectContaining({ id: 12, committedQuantity: 1, onHandQuantity: 1, backorderQuantity: 5 }),
     ]);
   });
 
-  it('引き当ても受注生産も無いバリアントは 0 で返し、手元の数はすぐ出せる数と同じ', async () => {
-    setupReads({ states: [] });
+  it('reads empty commitment from the inventory snapshot', async () => {
+    setupReads({ states: [{ variant_id: 11, free: 4, paid_allocated: 0, payment_held: 0, on_hand: 4, waiting: 0 }] });
 
     const res = await callGet();
 
@@ -380,7 +386,7 @@ describe('GET /api/admin/items/[id]/variants', () => {
     const res = await callGet();
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ variants: [], movements: [] });
+    expect(res.body).toEqual({ variants: [], movements: [], allocationEvents: [] });
     expect(mockRpc).toHaveBeenCalledTimes(1);
     expect(mockRpc).toHaveBeenCalledWith('backfill_item_variants', { target_item_id: 7 });
   });
@@ -389,6 +395,22 @@ describe('GET /api/admin/items/[id]/variants', () => {
     await callGet();
 
     expect(mockFrom.mock.calls.map(([table]) => table)).toEqual(['item_variants']);
+  });
+
+  it('adds allocationEvents from the new reader while retaining both existing arrays', async () => {
+    const row = { event_id: 'event', allocation_id: 'allocation', order_id: 'order', order_item_id: 'line', variant_id: 11,
+      event_type: 'promote', quantity: 2, operation_id: 'operation', counterpart_allocation_id: null, reverses_event_id: null,
+      stock_movement_id: null, reason: null, actor_id: null, created_at: '2026-10-24T00:00:00Z' };
+    const previous = mockRpc.getMockImplementation();
+    mockRpc.mockImplementation((name: string, args: unknown) => name === 'list_item_allocation_history'
+      ? Promise.resolve({ data: [row], error: null }) : previous?.(name,args));
+    const res = await callGet();
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body).sort()).toEqual(['allocationEvents','movements','variants']);
+    expect(res.body.allocationEvents).toEqual([{ id: 'event', allocationId: 'allocation', orderId: 'order', orderItemId: 'line',
+      variantId: 11, type: 'promote', quantity: 2, operationId: 'operation', counterpartAllocationId: null, reversesEventId: null,
+      stockMovementId: null, reason: null, actorId: null, createdAt: row.created_at }]);
+    expect(mockRpc).toHaveBeenCalledWith('list_item_allocation_history',{ _item_id: 7, _limit: 50 });
   });
 
   it('引き当て済み・受注生産の数が読めなければ 500 を返す（0 に見せない）', async () => {
@@ -466,145 +488,85 @@ describe('GET /api/admin/items/[id]/variants', () => {
   });
 });
 
+const REQUEST_KEY = '11111111-1111-4111-8111-111111111111';
+const postBody = { variantId: 11, delta: -1, reason: 'adjustment', requestKey: REQUEST_KEY };
+async function post(body: unknown = postBody) {
+  return await POST(makeRequest(body), params()) as unknown as { status: number; body: unknown };
+}
 describe('POST /api/admin/items/[id]/variants', () => {
-  let insertMock: jest.Mock;
-
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1' });
-    mockRpc.mockResolvedValue({ error: null });
-    insertMock = jest.fn().mockResolvedValue({ error: null });
-
-    mockFrom.mockImplementation((table: string) => {
-      if (table === 'item_variants') {
-        return {
-          select: jest.fn().mockReturnValue({
-            eq: jest.fn().mockReturnValue({
-              eq: jest.fn().mockReturnValue({
-                maybeSingle: jest.fn().mockResolvedValue({ data: { id: 11 }, error: null }),
-              }),
-            }),
-          }),
-        };
-      }
-      if (table === 'stock_movements') {
-        return { insert: insertMock };
-      }
-      return {};
-    });
+    mockCsrf.mockResolvedValue(undefined);
+    mockRateLimit.mockResolvedValue(null);
+    mockRpc.mockReset().mockResolvedValue({ data: { movementId: '5', releasedQuantity: 0, allocatedQuantity: 1, replayed: false }, error: null });
   });
-
-  it('admin.items.manage を要求する', async () => {
-    await POST(makeRequest({ variantId: 11, delta: 3, reason: 'restock' }), params());
-
+  it('uses one RPC, no direct INSERT, the authorized actor and audits the result', async () => {
+    expect(await post({ ...postBody, actorId: 'forged' })).toEqual({ status: 201, body: { success: true } });
     expect(mockAuthorize).toHaveBeenCalledWith('admin.items.manage', expect.anything());
+    expect(mockCsrf).toHaveBeenCalledTimes(1);
+    expect(mockRateLimit).toHaveBeenCalledTimes(2);
+    expect(mockRateLimit).toHaveBeenNthCalledWith(2, expect.objectContaining({ subject: 'admin-1' }));
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    expect(mockRpc).toHaveBeenCalledWith('admin_record_stock_movement', { _item_id: 7, _variant_id: 11, _delta: -1,
+      _reason: 'adjustment', _note: null, _actor_id: 'admin-1', _request_key: REQUEST_KEY, _expected_release_quantity: null });
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ actor_id: 'admin-1', outcome: 'success',
+      metadata: expect.objectContaining({ movement_id: '5', released_quantity: 0, allocated_quantity: 1, replayed: false }) }));
   });
-
-  it('台帳へ追記し、実行者を残す', async () => {
-    const res = (await POST(
-      makeRequest({ variantId: 11, delta: 3, reason: 'restock', note: '入荷' }),
-      params(),
-    )) as unknown as { status: number };
-
-    expect(res.status).toBe(201);
-    expect(insertMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        variant_id: 11,
-        delta: 3,
-        reason: 'restock',
-        note: '入荷',
-        created_by: 'admin-1',
-      }),
-    );
+  it.each([401,403])('preserves authorization/MFA denial %i before CSRF', async (status) => {
+    const response = { status, body: { error: 'Denied' } };
+    mockAuthorize.mockResolvedValue({ ok: false, response });
+    expect(await post()).toBe(response);
+    expect(mockCsrf).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
   });
-
-  it('監査ログに残す', async () => {
-    await POST(makeRequest({ variantId: 11, delta: -1, reason: 'adjustment' }), params());
-
-    expect(mockLogAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'admin.items.stock.move',
-        actor_id: 'admin-1',
-        outcome: 'success',
-      }),
-    );
+  it('preserves a real CSRF Response and stops before limits', async () => {
+    const response = new Response('Denied', { status: 403 });
+    mockCsrf.mockResolvedValue(response);
+    expect(await post()).toBe(response);
+    expect(mockRateLimit).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
   });
-
-  /**
-   * purchase / cancel / refund / return / exchange は注文の処理が書く（return は返品の受け取り、exchange は交換の品の確保）。
-   * 管理画面から打てると台帳の意味が壊れる。
-   */
-  it.each([['purchase'], ['cancel'], ['refund'], ['return'], ['exchange']])('%s は管理画面から打てない', async (reason) => {
-    const res = (await POST(makeRequest({ variantId: 11, delta: 1, reason }), params())) as unknown as {
-      status: number;
-    };
-
-    expect(res.status).toBe(400);
-    expect(insertMock).not.toHaveBeenCalled();
+  it.each([1,2])('preserves rate-limit response at stage %i', async (stage) => {
+    const response = new Response('Limited', { status: 429 });
+    if (stage === 2) mockRateLimit.mockResolvedValueOnce(null);
+    mockRateLimit.mockResolvedValueOnce(response);
+    expect(await post()).toBe(response);
+    expect(mockRpc).not.toHaveBeenCalled();
   });
-
-  it('増減 0 は受け付けない', async () => {
-    const res = (await POST(
-      makeRequest({ variantId: 11, delta: 0, reason: 'adjustment' }),
-      params(),
-    )) as unknown as { status: number };
-
-    expect(res.status).toBe(400);
-    expect(insertMock).not.toHaveBeenCalled();
+  it.each([{ ...postBody, requestKey: undefined }, { ...postBody, requestKey: 'invalid' },
+    { ...postBody, expectedReleaseQuantity: -1 }, { ...postBody, expectedReleaseQuantity: 1.5 },
+    { ...postBody, delta: 0 }, { ...postBody, reason: 'purchase' }, { ...postBody, reason: 'exchange' },
+    { ...postBody, reason: 'cancel' }, { ...postBody, reason: 'refund' }, { ...postBody, reason: 'return' },
+    { ...postBody, reason: 'allocation_release' }])('rejects invalid input before RPC %p', async (body) => {
+    expect((await post(body)).status).toBe(400);
+    expect(mockRpc).not.toHaveBeenCalled();
   });
-
-  /** 別の商品のバリアントに在庫を入れられないこと（BOLA 対策）。 */
-  it('その商品に属さないバリアントは 404 を返す', async () => {
-    mockFrom.mockImplementation((table: string) => {
-      if (table === 'item_variants') {
-        return {
-          select: jest.fn().mockReturnValue({
-            eq: jest.fn().mockReturnValue({
-              eq: jest.fn().mockReturnValue({
-                maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
-              }),
-            }),
-          }),
-        };
-      }
-      return { insert: insertMock };
-    });
-
-    const res = (await POST(
-      makeRequest({ variantId: 99, delta: 1, reason: 'restock' }),
-      params(),
-    )) as unknown as { status: number };
-
-    expect(res.status).toBe(404);
-    expect(insertMock).not.toHaveBeenCalled();
+  it.each([
+    ['GROUP_G_ARGUMENT_INVALID','22023',400,'入力を確かめてください。'],
+    ['GROUP_G_FORBIDDEN','42501',403,'在庫を変更する権限がありません。'],
+    ['GROUP_G_STOCK_INSUFFICIENT','23514',409,'在庫が足りないため、この数量は引けません。'],
+    ['GROUP_G_STOCK_RELEASE_REASON_REQUIRED','22023',400,'割り当てを外す理由を入力してください。'],
+    ['GROUP_G_REQUEST_KEY_CONFLICT','23505',409,'同じ要求番号で異なる在庫操作は実行できません。'],
+  ])('returns exact business error %s', async (message, code, status, error) => {
+    mockRpc.mockResolvedValue({ error: { message, code, details: 'PRIVATE-MARKER' } });
+    expect(await post()).toEqual({ status, body: { code: message, error } });
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure' }));
+    expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('PRIVATE-MARKER');
   });
-
-  /** item_variants.stock_quantity >= 0 の CHECK に当たったときは、理由の分かる応答にする。 */
-  it('在庫が足りない引き落としは 409 で断る', async () => {
-    insertMock.mockResolvedValue({
-      error: { code: '23514', message: 'violates check constraint "item_variants_stock_quantity_check"' },
-    });
-
-    const res = (await POST(
-      makeRequest({ variantId: 11, delta: -99, reason: 'adjustment' }),
-      params(),
-    )) as unknown as { status: number; body: { error: string } };
-
-    expect(res.status).toBe(409);
-    expect(res.body.error).toContain('在庫');
+  it('returns the recomputed release count; forwards confirmed inputs without replacing the key', async () => {
+    mockRpc.mockResolvedValue({ error: { message: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', code: '55000', details: '{"releasedQuantity":2}' } });
+    expect(await post({ ...postBody, expectedReleaseQuantity: 1, note: '棚卸' })).toEqual({ status: 409,
+      body: { code: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', error: '割り当て済みの品を外す必要があります。数量を確認してください。', releasedQuantity: 2 } });
+    expect(mockRpc).toHaveBeenCalledWith('admin_record_stock_movement', expect.objectContaining({ _request_key: REQUEST_KEY, _expected_release_quantity: 1, _note: '棚卸' }));
   });
-
-  it('台帳の追記が失敗したら 500 を返し、監査ログに残す', async () => {
-    insertMock.mockResolvedValue({ error: { code: 'XX000', message: 'boom' } });
-
-    const res = (await POST(
-      makeRequest({ variantId: 11, delta: 1, reason: 'restock' }),
-      params(),
-    )) as unknown as { status: number };
-
-    expect(res.status).toBe(500);
-    expect(mockLogAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'admin.items.stock.move', outcome: 'error' }),
-    );
+  it('unknown or mismatched DB errors return fixed 500 without raw logs/audit data', async () => {
+    mockRpc.mockResolvedValue({ error: { code: '23514', message: 'PRIVATE-MARKER', details: 'PRIVATE-MARKER' } });
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await post()).toEqual({ status: 500, body: { error: '在庫の記録に失敗しました' } });
+      expect(JSON.stringify([log.mock.calls, mockLogAudit.mock.calls])).not.toContain('PRIVATE-MARKER');
+    } finally { log.mockRestore(); }
   });
 });

@@ -9,6 +9,9 @@ import {
   insertRefundRecord,
   uniqueSuffix,
   variantStock,
+  ensureFixturePaidAllocation,
+  releaseFixtureAllocation,
+  withFixtureConsumption,
   type RefundFixtureStatus,
 } from './helpers/order-fixtures';
 
@@ -84,19 +87,24 @@ async function insertFulfillment(
   orderId: string,
   lines: Array<{ orderItemId: string; quantity: number }>,
 ): Promise<void> {
-  const res = await db.query(
-    `insert into public.order_fulfillments
-       (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order)
-     values ($1, 1, gen_random_uuid(), 'yamato', '1234-5678-9012', true, false)
-     returning id`,
-    [orderId],
-  );
-  for (const line of lines) {
-    await db.query(
-      'insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, $3)',
-      [res.rows[0].id, line.orderItemId, line.quantity],
+  // 発送した数の割当を G-1 で消費してから、発送の行を SQL で作る
+  await withFixtureConsumption(db, {
+    orderId, lines: lines.map((line) => ({ order_item_id: line.orderItemId, quantity: line.quantity })),
+  }, async () => {
+    const res = await db.query(
+      `insert into public.order_fulfillments
+         (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order)
+       values ($1, 1, gen_random_uuid(), 'yamato', '1234-5678-9012', true, false)
+       returning id`,
+      [orderId],
     );
-  }
+    for (const line of lines) {
+      await db.query(
+        'insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, $3)',
+        [res.rows[0].id, line.orderItemId, line.quantity],
+      );
+    }
+  });
 }
 
 /** 取引の中で、失敗する文を流した後に続けられるようにする */
@@ -497,10 +505,8 @@ describeLocalDb('integration: 返金の記録と数え方（移行 A）', (db) =
       [3, 0, 0, 0],
     ])('受注生産の品（3点注文・1点仕上がり・発送なし）の発送前の返金 %i 点: まだ作っていない %i・発送準備中 %i・未発送 %i', async (refunded, inProduction, ready, unshipped) => {
       const { orderId, madeItemId } = await createPaidOrder(db());
-      await db().query(
-        'insert into public.order_item_completions (order_id, order_item_id, quantity, request_key) values ($1, $2, 1, gen_random_uuid())',
-        [orderId, madeItemId],
-      );
+      // 1点仕上がり: G-1 では仕上がった品は割当（A）で数える（手動の仕上がりの記録は数えない）
+      await ensureFixturePaidAllocation(db(), [{ order_item_id: madeItemId, quantity: 1 }]);
       if (refunded > 0) {
         await insertRefundRecord(db(), { orderId, status: 'succeeded', lines: [{ orderItemId: madeItemId, quantity: refunded }] });
       }
@@ -635,12 +641,8 @@ describeLocalDb('integration: 返金の記録と数え方（移行 A）', (db) =
       expect((await states())[stockFx.variantId]).toMatchObject({ committed: 2 });
       expect((await states())[madeFx.variantId]).toMatchObject({ backorder: 1 });
 
-      // Stripe が受け付けた時は、結果を書く関数（移行 C）が台帳に返金の行を書く。ここでは同じ行を直接書く
-      await db().query(
-        `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id, refund_id)
-         values ($1, 1, 'refund', $2, $3, $4)`,
-        [stockFx.variantId, orderId, stockItemId, refundId],
-      );
+      // Stripe が受け付けた時は、結果を書く関数（移行 C）が台帳に返金の行を書く。ここでは同じ行を G-1 の解放として書く
+      await releaseFixtureAllocation(db(), { orderId, orderItemId: stockItemId, quantity: 1, reason: 'refund', refundId });
       expect((await states())[stockFx.variantId]).toMatchObject({ committed: 1 });
     });
   });
@@ -662,9 +664,10 @@ describeLocalDb('integration: 返金の記録と数え方（移行 A）', (db) =
         orderId,
         lines: [{ orderItemId: stockItemId, quantity: 1, restockType: 'no_restock' }],
       });
+      await releaseFixtureAllocation(db(), { orderId, orderItemId: stockItemId, quantity: 1, reason: 'refund', refundId });
       await db().query(
         `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id, refund_id)
-         values ($1, 1, 'refund', $2, $3, $4), ($1, -1, 'adjustment', $2, $3, $4)`,
+         values ($1, -1, 'adjustment', $2, $3, $4)`,
         [stockFx.variantId, orderId, stockItemId, refundId],
       );
 
@@ -1170,9 +1173,13 @@ describeLocalDb('E-3: 交換の行の割引と人気と返金の支払額',db=>{
     const cat=await createCatalogFixture(db(),{stock:10});
     const order=await insertOrderWithLines(db(),{status:'paid',discountAmount:1,paidAmount:14999,
       lines:[{itemId:cat.itemId,variantId:cat.variantId,quantity:3,fulfillmentType:'stock'}]});
-    const ship=(await db().query(`insert into public.order_fulfillments(order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order)
-      values($1,1,gen_random_uuid(),'yamato','TEST-4',false,true) returning id`,[order.orderId])).rows[0].id;
-    await db().query('insert into public.order_fulfillment_lines(fulfillment_id,order_item_id,quantity) values($1,$2,3)',[ship,order.orderItemIds[0]]);
+    // 発送した数の割当を G-1 で消費してから、発送の行を SQL で作る
+    const ship=await withFixtureConsumption(db(),{orderId:order.orderId,lines:[{order_item_id:order.orderItemIds[0],quantity:3}]},async()=>{
+      const id=(await db().query(`insert into public.order_fulfillments(order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order)
+        values($1,1,gen_random_uuid(),'yamato','TEST-4',false,true) returning id`,[order.orderId])).rows[0].id;
+      await db().query('insert into public.order_fulfillment_lines(fulfillment_id,order_item_id,quantity) values($1,$2,3)',[id,order.orderItemIds[0]]);
+      return id;
+    });
     const ret=(await db().query(`insert into public.order_returns(order_id,number,source,status,request_key,request_fingerprint,return_method,return_shipping_payer,notify_customer)
       values($1,1,'shop','open',gen_random_uuid(),'fixture','customer_ships','customer',false) returning id`,[order.orderId])).rows[0].id;
     const rl=(await db().query(`insert into public.order_return_lines(return_id,fulfillment_id,order_item_id,quantity,reason,resolution,exchange_variant_id,exchange_method)

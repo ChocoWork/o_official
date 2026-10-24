@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
-import { createCatalogFixture, movementsOf, revisionsOf, uniqueSuffix } from './helpers/order-fixtures';
+import { seedGroupG1Shipment } from './helpers/group-g1-fixtures';
+import { createCatalogFixture, movementsOf, releaseFixtureAllocation, reserveFixtureAllocation, revisionsOf, shipFixtureOrder, uniqueSuffix } from './helpers/order-fixtures';
 
 /**
  * 返金を始める関数・返金の読み出しの関数・ショップの設定の関数（グループ E-2 設計書 3・4・5・9・11 章、移行 B）。
@@ -104,11 +105,9 @@ async function createOrder(
     itemIds.push(itemId);
     variantIds.push(fx.variantId);
     if (line.fulfillmentType === 'stock' && (line.reserved ?? true)) {
-      await db.query(
-        `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id)
-         values ($1, $2, 'purchase', $3, $4)`,
-        [fx.variantId, -line.quantity, orderId, itemId],
-      );
+      await reserveFixtureAllocation(db, {
+        orderId, orderItemId: itemId, variantId: fx.variantId, quantity: line.quantity, status: options.status ?? 'paid',
+      });
     }
   }
   return { orderId, itemIds, variantIds, paymentIntentId };
@@ -225,10 +224,9 @@ async function insertRefundRow(
   return res.rows[0].id as string;
 }
 
-function ship(db: PgClient, orderId: string, actorId: string, lines: unknown) {
-  return db.query('select * from public.admin_create_fulfillment($1, $2, $3, $4, $5, $6, $7::jsonb)', [
-    orderId, actorId, crypto.randomUUID(), 'yamato', '1234-5678-9012', false, JSON.stringify(lines),
-  ]);
+/** 発送の材料は G-1 の割当を消費して作る（旧の発送の関数は Task 14 で止める） */
+async function ship(db: PgClient, orderId: string, actorId: string, lines: Array<{ order_item_id: string; quantity: number }>) {
+  return { rows: [await shipFixtureOrder(db, { orderId, actorId, lines })] };
 }
 
 function recordCompletion(db: PgClient, orderId: string, actorId: string, lines: unknown) {
@@ -1375,11 +1373,9 @@ describeLocalDb('integration: 返金を始める関数と読み出しの関数�
       });
       const [reservedItem, , partlyItem] = order.itemIds;
       // 3点注文して1点しか確保できていない商品
-      await db().query(
-        `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id)
-         values ($1, -1, 'purchase', $2, $3)`,
-        [order.variantIds[2], order.orderId, partlyItem],
-      );
+      await reserveFixtureAllocation(db(), {
+        orderId: order.orderId, orderItemId: partlyItem, variantId: order.variantIds[2], quantity: 1, status: 'paid',
+      });
       const restockable = async () => {
         const res = await db().query('select lines from public.load_order_refund_materials($1)', [order.orderId]);
         return (res.rows[0].lines as Row[]).map((line) => line.restockable);
@@ -1388,11 +1384,8 @@ describeLocalDb('integration: 返金を始める関数と読み出しの関数�
       expect(await restockable()).toEqual([3, 0, 1, 0]);
 
       // 確保が refund の台帳の行で1点外れた分は、戻せる数に入らない
-      await db().query(
-        `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id)
-         values ($1, 1, 'refund', $2, $3)`,
-        [order.variantIds[0], order.orderId, reservedItem],
-      );
+      // （G-1 の解放: 台帳の行・割当の残り・release の出来事を同じ操作で書く）
+      await releaseFixtureAllocation(db(), { orderId: order.orderId, orderItemId: reservedItem, quantity: 1, reason: 'refund' });
       expect(await restockable()).toEqual([2, 0, 1, 0]);
 
       // 発送した数は確保から引く: 確保 2 − 発送 1 = 1（未発送は 3 − 1 = 2）
@@ -1764,7 +1757,11 @@ describeLocalDb('integration: 返金と発送の同時の操作（Review Focus 3
     try {
       // 3点のうち2点を発送前に返金する（返事待ち）。発送できるのは残りの1点だけになる
       await beginRefund(db(), order.orderId, { actorId: actor.id, lines: [refundBefore(item, 2)], amount: 9000 });
-      const shipping = ship(other, order.orderId, actor.id, [{ order_item_id: item, quantity: 2 }]).then(
+      // 断られる側の守りを確かめるので、旧の発送の関数のまま（書く前に断るので割当には触れない）
+      const shipping = other.query('select * from public.admin_create_fulfillment($1, $2, $3, $4, $5, $6, $7::jsonb)', [
+        order.orderId, actor.id, crypto.randomUUID(), 'yamato', '1234-5678-9012', false,
+        JSON.stringify([{ order_item_id: item, quantity: 2 }]),
+      ]).then(
         () => null,
         (error: unknown) => error,
       );
@@ -1853,9 +1850,9 @@ describeLocalDb('E-3: 交換行の発送前の返金を E-2 の core が累積�
   test('元の支払額14999を3回の返金で5000・4999・5000に割り、材料にも元の支払額を返す',async()=>{
     const actor=await createActor(db());
     const order=await createOrder(db(),{lines:[{quantity:3,price:5000,fulfillmentType:'stock'}],discountAmount:1,withPaymentIntent:true});
-    const ship=(await db().query(`insert into public.order_fulfillments(order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order)
-      values($1,1,gen_random_uuid(),'yamato','TEST-5',false,true) returning id`,[order.orderId])).rows[0].id;
-    await db().query('insert into public.order_fulfillment_lines(fulfillment_id,order_item_id,quantity) values($1,$2,3)',[ship,order.itemIds[0]]);
+    // 発送の材料は G-1 の割当を消費して作る（注文の状態は元の材料と同じく変えない）
+    const ship=await seedGroupG1Shipment(db(),{orderId:order.orderId,lines:[{orderItemId:order.itemIds[0],quantity:3}],
+      shippedAt:new Date().toISOString(),carrier:'yamato',trackingNumber:'TEST-5',notifyCustomer:false});
     const ret=(await db().query(`insert into public.order_returns(order_id,number,source,status,request_key,request_fingerprint,return_method,return_shipping_payer,notify_customer)
       values($1,1,'shop','open',gen_random_uuid(),'fixture','customer_ships','customer',false) returning id`,[order.orderId])).rows[0].id;
     const rl=(await db().query(`insert into public.order_return_lines(return_id,fulfillment_id,order_item_id,quantity,reason,resolution,exchange_variant_id,exchange_method)

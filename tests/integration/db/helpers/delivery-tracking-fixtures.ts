@@ -1,7 +1,7 @@
 import type { ShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import { randomUUID } from 'node:crypto';
 import { connectLocalDb, type PgClient } from './local-db';
-import { createCatalogFixture, insertOrderWithLines, uniqueSuffix } from './order-fixtures';
+import { createCatalogFixture, insertOrderWithLines, shipFixtureOrder, uniqueSuffix, withFixtureConsumption } from './order-fixtures';
 
 /** 管理 RPC の実装と独立して記録の守りを試すため、発送の行だけを SQL で作る。商品行は呼び出し側が用意する。配送業者か番号が空の行は、表の決まりで旧データの写し（legacy）だけが持てるので legacy で作る。 */
 export async function insertDeliveryFixture(
@@ -56,14 +56,17 @@ export type ManualDelivery = DeliveryTarget & {
   requestKey: string; deliveredOn: string; notifyCustomer: boolean;
 };
 
-export function createDeliveryFulfillment(client: PgClient, input: {
+/** 発送の材料は G-1 の割当を消費して作る（旧の発送の関数は Task 14 で止める）。戻り値の形は旧の関数と同じ */
+export async function createDeliveryFulfillment(client: PgClient, input: {
   orderId: string; actorId: string; requestKey?: string; carrier?: string; trackingNumber?: string;
   notifyCustomer?: boolean; lines: Array<{ order_item_id: string; quantity: number }>;
 }) {
-  return client.query('select * from public.admin_create_fulfillment($1,$2,$3,$4,$5,$6,$7::jsonb)', [
-    input.orderId, input.actorId, input.requestKey ?? randomUUID(), input.carrier ?? 'yamato',
-    input.trackingNumber ?? 'Delivery-123', input.notifyCustomer ?? false, JSON.stringify(input.lines),
-  ]);
+  const row = await shipFixtureOrder(client, {
+    orderId: input.orderId, actorId: input.actorId, requestKey: input.requestKey ?? randomUUID(),
+    carrier: (input.carrier ?? 'yamato') as 'yamato' | 'sagawa' | 'japanpost',
+    trackingNumber: input.trackingNumber ?? 'Delivery-123', notifyCustomer: input.notifyCustomer ?? false, lines: input.lines,
+  });
+  return { rows: [row], rowCount: 1 };
 }
 
 export function updateDeliveryTracking(client: PgClient, input: TrackingEdit) {
@@ -101,10 +104,17 @@ export async function deliveryShipment(client: PgClient, input: {
   const actor = await createDeliveryActor(client);
   const clock = await deliveryClock(client);
   const shippedAt = input.shippedAt ?? `${clock.two_days_ago}T09:00:00+09:00`;
-  const shipment = await insertDeliveryFixture(client, { ...input, orderId: order.orderId, shippedAt });
-  await client.query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,$3)', [
-    shipment.fulfillmentId, order.orderItemId, input.shippedQuantity ?? 1,
-  ]);
+  // 発送した数の割当を G-1 で消費してから、発送の行を SQL で作る（旧の発送の関数は Task 14 で止める）
+  const shippedQuantity = input.shippedQuantity ?? 1;
+  const shipment = await withFixtureConsumption(client, {
+    orderId: order.orderId, lines: [{ order_item_id: order.orderItemId, quantity: shippedQuantity }],
+  }, async () => {
+    const inserted = await insertDeliveryFixture(client, { ...input, orderId: order.orderId, shippedAt });
+    await client.query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,$3)', [
+      inserted.fulfillmentId, order.orderItemId, shippedQuantity,
+    ]);
+    return inserted;
+  });
   return { ...order, ...shipment, actorId: actor.id, actorEmail: actor.email, shippedAt, clock };
 }
 

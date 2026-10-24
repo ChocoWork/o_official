@@ -5,6 +5,7 @@ import {
   insertOrderWithLines,
   insertRefundRecord,
   PRICE,
+  shipFixtureOrder,
   uniqueSuffix,
   variantStock,
 } from './helpers/order-fixtures';
@@ -84,16 +85,13 @@ async function createShippedOrder(db: PgClient, spec: OrderSpec): Promise<Shippe
   const shipments = spec.shipments ?? [Object.fromEntries(spec.lines.map((orderLine, index) => [index, orderLine.quantity]))];
   const fulfillmentIds: string[] = [];
   for (const shipment of shipments) {
-    const res = await db.query('select * from public.admin_create_fulfillment($1, $2, $3, $4, $5, $6, $7::jsonb)', [
+    // 発送の材料は G-1 の割当を消費して作る（旧の発送の関数は Task 14 で止める）
+    const res = await shipFixtureOrder(db, {
       orderId,
-      actor.id,
-      crypto.randomUUID(),
-      'yamato',
-      '1234-5678-9012',
-      false,
-      JSON.stringify(Object.entries(shipment).map(([index, quantity]) => ({ order_item_id: orderItemIds[Number(index)], quantity }))),
-    ]);
-    fulfillmentIds.push(res.rows[0].fulfillment_id as string);
+      actorId: actor.id,
+      lines: Object.entries(shipment).map(([index, quantity]) => ({ order_item_id: orderItemIds[Number(index)], quantity })),
+    });
+    fulfillmentIds.push(res.fulfillment_id);
   }
   return {
     orderId,

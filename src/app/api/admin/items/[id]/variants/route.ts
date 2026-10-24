@@ -4,6 +4,8 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { toOrderNumber } from '@/lib/orders/order-number';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
+import { listGroupGVariantInventory, listItemAllocationHistory, recordStockMovement, StockMovementError } from '@/lib/inventory/allocation-store';
 import { formatReturnNumber } from '@/lib/orders/returns/return-messages';
 
 /**
@@ -13,7 +15,7 @@ import { formatReturnNumber } from '@/lib/orders/returns/return-messages';
  * 更新しない（DB 側もトリガーで追記以外を拒む）。
  */
 
-const itemIdSchema = z.coerce.number().int().positive();
+const itemIdSchema = z.coerce.number().int().positive().safe();
 
 // 注文の処理が書く理由（purchase / cancel / refund / return / exchange）は管理画面から打てない。
 // 打てると「注文に紐づかない購入」が台帳に混ざり、受注数や突合の意味が壊れる。
@@ -21,30 +23,21 @@ const itemIdSchema = z.coerce.number().int().positive();
 const ADMIN_STOCK_REASONS = ['restock', 'adjustment'] as const;
 
 const movementSchema = z.object({
-  variantId: z.coerce.number().int().positive(),
+  variantId: z.coerce.number().int().positive().safe(),
   // delta <> 0 は DB 側の CHECK にもあるが、理由の分かる 400 で先に断る。
-  delta: z.coerce.number().int().refine((value) => value !== 0, '増減は 0 以外'),
+  delta: z.coerce.number().int().min(-2147483648).max(2147483647).refine((value) => value !== 0, '増減は 0 以外'),
   reason: z.enum(ADMIN_STOCK_REASONS),
   note: z.string().trim().max(200).optional(),
+  requestKey: z.string().uuid(),
+  expectedReleaseQuantity: z.number().int().min(0).max(2147483647).optional(),
 });
-
-/** 在庫が 0 を下回る追記は CHECK 制約で弾かれる。 */
-const CHECK_VIOLATION = '23514';
 
 type VariantRow = {
   id: number;
-  stock_quantity: number;
   is_active: boolean;
   sku: string | null;
   item_colors: { name: string; hex: string; position: number } | null;
   item_sizes: { label: string; position: number } | null;
-};
-
-/** public.list_variant_stock_states の1行（引き当て済みと受注生産の数。設計書 10-1） */
-type StockStateRow = {
-  variant_id: number;
-  committed: number;
-  backorder: number;
 };
 
 /** public.list_item_stock_history の1行（設計書 10-2） */
@@ -101,18 +94,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       target_item_id: itemId,
     });
     if (syncError) {
-      console.error('Failed to sync item variants:', itemId, syncError);
+      console.error('Failed to sync item variants:', itemId, ...describeErrorForLog(syncError));
       return NextResponse.json({ error: 'Failed to sync item variants' }, { status: 500 });
     }
 
     const { data: variants, error: variantsError } = await supabase
       .from('item_variants')
-      .select('id, stock_quantity, is_active, sku, item_colors(name, hex, position), item_sizes(label, position)')
+      .select('id, is_active, sku, item_colors(name, hex, position), item_sizes(label, position)')
       .eq('item_id', itemId)
       .order('id', { ascending: true });
 
     if (variantsError) {
-      console.error('Failed to fetch item variants:', itemId, variantsError);
+      console.error('Failed to fetch item variants:', itemId, ...describeErrorForLog(variantsError));
       return NextResponse.json({ error: 'Failed to fetch item variants' }, { status: 500 });
     }
 
@@ -121,13 +114,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     // 引き当て済みと受注生産の数は DB の関数が1か所で数える。台帳や view を画面の側で数え直さない。
     // 読めなかった時に 0 と見せると製造と仕入れの判断を誤るので、失敗は隠さない
-    const { data: stockStates, error: stockStatesError } = variantIds.length
-      ? await supabase.rpc('list_variant_stock_states', { _variant_ids: variantIds })
-      : { data: [], error: null };
-    if (stockStatesError) {
-      console.error('Failed to fetch variant stock states:', itemId, ...describeErrorForLog(stockStatesError));
+    let stockStates;
+    try {
+      stockStates = await listGroupGVariantInventory(supabase, variantIds);
+    } catch (error) {
+      console.error('Failed to fetch variant stock states:', itemId, ...describeErrorForLog(error));
       return NextResponse.json({ error: 'Failed to fetch variant stock states' }, { status: 500 });
     }
+    const allocationEvents = variantIds.length ? await listItemAllocationHistory(supabase, itemId, STOCK_HISTORY_LIMIT) : [];
 
     const { data: history, error: historyError } = variantIds.length
       ? await supabase.rpc('list_item_stock_history', { _item_id: itemId, _limit: STOCK_HISTORY_LIMIT })
@@ -152,15 +146,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       ((returnRows ?? []) as StockHistoryReturnRow[]).map((row) => [row.id, formatReturnNumber(row.order_id, row.number)] as const),
     );
 
-    const stateByVariant = new Map<number, StockStateRow>(
-      ((stockStates ?? []) as StockStateRow[]).map((row) => [row.variant_id, row]),
-    );
+    const stateByVariant = new Map(stockStates.map((row) => [row.variant_id, row]));
 
     return NextResponse.json(
       {
         variants: variantRows.map((row) => {
           const state = stateByVariant.get(row.id);
-          const committedQuantity = state?.committed ?? 0;
+          if (!state) throw new Error('INVENTORY_READ_FAILED');
+          const committedQuantity = state.paid_allocated + state.payment_held;
 
           return {
             id: row.id,
@@ -168,14 +161,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             colorHex: row.item_colors?.hex ?? null,
             sizeLabel: row.item_sizes?.label ?? null,
             sku: row.sku,
-            stockQuantity: row.stock_quantity,
+            stockQuantity: state.free,
             isActive: row.is_active,
             committedQuantity,
             // 手元の数は棚に実際にある数。すぐ出せる数に、注文のために取ってある数を足す（設計書 10-1）
-            onHandQuantity: row.stock_quantity + committedQuantity,
-            backorderQuantity: state?.backorder ?? 0,
+            onHandQuantity: state.on_hand,
+            backorderQuantity: state.waiting,
           };
         }),
+        allocationEvents,
         movements: historyRows.map((row) => ({
           id: row.movement_id,
           variantId: row.variant_id,
@@ -196,7 +190,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       { status: 200 },
     );
   } catch (error) {
-    console.error('GET /api/admin/items/:id/variants error:', error);
+    console.error('GET /api/admin/items/:id/variants error:', ...describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -207,6 +201,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!authz.ok) {
       return authz.response;
     }
+
+    const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
+    const csrfResult = await requireCsrfOrDeny();
+    if (csrfResult instanceof Response) return csrfResult;
+    const rate = { endpoint: 'admin.items.stock.move', limit: 50, windowSeconds: 600 };
+    const ipLimited = await enforceRateLimit({ request, ...rate });
+    if (ipLimited) return ipLimited;
+    const actorLimited = await enforceRateLimit({ request, ...rate, subject: authz.userId });
+    if (actorLimited) return actorLimited;
 
     const { id } = await params;
     const parsedItemId = itemIdSchema.safeParse(id);
@@ -223,78 +226,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       );
     }
 
-    const { variantId, delta, reason, note } = parsed.data;
+    const { variantId, delta, reason, note, requestKey, expectedReleaseQuantity } = parsed.data;
     const supabase = await createServiceRoleClient();
-
-    // 別の商品のバリアントに在庫を入れられないよう、item_id と合わせて引く（BOLA 対策）。
-    const { data: variant, error: variantError } = await supabase
-      .from('item_variants')
-      .select('id')
-      .eq('id', variantId)
-      .eq('item_id', itemId)
-      .maybeSingle<{ id: number }>();
-
-    if (variantError) {
-      console.error('Failed to look up item variant:', variantId, variantError);
-      return NextResponse.json({ error: 'Failed to record stock movement' }, { status: 500 });
-    }
-
-    if (!variant) {
-      return NextResponse.json({ error: 'Variant not found' }, { status: 404 });
-    }
-
-    const { error: insertError } = await supabase.from('stock_movements').insert({
-      variant_id: variantId,
-      delta,
-      reason,
-      note: note ?? null,
-      created_by: authz.userId,
+    const audit = (outcome: 'success' | 'failure' | 'error', metadata: Record<string, unknown>) => logAudit({
+      action: 'admin.items.stock.move', actor_id: authz.userId, resource: 'item_variants',
+      resource_id: String(variantId), outcome, metadata: { item_id: itemId, delta, reason, ...metadata },
     });
-
-    if (insertError) {
-      // 在庫が 0 を下回る引き落とし。操作の誤りなので、理由の分かる 409 で返す。
-      if (insertError.code === CHECK_VIOLATION) {
-        await logAudit({
-          action: 'admin.items.stock.move',
-          actor_id: authz.userId,
-          resource: 'item_variants',
-          resource_id: String(variantId),
-          outcome: 'failure',
-          detail: 'Stock would go below zero',
-          metadata: { item_id: itemId, delta, reason },
-        });
-        return NextResponse.json(
-          { error: '在庫が足りないため、この数量は引けません。' },
-          { status: 409 },
-        );
-      }
-
-      console.error('Failed to insert stock movement:', variantId, insertError);
-      await logAudit({
-        action: 'admin.items.stock.move',
-        actor_id: authz.userId,
-        resource: 'item_variants',
-        resource_id: String(variantId),
-        outcome: 'error',
-        detail: 'Failed to record stock movement',
-        metadata: { item_id: itemId, delta, reason, error_message: insertError.message ?? null },
-      });
-      return NextResponse.json({ error: 'Failed to record stock movement' }, { status: 500 });
+    try {
+      const result = await recordStockMovement(supabase, authz.userId, { itemId, variantId, delta, reason,
+        note: note ?? null, requestKey, expectedReleaseQuantity: expectedReleaseQuantity ?? null });
+      await audit('success', { movement_id: result.movementId, released_quantity: result.releasedQuantity,
+        allocated_quantity: result.allocatedQuantity, replayed: result.replayed });
+      return NextResponse.json({ success: true }, { status: 201 });
+    } catch (error) {
+      const failure = error instanceof StockMovementError ? error : new StockMovementError();
+      await audit(failure.code ? 'failure' : 'error', { code: failure.code ?? 'STOCK_MOVEMENT_FAILED' });
+      return NextResponse.json({ ...(failure.code ? { code: failure.code } : {}), error: failure.message,
+        ...(failure.releasedQuantity !== undefined ? { releasedQuantity: failure.releasedQuantity } : {}) },
+      { status: failure.status });
     }
-
-    await logAudit({
-      action: 'admin.items.stock.move',
-      actor_id: authz.userId,
-      resource: 'item_variants',
-      resource_id: String(variantId),
-      outcome: 'success',
-      detail: `Stock moved by ${delta} (${reason})`,
-      metadata: { item_id: itemId, delta, reason },
-    });
-
-    return NextResponse.json({ success: true }, { status: 201 });
-  } catch (error) {
-    console.error('POST /api/admin/items/:id/variants error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: '在庫の記録に失敗しました' }, { status: 500 });
   }
 }

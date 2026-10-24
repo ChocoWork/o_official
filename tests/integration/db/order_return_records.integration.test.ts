@@ -15,6 +15,7 @@ import {
   insertReturnRefund,
   uniqueSuffix,
   variantStock,
+  withFixtureConsumption,
   type RefundFixtureStatus,
   type ReturnFixtureStatus,
 } from './helpers/order-fixtures';
@@ -1088,7 +1089,9 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
     });
 
     test('確保中の数に交換の品の確保（exchange）が入る。返品の受け取り（return）は入らない', async () => {
-      const fx = await createShippedOrderFixture(db(), { lines: [{ quantity: 2, extraStock: 2 }] });
+      // Keep two units of A unconsumed after the shipped unit used for this return.
+      const fx = await createShippedOrderFixture(db(), { lines: [{ quantity: 3, extraStock: 2 }],
+        shipments: [{ lines: [{ lineIndex: 0, quantity: 1 }] }] });
       const originalItemId = fx.orderItemIds[0];
       const variantId = fx.variantIds[0];
       const created = await insertReturnRecord(db(), {
@@ -1106,11 +1109,22 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
         [fx.orderId, fx.itemIds[0], variantId, created.lineIds[0]],
       );
       const exchangeItemId = exchange.rows[0].id as string;
-      await db().query(
-        `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id, return_id)
-         values ($1, -1, 'exchange', $2, $3, $4)`,
-        [variantId, fx.orderId, exchangeItemId, created.returnId],
-      );
+      // All fixture rows are new and owned by this transaction, which already holds advisory.
+      // FIFO creates the exchange movement, allocation and event together; a bare ledger row is no longer A.
+      const before = (await db().query('select private.capture_group_g_item_states($1) as states', [[fx.orderId]])).rows[0].states;
+      const op = (await db().query(`insert into private.group_g_operations
+        (id,operation,request_key,fingerprint,cause_type,cause_id,result)
+        values(gen_random_uuid(),'fixture_exchange_allocation',gen_random_uuid(),
+          pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(
+            pg_catalog.jsonb_build_object('order_item_id',$1::text)::text,'UTF8')),'hex'),
+          'order_item',$1::text,'{}') returning id`, [exchangeItemId])).rows[0].id as string;
+      expect((await db().query('select private.allocate_group_g_fifo($1,$2,$3) as allocated', [[variantId], op, null])).rows[0].allocated).toBe(1);
+      await db().query('select private.record_group_g_item_state_changes($1,$2,$3,1,$4,$5)',
+        [JSON.stringify(before), [fx.orderId], op, 'fixture_exchange_allocation', null]);
+      expect((await db().query(`select reason,delta,order_item_id,return_id from public.stock_movements
+        where allocation_operation_id=$1`, [op])).rows).toEqual([
+        { reason: 'exchange', delta: -1, order_item_id: exchangeItemId, return_id: created.returnId },
+      ]);
       // 返品の受け取り（+1）を元の品に付けても、確保中の数は変わらない
       await db().query(
         `insert into public.stock_movements (variant_id, delta, reason, order_id, order_item_id, return_id)
@@ -2313,8 +2327,10 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
         const fulfillment = await insertDeliveryFixture(db(), {
           orderId: order.orderId, shippedAt: '2026-10-10T03:00:00Z', deliveredAt,
         });
-        await db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)',
-          [fulfillment.fulfillmentId, order.orderItemId]);
+        // 発送した数の割当を G-1 で消費してから、発送の行を SQL で作る
+        await withFixtureConsumption(db(), { orderId: order.orderId, lines: [{ order_item_id: order.orderItemId, quantity: 1 }] },
+          () => db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)',
+            [fulfillment.fulfillmentId, order.orderItemId]));
         expect((await shipmentLinesOf(db(), order.orderId)).map((line) => line.deadline_date)).toEqual([expected]);
         await db().query('update public.shop_return_settings set delivery_buffer_days=14 where id=1');
         expect((await shipmentLinesOf(db(), order.orderId)).map((line) => line.deadline_date)).toEqual([expected]);
@@ -2330,11 +2346,16 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
       const cancelled = await insertDeliveryFixture(db(), {
         orderId: order.orderId, shippedAt: '2026-10-20T03:00:00Z', deliveredAt: '2026-10-25T03:00:00Z',
       });
-      for (const [fulfillment, quantity] of [[first, 1], [second, 2], [cancelled, 1]] as const) {
-        await db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,$3)',
-          [fulfillment.fulfillmentId, order.orderItemId, quantity]);
-      }
+      // 届いた2発送は G-1 の割当を消費して作る。取り消した発送は、取り消した後に行を足す（割当は消費しない）
+      await withFixtureConsumption(db(), { orderId: order.orderId, lines: [{ order_item_id: order.orderItemId, quantity: 3 }] }, async () => {
+        for (const [fulfillment, quantity] of [[first, 1], [second, 2]] as const) {
+          await db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,$3)',
+            [fulfillment.fulfillmentId, order.orderItemId, quantity]);
+        }
+      });
       await db().query('update public.order_fulfillments set cancelled_at=now() where id=$1', [cancelled.fulfillmentId]);
+      await db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)',
+        [cancelled.fulfillmentId, order.orderItemId]);
       const deadlines = async () => (await shipmentLinesOf(db(), order.orderId)).map((line) => line.deadline_date);
       expect(await deadlines()).toEqual(['2026-10-13', '2026-10-20']);
       await db().query("update public.shop_return_settings set window_start='last_item' where id=1");
@@ -2376,7 +2397,8 @@ describeLocalDb('integration: 返品の記録と数え方（移行 A）', (db) =
       const target = await insertDeliveryFixture(db(), {
         orderId: order.orderId, shippedAt: '2026-10-01T03:00:00Z', deliveredAt: '2026-10-10T15:00:00Z',
       });
-      await db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)', [target.fulfillmentId, order.orderItemId]);
+      await withFixtureConsumption(db(), { orderId: order.orderId, lines: [{ order_item_id: order.orderItemId, quantity: 1 }] },
+        () => db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)', [target.fulfillmentId, order.orderItemId]));
       const row = (await shipmentLinesOf(db(), order.orderId))[0];
       // 関数は日付だけを返し、日の終わりは使う側が日本時間で比べる。ここでは関数の日付が、届いた日（日本時間 10/11）＋7日であることを見る。
       expect(row.deadline_date).toBe('2026-10-18');
