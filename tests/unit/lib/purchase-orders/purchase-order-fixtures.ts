@@ -55,7 +55,7 @@ export function confirmedDetail(): PurchaseOrderDetail {
     ],
     receipts: [
       {
-        id: RECEIPT_ID, kind: 'receive', receivedOn: '2026-10-26', memo: '午前便', reason: null, actorId: ACTOR_ID,
+        id: RECEIPT_ID, kind: 'receive', receivedOn: '2026-10-26', memo: '午前便', reason: null, actorId: ACTOR_ID, actorEmail: 'staff@example.com',
         createdAt: '2026-10-26T02:00:00+00:00',
         lines: [{ id: RECEIPT_LINE_ID, lineId: LINE_1, quantity: 2, reversesReceiptLineId: null, reversibleQuantity: 2 }],
       },

@@ -1,6 +1,6 @@
 # 発注書の状態（G-2）
 
-> 状態: 保存する2段階と、導出する3つの表示段階（導出する関数は Task 5）、数量の確定・訂正・打切り・取消の遷移（Task 6）は現行のソース（グループ G-2 Task 2・4・5・6。本番へは未適用） | 確認日: 2026-10-25 | 対象: `purchase_orders.stage` と、画面に出す5つの表示段階
+> 状態: 保存する2段階と、導出する3つの表示段階（導出する関数は Task 5）、数量の確定・訂正・打切り・取消の遷移（Task 6）、受け取りとその取消・数量訂正の遷移（Task 7）は現行のソース（グループ G-2 Task 2・4・5・6・7。本番へは未適用） | 確認日: 2026-10-25 | 対象: `purchase_orders.stage` と、画面に出す5つの表示段階
 
 ## 概要
 
@@ -16,9 +16,9 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応要件 | FREQ-526（発注の作成）、FREQ-527・528（数量の確定・訂正と打切り・取消。Task 6）、FREQ-529（受け取り。後続 Task） |
+| 対応要件 | FREQ-526（発注の作成）、FREQ-527・528（数量の確定・訂正と打切り・取消。Task 6）、FREQ-529（受け取りと、その取消・数量訂正。Task 7） |
 | 設計 | [グループ G 設計書](../../superpowers/specs/2026-10-23-group-g-design.md)、[G-2 実装計画](../../superpowers/plans/2026-10-24-group-g2-purchasing.md)の「決めたこと」 |
-| 実装 | 表と CHECK は移行 `20261024153505_group_g2_purchasing_foundation.sql`、作成・数量の確定と訂正・打切り・発注先の訂正は `20261024180500_group_g2_purchasing_writers.sql`、型は[共通の定義](../../../src/lib/purchase-orders/purchase-order-types.ts) |
+| 実装 | 表と CHECK は移行 `20261024153505_group_g2_purchasing_foundation.sql`、作成・数量の確定と訂正・打切り・発注先の訂正・受け取り・受け取りの取消は `20261024180500_group_g2_purchasing_writers.sql`、型は[共通の定義](../../../src/lib/purchase-orders/purchase-order-types.ts) |
 | 関連 | 書込みの順序は[発注書の作成の流れ](../sequence/purchasing.md)、在庫の割当は[在庫の割当の状態](inventory-allocation.md) |
 | 調査時点 | 2026-10-25。導出の式は Task 5 の移行（`20261024153505_group_g2_purchasing_foundation.sql` の節15）に実装した。DB での実行の検証は[発注の読取の試験](../../../tests/integration/db/group_g2_purchase_reads.integration.test.ts)（controller が使い捨て DB で流す） |
 
@@ -75,10 +75,11 @@ stateDiagram-v2
 | ST-PO-T3 | 確定前の発注の取消 | 段階が `ordered`。全行を渡した打切り（一部の行だけは 22023） | 確定数量を全行0にして段階 `quantity_confirmed`、打切りの履歴（前＝仮数量、後＝0）と打切り（`closed_quantity`＝仮数量）を残す。表示は `closed` | `admin_short_close_purchase_order`（Task 6） |
 | ST-PO-T4 | 数量の訂正・単価の訂正 | 段階が `quantity_confirmed`。理由が必須。納品済み未満には訂正できない（`GROUP_G_PO_QUANTITY_BELOW_RECEIVED`）。何も変わらない訂正は 22023 | 版 +1、変わった行だけを履歴（`quantity`）へ。単価だけの変更は前後の数量を現在の数量にして書く。段階は変えない | `admin_confirm_purchase_order_quantities`（Task 6） |
 | ST-PO-T4b | 発注先・メモの訂正 | どの段階でもよい。理由が必須。発注先もメモも変わらなければ 22023 | 版 +1、履歴（`header`）に前後の発注先とメモと理由。段階・明細は変えない | `admin_update_purchase_order_header`（Task 6） |
-| ST-PO-T5 | 受け取り・その取消 | 段階が `quantity_confirmed`。未納以下の数 | 納品済みの合計が変わる（導出する表示段階が変わる）。段階は変えない | Task 7 |
+| ST-PO-T5 | 受け取り | 段階が `quantity_confirmed`（数量確定前は `GROUP_G_PO_NOT_CONFIRMED`）。受取日が発注日から今日（日本時間）まで。行ごとに 1〜未納（超えると `GROUP_G_PO_RECEIVE_EXCEEDS_REMAINING`）。権限は `admin.receiving.manage` ＋ `admin.purchase_orders.read` | 受取（`receive`）・受取行・台帳の入庫（`restock`・無タグ）を書き、納品済み +q・未納 −q・行と発注書の版 +1、続けて FIFO で待つ注文へ割り当てる。納品済みの合計が変わるので導出する表示段階が変わる（`quantity_confirmed` → `partially_received` → `received`）。段階は変えない | `admin_receive_purchase_order`（Task 7） |
 | ST-PO-T6 | 残りを打ち切る | 段階が `quantity_confirmed`。選んだ行の未納が全て1以上（未納0の行を含むと `GROUP_G_PO_NOTHING_TO_CLOSE`）。理由が必須 | 確定数量を納品済みまで下げ、未納0にする（確定10・納品6 は発注数量6・未納0、`closed_quantity`＝4）。履歴（`short_close`）と打切りを残し、版 +1。段階は変えない。入庫・台帳・割当は動かさない。誤った打切りは理由付きの数量の訂正（ST-PO-T4）で戻せる | `admin_short_close_purchase_order`（Task 6） |
+| ST-PO-T7 | 受け取りの取消・数量訂正（同じ操作） | 段階は問わない（受取が当発注書の `receive` の受取で、行が当受取の正の行）。理由が必須。取り消す数は行の取り消せる数（その行の数量 − 既にその行を相殺した合計）以下（超えると `GROUP_G_PO_REVERSE_EXCEEDS_RECEIVED`）。variant ごとに 取り消す数 ≤ 空き在庫 ＋ 外せる支払い済みの割当（超えると `GROUP_G_PO_REVERSE_STOCK_INSUFFICIENT`）。外す点数があるのに確認の数が無い・違うと `GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED` | 相殺の受取（`reverse`・理由）と負の受取行（相殺元つき）・台帳の `adjustment`（無タグ）を追記し、納品済み −q・未納 +q（確定数量は不変）、行と発注書の版 +1。元の受取と行は変えない。在庫は G-1 の減らし方（空き在庫の次に、支払い済みの割当を新しい注文から外す）。納品済みの合計が変わるので表示段階も変わる（`received` → `partially_received`、打切りで `closed` だった発注書は、未納が復活して `partially_received` か `quantity_confirmed`）。段階は変えない | `admin_reverse_purchase_order_receipt`（Task 7） |
 
-どの書込みも、引数の検証 → 共通のロック → 権限（`admin.purchase_orders.manage` ＋ `admin.purchase_orders.read`）→ 指紋と再送 → 存在（`GROUP_G_PO_NOT_FOUND`）→ 版（`GROUP_G_PO_VERSION_CONFLICT`）→ 業務規則 の順に確かめる。指紋に版は含めないので、版が進んだ後に古い版で再送しても保存した結果を返す。
+どの書込みも、引数の検証 → 共通のロック → 権限（受け取りとその取消は `admin.receiving.manage` ＋ `admin.purchase_orders.read`、他は `admin.purchase_orders.manage` ＋ `admin.purchase_orders.read`）→ 指紋と再送 → 存在（`GROUP_G_PO_NOT_FOUND`）→ 版（`GROUP_G_PO_VERSION_CONFLICT`）→ 業務規則 の順に確かめる。指紋に版は含めないので、版が進んだ後に古い版で再送しても保存した結果を返す。
 
 逆向きの遷移（`quantity_confirmed` から `ordered` へ戻す）は無い。`UPDATE` は `purchase_orders` の `version` を1つずつ進め、共通の鍵を持つ接続だけが書ける（DB の守り）。
 
@@ -96,9 +97,9 @@ stateDiagram-v2
 | 層 | テスト |
 | --- | --- |
 | 単体 | [共通の定義（段階の文・エラー表・読取の検査）](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)、[画面の段階の文](../../../tests/unit/components/PurchaseOrderDetailSection.test.tsx) |
-| DB 結合 | [発注の作成（版 1・段階 ordered）](../../../tests/integration/db/group_g2_purchase_create.integration.test.ts)、[発注書の9表と守り](../../../tests/integration/db/group_g2_purchase_model.integration.test.ts)、[発注の読取（表示段階の導出）](../../../tests/integration/db/group_g2_purchase_reads.integration.test.ts)、[数量の確定・訂正・打切り・発注先の訂正（関数を通した段階）](../../../tests/integration/db/group_g2_purchase_quantities.integration.test.ts) |
+| DB 結合 | [発注の作成（版 1・段階 ordered）](../../../tests/integration/db/group_g2_purchase_create.integration.test.ts)、[発注書の9表と守り](../../../tests/integration/db/group_g2_purchase_model.integration.test.ts)、[発注の読取（表示段階の導出）](../../../tests/integration/db/group_g2_purchase_reads.integration.test.ts)、[数量の確定・訂正・打切り・発注先の訂正（関数を通した段階）](../../../tests/integration/db/group_g2_purchase_quantities.integration.test.ts)、[受け取り（関数を通した部分受取・全受取・打切り）](../../../tests/integration/db/group_g2_purchase_receipts.integration.test.ts)、[受け取りの取消（打切りの復活）](../../../tests/integration/db/group_g2_purchase_receipt_reversals.integration.test.ts) |
 
 ## 未確認事項
 
-- 導出の式は Task 5 の試験が、直接 INSERT / UPDATE の材料で全分岐（`ordered`・`quantity_confirmed`・`partially_received`・`received`・`closed`、打切りを数量の変わる再確定で戻した場合、打切りの後に単価だけの `quantity` の版を足しても `closed` のままの場合）を確かめる。数量確定・打切り・受け取りの**関数を通した**段階の遷移は、数量の確定・訂正・打切り・取消・打切りを再確定で戻して全部を受け取った後の `received`・打切りの後の単価の追加が Task 6 の試験（受取の材料は試験内で作る）、受取の関数を通した部分受取・全受取は Task 7 の試験が確かめる。Task 6 の確定・訂正の関数は、単価だけが変わった明細にも `quantity` の版を書く（`before_quantity` = `after_quantity`）ことを、この規則が前提にしている（Task 6 の静的な試験がその書き方の文を固定し、DB の試験が打切りの後に単価を足しても `closed` のままであることを確かめる）。
-- 数量の確定・訂正・打切り・取消・発注先の訂正の関数（Task 6）は実装済み（ローカルの使い捨て DB での実行は controller が行う）。受け取りの関数（Task 7）は未実装で、遷移表の「実行」が Task 7 になっている ST-PO-T5 はまだコードに無い。
+- 導出の式は Task 5 の試験が、直接 INSERT / UPDATE の材料で全分岐（`ordered`・`quantity_confirmed`・`partially_received`・`received`・`closed`、打切りを数量の変わる再確定で戻した場合、打切りの後に単価だけの `quantity` の版を足しても `closed` のままの場合）を確かめる。数量確定・打切り・受け取りの**関数を通した**段階の遷移は、数量の確定・訂正・打切り・取消・打切りを再確定で戻して全部を受け取った後の `received`・打切りの後の単価の追加が Task 6 の試験（受取の材料は試験内で作る）、受取の関数を通した部分受取・全受取・取消・打切りの復活は Task 7 の試験（受け取り・受け取りの取消・発注の読取の「本物の操作でも導かれる」）が確かめる。Task 6 の確定・訂正の関数は、単価だけが変わった明細にも `quantity` の版を書く（`before_quantity` = `after_quantity`）ことを、この規則が前提にしている（Task 6 の静的な試験がその書き方の文を固定し、DB の試験が打切りの後に単価を足しても `closed` のままであることを確かめる）。
+- 数量の確定・訂正・打切り・取消・発注先の訂正の関数（Task 6）は実装済み（ローカルの使い捨て DB での実行は controller が行う）。受け取りとその取消・数量訂正の関数（Task 7。ST-PO-T5・T7）も実装済みで、使い捨てのローカル DB（`db reset` の後）で DB の試験が通っている（2026-10-25）。本番へは未適用。

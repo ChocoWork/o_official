@@ -29,7 +29,7 @@
 | [Webhookキュー](stripe-webhook-queue.md) | `stripe_webhook_events.processing_status` | enqueue・claim・complete・fail RPC、Cron worker |
 | [決済の要対応](payment-exception.md) | `payment_exceptions.resolved_at`等 | 検出upsert・通知claim・管理解決RPC |
 | [在庫の割当（G-1）](inventory-allocation.md) | `order_item_allocations` の `kind` と `remaining_quantity`、支払額の違いの保留、`orders.paid_at` | 注文受付・入金・FIFO・解放・返金の各RPC（共通の在庫の鍵の下） |
-| [発注書（G-2）](purchasing.md) | `purchase_orders.stage`（保存する2段階）と、納品・未納・打切りから導く5つの表示段階 | 発注の作成（Task 4）、数量の確定・訂正・打切り・取消・発注先の訂正（Task 6）。受け取りは後続 Task（共通の在庫の鍵の下） |
+| [発注書（G-2）](purchasing.md) | `purchase_orders.stage`（保存する2段階）と、納品・未納・打切りから導く5つの表示段階 | 発注の作成（Task 4）、数量の確定・訂正・打切り・取消・発注先の訂正（Task 6）、受け取りとその取消・数量訂正（Task 7。共通の在庫の鍵の下） |
 
 ## 共通フォーマット
 

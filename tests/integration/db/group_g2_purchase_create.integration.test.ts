@@ -135,7 +135,7 @@ describe('G-2 writers migration の発注作成の節（DB なし）', () => {
     expect(delegate).toContain('SELECT private.admin_create_purchase_order(_supplier_name, _memo, _lines, _actor_id, _request_key);');
   });
 
-  test('FREQ-526-AC-02: 書き手の一覧は G-1 の56本を1文字も変えず、末尾に admin_create_purchase_order と Task 6 の3本（発注先・メモの訂正、数量の確定・訂正、残りの打切り）を足した60本', () => {
+  test('FREQ-526-AC-02: 書き手の一覧は G-1 の56本を1文字も変えず、末尾に admin_create_purchase_order と Task 6 の3本（発注先・メモの訂正、数量の確定・訂正、残りの打切り）と Task 7 の2本（受け取り、受け取りの取消）を足した62本', () => {
     const g1 = allowlistOf(withoutComments(G1_SQL), 'CREATE FUNCTION private.group_g_writer_allowlist()');
     const next = allowlistOf(WRITERS_CODE, 'CREATE OR REPLACE FUNCTION private.group_g_writer_allowlist()');
     expect(g1).toHaveLength(56);
@@ -144,13 +144,15 @@ describe('G-2 writers migration の発注作成の節（DB なし）', () => {
       'private.admin_update_purchase_order_header(uuid,integer,text,text,text,uuid,uuid)',
       'private.admin_confirm_purchase_order_quantities(uuid,integer,jsonb,text,uuid,uuid)',
       'private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)',
+      'private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid)',
+      'private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)',
     ]);
-    expect(new Set(next).size).toBe(60);
+    expect(new Set(next).size).toBe(62);
     const header = functionText(WRITERS_CODE, 'CREATE OR REPLACE FUNCTION private.group_g_writer_allowlist()', 'SELECT ARRAY[');
     expect(header).toContain("LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''");
   });
 
-  test('FREQ-540-AC-07: 最後の確かめに $g2b_final_objects$ と $g2b_final_table_acl$ を置き、60本・関数の ACL・PG17 の MAINTAIN を見る', () => {
+  test('FREQ-540-AC-07: 最後の確かめに $g2b_final_objects$ と $g2b_final_table_acl$ を置き、62本・関数の ACL・PG17 の MAINTAIN を見る', () => {
     const section = WRITERS_SQL.slice(WRITERS_SQL.indexOf('-- G2B_FINAL_ASSERT_BEGIN'), WRITERS_SQL.indexOf('-- G2B_FINAL_ASSERT_END'));
     for (const tag of ['$g2b_final_objects$', '$g2b_final_table_acl$']) {
       expect(section.split(`DO ${tag}`)).toHaveLength(2);
@@ -160,7 +162,8 @@ describe('G-2 writers migration の発注作成の節（DB なし）', () => {
       expect(section).toContain(`v_failed := '${detail}'`);
     }
     expect(section.match(/RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = v_failed/g)).toHaveLength(2);
-    expect(section).toContain('<> 60');
+    expect(section).toContain('<> 62');
+    expect(section).not.toContain('<> 60');
     expect(section).not.toContain('<> 57');
     expect(section).toContain("ARRAY['MAINTAIN']");
     expect(section).toContain("pg_catalog.current_setting('server_version_num')::integer >= 170000");

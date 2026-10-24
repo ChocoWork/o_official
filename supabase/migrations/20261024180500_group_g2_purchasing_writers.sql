@@ -1,6 +1,7 @@
--- G-2 writers (Tasks 4 and 6): the purchase-order lock helper, create a purchase order (FREQ-526), correct the supplier and
--- memo, confirm / correct the quantities and short close the rest (FREQ-527, FREQ-528) and the writer allowlist
--- (56 G-1 entries + the 4 purchase-order writers = 60). Later G-2 tasks extend the body section of this file.
+-- G-2 writers (Tasks 4, 6 and 7): the purchase-order lock helper, create a purchase order (FREQ-526), correct the supplier and
+-- memo, confirm / correct the quantities and short close the rest (FREQ-527, FREQ-528), receive goods and cancel / correct a
+-- receipt (FREQ-529) and the writer allowlist (56 G-1 entries + the 6 purchase-order writers = 62). Later G-2 tasks extend the
+-- body section of this file.
 -- Always applied after 20261024153505_group_g2_purchasing_foundation.sql. Applied SQL is never edited.
 BEGIN;
 
@@ -554,9 +555,413 @@ ALTER FUNCTION public.admin_short_close_purchase_order(uuid,integer,uuid[],text,
 REVOKE ALL ON FUNCTION public.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid) TO service_role;
 
--- 6. The closed list of writers. The 56 entries of 20261023211425_group_g1_allocation.sql:8897 stay exactly as they were;
---    Task 4 added private.admin_create_purchase_order (it writes private.group_g_operations) as the 57th, and this Task adds
---    the three writers above (each one writes private.group_g_operations) as the 58th to the 60th. Later G-2 tasks
+-- 6. Receive goods against a purchase order (FREQ-529, Task 7): the only G-2 writer that adds stock. One database
+--    transaction, in this order: argument check (22023; no table is read) -> lock helper WITH inventory (advisory first, then
+--    the lines' variants read after it, the inventory closure, the order, its lines) -> permission (admin.receiving.manage +
+--    admin.purchase_orders.read, 42501) -> fingerprint (no version) and replay / conflict (23505) -> existence (P0002) ->
+--    stage (GROUP_G_PO_NOT_CONFIRMED / 55000) -> version (GROUP_G_PO_VERSION_CONFLICT / 55000) -> received_on between the order
+--    date and today in Asia/Tokyo (GROUP_G_PO_RECEIVED_ON_INVALID / 22023) -> every line belongs to the order (22023) and
+--    quantity <= outstanding (GROUP_G_PO_RECEIVE_EXCEEDS_REMAINING / 23514). Nothing is written before every check passed.
+--    _lines = [{"lineId": uuid, "quantity": 1..99999}] (1 to 100 lines, a line at most once, exactly these two keys).
+--    Writes (G-1 ledger form): one receipt header (kind receive); per line (lineId ascending) a stock_movements row
+--    (delta +quantity, reason restock, note "<PO number> receipt", NO allocation_operation_id, so the G-1 consistency trigger of
+--    tagged rows never applies) and the receipt line tied to it, received_quantity += quantity and the line version + 1; the
+--    order version + 1. Then private.allocate_group_g_fifo for exactly the variants received (oldest waiting order first; a
+--    buyer's own hold or allocation is never taken; only FIFO tags a ledger row) and one item state record of reason
+--    purchase_order_receive. The result {receiptId, version, allocatedQuantity, replayed} is stored in group_g_operations
+--    (operation purchase_order_receive, cause_type purchase_order, cause_id = the order). app.group_g_operation_id is set just
+--    before the first write and restored on success and on failure (the G-1 form). The note is built from unicode escapes
+--    because this file is ASCII only.
+CREATE FUNCTION private.admin_receive_purchase_order(_purchase_order_id uuid, _expected_version integer, _received_on date,
+  _memo text, _lines jsonb, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_memo text := NULLIF(pg_catalog.regexp_replace(_memo, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '');
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+  v_orders uuid[];
+  v_before jsonb;
+  v_fingerprint text;
+  v_existing private.group_g_operations%ROWTYPE;
+  v_order public.purchase_orders%ROWTYPE;
+  v_line record;
+  v_receipt uuid;
+  v_movement bigint;
+  v_variants bigint[] := ARRAY[]::bigint[];
+  v_allocated integer;
+  v_version integer;
+  v_result jsonb;
+BEGIN
+  IF _purchase_order_id IS NULL OR _expected_version IS NULL OR _expected_version < 1 OR _received_on IS NULL
+    OR _actor_id IS NULL OR _request_key IS NULL OR pg_catalog.char_length(v_memo) > 200 THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF _lines IS NULL OR pg_catalog.jsonb_typeof(_lines) <> 'array' THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF pg_catalog.jsonb_array_length(_lines) NOT BETWEEN 1 AND 100 THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  -- every element is an object with exactly lineId and quantity; each value is checked as text before any cast
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)
+    WHERE CASE
+      WHEN pg_catalog.jsonb_typeof(e.value) <> 'object' THEN true
+      WHEN (SELECT pg_catalog.count(*) FROM pg_catalog.jsonb_object_keys(e.value)) <> 2 THEN true
+      WHEN pg_catalog.jsonb_typeof(e.value -> 'lineId') IS DISTINCT FROM 'string'
+        OR pg_catalog.jsonb_typeof(e.value -> 'quantity') IS DISTINCT FROM 'number' THEN true
+      WHEN (e.value ->> 'lineId') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN true
+      WHEN (e.value ->> 'quantity') !~ '^[1-9][0-9]{0,4}$' THEN true
+      ELSE false
+    END
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF (SELECT pg_catalog.count(DISTINCT (e.value ->> 'lineId')::uuid) FROM pg_catalog.jsonb_array_elements(_lines) AS e(value))
+     <> pg_catalog.jsonb_array_length(_lines) THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  v_orders := private.lock_group_g_purchase_orders(ARRAY[_purchase_order_id], true);
+  IF NOT private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.receiving.manage', 'admin.purchase_orders.read']) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+
+  v_fingerprint := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+    'operation', 'purchase_order_receive', 'purchase_order_id', _purchase_order_id,
+    'received_on', pg_catalog.to_char(_received_on, 'YYYY-MM-DD'), 'memo', v_memo,
+    'lines', (SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('lineId', (e.value ->> 'lineId')::uuid,
+                'quantity', (e.value ->> 'quantity')::integer) ORDER BY (e.value ->> 'lineId')::uuid)
+              FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)),
+    'actor_id', _actor_id)::text, 'UTF8')), 'hex');
+  SELECT op.* INTO v_existing FROM private.group_g_operations AS op
+    WHERE op.operation = 'purchase_order_receive' AND op.request_key = _request_key;
+  IF FOUND THEN
+    IF v_existing.fingerprint <> v_fingerprint THEN
+      RAISE EXCEPTION 'GROUP_G_REQUEST_KEY_CONFLICT' USING ERRCODE = '23505';
+    END IF;
+    RETURN v_existing.result || pg_catalog.jsonb_build_object('replayed', true);
+  END IF;
+
+  SELECT po.* INTO v_order FROM public.purchase_orders AS po WHERE po.id = _purchase_order_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'GROUP_G_PO_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_order.stage <> 'quantity_confirmed' THEN
+    RAISE EXCEPTION 'GROUP_G_PO_NOT_CONFIRMED' USING ERRCODE = '55000';
+  END IF;
+  IF v_order.version <> _expected_version THEN
+    RAISE EXCEPTION 'GROUP_G_PO_VERSION_CONFLICT' USING ERRCODE = '55000';
+  END IF;
+  IF _received_on < (v_order.ordered_at AT TIME ZONE 'Asia/Tokyo')::date
+     OR _received_on > (pg_catalog.now() AT TIME ZONE 'Asia/Tokyo')::date THEN
+    RAISE EXCEPTION 'GROUP_G_PO_RECEIVED_ON_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)
+    WHERE NOT EXISTS (SELECT 1 FROM public.purchase_order_lines AS l
+                      WHERE l.id = (e.value ->> 'lineId')::uuid AND l.purchase_order_id = _purchase_order_id)
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.purchase_order_lines AS l
+    JOIN pg_catalog.jsonb_array_elements(_lines) AS e(value) ON l.id = (e.value ->> 'lineId')::uuid
+    WHERE (e.value ->> 'quantity')::integer > COALESCE(l.outstanding_quantity, 0)
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_PO_RECEIVE_EXCEEDS_REMAINING' USING ERRCODE = '23514';
+  END IF;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  INSERT INTO public.purchase_order_receipts(purchase_order_id, kind, received_on, memo, actor_id, operation_id)
+    VALUES(_purchase_order_id, 'receive', _received_on, v_memo, _actor_id, v_operation) RETURNING id INTO v_receipt;
+  FOR v_line IN
+    SELECT l.id AS line_id, l.variant_id, (e.value ->> 'quantity')::integer AS quantity
+    FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)
+    JOIN public.purchase_order_lines AS l ON l.id = (e.value ->> 'lineId')::uuid
+    ORDER BY l.id
+  LOOP
+    INSERT INTO public.stock_movements(variant_id, delta, reason, note, created_by)
+      VALUES(v_line.variant_id, v_line.quantity, 'restock',
+        U&'\767A\6CE8 ' || v_order.number || U&' \306E\53D7\3051\53D6\308A', _actor_id)
+      RETURNING id INTO v_movement;
+    INSERT INTO public.purchase_order_receipt_lines(receipt_id, line_id, quantity, stock_movement_id)
+      VALUES(v_receipt, v_line.line_id, v_line.quantity, v_movement);
+    UPDATE public.purchase_order_lines SET received_quantity = received_quantity + v_line.quantity, version = version + 1,
+        updated_at = pg_catalog.now()
+      WHERE id = v_line.line_id;
+    v_variants := v_variants || v_line.variant_id;
+  END LOOP;
+  v_version := v_order.version + 1;
+  UPDATE public.purchase_orders SET version = v_version, updated_at = pg_catalog.now() WHERE id = _purchase_order_id;
+
+  v_allocated := private.allocate_group_g_fifo(v_variants, v_operation, _actor_id);
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'purchase_order_receive', _actor_id);
+
+  v_result := pg_catalog.jsonb_build_object('receiptId', v_receipt::text, 'version', v_version,
+    'allocatedQuantity', v_allocated, 'replayed', false);
+  INSERT INTO private.group_g_operations(id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+    VALUES(v_operation, 'purchase_order_receive', _request_key, v_fingerprint, 'purchase_order', _purchase_order_id::text,
+      _actor_id, v_result);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RETURN v_result;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid) TO service_role;
+
+CREATE FUNCTION public.admin_receive_purchase_order(_purchase_order_id uuid, _expected_version integer, _received_on date,
+  _memo text, _lines jsonb, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.admin_receive_purchase_order(_purchase_order_id, _expected_version, _received_on, _memo, _lines, _actor_id, _request_key); $$;
+ALTER FUNCTION public.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid) TO service_role;
+
+-- 7. Cancel a receipt or correct its quantity (FREQ-529): the same operation. Cancel = every line of the receipt by its whole
+--    reversible quantity, correct = some lines by a part. An offsetting receipt (kind reverse, received_on today in Asia/Tokyo,
+--    the reason) is appended; the receipt and its lines are never changed. _lines = [{"receiptLineId": uuid, "quantity": 1..99999}]
+--    (1 to 100 lines, once each, exactly these two keys, all positive lines of _receipt_id). _expected_release_quantity (NULL
+--    allowed, never negative) is the confirmation of how many allocated units will be taken back: the same "confirm, then resend
+--    with a new request key" promise as the G-1 stock decrease. Order of work as in section 6, with the reason required in the
+--    argument stage (GROUP_G_PO_REASON_REQUIRED / 22023, after the other argument checks; also when nothing is released).
+--    Checks, all before the first write: existence (P0002) -> version -> _receipt_id is a kind receive receipt of this order (22023)
+--    -> each line is a positive line of it (22023; an offsetting row cannot be cancelled) -> quantity <= reversible quantity
+--    (quantity minus the offsets already pointing at the line; GROUP_G_PO_REVERSE_EXCEEDS_RECEIVED / 23514) -> per variant
+--    q (to cancel), F (item_variants.stock_quantity read after the lock) and A (remaining_quantity of kind paid allocations of the
+--    locked orders; a payment hold is never taken): q > F + A is GROUP_G_PO_REVERSE_STOCK_INSUFFICIENT / 23514; units to take
+--    back = max(q - F, 0) per variant, releasedQuantity = their sum; releasedQuantity > 0 with no expected value, or a different
+--    expected value, is GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED / 55000 with DETAIL {"releasedQuantity": n} (the G-1 test).
+--    Writes (the G-1 decrease form, admin_record_stock_movement): per line (receiptLineId ascending) free stock first, then paid
+--    allocations newest order first (orders.created_at DESC, id DESC, order item DESC, allocation DESC): remaining_quantity
+--    and version, an allocation_release ledger row (+n, tagged, with the order and item, note = the reason) and a release
+--    allocation event of reason stock_adjustment; then the adjustment ledger row (-q, NOT tagged, note "<PO number> receipt
+--    cancelled"), the offsetting receipt line (-q, reverses_receipt_line_id, tied to that row), received_quantity -= q and the line
+--    version + 1; the order version + 1. Then FIFO (nothing is left over, so 0 units) and one item state record of reason
+--    stock_move (the reason G-1 uses for a stock decrease; the plan's stock_adjustment wording lost to G-1 parity). Only
+--    unshipped paid allocations exist (shipping consumes remaining_quantity), so shipped units are never taken back.
+--    The result {receiptId (the offsetting receipt), version, releasedQuantity, replayed} is stored in group_g_operations
+--    (operation purchase_order_receipt_reverse, cause_type purchase_order, cause_id = the order).
+CREATE FUNCTION private.admin_reverse_purchase_order_receipt(_purchase_order_id uuid, _expected_version integer, _receipt_id uuid,
+  _lines jsonb, _reason text, _expected_release_quantity integer, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_reason text := NULLIF(pg_catalog.regexp_replace(_reason, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '');
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_previous_operation text := pg_catalog.current_setting('app.group_g_operation_id', true);
+  v_orders uuid[];
+  v_before jsonb;
+  v_fingerprint text;
+  v_existing private.group_g_operations%ROWTYPE;
+  v_order public.purchase_orders%ROWTYPE;
+  v_line record;
+  v_allocation record;
+  v_receipt uuid;
+  v_free integer;
+  v_remaining integer;
+  v_quantity integer;
+  v_release integer;
+  v_release_movement bigint;
+  v_movement bigint;
+  v_variants bigint[] := ARRAY[]::bigint[];
+  v_version integer;
+  v_result jsonb;
+BEGIN
+  IF _purchase_order_id IS NULL OR _expected_version IS NULL OR _expected_version < 1 OR _receipt_id IS NULL
+    OR _actor_id IS NULL OR _request_key IS NULL OR _expected_release_quantity < 0 OR pg_catalog.char_length(v_reason) > 200 THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF _lines IS NULL OR pg_catalog.jsonb_typeof(_lines) <> 'array' THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF pg_catalog.jsonb_array_length(_lines) NOT BETWEEN 1 AND 100 THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  -- every element is an object with exactly receiptLineId and quantity; each value is checked as text before any cast
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)
+    WHERE CASE
+      WHEN pg_catalog.jsonb_typeof(e.value) <> 'object' THEN true
+      WHEN (SELECT pg_catalog.count(*) FROM pg_catalog.jsonb_object_keys(e.value)) <> 2 THEN true
+      WHEN pg_catalog.jsonb_typeof(e.value -> 'receiptLineId') IS DISTINCT FROM 'string'
+        OR pg_catalog.jsonb_typeof(e.value -> 'quantity') IS DISTINCT FROM 'number' THEN true
+      WHEN (e.value ->> 'receiptLineId') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN true
+      WHEN (e.value ->> 'quantity') !~ '^[1-9][0-9]{0,4}$' THEN true
+      ELSE false
+    END
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF (SELECT pg_catalog.count(DISTINCT (e.value ->> 'receiptLineId')::uuid) FROM pg_catalog.jsonb_array_elements(_lines) AS e(value))
+     <> pg_catalog.jsonb_array_length(_lines) THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF v_reason IS NULL THEN
+    RAISE EXCEPTION 'GROUP_G_PO_REASON_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  v_orders := private.lock_group_g_purchase_orders(ARRAY[_purchase_order_id], true);
+  IF NOT private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.receiving.manage', 'admin.purchase_orders.read']) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+
+  v_fingerprint := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+    'operation', 'purchase_order_receipt_reverse', 'purchase_order_id', _purchase_order_id, 'receipt_id', _receipt_id,
+    'lines', (SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('receiptLineId', (e.value ->> 'receiptLineId')::uuid,
+                'quantity', (e.value ->> 'quantity')::integer) ORDER BY (e.value ->> 'receiptLineId')::uuid)
+              FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)),
+    'reason', v_reason, 'expected_release_quantity', _expected_release_quantity, 'actor_id', _actor_id)::text, 'UTF8')), 'hex');
+  SELECT op.* INTO v_existing FROM private.group_g_operations AS op
+    WHERE op.operation = 'purchase_order_receipt_reverse' AND op.request_key = _request_key;
+  IF FOUND THEN
+    IF v_existing.fingerprint <> v_fingerprint THEN
+      RAISE EXCEPTION 'GROUP_G_REQUEST_KEY_CONFLICT' USING ERRCODE = '23505';
+    END IF;
+    RETURN v_existing.result || pg_catalog.jsonb_build_object('replayed', true);
+  END IF;
+
+  SELECT po.* INTO v_order FROM public.purchase_orders AS po WHERE po.id = _purchase_order_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'GROUP_G_PO_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_order.version <> _expected_version THEN
+    RAISE EXCEPTION 'GROUP_G_PO_VERSION_CONFLICT' USING ERRCODE = '55000';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.purchase_order_receipts AS r
+                 WHERE r.id = _receipt_id AND r.purchase_order_id = _purchase_order_id AND r.kind = 'receive') THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)
+    WHERE NOT EXISTS (SELECT 1 FROM public.purchase_order_receipt_lines AS rl
+                      WHERE rl.id = (e.value ->> 'receiptLineId')::uuid AND rl.receipt_id = _receipt_id AND rl.quantity > 0)
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  -- the reversible quantity is the line's quantity minus the offsets already pointing at it (the offsets are negative)
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)
+    JOIN public.purchase_order_receipt_lines AS rl ON rl.id = (e.value ->> 'receiptLineId')::uuid
+    WHERE (e.value ->> 'quantity')::integer > rl.quantity + COALESCE(
+      (SELECT pg_catalog.sum(n.quantity) FROM public.purchase_order_receipt_lines AS n WHERE n.reverses_receipt_line_id = rl.id), 0)
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_PO_REVERSE_EXCEEDS_RECEIVED' USING ERRCODE = '23514';
+  END IF;
+  -- q > F + A for one variant is a refusal; the units to take back are max(q - F, 0) per variant (F and A are read under the lock;
+  -- only allocations of the locked orders count, so the loop below never touches an unlocked order)
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)
+    JOIN public.purchase_order_receipt_lines AS rl ON rl.id = (e.value ->> 'receiptLineId')::uuid
+    JOIN public.purchase_order_lines AS l ON l.id = rl.line_id
+    JOIN public.item_variants AS v ON v.id = l.variant_id
+    WHERE (e.value ->> 'quantity')::bigint > v.stock_quantity::bigint + COALESCE((
+      SELECT pg_catalog.sum(a.remaining_quantity) FROM public.order_item_allocations AS a
+      JOIN public.order_items AS oi ON oi.id = a.order_item_id
+      WHERE a.variant_id = v.id AND a.kind = 'paid' AND a.remaining_quantity > 0 AND oi.order_id = ANY(v_orders)), 0)
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_PO_REVERSE_STOCK_INSUFFICIENT' USING ERRCODE = '23514';
+  END IF;
+  SELECT COALESCE(pg_catalog.sum(GREATEST((e.value ->> 'quantity')::integer - v.stock_quantity, 0)), 0)::integer INTO v_release
+  FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)
+  JOIN public.purchase_order_receipt_lines AS rl ON rl.id = (e.value ->> 'receiptLineId')::uuid
+  JOIN public.purchase_order_lines AS l ON l.id = rl.line_id
+  JOIN public.item_variants AS v ON v.id = l.variant_id;
+  IF (v_release > 0 AND _expected_release_quantity IS NULL)
+    OR (_expected_release_quantity IS NOT NULL AND _expected_release_quantity <> v_release) THEN
+    RAISE EXCEPTION 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED' USING ERRCODE = '55000',
+      DETAIL = pg_catalog.jsonb_build_object('releasedQuantity', v_release)::text;
+  END IF;
+
+  v_before := private.capture_group_g_item_states(v_orders);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+  INSERT INTO public.purchase_order_receipts(purchase_order_id, kind, received_on, reason, actor_id, operation_id)
+    VALUES(_purchase_order_id, 'reverse', (pg_catalog.now() AT TIME ZONE 'Asia/Tokyo')::date, v_reason, _actor_id, v_operation)
+    RETURNING id INTO v_receipt;
+  FOR v_line IN
+    SELECT rl.id AS receipt_line_id, rl.line_id, l.variant_id, (e.value ->> 'quantity')::integer AS quantity
+    FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)
+    JOIN public.purchase_order_receipt_lines AS rl ON rl.id = (e.value ->> 'receiptLineId')::uuid
+    JOIN public.purchase_order_lines AS l ON l.id = rl.line_id
+    ORDER BY rl.id
+  LOOP
+    SELECT v.stock_quantity INTO v_free FROM public.item_variants AS v WHERE v.id = v_line.variant_id;
+    v_remaining := GREATEST(v_line.quantity - v_free, 0);
+    FOR v_allocation IN
+      SELECT a.id, a.remaining_quantity, a.order_item_id, oi.order_id
+      FROM public.order_item_allocations AS a JOIN public.order_items AS oi ON oi.id = a.order_item_id
+      JOIN public.orders AS o ON o.id = oi.order_id
+      WHERE a.variant_id = v_line.variant_id AND a.kind = 'paid' AND a.remaining_quantity > 0 AND oi.order_id = ANY(v_orders)
+      ORDER BY o.created_at DESC, o.id DESC, oi.id DESC, a.id DESC
+    LOOP
+      EXIT WHEN v_remaining = 0;
+      v_quantity := LEAST(v_remaining, v_allocation.remaining_quantity);
+      UPDATE public.order_item_allocations AS a SET remaining_quantity = a.remaining_quantity - v_quantity, version = a.version + 1
+        WHERE a.id = v_allocation.id;
+      INSERT INTO public.stock_movements(variant_id, delta, reason, note, order_id, order_item_id, allocation_operation_id, created_by)
+        VALUES(v_line.variant_id, v_quantity, 'allocation_release', v_reason, v_allocation.order_id, v_allocation.order_item_id,
+          v_operation, _actor_id)
+        RETURNING id INTO v_release_movement;
+      INSERT INTO public.order_item_allocation_events(allocation_id, event_type, quantity, operation_id, sequence, stock_movement_id, reason, actor_id)
+        VALUES(v_allocation.id, 'release', v_quantity, v_operation, 1, v_release_movement, 'stock_adjustment', _actor_id);
+      v_remaining := v_remaining - v_quantity;
+    END LOOP;
+    INSERT INTO public.stock_movements(variant_id, delta, reason, note, created_by)
+      VALUES(v_line.variant_id, -v_line.quantity, 'adjustment',
+        U&'\767A\6CE8 ' || v_order.number || U&' \306E\53D7\3051\53D6\308A\53D6\6D88', _actor_id)
+      RETURNING id INTO v_movement;
+    INSERT INTO public.purchase_order_receipt_lines(receipt_id, line_id, quantity, reverses_receipt_line_id, stock_movement_id)
+      VALUES(v_receipt, v_line.line_id, -v_line.quantity, v_line.receipt_line_id, v_movement);
+    UPDATE public.purchase_order_lines SET received_quantity = received_quantity - v_line.quantity, version = version + 1,
+        updated_at = pg_catalog.now()
+      WHERE id = v_line.line_id;
+    v_variants := v_variants || v_line.variant_id;
+  END LOOP;
+  v_version := v_order.version + 1;
+  UPDATE public.purchase_orders SET version = v_version, updated_at = pg_catalog.now() WHERE id = _purchase_order_id;
+
+  PERFORM private.allocate_group_g_fifo(v_variants, v_operation, _actor_id);
+  PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'stock_move', _actor_id);
+
+  v_result := pg_catalog.jsonb_build_object('receiptId', v_receipt::text, 'version', v_version,
+    'releasedQuantity', v_release, 'replayed', false);
+  INSERT INTO private.group_g_operations(id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+    VALUES(v_operation, 'purchase_order_receipt_reverse', _request_key, v_fingerprint, 'purchase_order', _purchase_order_id::text,
+      _actor_id, v_result);
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RETURN v_result;
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  RAISE;
+END;
+$$;
+ALTER FUNCTION private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid) TO service_role;
+
+CREATE FUNCTION public.admin_reverse_purchase_order_receipt(_purchase_order_id uuid, _expected_version integer, _receipt_id uuid,
+  _lines jsonb, _reason text, _expected_release_quantity integer, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.admin_reverse_purchase_order_receipt(_purchase_order_id, _expected_version, _receipt_id, _lines, _reason, _expected_release_quantity, _actor_id, _request_key); $$;
+ALTER FUNCTION public.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid) TO service_role;
+
+-- 8. The closed list of writers. The 56 entries of 20261023211425_group_g1_allocation.sql:8897 stay exactly as they were;
+--    Task 4 added private.admin_create_purchase_order (it writes private.group_g_operations) as the 57th, Task 6 added three
+--    writers (58th to 60th), and Task 7 adds the receipt and the receipt cancellation (each one writes the ledger, the
+--    allocations and private.group_g_operations) as the 61st and 62nd. Later G-2 tasks
 --    append their writers. Owner, ACL and signature of the function are unchanged (CREATE OR REPLACE keeps them).
 --    group_g1_writer_inventory scans pg_proc.prosrc against it.
 CREATE OR REPLACE FUNCTION private.group_g_writer_allowlist() RETURNS pg_catalog.regprocedure[]
@@ -622,16 +1027,18 @@ AS $$
     'private.admin_create_purchase_order(text,text,jsonb,uuid,uuid)',
     'private.admin_update_purchase_order_header(uuid,integer,text,text,text,uuid,uuid)',
     'private.admin_confirm_purchase_order_quantities(uuid,integer,jsonb,text,uuid,uuid)',
-    'private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)'
+    'private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)',
+    'private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid)',
+    'private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)'
   ]::pg_catalog.regprocedure[];
 $$;
 
 -- G2B_BODY_END
 
 -- G2B_FINAL_ASSERT_BEGIN
--- Expectation of Tasks 4 and 6: the seven new functions (owner, SECURITY, language, result type, argument names, search_path,
+-- Expectation of Tasks 4, 6 and 7: the eleven new functions (owner, SECURITY, language, result type, argument names, search_path,
 -- and the EXECUTE rights read from the effective ACL where a NULL proacl means the default that includes PUBLIC), the order of
--- the lock helper (the common advisory before any other lock), and the allowlist: exactly the 56 G-1 entries plus the four
+-- the lock helper (the common advisory before any other lock), and the allowlist: exactly the 56 G-1 entries plus the six
 -- purchase-order writers, every one resolving to a function. The expected sets grow with every Task that adds to this file.
 DO $g2b_final_objects$
 DECLARE
@@ -696,7 +1103,9 @@ DECLARE
     'private.admin_create_purchase_order(text,text,jsonb,uuid,uuid)',
     'private.admin_update_purchase_order_header(uuid,integer,text,text,text,uuid,uuid)',
     'private.admin_confirm_purchase_order_quantities(uuid,integer,jsonb,text,uuid,uuid)',
-    'private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)'
+    'private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)',
+    'private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid)',
+    'private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)'
   ];
 BEGIN
   IF EXISTS (
@@ -719,7 +1128,15 @@ BEGIN
       ('private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)', true, true, 'plpgsql', 'jsonb',
         ARRAY['_purchase_order_id', '_expected_version', '_line_ids', '_reason', '_actor_id', '_request_key']),
       ('public.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)', false, true, 'sql', 'jsonb',
-        ARRAY['_purchase_order_id', '_expected_version', '_line_ids', '_reason', '_actor_id', '_request_key'])
+        ARRAY['_purchase_order_id', '_expected_version', '_line_ids', '_reason', '_actor_id', '_request_key']),
+      ('private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid)', true, true, 'plpgsql', 'jsonb',
+        ARRAY['_purchase_order_id', '_expected_version', '_received_on', '_memo', '_lines', '_actor_id', '_request_key']),
+      ('public.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid)', false, true, 'sql', 'jsonb',
+        ARRAY['_purchase_order_id', '_expected_version', '_received_on', '_memo', '_lines', '_actor_id', '_request_key']),
+      ('private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)', true, true, 'plpgsql', 'jsonb',
+        ARRAY['_purchase_order_id', '_expected_version', '_receipt_id', '_lines', '_reason', '_expected_release_quantity', '_actor_id', '_request_key']),
+      ('public.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)', false, true, 'sql', 'jsonb',
+        ARRAY['_purchase_order_id', '_expected_version', '_receipt_id', '_lines', '_reason', '_expected_release_quantity', '_actor_id', '_request_key'])
     ) AS e(sig, definer, service, lang, ret, names)
     LEFT JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(e.sig)
     WHERE p.oid IS NULL
@@ -748,8 +1165,8 @@ BEGIN
   ) THEN
     v_failed := 'purchase_writer_lock_order';
   ELSIF EXISTS (SELECT 1 FROM pg_catalog.unnest(v_writers) AS w(s) WHERE pg_catalog.to_regprocedure(w.s) IS NULL)
-     OR (SELECT pg_catalog.count(DISTINCT pg_catalog.to_regprocedure(w.s)) FROM pg_catalog.unnest(v_writers) AS w(s)) <> 60
-     OR pg_catalog.cardinality(private.group_g_writer_allowlist()) <> 60 THEN
+     OR (SELECT pg_catalog.count(DISTINCT pg_catalog.to_regprocedure(w.s)) FROM pg_catalog.unnest(v_writers) AS w(s)) <> 62
+     OR pg_catalog.cardinality(private.group_g_writer_allowlist()) <> 62 THEN
     v_failed := 'purchase_writer_allowlist_missing';
   ELSIF (SELECT pg_catalog.array_agg(x::oid ORDER BY x::oid) FROM pg_catalog.unnest(private.group_g_writer_allowlist()) AS a(x))
      IS DISTINCT FROM (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(w.s)::oid ORDER BY pg_catalog.to_regprocedure(w.s)::oid)
@@ -780,6 +1197,8 @@ BEGIN
       ('public.purchase_order_lines'),
       ('public.purchase_order_revisions'),
       ('public.purchase_order_short_closures'),
+      ('public.purchase_order_receipts'),
+      ('public.purchase_order_receipt_lines'),
       ('private.group_g_operations')
     ) AS e(rel)
     CROSS JOIN LATERAL (SELECT pg_catalog.to_regclass(e.rel) AS r) AS t

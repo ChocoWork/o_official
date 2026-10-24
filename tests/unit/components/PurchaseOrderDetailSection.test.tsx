@@ -166,7 +166,7 @@ describe('PurchaseOrderDetailSection', () => {
         ...detail.receipts,
         {
           id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2', kind: 'reverse', receivedOn: '2026-10-27', memo: null, reason: '数え間違い',
-          actorId: detail.createdBy, createdAt: '2026-10-27T01:00:00+00:00',
+          actorId: detail.createdBy, actorEmail: null, createdAt: '2026-10-27T01:00:00+00:00',
           lines: [{ id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2', lineId: detail.lines[0].id, quantity: -1, reversesReceiptLineId: detail.receipts[0].lines[0].id, reversibleQuantity: 0 }],
         },
       ],
@@ -598,5 +598,220 @@ describe('PurchaseOrderDetailSection: 数量の確定・訂正・打切り・取
     expect(screen.getByRole('dialog', { name: '数量の訂正' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: '発注書 PO-20261025-0001' })).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('PRIVATE-MARKER');
+  });
+});
+
+describe('PurchaseOrderDetailSection: 受け取りと、その取消・数量訂正（Task 7）', () => {
+  const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
+  const gets = () => fetchMock.mock.calls.filter(([, init]) => init?.method === undefined);
+  const bodyOf = (index: number) => JSON.parse(String(posts()[index][1]?.body)) as Record<string, unknown>;
+  const button = (name: string) => screen.getByRole('button', { name });
+  const queryButton = (name: string) => screen.queryByRole('button', { name });
+  const RECEIPT_ID_1 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
+  const NEW_RECEIPT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb9';
+  const user = () => userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+  beforeEach(() => {
+    // 日付だけ固定する(タイマーと microtask は本物のまま)。受取日の初期値(今日・日本時間)を 2026-10-27 にそろえる
+    jest.useFakeTimers({
+      now: new Date('2026-10-27T03:00:00.000Z'),
+      doNotFake: [
+        'hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame', 'cancelAnimationFrame',
+        'requestIdleCallback', 'cancelIdleCallback', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval',
+        'setTimeout', 'clearTimeout',
+      ],
+    });
+  });
+  afterEach(() => jest.useRealTimers());
+
+  /** 全行を受け取り済み(未納 0)にした発注書。受け取りの履歴は 1 件(取り消せる数が残る) */
+  const fullyReceived = (): PurchaseOrderDetail => {
+    const detail = confirmedDetail();
+    return {
+      ...detail,
+      displayStage: 'received',
+      lines: detail.lines.map((line) => ({ ...line, receivedQuantity: line.orderQuantity ?? 0, outstandingQuantity: 0 })),
+    };
+  };
+
+  test('FREQ-529-AC-01: 数量確定後で未納のある行がある時は「全部受け取る」「一部を受け取る」を出す', async () => {
+    await loaded(confirmedDetail());
+    expect(button('全部受け取る')).toBeEnabled();
+    expect(button('一部を受け取る')).toBeEnabled();
+  });
+
+  test('FREQ-529-AC-01: 数量確定前は受け取りのボタンを出さない', async () => {
+    await loaded(orderedDetail());
+    expect(queryButton('全部受け取る')).not.toBeInTheDocument();
+    expect(queryButton('一部を受け取る')).not.toBeInTheDocument();
+  });
+
+  test('FREQ-529-AC-01: 未納が全部 0 なら受け取りのボタンを出さない', async () => {
+    await loaded(fullyReceived());
+    expect(queryButton('全部受け取る')).not.toBeInTheDocument();
+    expect(queryButton('一部を受け取る')).not.toBeInTheDocument();
+  });
+
+  test('FREQ-529-AC-01: 「全部受け取る」で「全部を受け取る」、「一部を受け取る」で「一部を受け取る」のダイアログが開き、「戻る」で閉じる(通信しない)', async () => {
+    const actor = user();
+    await loaded(confirmedDetail());
+    await actor.click(button('全部受け取る'));
+    expect(screen.getByRole('dialog', { name: '全部を受け取る' })).toBeInTheDocument();
+    await actor.click(button('戻る'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await actor.click(button('一部を受け取る'));
+    expect(screen.getByRole('dialog', { name: '一部を受け取る' })).toBeInTheDocument();
+    await actor.click(button('戻る'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('FREQ-529-AC-01: 受け取りが成功したら、ダイアログを閉じて「受け取りを記録しました。」を role=status で出し、発注書を読み直す。読み直した発注書が出る', async () => {
+    const actor = user();
+    await loaded(confirmedDetail(), true);
+    await actor.click(button('全部受け取る'));
+    fetchMock.mockResolvedValueOnce(json({ receiptId: NEW_RECEIPT_ID, version: 3, allocatedQuantity: 0, replayed: false }, 201));
+    fetchMock.mockResolvedValueOnce(json({ purchaseOrder: { ...fullyReceived(), version: 3 } }));
+    await actor.click(button('受け取りを確定'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent(/^受け取りを記録しました。$/);
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    await waitFor(() => expect(gets()).toHaveLength(2));
+    expect(gets()[1]).toEqual([`/api/admin/purchase-orders/${ORDER_ID}`, { cache: 'no-store' }]);
+    expect(posts()[0][0]).toBe(`/api/admin/purchase-orders/${ORDER_ID}/receipts`);
+    expect(bodyOf(0)).toMatchObject({ expectedVersion: 2, receivedOn: '2026-10-27', lines: [{ quantity: 3 }, { quantity: 3 }] });
+    // 読み直した発注書(未納 0)では受け取りのボタンが消える
+    await waitFor(() => expect(queryButton('全部受け取る')).not.toBeInTheDocument());
+    expect(queryButton('一部を受け取る')).not.toBeInTheDocument();
+  });
+
+  test('FREQ-529-AC-01: 受け取りの履歴は、取り消せる数が残る受取(kind=receive)にだけ「この受け取りを取り消す」「数量を訂正」を出す。相殺の受取と、取り消せる数が 0 の受取には出さない', async () => {
+    const detail = confirmedDetail();
+    await loaded({
+      ...detail,
+      receipts: [
+        ...detail.receipts,
+        {
+          id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2', kind: 'reverse', receivedOn: '2026-10-27', memo: null, reason: '数え間違い', actorId: detail.createdBy, actorEmail: null,
+          createdAt: '2026-10-27T01:00:00+00:00',
+          lines: [{ id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2', lineId: detail.lines[0].id, quantity: -1, reversesReceiptLineId: detail.receipts[0].lines[0].id, reversibleQuantity: 0 }],
+        },
+        {
+          id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3', kind: 'receive', receivedOn: '2026-10-26', memo: '取り消し済み', reason: null, actorId: detail.createdBy, actorEmail: 'other@example.com',
+          createdAt: '2026-10-26T03:00:00+00:00',
+          lines: [{ id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc3', lineId: detail.lines[1].id, quantity: 1, reversesReceiptLineId: null, reversibleQuantity: 0 }],
+        },
+      ],
+    });
+    const history = screen.getByRole('region', { name: '受け取りの履歴' });
+    const items = within(history).getAllByRole('listitem').filter((item) => item.className.includes('border-black/15'));
+    expect(items).toHaveLength(3);
+    // 受取ごとに日付つきの名前(頁の「数量を訂正」と区別する)。見える文字は計画のとおり
+    expect(within(items[0]).getByRole('button', { name: 'この受け取りを取り消す（2026/10/26）' })).toHaveTextContent(/^この受け取りを取り消す$/);
+    expect(within(items[0]).getByRole('button', { name: '数量を訂正（2026/10/26）' })).toHaveTextContent(/^数量を訂正$/);
+    expect(within(items[1]).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(items[2]).queryByRole('button')).not.toBeInTheDocument();
+    // 頁の「数量を訂正」は 1 つだけ(受取の物と取り違えない)
+    expect(screen.getAllByRole('button', { name: '数量を訂正' })).toHaveLength(1);
+  });
+
+  test('FREQ-529-AC-04: 「この受け取りを取り消す」で「受け取りの取消」のダイアログが、「数量を訂正」(受取の物)で「受け取り数量の訂正」のダイアログが開き、「戻る」で閉じる', async () => {
+    const actor = user();
+    await loaded(confirmedDetail());
+    await actor.click(button('この受け取りを取り消す（2026/10/26）'));
+    const cancel = screen.getByRole('dialog', { name: '受け取りの取消' });
+    expect(within(cancel).getAllByTestId('purchase-order-reverse-row')).toHaveLength(1);
+    expect(cancel).toHaveTextContent('シャツ BLACK M');
+    await actor.click(button('戻る'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await actor.click(button('数量を訂正（2026/10/26）'));
+    expect(screen.getByRole('dialog', { name: '受け取り数量の訂正' })).toBeInTheDocument();
+    await actor.click(button('戻る'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('FREQ-529-AC-04: 取消が成功したら、ダイアログを閉じて「受け取りを取り消しました。」を出し、発注書を読み直す(同じ受取への POST は /receipts/[receiptId]/reversals)', async () => {
+    const actor = user();
+    await loaded(confirmedDetail());
+    await actor.click(button('この受け取りを取り消す（2026/10/26）'));
+    fetchMock.mockResolvedValueOnce(json({ receiptId: NEW_RECEIPT_ID, version: 3, releasedQuantity: 0, replayed: false }, 201));
+    fetchMock.mockResolvedValueOnce(json({ purchaseOrder: { ...confirmedDetail(), version: 3 } }));
+    await actor.type(screen.getByRole('textbox', { name: '理由' }), '数え間違い');
+    await actor.click(button('取り消す'));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent(/^受け取りを取り消しました。$/);
+    await waitFor(() => expect(gets()).toHaveLength(2));
+    expect(posts()[0][0]).toBe(`/api/admin/purchase-orders/${ORDER_ID}/receipts/${RECEIPT_ID_1}/reversals`);
+    expect(bodyOf(0)).toMatchObject({ expectedVersion: 2, lines: [{ quantity: 2 }], reason: '数え間違い' });
+  });
+
+  test('FREQ-529-AC-04: 外す割当の確認(409)は、ダイアログの中で本文「割り当て済みの品を3点外し、受注生産中に戻します。」を出し、確認後は新しい requestKey と確認の数で送って、成功したら「受け取り数量を訂正しました。」', async () => {
+    const actor = user();
+    await loaded(confirmedDetail());
+    await actor.click(button('数量を訂正（2026/10/26）'));
+    await actor.type(screen.getByRole('spinbutton', { name: '取り消す数' }), '1');
+    await actor.type(screen.getByRole('textbox', { name: '理由' }), '1点多く数えた');
+    fetchMock.mockResolvedValueOnce(json({ code: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', error: 'x', releasedQuantity: 3 }, 409));
+    await actor.click(button('訂正する'));
+    expect(await screen.findByTestId('purchase-order-release-confirmation')).toHaveTextContent('割り当て済みの品を3点外し、受注生産中に戻します。');
+    expect(screen.getByRole('dialog', { name: '受け取り数量の訂正' })).toBeInTheDocument();
+
+    fetchMock.mockResolvedValueOnce(json({ receiptId: NEW_RECEIPT_ID, version: 3, releasedQuantity: 3, replayed: false }, 201));
+    fetchMock.mockResolvedValueOnce(json({ purchaseOrder: { ...confirmedDetail(), version: 3 } }));
+    await actor.click(button('訂正する'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent(/^受け取り数量を訂正しました。$/);
+    expect(posts()).toHaveLength(2);
+    expect(bodyOf(1).expectedReleaseQuantity).toBe(3);
+    expect(bodyOf(1).requestKey).not.toBe(bodyOf(0).requestKey);
+  });
+
+  test('FREQ-529-AC-04: 読み直しで取り消せる数が無くなった受取のダイアログは出さない(開いたまま版が変わっても、受取が取り消し済みになれば閉じる)', async () => {
+    const actor = user();
+    await loaded(confirmedDetail());
+    await actor.click(button('この受け取りを取り消す（2026/10/26）'));
+    expect(screen.getByRole('dialog', { name: '受け取りの取消' })).toBeInTheDocument();
+    const reversed = confirmedDetail();
+    fetchMock.mockResolvedValueOnce(json({ code: 'GROUP_G_PO_VERSION_CONFLICT', error: 'x' }, 409));
+    fetchMock.mockResolvedValueOnce(json({
+      purchaseOrder: { ...reversed, version: 4, receipts: [{ ...reversed.receipts[0], lines: [{ ...reversed.receipts[0].lines[0], reversibleQuantity: 0 }] }] },
+    }));
+    await actor.type(screen.getByRole('textbox', { name: '理由' }), '数え間違い');
+    await actor.click(button('取り消す'));
+    await waitFor(() => expect(gets()).toHaveLength(2));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(queryButton('この受け取りを取り消す（2026/10/26）')).not.toBeInTheDocument();
+  });
+
+  test('FREQ-529-AC-01: 受け取りの履歴は受取ごとに「実行者 ${メールアドレス}」を出す(アカウントが無ければ「実行者 —」)。相殺の受取にも出る', async () => {
+    const detail = confirmedDetail();
+    await loaded({
+      ...detail,
+      receipts: [
+        detail.receipts[0],
+        {
+          id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2', kind: 'reverse', receivedOn: '2026-10-27', memo: null, reason: '数え間違い', actorId: detail.createdBy, actorEmail: null,
+          createdAt: '2026-10-27T01:00:00+00:00',
+          lines: [{ id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2', lineId: detail.lines[0].id, quantity: -1, reversesReceiptLineId: detail.receipts[0].lines[0].id, reversibleQuantity: 0 }],
+        },
+      ],
+    });
+    const history = screen.getByRole('region', { name: '受け取りの履歴' });
+    const items = within(history).getAllByRole('listitem').filter((item) => item.className.includes('border-black/15'));
+    expect(items).toHaveLength(2);
+    expect(within(items[0]).getByText('実行者 staff@example.com')).toBeInTheDocument();
+    expect(within(items[1]).getByText('実行者 —')).toBeInTheDocument();
+  });
+
+  test('FREQ-529-AC-01: 受け取りの履歴の既存の表示(日付・種類・メモ・理由・受取行)は変わらない。履歴の h2 は 数量の履歴・受け取りの履歴・取引書類 のまま', async () => {
+    await loaded(confirmedDetail());
+    const history = screen.getByRole('region', { name: '受け取りの履歴' });
+    expect(history).toHaveTextContent('2026/10/26');
+    expect(history).toHaveTextContent('午前便');
+    expect(within(history).getByText('+2')).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(['数量の履歴', '受け取りの履歴', '取引書類']);
   });
 });

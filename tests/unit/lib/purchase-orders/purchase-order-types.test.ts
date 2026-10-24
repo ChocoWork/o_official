@@ -13,13 +13,20 @@ import {
   formatPurchaseOrderDate,
   formatPurchaseOrderDateTime,
   formatPurchaseOrderDay,
+  formatPurchaseOrderReleaseConfirmation,
   formatYen,
   isPurchaseOrderCreatedQuery,
+  isPurchaseOrderDay,
   isPurchaseOrderQuantity,
   parsePurchaseOrderDetail,
   parsePurchaseOrderListRow,
+  PURCHASE_ORDER_RECEIPT_TEXT,
+  PURCHASE_ORDER_SURFACE_FORBIDDEN,
   purchaseOrderCreateFailureMessage,
+  purchaseOrderErrorBody,
   purchaseOrderFailureMessage,
+  purchaseOrderJstDay,
+  readReleasedQuantity,
   type PurchaseOrderDisplayStage,
   type PurchaseOrderStage,
 } from '@/lib/purchase-orders/purchase-order-types';
@@ -215,6 +222,8 @@ describe('purchase-order-types: 発注一覧表・発注書の詳細の読取（
     ['受取行の数量が負なのに相殺の元が無い', (d) => { d.receipts[0].lines[0].quantity = -1; return d; }],
     ['受取行の取り消せる数が負', (d) => { d.receipts[0].lines[0].reversibleQuantity = -1; return d; }],
     ['受取行の取り消せる数が数量を超える', (d) => { d.receipts[0].lines[0].reversibleQuantity = 3; return d; }],
+    ['受取の実行者のメールアドレスが無い(項目ごと欠けている)', (d) => { delete d.receipts[0].actorEmail; return d; }],
+    ['受取の実行者のメールアドレスが文字でない', (d) => { d.receipts[0].actorEmail = 1; return d; }],
     ['書類の種類が未知', (d) => { d.attachments[0].kind = 'receipt'; return d; }],
     ['書類の sha256 が64桁でない', (d) => { d.attachments[0].sha256 = 'abc'; return d; }],
     ['書類の sha256Source が未知', (d) => { d.attachments[0].sha256Source = 'client'; return d; }],
@@ -243,11 +252,18 @@ describe('purchase-order-types: 発注一覧表・発注書の詳細の読取（
     expect(JSON.stringify(caught)).not.toContain('PRIVATE-MARKER');
   });
 
+  test('FREQ-529-AC-01: 受取の実行者のメールアドレスは文字か null(アカウントが無い)で、そのまま返す', () => {
+    const raw = clone();
+    expect(parsePurchaseOrderDetail(raw).receipts[0].actorEmail).toBe('staff@example.com');
+    raw.receipts[0].actorEmail = null;
+    expect(parsePurchaseOrderDetail(raw).receipts[0].actorEmail).toBeNull();
+  });
+
   test('FREQ-526-AC-05: 相殺の受取行（数量が負）は元の行を指し、取り消せる数は0', () => {
     const raw = clone();
     raw.receipts.push({
       id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2', kind: 'reverse', receivedOn: '2026-10-27', memo: null, reason: '数え間違い',
-      actorId: raw.createdBy, createdAt: '2026-10-27T01:00:00+00:00',
+      actorId: raw.createdBy, actorEmail: null, createdAt: '2026-10-27T01:00:00+00:00',
       lines: [{ id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2', lineId: raw.lines[0].id, quantity: -1, reversesReceiptLineId: raw.receipts[0].lines[0].id, reversibleQuantity: 0 }],
     });
     raw.receipts[0].lines[0].reversibleQuantity = 1;
@@ -290,5 +306,111 @@ describe('purchase-order-types: 発注一覧表・発注書の詳細の読取（
     expect(isPurchaseOrderCreatedQuery({ created: 'true' })).toBe(false);
     expect(isPurchaseOrderCreatedQuery({ created: ['1', '1'] })).toBe(false);
     expect(isPurchaseOrderCreatedQuery({ other: '1' })).toBe(false);
+  });
+});
+
+describe('purchase-order-types: 受け取りとその取消・数量訂正（Task 7）', () => {
+  test('FREQ-529-AC-01: DB エラー表に Task 7 の6つがあり、SQLSTATE・状態・本文は計画のとおり', () => {
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_PO_NOT_CONFIRMED).toEqual(['55000', 409, '数量が確定するまで受け取りはできません。']);
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_PO_RECEIVE_EXCEEDS_REMAINING).toEqual(['23514', 409, '未納の数を超えて受け取ることはできません。先に数量を訂正してください。']);
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_PO_RECEIVED_ON_INVALID).toEqual(['22023', 400, '受取日は発注日から今日までの日付にしてください。']);
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_PO_REVERSE_EXCEEDS_RECEIVED).toEqual(['23514', 409, '取り消せる数を超えています。']);
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_PO_REVERSE_STOCK_INSUFFICIENT)
+      .toEqual(['23514', 409, '在庫が足りないため取り消せません。取り消す数が、空き在庫と外せる割当の合計を超えています。']);
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED).toEqual(['55000', 409, '割り当て済みの品を外す必要があります。数量を確認してください。']);
+  });
+
+  test('FREQ-529-AC-01: 受け取りの固定の文は計画のとおり', () => {
+    expect(PURCHASE_ORDER_RECEIPT_TEXT).toEqual({
+      receiveAll: '全部受け取る',
+      receivePart: '一部を受け取る',
+      receiveAllTitle: '全部を受け取る',
+      receivePartTitle: '一部を受け取る',
+      receiveNote: '検品で不良だった分は入力せず、未納のまま待つか、あとで打ち切ってください。',
+      receiveSubmit: '受け取りを確定',
+      receivedNotice: '受け取りを記録しました。',
+      reverse: 'この受け取りを取り消す',
+      correct: '数量を訂正',
+      reverseTitle: '受け取りの取消',
+      correctTitle: '受け取り数量の訂正',
+      reverseNote: '受け取りで入った在庫を、まず空き在庫から減らします。足りない時は、支払い済みの注文の割当を新しい注文から外します。',
+      reverseSubmit: '取り消す',
+      correctSubmit: '訂正する',
+      reversedNotice: '受け取りを取り消しました。',
+      correctedNotice: '受け取り数量を訂正しました。',
+      reasonRequired: '理由を入力してください。',
+    });
+    expect(formatPurchaseOrderReleaseConfirmation(3)).toBe('割り当て済みの品を3点外し、受注生産中に戻します。');
+  });
+
+  test('FREQ-529-AC-01: 権限の文は画面ごとに替わる。発注は「発注を扱う権限がありません。」、受け取りは「受け取りを記録する権限がありません。」', () => {
+    expect(PURCHASE_ORDER_SURFACE_FORBIDDEN).toEqual({ order: '発注を扱う権限がありません。', receipt: '受け取りを記録する権限がありません。' });
+    expect(purchaseOrderErrorBody('GROUP_G_FORBIDDEN')).toBe('発注を扱う権限がありません。');
+    expect(purchaseOrderErrorBody('GROUP_G_FORBIDDEN', 'order')).toBe('発注を扱う権限がありません。');
+    expect(purchaseOrderErrorBody('GROUP_G_FORBIDDEN', 'receipt')).toBe('受け取りを記録する権限がありません。');
+    // 権限以外の誤りは画面によらず同じ本文
+    expect(purchaseOrderErrorBody('GROUP_G_PO_NOT_CONFIRMED', 'receipt')).toBe(PURCHASE_ORDER_ERRORS.GROUP_G_PO_NOT_CONFIRMED[2]);
+    expect(purchaseOrderErrorBody('GROUP_G_PO_NOT_CONFIRMED', 'order')).toBe(PURCHASE_ORDER_ERRORS.GROUP_G_PO_NOT_CONFIRMED[2]);
+  });
+
+  test('FREQ-529-AC-01: 失敗の文（受け取り）: 表の code の本文 → CSRF → MFA → 401 → 403 は受け取り用の権限の文 → 400 → その他', () => {
+    const failure = (status: number, body: unknown) => purchaseOrderFailureMessage(status, body, 'receipt');
+    expect(failure(403, { code: 'GROUP_G_FORBIDDEN', error: 'x' })).toBe('受け取りを記録する権限がありません。');
+    expect(failure(403, { error: 'Forbidden', permission: 'admin.receiving.manage', role: 'supporter' })).toBe('受け取りを記録する権限がありません。');
+    expect(failure(403, { error: 'Forbidden', reason: 'MFA required' })).toBe('2要素認証が必要です');
+    expect(failure(401, { error: 'Unauthorized' })).toBe('ログインし直してください。');
+    expect(failure(400, { error: 'Invalid request', details: {} })).toBe('入力を確かめてください。');
+    expect(failure(409, { code: 'GROUP_G_PO_RECEIVE_EXCEEDS_REMAINING' })).toBe('未納の数を超えて受け取ることはできません。先に数量を訂正してください。');
+    expect(failure(409, { code: 'GROUP_G_PO_REVERSE_STOCK_INSUFFICIENT' }))
+      .toBe('在庫が足りないため取り消せません。取り消す数が、空き在庫と外せる割当の合計を超えています。');
+    expect(failure(500, null)).toBe('発注の記録に失敗しました');
+    expect(failure(500, { code: 'PRIVATE-MARKER', error: 'PRIVATE-MARKER' })).toBe('発注の記録に失敗しました');
+    // 発注の画面は従来どおり(既定)
+    expect(purchaseOrderFailureMessage(403, { error: 'Forbidden', permission: 'admin.purchase_orders.manage' })).toBe('発注を扱う権限がありません。');
+  });
+
+  test.each(['order', 'receipt'] as const)('FREQ-540-AC-07: CSRF の確かめで断られた403(%s)は「権限がありません」ではなく「再読み込みして、もう一度」の文', (surface) => {
+    const message = purchaseOrderFailureMessage(403, { error: 'Forbidden', reason: 'CSRF validation failed' }, surface);
+    expect(message).toBe('セキュリティ確認に失敗しました。ページを再読み込みして、もう一度送ってください。');
+    expect(message).toBe(PURCHASE_ORDER_TEXT.csrfFailed);
+    expect(message).not.toContain('権限');
+    // 403 以外の同じ reason は CSRF の文にしない。MFA の知らせが無いただの 403 は権限の文のまま
+    expect(purchaseOrderFailureMessage(500, { reason: 'CSRF validation failed' }, surface)).toBe('発注の記録に失敗しました');
+    expect(purchaseOrderFailureMessage(403, { error: 'Forbidden' }, surface)).toBe(PURCHASE_ORDER_SURFACE_FORBIDDEN[surface]);
+  });
+
+  test.each([
+    [{ code: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', releasedQuantity: 3 }, 3],
+    [{ code: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', releasedQuantity: 0 }, 0],
+    [{ code: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', releasedQuantity: 2147483647 }, 2147483647],
+    [{ code: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', releasedQuantity: -1 }, null],
+    [{ code: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', releasedQuantity: 1.5 }, null],
+    [{ code: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', releasedQuantity: '3' }, null],
+    [{ code: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', releasedQuantity: 2147483648 }, null],
+    [{ code: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED' }, null],
+    [{ code: 'GROUP_G_PO_VERSION_CONFLICT', releasedQuantity: 3 }, null],
+    [{ releasedQuantity: 3 }, null],
+    [null, null], ['text', null], [[3], null],
+  ])('FREQ-529-AC-04: 409 の本文 %j から外す点数を取り出す: %s', (body, expected) => {
+    expect(readReleasedQuantity(body)).toBe(expected);
+  });
+
+  test('FREQ-529-AC-01: 日本時間の日付: 時刻を日本時間（+9時間）で日にする。日付の形と実在を確かめる', () => {
+    expect(purchaseOrderJstDay(new Date('2026-10-25T14:59:59Z'))).toBe('2026-10-25');
+    expect(purchaseOrderJstDay(new Date('2026-10-25T15:00:00Z'))).toBe('2026-10-26');
+    expect(purchaseOrderJstDay('2026-10-25T14:30:00+00:00')).toBe('2026-10-25');
+    expect(purchaseOrderJstDay('2026-10-25T15:30:00+00:00')).toBe('2026-10-26');
+    expect(purchaseOrderJstDay('not a date')).toBe('');
+    expect(purchaseOrderJstDay()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(isPurchaseOrderDay('2026-10-26')).toBe(true);
+    expect(isPurchaseOrderDay('2028-02-29')).toBe(true);
+    for (const value of ['2026-02-30', '2027-02-29', '2026-13-01', '2026-00-10', '2026/10/26', '2026-10-26T00:00:00Z', '26-10-26', '', ' 2026-10-26']) {
+      expect({ value, valid: isPurchaseOrderDay(value) }).toEqual({ value, valid: false });
+    }
+  });
+
+  test('FREQ-529-AC-01: 受取数量・受取のメモの範囲は計画のとおり(1〜99999・0〜200)', () => {
+    expect(PURCHASE_ORDER_LIMITS.receivedQuantity).toEqual({ min: 1, max: 99999 });
+    expect(PURCHASE_ORDER_LIMITS.receiptMemo).toEqual({ min: 0, max: 200 });
   });
 });

@@ -50,7 +50,29 @@ export const PURCHASE_ORDER_ERRORS: Record<string, readonly [sqlstate: string, s
   GROUP_G_PO_REASON_REQUIRED: ['22023', 400, '理由を入力してください。'],
   GROUP_G_PO_QUANTITY_BELOW_RECEIVED: ['23514', 409, '納品済みの数より少ない数量には訂正できません。'],
   GROUP_G_PO_NOTHING_TO_CLOSE: ['55000', 409, '打ち切る未納がありません。'],
+  // 受け取りとその取消・数量訂正（Task 7）。確認の約束は G-1 の在庫を減らす操作と同じ（DETAIL は {"releasedQuantity":n} だけ）
+  GROUP_G_PO_NOT_CONFIRMED: ['55000', 409, '数量が確定するまで受け取りはできません。'],
+  GROUP_G_PO_RECEIVE_EXCEEDS_REMAINING: ['23514', 409, '未納の数を超えて受け取ることはできません。先に数量を訂正してください。'],
+  GROUP_G_PO_RECEIVED_ON_INVALID: ['22023', 400, '受取日は発注日から今日までの日付にしてください。'],
+  GROUP_G_PO_REVERSE_EXCEEDS_RECEIVED: ['23514', 409, '取り消せる数を超えています。'],
+  GROUP_G_PO_REVERSE_STOCK_INSUFFICIENT: ['23514', 409, '在庫が足りないため取り消せません。取り消す数が、空き在庫と外せる割当の合計を超えています。'],
+  GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED: ['55000', 409, '割り当て済みの品を外す必要があります。数量を確認してください。'],
 };
+
+/**
+ * 同じ DB の誤りでも、画面（受け取りの窓口と受け取りのダイアログ）ごとに本文を変える物。いまは権限の文だけ。
+ * order は発注の窓口（作成・訂正・数量・打切り）、receipt は受け取りとその取消・数量訂正。
+ */
+export type PurchaseOrderSurface = 'order' | 'receipt';
+export const PURCHASE_ORDER_SURFACE_FORBIDDEN: Record<PurchaseOrderSurface, string> = {
+  order: PURCHASE_ORDER_ERRORS.GROUP_G_FORBIDDEN[2],
+  receipt: '受け取りを記録する権限がありません。',
+};
+
+/** DB の誤り code の本文。受け取りの画面では GROUP_G_FORBIDDEN だけ画面ごとの文に替える。 */
+export function purchaseOrderErrorBody(code: string, surface: PurchaseOrderSurface = 'order'): string {
+  return code === 'GROUP_G_FORBIDDEN' ? PURCHASE_ORDER_SURFACE_FORBIDDEN[surface] : PURCHASE_ORDER_ERRORS[code][2];
+}
 
 export type PurchaseOrderCreateInput = {
   supplierName: string;
@@ -92,6 +114,87 @@ export type PurchaseOrderShortCloseInput = {
 };
 export type PurchaseOrderShortClosed = { version: number; closedQuantity: number; replayed: boolean };
 
+/** 受け取り（G-2 Task 7 / FREQ-529）。receivedOn は YYYY-MM-DD（発注日から今日まで・日本時間）。lines は受け取る行だけ（各 1〜未納）。 */
+export type PurchaseOrderReceiveInput = {
+  purchaseOrderId: string;
+  expectedVersion: number;
+  receivedOn: string;
+  memo: string | null;
+  lines: { lineId: string; quantity: number }[];
+  requestKey: string;
+};
+export type PurchaseOrderReceived = { receiptId: string; version: number; allocatedQuantity: number; replayed: boolean };
+
+/**
+ * 受け取りの取消・数量訂正（同じ操作。取消 = 全ての行を取り消せる数ぜんぶ、訂正 = 一部の行を一部の数）。
+ * expectedReleaseQuantity は外す割当の点数の確認値。最初は null で送り、外す割当があると窓口が 409
+ * （GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED + releasedQuantity）で返す。確認した後は新しい requestKey で、その数を入れて送り直す。
+ */
+export type PurchaseOrderReceiptReverseInput = {
+  purchaseOrderId: string;
+  expectedVersion: number;
+  receiptId: string;
+  lines: { receiptLineId: string; quantity: number }[];
+  reason: string;
+  expectedReleaseQuantity: number | null;
+  requestKey: string;
+};
+export type PurchaseOrderReceiptReversed = { receiptId: string; version: number; releasedQuantity: number; replayed: boolean };
+
+/** 受け取りの固定の文（発注書の詳細のボタンと、受け取り・取消のダイアログ）。 */
+export const PURCHASE_ORDER_RECEIPT_TEXT = {
+  receiveAll: '全部受け取る',
+  receivePart: '一部を受け取る',
+  receiveAllTitle: '全部を受け取る',
+  receivePartTitle: '一部を受け取る',
+  receiveNote: '検品で不良だった分は入力せず、未納のまま待つか、あとで打ち切ってください。',
+  receiveSubmit: '受け取りを確定',
+  receivedNotice: '受け取りを記録しました。',
+  reverse: 'この受け取りを取り消す',
+  correct: '数量を訂正',
+  reverseTitle: '受け取りの取消',
+  correctTitle: '受け取り数量の訂正',
+  reverseNote: '受け取りで入った在庫を、まず空き在庫から減らします。足りない時は、支払い済みの注文の割当を新しい注文から外します。',
+  reverseSubmit: '取り消す',
+  correctSubmit: '訂正する',
+  reversedNotice: '受け取りを取り消しました。',
+  correctedNotice: '受け取り数量を訂正しました。',
+  reasonRequired: PURCHASE_ORDER_ERRORS.GROUP_G_PO_REASON_REQUIRED[2],
+} as const;
+
+/** 外す割当があると、最初の送信は 409 になる。その確認の段に出す本文（n は窓口が返した外す点数）。 */
+export function formatPurchaseOrderReleaseConfirmation(releasedQuantity: number): string {
+  return `割り当て済みの品を${releasedQuantity}点外し、受注生産中に戻します。`;
+}
+
+/** 外す割当の確認を求める 409 の code（G-1 の在庫を減らす操作と同じ） */
+export const PURCHASE_ORDER_RELEASE_CONFIRMATION_CODE = 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED';
+
+/** 窓口の 409 の本文から、外す点数（0 以上の整数）を取り出す。形が合わなければ null */
+export function readReleasedQuantity(body: unknown): number | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const { code, releasedQuantity } = body as { code?: unknown; releasedQuantity?: unknown };
+  if (code !== PURCHASE_ORDER_RELEASE_CONFIRMATION_CODE) return null;
+  return typeof releasedQuantity === 'number' && Number.isInteger(releasedQuantity) && releasedQuantity >= 0 && releasedQuantity <= 2147483647
+    ? releasedQuantity
+    : null;
+}
+
+const JST_DAY_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+/** 日本時間の日付（YYYY-MM-DD）。受取日の初期値と範囲に使う。日時の文字列を渡すと、その日時の日本時間の日付。 */
+export function purchaseOrderJstDay(at: Date | string = new Date()): string {
+  const time = typeof at === 'string' ? Date.parse(at) : at.getTime();
+  return Number.isNaN(time) ? '' : new Date(time + JST_DAY_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** YYYY-MM-DD が実在の日付か（2026-02-30 のような日付は偽） */
+export function isPurchaseOrderDay(value: string): boolean {
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 /** 明細の呼び名: 商品名・色・サイズ。色・サイズが無ければ有る部分だけを並べる（詳細の表・履歴・ダイアログで同じ） */
 export function formatPurchaseOrderLineLabel(line: { itemName: string; colorName: string | null; sizeLabel: string | null }): string {
   return [line.itemName, line.colorName, line.sizeLabel].filter((part): part is string => part !== null && part !== '').join(' ');
@@ -118,6 +221,8 @@ export const PURCHASE_ORDER_TEXT = {
   invalidInput: PURCHASE_ORDER_ERRORS.GROUP_G_ARGUMENT_INVALID[2],
   supplierRequired: '発注先を入力してください。',
   failed: '発注の記録に失敗しました',
+  /** 変更の窓口の CSRF の確かめで断られた時（権限の不足ではない）。他の管理画面と同じ「再読み込みして、もう一度」の文 */
+  csrfFailed: 'セキュリティ確認に失敗しました。ページを再読み込みして、もう一度送ってください。',
 } as const;
 
 /**
@@ -138,13 +243,16 @@ export function isPurchaseOrderQuantity(value: string): boolean {
 
 /**
  * 発注の作成・数量の確定と訂正・打切り・発注先の訂正が失敗した時に画面へ出す文。
- * 表にある code はその本文、MFA の無い 403 は専用の文、401・403・400 はそれぞれの文、他は固定の失敗の文。
+ * 表にある code はその本文、CSRF で断られた 403 は「再読み込みして、もう一度」の文（権限の不足とは言わない）、
+ * MFA の無い 403 は専用の文、401・403・400 はそれぞれの文、他は固定の失敗の文。
  * 窓口の本文の error は使わない（英語の検証の文や生の文を画面へ流さないため）。
+ * surface が receipt（受け取りとその取消・数量訂正）の時だけ、権限の文が「受け取りを記録する権限がありません。」になる。
  */
-export function purchaseOrderFailureMessage(status: number, body: unknown): string {
-  const { code } = (typeof body === 'object' && body !== null ? body : {}) as { code?: unknown };
-  if (typeof code === 'string' && Object.hasOwn(PURCHASE_ORDER_ERRORS, code)) return PURCHASE_ORDER_ERRORS[code][2];
-  return adminLoadFailureMessage(status, body, PURCHASE_ORDER_TEXT.forbidden,
+export function purchaseOrderFailureMessage(status: number, body: unknown, surface: PurchaseOrderSurface = 'order'): string {
+  const { code, reason } = (typeof body === 'object' && body !== null ? body : {}) as { code?: unknown; reason?: unknown };
+  if (typeof code === 'string' && Object.hasOwn(PURCHASE_ORDER_ERRORS, code)) return purchaseOrderErrorBody(code, surface);
+  if (status === 403 && reason === 'CSRF validation failed') return PURCHASE_ORDER_TEXT.csrfFailed;
+  return adminLoadFailureMessage(status, body, PURCHASE_ORDER_SURFACE_FORBIDDEN[surface],
     status === 400 ? PURCHASE_ORDER_TEXT.invalidInput : PURCHASE_ORDER_TEXT.failed);
 }
 
@@ -282,6 +390,8 @@ export type PurchaseOrderReceipt = {
   memo: string | null;
   reason: string | null;
   actorId: string;
+  /** 受取を記録した人のメールアドレス(在庫の履歴と同じ見せ方)。アカウントが無くなっていれば null。画面は「実行者」に出す */
+  actorEmail: string | null;
   createdAt: string;
   lines: PurchaseOrderReceiptLine[];
 };
@@ -511,6 +621,7 @@ function readReceipt(value: unknown): PurchaseOrderReceipt {
     memo: readNullableText(raw.memo),
     reason: readNullableText(raw.reason),
     actorId: readId(raw.actorId),
+    actorEmail: readNullableText(raw.actorEmail),
     createdAt: readTimestamp(raw.createdAt),
     lines: readList(raw.lines, readReceiptLine),
   };

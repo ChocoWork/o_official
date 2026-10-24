@@ -12,7 +12,8 @@ import { createCatalogFixture, withLedgerLock } from './helpers/order-fixtures';
  * private.purchase_order_display_stages（表示段階を導く唯一の場所。誰も EXECUTE できない内部の helper）と、2つの公開入口。
  * 実行は controller の使い捨てローカル DB（ふつうの db reset の後）。試験ごとに BEGIN … ROLLBACK で包む。
  * 数量の確定・納品・打切りの関数は Task 6・7 で作るので、ここでは直接 INSERT / UPDATE の材料で段階を作る
- * （遅延の確かめは取引を終えないので発火しない）。操作経由の段階（部分受取・全受取・打切り・打切りを戻した後）は Task 6・7 の試験が確かめる。
+ * （遅延の確かめは取引を終えないので発火しない）。操作経由の段階（部分受取・全受取・取消・打切り・打切りを戻した後）は、
+ * Task 6 の試験と、この試験の「本物の操作でも導かれる」（Task 7）が確かめる。
  */
 jest.setTimeout(60000);
 
@@ -44,7 +45,7 @@ const REVISION_KEYS = [
   'beforeSupplierName', 'beforeUnitPriceYen', 'createdAt', 'id', 'kind', 'lineId', 'reason', 'revisionNo',
 ];
 const SHORT_CLOSURE_KEYS = ['actorId', 'closedQuantity', 'createdAt', 'id', 'lineId', 'reason'];
-const RECEIPT_KEYS = ['actorId', 'createdAt', 'id', 'kind', 'lines', 'memo', 'reason', 'receivedOn'];
+const RECEIPT_KEYS = ['actorEmail', 'actorId', 'createdAt', 'id', 'kind', 'lines', 'memo', 'reason', 'receivedOn'];
 const RECEIPT_LINE_KEYS = ['id', 'lineId', 'quantity', 'reversesReceiptLineId', 'reversibleQuantity'];
 const ATTACHMENT_KEYS = ['createdAt', 'current', 'fileName', 'id', 'kind', 'mimeType', 'revisionCount', 'sha256', 'sha256Source', 'sizeBytes'];
 const CURRENT_KEYS = ['amountYen', 'counterparty', 'currency', 'reason', 'replacesAttachmentId', 'revisionNo', 'transactionDate', 'voided'];
@@ -110,6 +111,9 @@ describe('G-2 foundation migration の発注書の読取の節（DB なし）', 
     expect(DETAIL_TEXT).not.toContain('operation_id');
     expect(DETAIL_TEXT).not.toContain('uploaded_by');
     expect(DETAIL_TEXT).toContain('RETURN NULL;');
+    // 受取の実行者はメールアドレスで返す(在庫の履歴と同じ。アカウントが無ければ NULL)。メールアドレスを返すのは受取だけ
+    expect(DETAIL_TEXT).toContain("'actorEmail', (SELECT u.email::text FROM auth.users AS u WHERE u.id = rc.actor_id)");
+    expect(DETAIL_TEXT.match(/auth\.users/g)).toHaveLength(1);
     expect(DETAIL_TEXT).toContain("'sha256', a.sha256");
     // 差し替えの関係は版1にしか保存されない（表の CHECK）ので、最新の版でなく版1から読む
     expect(DETAIL_TEXT).toContain("'replacesAttachmentId', (SELECT r1.replaces_attachment_id");
@@ -581,6 +585,63 @@ describeLocalDb('integration: G-2 発注一覧表と発注書の詳細の読取'
     expect(new Set(rows.map((row) => row.display_stage))).toEqual(new Set([scenario.expected.stage]));
   });
 
+  test('FREQ-526-AC-05: 表示段階は本物の操作でも導かれる: 確定 → 一部受け取り済み → 受け取り完了 → 取消で一部受け取り済みへ戻り → 再び受け取り完了、打切りで closed、打切りを数量の再確定で戻して受け取ると 受け取り完了(Task 7)', async () => {
+    const actor = await manager();
+    const [a, b] = await twoVariants();
+    const flushAll = async () => {
+      await db().query('set constraints all immediate');
+      await db().query('set constraints all deferred');
+    };
+    const call = async (sql: string, params: unknown[]) => {
+      const result = (await db().query(sql, params)).rows[0].r as Detail;
+      await flushAll();
+      return result;
+    };
+    const today = (await db().query("select (now() at time zone 'Asia/Tokyo')::date::text as d")).rows[0].d as string;
+    const confirmSql = 'select public.admin_confirm_purchase_order_quantities($1::uuid, $2::integer, $3::jsonb, $4::text, $5::uuid, $6::uuid) as r';
+    const receiveSql = 'select public.admin_receive_purchase_order($1::uuid, $2::integer, $3::date, null, $4::jsonb, $5::uuid, $6::uuid) as r';
+    const reverseSql = "select public.admin_reverse_purchase_order_receipt($1::uuid, $2::integer, $3::uuid, $4::jsonb, '数え間違い', null, $5::uuid, $6::uuid) as r";
+    const closeSql = "select public.admin_short_close_purchase_order($1::uuid, $2::integer, $3::uuid[], '打切り', $4::uuid, $5::uuid) as r";
+    const stageOf = async (id: string) => (await detailOf(actor, id) as Detail).displayStage as string;
+    const confirmBody = (lines: Array<{ id: string }>, quantities: number[]) => JSON.stringify(lines.map((line, index) => ({ lineId: line.id, quantity: quantities[index], unitPriceYen: null })));
+    const receiptLineOf = async (id: string, receiptId: string, lineId: string) => {
+      const detail = await detailOf(actor, id) as Detail;
+      return detail.receipts.find((receipt: Detail) => receipt.id === receiptId).lines.find((line: Detail) => line.lineId === lineId).id as string;
+    };
+
+    // 受け取りまで: ordered → quantity_confirmed → partially_received → received → (取消) partially_received → received
+    const order = await create(actor, [lineOf(a.variantId, 5), lineOf(b.variantId, 3)]);
+    const lines = await lineRows(order.id);
+    expect(await stageOf(order.id)).toBe('ordered');
+    const confirmed = await call(confirmSql, [order.id, 1, confirmBody(lines, [5, 3]), null, actor, randomUUID()]);
+    expect(await stageOf(order.id)).toBe('quantity_confirmed');
+    const first = await call(receiveSql, [order.id, confirmed.version, today, JSON.stringify([{ lineId: lines[0].id, quantity: 2 }]), actor, randomUUID()]);
+    expect(await stageOf(order.id)).toBe('partially_received');
+    const second = await call(receiveSql, [order.id, first.version, today, JSON.stringify([{ lineId: lines[0].id, quantity: 3 }, { lineId: lines[1].id, quantity: 3 }]), actor, randomUUID()]);
+    expect(await stageOf(order.id)).toBe('received');
+    const reversed = await call(reverseSql, [
+      order.id, second.version, second.receiptId, JSON.stringify([{ receiptLineId: await receiptLineOf(order.id, second.receiptId, lines[0].id), quantity: 1 }]), actor, randomUUID()]);
+    expect(await stageOf(order.id)).toBe('partially_received');
+    await call(receiveSql, [order.id, reversed.version, today, JSON.stringify([{ lineId: lines[0].id, quantity: 1 }]), actor, randomUUID()]);
+    expect(await stageOf(order.id)).toBe('received');
+
+    // 打切り: 一部受け取り済み → 打切りで closed → 数量の再確定で戻して受け取ると received(打切りは有効でない)
+    const other = await create(actor, [lineOf(a.variantId, 5), lineOf(b.variantId, 3)]);
+    const otherLines = await lineRows(other.id);
+    const otherConfirmed = await call(confirmSql, [other.id, 1, confirmBody(otherLines, [5, 3]), null, actor, randomUUID()]);
+    const otherReceived = await call(receiveSql, [other.id, otherConfirmed.version, today, JSON.stringify([{ lineId: otherLines[0].id, quantity: 2 }, { lineId: otherLines[1].id, quantity: 3 }]), actor, randomUUID()]);
+    expect(await stageOf(other.id)).toBe('partially_received');
+    const closed = await call(closeSql, [other.id, otherReceived.version, [otherLines[0].id], actor, randomUUID()]);
+    expect(await stageOf(other.id)).toBe('closed');
+    const reopened = await call(confirmSql, [other.id, closed.version, confirmBody(otherLines, [5, 3]), '再確定', actor, randomUUID()]);
+    expect(await stageOf(other.id)).toBe('partially_received');
+    await call(receiveSql, [other.id, reopened.version, today, JSON.stringify([{ lineId: otherLines[0].id, quantity: 3 }]), actor, randomUUID()]);
+    expect(await stageOf(other.id)).toBe('received');
+    // 一覧も同じ段階を返す
+    const rows = (await list(actor, 100, 0)).filter((row) => row.purchase_order_id === other.id);
+    expect(new Set(rows.map((row) => row.display_stage))).toEqual(new Set(['received']));
+  });
+
   test('FREQ-526-AC-05: helper は渡した複数の発注書をまとめて導き、渡していない発注書は返さない。NULL・空の配列は行なし', async () => {
     const actor = await manager();
     const [a, b] = await twoVariants();
@@ -747,8 +808,12 @@ describeLocalDb('integration: G-2 発注一覧表と発注書の詳細の読取'
     await confirm(order.id, [5, 3]);
     const [line1, line2] = await lineRows(order.id);
     const operationId = await operation();
+    // 実行者は、メールアドレスを持つ利用者(受け取り)と、アカウントの無い id(相殺)の2通り
+    const receiver = randomUUID();
+    const receiverEmail = `receiver-${receiver}@example.com`;
+    await db().query("insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data) values($1,$2,'{}','{}')", [receiver, receiverEmail]);
     const receive = await insertRow('purchase_order_receipts', {
-      purchase_order_id: order.id, kind: 'receive', received_on: '2026-10-26', memo: '午前便', actor_id: randomUUID(), operation_id: operationId,
+      purchase_order_id: order.id, kind: 'receive', received_on: '2026-10-26', memo: '午前便', actor_id: receiver, operation_id: operationId,
       created_at: new Date(Date.now() - 7200_000).toISOString(),
     });
     const receivedA = await insertRow('purchase_order_receipt_lines', { receipt_id: receive, line_id: line1.id, quantity: 5, stock_movement_id: await movement(a.variantId, 5, 'restock') });
@@ -769,11 +834,12 @@ describeLocalDb('integration: G-2 発注一覧表と発注書の詳細の読取'
       expect(sortedKeys(receipt)).toEqual(RECEIPT_KEYS);
       for (const row of receipt.lines) expect(sortedKeys(row)).toEqual(RECEIPT_LINE_KEYS);
     }
-    expect(detail.receipts[0]).toMatchObject({ id: receive, kind: 'receive', receivedOn: '2026-10-26', memo: '午前便', reason: null });
+    expect(detail.receipts[0]).toMatchObject({ id: receive, kind: 'receive', receivedOn: '2026-10-26', memo: '午前便', reason: null, actorId: receiver, actorEmail: receiverEmail });
     expect(detail.receipts[0].lines.map((row: Detail) => [row.id, row.lineId, row.quantity, row.reversesReceiptLineId, row.reversibleQuantity])).toEqual([
       [receivedA, line1.id, 5, null, 3], [receivedB, line2.id, 3, null, 3],
     ]);
-    expect(detail.receipts[1]).toMatchObject({ id: reverse, kind: 'reverse', receivedOn: '2026-10-27', memo: null, reason: '数え間違い' });
+    // 実行者のアカウントが無ければメールアドレスは null(受取の行は消えない)
+    expect(detail.receipts[1]).toMatchObject({ id: reverse, kind: 'reverse', receivedOn: '2026-10-27', memo: null, reason: '数え間違い', actorEmail: null });
     expect(detail.receipts[1].lines.map((row: Detail) => [row.id, row.lineId, row.quantity, row.reversesReceiptLineId, row.reversibleQuantity])).toEqual([
       [offset, line1.id, -2, receivedA, 0],
     ]);

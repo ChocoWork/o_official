@@ -3,7 +3,7 @@ jest.mock('server-only', () => ({}), { virtual: true });
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   confirmPurchaseOrderQuantities, createPurchaseOrder, getAdminPurchaseOrder, listAdminPurchaseOrderLines, PurchaseOrderError,
-  shortClosePurchaseOrder, updatePurchaseOrderHeader,
+  receivePurchaseOrder, reversePurchaseOrderReceipt, shortClosePurchaseOrder, updatePurchaseOrderHeader,
 } from '@/lib/purchase-orders/purchase-order-store';
 import { PURCHASE_ORDER_ERRORS } from '@/lib/purchase-orders/purchase-order-types';
 import { confirmedDetail, dbListRow, LINE_2, listRow, ORDER_ID as READ_ORDER_ID } from './purchase-order-fixtures';
@@ -20,6 +20,12 @@ const input = {
   requestKey: REQUEST_KEY,
 };
 const dbResult = { id: ORDER_ID, number: 'PO-20261025-0001', version: 1, replayed: false };
+
+/**
+ * 表のうち、DETAIL を持たない誤り。外す割当の確認（GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED）は DETAIL が
+ * {"releasedQuantity":n} でなければ受け入れないので、受け取りの取消の試験（Task 7）が別に確かめる。
+ */
+const PLAIN_ERRORS = Object.entries(PURCHASE_ORDER_ERRORS).filter(([message]) => message !== 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED');
 
 beforeEach(() => rpc.mockReset());
 
@@ -86,7 +92,7 @@ describe('createPurchaseOrder', () => {
     await expect(createPurchaseOrder(client, 'actor-1', input)).resolves.toEqual({ ...dbResult, replayed: true });
   });
 
-  test.each(Object.entries(PURCHASE_ORDER_ERRORS))(
+  test.each(PLAIN_ERRORS)(
     'FREQ-526-AC-02: DB の %s は message と SQLSTATE が両方そろった時だけ、表の状態と固定の本文の PurchaseOrderError にする',
     async (message, [sqlstate, status, body]) => {
       rpc.mockResolvedValue({ data: null, error: { message, code: sqlstate, details: 'PRIVATE-MARKER', hint: 'PRIVATE-MARKER' } });
@@ -228,7 +234,7 @@ describe('発注書の書込み（Task 6）: updatePurchaseOrderHeader・confirm
       expect(Object.keys(result)).toEqual(writer.keys);
     });
 
-    test.each(Object.entries(PURCHASE_ORDER_ERRORS))(
+    test.each(PLAIN_ERRORS)(
       'FREQ-527-AC-01: DB の %s は message と SQLSTATE が両方そろった時だけ、表の状態と固定の本文の PurchaseOrderError にする',
       async (message, [sqlstate, status, body]) => {
         rpc.mockResolvedValue({ data: null, error: { message, code: sqlstate, details: 'PRIVATE-MARKER', hint: 'PRIVATE-MARKER' } });
@@ -282,6 +288,184 @@ describe('発注書の書込み（Task 6）: updatePurchaseOrderHeader・confirm
     expect(args._reason).toBeNull();
     expect(args._lines).toEqual([{ lineId: LINE_A, quantity: 5, unitPriceYen: 0 }, { lineId: LINE_B, quantity: 3, unitPriceYen: null }]);
     expect(Object.keys(args._lines[0])).toEqual(['lineId', 'quantity', 'unitPriceYen']);
+  });
+});
+
+describe('受け取り（Task 7）: receivePurchaseOrder・reversePurchaseOrderReceipt', () => {
+  const LINE_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+  const LINE_B = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+  const RECEIPT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
+  const NEW_RECEIPT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2';
+  const RECEIPT_LINE_A = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1';
+  const RECEIPT_LINE_B = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2';
+  const base = { purchaseOrderId: ORDER_ID, expectedVersion: 3, requestKey: REQUEST_KEY };
+  const RECEIPT_FORBIDDEN = '受け取りを記録する権限がありません。';
+
+  const writers = [
+    {
+      name: 'receivePurchaseOrder',
+      rpcName: 'admin_receive_purchase_order',
+      call: () => receivePurchaseOrder(client, 'actor-1', {
+        ...base, receivedOn: '2026-10-26', memo: '午前便', lines: [{ lineId: LINE_B, quantity: 3 }, { lineId: LINE_A, quantity: 2 }],
+      }),
+      args: {
+        _purchase_order_id: ORDER_ID, _expected_version: 3, _received_on: '2026-10-26', _memo: '午前便',
+        _lines: [{ lineId: LINE_B, quantity: 3 }, { lineId: LINE_A, quantity: 2 }], _actor_id: 'actor-1', _request_key: REQUEST_KEY,
+      },
+      data: { receiptId: NEW_RECEIPT, version: 4, allocatedQuantity: 2, replayed: false },
+      keys: ['receiptId', 'version', 'allocatedQuantity', 'replayed'],
+      broken: [
+        ['null', null], ['配列', [{ receiptId: NEW_RECEIPT, version: 4, allocatedQuantity: 2, replayed: false }]],
+        ['receiptId が無い', { version: 4, allocatedQuantity: 2, replayed: false }], ['receiptId が uuid でない', { receiptId: 'abc', version: 4, allocatedQuantity: 2, replayed: false }],
+        ['version が0', { receiptId: NEW_RECEIPT, version: 0, allocatedQuantity: 2, replayed: false }],
+        ['allocatedQuantity が負', { receiptId: NEW_RECEIPT, version: 4, allocatedQuantity: -1, replayed: false }],
+        ['allocatedQuantity が小数', { receiptId: NEW_RECEIPT, version: 4, allocatedQuantity: 1.5, replayed: false }],
+        ['allocatedQuantity が文字列', { receiptId: NEW_RECEIPT, version: 4, allocatedQuantity: '2', replayed: false }],
+        ['allocatedQuantity が無い', { receiptId: NEW_RECEIPT, version: 4, replayed: false }],
+        ['replayed が真偽値でない', { receiptId: NEW_RECEIPT, version: 4, allocatedQuantity: 2, replayed: 0 }],
+      ] as Array<[string, unknown]>,
+    },
+    {
+      name: 'reversePurchaseOrderReceipt',
+      rpcName: 'admin_reverse_purchase_order_receipt',
+      call: () => reversePurchaseOrderReceipt(client, 'actor-1', {
+        ...base, receiptId: RECEIPT, lines: [{ receiptLineId: RECEIPT_LINE_B, quantity: 1 }, { receiptLineId: RECEIPT_LINE_A, quantity: 2 }],
+        reason: '数え間違い', expectedReleaseQuantity: 3,
+      }),
+      args: {
+        _purchase_order_id: ORDER_ID, _expected_version: 3, _receipt_id: RECEIPT,
+        _lines: [{ receiptLineId: RECEIPT_LINE_B, quantity: 1 }, { receiptLineId: RECEIPT_LINE_A, quantity: 2 }],
+        _reason: '数え間違い', _expected_release_quantity: 3, _actor_id: 'actor-1', _request_key: REQUEST_KEY,
+      },
+      data: { receiptId: NEW_RECEIPT, version: 4, releasedQuantity: 3, replayed: false },
+      keys: ['receiptId', 'version', 'releasedQuantity', 'replayed'],
+      broken: [
+        ['null', null], ['receiptId が無い', { version: 4, releasedQuantity: 3, replayed: false }],
+        ['receiptId が uuid でない', { receiptId: 'abc', version: 4, releasedQuantity: 3, replayed: false }],
+        ['version が0', { receiptId: NEW_RECEIPT, version: 0, releasedQuantity: 3, replayed: false }],
+        ['releasedQuantity が負', { receiptId: NEW_RECEIPT, version: 4, releasedQuantity: -1, replayed: false }],
+        ['releasedQuantity が文字列', { receiptId: NEW_RECEIPT, version: 4, releasedQuantity: '3', replayed: false }],
+        ['releasedQuantity が無い', { receiptId: NEW_RECEIPT, version: 4, replayed: false }],
+        ['replayed が無い', { receiptId: NEW_RECEIPT, version: 4, releasedQuantity: 3 }],
+      ] as Array<[string, unknown]>,
+    },
+  ];
+
+  describe.each(writers)('$name', (writer) => {
+    test('FREQ-529-AC-01: RPC を引数名どおり・実行者つきで1回だけ呼び、DB の戻りをそのまま返す', async () => {
+      rpc.mockResolvedValue({ data: writer.data, error: null });
+      await expect(writer.call()).resolves.toEqual(writer.data);
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(rpc).toHaveBeenCalledWith(writer.rpcName, writer.args);
+    });
+
+    test('FREQ-529-AC-02: 再送された結果（replayed: true）はそのまま返し、戻りは決まった項目だけ（余分な項目は落とす）', async () => {
+      rpc.mockResolvedValue({ data: { ...writer.data, replayed: true, secret: 'PRIVATE-MARKER' }, error: null });
+      const result = await writer.call();
+      expect(result).toEqual({ ...writer.data, replayed: true });
+      expect(Object.keys(result)).toEqual(writer.keys);
+    });
+
+    test.each(PLAIN_ERRORS)(
+      'FREQ-529-AC-01: DB の %s は message と SQLSTATE が両方そろった時だけ、表の状態と固定の本文の PurchaseOrderError にする（権限の文だけ受け取り用）',
+      async (message, [sqlstate, status, body]) => {
+        rpc.mockResolvedValue({ data: null, error: { message, code: sqlstate, details: 'PRIVATE-MARKER', hint: 'PRIVATE-MARKER' } });
+        const error = await failureOf(writer.call);
+        expect({ status: error.status, code: error.code, message: error.message })
+          .toEqual({ status, code: message, message: message === 'GROUP_G_FORBIDDEN' ? RECEIPT_FORBIDDEN : body });
+        expect(error.releasedQuantity).toBeUndefined();
+        expect(JSON.stringify(error)).not.toContain('PRIVATE-MARKER');
+        expect(error.cause).toBeUndefined();
+      },
+    );
+
+    test.each([
+      ['message は表にあるが SQLSTATE が違う', { message: 'GROUP_G_PO_VERSION_CONFLICT', code: '22023' }],
+      ['SQLSTATE は表と同じだが message が表に無い', { message: 'PRIVATE-MARKER', code: '55000' }],
+      ['message が無い', { code: '55000' }],
+      ['code が無い', { message: 'GROUP_G_PO_NOT_CONFIRMED' }],
+      ['message は継承した名前（toString）', { message: 'toString', code: '55000' }],
+      ['PostgREST の別の誤り', { message: 'PRIVATE-MARKER', code: 'PGRST202', details: 'PRIVATE-MARKER' }],
+    ])('FREQ-529-AC-01: 未知・不一致（%s）は500の固定の文で、生の文も code も出さない', async (_name, dbError) => {
+      rpc.mockResolvedValue({ data: null, error: dbError });
+      const error = await failureOf(writer.call);
+      expect({ status: error.status, code: error.code, message: error.message }).toEqual({ status: 500, code: undefined, message: '発注の記録に失敗しました' });
+      expect(JSON.stringify(error)).not.toContain('PRIVATE-MARKER');
+    });
+
+    test('FREQ-529-AC-01: 通信そのものの失敗（RPC が throw）も500の固定の文で、生の文を持たない', async () => {
+      rpc.mockRejectedValue(new TypeError('PRIVATE-MARKER'));
+      const error = await failureOf(writer.call);
+      expect({ status: error.status, code: error.code, message: error.message }).toEqual({ status: 500, code: undefined, message: '発注の記録に失敗しました' });
+      expect(JSON.stringify(error)).not.toContain('PRIVATE-MARKER');
+      expect(error.cause).toBeUndefined();
+    });
+
+    test.each(writer.broken)('FREQ-529-AC-01: 戻り値の型検査: %s は500の固定の文（成功として返さない）', async (_name, data) => {
+      rpc.mockResolvedValue({ data, error: null });
+      const error = await failureOf(writer.call);
+      expect({ status: error.status, code: error.code, message: error.message }).toEqual({ status: 500, code: undefined, message: '発注の記録に失敗しました' });
+    });
+  });
+
+  test('FREQ-529-AC-01: 受け取りの明細は lineId と quantity だけを渡し（余分な項目は付けない）、メモが無ければ null を渡す', async () => {
+    rpc.mockResolvedValue({ data: { receiptId: NEW_RECEIPT, version: 4, allocatedQuantity: 0, replayed: false }, error: null });
+    const lines = [{ lineId: LINE_A, quantity: 2, extra: 'x' }] as unknown as Array<{ lineId: string; quantity: number }>;
+    await receivePurchaseOrder(client, 'actor-1', { ...base, receivedOn: '2026-10-26', memo: null, lines });
+    const args = rpc.mock.calls[0][1];
+    expect(args._memo).toBeNull();
+    expect(args._lines).toEqual([{ lineId: LINE_A, quantity: 2 }]);
+    expect(Object.keys(args._lines[0])).toEqual(['lineId', 'quantity']);
+  });
+
+  test('FREQ-529-AC-04: 取消の明細は receiptLineId と quantity だけを渡し、確認の数が無ければ null（最初の送信）。0 は 0 のまま渡す', async () => {
+    rpc.mockResolvedValue({ data: { receiptId: NEW_RECEIPT, version: 4, releasedQuantity: 0, replayed: false }, error: null });
+    const lines = [{ receiptLineId: RECEIPT_LINE_A, quantity: 2, extra: 'x' }] as unknown as Array<{ receiptLineId: string; quantity: number }>;
+    await reversePurchaseOrderReceipt(client, 'actor-1', { ...base, receiptId: RECEIPT, lines, reason: '数え間違い', expectedReleaseQuantity: null });
+    expect(rpc.mock.calls[0][1]._expected_release_quantity).toBeNull();
+    expect(rpc.mock.calls[0][1]._lines).toEqual([{ receiptLineId: RECEIPT_LINE_A, quantity: 2 }]);
+    expect(Object.keys(rpc.mock.calls[0][1]._lines[0])).toEqual(['receiptLineId', 'quantity']);
+    await reversePurchaseOrderReceipt(client, 'actor-1', { ...base, receiptId: RECEIPT, lines, reason: '数え間違い', expectedReleaseQuantity: 0 });
+    expect(rpc.mock.calls[1][1]._expected_release_quantity).toBe(0);
+  });
+
+  test('FREQ-529-AC-04: 外す割当の確認（55000）は DETAIL の {"releasedQuantity":n} だけを解釈し、409・code・releasedQuantity を持つ PurchaseOrderError にする', async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: { message: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', code: '55000', details: '{"releasedQuantity": 3}', hint: 'PRIVATE-MARKER' },
+    });
+    const error = await failureOf(() => reversePurchaseOrderReceipt(client, 'actor-1', {
+      ...base, receiptId: RECEIPT, lines: [{ receiptLineId: RECEIPT_LINE_A, quantity: 2 }], reason: '数え間違い', expectedReleaseQuantity: null,
+    }));
+    expect({ status: error.status, code: error.code, message: error.message, releasedQuantity: error.releasedQuantity })
+      .toEqual({ status: 409, code: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', message: '割り当て済みの品を外す必要があります。数量を確認してください。', releasedQuantity: 3 });
+    expect(JSON.stringify(error)).not.toContain('PRIVATE-MARKER');
+    // 確認の数 0 もそのまま
+    rpc.mockResolvedValue({ data: null, error: { message: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', code: '55000', details: '{"releasedQuantity": 0}' } });
+    expect((await failureOf(() => receivePurchaseOrder(client, 'actor-1', {
+      ...base, receivedOn: '2026-10-26', memo: null, lines: [{ lineId: LINE_A, quantity: 1 }],
+    }))).releasedQuantity).toBe(0);
+  });
+
+  test.each([
+    ['DETAIL が無い', undefined], ['DETAIL が null', null], ['DETAIL が JSON でない', 'not json'], ['キーが違う', '{"released": 3}'],
+    ['キーが2つ', '{"releasedQuantity": 3, "extra": 1}'], ['点数が負', '{"releasedQuantity": -1}'], ['点数が小数', '{"releasedQuantity": 1.5}'],
+    ['点数が文字', '{"releasedQuantity": "3"}'], ['点数が大きすぎる', '{"releasedQuantity": 2147483648}'], ['配列', '[3]'], ['SQLSTATE が違う（別の誤りの DETAIL）', '{"releasedQuantity": 3}'],
+  ])('FREQ-529-AC-04: 確認の誤りでも %s なら確認として受け入れず、500の固定の文', async (name, details) => {
+    const code = name.startsWith('SQLSTATE') ? '22023' : '55000';
+    rpc.mockResolvedValue({ data: null, error: { message: 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', code, details } });
+    const error = await failureOf(() => reversePurchaseOrderReceipt(client, 'actor-1', {
+      ...base, receiptId: RECEIPT, lines: [{ receiptLineId: RECEIPT_LINE_B, quantity: 1 }], reason: '数え間違い', expectedReleaseQuantity: null,
+    }));
+    expect({ status: error.status, code: error.code, message: error.message, releasedQuantity: error.releasedQuantity })
+      .toEqual({ status: 500, code: undefined, message: '発注の記録に失敗しました', releasedQuantity: undefined });
+  });
+
+  test('FREQ-529-AC-04: PurchaseOrderError は releasedQuantity を、表にある code の時だけ持つ', () => {
+    expect(new PurchaseOrderError(409, 'GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED', { releasedQuantity: 2 }).releasedQuantity).toBe(2);
+    expect(new PurchaseOrderError(500, 'PRIVATE-MARKER', { releasedQuantity: 2 }).releasedQuantity).toBeUndefined();
+    expect(new PurchaseOrderError(403, 'GROUP_G_FORBIDDEN', { surface: 'receipt' }).message).toBe(RECEIPT_FORBIDDEN);
+    expect(new PurchaseOrderError(403, 'GROUP_G_FORBIDDEN').message).toBe('発注を扱う権限がありません。');
   });
 });
 

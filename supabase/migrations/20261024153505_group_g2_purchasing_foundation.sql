@@ -980,6 +980,8 @@ GRANT EXECUTE ON FUNCTION public.list_admin_purchase_order_lines(integer, intege
 --     internal operation id are never part of it (the sha256 is). Order of the arrays: lines by line_no; revisions by
 --     revision_no, then the order-level row before the line rows (by line_no), then kind; short closures and receipts by
 --     the time they were recorded; receipt lines by line_no; attachments, pending uploads by creation time.
+--       receipts.actorEmail : the e-mail of the user who recorded the receipt (NULL when the account no longer exists), the same
+--         way the stock history shows who moved stock; the screen shows it as the "executor" of the receipt.
 --       reversibleQuantity : for a positive receipt line, its quantity plus the (negative) offsets that point at it; 0 for an offset.
 --       attachments.current : the row of the attachment's latest revision (the largest revision_no), except that
 --         replacesAttachmentId is read from revision 1 (the only revision that can store the link, per the table CHECK),
@@ -1039,7 +1041,8 @@ BEGIN
       WHERE sl.purchase_order_id = v_order.id),
     'receipts', (SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
         'id', rc.id, 'kind', rc.kind, 'receivedOn', rc.received_on, 'memo', rc.memo, 'reason', rc.reason,
-        'actorId', rc.actor_id, 'createdAt', rc.created_at,
+        'actorId', rc.actor_id,
+        'actorEmail', (SELECT u.email::text FROM auth.users AS u WHERE u.id = rc.actor_id), 'createdAt', rc.created_at,
         'lines', (SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
             'id', rcl.id, 'lineId', rcl.line_id, 'quantity', rcl.quantity,
             'reversesReceiptLineId', rcl.reverses_receipt_line_id,

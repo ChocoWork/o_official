@@ -6,8 +6,12 @@
 // 操作（Task 6 / FREQ-527・528）: 数量確定待ちは「数量確定」「発注を取り消す」、確定後は「数量を訂正」と、未納のある行を選んで「残りを打ち切る」、
 // いつでも「発注先・メモを訂正」。成功したら通知を role=status で出して発注書を読み直す（読み直しに失敗しても今の表示は消さない）。
 // 作成の直後は発注の画面が目印（created）つきで移してくるので、読み込んだ発注書の番号で通知を role=status で出す（操作の通知が出たら入れ替わる）。
+// 受け取り（Task 7 / FREQ-529）: 数量確定済みで未納のある行がある時だけ「全部受け取る」「一部を受け取る」。受け取りの履歴の、取り消せる数が残る
+// 受取には「この受け取りを取り消す」「数量を訂正」（受取ごとに日付つきの名前にして、頁の「数量を訂正」と区別する）。
 import { useEffect, useId, useState } from 'react';
 import PurchaseOrderQuantityDialog from '@/components/PurchaseOrderQuantityDialog';
+import PurchaseOrderReceiptReverseDialog from '@/components/PurchaseOrderReceiptReverseDialog';
+import PurchaseOrderReceiveDialog from '@/components/PurchaseOrderReceiveDialog';
 import PurchaseOrderShortCloseDialog from '@/components/PurchaseOrderShortCloseDialog';
 import { Button } from '@/components/ui/Button/Button';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
@@ -29,6 +33,7 @@ import {
   PURCHASE_ORDER_LIMITS,
   PURCHASE_ORDER_LIST_TEXT,
   PURCHASE_ORDER_RECEIPT_KIND_LABELS,
+  PURCHASE_ORDER_RECEIPT_TEXT,
   PURCHASE_ORDER_REVISION_KIND_LABELS,
   type PurchaseOrderDetail,
   type PurchaseOrderRevision,
@@ -51,8 +56,11 @@ type State =
   | { phase: 'error'; message: string }
   | { phase: 'ready'; detail: PurchaseOrderDetail };
 
-/** 開いているダイアログ。close は選んだ行の残りの打切り、cancel は確定前の取消 */
-type DialogKind = 'confirm' | 'correct' | 'close' | 'cancel' | 'header';
+/** 開いているダイアログ。close は選んだ行の残りの打切り、cancel は確定前の取消、receiveAll・receivePart は受け取り */
+type DialogKind = 'confirm' | 'correct' | 'close' | 'cancel' | 'header' | 'receiveAll' | 'receivePart';
+
+/** 取り消す受取と、取消（全部）か数量訂正（一部）か */
+type ReverseTarget = { receiptId: string; mode: 'cancel' | 'correct' };
 
 type Props = {
   purchaseOrderId: string;
@@ -179,6 +187,7 @@ export default function PurchaseOrderDetailSection({ purchaseOrderId, created = 
   // 操作が済んだ・版が古かった時に増やすと、発注書を読み直す（表示は読み直しが済むまで今のまま）
   const [reloadKey, setReloadKey] = useState(0);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
+  const [reverseTarget, setReverseTarget] = useState<ReverseTarget | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -230,6 +239,7 @@ export default function PurchaseOrderDetailSection({ purchaseOrderId, created = 
   const reload = (): void => setReloadKey((key) => key + 1);
   const handleSaved = (message: string): void => {
     setDialog(null);
+    setReverseTarget(null);
     setSelected(new Set());
     setNotice(message);
     reload();
@@ -242,6 +252,10 @@ export default function PurchaseOrderDetailSection({ purchaseOrderId, created = 
     });
   };
   const dialogProps = { onClose: () => setDialog(null), onSaved: handleSaved, onStale: reload };
+  // 取り消す受取。読み直しで消えた・取り消せる数が無くなった時は、ダイアログを出さない
+  const reverseReceipt = reverseTarget === null ? undefined : detail?.receipts.find((receipt) => receipt.id === reverseTarget.receiptId);
+  const reversible = (receipt: PurchaseOrderDetail['receipts'][number]): boolean =>
+    receipt.kind === 'receive' && receipt.lines.some((line) => line.reversibleQuantity > 0);
   // 作成の直後の通知。操作の通知が出たら入れ替わる（role=status は常に1つ）
   const statusNotice = notice ?? (created && detail ? formatPurchaseOrderCreatedNotice(detail.number) : null);
 
@@ -269,6 +283,12 @@ export default function PurchaseOrderDetailSection({ purchaseOrderId, created = 
             ) : null}
             {selectedIds.length > 0 ? (
               <Button size="sm" onClick={() => setDialog('close')}>{PURCHASE_ORDER_ACTION_TEXT.shortClose}</Button>
+            ) : null}
+            {outstandingIds.length > 0 ? (
+              <>
+                <Button size="sm" onClick={() => setDialog('receiveAll')}>{PURCHASE_ORDER_RECEIPT_TEXT.receiveAll}</Button>
+                <Button size="sm" variant="secondary" onClick={() => setDialog('receivePart')}>{PURCHASE_ORDER_RECEIPT_TEXT.receivePart}</Button>
+              </>
             ) : null}
           </div>
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2">
@@ -370,6 +390,7 @@ export default function PurchaseOrderDetailSection({ purchaseOrderId, created = 
                     <p>{`${formatPurchaseOrderDay(receipt.receivedOn)} ${PURCHASE_ORDER_RECEIPT_KIND_LABELS[receipt.kind]}`}</p>
                     {receipt.memo !== null ? <p className="break-words">{receipt.memo}</p> : null}
                     {receipt.reason !== null ? <p className="break-words">{`理由 ${receipt.reason}`}</p> : null}
+                    <p className="break-words">{`実行者 ${receipt.actorEmail ?? '—'}`}</p>
                     <ul className="space-y-1">
                       {receipt.lines.map((line) => (
                         <li key={line.id} className="flex flex-wrap gap-x-3">
@@ -378,6 +399,26 @@ export default function PurchaseOrderDetailSection({ purchaseOrderId, created = 
                         </li>
                       ))}
                     </ul>
+                    {reversible(receipt) ? (
+                      <div className="flex flex-wrap gap-3">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          aria-label={`${PURCHASE_ORDER_RECEIPT_TEXT.reverse}（${formatPurchaseOrderDay(receipt.receivedOn)}）`}
+                          onClick={() => setReverseTarget({ receiptId: receipt.id, mode: 'cancel' })}
+                        >
+                          {PURCHASE_ORDER_RECEIPT_TEXT.reverse}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          aria-label={`${PURCHASE_ORDER_RECEIPT_TEXT.correct}（${formatPurchaseOrderDay(receipt.receivedOn)}）`}
+                          onClick={() => setReverseTarget({ receiptId: receipt.id, mode: 'correct' })}
+                        >
+                          {PURCHASE_ORDER_RECEIPT_TEXT.correct}
+                        </Button>
+                      </div>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -393,6 +434,19 @@ export default function PurchaseOrderDetailSection({ purchaseOrderId, created = 
           {dialog === 'close' ? <PurchaseOrderShortCloseDialog purchaseOrder={detail} mode="close" lineIds={selectedIds} {...dialogProps} /> : null}
           {dialog === 'cancel' ? <PurchaseOrderShortCloseDialog purchaseOrder={detail} mode="cancel" lineIds={[]} {...dialogProps} /> : null}
           {dialog === 'header' ? <HeaderCorrectionDialog purchaseOrder={detail} {...dialogProps} /> : null}
+          {dialog === 'receiveAll' || dialog === 'receivePart' ? (
+            <PurchaseOrderReceiveDialog purchaseOrder={detail} mode={dialog === 'receiveAll' ? 'all' : 'part'} {...dialogProps} />
+          ) : null}
+          {reverseTarget !== null && reverseReceipt !== undefined && reversible(reverseReceipt) ? (
+            <PurchaseOrderReceiptReverseDialog
+              purchaseOrder={detail}
+              receipt={reverseReceipt}
+              mode={reverseTarget.mode}
+              onClose={() => setReverseTarget(null)}
+              onSaved={handleSaved}
+              onStale={reload}
+            />
+          ) : null}
         </>
       ) : null}
     </div>

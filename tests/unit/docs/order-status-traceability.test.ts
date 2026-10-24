@@ -221,13 +221,13 @@ test('2つのAPIの全HTTPとnone/401/503の違いとX1を記録する', () => {
 test('API一覧の数と2つの追加行が実ソースと一致する', () => {
   const routes = walk('src/app/api').filter((file) => file.endsWith('/route.ts'));
   const methods = routes.flatMap((file) => [...read(file).matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b|export\s+const\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g)]);
-  expect(routes).toHaveLength(137); expect(methods).toHaveLength(178);
+  expect(routes).toHaveLength(139); expect(methods).toHaveLength(180);
   const inventory = read(contractFiles[1]);
   const entries = inventory.split('\n').filter((line) => line.startsWith('| ' + tick + '/api/'));
-  expect(entries).toHaveLength(136);
-  expect(entries.flatMap((line) => line.split('|')[2].match(new RegExp(tick + '(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)' + tick, 'g')) ?? [])).toHaveLength(177);
-  mustContain(read(contractFiles[0]), ['137ファイル', '178組', '136ファイル・177組', 'HEAD/OPTIONSは178組に含めない']);
-  mustContain(inventory, ['137ファイル・178メソッド', '136行・177メソッド',
+  expect(entries).toHaveLength(138);
+  expect(entries.flatMap((line) => line.split('|')[2].match(new RegExp(tick + '(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)' + tick, 'g')) ?? [])).toHaveLength(179);
+  mustContain(read(contractFiles[0]), ['139ファイル', '180組', '138ファイル・179組', 'HEAD/OPTIONSは180組に含めない']);
+  mustContain(inventory, ['139ファイル・180メソッド', '138行・179メソッド',
     '| ' + tick + '/api/order-status/[token]/private' + tick + ' | ' + tick + 'GET' + tick + ' |',
     '| ' + tick + '/api/order-status/[token]/verify' + tick + ' | ' + tick + 'POST' + tick + ' |']);
 });

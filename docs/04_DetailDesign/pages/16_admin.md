@@ -1,4 +1,4 @@
-﻿# 1.16 管理画面（ADMIN）詳細設計
+# 1.16 管理画面（ADMIN）詳細設計
 
 > 状態: 既存設計 | 実装状況は項目ごとに要再照合
 
@@ -885,10 +885,10 @@ G-2 の画面は、管理メニューの INVENTORY から入る。この節は T
 | 旗と見込額 | **数量確定後（保存する段階が `quantity_confirmed`）だけ**、`flags.unitPriceMissing` が真なら「単価未登録」、`flags.documentMissing` が真なら「証憑未添付」のバッジ。単価がある行があれば「発注見込額 ¥6,000」の形（単価 × 確定数量の合計。単価のない行は含めない）と、隣に「税の扱いは書類に従います」。見込額が無い（全行が単価未登録）時は出さない。数量確定前は旗も見込額も出さない |
 | 明細の表 | `aria-label="明細"`。列は「商品名」「色」「サイズ」「仮数量」「発注数量」「納品済み」「未納」「単価（円）」の8つで、`line_no` 順（窓口の順）。数量確定前の行は「発注数量」と「未納」が「数量未確定」、単価が無ければ「未登録」、あれば3桁区切り（`1,200`） |
 | 数量の履歴 | h2「数量の履歴」。列は「版」「日時（日本時間 `YYYY/MM/DD HH:mm`）」「種類（発注／発注先・メモの訂正／数量の確定・訂正／打切り）」「対象（発注書／商品名 色 サイズ）」「変更（`数量 4 → 3`・`単価`・`発注先`・`メモ`を「・」でつなぐ。変更前が無ければ変更後だけ。**前後の値が同じ項目は出さない**: 単価だけの訂正の履歴は前後の数量が同じなので `単価 500 → 650` だけ、発注先が同じ訂正は `メモ …` だけ）」「理由」。窓口の順（版 → 発注書全体の行 → 明細番号 → 種類） |
-| 受け取りの履歴 | h2「受け取りの履歴」。受け取りごとに「${日付} 受け取り」または「${日付} 受け取りの取消」、メモ、理由、受取行（商品名 色 サイズ と `+2`／`-1` の数量）。無ければ「受け取りの記録はありません。」。取り消せる数（`reversibleQuantity`）は後続の Task が使う |
+| 受け取りの履歴 | h2「受け取りの履歴」。受け取りごとに「${日付} 受け取り」または「${日付} 受け取りの取消」、メモ、理由、「実行者 ${メールアドレス}」（詳細の読取の関数が受取ごとに返す `actorEmail`。在庫の履歴と同じ見せ方で、アカウントが無ければ「実行者 —」。相殺の受取にも出す）、受取行（商品名 色 サイズ と `+2`／`-1` の数量）。無ければ「受け取りの記録はありません。」。取り消せる数（`reversibleQuantity`）が残る受取には、Task 7 が「この受け取りを取り消す」「数量を訂正」を足した（下の「受け取りと、その取消・数量訂正」） |
 | 取引書類 | h2「取引書類」の見出しだけ。書類の一覧・無効の印・保存途中の予約（`pendingUploads`）・追加・表示・無効化・訂正は Task 8 が足す（窓口は書類と予約を既に返すが、この Task の画面は使わない） |
 
-受け取りと書類のボタンは後続の Task が足す。窓口の仕様は[API仕様](../../03_BasicDesign/api/api-spec.md)の `GET /api/admin/purchase-orders/[id]`、表示段階の導き方は[発注書の状態](../states/purchasing.md)。
+受け取りのボタンは Task 7 が足した（下の「受け取りと、その取消・数量訂正」）。書類のボタンは後続の Task が足す。窓口の仕様は[API仕様](../../03_BasicDesign/api/api-spec.md)の `GET /api/admin/purchase-orders/[id]`、表示段階の導き方は[発注書の状態](../states/purchasing.md)。
 
 #### 発注書の頁の操作（Task 6 / FREQ-527・528）
 
@@ -906,3 +906,18 @@ G-2 の画面は、管理メニューの INVENTORY から入る。この節は T
 | 版の競合 | 409 は表の本文「発注書が更新されました。内容を確認して、もう一度送ってください。」を出し、親が発注書を読み直す。ダイアログは開いたまま入力を保ち、次の送信は読み直した版で送る |
 
 検証: 単体 [画面](../../../tests/unit/components/PurchaseOrderDetailSection.test.tsx)・[頁](../../../tests/unit/components/PurchaseOrderDetailPage.test.tsx)・[数量のダイアログ](../../../tests/unit/components/PurchaseOrderQuantityDialog.test.tsx)・[打切りのダイアログ](../../../tests/unit/components/PurchaseOrderShortCloseDialog.test.tsx)・[窓口](../../../tests/unit/api/admin/purchase-order-detail-route.test.ts)・[発注先・メモの窓口](../../../tests/unit/api/admin/purchase-order-header-route.test.ts)・[数量の窓口](../../../tests/unit/api/admin/purchase-order-quantities-route.test.ts)・[打切りの窓口](../../../tests/unit/api/admin/purchase-order-short-closures-route.test.ts)・[store](../../../tests/unit/lib/purchase-orders/purchase-order-store.test.ts)・[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)。DB [発注の読取](../../../tests/integration/db/group_g2_purchase_reads.integration.test.ts)・[数量・打切り](../../../tests/integration/db/group_g2_purchase_quantities.integration.test.ts)。3つの画面幅の確認は Task 10 の E2E。
+
+#### 受け取りと、その取消・数量訂正（Task 7 / FREQ-529）
+
+受け取りの部品は2つ。送る流れは Task 6 と同じ [usePurchaseOrderWrite](../../../src/hooks/usePurchaseOrderWrite.ts) が持ち、受け取り用に `surface: 'receipt'`（権限の拒否の文が「受け取りを記録する権限がありません。」になる）と、外す割当の確認の409を失敗にせず点数を `submit` の戻りで返す `confirmsRelease` を足した。CSRF の確かめで断られた403は、発注の画面も含めて「セキュリティ確認に失敗しました。ページを再読み込みして、もう一度送ってください。」を出す（権限の不足とは言わない）。
+
+| 要素 | 内容 |
+| --- | --- |
+| ボタン（頁の上） | 数量確定後で**未納のある行がある時だけ**「全部受け取る」「一部を受け取る」。数量確定前・未納が全て0の時は出さない |
+| 受取ごとのボタン | 受け取りの履歴の、**種類が受け取りで取り消せる数が残る行のある受取**にだけ「この受け取りを取り消す」「数量を訂正」。相殺の受取と、取り消せる数が全て0の受取には出さない。頁の「数量を訂正」（数量の訂正）と区別するため、ボタンの名前（`aria-label`）は受取の日付つきの「この受け取りを取り消す（2026/10/26）」「数量を訂正（2026/10/26）」で、見える文字は計画どおり。読み直しで取り消せる数が無くなった受取のダイアログは閉じる |
+| 受け取り（[PurchaseOrderReceiveDialog](../../../src/components/PurchaseOrderReceiveDialog.tsx)） | 見出し「全部を受け取る」／「一部を受け取る」。説明「検品で不良だった分は入力せず、未納のまま待つか、あとで打ち切ってください。」。表（`aria-label="受け取る行"`、見出しを保った縦横にスクロールする領域）は「商品名」「色」「サイズ」「発注数量」「納品済み」「未納」「今回受け取った数」の7列で、**未納のある行だけ**を発注書の行の並びで並べる。「今回受け取った数」は、全部は未納が初期値で変えられない（読み取り専用）、一部は空欄で始まり各行の良品数（1〜未納。空欄の行は受け取らない。未納を超える数は行の下に「未納の数を超えて受け取ることはできません。先に数量を訂正してください。」、0・負・小数は「入力を確かめてください。」を出す）。「受取日」（日付の入力。初期値は今日・日本時間。最小は発注日、最大は今日。範囲外は「受取日は発注日から今日までの日付にしてください。」を出して送れない）と「メモ」（任意・200字）。ボタン「受け取りを確定」「戻る」。範囲内の行が1つ以上あり、不正な行が無い間だけ押せる。通知「受け取りを記録しました。」。窓口は `POST /api/admin/purchase-orders/[id]/receipts` |
+| 取消・数量訂正（[PurchaseOrderReceiptReverseDialog](../../../src/components/PurchaseOrderReceiptReverseDialog.tsx)） | 見出し「受け取りの取消」／「受け取り数量の訂正」。説明「受け取りで入った在庫を、まず空き在庫から減らします。足りない時は、支払い済みの注文の割当を新しい注文から外します。」。取り消せる数が残る行ごとに商品名と「取り消せる数 ${n}」と「取り消す数」（取消は取り消せる数ぜんぶで変えられない、訂正は空欄で始まり1〜取り消せる数。超える数は「取り消せる数を超えています。」）。「理由」必須（空・空白だけの間は押せない）。ボタンは取消「取り消す」・訂正「訂正する」と「戻る」。通知「受け取りを取り消しました。」／「受け取り数量を訂正しました。」。窓口は `POST /api/admin/purchase-orders/[id]/receipts/[receiptId]/reversals` |
+| 確認の段 | 外す割当があると最初の送信は409（書込み0件・`releasedQuantity` つき）になる。ダイアログは**見出しをそのまま**、`role="status"` の本文「割り当て済みの品を${n}点外し、受注生産中に戻します。」を出し、行の数は変えられなくなる（確認した数と送る数をずらさない）。ボタンは同じ名前（「取り消す」／「訂正する」）で、押すと**新しい requestKey** と `expectedReleaseQuantity` = n で送り直す（通信の失敗・5xx の後の再押下だけが同じ requestKey と本文）。送り直しで外す点数が変わっていれば再び409になり、本文を新しい n で出し直す。外す点数が 0 になっていた時（空き在庫が増えた等）は確認が要らないので確認の段を出さず（「0点外し」とは見せない）、確認の数なしの新しい要求で自動で送り直す。この段の「戻る」は入力の段に戻る（入力は保ち、次の送信は確認の数なしの新しい要求）。この段で理由が空になっていたら送らずに「理由を入力してください。」を出す。保存中は閉じない。複数の variant の取消では n は variant ごとの合計 |
+| 失敗 | 取り消す数が空き在庫と外せる割当の合計を超えると「在庫が足りないため取り消せません。取り消す数が、空き在庫と外せる割当の合計を超えています。」、取り消せる数の超過、数量確定前・未納超過・受取日の誤り、版の競合は表の本文を出し、**入力と確認の段は保つ**。版の競合は親が読み直す |
+
+検証: 単体 [受け取りのダイアログ](../../../tests/unit/components/PurchaseOrderReceiveDialog.test.tsx)・[取消・訂正のダイアログ](../../../tests/unit/components/PurchaseOrderReceiptReverseDialog.test.tsx)・[発注書の画面](../../../tests/unit/components/PurchaseOrderDetailSection.test.tsx)・[受け取りの窓口](../../../tests/unit/api/admin/purchase-order-receipts-route.test.ts)・[取消の窓口](../../../tests/unit/api/admin/purchase-order-receipt-reversals-route.test.ts)・[store](../../../tests/unit/lib/purchase-orders/purchase-order-store.test.ts)・[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)。DB [受け取り](../../../tests/integration/db/group_g2_purchase_receipts.integration.test.ts)・[受け取りの取消](../../../tests/integration/db/group_g2_purchase_receipt_reversals.integration.test.ts)。3つの画面幅の確認は Task 10 の E2E。
