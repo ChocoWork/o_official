@@ -8,7 +8,9 @@
 // 作成の直後は発注の画面が目印（created）つきで移してくるので、読み込んだ発注書の番号で通知を role=status で出す（操作の通知が出たら入れ替わる）。
 // 受け取り（Task 7 / FREQ-529）: 数量確定済みで未納のある行がある時だけ「全部受け取る」「一部を受け取る」。受け取りの履歴の、取り消せる数が残る
 // 受取には「この受け取りを取り消す」「数量を訂正」（受取ごとに日付つきの名前にして、頁の「数量を訂正」と区別する）。
+// 取引書類（Task 8 / FREQ-530）: 書類の一覧・保存が終わっていないファイル・操作は PurchaseOrderDocumentsSection が出す。保存・訂正・無効化の後は通知を出して読み直す。
 import { useEffect, useId, useState } from 'react';
+import PurchaseOrderDocumentsSection from '@/components/PurchaseOrderDocumentsSection';
 import PurchaseOrderQuantityDialog from '@/components/PurchaseOrderQuantityDialog';
 import PurchaseOrderReceiptReverseDialog from '@/components/PurchaseOrderReceiptReverseDialog';
 import PurchaseOrderReceiveDialog from '@/components/PurchaseOrderReceiveDialog';
@@ -43,7 +45,6 @@ const LINE_HEADINGS = ['商品名', '色', 'サイズ', '仮数量', '発注数�
 const REVISION_HEADINGS = ['版', '日時', '種類', '対象', '変更', '理由'] as const;
 const REVISIONS_ID = 'purchase-order-revisions-heading';
 const RECEIPTS_ID = 'purchase-order-receipts-heading';
-const DOCUMENTS_ID = 'purchase-order-documents-heading';
 const HEAD_CELL = 'sticky top-0 z-10 whitespace-nowrap border-b border-black/15 bg-white p-3 font-normal';
 const NUMBER_CELL = 'p-3 text-right tabular-nums';
 const SCROLL_REGION_CLASS = 'max-h-[70vh] max-w-full overflow-auto border border-black/15 focus-visible:outline-2';
@@ -425,10 +426,7 @@ export default function PurchaseOrderDetailSection({ purchaseOrderId, created = 
             )}
           </section>
 
-          {/* 取引書類の中身（一覧・保存途中の予約・操作）は Task 8 が足す。この Task は節の見出しだけ */}
-          <section aria-labelledby={DOCUMENTS_ID} className="space-y-3">
-            <h2 id={DOCUMENTS_ID} className="lk-text-lg">取引書類</h2>
-          </section>
+          <PurchaseOrderDocumentsSection purchaseOrder={detail} onSaved={handleSaved} onReload={reload} />
 
           {dialog === 'confirm' || dialog === 'correct' ? <PurchaseOrderQuantityDialog purchaseOrder={detail} {...dialogProps} /> : null}
           {dialog === 'close' ? <PurchaseOrderShortCloseDialog purchaseOrder={detail} mode="close" lineIds={selectedIds} {...dialogProps} /> : null}

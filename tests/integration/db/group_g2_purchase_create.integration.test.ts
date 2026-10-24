@@ -135,7 +135,7 @@ describe('G-2 writers migration の発注作成の節（DB なし）', () => {
     expect(delegate).toContain('SELECT private.admin_create_purchase_order(_supplier_name, _memo, _lines, _actor_id, _request_key);');
   });
 
-  test('FREQ-526-AC-02: 書き手の一覧は G-1 の56本を1文字も変えず、末尾に admin_create_purchase_order と Task 6 の3本（発注先・メモの訂正、数量の確定・訂正、残りの打切り）と Task 7 の2本（受け取り、受け取りの取消）を足した62本', () => {
+  test('FREQ-526-AC-02: 書き手の一覧は G-1 の56本を1文字も変えず、末尾に admin_create_purchase_order と Task 6 の3本（発注先・メモの訂正、数量の確定・訂正、残りの打切り）と Task 7 の2本（受け取り、受け取りの取消）と Task 8 の3本（原本の予約・確定・訂正）を足した65本', () => {
     const g1 = allowlistOf(withoutComments(G1_SQL), 'CREATE FUNCTION private.group_g_writer_allowlist()');
     const next = allowlistOf(WRITERS_CODE, 'CREATE OR REPLACE FUNCTION private.group_g_writer_allowlist()');
     expect(g1).toHaveLength(56);
@@ -146,8 +146,11 @@ describe('G-2 writers migration の発注作成の節（DB なし）', () => {
       'private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)',
       'private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid)',
       'private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)',
+      'private.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid)',
+      'private.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid)',
+      'private.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid)',
     ]);
-    expect(new Set(next).size).toBe(62);
+    expect(new Set(next).size).toBe(65);
     const header = functionText(WRITERS_CODE, 'CREATE OR REPLACE FUNCTION private.group_g_writer_allowlist()', 'SELECT ARRAY[');
     expect(header).toContain("LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''");
   });
@@ -162,7 +165,8 @@ describe('G-2 writers migration の発注作成の節（DB なし）', () => {
       expect(section).toContain(`v_failed := '${detail}'`);
     }
     expect(section.match(/RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = v_failed/g)).toHaveLength(2);
-    expect(section).toContain('<> 62');
+    expect(section).toContain('<> 65');
+    expect(section).not.toContain('<> 62');
     expect(section).not.toContain('<> 60');
     expect(section).not.toContain('<> 57');
     expect(section).toContain("ARRAY['MAINTAIN']");

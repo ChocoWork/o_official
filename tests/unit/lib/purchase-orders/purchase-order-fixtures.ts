@@ -72,7 +72,7 @@ export function confirmedDetail(): PurchaseOrderDetail {
       },
     ],
     pendingUploads: [
-      { reservationId: RESERVATION_ID, kind: 'quote', fileName: 'quote.pdf', createdAt: '2026-10-25T15:00:00+00:00', expiresAt: '2026-10-25T16:00:00+00:00', expired: true },
+      { reservationId: RESERVATION_ID, kind: 'quote', fileName: 'quote.pdf', createdAt: '2026-10-25T15:00:00+00:00', expiresAt: '2026-10-25T16:00:00+00:00', expired: true, replacesAttachmentId: null },
     ],
     flags: { unitPriceMissing: true, documentMissing: false },
     estimatedAmountYen: 6000,

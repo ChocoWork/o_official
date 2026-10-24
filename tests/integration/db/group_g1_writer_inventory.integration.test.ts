@@ -13,7 +13,9 @@ import { createCatalogFixture } from './helpers/order-fixtures';
  * private.admin_create_purchase_order を足した57本に、G-2 Task 6 で発注先・メモの訂正 private.admin_update_purchase_order_header、
  * 数量の確定・訂正 private.admin_confirm_purchase_order_quantities、残りの打切り private.admin_short_close_purchase_order を足した
  * 60本に、G-2 Task 7 で受け取り private.admin_receive_purchase_order と受け取りの取消・数量訂正
- * private.admin_reverse_purchase_order_receipt を足した62本（G-2 の後続 Task が書き手を足すたびに増える）。
+ * private.admin_reverse_purchase_order_receipt を足した62本に、G-2 Task 8 で原本の予約 private.admin_reserve_purchase_order_attachment、
+ * 確定 private.admin_attach_purchase_order_document、訂正・無効化 private.admin_revise_purchase_order_document を足した65本
+ * （G-2 の後続 Task が書き手を足すたびに増える）。
  */
 jest.setTimeout(60000);
 
@@ -80,6 +82,9 @@ const ALLOWLIST = [
   'private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)',
   'private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid)',
   'private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)',
+  'private.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid)',
+  'private.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid)',
+  'private.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid)',
 ];
 
 const STOPPED = ALLOWLIST.slice(47, 53);
@@ -159,10 +164,10 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
   beforeEach(async () => { await db().query('begin'); });
   afterEach(async () => { await db().query('rollback'); });
 
-  test('一覧は決めた62本と同じ集合で、関数は postgres の SECURITY DEFINER・search_path 空・だれも EXECUTE できない', async () => {
+  test('一覧は決めた65本と同じ集合で、関数は postgres の SECURITY DEFINER・search_path 空・だれも EXECUTE できない', async () => {
     const expected = (await db().query('select to_regprocedure(s)::oid::text as oid, s from unnest($1::text[]) as s', [ALLOWLIST])).rows;
     expect(expected.filter((row) => row.oid === null).map((row) => row.s)).toEqual([]);
-    expect(new Set(expected.map((row) => row.oid)).size).toBe(62);
+    expect(new Set(expected.map((row) => row.oid)).size).toBe(65);
     const actual = (await db().query('select unnest(private.group_g_writer_allowlist())::oid::text as oid')).rows.map((row) => row.oid);
     expect([...actual].sort()).toEqual(expected.map((row) => row.oid).sort());
     const fn = (await db().query(`select p.proowner::regrole::text as owner, p.prosecdef, p.proconfig, p.provolatile,

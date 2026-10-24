@@ -28,6 +28,8 @@ type Options = {
   surface?: PurchaseOrderSurface;
   /** 外す割当の確認の409を失敗として扱わず、submit の戻りで点数を返す。偽（既定）なら他の失敗と同じように文を出す */
   confirmsRelease?: boolean;
+  /** 成功の応答の形の確かめ。既定は { version: 整数 } を持つ物（発注書の書込み）。書類の訂正（Task 8）は { attachmentId, revisionNo } を確かめる */
+  isSaved?: (body: unknown) => boolean;
 };
 
 function readCode(body: unknown): unknown {
@@ -35,13 +37,15 @@ function readCode(body: unknown): unknown {
 }
 
 /** 成功の応答（窓口の 200 / 201）か。形が崩れていれば成功として扱わない */
-function isSaved(body: unknown): boolean {
+function hasVersion(body: unknown): boolean {
   if (body === null || typeof body !== 'object') return false;
   const { version } = body as { version?: unknown };
   return typeof version === 'number' && Number.isInteger(version) && version >= 1;
 }
 
-export function usePurchaseOrderWrite({ url, method, onSaved, onStale, surface = 'order', confirmsRelease = false }: Options) {
+export function usePurchaseOrderWrite({
+  url, method, onSaved, onStale, surface = 'order', confirmsRelease = false, isSaved = hasVersion,
+}: Options) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sendingRef = useRef(false);

@@ -38,7 +38,8 @@ type WriteSpec<Body, Result, Params extends { id: string }> = {
   status: 200 | 201;
   run: (client: SupabaseClient, actorId: string, purchaseOrderId: string, body: Body, params: Params) => Promise<Result>;
   auditSuccess: (body: Body, result: Result) => Record<string, unknown>;
-  auditFailure: (body: Body) => Record<string, unknown>;
+  /** 失敗の監査の metadata。パスの uuid（検査済み）も渡す */
+  auditFailure: (body: Body, params: Params) => Record<string, unknown>;
 };
 
 function noStore(response: Response): Response {
@@ -97,7 +98,7 @@ export async function handlePurchaseOrderWrite<Body, Result, Params extends { id
       return noStore(NextResponse.json(result, { status: spec.status }));
     } catch (error) {
       const failure = error instanceof PurchaseOrderError ? error : new PurchaseOrderError();
-      await audit(failure.code ? 'failure' : 'error', purchaseOrderId, { ...spec.auditFailure(body), code: failure.code ?? spec.errorCode });
+      await audit(failure.code ? 'failure' : 'error', purchaseOrderId, { ...spec.auditFailure(body, params), code: failure.code ?? spec.errorCode });
       // 外す割当の確認(409)は、利用者が確認する点数を本文に入れる(G-1 の在庫の窓口と同じ形)。書込みは0件
       return noStore(NextResponse.json({
         ...(failure.code ? { code: failure.code } : {}),

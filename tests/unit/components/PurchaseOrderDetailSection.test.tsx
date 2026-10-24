@@ -182,7 +182,7 @@ describe('PurchaseOrderDetailSection', () => {
     expect(screen.getByRole('region', { name: '受け取りの履歴' })).toHaveTextContent('受け取りの記録はありません。');
   });
 
-  test('FREQ-526-AC-05: 取引書類の節は見出しだけ（書類の一覧・無効の印・保存途中の予約・操作は Task 8）。書類や予約があっても、ファイル名も保存先の鍵も出さない', async () => {
+  test('FREQ-530-AC-02: 取引書類の節は見出し「取引書類」の下に、書類の一覧（無効の印つき）・保存が終わっていないファイル・操作を出す。保存先の鍵は出さない', async () => {
     const detail = confirmedDetail();
     const [attachment] = detail.attachments;
     await loaded({
@@ -191,10 +191,28 @@ describe('PurchaseOrderDetailSection', () => {
     });
     const documents = screen.getByRole('region', { name: '取引書類' });
     expect(within(documents).getByRole('heading', { level: 2, name: '取引書類' })).toBeInTheDocument();
-    expect(documents.textContent).toBe('取引書類');
-    expect(within(documents).queryByRole('list')).not.toBeInTheDocument();
-    expect(screen.queryByText('無効')).not.toBeInTheDocument();
-    for (const text of ['invoice.pdf', 'old.pdf', 'quote.pdf', 'storage']) expect(document.body.textContent).not.toContain(text);
+    expect(within(documents).getByRole('button', { name: '書類を追加' })).toBeInTheDocument();
+    expect(within(documents).getAllByTestId('purchase-order-document')).toHaveLength(2);
+    expect(documents).toHaveTextContent('invoice.pdf');
+    expect(documents).toHaveTextContent('old.pdf');
+    expect(within(documents).getAllByText('無効')).toHaveLength(1);
+    expect(within(documents).getByRole('heading', { level: 3, name: '保存が終わっていないファイル' })).toBeInTheDocument();
+    expect(documents).toHaveTextContent('quote.pdf');
+    for (const text of ['storage', 'purchase-order-documents']) expect(document.body.textContent).not.toContain(text);
+  });
+
+  test('FREQ-530-AC-02: 取引書類を訂正・保存した後は通知を role=status で出し、発注書を読み直す', async () => {
+    const user = userEvent.setup();
+    await loaded({ ...confirmedDetail(), pendingUploads: [] });
+    fetchMock.mockResolvedValueOnce(json({ attachmentId: 'dddddddd-dddd-4ddd-8ddd-ddddddddddd1', revisionNo: 2, replayed: false }, 201));
+    fetchMock.mockResolvedValueOnce(json({ purchaseOrder: confirmedDetail() }));
+    await user.click(screen.getByRole('button', { name: '無効にする' }));
+    const dialog = screen.getByRole('dialog', { name: '書類を無効にする' });
+    await user.type(within(dialog).getByRole('textbox', { name: '理由' }), '宛先の誤り');
+    await user.click(within(dialog).getByRole('button', { name: '無効にする' }));
+    expect(await screen.findByText('書類を無効にしました。')).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(fetchMock.mock.calls[2][0]).toBe(`/api/admin/purchase-orders/${ORDER_ID}`);
   });
 
   test('FREQ-526-AC-05: 表は見出しを保ったスクロール領域に入り、頁全体を横に広げない', async () => {

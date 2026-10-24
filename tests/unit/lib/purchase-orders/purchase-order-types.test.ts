@@ -1,8 +1,15 @@
 import {
   PURCHASE_ORDER_ACTION_TEXT,
+  PURCHASE_ORDER_ATTACHMENT_KIND_LABELS,
   PURCHASE_ORDER_CREATED_QUERY,
   PURCHASE_ORDER_DETAIL_TEXT,
   PURCHASE_ORDER_DISPLAY_STAGE_LABELS,
+  PURCHASE_ORDER_DOCUMENT_ERRORS,
+  PURCHASE_ORDER_DOCUMENT_MAX_BYTES,
+  PURCHASE_ORDER_DOCUMENT_MIN_DAY,
+  PURCHASE_ORDER_DOCUMENT_PAGE_LIMIT,
+  PURCHASE_ORDER_DOCUMENT_SIGNATURE_LENGTH,
+  PURCHASE_ORDER_DOCUMENT_TEXT,
   PURCHASE_ORDER_ERRORS,
   PURCHASE_ORDER_LIMITS,
   PURCHASE_ORDER_LIST_TEXT,
@@ -17,9 +24,14 @@ import {
   formatYen,
   isPurchaseOrderCreatedQuery,
   isPurchaseOrderDay,
+  hasPurchaseOrderDocumentSignature,
+  isPurchaseOrderErrorCode,
   isPurchaseOrderQuantity,
   parsePurchaseOrderDetail,
+  parsePurchaseOrderDocumentSearchRow,
   parsePurchaseOrderListRow,
+  purchaseOrderDocumentMimeOfName,
+  purchaseOrderDocumentStateLabel,
   PURCHASE_ORDER_RECEIPT_TEXT,
   PURCHASE_ORDER_SURFACE_FORBIDDEN,
   purchaseOrderCreateFailureMessage,
@@ -30,7 +42,7 @@ import {
   type PurchaseOrderDisplayStage,
   type PurchaseOrderStage,
 } from '@/lib/purchase-orders/purchase-order-types';
-import { confirmedDetail, listRow, orderedDetail } from './purchase-order-fixtures';
+import { ATTACHMENT_ID, confirmedDetail, listRow, ORDER_ID, orderedDetail } from './purchase-order-fixtures';
 
 describe('purchase-order-types', () => {
   test('FREQ-526-AC-01: 値の範囲は計画の共通の値と同じ（行1〜100・仮数量1〜99999・発注先1〜100・メモ0〜500）', () => {
@@ -236,6 +248,8 @@ describe('purchase-order-types: 発注一覧表・発注書の詳細の読取（
     ['書類の版の数が0', (d) => { d.attachments[0].revisionCount = 0; return d; }],
     ['保存途中の予約の expired が真偽値でない', (d) => { d.pendingUploads[0].expired = 'yes'; return d; }],
     ['保存途中の予約の期限が日付でない', (d) => { d.pendingUploads[0].expiresAt = 'いつか'; return d; }],
+    ['保存途中の予約の差し替え元が uuid でない', (d) => { d.pendingUploads[0].replacesAttachmentId = 'x'; return d; }],
+    ['保存途中の予約の差し替え元の項目が無い', (d) => { delete d.pendingUploads[0].replacesAttachmentId; return d; }],
     ['flags が無い', (d) => { delete d.flags; return d; }],
     ['flags の値が真偽値でない', (d) => { d.flags.unitPriceMissing = 'true'; return d; }],
     ['見込額が負', (d) => { d.estimatedAmountYen = -1; return d; }],
@@ -412,5 +426,122 @@ describe('purchase-order-types: 受け取りとその取消・数量訂正（Tas
   test('FREQ-529-AC-01: 受取数量・受取のメモの範囲は計画のとおり(1〜99999・0〜200)', () => {
     expect(PURCHASE_ORDER_LIMITS.receivedQuantity).toEqual({ min: 1, max: 99999 });
     expect(PURCHASE_ORDER_LIMITS.receiptMemo).toEqual({ min: 0, max: 200 });
+  });
+});
+
+describe('purchase-order-types: 取引書類の原本（Task 8）', () => {
+  const documentRow = () => ({
+    attachmentId: ATTACHMENT_ID, purchaseOrderId: ORDER_ID, purchaseOrderNumber: 'PO-20261025-0001', kind: 'invoice', fileName: 'invoice.pdf',
+    mimeType: 'application/pdf', sizeBytes: 2048, revisionNo: 1, isCurrent: true, transactionDate: '2026-10-26', amountYen: 6000, currency: 'JPY',
+    counterparty: '工場A', voided: false, reason: null, replacesAttachmentId: null, createdAt: '2026-10-26T03:00:00+00:00',
+  });
+
+  test('FREQ-530-AC-02: 原本の値の範囲は 取引先1〜100・ファイル名1〜255・金額0〜99999999999・20 MiB・取引日は 2000-01-01 以降・検索は50件/頁', () => {
+    expect(PURCHASE_ORDER_LIMITS.counterparty).toEqual({ min: 1, max: 100 });
+    expect(PURCHASE_ORDER_LIMITS.documentFileName).toEqual({ min: 1, max: 255 });
+    expect(PURCHASE_ORDER_LIMITS.documentAmountYen).toEqual({ min: 0, max: 99999999999 });
+    expect(PURCHASE_ORDER_DOCUMENT_MAX_BYTES).toBe(20 * 1024 * 1024);
+    expect(PURCHASE_ORDER_DOCUMENT_MIN_DAY).toBe('2000-01-01');
+    expect(PURCHASE_ORDER_DOCUMENT_PAGE_LIMIT).toBe(50);
+  });
+
+  test('FREQ-530-AC-02: DB の誤りの表に原本の3つがあり、SQLSTATE・状態・本文は計画のとおり', () => {
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_PO_DOCUMENT_RESERVATION_INVALID).toEqual(['55000', 409, '保存の予約が見つかりません。もう一度ファイルを選んでください。']);
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_PO_DOCUMENT_ALREADY_ATTACHED).toEqual(['55000', 409, 'この書類はすでに登録されています。']);
+    expect(PURCHASE_ORDER_ERRORS.GROUP_G_PO_DOCUMENT_REPLACEMENT_INVALID).toEqual(['22023', 400, '差し替え元の書類を確かめてください。']);
+  });
+
+  test('FREQ-530-AC-02: 置き場の確かめの誤りの表は 状態と本文が計画のとおりで、本文は空でなく重複もなく、DB の表と code が重ならない', () => {
+    expect(PURCHASE_ORDER_DOCUMENT_ERRORS).toEqual({
+      DOCUMENT_NOT_UPLOADED: [409, 'ファイルがまだ届いていません。もう一度アップロードしてください。'],
+      DOCUMENT_TYPE_UNSUPPORTED: [422, 'PDF・JPEG・PNG のファイルを選んでください。'],
+      DOCUMENT_TOO_LARGE: [422, 'ファイルは 20 MiB までです。'],
+      DOCUMENT_HASH_MISMATCH: [422, 'アップロードしたファイルの内容が一致しません。もう一度アップロードしてください。'],
+      DOCUMENT_STORAGE_UNAVAILABLE: [503, 'ファイルの保存先に接続できません。時間をおいて再度お試しください。'],
+      DOCUMENT_NOT_FOUND: [404, '原本を取得できません。'],
+    });
+    const bodies = [...Object.values(PURCHASE_ORDER_DOCUMENT_ERRORS).map(([, body]) => body), ...Object.values(PURCHASE_ORDER_ERRORS).map(([, , body]) => body)];
+    expect(new Set(bodies).size).toBe(bodies.length);
+    for (const code of Object.keys(PURCHASE_ORDER_DOCUMENT_ERRORS)) expect(Object.hasOwn(PURCHASE_ORDER_ERRORS, code)).toBe(false);
+  });
+
+  test('FREQ-530-AC-02: 誤り code の判定と本文は DB の表と原本の表の両方を引く。継承した名前・未知の code は表に無い', () => {
+    expect(isPurchaseOrderErrorCode('GROUP_G_FORBIDDEN')).toBe(true);
+    expect(isPurchaseOrderErrorCode('DOCUMENT_TOO_LARGE')).toBe(true);
+    for (const code of ['', 'toString', '__proto__', 'constructor', 'PRIVATE-MARKER']) expect(isPurchaseOrderErrorCode(code)).toBe(false);
+    expect(purchaseOrderErrorBody('DOCUMENT_NOT_FOUND')).toBe('原本を取得できません。');
+    expect(purchaseOrderErrorBody('DOCUMENT_NOT_FOUND', 'receipt')).toBe('原本を取得できません。');
+    expect(purchaseOrderErrorBody('GROUP_G_PO_DOCUMENT_ALREADY_ATTACHED')).toBe('この書類はすでに登録されています。');
+  });
+
+  test('FREQ-530-AC-02: 失敗の文は原本の code（DB の表・置き場の確かめ）も本文にする。表に無い code は出さない', () => {
+    expect(purchaseOrderFailureMessage(409, { code: 'GROUP_G_PO_DOCUMENT_ALREADY_ATTACHED', error: 'x' })).toBe('この書類はすでに登録されています。');
+    expect(purchaseOrderFailureMessage(422, { code: 'DOCUMENT_HASH_MISMATCH', error: 'x' })).toBe('アップロードしたファイルの内容が一致しません。もう一度アップロードしてください。');
+    expect(purchaseOrderFailureMessage(503, { code: 'DOCUMENT_STORAGE_UNAVAILABLE', error: 'x' })).toBe('ファイルの保存先に接続できません。時間をおいて再度お試しください。');
+    expect(purchaseOrderFailureMessage(422, { code: 'PRIVATE-MARKER', error: 'PRIVATE-MARKER' })).toBe('発注の記録に失敗しました');
+  });
+
+  test('FREQ-530-AC-02: 画面の固定の文は計画のとおり（取引書類の節・保存が終わっていないファイル・書類検索）', () => {
+    expect(PURCHASE_ORDER_DOCUMENT_TEXT).toMatchObject({
+      heading: '取引書類', add: '書類を追加', voidedBadge: '無効', view: '表示', download: 'ダウンロード', print: '印刷', correct: '情報を訂正',
+      replace: '差し替える', void: '無効にする', pendingHeading: '保存が終わっていないファイル', resume: '続きから保存',
+      expired: '期限を過ぎています。内容を確認してください。',
+      searchHeading: '取引書類の検索', searchDateFrom: '取引日（から）', searchDateTo: '取引日（まで）', searchAmountMin: '金額（円）（から）',
+      searchAmountMax: '金額（円）（まで）', searchCounterparty: '取引先', searchNumber: '発注書番号', searchKind: '種類',
+      searchIncludeHistory: '訂正前の情報も探す', search: '検索', clear: '条件をクリア', searchEmpty: '該当する書類はありません。',
+      searchForbidden: '取引書類を見る権限がありません。',
+      columnNumber: '発注書番号', columnKind: '種類', columnFileName: 'ファイル名', columnDate: '取引日', columnAmount: '金額（円）',
+      columnCounterparty: '取引先', columnState: '状態',
+    });
+    expect(PURCHASE_ORDER_ATTACHMENT_KIND_LABELS).toEqual({ quote: '見積書', invoice: '請求書' });
+  });
+
+  test('FREQ-530-AC-02: 書類検索の1行を検査して決まった項目だけにする。崩れた行・知らない項目は PURCHASE_ORDER_READ_FAILED / 落とす', () => {
+    expect(parsePurchaseOrderDocumentSearchRow({ ...documentRow(), storagePath: 'x/y' })).toEqual(documentRow());
+    for (const broken of [
+      { kind: 'memo' }, { attachmentId: 'x' }, { purchaseOrderNumber: 'PO-1' }, { revisionNo: 0 }, { isCurrent: 'yes' }, { transactionDate: '2026/10/26' },
+      { amountYen: -1 }, { amountYen: 1.5 }, { currency: 'jpy' }, { voided: null }, { reason: 1 }, { replacesAttachmentId: 'x' }, { createdAt: 'never' },
+      { fileName: null }, { sizeBytes: -1 },
+    ]) {
+      expect(() => parsePurchaseOrderDocumentSearchRow({ ...documentRow(), ...broken })).toThrow(PURCHASE_ORDER_READ_FAILED);
+    }
+    expect(() => parsePurchaseOrderDocumentSearchRow(null)).toThrow(PURCHASE_ORDER_READ_FAILED);
+    expect(parsePurchaseOrderDocumentSearchRow({ ...documentRow(), reason: '誤り', replacesAttachmentId: ATTACHMENT_ID })).toMatchObject({ reason: '誤り', replacesAttachmentId: ATTACHMENT_ID });
+  });
+
+  test.each([
+    ['quote.pdf', 'application/pdf'], ['a.PDF', 'application/pdf'], ['a.b.jpg', 'image/jpeg'], ['x.JPEG', 'image/jpeg'], ['scan.Png', 'image/png'],
+    ['quote', null], ['quote.', null], ['quote.txt', null], ['quote.pdf.exe', null], ['.pdf2', null], ['toString', null], ['a.constructor', null], ['', null],
+  ])('FREQ-530-AC-02: ファイル名 %j の拡張子から決まる種類は %s（継承した名前は拾わない）', (name, mime) => {
+    expect(purchaseOrderDocumentMimeOfName(name)).toBe(mime);
+  });
+
+  test('FREQ-530-AC-02: 先頭のバイトの印は PDF `%PDF-`・JPEG `FF D8 FF`・PNG `89 50 4E 47 0D 0A 1A 0A` で、種類が違えば合わない・短すぎれば合わない', () => {
+    expect(PURCHASE_ORDER_DOCUMENT_SIGNATURE_LENGTH).toBe(8);
+    const pdf = [0x25, 0x50, 0x44, 0x46, 0x2d, 0x31];
+    const jpeg = [0xff, 0xd8, 0xff, 0xe0];
+    const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    expect(hasPurchaseOrderDocumentSignature(pdf, 'application/pdf')).toBe(true);
+    expect(hasPurchaseOrderDocumentSignature(jpeg, 'image/jpeg')).toBe(true);
+    expect(hasPurchaseOrderDocumentSignature(png, 'image/png')).toBe(true);
+    expect(hasPurchaseOrderDocumentSignature(png, 'application/pdf')).toBe(false);
+    expect(hasPurchaseOrderDocumentSignature(pdf, 'image/jpeg')).toBe(false);
+    expect(hasPurchaseOrderDocumentSignature(jpeg, 'image/png')).toBe(false);
+    expect(hasPurchaseOrderDocumentSignature(png.slice(0, 7), 'image/png')).toBe(false);
+    expect(hasPurchaseOrderDocumentSignature([], 'application/pdf')).toBe(false);
+  });
+
+  test('FREQ-530-AC-02: 種類の検査に通らなかった時・選び直しの文は計画の外の文で、検索結果の見出しと訂正のボタンの名前も定義にある', () => {
+    expect(PURCHASE_ORDER_DOCUMENT_TEXT.resumeTypeMismatch).toBe('予約したファイルと同じ種類のファイルを選んでください。');
+    expect(PURCHASE_ORDER_DOCUMENT_TEXT.rejectedFile).toBe('このファイルは保存できませんでした。PDF・JPEG・PNG の正しいファイルを選び直して、新しく保存してください。');
+    expect(PURCHASE_ORDER_DOCUMENT_TEXT.correctSubmit).toBe('訂正する');
+    expect(PURCHASE_ORDER_DOCUMENT_TEXT.searchResults).toBe('検索結果');
+  });
+
+  test('FREQ-530-AC-02: 検索結果の状態の文字は 訂正前の版 →「訂正前」、最新で無効 →「無効」、それ以外 →「有効」', () => {
+    expect(purchaseOrderDocumentStateLabel({ isCurrent: true, voided: false })).toBe('有効');
+    expect(purchaseOrderDocumentStateLabel({ isCurrent: true, voided: true })).toBe('無効');
+    expect(purchaseOrderDocumentStateLabel({ isCurrent: false, voided: false })).toBe('訂正前');
+    expect(purchaseOrderDocumentStateLabel({ isCurrent: false, voided: true })).toBe('訂正前');
   });
 });

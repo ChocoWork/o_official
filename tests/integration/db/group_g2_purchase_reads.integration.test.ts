@@ -49,7 +49,7 @@ const RECEIPT_KEYS = ['actorEmail', 'actorId', 'createdAt', 'id', 'kind', 'lines
 const RECEIPT_LINE_KEYS = ['id', 'lineId', 'quantity', 'reversesReceiptLineId', 'reversibleQuantity'];
 const ATTACHMENT_KEYS = ['createdAt', 'current', 'fileName', 'id', 'kind', 'mimeType', 'revisionCount', 'sha256', 'sha256Source', 'sizeBytes'];
 const CURRENT_KEYS = ['amountYen', 'counterparty', 'currency', 'reason', 'replacesAttachmentId', 'revisionNo', 'transactionDate', 'voided'];
-const PENDING_KEYS = ['createdAt', 'expired', 'expiresAt', 'fileName', 'kind', 'reservationId'];
+const PENDING_KEYS = ['createdAt', 'expired', 'expiresAt', 'fileName', 'kind', 'replacesAttachmentId', 'reservationId'];
 
 type Row = Record<string, unknown>;
 type DbFailure = { code?: string; message?: string; detail?: string };
@@ -675,11 +675,28 @@ describeLocalDb('integration: G-2 発注一覧表と発注書の詳細の読取'
     ]);
     for (const row of detail.pendingUploads) {
       expect(sortedKeys(row)).toEqual(PENDING_KEYS);
+      expect(row.replacesAttachmentId).toBeNull();
       expect(Number.isNaN(Date.parse(row.createdAt))).toBe(false);
       expect(Number.isNaN(Date.parse(row.expiresAt))).toBe(false);
     }
     expect(detail.attachments).toHaveLength(1);
     expect(JSON.stringify(detail)).not.toContain(order.id + '/');
+  });
+
+  test('FREQ-530-AC-03: 差し替えの予約は、差し替える添付の id を pendingUploads の replacesAttachmentId に出す（保存が止まって頁を読み直しても、続きから保存が差し替えとして続けられる）', async () => {
+    const actor = await manager();
+    const [a] = await twoVariants();
+    const order = await create(actor, [lineOf(a.variantId, 5)]);
+    const operationId = await operation();
+    const original = await attach(order.id, operationId, { fileName: 'original.pdf' });
+    const replacing = await reservation(order.id, operationId, { kind: 'invoice', original_file_name: 'new.pdf', replaces_attachment_id: original.attachmentId });
+    const plain = await reservation(order.id, operationId, { kind: 'quote', original_file_name: 'plain.pdf' });
+
+    const detail = await detailOf(actor, order.id) as Detail;
+    const byId = new Map<string, Detail>(detail.pendingUploads.map((row: Detail) => [row.reservationId, row]));
+    expect(byId.get(replacing)!.replacesAttachmentId).toBe(original.attachmentId);
+    expect(byId.get(plain)!.replacesAttachmentId).toBeNull();
+    for (const row of detail.pendingUploads) expect(sortedKeys(row)).toEqual(PENDING_KEYS);
   });
 
   test('FREQ-526-AC-05: 数量確定前（ordered）は 単価未登録・証憑未添付 の旗も見込額も立たない（数量確定後だけ）', async () => {

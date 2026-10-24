@@ -1,6 +1,7 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  isPurchaseOrderErrorCode,
   PURCHASE_ORDER_ERRORS,
   PURCHASE_ORDER_READ_FAILED,
   PURCHASE_ORDER_RELEASE_CONFIRMATION_CODE,
@@ -40,7 +41,7 @@ export class PurchaseOrderError extends Error {
     code?: string,
     extra: { surface?: PurchaseOrderSurface; releasedQuantity?: number } = {},
   ) {
-    const known = code !== undefined && Object.hasOwn(PURCHASE_ORDER_ERRORS, code);
+    const known = code !== undefined && isPurchaseOrderErrorCode(code);
     super(known ? purchaseOrderErrorBody(code, extra.surface) : PURCHASE_ORDER_TEXT.failed);
     this.name = 'PurchaseOrderError';
     if (known) this.code = code;
@@ -60,7 +61,7 @@ const isReleasedQuantity = (value: unknown): value is number =>
  * message と SQLSTATE が両方そろい、表と完全に一致した時だけ分類する（片方だけの一致は信用しない）。
  * 外す割当の確認（55000）は DETAIL が {"releasedQuantity":n} のキー1つだけの時だけ受け入れる（G-1 の stockError と同じ）。
  */
-function classify(error: unknown, surface: PurchaseOrderSurface = 'order'): PurchaseOrderError {
+export function classify(error: unknown, surface: PurchaseOrderSurface = 'order'): PurchaseOrderError {
   if (!isObject(error) || typeof error.message !== 'string' || !Object.hasOwn(PURCHASE_ORDER_ERRORS, error.message)) {
     return new PurchaseOrderError();
   }
@@ -119,7 +120,7 @@ const isCount = (value: unknown): value is number => typeof value === 'number' &
  * 発注書の書込み（Task 6 の3つ）が共通で使う呼び出し。RPC を1回呼び、DB の誤りは表で分類し、戻りがオブジェクトでなければ固定の失敗にする。
  * 戻りの項目の検査は呼び手が行う。
  */
-async function callWriter(
+export async function callWriter(
   client: SupabaseClient,
   name: string,
   args: Record<string, unknown>,
@@ -264,7 +265,7 @@ export async function reversePurchaseOrderReceipt(
 const readFailed = () => new Error(PURCHASE_ORDER_READ_FAILED);
 
 /** DB が実行者の権限（admin.purchase_orders.read）で断った時だけ。message と SQLSTATE が両方そろった時に限る */
-function readFailure(error: unknown): Error {
+export function readFailure(error: unknown): Error {
   return isObject(error) && error.message === 'GROUP_G_FORBIDDEN' && error.code === '42501'
     ? new PurchaseOrderError(403, 'GROUP_G_FORBIDDEN')
     : readFailed();

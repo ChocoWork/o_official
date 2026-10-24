@@ -1,6 +1,6 @@
 # 発注書の作成・読取・数量の確定と打切りの流れ（G-2）
 
-> 状態: 現行のソース（グループ G-2 Task 4・5・6・7。発注の作成、発注一覧表・発注書の詳細の読取、数量の確定・訂正・残りの打切り・発注の取消・発注先とメモの訂正、受け取り（全部・一部・後日）と FIFO への接続、受け取りの取消・数量訂正。原本の添付は後続 Task が足す。本番へは未適用） | 確認日: 2026-10-25 | 対象: 在庫一覧表の「発注」から発注書を1件保存するまでの順序と、全ての発注書の書込みに共通のロックの順、発注一覧表と発注書の頁の読取の順序、発注書の頁からの数量の確定・訂正・打切り・取消・発注先の訂正の順序、受け取りと受け取りの取消の順序
+> 状態: 現行のソース（グループ G-2 Task 4・5・6・7。発注の作成、発注一覧表・発注書の詳細の読取、数量の確定・訂正・残りの打切り・発注の取消・発注先とメモの訂正、受け取り（全部・一部・後日）と FIFO への接続、受け取りの取消・数量訂正、取引書類の原本（Task 8。予約 → 置き場へ PUT → 確定の二段階の保存、訂正・差し替え・無効化、閲覧、検索、片側の失敗からの再開）。本番へは未適用） | 確認日: 2026-10-25 | 対象: 在庫一覧表の「発注」から発注書を1件保存するまでの順序と、全ての発注書の書込みに共通のロックの順、発注一覧表と発注書の頁の読取の順序、発注書の頁からの数量の確定・訂正・打切り・取消・発注先の訂正の順序、受け取りと受け取りの取消の順序、取引書類の原本の二段階の保存と再開の順序
 
 ## 概要
 
@@ -18,9 +18,9 @@
 
 | 項目 | 内容 |
 | --- | --- |
-| 対応要件 | FREQ-526（発注の作成と読取）、FREQ-527・528（数量の確定・訂正と打切り・取消）、FREQ-529（受け取りと、その取消・数量訂正）、FREQ-540-AC-07（権限の組を窓口と DB の両方で確かめる）。[要件](../../02_Requirements/requirements.md) |
-| 設計 | [グループ G 設計書](../../superpowers/specs/2026-10-23-group-g-design.md)、[G-2 実装計画](../../superpowers/plans/2026-10-24-group-g2-purchasing.md)の Task 4・6・7 と全体のロック順 |
-| 実装 | 移行 `supabase/migrations/20261024180500_group_g2_purchasing_writers.sql`、[store](../../../src/lib/purchase-orders/purchase-order-store.ts)、[窓口](../../../src/app/api/admin/purchase-orders/route.ts)、[書込みの窓口の共通の流れ](../../../src/lib/purchase-orders/purchase-order-route.ts)、[画面](../../../src/components/AdminInventorySection.tsx)、[送る流れの hook](../../../src/hooks/usePurchaseOrderWrite.ts) |
+| 対応要件 | FREQ-526（発注の作成と読取）、FREQ-527・528（数量の確定・訂正と打切り・取消）、FREQ-529（受け取りと、その取消・数量訂正）、FREQ-530（取引書類の原本の保存・訂正・検索・閲覧・再開）、FREQ-540-AC-07（権限の組を窓口と DB の両方で確かめる）。[要件](../../02_Requirements/requirements.md) |
+| 設計 | [グループ G 設計書](../../superpowers/specs/2026-10-23-group-g-design.md)、[G-2 実装計画](../../superpowers/plans/2026-10-24-group-g2-purchasing.md)の Task 4・6・7・8 と全体のロック順 |
+| 実装 | 移行 `supabase/migrations/20261024180500_group_g2_purchasing_writers.sql`、[store](../../../src/lib/purchase-orders/purchase-order-store.ts)、[窓口](../../../src/app/api/admin/purchase-orders/route.ts)、[書込みの窓口の共通の流れ](../../../src/lib/purchase-orders/purchase-order-route.ts)、[画面](../../../src/components/AdminInventorySection.tsx)、[送る流れの hook](../../../src/hooks/usePurchaseOrderWrite.ts)、原本は[置き場と DB の結び付け](../../../src/lib/purchase-orders/purchase-order-documents.ts)・[ブラウザの道具](../../../src/lib/purchase-orders/purchase-order-documents-client.ts)・[画面](../../../src/components/PurchaseOrderDocumentsSection.tsx) |
 | 関連 | 鍵の順の元は[在庫の割当と共通の鍵の流れ（G-1）](inventory-allocation.md)、保存する段階は[発注書の状態](../states/purchasing.md)、データは[ER 図](../../03_BasicDesign/data/er.md)の「発注書・受け取り・原本の添付」、API は[API 設計](../../03_BasicDesign/api/api-spec.md) |
 | 調査時点 | 2026-10-25 のソース。本番の適用状況と実データでの競合は未確認（末尾） |
 
@@ -248,6 +248,73 @@ sequenceDiagram
 | 確認の約束 | 外す割当があると最初の送信は書込み0件の 409 になり、利用者の確認の後は**新しい requestKey** と確認の数で送り直す。同じ確定送信の通信の再送だけが同じ requestKey と本文を使う。複数の variant の取消では n は variant ごとの合計（窓口の 409 の本文と画面の確認の本文に入る）。画面は n が 0 になっていた確認（確認の数が古く、空き在庫が増えた等）では確認の段を出さず、確認の数なしの新しい requestKey で自動で送り直す |
 | 発注への効き | 納品済み −q、未納 +q（確定数量は不変なので再び受け取れる）、打切り済みの行（確定＝納品）を取り消すと未納が復活する。在庫（手持ち）が q 減るので発注必要数は、外した割当が注文数の中で ready → 受注生産中に移るだけで合計は変わらない |
 
+## 取引書類の原本: 二段階の保存と再開（Task 8）
+
+見積書・請求書の原本は 予約 → 置き場（非公開の入れ物 `purchase-order-documents`）へ直接 PUT → 確定 の二段階で保存する。**DB の取引の中では置き場を使わない**（予約と確定は別の取引で、その間と後に、署名つきの送り先の発行・PUT・読み戻し・ハッシュ計算が入る）。予約だけでは添付として見えず、確定で初めて添付（版1）になる。署名つきの送り先・リンクと保存キーは、頼んだ本人への応答にだけ載せ、誤りにも監査にもログにも出さない。
+
+```mermaid
+sequenceDiagram
+  participant B as ブラウザ
+  participant R as 窓口
+  participant S as store
+  participant D as DB の関数
+  participant O as 置き場
+  B->>B: 拡張子・種類・先頭のバイト・20 MiB の確かめ、ファイルの SHA-256
+  B->>R: POST …/attachments/reservations（種類・ファイル名・差し替え元・requestKey）
+  R->>S: reservePurchaseOrderDocument
+  S->>D: admin_reserve_purchase_order_attachment（予約を追記・差し替え元も予約に残す・期限24時間）
+  D-->>S: 予約 ID・保存キー・期限
+  S->>O: createSignedUploadUrl（保存キー・upsert: false）
+  O-->>S: 署名つきの送り先
+  R-->>B: 201 予約 ID・署名つきの送り先
+  B->>O: PUT 署名つきの送り先（content-type・x-upsert: false）
+  B->>R: POST …/attachments（予約 ID・sha256・取引日・金額・取引先・requestKey）
+  R->>S: attachPurchaseOrderDocument
+  S->>O: download（保存キー）
+  S->>S: 拡張子・先頭のバイト・種類・20 MiB・SHA-256 の一致を検査
+  S->>D: admin_attach_purchase_order_document（添付と版1を追記。差し替え元は予約から版1へ写す）
+  R-->>B: 201 添付 ID・版1
+```
+
+図の境界: 窓口は認可 → CSRF → IP と actor の回数制限 → 検証の順で、DB の関数は 引数の検証 → 共通のロック → 権限（`purchase_orders.manage` ＋ `read`）→ 指紋と再送 → 存在 → 業務規則 → 書込み → 操作の記録 の順（他の発注書の書込みと同じ）。差し替え元（その発注書の添付）は予約の時に確かめて予約の行に残し（他の発注書の物なら 22023 の GROUP_G_PO_DOCUMENT_REPLACEMENT_INVALID）、確定の窓口と関数は差し替え元を受けない。検査に合わなければ DB を呼ばず、置き場にまだ無ければ409、種類・大きさ・ハッシュの不一致は422、置き場の不調は503。予約の期限（24時間）は確定を止めない。
+
+### 片側の失敗からの再開
+
+```mermaid
+flowchart TD
+  A["予約（DB）"] --> B{"署名つきの送り先を作れたか"}
+  B -- いいえ --> C["503。予約は DB に残る（頁を読み直すと「保存が終わっていないファイル」）"]
+  B -- はい --> D{"PUT は成功したか"}
+  D -- いいえ --> E["pending（予約 ID）。続きから保存で送り先を出し直す"]
+  D -- はい --> F{"確定は DB で成功したか"}
+  F -- はい --> G["添付済み（応答を失っても同じ requestKey の再送は同じ結果）"]
+  F -- いいえ --> H["pending。置き場に保存済み"]
+  F -- 種類の検査に通らない（422） --> X["rejected。同じ予約は通らないので、ファイルを選び直させ、新しい予約で保存し直す（差し替え元は引き継ぐ）。止まった予約は残る"]
+  C --> I["続きから保存: POST …/upload-url"]
+  E --> I
+  H --> I
+  I --> J{"置き場に保存済みか（オブジェクト名の完全一致）"}
+  J -- はい --> K["uploaded: true。PUT を省いて確定（ファイルが手元に無ければ sha256 なし = server）"]
+  J -- いいえ --> L{"ファイルは手元にあるか"}
+  L -- はい --> P{"予約の種類の中身か（先頭のバイト）"}
+  P -- はい --> M["新しい送り先へ PUT して確定"]
+  P -- いいえ --> Q["置き場に置く前に断る。選び直しを求める"]
+  L -- いいえ --> N["ファイルの選び直しを求める"]
+  K -- 確定が種類の検査で 422 --> X
+```
+
+| 止まった所 | 画面に出る物 | 再開 |
+| --- | --- | --- |
+| 予約はできたが送り先を作れない | 予約を取れなかった文（503）。予約は残る | 頁を読み直すと「保存が終わっていないファイル」に出る。「続きから保存」 |
+| 置き場への PUT の失敗 | 保存が終わっていない旨と失敗の文。読み直した発注書に予約が出る | 同じ画面ならファイルと入力を引き継ぐ。読み直した後は入れ直してファイルを選び直す |
+| PUT は成功し確定が失敗（通信切れ・ハッシュの不一致・5xx） | 同上 | 送り先を出し直す窓口が `uploaded: true` を返し、PUT を省いて確定する。同じ内容なら同じ requestKey で送る |
+| 置き場のファイルが種類の検査に通らない（拡張子と中身が違う。確定が 422 `DOCUMENT_TYPE_UNSUPPORTED`） | 「このファイルは保存できませんでした。PDF・JPEG・PNG の正しいファイルを選び直して、新しく保存してください。」とファイルの欄。発注書を読み直す | 続きから保存を繰り返しても通らない（置き場のファイルは上書きできない）ので、選び直したファイルを新しい予約で保存する。種類と差し替え元は止まった予約から引き継ぐ。止まった予約は期限まで残る |
+| 続きから保存で選び直したファイルが予約の種類（保存キーの拡張子）の中身でない | 「予約したファイルと同じ種類のファイルを選んでください。」 | 窓口にも置き場にも進まない。正しいファイルを選び直す |
+| 頁を読み直した後 | `pendingUploads`（期限切れも。差し替えの予約は `replacesAttachmentId` を持つ） | `uploaded: true` でファイルが手元に無ければ、`sha256: null` で確定し、サーバーが読み戻した本文のハッシュを `sha256_source = server` で記録する。差し替えの関係は予約に残っているので保たれる |
+| DB で確定したが応答を失う | 読み直すと添付済み | 同じ画面なら同じ requestKey の再送が保存した結果（`replayed`）を返す。別の requestKey は GROUP_G_PO_DOCUMENT_ALREADY_ATTACHED で二重にならず、画面は発注書を読み直して一覧を合わせる |
+
+閲覧は、認可の後に窓口が `createSignedUrl(保存キー, 60)`（ダウンロードは原ファイル名つき）を作って返し、画面が新しいタブ／保存で開く。書類検索は読むだけの1回の RPC（`search_purchase_order_documents`）で、保存キーを返さない。
+
 ## 共通のロックの順
 
 発注書の書込みは全て `lock_group_g_purchase_orders(発注書の id の配列, 在庫を動かすか)` で鍵を取る。順は G-1 の末尾に足す。
@@ -284,11 +351,13 @@ flowchart TD
 
 | 層 | テスト |
 | --- | --- |
-| DB 結合 | [発注の作成](../../../tests/integration/db/group_g2_purchase_create.integration.test.ts)（保存の内容、番号、再送と衝突、引数、権限、在庫の不変、途中失敗で何も残らない、関数の ACL、ロック helper）、[書き手の閉じた一覧](../../../tests/integration/db/group_g1_writer_inventory.integration.test.ts)（62本） |
+| DB 結合 | [発注の作成](../../../tests/integration/db/group_g2_purchase_create.integration.test.ts)（保存の内容、番号、再送と衝突、引数、権限、在庫の不変、途中失敗で何も残らない、関数の ACL、ロック helper）、[書き手の閉じた一覧](../../../tests/integration/db/group_g1_writer_inventory.integration.test.ts)（65本） |
+| DB 結合（原本。Task 8） | [原本](../../../tests/integration/db/group_g2_purchase_documents.integration.test.ts)（予約・確定・訂正・無効化・差し替え・検索の内容、再送と衝突、二重確定、期限切れの予約、追記専用、保存キーが出ない、権限、引数、途中失敗で全て戻る、関数の ACL、最後の確かめ） |
 | DB 結合（受け取り。Task 7） | [受け取り](../../../tests/integration/db/group_g2_purchase_receipts.integration.test.ts)（台帳・受取・納品済み・FIFO・履歴の同時保存、案A、一部と後日、再送と衝突、拒否で全て不変、権限、途中失敗で全て戻る、表示段階、在庫一覧表への反映、関数の ACL）、[受け取りの取消](../../../tests/integration/db/group_g2_purchase_receipt_reversals.integration.test.ts)（相殺の追記、一部の訂正、確認の約束、空き在庫と割当の減らし方、足りない時の断り、出荷済みの割当、打切りの復活、再送、権限、途中失敗で全て戻る） |
 | DB 結合（数量・打切り。Task 6） | [数量の確定・訂正・打切り・発注先の訂正](../../../tests/integration/db/group_g2_purchase_quantities.integration.test.ts)（確定・訂正・単価の NULL と 0、納品済み未満、版の競合、確定前の取消、再送と衝突、引数、権限、途中失敗で何も残らない、在庫・台帳・受取の不変、表示段階の遷移、関数の ACL） |
 | DB 結合（読取。Task 5） | [発注の読取](../../../tests/integration/db/group_g2_purchase_reads.integration.test.ts)（一覧の並び・頁・total・数量未確定、詳細の形、表示段階の導出、予約・旗・見込額、権限、関数の ACL、最後の確かめ） |
 | 単体 | [store](../../../tests/unit/lib/purchase-orders/purchase-order-store.test.ts)、[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)、[窓口](../../../tests/unit/api/admin/purchase-orders-route.test.ts)、[詳細の窓口](../../../tests/unit/api/admin/purchase-order-detail-route.test.ts)、[画面](../../../tests/unit/components/AdminInventorySection.test.tsx)、[一覧の画面](../../../tests/unit/components/PurchaseOrderListSection.test.tsx)、[発注書の画面](../../../tests/unit/components/PurchaseOrderDetailSection.test.tsx)、[発注書の頁](../../../tests/unit/components/PurchaseOrderDetailPage.test.tsx)、[数量の窓口](../../../tests/unit/api/admin/purchase-order-quantities-route.test.ts)、[打切りの窓口](../../../tests/unit/api/admin/purchase-order-short-closures-route.test.ts)、[発注先・メモの窓口](../../../tests/unit/api/admin/purchase-order-header-route.test.ts)、[数量のダイアログ](../../../tests/unit/components/PurchaseOrderQuantityDialog.test.tsx)、[打切りのダイアログ](../../../tests/unit/components/PurchaseOrderShortCloseDialog.test.tsx)、[受け取りの窓口](../../../tests/unit/api/admin/purchase-order-receipts-route.test.ts)、[取消の窓口](../../../tests/unit/api/admin/purchase-order-receipt-reversals-route.test.ts)、[受け取りのダイアログ](../../../tests/unit/components/PurchaseOrderReceiveDialog.test.tsx)、[取消・訂正のダイアログ](../../../tests/unit/components/PurchaseOrderReceiptReverseDialog.test.tsx) |
+| 単体（原本。Task 8） | [置き場と DB の結び付け](../../../tests/unit/lib/purchase-orders/purchase-order-documents.test.ts)、[ブラウザの道具](../../../tests/unit/lib/purchase-orders/purchase-order-documents-client.test.ts)、[窓口（予約・送り先の出し直し・確定・訂正・閲覧リンク）](../../../tests/unit/api/admin/purchase-order-attachments-route.test.ts)、[書類検索の窓口](../../../tests/unit/api/admin/purchase-order-documents-route.test.ts)、[取引書類の節](../../../tests/unit/components/PurchaseOrderDocumentsSection.test.tsx)、[書類検索の画面](../../../tests/unit/components/PurchaseOrderDocumentSearchSection.test.tsx) |
 
 テストへのリンクは検証観点の参照であり、実行成功の証跡ではない。
 
@@ -300,3 +369,4 @@ flowchart TD
 - 数量の確定・訂正・打切り・発注先の訂正の関数（移行の節3〜5）も同じ。DB の試験は納品済みを試験内の材料（台帳の restock・受取・受取行・行の更新）で作る。受け取りの関数（Task 7）を通した部分受取の後の打切りは Task 7 の試験（受け取り・受け取りの取消・発注の読取）が確かめ、同時の打切りと受け取りの競合は Task 9 の試験が確かめる。
 - 受け取りとその取消の関数（移行の節6・7）も本番へは未適用。ローカルの使い捨て DB（`db reset` の後）では DB の試験が通っている（2026-10-25）。受け取りの履歴の「実行者」は、詳細の読取の関数が受取ごとに返すメールアドレス（`actorEmail`。在庫の履歴と同じ見せ方。アカウントが無ければ「—」）で出す。
 - 同時の2つの発注確定の競合（共通の鍵での直列化）と、鍵を持つ他の書込みとの順番待ちは、Task 9 の並行試験で確かめる。
+- 取引書類の原本の関数（移行の節8。基盤の節16の検索を含む）は本番へ未適用で、ローカルの DB での実行結果は controller が `db reset` の後に確かめる。置き場への PUT・読み戻し・署名つきリンクは単体では置き場の代役で確かめており、本物の置き場と、署名つきの送り先への PUT が CSP に遮られないことは Task 10 の E2E が確かめる。置き場の WORM は後続（[取引書類の運用](../../06_Operations/purchase-order-documents.md)）。

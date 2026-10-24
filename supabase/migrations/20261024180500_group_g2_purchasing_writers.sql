@@ -1,7 +1,7 @@
--- G-2 writers (Tasks 4, 6 and 7): the purchase-order lock helper, create a purchase order (FREQ-526), correct the supplier and
+-- G-2 writers (Tasks 4, 6, 7 and 8): the purchase-order lock helper, create a purchase order (FREQ-526), correct the supplier and
 -- memo, confirm / correct the quantities and short close the rest (FREQ-527, FREQ-528), receive goods and cancel / correct a
--- receipt (FREQ-529) and the writer allowlist (56 G-1 entries + the 6 purchase-order writers = 62). Later G-2 tasks extend the
--- body section of this file.
+-- receipt (FREQ-529), reserve / attach / revise the original documents (FREQ-530) and the writer allowlist (56 G-1 entries +
+-- the 9 purchase-order writers = 65). Later G-2 tasks extend the body section of this file.
 -- Always applied after 20261024153505_group_g2_purchasing_foundation.sql. Applied SQL is never edited.
 BEGIN;
 
@@ -958,10 +958,280 @@ ALTER FUNCTION public.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jso
 REVOKE ALL ON FUNCTION public.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid) TO service_role;
 
--- 8. The closed list of writers. The 56 entries of 20261023211425_group_g1_allocation.sql:8897 stay exactly as they were;
+-- 8. Original documents (quotes and invoices) of a purchase order (FREQ-530, Task 8): three writers, none of which touches
+--    stock, the ledger, allocations or orders, and none of which changes the purchase order or its version. They follow the
+--    order of work of the writers above: argument check (22023; no table is read) -> lock helper (advisory first, then the
+--    order and its lines) -> permission check (admin.purchase_orders.manage + admin.purchase_orders.read, 42501) ->
+--    fingerprint and replay / conflict (23505) -> existence (GROUP_G_PO_NOT_FOUND / P0002) -> business rules -> writes ->
+--    private.group_g_operations last. The file itself is never read or written here: the caller (the server) has already
+--    checked the stored object (kind, size, hash) and hands in the results. No database lock is held while the storage is used.
+--    Reserve: promises one storage key <order id>/<random uuid>.<pdf|jpg|jpeg|png> for 24 hours and returns it (the server turns it
+--    into a signed upload destination afterwards). An expired reservation is never deleted or changed; it stays and can still be
+--    attached. For a replacement upload the replaced attachment (_replaces_attachment_id, an attachment of this order, else
+--    GROUP_G_PO_DOCUMENT_REPLACEMENT_INVALID) is stored on the reservation, so a stopped upload keeps the link across a page
+--    reload. Attach: turns a reservation of this order that no attachment points at into an attachment (revision 1 carries the
+--    transaction details and the replaced attachment copied from the reservation, whose own rows stay untouched; the caller
+--    cannot pass it). Revise: appends the next revision (a correction or a void; the reason is required and the content must
+--    differ from the latest revision). The currency is JPY only for now (the column allows any three capital letters).
+CREATE FUNCTION private.admin_reserve_purchase_order_attachment(_purchase_order_id uuid, _kind text, _file_name text,
+  _replaces_attachment_id uuid, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_file_name text := NULLIF(pg_catalog.regexp_replace(_file_name, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '');
+  v_extension text;
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_reservation uuid := pg_catalog.gen_random_uuid();
+  v_path text;
+  v_expires timestamptz;
+  v_fingerprint text;
+  v_existing private.group_g_operations%ROWTYPE;
+  v_result jsonb;
+BEGIN
+  IF _purchase_order_id IS NULL OR _actor_id IS NULL OR _request_key IS NULL OR _kind IS NULL OR _kind NOT IN ('quote', 'invoice')
+    OR v_file_name IS NULL OR pg_catalog.char_length(v_file_name) > 255 OR v_file_name ~ '[[:cntrl:]]' THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  v_extension := pg_catalog.lower(pg_catalog.substring(v_file_name, '\.([A-Za-z0-9]+)$'));
+  IF v_extension IS NULL OR v_extension NOT IN ('pdf', 'jpg', 'jpeg', 'png') THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM private.lock_group_g_purchase_orders(ARRAY[_purchase_order_id], false);
+  IF NOT private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.purchase_orders.manage', 'admin.purchase_orders.read']) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+
+  v_fingerprint := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+    'operation', 'purchase_order_attachment_reserve', 'purchase_order_id', _purchase_order_id, 'kind', _kind,
+    'file_name', v_file_name, 'replaces_attachment_id', _replaces_attachment_id, 'actor_id', _actor_id)::text, 'UTF8')), 'hex');
+  SELECT op.* INTO v_existing FROM private.group_g_operations AS op
+    WHERE op.operation = 'purchase_order_attachment_reserve' AND op.request_key = _request_key;
+  IF FOUND THEN
+    IF v_existing.fingerprint <> v_fingerprint THEN
+      RAISE EXCEPTION 'GROUP_G_REQUEST_KEY_CONFLICT' USING ERRCODE = '23505';
+    END IF;
+    RETURN v_existing.result || pg_catalog.jsonb_build_object('replayed', true);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.purchase_orders AS po WHERE po.id = _purchase_order_id) THEN
+    RAISE EXCEPTION 'GROUP_G_PO_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  IF _replaces_attachment_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.purchase_order_attachments AS prev
+    WHERE prev.id = _replaces_attachment_id AND prev.purchase_order_id = _purchase_order_id) THEN
+    RAISE EXCEPTION 'GROUP_G_PO_DOCUMENT_REPLACEMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  v_path := _purchase_order_id::text || '/' || pg_catalog.gen_random_uuid()::text || '.' || v_extension;
+  v_expires := pg_catalog.now() + INTERVAL '24 hours';
+  INSERT INTO public.purchase_order_attachment_reservations(id, purchase_order_id, kind, original_file_name, storage_path,
+      created_by, operation_id, expires_at, replaces_attachment_id)
+    VALUES(v_reservation, _purchase_order_id, _kind, v_file_name, v_path, _actor_id, v_operation, v_expires,
+      _replaces_attachment_id);
+
+  v_result := pg_catalog.jsonb_build_object('reservationId', v_reservation, 'storagePath', v_path, 'expiresAt', v_expires,
+    'replayed', false);
+  INSERT INTO private.group_g_operations(id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+    VALUES(v_operation, 'purchase_order_attachment_reserve', _request_key, v_fingerprint, 'purchase_order',
+      _purchase_order_id::text, _actor_id, v_result);
+  RETURN v_result;
+END;
+$$;
+ALTER FUNCTION private.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid) TO service_role;
+
+CREATE FUNCTION public.admin_reserve_purchase_order_attachment(_purchase_order_id uuid, _kind text, _file_name text,
+  _replaces_attachment_id uuid, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.admin_reserve_purchase_order_attachment(_purchase_order_id, _kind, _file_name, _replaces_attachment_id, _actor_id, _request_key); $$;
+ALTER FUNCTION public.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid) TO service_role;
+
+CREATE FUNCTION private.admin_attach_purchase_order_document(_reservation_id uuid, _purchase_order_id uuid, _mime_type text,
+  _size_bytes bigint, _sha256 text, _sha256_source text, _transaction_date date, _amount_yen bigint, _currency text,
+  _counterparty text, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_counterparty text := NULLIF(pg_catalog.regexp_replace(_counterparty, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '');
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_attachment uuid := pg_catalog.gen_random_uuid();
+  v_fingerprint text;
+  v_existing private.group_g_operations%ROWTYPE;
+  v_reservation public.purchase_order_attachment_reservations%ROWTYPE;
+  v_result jsonb;
+BEGIN
+  IF _reservation_id IS NULL OR _purchase_order_id IS NULL OR _actor_id IS NULL OR _request_key IS NULL
+    OR _mime_type IS NULL OR _mime_type NOT IN ('application/pdf', 'image/jpeg', 'image/png')
+    OR _size_bytes IS NULL OR _size_bytes NOT BETWEEN 1 AND 20971520
+    OR _sha256 IS NULL OR _sha256 !~ '^[0-9a-f]{64}$'
+    OR _sha256_source IS NULL OR _sha256_source NOT IN ('browser', 'server')
+    OR _transaction_date IS NULL OR NOT pg_catalog.isfinite(_transaction_date) OR _transaction_date < DATE '2000-01-01'
+    OR _amount_yen IS NULL OR _amount_yen NOT BETWEEN 0 AND 99999999999
+    OR _currency IS NULL OR _currency <> 'JPY'
+    OR v_counterparty IS NULL OR pg_catalog.char_length(v_counterparty) > 100 THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM private.lock_group_g_purchase_orders(ARRAY[_purchase_order_id], false);
+  IF NOT private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.purchase_orders.manage', 'admin.purchase_orders.read']) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+
+  v_fingerprint := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+    'operation', 'purchase_order_attachment_attach', 'reservation_id', _reservation_id, 'purchase_order_id', _purchase_order_id,
+    'mime_type', _mime_type, 'size_bytes', _size_bytes, 'sha256', _sha256, 'sha256_source', _sha256_source,
+    'transaction_date', _transaction_date, 'amount_yen', _amount_yen, 'currency', _currency, 'counterparty', v_counterparty,
+    'actor_id', _actor_id)::text, 'UTF8')), 'hex');
+  SELECT op.* INTO v_existing FROM private.group_g_operations AS op
+    WHERE op.operation = 'purchase_order_attachment_attach' AND op.request_key = _request_key;
+  IF FOUND THEN
+    IF v_existing.fingerprint <> v_fingerprint THEN
+      RAISE EXCEPTION 'GROUP_G_REQUEST_KEY_CONFLICT' USING ERRCODE = '23505';
+    END IF;
+    RETURN v_existing.result || pg_catalog.jsonb_build_object('replayed', true);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.purchase_orders AS po WHERE po.id = _purchase_order_id) THEN
+    RAISE EXCEPTION 'GROUP_G_PO_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  SELECT rv.* INTO v_reservation FROM public.purchase_order_attachment_reservations AS rv
+    WHERE rv.id = _reservation_id AND rv.purchase_order_id = _purchase_order_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'GROUP_G_PO_DOCUMENT_RESERVATION_INVALID' USING ERRCODE = '55000';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.purchase_order_attachments AS ax WHERE ax.reservation_id = _reservation_id) THEN
+    RAISE EXCEPTION 'GROUP_G_PO_DOCUMENT_ALREADY_ATTACHED' USING ERRCODE = '55000';
+  END IF;
+
+  INSERT INTO public.purchase_order_attachments(id, purchase_order_id, reservation_id, kind, original_file_name, storage_path,
+      mime_type, size_bytes, sha256, sha256_source, uploaded_by, operation_id)
+    VALUES(v_attachment, _purchase_order_id, _reservation_id, v_reservation.kind, v_reservation.original_file_name,
+      v_reservation.storage_path, _mime_type, _size_bytes, _sha256, _sha256_source, _actor_id, v_operation);
+  INSERT INTO public.purchase_order_attachment_revisions(attachment_id, revision_no, transaction_date, amount_yen, currency,
+      counterparty, voided, reason, replaces_attachment_id, actor_id, operation_id)
+    VALUES(v_attachment, 1, _transaction_date, _amount_yen, _currency, v_counterparty, false, NULL, v_reservation.replaces_attachment_id,
+      _actor_id, v_operation);
+
+  v_result := pg_catalog.jsonb_build_object('attachmentId', v_attachment, 'revisionNo', 1, 'replayed', false);
+  INSERT INTO private.group_g_operations(id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+    VALUES(v_operation, 'purchase_order_attachment_attach', _request_key, v_fingerprint, 'purchase_order',
+      _purchase_order_id::text, _actor_id, v_result);
+  RETURN v_result;
+END;
+$$;
+ALTER FUNCTION private.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid) TO service_role;
+
+CREATE FUNCTION public.admin_attach_purchase_order_document(_reservation_id uuid, _purchase_order_id uuid, _mime_type text,
+  _size_bytes bigint, _sha256 text, _sha256_source text, _transaction_date date, _amount_yen bigint, _currency text,
+  _counterparty text, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.admin_attach_purchase_order_document(_reservation_id, _purchase_order_id, _mime_type, _size_bytes, _sha256, _sha256_source, _transaction_date, _amount_yen, _currency, _counterparty, _actor_id, _request_key); $$;
+ALTER FUNCTION public.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid) TO service_role;
+
+CREATE FUNCTION private.admin_revise_purchase_order_document(_attachment_id uuid, _purchase_order_id uuid, _transaction_date date,
+  _amount_yen bigint, _currency text, _counterparty text, _voided boolean, _reason text, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_counterparty text := NULLIF(pg_catalog.regexp_replace(_counterparty, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '');
+  v_reason text := NULLIF(pg_catalog.regexp_replace(_reason, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '');
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_fingerprint text;
+  v_existing private.group_g_operations%ROWTYPE;
+  v_latest public.purchase_order_attachment_revisions%ROWTYPE;
+  v_revision_no integer;
+  v_result jsonb;
+BEGIN
+  IF _attachment_id IS NULL OR _purchase_order_id IS NULL OR _actor_id IS NULL OR _request_key IS NULL OR _voided IS NULL
+    OR _transaction_date IS NULL OR NOT pg_catalog.isfinite(_transaction_date) OR _transaction_date < DATE '2000-01-01'
+    OR _amount_yen IS NULL OR _amount_yen NOT BETWEEN 0 AND 99999999999
+    OR _currency IS NULL OR _currency <> 'JPY'
+    OR v_counterparty IS NULL OR pg_catalog.char_length(v_counterparty) > 100
+    OR pg_catalog.char_length(v_reason) > 200 THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF v_reason IS NULL THEN
+    RAISE EXCEPTION 'GROUP_G_PO_REASON_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM private.lock_group_g_purchase_orders(ARRAY[_purchase_order_id], false);
+  IF NOT private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.purchase_orders.manage', 'admin.purchase_orders.read']) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+
+  v_fingerprint := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+    'operation', 'purchase_order_attachment_revise', 'attachment_id', _attachment_id, 'purchase_order_id', _purchase_order_id,
+    'transaction_date', _transaction_date, 'amount_yen', _amount_yen, 'currency', _currency, 'counterparty', v_counterparty,
+    'voided', _voided, 'reason', v_reason, 'actor_id', _actor_id)::text, 'UTF8')), 'hex');
+  SELECT op.* INTO v_existing FROM private.group_g_operations AS op
+    WHERE op.operation = 'purchase_order_attachment_revise' AND op.request_key = _request_key;
+  IF FOUND THEN
+    IF v_existing.fingerprint <> v_fingerprint THEN
+      RAISE EXCEPTION 'GROUP_G_REQUEST_KEY_CONFLICT' USING ERRCODE = '23505';
+    END IF;
+    RETURN v_existing.result || pg_catalog.jsonb_build_object('replayed', true);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM public.purchase_orders AS po WHERE po.id = _purchase_order_id) THEN
+    RAISE EXCEPTION 'GROUP_G_PO_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  -- an attachment of another order (or none) is a plain argument error: the caller only sends attachments it has just read
+  SELECT r.* INTO v_latest FROM public.purchase_order_attachment_revisions AS r
+    JOIN public.purchase_order_attachments AS a ON a.id = r.attachment_id
+    WHERE a.id = _attachment_id AND a.purchase_order_id = _purchase_order_id
+    ORDER BY r.revision_no DESC LIMIT 1;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF v_latest.transaction_date = _transaction_date AND v_latest.amount_yen = _amount_yen AND v_latest.currency = _currency
+    AND v_latest.counterparty = v_counterparty AND v_latest.voided = _voided THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  v_revision_no := v_latest.revision_no + 1;
+  INSERT INTO public.purchase_order_attachment_revisions(attachment_id, revision_no, transaction_date, amount_yen, currency,
+      counterparty, voided, reason, replaces_attachment_id, actor_id, operation_id)
+    VALUES(_attachment_id, v_revision_no, _transaction_date, _amount_yen, _currency, v_counterparty, _voided, v_reason, NULL,
+      _actor_id, v_operation);
+
+  v_result := pg_catalog.jsonb_build_object('attachmentId', _attachment_id, 'revisionNo', v_revision_no, 'replayed', false);
+  INSERT INTO private.group_g_operations(id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+    VALUES(v_operation, 'purchase_order_attachment_revise', _request_key, v_fingerprint, 'purchase_order',
+      _purchase_order_id::text, _actor_id, v_result);
+  RETURN v_result;
+END;
+$$;
+ALTER FUNCTION private.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid) TO service_role;
+
+CREATE FUNCTION public.admin_revise_purchase_order_document(_attachment_id uuid, _purchase_order_id uuid, _transaction_date date,
+  _amount_yen bigint, _currency text, _counterparty text, _voided boolean, _reason text, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.admin_revise_purchase_order_document(_attachment_id, _purchase_order_id, _transaction_date, _amount_yen, _currency, _counterparty, _voided, _reason, _actor_id, _request_key); $$;
+ALTER FUNCTION public.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid) TO service_role;
+
+-- 9. The closed list of writers. The 56 entries of 20261023211425_group_g1_allocation.sql:8897 stay exactly as they were;
 --    Task 4 added private.admin_create_purchase_order (it writes private.group_g_operations) as the 57th, Task 6 added three
---    writers (58th to 60th), and Task 7 adds the receipt and the receipt cancellation (each one writes the ledger, the
---    allocations and private.group_g_operations) as the 61st and 62nd. Later G-2 tasks
+--    writers (58th to 60th), Task 7 adds the receipt and the receipt cancellation (each one writes the ledger, the
+--    allocations and private.group_g_operations) as the 61st and 62nd, and Task 8 adds the three document writers (63rd to
+--    65th; each one writes private.group_g_operations). Later G-2 tasks
 --    append their writers. Owner, ACL and signature of the function are unchanged (CREATE OR REPLACE keeps them).
 --    group_g1_writer_inventory scans pg_proc.prosrc against it.
 CREATE OR REPLACE FUNCTION private.group_g_writer_allowlist() RETURNS pg_catalog.regprocedure[]
@@ -1029,16 +1299,19 @@ AS $$
     'private.admin_confirm_purchase_order_quantities(uuid,integer,jsonb,text,uuid,uuid)',
     'private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)',
     'private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid)',
-    'private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)'
+    'private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)',
+    'private.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid)',
+    'private.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid)',
+    'private.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid)'
   ]::pg_catalog.regprocedure[];
 $$;
 
 -- G2B_BODY_END
 
 -- G2B_FINAL_ASSERT_BEGIN
--- Expectation of Tasks 4, 6 and 7: the eleven new functions (owner, SECURITY, language, result type, argument names, search_path,
+-- Expectation of Tasks 4, 6, 7 and 8: the nineteen new functions (owner, SECURITY, language, result type, argument names, search_path,
 -- and the EXECUTE rights read from the effective ACL where a NULL proacl means the default that includes PUBLIC), the order of
--- the lock helper (the common advisory before any other lock), and the allowlist: exactly the 56 G-1 entries plus the six
+-- the lock helper (the common advisory before any other lock), and the allowlist: exactly the 56 G-1 entries plus the nine
 -- purchase-order writers, every one resolving to a function. The expected sets grow with every Task that adds to this file.
 DO $g2b_final_objects$
 DECLARE
@@ -1105,7 +1378,10 @@ DECLARE
     'private.admin_confirm_purchase_order_quantities(uuid,integer,jsonb,text,uuid,uuid)',
     'private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)',
     'private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid)',
-    'private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)'
+    'private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)',
+    'private.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid)',
+    'private.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid)',
+    'private.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid)'
   ];
 BEGIN
   IF EXISTS (
@@ -1136,7 +1412,19 @@ BEGIN
       ('private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)', true, true, 'plpgsql', 'jsonb',
         ARRAY['_purchase_order_id', '_expected_version', '_receipt_id', '_lines', '_reason', '_expected_release_quantity', '_actor_id', '_request_key']),
       ('public.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)', false, true, 'sql', 'jsonb',
-        ARRAY['_purchase_order_id', '_expected_version', '_receipt_id', '_lines', '_reason', '_expected_release_quantity', '_actor_id', '_request_key'])
+        ARRAY['_purchase_order_id', '_expected_version', '_receipt_id', '_lines', '_reason', '_expected_release_quantity', '_actor_id', '_request_key']),
+      ('private.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid)', true, true, 'plpgsql', 'jsonb',
+        ARRAY['_purchase_order_id', '_kind', '_file_name', '_replaces_attachment_id', '_actor_id', '_request_key']),
+      ('public.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid)', false, true, 'sql', 'jsonb',
+        ARRAY['_purchase_order_id', '_kind', '_file_name', '_replaces_attachment_id', '_actor_id', '_request_key']),
+      ('private.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid)', true, true, 'plpgsql', 'jsonb',
+        ARRAY['_reservation_id', '_purchase_order_id', '_mime_type', '_size_bytes', '_sha256', '_sha256_source', '_transaction_date', '_amount_yen', '_currency', '_counterparty', '_actor_id', '_request_key']),
+      ('public.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid)', false, true, 'sql', 'jsonb',
+        ARRAY['_reservation_id', '_purchase_order_id', '_mime_type', '_size_bytes', '_sha256', '_sha256_source', '_transaction_date', '_amount_yen', '_currency', '_counterparty', '_actor_id', '_request_key']),
+      ('private.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid)', true, true, 'plpgsql', 'jsonb',
+        ARRAY['_attachment_id', '_purchase_order_id', '_transaction_date', '_amount_yen', '_currency', '_counterparty', '_voided', '_reason', '_actor_id', '_request_key']),
+      ('public.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid)', false, true, 'sql', 'jsonb',
+        ARRAY['_attachment_id', '_purchase_order_id', '_transaction_date', '_amount_yen', '_currency', '_counterparty', '_voided', '_reason', '_actor_id', '_request_key'])
     ) AS e(sig, definer, service, lang, ret, names)
     LEFT JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(e.sig)
     WHERE p.oid IS NULL
@@ -1165,8 +1453,8 @@ BEGIN
   ) THEN
     v_failed := 'purchase_writer_lock_order';
   ELSIF EXISTS (SELECT 1 FROM pg_catalog.unnest(v_writers) AS w(s) WHERE pg_catalog.to_regprocedure(w.s) IS NULL)
-     OR (SELECT pg_catalog.count(DISTINCT pg_catalog.to_regprocedure(w.s)) FROM pg_catalog.unnest(v_writers) AS w(s)) <> 62
-     OR pg_catalog.cardinality(private.group_g_writer_allowlist()) <> 62 THEN
+     OR (SELECT pg_catalog.count(DISTINCT pg_catalog.to_regprocedure(w.s)) FROM pg_catalog.unnest(v_writers) AS w(s)) <> 65
+     OR pg_catalog.cardinality(private.group_g_writer_allowlist()) <> 65 THEN
     v_failed := 'purchase_writer_allowlist_missing';
   ELSIF (SELECT pg_catalog.array_agg(x::oid ORDER BY x::oid) FROM pg_catalog.unnest(private.group_g_writer_allowlist()) AS a(x))
      IS DISTINCT FROM (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(w.s)::oid ORDER BY pg_catalog.to_regprocedure(w.s)::oid)
@@ -1199,6 +1487,7 @@ BEGIN
       ('public.purchase_order_short_closures'),
       ('public.purchase_order_receipts'),
       ('public.purchase_order_receipt_lines'),
+      ('public.purchase_order_attachment_revisions'),
       ('private.group_g_operations')
     ) AS e(rel)
     CROSS JOIN LATERAL (SELECT pg_catalog.to_regclass(e.rel) AS r) AS t

@@ -1210,9 +1210,9 @@ describeLocalDb('integration: G-2 数量の確定・訂正・打切り', (db) =>
     }
   });
 
-  test('FREQ-540-AC-07: 書き手の一覧は 62 本(Task 7 の受け取りの 2 本を含む)で、3本の private 本体を含み、public 入口は含まない', async () => {
+  test('FREQ-540-AC-07: 書き手の一覧は 65 本(Task 7 の受け取りの 2 本・Task 8 の原本の 3 本を含む)で、3本の private 本体を含み、public 入口は含まない', async () => {
     const list = (await db().query('select x::oid::text as oid from unnest(private.group_g_writer_allowlist()) as a(x)')).rows;
-    expect(list).toHaveLength(62);
+    expect(list).toHaveLength(65);
     const oids = new Set(list.map((row) => row.oid));
     for (const signature of SIGNATURES) {
       const privateOid = (await db().query('select $1::regprocedure::oid::text as oid', [`private.${signature}`])).rows[0].oid;

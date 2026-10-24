@@ -47,6 +47,16 @@ describe('PurchaseOrderError', () => {
         .toEqual({ status: PURCHASE_ORDER_ERRORS[code][1], code, message: PURCHASE_ORDER_ERRORS[code][2] });
     });
 
+  test.each([
+    ['DOCUMENT_NOT_UPLOADED', 409, 'ファイルがまだ届いていません。もう一度アップロードしてください。'],
+    ['DOCUMENT_TYPE_UNSUPPORTED', 422, 'PDF・JPEG・PNG のファイルを選んでください。'],
+    ['DOCUMENT_STORAGE_UNAVAILABLE', 503, 'ファイルの保存先に接続できません。時間をおいて再度お試しください。'],
+    ['DOCUMENT_NOT_FOUND', 404, '原本を取得できません。'],
+  ])('FREQ-530-AC-02: 原本の code（%s）は、渡した状態のまま原本の表の本文と code を持つ', (code, status, body) => {
+    const error = new PurchaseOrderError(status, code);
+    expect({ status: error.status, code: error.code, message: error.message }).toEqual({ status, code, message: body });
+  });
+
   test.each(['PRIVATE-MARKER', 'toString', '__proto__', 'constructor', 'hasOwnProperty', ''])(
     'FREQ-526-AC-02: 表に無い code（%j）でも落ちず、code 無しの固定の失敗の文になる', (code) => {
       const error = new PurchaseOrderError(500, code);

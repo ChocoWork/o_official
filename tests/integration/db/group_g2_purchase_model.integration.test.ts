@@ -33,7 +33,8 @@ const TRUNCATE_WITH: Record<string, string[]> = {
   purchase_order_receipts: ['purchase_order_receipt_lines'],
   purchase_order_receipt_lines: [],
   purchase_order_attachment_reservations: ['purchase_order_attachments', 'purchase_order_attachment_revisions'],
-  purchase_order_attachments: ['purchase_order_attachment_revisions'],
+  // 予約は差し替え元の添付も指す（replaces_attachment_id）ので、添付を TRUNCATE する文には予約も並べる
+  purchase_order_attachments: ['purchase_order_attachment_reservations', 'purchase_order_attachment_revisions'],
   purchase_order_attachment_revisions: [],
 };
 const FUNCTIONS = [
@@ -540,6 +541,9 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
     }
     const stored = await make({ storage_path: pathA });
     await violated(() => make({}), '23505', aCheck('reservation_id_key'));
+    // 予約が持つ差し替え元は、実在の添付だけ（外部キー。NULL は新しい書類）。版の表の replaces_attachment_id と同じ向き
+    await violated(() => reservation(b.orderId, b.operationId, { replaces_attachment_id: randomUUID() }), '23503', rCheck('replaces_fkey'));
+    await reservation(b.orderId, b.operationId, { replaces_attachment_id: stored });
     const reservedB = await reservation(b.orderId, b.operationId);
     await violated(() => attachment(b.orderId, reservedB, b.operationId, { storage_path: pathA }), '23505', aCheck('storage_path_key'));
 
@@ -593,7 +597,7 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
        from pg_constraint c where c.contype = 'f' and c.conrelid = any ($1::regclass[]) order by c.conname`,
       [TABLES.map((name) => `public.${name}`)],
     )).rows;
-    expect(fkeys).toHaveLength(21);
+    expect(fkeys).toHaveLength(22);
     for (const fkey of fkeys) {
       expect(fkey).toMatchObject({
         on_delete: 'r', on_update: 'a',

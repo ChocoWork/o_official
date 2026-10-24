@@ -123,7 +123,7 @@ describe('G-2 writers migration の受け取りの節（DB なし）', () => {
     expect(CODE).not.toMatch(/ON SCHEMA\s+private/i);
   });
 
-  test('FREQ-540-AC-07: 書き手の一覧は G-1 の56本を1文字も変えず、末尾に 作成・Task 6 の3本・受け取り・受け取りの取消を足した62本。最後の確かめも62本を見る', () => {
+  test('FREQ-540-AC-07: 書き手の一覧は G-1 の56本を1文字も変えず、末尾に 作成・Task 6 の3本・受け取り・受け取りの取消・Task 8 の原本の3本を足した65本。最後の確かめも65本を見る', () => {
     const g1 = allowlistOf(withoutComments(G1_SQL), 'CREATE FUNCTION private.group_g_writer_allowlist()');
     const next = allowlistOf(CODE, 'CREATE OR REPLACE FUNCTION private.group_g_writer_allowlist()');
     expect(g1).toHaveLength(56);
@@ -135,10 +135,14 @@ describe('G-2 writers migration の受け取りの節（DB なし）', () => {
       'private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)',
       `private.${RECEIVE_SIGNATURE}`,
       `private.${REVERSE_SIGNATURE}`,
+      'private.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid)',
+      'private.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid)',
+      'private.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid)',
     ]);
-    expect(new Set(next).size).toBe(62);
+    expect(new Set(next).size).toBe(65);
     const section = WRITERS_SQL.slice(WRITERS_SQL.indexOf('-- G2B_FINAL_ASSERT_BEGIN'), WRITERS_SQL.indexOf('-- G2B_FINAL_ASSERT_END'));
-    expect(section).toContain('<> 62');
+    expect(section).toContain('<> 65');
+    expect(section).not.toContain('<> 62');
     expect(section).not.toContain('<> 60');
     for (const signature of [RECEIVE_SIGNATURE, REVERSE_SIGNATURE]) {
       expect(section).toContain(`'private.${signature}'`);
@@ -556,7 +560,7 @@ describeLocalDb('integration: G-2 受け取り', (db) => {
     expect(await read(`public.${RECEIVE_SIGNATURE}`)).toEqual({ ...common, definer: false, language: 'sql', names });
 
     const list = (await db().query('select x::oid::text as oid from unnest(private.group_g_writer_allowlist()) as a(x)')).rows;
-    expect(list).toHaveLength(62);
+    expect(list).toHaveLength(65);
     const oids = new Set(list.map((row) => row.oid));
     const privateOid = (await db().query('select $1::regprocedure::oid::text as oid', [`private.${RECEIVE_SIGNATURE}`])).rows[0].oid;
     const publicOid = (await db().query('select $1::regprocedure::oid::text as oid', [`public.${RECEIVE_SIGNATURE}`])).rows[0].oid;

@@ -810,7 +810,7 @@ flowchart TD
 
 ## 在庫一覧表・発注（G-2 / FREQ-525〜530）
 
-G-2 の画面は、管理メニューの INVENTORY から入る。この節は Task 3 で作った在庫一覧表と、Task 4 で足した発注（入力 → 確認 → 確定）と、Task 5 で足した発注一覧表・発注書の詳細（読むだけ）と、Task 6 で足した発注書の頁の操作（数量の確定・訂正、残りの打切り、発注の取消、発注先・メモの訂正）を記し、受け取り・原本の添付は、それぞれの Task が同じ節へ足す。
+G-2 の画面は、管理メニューの INVENTORY から入る。この節は Task 3 で作った在庫一覧表と、Task 4 で足した発注（入力 → 確認 → 確定）と、Task 5 で足した発注一覧表・発注書の詳細（読むだけ）と、Task 6 で足した発注書の頁の操作（数量の確定・訂正、残りの打切り、発注の取消、発注先・メモの訂正）と、Task 7 で足した受け取りとその取消・数量訂正と、Task 8 で足した取引書類の原本（添付・訂正・差し替え・無効化・閲覧・検索・続きから保存）を記す。
 
 ### INVENTORY タブ
 
@@ -860,7 +860,7 @@ G-2 の画面は、管理メニューの INVENTORY から入る。この節は T
 
 | 要素 | 内容 |
 | --- | --- |
-| 見出し・リンク | h1「発注一覧表」。リンク「管理画面に戻る」（`/admin`）・「在庫一覧表」（`/admin/inventory`）・「取引書類を検索」（`/admin/purchase-orders/documents`。後続の Task が作る未実装のルート） |
+| 見出し・リンク | h1「発注一覧表」。リンク「管理画面に戻る」（`/admin`）・「在庫一覧表」（`/admin/inventory`）・「取引書類を検索」（`/admin/purchase-orders/documents`。Task 8 で作った。下の「取引書類の原本」） |
 | 読込中 | 「読み込み中...」（`role="status"`） |
 | 失敗の文 | 共有の `adminLoadFailureMessage` で決める。順は、本文の `reason` が `MFA required` なら「2要素認証が必要です」、401 は「ログインし直してください。」、403 は「発注一覧を見る権限がありません。」、それ以外と応答の形が崩れた時は「発注一覧を読み込めませんでした。時間をおいて再度お試しください。」。`role="alert"` で出し、表と頁送りは出さない |
 | 空 | 「発注書はまだありません。」 |
@@ -886,9 +886,9 @@ G-2 の画面は、管理メニューの INVENTORY から入る。この節は T
 | 明細の表 | `aria-label="明細"`。列は「商品名」「色」「サイズ」「仮数量」「発注数量」「納品済み」「未納」「単価（円）」の8つで、`line_no` 順（窓口の順）。数量確定前の行は「発注数量」と「未納」が「数量未確定」、単価が無ければ「未登録」、あれば3桁区切り（`1,200`） |
 | 数量の履歴 | h2「数量の履歴」。列は「版」「日時（日本時間 `YYYY/MM/DD HH:mm`）」「種類（発注／発注先・メモの訂正／数量の確定・訂正／打切り）」「対象（発注書／商品名 色 サイズ）」「変更（`数量 4 → 3`・`単価`・`発注先`・`メモ`を「・」でつなぐ。変更前が無ければ変更後だけ。**前後の値が同じ項目は出さない**: 単価だけの訂正の履歴は前後の数量が同じなので `単価 500 → 650` だけ、発注先が同じ訂正は `メモ …` だけ）」「理由」。窓口の順（版 → 発注書全体の行 → 明細番号 → 種類） |
 | 受け取りの履歴 | h2「受け取りの履歴」。受け取りごとに「${日付} 受け取り」または「${日付} 受け取りの取消」、メモ、理由、「実行者 ${メールアドレス}」（詳細の読取の関数が受取ごとに返す `actorEmail`。在庫の履歴と同じ見せ方で、アカウントが無ければ「実行者 —」。相殺の受取にも出す）、受取行（商品名 色 サイズ と `+2`／`-1` の数量）。無ければ「受け取りの記録はありません。」。取り消せる数（`reversibleQuantity`）が残る受取には、Task 7 が「この受け取りを取り消す」「数量を訂正」を足した（下の「受け取りと、その取消・数量訂正」） |
-| 取引書類 | h2「取引書類」の見出しだけ。書類の一覧・無効の印・保存途中の予約（`pendingUploads`）・追加・表示・無効化・訂正は Task 8 が足す（窓口は書類と予約を既に返すが、この Task の画面は使わない） |
+| 取引書類 | h2「取引書類」。中身は Task 8 の [PurchaseOrderDocumentsSection](../../../src/components/PurchaseOrderDocumentsSection.tsx) が出す（下の「取引書類の原本」） |
 
-受け取りのボタンは Task 7 が足した（下の「受け取りと、その取消・数量訂正」）。書類のボタンは後続の Task が足す。窓口の仕様は[API仕様](../../03_BasicDesign/api/api-spec.md)の `GET /api/admin/purchase-orders/[id]`、表示段階の導き方は[発注書の状態](../states/purchasing.md)。
+受け取りのボタンは Task 7、書類のボタンは Task 8 が足した（下の「受け取りと、その取消・数量訂正」「取引書類の原本」）。窓口の仕様は[API仕様](../../03_BasicDesign/api/api-spec.md)の `GET /api/admin/purchase-orders/[id]`、表示段階の導き方は[発注書の状態](../states/purchasing.md)。
 
 #### 発注書の頁の操作（Task 6 / FREQ-527・528）
 
@@ -921,3 +921,22 @@ G-2 の画面は、管理メニューの INVENTORY から入る。この節は T
 | 失敗 | 取り消す数が空き在庫と外せる割当の合計を超えると「在庫が足りないため取り消せません。取り消す数が、空き在庫と外せる割当の合計を超えています。」、取り消せる数の超過、数量確定前・未納超過・受取日の誤り、版の競合は表の本文を出し、**入力と確認の段は保つ**。版の競合は親が読み直す |
 
 検証: 単体 [受け取りのダイアログ](../../../tests/unit/components/PurchaseOrderReceiveDialog.test.tsx)・[取消・訂正のダイアログ](../../../tests/unit/components/PurchaseOrderReceiptReverseDialog.test.tsx)・[発注書の画面](../../../tests/unit/components/PurchaseOrderDetailSection.test.tsx)・[受け取りの窓口](../../../tests/unit/api/admin/purchase-order-receipts-route.test.ts)・[取消の窓口](../../../tests/unit/api/admin/purchase-order-receipt-reversals-route.test.ts)・[store](../../../tests/unit/lib/purchase-orders/purchase-order-store.test.ts)・[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)。DB [受け取り](../../../tests/integration/db/group_g2_purchase_receipts.integration.test.ts)・[受け取りの取消](../../../tests/integration/db/group_g2_purchase_receipt_reversals.integration.test.ts)。3つの画面幅の確認は Task 10 の E2E。
+
+#### 取引書類の原本（Task 8 / FREQ-530）
+
+発注書の頁の節 [PurchaseOrderDocumentsSection](../../../src/components/PurchaseOrderDocumentsSection.tsx) と、書類検索の頁 `/admin/purchase-orders/documents`（[PurchaseOrderDocumentSearchSection](../../../src/components/PurchaseOrderDocumentSearchSection.tsx)）。置き場への送り方はブラウザの道具 [purchase-order-documents-client](../../../src/lib/purchase-orders/purchase-order-documents-client.ts) が持つ（順は ファイルの確かめ（拡張子・種類・先頭のバイト・大きさ）→ SHA-256 → 予約 → 署名つきの送り先へ PUT → 確定）。保存・訂正の送り方の共通部分は [usePurchaseOrderWrite](../../../src/hooks/usePurchaseOrderWrite.ts)（成功の形の確かめだけ `isSaved` で替えられる）。詳しい順は[取引書類の保存と再開の図](../sequence/purchasing.md)、窓口は[API仕様](../../03_BasicDesign/api/api-spec.md)、運用は[取引書類の運用](../../06_Operations/purchase-order-documents.md)。
+
+| 要素 | 内容 |
+| --- | --- |
+| 見出し・追加 | h2「取引書類」。ボタン「書類を追加」でダイアログ「書類を追加」を開く |
+| 書類の一覧 | 書類ごとに 種類（見積書／請求書）・ファイル名・「取引日 ${YYYY/MM/DD} 金額（円） ¥${金額} 取引先 ${取引先}」・（あれば）理由。無効な最新の版にはバッジ「無効」。確定前のファイルは出さない。無ければ「取引書類はまだありません。」。操作のボタンは書類名の group（`aria-label` は「${ファイル名} の操作」）の中に「表示」「ダウンロード」「印刷」「情報を訂正」「差し替える」「無効にする」を並べる（無効の書類に「無効にする」は無い） |
+| 追加・差し替えのダイアログ | 見出し「書類を追加」／「書類を差し替える」。入力は 種類（見積書・請求書）・取引日（日付）・金額（円）・取引先・ファイル（PDF・JPEG・PNG）。差し替えは元の書類の種類・取引日・金額・取引先を初期値にし、元の書類を差し替え元として予約の時に送る（予約に残り、確定は本文で受けない）。「保存する」で送る。ファイルは送る前に 拡張子（pdf・jpg・jpeg・png）・ブラウザの種類・先頭のバイト（PDF・JPEG・PNG の印）・20 MiB を確かめ、合わなければ「PDF・JPEG・PNG のファイルを選んでください。」「ファイルは 20 MiB までです。」を出して送らない。取引日（2000-01-01 以降の実在の日付）・金額（円）（11桁までの数字）・取引先（1〜100字）が合わなければ「取引日・金額・取引先を入力してください。」、ファイルが無ければ「ファイルを選んでください。」を出して送らない。送信中は二重に送れず閉じない。成功は通知「書類を保存しました。」を出して親が発注書を読み直す。送れなかった（error）時は文を `role="alert"` で出して開いたままにする。確定が種類の検査で断られた（rejected）時は、選んだファイルを捨てて「このファイルは保存できませんでした。PDF・JPEG・PNG の正しいファイルを選び直して、新しく保存してください。」を出し、発注書を読み直して、開いたまま新しいファイル（新しい予約）で保存し直せる |
+| 保存の途中で止まった時 | 置き場への PUT か確定が失敗（pending）した時は、ダイアログを閉じて発注書を読み直させ、`role="alert"` で「書類の保存が終わっていません。内容を確認して、続きから保存してください。」と失敗の文を出す。送れなかったファイルと入力はこの画面で覚えておき、読み直した後の「続きから保存」で引き継ぐ（頁を読み直すと忘れる） |
+| 保存が終わっていないファイル | 予約があって添付に結ばれていない物（`pendingUploads`）。見出し h3「保存が終わっていないファイル」の下に 種類・ファイル名・作成日・（期限を過ぎていれば）「期限を過ぎています。内容を確認してください。」と、ボタン「続きから保存」を並べる。期限を過ぎた予約も確認済みにして消す操作は無く、確定されるまで残り続ける |
+| 続きから保存 | ダイアログ「続きから保存」。予約の種類・ファイル名を示し、取引日・金額（円）・取引先を入れ直す（この画面で覚えていれば初期値に入れ、ファイルも引き継ぐ）。置き場に保存済みならファイルは要らず（確定にはブラウザのハッシュを付けず、サーバーが読み戻した本文のハッシュを記録する）、置き場に無ければ「ファイルを選び直してください。」を出してファイルの欄を出し、選び直して再び「保存する」。選び直したファイルは、予約の種類（保存キーの拡張子）の中身でなければ「予約したファイルと同じ種類のファイルを選んでください。」で置き場に置く前に断る。差し替えの関係は予約に残っているので、読み直した後の再開でも保たれ、画面は確定に差し替え元を載せない。断られた後（すでに登録済みなど）は発注書を読み直す。置き場のファイルが種類の検査に通らず確定が断られた（rejected）時は、続きから保存を繰り返しても通らないので、同じダイアログでファイルの欄を出して選び直させ、新しい予約で保存する（種類と差し替え元は止まった予約から引き継ぐ。止まった予約は一覧に残る） |
+| 情報を訂正・無効にする | ダイアログ「書類の情報を訂正」（取引日・金額（円）・取引先を今の値で出し、理由が必須。「訂正する」）と「書類を無効にする」（理由だけ。情報はそのまま `voided: true`。「無効にする」）。訂正は今の無効かどうかを変えない。理由が空なら「理由を入力してください。」。成功は通知「書類の情報を訂正しました。」「書類を無効にしました。」。同じ内容の再押下・通信の失敗後の再押下は同じ requestKey で送る |
+| 表示・ダウンロード・印刷 | 窓口 `GET …/attachments/[attachmentId]/url`（共通の道具 `fetchPurchaseOrderDocumentUrl`。書類検索の「原本を見る」も同じ）から60秒の署名つきリンクをもらう。「表示」「印刷」は新しいタブで開く（印刷はそのタブのブラウザの印刷で行う）。「ダウンロード」は `?download=1` のリンクを保存として開く。リンクは画面にも記録にも出さない。もらえない時は `role="alert"` で表の本文（置き場に無い「原本を取得できません。」・置き場の不調・権限・2要素認証・ログイン）を出し、タブは開かない |
+| 書類検索 | h1「取引書類の検索」。条件は 取引日（から・まで）・金額（円）（から・まで）・取引先・発注書番号・種類（すべて／見積書／請求書）・「訂正前の情報も探す」。ボタン「検索」（押した時に条件を確定して1頁目を読む。金額に数字以外があれば読まずに「入力を確かめてください。」）・「条件をクリア」・「印刷」（`window.print()`。条件欄・ボタン・頁送りは `print:hidden`）。結果の表は 発注書番号（発注書の頁へのリンク）・種類・ファイル名・取引日・金額（円）・取引先・状態（有効／無効／訂正前）の7列と、最後の列「原本」（各行の「原本を見る」。印刷しない）で、画面では見出しを保った高さの上限つきスクロール領域。「原本を見る」は発注書の頁の「表示」と同じ窓口 `GET …/attachments/[attachmentId]/url`（行の発注書・添付の id。60秒の署名つきリンク）をもらって新しいタブで開き、もらえない時は発注書の頁と同じ文（置き場に無い「原本を取得できません。」・置き場の不調・権限・2要素認証・ログイン・想定外）を `role="alert"` で出してタブは開かない（共通の道具 `fetchPurchaseOrderDocumentUrl`）。開く間は全行のボタンを押せず、新しく検索するか頁を送ると文は消える。リンクは画面にも記録にも出さない。印刷では上限・スクロール・表の最小幅を外し（`print:max-h-none`・`print:overflow-visible`・`print:min-w-0`）、表を丸ごと出す。50件ごとの頁送り。空は「該当する書類はありません。」、403 は「取引書類を見る権限がありません。」、MFA・401 は共有の `adminLoadFailureMessage`、他は「取引書類を読み込めませんでした。時間をおいて再度お試しください。」 |
+| 証憑未添付 | 無効でない添付が無い時のバッジ「証憑未添付」は Task 5 のまま（数量確定後、詳細の `flags.documentMissing`）。書類を無効にして読み直すと出る |
+
+検証: 単体 [取引書類の節](../../../tests/unit/components/PurchaseOrderDocumentsSection.test.tsx)・[書類検索](../../../tests/unit/components/PurchaseOrderDocumentSearchSection.test.tsx)・[発注書の画面](../../../tests/unit/components/PurchaseOrderDetailSection.test.tsx)・[原本の store](../../../tests/unit/lib/purchase-orders/purchase-order-documents.test.ts)・[ブラウザの道具](../../../tests/unit/lib/purchase-orders/purchase-order-documents-client.test.ts)・[窓口](../../../tests/unit/api/admin/purchase-order-attachments-route.test.ts)・[検索の窓口](../../../tests/unit/api/admin/purchase-order-documents-route.test.ts)・[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)。DB [原本](../../../tests/integration/db/group_g2_purchase_documents.integration.test.ts)。3つの画面幅と置き場への PUT が CSP に遮られないことの確認は Task 10 の E2E。

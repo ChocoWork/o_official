@@ -1,10 +1,10 @@
 # ER 図（現行リポジトリの実装）
 
-> 状態: 現行のソース（グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・21 FK を 2026-10-25 に追記。G-2 は本番へ未適用） | 確認日: 2026-10-25 | 対象: `supabase/migrations/` の基準スキーマと後続変更
+> 状態: 現行のソース（グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ未適用） | 確認日: 2026-10-25 | 対象: `supabase/migrations/` の基準スキーマと後続変更
 
 ## 概要
 
-`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 段1・段2・E-4・E-5・G-1・G-2（発注書の9表）の追記を反映した掲載対象は **99 テーブル（public 89、private 8、security 2）と 141 FK（public 起点 130、private 起点 11）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
+`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 段1・段2・E-4・E-5・G-1・G-2（発注書の9表）の追記を反映した掲載対象は **99 テーブル（public 89、private 8、security 2）と 142 FK（public 起点 131、private 起点 11）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
 
 基準の確認日: **2026-10-03**。ソース基準コミット: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`。基準は [20260901102912_remote_schema.sql](../../../supabase/migrations/20260901102912_remote_schema.sql)、基準集計の最後の対象ファイルは [20260927100800_retire_legacy_order_rpcs.sql](../../../supabase/migrations/20260927100800_retire_legacy_order_rpcs.sql)。対象の 40 SQL ファイルの基準は59テーブル・63 FKで、後続の記載済みの追記を含む一覧は2026-10-09に数え直し、グループ E-1 の分を2026-10-10 に、グループ E-2 の分を2026-10-11 に、グループ E-3 の分を2026-10-13 に足した。配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文状況のリンクの表は E-5 の変更を 2026-10-22 に反映。本番 DB の適用状況は確認していない。
 
@@ -26,7 +26,7 @@ E-3 段2（FREQ-475〜486）: [移行 D](../../../supabase/migrations/2026102014
 
 2026-10-24 追記（グループ G-1、FREQ-520〜524・535・540〜541）: 1本の移行 `supabase/migrations/20261023211425_group_g1_allocation.sql`（先頭の節が本番のテスト用の注文と関連記録を消す清掃、続く本体が下の追加、末尾が全部の確かめ。まとめて 1 取引で当てる）で、`private.group_g_operations`（操作の受付。追記だけ）・`public.order_item_allocations`（割当の現在値。仮確保 H と入金済みの割当 A）・`public.order_item_allocation_events`（割当の履歴。追記だけ）・`public.order_item_state_events`（品物ごとの状態の履歴。追記だけ）を足し、`public.orders.paid_at`（初めて入金を DB に記録した時刻。一度だけ書く）と `public.stock_movements.allocation_operation_id`（台帳の行を割当の操作に結ぶ）を足し、台帳の理由に `allocation_release` を足した。4表は RLS を有効にして表の権限を外し、service_role は public の3表を読むだけ（private の受付表は読むこともできない）、書くのは共通の在庫の鍵（advisory (190521,1)）を最初に取る private の SECURITY DEFINER の DB の関数だけにした。差分はテーブル +4（public +3、private +1）、物理 FK +12（public 起点 +11、private 起点 +1。実行した人の列 `actor_id` は外部キーにしない）で、前の追記の86テーブル・108 FK から **90テーブル・120 FK** になる。本番へは未適用（適用の手順と記録は [DB マイグレーション運用](../../06_Operations/db-migrations.md)）。内容は 2.10・3.3・4.3.4・5.1・5.2 と末尾の「在庫の割当と品物の状態の履歴」に書く。
 
-2026-10-25 追記（グループ G-2、FREQ-526〜530・540）: 移行 `supabase/migrations/20261024153505_group_g2_purchasing_foundation.sql`（Task 1 の基盤の移行に Task 2 が本体と末尾の確かめを足す。本番へは未適用。適用の手順と記録は [DB マイグレーション運用](../../06_Operations/db-migrations.md)）で、発注書の9表 `public.purchase_orders`（発注書）・`public.purchase_order_lines`（発注書の行）・`public.purchase_order_revisions`（数量・単価・発注先の履歴。追記だけ）・`public.purchase_order_short_closures`（残りの打切り。追記だけ）・`public.purchase_order_receipts`（受け取りの操作。追記だけ）・`public.purchase_order_receipt_lines`（受け取りの商品と数。取消・訂正は負の行で相殺。追記だけ）・`public.purchase_order_attachment_reservations`（原本の置き場の予約。追記だけ）・`public.purchase_order_attachments`（原本。追記だけ）・`public.purchase_order_attachment_revisions`（原本の取引の記録と訂正。追記だけ）と、非公開の置き場 `purchase-order-documents`（`storage.buckets` の1行）を足した。9表は RLS を有効にして表の権限を外し、service_role は原本と予約の2表の `SELECT` だけ（保存キーの照会用）、書くのは後の Task の共通の鍵を最初に取る SECURITY DEFINER の DB の関数だけ。差分はテーブル +9（public +9）、物理 FK +21（`public` 起点 +21。操作の受付 `private.group_g_operations` への5本は遅延、`item_variants` と `stock_movements` への各1本を含む。実行した人の列 `created_by`・`actor_id`・`uploaded_by` は外部キーにしない）で、前の追記の90テーブル・120 FK から **99テーブル・141 FK** になる。内容は 2.11・3.3・4.3.5 と末尾の「発注書・受け取り・原本の添付」に書く。
+2026-10-25 追記（グループ G-2、FREQ-526〜530・540）: 移行 `supabase/migrations/20261024153505_group_g2_purchasing_foundation.sql`（Task 1 の基盤の移行に Task 2 が本体と末尾の確かめを足す。本番へは未適用。適用の手順と記録は [DB マイグレーション運用](../../06_Operations/db-migrations.md)）で、発注書の9表 `public.purchase_orders`（発注書）・`public.purchase_order_lines`（発注書の行）・`public.purchase_order_revisions`（数量・単価・発注先の履歴。追記だけ）・`public.purchase_order_short_closures`（残りの打切り。追記だけ）・`public.purchase_order_receipts`（受け取りの操作。追記だけ）・`public.purchase_order_receipt_lines`（受け取りの商品と数。取消・訂正は負の行で相殺。追記だけ）・`public.purchase_order_attachment_reservations`（原本の置き場の予約。追記だけ）・`public.purchase_order_attachments`（原本。追記だけ）・`public.purchase_order_attachment_revisions`（原本の取引の記録と訂正。追記だけ）と、非公開の置き場 `purchase-order-documents`（`storage.buckets` の1行）を足した。9表は RLS を有効にして表の権限を外し、service_role は原本と予約の2表の `SELECT` だけ（保存キーの照会用）、書くのは後の Task の共通の鍵を最初に取る SECURITY DEFINER の DB の関数だけ。差分はテーブル +9（public +9）、物理 FK +22（`public` 起点 +22。操作の受付 `private.group_g_operations` への5本は遅延、`item_variants` と `stock_movements` への各1本、予約の差し替え元〔`purchase_order_attachment_reservations.replaces_attachment_id`→`purchase_order_attachments`〕の1本を含む。実行した人の列 `created_by`・`actor_id`・`uploaded_by` は外部キーにしない）で、前の追記の90テーブル・120 FK から **99テーブル・142 FK** になる。内容は 2.11・3.3・4.3.5 と末尾の「発注書・受け取り・原本の添付」に書く。
 
 図は領域別に分割する。PK・FK と関係を読むための列だけを載せ、全列、CHECK、RLS、トリガー、RPC、Storage オブジェクトの一覧は SQL に委ねる（グループ E-1 の3つの表と `private.order_email_outbox` の追加の列だけは例外で、全列・CHECK・索引・RLS・トリガー・書く関数を第 3 節の「発送と仕上がりの列・索引」に書く。グループ E-2 の返金の2つの表・ショップの設定・切り替えの時刻の表と、追加の列も同じ例外で、第 3 節の「返金の列・索引」に書く。グループ E-3 の返品の4つの表・返品の設定の2つの表と、追加の列も同じ例外で、第 3 節の「返品の列・索引」に書く）。E-3 段2の追加4表も全列・CHECK・索引・RLS・守りを第3節に記す。グループ G-1 の追加4表と追加の2列も同じ例外で、全列・CHECK・索引・RLS・守り・書く関数を末尾の「在庫の割当と品物の状態の履歴」に書く。グループ G-2 の発注書の9表も同じ例外で、全列・CHECK・索引・RLS・守りを末尾の「発注書・受け取り・原本の添付」に書く。旧 `migrations/` と `supabase/pending/` は主な集計の基準に含めず、現行コードが依存する旧定義だけを補足する。
 
@@ -765,6 +765,7 @@ erDiagram
   purchase_order_attachment_reservations ||--o| purchase_order_attachments : reservation_id
   purchase_order_attachments ||--o{ purchase_order_attachment_revisions : attachment_id
   purchase_order_attachments o|--o{ purchase_order_attachment_revisions : replaces_attachment_id
+  purchase_order_attachments o|--o{ purchase_order_attachment_reservations : replaces_attachment_id
   group_g_operations ||--o{ purchase_order_revisions : operation_id
   group_g_operations ||--o{ purchase_order_receipts : operation_id
   group_g_operations ||--o{ purchase_order_attachment_reservations : operation_id
@@ -784,11 +785,11 @@ erDiagram
 | 発注書 → 予約・原本 → 取引の記録 | 予約は保存キーを先に取り分ける。原本は予約を1つだけ使う（`reservation_id` UNIQUE）。取引の記録は原本ごとに版を積み、差し替えは新しい原本が元を指す（`replaces_attachment_id`） |
 | 操作の受付 → 履歴・受け取り・予約・原本・取引の記録 | 1回の操作の番号。先に作り、受付の行は処理の終わりに1度だけ書く。参照は取引の終わりに確かめる（`DEFERRABLE INITIALLY DEFERRED`） |
 
-21本の外部キーはすべて `ON DELETE RESTRICT`。実行した人の `created_by`・`actor_id`・`uploaded_by` は物理 FK にしない（利用者の削除が追記だけの履歴を更新しないため。5.1）。
+22本の外部キーはすべて `ON DELETE RESTRICT`。実行した人の `created_by`・`actor_id`・`uploaded_by` は物理 FK にしない（利用者の削除が追記だけの履歴を更新しないため。5.1）。
 
 ## 3. 全テーブルとキーの一覧
 
-以下は掲載対象の99テーブル・141 FKの定義元とキーの一覧。FK の有無は入出両方向で判定する。`audit_logs_backups.id` は主キーではなく nullable の通常列である。
+以下は掲載対象の99テーブル・142 FKの定義元とキーの一覧。FK の有無は入出両方向で判定する。`audit_logs_backups.id` は主キーではなく nullable の通常列である。
 
 ### 3.1 認証・利用者
 
@@ -909,11 +910,11 @@ G-1で `order_items`（+2）・`item_variants`（+1）・`stock_movements`（+1�
 | `public.purchase_order_short_closures` | `(id)` | `(revision_id)` | 参照元 0 / 参照先 2 | 同上 |
 | `public.purchase_order_receipts` | `(id)` | なし | 参照元 1 / 参照先 2 | 同上 |
 | `public.purchase_order_receipt_lines` | `(id)` | `(stock_movement_id)`; `(receipt_id, line_id)` | 参照元 1（自表） / 参照先 4 | 同上 |
-| `public.purchase_order_attachment_reservations` | `(id)` | `(storage_path)` | 参照元 1 / 参照先 2 | 同上 |
-| `public.purchase_order_attachments` | `(id)` | `(reservation_id)`; `(storage_path)` | 参照元 2 / 参照先 3 | 同上 |
+| `public.purchase_order_attachment_reservations` | `(id)` | `(storage_path)` | 参照元 1 / 参照先 3 | 同上 |
+| `public.purchase_order_attachments` | `(id)` | `(reservation_id)`; `(storage_path)` | 参照元 3 / 参照先 3 | 同上 |
 | `public.purchase_order_attachment_revisions` | `(id)` | `(attachment_id, revision_no)` | 参照元 0 / 参照先 3 | 同上 |
 
-G-2で `item_variants`（+1）・`stock_movements`（+1）・`private.group_g_operations`（+5）を参照するFKが増える。既存行の参照数表記は各段階時点の記録とし、列・索引・守りの最終契約は末尾の「発注書・受け取り・原本の添付」の節を参照する。
+G-2で `item_variants`（+1）・`stock_movements`（+1）・`private.group_g_operations`（+5）を参照するFKが増える（原本の予約が差し替え元の添付を指す1本は同じ G-2 の表の間のFK）。既存行の参照数表記は各段階時点の記録とし、列・索引・守りの最終契約は末尾の「発注書・受け取り・原本の添付」の節を参照する。
 
 #### 発送と仕上がりの列・索引（2026-10-10）
 
@@ -1296,7 +1297,7 @@ CHECK (
 
 「遅延」は `DEFERRABLE INITIALLY DEFERRED`。操作の番号を先に作り、受付の行を処理の終わりに書く順を許すため、参照は取引の終わりに確かめる。
 
-### 4.3.5 発注書の追加21 FK（G-2）
+### 4.3.5 発注書の追加22 FK（G-2）
 
 | 参照元 | 参照先 | NULL | 親からの多重度 | 削除動作 |
 | --- | --- | --- | --- | --- |
@@ -1314,6 +1315,7 @@ CHECK (
 | `public.purchase_order_receipt_lines.reverses_receipt_line_id` | `public.purchase_order_receipt_lines.id` | 可（負の行〔相殺〕だけが持つ） | 0..多 | RESTRICT |
 | `public.purchase_order_receipt_lines.stock_movement_id` | `public.stock_movements.id` | 不可 | 0..1（UNIQUE） | RESTRICT |
 | `public.purchase_order_attachment_reservations.purchase_order_id` | `public.purchase_orders.id` | 不可 | 0..多 | RESTRICT |
+| `public.purchase_order_attachment_reservations.replaces_attachment_id` | `public.purchase_order_attachments.id` | 可（差し替えの予約だけが持つ。確定が版 1 の同じ列へ写す） | 0..多 | RESTRICT |
 | `public.purchase_order_attachment_reservations.operation_id` | `private.group_g_operations.id` | 不可 | 0..多 | RESTRICT（遅延） |
 | `public.purchase_order_attachments.purchase_order_id` | `public.purchase_orders.id` | 不可 | 0..多 | RESTRICT |
 | `public.purchase_order_attachments.reservation_id` | `public.purchase_order_attachment_reservations.id` | 不可 | 0..1（UNIQUE） | RESTRICT |
@@ -1833,7 +1835,7 @@ publicのRPCは完全修飾名・`SECURITY DEFINER`・`SET search_path = ''`・�
 
 [設計書 8章](../../superpowers/specs/2026-10-23-group-g-design.md)・[実装計画](../../superpowers/plans/2026-10-24-group-g2-purchasing.md)の Task 2 を参照。移行は1本 `supabase/migrations/20261024153505_group_g2_purchasing_foundation.sql`（本番へ適用した後は、MCP が記録した版にファイル名を直す。リンクにしないのはそのため）。先頭の `BEGIN;`〜末尾の `COMMIT;` を1組だけ持ち、本体（`-- G2A_BODY_BEGIN`〜`-- G2A_BODY_END`。Task 1 の権限の切替・G-1 の持ち越し・公開関数11本の実行権の剥奪の後に、以下の9表・守り・置き場）と末尾の確かめ（`-- G2A_FINAL_ASSERT_BEGIN`〜`-- G2A_FINAL_ASSERT_END`）を1取引で当てる。**データを変える文は無い**（変更はスキーマと `storage.buckets` の1行だけ）。本番へは未適用。適用の手順と記録は [DB マイグレーション運用](../../06_Operations/db-migrations.md)。
 
-差分はテーブル +9（public +9）、物理 FK +21、置き場 +1。G-1 までの90テーブル・120 FKに足して、合わせて99テーブル・141 FK。図は 2.11、FK の一覧は 4.3.5。新しい sequence は作らない（主キーは `uuid DEFAULT gen_random_uuid()`）。
+差分はテーブル +9（public +9）、物理 FK +22、置き場 +1。G-1 までの90テーブル・120 FKに足して、合わせて99テーブル・142 FK。図は 2.11、FK の一覧は 4.3.5。新しい sequence は作らない（主キーは `uuid DEFAULT gen_random_uuid()`）。
 
 ### 値の範囲
 
@@ -1863,7 +1865,7 @@ publicのRPCは完全修飾名・`SECURITY DEFINER`・`SET search_path = ''`・�
 | `purchase_order_short_closures` | `line_id`、`revision_id`、`closed_quantity`（打ち切った未納数。0 より大きい）、`reason`（NOT NULL）、`actor_id` | なし |
 | `purchase_order_receipts` | `purchase_order_id`、`kind`（`receive`・`reverse`。既定 `receive`）、`received_on`（date。相殺は操作した日の日本時間）、`memo`（200文字まで）、`reason`、`actor_id`、`operation_id` | なし |
 | `purchase_order_receipt_lines` | `receipt_id`、`line_id`、`quantity`、`reverses_receipt_line_id`、`stock_movement_id` | `purchase_order_receipt_lines_line_idx (line_id)`、`purchase_order_receipt_lines_reverses_idx (reverses_receipt_line_id) WHERE reverses_receipt_line_id IS NOT NULL` |
-| `purchase_order_attachment_reservations` | `purchase_order_id`、`kind`、`original_file_name`、`storage_path`（一意）、`created_by`、`operation_id`、`expires_at`。予約が使われたかは原本側の `reservation_id` で決まり、予約の行は変えない | なし |
+| `purchase_order_attachment_reservations` | `purchase_order_id`、`kind`、`original_file_name`、`storage_path`（一意）、`created_by`、`operation_id`、`expires_at`、`replaces_attachment_id`（uuid、NULL 可。差し替えの予約だけが、差し替える添付を持つ）。予約が使われたかは原本側の `reservation_id` で決まり、予約の行は変えない | なし |
 | `purchase_order_attachments` | `purchase_order_id`、`reservation_id`（一意）、`kind`、`original_file_name`、`storage_path`（予約と同じ値。一意）、`mime_type`、`size_bytes`、`sha256`、`sha256_source`、`uploaded_by`、`operation_id` | なし |
 | `purchase_order_attachment_revisions` | `attachment_id`、`revision_no`、`transaction_date`、`amount_yen`、`currency`、`counterparty`、`voided`（既定 false）、`reason`、`replaces_attachment_id`、`actor_id`、`operation_id` | `purchase_order_attachment_revisions_search_idx (transaction_date, amount_yen, counterparty)`、`purchase_order_attachment_revisions_attachment_idx (attachment_id, revision_no DESC)` |
 

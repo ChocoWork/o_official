@@ -453,7 +453,10 @@ CREATE INDEX purchase_order_receipt_lines_reverses_idx
   ON public.purchase_order_receipt_lines (reverses_receipt_line_id) WHERE reverses_receipt_line_id IS NOT NULL;
 
 -- A reservation is the promise of one storage key for one upload. Whether it was used is decided by the attachment that
--- points at it (reservation_id), so the reservation row is never changed.
+-- points at it (reservation_id), so the reservation row is never changed. replaces_attachment_id is the attachment a
+-- replacement upload replaces, recorded when the upload is reserved so that a stopped upload keeps the link (a page reload
+-- cannot lose it); the attach step copies it to revision 1 of the new attachment. Its foreign key is added below, after the
+-- attachments table exists.
 CREATE TABLE public.purchase_order_attachment_reservations (
   id uuid NOT NULL DEFAULT pg_catalog.gen_random_uuid(),
   purchase_order_id uuid NOT NULL,
@@ -463,6 +466,7 @@ CREATE TABLE public.purchase_order_attachment_reservations (
   created_by uuid NOT NULL,
   operation_id uuid NOT NULL,
   expires_at timestamptz NOT NULL,
+  replaces_attachment_id uuid,
   created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
   CONSTRAINT purchase_order_attachment_reservations_pkey PRIMARY KEY (id),
   CONSTRAINT purchase_order_attachment_reservations_purchase_order_id_fkey FOREIGN KEY (purchase_order_id)
@@ -508,6 +512,9 @@ CREATE TABLE public.purchase_order_attachments (
   CONSTRAINT purchase_order_attachments_sha256_source_check CHECK (sha256_source IN ('browser', 'server'))
 );
 ALTER TABLE public.purchase_order_attachments OWNER TO postgres;
+ALTER TABLE public.purchase_order_attachment_reservations
+  ADD CONSTRAINT purchase_order_attachment_reservations_replaces_fkey FOREIGN KEY (replaces_attachment_id)
+    REFERENCES public.purchase_order_attachments (id) ON DELETE RESTRICT;
 
 -- Revision 1 is the first record of the document's transaction details; later revisions (corrections, voiding) carry a reason.
 -- replaces_attachment_id is set only on revision 1 of an attachment that replaces an earlier one.
@@ -986,7 +993,8 @@ GRANT EXECUTE ON FUNCTION public.list_admin_purchase_order_lines(integer, intege
 --       attachments.current : the row of the attachment's latest revision (the largest revision_no), except that
 --         replacesAttachmentId is read from revision 1 (the only revision that can store the link, per the table CHECK),
 --         so a replacement keeps its link after a correction.
---       pendingUploads : reservations that no attachment points at; expired = now() > expires_at.
+--       pendingUploads : reservations that no attachment points at; expired = now() > expires_at; replacesAttachmentId is
+--         the attachment a stopped replacement upload replaces (NULL for a new document).
 --       flags.unitPriceMissing : the order is quantity_confirmed and some line has no unit price.
 --       flags.documentMissing : the order is quantity_confirmed and no attachment has a latest revision that is not voided.
 --       estimatedAmountYen : the sum of unit price * confirmed quantity over the lines that have both (NULL when none does).
@@ -1076,7 +1084,8 @@ BEGIN
       WHERE a.purchase_order_id = v_order.id),
     'pendingUploads', (SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
         'reservationId', rv.id, 'kind', rv.kind, 'fileName', rv.original_file_name, 'createdAt', rv.created_at,
-        'expiresAt', rv.expires_at, 'expired', pg_catalog.now() > rv.expires_at) ORDER BY rv.created_at, rv.id), '[]'::jsonb)
+        'expiresAt', rv.expires_at, 'expired', pg_catalog.now() > rv.expires_at,
+        'replacesAttachmentId', rv.replaces_attachment_id) ORDER BY rv.created_at, rv.id), '[]'::jsonb)
       FROM public.purchase_order_attachment_reservations AS rv
       WHERE rv.purchase_order_id = v_order.id
         AND NOT EXISTS (SELECT 1 FROM public.purchase_order_attachments AS ra WHERE ra.reservation_id = rv.id)),
@@ -1107,6 +1116,84 @@ AS $$ SELECT private.get_admin_purchase_order(_purchase_order_id, _actor_id); $$
 ALTER FUNCTION public.get_admin_purchase_order(uuid, uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.get_admin_purchase_order(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_admin_purchase_order(uuid, uuid) TO service_role;
+
+-- 16. Search of the original documents (G-2 Task 8, FREQ-530): one row per revision of an attachment that matches, read from
+--     one snapshot (STABLE). The permission (admin.purchase_orders.read for _actor_id) is checked first (42501), then the
+--     arguments (22023: _kind quote / invoice / NULL, _include_history not NULL, _limit 1..100, _offset >= 0). By default only
+--     the latest revision of each attachment is searched; with _include_history every revision is, and is_current tells
+--     the latest from the earlier ones, so a document is also found by the date, amount or counterparty it had before a
+--     correction. NULL filters are not applied; the date and amount ranges include both ends; the counterparty is a
+--     case-insensitive substring (strpos, so % _ and a backslash are plain characters); the order number is a case-insensitive
+--     prefix; filters combine with AND. Order: transaction_date DESC, revision created_at DESC, revision id. total is the
+--     number of matching rows before the page is cut. created_at is the time of the revision. replaces_attachment_id is the
+--     link of revision 1 (the only revision that can hold it), the same as the detail reads it. The storage path is never returned.
+CREATE FUNCTION private.search_purchase_order_documents(_date_from date, _date_to date, _amount_min bigint, _amount_max bigint,
+  _counterparty text, _purchase_order_number text, _kind text, _include_history boolean, _limit integer, _offset integer,
+  _actor_id uuid)
+RETURNS TABLE(total bigint, attachment_id uuid, purchase_order_id uuid, purchase_order_number text, kind text,
+  original_file_name text, mime_type text, size_bytes bigint, revision_no integer, is_current boolean, transaction_date date,
+  amount_yen bigint, currency text, counterparty text, voided boolean, reason text, replaces_attachment_id uuid,
+  created_at timestamptz)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  IF NOT private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.purchase_orders.read']) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+  IF (_kind IS NOT NULL AND _kind NOT IN ('quote', 'invoice')) OR _include_history IS NULL
+    OR _limit IS NULL OR _limit NOT BETWEEN 1 AND 100 OR _offset IS NULL OR _offset < 0 THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
+  WITH latest AS (
+    SELECT lr.attachment_id AS aid, pg_catalog.max(lr.revision_no) AS maxno
+    FROM public.purchase_order_attachment_revisions AS lr
+    GROUP BY lr.attachment_id
+  ), matched AS (
+    SELECT r.id AS rid, a.id AS aid, po.id AS poid, po.number AS pnumber, a.kind AS akind, a.original_file_name AS fname,
+      a.mime_type AS mime, a.size_bytes AS sbytes, r.revision_no AS rno, (r.revision_no = l.maxno) AS cur,
+      r.transaction_date AS tdate, r.amount_yen AS amount, r.currency AS ccy, r.counterparty AS party, r.voided AS vd,
+      r.reason AS rsn,
+      (SELECT r1.replaces_attachment_id FROM public.purchase_order_attachment_revisions AS r1
+       WHERE r1.attachment_id = a.id AND r1.revision_no = 1) AS repl,
+      r.created_at AS rcreated,
+      pg_catalog.count(*) OVER () AS cnt
+    FROM public.purchase_order_attachment_revisions AS r
+    JOIN latest AS l ON l.aid = r.attachment_id
+    JOIN public.purchase_order_attachments AS a ON a.id = r.attachment_id
+    JOIN public.purchase_orders AS po ON po.id = a.purchase_order_id
+    WHERE (_include_history OR r.revision_no = l.maxno)
+      AND (_date_from IS NULL OR r.transaction_date >= _date_from)
+      AND (_date_to IS NULL OR r.transaction_date <= _date_to)
+      AND (_amount_min IS NULL OR r.amount_yen >= _amount_min)
+      AND (_amount_max IS NULL OR r.amount_yen <= _amount_max)
+      AND (_counterparty IS NULL OR pg_catalog.strpos(pg_catalog.lower(r.counterparty), pg_catalog.lower(_counterparty)) > 0)
+      AND (_purchase_order_number IS NULL OR pg_catalog.starts_with(pg_catalog.lower(po.number), pg_catalog.lower(_purchase_order_number)))
+      AND (_kind IS NULL OR a.kind = _kind)
+  )
+  SELECT m.cnt, m.aid, m.poid, m.pnumber, m.akind, m.fname, m.mime, m.sbytes, m.rno, m.cur, m.tdate, m.amount, m.ccy, m.party,
+    m.vd, m.rsn, m.repl, m.rcreated
+  FROM matched AS m
+  ORDER BY m.tdate DESC, m.rcreated DESC, m.rid
+  LIMIT _limit OFFSET _offset;
+END;
+$$;
+ALTER FUNCTION private.search_purchase_order_documents(date, date, bigint, bigint, text, text, text, boolean, integer, integer, uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.search_purchase_order_documents(date, date, bigint, bigint, text, text, text, boolean, integer, integer, uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.search_purchase_order_documents(date, date, bigint, bigint, text, text, text, boolean, integer, integer, uuid) TO service_role;
+
+CREATE FUNCTION public.search_purchase_order_documents(_date_from date, _date_to date, _amount_min bigint, _amount_max bigint,
+  _counterparty text, _purchase_order_number text, _kind text, _include_history boolean, _limit integer, _offset integer,
+  _actor_id uuid)
+RETURNS TABLE(total bigint, attachment_id uuid, purchase_order_id uuid, purchase_order_number text, kind text,
+  original_file_name text, mime_type text, size_bytes bigint, revision_no integer, is_current boolean, transaction_date date,
+  amount_yen bigint, currency text, counterparty text, voided boolean, reason text, replaces_attachment_id uuid,
+  created_at timestamptz)
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.search_purchase_order_documents(_date_from, _date_to, _amount_min, _amount_max, _counterparty, _purchase_order_number, _kind, _include_history, _limit, _offset, _actor_id); $$;
+ALTER FUNCTION public.search_purchase_order_documents(date, date, bigint, bigint, text, text, text, boolean, integer, integer, uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.search_purchase_order_documents(date, date, bigint, bigint, text, text, text, boolean, integer, integer, uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.search_purchase_order_documents(date, date, bigint, bigint, text, text, text, boolean, integer, integer, uuid) TO service_role;
 
 -- G2A_BODY_END
 
@@ -1187,7 +1274,7 @@ BEGIN
       ('purchase_order_short_closures', 'id:uuid!,line_id:uuid!,revision_id:uuid!,closed_quantity:integer!,reason:text!,actor_id:uuid!,created_at:tz!'),
       ('purchase_order_receipts', 'id:uuid!,purchase_order_id:uuid!,kind:text!,received_on:date!,memo:text,reason:text,actor_id:uuid!,operation_id:uuid!,created_at:tz!'),
       ('purchase_order_receipt_lines', 'id:uuid!,receipt_id:uuid!,line_id:uuid!,quantity:integer!,reverses_receipt_line_id:uuid,stock_movement_id:bigint!,created_at:tz!'),
-      ('purchase_order_attachment_reservations', 'id:uuid!,purchase_order_id:uuid!,kind:text!,original_file_name:text!,storage_path:text!,created_by:uuid!,operation_id:uuid!,expires_at:tz!,created_at:tz!'),
+      ('purchase_order_attachment_reservations', 'id:uuid!,purchase_order_id:uuid!,kind:text!,original_file_name:text!,storage_path:text!,created_by:uuid!,operation_id:uuid!,expires_at:tz!,replaces_attachment_id:uuid,created_at:tz!'),
       ('purchase_order_attachments', 'id:uuid!,purchase_order_id:uuid!,reservation_id:uuid!,kind:text!,original_file_name:text!,storage_path:text!,mime_type:text!,size_bytes:bigint!,sha256:text!,sha256_source:text!,uploaded_by:uuid!,operation_id:uuid!,created_at:tz!'),
       ('purchase_order_attachment_revisions', 'id:uuid!,attachment_id:uuid!,revision_no:integer!,transaction_date:date!,amount_yen:bigint!,currency:text!,counterparty:text!,voided:boolean!,reason:text,replaces_attachment_id:uuid,actor_id:uuid!,operation_id:uuid!,created_at:tz!')
     ) AS e(rel, cols)
@@ -1218,7 +1305,7 @@ BEGIN
         ('purchase_order_short_closures', 'pkey:p(id),line_id_fkey:f>purchase_order_lines(line_id),revision_id_fkey:f>purchase_order_revisions(revision_id),revision_id_key:u(revision_id),closed_quantity_check:c,reason_check:c'),
         ('purchase_order_receipts', 'pkey:p(id),purchase_order_id_fkey:f>purchase_orders(purchase_order_id),operation_id_fkey:f>group_g_operations(operation_id),kind_check:c,memo_check:c,reason_check:c,kind_reason_check:c'),
         ('purchase_order_receipt_lines', 'pkey:p(id),receipt_id_fkey:f>purchase_order_receipts(receipt_id),line_id_fkey:f>purchase_order_lines(line_id),reverses_receipt_line_id_fkey:f>purchase_order_receipt_lines(reverses_receipt_line_id),stock_movement_id_fkey:f>stock_movements(stock_movement_id),stock_movement_id_key:u(stock_movement_id),receipt_line_key:u(receipt_id+line_id),quantity_check:c,reverses_check:c,group_g_po_line_received:t'),
-        ('purchase_order_attachment_reservations', 'pkey:p(id),purchase_order_id_fkey:f>purchase_orders(purchase_order_id),operation_id_fkey:f>group_g_operations(operation_id),storage_path_key:u(storage_path),kind_check:c,file_name_check:c'),
+        ('purchase_order_attachment_reservations', 'pkey:p(id),purchase_order_id_fkey:f>purchase_orders(purchase_order_id),operation_id_fkey:f>group_g_operations(operation_id),replaces_fkey:f>purchase_order_attachments(replaces_attachment_id),storage_path_key:u(storage_path),kind_check:c,file_name_check:c'),
         ('purchase_order_attachments', 'pkey:p(id),purchase_order_id_fkey:f>purchase_orders(purchase_order_id),reservation_id_fkey:f>purchase_order_attachment_reservations(reservation_id),operation_id_fkey:f>group_g_operations(operation_id),reservation_id_key:u(reservation_id),storage_path_key:u(storage_path),kind_check:c,file_name_check:c,mime_type_check:c,size_bytes_check:c,sha256_check:c,sha256_source_check:c'),
         ('purchase_order_attachment_revisions', 'pkey:p(id),attachment_id_fkey:f>purchase_order_attachments(attachment_id),replaces_attachment_fkey:f>purchase_order_attachments(replaces_attachment_id),operation_id_fkey:f>group_g_operations(operation_id),attachment_revision_key:u(attachment_id+revision_no),revision_no_check:c,transaction_date_check:c,amount_yen_check:c,currency_check:c,counterparty_check:c,reason_check:c,revision_reason_check:c,voided_reason_check:c,replaces_check:c')
       ) AS e(rel, cons)
@@ -1477,7 +1564,39 @@ BEGIN
       ('private.get_admin_purchase_order(uuid,uuid)', true, true, false, 'jsonb'::regtype::oid,
        ARRAY['_purchase_order_id', '_actor_id'], NULL::"char"[], NULL::oid[]),
       ('public.get_admin_purchase_order(uuid,uuid)', false, true, false, 'jsonb'::regtype::oid,
-       ARRAY['_purchase_order_id', '_actor_id'], NULL::"char"[], NULL::oid[])
+       ARRAY['_purchase_order_id', '_actor_id'], NULL::"char"[], NULL::oid[]),
+      ('private.search_purchase_order_documents(date,date,bigint,bigint,text,text,text,boolean,integer,integer,uuid)', true, true, true,
+       'record'::regtype::oid,
+       ARRAY['_date_from', '_date_to', '_amount_min', '_amount_max', '_counterparty', '_purchase_order_number', '_kind',
+             '_include_history', '_limit', '_offset', '_actor_id', 'total', 'attachment_id', 'purchase_order_id',
+             'purchase_order_number', 'kind', 'original_file_name', 'mime_type', 'size_bytes', 'revision_no', 'is_current',
+             'transaction_date', 'amount_yen', 'currency', 'counterparty', 'voided', 'reason', 'replaces_attachment_id',
+             'created_at'],
+       ARRAY['i', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't',
+             't', 't', 't', 't', 't', 't']::"char"[],
+       ARRAY['date'::regtype::oid, 'date'::regtype::oid, 'bigint'::regtype::oid, 'bigint'::regtype::oid, 'text'::regtype::oid,
+             'text'::regtype::oid, 'text'::regtype::oid, 'boolean'::regtype::oid, 'integer'::regtype::oid,
+             'integer'::regtype::oid, 'uuid'::regtype::oid, 'bigint'::regtype::oid, 'uuid'::regtype::oid, 'uuid'::regtype::oid,
+             'text'::regtype::oid, 'text'::regtype::oid, 'text'::regtype::oid, 'text'::regtype::oid, 'bigint'::regtype::oid,
+             'integer'::regtype::oid, 'boolean'::regtype::oid, 'date'::regtype::oid, 'bigint'::regtype::oid,
+             'text'::regtype::oid, 'text'::regtype::oid, 'boolean'::regtype::oid, 'text'::regtype::oid, 'uuid'::regtype::oid,
+             'timestamptz'::regtype::oid]),
+      ('public.search_purchase_order_documents(date,date,bigint,bigint,text,text,text,boolean,integer,integer,uuid)', false, true, true,
+       'record'::regtype::oid,
+       ARRAY['_date_from', '_date_to', '_amount_min', '_amount_max', '_counterparty', '_purchase_order_number', '_kind',
+             '_include_history', '_limit', '_offset', '_actor_id', 'total', 'attachment_id', 'purchase_order_id',
+             'purchase_order_number', 'kind', 'original_file_name', 'mime_type', 'size_bytes', 'revision_no', 'is_current',
+             'transaction_date', 'amount_yen', 'currency', 'counterparty', 'voided', 'reason', 'replaces_attachment_id',
+             'created_at'],
+       ARRAY['i', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't',
+             't', 't', 't', 't', 't', 't']::"char"[],
+       ARRAY['date'::regtype::oid, 'date'::regtype::oid, 'bigint'::regtype::oid, 'bigint'::regtype::oid, 'text'::regtype::oid,
+             'text'::regtype::oid, 'text'::regtype::oid, 'boolean'::regtype::oid, 'integer'::regtype::oid,
+             'integer'::regtype::oid, 'uuid'::regtype::oid, 'bigint'::regtype::oid, 'uuid'::regtype::oid, 'uuid'::regtype::oid,
+             'text'::regtype::oid, 'text'::regtype::oid, 'text'::regtype::oid, 'text'::regtype::oid, 'bigint'::regtype::oid,
+             'integer'::regtype::oid, 'boolean'::regtype::oid, 'date'::regtype::oid, 'bigint'::regtype::oid,
+             'text'::regtype::oid, 'text'::regtype::oid, 'boolean'::regtype::oid, 'text'::regtype::oid, 'uuid'::regtype::oid,
+             'timestamptz'::regtype::oid])
     ) AS e(sig, definer, service_exec, retset, ret, names, modes, types)
     LEFT JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(e.sig)
     WHERE p.oid IS NULL

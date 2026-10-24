@@ -20,7 +20,20 @@ export const PURCHASE_ORDER_LIMITS = {
   memo: { min: 0, max: 500 },
   reason: { min: 1, max: 200 },
   receiptMemo: { min: 0, max: 200 },
+  /** 取引書類の取引先（前後の空白を落とした後の文字数） */
+  counterparty: { min: 1, max: 100 },
+  /** 取引書類の原本のファイル名 */
+  documentFileName: { min: 1, max: 255 },
+  /** 取引書類の取引金額（整数円。発注見込額とは別に保存する） */
+  documentAmountYen: { min: 0, max: 99999999999 },
 } as const;
+
+/** 取引書類の原本の大きさの上限（20 MiB。非公開の入れ物 purchase-order-documents の file_size_limit と同じ） */
+export const PURCHASE_ORDER_DOCUMENT_MAX_BYTES = 20971520;
+/** 取引日の下限（DB の CHECK と同じ。上は未来でもよい） */
+export const PURCHASE_ORDER_DOCUMENT_MIN_DAY = '2000-01-01';
+/** 書類検索の1頁の件数 */
+export const PURCHASE_ORDER_DOCUMENT_PAGE_LIMIT = 50;
 
 /** DB に保存する段階。ordered は発注確定直後（数量は仮）。 */
 export type PurchaseOrderStage = 'ordered' | 'quantity_confirmed';
@@ -57,6 +70,23 @@ export const PURCHASE_ORDER_ERRORS: Record<string, readonly [sqlstate: string, s
   GROUP_G_PO_REVERSE_EXCEEDS_RECEIVED: ['23514', 409, '取り消せる数を超えています。'],
   GROUP_G_PO_REVERSE_STOCK_INSUFFICIENT: ['23514', 409, '在庫が足りないため取り消せません。取り消す数が、空き在庫と外せる割当の合計を超えています。'],
   GROUP_G_STOCK_RELEASE_CONFIRMATION_REQUIRED: ['55000', 409, '割り当て済みの品を外す必要があります。数量を確認してください。'],
+  // 取引書類の原本（Task 8）
+  GROUP_G_PO_DOCUMENT_RESERVATION_INVALID: ['55000', 409, '保存の予約が見つかりません。もう一度ファイルを選んでください。'],
+  GROUP_G_PO_DOCUMENT_ALREADY_ATTACHED: ['55000', 409, 'この書類はすでに登録されています。'],
+  GROUP_G_PO_DOCUMENT_REPLACEMENT_INVALID: ['22023', 400, '差し替え元の書類を確かめてください。'],
+};
+
+/**
+ * DB を呼ぶ前に store が原本（置き場のファイル）を確かめて投げる誤り（Task 8）。DB の誤りと違い SQLSTATE は無い。
+ * キーは code、値は [HTTP の状態, 利用者に見せる本文]。署名つきの送り先・保存先の鍵・ファイルの中身は本文に入れない。
+ */
+export const PURCHASE_ORDER_DOCUMENT_ERRORS: Record<string, readonly [status: number, body: string]> = {
+  DOCUMENT_NOT_UPLOADED: [409, 'ファイルがまだ届いていません。もう一度アップロードしてください。'],
+  DOCUMENT_TYPE_UNSUPPORTED: [422, 'PDF・JPEG・PNG のファイルを選んでください。'],
+  DOCUMENT_TOO_LARGE: [422, 'ファイルは 20 MiB までです。'],
+  DOCUMENT_HASH_MISMATCH: [422, 'アップロードしたファイルの内容が一致しません。もう一度アップロードしてください。'],
+  DOCUMENT_STORAGE_UNAVAILABLE: [503, 'ファイルの保存先に接続できません。時間をおいて再度お試しください。'],
+  DOCUMENT_NOT_FOUND: [404, '原本を取得できません。'],
 };
 
 /**
@@ -69,8 +99,14 @@ export const PURCHASE_ORDER_SURFACE_FORBIDDEN: Record<PurchaseOrderSurface, stri
   receipt: '受け取りを記録する権限がありません。',
 };
 
-/** DB の誤り code の本文。受け取りの画面では GROUP_G_FORBIDDEN だけ画面ごとの文に替える。 */
+/** 利用者に見せる誤り code（DB の表と原本の表）か。継承した名前は含まない */
+export function isPurchaseOrderErrorCode(code: string): boolean {
+  return Object.hasOwn(PURCHASE_ORDER_ERRORS, code) || Object.hasOwn(PURCHASE_ORDER_DOCUMENT_ERRORS, code);
+}
+
+/** 誤り code の本文（isPurchaseOrderErrorCode が真の code だけ）。受け取りの画面では GROUP_G_FORBIDDEN だけ画面ごとの文に替える。 */
 export function purchaseOrderErrorBody(code: string, surface: PurchaseOrderSurface = 'order'): string {
+  if (Object.hasOwn(PURCHASE_ORDER_DOCUMENT_ERRORS, code)) return PURCHASE_ORDER_DOCUMENT_ERRORS[code][1];
   return code === 'GROUP_G_FORBIDDEN' ? PURCHASE_ORDER_SURFACE_FORBIDDEN[surface] : PURCHASE_ORDER_ERRORS[code][2];
 }
 
@@ -250,7 +286,7 @@ export function isPurchaseOrderQuantity(value: string): boolean {
  */
 export function purchaseOrderFailureMessage(status: number, body: unknown, surface: PurchaseOrderSurface = 'order'): string {
   const { code, reason } = (typeof body === 'object' && body !== null ? body : {}) as { code?: unknown; reason?: unknown };
-  if (typeof code === 'string' && Object.hasOwn(PURCHASE_ORDER_ERRORS, code)) return purchaseOrderErrorBody(code, surface);
+  if (typeof code === 'string' && isPurchaseOrderErrorCode(code)) return purchaseOrderErrorBody(code, surface);
   if (status === 403 && reason === 'CSRF validation failed') return PURCHASE_ORDER_TEXT.csrfFailed;
   return adminLoadFailureMessage(status, body, PURCHASE_ORDER_SURFACE_FORBIDDEN[surface],
     status === 400 ? PURCHASE_ORDER_TEXT.invalidInput : PURCHASE_ORDER_TEXT.failed);
@@ -418,7 +454,7 @@ export type PurchaseOrderAttachment = {
   revisionCount: number;
 };
 
-/** 添付に結ばれていない予約（保存の途中で止まったファイル） */
+/** 添付に結ばれていない予約（保存の途中で止まったファイル）。replacesAttachmentId は差し替えの予約が差し替える添付（新しい書類は null） */
 export type PurchaseOrderPendingUpload = {
   reservationId: string;
   kind: PurchaseOrderAttachmentKind;
@@ -426,6 +462,7 @@ export type PurchaseOrderPendingUpload = {
   createdAt: string;
   expiresAt: string;
   expired: boolean;
+  replacesAttachmentId: string | null;
 };
 
 /**
@@ -662,6 +699,7 @@ function readPendingUpload(value: unknown): PurchaseOrderPendingUpload {
     createdAt: readTimestamp(raw.createdAt),
     expiresAt: readTimestamp(raw.expiresAt),
     expired: readBoolean(raw.expired),
+    replacesAttachmentId: readNullableId(raw.replacesAttachmentId),
   };
 }
 
@@ -695,6 +733,222 @@ export function parsePurchaseOrderDetail(value: unknown): PurchaseOrderDetail {
     flags: { unitPriceMissing: readBoolean(flags.unitPriceMissing), documentMissing: readBoolean(flags.documentMissing) },
     estimatedAmountYen: readNullableCount(raw.estimatedAmountYen),
   };
+}
+
+// ---- 取引書類の原本（見積書・請求書 / G-2 Task 8・FREQ-530） ----
+
+export type PurchaseOrderDocumentMeta = {
+  transactionDate: string;
+  amountYen: number;
+  counterparty: string;
+};
+
+export type PurchaseOrderDocumentMime = 'application/pdf' | 'image/jpeg' | 'image/png';
+
+/** 原本に使える拡張子と、その種類（小文字の拡張子）。画面の事前の確かめとサーバーの検査が同じ表を使う */
+export const PURCHASE_ORDER_DOCUMENT_MIME_BY_EXTENSION: Readonly<Record<string, PurchaseOrderDocumentMime>> = {
+  pdf: 'application/pdf',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+};
+
+/** 種類ごとの先頭のバイト（PDF `%PDF-`／JPEG `FF D8 FF`／PNG `89 50 4E 47 0D 0A 1A 0A`） */
+export const PURCHASE_ORDER_DOCUMENT_SIGNATURES: Readonly<Record<PurchaseOrderDocumentMime, readonly number[]>> = {
+  'application/pdf': [0x25, 0x50, 0x44, 0x46, 0x2d],
+  'image/jpeg': [0xff, 0xd8, 0xff],
+  'image/png': [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+};
+
+/** 先頭のバイトを見るのに要る長さ（一番長い印） */
+export const PURCHASE_ORDER_DOCUMENT_SIGNATURE_LENGTH = 8;
+
+/** ファイル名の拡張子（最後の `.` の後ろ。小文字）から種類を決める。許す拡張子でなければ null */
+export function purchaseOrderDocumentMimeOfName(name: string): PurchaseOrderDocumentMime | null {
+  const extension = /\.([A-Za-z0-9]+)$/.exec(name)?.[1].toLowerCase();
+  return extension !== undefined && Object.hasOwn(PURCHASE_ORDER_DOCUMENT_MIME_BY_EXTENSION, extension)
+    ? PURCHASE_ORDER_DOCUMENT_MIME_BY_EXTENSION[extension]
+    : null;
+}
+
+/** 先頭のバイトが、その種類の印と同じか */
+export function hasPurchaseOrderDocumentSignature(bytes: ArrayLike<number>, mime: PurchaseOrderDocumentMime): boolean {
+  return PURCHASE_ORDER_DOCUMENT_SIGNATURES[mime].every((byte, index) => bytes[index] === byte);
+}
+
+/** 書類の予約（置き場の保存先を1つ約束する）。署名つきの送り先は応答にだけ載せる。replacesAttachmentId は差し替える添付（予約に残り、確定が版1へ写す） */
+export type PurchaseOrderDocumentReserveInput = {
+  purchaseOrderId: string;
+  kind: PurchaseOrderAttachmentKind;
+  fileName: string;
+  replacesAttachmentId: string | null;
+  requestKey: string;
+};
+export type PurchaseOrderDocumentReserved = { reservationId: string; signedUrl: string; expiresAt: string; replayed: boolean };
+
+export type PurchaseOrderDocumentUploadUrlInput = { purchaseOrderId: string; reservationId: string };
+export type PurchaseOrderDocumentUploadUrl = { uploaded: true } | { uploaded: false; signedUrl: string };
+
+/** sha256 は 64 桁の小文字（ブラウザが計算した値）。null は手元にファイルが無い再開で、サーバーが読み戻した本文から計算する */
+export type PurchaseOrderDocumentAttachInput = PurchaseOrderDocumentMeta & {
+  purchaseOrderId: string;
+  reservationId: string;
+  sha256: string | null;
+  currency: 'JPY';
+  requestKey: string;
+};
+export type PurchaseOrderDocumentAttached = { attachmentId: string; revisionNo: number; replayed: boolean };
+
+/** 書類の情報の訂正と無効化（どちらも新しい版を足す。reason は必須） */
+export type PurchaseOrderDocumentReviseInput = PurchaseOrderDocumentMeta & {
+  purchaseOrderId: string;
+  attachmentId: string;
+  currency: 'JPY';
+  voided: boolean;
+  reason: string;
+  requestKey: string;
+};
+export type PurchaseOrderDocumentRevised = { attachmentId: string; revisionNo: number; replayed: boolean };
+
+export type PurchaseOrderDocumentUrlInput = { purchaseOrderId: string; attachmentId: string; download: boolean };
+export type PurchaseOrderDocumentUrl = { url: string; expiresInSeconds: 60 };
+
+/** 書類検索の条件。空の条件は null（かけない）。日付は YYYY-MM-DD、金額は整数円 */
+export type PurchaseOrderDocumentSearchFilters = {
+  dateFrom: string | null;
+  dateTo: string | null;
+  amountMin: number | null;
+  amountMax: number | null;
+  counterparty: string | null;
+  number: string | null;
+  kind: PurchaseOrderAttachmentKind | null;
+  includeHistory: boolean;
+};
+
+/** 書類検索の1行（添付の1つの版）。保存先の鍵は含まない。isCurrent が偽の行は、訂正の前の版 */
+export type PurchaseOrderDocumentSearchRow = {
+  attachmentId: string;
+  purchaseOrderId: string;
+  purchaseOrderNumber: string;
+  kind: PurchaseOrderAttachmentKind;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  revisionNo: number;
+  isCurrent: boolean;
+  transactionDate: string;
+  amountYen: number;
+  currency: string;
+  counterparty: string;
+  voided: boolean;
+  reason: string | null;
+  replacesAttachmentId: string | null;
+  createdAt: string;
+};
+
+/** 書類検索の1行を検査する（DB の戻りを camelCase にした物、または窓口の応答の1行）。決まった項目だけを返す。崩れていれば PURCHASE_ORDER_READ_FAILED */
+export function parsePurchaseOrderDocumentSearchRow(value: unknown): PurchaseOrderDocumentSearchRow {
+  const raw = readObject(value);
+  return {
+    attachmentId: readId(raw.attachmentId),
+    purchaseOrderId: readId(raw.purchaseOrderId),
+    purchaseOrderNumber: readMatch(raw.purchaseOrderNumber, NUMBER_PATTERN),
+    kind: readOneOf(raw.kind, PURCHASE_ORDER_ATTACHMENT_KINDS),
+    fileName: readText(raw.fileName),
+    mimeType: readText(raw.mimeType),
+    sizeBytes: readCount(raw.sizeBytes),
+    revisionNo: readPositive(raw.revisionNo),
+    isCurrent: readBoolean(raw.isCurrent),
+    transactionDate: readDay(raw.transactionDate),
+    amountYen: readCount(raw.amountYen),
+    currency: readMatch(raw.currency, CURRENCY_PATTERN),
+    counterparty: readText(raw.counterparty),
+    voided: readBoolean(raw.voided),
+    reason: readNullableText(raw.reason),
+    replacesAttachmentId: readNullableId(raw.replacesAttachmentId),
+    createdAt: readTimestamp(raw.createdAt),
+  };
+}
+
+/** 取引書類の固定の文（発注書の詳細の節・保存途中のファイル・書類検索）。窓口の文は誤りの表（PURCHASE_ORDER_DOCUMENT_ERRORS）にある。 */
+export const PURCHASE_ORDER_DOCUMENT_TEXT = {
+  heading: '取引書類',
+  add: '書類を追加',
+  empty: '取引書類はまだありません。',
+  voidedBadge: '無効',
+  view: '表示',
+  download: 'ダウンロード',
+  print: '印刷',
+  correct: '情報を訂正',
+  replace: '差し替える',
+  void: '無効にする',
+  pendingHeading: '保存が終わっていないファイル',
+  resume: '続きから保存',
+  expired: '期限を過ぎています。内容を確認してください。',
+  kindLabel: '種類',
+  transactionDateLabel: '取引日',
+  amountLabel: '金額（円）',
+  counterpartyLabel: '取引先',
+  fileLabel: 'ファイル',
+  reasonLabel: '理由',
+  addTitle: '書類を追加',
+  replaceTitle: '書類を差し替える',
+  correctTitle: '書類の情報を訂正',
+  voidTitle: '書類を無効にする',
+  resumeTitle: '続きから保存',
+  save: '保存する',
+  back: '戻る',
+  selectFileAgain: 'ファイルを選び直してください。',
+  /** 続きから保存で選び直したファイルが、予約したファイルの種類と違う */
+  resumeTypeMismatch: '予約したファイルと同じ種類のファイルを選んでください。',
+  /** 置き場のファイルが種類の検査に通らなかった（続きから保存を繰り返しても通らない）。新しい予約で保存し直す */
+  rejectedFile: 'このファイルは保存できませんでした。PDF・JPEG・PNG の正しいファイルを選び直して、新しく保存してください。',
+  correctSubmit: '訂正する',
+  searchResults: '検索結果',
+  savedNotice: '書類を保存しました。',
+  correctedNotice: '書類の情報を訂正しました。',
+  voidedNotice: '書類を無効にしました。',
+  pendingNotice: '書類の保存が終わっていません。内容を確認して、続きから保存してください。',
+  openFailed: '原本を取得できません。',
+  uploadFailed: 'ファイルを送れませんでした。続きから保存してください。',
+  inputRequired: '取引日・金額・取引先を入力してください。',
+  fileRequired: 'ファイルを選んでください。',
+  /** 書類検索 */
+  searchHeading: '取引書類の検索',
+  searchDateFrom: '取引日（から）',
+  searchDateTo: '取引日（まで）',
+  searchAmountMin: '金額（円）（から）',
+  searchAmountMax: '金額（円）（まで）',
+  searchCounterparty: '取引先',
+  searchNumber: '発注書番号',
+  searchKind: '種類',
+  searchKindAll: 'すべて',
+  searchIncludeHistory: '訂正前の情報も探す',
+  search: '検索',
+  clear: '条件をクリア',
+  searchEmpty: '該当する書類はありません。',
+  searchForbidden: '取引書類を見る権限がありません。',
+  searchFailed: '取引書類を読み込めませんでした。時間をおいて再度お試しください。',
+  searchApiFailed: '取引書類を読み込めませんでした。',
+  columnNumber: '発注書番号',
+  columnKind: '種類',
+  columnFileName: 'ファイル名',
+  columnDate: '取引日',
+  columnAmount: '金額（円）',
+  columnCounterparty: '取引先',
+  columnState: '状態',
+  /** 結果の表の最後の列（印刷しない）と、その行の原本を開くボタン */
+  columnOriginal: '原本',
+  viewOriginal: '原本を見る',
+  stateValid: '有効',
+  stateVoided: '無効',
+  stateBefore: '訂正前',
+} as const;
+
+/** 書類検索の結果の「状態」の文字。訂正前の版は「訂正前」、最新の版が無効なら「無効」、それ以外は「有効」 */
+export function purchaseOrderDocumentStateLabel(row: Pick<PurchaseOrderDocumentSearchRow, 'isCurrent' | 'voided'>): string {
+  if (!row.isCurrent) return PURCHASE_ORDER_DOCUMENT_TEXT.stateBefore;
+  return row.voided ? PURCHASE_ORDER_DOCUMENT_TEXT.stateVoided : PURCHASE_ORDER_DOCUMENT_TEXT.stateValid;
 }
 
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
