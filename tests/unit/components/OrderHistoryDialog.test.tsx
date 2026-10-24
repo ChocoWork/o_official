@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type {
-  OrderHistoryCompletionEntry,
   OrderHistoryDeliveryEventEntry,
   OrderHistoryEmailEntry,
   OrderHistoryFulfillmentEntry,
@@ -706,37 +705,23 @@ describe('OrderHistoryDialog の中身の画面', () => {
   });
 });
 
-// 発送と仕上がり（グループ E-1）。履歴の窓口が返す4つの行の出し方と、発送・仕上がりの取消
+// 発送（グループ E-1）。履歴の窓口が返す発送・発送の取消の行の出し方。G-1 Task 15 で発送・仕上がりの取消の入口は撤去した
 const FULFILLMENT_ID = 'f1f1f1f1-1111-2222-8333-444455556666';
-const COMPLETION_ID = 'c1c1c1c1-1111-2222-8333-444455556666';
-const CANCEL_FULFILLMENT_URL = `/api/admin/orders/${ORDER_ID}/fulfillments/${FULFILLMENT_ID}/cancel`;
-const CANCEL_COMPLETION_URL = `/api/admin/orders/${ORDER_ID}/completions/${COMPLETION_ID}/cancel`;
-const HISTORY_URL = `/api/admin/orders/${ORDER_ID}/history`;
 
 function fulfillmentEntry(overrides: Partial<OrderHistoryFulfillmentEntry> = {}): OrderHistoryFulfillmentEntry {
   return {
     type: 'fulfillment', at: '2026-10-10T02:00:00.000Z', fulfillmentId: FULFILLMENT_ID, number: 1, carrierLabel: 'ヤマト運輸',
     trackingNumber: '1234-5678', items: [{ name: 'シルクブラウス', quantity: 2 }], actorEmail: 'admin@example.com',
-    notifyCustomer: true, completesOrder: false, cancelled: false, cancellable: true, legacy: false,
+    notifyCustomer: true, completesOrder: false, cancelled: false, cancellable: false, legacy: false,
     ...overrides,
   };
 }
 
-function completionEntry(overrides: Partial<OrderHistoryCompletionEntry> = {}): OrderHistoryCompletionEntry {
-  return {
-    type: 'completion', at: '2026-10-10T01:00:00.000Z', completionId: COMPLETION_ID, items: [{ name: 'ウールコート', quantity: 1 }],
-    actorEmail: 'admin@example.com', cancelled: false, cancellable: true, legacy: false,
-    ...overrides,
-  };
-}
-
-describe('OrderHistoryDialog の発送と仕上がりの行', () => {
-  it('発送・発送の取消・仕上がり・仕上がりの取消の行を、決まった言葉で出す', async () => {
+describe('OrderHistoryDialog の発送の行', () => {
+  it('発送・発送の取消の行を、決まった言葉で出す。窓口が昔の形で cancellable を true にしても「この発送を取り消す」は出さない', async () => {
     const entries: OrderHistoryResponse['entries'] = [
-      fulfillmentEntry({ number: 2, completesOrder: true, items: [{ name: 'シルクブラウス', quantity: 2 }, { name: 'ウールコート', quantity: 1 }] }),
+      fulfillmentEntry({ number: 2, completesOrder: true, cancellable: true, items: [{ name: 'シルクブラウス', quantity: 2 }, { name: 'ウールコート', quantity: 1 }] }),
       { type: 'fulfillment_cancel', at: '2026-10-10T03:00:00.000Z', fulfillmentId: 'fulfillment-0', number: 1, actorEmail: 'admin@example.com' },
-      completionEntry(),
-      { type: 'completion_cancel', at: '2026-10-10T00:30:00.000Z', completionId: 'completion-0', actorEmail: 'admin@example.com' },
     ];
     mockClientFetch.mockResolvedValueOnce(json(history({ entries })));
 
@@ -745,7 +730,7 @@ describe('OrderHistoryDialog の発送と仕上がりの行', () => {
     const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
     await within(dialog).findByText('宛先: hanako@example.com');
     const items = within(dialog).getAllByRole('listitem');
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(2);
     expect(items[0]).toHaveTextContent('発送（2回目）');
     expect(items[0]).toHaveTextContent('配送業者: ヤマト運輸 / 伝票番号: 1234-5678');
     expect(items[0]).toHaveTextContent('商品: シルクブラウス × 2 / ウールコート × 1');
@@ -754,18 +739,15 @@ describe('OrderHistoryDialog の発送と仕上がりの行', () => {
     expect(items[0]).toHaveTextContent('操作: admin@example.com');
     expect(items[1]).toHaveTextContent('発送（1回目）を取り消しました');
     expect(items[1]).toHaveTextContent('操作: admin@example.com');
-    expect(items[2]).toHaveTextContent('受注生産の品が仕上がりました');
-    expect(items[2]).toHaveTextContent('商品: ウールコート × 1');
-    expect(items[3]).toHaveTextContent('仕上がりを取り消しました');
-    expect(within(items[0]).getByRole('button', { name: 'この発送を取り消す' })).toBeInTheDocument();
-    expect(within(items[2]).getByRole('button', { name: 'この仕上がりを取り消す' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'この発送を取り消す' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'この仕上がりを取り消す' })).not.toBeInTheDocument();
+    expect(mockClientFetch).toHaveBeenCalledTimes(1);
   });
 
-  it('メールを送らなかった発送と、一部だけの発送は、その通りに出す。取り消し済みの行には印を出し、取消のボタンは出さない', async () => {
+  it('メールを送らなかった発送と、一部だけの発送は、その通りに出す。取り消し済みの行には印を出す', async () => {
     const entries: OrderHistoryResponse['entries'] = [
       fulfillmentEntry({ notifyCustomer: false, completesOrder: false }),
-      fulfillmentEntry({ fulfillmentId: 'fulfillment-2', number: 2, cancelled: true, cancellable: false }),
-      completionEntry({ cancelled: true, cancellable: false }),
+      fulfillmentEntry({ fulfillmentId: 'fulfillment-2', number: 2, cancelled: true }),
     ];
     mockClientFetch.mockResolvedValueOnce(json(history({ entries })));
 
@@ -778,9 +760,7 @@ describe('OrderHistoryDialog の発送と仕上がりの行', () => {
     expect(items[0]).not.toHaveTextContent('この発送で全部を送りました');
     expect(items[0]).not.toHaveTextContent('取り消し済み');
     expect(items[1]).toHaveTextContent('取り消し済み');
-    expect(items[2]).toHaveTextContent('取り消し済み');
-    expect(within(dialog).getAllByRole('button', { name: 'この発送を取り消す' })).toHaveLength(1);
-    expect(within(dialog).queryByRole('button', { name: 'この仕上がりを取り消す' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'この発送を取り消す' })).not.toBeInTheDocument();
   });
 
   it('発送のメールの行は「発送（n回目）のメール」と出し、再送はその発送の番号を窓口へ送る', async () => {
@@ -807,197 +787,6 @@ describe('OrderHistoryDialog の発送と仕上がりの行', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'shipped', fulfillmentId: FULFILLMENT_ID }),
     });
-  });
-});
-
-describe('OrderHistoryDialog の発送の取消', () => {
-  it('確かめの画面の文を出し、「取り消す」で窓口へ送り、履歴を読み直して、親に知らせる', async () => {
-    const reloaded = history({
-      entries: [
-        { type: 'fulfillment_cancel', at: '2026-10-10T03:00:00.000Z', fulfillmentId: FULFILLMENT_ID, number: 1, actorEmail: 'admin@example.com' },
-        fulfillmentEntry({ cancelled: true, cancellable: false }),
-        { type: 'created', at: '2026-10-09T00:59:00.000Z' },
-      ],
-    });
-    mockClientFetch
-      .mockResolvedValueOnce(json(history({ entries: [fulfillmentEntry(), { type: 'created', at: '2026-10-09T00:59:00.000Z' }] })))
-      .mockResolvedValueOnce(json({ outcome: 'cancelled', orderStatus: 'paid' }))
-      .mockResolvedValueOnce(json(reloaded));
-    const onChanged = jest.fn();
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} onChanged={onChanged} />);
-
-    press(await screen.findByRole('button', { name: 'この発送を取り消す' }));
-
-    expect(screen.getByRole('dialog', { name: 'この発送を取り消す' })).toHaveTextContent(
-      '発送（1回目）を取り消し、その商品を発送準備中に戻します。お客様にメールは送りません。送った発送のメールがあれば、店からお客様に連絡してください。',
-    );
-    expect(mockClientFetch).toHaveBeenCalledTimes(1);
-    press(screen.getByRole('button', { name: '取り消す' }));
-
-    expect(await screen.findByText('発送（1回目）を取り消しました。')).toBeInTheDocument();
-    expect(mockClientFetch).toHaveBeenNthCalledWith(2, CANCEL_FULFILLMENT_URL, { method: 'POST' });
-    expect(mockClientFetch).toHaveBeenNthCalledWith(3, HISTORY_URL, { cache: 'no-store' });
-    expect(onChanged).toHaveBeenCalledTimes(1);
-    const dialog = screen.getByRole('dialog', { name: 'この注文の履歴' });
-    expect(screen.getByRole('status')).toHaveTextContent('発送（1回目）を取り消しました。');
-    expect(within(dialog).queryByRole('button', { name: 'この発送を取り消す' })).not.toBeInTheDocument();
-    const items = within(dialog).getAllByRole('listitem');
-    expect(items[0]).toHaveTextContent('発送（1回目）を取り消しました');
-    expect(items[1]).toHaveTextContent('取り消し済み');
-  });
-
-  it('もう取り消してあった（already_cancelled）時も、取り消せた時と同じ知らせにする', async () => {
-    mockClientFetch
-      .mockResolvedValueOnce(json(history({ entries: [fulfillmentEntry()] })))
-      .mockResolvedValueOnce(json({ outcome: 'already_cancelled', orderStatus: 'paid' }))
-      .mockResolvedValueOnce(json(history({ entries: [fulfillmentEntry({ cancelled: true, cancellable: false })] })));
-    const onChanged = jest.fn();
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} onChanged={onChanged} />);
-    press(await screen.findByRole('button', { name: 'この発送を取り消す' }));
-    press(screen.getByRole('button', { name: '取り消す' }));
-
-    expect(await screen.findByText('発送（1回目）を取り消しました。')).toBeInTheDocument();
-    expect(onChanged).toHaveBeenCalledTimes(1);
-  });
-
-  it('「やめる」では送らず、取消を開いた行のボタンへフォーカスが戻る', async () => {
-    mockClientFetch.mockResolvedValueOnce(
-      json(history({ entries: [fulfillmentEntry({ number: 2, fulfillmentId: 'fulfillment-2' }), fulfillmentEntry()] })),
-    );
-    const onChanged = jest.fn();
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} onChanged={onChanged} />);
-
-    press((await screen.findAllByRole('button', { name: 'この発送を取り消す' }))[1]);
-    expect(screen.getByRole('dialog', { name: 'この発送を取り消す' })).toHaveFocus();
-    press(screen.getByRole('button', { name: 'やめる' }));
-
-    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'この発送を取り消す' })[1]).toHaveFocus();
-    expect(mockClientFetch).toHaveBeenCalledTimes(1);
-    expect(onChanged).not.toHaveBeenCalled();
-  });
-
-  it('取り消せた後は、履歴のパネルにフォーカスが留まる（消えたボタンへ戻さない）', async () => {
-    mockClientFetch
-      .mockResolvedValueOnce(json(history({ entries: [fulfillmentEntry()] })))
-      .mockResolvedValueOnce(json({ outcome: 'cancelled', orderStatus: 'paid' }))
-      .mockResolvedValueOnce(json(history({ entries: [fulfillmentEntry({ cancelled: true, cancellable: false })] })));
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
-    press(await screen.findByRole('button', { name: 'この発送を取り消す' }));
-    press(screen.getByRole('button', { name: '取り消す' }));
-    await screen.findByText('発送（1回目）を取り消しました。');
-
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toHaveFocus());
-  });
-
-  it('送っている間は「取り消す」を押せず、二重に送らない', async () => {
-    const post = deferredResponse();
-    mockClientFetch
-      .mockResolvedValueOnce(json(history({ entries: [fulfillmentEntry()] })))
-      .mockReturnValueOnce(post.promise)
-      .mockResolvedValueOnce(json(history({ entries: [fulfillmentEntry({ cancelled: true, cancellable: false })] })));
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
-    press(await screen.findByRole('button', { name: 'この発送を取り消す' }));
-    press(screen.getByRole('button', { name: '取り消す' }));
-
-    expect(screen.getByRole('button', { name: '取り消す' })).toBeDisabled();
-    press(screen.getByRole('button', { name: '取り消す' }));
-    expect(mockClientFetch).toHaveBeenCalledTimes(2);
-
-    await act(async () => { post.resolve(json({ outcome: 'cancelled', orderStatus: 'paid' })); });
-    expect(await screen.findByText('発送（1回目）を取り消しました。')).toBeInTheDocument();
-  });
-
-  it.each([
-    [409, { error: 'この発送は取り消せません。注文の状態を確かめてください。', code: 'fulfillment_cancel_not_allowed' }, 'この発送は取り消せません。注文の状態を確かめてください。'],
-    [404, { error: '発送の記録が見つかりません。', code: 'fulfillment_not_found' }, '発送の記録が見つかりません。'],
-    [403, { error: 'Forbidden' }, 'この操作の権限がありません。'],
-    [429, { error: 'Too many requests' }, '発送の取消に失敗しました。'],
-  ])('窓口が断った（%i）時は、確かめの画面に留まって理由を出し、親には知らせない', async (status, body, message) => {
-    mockClientFetch
-      .mockResolvedValueOnce(json(history({ entries: [fulfillmentEntry()] })))
-      .mockResolvedValueOnce(json(body, status))
-      .mockResolvedValueOnce(json(history({ entries: [fulfillmentEntry()] })));
-    const onChanged = jest.fn();
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} onChanged={onChanged} />);
-    press(await screen.findByRole('button', { name: 'この発送を取り消す' }));
-    press(screen.getByRole('button', { name: '取り消す' }));
-
-    expect(await screen.findByText(message)).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent(message);
-    expect(screen.getByRole('status')).toBeEmptyDOMElement();
-    expect(screen.getByRole('dialog', { name: 'この発送を取り消す' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '取り消す' })).toBeEnabled();
-    expect(onChanged).not.toHaveBeenCalled();
-    expect(screen.queryByText('Too many requests')).not.toBeInTheDocument();
-  });
-
-  it('答えが分からない時は、履歴へ戻って読み直し、取り消されたか確かめるよう知らせて、親にも知らせる', async () => {
-    mockClientFetch
-      .mockResolvedValueOnce(json(history({ entries: [fulfillmentEntry()] })))
-      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
-      .mockResolvedValueOnce(json(history({ entries: [fulfillmentEntry({ cancelled: true, cancellable: false })] })));
-    const onChanged = jest.fn();
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} onChanged={onChanged} />);
-    press(await screen.findByRole('button', { name: 'この発送を取り消す' }));
-    press(screen.getByRole('button', { name: '取り消す' }));
-
-    const message = '結果を確かめられませんでした。履歴を読み直しました。取り消されたかどうかは、この履歴で確かめてください。';
-    expect(await screen.findByText(message)).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent(message);
-    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
-    expect(mockClientFetch).toHaveBeenNthCalledWith(3, HISTORY_URL, { cache: 'no-store' });
-    expect(onChanged).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('OrderHistoryDialog の仕上がりの取消', () => {
-  it('確かめの画面の文を出し、「取り消す」で窓口へ送り、履歴を読み直して、親に知らせる', async () => {
-    mockClientFetch
-      .mockResolvedValueOnce(json(history({ entries: [completionEntry()] })))
-      .mockResolvedValueOnce(json({ outcome: 'cancelled' }))
-      .mockResolvedValueOnce(json(history({
-        entries: [
-          { type: 'completion_cancel', at: '2026-10-10T03:00:00.000Z', completionId: COMPLETION_ID, actorEmail: 'admin@example.com' },
-          completionEntry({ cancelled: true, cancellable: false }),
-        ],
-      })));
-    const onChanged = jest.fn();
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} onChanged={onChanged} />);
-
-    press(await screen.findByRole('button', { name: 'この仕上がりを取り消す' }));
-
-    expect(screen.getByRole('dialog', { name: 'この仕上がりを取り消す' })).toHaveTextContent(
-      'この仕上がりを取り消し、その商品を受注生産中に戻します。',
-    );
-    press(screen.getByRole('button', { name: '取り消す' }));
-
-    expect(await screen.findByText('仕上がりを取り消しました。')).toBeInTheDocument();
-    expect(mockClientFetch).toHaveBeenNthCalledWith(2, CANCEL_COMPLETION_URL, { method: 'POST' });
-    expect(mockClientFetch).toHaveBeenNthCalledWith(3, HISTORY_URL, { cache: 'no-store' });
-    expect(onChanged).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'この仕上がりを取り消す' })).not.toBeInTheDocument();
-  });
-
-  it('もう発送した数を下回る取消は断られ、その理由を確かめの画面に出す', async () => {
-    const message = 'もう発送した数があるため、取り消せません。';
-    mockClientFetch
-      .mockResolvedValueOnce(json(history({ entries: [completionEntry()] })))
-      .mockResolvedValueOnce(json({ error: message, code: 'completion_already_shipped' }, 409))
-      .mockResolvedValueOnce(json(history({ entries: [completionEntry({ cancellable: false })] })));
-    const onChanged = jest.fn();
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} onChanged={onChanged} />);
-    press(await screen.findByRole('button', { name: 'この仕上がりを取り消す' }));
-    press(screen.getByRole('button', { name: '取り消す' }));
-
-    expect(await screen.findByText(message)).toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: 'この仕上がりを取り消す' })).toBeInTheDocument();
-    expect(onChanged).not.toHaveBeenCalled();
-
-    // 読み直した履歴では、この仕上がりはもう取り消せない行になっている
-    press(screen.getByRole('button', { name: 'やめる' }));
-    expect(screen.queryByRole('button', { name: 'この仕上がりを取り消す' })).not.toBeInTheDocument();
   });
 });
 
@@ -1338,8 +1127,6 @@ describe('OrderHistoryDialog の申し込みの行（P17）', () => {
 
 // 配送の状況（グループ E-4 の Task 10）。設計書 6-1 の表と、計画の C-5 の言葉。履歴の窓口が返す配送の行（Task 9）と、直す・配達済みにする画面とのつなぎ
 const DELIVERED_AT = '2026-10-21T03:00:00.000Z';
-const TRACKING_POST_URL = `/api/admin/orders/${ORDER_ID}/fulfillments/${FULFILLMENT_ID}/tracking`;
-const DELIVERED_POST_URL = `/api/admin/orders/${ORDER_ID}/fulfillments/${FULFILLMENT_ID}/delivered`;
 
 function deliveryDetail(overrides: Partial<FulfillmentDeliveryDetail> = {}): FulfillmentDeliveryDetail {
   return {
@@ -1360,7 +1147,7 @@ function shipmentWithDelivery(
   const detail = deliveryDetail(delivery);
   const cancelled = detail.cancelledAt !== null;
   return fulfillmentEntry({
-    fulfillmentId: detail.fulfillmentId, number: detail.number, cancelled, cancellable: !cancelled, delivery: detail, ...overrides,
+    fulfillmentId: detail.fulfillmentId, number: detail.number, cancelled, cancellable: false, delivery: detail, ...overrides,
   });
 }
 
@@ -1386,20 +1173,13 @@ function trackingChangeEntry(overrides: Partial<TrackingChange> = {}, number = 1
 /** 履歴を開く。enabled は履歴の窓口が返す追跡のオン・オフ（省くと、窓口が返さない昔の見本の形） */
 async function openDeliveryHistory(
   entries: OrderHistoryResponse['entries'],
-  options: { enabled?: boolean; canManage?: boolean; onChanged?: () => void } = {},
+  options: { enabled?: boolean } = {},
 ) {
   mockClientFetch.mockResolvedValueOnce(
     json(history({ entries, ...(options.enabled === undefined ? {} : { deliveryTrackingEnabled: options.enabled }) })),
   );
   const onClose = jest.fn();
-  render(
-    <OrderHistoryDialog
-      orderId={ORDER_ID}
-      onClose={onClose}
-      onChanged={options.onChanged}
-      canManageDelivery={options.canManage ?? true}
-    />,
-  );
+  render(<OrderHistoryDialog orderId={ORDER_ID} onClose={onClose} />);
   const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
   await within(dialog).findByText('宛先: hanako@example.com');
   return { dialog, onClose, items: within(dialog).getAllByRole('listitem') };
@@ -1445,17 +1225,18 @@ const TABLE_ROWS: TableRow[] = [
     probe: () => screen.queryByText('追跡中'),
     off: false, on: true,
   },
+  // G-1 Task 15: 「伝票番号を直す」「配達済みにする」は撤去した（追跡のオン・オフにかかわらず出さない）
   {
     label: 'ボタン「伝票番号を直す」',
     entries: () => [shipmentWithDelivery()],
     probe: () => screen.queryByRole('button', { name: '伝票番号を直す' }),
-    off: true, on: true,
+    off: false, on: false,
   },
   {
     label: 'ボタン「配達済みにする」',
     entries: () => [shipmentWithDelivery()],
     probe: () => screen.queryByRole('button', { name: '配達済みにする' }),
-    off: true, on: true,
+    off: false, on: false,
   },
 ];
 
@@ -1589,30 +1370,18 @@ describe('OrderHistoryDialog の配送の表示（設計書 6-1 の表）', () =
     expect(screen.queryByRole('button', { name: 'この発送を取り消す' })).not.toBeInTheDocument();
   });
 
-  it('取消には2つのボタン無し、配達済みには直すだけ', async () => {
+  it('配達済みの発送にも、配達済みでない発送にも、2つのボタンと取消を出さない（G-1 Task 15）', async () => {
     await openDeliveryHistory(
       [
         shipmentWithDelivery({ deliveryStatus: 'delivered', deliveredAt: DELIVERED_AT, deliveredSource: 'tracking' }),
+        shipmentWithDelivery({ fulfillmentId: 'fulfillment-2', number: 2 }, { cancellable: true }),
       ],
+      { enabled: true },
     );
 
-    expect(screen.getByRole('button', { name: '伝票番号を直す' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
-  });
-
-  it('管理の権限（canManageDelivery）が無い人には、2つのボタンを出さない（省いた時も同じ）', async () => {
-    const { dialog } = await openDeliveryHistory([shipmentWithDelivery()], { canManage: false });
-    expect(within(dialog).queryByRole('button', { name: '伝票番号を直す' })).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
-    cleanup();
-
-    mockClientFetch.mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()] })));
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
-    await screen.findByText('宛先: hanako@example.com');
     expect(screen.queryByRole('button', { name: '伝票番号を直す' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
-    // 取り消す操作は今までどおり（配送の権限とは別）
-    expect(screen.getByRole('button', { name: 'この発送を取り消す' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'この発送を取り消す' })).not.toBeInTheDocument();
   });
 
   it('窓口が配送の現在値を付けなかった昔の見本の発送には、2つのボタンを出さない', async () => {
@@ -1724,272 +1493,5 @@ describe('OrderHistoryDialog の配送の出来事と伝票番号の直しの行
     } finally {
       error.mockRestore();
     }
-  });
-});
-
-describe('OrderHistoryDialog の伝票番号を直す・配達済みにする画面', () => {
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-  /** 履歴へ戻った後の読み直しの返事を待つ（待たずに終えると、終わった後の描き直しが act の外になる） */
-  const flush = () => act(async () => {});
-
-  const submitIn = (name: string) => within(screen.getByRole('dialog', { name })).getByRole('button', { name });
-
-  it('「伝票番号を直す」で直す画面へ移る。履歴のダイアログは重ねず、最初の入力へフォーカスが移り、追跡オンの説明を出す', async () => {
-    await openDeliveryHistory([shipmentWithDelivery()], { enabled: true });
-
-    press(screen.getByRole('button', { name: '伝票番号を直す' }));
-
-    const dialog = screen.getByRole('dialog', { name: '伝票番号を直す' });
-    expect(screen.getAllByRole('dialog')).toHaveLength(1);
-    expect(screen.queryByRole('dialog', { name: 'この注文の履歴' })).not.toBeInTheDocument();
-    expect(screen.getByLabelText('配送業者')).toHaveFocus();
-    expect(screen.getByLabelText('伝票番号')).toHaveValue('1234-5678');
-    expect(dialog).toHaveTextContent('直すと配送の状況は受付済みに戻り、新しい伝票番号で追跡します。チェックを外すと、この先の配達中・配達済みのメールも送りません');
-  });
-
-  it('追跡オフの履歴から開いた直す画面と配達済みの画面には、オフの説明を出す', async () => {
-    await openDeliveryHistory([shipmentWithDelivery()], { enabled: false });
-    mockClientFetch.mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()], deliveryTrackingEnabled: false })));
-
-    press(screen.getByRole('button', { name: '伝票番号を直す' }));
-    expect(screen.getByText('チェックを外すと、この先の配達済みのメールも送りません')).toBeVisible();
-    press(screen.getByRole('button', { name: '戻る' }));
-    await flush();
-    press(screen.getByRole('button', { name: '配達済みにする' }));
-
-    expect(screen.getByRole('dialog', { name: '配達済みにする' })).toBeInTheDocument();
-    expect(screen.getByText('お客様に届いたことが分かった時に使います。返品の期限は、この日から数えます')).toBeVisible();
-  });
-
-  it('配達済みの発送を直す画面には、返品の期限の警告を出す', async () => {
-    await openDeliveryHistory([
-      shipmentWithDelivery({ deliveryStatus: 'delivered', deliveredAt: DELIVERED_AT, deliveredSource: 'manual' }),
-    ]);
-
-    press(screen.getByRole('button', { name: '伝票番号を直す' }));
-
-    expect(screen.getByText('配達済みの記録が消え、返品の期限は新しい届いた日から数え直します')).toBeVisible();
-  });
-
-  it('「戻る」で履歴へ戻ると、開いた行のボタンへフォーカスが返り、履歴を読み直す。親には知らせない', async () => {
-    const entries = [shipmentWithDelivery({ fulfillmentId: 'fulfillment-2', number: 2 }), shipmentWithDelivery()];
-    const onChanged = jest.fn();
-    await openDeliveryHistory(entries, { onChanged });
-    mockClientFetch.mockResolvedValueOnce(json(history({ entries })));
-
-    press(screen.getAllByRole('button', { name: '伝票番号を直す' })[1]);
-    press(screen.getByRole('button', { name: '戻る' }));
-
-    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: '伝票番号を直す' })[1]).toHaveFocus();
-    expect(mockClientFetch).toHaveBeenCalledTimes(2);
-    expect(mockClientFetch).toHaveBeenNthCalledWith(2, HISTORY_URL, { cache: 'no-store' });
-    expect(onChanged).not.toHaveBeenCalled();
-    await flush();
-    expect(screen.getAllByRole('button', { name: '伝票番号を直す' })[1]).toHaveFocus();
-  });
-
-  it('配達済みの画面から「戻る」でも、その行の「配達済みにする」へフォーカスが返る', async () => {
-    const entries = [shipmentWithDelivery({ fulfillmentId: 'fulfillment-2', number: 2 }), shipmentWithDelivery()];
-    await openDeliveryHistory(entries);
-    mockClientFetch.mockResolvedValueOnce(json(history({ entries })));
-
-    press(screen.getAllByRole('button', { name: '配達済みにする' })[1]);
-    expect(screen.getByRole('dialog', { name: '配達済みにする' })).toBeInTheDocument();
-    press(screen.getByRole('button', { name: '戻る' }));
-
-    expect(screen.getAllByRole('button', { name: '配達済みにする' })[1]).toHaveFocus();
-    await flush();
-  });
-
-  it('Escape では、履歴ごと閉じずに、直す画面だけを閉じて履歴へ戻る', async () => {
-    const { onClose } = await openDeliveryHistory([shipmentWithDelivery()]);
-    mockClientFetch.mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()] })));
-
-    press(screen.getByRole('button', { name: '伝票番号を直す' }));
-    fireEvent.keyDown(document, { key: 'Escape' });
-
-    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
-    expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: '伝票番号を直す' })).toHaveFocus();
-    await flush();
-  });
-
-  it('直せたら、窓口へ送り、履歴を読み直し、親に知らせ、成功の知らせを出す。フォーカスは同じ行のボタンへ戻る', async () => {
-    const onChanged = jest.fn();
-    await openDeliveryHistory([shipmentWithDelivery()], { enabled: true, onChanged });
-    mockClientFetch
-      .mockResolvedValueOnce(json({ data: { trackingChangeId: 'change-9', trackingVersion: 2, replayed: false } }))
-      .mockResolvedValueOnce(json(history({
-        entries: [trackingChangeEntry({ id: 'change-9' }), shipmentWithDelivery({ carrier: 'sagawa', trackingNumber: 'AB-99', trackingVersion: 2, deliveryStatus: 'confirmed' })],
-        deliveryTrackingEnabled: true,
-      })));
-
-    press(screen.getByRole('button', { name: '伝票番号を直す' }));
-    fireEvent.change(screen.getByLabelText('配送業者'), { target: { value: 'sagawa' } });
-    fireEvent.change(screen.getByLabelText('伝票番号'), { target: { value: 'AB-99' } });
-    press(submitIn('伝票番号を直す'));
-
-    expect(await screen.findByText('伝票番号を直しました。')).toBeInTheDocument();
-    expect(mockClientFetch).toHaveBeenNthCalledWith(2, TRACKING_POST_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: expect.any(String),
-    });
-    const body = JSON.parse((mockClientFetch.mock.calls[1][1] as RequestInit).body as string) as Record<string, unknown>;
-    expect(body).toEqual({ requestKey: expect.any(String), carrier: 'sagawa', trackingNumber: 'AB-99', notifyCustomer: true });
-    expect(mockClientFetch).toHaveBeenNthCalledWith(3, HISTORY_URL, { cache: 'no-store' });
-    expect(onChanged).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('status')).toHaveTextContent('伝票番号を直しました。');
-    expect(screen.getByRole('alert')).toBeEmptyDOMElement();
-    await waitFor(() => expect(screen.getByText('伝票番号を直した（1回目）')).toBeVisible());
-    expect(screen.getByRole('button', { name: '伝票番号を直す' })).toHaveFocus();
-  });
-
-  it('直す画面は履歴と同じダイアログ（同じパネル）の中で切り替わる。重ねず、戻っても作り直さない', async () => {
-    await openDeliveryHistory([shipmentWithDelivery()], { enabled: true });
-    mockClientFetch.mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()], deliveryTrackingEnabled: true })));
-    const panel = screen.getByRole('dialog', { name: 'この注文の履歴' });
-
-    press(screen.getByRole('button', { name: '伝票番号を直す' }));
-    expect(screen.getByRole('dialog', { name: '伝票番号を直す' })).toBe(panel);
-    expect(screen.getAllByRole('dialog')).toHaveLength(1);
-    press(screen.getByRole('button', { name: '戻る' }));
-
-    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBe(panel);
-    await flush();
-  });
-
-  it('成功の知らせの入れ物（status・alert）は、直す画面を開いて閉じても作り直されず、同じ要素の中に文字が入る', async () => {
-    await openDeliveryHistory([shipmentWithDelivery()], { enabled: true });
-    const status = screen.getByRole('status');
-    const historyAlert = screen.getByRole('alert');
-    mockClientFetch
-      .mockResolvedValueOnce(json({ data: { trackingChangeId: 'change-9', trackingVersion: 2, replayed: false } }))
-      .mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()], deliveryTrackingEnabled: true })));
-
-    press(screen.getByRole('button', { name: '伝票番号を直す' }));
-    // 直す画面を開いている間も、同じ入れ物が残っている
-    expect(screen.getByRole('status')).toBe(status);
-    expect(status).toBeEmptyDOMElement();
-    fireEvent.change(screen.getByLabelText('伝票番号'), { target: { value: 'AB-99' } });
-    press(submitIn('伝票番号を直す'));
-
-    expect(await screen.findByText('伝票番号を直しました。')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toBe(status);
-    expect(status).toHaveTextContent('伝票番号を直しました。');
-    expect(screen.getByRole('alert')).toBe(historyAlert);
-    expect(historyAlert).toBeEmptyDOMElement();
-  });
-
-  it('配達済みにできた後の成功の知らせは、履歴のパネルへフォーカスを移した後の描画で、残っている入れ物に入る', async () => {
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-21T03:00:00.000Z'));
-    await openDeliveryHistory([shipmentWithDelivery()]);
-    const status = screen.getByRole('status');
-    const panel = screen.getByRole('dialog', { name: 'この注文の履歴' });
-    mockClientFetch
-      .mockResolvedValueOnce(json({ data: { eventId: 'event-9', deliveredAt: '2026-10-21T03:00:00.000Z', replayed: false } }))
-      .mockResolvedValueOnce(json(history({
-        entries: [shipmentWithDelivery({ deliveryStatus: 'delivered', deliveredAt: '2026-10-21T03:00:00.000Z', deliveredSource: 'manual' })],
-      })));
-
-    press(screen.getByRole('button', { name: '配達済みにする' }));
-    const textsAtFocus: string[] = [];
-    panel.addEventListener('focus', () => { textsAtFocus.push(status.textContent ?? ''); });
-    press(submitIn('配達済みにする'));
-
-    expect(await screen.findByText('配達済みにしました。')).toBeInTheDocument();
-    expect(textsAtFocus).toEqual(['']);
-    expect(panel).toHaveFocus();
-    expect(screen.getByRole('status')).toBe(status);
-    expect(status).toHaveTextContent('配達済みにしました。');
-  });
-
-  it('直す画面で背景を押しても、履歴ごとは閉じず、直す画面だけを閉じる。送っている間は閉じない', async () => {
-    const post = deferredResponse();
-    const { onClose } = await openDeliveryHistory([shipmentWithDelivery()]);
-    mockClientFetch
-      .mockReturnValueOnce(post.promise)
-      .mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()] })));
-
-    press(screen.getByRole('button', { name: '伝票番号を直す' }));
-    fireEvent.change(screen.getByLabelText('伝票番号'), { target: { value: 'AB-99' } });
-    press(submitIn('伝票番号を直す'));
-    const overlay = screen.getByRole('dialog', { name: '伝票番号を直す' }).parentElement as HTMLElement;
-    fireEvent.click(overlay);
-    expect(screen.getByRole('dialog', { name: '伝票番号を直す' })).toBeInTheDocument();
-    expect(onClose).not.toHaveBeenCalled();
-
-    await act(async () => { post.resolve(json({ data: { trackingChangeId: 'change-9', trackingVersion: 2, replayed: false } })); });
-    await flush();
-    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it('配達済みにできたら、窓口へ送り、履歴を読み直し、親に知らせ、成功の知らせを出す。消えたボタンではなくパネルにフォーカスが留まる', async () => {
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-21T03:00:00.000Z'));
-    const onChanged = jest.fn();
-    await openDeliveryHistory([shipmentWithDelivery()], { onChanged });
-    mockClientFetch
-      .mockResolvedValueOnce(json({ data: { eventId: 'event-9', deliveredAt: '2026-10-15T03:00:00.000Z', replayed: false } }))
-      .mockResolvedValueOnce(json(history({
-        entries: [shipmentWithDelivery({ deliveryStatus: 'delivered', deliveredAt: '2026-10-15T03:00:00.000Z', deliveredSource: 'manual' })],
-      })));
-
-    press(screen.getByRole('button', { name: '配達済みにする' }));
-    fireEvent.change(screen.getByLabelText('届いた日'), { target: { value: '2026-10-15' } });
-    press(submitIn('配達済みにする'));
-
-    expect(await screen.findByText('配達済みにしました。')).toBeInTheDocument();
-    expect(mockClientFetch).toHaveBeenNthCalledWith(2, DELIVERED_POST_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: expect.any(String),
-    });
-    const body = JSON.parse((mockClientFetch.mock.calls[1][1] as RequestInit).body as string) as Record<string, unknown>;
-    expect(body).toEqual({ requestKey: expect.any(String), deliveredOn: '2026-10-15', notifyCustomer: true });
-    expect(onChanged).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('status')).toHaveTextContent('配達済みにしました。');
-    await waitFor(() => expect(screen.getByText('お届け日 10月15日（手で）')).toBeVisible());
-    expect(screen.queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toHaveFocus();
-  });
-
-  it('結果が分からないまま戻ると、履歴を読み直し、親にも知らせるが、成功の知らせは出さない', async () => {
-    const onChanged = jest.fn();
-    await openDeliveryHistory([shipmentWithDelivery()], { onChanged });
-    mockClientFetch
-      .mockResolvedValueOnce(json({}, 503))
-      .mockResolvedValueOnce(json(history({ entries: [shipmentWithDelivery()] })));
-
-    press(screen.getByRole('button', { name: '伝票番号を直す' }));
-    fireEvent.change(screen.getByLabelText('伝票番号'), { target: { value: 'AB-99' } });
-    press(submitIn('伝票番号を直す'));
-    await screen.findByText('結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。');
-    press(screen.getByRole('button', { name: '戻る' }));
-
-    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
-    expect(mockClientFetch).toHaveBeenNthCalledWith(3, HISTORY_URL, { cache: 'no-store' });
-    expect(onChanged).toHaveBeenCalledTimes(1);
-    await flush();
-    expect(screen.getByRole('status')).toBeEmptyDOMElement();
-    expect(screen.getByRole('alert')).toBeEmptyDOMElement();
-  });
-
-  it('断られた間は直す画面に留まり、親には知らせない', async () => {
-    const onChanged = jest.fn();
-    await openDeliveryHistory([shipmentWithDelivery()], { onChanged });
-    mockClientFetch.mockResolvedValueOnce(json({ error: '取り消した発送は変更できません。', code: 'DELIVERY_FULFILLMENT_CANCELLED' }, 409));
-
-    press(screen.getByRole('button', { name: '伝票番号を直す' }));
-    fireEvent.change(screen.getByLabelText('伝票番号'), { target: { value: 'AB-99' } });
-    press(submitIn('伝票番号を直す'));
-
-    expect(await screen.findByText('取り消した発送は変更できません。')).toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: '伝票番号を直す' })).toBeInTheDocument();
-    expect(onChanged).not.toHaveBeenCalled();
   });
 });

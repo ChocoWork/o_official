@@ -217,7 +217,8 @@ describe('GET /api/admin/orders/[id]/history', () => {
       kindLabel: '発送（1回目）', fulfillmentId: FULFILLMENT_ID, fulfillmentNumber: 1, resendable: true,
     });
     expect(body.entries[1]).toMatchObject({
-      number: 1, carrierLabel: 'ヤマト運輸', trackingNumber: '1234-5678', cancellable: true,
+      // G-1 Task 15: 旧の発送の取消は止めたので、発送の行は取り消せない（cancellable は常に false）
+      number: 1, carrierLabel: 'ヤマト運輸', trackingNumber: '1234-5678', cancellable: false,
       items: [{ name: 'シルクブラウス（白 / M）', quantity: 1 }], actorEmail: 'admin@example.com',
     });
     expect(mockRpc).toHaveBeenCalledWith('list_order_fulfillments', { _order_id: ORDER_ID });

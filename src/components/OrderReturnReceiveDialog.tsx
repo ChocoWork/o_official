@@ -410,10 +410,16 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
 
   const feesTotal = preview.fees.returnShipping + preview.fees.restocking + preview.fees.exchange + preview.fees.exchangeShipping;
   const feeDuePreview = effectiveChoice === 'now' ? preview.feeDue : effectiveChoice === 'none' ? feesTotal : 0;
+  // 交換品の割り当てを保留するのは、この受け取りの手数料だけでなく、前の受け取りの手数料がまだ払われていない時も同じ
+  // （DB の割り当ての止め fee_waiting と同じ条件: 未決着の手数料があり、受け取りの記録も、支払いを待たずに送るも、まだ）
+  const feeStillUnpaid = detail.fees.feeDueAmount > 0 && detail.fees.feeReceivedAt === null && detail.fees.exchangeReleasedAt === null;
+  const exchangeHoldNotice = exchangeUnits > 0 && (feeDuePreview > 0 || feeStillUnpaid)
+    ? <p className="font-acumin lk-text-sm text-black">手数料のお支払い待ちのため、交換品の割り当てを保留します。</p>
+    : null;
   const feeDueNotice = feeDuePreview > 0
     ? <>
         <p className="font-acumin lk-text-sm text-black">{`お支払い待ち ${formatYen(feeDuePreview)}（交換の品は、お支払いを確かめてから送ります）`}</p>
-        {exchangeUnits > 0 ? <p className="font-acumin lk-text-sm text-black">手数料のお支払い待ちのため、交換品の割り当てを保留します。</p> : null}
+        {exchangeHoldNotice}
       </>
     : null;
 
@@ -767,6 +773,8 @@ function OrderReturnReceiveDialogBody({ loaded, onReload, reloading = false, rel
                   {feeDueNotice}
                 </div>
               ) : null}
+              {/* この受け取りの手数料が無い時（前の受け取りの手数料だけが残る時）は、保留の文だけを出す */}
+              {feeDuePreview > 0 ? null : exchangeHoldNotice}
 
               <Checkbox
                 label="お客様に知らせる"

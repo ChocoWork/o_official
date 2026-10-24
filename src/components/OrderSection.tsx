@@ -4,6 +4,10 @@ import { Button } from '@/components/ui/Button/Button';
 import { DataTable } from '@/components/ui/DataTable/DataTable';
 import { StatusBadge, type StatusBadgeTone } from '@/components/ui/StatusBadge/StatusBadge';
 import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
+import {
+	LEGACY_FULFILLMENT_DISABLED_TEXT,
+	MANUAL_COMPLETION_DISABLED_TEXT,
+} from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import type { OrderStatus as DbOrderStatus } from '@/lib/orders/order-payment-types';
 import { PARTIALLY_SHIPPED_LABEL, type OrderProgressKey } from '@/lib/orders/order-progress';
@@ -62,8 +66,9 @@ export type OrderItem = {
 	/** 発送した数があり、未発送の数も残っている */
 	partiallyShipped?: boolean;
 	canRefund?: boolean;
+	/** G-1 から窓口は常に false。一覧は見ない（「発送済みにする」は G-1 Task 15 で撤去した） */
 	canShip?: boolean;
-	/** 受注生産中の数がある決済完了の注文 */
+	/** G-1 から窓口は常に false。一覧は見ない（「仕上がりを記録する」は G-1 Task 15 で撤去した） */
 	canRecordCompletion?: boolean;
 	missingShippingFields?: string[];
 	/** 在庫を確保できなかった入金済みの注文（要確認）。確認済みにするまで印を出す */
@@ -102,9 +107,6 @@ interface OrderSectionProps {
 	noticeMessage?: string | null;
 	onCancelOrder?: (id: string) => void;
 	onRefundOrder?: (id: string) => void;
-	onShipOrder?: (id: string) => void;
-	/** 受注生産の品の仕上がりを記録する画面を開く */
-	onRecordCompletion?: (id: string) => void;
 	/** 注文の履歴（状態の変化とメール）を開く */
 	onShowHistory?: (id: string) => void;
 	/** 返品の画面（返品の一覧・受け取り・返金・作る）を開く */
@@ -250,8 +252,6 @@ export default function OrderSection({
 	noticeMessage = null,
 	onCancelOrder,
 	onRefundOrder,
-	onShipOrder,
-	onRecordCompletion,
 	onShowHistory,
 	onShowReturns,
 	onShowCancelRequest,
@@ -277,6 +277,14 @@ export default function OrderSection({
 					{noticeMessage}
 				</p>
 			) : null}
+			{/*
+				G-1 Task 15: 旧の発送・手動の仕上がりの入口は撤去した。止めたことを、注文の行ごとではなく表の上に1回ずつ伝える。
+				画面の幅が狭くても折り返す（折り返しを止める指定や固定の幅を付けない）
+			*/}
+			<div className="mb-4 space-y-1">
+				<p className="lk-text-sm text-[#474747] font-acumin">{LEGACY_FULFILLMENT_DISABLED_TEXT}</p>
+				<p className="lk-text-sm text-[#474747] font-acumin">{MANUAL_COMPLETION_DISABLED_TEXT}</p>
+			</div>
 
 			<DataTable
 				rows={orders}
@@ -452,28 +460,6 @@ export default function OrderSection({
 								{/* canShip が false になる理由は、配送先が足りない・支払額の確かめ・送る品が残っていない、の3つ。配送先が実際に足りない時だけ出す */}
 								{awaitingShipment && hasMissingShipping ? (
 									<span className="lk-text-xs text-red-700" role="status">配送先要確認</span>
-								) : null}
-								{order.canRecordCompletion && onRecordCompletion ? (
-									<Button
-										variant="secondary"
-										size="sm"
-										className="font-acumin"
-										onClick={() => onRecordCompletion(order.id)}
-										disabled={isProcessing}
-									>
-										{isProcessing ? '処理中...' : '仕上がりを記録する'}
-									</Button>
-								) : null}
-								{order.canShip && onShipOrder ? (
-									<Button
-										variant="primary"
-										size="sm"
-										className="font-acumin"
-										onClick={() => onShipOrder(order.id)}
-										disabled={isProcessing}
-									>
-										{isProcessing ? '処理中...' : '発送済みにする'}
-									</Button>
 								) : null}
 								{order.canCancel && onCancelOrder ? (
 									<Button

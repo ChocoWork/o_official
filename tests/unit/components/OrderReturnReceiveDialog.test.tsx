@@ -653,7 +653,42 @@ describe('OrderReturnReceiveDialog のお支払い待ちの見込み', () => {
     });
     const { dialog } = await openDialog(detail);
     receiveAll(dialog, scenario === 'お返しだけ' ? 'sent_back' : 'restocked');
-    expect(within(dialog).queryByText(/お支払い待ち/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/^お支払い待ち /)).not.toBeInTheDocument();
+  });
+
+  // G-1 Task 15（Task 11 の持ち越し M3）: 保留の文は、この受け取りの手数料だけでなく、返品として未払いの手数料が残る間も出す
+  const HOLD = '手数料のお支払い待ちのため、交換品の割り当てを保留します。';
+
+  it('前の受け取りの手数料がまだ払われていなければ、今回の手数料が0円でも交換品の保留の文を出す', async () => {
+    const { dialog } = await openDialog(returnDetail({
+      returnMethod: 'shop_label', fees, firstReceiptDone: true, firstExchangeReceiptDone: true, lines: [exchangeLine()],
+    }));
+    receiveAll(dialog, 'restocked');
+
+    expect(within(dialog).queryByText(/^お支払い待ち /)).not.toBeInTheDocument();
+    expect(within(dialog).getAllByText(HOLD)).toHaveLength(1);
+  });
+
+  it.each<[string, Partial<OrderReturnDetail['fees']>]>([
+    ['手数料の受け取りを記録した', { feeReceivedAt: '2026-10-20T01:00:00.000Z' }],
+    ['支払いを待たずに送れるようにした', { exchangeReleasedAt: '2026-10-20T01:00:00.000Z' }],
+    ['未払いの手数料が0円', { feeDueAmount: 0 }],
+  ])('前の受け取りの手数料が%s時は、今回の手数料が0円なら保留の文を出さない', async (_label, settled) => {
+    const { dialog } = await openDialog(returnDetail({
+      returnMethod: 'shop_label', fees: { ...fees, ...settled }, firstReceiptDone: true, firstExchangeReceiptDone: true, lines: [exchangeLine()],
+    }));
+    receiveAll(dialog, 'restocked');
+
+    expect(within(dialog).queryByText(HOLD)).not.toBeInTheDocument();
+  });
+
+  it('前の受け取りの手数料が残っていても、交換の品を受け取らない（お返しだけの）受け取りには保留の文を出さない', async () => {
+    const { dialog } = await openDialog(returnDetail({
+      returnMethod: 'shop_label', fees, firstReceiptDone: true, firstExchangeReceiptDone: true, lines: [exchangeLine()],
+    }));
+    receiveAll(dialog, 'sent_back');
+
+    expect(within(dialog).queryByText(HOLD)).not.toBeInTheDocument();
   });
 });
 

@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { clientFetch } from '@/lib/client-fetch';
-import { DELIVERY_ERROR_MESSAGES } from '@/lib/orders/tracking/delivery-messages';
+import { LEGACY_FULFILLMENT_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import type {
   DeliveryCallResult,
   MarkDeliveredInput,
@@ -12,7 +11,7 @@ import type {
 /**
  * 管理画面（ブラウザ）から、伝票番号を直す窓口と、配達済みにする窓口（POST。計画の C-3）を呼ぶ道具と、
  * 直す画面・配達済みの画面が共有する「二重防止の番号と結果不明の再送」の流れ。
- * clientFetch を使うのでブラウザだけで動く。サーバーからは import しない。
+ * G-1 Task 14 で2つの窓口は止めた（410）ので、G-1 Task 15 から2つの道具は窓口を呼ばずに固定の停止の文で断る。サーバーからは import しない。
  */
 
 // 画面の言葉は計画の C-5・C-4 のとおり（句点を足し引きしない）
@@ -23,102 +22,25 @@ export const DELIVERY_FORM_TEXT = {
   unknown: '結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。',
 } as const;
 
-const UNAUTHENTICATED_MESSAGE = '認証が必要です。再ログインしてください。';
-// 管理画面の隣の操作と同じ文
-const FORBIDDEN_MESSAGE = 'この操作の権限がありません。';
-const RATE_LIMITED_MESSAGE = 'しばらくしてから、もう一度お試しください。';
-const REFUSED_FALLBACK_MESSAGE = DELIVERY_ERROR_MESSAGES.DELIVERY_ARGUMENT_INVALID.message;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** 窓口が日本語で返す断りの文（`{ error }`）。文字でない・空・長すぎる時は使わない */
-function ownErrorMessage(body: unknown): string | null {
-  if (!isRecord(body)) return null;
-  const { error } = body;
-  return typeof error === 'string' && error.length > 0 && error.length <= 200 ? error : null;
-}
-
-function readTrackingResult(data: unknown): UpdateTrackingResult | null {
-  if (!isRecord(data)) return null;
-  const { trackingChangeId, trackingVersion, replayed } = data;
-  return typeof trackingChangeId === 'string' && typeof trackingVersion === 'number' && typeof replayed === 'boolean'
-    ? { trackingChangeId, trackingVersion, replayed }
-    : null;
-}
-
-function readDeliveredResult(data: unknown): MarkDeliveredResult | null {
-  if (!isRecord(data)) return null;
-  const { eventId, deliveredAt, replayed } = data;
-  return typeof eventId === 'string' && typeof deliveredAt === 'string' && typeof replayed === 'boolean'
-    ? { eventId, deliveredAt, replayed }
-    : null;
-}
-
-/**
- * 書く窓口の答えを、画面が分けて扱う4つにする。
- * - ok: 記録できた（前の結果の再送でも同じ）
- * - blocked: 処理に入る前の断り（401・403・429）。何も変わっていない。二重防止の番号は変えない
- * - refused: 処理の中の断り（400・404・409 ほか）。記録していない。次の送信は別の操作なので新しい番号にする
- * - unknown: 通信が切れた・500 番台・読めない成功。記録されたかもしれない
- * 送信が途中で切れたかもしれない時に画面が同じ二重防止の番号で送り直せるよう、書き込みを自動では送り直さない（clientFetch も同じ）。
- */
-async function callDeliveryApi<T>(
-  url: string,
-  body: object,
-  readData: (data: unknown) => T | null,
-): Promise<DeliveryCallResult<T>> {
-  let response: Response;
-  try {
-    response = await clientFetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    return { kind: 'unknown' };
-  }
-
-  if (response.status >= 500) return { kind: 'unknown' };
-  if (response.ok) {
-    try {
-      const parsed: unknown = await response.json();
-      const data = readData(isRecord(parsed) ? parsed.data : undefined);
-      return data ? { kind: 'ok', data } : { kind: 'unknown' };
-    } catch {
-      return { kind: 'unknown' };
-    }
-  }
-
-  // 回数の制限などの共通の守りは英語の短い文を返すので、権限と回数の制限は固定の文にする
-  if (response.status === 401) return { kind: 'blocked', message: UNAUTHENTICATED_MESSAGE };
-  if (response.status === 403) return { kind: 'blocked', message: FORBIDDEN_MESSAGE };
-  if (response.status === 429) return { kind: 'blocked', message: RATE_LIMITED_MESSAGE };
-  const errorBody: unknown = await response.json().catch(() => null);
-  return { kind: 'refused', message: ownErrorMessage(errorBody) ?? REFUSED_FALLBACK_MESSAGE };
-}
-
-const deliveryUrl = (orderId: string, fulfillmentId: string, operation: 'tracking' | 'delivered') =>
-  `/api/admin/orders/${orderId}/fulfillments/${fulfillmentId}/${operation}`;
-
-/** 伝票番号を直す（POST .../fulfillments/[fulfillmentId]/tracking）。送るのは C-3 の4項目だけ */
-export function submitTrackingEdit(
+/** 伝票番号を直す（POST .../fulfillments/[fulfillmentId]/tracking）。G-1 で窓口は止めた（410）ので、窓口を呼ばずに発送の停止の文で断る */
+export const submitTrackingEdit: (
   orderId: string,
   fulfillmentId: string,
   body: Pick<UpdateTrackingInput, 'requestKey' | 'carrier' | 'trackingNumber' | 'notifyCustomer'>,
-): Promise<DeliveryCallResult<UpdateTrackingResult>> {
-  return callDeliveryApi(deliveryUrl(orderId, fulfillmentId, 'tracking'), body, readTrackingResult);
-}
+) => Promise<DeliveryCallResult<UpdateTrackingResult>> = async () => ({
+  kind: 'refused',
+  message: LEGACY_FULFILLMENT_DISABLED_TEXT,
+});
 
-/** 手で配達済みにする（POST .../fulfillments/[fulfillmentId]/delivered）。送るのは C-3 の3項目だけ */
-export function submitManualDelivered(
+/** 手で配達済みにする（POST .../fulfillments/[fulfillmentId]/delivered）。G-1 で窓口は止めた（410）ので、窓口を呼ばずに発送の停止の文で断る */
+export const submitManualDelivered: (
   orderId: string,
   fulfillmentId: string,
   body: Pick<MarkDeliveredInput, 'requestKey' | 'deliveredOn' | 'notifyCustomer'>,
-): Promise<DeliveryCallResult<MarkDeliveredResult>> {
-  return callDeliveryApi(deliveryUrl(orderId, fulfillmentId, 'delivered'), body, readDeliveredResult);
-}
+) => Promise<DeliveryCallResult<MarkDeliveredResult>> = async () => ({
+  kind: 'refused',
+  message: LEGACY_FULFILLMENT_DISABLED_TEXT,
+});
 
 type DeliverySubmissionOptions<Body, Result> = {
   /** 窓口を呼ぶ（submitTrackingEdit か submitManualDelivered） */

@@ -65,7 +65,6 @@ describe('OrderSection order actions', () => {
         ]}
         onCancelOrder={onCancelOrder}
         onRefundOrder={jest.fn()}
-        onShipOrder={jest.fn()}
       />,
     );
 
@@ -82,7 +81,6 @@ describe('OrderSection order actions', () => {
     render(
       <OrderSection
         orders={[{ ...paidOrder, canShip: false, missingShippingFields: ['address', 'phone'] }]}
-        onShipOrder={jest.fn()}
       />,
     );
 
@@ -97,7 +95,6 @@ describe('OrderSection order actions', () => {
           { ...inProductionOrder, id: 'no-address', canShip: false, missingShippingFields: ['address'] },
           { ...inProductionOrder, id: 'blocked', canShip: false, shipBlockedReason: '支払額の確認が必要です（要対応）' },
         ]}
-        onShipOrder={jest.fn()}
       />,
     );
 
@@ -116,7 +113,6 @@ describe('OrderSection order actions', () => {
     render(
       <OrderSection
         orders={[{ ...paidOrder, canShip: false, shipBlockedReason: '支払額の確認が必要です（要対応）' }]}
-        onShipOrder={jest.fn()}
       />,
     );
 
@@ -133,7 +129,6 @@ describe('OrderSection order actions', () => {
           { ...paidOrder, id: 'nothing-left-b', canShip: false },
           { ...paidOrder, id: 'no-address', canShip: false, missingShippingFields: ['address'] },
         ]}
-        onShipOrder={jest.fn()}
       />,
     );
 
@@ -308,51 +303,21 @@ describe('OrderSection の注文の言葉と印', () => {
   });
 });
 
-describe('OrderSection の仕上がりと発送のボタン', () => {
-  it('受注生産中の数がある注文には「仕上がりを記録する」を出し、押すと注文の番号を渡す', () => {
-    const onRecordCompletion = jest.fn();
+// G-1 Task 15: 「仕上がりを記録する」「発送済みにする」は撤去した。窓口が昔の形で canShip・canRecordCompletion を true にしても出さない
+describe('OrderSection の仕上がりと発送のボタン（G-1 で撤去）', () => {
+  it('受注生産中の数がある注文・canShip の注文にも「仕上がりを記録する」「発送済みにする」を出さない', () => {
+    render(<OrderSection orders={[{ ...inProductionOrder, canShip: true }, paidOrder]} />);
 
-    render(<OrderSection orders={[inProductionOrder, paidOrder]} onRecordCompletion={onRecordCompletion} />);
-
-    const buttons = screen.getAllByRole('button', { name: '仕上がりを記録する' });
-    expect(buttons).toHaveLength(1);
-    fireEvent.click(buttons[0]);
-    expect(onRecordCompletion).toHaveBeenCalledWith('in-production-order');
+    expect(screen.queryByRole('button', { name: '仕上がりを記録する' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '発送済みにする' })).not.toBeInTheDocument();
   });
 
-  it('仕上がりを記録できない注文や、押した時の処理が無い一覧には「仕上がりを記録する」を出さない', () => {
-    const { rerender } = render(<OrderSection orders={[inProductionOrder]} />);
-    expect(screen.queryByRole('button', { name: '仕上がりを記録する' })).not.toBeInTheDocument();
-
-    rerender(<OrderSection orders={[{ ...inProductionOrder, canRecordCompletion: false }]} onRecordCompletion={jest.fn()} />);
-    expect(screen.queryByRole('button', { name: '仕上がりを記録する' })).not.toBeInTheDocument();
-  });
-
-  it('「発送済みにする」は言葉ではなく canShip で決める（受注生産中の言葉の注文にも出る。配送中の注文には出ない）', () => {
-    const onShipOrder = jest.fn();
-
+  it('処理中の注文の残った操作のボタン（返金・キャンセル）は押せず「処理中...」と出す', () => {
     render(
       <OrderSection
-        orders={[
-          { ...inProductionOrder, canShip: true },
-          { ...paidOrder, id: 'shipped-order', status: '配送中', orderStatus: 'shipped', canShip: false },
-        ]}
-        onShipOrder={onShipOrder}
-      />,
-    );
-
-    const buttons = screen.getAllByRole('button', { name: '発送済みにする' });
-    expect(buttons).toHaveLength(1);
-    fireEvent.click(buttons[0]);
-    expect(onShipOrder).toHaveBeenCalledWith('in-production-order');
-  });
-
-  it('処理中の注文のボタンは押せず「処理中...」と出す', () => {
-    render(
-      <OrderSection
-        orders={[{ ...inProductionOrder, canShip: true }]}
-        onShipOrder={jest.fn()}
-        onRecordCompletion={jest.fn()}
+        orders={[{ ...inProductionOrder, canShip: true, canCancel: true, cancelKind: 'paid' }]}
+        onRefundOrder={jest.fn()}
+        onCancelOrder={jest.fn()}
         processingOrderIds={['in-production-order']}
       />,
     );

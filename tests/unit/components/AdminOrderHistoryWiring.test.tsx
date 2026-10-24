@@ -1,10 +1,14 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import AdminPage from '@/app/admin/page';
+import {
+  LEGACY_FULFILLMENT_DISABLED_TEXT,
+  MANUAL_COMPLETION_DISABLED_TEXT,
+} from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import type { RefundMaterials } from '@/lib/orders/refund/refund-types';
 
 /**
- * 管理画面の ORDER タブと、履歴・発送・仕上がりの画面のつなぎ込み（グループ D の Task 7、グループ E-1 の Task 7）。
- * 部品ごとの試験（OrderHistoryDialog・OrderShipDialog・OrderCompletionDialog・OrderSection）では見えない、
+ * 管理画面の ORDER タブと、履歴の画面のつなぎ込み（グループ D の Task 7、グループ E-1 の Task 7）。発送・仕上がりの画面は G-1 Task 15 で撤去した。
+ * 部品ごとの試験（OrderHistoryDialog・OrderSection）では見えない、
  * 管理画面の中での配線を確かめる。一覧と各画面は本物を使い、窓口（clientFetch）だけを差し替える。
  */
 const clientFetchMock = jest.fn();
@@ -48,8 +52,6 @@ const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
 const ITEM_ID = 'b1b2c3d4-1111-2222-8333-444455556666';
 const COAT_ID = 'c1c2c3d4-1111-2222-8333-444455556666';
 const FULFILLMENT_ID = 'f1f1f1f1-1111-2222-8333-444455556666';
-/** 一覧に並ぶ、もう1つの注文 */
-const OTHER_ORDER_ID = 'd1d2d3d4-1111-2222-8333-444455556666';
 
 const BLOUSE = {
   id: ITEM_ID, name: 'シルクブラウス', color: '白', size: 'M', quantity: 1, fulfillmentType: 'stock',
@@ -80,25 +82,6 @@ function orderRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** 発送の画面・仕上がりの画面が読む「発送の材料」 */
-function materialsBody(lines: unknown[]) {
-  return {
-    order: { id: ORDER_ID, orderNumber: 'ORD-A1B2C3D4', status: 'paid', progress: { key: 'ready', label: '発送準備中', partiallyShipped: false } },
-    blockedReason: null,
-    lines,
-    fulfillments: [],
-  };
-}
-
-const BLOUSE_LINE = {
-  orderItemId: ITEM_ID, name: 'シルクブラウス', color: '白', size: 'M', fulfillmentType: 'stock',
-  quantity: 1, shipped: 0, inProduction: 0, readyUnshipped: 1, unshipped: 1,
-};
-const COAT_LINE = {
-  orderItemId: COAT_ID, name: 'ウールコート', color: '黒', size: 'L', fulfillmentType: 'backorder',
-  quantity: 1, shipped: 0, inProduction: 1, readyUnshipped: 0, unshipped: 1,
-};
-
 const historyBody = {
   order: { id: ORDER_ID, orderNumber: 'ORD-A1B2C3D4', statusLabel: '決済完了', recipient: 'hanako@example.com' },
   sendPaused: null,
@@ -118,25 +101,9 @@ function listRequests() {
   return clientFetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/admin/orders?'));
 }
 
-/** 窓口（url の終わりが suffix）へ POST した本文。送っていなければ undefined */
-function postedBody(suffix: string): Record<string, unknown> | undefined {
-  const call = clientFetchMock.mock.calls.find(
-    ([url, init]) => String(url).endsWith(suffix) && (init as RequestInit | undefined)?.method === 'POST',
-  );
-  return call ? (JSON.parse((call[1] as RequestInit).body as string) as Record<string, unknown>) : undefined;
-}
-
-/**
- * 一覧の知らせ（OrderSection の noticeMessage）の要素。「配送先要確認」や発送を止める理由など、ほかの role="status" は含めない。
- * 知らせが出ている時は要素を返し、無ければ null（出ている時に見つかることは、仕上がりの試験で確かめている）
- */
-function listNotice(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('p[role="status"][aria-live="polite"]');
-}
-
 /** 一覧が返す行。窓口を呼んだ後に差し替えて、読み直した結果を再現する */
 let orderRows: unknown[] = [];
-/** 発送・仕上がり・取消の POST への答え（既定は成功） */
+/** POST への答え（既定は成功） */
 let postAnswer: (url: string) => Promise<unknown> = () => ok({});
 
 /** 返事を止めておく。release(返事) で返す（画面の更新まで待つ） */
@@ -163,15 +130,15 @@ function holdPost(suffix: string) {
   return release;
 }
 
-/** 履歴に出す、取り消せる発送の行 */
+/** 履歴に出す発送の行。窓口が昔の形で cancellable を true にした物（G-1 Task 15 でも取消の入口は出さない） */
 const CANCELLABLE_SHIPMENT = {
   type: 'fulfillment', at: '2026-10-10T02:00:00.000Z', fulfillmentId: FULFILLMENT_ID, number: 1, carrierLabel: 'ヤマト運輸',
   trackingNumber: '1234-5678', items: [{ name: 'シルクブラウス', quantity: 1 }], actorEmail: 'admin@example.com',
   notifyCustomer: true, completesOrder: true, cancelled: false, cancellable: true, legacy: false,
 };
 
-/** 窓口の差し替え。一覧は orderRows、POST は postAnswer。発送の材料と履歴の行は引数で決める */
-function serveOrdersApi({ lines = [BLOUSE_LINE], entries = historyBody.entries }: { lines?: unknown[]; entries?: unknown[] } = {}) {
+/** 窓口の差し替え。一覧は orderRows、POST は postAnswer。履歴の行は引数で決める */
+function serveOrdersApi({ entries = historyBody.entries }: { entries?: unknown[] } = {}) {
   clientFetchMock.mockImplementation((url: string, init?: RequestInit) => {
     const target = String(url);
     if (init?.method === 'POST') return postAnswer(target);
@@ -179,24 +146,17 @@ function serveOrdersApi({ lines = [BLOUSE_LINE], entries = historyBody.entries }
       return ok({ data: orderRows, pagination: { page: 1, pageSize: 20, total: orderRows.length, totalPages: 1 } });
     }
     if (target.endsWith('/history')) return ok({ ...historyBody, entries });
-    if (target.endsWith('/fulfillments')) return ok(materialsBody(lines));
     return ok({});
   });
 }
 
-describe('管理画面の注文の履歴・発送・仕上がりのつなぎ込み', () => {
+describe('管理画面の注文の履歴のつなぎ込み（発送・仕上がりの入口は G-1 で撤去）', () => {
   beforeEach(() => {
     clientFetchMock.mockReset();
     mockAttention.mockReset();
     mockAttention.mockImplementation(() => ok({ data: { exceptions: [], reviews: [], counts: { exceptions: 0, reviews: 0 } } }));
     orderRows = [orderRow()];
-    postAnswer = (url) => {
-      if (url.endsWith('/fulfillments')) {
-        return ok({ fulfillmentId: 'fulfillment-1', number: 1, completesOrder: true, orderStatus: 'shipped', replayed: false });
-      }
-      if (url.endsWith('/completions')) return ok({ completionIds: ['completion-1'], replayed: false });
-      return ok({ outcome: 'cancelled', orderStatus: 'paid' });
-    };
+    postAnswer = () => ok({});
     clientFetchMock.mockImplementation((url: string, init?: RequestInit) => {
       const target = String(url);
       if (init?.method === 'POST') return postAnswer(target);
@@ -204,7 +164,6 @@ describe('管理画面の注文の履歴・発送・仕上がりのつなぎ込�
         return ok({ data: orderRows, pagination: { page: 1, pageSize: 20, total: orderRows.length, totalPages: 1 } });
       }
       if (target.endsWith('/history')) return ok(historyBody);
-      if (target.endsWith('/fulfillments')) return ok(materialsBody([BLOUSE_LINE]));
       return ok({});
     });
   });
@@ -252,159 +211,33 @@ describe('管理画面の注文の履歴・発送・仕上がりのつなぎ込�
     expect(historyButton).toHaveFocus();
   });
 
-  it('履歴の画面で発送を取り消すと、履歴は開いたまま、一覧を読み直す', async () => {
-    clientFetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      const target = String(url);
-      if (init?.method === 'POST') return postAnswer(target);
-      if (target.startsWith('/api/admin/orders?')) {
-        return ok({ data: orderRows, pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
-      }
-      if (target.endsWith('/history')) {
-        return ok({
-          ...historyBody,
-          entries: [
-            {
-              type: 'fulfillment', at: '2026-10-10T02:00:00.000Z', fulfillmentId: FULFILLMENT_ID, number: 1, carrierLabel: 'ヤマト運輸',
-              trackingNumber: '1234-5678', items: [{ name: 'シルクブラウス', quantity: 1 }], actorEmail: 'admin@example.com',
-              notifyCustomer: true, completesOrder: true, cancelled: false, cancellable: true, legacy: false,
-            },
-          ],
-        });
-      }
-      return ok({});
-    });
+  // G-1 Task 15: 「発送済みにする」「仕上がりを記録する」と履歴の「この発送を取り消す」は撤去した。窓口が昔の形で
+  // canShip・canRecordCompletion・cancellable を true にしても入口を出さず、止めた窓口（410）へ要求を送らない
+  it('一覧に「発送済みにする」「仕上がりを記録する」を出さず、表の上に2つの停止の文を1回ずつ出す。発送の材料も読まない', async () => {
+    orderRows = [
+      orderRow({ canShip: true, canRecordCompletion: true }),
+      orderRow({ id: 'other-order', status: '受注生産中', progressKey: 'in_production', items: [COAT_IN_PRODUCTION], canShip: true, canRecordCompletion: true }),
+    ];
+    render(<AdminPage />);
+    await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' });
+
+    expect(screen.queryByRole('button', { name: '発送済みにする' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '仕上がりを記録する' })).not.toBeInTheDocument();
+    expect(screen.getAllByText(LEGACY_FULFILLMENT_DISABLED_TEXT)).toHaveLength(1);
+    expect(screen.getAllByText(MANUAL_COMPLETION_DISABLED_TEXT)).toHaveLength(1);
+    expect(clientFetchMock.mock.calls.some(([url]) => /\/(fulfillments|completions)(\/|$)/.test(String(url)))).toBe(false);
+  });
+
+  it('履歴に昔の形の取り消せる発送が来ても「この発送を取り消す」を出さず、配送の停止の文を出し、POST を送らない', async () => {
+    serveOrdersApi({ entries: [CANCELLABLE_SHIPMENT] });
     render(<AdminPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'この発送を取り消す' }));
-    expect(listRequests()).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', { name: '取り消す' }));
 
-    await waitFor(() => expect(listRequests()).toHaveLength(2));
-    expect(clientFetchMock).toHaveBeenCalledWith(
-      `/api/admin/orders/${ORDER_ID}/fulfillments/${FULFILLMENT_ID}/cancel`,
-      { method: 'POST' },
-    );
-    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
-  });
-
-  it('発送: 発送の画面が材料を読み、チェックを外すと notifyCustomer=false で発送の窓口へ送り、画面を閉じて、一覧を読み直す', async () => {
-    postAnswer = (url) => {
-      orderRows = [orderRow({
-        status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false,
-        items: [{ ...BLOUSE, shipped: 1, readyUnshipped: 0 }],
-      })];
-      return url.endsWith('/fulfillments')
-        ? ok({ fulfillmentId: 'fulfillment-1', number: 1, completesOrder: true, orderStatus: 'shipped', replayed: false })
-        : ok({});
-    };
-    render(<AdminPage />);
-    fireEvent.click(await screen.findByRole('button', { name: '発送済みにする' }));
-
-    const dialog = await screen.findByRole('dialog', { name: '発送済みにする' });
-    expect(clientFetchMock).toHaveBeenCalledWith(`/api/admin/orders/${ORDER_ID}/fulfillments`, { cache: 'no-store' });
-    const checkbox = await within(dialog).findByRole('checkbox', { name: 'お客様に発送のメールを送る' });
-    expect(checkbox).toBeChecked();
-    fireEvent.click(checkbox);
-    fireEvent.change(within(dialog).getByLabelText('追跡番号'), { target: { value: ' E2E-1 ' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '発送する' }));
-
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(postedBody('/fulfillments')).toEqual({
-      requestKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
-      carrier: 'yamato',
-      trackingNumber: 'E2E-1',
-      notifyCustomer: false,
-      lines: [{ orderItemId: ITEM_ID, quantity: 1 }],
-    });
-    // 前の状態の窓口（/status）へは送らない。手元で言葉を書き換えず、読み直した一覧の言葉（配送中）を出す
-    expect(clientFetchMock.mock.calls.some(([url]) => String(url).endsWith('/status'))).toBe(false);
-    expect(await screen.findByText('配送中', { selector: 'span' })).toBeInTheDocument();
-    expect(listRequests()).toHaveLength(2);
-    expect(screen.queryByRole('button', { name: '発送済みにする' })).not.toBeInTheDocument();
-  });
-
-  it('発送: 既定のままなら notifyCustomer=true で送る', async () => {
-    render(<AdminPage />);
-    fireEvent.click(await screen.findByRole('button', { name: '発送済みにする' }));
-    const dialog = await screen.findByRole('dialog', { name: '発送済みにする' });
-    await within(dialog).findByRole('checkbox', { name: 'お客様に発送のメールを送る' });
-    fireEvent.change(within(dialog).getByLabelText('追跡番号'), { target: { value: '1234-5678' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '発送する' }));
-
-    await waitFor(() => expect(postedBody('/fulfillments')).toBeDefined());
-    expect(postedBody('/fulfillments')).toMatchObject({ carrier: 'yamato', trackingNumber: '1234-5678', notifyCustomer: true });
-  });
-
-  it('発送: 追跡番号が不正なら、画面の中に知らせて、送らず、画面は開いたまま', async () => {
-    render(<AdminPage />);
-    fireEvent.click(await screen.findByRole('button', { name: '発送済みにする' }));
-    const dialog = await screen.findByRole('dialog', { name: '発送済みにする' });
-    await within(dialog).findByLabelText('追跡番号');
-    fireEvent.change(within(dialog).getByLabelText('追跡番号'), { target: { value: 'あいう' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '発送する' }));
-
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('追跡番号は英数字とハイフンで入力してください。');
-    expect(postedBody('/fulfillments')).toBeUndefined();
-    expect(screen.getByRole('dialog', { name: '発送済みにする' })).toBeInTheDocument();
-  });
-
-  it('発送: 窓口が断ったら、画面を開いたまま理由を出し、一覧は読み直さない', async () => {
-    const message = '発送する数が発送準備中の数を超えています。受注生産の品は、先に仕上がりを記録してください。';
-    postAnswer = () => refused(409, { error: message, code: 'quantity_exceeds_ready' });
-    render(<AdminPage />);
-    fireEvent.click(await screen.findByRole('button', { name: '発送済みにする' }));
-    const dialog = await screen.findByRole('dialog', { name: '発送済みにする' });
-    await within(dialog).findByLabelText('追跡番号');
-    fireEvent.change(within(dialog).getByLabelText('追跡番号'), { target: { value: '1234-5678' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '発送する' }));
-
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(message);
-    expect(screen.getByRole('dialog', { name: '発送済みにする' })).toBeInTheDocument();
-    expect(listRequests()).toHaveLength(1);
-  });
-
-  it('発送: 「キャンセル」で閉じ、送らない。開き直すと既定（チェックは入っている）に戻る', async () => {
-    render(<AdminPage />);
-    fireEvent.click(await screen.findByRole('button', { name: '発送済みにする' }));
-    const dialog = await screen.findByRole('dialog', { name: '発送済みにする' });
-    fireEvent.click(await within(dialog).findByRole('checkbox', { name: 'お客様に発送のメールを送る' }));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'キャンセル' }));
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(postedBody('/fulfillments')).toBeUndefined();
-
-    fireEvent.click(screen.getByRole('button', { name: '発送済みにする' }));
-    expect(await screen.findByRole('checkbox', { name: 'お客様に発送のメールを送る' })).toBeChecked();
-  });
-
-  it('仕上がり: 「仕上がりを記録する」で仕上がりの画面を開き、記録すると画面を閉じ、知らせを出して一覧を読み直す', async () => {
-    orderRows = [orderRow({
-      status: '受注生産中', progressKey: 'in_production', items: [COAT_IN_PRODUCTION], canShip: true, canRecordCompletion: true,
-    })];
-    clientFetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      const target = String(url);
-      if (init?.method === 'POST') return postAnswer(target);
-      if (target.startsWith('/api/admin/orders?')) {
-        return ok({ data: orderRows, pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
-      }
-      if (target.endsWith('/fulfillments')) return ok(materialsBody([COAT_LINE]));
-      return ok({});
-    });
-    render(<AdminPage />);
-    fireEvent.click(await screen.findByRole('button', { name: '仕上がりを記録する' }));
-
-    const dialog = await screen.findByRole('dialog', { name: '仕上がりを記録する' });
-    const group = await within(dialog).findByRole('group', { name: 'ウールコート（黒 / L）' });
-    fireEvent.change(within(group).getByLabelText('仕上がった数'), { target: { value: '1' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '記録する' }));
-
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(postedBody('/completions')).toEqual({
-      requestKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
-      lines: [{ orderItemId: COAT_ID, quantity: 1 }],
-    });
-    expect(await screen.findByText('仕上がりを記録しました。')).toBeInTheDocument();
-    expect(listRequests()).toHaveLength(2);
+    const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
+    await within(dialog).findByText('発送（1回目）');
+    expect(within(dialog).queryByRole('button', { name: 'この発送を取り消す' })).not.toBeInTheDocument();
+    expect(within(dialog).getAllByText(LEGACY_FULFILLMENT_DISABLED_TEXT)).toHaveLength(1);
+    expect(clientFetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'POST')).toBe(false);
   });
 
   it('一部だけ送った注文には「一部発送済み」の印と、0でない数だけの商品の欄を出す', async () => {
@@ -420,96 +253,7 @@ describe('管理画面の注文の履歴・発送・仕上がりのつなぎ込�
     expect(screen.getByText('ウールコート（黒 / L）×1（受注生産中 1）')).toBeInTheDocument();
   });
 
-  it('発送: 注文 A の返事を待つ間に注文 B の画面を開いても、A の返事で B の画面は閉じず、一覧は読み直す', async () => {
-    orderRows = [orderRow(), orderRow({ id: OTHER_ORDER_ID })];
-    const release = holdPost('/fulfillments');
-    render(<AdminPage />);
-    fireEvent.click((await screen.findAllByRole('button', { name: '発送済みにする' }))[0]);
-    const dialogForA = await screen.findByRole('dialog', { name: '発送済みにする' });
-    await within(dialogForA).findByRole('checkbox', { name: 'お客様に発送のメールを送る' });
-    fireEvent.change(within(dialogForA).getByLabelText('追跡番号'), { target: { value: '1234-5678' } });
-    fireEvent.click(within(dialogForA).getByRole('button', { name: '発送する' }));
-    await waitFor(() => expect(clientFetchMock).toHaveBeenCalledWith(
-      `/api/admin/orders/${ORDER_ID}/fulfillments`,
-      expect.objectContaining({ method: 'POST' }),
-    ));
-
-    // 返事を待つ間に、注文 B の発送の画面を開く（A の画面の後ろの行のボタンなので hidden: true で探す）
-    fireEvent.click(screen.getAllByRole('button', { name: '発送済みにする', hidden: true })[1]);
-    await waitFor(() => expect(clientFetchMock).toHaveBeenCalledWith(
-      `/api/admin/orders/${OTHER_ORDER_ID}/fulfillments`,
-      { cache: 'no-store' },
-    ));
-    const dialogForB = await screen.findByRole('dialog', { name: '発送済みにする' });
-    await within(dialogForB).findByRole('checkbox', { name: 'お客様に発送のメールを送る' });
-
-    await release(ok({ fulfillmentId: 'fulfillment-1', number: 1, completesOrder: true, orderStatus: 'shipped', replayed: false }));
-
-    await waitFor(() => expect(listRequests()).toHaveLength(2));
-    expect(screen.getByRole('dialog', { name: '発送済みにする' })).toBeInTheDocument();
-  });
-
-  it('仕上がり: 注文 A の返事を待つ間に A の画面を閉じて注文 B の画面を開いても、A の返事で B の画面は閉じず、知らせを出して一覧を読み直す', async () => {
-    const inProduction = {
-      status: '受注生産中', progressKey: 'in_production', items: [COAT_IN_PRODUCTION], canShip: true, canRecordCompletion: true,
-    };
-    orderRows = [orderRow(inProduction), orderRow({ ...inProduction, id: OTHER_ORDER_ID })];
-    serveOrdersApi({ lines: [COAT_LINE] });
-    const release = holdPost('/completions');
-    render(<AdminPage />);
-    fireEvent.click((await screen.findAllByRole('button', { name: '仕上がりを記録する' }))[0]);
-    const dialogForA = await screen.findByRole('dialog', { name: '仕上がりを記録する' });
-    const groupForA = await within(dialogForA).findByRole('group', { name: 'ウールコート（黒 / L）' });
-    fireEvent.change(within(groupForA).getByLabelText('仕上がった数'), { target: { value: '1' } });
-    fireEvent.click(within(dialogForA).getByRole('button', { name: '記録する' }));
-    await waitFor(() => expect(clientFetchMock).toHaveBeenCalledWith(
-      `/api/admin/orders/${ORDER_ID}/completions`,
-      expect.objectContaining({ method: 'POST' }),
-    ));
-
-    // 返事を待つ間に、A の画面を閉じ（「キャンセル」は送信中も押せる）、注文 B の仕上がりの画面を開く
-    fireEvent.click(within(dialogForA).getByRole('button', { name: 'キャンセル' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole('button', { name: '仕上がりを記録する' })[1]);
-    await waitFor(() => expect(clientFetchMock).toHaveBeenCalledWith(
-      `/api/admin/orders/${OTHER_ORDER_ID}/fulfillments`,
-      { cache: 'no-store' },
-    ));
-    const dialogForB = await screen.findByRole('dialog', { name: '仕上がりを記録する' });
-    await within(dialogForB).findByRole('group', { name: 'ウールコート（黒 / L）' });
-
-    await release(ok({ completionIds: ['completion-1'], replayed: false }));
-
-    await waitFor(() => expect(listRequests()).toHaveLength(2));
-    expect(screen.getByRole('dialog', { name: '仕上がりを記録する' })).toBeInTheDocument();
-    expect(await screen.findByText('仕上がりを記録しました。')).toBeInTheDocument();
-    // 一覧の知らせの要素が、この選び方で見つかること（発送の後に知らせが出ない試験の見張りが、空振りしないため）
-    expect(listNotice()).toHaveTextContent('仕上がりを記録しました。');
-  });
-
-  it('発送: 成功しても、一覧の知らせは出さない（言葉は、読み直した記録から出す）', async () => {
-    postAnswer = () => {
-      orderRows = [orderRow({
-        status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false,
-        items: [{ ...BLOUSE, shipped: 1, readyUnshipped: 0 }],
-      })];
-      return ok({ fulfillmentId: 'fulfillment-1', number: 1, completesOrder: true, orderStatus: 'shipped', replayed: false });
-    };
-    render(<AdminPage />);
-    fireEvent.click(await screen.findByRole('button', { name: '発送済みにする' }));
-    const dialog = await screen.findByRole('dialog', { name: '発送済みにする' });
-    await within(dialog).findByRole('checkbox', { name: 'お客様に発送のメールを送る' });
-    fireEvent.change(within(dialog).getByLabelText('追跡番号'), { target: { value: '1234-5678' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '発送する' }));
-
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    // 読み直した一覧が出てから確かめる（読み込み中は、知らせも出ない）。見るのは一覧の知らせの要素だけ
-    expect(await screen.findByText('配送中', { selector: 'span' })).toBeInTheDocument();
-    expect(listNotice()).not.toBeInTheDocument();
-    expect(screen.queryByText('仕上がりを記録しました。')).not.toBeInTheDocument();
-  });
-
-  // 発送・仕上がり・履歴の取消・要確認の確認は、窓口の返事を待ってから一覧を読み直す。返事を待つ間に絞り込みが変わっても、
+  // 要確認の確認は、窓口の返事を待ってから一覧を読み直す。返事を待つ間に絞り込みが変わっても、
   // 読み直しは、押した時点の（古い）条件ではなく、今の条件で頼む
   describe('返事を待つ間に絞り込みを変えても、返事の後の読み直しは今の絞り込みで頼む', () => {
     /** 絞り込みを「発送待ち」へ変える。窓口へは status=paid で頼むはず（画面の後ろのボタンなので hidden: true で探す） */
@@ -523,60 +267,6 @@ describe('管理画面の注文の履歴・発送・仕上がりのつなぎ込�
       await waitFor(() => expect(listRequests()).toHaveLength(3));
       expect(String(listRequests().at(-1)?.[0])).toContain('status=paid');
     }
-
-    it('発送', async () => {
-      const release = holdPost('/fulfillments');
-      render(<AdminPage />);
-      fireEvent.click(await screen.findByRole('button', { name: '発送済みにする' }));
-      const dialog = await screen.findByRole('dialog', { name: '発送済みにする' });
-      await within(dialog).findByRole('checkbox', { name: 'お客様に発送のメールを送る' });
-      fireEvent.change(within(dialog).getByLabelText('追跡番号'), { target: { value: '1234-5678' } });
-      fireEvent.click(within(dialog).getByRole('button', { name: '発送する' }));
-      await waitFor(() => expect(postedBody('/fulfillments')).toBeDefined());
-
-      await changeFilterToAwaitingShipment();
-      await release(ok({ fulfillmentId: 'fulfillment-1', number: 1, completesOrder: true, orderStatus: 'shipped', replayed: false }));
-
-      await expectReloadedWithCurrentFilter();
-    });
-
-    it('仕上がりの記録', async () => {
-      orderRows = [orderRow({
-        status: '受注生産中', progressKey: 'in_production', items: [COAT_IN_PRODUCTION], canShip: true, canRecordCompletion: true,
-      })];
-      serveOrdersApi({ lines: [COAT_LINE] });
-      const release = holdPost('/completions');
-      render(<AdminPage />);
-      fireEvent.click(await screen.findByRole('button', { name: '仕上がりを記録する' }));
-      const dialog = await screen.findByRole('dialog', { name: '仕上がりを記録する' });
-      const group = await within(dialog).findByRole('group', { name: 'ウールコート（黒 / L）' });
-      fireEvent.change(within(group).getByLabelText('仕上がった数'), { target: { value: '1' } });
-      fireEvent.click(within(dialog).getByRole('button', { name: '記録する' }));
-      await waitFor(() => expect(postedBody('/completions')).toBeDefined());
-
-      await changeFilterToAwaitingShipment();
-      await release(ok({ completionIds: ['completion-1'], replayed: false }));
-
-      await expectReloadedWithCurrentFilter();
-    });
-
-    it('履歴の発送の取消', async () => {
-      serveOrdersApi({ entries: [CANCELLABLE_SHIPMENT] });
-      const release = holdPost('/cancel');
-      render(<AdminPage />);
-      fireEvent.click(await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' }));
-      fireEvent.click(await screen.findByRole('button', { name: 'この発送を取り消す' }));
-      fireEvent.click(screen.getByRole('button', { name: '取り消す' }));
-      await waitFor(() => expect(clientFetchMock).toHaveBeenCalledWith(
-        `/api/admin/orders/${ORDER_ID}/fulfillments/${FULFILLMENT_ID}/cancel`,
-        { method: 'POST' },
-      ));
-
-      await changeFilterToAwaitingShipment();
-      await release(ok({ outcome: 'cancelled', orderStatus: 'paid' }));
-
-      await expectReloadedWithCurrentFilter();
-    });
 
     it('要確認の「確認済みにする」', async () => {
       mockAttention.mockImplementation(() => ok({ data: {
@@ -1162,7 +852,7 @@ describe('管理画面の配送（一覧の印・要対応の配送の組・直�
     expect(logged).toHaveBeenCalled();
   });
 
-  it('サポートの人も、配送の「対応済みにする」と、履歴の「伝票番号を直す」「配達済みにする」を使える。返金の入口は出さない', async () => {
+  it('サポートの人も、配送の「対応済みにする」を使える。履歴の「伝票番号を直す」「配達済みにする」は G-1 で撤去した。返金の入口は出さない', async () => {
     mockUserRole = 'supporter';
     orderRows = [orderRow({
       status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false, canRefund: true,
@@ -1177,8 +867,9 @@ describe('管理画面の配送（一覧の印・要対応の配送の組・直�
     fireEvent.click(screen.getByRole('button', { name: '履歴を開く' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
-    expect(await within(dialog).findByRole('button', { name: '伝票番号を直す' })).toBeVisible();
-    expect(within(dialog).getByRole('button', { name: '配達済みにする' })).toBeVisible();
+    await within(dialog).findByText('発送（1回目）');
+    expect(within(dialog).queryByRole('button', { name: '伝票番号を直す' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
   });
 
   it('店長には返金の入口が出る（同じ行で、サポートの人との違いが返金だけであることの確かめ）', async () => {
@@ -1191,78 +882,16 @@ describe('管理画面の配送（一覧の印・要対応の配送の組・直�
     expect(await screen.findByRole('button', { name: '返金' })).toBeVisible();
   });
 
-  it('履歴で伝票番号を直せたら、履歴は開いたまま、履歴・一覧・要対応を読み直し、成功の知らせを出す', async () => {
+  it('店長が履歴を開いても「伝票番号を直す」「配達済みにする」を出さず、配送の停止の文を出す。配送の状況は読める（G-1 Task 15）', async () => {
     render(<AdminPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' }));
-    fireEvent.click(await screen.findByRole('button', { name: '伝票番号を直す' }));
-    const dialog = await screen.findByRole('dialog', { name: '伝票番号を直す' });
-    // 追跡オンの履歴（deliveryTrackingEnabled: true）から開いたので、オンの説明が出る
-    expect(dialog).toHaveTextContent('直すと配送の状況は受付済みに戻り、新しい伝票番号で追跡します。');
-    const listsBefore = listRequests().length;
-    const attentionBefore = mockAttention.mock.calls.length;
-    const historyBefore = clientFetchMock.mock.calls.filter(([url]) => String(url).endsWith('/history')).length;
-    postAnswer = (url) => (url.endsWith('/tracking') ? ok({ data: { trackingChangeId: 'change-9', trackingVersion: 2, replayed: false } }) : ok({}));
 
-    fireEvent.change(within(dialog).getByLabelText('配送業者'), { target: { value: 'sagawa' } });
-    fireEvent.change(within(dialog).getByLabelText('伝票番号'), { target: { value: ' AB-99 ' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '伝票番号を直す' }));
-
-    expect(await screen.findByText('伝票番号を直しました。')).toBeVisible();
-    expect(postedBody('/tracking')).toEqual({
-      requestKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
-      carrier: 'sagawa',
-      trackingNumber: 'AB-99',
-      notifyCustomer: true,
-    });
-    expect(clientFetchMock).toHaveBeenCalledWith(
-      `/api/admin/orders/${ORDER_ID}/fulfillments/${FULFILLMENT_ID}/tracking`,
-      expect.objectContaining({ method: 'POST' }),
-    );
-    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
-    await waitFor(() => expect(listRequests()).toHaveLength(listsBefore + 1));
-    await waitFor(() => expect(mockAttention.mock.calls.length).toBeGreaterThan(attentionBefore));
-    expect(clientFetchMock.mock.calls.filter(([url]) => String(url).endsWith('/history')).length).toBeGreaterThan(historyBefore);
-  });
-
-  it('履歴で配達済みにできたら、届いた日と日本時間の今日で送り、履歴・一覧・要対応を読み直す', async () => {
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-21T03:00:00.000Z'));
-    render(<AdminPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' }));
-    fireEvent.click(await screen.findByRole('button', { name: '配達済みにする' }));
-    const dialog = await screen.findByRole('dialog', { name: '配達済みにする' });
-    expect(within(dialog).getByLabelText('届いた日')).toHaveValue('2026-10-21');
-    const listsBefore = listRequests().length;
-    const attentionBefore = mockAttention.mock.calls.length;
-    postAnswer = (url) => (url.endsWith('/delivered') ? ok({ data: { eventId: 'event-9', deliveredAt: '2026-10-21T03:00:00.000Z', replayed: false } }) : ok({}));
-
-    fireEvent.click(within(dialog).getByRole('button', { name: '配達済みにする' }));
-
-    expect(await screen.findByText('配達済みにしました。')).toBeVisible();
-    expect(postedBody('/delivered')).toEqual({
-      requestKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
-      deliveredOn: '2026-10-21',
-      notifyCustomer: true,
-    });
-    await waitFor(() => expect(listRequests()).toHaveLength(listsBefore + 1));
-    await waitFor(() => expect(mockAttention.mock.calls.length).toBeGreaterThan(attentionBefore));
-  });
-
-  it('履歴で結果が分からないまま戻っても、一覧と要対応を読み直す', async () => {
-    render(<AdminPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' }));
-    fireEvent.click(await screen.findByRole('button', { name: '伝票番号を直す' }));
-    const dialog = await screen.findByRole('dialog', { name: '伝票番号を直す' });
-    const listsBefore = listRequests().length;
-    const attentionBefore = mockAttention.mock.calls.length;
-    postAnswer = () => Promise.resolve({ ok: false, status: 503, json: async () => ({}) });
-
-    fireEvent.change(within(dialog).getByLabelText('伝票番号'), { target: { value: 'AB-99' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '伝票番号を直す' }));
-    await screen.findByText('結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。');
-    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
-
-    await waitFor(() => expect(listRequests()).toHaveLength(listsBefore + 1));
-    await waitFor(() => expect(mockAttention.mock.calls.length).toBeGreaterThan(attentionBefore));
-    expect(screen.getByRole('dialog', { name: 'この注文の履歴' })).toBeInTheDocument();
+    const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
+    await within(dialog).findByText('発送（1回目）');
+    expect(within(dialog).queryByRole('button', { name: '伝票番号を直す' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
+    expect(within(dialog).getAllByText(LEGACY_FULFILLMENT_DISABLED_TEXT)).toHaveLength(1);
+    expect(within(dialog).getByText('追跡中')).toBeVisible();
+    expect(clientFetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'POST')).toBe(false);
   });
 });

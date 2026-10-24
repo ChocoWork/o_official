@@ -292,7 +292,8 @@ export type BuildOrderHistoryInput = {
   fulfillments: OrderFulfillmentHistoryRow[];
   /**
    * G-1 Task 14: 手動の仕上がりは終了した。渡されても履歴の行にしない（読みも合成もしない）。
-   * 画面の型を次の Task まで通すためだけに残し、Task 15 で最後の画面の参照と一緒に消す。
+   * 画面の参照は G-1 Task 15 で外した。E2E（e2e/delivery-tracking-test-utils.ts・FR-ADMIN-069。G-1 Task 18 の担当）が
+   * この入力と仕上がりの行の型を参照するので、型の検査を通すために Task 18 まで残す。
    */
   completions?: OrderCompletionHistoryRow[];
   refunds: OrderRefundRow[];
@@ -613,7 +614,8 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
       notifyCustomer: delivery ? delivery.notifyCustomer : row.notifyCustomer,
       completesOrder: row.completesOrder,
       cancelled,
-      cancellable: !cancelled && (order.status === 'paid' || order.status === 'shipped'),
+      // G-1: 旧の発送の取消は止めた（窓口は 410、画面の入口は Task 15 で撤去）。読み手の形を保つため、項目は残して常に false にする
+      cancellable: false,
       legacy: row.legacy,
       ...(delivery ? { delivery } : {}),
     };

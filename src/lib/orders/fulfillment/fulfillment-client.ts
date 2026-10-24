@@ -1,19 +1,18 @@
-import { clientFetch } from '@/lib/client-fetch';
-import { FULFILLMENT_FAILURE_MESSAGES } from '@/lib/orders/fulfillment/fulfillment-messages';
 import type { FulfillmentMaterialLine, FulfillmentMaterials } from '@/lib/orders/fulfillment/fulfillment-types';
+import {
+  LEGACY_FULFILLMENT_DISABLED_TEXT,
+  MANUAL_COMPLETION_DISABLED_TEXT,
+} from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 
 /**
- * 管理画面（ブラウザ）から発送・仕上がりの窓口を呼ぶ道具と、発送の画面・仕上がりの画面・履歴の画面で同じに扱う部品。
- * clientFetch を使うのでブラウザだけで動く。サーバーからは import しない。
+ * 管理画面（ブラウザ）から発送・仕上がりの窓口を呼ぶ道具と、返品・返金・取消の申し込みの画面で同じに扱う部品。
+ * G-1 Task 14 で発送・仕上がりの窓口は止めた（410）ので、G-1 Task 15 から書く道具と材料の読み取りは窓口を呼ばずに
+ * 固定の停止の文で断る。商品の見出し・数の入力の部品はそのまま使う。サーバーからは import しない。
  */
 
 /** 仕上がりを記録した後の知らせ（仕上がりの画面は閉じるので、管理画面の一覧が出す） */
 export const COMPLETION_RECORDED_MESSAGE = '仕上がりを記録しました。';
 export const NO_COMPLETION_QUANTITY_MESSAGE = '仕上がった数を入れてください。';
-
-const UNAUTHENTICATED_MESSAGE = '認証が必要です。再ログインしてください。';
-// 管理画面の隣の操作（src/app/admin/page.tsx の要対応・要確認の操作）と同じ文
-const FORBIDDEN_MESSAGE = 'この操作の権限がありません。';
 
 /** 窓口の答えを、画面が分けて扱う3つにする */
 export type FulfillmentCallResult<T> =
@@ -27,71 +26,29 @@ export type FulfillmentMaterialsResult =
   | { ok: true; materials: FulfillmentMaterials }
   | { ok: false; message: string };
 
-/** 窓口が日本語で返す断りの文（400・404・409 の `{ error }`）。文字でない・長すぎる時は使わない */
-function ownErrorMessage(body: unknown): string | null {
-  if (!body || typeof body !== 'object') return null;
-  const { error } = body as { error?: unknown };
-  return typeof error === 'string' && error.length > 0 && error.length <= 200 ? error : null;
+/** 仕上がりの窓口（POST …/completions と …/completions/[completionId]/cancel）か */
+function isCompletionUrl(url: string): boolean {
+  return /\/completions(?:\/|$)/.test(url);
 }
 
 /**
- * 断られた時に画面へ出す文。回数の制限などの共通の守りは英語の短い文を返すので、窓口が日本語で返す
- * 400・404・409 の文だけをそのまま出し、権限（401・403）は固定の文にする。
+ * 発送・仕上がり・それぞれの取消の窓口（POST）。窓口を呼ばずに断る（G-1 で停止。G-3 の新しい発送票まで再開しない）。
+ * 仕上がりの窓口は手動の仕上がりの停止の文、ほかは発送の停止の文。
  */
-function refusalMessage(status: number, body: unknown, fallback: string): string {
-  if (status === 401) return UNAUTHENTICATED_MESSAGE;
-  if (status === 403) return FORBIDDEN_MESSAGE;
-  if (status === 400 || status === 404 || status === 409) return ownErrorMessage(body) ?? fallback;
-  return fallback;
-}
-
-/**
- * 発送・仕上がり・それぞれの取消の窓口（POST）を呼ぶ。body が undefined なら本文なしで送る。
- * 送信が途中で切れたかもしれない時は、画面が同じ重複防止キーで送り直せるように unknown を返す
- * （clientFetch は書き込みを自動で送り直さない）。
- */
-export async function callFulfillmentApi<T>(
+export const callFulfillmentApi: <T>(
   url: string,
   body: unknown,
   fallbackMessage: string,
-): Promise<FulfillmentCallResult<T>> {
-  let response: Response;
-  try {
-    response = await clientFetch(url, {
-      method: 'POST',
-      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-    });
-  } catch {
-    return { kind: 'unknown' };
-  }
+) => Promise<FulfillmentCallResult<T>> = async (url) => ({
+  kind: 'refused',
+  message: isCompletionUrl(url) ? MANUAL_COMPLETION_DISABLED_TEXT : LEGACY_FULFILLMENT_DISABLED_TEXT,
+});
 
-  if (response.status >= 500) return { kind: 'unknown' };
-  if (response.ok) {
-    try {
-      return { kind: 'ok', body: (await response.json()) as T };
-    } catch {
-      return { kind: 'unknown' };
-    }
-  }
-
-  const errorBody: unknown = await response.json().catch(() => null);
-  return { kind: 'refused', message: refusalMessage(response.status, errorBody, fallbackMessage) };
-}
-
-/** 発送の画面と仕上がりの画面が、開いた時と仕上がりの記録の後に読む「発送の材料」 */
-export async function fetchFulfillmentMaterials(orderId: string): Promise<FulfillmentMaterialsResult> {
-  try {
-    const response = await clientFetch(`/api/admin/orders/${orderId}/fulfillments`, { cache: 'no-store' });
-    if (response.status >= 500) return { ok: false, message: FULFILLMENT_FAILURE_MESSAGES.materials };
-    if (!response.ok) {
-      const body: unknown = await response.json().catch(() => null);
-      return { ok: false, message: refusalMessage(response.status, body, FULFILLMENT_FAILURE_MESSAGES.materials) };
-    }
-    return { ok: true, materials: (await response.json()) as FulfillmentMaterials };
-  } catch {
-    return { ok: false, message: FULFILLMENT_FAILURE_MESSAGES.materials };
-  }
-}
+/** 発送の材料（GET …/fulfillments）。窓口を呼ばずに発送の停止の文を返す（G-1 で停止） */
+export const fetchFulfillmentMaterials: (orderId: string) => Promise<FulfillmentMaterialsResult> = async () => ({
+  ok: false,
+  message: LEGACY_FULFILLMENT_DISABLED_TEXT,
+});
 
 /** 商品の見出し。「シルクブラウス（白 / M）」。色もサイズも無ければ名前だけ */
 export function lineLabel(line: Pick<FulfillmentMaterialLine, 'name' | 'color' | 'size'>): string {

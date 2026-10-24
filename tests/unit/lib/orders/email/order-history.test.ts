@@ -218,7 +218,7 @@ describe('buildOrderHistory - 発送', () => {
     expect(entriesOf(history.entries, 'fulfillment')).toEqual([{
       type: 'fulfillment', at: '2026-10-10T02:00:00.000Z', fulfillmentId: 'f-1', number: 2, carrierLabel: 'ヤマト運輸',
       trackingNumber: '1234-5678', items: [{ name: 'シルクブラウス（白 / M）', quantity: 1 }, { name: 'リネンパンツ', quantity: 1 }],
-      actorEmail: 'admin@example.com', notifyCustomer: true, completesOrder: true, cancelled: false, cancellable: true, legacy: false,
+      actorEmail: 'admin@example.com', notifyCustomer: true, completesOrder: true, cancelled: false, cancellable: false, legacy: false,
     }]);
   });
 
@@ -235,18 +235,13 @@ describe('buildOrderHistory - 発送', () => {
     expect(history.entries[1]).toMatchObject({ type: 'fulfillment', cancelled: true, cancellable: false });
   });
 
+  // G-1 Task 15: 旧の発送の取消は止めた（窓口は 410、画面の入口は撤去）。発送済み・決済完了の注文でも取り消せない行にする
   it.each([
-    ['payment_in_progress', false],
-    ['pending', false],
-    ['paid', true],
-    ['failed', false],
-    ['abandoned', false],
-    ['cancelled', false],
-    ['shipped', true],
-  ] as const)('注文が %s の時、発送を取り消せるか=%s', (status, cancellable) => {
+    'payment_in_progress', 'pending', 'paid', 'failed', 'abandoned', 'cancelled', 'shipped',
+  ] as const)('注文が %s の時も、発送の行は取り消せない（cancellable は常に false）', (status) => {
     const history = buildOrderHistory(input({ order: { ...ORDER, status }, fulfillments: [fulfillment()], lines: LINES }));
 
-    expect(entriesOf(history.entries, 'fulfillment')[0]).toMatchObject({ cancellable });
+    expect(entriesOf(history.entries, 'fulfillment')[0]).toMatchObject({ cancelled: false, cancellable: false });
   });
 
   it('前からの記録（legacy）は印を付ける。配送業者・伝票番号・操作した人が空でもよい', () => {

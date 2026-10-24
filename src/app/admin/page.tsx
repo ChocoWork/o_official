@@ -19,8 +19,6 @@ import OrderSection, { type OrderItem } from '@/components/OrderSection';
 import AttentionInbox from '@/components/AttentionInbox';
 import OrderCancelDialog, { type OrderCancelValues } from '@/components/OrderCancelDialog';
 import OrderCancelRequestDialog, { type RemoveItemsRequest } from '@/components/OrderCancelRequestDialog';
-import OrderShipDialog from '@/components/OrderShipDialog';
-import OrderCompletionDialog from '@/components/OrderCompletionDialog';
 import OrderHistoryDialog from '@/components/OrderHistoryDialog';
 import OrderPaidCancelDialog from '@/components/OrderPaidCancelDialog';
 import OrderRefundDialog from '@/components/OrderRefundDialog';
@@ -30,7 +28,6 @@ import { Button } from '@/components/ui/Button/Button';
 import { DateTimePicker } from '@/components/ui/DateTimePicker/DateTimePicker';
 import { SearchField } from '@/components/ui/SearchField/SearchField';
 import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
-import { COMPLETION_RECORDED_MESSAGE } from '@/lib/orders/fulfillment/fulfillment-client';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { PAYMENT_STATUS_LABELS } from '@/lib/orders/payment-status';
 import type { OrderAttention, OrderStatus } from '@/lib/orders/order-payment-types';
@@ -180,8 +177,6 @@ function AdminPageContent() {
   const [orderAmountMin, setOrderAmountMin] = useState('');
   const [orderAmountMax, setOrderAmountMax] = useState('');
   const [processingOrderIds, setProcessingOrderIds] = useState<string[]>([]);
-  const [shipOrderId, setShipOrderId] = useState<string | null>(null);
-  const [completionOrderId, setCompletionOrderId] = useState<string | null>(null);
   const [historyOrderId, setHistoryOrderId] = useState<string | null>(null);
   const [reviewOnly, setReviewOnly] = useState(false);
   const [attention, setAttention] = useState<AdminOrderAttention | null>(null);
@@ -789,36 +784,6 @@ function AdminPageContent() {
       '注文を取り消して解決しました。',
     );
 
-  const openShipDialog = (id: string) => {
-    setOrdersNoticeMessage(null);
-    setShipOrderId(id);
-  };
-
-  const openCompletionDialog = (id: string) => {
-    setOrdersNoticeMessage(null);
-    setCompletionOrderId(id);
-  };
-
-  // 発送・仕上がりの画面は自分で窓口を呼ぶ。成功したら、ここで一覧を読み直す（手元で言葉を書き換えない）。
-  // 閉じるのは、その操作の注文の画面だけ（返事を待つ間に別の注文の画面を開いていたら、その画面は閉じない）
-  const handleShipped = (id: string) => {
-    setShipOrderId((current) => (current === id ? null : current));
-    void fetchOrdersRef.current();
-  };
-
-  const handleCompletionRecorded = (id: string) => {
-    setCompletionOrderId((current) => (current === id ? null : current));
-    setOrdersNoticeMessage(COMPLETION_RECORDED_MESSAGE);
-    void fetchOrdersRef.current();
-  };
-
-  // 履歴の画面で発送か仕上がりを取り消した・伝票番号を直した・配達済みにした（結果が分からない時も）。履歴の画面は開いたまま、一覧を読み直す。
-  // 伝票番号を直す・配達済みにすると、開いていた配送の要対応が閉じるので、要対応の欄も読み直す
-  const handleFulfillmentChanged = () => {
-    void fetchOrdersRef.current();
-    void fetchAttention();
-  };
-
   // 配送の要対応を対応済みにする。成功したら欄と一覧を読み直し、全部閉じれば「配送」の組が消える（もう閉じてあった時も同じ）
   const handleResolveDelivery = (attentionId: string) =>
     void runAttentionAction(
@@ -1340,33 +1305,15 @@ function AdminPageContent() {
               noticeMessage={ordersNoticeMessage}
               onCancelOrder={handleCancelOrder}
               onRefundOrder={userRole === 'admin' ? handleRefundOrder : undefined}
-              onShipOrder={openShipDialog}
-              onRecordCompletion={openCompletionDialog}
               onShowHistory={setHistoryOrderId}
               onShowReturns={handleShowReturns}
               onShowCancelRequest={handleShowCancelRequest}
               canRefundReturn={userRole === 'admin'}
               processingOrderIds={processingOrderIds}
             />
-            <OrderShipDialog
-              orderId={shipOrderId}
-              onClose={() => setShipOrderId(null)}
-              onShipped={() => {
-                if (shipOrderId) handleShipped(shipOrderId);
-              }}
-            />
-            <OrderCompletionDialog
-              orderId={completionOrderId}
-              onClose={() => setCompletionOrderId(null)}
-              onRecorded={() => {
-                if (completionOrderId) handleCompletionRecorded(completionOrderId);
-              }}
-            />
             <OrderHistoryDialog
               orderId={historyOrderId}
               onClose={() => setHistoryOrderId(null)}
-              onChanged={handleFulfillmentChanged}
-              canManageDelivery={canManageDelivery}
             />
             <OrderRefundDialog
               orderId={refundOrderId}

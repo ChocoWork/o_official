@@ -1,15 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DELIVERED_TITLE, DeliveredForm } from '@/components/OrderDeliveredDialog';
-import { TRACKING_EDIT_TITLE, TrackingEditForm } from '@/components/OrderTrackingEditDialog';
 import { Button } from '@/components/ui/Button/Button';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { StatusBadge, type StatusBadgeTone } from '@/components/ui/StatusBadge/StatusBadge';
 import { clientFetch } from '@/lib/client-fetch';
 import type {
   OrderEmailContentResponse,
-  OrderHistoryCompletionEntry,
   OrderHistoryDeliveryEventEntry,
   OrderHistoryEmailEntry,
   OrderHistoryEntry,
@@ -17,53 +14,33 @@ import type {
   OrderHistoryResponse,
   OrderHistoryTrackingChangeEntry,
 } from '@/lib/orders/email/order-history';
-import { callFulfillmentApi } from '@/lib/orders/fulfillment/fulfillment-client';
-import { FULFILLMENT_FAILURE_MESSAGES } from '@/lib/orders/fulfillment/fulfillment-messages';
-import type { CancelCompletionResponse, CancelFulfillmentResponse } from '@/lib/orders/fulfillment/fulfillment-types';
+import { LEGACY_FULFILLMENT_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import { formatYen } from '@/lib/orders/refund/refund-messages';
 import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import { DELIVERY_STATUS_LABELS, TRACKING_STATE_LABELS } from '@/lib/orders/tracking/delivery-messages';
 import type { DeliveryStatus, FulfillmentDeliveryDetail, TrackingChange } from '@/lib/orders/tracking/delivery-types';
 import { cn } from '@/lib/utils';
 
-/** 取り消せる行（発送か仕上がり） */
-type CancelTarget = OrderHistoryFulfillmentEntry | OrderHistoryCompletionEntry;
-
-/** 伝票番号を直す・配達済みにする画面を開ける行（配送の現在値を持つ発送の行） */
-type DeliveryTarget = OrderHistoryFulfillmentEntry & { delivery: FulfillmentDeliveryDetail };
-
 type View =
   | { name: 'list' }
   | { name: 'content'; entry: OrderHistoryEmailEntry; content: OrderEmailContentResponse | null; error: string | null }
-  | { name: 'confirm'; entry: OrderHistoryEmailEntry }
-  | { name: 'cancel'; entry: CancelTarget }
-  // 直す画面（tracking）か配達済みの画面（delivered）。履歴と同じダイアログの中で切り替える
-  | { name: 'tracking' | 'delivered'; entry: DeliveryTarget };
-
-/** 直す画面か配達済みの画面を開いている時の View */
-type DeliveryView = Extract<View, { name: 'tracking' | 'delivered' }>;
+  | { name: 'confirm'; entry: OrderHistoryEmailEntry };
 
 /** 履歴の行のボタンの種類。確かめの画面から戻る時に、同じ行の同じボタンへフォーカスを戻すのに使う */
-type HistoryAction = 'content' | 'resend' | 'cancel' | 'tracking' | 'delivered';
+type HistoryAction = 'content' | 'resend';
 
-/** 再送・取消の結果の知らせ。受け付けは status、断り・失敗は alert の入れ物に出す */
+/** 再送の結果の知らせ。受け付けは status、断り・失敗は alert の入れ物に出す */
 type Notice = { tone: 'success' | 'failure'; text: string };
 
 type OrderHistoryDialogProps = {
   /** 開いている注文。null なら閉じている */
   orderId: string | null;
   onClose: () => void;
-  /** 発送か仕上がりを取り消した・伝票番号を直した・配達済みにした（結果が分からない時も）。管理画面が一覧と要対応を読み直す */
-  onChanged?: () => void;
-  /** 伝票番号を直す・配達済みにするボタンを出すか。店長とサポートの人だけ（返金の権限とは別。省くとオフ） */
-  canManageDelivery?: boolean;
 };
 
 type OrderHistoryDialogBodyProps = {
   orderId: string;
   onClose: () => void;
-  onChanged?: () => void;
-  canManageDelivery?: boolean;
 };
 
 const RESEND_ACCEPTED_MESSAGE = '再送を受け付けました。少し待つと届きます。';
@@ -71,11 +48,6 @@ const RESEND_FAILED_MESSAGE = '再送を受け付けられませんでした。'
 // 管理画面の隣の操作（src/app/admin/page.tsx の要対応・要確認の操作）と同じ文
 const FORBIDDEN_MESSAGE = 'この操作の権限がありません。';
 const CONTENT_FAILED_MESSAGE = 'メールの中身を読み込めませんでした。';
-const CANCEL_UNCERTAIN_MESSAGE =
-  '結果を確かめられませんでした。履歴を読み直しました。取り消されたかどうかは、この履歴で確かめてください。';
-// 伝票番号を直した・配達済みにした後の知らせ（グループ E-4 の計画の C-5）
-const TRACKING_EDIT_SUCCESS_MESSAGE = '伝票番号を直しました。';
-const DELIVERED_SUCCESS_MESSAGE = '配達済みにしました。';
 const DELIVERED_SOURCE_LABELS = { tracking: '追跡', manual: '手で' } as const;
 
 /** 配送の状況の印の色。店が動く番の状況（不在・遅れ・問題あり）を目立たせる */
@@ -150,20 +122,9 @@ function manualMark(entry: OrderHistoryEmailEntry): string {
   return `手で再送${entry.requestedByEmail ? `（${entry.requestedByEmail}）` : ''}`;
 }
 
-function cancelTargetId(entry: CancelTarget): string {
-  return entry.type === 'fulfillment' ? entry.fulfillmentId : entry.completionId;
-}
-
-/** 確かめ・取消・直す・配達済みの画面が見ている行の番号。履歴や中身の画面では null */
+/** 再送の確かめの画面が見ている行の番号。履歴や中身の画面では null */
 function viewTargetId(view: View): string | null {
-  if (view.name === 'confirm') return view.entry.emailId;
-  if (view.name === 'cancel') return cancelTargetId(view.entry);
-  if (view.name === 'tracking' || view.name === 'delivered') return view.entry.fulfillmentId;
-  return null;
-}
-
-function cancelSuccessText(entry: CancelTarget): string {
-  return entry.type === 'fulfillment' ? `発送（${entry.number}回目）を取り消しました。` : '仕上がりを取り消しました。';
+  return view.name === 'confirm' ? view.entry.emailId : null;
 }
 
 /** 数が0の商品は「× 0」を付けず品名だけにする（確保し直せた数が0の商品が出る。足りなかった数は別の行が伝える） */
@@ -173,24 +134,20 @@ function formatItems(items: Array<{ name: string; quantity: number }>): string {
 
 /**
  * 「この注文の履歴」（グループ D 設計書 5 章。Shopify の注文の Timeline とメールの再送に合わせる）。
- * 状態の変化・メール・発送・仕上がり（とその取消）・返金・返品を新しい順に出し、送ったメールの中身・再送の確かめ・
- * 発送と仕上がりの取消の確かめを同じダイアログの中で切り替える（ダイアログを重ねると、Escape で外側も閉じるため）。
- * 再送や取消ができるかは窓口が決めた値に従う。
- * 配送（グループ E-4）: 発送の行に届いた日・現在の状況・登録の状態、出来事と伝票番号の直しの行を出し、「伝票番号を直す」
- * 「配達済みにする」は、それぞれの画面の中身（OrderTrackingEditDialog・OrderDeliveredDialog の TrackingEditForm・DeliveredForm）で行う。
- * その中身は同じダイアログの中で切り替える（ダイアログを重ねると、Escape で外側も閉じ、Tab の囲いも二重になる。
- * 履歴のダイアログを作り直すと、知らせの入れ物も作り直されて読み上げられにくい）。戻ると履歴へ戻り、履歴を読み直す。
+ * 状態の変化・メール・発送（とその取消）・返金・返品を新しい順に出し、送ったメールの中身・再送の確かめを
+ * 同じダイアログの中で切り替える（ダイアログを重ねると、Escape で外側も閉じるため）。再送できるかは窓口が決めた値に従う。
+ * 配送（グループ E-4）: 発送の行に届いた日・現在の状況・登録の状態、出来事と伝票番号の直しの行を出す。
+ * G-1 Task 15: 「伝票番号を直す」「配達済みにする」「この発送を取り消す」と仕上がりの行・その取消は撤去した。
+ * 履歴の一覧の上に、発送の停止の文を1回出す（窓口が昔の形で cancellable を true にしても、取消の入口は出さない）。
  *
  * 開くたびに中身を作り直す（key に注文を使う）。前の注文の履歴や画面の切り替えを残したまま開くと、
  * ダイアログが先に中の先頭のボタンへ移したフォーカスが、その後の状態の消去でボタンごと外れてしまう。
  */
-export default function OrderHistoryDialog({ orderId, onClose, onChanged, canManageDelivery = false }: OrderHistoryDialogProps) {
-  return orderId ? (
-    <OrderHistoryDialogBody key={orderId} orderId={orderId} onClose={onClose} onChanged={onChanged} canManageDelivery={canManageDelivery} />
-  ) : null;
+export default function OrderHistoryDialog({ orderId, onClose }: OrderHistoryDialogProps) {
+  return orderId ? <OrderHistoryDialogBody key={orderId} orderId={orderId} onClose={onClose} /> : null;
 }
 
-function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery = false }: OrderHistoryDialogBodyProps) {
+function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProps) {
   const [history, setHistory] = useState<OrderHistoryResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -202,13 +159,6 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
   const shownView = useRef<View['name']>('list');
   const contentRequest = useRef(0);
   const returnFocus = useRef<{ id: string; action: HistoryAction } | null>(null);
-  // 直す画面・配達済みの画面で記録できたか。履歴へ戻る時に、消えるボタンへフォーカスを戻さないために持つ
-  const deliveryDone = useRef(false);
-  // 直す画面・配達済みの画面の「閉じる」。画面が表示している間だけ登録する（Escape や背景の押しをつなぐため）
-  const deliveryClose = useRef<(() => void) | null>(null);
-  const registerClose = useCallback((close: (() => void) | null) => {
-    deliveryClose.current = close;
-  }, []);
 
   const load = useCallback(async (id: string) => {
     setLoadError(null);
@@ -232,7 +182,7 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
 
   // 画面を切り替えると、押したボタンは画面ごと消えて、フォーカスがダイアログの外（body）へ落ちる（設計書 5-5、WCAG 2.4.3）。
   // 戻る・やめるでは同じ行のボタンへ戻す。ボタンが消えた場合と、それ以外の切り替えはパネルへ移す
-  // （再送や取消の返事を待つ間の「やめる」も、返事の後の読み直しで行のボタンが消えるので、パネルへ移す）。
+  // （再送の返事を待つ間の「やめる」も、返事の後の読み直しで行のボタンが消えるので、パネルへ移す）。
   // 最初の画面では動かさない（Dialog が開いた時に決めた場所を奪わない）
   useEffect(() => {
     if (shownView.current === view.name) return;
@@ -244,15 +194,11 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
           .find((button) => button.dataset.historyId === target.id && button.dataset.historyAction === target.action && !button.disabled)
       : null;
     returnFocus.current = null;
-    // 直す画面・配達済みの画面は入力の画面なので、最初の入力へ移す（単独のダイアログで開いた時と同じ）
-    const firstField = view.name === 'tracking' || view.name === 'delivered'
-      ? viewRef.current?.querySelector<HTMLElement>('select:not([disabled]), input:not([disabled])')
-      : null;
-    (opener ?? firstField ?? panel)?.focus();
+    (opener ?? panel)?.focus();
   }, [view.name]);
 
   // 焦点の移動と polite の文の挿入が同じ描画だと読み上げが落ちるため、上の移動の後の描画で文を入れる。
-  // 別の行の確かめ・取消の画面にいる間は、その行の結果と誤解される知らせを出さずに取っておき、その画面を離れた時に出す。
+  // 別の行の確かめの画面にいる間は、その行の結果と誤解される知らせを出さずに取っておき、その画面を離れた時に出す。
   useEffect(() => {
     if (!pendingNotice) return;
     const viewTarget = viewTargetId(view);
@@ -262,8 +208,8 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
   }, [pendingNotice, view]);
 
   const backToList = (id: string, action: HistoryAction) => {
-    // 再送や取消の返事を待つ間は、返事の後の読み直しで行のボタンが消えうる（受け付けた行は再送できなくなり、
-    // 取り消した行は取り消せなくなる）。消えるボタンへ戻すとフォーカスが body へ落ちるので、行は覚えず、上の effect でパネルへ移す
+    // 再送の返事を待つ間は、返事の後の読み直しで行のボタンが消えうる（受け付けた行は再送できなくなる）。
+    // 消えるボタンへ戻すとフォーカスが body へ落ちるので、行は覚えず、上の effect でパネルへ移す
     returnFocus.current = action !== 'content' && submitting ? null : { id, action };
     setView({ name: 'list' });
   };
@@ -325,82 +271,12 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
     await load(orderId);
   };
 
-  const askCancel = (entry: CancelTarget) => {
-    setNotice(null);
-    setView({ name: 'cancel', entry });
-  };
-
-  const cancel = async (entry: CancelTarget) => {
-    if (submitting) return;
-    setSubmitting(true);
-    setNotice(null);
-    const targetId = cancelTargetId(entry);
-    const result = await callFulfillmentApi<CancelFulfillmentResponse | CancelCompletionResponse>(
-      entry.type === 'fulfillment'
-        ? `/api/admin/orders/${orderId}/fulfillments/${entry.fulfillmentId}/cancel`
-        : `/api/admin/orders/${orderId}/completions/${entry.completionId}/cancel`,
-      undefined,
-      entry.type === 'fulfillment' ? FULFILLMENT_FAILURE_MESSAGES.cancel : FULFILLMENT_FAILURE_MESSAGES.completion_cancel,
-    );
-    setSubmitting(false);
-    if (result.kind === 'refused') {
-      // 断られた＝何も変わっていない。確かめの画面に留まり、理由をその画面に出す（やめることも、押し直すこともできる）
-      setPendingNotice({ targetId, notice: { tone: 'failure', text: result.message } });
-    } else {
-      // 取り消した（もう取り消してあった時も同じ）か、結果が分からない。どちらも状態が変わりうるので一覧を読み直させ、
-      // 履歴へ戻る。取り消した行のボタンは消えるので、フォーカスはパネルへ移す
-      onChanged?.();
-      returnFocus.current = null;
-      setPendingNotice({
-        targetId,
-        notice: result.kind === 'ok'
-          ? { tone: 'success', text: cancelSuccessText(entry) }
-          : { tone: 'failure', text: CANCEL_UNCERTAIN_MESSAGE },
-      });
-      setView((current) => (current.name === 'cancel' && cancelTargetId(current.entry) === targetId ? { name: 'list' } : current));
-    }
-    await load(orderId);
-  };
-
-  const openDelivery = (name: 'tracking' | 'delivered', entry: DeliveryTarget) => {
-    setNotice(null);
-    deliveryDone.current = false;
-    setView({ name, entry });
-  };
-
-  // 直す画面・配達済みの画面から履歴へ戻る（戻る・Escape・記録できた後）。履歴は、いつも読み直す
-  // （窓口が「履歴を読み直してください」と断った時にも応えるため）。配達済みにできた時は、押したボタンが読み直しで消えるので、
-  // フォーカスはパネルへ移す。伝票番号を直した時は同じボタンが残るので、そこへ戻す
-  const closeDelivery = (current: DeliveryView) => {
-    returnFocus.current =
-      current.name === 'delivered' && deliveryDone.current ? null : { id: current.entry.fulfillmentId, action: current.name };
-    deliveryDone.current = false;
-    setView({ name: 'list' });
-    void load(orderId);
-  };
-
-  // 記録できた（前の結果の再送でも）。親が一覧と要対応を読み直し、履歴へ戻った後に成功の知らせを出す
-  const deliveryChanged = (current: DeliveryView) => {
-    deliveryDone.current = true;
-    onChanged?.();
-    setPendingNotice({
-      targetId: current.entry.fulfillmentId,
-      notice: { tone: 'success', text: current.name === 'tracking' ? TRACKING_EDIT_SUCCESS_MESSAGE : DELIVERED_SUCCESS_MESSAGE },
-    });
-  };
-
   const title =
     view.name === 'content'
       ? `${view.entry.kindLabel}のメールの中身`
       : view.name === 'confirm'
         ? 'お客様へ再送'
-        : view.name === 'cancel'
-          ? (view.entry.type === 'fulfillment' ? 'この発送を取り消す' : 'この仕上がりを取り消す')
-          : view.name === 'tracking'
-            ? TRACKING_EDIT_TITLE
-            : view.name === 'delivered'
-              ? DELIVERED_TITLE
-              : 'この注文の履歴';
+        : 'この注文の履歴';
   const statusText = notice?.tone === 'success' ? notice.text : null;
   const failureText = notice?.tone === 'failure' ? notice.text : null;
 
@@ -489,9 +365,6 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
     }
     if (entry.type === 'fulfillment') {
       const delivery = entry.delivery;
-      // 取り消した発送は、直す・配達済みにするの対象にしない。配達済みの発送には「配達済みにする」を出さない
-      const deliveryTarget: DeliveryTarget | null = canManageDelivery && delivery && !entry.cancelled ? { ...entry, delivery } : null;
-      const canMarkDelivered = deliveryTarget !== null && deliveryTarget.delivery.deliveredAt === null;
       return (
         <li key={`fulfillment-${entry.fulfillmentId}`} className="space-y-1 font-acumin lk-text-3xs text-black">
           <div className="flex flex-wrap items-center gap-2">
@@ -510,46 +383,6 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
           {entry.completesOrder ? <p className="text-[#474747]">この発送で全部を送りました</p> : null}
           {entry.actorEmail ? <p className="text-[#474747]">操作: {entry.actorEmail}</p> : null}
           {delivery ? renderFulfillmentDelivery(entry, delivery) : null}
-          {entry.cancellable || deliveryTarget ? (
-            <div className="flex flex-wrap gap-2">
-              {deliveryTarget ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="font-acumin"
-                  data-history-id={entry.fulfillmentId}
-                  data-history-action="tracking"
-                  onClick={() => openDelivery('tracking', deliveryTarget)}
-                >
-                  伝票番号を直す
-                </Button>
-              ) : null}
-              {deliveryTarget && canMarkDelivered ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="font-acumin"
-                  data-history-id={entry.fulfillmentId}
-                  data-history-action="delivered"
-                  onClick={() => openDelivery('delivered', deliveryTarget)}
-                >
-                  配達済みにする
-                </Button>
-              ) : null}
-              {entry.cancellable ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="font-acumin"
-                  data-history-id={entry.fulfillmentId}
-                  data-history-action="cancel"
-                  onClick={() => askCancel(entry)}
-                >
-                  この発送を取り消す
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
         </li>
       );
     }
@@ -561,45 +394,8 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
         </li>
       );
     }
-    if (entry.type === 'completion') {
-      return (
-        <li key={`completion-${entry.completionId}`} className="space-y-1 font-acumin lk-text-3xs text-black">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[#474747]">{formatJst(entry.at)}</span>
-            <span>受注生産の品が仕上がりました</span>
-            {entry.cancelled ? (
-              <StatusBadge tone="neutral" size="sm">
-                取り消し済み
-              </StatusBadge>
-            ) : null}
-          </div>
-          <p>{`商品: ${formatItems(entry.items)}`}</p>
-          {entry.actorEmail ? <p className="text-[#474747]">操作: {entry.actorEmail}</p> : null}
-          {entry.cancellable ? (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="font-acumin"
-                data-history-id={entry.completionId}
-                data-history-action="cancel"
-                onClick={() => askCancel(entry)}
-              >
-                この仕上がりを取り消す
-              </Button>
-            </div>
-          ) : null}
-        </li>
-      );
-    }
-    if (entry.type === 'completion_cancel') {
-      return (
-        <li key={`completion-cancel-${entry.completionId}`} className="font-acumin lk-text-3xs text-black">
-          <span className="text-[#474747]">{formatJst(entry.at)}</span> 仕上がりを取り消しました
-          {entry.actorEmail ? <span className="block text-[#474747]">操作: {entry.actorEmail}</span> : null}
-        </li>
-      );
-    }
+    // G-1: 手動の仕上がりは終了し、窓口は仕上がりの行を作らない。昔の形の行が来ても出さない（互換の表示は作らない）
+    if (entry.type === 'completion' || entry.type === 'completion_cancel') return null;
     if (entry.type === 'refund') {
       const current = entry.steps.at(-1);
       // 在庫に戻せるのは発送前の商品だけ。「戻さない」の返金にも 0 を出して、戻さなかったことを履歴で確かめられるようにする
@@ -691,24 +487,10 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
     );
   };
 
-  // 直す画面・配達済みの画面は、履歴と同じダイアログの中で切り替える（ダイアログを重ねず、知らせの入れ物も作り直さない）。
-  // その画面で Escape や背景を押した時は、履歴ごと閉じず、その画面の「閉じる」（送っている間は閉じない）につなぐ
-  const handleDialogClose = () => {
-    if (view.name !== 'tracking' && view.name !== 'delivered') {
-      onClose();
-      return;
-    }
-    if (deliveryClose.current) {
-      deliveryClose.current();
-    } else {
-      closeDelivery(view);
-    }
-  };
-
   return (
-    <Dialog open onClose={handleDialogClose} title={title}>
+    <Dialog open onClose={onClose} title={title}>
       {/*
-        再送・取消の結果と履歴の読み込みの誤りの知らせ。画面を切り替えても履歴を読み直しても消えない入れ物を最初から置き、
+        再送の結果と履歴の読み込みの誤りの知らせ。画面を切り替えても履歴を読み直しても消えない入れ物を最初から置き、
         中の文字だけを変える（後から差し込んだ入れ物は、読み上げられない環境が多い）。受け付けは status、断り・失敗は alert
       */}
       <p role="status" aria-live="polite" className={cn('font-acumin lk-text-3xs text-black', statusText && 'mb-3')}>
@@ -721,6 +503,8 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
 
       {view.name === 'list' ? (
         <div ref={viewRef} className="space-y-3">
+          {/* G-1 Task 15: 伝票番号の訂正・手動の配達済み・発送の取消は止めた。履歴の上に1回だけ伝える（狭い画面でも折り返す） */}
+          <p className="font-acumin lk-text-3xs text-[#474747]">{LEGACY_FULFILLMENT_DISABLED_TEXT}</p>
           {!history && !loadError ? <p className="font-acumin lk-text-3xs text-[#474747]">読み込み中です...</p> : null}
           {history ? (
             <>
@@ -740,37 +524,6 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
           <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={onClose}>
             閉じる
           </Button>
-        </div>
-      ) : null}
-
-      {view.name === 'tracking' ? (
-        <div ref={viewRef}>
-          <TrackingEditForm
-            key={view.entry.fulfillmentId}
-            orderId={orderId}
-            fulfillment={view.entry.delivery}
-            trackingEnabled={trackingEnabled}
-            onClose={() => closeDelivery(view)}
-            onChanged={() => deliveryChanged(view)}
-            // 結果が分からないまま閉じた。記録されたかもしれないので、親が一覧と要対応を読み直す（成功の知らせは出さない）
-            onUncertain={() => onChanged?.()}
-            registerClose={registerClose}
-          />
-        </div>
-      ) : null}
-
-      {view.name === 'delivered' ? (
-        <div ref={viewRef}>
-          <DeliveredForm
-            key={view.entry.fulfillmentId}
-            orderId={orderId}
-            fulfillment={view.entry.delivery}
-            trackingEnabled={trackingEnabled}
-            onClose={() => closeDelivery(view)}
-            onChanged={() => deliveryChanged(view)}
-            onUncertain={() => onChanged?.()}
-            registerClose={registerClose}
-          />
         </div>
       ) : null}
 
@@ -831,30 +584,6 @@ function OrderHistoryDialogBody({ orderId, onClose, onChanged, canManageDelivery
               onClick={() => void resend(view.entry)}
             >
               再送する
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      {view.name === 'cancel' ? (
-        <div ref={viewRef} className="space-y-3">
-          <p className="font-acumin lk-text-3xs text-black">
-            {view.entry.type === 'fulfillment'
-              ? `発送（${view.entry.number}回目）を取り消し、その商品を発送準備中に戻します。お客様にメールは送りません。送った発送のメールがあれば、店からお客様に連絡してください。`
-              : 'この仕上がりを取り消し、その商品を受注生産中に戻します。'}
-          </p>
-          <div className="flex gap-2 pt-1">
-            <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={() => backToList(cancelTargetId(view.entry), 'cancel')}>
-              やめる
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              className="w-full font-acumin"
-              disabled={submitting}
-              onClick={() => void cancel(view.entry)}
-            >
-              取り消す
             </Button>
           </div>
         </div>
