@@ -1,6 +1,6 @@
 ﻿# DB マイグレーション運用
 
-> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取まで） | 確認日: 2026-10-25 | 本番適用状況は未確認（G-1 の移行は 2026-10-24 に適用済み。G-2 の移行は未適用）
+> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕まで） | 確認日: 2026-10-25 | 本番適用状況は未確認（G-1 の移行は 2026-10-24 に適用済み。G-2 の移行は2本とも未適用）
 
 ## 概要
 
@@ -403,7 +403,7 @@ CI（DB）とホスティング（アプリ）のどちらが先に終わるか�
 
 ## グループ G-2 発注・受け取りの移行（20261024153505〜）
 
-[設計書](../superpowers/specs/2026-10-23-group-g-design.md)と[実装計画](../superpowers/plans/2026-10-24-group-g2-purchasing.md)に従う。移行は2本（Task 1 で作り Task 2 以降が足す基盤と、Task 4 の発注・受け取り）。ここには基盤の移行を書き（Task 1 の分と Task 2 の発注書の9表）、Task 4 の移行は Task 4 が同じ節に足す。**どちらも本番へは未適用**（controller が全体の検証の後に当てる）。基盤のファイルの 100,000 バイトの上限は Task 3 で外した（本番は `npx supabase db push --linked` でファイルごとに1取引で当て、CLI は大きなファイルも扱える）。移行は2本のまま。
+[設計書](../superpowers/specs/2026-10-23-group-g-design.md)と[実装計画](../superpowers/plans/2026-10-24-group-g2-purchasing.md)に従う。移行は2本（Task 1 で作り Task 2 以降が足す基盤と、Task 4 で作り Task 5 以降が足す書込みの `writers`）。ここには基盤の移行を書き（Task 1 の分と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取）、`writers` の移行は下の「writers の移行」に書く。**どちらも本番へは未適用**（controller が全体の検証の後に当てる。常に基盤の後）。基盤のファイルの 100,000 バイトの上限は Task 3 で外した（本番は `npx supabase db push --linked` でファイルごとに1取引で当て、CLI は大きなファイルも扱える）。移行は2本のまま。
 
 ### 記録（Task 1 の基盤）
 
@@ -411,6 +411,7 @@ CI（DB）とホスティング（アプリ）のどちらが先に終わるか�
 | --- | --- |
 | 移行ファイル | `supabase/migrations/20261024153505_group_g2_purchasing_foundation.sql`（先頭の `BEGIN;` と末尾の `COMMIT;` を1組だけ持つ。本体は `-- G2A_BODY_BEGIN`〜`-- G2A_BODY_END`、末尾の確かめは `-- G2A_FINAL_ASSERT_BEGIN`〜`-- G2A_FINAL_ASSERT_END`。UTF-8・BOMなし・LF） |
 | 本番適用版 | 未適用（適用の直前に、バイト数と MD5 を固定して記録する） |
+| 書込みの移行 | `supabase/migrations/20261024180500_group_g2_purchasing_writers.sql`（Task 4。常に基盤の後。節の印は `-- G2B_BODY_BEGIN`〜`-- G2B_BODY_END` と `-- G2B_FINAL_ASSERT_BEGIN`〜`-- G2B_FINAL_ASSERT_END`。UTF-8・BOMなし・LF・ASCII のみ）。未適用（同じく適用の直前に固定して記録する） |
 
 ### 何をするか
 
@@ -454,6 +455,22 @@ G-1 の適用済みの移行は変えず、新しい移行の本体で次を行�
 - **末尾の確かめ**: `$g2a_final_inventory_list$`（`DETAIL` は `inventory_list_functions`）が、2関数の存在・所有者・`SECURITY DEFINER` か INVOKER か・言語・`STABLE`・集合を返すこと・`search_path` が空・引数と戻り列の名前／型／順・anon／authenticated／PUBLIC が EXECUTE できず service_role ができること、を見る。
 - **Task 2 のレビューからの持ち越し（M1）**: `private.check_purchase_order_receipt_line()` に、受け取りの種類と行の符号の確かめを足した。種類 `receive` の受け取りは正の行だけ、種類 `reverse` の受け取りは負の行だけ。違えば `GROUP_G_PO_RECEIPT_LINE_MISMATCH`／23514（`DETAIL` は `kind`）。まだ本番に当てていない移行の中の関数なので、同じファイルの中で直した。
 
+### writers の移行（Task 4。発注の作成とロック helper）
+
+`20261024180500_group_g2_purchasing_writers.sql` は、基盤の移行が作った表に書く関数だけを持つ。Task 5 以降の書込み（数量確定・受け取り・原本など）がここへ足される。データを変える文は無く、**本番の変更は関数の追加と書き手の一覧の置き換えだけ**（owner 確認は要らない）。
+
+| 順 | 内容 |
+| --- | --- |
+| 1 | ロック helper `private.lock_group_g_purchase_orders(_purchase_order_ids uuid[], _with_inventory boolean) RETURNS uuid[]`（`SECURITY DEFINER`・所有者 postgres・`search_path` 空）を足す。**最初の文が共通の鍵 `pg_advisory_xact_lock(190521,1)`**。`_with_inventory` が真なら、その鍵の**後**に発注書の行の `variant_id` を読み、`lock_group_g_inventory(その variant, [], NULL)`（鍵は再入できる）で在庫の閉包を取って、ロックした注文の id（昇順）を返す。偽なら空の配列。続けて `purchase_orders`（id 昇順）→ `purchase_order_lines`（id 昇順）を `FOR UPDATE` で取る。`SKIP LOCKED` は使わない。呼び手は対象を後から足して前の段に戻らない。**誰にも EXECUTE を付けない**（service_role にも） |
+| 2 | `private.admin_create_purchase_order(_supplier_name, _memo, _lines, _actor_id, _request_key) RETURNS jsonb` と、同じ名前・引数・戻り型の public 入口（`LANGUAGE sql SECURITY INVOKER`）を足す。private 本体も public 入口も `PUBLIC`・`anon`・`authenticated`・`service_role` を個別に REVOKE してから `service_role` だけに EXECUTE を付ける。処理の順は **引数の検証（`22023`）→ ロック helper（鍵だけ）→ 権限（`admin.purchase_orders.manage` ＋ `read` の和集合。`42501`）→ 指紋と再送・衝突（`23505`）→ variant の存在（`22023`）→ 番号 → INSERT**。詳細は[発注の作成の順序図](../04_DetailDesign/sequence/purchasing.md) |
+| 3 | `private.group_g_writer_allowlist()` を置き換える（`CREATE OR REPLACE`。署名・所有者・ACL は同じ）。G-1 の56本は1文字も変えず、末尾に `private.admin_create_purchase_order(text,text,jsonb,uuid,uuid)` を足した**57本**。Task 5 以降が書き手を足すたびに増える |
+| 4 | 末尾の確かめ（`GROUP_G_MIGRATION_ASSERTION_FAILED`／55000、`DETAIL` が項目名）。`$g2b_final_objects$`: 3関数の存在・所有者・`SECURITY DEFINER` か INVOKER か・言語・戻り型・引数名・`search_path` 空・anon／authenticated／PUBLIC〔有効な ACL で見る〕が EXECUTE できないこと・service_role の EXECUTE（`purchase_writer_functions`）、ロック helper の本体で鍵が在庫の閉包と `FOR UPDATE` より先にあること（`purchase_writer_lock_order`）、一覧の57本が全て関数に解決すること（`purchase_writer_allowlist_missing`）、一覧が期待の57本と同じ集合であること（`purchase_writer_allowlist`）。`$g2b_final_table_acl$`: 書き込む4表（`purchase_orders`・`purchase_order_lines`・`purchase_order_revisions`・`private.group_g_operations`）の権限を意味で比べ、postgres は全権限、PUBLIC・anon・authenticated・service_role は列の権限も含め無し、PostgreSQL 17 以降は `MAINTAIN` も「無い」の一覧に入れる（`purchase_writer_table_acl`）。違えば全部戻る。続けて `NOTIFY pgrst, 'reload schema'`、`COMMIT` |
+
+- **発注番号**: `PO-` ＋ 日本時間（`Asia/Tokyo`）の `YYYYMMDD` ＋ `-` ＋ 4桁の連番。連番は同じ日の最大＋1で、共通の鍵の下で採り、`purchase_orders.number` の UNIQUE が守る。別の日の番号は数えない。9999 を超えると `GROUP_G_PO_NUMBER_EXHAUSTED`／55000 で何も残さず止まる（窓口は固定の500）。
+- **冪等**: 操作の種類 `purchase_order_create`・原因 `purchase_order`＝新しい発注書の id。指紋は `{operation, supplier_name, memo, lines〔variantId 昇順〕, actor_id}` の SHA-256。同じ要求番号・同じ指紋は保存した結果に `replayed: true` を足して返し、指紋が違えば `GROUP_G_REQUEST_KEY_CONFLICT`／23505。権限の確かめは再送の判定より先なので、権限の無い人には再送の結果も見せない。
+- **在庫は動かさない**: 在庫・割当・台帳・状態の履歴・注文は読みも書きもしない（読むのは variant・商品・色・サイズ・発注書・操作の受付だけ）。ロック helper の `_with_inventory = true` を使うのは、在庫を動かす後続の書込み（受け取りとその取消。Task 7）。
+- **適用の順**: 常に基盤の移行の後（ファイル名が後ろ）。基盤が先に当たっていないと、この移行は表が無くて関数の末尾の確かめで止まる。
+
 ### 試験
 
-DB 結合は `group_g2_stock_permissions`・`group_g2_g1_followups`・`group_g2_public_function_acl`・`group_g2_purchase_model`・`group_g2_inventory_list`（Task 3）の5本（共通の確認は `db reset` の後に PostgREST の smoke → 上の5本と、`admin_revoke_sessions_function`・`auth_db_functions`・`rate_limit_counters`・G-1 の `group_g1_stock_api`・`group_g1_inventory_reads`・`group_g1_payment`・`group_g1_exchange_fee`・`group_g1_concurrency`・`group_g1_fifo`・`group_g1_model`・`group_g1_writer_inventory`・`stock_movements`）。対応は[試験仕様](../05_Quality/tests/test-spec.md)の「グループ G-2 のテスト」。
+DB 結合は `group_g2_stock_permissions`・`group_g2_g1_followups`・`group_g2_public_function_acl`・`group_g2_purchase_model`・`group_g2_inventory_list`（Task 3）・`group_g2_purchase_create`（Task 4）の6本（共通の確認は `db reset` の後に PostgREST の smoke → 上の6本と、`admin_revoke_sessions_function`・`auth_db_functions`・`rate_limit_counters`・G-1 の `group_g1_stock_api`・`group_g1_inventory_reads`・`group_g1_payment`・`group_g1_exchange_fee`・`group_g1_concurrency`・`group_g1_fifo`・`group_g1_model`・`group_g1_writer_inventory`・`stock_movements`）。対応は[試験仕様](../05_Quality/tests/test-spec.md)の「グループ G-2 のテスト」。

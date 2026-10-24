@@ -1,6 +1,6 @@
 # 画面一覧
 
-> 状態: 全画面ルートと導線・表示条件をレビュー | 確認日: 2026-10-03（購入の行は2026-10-07、E-5は2026-10-22、G-1 の旧配送の入口の撤去は2026-10-24に、G-2 Task 3 の在庫一覧表は2026-10-25に反映） | 根拠: `src/app/**/page.tsx` 41件（顧客向け18・認証・アカウント9・管理・開発補助14。2026-10-25 に数え直し、G-0 の権限画面を足した）
+> 状態: 全画面ルートと導線・表示条件をレビュー | 確認日: 2026-10-03（購入の行は2026-10-07、E-5は2026-10-22、G-1 の旧配送の入口の撤去は2026-10-24に、G-2 Task 3 の在庫一覧表と Task 4 の発注の入力・確認・確定は2026-10-25に反映） | 根拠: `src/app/**/page.tsx` 41件（顧客向け18・認証・アカウント9・管理・開発補助14。2026-10-25 に数え直し、G-0 の権限画面を足した）
 
 ## 概要
 
@@ -53,7 +53,7 @@
 | --- | --- | --- | --- |
 | `/admin` | 管理タブ | adminはKPI・ACCOUNTING・NEWS・ITEM・LOOK・STOCKIST・USER・ORDER・INVENTORY・SETTINGS、supporterはORDER・INVENTORY。`tab` は初期選択、タブ操作は同画面の状態変更。INVENTORYタブは店長とsupporterの両方に同じ中身（`nav` 「在庫・発注メニュー」の「在庫一覧表」「発注一覧表」リンク）。KPIからMeta OAuthへ。ACCOUNTING・固定資産の添付証憑は閲覧API経由で別タブに開く。権限なし・MFA未確認も同画面に案内 | [page.tsx](../../../src/app/admin/page.tsx) |
 | `/admin/create-user` | ユーザー作成フォーム | 専用入口リンクは未確認。成功時は入力を初期化し同画面に留まる。専用の戻るリンクなし | [page.tsx](../../../src/app/admin/create-user/page.tsx) |
-| `/admin/inventory` | 在庫一覧表（G-2 / FREQ-525） | `/admin` のINVENTORYタブの「在庫一覧表」から移動。「管理画面に戻る」は `/admin`。同画面で「在庫の内訳」を行ごとに開閉。読込中・権限なし（403）・2要素認証が必要・ログインし直し（401）・読込失敗・空は同じURLの表示で、権限なしと失敗では表とボタンを出さない。「発注一覧表」のリンク先 `/admin/purchase-orders` は後続のTask | [page.tsx](../../../src/app/admin/inventory/page.tsx)、[AdminInventorySection](../../../src/components/AdminInventorySection.tsx) |
+| `/admin/inventory` | 在庫一覧表（G-2 / FREQ-525） | `/admin` のINVENTORYタブの「在庫一覧表」から移動。「管理画面に戻る」は `/admin`。同画面で「在庫の内訳」を行ごとに開閉。読込中・権限なし（403）・2要素認証が必要・ログインし直し（401）・読込失敗・空は同じURLの表示で、権限なしと失敗では表とボタンを出さない。同画面で「発注」から発注モード（各行に「発注数量」）→「発注書確認」→「発注書の確認」（発注先・メモ）→「発注確定」の3段（G-2 Task 4 / FREQ-526。通信は確定の1回だけで、成功すると `/admin/purchase-orders/[id]?created=1` へ移り、通知は移動先の頁が出す）。「発注一覧表」のリンク先 `/admin/purchase-orders` と移動先の発注書の頁は後続のTask | [page.tsx](../../../src/app/admin/inventory/page.tsx)、[AdminInventorySection](../../../src/components/AdminInventorySection.tsx) |
 | `/admin/item/create` | 商品作成 | ITEMタブから移動。保存成功・キャンセルで `/admin?tab=ITEM` へ | [page.tsx](../../../src/app/admin/item/create/page.tsx) |
 | `/admin/item/edit/[id]` | 商品編集 | ITEM一覧の編集から移動。保存成功・キャンセルで `/admin?tab=ITEM` へ。取得失敗は同画面に表示 | [[id]/page.tsx](../../../src/app/admin/item/edit/%5Bid%5D/page.tsx) |
 | `/admin/look/create` | LOOK作成 | LOOKタブから移動。保存成功・キャンセルで `/admin?tab=LOOK` へ | [page.tsx](../../../src/app/admin/look/create/page.tsx) |
@@ -76,7 +76,7 @@
 | `/account`・注文詳細 | 認証確認中は読込、未ログインは同じURLのログイン案内。ロール限定なし | [注文詳細API](../../../src/app/api/orders/%5Bid%5D/route.ts)は認証と注文所有者の一致を確認する |
 | `/admin` | 認証確認中は読込。未ログイン・admin/supporter以外は権限なし。MFA未確認は2要素認証案内。いずれも同じURLに留まる | ロールで表示タブ・操作候補が変わり、操作APIでも認可を確認する |
 | 管理の8作成・編集ルート、`/admin/create-user` | ページ・フォーム固有のログイン／ロール／MFA表示ガードなし。編集ページの取得失敗は同じURLのエラー表示 | フォーム表示は操作許可を意味しない。[管理API認可](../../../src/lib/auth/admin-rbac.ts)で認証、セッション、DBのACL権限、AAL2を確認する |
-| `/admin/inventory` | ページ側のログイン／ロール／MFA表示ガードなし。表示可否は窓口 `GET /api/admin/inventory` の返事（200で表、403で「在庫一覧を見る権限がありません。」、MFAなしの403で「2要素認証が必要です」、401で「ログインし直してください。」、その他は読込失敗）で決める | 窓口が `admin.stock.read` を、DBの関数も実行者の権限を確かめる。フォーム・ボタンは持たず、読むだけ |
+| `/admin/inventory` | ページ側のログイン／ロール／MFA表示ガードなし。表示可否は窓口 `GET /api/admin/inventory` の返事（200で表、403で「在庫一覧を見る権限がありません。」、MFAなしの403で「2要素認証が必要です」、401で「ログインし直してください。」、その他は読込失敗）で決める | 窓口が `admin.stock.read` を、DBの関数も実行者の権限を確かめる。表の読込は読むだけ。発注の確定（`POST /api/admin/purchase-orders`）は `admin.purchase_orders.manage` ＋ `admin.purchase_orders.read` を窓口とDBの関数の両方が確かめ、ボタン「発注」は役割では隠さない（権限が無い人は確定で「発注を扱う権限がありません。」） |
 | `/loading` | 認証確認中は読込。未ログイン・admin以外は同じURLの権限なし表示。ページ側のMFA確認なし | メニューの表示条件とページ自体のadmin確認を両方実装している |
 | 共通レイアウト・proxy | [Providers](../../../src/contexts/Providers.tsx)は全画面に共通ナビを配置。[admin/layout](../../../src/app/admin/layout.tsx)はスタイル制御。[proxy](../../../src/proxy.ts)には画面のログイン・ロールによるリダイレクトなし | proxyはAPI変更リクエストのOrigin検査、セキュリティヘッダー、セッション識別Cookieを扱う |
 

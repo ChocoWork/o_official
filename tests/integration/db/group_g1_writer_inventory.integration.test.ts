@@ -9,7 +9,8 @@ import { createCatalogFixture } from './helpers/order-fixtures';
  * 持つ関数が private.group_g_writer_allowlist() の中だけにあることを見る。書き手を PERFORM・SELECT・:= で呼ぶ関数も、
  * 一覧の中か、同じ名前の private 本体へ委ねるだけの公開 SQL INVOKER のどちらかに限る。
  * 一覧は設計の53本と、Task 7/8 で足した内部の書き手3本の56本（private.record_group_g_payment_exception_row・
- * private.record_group_g_refund_result・private.release_group_g_payment_holds）。
+ * private.record_group_g_refund_result・private.release_group_g_payment_holds）に、G-2 Task 4 で
+ * private.admin_create_purchase_order を足した57本（G-2 の後続 Task が書き手を足すたびに増える）。
  */
 jest.setTimeout(60000);
 
@@ -70,6 +71,7 @@ const ALLOWLIST = [
   'private.record_group_g_payment_exception_row(text,text,text,text,text,uuid,uuid)',
   'private.record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)',
   'private.release_group_g_payment_holds(uuid,uuid,text,uuid)',
+  'private.admin_create_purchase_order(text,text,jsonb,uuid,uuid)',
 ];
 
 const STOPPED = ALLOWLIST.slice(47, 53);
@@ -149,10 +151,10 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
   beforeEach(async () => { await db().query('begin'); });
   afterEach(async () => { await db().query('rollback'); });
 
-  test('一覧は決めた56本と同じ集合で、関数は postgres の SECURITY DEFINER・search_path 空・だれも EXECUTE できない', async () => {
+  test('一覧は決めた57本と同じ集合で、関数は postgres の SECURITY DEFINER・search_path 空・だれも EXECUTE できない', async () => {
     const expected = (await db().query('select to_regprocedure(s)::oid::text as oid, s from unnest($1::text[]) as s', [ALLOWLIST])).rows;
     expect(expected.filter((row) => row.oid === null).map((row) => row.s)).toEqual([]);
-    expect(new Set(expected.map((row) => row.oid)).size).toBe(56);
+    expect(new Set(expected.map((row) => row.oid)).size).toBe(57);
     const actual = (await db().query('select unnest(private.group_g_writer_allowlist())::oid::text as oid')).rows.map((row) => row.oid);
     expect([...actual].sort()).toEqual(expected.map((row) => row.oid).sort());
     const fn = (await db().query(`select p.proowner::regrole::text as owner, p.prosecdef, p.proconfig, p.provolatile,

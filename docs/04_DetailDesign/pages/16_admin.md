@@ -810,7 +810,7 @@ flowchart TD
 
 ## 在庫一覧表・発注（G-2 / FREQ-525〜530）
 
-G-2 の画面は、管理メニューの INVENTORY から入る。この節は Task 3 で作った在庫一覧表を記し、発注一覧表・発注の詳細・受け取り・原本の添付は、それぞれの Task が同じ節へ足す。
+G-2 の画面は、管理メニューの INVENTORY から入る。この節は Task 3 で作った在庫一覧表と、Task 4 で足した発注（入力 → 確認 → 確定）を記し、発注一覧表・発注の詳細・受け取り・原本の添付は、それぞれの Task が同じ節へ足す。
 
 ### INVENTORY タブ
 
@@ -833,3 +833,23 @@ G-2 の画面は、管理メニューの INVENTORY から入る。この節は T
 数の意味（DB の `list_admin_inventory(_actor_id)`。1つの snapshot）: 在庫は空き＋入金済みの割当＋支払い前の仮確保（G-1 の `on_hand` と同じ）。注文数は G-1 の投影で「受注生産中」と「仕上がり待ち」の数（未払い・取消申請中・返品申請中・取消済みは含めない）。発注済みは数量確定済みの発注の未納（`outstanding_quantity`）だけで、仮数量は数えない。発注必要数は `max(0, 注文数 − 在庫 − 発注済み)`。止めた variant は在庫・未納・注文数のどれかがある間だけ出る。並びは商品・色の位置・サイズの位置・variant の番号。
 
 検証: 単体 [式と読取](../../../tests/unit/lib/inventory/inventory-list.test.ts)・[窓口](../../../tests/unit/api/admin/inventory-route.test.ts)・[画面](../../../tests/unit/components/AdminInventorySection.test.tsx)・[管理メニュー](../../../tests/unit/components/AdminSettingsMenu.test.tsx)・[読込失敗の文](../../../tests/unit/lib/admin/admin-load-failure.test.ts)・[在庫の欄](../../../tests/unit/components/ItemStockSection.test.tsx)。DB [在庫一覧](../../../tests/integration/db/group_g2_inventory_list.integration.test.ts)。E2E [FR-ADMIN-029](../../../e2e/FR-ADMIN-029-accounting-tab.spec.ts)（管理メニューの並び）。3つの画面幅の頁全体の確認は Task 10。
+
+### 発注（入力 → 確認 → 確定 / FREQ-526）
+
+同じ [AdminInventorySection](../../../src/components/AdminInventorySection.tsx) の中の3つの段。**通信するのは確定の1回だけ**で、入力と確認は画面の状態（`view`／`input`／`confirm`）。行がある時だけ、見出しの下にボタン「発注」を出す（読込中・失敗・権限なし・空では出さない）。
+
+| 段 | 内容 |
+| --- | --- |
+| 入力 | 「発注」で発注モードに入る。表の末尾に列「発注数量」を足し、各行に数値の入力（`aria-label` は「商品名 色 サイズ の発注数量」。色・サイズが無ければその部分を省く。**空欄で始まる**。発注必要数の列は見えたまま）。「発注書確認」は、1〜99999 の整数を入れた行が1つ以上ある時だけ押せる。「キャンセル」で抜け、入力は捨てる。入れた数量は、在庫の内訳の開閉などほかの列の操作で消えない |
+| 確認 | 見出し h2「発注書の確認」。正の整数を入れた行だけを表（商品名・色・サイズ・発注数量）に並べ、発注先（必須・100字）とメモ（任意・500字）を入れる。**納期の欄は無い**。「発注確定」と「戻る」（戻っても入れた数量は残る）。発注先が空（空白だけを含む）は「発注先を入力してください。」を `role="alert"` で出し、通信しない |
+| 確定 | 「発注確定」で `POST /api/admin/purchase-orders`（本文は発注先・メモ〔空なら項目ごと送らない〕・明細〔画面の並びの variantId と quantity〕・requestKey）。送信中は「発注確定」と「戻る」を押せない。同じ確認の再押下・通信の再送（通信の失敗・5xx・読めない 201）は**同じ requestKey と本文**を使い、内容（発注先・メモ・数量）を変えるか、確定した応答（4xx）を受けた後は新しい requestKey にする。成功すると入力を片付け、目印つきの `/admin/purchase-orders/[id]?created=1` へ移る（通知はこの部品には出さない。この部品は移動で消えるので、通知は移動先の頁が出す。下の「発注書の頁への引き継ぎ」） |
+
+失敗の文は共有の `adminLoadFailureMessage` を使う関数（[purchaseOrderCreateFailureMessage](../../../src/lib/purchase-orders/purchase-order-types.ts)）で決め、順は、DB エラー表にある `code` ならその本文（入力の誤り「入力を確かめてください。」・権限「発注を扱う権限がありません。」・同じ要求番号で別の内容「同じ要求番号で異なる操作は実行できません。」）、MFA なしの 403「2要素認証が必要です」、401「ログインし直してください。」、403「発注を扱う権限がありません。」、400「入力を確かめてください。」、それ以外「発注の記録に失敗しました」。窓口の本文の `error`（英語の検証の文や生の文）は画面へ流さない。
+
+権限は窓口と DB の関数の両方が `admin.purchase_orders.manage` ＋ `admin.purchase_orders.read` を確かめるので、権限の無い人が確定すると 403 の文が出る（ボタンは役割では隠さない）。流れの全体は[発注書の作成の流れ](../sequence/purchasing.md)、保存する段階は[発注書の状態](../states/purchasing.md)。
+
+#### 発注書の頁への引き継ぎ（Task 5 の義務）
+
+移動先の `/admin/purchase-orders/[id]` は Task 5 が作る（それまでは頁が無い）。確定に成功した画面は `/admin/purchase-orders/<id>?created=1` へ移る（目印は[共通の定義](../../../src/lib/purchase-orders/purchase-order-types.ts)の `PURCHASE_ORDER_CREATED_QUERY`）。**発注書の頁は、クエリに `created=1` がある時、読み込んだ発注書の番号で通知「発注書 ○○ を作成しました。数量が確定するまで受け取りはできません。」を `role="status"` で出す**こと（文は同じ定義の `formatPurchaseOrderCreatedNotice(number)` で作る。番号は URL に載せず、頁が読んだ発注書の番号を使う）。発注書が読めない（404・403）時は通知を出さない。
+
+検証: 単体 [画面](../../../tests/unit/components/AdminInventorySection.test.tsx)・[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)・[store](../../../tests/unit/lib/purchase-orders/purchase-order-store.test.ts)・[窓口](../../../tests/unit/api/admin/purchase-orders-route.test.ts)。DB [発注の作成](../../../tests/integration/db/group_g2_purchase_create.integration.test.ts)。3つの画面幅の確認は Task 10 の E2E。
