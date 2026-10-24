@@ -802,7 +802,7 @@ const ORDER_ROW = {
   shipping_building: 'Aビル 3F',
   shipping_phone: '090-1234-5678',
   shipping_email: 'hanako@example.com',
-  payment_intent_id: 'pi_test_123',
+  checkout_session_id: 'cs_test_123',
 };
 const ORDER_ROW_OUTPUT = {
   shipping_full_name: '山田 花子',
@@ -838,7 +838,7 @@ describe('loadOrderStatusPrivateInput', () => {
 
     const selectedColumns = queryCalls.filter((call) => call.method === 'select').map((call) => [call.table, call.args[0]]);
     const expectedPrivateColumns = [
-      ['orders', 'shipping_full_name,shipping_postal_code,shipping_prefecture,shipping_city,shipping_address,shipping_building,shipping_phone,shipping_email,payment_intent_id'],
+      ['orders', 'shipping_full_name,shipping_postal_code,shipping_prefecture,shipping_city,shipping_address,shipping_building,shipping_phone,shipping_email,checkout_session_id'],
       ['checkout_drafts', 'payment_method'],
       ['order_fulfillments', 'id,number,shipping_carrier,tracking_number,cancelled_at'],
     ];
@@ -861,7 +861,7 @@ describe('loadOrderStatusPrivateInput', () => {
     ]);
     expect(byTable('checkout_drafts')).toEqual([
       ['select', 'payment_method'],
-      ['eq', 'payment_intent_id', 'pi_test_123'],
+      ['eq', 'checkout_session_id', 'cs_test_123'],
       ['limit', 1],
       ['maybeSingle'],
     ]);
@@ -873,7 +873,7 @@ describe('loadOrderStatusPrivateInput', () => {
     ]);
   });
 
-  test('住所・連絡先・支払方法・発送・返品を、認可後の入力の形で返す。payment_intent_id は出さない', async () => {
+  test('住所・連絡先・支払方法・発送・返品を、認可後の入力の形で返す。checkout_session_id は出さない', async () => {
     const { store } = privateStore();
 
     const input = await loadOrderStatusPrivateInput(store, ORDER_ID);
@@ -885,8 +885,8 @@ describe('loadOrderStatusPrivateInput', () => {
       { fulfillmentId: FULFILLMENT_2, number: 2, shippingCarrier: null, trackingNumber: null, cancelledAt: null },
     ]);
     expect(input?.returnSection).toMatchObject(RETURNS_EXTRAS);
-    expect(JSON.stringify(input).includes('pi_test_123')).toBe(false);
-    expect(Object.keys(input?.order ?? {})).not.toContain('payment_intent_id');
+    expect(JSON.stringify(input).includes('cs_test_123')).toBe(false);
+    expect(Object.keys(input?.order ?? {})).not.toContain('checkout_session_id');
   });
 
   test('返送先は accepted / partially_received の返品だけに残り、送り返しは元の配列indexのまま残る', async () => {
@@ -913,14 +913,28 @@ describe('loadOrderStatusPrivateInput', () => {
     expect(accepted?.returnAddress).toEqual({ name: '返品係', postalCode: '150-0001', address: '東京都渋谷区神宮前1-2-3', phone: '03-1234-5678' });
   });
 
-  test('発送の無い注文は空の配列、支払方法の無い注文（payment_intent_id なし・下書き無し）は null', async () => {
+  test('カードの注文は、下書きの payment_intent_id が null でも、同じ checkout_session_id の下書きの支払方法を返す', async () => {
+    const { store, queryCalls } = privateStore({
+      orders: { data: { ...ORDER_ROW, checkout_session_id: 'cs_test_card_1' } },
+      drafts: { data: { payment_method: 'stripe_card', payment_intent_id: null } },
+    });
+
+    const input = await loadOrderStatusPrivateInput(store, ORDER_ID);
+
+    expect(input?.paymentMethod).toBe('stripe_card');
+    const draftCalls = queryCalls.filter((call) => call.table === 'checkout_drafts').map((call) => [call.method, ...call.args]);
+    expect(draftCalls).toContainEqual(['eq', 'checkout_session_id', 'cs_test_card_1']);
+    expect(draftCalls.some((call) => call.includes('payment_intent_id'))).toBe(false);
+  });
+
+  test('発送の無い注文は空の配列、支払方法の無い注文（checkout_session_id なし・下書き無し）は null', async () => {
     const noShipments = privateStore({ fulfillments: { data: [] } });
     await expect(loadOrderStatusPrivateInput(noShipments.store, ORDER_ID)).resolves.toMatchObject({ fulfillments: [] });
 
-    const noIntent = privateStore({ orders: { data: { ...ORDER_ROW, payment_intent_id: null } } });
-    const result = await loadOrderStatusPrivateInput(noIntent.store, ORDER_ID);
+    const noSession = privateStore({ orders: { data: { ...ORDER_ROW, checkout_session_id: null } } });
+    const result = await loadOrderStatusPrivateInput(noSession.store, ORDER_ID);
     expect(result?.paymentMethod).toBeNull();
-    expect(noIntent.queryCalls.some((call) => call.table === 'checkout_drafts')).toBe(false);
+    expect(noSession.queryCalls.some((call) => call.table === 'checkout_drafts')).toBe(false);
 
     const noDraft = privateStore({ drafts: { data: null } });
     await expect(loadOrderStatusPrivateInput(noDraft.store, ORDER_ID)).resolves.toMatchObject({ paymentMethod: null });
@@ -929,7 +943,7 @@ describe('loadOrderStatusPrivateInput', () => {
   test('空欄・電話なしなど null の住所の項目もそのまま null で渡す', async () => {
     const empty = {
       shipping_full_name: null, shipping_postal_code: null, shipping_prefecture: null, shipping_city: null,
-      shipping_address: null, shipping_building: null, shipping_phone: null, shipping_email: null, payment_intent_id: null,
+      shipping_address: null, shipping_building: null, shipping_phone: null, shipping_email: null, checkout_session_id: null,
     };
     const { store } = privateStore({ orders: { data: empty } });
 
@@ -964,7 +978,7 @@ describe('loadOrderStatusPrivateInput', () => {
       ['orders の列が文字列でない', privateStore({ orders: { data: { ...ORDER_ROW, shipping_phone: 5 } } })],
       ['orders の列が無い', privateStore({ orders: { data: { ...ORDER_ROW, shipping_email: undefined } } })],
       ['orders が配列', privateStore({ orders: { data: [ORDER_ROW] } })],
-      ['orders の payment_intent_id が数値', privateStore({ orders: { data: { ...ORDER_ROW, payment_intent_id: 5 } } })],
+      ['orders の checkout_session_id が数値', privateStore({ orders: { data: { ...ORDER_ROW, checkout_session_id: 5 } } })],
       ['下書きの支払方法が数値', privateStore({ drafts: { data: { payment_method: 5 } } })],
       ['下書きの支払方法が無い', privateStore({ drafts: { data: {} } })],
       ['発送が配列でない', privateStore({ fulfillments: { data: {} } })],

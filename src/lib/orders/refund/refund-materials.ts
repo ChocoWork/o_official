@@ -52,8 +52,8 @@ export async function loadRefundMaterials(client: SupabaseClient, orderId: strin
   // ここから先は、呼び出し側が渡した文字ではなく、DB が返した番号（小文字）で引く
   const dbOrderId = String(row.order_id);
   const [orderResult, itemsResult] = await Promise.all([
-    // DB の材料の関数は支払いの番号を返さない。宛先・氏名・メールは読まない
-    client.from('orders').select('payment_intent_id').eq('id', dbOrderId).maybeSingle<{ payment_intent_id: string | null }>(),
+    // DB の材料の関数は Checkout Session の番号を返さない。宛先・氏名・メールは読まない
+    client.from('orders').select('checkout_session_id').eq('id', dbOrderId).maybeSingle<{ checkout_session_id: string | null }>(),
     // 同じ注文の商品は同じ時刻に登録されるので、id を足して並びを決める
     client
       .from('order_items')
@@ -69,14 +69,14 @@ export async function loadRefundMaterials(client: SupabaseClient, orderId: strin
     throw new RefundStoreError('load_order_items', itemsResult.error);
   }
 
-  // 支払い方法（checkout_drafts に注文確定時の payment_intent_id が書き戻されている）
-  const paymentIntentId = orderResult.data?.payment_intent_id ?? null;
+  // 支払い方法（checkout_drafts を注文と同じ Checkout Session で引く。カードの注文は下書きに payment_intent_id が残らない）
+  const checkoutSessionId = orderResult.data?.checkout_session_id ?? null;
   let draftPaymentMethod: string | null = null;
-  if (paymentIntentId) {
+  if (checkoutSessionId) {
     const draftResult = await client
       .from('checkout_drafts')
       .select('payment_method')
-      .eq('payment_intent_id', paymentIntentId)
+      .eq('checkout_session_id', checkoutSessionId)
       .limit(1)
       .maybeSingle<{ payment_method: string }>();
     if (draftResult.error) {

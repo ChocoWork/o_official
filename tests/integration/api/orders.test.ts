@@ -354,6 +354,8 @@ describe('GET /api/orders/[id]', () => {
 				created_at: '2026-04-01T00:00:00.000Z',
 				status: 'paid',
 				payment_intent_id: 'pi_123',
+				// 支払方法は注文と同じ決済画面の番号で下書きから引く（G-1 で下書きへの PaymentIntent の書き戻しをやめた）
+				checkout_session_id: 'cs_test_123',
 				subtotal_amount: 12000,
 				shipping_amount: 500,
 				discount_amount: 1000,

@@ -502,19 +502,22 @@ export async function loadOrderStatusReturns(
 // ---- 個人情報（認可の後だけ） ----
 
 const PRIVATE_ORDER_COLUMNS =
-  'shipping_full_name,shipping_postal_code,shipping_prefecture,shipping_city,shipping_address,shipping_building,shipping_phone,shipping_email,payment_intent_id';
+  'shipping_full_name,shipping_postal_code,shipping_prefecture,shipping_city,shipping_address,shipping_building,shipping_phone,shipping_email,checkout_session_id';
 const PRIVATE_FULFILLMENT_COLUMNS = 'id,number,shipping_carrier,tracking_number,cancelled_at';
 // 返送のしかた（返送先）を案内するのは、これから送る間だけ（会員の注文の画面と同じ）
 const RETURN_ADDRESS_STATUSES: readonly CustomerReturnStatus[] = ['accepted', 'partially_received'];
 
-/** 支払方法の記録（checkout_drafts）は、注文確定時の payment_intent_id で引く。会員の画面と同じ */
-async function loadPaymentMethod(store: OrderStatusStore, paymentIntentId: string | null): Promise<string | null> {
-  if (!paymentIntentId) {
+/**
+ * 支払方法の記録（checkout_drafts）は、注文と同じ Checkout Session の番号で引く。会員の画面と同じ。
+ * カードの注文は Session を開いた時点で支払いの番号が無く、下書きの payment_intent_id は null のまま残る
+ */
+async function loadPaymentMethod(store: OrderStatusStore, checkoutSessionId: string | null): Promise<string | null> {
+  if (!checkoutSessionId) {
     return null;
   }
   const operation = 'checkout_drafts';
   const data = await readTable(operation, () =>
-    store.from('checkout_drafts').select('payment_method').eq('payment_intent_id', paymentIntentId).limit(1).maybeSingle(),
+    store.from('checkout_drafts').select('payment_method').eq('checkout_session_id', checkoutSessionId).limit(1).maybeSingle(),
   );
   return data === null ? null : textOrNull(row(data, operation).payment_method, operation);
 }
@@ -571,10 +574,10 @@ export async function loadOrderStatusPrivateInput(store: OrderStatusStore, order
     shipping_phone: textOrNull(order.shipping_phone, operation),
     shipping_email: textOrNull(order.shipping_email, operation),
   };
-  const paymentIntentId = textOrNull(order.payment_intent_id, operation);
+  const checkoutSessionId = textOrNull(order.checkout_session_id, operation);
 
   const [paymentMethod, fulfillments, returnSection] = await Promise.all([
-    loadPaymentMethod(store, paymentIntentId),
+    loadPaymentMethod(store, checkoutSessionId),
     loadPrivateFulfillments(store, orderId),
     loadOrderStatusReturns(store, { orderId, includePrivate: true }),
   ]);

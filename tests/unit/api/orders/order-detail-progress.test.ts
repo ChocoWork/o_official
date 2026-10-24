@@ -67,6 +67,7 @@ import { GET } from '@/app/api/orders/[id]/route';
 import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
 import { signItemImageUrl } from '@/lib/storage/item-images';
 import type { CustomerOrderReturns } from '@/lib/orders/returns/customer-return-types';
+import { mapPaymentMethodLabel } from '@/features/checkout/services/payment-method.service';
 
 type Json = Record<string, any>;
 type RouteResponse = { status: number; body: Json; headers: Record<string, string> };
@@ -104,7 +105,7 @@ const EXCHANGE_ITEM = {
 
 function orderRow(overrides: Record<string, unknown> = {}) {
   return {
-    id: ORDER_ID, created_at: '2026-10-01T00:00:00.000Z', status: 'paid', payment_intent_id: null,
+    id: ORDER_ID, created_at: '2026-10-01T00:00:00.000Z', status: 'paid', checkout_session_id: null,
     subtotal_amount: 82000, shipping_amount: 0, discount_amount: 0, total_amount: 82000, currency: 'jpy',
     shipping_full_name: '山田 花子', shipping_email: 'hanako@example.com', shipping_postal_code: '1500001',
     shipping_prefecture: '東京都', shipping_city: '渋谷区', shipping_address: '神宮前1-2-3', shipping_building: null,
@@ -1377,5 +1378,49 @@ describe('GET /api/orders/[id] の配送の状況と配達済み（グループ 
       expect(loggedText(consoleError)).not.toContain('神宮前');
       consoleError.mockRestore();
     });
+  });
+});
+
+describe('GET /api/orders/[id] の支払方法（checkout_drafts を Checkout Session で引く）', () => {
+  // 下書きの答え。カードの注文は Session を開いた時点では支払いの番号が無く、下書きの payment_intent_id は null のまま
+  function draftQuery(answer: { data: unknown; error: unknown }) {
+    const query = {
+      select: jest.fn(),
+      eq: jest.fn(),
+      limit: jest.fn(),
+      maybeSingle: jest.fn(async () => answer),
+    };
+    for (const method of [query.select, query.eq, query.limit]) {
+      method.mockReturnValue(query);
+    }
+    return query;
+  }
+
+  it('カードの注文は、下書きの payment_intent_id が null でも、同じ checkout_session_id の下書きの支払方法を出す', async () => {
+    setup({ order: orderRow({ checkout_session_id: 'cs_test_card_1' }) });
+    const query = draftQuery({ data: { payment_method: 'stripe_card', payment_intent_id: null }, error: null });
+    mockServiceClient.from.mockImplementation((table: string) => (table === 'checkout_drafts' ? query : undefined));
+
+    const { status, body } = await getDetail();
+
+    expect(status).toBe(200);
+    expect(mockOwnerQuery.select.mock.calls[0][0]).toContain('checkout_session_id');
+    expect(mockServiceClient.from).toHaveBeenCalledWith('checkout_drafts');
+    expect(query.select).toHaveBeenCalledWith('payment_method');
+    expect(query.eq).toHaveBeenCalledWith('checkout_session_id', 'cs_test_card_1');
+    expect(query.limit).toHaveBeenCalledWith(1);
+    expect(body.paymentMethod).toBe(mapPaymentMethodLabel('stripe_card'));
+    expect(body.paymentMethod).not.toBe('-');
+    expect(JSON.stringify(body)).not.toContain('cs_test_card_1');
+  });
+
+  it('checkout_session_id の無い注文は下書きを読まず、支払方法は null（画面は「-」）', async () => {
+    setup({ order: orderRow({ checkout_session_id: null }) });
+
+    const { status, body } = await getDetail();
+
+    expect(status).toBe(200);
+    expect(mockServiceClient.from).not.toHaveBeenCalledWith('checkout_drafts');
+    expect(body.paymentMethod).toBe('-');
   });
 });

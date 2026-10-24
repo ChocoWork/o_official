@@ -22,7 +22,7 @@ const NO_STORE_HEADERS = {
 	'Cache-Control': 'no-store',
 };
 
-type OrderDetailRow = CustomerOrderDetailInput['order'] & { payment_intent_id: string | null };
+type OrderDetailRow = CustomerOrderDetailInput['order'] & { checkout_session_id: string | null };
 
 export async function GET(
 	request: NextRequest,
@@ -45,7 +45,7 @@ export async function GET(
 			id,
 			created_at,
 			status,
-			payment_intent_id,
+			checkout_session_id,
 			subtotal_amount,
 			shipping_amount,
 			discount_amount,
@@ -143,13 +143,13 @@ export async function GET(
 		console.error('Order return section fetch error:', returnError instanceof Error ? returnError.name : 'UnknownError');
 	}
 
-	// 支払方法（checkout_drafts に注文確定時の payment_intent_id が書き戻されている）
+	// 支払方法（checkout_drafts を注文と同じ Checkout Session で引く。カードの注文は下書きに payment_intent_id が残らない）
 	let paymentMethod: string | null = null;
-	if (data.payment_intent_id) {
+	if (data.checkout_session_id) {
 		const { data: draftRow } = await serviceSupabase
 			.from('checkout_drafts')
 			.select('payment_method')
-			.eq('payment_intent_id', data.payment_intent_id)
+			.eq('checkout_session_id', data.checkout_session_id)
 			.limit(1)
 			.maybeSingle<{ payment_method: string }>();
 		paymentMethod = draftRow?.payment_method ?? null;

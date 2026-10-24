@@ -6,7 +6,7 @@ const ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455556666';
 const ITEM_X = 'f1b2c3d4-1111-4222-8333-444455556661';
 const ITEM_Y = 'f1b2c3d4-1111-4222-8333-444455556662';
 const REFUND_ID = 'd1b2c3d4-1111-4222-8333-444455556666';
-const PAYMENT_INTENT_ID = 'pi_3Abc123';
+const CHECKOUT_SESSION_ID = 'cs_test_a1Abc123';
 
 type QueryResult = { data: unknown; error: { message?: string; code?: string } | null };
 
@@ -48,7 +48,7 @@ const ITEM_ROWS = [
 
 function stubClient(options: { rpc?: QueryResult; order?: QueryResult; items?: QueryResult; draft?: QueryResult } = {}) {
   const tables = {
-    orders: query(options.order ?? { data: { payment_intent_id: PAYMENT_INTENT_ID }, error: null }),
+    orders: query(options.order ?? { data: { checkout_session_id: CHECKOUT_SESSION_ID }, error: null }),
     order_items: query(options.items ?? { data: ITEM_ROWS, error: null }),
     checkout_drafts: query(options.draft ?? { data: { payment_method: 'stripe_card' }, error: null }),
   };
@@ -99,13 +99,13 @@ describe('loadRefundMaterials', () => {
     expect(tables.order_items.eq).toHaveBeenCalledWith('order_id', ORDER_ID);
   });
 
-  it('お客様の宛先・氏名・メールは読まない。注文から読むのは支払いの番号の1列だけ', async () => {
+  it('お客様の宛先・氏名・メールは読まない。注文から読むのは Checkout Session の番号の1列だけ', async () => {
     const { client, tables } = stubClient();
 
     await loadRefundMaterials(client, ORDER_ID);
 
     expect(tables.orders.select).toHaveBeenCalledTimes(1);
-    expect(tables.orders.select).toHaveBeenCalledWith('payment_intent_id');
+    expect(tables.orders.select).toHaveBeenCalledWith('checkout_session_id');
     expect(tables.orders.eq).toHaveBeenCalledWith('id', ORDER_ID);
   });
 
@@ -218,8 +218,18 @@ describe('loadRefundMaterials', () => {
 
       expect(materials?.order.paymentMethod).toBe(expected);
       expect(tables.checkout_drafts.select).toHaveBeenCalledWith('payment_method');
-      expect(tables.checkout_drafts.eq).toHaveBeenCalledWith('payment_intent_id', PAYMENT_INTENT_ID);
+      expect(tables.checkout_drafts.eq).toHaveBeenCalledWith('checkout_session_id', CHECKOUT_SESSION_ID);
       expect(tables.checkout_drafts.limit).toHaveBeenCalledWith(1);
+    });
+
+    it('カードの注文は、下書きの payment_intent_id が null でも、同じ checkout_session_id の下書きから card を出す', async () => {
+      const { client, tables } = stubClient({ draft: { data: { payment_method: 'stripe_card', payment_intent_id: null }, error: null } });
+
+      const materials = await loadRefundMaterials(client, ORDER_ID);
+
+      expect(materials?.order.paymentMethod).toBe('card');
+      expect(tables.checkout_drafts.eq).toHaveBeenCalledTimes(1);
+      expect(tables.checkout_drafts.eq).toHaveBeenCalledWith('checkout_session_id', CHECKOUT_SESSION_ID);
     });
 
     it('下書きの行が無ければ unknown', async () => {
@@ -230,8 +240,8 @@ describe('loadRefundMaterials', () => {
       expect(materials?.order.paymentMethod).toBe('unknown');
     });
 
-    it('注文に支払いの番号が無ければ、下書きを読まずに unknown', async () => {
-      const { client, from } = stubClient({ order: { data: { payment_intent_id: null }, error: null } });
+    it('注文に Checkout Session の番号が無ければ、下書きを読まずに unknown', async () => {
+      const { client, from } = stubClient({ order: { data: { checkout_session_id: null }, error: null } });
 
       const materials = await loadRefundMaterials(client, ORDER_ID);
 
