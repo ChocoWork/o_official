@@ -1,3 +1,11 @@
+/**
+ * 取扱店の一覧ページ /stockist とそのメタ情報（src/app/stockist/page.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-STOCKIST-101
+ * @design DD-STOCKIST-001
+ * @remarks 店の数が少ない前提で、ページを作るサーバーの中で公開の店を 1 回で全部取り、絞り込みは部品に任せる。検索の結果や共有のカードで取扱店の頁だと分かるよう、題・説明・OGP は固定の値で返す。
+ */
 import type { Metadata } from 'next';
 import { PublicStockistGrid } from '@/features/stockist/components/PublicStockistGrid';
 import { getPublicStockists } from '@/features/stockist/services/public';

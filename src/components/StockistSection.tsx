@@ -1,3 +1,11 @@
+/**
+ * 管理画面の STOCKIST タブに、全部の取扱店を状態の札つきで並べ、公開の切り替えと削除をその場で行う部品（src/components/StockistSection.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-STOCKIST-121
+ * @design DD-STOCKIST-030
+ * @remarks 店長が非公開の店も含めて一覧し、切り替えと削除まで終えられるよう1つの部品に置く（SCR-STOCKIST-004）。消した店は戻せないので、削除の前に確かめの窓を挟む（STATE-STOCKIST-001）。編集は作成と同じフォームを使うため、一覧の中では行わず別の頁へ移す（FLOW-STOCKIST-002）。利用者の端末で動くため権限の守りは持たず、変更は窓口へ送って窓口に任せる（ARC-STOCKIST-002）。
+ */
 "use client";
 
 import { useEffect, useState } from "react";

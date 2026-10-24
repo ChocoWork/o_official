@@ -95,7 +95,7 @@ describe('admin stockist security guards', () => {
     mockRequireCsrfOrDeny.mockResolvedValue(undefined);
   });
 
-  test('GET applies both ip and actor rate limits before reading stockists', async () => {
+  test('DD-STOCKIST-038 GET applies both ip and actor rate limits before reading stockists', async () => {
     const request = new Request('http://localhost/api/admin/stockists', {
       method: 'GET',
       headers: { 'x-forwarded-for': '198.51.100.10' },
@@ -125,7 +125,7 @@ describe('admin stockist security guards', () => {
     );
   });
 
-  test('POST returns 403 when csrf validation denies cookie-authenticated mutation', async () => {
+  test('DD-STOCKIST-036 POST returns 403 when csrf validation denies cookie-authenticated mutation', async () => {
     mockRequireCsrfOrDeny.mockResolvedValue({
       status: 403,
       _body: { error: 'Forbidden' },
@@ -151,7 +151,7 @@ describe('admin stockist security guards', () => {
     expect(body).toEqual({ error: 'Forbidden' });
   });
 
-  test('POST rotates csrf cookie on success', async () => {
+  test('DD-STOCKIST-037 POST rotates csrf cookie on success', async () => {
     mockRequireCsrfOrDeny.mockResolvedValue({
       rotatedCsrfToken: 'rotated-token',
     });
@@ -180,7 +180,7 @@ describe('admin stockist security guards', () => {
     );
   });
 
-  test('PATCH returns 429 when mutation rate limit is exceeded', async () => {
+  test('DD-STOCKIST-038 PATCH returns 429 when mutation rate limit is exceeded', async () => {
     mockEnforceRateLimit
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce({

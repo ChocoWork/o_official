@@ -91,7 +91,7 @@ for (const scenario of [
   { label: 'home', path: '/' },
   { label: 'catalog', path: '/stockist' },
 ]) {
-  test(`FR-STOCKIST-009 ${scenario.label} applies phi-based divider spacing`, async ({ page }) => {
+  test(`${scenario.label} applies phi-based divider spacing`, async ({ page }) => {
     const metrics = await measureStockistSpacing(scenario.path, page);
     const expectedTitleToDividerGapPx = metrics.titleFontSizePx / PHI;
     const expectedDividerToDetailsGapPx = expectedTitleToDividerGapPx;

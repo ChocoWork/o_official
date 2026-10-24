@@ -1,3 +1,12 @@
+/**
+ * 管理の取扱店の一覧と作成の窓口（src/app/api/admin/stockists/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-STOCKIST-141
+ * @design DD-STOCKIST-034
+ * @remarks 一覧の読みと作成の変更で必要な権限を分け、読みの権限だけでは書けないようにする（SEC-STOCKIST-006）。
+ * 変更は認可の次に回数の制限、その次に CSRF の token を確かめる。回数の制限を認可の後に呼ぶので、認可で断った要求は数えない。これは SEC-STOCKIST-020 を満たさない（推定）。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';

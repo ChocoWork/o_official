@@ -15,6 +15,13 @@ function toPublicStockists(rows: StockistRecord[]): PublicStockist[] {
   }));
 }
 
+/**
+ * 公開の店を id の順に取り、画面に渡す 6 つの列に詰め直して返す。
+ *
+ * @impl IMPL-STOCKIST-103
+ * @design DD-STOCKIST-003
+ * @remarks 公開の印は DB の RLS と取り出しの条件の 2 段で絞り、片方が崩れても非公開の店を外へ出さない。状態などの内部の列を画面へ渡さないため、返す前に詰め直す。並びの要件が無いので、取るたびに並びが変わらないよう id の順にする。DB が一時的に落ちても頁全体を誤りにしないよう、誤りは空の配列にする。
+ */
 export async function getPublicStockists(options?: {
   limit?: number;
 }): Promise<PublicStockist[]> {
@@ -40,6 +47,13 @@ export async function getPublicStockists(options?: {
   return toPublicStockists((data ?? []) as StockistRecord[]);
 }
 
+/**
+ * ホームの取扱店の節に出す分として、公開の店を 6 件まで返す。
+ *
+ * @impl IMPL-STOCKIST-104
+ * @design DD-STOCKIST-004
+ * @remarks ホームの格子は 6 件までしか使わないので、取り出しの側で件数を絞る。
+ */
 export async function getHomePublicStockists(): Promise<PublicStockist[]> {
   return getPublicStockists({ limit: 6 });
 }

@@ -1,3 +1,11 @@
+/**
+ * 取扱店の作成と編集に共通のフォーム（src/app/admin/stockist/StockistForm.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-STOCKIST-122
+ * @design DD-STOCKIST-031
+ * @remarks 作成と編集で欄と確かめを1つにするため、送り先と方法を受け取る形にする（SCR-STOCKIST-005・006）。作ったばかりの店が確かめる前に公開されないよう、状態の初めは非公開にする（STATE-STOCKIST-001）。5つの欄は前後の空白を除いて、空があれば送らない（カードの情報の欠けた店を作らないため）。保存できたら STOCKIST タブの一覧へ戻して結果を確かめられるようにする（FLOW-STOCKIST-002）。
+ */
 'use client';
 
 import { useEffect, useState } from 'react';

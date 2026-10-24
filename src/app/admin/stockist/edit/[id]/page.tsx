@@ -1,3 +1,11 @@
+/**
+ * 取扱店の編集のページ（src/app/admin/stockist/edit/[id]/page.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-STOCKIST-124
+ * @design DD-STOCKIST-033
+ * @remarks 作成と同じフォームを今の値を入れた状態で開くため、URL の id で1件を取ってからフォームを描く（SCR-STOCKIST-006）。取れない時は同じ頁に誤りの文を出して留まる（FLOW-STOCKIST-002）。
+ */
 'use client';
 
 import { useEffect, useState } from 'react';

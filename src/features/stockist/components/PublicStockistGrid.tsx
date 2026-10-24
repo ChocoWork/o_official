@@ -1,3 +1,11 @@
+/**
+ * 取扱店のカードと、ホームの格子・一覧の地方と都道府県の絞り込みと格子を描く部品（src/features/stockist/components/PublicStockistGrid.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-STOCKIST-102
+ * @design DD-STOCKIST-002
+ * @remarks 一覧とホームでカードの中身をそろえるため、1 つの部品を 2 つの形で使う。絞り込みは押すたびにすぐ描き直し、選んだ県を URL の pref に書き戻して共有と戻るで同じ絞り込みを開けるよう、利用者の端末で動かす。URL の値は 47 都道府県の許可の一覧で絞り、細工した URL で画面を乱させない。店舗の値は管理者が入れた自由な文なので、React の文字として出して HTML として解釈させず、住所と電話のリンクは決まった形でだけ作って任意のリンクを作らせない。
+ */
 "use client";
 
 import { useCallback, useMemo, useState } from "react";

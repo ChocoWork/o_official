@@ -1,0 +1,409 @@
+export {};
+
+jest.mock('next/server', () => ({
+  NextResponse: {
+    json: (body: unknown, init?: { status?: number }) => ({
+      status: init?.status ?? 200,
+      body,
+      json: async () => body,
+    }),
+  },
+}));
+
+jest.mock('@/lib/supabase/server', () => ({
+  createClient: jest.fn(),
+}));
+
+jest.mock('@/lib/auth/admin-rbac', () => ({
+  authorizeAdminPermission: jest.fn(),
+}));
+
+jest.mock('@/lib/audit', () => ({
+  logAudit: jest.fn(),
+}));
+
+jest.mock('@/features/stockist/services/admin-security', () => ({
+  applyRotatedCsrfCookie: jest.fn(),
+  enforceAdminStockistMutationRateLimit: jest.fn(),
+  enforceAdminStockistReadRateLimit: jest.fn(),
+  requireAdminStockistCsrf: jest.fn(),
+  toCsrfDenyResponse: jest.fn(),
+}));
+
+const { createClient: mockCreateClient } = require('@/lib/supabase/server');
+const { authorizeAdminPermission: mockAuthorize } = require('@/lib/auth/admin-rbac');
+const { logAudit: mockLogAudit } = require('@/lib/audit');
+const {
+  applyRotatedCsrfCookie: mockApplyCookie,
+  enforceAdminStockistMutationRateLimit: mockMutationLimit,
+  enforceAdminStockistReadRateLimit: mockReadLimit,
+  requireAdminStockistCsrf: mockRequireCsrf,
+  toCsrfDenyResponse: mockToDeny,
+} = require('@/features/stockist/services/admin-security');
+
+const { GET, POST } = require('@/app/api/admin/stockists/route');
+
+const validBody = {
+  name: 'Flagship',
+  address: 'Tokyo Shibuya 1-1',
+  phone: '03-0000-0000',
+  time: '11:00-20:00',
+  holiday: 'Wed',
+  status: 'private',
+};
+
+const csrfResult = { rotatedCsrfToken: 'rotated' };
+
+function jsonRequest(body: unknown, headers: Record<string, string> = {}) {
+  return new Request('http://localhost/api/admin/stockists', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+}
+
+function getRequest() {
+  return new Request('http://localhost/api/admin/stockists', { method: 'GET' });
+}
+
+function setupSelect(result: { data?: unknown; error: unknown }) {
+  const order = jest.fn().mockResolvedValue(result);
+  const select = jest.fn().mockReturnValue({ order });
+  const from = jest.fn().mockReturnValue({ select });
+  mockCreateClient.mockResolvedValue({ from });
+  return { from, select, order };
+}
+
+function setupInsert(result: { data?: unknown; error: unknown }) {
+  const single = jest.fn().mockResolvedValue(result);
+  const select = jest.fn().mockReturnValue({ single });
+  const insert = jest.fn().mockReturnValue({ select });
+  const from = jest.fn().mockReturnValue({ insert });
+  mockCreateClient.mockResolvedValue({ from });
+  return { from, insert, select, single };
+}
+
+beforeEach(() => {
+  jest.resetAllMocks();
+  jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  mockAuthorize.mockResolvedValue({
+    ok: true,
+    userId: 'admin-user',
+    actorEmail: 'admin@example.com',
+  });
+  mockReadLimit.mockResolvedValue(null);
+  mockMutationLimit.mockResolvedValue(null);
+  mockRequireCsrf.mockResolvedValue(csrfResult);
+  mockToDeny.mockReturnValue(null);
+  mockLogAudit.mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
+describe('GET /api/admin/stockists', () => {
+  it('DD-STOCKIST-034 GET は認可が失敗した時にその応答をそのまま返し、表に触らない', async () => {
+    const denied = { status: 403, body: { error: 'Forbidden' } };
+    mockAuthorize.mockResolvedValue({ ok: false, response: denied });
+
+    const response = await GET(getRequest());
+
+    expect(response).toBe(denied);
+    expect(mockReadLimit).not.toHaveBeenCalled();
+    expect(mockCreateClient).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-034 GET は読みの権限 admin.stockists.read で認可する', async () => {
+    setupSelect({ data: [], error: null });
+    const request = getRequest();
+
+    await GET(request);
+
+    expect(mockAuthorize).toHaveBeenCalledWith('admin.stockists.read', request);
+  });
+
+  it('DD-STOCKIST-034 GET は回数の制限が応答を返した時にそれを返し、表に触らない', async () => {
+    const limited = { status: 429, body: { error: 'Too many requests' } };
+    mockReadLimit.mockResolvedValue(limited);
+    const request = getRequest();
+
+    const response = await GET(request);
+
+    expect(response).toBe(limited);
+    expect(mockReadLimit).toHaveBeenCalledWith(request, 'admin-user');
+    expect(mockCreateClient).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-034 GET は全部の列を id の昇順で読み 200 で data を返す', async () => {
+    const rows = [
+      { id: 1, name: 'A' },
+      { id: 2, name: 'B' },
+    ];
+    const { from, select, order } = setupSelect({ data: rows, error: null });
+    const request = getRequest();
+
+    const response = await GET(request);
+
+    expect(mockCreateClient).toHaveBeenCalledWith(request);
+    expect(from).toHaveBeenCalledWith('stockists');
+    expect(select).toHaveBeenCalledWith('*');
+    expect(order).toHaveBeenCalledWith('id', { ascending: true });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: rows });
+  });
+
+  it('DD-STOCKIST-034 GET は表の読み出しに失敗した時に 500 Failed to fetch stockists を返す', async () => {
+    setupSelect({ data: null, error: { message: 'db down' } });
+
+    const response = await GET(getRequest());
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Failed to fetch stockists' });
+  });
+
+  it('DD-STOCKIST-034 GET は例外の時に 500 Internal server error を返す', async () => {
+    mockCreateClient.mockRejectedValue(new Error('boom'));
+
+    const response = await GET(getRequest());
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Internal server error' });
+  });
+});
+
+describe('POST /api/admin/stockists', () => {
+  it('DD-STOCKIST-034 POST は認可が失敗した時にその応答をそのまま返し、表に触らない', async () => {
+    const denied = { status: 401, body: { error: 'Unauthorized' } };
+    mockAuthorize.mockResolvedValue({ ok: false, response: denied });
+
+    const response = await POST(jsonRequest(validBody));
+
+    expect(response).toBe(denied);
+    expect(mockMutationLimit).not.toHaveBeenCalled();
+    expect(mockCreateClient).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-034 POST は変更の権限 admin.stockists.manage で認可する', async () => {
+    setupInsert({ data: { id: 1 }, error: null });
+    const request = jsonRequest(validBody);
+
+    await POST(request);
+
+    expect(mockAuthorize).toHaveBeenCalledWith('admin.stockists.manage', request);
+  });
+
+  it('DD-STOCKIST-034 POST は回数の制限が応答を返した時にそれを返し、CSRF も表も見ない', async () => {
+    const limited = { status: 429, body: { error: 'Too many requests' } };
+    mockMutationLimit.mockResolvedValue(limited);
+    const request = jsonRequest(validBody);
+
+    const response = await POST(request);
+
+    expect(response).toBe(limited);
+    expect(mockMutationLimit).toHaveBeenCalledWith(request, 'admin-user');
+    expect(mockReadLimit).not.toHaveBeenCalled();
+    expect(mockRequireCsrf).not.toHaveBeenCalled();
+    expect(mockCreateClient).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-034 POST は CSRF の確かめが拒否の応答を返した時にそれを返し、本文を読まない', async () => {
+    const deny = { status: 403, body: { error: 'Forbidden', reason: 'CSRF validation failed' } };
+    mockToDeny.mockReturnValue(deny);
+    const request = jsonRequest(validBody);
+    const jsonSpy = jest.spyOn(request, 'json');
+
+    const response = await POST(request);
+
+    expect(response).toBe(deny);
+    expect(mockToDeny).toHaveBeenCalledWith(csrfResult);
+    expect(jsonSpy).not.toHaveBeenCalled();
+    expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-034 POST は本文が JSON でない時に 500 Internal server error を返し、監査を残さない', async () => {
+    const request = new Request('http://localhost/api/admin/stockists', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'not json',
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Internal server error' });
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['店舗名が空白だけ', { name: '   ' }, 'name'],
+    ['店舗名が256字', { name: 'a'.repeat(256) }, 'name'],
+    ['住所が501字', { address: 'a'.repeat(501) }, 'address'],
+    ['電話が51字', { phone: '1'.repeat(51) }, 'phone'],
+    ['時間が121字', { time: 't'.repeat(121) }, 'time'],
+    ['定休日が121字', { holiday: 'h'.repeat(121) }, 'holiday'],
+    ['状態が draft', { status: 'draft' }, 'status'],
+  ])(
+    'DD-STOCKIST-034 POST は値の形が合わない（%s）時に 400 と details を返し、監査 failure を残す',
+    async (_label, patch, field) => {
+      const response = await POST(jsonRequest({ ...validBody, ...patch }));
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.error).toBe('Invalid request');
+      expect(Object.keys(body.details.fieldErrors)).toEqual([field]);
+      expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockLogAudit).toHaveBeenCalledTimes(1);
+      const audit = mockLogAudit.mock.calls[0][0];
+      expect(audit).toEqual(
+        expect.objectContaining({
+          action: 'admin.stockists.create',
+          actor_id: 'admin-user',
+          actor_email: 'admin@example.com',
+          resource: 'stockists',
+          outcome: 'failure',
+          detail: 'Validation failed',
+        }),
+      );
+      expect(audit).not.toHaveProperty('resource_id');
+    },
+  );
+
+  it('DD-STOCKIST-034 POST は欄が足りない時に 400 を返す', async () => {
+    const { holiday: _holiday, ...rest } = validBody;
+
+    const response = await POST(jsonRequest(rest));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).details.fieldErrors).toHaveProperty('holiday');
+  });
+
+  it('DD-STOCKIST-034 POST の insert の本文は前後の空白を除いた6つの値で type を含まない', async () => {
+    const { from, insert, select } = setupInsert({ data: { id: 5 }, error: null });
+
+    await POST(
+      jsonRequest({
+        name: '  Flagship  ',
+        address: ' Tokyo ',
+        phone: ' 03 ',
+        time: ' 11-20 ',
+        holiday: ' Wed ',
+        status: 'published',
+      }),
+    );
+
+    expect(from).toHaveBeenCalledWith('stockists');
+    expect(insert).toHaveBeenCalledWith([
+      {
+        name: 'Flagship',
+        address: 'Tokyo',
+        phone: '03',
+        time: '11-20',
+        holiday: 'Wed',
+        status: 'published',
+      },
+    ]);
+    expect(insert.mock.calls[0][0][0]).not.toHaveProperty('type');
+    expect(select).toHaveBeenCalledWith('id');
+  });
+
+  it('DD-STOCKIST-034 POST は insert に失敗した時に監査 error と 500 Failed to save stockist を返す', async () => {
+    setupInsert({ data: null, error: { message: 'null value in column type' } });
+
+    const response = await POST(jsonRequest(validBody));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Failed to save stockist' });
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.stockists.create',
+        outcome: 'error',
+        detail: 'DB insert failed',
+      }),
+    );
+    expect(mockApplyCookie).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-034 POST は成功で監査 success と 201 を返し、回した CSRF の token を応答に付ける', async () => {
+    setupInsert({ data: { id: 77 }, error: null });
+
+    const response = await POST(jsonRequest(validBody));
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual({ success: true, id: 77 });
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.stockists.create',
+        actor_id: 'admin-user',
+        actor_email: 'admin@example.com',
+        resource: 'stockists',
+        resource_id: '77',
+        outcome: 'success',
+        detail: 'Created stockist: Flagship',
+      }),
+    );
+    expect(mockApplyCookie).toHaveBeenCalledWith(response, csrfResult);
+  });
+
+  it('DD-STOCKIST-034 POST は共有の確かめが何も返さない本番の形（undefined）でも成功し、Cookie の付け直しに undefined を渡す', async () => {
+    mockRequireCsrf.mockResolvedValue(undefined);
+    setupInsert({ data: { id: 77 }, error: null });
+
+    const response = await POST(jsonRequest(validBody));
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual({ success: true, id: 77 });
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.stockists.create',
+        actor_id: 'admin-user',
+        actor_email: 'admin@example.com',
+        resource: 'stockists',
+        resource_id: '77',
+        outcome: 'success',
+        detail: 'Created stockist: Flagship',
+      }),
+    );
+    expect(mockApplyCookie).toHaveBeenCalledWith(response, undefined);
+  });
+
+  it('DD-STOCKIST-034 POST は監査の ip に x-forwarded-for の先頭を空白を除いて入れ、user_agent はその値を入れる', async () => {
+    setupInsert({ data: { id: 1 }, error: null });
+
+    await POST(
+      jsonRequest(validBody, {
+        'x-forwarded-for': ' 1.2.3.4 , 5.6.7.8',
+        'user-agent': 'jest-agent',
+      }),
+    );
+
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ ip: '1.2.3.4', user_agent: 'jest-agent' }),
+    );
+  });
+
+  it('DD-STOCKIST-034 POST は x-forwarded-for と user-agent が無い時に監査の ip と user_agent を null にする', async () => {
+    setupInsert({ data: { id: 1 }, error: null });
+    const request = jsonRequest(validBody);
+    request.headers.delete('user-agent');
+
+    await POST(request);
+
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ ip: null, user_agent: null }),
+    );
+  });
+
+  it('DD-STOCKIST-034 POST は認可の後に例外が出た時に 500 Internal server error を返す', async () => {
+    mockCreateClient.mockRejectedValue(new Error('boom'));
+
+    const response = await POST(jsonRequest(validBody));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Internal server error' });
+  });
+});

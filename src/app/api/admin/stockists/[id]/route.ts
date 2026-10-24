@@ -1,3 +1,12 @@
+/**
+ * 管理の取扱店1件の読み・更新・公開の切り替え・削除の窓口（src/app/api/admin/stockists/[id]/route.ts）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-STOCKIST-142
+ * @design DD-STOCKIST-035
+ * @remarks 道の id は認可より前に正の整数かを確かめ、形の悪い値を DB へ渡さない。
+ * 読みと変更で権限を分け、変更は認可・回数の制限・CSRF の token の順に確かめる。回数の制限を認可の後に呼ぶので、認可で断った要求は数えない。これは SEC-STOCKIST-020 を満たさない（推定）。権限は読みと変更で分ける（SEC-STOCKIST-006）。
+ */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';

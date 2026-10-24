@@ -57,7 +57,7 @@ STOCKIST の領域の要求・要件・受け入れ条件・派生要件を、�
 | FR-STOCKIST-006 | FR-STOCKIST-006-AC-01 | `test.skip` |
 | FR-STOCKIST-007 | FR-STOCKIST-007-AC-01 | `test.skip` |
 | FR-STOCKIST-008 | FR-STOCKIST-008-AC-02 | h2 を探すので今は赤。名前の重なり（AC-01）は見ていない |
-| FR-STOCKIST-009 | 無し（DRV-STOCKIST-012 の動きを試す。受け入れ条件が無いので名前に付ける ID が無い） | 今は赤（カードの上の余白）。テスト名の先頭の `FR-STOCKIST-009` は範囲内に定義が無く、E2E の段に書ける受け入れ条件でもないので、`npm run validate-trace -- STOCKIST` が `wrong-test-level` と `unknown-test-id` で落とす（`e2e/FR-STOCKIST-009-divider-spacing.spec.ts`）。DRV-STOCKIST-012 を要件として認めれば、`SR-STOCKIST-001` と要件・受け入れ条件を起こし、テスト名をその受け入れ条件にする |
+| FR-STOCKIST-009 | 無し（DRV-STOCKIST-012 の動きを試す。受け入れ条件が無いので名前に付ける ID が無い） | 今は赤（カードの上の余白）。テスト名の先頭にあった `FR-STOCKIST-009` は範囲内に定義が無く、E2E の段に書ける受け入れ条件でもなかったので、2026-10-24 に名前から外した（`e2e/FR-STOCKIST-009-divider-spacing.spec.ts`）。今は ID の無い名前として `untagged-test` に数える。DRV-STOCKIST-012 を要件として認めれば、`SR-STOCKIST-001` と要件・受け入れ条件を起こし、テスト名をその受け入れ条件にする |
 | FR-STOCKIST-010 の「地方（親）チェック」 | FREQ-57-AC-01 | モバイル・タブレットでは FILTER の引き出しから選ぶので FREQ-57-AC-03 も通る（専用のテストは無い） |
 | FR-STOCKIST-010 の「都道府県（子）チェック」 | FREQ-57-AC-02 | 同上 |
 | FR-STOCKIST-010 の「店舗が無い地方・都道府県」 | FR-STOCKIST-010-AC-01 | — |
@@ -1434,7 +1434,7 @@ select の結果の行の数が `max_rows` 以下で、`/stockist` に表示さ�
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | ブランドの見た目の決まり（黄金比の余白）をカードにも当て、ホームと一覧で同じ間合いにするため（推定）。要件の文は無く、E2E `FR-STOCKIST-009` だけがこの寸法を試す（今は赤。テスト名の ID は今 `wrong-test-level`・`unknown-test-id` で落ちる。「E2E と受け入れ条件の対応」を参照） |
+| 根拠 | ブランドの見た目の決まり（黄金比の余白）をカードにも当て、ホームと一覧で同じ間合いにするため（推定）。要件の文は無く、E2E `FR-STOCKIST-009` だけがこの寸法を試す（今は赤。テスト名に付ける受け入れ条件が無いので、名前に ID は無い。「E2E と受け入れ条件の対応」を参照） |
 | 状態 | 推定 |
 | 出どころ | 実装から推定（`e2e/FR-STOCKIST-009-divider-spacing.spec.ts`、コミット `f85b1d5f`、`src/styles/globals.css` の取扱店のカードの節） |
 
@@ -1478,6 +1478,6 @@ OGP の題と説明は title・description と同じ。画像はサイトの主�
 - FR-STOCKIST-010 と FREQ-57-REQ-01 の二重の定義をどちらかにまとめるか
 - FREQ-13-AC-01 の「正しい店舗情報」と FREQ-18-AC-01 の「エラーが発生せず」を何で確かめるか（具体の形は FR-STOCKIST-・FR-ADMIN-006 の受け入れ条件に起こした）
 - 頁の要件を FREQ-13 に、FR-ADMIN-006 を FREQ-18 につないだことの確認（`SR-STOCKIST-` を起こす案もある）
-- E2E `FR-STOCKIST-009` の動き（DRV-STOCKIST-012）を要件として認めるか。認めれば `SR-STOCKIST-001` と要件・受け入れ条件を起こしてテスト名に付けられる。それまでは検査が `wrong-test-level`・`unknown-test-id` で落とす
+- E2E `FR-STOCKIST-009` の動き（DRV-STOCKIST-012）を要件として認めるか。認めれば `SR-STOCKIST-001` と要件・受け入れ条件を起こしてテスト名に付けられる。それまではテスト名に ID を付けず、検査は `untagged-test` に数える
 - 店舗名の見出しの段（E2E と詳細設計は h2、コードと画面の決まりは h3）
 - FREQ-118-AC-04・FREQ-274 の「STOCKIST は 1680px 据え置き」と、今の取扱店のコードに幅の上限が無いこと

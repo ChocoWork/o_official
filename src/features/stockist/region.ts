@@ -58,13 +58,25 @@ const ALL_PREFECTURES: string[] = STOCKIST_REGIONS.flatMap((entry) => [
   ...entry.prefectures,
 ]);
 
-// 住所の先頭から都道府県名を判定する。該当しなければ null。
+/**
+ * 住所の先頭から都道府県名を判定する。該当しなければ null。
+ *
+ * @impl IMPL-STOCKIST-105
+ * @design DD-STOCKIST-005
+ * @remarks 住所は日本の慣習どおり先頭に都道府県名が来る前提で判定する。店の表に県の列を足さず、この慣習で県を決める。先頭が県名でない住所は県なしの null になる。
+ */
 export function getPrefectureFromAddress(address: string): string | null {
   const trimmed = address.trim();
   return ALL_PREFECTURES.find((prefecture) => trimmed.startsWith(prefecture)) ?? null;
 }
 
-// 表示用の短縮ラベル（青森県→青森 / 東京都→東京 / 大阪府→大阪）。北海道はそのまま。
+/**
+ * 表示用の短縮ラベルを返す（青森県→青森 / 東京都→東京 / 大阪府→大阪）。北海道はそのまま。
+ *
+ * @impl IMPL-STOCKIST-106
+ * @design DD-STOCKIST-006
+ * @remarks 北海道は末尾の「道」を落とすと意味が変わるので、末尾を落とす対象を都・府・県に限る。
+ */
 export function getPrefectureShortLabel(prefecture: string): string {
   if (prefecture === '北海道') {
     return prefecture;
