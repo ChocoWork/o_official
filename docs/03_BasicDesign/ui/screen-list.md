@@ -1,6 +1,6 @@
 # 画面一覧
 
-> 状態: 全画面ルートと導線・表示条件をレビュー | 確認日: 2026-10-03（購入の行は2026-10-07、E-5は2026-10-22、G-1 の旧配送の入口の撤去は2026-10-24に、G-2 Task 3 の在庫一覧表と Task 4 の発注の入力・確認・確定は2026-10-25に反映） | 根拠: `src/app/**/page.tsx` 41件（顧客向け18・認証・アカウント9・管理・開発補助14。2026-10-25 に数え直し、G-0 の権限画面を足した）
+> 状態: 全画面ルートと導線・表示条件をレビュー | 確認日: 2026-10-03（購入の行は2026-10-07、E-5は2026-10-22、G-1 の旧配送の入口の撤去は2026-10-24に、G-2 Task 3 の在庫一覧表と Task 4 の発注の入力・確認・確定と Task 5 の発注一覧表・発注書の頁は2026-10-25に反映） | 根拠: `src/app/**/page.tsx` 43件（顧客向け18・認証・アカウント9・管理・開発補助16。2026-10-25 に数え直し、G-0 の権限画面と G-2 の発注一覧表・発注書の頁を足した）
 
 ## 概要
 
@@ -45,7 +45,7 @@
 
 [注文商品の共通表示](../../../src/features/account/components/OrderItemRow.tsx)には、`itemId` があり `stockStatus=sold_out` の商品から `/contact?subject=予約注文：{商品名}` へ進む分岐がある。ただし現行の注文詳細APIは `stockStatus` を返さないため、注文詳細での表示条件は成立しない。contactはこのクエリから件名を初期入力しない。
 
-## 管理・開発補助画面（14ルート）
+## 管理・開発補助画面（16ルート）
 
 個別フォームの画面表示と操作APIの認可は[表示条件の表](#画面表示と操作権限)を参照する。
 
@@ -53,7 +53,9 @@
 | --- | --- | --- | --- |
 | `/admin` | 管理タブ | adminはKPI・ACCOUNTING・NEWS・ITEM・LOOK・STOCKIST・USER・ORDER・INVENTORY・SETTINGS、supporterはORDER・INVENTORY。`tab` は初期選択、タブ操作は同画面の状態変更。INVENTORYタブは店長とsupporterの両方に同じ中身（`nav` 「在庫・発注メニュー」の「在庫一覧表」「発注一覧表」リンク）。KPIからMeta OAuthへ。ACCOUNTING・固定資産の添付証憑は閲覧API経由で別タブに開く。権限なし・MFA未確認も同画面に案内 | [page.tsx](../../../src/app/admin/page.tsx) |
 | `/admin/create-user` | ユーザー作成フォーム | 専用入口リンクは未確認。成功時は入力を初期化し同画面に留まる。専用の戻るリンクなし | [page.tsx](../../../src/app/admin/create-user/page.tsx) |
-| `/admin/inventory` | 在庫一覧表（G-2 / FREQ-525） | `/admin` のINVENTORYタブの「在庫一覧表」から移動。「管理画面に戻る」は `/admin`。同画面で「在庫の内訳」を行ごとに開閉。読込中・権限なし（403）・2要素認証が必要・ログインし直し（401）・読込失敗・空は同じURLの表示で、権限なしと失敗では表とボタンを出さない。同画面で「発注」から発注モード（各行に「発注数量」）→「発注書確認」→「発注書の確認」（発注先・メモ）→「発注確定」の3段（G-2 Task 4 / FREQ-526。通信は確定の1回だけで、成功すると `/admin/purchase-orders/[id]?created=1` へ移り、通知は移動先の頁が出す）。「発注一覧表」のリンク先 `/admin/purchase-orders` と移動先の発注書の頁は後続のTask | [page.tsx](../../../src/app/admin/inventory/page.tsx)、[AdminInventorySection](../../../src/components/AdminInventorySection.tsx) |
+| `/admin/inventory` | 在庫一覧表（G-2 / FREQ-525） | `/admin` のINVENTORYタブの「在庫一覧表」から移動。「管理画面に戻る」は `/admin`。同画面で「在庫の内訳」を行ごとに開閉。読込中・権限なし（403）・2要素認証が必要・ログインし直し（401）・読込失敗・空は同じURLの表示で、権限なしと失敗では表とボタンを出さない。同画面で「発注」から発注モード（各行に「発注数量」）→「発注書確認」→「発注書の確認」（発注先・メモ）→「発注確定」の3段（G-2 Task 4 / FREQ-526。通信は確定の1回だけで、成功すると `/admin/purchase-orders/[id]?created=1` へ移り、通知は移動先の頁が出す）。移動先の発注書の頁と、タブの「発注一覧表」のリンク先 `/admin/purchase-orders` は G-2 Task 5 の行に記す | [page.tsx](../../../src/app/admin/inventory/page.tsx)、[AdminInventorySection](../../../src/components/AdminInventorySection.tsx) |
+| `/admin/purchase-orders` | 発注一覧表（G-2 Task 5 / FREQ-526） | `/admin` のINVENTORYタブの「発注一覧表」から移動。リンク「取引書類を検索」（`/admin/purchase-orders/documents`。後続のTaskが作る未実装のルート）・「在庫一覧表」（`/admin/inventory`）・「管理画面に戻る」（`/admin`）。明細ごとの行を 発注書番号（発注書の頁へのリンク）・商品名・色・サイズ・発注数量・納品済み・未納 の7列で見る（「打切り」の列は無い）。数量確定前の行は発注数量と未納が「数量未確定」。20行ごとの頁送り（「前へ」「次へ」と「1〜20 / 45」の形の範囲）は同じURLの状態。読込中・権限なし（403）・2要素認証が必要・ログインし直し（401）・読込失敗・空（「発注書はまだありません。」）は同じURLの表示で、権限なしと失敗では表と頁送りを出さない | [page.tsx](../../../src/app/admin/purchase-orders/page.tsx)、[PurchaseOrderListSection](../../../src/components/PurchaseOrderListSection.tsx) |
+| `/admin/purchase-orders/[id]` | 発注書の詳細（G-2 Task 5 / FREQ-526） | 発注一覧表の発注書番号、または在庫一覧表の発注確定（`?created=1` つき）から移動。「発注一覧表に戻る」は `/admin/purchase-orders`。h1「発注書 ○○」・発注先・メモ・発注日・段階、明細の表、数量確定後だけ「単価未登録」「証憑未添付」のバッジと「発注見込額 ¥…」（「税の扱いは書類に従います」を添える）、数量の履歴・受け取りの履歴・取引書類の節。`?created=1` がある時は、読み込んだ発注書の番号で作成の通知を出す。読込中・権限なし（403）・2要素認証が必要・ログインし直し（401）・見つからない（404）・読込失敗は同じURLの表示。操作のボタンは後続のTask | [[id]/page.tsx](../../../src/app/admin/purchase-orders/%5Bid%5D/page.tsx)、[PurchaseOrderDetailSection](../../../src/components/PurchaseOrderDetailSection.tsx) |
 | `/admin/item/create` | 商品作成 | ITEMタブから移動。保存成功・キャンセルで `/admin?tab=ITEM` へ | [page.tsx](../../../src/app/admin/item/create/page.tsx) |
 | `/admin/item/edit/[id]` | 商品編集 | ITEM一覧の編集から移動。保存成功・キャンセルで `/admin?tab=ITEM` へ。取得失敗は同画面に表示 | [[id]/page.tsx](../../../src/app/admin/item/edit/%5Bid%5D/page.tsx) |
 | `/admin/look/create` | LOOK作成 | LOOKタブから移動。保存成功・キャンセルで `/admin?tab=LOOK` へ | [page.tsx](../../../src/app/admin/look/create/page.tsx) |
@@ -77,6 +79,7 @@
 | `/admin` | 認証確認中は読込。未ログイン・admin/supporter以外は権限なし。MFA未確認は2要素認証案内。いずれも同じURLに留まる | ロールで表示タブ・操作候補が変わり、操作APIでも認可を確認する |
 | 管理の8作成・編集ルート、`/admin/create-user` | ページ・フォーム固有のログイン／ロール／MFA表示ガードなし。編集ページの取得失敗は同じURLのエラー表示 | フォーム表示は操作許可を意味しない。[管理API認可](../../../src/lib/auth/admin-rbac.ts)で認証、セッション、DBのACL権限、AAL2を確認する |
 | `/admin/inventory` | ページ側のログイン／ロール／MFA表示ガードなし。表示可否は窓口 `GET /api/admin/inventory` の返事（200で表、403で「在庫一覧を見る権限がありません。」、MFAなしの403で「2要素認証が必要です」、401で「ログインし直してください。」、その他は読込失敗）で決める | 窓口が `admin.stock.read` を、DBの関数も実行者の権限を確かめる。表の読込は読むだけ。発注の確定（`POST /api/admin/purchase-orders`）は `admin.purchase_orders.manage` ＋ `admin.purchase_orders.read` を窓口とDBの関数の両方が確かめ、ボタン「発注」は役割では隠さない（権限が無い人は確定で「発注を扱う権限がありません。」） |
+| `/admin/purchase-orders`・`/admin/purchase-orders/[id]` | ページ側のログイン／ロール／MFA表示ガードなし。表示可否は窓口 `GET /api/admin/purchase-orders`・`GET /api/admin/purchase-orders/[id]` の返事（200で表示、403で「発注一覧を見る権限がありません。」／「発注書を見る権限がありません。」、MFAなしの403で「2要素認証が必要です」、401で「ログインし直してください。」、発注書の頁の404で「発注書が見つかりません。」、その他は読込失敗）で決める | 窓口が `admin.purchase_orders.read` だけを、DBの関数も実行者の権限を確かめる（`manage` は要らない）。読むだけで、CSRF・回数制限・監査は無い。`admin.items.*` や在庫の権限だけの人は403 |
 | `/loading` | 認証確認中は読込。未ログイン・admin以外は同じURLの権限なし表示。ページ側のMFA確認なし | メニューの表示条件とページ自体のadmin確認を両方実装している |
 | 共通レイアウト・proxy | [Providers](../../../src/contexts/Providers.tsx)は全画面に共通ナビを配置。[admin/layout](../../../src/app/admin/layout.tsx)はスタイル制御。[proxy](../../../src/proxy.ts)には画面のログイン・ロールによるリダイレクトなし | proxyはAPI変更リクエストのOrigin検査、セキュリティヘッダー、セッション識別Cookieを扱う |
 
@@ -103,7 +106,7 @@
 
 ## ルート数とレビュー方法
 
-- `src/app/**/page.tsx` の全41件を棚卸しし、この一覧と[1つの画面遷移図](screen-flow.md#全画面遷移図)に各1件ずつ対応させる。
+- `src/app/**/page.tsx` の全43件を棚卸しし、この一覧と[1つの画面遷移図](screen-flow.md#全画面遷移図)に各1件ずつ対応させる。
 - ページから描画されるコンポーネントのリンク・ルーター操作、認証APIと外部サービスからの戻り先、表示ガード、クエリ更新を確認する。共通ナビは[Providers](../../../src/contexts/Providers.tsx)、[Header](../../../src/components/Header.tsx)、[Footer](../../../src/components/Footer.tsx)を確認する。
 - `error.tsx`、API Route Handler、外部サービス、タブやダイアログは独立した画面ルート数に加えない。詳細ページ間の `[id]` 変更は画面遷移として図示するが、同じルート定義の1件に数える。
 - `AdminTabs`・`AdminSideNav` の型にあるCONTACTは、現行 `/admin` の表示タブ配列に含まれない。現在表示するadminの10タブ（INVENTORYはORDERの次、SETTINGSは最後）とsupporterのORDER・INVENTORYを記録する。

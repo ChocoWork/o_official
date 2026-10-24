@@ -1,15 +1,26 @@
 import {
   PURCHASE_ORDER_CREATED_QUERY,
+  PURCHASE_ORDER_DETAIL_TEXT,
   PURCHASE_ORDER_DISPLAY_STAGE_LABELS,
   PURCHASE_ORDER_ERRORS,
   PURCHASE_ORDER_LIMITS,
+  PURCHASE_ORDER_LIST_TEXT,
+  PURCHASE_ORDER_READ_FAILED,
   PURCHASE_ORDER_TEXT,
   formatPurchaseOrderCreatedNotice,
+  formatPurchaseOrderDate,
+  formatPurchaseOrderDateTime,
+  formatPurchaseOrderDay,
+  formatYen,
+  isPurchaseOrderCreatedQuery,
   isPurchaseOrderQuantity,
+  parsePurchaseOrderDetail,
+  parsePurchaseOrderListRow,
   purchaseOrderCreateFailureMessage,
   type PurchaseOrderDisplayStage,
   type PurchaseOrderStage,
 } from '@/lib/purchase-orders/purchase-order-types';
+import { confirmedDetail, listRow, orderedDetail } from './purchase-order-fixtures';
 
 describe('purchase-order-types', () => {
   test('FREQ-526-AC-01: 値の範囲は計画の共通の値と同じ（行1〜100・仮数量1〜99999・発注先1〜100・メモ0〜500）', () => {
@@ -80,5 +91,165 @@ describe('purchase-order-types', () => {
     expect(purchaseOrderCreateFailureMessage(500, null)).toBe('発注の記録に失敗しました');
     // 表に無い code の本文は出さない（生の文を画面へ流さない）
     expect(purchaseOrderCreateFailureMessage(500, { code: 'PRIVATE-MARKER', error: 'PRIVATE-MARKER' })).toBe('発注の記録に失敗しました');
+  });
+});
+
+describe('purchase-order-types: 発注一覧表・発注書の詳細の読取（Task 5）', () => {
+  const clone = () => JSON.parse(JSON.stringify(confirmedDetail())) as any;
+
+  test('FREQ-526-AC-04: 発注一覧表の固定の文は計画のとおり', () => {
+    expect(PURCHASE_ORDER_LIST_TEXT).toMatchObject({
+      heading: '発注一覧表',
+      empty: '発注書はまだありません。',
+      forbidden: '発注一覧を見る権限がありません。',
+      failed: '発注一覧を読み込めませんでした。時間をおいて再度お試しください。',
+      unconfirmed: '数量未確定',
+    });
+  });
+
+  test('FREQ-526-AC-05: 発注書の詳細の固定の文は、見つからない時が計画の文、見積額の注記が「税の扱いは書類に従います」', () => {
+    expect(PURCHASE_ORDER_DETAIL_TEXT.notFound).toBe('発注書が見つかりません。');
+    expect(PURCHASE_ORDER_DETAIL_TEXT.taxNote).toBe('税の扱いは書類に従います');
+    expect(PURCHASE_ORDER_DETAIL_TEXT.priceMissing).toBe('単価未登録');
+    expect(PURCHASE_ORDER_DETAIL_TEXT.documentMissing).toBe('証憑未添付');
+  });
+
+  test('FREQ-526-AC-05: 読取の失敗は内部の印 PURCHASE_ORDER_READ_FAILED', () => {
+    expect(PURCHASE_ORDER_READ_FAILED).toBe('PURCHASE_ORDER_READ_FAILED');
+  });
+
+  test('FREQ-526-AC-05: parsePurchaseOrderDetail は数量確定済みの発注書をそのままの形で返す', () => {
+    expect(parsePurchaseOrderDetail(confirmedDetail())).toEqual(confirmedDetail());
+  });
+
+  test('FREQ-526-AC-05: parsePurchaseOrderDetail は数量確定前の発注書（確定数量・未納・単価が無い）を返す', () => {
+    const parsed = parsePurchaseOrderDetail(orderedDetail());
+    expect(parsed).toEqual(orderedDetail());
+    expect(parsed.lines.map((line) => [line.orderQuantity, line.outstandingQuantity, line.unitPriceYen])).toEqual([[null, null, null], [null, null, null]]);
+  });
+
+  test('FREQ-526-AC-05: 知らない項目（保存先の鍵・内部の操作ID）は戻りに含めない', () => {
+    const raw = clone();
+    raw.storage_path = 'PRIVATE-MARKER';
+    raw.operationId = 'PRIVATE-MARKER';
+    raw.attachments[0].storagePath = 'PRIVATE-MARKER';
+    raw.attachments[0].operationId = 'PRIVATE-MARKER';
+    raw.revisions[0].operationId = 'PRIVATE-MARKER';
+    raw.lines[0].internal = 'PRIVATE-MARKER';
+    expect(JSON.stringify(parsePurchaseOrderDetail(raw))).not.toContain('PRIVATE-MARKER');
+    expect(parsePurchaseOrderDetail(raw)).toEqual(confirmedDetail());
+  });
+
+  const BROKEN: Array<[string, (detail: any) => unknown]> = [
+    ['null', () => null],
+    ['配列', () => []],
+    ['文字列', () => 'PRIVATE-MARKER'],
+    ['id が uuid でない', (d) => { d.id = 'abc'; return d; }],
+    ['number の形が違う', (d) => { d.number = 'PO-2026-1'; return d; }],
+    ['発注先が文字列でない', (d) => { d.supplierName = 5; return d; }],
+    ['メモが文字列でも null でもない', (d) => { d.memo = 5; return d; }],
+    ['未知の保存段階', (d) => { d.stage = 'draft'; return d; }],
+    ['未知の表示段階', (d) => { d.displayStage = 'cancelled'; return d; }],
+    ['保存段階 ordered なのに表示段階が受け取り済み', (d) => { d.stage = 'ordered'; return d; }],
+    ['保存段階が確定済みなのに表示段階が ordered', (d) => { d.displayStage = 'ordered'; return d; }],
+    ['版が0', (d) => { d.version = 0; return d; }],
+    ['版が小数', (d) => { d.version = 1.5; return d; }],
+    ['発注日時が日付でない', (d) => { d.orderedAt = 'いつか'; return d; }],
+    ['作成者が uuid でない', (d) => { d.createdBy = 'abc'; return d; }],
+    ['lines が配列でない', (d) => { d.lines = {}; return d; }],
+    ['行の納品済みが負', (d) => { d.lines[0].receivedQuantity = -1; return d; }],
+    ['行の確定数量が小数', (d) => { d.lines[0].orderQuantity = 2.5; return d; }],
+    ['行の確定数量が文字列', (d) => { d.lines[0].orderQuantity = '5'; return d; }],
+    ['行の確定数量が無いのに未納がある', (d) => { d.lines[0].orderQuantity = null; return d; }],
+    ['行の確定数量があるのに未納が無い', (d) => { d.lines[0].outstandingQuantity = null; return d; }],
+    ['行の未納が 確定数量 − 納品済み と合わない', (d) => { d.lines[0].outstandingQuantity = 4; return d; }],
+    ['行の単価が負', (d) => { d.lines[0].unitPriceYen = -1; return d; }],
+    ['行の variantId が0', (d) => { d.lines[0].variantId = 0; return d; }],
+    ['行の line_no が0', (d) => { d.lines[0].lineNo = 0; return d; }],
+    ['履歴の種類が未知', (d) => { d.revisions[0].kind = 'delete'; return d; }],
+    ['履歴の数量が負', (d) => { d.revisions[1].afterQuantity = -1; return d; }],
+    ['履歴の版が0', (d) => { d.revisions[1].revisionNo = 0; return d; }],
+    ['打切りの数量が負', (d) => { d.shortClosures[0].closedQuantity = -1; return d; }],
+    ['受け取りの種類が未知', (d) => { d.receipts[0].kind = 'refund'; return d; }],
+    ['受け取りの日が日付の形でない', (d) => { d.receipts[0].receivedOn = '2026/10/26'; return d; }],
+    ['受取行の数量が0', (d) => { d.receipts[0].lines[0].quantity = 0; return d; }],
+    ['受取行の数量が負なのに相殺の元が無い', (d) => { d.receipts[0].lines[0].quantity = -1; return d; }],
+    ['受取行の取り消せる数が負', (d) => { d.receipts[0].lines[0].reversibleQuantity = -1; return d; }],
+    ['受取行の取り消せる数が数量を超える', (d) => { d.receipts[0].lines[0].reversibleQuantity = 3; return d; }],
+    ['書類の種類が未知', (d) => { d.attachments[0].kind = 'receipt'; return d; }],
+    ['書類の sha256 が64桁でない', (d) => { d.attachments[0].sha256 = 'abc'; return d; }],
+    ['書類の sha256Source が未知', (d) => { d.attachments[0].sha256Source = 'client'; return d; }],
+    ['書類の大きさが負', (d) => { d.attachments[0].sizeBytes = -1; return d; }],
+    ['書類の current が無い', (d) => { d.attachments[0].current = null; return d; }],
+    ['書類の取引日が日付の形でない', (d) => { d.attachments[0].current.transactionDate = '10/26'; return d; }],
+    ['書類の金額が負', (d) => { d.attachments[0].current.amountYen = -1; return d; }],
+    ['書類の通貨が3文字の大文字でない', (d) => { d.attachments[0].current.currency = 'jpy'; return d; }],
+    ['書類の voided が真偽値でない', (d) => { d.attachments[0].current.voided = 'no'; return d; }],
+    ['書類の版の数が0', (d) => { d.attachments[0].revisionCount = 0; return d; }],
+    ['保存途中の予約の expired が真偽値でない', (d) => { d.pendingUploads[0].expired = 'yes'; return d; }],
+    ['保存途中の予約の期限が日付でない', (d) => { d.pendingUploads[0].expiresAt = 'いつか'; return d; }],
+    ['flags が無い', (d) => { delete d.flags; return d; }],
+    ['flags の値が真偽値でない', (d) => { d.flags.unitPriceMissing = 'true'; return d; }],
+    ['見込額が負', (d) => { d.estimatedAmountYen = -1; return d; }],
+    ['見込額が文字列', (d) => { d.estimatedAmountYen = '6000'; return d; }],
+    ['見込額が小数', (d) => { d.estimatedAmountYen = 0.5; return d; }],
+  ];
+
+  test.each(BROKEN)('FREQ-526-AC-05: 形の崩れ（%s）は内部の失敗 PURCHASE_ORDER_READ_FAILED で、生の値を持たない', (_name, mutate) => {
+    const input = mutate(clone());
+    let caught: unknown;
+    try { parsePurchaseOrderDetail(input); } catch (error) { caught = error; }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe('PURCHASE_ORDER_READ_FAILED');
+    expect(JSON.stringify(caught)).not.toContain('PRIVATE-MARKER');
+  });
+
+  test('FREQ-526-AC-05: 相殺の受取行（数量が負）は元の行を指し、取り消せる数は0', () => {
+    const raw = clone();
+    raw.receipts.push({
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2', kind: 'reverse', receivedOn: '2026-10-27', memo: null, reason: '数え間違い',
+      actorId: raw.createdBy, createdAt: '2026-10-27T01:00:00+00:00',
+      lines: [{ id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2', lineId: raw.lines[0].id, quantity: -1, reversesReceiptLineId: raw.receipts[0].lines[0].id, reversibleQuantity: 0 }],
+    });
+    raw.receipts[0].lines[0].reversibleQuantity = 1;
+    expect(parsePurchaseOrderDetail(raw).receipts[1].lines[0]).toMatchObject({ quantity: -1, reversibleQuantity: 0 });
+  });
+
+  test('FREQ-526-AC-04: parsePurchaseOrderListRow は数量確定前の行（発注数量・未納が NULL）と確定後の行を返し、崩れた行は内部の失敗にする', () => {
+    expect(parsePurchaseOrderListRow(listRow())).toEqual(listRow());
+    const unconfirmed = listRow({ displayStage: 'ordered', orderQuantity: null, receivedQuantity: 0, outstandingQuantity: null });
+    expect(parsePurchaseOrderListRow(unconfirmed)).toEqual(unconfirmed);
+    const broken: unknown[] = [
+      null, 'x', { ...listRow(), purchaseOrderId: 'abc' }, { ...listRow(), number: 'x' }, { ...listRow(), displayStage: 'draft' },
+      { ...listRow(), lineNo: 0 }, { ...listRow(), itemName: 1 }, { ...listRow(), provisionalQuantity: -1 },
+      { ...listRow(), receivedQuantity: 2.5 }, { ...listRow(), orderQuantity: null }, { ...listRow(), outstandingQuantity: null },
+      { ...listRow(), outstandingQuantity: 9 }, { ...listRow(), colorName: 5 },
+    ];
+    for (const row of broken) expect(() => parsePurchaseOrderListRow(row)).toThrow('PURCHASE_ORDER_READ_FAILED');
+  });
+
+  test('FREQ-526-AC-05: 発注日は日本時間の YYYY/MM/DD（協定世界時の15時以降は翌日）、日時は YYYY/MM/DD HH:mm', () => {
+    expect(formatPurchaseOrderDate('2026-10-25T14:59:59+00:00')).toBe('2026/10/25');
+    expect(formatPurchaseOrderDate('2026-10-25T15:00:00+00:00')).toBe('2026/10/26');
+    expect(formatPurchaseOrderDate('2026-12-31T20:00:00Z')).toBe('2027/01/01');
+    expect(formatPurchaseOrderDate('2026-10-25T23:30:00+09:00')).toBe('2026/10/25');
+    expect(formatPurchaseOrderDateTime('2026-10-25T15:05:00+00:00')).toBe('2026/10/26 00:05');
+    expect(formatPurchaseOrderDay('2026-10-26')).toBe('2026/10/26');
+  });
+
+  test.each([[0, '¥0'], [980, '¥980'], [1200, '¥1,200'], [6000, '¥6,000'], [1234567, '¥1,234,567'], [99999999999, '¥99,999,999,999']])(
+    'FREQ-526-AC-05: 金額 %i は %s の形で出す', (amount, expected) => {
+      expect(formatYen(amount)).toBe(expected);
+    });
+
+  test('FREQ-526-AC-05: 目印 created=1 を見るのは、created がちょうど "1" の時だけ（無い・別の値・複数は通知を出さない）', () => {
+    const [key, value] = PURCHASE_ORDER_CREATED_QUERY.split('=');
+    expect(isPurchaseOrderCreatedQuery({ [key]: value })).toBe(true);
+    expect(isPurchaseOrderCreatedQuery({})).toBe(false);
+    expect(isPurchaseOrderCreatedQuery({ created: '0' })).toBe(false);
+    expect(isPurchaseOrderCreatedQuery({ created: '' })).toBe(false);
+    expect(isPurchaseOrderCreatedQuery({ created: 'true' })).toBe(false);
+    expect(isPurchaseOrderCreatedQuery({ created: ['1', '1'] })).toBe(false);
+    expect(isPurchaseOrderCreatedQuery({ other: '1' })).toBe(false);
   });
 });

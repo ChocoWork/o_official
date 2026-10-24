@@ -810,11 +810,11 @@ flowchart TD
 
 ## 在庫一覧表・発注（G-2 / FREQ-525〜530）
 
-G-2 の画面は、管理メニューの INVENTORY から入る。この節は Task 3 で作った在庫一覧表と、Task 4 で足した発注（入力 → 確認 → 確定）を記し、発注一覧表・発注の詳細・受け取り・原本の添付は、それぞれの Task が同じ節へ足す。
+G-2 の画面は、管理メニューの INVENTORY から入る。この節は Task 3 で作った在庫一覧表と、Task 4 で足した発注（入力 → 確認 → 確定）と、Task 5 で足した発注一覧表・発注書の詳細（読むだけ）を記し、数量の確定・受け取り・原本の添付は、それぞれの Task が同じ節へ足す。
 
 ### INVENTORY タブ
 
-店長（`admin`）とサポーター（`supporter`）の両方のメニューに `INVENTORY` を出す（店長は `ORDER` の次、`SETTINGS` の前。サポーターは `ORDER` の次、最後）。印は細線の箱（`ri-archive-line`）。中身は役割で出し分けず、`nav aria-label="在庫・発注メニュー"` に「在庫一覧表」（`/admin/inventory`）と「発注一覧表」（`/admin/purchase-orders`。後続の Task）のリンクを置く。権限の無い人が開いた先は各頁の権限の文で、窓口と DB が守る。`/admin?tab=INVENTORY` で直接開ける（サポーターも）。サポーターのタブは以前 ORDER だけだったので表に出なかったが、先頭以外のタブを `tab` で指すと、最初の描画で「見えないタブなら先頭へ戻す」処理が URL の `tab` を上書きして ORDER に戻っていた。この処理を、直前に積まれた `tab` を上書きしない形（関数で渡す更新）に直した。
+店長（`admin`）とサポーター（`supporter`）の両方のメニューに `INVENTORY` を出す（店長は `ORDER` の次、`SETTINGS` の前。サポーターは `ORDER` の次、最後）。印は細線の箱（`ri-archive-line`）。中身は役割で出し分けず、`nav aria-label="在庫・発注メニュー"` に「在庫一覧表」（`/admin/inventory`）と「発注一覧表」（`/admin/purchase-orders`。Task 5 で作った）のリンクを置く。権限の無い人が開いた先は各頁の権限の文で、窓口と DB が守る。`/admin?tab=INVENTORY` で直接開ける（サポーターも）。サポーターのタブは以前 ORDER だけだったので表に出なかったが、先頭以外のタブを `tab` で指すと、最初の描画で「見えないタブなら先頭へ戻す」処理が URL の `tab` を上書きして ORDER に戻っていた。この処理を、直前に積まれた `tab` を上書きしない形（関数で渡す更新）に直した。
 
 ### 在庫一覧表（`/admin/inventory` / FREQ-525）
 
@@ -848,8 +848,46 @@ G-2 の画面は、管理メニューの INVENTORY から入る。この節は T
 
 権限は窓口と DB の関数の両方が `admin.purchase_orders.manage` ＋ `admin.purchase_orders.read` を確かめるので、権限の無い人が確定すると 403 の文が出る（ボタンは役割では隠さない）。流れの全体は[発注書の作成の流れ](../sequence/purchasing.md)、保存する段階は[発注書の状態](../states/purchasing.md)。
 
-#### 発注書の頁への引き継ぎ（Task 5 の義務）
+#### 発注書の頁への引き継ぎ（Task 4 から引き継いだ義務。Task 5 で実装済み）
 
-移動先の `/admin/purchase-orders/[id]` は Task 5 が作る（それまでは頁が無い）。確定に成功した画面は `/admin/purchase-orders/<id>?created=1` へ移る（目印は[共通の定義](../../../src/lib/purchase-orders/purchase-order-types.ts)の `PURCHASE_ORDER_CREATED_QUERY`）。**発注書の頁は、クエリに `created=1` がある時、読み込んだ発注書の番号で通知「発注書 ○○ を作成しました。数量が確定するまで受け取りはできません。」を `role="status"` で出す**こと（文は同じ定義の `formatPurchaseOrderCreatedNotice(number)` で作る。番号は URL に載せず、頁が読んだ発注書の番号を使う）。発注書が読めない（404・403）時は通知を出さない。
+移動先の `/admin/purchase-orders/[id]` は Task 5 が作った。確定に成功した画面は `/admin/purchase-orders/<id>?created=1` へ移る（目印は[共通の定義](../../../src/lib/purchase-orders/purchase-order-types.ts)の `PURCHASE_ORDER_CREATED_QUERY`）。**発注書の頁は、クエリに `created=1` がある時、読み込んだ発注書の番号で通知「発注書 ○○ を作成しました。数量が確定するまで受け取りはできません。」を `role="status"` で出す**（文は同じ定義の `formatPurchaseOrderCreatedNotice(number)` で作る。番号は URL に載せず、頁が読んだ発注書の番号を使う）。発注書が読めない（404・403・401・読込失敗）時と、目印が無い・別の値・同じ名前の複数指定の時は通知を出さない。実装は頁（[page.tsx](../../../src/app/admin/purchase-orders/%5Bid%5D/page.tsx)）が `searchParams` を `isPurchaseOrderCreatedQuery` で見て部品の `created` に渡し、部品（[PurchaseOrderDetailSection](../../../src/components/PurchaseOrderDetailSection.tsx)）が読み込んだ発注書の番号で通知を作る。
 
-検証: 単体 [画面](../../../tests/unit/components/AdminInventorySection.test.tsx)・[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)・[store](../../../tests/unit/lib/purchase-orders/purchase-order-store.test.ts)・[窓口](../../../tests/unit/api/admin/purchase-orders-route.test.ts)。DB [発注の作成](../../../tests/integration/db/group_g2_purchase_create.integration.test.ts)。3つの画面幅の確認は Task 10 の E2E。
+検証: 単体 [画面](../../../tests/unit/components/AdminInventorySection.test.tsx)・[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)・[store](../../../tests/unit/lib/purchase-orders/purchase-order-store.test.ts)・[窓口](../../../tests/unit/api/admin/purchase-orders-route.test.ts)。DB [発注の作成](../../../tests/integration/db/group_g2_purchase_create.integration.test.ts)。3つの画面幅の確認は Task 10 の E2E。通知の引き継ぎの検証は[発注書の頁](../../../tests/unit/components/PurchaseOrderDetailPage.test.tsx)・[発注書の部品](../../../tests/unit/components/PurchaseOrderDetailSection.test.tsx)。
+
+### 発注一覧表（`/admin/purchase-orders` / FREQ-526）
+
+独立ページ [page.tsx](../../../src/app/admin/purchase-orders/page.tsx) は `<main className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 md:px-8">` に [PurchaseOrderListSection](../../../src/components/PurchaseOrderListSection.tsx)（Client Component）を置くだけ。`GET /api/admin/purchase-orders?limit=20&page=N`（`admin.purchase_orders.read`。`cache: 'no-store'`）の返事で表示を決め、ページ側の表示ガードは持たない。
+
+| 要素 | 内容 |
+| --- | --- |
+| 見出し・リンク | h1「発注一覧表」。リンク「管理画面に戻る」（`/admin`）・「在庫一覧表」（`/admin/inventory`）・「取引書類を検索」（`/admin/purchase-orders/documents`。後続の Task が作る未実装のルート） |
+| 読込中 | 「読み込み中...」（`role="status"`） |
+| 失敗の文 | 共有の `adminLoadFailureMessage` で決める。順は、本文の `reason` が `MFA required` なら「2要素認証が必要です」、401 は「ログインし直してください。」、403 は「発注一覧を見る権限がありません。」、それ以外と応答の形が崩れた時は「発注一覧を読み込めませんでした。時間をおいて再度お試しください。」。`role="alert"` で出し、表と頁送りは出さない |
+| 空 | 「発注書はまだありません。」 |
+| 表 | 列見出しは「発注書番号」「商品名」「色」「サイズ」「発注数量」「納品済み」「未納」の7つだけをこの順（**「打切り」の列は無い**。数の列は右寄せ）。1行が発注書の1明細で、並びは窓口（DB）の順（発注書番号の降順・同じ発注書内は明細番号順）。発注書番号は発注書の頁（`/admin/purchase-orders/[id]`）へのリンク。色・サイズが無ければ「—」。数量確定前の行は「発注数量」と「未納」が「数量未確定」（納品済みは 0 のまま） |
+| 頁送り | 20行ごと。「前へ」「次へ」と「${from}〜${to} / ${total}」（total は全明細の数）。最初の頁では「前へ」、最後の頁では「次へ」を押せない。頁を替えると読み直し、読込に失敗すれば失敗の文を出す |
+| 画面幅 | 表は `role="region"`（見出しで名付け、キーボードで焦点を当てられる）の `max-h-[70vh] overflow-auto` に入れ、見出し行は `sticky top-0`。390/768/1280px で頁全体が横にはみ出さない（表の最小幅 44rem より狭い時は領域の中だけ横スクロール）。実表示の検証は Task 10 の E2E |
+
+窓口の仕様は[API仕様](../../03_BasicDesign/api/api-spec.md)の `GET /api/admin/purchase-orders`。`limit` は 1〜100（既定 20）、`page` は 1〜100000（既定 1）で、外は 400。表示段階（`displayStage`）は一覧の画面には出さない（詳細の頁が使う）。
+
+検証: 単体 [画面](../../../tests/unit/components/PurchaseOrderListSection.test.tsx)・[頁](../../../tests/unit/components/PurchaseOrderListPage.test.tsx)・[窓口](../../../tests/unit/api/admin/purchase-orders-route.test.ts)・[store](../../../tests/unit/lib/purchase-orders/purchase-order-store.test.ts)・[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)。DB [発注の読取](../../../tests/integration/db/group_g2_purchase_reads.integration.test.ts)。3つの画面幅の確認は Task 10 の E2E。
+
+### 発注書の詳細（`/admin/purchase-orders/[id]` / FREQ-526）
+
+独立ページ [page.tsx](../../../src/app/admin/purchase-orders/%5Bid%5D/page.tsx)（Server Component。Next.js 16 の `params`・`searchParams` は Promise なので `await` する）が、`<main className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 md:px-8">` に [PurchaseOrderDetailSection](../../../src/components/PurchaseOrderDetailSection.tsx)（Client Component）を置く。部品は `GET /api/admin/purchase-orders/[id]`（`admin.purchase_orders.read`。`cache: 'no-store'`）を1回読み、応答は共通の定義の `parsePurchaseOrderDetail` で検査する（崩れた応答・頼んだ id と違う発注書は読込失敗として扱う）。
+
+| 要素 | 内容 |
+| --- | --- |
+| 見出し・リンク | リンク「発注一覧表に戻る」（`/admin/purchase-orders`）。h1「発注書 ${番号}」（読み込むまでは「発注書」） |
+| 読込中・失敗 | 「読み込み中...」（`role="status"`）。失敗は `role="alert"`: 404「発注書が見つかりません。」、本文の `reason` が `MFA required` なら「2要素認証が必要です」、401「ログインし直してください。」、403「発注書を見る権限がありません。」、それ以外と応答の崩れ「発注書を読み込めませんでした。時間をおいて再度お試しください。」。失敗では表も履歴も作成の通知も出さない |
+| 作成の通知 | `?created=1` がある時だけ、読み込んだ発注書の番号で「発注書 ○○ を作成しました。数量が確定するまで受け取りはできません。」を `role="status"` で出す（上の「発注書の頁への引き継ぎ」） |
+| 概要 | 発注先・メモ（無ければ「—」）・発注日（日本時間 `YYYY/MM/DD`）・段階（表示段階の日本語。数量確定待ち／数量確定済み・受け取り待ち／一部受け取り済み／受け取り完了／完了（残りを打ち切り）） |
+| 旗と見込額 | **数量確定後（保存する段階が `quantity_confirmed`）だけ**、`flags.unitPriceMissing` が真なら「単価未登録」、`flags.documentMissing` が真なら「証憑未添付」のバッジ。単価がある行があれば「発注見込額 ¥6,000」の形（単価 × 確定数量の合計。単価のない行は含めない）と、隣に「税の扱いは書類に従います」。見込額が無い（全行が単価未登録）時は出さない。数量確定前は旗も見込額も出さない |
+| 明細の表 | `aria-label="明細"`。列は「商品名」「色」「サイズ」「仮数量」「発注数量」「納品済み」「未納」「単価（円）」の8つで、`line_no` 順（窓口の順）。数量確定前の行は「発注数量」と「未納」が「数量未確定」、単価が無ければ「未登録」、あれば3桁区切り（`1,200`） |
+| 数量の履歴 | h2「数量の履歴」。列は「版」「日時（日本時間 `YYYY/MM/DD HH:mm`）」「種類（発注／発注先・メモの訂正／数量の確定・訂正／打切り）」「対象（発注書／商品名 色 サイズ）」「変更（`数量 4 → 3`・`単価`・`発注先`・`メモ`を「・」でつなぐ。変更前が無ければ変更後だけ）」「理由」。窓口の順（版 → 発注書全体の行 → 明細番号 → 種類） |
+| 受け取りの履歴 | h2「受け取りの履歴」。受け取りごとに「${日付} 受け取り」または「${日付} 受け取りの取消」、メモ、理由、受取行（商品名 色 サイズ と `+2`／`-1` の数量）。無ければ「受け取りの記録はありません。」。取り消せる数（`reversibleQuantity`）は後続の Task が使う |
+| 取引書類 | h2「取引書類」の見出しだけ。書類の一覧・無効の印・保存途中の予約（`pendingUploads`）・追加・表示・無効化・訂正は Task 8 が足す（窓口は書類と予約を既に返すが、この Task の画面は使わない） |
+
+操作のボタン（数量の確定・訂正、打切り、受け取り、書類）は後続の Task が足す。窓口の仕様は[API仕様](../../03_BasicDesign/api/api-spec.md)の `GET /api/admin/purchase-orders/[id]`、表示段階の導き方は[発注書の状態](../states/purchasing.md)。
+
+検証: 単体 [画面](../../../tests/unit/components/PurchaseOrderDetailSection.test.tsx)・[頁](../../../tests/unit/components/PurchaseOrderDetailPage.test.tsx)・[窓口](../../../tests/unit/api/admin/purchase-order-detail-route.test.ts)・[store](../../../tests/unit/lib/purchase-orders/purchase-order-store.test.ts)・[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)。DB [発注の読取](../../../tests/integration/db/group_g2_purchase_reads.integration.test.ts)。3つの画面幅の確認は Task 10 の E2E。

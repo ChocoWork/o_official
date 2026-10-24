@@ -1,6 +1,6 @@
-# 発注書の作成の流れ（G-2）
+# 発注書の作成と読取の流れ（G-2）
 
-> 状態: 現行のソース（グループ G-2 Task 4。発注の作成のみ。数量確定・受け取り・原本の添付は後続 Task が足す。本番へは未適用） | 確認日: 2026-10-25 | 対象: 在庫一覧表の「発注」から発注書を1件保存するまでの順序と、全ての発注書の書込みに共通のロックの順
+> 状態: 現行のソース（グループ G-2 Task 4・5。発注の作成と、発注一覧表・発注書の詳細の読取。数量確定・受け取り・原本の添付は後続 Task が足す。本番へは未適用） | 確認日: 2026-10-25 | 対象: 在庫一覧表の「発注」から発注書を1件保存するまでの順序と、全ての発注書の書込みに共通のロックの順、発注一覧表と発注書の頁の読取の順序
 
 ## 概要
 
@@ -66,7 +66,7 @@ sequenceDiagram
 | 6〜8 | 引数の誤りは権限より先に断る。ロック helper は表の行を読む前に共通の鍵だけを取る（`_with_inventory` は偽。この Task は在庫を動かさない）。権限の確かめは再送の判定より先で、権限の無い人には再送の結果も見せない |
 | 9〜13 | 初めての要求だけが、variant の存在、番号の採番、保存へ進む。再送と衝突は何も書かない |
 | 14〜16 | 成功も失敗も監査に残す。metadata は件数・再送かどうか・結果コードだけで、発注先・メモ・要求番号は残さない |
-| 17 | 入力を片付け、`/admin/purchase-orders/<id>?created=1` へ移る。通知「発注書 ○○ を作成しました。数量が確定するまで受け取りはできません。」は、移動で消えるこの画面ではなく、移動先の発注書の頁が `created=1` を見て出す（Task 5 の義務。[16_admin](../pages/16_admin.md)） |
+| 17 | 入力を片付け、`/admin/purchase-orders/<id>?created=1` へ移る。通知「発注書 ○○ を作成しました。数量が確定するまで受け取りはできません。」は、移動で消えるこの画面ではなく、移動先の発注書の頁が `created=1` を見て出す（Task 5 で実装。下の「発注一覧表と発注書の頁の読取」、[16_admin](../pages/16_admin.md)） |
 
 ## DB の取引の中身
 
@@ -80,6 +80,44 @@ sequenceDiagram
 | `private.group_g_operations` 1件 | 操作 `purchase_order_create`・原因 `purchase_order`＝新しい id・指紋・結果。最後に書く（履歴の外部キーは遅延） |
 
 書かないもの: 在庫（`stock_quantity`）・台帳・割当・状態の履歴・注文。明示して取るロックは共通の鍵と発注書の行（作成では空）だけで、variant や注文の行の鍵は明示して取らない（明細の外部キーの挿入が variant の行に暗黙の `FOR KEY SHARE` を取るが、共通の鍵を持つ書込みの間で待ち合いの輪にはならない）。
+
+## 発注一覧表と発注書の頁の読取（Task 5）
+
+読取は書込みと違い、**共通の鍵も行の鍵も取らない**。DB の読取の関数は STABLE で、呼び出しごとに1つの snapshot から読み、何も書かない。権限は窓口と DB の関数の両方が `admin.purchase_orders.read`（`manage` は要らない）で確かめ、DB は実行者（`_actor_id`）の有効な全役割の権限の和集合を毎回確かめる。表示段階は内部の helper 1か所が導く（[発注書の状態](../states/purchasing.md#表示段階の導き方実装)）。
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant B as 発注書の頁（ブラウザ）
+  participant A as GET /api/admin/purchase-orders/[id]
+  participant S as store（getAdminPurchaseOrder）
+  participant D as DB 関数 get_admin_purchase_order
+  participant H as private.purchase_order_display_stages
+  B->>A: ?created=1 つきで開いた頁が id の発注書を読む
+  A->>A: 認可 admin.purchase_orders.read（401・403・503 はそのまま返す）
+  A->>A: id が uuid か（違えば400）
+  A->>S: getAdminPurchaseOrder(actorId, id)
+  S->>D: rpc get_admin_purchase_order（service_role）
+  D->>D: 権限の確かめ（42501）
+  D->>D: 発注書を読む（無ければ NULL）
+  D->>H: 表示段階を導く
+  D->>D: 明細・履歴・打切り・受け取り・書類・予約・旗・見込額を集める
+  D-->>S: jsonb（保存先の鍵と内部の操作 ID は含まない）
+  S->>S: parsePurchaseOrderDetail で形を検査し、頼んだ id かを確かめる
+  S-->>A: 詳細か null か PurchaseOrderError
+  A-->>B: 200 { purchaseOrder } か 404 か固定の文のエラー（no-store）
+  B->>B: 目印があれば、読んだ発注書の番号で作成の通知を出す
+```
+
+| 順 | 内容 |
+| --- | --- |
+| 1〜3 | 認可が先で、id の検証はその後（権限の無い人に id の良し悪しを教えない）。一覧（`GET /api/admin/purchase-orders`）も同じで、`limit`（1〜100）・`page`（1〜100000）の範囲外は認可の後で400 |
+| 4〜5 | store は引数名どおりに RPC を1回呼ぶ。権限の拒否（`GROUP_G_FORBIDDEN`／42501 の組が完全に一致した時だけ）は403、他の失敗（形の崩れ・通信の失敗・別の誤り）は生の文を持たない内部の失敗で、窓口は固定の500にする |
+| 6〜9 | DB は権限の確かめを最初に行い、次に発注書を読む（無い発注書は NULL。窓口は404）。表示段階の helper を呼び、残りを同じ snapshot から集める |
+| 10 | 戻りは決まった項目だけ。`storage_path` と操作の ID は含まず、`sha256` は含む |
+| 11〜14 | 検査に通らない応答は成功にしない。画面は作成の通知を、読み込めた時だけ出す |
+
+一覧は `list_admin_purchase_order_lines(limit, offset, actor)` が明細ごとの行を発注書番号の降順（バイト順）・明細番号順で返し、各行に全明細の数 `total` を持たせる（1回の読取で頁と合計を同じ snapshot から得る）。数量確定前の行の確定数量と未納は NULL。
 
 ## 共通のロックの順
 
@@ -118,12 +156,14 @@ flowchart TD
 | 層 | テスト |
 | --- | --- |
 | DB 結合 | [発注の作成](../../../tests/integration/db/group_g2_purchase_create.integration.test.ts)（保存の内容、番号、再送と衝突、引数、権限、在庫の不変、途中失敗で何も残らない、関数の ACL、ロック helper）、[書き手の閉じた一覧](../../../tests/integration/db/group_g1_writer_inventory.integration.test.ts)（57本） |
-| 単体 | [store](../../../tests/unit/lib/purchase-orders/purchase-order-store.test.ts)、[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)、[窓口](../../../tests/unit/api/admin/purchase-orders-route.test.ts)、[画面](../../../tests/unit/components/AdminInventorySection.test.tsx) |
+| DB 結合（読取。Task 5） | [発注の読取](../../../tests/integration/db/group_g2_purchase_reads.integration.test.ts)（一覧の並び・頁・total・数量未確定、詳細の形、表示段階の導出、予約・旗・見込額、権限、関数の ACL、最後の確かめ） |
+| 単体 | [store](../../../tests/unit/lib/purchase-orders/purchase-order-store.test.ts)、[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)、[窓口](../../../tests/unit/api/admin/purchase-orders-route.test.ts)、[詳細の窓口](../../../tests/unit/api/admin/purchase-order-detail-route.test.ts)、[画面](../../../tests/unit/components/AdminInventorySection.test.tsx)、[一覧の画面](../../../tests/unit/components/PurchaseOrderListSection.test.tsx)、[発注書の画面](../../../tests/unit/components/PurchaseOrderDetailSection.test.tsx)、[発注書の頁](../../../tests/unit/components/PurchaseOrderDetailPage.test.tsx) |
 
 テストへのリンクは検証観点の参照であり、実行成功の証跡ではない。
 
 ## 未確認事項
 
 - 移行 `20261024180500_group_g2_purchasing_writers.sql` は本番へ未適用。ローカルの DB での実行結果は controller が `db reset` の後に確かめる。
-- 発注の確定の後に移る先 `/admin/purchase-orders/[id]` は Task 5 が作る。それまでは移動先の頁が無く、`created=1` を見て通知を出す処理もまだ無い。
+- 発注の確定の後に移る先 `/admin/purchase-orders/[id]` と、`created=1` を見て通知を出す処理は Task 5 で作った（単体で確かめた。実ブラウザでの 390/768/1280px の確認は Task 10 の E2E）。
+- 読取の関数（節15）は本番へ未適用で、ローカルの DB での実行結果は controller が `db reset` の後に確かめる。
 - 同時の2つの発注確定の競合（共通の鍵での直列化）と、鍵を持つ他の書込みとの順番待ちは、Task 9 の並行試験で確かめる。

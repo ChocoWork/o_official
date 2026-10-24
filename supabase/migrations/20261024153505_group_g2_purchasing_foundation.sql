@@ -867,6 +867,244 @@ ALTER FUNCTION public.list_admin_inventory(uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.list_admin_inventory(uuid) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.list_admin_inventory(uuid) TO service_role;
 
+-- 15. Purchase order reads (G-2 Task 5, FREQ-526): the display stage, the order list (one row per line) and one order's
+--     detail. Every reader is STABLE (one snapshot per call) and writes nothing. The two readers check
+--     group_g_actor_has_permissions(_actor_id, admin.purchase_orders.read) first: otherwise GROUP_G_FORBIDDEN / 42501 is
+--     raised before anything is read.
+--     private.purchase_order_display_stages is an internal helper (nobody can EXECUTE it; the readers are DEFINER bodies owned
+--     by postgres) and the ONLY place the display stage is derived. outstanding / received are the sums over the order's
+--     lines (an unconfirmed line has no outstanding quantity, so an order still at stage ordered sums to 0):
+--       stage = ordered                                              -> ordered
+--       outstanding > 0 and received = 0                             -> quantity_confirmed
+--       outstanding > 0 and received > 0                             -> partially_received
+--       outstanding = 0 and (active short close or received = 0)     -> closed
+--       outstanding = 0 and received > 0 and no active short close   -> received
+--     A line has an active short close when its latest quantity-related revision is a short_close. Quantity-related means a
+--     short_close, or a quantity revision that changes the quantity (before_quantity differs from after_quantity; a revision that
+--     only sets a unit price keeps the quantity and so cannot undo a close). The latest is the one with the largest revision_no,
+--     so a short close that a later re-confirmation undid no longer counts.
+CREATE FUNCTION private.purchase_order_display_stages(_purchase_order_ids uuid[])
+RETURNS TABLE(purchase_order_id uuid, display_stage text, total_received bigint, total_outstanding bigint,
+  has_active_short_close boolean)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+BEGIN
+  RETURN QUERY
+  WITH sums AS (
+    SELECT l.purchase_order_id AS poid,
+      COALESCE(pg_catalog.sum(l.received_quantity), 0)::bigint AS received,
+      COALESCE(pg_catalog.sum(l.outstanding_quantity), 0)::bigint AS outstanding
+    FROM public.purchase_order_lines AS l
+    WHERE l.purchase_order_id = ANY (_purchase_order_ids)
+    GROUP BY l.purchase_order_id
+  ), latest AS (
+    SELECT DISTINCT ON (r.line_id) r.purchase_order_id AS poid, r.kind AS kind
+    FROM public.purchase_order_revisions AS r
+    WHERE r.purchase_order_id = ANY (_purchase_order_ids) AND r.line_id IS NOT NULL
+      AND (r.kind = 'short_close' OR (r.kind = 'quantity' AND r.before_quantity IS DISTINCT FROM r.after_quantity))
+    ORDER BY r.line_id, r.revision_no DESC, r.created_at DESC, r.id DESC
+  ), closes AS (
+    SELECT DISTINCT x.poid FROM latest AS x WHERE x.kind = 'short_close'
+  )
+  SELECT po.id,
+    CASE
+      WHEN po.stage = 'ordered' THEN 'ordered'
+      WHEN COALESCE(s.outstanding, 0) > 0 AND COALESCE(s.received, 0) = 0 THEN 'quantity_confirmed'
+      WHEN COALESCE(s.outstanding, 0) > 0 THEN 'partially_received'
+      WHEN c.poid IS NOT NULL OR COALESCE(s.received, 0) = 0 THEN 'closed'
+      ELSE 'received'
+    END,
+    COALESCE(s.received, 0), COALESCE(s.outstanding, 0), c.poid IS NOT NULL
+  FROM public.purchase_orders AS po
+  LEFT JOIN sums AS s ON s.poid = po.id
+  LEFT JOIN closes AS c ON c.poid = po.id
+  WHERE po.id = ANY (_purchase_order_ids);
+END;
+$$;
+ALTER FUNCTION private.purchase_order_display_stages(uuid[]) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.purchase_order_display_stages(uuid[]) FROM PUBLIC, anon, authenticated, service_role;
+
+--     The order list: one row per line, newest order number first (a plain byte comparison), then line_no. total is the number
+--     of lines over all orders and repeats on every row (an empty page has no row, so no total). order_quantity is the
+--     confirmed quantity (NULL until the quantity is confirmed), outstanding_quantity is NULL with it.
+--     _limit must be 1 to 100 and _offset 0 or more (GROUP_G_ARGUMENT_INVALID / 22023, after the permission check).
+CREATE FUNCTION private.list_admin_purchase_order_lines(_limit integer, _offset integer, _actor_id uuid)
+RETURNS TABLE(total bigint, purchase_order_id uuid, number text, display_stage text, line_id uuid, line_no integer,
+  item_name text, color_name text, size_label text, provisional_quantity integer, order_quantity integer,
+  received_quantity integer, outstanding_quantity integer)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+#variable_conflict use_column
+BEGIN
+  IF NOT private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.purchase_orders.read']) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+  IF _limit IS NULL OR _limit NOT BETWEEN 1 AND 100 OR _offset IS NULL OR _offset < 0 THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
+  WITH page AS (
+    SELECT po.id AS poid, po.number AS pnumber, l.id AS lid, l.line_no AS lno, l.item_name AS iname, l.color_name AS cname,
+      l.size_label AS slabel, l.provisional_quantity AS pq, l.confirmed_quantity AS cq, l.received_quantity AS rq,
+      l.outstanding_quantity AS oq, pg_catalog.count(*) OVER () AS cnt
+    FROM public.purchase_order_lines AS l
+    JOIN public.purchase_orders AS po ON po.id = l.purchase_order_id
+    ORDER BY po.number COLLATE pg_catalog."C" DESC, l.line_no
+    LIMIT _limit OFFSET _offset
+  ), stages AS (
+    SELECT s.purchase_order_id AS poid, s.display_stage AS stage
+    FROM private.purchase_order_display_stages((SELECT pg_catalog.array_agg(DISTINCT p.poid) FROM page AS p)) AS s
+  )
+  SELECT p.cnt, p.poid, p.pnumber, s.stage, p.lid, p.lno, p.iname, p.cname, p.slabel, p.pq, p.cq, p.rq, p.oq
+  FROM page AS p
+  JOIN stages AS s ON s.poid = p.poid
+  ORDER BY p.pnumber COLLATE pg_catalog."C" DESC, p.lno;
+END;
+$$;
+ALTER FUNCTION private.list_admin_purchase_order_lines(integer, integer, uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.list_admin_purchase_order_lines(integer, integer, uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.list_admin_purchase_order_lines(integer, integer, uuid) TO service_role;
+
+CREATE FUNCTION public.list_admin_purchase_order_lines(_limit integer, _offset integer, _actor_id uuid)
+RETURNS TABLE(total bigint, purchase_order_id uuid, number text, display_stage text, line_id uuid, line_no integer,
+  item_name text, color_name text, size_label text, provisional_quantity integer, order_quantity integer,
+  received_quantity integer, outstanding_quantity integer)
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $$ SELECT * FROM private.list_admin_purchase_order_lines(_limit, _offset, _actor_id); $$;
+ALTER FUNCTION public.list_admin_purchase_order_lines(integer, integer, uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.list_admin_purchase_order_lines(integer, integer, uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.list_admin_purchase_order_lines(integer, integer, uuid) TO service_role;
+
+--     One order's detail as jsonb (camelCase keys), NULL when there is no such order. The storage path of a document and every
+--     internal operation id are never part of it (the sha256 is). Order of the arrays: lines by line_no; revisions by
+--     revision_no, then the order-level row before the line rows (by line_no), then kind; short closures and receipts by
+--     the time they were recorded; receipt lines by line_no; attachments, pending uploads by creation time.
+--       reversibleQuantity : for a positive receipt line, its quantity plus the (negative) offsets that point at it; 0 for an offset.
+--       attachments.current : the row of the attachment's latest revision (the largest revision_no), except that
+--         replacesAttachmentId is read from revision 1 (the only revision that can store the link, per the table CHECK),
+--         so a replacement keeps its link after a correction.
+--       pendingUploads : reservations that no attachment points at; expired = now() > expires_at.
+--       flags.unitPriceMissing : the order is quantity_confirmed and some line has no unit price.
+--       flags.documentMissing : the order is quantity_confirmed and no attachment has a latest revision that is not voided.
+--       estimatedAmountYen : the sum of unit price * confirmed quantity over the lines that have both (NULL when none does).
+CREATE FUNCTION private.get_admin_purchase_order(_purchase_order_id uuid, _actor_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_order public.purchase_orders%ROWTYPE;
+  v_stage text;
+BEGIN
+  IF NOT private.group_g_actor_has_permissions(_actor_id, ARRAY['admin.purchase_orders.read']) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+  SELECT po.* INTO v_order FROM public.purchase_orders AS po WHERE po.id = _purchase_order_id;
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+  SELECT s.display_stage INTO v_stage FROM private.purchase_order_display_stages(ARRAY[v_order.id]) AS s;
+  RETURN pg_catalog.jsonb_build_object(
+    'id', v_order.id,
+    'number', v_order.number,
+    'supplierName', v_order.supplier_name,
+    'memo', v_order.memo,
+    'stage', v_order.stage,
+    'displayStage', v_stage,
+    'version', v_order.version,
+    'orderedAt', v_order.ordered_at,
+    'createdBy', v_order.created_by,
+    'lines', (SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+        'id', l.id, 'lineNo', l.line_no, 'variantId', l.variant_id, 'itemName', l.item_name, 'colorName', l.color_name,
+        'sizeLabel', l.size_label, 'provisionalQuantity', l.provisional_quantity, 'orderQuantity', l.confirmed_quantity,
+        'receivedQuantity', l.received_quantity, 'outstandingQuantity', l.outstanding_quantity,
+        'unitPriceYen', l.unit_price_yen, 'version', l.version) ORDER BY l.line_no), '[]'::jsonb)
+      FROM public.purchase_order_lines AS l
+      WHERE l.purchase_order_id = v_order.id),
+    'revisions', (SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+        'id', r.id, 'lineId', r.line_id, 'revisionNo', r.revision_no, 'kind', r.kind,
+        'beforeQuantity', r.before_quantity, 'afterQuantity', r.after_quantity,
+        'beforeUnitPriceYen', r.before_unit_price_yen, 'afterUnitPriceYen', r.after_unit_price_yen,
+        'beforeSupplierName', r.before_supplier_name, 'afterSupplierName', r.after_supplier_name,
+        'beforeMemo', r.before_memo, 'afterMemo', r.after_memo, 'reason', r.reason, 'actorId', r.actor_id,
+        'createdAt', r.created_at) ORDER BY r.revision_no, rl.line_no NULLS FIRST, r.kind, r.id), '[]'::jsonb)
+      FROM public.purchase_order_revisions AS r
+      LEFT JOIN public.purchase_order_lines AS rl ON rl.id = r.line_id
+      WHERE r.purchase_order_id = v_order.id),
+    'shortClosures', (SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+        'id', sc.id, 'lineId', sc.line_id, 'closedQuantity', sc.closed_quantity, 'reason', sc.reason,
+        'actorId', sc.actor_id, 'createdAt', sc.created_at) ORDER BY sc.created_at, sl.line_no, sc.id), '[]'::jsonb)
+      FROM public.purchase_order_short_closures AS sc
+      JOIN public.purchase_order_lines AS sl ON sl.id = sc.line_id
+      WHERE sl.purchase_order_id = v_order.id),
+    'receipts', (SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+        'id', rc.id, 'kind', rc.kind, 'receivedOn', rc.received_on, 'memo', rc.memo, 'reason', rc.reason,
+        'actorId', rc.actor_id, 'createdAt', rc.created_at,
+        'lines', (SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+            'id', rcl.id, 'lineId', rcl.line_id, 'quantity', rcl.quantity,
+            'reversesReceiptLineId', rcl.reverses_receipt_line_id,
+            'reversibleQuantity', CASE WHEN rcl.quantity > 0
+              THEN rcl.quantity + COALESCE((SELECT pg_catalog.sum(o.quantity)
+                                            FROM public.purchase_order_receipt_lines AS o
+                                            WHERE o.reverses_receipt_line_id = rcl.id), 0)::integer
+              ELSE 0 END) ORDER BY rl2.line_no, rcl.id), '[]'::jsonb)
+          FROM public.purchase_order_receipt_lines AS rcl
+          JOIN public.purchase_order_lines AS rl2 ON rl2.id = rcl.line_id
+          WHERE rcl.receipt_id = rc.id)) ORDER BY rc.created_at, rc.id), '[]'::jsonb)
+      FROM public.purchase_order_receipts AS rc
+      WHERE rc.purchase_order_id = v_order.id),
+    'attachments', (SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+        'id', a.id, 'kind', a.kind, 'fileName', a.original_file_name, 'mimeType', a.mime_type, 'sizeBytes', a.size_bytes,
+        'sha256', a.sha256, 'sha256Source', a.sha256_source, 'createdAt', a.created_at,
+        'current', (SELECT pg_catalog.jsonb_build_object(
+            'revisionNo', cr.revision_no, 'transactionDate', cr.transaction_date, 'amountYen', cr.amount_yen,
+            'currency', cr.currency, 'counterparty', cr.counterparty, 'voided', cr.voided, 'reason', cr.reason,
+            'replacesAttachmentId', (SELECT r1.replaces_attachment_id
+                                     FROM public.purchase_order_attachment_revisions AS r1
+                                     WHERE r1.attachment_id = a.id AND r1.revision_no = 1))
+          FROM public.purchase_order_attachment_revisions AS cr
+          WHERE cr.attachment_id = a.id
+          ORDER BY cr.revision_no DESC
+          LIMIT 1),
+        'revisionCount', (SELECT pg_catalog.count(*)::integer
+          FROM public.purchase_order_attachment_revisions AS cn
+          WHERE cn.attachment_id = a.id)) ORDER BY a.created_at, a.id), '[]'::jsonb)
+      FROM public.purchase_order_attachments AS a
+      WHERE a.purchase_order_id = v_order.id),
+    'pendingUploads', (SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+        'reservationId', rv.id, 'kind', rv.kind, 'fileName', rv.original_file_name, 'createdAt', rv.created_at,
+        'expiresAt', rv.expires_at, 'expired', pg_catalog.now() > rv.expires_at) ORDER BY rv.created_at, rv.id), '[]'::jsonb)
+      FROM public.purchase_order_attachment_reservations AS rv
+      WHERE rv.purchase_order_id = v_order.id
+        AND NOT EXISTS (SELECT 1 FROM public.purchase_order_attachments AS ra WHERE ra.reservation_id = rv.id)),
+    'flags', pg_catalog.jsonb_build_object(
+      'unitPriceMissing', v_order.stage = 'quantity_confirmed' AND EXISTS (
+        SELECT 1 FROM public.purchase_order_lines AS fl
+        WHERE fl.purchase_order_id = v_order.id AND fl.unit_price_yen IS NULL),
+      'documentMissing', v_order.stage = 'quantity_confirmed' AND NOT EXISTS (
+        SELECT 1 FROM public.purchase_order_attachments AS fa
+        WHERE fa.purchase_order_id = v_order.id
+          AND NOT COALESCE((SELECT fr.voided FROM public.purchase_order_attachment_revisions AS fr
+                            WHERE fr.attachment_id = fa.id
+                            ORDER BY fr.revision_no DESC
+                            LIMIT 1), false))),
+    'estimatedAmountYen', (SELECT pg_catalog.sum(el.unit_price_yen::bigint * el.confirmed_quantity)::bigint
+      FROM public.purchase_order_lines AS el
+      WHERE el.purchase_order_id = v_order.id AND el.unit_price_yen IS NOT NULL AND el.confirmed_quantity IS NOT NULL));
+END;
+$$;
+ALTER FUNCTION private.get_admin_purchase_order(uuid, uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.get_admin_purchase_order(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.get_admin_purchase_order(uuid, uuid) TO service_role;
+
+CREATE FUNCTION public.get_admin_purchase_order(_purchase_order_id uuid, _actor_id uuid)
+RETURNS jsonb
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.get_admin_purchase_order(_purchase_order_id, _actor_id); $$;
+ALTER FUNCTION public.get_admin_purchase_order(uuid, uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.get_admin_purchase_order(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_admin_purchase_order(uuid, uuid) TO service_role;
+
 -- G2A_BODY_END
 
 -- G2A_FINAL_ASSERT_BEGIN
@@ -1199,6 +1437,68 @@ BEGIN
   END IF;
 END;
 $g2a_final_inventory_list$;
+
+-- Task 5 expectation: the display-stage helper, the order list and detail readers and their public entrances. Owner postgres,
+-- STABLE, search_path empty, exactly this argument and result shape. The private bodies are SECURITY DEFINER plpgsql and the
+-- public entrances SQL SECURITY INVOKER delegates. Nobody (not even service_role) can EXECUTE the helper; for the other four
+-- service_role can and anon / authenticated / PUBLIC cannot (PUBLIC is read from the effective ACL).
+DO $g2a_final_purchase_reads$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM (VALUES
+      ('private.purchase_order_display_stages(uuid[])', true, false, true, 'record'::regtype::oid,
+       ARRAY['_purchase_order_ids', 'purchase_order_id', 'display_stage', 'total_received', 'total_outstanding',
+             'has_active_short_close'],
+       ARRAY['i', 't', 't', 't', 't', 't']::"char"[],
+       ARRAY['uuid[]'::regtype::oid, 'uuid'::regtype::oid, 'text'::regtype::oid, 'bigint'::regtype::oid,
+             'bigint'::regtype::oid, 'boolean'::regtype::oid]),
+      ('private.list_admin_purchase_order_lines(integer,integer,uuid)', true, true, true, 'record'::regtype::oid,
+       ARRAY['_limit', '_offset', '_actor_id', 'total', 'purchase_order_id', 'number', 'display_stage', 'line_id', 'line_no',
+             'item_name', 'color_name', 'size_label', 'provisional_quantity', 'order_quantity', 'received_quantity',
+             'outstanding_quantity'],
+       ARRAY['i', 'i', 'i', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't']::"char"[],
+       ARRAY['integer'::regtype::oid, 'integer'::regtype::oid, 'uuid'::regtype::oid, 'bigint'::regtype::oid,
+             'uuid'::regtype::oid, 'text'::regtype::oid, 'text'::regtype::oid, 'uuid'::regtype::oid, 'integer'::regtype::oid,
+             'text'::regtype::oid, 'text'::regtype::oid, 'text'::regtype::oid, 'integer'::regtype::oid,
+             'integer'::regtype::oid, 'integer'::regtype::oid, 'integer'::regtype::oid]),
+      ('public.list_admin_purchase_order_lines(integer,integer,uuid)', false, true, true, 'record'::regtype::oid,
+       ARRAY['_limit', '_offset', '_actor_id', 'total', 'purchase_order_id', 'number', 'display_stage', 'line_id', 'line_no',
+             'item_name', 'color_name', 'size_label', 'provisional_quantity', 'order_quantity', 'received_quantity',
+             'outstanding_quantity'],
+       ARRAY['i', 'i', 'i', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't', 't']::"char"[],
+       ARRAY['integer'::regtype::oid, 'integer'::regtype::oid, 'uuid'::regtype::oid, 'bigint'::regtype::oid,
+             'uuid'::regtype::oid, 'text'::regtype::oid, 'text'::regtype::oid, 'uuid'::regtype::oid, 'integer'::regtype::oid,
+             'text'::regtype::oid, 'text'::regtype::oid, 'text'::regtype::oid, 'integer'::regtype::oid,
+             'integer'::regtype::oid, 'integer'::regtype::oid, 'integer'::regtype::oid]),
+      ('private.get_admin_purchase_order(uuid,uuid)', true, true, false, 'jsonb'::regtype::oid,
+       ARRAY['_purchase_order_id', '_actor_id'], NULL::"char"[], NULL::oid[]),
+      ('public.get_admin_purchase_order(uuid,uuid)', false, true, false, 'jsonb'::regtype::oid,
+       ARRAY['_purchase_order_id', '_actor_id'], NULL::"char"[], NULL::oid[])
+    ) AS e(sig, definer, service_exec, retset, ret, names, modes, types)
+    LEFT JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(e.sig)
+    WHERE p.oid IS NULL
+       OR p.proowner <> 'postgres'::regrole
+       OR p.prosecdef <> e.definer
+       OR p.provolatile <> 's'
+       OR p.proretset <> e.retset
+       OR p.prorettype <> e.ret
+       OR p.prolang <> (SELECT l.oid FROM pg_catalog.pg_language AS l
+                        WHERE l.lanname = CASE WHEN e.definer THEN 'plpgsql' ELSE 'sql' END)
+       OR NOT ('search_path=""' = ANY (COALESCE(p.proconfig, ARRAY[]::text[])))
+       OR p.proargnames IS DISTINCT FROM e.names
+       OR p.proargmodes IS DISTINCT FROM e.modes
+       OR p.proallargtypes IS DISTINCT FROM e.types
+       OR pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE') <> e.service_exec
+       OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) AS x
+                  WHERE x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'purchase_read_functions';
+  END IF;
+END;
+$g2a_final_purchase_reads$;
 -- G2A_FINAL_ASSERT_END
 
 NOTIFY pgrst, 'reload schema';

@@ -5,18 +5,20 @@ const mockRateLimit = jest.fn();
 jest.mock('@/lib/csrfMiddleware', () => ({ requireCsrfOrDeny: () => mockCsrf() }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: (...args: unknown[]) => mockRateLimit(...args) }));
 jest.mock('next/server', () => ({ NextResponse: { json: (body: unknown, init?: ResponseInit) => new Response(JSON.stringify(body), init) } }));
-jest.mock('@/lib/auth/admin-rbac', () => ({ authorizeAdminPermissions: jest.fn() }));
+jest.mock('@/lib/auth/admin-rbac', () => ({ authorizeAdminPermissions: jest.fn(), authorizeAdminPermission: jest.fn() }));
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
 const mockLogAudit = jest.fn();
 jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
 
 import { inspect } from 'util';
-import { POST } from '@/app/api/admin/purchase-orders/route';
-import { authorizeAdminPermissions } from '@/lib/auth/admin-rbac';
+import { GET, POST } from '@/app/api/admin/purchase-orders/route';
+import { authorizeAdminPermission, authorizeAdminPermissions } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { dbListRow, listRow } from '../../lib/purchase-orders/purchase-order-fixtures';
 
 const rpc = jest.fn();
 const authorize = authorizeAdminPermissions as jest.Mock;
+const authorizeRead = authorizeAdminPermission as jest.Mock;
 
 const REQUEST_KEY = '11111111-1111-4111-8111-111111111111';
 const ORDER_ID = '22222222-2222-4222-8222-222222222222';
@@ -56,6 +58,7 @@ beforeEach(() => {
   jest.resetAllMocks();
   jest.spyOn(console, 'error').mockImplementation(() => {});
   authorize.mockResolvedValue({ ok: true, userId: 'authorized-actor', role: 'admin' });
+  authorizeRead.mockResolvedValue({ ok: true, userId: 'authorized-actor', role: 'admin' });
   mockCsrf.mockResolvedValue(undefined);
   mockRateLimit.mockResolvedValue(null);
   mockLogAudit.mockResolvedValue(undefined);
@@ -314,5 +317,139 @@ describe('POST /api/admin/purchase-orders', () => {
     expect(result.status).toBe(500);
     expect(result.json).toEqual({ error: '発注の記録に失敗しました' });
     expect(inspect([result.text, (console.error as jest.Mock).mock.calls], { depth: null })).not.toContain('PRIVATE-MARKER');
+  });
+});
+
+describe('GET /api/admin/purchase-orders', () => {
+  const listUrl = (query = '') => `https://example.test/api/admin/purchase-orders${query}`;
+  const get = async (query = '') => {
+    const request = new Request(listUrl(query));
+    const response = await GET(request);
+    const text = await response.text();
+    return { request, response, status: response.status, text, json: text ? JSON.parse(text) : null };
+  };
+  const dbRows = (total = 1) => [dbListRow(total, listRow())];
+
+  beforeEach(() => { rpc.mockResolvedValue({ data: dbRows(), error: null }); });
+
+  /** 本物の authorizeAdminPermission と同じ規則の代役: 要る権限が無ければ 403 */
+  function grantOnly(...held: string[]) {
+    authorizeRead.mockImplementation(async (required: string) =>
+      held.includes(required)
+        ? { ok: true, userId: 'authorized-actor', role: 'supporter' }
+        : { ok: false, response: new Response(JSON.stringify({ error: 'Forbidden', permission: required }), { status: 403 }) });
+  }
+
+  test('FREQ-526-AC-04: 200 で { rows, total, page, limit } を返し no-store。認可は admin.purchase_orders.read、RPC は実行者つきで1回だけ（既定は limit=20・page=1）', async () => {
+    const { request, response, json } = await get();
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(json).toEqual({ rows: [listRow()], total: 1, page: 1, limit: 20 });
+    expect(authorizeRead).toHaveBeenCalledTimes(1);
+    expect(authorizeRead).toHaveBeenCalledWith('admin.purchase_orders.read', request);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('list_admin_purchase_order_lines', { _limit: 20, _offset: 0, _actor_id: 'authorized-actor' });
+  });
+
+  test('FREQ-526-AC-04: limit と page を指すと offset は (page − 1) × limit で、応答にも同じ値を返す', async () => {
+    rpc.mockResolvedValue({ data: dbRows(300), error: null });
+    const { json } = await get('?limit=50&page=3');
+    expect(rpc).toHaveBeenCalledWith('list_admin_purchase_order_lines', { _limit: 50, _offset: 100, _actor_id: 'authorized-actor' });
+    expect(json).toMatchObject({ total: 300, page: 3, limit: 50 });
+    await get('?limit=100&page=100000');
+    expect(rpc).toHaveBeenLastCalledWith('list_admin_purchase_order_lines', { _limit: 100, _offset: 9999900, _actor_id: 'authorized-actor' });
+    await get('?limit=1');
+    expect(rpc).toHaveBeenLastCalledWith('list_admin_purchase_order_lines', { _limit: 1, _offset: 0, _actor_id: 'authorized-actor' });
+  });
+
+  test('FREQ-526-AC-04: 発注書がまだ無ければ rows は空で total は0（200）', async () => {
+    rpc.mockResolvedValue({ data: [], error: null });
+    const { status, json } = await get();
+    expect(status).toBe(200);
+    expect(json).toEqual({ rows: [], total: 0, page: 1, limit: 20 });
+  });
+
+  test.each([
+    'limit=0', 'limit=101', 'limit=-1', 'limit=abc', 'limit=1.5', 'limit=', 'limit=%2020', 'limit=1e1', 'limit=020x',
+    'page=0', 'page=-1', 'page=abc', 'page=1.5', 'page=', 'page=100001', 'page=99999999999999999999',
+  ])('FREQ-526-AC-04: 範囲外・数でない指定（%s）は400で no-store、RPC は呼ばない', async (query) => {
+    const { response, status, json } = await get(`?${query}`);
+    expect(status).toBe(400);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(json).toEqual({ error: 'Invalid request' });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+  });
+
+  test('FREQ-540-AC-07: admin.purchase_orders.read だけを持つ人は200（manage は要らない）', async () => {
+    grantOnly('admin.purchase_orders.read');
+    expect((await get()).status).toBe(200);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    ['admin.items.read と admin.items.manage だけ', ['admin.items.read', 'admin.items.manage']],
+    ['admin.purchase_orders.manage だけ', ['admin.purchase_orders.manage']],
+    ['admin.stock.read と admin.stock.manage だけ', ['admin.stock.read', 'admin.stock.manage']],
+    ['何も無い', []],
+  ])('FREQ-540-AC-07: %s の人は403（permission は admin.purchase_orders.read）で no-store。RPC は呼ばない', async (_name, held) => {
+    grantOnly(...held);
+    const { response, status, json } = await get();
+    expect(status).toBe(403);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(json).toEqual({ error: 'Forbidden', permission: 'admin.purchase_orders.read' });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [401, { error: 'Unauthorized' }], [403, { error: 'Forbidden', reason: 'MFA required' }], [503, { error: 'Service temporarily unavailable' }],
+  ])('FREQ-540-AC-07: 認可の拒否 %s は状態と本文をそのまま返し no-store、RPC は呼ばない', async (status, body) => {
+    authorizeRead.mockResolvedValue({
+      ok: false, response: new Response(JSON.stringify(body), { status, headers: { 'retry-after': '30' } }),
+    });
+    const result = await get();
+    expect(result.status).toBe(status);
+    expect(result.json).toEqual(body);
+    expect(result.response.headers.get('cache-control')).toBe('no-store');
+    expect(result.response.headers.get('retry-after')).toBe('30');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  test('FREQ-540-AC-07: 認可が通らなければ、範囲外の指定でも400でなく認可の拒否を返す（指定の良し悪しを先に教えない）', async () => {
+    grantOnly();
+    expect((await get('?limit=0')).status).toBe(403);
+  });
+
+  test('FREQ-540-AC-07: DB が GROUP_G_FORBIDDEN / 42501 で断ったら403の固定の文と code（生の文は返さない）', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'GROUP_G_FORBIDDEN', code: '42501', details: 'PRIVATE-MARKER', hint: 'PRIVATE-MARKER' } });
+    const { response, status, json, text } = await get();
+    expect(status).toBe(403);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(json).toEqual({ code: 'GROUP_G_FORBIDDEN', error: '発注を扱う権限がありません。' });
+    expect(text).not.toContain('PRIVATE-MARKER');
+  });
+
+  test.each(['rpc', 'malformed', 'client'] as const)(
+    'FREQ-526-AC-04: 内部の失敗(%s)は固定の500。DB の生の誤りを本文にもログにも出さない', async (source) => {
+      if (source === 'rpc') rpc.mockResolvedValue({ data: null, error: { message: 'PRIVATE-MARKER', code: '57014', details: 'PRIVATE-MARKER', hint: 'PRIVATE-MARKER' } });
+      if (source === 'malformed') rpc.mockResolvedValue({ data: [{ ...dbListRow(1), display_stage: 'PRIVATE-MARKER' }], error: null });
+      if (source === 'client') (createServiceRoleClient as jest.Mock).mockRejectedValue(new Error('PRIVATE-MARKER'));
+      const { response, status, json, text } = await get();
+      expect(status).toBe(500);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(json).toEqual({ error: '発注一覧を読み込めませんでした。' });
+      expect(text).not.toContain('PRIVATE-MARKER');
+      expect(console.error).toHaveBeenCalledTimes(1);
+      expect(console.error).toHaveBeenCalledWith('[admin.purchase_orders] list failed');
+      expect(inspect((console.error as jest.Mock).mock.calls, { depth: null })).not.toContain('PRIVATE-MARKER');
+    });
+
+  test('FREQ-526-AC-04: 読むだけ。CSRF・回数制限・監査には進まない', async () => {
+    await get();
+    expect(mockCsrf).not.toHaveBeenCalled();
+    expect(mockRateLimit).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
+    expect(authorize).not.toHaveBeenCalled();
   });
 });

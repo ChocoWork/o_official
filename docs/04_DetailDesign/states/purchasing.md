@@ -1,6 +1,6 @@
 # 発注書の状態（G-2）
 
-> 状態: 保存する2段階は現行のソース（グループ G-2 Task 2・4。本番へは未適用）。導出する3つの表示段階は設計で、導出する関数は Task 5 が実装する | 確認日: 2026-10-25 | 対象: `purchase_orders.stage` と、画面に出す5つの表示段階
+> 状態: 保存する2段階と、導出する3つの表示段階（導出する関数は Task 5）は現行のソース（グループ G-2 Task 2・4・5。本番へは未適用） | 確認日: 2026-10-25 | 対象: `purchase_orders.stage` と、画面に出す5つの表示段階
 
 ## 概要
 
@@ -9,7 +9,7 @@
 | 層 | 値 | 保存 | 更新主体 |
 | --- | --- | --- | --- |
 | 保存する段階 | `ordered`、`quantity_confirmed` | `purchase_orders.stage`（CHECK 制約。既定 `ordered`） | 作成は `admin_create_purchase_order`（Task 4）、`quantity_confirmed` への進みは数量確定の関数（Task 6） |
-| 導出する表示段階 | `ordered`、`quantity_confirmed`、`partially_received`、`received`、`closed` | しない（読取の関数が毎回導く） | 読取の関数（Task 5） |
+| 導出する表示段階 | `ordered`、`quantity_confirmed`、`partially_received`、`received`、`closed` | しない（読取の関数が毎回導く） | 内部の helper `private.purchase_order_display_stages`（Task 5。導くのはここ1か所） |
 | 画面だけの状態 | `draft` | しない | 在庫一覧表の発注モード（入力と確認） |
 
 ## 範囲と根拠
@@ -20,7 +20,7 @@
 | 設計 | [グループ G 設計書](../../superpowers/specs/2026-10-23-group-g-design.md)、[G-2 実装計画](../../superpowers/plans/2026-10-24-group-g2-purchasing.md)の「決めたこと」 |
 | 実装 | 表と CHECK は移行 `20261024153505_group_g2_purchasing_foundation.sql`、作成は `20261024180500_group_g2_purchasing_writers.sql`、型は[共通の定義](../../../src/lib/purchase-orders/purchase-order-types.ts) |
 | 関連 | 書込みの順序は[発注書の作成の流れ](../sequence/purchasing.md)、在庫の割当は[在庫の割当の状態](inventory-allocation.md) |
-| 調査時点 | 2026-10-25。導出の式は設計の決定であり、コードにはまだ無い（末尾） |
+| 調査時点 | 2026-10-25。導出の式は Task 5 の移行（`20261024153505_group_g2_purchasing_foundation.sql` の節15）に実装した。DB での実行の検証は[発注の読取の試験](../../../tests/integration/db/group_g2_purchase_reads.integration.test.ts)（controller が使い捨て DB で流す） |
 
 ## 状態定義
 
@@ -52,6 +52,20 @@ stateDiagram-v2
 
 内側の状態 `waiting` の表示の文は「数量確定済み・受け取り待ち」。外側の遷移は保存する `stage` の変化、内側は保存せず導く表示段階の変化。訂正・単価・発注先の訂正・受け取り・打切りは `quantity_confirmed` のまま（`stage` は変えない）で、下の遷移条件表に書く。
 
+## 表示段階の導き方（実装）
+
+導くのは DB の内部の関数 `private.purchase_order_display_stages(uuid[])`（STABLE の SECURITY DEFINER。誰にも EXECUTE を付けず、発注一覧表の読取 `list_admin_purchase_order_lines` と発注書の詳細の読取 `get_admin_purchase_order` だけが呼ぶ）の**1か所だけ**。戻りは 発注書の id・表示段階・納品の合計・未納の合計・`has_active_short_close`。納品の合計・未納の合計は発注書の明細の `received_quantity`・`outstanding_quantity`（確定数量 − 納品済み。未確定の行は NULL で、合計では 0 として数える）の和。
+
+| 順 | 条件 | 表示段階 |
+| --- | --- | --- |
+| 1 | 保存する段階が `ordered` | `ordered` |
+| 2 | 未納の合計 > 0 かつ 納品の合計 = 0 | `quantity_confirmed` |
+| 3 | 未納の合計 > 0 かつ 納品の合計 > 0 | `partially_received` |
+| 4 | 未納の合計 = 0 かつ（`has_active_short_close`、または納品の合計 = 0） | `closed` |
+| 5 | 未納の合計 = 0 かつ 納品の合計 > 0 かつ `has_active_short_close` でない | `received` |
+
+`has_active_short_close` は「ある明細の、数量に関わる最新の版が打切りである」時に真。数量に関わる版は `purchase_order_revisions` の、種類 `short_close`（打切り）と、**数量が実際に変わる**種類 `quantity` の版（`before_quantity` と `after_quantity` が違う。NULL 同士は同じとみなす）で、明細ごとに `revision_no` が最大の1件を取り、それが `short_close` なら真（`order`・`header` の版は数えない）。単価だけを直す `quantity` の版（数量は変わらない。Task 6 の確定・訂正の関数は単価の変更もこの種類で記録する）は打切りを戻さないので、打切りの後に単価を足しても `closed` のまま。誤って打切った後に数量を戻す再確定（数量が変わる、より新しい `quantity` の版）をした明細は偽に戻るので、全部を受け取った後は `received` になる。全行を確定数量 0 で確定した（確定前の取消も含む）発注書は、納品の合計が 0 なので打切りの版が無くても `closed`。
+
 ## 遷移条件
 
 | ID | 契機 | 条件 | 副作用 | 実行 |
@@ -78,10 +92,10 @@ stateDiagram-v2
 
 | 層 | テスト |
 | --- | --- |
-| 単体 | [共通の定義（段階の文・エラー表）](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts) |
-| DB 結合 | [発注の作成（版 1・段階 ordered）](../../../tests/integration/db/group_g2_purchase_create.integration.test.ts)、[発注書の9表と守り](../../../tests/integration/db/group_g2_purchase_model.integration.test.ts) |
+| 単体 | [共通の定義（段階の文・エラー表・読取の検査）](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)、[画面の段階の文](../../../tests/unit/components/PurchaseOrderDetailSection.test.tsx) |
+| DB 結合 | [発注の作成（版 1・段階 ordered）](../../../tests/integration/db/group_g2_purchase_create.integration.test.ts)、[発注書の9表と守り](../../../tests/integration/db/group_g2_purchase_model.integration.test.ts)、[発注の読取（表示段階の導出）](../../../tests/integration/db/group_g2_purchase_reads.integration.test.ts) |
 
 ## 未確認事項
 
-- 表示段階を導く読取の関数と、導出の式（`partially_received`・`received`・`closed` の境界）は Task 5 で実装する。ここの式は計画の決定を書いたもので、実装後に照合する。
+- 導出の式は Task 5 の試験が、直接 INSERT / UPDATE の材料で全分岐（`ordered`・`quantity_confirmed`・`partially_received`・`received`・`closed`、打切りを数量の変わる再確定で戻した場合、打切りの後に単価だけの `quantity` の版を足しても `closed` のままの場合）を確かめる。数量確定・打切り・受け取りの**関数を通した**段階の遷移（部分受取・全受取・打切り・打切りを再確定で戻して全部を受け取った後の `received`・打切りの後の単価の追加）は Task 6・7 の試験が確かめる。Task 6 の確定・訂正の関数は、単価だけが変わった明細にも `quantity` の版を書く（`before_quantity` = `after_quantity`）ことを、この規則が前提にしている。
 - 数量確定・打切り・受け取りの関数（Task 6・7）は未実装。上の遷移表の「実行」が Task の列になっているものは、まだコードに無い。
