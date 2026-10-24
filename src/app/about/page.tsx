@@ -1,3 +1,11 @@
+/**
+ * アバウトページ `/about`。題・説明・OG を返す関数と、ブランドの思想を伝える区画と CTA を描くページの本体（src/app/about/page.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-ABOUT-101
+ * @design DD-ABOUT-001
+ * @remarks ブランドの思想の文は滅多に変わらず、DB や外のサービスが止まっても出せるよう、文言をこのファイルに字で持って何も読まない（SEC-ABOUT-006）。OG の画像は相対の道だけを渡し、外のオリジンを指さない（SEC-ABOUT-001）。絶対の URL にする起点は共有の layout の環境変数に任せ、要求の見出しで起点を偽らせない（SEC-ABOUT-005）。
+ */
 import type { Metadata } from "next";
 import { Button } from "@/components/ui/Button/Button";
 

@@ -12,7 +12,7 @@
 | `DD-ABOUT-001` | `src/app/about/page.tsx`（ファイル全体） | 題・説明・OG を返す関数と、5つの区画と CTA 2つを描くページの本体 | `IMPL-ABOUT-001`〜`008` |
 
 - 結論: ABOUT のコードの単位は `src/app/about/page.tsx` の1つだけ（`.tsx` はファイル全体で1つの単位）なので、詳細設計も `DD-ABOUT-001` の1つにまとめた。この単位は文をコードに直に持ち、DB・外のサービス・API を呼ばない
-- ページの中の分岐は1つだけ（最後の原則にだけ下の罫線を引く）。単体テストは今は0件で、この分岐の両方を通す試験が要る
+- ページの中の分岐は1つだけ（最後の原則にだけ下の罫線を引く）。単体テストは `tests/unit/about/about-page.test.tsx` の8件で、この分岐の両方を通す
 - 旧版のこの頁の表（`IMPL-ABOUT-001`〜`008`）は、画像・`Explore More` の節・`/contact` の CTA・アイコンなど今のコードに無い物を「済」としていた。今の動きに書き直し、元の番号は `DD-ABOUT-001` の「旧番号」に移した
 - 番号は `DD-ABOUT-001`〜`029` をこの頁で使う。今は `001` だけを使い、`002` 以降は空けておく
 
@@ -146,22 +146,21 @@ graph LR
 
 #### テスト観点
 
-分岐の網羅 100% と各区画の中身に要る単体テスト（React Testing Library。置き場は `tests/unit/about/` の下、例 `tests/unit/about/about-page.test.tsx`。名前の先頭は `DD-ABOUT-001`）。今は0件。
+分岐の網羅 100% と各区画の中身に要る単体テスト（React Testing Library。置き場は `tests/unit/about/` の下、例 `tests/unit/about/about-page.test.tsx`。名前の先頭は `DD-ABOUT-001`）。今は8件。
 
 | # | 観点 | 入力 | 期待 |
 | --- | --- | --- | --- |
 | 1 | 最後の原則だけ下の罫線（分岐の真） | ページの関数を描く | `国内受注生産` の h3 を含む枠の class に `border-b` がある |
 | 2 | 最後でない原則は下の罫線なし（分岐の偽） | 同上 | `タイムレス・ユニセックス`・`天然繊維` の h3 を含む枠の class に `border-b` が無い（`border-t` はある） |
 | 3 | 3つの原則の番号と見出し | 同上 | `01`・`02`・`03`、英語のラベル3つ、h3 が3つでこの順 |
-| 4 | 区画の見出しの順 | 同上 | h2 が4つで `Brand Philosophy / ブランドの思想`・`WHY WE MAKE / なぜ、つくるのか`・`OUR COMMITMENTS / 取り組み`・`COLLECTION / 商品設計思想` の順。h1 は0（今の動き。FR-ABOUT-005 の判断で変わる） |
+| 4 | 3つの区画の本文 | 同上 | ブランドの思想・なぜつくるか・商品設計思想の本文が出る |
 | 5 | 創業者の言葉と締めの一文 | 同上 | `— Founder, Le Fil des Heures` と `時を超えて価値の続く服を。` が出る |
-| 6 | CTA の行き先 | 同上 | 名前 `VIEW COLLECTION` のリンクが `/item`、`VIEW LOOKBOOK` が `/look`。`/contact` へのリンクは無い |
-| 7 | 画像とアイコンを持たない | 同上 | `img`・`svg`・`ri-` の class の要素が0（DRV-ABOUT-003） |
-| 8 | 題・説明・OG の固定の値 | metadata の関数を待つ | title が `ABOUT \| Le Fil des Heures`、description が空でない、OG の title が title と同じ、OG の画像が `["/about.png"]` |
-| 9 | OG の画像が相対の道 | 同上 | OG の画像の値が `/` で始まり、`http` で始まらない（外のオリジンを指さない。SEC-ABOUT-001） |
-| 10 | 読み出しをしない | `fetch` を見張って、metadata の関数とページの関数を呼ぶ | `fetch` が一度も呼ばれない（SEC-ABOUT-006） |
+| 6 | 題・説明・OG の固定の値 | metadata の関数を待つ | title が `ABOUT \| Le Fil des Heures`、description が空でない、OG の title が title と同じ、OG の画像が `["/about.png"]` |
+| 7 | OG の画像が相対の道 | 同上 | OG の画像の値が `/` で始まり、`http` で始まらない（外のオリジンを指さない。SEC-ABOUT-001） |
+| 8 | 読み出しをしない | `fetch` を見張って、metadata の関数とページの関数を呼ぶ | `fetch` が一度も呼ばれない（SEC-ABOUT-006） |
 
-- 分岐の網羅に要るのは 1 と 2（1回の描画で両方を通る）。3〜10 は区画の中身と守りの確かめ
+- 分岐の網羅に要るのは 1 と 2（1回の描画で両方を通る）。3〜8 は区画の中身と守りの確かめ。単体テストの 8 件は `tests/unit/about/about-page.test.tsx` の `it` の順と同じ
+- 次の観点は単体では試さず、結合テストが見る。h2 が4つで `Brand Philosophy / ブランドの思想`・`WHY WE MAKE / なぜ、つくるのか`・`OUR COMMITMENTS / 取り組み`・`COLLECTION / 商品設計思想` の順（h1 は試さない。TM-ABOUT-01 の判断待ち）、CTA の行き先（`VIEW COLLECTION` が `/item`、`VIEW LOOKBOOK` が `/look`、`/contact` へのリンクは無い）、画像とアイコンを持たない（`img`・`svg`・`picture`・`video`・`i` の要素が0。DRV-ABOUT-003）は SCR-ABOUT-001（`tests/integration/ui/about-screen.test.tsx`）と FLOW-ABOUT-001（`tests/integration/ui/about-flow.test.tsx`）のテストが見る
 - 応答の見出し・Cookie・CSP・`Cache-Control`（SEC-ABOUT-002・003・004）と、OG の絶対の URL（SEC-ABOUT-005）は共有の proxy と layout の動きなので、この単位の単体テストでは試さない（E2E の受け入れ条件で試す）
 
 ## 実装の単位
