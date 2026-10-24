@@ -13,7 +13,7 @@
 | `DD-HOME-002` | `src/features/home/components/HomeSectionViewAll.tsx` | ITEM・LOOK・NEWS の区画の下の VIEW ALL のボタン | `IMPL-HOME-004` |
 | `DD-HOME-003` | `src/components/animations/TextReveal.tsx` | 文字列を1文字ずつ出す部品（ヒーローのブランド名） | なし |
 
-- 結論: HOME の3つの単位はどれも分岐が少ない。ページは条件の分岐を持たず、区画の出し分けは各領域の格子の部品が持つ。VIEW ALL のボタンも分岐を持たない。分岐の網羅で手間が要るのは `TextReveal` だけで、そのうち `ref` が空の時の早期の戻りは届かない分岐の候補
+- 結論: HOME の3つの単位はどれも分岐が少ない。ページは条件の分岐を持たず、区画の出し分けは各領域の格子の部品が持つ。VIEW ALL のボタンも分岐を持たない。分岐の網羅で手間が要るのは `TextReveal` だけで、そのうち `ref` が空の時の早期の戻りは、単体テストで `React.useRef` を差し替えて通す
 - 番号は `DD-HOME-001`〜`029` をこの頁で使う。今は `001`〜`003` を使い、`004` 以降は空けておく
 - 旧版のこの頁の機能要件対応表（`IMPL-HOME-001`〜`011`）は、各項目の「旧番号」に移した。表の中身の古い所（FR-HOME-003 の「不要」、FR-HOME-007 の `sizes="100vw"`、NFR-HOME-001 の「priority 未設定」ほか）は今のコードに合わせて書き直した
 
@@ -127,7 +127,7 @@ FR-HOME-001・002・003・005・006・007・008・009、NFR-HOME-001・002、FRE
 
 #### テスト観点
 
-分岐は0なので、分岐の網羅は単体テストで描くだけで 100% になる見込み（推定）。置き場は `tests/unit/home/home-page.test.tsx`（`scope.json` の `tests/unit/**/home/**` に当たる名前）。7つの取得の関数・各領域の格子・`SearchHomePreview`・`next/image`・`ReactDOM.preload` は差し替え、`await Home()` の結果を React Testing Library で描く。
+分岐は0なので、分岐の網羅は単体テストで描くだけで 100% になる（2026-10-24 に `TRACE_AREAS=HOME` で測って 100%）。置き場は `tests/unit/home/home-page.test.tsx`（`scope.json` の `tests/unit/**/home/**` に当たる名前）。7つの取得の関数・各領域の格子・`SearchHomePreview`・`next/image`・`ReactDOM.preload` は差し替え、`await Home()` の結果を React Testing Library で描く。
 
 | # | 観点 | 入力 | 期待 |
 | --- | --- | --- | --- |
@@ -141,7 +141,7 @@ FR-HOME-001・002・003・005・006・007・008・009、NFR-HOME-001・002、FRE
 | 8 | 空の時 | 取得の関数が全部空の配列と 0 を返す | 例外を投げず、ヒーローと ABOUT が描かれる |
 | 9 | 取得の例外 | 取得の関数の1つが reject | `Home()` が reject する（今の動き。SEC-HOME-014） |
 
-- 今ある単体テストは無い（`tests/unit` に `app/page` を import する物は0件）。E2E は `FR-HOME-001`〜`009`・`012`・`013`・`017`〜`020`・`NFR-HOME-001`・`002` がホームを試す
+- `tests/unit/home/home-page.test.tsx` が試す。E2E は `FR-HOME-001`〜`009`・`012`・`013`・`017`〜`020`・`NFR-HOME-001`・`002` がホームを試す
 
 ### DD-HOME-002 VIEW ALL のボタン HomeSectionViewAll
 
@@ -198,7 +198,7 @@ FR-HOME-004、FREQ-146-REQ-01（NEWS）、FREQ-147-REQ-03、FREQ-148-REQ-03、DR
 | 3 | 外側のクラス（あり） | `className="hidden sm:flex"` | 外側の `div` に既定のクラスと `hidden`・`sm:flex` が両方ある |
 | 4 | 外側のクラス（なし） | `className` なし | 外側の `div` に既定のクラスだけ |
 
-- 今ある直接の単体テストは無い。`tests/unit/components/HomeItemsGrid.test.tsx` と `tests/features/look/PublicLookGrid.test.tsx` が親の格子の中で間接に見る（どちらも HOME の範囲外）
+- `tests/unit/home/home-section-view-all.test.tsx` が直接試す。`tests/unit/components/HomeItemsGrid.test.tsx` と `tests/features/look/PublicLookGrid.test.tsx` が親の格子の中で間接に見る（どちらも HOME の範囲外）
 
 ### DD-HOME-003 文字列を1文字ずつ出す部品 TextReveal
 
@@ -235,7 +235,7 @@ FREQ-278-REQ-01・04・05、FR-HOME-009（h1 を1つにする）。
 
 | 場合 | 動き | 道 |
 | --- | --- | --- |
-| 見張りの時に要素がまだ無い | 見張らずに戻る。要素は必ず描くので届かない分岐の候補（推定） | `TextReveal.tsx` |
+| 見張りの時に要素がまだ無い | 見張らずに戻る。要素は必ず描くので本当の実行では届かない。単体テストでは `React.useRef` を差し替えて通す（テスト観点の 13） | `TextReveal.tsx` |
 | JS が動かない | サーバーの HTML は全部の文字が透明のまま残る見込み（推定。確かめていない） | `TextReveal.tsx` |
 | 画面から出た（`once` が真） | 見えたまま。ホームはこの道 | `TextReveal.tsx` |
 
@@ -269,9 +269,11 @@ FREQ-278-REQ-01・04・05、FR-HOME-009（h1 を1つにする）。
 | 10 | 動きを減らす設定の変化 | 描いた後に `matches` を真にして `change` を呼ぶ | `transition: none` に変わる |
 | 11 | 後始末 | 部品を外す | `removeEventListener` と `disconnect` が呼ばれる |
 | 12 | 文字列の逃がし | `text="<b>x</b>"` | `b` の要素ができず、字として出る |
+| 13 | 要素の参照が空（`useRef` の差し替え） | `React.useRef` を、`current` が常に空の参照を返す物に差し替えて描く | 見張りが作られず、全部の span が透明のまま。部品を外しても例外にならない |
+| 14 | `once` が変わる | `once` 真で描き、`once` 偽に描き直す | 最初の見張りが `disconnect` され、見張りが作り直される（合計2つ） |
 
-- `if (!el) return`は ref が必ず付くので試さず、`docs/05_Quality/reports/test-gaps.md` の「届かない分岐」に理由を書く候補
-- 今ある単体テストは無い。E2E は `FR-HOME-018` が span の数・最後の状態・名前・動きを減らす設定を試す
+- `if (!el) return` は ref が必ず付くので本当の実行では届かない。単体テストで `React.useRef` を、`current` が常に空の参照を返す物に差し替えて通す（13）。分岐の網羅は 100%
+- `tests/unit/home/text-reveal.test.tsx` が試す。E2E は `FR-HOME-018` が span の数・最後の状態・名前・動きを減らす設定を試す
 
 ## 未確認事項
 
@@ -279,5 +281,4 @@ FREQ-278-REQ-01・04・05、FR-HOME-009（h1 を1つにする）。
 - Next.js の既定の失敗の画面が本番ビルドで何を出すか（`error.tsx` が無い時）
 - JS が動かない時にブランド名が見えないままになるか（DD-HOME-003）
 - `TextReveal` の `once` が偽の道（`/loading` の見本だけが使う）をホームの領域で持ち続けるか
-- 単体テストの3ファイル（`tests/unit/home/`）はまだ無い。書く時に `npm run test:trace-coverage` で網羅を測る
 - この頁の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

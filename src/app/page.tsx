@@ -1,3 +1,12 @@
+/**
+ * ホームのページ（src/app/page.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-HOME-101
+ * @design DD-HOME-001
+ * @remarks 商品・LOOK・NEWS・取扱店とそれぞれの総数の7つの取得は互いに依存しないので、1回の Promise.all で並べて待ち、表示までの待ちを最も遅い1本に抑える。
+ * ヒーロー画像は最初の画面で一番大きな物なので、HTML を返す前に先読みを頼み、画像にも優先の印を付ける。
+ */
 import type { Metadata } from "next";
 import Image from "next/image";
 import ReactDOM from "react-dom";

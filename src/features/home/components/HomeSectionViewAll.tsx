@@ -1,8 +1,14 @@
+/**
+ * ホームの ITEM・LOOK・NEWS の区画の末尾に置く VIEW ALL ボタン（src/features/home/components/HomeSectionViewAll.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-HOME-102
+ * @design DD-HOME-002
+ * @remarks ITEM・LOOK・NEWS の区画の下から一覧へ移る入口を、同じ見た目の共通のボタン1つにまとめるため、共通 UI の Button に載せる。
+ */
 import { Button } from "@/components/ui/Button/Button";
 import { cn } from "@/lib/utils";
 
-// ホーム各セクション（ITEMS / LOOK / NEWS）の末尾に配置する VIEW ALL ボタン。
-// 共通 UI の Button（secondary: 白地・黒枠、ホバーで反転）を使用する。
 type HomeSectionViewAllProps = {
   href: string;
   /** ページ内に VIEW ALL が複数並ぶため、行き先を区別する名前を必須にする */

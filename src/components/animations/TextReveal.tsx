@@ -1,3 +1,11 @@
+/**
+ * 文字を1文字ずつ下から浮かせて見せる見出しの部品（src/components/animations/TextReveal.tsx）。
+ *
+ * @packageDocumentation
+ * @impl IMPL-HOME-103
+ * @design DD-HOME-003
+ * @remarks 画面に入ってから動かすため、利用者の端末で表示の検知と動きの設定の変更を見張る必要があり、クライアントで動かす。
+ */
 'use client';
 
 import { useEffect, useRef, useState, type Ref } from 'react';
