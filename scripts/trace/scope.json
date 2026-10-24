@@ -236,7 +236,10 @@
       "tests/unit/app/login/**/*.test.{ts,tsx}",
       "tests/integration/api/auth/**/*.test.{ts,tsx}",
       "tests/integration/api/auth.test.ts",
-      "tests/integration/auth-flow.test.ts"
+      "tests/integration/auth-flow.test.ts",
+      "tests/integration/ui/auth-*.test.{ts,tsx}",
+      "tests/integration/api/auth-*.test.ts",
+      "tests/integration/db/auth_*.integration.test.ts"
     ],
     "e2e": [
       "e2e/FR-LOGIN-*.spec.ts",

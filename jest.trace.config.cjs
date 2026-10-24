@@ -18,12 +18,24 @@ if (unknown.length > 0) {
 }
 const areas = wanted.length > 0 ? scope.filter((a) => wanted.includes(a.area)) : scope;
 
+// 中括弧の型 `a/{b,c}/d` を `a/b/d`・`a/c/d` に開く。
+// jest は testMatch を整える時に `/{` を `\{`（中括弧そのものの字）に変えるので、開かずに渡すと Windows で当たらない。
+// scripts/trace は fs.globSync で中括弧を開いて読むので、開いて渡せば両方が同じファイルを選ぶ。
+function expandBraces(pattern) {
+  const m = /\{([^{}]*)\}/.exec(pattern);
+  if (!m) return [pattern];
+  const head = pattern.slice(0, m.index);
+  const tail = pattern.slice(m.index + m[0].length);
+  return m[1].split(',').flatMap((alt) => expandBraces(head + alt + tail));
+}
+
 module.exports = {
   ...base,
   // 分岐の網羅は単体の試験で測るので、tests/unit/ の下だけを流す
   testMatch: areas
     .flatMap((a) => a.tests)
     .filter((p) => p.startsWith('tests/unit/'))
+    .flatMap(expandBraces)
     .map((p) => `<rootDir>/${p}`),
   collectCoverageFrom: areas.flatMap((a) => a.src),
   coverageThreshold: { global: { branches: 100 } },
