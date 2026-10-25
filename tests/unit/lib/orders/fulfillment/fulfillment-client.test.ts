@@ -1,46 +1,14 @@
-const mockClientFetch = jest.fn();
-jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
+import * as fulfillmentClient from '@/lib/orders/fulfillment/fulfillment-client';
+import { clampQuantity, lineLabel } from '@/lib/orders/fulfillment/fulfillment-client';
 
-import {
-  callFulfillmentApi,
-  clampQuantity,
-  fetchFulfillmentMaterials,
-  lineLabel,
-} from '@/lib/orders/fulfillment/fulfillment-client';
-import {
-  LEGACY_FULFILLMENT_DISABLED_TEXT,
-  MANUAL_COMPLETION_DISABLED_TEXT,
-} from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
-
-const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
-
-beforeEach(() => {
-  mockClientFetch.mockReset();
-});
-
-// G-1 Task 15: 旧の発送・仕上がり・取消・発送の材料の窓口は止めた（410）。画面の道具は窓口を呼ばずに固定の停止の文で断る
-describe('callFulfillmentApi（G-1 で停止）', () => {
-  it.each([
-    [`/api/admin/orders/${ORDER_ID}/fulfillments`, { requestKey: 'k' }],
-    [`/api/admin/orders/${ORDER_ID}/fulfillments/f-1/cancel`, undefined],
-  ])('発送の窓口 %s は窓口を呼ばず、発送の停止の文で断る', async (url, body) => {
-    await expect(callFulfillmentApi(url, body, '失敗')).resolves.toEqual({ kind: 'refused', message: LEGACY_FULFILLMENT_DISABLED_TEXT });
-    expect(mockClientFetch).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    [`/api/admin/orders/${ORDER_ID}/completions`, { requestKey: 'k', lines: [] }],
-    [`/api/admin/orders/${ORDER_ID}/completions/c-1/cancel`, undefined],
-  ])('仕上がりの窓口 %s は窓口を呼ばず、手動の仕上がりの停止の文で断る', async (url, body) => {
-    await expect(callFulfillmentApi(url, body, '失敗')).resolves.toEqual({ kind: 'refused', message: MANUAL_COMPLETION_DISABLED_TEXT });
-    expect(mockClientFetch).not.toHaveBeenCalled();
-  });
-});
-
-describe('fetchFulfillmentMaterials（G-1 で停止）', () => {
-  it('発送の材料の窓口を呼ばず、発送の停止の文を返す', async () => {
-    await expect(fetchFulfillmentMaterials(ORDER_ID)).resolves.toEqual({ ok: false, message: LEGACY_FULFILLMENT_DISABLED_TEXT });
-    expect(mockClientFetch).not.toHaveBeenCalled();
+// G-3 Task 7: 発送・仕上がりの窓口を呼ぶ停止の道具（callFulfillmentApi・fetchFulfillmentMaterials）と、その知らせの文は、発送票の窓口へ移って無くなった。
+// 商品の見出しと数の入力の部品（返品・返金・取消の申し込みの画面が使う）だけが残る
+describe('fulfillment-client の整理（G-3 Task 7）', () => {
+  it('FREQ-534-AC-05: 窓口を呼ぶ停止の道具と仕上がりの知らせの文は無く、見出しと数の入力の部品だけが残る', () => {
+    for (const name of ['callFulfillmentApi', 'fetchFulfillmentMaterials', 'COMPLETION_RECORDED_MESSAGE', 'NO_COMPLETION_QUANTITY_MESSAGE']) {
+      expect(fulfillmentClient).not.toHaveProperty(name);
+    }
+    expect(Object.keys(fulfillmentClient).sort()).toEqual(['clampQuantity', 'lineLabel']);
   });
 });
 

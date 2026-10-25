@@ -8,7 +8,7 @@ import { seedGroupG3ReadyOrder, seedGroupG3Slip, withRolePermissions } from './h
 import { seedGroupG1Allocation, seedGroupG1Shipment, setOrderStatusForFixture } from './helpers/group-g1-fixtures';
 import { insertRefundRecord, insertReturnRecord, type RefundFixtureStatus, type ReturnFixtureStatus } from './helpers/order-fixtures';
 import { setDeliveryTracking } from './helpers/delivery-tracking-fixtures';
-import { G3C_ALLOWLIST } from './helpers/group-g-allowlist';
+import { G3C_ALLOWLIST, G3D_ALLOWLIST } from './helpers/group-g-allowlist';
 
 jest.setTimeout(90000);
 type Confirmed = { id: string; number: string; version: number; fulfillments: { orderId: string; fulfillmentId: string; number: number; completesOrder: boolean }[] };
@@ -561,7 +561,7 @@ describeLocalDb('G-3 shipment slip cancel', (db) => {
     },
   );
 
-  test('FREQ-540-AC-11: 公開入口はINVOKER委譲、private本体はDEFINER、restoreにEXECUTEなし、allowlist72本に2本が入る', async () => {
+  test('FREQ-540-AC-11: 公開入口はINVOKER委譲、private本体はDEFINER、restoreにEXECUTEなし、allowlist74本に2本が入る', async () => {
     const rows = (await db().query(`select n.nspname,p.proname,p.prosecdef,p.prosrc,has_function_privilege('service_role',p.oid,'EXECUTE') service,
       has_function_privilege('anon',p.oid,'EXECUTE') anon,has_function_privilege('authenticated',p.oid,'EXECUTE') authenticated,
       exists(select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0 and a.privilege_type = 'EXECUTE') public_execute
@@ -574,9 +574,9 @@ describeLocalDb('G-3 shipment slip cancel', (db) => {
     expect(rows.find((row) => row.nspname === 'private' && row.proname === 'admin_cancel_shipment_slip')).toMatchObject({ prosecdef: true, service: true });
     expect(rows.find((row) => row.proname === 'restore_group_g_shipment')).toMatchObject({ prosecdef: true, service: false });
     const allowlist = (await db().query('select x::oid::text as oid from unnest(private.group_g_writer_allowlist()) as a(x)')).rows.map((row) => row.oid);
-    expect(allowlist).toHaveLength(72);
-    const expected = (await db().query('select to_regprocedure(s)::oid::text as oid from unnest($1::text[]) as s', [G3C_ALLOWLIST])).rows.map((row) => row.oid);
+    expect(allowlist).toHaveLength(74);
+    const expected = (await db().query('select to_regprocedure(s)::oid::text as oid from unnest($1::text[]) as s', [G3D_ALLOWLIST])).rows.map((row) => row.oid);
     expect([...allowlist].sort()).toEqual([...expected].sort());
-    expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(72);
+    expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(74);
   });
 });

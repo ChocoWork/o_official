@@ -1768,7 +1768,8 @@ function composeDelivery(material: OrderEmailMaterial, kind: DeliveryEmailKind):
       greeting(order.shipping_full_name), '', updated ? 'ご注文の発送の情報を更新しました。' : 'ご注文の商品を配達中です。', '',
       `注文番号: ${orderNumber}`, '', updated ? '発送した商品:' : '配達中の商品:', ...itemLines, '',
       `配送業者: ${carrier.label}`, `追跡番号: ${trackingNumber}`, `追跡はこちら: ${carrier.trackingUrl(trackingNumber)}`, '',
-      ...(updated ? ['先にお知らせした伝票番号は使えません', ''] : []),
+      // 前の番号が無い（番号を初めて入れた）時は、使えなくなる番号が無いので、この行とその後の空行を出さない
+      ...(updated && delivery.previousTrackingNumber ? ['先にお知らせした伝票番号は使えません', ''] : []),
       contactLine(order.id), '', SHOP_NAME,
     ].join('\n'),
   };

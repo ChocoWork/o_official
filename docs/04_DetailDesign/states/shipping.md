@@ -1,6 +1,6 @@
 # 発送票の状態（G-3）
 
-> 状態: 保存する4段階と、操作印ごとの遷移の定義は現行のソース（グループ G-3 Task 1・4・5・6）。下書きの保存・破棄（Task 4）と確定（Task 5）と取消（Task 6）の関数を実装。Task 5まで、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。取消（Task 6）を含む21 suiteで1,287/1,287成功も確認した（2026-10-25）。伝票番号・配達済み・出荷日の訂正の遷移は定義済みだが、書く関数は後続 Task（本番へは未適用） | 確認日: 2026-10-25 | 対象: `shipment_slips.stage` と、票の更新を通す操作印 `app.group_g_slip_change`
+> 状態: 保存する4段階と、操作印ごとの遷移の定義は現行のソース（グループ G-3 Task 1・4・5・6）。下書きの保存・破棄（Task 4）と確定（Task 5）と取消（Task 6）の関数を実装。Task 5まで、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。取消（Task 6）を含む21 suiteで1,287/1,287成功も確認した（2026-10-25）。伝票番号の入力・訂正と手動の配達済み（Task 7）の関数を実装（controller が fresh reset して19 suite・1,079/1,079成功を確認。2026-10-25）。出荷日の訂正の遷移は定義済みだが、書く関数は後続 Task（本番へは未適用） | 確認日: 2026-10-25 | 対象: `shipment_slips.stage` と、票の更新を通す操作印 `app.group_g_slip_change`
 
 ## 概要
 
@@ -79,9 +79,19 @@ stateDiagram-v2
 | `cancelled` | 別の要求番号の取消は `GROUP_G_SLIP_CANCELLED`。同じ要求番号の再送は保存した結果を返す |
 | `draft`・`discarded` | `GROUP_G_SLIP_NOT_CONFIRMED` |
 
+## 伝票番号の後入力・訂正と手動の配達済み（G-3 Task 7）
+
+`confirmed` → `confirmed`（印 `tracking`）は伝票番号の入力・訂正、`confirmed` → `confirmed`（印 `deliver`）は手動の配達済み。段階は変わらず、版だけが1つ増える（`tracking` は運送会社・番号・`tracking_version` も変える。`deliver` は版と更新時刻だけ）。伝票番号の訂正では、発送が配達済みだった票も発送済みの状態（`delivery_status = confirmed`）へ戻る。順序の詳細は[伝票番号の後入力・訂正と手動の配達済み](../sequence/shipping.md)。
+
+| 前の段階 | 伝票番号の入力・訂正（印 `tracking`） | 手動の配達済み（印 `deliver`） |
+| --- | --- | --- |
+| `confirmed` | `confirmed`（版+1。`tracking_version`+1。版履歴 `tracking_update`）。同じ値は `GROUP_G_SLIP_TRACKING_UNCHANGED`、空に戻す訂正は `GROUP_G_SLIP_TRACKING_INCOMPLETE` | `confirmed`（版+1。版履歴 `delivered`）。すでに配達済みなら `GROUP_G_SLIP_ALREADY_DELIVERED`、届いた日が範囲外なら `GROUP_G_SLIP_DELIVERY_DATE_INVALID` |
+| `cancelled` | `GROUP_G_SLIP_CANCELLED` | `GROUP_G_SLIP_CANCELLED` |
+| `draft`・`discarded` | `GROUP_G_SLIP_NOT_CONFIRMED` | `GROUP_G_SLIP_NOT_CONFIRMED` |
+
 ## 関連テスト
 
-[発送票モデル](../../../tests/integration/db/group_g3_model.integration.test.ts)（印ごとの列の許可表と、許さない遷移の拒否）、[下書き](../../../tests/integration/db/group_g3_draft.integration.test.ts)（作成・入れ替え・破棄・期限切れ・原子性）、[発送の取消](../../../tests/integration/db/group_g3_cancel.integration.test.ts)（戻しは1回・拒否の優先・再発送・原子性）、[発送票の頁](../../../tests/unit/components/ShipmentSlipSection.test.tsx)（段階ごとの画面）、[取消のダイアログ](../../../tests/unit/components/ShipmentSlipCancelDialog.test.tsx)。
+[伝票番号・配達済み](../../../tests/integration/db/group_g3_tracking.integration.test.ts)（番号の後入力・訂正・手動の配達済み・旧版の借りの印・権限・旧4RPCの停止）、[発送票モデル](../../../tests/integration/db/group_g3_model.integration.test.ts)（印ごとの列の許可表と、許さない遷移の拒否）、[下書き](../../../tests/integration/db/group_g3_draft.integration.test.ts)（作成・入れ替え・破棄・期限切れ・原子性）、[発送の取消](../../../tests/integration/db/group_g3_cancel.integration.test.ts)（戻しは1回・拒否の優先・再発送・原子性）、[発送票の頁](../../../tests/unit/components/ShipmentSlipSection.test.tsx)（段階ごとの画面）、[取消のダイアログ](../../../tests/unit/components/ShipmentSlipCancelDialog.test.tsx)。
 
 ## 未確認事項
 

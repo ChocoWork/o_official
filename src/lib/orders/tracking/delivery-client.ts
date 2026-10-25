@@ -1,17 +1,11 @@
 import { useState } from 'react';
-import { LEGACY_FULFILLMENT_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
-import type {
-  DeliveryCallResult,
-  MarkDeliveredInput,
-  MarkDeliveredResult,
-  UpdateTrackingInput,
-  UpdateTrackingResult,
-} from '@/lib/orders/tracking/delivery-types';
+import type { DeliveryCallResult } from '@/lib/orders/tracking/delivery-types';
 
 /**
- * 管理画面（ブラウザ）から、伝票番号を直す窓口と、配達済みにする窓口（POST。計画の C-3）を呼ぶ道具と、
- * 直す画面・配達済みの画面が共有する「二重防止の番号と結果不明の再送」の流れ。
- * G-1 Task 14 で2つの窓口は止めた（410）ので、G-1 Task 15 から2つの道具は窓口を呼ばずに固定の停止の文で断る。サーバーからは import しない。
+ * 伝票番号を入れる・直す画面と、配達済みにする画面（発送票の ShipmentSlipTrackingDialog・ShipmentSlipDeliveredDialog）が共有する
+ * 「二重防止の番号と結果不明の再送」の流れ（useDeliverySubmission）と、その画面の言葉。
+ * 窓口を呼ぶ道具は shipment-slip-client.ts だけに置く（旧の発送ごとの窓口は G-1 で止め、G-3 Task 7 で停止の道具も整理した）。
+ * サーバーからは import しない。
  */
 
 // 画面の言葉は計画の C-5・C-4 のとおり（句点を足し引きしない）
@@ -22,28 +16,8 @@ export const DELIVERY_FORM_TEXT = {
   unknown: '結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。',
 } as const;
 
-/** 伝票番号を直す（POST .../fulfillments/[fulfillmentId]/tracking）。G-1 で窓口は止めた（410）ので、窓口を呼ばずに発送の停止の文で断る */
-export const submitTrackingEdit: (
-  orderId: string,
-  fulfillmentId: string,
-  body: Pick<UpdateTrackingInput, 'requestKey' | 'carrier' | 'trackingNumber' | 'notifyCustomer'>,
-) => Promise<DeliveryCallResult<UpdateTrackingResult>> = async () => ({
-  kind: 'refused',
-  message: LEGACY_FULFILLMENT_DISABLED_TEXT,
-});
-
-/** 手で配達済みにする（POST .../fulfillments/[fulfillmentId]/delivered）。G-1 で窓口は止めた（410）ので、窓口を呼ばずに発送の停止の文で断る */
-export const submitManualDelivered: (
-  orderId: string,
-  fulfillmentId: string,
-  body: Pick<MarkDeliveredInput, 'requestKey' | 'deliveredOn' | 'notifyCustomer'>,
-) => Promise<DeliveryCallResult<MarkDeliveredResult>> = async () => ({
-  kind: 'refused',
-  message: LEGACY_FULFILLMENT_DISABLED_TEXT,
-});
-
 type DeliverySubmissionOptions<Body, Result> = {
-  /** 窓口を呼ぶ（submitTrackingEdit か submitManualDelivered） */
+  /** 窓口を呼ぶ（shipment-slip-client.ts の submitSlipTrackingEdit か submitSlipDelivered を包んだ関数） */
   send: (body: Body) => Promise<DeliveryCallResult<Result>>;
   /** 記録できた（前の結果の再送でも）。親へ知らせる処理 */
   onSucceeded: () => void;

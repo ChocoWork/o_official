@@ -1021,3 +1021,23 @@ G-1 で止めた旧い発送の入口の案内を、G-3 の発送票へ向ける
 | 成功 | 「発送を取り消しました。」を出してダイアログを閉じ、票を読み直す。状態は「取消済み」になり、「発送の記録」と「発送を取り消す」は出なくなる |
 
 検証: 単体 [取消のダイアログ](../../../tests/unit/components/ShipmentSlipCancelDialog.test.tsx)・[票の頁](../../../tests/unit/components/ShipmentSlipSection.test.tsx)・[取消の窓口](../../../tests/unit/api/admin/shipment-slip-cancel-route.test.ts)・[store](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-store.test.ts)・[client](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-client.test.ts)。DB は[発送の取消](../../../tests/integration/db/group_g3_cancel.integration.test.ts)（controller の reset 後に21 suite・1,287/1,287成功。2026-10-25）。3つの画面幅の確認は後続 Task の E2E。
+
+## 伝票番号の入力・訂正と手動の配達済み（G-3 Task 7）
+
+確定済みの票（状態「発送済み」）の「発送の記録」の下に、ボタン「伝票番号を直す」（伝票番号が無い票は「伝票番号を入れる」）と「配達済みにする」を出す（下書き・取消済み・破棄済みには出さない。「配達済みにする」は、有効な発送のどれかがすでに配達済みの票にも出さない）。部品は[ShipmentSlipTrackingDialog](../../../src/components/ShipmentSlipTrackingDialog.tsx)と[ShipmentSlipDeliveredDialog](../../../src/components/ShipmentSlipDeliveredDialog.tsx)で、票の頁（[ShipmentSlipSection](../../../src/components/ShipmentSlipSection.tsx)）が開閉する。2つとも `useDeliverySubmission`（二重防止の番号・結果不明の再確認）に、`shipment-slip-client.ts` の `submitSlipTrackingEdit`・`submitSlipDelivered` を渡して窓口を呼ぶ。
+
+| 場所 | 内容 |
+| --- | --- |
+| 伝票番号のダイアログ | 見出し・ボタンは番号がある票が「伝票番号を直す」「直す」、無い票が「伝票番号を入れる」「入れる」。運送会社（ヤマト運輸・佐川急便・日本郵便。今の値で始まる。運送会社がまだ無い票は何も選ばれておらず、先頭に「選んでください」を置いて、選ぶまで送れない）・伝票番号（今の値）・「お客様に更新のメールを送る」（初期オン）、説明「票に含まれるすべての注文に反映します。」、ボタン「戻る」。運送会社と伝票番号は両方必須で、空では送れず「運送会社と伝票番号は、両方入れるか両方空にしてください。」、書式（英数字とハイフン64文字まで）に合わなければ「入力を確かめてください。」を窓口へ送る前に出す |
+| 配達済みのダイアログ | 見出し・ボタン「配達済みにする」、説明「票に含まれるすべての注文を配達済みにします。」、「届いた日」（初期値は日本時間の今日。今日より後は選べない）・「お客様に配達済みのメールを送る」（初期オン）、ボタン「戻る」 |
+| 送信 | `POST /api/admin/shipment-slips/[id]/tracking`（本文は `expectedVersion`・`carrier`・`trackingNumber`・`notifyCustomer`・`requestKey`）、`POST /api/admin/shipment-slips/[id]/delivered`（本文は `expectedVersion`・`deliveredOn`・`notifyCustomer`・`requestKey`）。送信中はボタンも入力も押せず、Escape でも閉じない。二重に押しても通信は1回。処理の前の断り（429 など）の後の再押下は同じ `requestKey`・同じ本文 |
+| 断り | 表の本文（同じ値・すでに配達済み・届いた日の範囲・取消済み・版の競合など）を `role="alert"` でダイアログの中に出し、**入力を保ったまま開いたまま**票を読み直す（次に押すと読み直した新しい版・新しい `requestKey` で送る）。権限の不足（403）は「発送を扱う権限がありません。」だけを出し、読み直さない。読み直した票が取消済みになっていたら、ダイアログを閉じて「取消済み」の表示だけにする |
+| 結果不明 | 「結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。」と「もう一度確かめる」を出し、入力を止めて同じ本文・同じ `requestKey` を送り直す。「戻る」は記録されたかもしれないので票を読み直して閉じる |
+| 成功 | 「伝票番号を更新しました。」「配達済みにしました。」を出してダイアログを閉じ、票を読み直す |
+
+票の画面の注意書き2点（利用者への案内。画面の文ではなく、この画面を使う時の決まり）:
+
+1. 伝票番号は入れた後は訂正できるが、空には戻せない。運送会社と伝票番号は両方必須で、誤って入れた番号は正しい番号へ直す。番号を消す操作は無い（DB も `GROUP_G_SLIP_TRACKING_INCOMPLETE` で断る）。
+2. 配送の要対応（追跡の失敗・配達の問題）は、同梱の票では**代表の注文にだけ**出る。参加する他の注文には出ないので、票の画面の追跡の登録の要約（`registration`。追跡がオンかどうか・状態・一度でも登録できたか・代表の注文）で確かめる。伝票番号の訂正と手動の配達済みは、代表の登録を止め、代表の要対応を閉じる（参加の注文の要対応は扱わない）。
+
+検証: 単体 [伝票番号のダイアログ](../../../tests/unit/components/ShipmentSlipTrackingDialog.test.tsx)・[配達済みのダイアログ](../../../tests/unit/components/ShipmentSlipDeliveredDialog.test.tsx)・[票の頁](../../../tests/unit/components/ShipmentSlipSection.test.tsx)・[伝票番号の窓口](../../../tests/unit/api/admin/shipment-slip-tracking-route.test.ts)・[配達済みの窓口](../../../tests/unit/api/admin/shipment-slip-delivered-route.test.ts)・[store](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-store.test.ts)・[client](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-client.test.ts)・[型と言葉](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-types.test.ts)・[旧い呼び出しの道具の整理](../../../tests/unit/lib/orders/tracking/delivery-client.test.ts)。DB は[伝票番号・配達済み](../../../tests/integration/db/group_g3_tracking.integration.test.ts)（controller が fresh reset して19 suite・1,079/1,079成功を確認。2026-10-25）。3つの画面幅の確認は後続 Task の E2E。

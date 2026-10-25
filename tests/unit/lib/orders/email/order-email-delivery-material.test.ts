@@ -61,7 +61,7 @@ describe('配送メールの材料を読む', () => {
     const source = await loadDeliveryEmailMaterial(h.client, claim(kind));
     expect(source?.delivery).toEqual({ fulfillmentId: FULFILLMENT.id, trackingVersion: 3, currentTrackingVersion: 3,
       cancelled: false, deliveryStatus: 'delivered', deliveredAt: '2026-10-20T15:01:00Z',
-      windowDays: kind === 'delivered' ? 7 : null, carrier: 'yamato', trackingNumber: 'CURRENT-1234' });
+      windowDays: kind === 'delivered' ? 7 : null, carrier: 'yamato', trackingNumber: 'CURRENT-1234', previousTrackingNumber: null });
     expect(source?.fulfillment?.lines).toEqual([{ item_name: 'コート', color: 'BLACK', size: 'M', quantity: 1, exchange: false }]);
     for (const query of h.queries.filter((q) => q.table === 'order_fulfillments')) {
       expect(query.filters).toEqual(expect.arrayContaining([['id', FULFILLMENT.id], ['order_id', ORDER.id]]));
@@ -84,6 +84,22 @@ describe('配送メールの材料を読む', () => {
     );
     // 追跡の詳細・出来事・場所・providerの文は読まない。
     expect(h.queries.map((q) => q.columns).join(',')).not.toMatch(/provider|location|description|\*/);
+  });
+
+  it('FREQ-534-AC-01: 発送の更新は直しの行の from_tracking_number を previousTrackingNumber にする。前の番号が無い（初めて入れた）時は null', async () => {
+    const corrected = await loadDeliveryEmailMaterial(store().client, claim('shipping_update', { trackingVersion: 2 }));
+    expect(corrected?.delivery?.previousTrackingNumber).toBe('OLD-1234');
+    for (const from of [null, '', '  ']) {
+      const first = await loadDeliveryEmailMaterial(
+        store({ order_fulfillment_tracking_changes: [{ ...CHANGE, from_carrier: null, from_tracking_number: from }] }).client,
+        claim('shipping_update', { trackingVersion: 2 }),
+      );
+      expect(first?.delivery).toMatchObject({ previousTrackingNumber: null, carrier: 'sagawa', trackingNumber: 'CORRECTED-1234' });
+    }
+    // 更新メール以外は直しの行を読まないので null のまま
+    const h = store();
+    expect((await loadDeliveryEmailMaterial(h.client, claim('out_for_delivery')))?.delivery?.previousTrackingNumber).toBeNull();
+    expect(h.queries.some((q) => q.table === 'order_fulfillment_tracking_changes')).toBe(false);
   });
 
   it.each([1, 7, 365, null])('配達済みは設定のwindow_days=%sをそのまま読む', async (window_days) => {

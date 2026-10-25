@@ -44,7 +44,7 @@ function material(overrides: Partial<OrderEmailDeliveryMaterial> = {}): OrderEma
     refund: null, orderReturn: null, request: null,
     delivery: { fulfillmentId: 'fulfillment-1', trackingVersion: 2, currentTrackingVersion: 2, cancelled: false,
       deliveryStatus: 'confirmed', deliveredAt: '2026-10-20T15:00:00Z', windowDays: 7,
-      carrier: 'yamato', trackingNumber: '1234', ...overrides },
+      carrier: 'yamato', trackingNumber: '1234', previousTrackingNumber: null, ...overrides },
   };
 }
 

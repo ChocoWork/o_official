@@ -4,13 +4,14 @@
  * fulfillment_postgrest.integration.test.ts と同じく、接続先未設定は skip、非ローカルは失敗させる。
  * SQL の準備も PostgREST の書き込みも commit される。--runInBand 専用で、毎回共有の配送状態を戻す。
  * 注文・発送・出来事の追記記録は消さず、controller の次の reset で捨てる。
- * G-1 Task 14: 旧の作成・取消・伝票番号の訂正・手動の配達済みの関数は PostgREST を通しても LEGACY_FULFILLMENT_DISABLED（55000）で断り、
- * 窓口（store）は PostgREST を呼ぶ前に LegacyFulfillmentDisabledError を投げる。読み出しの形は、合成の訂正・配達済み（fixture）を材料に確かめる。
+ * G-1 Task 14: 旧の作成・取消・伝票番号の訂正・手動の配達済みの関数は PostgREST を通しても LEGACY_FULFILLMENT_DISABLED（55000）で断る。
+ * 作成の store（createFulfillment）は PostgREST を呼ぶ前に LegacyFulfillmentDisabledError を投げる。伝票番号の訂正・手動の配達済みの store の
+ * 停止の道具は G-3 Task 7 で発送票の道具に置き換わって無くなったので、この2つは生の RPC が断ることだけを確かめる。
+ * 読み出しの形は、合成の訂正・配達済み（fixture）を材料に確かめる。
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
 import { createFulfillment } from '@/lib/orders/fulfillment/fulfillment-store';
-import { LegacyFulfillmentDisabledError } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import {
   claimDeliveryTracking,
   expireDeliveryTracking,
@@ -18,7 +19,6 @@ import {
   getOrderDeliveryDetail,
   listDeliveryAttention,
   listOrderDeliverySummaries,
-  markFulfillmentDelivered,
   recordDeliveryReadResult,
   recordDeliveryRegistrationResult,
   recordDeliveryStopResult,
@@ -26,7 +26,6 @@ import {
   setDeliveryTracking,
   signalDeliveryTracking,
   takeDeliveryProviderSlot,
-  updateFulfillmentTracking,
   type DeliveryStore,
 } from '@/lib/orders/tracking/delivery-store';
 import type { DeliveryReadResult, TrackingClaim } from '@/lib/orders/tracking/delivery-types';
@@ -160,9 +159,7 @@ describeLocalDb('integration: 配送の関数を実際の PostgREST に通す', 
       orderId: target.orderId, fulfillmentId: target.fulfillmentId, actorId: actor.id, requestKey: randomUUID(),
       carrier: 'japanpost' as const, trackingNumber: `NEW-${randomUUID()}`, notifyCustomer: true,
     };
-    // 窓口は PostgREST を呼ばない。PostgREST を直に通しても固定の拒否
-    await expect(updateFulfillmentTracking(store, input)).rejects.toBeInstanceOf(LegacyFulfillmentDisabledError);
-    expect(replies).toEqual([]);
+    // 発送ごとの窓口の停止の道具は G-3 Task 7 で無くなった。PostgREST を直に通しても固定の拒否
     const raw = await client.rpc('admin_update_fulfillment_tracking', {
       _order_id: input.orderId, _fulfillment_id: input.fulfillmentId, _actor_id: input.actorId, _request_key: input.requestKey,
       _shipping_carrier: input.carrier, _tracking_number: input.trackingNumber, _notify_customer: input.notifyCustomer,
@@ -222,8 +219,6 @@ describeLocalDb('integration: 配送の関数を実際の PostgREST に通す', 
       requestKey: randomUUID(), deliveredOn: target.clock.today, notifyCustomer: true,
     };
     replies = [];
-    await expect(markFulfillmentDelivered(store, input)).rejects.toBeInstanceOf(LegacyFulfillmentDisabledError);
-    expect(replies).toEqual([]);
     const refused = await client.rpc('admin_mark_fulfillment_delivered', {
       _order_id: input.orderId, _fulfillment_id: input.fulfillmentId, _actor_id: input.actorId,
       _request_key: input.requestKey, _delivered_on: input.deliveredOn, _notify_customer: input.notifyCustomer,

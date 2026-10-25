@@ -19,6 +19,8 @@ export type OrderEmailDeliveryMaterial = {
   windowDays: number | null;
   carrier: ShippingCarrierId | null;
   trackingNumber: string | null;
+  /** 発送の更新メールで、直す前の伝票番号（直しの行の from_tracking_number）。前の番号が無い（初めて入れた）時と、更新メール以外は null */
+  previousTrackingNumber: string | null;
 };
 
 type DeliveryRow = {
@@ -29,7 +31,7 @@ type DeliveryRow = {
   shipping_carrier: string | null;
   tracking_number: string | null;
 };
-type ChangeRow = { to_carrier: string; to_tracking_number: string };
+type ChangeRow = { to_carrier: string; to_tracking_number: string; from_tracking_number: string | null };
 
 /**
  * 注文・発送・商品の読み方は既存と共通。現在値は本文の再利用より前に読み直す。
@@ -57,15 +59,18 @@ export async function loadDeliveryEmailMaterial(
 
   let carrier = current.shipping_carrier;
   let trackingNumber = current.tracking_number;
+  let previousTrackingNumber: string | null = null;
   if (claim.kind === 'shipping_update') {
     const { data: change, error: changeError } = await store.from('order_fulfillment_tracking_changes')
-      .select('to_carrier, to_tracking_number')
+      .select('to_carrier, to_tracking_number, from_tracking_number')
       .eq('id', claim.trackingChangeId).eq('fulfillment_id', claim.fulfillmentId).eq('tracking_version', version)
       .maybeSingle<ChangeRow>();
     if (changeError) throw new OrderEmailMaterialError('order_fulfillment_tracking_changes', { cause: changeError });
     if (!change) return null;
     carrier = change.to_carrier;
     trackingNumber = change.to_tracking_number;
+    // 前の番号が無い（番号なしで確定した票へ初めて入れた）時は null のまま
+    previousTrackingNumber = change.from_tracking_number?.trim() || null;
   }
 
   let windowDays: number | null = null;
@@ -83,7 +88,7 @@ export async function loadDeliveryEmailMaterial(
     delivery: {
       fulfillmentId: claim.fulfillmentId, trackingVersion: version, currentTrackingVersion: current.tracking_version,
       cancelled: current.cancelled_at !== null, deliveryStatus: current.delivery_status, deliveredAt: current.delivered_at,
-      windowDays, carrier: isShippingCarrierId(carrier) ? carrier : null, trackingNumber,
+      windowDays, carrier: isShippingCarrierId(carrier) ? carrier : null, trackingNumber, previousTrackingNumber,
     },
   };
 }

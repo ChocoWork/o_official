@@ -693,12 +693,12 @@ function deliveryMaterial(overrides: Partial<OrderEmailDeliveryMaterial> = {}): 
     delivery: {
       fulfillmentId: 'fulfillment-1', trackingVersion: 2, currentTrackingVersion: 2, cancelled: false,
       deliveryStatus: 'delivered', deliveredAt: '2026-10-20T15:01:00.000Z', windowDays: 7, carrier: 'sagawa',
-      trackingNumber: 'NEW-1234', ...overrides,
+      trackingNumber: 'NEW-1234', previousTrackingNumber: 'OLD-1234', ...overrides,
     },
   };
 }
 
-const request = (kind: ComposeRequest['kind'], variant: ComposeRequest['variant'] = null, paymentExpiredSent = false): ComposeRequest => ({
+const request =(kind: ComposeRequest['kind'], variant: ComposeRequest['variant'] = null, paymentExpiredSent = false): ComposeRequest => ({
   kind, variant, paymentExpiredSent,
 });
 

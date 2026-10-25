@@ -11,10 +11,12 @@ import {
   PACKING_HOLD_REASONS,
   parsePackingRow,
   parseShipmentSlipCancelled,
+  parseShipmentSlipDelivered,
   parseShipmentSlipDetail,
   parseShipmentSlipLink,
   parseShipmentSlipListRow,
   parseShipmentSlipSaved,
+  parseShipmentSlipTrackingUpdated,
   readShipmentSlipQueryInteger,
   SHIPMENT_SLIP_CANCEL_BLOCKER_REASONS,
   SHIPMENT_SLIP_CANCEL_BLOCKER_TEXT,
@@ -389,5 +391,47 @@ describe('下書きの言葉と保存の戻り（G-3 Task 4）', () => {
     expect(formatCancelBlocker('ORD-ABC', 'has_return')).toBe('注文 ORD-ABC は返品の対象です');
     expect(formatCancelBlocker('ORD-ABC', 'refunded')).toBe('注文 ORD-ABC は発送後に返金済みです');
     expect(formatCancelBlocker('ORD-ABC', 'not_cancellable')).toBe('注文 ORD-ABC は取り消せない状態です');
+  });
+
+  test('FREQ-534-AC-01: 伝票番号の後入力・訂正の戻りは id・版・追跡の版・replayed の4項目だけにする。追跡の版は2以上。崩れていれば SHIPMENT_SLIP_READ_FAILED', () => {
+    const updated = { id: SLIP_ID, version: 3, trackingVersion: 2, replayed: false };
+    expect(parseShipmentSlipTrackingUpdated({ ...updated, extra: 'PRIVATE-MARKER' })).toEqual(updated);
+    expect(parseShipmentSlipTrackingUpdated({ ...updated, trackingVersion: 7, replayed: true })).toEqual({ ...updated, trackingVersion: 7, replayed: true });
+    for (const bad of [
+      null, [], 'x', {}, { ...updated, id: 'x' }, { ...updated, version: 0 }, { ...updated, trackingVersion: 1 }, { ...updated, trackingVersion: 0 },
+      { ...updated, trackingVersion: 2.5 }, { ...updated, trackingVersion: '2' }, { ...updated, trackingVersion: undefined }, { ...updated, replayed: 'false' },
+    ]) {
+      expect(() => parseShipmentSlipTrackingUpdated(bad)).toThrow(SHIPMENT_SLIP_READ_FAILED);
+    }
+  });
+
+  test('FREQ-534-AC-02: 手動の配達済みの戻りは id・版・届いた時刻・replayed の4項目だけにする。時刻は読める日時。崩れていれば SHIPMENT_SLIP_READ_FAILED', () => {
+    const delivered = { id: SLIP_ID, version: 3, deliveredAt: '2026-10-25T03:00:00.000Z', replayed: false };
+    expect(parseShipmentSlipDelivered({ ...delivered, extra: 'PRIVATE-MARKER' })).toEqual(delivered);
+    for (const bad of [
+      null, [], 'x', {}, { ...delivered, id: 'x' }, { ...delivered, version: 0 }, { ...delivered, deliveredAt: 'not a date' }, { ...delivered, deliveredAt: null },
+      { ...delivered, deliveredAt: undefined }, { ...delivered, deliveredAt: 20261025 }, { ...delivered, replayed: 1 },
+    ]) {
+      expect(() => parseShipmentSlipDelivered(bad)).toThrow(SHIPMENT_SLIP_READ_FAILED);
+    }
+  });
+
+  test('FREQ-534-AC-01〜02: 伝票番号の後入力・訂正と配達済みの言葉は計画の「画面の言葉」と完全一致（絵文字・感嘆符なし）', () => {
+    expect(SHIPMENT_SLIP_TEXT.trackingEdit).toBe('伝票番号を直す');
+    expect(SHIPMENT_SLIP_TEXT.trackingEnter).toBe('伝票番号を入れる');
+    expect(SHIPMENT_SLIP_TEXT.trackingSubmitEdit).toBe('直す');
+    expect(SHIPMENT_SLIP_TEXT.trackingSubmitEnter).toBe('入れる');
+    expect(SHIPMENT_SLIP_TEXT.trackingDescription).toBe('票に含まれるすべての注文に反映します。');
+    expect(SHIPMENT_SLIP_TEXT.trackingNotify).toBe('お客様に更新のメールを送る');
+    expect(SHIPMENT_SLIP_TEXT.trackingUpdated).toBe('伝票番号を更新しました。');
+    expect(SHIPMENT_SLIP_TEXT.carrierLabel).toBe('運送会社');
+    expect(SHIPMENT_SLIP_TEXT.carrierPlaceholder).toBe('選んでください');
+    expect(SHIPMENT_SLIP_TEXT.trackingNumberLabel).toBe('伝票番号');
+    expect(SHIPMENT_SLIP_TEXT.markDelivered).toBe('配達済みにする');
+    expect(SHIPMENT_SLIP_TEXT.deliveredDescription).toBe('票に含まれるすべての注文を配達済みにします。');
+    expect(SHIPMENT_SLIP_TEXT.deliveredOnLabel).toBe('届いた日');
+    expect(SHIPMENT_SLIP_TEXT.deliveredNotify).toBe('お客様に配達済みのメールを送る');
+    expect(SHIPMENT_SLIP_TEXT.delivered).toBe('配達済みにしました。');
+    expect(Object.values(SHIPMENT_SLIP_TEXT).join('')).not.toMatch(/[!！]/);
   });
 });

@@ -603,6 +603,9 @@ describeLocalDb('G-3 発送票の下書き（保存・入替・破棄）', (db) 
     const SAVE_ENTRY = 'public.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid)';
     const LOCK = 'private.lock_group_g_shipment_slips(uuid[],uuid[],boolean)';
     const failed = (detail: string) => ({ code: '55000', message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', detail });
+    // G3C の確かめは「その移行を当てた時点の72本」を固定で持つ。今の DB の一覧は G3D（Task 7）で74本になったので、各試験の最初
+    // （外側の BEGIN の後）に、取引の中の一覧を G3C の72本へ入れ替える。戻すのは外側の ROLLBACK
+    beforeEach(async () => { await db().query(replaceAllowlistSql(G3C_ALLOWLIST)); });
     async function run(): Promise<{ code?: string; message?: string; detail?: string } | null> {
       await db().query('savepoint assert_section');
       try {
@@ -626,7 +629,7 @@ describeLocalDb('G-3 発送票の下書き（保存・入替・破棄）', (db) 
         await db().query('release savepoint tamper');
       }
     }
-    test('FREQ-540-AC-11: 今の DB で末尾の確かめが通る（書き手の一覧は固定の一覧と同じ。G3C の確かめは今の一覧そのもので流し、入れ替えない）', async () => {
+    test('FREQ-540-AC-11: 取引の中で書き手の一覧を G3C の72本へ入れ替えると、今の DB で G3C の末尾の確かめが通る（今の DB の一覧は G3D で74本）', async () => {
       expect(ASSERT).not.toBe('');
       expect(G3C_ALLOWLIST).toHaveLength(72);
       expect(await run()).toBeNull();

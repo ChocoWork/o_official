@@ -8,7 +8,6 @@ import {
   getOrderDeliveryDetail,
   listDeliveryAttention,
   listOrderDeliverySummaries,
-  markFulfillmentDelivered,
   recordDeliveryReadResult,
   recordDeliveryRegistrationResult,
   recordDeliveryStopResult,
@@ -16,33 +15,25 @@ import {
   setDeliveryTracking,
   signalDeliveryTracking,
   takeDeliveryProviderSlot,
-  updateFulfillmentTracking,
   type DeliveryStore,
 } from '@/lib/orders/tracking/delivery-store';
+import * as deliveryStore from '@/lib/orders/tracking/delivery-store';
 import type {
   DeliveryReadResult,
   TrackingClaim,
-  UpdateTrackingInput,
 } from '@/lib/orders/tracking/delivery-types';
-import { LegacyFulfillmentDisabledError } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 
 jest.mock('server-only', () => ({}), { virtual: true });
 
 const ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455556666';
-const OTHER_ORDER_ID = 'a1b2c3d4-1111-4222-8333-444455557777';
 const FULFILLMENT_ID = 'b1b2c3d4-1111-4222-8333-444455556666';
 const ACTOR_ID = 'c1b2c3d4-1111-4222-8333-444455556666';
-const REQUEST_KEY = 'd1b2c3d4-1111-4222-8333-444455556666';
 const CHANGE_ID = 'e1b2c3d4-1111-4222-8333-444455556666';
 const EVENT_ID = 'f1b2c3d4-1111-4222-8333-444455556666';
 const ATTENTION_ID = 'a1b2c3d4-2222-4222-8333-444455556666';
 const LEASE_TOKEN = 'b1b2c3d4-2222-4222-8333-444455556666';
 const AT = '2026-10-21T03:00:00.000Z';
 const EXPIRES_AT = '2026-11-20T03:00:00.000Z';
-const INPUT: UpdateTrackingInput = {
-  orderId: ORDER_ID, fulfillmentId: FULFILLMENT_ID, actorId: ACTOR_ID, requestKey: REQUEST_KEY,
-  carrier: 'sagawa', trackingNumber: 'New-123', notifyCustomer: false,
-};
 const CLAIM: TrackingClaim = {
   fulfillmentId: FULFILLMENT_ID, trackingVersion: 2, carrier: 'sagawa', trackingNumber: 'NEW-123',
   action: 'read', leaseToken: LEASE_TOKEN, signalRevision: 7, attempts: 2, readAttempts: 1, expiresAt: EXPIRES_AT,
@@ -108,24 +99,15 @@ const ATTENTION_ROW = {
   fulfillment_number: 1, kind: 'delivery_failure', opened_at: AT, status: 'failure',
 };
 
-// G-1 Task 14: 伝票番号の訂正と手動の配達済みは止めた。RPC を1回も呼ばず、固定の記号と SQLSTATE 55000 で断る
-describe('止めた管理操作（G-1）', () => {
-  const MANUAL = {
-    orderId: ORDER_ID, fulfillmentId: FULFILLMENT_ID, actorId: ACTOR_ID, requestKey: REQUEST_KEY,
-    deliveredOn: '2026-10-21', notifyCustomer: true,
-  };
-  test.each([
-    ['番号の直し', (store: DeliveryStore) => updateFulfillmentTracking(store, INPUT)],
-    ['手で配達済み', (store: DeliveryStore) => markFulfillmentDelivered(store, MANUAL)],
-    ['別の注文の番号', (store: DeliveryStore) => updateFulfillmentTracking(store, { ...INPUT, orderId: OTHER_ORDER_ID })],
-  ] as const)('%sは RPC を呼ばずに LEGACY_FULFILLMENT_DISABLED を投げる', async (_name, call) => {
-    const { store, rpc } = storeWith([{ tracking_change_id: CHANGE_ID, tracking_version: 2, replayed: false }]);
-    const error: unknown = await call(store).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(LegacyFulfillmentDisabledError);
-    expect(error).toMatchObject({ code: 'LEGACY_FULFILLMENT_DISABLED', sqlstate: '55000', message: 'LEGACY_FULFILLMENT_DISABLED' });
-    expect(error).not.toBeInstanceOf(DeliveryOperationError);
-    expect(error).not.toBeInstanceOf(DeliveryStoreError);
-    expect(rpc).not.toHaveBeenCalled();
+// G-3 Task 7: 発送ごとの伝票番号の訂正と手動の配達済みの停止の道具（G-1 Task 14）は、発送票単位の新しい関数
+// （shipment-slip-store.ts の updateShipmentSlipTracking・markShipmentSlipDelivered）に置き換わって無くなった
+describe('旧の発送ごとの管理操作の停止の道具（G-3 Task 7 で整理）', () => {
+  test('FREQ-534-AC-05: delivery-store に updateFulfillmentTracking・markFulfillmentDelivered は無い（配送の読み出しと設定の関数は残る）', () => {
+    expect(deliveryStore).not.toHaveProperty('updateFulfillmentTracking');
+    expect(deliveryStore).not.toHaveProperty('markFulfillmentDelivered');
+    for (const name of ['setDeliveryTracking', 'resolveDeliveryAttention', 'getOrderDeliveryDetail', 'recordDeliveryReadResult']) {
+      expect(deliveryStore).toHaveProperty(name);
+    }
   });
 });
 

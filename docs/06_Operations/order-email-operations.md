@@ -583,3 +583,13 @@ Resendのクリック追跡（Click Tracking）は注文のメールで有効に
 発送票の取消（`admin_cancel_shipment_slip`）は、**お客様向けの取消のメールを作らない**。まだ送っていない発送メールだけを取りやめる。票の全注文の発送ごとに、その発送の行のうち状態が `pending`・`retry_wait` のものを `skipped` にし、`last_error_code` を `fulfillment_cancelled`、件名と本文を消し（件名があった行は `body_erased_at` を記録）、`finished_at` を取消の時刻にする。種類は問わない（発送・伝票番号の更新・配送の通知はどれも同じ発送の行）。`sent`（送信済み）と `sending`（送信中の行は、worker が中身を作る時に取消を見て取りやめる）は変えない。予約済みで送る前の発送メールがそのまま送られることはない。取消の後に同じ品物を新しい票で再発送した時のメールは、確定（Task 5）と同じく注文ごとに1通だけ作る。
 
 [取消のDB試験](../../tests/integration/db/group_g3_cancel.integration.test.ts)が、再送待ちの行が skipped になること・送信済みの行が変わらないこと・取消でoutboxの行が増えないことを検査する（controllerのreset後に実測済み。21 suiteで1,287/1,287成功、2026-10-25）。実際のメール送信はこのTaskでは確認していない。
+
+## 更新メール（伝票番号の後入力・訂正。G-3 Task 7）
+
+票単位の伝票番号の入力・訂正（`admin_update_shipment_slip_tracking`）で通知をオンにすると、票の有効な発送ごとに `shipping_update` の予定を**注文ごとに1通**積む（通知オフは0通。追跡がオフでも積む）。件名は従来のまま（【Le Fil des Heures】発送の情報を更新しました（{注文番号}））。メールには、その注文で発送した商品と新しい運送会社・追跡番号・追跡のリンクだけを載せ、同梱した別注文の情報は載せない。
+
+本文の「先にお知らせした伝票番号は使えません」の行（とその後の空行）は、**前の番号があった訂正にだけ**出す。番号なしで確定した票へ初めて番号を入れた更新は、使えなくなる番号が無いので、この行とその後の空行を出さず、ほかは今のまま。前の番号の有無は、配送メールの材料の `previousTrackingNumber`（直しの行の `from_tracking_number`。無い・空なら `null`。更新メール以外は `null`）で決め、本文には前の番号そのものを書かない。
+
+[文面の試験](../../tests/unit/lib/orders/email/order-email-compose-delivery.test.ts)（前の番号が無い時と有る時）と[材料の試験](../../tests/unit/lib/orders/email/order-email-delivery-material.test.ts)で確認する。実DBのoutboxは[伝票番号・配達済みの試験](../../tests/integration/db/group_g3_tracking.integration.test.ts)で検査する（controllerがfresh resetして流し、19 suiteで1,079/1,079成功を確認した。2026-10-25）。手動の配達済み（`admin_mark_shipment_slip_delivered`）の `delivered` メールは、発送の通知と入力の両方がオンの時だけ注文ごとに1通積む。実際のメール送信はこのTaskでは確認していない。
+
+発送の通知の列（`order_fulfillments.notify_customer`）の意味（E-4 と同じ）: 伝票番号の入力・訂正で「お客様に更新のメールを送る」をオフにすると、この列もオフになる。その後に配達済みのダイアログで「お客様に配達済みのメールを送る」をオンにしても、列がオフの発送には配達済みのメールを積まない（ダイアログはこの関係を伝えない。配達済みのメールを送りたい発送は、通知をオンのままにして直す）。

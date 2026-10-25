@@ -385,7 +385,7 @@ describeLocalDb('G-3 shipment slip confirm', (db) => {
       await refused(s.id,'GROUP_G_FORBIDDEN',{by},'42501');
     expect((await confirm(s.id)).version).toBe(2);
   });
-  test('FREQ-540-AC-11: 公開入口はINVOKER委譲、private本体はDEFINER、helperにEXECUTEなし、allowlist72本',async()=>{
+  test('FREQ-540-AC-11: 公開入口はINVOKER委譲、private本体はDEFINER、helperにEXECUTEなし、allowlist74本',async()=>{
     const rows=(await db().query(`select n.nspname,p.prosecdef,p.prosrc,has_function_privilege('service_role',p.oid,'EXECUTE') service,
       has_function_privilege('anon',p.oid,'EXECUTE') anon,has_function_privilege('authenticated',p.oid,'EXECUTE') authenticated
       from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.oid=any($1::regprocedure[])`,[[`public.${signature}`,`private.${signature}`,
@@ -395,7 +395,7 @@ describeLocalDb('G-3 shipment slip confirm', (db) => {
     expect(rows.find(r=>r.nspname==='public')).toMatchObject({prosecdef:false,service:true});
     expect(rows.find(r=>r.nspname==='public').prosrc).toContain('SELECT private.admin_confirm_shipment_slip(');
     expect(rows.filter(r=>!r.service)).toHaveLength(2);
-    expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(72);
+    expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(74);
   });
   test('FREQ-540-AC-11: consumeは共通advisoryなしでは拒否する',async()=>{
     const other=await connectLocalDb();try {

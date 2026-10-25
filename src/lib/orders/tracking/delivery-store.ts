@@ -1,10 +1,6 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ORDER_EMAIL_STATUSES } from '@/lib/orders/email/order-email-types';
-import {
-  LEGACY_FULFILLMENT_DISABLED,
-  LegacyFulfillmentDisabledError,
-} from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import { SHIPPING_CARRIER_IDS } from '@/lib/orders/shipping-carriers';
 import {
   DELIVERY_ATTENTION_KINDS,
@@ -21,8 +17,6 @@ import {
   type DeliveryRegistration,
   type DeliveryTrackingSettings,
   type FulfillmentDeliveryDetail,
-  type MarkDeliveredInput,
-  type MarkDeliveredResult,
   type OrderDeliveryDetail,
   type OrderDeliverySummary,
   type RegistrationOutcome,
@@ -30,8 +24,6 @@ import {
   type TrackingClaim,
   type TrackingSignal,
   type TrackingState,
-  type UpdateTrackingInput,
-  type UpdateTrackingResult,
 } from '@/lib/orders/tracking/delivery-types';
 
 export type DeliveryStore = Pick<SupabaseClient, 'rpc'>;
@@ -216,17 +208,8 @@ function parseAttention(value: unknown, operation: string): DeliveryAttentionIte
   };
 }
 
-// G-1 Task 14: 旧の伝票番号の訂正・手動の配達済みは止めた。引数を見ず、DB を呼ぶ前に LEGACY_FULFILLMENT_DISABLED を投げる
-// （DB の旧の関数も同じ記号で断る）。形は呼び手の型のために残し、G-3 の新しい発送票で置き換える。
-export const updateFulfillmentTracking: (store: DeliveryStore, input: UpdateTrackingInput) => Promise<UpdateTrackingResult> =
-  async () => {
-    throw new LegacyFulfillmentDisabledError(LEGACY_FULFILLMENT_DISABLED);
-  };
-
-export const markFulfillmentDelivered: (store: DeliveryStore, input: MarkDeliveredInput) => Promise<MarkDeliveredResult> =
-  async () => {
-    throw new LegacyFulfillmentDisabledError(LEGACY_FULFILLMENT_DISABLED);
-  };
+// 旧の伝票番号の訂正・手動の配達済み（発送ごと）は G-1 で止め（DB の旧の関数は LEGACY_FULFILLMENT_DISABLED で断る）、G-3 Task 7 で
+// 発送票単位の新しい関数（shipment-slip-store.ts の updateShipmentSlipTracking・markShipmentSlipDelivered）へ置き換えた。停止の道具は残さない。
 
 export async function setDeliveryTracking(
   store: DeliveryStore, input: { enabled: boolean; actorId: string },

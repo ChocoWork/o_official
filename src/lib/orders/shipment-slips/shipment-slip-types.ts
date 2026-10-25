@@ -165,6 +165,25 @@ export const SHIPMENT_SLIP_TEXT = {
   cancelDescription: '票に含まれるすべての注文の発送を取り消し、品物を発送準備中に戻します。',
   cancelSubmit: '取り消す',
   cancelled: '発送を取り消しました。',
+  // ---- 伝票番号の後入力・訂正と手動の配達済み（G-3 Task 7） ----
+  /** 番号がある票のボタン・見出し。番号が無い票は trackingEnter */
+  trackingEdit: '伝票番号を直す',
+  trackingEnter: '伝票番号を入れる',
+  /** ダイアログのボタン（番号がある票は「直す」、無い票は「入れる」） */
+  trackingSubmitEdit: '直す',
+  trackingSubmitEnter: '入れる',
+  trackingDescription: '票に含まれるすべての注文に反映します。',
+  trackingNotify: 'お客様に更新のメールを送る',
+  trackingUpdated: '伝票番号を更新しました。',
+  carrierLabel: '運送会社',
+  /** 運送会社がまだ無い票の伝票番号のダイアログで、選択の先頭に置く（選ぶまで送れない） */
+  carrierPlaceholder: '選んでください',
+  trackingNumberLabel: '伝票番号',
+  markDelivered: '配達済みにする',
+  deliveredDescription: '票に含まれるすべての注文を配達済みにします。',
+  deliveredOnLabel: '届いた日',
+  deliveredNotify: 'お客様に配達済みのメールを送る',
+  delivered: '配達済みにしました。',
   slipBack: '荷作り表に戻る',
   slipFailed: '発送票を読み込めませんでした。',
   slipForbidden: '発送票を見る権限がありません。',
@@ -701,6 +720,35 @@ export type ShipmentSlipCancelled = { id: string; version: number; restoredQuant
 export function parseShipmentSlipCancelled(value: unknown): ShipmentSlipCancelled {
   const raw = readObject(value);
   return { id: readId(raw.id), version: readPositive(raw.version), restoredQuantity: readPositive(raw.restoredQuantity), replayed: readBoolean(raw.replayed) };
+}
+
+/**
+ * 伝票番号の後入力・訂正の入力（G-3 Task 7）。運送会社と伝票番号は両方必須（空に戻す訂正は無い）。
+ * 伝票番号は trim 後 `^[0-9A-Za-z-]{1,64}$`。
+ */
+export type ShipmentSlipTrackingInput = {
+  expectedVersion: number; carrier: ShippingCarrierId; trackingNumber: string; notifyCustomer: boolean; requestKey: string;
+};
+/** 伝票番号の後入力・訂正の戻り。trackingVersion は新しい追跡の版（2 以上） */
+export type ShipmentSlipTrackingUpdated = { id: string; version: number; trackingVersion: number; replayed: boolean };
+
+/** 伝票番号の後入力・訂正の戻り（DB の関数の戻り、または窓口の応答）を検査して、決まった項目だけにする。 */
+export function parseShipmentSlipTrackingUpdated(value: unknown): ShipmentSlipTrackingUpdated {
+  const raw = readObject(value);
+  const trackingVersion = readPositive(raw.trackingVersion);
+  if (trackingVersion < 2) fail();
+  return { id: readId(raw.id), version: readPositive(raw.version), trackingVersion, replayed: readBoolean(raw.replayed) };
+}
+
+/** 手動の配達済みの入力（G-3 Task 7）。deliveredOn は日本時間の暦日（YYYY-MM-DD） */
+export type ShipmentSlipDeliveredInput = { expectedVersion: number; deliveredOn: string; notifyCustomer: boolean; requestKey: string };
+/** 手動の配達済みの戻り。deliveredAt は届いたとして記録した時刻（ISO 8601） */
+export type ShipmentSlipDelivered = { id: string; version: number; deliveredAt: string; replayed: boolean };
+
+/** 手動の配達済みの戻り（DB の関数の戻り、または窓口の応答）を検査して、決まった項目だけにする。 */
+export function parseShipmentSlipDelivered(value: unknown): ShipmentSlipDelivered {
+  const raw = readObject(value);
+  return { id: readId(raw.id), version: readPositive(raw.version), deliveredAt: readTimestamp(raw.deliveredAt), replayed: readBoolean(raw.replayed) };
 }
 
 /** 確定の戻りを検査する。空・重複・順序の崩れは成功として扱わない。 */

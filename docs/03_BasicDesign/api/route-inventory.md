@@ -1,10 +1,10 @@
 # APIルート一覧
 
-> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02（checkout の入口の変更は 2026-10-07、カートの入口の変更は 2026-10-08、発送・仕上がりの入口の変更は 2026-10-10、返金・ショップの設定の入口の変更は 2026-10-11 に、返品の入口の変更は 2026-10-13 に反映、配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文の状況の入口・表は E-5 の変更を 2026-10-22 に、在庫一覧表の入口は G-2 Task 3 の変更を、発注の作成の入口は G-2 Task 4 の変更を、発注一覧表・発注書の詳細の入口は G-2 Task 5 の変更を、発注書の数量の確定・訂正・打切り・発注先の訂正の入口は G-2 Task 6 の変更を、発注書の受け取りと受け取りの取消の入口は G-2 Task 7 の変更を、取引書類の原本の入口は G-2 Task 8 の変更を、荷作り表と発送票の読取の入口は G-3 Task 3 の変更を、発送票の下書きの入口は G-3 Task 4 の変更を、発送確定の入口は G-3 Task 5 の変更を、発送の取消の入口は G-3 Task 6 の変更を 2026-10-25 に反映） | 対象: `src/app/api/**/route.ts`
+> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02（checkout の入口の変更は 2026-10-07、カートの入口の変更は 2026-10-08、発送・仕上がりの入口の変更は 2026-10-10、返金・ショップの設定の入口の変更は 2026-10-11 に、返品の入口の変更は 2026-10-13 に反映、配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文の状況の入口・表は E-5 の変更を 2026-10-22 に、在庫一覧表の入口は G-2 Task 3 の変更を、発注の作成の入口は G-2 Task 4 の変更を、発注一覧表・発注書の詳細の入口は G-2 Task 5 の変更を、発注書の数量の確定・訂正・打切り・発注先の訂正の入口は G-2 Task 6 の変更を、発注書の受け取りと受け取りの取消の入口は G-2 Task 7 の変更を、取引書類の原本の入口は G-2 Task 8 の変更を、荷作り表と発送票の読取の入口は G-3 Task 3 の変更を、発送票の下書きの入口は G-3 Task 4 の変更を、発送確定の入口は G-3 Task 5 の変更を、発送の取消の入口は G-3 Task 6 の変更を、伝票番号の入力・訂正と手動の配達済みの入口は G-3 Task 7 の変更を、Google ログイン開始の POST とログインの後の行き先の POST は波1-A の変更を 2026-10-25 に反映） | 対象: `src/app/api/**/route.ts`
 
 ## 概要
 
-現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。G-0 の2入口と G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口（`GET /api/admin/purchase-orders`・`GET /api/admin/purchase-orders/[id]`）と Task 6 の発注先・メモの訂正・数量の確定と訂正・残りの打切りの入口（`PATCH /api/admin/purchase-orders/[id]`・`POST /api/admin/purchase-orders/[id]/quantities`・`POST /api/admin/purchase-orders/[id]/short-closures`）と Task 7 の受け取り・受け取りの取消の入口（`POST /api/admin/purchase-orders/[id]/receipts`・`POST /api/admin/purchase-orders/[id]/receipts/[receiptId]/reversals`）と Task 8 の取引書類の原本の6入口（予約・署名つき送り先の出し直し・確定・訂正と無効化の `POST` 4本、閲覧リンクと書類検索の `GET` 2本）と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）と G-3 Task 4 の発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）と G-3 Task 5 の発送確定（`POST /api/admin/shipment-slips/[id]/confirm`）と G-3 Task 6 の発送の取消（`POST /api/admin/shipment-slips/[id]/cancel`）を含め、Route Handler は152ファイル・194メソッド（自動の HEAD・OPTIONS は数えない。2026-10-25 静的集計）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は151行・193メソッド。
+現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。G-0 の2入口と G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口（`GET /api/admin/purchase-orders`・`GET /api/admin/purchase-orders/[id]`）と Task 6 の発注先・メモの訂正・数量の確定と訂正・残りの打切りの入口（`PATCH /api/admin/purchase-orders/[id]`・`POST /api/admin/purchase-orders/[id]/quantities`・`POST /api/admin/purchase-orders/[id]/short-closures`）と Task 7 の受け取り・受け取りの取消の入口（`POST /api/admin/purchase-orders/[id]/receipts`・`POST /api/admin/purchase-orders/[id]/receipts/[receiptId]/reversals`）と Task 8 の取引書類の原本の6入口（予約・署名つき送り先の出し直し・確定・訂正と無効化の `POST` 4本、閲覧リンクと書類検索の `GET` 2本）と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）と G-3 Task 4 の発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）と G-3 Task 5 の発送確定（`POST /api/admin/shipment-slips/[id]/confirm`）と G-3 Task 6 の発送の取消（`POST /api/admin/shipment-slips/[id]/cancel`）と G-3 Task 7 の伝票番号の入力・訂正（`POST /api/admin/shipment-slips/[id]/tracking`）と手動の配達済み（`POST /api/admin/shipment-slips/[id]/delivered`）と 波1-A の Google ログイン開始の POST（`POST /api/auth/oauth/start`）とログインの後の行き先の POST（`POST /api/auth/post-login`）を含め、Route Handler は155ファイル・198メソッド（自動の HEAD・OPTIONS は数えない。2026-10-25 静的集計）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は154行・197メソッド。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |
@@ -98,6 +98,8 @@
 | `/api/admin/shipment-slips/[id]/discard` | `POST` | [route.ts](../../../src/app/api/admin/shipment-slips/%5Bid%5D/discard/route.ts) （G-3 Task 4: 上と同じ4権限。下書きの破棄。`expectedVersion` が必須。CSRF・回数制限 `admin.shipment_slips.discard` の60回/600秒・監査 `admin.shipment_slips.draft.discard`。成功は200） |
 | `/api/admin/shipment-slips/[id]/confirm` | `POST` | [route.ts](../../../src/app/api/admin/shipment-slips/%5Bid%5D/confirm/route.ts) |
 | `/api/admin/shipment-slips/[id]/cancel` | `POST` | [route.ts](../../../src/app/api/admin/shipment-slips/%5Bid%5D/cancel/route.ts) （G-3 Task 6: 上と同じ4権限。確定済みの票の全体の取消。`expectedVersion` が必須。CSRF・回数制限 `admin.shipment_slips.cancel` の30回/600秒・監査 `admin.shipment_slips.cancel`。成功は200） |
+| `/api/admin/shipment-slips/[id]/tracking` | `POST` | [route.ts](../../../src/app/api/admin/shipment-slips/%5Bid%5D/tracking/route.ts) （G-3 Task 7: 上と同じ4権限。確定済みの票の伝票番号の入力・訂正。運送会社と番号は両方必須。`expectedVersion` が必須。CSRF・回数制限 `admin.shipment_slips.tracking` の60回/600秒・監査 `admin.shipment_slips.tracking.update`。成功は200） |
+| `/api/admin/shipment-slips/[id]/delivered` | `POST` | [route.ts](../../../src/app/api/admin/shipment-slips/%5Bid%5D/delivered/route.ts) （G-3 Task 7: 上と同じ4権限。確定済みの票の手動の配達済み。`expectedVersion` と `deliveredOn` が必須。CSRF・回数制限 `admin.shipment_slips.delivered` の60回/600秒・監査 `admin.shipment_slips.delivered`。成功は200） |
 | `/api/admin/settings/shop` | `GET`, `PUT` | [route.ts](../../../src/app/api/admin/settings/shop/route.ts) |
 | `/api/admin/stockists/[id]` | `DELETE`, `GET`, `PATCH`, `PUT` | [route.ts](../../../src/app/api/admin/stockists/%5Bid%5D/route.ts) |
 | `/api/admin/stockists` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/stockists/route.ts) |
@@ -115,8 +117,9 @@
 | `/api/auth/mfa/status` | `GET` | [route.ts](../../../src/app/api/auth/mfa/status/route.ts) |
 | `/api/auth/mfa/verify` | `POST` | [route.ts](../../../src/app/api/auth/mfa/verify/route.ts) |
 | `/api/auth/oauth/callback` | `GET` | [route.ts](../../../src/app/api/auth/oauth/callback/route.ts) |
-| `/api/auth/oauth/start` | `GET` | [route.ts](../../../src/app/api/auth/oauth/start/route.ts) |
+| `/api/auth/oauth/start` | `GET`, `POST` | [route.ts](../../../src/app/api/auth/oauth/start/route.ts) （波1-A: `POST` は会員認証不要。Google ログインの開始。本文の `next` だけを確かめて戻り先の控え（サーバー側）を作り、番号は Cookie だけで渡す。回数制限 `auth:oauth:start` の50回/600秒・監査 `auth.oauth.start`。成功は200 `{url}` で 303 にしない。`GET` は 302 のままで控えを作らず古い控えの Cookie を消す） |
 | `/api/auth/otp/verify` | `POST` | [route.ts](../../../src/app/api/auth/otp/verify/route.ts) |
+| `/api/auth/post-login` | `POST` | [route.ts](../../../src/app/api/auth/post-login/route.ts) （波1-A: `authenticateRequest`〔セッションCookie/JWT〕。認証の失敗は `authFailureResponse`〔401/403〕。役割とaalはトークンのclaimsだけから読む。回数制限 `auth:post-login` の60回/600秒〔IPごと〕。本文なしで HttpOnly の `sb-return-intent` Cookie を読み、ログインの確定の後の行き先を答える〔戻り先の控えを1回で使い切る。管理者・サポーターは2段目の後〕。成功は200 `{redirectTo, needsMfa}`〔`Cache-Control: no-store`・`Referrer-Policy: no-referrer`〕、失敗は500 `{error:'Internal server error'}`。控えは1回限りで Cookie を消すか残し、外れた控えは監査に残す） |
 | `/api/auth/password-reset/confirm` | `POST` | [route.ts](../../../src/app/api/auth/password-reset/confirm/route.ts) |
 | `/api/auth/password-reset/link` | `GET`, `POST` | [route.ts](../../../src/app/api/auth/password-reset/link/route.ts) |
 | `/api/auth/password-reset/request` | `POST` | [route.ts](../../../src/app/api/auth/password-reset/request/route.ts) |
@@ -173,6 +176,12 @@ G-3 Task 4: 発送票の下書きの3入口（`POST /api/admin/shipment-slips`�
 G-3 Task 5: 発送確定の入口（`POST /api/admin/shipment-slips/[id]/confirm`）を追加。認可→CSRF→IPとactorの制限→検証→DB→監査の順序とno-store応答はTask 4と共通。現在の総数は上の概要を参照。
 
 G-3 Task 6: 発送の取消の入口（`POST /api/admin/shipment-slips/[id]/cancel`）を追加（151ファイル→152ファイル、193メソッド→194メソッド。表は150行・192メソッド→151行・193メソッド）。順序とno-store応答はTask 4・5と共通で、回数制限は30回/600秒。現在の総数は上の概要を参照。
+
+波1-A: Google ログイン開始の `POST /api/auth/oauth/start` を追加（152ファイル→152ファイル、194メソッド→195メソッド。表は151行・193メソッド→151行・194メソッド）。既存の `GET` と同じファイルに2本目の export を足したため、ファイル数と表の行数は変わらない。詳しい入力と応答は [APIの主要契約](api-spec.md)の `POST /api/auth/oauth/start` に記す。現在の総数は上の概要を参照。
+
+G-3 Task 7: 伝票番号の入力・訂正の入口（`POST /api/admin/shipment-slips/[id]/tracking`）と手動の配達済みの入口（`POST /api/admin/shipment-slips/[id]/delivered`）を追加（152ファイル→154ファイル、195メソッド→197メソッド。表は151行・194メソッド→153行・196メソッド）。順序とno-store応答はTask 4・5・6と共通で、回数制限はどちらも60回/600秒。現在の総数は上の概要を参照。
+
+波1-A: ログインの後の行き先の窓口（`POST /api/auth/post-login`）を追加（154ファイル→155ファイル、197メソッド→198メソッド）。表は153行・196メソッド→154行・197メソッド。詳しい入力と応答は [APIの主要契約](api-spec.md)の `POST /api/auth/post-login` に記す。現在の総数は上の概要を参照。
 
 ## 権限設定の入口（G-0 / FREQ-519・FREQ-540 の G-0 部分）
 

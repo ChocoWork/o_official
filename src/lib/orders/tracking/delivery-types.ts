@@ -62,15 +62,6 @@ export type DeliveryAttentionItem = {
   id: string; orderId: string; orderNumber: string; fulfillmentId: string; fulfillmentNumber: number;
   kind: DeliveryAttentionKind; openedAt: string; status: DeliveryStatus;
 };
-export type UpdateTrackingInput = {
-  orderId: string; fulfillmentId: string; actorId: string; requestKey: string;
-  carrier: ShippingCarrierId; trackingNumber: string; notifyCustomer: boolean;
-};
-export type UpdateTrackingResult = { trackingChangeId: string; trackingVersion: number; replayed: boolean };
-export type MarkDeliveredInput = {
-  orderId: string; fulfillmentId: string; actorId: string; requestKey: string; deliveredOn: string; notifyCustomer: boolean;
-};
-export type MarkDeliveredResult = { eventId: string; deliveredAt: string; replayed: boolean };
 export type TrackingClaim = {
   fulfillmentId: string; trackingVersion: number; carrier: ShippingCarrierId; trackingNumber: string;
   action: TrackingAction; leaseToken: string; signalRevision: number; attempts: number; readAttempts: number; expiresAt: string;

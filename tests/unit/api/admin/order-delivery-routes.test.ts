@@ -12,8 +12,6 @@ const mockLimit = jest.fn();
 const mockAudit = jest.fn();
 const mockMail = jest.fn();
 const mockTracking = jest.fn();
-const mockUpdate = jest.fn();
-const mockDelivered = jest.fn();
 const mockResolve = jest.fn();
 const mockSummaries = jest.fn();
 const mockCreateStore = jest.fn();
@@ -25,8 +23,6 @@ jest.mock('@/lib/orders/email/order-email-schedule', () => ({ scheduleOrderEmail
 jest.mock('@/lib/orders/tracking/delivery-schedule', () => ({ scheduleDeliveryTracking: () => mockTracking() }));
 jest.mock('@/lib/orders/tracking/delivery-store', () => ({
   ...jest.requireActual('@/lib/orders/tracking/delivery-store'),
-  updateFulfillmentTracking: (...args: unknown[]) => mockUpdate(...args),
-  markFulfillmentDelivered: (...args: unknown[]) => mockDelivered(...args),
   resolveDeliveryAttention: (...args: unknown[]) => mockResolve(...args),
   listOrderDeliverySummaries: (...args: unknown[]) => mockSummaries(...args),
 }));
@@ -88,7 +84,7 @@ async function post(endpoint: Endpoint, body: unknown = bodies[endpoint], id = O
 const endpoints: Endpoint[] = ['tracking', 'delivered', 'resolve'];
 const stopped = ['tracking', 'delivered'] as const;
 function noWork() {
-  for (const mock of [mockCreateStore, mockUpdate, mockDelivered, mockResolve, mockMail, mockTracking]) expect(mock).not.toHaveBeenCalled();
+  for (const mock of [mockCreateStore, mockResolve, mockMail, mockTracking]) expect(mock).not.toHaveBeenCalled();
 }
 async function expectDisabled(response: Response) {
   expect(response.status).toBe(410);
@@ -100,8 +96,6 @@ beforeEach(() => {
   mockQueryCalls.length = 0;
   mockAuthorize.mockResolvedValue({ ok: true, userId: 'actor-from-auth', role: 'supporter' });
   mockCreateStore.mockResolvedValue(mockStore);
-  mockUpdate.mockResolvedValue({ trackingChangeId: KEY, trackingVersion: 2, replayed: false });
-  mockDelivered.mockResolvedValue({ eventId: KEY, deliveredAt: '2026-10-21T03:00:00Z', replayed: false });
   mockResolve.mockResolvedValue({ outcome: 'resolved' });
   mockSummaries.mockResolvedValue(new Map());
 });

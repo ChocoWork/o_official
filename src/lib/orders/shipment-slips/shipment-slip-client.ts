@@ -8,20 +8,26 @@ import {
   parsePackingRow,
   parseShipmentSlipCancelled,
   parseShipmentSlipConfirmed,
+  parseShipmentSlipDelivered,
   parseShipmentSlipDetail,
   parseShipmentSlipListRow,
   parseShipmentSlipSaved,
+  parseShipmentSlipTrackingUpdated,
   SHIPMENT_SLIP_ERRORS,
   SHIPMENT_SLIP_TEXT,
   type PackingRow,
   type ShipmentSlipCancelled,
   type ShipmentSlipConfirmed,
   type ShipmentSlipConfirmInput,
+  type ShipmentSlipDelivered,
+  type ShipmentSlipDeliveredInput,
   type ShipmentSlipDetail,
   type ShipmentSlipDraftLine,
   type ShipmentSlipListRow,
   type ShipmentSlipSaved,
   type ShipmentSlipStage,
+  type ShipmentSlipTrackingInput,
+  type ShipmentSlipTrackingUpdated,
 } from './shipment-slip-types';
 
 /**
@@ -214,6 +220,26 @@ export function submitSlipDiscard(
 export function submitSlipConfirm(slipId: string, body: ShipmentSlipConfirmInput): Promise<DeliveryCallResult<ShipmentSlipConfirmed>> {
   if (!isShipmentSlipId(slipId)) return Promise.resolve({ kind: 'refused', message: SHIPMENT_SLIP_TEXT.slipNotFound });
   return forSlip(slipId, callWriter(`/api/admin/shipment-slips/${slipId}/confirm`, body, parseShipmentSlipConfirmed));
+}
+
+/**
+ * 伝票番号を入れる・直す（POST /api/admin/shipment-slips/[id]/tracking、本文 { expectedVersion, carrier, trackingNumber, notifyCustomer, requestKey }）。
+ * 結果不明の再送でも同じrequestKeyと本文を使う。
+ */
+export function submitSlipTrackingEdit(slipId: string, body: ShipmentSlipTrackingInput): Promise<DeliveryCallResult<ShipmentSlipTrackingUpdated>> {
+  if (!isShipmentSlipId(slipId)) return Promise.resolve({ kind: 'refused', message: SHIPMENT_SLIP_TEXT.slipNotFound });
+  return forSlip(slipId, callWriter(`/api/admin/shipment-slips/${slipId}/tracking`, {
+    expectedVersion: body.expectedVersion, carrier: body.carrier, trackingNumber: body.trackingNumber,
+    notifyCustomer: body.notifyCustomer, requestKey: body.requestKey,
+  }, parseShipmentSlipTrackingUpdated));
+}
+
+/** 手動の配達済み（POST /api/admin/shipment-slips/[id]/delivered、本文 { expectedVersion, deliveredOn, notifyCustomer, requestKey }）。結果不明の再送でも同じrequestKeyと本文を使う。 */
+export function submitSlipDelivered(slipId: string, body: ShipmentSlipDeliveredInput): Promise<DeliveryCallResult<ShipmentSlipDelivered>> {
+  if (!isShipmentSlipId(slipId)) return Promise.resolve({ kind: 'refused', message: SHIPMENT_SLIP_TEXT.slipNotFound });
+  return forSlip(slipId, callWriter(`/api/admin/shipment-slips/${slipId}/delivered`, {
+    expectedVersion: body.expectedVersion, deliveredOn: body.deliveredOn, notifyCustomer: body.notifyCustomer, requestKey: body.requestKey,
+  }, parseShipmentSlipDelivered));
 }
 
 /** 発送の取消（POST /api/admin/shipment-slips/[id]/cancel、本文 { expectedVersion, requestKey }）。結果不明の再送でも同じrequestKeyと本文を使う。 */

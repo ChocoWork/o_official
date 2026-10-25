@@ -14,8 +14,10 @@ import {
   listAdminOrderShipmentSlips,
   listAdminPacking,
   listAdminShipmentSlips,
+  markShipmentSlipDelivered,
   saveShipmentSlipDraft,
   ShipmentSlipError,
+  updateShipmentSlipTracking,
 } from '@/lib/orders/shipment-slips/shipment-slip-store';
 
 const apiUrl = process.env.LOCAL_SUPABASE_URL;
@@ -219,12 +221,42 @@ describeLocalDb('G-3 real supabase-js -> PostgREST -> SQL read paths', (db) => {
     expect(await getAdminShipmentSlip(service, actor, created.id)).toMatchObject({ stage: 'cancelled', version: cancelled.version });
   });
 
-  test('FREQ-540-AC-10: 下書きの保存・破棄・確定・取消の公開入口も、anon・実authenticated JWTはactor権限があってもEXECUTEを拒み（42501）、何も書かない', async () => {
+  test('FREQ-534-AC-01: 実storeの伝票番号の後入力はPostgRESTを通り、再送で増えず、同じ値・版違い・権限なしを分類する。続けて手動の配達済みも通り、再送で増えず、配達済みの票への別キーはALREADY_DELIVERED', async () => {
+    const created = await saveShipmentSlipDraft(service, actor, { slipId: null, expectedVersion: null, lines: [{ orderItemId: itemId, quantity: 1 }], requestKey: randomUUID() });
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date());
+    const confirmed = await confirmShipmentSlip(service, actor, { slipId: created.id, expectedVersion: 1, carrier: null, trackingNumber: null, shipmentDate: today, notifyCustomer: false, requestKey: randomUUID() });
+    const number = `PG-${randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`;
+    const input = { slipId: created.id, expectedVersion: confirmed.version, carrier: 'yamato' as const, trackingNumber: number, notifyCustomer: false, requestKey: randomUUID() };
+    await expect(updateShipmentSlipTracking(service, actor, { ...input, expectedVersion: 99 })).rejects.toMatchObject({ status: 409, code: 'GROUP_G_SLIP_VERSION_CONFLICT' });
+    await expect(updateShipmentSlipTracking(service, randomUUID(), input)).rejects.toMatchObject({ status: 403, code: 'GROUP_G_FORBIDDEN' });
+    const updated = await updateShipmentSlipTracking(service, actor, input);
+    expect(updated).toEqual({ id: created.id, version: confirmed.version + 1, trackingVersion: 2, replayed: false });
+    expect(await updateShipmentSlipTracking(service, actor, input)).toEqual({ ...updated, replayed: true });
+    await expect(updateShipmentSlipTracking(service, actor, { ...input, expectedVersion: updated.version, trackingNumber: number.toLowerCase(), requestKey: randomUUID() }))
+      .rejects.toMatchObject({ status: 409, code: 'GROUP_G_SLIP_TRACKING_UNCHANGED' });
+    expect(await getAdminShipmentSlip(service, actor, created.id)).toMatchObject({ stage: 'confirmed', version: updated.version, carrier: 'yamato', trackingNumber: number, trackingVersion: 2 });
+
+    const delivery = { slipId: created.id, expectedVersion: updated.version, deliveredOn: today, notifyCustomer: false, requestKey: randomUUID() };
+    await expect(markShipmentSlipDelivered(service, randomUUID(), delivery)).rejects.toMatchObject({ status: 403, code: 'GROUP_G_FORBIDDEN' });
+    await expect(markShipmentSlipDelivered(service, actor, { ...delivery, expectedVersion: 99 })).rejects.toMatchObject({ status: 409, code: 'GROUP_G_SLIP_VERSION_CONFLICT' });
+    await expect(markShipmentSlipDelivered(service, actor, { ...delivery, deliveredOn: '2000-01-01', requestKey: randomUUID() })).rejects.toMatchObject({ status: 400, code: 'GROUP_G_SLIP_DELIVERY_DATE_INVALID' });
+    const delivered = await markShipmentSlipDelivered(service, actor, delivery);
+    expect(delivered).toEqual({ id: created.id, version: updated.version + 1, deliveredAt: expect.stringMatching(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$/), replayed: false });
+    expect(await markShipmentSlipDelivered(service, actor, delivery)).toEqual({ ...delivered, replayed: true });
+    await expect(markShipmentSlipDelivered(service, actor, { ...delivery, expectedVersion: delivered.version, requestKey: randomUUID() }))
+      .rejects.toMatchObject({ status: 409, code: 'GROUP_G_SLIP_ALREADY_DELIVERED' });
+    const detail = await getAdminShipmentSlip(service, actor, created.id);
+    expect(detail.orders).toEqual([expect.objectContaining({ orderId, deliveryStatus: 'delivered', deliveredAt: expect.any(String) })]);
+  });
+
+  test('FREQ-540-AC-10: 下書きの保存・破棄・確定・取消・伝票番号・配達済みの公開入口も、anon・実authenticated JWTはactor権限があってもEXECUTEを拒み（42501）、何も書かない', async () => {
     const writes = (): Array<[string, Record<string, unknown>]> => [
       ['admin_save_shipment_slip_draft', { _slip_id: null, _expected_version: null, _lines: [{ orderItemId: itemId, quantity: 1 }], _actor_id: actor, _request_key: randomUUID() }],
       ['admin_discard_shipment_slip_draft', { _slip_id: slipId, _expected_version: 1, _actor_id: actor, _request_key: randomUUID() }],
       ['admin_confirm_shipment_slip', { _slip_id: slipId, _expected_version: 1, _carrier: null, _tracking_number: null, _shipment_date: '2026-10-25', _notify_customer: false, _actor_id: actor, _request_key: randomUUID() }],
       ['admin_cancel_shipment_slip', { _slip_id: slipId, _expected_version: 1, _actor_id: actor, _request_key: randomUUID() }],
+      ['admin_update_shipment_slip_tracking', { _slip_id: slipId, _expected_version: 2, _carrier: 'yamato', _tracking_number: 'DENIED-1', _notify_customer: false, _actor_id: actor, _request_key: randomUUID() }],
+      ['admin_mark_shipment_slip_delivered', { _slip_id: slipId, _expected_version: 2, _delivered_on: '2026-10-25', _notify_customer: false, _actor_id: actor, _request_key: randomUUID() }],
     ];
     const countBefore = (await service.rpc('list_admin_shipment_slips', { _stage: 'discarded', _limit: 1, _offset: 0, _actor_id: actor })).data?.[0]?.total_count;
     for (const client of [anon, authenticated]) for (const [name, args] of writes()) {

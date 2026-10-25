@@ -569,7 +569,7 @@ G-3 は4本を次の順で作る。Task 1 で存在するのは基盤の1本だ�
 | 1 | `20261025053324_group_g3_shipping_foundation.sql` | 発送票の6表・出荷日の列とCHECK・変更と消費の守り・割当イベントの理由17値・発注書のある商品の削除止め。Task 1 |
 | 2 | `20261025070821_group_g3_shipping_reads.sql`（作成済み・Fix round 1再適用待ち） | 読取5本と入口5本、内部3本の同梱・準備数の定義。Task 2。追跡の読取側の置換は同じ移行へTask 8で追記 |
 | 3 | `20261025100130_group_g3_shipping_slips.sql`（Task 4 で作成済み・ローカル DB に適用済み・本番未適用） | ロック helper、下書きの保存・破棄、書き手の閉じた一覧（G-2 の65本＋この移行の書き手）。Task 4。発送確定は Task 5、発送の取消（戻しの道具とともに）は Task 6 で同じ移行へ追記済み（適用前なので追記してよい）。72本 |
-| 4 | `<ts4>_group_g3_shipping_actions.sql`（未作成） | 伝票訂正、手動配達済み、出荷日訂正、配送反映の置換、許可一覧とassert。Task 7〜10 |
+| 4 | `20261025134538_group_g3_shipping_actions.sql`（Task 7 で作成・本番未適用。ローカル DB へは controller が fresh reset して適用し、19 suite・1,079/1,079成功、全件の単体と DB で18,870件成功〔別セッションの意図的な stockist_rls の赤2件だけ〕を確認した。2026-10-25） | 伝票番号の後入力・訂正、手動配達済み、許可一覧とassert（72→74本）。出荷日訂正、配送反映の置換は同じ移行へ Task 8〜10 が追記する。Task 7 |
 
 `20261024180500 < ts1 < ts2 < ts3 < ts4`。各ファイルは先頭 BEGIN; から末尾assert・NOTIFY pgrst, 'reload schema';・COMMIT; までを1取引で当てる。基盤は G3A_BODY_BEGIN/END と G3A_FINAL_ASSERT_BEGIN/END、後続は G3B/G3C/G3D の印で区切る。基盤は書込み口を追加せず、読取は書込みを持たない。ファイルの大きさに上限はなく、バイト数とMD5をTaskの報告へ残す。
 
@@ -688,3 +688,16 @@ Fix round 1（Opus レビュー後、2026-10-25）は末尾の確かめ `shipmen
 | 書込みの順 | 発送ごとに、取消の印 → 追跡登録 cancelled・要対応 auto → restore → 注文 paid → 未送信メール skipped。割当の上限は遅延の確かめ（commit の時）だが、途中の状態も上限を超えないよう発送の取消を先にする。詳しくは[発送の取消](../04_DetailDesign/sequence/shipping.md) |
 
 実装者は本番・Docker・supabase CLI・db resetを使わず、DBへは接続して**取引の中で新しい節を当てて必ず戻す**形（実関数の置換・コミットなし）で先に確認した。その後controllerがresetして適用し、[発送の取消](../../tests/integration/db/group_g3_cancel.integration.test.ts)（別接続の試験を含む）・確定・下書き・書き手の閉じた一覧・G-2末尾assert（`group_g2_migration_asserts`・`group_g2_purchase_documents`）・`group_g3_model`・`group_g3_reads`・`group_g1_refund_cancel`・`group_g1_return_exchange`・`group_g2_purchase_receipt_reversals`・`order_return_*`・`order_refund_*` と、鍵を持つcontrollerが流した実鍵PostgRESTの[経路の試験](../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts)を含む**21 suiteで1,287/1,287成功**、全件の単体とDBで**18,318件成功**（別セッションの意図的なstockist_rlsの赤2件だけ）、G-0 cleanup 12/12を確認した（2026-10-25）。本番適用・実メール・外への停止・E2Eの証拠にはしない。
+
+## G-3 Task 7 伝票番号の後入力・訂正と手動の配達済み（第4の移行）
+
+確認日: 2026-10-25。第4の移行 [20261025134538_group_g3_shipping_actions.sql](../../supabase/migrations/20261025134538_group_g3_shipping_actions.sql) を作った（`migration new` の代わりに実装時の UTC で手で作成。別セッションの `20261025120000_auth_return_intents.sql` より後）。**本番未適用**。G-1/G-2と先の3本（foundation・reads・slips）は変更しない。表・列・制約・triggerは変えない。サイズ・MD5は **43,652 bytes / `36D5544C71FC56D0CBA2DD294863BEA7`**（ASCIIのみ・BOM/CRなし・全角空白/NBSP/ゼロ幅文字なし・BEGIN/NOTIFY/COMMITとG3Dの節印は各1組）。
+
+| 項目 | 内容 |
+| --- | --- |
+| 追加する関数 | `private.admin_update_shipment_slip_tracking(uuid,integer,text,text,boolean,uuid,uuid)`・`private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)` とそれぞれの `public` 入口（同名・同引数・SQL INVOKER）。DEFINER・`search_path=''`・所有者postgres・PUBLIC/anon/authenticatedを個別REVOKE、service_roleだけがEXECUTE。`USAGE ON SCHEMA private` は操作しない |
+| 書き手の閉じた一覧 | 72本へ上の2本の private 本体を足した**74本**（`private.group_g_writer_allowlist()` を `CREATE OR REPLACE`）。共有の試験の道具 `G3D_ALLOWLIST`（74本）を足し、今のDBの本数を固定する試験（`group_g1_writer_inventory`・`group_g2_migration_asserts`・`group_g2_purchase_documents`・`group_g2_purchase_quantities`・`group_g2_purchase_receipts`・`group_g3_confirm`・`group_g3_cancel`）は 74 へ、G3C の末尾assertを今のDBで流す `group_g3_draft` は流す前に取引の中の一覧を `G3C_ALLOWLIST`（72本）へ入れ替える |
+| 末尾のassert（G3D） | 4関数の所有者・SECURITY・言語・戻り型・引数名・search_path・EXECUTE（実効ACLの意味。PUBLICを含む）、4関数の集合（同名の余分な overload と欠け）、書込み本体2本の押さえ前の参照（表の参照と public/private 関数呼出しを置けない）、書き手74本のOID照合。違えば `GROUP_G_MIGRATION_ASSERTION_FAILED`／55000（DETAIL は `shipment_slip_action_functions`・`shipment_slip_action_lock_order`・`shipment_slip_action_writer_allowlist(_missing)`・`shipment_slip_action_function_set`） |
+| 旧4RPC | `admin_create_fulfillment`・`admin_cancel_fulfillment`・`admin_update_fulfillment_tracking`・`admin_mark_fulfillment_delivered` は `LEGACY_FULFILLMENT_DISABLED`／55000 のまま（変更なし）。旧の発送ごとの窓口の呼び出し・store の停止の道具だけを整理した |
+
+適用と確認: ローカルは controller が `db reset` してから共通の確かめ（匿名と実 authenticated の `GET /rest/v1/items?select=id&limit=0` が各 HTTP 200）→ [伝票番号・配達済み](../../tests/integration/db/group_g3_tracking.integration.test.ts)・書き手の閉じた一覧・下書き・確定・取消・G-2 の末尾の確かめ・`group_g3_model`・`group_g3_reads`・配送（`group_g1_delivery*`・`delivery_tracking_*`）・メール（`order_email_*`）を `--runInBand` で流す。実鍵 PostgREST の [経路の試験](../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts)（伝票番号・配達済みの実 store 経路と、anon・authenticated の拒否）は鍵を持つ controller が流す。実測: controller が fresh reset して流し、鍵つきの PostgREST を含む19 suiteで1,079/1,079成功、全件の単体と DB で18,870件成功（別セッションの意図的な stockist_rls の赤2件だけ）、G-0 cleanup 12/12（2026-10-25）。レビュー後の小さな直し（SQL は不変）は実装者が `group_g3_tracking` をローカル DB で流して確認した。本番適用・実メール・外への登録・E2Eの証拠にはしない。

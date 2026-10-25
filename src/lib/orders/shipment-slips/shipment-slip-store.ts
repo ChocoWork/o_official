@@ -5,10 +5,12 @@ import {
   parsePackingRow,
   parseShipmentSlipCancelled,
   parseShipmentSlipConfirmed,
+  parseShipmentSlipDelivered,
   parseShipmentSlipDetail,
   parseShipmentSlipLink,
   parseShipmentSlipListRow,
   parseShipmentSlipSaved,
+  parseShipmentSlipTrackingUpdated,
   SHIPMENT_SLIP_ERRORS,
   SHIPMENT_SLIP_READ_FAILED,
   SHIPMENT_SLIP_TEXT,
@@ -16,12 +18,16 @@ import {
   type ShipmentSlipCancelled,
   type ShipmentSlipConfirmed,
   type ShipmentSlipConfirmInput,
+  type ShipmentSlipDelivered,
+  type ShipmentSlipDeliveredInput,
   type ShipmentSlipDetail,
   type ShipmentSlipDraftLine,
   type ShipmentSlipLink,
   type ShipmentSlipListRow,
   type ShipmentSlipSaved,
   type ShipmentSlipStage,
+  type ShipmentSlipTrackingInput,
+  type ShipmentSlipTrackingUpdated,
 } from './shipment-slip-types';
 
 /**
@@ -257,6 +263,39 @@ export async function confirmShipmentSlip(
     _actor_id: actorId, _request_key: input.requestKey,
   });
   const result = guarded(() => parseShipmentSlipConfirmed(data));
+  if (result.id !== input.slipId.toLowerCase()) throw new ShipmentSlipError();
+  return result;
+}
+
+/**
+ * 確定済みの票の伝票番号を入れる・直す（DB の関数 admin_update_shipment_slip_tracking を1回呼ぶ）。運送会社と番号は両方必須で、
+ * 票の全注文の有効な発送へ同じ値を反映する。同じ値（番号は大文字小文字を無視）は GROUP_G_SLIP_TRACKING_UNCHANGED（409）。
+ * actor は認可結果から渡し、崩れた成功の答えや別の票の答えは固定の500にする。
+ */
+export async function updateShipmentSlipTracking(
+  client: SupabaseClient, actorId: string, input: ShipmentSlipTrackingInput & { slipId: string },
+): Promise<ShipmentSlipTrackingUpdated> {
+  const data = await callRpc(client, 'admin_update_shipment_slip_tracking', {
+    _slip_id: input.slipId, _expected_version: input.expectedVersion, _carrier: input.carrier,
+    _tracking_number: input.trackingNumber, _notify_customer: input.notifyCustomer, _actor_id: actorId, _request_key: input.requestKey,
+  });
+  const result = guarded(() => parseShipmentSlipTrackingUpdated(data));
+  if (result.id !== input.slipId.toLowerCase()) throw new ShipmentSlipError();
+  return result;
+}
+
+/**
+ * 確定済みの票を全体で配達済みにする（DB の関数 admin_mark_shipment_slip_delivered を1回呼ぶ）。
+ * すでに配達済み（409）・届いた日が範囲外（400）は DB が全体を断る。actor は認可結果から渡し、崩れた成功の答えや別の票の答えは固定の500にする。
+ */
+export async function markShipmentSlipDelivered(
+  client: SupabaseClient, actorId: string, input: ShipmentSlipDeliveredInput & { slipId: string },
+): Promise<ShipmentSlipDelivered> {
+  const data = await callRpc(client, 'admin_mark_shipment_slip_delivered', {
+    _slip_id: input.slipId, _expected_version: input.expectedVersion, _delivered_on: input.deliveredOn,
+    _notify_customer: input.notifyCustomer, _actor_id: actorId, _request_key: input.requestKey,
+  });
+  const result = guarded(() => parseShipmentSlipDelivered(data));
   if (result.id !== input.slipId.toLowerCase()) throw new ShipmentSlipError();
   return result;
 }

@@ -3,6 +3,7 @@ import ShipmentSlipSection from '@/components/ShipmentSlipSection';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { rememberSlipNotice } from '@/lib/orders/shipment-slips/shipment-slip-notice';
 import type { ShipmentSlipDetail } from '@/lib/orders/shipment-slips/shipment-slip-types';
+import { DELIVERY_STATUS_LABELS } from '@/lib/orders/tracking/delivery-messages';
 import {
   confirmedDetail,
   draftDetail,
@@ -40,6 +41,8 @@ type State = {
   draft?: (body: Draft) => Response | Promise<Response>;
   confirm?: (body: Record<string, unknown>) => Response | Promise<Response>;
   cancel?: (body: { expectedVersion: number; requestKey: string }) => Response | Promise<Response>;
+  tracking?: (body: Record<string, unknown>) => Response | Promise<Response>;
+  delivered?: (body: Record<string, unknown>) => Response | Promise<Response>;
   discard?: (body: { expectedVersion: number; requestKey: string }) => Response | Promise<Response>;
 };
 
@@ -57,6 +60,8 @@ function serve(state: State) {
       const body = JSON.parse(String(init.body));
       if (target.endsWith('/confirm')) return state.confirm ? state.confirm(body) : respond(500, {});
       if (target.endsWith('/cancel')) return state.cancel ? state.cancel(body) : respond(500, {});
+      if (target.endsWith('/tracking')) return state.tracking ? state.tracking(body) : respond(500, {});
+      if (target.endsWith('/delivered')) return state.delivered ? state.delivered(body) : respond(500, {});
       if (target.endsWith('/draft')) return state.draft ? state.draft(body) : respond(200, { id: SLIP_ID, number: 'SL-20261025-0001', version: 2, replayed: false });
       return state.discard ? state.discard(body) : respond(200, { id: SLIP_ID, number: 'SL-20261025-0001', version: 2, replayed: false });
     }
@@ -906,5 +911,200 @@ describe('発送の取消', () => {
     expect(posts()).toHaveLength(2);
     expect(posts()[1]).toEqual(posts()[0]);
     await waitFor(() => expect(screen.getByTestId('slip-stage')).toHaveTextContent('取消済み'));
+  });
+});
+
+describe('伝票番号の入力・訂正と手動の配達済み（G-3 Task 7）', () => {
+  const trackingUpdated = (version = 3) => ({ id: SLIP_ID, version, trackingVersion: 2, replayed: false });
+  const deliveredResult = (version = 3) => ({ id: SLIP_ID, version, deliveredAt: '2026-10-25T03:00:00.000Z', replayed: false });
+  const open = async (buttonName: string, dialogName: string) => {
+    render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    fireEvent.click(await screen.findByRole('button', { name: buttonName }));
+    return screen.findByRole('dialog', { name: dialogName });
+  };
+
+  test('FREQ-534-AC-01: 確定済みの票に「伝票番号を直す」「配達済みにする」を出す（番号が無い票は「伝票番号を入れる」）。下書き・取消済みには出さない', async () => {
+    serve({ slip: () => confirmedDetail() });
+    const { unmount } = render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    expect(await screen.findByRole('button', { name: '伝票番号を直す' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '配達済みにする' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '伝票番号を入れる' })).not.toBeInTheDocument();
+    unmount();
+
+    serve({ slip: () => confirmedDetail({ carrier: null, trackingNumber: null }) });
+    const second = render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    expect(await screen.findByRole('button', { name: '伝票番号を入れる' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '伝票番号を直す' })).not.toBeInTheDocument();
+    second.unmount();
+
+    for (const detail of [draftDetail(), confirmedDetail({ stage: 'cancelled', cancelledAt: '2026-10-25T05:00:00+00:00', cancelBlockers: [] })]) {
+      serve({ slip: () => detail });
+      const view = render(<ShipmentSlipSection slipId={SLIP_ID} />);
+      await screen.findByRole('heading', { level: 1 });
+      for (const name of ['伝票番号を直す', '伝票番号を入れる', '配達済みにする']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  test('FREQ-534-AC-02: 有効な発送のどれかがすでに配達済みの票には「配達済みにする」を出さない（伝票番号を直す・発送を取り消すは出す）。取消済みの発送の配達済みは数えない', async () => {
+    const base = confirmedDetail().orders[0];
+    const delivered = { ...base, deliveryStatus: 'delivered' as const, deliveredAt: '2026-10-25T03:00:00+00:00' };
+    serve({ slip: () => confirmedDetail({ orders: [delivered] }) });
+    const first = render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    expect(await screen.findByRole('button', { name: '伝票番号を直す' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '発送を取り消す' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
+    first.unmount();
+
+    // 2つの発送のうち一方だけ配達済みでも出さない
+    serve({ slip: () => confirmedDetail({ orders: [base, { ...delivered, orderId: ORDER_ID_2, fulfillmentId: '88888888-8888-4888-8888-888888888888' }] }) });
+    const second = render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    await screen.findByRole('button', { name: '伝票番号を直す' });
+    expect(screen.queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
+    second.unmount();
+
+    // 取り消された発送が配達済みでも、有効な発送が未配達なら出す
+    serve({ slip: () => confirmedDetail({ orders: [base, { ...delivered, orderId: ORDER_ID_2, fulfillmentId: '88888888-8888-4888-8888-888888888888', cancelledAt: '2026-10-25T05:00:00+00:00' }] }) });
+    render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    expect(await screen.findByRole('button', { name: '配達済みにする' })).toBeInTheDocument();
+  });
+
+  test('FREQ-534-AC-01: 「伝票番号を直す」は今の運送会社と番号を入れたダイアログを開き、「戻る」では何も送らない', async () => {
+    serve({ slip: () => confirmedDetail() });
+    const dialog = await open('伝票番号を直す', '伝票番号を直す');
+    expect(within(dialog).getByText('票に含まれるすべての注文に反映します。')).toBeInTheDocument();
+    expect((within(dialog).getByLabelText('伝票番号') as HTMLInputElement).value).toBe('1234-5678');
+    expect((within(dialog).getByLabelText('運送会社') as HTMLSelectElement).value).toBe('yamato');
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(posts()).toHaveLength(0);
+  });
+
+  test('FREQ-534-AC-01: 番号が無い票の「伝票番号を入れる」で運送会社と番号を送ると、成功で「伝票番号を更新しました。」を出してダイアログを閉じ、票を読み直して番号を表示する', async () => {
+    let current = confirmedDetail({ carrier: null, trackingNumber: null });
+    serve({ slip: () => current, tracking: () => {
+      current = confirmedDetail({ version: 3, carrier: 'sagawa', trackingNumber: 'NEW-456', trackingVersion: 2 });
+      return respond(200, trackingUpdated());
+    } });
+    const dialog = await open('伝票番号を入れる', '伝票番号を入れる');
+    fireEvent.change(within(dialog).getByLabelText('運送会社'), { target: { value: 'sagawa' } });
+    fireEvent.change(within(dialog).getByLabelText('伝票番号'), { target: { value: 'NEW-456' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '入れる' }));
+
+    expect(await screen.findByText('伝票番号を更新しました。')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(posts()).toHaveLength(1);
+    expect(posts()[0].url).toBe(`/api/admin/shipment-slips/${SLIP_ID}/tracking`);
+    expect(posts()[0].body).toEqual({ expectedVersion: 2, carrier: 'sagawa', trackingNumber: 'NEW-456', notifyCustomer: true, requestKey: expect.stringMatching(UUID) });
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    expect(await screen.findByRole('button', { name: '伝票番号を直す' })).toBeInTheDocument();
+    expect(screen.getByText('佐川急便 NEW-456')).toBeInTheDocument();
+  });
+
+  test('FREQ-534-AC-01: 伝票番号が断られた（変わっていない）時は表の本文をダイアログの中に出して開いたままにし、票を読み直す。入力は保つ', async () => {
+    serve({ slip: () => confirmedDetail(), tracking: () => respond(409, { code: 'GROUP_G_SLIP_TRACKING_UNCHANGED' }) });
+    const dialog = await open('伝票番号を直す', '伝票番号を直す');
+    fireEvent.click(within(dialog).getByRole('button', { name: '直す' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('運送会社も伝票番号も変わっていません。');
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    expect(screen.getByRole('dialog', { name: '伝票番号を直す' })).toBeInTheDocument();
+    expect((within(screen.getByRole('dialog')).getByLabelText('伝票番号') as HTMLInputElement).value).toBe('1234-5678');
+    expect(screen.queryByText('伝票番号を更新しました。')).not.toBeInTheDocument();
+  });
+
+  test('FREQ-534-AC-01: 版競合（409）の後は読み直した新しい版・新しい requestKey で送り、二重押下は通信1回', async () => {
+    let current = confirmedDetail();
+    let attempts = 0;
+    serve({ slip: () => current, tracking: () => {
+      attempts += 1;
+      if (attempts === 1) {
+        current = confirmedDetail({ version: 4 });
+        return respond(409, { code: 'GROUP_G_SLIP_VERSION_CONFLICT' });
+      }
+      return respond(200, trackingUpdated(5));
+    } });
+    const dialog = await open('伝票番号を直す', '伝票番号を直す');
+    fireEvent.change(within(dialog).getByLabelText('伝票番号'), { target: { value: 'KEEP-1' } });
+    const button = within(dialog).getByRole('button', { name: '直す' });
+    fireEvent.click(button); fireEvent.click(button);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('発送票が更新されました。内容を確認して、もう一度送ってください。');
+    expect(posts()).toHaveLength(1);
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '直す' }));
+    await waitFor(() => expect(posts()).toHaveLength(2));
+    expect(posts()[1].body).toMatchObject({ expectedVersion: 4, trackingNumber: 'KEEP-1' });
+    expect(posts()[1].body.requestKey).not.toBe(posts()[0].body.requestKey);
+    expect(await screen.findByText('伝票番号を更新しました。')).toBeInTheDocument();
+  });
+
+  test('FREQ-534-AC-01: 結果が分からない時は「もう一度確かめる」で同じ本文・requestKeyを送り直し、成功で票を読み直す', async () => {
+    let attempts = 0;
+    serve({ slip: () => confirmedDetail(), tracking: () => {
+      attempts += 1;
+      return attempts === 1 ? respond(500, {}) : respond(200, { ...trackingUpdated(), replayed: true });
+    } });
+    const dialog = await open('伝票番号を直す', '伝票番号を直す');
+    fireEvent.change(within(dialog).getByLabelText('伝票番号'), { target: { value: 'NEW-9' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '直す' }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
+    expect(await screen.findByText('伝票番号を更新しました。')).toBeInTheDocument();
+    expect(posts()).toHaveLength(2);
+    expect(posts()[1]).toEqual(posts()[0]);
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+  });
+
+  test('FREQ-534-AC-02: 「配達済みにする」はダイアログ（説明・届いた日・「配達済みにする」「戻る」）を開き、「戻る」では何も送らない', async () => {
+    serve({ slip: () => confirmedDetail() });
+    const dialog = await open('配達済みにする', '配達済みにする');
+    expect(within(dialog).getByText('票に含まれるすべての注文を配達済みにします。')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('届いた日')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '配達済みにする' })).toBeEnabled();
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(posts()).toHaveLength(0);
+  });
+
+  test('FREQ-534-AC-02: 「配達済みにする」で POST …/delivered へ expectedVersion・deliveredOn・notifyCustomer・requestKey を送り、成功で「配達済みにしました。」を出してダイアログを閉じ、票を読み直す', async () => {
+    let current = confirmedDetail();
+    serve({ slip: () => current, delivered: () => {
+      current = confirmedDetail({ version: 3, orders: [{ ...confirmedDetail().orders[0], deliveryStatus: 'delivered', deliveredAt: '2026-10-25T03:00:00+00:00' }] });
+      return respond(200, deliveredResult());
+    } });
+    const dialog = await open('配達済みにする', '配達済みにする');
+    fireEvent.click(within(dialog).getByRole('button', { name: '配達済みにする' }));
+
+    expect(await screen.findByText('配達済みにしました。')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(posts()).toHaveLength(1);
+    expect(posts()[0].url).toBe(`/api/admin/shipment-slips/${SLIP_ID}/delivered`);
+    expect(posts()[0].body).toEqual({
+      expectedVersion: 2, deliveredOn: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date()), notifyCustomer: true, requestKey: expect.stringMatching(UUID),
+    });
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    expect(await screen.findByText(`注文 ${toOrderNumber(ORDER_ID)} 発送（1回目） ${DELIVERY_STATUS_LABELS.delivered}`)).toBeInTheDocument();
+  });
+
+  test('FREQ-534-AC-02: すでに配達済みで断られた時は表の本文をダイアログの中に出して開いたままにし、票を読み直す', async () => {
+    serve({ slip: () => confirmedDetail(), delivered: () => respond(409, { code: 'GROUP_G_SLIP_ALREADY_DELIVERED' }) });
+    const dialog = await open('配達済みにする', '配達済みにする');
+    fireEvent.click(within(dialog).getByRole('button', { name: '配達済みにする' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('この発送票はすでに配達済みです。');
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    expect(screen.getByRole('dialog', { name: '配達済みにする' })).toBeInTheDocument();
+    expect(screen.queryByText('配達済みにしました。')).not.toBeInTheDocument();
+  });
+
+  test('FREQ-534-AC-01: 別の人が先に取り消していて、読み直した票が取消済みなら、ダイアログを閉じて「取消済み」の表示だけにする', async () => {
+    let current = confirmedDetail();
+    serve({ slip: () => current, tracking: () => {
+      current = confirmedDetail({ stage: 'cancelled', version: 3, cancelledAt: '2026-10-25T05:00:00+00:00', cancelBlockers: [] });
+      return respond(409, { code: 'GROUP_G_SLIP_CANCELLED' });
+    } });
+    const dialog = await open('伝票番号を直す', '伝票番号を直す');
+    fireEvent.click(within(dialog).getByRole('button', { name: '直す' }));
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    await waitFor(() => expect(screen.getByTestId('slip-stage')).toHaveTextContent('取消済み'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '伝票番号を直す' })).not.toBeInTheDocument();
   });
 });

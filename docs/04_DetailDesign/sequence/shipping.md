@@ -1,6 +1,6 @@
 # 荷作り表から発送票の下書きまでの流れ（G-3）
 
-> 状態: 現行のソース（グループ G-3 Task 4・5・6。荷作り表で下書きを作り、票の頁で編集・破棄・確認・確定・取消する。本番へは未適用） | 確認日: 2026-10-25 | 対象: 下書きの作成・入れ替え・破棄と発送確定と発送の取消の順序、発送票の書込みに共通のロックの順
+> 状態: 現行のソース（グループ G-3 Task 4・5・6・7。荷作り表で下書きを作り、票の頁で編集・破棄・確認・確定・取消・伝票番号の入力と訂正・手動の配達済みをする。本番へは未適用） | 確認日: 2026-10-25 | 対象: 下書きの作成・入れ替え・破棄と発送確定と発送の取消と伝票番号の後入力・訂正と手動の配達済みの順序、発送票の書込みに共通のロックの順
 
 ## 概要
 
@@ -284,3 +284,85 @@ F は ① で `+n`、③ で `−n` なので下限を割らず、最後は元�
 
 - DB は controller が reset して実測した（別接続の試験と実鍵 PostgREST を含む21 suiteで1,287/1,287成功、全件の単体と DB で18,318件成功。2026-10-25）。実メール送信・実際の外への停止・本番の実データは未確認。
 - 390/768/1280px の実測は E2E の担当。
+
+## 伝票番号の後入力・訂正と手動の配達済み（G-3 Task 7）
+
+確定済みの票の**全体に**、伝票番号を入れる・直す操作（FREQ-534-AC-01）と、手動で配達済みにする操作（FREQ-534-AC-02。返品の期限は FREQ-535-AC-04 の一部）。どちらも DB の関数（`private` の DEFINER 本体と、同名・同引数の `public` の SQL INVOKER 入口。service_role だけが EXECUTE）が、票の全注文の有効な発送を1取引で更新する。移行は `20261025134538_group_g3_shipping_actions.sql`（節の印 `G3D`）。書き手の閉じた一覧は72本から74本。旧の発送ごとの関数（`admin_update_fulfillment_tracking`・`admin_mark_fulfillment_delivered`）は `LEGACY_FULFILLMENT_DISABLED`／55000 のまま。
+
+### 順序（伝票番号の入力・訂正）
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant B as 発送票の頁（伝票番号のダイアログ）
+  participant A as POST /api/admin/shipment-slips/[id]/tracking
+  participant D as DB 関数 admin_update_shipment_slip_tracking
+  B->>B: 「伝票番号を直す」（番号が無い票は「伝票番号を入れる」）→ 運送会社・伝票番号・更新メール
+  B->>A: expectedVersion・carrier・trackingNumber・notifyCustomer・requestKey
+  A->>A: 認可 4権限、CSRF、IP と actor の回数制限（60回/600秒）、検証（運送会社と番号は両方必須）
+  A->>D: 認可済みの userId で RPC を1回
+  D->>D: 引数 → 押さえ（設定 FOR SHARE を含む）→ 権限 → 指紋と再送 → 存在 → 段階 → 版 → 変更なし
+  D->>D: 状態 before → 操作印
+  loop 注文 ID 昇順（有効な発送ごと）
+    D->>D: 変更行（from は今の値・NULL 可）→ 発送（印 tracking_edit）→ 出来事 → 注文の写し
+  end
+  D->>D: 代表の登録を replaced → 要対応を auto → 新しい版の親と代表の登録
+  D->>D: 通知オンなら注文ごとに shipping_update を1通
+  D->>D: 票（印 tracking）・tracking_update の版・状態の差分・操作の記録
+  D-->>A: id・version・trackingVersion・replayed
+  A->>A: 監査 admin.shipment_slips.tracking.update
+  A-->>B: 200 → 「伝票番号を更新しました。」票を読み直す
+```
+
+| 順 | 内容 |
+| --- | --- |
+| 引数 | 版・実行者・要求番号・通知の欠け、運送会社が3値以外、番号が trim 後 `^[0-9A-Za-z-]{1,64}$` でないのは `GROUP_G_ARGUMENT_INVALID`（22023）。書式が正しくても運送会社か番号のどちらかが空なら `GROUP_G_SLIP_TRACKING_INCOMPLETE`（22023。**空には戻せない**）。表は読まない |
+| 押さえ〜再送 | `lock_group_g_shipment_slips(票, 空, true)` → 4権限（42501）→ 指紋 `{operation, slip_id, carrier, tracking_number, notify_customer, actor_id}`（版は含めない）。同じ `request_key` で同じ指紋は保存した結果を `replayed: true` で返し、違えば `GROUP_G_REQUEST_KEY_CONFLICT`（23505） |
+| 票 | 無ければ `GROUP_G_SLIP_NOT_FOUND`（P0002）→ `cancelled` は `GROUP_G_SLIP_CANCELLED`、`confirmed` でなければ `GROUP_G_SLIP_NOT_CONFIRMED` → 版が違えば `GROUP_G_SLIP_VERSION_CONFLICT`（55000）→ 運送会社が同じで番号が大文字小文字を無視して同じなら `GROUP_G_SLIP_TRACKING_UNCHANGED`（22023。通知だけの変更も断る。番号が無かった票は常に変更） |
+| 書込み | 新しい追跡の版 v = 票の `tracking_version` + 1。有効な発送ごと（`order_id` 昇順）に ① 変更行（`from_*` = 今の値、`to_*`、`tracking_version` = v、`notify_customer`、`request_key` = `md5('slip_tracking:' ‖ 共通のキー ‖ ':' ‖ 発送 ID)` の uuid、E-4 と同じ式の `request_fingerprint`、`changed_by`）② 発送を印 `tracking_edit` で更新（運送会社・番号・通知・`delivery_status = confirmed`・`delivery_status_at = now()`・`delivered_at = NULL`・`tracking_version = v`、作成の指紋が NULL なら補う）③ 出来事 `confirmed`／`tracking_edit` ④ 全部送った発送（`completes_order`）で注文が `shipped` なら注文の運送会社と番号を同じ値へ（理由 `admin_update_fulfillment_tracking`） |
+| 追跡 | 代表（有効な発送の最小の `order_id`）の登録を `stop_fulfillment_registrations(代表, 'replaced')` で止め、開いた要対応を `auto` で閉じ、`register_group_g_slip_tracking(票, v, …)` で票×版の親の行と（追跡がオンなら）代表の新しい版の登録（期限は訂正の時刻 + 30日）を作る。参加の発送に登録は作らない。追跡がオフでも親の行だけは作り、全操作が動く |
+| メール | `notifyCustomer` なら発送ごとに `enqueue_delivery_email(発送, v, 'shipping_update', 変更行)`。注文ごとに1通。本文は、直す前の番号（変更行の `from_tracking_number`）が無い時は「先にお知らせした伝票番号は使えません」の行とその後の空行を出さない |
+| 票 | 印 `tracking`（運送会社・番号・`tracking_version` と版+1）、`shipment_slip_versions`（kind `tracking_update`）、状態の差分（配達済みだった票は `delivered`→`shipped`。理由 `shipment_slip_tracking_update`）、操作の記録 `shipment_slip_tracking_update` |
+
+訂正前の版の借りの印で `record_delivery_read_result` を呼んでも、旧版の登録は止まっていて発送の `tracking_version` も違うので `applied = false` で何も書かない（現行の発送の状況は変わらない）。
+
+### 順序（手動の配達済み）
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant B as 発送票の頁（配達済みのダイアログ）
+  participant A as POST /api/admin/shipment-slips/[id]/delivered
+  participant D as DB 関数 admin_mark_shipment_slip_delivered
+  B->>B: 「配達済みにする」→ 届いた日（初期値は今日）・配達済みのメール
+  B->>A: expectedVersion・deliveredOn・notifyCustomer・requestKey
+  A->>A: 認可 4権限、CSRF、IP と actor の回数制限（60回/600秒）、検証（日付の形）
+  A->>D: 認可済みの userId で RPC を1回
+  D->>D: 引数 → 押さえ → 権限 → 指紋と再送 → 存在 → 段階 → 版 → すでに配達済み → 届いた日の範囲
+  D->>D: 状態 before → 操作印
+  loop 注文 ID 昇順（有効な発送ごと）
+    D->>D: 発送（印 manual）を配達済みへ → 出来事 delivered／manual
+    D->>D: 代表だけ: 登録を stopped／delivered・要対応を auto
+    D->>D: 発送の通知と入力の両方がオンなら delivered メールを1通
+  end
+  D->>D: 票（印 deliver・版+1）・delivered の版・状態の差分・操作の記録
+  D-->>A: id・version・deliveredAt・replayed
+  A-->>B: 200 → 「配達済みにしました。」票を読み直す
+```
+
+| 順 | 内容 |
+| --- | --- |
+| 引数〜版 | 伝票番号と同じ（引数 → 押さえ → 権限 → 指紋 `{operation, slip_id, delivered_on, notify_customer, actor_id}` と再送 → 存在 → 段階 → 版） |
+| 配達済み | 有効な発送のどれかが `delivered_at` を持つなら `GROUP_G_SLIP_ALREADY_DELIVERED`（55000） |
+| 届いた日 | 発送した日（JST）より前、または今日（JST）より後は `GROUP_G_SLIP_DELIVERY_DATE_INVALID`（22023） |
+| 書込み | 発送ごとに `delivery_status = delivered`・`delivery_status_at = delivered_at = GREATEST(shipped_at, LEAST(届いた日 12:00 JST, now()))`（印 `manual`）、出来事 `delivered`／`manual`（`created_by`、`request_key` = `md5('slip_delivered:' ‖ 共通のキー ‖ ':' ‖ 発送 ID)` の uuid、E-4 と同じ式の指紋）。代表の登録は E-4 と同じ更新で `stopped`／`delivered`。通知は `fulfillment.notify_customer` かつ入力がオンの時だけ。票は印 `deliver`（版+1 だけ）、`shipment_slip_versions`（kind `delivered`）、状態の差分（`shipped`→`delivered`。理由 `shipment_slip_deliver`） |
+| 返品の期限 | 既存の `fulfillment_line_returnable` が `delivered_at` の日（JST）から数える。コードは変えない。`shipped_at` は動かさない |
+
+### 画面（伝票番号・配達済み）
+
+確定済みの票に「伝票番号を直す」（番号が無い票は「伝票番号を入れる」）と「配達済みにする」を出す。どちらのダイアログも `useDeliverySubmission`（二重防止の番号・結果不明の「もう一度確かめる」）で窓口を呼ぶ。DB が断った時（版の競合・同じ値・配達済みなど）は表の本文をダイアログの中に出し、入力を保ったまま開いておき、票を読み直す（次に押すと新しい版・新しい `requestKey` で送る）。成功は「伝票番号を更新しました。」「配達済みにしました。」を出して閉じ、票を読み直す。
+
+### 未確認事項（Task 7）
+
+- DB（`group_g3_tracking` ほか）は controller が fresh reset して実測した（実鍵 PostgREST を含む19 suiteで1,079/1,079成功、全件の単体と DB で18,870件成功。別セッションの意図的な stockist_rls の赤2件だけ。2026-10-25）。実メール送信・実際の外への登録・本番の実データは未確認。
+- 同梱の票の追跡の結果を票の全注文へ反映する処理は Task 8。この Task は代表の登録の作成と止めるところまで。

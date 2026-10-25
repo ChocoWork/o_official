@@ -28,7 +28,7 @@ function material(overrides: Partial<OrderEmailDeliveryMaterial> = {}): OrderEma
     delivery: {
       fulfillmentId: 'fulfillment-1', trackingVersion: 2, currentTrackingVersion: 2, cancelled: false,
       deliveryStatus: 'out_for_delivery', deliveredAt: '2026-10-20T15:01:00.000Z', windowDays: 7,
-      carrier: 'sagawa', trackingNumber: 'NEW-1234', ...overrides,
+      carrier: 'sagawa', trackingNumber: 'NEW-1234', previousTrackingNumber: 'OLD-1234', ...overrides,
     },
   };
 }
@@ -104,6 +104,32 @@ describe('配送メールのC-6の件名と本文', () => {
     expect(compose('shipping_update', material({ currentTrackingVersion: 3 }))).toEqual({
       subject: '【Le Fil des Heures】発送の情報を更新しました（ORD-A1B2C3D4）', text: SHIPPING_UPDATE,
     });
+  });
+
+  it('FREQ-534-AC-01: 前の番号が無い（番号を初めて入れた）更新は「先にお知らせした伝票番号は使えません」の行とその後の空行を出さず、ほかは前の番号がある訂正と同じ', () => {
+    const first = compose('shipping_update', material({ currentTrackingVersion: 3, previousTrackingNumber: null }));
+    const notice = '先にお知らせした伝票番号は使えません\n\n';
+    expect(SHIPPING_UPDATE).toContain(notice);
+    expect(first).toEqual({
+      subject: '【Le Fil des Heures】発送の情報を更新しました（ORD-A1B2C3D4）', text: SHIPPING_UPDATE.replace(notice, ''),
+    });
+    expect(first?.text).not.toContain('先にお知らせした');
+    expect(first?.text).not.toContain('\n\n\n');
+    // 追跡の行は残り、前の番号は本文に出ない
+    expect(first?.text).toContain('追跡番号: NEW-1234');
+    expect(first?.text).not.toContain('OLD-1234');
+  });
+
+  it('FREQ-534-AC-01: 前の番号がある訂正でも、前の番号そのものは本文に出さず、行は今のまま', () => {
+    const corrected = compose('shipping_update', material({ currentTrackingVersion: 3, previousTrackingNumber: 'OLD-1234' }));
+    expect(corrected?.text).toBe(SHIPPING_UPDATE);
+    expect(corrected?.text).not.toContain('OLD-1234');
+  });
+
+  it('FREQ-534-AC-01: 前の番号の有無は配達中・配達済みのメールを変えない', () => {
+    for (const previousTrackingNumber of [null, 'OLD-1234']) {
+      expect(compose('out_for_delivery', material({ previousTrackingNumber }))?.text).toBe(OUT_FOR_DELIVERY);
+    }
   });
 
   it.each([1, 7, 365, null])('届いた日の案内は設定の%s日、無制限なら一文無し', (windowDays) => {
