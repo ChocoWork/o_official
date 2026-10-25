@@ -54,12 +54,17 @@ FREQ-101 は範囲外の `/terms` にもかかるが、範囲の E2E（`e2e/FR-P
 | --- | --- |
 | FR-PRIVACY-001-policy-content | FR-PRIVACY-001-AC-01（窓口のメールも見るが、名前の ID は1つ） |
 | FR-PRIVACY-002-metadata | FR-PRIVACY-002-AC-01（og:title・og:description も見る。DRV-PRIVACY-001 の動き） |
-| FR-PRIVACY-003-additional-legal-sections | FREQ-100-AC-01・AC-02（1つのテストで両方） |
-| FR-PRIVACY-004-typography-spacing | FREQ-101-AC-01・AC-02（1つのテストで両方。6件のうち3件は範囲外の `/terms`） |
+| FR-PRIVACY-003-additional-legal-sections | FREQ-100-AC-01（窓口のメールも見るが、名前の ID は1つ。FREQ-100-AC-02 は 005） |
+| FR-PRIVACY-004-typography-spacing | FREQ-101-AC-01（6件のうち3件は範囲外の `/terms`。FREQ-101-AC-02 は 005） |
+| FR-PRIVACY-005-policy-text-viewports | FREQ-100-AC-02、FREQ-101-AC-02、FR-PRIVACY-001-AC-01、FR-PRIVACY-002-AC-01（3つの幅）、SEC-PRIVACY-011-AC-01・AC-02、SEC-PRIVACY-017-AC-01、SEC-PRIVACY-019-AC-01 |
+| FR-PRIVACY-006-response-headers-and-cookies | SEC-PRIVACY-007-AC-01、013-AC-01、014-AC-01・AC-02、015-AC-01、016-AC-01 |
+| FR-PRIVACY-007-settings-postgrest-access | SEC-PRIVACY-001-AC-01・AC-02、010-AC-01・AC-02（手元の Supabase の PostgREST を直接叩く） |
+| FR-PRIVACY-008-tracking-setting-and-read-failure | SEC-PRIVACY-002-AC-01、006-AC-01、011-AC-01（追跡オンの場合）、012-AC-01 |
+| FR-PRIVACY-009-tracking-setting-read-failure | SEC-PRIVACY-005-AC-01、008-AC-01、009-AC-01（サービスロールの実行権を外すので、ほかの spec と同時に流さない） |
 
-- E2E のファイル名の番号 `FR-PRIVACY-003`・`004` は要件の ID ではない（E2E のファイル名の番号の割り当てによる）。要件として定義しない
-- FR-PRIVACY-001・002 の E2E は既定の幅1つだけで、3つの幅の決まりを満たしていない
-- 受け入れ条件があって範囲の E2E が無い物は無い。派生要件 DRV-PRIVACY-002〜004 の動きを試す E2E は無い
+- E2E のファイル名の番号 `FR-PRIVACY-003`〜`009` は要件の ID ではない（E2E のファイル名の番号の割り当てによる）。要件として定義しない
+- FR-PRIVACY-001・002 の E2E は既定の幅1つだけだが、同じ受け入れ条件を 005 が3つの幅で試す
+- E2E が無い受け入れ条件は SEC-PRIVACY-003-AC-01（許す幅が未決）、004-AC-01（回数の制限が未決）、006-AC-02（17TRACK の鍵が無いアプリを起動できない）、018-AC-01（運用文書の確認）。派生要件 DRV-PRIVACY-002〜004 の動きを試す E2E は無い
 
 ## 要求
 
@@ -237,7 +242,7 @@ FREQ-101 は範囲外の `/terms` にもかかるが、範囲の E2E（`e2e/FR-P
 
 `/privacy` を開くと、「Privacy Policy」を含む h1 と、h2「個人情報の取り扱いについて」「1. 個人情報の定義」「2. 個人情報の収集方法」「3. 個人情報の利用目的」「4. 個人情報の第三者提供」「8. 個人情報の安全管理」「9. Cookie 及び外部サービスの利用」が表示されること。
 
-今の E2E（`e2e/FR-PRIVACY-001`）は h1 と h2 の3つ（前置き・3・4）だけを見る。
+今の E2E（`e2e/FR-PRIVACY-001`）は h1 と h2 の7つすべてを既定の幅で見る。3つの幅では `e2e/FR-PRIVACY-005` が見る。
 
 ### FR-PRIVACY-002-AC-01 頁の title と description が出る
 
@@ -266,7 +271,7 @@ FREQ-101 は範囲外の `/terms` にもかかるが、範囲の E2E（`e2e/FR-P
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3。実装から推定 |
 | 優先度 | MUST |
 
-`get_delivery_tracking_settings` の実行と `shop_settings` の読み取りは service role だけに許す。service role も表には読み取り（SELECT）しか持たず、書き込みは所有者の権限で動く関数（SECURITY DEFINER）の中だけで起きる（DATA-PRIVACY-002）。今のコードは満たす（`supabase/migrations/20261021221140_delivery_tracking_admin.sql`、`supabase/migrations/20261011222930_order_refund_records.sql`）。権限は結合テストが確かめる（範囲外の `tests/integration/db/delivery_tracking_admin.integration.test.ts` と、DATA-PRIVACY-002 の `tests/integration/db/privacy_settings_permissions.integration.test.ts`。後者は書いただけで、手元の DB では流していない）。PostgREST の経路で試す E2E は無い。
+`get_delivery_tracking_settings` の実行と `shop_settings` の読み取りは service role だけに許す。service role も表には読み取り（SELECT）しか持たず、書き込みは所有者の権限で動く関数（SECURITY DEFINER）の中だけで起きる（DATA-PRIVACY-002）。今のコードは満たす（`supabase/migrations/20261021221140_delivery_tracking_admin.sql`、`supabase/migrations/20261011222930_order_refund_records.sql`）。権限は結合テストが確かめる（範囲外の `tests/integration/db/delivery_tracking_admin.integration.test.ts` と、DATA-PRIVACY-002 の `tests/integration/db/privacy_settings_permissions.integration.test.ts`。後者は書いただけで、手元の DB では流していない）。PostgREST の経路は `e2e/FR-PRIVACY-007` が試す。
 
 #### SEC-PRIVACY-001-AC-01 anon と一般会員の鍵で設定の関数を呼べない
 
@@ -378,7 +383,7 @@ anon の鍵と一般会員の JWT の select が断られるか、行が0件で�
 | 出どころ | OWASP ASVS 4.0.3 V8.3.3。`src/app/privacy/page.tsx` |
 | 優先度 | MUST |
 
-設定を読めない時と service role の client を作れない時は、委託の一覧を描かずに頁の失敗にする。今のコードは満たす（`src/app/privacy/page.tsx`、単体テスト `tests/unit/components/PrivacyPage.test.tsx`、結合テスト `tests/integration/ui/privacy-request-time-render.test.tsx`・`privacy-tracking-clause-state.test.tsx`）。E2E は無い。
+設定を読めない時と service role の client を作れない時は、委託の一覧を描かずに頁の失敗にする。今のコードは満たす（`src/app/privacy/page.tsx`、単体テスト `tests/unit/components/PrivacyPage.test.tsx`、結合テスト `tests/integration/ui/privacy-request-time-render.test.tsx`・`privacy-tracking-clause-state.test.tsx`）。E2E は `e2e/FR-PRIVACY-009`（手元の DB でサービスロールの実行権を外して試す）。
 
 #### SEC-PRIVACY-005-AC-01 設定を読めない時に委託の一覧が表示されない
 
@@ -515,7 +520,7 @@ anon の鍵と一般会員の JWT の select が断られるか、行が0件で�
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1 |
 | 優先度 | MUST |
 
-追跡の切り替えは、`admin.settings.manage` を持ち aal2 を済ませた管理者が、CSRF の token と回数の制限と監査の記録を通る窓口からだけできる。PostgREST から切り替えの関数・表の直接の書き換えはできない。今のコードは満たす（`src/app/api/admin/settings/shop/route.ts`、`src/lib/auth/admin-rbac.ts`、`supabase/migrations/20261021221140_delivery_tracking_admin.sql`、`supabase/migrations/20261011222930_order_refund_records.sql`、`supabase/migrations/20261021220816_delivery_tracking_records.sql`）。PostgREST の経路の E2E は無い。
+追跡の切り替えは、`admin.settings.manage` を持ち aal2 を済ませた管理者が、CSRF の token と回数の制限と監査の記録を通る窓口からだけできる。PostgREST から切り替えの関数・表の直接の書き換えはできない。今のコードは満たす（`src/app/api/admin/settings/shop/route.ts`、`src/lib/auth/admin-rbac.ts`、`supabase/migrations/20261021221140_delivery_tracking_admin.sql`、`supabase/migrations/20261011222930_order_refund_records.sql`、`supabase/migrations/20261021220816_delivery_tracking_records.sql`）。PostgREST の経路は `e2e/FR-PRIVACY-007` が試す。
 
 #### SEC-PRIVACY-010-AC-01 aal1 の管理者は直接も窓口からも切り替えられない
 
@@ -614,7 +619,7 @@ anon の鍵と一般会員の JWT の select が断られるか、行が0件で�
 | 出どころ | OWASP ASVS 4.0.3 V14.4.7。`docs/05_Quality/reviews/security/security_review_privacy.md` |
 | 優先度 | MUST |
 
-`/privacy` の応答に `frame-ancestors 'none'` を含む CSP と `X-Frame-Options: DENY` を付ける。HSTS と `nosniff` も付ける。今のコードは満たす（`src/proxy.ts`）。`/privacy` で試す E2E は無い。
+`/privacy` の応答に `frame-ancestors 'none'` を含む CSP と `X-Frame-Options: DENY` を付ける。HSTS と `nosniff` も付ける。今のコードは満たす（`src/proxy.ts`）。`/privacy` では `e2e/FR-PRIVACY-006` が試す。
 
 #### SEC-PRIVACY-013-AC-01 応答に枠の禁止と基本の守りの見出しが付く
 

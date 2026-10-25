@@ -17,7 +17,7 @@ const requiredHeadings = [
 
 test.describe('FR-PRIVACY-003 追加した法的セクション', () => {
   for (const vp of viewports) {
-    test(`${vp.name}: 委託・保有期間・国外移転・開示請求・変更・窓口を表示する`, async ({ page }) => {
+    test(`FREQ-100-AC-01 ${vp.name}: 委託・保有期間・国外移転・開示請求・変更・窓口を表示する`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/privacy');
 

@@ -12,7 +12,7 @@ const viewports = [
 for (const path of ['/privacy', '/terms']) {
   test.describe(`FR-PRIVACY-004 タイポグラフィと余白 (${path})`, () => {
     for (const vp of viewports) {
-      test(`${vp.name}: 本文行間が広く、見出しが本文より大きい`, async ({ page }) => {
+      test(`FREQ-101-AC-01 ${vp.name}: 本文行間が広く、見出しが本文より大きい`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto(path);
 

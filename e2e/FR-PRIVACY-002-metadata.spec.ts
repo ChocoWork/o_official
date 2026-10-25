@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('FR-PRIVACY-002 metadata', () => {
-  test('/privacy に title と description と OGP を設定する', async ({ page }) => {
+  test('FR-PRIVACY-002-AC-01 /privacy に title と description と OGP を設定する', async ({ page }) => {
     await page.goto('/privacy');
 
     await expect(page).toHaveTitle('Privacy Policy | Le Fil des Heures');
