@@ -1,6 +1,6 @@
 # ABOUT の要件
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-25 | 対象: ABOUT（アバウトページ `/about`） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -40,21 +40,23 @@ ABOUT の領域の要求・要件・受け入れ条件・派生要件を、追�
 
 ### E2E と受け入れ条件の対応
 
-`e2e/FR-ABOUT-*` のファイルが試している受け入れ条件。テスト名に ID を付ける時に使う。2026-10-24 の E2E 全件では 005〜008 が赤（アサーションの不一致で、実装と合わない）。
+`e2e/FR-ABOUT-*` のファイルが試している受け入れ条件。テスト名に ID を付ける時に使う。テスト名から読める ID は先頭の1つだけ（`scripts/trace/parse-tests.ts`）なので、1つのテストは1つの受け入れ条件だけを試す。2026-10-24 の E2E 全件では 005〜008 が赤だった（アサーションの不一致で、実装と合わない。その後の直しは未実行）。
 
-| E2E のファイル | 受け入れ条件 | 2026-10-24 の結果 |
+| E2E のファイル | 受け入れ条件 | 備考 |
 | --- | --- | --- |
-| FR-ABOUT-001-brand-philosophy-section | FR-ABOUT-001-AC-01 | 通過 |
-| FR-ABOUT-002-quality-craftsmanship-section | FR-ABOUT-002-AC-01 | 通過 |
-| FR-ABOUT-003-our-values-icons | FR-ABOUT-003-AC-01 | 通過 |
-| FR-ABOUT-004-responsive-story-layout | FR-ABOUT-004-AC-01・AC-02（1つのテストで両方。3つの幅） | 通過 |
-| FR-ABOUT-005-heading-and-metadata | FR-ABOUT-005-AC-01・AC-02（1つのテストで両方） | 赤（h1 が無い） |
-| FR-ABOUT-006-cta-links | FR-ABOUT-006-AC-01 | 赤（その文言のリンクが無い） |
-| FR-ABOUT-007-icon-aria-and-image-alt | FR-ABOUT-007-AC-01・AC-02（1つのテストで両方） | 赤（アイコンが無い） |
-| FR-ABOUT-008-static-image-source | FR-ABOUT-008-AC-01 | 赤（画像が1枚も無い） |
+| FR-ABOUT-001-brand-philosophy-section | FR-ABOUT-001-AC-01 | |
+| FR-ABOUT-002-quality-craftsmanship-section | FR-ABOUT-002-AC-01 | |
+| FR-ABOUT-003-our-values-icons | FR-ABOUT-003-AC-01 | |
+| FR-ABOUT-004-responsive-story-layout | FR-ABOUT-004-AC-01（3つの幅） | |
+| FR-ABOUT-005-heading-and-metadata | FR-ABOUT-005-AC-01 | h1 が無いと赤 |
+| FR-ABOUT-006-cta-links | FR-ABOUT-006-AC-01 | その文言のリンクが無いと赤 |
+| FR-ABOUT-007-icon-aria-and-image-alt | FR-ABOUT-007-AC-01 | アイコンが0個の今は空で通る |
+| FR-ABOUT-008-static-image-source | FR-ABOUT-008-AC-01 | 画像が0枚の今は空で通る |
+| FR-ABOUT-009-page-layout-and-meta-remaining | FR-ABOUT-004-AC-02・FR-ABOUT-005-AC-02・FR-ABOUT-007-AC-02・SEC-ABOUT-001-AC-01（3つの幅） | 画像が0枚の今は空で通る |
+| FR-ABOUT-010-security-http-contract | SEC-ABOUT-001-AC-02・002-AC-01・003-AC-01・003-AC-02・004-AC-01・004-AC-02・005-AC-01（HTTP だけ。幅に依らない） | SEC-ABOUT-003 の2つは今のコードでは赤 |
 
-- 3つの幅（390・768・1280）で試すのは 004 だけ。ほかは desktop だけ
-- テスト名から読める ID は先頭の1つだけ（`scripts/trace/parse-tests.ts`）。004・005・007 の「1つのテストで両方」は、名前に ID を付けても AC-02 にはつながらない。AC-02 を確かめるには、テストを AC ごとに分ける必要がある
+- 3つの幅（390・768・1280）で試すのは 004 と 009。010 は HTTP の応答だけを見るので幅の繰り返しは無い。ほかは desktop だけ
+- E2E で試さない受け入れ条件は SEC-ABOUT-006-AC-01・SEC-ABOUT-007-AC-01。前者は Supabase に届かない状態、後者は環境変数を外してビルドし直した状態が要り、共有の E2E の実行では作れない。代わりに単体テスト（`src/app/about/page.tsx` が読み出しを持たないこと、`getSiteUrl` の挙動）で確かめる
 - 派生要件 `DRV-ABOUT-` の動きを試す E2E は無い
 
 ## 要求
@@ -532,7 +534,7 @@ Cookie を持たない要求で `/about` を要求した時、応答に `Set-Coo
 | 上位 | SEC-ABOUT-006 |
 | 根拠 | 描画が DB に頼っていないことを、DB を外した状態で確かめるため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（手元の Supabase に届かない状態で本番ビルドの `/about` を開く） |
+| 確かめ方 | 単体テスト・レビュー（E2E は不可。共有の E2E の実行では Supabase を止められない。`src/app/about/page.tsx` が DB を読まないことを確かめる） |
 | 出どころ | 実装から推定 |
 
 手元の Supabase に届かない状態で `/about` を開いた時、応答が 200 で、`Brand Philosophy / ブランドの思想` の見出しが表示されること。
@@ -559,7 +561,7 @@ Cookie を持たない要求で `/about` を要求した時、応答に `Set-Coo
 | 上位 | SEC-ABOUT-007 |
 | 根拠 | 設定が漏れた状態を再現して、手元の URL が公開の応答に出ないことを確かめるため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（サイトの URL の環境変数を外して本番ビルドを起動し、`/about` を要求する） |
+| 確かめ方 | 単体テスト（E2E は不可。`NEXT_PUBLIC_*` はビルドで埋まり、E2E の起動が `NEXT_PUBLIC_SITE_URL` を固定する。`getSiteUrl` を環境変数を外して呼ぶ） |
 | 出どころ | 実装から推定 |
 
 サイトの URL の環境変数を1つも設定せずに起動して `/about` を要求した時、`og:image` の URL のホストが `localhost` でないこと。または起動の時点で警告かエラーが出ること。本番で設定した本番のドメインを与えて起動した時は、`og:image` の URL のホストがそのドメインと同じであること。

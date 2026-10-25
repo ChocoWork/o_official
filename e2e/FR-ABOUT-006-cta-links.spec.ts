@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('FR-ABOUT-006 CTAリンク', () => {
-  test('COLLECTION / LOOKBOOK / CONTACT のCTAを表示する', async ({ page }) => {
+  test('FR-ABOUT-006-AC-01 COLLECTION / LOOKBOOK / CONTACT のCTAを表示する', async ({ page }) => {
     await page.goto('/about');
 
     await expect(page.getByRole('link', { name: 'COLLECTIONを見る' })).toHaveAttribute('href', '/item');

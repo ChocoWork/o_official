@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('FR-ABOUT-001 Brand Philosophy', () => {
-  test('Brand Philosophy セクションを表示する', async ({ page }) => {
+  test('FR-ABOUT-001-AC-01 Brand Philosophy セクションを表示する', async ({ page }) => {
     await page.goto('/about');
 
     await expect(page.getByRole('heading', { name: 'Brand Philosophy / ブランドの思想' })).toBeVisible();
