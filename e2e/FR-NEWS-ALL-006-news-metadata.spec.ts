@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('FR-NEWS-ALL-006 news metadata', () => {
-  test('ニュース一覧ページの title / description が設定されている', async ({ page }) => {
+  test('FR-NEWS-ALL-006-AC-01 ニュース一覧ページの title / description が設定されている', async ({ page }) => {
     await page.goto('/news');
     await page.waitForLoadState('domcontentloaded');
 

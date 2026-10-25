@@ -1,28 +1,29 @@
 import { expect, test } from '@playwright/test';
-import { getNewsDetailHrefs, gotoNewsList } from './news-detail-test-utils';
 
 test.describe('FR-NEWS-DETAIL-007 navigation aria labels', () => {
-  test('前後リンクにaria-labelを付与する', async ({ page }) => {
-    await gotoNewsList(page);
-    const hrefs = await getNewsDetailHrefs(page);
-    test.skip(hrefs.length === 0, 'ニュース記事が存在しないためスキップ');
+  test('FR-NEWS-DETAIL-007-AC-01 前後リンクのaria-labelが「前の記事: <題>」「次の記事: <題>」になる', async ({ page }) => {
+    // 並列の試験（FR-HOME-023）が足す公開の記事に前後を変えられないよう、前後が見本の行だけになる見本の id 3 を開く。
+    // 前後は id 2 と id 4。題は一覧の写しでなく見本（supabase/seed.sql）の題と突き合わせる。
+    const seedTitleByPath = new Map<string, string>([
+      ['/news/2', 'Synthetic Collection Note'],
+      ['/news/4', 'Synthetic Collaboration Story'],
+    ]);
 
-    const targetHref = hrefs.length >= 3 ? hrefs[1] : hrefs[0];
-    await page.goto(targetHref, { waitUntil: 'domcontentloaded' });
+    await page.goto('/news/3', { waitUntil: 'domcontentloaded' });
 
-    const prevLink = page.locator('a[aria-label^="前の記事"], a[aria-label^="Previous article"]');
-    const nextLink = page.locator('a[aria-label^="次の記事"], a[aria-label^="Next article"]');
+    const prevLink = page.locator('a[aria-label^="前の記事: "]:visible');
+    const nextLink = page.locator('a[aria-label^="次の記事: "]:visible');
+    expect((await prevLink.count()) + (await nextLink.count())).toBeGreaterThan(0);
 
-    if (await prevLink.count()) {
-      await expect(prevLink.first()).toHaveAttribute('aria-label', /前の記事|Previous article/);
-    }
-
-    if (await nextLink.count()) {
-      await expect(nextLink.first()).toHaveAttribute('aria-label', /次の記事|Next article/);
-    }
-
-    if (hrefs.length > 1) {
-      expect((await prevLink.count()) + (await nextLink.count())).toBeGreaterThan(0);
+    for (const [link, prefix] of [
+      [prevLink, '前の記事: '],
+      [nextLink, '次の記事: '],
+    ] as const) {
+      if ((await link.count()) === 0) continue;
+      const href = (await link.first().getAttribute('href')) ?? '';
+      const title = seedTitleByPath.get(href.split('?')[0]);
+      expect(title, `${href} は見本の id 2・4 のどちらか`).toBeTruthy();
+      await expect(link.first()).toHaveAttribute('aria-label', `${prefix}${title}`);
     }
   });
 });

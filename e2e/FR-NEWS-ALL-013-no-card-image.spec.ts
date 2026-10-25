@@ -13,7 +13,7 @@ const viewports = [
 
 test.describe('FR-NEWS-ALL-013 NEWS 一覧の記事カードに画像を表示しない', () => {
   for (const vp of viewports) {
-    test(`${vp.name} (${vp.width}px): 記事カード内に img が存在しない`, async ({ page }) => {
+    test(`FREQ-32-AC-01 ${vp.name} (${vp.width}px): 記事カード内に img が存在しない`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/news');
       await page.waitForLoadState('networkidle');

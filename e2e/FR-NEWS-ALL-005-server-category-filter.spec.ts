@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 test.describe('FR-NEWS-ALL-005 server category filter', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test('category クエリ指定時に一覧記事が指定カテゴリのみになる', async ({ page }) => {
+  test('FR-NEWS-ALL-005-AC-01 category クエリ指定時に一覧記事が指定カテゴリのみになる', async ({ page }) => {
     await page.goto('/news?category=EVENT');
     await page.waitForLoadState('networkidle');
 

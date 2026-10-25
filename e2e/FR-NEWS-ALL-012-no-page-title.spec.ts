@@ -13,7 +13,7 @@ const viewports = [
 
 test.describe('FR-NEWS-ALL-012 NEWS 一覧ページにページ見出しを表示しない', () => {
   for (const vp of viewports) {
-    test(`${vp.name} (${vp.width}px): ページ見出し h1「NEWS」が存在しない`, async ({ page }) => {
+    test(`FREQ-31-AC-01 ${vp.name} (${vp.width}px): ページ見出し h1「NEWS」が存在しない`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/news');
       await page.waitForLoadState('networkidle');

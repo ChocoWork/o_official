@@ -12,7 +12,7 @@ async function contentPaddingLeft(page: Page, path: string, testId: string) {
 
 for (const width of [1024, 1280, 1536]) {
   test.describe(`FR-NEWS-ALL-016 フィルター縦線とコンテンツの距離が ITEM と一致 (${width}px)`, () => {
-    test('NEWS のコンテンツ列の左 padding が ITEM と一致', async ({ page }) => {
+    test('FREQ-49-AC-01 NEWS のコンテンツ列の左 padding が ITEM と一致', async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
 
       const news = await contentPaddingLeft(page, '/news', 'news-content-column');

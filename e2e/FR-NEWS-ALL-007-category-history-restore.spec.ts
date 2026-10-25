@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 test.describe('FR-NEWS-ALL-007 category history restore', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test('ブラウザ戻るでカテゴリ絞り込み状態が復元される', async ({ page }) => {
+  test('FR-NEWS-ALL-007-AC-01 ブラウザ戻るでカテゴリ絞り込み状態が復元される', async ({ page }) => {
     await page.goto('/news');
     await page.waitForLoadState('networkidle');
 

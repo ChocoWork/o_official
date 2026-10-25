@@ -18,7 +18,7 @@ for (const vp of [
   { name: 'tablet', width: 768, height: 1024 },
 ] as const) {
   test.describe(`FR-NEWS-ALL-014 FILTER ボタンが ITEM と一致 (${vp.name})`, () => {
-    test('NEWS の FILTER ボタンの文字サイズ・字間が ITEM と一致', async ({ page }) => {
+    test('FREQ-47-AC-01 NEWS の FILTER ボタンの文字サイズ・字間が ITEM と一致', async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
 
       const news = await filterButtonTypography(page, '/news');

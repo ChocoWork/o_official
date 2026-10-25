@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('FR-NEWS-ALL-007 detail back filter restore', () => {
-  test('単一カテゴリ選択時に詳細遷移後のブラウザ戻るでフィルタが復元される', async ({ page }) => {
+  test('FR-NEWS-ALL-007-AC-02 単一カテゴリ選択時に詳細遷移後のブラウザ戻るでフィルタが復元される', async ({ page }) => {
     await page.goto('/news');
     await page.waitForLoadState('networkidle');
 
@@ -16,7 +16,7 @@ test.describe('FR-NEWS-ALL-007 detail back filter restore', () => {
     await expect(page.getByRole('checkbox', { name: 'EVENT', exact: true })).toBeChecked();
   });
 
-  test('複数カテゴリ選択時に詳細遷移後のブラウザ戻るでフィルタが復元される', async ({ page }) => {
+  test('FR-NEWS-ALL-007-AC-02 複数カテゴリ選択時に詳細遷移後のブラウザ戻るでフィルタが復元される', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
 
     await page.goto('/news');

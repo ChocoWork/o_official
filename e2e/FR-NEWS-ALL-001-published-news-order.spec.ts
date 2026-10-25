@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 test.describe('FR-NEWS-ALL-001 published news order', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test('公開済みニュースが公開日降順で表示される', async ({ page }) => {
+  test('FR-NEWS-ALL-001-AC-01 公開済みニュースが公開日降順で表示される', async ({ page }) => {
     await page.goto('/news');
     await page.waitForLoadState('networkidle');
 
