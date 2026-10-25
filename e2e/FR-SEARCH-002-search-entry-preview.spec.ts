@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { fetchSearchSeed } from './search-test-utils';
 
 test.describe('FR-SEARCH-002 search entry and instant preview', () => {
-  test('ヘッダー検索アイコンから search ページへ遷移し、/?q= で即時プレビューを表示する', async ({ page }) => {
+  test('FR-SEARCH-002-AC-01 ヘッダー検索アイコンから search ページへ遷移し、/?q= で即時プレビューを表示する', async ({ page }) => {
     const seed = await fetchSearchSeed(page);
 
     await page.goto('/');

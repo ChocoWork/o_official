@@ -17,7 +17,7 @@ async function openSuggestions(page: import('@playwright/test').Page) {
 }
 
 test.describe('FR-SEARCH-011 予測候補（combobox）', () => {
-  test('AC-01/AC-04 候補は種別付き・40px以上・最大8件で、ラベルに入力語を含む', async ({ page }) => {
+  test('FREQ-190-AC-04 AC-01/AC-04 候補は種別付き・40px以上・最大8件で、ラベルに入力語を含む', async ({ page }) => {
     await openSuggestions(page);
 
     const options = page.locator('[role="option"]');
@@ -46,7 +46,7 @@ test.describe('FR-SEARCH-011 予測候補（combobox）', () => {
     expect(listBox!.y).toBeGreaterThanOrEqual(inputBox!.y);
   });
 
-  test('AC-02 ARIA combobox 属性とキーボード操作', async ({ page }) => {
+  test('FREQ-190-AC-02 AC-02 ARIA combobox 属性とキーボード操作', async ({ page }) => {
     const input = await openSuggestions(page);
 
     await expect(input).toHaveAttribute('role', 'combobox');
@@ -70,7 +70,7 @@ test.describe('FR-SEARCH-011 予測候補（combobox）', () => {
     await expect(input).toHaveAttribute('aria-expanded', 'false');
   });
 
-  test('AC-03 ↓+Enter とクリックのどちらでも候補の語と種別で検索される', async ({ page }) => {
+  test('FREQ-190-AC-03 AC-03 ↓+Enter とクリックのどちらでも候補の語と種別で検索される', async ({ page }) => {
     // キーボードで先頭候補を確定
     await openSuggestions(page);
     const firstLabel = (await page.locator('[role="option"] span').first().innerText()).trim();

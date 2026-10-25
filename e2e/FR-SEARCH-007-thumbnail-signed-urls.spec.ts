@@ -12,7 +12,7 @@ const VIEWPORTS = [
 ] as const;
 
 test.describe('FR-SEARCH-007 検索結果サムネイルの署名付き URL 配信', () => {
-  test('AC-01 /api/search の imageUrl が署名付き URL であること', async ({ page }) => {
+  test('FREQ-185-AC-01 AC-01 /api/search の imageUrl が署名付き URL であること', async ({ page }) => {
     const seed = await fetchSearchSeed(page);
 
     const response = await page.request.get(`/api/search?q=${encodeURIComponent(seed.query)}&tab=all`);
@@ -37,7 +37,7 @@ test.describe('FR-SEARCH-007 検索結果サムネイルの署名付き URL 配�
   });
 
   for (const vp of VIEWPORTS) {
-    test(`AC-02 ${vp.name} サムネイル画像が実際に読み込まれること`, async ({ page }) => {
+    test(`FREQ-185-AC-02 AC-02 ${vp.name} サムネイル画像が実際に読み込まれること`, async ({ page }) => {
       const seed = await fetchSearchSeed(page);
 
       const failedImageRequests: string[] = [];

@@ -46,7 +46,7 @@ SEARCH の領域の要求・要件・受け入れ条件・派生要件を、追�
 
 ### E2E と受け入れ条件の対応
 
-`e2e/FR-SEARCH-*` のファイルが試している受け入れ条件。テスト名に ID を付ける時に使う。ファイル名の番号 006〜017 は要件の番号ではない（要件は FR-SEARCH-001〜005 だけ）。
+`e2e/FR-SEARCH-*` のファイルが試している受け入れ条件。テスト名に ID を付ける時に使う。ファイル名の番号 006〜024 は要件の番号ではない（要件は FR-SEARCH-001〜005 だけ）。
 
 | E2E のファイル | 受け入れ条件 |
 | --- | --- |
@@ -55,20 +55,27 @@ SEARCH の領域の要求・要件・受け入れ条件・派生要件を、追�
 | FR-SEARCH-003-fulltext-highlight | FR-SEARCH-003-AC-01 |
 | FR-SEARCH-004-empty-results | FR-SEARCH-004-AC-01 |
 | FR-SEARCH-005-search-history | FREQ-189-AC-01・AC-02 |
-| FR-SEARCH-006-two-column-redesign | FREQ-184-AC-01〜03、FREQ-196-AC-01・02、FREQ-197-AC-01、FREQ-198-AC-02（テストの中の「AC-03」「AC-04」の注は FREQ-184 の AC-02・03 にずれている） |
+| FR-SEARCH-006-two-column-redesign | FREQ-184-AC-03（LOAD MORE は固定の語で試す。8 件超は `q=Synthetic`、8 件以下は `q=Tsubame`）、FREQ-196-AC-01・02、FREQ-197-AC-01、FREQ-198-AC-02（テストの中の「AC-03」「AC-04」の注は FREQ-184 の AC-02・03 にずれている） |
 | FR-SEARCH-007-thumbnail-signed-urls | FREQ-185-AC-01・02（NEWS の項目） |
 | FR-SEARCH-008-popular-items-by-purchases | FREQ-186-AC-01（並びは見ない）・AC-02（購入数が無いことだけ）・AC-03 |
 | FR-SEARCH-009-preview-flag-parsing | FREQ-187-AC-01〜03 |
-| FR-SEARCH-010-full-height-layout | FREQ-188-AC-01〜03、FREQ-197-AC-02 |
+| FR-SEARCH-010-full-height-layout | FREQ-188-AC-01・02（AC-02 は desktop 1280 だけ。tablet は FR-SEARCH-023 の FREQ-197-AC-02）、AC-03 の横スクロールも見る |
 | FR-SEARCH-011-suggestions-combobox | FREQ-190-AC-01〜04（候補の高さは FREQ-192 の 40px で試す） |
 | FR-SEARCH-012-compact-form-and-tab-underline | FREQ-192-AC-01〜03、FREQ-193-AC-01・02 |
 | FR-SEARCH-013-underline-and-dropdown-edges | FREQ-194-AC-01・02（AUTH の項目）、FREQ-195-AC-01・02 |
 | FR-SEARCH-014-tablet-desktop-parity-and-mobile-title | FREQ-197-AC-01・03、FREQ-198-AC-01〜03 |
-| FR-SEARCH-015-mobile-density | FREQ-199-AC-01（FREQ-200 で置き換えた形で試す）・AC-02・AC-03 |
+| FR-SEARCH-015-mobile-density | FREQ-199-AC-02・AC-03（AC-01 は成り立たないので試験を置かない。FREQ-200-AC-01 を FR-SEARCH-016 で試す） |
 | FR-SEARCH-016-tab-inset-and-letter-spacing | FREQ-200-AC-01〜03 |
 | FR-SEARCH-017-item-meta-price | FREQ-201-AC-01〜03 |
+| FR-SEARCH-018-search-page-flows | FREQ-01-AC-01、FR-SEARCH-001-AC-02・AC-03、FR-SEARCH-002-AC-02、FR-SEARCH-003-AC-02、FREQ-189-AC-02、SEC-SEARCH-011-AC-01、SEC-SEARCH-021-AC-01 |
+| FR-SEARCH-019-search-api-contract-and-headers | FREQ-187-AC-01、SEC-SEARCH-004-AC-01、SEC-SEARCH-009-AC-02、SEC-SEARCH-010-AC-01、SEC-SEARCH-012-AC-01、SEC-SEARCH-014-AC-01、SEC-SEARCH-019-AC-01（HTTP だけ） |
+| FR-SEARCH-020-search-db-function-grants | FREQ-186-AC-02、SEC-SEARCH-002-AC-01、SEC-SEARCH-007-AC-01、SEC-SEARCH-008-AC-01、SEC-SEARCH-009-AC-01（手元の DB の PostgREST を直接） |
+| FR-SEARCH-021-search-injected-rows | SEC-SEARCH-001-AC-01・AC-02、SEC-SEARCH-003-AC-01（題に `\` を含む公開の商品を試験の中で足す）、SEC-SEARCH-013-AC-01、SEC-SEARCH-015-AC-01、SEC-SEARCH-016-AC-01 |
+| FR-SEARCH-022-search-rate-limit | SEC-SEARCH-005-AC-01・AC-02、SEC-SEARCH-006-AC-01、SEC-SEARCH-017-AC-01（search_news の EXECUTE を外す）、SEC-SEARCH-020-AC-01。他の試験を壊すので、playwright.config.ts の isolated-global の project で最後に流す |
+| FR-SEARCH-023-search-two-column-heading-results-header | FREQ-188-AC-03、FREQ-191-AC-02、FREQ-196-AC-01・02、FREQ-197-AC-01〜03、FREQ-198-AC-01・03 |
+| FR-SEARCH-024-search-tab-rows-viewport-details | FREQ-192-AC-03、FREQ-193-AC-02、FREQ-195-AC-02、FREQ-199-AC-03、FREQ-200-AC-03、FREQ-201-AC-02 |
 
-受け入れ条件があって範囲の E2E が無い物: `FREQ-01-AC-01`、`FR-SEARCH-001-AC-03`、`FR-SEARCH-003-AC-02`、`FREQ-186-AC-02` の EXECUTE の権限の部分（DB の物）、`FREQ-191-AC-01`・`02`。3つの幅で試していない E2E（001〜005・009・011、012 の1つ目、013 の FREQ-194、015・016 の1つ目）も残る。
+受け入れ条件があって範囲の E2E が無い物: 今は成り立たない FREQ-184-AC-01・02、FREQ-190-AC-01、FREQ-191-AC-01、FREQ-199-AC-01（ユーザーの判断待ち）と、サーバーの記録の中身を見る SEC-SEARCH-018-AC-01（ブラウザや HTTP から見えないので単体・結合の試験の仕事）。3つの幅で試していない E2E（001〜005・009・011、012 の1つ目、013 の FREQ-194、016 の1つ目）も残る。
 
 ## 要求
 

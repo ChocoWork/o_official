@@ -11,7 +11,7 @@ const VIEWPORTS = [
 
 test.describe('FR-SEARCH-014 タブレットのPC同等化とモバイル見出し', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} レイアウトと見出しの表示`, async ({ page }) => {
+    test(`FREQ-198-AC-02 ${vp.name} レイアウトと見出しの表示`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/search?q=a');
       await expect(page.locator('[data-testid="search-result-row"]').first()).toBeVisible();

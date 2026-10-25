@@ -10,7 +10,7 @@ const VIEWPORTS = [
 ] as const;
 
 test.describe("FR-SEARCH-016 タブの左右余白と字間", () => {
-  test("AC-01 モバイルで先頭/末尾タブがタブ列端より内側に入る", async ({
+  test("FREQ-200-AC-01 AC-01 モバイルで先頭/末尾タブがタブ列端より内側に入る", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -40,7 +40,7 @@ test.describe("FR-SEARCH-016 タブの左右余白と字間", () => {
   });
 
   for (const vp of VIEWPORTS) {
-    test(`AC-02/AC-03 ${vp.name} 字間 0.1em と下線の端揃え`, async ({
+    test(`FREQ-200-AC-02 AC-02/AC-03 ${vp.name} 字間 0.1em と下線の端揃え`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });

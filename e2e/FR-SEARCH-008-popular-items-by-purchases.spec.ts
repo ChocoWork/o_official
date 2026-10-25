@@ -20,7 +20,7 @@ test.describe('FR-SEARCH-008 POPULAR ITEMS の購入数順表示', () => {
   // 購入数の降順そのものは RPC 定義側で担保する（購入数は API に出さないため
   // HTTP からは観測できない）。ここでは公開 ITEM のみが並ぶことと、
   // 購入数が外部へ漏れないことを検証する。
-  test('AC-01/AC-02 公開 ITEM のみが並び、購入数はレスポンスに含めない', async ({ page }) => {
+  test('FREQ-186-AC-01 AC-01/AC-02 公開 ITEM のみが並び、購入数はレスポンスに含めない', async ({ page }) => {
     const response = await page.request.get('/api/search?q=');
     expect(response.ok()).toBeTruthy();
 
@@ -41,7 +41,7 @@ test.describe('FR-SEARCH-008 POPULAR ITEMS の購入数順表示', () => {
   });
 
   for (const vp of VIEWPORTS) {
-    test(`AC-03 ${vp.name} 検索語なしで POPULAR ITEMS が表示されること`, async ({ page }) => {
+    test(`FREQ-186-AC-03 AC-03 ${vp.name} 検索語なしで POPULAR ITEMS が表示されること`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/search');
 

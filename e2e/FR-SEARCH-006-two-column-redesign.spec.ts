@@ -1,5 +1,4 @@
 import { expect, test, type Locator } from '@playwright/test';
-import { fetchSearchSeed } from './search-test-utils';
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -27,11 +26,10 @@ const VIEWPORTS = [
 
 test.describe('FR-SEARCH-006 2カラムリデザイン', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} レイアウト・結果ヘッダー・結果行・LOAD MORE`, async ({ page }) => {
-      const seed = await fetchSearchSeed(page);
-
+    test(`FREQ-184-AC-03 ${vp.name} レイアウト・結果ヘッダー・結果行・LOAD MORE`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
-      await page.goto(`/search?q=${encodeURIComponent(seed.query)}`);
+      // 'Synthetic' は商品・ルック・ニュースの 3 種別で合わせて 8 件を超えて一致する（seed.sql）ので、LOAD MORE の出る側を確かめる
+      await page.goto('/search?q=Synthetic');
 
       // 見出しは FREQ-198 によりモバイルでは視覚的に隠れる（sr-only）が、
       // 文書構造としては常に存在する
@@ -88,18 +86,25 @@ test.describe('FR-SEARCH-006 2カラムリデザイン', () => {
       const borderBottom = await firstRow.evaluate((el) => getComputedStyle(el).borderBottomWidth);
       expect(borderBottom).toBe('1px');
 
-      // AC-04: 結果が 8 件を超える場合のみ LOAD MORE を表示し、クリックで行が増える
+      // AC-04（FREQ-184-AC-03）: 結果が 8 件を超えるので 8 行と LOAD MORE が出て、クリックで行が増える
       const totalCount = Number((await resultsHeader.innerText()).match(/(\d+) RESULTS/)?.[1] ?? '0');
+      expect(totalCount).toBeGreaterThan(8);
+      expect(rowCount).toBe(8);
       const loadMore = page.getByRole('button', { name: 'LOAD MORE' });
-      if (totalCount > 8) {
-        expect(rowCount).toBe(8);
-        await expect(loadMore).toBeVisible();
-        await loadMore.click();
-        await expect(rows.nth(8)).toBeVisible();
-      } else {
-        await expect(loadMore).toBeHidden();
-        expect(rowCount).toBe(totalCount);
-      }
+      await expect(loadMore).toBeVisible();
+      await loadMore.click();
+      await expect(rows.nth(8)).toBeVisible();
+    });
+  }
+
+  for (const vp of VIEWPORTS) {
+    test(`FREQ-184-AC-03 ${vp.name} 結果が 8 件以下なら LOAD MORE が出ない`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      // 'Tsubame' は商品 1 件だけに一致する（seed.sql）
+      await page.goto('/search?q=Tsubame');
+      await expect(page.getByText(/^\d+ RESULTS$/)).toBeVisible();
+      await expect(page.locator('[data-testid="search-result-row"]').first()).toBeVisible();
+      await expect(page.getByRole('button', { name: 'LOAD MORE' })).toBeHidden();
     });
   }
 });

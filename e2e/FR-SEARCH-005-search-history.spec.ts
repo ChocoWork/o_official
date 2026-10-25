@@ -6,7 +6,7 @@ import { fetchSearchSeed } from './search-test-utils';
 // 旧 FR-SEARCH-005（履歴を保持して再訪時に表示する）は本要件で廃止。
 
 test.describe('FR-SEARCH-005 検索履歴の非表示', () => {
-  test('AC-01/AC-02 履歴は表示されず localStorage にも保存されない', async ({ page }) => {
+  test('FREQ-189-AC-01 AC-01/AC-02 履歴は表示されず localStorage にも保存されない', async ({ page }) => {
     const seed = await fetchSearchSeed(page);
 
     await page.goto('/search');

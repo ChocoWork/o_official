@@ -10,7 +10,7 @@ const VIEWPORTS = [
 ] as const;
 
 test.describe('FR-SEARCH-012 フォーム圧縮とタブ下線', () => {
-  test('AC-01 フォームと候補行の高さが詰まっている', async ({ page }) => {
+  test('FREQ-192-AC-01 AC-01 フォームと候補行の高さが詰まっている', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/search');
 
@@ -34,7 +34,7 @@ test.describe('FR-SEARCH-012 フォーム圧縮とタブ下線', () => {
   });
 
   for (const vp of VIEWPORTS) {
-    test(`AC-02/AC-03 ${vp.name} タブの下線がヘッダーナビと同じ挙動`, async ({ page }) => {
+    test(`FREQ-192-AC-02 AC-02/AC-03 ${vp.name} タブの下線がヘッダーナビと同じ挙動`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/search');
       await expect(page.getByRole('tab', { name: 'ALL' })).toBeVisible();

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('FR-SEARCH-004 empty results', () => {
-  test('検索結果がゼロ件のときメッセージと人気商品を表示する', async ({ page }) => {
+  test('FR-SEARCH-004-AC-01 検索結果がゼロ件のときメッセージと人気商品を表示する', async ({ page }) => {
     const missingQuery = 'zzzz-no-search-hit-20260418';
 
     await page.goto(`/search?q=${encodeURIComponent(missingQuery)}`);

@@ -13,7 +13,7 @@ type SearchResponse = {
 };
 
 test.describe('FR-SEARCH-009 preview フラグの解釈', () => {
-  test('AC-01/AC-02 preview 未指定は 1種別最大8件、preview=true は最大3件', async ({ page }) => {
+  test('FREQ-187-AC-02 AC-01/AC-02 preview 未指定は 1種別最大8件、preview=true は最大3件', async ({ page }) => {
     const seed = await fetchSearchSeed(page);
 
     const normalResponse = await page.request.get(`/api/search?q=${encodeURIComponent(seed.query)}`);
@@ -36,7 +36,7 @@ test.describe('FR-SEARCH-009 preview フラグの解釈', () => {
     expect(normal.counts.all).toBeGreaterThanOrEqual(preview.counts.all);
   });
 
-  test('AC-03 preview 未指定は search:public として計上され 20 回連続でも 429 にならない', async ({ page }) => {
+  test('FREQ-187-AC-03 AC-03 preview 未指定は search:public として計上され 20 回連続でも 429 にならない', async ({ page }) => {
     const statuses: number[] = [];
     for (let attempt = 0; attempt < 21; attempt += 1) {
       const response = await page.request.get('/api/search?q=');

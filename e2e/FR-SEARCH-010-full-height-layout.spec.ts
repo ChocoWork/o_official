@@ -11,7 +11,7 @@ const VIEWPORTS = [
 
 test.describe('FR-SEARCH-010 検索画面の全画面表示', () => {
   for (const vp of VIEWPORTS) {
-    test(`AC-01/AC-03 ${vp.name} フッターがファーストビューに出ず横スクロールもしない`, async ({ page }) => {
+    test(`FREQ-188-AC-01 AC-01/AC-03 ${vp.name} フッターがファーストビューに出ず横スクロールもしない`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/search');
 
@@ -39,12 +39,9 @@ test.describe('FR-SEARCH-010 検索画面の全画面表示', () => {
     });
   }
 
-  // FREQ-197: tablet も desktop と同じ2カラムなので、縦中央寄せの検証も両方で行う
-  for (const vp of [
-    { name: 'tablet', width: 768, height: 1024 },
-    { name: 'desktop', width: 1280, height: 800 },
-  ] as const) {
-    test(`AC-02 ${vp.name} で左カラムが縦中央寄りに配置される`, async ({ page }) => {
+  // FREQ-188-AC-02 は desktop 1280 だけを対象にする。tablet の縦中央寄せは FREQ-197-AC-02（FR-SEARCH-023）で確かめる
+  for (const vp of [{ name: 'desktop', width: 1280, height: 800 }] as const) {
+    test(`FREQ-188-AC-02 AC-02 ${vp.name} で左カラムが縦中央寄りに配置される`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/search');
       await expect(page.locator('[data-testid="search-result-row"]').first()).toBeVisible();

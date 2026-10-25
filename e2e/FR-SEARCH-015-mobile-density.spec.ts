@@ -47,18 +47,7 @@ async function measure(page: import('@playwright/test').Page): Promise<Measured>
 }
 
 test.describe('FR-SEARCH-015 モバイルの文字サイズと余白', () => {
-  test('AC-01 モバイルのタブが全幅に均等配置される', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    const mobile = await measure(page);
-
-    expect(mobile.tabsHorizontal).toBe(true);
-    // FREQ-200 でタブ列に左右パディングを追加したため、先頭/末尾タブは
-    // タブ列端より内側に入る（全幅一致は FREQ-200-AC-01 で置換）。
-    expect(mobile.firstTabLeft).toBeGreaterThan(mobile.tablistLeft);
-    expect(mobile.lastTabRight).toBeLessThan(mobile.tablistRight);
-  });
-
-  test('AC-02/AC-03 モバイルは文字も行も tablet / desktop より小さい', async ({ page }) => {
+  test('FREQ-199-AC-02 AC-02/AC-03 モバイルは文字も行も tablet / desktop より小さい', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const mobile = await measure(page);
 

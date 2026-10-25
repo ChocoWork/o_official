@@ -28,7 +28,7 @@ async function readRows(page: import('@playwright/test').Page): Promise<Row[]> {
 
 test.describe('FR-SEARCH-017 ITEM メタの価格表示', () => {
   for (const vp of VIEWPORTS) {
-    test(`AC-01/AC-02 ${vp.name} ITEM は価格・LOOK/NEWS は従来のメタ`, async ({ page }) => {
+    test(`FREQ-201-AC-01 AC-01/AC-02 ${vp.name} ITEM は価格・LOOK/NEWS は従来のメタ`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       const rows = await readRows(page);
 
@@ -56,7 +56,7 @@ test.describe('FR-SEARCH-017 ITEM メタの価格表示', () => {
     });
   }
 
-  test('AC-03 /api/search の items[].meta が価格・purchase_count 非公開', async ({ request }) => {
+  test('FREQ-201-AC-03 AC-03 /api/search の items[].meta が価格・purchase_count 非公開', async ({ request }) => {
     const response = await request.get('/api/search?q=a');
     expect(response.ok()).toBe(true);
 
