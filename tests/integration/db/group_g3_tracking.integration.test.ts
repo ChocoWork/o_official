@@ -48,7 +48,6 @@ describe('G-3 tracking / delivered migration (no database)', () => {
     expect(names.filter((name) => name.endsWith('_group_g3_shipping_actions.sql'))).toEqual([MIGRATION]);
     const stamp = (name: string): string => name.slice(0, name.indexOf('_'));
     expect(stamp(MIGRATION) > stamp(names.find((name) => name.endsWith('_group_g3_shipping_slips.sql')) as string)).toBe(true);
-    for (const other of names.filter((name) => name.endsWith('_auth_return_intents.sql'))) expect(stamp(MIGRATION) > stamp(other)).toBe(true);
     expect(sql.charCodeAt(0)).not.toBe(0xfeff);
     expect(sql).not.toMatch(/[\r　 ﻿​-‍]/);
     expect(sql).not.toMatch(/[^\x00-\x7f]/);

@@ -1,6 +1,6 @@
 # テスト仕様
 
-> 状態: 現行の方針（グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 7の伝票番号の後入力・訂正と手動の配達済みのDB・単体を追記）（G-3 Task 6の発送の取消のDB・単体を追記）（G-3 Task 4の発送票の下書きのDB・単体を追記）（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件
+> 状態: 現行の方針（G-3 Task 8 のテストの節は 2026-10-26 に追記。グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 7の伝票番号の後入力・訂正と手動の配達済みのDB・単体を追記）（G-3 Task 6の発送の取消のDB・単体を追記）（G-3 Task 4の発送票の下書きのDB・単体を追記）（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件
 
 ## 概要
 
@@ -305,3 +305,17 @@ E2E は後続 Task（Task 13）で扱う。この Task は E2E の期待を変�
 | [文書単体](../../../tests/unit/docs/delivery-status-traceability.test.ts)・[書き手の閉じた一覧](../../../tests/integration/db/group_g1_writer_inventory.integration.test.ts) | 単体・DB構造 | 要求と窓口・FREQ-540 AC-11 | AC-534-01/02/05 の追跡、routeは155ファイル・198メソッド（別セッションの `POST /api/auth/post-login` を含む）、一覧は154行・197メソッド。許可一覧は74本、発送票の書込み関数は6本（入口6本）、service_roleがEXECUTEできるのは12本 |
 
 許可一覧はG3D_ALLOWLISTの74本。G-2/G-3 の末尾assertを今のDBで流す試験（`group_g2_migration_asserts`・`group_g2_purchase_documents`・`group_g3_draft`）は、流す前に取引の中の一覧をその移行を当てた時点の本数（65本・72本）へ入れ替える。実PostgRESTの伝票番号・配達済みの経路（[group_g3_postgrest_paths](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts)）は鍵を持つcontrollerが流す。単体はDBのトリガー・RLS・追跡事業者・実メール・ブラウザの動作を証明しない。
+
+## G-3 Task 8 追跡の親（代表の登録）と配送の読み直しの結果の票への展開
+
+確認日: 2026-10-26。実装者は単体・型・lint・文書の確認だけを行い（DB 結合は別の作業が手元の DB を使っていたため流していない。移行の新しい節は取引の中で当てて必ず戻す形で構文と末尾 assert を確かめたのみ）、DB 結合の実測は controller の reset 後。移行は第2（reads・G3B）と第4（actions・G3D）の既存の2本を編集した（新しい移行は作らない）。
+
+| 試験 | 段 | 対応 | 内容 |
+| --- | --- | --- | --- |
+| [group_g3_tracking_parent](../../../tests/integration/db/group_g3_tracking_parent.integration.test.ts) の DB なしの部分 | 構造（DBなし） | FREQ-534 AC-04・FREQ-541 AC-03・FREQ-540 AC-11 | reads の移行の形（ASCII・節の印）、3つの置換が E-4・E-5 の本文から指定の1か所だけ違うこと、助けが読むだけで誰にも EXECUTE させないこと、読み直しの結果の置換が G-1 の本体から指定の13行だけを外すこと（コメントを除く）、共通の押さえは1回・在庫の閉包の道具を呼ばないこと、行の鍵の並びが G-1 の本体と同じ12表で票の全注文を表ごとに1回ずつ取る（前の表へ戻らない）こと |
+| 同 DB の部分（取引の中） | DB結合（controller の reset 後に実測） | FREQ-534 AC-01・AC-03・AC-04・FREQ-541 AC-03・FREQ-540 AC-11 | 追跡オンの票の確定で親の行1行と代表の登録1行だけ（2注文・3注文）、claim は代表の1行だけ、読み直しの結果が in_transit→out_for_delivery→delivered で全注文に反映（出来事・メール・操作の記録・品物状態を注文ごとに1回、登録は代表だけ）、配達失敗の要対応は代表だけ、古い読み直しと同じ状況の再読、参加の注文の2つの読取が代表の登録の状態を返し customer-order-view が配送の状況を出して他の注文の情報を含まない、票に属さない発送の出力と取り込み対象が従来どおり、訂正で旧版の登録が replaced・新しい親の行と代表の登録・旧版の借りの印は何も変えない、取消で代表だけ cancelled、追跡オフで親の行だけ・オンにすると代表だけ取り込み（backfilled_count が票ごとに1）、追跡オフで訂正・配達済み、末尾 assert の改変の検出（reads・actions） |
+| 同 DB の部分（別接続・commit した準備） | DB結合（controller の reset 後に実測） | FREQ-541 AC-03 | 共通の鍵を待つ間は行を1つも固定しない、注文の表を2注文とも固定してから商品の表の最後の行で待つ・商品の表を全部固定してから割当の表の最後の行で待つ（表ごとに票の全注文をまとめて取る）、読み直しの結果と同じ票の伝票番号の訂正を別接続で同時に流しても deadlock が起きない |
+| [group_g3_postgrest_paths](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts) の顧客向けの経路 | DB結合（実鍵 PostgREST。controller が流す） | FREQ-541 AC-03 | 実 store（公開材料・管理の配送詳細）と customer-order-view が PostgREST を通り、参加の注文にも代表の登録の状態と配送の状況が出て、別の注文の情報が入らない |
+| [既存の単体](../../../tests/unit/lib/orders/customer-order-view.test.ts)・[配送 store](../../../tests/unit/lib/orders/tracking/delivery-store.test.ts)・[文書単体](../../../tests/unit/docs/delivery-status-traceability.test.ts) | 単体 | FREQ-541 AC-03・要求の追跡 | 出力が変わらない既存の単体は無修正。文書単体は FREQ-534 の AC 一覧に AC-04 を加えた |
+
+controller の reset 後に流す DB suite: `group_g3_tracking_parent`・`group_g1_delivery*`・`delivery_tracking_*`・`order_status_links*`・`group_g1_concurrency`・`group_g3_*`（`group_g3_postgrest_paths` は鍵を持つ controller）。既存の E-4・G-1 の suite は無修正で緑のまま（読み直しの結果の本体の文字の並びを確かめる `group_g1_delivery` は、票に属さない発送の道の文をそのまま残して通す）。単体は DB・実メール・17TRACK・ブラウザの動作を証明しない。

@@ -2,6 +2,9 @@ BEGIN;
 
 -- G3B_BODY_BEGIN
 -- FREQ-531 / FREQ-532: reads only. G-1/G-2 definitions and writer membership are unchanged.
+-- Task 8 (FREQ-534-AC-04, FREQ-541-AC-03) adds, at the end of this body, the read-only helper private.tracking_registration_owner and
+-- replaces three E-4 functions by one changed condition each (delivery_tracking_backfill_targets, get_order_delivery_detail,
+-- get_order_status_public_material). Writers and the allowlist are not touched here.
 
 -- Only paid orders with live paid allocations can yield ready ranges. Materialize BEFORE projection:
 -- a closed order's historical returns/refunds/shipments are never passed into the G-1 projection here.
@@ -379,6 +382,312 @@ AS $$ SELECT * FROM private.list_shipment_accounting_inputs(_from, _to, _limit);
 ALTER FUNCTION public.list_shipment_accounting_inputs(date,date,integer) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.list_shipment_accounting_inputs(date,date,integer) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.list_shipment_accounting_inputs(date,date,integer) TO service_role;
+
+-- Task 8 (FREQ-534-AC-04, FREQ-541-AC-03): the tracking parent. A shipment slip is registered with the carrier once per slip and
+-- tracking version, by its leader shipment only (private.shipment_tracking_registrations.leader_fulfillment_id, the active shipment
+-- with the smallest order id when the parent row is made). The other shipments of the slip (participants) never get a registration
+-- row of their own. This helper names the shipment whose registration speaks for a shipment and a tracking version: the leader when
+-- the slip of the shipment has a parent row of that version, the shipment itself otherwise (a shipment on no slip, or a version
+-- without a parent row). Read-only internal helper: nobody but the owner can EXECUTE it.
+CREATE FUNCTION private.tracking_registration_owner(_fulfillment_id uuid, _tracking_version integer)
+RETURNS uuid
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT COALESCE((
+    SELECT sr.leader_fulfillment_id
+    FROM public.shipment_slip_fulfillments AS sf
+    JOIN private.shipment_tracking_registrations AS sr
+      ON sr.slip_id = sf.slip_id AND sr.tracking_version = _tracking_version
+    WHERE sf.fulfillment_id = _fulfillment_id
+  ), _fulfillment_id)
+$$;
+ALTER FUNCTION private.tracking_registration_owner(uuid,integer) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.tracking_registration_owner(uuid,integer) FROM PUBLIC, anon, authenticated, service_role;
+
+-- Replacement 1 of 3: turning delivery tracking on later makes registrations only for shipments that speak for themselves, so a
+-- participant of a slip never gets one. The only added line is the last condition. Signature, volatility, search_path, owner and
+-- ACL are unchanged.
+CREATE OR REPLACE FUNCTION private.delivery_tracking_backfill_targets()
+RETURNS TABLE (fulfillment_id uuid, tracking_version integer, expires_at timestamptz)
+LANGUAGE sql
+STABLE
+SET search_path = ''
+AS $$
+  SELECT f.id,
+         f.tracking_version,
+         COALESCE(r.expires_at, s.started_at + interval '30 days')
+  FROM public.order_fulfillments AS f
+  LEFT JOIN public.order_fulfillment_tracking_changes AS c
+    ON c.fulfillment_id = f.id AND c.tracking_version = f.tracking_version
+  LEFT JOIN private.fulfillment_tracking_registrations AS r
+    ON r.fulfillment_id = f.id AND r.tracking_version = f.tracking_version
+  CROSS JOIN LATERAL (
+    SELECT CASE WHEN f.tracking_version = 1 THEN f.shipped_at ELSE c.changed_at END AS started_at
+  ) AS s
+  WHERE f.cancelled_at IS NULL
+    AND f.delivered_at IS NULL
+    AND f.shipping_carrier IN ('yamato', 'sagawa', 'japanpost')
+    AND f.tracking_number IS NOT NULL
+    AND (r.fulfillment_id IS NULL OR (r.state = 'stopped' AND r.stop_reason = 'disabled'))
+    AND COALESCE(r.expires_at, s.started_at + interval '30 days') > pg_catalog.now()
+    AND private.tracking_registration_owner(f.id, f.tracking_version) = f.id
+$$;
+
+-- Replacement 2 of 3: the admin view of one order. A participant shows the registration of its leader. The only changed line is the
+-- registration lookup (r.fulfillment_id = the owner). A shipment on no slip is its own owner, so its output is identical.
+CREATE OR REPLACE FUNCTION public.get_order_delivery_detail(_order_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_enabled boolean;
+BEGIN
+  IF _order_id IS NULL THEN
+    RAISE EXCEPTION 'DELIVERY_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.orders AS o WHERE o.id = _order_id) THEN
+    RAISE EXCEPTION 'ORDER_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+
+  SELECT s.delivery_tracking_enabled INTO v_enabled FROM public.shop_settings AS s WHERE s.id = 1;
+
+  RETURN pg_catalog.jsonb_build_object(
+    'enabled', COALESCE(v_enabled, false),
+    'fulfillments', COALESCE((
+      SELECT pg_catalog.jsonb_agg(
+        pg_catalog.jsonb_build_object(
+          'fulfillment_id', f.id,
+          'number', f.number,
+          'carrier', f.shipping_carrier,
+          'tracking_number', f.tracking_number,
+          'notify_customer', f.notify_customer,
+          'shipped_at', f.shipped_at,
+          'cancelled_at', f.cancelled_at,
+          'tracking_version', f.tracking_version,
+          'delivery_status', f.delivery_status,
+          'delivery_status_at', f.delivery_status_at,
+          'delivered_at', f.delivered_at,
+          'delivered_source', CASE
+            WHEN f.delivered_at IS NULL THEN NULL
+            WHEN EXISTS (
+              SELECT 1
+              FROM public.order_fulfillment_events AS m
+              WHERE m.fulfillment_id = f.id
+                AND m.tracking_version = f.tracking_version
+                AND m.source = 'manual'
+                AND m.status = 'delivered'
+            ) THEN 'manual'
+            ELSE 'tracking'
+          END,
+          'registration', (
+            SELECT pg_catalog.jsonb_build_object(
+                     'state', r.state,
+                     'failure_kind', r.failure_kind,
+                     'stop_reason', r.stop_reason,
+                     'expires_at', r.expires_at,
+                     'ever_registered', r.ever_registered
+                   )
+            FROM private.fulfillment_tracking_registrations AS r
+            WHERE r.fulfillment_id = private.tracking_registration_owner(f.id, f.tracking_version)
+              AND r.tracking_version = f.tracking_version
+          ),
+          'events', COALESCE((
+            SELECT pg_catalog.jsonb_agg(
+                     pg_catalog.jsonb_build_object(
+                       'id', e.id,
+                       'tracking_version', e.tracking_version,
+                       'status', e.status,
+                       'happened_at', e.happened_at,
+                       'recorded_at', e.recorded_at,
+                       'source', e.source,
+                       'provider_sub_status', e.provider_sub_status,
+                       'actor_email', eu.email::text
+                     )
+                     ORDER BY e.tracking_version DESC, e.happened_at DESC, e.recorded_at DESC, e.id
+                   )
+            FROM public.order_fulfillment_events AS e
+            LEFT JOIN auth.users AS eu ON eu.id = e.created_by
+            WHERE e.fulfillment_id = f.id
+          ), '[]'::jsonb),
+          'tracking_changes', COALESCE((
+            SELECT pg_catalog.jsonb_agg(
+                     pg_catalog.jsonb_build_object(
+                       'id', c.id,
+                       'from_carrier', c.from_carrier,
+                       'from_tracking_number', c.from_tracking_number,
+                       'to_carrier', c.to_carrier,
+                       'to_tracking_number', c.to_tracking_number,
+                       'tracking_version', c.tracking_version,
+                       'notify_customer', c.notify_customer,
+                       'changed_at', c.changed_at,
+                       'actor_email', cu.email::text,
+                       'email_status', (
+                         SELECT m.status
+                         FROM private.order_email_outbox AS m
+                         WHERE m.tracking_change_id = c.id
+                           AND m.kind = 'shipping_update'
+                           AND m.origin = 'auto'
+                         ORDER BY m.seq DESC
+                         LIMIT 1
+                       )
+                     )
+                     ORDER BY c.changed_at DESC, c.id
+                   )
+            FROM public.order_fulfillment_tracking_changes AS c
+            LEFT JOIN auth.users AS cu ON cu.id = c.changed_by
+            WHERE c.fulfillment_id = f.id
+          ), '[]'::jsonb)
+        )
+        ORDER BY f.number
+      )
+      FROM public.order_fulfillments AS f
+      WHERE f.order_id = _order_id
+    ), '[]'::jsonb)
+  );
+END;
+$$;
+
+-- Replacement 3 of 3: the public status material of one order, same single change. The leader registration carries a state and a
+-- flag only; no order number or item of another order of the slip appears in the output.
+CREATE OR REPLACE FUNCTION public.get_order_status_public_material(_order_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_order jsonb;
+BEGIN
+  IF _order_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT pg_catalog.jsonb_build_object(
+    'id', o.id,
+    'created_at', o.created_at,
+    'status', o.status,
+    'subtotal_amount', o.subtotal_amount,
+    'shipping_amount', o.shipping_amount,
+    'discount_amount', o.discount_amount,
+    'total_amount', o.total_amount,
+    'currency', o.currency,
+    'order_items', COALESCE((
+      SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+        'id', oi.id,
+        'item_id', oi.item_id,
+        'variant_id', oi.variant_id,
+        'item_name', oi.item_name,
+        'item_image_url', oi.item_image_url,
+        'color', oi.color,
+        'size', oi.size,
+        'quantity', oi.quantity,
+        'line_total', oi.line_total,
+        'line_kind', oi.line_kind
+      ) ORDER BY oi.created_at, oi.id)
+      FROM public.order_items AS oi
+      WHERE oi.order_id = o.id
+    ), '[]'::jsonb)
+  ) INTO v_order
+  FROM public.orders AS o
+  WHERE o.id = _order_id
+    AND o.status NOT IN ('payment_in_progress', 'abandoned');
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+
+  RETURN pg_catalog.jsonb_build_object(
+    'order', v_order,
+    'line_rows', COALESCE((
+      SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+        'order_id', _order_id,
+        'order_item_id', l.order_item_id,
+        'variant_id', l.variant_id,
+        'fulfillment_type', l.fulfillment_type,
+        'quantity', l.quantity,
+        'shipped', l.shipped,
+        'completed', l.completed,
+        'refunded_before_shipment', l.refunded_before_shipment,
+        'refunded_after_shipment', l.refunded_after_shipment,
+        'in_production', l.in_production,
+        'ready_unshipped', l.ready_unshipped,
+        'unshipped', l.unshipped
+      ) ORDER BY l.order_item_id)
+      FROM private.order_line_fulfillment(_order_id) AS l
+    ), '[]'::jsonb),
+    'fulfillments', COALESCE((
+      SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+        'fulfillment_id', f.id,
+        'number', f.number,
+        'shipping_carrier', f.shipping_carrier,
+        'shipped_at', f.shipped_at,
+        'cancelled_at', f.cancelled_at,
+        'lines', COALESCE((
+          SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+            'order_item_id', fl.order_item_id, 'quantity', fl.quantity
+          ) ORDER BY fl.order_item_id)
+          FROM public.order_fulfillment_lines AS fl
+          WHERE fl.fulfillment_id = f.id
+        ), '[]'::jsonb)
+      ) ORDER BY f.number)
+      FROM public.order_fulfillments AS f
+      WHERE f.order_id = _order_id
+    ), '[]'::jsonb),
+    'delivery_detail', pg_catalog.jsonb_build_object(
+      'enabled', COALESCE((
+        SELECT s.delivery_tracking_enabled FROM public.shop_settings AS s WHERE s.id = 1
+      ), false),
+      'fulfillments', COALESCE((
+        SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+          'fulfillment_id', f.id,
+          'cancelled_at', f.cancelled_at,
+          'tracking_version', f.tracking_version,
+          'delivery_status', f.delivery_status,
+          'delivery_status_at', f.delivery_status_at,
+          'delivered_at', f.delivered_at,
+          'registration', (
+            SELECT pg_catalog.jsonb_build_object('state', r.state, 'ever_registered', r.ever_registered)
+            FROM private.fulfillment_tracking_registrations AS r
+            WHERE r.fulfillment_id = private.tracking_registration_owner(f.id, f.tracking_version)
+              AND r.tracking_version = f.tracking_version
+          ),
+          'events', COALESCE((
+            SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+              'tracking_version', e.tracking_version,
+              'status', e.status,
+              'happened_at', e.happened_at,
+              'recorded_at', e.recorded_at
+            ) ORDER BY e.happened_at DESC, e.recorded_at DESC, e.id)
+            FROM public.order_fulfillment_events AS e
+            WHERE e.fulfillment_id = f.id
+              AND e.tracking_version = f.tracking_version
+          ), '[]'::jsonb)
+        ) ORDER BY f.number)
+        FROM public.order_fulfillments AS f
+        WHERE f.order_id = _order_id
+      ), '[]'::jsonb)
+    ),
+    'delivery_summary', (
+      SELECT pg_catalog.jsonb_build_object(
+        'active_count', (pg_catalog.count(*) FILTER (WHERE f.cancelled_at IS NULL))::integer,
+        'delivered_count', (pg_catalog.count(*) FILTER (WHERE f.cancelled_at IS NULL AND f.delivered_at IS NOT NULL))::integer
+      )
+      FROM public.order_fulfillments AS f
+      WHERE f.order_id = _order_id
+    ),
+    'refund_rows', COALESCE((
+      SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+        'refund_id', r.id, 'created_at', r.created_at, 'amount', r.amount, 'status', r.status
+      ) ORDER BY r.created_at DESC, r.id DESC)
+      FROM public.order_refunds AS r
+      WHERE r.order_id = _order_id
+    ), '[]'::jsonb)
+  );
+END;
+$$;
 -- G3B_BODY_END
 
 -- G3B_FINAL_ASSERT_BEGIN
@@ -450,6 +759,54 @@ BEGIN
   END LOOP;
 END;
 $g3b_final_objects$;
+
+-- Task 8: the tracking parent helper and the three replaced readers keep owner, SECURITY, volatility, search_path and ACL, and every
+-- reader resolves the registration through the helper (the single changed line is still in place). DETAIL names the group only.
+DO $g3b_tracking_parent$
+DECLARE
+  v_failed text;
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM (VALUES
+      ('private.tracking_registration_owner(uuid,integer)', true, 'sql', false),
+      ('private.delivery_tracking_backfill_targets()', false, 'sql', false),
+      ('public.get_order_delivery_detail(uuid)', true, 'plpgsql', true),
+      ('public.get_order_status_public_material(uuid)', true, 'plpgsql', true)
+    ) AS e(sig, definer, lang, service)
+    LEFT JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(e.sig)
+    WHERE p.oid IS NULL
+       OR p.proowner <> 'postgres'::regrole
+       OR p.prosecdef <> e.definer
+       OR p.provolatile <> 's'
+       OR p.prolang <> (SELECT l.oid FROM pg_catalog.pg_language AS l WHERE l.lanname = e.lang)
+       OR p.proconfig IS DISTINCT FROM ARRAY['search_path=""']::text[]
+       OR pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE') <> e.service
+       OR NOT pg_catalog.has_function_privilege('postgres', p.oid, 'EXECUTE')
+       OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) AS a
+                  WHERE a.grantee = 0 AND a.privilege_type = 'EXECUTE')
+  ) THEN
+    v_failed := 'tracking_parent_functions';
+  ELSIF EXISTS (
+    SELECT 1
+    FROM pg_catalog.unnest(ARRAY['public.get_order_delivery_detail(uuid)', 'public.get_order_status_public_material(uuid)']) AS w(sig)
+    JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(w.sig)
+    WHERE pg_catalog.strpos(p.prosrc, 'r.fulfillment_id = private.tracking_registration_owner(f.id, f.tracking_version)') = 0
+       OR p.prosrc ~ '\mr\.fulfillment_id\s*=\s*f\.id'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_proc AS p
+    WHERE p.oid = pg_catalog.to_regprocedure('private.delivery_tracking_backfill_targets()')
+      AND pg_catalog.strpos(p.prosrc, 'AND private.tracking_registration_owner(f.id, f.tracking_version) = f.id') > 0
+  ) THEN
+    v_failed := 'tracking_parent_callers';
+  END IF;
+  IF v_failed IS NOT NULL THEN
+    RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = v_failed;
+  END IF;
+END
+$g3b_tracking_parent$;
 
 -- G3B_FINAL_ASSERT_END
 

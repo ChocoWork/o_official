@@ -7,6 +7,13 @@ import { connectLocalDb, describeLocalDb, isLocalDatabase } from './helpers/loca
 import { withGroupG1FixtureTransaction, setOrderStatusForFixture } from './helpers/group-g1-fixtures';
 import { seedGroupG3ReadyOrder, seedGroupG3Slip } from './helpers/group-g3-fixtures';
 import {
+  enableDeliveryTracking, leaseDeliveryRegistration, patchDeliveryRegistration, recordReadResult, restoreCommittedDeliveryState,
+} from './helpers/delivery-tracking-fixtures';
+import { loadOrderStatusPublicMaterial } from '@/lib/orders/status/status-store';
+import { getOrderDeliveryDetail } from '@/lib/orders/tracking/delivery-store';
+import { buildCustomerOrderPublicView } from '@/lib/orders/customer-order-view';
+import { toOrderNumber } from '@/lib/orders/order-number';
+import {
   cancelShipmentSlip,
   confirmShipmentSlip,
   discardShipmentSlipDraft,
@@ -247,6 +254,58 @@ describeLocalDb('G-3 real supabase-js -> PostgREST -> SQL read paths', (db) => {
       .rejects.toMatchObject({ status: 409, code: 'GROUP_G_SLIP_ALREADY_DELIVERED' });
     const detail = await getAdminShipmentSlip(service, actor, created.id);
     expect(detail.orders).toEqual([expect.objectContaining({ orderId, deliveryStatus: 'delivered', deliveredAt: expect.any(String) })]);
+  });
+
+  /**
+   * 追跡の親（G-3 Task 8）。追跡オンの2注文の票を確定し、代表の登録を登録済みにして in_transit の読み直しを書いたものを commit し、
+   * お客様向けの公開材料（loadOrderStatusPublicMaterial → buildCustomerOrderPublicView）と管理の配送詳細（getOrderDeliveryDetail）を
+   * 実 supabase-js → PostgREST → SQL の道で読む。参加の注文にも代表の登録の状態と配送の状況が出て、別の注文の情報は入らない。
+   */
+  test('FREQ-541-AC-03: 実 store の顧客向けの経路が PostgREST を通り、同梱票の参加の注文にも代表の登録の状態と配送の状況が出て、どの注文の出力にも別の注文の注文ID・品物・発送は入らない', async () => {
+    const cleanup = await connectLocalDb();
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date());
+    let slip: string | undefined;
+    try {
+      const made = await withGroupG1FixtureTransaction(db(), async () => {
+        await enableDeliveryTracking(db());
+        const orders = [await seedGroupG3ReadyOrder(db()), await seedGroupG3ReadyOrder(db())];
+        const drafted = (await db().query('select public.admin_save_shipment_slip_draft(null,null,$1::jsonb,$2,$3) as r',
+          [JSON.stringify(orders.map((o) => ({ orderItemId: o.orderItemId, quantity: 2 }))), actor, randomUUID()])).rows[0].r as { id: string };
+        const confirmed = (await db().query('select public.admin_confirm_shipment_slip($1,1,$2,$3,$4::date,true,$5,$6) as r',
+          [drafted.id, 'yamato', `PG-${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`, today, actor, randomUUID()]))
+          .rows[0].r as { fulfillments: Array<{ orderId: string; fulfillmentId: string }> };
+        const rows = [...confirmed.fulfillments].sort((x, y) => (x.orderId < y.orderId ? -1 : x.orderId > y.orderId ? 1 : 0));
+        await patchDeliveryRegistration(db(), rows[0].fulfillmentId, "state='registered',ever_registered=true,registered_at=now()", 1);
+        const lease = await leaseDeliveryRegistration(db(), rows[0].fulfillmentId, 1);
+        const when = new Date((await db().query('select now() as at')).rows[0].at).toISOString();
+        const result = await recordReadResult(db(), lease, { outcome: 'ok', status: 'in_transit', provider_status: 'InTransit',
+          provider_sub_status: null, happened_at: when, delivered_at: null, read_at: when, error_code: null });
+        return { slipId: drafted.id, rows, orders, result };
+      }); // commit: PostgREST reads from separate connections
+      slip = made.slipId;
+      expect(made.result).toEqual({ applied: true, changed: true, stopped: false });
+      for (const row of made.rows) {
+        const other = made.rows.find((candidate) => candidate.orderId !== row.orderId)!;
+        const otherItem = made.orders.find((order) => order.orderId === other.orderId)!.orderItemId;
+        const material = await loadOrderStatusPublicMaterial(service, row.orderId);
+        expect(material?.deliveryDetail.fulfillments).toEqual([expect.objectContaining({
+          fulfillmentId: row.fulfillmentId, deliveryStatus: 'in_transit', registration: { state: 'registered', everRegistered: true } })]);
+        const view = await buildCustomerOrderPublicView({ ...material!, returnSection: null, trackingKeyConfigured: true, signImage: async () => null });
+        expect(view.shipments).toHaveLength(1);
+        expect(view.shipments[0]).toMatchObject({ id: row.fulfillmentId, delivery: { status: 'in_transit' } });
+        const detail = await getOrderDeliveryDetail(service, row.orderId);
+        expect(detail.fulfillments).toEqual([expect.objectContaining({
+          fulfillmentId: row.fulfillmentId, deliveryStatus: 'in_transit', registration: expect.objectContaining({ state: 'registered', everRegistered: true }) })]);
+        const text = JSON.stringify([material, view, detail]);
+        for (const forbidden of [other.orderId, toOrderNumber(other.orderId), other.fulfillmentId, otherItem]) expect({ row: row.orderId, leaks: text.includes(forbidden) }).toEqual({ row: row.orderId, leaks: false });
+      }
+    } finally {
+      try {
+        if (slip) await cancelShipmentSlip(service, actor, { slipId: slip, expectedVersion: 2, requestKey: randomUUID() }).catch(() => undefined);
+      } finally {
+        try { await restoreCommittedDeliveryState(cleanup); } finally { await cleanup.end(); }
+      }
+    }
   });
 
   test('FREQ-540-AC-10: 下書きの保存・破棄・確定・取消・伝票番号・配達済みの公開入口も、anon・実authenticated JWTはactor権限があってもEXECUTEを拒み（42501）、何も書かない', async () => {

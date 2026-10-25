@@ -1,6 +1,6 @@
 # ER 図（現行リポジトリの実装）
 
-> 状態: 現行のソース（グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ適用済み（Task 1 の依頼で確認）。G-3 Task 1 の新6表・出荷日・守りを同日に追記し、controller reset後のDB全件でTask 1の新規失敗0を2026-10-25に確認した（全体は既知stockist2失敗によりexit 1）。G-2 Task 9 で手元の DB と突き合わせ、発注書の9表・22 FK、FK の合計 142〔public 起点 131・private 起点 11〕が DB と一致することを確かめた） | 確認日: 2026-10-25（G-3 Task 5の確定まで追記。controllerの実鍵PostgRESTを含む12 suiteで665/665成功） | 対象: `supabase/migrations/` の基準スキーマと後続変更
+> 状態: 現行のソース（G-3 Task 8 の追跡の親と配送の結果の票への展開（表の変更なし、関数の置換）を 2026-10-26 に追記。グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ適用済み（Task 1 の依頼で確認）。G-3 Task 1 の新6表・出荷日・守りを同日に追記し、controller reset後のDB全件でTask 1の新規失敗0を2026-10-25に確認した（全体は既知stockist2失敗によりexit 1）。G-2 Task 9 で手元の DB と突き合わせ、発注書の9表・22 FK、FK の合計 142〔public 起点 131・private 起点 11〕が DB と一致することを確かめた） | 確認日: 2026-10-25（G-3 Task 5の確定まで追記。controllerの実鍵PostgRESTを含む12 suiteで665/665成功） | 対象: `supabase/migrations/` の基準スキーマと後続変更
 
 ## 概要
 
@@ -2034,3 +2034,18 @@ public.item_delete_blockers(bigint[]) は戻り値の追加のため DROP → CR
 | `private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)` と同名の public 入口 | 引数 → lock helper(true) → 権限 → 指紋と再送 → 存在 → 段階 → 版 → すでに配達済み（`GROUP_G_SLIP_ALREADY_DELIVERED`）→ 届いた日の範囲（`GROUP_G_SLIP_DELIVERY_DATE_INVALID`）→ 状態の before と操作印 → 発送ごとに `order_fulfillments`（印 `manual`。`delivered_at` = `GREATEST(shipped_at, LEAST(届いた日 12:00 JST, now()))`）・`order_fulfillment_events`（`delivered`／`manual`、派生の `request_key`）、代表だけ登録を stopped／delivered・要対応を auto、発送の通知と入力の両方がオンなら `delivered` メール → 票（印 `deliver`）・`shipment_slip_versions`（`delivered`）・状態の差分（`shipment_slip_deliver`）・`group_g_operations`（`shipment_slip_deliver`）。成功は `{id, version, deliveredAt, replayed}` | 同上 |
 
 指紋は 操作・票・入力（伝票番号は運送会社・番号・通知、配達済みは届いた日・通知）・実行者 の SHA-256（版は含めない）。発送ごとの派生の要求番号は `md5('slip_tracking:' || 共通のキー || ':' || fulfillment_id)::uuid`（変更行）と `md5('slip_delivered:' || 共通のキー || ':' || fulfillment_id)::uuid`（出来事）。末尾 assert（`$g3d_final_objects$`）は4関数の所有者・属性・ACL を意味で、書込み本体2本の押さえ前の参照を、書き手74本をOIDまで照合する。旧4RPC（作成・取消・伝票の訂正・手動の配達済み）は `LEGACY_FULFILLMENT_DISABLED`／55000 のまま。詳しい順序は[伝票番号の後入力・訂正と手動の配達済み](../../04_DetailDesign/sequence/shipping.md)、段階は[発送票の状態](../../04_DetailDesign/states/shipping.md)。[DB試験](../../../tests/integration/db/group_g3_tracking.integration.test.ts)。
+
+### 追跡の親（代表の登録）と配送の結果の票への展開（G-3 Task 8）
+
+確認日: 2026-10-26。**表・FK・列・制約・trigger は変えない**。読取の移行 [`20261025070821_group_g3_shipping_reads.sql`](../../../supabase/migrations/20261025070821_group_g3_shipping_reads.sql)（節の印 `G3B`）に内部の助け1本と既存3関数の置換、確定済みの actions の移行 [`20261025134538_group_g3_shipping_actions.sql`](../../../supabase/migrations/20261025134538_group_g3_shipping_actions.sql)（節の印 `G3D`）に既存1関数の置換を足した（どちらも本番未適用の第2・第4の移行を編集。同じ名前・同じ引数・同じ戻り型・所有者・ACL・属性のまま。書き手の閉じた一覧は74本のまま）。DB の実測は controller の reset 後。
+
+**設計 8-1 との差**: 設計書は `private.shipment_tracking_registrations` に「票ID、追跡版、登録状態、lease、再送情報」を持たせ、注文別登録の親・外部登録の作業単位にする案だった。実装は親の行を**同一性と所属**だけにした: 票・追跡の版・代表の発送・運送会社・番号（大文字）・操作。登録の状態・借りの印（lease）・再試行・外への停止の印は、代表の発送の**既存E-4の行**（`private.fulfillment_tracking_registrations`）が持つ。借り出し（`claim_delivery_tracking`）・登録/停止の結果・期限切れは従来のコードのまま、票×版に1行（代表の1行）だけを扱う。要対応（`order_fulfillment_attention`）も代表の発送にだけ付き、票の詳細の `registration` が代表の注文IDを示す。参加の発送には登録の行も要対応も作らない。
+
+| 関数 | 変更 | 実行権限 |
+| --- | --- | --- |
+| `private.tracking_registration_owner(uuid,integer) RETURNS uuid`（新・STABLE DEFINER・読むだけ） | その発送が `shipment_slip_fulfillments` で結ぶ票に、その追跡の版の親の行があれば `leader_fulfillment_id`、無ければ引数の発送そのもの（票に属さない発送・親の行の無い版も自分） | だれも EXECUTE できない（所有者の関数からだけ） |
+| `private.delivery_tracking_backfill_targets()`（置換） | 条件に `AND private.tracking_registration_owner(f.id, f.tracking_version) = f.id` を1行足す。追跡をあとからオンにしても、参加の発送に登録を作らない（`admin_set_delivery_tracking` の `backfilled_count` と `get_delivery_tracking_settings` の件数は票ごとに1） | 変更なし（だれも EXECUTE できない） |
+| `public.get_order_delivery_detail(uuid)`・`public.get_order_status_public_material(uuid)`（置換） | `'registration'` を引く副問合せの `r.fulfillment_id = f.id` を `r.fulfillment_id = private.tracking_registration_owner(f.id, f.tracking_version)` に変える。ほかは1文字も変えない（票に属さない発送の出力は同じ）。参加の注文のお客様にも代表の登録の状態（公開の材料は `state`・`ever_registered` だけ）で配送の状況が出る | 変更なし（service_role のみ） |
+| `private.record_delivery_read_result(uuid,integer,uuid,jsonb)`（置換。書き手の閉じた一覧の中・名前も数も変わらない） | G-1 の本体との差は、(1) 代表の発送が票の代表（親の行がその発送を代表と呼ぶ）なら、行の鍵を**表ごとに票の全注文（`ANY(票の注文)`）でまとめて**取ってから次の表へ進む（orders → order_items → 割当 → 返品 → 返品の明細 → 返品の受取 → 受取の明細 → 返金 → 返金の明細 → 取消申請 → 取消申請の明細 → 発送、その後に代表の登録の行。前の表へは戻らない。票に属さない発送は従来どおり自分の注文だけ）、(2) 対象 = 代表（先頭）＋その票の他の有効な発送のうち同じ追跡の版でまだ配達済みでないもの（`order_id` 昇順）へ、出来事・状況・配達中/配達済みのメール・配達済みの反映（操作の記録と品物の状態。冪等キーは G-1 の式を対象の発送IDで）を同じ内容で書く、(3) 登録の行の更新・要対応の開閉・戻り値は代表について1回だけ | 変更なし（private・public とも service_role のみ） |
+
+在庫の閉包の道具（variant・商品・近隣の注文まで広げる）は、この worker の経路が今より多く取ることになるので呼ばない。末尾の確かめは reads の `tracking_parent_functions`／`tracking_parent_callers`、actions の `shipment_slip_read_result_function`／`shipment_slip_read_result_body`（属性と ACL の不変、共通の押さえの数と位置、対象への展開）。詳しい順序は[追跡の親と配送の読み直しの結果の票への展開](../../04_DetailDesign/sequence/shipping.md)、運用は[webhook-queue-operations](../../06_Operations/webhook-queue-operations.md)。[DB試験](../../../tests/integration/db/group_g3_tracking_parent.integration.test.ts)。
