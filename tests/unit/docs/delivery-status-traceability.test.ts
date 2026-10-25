@@ -166,14 +166,14 @@ test('3管理POSTと1webhookをAPIと入口一覧に記録し総数が実コー�
   });
   const routes = walk('src/app/api').filter((file) => file.endsWith('/route.ts'));
   const methods = routes.flatMap((file) => [...read(file).matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b|export\s+const\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g)]);
-  expect(routes).toHaveLength(148); expect(methods).toHaveLength(189);
-  contains(api, '148ファイル'); contains(api, '189組');
-  contains(api, 'HEAD/OPTIONSは189組に含めない');
+  expect(routes).toHaveLength(150); expect(methods).toHaveLength(192);
+  contains(api, '150ファイル'); contains(api, '192組');
+  contains(api, 'HEAD/OPTIONSは192組に含めない');
   for (const file of files.slice(0, 3)) contains(read(file), '配送の入口・表は E-4 の変更を 2026-10-21 に反映');
-  contains(inventory, '148ファイル・189メソッド');
+  contains(inventory, '150ファイル・192メソッド');
   const entries = inventory.split('\n').filter((line) => /^\| `\/api\//.test(line));
-  expect(entries).toHaveLength(147);
-  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(188);
+  expect(entries).toHaveLength(149);
+  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(191);
 });
 
 test('APIに設定と顧客の条件と全エラーを反映する', () => {
@@ -274,13 +274,13 @@ test('G-1の要求8行（FREQ-520〜524・535・540・541）とFREQ-401の在庫
   const ids = lines.filter((line) => /^\| FREQ-(52[0-4]|535|54[01]) \|/.test(line)).map((line) => line.split('|')[1].trim());
   expect(ids).toEqual(['FREQ-520', 'FREQ-521', 'FREQ-522', 'FREQ-523', 'FREQ-524', 'FREQ-535', 'FREQ-540', 'FREQ-541']);
   const freq540 = lines.find((line) => line.startsWith('| FREQ-540 |'))!;
-  // G-1/G-2を保ち、G-3 Task 1のAC-12とTask 2の読取部分AC-10を追跡する。
+  // G-1/G-2を保ち、G-3 Task 1のAC-12とTask 2の読取部分AC-10、Task 4の書き手の部分AC-11を追跡する。
   const G2_FREQ_540_ADDITIONS = ['FREQ-540-AC-06', 'FREQ-540-AC-07', 'FREQ-540-AC-08', 'FREQ-540-AC-09'];
   const freq540Acs = freq540.split('|')[5].match(/FREQ-540-AC-\d+/g);
   expect(freq540Acs!.slice(0, 5)).toEqual(['FREQ-540-AC-01', 'FREQ-540-AC-02', 'FREQ-540-AC-03', 'FREQ-540-AC-04', 'FREQ-540-AC-05']);
-  expect(freq540Acs!.slice(5)).toEqual([...G2_FREQ_540_ADDITIONS, 'FREQ-540-AC-10', 'FREQ-540-AC-12']);
+  expect(freq540Acs!.slice(5)).toEqual([...G2_FREQ_540_ADDITIONS, 'FREQ-540-AC-10', 'FREQ-540-AC-11', 'FREQ-540-AC-12']);
   const freq533 = lines.find((line) => line.startsWith('| FREQ-533 |'))!;
-  expect(freq533.split('|')[5].match(/FREQ-533-AC-\d+/g)).toEqual(['FREQ-533-AC-02', 'FREQ-533-AC-04']);
+  expect(freq533.split('|')[5].match(/FREQ-533-AC-\d+/g)).toEqual(['FREQ-533-AC-01', 'FREQ-533-AC-02', 'FREQ-533-AC-03', 'FREQ-533-AC-04']);
   contains(freq533, 'consume の裏付けの守りだけ');
   contains(freq533, '手元在庫の1回減と取消での1回戻り（空き在庫は不変）');
   contains(freq533, 'Task 1 は理由 CHECK の2値だけ');
@@ -352,4 +352,31 @@ test('従来本文や後続節の言葉と別行のHTTPではE-4の不足を補�
   const wrongMessage = api.replace('| `ORDER_NOT_FOUND` | 404 | 注文が見つかりません。 |',
     '| `ORDER_NOT_FOUND` | 404 | 別の文言 |\n注文が見つかりません。');
   expect(errorRows(wrongMessage)).not.toContainEqual(row);
+});
+
+test('G-3 Task 4の発送票の下書き（作成・入替・破棄）と書き手67本を正本で追跡する', () => {
+  const lines = read(requirements).split(/\r?\n/);
+  const rowOf = (id: string) => lines.find((line) => line.startsWith(`| ${id} |`))!;
+  const draftSuite = 'tests/integration/db/group_g3_draft.integration.test.ts';
+  const freq531 = rowOf('FREQ-531');
+  for (const word of [draftSuite, 'tests/unit/api/admin/shipment-slip-draft-route.test.ts', 'tests/unit/components/ShipmentSlipSection.test.tsx',
+    'tests/unit/lib/orders/shipment-slips/shipment-slip-client.test.ts', 'POST /api/admin/shipment-slips', '発送票を作る権限がありません。']) contains(freq531, word);
+  contains(rowOf('FREQ-532'), draftSuite);
+  contains(rowOf('FREQ-533'), 'FREQ-533-AC-01（下書きの部分。G-3 Task 4）');
+  contains(rowOf('FREQ-533'), 'FREQ-533-AC-03（下書きの部分。G-3 Task 4）');
+  const freq540 = rowOf('FREQ-540');
+  contains(freq540, 'FREQ-540-AC-11（G-3 Task 4）');
+  contains(freq540, 'Task 4 で67本');
+  contains(freq540, 'tests/integration/db/helpers/group-g-allowlist.ts');
+  // 新しい試験・共有の道具は、要求表が指す先として実在する
+  for (const file of [draftSuite, 'tests/integration/db/helpers/group-g-allowlist.ts', 'tests/unit/api/admin/shipment-slip-draft-route.test.ts',
+    'tests/unit/components/ShipmentSlipSection.test.tsx', 'tests/unit/lib/orders/shipment-slips/shipment-slip-client.test.ts']) {
+    expect({ file, exists: existsSync(path.resolve(root, file)) }).toEqual({ file, exists: true });
+  }
+  // 順序図と状態遷移図は、それぞれの README の索引から辿れる
+  for (const file of ['docs/04_DetailDesign/sequence/shipping.md', 'docs/04_DetailDesign/states/shipping.md']) {
+    expect({ file, exists: existsSync(path.resolve(root, file)) }).toEqual({ file, exists: true });
+  }
+  contains(read('docs/04_DetailDesign/sequence/README.md'), '(shipping.md)');
+  contains(read('docs/04_DetailDesign/states/README.md'), '(shipping.md)');
 });

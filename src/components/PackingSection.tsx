@@ -1,31 +1,35 @@
 'use client';
 
 // File: src/components/PackingSection.tsx
-// 荷作り表（G-3 / FREQ-531）。発送準備中の品物だけを、古い注文から 注文ID・注文日・顧客名・メールアドレス・商品名・色・サイズ・数量・単価 の9列で見る。
-// 下に、発送票の下書きと確定済みの発送票を新しい順に最新20件ずつ出す。この段階は読むだけ（品物を選ぶ操作と「発送」は次の段階で足す）。
-// 権限は窓口と DB が守り、この部品は返事の状態で出し分ける。
+// 荷作り表（G-3 / FREQ-531）。発送準備中の品物だけを、古い注文から 選択欄・注文ID・注文日・顧客名・メールアドレス・商品名・色・サイズ・数量・単価 で見る。
+// 品物を選び（1行目を選ぶと、同じお客様・同じ配送先の行だけ選べる）、「発送」で発送票の下書きを作って票の頁へ移る。
+// 下に、発送票の下書きと確定済みの発送票を新しい順に最新20件ずつ出す。
+// 権限は窓口と DB が守り、この部品は返事で出し分ける（荷作り表の答えの canManage が false の人には、最初の描画から選択欄と「発送」を出さず権限の文を1回出す。
+// 答えの後で権限が外れた人は、「発送」の返事が権限の不足の 403 だった時に同じ形へ片付ける。CSRF の失敗・MFA の 403 は権限の不足にしない）。
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import OrderHistoryDialog from '@/components/OrderHistoryDialog';
 import { Button } from '@/components/ui/Button/Button';
-import { adminLoadFailureMessage } from '@/lib/admin/admin-load-failure';
-import { clientFetch } from '@/lib/client-fetch';
+import { useShipmentSlipWrite } from '@/hooks/useShipmentSlipWrite';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { formatYen } from '@/lib/orders/refund/refund-messages';
+import { fetchPacking, fetchShipmentSlips, submitSlipDraft } from '@/lib/orders/shipment-slips/shipment-slip-client';
+import { rememberSlipNotice } from '@/lib/orders/shipment-slips/shipment-slip-notice';
 import {
   formatOtherSlipNotice,
   PACKING_COLUMN_HEADINGS,
   PACKING_HOLD_LABELS,
-  parsePackingRow,
-  parseShipmentSlipListRow,
   SHIPMENT_SLIP_LIMITS,
   SHIPMENT_SLIP_STAGE_LABELS,
   SHIPMENT_SLIP_TEXT,
   type PackingRow,
+  type ShipmentSlipDraftLine,
   type ShipmentSlipListRow,
   type ShipmentSlipStage,
 } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import { SHIPPING_CARRIERS } from '@/lib/orders/shipping-carriers';
+import { DELIVERY_FORM_TEXT } from '@/lib/orders/tracking/delivery-client';
 
 const LIMIT = SHIPMENT_SLIP_LIMITS.packingPage.limit.fallback;
 const SLIP_LIMIT = SHIPMENT_SLIP_LIMITS.slipPage.limit.fallback;
@@ -60,41 +64,14 @@ function formatShipmentDay(value: string): string {
 type PackingState =
   | { phase: 'loading' }
   | { phase: 'error'; message: string }
-  | { phase: 'ready'; rows: PackingRow[]; total: number };
-
-/** 窓口の応答（{ rows, total, page, limit }）から行と全件数を取る。形が崩れていれば null */
-function readPage<T>(body: unknown, parse: (row: unknown) => T): { rows: T[]; total: number } | null {
-  if (body === null || typeof body !== 'object') return null;
-  const { rows, total } = body as { rows?: unknown; total?: unknown };
-  if (!Array.isArray(rows) || typeof total !== 'number' || !Number.isSafeInteger(total) || total < rows.length) return null;
-  // 全件があるのに頁が空なのは、頁の指定が合っていない（読み違い）
-  if (rows.length === 0 && total > 0) return null;
-  try {
-    return { rows: rows.map((row: unknown) => parse(row)), total };
-  } catch {
-    return null;
-  }
-}
+  | { phase: 'ready'; rows: PackingRow[]; total: number; canManage: boolean };
 
 type SlipRowsResult = { ok: true; rows: ShipmentSlipListRow[] } | { ok: false; message: string };
 
 /** 段階ごとの最新の票を読む。失敗は文にして返す（呼び手の表の外には出さない） */
 async function fetchSlipRows(stage: ShipmentSlipStage): Promise<SlipRowsResult> {
-  const failed: SlipRowsResult = { ok: false, message: SHIPMENT_SLIP_TEXT.slipListFailed };
-  try {
-    const response = await clientFetch(`/api/admin/shipment-slips?stage=${stage}&limit=${SLIP_LIMIT}&page=1`, { cache: 'no-store' });
-    const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) {
-      return {
-        ok: false,
-        message: adminLoadFailureMessage(response.status, body, SHIPMENT_SLIP_TEXT.slipListForbidden, SHIPMENT_SLIP_TEXT.slipListFailed),
-      };
-    }
-    const page = readPage(body, parseShipmentSlipListRow);
-    return page === null ? failed : { ok: true, rows: page.rows };
-  } catch {
-    return failed;
-  }
+  const result = await fetchShipmentSlips({ stage, limit: SLIP_LIMIT, page: 1 });
+  return result.kind === 'ok' ? { ok: true, rows: result.data.rows } : { ok: false, message: result.message };
 }
 
 type SlipListState =
@@ -227,51 +204,59 @@ function ConfirmedSlipsSection(): React.JSX.Element {
   );
 }
 
-/** 行の下に出す文。選べない理由（理由ごとに1行）と、別の下書きにも選ばれている通知 */
-function rowNotes(row: PackingRow): string[] {
+/** 行の下に出す文。選べない理由（理由ごとに1行）、別の下書きにも選ばれている通知、同梱できない行の案内 */
+function rowNotes(row: PackingRow, mismatch: boolean): string[] {
   return [
     ...row.blockedReasons.map((reason) => PACKING_HOLD_LABELS[reason]),
     ...(row.otherSlipNumbers.length > 0 ? [formatOtherSlipNotice(row.otherSlipNumbers)] : []),
+    ...(mismatch ? [SHIPMENT_SLIP_TEXT.bundleHint] : []),
   ];
 }
 
+/** 「商品名 色 サイズ」。色・サイズが無ければ省く（選択欄・送る数の名前に使う） */
+function rowLabel(row: PackingRow): string {
+  return [row.itemName, row.color, row.size].filter((part): part is string => Boolean(part)).join(' ');
+}
+
+/** 選んだ行。quantity は入力の文字（検査は送る時）。row は選んだ時の行（1行目の bundleKey を同梱の基準にする） */
+type Pick = { row: PackingRow; quantity: string };
+
+/** 送る数の入力が、1〜準備中の数の整数か */
+function isValidQuantity(quantity: string, max: number): boolean {
+  return /^[0-9]{1,5}$/.test(quantity) && Number(quantity) >= SHIPMENT_SLIP_LIMITS.quantity.min && Number(quantity) <= Math.min(max, SHIPMENT_SLIP_LIMITS.quantity.max);
+}
+
 export default function PackingSection(): React.JSX.Element {
+  const router = useRouter();
+  const write = useShipmentSlipWrite();
   const [page, setPage] = useState(1);
   const [state, setState] = useState<PackingState>({ phase: 'loading' });
   const [historyOrderId, setHistoryOrderId] = useState<string | null>(null);
   // 下の発送票の一覧を出すか。荷作り表の最初の答えを待ち、権限が無い（401・403）時は出さない（同じ権限で断られる読み込みを重ねない）
   const [slipsAllowed, setSlipsAllowed] = useState(false);
+  // 選んだ行（選んだ順。頁をまたいでも残る）。操作の権限が無い（答えの canManage が false、または「発送」の返事が権限の不足の 403）時は、
+  // 選択欄と「発送」を出さず権限の文を1回出す
+  const [picks, setPicks] = useState<Pick[]>([]);
+  const [forbiddenByWrite, setForbiddenByWrite] = useState(false);
+  const operable = !forbiddenByWrite && (state.phase !== 'ready' || state.canManage);
 
   useEffect(() => {
     let cancelled = false;
-    const failed: PackingState = { phase: 'error', message: SHIPMENT_SLIP_TEXT.packingFailed };
     void (async () => {
-      try {
-        const response = await clientFetch(`/api/admin/packing?limit=${LIMIT}&page=${page}`, { cache: 'no-store' });
-        const body: unknown = await response.json().catch(() => null);
-        if (cancelled) return;
-        if (!response.ok) {
-          setState({
-            phase: 'error',
-            message: adminLoadFailureMessage(response.status, body, SHIPMENT_SLIP_TEXT.packingForbidden, SHIPMENT_SLIP_TEXT.packingFailed),
-          });
-          if (response.status !== 401 && response.status !== 403) setSlipsAllowed(true);
-          return;
-        }
-        const result = readPage(body, parsePackingRow);
-        setSlipsAllowed(true);
-        if (result !== null && result.rows.length === 0 && page > 1) {
-          // 他の人の発送などで全件が減り、今の頁が範囲外になった。1頁目へ戻って読み直す（行き止まりにしない。読み込み中の表示のまま）
-          setPage(1);
-          return;
-        }
-        setState(result === null ? failed : { phase: 'ready', ...result });
-      } catch {
-        if (!cancelled) {
-          setState(failed);
-          setSlipsAllowed(true);
-        }
+      const result = await fetchPacking({ limit: LIMIT, page });
+      if (cancelled) return;
+      if (result.kind === 'error') {
+        setState({ phase: 'error', message: result.message });
+        if (!result.denied) setSlipsAllowed(true);
+        return;
       }
+      setSlipsAllowed(true);
+      if (result.data.rows.length === 0 && page > 1) {
+        // 他の人の発送などで全件が減り、今の頁が範囲外になった。1頁目へ戻って読み直す（行き止まりにしない。読み込み中の表示のまま）
+        setPage(1);
+        return;
+      }
+      setState({ phase: 'ready', ...result.data });
     })();
     return () => { cancelled = true; };
   }, [page]);
@@ -282,6 +267,44 @@ export default function PackingSection(): React.JSX.Element {
   };
 
   const from = (page - 1) * LIMIT + 1;
+
+  // 1行目の bundleKey が同梱の基準。基準と違う行・bundleKey が無い行は選べない（全部外すと戻る）
+  const anchorKey = picks.length > 0 ? picks[0].row.bundleKey : null;
+  const pickedIds = new Set(picks.map((pick) => pick.row.orderItemId));
+  const isMismatch = (row: PackingRow): boolean =>
+    picks.length > 0 && !pickedIds.has(row.orderItemId) && (row.bundleKey === null || row.bundleKey !== anchorKey);
+  const locked = write.sending || write.uncertain;
+  const canShip = picks.length > 0 && picks.every((pick) => isValidQuantity(pick.quantity, pick.row.shippableQuantity)) && !locked;
+
+  const toggle = (row: PackingRow): void => {
+    setPicks((current) => (current.some((pick) => pick.row.orderItemId === row.orderItemId)
+      ? current.filter((pick) => pick.row.orderItemId !== row.orderItemId)
+      : [...current, { row, quantity: String(row.shippableQuantity) }]));
+  };
+  const setQuantity = (orderItemId: string, quantity: string): void => {
+    setPicks((current) => current.map((pick) => (pick.row.orderItemId === orderItemId ? { ...pick, quantity } : pick)));
+  };
+
+  const ship = (): void => {
+    if (!canShip) return;
+    const lines: ShipmentSlipDraftLine[] = picks.map((pick) => ({ orderItemId: pick.row.orderItemId, quantity: Number(pick.quantity) }));
+    write.run(
+      JSON.stringify(lines),
+      (requestKey) => submitSlipDraft(null, { lines, requestKey }),
+      (result) => {
+        if (result.kind === 'ok') {
+          rememberSlipNotice(result.data.id);
+          router.push(`/admin/shipment-slips/${result.data.id}`);
+        } else if (result.kind === 'blocked' && result.forbidden === true) {
+          setForbiddenByWrite(true);
+          setPicks([]);
+          write.clearMessage();
+        }
+      },
+    );
+  };
+
+  const columnCount = PACKING_COLUMN_HEADINGS.length + (operable ? 1 : 0);
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-8">
@@ -305,6 +328,9 @@ export default function PackingSection(): React.JSX.Element {
               <table className="w-full min-w-[64rem] border-collapse text-left">
                 <thead>
                   <tr>
+                    {operable ? (
+                      <th scope="col" className={HEAD_CELL}><span className="sr-only">{SHIPMENT_SLIP_TEXT.selectHeading}</span></th>
+                    ) : null}
                     {PACKING_COLUMN_HEADINGS.map((heading) => (
                       <th key={heading} scope="col" className={`${HEAD_CELL} ${RIGHT_ALIGNED_COLUMNS.has(heading) ? 'text-right' : ''}`}>{heading}</th>
                     ))}
@@ -312,10 +338,24 @@ export default function PackingSection(): React.JSX.Element {
                 </thead>
                 <tbody>
                   {state.rows.map((row) => {
-                    const notes = rowNotes(row);
+                    const mismatch = operable && isMismatch(row);
+                    const notes = rowNotes(row, mismatch);
                     const orderNumber = toOrderNumber(row.orderId);
+                    const pick = picks.find((candidate) => candidate.row.orderItemId === row.orderItemId);
+                    const quantityValid = pick !== undefined && isValidQuantity(pick.quantity, row.readyQuantity);
                     return (
-                      <PackingTableRow key={row.orderItemId} notes={notes}>
+                      <PackingTableRow key={row.orderItemId} notes={notes} columnCount={columnCount}>
+                        {operable ? (
+                          <td className="p-3">
+                            <input
+                              type="checkbox"
+                              aria-label={`${rowLabel(row)} を選ぶ`}
+                              checked={pick !== undefined}
+                              disabled={row.blockedReasons.length > 0 || mismatch || locked}
+                              onChange={() => toggle(row)}
+                            />
+                          </td>
+                        ) : null}
                         <td className="whitespace-nowrap p-3">
                           <button
                             type="button"
@@ -335,7 +375,27 @@ export default function PackingSection(): React.JSX.Element {
                         </td>
                         <td className="break-words p-3">{row.color ?? '—'}</td>
                         <td className="break-words p-3">{row.size ?? '—'}</td>
-                        <td className={NUMBER_CELL}>{row.readyQuantity}</td>
+                        <td className={NUMBER_CELL}>
+                          {row.readyQuantity}
+                          {pick !== undefined ? (
+                            <label className="mt-2 block text-left lk-text-2xs text-[#474747]">
+                              {SHIPMENT_SLIP_TEXT.sendQuantity}
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                aria-label={`${rowLabel(row)} の送る数`}
+                                min={SHIPMENT_SLIP_LIMITS.quantity.min}
+                                max={row.readyQuantity}
+                                step={1}
+                                value={pick.quantity}
+                                disabled={locked}
+                                aria-invalid={!quantityValid}
+                                onChange={(event) => setQuantity(row.orderItemId, event.target.value)}
+                                className="mt-1 block w-24 border border-black/20 bg-white px-2 py-1 text-right tabular-nums text-black"
+                              />
+                            </label>
+                          ) : null}
+                        </td>
                         <td className={NUMBER_CELL}>{formatYen(row.unitPrice)}</td>
                       </PackingTableRow>
                     );
@@ -350,6 +410,22 @@ export default function PackingSection(): React.JSX.Element {
             </div>
           </>
         ) : null}
+        {state.phase === 'ready' && !operable ? <p>{SHIPMENT_SLIP_TEXT.createForbidden}</p> : null}
+        {state.phase === 'ready' && operable && state.rows.length > 0 ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="button" disabled={!canShip} onClick={ship}>{SHIPMENT_SLIP_TEXT.ship}</Button>
+              {write.sending ? <span role="status">{DELIVERY_FORM_TEXT.saving}</span> : null}
+            </div>
+            {write.message !== null ? <p role="alert">{write.message}</p> : null}
+            {write.uncertain ? (
+              <div className="space-y-2">
+                <p role="alert">{DELIVERY_FORM_TEXT.unknown}</p>
+                <Button type="button" variant="secondary" disabled={write.sending} onClick={write.checkAgain}>{DELIVERY_FORM_TEXT.checkAgain}</Button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {slipsAllowed ? (
         <>
@@ -362,14 +438,14 @@ export default function PackingSection(): React.JSX.Element {
   );
 }
 
-/** 1つの品物の行。選べない理由と別の下書きの通知は、行の下の1行に出す（9列ぜんぶにまたがる） */
-function PackingTableRow({ notes, children }: { notes: string[]; children: React.ReactNode }): React.JSX.Element {
+/** 1つの品物の行。選べない理由・別の下書きの通知・同梱できない行の案内は、行の下の1行に出す（表の全部の列にまたがる） */
+function PackingTableRow({ notes, columnCount, children }: { notes: string[]; columnCount: number; children: React.ReactNode }): React.JSX.Element {
   return (
     <>
       <tr data-testid="packing-row" className={`align-top ${notes.length > 0 ? '' : 'border-b border-black/10'}`}>{children}</tr>
       {notes.length > 0 ? (
         <tr data-testid="packing-row-note" className="border-b border-black/10">
-          <td colSpan={PACKING_COLUMN_HEADINGS.length} className="px-3 pb-3 text-[#474747]">
+          <td colSpan={columnCount} className="px-3 pb-3 text-[#474747]">
             {notes.map((note) => <p key={note}>{note}</p>)}
           </td>
         </tr>

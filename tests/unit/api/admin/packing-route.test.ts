@@ -7,6 +7,7 @@ const mockCsrf = jest.fn();
 const mockRateLimit = jest.fn();
 jest.mock('@/lib/csrfMiddleware', () => ({ requireCsrfOrDeny: () => mockCsrf() }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: (...args: unknown[]) => mockRateLimit(...args) }));
+jest.mock('@/lib/audit', () => ({ logAudit: jest.fn() }));
 
 import { inspect } from 'util';
 import { GET } from '@/app/api/admin/packing/route';
@@ -44,13 +45,14 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 describe('GET /api/admin/packing', () => {
-  test('FREQ-531-AC-01: 200 で { rows, total, page, limit } を返し no-store。認可は shipping.read + orders.read、RPC は既定の50件・1頁目と認可結果の userId で1回だけ', async () => {
+  test('FREQ-531-AC-01: 200 で { rows, total, page, limit, canManage } を返し no-store。認可は shipping.read + orders.read（読む権限）と、操作の4つの組（canManage 用）、RPC は既定の50件・1頁目と認可結果の userId で1回だけ', async () => {
     const { request, response, json } = await get();
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(json).toEqual({ rows: [packingRow()], total: 1, page: 1, limit: 50 });
-    expect(authorize).toHaveBeenCalledTimes(1);
-    expect(authorize).toHaveBeenCalledWith(['admin.shipping.read', 'admin.orders.read'], request);
+    expect(json).toEqual({ rows: [packingRow()], total: 1, page: 1, limit: 50, canManage: true });
+    expect(authorize).toHaveBeenCalledTimes(2);
+    expect(authorize).toHaveBeenNthCalledWith(1, ['admin.shipping.read', 'admin.orders.read'], request);
+    expect(authorize).toHaveBeenNthCalledWith(2, ['admin.shipping.manage', 'admin.shipping.read', 'admin.orders.manage', 'admin.orders.read'], request);
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenCalledWith('list_admin_packing', { _slip_id: null, _limit: 50, _offset: 0, _actor_id: 'authorized-actor' });
   });
@@ -110,10 +112,34 @@ describe('GET /api/admin/packing', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  test('FREQ-540-AC-10: shipping.read と orders.read の両方があれば進み、manage は要らない', async () => {
+  test('FREQ-540-AC-10: shipping.read と orders.read の両方があれば進み、manage は要らない。操作の権限が無いので canManage は false（読むだけの人に操作を出さない）', async () => {
     useAcl(['admin.shipping.read', 'admin.orders.read']);
-    expect((await get()).status).toBe(200);
+    const { status, json } = await get();
+    expect(status).toBe(200);
+    expect(json.canManage).toBe(false);
     expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    ['4つ全部', ['admin.shipping.read', 'admin.orders.read', 'admin.shipping.manage', 'admin.orders.manage'], true],
+    ['shipping.manage だけ足りない', ['admin.shipping.read', 'admin.orders.read', 'admin.orders.manage'], false],
+    ['orders.manage だけ足りない', ['admin.shipping.read', 'admin.orders.read', 'admin.shipping.manage'], false],
+  ])('FREQ-540-AC-10: canManage は操作の4つの権限を全部持つ時だけ true（%s）', async (_name, held, expected) => {
+    useAcl(held);
+    expect((await get()).json.canManage).toBe(expected);
+  });
+
+  test.each([
+    [401, { error: 'Unauthorized' }], [503, { error: 'Service temporarily unavailable' }], [500, { error: 'Internal server error' }],
+  ])('FREQ-540-AC-10: 2回目の確かめが権限の不足ではない理由（%s）で断られたら、false にせずその応答を返す（RPC は呼ばない）', async (status, body) => {
+    authorize
+      .mockResolvedValueOnce({ ok: true, userId: 'authorized-actor', role: 'admin' })
+      .mockResolvedValueOnce({ ok: false, response: new Response(JSON.stringify(body), { status }) });
+    const result = await get();
+    expect(result.status).toBe(status);
+    expect(result.json).toEqual(body);
+    expect(result.response.headers.get('cache-control')).toBe('no-store');
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   test.each([

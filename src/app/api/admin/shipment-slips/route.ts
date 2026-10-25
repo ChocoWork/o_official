@@ -1,8 +1,10 @@
 import 'server-only';
 
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { authorizeAdminPermissions } from '@/lib/auth/admin-rbac';
-import { listAdminShipmentSlips, ShipmentSlipError } from '@/lib/orders/shipment-slips/shipment-slip-store';
+import { draftLinesSchema, handleShipmentSlipWrite, requestKeySchema } from '@/lib/orders/shipment-slips/shipment-slip-route';
+import { listAdminShipmentSlips, saveShipmentSlipDraft, ShipmentSlipError } from '@/lib/orders/shipment-slips/shipment-slip-store';
 import {
   isShipmentSlipStage,
   readShipmentSlipQueryInteger,
@@ -50,4 +52,30 @@ export async function GET(request: Request): Promise<Response> {
     console.error('GET /api/admin/shipment-slips error:', ...describeErrorForLog(error));
     return noStore(NextResponse.json({ error: SHIPMENT_SLIP_TEXT.failed }, { status: 500 }));
   }
+}
+
+const createSchema = z.object({ lines: draftLinesSchema, requestKey: requestKeySchema });
+
+/**
+ * 発送票の下書きの作成（G-3 / FREQ-531-AC-03）。荷作り表で選んだ行（注文の明細と送る数）から新しい下書きを作る。
+ * 権限は窓口と DB の関数の両方で下書き・破棄の組（admin.shipping.manage + admin.shipping.read + admin.orders.manage + admin.orders.read）を確かめ、
+ * 実行者は認可結果の userId だけから渡す。同梱できるか・数量が準備中の数以下かは DB が確かめる。同じ requestKey と同じ内容の再送は同じ票を返す。
+ * 成功は 201 { id, number, version, replayed }。DB の生の誤りは本文にも監査にもログにも出さない。
+ */
+export async function POST(request: Request): Promise<Response> {
+  return handleShipmentSlipWrite({
+    request,
+    label: 'POST /api/admin/shipment-slips',
+    rateEndpoint: 'admin.shipment_slips.draft',
+    rateLimit: 120,
+    auditAction: 'admin.shipment_slips.draft.save',
+    errorCode: 'SHIPMENT_SLIP_DRAFT_SAVE_FAILED',
+    schema: createSchema,
+    status: 201,
+    run: (client, actorId, _slipId, body) => saveShipmentSlipDraft(client, actorId, {
+      slipId: null, expectedVersion: null, lines: body.lines, requestKey: body.requestKey,
+    }),
+    auditSuccess: (body, result) => ({ line_count: body.lines.length, replayed: result.replayed }),
+    auditFailure: (body) => ({ line_count: body.lines.length }),
+  });
 }

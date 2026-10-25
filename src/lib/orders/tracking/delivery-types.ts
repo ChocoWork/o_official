@@ -83,4 +83,8 @@ export type DeliveryReadResult = {
 };
 export type TrackingSignal = { carrier: 100062 | 100040 | 10021; number: string; event: 'TRACKING_UPDATED' | 'TRACKING_STOPPED' };
 export type CustomerDelivery = { status: DeliveryStatus; statusAt: string; events: Array<{ status: DeliveryStatus; happenedAt: string }> };
-export type DeliveryCallResult<T> = { kind: 'ok'; data: T } | { kind: 'blocked' | 'refused'; message: string } | { kind: 'unknown' };
+/**
+ * 書込みの窓口の答え。ok・refused（処理の中の断り）・blocked（処理の前の断り）・unknown（結果不明）。
+ * blocked の forbidden は、窓口が「この操作の権限が無い」と確かに返した時だけ true（CSRF の失敗・MFA・不明な 403 は false か省略）。
+ */
+export type DeliveryCallResult<T> = { kind: 'ok'; data: T } | { kind: 'refused'; message: string } | { kind: 'blocked'; message: string; forbidden?: boolean } | { kind: 'unknown' };

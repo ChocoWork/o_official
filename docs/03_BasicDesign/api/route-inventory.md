@@ -1,10 +1,10 @@
 # APIルート一覧
 
-> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02（checkout の入口の変更は 2026-10-07、カートの入口の変更は 2026-10-08、発送・仕上がりの入口の変更は 2026-10-10、返金・ショップの設定の入口の変更は 2026-10-11 に、返品の入口の変更は 2026-10-13 に反映、配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文の状況の入口・表は E-5 の変更を 2026-10-22 に、在庫一覧表の入口は G-2 Task 3 の変更を、発注の作成の入口は G-2 Task 4 の変更を、発注一覧表・発注書の詳細の入口は G-2 Task 5 の変更を、発注書の数量の確定・訂正・打切り・発注先の訂正の入口は G-2 Task 6 の変更を、発注書の受け取りと受け取りの取消の入口は G-2 Task 7 の変更を、取引書類の原本の入口は G-2 Task 8 の変更を、荷作り表と発送票の読取の入口は G-3 Task 3 の変更を 2026-10-25 に反映） | 対象: `src/app/api/**/route.ts`
+> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02（checkout の入口の変更は 2026-10-07、カートの入口の変更は 2026-10-08、発送・仕上がりの入口の変更は 2026-10-10、返金・ショップの設定の入口の変更は 2026-10-11 に、返品の入口の変更は 2026-10-13 に反映、配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文の状況の入口・表は E-5 の変更を 2026-10-22 に、在庫一覧表の入口は G-2 Task 3 の変更を、発注の作成の入口は G-2 Task 4 の変更を、発注一覧表・発注書の詳細の入口は G-2 Task 5 の変更を、発注書の数量の確定・訂正・打切り・発注先の訂正の入口は G-2 Task 6 の変更を、発注書の受け取りと受け取りの取消の入口は G-2 Task 7 の変更を、取引書類の原本の入口は G-2 Task 8 の変更を、荷作り表と発送票の読取の入口は G-3 Task 3 の変更を、発送票の下書きの入口は G-3 Task 4 の変更を 2026-10-25 に反映） | 対象: `src/app/api/**/route.ts`
 
 ## 概要
 
-現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。G-0 の2入口と G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口（`GET /api/admin/purchase-orders`・`GET /api/admin/purchase-orders/[id]`）と Task 6 の発注先・メモの訂正・数量の確定と訂正・残りの打切りの入口（`PATCH /api/admin/purchase-orders/[id]`・`POST /api/admin/purchase-orders/[id]/quantities`・`POST /api/admin/purchase-orders/[id]/short-closures`）と Task 7 の受け取り・受け取りの取消の入口（`POST /api/admin/purchase-orders/[id]/receipts`・`POST /api/admin/purchase-orders/[id]/receipts/[receiptId]/reversals`）と Task 8 の取引書類の原本の6入口（予約・署名つき送り先の出し直し・確定・訂正と無効化の `POST` 4本、閲覧リンクと書類検索の `GET` 2本）と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）を含め、Route Handler は148ファイル・189メソッド（自動の HEAD・OPTIONS は数えない。2026-10-25 静的集計）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は147行・188メソッド。
+現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。G-0 の2入口と G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口（`GET /api/admin/purchase-orders`・`GET /api/admin/purchase-orders/[id]`）と Task 6 の発注先・メモの訂正・数量の確定と訂正・残りの打切りの入口（`PATCH /api/admin/purchase-orders/[id]`・`POST /api/admin/purchase-orders/[id]/quantities`・`POST /api/admin/purchase-orders/[id]/short-closures`）と Task 7 の受け取り・受け取りの取消の入口（`POST /api/admin/purchase-orders/[id]/receipts`・`POST /api/admin/purchase-orders/[id]/receipts/[receiptId]/reversals`）と Task 8 の取引書類の原本の6入口（予約・署名つき送り先の出し直し・確定・訂正と無効化の `POST` 4本、閲覧リンクと書類検索の `GET` 2本）と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）と G-3 Task 4 の発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）を含め、Route Handler は150ファイル・192メソッド（自動の HEAD・OPTIONS は数えない。2026-10-25 静的集計）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は149行・191メソッド。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |
@@ -93,7 +93,9 @@
 | `/api/admin/returns/[returnId]/reopen` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/reopen/route.ts) |
 | `/api/admin/revoke-user-sessions` | `POST` | [route.ts](../../../src/app/api/admin/revoke-user-sessions/route.ts) |
 | `/api/admin/shipment-slips/[id]` | `GET` | [route.ts](../../../src/app/api/admin/shipment-slips/%5Bid%5D/route.ts) （G-3 Task 3: `admin.shipping.read` ＋ `admin.orders.read`。発送票1件の詳細。読むだけ。id が uuid でなければ400、無ければ404） |
-| `/api/admin/shipment-slips` | `GET` | [route.ts](../../../src/app/api/admin/shipment-slips/route.ts) （G-3 Task 3: `admin.shipping.read` ＋ `admin.orders.read`。発送票の一覧。読むだけ。stage で絞れる） |
+| `/api/admin/shipment-slips` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/shipment-slips/route.ts) （G-3 Task 3: `GET` は `admin.shipping.read` ＋ `admin.orders.read`。発送票の一覧。読むだけ。stage で絞れる。G-3 Task 4: `POST` は `admin.shipping.manage` ＋ `admin.shipping.read` ＋ `admin.orders.manage` ＋ `admin.orders.read`。発送票の下書きの作成。CSRF・回数制限 `admin.shipment_slips.draft` の120回/600秒・監査 `admin.shipment_slips.draft.save`。成功は201） |
+| `/api/admin/shipment-slips/[id]/draft` | `POST` | [route.ts](../../../src/app/api/admin/shipment-slips/%5Bid%5D/draft/route.ts) （G-3 Task 4: 上と同じ4権限。下書きの品物を丸ごと入れ替える（外す・追加）。`expectedVersion` が必須。CSRF・回数制限 `admin.shipment_slips.draft` の120回/600秒・監査 `admin.shipment_slips.draft.save`。成功は200） |
+| `/api/admin/shipment-slips/[id]/discard` | `POST` | [route.ts](../../../src/app/api/admin/shipment-slips/%5Bid%5D/discard/route.ts) （G-3 Task 4: 上と同じ4権限。下書きの破棄。`expectedVersion` が必須。CSRF・回数制限 `admin.shipment_slips.discard` の60回/600秒・監査 `admin.shipment_slips.draft.discard`。成功は200） |
 | `/api/admin/settings/shop` | `GET`, `PUT` | [route.ts](../../../src/app/api/admin/settings/shop/route.ts) |
 | `/api/admin/stockists/[id]` | `DELETE`, `GET`, `PATCH`, `PUT` | [route.ts](../../../src/app/api/admin/stockists/%5Bid%5D/route.ts) |
 | `/api/admin/stockists` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/stockists/route.ts) |
@@ -163,6 +165,8 @@
 G-3移行: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の発送票へ移行しました。旧入口は認可後410を返します。以下のE-4記述は移行前の契約として保持します。上の6パス・7メソッド（発送の材料の GET・発送・発送の取消・伝票番号の訂正・手動の配達済み・仕上がりの記録と取消）は route ファイルとメソッドを残したまま、POST は既存の認可（MFA）・CSRF・回数制限の後、GET は認可の後に、入力を読まずに 410 の固定の本文（発送の5メソッドは `LEGACY_FULFILLMENT_DISABLED`、仕上がりの2メソッドは `MANUAL_COMPLETION_DISABLED`）と `Cache-Control: no-store` を返す。数は132ファイル・171メソッドのまま（G-1 Task 14）。仕上がりの手動記録と取消の2メソッドは終了のまま再開しない（G-1停止）。
 
 G-3 Task 3: 荷作り表と発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）を追加。いずれも `admin.shipping.read` ＋ `admin.orders.read` を窓口と DB の関数の両方で確かめ、読むだけなので CSRF と回数制限は通さない。応答は `Cache-Control: no-store`。数は148ファイル・189メソッド（表は147行・188メソッド）。詳しい入力と応答は [APIの主要契約](api-spec.md)の「管理:荷作り表・発送票」に記す。
+
+G-3 Task 4: 発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）を追加。いずれも `admin.shipping.manage` ＋ `admin.shipping.read` ＋ `admin.orders.manage` ＋ `admin.orders.read` を窓口と DB の関数の両方で確かめ、認可 → CSRF → IP の回数制限 → actor の回数制限 → 検証 → DB → 監査の順に通す。応答は `Cache-Control: no-store`。数は150ファイル・192メソッド（表は149行・191メソッド）。詳しい入力と応答は [APIの主要契約](api-spec.md)の「管理:荷作り表・発送票」に記す。
 
 ## 権限設定の入口（G-0 / FREQ-519・FREQ-540 の G-0 部分）
 

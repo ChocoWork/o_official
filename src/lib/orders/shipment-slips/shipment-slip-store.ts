@@ -6,13 +6,16 @@ import {
   parseShipmentSlipDetail,
   parseShipmentSlipLink,
   parseShipmentSlipListRow,
+  parseShipmentSlipSaved,
   SHIPMENT_SLIP_ERRORS,
   SHIPMENT_SLIP_READ_FAILED,
   SHIPMENT_SLIP_TEXT,
   type PackingRow,
   type ShipmentSlipDetail,
+  type ShipmentSlipDraftLine,
   type ShipmentSlipLink,
   type ShipmentSlipListRow,
+  type ShipmentSlipSaved,
   type ShipmentSlipStage,
 } from './shipment-slip-types';
 
@@ -47,8 +50,8 @@ export function classify(error: unknown): ShipmentSlipError {
   return error.code === sqlstate ? new ShipmentSlipError(status, error.message) : new ShipmentSlipError();
 }
 
-/** RPC を1回呼び、DB の誤りは表で分類し、通信の失敗は固定の500にする。戻りの検査は呼び手が行う。 */
-async function callReader(client: SupabaseClient, name: string, args: Record<string, unknown>): Promise<unknown> {
+/** RPC を1回呼び、DB の誤りは表で分類し、通信の失敗は固定の500にする。戻りの検査は呼び手が行う。読取にも書込みにも使う。 */
+async function callRpc(client: SupabaseClient, name: string, args: Record<string, unknown>): Promise<unknown> {
   let response;
   try {
     response = await client.rpc(name, args);
@@ -147,7 +150,7 @@ export async function listAdminPacking(
   actorId: string,
   { slipId, limit, page }: { slipId: string | null; limit: number; page: number },
 ): Promise<{ rows: PackingRow[]; total: number }> {
-  const data = await callReader(client, 'list_admin_packing', {
+  const data = await callRpc(client, 'list_admin_packing', {
     _slip_id: slipId, _limit: limit, _offset: (page - 1) * limit, _actor_id: actorId,
   });
   return readPage(data, toPackingRow, (row) => row.orderItemId);
@@ -159,7 +162,7 @@ export async function listAdminShipmentSlips(
   actorId: string,
   { stage, limit, page }: { stage: ShipmentSlipStage | null; limit: number; page: number },
 ): Promise<{ rows: ShipmentSlipListRow[]; total: number }> {
-  const data = await callReader(client, 'list_admin_shipment_slips', {
+  const data = await callRpc(client, 'list_admin_shipment_slips', {
     _stage: stage, _limit: limit, _offset: (page - 1) * limit, _actor_id: actorId,
   });
   return readPage(data, toSlipListRow, (row) => row.id);
@@ -170,7 +173,7 @@ export async function listAdminShipmentSlips(
  * 戻りは検査して決まった項目だけにする。頼んだ票以外が返ったら読み違い。
  */
 export async function getAdminShipmentSlip(client: SupabaseClient, actorId: string, slipId: string): Promise<ShipmentSlipDetail> {
-  const data = await callReader(client, 'get_admin_shipment_slip', { _slip_id: slipId, _actor_id: actorId });
+  const data = await callRpc(client, 'get_admin_shipment_slip', { _slip_id: slipId, _actor_id: actorId });
   const detail = guarded(() => parseShipmentSlipDetail(data));
   if (detail.id !== slipId.toLowerCase()) throw new ShipmentSlipError();
   return detail;
@@ -185,7 +188,7 @@ export async function listAdminOrderShipmentSlips(
   actorId: string,
   orderId: string,
 ): Promise<Map<string, ShipmentSlipLink>> {
-  const data = await callReader(client, 'list_admin_order_shipment_slips', { _order_id: orderId, _actor_id: actorId });
+  const data = await callRpc(client, 'list_admin_order_shipment_slips', { _order_id: orderId, _actor_id: actorId });
   if (!Array.isArray(data)) throw new ShipmentSlipError();
   const slips = new Map<string, ShipmentSlipLink>();
   for (const raw of data) {
@@ -198,4 +201,43 @@ export async function listAdminOrderShipmentSlips(
     slips.set(fulfillmentId, link);
   }
   return slips;
+}
+
+/**
+ * 発送票の下書きを保存する（DB の関数 admin_save_shipment_slip_draft を1回呼ぶ。在庫・割当・台帳・注文・発送は動かさない）。
+ * slipId が null なら新しい下書きを作り（expectedVersion は null）、あれば下書きの選択を丸ごと入れ替える（expectedVersion が要る）。
+ * 同じ requestKey と同じ内容の再送は同じ票を replayed: true で返す。実行者は呼び手が認可結果から渡す。
+ * 権限・同梱・数量などの拒否は表で分類した ShipmentSlipError、他の失敗・崩れた戻りは固定の500。
+ */
+export async function saveShipmentSlipDraft(
+  client: SupabaseClient,
+  actorId: string,
+  input: { slipId: string | null; expectedVersion: number | null; lines: ShipmentSlipDraftLine[]; requestKey: string },
+): Promise<ShipmentSlipSaved> {
+  const data = await callRpc(client, 'admin_save_shipment_slip_draft', {
+    _slip_id: input.slipId,
+    _expected_version: input.expectedVersion,
+    _lines: input.lines.map((line) => ({ orderItemId: line.orderItemId, quantity: line.quantity })),
+    _actor_id: actorId,
+    _request_key: input.requestKey,
+  });
+  return guarded(() => parseShipmentSlipSaved(data));
+}
+
+/**
+ * 発送票の下書きを破棄する（DB の関数 admin_discard_shipment_slip_draft を1回呼ぶ）。下書きでなければ GROUP_G_SLIP_NOT_DRAFT（409）。
+ * 版が違えば GROUP_G_SLIP_VERSION_CONFLICT。同じ requestKey と同じ内容の再送は同じ結果を replayed: true で返す。
+ */
+export async function discardShipmentSlipDraft(
+  client: SupabaseClient,
+  actorId: string,
+  input: { slipId: string; expectedVersion: number; requestKey: string },
+): Promise<ShipmentSlipSaved> {
+  const data = await callRpc(client, 'admin_discard_shipment_slip_draft', {
+    _slip_id: input.slipId,
+    _expected_version: input.expectedVersion,
+    _actor_id: actorId,
+    _request_key: input.requestKey,
+  });
+  return guarded(() => parseShipmentSlipSaved(data));
 }

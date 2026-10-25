@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import { createCatalogFixture } from './helpers/order-fixtures';
+import { G2_ALLOWLIST, G3C_ALLOWLIST, runWithAllowlist } from './helpers/group-g-allowlist';
 
 /**
  * G-2 Task 8（FREQ-530・FREQ-540-AC-07）: 見積書・請求書の原本の予約・確定・訂正・無効化・検索。
@@ -1205,9 +1206,9 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
     expect((privateSearch.names as string[]).slice(0, 11)).toEqual(searchNames);
   });
 
-  test('FREQ-540-AC-07: 書き手の一覧は 65 本で、3本の private 本体を含み、public 入口と検索は含まない', async () => {
+  test('FREQ-540-AC-07: 書き手の一覧は G-3 の現在の本数（G-2 の65本 + 発送票の書き手）で、3本の private 本体を含み、public 入口と検索は含まない', async () => {
     const list = (await db().query('select x::oid::text as oid from unnest(private.group_g_writer_allowlist()) as a(x)')).rows;
-    expect(list).toHaveLength(65);
+    expect(list).toHaveLength(G3C_ALLOWLIST.length);
     const oids = new Set(list.map((row) => row.oid));
     for (const signature of WRITER_SIGNATURES) {
       const privateOid = (await db().query('select $1::regprocedure::oid::text as oid', [`private.${signature}`])).rows[0].oid;
@@ -1290,14 +1291,30 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
       }
     }
     const failed = (detail: string) => ({ code: '55000', message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', detail });
+    /** G2B の確かめは G-2 の65本を固定で持つ。流す前に、取引の中の書き手の一覧を G-2 の65本へ入れ替える（戻すのは savepoint への rollback） */
+    async function runWithG2Allowlist(block: string) {
+      await db().query('savepoint final_assert_g2');
+      try {
+        await runWithAllowlist(db(), G2_ALLOWLIST, block);
+        return null;
+      } catch (error) {
+        const e = error as { code: string; message: string; detail: string };
+        return { code: e.code, message: e.message, detail: e.detail };
+      } finally {
+        await db().query('rollback to savepoint final_assert_g2');
+        await db().query('release savepoint final_assert_g2');
+      }
+    }
 
-    test('FREQ-540-AC-07: 今の DB で 3つの確かめ（検索の関数・書き手の関数と65本・書く表の権限）が通る', async () => {
+    test('FREQ-540-AC-07: 今の DB で 3つの確かめ（検索の関数・書き手の関数と65本・書く表の権限）が通る（書き手は一覧を G-2 の65本へ入れ替えてから）', async () => {
       expect(READS).not.toBe('');
       expect(OBJECTS).not.toBe('');
       expect(TABLE_ACL).not.toBe('');
       expect(await run(READS)).toBeNull();
-      expect(await run(OBJECTS)).toBeNull();
+      expect(await runWithG2Allowlist(OBJECTS)).toBeNull();
       expect(await run(TABLE_ACL)).toBeNull();
+      // 今の DB の一覧（G-3 の書き手が加わった本数）のままでは、固定の65本の確かめは止まる
+      expect(await run(OBJECTS)).toEqual(failed('purchase_writer_allowlist_missing'));
     });
 
     test.each([

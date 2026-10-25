@@ -15,7 +15,9 @@ import { createCatalogFixture } from './helpers/order-fixtures';
  * 60本に、G-2 Task 7 で受け取り private.admin_receive_purchase_order と受け取りの取消・数量訂正
  * private.admin_reverse_purchase_order_receipt を足した62本に、G-2 Task 8 で原本の予約 private.admin_reserve_purchase_order_attachment、
  * 確定 private.admin_attach_purchase_order_document、訂正・無効化 private.admin_revise_purchase_order_document を足した65本
- * （G-2 の Task 9 で閉じた。書き手は65本のまま）。走査する表には G-2 の発注書の9表を足した（TABLES）。
+ * （G-2 の Task 9 で閉じた。書き手は65本のまま）に、G-3 Task 4 で発送票の下書きの保存 private.admin_save_shipment_slip_draft と
+ * 破棄 private.admin_discard_shipment_slip_draft を足した67本（G-3 の以降の Task が書き手を足すたびに本数が増える）。
+ * 走査する表には G-2 の発注書の9表を足した（TABLES）。
  * G-2 Task 9（FREQ-540-AC-08）: 新しい書込み関数9本とその公開入口9本・内部の道具4本・読取4本の構造（private・SECURITY DEFINER・
  * search_path 空・EXECUTE の集合）と、各本体が共通の押さえ lock_group_g_purchase_orders を発注書の表・item_variants・
  * stock_movements への最初の参照より前に呼ぶ順を、pg_proc の prosrc で確かめる。
@@ -88,6 +90,8 @@ const ALLOWLIST = [
   'private.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid)',
   'private.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid)',
   'private.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid)',
+  'private.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid)',
+  'private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)',
 ];
 
 const STOPPED = ALLOWLIST.slice(47, 53);
@@ -187,10 +191,10 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
   beforeEach(async () => { await db().query('begin'); });
   afterEach(async () => { await db().query('rollback'); });
 
-  test('一覧は決めた65本と同じ集合で、関数は postgres の SECURITY DEFINER・search_path 空・だれも EXECUTE できない', async () => {
+  test('一覧は決めた67本と同じ集合で、関数は postgres の SECURITY DEFINER・search_path 空・だれも EXECUTE できない', async () => {
     const expected = (await db().query('select to_regprocedure(s)::oid::text as oid, s from unnest($1::text[]) as s', [ALLOWLIST])).rows;
     expect(expected.filter((row) => row.oid === null).map((row) => row.s)).toEqual([]);
-    expect(new Set(expected.map((row) => row.oid)).size).toBe(65);
+    expect(new Set(expected.map((row) => row.oid)).size).toBe(67);
     const actual = (await db().query('select unnest(private.group_g_writer_allowlist())::oid::text as oid')).rows.map((row) => row.oid);
     expect([...actual].sort()).toEqual(expected.map((row) => row.oid).sort());
     const fn = (await db().query(`select p.proowner::regrole::text as owner, p.prosecdef, p.proconfig, p.provolatile,
@@ -361,11 +365,11 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
   const NO_ONE = { anon: false, authenticated: false, service_role: false, public_execute: false };
   const SERVICE_ROLE_ONLY = { anon: false, authenticated: false, service_role: true, public_execute: false };
 
-  test('FREQ-540-AC-10: 発送の読取5本と内部の道具3本は書き手でなく、65本の許可一覧を増やさない', async () => {
+  test('FREQ-540-AC-10: 発送の読取5本と内部の道具3本は書き手でなく、許可一覧（G-3 Task 4 で67本）を増やさない', async () => {
     const procs = await loadProcs(db());
     const allow = await allowlistOids(db());
     const { direct, closure } = analyze(procs);
-    expect(ALLOWLIST).toHaveLength(65);
+    expect(ALLOWLIST).toHaveLength(67);
     const readers = ['list_admin_packing', 'list_admin_shipment_slips', 'get_admin_shipment_slip',
       'list_admin_order_shipment_slips', 'list_shipment_accounting_inputs'];
     const internal = ['group_g_shipment_ready', 'group_g_bundle_verdict', 'group_g_bundle_key'];
@@ -493,5 +497,58 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
       await db().query('rollback to savepoint g2_probes');
     }
     expect((await db().query("select to_regprocedure('private.g2_probe_write_0()') as fn")).rows[0].fn).toBeNull();
+  });
+
+  // ---- G-3 Task 4（FREQ-540-AC-10・AC-11）: 発送票の下書きの書き手 ----
+
+  const SLIP_WRITER_NAMES = ['admin_save_shipment_slip_draft', 'admin_discard_shipment_slip_draft'];
+  const SLIP_LOCK = 'lock_group_g_shipment_slips';
+
+  test('FREQ-540-AC-11: 発送票の書込み関数2本は private の SECURITY DEFINER・search_path 空で閉じた一覧の中にあり、public の入口2本は同名 private へ委ねるだけの SQL INVOKER。どちらも service_role だけが EXECUTE できる', async () => {
+    const procs = await loadProcs(db());
+    const allow = await allowlistOids(db());
+    for (const name of SLIP_WRITER_NAMES) {
+      const bodies = procs.filter((proc) => proc.schema === 'private' && proc.name === name);
+      const entries = procs.filter((proc) => proc.schema === 'public' && proc.name === name);
+      expect({ name, bodies: bodies.length, entries: entries.length }).toEqual({ name, bodies: 1, entries: 1 });
+      expect({ name, definer: bodies[0].secdef, allowed: allow.has(bodies[0].key), writer: isDirectWriter(bodies[0]) })
+        .toEqual({ name, definer: true, allowed: true, writer: true });
+      expect({ name, delegate: isPublicDelegate(entries[0], allow, procs), writer: isDirectWriter(entries[0]), allowed: allow.has(entries[0].key) })
+        .toEqual({ name, delegate: true, writer: false, allowed: false });
+      expect({ name, acl: await aclOf(bodies[0].oid) })
+        .toEqual({ name, acl: { owner: 'postgres', prosecdef: true, proconfig: ['search_path=""'], ...SERVICE_ROLE_ONLY } });
+      expect({ name, acl: await aclOf(entries[0].oid) })
+        .toEqual({ name, acl: { owner: 'postgres', prosecdef: false, proconfig: ['search_path=""'], ...SERVICE_ROLE_ONLY } });
+    }
+  });
+
+  test('FREQ-540-AC-11: 発送票の押さえの道具は誰も（service_role も）EXECUTE できず、書き手でも一覧の中でもなく、1本だけ', async () => {
+    const procs = await loadProcs(db());
+    const allow = await allowlistOids(db());
+    const found = procs.filter((proc) => ['private', 'public'].includes(proc.schema) && proc.name === SLIP_LOCK);
+    expect(found.map((proc) => `${proc.schema}.${proc.name}(${proc.identity})`)).toEqual(['private.lock_group_g_shipment_slips(_slip_ids uuid[], _order_item_ids uuid[], _with_settings boolean)']);
+    expect({ acl: await aclOf(found[0].oid), writer: isDirectWriter(found[0]), allowed: allow.has(found[0].key) })
+      .toEqual({ acl: { owner: 'postgres', prosecdef: true, proconfig: ['search_path=""'], ...NO_ONE }, writer: false, allowed: false });
+    // service_role が EXECUTE できる発送票の書込みの関数は、書込みの本体2本とその入口2本だけ
+    const executable = (await db().query(`select p.oid::text as oid from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname in ('public', 'private') and p.proname = any($1::text[]) and has_function_privilege('service_role', p.oid, 'EXECUTE')`,
+    [[...SLIP_WRITER_NAMES, SLIP_LOCK]])).rows.map((row) => String(row.oid)).sort();
+    expect(executable).toEqual(procs.filter((proc) => SLIP_WRITER_NAMES.includes(proc.name)).map((proc) => proc.oid).sort());
+    expect(executable).toHaveLength(4);
+  });
+
+  test('FREQ-540-AC-11: 発送票の書込み本体2本は、共通の押さえ lock_group_g_shipment_slips を、発送票・注文・操作の記録の表への最初の参照より前に呼び、押さえの道具は共通の advisory を最初の文にする', async () => {
+    const procs = await loadProcs(db());
+    for (const name of SLIP_WRITER_NAMES) {
+      const body = procs.find((proc) => proc.schema === 'private' && proc.name === name)!;
+      const code = normalize(body.src, true);
+      const firstCall = code.indexOf(`${SLIP_LOCK}(`);
+      const withoutCall = code.split(SLIP_LOCK).join(' '.repeat(SLIP_LOCK.length));
+      const references = [...withoutCall.matchAll(/\b(?:from|join|into|update)\s+(?:public\.|private\.)(shipment_slips?|shipment_slip_[a-z_]+|order_items|orders|group_g_operations)\b/g)];
+      expect({ name, called: firstCall >= 0, references: references.length > 0 }).toEqual({ name, called: true, references: true });
+      expect({ name, lockFirst: firstCall < (references[0].index ?? -1) }).toEqual({ name, lockFirst: true });
+    }
+    const helper = procs.find((proc) => proc.schema === 'private' && proc.name === SLIP_LOCK)!;
+    expect(helper.src).toMatch(/BEGIN\s+PERFORM pg_catalog\.pg_advisory_xact_lock\(190521,1\);/);
   });
 });

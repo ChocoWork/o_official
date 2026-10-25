@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
+import { G2_ALLOWLIST, G3C_ALLOWLIST, replaceAllowlistSql, runWithAllowlist } from './helpers/group-g-allowlist';
 
 /**
  * G-2 Task 9（FREQ-540-AC-08）: G-2 の移行 2 本（基盤 foundation と書き手 writers）の形と、末尾の確かめの節（G2A_FINAL_ASSERT・G2B_FINAL_ASSERT）。
@@ -15,6 +16,9 @@ import { describeLocalDb } from './helpers/local-db';
  * G-3 以降へ: 「今の DB で通る」と固定の 65 本（書き手の一覧）の試験は、書き手の閉じた一覧が 65 本を超える時と、この移行の関数を
  *   置き換える時に赤くなる。G-3 は、その変更と同じコミットで、この試験と、同じ確かめを今の DB で流す G-2 の DB 試験
  *   （group_g2_purchase_model・group_g2_purchase_reads・group_g2_purchase_documents・group_g2_public_function_acl）を直す。
+ * G-3 Task 4（書き手の一覧が67本になった）: G2B の確かめの節（writers）を今の DB で流す前に、共有の道具 group-g-allowlist の
+ *   runWithAllowlist／G2_ALLOWLIST で取引の中の一覧を G-2 の65本へ入れ替える（戻すのは各試験の rollback）。今の DB の一覧そのものは
+ *   G3C_ALLOWLIST（G-3 の現在の本数）と同じことを別に確かめる。
  */
 jest.setTimeout(60000);
 
@@ -224,11 +228,15 @@ describeLocalDb('integration: G-2 の移行の末尾の確かめを流す（両�
 
   type Failure = { code?: string; message?: string; detail?: string };
 
-  /** 節を流す。止まったら { code, message, detail }、通れば null。取引は savepoint まで戻す */
-  async function run(section: string): Promise<Failure | null> {
+  /**
+   * 節を流す。止まったら { code, message, detail }、通れば null。取引は savepoint まで戻す。
+   * allowlist を渡すと、流す前に取引の中の書き手の一覧をその一覧へ入れ替える（戻すのは savepoint への rollback）
+   */
+  async function run(section: string, allowlist?: readonly string[]): Promise<Failure | null> {
     await db().query('savepoint assert_section');
     try {
-      await db().query(section);
+      if (allowlist === undefined) await db().query(section);
+      else await runWithAllowlist(db(), allowlist, section);
       return null;
     } catch (error) {
       const caught = error as Failure;
@@ -253,9 +261,19 @@ describeLocalDb('integration: G-2 の移行の末尾の確かめを流す（両�
 
   const failed = (detail: string): Failure => ({ code: '55000', message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', detail });
 
-  test('FREQ-540-AC-08: 今の DB で両ファイルの末尾の確かめの節が通る', async () => {
+  test('FREQ-540-AC-08: 今の DB で両ファイルの末尾の確かめの節が通る（G2B は取引の中で一覧を G-2 の65本へ入れ替えてから）', async () => {
     expect(await run(FOUNDATION_ASSERT)).toBeNull();
-    expect(await run(WRITERS_ASSERT)).toBeNull();
+    expect(await run(WRITERS_ASSERT, G2_ALLOWLIST)).toBeNull();
+  });
+
+  test('FREQ-540-AC-10: 今の DB の書き手の一覧のままでは G2B の確かめは止まる（G-3 の書き手が加わった67本。一覧の本数・並びは G3C_ALLOWLIST と同じ）', async () => {
+    expect(G2_ALLOWLIST).toHaveLength(65);
+    expect(G3C_ALLOWLIST.slice(0, 65)).toEqual(G2_ALLOWLIST);
+    const live = (await db().query('select x::oid::text as oid from unnest(private.group_g_writer_allowlist()) as a(x)')).rows.map((row) => String(row.oid));
+    const expected = (await db().query('select to_regprocedure(s)::oid::text as oid from unnest($1::text[]) as s', [G3C_ALLOWLIST])).rows.map((row) => row.oid);
+    expect(expected.every((oid: string | null) => oid !== null)).toBe(true);
+    expect([...live].sort()).toEqual([...expected].sort());
+    expect(await run(WRITERS_ASSERT)).toEqual(failed('purchase_writer_allowlist_missing'));
   });
 
   test('FREQ-540-AC-08: 移行を流す側の search_path が違っても（pg_catalog だけ・public と private を前に）通る', async () => {
@@ -263,7 +281,7 @@ describeLocalDb('integration: G-2 の移行の末尾の確かめを流す（両�
       await db().query('savepoint search_path_run');
       try {
         await db().query(`set local search_path to ${searchPath}`);
-        expect({ searchPath, foundation: await run(FOUNDATION_ASSERT), writers: await run(WRITERS_ASSERT) })
+        expect({ searchPath, foundation: await run(FOUNDATION_ASSERT), writers: await run(WRITERS_ASSERT, G2_ALLOWLIST) })
           .toEqual({ searchPath, foundation: null, writers: null });
       } finally {
         await db().query('rollback to savepoint search_path_run');
@@ -331,10 +349,12 @@ describeLocalDb('integration: G-2 の移行の末尾の確かめを流す（両�
   });
 
   describe('writers', () => {
+    // G2B の確かめは「その移行を当てた時点の65本」を固定で持つ。今の DB の一覧（G-3 で67本）のままでは通らないので、
+    // 各試験の最初（外側の BEGIN の後）に、取引の中の一覧を G-2 の65本へ入れ替える。戻すのは外側の ROLLBACK
+    beforeEach(async () => { await db().query(replaceAllowlistSql(G2_ALLOWLIST)); });
+
     /** 固定の一覧を、書き手の閉じた一覧の関数として入れ替える文（entries は 'private.name(args)' の並び） */
-    const replaceAllowlist = (entries: string[]) => `create or replace function private.group_g_writer_allowlist()
-      returns pg_catalog.regprocedure[] language sql stable security definer set search_path = ''
-      as $f$ select array[${entries.map((entry) => `'${entry}'`).join(', ')}]::pg_catalog.regprocedure[] $f$`;
+    const replaceAllowlist = (entries: string[]) => replaceAllowlistSql(entries);
     const CURRENT = signaturesIn(sectionOf(WRITERS_ASSERT, 'v_writers text[] := ARRAY[', '];'));
     const LOCK_HELPER = 'private.lock_group_g_purchase_orders(uuid[],boolean)';
     const CREATE_BODY = 'private.admin_create_purchase_order(text,text,jsonb,uuid,uuid)';
@@ -369,7 +389,13 @@ describeLocalDb('integration: G-2 の移行の末尾の確かめを流す（両�
     });
 
     test('FREQ-540-AC-08: 固定の一覧の入れ替え（同じ 65 本）は通る。入れ替えが戻ることも確かめる', async () => {
+      expect(CURRENT).toEqual([...G2_ALLOWLIST]);
       expect(await runAfter(replaceAllowlist(CURRENT), WRITERS_ASSERT)).toBeNull();
+      expect((await db().query('select cardinality(private.group_g_writer_allowlist()) as n')).rows[0].n).toBe(65);
+    });
+
+    test('FREQ-540-AC-10: G-3 の書き手を足した一覧（今の DB と同じ本数）では G2B の確かめは止まり、入れ替えは savepoint で戻る', async () => {
+      expect(await runAfter(replaceAllowlist([...G3C_ALLOWLIST]), WRITERS_ASSERT)).toEqual(failed('purchase_writer_allowlist_missing'));
       expect((await db().query('select cardinality(private.group_g_writer_allowlist()) as n')).rows[0].n).toBe(65);
     });
 

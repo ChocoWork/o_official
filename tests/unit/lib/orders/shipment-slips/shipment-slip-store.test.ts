@@ -5,10 +5,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { inspect } from 'util';
 import {
   classify,
+  discardShipmentSlipDraft,
   getAdminShipmentSlip,
   listAdminOrderShipmentSlips,
   listAdminPacking,
   listAdminShipmentSlips,
+  saveShipmentSlipDraft,
   ShipmentSlipError,
 } from '@/lib/orders/shipment-slips/shipment-slip-store';
 import { SHIPMENT_SLIP_ERRORS } from '@/lib/orders/shipment-slips/shipment-slip-types';
@@ -259,5 +261,122 @@ describe('listAdminOrderShipmentSlips', () => {
   test('FREQ-531-AC-04: DB が権限で断ると 403（呼び手が履歴だけを返すための印）', async () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'GROUP_G_FORBIDDEN', code: '42501' } });
     expect(await failure(() => listAdminOrderShipmentSlips(client, 'actor-1', ORDER_ID))).toMatchObject({ status: 403, code: 'GROUP_G_FORBIDDEN' });
+  });
+});
+
+const REQUEST_KEY = '66666666-6666-4666-8666-666666666661';
+const SAVED = { id: SLIP_ID, number: 'SL-20261025-0001', version: 1, replayed: false };
+/** 下書きの保存・破棄で、DB の拒否がそのまま表の状態・code・本文になる組（保存と破棄が返しうるもの） */
+const DRAFT_REFUSALS = [
+  'GROUP_G_ARGUMENT_INVALID', 'GROUP_G_FORBIDDEN', 'GROUP_G_REQUEST_KEY_CONFLICT', 'GROUP_G_SLIP_NOT_FOUND', 'GROUP_G_SLIP_VERSION_CONFLICT',
+  'GROUP_G_SLIP_NOT_DRAFT', 'GROUP_G_SLIP_EMPTY', 'GROUP_G_SLIP_CUSTOMER_MISMATCH', 'GROUP_G_SLIP_ADDRESS_MISMATCH', 'GROUP_G_SLIP_ADDRESS_INCOMPLETE',
+  'GROUP_G_SLIP_ORDER_NOT_SHIPPABLE', 'GROUP_G_SLIP_PAYMENT_REVIEW_REQUIRED', 'GROUP_G_SLIP_EXCHANGE_ON_HOLD', 'GROUP_G_SLIP_QUANTITY_EXCEEDS_READY',
+] as const;
+/** 表に載せない内部の誤り（生の文を出さない固定の500） */
+const INTERNAL_ERRORS: Array<[string, string]> = [
+  ['GROUP_G_SHIPMENT_CONSUMPTION', '23514'], ['GROUP_G_INVENTORY_LOCK_REQUIRED', '55000'],
+  ['GROUP_G_SLIP_NUMBER_EXHAUSTED', '55000'], ['GROUP_G_HISTORY_IMMUTABLE', '55000'], ['PRIVATE-MARKER', '57014'],
+];
+
+describe('saveShipmentSlipDraft', () => {
+  test('FREQ-531-AC-03: 作成は slipId・expectedVersion を NULL にして admin_save_shipment_slip_draft を実行者つきで1回呼び、行は orderItemId と quantity だけを渡して結果を返す', async () => {
+    rpc.mockResolvedValue({ data: SAVED, error: null });
+    const result = await saveShipmentSlipDraft(client, 'actor-1', {
+      slipId: null, expectedVersion: null, requestKey: REQUEST_KEY,
+      lines: [{ orderItemId: ITEM_ID_2, quantity: 2, extra: 'x' } as { orderItemId: string; quantity: number }],
+    });
+    expect(result).toEqual(SAVED);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('admin_save_shipment_slip_draft', {
+      _slip_id: null, _expected_version: null, _lines: [{ orderItemId: ITEM_ID_2, quantity: 2 }], _actor_id: 'actor-1', _request_key: REQUEST_KEY,
+    });
+  });
+
+  test('FREQ-531-AC-03: 入替は票の id と版を渡す。同じ要求番号・同じ内容の再送は replayed: true の同じ結果', async () => {
+    rpc.mockResolvedValue({ data: { ...SAVED, version: 3, replayed: true }, error: null });
+    const result = await saveShipmentSlipDraft(client, 'actor-1', {
+      slipId: SLIP_ID, expectedVersion: 2, requestKey: REQUEST_KEY, lines: [{ orderItemId: ITEM_ID_2, quantity: 1 }],
+    });
+    expect(result).toEqual({ ...SAVED, version: 3, replayed: true });
+    expect(rpc).toHaveBeenCalledWith('admin_save_shipment_slip_draft', {
+      _slip_id: SLIP_ID, _expected_version: 2, _lines: [{ orderItemId: ITEM_ID_2, quantity: 1 }], _actor_id: 'actor-1', _request_key: REQUEST_KEY,
+    });
+  });
+
+  test('FREQ-531-AC-03: 戻りは決まった4項目だけにする（知らない項目は落とす）', async () => {
+    rpc.mockResolvedValue({ data: { ...SAVED, secret: 'PRIVATE-MARKER' }, error: null });
+    const result = await saveShipmentSlipDraft(client, 'actor-1', { slipId: null, expectedVersion: null, requestKey: REQUEST_KEY, lines: [] });
+    expect(result).toEqual(SAVED);
+    expect(Object.keys(result).sort()).toEqual(['id', 'number', 'replayed', 'version']);
+  });
+
+  test.each(DRAFT_REFUSALS)('FREQ-532-AC-01: DB の拒否 %s は message と SQLSTATE がそろった時だけ表の状態・code・本文にする', async (message) => {
+    const [sqlstate, status, body] = SHIPMENT_SLIP_ERRORS[message];
+    rpc.mockResolvedValue({ data: null, error: { message, code: sqlstate, details: 'PRIVATE-MARKER', hint: 'PRIVATE-MARKER' } });
+    const result = await failure(() => saveShipmentSlipDraft(client, 'actor-1', { slipId: null, expectedVersion: null, requestKey: REQUEST_KEY, lines: [] }));
+    expect(result).toMatchObject({ status, code: message, message: body });
+    expect(inspect(result.error, { depth: null, showHidden: true })).not.toContain('PRIVATE-MARKER');
+  });
+
+  test.each(INTERNAL_ERRORS)('FREQ-531-AC-04: 表に載せない誤り %s は生の文を出さない固定の500', async (message, code) => {
+    rpc.mockResolvedValue({ data: null, error: { message, code, details: 'PRIVATE-MARKER' } });
+    const result = await failure(() => saveShipmentSlipDraft(client, 'actor-1', { slipId: null, expectedVersion: null, requestKey: REQUEST_KEY, lines: [] }));
+    expect(result).toMatchObject({ status: 500, code: undefined, message: FAILED });
+    expect(inspect(result.error, { depth: null, showHidden: true })).not.toContain('PRIVATE-MARKER');
+  });
+
+  test.each([
+    ['null', null], ['配列', [SAVED]], ['id が無い', { ...SAVED, id: undefined }], ['id が uuid でない', { ...SAVED, id: 'x' }],
+    ['番号の形が違う', { ...SAVED, number: 'SL-1' }], ['版が 0', { ...SAVED, version: 0 }], ['版が小数', { ...SAVED, version: 1.5 }],
+    ['replayed が文字', { ...SAVED, replayed: 'false' }],
+  ])('FREQ-531-AC-04: 戻りが崩れている（%s）と固定の500', async (_name, data) => {
+    rpc.mockResolvedValue({ data, error: null });
+    const result = await failure(() => saveShipmentSlipDraft(client, 'actor-1', { slipId: null, expectedVersion: null, requestKey: REQUEST_KEY, lines: [] }));
+    expect(result).toMatchObject({ status: 500, code: undefined, message: FAILED });
+  });
+
+  test('FREQ-531-AC-04: RPC が投げても固定の500で、生の文を持たない', async () => {
+    rpc.mockRejectedValue(new Error('PRIVATE-MARKER'));
+    const result = await failure(() => saveShipmentSlipDraft(client, 'actor-1', { slipId: null, expectedVersion: null, requestKey: REQUEST_KEY, lines: [] }));
+    expect(result).toMatchObject({ status: 500, code: undefined, message: FAILED });
+    expect(inspect(result.error, { depth: null, showHidden: true })).not.toContain('PRIVATE-MARKER');
+  });
+});
+
+describe('discardShipmentSlipDraft', () => {
+  test('FREQ-531-AC-03: admin_discard_shipment_slip_draft を票の id・版・実行者・要求番号で1回呼び、結果を返す', async () => {
+    rpc.mockResolvedValue({ data: { ...SAVED, version: 2 }, error: null });
+    const result = await discardShipmentSlipDraft(client, 'actor-1', { slipId: SLIP_ID, expectedVersion: 1, requestKey: REQUEST_KEY });
+    expect(result).toEqual({ ...SAVED, version: 2 });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('admin_discard_shipment_slip_draft', {
+      _slip_id: SLIP_ID, _expected_version: 1, _actor_id: 'actor-1', _request_key: REQUEST_KEY,
+    });
+  });
+
+  test.each(DRAFT_REFUSALS)('FREQ-531-AC-03: DB の拒否 %s は表の状態・code・本文にする', async (message) => {
+    const [sqlstate, status, body] = SHIPMENT_SLIP_ERRORS[message];
+    rpc.mockResolvedValue({ data: null, error: { message, code: sqlstate, details: 'PRIVATE-MARKER' } });
+    const result = await failure(() => discardShipmentSlipDraft(client, 'actor-1', { slipId: SLIP_ID, expectedVersion: 1, requestKey: REQUEST_KEY }));
+    expect(result).toMatchObject({ status, code: message, message: body });
+    expect(inspect(result.error, { depth: null, showHidden: true })).not.toContain('PRIVATE-MARKER');
+  });
+
+  test.each([['null', null], ['版が無い', { ...SAVED, version: undefined }], ['番号が違う形', { ...SAVED, number: 'PO-20261025-0001' }]])(
+    'FREQ-531-AC-04: 戻りが崩れている（%s）と固定の500', async (_name, data) => {
+      rpc.mockResolvedValue({ data, error: null });
+      const result = await failure(() => discardShipmentSlipDraft(client, 'actor-1', { slipId: SLIP_ID, expectedVersion: 1, requestKey: REQUEST_KEY }));
+      expect(result).toMatchObject({ status: 500, code: undefined, message: FAILED });
+    },
+  );
+
+  test('FREQ-531-AC-04: 表に載せない誤りと通信の失敗は生の文を出さない固定の500', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'GROUP_G_HISTORY_IMMUTABLE', code: '55000', details: 'PRIVATE-MARKER' } });
+    expect(await failure(() => discardShipmentSlipDraft(client, 'actor-1', { slipId: SLIP_ID, expectedVersion: 1, requestKey: REQUEST_KEY })))
+      .toMatchObject({ status: 500, code: undefined, message: FAILED });
+    rpc.mockRejectedValue(new Error('PRIVATE-MARKER'));
+    const result = await failure(() => discardShipmentSlipDraft(client, 'actor-1', { slipId: SLIP_ID, expectedVersion: 1, requestKey: REQUEST_KEY }));
+    expect(result).toMatchObject({ status: 500, code: undefined, message: FAILED });
+    expect(inspect(result.error, { depth: null, showHidden: true })).not.toContain('PRIVATE-MARKER');
   });
 });

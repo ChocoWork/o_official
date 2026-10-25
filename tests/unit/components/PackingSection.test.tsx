@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import PackingSection from '@/components/PackingSection';
 import { formatYen } from '@/lib/orders/refund/refund-messages';
+import { takeSlipNotice } from '@/lib/orders/shipment-slips/shipment-slip-notice';
 import {
+  ITEM_ID,
   ITEM_ID_2,
   ORDER_ID,
   ORDER_ID_2,
@@ -12,11 +14,13 @@ import {
 } from '../lib/orders/shipment-slips/shipment-slip-fixtures';
 
 /**
- * 荷作り表（G-3 / FREQ-531）の画面。この段階は読むだけで、品物を選ぶ欄と「発送」は出さない（次の段階で足す）。
- * 窓口（clientFetch）と注文の履歴のダイアログだけを差し替える。
+ * 荷作り表（G-3 / FREQ-531・FREQ-532）の画面。発送準備中の品物の表（選択欄・送る数・「発送」を含む）と、下の発送票の一覧。
+ * 窓口（clientFetch）・票の頁への移動（next/navigation）・注文の履歴のダイアログだけを差し替える。
  */
 const mockClientFetch = jest.fn();
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
+const mockPush = jest.fn();
+jest.mock('next/navigation', () => ({ useRouter: () => ({ push: mockPush }) }));
 const mockHistoryDialog = jest.fn();
 jest.mock('@/components/OrderHistoryDialog', () => ({
   __esModule: true,
@@ -35,14 +39,27 @@ function respond(status: number, body: unknown) {
 type Handlers = {
   packing?: (url: string) => Response | Promise<Response>;
   slips?: (stage: string) => Response | Promise<Response>;
+  /** 下書きを作る窓口（POST /api/admin/shipment-slips）。本文は JSON を読んだ物 */
+  create?: (body: { lines: Array<{ orderItemId: string; quantity: number }>; requestKey: string }) => Response | Promise<Response>;
 };
 
-/** 荷作り表と発送票の一覧の窓口を、URL で振り分けて答える */
-function serve({ packing, slips }: Handlers = {}) {
-  mockClientFetch.mockImplementation(async (url: string) => {
+/** 荷作り表の成功の答えに canManage が無ければ true を足す（権限のある人の答え。無い人の試験は canManage: false を自分で入れる） */
+async function withCanManage(answer: Response | Promise<Response>): Promise<Response> {
+  const response = await answer;
+  const body: unknown = await response.json();
+  if (response.ok && body !== null && typeof body === 'object' && !('canManage' in body)) return respond(response.status, { canManage: true, ...body });
+  return respond(response.status, body);
+}
+
+/** 荷作り表と発送票の一覧・作成の窓口を、URL と method で振り分けて答える */
+function serve({ packing, slips, create }: Handlers = {}) {
+  mockClientFetch.mockImplementation(async (url: string, init?: RequestInit) => {
     const target = String(url);
+    if (init?.method === 'POST') {
+      return create ? create(JSON.parse(String(init.body))) : respond(201, { id: SLIP_ID, number: 'SL-20261025-0001', version: 1, replayed: false });
+    }
     if (target.startsWith('/api/admin/packing')) {
-      return packing ? packing(target) : respond(200, { ...EMPTY, rows: [packingRow()], total: 1 });
+      return withCanManage(packing ? packing(target) : respond(200, { ...EMPTY, rows: [packingRow()], total: 1 }));
     }
     const stage = new URL(target, 'https://example.test').searchParams.get('stage') ?? '';
     return slips ? slips(stage) : respond(200, { rows: [], total: 0, page: 1, limit: 20 });
@@ -50,7 +67,13 @@ function serve({ packing, slips }: Handlers = {}) {
 }
 
 const packingCalls = () => mockClientFetch.mock.calls.map(([url]) => String(url)).filter((url) => url.startsWith('/api/admin/packing'));
-const slipCalls = () => mockClientFetch.mock.calls.map(([url]) => String(url)).filter((url) => url.startsWith('/api/admin/shipment-slips'));
+const slipCalls = () => mockClientFetch.mock.calls
+  .filter(([, init]) => (init as RequestInit | undefined)?.method !== 'POST')
+  .map(([url]) => String(url)).filter((url) => url.startsWith('/api/admin/shipment-slips'));
+/** 下書きを作る窓口への送信（本文の JSON を読んだ物） */
+const createCalls = () => mockClientFetch.mock.calls
+  .filter(([url, init]) => String(url) === '/api/admin/shipment-slips' && (init as RequestInit | undefined)?.method === 'POST')
+  .map(([, init]) => JSON.parse(String((init as RequestInit).body)) as { lines: Array<{ orderItemId: string; quantity: number }>; requestKey: string });
 
 function packingTable(): HTMLElement {
   return screen.getAllByRole('table')[0];
@@ -64,6 +87,8 @@ function sectionTable(heading: string): HTMLElement {
 beforeEach(() => {
   mockClientFetch.mockReset();
   mockHistoryDialog.mockReset();
+  mockPush.mockReset();
+  window.sessionStorage.clear();
 });
 
 describe('荷作り表: 発送準備中の品物の表', () => {
@@ -80,22 +105,24 @@ describe('荷作り表: 発送準備中の品物の表', () => {
     expect(screen.getByRole('link', { name: '管理画面に戻る' })).toHaveAttribute('href', '/admin?tab=PACKING');
   });
 
-  test('FREQ-531-AC-01: 列は左から 注文ID・注文日・顧客名・メールアドレス・商品名・色・サイズ・数量・単価 の9つ。選択の列は出さない', async () => {
+  test('FREQ-531-AC-01: 列は左から 選択欄（見出しは視覚的に隠す「選択」）・注文ID・注文日・顧客名・メールアドレス・商品名・色・サイズ・数量・単価', async () => {
     serve();
     render(<PackingSection />);
     await screen.findAllByTestId('packing-row');
 
     const headings = within(packingTable()).getAllByRole('columnheader').map((cell) => cell.textContent);
-    expect(headings).toEqual(['注文ID', '注文日', '顧客名', 'メールアドレス', '商品名', '色', 'サイズ', '数量', '単価']);
+    expect(headings).toEqual(['選択', '注文ID', '注文日', '顧客名', 'メールアドレス', '商品名', '色', 'サイズ', '数量', '単価']);
+    expect(within(within(packingTable()).getAllByRole('columnheader')[0]).getByText('選択')).toHaveClass('sr-only');
   });
 
-  test('FREQ-531-AC-01: 1行は 注文番号・注文日（日本時間）・顧客名・メール・商品名・色・サイズ・準備中の数・単価 を左の列から順に出す', async () => {
+  test('FREQ-531-AC-01: 1行は 選択欄・注文番号・注文日（日本時間）・顧客名・メール・商品名・色・サイズ・準備中の数・単価 を左の列から順に出す', async () => {
     serve({ packing: () => respond(200, { rows: [packingRow({ orderCreatedAt: '2026-10-19T16:00:00+00:00' })], total: 1, page: 1, limit: 50 }) });
     render(<PackingSection />);
 
     const row = (await screen.findAllByTestId('packing-row'))[0];
     const cells = within(row).getAllByRole('cell').map((cell) => cell.textContent);
-    expect(cells).toEqual(['ORD-11111111', '2026/10/20', '山田 花子', 'hanako@example.com', 'シルクブラウス', '白', 'M', '3', formatYen(12800)]);
+    expect(cells).toEqual(['', 'ORD-11111111', '2026/10/20', '山田 花子', 'hanako@example.com', 'シルクブラウス', '白', 'M', '3', formatYen(12800)]);
+    expect(within(row).getByRole('checkbox', { name: 'シルクブラウス 白 M を選ぶ' })).not.toBeChecked();
   });
 
   test('FREQ-531-AC-01: 名前・メール・色・サイズが無い行は — を出す', async () => {
@@ -104,8 +131,9 @@ describe('荷作り表: 発送準備中の品物の表', () => {
 
     const row = (await screen.findAllByTestId('packing-row'))[0];
     const cells = within(row).getAllByRole('cell').map((cell) => cell.textContent);
-    expect(cells.slice(2, 4)).toEqual(['—', '—']);
-    expect(cells.slice(5, 7)).toEqual(['—', '—']);
+    expect(cells.slice(3, 5)).toEqual(['—', '—']);
+    expect(cells.slice(6, 8)).toEqual(['—', '—']);
+    expect(within(row).getByRole('checkbox', { name: 'シルクブラウス を選ぶ' })).toBeInTheDocument();
   });
 
   test('FREQ-531-AC-01: 窓口が返した順（古い注文から）のまま並べる', async () => {
@@ -118,7 +146,7 @@ describe('荷作り表: 発送準備中の品物の表', () => {
     render(<PackingSection />);
 
     const rows = await screen.findAllByTestId('packing-row');
-    expect(rows.map((row) => within(row).getAllByRole('cell')[4].textContent)).toEqual(['先の品', '後の品']);
+    expect(rows.map((row) => within(row).getAllByRole('cell')[5].textContent)).toEqual(['先の品', '後の品']);
   });
 
   test('FREQ-531-AC-01: 注文IDは注文番号のボタンで、押すと注文の履歴のダイアログを orderId つきで開く。閉じると orderId は null', async () => {
@@ -144,19 +172,18 @@ describe('荷作り表: 発送準備中の品物の表', () => {
     render(<PackingSection />);
 
     const [exchange, normal] = await screen.findAllByTestId('packing-row');
-    expect(within(within(exchange).getAllByRole('cell')[4]).getByText('交換の品')).toBeInTheDocument();
+    expect(within(within(exchange).getAllByRole('cell')[5]).getByText('交換の品')).toBeInTheDocument();
     expect(within(normal).queryByText('交換の品')).not.toBeInTheDocument();
   });
 
-  test('FREQ-531-AC-01: この段階は読むだけ。選択欄・送る数の入力・「発送」のボタンを出さない', async () => {
+  test('FREQ-531-AC-03: 選ぶ前は送る数の入力を出さず、「発送」は無効。権限の文は出さない', async () => {
     serve({ packing: () => respond(200, { rows: [packingRow(), packingRow({ orderItemId: ITEM_ID_2, blockedReasons: ['variant_missing'], shippableQuantity: 0 })], total: 2, page: 1, limit: 50 }) });
     render(<PackingSection />);
     await screen.findAllByTestId('packing-row');
 
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2);
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '発送' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '発送' })).toBeDisabled();
     expect(screen.queryByText('発送票を作る権限がありません。')).not.toBeInTheDocument();
   });
 });
@@ -485,5 +512,283 @@ describe('荷作り表: 画面の幅', () => {
     for (const cell of within(packingTable()).getAllByRole('columnheader')) {
       expect(cell.className).toMatch(/sticky/);
     }
+  });
+});
+
+describe('荷作り表: 品物を選んで発送票の下書きを作る', () => {
+  const KEY_A = 'a'.repeat(32);
+  const ROW_A = packingRow({ bundleKey: KEY_A });
+  const ROW_B = packingRow({ orderId: ORDER_ID_2, orderItemId: ITEM_ID_2, itemName: 'ニットベスト', color: '黒', size: 'L', readyQuantity: 5, shippableQuantity: 5, bundleKey: KEY_A });
+  const ROW_C = packingRow({ orderId: '11111111-1111-4111-8111-111111111113', orderItemId: '22222222-2222-4222-8222-222222222223', itemName: '別のお客様の品', color: '青', size: 'S', bundleKey: 'c'.repeat(32) });
+  const ROW_D = packingRow({ orderId: '11111111-1111-4111-8111-111111111114', orderItemId: '22222222-2222-4222-8222-222222222224', itemName: '鍵の無い品', color: '赤', size: 'F', bundleKey: null });
+  const HINT = '同じお客様・同じ配送先の注文だけ同梱できます';
+  const rows = (...list: ReturnType<typeof packingRow>[]) => () => respond(200, { rows: list, total: list.length, page: 1, limit: 50 });
+  const box = (name: string) => screen.getByRole('checkbox', { name });
+  const quantityInput = (name: string) => screen.getByRole('spinbutton', { name });
+  const ship = () => screen.getByRole('button', { name: '発送' });
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+  test('FREQ-531-AC-03: 1行目を選ぶと、bundleKey が違う行・NULL の行の選択欄が無効になり「同じお客様・同じ配送先の注文だけ同梱できます」を行の下に出す。全部外すと戻る', async () => {
+    serve({ packing: rows(ROW_A, ROW_B, ROW_C, ROW_D) });
+    render(<PackingSection />);
+    await screen.findAllByTestId('packing-row');
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+    for (const name of ['シルクブラウス 白 M を選ぶ', 'ニットベスト 黒 L を選ぶ', '別のお客様の品 青 S を選ぶ', '鍵の無い品 赤 F を選ぶ']) expect(box(name)).toBeEnabled();
+
+    fireEvent.click(box('シルクブラウス 白 M を選ぶ'));
+    expect(box('シルクブラウス 白 M を選ぶ')).toBeChecked();
+    expect(box('ニットベスト 黒 L を選ぶ')).toBeEnabled();
+    expect(box('別のお客様の品 青 S を選ぶ')).toBeDisabled();
+    expect(box('鍵の無い品 赤 F を選ぶ')).toBeDisabled();
+    expect(screen.getAllByText(HINT)).toHaveLength(2);
+    // 選んだ行の下ではなく、同梱できない行の下に出る
+    const notes = screen.getAllByTestId('packing-row-note');
+    expect(notes).toHaveLength(2);
+    expect(notes[0].previousElementSibling).toBe(screen.getAllByTestId('packing-row')[2]);
+
+    fireEvent.click(box('ニットベスト 黒 L を選ぶ'));
+    fireEvent.click(box('シルクブラウス 白 M を選ぶ'));
+    // 1行目を外しても、残った行（B）が基準になる
+    expect(box('別のお客様の品 青 S を選ぶ')).toBeDisabled();
+    fireEvent.click(box('ニットベスト 黒 L を選ぶ'));
+    for (const name of ['シルクブラウス 白 M を選ぶ', 'ニットベスト 黒 L を選ぶ', '別のお客様の品 青 S を選ぶ', '鍵の無い品 赤 F を選ぶ']) expect(box(name)).toBeEnabled();
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+  });
+
+  test('FREQ-531-AC-02: 阻害理由のある行は選べない（理由は行の下に出す）', async () => {
+    serve({ packing: rows(ROW_A, packingRow({ orderItemId: ITEM_ID_2, blockedReasons: ['payment_review'], shippableQuantity: 0, itemName: '確認待ちの品', color: null, size: null })) });
+    render(<PackingSection />);
+    await screen.findAllByTestId('packing-row');
+
+    expect(box('確認待ちの品 を選ぶ')).toBeDisabled();
+    expect(screen.getByText('支払額の確認が済むまで選べません')).toBeInTheDocument();
+    expect(box('シルクブラウス 白 M を選ぶ')).toBeEnabled();
+  });
+
+  test('FREQ-531-AC-03: 選んだ行に「今回送る数」の入力が出る。初期値は準備中の数で、1〜準備中の数の整数のあいだだけ「発送」を押せる', async () => {
+    serve({ packing: rows(ROW_A, ROW_B) });
+    render(<PackingSection />);
+    await screen.findAllByTestId('packing-row');
+    expect(ship()).toBeDisabled();
+
+    fireEvent.click(box('シルクブラウス 白 M を選ぶ'));
+    const input = quantityInput('シルクブラウス 白 M の送る数');
+    expect(input).toHaveValue(3);
+    expect(input).toHaveAttribute('min', '1');
+    expect(input).toHaveAttribute('max', '3');
+    expect(screen.getByText('今回送る数')).toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton', { name: 'ニットベスト 黒 L の送る数' })).not.toBeInTheDocument();
+    expect(ship()).toBeEnabled();
+
+    for (const [value, enabled] of [['0', false], ['4', false], ['', false], ['1.5', false], ['2', true], ['3', true]] as const) {
+      fireEvent.change(input, { target: { value } });
+      expect({ value, enabled: !ship().hasAttribute('disabled') }).toEqual({ value, enabled });
+    }
+    fireEvent.click(box('シルクブラウス 白 M を選ぶ'));
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(ship()).toBeDisabled();
+  });
+
+  test('FREQ-533-AC-01: 「発送」で下書きを作る窓口を1回だけ呼び（二重押下でも1回）、選んだ行・送る数・requestKey を送り、成功で票の頁へ移る。通知は票の頁へ引き継ぐ', async () => {
+    let release: () => void = () => {};
+    serve({
+      packing: rows(ROW_A, ROW_B),
+      create: () => new Promise<Response>((resolve) => {
+        release = () => resolve(respond(201, { id: SLIP_ID, number: 'SL-20261025-0001', version: 1, replayed: false }));
+      }),
+    });
+    render(<PackingSection />);
+    await screen.findAllByTestId('packing-row');
+    fireEvent.click(box('シルクブラウス 白 M を選ぶ'));
+    fireEvent.click(box('ニットベスト 黒 L を選ぶ'));
+    fireEvent.change(quantityInput('シルクブラウス 白 M の送る数'), { target: { value: '2' } });
+
+    fireEvent.click(ship());
+    fireEvent.click(ship());
+    expect(await screen.findByText('保存しています…')).toBeInTheDocument();
+    expect(createCalls()).toHaveLength(1);
+    expect(createCalls()[0].lines).toEqual([{ orderItemId: ITEM_ID, quantity: 2 }, { orderItemId: ITEM_ID_2, quantity: 5 }]);
+    expect(createCalls()[0].requestKey).toMatch(UUID);
+    expect(Object.keys(createCalls()[0]).sort()).toEqual(['lines', 'requestKey']);
+    // 送っている間は選択欄も入力も止める
+    expect(box('シルクブラウス 白 M を選ぶ')).toBeDisabled();
+    expect(quantityInput('シルクブラウス 白 M の送る数')).toBeDisabled();
+    expect(mockPush).not.toHaveBeenCalled();
+
+    release();
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith(`/admin/shipment-slips/${SLIP_ID}`));
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(takeSlipNotice(SLIP_ID)).toBe(true);
+    expect(takeSlipNotice(SLIP_ID)).toBe(false);
+  });
+
+  test('FREQ-533-AC-03: 結果が分からない（500・通信切れ）時は、入力を止めて「結果を確かめられませんでした…」と「もう一度確かめる」を出し、同じ requestKey と同じ本文で送り直す', async () => {
+    let calls = 0;
+    serve({
+      packing: rows(ROW_A),
+      create: () => {
+        calls += 1;
+        if (calls === 1) return respond(500, { error: '発送の記録に失敗しました' });
+        if (calls === 2) throw new Error('network');
+        return respond(200, { id: SLIP_ID, number: 'SL-20261025-0001', version: 1, replayed: true });
+      },
+    });
+    render(<PackingSection />);
+    await screen.findAllByTestId('packing-row');
+    fireEvent.click(box('シルクブラウス 白 M を選ぶ'));
+    fireEvent.click(ship());
+
+    expect(await screen.findByText('結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。')).toBeInTheDocument();
+    expect(box('シルクブラウス 白 M を選ぶ')).toBeDisabled();
+    expect(quantityInput('シルクブラウス 白 M の送る数')).toBeDisabled();
+    expect(ship()).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'もう一度確かめる' }));
+    await waitFor(() => expect(createCalls()).toHaveLength(2));
+    // 通信が切れてもう一度結果不明: まだ同じ画面
+    expect(await screen.findByRole('button', { name: 'もう一度確かめる' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'もう一度確かめる' }));
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith(`/admin/shipment-slips/${SLIP_ID}`));
+    expect(createCalls()).toHaveLength(3);
+    expect(createCalls()[1]).toEqual(createCalls()[0]);
+    expect(createCalls()[2]).toEqual(createCalls()[0]);
+  });
+
+  test('FREQ-531-AC-03: 窓口が断った時（409）は表の文を出し、選択は保つ。次の送信は新しい requestKey', async () => {
+    serve({
+      packing: rows(ROW_A),
+      create: () => respond(409, { code: 'GROUP_G_SLIP_QUANTITY_EXCEEDS_READY', error: '発送準備中の数を超えています。荷作り表を読み直してください。' }),
+    });
+    render(<PackingSection />);
+    await screen.findAllByTestId('packing-row');
+    fireEvent.click(box('シルクブラウス 白 M を選ぶ'));
+    fireEvent.click(ship());
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('発送準備中の数を超えています。荷作り表を読み直してください。');
+    expect(box('シルクブラウス 白 M を選ぶ')).toBeChecked();
+    expect(ship()).toBeEnabled();
+    expect(mockPush).not.toHaveBeenCalled();
+    fireEvent.click(ship());
+    await waitFor(() => expect(createCalls()).toHaveLength(2));
+    expect(createCalls()[1].requestKey).not.toBe(createCalls()[0].requestKey);
+    expect(createCalls()[1].lines).toEqual(createCalls()[0].lines);
+  });
+
+  test('FREQ-531-AC-03: 回数の制限（429）やログイン切れ（401）は文を出す。同じ内容の再押下は同じ requestKey', async () => {
+    serve({ packing: rows(ROW_A), create: () => respond(429, { error: 'Too many requests' }) });
+    render(<PackingSection />);
+    await screen.findAllByTestId('packing-row');
+    fireEvent.click(box('シルクブラウス 白 M を選ぶ'));
+    fireEvent.click(ship());
+    expect(await screen.findByRole('alert')).toHaveTextContent('操作が続いたため受け付けませんでした。しばらく待ってから、もう一度お試しください。');
+    fireEvent.click(ship());
+    await waitFor(() => expect(createCalls()).toHaveLength(2));
+    expect(createCalls()[1]).toEqual(createCalls()[0]);
+    await waitFor(() => expect(ship()).toBeEnabled());
+    expect(await screen.findByRole('alert')).toHaveTextContent('操作が続いたため受け付けませんでした。');
+
+    mockClientFetch.mockReset();
+    serve({ packing: rows(ROW_A), create: () => respond(401, { error: 'Unauthorized' }) });
+    fireEvent.click(ship());
+    expect(await screen.findByRole('alert')).toHaveTextContent('ログインし直してください。');
+  });
+
+  test('FREQ-540-AC-10: 操作の権限だけ無い人（「発送」の返事が 403）は、表は見えたまま選択欄と「発送」が消え、「発送票を作る権限がありません。」を1回出す', async () => {
+    serve({
+      packing: rows(ROW_A, ROW_B),
+      create: () => respond(403, { code: 'GROUP_G_FORBIDDEN', error: '発送を扱う権限がありません。' }),
+    });
+    render(<PackingSection />);
+    await screen.findAllByTestId('packing-row');
+    fireEvent.click(box('シルクブラウス 白 M を選ぶ'));
+    fireEvent.click(ship());
+
+    expect(await screen.findByText('発送票を作る権限がありません。')).toBeInTheDocument();
+    expect(screen.getAllByText('発送票を作る権限がありません。')).toHaveLength(1);
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '発送' })).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('packing-row')).toHaveLength(2);
+    const headings = within(packingTable()).getAllByRole('columnheader').map((cell) => cell.textContent);
+    expect(headings).toEqual(['注文ID', '注文日', '顧客名', 'メールアドレス', '商品名', '色', 'サイズ', '数量', '単価']);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  test('FREQ-540-AC-10: 荷作り表の答えの canManage が false の人は、最初の描画から選択欄・送る数・「発送」が無く、「発送票を作る権限がありません。」が1回出る（窓口は呼ばない）', async () => {
+    serve({ packing: () => respond(200, { rows: [ROW_A, ROW_B], total: 2, page: 1, limit: 50, canManage: false }) });
+    render(<PackingSection />);
+    await screen.findAllByTestId('packing-row');
+
+    // 操作の部品は一度も描画されない（表が出た最初の描画で既に無い）
+    expect(screen.getAllByText('発送票を作る権限がありません。')).toHaveLength(1);
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '発送' })).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('packing-row')).toHaveLength(2);
+    expect(within(packingTable()).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(
+      ['注文ID', '注文日', '顧客名', 'メールアドレス', '商品名', '色', 'サイズ', '数量', '単価'],
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(createCalls()).toHaveLength(0);
+    // 読む権限はあるので、下の発送票の一覧は読む
+    expect(slipCalls().length).toBeGreaterThan(0);
+  });
+
+  test('FREQ-540-AC-10: canManage が true の人は選択欄と「発送」があり、権限の文は出ない', async () => {
+    serve({ packing: () => respond(200, { rows: [ROW_A], total: 1, page: 1, limit: 50, canManage: true }) });
+    render(<PackingSection />);
+    await screen.findAllByTestId('packing-row');
+    expect(box('シルクブラウス 白 M を選ぶ')).toBeEnabled();
+    expect(ship()).toBeDisabled();
+    expect(screen.queryByText('発送票を作る権限がありません。')).not.toBeInTheDocument();
+  });
+
+  test('FREQ-540-AC-10: 「発送」の返事が権限の不足の 403（permission つき）でも、表は見えたまま操作が消え、権限の文を1回出す', async () => {
+    serve({
+      packing: rows(ROW_A),
+      create: () => respond(403, { error: 'Forbidden', permission: 'admin.shipping.manage', role: 'supporter' }),
+    });
+    render(<PackingSection />);
+    await screen.findAllByTestId('packing-row');
+    fireEvent.click(box('シルクブラウス 白 M を選ぶ'));
+    fireEvent.click(ship());
+    expect(await screen.findByText('発送票を作る権限がありません。')).toBeInTheDocument();
+    expect(screen.getAllByText('発送票を作る権限がありません。')).toHaveLength(1);
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '発送' })).not.toBeInTheDocument();
+  });
+
+  test.each([
+    ['CSRF の確かめの失敗', { error: 'Forbidden', reason: 'CSRF validation failed' }, 'セキュリティ確認に失敗しました。ページを再読み込みして、もう一度送ってください。'],
+    ['MFA が要る', { error: 'Forbidden', reason: 'MFA required', permission: 'admin.shipping.manage', role: 'admin' }, '2要素認証が必要です'],
+    ['理由の分からない 403', { error: 'Forbidden' }, '発送を扱う権限がありません。'],
+  ])('FREQ-540-AC-10: 「発送」の返事が 403（%s）でも権限が無いことにはしない。文を出し、選択欄と「発送」は残る', async (_name, body, message) => {
+    serve({ packing: rows(ROW_A), create: () => respond(403, body) });
+    render(<PackingSection />);
+    await screen.findAllByTestId('packing-row');
+    fireEvent.click(box('シルクブラウス 白 M を選ぶ'));
+    fireEvent.click(ship());
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(screen.queryByText('発送票を作る権限がありません。')).not.toBeInTheDocument();
+    expect(box('シルクブラウス 白 M を選ぶ')).toBeChecked();
+    expect(ship()).toBeEnabled();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  test('FREQ-531-AC-03: 選んだ行は頁を変えても残り、同梱の基準も保たれる', async () => {
+    serve({
+      packing: (url) => (url.includes('page=2') ? respond(200, { rows: [ROW_B, ROW_C], total: 120, page: 2, limit: 50 }) : respond(200, { rows: [ROW_A], total: 120, page: 1, limit: 50 })),
+    });
+    render(<PackingSection />);
+    await screen.findAllByTestId('packing-row');
+    fireEvent.click(box('シルクブラウス 白 M を選ぶ'));
+    fireEvent.click(screen.getByRole('button', { name: '次の頁' }));
+    await screen.findByText('51〜52 / 120');
+    expect(box('ニットベスト 黒 L を選ぶ')).toBeEnabled();
+    expect(box('別のお客様の品 青 S を選ぶ')).toBeDisabled();
+    expect(ship()).toBeEnabled();
+    fireEvent.click(ship());
+    await waitFor(() => expect(createCalls()).toHaveLength(1));
+    expect(createCalls()[0].lines).toEqual([{ orderItemId: ROW_A.orderItemId, quantity: 3 }]);
   });
 });

@@ -3,6 +3,7 @@ import {
   formatOpenSlipLabel,
   formatOtherSlipNotice,
   isShipmentSlipErrorCode,
+  isShipmentSlipId,
   isShipmentSlipStage,
   PACKING_COLUMN_HEADINGS,
   PACKING_HOLD_LABELS,
@@ -11,14 +12,19 @@ import {
   parseShipmentSlipDetail,
   parseShipmentSlipLink,
   parseShipmentSlipListRow,
+  parseShipmentSlipSaved,
   readShipmentSlipQueryInteger,
   SHIPMENT_SLIP_ERRORS,
   SHIPMENT_SLIP_FAILED,
+  SHIPMENT_SLIP_ISSUE_CODES,
+  SHIPMENT_SLIP_ISSUE_TEXT,
   SHIPMENT_SLIP_LIMITS,
   SHIPMENT_SLIP_READ_FAILED,
   SHIPMENT_SLIP_STAGE_LABELS,
   SHIPMENT_SLIP_STAGES,
   SHIPMENT_SLIP_TEXT,
+  SLIP_LINE_COLUMN_HEADINGS,
+  formatSlipHeading,
 } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import {
   confirmedDetail,
@@ -150,6 +156,16 @@ describe('画面の言葉', () => {
     expect(SHIPMENT_SLIP_TEXT.openPacking).toBe('荷作り表を開く');
     expect(SHIPMENT_SLIP_TEXT.orderHistoryGuide).toBe('発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票から行います。');
     expect(formatOpenSlipLabel('SL-20261025-0001')).toBe('発送票 SL-20261025-0001 を開く');
+  });
+});
+
+describe('isShipmentSlipId', () => {
+  test('FREQ-531-AC-03: 窓口の URL のパスに入れてよいのは uuid の形（大文字小文字は問わない）だけ', () => {
+    expect(isShipmentSlipId('33333333-3333-4333-8333-333333333331')).toBe(true);
+    expect(isShipmentSlipId('ABCDEF12-3333-4333-8333-333333333331')).toBe(true);
+    for (const value of ['', 'abc', '../orders', '33333333-3333-4333-8333-333333333331/discard', '33333333-3333-4333-8333-33333333333', ' 33333333-3333-4333-8333-333333333331', '33333333-3333-4333-8333-333333333331\n']) {
+      expect(isShipmentSlipId(value)).toBe(false);
+    }
   });
 });
 
@@ -292,5 +308,58 @@ describe('parseShipmentSlipLink', () => {
   ])('FREQ-533-AC-01: 崩れた結び付き %j は止める', (patch) => {
     expect(() => parseShipmentSlipLink({ fulfillmentId: FULFILLMENT_ID, slipId: SLIP_ID, number: 'SL-20261025-0001', stage: 'confirmed', ...patch }))
       .toThrow(SHIPMENT_SLIP_READ_FAILED);
+  });
+});
+
+describe('下書きの言葉と保存の戻り（G-3 Task 4）', () => {
+  test('FREQ-531-AC-03: 荷作り表の下書きの言葉は計画の「画面の言葉」と完全一致', () => {
+    expect(SHIPMENT_SLIP_TEXT.selectHeading).toBe('選択');
+    expect(SHIPMENT_SLIP_TEXT.bundleHint).toBe('同じお客様・同じ配送先の注文だけ同梱できます');
+    expect(SHIPMENT_SLIP_TEXT.sendQuantity).toBe('今回送る数');
+    expect(SHIPMENT_SLIP_TEXT.ship).toBe('発送');
+    expect(SHIPMENT_SLIP_TEXT.draftSaved).toBe('下書きを保存しました。');
+    expect(SHIPMENT_SLIP_TEXT.createForbidden).toBe('発送票を作る権限がありません。');
+    expect(SHIPMENT_SLIP_TEXT.forbidden).toBe('発送を扱う権限がありません。');
+    expect(SHIPMENT_SLIP_TEXT.csrfFailed).toBe('セキュリティ確認に失敗しました。ページを再読み込みして、もう一度送ってください。');
+    expect(SHIPMENT_SLIP_TEXT.emptyLines).toBe('品物を選んでください。');
+    expect(SHIPMENT_SLIP_TEXT.linesHeading).toBe('同梱する品物');
+    expect(SHIPMENT_SLIP_TEXT.removeLine).toBe('この行を外す');
+    expect(SHIPMENT_SLIP_TEXT.addHeading).toBe('品物を追加');
+    expect(SHIPMENT_SLIP_TEXT.addButton).toBe('追加');
+    expect(SHIPMENT_SLIP_TEXT.shipToHeading).toBe('送り先');
+    expect(SHIPMENT_SLIP_TEXT.discardDraft).toBe('下書きを破棄');
+    expect(SHIPMENT_SLIP_TEXT.discardConfirm).toBe('この下書きを破棄しますか。');
+    expect(SHIPMENT_SLIP_TEXT.discardSubmit).toBe('破棄する');
+    expect(SHIPMENT_SLIP_TEXT.back).toBe('戻る');
+    expect([...SLIP_LINE_COLUMN_HEADINGS]).toEqual(['注文ID', '顧客名', '商品名', '色', 'サイズ', '送る数', '今の準備中の数']);
+    expect(formatSlipHeading('SL-20261025-0001')).toBe('発送票 SL-20261025-0001');
+    expect(Object.values(SHIPMENT_SLIP_TEXT).join('')).not.toMatch(/[!！]/);
+  });
+
+  test('FREQ-531-AC-02: 下書きの問題（issues）の文は、DB のエラー表と阻害理由の文に合わせる。すべての問題の種類に文がある', () => {
+    expect(Object.keys(SHIPMENT_SLIP_ISSUE_TEXT).sort()).toEqual([...SHIPMENT_SLIP_ISSUE_CODES].sort());
+    expect(SHIPMENT_SLIP_ISSUE_TEXT).toEqual({
+      expired: '下書きの期限が切れました。品物を選び直してください。',
+      customer_mismatch: '同じお客様の注文だけを同梱できます。会員は同じ会員、ゲストは同じメールアドレスの注文に限ります。',
+      address_mismatch: '配送先がすべて同じ注文だけを同梱できます。',
+      order_not_shippable: '入金が確認できていない注文は発送できません。',
+      payment_review: '支払額の確認が済むまで発送できません。',
+      exchange_fee_waiting: '交換手数料のお支払いを待っているため発送できません。',
+      variant_missing: '色・サイズが確定していないため選べません',
+      address_incomplete: '配送先の情報が足りない注文は発送できません。',
+      paid_at_missing: '入金日時が記録されていないため選べません',
+      quantity_exceeds_ready: '発送準備中の数を超えています。荷作り表を読み直してください。',
+    });
+  });
+
+  test('FREQ-531-AC-03: 保存・破棄の戻りは id・番号・版・replayed の4項目だけにする。崩れていれば SHIPMENT_SLIP_READ_FAILED', () => {
+    const saved = { id: SLIP_ID, number: 'SL-20261025-0001', version: 2, replayed: true };
+    expect(parseShipmentSlipSaved({ ...saved, extra: 'PRIVATE-MARKER' })).toEqual(saved);
+    for (const bad of [
+      null, [], 'x', {}, { ...saved, id: 'x' }, { ...saved, number: 'SL-1' }, { ...saved, version: 0 }, { ...saved, version: '2' },
+      { ...saved, replayed: 1 }, { ...saved, id: undefined },
+    ]) {
+      expect(() => parseShipmentSlipSaved(bad)).toThrow(SHIPMENT_SLIP_READ_FAILED);
+    }
   });
 });

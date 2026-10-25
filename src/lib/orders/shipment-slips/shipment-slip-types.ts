@@ -143,7 +143,71 @@ export const SHIPMENT_SLIP_TEXT = {
   openPacking: '荷作り表を開く',
   /** 注文の履歴（OrderHistoryDialog）の上の案内 */
   orderHistoryGuide: '発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票から行います。',
+  // ---- 下書き（G-3 Task 4） ----
+  /** 荷作り表の選択欄の見出し（視覚的に隠す） */
+  selectHeading: '選択',
+  /** 1行目を選んだ後、同梱できない行の下に出す */
+  bundleHint: '同じお客様・同じ配送先の注文だけ同梱できます',
+  /** 荷作り表の各行の「今回送る数」の見出し */
+  sendQuantity: '今回送る数',
+  ship: '発送',
+  draftSaved: '下書きを保存しました。',
+  /** 荷作り表から作る操作の権限だけが無い人に1回出す */
+  createForbidden: '発送票を作る権限がありません。',
+  /** 書込みの窓口が 403 で返す文（DB のエラー表と同じ）。荷作り表は、これが返ったら操作の欄を片付ける */
+  forbidden: SHIPMENT_SLIP_ERRORS.GROUP_G_FORBIDDEN[2],
+  /** CSRF の確かめで断られた 403 は権限の不足ではない。再読み込みを促す */
+  csrfFailed: 'セキュリティ確認に失敗しました。ページを再読み込みして、もう一度送ってください。',
+  /** 最後の1行を外そうとした時（DB の GROUP_G_SLIP_EMPTY と同じ文）。窓口へは送らない */
+  emptyLines: SHIPMENT_SLIP_ERRORS.GROUP_G_SLIP_EMPTY[2],
+  slipBack: '荷作り表に戻る',
+  slipFailed: '発送票を読み込めませんでした。',
+  slipForbidden: '発送票を見る権限がありません。',
+  slipNotFound: SHIPMENT_SLIP_ERRORS.GROUP_G_SLIP_NOT_FOUND[2],
+  linesHeading: '同梱する品物',
+  removeLine: 'この行を外す',
+  addHeading: '品物を追加',
+  addButton: '追加',
+  addEmpty: '追加できる品物はありません。',
+  shipToHeading: '送り先',
+  discardDraft: '下書きを破棄',
+  discardConfirm: 'この下書きを破棄しますか。',
+  discardSubmit: '破棄する',
+  back: '戻る',
+  loading: '読み込み中...',
 } as const;
+
+/** 票の id（窓口の URL のパスに入れる値）の形か。uuid でなければ URL に入れない */
+export function isShipmentSlipId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+/** 票の頁の「同梱する品物」の表の見出し（左から。操作の列は視覚的に隠す見出しを足す） */
+export const SLIP_LINE_COLUMN_HEADINGS = [
+  '注文ID', '顧客名', '商品名', '色', 'サイズ', '送る数', '今の準備中の数',
+] as const;
+
+/** 票の頁の見出し。例: 発送票 SL-20261025-0001 */
+export function formatSlipHeading(number: string): string {
+  return `発送票 ${number}`;
+}
+
+/**
+ * 下書きの問題（issues）を行や票の上に出す文。DB のエラー表の本文と、阻害理由の文（PACKING_HOLD_LABELS）に合わせる。
+ * 色・サイズ未確定と入金日時なしは、エラー表に独自の文が無いので荷作り表と同じ阻害理由の文を使う。
+ */
+export const SHIPMENT_SLIP_ISSUE_TEXT: Record<ShipmentSlipIssueCode, string> = {
+  expired: SHIPMENT_SLIP_ERRORS.GROUP_G_SLIP_DRAFT_EXPIRED[2],
+  customer_mismatch: SHIPMENT_SLIP_ERRORS.GROUP_G_SLIP_CUSTOMER_MISMATCH[2],
+  address_mismatch: SHIPMENT_SLIP_ERRORS.GROUP_G_SLIP_ADDRESS_MISMATCH[2],
+  order_not_shippable: SHIPMENT_SLIP_ERRORS.GROUP_G_SLIP_ORDER_NOT_SHIPPABLE[2],
+  payment_review: SHIPMENT_SLIP_ERRORS.GROUP_G_SLIP_PAYMENT_REVIEW_REQUIRED[2],
+  exchange_fee_waiting: SHIPMENT_SLIP_ERRORS.GROUP_G_SLIP_EXCHANGE_ON_HOLD[2],
+  variant_missing: PACKING_HOLD_LABELS.variant_missing,
+  address_incomplete: SHIPMENT_SLIP_ERRORS.GROUP_G_SLIP_ADDRESS_INCOMPLETE[2],
+  paid_at_missing: PACKING_HOLD_LABELS.paid_at_missing,
+  quantity_exceeds_ready: SHIPMENT_SLIP_ERRORS.GROUP_G_SLIP_QUANTITY_EXCEEDS_READY[2],
+};
 
 /** 別の下書きにも選ばれている行の通知。番号は票の番号（複数なら読点で並べる） */
 export function formatOtherSlipNotice(numbers: readonly string[]): string {
@@ -315,6 +379,14 @@ export type ShipmentSlipDetail = {
 /** 注文の履歴の発送の行に付ける、その発送が属する票。票に属さない発送は null */
 export type ShipmentSlipLink = { slipId: string; number: string; stage: ShipmentSlipStage };
 
+// ---- 書込み（下書きの保存・破棄。G-3 Task 4） ----
+
+/** 下書きに選ぶ1行。送る数は 1〜99999（SHIPMENT_SLIP_LIMITS.quantity）で、準備中の数以下 */
+export type ShipmentSlipDraftLine = { orderItemId: string; quantity: number };
+
+/** 下書きの保存・破棄の成功の戻り。replayed は同じ要求番号・同じ内容の再送で true */
+export type ShipmentSlipSaved = { id: string; number: string; version: number; replayed: boolean };
+
 // ---- 検査の道具。崩れを見つけたらその場で SHIPMENT_SLIP_READ_FAILED を投げる（中身は持たない）。 ----
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -453,6 +525,15 @@ export function parseShipmentSlipLink(value: unknown): ShipmentSlipLink & { fulf
     number: readNumber(raw.number),
     stage: readOneOf(raw.stage, SHIPMENT_SLIP_STAGES),
   };
+}
+
+/**
+ * 下書きの保存・破棄の戻り（DB の関数の戻り、または窓口の応答）を検査して、決まった項目だけにする。
+ * 崩れていれば Error('SHIPMENT_SLIP_READ_FAILED')。
+ */
+export function parseShipmentSlipSaved(value: unknown): ShipmentSlipSaved {
+  const raw = readObject(value);
+  return { id: readId(raw.id), number: readNumber(raw.number), version: readPositive(raw.version), replayed: readBoolean(raw.replayed) };
 }
 
 function readShipTo(value: unknown): ShipmentSlipShipTo {

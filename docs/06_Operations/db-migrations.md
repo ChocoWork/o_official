@@ -1,6 +1,6 @@
 # DB マイグレーション運用
 
-> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで） | 確認日: 2026-10-25 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み
+> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで。G-3 は Task 1 の基盤・Task 2 の読取・Task 4 の書き手の移行を追記） | 確認日: 2026-10-25 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み
 
 ## 概要
 
@@ -568,7 +568,7 @@ G-3 は4本を次の順で作る。Task 1 で存在するのは基盤の1本だ�
 | --- | --- | --- |
 | 1 | `20261025053324_group_g3_shipping_foundation.sql` | 発送票の6表・出荷日の列とCHECK・変更と消費の守り・割当イベントの理由17値・発注書のある商品の削除止め。Task 1 |
 | 2 | `20261025070821_group_g3_shipping_reads.sql`（作成済み・Fix round 1再適用待ち） | 読取5本と入口5本、内部3本の同梱・準備数の定義。Task 2。追跡の読取側の置換は同じ移行へTask 8で追記 |
-| 3 | `<ts3>_group_g3_shipping_slips.sql`（未作成） | ロック helper、下書き、発送確定、取消。Task 4〜6 |
+| 3 | `20261025100130_group_g3_shipping_slips.sql`（Task 4 で作成済み・ローカル DB に適用済み・本番未適用） | ロック helper、下書きの保存・破棄、書き手の閉じた一覧（G-2 の65本＋この移行の書き手）。Task 4。発送確定・取消の書き手は Task 5〜6 で同じ移行へ追記する（適用前なので追記してよい） |
 | 4 | `<ts4>_group_g3_shipping_actions.sql`（未作成） | 伝票訂正、手動配達済み、出荷日訂正、配送反映の置換、許可一覧とassert。Task 7〜10 |
 
 `20261024180500 < ts1 < ts2 < ts3 < ts4`。各ファイルは先頭 BEGIN; から末尾assert・NOTIFY pgrst, 'reload schema';・COMMIT; までを1取引で当てる。基盤は G3A_BODY_BEGIN/END と G3A_FINAL_ASSERT_BEGIN/END、後続は G3B/G3C/G3D の印で区切る。基盤は書込み口を追加せず、読取は書込みを持たない。ファイルの大きさに上限はなく、バイト数とMD5をTaskの報告へ残す。
@@ -635,3 +635,38 @@ ACLはhas_function_privilegeとaclexplodeで意味を比較する。proaclの文
 荷作り表は指定票が不在なら`GROUP_G_SLIP_NOT_FOUND / P0002`、下書き以外なら共通値の`GROUP_G_SLIP_NOT_DRAFT / 55000`。どちらもactorの2権限を確認した後に判定する。詳細の住所不足・入金日時なし・注文状態・支払確認などは明細IDつきで示し、顧客/住所の不一致と期限切れは票単位。入金日時なしはpaid注文だけに付ける。準備数のMATERIALIZED集合は詳細1回につき1度計算し、linesとissuesで共用する。
 
 同梱判定は空/NULL配列・不在ID・NULL要素を`address_incomplete`にする。重複する実在IDは同じ注文として扱い、キーは不在/NULL IDでNULL。PostgRESTの再検証には`LOCAL_SUPABASE_ANON_KEY`も必要で、未設定は理由つきskip。anonと実ユーザーJWTのclientは実anonキー、service_roleだけはserviceキーを使う。材料の票は最初から期限切れ、認証の利用者はactorと共用する1人だけとし、終了時は準備注文を閉じてsignOut・認証利用者の削除を行う。追記専用の票・注文・在庫の材料は残る。
+
+## G-3 Task 4 発送票の書き手の移行の適用境界
+
+確認日: 2026-10-25。[書き手の移行](../../supabase/migrations/20261025100130_group_g3_shipping_slips.sql) は Task 2 の読取移行の後に適用する。ASCII・BOMなし・LF、BEGIN / NOTIFY / COMMIT は各1組、本体と末尾assertの印は G3C。適用済みの G-1/G-2 の移行と、Task 1・2 の移行は変更しない。業務データ・表・表権限・private schema の USAGE は変更しない（表と権限は Task 1 が作った物を使う）。**本番には未適用（ローカルの reset でだけ適用）なので、後続 Task（5〜6）が同じファイルへ書き手を追記してよい。本番へ適用した後は編集しない。**
+
+| 項目 | 値 |
+| --- | --- |
+| 名前 | `20261025100130_group_g3_shipping_slips.sql`（UTC 2026-10-25 10:01:30。Task 2 の `20261025070821` より後） |
+| サイズ・MD5 | 41,238 bytes・`A28AFAAEBE5FA5D8095602E76AFB010D`（Fix round 1。直前: 40,253 bytes・`2440F06B8E8FF420A3401CDE507DCD7F`。Task 1: 40,477 bytes・`635ADBB776D48CBAD9AF26AF8AE5ACB3`、Task 2: 34,091 bytes・`2549F499F202525CD02A4CC460AD2B29` のまま不変） |
+| 作るもの | 関数5本: 内部の押さえ `private.lock_group_g_shipment_slips(uuid[],uuid[],boolean)`（誰も EXECUTE できない）、書込み本体2本 `private.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid)`・`private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)`（service_role だけ EXECUTE）、同名・同引数・同戻り型の public 入口2本（SQL INVOKER の委譲だけ。service_role だけ EXECUTE）。`private.group_g_writer_allowlist()` を `CREATE OR REPLACE` で G-2 の65本＋保存・破棄の2本＝67本へ置換 |
+| 触らないもの | 表・列・制約・trigger・索引・sequence・既存関数（許可一覧の置換を除く）・`USAGE ON SCHEMA private` |
+
+### 末尾の確かめ
+
+`$g3c_final_objects$` は失敗を `GROUP_G_MIGRATION_ASSERTION_FAILED / 55000`、DETAIL は項目名だけで止める。ACL は `has_function_privilege` と `aclexplode` の意味で比べ、`proacl::text`・OID の数値・ACL 順には依存しない。この移行に表権限の変更は無いので MAINTAIN の版ガードも要らない（Task 1 のガードはそのまま）。
+
+| DETAIL | 確かめる内容 |
+| --- | --- |
+| `shipment_slip_functions` | 5本の存在、postgres 所有、VOLATILE、DEFINER/INVOKER、言語、戻り型、引数名、空の search_path、anon・authenticated・PUBLIC の EXECUTE なし、service_role の EXECUTE は書込み本体2本と入口2本だけ（押さえの道具は誰にも付けない） |
+| `shipment_slip_lock_order` | 押さえの道具の本文が `BEGIN` の直後に `PERFORM pg_catalog.pg_advisory_xact_lock(190521,1);` で始まり、続いて設定の `FOR SHARE` → `lock_group_g_inventory(` → 票の行の `FOR UPDATE`（`public.shipment_slips` を指す）→ 追跡の登録の行（`private.fulfillment_tracking_registrations`）の `FOR UPDATE` の順（大文字小文字・空白の違いを問わない。票の行より先に登録の行を取る、在庫の閉包より先に票の行を取る改変を止める）。書込み本体2本が `lock_group_g_shipment_slips(` を呼び、その呼び出しより前の本文に、表の参照（`from`・`join`・`into`・`update`・`table` の後ろに、`only` を挟んでもよい `public.` か `private.`）も、`public.` か `private.` の関数の呼び出し（例: 権限の確かめ `group_g_actor_has_permissions(` を押さえの前へ移す改変）も無い（小文字化して見るので大文字・空白の数・引用符つきのスキーマ名の書き方でもすり抜けない） |
+| `shipment_slip_writer_allowlist_missing` | 固定の67本がすべて関数に解決でき、重複せず、`group_g_writer_allowlist()` の本数も67 |
+| `shipment_slip_writer_allowlist` | 許可一覧の関数の OID の集合が、固定の一覧の OID の集合と同じ |
+| `shipment_slip_function_set` | public と private にある同名（押さえの道具・保存・破棄）の関数が、上の5本ちょうど（余分な overload と欠けを見つける） |
+
+### 書き手の許可一覧が65本を超えた最初の Task のための直し
+
+G-2 の末尾の確かめ（`$g2b_final_objects$`）は「適用した時点の65本」を固定で持つ。実DBで流す2つの suite（`group_g2_migration_asserts`・`group_g2_purchase_documents`）は、流す前に取引の中の一覧を共有の道具 [group-g-allowlist](../../tests/integration/db/helpers/group-g-allowlist.ts) の `runWithAllowlist(client, G2_ALLOWLIST, 節)` で G-2 の65本へ入れ替える（`G2_ALLOWLIST` は G2B 移行の `v_writers` の配列から読み取って固定する。戻すのは各試験の rollback）。今の DB の一覧のままでは G2B の確かめが `purchase_writer_allowlist_missing` で止まることも試験する。「今の DB の本数」を見る試験（`group_g1_writer_inventory`・`group_g2_purchase_documents`・`group_g2_purchase_quantities`・`group_g2_purchase_receipts`）は G-3 の現在の本数（67）に合わせた。`G3C_ALLOWLIST` は G-2 の65本＋この移行に**存在する**書き手だけで、Task 5 で確定の3本、Task 6 で2本と増える（まだ無い関数の署名は `::regprocedure` に通さない）。G3C の末尾の確かめを `G3C_ALLOWLIST` で流し直すのは Task 10。
+
+### 試験と適用の境界
+
+[発送票の下書き](../../tests/integration/db/group_g3_draft.integration.test.ts) は 作成・入れ替え・再送・同梱・優先順・数量・権限・原子性（故障注入）・破棄・期限切れ・構造・末尾の確かめの改変を確認する。[書き手の閉じた一覧](../../tests/integration/db/group_g1_writer_inventory.integration.test.ts)は67本と新しい関数の構造（押さえの道具の最初の文、書込み本体が表を読む前に押さえを呼ぶ順）を確認する。[実 PostgREST](../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts)の保存・破棄の経路は、鍵を持つ controller が流す。
+
+実装者は SQL・試験・単体・型・lint・文書の検査までを担当する。controller がローカルを reset して SQL を適用し、`group_g3_draft`・`group_g1_writer_inventory`・`group_g2_migration_asserts`・`group_g2_purchase_documents`・`group_g3_model`・`group_g3_reads`・`group_g2_concurrency`・`group_g1_concurrency` を流す。SQL に直しが必要になれば再 reset 待ちへ戻る。本番への適用は未実施。
+
+Fix round 1（Opus レビュー後、2026-10-25）は末尾の確かめ `shipment_slip_lock_order` の強化だけで SQL の本体（押さえの道具・保存・破棄・入口・許可一覧）は変えていない。強化した確かめを実DBの関数に当て直す試験（`group_g3_draft` の末尾の確かめの改変）に、`group_g_actor_has_permissions(` を押さえの前へ移す（保存・破棄）・`FROM ONLY`・`TABLE` で表を読む・押さえの道具が登録の行を票の行より先に取る・票の行を在庫の閉包より先に取る、の5つの改変を足した（既存の改変は残す）。連番の枯渇（`SL-<日本時間の日付>-9999` があると `GROUP_G_SLIP_NUMBER_EXHAUSTED / 55000`）の試験も足した。確かめの文が変わったので、コントローラーが再 reset してから流す。

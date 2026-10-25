@@ -1,6 +1,6 @@
 # 状態設計の案内と記載方針
 
-> 状態: 現行ソースとの同期方針 | 確認日: 2026-10-25（在庫の割当の行は2026-10-24に、発注書の行は2026-10-25に確認） | 対象: 注文・購入下書き・Webhook・要対応記録・在庫の割当・発注書
+> 状態: 現行ソースとの同期方針 | 確認日: 2026-10-25（在庫の割当の行は2026-10-24に、発注書の行と発送票の行は2026-10-25に確認） | 対象: 注文・購入下書き・Webhook・要対応記録・在庫の割当・発注書・発送票
 
 ## 概要
 
@@ -30,6 +30,7 @@
 | [決済の要対応](payment-exception.md) | `payment_exceptions.resolved_at`等 | 検出upsert・通知claim・管理解決RPC |
 | [在庫の割当（G-1）](inventory-allocation.md) | `order_item_allocations` の `kind` と `remaining_quantity`、支払額の違いの保留、`orders.paid_at` | 注文受付・入金・FIFO・解放・返金の各RPC（共通の在庫の鍵の下） |
 | [発注書（G-2）](purchasing.md) | `purchase_orders.stage`（保存する2段階）と、納品・未納・打切りから導く5つの表示段階 | 発注の作成（Task 4）、数量の確定・訂正・打切り・取消・発注先の訂正（Task 6）、受け取りとその取消・数量訂正（Task 7。共通の在庫の鍵の下） |
+| [発送票（G-3）](shipping.md) | `shipment_slips.stage`（`draft`・`confirmed`・`cancelled`・`discarded`）と、票の更新を通す操作印 `app.group_g_slip_change` ごとの遷移 | 下書きの保存・破棄（Task 4。共通の在庫の鍵の下）。確定・伝票・配達済み・出荷日の訂正・取消は後続 Task |
 
 ## 共通フォーマット
 

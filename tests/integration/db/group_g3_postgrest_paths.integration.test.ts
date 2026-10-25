@@ -7,10 +7,12 @@ import { connectLocalDb, describeLocalDb, isLocalDatabase } from './helpers/loca
 import { withGroupG1FixtureTransaction, setOrderStatusForFixture } from './helpers/group-g1-fixtures';
 import { seedGroupG3ReadyOrder, seedGroupG3Slip } from './helpers/group-g3-fixtures';
 import {
+  discardShipmentSlipDraft,
   getAdminShipmentSlip,
   listAdminOrderShipmentSlips,
   listAdminPacking,
   listAdminShipmentSlips,
+  saveShipmentSlipDraft,
   ShipmentSlipError,
 } from '@/lib/orders/shipment-slips/shipment-slip-store';
 
@@ -152,6 +154,57 @@ describeLocalDb('G-3 real supabase-js -> PostgREST -> SQL read paths', (db) => {
     }
   });
 
+  /** 本物の store の書込み関数を、service_role の supabase-js → PostgREST → SQL の道で通す（G-3 Task 4）。作った下書きは最後に破棄する */
+  test('FREQ-531-AC-03: 実 store の下書きの作成・入替・破棄が PostgREST を通り、再送は replayed: true、版違い・権限なしは固定の 409・403 の ShipmentSlipError', async () => {
+    const key = randomUUID();
+    const created = await saveShipmentSlipDraft(service, actor, { slipId: null, expectedVersion: null, lines: [{ orderItemId: itemId, quantity: 1 }], requestKey: key });
+    expect(created).toMatchObject({ version: 1, replayed: false });
+    expect(created.number).toMatch(/^SL-[0-9]{8}-[0-9]{4}$/);
+    expect(await saveShipmentSlipDraft(service, actor, { slipId: null, expectedVersion: null, lines: [{ orderItemId: itemId, quantity: 1 }], requestKey: key }))
+      .toEqual({ ...created, replayed: true });
+
+    const replaced = await saveShipmentSlipDraft(service, actor, { slipId: created.id, expectedVersion: 1, lines: [{ orderItemId: itemId, quantity: 3 }], requestKey: randomUUID() });
+    expect(replaced).toEqual({ id: created.id, number: created.number, version: 2, replayed: false });
+    const detail = await getAdminShipmentSlip(service, actor, created.id);
+    expect(detail).toMatchObject({ id: created.id, stage: 'draft', version: 2 });
+    expect(detail.lines).toEqual([expect.objectContaining({ orderItemId: itemId, quantity: 3 })]);
+
+    const failures: Array<[string, () => Promise<unknown>, number, string]> = [
+      ['stale version', () => saveShipmentSlipDraft(service, actor, { slipId: created.id, expectedVersion: 1, lines: [{ orderItemId: itemId, quantity: 1 }], requestKey: randomUUID() }), 409, 'GROUP_G_SLIP_VERSION_CONFLICT'],
+      ['too many', () => saveShipmentSlipDraft(service, actor, { slipId: created.id, expectedVersion: 2, lines: [{ orderItemId: itemId, quantity: 5 }], requestKey: randomUUID() }), 409, 'GROUP_G_SLIP_QUANTITY_EXCEEDS_READY'],
+      ['empty', () => saveShipmentSlipDraft(service, actor, { slipId: created.id, expectedVersion: 2, lines: [], requestKey: randomUUID() }), 400, 'GROUP_G_SLIP_EMPTY'],
+      ['stranger save', () => saveShipmentSlipDraft(service, randomUUID(), { slipId: null, expectedVersion: null, lines: [{ orderItemId: itemId, quantity: 1 }], requestKey: randomUUID() }), 403, 'GROUP_G_FORBIDDEN'],
+      ['stranger discard', () => discardShipmentSlipDraft(service, randomUUID(), { slipId: created.id, expectedVersion: 2, requestKey: randomUUID() }), 403, 'GROUP_G_FORBIDDEN'],
+      ['missing slip', () => discardShipmentSlipDraft(service, actor, { slipId: randomUUID(), expectedVersion: 1, requestKey: randomUUID() }), 404, 'GROUP_G_SLIP_NOT_FOUND'],
+    ];
+    for (const [name, call, status, code] of failures) {
+      const error = await call().then(() => null, (e: unknown) => e);
+      expect({ name, isStoreError: error instanceof ShipmentSlipError }).toEqual({ name, isStoreError: true });
+      expect({ name, status: (error as ShipmentSlipError).status, code: (error as ShipmentSlipError).code }).toEqual({ name, status, code });
+    }
+
+    const discardKey = randomUUID();
+    const discarded = await discardShipmentSlipDraft(service, actor, { slipId: created.id, expectedVersion: 2, requestKey: discardKey });
+    expect(discarded).toEqual({ id: created.id, number: created.number, version: 3, replayed: false });
+    expect(await discardShipmentSlipDraft(service, actor, { slipId: created.id, expectedVersion: 2, requestKey: discardKey })).toEqual({ ...discarded, replayed: true });
+    const again = await discardShipmentSlipDraft(service, actor, { slipId: created.id, expectedVersion: 3, requestKey: randomUUID() }).then(() => null, (e: unknown) => e);
+    expect({ status: (again as ShipmentSlipError).status, code: (again as ShipmentSlipError).code }).toEqual({ status: 409, code: 'GROUP_G_SLIP_NOT_DRAFT' });
+    expect(await getAdminShipmentSlip(service, actor, created.id)).toMatchObject({ stage: 'discarded', version: 3 });
+  });
+
+  test('FREQ-540-AC-10: 下書きの保存・破棄の公開入口も、anon・実authenticated JWTはactor権限があってもEXECUTEを拒み（42501）、何も書かない', async () => {
+    const writes = (): Array<[string, Record<string, unknown>]> => [
+      ['admin_save_shipment_slip_draft', { _slip_id: null, _expected_version: null, _lines: [{ orderItemId: itemId, quantity: 1 }], _actor_id: actor, _request_key: randomUUID() }],
+      ['admin_discard_shipment_slip_draft', { _slip_id: slipId, _expected_version: 1, _actor_id: actor, _request_key: randomUUID() }],
+    ];
+    const countBefore = (await service.rpc('list_admin_shipment_slips', { _stage: 'discarded', _limit: 1, _offset: 0, _actor_id: actor })).data?.[0]?.total_count;
+    for (const client of [anon, authenticated]) for (const [name, args] of writes()) {
+      const r = await client.rpc(name, args);
+      expect({ name, code: r.error?.code, denied: [401, 403].includes(r.status) }).toEqual({ name, code: '42501', denied: true });
+    }
+    expect((await service.rpc('list_admin_shipment_slips', { _stage: 'discarded', _limit: 1, _offset: 0, _actor_id: actor })).data?.[0]?.total_count).toBe(countBefore);
+    expect(await getAdminShipmentSlip(service, actor, slipId)).toMatchObject({ stage: 'draft', version: 1 });
+  });
   test('FREQ-540-AC-10: anon・実authenticated JWTはactor権限があっても5本すべてのEXECUTEを拒む', async () => {
     for (const client of [anon, authenticated]) for (const [name, args] of calls()) {
       const r = await client.rpc(name, args);

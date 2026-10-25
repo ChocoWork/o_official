@@ -1,0 +1,625 @@
+-- G-3 shipment-slip writers (Task 4 and later G-3 tasks): the lock helper for every shipment-slip writer, saving a draft
+-- (create / replace the selected lines) and discarding a draft (FREQ-531-AC-03, FREQ-532, FREQ-533-AC-01, FREQ-540-AC-10,
+-- FREQ-540-AC-11), and the writer allowlist (65 G-1/G-2 entries + the writers of this file). Later G-3 tasks extend the body
+-- section of this file while it is not applied anywhere. Always applied after 20261025070821_group_g3_shipping_reads.sql.
+BEGIN;
+
+-- G3C_BODY_BEGIN
+
+-- 1. Lock helper for every shipment-slip writer. The common advisory (190521,1) is the very first statement; the targets are
+--    only discovered by reads after it (the same rule as lock_group_g_inventory and lock_group_g_purchase_orders). Order:
+--    advisory -> shop_settings (FOR SHARE, only when the caller touches tracking) -> reads that close the set of orders and
+--    variants (the items of _order_item_ids, the draft selection and the lines of the slips, the orders of their shipments)
+--    -> lock_group_g_inventory (re-entrant advisory; its result, the locked order ids ascending, is kept and returned) ->
+--    the slips (id ascending) -> when tracking is touched, the registrations of the slips' shipments ((fulfillment_id,
+--    tracking_version) ascending). A caller must never add targets afterwards and go back to an earlier stage.
+--    Internal helper: nobody but the owner can EXECUTE it.
+CREATE FUNCTION private.lock_group_g_shipment_slips(_slip_ids uuid[], _order_item_ids uuid[], _with_settings boolean)
+RETURNS uuid[]
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_orders uuid[];
+  v_variants bigint[];
+  v_locked uuid[];
+BEGIN
+  PERFORM pg_catalog.pg_advisory_xact_lock(190521,1);
+  IF _with_settings IS TRUE THEN
+    PERFORM s.id FROM public.shop_settings AS s WHERE s.id = 1 FOR SHARE;
+  END IF;
+  WITH targets AS (
+    SELECT oi.order_id, oi.variant_id FROM public.order_items AS oi WHERE oi.id = ANY(_order_item_ids)
+    UNION
+    SELECT oi.order_id, oi.variant_id FROM public.shipment_slips AS s
+      CROSS JOIN LATERAL pg_catalog.jsonb_to_recordset(s.draft_lines) AS d("orderItemId" uuid)
+      JOIN public.order_items AS oi ON oi.id = d."orderItemId"
+      WHERE s.id = ANY(_slip_ids)
+    UNION
+    SELECT oi.order_id, oi.variant_id FROM public.shipment_slip_lines AS l
+      JOIN public.order_items AS oi ON oi.id = l.order_item_id
+      WHERE l.slip_id = ANY(_slip_ids)
+    UNION
+    SELECT sf.order_id, NULL::bigint FROM public.shipment_slip_fulfillments AS sf WHERE sf.slip_id = ANY(_slip_ids)
+  )
+  SELECT COALESCE(pg_catalog.array_agg(DISTINCT t.order_id ORDER BY t.order_id), ARRAY[]::uuid[]),
+         COALESCE(pg_catalog.array_agg(DISTINCT t.variant_id ORDER BY t.variant_id) FILTER (WHERE t.variant_id IS NOT NULL),
+                  ARRAY[]::bigint[])
+    INTO v_orders, v_variants
+  FROM targets AS t;
+  v_locked := private.lock_group_g_inventory(v_variants, v_orders, NULL);
+  PERFORM s.id FROM public.shipment_slips AS s WHERE s.id = ANY(_slip_ids) ORDER BY s.id FOR UPDATE;
+  IF _with_settings IS TRUE THEN
+    PERFORM r.fulfillment_id FROM private.fulfillment_tracking_registrations AS r
+      WHERE r.fulfillment_id IN (SELECT sf.fulfillment_id FROM public.shipment_slip_fulfillments AS sf WHERE sf.slip_id = ANY(_slip_ids))
+      ORDER BY r.fulfillment_id, r.tracking_version FOR UPDATE;
+  END IF;
+  RETURN v_locked;
+END;
+$$;
+ALTER FUNCTION private.lock_group_g_shipment_slips(uuid[],uuid[],boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.lock_group_g_shipment_slips(uuid[],uuid[],boolean) FROM PUBLIC, anon, authenticated, service_role;
+
+-- 2. Save a shipment-slip draft (FREQ-531-AC-03). _slip_id NULL creates a new draft (_expected_version must be NULL); a
+--    non-NULL _slip_id replaces the whole selection of that draft (_expected_version is then required).
+--    _lines = [{"orderItemId": <uuid>, "quantity": <int>}], 1 to 100 lines, an item at most once, each element has exactly
+--    those two keys, quantity 1 to 99999 as a plain integer. [] is GROUP_G_SLIP_EMPTY, any other shape problem is
+--    GROUP_G_ARGUMENT_INVALID (both 22023).
+--    Order of work: argument check (22023) -> lock helper (advisory first, nothing else read before it) -> permission check
+--    (the four shipping/orders manage + read codes, 42501) -> fingerprint and replay / conflict (23505) -> existence of the
+--    slip (P0002) -> stage must be draft (GROUP_G_SLIP_NOT_DRAFT) -> version (GROUP_G_SLIP_VERSION_CONFLICT) -> existence of
+--    the items (22023) -> each order is judged in this order and the first violation is returned: (1) status must be paid
+--    (GROUP_G_SLIP_ORDER_NOT_SHIPPABLE), (2) the blocked reasons of group_g_shipment_ready by priority payment_review ->
+--    GROUP_G_SLIP_PAYMENT_REVIEW_REQUIRED, exchange_fee_waiting -> GROUP_G_SLIP_EXCHANGE_ON_HOLD, address_incomplete ->
+--    GROUP_G_SLIP_ADDRESS_INCOMPLETE, variant_missing / paid_at_missing -> GROUP_G_SLIP_ORDER_NOT_SHIPPABLE, (3) the bundle
+--    verdict customer_mismatch -> GROUP_G_SLIP_CUSTOMER_MISMATCH, address_mismatch -> GROUP_G_SLIP_ADDRESS_MISMATCH,
+--    address_incomplete -> GROUP_G_SLIP_ADDRESS_INCOMPLETE, (4) a quantity above the shippable quantity ->
+--    GROUP_G_SLIP_QUANTITY_EXCEEDS_READY -> write.
+--    A new draft takes the number SL- + the JST date + - + a 4 digit sequence (the largest of the day + 1, taken under the
+--    advisory and guarded by the UNIQUE constraint; above 9999 GROUP_G_SLIP_NUMBER_EXHAUSTED / 55000). The customer copy and
+--    the seven ship-to fields (trimmed; an empty building is NULL) are taken from the order of the first item (item id
+--    ascending). The same copy is taken again on every replacement. expires_at = now() + 7 days on every save. Stock,
+--    allocations, the ledger, orders and shipments are never touched; two drafts may select the same item.
+--    The result {id, number, version, replayed} is stored in group_g_operations (operation shipment_slip_save, cause_type
+--    shipment_slip, cause_id = the slip id); a replay returns it with replayed = true. The fingerprint (actor included, the
+--    version excluded) is the SHA-256 of {operation, slip_id, lines by item id, actor_id}.
+CREATE FUNCTION private.admin_save_shipment_slip_draft(_slip_id uuid, _expected_version integer, _lines jsonb, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_fingerprint text;
+  v_existing private.group_g_operations%ROWTYPE;
+  v_slip public.shipment_slips%ROWTYPE;
+  v_first public.orders%ROWTYPE;
+  v_item_ids uuid[];
+  v_order_ids uuid[];
+  v_payment_review boolean;
+  v_exchange_fee boolean;
+  v_address boolean;
+  v_unshippable boolean;
+  v_exceeds boolean;
+  v_verdict text;
+  v_draft_lines jsonb;
+  v_kind text;
+  v_email text;
+  v_prefix text;
+  v_sequence integer;
+  v_number text;
+  v_slip_id uuid;
+  v_version integer;
+  v_previous_change text;
+  v_result jsonb;
+BEGIN
+  IF _actor_id IS NULL OR _request_key IS NULL OR _lines IS NULL OR pg_catalog.jsonb_typeof(_lines) <> 'array'
+    OR (_slip_id IS NULL) <> (_expected_version IS NULL) OR _expected_version < 1 THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF pg_catalog.jsonb_array_length(_lines) = 0 THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_EMPTY' USING ERRCODE = '22023';
+  END IF;
+  IF pg_catalog.jsonb_array_length(_lines) > 100 THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  -- every element is an object with exactly orderItemId and quantity, an item id string and a plain positive integer in range
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)
+    WHERE CASE
+      WHEN pg_catalog.jsonb_typeof(e.value) <> 'object' THEN true
+      WHEN (SELECT pg_catalog.count(*) FROM pg_catalog.jsonb_object_keys(e.value)) <> 2 THEN true
+      WHEN pg_catalog.jsonb_typeof(e.value -> 'orderItemId') IS DISTINCT FROM 'string'
+        OR pg_catalog.jsonb_typeof(e.value -> 'quantity') IS DISTINCT FROM 'number' THEN true
+      WHEN (e.value ->> 'orderItemId') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        OR (e.value ->> 'quantity') !~ '^[1-9][0-9]{0,4}$' THEN true
+      ELSE false
+    END
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  SELECT pg_catalog.array_agg((e.value ->> 'orderItemId')::uuid ORDER BY (e.value ->> 'orderItemId')::uuid) INTO v_item_ids
+  FROM pg_catalog.jsonb_array_elements(_lines) AS e(value);
+  IF (SELECT pg_catalog.count(DISTINCT x.id) FROM pg_catalog.unnest(v_item_ids) AS x(id)) <> pg_catalog.cardinality(v_item_ids) THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM private.lock_group_g_shipment_slips(ARRAY[_slip_id], v_item_ids, false);
+  IF NOT private.group_g_actor_has_permissions(_actor_id,
+      ARRAY['admin.shipping.manage', 'admin.shipping.read', 'admin.orders.manage', 'admin.orders.read']) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+
+  v_draft_lines := (SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('orderItemId', (e.value ->> 'orderItemId')::uuid,
+      'quantity', (e.value ->> 'quantity')::integer) ORDER BY (e.value ->> 'orderItemId')::uuid)
+    FROM pg_catalog.jsonb_array_elements(_lines) AS e(value));
+  v_fingerprint := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+    'operation', 'shipment_slip_save', 'slip_id', _slip_id, 'lines', v_draft_lines, 'actor_id', _actor_id)::text, 'UTF8')), 'hex');
+  SELECT op.* INTO v_existing FROM private.group_g_operations AS op
+    WHERE op.operation = 'shipment_slip_save' AND op.request_key = _request_key;
+  IF FOUND THEN
+    IF v_existing.fingerprint <> v_fingerprint THEN
+      RAISE EXCEPTION 'GROUP_G_REQUEST_KEY_CONFLICT' USING ERRCODE = '23505';
+    END IF;
+    RETURN v_existing.result || pg_catalog.jsonb_build_object('replayed', true);
+  END IF;
+
+  IF _slip_id IS NOT NULL THEN
+    SELECT s.* INTO v_slip FROM public.shipment_slips AS s WHERE s.id = _slip_id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'GROUP_G_SLIP_NOT_FOUND' USING ERRCODE = 'P0002';
+    END IF;
+    IF v_slip.stage <> 'draft' THEN
+      RAISE EXCEPTION 'GROUP_G_SLIP_NOT_DRAFT' USING ERRCODE = '55000';
+    END IF;
+    IF v_slip.version <> _expected_version THEN
+      RAISE EXCEPTION 'GROUP_G_SLIP_VERSION_CONFLICT' USING ERRCODE = '55000';
+    END IF;
+  END IF;
+
+  SELECT pg_catalog.array_agg(DISTINCT oi.order_id ORDER BY oi.order_id) INTO v_order_ids
+  FROM public.order_items AS oi WHERE oi.id = ANY(v_item_ids);
+  IF (SELECT pg_catalog.count(*) FROM public.order_items AS oi WHERE oi.id = ANY(v_item_ids)) <> pg_catalog.cardinality(v_item_ids) THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  -- (1) every order is paid
+  IF EXISTS (SELECT 1 FROM public.orders AS o WHERE o.id = ANY(v_order_ids) AND o.status <> 'paid') THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_ORDER_NOT_SHIPPABLE' USING ERRCODE = '22023';
+  END IF;
+  -- (2) the blocked reasons and (4) the quantities come from the same single evaluation of group_g_shipment_ready
+  WITH ready AS MATERIALIZED (
+    SELECT r.order_item_id, r.shippable, r.blocked_reasons
+    FROM private.group_g_shipment_ready(v_order_ids) AS r WHERE r.order_item_id = ANY(v_item_ids)
+  ), wanted AS (
+    SELECT (e.value ->> 'orderItemId')::uuid AS item_id, (e.value ->> 'quantity')::integer AS quantity
+    FROM pg_catalog.jsonb_array_elements(_lines) AS e(value)
+  )
+  SELECT COALESCE((SELECT pg_catalog.bool_or('payment_review' = ANY(r.blocked_reasons)) FROM ready AS r), false),
+         COALESCE((SELECT pg_catalog.bool_or('exchange_fee_waiting' = ANY(r.blocked_reasons)) FROM ready AS r), false),
+         COALESCE((SELECT pg_catalog.bool_or('address_incomplete' = ANY(r.blocked_reasons)) FROM ready AS r), false),
+         COALESCE((SELECT pg_catalog.bool_or('variant_missing' = ANY(r.blocked_reasons) OR 'paid_at_missing' = ANY(r.blocked_reasons))
+                   FROM ready AS r), false),
+         EXISTS (SELECT 1 FROM wanted AS w LEFT JOIN ready AS r ON r.order_item_id = w.item_id
+                 WHERE w.quantity > COALESCE(r.shippable, 0))
+    INTO v_payment_review, v_exchange_fee, v_address, v_unshippable, v_exceeds;
+  IF v_payment_review THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_PAYMENT_REVIEW_REQUIRED' USING ERRCODE = '22023';
+  ELSIF v_exchange_fee THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_EXCHANGE_ON_HOLD' USING ERRCODE = '22023';
+  ELSIF v_address THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_ADDRESS_INCOMPLETE' USING ERRCODE = '22023';
+  ELSIF v_unshippable THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_ORDER_NOT_SHIPPABLE' USING ERRCODE = '22023';
+  END IF;
+  -- (3) the bundle verdict
+  v_verdict := private.group_g_bundle_verdict(v_order_ids);
+  IF v_verdict = 'customer_mismatch' THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_CUSTOMER_MISMATCH' USING ERRCODE = '22023';
+  ELSIF v_verdict = 'address_mismatch' THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_ADDRESS_MISMATCH' USING ERRCODE = '22023';
+  ELSIF v_verdict IS NOT NULL THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_ADDRESS_INCOMPLETE' USING ERRCODE = '22023';
+  END IF;
+  -- (4) the quantities
+  IF v_exceeds THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_QUANTITY_EXCEEDS_READY' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT o.* INTO v_first FROM public.orders AS o
+    JOIN public.order_items AS oi ON oi.order_id = o.id WHERE oi.id = v_item_ids[1];
+  v_kind := CASE WHEN v_first.user_id IS NULL THEN 'guest' ELSE 'member' END;
+  v_email := CASE WHEN v_first.user_id IS NULL THEN pg_catalog.lower(pg_catalog.btrim(v_first.shipping_email)) END;
+
+  IF _slip_id IS NULL THEN
+    v_prefix := 'SL-' || pg_catalog.to_char(pg_catalog.now() AT TIME ZONE 'Asia/Tokyo', 'YYYYMMDD') || '-';
+    SELECT COALESCE(pg_catalog.max(pg_catalog.substr(s.number, pg_catalog.length(v_prefix) + 1)::integer), 0) + 1 INTO v_sequence
+    FROM public.shipment_slips AS s WHERE pg_catalog.starts_with(s.number, v_prefix);
+    IF v_sequence > 9999 THEN
+      RAISE EXCEPTION 'GROUP_G_SLIP_NUMBER_EXHAUSTED' USING ERRCODE = '55000';
+    END IF;
+    v_number := v_prefix || pg_catalog.lpad(v_sequence::text, 4, '0');
+    INSERT INTO public.shipment_slips(number, stage, version, customer_kind, customer_user_id, customer_email,
+        ship_to_full_name, ship_to_postal_code, ship_to_prefecture, ship_to_city, ship_to_address, ship_to_phone, ship_to_building,
+        draft_lines, expires_at, created_by)
+      VALUES(v_number, 'draft', 1, v_kind, v_first.user_id, v_email,
+        pg_catalog.btrim(v_first.shipping_full_name), pg_catalog.btrim(v_first.shipping_postal_code),
+        pg_catalog.btrim(v_first.shipping_prefecture), pg_catalog.btrim(v_first.shipping_city),
+        pg_catalog.btrim(v_first.shipping_address), pg_catalog.btrim(v_first.shipping_phone),
+        NULLIF(pg_catalog.btrim(v_first.shipping_building), ''),
+        v_draft_lines, pg_catalog.now() + interval '7 days', _actor_id)
+      RETURNING id INTO v_slip_id;
+    v_version := 1;
+  ELSE
+    v_slip_id := _slip_id;
+    v_number := v_slip.number;
+    v_previous_change := pg_catalog.current_setting('app.group_g_slip_change', true);
+    PERFORM pg_catalog.set_config('app.group_g_slip_change', 'draft', true);
+    UPDATE public.shipment_slips
+      SET draft_lines = v_draft_lines, customer_kind = v_kind, customer_user_id = v_first.user_id, customer_email = v_email,
+          ship_to_full_name = pg_catalog.btrim(v_first.shipping_full_name), ship_to_postal_code = pg_catalog.btrim(v_first.shipping_postal_code),
+          ship_to_prefecture = pg_catalog.btrim(v_first.shipping_prefecture), ship_to_city = pg_catalog.btrim(v_first.shipping_city),
+          ship_to_address = pg_catalog.btrim(v_first.shipping_address), ship_to_phone = pg_catalog.btrim(v_first.shipping_phone),
+          ship_to_building = NULLIF(pg_catalog.btrim(v_first.shipping_building), ''),
+          expires_at = pg_catalog.now() + interval '7 days', version = version + 1, updated_at = pg_catalog.now()
+      WHERE id = _slip_id
+      RETURNING version INTO v_version;
+    PERFORM pg_catalog.set_config('app.group_g_slip_change', COALESCE(v_previous_change, ''), true);
+  END IF;
+
+  v_result := pg_catalog.jsonb_build_object('id', v_slip_id::text, 'number', v_number, 'version', v_version, 'replayed', false);
+  INSERT INTO private.group_g_operations(id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+    VALUES(v_operation, 'shipment_slip_save', _request_key, v_fingerprint, 'shipment_slip', v_slip_id::text, _actor_id, v_result);
+  RETURN v_result;
+END;
+$$;
+ALTER FUNCTION private.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid) TO service_role;
+
+CREATE FUNCTION public.admin_save_shipment_slip_draft(_slip_id uuid, _expected_version integer, _lines jsonb, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.admin_save_shipment_slip_draft(_slip_id, _expected_version, _lines, _actor_id, _request_key); $$;
+ALTER FUNCTION public.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid) TO service_role;
+
+-- 3. Discard a shipment-slip draft. The same order of work as the save (argument check -> lock helper -> permission ->
+--    fingerprint, replay / conflict -> existence -> stage must be draft -> version) and then the slip becomes discarded
+--    (discarded_at, discarded_by, expires_at NULL, version + 1). An expired draft can be discarded. Operation
+--    shipment_slip_discard; the result is {id, number, version, replayed}. The fingerprint is the SHA-256 of
+--    {operation, slip_id, actor_id}.
+CREATE FUNCTION private.admin_discard_shipment_slip_draft(_slip_id uuid, _expected_version integer, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_fingerprint text;
+  v_existing private.group_g_operations%ROWTYPE;
+  v_slip public.shipment_slips%ROWTYPE;
+  v_version integer;
+  v_previous_change text;
+  v_result jsonb;
+BEGIN
+  IF _slip_id IS NULL OR _expected_version IS NULL OR _expected_version < 1 OR _actor_id IS NULL OR _request_key IS NULL THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM private.lock_group_g_shipment_slips(ARRAY[_slip_id], ARRAY[]::uuid[], false);
+  IF NOT private.group_g_actor_has_permissions(_actor_id,
+      ARRAY['admin.shipping.manage', 'admin.shipping.read', 'admin.orders.manage', 'admin.orders.read']) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+
+  v_fingerprint := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+    'operation', 'shipment_slip_discard', 'slip_id', _slip_id, 'actor_id', _actor_id)::text, 'UTF8')), 'hex');
+  SELECT op.* INTO v_existing FROM private.group_g_operations AS op
+    WHERE op.operation = 'shipment_slip_discard' AND op.request_key = _request_key;
+  IF FOUND THEN
+    IF v_existing.fingerprint <> v_fingerprint THEN
+      RAISE EXCEPTION 'GROUP_G_REQUEST_KEY_CONFLICT' USING ERRCODE = '23505';
+    END IF;
+    RETURN v_existing.result || pg_catalog.jsonb_build_object('replayed', true);
+  END IF;
+
+  SELECT s.* INTO v_slip FROM public.shipment_slips AS s WHERE s.id = _slip_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_slip.stage <> 'draft' THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_NOT_DRAFT' USING ERRCODE = '55000';
+  END IF;
+  IF v_slip.version <> _expected_version THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_VERSION_CONFLICT' USING ERRCODE = '55000';
+  END IF;
+
+  v_previous_change := pg_catalog.current_setting('app.group_g_slip_change', true);
+  PERFORM pg_catalog.set_config('app.group_g_slip_change', 'discard', true);
+  UPDATE public.shipment_slips
+    SET stage = 'discarded', discarded_at = pg_catalog.now(), discarded_by = _actor_id, expires_at = NULL,
+        version = version + 1, updated_at = pg_catalog.now()
+    WHERE id = _slip_id
+    RETURNING version INTO v_version;
+  PERFORM pg_catalog.set_config('app.group_g_slip_change', COALESCE(v_previous_change, ''), true);
+
+  v_result := pg_catalog.jsonb_build_object('id', _slip_id::text, 'number', v_slip.number, 'version', v_version, 'replayed', false);
+  INSERT INTO private.group_g_operations(id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+    VALUES(v_operation, 'shipment_slip_discard', _request_key, v_fingerprint, 'shipment_slip', _slip_id::text, _actor_id, v_result);
+  RETURN v_result;
+END;
+$$;
+ALTER FUNCTION private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid) TO service_role;
+
+CREATE FUNCTION public.admin_discard_shipment_slip_draft(_slip_id uuid, _expected_version integer, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.admin_discard_shipment_slip_draft(_slip_id, _expected_version, _actor_id, _request_key); $$;
+ALTER FUNCTION public.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid) TO service_role;
+
+-- 4. The closed list of writers. The 65 entries of 20261024180500_group_g2_purchasing_writers.sql stay exactly as they were;
+--    this file appends the two draft writers (66th and 67th; each one writes public.shipment_slips and
+--    private.group_g_operations). Later G-3 tasks append their writers while this file is not applied anywhere. Owner, ACL
+--    and signature of the function are unchanged (CREATE OR REPLACE keeps them). group_g1_writer_inventory scans
+--    pg_proc.prosrc against it.
+CREATE OR REPLACE FUNCTION private.group_g_writer_allowlist() RETURNS pg_catalog.regprocedure[]
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT ARRAY[
+    'private.apply_group_g_stock_movement(bigint,integer)',
+    'private.allocate_group_g_fifo(bigint[],uuid,uuid)',
+    'private.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer)',
+    'private.record_group_g_item_state_changes(jsonb,uuid[],uuid,integer,text,uuid)',
+    'private.ensure_group_g_payment_review_hold(uuid,text,text,text,uuid)',
+    'private.release_group_g_payment_review_holds(uuid,uuid)',
+    'private.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)',
+    'private.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text)',
+    'private.mark_order_awaiting_payment(uuid,text,text)',
+    'private.release_stock_for_unpaid_order(uuid,public.order_status,public.order_status,text,uuid,text,text,text,boolean)',
+    'private.record_cancelled_order_paid_amount(uuid,text,integer)',
+    'private.admin_cancel_failed_order(uuid,uuid,text,text)',
+    'private.link_guest_orders(uuid,text)',
+    'private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)',
+    'private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)',
+    'private.apply_order_refund_state(uuid)',
+    'private.apply_return_refund_outcome(uuid,text)',
+    'private.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text)',
+    'private.mark_order_refund_error(uuid,text,boolean)',
+    'private.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)',
+    'private.mark_order_reviewed(uuid,uuid)',
+    'private.record_payment_exception(text,text,text,text,text,uuid,uuid)',
+    'private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)',
+    'private.resolve_payment_exception_by_system(uuid,text)',
+    'private.customer_order_for_request(uuid,uuid,boolean)',
+    'private.customer_request_cancel(uuid,uuid,uuid,jsonb,text)',
+    'private.lock_order_cancel_request(uuid)',
+    'private.admin_decline_cancel_request(uuid,uuid,text,text)',
+    'private.admin_close_cancel_request(uuid,uuid)',
+    'private.admin_resolve_cancel_request(uuid,uuid,uuid,boolean)',
+    'private.lock_order_return(uuid)',
+    'private.admin_create_return(uuid,uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
+    'private.admin_cancel_return(uuid,uuid)',
+    'private.customer_request_return(uuid,uuid,uuid,jsonb)',
+    'private.admin_approve_return(uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
+    'private.admin_decline_return(uuid,uuid,text,text)',
+    'private.admin_close_return_missing(uuid,uuid,uuid)',
+    'private.admin_reopen_return(uuid,uuid,uuid)',
+    'private.admin_inspect_return(uuid,uuid,uuid,jsonb)',
+    'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)',
+    'private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)',
+    'private.refresh_order_return_status(uuid)',
+    'private.admin_record_return_fee_payment(uuid,uuid,text,boolean)',
+    'private.admin_release_return_exchange(uuid,uuid)',
+    'private.record_delivery_read_result(uuid,integer,uuid,jsonb)',
+    'private.apply_tracking_status(uuid,text,timestamptz,timestamptz)',
+    'public.apply_stock_movement()',
+    'public.admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb)',
+    'public.admin_cancel_fulfillment(uuid,uuid,uuid)',
+    'public.admin_update_fulfillment_tracking(uuid,uuid,uuid,uuid,text,text,boolean)',
+    'public.admin_mark_fulfillment_delivered(uuid,uuid,uuid,uuid,date,boolean)',
+    'public.admin_record_completion(uuid,uuid,uuid,jsonb)',
+    'public.admin_cancel_completion(uuid,uuid,uuid)',
+    'private.record_group_g_payment_exception_row(text,text,text,text,text,uuid,uuid)',
+    'private.record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)',
+    'private.release_group_g_payment_holds(uuid,uuid,text,uuid)',
+    'private.admin_create_purchase_order(text,text,jsonb,uuid,uuid)',
+    'private.admin_update_purchase_order_header(uuid,integer,text,text,text,uuid,uuid)',
+    'private.admin_confirm_purchase_order_quantities(uuid,integer,jsonb,text,uuid,uuid)',
+    'private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)',
+    'private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid)',
+    'private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)',
+    'private.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid)',
+    'private.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid)',
+    'private.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid)',
+    'private.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid)',
+    'private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)'
+  ]::pg_catalog.regprocedure[];
+$$;
+
+-- G3C_BODY_END
+
+-- G3C_FINAL_ASSERT_BEGIN
+-- Expectation of Task 4: the five new functions (owner, SECURITY, language, result type, argument names, search_path, and
+-- the EXECUTE rights read from the effective ACL where a NULL proacl means the default that includes PUBLIC), the same five as
+-- a set (no function of these names beyond them; service_role may EXECUTE exactly the two writers and their two public
+-- entrances, never the lock helper), the order of the lock helper (the common advisory is the first statement, then the
+-- inventory closure, then the row locks) and of each writer (the lock helper before any table is read), and the allowlist:
+-- exactly the 65 G-1/G-2 entries plus the two draft writers, every one resolving to a function, compared to the fixed set by
+-- OID. The expected sets grow with every Task that adds to this file.
+DO $g3c_final_objects$
+DECLARE
+  v_failed text;
+  v_functions text[] := ARRAY[
+    'private.lock_group_g_shipment_slips(uuid[],uuid[],boolean)',
+    'private.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid)',
+    'public.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid)',
+    'private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)',
+    'public.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)'
+  ];
+  v_writers text[] := ARRAY[
+    'private.apply_group_g_stock_movement(bigint,integer)',
+    'private.allocate_group_g_fifo(bigint[],uuid,uuid)',
+    'private.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer)',
+    'private.record_group_g_item_state_changes(jsonb,uuid[],uuid,integer,text,uuid)',
+    'private.ensure_group_g_payment_review_hold(uuid,text,text,text,uuid)',
+    'private.release_group_g_payment_review_holds(uuid,uuid)',
+    'private.place_order_from_checkout_draft(uuid,text,text,integer,integer,text,timestamptz,text,bigint[],uuid)',
+    'private.mark_order_paid(uuid,public.order_status,text,integer,text,boolean,text,text)',
+    'private.mark_order_awaiting_payment(uuid,text,text)',
+    'private.release_stock_for_unpaid_order(uuid,public.order_status,public.order_status,text,uuid,text,text,text,boolean)',
+    'private.record_cancelled_order_paid_amount(uuid,text,integer)',
+    'private.admin_cancel_failed_order(uuid,uuid,text,text)',
+    'private.link_guest_orders(uuid,text)',
+    'private.begin_order_refund(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer)',
+    'private.begin_order_refund_core(uuid,text,uuid,jsonb,boolean,integer,integer,text,text,text,boolean,uuid,integer,uuid,integer)',
+    'private.apply_order_refund_state(uuid)',
+    'private.apply_return_refund_outcome(uuid,text)',
+    'private.record_order_refund_result(uuid,text,text,text,text,timestamptz,text,text,text)',
+    'private.mark_order_refund_error(uuid,text,boolean)',
+    'private.record_external_order_refund(uuid,text,integer,text,text,text,timestamptz,text,text,text,text,timestamptz)',
+    'private.mark_order_reviewed(uuid,uuid)',
+    'private.record_payment_exception(text,text,text,text,text,uuid,uuid)',
+    'private.resolve_payment_exception(uuid,uuid,text,boolean,text,boolean)',
+    'private.resolve_payment_exception_by_system(uuid,text)',
+    'private.customer_order_for_request(uuid,uuid,boolean)',
+    'private.customer_request_cancel(uuid,uuid,uuid,jsonb,text)',
+    'private.lock_order_cancel_request(uuid)',
+    'private.admin_decline_cancel_request(uuid,uuid,text,text)',
+    'private.admin_close_cancel_request(uuid,uuid)',
+    'private.admin_resolve_cancel_request(uuid,uuid,uuid,boolean)',
+    'private.lock_order_return(uuid)',
+    'private.admin_create_return(uuid,uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
+    'private.admin_cancel_return(uuid,uuid)',
+    'private.customer_request_return(uuid,uuid,uuid,jsonb)',
+    'private.admin_approve_return(uuid,uuid,jsonb,text,text,text,text,integer,integer,integer,integer,text,boolean)',
+    'private.admin_decline_return(uuid,uuid,text,text)',
+    'private.admin_close_return_missing(uuid,uuid,uuid)',
+    'private.admin_reopen_return(uuid,uuid,uuid)',
+    'private.admin_inspect_return(uuid,uuid,uuid,jsonb)',
+    'private.admin_receive_return(uuid,uuid,boolean,uuid,jsonb,jsonb,text,integer,integer,text,boolean,text,text,text)',
+    'private.admin_refund_return(uuid,uuid,uuid,integer,integer,text,boolean)',
+    'private.refresh_order_return_status(uuid)',
+    'private.admin_record_return_fee_payment(uuid,uuid,text,boolean)',
+    'private.admin_release_return_exchange(uuid,uuid)',
+    'private.record_delivery_read_result(uuid,integer,uuid,jsonb)',
+    'private.apply_tracking_status(uuid,text,timestamptz,timestamptz)',
+    'public.apply_stock_movement()',
+    'public.admin_create_fulfillment(uuid,uuid,uuid,text,text,boolean,jsonb)',
+    'public.admin_cancel_fulfillment(uuid,uuid,uuid)',
+    'public.admin_update_fulfillment_tracking(uuid,uuid,uuid,uuid,text,text,boolean)',
+    'public.admin_mark_fulfillment_delivered(uuid,uuid,uuid,uuid,date,boolean)',
+    'public.admin_record_completion(uuid,uuid,uuid,jsonb)',
+    'public.admin_cancel_completion(uuid,uuid,uuid)',
+    'private.record_group_g_payment_exception_row(text,text,text,text,text,uuid,uuid)',
+    'private.record_group_g_refund_result(uuid,text,text,text,text,timestamptz,text,text,text,text,uuid[],jsonb)',
+    'private.release_group_g_payment_holds(uuid,uuid,text,uuid)',
+    'private.admin_create_purchase_order(text,text,jsonb,uuid,uuid)',
+    'private.admin_update_purchase_order_header(uuid,integer,text,text,text,uuid,uuid)',
+    'private.admin_confirm_purchase_order_quantities(uuid,integer,jsonb,text,uuid,uuid)',
+    'private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)',
+    'private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid)',
+    'private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)',
+    'private.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid)',
+    'private.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid)',
+    'private.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid)',
+    'private.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid)',
+    'private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)'
+  ];
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM (VALUES
+      ('private.lock_group_g_shipment_slips(uuid[],uuid[],boolean)', true, false, 'plpgsql', 'uuid[]',
+        ARRAY['_slip_ids', '_order_item_ids', '_with_settings']),
+      ('private.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid)', true, true, 'plpgsql', 'jsonb',
+        ARRAY['_slip_id', '_expected_version', '_lines', '_actor_id', '_request_key']),
+      ('public.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid)', false, true, 'sql', 'jsonb',
+        ARRAY['_slip_id', '_expected_version', '_lines', '_actor_id', '_request_key']),
+      ('private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)', true, true, 'plpgsql', 'jsonb',
+        ARRAY['_slip_id', '_expected_version', '_actor_id', '_request_key']),
+      ('public.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)', false, true, 'sql', 'jsonb',
+        ARRAY['_slip_id', '_expected_version', '_actor_id', '_request_key'])
+    ) AS e(sig, definer, service, lang, ret, names)
+    LEFT JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(e.sig)
+    WHERE p.oid IS NULL
+       OR p.proowner <> 'postgres'::regrole
+       OR p.prosecdef <> e.definer
+       OR p.provolatile <> 'v'
+       OR p.proretset
+       OR p.prolang <> (SELECT l.oid FROM pg_catalog.pg_language AS l WHERE l.lanname = e.lang)
+       OR p.prorettype <> e.ret::regtype::oid
+       OR p.proargnames IS DISTINCT FROM e.names
+       OR NOT ('search_path=""' = ANY (COALESCE(p.proconfig, ARRAY[]::text[])))
+       OR pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE') <> e.service
+       OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) AS x
+                  WHERE x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+  ) THEN
+    v_failed := 'shipment_slip_functions';
+  ELSIF NOT EXISTS (
+    -- the lock helper, read in lower case: the common advisory is its first statement, then the settings row (FOR SHARE), the
+    -- inventory closure, the rows of the slips (FOR UPDATE, on public.shipment_slips) and only then the tracking registrations
+    -- (FOR UPDATE), so the slips are always locked before their registrations
+    SELECT 1 FROM pg_catalog.pg_proc AS p
+    CROSS JOIN LATERAL (SELECT pg_catalog.lower(p.prosrc) AS body) AS s
+    CROSS JOIN LATERAL (SELECT pg_catalog.strpos(s.body, 'pg_advisory_xact_lock(') AS advisory,
+                               pg_catalog.strpos(s.body, 'for share') AS settings,
+                               pg_catalog.strpos(s.body, 'private.lock_group_g_inventory(') AS inventory,
+                               pg_catalog.strpos(s.body, 'for update') AS slips,
+                               pg_catalog.strpos(s.body, 'private.fulfillment_tracking_registrations') AS registrations) AS k
+    WHERE p.oid = 'private.lock_group_g_shipment_slips(uuid[],uuid[],boolean)'::regprocedure
+      AND s.body ~ 'begin\s+perform\s+pg_catalog\.pg_advisory_xact_lock\(\s*190521\s*,\s*1\s*\)\s*;'
+      AND 0 < k.advisory AND k.advisory < k.settings AND k.settings < k.inventory AND k.inventory < k.slips AND k.slips < k.registrations
+      AND pg_catalog.substr(s.body, k.inventory, k.slips - k.inventory) LIKE '%public.shipment_slips%'
+      AND pg_catalog.strpos(pg_catalog.substr(s.body, k.registrations), 'for update') > 0
+  ) OR EXISTS (
+    -- the two writers: the text before the first call of the lock helper must not name a table (after from / join / into /
+    -- update / table, with or without ONLY) and must not call a function of public or private (a permission check or any other
+    -- helper that reads a table). Compared in lower case, with any spacing and with quoted schema names, so a body written in
+    -- another style cannot slip by. A body that never calls the lock helper fails too.
+    SELECT 1 FROM pg_catalog.unnest(ARRAY[
+      'private.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid)',
+      'private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)'
+    ]) AS w(sig)
+    JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(w.sig)
+    WHERE CASE
+      WHEN pg_catalog.strpos(pg_catalog.lower(p.prosrc), 'private.lock_group_g_shipment_slips(') = 0 THEN true
+      ELSE pg_catalog.substr(pg_catalog.lower(p.prosrc), 1, pg_catalog.strpos(pg_catalog.lower(p.prosrc), 'private.lock_group_g_shipment_slips(') - 1)
+        ~ '((from|join|into|update|table)\s+(only\s+)?"?(public|private)"?\s*\.)|("?(public|private)"?\s*\.\s*"?[a-z_][a-z0-9_]*"?\s*\()'
+    END
+  ) THEN
+    v_failed := 'shipment_slip_lock_order';
+  ELSIF EXISTS (SELECT 1 FROM pg_catalog.unnest(v_writers) AS w(s) WHERE pg_catalog.to_regprocedure(w.s) IS NULL)
+     OR (SELECT pg_catalog.count(DISTINCT pg_catalog.to_regprocedure(w.s)) FROM pg_catalog.unnest(v_writers) AS w(s)) <> 67
+     OR pg_catalog.cardinality(private.group_g_writer_allowlist()) <> 67 THEN
+    v_failed := 'shipment_slip_writer_allowlist_missing';
+  ELSIF (SELECT pg_catalog.array_agg(x::oid ORDER BY x::oid) FROM pg_catalog.unnest(private.group_g_writer_allowlist()) AS a(x))
+     IS DISTINCT FROM (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(w.s)::oid ORDER BY pg_catalog.to_regprocedure(w.s)::oid)
+                       FROM pg_catalog.unnest(v_writers) AS w(s)) THEN
+    v_failed := 'shipment_slip_writer_allowlist';
+  -- the functions of this file as a set: a function of one of these names (in public or private) is one of the five listed
+  -- above and every listed one exists, so an extra overload or a missing function fails. Together with the per-function EXECUTE
+  -- flags checked first, the EXECUTE rights of service_role over these names are exactly the two writers and their entrances.
+  ELSIF (SELECT pg_catalog.array_agg(p.oid ORDER BY p.oid)
+         FROM pg_catalog.pg_proc AS p JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
+         WHERE n.nspname IN ('public', 'private')
+           AND p.proname IN ('lock_group_g_shipment_slips', 'admin_save_shipment_slip_draft', 'admin_discard_shipment_slip_draft'))
+        IS DISTINCT FROM
+        (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(f.sig)::oid ORDER BY pg_catalog.to_regprocedure(f.sig)::oid)
+         FROM pg_catalog.unnest(v_functions) AS f(sig)) THEN
+    v_failed := 'shipment_slip_function_set';
+  END IF;
+
+  IF v_failed IS NOT NULL THEN
+    RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = v_failed;
+  END IF;
+END
+$g3c_final_objects$;
+-- G3C_FINAL_ASSERT_END
+
+NOTIFY pgrst, 'reload schema';
+COMMIT;

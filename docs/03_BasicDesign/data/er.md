@@ -1,6 +1,6 @@
 # ER 図（現行リポジトリの実装）
 
-> 状態: 現行のソース（グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ適用済み（Task 1 の依頼で確認）。G-3 Task 1 の新6表・出荷日・守りを同日に追記し、controller reset後のDB全件でTask 1の新規失敗0を2026-10-25に確認した（全体は既知stockist2失敗によりexit 1）。G-2 Task 9 で手元の DB と突き合わせ、発注書の9表・22 FK、FK の合計 142〔public 起点 131・private 起点 11〕が DB と一致することを確かめた） | 確認日: 2026-10-25（G-3 Task 2の読取DB部分を追記） | 対象: `supabase/migrations/` の基準スキーマと後続変更
+> 状態: 現行のソース（グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ適用済み（Task 1 の依頼で確認）。G-3 Task 1 の新6表・出荷日・守りを同日に追記し、controller reset後のDB全件でTask 1の新規失敗0を2026-10-25に確認した（全体は既知stockist2失敗によりexit 1）。G-2 Task 9 で手元の DB と突き合わせ、発注書の9表・22 FK、FK の合計 142〔public 起点 131・private 起点 11〕が DB と一致することを確かめた） | 確認日: 2026-10-25（G-3 Task 2の読取DB部分と Task 4 の書込み関数を追記） | 対象: `supabase/migrations/` の基準スキーマと後続変更
 
 ## 概要
 
@@ -1991,3 +1991,15 @@ public.item_delete_blockers(bigint[]) は戻り値の追加のため DROP → CR
 会計入力の`_limit`は切り詰めで、署名は変更しない。会計Taskは **`rows = _limit`なら、より多い行がある可能性がある** として、全件を読めた扱いにしない。範囲や上限を調整して`rows < _limit`を確認し、1日だけでも上限に達する場合は未完了として扱う。今回ページ引数と索引は追加しない。
 
 2026-10-25のFix round 1は上記のissue粒度・不正ID/票の拒否・準備数の共用を反映した。前版のローカル191件成功と区別し、今回のSQLはcontroller再reset後に再検証する。先絞りはpaid割当なしのpaid注文も渡したG-1投影との数量比較、住所の前後空白は7項目それぞれのキー比較でも確かめる。
+
+## 発送票の書込み関数（G-3 Task 4）
+
+確認日: 2026-10-25。[書き手の移行](../../../supabase/migrations/20261025100130_group_g3_shipping_slips.sql) は関数5本だけを追加し、**表・FK・列・制約・trigger は変えない**（Task 1 の6表と守りを使う）。書き手の閉じた一覧（`private.group_g_writer_allowlist()`）は G-2 の65本＋保存・破棄の2本＝67本へ置換する。ローカルの reset で適用し、DB の試験で確かめた（本番は未適用）。
+
+| 関数 | 責務 | 書く表 | 権限 |
+| --- | --- | --- | --- |
+| `private.lock_group_g_shipment_slips(uuid[],uuid[],boolean)` | 票の書込みに共通の押さえ。最初の文が共通の鍵 `(190521,1)`。設定の行（追跡に触れる時だけ `FOR SHARE`）→ 対象の読取（明細・票の選択・確定行・発送が指す注文と variant）→ `lock_group_g_inventory` → 票の行（id昇順 `FOR UPDATE`）→ 追跡に触れる時だけ代表の登録の行。ロックした注文 ID を返す | なし（行の鍵だけ） | 誰も EXECUTE できない |
+| `private.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid)` と同名の public 入口 | 下書きの作成（票 ID が NULL）と、選択の丸ごとの入れ替え。確かめの順は 引数 → 押さえ → 権限（4つ）→ 指紋と再送 → 存在 → 下書き → 版 → 明細の存在 → 未払い → 阻害理由 → 同梱 → 数量 → 書込み。顧客と送り先の写しは先頭の明細（`orderItemId` 昇順）の注文から取る。有効期限は `now() + 7日`。成功は `{id, number, version, replayed}` | `shipment_slips`（INSERT または印 `draft` の UPDATE）、`group_g_operations`（`shipment_slip_save`）。在庫・割当・台帳・注文・発送は書かない | service_role だけ（public は SQL INVOKER の委譲） |
+| `private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)` と同名の public 入口 | 下書きの破棄。印 `discard` で `stage = discarded`・`discarded_at`・`discarded_by`・`expires_at = NULL`・版+1 | `shipment_slips`（UPDATE）、`group_g_operations`（`shipment_slip_discard`） | 同上 |
+
+票の番号は `SL-` と日本時間の `YYYYMMDD` と4桁の連番（その日の最大＋1。`shipment_slips.number` の UNIQUE が最後の守り。9999 を超えると `GROUP_G_SLIP_NUMBER_EXHAUSTED`）。指紋は 操作・票・行（`orderItemId` 昇順）・実行者 の SHA-256（版は含めない）。2つの下書きが同じ明細を選べるので、`shipment_slip_lines` には書かない（確定で初めて書く）。新しい関数はすべて postgres 所有・空の search_path・anon/authenticated/PUBLIC の EXECUTE なし。private schema の USAGE は操作しない。詳しい順序は[発送票の下書きの流れ](../../04_DetailDesign/sequence/shipping.md)、段階は[発送票の状態](../../04_DetailDesign/states/shipping.md)。
