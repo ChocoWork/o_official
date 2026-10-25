@@ -126,9 +126,9 @@
 | `/api/admin/orders/:id/refund` | GET | 返金の画面の材料（注文の金額・返せる額・商品ごとの数と割り振った割引・返事待ちの返金）（FREQ-448） | `admin.orders.refund` |
 | `/api/admin/orders/:id/refund` | POST | 返金を1件の記録にして Stripe に頼む（二重防止の番号・商品と数・送料・額・理由・知らせるか）。返せる額・数の超過は409、Stripe の断りは422、答えが分からない時は502（FREQ-447・448） | `admin.orders.refund` |
 | `/api/admin/orders/:id/refund/confirm` | POST | 返事待ちの返金を、記録の番号で確かめ直す（FREQ-448） | `admin.orders.refund` |
-| `/api/admin/orders/:id/fulfillments` | GET | **G-1停止**: 認可の後 410 `LEGACY_FULFILLMENT_DISABLED`（G-3の新発送票へ）。以下は停止前の契約: 発送の画面と仕上がりの画面の材料（商品ごとの数・発送の一覧・発送できない理由）（FREQ-439・440）。返品の交換の品の行には lineKind と、手数料のお支払い待ちで送れない数 exchangeOnHold を付ける（グループ E-3。FREQ-465） | `admin.orders.manage` |
-| `/api/admin/orders/:id/fulfillments` | POST | **G-1停止**: 認可・CSRF・回数制限の後 410 `LEGACY_FULFILLMENT_DISABLED`（G-3の新発送票へ）。以下は停止前の契約: 発送を1回分記録する（重複防止キー・配送業者・追跡番号・知らせるか・商品と数）。発送準備中の数を超えると409（FREQ-439）。手数料のお支払いを待っている交換の品を含むと409（窓口の記号 `fulfillment_exchange_on_hold`。DB の `FULFILLMENT_EXCHANGE_ON_HOLD`。グループ E-3。FREQ-465） | `admin.orders.manage` |
-| `/api/admin/orders/:id/fulfillments/:fulfillmentId/cancel` | POST | **G-1停止**: 認可・CSRF・回数制限の後 410 `LEGACY_FULFILLMENT_DISABLED`（G-3の新発送票へ）。以下は停止前の契約: 発送の取消。送る前のその発送のメールを取りやめる（FREQ-443）。申し込み・受付中・完了の返品が指す発送は409（窓口の記号 `fulfillment_has_return`。DB の `FULFILLMENT_HAS_RETURN`。取消の返品しか指さない発送は取り消せる。グループ E-3。FREQ-471） | `admin.orders.manage` |
+| `/api/admin/orders/:id/fulfillments` | GET | **G-3移行**: 認可の後 410 `LEGACY_FULFILLMENT_DISABLED`（G-3の発送票へ移行）。以下は移行前の契約: 発送の画面と仕上がりの画面の材料（商品ごとの数・発送の一覧・発送できない理由）（FREQ-439・440）。返品の交換の品の行には lineKind と、手数料のお支払い待ちで送れない数 exchangeOnHold を付ける（グループ E-3。FREQ-465） | `admin.orders.manage` |
+| `/api/admin/orders/:id/fulfillments` | POST | **G-3移行**: 認可・CSRF・回数制限の後 410 `LEGACY_FULFILLMENT_DISABLED`（G-3の発送票へ移行）。以下は移行前の契約: 発送を1回分記録する（重複防止キー・配送業者・追跡番号・知らせるか・商品と数）。発送準備中の数を超えると409（FREQ-439）。手数料のお支払いを待っている交換の品を含むと409（窓口の記号 `fulfillment_exchange_on_hold`。DB の `FULFILLMENT_EXCHANGE_ON_HOLD`。グループ E-3。FREQ-465） | `admin.orders.manage` |
+| `/api/admin/orders/:id/fulfillments/:fulfillmentId/cancel` | POST | **G-3移行**: 認可・CSRF・回数制限の後 410 `LEGACY_FULFILLMENT_DISABLED`（G-3の発送票へ移行）。以下は移行前の契約: 発送の取消。送る前のその発送のメールを取りやめる（FREQ-443）。申し込み・受付中・完了の返品が指す発送は409（窓口の記号 `fulfillment_has_return`。DB の `FULFILLMENT_HAS_RETURN`。取消の返品しか指さない発送は取り消せる。グループ E-3。FREQ-471） | `admin.orders.manage` |
 | `/api/admin/orders/:id/completions` | POST | **G-1停止**: 認可・CSRF・回数制限の後 410 `MANUAL_COMPLETION_DISABLED`（手動の仕上がりは終了）。以下は停止前の契約: 受注生産の品の仕上がりを記録する（FREQ-440） | `admin.orders.manage` |
 | `/api/admin/orders/:id/completions/:completionId/cancel` | POST | **G-1停止**: 認可・CSRF・回数制限の後 410 `MANUAL_COMPLETION_DISABLED`（手動の仕上がりは終了）。以下は停止前の契約: 仕上がりの取消。もう発送した数を下回る取消は409（FREQ-440） | `admin.orders.manage` |
 | `/api/admin/orders/:id/returns` | GET | 返品の画面の材料（返品の一覧と行ごとの進み具合・返金待ちの額の見込み・手数料・返せる額と送料・返品できる数の合計・要検品の設定）。取消・お断りの返品も返すが、画面は出さない（グループ E-3。FREQ-462・463） | `admin.orders.return` |
@@ -233,7 +233,7 @@ DB変更は次の2段階で適用する。第1段階は本番適用済み、第2
 
 ### 発送と仕上がりの画面と、注文の言葉（FREQ-439〜443）
 
-G-1停止: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の新発送票まで利用できません。旧入口は認可後410を返します。以下のE-4記述は停止前の契約として保持します。手動の仕上がりの記録・取消も G-1 で終了した（品物は在庫の入荷から FIFO で自動に割り当てる）。止めた入口の答えは固定の文「発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票の公開まで利用できません。」と「仕上がりの手動記録・取消は終了しました。在庫の入荷から自動で割り当てます。」で、一覧の canShip・canRecordCompletion は false、注文の履歴は仕上がりの行を作らない。G-1 Task 15 で画面の入口（一覧の「仕上がりを記録する」「発送済みにする」、履歴の「この発送を取り消す」「この仕上がりを取り消す」）と発送の画面・仕上がりの画面（下の表の `OrderShipDialog`・`OrderCompletionDialog`）を削除した。注文一覧の表の上に2つの停止の文を1回ずつ、注文の履歴の一覧の上に発送の停止の文を1回出す（どの画面幅でも折り返す）。履歴の発送の行の cancellable は常に false。[fulfillment-client.ts](../../../src/lib/orders/fulfillment/fulfillment-client.ts) の書く道具と発送の材料の読み取りは、窓口を呼ばずに固定の停止の文で断る（商品の見出しと数の入力の部品は返品・返金の画面が使うので残す）。下の表は停止前の契約。
+G-3移行: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の発送票へ移行しました。旧入口は認可後410を返します。以下のE-4記述は移行前の契約として保持します。手動の仕上がりの記録・取消は G-1 で終了した（品物は在庫の入荷から FIFO で自動に割り当てる）。止めた入口の答えは固定の文「旧い発送の操作は終了しました。発送・発送取消・伝票番号の訂正・手動の配達済みは、荷作り表の発送票から行ってください。」と「仕上がりの手動記録・取消は終了しました。在庫の入荷から自動で割り当てます。」で、一覧の canShip・canRecordCompletion は false、注文の履歴は仕上がりの行を作らない。G-1 Task 15 で画面の入口（一覧の「仕上がりを記録する」「発送済みにする」、履歴の「この発送を取り消す」「この仕上がりを取り消す」）と発送の画面・仕上がりの画面（下の表の `OrderShipDialog`・`OrderCompletionDialog`）を削除した。注文一覧の表の上に「発送は荷作り表から行います。」・「荷作り表を開く」（`/admin/packing`）・仕上がりの停止の文を1回ずつ、注文の履歴の一覧の上に「発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票から行います。」を1回出す（どの画面幅でも折り返す。G-3 で置換。下の「荷作り表・発送票」の節）。履歴の発送の行の cancellable は常に false。[fulfillment-client.ts](../../../src/lib/orders/fulfillment/fulfillment-client.ts) の書く道具と発送の材料の読み取りは、窓口を呼ばずに固定の停止の文で断る（商品の見出しと数の入力の部品は返品・返金の画面が使うので残す）。下の表は停止前の契約。
 
 2026-10-10 から、発送は商品と数を選ぶ1回ごとの記録になり、受注生産の品は仕上がりを記録するまで送れない（[グループ E-1 設計書](../../superpowers/specs/2026-10-10-partial-fulfillment-design.md)）。DB の状態の値（`paid`・`shipped` など）は変えず、一覧の言葉は商品ごとの数から出す（[注文・決済の状態](../states/order-payment.md)、[order-progress.ts](../../../src/lib/orders/order-progress.ts)）。
 
@@ -721,7 +721,7 @@ E2E は e2e/ の同名の spec、DB 結合は tests/integration/db/ の同名、
 
 [配送の詳細設計](../../superpowers/specs/2026-10-21-delivery-status-design.md)・[実装計画](../../superpowers/plans/2026-10-21-delivery-status.md)を参照。以下は実装後の契約であり、既存の決定の本文は履歴として残す。
 
-G-1停止: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の新発送票まで利用できません。旧入口は認可後410を返します。以下のE-4記述は停止前の契約として保持します。伝票番号の訂正と手動の配達済みの窓口は、認可・CSRF・回数制限の後に固定の文「発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票の公開まで利用できません。」の 410 を返す。一覧の配送の印・要対応・ショップの設定（追跡のオン・オフ）は今のまま。G-1 Task 15 で履歴の「伝票番号を直す」「配達済みにする」と2つの画面（`OrderTrackingEditDialog`・`OrderDeliveredDialog`）を削除し、[delivery-client.ts](../../../src/lib/orders/tracking/delivery-client.ts) の2つの道具は窓口を呼ばずに固定の停止の文で断る。下の表の2つのボタンと文言は停止前の契約。
+G-3移行: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の発送票へ移行しました。旧入口は認可後410を返します。以下のE-4記述は移行前の契約として保持します。伝票番号の訂正と手動の配達済みの窓口は、認可・CSRF・回数制限の後に固定の文「旧い発送の操作は終了しました。発送・発送取消・伝票番号の訂正・手動の配達済みは、荷作り表の発送票から行ってください。」の 410 を返す。一覧の配送の印・要対応・ショップの設定（追跡のオン・オフ）は今のまま。G-1 Task 15 で履歴の「伝票番号を直す」「配達済みにする」と2つの画面（`OrderTrackingEditDialog`・`OrderDeliveredDialog`）を削除し、[delivery-client.ts](../../../src/lib/orders/tracking/delivery-client.ts) の2つの道具は窓口を呼ばずに固定の停止の文で断る。下の表の2つのボタンと文言は停止前の契約。
 
 ### 履歴と操作（設計6-1の実装後の表示）
 
@@ -763,7 +763,7 @@ G-1停止: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の
 | --- | --- |
 | 説明 | 「オンにすると、発送した荷物の配送状況（配達中・配達済みなど）を 17TRACK から受け取り、お客様の注文の画面に出し、配達中・配達済みのメールを送ります。17TRACK には配送業者と伝票番号だけを渡します」 |
 | 費用と制約 | 「17TRACK の利用料がかかります（最初の200件は無料。その後は年払い）。佐川急便の荷物は、佐川急便の追跡が止まっている間は追えません」 |
-| オフの説明 | 「伝票番号の訂正と手動の配達済みは、発送票の公開まで利用できません。」（G-1 Task 15 から。停止前は「オフの間も、伝票番号の直しと、手で配達済みにすることはできます」） |
+| オフの説明 | 「オフの間も、伝票番号の訂正と手動の配達済みは、発送票から行えます。」（G-3 から。G-1 Task 15 の間は「伝票番号の訂正と手動の配達済みは、発送票の公開まで利用できません。」、その前は「オフの間も、伝票番号の直しと、手で配達済みにすることはできます」） |
 | オン確認 | 「配送の追跡を使う」「30日以内に発送した配達済みでない発送（N件）も 17TRACK に登録します。1件ごとに 17TRACK の件数を使います」「オンにする」「戻る」 |
 | オフ確認 | 「配送の追跡を止める」「追跡を止め、配送の要対応を閉じます。記録した配送状況は残ります」「オフにする」「戻る」 |
 | 件数の再取得中 | 「件数を確かめています…」 |
@@ -814,7 +814,7 @@ G-2 の画面は、管理メニューの INVENTORY から入る。この節は T
 
 ### INVENTORY タブ
 
-店長（`admin`）とサポーター（`supporter`）の両方のメニューに `INVENTORY` を出す（店長は `ORDER` の次、`SETTINGS` の前。サポーターは `ORDER` の次、最後）。印は細線の箱（`ri-archive-line`）。中身は役割で出し分けず、`nav aria-label="在庫・発注メニュー"` に「在庫一覧表」（`/admin/inventory`）と「発注一覧表」（`/admin/purchase-orders`。Task 5 で作った）のリンクを置く。権限の無い人が開いた先は各頁の権限の文で、窓口と DB が守る。`/admin?tab=INVENTORY` で直接開ける（サポーターも）。サポーターのタブは以前 ORDER だけだったので表に出なかったが、先頭以外のタブを `tab` で指すと、最初の描画で「見えないタブなら先頭へ戻す」処理が URL の `tab` を上書きして ORDER に戻っていた。この処理を、直前に積まれた `tab` を上書きしない形（関数で渡す更新）に直した。
+店長（`admin`）とサポーター（`supporter`）の両方のメニューに `INVENTORY` を出す（店長は `ORDER` の次、`PACKING` の前。サポーターは `ORDER` の次、`PACKING` の前）。印は細線の箱（`ri-archive-line`）。中身は役割で出し分けず、`nav aria-label="在庫・発注メニュー"` に「在庫一覧表」（`/admin/inventory`）と「発注一覧表」（`/admin/purchase-orders`。Task 5 で作った）のリンクを置く。権限の無い人が開いた先は各頁の権限の文で、窓口と DB が守る。`/admin?tab=INVENTORY` で直接開ける（サポーターも）。サポーターのタブは以前 ORDER だけだったので表に出なかったが、先頭以外のタブを `tab` で指すと、最初の描画で「見えないタブなら先頭へ戻す」処理が URL の `tab` を上書きして ORDER に戻っていた。この処理を、直前に積まれた `tab` を上書きしない形（関数で渡す更新）に直した。
 
 ### 在庫一覧表（`/admin/inventory` / FREQ-525）
 
@@ -940,3 +940,47 @@ G-2 の画面は、管理メニューの INVENTORY から入る。この節は T
 | 証憑未添付 | 無効でない添付が無い時のバッジ「証憑未添付」は Task 5 のまま（数量確定後、詳細の `flags.documentMissing`）。書類を無効にして読み直すと出る |
 
 検証: 単体 [取引書類の節](../../../tests/unit/components/PurchaseOrderDocumentsSection.test.tsx)・[書類検索](../../../tests/unit/components/PurchaseOrderDocumentSearchSection.test.tsx)・[発注書の画面](../../../tests/unit/components/PurchaseOrderDetailSection.test.tsx)・[原本の store](../../../tests/unit/lib/purchase-orders/purchase-order-documents.test.ts)・[ブラウザの道具](../../../tests/unit/lib/purchase-orders/purchase-order-documents-client.test.ts)・[窓口](../../../tests/unit/api/admin/purchase-order-attachments-route.test.ts)・[検索の窓口](../../../tests/unit/api/admin/purchase-order-documents-route.test.ts)・[共通の定義](../../../tests/unit/lib/purchase-orders/purchase-order-types.test.ts)。DB [原本](../../../tests/integration/db/group_g2_purchase_documents.integration.test.ts)・[PostgREST を通る道](../../../tests/integration/db/group_g2_postgrest_paths.integration.test.ts)（store から手元の Supabase の API を通して1回ずつ）。3つの画面幅と置き場への PUT が CSP に遮られないことの確認は Task 10 の E2E。
+
+## 荷作り表・発送票（G-3 / FREQ-531〜535）
+
+G-3 の画面は、管理メニューの PACKING から入る。この節は Task 3 で作った荷作り表（読むだけ）と、旧い発送の案内の置換を記す。品物を選ぶ操作・「発送」・発送票の頁（`/admin/shipment-slips/[id]`）は後続 Task で足す。
+
+### PACKING タブ
+
+店長（`admin`）とサポーター（`supporter`）の両方のメニューに `PACKING` を出す（店長は `INVENTORY` の次、`SETTINGS` の前。サポーターは `INVENTORY` の次、最後）。印は細線の箱（`ri-box-3-line`）。中身は役割で出し分けず、`nav aria-label="荷作りメニュー"` に「荷作り表」（`/admin/packing`）のリンクを置く。権限の有無は各頁・窓口・DB が決める。`/admin?tab=PACKING` で直接開ける（サポーターも）。
+
+### 荷作り表（`/admin/packing` / FREQ-531）
+
+部品 [PackingSection](../../../src/components/PackingSection.tsx)。窓口 `GET /api/admin/packing` を50件ずつ読む（[API仕様](../../03_BasicDesign/api/api-spec.md)）。この段階は読むだけで、選択欄・送る数の入力・「発送」は出さない。
+
+| 要素 | 内容 |
+| --- | --- |
+| 見出し・説明 | h1「荷作り表」、説明「発送準備中の品物だけを表示します。品物を選んで「発送」を押すと、発送票の下書きを作ります。」。リンク「管理画面に戻る」は `/admin?tab=PACKING` |
+| 表 | 左から 注文ID・注文日・顧客名・メールアドレス・商品名・色・サイズ・数量・単価 の9列。古い注文から。注文IDは注文番号（`toOrderNumber`）の文字のボタンで、押すと既存の注文の履歴のダイアログ（`OrderHistoryDialog`）を `orderId` つきで開く（`aria-label` は「ORD-… の履歴を開く」。注文の詳細頁は G-4 まで無いので、G-4 でリンクへ差し替える）。注文日は日本時間の日付、数量は発送準備中の数、単価は全角の `￥` と桁区切り。交換の品の行は商品名の横に「交換の品」。名前・メール・色・サイズが無い行は「—」 |
+| 行の下の文 | 選べない行は阻害理由の文を理由ごとに1行（支払額の確認が済むまで選べません／交換手数料のお支払いを待っているため選べません／色・サイズが確定していないため選べません／配送先の情報が足りないため選べません／入金日時が記録されていないため選べません）。別の下書きにも選ばれている行は「別の発送票（番号）にも選ばれています」（複数なら読点で並べる）。どちらも無い行には下の行を足さない |
+| 頁送り | 「前の頁」「次の頁」と「1〜50 / 全件数」の範囲。頁を変えても下の発送票の一覧は読み直さない。他の人の発送などで全件が減り、2頁目以降が範囲外で空になった時は、1頁目へ戻って読み直す（「品物はありません」で行き止まりにしない）。2頁目以降の読み込みが失敗した時は「前の頁」を出す |
+| 状態 | 読み込み中は status。空は「発送準備中の品物はありません。」。権限が無い（403）は「荷作り表を見る権限がありません。」、ログイン切れ（401）は「ログインし直してください。」、2要素認証が無い時は「2要素認証が必要です」だけを出し、下の一覧は読まない。それ以外の失敗（形が崩れた応答を含む）は「荷作り表を読み込めませんでした。」（下の一覧は出す） |
+| 画面幅 | 表は見出しを保った高さの上限つきスクロール領域（`role="region"`・`tabindex=0`）に入れ、頁全体を横にはみ出させない。390/768/1280px で同じ項目 |
+
+#### 荷作り表の下の発送票の一覧
+
+荷作り表を読めた後（権限が無い時は読まない）、窓口 `GET /api/admin/shipment-slips` を段階ごとに最新20件で読み、次の2つの節を出す。
+
+| 節 | 内容 |
+| --- | --- |
+| 発送票の下書き | 票番号・更新日時（日本時間）・注文数・数量・「開く」（`/admin/shipment-slips/` + 票の ID。`aria-label` は「発送票 ${番号} を開く」）。期限切れの下書きは票番号の横に「期限切れ」 |
+| 確定済みの発送票 | 票番号・出荷日・運送会社と伝票番号（無ければ「伝票番号なし」）・注文数・「開く」。発送済みと取消済みを更新の新しい順に合わせて最新20件。取消済みは票番号の横に「取消済み」 |
+
+空は「該当する発送票はありません。」、読めない時は節ごとに「発送票の一覧を読み込めませんでした。」、権限の文は「発送票を見る権限がありません。」。
+
+### 旧い発送の案内の置換（FREQ-524-AC-03 / FREQ-533-AC-01）
+
+G-1 で止めた旧い発送の入口の案内を、G-3 の発送票へ向ける文に置き換えた。旧入口の HTTP 410（コード `LEGACY_FULFILLMENT_DISABLED`）は変えず、本文だけを「旧い発送の操作は終了しました。発送・発送取消・伝票番号の訂正・手動の配達済みは、荷作り表の発送票から行ってください。」にした。
+
+| 場所 | 内容 |
+| --- | --- |
+| 注文一覧（`OrderSection`）の表の上 | 「発送は荷作り表から行います。」、ボタン「荷作り表を開く」（`/admin/packing`）、仕上がりの停止の文（`MANUAL_COMPLETION_DISABLED_TEXT`。再開しない）を1回ずつ。どの画面幅でも折り返す |
+| 注文の履歴（`OrderHistoryDialog`）の上 | 「発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票から行います。」を1回。票に属する発送の行には「発送票 ${番号} を開く」（`/admin/shipment-slips/` + 票の ID）を出す（窓口 `GET /api/admin/orders/[id]/history` が `list_admin_order_shipment_slips` で `slipId`・`slipNumber` を付ける。票へのリンクは補助の情報なので、読み込みに失敗した時は（発送の権限 `admin.shipping.read` が無く DB が断った時も、他の失敗も）付けず、履歴は返す。権限の拒否以外はログに例外名と code だけを出す） |
+| ショップの設定（`ShopSettingsSection`）の追跡の説明 | 第三の文を「オフの間も、伝票番号の訂正と手動の配達済みは、発送票から行えます。」に置換 |
+
+検証: 単体 [窓口](../../../tests/unit/api/admin/packing-route.test.ts)・[票の一覧の窓口](../../../tests/unit/api/admin/shipment-slips-route.test.ts)・[票の詳細の窓口](../../../tests/unit/api/admin/shipment-slip-detail-route.test.ts)・[履歴の窓口](../../../tests/unit/api/admin/order-email-routes.test.ts)・[store](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-store.test.ts)・[型と言葉](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-types.test.ts)・[同梱の判定](../../../tests/unit/lib/orders/shipment-slips/bundling.test.ts)・[荷作り表](../../../tests/unit/components/PackingSection.test.tsx)・[管理メニュー](../../../tests/unit/components/AdminSettingsMenu.test.tsx)・[旧い案内の置換](../../../tests/unit/components/AdminGroupG1LegacyStop.test.tsx)。3つの画面幅の確認は後続 Task の E2E。

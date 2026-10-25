@@ -1,9 +1,18 @@
 /** @jest-environment node */
+jest.mock('server-only', () => ({}), { virtual: true });
+
 import { randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { connectLocalDb, describeLocalDb, isLocalDatabase } from './helpers/local-db';
 import { withGroupG1FixtureTransaction, setOrderStatusForFixture } from './helpers/group-g1-fixtures';
 import { seedGroupG3ReadyOrder, seedGroupG3Slip } from './helpers/group-g3-fixtures';
+import {
+  getAdminShipmentSlip,
+  listAdminOrderShipmentSlips,
+  listAdminPacking,
+  listAdminShipmentSlips,
+  ShipmentSlipError,
+} from '@/lib/orders/shipment-slips/shipment-slip-store';
 
 const apiUrl = process.env.LOCAL_SUPABASE_URL;
 const serviceKey = process.env.LOCAL_SUPABASE_SERVICE_ROLE_KEY;
@@ -96,6 +105,53 @@ describeLocalDb('G-3 real supabase-js -> PostgREST -> SQL read paths', (db) => {
         .toEqual({ name, code: '42501', forbidden: true, status: 403 });
     }
   });
+  /** 本物の store の読取関数を、service_role の supabase-js → PostgREST → SQL の道で1回ずつ通す（戻りは store の検査を通った camelCase） */
+  test('FREQ-531-AC-01: 実 store の読取4本が PostgREST を通り、型検査を通った camelCase の行・詳細・結び付きを返す', async () => {
+    let packing = await listAdminPacking(service, actor, { slipId: slipId, limit: 100, page: 1 });
+    let row = packing.rows.find((r) => r.orderItemId === itemId);
+    for (let page = 2; !row && (page - 1) * 100 < packing.total; page += 1) {
+      packing = await listAdminPacking(service, actor, { slipId: slipId, limit: 100, page });
+      row = packing.rows.find((r) => r.orderItemId === itemId);
+    }
+    expect(row).toMatchObject({
+      orderId, orderItemId: itemId, readyQuantity: 4, shippableQuantity: 4, selectedQuantity: 2, bundleOk: true, blockedReasons: [], otherSlipNumbers: [],
+    });
+    expect(packing.total).toBeGreaterThanOrEqual(1);
+
+    let slips = await listAdminShipmentSlips(service, actor, { stage: 'draft', limit: 100, page: 1 });
+    let listed = slips.rows.find((r) => r.id === slipId);
+    for (let page = 2; !listed && (page - 1) * 100 < slips.total; page += 1) {
+      slips = await listAdminShipmentSlips(service, actor, { stage: 'draft', limit: 100, page });
+      listed = slips.rows.find((r) => r.id === slipId);
+    }
+    expect(listed).toMatchObject({ id: slipId, stage: 'draft', expired: true, orderCount: 1, itemQuantity: 2, shipmentDate: null, shippingCarrier: null, trackingNumber: null });
+
+    const detail = await getAdminShipmentSlip(service, actor, slipId);
+    expect(detail).toMatchObject({ id: slipId, stage: 'draft', expired: true, notifyCustomer: null, confirmedAt: null });
+    expect(detail.lines).toEqual([expect.objectContaining({ orderId, orderItemId: itemId, quantity: 2, readyQuantity: 4, isExchange: false })]);
+    expect(detail.issues).toContainEqual({ code: 'expired', orderItemId: null });
+
+    // 下書きは発送を持たないので、注文に結び付く票は無い
+    expect((await listAdminOrderShipmentSlips(service, actor, orderId)).size).toBe(0);
+  });
+
+  test('FREQ-531-AC-04: 実 store は PostgREST 越しの権限なし・不在の票を、固定の 403・404 の ShipmentSlipError にする（生の誤りは持たない）', async () => {
+    const stranger = randomUUID();
+    const failures: Array<[string, () => Promise<unknown>, number, string]> = [
+      ['packing', () => listAdminPacking(service, stranger, { slipId: null, limit: 50, page: 1 }), 403, 'GROUP_G_FORBIDDEN'],
+      ['slips', () => listAdminShipmentSlips(service, stranger, { stage: null, limit: 20, page: 1 }), 403, 'GROUP_G_FORBIDDEN'],
+      ['detail', () => getAdminShipmentSlip(service, stranger, slipId), 403, 'GROUP_G_FORBIDDEN'],
+      ['order slips', () => listAdminOrderShipmentSlips(service, stranger, orderId), 403, 'GROUP_G_FORBIDDEN'],
+      ['missing slip', () => getAdminShipmentSlip(service, actor, randomUUID()), 404, 'GROUP_G_SLIP_NOT_FOUND'],
+      ['missing packing slip', () => listAdminPacking(service, actor, { slipId: randomUUID(), limit: 50, page: 1 }), 404, 'GROUP_G_SLIP_NOT_FOUND'],
+    ];
+    for (const [name, call, status, code] of failures) {
+      const error = await call().then(() => null, (e: unknown) => e);
+      expect({ name, isStoreError: error instanceof ShipmentSlipError }).toEqual({ name, isStoreError: true });
+      expect({ name, status: (error as ShipmentSlipError).status, code: (error as ShipmentSlipError).code }).toEqual({ name, status, code });
+    }
+  });
+
   test('FREQ-540-AC-10: anon・実authenticated JWTはactor権限があっても5本すべてのEXECUTEを拒む', async () => {
     for (const client of [anon, authenticated]) for (const [name, args] of calls()) {
       const r = await client.rpc(name, args);

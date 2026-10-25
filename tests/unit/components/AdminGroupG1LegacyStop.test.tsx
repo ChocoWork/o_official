@@ -13,10 +13,11 @@ import OrderHistoryDialog from '@/components/OrderHistoryDialog';
 
 /**
  * G-1 Task 15: 旧の発送・発送取消・伝票番号の訂正・手動の配達済み・仕上がりの手動記録と取消の画面の入口を撤去し、
- * 既存の注文一覧（OrderSection）と注文の履歴（OrderHistoryDialog）の中に、Task 14 の固定の停止の文を出す。
- * 窓口が昔の形で canShip・canRecordCompletion・cancellable を true にしても、入口は出さない。
+ * 既存の注文一覧（OrderSection）と注文の履歴（OrderHistoryDialog）の中に、固定の案内を出す。
+ * G-3: 発送・発送取消・伝票番号の訂正・手動の配達済みの案内は、荷作り表（注文一覧）と発送票（履歴）へ移った。仕上がりの手動記録は終了のまま。
+ * 窓口が昔の形で canShip・canRecordCompletion・cancellable を true にしても、旧い入口は出さない。
  * 注文の取消・返金・返品・キャンセルの申し込み・履歴を開く・メールの再送は止めない。
- * FREQ-524-AC-03・FREQ-540（G-1 部分）の単体
+ * FREQ-524-AC-03・FREQ-540（G-1 部分）・FREQ-533-AC-01（履歴からの票）の単体
  */
 
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
@@ -74,7 +75,7 @@ function expectWraps(element: HTMLElement) {
   expect(element.style.width).toBe('');
 }
 
-describe('G-1 の注文一覧: 旧の発送・仕上がりの入口を出さず、停止の文を1回ずつ出す', () => {
+describe('注文一覧: 旧の発送・仕上がりの入口を出さず、荷作り表への案内と仕上がりの停止の文を1回ずつ出す', () => {
   it('偽の canShip・canRecordCompletion でも「発送済みにする」「仕上がりを記録する」を出さない', () => {
     render(
       <OrderSection
@@ -92,28 +93,40 @@ describe('G-1 の注文一覧: 旧の発送・仕上がりの入口を出さず�
     }
   });
 
-  it('2つの停止の文を、注文が何件あっても一覧の表の上に1回ずつ出す。行の中には出さない', () => {
+  it('FREQ-524-AC-03: 荷作り表への案内と仕上がりの停止の文を、注文が何件あっても一覧の表の上に1回ずつ出す。行の中には出さない', () => {
     render(<OrderSection orders={[legacyOrder(), legacyOrder({ id: 'other-order' })]} onShowHistory={jest.fn()} />);
 
-    const legacy = screen.getAllByText(LEGACY_FULFILLMENT_DISABLED_TEXT);
+    const guide = screen.getAllByText('発送は荷作り表から行います。');
     const manual = screen.getAllByText(MANUAL_COMPLETION_DISABLED_TEXT);
-    expect(legacy).toHaveLength(1);
+    expect(guide).toHaveLength(1);
     expect(manual).toHaveLength(1);
+    const link = screen.getByRole('link', { name: '荷作り表を開く' });
+    expect(link).toHaveAttribute('href', '/admin/packing');
     const table = screen.getByRole('table');
-    for (const text of [legacy[0], manual[0]]) {
-      expect(table.contains(text)).toBe(false);
-      expect(text.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expectWraps(text);
+    // 案内 → 荷作り表を開く → 仕上がりの停止の文 の順で、どれも表の上
+    expect(guide[0].compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(link.compareDocumentPosition(manual[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const element of [guide[0], link, manual[0]]) {
+      expect(table.contains(element)).toBe(false);
+      expect(element.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
+    for (const text of [guide[0], manual[0]]) expectWraps(text);
   });
 
-  it('注文が0件でも停止の文を1回ずつ出す。読み込み中は出さない', () => {
+  it('FREQ-524-AC-03: 旧い発送の停止の文は注文一覧に出さない', () => {
+    render(<OrderSection orders={[legacyOrder()]} onShowHistory={jest.fn()} />);
+    expect(screen.queryByText(LEGACY_FULFILLMENT_DISABLED_TEXT)).not.toBeInTheDocument();
+  });
+
+  it('FREQ-524-AC-03: 注文が0件でも案内と仕上がりの停止の文を1回ずつ出す。読み込み中は出さない', () => {
     const { rerender } = render(<OrderSection orders={[]} />);
-    expect(screen.getAllByText(LEGACY_FULFILLMENT_DISABLED_TEXT)).toHaveLength(1);
+    expect(screen.getAllByText('発送は荷作り表から行います。')).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: '荷作り表を開く' })).toHaveLength(1);
     expect(screen.getAllByText(MANUAL_COMPLETION_DISABLED_TEXT)).toHaveLength(1);
 
     rerender(<OrderSection orders={[]} isLoading />);
-    expect(screen.queryByText(LEGACY_FULFILLMENT_DISABLED_TEXT)).not.toBeInTheDocument();
+    expect(screen.queryByText('発送は荷作り表から行います。')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '荷作り表を開く' })).not.toBeInTheDocument();
     expect(screen.queryByText(MANUAL_COMPLETION_DISABLED_TEXT)).not.toBeInTheDocument();
   });
 
@@ -155,7 +168,7 @@ function legacyHistory(): OrderHistoryResponse {
       {
         type: 'fulfillment', at: '2026-10-10T02:00:00.000Z', fulfillmentId: FULFILLMENT_ID, number: 1, carrierLabel: 'ヤマト運輸',
         trackingNumber: '1234-5678', items: [{ name: 'シルクブラウス', quantity: 1 }], actorEmail: 'admin@example.com',
-        notifyCustomer: true, completesOrder: false, cancelled: false, cancellable: true, legacy: false,
+        notifyCustomer: true, completesOrder: false, cancelled: false, cancellable: true, legacy: false, slipId: null, slipNumber: null,
         delivery: {
           fulfillmentId: FULFILLMENT_ID, number: 1, carrier: 'yamato', trackingNumber: '1234-5678', notifyCustomer: true,
           shippedAt: '2026-10-10T02:00:00.000Z', cancelledAt: null, trackingVersion: 1, deliveryStatus: 'in_transit',
@@ -175,7 +188,7 @@ function legacyHistory(): OrderHistoryResponse {
   };
 }
 
-describe('G-1 の注文の履歴: 伝票番号の訂正・手動の配達済み・発送の取消の入口を出さず、配送の停止の文を出す', () => {
+describe('注文の履歴: 伝票番号の訂正・手動の配達済み・発送の取消の入口を出さず、発送票への案内を出す', () => {
   beforeEach(() => {
     mockClientFetch.mockReset();
   });
@@ -196,19 +209,41 @@ describe('G-1 の注文の履歴: 伝票番号の訂正・手動の配達済み�
     expect(mockClientFetch).toHaveBeenCalledWith(`/api/admin/orders/${ORDER_ID}/history`, { cache: 'no-store' });
   });
 
-  it('配送の停止の文を、履歴の一覧の上に1回だけ出す。仕上がりの停止の文は履歴には出さない', async () => {
+  it('FREQ-524-AC-03: 発送票への案内を、履歴の一覧の上に1回だけ出す。旧い停止の文と仕上がりの停止の文は履歴には出さない', async () => {
     mockClientFetch.mockResolvedValueOnce(json(legacyHistory()));
     render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
 
     const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
     await within(dialog).findByText('宛先: hanako@example.com');
-    const texts = within(dialog).getAllByText(LEGACY_FULFILLMENT_DISABLED_TEXT);
+    const texts = within(dialog).getAllByText('発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票から行います。');
     expect(texts).toHaveLength(1);
     const list = within(dialog).getByRole('list');
     expect(list.contains(texts[0])).toBe(false);
     expect(texts[0].compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expectWraps(texts[0]);
+    expect(within(dialog).queryByText(LEGACY_FULFILLMENT_DISABLED_TEXT)).not.toBeInTheDocument();
     expect(within(dialog).queryByText(MANUAL_COMPLETION_DISABLED_TEXT)).not.toBeInTheDocument();
+  });
+
+  it('FREQ-533-AC-01: 票に属する発送の行には「発送票 番号 を開く」を出し、票の頁へ移れる。票に属さない発送には出さない', async () => {
+    const history = legacyHistory();
+    const SLIP_ID = 'a9a9a9a9-1111-4222-8333-444455556666';
+    const fulfillment = history.entries[0];
+    if (fulfillment.type !== 'fulfillment') throw new Error('fixture');
+    history.entries.push({ ...fulfillment, fulfillmentId: 'f2f2f2f2-1111-2222-8333-444455556666', number: 2, slipId: null, slipNumber: null });
+    fulfillment.slipId = SLIP_ID;
+    fulfillment.slipNumber = 'SL-20261025-0001';
+    mockClientFetch.mockResolvedValueOnce(json(history));
+    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+
+    const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
+    await within(dialog).findByText('宛先: hanako@example.com');
+    const links = within(dialog).getAllByRole('link', { name: /発送票/ });
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAccessibleName('発送票 SL-20261025-0001 を開く');
+    expect(links[0]).toHaveAttribute('href', `/admin/shipment-slips/${SLIP_ID}`);
+    // リンクは、その票に属する発送（1回目）の行の中にある
+    expect(within(links[0].closest('li') as HTMLElement).getByText('発送（1回目）')).toBeInTheDocument();
   });
 
   it('メールの中身を見る・お客様へ再送は残る（履歴の読み取りと再送は止めない）', async () => {

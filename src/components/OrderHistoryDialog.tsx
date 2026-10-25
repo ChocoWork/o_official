@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/Button/Button';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { StatusBadge, type StatusBadgeTone } from '@/components/ui/StatusBadge/StatusBadge';
@@ -14,8 +15,8 @@ import type {
   OrderHistoryResponse,
   OrderHistoryTrackingChangeEntry,
 } from '@/lib/orders/email/order-history';
-import { LEGACY_FULFILLMENT_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import { formatYen } from '@/lib/orders/refund/refund-messages';
+import { formatOpenSlipLabel, SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import { DELIVERY_STATUS_LABELS, TRACKING_STATE_LABELS } from '@/lib/orders/tracking/delivery-messages';
 import type { DeliveryStatus, FulfillmentDeliveryDetail, TrackingChange } from '@/lib/orders/tracking/delivery-types';
@@ -382,6 +383,13 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
           <p className="text-[#474747]">{`お客様へのメール: ${entry.notifyCustomer ? '送る' : '送らない'}`}</p>
           {entry.completesOrder ? <p className="text-[#474747]">この発送で全部を送りました</p> : null}
           {entry.actorEmail ? <p className="text-[#474747]">操作: {entry.actorEmail}</p> : null}
+          {entry.slipId && entry.slipNumber ? (
+            <p>
+              <Link href={`/admin/shipment-slips/${entry.slipId}`} className="underline underline-offset-4">
+                {formatOpenSlipLabel(entry.slipNumber)}
+              </Link>
+            </p>
+          ) : null}
           {delivery ? renderFulfillmentDelivery(entry, delivery) : null}
         </li>
       );
@@ -501,8 +509,8 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
 
       {view.name === 'list' ? (
         <div ref={viewRef} className="space-y-3">
-          {/* G-1 Task 15: 伝票番号の訂正・手動の配達済み・発送の取消は止めた。履歴の上に1回だけ伝える（狭い画面でも折り返す） */}
-          <p className="font-acumin lk-text-3xs text-[#474747]">{LEGACY_FULFILLMENT_DISABLED_TEXT}</p>
+          {/* G-1 Task 15 / G-3: 発送・発送の取消・伝票番号の訂正・手動の配達済みは発送票で行う。履歴の上に1回だけ伝える（狭い画面でも折り返す） */}
+          <p className="font-acumin lk-text-3xs text-[#474747]">{SHIPMENT_SLIP_TEXT.orderHistoryGuide}</p>
           {!history && !loadError ? <p className="font-acumin lk-text-3xs text-[#474747]">読み込み中です...</p> : null}
           {history ? (
             <>

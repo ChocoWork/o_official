@@ -26,6 +26,8 @@ import { listOrderRefunds, RefundStoreError } from '@/lib/orders/refund/refund-s
 import { listOrderCancelRequests } from '@/lib/orders/returns/cancel-request-store';
 import { listOrderReturns } from '@/lib/orders/returns/return-store';
 import type { OrderReturnDetail } from '@/lib/orders/returns/return-types';
+import { listAdminOrderShipmentSlips, ShipmentSlipError } from '@/lib/orders/shipment-slips/shipment-slip-store';
+import type { ShipmentSlipLink } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import { DeliveryStoreError, getOrderDeliveryDetail } from '@/lib/orders/tracking/delivery-store';
 
 type HistoryOrderRow = { id: string; status: OrderStatus; shipping_email: string | null; created_at: string };
@@ -176,6 +178,23 @@ async function actorEmailOf(client: SupabaseClient, actorId: string): Promise<st
   return data.user?.email ?? null;
 }
 
+/**
+ * 発送が属する発送票（G-3）。票へのリンクは補助の情報なので、読めなくても履歴そのものは返す（票を付けず undefined）。
+ * DB の関数は発送の権限（admin.shipping.read + admin.orders.read）を確かめるので、注文を見る権限だけの人は GROUP_G_FORBIDDEN で断られる（ログは出さない）。
+ * それ以外の失敗（一時的な通信の失敗など）は、ログに例外名と、あれば code だけを出す（DB の文は出さない）。
+ */
+async function loadSlipLinks(client: SupabaseClient, actorId: string, orderId: string): Promise<ReadonlyMap<string, ShipmentSlipLink> | undefined> {
+  try {
+    return await listAdminOrderShipmentSlips(client, actorId, orderId);
+  } catch (error) {
+    if (!(error instanceof ShipmentSlipError && error.code === 'GROUP_G_FORBIDDEN')) {
+      console.error('[admin.orders.history] Failed to load shipment slip links', error instanceof Error ? error.name : 'UnknownError',
+        ...(error instanceof ShipmentSlipError && error.code ? [error.code] : []));
+    }
+    return undefined;
+  }
+}
+
 /** 「この注文の履歴」（グループ D 設計書 5-1、グループ E-1・E-2・E-3 設計書 9-2・8-1）。状態の変化・メール・発送・仕上がり・返金・返品（申し込み・承認・お断りを含む）とその取消、キャンセルの申し込みを新しい順に返す。本文は返さない */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const authz = await authorizeAdminPermission('admin.orders.read', request);
@@ -205,7 +224,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     const store = supabase as unknown as OrderEmailStore;
     // G-1 Task 14: 手動の仕上がりは終了したので、仕上がりの一覧は読まない
-    const [statusRows, emailRows, sendState, fulfillments, refunds, returns, cancelRequests, lines, delivery] = await Promise.all([
+    const [statusRows, emailRows, sendState, fulfillments, refunds, returns, cancelRequests, lines, delivery, slips] = await Promise.all([
       listOrderStatusHistory(store, order.id),
       listOrderEmailHistory(store, order.id),
       getOrderEmailSendState(store),
@@ -215,6 +234,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       listOrderCancelRequests(supabase, order.id),
       loadHistoryLines(supabase, order.id),
       getOrderDeliveryDetail(supabase, order.id),
+      loadSlipLinks(supabase, authz.userId, order.id),
     ]);
     // 受け取りの細目と、返品の記録（取消などをした人と手数料をいただかない印）は、返品の一覧で番号が分かってから読む
     const [returnReceiptLines, returnRecords] = await Promise.all([
@@ -236,6 +256,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         cancelRequests,
         lines,
         delivery,
+        slips,
       }),
       { headers: { 'Cache-Control': 'no-store' } },
     );

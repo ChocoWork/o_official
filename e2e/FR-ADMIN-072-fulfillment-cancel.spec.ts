@@ -69,6 +69,8 @@ function entriesOf(state: CancelState): OrderHistoryResponse['entries'] {
     cancelled: state.cancelled,
     cancellable: !state.cancelled,
     legacy: false,
+    slipId: null,
+    slipNumber: null,
   } satisfies OrderHistoryFulfillmentEntry;
   const mail = {
     type: 'email',

@@ -86,8 +86,12 @@ const ITEM_1 = 'd1b2c3d4-1111-4222-8333-444455556661';
 const ITEM_2 = 'd1b2c3d4-1111-4222-8333-444455556662';
 const DENIED = new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
 
+// 履歴は発送票への結び付き（G-3 の list_admin_order_shipment_slips）も読む。指定が無い試験では、票に属する発送が無い（空の表）
 function rpcReturns(map: Record<string, { data: unknown; error?: unknown }>) {
-  mockRpc.mockImplementation(async (name: string) => ({ data: map[name]?.data ?? null, error: map[name]?.error ?? null }));
+  mockRpc.mockImplementation(async (name: string) => ({
+    data: map[name]?.data ?? (name === 'list_admin_order_shipment_slips' ? [] : null),
+    error: map[name]?.error ?? null,
+  }));
 }
 
 beforeEach(() => {
@@ -224,6 +228,92 @@ describe('GET /api/admin/orders/[id]/history', () => {
     expect(mockRpc).toHaveBeenCalledWith('list_order_fulfillments', { _order_id: ORDER_ID });
     expect(mockRpc).not.toHaveBeenCalledWith('list_order_completions', expect.anything());
     expect(mockRpc).toHaveBeenCalledWith('list_order_line_fulfillment', { _order_ids: [ORDER_ID] });
+  });
+
+  describe('発送が属する発送票（G-3 / FREQ-533-AC-01）', () => {
+    const SLIP_ID = 'a9a9a9a9-1111-4222-8333-444455556666';
+    const OTHER_FULFILLMENT_ID = 'c2b2c3d4-1111-4222-8333-444455556666';
+    const fulfillmentRow = (id: string, number: number) => ({
+      fulfillment_id: id, number, shipping_carrier: 'yamato', tracking_number: '1234-5678', notify_customer: true,
+      completes_order: false, shipped_at: `2026-10-1${number}T02:00:00+00:00`, created_by_email: 'admin@example.com', cancelled_at: null,
+      cancelled_by_email: null, legacy: false, lines: [],
+    });
+
+    function serveFulfillments(slips: { data: unknown; error?: unknown }) {
+      mockMaybeSingle.mockResolvedValue({ data: { id: ORDER_ID, status: 'paid', shipping_email: null, created_at: '2026-10-08T23:00:00.000Z' }, error: null });
+      rpcReturns({
+        get_order_email_send_state: { data: [{ paused: false, reason: null, paused_at: null, next_probe_at: null }] },
+        list_order_fulfillments: { data: [fulfillmentRow(FULFILLMENT_ID, 1), fulfillmentRow(OTHER_FULFILLMENT_ID, 2)] },
+        list_admin_order_shipment_slips: slips,
+      });
+    }
+
+    it('票に属する発送の行に slipId と slipNumber を付け、属さない発送は null。DB の関数は注文の番号と認可結果の userId で呼ぶ', async () => {
+      serveFulfillments({ data: [{ slip_id: SLIP_ID, number: 'SL-20261025-0001', stage: 'confirmed', fulfillment_id: FULFILLMENT_ID }] });
+      const response = await getHistory(request(), context);
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      const fulfillments = body.entries.filter((entry: { type: string }) => entry.type === 'fulfillment');
+      expect(fulfillments).toHaveLength(2);
+      expect(fulfillments.find((entry: { number: number }) => entry.number === 1)).toMatchObject({ slipId: SLIP_ID, slipNumber: 'SL-20261025-0001' });
+      expect(fulfillments.find((entry: { number: number }) => entry.number === 2)).toMatchObject({ slipId: null, slipNumber: null });
+      expect(mockRpc).toHaveBeenCalledWith('list_admin_order_shipment_slips', { _order_id: ORDER_ID, _actor_id: 'admin-1' });
+      expect(mockAuthorize).toHaveBeenCalledWith('admin.orders.read', expect.any(Request));
+    });
+
+    it('発送の権限が無く DB が GROUP_G_FORBIDDEN で断っても、票を付けないだけで履歴は 200 で返す', async () => {
+      serveFulfillments({ data: null, error: { message: 'GROUP_G_FORBIDDEN', code: '42501' } });
+      const response = await getHistory(request(), context);
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      const fulfillments = body.entries.filter((entry: { type: string }) => entry.type === 'fulfillment');
+      expect(fulfillments).toHaveLength(2);
+      expect(fulfillments.every((entry: { slipId: unknown; slipNumber: unknown }) => entry.slipId === null && entry.slipNumber === null)).toBe(true);
+    });
+
+    it('票の読み込みが他の理由で失敗しても、票を付けないだけで履歴は 200 で返す。ログは例外名だけで DB の文を出さない', async () => {
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        serveFulfillments({ data: null, error: { message: '宛先を含む例外', code: '57014' } });
+        const response = await getHistory(request(), context);
+
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        const fulfillments = body.entries.filter((entry: { type: string }) => entry.type === 'fulfillment');
+        expect(fulfillments).toHaveLength(2);
+        expect(fulfillments.every((entry: { slipId: unknown; slipNumber: unknown }) => entry.slipId === null && entry.slipNumber === null)).toBe(true);
+        expect(error.mock.calls).toEqual([['[admin.orders.history] Failed to load shipment slip links', 'ShipmentSlipError']]);
+        expect(JSON.stringify(error.mock.calls)).not.toContain('宛先を含む例外');
+      } finally {
+        error.mockRestore();
+      }
+    });
+
+    it('票の結び付きが崩れた形で返っても（分類済みの code が無い失敗）、履歴は 200 で返す', async () => {
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        serveFulfillments({ data: [{ slip_id: 'x', number: 'SL-1', stage: 'confirmed', fulfillment_id: FULFILLMENT_ID }] });
+        const response = await getHistory(request(), context);
+
+        expect(response.status).toBe(200);
+        expect(error.mock.calls).toEqual([['[admin.orders.history] Failed to load shipment slip links', 'ShipmentSlipError']]);
+      } finally {
+        error.mockRestore();
+      }
+    });
+
+    it('FORBIDDEN の時は履歴を 200 で返し、ログも出さない', async () => {
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        serveFulfillments({ data: null, error: { message: 'GROUP_G_FORBIDDEN', code: '42501' } });
+        expect((await getHistory(request(), context)).status).toBe(200);
+        expect(error).not.toHaveBeenCalled();
+      } finally {
+        error.mockRestore();
+      }
+    });
   });
 
   it('権限が無ければ認可の応答、注文番号の形が違えば 400、無ければ 404、DB の失敗は 500', async () => {

@@ -40,9 +40,9 @@ type AdminOrderAttention = OrderAttention & {
 };
 
 // SETTINGS（ショップの設定）は店長だけ。サポートの人の supporterTabs には足さない（窓口も権限 admin.settings.manage で守る）
-// INVENTORY（在庫一覧表・発注一覧表への入口）は店長とサポートの人の両方に同じ中身を出す。権限の無い人が開いた先は、各頁の権限の文（窓口と DB が守る）
-const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'SETTINGS'];
-const supporterTabs: TabType[] = ['ORDER', 'INVENTORY'];
+// INVENTORY（在庫一覧表・発注一覧表への入口）と PACKING（荷作り表への入口）は店長とサポートの人の両方に同じ中身を出す。権限の無い人が開いた先は、各頁の権限の文（窓口と DB が守る）
+const allAdminTabs: TabType[] = ['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'PACKING', 'SETTINGS'];
+const supporterTabs: TabType[] = ['ORDER', 'INVENTORY', 'PACKING'];
 // 絞り込みは DB の状態で行う（段階で絞ると、ページを分けて読む作りが崩れる。設計書 4-4）。value は窓口の status にそのまま送る
 const ORDER_STATUS_FILTERS = [
   { label: 'すべて', value: 'all' },
@@ -1136,6 +1136,12 @@ function AdminPageContent() {
           <nav aria-label="在庫・発注メニュー" className="flex flex-wrap gap-3">
             <Button href="/admin/inventory" variant="secondary">在庫一覧表</Button>
             <Button href="/admin/purchase-orders" variant="secondary">発注一覧表</Button>
+          </nav>
+        );
+      case 'PACKING':
+        return (
+          <nav aria-label="荷作りメニュー" className="flex flex-wrap gap-3">
+            <Button href="/admin/packing" variant="secondary">荷作り表</Button>
           </nav>
         );
       case 'SETTINGS':

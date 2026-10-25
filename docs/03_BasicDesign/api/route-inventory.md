@@ -1,15 +1,15 @@
 # APIルート一覧
 
-> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02（checkout の入口の変更は 2026-10-07、カートの入口の変更は 2026-10-08、発送・仕上がりの入口の変更は 2026-10-10、返金・ショップの設定の入口の変更は 2026-10-11 に、返品の入口の変更は 2026-10-13 に反映、配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文の状況の入口・表は E-5 の変更を 2026-10-22 に、在庫一覧表の入口は G-2 Task 3 の変更を、発注の作成の入口は G-2 Task 4 の変更を、発注一覧表・発注書の詳細の入口は G-2 Task 5 の変更を、発注書の数量の確定・訂正・打切り・発注先の訂正の入口は G-2 Task 6 の変更を、発注書の受け取りと受け取りの取消の入口は G-2 Task 7 の変更を、取引書類の原本の入口は G-2 Task 8 の変更を 2026-10-25 に反映） | 対象: `src/app/api/**/route.ts`
+> 状態: ソースから作成した入口一覧 | 確認日: 2026-10-02（checkout の入口の変更は 2026-10-07、カートの入口の変更は 2026-10-08、発送・仕上がりの入口の変更は 2026-10-10、返金・ショップの設定の入口の変更は 2026-10-11 に、返品の入口の変更は 2026-10-13 に反映、配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文の状況の入口・表は E-5 の変更を 2026-10-22 に、在庫一覧表の入口は G-2 Task 3 の変更を、発注の作成の入口は G-2 Task 4 の変更を、発注一覧表・発注書の詳細の入口は G-2 Task 5 の変更を、発注書の数量の確定・訂正・打切り・発注先の訂正の入口は G-2 Task 6 の変更を、発注書の受け取りと受け取りの取消の入口は G-2 Task 7 の変更を、取引書類の原本の入口は G-2 Task 8 の変更を、荷作り表と発送票の読取の入口は G-3 Task 3 の変更を 2026-10-25 に反映） | 対象: `src/app/api/**/route.ts`
 
 ## 概要
 
-現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。G-0 の2入口と G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口（`GET /api/admin/purchase-orders`・`GET /api/admin/purchase-orders/[id]`）と Task 6 の発注先・メモの訂正・数量の確定と訂正・残りの打切りの入口（`PATCH /api/admin/purchase-orders/[id]`・`POST /api/admin/purchase-orders/[id]/quantities`・`POST /api/admin/purchase-orders/[id]/short-closures`）と Task 7 の受け取り・受け取りの取消の入口（`POST /api/admin/purchase-orders/[id]/receipts`・`POST /api/admin/purchase-orders/[id]/receipts/[receiptId]/reversals`）と Task 8 の取引書類の原本の6入口（予約・署名つき送り先の出し直し・確定・訂正と無効化の `POST` 4本、閲覧リンクと書類検索の `GET` 2本）を含め、Route Handler は145ファイル・186メソッド（自動の HEAD・OPTIONS は数えない。2026-10-25 静的集計）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は144行・185メソッド。
+現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。G-0 の2入口と G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口（`GET /api/admin/purchase-orders`・`GET /api/admin/purchase-orders/[id]`）と Task 6 の発注先・メモの訂正・数量の確定と訂正・残りの打切りの入口（`PATCH /api/admin/purchase-orders/[id]`・`POST /api/admin/purchase-orders/[id]/quantities`・`POST /api/admin/purchase-orders/[id]/short-closures`）と Task 7 の受け取り・受け取りの取消の入口（`POST /api/admin/purchase-orders/[id]/receipts`・`POST /api/admin/purchase-orders/[id]/receipts/[receiptId]/reversals`）と Task 8 の取引書類の原本の6入口（予約・署名つき送り先の出し直し・確定・訂正と無効化の `POST` 4本、閲覧リンクと書類検索の `GET` 2本）と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）を含め、Route Handler は148ファイル・189メソッド（自動の HEAD・OPTIONS は数えない。2026-10-25 静的集計）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は147行・188メソッド。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |
-| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/tracking` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/tracking/route.ts) （G-1停止: 認可・CSRF・回数制限の後に 410 `LEGACY_FULFILLMENT_DISABLED`。G-3の新発送票へ移る） |
-| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/delivered` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/delivered/route.ts) （G-1停止: 認可・CSRF・回数制限の後に 410 `LEGACY_FULFILLMENT_DISABLED`。G-3の新発送票へ移る） |
+| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/tracking` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/tracking/route.ts) （G-3移行: 認可・CSRF・回数制限の後に 410 `LEGACY_FULFILLMENT_DISABLED`。発送は荷作り表の発送票で行う） |
+| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/delivered` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/delivered/route.ts) （G-3移行: 認可・CSRF・回数制限の後に 410 `LEGACY_FULFILLMENT_DISABLED`。発送は荷作り表の発送票で行う） |
 | `/api/admin/order-attention/deliveries/[attentionId]/resolve` | `POST` | [route.ts](../../../src/app/api/admin/order-attention/deliveries/%5BattentionId%5D/resolve/route.ts) |
 | `/api/webhook/17track` | `POST` | [route.ts](../../../src/app/api/webhook/17track/route.ts) |
 | `/api/orders/[id]/return-request` | `GET`, `POST` | [route.ts](../../../src/app/api/orders/%5Bid%5D/return-request/route.ts) |
@@ -71,8 +71,8 @@
 | `/api/admin/orders/[id]/completions` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/completions/route.ts) （G-1停止: 認可・CSRF・回数制限の後に 410 `MANUAL_COMPLETION_DISABLED`。仕上がりの手動記録・取消は終了） |
 | `/api/admin/orders/[id]/emails/[emailId]` | `GET` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/emails/%5BemailId%5D/route.ts) |
 | `/api/admin/orders/[id]/emails/resend` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/emails/resend/route.ts) |
-| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/cancel` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/cancel/route.ts) （G-1停止: 認可・CSRF・回数制限の後に 410 `LEGACY_FULFILLMENT_DISABLED`。G-3の新発送票へ移る） |
-| `/api/admin/orders/[id]/fulfillments` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts) （G-1停止: GET は認可の後、POST は認可・CSRF・回数制限の後に 410 `LEGACY_FULFILLMENT_DISABLED`。G-3の新発送票へ移る） |
+| `/api/admin/orders/[id]/fulfillments/[fulfillmentId]/cancel` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/cancel/route.ts) （G-3移行: 認可・CSRF・回数制限の後に 410 `LEGACY_FULFILLMENT_DISABLED`。発送は荷作り表の発送票で行う） |
+| `/api/admin/orders/[id]/fulfillments` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts) （G-3移行: GET は認可の後、POST は認可・CSRF・回数制限の後に 410 `LEGACY_FULFILLMENT_DISABLED`。発送は荷作り表の発送票で行う） |
 | `/api/admin/orders/[id]/history` | `GET` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/history/route.ts) |
 | `/api/admin/orders/[id]/refund/confirm` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/refund/confirm/route.ts) |
 | `/api/admin/orders/[id]/refund` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) |
@@ -81,6 +81,7 @@
 | `/api/admin/orders/[id]/review` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/review/route.ts) |
 | `/api/admin/orders/[id]/status` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
 | `/api/admin/orders` | `GET` | [route.ts](../../../src/app/api/admin/orders/route.ts) |
+| `/api/admin/packing` | `GET` | [route.ts](../../../src/app/api/admin/packing/route.ts) （G-3 Task 3: `admin.shipping.read` ＋ `admin.orders.read`。荷作り表。発送準備中の品物の行を古い注文から返す。読むだけ。CSRF・回数制限なし） |
 | `/api/admin/payment-exceptions/[id]/resolve` | `POST` | [route.ts](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts) |
 | `/api/admin/returns/[returnId]/cancel` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/cancel/route.ts) |
 | `/api/admin/returns/[returnId]/close-missing` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/close-missing/route.ts) |
@@ -91,6 +92,8 @@
 | `/api/admin/returns/[returnId]/release-exchange` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/release-exchange/route.ts) |
 | `/api/admin/returns/[returnId]/reopen` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/reopen/route.ts) |
 | `/api/admin/revoke-user-sessions` | `POST` | [route.ts](../../../src/app/api/admin/revoke-user-sessions/route.ts) |
+| `/api/admin/shipment-slips/[id]` | `GET` | [route.ts](../../../src/app/api/admin/shipment-slips/%5Bid%5D/route.ts) （G-3 Task 3: `admin.shipping.read` ＋ `admin.orders.read`。発送票1件の詳細。読むだけ。id が uuid でなければ400、無ければ404） |
+| `/api/admin/shipment-slips` | `GET` | [route.ts](../../../src/app/api/admin/shipment-slips/route.ts) （G-3 Task 3: `admin.shipping.read` ＋ `admin.orders.read`。発送票の一覧。読むだけ。stage で絞れる） |
 | `/api/admin/settings/shop` | `GET`, `PUT` | [route.ts](../../../src/app/api/admin/settings/shop/route.ts) |
 | `/api/admin/stockists/[id]` | `DELETE`, `GET`, `PATCH`, `PUT` | [route.ts](../../../src/app/api/admin/stockists/%5Bid%5D/route.ts) |
 | `/api/admin/stockists` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/stockists/route.ts) |
@@ -157,7 +160,9 @@
 
 履歴・中身は `admin.orders.read`、再送は `admin.orders.manage`・CSRF・送信元と管理者ごと10分に30回。配達の受け口は公開で Svix 署名を確かめる。発送・発送の取消・仕上がり・仕上がりの取消は `admin.orders.manage`・CSRF・回数の制限（発送と仕上がりの記録は10分に60回、取消は30回）で、発送は `POST /api/admin/orders/[id]/fulfillments` の本文 `notifyCustomer`（真偽、既定 true）で知らせるかを選ぶ（グループ E-1。発送ごとに発送のメールを1通送る）。返金の材料の読み込み（`GET …/refund`）は `admin.orders.refund` だけ（読むだけなので CSRF と回数の制限は通さない）、返金（`POST …/refund`）と返事待ちの確かめ直し（`POST …/refund/confirm`）は `admin.orders.refund`・CSRF・回数の制限（10分に30回。確かめ直しも返金と同じ数に数える）、支払い済みの注文のキャンセル（`POST …/status` の支払い済みの道）は `admin.orders.manage` と `admin.orders.refund` の両方・CSRF・回数の制限（10分に30回）、ショップの設定（`GET`・`PUT /api/admin/settings/shop`）は `admin.settings.manage`（`PUT` は CSRF と回数の制限、10分に30回）で守る（グループ E-2。返金は返金ごとに返金のお知らせを1通、支払い済みのキャンセルはキャンセルのお知らせを1通送る）。返品の入口（グループ E-3）は、読む `GET …/returns`・`GET …/returns/materials` が `admin.orders.return`（読むだけなので CSRF と回数の制限は通さない）、書く `POST …/returns` と `POST /api/admin/returns/[returnId]/…` が `admin.orders.return`・CSRF・回数の制限（作る・受け取る・額を決めて返金するは10分に30回、取消・開き直し・届かないで終える・検品・手数料の受け取りの記録・支払いを待たずに送るは10分に60回）で守る。受け取りの今返金（お客様の申し込みで返送不要でない返品の計算どおりの場合を除く）・額の指定・送料・交換の選び直しと、額を決めて返金・手数料の受け取りの記録・支払いを待たずに送るは、`admin.orders.refund` も要る（店長だけ）。詳しい入力と応答は [APIの主要契約](api-spec.md)の「管理:注文・要対応」「管理:ショップの設定」「Webhook・Cron」に記す。段2の承認・お断り・写真・キャンセルの申し込みの4操作は admin.orders.return、商品の返品不可は admin.items.manage、設定は admin.settings.manage。お客様の書く窓口はログイン・CSRF・送信元とお客様ごとの制限で守る。
 
-G-1停止: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の新発送票まで利用できません。旧入口は認可後410を返します。以下のE-4記述は停止前の契約として保持します。上の6パス・7メソッド（発送の材料の GET・発送・発送の取消・伝票番号の訂正・手動の配達済み・仕上がりの記録と取消）は route ファイルとメソッドを残したまま、POST は既存の認可（MFA）・CSRF・回数制限の後、GET は認可の後に、入力を読まずに 410 の固定の本文（発送の5メソッドは `LEGACY_FULFILLMENT_DISABLED`、仕上がりの2メソッドは `MANUAL_COMPLETION_DISABLED`）と `Cache-Control: no-store` を返す。数は132ファイル・171メソッドのまま（G-1 Task 14）。
+G-3移行: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の発送票へ移行しました。旧入口は認可後410を返します。以下のE-4記述は移行前の契約として保持します。上の6パス・7メソッド（発送の材料の GET・発送・発送の取消・伝票番号の訂正・手動の配達済み・仕上がりの記録と取消）は route ファイルとメソッドを残したまま、POST は既存の認可（MFA）・CSRF・回数制限の後、GET は認可の後に、入力を読まずに 410 の固定の本文（発送の5メソッドは `LEGACY_FULFILLMENT_DISABLED`、仕上がりの2メソッドは `MANUAL_COMPLETION_DISABLED`）と `Cache-Control: no-store` を返す。数は132ファイル・171メソッドのまま（G-1 Task 14）。仕上がりの手動記録と取消の2メソッドは終了のまま再開しない（G-1停止）。
+
+G-3 Task 3: 荷作り表と発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）を追加。いずれも `admin.shipping.read` ＋ `admin.orders.read` を窓口と DB の関数の両方で確かめ、読むだけなので CSRF と回数制限は通さない。応答は `Cache-Control: no-store`。数は148ファイル・189メソッド（表は147行・188メソッド）。詳しい入力と応答は [APIの主要契約](api-spec.md)の「管理:荷作り表・発送票」に記す。
 
 ## 権限設定の入口（G-0 / FREQ-519・FREQ-540 の G-0 部分）
 
@@ -178,7 +183,7 @@ API単体 [GET](../../../tests/unit/api/admin/permissions-route.test.ts)・[POST
 
 [配送の詳細設計](../../superpowers/specs/2026-10-21-delivery-status-design.md)・[実装計画](../../superpowers/plans/2026-10-21-delivery-status.md)を参照。以下は実装後の契約であり、既存の決定の本文は履歴として残す。
 
-G-1停止: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の新発送票まで利用できません。旧入口は認可後410を返します。以下のE-4記述は停止前の契約として保持します。伝票番号の訂正（tracking）と手動の配達済み（delivered）の2本は今は 410 `LEGACY_FULFILLMENT_DISABLED` を返す。要対応の解決と17TRACKの受け口は今のまま。
+G-3移行: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の発送票へ移行しました。旧入口は認可後410を返します。以下のE-4記述は移行前の契約として保持します。伝票番号の訂正（tracking）と手動の配達済み（delivered）の2本は今は 410 `LEGACY_FULFILLMENT_DISABLED` を返す。要対応の解決と17TRACKの受け口は今のまま。
 
 管理POST 3本と17TRACKのPOST 1本の計4パス・4メソッドを追加。ソースの静的集計は128ファイル・167メソッド、E2E用の1本を除いた表は127行・166メソッド。新しいページURLは0。詳細はAPI仕様の配送の節と計画 C-3。
 

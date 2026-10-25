@@ -341,7 +341,7 @@ function legacyHistoryResponse(): OrderHistoryResponse {
     {
       type: 'fulfillment', at: '2026-10-10T02:00:00.000Z', fulfillmentId: G1_FULFILLMENT_ID, number: 1, carrierLabel: 'ヤマト運輸',
       trackingNumber: '1234-5678', items: [{ name: 'シルクブラウス', quantity: 1 }], actorEmail: 'admin@example.com',
-      notifyCustomer: true, completesOrder: false, cancelled: false, cancellable: true, legacy: false,
+      notifyCustomer: true, completesOrder: false, cancelled: false, cancellable: true, legacy: false, slipId: null, slipNumber: null,
       delivery: {
         fulfillmentId: G1_FULFILLMENT_ID, number: 1, carrier: 'yamato', trackingNumber: '1234-5678', notifyCustomer: true,
         shippedAt: '2026-10-10T02:00:00.000Z', cancelledAt: null, trackingVersion: 1, deliveryStatus: 'in_transit',

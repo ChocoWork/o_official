@@ -212,6 +212,7 @@ describe('buildOrderHistory - 発送', () => {
       type: 'fulfillment', at: '2026-10-10T02:00:00.000Z', fulfillmentId: 'f-1', number: 2, carrierLabel: 'ヤマト運輸',
       trackingNumber: '1234-5678', items: [{ name: 'シルクブラウス（白 / M）', quantity: 1 }, { name: 'リネンパンツ', quantity: 1 }],
       actorEmail: 'admin@example.com', notifyCustomer: true, completesOrder: true, cancelled: false, cancellable: false, legacy: false,
+      slipId: null, slipNumber: null,
     }]);
   });
 

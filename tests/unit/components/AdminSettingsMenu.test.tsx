@@ -72,11 +72,11 @@ beforeEach(() => {
 });
 
 describe('管理画面の左のメニューの SETTINGS', () => {
-  it('FREQ-525-AC-01: 店長のメニューには、ORDER と INVENTORY の次（最後）に SETTINGS が出る。印は細線の歯車', async () => {
+  it('FREQ-525-AC-01: 店長のメニューには、ORDER・INVENTORY・PACKING の次（最後）に SETTINGS が出る。印は細線の歯車', async () => {
     render(<AdminPage />);
     const nav = await screen.findByRole('navigation', { name: '管理メニュー' });
 
-    expect(menuLabels(nav)).toEqual(['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'SETTINGS']);
+    expect(menuLabels(nav)).toEqual(['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'PACKING', 'SETTINGS']);
     expect(within(nav).getByRole('button', { name: 'SETTINGS' }).querySelector('i')).toHaveClass('ri-settings-3-line');
   });
 
@@ -101,12 +101,12 @@ describe('管理画面の左のメニューの SETTINGS', () => {
     expect(screen.getByRole('heading', { name: 'ショップの設定' })).toBeInTheDocument();
   });
 
-  it('FREQ-525-AC-01: サポートの人のメニューは ORDER と INVENTORY で、SETTINGS は出ない', async () => {
+  it('FREQ-525-AC-01: サポートの人のメニューは ORDER・INVENTORY・PACKING で、SETTINGS は出ない', async () => {
     mockUserRole = 'supporter';
     render(<AdminPage />);
     const nav = await screen.findByRole('navigation', { name: '管理メニュー' });
 
-    expect(menuLabels(nav)).toEqual(['ORDER', 'INVENTORY']);
+    expect(menuLabels(nav)).toEqual(['ORDER', 'INVENTORY', 'PACKING']);
     expect(screen.queryByRole('button', { name: 'SETTINGS' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '権限' })).not.toBeInTheDocument();
   });
@@ -161,6 +161,52 @@ describe('管理画面の左のメニューの INVENTORY', () => {
   });
 
   it('FREQ-525-AC-01: INVENTORY の外（ORDER）では在庫・発注メニューを出さない', async () => {
+    mockUserRole = 'supporter';
+    render(<AdminPage />);
+    await screen.findByRole('navigation', { name: '管理メニュー' });
+
+    expect(screen.queryByRole('navigation', { name: MENU })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * 管理画面の左のメニューの PACKING（G-3 / FREQ-531。荷作り表への入口）。
+ * 中身は役割で出し分けず、店長とサポーターの両方に同じ物を出す。権限の無い人が開いた先は荷作り表の頁の権限の文（窓口と DB が守る）。
+ */
+describe('管理画面の左のメニューの PACKING', () => {
+  const MENU = '荷作りメニュー';
+
+  it.each(['admin', 'supporter'] as const)('FREQ-531-AC-01: %s のメニューに PACKING があり、押すと荷作り表へのリンクが並ぶ', async (role) => {
+    mockUserRole = role;
+    render(<AdminPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'PACKING' }));
+
+    const menu = await screen.findByRole('navigation', { name: MENU });
+    const links = within(menu).getAllByRole('link');
+    expect(links.map((link) => link.textContent)).toEqual(['荷作り表']);
+    expect(within(menu).getByRole('link', { name: '荷作り表' })).toHaveAttribute('href', '/admin/packing');
+    expect(screen.getByRole('button', { name: 'PACKING' })).toHaveAttribute('aria-current', 'page');
+    // 荷作り表そのものはリンク先の頁が読む。この画面は荷作り表の窓口を読まない
+    expect(clientFetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/api/admin/packing'), expect.anything());
+  });
+
+  it('FREQ-531-AC-01: PACKING の印は細線の箱で、店長のメニューでは INVENTORY の次（SETTINGS の前）に並ぶ', async () => {
+    render(<AdminPage />);
+    const nav = await screen.findByRole('navigation', { name: '管理メニュー' });
+    expect(within(nav).getByRole('button', { name: 'PACKING' }).querySelector('i')).toHaveClass('ri-box-3-line');
+    expect(menuLabels(nav).slice(8, 11)).toEqual(['INVENTORY', 'PACKING', 'SETTINGS']);
+  });
+
+  it.each(['admin', 'supporter'] as const)('FREQ-531-AC-01: %s は URL の tab=PACKING で直接開ける（サポーターは先頭の ORDER に戻されない）', async (role) => {
+    mockUserRole = role;
+    mockSearchParams = new URLSearchParams('tab=PACKING');
+    render(<AdminPage />);
+
+    expect(await screen.findByRole('navigation', { name: MENU })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'PACKING' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('FREQ-531-AC-01: PACKING の外（ORDER）では荷作りメニューを出さない', async () => {
     mockUserRole = 'supporter';
     render(<AdminPage />);
     await screen.findByRole('navigation', { name: '管理メニュー' });

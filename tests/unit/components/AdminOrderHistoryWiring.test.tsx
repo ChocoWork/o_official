@@ -1,10 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import AdminPage from '@/app/admin/page';
-import {
-  LEGACY_FULFILLMENT_DISABLED_TEXT,
-  MANUAL_COMPLETION_DISABLED_TEXT,
-} from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
+import { MANUAL_COMPLETION_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import type { RefundMaterials } from '@/lib/orders/refund/refund-types';
+import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 
 /**
  * 管理画面の ORDER タブと、履歴の画面のつなぎ込み（グループ D の Task 7、グループ E-1 の Task 7）。発送・仕上がりの画面は G-1 Task 15 で撤去した。
@@ -134,7 +132,7 @@ function holdPost(suffix: string) {
 const CANCELLABLE_SHIPMENT = {
   type: 'fulfillment', at: '2026-10-10T02:00:00.000Z', fulfillmentId: FULFILLMENT_ID, number: 1, carrierLabel: 'ヤマト運輸',
   trackingNumber: '1234-5678', items: [{ name: 'シルクブラウス', quantity: 1 }], actorEmail: 'admin@example.com',
-  notifyCustomer: true, completesOrder: true, cancelled: false, cancellable: true, legacy: false,
+  notifyCustomer: true, completesOrder: true, cancelled: false, cancellable: true, legacy: false, slipId: null, slipNumber: null,
 };
 
 /** 窓口の差し替え。一覧は orderRows、POST は postAnswer。履歴の行は引数で決める */
@@ -213,7 +211,7 @@ describe('管理画面の注文の履歴のつなぎ込み（発送・仕上が�
 
   // G-1 Task 15: 「発送済みにする」「仕上がりを記録する」と履歴の「この発送を取り消す」は撤去した。窓口が昔の形で
   // canShip・canRecordCompletion・cancellable を true にしても入口を出さず、止めた窓口（410）へ要求を送らない
-  it('一覧に「発送済みにする」「仕上がりを記録する」を出さず、表の上に2つの停止の文を1回ずつ出す。発送の材料も読まない', async () => {
+  it('一覧に「発送済みにする」「仕上がりを記録する」を出さず、表の上に荷作り表への案内と仕上がりの停止の文を1回ずつ出す。発送の材料も読まない', async () => {
     orderRows = [
       orderRow({ canShip: true, canRecordCompletion: true }),
       orderRow({ id: 'other-order', status: '受注生産中', progressKey: 'in_production', items: [COAT_IN_PRODUCTION], canShip: true, canRecordCompletion: true }),
@@ -223,12 +221,13 @@ describe('管理画面の注文の履歴のつなぎ込み（発送・仕上が�
 
     expect(screen.queryByRole('button', { name: '発送済みにする' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '仕上がりを記録する' })).not.toBeInTheDocument();
-    expect(screen.getAllByText(LEGACY_FULFILLMENT_DISABLED_TEXT)).toHaveLength(1);
+    expect(screen.getAllByText(SHIPMENT_SLIP_TEXT.orderSectionGuide)).toHaveLength(1);
+    expect(screen.getByRole('link', { name: '荷作り表を開く' })).toHaveAttribute('href', '/admin/packing');
     expect(screen.getAllByText(MANUAL_COMPLETION_DISABLED_TEXT)).toHaveLength(1);
     expect(clientFetchMock.mock.calls.some(([url]) => /\/(fulfillments|completions)(\/|$)/.test(String(url)))).toBe(false);
   });
 
-  it('履歴に昔の形の取り消せる発送が来ても「この発送を取り消す」を出さず、配送の停止の文を出し、POST を送らない', async () => {
+  it('履歴に昔の形の取り消せる発送が来ても「この発送を取り消す」を出さず、発送票への案内を出し、POST を送らない', async () => {
     serveOrdersApi({ entries: [CANCELLABLE_SHIPMENT] });
     render(<AdminPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' }));
@@ -236,7 +235,7 @@ describe('管理画面の注文の履歴のつなぎ込み（発送・仕上が�
     const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
     await within(dialog).findByText('発送（1回目）');
     expect(within(dialog).queryByRole('button', { name: 'この発送を取り消す' })).not.toBeInTheDocument();
-    expect(within(dialog).getAllByText(LEGACY_FULFILLMENT_DISABLED_TEXT)).toHaveLength(1);
+    expect(within(dialog).getAllByText(SHIPMENT_SLIP_TEXT.orderHistoryGuide)).toHaveLength(1);
     expect(clientFetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'POST')).toBe(false);
   });
 
@@ -882,7 +881,7 @@ describe('管理画面の配送（一覧の印・要対応の配送の組・直�
     expect(await screen.findByRole('button', { name: '返金' })).toBeVisible();
   });
 
-  it('店長が履歴を開いても「伝票番号を直す」「配達済みにする」を出さず、配送の停止の文を出す。配送の状況は読める（G-1 Task 15）', async () => {
+  it('店長が履歴を開いても「伝票番号を直す」「配達済みにする」を出さず、発送票への案内を出す。配送の状況は読める（G-1 Task 15 / G-3）', async () => {
     render(<AdminPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'ORD-A1B2C3D4 の履歴' }));
 
@@ -890,7 +889,7 @@ describe('管理画面の配送（一覧の印・要対応の配送の組・直�
     await within(dialog).findByText('発送（1回目）');
     expect(within(dialog).queryByRole('button', { name: '伝票番号を直す' })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: '配達済みにする' })).not.toBeInTheDocument();
-    expect(within(dialog).getAllByText(LEGACY_FULFILLMENT_DISABLED_TEXT)).toHaveLength(1);
+    expect(within(dialog).getAllByText(SHIPMENT_SLIP_TEXT.orderHistoryGuide)).toHaveLength(1);
     expect(within(dialog).getByText('追跡中')).toBeVisible();
     expect(clientFetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'POST')).toBe(false);
   });

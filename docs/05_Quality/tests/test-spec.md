@@ -1,6 +1,6 @@
 # テスト仕様
 
-> 状態: 現行の方針（グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件
+> 状態: 現行の方針（グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件
 
 ## 概要
 
@@ -217,7 +217,7 @@ G-0の基準専用のorder-fixtures.tsの非G分岐は、G-3のshipment_date列�
 | ファイル | 層 | 対象 | 入力と期待 |
 | --- | --- | --- | --- |
 | [group_g3_reads](../../../tests/integration/db/group_g3_reads.integration.test.ts) | DB結合 | FREQ-531-AC-01〜04、FREQ-532-AC-01〜05、FREQ-535-AC-05、FREQ-540-AC-10 | paid割当と除外状態、一部準備数、同時刻のID順、頁とbigint総数、5阻害理由の和、相互の下書き番号・期限・選択数。同梱の会員・ゲスト・混在・別ID・7住所差分・必須の空・メールの連鎖拒否・JSON文字境界を表で確かめ、キー全一致と判定NULLを突き合わせる。役割の和集合・取消・期限、詳細issuesと取消阻害3種、履歴・注文の票・7列会計入力と取消時刻。在庫減・割当入替・受取後の数を再読取する |
-| [group_g3_postgrest_paths](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts) | 実PostgREST結合 | FREQ-531-AC-01・04、FREQ-540-AC-10 | supabase-js rpcから公開5入口をservice_roleで呼ぶ。権限なしactorはGROUP_G_FORBIDDEN / 42501。Authorizationを送らないanonと実Authで得たauthenticated JWTは5本とも42501。鍵・JWT・認証エラーは出力しない。storeはTask 3以降 |
+| [group_g3_postgrest_paths](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts) | 実PostgREST結合 | FREQ-531-AC-01・04、FREQ-540-AC-10 | supabase-js rpcから公開5入口をservice_roleで呼ぶ。権限なしactorはGROUP_G_FORBIDDEN / 42501。Authorizationを送らないanonと実Authで得たauthenticated JWTは5本とも42501。鍵・JWT・認証エラーは出力しない。実 store の読取4本をPostgREST越しに通す2件はTask 3で追加（下のTask 3の節） |
 | [group_g1_writer_inventory](../../../tests/integration/db/group_g1_writer_inventory.integration.test.ts) | DB構造・回帰 | FREQ-540-AC-10 | 読取本体5本・入口5本・内部3本の所有者、SECURITY、空search_path、EXECUTE集合。直接・推移的な書き手に入らず、許可一覧は65本 |
 | [delivery-status-traceability](../../../tests/unit/docs/delivery-status-traceability.test.ts) | 文書単体 | 要求表の追跡 | FREQ-531・532のAC一覧、FREQ-535の会計入力AC-05、FREQ-540の読取部分AC-10を固定し、既存の一覧と検査を保つ |
 
@@ -226,3 +226,22 @@ G-0の基準専用のorder-fixtures.tsの非G分岐は、G-3のshipment_date列�
 実行時はDATABASE_URLのlocalhost guardを使う。PostgREST用はLOCAL_SUPABASE_URL・LOCAL_SUPABASE_SERVICE_ROLE_KEY・LOCAL_SUPABASE_ANON_KEYが必要で、未設定は理由つきskip、localhost以外は失敗。anonと実ユーザーJWTのclientは実anonキーで作る。材料は期限切れの下書き、認証利用者はactorと共用する1人、終了時は準備注文を閉じてsignOut・認証利用者の削除を行う。DB6 suiteの実行・再reset・件数はTask 2報告に記録する。画面・HTTP route・外部追跡・メール・E2E・本番は本Taskの検証外。
 
 2026-10-25 Fix round 1の追加検査: 住所不足は該当明細だけに1件ずつ、paid以外にはpaid_at_missingなし、詳細の準備数呼出しは1回、不正/不在の票、空/不在IDの同梱拒否、住所7項目の前後空白、全段階と不正stage・確定票の2注文/3点、paid割当なしのpaid注文を含むG-1投影との先絞りの同値性。会計入力の打切りの扱いとTask 8の追跡読取側の追記は文書単体でも固定する。前版191件成功の後でSQLを変更したため、これらのDB・実anonキーによるPostgREST検証はcontroller再reset後まで未実施。
+
+## G-3 Task 3 荷作り表の画面と読取の窓口・管理メニュー・旧い案内の置換
+
+確認日: 2026-10-25。下記の単体は実行済み（件数は Task 3 報告）。DB・PostgREST の2件（実 store 経路）は作成済みで、controller の実行待ち。
+
+| ファイル | 層 | 対象 | 入力と期待 |
+| --- | --- | --- | --- |
+| [bundling](../../../tests/unit/lib/orders/shipment-slips/bundling.test.ts) | 単体 | FREQ-532-AC-01〜05 | 会員同士のメール違いは通し、別IDは同じメールでも拒否、ゲスト同士はメールの大文字小文字・前後の空白を除いて通し、混在は拒否。配送先7項目の差、建物の空・null・空白の同一視、半角空白だけを落とす（タブ・全角は落とさない）、必須の空、評価の順（不足→お客様→配送先） |
+| [shipment-slip-types](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-types.test.ts) | 単体 | FREQ-531-AC-01〜04、FREQ-524-AC-03 | 段階・阻害理由の文・値の範囲、DBエラー表28行の完全一致、継承名の排除、画面の言葉の完全一致、旧い発送の案内の新しい文、行・票の一覧・詳細・結び付きの検査（崩れは止める） |
+| [shipment-slip-store](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-store.test.ts) | 単体 | FREQ-531-AC-01・04、FREQ-533-AC-01 | RPC名・引数名（_actor_id）、total_count からの total、message と SQLSTATE の完全一致の分類、未知・崩れた戻りは生の誤りを持たない固定の500 |
+| [packing-route](../../../tests/unit/api/admin/packing-route.test.ts)・[shipment-slips-route](../../../tests/unit/api/admin/shipment-slips-route.test.ts)・[shipment-slip-detail-route](../../../tests/unit/api/admin/shipment-slip-detail-route.test.ts) | 単体 | FREQ-531-AC-01・04、FREQ-540-AC-10 | 認可の組（足りない最初の権限が403の permission）、401/403/MFA/503 のそのまま返し、limit・page・stage・slipId・id の検証、no-store、CSRF・回数制限なし、DB の403・404・400 の固定の本文、内部の失敗は固定の500でログに生の文を出さない |
+| [PackingSection](../../../tests/unit/components/PackingSection.test.tsx) | 単体（画面） | FREQ-531-AC-01〜04 | 9列の見出しと並び、注文IDのボタンが注文の履歴を orderId つきで開く、交換の品の印、阻害理由と別の下書きの文、権限・空・失敗の文、頁送り（2頁目以降が範囲外で空なら1頁目へ戻って読み直す。2頁目以降の失敗には「前の頁」を出す）、下の発送票の一覧（下書き・確定済み・取消済み）、スクロール領域。読むだけの間は選択欄・「発送」を出さない |
+| [AdminSettingsMenu](../../../tests/unit/components/AdminSettingsMenu.test.tsx) | 単体（画面） | FREQ-531-AC-01 | PACKING が店長・サポーターの両方に出て、INVENTORY の次、SETTINGS の前。印・リンク・`/admin?tab=PACKING` |
+| [AdminGroupG1LegacyStop](../../../tests/unit/components/AdminGroupG1LegacyStop.test.tsx)・[AdminOrderHistoryWiring](../../../tests/unit/components/AdminOrderHistoryWiring.test.tsx)・[ShopSettingsSection](../../../tests/unit/components/ShopSettingsSection.test.tsx) | 単体（画面） | FREQ-524-AC-03、FREQ-533-AC-01 | 注文一覧は荷作り表への案内とリンク、履歴は発送票への案内と、票に属する発送の行への「発送票 ○○ を開く」。追跡の説明の第三の文の置換 |
+| [order-email-routes](../../../tests/unit/api/admin/order-email-routes.test.ts) | 単体（窓口） | FREQ-533-AC-01 | 履歴の窓口が slipId・slipNumber を付ける。票の読み込みに失敗した時は（DB が GROUP_G_FORBIDDEN で断った時も、他の失敗も）付けず履歴は200。FORBIDDEN 以外は例外名だけをログに出す |
+| [delivery-status-traceability](../../../tests/unit/docs/delivery-status-traceability.test.ts)・[order-status-traceability](../../../tests/unit/docs/order-status-traceability.test.ts) | 文書単体 | 窓口の数・停止の注記 | route は148ファイル・189メソッド（表は147行・188メソッド）。G-3移行の注記をE-4節と旧入口の隣に置き、仕上がりの2メソッドは G-1停止 のまま |
+| [group_g3_postgrest_paths](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts)（追加2件） | 実PostgREST結合 | FREQ-531-AC-01・04 | 実 store の読取4本を service_role の supabase-js 経由で通し、行・詳細・結び付きが型検査を通る。権限なし・不在の票は固定の403・404の ShipmentSlipError。鍵・JWT・生の誤りは出さない。controller 実行待ち |
+
+E2E は後続 Task（Task 13）で扱う。G-1 から止めていた旧い案内の期待のうち、型の都合で最小限だけ触れた E2E: FR-ADMIN-072・082・093・123（slipId: null, slipNumber: null の追加）と FR-ADMIN-104（追跡の説明の第三の文）。

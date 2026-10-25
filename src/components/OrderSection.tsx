@@ -4,16 +4,14 @@ import { Button } from '@/components/ui/Button/Button';
 import { DataTable } from '@/components/ui/DataTable/DataTable';
 import { StatusBadge, type StatusBadgeTone } from '@/components/ui/StatusBadge/StatusBadge';
 import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
-import {
-	LEGACY_FULFILLMENT_DISABLED_TEXT,
-	MANUAL_COMPLETION_DISABLED_TEXT,
-} from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
+import { MANUAL_COMPLETION_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import type { OrderStatus as DbOrderStatus } from '@/lib/orders/order-payment-types';
 import { PARTIALLY_SHIPPED_LABEL, type OrderProgressKey } from '@/lib/orders/order-progress';
 import { PAYMENT_STATUS_LABELS, REFUND_FAILED_BADGE, REFUND_PENDING_BADGE, type PaymentStatusKey } from '@/lib/orders/payment-status';
 import { RETURN_DISPLAY_STATUS_LABELS, RETURN_MARK_LABELS } from '@/lib/orders/returns/return-messages';
 import type { OrderReturnSummary, ReturnDisplayStatus, ReturnNextAction } from '@/lib/orders/returns/return-types';
+import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import { DELIVERY_ATTENTION_LABELS } from '@/lib/orders/tracking/delivery-messages';
 import { cn } from '@/lib/utils';
 
@@ -278,11 +276,14 @@ export default function OrderSection({
 				</p>
 			) : null}
 			{/*
-				G-1 Task 15: 旧の発送・手動の仕上がりの入口は撤去した。止めたことを、注文の行ごとではなく表の上に1回ずつ伝える。
+				G-1 Task 15 / G-3: 旧の発送・手動の仕上がりの入口は撤去した。発送は荷作り表の発送票で行うので、注文の行ごとではなく表の上に1回ずつ伝える。
 				画面の幅が狭くても折り返す（折り返しを止める指定や固定の幅を付けない）
 			*/}
-			<div className="mb-4 space-y-1">
-				<p className="lk-text-sm text-[#474747] font-acumin">{LEGACY_FULFILLMENT_DISABLED_TEXT}</p>
+			<div className="mb-4 space-y-2">
+				<p className="lk-text-sm text-[#474747] font-acumin">{SHIPMENT_SLIP_TEXT.orderSectionGuide}</p>
+				<div>
+					<Button href="/admin/packing" variant="secondary" size="sm" className="font-acumin">{SHIPMENT_SLIP_TEXT.openPacking}</Button>
+				</div>
 				<p className="lk-text-sm text-[#474747] font-acumin">{MANUAL_COMPLETION_DISABLED_TEXT}</p>
 			</div>
 

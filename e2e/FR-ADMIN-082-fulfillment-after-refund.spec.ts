@@ -205,6 +205,8 @@ for (const viewport of viewports) {
         cancelled: false,
         cancellable: true,
         legacy: false,
+        slipId: null,
+        slipNumber: null,
       } satisfies OrderHistoryFulfillmentEntry;
       const posts: string[] = [];
       await mockAdminSession(page);

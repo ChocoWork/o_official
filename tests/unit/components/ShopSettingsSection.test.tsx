@@ -920,8 +920,8 @@ const DELIVERY_SWITCH_NAME = '配送の追跡（17TRACK）を使う';
 const DELIVERY_EXPLANATIONS = [
   'オンにすると、発送した荷物の配送状況（配達中・配達済みなど）を 17TRACK から受け取り、お客様の注文の画面に出し、配達中・配達済みのメールを送ります。17TRACK には配送業者と伝票番号だけを渡します',
   '17TRACK の利用料がかかります（最初の200件は無料。その後は年払い）。佐川急便の荷物は、佐川急便の追跡が止まっている間は追えません',
-  // G-1 Task 15: 伝票番号の訂正と手動の配達済みを止めたので、第三の説明を置き換えた
-  '伝票番号の訂正と手動の配達済みは、発送票の公開まで利用できません。',
+  // G-3: 伝票番号の訂正と手動の配達済みは、追跡のオン・オフに関わらず発送票から行えるので、第三の説明を置き換えた
+  'オフの間も、伝票番号の訂正と手動の配達済みは、発送票から行えます。',
 ];
 /** G-1 で消した、オフの間も直せる・配達済みにできるという説明 */
 const DELIVERY_OLD_OFF_EXPLANATION = 'オフの間も、伝票番号の直しと、手で配達済みにすることはできます';
@@ -1012,7 +1012,9 @@ describe('ShopSettingsSection の「配送の追跡」の欄の表示', () => {
       expect(within(deliveryRegion()).getByText(sentence)).toBeVisible();
     }
     expect(screen.queryByText(DELIVERY_OLD_OFF_EXPLANATION)).not.toBeInTheDocument();
-    expect(screen.queryByText(/オフの間も/)).not.toBeInTheDocument();
+    // 「オフの間も」で始まる説明は、発送票から行えるという第三の文だけ（旧い説明の言葉は残らない）
+    expect(screen.getAllByText(/オフの間も/).map((element) => element.textContent)).toEqual(['オフの間も、伝票番号の訂正と手動の配達済みは、発送票から行えます。']);
+    expect(screen.queryByText(/発送票の公開まで/)).not.toBeInTheDocument();
   });
 
   it('鍵が設定済みなら「鍵：設定済み」を出し、トグルは押せる。「鍵を設定してください」は出さない', async () => {

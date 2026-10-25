@@ -712,7 +712,7 @@ function fulfillmentEntry(overrides: Partial<OrderHistoryFulfillmentEntry> = {})
   return {
     type: 'fulfillment', at: '2026-10-10T02:00:00.000Z', fulfillmentId: FULFILLMENT_ID, number: 1, carrierLabel: 'ヤマト運輸',
     trackingNumber: '1234-5678', items: [{ name: 'シルクブラウス', quantity: 2 }], actorEmail: 'admin@example.com',
-    notifyCustomer: true, completesOrder: false, cancelled: false, cancellable: false, legacy: false,
+    notifyCustomer: true, completesOrder: false, cancelled: false, cancellable: false, legacy: false, slipId: null, slipNumber: null,
     ...overrides,
   };
 }

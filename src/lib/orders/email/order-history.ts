@@ -24,6 +24,7 @@ import {
 // 型だけを読む（実行時には何も読み込まない）。窓口が DB の関数から読んだ行を、そのまま渡してもらう
 import type { OrderFulfillmentHistoryRow } from '@/lib/orders/fulfillment/fulfillment-store';
 import type { OrderRefundRow } from '@/lib/orders/refund/refund-store';
+import type { ShipmentSlipLink } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import type { DeliveryEvent, FulfillmentDeliveryDetail, OrderDeliveryDetail, TrackingChange } from '@/lib/orders/tracking/delivery-types';
 
 /**
@@ -138,6 +139,9 @@ export type OrderHistoryFulfillmentEntry = {
   cancelled: boolean;
   cancellable: boolean;
   legacy: boolean;
+  /** この発送が属する発送票（G-3）。票に属さない発送（G-3 より前の発送、読めなかった時）は null。画面は票へのリンクを出す */
+  slipId: string | null;
+  slipNumber: string | null;
   delivery?: FulfillmentDeliveryDetail;
 };
 
@@ -278,6 +282,8 @@ export type BuildOrderHistoryInput = {
   cancelRequests: AdminCancelRequest[];
   lines: OrderHistoryLine[];
   delivery?: OrderDeliveryDetail;
+  /** 発送の ID から、その発送が属する発送票を引く表（G-3）。窓口が権限を確かめて読み、足りない時や読めない時は渡さない */
+  slips?: ReadonlyMap<string, ShipmentSlipLink>;
 };
 
 const OPEN_STATUSES: ReadonlySet<OrderEmailStatus> = new Set(['pending', 'sending', 'retry_wait']);
@@ -591,6 +597,8 @@ export function buildOrderHistory(input: BuildOrderHistoryInput): OrderHistoryRe
       // G-1: 旧の発送の取消は止めた（窓口は 410、画面の入口は Task 15 で撤去）。読み手の形を保つため、項目は残して常に false にする
       cancellable: false,
       legacy: row.legacy,
+      slipId: input.slips?.get(row.fulfillmentId)?.slipId ?? null,
+      slipNumber: input.slips?.get(row.fulfillmentId)?.number ?? null,
       ...(delivery ? { delivery } : {}),
     };
   });
