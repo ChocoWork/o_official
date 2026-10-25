@@ -9,6 +9,7 @@
 | [ステークホルダー要求](stakeholder-requirements.md) | 利用者と管理者が求める成果、事業上の目標 |
 | [要件定義書](requirements.md) | 機能・非機能要件、優先度、受け付け基準 |
 | [ユースケース一覧](use-cases.md) | 主要な利用者目的と要求IDの対応 |
+| 範囲内の 9 領域（[news](areas/news.md)・[home](areas/home.md)・[look](areas/look.md)・[about](areas/about.md)・[stockist](areas/stockist.md)・[search](areas/search.md)・[privacy](areas/privacy.md)・[auth](areas/auth.md)・[admin](areas/admin.md)） | 要求・要件・受け入れ条件・セキュリティ要件・派生要件の項目（この領域の ID の定義の正本。`requirements.md` の写し元の行は定義に数えない。[領域の文書の一覧](../README.md#範囲内の領域の文書)） |
 
 ## 読み方
 

@@ -4,7 +4,7 @@
 
 ## 概要
 
-試験が足りない項目、名前に ID の無い試験、分岐の網羅で届かない所を並べた表。
+試験が足りない項目、名前に ID の無い試験、飛ばしている試験、分岐の網羅で届かない所を並べた表。
 
 `npm run trace:report` が作る。手で直さない（「届かない分岐」の節だけは手で書き、生成し直しても残る）。
 
@@ -23,13 +23,14 @@
 | SEC-NEWS-020-AC-02 管理の1件の取得は DB の失敗を 404 にしない | E2E | `docs/02_Requirements/areas/news.md:2328` |
 | SEC-NEWS-020-AC-03 公開の一覧の取り出しの失敗が記録に残る | E2E | `docs/02_Requirements/areas/news.md:2340` |
 | SEC-NEWS-021-AC-01 決めた回数を超えた作成を断る | E2E | `docs/02_Requirements/areas/news.md:2365` |
-| FREQ-278-AC-02 3つの幅で縦線の動きの名前が threadDraw | E2E | `docs/02_Requirements/areas/home.md:698` |
-| FREQ-278-AC-06 3つの幅で縦線は1回だけ再生し、終わりの形を保つ | E2E | `docs/02_Requirements/areas/home.md:750` |
-| SEC-HOME-014-AC-01 1つの領域の取得が失敗してもホームのほかの節が出る | E2E | `docs/02_Requirements/areas/home.md:1384` |
-| FREQ-12-AC-01 ほかの利用者のコーディネートを見る時にエラーが出ず関連コーディネートが出る | E2E | `docs/02_Requirements/areas/look.md:1773` |
-| FREQ-137-AC-01 各幅で HOME と一覧の格子の row-gap と column-gap が等しい | E2E | `docs/02_Requirements/areas/look.md:2267` |
-| SEC-LOOK-009-AC-02 上限を超える公開の LOOK があっても、一覧の1回の表示は上限まで | E2E | `docs/02_Requirements/areas/look.md:4066` |
-| SEC-LOOK-010-AC-01 大きな件数を求めても上限までしか返らない | E2E | `docs/02_Requirements/areas/look.md:4091` |
+| FREQ-278-AC-02 3つの幅で縦線の動きの名前が threadDraw | E2E | `docs/02_Requirements/areas/home.md:709` |
+| FREQ-278-AC-06 3つの幅で縦線は1回だけ再生し、終わりの形を保つ | E2E | `docs/02_Requirements/areas/home.md:761` |
+| SEC-HOME-014-AC-01 1つの領域の取得が失敗してもホームのほかの節が出る | E2E | `docs/02_Requirements/areas/home.md:1395` |
+| FREQ-12-AC-01 ほかの利用者のコーディネートを見る時にエラーが出ず関連コーディネートが出る | E2E | `docs/02_Requirements/areas/look.md:1825` |
+| FREQ-137-AC-01 各幅で HOME と一覧の格子の row-gap と column-gap が等しい | E2E | `docs/02_Requirements/areas/look.md:2319` |
+| FR-LOOK-DETAIL-007-AC-01 詳細に同じシーズンか関連のコーディネートを薦める節が出る | E2E | `docs/02_Requirements/areas/look.md:3745` |
+| SEC-LOOK-009-AC-02 上限を超える公開の LOOK があっても、一覧の1回の表示は上限まで | E2E | `docs/02_Requirements/areas/look.md:4118` |
+| SEC-LOOK-010-AC-01 大きな件数を求めても上限までしか返らない | E2E | `docs/02_Requirements/areas/look.md:4143` |
 | SEC-ABOUT-006-AC-01 Supabase に届かない状態でも /about が表示される | E2E | `docs/02_Requirements/areas/about.md:530` |
 | SEC-ABOUT-007-AC-01 設定が無い時に OG の URL が手元の URL にならない | E2E | `docs/02_Requirements/areas/about.md:557` |
 | SEC-STOCKIST-008-AC-01 anon・authenticated に表の余分な権限が無い | E2E | `docs/02_Requirements/areas/stockist.md:938` |
@@ -63,13 +64,13 @@
 | SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:4593` |
 | SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:4730` |
 | SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:4842` |
-| FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:201` |
-| SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:417` |
-| SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:628` |
-| SEC-ADMIN-010-AC-02 保持の期間を過ぎた行は写しを残してから消える | E2E | `docs/02_Requirements/areas/admin.md:640` |
-| SEC-ADMIN-012-AC-02 漏れたパスワードでの作成を断る | E2E | `docs/02_Requirements/areas/admin.md:702` |
-| SEC-ADMIN-017-AC-02 秘密が未設定なら Reply-To の無いメールを送る | E2E | `docs/02_Requirements/areas/admin.md:875` |
-| SEC-ADMIN-021-AC-02 メールを送らなかった返信は mailSent を false で返す | E2E | `docs/02_Requirements/areas/admin.md:987` |
+| FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:206` |
+| SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:422` |
+| SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:633` |
+| SEC-ADMIN-010-AC-02 保持の期間を過ぎた行は写しを残してから消える | E2E | `docs/02_Requirements/areas/admin.md:645` |
+| SEC-ADMIN-012-AC-02 漏れたパスワードでの作成を断る | E2E | `docs/02_Requirements/areas/admin.md:707` |
+| SEC-ADMIN-017-AC-02 秘密が未設定なら Reply-To の無いメールを送る | E2E | `docs/02_Requirements/areas/admin.md:880` |
+| SEC-ADMIN-021-AC-02 メールを送らなかった返信は mailSent を false で返す | E2E | `docs/02_Requirements/areas/admin.md:992` |
 
 ## 名前に ID の無い試験
 
@@ -118,6 +119,15 @@
 | e2e | `e2e/FR-PWRESET-002-password-reset-hardening.spec.ts:69` | opening the link with GET forwards to the verify page |
 | e2e | `e2e/FR-PWRESET-002-password-reset-hardening.spec.ts:82` | a link without a token redirects with a reason |
 | e2e | `e2e/FR-PWRESET-002-password-reset-hardening.spec.ts:111` | confirm rejects the removed legacy token payload |
+
+## 飛ばしている試験
+
+| 段 | 場所 | 指す項目 | 名前 |
+| --- | --- | --- | --- |
+| e2e | `e2e/FR-LOOK-DETAIL-007-related-recommendations-wont.spec.ts:4` | FR-LOOK-DETAIL-007-AC-01 | FR-LOOK-DETAIL-007-AC-01 詳細に同じシーズンか関連のコーディネートを薦める節が出る（現フェーズ対象外のため未実装） |
+| unit | `tests/unit/app/auth/auth-callback-page.test.tsx:145` | DD-AUTH-006 | DD-AUTH-006 //で始まる外の住所の next は /auth/verified にする |
+| integration | `tests/integration/ui/auth-header-visibility.test.tsx:95` | ARC-AUTH-008 | ARC-AUTH-008 CSS が印の true の時にヘッダーの高さを、false の時に 0 を --site-header-offset に入れる（計算後の CSS で確かめる手段が要る） |
+| integration | `tests/integration/ui/auth-header-visibility.test.tsx:96` | ARC-AUTH-008 | ARC-AUTH-008 共有のレイアウトが html の初期値に data-header-visible="true" を持つ（レイアウトを描いて確かめる手段が要る） |
 
 ## 届かない分岐
 

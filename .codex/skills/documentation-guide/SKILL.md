@@ -144,7 +144,7 @@ description: ドキュメント作成時の共通ルール。Markdown ドキュ�
 
 | 属性 | 書く項目 | 中身 |
 | --- | --- | --- |
-| 上位 | 要求（`FREQ-NN`・`SR-`）・`THR-`・`DRV-` を除く全部（必須） | 上の段の ID。複数は `、` で区切る。範囲外の ID は直後に `（範囲外）` を付ける（例: `SEC-012（範囲外）`）。`（範囲外）` 付きの ID は、範囲内に定義があるか、範囲外の文書に現れていなければ落ちる。範囲外の文書とは `docs/**/*.md` から、範囲内の文書・`graphify-out`・`docs/superpowers/**`・`docs/05_Quality/reports/**` を除いた物。範囲内の文書の本文に ID を書いても、知られた ID にはならない |
+| 上位 | 要求（`FREQ-NN`・`SR-`）・`THR-`・`DRV-` を除く全部（必須） | 上の段の ID。複数は `、` で区切る。範囲外の ID は直後に `（範囲外）` を付ける（例: `SEC-012（範囲外）`）。`（範囲外）` 付きの ID は、範囲内に定義があるか、範囲外の文書に現れていなければ落ちる。読み込んだ領域の中に定義のある `（範囲外）` 付きの ID は、道具が範囲内の上位として扱う（影響範囲・たどりが領域をまたぐ）ので、定義が範囲内に入ったら印を外す。範囲外の文書とは `docs/**/*.md` から、範囲内の文書・`graphify-out`・`docs/superpowers/**`・`docs/05_Quality/reports/**` を除いた物。範囲内の文書の本文に ID を書いても、知られた ID にはならない |
 | 根拠 | 全部（必須） | なぜそうなっているか。上位の ID や出どころを添える |
 | 状態 | 全部（必須） | `現行`・`推定`・`廃止` のどれか1つ（ほかの字は空とみなす） |
 | 確かめ方 | 要件・設計 | E2E・結合テスト・単体テスト・レビューなど |
@@ -269,7 +269,7 @@ it('DD-NEWS-003 下書きのニュースを返さない', () => { … });
 
 - 段は置き場で決まる。段に合わない種類を書くと `wrong-test-level` で落ちる
 - テストのファイルは、パスが `scope.json` の `tests`・`e2e` の型（glob）に合う時だけ範囲に入る（NEWS なら、単体テストは名前に `news`・`News` を含むか `news/` の下、結合テストは名前に小文字の `news` を含むか `news/` の下、E2E は `e2e/FR-NEWS-*.spec.ts`。`tests/integration/ui/NewsList.test.tsx` のような大文字始まりの名前は範囲外になる）。`tests/unit/`・`tests/integration/` の新しいファイルの名前は小文字のケバブ（例: `news-list.test.tsx`）にする。新しい E2E のファイルは今までどおり `e2e/FR-<AREA>-NNN-<kebab>.spec.ts` の名前にし（範囲の e2e の型に合わせるため）、mobile 390・tablet 768・desktop 1280 の3つの幅で試し、本番ビルドに対して流す
-- 読むのは `test`・`it`（`.only`・`.skip`・`.each` を含む）の名前だけ。`describe` の名前とファイルの名前はつなぎにならない。E2E のファイル名（`FR-NEWS-ALL-001-….spec.ts`）は変えず、テスト名に受け入れ条件の ID を書く（要件の ID ではなく）
+- 読むのは `test`・`it`（`.only`・`.skip`・`.todo`・`.fixme`・`.each` を含む）の名前だけ。`skip`・`todo`・`fixme` の試験は実行しないので、受け入れ条件・構造設計・詳細設計の「試験がある」に数えず、`test-gaps.md` の「飛ばしている試験」の節に出す（WONT の受け入れ条件のように飛ばしている物は `missing-child` に出て、基準に持つ）。`describe` の名前とファイルの名前はつなぎにならない。E2E のファイル名（`FR-NEWS-ALL-001-….spec.ts`）は変えず、テスト名に受け入れ条件の ID を書く（要件の ID ではなく）
 - テンプレート文字列の名前は、先頭の ID を `${…}` にせず字で書く
 - 範囲内のテストは全部、名前の先頭に ID が要る（`untagged-test`）。ID は範囲内に定義が要り（`unknown-test-id`）、廃止の項目を指さない
 - 既にあるテストの名前に ID を付ける前に、範囲内の E2E を流して基準を取り、`npm run trace:compare-e2e` で前後を比べる。結果の JSON は PowerShell で `$env:PLAYWRIGHT_JSON_OUTPUT_NAME="$env:TEMP\x.json"; npx playwright test <パス> --reporter=json` のように作る（前と後で別の名前にする）
@@ -281,10 +281,10 @@ it('DD-NEWS-003 下書きのニュースを返さない', () => { … });
 
 | コマンド | 確かめること |
 | --- | --- |
-| `npm run validate-trace`（`-- <AREA>` で領域を絞る） | 6〜10 の決まり。違反を `ファイル:行 [決まりの名前] 中身` で出し、1つでもあれば終了コード 1 |
+| `npm run validate-trace`（`-- <AREA>` で領域を絞る） | 6〜10 の決まり。違反を `ファイル:行 [決まりの名前] 中身` で出す。既知の違反は `scripts/trace/baseline.json` に持ち（出力に「（既知）」と付く）、**基準より増えた違反が1つでもあれば**終了コード 1。直して基準から消す時と、承認した違反を足す時は `npm run validate-trace -- --update-baseline`（全領域だけ）。どのファイルにも当たらない `scope.json` の型は件数の警告が出る（一覧は `-- --list-unmatched`） |
 | `npm run trace -- <ID かファイル>` | 上（要求まで）と下（テストまで）と、同じ `DD-` を共有する単位。変える前の影響範囲の分析に使う |
-| `npm run trace:report -- <AREA>` | 生成物 `docs/05_Quality/reports/trace-matrix.md`・`test-gaps.md`・`unused-code.md` を作り直す |
-| `npm run test:trace-coverage` | 範囲内の単体テスト（`tests/unit/`）を流し、範囲内のファイルの分岐の網羅が 100% か。領域は環境変数 `TRACE_AREAS` にカンマ区切りで渡し、無ければ `scope.json` の全部。PowerShell では `$env:TRACE_AREAS='NEWS'; npm run test:trace-coverage`（`-- NEWS` の書き方は使えない） |
+| `npm run trace:report` | 生成物 `docs/05_Quality/reports/trace-matrix.md`・`test-gaps.md`・`unused-code.md` を作り直す。生成物は全領域をまとめた1つの一覧なので、領域名を渡しても全領域を書く（1つの領域だけで書き直すと、ほかの領域の行が消える） |
+| `npm run test:trace-coverage` | 範囲内の単体テスト（結合 `tests/integration/` 以外）を流し、範囲内のファイルの分岐の網羅を測り、届かない分岐を `test-gaps.md` の「届かない分岐」の節と突き合わせる（`scripts/trace/check-coverage.ts`）。節に無い届かない分岐と、節にあるのに今は届いている行があれば終了コード 1（「分岐の網羅の数には入らない」と書いた行は外す）。領域は環境変数 `TRACE_AREAS` にカンマ区切りで渡し、無ければ `scope.json` の全部。PowerShell では `$env:TRACE_AREAS='NEWS'; npm run test:trace-coverage`（`-- NEWS` の書き方は使えない） |
 | `npm run trace:compare-e2e -- <前の JSON> <後の JSON>` | テスト名に ID を付ける前後の E2E の結果（Playwright の JSON）を、名前の対応で比べる |
 | `npm run validate-docs` | Markdown の形、相対リンク、Mermaid の図 |
 
@@ -301,14 +301,14 @@ it('DD-NEWS-003 下書きのニュースを返さない', () => { … });
 | `unknown-parent` | 上位の ID が範囲内に無い（`（範囲外）` 付きは、範囲内の文書にも、7 の「上位」の行で決めた範囲外の文書にも無い） |
 | `missing-child` | 7 の表の「下に要るもの」が無い |
 | `retired-reference` | 廃止の項目を指している |
-| `missing-impl`・`duplicate-impl` | 単位に `@impl` が無い・同じ `IMPL-` が2つある |
+| `missing-impl`・`duplicate-impl`・`multiple-impl` | 単位に `@impl` が無い・同じ `IMPL-` が2つある・1つの単位に `@impl` が複数ある |
 | `bad-design-link` | `@design` が1つでない・`DD-` でない・範囲内に無い |
 | `untagged-test`・`wrong-test-level`・`unknown-test-id` | テスト名の先頭に ID が無い・段に合わない・範囲内に無い |
 
 - 生成物は手で直さない。手で書いてよいのは、`trace-matrix.md` の「食い違い」節、`test-gaps.md` の「届かない分岐」節、`unused-code.md` の「判断」の列だけ（作り直しても引き継がれる）
 - 文書とコードが食い違ったら、どちらが正しいかを決めずに「食い違い」節に載せてユーザーに聞く
 - テストで届かない分岐（型の上では起きない道など）は、理由を「届かない分岐」節に1件ずつ書く。書き足せるテストの逃がし先にしない。1行に1件、``- `src/…/file.ts:42` 理由。確認: 未`` の形で書く（`-` か `*` で始め、`ファイル:行` を書き、空白の後に理由）。この形に合わない行は警告が出て、作り直しの時に消える
-- 使われていないコードは消さずに `unused-code.md` に載せる。判断はユーザーが書く
+- 使われていないコードは消さずに `unused-code.md` に載せる。判断はユーザーが書く。見つけ方は「参照なし」（どこからも import されない）、「試験だけが参照」（`tests/`・`e2e/`・`scripts/` からだけ import され、製品のコードからは使われない）、「要件につながらない」の3つ
 
 ### 12. 型
 

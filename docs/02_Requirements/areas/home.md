@@ -51,29 +51,40 @@ HOME の領域の要求・要件・受け入れ条件・派生要件を、追跡
 
 ### E2E と受け入れ条件の対応
 
-`e2e/FR-HOME-*`・`e2e/NFR-HOME-*` のうち範囲の型に入るファイルが試している受け入れ条件。テスト名に ID を付ける時に使う。
+範囲の E2E（`e2e/FR-HOME-*`・`e2e/NFR-HOME-*` のうち範囲の型に入るファイル）のテスト名の先頭に付けた受け入れ条件（2026-10-25 時点。`npm run validate-trace -- HOME` の `missing-child` が正）。
 
-| E2E のファイル | 受け入れ条件 |
+| E2E のファイル | テスト名の先頭に付けた受け入れ条件 |
 | --- | --- |
-| FR-HOME-001-hero-banner | FR-HOME-001-AC-01（古い代替テキストを探して落ちる。食い違い） |
+| FR-HOME-001-hero-banner | FR-HOME-001-AC-01 |
 | FR-HOME-002-home-sections | FR-HOME-002-AC-01 |
 | FR-HOME-004-view-all-buttons | FR-HOME-004-AC-01 |
-| FR-HOME-005-stockist-home | FR-HOME-005-AC-01（1280px だけ） |
-| FR-HOME-006-007-011-home-quality | FR-HOME-006-AC-01・FR-HOME-007-AC-01・FR-HOME-009-AC-01・NFR-HOME-002-AC-01（1つのテストで4つ。名前の ID は1つなので分ける必要がある） |
+| FR-HOME-005-stockist-home | FR-HOME-005-AC-01 |
+| FR-HOME-006-007-011-home-quality | FR-HOME-006-AC-01 |
 | FR-HOME-006-home-metadata | FR-HOME-006-AC-01 |
 | FR-HOME-007-hero-priority | FR-HOME-007-AC-01 |
 | FR-HOME-008-about-image | FR-HOME-008-AC-01 |
 | FR-HOME-009-heading-structure | FR-HOME-009-AC-01 |
-| FR-HOME-012-view-all-button-ui | FREQ-146-AC-01・AC-02（NEWS が定義） |
-| FR-HOME-013-section-display-limits | FREQ-147-AC-01〜03、FREQ-148-AC-01〜03、FREQ-149-AC-01・02（NEWS が定義）、FREQ-276-AC-03（範囲外、持ち主なし）、FREQ-277-AC-03（LOOK が定義）。1つのテストで5つの要求 |
-| FR-HOME-017-section-title-common | FREQ-275-AC-01・AC-03（NEWS が定義）、FREQ-314-AC-02（範囲外、持ち主なし） |
-| FR-HOME-018-hero-motion | 1つ目 FREQ-278-AC-01、2つ目 FREQ-282-AC-01 と FREQ-278-AC-03、3つ目 FREQ-278-AC-04、4つ目 FREQ-278-AC-05、5つ目 FREQ-280-AC-01・AC-02 |
-| FR-HOME-019-hero-thread-loop | 1つ目 FREQ-282-AC-01、2つ目 FREQ-282-AC-02 |
+| FR-HOME-012-view-all-button-ui | FREQ-146-AC-01 |
+| FR-HOME-013-section-display-limits | FREQ-147-AC-01 |
+| FR-HOME-017-section-title-common | FREQ-275-AC-01 |
+| FR-HOME-018-hero-motion | FREQ-278-AC-01、FREQ-278-AC-03、FREQ-278-AC-04、FREQ-278-AC-05、FREQ-280-AC-02 |
+| FR-HOME-019-hero-thread-loop | FREQ-282-AC-01、FREQ-282-AC-02 |
 | FR-HOME-020-hero-scroll-color | FREQ-283-AC-01 |
-| NFR-HOME-001-home-performance | NFR-HOME-001-AC-01（3G を模していない。食い違い） |
-| NFR-HOME-002-wcag-accessibility | NFR-HOME-002-AC-01（コントラスト比そのものは測っていない） |
+| FR-HOME-021-home-grid-limits-and-links | FREQ-147-AC-02、FREQ-148-AC-01、FREQ-148-AC-02、FREQ-147-AC-03、FREQ-148-AC-03、FR-HOME-003-AC-01、FREQ-280-AC-01 |
+| FR-HOME-022-home-response-hardening | SEC-HOME-008-AC-02、SEC-HOME-009-AC-01、SEC-HOME-010-AC-01、SEC-HOME-017-AC-01、SEC-HOME-009-AC-02、SEC-HOME-010-AC-02、SEC-HOME-015-AC-01、SEC-HOME-016-AC-01、SEC-HOME-017-AC-02、SEC-HOME-018-AC-01 |
+| FR-HOME-023-home-published-only-and-content | SEC-HOME-001-AC-01、SEC-HOME-001-AC-02、SEC-HOME-002-AC-01、SEC-HOME-004-AC-02、SEC-HOME-006-AC-01、SEC-HOME-006-AC-02、SEC-HOME-007-AC-01、SEC-HOME-008-AC-01、SEC-HOME-013-AC-01 |
+| FR-HOME-024-home-table-grants | SEC-HOME-003-AC-01、SEC-HOME-003-AC-02、SEC-HOME-004-AC-01、SEC-HOME-005-AC-01、SEC-HOME-020-AC-01 |
+| NFR-HOME-001-home-performance | NFR-HOME-001-AC-01 |
+| NFR-HOME-002-wcag-accessibility | NFR-HOME-002-AC-01 |
 
-受け入れ条件があって範囲の E2E が無い物: `FR-HOME-003-AC-01`、`FREQ-278-AC-02`・`AC-06`（縦線は FREQ-282 の動きに変わった）。E2E が今の値で試し、受け入れ条件の文と数が合わない物: `FREQ-147-AC-02`・`FREQ-148-AC-02`（1280px の件数）。
+E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-278-AC-02`・`AC-06`（縦線は FREQ-282 の動きに変わった）、`SEC-HOME-014-AC-01`（今のコードが満たさない。TM-HOME-42）。E2E が今の値で試し、受け入れ条件の文と数が合わない物: `FREQ-147-AC-02`・`FREQ-148-AC-02`（1280px の件数）。
+
+- `FR-HOME-001-hero-banner` は古い代替テキストを探して落ちる（食い違い）
+- `FR-HOME-005-stockist-home` は 1280px だけ試す
+- `FR-HOME-006-007-011-home-quality` は1つのテストで FR-HOME-006・007・009 と NFR-HOME-002 の4つを試すが、名前の ID は FR-HOME-006-AC-01 の1つだけ
+- `FR-HOME-013-section-display-limits` は1つのテストで FREQ-147・148・149（NEWS が定義）、FREQ-276-AC-03（範囲外、持ち主なし）、FREQ-277-AC-03（LOOK が定義）の5つの要求を試すが、名前の ID は FREQ-147-AC-01 の1つだけ
+- `NFR-HOME-001-home-performance` は 3G を模していない（食い違い）
+- `NFR-HOME-002-wcag-accessibility` はコントラスト比そのものを測っていない
 
 ## 要求
 

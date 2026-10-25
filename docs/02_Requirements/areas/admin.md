@@ -62,16 +62,21 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 
 ### E2E と受け入れ条件の対応
 
-範囲の E2E（`e2e/FR-ADMIN-MISC-*.spec.ts`）は1本も無い。どの受け入れ条件にも範囲の E2E が無い。
+範囲の E2E は `e2e/FR-ADMIN-MISC-001`〜`007` の7本。テスト名の先頭に付けた受け入れ条件は次のとおり（2026-10-25 時点。`npm run validate-trace -- ADMIN` の `missing-child` が正）。
 
-| 受け入れ条件 | 今ある試験（範囲の E2E ではない） |
+| E2E のファイル | テスト名の先頭に付けた受け入れ条件 |
 | --- | --- |
-| FREQ-508-AC-01・AC-02 | 結合テストの置き場の `tests/integration/api/admin/audit-logs.test.ts`（認可と DB を差し替えた窓口の試験）、DB 結合 `tests/integration/db/audit_read_permission.integration.test.ts`（範囲の型に合わない） |
-| FREQ-508-AC-03 | DB 結合 `tests/integration/db/audit_read_permission.integration.test.ts` |
-| FREQ-25-AC-01、FR-ADMIN-009-AC-01〜06 | 無い |
+| FR-ADMIN-MISC-001-admin-api-authorization-gates | SEC-ADMIN-001-AC-01、SEC-ADMIN-001-AC-02、SEC-ADMIN-001-AC-03、SEC-ADMIN-005-AC-01、SEC-ADMIN-005-AC-02 |
+| FR-ADMIN-MISC-002-create-user-screen-and-api | SEC-ADMIN-001-AC-04、SEC-ADMIN-008-AC-02、SEC-ADMIN-012-AC-01、SEC-ADMIN-013-AC-01、SEC-ADMIN-013-AC-02 |
+| FR-ADMIN-MISC-003-session-revocation-and-mfa-reset | SEC-ADMIN-007-AC-01、SEC-ADMIN-008-AC-01、SEC-ADMIN-009-AC-01、SEC-ADMIN-014-AC-01、SEC-ADMIN-014-AC-02、SEC-ADMIN-015-AC-01、SEC-ADMIN-015-AC-02、SEC-ADMIN-016-AC-01 |
+| FR-ADMIN-MISC-004-audit-log-read | FREQ-508-AC-01、FREQ-508-AC-02、SEC-ADMIN-011-AC-01、SEC-ADMIN-023-AC-01 |
+| FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access | SEC-ADMIN-002-AC-01、SEC-ADMIN-002-AC-02、SEC-ADMIN-003-AC-01、SEC-ADMIN-004-AC-01、SEC-ADMIN-022-AC-01 |
+| FR-ADMIN-MISC-006-contact-management | FR-ADMIN-009-AC-01、FR-ADMIN-009-AC-05、FR-ADMIN-009-AC-02、FR-ADMIN-009-AC-03、FR-ADMIN-009-AC-04、FR-ADMIN-009-AC-06、SEC-ADMIN-019-AC-01、SEC-ADMIN-020-AC-01、SEC-ADMIN-021-AC-01 |
+| FR-ADMIN-MISC-007-contact-reply-mail-and-threading | FREQ-25-AC-01、SEC-ADMIN-006-AC-01、SEC-ADMIN-006-AC-02、SEC-ADMIN-017-AC-01、SEC-ADMIN-018-AC-01、SEC-ADMIN-022-AC-02 |
+
+E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-508-AC-03`、`SEC-ADMIN-003-AC-02`、`SEC-ADMIN-010-AC-01`・`AC-02`、`SEC-ADMIN-012-AC-02`、`SEC-ADMIN-017-AC-02`、`SEC-ADMIN-021-AC-02`。`FREQ-508-AC-03` は DB 結合 `tests/integration/db/audit_read_permission.integration.test.ts` が確かめる。
 
 - `e2e/FR-ADMIN-009-kpi-icon-tooltip.spec.ts` はファイル名が要件 FR-ADMIN-009 と同じ番号だが、KPI の試験で問い合わせの管理を試さない。範囲の型にも入らない（TM-ADMIN-17）
-- 問い合わせの管理と監査ログは画面が無いので、今のコードで E2E を書くなら窓口を直接呼ぶ形になる（推定）
 
 ## 要求
 

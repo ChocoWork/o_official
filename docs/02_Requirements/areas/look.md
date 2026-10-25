@@ -48,31 +48,83 @@ LOOK の領域の要求・要件・受け入れ条件・派生要件を、追跡
 
 ### E2E と受け入れ条件の対応
 
-`e2e/FR-LOOK-*` のファイルが試している受け入れ条件。ファイルの中の FREQ の印とテストの名前から読んだ（推定）。テスト名に ID を付ける時に使う。
+範囲の E2E（`e2e/FR-LOOK-*`）のテスト名の先頭に付けた受け入れ条件（2026-10-25 時点。`npm run validate-trace -- LOOK` の `missing-child` が正）。
 
-| E2E のファイル | 受け入れ条件 |
+| E2E のファイル | テスト名の先頭に付けた受け入れ条件 |
 | --- | --- |
-| FR-LOOK-ALL-001〜005 | 同じ番号の `FR-LOOK-ALL-NNN-AC-01`（002・004 は AC-01・AC-02） |
-| FR-LOOK-ALL-006 | FREQ-51-AC-01・AC-02、FR-LOOK-ALL-006-AC-01 |
-| FR-LOOK-ALL-007 | FREQ-53-AC-02（φ 比の間隔） |
-| FR-LOOK-ALL-008〜013 | FREQ-50-AC-01、FREQ-52-AC-01、FREQ-53-AC-01・02、FREQ-54-AC-01、FREQ-55-AC-01・02、FREQ-56-AC-01・02（番号の順） |
-| FR-LOOK-ALL-014 | FREQ-127-AC-01〜03、FREQ-138-AC-01 |
-| FR-LOOK-ALL-015〜022 | FREQ-128〜135 の AC（番号の順。021 は FREQ-134、022 は FREQ-135） |
-| FR-LOOK-ALL-023 | FREQ-136-AC-01、FREQ-139-AC-01 |
-| FR-LOOK-ALL-024 | FREQ-137-AC-01・02 |
-| FR-LOOK-ALL-025〜029 | FREQ-138〜142 の AC（番号の順） |
-| FR-LOOK-ALL-030・032 | FREQ-143-AC-01・02・04、FREQ-145-AC-01・02 |
-| FR-LOOK-ALL-031 | FREQ-144-AC-01〜04 |
-| FR-LOOK-ALL-033・034 | FREQ-150・FREQ-151 の AC |
-| FR-LOOK-ALL-035 | FREQ-274-AC-01・02（NEWS が持つ）。390・768px でデスクトップのフィルターを出さないテストは対応が無い |
-| FR-LOOK-ALL-036 | FREQ-277-AC-01〜03 |
-| FR-LOOK-ALL-037〜040 | FREQ-279・337・338・339 の AC |
-| FR-LOOK-DETAIL-001〜007 | 同じ番号の `FR-LOOK-DETAIL-NNN-AC-NN`（007 は skip） |
-| FR-LOOK-DETAIL-008〜012 | FREQ-176〜180 の AC（番号の順） |
-| FR-LOOK-DETAIL-013〜015 | FREQ-181〜183 の AC（390px の分は FREQ-343 の AC） |
-| FR-LOOK-DETAIL-016〜018 | FREQ-288・343・344 の AC |
+| FR-LOOK-ADMIN-001-look-tab-crud | FR-ADMIN-005-AC-01、FR-ADMIN-005-AC-02、FR-ADMIN-005-AC-03、FR-ADMIN-005-AC-04、FR-ADMIN-005-AC-05、FREQ-17-AC-01 |
+| FR-LOOK-ALL-001-published-looks-grid | FR-LOOK-ALL-001-AC-01 |
+| FR-LOOK-ALL-002-look-card-fields-and-navigation | FR-LOOK-ALL-002-AC-01 |
+| FR-LOOK-ALL-003-look-list-render-capacity | FR-LOOK-ALL-003-AC-01 |
+| FR-LOOK-ALL-004-home-look-section-and-cta | FR-LOOK-ALL-004-AC-01 |
+| FR-LOOK-ALL-005-look-list-seo-metadata | FR-LOOK-ALL-005-AC-01 |
+| FR-LOOK-ALL-006-look-filter-sort-wont | FREQ-51-AC-01、FREQ-51-AC-02 |
+| FR-LOOK-ALL-007-related-item-spacing | FREQ-53-AC-02 |
+| FR-LOOK-ALL-008-no-lookbook-heading | FREQ-50-AC-01 |
+| FR-LOOK-ALL-009-filter-spacing-match-news | FREQ-52-AC-01 |
+| FR-LOOK-ALL-010-related-item-proximity | FREQ-53-AC-01 |
+| FR-LOOK-ALL-011-card-text-proximity | FREQ-54-AC-01 |
+| FR-LOOK-ALL-012-grid-row-gap | FREQ-55-AC-01、FREQ-55-AC-02 |
+| FR-LOOK-ALL-013-related-item-mobile-stack | FREQ-56-AC-01、FREQ-56-AC-02、FREQ-133-AC-01 |
+| FR-LOOK-ALL-014-season-label-format | FREQ-138-AC-01、FREQ-127-AC-01 |
+| FR-LOOK-ALL-015-card-overlay-desktop | FREQ-128-AC-01、FREQ-128-AC-03 |
+| FR-LOOK-ALL-016-overlay-serif-gradient | FREQ-129-AC-01、FREQ-128-AC-03 |
+| FR-LOOK-ALL-017-overlay-gradient-smooth | FREQ-130-AC-01、FREQ-128-AC-03 |
+| FR-LOOK-ALL-018-hover-related-items | FREQ-131-AC-01、FREQ-128-AC-03 |
+| FR-LOOK-ALL-019-hover-second-image | FREQ-132-AC-01、FREQ-132-AC-02 |
+| FR-LOOK-ALL-020-desktop-hide-below-related-items | FREQ-133-AC-01、FREQ-133-AC-02 |
+| FR-LOOK-ALL-021-overlay-text-alignment | FREQ-134-AC-01、FREQ-128-AC-03 |
+| FR-LOOK-ALL-022-overlay-last-baseline | FREQ-135-AC-01、FREQ-128-AC-03 |
+| FR-LOOK-ALL-023-desktop-image-no-margin | FREQ-136-AC-01、FREQ-139-AC-01 |
+| FR-LOOK-ALL-024-equal-card-gaps | FREQ-137-AC-02 |
+| FR-LOOK-ALL-025-card-info-panel | FREQ-138-AC-01、FREQ-138-AC-02、FREQ-138-AC-03、FREQ-138-AC-04、FREQ-138-AC-05 |
+| FR-LOOK-ALL-026-panel-spacing-typography | FREQ-139-AC-01、FREQ-139-AC-05 |
+| FR-LOOK-ALL-027-mobile-tablet-row-gap | FREQ-140-AC-01、FREQ-140-AC-02、FREQ-140-AC-04 |
+| FR-LOOK-ALL-028-catalog-match-home-mobile | FREQ-141-AC-01、FREQ-141-AC-03、FREQ-141-AC-04 |
+| FR-LOOK-ALL-029-card-gray-border | FREQ-142-AC-01、FREQ-142-AC-02、FREQ-142-AC-04 |
+| FR-LOOK-ALL-030-season-label-emphasis | FREQ-143-AC-01 |
+| FR-LOOK-ALL-031-related-item-match-item-card | FREQ-144-AC-01 |
+| FR-LOOK-ALL-032-season-label-tracking-narrow | FREQ-145-AC-01 |
+| FR-LOOK-ALL-033-overlay-item-underline-link | FREQ-150-AC-01、FREQ-150-AC-03、FREQ-150-AC-04 |
+| FR-LOOK-ALL-034-panel-item-underline-link | FREQ-151-AC-01、FREQ-151-AC-04 |
+| FR-LOOK-ALL-036-grid-columns-match-item | FREQ-277-AC-01、FREQ-277-AC-02、FREQ-277-AC-03 |
+| FR-LOOK-ALL-037-card-scroll-reveal | FREQ-279-AC-01、FREQ-279-AC-05、FREQ-279-AC-02、FREQ-279-AC-04 |
+| FR-LOOK-ALL-038-mobile-related-item-group-gap | FREQ-337-AC-01、FREQ-337-AC-02、FREQ-337-AC-03 |
+| FR-LOOK-ALL-039-card-text-reveal-left-to-right | FREQ-338-AC-01、FREQ-338-AC-02、FREQ-338-AC-03 |
+| FR-LOOK-ALL-040-reveal-initial-outside-card | FREQ-339-AC-01、FREQ-339-AC-02 |
+| FR-LOOK-ALL-041-card-overlay-desktop-remaining | FREQ-128-AC-02、FREQ-128-AC-04、FREQ-129-AC-02、FREQ-129-AC-03、FREQ-130-AC-02、FREQ-131-AC-02、FREQ-131-AC-03、FREQ-134-AC-02、FREQ-150-AC-02 |
+| FR-LOOK-ALL-042-season-label-and-hover-image-remaining | FREQ-127-AC-01、FREQ-127-AC-03、FREQ-127-AC-02、FREQ-143-AC-02、FREQ-143-AC-04、FREQ-145-AC-02、FREQ-132-AC-03 |
+| FR-LOOK-ALL-043-card-info-panel-remaining | FREQ-139-AC-02、FREQ-139-AC-03、FREQ-139-AC-04、FREQ-142-AC-03、FREQ-144-AC-02、FREQ-144-AC-03、FREQ-144-AC-04、FREQ-151-AC-02、FREQ-151-AC-03 |
+| FR-LOOK-ALL-044-list-behaviour-and-grid-remaining | FR-LOOK-ALL-001-AC-02、FR-LOOK-ALL-002-AC-02、FR-LOOK-ALL-004-AC-02、FR-LOOK-ALL-006-AC-01、FR-LOOK-ALL-006-AC-02、FREQ-140-AC-03、FREQ-141-AC-02、FREQ-279-AC-03 |
+| FR-LOOK-DETAIL-001-look-detail-core-display | FR-LOOK-DETAIL-001-AC-01 |
+| FR-LOOK-DETAIL-002-styling-items-links | FR-LOOK-DETAIL-002-AC-01 |
+| FR-LOOK-DETAIL-003-prev-next-navigation | FR-LOOK-DETAIL-003-AC-01 |
+| FR-LOOK-DETAIL-004-not-found-and-back-link | FR-LOOK-DETAIL-004-AC-02 |
+| FR-LOOK-DETAIL-005-multi-image-gallery | FR-LOOK-DETAIL-005-AC-01 |
+| FR-LOOK-DETAIL-006-metadata-backlink-aria | FR-LOOK-DETAIL-006-AC-01 |
+| FR-LOOK-DETAIL-007-related-recommendations-wont | FR-LOOK-DETAIL-007-AC-01（skip。試験に数えない） |
+| FR-LOOK-DETAIL-008-related-items-divider-unify | FREQ-176-AC-01 |
+| FR-LOOK-DETAIL-009-related-item-preview-size | FREQ-177-AC-01 |
+| FR-LOOK-DETAIL-010-remove-back-link | FREQ-178-AC-01、FREQ-178-AC-02 |
+| FR-LOOK-DETAIL-011-image-gallery-match-item | FREQ-179-AC-01、FREQ-179-AC-02、FREQ-179-AC-03 |
+| FR-LOOK-DETAIL-012-desktop-image-no-overlap | FREQ-180-AC-01、FREQ-179-AC-02 |
+| FR-LOOK-DETAIL-013-bottom-nav-three-columns | FREQ-181-AC-01 |
+| FR-LOOK-DETAIL-014-nav-icon-thin-svg | FREQ-182-AC-01 |
+| FR-LOOK-DETAIL-015-nav-black-and-icon-size | FREQ-183-AC-01 |
+| FR-LOOK-DETAIL-016-tablet-desktop-match-item | FREQ-288-AC-01、FREQ-288-AC-02、FREQ-288-AC-03 |
+| FR-LOOK-DETAIL-017-mobile-fixed-bottom-nav | FREQ-343-AC-01、FREQ-343-AC-02、FREQ-343-AC-03、FREQ-343-AC-04、FREQ-343-AC-05 |
+| FR-LOOK-DETAIL-018-no-horizontal-overflow | FREQ-344-AC-01、FREQ-344-AC-03 |
+| FR-LOOK-DETAIL-019-detail-content-and-links-remaining | FR-LOOK-DETAIL-001-AC-02、FR-LOOK-DETAIL-002-AC-02、FR-LOOK-DETAIL-003-AC-02、FR-LOOK-DETAIL-004-AC-01、FR-LOOK-DETAIL-006-AC-02、FREQ-11-AC-01 |
+| FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining | FREQ-176-AC-02、FREQ-180-AC-02、FREQ-181-AC-02、FREQ-181-AC-03、FREQ-182-AC-02、FREQ-183-AC-02、FREQ-183-AC-03、FREQ-344-AC-02、FREQ-289-AC-01、FREQ-289-AC-02 |
+| FR-LOOK-SEC-001-public-visibility | SEC-LOOK-001-AC-01、SEC-LOOK-001-AC-02、SEC-LOOK-006-AC-01、SEC-LOOK-006-AC-02、SEC-LOOK-007-AC-01、SEC-LOOK-008-AC-01、SEC-LOOK-009-AC-01、SEC-LOOK-016-AC-01、SEC-LOOK-017-AC-01 |
+| FR-LOOK-SEC-002-postgrest-policies | SEC-LOOK-002-AC-01、SEC-LOOK-002-AC-02、SEC-LOOK-003-AC-01、SEC-LOOK-003-AC-02、SEC-LOOK-004-AC-01、SEC-LOOK-004-AC-02、SEC-LOOK-005-AC-01、SEC-LOOK-005-AC-02、SEC-LOOK-010-AC-02、SEC-LOOK-023-AC-01 |
+| FR-LOOK-SEC-003-admin-api-authz | SEC-LOOK-019-AC-01、SEC-LOOK-019-AC-02、SEC-LOOK-019-AC-03、SEC-LOOK-019-AC-04、SEC-LOOK-018-AC-01、SEC-LOOK-018-AC-02、SEC-LOOK-016-AC-02、SEC-LOOK-016-AC-03、SEC-LOOK-011-AC-01 |
+| FR-LOOK-SEC-004-admin-write-integrity | SEC-LOOK-012-AC-01、SEC-LOOK-012-AC-02、SEC-LOOK-012-AC-03、SEC-LOOK-013-AC-01、SEC-LOOK-013-AC-02、SEC-LOOK-014-AC-01、SEC-LOOK-014-AC-02、SEC-LOOK-020-AC-01、SEC-LOOK-020-AC-02、SEC-LOOK-015-AC-01 |
+| FR-LOOK-SEC-005-global-faults | SEC-LOOK-021-AC-01、SEC-LOOK-022-AC-01、SEC-LOOK-022-AC-02 |
 
-受け入れ条件があって範囲の E2E が無い物: `FREQ-11-AC-01`・`FREQ-12-AC-01`・`FREQ-17-AC-01`、`FR-LOOK-ALL-001-AC-02`・`FR-LOOK-DETAIL-001-AC-02`・`FR-LOOK-DETAIL-003-AC-02`、`FR-ADMIN-005-AC-01`〜`05`。範囲外の E2E だけがある物: `FREQ-289-AC-01`・`02`（`FR-ITEM-DETAIL-041`）。`FREQ-277-AC-03` は範囲外の `FR-HOME-013` も試す。
+E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-12-AC-01`（実装が無い）、`FREQ-137-AC-01`（`FR-LOOK-ALL-024` は desktop（lg 以上）だけ試して AC-02 を付けている。390・768px の縦横の同値は FREQ-140 で変わり、今の値は `FR-LOOK-ALL-027` が試す）、`FR-LOOK-DETAIL-007-AC-01`（WONT。`test.skip` は試験に数えず、`test-gaps.md` の「飛ばしている試験」に出る）、`SEC-LOOK-009-AC-02`、`SEC-LOOK-010-AC-01`。範囲外の E2E だけがある物: `FREQ-289-AC-01`・`02`（`FR-ITEM-DETAIL-041`）。`FREQ-277-AC-03` は範囲外の `FR-HOME-013` も試す。
+
+- `FR-LOOK-ALL-035` は FREQ-274-AC-01・02（NEWS が持つ）を試す。390・768px でデスクトップのフィルターを出さないテストは対応が無い
 
 ## 要求
 

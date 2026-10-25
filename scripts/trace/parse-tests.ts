@@ -12,11 +12,14 @@ export interface TestRef {
   file: string;
   line: number;
   title: string;
+  /** skip・todo・fixme で実行しない試験。確かめにならないので、受け入れ条件などの「試験がある」に数えない。 */
+  skipped?: boolean;
 }
 
 const LEAD_TOKEN = /^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+/;
 const TEST_FNS = new Set(['test', 'it']);
-const MODIFIERS = new Set(['only', 'skip']);
+const MODIFIERS = new Set(['only', 'skip', 'todo', 'fixme']);
+const SKIPPING = new Set(['skip', 'todo', 'fixme']);
 
 /** 置き場で段を決める。e2e/ で始まれば e2e、tests/integration/ は integration、ほかは unit。 */
 export function levelOf(file: string): TestLevel {
@@ -30,14 +33,17 @@ function isTestFn(e: ts.Expression): boolean {
   return ts.isIdentifier(e) && TEST_FNS.has(e.text);
 }
 
-/** `test`・`it`・`test.only`・`test.skip`・`it.each(…)`・`it.each`…`` のどれかの呼び先か。 */
-function isTestCallee(callee: ts.Expression): boolean {
-  if (isTestFn(callee)) return true;
+/**
+ * `test`・`it`・`test.only`・`test.skip`・`it.todo`・`test.fixme`・`it.each(…)`・`it.each`…`` のどれかの呼び先か。
+ * 当たれば、実行しない種類（skip・todo・fixme）かも返す。
+ */
+function testCallee(callee: ts.Expression): { skipped: boolean } | null {
+  if (isTestFn(callee)) return { skipped: false };
   if (ts.isPropertyAccessExpression(callee)) {
-    return isTestFn(callee.expression) && MODIFIERS.has(callee.name.text);
+    return isTestFn(callee.expression) && MODIFIERS.has(callee.name.text) ? { skipped: SKIPPING.has(callee.name.text) } : null;
   }
   const each = ts.isCallExpression(callee) ? callee.expression : ts.isTaggedTemplateExpression(callee) ? callee.tag : null;
-  return !!each && ts.isPropertyAccessExpression(each) && isTestFn(each.expression) && each.name.text === 'each';
+  return !!each && ts.isPropertyAccessExpression(each) && isTestFn(each.expression) && each.name.text === 'each' ? { skipped: false } : null;
 }
 
 /** 文字列はその値、テンプレートは `${…}` を含む元の字のまま返す。 */
@@ -53,7 +59,8 @@ export function parseTestRefs(file: string, text: string): TestRef[] {
   const level = levelOf(file);
   const refs: TestRef[] = [];
   const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node) && isTestCallee(node.expression)) {
+    const callee = ts.isCallExpression(node) ? testCallee(node.expression) : null;
+    if (ts.isCallExpression(node) && callee) {
       const title = titleOf(node.arguments[0], sf);
       if (title !== null) {
         const token = LEAD_TOKEN.exec(title)?.[0];
@@ -63,6 +70,7 @@ export function parseTestRefs(file: string, text: string): TestRef[] {
           file,
           line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
           title,
+          skipped: callee.skipped,
         });
       }
     }

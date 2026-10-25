@@ -10,6 +10,12 @@ describe('parseCodeUnits', () => {
     ]);
   });
 
+  it('@impl が2つ以上あれば、最初を implId、残りを extraImplIds に入れる', () => {
+    const src = "/**\n * @packageDocumentation\n * @impl IMPL-NEWS-101\n * @impl IMPL-NEWS-102\n * @design DD-NEWS-001\n */\nexport default function P() { return null; }\n";
+    const [u] = parseCodeUnits('src/app/news/page.tsx', src);
+    expect([u.implId, u.extraImplIds]).toEqual(['IMPL-NEWS-101', ['IMPL-NEWS-102']]);
+  });
+
   it("'use client' より前のコメントもファイル単位として読む", () => {
     const src = "/**\n * @packageDocumentation\n * @impl IMPL-NEWS-102\n * @design DD-NEWS-002\n */\n'use client';\nexport function A() { return null; }\n";
     expect(parseCodeUnits('src/features/news/components/A.tsx', src)[0].implId).toBe('IMPL-NEWS-102');

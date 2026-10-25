@@ -16,18 +16,24 @@ afterEach(() => {
   else process.env.TRACE_AREAS = ORIGINAL;
 });
 
-it('NEWS の範囲だけを集め、分岐 100% を求める', () => {
+it('NEWS の範囲だけを集め、jest 自身は網羅の下限を求めない（check-coverage.ts が節と突き合わせて落とす）', () => {
   const cfg = loadConfig('NEWS');
   expect(cfg.collectCoverageFrom).toContain('src/features/news/**/*.{ts,tsx}');
-  expect(cfg.coverageThreshold).toEqual({ global: { branches: 100 } });
+  expect(cfg.coverageThreshold).toBeUndefined();
   expect(cfg.moduleNameMapper['^@/(.*)$']).toBe('<rootDir>/src/$1');
 });
 
-it('testMatch は範囲の tests のうち tests/unit/ の下だけにする', () => {
+it('testMatch は範囲の tests のうち結合（tests/integration/）以外にする', () => {
   const cfg = loadConfig('NEWS');
   expect(cfg.testMatch).toContain('<rootDir>/tests/unit/**/*news*.test.ts');
   expect(cfg.testMatch).toContain('<rootDir>/tests/unit/**/*news*.test.tsx');
   expect(cfg.testMatch.every((p: string) => p.startsWith('<rootDir>/tests/unit/'))).toBe(true);
+});
+
+it('LOOK の tests/features/ の単体テストも testMatch に入れる（scripts/trace は結合以外を単体に数える）', () => {
+  const cfg = loadConfig('LOOK');
+  expect(cfg.testMatch).toContain('<rootDir>/tests/features/look/**/*.test.ts');
+  expect(cfg.testMatch.some((p: string) => p.includes('tests/integration/'))).toBe(false);
 });
 
 it('ほかの設定は jest.config.cjs をそのまま引き継ぐ', () => {
@@ -56,14 +62,14 @@ it('testMatch は中括弧を開いて渡す（jest が `/{` を中括弧その�
   expect(cfg.testMatch).toContain('<rootDir>/tests/unit/**/use-turnstile-widget*.test.tsx');
 });
 
-it('開いた testMatch が選ぶファイルは、scripts/trace が scope.json の tests から選ぶ tests/unit/ のファイルと同じ', () => {
+it('開いた testMatch が選ぶファイルは、scripts/trace が scope.json の tests から選ぶ結合以外のファイルと同じ', () => {
   const fs = require('node:fs');
   const scope = JSON.parse(fs.readFileSync('scripts/trace/scope.json', 'utf8').replace(/^﻿/, ''));
   const glob = (p: string): string[] => fs.globSync(p, { cwd: process.cwd() }).map((f: string) => f.replaceAll(String.fromCharCode(92), '/'));
   for (const a of scope) {
     const cfg = loadConfig(a.area);
     const expected = new Set<string>(
-      a.tests.filter((p: string) => p.startsWith('tests/unit/')).flatMap(glob),
+      a.tests.filter((p: string) => !p.startsWith('tests/integration/')).flatMap(glob),
     );
     const actual = new Set<string>(cfg.testMatch.flatMap((p: string) => glob(p.replace('<rootDir>/', ''))));
     expect([...actual].sort()).toEqual([...expected].sort());

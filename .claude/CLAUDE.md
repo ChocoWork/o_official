@@ -135,7 +135,7 @@ docs\1_RequirementsDifinition\brand.md に私の服のブランドのコンセ�
 
 タスクを1つ終えるごとに、変更内容に対応する docs 配下の正本を同じコミットで更新する。コードだけ変えて文書を残さない。
 
-書式は `documentation-guide` スキルに従う。コードを変えたら、その単位の `@impl`・`@design` と、つながる `DD-` を同じコミットで直す。範囲内の領域を変えたら `npm run validate-trace` と `npm run test:trace-coverage` を通す。
+書式は `documentation-guide` スキルに従う。コードを変えたら、その単位の `@impl`・`@design` と、つながる `DD-` を同じコミットで直す。範囲内の領域を変えたら `npm run validate-trace` と `npm run test:trace-coverage` を通す（既知の違反は `scripts/trace/baseline.json`、届かない分岐は `test-gaps.md` の節に持ち、そこから増やさない）。
 
 どの領域でも更新する正本:
 
@@ -154,7 +154,7 @@ docs\1_RequirementsDifinition\brand.md に私の服のブランドのコンセ�
 | 構成・画面・画面遷移・状態遷移・API・データ | `docs/03_BasicDesign/areas/<area>.md`（`api-spec.md` などには書き足さない） |
 | 設計判断 | `docs/03_BasicDesign/decisions/ADR-NNNN-<slug>.md` |
 | 処理の詳細 | `scope.json` に挙がっている `docs/04_DetailDesign/pages/` の頁の `DD-` |
-| テストの追加・変更 | テスト名の先頭の ID。`npm run trace:report -- <AREA>` で `docs/05_Quality/reports/` の一覧を作り直す |
+| テストの追加・変更 | テスト名の先頭の ID。`npm run trace:report` で `docs/05_Quality/reports/` の一覧を全領域分作り直す |
 
 範囲に入っていない領域で、上に加えて更新する正本:
 

@@ -10,6 +10,8 @@ export interface CodeUnit {
   symbol: string;
   unitKind: 'file' | 'function';
   implId?: string;
+  /** 2つ目以降の @impl（1つの単位に @impl は1つ。検査の multiple-impl で落とす）。 */
+  extraImplIds?: string[];
   designIds: string[];
   remarks: string;
 }
@@ -19,6 +21,7 @@ const ID_TOKEN = /[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+/g;
 
 interface DocTags {
   implId?: string;
+  extraImplIds?: string[];
   designIds: string[];
   remarks: string;
 }
@@ -45,7 +48,13 @@ function readDoc(comment: string): DocTags {
   }
   const body = (tag: string) => (bodies.get(tag) ?? []).filter((s) => s !== '').join(' ');
   const ids = (tag: string) => [...body(tag).matchAll(ID_TOKEN)].map((m) => m[0]).filter((id) => kindOf(id) !== null);
-  return { implId: ids('impl')[0], designIds: ids('design'), remarks: body('remarks') };
+  const impls = ids('impl');
+  return {
+    implId: impls[0],
+    ...(impls.length > 1 ? { extraImplIds: impls.slice(1) } : {}),
+    designIds: ids('design'),
+    remarks: body('remarks'),
+  };
 }
 
 function isDoc(text: string, range: ts.CommentRange): boolean {

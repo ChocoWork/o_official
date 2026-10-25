@@ -31,12 +31,14 @@ function expandBraces(pattern) {
 
 module.exports = {
   ...base,
-  // 分岐の網羅は単体の試験で測るので、tests/unit/ の下だけを流す
+  // 分岐の網羅は単体の試験で測るので、結合（tests/integration/）以外を流す
+  // （scripts/trace の levelOf も、e2e/ と tests/integration/ 以外は単体に数える。tests/features/ など）
   testMatch: areas
     .flatMap((a) => a.tests)
-    .filter((p) => p.startsWith('tests/unit/'))
+    .filter((p) => !p.startsWith('tests/integration/'))
     .flatMap(expandBraces)
     .map((p) => `<rootDir>/${p}`),
   collectCoverageFrom: areas.flatMap((a) => a.src),
-  coverageThreshold: { global: { branches: 100 } },
+  // 100% を求めない。届かない分岐は test-gaps.md の「届かない分岐」の節に理由つきで載せ、
+  // scripts/trace/check-coverage.ts が「節に無い届かない分岐」と「節にあって今は届いている/無い分岐」で落とす。
 };

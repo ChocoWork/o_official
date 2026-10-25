@@ -7,7 +7,7 @@ import { ancestorsOf } from './impact';
 import { kindOf, type TraceKind } from './model';
 import type { TraceModel } from './rules';
 
-export interface UnusedCandidate { file: string; symbol: string; finding: '参照なし' | '要件につながらない'; how: string; impact: string; inScope: boolean }
+export interface UnusedCandidate { file: string; symbol: string; finding: '参照なし' | '試験だけが参照' | '要件につながらない'; how: string; impact: string; inScope: boolean }
 
 // fs.globSync は Node 22 から在るが、手元の @types/node（20）には型が無い。
 const globSync = (fs as unknown as { globSync(pattern: string, options: { cwd: string }): string[] }).globSync;
@@ -21,6 +21,8 @@ const NEXT_FILE = /^src\/app\/(?:.*\/)?(?:page|layout|route|loading|error|not-fo
 // 要件として数える種類（範囲外の上位もこの種類なら要件につながるとみなす）。
 const REQUIREMENT: readonly TraceKind[] = ['REQUEST', 'REQ', 'SEC', 'DRV'];
 const isRequirement = (k: TraceKind | null) => k !== null && REQUIREMENT.includes(k);
+// 製品のコードの外（試験と道具）。ここからだけ指される物は、製品の中では使われていない。
+const TOOL_SIDE = /^(?:tests|e2e|scripts)\//;
 const NOT_REFERENCES = ['docs/superpowers/', 'docs/05_Quality/reports/'];
 
 /** そのファイルの中の何を使うか。'*' は全部（名前空間・動的 import・require）。 */
@@ -176,10 +178,30 @@ export function findUnused(root: string, model: TraceModel): UnusedCandidate[] {
       });
       continue;
     }
+    if (refs.every((r) => TOOL_SIDE.test(r.from))) {
+      const froms = [...new Set(refs.map((r) => r.from))];
+      out.push({
+        file, symbol: '<file>', finding: '試験だけが参照',
+        how: `${scanned}（このファイルを指す ${refs.length} 件は全部 tests/・e2e/・scripts/ のファイル: ${listSome(froms)}）`,
+        impact: `製品のコードからは使われない（消すと、この試験が落ちる）。${docNote(file.replace(/^src\//, '').replace(/(?:\/index)?\.tsx?$/, ''))}`,
+        inScope: scope,
+      });
+      continue;
+    }
     if (!scope) continue;
     for (const name of exportsOf(file, texts.get(file)!)) {
-      if (refs.some((r) => r.use === '*' || r.use.has(name))) continue;
+      const users = refs.filter((r) => r.use === '*' || r.use.has(name));
+      if (users.some((r) => !TOOL_SIDE.test(r.from))) continue;
       const hits = textHits(name, file);
+      if (users.length > 0) {
+        out.push({
+          file, symbol: name, finding: '試験だけが参照',
+          how: `${scanned}（${name} を import するのは ${users.length} 件で、全部 tests/・e2e/・scripts/ のファイル: ${listSome([...new Set(users.map((r) => r.from))])}）`,
+          impact: `製品のコードからは使われない（消すと、この試験が落ちる）。${docNote(name)}`,
+          inScope: true,
+        });
+        continue;
+      }
       out.push({
         file, symbol: name, finding: '参照なし',
         how: `${scanned}（このファイルを指す ${refs.length} 件のどれも ${name} を import しない）。文字の検索「${name}」: ほかのファイルに ${hits.length} 件`,

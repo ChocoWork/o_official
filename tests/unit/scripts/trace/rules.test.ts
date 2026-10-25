@@ -219,6 +219,13 @@ describe('checkModel', () => {
     }
   });
 
+  it('multiple-impl: 1つの単位に @impl が複数あれば落とす', () => {
+    const m = validModel();
+    m.units = [unit({ extraImplIds: ['IMPL-NEWS-102'] })];
+    expect(checkModel(m).filter((v) => v.rule === 'multiple-impl')).toHaveLength(1);
+    expect(rulesOf(validModel())).not.toContain('multiple-impl');
+  });
+
   it('duplicate-impl: 同じ IMPL が2つの単位にあれば落とす', () => {
     const m = validModel();
     m.units.push(unit({ symbol: 'g', line: 20 }));
@@ -253,5 +260,31 @@ describe('checkModel', () => {
     const m = validModel();
     m.tests.push(test({ id: 'DD-NEWS-999' }));
     expect(rulesOf(m)).toContain('unknown-test-id');
+  });
+
+  it('skipped の試験は「試験がある」に数えない（AC の E2E・構造設計の結合・DD の単体）', () => {
+    const m = validModel();
+    m.tests = m.tests.map((t) => ({ ...t, skipped: true }));
+    const missing = checkModel(m).filter((v) => v.rule === 'missing-child').map((v) => v.message);
+    expect(missing).toEqual(expect.arrayContaining([
+      expect.stringContaining('FR-NEWS-ALL-001-AC-01 に e2e テスト'),
+      expect.stringContaining('API-NEWS-001 に 結合テスト'),
+      expect.stringContaining('DD-NEWS-001 に 単体テスト'),
+    ]));
+  });
+
+  it('referenceItems: 検査の対象外の領域の ID は、テスト・上位・@design の「範囲内に無い」にしない', () => {
+    const m = validModel();
+    m.tests.push(test({ id: 'FR-HOME-001-AC-01', level: 'e2e' }));
+    m.items = m.items.map((x) => (x.id === 'API-NEWS-001' ? { ...x, parents: [...x.parents, 'FR-HOME-001'] } : x));
+    m.units.push(unit({ symbol: 'g', implId: 'IMPL-NEWS-102', designIds: ['DD-HOME-001'] }));
+    const rules = (model: TraceModel) => checkModel(model).filter((v) => /unknown-|bad-design-link/.test(v.rule)).map((v) => v.rule);
+    expect(rules(m)).toEqual(expect.arrayContaining(['unknown-test-id', 'unknown-parent', 'bad-design-link']));
+    m.referenceItems = [
+      item({ id: 'FR-HOME-001-AC-01', kind: 'AC', parents: [] }),
+      item({ id: 'FR-HOME-001', kind: 'REQ', parents: [] }),
+      item({ id: 'DD-HOME-001', kind: 'DD', parents: [] }),
+    ];
+    expect(rules(m)).toEqual([]);
   });
 });

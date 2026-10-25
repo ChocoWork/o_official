@@ -13,6 +13,8 @@ export interface TraceModel {
   knownIdsOutsideScope: Set<string>;
   /** ID に似ているのに形の合わない見出し（項目にならないので、ここから bad-id で落とす）。 */
   badHeadings?: BadHeading[];
+  /** 検査の対象にしない領域の項目。ID を引くためだけに使う（領域を絞った検査で、別の領域の ID を unknown にしない）。 */
+  referenceItems?: TraceItem[];
 }
 
 const STRUCT: readonly TraceKind[] = ['ARC', 'SCR', 'FLOW', 'STATE', 'API', 'DATA'];
@@ -60,9 +62,12 @@ export function checkModel(model: TraceModel): Violation[] {
     if (first) out.push(at('duplicate-id', `${it.id} は ${first.file}:${first.line} でも定義されている`, it));
     else byId.set(it.id, it);
   }
+  const refById = new Map((model.referenceItems ?? []).map((i) => [i.id, i]));
+  const defined = (id: string) => byId.has(id) || refById.has(id);
   const live = (it: TraceItem) => it.status !== '廃止';
   const childrenOf = (id: string) => model.items.filter((c) => live(c) && c.parents.includes(id));
-  const testsOf = (id: string, level: TestLevel) => model.tests.filter((t) => t.id === id && t.level === level);
+  // skip・todo・fixme の試験は確かめにならないので、「試験がある」に数えない。
+  const testsOf = (id: string, level: TestLevel) => model.tests.filter((t) => t.id === id && t.level === level && !t.skipped);
 
   for (const h of model.badHeadings ?? []) out.push(at('bad-id', `見出しの ${h.heading} は ID の形に合わない`, h));
   for (const it of model.items) {
@@ -86,11 +91,11 @@ export function checkModel(model: TraceModel): Violation[] {
       out.push(at('wrong-parent-kind', `${it.id} の上位に REQ・SEC・DRV のどれかが要る`, it));
     }
     for (const p of it.parents) {
-      if (!byId.has(p)) out.push(at('unknown-parent', `${it.id} の上位 ${p} が範囲内に無い`, it));
+      if (!defined(p)) out.push(at('unknown-parent', `${it.id} の上位 ${p} が範囲内に無い`, it));
     }
     for (const p of it.outOfScopeParents) {
       // 読み込む領域が増えると範囲外の文書が範囲内に入るので、範囲内の定義も見る。
-      if (!byId.has(p) && !model.knownIdsOutsideScope.has(p)) {
+      if (!defined(p) && !model.knownIdsOutsideScope.has(p)) {
         out.push(at('unknown-parent', `${it.id} の上位 ${p}（範囲外）が範囲内にもほかの文書にも無い`, it));
       }
     }
@@ -130,7 +135,7 @@ export function checkModel(model: TraceModel): Violation[] {
     return missing;
   }
 
-  const retired = (id: string) => byId.get(id)?.status === '廃止';
+  const retired = (id: string) => (byId.get(id) ?? refById.get(id))?.status === '廃止';
   const implSeen = new Map<string, CodeUnit>();
   for (const u of model.units) {
     const name = `${u.file} の ${u.symbol}`;
@@ -141,12 +146,15 @@ export function checkModel(model: TraceModel): Violation[] {
       if (first) out.push(at('duplicate-impl', `${u.implId} は ${first.file}:${first.line} にもある`, u));
       else implSeen.set(u.implId, u);
     }
+    if (u.extraImplIds && u.extraImplIds.length > 0) {
+      out.push(at('multiple-impl', `${name} に @impl が複数ある（${[u.implId, ...u.extraImplIds].join('、')}）`, u));
+    }
     const [design, ...rest] = u.designIds;
     if (design === undefined || rest.length > 0) {
       out.push(at('bad-design-link', `${name} の @design が1つでない（${u.designIds.length} 個）`, u));
     } else if (kindOf(design) !== 'DD') {
       out.push(at('bad-design-link', `${name} の @design ${design} が DD でない`, u));
-    } else if (!byId.has(design)) {
+    } else if (!defined(design)) {
       out.push(at('bad-design-link', `${name} の @design ${design} が範囲内に無い`, u));
     }
     for (const id of [u.implId, ...u.designIds]) {
@@ -160,7 +168,7 @@ export function checkModel(model: TraceModel): Violation[] {
       continue;
     }
     if (!TEST_KINDS[t.level](kindOf(t.id))) out.push(at('wrong-test-level', `${t.level} のテストが ${t.id} を指す`, t));
-    if (!byId.has(t.id)) out.push(at('unknown-test-id', `テストの ${t.id} が範囲内に無い`, t));
+    if (!defined(t.id)) out.push(at('unknown-test-id', `テストの ${t.id} が範囲内に無い`, t));
     else if (retired(t.id)) out.push(at('retired-reference', `テスト「${t.title}」が廃止の ${t.id} を指す`, t));
   }
   return out;

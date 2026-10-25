@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadModel, loadScope, type AreaScope } from '@/../scripts/trace/load';
+import { loadModel, loadScope, unmatchedPatterns, type AreaScope } from '@/../scripts/trace/load';
 import { checkModel } from '@/../scripts/trace/rules';
 
 let root: string;
@@ -105,5 +105,39 @@ describe('loadModel', () => {
       const v = checkModel(loadModel(areas, root)).filter((x) => x.rule === 'unknown-parent');
       expect(v).toEqual([]);
     }
+  });
+
+  it('範囲内に定義のある（範囲外）の上位は parents に移し、定義が無いものだけ（範囲外）に残す', () => {
+    put('docs/news/s.md', DOC('SEC-NEWS-001'));
+    put('docs/home/h.md', '### API-HOME-002 題\n\n| 属性 | 値 |\n| --- | --- |\n| 上位 | SEC-NEWS-001（範囲外）、FREQ-5（範囲外） |\n');
+    const news: AreaScope = { area: 'NEWS', docs: ['docs/news/s.md'], src: [], tests: [], e2e: [] };
+    const home: AreaScope = { area: 'HOME', docs: ['docs/home/h.md'], src: [], tests: [], e2e: [] };
+    const both = loadModel([news, home], root).items.find((i) => i.id === 'API-HOME-002');
+    expect([both?.parents, both?.outOfScopeParents]).toEqual([['SEC-NEWS-001'], ['FREQ-5']]);
+    const alone = loadModel([home], root).items.find((i) => i.id === 'API-HOME-002');
+    expect([alone?.parents, alone?.outOfScopeParents]).toEqual([[], ['SEC-NEWS-001', 'FREQ-5']]);
+  });
+
+  it('領域を絞っても、referenceAreas の項目で別の領域の ID を引ける（検査の対象にはしない）', () => {
+    put('docs/news/s.md', DOC('SEC-NEWS-001'));
+    put('docs/home/h.md', DOC('API-HOME-002'));
+    put('e2e/FR-HOME-002-x.spec.ts', "test('SEC-NEWS-001-AC-01 x', async () => {});\n");
+    const news: AreaScope = { area: 'NEWS', docs: ['docs/news/s.md'], src: [], tests: [], e2e: [] };
+    const home: AreaScope = { area: 'HOME', docs: ['docs/home/h.md'], src: [], tests: [], e2e: ['e2e/FR-HOME-002-*.spec.ts'] };
+    const lone = loadModel([home], root);
+    expect(checkModel(lone).some((v) => v.rule === 'unknown-test-id')).toBe(true);
+    const ref = loadModel([home], root, [news, home]);
+    expect(ref.referenceItems?.map((i) => i.id)).toEqual(['SEC-NEWS-001']);
+    expect(ref.items.map((i) => i.id)).toEqual(['API-HOME-002']);
+  });
+});
+
+describe('unmatchedPatterns', () => {
+  it('どのファイルにも当たらない型を領域つきで返す', () => {
+    const area: AreaScope = { area: 'NEWS', docs: ['docs/in/a.md', 'docs/none/*.md'], src: ['src/news/**/*.ts'], tests: ['tests/unit/**/*typo*.test.ts'], e2e: [] };
+    expect(unmatchedPatterns([area], root)).toEqual([
+      { area: 'NEWS', pattern: 'docs/none/*.md' },
+      { area: 'NEWS', pattern: 'tests/unit/**/*typo*.test.ts' },
+    ]);
   });
 });

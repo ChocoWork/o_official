@@ -85,10 +85,28 @@ describe('findUnused', () => {
   });
 
   it('jest.mock だけのファイルは参照ありとみなし、範囲外の候補は inScope: false で載せる', () => {
-    const files = findUnused(root, model()).filter((c) => c.symbol === '<file>').map(keyOf);
-    expect(files).toEqual([]);
+    const noRef = () => findUnused(root, model()).filter((c) => c.symbol === '<file>' && c.finding === '参照なし').map(keyOf);
+    expect(noRef()).toEqual([]);
     fs.writeFileSync(path.join(root, 'tests/unit/only.test.ts'), "import { t } from '@/lib/only-test';\n");
-    expect(findUnused(root, model()).filter((c) => c.symbol === '<file>').map(keyOf)).toEqual(['src/lib/dead.ts|<file>|参照なし|out']);
+    expect(noRef()).toEqual(['src/lib/dead.ts|<file>|参照なし|out']);
+  });
+
+  it('試験・道具からだけ指されるファイルと export は「試験だけが参照」で載せる（製品の中で使われないので）', () => {
+    put('src/lib/shared.ts', 'export function both() {}\nexport function onlyTest() {}\nexport function unreferenced() {}\n');
+    put('src/app/y/page.tsx', "import { both } from '@/lib/shared';\nexport default both;\n");
+    put('tests/unit/shared.test.ts', "import { onlyTest } from '@/lib/shared';\nimport { both } from '@/lib/shared';\n");
+    const m = model();
+    m.units.push(unit('src/lib/shared.ts', 'both', ['DD-NEWS-001']));
+    const keys = findUnused(root, m).map(keyOf);
+    expect(keys).toEqual(expect.arrayContaining([
+      'src/lib/only-test.ts|<file>|試験だけが参照|out',
+      'src/lib/by-script.ts|<file>|試験だけが参照|out',
+      'src/lib/shared.ts|onlyTest|試験だけが参照|in',
+      'src/lib/shared.ts|unreferenced|参照なし|in',
+    ]));
+    expect(keys).not.toContain('src/lib/shared.ts|both|試験だけが参照|in');
+    expect(keys).not.toContain('src/lib/shared.ts|<file>|試験だけが参照|in');
+    expect(findUnused(root, m).find((c) => c.symbol === 'onlyTest')?.how).toContain('tests/unit/shared.test.ts');
   });
 
   it('参照なしのファイルには文字の検索と文書の参照を書く（生成物の一覧は数えない）', () => {

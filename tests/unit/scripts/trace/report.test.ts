@@ -156,6 +156,19 @@ describe('test-gaps', () => {
     expect(section(md, '## 名前に ID の無い試験')).toContain('`e2e/FR-NEWS-DETAIL-001-b.spec.ts:9`');
     expect(parseUncovered(md)).toEqual(uncovered);
   });
+
+  it('飛ばしている試験（skip・todo・fixme）は「試験がある」に数えず、飛ばしている試験の節に出す', () => {
+    const model = fixtureModel();
+    model.tests.push({ ...test('FR-NEWS-ALL-001-AC-02', 'e2e', 'e2e/FR-NEWS-ALL-001-c.spec.ts', 4), skipped: true });
+    model.tests = model.tests.map((t) => (t.id === 'DD-NEWS-001' ? { ...t, skipped: true } : t));
+    const md = renderTestGaps(model, []);
+    expect(section(md, '## 試験の足りない項目')).toMatch(/\| FR-NEWS-ALL-001-AC-02 [^|]*\| E2E \|/);
+    expect(section(md, '## 試験の足りない項目')).toMatch(/\| DD-NEWS-001 [^|]*\| 単体テスト \|/);
+    const skipped = section(md, '## 飛ばしている試験');
+    expect(skipped).toContain('`e2e/FR-NEWS-ALL-001-c.spec.ts:4`');
+    expect(skipped).toContain('`tests/unit/news.test.ts:3`');
+    expect(section(renderTestGaps(fixtureModel(), []), '## 飛ばしている試験')).toContain('（なし）');
+  });
 });
 
 describe('renderHead', () => {

@@ -1,6 +1,7 @@
-// npm run trace:report -- [AREA...]
-// 引数の領域（無ければ scope.json の全部）から trace-matrix.md・test-gaps.md・unused-code.md を
-// docs/05_Quality/reports/ に書く。手書きの節（食い違い・届かない分岐）と判断の列は前の版から引き継ぐ。
+// npm run trace:report
+// scope.json の全領域から trace-matrix.md・test-gaps.md・unused-code.md を docs/05_Quality/reports/ に書く。
+// 生成物は全領域をまとめた1つの一覧なので、領域名を渡しても全領域を書く（1つの領域だけで書き直すと、ほかの領域の行が消える）。
+// 手書きの節（食い違い・届かない分岐）と判断の列は前の版から引き継ぐ。
 // 設計: docs/superpowers/specs/2026-10-24-traceability-design.md の 6-1・7・8。
 
 import fs from 'node:fs';
@@ -21,6 +22,7 @@ const MISMATCH = '## 食い違い';
 const UNCOVERED = '## 届かない分岐';
 const GAPS = '## 試験の足りない項目';
 const UNTAGGED = '## 名前に ID の無い試験';
+const SKIPPED = '## 飛ばしている試験';
 const UNCOVERED_NOTE = '手書きの節。分岐の網羅で届かない所を、1行に1件「- `場所:行` 理由。確認: 未」の形で書く。生成し直しても残る。';
 const DERIVED = '（派生要件）';
 
@@ -38,7 +40,8 @@ function index(model: TraceModel) {
   const live = model.items.filter((i) => i.status !== '廃止');
   const byId = new Map(model.items.map((i) => [i.id, i]));
   const childrenOf = (id: string, kinds: readonly TraceKind[]) => live.filter((c) => kinds.includes(c.kind) && c.parents.includes(id));
-  const testsOf = (id: string, level: TestLevel) => model.tests.filter((t) => t.id === id && t.level === level);
+  // skip・todo・fixme の試験は確かめにならないので、「試験がある」に数えない（飛ばしている試験の節に出す）。
+  const testsOf = (id: string, level: TestLevel) => model.tests.filter((t) => t.id === id && t.level === level && !t.skipped);
   /** 上位の欄の ID（範囲外は印を付ける）。 */
   const parentsOf = (i: TraceItem) => [...i.parents, ...i.outOfScopeParents.map((p) => `${p}（範囲外）`)];
   return { live, byId, childrenOf, testsOf, parentsOf };
@@ -133,6 +136,7 @@ export function renderTestGaps(model: TraceModel, uncovered: UncoveredBranch[]):
     need.filter(([is, level]) => is(i) && testsOf(i.id, level).length === 0).map(([, , what]) => [named(i), what, where(i)]),
   );
   const untagged = model.tests.filter((t: TestRef) => t.id === null).map((t) => [t.level, where(t), t.title]);
+  const skipped = model.tests.filter((t: TestRef) => t.skipped).map((t) => [t.level, where(t), t.id ?? NONE, t.title]);
   return [
     GAPS,
     '',
@@ -140,6 +144,9 @@ export function renderTestGaps(model: TraceModel, uncovered: UncoveredBranch[]):
     UNTAGGED,
     '',
     untagged.length > 0 ? table(['段', '場所', '名前'], untagged) : `${NONE}\n`,
+    SKIPPED,
+    '',
+    skipped.length > 0 ? table(['段', '場所', '指す項目', '名前'], skipped) : `${NONE}\n`,
     UNCOVERED,
     '',
     UNCOVERED_NOTE,
@@ -165,7 +172,7 @@ function sectionOf(text: string, heading: string, stops: readonly string[]): { s
 /** 「届かない分岐」の節の「- `file:line` 理由」を読む。 */
 export function parseUncovered(text: string): UncoveredBranch[] {
   const normalized = text.replace(/\r\n/g, '\n');
-  const range = sectionOf(normalized, UNCOVERED, [GAPS, UNTAGGED]);
+  const range = sectionOf(normalized, UNCOVERED, [GAPS, UNTAGGED, SKIPPED]);
   if (!range) return [];
   const out: UncoveredBranch[] = [];
   // 1行目は見出し。
@@ -214,7 +221,8 @@ function main(argv: string[]): number {
     console.error(`scope.json に無い領域: ${unknown.join(', ')}`);
     return 2;
   }
-  const areas = argv.length > 0 ? all.filter((a) => argv.includes(a.area)) : all;
+  if (argv.length > 0) console.error('注意: 一覧は全領域をまとめて作るので、領域名は使わずに全領域を書く');
+  const areas = all;
   const root = process.cwd();
   const model = loadModel(areas, root);
   const head = (title: string, summary: string, hand: string) =>
@@ -226,7 +234,7 @@ function main(argv: string[]): number {
   const unused = findUnused(root, model);
   const outputs: [string, string][] = [
     ['trace-matrix.md', keepHandSection(head('追跡の一覧', '要求から受け入れ条件・E2E・構造設計・詳細設計・コードの単位・単体テストまでのつながりを、上から下と下から上の両方で並べた表。', '「食い違い」の節だけは手で書き、生成し直しても残る') + renderMatrix(model), previous('trace-matrix.md'), MISMATCH)],
-    ['test-gaps.md', head('試験の穴', '試験が足りない項目、名前に ID の無い試験、分岐の網羅で届かない所を並べた表。', '「届かない分岐」の節だけは手で書き、生成し直しても残る') + renderTestGaps(model, parseUncovered(previous('test-gaps.md') ?? ''))],
+    ['test-gaps.md', head('試験の穴', '試験が足りない項目、名前に ID の無い試験、飛ばしている試験、分岐の網羅で届かない所を並べた表。', '「届かない分岐」の節だけは手で書き、生成し直しても残る') + renderTestGaps(model, parseUncovered(previous('test-gaps.md') ?? ''))],
     ['unused-code.md', head('使われていないコードの候補', 'どこからも呼ばれていないコードの候補と、残すか消すかの判断。', '「判断」の列だけはユーザーが書き、生成し直しても残る。候補は消さずに載せる') + renderUnused(unused, previous('unused-code.md'))],
   ];
   for (const note of seedNotes(unused, root)) console.error(note);

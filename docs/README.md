@@ -1,6 +1,6 @@
 # 文書の案内
 
-> 状態: 現行の文書体系 | 確認日: 2026-10-24 | 対象: `docs/` の追跡済み文書
+> 状態: 現行の文書体系 | 確認日: 2026-10-25 | 対象: `docs/` の追跡済み文書
 
 ## 概要
 
@@ -11,11 +11,29 @@
 | 工程 | 文書 | 正本として扱う内容 |
 | --- | --- | --- |
 | 企画 | [ブランド](01_Planning/brand.md)、[システムコンテキスト](01_Planning/system-context.md)、[KPI用語](01_Planning/kpi.md) | 目的、利用者、外部システム、事業上の前提 |
-| 要件定義 | [要求の出所](02_Requirements/stakeholder-requirements.md)、[要件と受け入れ条件](02_Requirements/requirements.md)、[ユースケース](02_Requirements/use-cases.md) | 要求ID、要件ID、優先度、受け入れ条件 |
-| 基本設計 | [画面一覧](03_BasicDesign/ui/screen-list.md)、[画面遷移](03_BasicDesign/ui/screen-flow.md)、[システム構成](03_BasicDesign/architecture/system-overview.md)、[ER図](03_BasicDesign/data/er.md)、[API概要](03_BasicDesign/api/api-spec.md)、[全ルート一覧](03_BasicDesign/api/route-inventory.md) | 境界、主要構成、画面・データ・APIの契約 |
+| 要件定義 | [要求の出所](02_Requirements/stakeholder-requirements.md)、[要件と受け入れ条件](02_Requirements/requirements.md)、[ユースケース](02_Requirements/use-cases.md)、範囲内の 9 領域は[下の表](#範囲内の領域の文書) | 要求ID、要件ID、優先度、受け入れ条件 |
+| 基本設計 | [画面一覧](03_BasicDesign/ui/screen-list.md)、[画面遷移](03_BasicDesign/ui/screen-flow.md)、[システム構成](03_BasicDesign/architecture/system-overview.md)、[ER図](03_BasicDesign/data/er.md)、[API概要](03_BasicDesign/api/api-spec.md)、[全ルート一覧](03_BasicDesign/api/route-inventory.md)、範囲内の 9 領域は[下の表](#範囲内の領域の文書)と[設計判断の案内](03_BasicDesign/decisions/README.md) | 境界、主要構成、画面・データ・APIの契約 |
 | 詳細設計 | [詳細設計の案内](04_DetailDesign/README.md)、[認証シーケンス](04_DetailDesign/sequence/auth-login-mfa.md)、[注文・決済の状態](04_DetailDesign/states/order-payment.md) | ページ・処理・状態ごとの入出力と例外 |
-| 品質確認 | [品質文書の案内](05_Quality/README.md)、[テスト仕様](05_Quality/tests/test-spec.md)、[要件ID参照状況](05_Quality/reports/traceability-report.md) | テスト観点、証跡、レビュー記録 |
+| 品質確認 | [品質文書の案内](05_Quality/README.md)、[テスト仕様](05_Quality/tests/test-spec.md)、[要件ID参照状況](05_Quality/reports/traceability-report.md)、[追跡の一覧](05_Quality/reports/trace-matrix.md)、[試験の穴](05_Quality/reports/test-gaps.md)、[使われていないコードの候補](05_Quality/reports/unused-code.md)、[作業と指摘の台帳](05_Quality/reviews/code/2026-09-25-working-diff-security-review.md) | テスト観点、証跡、レビュー記録 |
 | 運用 | [運用文書の案内](06_Operations/README.md)、[デプロイ・運用構成](06_Operations/deployment-topology.md) | 配置と運用手順。稼働状態は別途実測する |
+
+## 範囲内の領域の文書
+
+範囲（`scripts/trace/scope.json`）に入っている 9 領域の正本。要件（要求・要件・受け入れ条件・セキュリティ要件・派生要件）、構造設計（構成・画面・画面遷移・状態遷移・API・データ）、脅威を領域ごとのファイルで持つ。設計判断は[設計判断の案内](03_BasicDesign/decisions/README.md)、詳細設計は[詳細設計の案内](04_DetailDesign/README.md)のページ別設計（`DD-` の項目）にある。
+
+| 領域 | 要件 | 構造設計 | 脅威 |
+| --- | --- | --- | --- |
+| NEWS | [news](02_Requirements/areas/news.md) | [news](03_BasicDesign/areas/news.md) | [news](05_Quality/security/threats/news.md) |
+| HOME | [home](02_Requirements/areas/home.md) | [home](03_BasicDesign/areas/home.md) | [home](05_Quality/security/threats/home.md) |
+| LOOK | [look](02_Requirements/areas/look.md) | [look](03_BasicDesign/areas/look.md) | [look](05_Quality/security/threats/look.md) |
+| ABOUT | [about](02_Requirements/areas/about.md) | [about](03_BasicDesign/areas/about.md) | [about](05_Quality/security/threats/about.md) |
+| STOCKIST | [stockist](02_Requirements/areas/stockist.md) | [stockist](03_BasicDesign/areas/stockist.md) | [stockist](05_Quality/security/threats/stockist.md) |
+| SEARCH | [search](02_Requirements/areas/search.md) | [search](03_BasicDesign/areas/search.md) | [search](05_Quality/security/threats/search.md) |
+| PRIVACY | [privacy](02_Requirements/areas/privacy.md) | [privacy](03_BasicDesign/areas/privacy.md) | [privacy](05_Quality/security/threats/privacy.md) |
+| AUTH | [auth](02_Requirements/areas/auth.md) | [auth](03_BasicDesign/areas/auth.md) | [auth](05_Quality/security/threats/auth.md) |
+| ADMIN（そのほか） | [admin](02_Requirements/areas/admin.md) | [admin](03_BasicDesign/areas/admin.md) | [admin](05_Quality/security/threats/admin.md) |
+
+つながりの一覧は[追跡の一覧](05_Quality/reports/trace-matrix.md)、試験の足りない所は[試験の穴](05_Quality/reports/test-gaps.md)、使われていないコードの候補は[使われていないコードの候補](05_Quality/reports/unused-code.md)。この仕組みの設計は[追跡の設計](superpowers/specs/2026-10-24-traceability-design.md)。
 
 ## 文書の役割と更新規則
 
@@ -25,7 +43,7 @@
 | 実装根拠 | ルート、型、マイグレーション、ワークフローなど確認可能なファイルを相対リンクで示す。実装から推定した内容は推定と明記する |
 | 履歴記録 | 日付付きレビュー、カバレッジ報告、過去のマイグレーション手順は当時の記録として保持する。最新の正本へは必要な結論だけを反映する |
 | 作業記録 | [`superpowers/`](superpowers/) の設計案と実装計画は作業過程の記録。現行契約を上書きしない |
-| 生成物 | `05_Quality/reports/` の `trace-matrix.md`・`test-gaps.md`・`unused-code.md` は `npm run trace:report` が作る。手で直すのは「食い違い」節・「届かない分岐」節・「判断」の列だけ |
+| 生成物 | `05_Quality/reports/` の `trace-matrix.md`・`test-gaps.md`・`unused-code.md` は `npm run trace:report`（全領域をまとめて書く。領域名を渡しても全領域）が作る。手で直すのは「食い違い」節・「届かない分岐」節・「判断」の列だけ |
 
 要件ID・受け入れ条件IDは移動に伴って振り直さない。新しい文書を追加するときは、対応する要件ID、設計、テストをリンクで結び、重複した要件本文を別の正本として作らない。`docs/ui-mocks` は Git 管理外のローカル画像であり、今回の追跡済み文書体系には含めない。
 

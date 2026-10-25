@@ -21,7 +21,7 @@
     "trace": "tsx scripts/trace/impact.ts",
     "trace:report": "tsx scripts/trace/report.ts",
     "trace:compare-e2e": "tsx scripts/trace/compare-e2e.ts",
-    "test:trace-coverage": "jest -c jest.trace.config.cjs --coverage",
+    "test:trace-coverage": "jest -c jest.trace.config.cjs --coverage && tsx scripts/trace/check-coverage.ts",
     "report:traceability": "node scripts/generate-coverage-report.js",
     "check-coverage": "node scripts/generate-coverage-report.js --strict",
     "cleanup:audit-logs": "node scripts/cleanup-audit-logs.js",
