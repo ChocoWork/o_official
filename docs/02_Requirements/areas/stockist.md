@@ -1,6 +1,6 @@
 # STOCKIST の要件
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: STOCKIST（取扱店の一覧 `/stockist`・ホームの取扱店の節の部品・管理の取扱店） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり。取扱店のファイルは含まない）
+> 状態: 推定 | 確認日: 2026-10-25 | 対象: STOCKIST（取扱店の一覧 `/stockist`・ホームの取扱店の節の部品・管理の取扱店） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり。取扱店のファイルは含まない）
 
 ## 概要
 
@@ -45,24 +45,28 @@ STOCKIST の領域の要求・要件・受け入れ条件・派生要件を、�
 
 ### E2E と受け入れ条件の対応
 
-`e2e/FR-STOCKIST-*` のファイルが試している受け入れ条件。テスト名に ID を付ける時に使う。`playwright.config.ts` の project は Desktop Chrome だけで、3つの幅で試すのは 010 だけ。
+`e2e/FR-STOCKIST-*` のファイルが試している受け入れ条件。テスト名に ID を付ける時に使う。`playwright.config.ts` の project は Desktop Chrome（chromium と、DB 全体を変える4本（FR-STOCKIST-017 など）だけを最後に1本ずつ流す isolated-global）。3つの幅（390・768・1280）で試す。HTTP だけの試験は幅ごとに繰り返さない。
 
 | E2E のファイル | 受け入れ条件 | 今のテストとのずれ |
 | --- | --- | --- |
-| FR-STOCKIST-001 | FREQ-13-AC-01 | カードが1つ以上あることだけを見る。列の数（FR-STOCKIST-001-AC-01・02）は見ていない |
-| FR-STOCKIST-002 | FR-STOCKIST-002-AC-01 | h2 を探すので今は赤（カードの店舗名は h3）。文字は見ずアイコンだけを数える |
-| FR-STOCKIST-003 | FR-STOCKIST-003-AC-02 | 空の時の文「公開中の店舗情報がありません」がコードに無い。非公開を出さないこと（AC-01）は見ていない |
-| FR-STOCKIST-004 | FR-STOCKIST-004-AC-01・AC-02（1つのテストで両方） | タブレットの幅に 768px でなく 1024px を使う |
-| FR-STOCKIST-005 | FR-STOCKIST-005-AC-01 | — |
-| FR-STOCKIST-006 | FR-STOCKIST-006-AC-01 | `test.skip` |
-| FR-STOCKIST-007 | FR-STOCKIST-007-AC-01 | `test.skip` |
-| FR-STOCKIST-008 | FR-STOCKIST-008-AC-02 | h2 を探すので今は赤。名前の重なり（AC-01）は見ていない |
+| FR-STOCKIST-001 | FREQ-13-AC-01 | 2026-10-25 に、見本の店の名前と住所が出ることと `pageerror` が無いことまで見るようにした |
+| FR-STOCKIST-002 | FR-STOCKIST-002-AC-01 | 2026-10-25 に、768px と 1280px で見本の店ごとに 5 つの文字を見るようにした |
+| FR-STOCKIST-004 | FR-STOCKIST-004-AC-01 | 390px の「3 枚以下」の半分だけ。タブレット・デスクトップの 6 件は FR-STOCKIST-011 の AC-02 |
+| FR-STOCKIST-005 | FR-STOCKIST-005-AC-01 | title は「STOCKIST \| Le Fil des Heures」の完全一致 |
+| FR-STOCKIST-008 | FR-STOCKIST-008-AC-02 | 2026-10-25 に、各カードの h3 が 1 つで見本の店名と一致することを見るようにした。名前の重なり（AC-01）は FR-STOCKIST-012 |
 | FR-STOCKIST-009 | 無し（DRV-STOCKIST-012 の動きを試す。受け入れ条件が無いので名前に付ける ID が無い） | 今は赤（カードの上の余白）。テスト名の先頭にあった `FR-STOCKIST-009` は範囲内に定義が無く、E2E の段に書ける受け入れ条件でもなかったので、2026-10-24 に名前から外した（`e2e/FR-STOCKIST-009-divider-spacing.spec.ts`）。今は ID の無い名前として `untagged-test` に数える。DRV-STOCKIST-012 を要件として認めれば、`SR-STOCKIST-001` と要件・受け入れ条件を起こし、テスト名をその受け入れ条件にする |
-| FR-STOCKIST-010 の「地方（親）チェック」 | FREQ-57-AC-01 | モバイル・タブレットでは FILTER の引き出しから選ぶので FREQ-57-AC-03 も通る（専用のテストは無い） |
-| FR-STOCKIST-010 の「都道府県（子）チェック」 | FREQ-57-AC-02 | 同上 |
+| FR-STOCKIST-010 の「地方（親）チェック」 | FREQ-57-AC-01 | 残ったカードの住所が近畿の府県だけであることまで見る。モバイル・タブレットでは FILTER の引き出しから選ぶ |
+| FR-STOCKIST-010 の「都道府県（子）チェック」 | FREQ-57-AC-02 | 残ったカードの住所が大阪府だけであることまで見る |
 | FR-STOCKIST-010 の「店舗が無い地方・都道府県」 | FR-STOCKIST-010-AC-01 | — |
+| FR-STOCKIST-011 | FR-STOCKIST-001-AC-01・AC-02、002-AC-02、004-AC-02、006-AC-01、007-AC-01、010-AC-03・AC-04、FREQ-57-AC-03、SEC-STOCKIST-017-AC-01 | 見本の店の名前で絞って数える（同時に流れる他の試験の行に左右されない）。読むだけ |
+| FR-STOCKIST-012 | FR-STOCKIST-003-AC-01、008-AC-01、010-AC-02、SEC-STOCKIST-001-AC-01・AC-02、016-AC-01・AC-02 | 手元の DB に `E2E-STK-` の行を足す。非公開の行はホームの最初の 6 件に入る小さい id で足す |
+| FR-STOCKIST-013 | FR-ADMIN-006-AC-01〜05、FREQ-18-AC-01、SEC-STOCKIST-015-AC-01、019-AC-01・AC-02 | 本物の aal2 の店長・サポーターでログインする（`e2e/stockist-admin-test-utils.ts`） |
+| FR-STOCKIST-014 | SEC-STOCKIST-004-AC-01・AC-02、005-AC-01、006-AC-01〜04、020-AC-01、021-AC-01 | HTTP だけ。幅ごとには繰り返さない |
+| FR-STOCKIST-015 | SEC-STOCKIST-007-AC-01・AC-02、009-AC-01、010-AC-01、011-AC-01、012-AC-01、013-AC-01・AC-02、014-AC-01・AC-02 | HTTP だけ。管理 API の JWT は `e2e/admin-session-test-utils.ts`（FR-STOCKIST-016 と共有） |
+| FR-STOCKIST-016 | SEC-STOCKIST-002-AC-01、003-AC-01〜03 | 002 は 3 つの幅、003 は HTTP だけ |
+| FR-STOCKIST-017 | FR-STOCKIST-003-AC-02、SEC-STOCKIST-018-AC-01 | 全部の公開の店を巻き込むので、`playwright.config.ts` の project `isolated-global`（chromium の teardown）で最後に流す。1 つの試験の中で DB を 1 回だけ変え、3 つの幅をその窓で見る。公開の取り出しの上限は 200 件と決めた |
 
-受け入れ条件があって範囲の E2E が無い物: `FREQ-18-AC-01`、`FREQ-57-AC-03`（専用の物）、`FR-STOCKIST-001-AC-01`・`AC-02`、`FR-STOCKIST-002-AC-02`、`FR-STOCKIST-003-AC-01`、`FR-STOCKIST-008-AC-01`、`FR-STOCKIST-010-AC-02`〜`AC-04`、`FR-ADMIN-006-AC-01`〜`AC-05`（管理の取扱店の E2E は1本も無い）。範囲外の E2E だけがある物: `e2e/FR-HOME-005-stockist-home.spec.ts`（FR-HOME-005、ホームの取扱店の節）。
+受け入れ条件があって範囲の E2E が無い物: `SEC-STOCKIST-008-AC-01`（PostgREST が出さない権限の問い合わせなので、`tests/integration/db/stockist_rls.integration.test.ts` の結合テストで確かめる）。範囲外の E2E だけがある物: `e2e/FR-HOME-005-stockist-home.spec.ts`（FR-HOME-005、ホームの取扱店の節）。2026-10-25 に、中身の無かった `FR-STOCKIST-003`・`006`・`007` の E2E ファイルを消した（003 は存在しない空の文を探して落ちない、006・007 は `test.skip` で何も見ていなかった。AC は FR-STOCKIST-011・012・017 が見る）。
 
 ## 要求
 
@@ -925,7 +929,7 @@ GET の2つは 200 になり、POST・PUT・PATCH・DELETE は 403 になって�
 | 上位 | THR-STOCKIST-008 |
 | 根拠 | RLS が止めない操作（TRUNCATE など）や連番の書き換えの道を、権限の段でも閉じるため。RLS の方針だけに頼らない。全体の NFR-SEC-005 の最小の権限を表に当てはめた |
 | 状態 | 推定 |
-| 確かめ方 | 結合テスト・E2E |
+| 確かめ方 | 結合テスト |
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3 |
 | 優先度 | SHOULD |
 
@@ -938,7 +942,7 @@ GET の2つは 200 になり、POST・PUT・PATCH・DELETE は 403 になって�
 | 上位 | SEC-STOCKIST-008、NFR-SEC-005（範囲外） |
 | 根拠 | 移行の権限の付け方が、決めた最小の形になっていることを確かめるため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（手元の Supabase に `has_table_privilege`・`has_sequence_privilege` で問い合わせる） |
+| 確かめ方 | 結合テスト（手元の DB に `has_table_privilege`・`has_sequence_privilege` で問い合わせる。PostgREST は TRUNCATE・TRIGGER・REFERENCES・MAINTAIN と連番の UPDATE を HTTP で出さないので E2E では確かめられない。`tests/integration/db/stockist_rls.integration.test.ts` の「DATA-STOCKIST-002 … 余分な権限が付いていない」。結合テストは AC を指せない決まりなので、`validate-trace` の missing-child（e2e テスト無し）は知ったうえで残る） |
 | 出どころ | 実装から推定 |
 
 anon・authenticated の `stockists` の TRUNCATE・TRIGGER・REFERENCES・MAINTAIN の権限と、anon の INSERT・UPDATE・DELETE の権限と、`stockists_id_seq` の UPDATE の権限が、どれも false であること。
@@ -1228,6 +1232,8 @@ PUT・PATCH・DELETE は、変わった行が0件の時は 404 を返し、成�
 | 出どころ | 実装から推定 |
 
 select の結果の行の数が `max_rows` 以下で、`/stockist` に表示されるカードの数が公開の取り出しの上限以下であること。
+
+公開の取り出しの上限は 200 件とする（2026-10-25 に例の 200 件を決めた値にした。E2E の定数 `PUBLIC_FETCH_LIMIT`、`e2e/FR-STOCKIST-017-global-state-windows.spec.ts`）。
 
 ### SEC-STOCKIST-019 管理の作成・編集の頁は入口で権限を確かめる
 

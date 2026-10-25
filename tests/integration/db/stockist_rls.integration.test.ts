@@ -208,6 +208,26 @@ describeLocalDb('integration: stockists の RLS と付与', (db) => {
     expect(result.rows.map((row) => row.privilege)).toEqual(SEQUENCE_PRIVILEGES);
   });
 
+  // 設計書どおりの最小の権限（SEC-STOCKIST-008）。今の移行は全部付けているので、これは直るまで赤（DATA-STOCKIST-002 の付与の確かめと逆の向き）
+  test.each([
+    ['anon', ['DELETE', 'INSERT', 'MAINTAIN', 'REFERENCES', 'TRIGGER', 'TRUNCATE', 'UPDATE']],
+    ['authenticated', ['MAINTAIN', 'REFERENCES', 'TRIGGER', 'TRUNCATE']],
+  ])('DATA-STOCKIST-002 %s の stockists に余分な権限が付いていない（SEC-STOCKIST-008-AC-01 の確かめ。直るまで赤）', async (role, forbiddenTable) => {
+    const table = await db().query(
+      `select privilege from unnest($2::text[]) as privilege
+       where has_table_privilege($1::name, 'public.stockists'::regclass, privilege)
+       order by privilege`,
+      [role, forbiddenTable],
+    );
+    const sequence = await db().query(
+      `select has_sequence_privilege($1::name, 'public.stockists_id_seq'::regclass, 'UPDATE') as granted`,
+      [role],
+    );
+
+    expect(table.rows.map((row) => row.privilege)).toEqual([]);
+    expect(sequence.rows).toEqual([{ granted: false }]);
+  });
+
   test('DATA-STOCKIST-002 anon は has_permission を呼べず、authenticated は呼べる', async () => {
     const result = await db().query(
       `select has_function_privilege('anon', 'public.has_permission(text)', 'EXECUTE') as anon,

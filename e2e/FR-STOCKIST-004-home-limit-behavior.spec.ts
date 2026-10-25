@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('FR-STOCKIST-004 HOME件数制御', () => {
-  test('HOMEでは最大6件、モバイルでは上位3件が表示される', async ({ page }) => {
+  test('FR-STOCKIST-004-AC-01 HOMEでは最大6件、モバイルでは上位3件が表示される', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
 
