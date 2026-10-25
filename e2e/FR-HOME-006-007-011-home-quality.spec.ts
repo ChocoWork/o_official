@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("FR-HOME-006 / 007 / 011 home quality checks", () => {
-  test("sets home metadata, prioritizes hero image, and keeps accessible structure", async ({
+  test("FR-HOME-006-AC-01 sets home metadata, prioritizes hero image, and keeps accessible structure", async ({
     page,
   }) => {
     await page.goto("/");
@@ -15,10 +15,8 @@ test.describe("FR-HOME-006 / 007 / 011 home quality checks", () => {
       "Le Fil des Heuresの公式オンラインストア。時を紡ぐニュートラルモードな日常着を提案します。",
     );
 
-    const heroImage = page.locator('img[alt="Hero Background"]');
-    await expect(heroImage).toHaveCount(1);
-    await expect(heroImage).toHaveAttribute("sizes", "100vw");
-    await expect(heroImage).not.toHaveAttribute("loading", "lazy");
+    // ヒーロー画像の先読み・遅延読み込みでない確認は FR-HOME-007-AC-01 が持つ。
+    await expect(page.getByRole("img", { name: /メインビジュアル/ })).toHaveCount(1);
 
     await expect(page.locator("h1")).toHaveCount(1);
     await expect(

@@ -80,7 +80,7 @@ async function assertSection(
 
 test.describe('FR-HOME-013 home section display limits', () => {
   for (const viewport of viewports) {
-    test(`${viewport.name}: sections show breakpoint-specific counts with conditional VIEW ALL`, async ({
+    test(`FREQ-147-AC-01 ${viewport.name}: sections show breakpoint-specific counts with conditional VIEW ALL`, async ({
       page,
     }) => {
       await page.setViewportSize({

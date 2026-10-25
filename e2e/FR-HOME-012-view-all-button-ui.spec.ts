@@ -12,7 +12,7 @@ const sectionIds = ['items', 'look', 'news'] as const;
 
 test.describe('FR-HOME-012 view all buttons use common Button UI', () => {
   for (const viewport of viewports) {
-    test(`${viewport.name}: VIEW ALL buttons use Button component without arrow icon`, async ({
+    test(`FREQ-146-AC-01 ${viewport.name}: VIEW ALL buttons use Button component without arrow icon`, async ({
       page,
     }) => {
       await page.setViewportSize({

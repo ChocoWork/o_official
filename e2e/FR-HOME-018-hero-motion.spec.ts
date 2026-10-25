@@ -12,7 +12,7 @@ const VIEWPORTS = [
 
 test.describe('FR-HOME-018 ヒーローのモーション', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} ブランド名が1文字ずつの span に分割され、完了後は全文字が見える`, async ({
+    test(`FREQ-278-AC-01 ${vp.name} ブランド名が1文字ずつの span に分割され、完了後は全文字が見える`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -25,9 +25,8 @@ test.describe('FR-HOME-018 ヒーローのモーション', () => {
       const chars = heading.locator('span');
       await expect(chars).toHaveCount('Le Fil des Heures'.length);
 
-      // モーション完了を待ってから最終状態を確認する
-      // （delay 200ms + 16文字 * 30ms + duration 400ms ≒ 1080ms）
-      await page.waitForTimeout(1500);
+      // モーション完了（delay 200ms + 16文字 * 30ms + duration 400ms ≒ 1080ms）は、
+      // 下の toHaveCSS の自動の待ち（最終状態になるまで再確認）で待つ。固定の sleep は使わない。
       const first = chars.first();
       const last = chars.last();
       await expect(first).toHaveCSS('opacity', '1');
@@ -37,7 +36,7 @@ test.describe('FR-HOME-018 ヒーローのモーション', () => {
       await expect(last).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
     });
 
-    test(`${vp.name} 縦線が heroThreadLoop で動き、ブランド名が 6xl サイズになる`, async ({
+    test(`FREQ-278-AC-03 ${vp.name} 縦線が heroThreadLoop で動き、ブランド名が 6xl サイズになる`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -65,7 +64,7 @@ test.describe('FR-HOME-018 ヒーローのモーション', () => {
       expect(actual).toBe(expected);
     });
   }
-  test('見出しのアクセシブル名が1文字ずつに分解されない', async ({ page }) => {
+  test('FREQ-278-AC-04 見出しのアクセシブル名が1文字ずつに分解されない', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/');
 
@@ -79,7 +78,7 @@ test.describe('FR-HOME-018 ヒーローのモーション', () => {
     await expect(heading).toHaveCount(1);
   });
 
-  test('prefers-reduced-motion: reduce でヒーローのモーションが止まる', async ({ page }) => {
+  test('FREQ-278-AC-05 prefers-reduced-motion: reduce でヒーローのモーションが止まる', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/');
@@ -95,7 +94,8 @@ test.describe('FR-HOME-018 ヒーローのモーション', () => {
     await expect(page.locator('.hero-thread').first()).toHaveCSS('animation-name', 'none');
   });
 
-  test('CSP が inline style を落とさず、style-src-elem は締まったまま', async ({ page }) => {
+  // FREQ-280-AC-01（価格の font-size）は FR-HOME-021 が確かめる。
+  test('FREQ-280-AC-02 CSP が inline style を落とさず、style-src-elem は締まったまま', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const response = await page.goto('/');
 
@@ -104,22 +104,5 @@ test.describe('FR-HOME-018 ヒーローのモーション', () => {
     const styleElem = csp.split(';').map((d) => d.trim()).find((d) => d.startsWith('style-src-elem'));
     expect(styleElem).toBeTruthy();
     expect(styleElem).not.toContain("'unsafe-inline'");
-
-    // FREQ-280-AC-01: style 属性が CSP でブロックされると 16px に落ちる。
-    // 価格は style={{ fontSize: var(--lk-size-2xs) }} で描画される代表例。
-    const price = page.locator('[data-testid="item-price"]').first();
-    await expect(price).toBeAttached();
-    const [actual, expected] = await Promise.all([
-      price.evaluate((el) => getComputedStyle(el).fontSize),
-      page.evaluate(() => {
-        const probe = document.createElement('div');
-        probe.style.fontSize = 'var(--lk-size-2xs)';
-        document.body.appendChild(probe);
-        const size = getComputedStyle(probe).fontSize;
-        probe.remove();
-        return size;
-      }),
-    ]);
-    expect(actual).toBe(expected);
   });
 });

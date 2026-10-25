@@ -13,7 +13,7 @@ const viewports = [
 
 test.describe('FR-HOME-002 home page sections', () => {
   for (const vp of viewports) {
-    test(`renders correctly on ${vp.name} (${vp.width}px)`, async ({ page }) => {
+    test(`FR-HOME-002-AC-01 renders correctly on ${vp.name} (${vp.width}px)`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/');
 

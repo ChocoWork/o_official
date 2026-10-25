@@ -10,7 +10,7 @@ const VIEWPORTS = [
 
 test.describe('FR-HOME-020 ヒーローの SCROLL の色', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} SCROLL ラベルと縦線が白 90% で描画される`, async ({ page }) => {
+    test(`FREQ-283-AC-01 ${vp.name} SCROLL ラベルと縦線が白 90% で描画される`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/');
 

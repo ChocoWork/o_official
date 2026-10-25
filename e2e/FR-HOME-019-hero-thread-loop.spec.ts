@@ -11,7 +11,7 @@ const VIEWPORTS = [
 
 test.describe('FR-HOME-019 ヒーローの縦線が動き続ける', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} 縦線が上から下へ伸びる動きだけを無限再生する`, async ({ page }) => {
+    test(`FREQ-282-AC-01 ${vp.name} 縦線が上から下へ伸びる動きだけを無限再生する`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/');
 
@@ -29,31 +29,41 @@ test.describe('FR-HOME-019 ヒーローの縦線が動き続ける', () => {
       );
       expect(originY).toBe('0px');
 
-      // 1 サイクル（2.1s）を越えても止まっていないこと。停止していれば
-      // transform は同じ値のまま変わらない。2 点比較だと偶然一致しうるので、
-      // 複数回サンプリングして異なる値が出ることを見る。
+      // 1 サイクル（2.1s）を越えても止まっていないこと。停止していれば transform は同じ値のまま変わらない。
+      // 2 点比較だと偶然一致しうるので、ページの中で描画の 1 コマごとに 3 秒分（1 サイクルより長い）を集め、
+      // 異なる値が出ることを見る。待ちの sleep は使わない。
       // 併せて、線が消える瞬間が無いこと（描画高さが常に 0 より大きく、
       // フェードも挟まないので opacity は常に 1）を確認する。
+      const samples = await thread.evaluate(
+        (el) =>
+          new Promise<Array<{ transform: string; opacity: number; height: number }>>((resolve) => {
+            const collected: Array<{ transform: string; opacity: number; height: number }> = [];
+            const startedAt = performance.now();
+            const tick = () => {
+              const style = getComputedStyle(el);
+              collected.push({
+                transform: style.transform,
+                opacity: Number(style.opacity),
+                height: el.getBoundingClientRect().height,
+              });
+              if (performance.now() - startedAt < 3000) requestAnimationFrame(tick);
+              else resolve(collected);
+            };
+            requestAnimationFrame(tick);
+          }),
+      );
+      expect(samples.length).toBeGreaterThan(30);
       const transforms = new Set<string>();
-      for (let i = 0; i < 30; i += 1) {
-        const { transform, opacity, height } = await thread.evaluate((el) => {
-          const style = getComputedStyle(el);
-          return {
-            transform: style.transform,
-            opacity: Number(style.opacity),
-            height: el.getBoundingClientRect().height,
-          };
-        });
+      for (const { transform, opacity, height } of samples) {
         transforms.add(transform);
         expect(opacity).toBe(1);
         expect(height).toBeGreaterThan(0);
-        await page.waitForTimeout(100);
       }
       expect(transforms.size).toBeGreaterThan(1);
     });
   }
 
-  test('prefers-reduced-motion: reduce で縦線が動かない', async ({ page }) => {
+  test('FREQ-282-AC-02 prefers-reduced-motion: reduce で縦線が動かない', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/');

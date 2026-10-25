@@ -53,7 +53,7 @@ async function readStyles(
 
 test.describe("FR-HOME-017 セクション見出しの共通化", () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name}: FREQ-275-AC-01/AC-02/AC-03 見出しが共通サイズ・共通下線`, async ({
+    test(`FREQ-275-AC-01 ${vp.name}: FREQ-275-AC-01/AC-02/AC-03 見出しが共通サイズ・共通下線`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
