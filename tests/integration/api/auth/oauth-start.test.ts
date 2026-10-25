@@ -1,6 +1,7 @@
 /**
  * Google のログインの開始の窓口（API-AUTH-007）。
- * 入力の絞り込み・戻り先の組み立て・PKCE の Cookie の付け直し・失敗の分岐を確かめる。
+ * 入力の絞り込み・戻り先の控え・PKCE の Cookie の付け直し・失敗の分岐を確かめる。
+ * 戻り先の確かめと控えの Cookie の動作は本物を通し、控えの保存（return-intent-store の createReturnIntent）だけを差し替える。
  */
 
 const mockEnforceRateLimit = jest.fn();
@@ -10,7 +11,15 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 
 const mockLogAudit = jest.fn();
 jest.mock('@/lib/audit', () => ({
+  __esModule: true,
+  default: (...args: unknown[]) => mockLogAudit(...args),
   logAudit: (...args: unknown[]) => mockLogAudit(...args),
+}));
+
+const mockCreateReturnIntent = jest.fn();
+jest.mock('@/features/auth/return-intent/return-intent-store', () => ({
+  ...jest.requireActual('@/features/auth/return-intent/return-intent-store'),
+  createReturnIntent: (...args: unknown[]) => mockCreateReturnIntent(...args),
 }));
 
 const signInWithOAuthMock = jest.fn();
@@ -30,6 +39,7 @@ jest.mock('next/server', () => ({
       _body: body,
       json: async () => body,
       headers: new Map<string, string>(),
+      cookies: { set: jest.fn() },
     }),
     redirect: (url: URL, init?: any) => ({
       status: init?.status ?? 302,
@@ -39,7 +49,7 @@ jest.mock('next/server', () => ({
   },
 }));
 
-describe('API-AUTH-007 GET /api/auth/oauth/start', () => {
+describe('API-AUTH-007 /api/auth/oauth/start', () => {
   const handlerImport = () => import('@/app/api/auth/oauth/start/route');
   const env = process.env as Record<string, string | undefined>;
   const SAVED = {
@@ -61,6 +71,7 @@ describe('API-AUTH-007 GET /api/auth/oauth/start', () => {
     delete env.SUPABASE_URL;
     mockEnforceRateLimit.mockResolvedValue(undefined);
     mockLogAudit.mockResolvedValue(undefined);
+    mockCreateReturnIntent.mockResolvedValue({ token: 'O'.repeat(43), maxAgeSeconds: 900 });
     signInWithOAuthMock.mockResolvedValue({
       data: {
         url: 'https://example.supabase.co/auth/v1/authorize?provider=google',
@@ -79,7 +90,7 @@ describe('API-AUTH-007 GET /api/auth/oauth/start', () => {
   test('API-AUTH-007 Google の同意の画面へ 302 で移し、毎回アカウントを選ばせる', async () => {
     const { GET } = await handlerImport();
 
-    const res: any = await GET(startRequest('?provider=google&redirect_to=%2Fauth%2Fverified'));
+    const res: any = await GET(startRequest('?provider=google'));
 
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('https://example.supabase.co/auth/v1/authorize?provider=google');
@@ -87,7 +98,7 @@ describe('API-AUTH-007 GET /api/auth/oauth/start', () => {
     expect(signInWithOAuthMock).toHaveBeenCalledWith({
       provider: 'google',
       options: {
-        redirectTo: 'http://localhost:3000/api/auth/oauth/callback?next=%2Fauth%2Fverified',
+        redirectTo: 'http://localhost:3000/api/auth/oauth/callback',
         queryParams: {
           prompt: 'select_account',
         },
@@ -95,7 +106,7 @@ describe('API-AUTH-007 GET /api/auth/oauth/start', () => {
     });
   });
 
-  test('API-AUTH-007 応答は no-store と no-referrer で、成功を送り先つきで監査に残す', async () => {
+  test('API-AUTH-007 応答は no-store と no-referrer で、成功を監査に残す（戻り先の道筋は残さない）', async () => {
     const { GET } = await handlerImport();
 
     const res: any = await GET(startRequest('?provider=google&redirect_to=%2Faccount'));
@@ -105,23 +116,26 @@ describe('API-AUTH-007 GET /api/auth/oauth/start', () => {
     expect(mockLogAudit).toHaveBeenCalledWith({
       action: 'auth.oauth.start',
       outcome: 'success',
-      metadata: { provider: 'google', redirect_to: '/account' },
+      metadata: { provider: 'google' },
     });
   });
 
   test.each([
     ['外部の住所', '?provider=google&redirect_to=https%3A%2F%2Fevil.example.net%2F'],
     ['プロトコル相対', '?provider=google&redirect_to=%2F%2Fevil.example.net'],
-    ['バックスラッシュ入り', '?provider=google&redirect_to=%2F%5Cevil.example.net'],
+    ['内部の道筋', '?provider=google&redirect_to=%2Faccount'],
+    ['next', '?provider=google&next=%2Faccount'],
     ['指定なし', '?provider=google'],
-  ])('API-AUTH-007 戻りの送り先が内部の道でなければ既定の /auth/verified に直す（%s）', async (_label, query) => {
+  ])('API-AUTH-007 GET は戻り先を読まず、戻りの URL にクエリを付けず、控えを作らず控えの Cookie を消す（%s）', async (_label, query) => {
     const { GET } = await handlerImport();
 
-    await GET(startRequest(query));
+    const res: any = await GET(startRequest(query));
 
     const redirectTo = new URL(signInWithOAuthMock.mock.calls[0][0].options.redirectTo);
     expect(redirectTo.pathname).toBe('/api/auth/oauth/callback');
-    expect(redirectTo.searchParams.get('next')).toBe('/auth/verified');
+    expect(redirectTo.search).toBe('');
+    expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+    expect(res.cookies.set).toHaveBeenCalledWith(expect.objectContaining({ name: 'sb-return-intent', value: '', maxAge: 0 }));
   });
 
   test('API-AUTH-007 PKCE の検証の値を溜めた Cookie を、応答のリダイレクトに付け直す', async () => {
@@ -137,9 +151,11 @@ describe('API-AUTH-007 GET /api/auth/oauth/start', () => {
 
     const res: any = await GET(startRequest('?provider=google'));
 
-    expect(res.cookies.set).toHaveBeenCalledTimes(2);
+    // PKCE などの 2 つに加え、戻り先の控えの Cookie（GET なので消す側）が 1 つ付く
+    expect(res.cookies.set).toHaveBeenCalledTimes(3);
     expect(res.cookies.set).toHaveBeenCalledWith('sb-pkce-code-verifier', 'verifier', { path: '/', maxAge: 600 });
     expect(res.cookies.set).toHaveBeenCalledWith('sb-other', 'x', undefined);
+    expect(res.cookies.set).toHaveBeenCalledWith(expect.objectContaining({ name: 'sb-return-intent', maxAge: 0 }));
   });
 
   test('API-AUTH-007 PKCE のクライアントには匿名の鍵と URL を渡し、URL は SUPABASE_URL を優先する', async () => {
@@ -282,6 +298,137 @@ describe('API-AUTH-007 GET /api/auth/oauth/start', () => {
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'error', detail: 'Error: sdk crashed' }),
     );
+  });
+
+  describe('POST（JSON で戻り先を受け、200 の { url } を返す）', () => {
+    function postRequest(body: unknown, raw = false) {
+      return new Request('http://localhost:3000/api/auth/oauth/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: raw ? (body as string) : JSON.stringify(body),
+      });
+    }
+
+    test('API-AUTH-007 next が通ると 200 の { url } を返し（303 や Location は使わない）、控えの Cookie と PKCE の Cookie を付ける', async () => {
+      signInWithOAuthMock.mockImplementation(async () => {
+        const config: any = mockCreateServerClient.mock.calls[0][2];
+        config.cookies.setAll([{ name: 'sb-pkce-code-verifier', value: 'verifier', options: { path: '/', maxAge: 600 } }]);
+        return { data: { url: 'https://example.supabase.co/auth/v1/authorize?provider=google' }, error: null };
+      });
+      const { POST } = await handlerImport();
+
+      const res: any = await POST(postRequest({ provider: 'google', next: '/account' }));
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ url: 'https://example.supabase.co/auth/v1/authorize?provider=google' });
+      expect(res.headers.has('location')).toBe(false);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
+      expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
+      expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/account', purpose: 'login' });
+      expect(res.cookies.set).toHaveBeenCalledWith('sb-pkce-code-verifier', 'verifier', { path: '/', maxAge: 600 });
+      expect(res.cookies.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'sb-return-intent',
+          value: 'O'.repeat(43),
+          httpOnly: true,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 900,
+        }),
+      );
+    });
+
+    test('API-AUTH-007 番号も戻り先の道筋も、本文・戻りの URL・監査に出さない', async () => {
+      const { POST } = await handlerImport();
+
+      const res: any = await POST(postRequest({ provider: 'google', next: '/search?q=coat' }));
+
+      const body = JSON.stringify(await res.json());
+      expect(body).not.toContain('O'.repeat(43));
+      expect(body).not.toContain('/search');
+      expect(signInWithOAuthMock.mock.calls[0][0].options.redirectTo).toBe('http://localhost:3000/api/auth/oauth/callback');
+      expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('/search');
+    });
+
+    test.each([
+      ['外部の住所', { provider: 'google', next: 'https://evil.example.net/' }],
+      ['プロトコル相対', { provider: 'google', next: '//evil.example.net' }],
+      ['タブ入り', { provider: 'google', next: '/\t/evil.example.net' }],
+      ['除外の道筋', { provider: 'google', next: '/api/auth/me' }],
+      ['数値', { provider: 'google', next: 123 }],
+      ['長すぎる値', { provider: 'google', next: '/item/' + 'a'.repeat(3000) }],
+      ['指定なし', { provider: 'google' }],
+    ])('API-AUTH-007 戻り先が確かめに通らなくても 200 の { url } を返し（ログインを止めない）、控えを作らず控えの Cookie を消す（%s）', async (_label, body) => {
+      const { POST } = await handlerImport();
+
+      const res: any = await POST(postRequest(body));
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).url).toBe('https://example.supabase.co/auth/v1/authorize?provider=google');
+      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+      expect(res.cookies.set).toHaveBeenCalledWith(expect.objectContaining({ name: 'sb-return-intent', value: '', maxAge: 0 }));
+    });
+
+    test('API-AUTH-007 控えの保存が失敗しても 200 の { url } を返し、控えの Cookie は消す側になる', async () => {
+      mockCreateReturnIntent.mockResolvedValue(null);
+      const { POST } = await handlerImport();
+
+      const res: any = await POST(postRequest({ provider: 'google', next: '/account' }));
+
+      expect(res.status).toBe(200);
+      expect(res.cookies.set).toHaveBeenCalledWith(expect.objectContaining({ name: 'sb-return-intent', value: '', maxAge: 0 }));
+    });
+
+    test('API-AUTH-007 provider が google 以外なら 400 で、控えを作らない', async () => {
+      const { POST } = await handlerImport();
+
+      const res: any = await POST(postRequest({ provider: 'github', next: '/account' }));
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Unsupported provider' });
+      expect(signInWithOAuthMock).not.toHaveBeenCalled();
+      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ['JSON でない', '{broken', true],
+      ['provider が無い', { next: '/account' }, false],
+    ])('API-AUTH-007 本文が %s なら 400 で、URL も控えも作らない', async (_label, body, raw) => {
+      const { POST } = await handlerImport();
+
+      const res: any = await POST(postRequest(body, raw));
+
+      expect(res.status).toBe(400);
+      expect(signInWithOAuthMock).not.toHaveBeenCalled();
+      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+    });
+
+    test('API-AUTH-007 認可の URL を作れなければ 502 で、控えを作らない', async () => {
+      signInWithOAuthMock.mockResolvedValueOnce({ data: { url: null }, error: { message: 'failed' } });
+      const { POST } = await handlerImport();
+
+      const res: any = await POST(postRequest({ provider: 'google', next: '/account' }));
+
+      expect(res.status).toBe(502);
+      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+    });
+
+    test('API-AUTH-007 POST も同じ枠（auth:oauth:start）で数え、制限に当たったらその応答を返して本文を読まない', async () => {
+      const limited = { status: 429 };
+      mockEnforceRateLimit.mockResolvedValue(limited);
+      const { POST } = await handlerImport();
+      const request = postRequest({ provider: 'google' });
+      const jsonSpy = jest.spyOn(request, 'json');
+
+      const res = await POST(request);
+
+      expect(res).toBe(limited);
+      expect(jsonSpy).not.toHaveBeenCalled();
+      expect(mockEnforceRateLimit).toHaveBeenCalledWith(
+        expect.objectContaining({ endpoint: 'auth:oauth:start', limit: 50, windowSeconds: 600 }),
+      );
+      expect(signInWithOAuthMock).not.toHaveBeenCalled();
+    });
   });
 });
 

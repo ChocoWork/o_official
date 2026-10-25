@@ -1,7 +1,7 @@
 /**
  * DD-AUTH-018 会員登録の窓口（src/app/api/auth/register/route.ts）の単体テスト。
  * 回数の制限・Turnstile・漏洩の照合・Supabase・メール・監査は差し替え、窓口の分岐だけを確かめる。
- * 本文の形（RegisterRequestSchema）と送り先の絞り込み（sanitizeRedirectPath）は本物を通す。
+ * 本文の形（RegisterRequestSchema）と戻り先の確かめ・控えの Cookie の動作（return-intent-service.ts）は本物を通し、控えの保存（return-intent-store.ts）だけを差し替える。
  */
 
 const mockAfterCallbacks: Array<() => unknown> = [];
@@ -33,7 +33,14 @@ jest.mock('@/lib/redirect', () => ({
   ...jest.requireActual('@/lib/redirect'),
   getRequestOrigin: () => 'http://localhost:3000',
 }));
-jest.mock('@/lib/audit', () => ({ logAudit: jest.fn() }));
+jest.mock('@/lib/audit', () => {
+  const logAudit = jest.fn();
+  return { __esModule: true, default: logAudit, logAudit };
+});
+jest.mock('@/features/auth/return-intent/return-intent-store', () => ({
+  ...jest.requireActual('@/features/auth/return-intent/return-intent-store'),
+  createReturnIntent: jest.fn(),
+}));
 jest.mock('@/lib/site-url-guard', () => ({ isEmailOriginAllowed: jest.fn() }));
 jest.mock('@/lib/ops/site-url-alert', () => ({ notifySiteUrlInvalid: jest.fn() }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
@@ -42,6 +49,7 @@ jest.mock('@/features/auth/services/auth-admin-user', () => ({ findAuthUserIdByE
 jest.mock('@/features/auth/services/register', () => ({ persistSessionAndCookies: jest.fn() }));
 jest.mock('@/features/cart/services/guest-shopping-token', () => ({ readGuestShoppingTokens: jest.fn() }));
 jest.mock('@/lib/cookie', () => ({
+  ...jest.requireActual('@/lib/cookie'),
   accessCookieName: 'access-cookie',
   refreshCookieName: 'refresh-cookie',
   csrfCookieName: 'csrf-cookie',
@@ -59,6 +67,7 @@ import { notifySiteUrlInvalid } from '@/lib/ops/site-url-alert';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { verifyTurnstile } from '@/lib/turnstile';
 import { findAuthUserIdByEmail } from '@/features/auth/services/auth-admin-user';
+import { createReturnIntent } from '@/features/auth/return-intent/return-intent-store';
 import { persistSessionAndCookies } from '@/features/auth/services/register';
 import { readGuestShoppingTokens } from '@/features/cart/services/guest-shopping-token';
 import { cookieOptionsForAccess, cookieOptionsForRefresh, cookieOptionsForCsrf } from '@/lib/cookie';
@@ -74,6 +83,7 @@ const mockNotifySiteUrlInvalid = notifySiteUrlInvalid as jest.Mock;
 const mockRateLimit = enforceRateLimit as jest.Mock;
 const mockTurnstile = verifyTurnstile as jest.Mock;
 const mockFindUser = findAuthUserIdByEmail as jest.Mock;
+const mockCreateReturnIntent = createReturnIntent as jest.Mock;
 const mockPersist = persistSessionAndCookies as jest.Mock;
 const mockReadTokens = readGuestShoppingTokens as jest.Mock;
 const mockAccessOptions = cookieOptionsForAccess as jest.Mock;
@@ -120,6 +130,7 @@ describe('POST /api/auth/register', () => {
     mockOriginAllowed.mockReturnValue(true);
     mockPwned.mockResolvedValue({ status: 'ok' });
     mockFindUser.mockResolvedValue({ status: 'not_found' });
+    mockCreateReturnIntent.mockResolvedValue({ token: 'S'.repeat(43), maxAgeSeconds: 3600 });
     mockPersist.mockResolvedValue({ ok: true });
     mockReadTokens.mockReturnValue(TOKENS);
     mockLogAudit.mockResolvedValue(undefined);
@@ -296,34 +307,58 @@ describe('POST /api/auth/register', () => {
       expect(console.error).toHaveBeenCalledWith('Register handler error:', expect.anything());
     });
 
-    it('DD-AUTH-018 redirect_to を確認のリンクの送り先にする', async () => {
-      await POST(registerRequest({ email: 'new@example.com', password: PASSWORD, redirect_to: '/look' }));
+    it('DD-AUTH-018 確認のリンク（emailRedirectTo）は /api/auth/confirm だけで、クエリを持たない', async () => {
+      await POST(registerRequest({ email: 'new@example.com', password: PASSWORD, next: '/look' }));
 
       const url = new URL(signUp.mock.calls[0][0].options.emailRedirectTo);
       expect(url.origin).toBe('http://localhost:3000');
       expect(url.pathname).toBe('/api/auth/confirm');
-      expect(url.searchParams.get('redirect_to')).toBe('/look');
+      expect(url.search).toBe('');
     });
 
-    it('DD-AUTH-018 redirect_to が無ければ emailRedirectTo を使う', async () => {
-      await POST(registerRequest({ email: 'new@example.com', password: PASSWORD, emailRedirectTo: '/news' }));
+    it.each([
+      ['redirect_to', '/look'],
+      ['emailRedirectTo', '/news'],
+    ])('DD-AUTH-018 古いクライアントが送る %s は捨てられ、控えも確認のリンクのクエリも作らない', async (key, value) => {
+      const res: any = await POST(registerRequest({ email: 'new@example.com', password: PASSWORD, [key]: value }));
 
-      const url = new URL(signUp.mock.calls[0][0].options.emailRedirectTo);
-      expect(url.searchParams.get('redirect_to')).toBe('/news');
+      expect(res.status).toBe(202);
+      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+      expect(new URL(signUp.mock.calls[0][0].options.emailRedirectTo).search).toBe('');
+      expect(res.cookies.set).toHaveBeenCalledWith(expect.objectContaining({ name: 'sb-return-intent', value: '', maxAge: 0 }));
     });
 
-    it('DD-AUTH-018 どちらも無ければ既定の /auth/verified にする', async () => {
-      await POST(registerRequest());
+    it('DD-AUTH-018 next が通ると signup の用途で控え、控えの Cookie を HttpOnly・Lax・Path /・Max-Age 3600 で付ける', async () => {
+      const res: any = await POST(registerRequest({ email: 'new@example.com', password: PASSWORD, next: '/account?tab=orders#x' }));
 
-      const url = new URL(signUp.mock.calls[0][0].options.emailRedirectTo);
-      expect(url.searchParams.get('redirect_to')).toBe('/auth/verified');
+      expect(res.status).toBe(202);
+      expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/account?tab=orders', purpose: 'signup' });
+      expect(res.cookies.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'sb-return-intent',
+          value: 'S'.repeat(43),
+          httpOnly: true,
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 3600,
+        }),
+      );
+      expect(JSON.stringify(await res.json())).not.toContain('S'.repeat(43));
     });
 
-    it('DD-AUTH-018 外部への送り先（//evil.example）は既定の /auth/verified に直す', async () => {
-      await POST(registerRequest({ email: 'new@example.com', password: PASSWORD, redirect_to: '//evil.example' }));
+    it.each([
+      ['外部への送り先', '//evil.example'],
+      ['タブ入り', '/\t/evil.example'],
+      ['解釈で外へ向く', '/.//evil.example'],
+      ['途中の画面 /auth/verified', '/auth/verified'],
+      ['数値', 123],
+      ['長すぎる値', '/item/' + 'a'.repeat(3000)],
+    ])('DD-AUTH-018 確かめに通らない next（%s）でも登録は 400 にならず、控えを作らず控えの Cookie を消す', async (_label, next) => {
+      const res: any = await POST(registerRequest({ email: 'new@example.com', password: PASSWORD, next }));
 
-      const url = new URL(signUp.mock.calls[0][0].options.emailRedirectTo);
-      expect(url.searchParams.get('redirect_to')).toBe('/auth/verified');
+      expect(res.status).toBe(202);
+      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+      expect(res.cookies.set).toHaveBeenCalledWith(expect.objectContaining({ name: 'sb-return-intent', value: '', maxAge: 0 }));
     });
   });
 
@@ -391,6 +426,79 @@ describe('POST /api/auth/register', () => {
       expect(order).toEqual(['turnstile', 'lookup', 'signUp']);
     });
   });
+
+  describe('戻り先の控え（列挙対策）', () => {
+    const body = { email: 'new@example.com', password: PASSWORD, turnstileToken: 't', next: '/item/3' };
+    const returnIntentCookies = (res: any) =>
+      res.cookies.set.mock.calls.map((call: unknown[]) => call[0]).filter((c: any) => c.name === 'sb-return-intent');
+
+    it('DD-AUTH-018 控えの作成は Turnstile・漏洩の確かめの後で、既存会員の照会より前に行う', async () => {
+      const order: string[] = [];
+      mockTurnstile.mockImplementation(async () => (order.push('turnstile'), { ok: true }));
+      mockPwned.mockImplementation(async () => (order.push('pwned'), { status: 'ok' }));
+      mockCreateReturnIntent.mockImplementation(async () => (order.push('intent'), { token: 'S'.repeat(43), maxAgeSeconds: 3600 }));
+      mockFindUser.mockImplementation(async () => (order.push('lookup'), { status: 'not_found' }));
+
+      await POST(registerRequest(body));
+
+      expect(order).toEqual(['turnstile', 'pwned', 'intent', 'lookup']);
+    });
+
+    it('DD-AUTH-018 Turnstile の失敗・漏洩・住所の見張り・制限では控えを作らない', async () => {
+      mockTurnstile.mockResolvedValueOnce({ ok: false });
+      await POST(registerRequest(body));
+      mockPwned.mockResolvedValueOnce({ status: 'pwned' });
+      await POST(registerRequest(body));
+      mockOriginAllowed.mockReturnValueOnce(false);
+      await POST(registerRequest(body));
+      mockRateLimit.mockResolvedValueOnce({ status: 429 });
+      await POST(registerRequest(body));
+
+      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+    });
+
+    it('DD-AUTH-018 新規・登録済み・重複の例外の 3 つの枝で、202・本文・控えの Cookie の属性が同じ', async () => {
+      const fresh: any = await POST(registerRequest(body));
+
+      mockFindUser.mockResolvedValueOnce({ status: 'found', userId: 'u-1' });
+      const registered: any = await POST(registerRequest(body));
+
+      signUp.mockResolvedValueOnce({ data: { session: null, user: null }, error: { message: 'User already registered' } });
+      const duplicate: any = await POST(registerRequest(body));
+
+      const responses = [fresh, registered, duplicate];
+      expect(responses.map((r) => r.status)).toEqual([202, 202, 202]);
+      const bodies = await Promise.all(responses.map((r) => r.json()));
+      expect(bodies).toEqual(Array(3).fill({ message: 'Confirmation email sent' }));
+      const cookieShapes = responses.map((r) => {
+        const calls = returnIntentCookies(r);
+        expect(calls).toHaveLength(1);
+        const { value: _value, ...attributes } = calls[0];
+        return attributes;
+      });
+      expect(cookieShapes[1]).toEqual(cookieShapes[0]);
+      expect(cookieShapes[2]).toEqual(cookieShapes[0]);
+      expect(cookieShapes[0]).toEqual(expect.objectContaining({ httpOnly: true, sameSite: 'lax', path: '/', maxAge: 3600 }));
+    });
+
+    it('DD-AUTH-018 控えの作成が失敗しても 3 つの枝とも 202 で、控えの Cookie は消す側（Max-Age 0）で揃う', async () => {
+      mockCreateReturnIntent.mockResolvedValue(null);
+
+      const fresh: any = await POST(registerRequest(body));
+      mockFindUser.mockResolvedValueOnce({ status: 'found', userId: 'u-1' });
+      const registered: any = await POST(registerRequest(body));
+      signUp.mockResolvedValueOnce({ data: { session: null, user: null }, error: { message: 'User already registered' } });
+      const duplicate: any = await POST(registerRequest(body));
+
+      for (const res of [fresh, registered, duplicate]) {
+        expect(res.status).toBe(202);
+        const calls = returnIntentCookies(res);
+        expect(calls).toHaveLength(1);
+        expect(calls[0]).toEqual(expect.objectContaining({ value: '', maxAge: 0 }));
+      }
+    });
+  });
+
 
   describe('住所の見張り', () => {
     it('DD-AUTH-018 住所が許可の一覧に無ければ応答の外で運用へ知らせ、503 を返す', async () => {
@@ -622,6 +730,13 @@ describe('POST /api/auth/register', () => {
         outcome: 'success',
         resource_id: 'user-1',
       });
+    });
+
+    it('DD-AUTH-018 即ログインの枝（201）では控えを使う所が無いので、控えの Cookie を消す', async () => {
+      const res: any = await POST(registerRequest({ email: 'new@example.com', password: PASSWORD, next: '/item/3' }));
+
+      expect(res.status).toBe(201);
+      expect(res.cookies.set).toHaveBeenCalledWith(expect.objectContaining({ name: 'sb-return-intent', value: '', maxAge: 0 }));
     });
 
     it('DD-AUTH-018 cookie ヘッダが無ければ null をゲストの印の読み取りへ渡す', async () => {

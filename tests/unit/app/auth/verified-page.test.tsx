@@ -101,6 +101,8 @@ const enrollOk = () =>
 
 const verifyOk = () => jsonResponse({ data: { verified: true } });
 
+const postLoginTo = (redirectTo: unknown, needsMfa = false) => () => jsonResponse({ redirectTo, needsMfa });
+
 const CODE_LABEL = '認証コード（6〜8桁）';
 
 beforeEach(() => {
@@ -111,6 +113,7 @@ beforeEach(() => {
     '/api/auth/me': adminUnverified,
     '/api/auth/mfa/status': twoFactorStatus,
     '/api/auth/mfa/verify': verifyOk,
+    '/api/auth/post-login': postLoginTo('/admin'),
   });
   globalThis.fetch = mockFetch as unknown as typeof fetch;
 });
@@ -191,19 +194,80 @@ describe('/auth/verified の頁: 読み込みと振り分け', () => {
   });
 
   it.each(['admin', 'supporter'])(
-    'DD-AUTH-005 「%s」が確認済み（aal2）なら文を替えて /admin へ置き換え、TOTP の状態は聞かない',
+    'DD-AUTH-005 「%s」が確認済み（aal2）なら文を替えて post-login が返した /admin へ置き換え、TOTP の状態は聞かない',
     async (role) => {
       routeFetch({
         '/api/auth/me': () =>
           jsonResponse({ authenticated: true, user: { role, mfaVerified: true } }),
+        '/api/auth/post-login': postLoginTo('/admin'),
       });
       render(<VerifiedPage />);
 
       await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/admin'));
       expect(screen.getByRole('status')).toHaveTextContent('認証が完了しました。管理画面へ移動します…');
       expect(callsTo('/api/auth/mfa/status')).toHaveLength(0);
+      expect(callsTo('/api/auth/post-login')).toEqual([
+        ['/api/auth/post-login', { method: 'POST', cache: 'no-store', credentials: 'same-origin' }],
+      ]);
     },
   );
+
+  it('DD-AUTH-005 確認済みの管理者は post-login が返した戻り先（/admin/orders）へ置き換える', async () => {
+    routeFetch({
+      '/api/auth/me': () => jsonResponse({ authenticated: true, user: { role: 'admin', mfaVerified: true } }),
+      '/api/auth/post-login': postLoginTo('/admin/orders'),
+    });
+    render(<VerifiedPage />);
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/admin/orders'));
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
+
+  it('DD-AUTH-005 確認済みの管理者でも post-login が needsMfa:true を返したら移らず、TOTP の入力を出す', async () => {
+    routeFetch({
+      '/api/auth/me': () => jsonResponse({ authenticated: true, user: { role: 'admin', mfaVerified: true } }),
+      '/api/auth/post-login': postLoginTo('/auth/verified', true),
+      '/api/auth/mfa/status': oneFactorStatus,
+    });
+    render(<VerifiedPage />);
+
+    expect(await screen.findByText('2要素認証コードを入力してください。')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: CODE_LABEL })).toBeInTheDocument();
+    expect(callsTo('/api/auth/mfa/status')).toHaveLength(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['401', () => jsonResponse({ error: 'Unauthorized' }, false, 401)],
+    ['503', () => jsonResponse({ error: 'unavailable' }, false, 503)],
+    ['本文が JSON でない', () => brokenJsonResponse()],
+    ['通信が投げる', () => { throw new Error('offline'); }],
+  ])('DD-AUTH-005 post-login が「%s」なら特権は保険の /admin へ置き換える', async (_label, build) => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    routeFetch({
+      '/api/auth/me': () => jsonResponse({ authenticated: true, user: { role: 'admin', mfaVerified: true } }),
+      '/api/auth/post-login': build,
+    });
+    render(<VerifiedPage />);
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/admin'));
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['外の住所', 'https://evil.example/'],
+    ['プロトコル相対', '//evil.example'],
+    ['文字でない値', 42],
+  ])('DD-AUTH-005 post-login の戻り先が不正（%s）なら二重の確かめで保険の /admin に直す', async (_label, redirectTo) => {
+    routeFetch({
+      '/api/auth/me': () => jsonResponse({ authenticated: true, user: { role: 'admin', mfaVerified: true } }),
+      '/api/auth/post-login': postLoginTo(redirectTo),
+    });
+    render(<VerifiedPage />);
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/admin'));
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
 
   it.each([
     ['mfaVerified が偽', { role: 'admin', mfaVerified: false }],
@@ -221,34 +285,51 @@ describe('/auth/verified の頁: 読み込みと振り分け', () => {
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
-  it('DD-AUTH-005 一般の会員は文を替えてリンクを出し、0.8 秒後に /account へ置き換える', async () => {
+  it('DD-AUTH-005 一般の会員は文を替えてリンクを出し、0.8 秒後に post-login が返した戻り先へ置き換える', async () => {
     routeFetch({
       '/api/auth/me': () =>
         jsonResponse({ authenticated: true, user: { role: 'user', mfaVerified: false } }),
+      '/api/auth/post-login': postLoginTo('/item/3?color=red'),
     });
     render(<VerifiedPage />);
 
-    expect(await screen.findByText('確認完了。アカウントへ移動します…')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('確認完了。アカウントへ移動します…');
-    expect(screen.getByRole('link', { name: 'アカウントへ' })).toHaveAttribute('href', '/account');
+    expect(await screen.findByText('確認完了。移動します…')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('確認完了。移動します…');
+    expect(screen.getByRole('link', { name: 'トップへ' })).toHaveAttribute('href', '/');
+    expect(screen.queryByRole('link', { name: 'アカウントへ' })).not.toBeInTheDocument();
     expect(mockReplace).not.toHaveBeenCalled();
     expect(callsTo('/api/auth/mfa/status')).toHaveLength(0);
+    expect(callsTo('/api/auth/post-login')).toHaveLength(0);
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/account'), { timeout: 2000 });
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/item/3?color=red'), { timeout: 2000 });
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(callsTo('/api/auth/post-login')).toHaveLength(1);
+  });
+
+  it('DD-AUTH-005 一般の会員は post-login が引けなければ保険の / へ置き換える', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    routeFetch({
+      '/api/auth/me': () => jsonResponse({ authenticated: true, user: { role: 'user' } }),
+      '/api/auth/post-login': () => jsonResponse({ error: 'unavailable' }, false, 503),
+    });
+    render(<VerifiedPage />);
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/'), { timeout: 2000 });
     expect(mockReplace).toHaveBeenCalledTimes(1);
   });
 
-  it('DD-AUTH-005 一般の会員の頁が 0.8 秒の前に閉じたら時計を止め、/account へは移らない', async () => {
+  it('DD-AUTH-005 一般の会員の頁が 0.8 秒の前に閉じたら時計を止め、移らず post-login も呼ばない', async () => {
     routeFetch({
       '/api/auth/me': () => jsonResponse({ authenticated: true, user: { role: 'user' } }),
     });
     const { unmount } = render(<VerifiedPage />);
-    await screen.findByText('確認完了。アカウントへ移動します…');
+    await screen.findByText('確認完了。移動します…');
 
     unmount();
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     expect(mockReplace).not.toHaveBeenCalled();
+    expect(callsTo('/api/auth/post-login')).toHaveLength(0);
   });
 
   it.each([
@@ -260,7 +341,7 @@ describe('/auth/verified の頁: 読み込みと振り分け', () => {
     routeFetch({ '/api/auth/me': () => jsonResponse({ authenticated: true, user }) });
     const { unmount } = render(<VerifiedPage />);
 
-    expect(await screen.findByText('確認完了。アカウントへ移動します…')).toBeInTheDocument();
+    expect(await screen.findByText('確認完了。移動します…')).toBeInTheDocument();
     expect(callsTo('/api/auth/mfa/status')).toHaveLength(0);
     expect(callsTo('/api/auth/mfa/enroll-totp')).toHaveLength(0);
     unmount();
@@ -645,11 +726,12 @@ describe('/auth/verified の頁: TOTP の登録の失敗', () => {
 });
 
 describe('/auth/verified の頁: 認証コードの確認', () => {
-  async function renderWithOneFactor() {
+  async function renderWithOneFactor(postLogin: Handler = postLoginTo('/admin')) {
     routeFetch({
       '/api/auth/me': adminUnverified,
       '/api/auth/mfa/status': oneFactorStatus,
       '/api/auth/mfa/verify': verifyOk,
+      '/api/auth/post-login': postLogin,
     });
     const user = userEvent.setup();
     render(<VerifiedPage />);
@@ -678,6 +760,47 @@ describe('/auth/verified の頁: 認証コードの確認', () => {
       mockReplace.mock.invocationCallOrder[0],
     );
     expect(screen.getByText('2要素認証が完了しました。管理画面へ移動します…')).toBeInTheDocument();
+  });
+
+  it('DD-AUTH-005 確認が通ったら状態の同期の後に post-login を呼び、その戻り先（/admin/orders）へ置き換える', async () => {
+    const { user, input } = await renderWithOneFactor(postLoginTo('/admin/orders'));
+
+    await user.type(input, '654321');
+    await user.click(completeButton());
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/admin/orders'));
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    const postLoginOrder = mockFetch.mock.invocationCallOrder[
+      mockFetch.mock.calls.findIndex(([url]) => url === '/api/auth/post-login')
+    ];
+    expect(mockRefreshAuthState.mock.invocationCallOrder[0]).toBeLessThan(postLoginOrder);
+    expect(postLoginOrder).toBeLessThan(mockReplace.mock.invocationCallOrder[0]);
+    expect(callsTo('/api/auth/post-login')[0][1]).toEqual({
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+  });
+
+  it('DD-AUTH-005 確認が通っても post-login が引けなければ保険の /admin へ置き換える', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { user, input } = await renderWithOneFactor(() => jsonResponse({ error: 'x' }, false, 500));
+
+    await user.type(input, '654321');
+    await user.click(completeButton());
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/admin'));
+  });
+
+  it('DD-AUTH-005 確認が通ったのに post-login が needsMfa:true を返したら移らず、誤りの文を出す', async () => {
+    const { user, input } = await renderWithOneFactor(postLoginTo('/auth/verified', true));
+
+    await user.type(input, '654321');
+    await user.click(completeButton());
+
+    expect(await screen.findByText('2要素認証の完了を確認できませんでした。もう一度お試しください。')).toBeInTheDocument();
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(completeButton()).toBeEnabled();
   });
 
   it('DD-AUTH-005 コード欄は数字だけを受け、8 桁で切る', async () => {

@@ -10,6 +10,11 @@ jest.mock('@/lib/turnstile', () => ({ verifyTurnstile: jest.fn().mockResolvedVal
 jest.mock('@/lib/pwned-password', () => ({ checkPwnedPassword: jest.fn().mockResolvedValue({ status: 'ok' }) }));
 jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('@/lib/mail', () => ({ __esModule: true, default: jest.fn().mockResolvedValue(undefined) }));
+// この試験の NextResponse は json だけの簡易版で cookies を持たない。戻り先の控えは別の試験で確かめるので、ここでは何もしない部品に差し替える
+jest.mock('@/features/auth/return-intent/return-intent-service', () => ({
+  issueReturnIntent: jest.fn().mockResolvedValue({ action: { kind: 'clear' }, outcome: 'cleared' }),
+  applyReturnIntentCookie: jest.fn(),
+}));
 jest.mock('@/lib/ops/site-url-alert', () => ({ notifySiteUrlInvalid: jest.fn().mockResolvedValue(undefined) }), { virtual: true });
 const mockSignUp = jest.fn();
 const mockRpc = jest.fn();

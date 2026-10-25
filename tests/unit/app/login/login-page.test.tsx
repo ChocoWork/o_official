@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import LoginPage, { generateMetadata } from '@/app/login/page';
 import { loginTwoFactorSessionCookieName } from '@/lib/cookie';
 
@@ -20,8 +20,22 @@ jest.mock('@/features/auth/services/login-2fa-session', () => ({
 }));
 jest.mock('@/components/AuthTabs', () => ({
   __esModule: true,
-  default: ({ initialTab, initialEmail }: { initialTab: string; initialEmail: string }) => (
-    <div data-testid="auth-tabs" data-tab={initialTab} data-email={initialEmail} />
+  default: ({
+    initialTab,
+    initialEmail,
+    returnTo,
+  }: {
+    initialTab: string;
+    initialEmail: string;
+    returnTo?: string;
+  }) => (
+    <div
+      data-testid="auth-tabs"
+      data-tab={initialTab}
+      data-email={initialEmail}
+      data-has-return-to={String(returnTo !== undefined)}
+      data-return-to={returnTo ?? ''}
+    />
   ),
 }));
 
@@ -111,6 +125,30 @@ describe('/login page', () => {
     const tabs = await renderPage({ tab: ['register', 'register'] });
 
     expect(tabs).toHaveAttribute('data-tab', 'login');
+  });
+
+  test('DD-AUTH-001 ?next が確かめを通れば、通った道筋だけを returnTo として AuthTabs に渡す', async () => {
+    const tabs = await renderPage({ next: '/item/3?color=red#frag' });
+
+    expect(tabs).toHaveAttribute('data-return-to', '/item/3?color=red');
+  });
+
+  test.each([
+    ['外の住所', '//evil.example'],
+    ['/login', '/login'],
+    ['/auth/verified', '/auth/verified'],
+    ['タブを含む値', '/%09/evil.example'],
+    ['許可リスト外', '/unknown'],
+  ])('DD-AUTH-001 ?next が %s なら returnTo を渡さない', async (_label, next) => {
+    const tabs = await renderPage({ next });
+
+    expect(tabs).toHaveAttribute('data-has-return-to', 'false');
+  });
+
+  test('DD-AUTH-001 ?next が配列・未指定なら returnTo を渡さない', async () => {
+    expect(await renderPage({ next: ['/item/3', '/item/4'] })).toHaveAttribute('data-has-return-to', 'false');
+    cleanup();
+    expect(await renderPage({})).toHaveAttribute('data-has-return-to', 'false');
   });
 
   test('DD-AUTH-001 metadata が title・description・OG を返す', async () => {

@@ -8,6 +8,8 @@
  * もう一度ログインを押して2通目のコードを送り、アカウント単位の枠を無駄に使う。
  * そのため保留の Cookie が有効なら描く前にサーバーで転送する。
  * 初めのタブとメールを問い合わせで受けるのは、ゲストの注文の完了画面などが会員登録への案内にその二つを付けて来るため。
+ * `next`（ログインの後の戻り先）は確かめを通った道筋だけを AuthTabs に渡し、外れた値は画面に出さず捨てる。
+ * 控えるのは入口の POST で、ここは値を運ぶだけ（ARC-AUTH-010）。
  */
 import type { Metadata } from 'next';
 import React from "react";
@@ -16,6 +18,7 @@ import { redirect } from "next/navigation";
 import AuthTabs from "@/components/AuthTabs";
 import { loginTwoFactorSessionCookieName } from "@/lib/cookie";
 import { verifyLoginTwoFactorSessionToken } from "@/features/auth/services/login-2fa-session";
+import { validateReturnPath } from "@/features/auth/return-intent/return-path";
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
@@ -54,5 +57,14 @@ export default async function LoginPage({
   const emailParam = params?.email;
   const initialEmail = typeof emailParam === 'string' ? emailParam : '';
 
-  return <AuthTabs initialTab={initialTab} initialEmail={initialEmail} />;
+  const nextParam = params?.next;
+  const returnTo = validateReturnPath(nextParam);
+
+  return (
+    <AuthTabs
+      initialTab={initialTab}
+      initialEmail={initialEmail}
+      returnTo={returnTo.ok ? returnTo.path : undefined}
+    />
+  );
 }

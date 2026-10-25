@@ -36,7 +36,10 @@ jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: jest.fn(),
 }));
 
-jest.mock('@/lib/audit', () => ({ logAudit: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('@/lib/audit', () => {
+  const logAudit = jest.fn().mockResolvedValue(undefined);
+  return { __esModule: true, default: logAudit, logAudit };
+});
 
 jest.mock('@/lib/auth/authenticate', () => ({
   authenticateRequest: jest.fn(),
@@ -133,6 +136,7 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       { label: 'POST /api/auth/password-reset/link', method: 'POST', path: '/api/auth/password-reset/link', load: () => require('@/app/api/auth/password-reset/link/route').POST, endpoint: 'auth:password_reset_link', limit: 20, windowSeconds: 600 },
       { label: 'POST /api/auth/password-reset/confirm', method: 'POST', path: '/api/auth/password-reset/confirm', load: () => require('@/app/api/auth/password-reset/confirm/route').POST, endpoint: 'auth:password_reset_confirm', limit: 10, windowSeconds: 3600 },
       { label: 'GET /api/auth/confirm', method: 'GET', path: '/api/auth/confirm', load: () => require('@/app/api/auth/confirm/route').GET, endpoint: 'auth:confirm', limit: 50, windowSeconds: 600 },
+      { label: 'POST /api/auth/oauth/start', method: 'POST', path: '/api/auth/oauth/start', load: () => require('@/app/api/auth/oauth/start/route').POST, endpoint: 'auth:oauth:start', limit: 50, windowSeconds: 600 },
       { label: 'GET /api/auth/oauth/start', method: 'GET', path: '/api/auth/oauth/start', load: () => require('@/app/api/auth/oauth/start/route').GET, endpoint: 'auth:oauth:start', limit: 50, windowSeconds: 600 },
       { label: 'GET /api/auth/oauth/callback', method: 'GET', path: '/api/auth/oauth/callback', load: () => require('@/app/api/auth/oauth/callback/route').GET, endpoint: 'auth:oauth:callback', limit: 50, windowSeconds: 600 },
       { label: 'POST /api/auth/refresh', method: 'POST', path: '/api/auth/refresh', load: () => require('@/app/api/auth/refresh/route').POST, endpoint: 'auth:refresh', limit: 30, windowSeconds: 600 },
@@ -190,6 +194,17 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       expect(enforceRateLimit.mock.calls[0][0].subject).toBeUndefined();
       expect(createPublicClient).not.toHaveBeenCalled();
       expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'login', outcome: 'failure', detail: 'invalid-input-response' }));
+    });
+
+    test('ARC-AUTH-005 login は Turnstile に落ちたら、next を付けていても戻り先の控えを作らず Cookie も付けない', async () => {
+      verifyTurnstile.mockResolvedValue({ ok: false, error: 'invalid-input-response' });
+      const { POST } = require('@/app/api/auth/login/route') as { POST: Handler };
+
+      const res = await POST(request('POST', '/api/auth/login', { ...loginBody, next: '/account' }));
+
+      expect(res.status).toBe(403);
+      expect(res.cookies.get('sb-return-intent')).toBeUndefined();
+      expect(createServiceRoleClient).not.toHaveBeenCalled();
     });
 
     test('ARC-AUTH-005 login は本番で Turnstile の鍵が無いと 403 で断る', async () => {
@@ -261,6 +276,21 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       expect(enforceRateLimit).toHaveBeenCalledTimes(1);
       expect(enforceRateLimit.mock.calls[0][0]).toEqual(expect.objectContaining({ endpoint: 'auth:register', limit: 20, windowSeconds: 3600 }));
       expect(createClient).not.toHaveBeenCalled();
+      expect(createServiceRoleClient).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('会員登録は Turnstile に落ちたら戻り先の控えを作らない', () => {
+    test('ARC-AUTH-005 register は Turnstile に落ちたら、next を付けていても控えを作らず Cookie も付けない', async () => {
+      verifyTurnstile.mockResolvedValue({ ok: false, error: 'invalid-input-response' });
+      const { POST } = require('@/app/api/auth/register/route') as { POST: Handler };
+
+      const res = await POST(
+        request('POST', '/api/auth/register', { email: 'new@example.com', password: 'password123456789', turnstileToken: 'ts-token', next: '/account' }),
+      );
+
+      expect(res.status).toBe(403);
+      expect(res.cookies.get('sb-return-intent')).toBeUndefined();
       expect(createServiceRoleClient).not.toHaveBeenCalled();
     });
   });

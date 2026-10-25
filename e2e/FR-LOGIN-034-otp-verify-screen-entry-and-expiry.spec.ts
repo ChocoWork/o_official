@@ -201,7 +201,7 @@ for (const viewport of viewports) {
       await expect(page.getByText(/後に再送可能/)).toHaveCount(0);
     });
 
-    test(`FR-LOGIN-007-AC-01 一般の会員はパスワードと確認コードを通すと /account へ移り、TOTP を求められない (${viewport.name})`, async ({
+    test(`FR-LOGIN-007-AC-01 一般の会員は戻り先なしでパスワードと確認コードを通すと / へ移り、TOTP を求められない (${viewport.name})`, async ({
       page,
     }) => {
       const member = await createMemberWithPassword(`ac01-${viewport.name}`);
@@ -225,8 +225,8 @@ for (const viewport of viewports) {
       }
       await page.getByRole('button', { name: 'サインイン' }).click();
 
-      // 一般の会員（user）は /account へ移り、TOTP の入力を求められない
-      await expect(page).toHaveURL(/\/account$/);
+      // 一般の会員（user）は戻り先が無いので / へ移り、TOTP の入力を求められない（FR-AUTH-005-AC-03）
+      await expect.poll(() => new URL(page.url()).pathname, { timeout: 15_000 }).toBe('/');
       await expect(page).not.toHaveURL(/\/auth\/verified/);
       await expect(page.locator('body')).not.toContainText('TOTP');
     });

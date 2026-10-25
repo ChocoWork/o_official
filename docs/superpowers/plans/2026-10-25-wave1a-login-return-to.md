@@ -18,7 +18,7 @@
 | --- | --- |
 | 新しい要求・要件 | `SR-AUTH-008`（要求）、`FR-AUTH-005`（要件）と `FR-AUTH-005-AC-01`〜`07`、`SEC-AUTH-026` の更新と `-AC-01`〜`03`、`SEC-AUTH-032`（控えの扱い）と `-AC-01`〜`02`、脅威 `THR-AUTH-032` |
 | 新しい設計 | `ARC-AUTH-010`、`STATE-AUTH-006`、`API-AUTH-019`、`DATA-AUTH-005`、`ADR-0412`、`DD-AUTH-032`〜`036`。既存の `FLOW-AUTH-001`〜`003`・`API-AUTH-001`・`005`〜`008`・`015`・`DATA-AUTH-004`・`DD-AUTH-005`・`014`・`017`〜`021`・`028` を更新。`SCR-AUTH-008` と `DD-AUTH-006` を廃止 |
-| 新しいコード | `src/features/auth/return-intent/`（`return-path.ts`・`return-intent-store.ts`・`return-intent-service.ts`・`use-login-href.ts`）、`src/app/api/auth/post-login/route.ts`、移行 `supabase/migrations/20261025120000_auth_return_intents.sql` |
+| 新しいコード | `src/features/auth/return-intent/`（`return-path.ts`・`return-intent-store.ts`・`return-intent-service.ts`・`use-login-href.ts`）、`src/app/api/auth/post-login/route.ts`、移行 `supabase/migrations/20261026010000_auth_return_intents.sql` |
 | 消すコード | `src/app/auth/callback/page.tsx` と、その単体・結合試験 2 本。`src/lib/redirect.ts` の `sanitizeRedirectPath` |
 | 触る既存コード | `login`・`login/cancel`・`logout`・`register`・`confirm`・`oauth/start`・`oauth/callback` の各 route、`/login` 頁、`/auth/verified` 頁、`VerifyOtpClient`、`AuthTabs`・`LoginModal`・`RegisterModal`・`Header`、`LoginContext`、`/account` 系の 3 つのログイン門、`src/lib/cookie.ts`、2 つのスキーマ |
 | タスク | 8 つ（文書の骨組み → 確かめの部品 → 移行と DB 試験 → 保存・開始・解決の部品 → 入口 → 出口 → 画面 → 消す・E2E・最終確認） |
@@ -72,7 +72,7 @@
 | 詳細設計 | `DD-AUTH-032`〜`036` | 032 戻り先の確かめ（`return-path.ts`）／033 控えの保存（`return-intent-store.ts`）／034 控えの開始と解決（`return-intent-service.ts`）／035 ログイン後の行き先の窓口（`post-login/route.ts`）／036 ログインの入口の URL を作る（`use-login-href.ts`） |
 | 実装 | `IMPL-AUTH-206`〜`210` | 206 `return-path.ts`／207 `return-intent-store.ts`／208 `return-intent-service.ts`／209 `post-login/route.ts`／210 `use-login-href.ts` |
 | E2E | `e2e/FR-LOGIN-038-login-return-to.spec.ts` | 3 つの幅（390・768・1280） |
-| 移行 | `supabase/migrations/20261025120000_auth_return_intents.sql` | 時刻は `ls supabase/migrations` の最新（今は `20261025100130`）より後。G-3 が新しい移行を足していたら、それより後に付け直す |
+| 移行 | `supabase/migrations/20261026010000_auth_return_intents.sql` | 時刻は `ls supabase/migrations` の最新（今は `20261025100130`）より後。G-3 が新しい移行を足していたら、それより後に付け直す |
 
 ### scope.json（Task 1 で足す）
 
@@ -108,7 +108,7 @@ DB 試験 `tests/integration/db/auth_return_intents.integration.test.ts` は既�
 | 部品 | `src/features/auth/return-intent/return-intent-store.ts`、`return-intent-service.ts` | 新規 | 4 |
 | 部品 | `src/features/auth/return-intent/use-login-href.ts` | 新規 | 7 |
 | 共有 | `src/lib/redirect.ts`（`sanitizeRedirectPath` を削除）、`src/lib/cookie.ts`（名前と属性を足す）。`src/lib/browser-location.ts` は触らない（既存の `navigateBrowser` を使う） | 変更 | 2・4 |
-| 移行 | `supabase/migrations/20261025120000_auth_return_intents.sql`、`tests/unit/migrations/auth-return-intents.test.ts`（移行の文面の単体試験。DB なしで流せる） | 新規 | 3 |
+| 移行 | `supabase/migrations/20261026010000_auth_return_intents.sql`、`tests/unit/migrations/auth-return-intents.test.ts`（移行の文面の単体試験。DB なしで流せる） | 新規 | 3 |
 | route | `login`・`login/cancel`・`logout`・`register`・`oauth/start` | 変更 | 5 |
 | route | `post-login`（新規）・`confirm`・`oauth/callback` | 新規・変更 | 6 |
 | スキーマ | `src/features/auth/schemas/login.ts`・`register.ts` | 変更 | 5 |
@@ -274,7 +274,7 @@ export function isPrivilegedRole(role: unknown): role is 'admin' | 'supporter';
 ## Task 3: 移行・DB 結合試験（書くだけ）・運用文書
 
 **Files:**
-- Create: `supabase/migrations/20261025120000_auth_return_intents.sql`
+- Create: `supabase/migrations/20261026010000_auth_return_intents.sql`
 - Create: `tests/integration/db/auth_return_intents.integration.test.ts`
 - Create: `tests/unit/migrations/auth-return-intents.test.ts`
 - 報告に書く（編集しない）: `docs/06_Operations/db-migrations.md` の新しい節の本文

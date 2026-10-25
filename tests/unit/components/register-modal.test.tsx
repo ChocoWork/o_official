@@ -166,7 +166,7 @@ describe('RegisterModal', () => {
       submitForm();
 
       await waitFor(() =>
-        expect(registerMock).toHaveBeenCalledWith(VALID_EMAIL, VALID_PASSWORD, undefined),
+        expect(registerMock).toHaveBeenCalledWith(VALID_EMAIL, VALID_PASSWORD, undefined, { next: undefined }),
       );
       expect(screen.queryByTestId('turnstile-script')).not.toBeInTheDocument();
       expect(mockTurnstile.siteKey).toBe('');
@@ -209,7 +209,9 @@ describe('RegisterModal', () => {
       submitForm();
 
       await waitFor(() =>
-        expect(registerMock).toHaveBeenCalledWith(VALID_EMAIL, VALID_PASSWORD, 'turnstile-token'),
+        expect(registerMock).toHaveBeenCalledWith(VALID_EMAIL, VALID_PASSWORD, 'turnstile-token', {
+          next: undefined,
+        }),
       );
     });
 
@@ -427,13 +429,33 @@ describe('RegisterModal', () => {
     });
   });
 
-  test('DD-AUTH-009 Google のボタンで loginWithGoogle を /auth/verified つきで呼ぶ', async () => {
+  test('DD-AUTH-009 Google のボタンで loginWithGoogle を returnTo つきで呼ぶ', async () => {
+    const user = userEvent.setup();
+    render(<RegisterModal returnTo="/item/3?color=red" />);
+
+    await user.click(screen.getByRole('button', { name: 'Googleで登録' }));
+
+    expect(loginWithGoogleMock).toHaveBeenCalledWith({ next: '/item/3?color=red' });
+    expect(registerMock).not.toHaveBeenCalled();
+  });
+
+  test('DD-AUTH-009 returnTo が無ければ Google の next も無い（/auth/verified を決め打ちしない）', async () => {
     const user = userEvent.setup();
     render(<RegisterModal />);
 
     await user.click(screen.getByRole('button', { name: 'Googleで登録' }));
 
-    expect(loginWithGoogleMock).toHaveBeenCalledWith({ next: '/auth/verified' });
-    expect(registerMock).not.toHaveBeenCalled();
+    expect(loginWithGoogleMock).toHaveBeenCalledWith({ next: undefined });
+  });
+
+  test('DD-AUTH-009 returnTo を register の next として渡す', async () => {
+    render(<RegisterModal returnTo="/account" />);
+    fillForm();
+
+    submitForm();
+
+    await waitFor(() =>
+      expect(registerMock).toHaveBeenCalledWith(VALID_EMAIL, VALID_PASSWORD, undefined, { next: '/account' }),
+    );
   });
 });

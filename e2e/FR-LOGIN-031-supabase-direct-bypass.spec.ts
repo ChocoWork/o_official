@@ -96,9 +96,6 @@ const newEmail = (label: string): string =>
 
 /** 役割 admin を付けた利用者。afterAll で user_roles を無効にする */
 const adminUserIds: string[] = [];
-/** 試験が足した注文。afterAll で消す */
-const orderIds: string[] = [];
-
 type TokenReply = { access_token?: string; refresh_token?: string };
 
 /** 手元の GoTrue のトークンの要求（Node から。JWT を通信記録に載せない） */
@@ -177,7 +174,6 @@ function ensureOwnedRows(member: Actor): Promise<string> {
         [`e2e-auth031-${suffix}`, `pi_e2e_auth031_${suffix}`, member.userId],
       );
       const orderId = order.rows[0].id as string;
-      orderIds.push(orderId);
       const counts = await db.query(
         `select (select count(*)::int from public.profiles where user_id = $1::uuid) as profiles,
                 (select count(*)::int from public.orders where user_id = $1::uuid) as orders`,
@@ -194,10 +190,10 @@ function ensureOwnedRows(member: Actor): Promise<string> {
 }
 
 test.afterAll(async () => {
-  if (orderIds.length === 0 && adminUserIds.length === 0) return;
+  // 注文は法定の削除禁止トリガーで消せない。db reset に任せる。
+  if (adminUserIds.length === 0) return;
   await withDb(async (db) => {
-    if (orderIds.length > 0) await db.query('delete from public.orders where id = any($1::uuid[])', [orderIds]);
-    if (adminUserIds.length > 0) await db.query('update public.user_roles set active = false where user_id = any($1::uuid[])', [adminUserIds]);
+    await db.query('update public.user_roles set active = false where user_id = any($1::uuid[])', [adminUserIds]);
   });
 });
 

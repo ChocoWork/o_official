@@ -41,7 +41,18 @@ jest.mock('@/lib/turnstile', () => ({
 }));
 
 const logAudit = jest.fn().mockResolvedValue(undefined);
-jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => logAudit(...args) }));
+jest.mock('@/lib/audit', () => ({
+  __esModule: true,
+  default: (...args: unknown[]) => logAudit(...args),
+  logAudit: (...args: unknown[]) => logAudit(...args),
+}));
+
+// 戻り先の控えの保存だけを差し替える（照会の rpc と取り違えない。確かめと Cookie の動作は本物）
+const createReturnIntent = jest.fn();
+jest.mock('@/features/auth/return-intent/return-intent-store', () => ({
+  ...jest.requireActual('@/features/auth/return-intent/return-intent-store'),
+  createReturnIntent: (...args: unknown[]) => createReturnIntent(...args),
+}));
 
 const sendMail = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/lib/mail', () => ({ __esModule: true, default: (...args: unknown[]) => sendMail(...args) }));
@@ -60,10 +71,10 @@ jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: async () => ({ rpc: (...a: unknown[]) => rpc(...a), from: (...a: unknown[]) => from(...a) }),
 }));
 
-function registerRequest(email: string) {
+function registerRequest(email: string, extra: Record<string, unknown> = {}) {
   return new Request('http://localhost:3000/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ email, password: 'Passw0rd!23456789', turnstileToken: 't' }),
+    body: JSON.stringify({ email, password: 'Passw0rd!23456789', turnstileToken: 't', ...extra }),
     headers: { 'content-type': 'application/json' },
   });
 }
@@ -90,6 +101,7 @@ describe('ARC-AUTH-006 会員登録は登録済みかどうかで応答を変え
     logAudit.mockClear();
     signUp.mockReset();
     rpc.mockReset();
+    createReturnIntent.mockReset().mockResolvedValue({ token: 'E'.repeat(43), maxAgeSeconds: 3600 });
     errorSpy.mockImplementation(() => undefined);
   });
 
@@ -197,6 +209,91 @@ describe('ARC-AUTH-006 会員登録は登録済みかどうかで応答を変え
 
     expect(afterCallbacks).toHaveLength(0);
     expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  describe('戻り先の控えの Cookie も 3 つの枝で同じ形にする', () => {
+    const intentCookieCalls = (res: any) =>
+      res.cookies.set.mock.calls.map((call: unknown[]) => call[0]).filter((c: any) => c?.name === 'sb-return-intent');
+
+    // 新規 / 登録済み / signUp の重複の例外（SSO・banned・論理削除）の 3 枝を順に流す
+    async function runThreeBranches(extra: Record<string, unknown>) {
+      rpc.mockResolvedValue({ data: null, error: null });
+      signUp.mockResolvedValue({ data: { session: null, user: { id: 'new-1' } }, error: null });
+      const fresh: any = await handler(registerRequest('new@example.com', extra));
+
+      rpc.mockResolvedValue({ data: 'existing-1', error: null });
+      const registered: any = await handler(registerRequest('taken@example.com', extra));
+
+      rpc.mockResolvedValue({ data: null, error: null });
+      signUp.mockResolvedValue({ data: { session: null, user: null }, error: { message: 'User already registered' } });
+      const duplicate: any = await handler(registerRequest('banned@example.com', extra));
+
+      return [fresh, registered, duplicate];
+    }
+
+    test('ARC-AUTH-006 next が通る時、3 枝とも 202・同じ本文・同じ属性の控えの Cookie（値だけが違ってよい）を返す', async () => {
+      const responses = await runThreeBranches({ next: '/account' });
+
+      expect(responses.map((r: any) => r.status)).toEqual([202, 202, 202]);
+      const bodies = await Promise.all(responses.map((r: any) => r.json()));
+      expect(bodies[1]).toEqual(bodies[0]);
+      expect(bodies[2]).toEqual(bodies[0]);
+      const shapes = responses.map((r: any) => {
+        const calls = intentCookieCalls(r);
+        expect(calls).toHaveLength(1);
+        const { value, ...attributes } = calls[0];
+        expect(value).toEqual(expect.any(String));
+        return attributes;
+      });
+      expect(shapes[1]).toEqual(shapes[0]);
+      expect(shapes[2]).toEqual(shapes[0]);
+      expect(shapes[0]).toEqual(expect.objectContaining({ httpOnly: true, sameSite: 'lax', path: '/', maxAge: 3600 }));
+      // 照会の結果に関わらず、控えは 3 回とも作る（枝で作る・作らないを変えない）
+      expect(createReturnIntent).toHaveBeenCalledTimes(3);
+    });
+
+    test('ARC-AUTH-006 控えの作成が失敗する時も、3 枝とも 202 で控えの Cookie は同じ消す側（Max-Age 0）になる', async () => {
+      createReturnIntent.mockResolvedValue(null);
+
+      const responses = await runThreeBranches({ next: '/account' });
+
+      expect(responses.map((r: any) => r.status)).toEqual([202, 202, 202]);
+      for (const res of responses) {
+        const calls = intentCookieCalls(res);
+        expect(calls).toHaveLength(1);
+        expect(calls[0]).toEqual(expect.objectContaining({ value: '', maxAge: 0 }));
+      }
+    });
+
+    test('ARC-AUTH-006 next が無い・外の住所でも 3 枝が同じ形（控えの Cookie は消す側）で、控えは作らない', async () => {
+      for (const extra of [{}, { next: '//evil.example' }]) {
+        createReturnIntent.mockClear();
+        const responses = await runThreeBranches(extra);
+
+        for (const res of responses) {
+          expect(res.status).toBe(202);
+          expect(intentCookieCalls(res)).toEqual([expect.objectContaining({ value: '', maxAge: 0 })]);
+        }
+        expect(createReturnIntent).not.toHaveBeenCalled();
+      }
+    });
+
+    test('ARC-AUTH-006 控えの作成は既存会員の照会（rpc）より前に行う', async () => {
+      const order: string[] = [];
+      createReturnIntent.mockImplementation(async () => {
+        order.push('intent');
+        return { token: 'E'.repeat(43), maxAgeSeconds: 3600 };
+      });
+      rpc.mockImplementation(async () => {
+        order.push('lookup');
+        return { data: null, error: null };
+      });
+      signUp.mockResolvedValue({ data: { session: null, user: { id: 'new-1' } }, error: null });
+
+      await handler(registerRequest('new@example.com', { next: '/account' }));
+
+      expect(order).toEqual(['intent', 'lookup']);
+    });
   });
 
   test('ARC-AUTH-006 Confirm email が OFF の設定だと新規は 201 で登録済みは 202 になり、応答で判別できる（ON が前提）', async () => {

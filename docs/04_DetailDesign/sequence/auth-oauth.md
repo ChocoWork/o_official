@@ -1,6 +1,6 @@
 # Google OAuthシーケンス
 
-> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直した。ユーザーの確認は未） | 確認日: 2026-10-24 | 対象: Google開始・callback
+> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直した。ユーザーの確認は未） | 確認日: 2026-10-25 | 対象: Google開始・callback
 
 ## 概要
 
@@ -15,12 +15,12 @@ GoogleログインはSupabaseのPKCE対応SSR clientで開始し、callbackでco
 | ボタンからの開始 | [LoginContext](../../../src/contexts/LoginContext.tsx) |
 | OAuth開始 | [start API](../../../src/app/api/auth/oauth/start/route.ts) |
 | callback・role別redirect | [callback API](../../../src/app/api/auth/oauth/callback/route.ts) |
-| 共通保存・戻り先検証 | [初回保存](../../../src/features/auth/services/register.ts)、[redirect helper](../../../src/lib/redirect.ts)、[Cookie属性](../../../src/lib/cookie.ts) |
+| 共通保存・戻り先検証 | [初回保存](../../../src/features/auth/services/register.ts)、[戻り先の確かめ](../../../src/features/auth/return-intent/return-path.ts)、[戻り先の控えの開始と解決](../../../src/features/auth/return-intent/return-intent-service.ts)、[origin helper](../../../src/lib/redirect.ts)、[Cookie属性](../../../src/lib/cookie.ts) |
 | 特権roleの後続画面 | [verifiedページ](../../../src/app/auth/verified/page.tsx)、[ログイン・TOTP](auth-login-mfa.md) |
 
 ## SQ-AUTH-OAUTH-START: Googleログインの開始
 
-開始契機はGoogleボタン。事前条件はSupabase URL・anon keyの設定。終了結果はauthorize URLへの302、またはエラーである。
+開始契機はGoogleボタン。事前条件はSupabase URL・anon keyの設定。終了結果は、ボタンのPOST（`fetch`）ならauthorize URLを持つ200（`{ url }`）、GETならauthorize URLへの302、またはエラーである。戻り先の控えを作るのはPOSTだけ（下の SQ-AUTH-OAUTH-RETURN）。
 
 ```mermaid
 sequenceDiagram
@@ -30,9 +30,9 @@ sequenceDiagram
   participant DB as レート制限RPC
   participant SDK as Supabase SSR client
   User->>UI: Googleログインを選択
-  UI->>API: GET /api/auth/oauth/start?provider=google&redirect_to=...
+  UI->>API: POST /api/auth/oauth/start（本文 provider・next）
   API->>DB: IP50回 / 600秒
-  API->>API: provider・query・redirect・envを確認
+  API->>API: provider・body/query・envを確認
   API->>SDK: createServerClient（flowType=pkce）
   API->>SDK: signInWithOAuth（prompt=select_account）
   SDK-->>API: authorize URL・設定するCookie
@@ -40,12 +40,12 @@ sequenceDiagram
     API-->>UI: 502
   else URL生成成功
     API->>API: SDK Cookieをレスポンスへ準備・監査
-    API-->>UI: 302 authorize URL + SDK Cookie
+    API-->>UI: 200 { url } + SDK Cookie（GET は 302 authorize URL）
     Note over UI,SDK: 外部認証後のcallbackは次のシナリオ
   end
 ```
 
-providerはgoogleのみ。欠落・未対応providerは400、env欠落500、例外500。redirect_toは相対パスを検査し、既定`/auth/verified`をcallbackの`next`へ入れる。SSRのCookie adapterで受けたCookie名・値・optionsをそのままレスポンスへ書く。302にはno-store／no-referrerを付ける。外部ログイン画面の表示・同意・成功は今回実行確認していない。
+providerはgoogleのみ。欠落・未対応providerは400、env欠落500、例外500。POSTは本文の`next`を戻り先の確かめに通して控え、callbackの`next`には何も入れない（`redirect_to`は読まない）。SSRのCookie adapterで受けたCookie名・値・optionsをそのままレスポンスへ書く。応答にはno-store／no-referrerを付ける。外部ログイン画面の表示・同意・成功は今回実行確認していない。
 
 ## SQ-AUTH-OAUTH-CALLBACK: code交換とセッション作成
 
@@ -88,6 +88,41 @@ queryのcode欠落は400、env欠落500、外側例外500。callbackはstateを�
 | ログイン方式 | メールログインの保留Cookie・OTP APIは通らない。verifiedページに到達した場合のrole／既AAL2／エラー分岐は[追加認証画面の入口と出口](auth-login-mfa.md#追加認証画面の入口と出口)を参照する。特権roleでも指定戻り先が別のパスなら、このcallback自体はverifiedページへ強制しない |
 | アプリ独自連携 | このstart/callbackにoauth_requests／oauth_accountsの照会・作成、link-proposal／link-confirmはない。Supabase側のアカウント連携方針は未確認 |
 | guest注文 | callbackにはconfirm／OTPと同じguest注文引継ぎ呼出しがない |
+
+## SQ-AUTH-OAUTH-RETURN: 戻り先の控えと使い切り（2026-10-25 の設計。開始の POST と画面側は実装済み）
+
+開始契機は Google ボタン。終了結果は戻り先（無ければ `/`）、または管理者・サポーターの `/auth/verified`。設計は [AUTH の構造設計](../../03_BasicDesign/areas/auth.md) の FLOW-AUTH-002・API-AUTH-007・API-AUTH-008、決定は `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`。始めるのを `fetch` の POST にするのは、CSP の `form-action 'self'` がフォームの送信に続くリダイレクトにも当たるため。
+
+```mermaid
+sequenceDiagram
+  actor User as 利用者
+  participant UI as ブラウザ
+  participant Start as oauth start API
+  participant Store as 戻り先の控え
+  participant Google as Google と Supabase Auth
+  participant CB as oauth callback API
+  User->>UI: Google でログインを押す
+  UI->>Start: POST /api/auth/oauth/start（provider と next）
+  Start->>Google: authorize の URL を PKCE で作る
+  Start->>Start: next を戻り先の確かめに通す
+  Start->>Store: 番号の sha256 と道筋を控える（用途 login、15 分）
+  Start-->>UI: 200 の url と PKCE Cookie と sb-return-intent
+  UI->>Google: url へ移る
+  Google-->>UI: callback に code（next も番号も URL に無い）
+  UI->>CB: GET /api/auth/oauth/callback（Cookie を連れる）
+  CB->>Google: code を session に交換
+  CB->>CB: セッションを保存
+  alt 一般の会員
+    CB->>Store: 1 回で使い切る
+    CB-->>UI: 303 で戻り先か / と Cookie 削除
+  else 管理者・サポーター
+    CB-->>UI: 303 で /auth/verified（使い切らない）
+  end
+```
+
+- GET の `oauth/start` は戻り先を作らない。残っている Cookie を消す
+- 戻りの URL に `next`・番号を載せないので、Supabase の許可する戻り先の一致は `/api/auth/oauth/callback` の 1 つで足りる
+- 保存が失敗した時は戻り先を使い切らない
 
 ## 関連テスト
 

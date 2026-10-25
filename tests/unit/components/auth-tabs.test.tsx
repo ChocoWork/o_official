@@ -5,8 +5,8 @@ import AuthTabs from '@/components/AuthTabs';
 
 jest.mock('@/components/LoginModal', () => ({
   __esModule: true,
-  default: ({ open }: { open: boolean }) => (
-    <div data-testid="login-modal" data-open={String(open)} />
+  default: ({ open, returnTo }: { open: boolean; returnTo?: string }) => (
+    <div data-testid="login-modal" data-open={String(open)} data-return-to={returnTo ?? ''} />
   ),
 }));
 
@@ -15,11 +15,13 @@ jest.mock('@/components/RegisterModal', () => ({
   default: ({
     onSwitchToLogin,
     initialEmail,
+    returnTo,
   }: {
     onSwitchToLogin?: () => void;
     initialEmail?: string;
+    returnTo?: string;
   }) => (
-    <div data-testid="register-modal" data-initial-email={initialEmail ?? ''}>
+    <div data-testid="register-modal" data-initial-email={initialEmail ?? ''} data-return-to={returnTo ?? ''}>
       <button type="button" onClick={onSwitchToLogin}>
         mock-switch-to-login
       </button>
@@ -57,6 +59,25 @@ describe('AuthTabs', () => {
 
     expect(screen.getByTestId('login-modal')).toHaveAttribute('data-open', 'true');
     expect(screen.queryByTestId('register-modal')).toBeNull();
+  });
+
+  it('DD-AUTH-010 returnTo をログインにも会員登録にも渡し、タブを替えても保つ', async () => {
+    const user = userEvent.setup();
+    render(<AuthTabs initialTab="login" returnTo="/item/3?color=red" />);
+
+    expect(screen.getByTestId('login-modal')).toHaveAttribute('data-return-to', '/item/3?color=red');
+
+    await user.click(screen.getByRole('tab', { name: '会員登録' }));
+    expect(screen.getByTestId('register-modal')).toHaveAttribute('data-return-to', '/item/3?color=red');
+
+    await user.click(screen.getByRole('tab', { name: 'ログイン' }));
+    expect(screen.getByTestId('login-modal')).toHaveAttribute('data-return-to', '/item/3?color=red');
+  });
+
+  it('DD-AUTH-010 returnTo が無ければ子にも渡さない', () => {
+    render(<AuthTabs initialTab="login" />);
+
+    expect(screen.getByTestId('login-modal')).toHaveAttribute('data-return-to', '');
   });
 
   it('DD-AUTH-010 初めのタブが会員登録なら RegisterModal にメールの初めの値を渡す', () => {

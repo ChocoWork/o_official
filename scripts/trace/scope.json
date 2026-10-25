@@ -226,7 +226,8 @@
       "src/components/AuthTabs.tsx",
       "src/components/AuthResultScreen.tsx",
       "src/hooks/useTurnstileWidget.ts",
-      "src/lib/format-countdown.ts"
+      "src/lib/format-countdown.ts",
+      "src/features/auth/return-intent/**/*.ts"
     ],
     "tests": [
       "tests/unit/components/{LoginModal,RegisterModal,AuthTabs,AuthResultScreen,VerifyOtpClient,Header}.test.tsx",
@@ -234,6 +235,8 @@
       "tests/unit/api/auth/**/*.test.{ts,tsx}",
       "tests/unit/app/auth/**/*.test.{ts,tsx}",
       "tests/unit/app/login/**/*.test.{ts,tsx}",
+      "tests/unit/features/auth/return-intent/**/*.test.{ts,tsx}",
+      "tests/unit/migrations/auth-return-intents*.test.ts",
       "tests/integration/api/auth/**/*.test.{ts,tsx}",
       "tests/integration/api/auth.test.ts",
       "tests/integration/auth-flow.test.ts",

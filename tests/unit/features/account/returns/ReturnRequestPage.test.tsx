@@ -6,7 +6,10 @@ jest.mock('next/link', () => ({ href, children, ...props }: any) => (
     {children}
   </a>
 ));
-jest.mock('next/navigation', () => ({ useParams: () => ({ id: 'order-1' }) }));
+jest.mock('next/navigation', () => ({
+  useParams: () => ({ id: 'order-1' }),
+  usePathname: () => '/account/orders/order-1/return',
+}));
 let mockLogin = { isLoggedIn: true, isAuthResolved: true };
 jest.mock('@/contexts/LoginContext', () => ({ useLogin: () => mockLogin }));
 const mockFetchMaterials = jest.fn();
@@ -58,7 +61,10 @@ describe('お客様の返品・交換の申し込みの画面（ログインの�
 
     expect(screen.getByRole('heading', { name: '返品・交換のお申し込み' })).toBeInTheDocument();
     expect(screen.getByText('お申し込みにはログインが必要です')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'ログイン' })).toHaveAttribute('href', '/login');
+    expect(screen.getByRole('link', { name: 'ログイン' })).toHaveAttribute(
+      'href',
+      '/login?next=%2Faccount%2Forders%2Forder-1%2Freturn',
+    );
     expect(mockFetchMaterials).not.toHaveBeenCalled();
     expect(screen.queryByTestId('form-stub')).not.toBeInTheDocument();
   });

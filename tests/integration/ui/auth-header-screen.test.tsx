@@ -205,15 +205,23 @@ describe('SCR-AUTH-009 ヘッダー', () => {
     expect(cart.querySelector('[data-ui-badge]')).toBeNull();
   });
 
-  it('SCR-AUTH-009 ログインしていなければ /login のアイコン、していれば /account のアイコンを出す', () => {
-    const out = renderHeader({ loggedIn: false });
-    expect(within(out.header).getByRole('link', { name: 'ログイン' })).toHaveAttribute('href', '/login');
+  it('SCR-AUTH-009 ログインしていなければ今の頁を next に載せた /login のアイコン、していれば /account のアイコンを出す', () => {
+    const out = renderHeader({ loggedIn: false, path: '/stockist' });
+    expect(within(out.header).getByRole('link', { name: 'ログイン' })).toHaveAttribute(
+      'href',
+      '/login?next=%2Fstockist',
+    );
     expect(within(out.header).queryByRole('link', { name: 'アカウント' })).toBeNull();
     out.unmount();
 
     const inn = renderHeader({ loggedIn: true, role: 'user' });
     expect(within(inn.header).getByRole('link', { name: 'アカウント' })).toHaveAttribute('href', '/account');
     expect(within(inn.header).queryByRole('link', { name: 'ログイン' })).toBeNull();
+  });
+
+  it('SCR-AUTH-009 /login にいる時のログインのアイコンは next を付けない', () => {
+    const out = renderHeader({ loggedIn: false, path: '/login' });
+    expect(within(out.header).getByRole('link', { name: 'ログイン' })).toHaveAttribute('href', '/login');
   });
 
   it('SCR-AUTH-009 ドロワーを開くボタンを右側のアイコン群の最後に置く', () => {

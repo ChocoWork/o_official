@@ -8,7 +8,10 @@ jest.mock('next/link', () => ({ href, children, ...props }: any) => (
   </a>
 ));
 jest.mock('next/image', () => ({ src, alt }: any) => React.createElement('img', { src, alt }));
-jest.mock('next/navigation', () => ({ useParams: () => ({ id: 'order-1' }) }));
+jest.mock('next/navigation', () => ({
+  useParams: () => ({ id: 'order-1' }),
+  usePathname: () => '/account/orders/order-1',
+}));
 jest.mock('@/contexts/LoginContext', () => ({
   useLogin: () => ({ isLoggedIn: true, isAuthResolved: true }),
 }));

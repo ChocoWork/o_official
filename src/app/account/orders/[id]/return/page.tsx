@@ -4,6 +4,7 @@ import React from 'react';
 import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/Button/Button';
 import { useLogin } from '@/contexts/LoginContext';
+import { useLoginHref } from '@/features/auth/return-intent/use-login-href';
 import { fetchCustomerReturnMaterials } from '@/features/account/returns/customer-return-client';
 import { ReturnRequestForm } from '@/features/account/returns/ReturnRequestForm';
 import { REQUEST_TEXT, availabilityMessageOf } from '@/features/account/returns/return-request-model';
@@ -27,6 +28,7 @@ type LoadState =
 export default function ReturnRequestPage() {
   const params = useParams<{ id: string }>();
   const { isLoggedIn, isAuthResolved } = useLogin();
+  const loginHref = useLoginHref();
   const [load, setLoad] = React.useState<LoadState>({ kind: 'loading' });
 
   React.useEffect(() => {
@@ -63,7 +65,7 @@ export default function ReturnRequestPage() {
         <p className="text-[#474747] mb-8" style={lgStyle}>
           {REQUEST_TEXT.loginRequired}
         </p>
-        <Button href="/login" variant="primary" size="lg">
+        <Button href={loginHref} variant="primary" size="lg">
           {REQUEST_TEXT.login}
         </Button>
       </div>

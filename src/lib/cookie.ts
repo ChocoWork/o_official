@@ -7,6 +7,7 @@ export const csrfCookieName = 'sb-csrf-token';
 export const passwordResetSessionCookieName = 'sb-password-reset-session';
 export const loginTwoFactorSessionCookieName = 'sb-login-2fa-session';
 export const sessionCookieName = 'session_id';
+export const returnIntentCookieName = 'sb-return-intent';
 export const csrfCookieMaxAgeSeconds = 7 * 24 * 60 * 60;
 export const cartCookieName = 'cart';
 export const wishlistCookieName = 'wishlist';
@@ -92,6 +93,15 @@ export function cookieOptionsForGuestShopping(maxAgeSeconds: number = guestShopp
   return {
     ...getBaseCookieOptions(),
     maxAge: maxAgeSeconds,
+  };
+}
+
+export function cookieOptionsForReturnIntent(maxAgeSeconds: number) {
+  return {
+    ...getBaseCookieOptions(),
+    maxAge: maxAgeSeconds,
+    httpOnly: true,
+    sameSite: 'lax' as const,
   };
 }
 

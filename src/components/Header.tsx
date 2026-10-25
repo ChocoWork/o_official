@@ -17,6 +17,7 @@ import { usePathname } from "next/navigation";
 import { Accordion } from "@/components/ui/Accordion/Accordion";
 import LoginModal from "@/components/LoginModal";
 import { useLogin } from "@/contexts/LoginContext";
+import { useLoginHref } from "@/features/auth/return-intent/use-login-href";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/Button/Button";
 import { Drawer } from "@/components/ui/Drawer/Drawer";
@@ -86,6 +87,7 @@ const Header = () => {
   const pathname = usePathname();
   const isAdminPage = pathname.startsWith("/admin");
   const { isLoggedIn, userRole } = useLogin();
+  const loginHref = useLoginHref();
   const canManage = userRole === "admin" || userRole === "supporter";
   const isAdmin = userRole === "admin";
   const { cartCount } = useCart();
@@ -277,7 +279,7 @@ const Header = () => {
                 </Link>
               ) : (
                 <Link
-                  href="/login"
+                  href={loginHref}
                   aria-label="ログイン"
                   className="icon-frame min-h-11"
                 >

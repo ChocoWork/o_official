@@ -51,11 +51,11 @@ function loginCalls() {
   return fetchMock.mock.calls.filter(([url]) => url === '/api/auth/login');
 }
 
-async function renderLoginScreen() {
+async function renderLoginScreen(returnTo?: string) {
   await act(async () => {
     render(
       <LoginProvider>
-        <AuthTabs initialTab="login" />
+        <AuthTabs initialTab="login" returnTo={returnTo} />
       </LoginProvider>,
     );
   });
@@ -95,6 +95,9 @@ describe('SCR-AUTH-002 ログインのフォームはメール・パスワード
       remove: turnstileRemoveMock,
     };
     fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/oauth/start') {
+        return { ok: true, status: 200, json: async () => ({ url: 'https://accounts.example.test/authorize' }) };
+      }
       if (url !== '/api/auth/login') {
         return { ok: false, status: 401, json: async () => ({ authenticated: false }) };
       }
@@ -260,16 +263,31 @@ describe('SCR-AUTH-002 ログインのフォームはメール・パスワード
     expect(loginCalls()).toHaveLength(0);
   });
 
-  it('SCR-AUTH-002 Google のボタンは窓口の入口へブラウザを移す', async () => {
+  it('SCR-AUTH-002 Google のボタンは開始の窓口へ POST し、返った住所へブラウザを移す', async () => {
     const user = userEvent.setup();
     await renderLoginScreen();
 
     await user.click(screen.getByRole('button', { name: /Googleでサインイン/ }));
 
-    expect(navigateBrowser).toHaveBeenCalledWith(
-      '/api/auth/oauth/start?provider=google&redirect_to=%2Fauth%2Fverified',
-    );
+    await waitFor(() => expect(navigateBrowser).toHaveBeenCalledWith('https://accounts.example.test/authorize'));
+    const [, init] = fetchMock.mock.calls.find(([url]) => url === '/api/auth/oauth/start');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ provider: 'google' });
     expect(loginCalls()).toHaveLength(0);
+  });
+
+  it('SCR-AUTH-002 戻り先つきの画面は、ログインの本文にも Google の開始の本文にも next を載せる', async () => {
+    const user = userEvent.setup();
+    await renderLoginScreen('/item/3?color=red');
+
+    await fillAndSubmit(user);
+    await waitFor(() => expect(loginCalls()).toHaveLength(1));
+    expect(JSON.parse(loginCalls()[0][1].body)).toMatchObject({ email: VALID_EMAIL, next: '/item/3?color=red' });
+
+    await user.click(screen.getByRole('button', { name: /Googleでサインイン/ }));
+    await waitFor(() => expect(navigateBrowser).toHaveBeenCalled());
+    const [, init] = fetchMock.mock.calls.find(([url]) => url === '/api/auth/oauth/start');
+    expect(JSON.parse(init.body)).toEqual({ provider: 'google', next: '/item/3?color=red' });
   });
 
   it('SCR-AUTH-002 サイトキーが無ければ Turnstile を描かず、トークン無しで送る', async () => {

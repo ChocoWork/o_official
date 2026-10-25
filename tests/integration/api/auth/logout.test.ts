@@ -60,6 +60,7 @@ const ALWAYS_CLEARED_COOKIES = [
   'sb-csrf-token',
   'sb-login-2fa-session',
   'sb-password-reset-session',
+  'sb-return-intent',
   'cart',
   'wishlist',
 ];
@@ -133,6 +134,14 @@ describe('Logout API integration (mocked supabase & headers)', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
     expectCleared(res, ALWAYS_CLEARED_COOKIES);
+  });
+
+  test('API-AUTH-015 戻り先の控えの Cookie は空の値と Max-Age 0 で消し、次の人に前の人の戻り先を持ち越さない', async () => {
+    const res: any = await logoutHandler();
+
+    expect(res.cookies.get('sb-return-intent')).toEqual(
+      expect.objectContaining({ name: 'sb-return-intent', value: '', maxAge: 0, path: '/' }),
+    );
   });
 
   test('API-AUTH-015 refresh の Cookie が無い時は、サーバーのセッションを切らずに Cookie だけ消す', async () => {

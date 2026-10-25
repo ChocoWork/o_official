@@ -15,6 +15,7 @@ import AccountInquiries from "@/components/AccountInquiries";
 import { formatOrderStatus } from "@/lib/orders/order-status";
 import { PREFECTURES } from "@/lib/constants/prefectures";
 import { clientFetch } from "@/lib/client-fetch";
+import { useLoginHref } from "@/features/auth/return-intent/use-login-href";
 import { formatPhoneNumberInput } from "@/features/account/utils/profile-format.util";
 import {
   formatPostalCodeInput,
@@ -156,6 +157,7 @@ function defaultAddressFields(list: ShippingAddress[]): ProfileAddress {
 
 function AccountPageContent() {
   const { isLoggedIn, isAuthResolved, logout } = useLogin();
+  const loginHref = useLoginHref();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -701,7 +703,7 @@ function AccountPageContent() {
         <span aria-hidden="true" className="mb-6 block h-10 w-px bg-black/30" />
 
         <Button
-          href="/login"
+          href={loginHref}
           variant="primary"
           size="lg"
           shape="rounded"

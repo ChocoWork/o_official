@@ -1,6 +1,7 @@
 /**
  * Google のログインの戻りの窓口（API-AUTH-008）。
- * code の交換・役割による送り先の決定・保存の失敗の扱い・失敗の分岐を確かめる。
+ * code の交換・戻り先の控えの使い切りと役割による送り先の決定・保存の失敗の扱い・失敗の分岐を確かめる。
+ * 戻り先の解決（return-intent-service）は本物を通し、控えの表を触る rpc だけを差し替える。
  */
 
 const mockEnforceRateLimit = jest.fn();
@@ -10,7 +11,15 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 
 const mockLogAudit = jest.fn();
 jest.mock('@/lib/audit', () => ({
+  __esModule: true,
+  default: (...args: unknown[]) => mockLogAudit(...args),
   logAudit: (...args: unknown[]) => mockLogAudit(...args),
+}));
+
+// 控えの表は service_role の rpc だけで触る。consume は呼ばれた回数と引数を見る。
+const mockRpc = jest.fn();
+jest.mock('@/lib/supabase/server', () => ({
+  createServiceRoleClient: async () => ({ rpc: (...args: unknown[]) => mockRpc(...args) }),
 }));
 
 const persistSessionAndCookiesMock = jest.fn();
@@ -53,6 +62,26 @@ const SESSION = {
   token_type: 'bearer',
 };
 
+const INTENT_TOKEN = 'A'.repeat(43);
+const INTENT_COOKIE = `sb-return-intent=${INTENT_TOKEN}`;
+
+/** 最初の 1 回だけ道筋を返し、2 回目からは null を返す（1 回で使い切る DB の関数の写し）。 */
+function fakeConsume(returnPath: string | null) {
+  let used = false;
+  mockRpc.mockImplementation(async (name: string) => {
+    if (name !== 'consume_auth_return_intent') return { data: null, error: null };
+    if (used) return { data: null, error: null };
+    used = true;
+    return { data: returnPath, error: null };
+  });
+}
+
+function intentCookieCalls(res: any) {
+  return (res.cookies.set as jest.Mock).mock.calls
+    .map(([arg]) => arg)
+    .filter((arg) => arg && typeof arg === 'object' && arg.name === 'sb-return-intent');
+}
+
 function exchanged(user: Record<string, unknown> = {}, session: Record<string, unknown> = {}) {
   return {
     data: {
@@ -92,6 +121,8 @@ describe('API-AUTH-008 GET /api/auth/oauth/callback', () => {
     mockLogAudit.mockResolvedValue(undefined);
     persistSessionAndCookiesMock.mockResolvedValue({ ok: true });
     exchangeCodeForSessionMock.mockResolvedValue(exchanged());
+    mockRpc.mockReset();
+    mockRpc.mockResolvedValue({ data: null, error: null });
   });
 
   afterAll(() => {
@@ -124,9 +155,9 @@ describe('API-AUTH-008 GET /api/auth/oauth/callback', () => {
     });
 
     test.each([
-      ['next だけ付いている', '?next=%2Fauth%2Fverified'],
+      ['next だけ付いている', '?next=%2Faccount'],
       ['何も付いていない', ''],
-      ['code が空', '?code=&next=%2Fauth%2Fverified'],
+      ['code が空', '?code=&next=%2Faccount'],
     ])('API-AUTH-008 code が無ければ 400 で、交換せず監査に残す（%s）', async (_label, query) => {
       const res = await callGet(callbackRequest(query));
       const body = await res.json();
@@ -175,7 +206,7 @@ describe('API-AUTH-008 GET /api/auth/oauth/callback', () => {
         error: { message: 'invalid_grant' },
       });
 
-      const res = await callGet(callbackRequest('?code=bad-code&next=%2Fauth%2Fverified'));
+      const res = await callGet(callbackRequest('?code=bad-code'));
       const body = await res.json();
 
       expect(res.status).toBe(502);
@@ -245,15 +276,15 @@ describe('API-AUTH-008 GET /api/auth/oauth/callback', () => {
   });
 
   describe('成功の送り先', () => {
-    // /auth/verified は admin / supporter 向けの着地点。
-    // 一般ユーザーが next=/auth/verified を指定しても /account へ振り替える。
-    test('API-AUTH-008 一般の会員が既定の送り先なら /account へ 303 で移し、セッションを保存する', async () => {
-      const res = await callGet(callbackRequest('?code=good-code&next=%2Fauth%2Fverified'));
+    test('API-AUTH-008 控えが無い一般の会員は / へ 303 で移し、セッションを保存する（消す物が無いので控えの Cookie は触らない）', async () => {
+      const res = await callGet(callbackRequest('?code=good-code'));
 
       expect(res.status).toBe(303);
-      expect(res.headers.get('location')).toBe('http://localhost:3000/account');
+      expect(res.headers.get('location')).toBe('http://localhost:3000/');
       expect(res.headers.get('Cache-Control')).toBe('no-store');
       expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(intentCookieCalls(res)).toEqual([]);
 
       expect(persistSessionAndCookiesMock).toHaveBeenCalledWith(
         expect.objectContaining({ status: 303 }),
@@ -279,57 +310,85 @@ describe('API-AUTH-008 GET /api/auth/oauth/callback', () => {
       );
     });
 
-    test('API-AUTH-008 next が無い時も既定の送り先として扱い、一般の会員は /account へ移す', async () => {
-      const res = await callGet(callbackRequest('?code=good-code'));
+    test('API-AUTH-008 控えがあれば保存の後に login の用途で使い切り、戻り先へ 303 で移して控えの Cookie を消す', async () => {
+      fakeConsume('/item/3?color=red');
 
-      expect(res.headers.get('location')).toBe('http://localhost:3000/account');
+      const res = await callGet(callbackRequest('?code=good-code', { cookie: INTENT_COOKIE }));
+
+      expect(res.status).toBe(303);
+      expect(res.headers.get('location')).toBe('http://localhost:3000/item/3?color=red');
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockRpc).toHaveBeenCalledWith('consume_auth_return_intent', {
+        _token_hash: expect.stringMatching(/^[0-9a-f]{64}$/),
+        _purpose: 'login',
+        _user_id: 'user-123',
+      });
+      expect(JSON.stringify(mockRpc.mock.calls)).not.toContain(INTENT_TOKEN);
+      expect(intentCookieCalls(res)).toEqual([expect.objectContaining({ value: '', maxAge: 0, path: '/' })]);
     });
 
-    test('API-AUTH-008 一般の会員が既定以外の内部の送り先を指したらそのまま使う', async () => {
-      const res = await callGet(callbackRequest('?code=good-code&next=%2Faccount%2Forders'));
+    test('API-AUTH-008 使い切れなかった控え（期限切れ・使用済み）は / へ移し、Cookie は消す', async () => {
+      fakeConsume(null);
 
-      expect(res.headers.get('location')).toBe('http://localhost:3000/account/orders');
+      const res = await callGet(callbackRequest('?code=good-code', { cookie: INTENT_COOKIE }));
+
+      expect(res.headers.get('location')).toBe('http://localhost:3000/');
+      expect(intentCookieCalls(res)).toEqual([expect.objectContaining({ value: '', maxAge: 0 })]);
     });
 
-    test.each(['admin', 'supporter'])('API-AUTH-008 %s は既定の送り先のまま /auth/verified（TOTP の画面）へ通す', async (role) => {
+    test('API-AUTH-008 控えが /admin を指していても一般の会員は / へ移す（出口で役割を確かめ直す）', async () => {
+      fakeConsume('/admin');
+
+      const res = await callGet(callbackRequest('?code=good-code', { cookie: INTENT_COOKIE }));
+
+      expect(res.headers.get('location')).toBe('http://localhost:3000/');
+    });
+
+    test('API-AUTH-008 形の合わない番号の Cookie は使い切りを呼ばず / へ移し、消す', async () => {
+      const res = await callGet(callbackRequest('?code=good-code', { cookie: 'sb-return-intent=short' }));
+
+      expect(res.headers.get('location')).toBe('http://localhost:3000/');
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(intentCookieCalls(res)).toEqual([expect.objectContaining({ value: '', maxAge: 0 })]);
+    });
+
+    test.each(['admin', 'supporter'])('API-AUTH-008 %s は aal1 なので /auth/verified（TOTP の画面）へ通し、控えは使い切らない', async (role) => {
       exchangeCodeForSessionMock.mockResolvedValueOnce(exchanged({ app_metadata: { role } }));
+      fakeConsume('/admin/orders');
 
-      const res = await callGet(callbackRequest('?code=good-code&next=%2Fauth%2Fverified'));
+      const res = await callGet(callbackRequest('?code=good-code', { cookie: INTENT_COOKIE }));
 
       expect(res.status).toBe(303);
       expect(res.headers.get('location')).toBe('http://localhost:3000/auth/verified');
-    });
-
-    test('API-AUTH-008 管理の役割が next を指定しなくても /auth/verified へ通す', async () => {
-      exchangeCodeForSessionMock.mockResolvedValueOnce(exchanged({ app_metadata: { role: 'admin' } }));
-
-      const res = await callGet(callbackRequest('?code=good-code'));
-
-      expect(res.headers.get('location')).toBe('http://localhost:3000/auth/verified');
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(intentCookieCalls(res)).toEqual([]);
     });
 
     test.each([
       ['未知の役割', { role: 'owner' }],
       ['役割が文字列でない', { role: 1 }],
       ['app_metadata が無い', undefined],
-    ])('API-AUTH-008 役割が読めない（%s）会員は一般として扱う', async (_label, appMetadata) => {
+    ])('API-AUTH-008 役割が読めない（%s）会員は一般として扱い、/ へ移す', async (_label, appMetadata) => {
       exchangeCodeForSessionMock.mockResolvedValueOnce(exchanged({ app_metadata: appMetadata }));
 
-      const res = await callGet(callbackRequest('?code=good-code&next=%2Fauth%2Fverified'));
+      const res = await callGet(callbackRequest('?code=good-code'));
 
-      expect(res.headers.get('location')).toBe('http://localhost:3000/account');
+      expect(res.headers.get('location')).toBe('http://localhost:3000/');
     });
 
     test.each([
       ['外部の住所', '?code=good-code&next=https%3A%2F%2Fevil.example.net%2F'],
       ['プロトコル相対', '?code=good-code&next=%2F%2Fevil.example.net'],
       ['バックスラッシュ入り', '?code=good-code&next=%2F%5Cevil.example.net'],
-    ])('API-AUTH-008 next が内部の道でなければ既定に直し、外へは移さない（%s）', async (_label, query) => {
+      ['タブ入り', '?code=good-code&next=%2F%09%2Fevil.example.net'],
+      ['解釈で外へ向く', '?code=good-code&next=%2F.%2F%2Fevil.example.net'],
+      ['内部の道（古い形）', '?code=good-code&next=%2Faccount%2Forders'],
+    ])('API-AUTH-008 URL の next は読まない。外へも内部の道へも移さない（%s）', async (_label, query) => {
       const general = await callGet(callbackRequest(query));
       exchangeCodeForSessionMock.mockResolvedValueOnce(exchanged({ app_metadata: { role: 'admin' } }));
       const admin = await callGet(callbackRequest(query));
 
-      expect(general.headers.get('location')).toBe('http://localhost:3000/account');
+      expect(general.headers.get('location')).toBe('http://localhost:3000/');
       expect(admin.headers.get('location')).toBe('http://localhost:3000/auth/verified');
     });
 
@@ -356,13 +415,16 @@ describe('API-AUTH-008 GET /api/auth/oauth/callback', () => {
   });
 
   describe('保存の失敗', () => {
-    test('API-AUTH-008 保存に失敗しても 303 を返し、成功は監査に残さない', async () => {
+    test('API-AUTH-008 保存に失敗しても 303 を返し、控えを使い切らず、成功は監査に残さない', async () => {
       persistSessionAndCookiesMock.mockResolvedValueOnce({ ok: false, error: 'db insert failed' });
+      fakeConsume('/item/3');
 
-      const res = await callGet(callbackRequest('?code=good-code-2&next=%2Fauth%2Fverified'));
+      const res = await callGet(callbackRequest('?code=good-code-2', { cookie: INTENT_COOKIE }));
 
       expect(res.status).toBe(303);
-      expect(res.headers.get('location')).toBe('http://localhost:3000/account');
+      expect(res.headers.get('location')).toBe('http://localhost:3000/');
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(intentCookieCalls(res)).toEqual([]);
       expect(mockLogAudit).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'auth.oauth.callback',
@@ -388,10 +450,13 @@ describe('API-AUTH-008 GET /api/auth/oauth/callback', () => {
     test('API-AUTH-008 保存が例外で落ちても 303 を返し、JSON で止めず理由を監査に残す', async () => {
       persistSessionAndCookiesMock.mockRejectedValueOnce(new Error('persist crashed'));
 
-      const res = await callGet(callbackRequest('?code=good-code'));
+      fakeConsume('/item/3');
+
+      const res = await callGet(callbackRequest('?code=good-code', { cookie: INTENT_COOKIE }));
 
       expect(res.status).toBe(303);
-      expect(res.headers.get('location')).toBe('http://localhost:3000/account');
+      expect(res.headers.get('location')).toBe('http://localhost:3000/');
+      expect(mockRpc).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledWith(
         expect.objectContaining({ outcome: 'error', detail: 'Error: persist crashed', resource_id: 'user-123' }),
       );

@@ -23,8 +23,14 @@ jest.mock('@/lib/supabase/server', () => {
   };
 });
 
-jest.mock('@/lib/audit', () => ({
-  logAudit: jest.fn().mockResolvedValue(undefined),
+jest.mock('@/lib/audit', () => {
+  const logAudit = jest.fn().mockResolvedValue(undefined);
+  return { __esModule: true, default: logAudit, logAudit };
+});
+
+jest.mock('@/features/auth/return-intent/return-intent-store', () => ({
+  ...jest.requireActual('@/features/auth/return-intent/return-intent-store'),
+  createReturnIntent: jest.fn(),
 }));
 
 jest.mock('@/features/auth/services/login-2fa-session', () => ({
@@ -33,6 +39,7 @@ jest.mock('@/features/auth/services/login-2fa-session', () => ({
 }));
 
 jest.mock('@/lib/cookie', () => ({
+  ...jest.requireActual('@/lib/cookie'),
   loginTwoFactorSessionCookieName: 'sb-login-2fa-session',
   cookieOptionsForLoginTwoFactor: jest.fn((maxAge: number) => ({
     httpOnly: true,
@@ -68,6 +75,7 @@ const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 const { verifyTurnstile } = require('@/lib/turnstile');
 const { createPublicClient, __mockSignInWithPassword, __mockSignInWithOtp } = require('@/lib/supabase/server');
 const { logAudit } = require('@/lib/audit');
+const { createReturnIntent } = require('@/features/auth/return-intent/return-intent-store');
 const { createLoginTwoFactorSessionToken } = require('@/features/auth/services/login-2fa-session');
 /* eslint-enable @typescript-eslint/no-require-imports */
 
@@ -103,6 +111,7 @@ describe('POST /api/auth/login (DD-AUTH-014)', () => {
       error: null,
     });
     __mockSignInWithOtp.mockResolvedValue({ error: null });
+    createReturnIntent.mockResolvedValue({ token: 'T'.repeat(43), maxAgeSeconds: 900 });
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
@@ -327,5 +336,74 @@ describe('POST /api/auth/login (DD-AUTH-014)', () => {
 
     expect(res.status).toBe(500);
     expect(res._body).toEqual({ error: 'Internal server error' });
+  });
+
+  describe('戻り先の控え（next）', () => {
+    const body = (next?: unknown) => ({ email: EMAIL, password: PASSWORD, turnstileToken: 'ts-token', ...(next === undefined ? {} : { next }) });
+
+    test('DD-AUTH-014 next が通ると控えの Cookie と保留の Cookie の両方を付け、控えは login の用途で保存される', async () => {
+      const res: any = await POST(buildRequest(body('/item/3?color=red')));
+
+      expect(res.status).toBe(200);
+      expect(res._body.step).toBe('otp');
+      expect(createReturnIntent).toHaveBeenCalledWith({ returnPath: '/item/3?color=red', purpose: 'login' });
+      expect(res.cookies.get('sb-login-2fa-session')).toEqual(expect.objectContaining({ value: 'signed-pending-token' }));
+      expect(res.cookies.get('sb-return-intent')).toEqual(
+        expect.objectContaining({ value: 'T'.repeat(43), httpOnly: true, sameSite: 'lax', path: '/', maxAge: 900 }),
+      );
+    });
+
+    test('DD-AUTH-014 応答の本文に戻り先の道筋も番号も出さない', async () => {
+      const res: any = await POST(buildRequest(body('/item/3?color=red')));
+
+      const text = JSON.stringify(res._body);
+      expect(text).not.toContain('/item/3');
+      expect(text).not.toContain('T'.repeat(43));
+    });
+
+    test.each([
+      ['next が無い', undefined],
+      ['外の住所', '//evil.example'],
+      ['数値', 123],
+      ['長すぎる値', '/item/' + 'a'.repeat(3000)],
+      ['除外の道筋', '/login'],
+    ])('DD-AUTH-014 %s でもログインは 400 にならず、控えを作らず控えの Cookie は消す側になる', async (_label, next) => {
+      const res: any = await POST(buildRequest(body(next)));
+
+      expect(res.status).toBe(200);
+      expect(res._body.step).toBe('otp');
+      expect(createReturnIntent).not.toHaveBeenCalled();
+      expect(res.cookies.get('sb-return-intent')).toEqual(expect.objectContaining({ value: '', maxAge: 0 }));
+    });
+
+    test('DD-AUTH-014 控えの保存が失敗してもログインは止まらず、応答は 200 の step otp で控えの Cookie は消す側になる', async () => {
+      createReturnIntent.mockResolvedValue(null);
+
+      const res: any = await POST(buildRequest(body('/account')));
+
+      expect(res.status).toBe(200);
+      expect(res._body.step).toBe('otp');
+      expect(res.cookies.get('sb-return-intent')).toEqual(expect.objectContaining({ value: '', maxAge: 0 }));
+    });
+
+    test('DD-AUTH-014 パスワードの誤り・ボット判定・制限・確認コードの送信の失敗では控えを作らず Cookie も付けない', async () => {
+      __mockSignInWithPassword.mockResolvedValueOnce({ data: { session: null, user: null }, error: { message: 'bad' } });
+      const wrongPassword: any = await POST(buildRequest(body('/account')));
+
+      verifyTurnstile.mockResolvedValueOnce({ ok: false });
+      const bot: any = await POST(buildRequest(body('/account')));
+
+      enforceRateLimit.mockResolvedValueOnce(limitedResponse());
+      const limited: any = await POST(buildRequest(body('/account')));
+
+      __mockSignInWithOtp.mockResolvedValueOnce({ error: { message: 'smtp down' } });
+      const otpFailed: any = await POST(buildRequest(body('/account')));
+
+      expect([wrongPassword.status, bot.status, limited.status, otpFailed.status]).toEqual([401, 403, 429, 500]);
+      expect(createReturnIntent).not.toHaveBeenCalled();
+      for (const res of [wrongPassword, bot, otpFailed]) {
+        expect(res.cookies.get('sb-return-intent')).toBeUndefined();
+      }
+    });
   });
 });

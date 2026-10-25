@@ -1,6 +1,6 @@
 # 会員登録・確認シーケンス
 
-> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直した。ユーザーの確認は未） | 確認日: 2026-10-24 | 対象: 公開登録、管理者作成、メール確認
+> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直した。ユーザーの確認は未） | 確認日: 2026-10-25 | 対象: 公開登録、管理者作成、メール確認
 
 ## 概要
 
@@ -13,7 +13,7 @@
 | 対象 | 実コード参照 |
 | --- | --- |
 | 登録受付 | [register API](../../../src/app/api/auth/register/route.ts)、[Schema](../../../src/features/auth/schemas/register.ts) |
-| メール確認 | [confirm API](../../../src/app/api/auth/confirm/route.ts)、[redirect検証](../../../src/lib/redirect.ts) |
+| メール確認 | [confirm API](../../../src/app/api/auth/confirm/route.ts)、[戻り先の控えの解決](../../../src/features/auth/return-intent/return-intent-service.ts)、[origin helper](../../../src/lib/redirect.ts) |
 | ユーザー検索 | [検索サービス](../../../src/features/auth/services/auth-admin-user.ts)、[migration](../../../supabase/migrations/20260901102912_remote_schema.sql) |
 | CookieとDB保存 | [初回保存](../../../src/features/auth/services/register.ts)、[Cookie](../../../src/lib/cookie.ts)、[ゲスト注文引継ぎ](../../../src/lib/orders/link-guest-orders.ts) |
 | UI・監査 | [RegisterModal](../../../src/components/RegisterModal.tsx)、[LoginContext](../../../src/contexts/LoginContext.tsx)、[audit helper](../../../src/lib/audit.ts) |
@@ -158,6 +158,38 @@ typeはsignup／email／magiclink／recoveryを受理し、不明値はsignupに
 ゲスト注文は確認済みemail・user_id NULLの行だけを紐付ける。紐付いた注文がある場合は、最新注文の配送先・氏名からprofilesの未設定住所・表示名も補完する。既存値は上書きしない。profile保存失敗でも注文の紐付けを戻さず、いずれのhelper失敗も認証を止めない。注文の紐付け失敗は次回OTPログインで再試行される。
 
 登録フォームが指定する`/auth/verified`の到達後は、[追加認証画面の入口と出口](auth-login-mfa.md#追加認証画面の入口と出口)に従い、未認証表示、一般userの/account、特権roleのTOTP／管理画面へ分かれる。
+
+## SQ-AUTH-REGISTER-RETURN: 戻り先の控えと確認リンクでの使い切り（2026-10-25、波 1-A）
+
+開始契機は会員登録の送信。終了結果は、同じ端末で確認のリンクを開いた時の戻り先（無ければ `/`）。設計は [AUTH の構造設計](../../03_BasicDesign/areas/auth.md) の FLOW-AUTH-003・API-AUTH-005・API-AUTH-006、決定は `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`。
+
+```mermaid
+sequenceDiagram
+  actor User as 利用者
+  participant UI as ブラウザ
+  participant Reg as register API
+  participant Store as 戻り先の控え
+  participant Mail as 確認のメール
+  participant Conf as confirm API
+  User->>UI: 会員登録を送信（next つき）
+  UI->>Reg: POST /api/auth/register
+  Reg->>Reg: Turnstile と漏洩の確かめ
+  Reg->>Store: 番号の sha256 と道筋を控える（用途 signup、1 時間）
+  Note over Reg: 既存会員の照会より前に控え、3 つの 202 で Cookie の形を同じにする
+  Reg-->>UI: 202 と sb-return-intent
+  Reg->>Mail: 確認のリンク（クエリ無しの /api/auth/confirm）
+  User->>Conf: 同じ端末でリンクを開く
+  Conf->>Conf: 印の確かめとセッションの保存
+  alt type が signup で Cookie あり
+    Conf->>Store: 1 回で使い切る（用途 signup）
+    Conf-->>UI: 303 で戻り先か / と Cookie 削除
+  else Cookie なし（別のブラウザ）または type が signup 以外
+    Conf-->>UI: 303 で /
+  end
+```
+
+- 確認のリンクに `redirect_to` を付けない。失敗は固定の `/login` へ 303
+- 別のブラウザでリンクを開いた時は戻り先を使わず `/`。セッションを作らず `/login` へ送る形は SEC-AUTH-007 の別の作業
 
 ## 関連テスト
 

@@ -1,6 +1,6 @@
 /**
  * FR-SIGNUP-003 会員登録の確認メールのリンク（/api/auth/confirm）
- * 対応: FR-LOGIN-004-AC-01・SEC-AUTH-006-AC-01・SEC-AUTH-006-AC-02・SEC-AUTH-007-AC-01
+ * 対応: FR-LOGIN-004-AC-01・SEC-AUTH-006-AC-01・SEC-AUTH-006-AC-02・SEC-AUTH-007-AC-01・FR-AUTH-005-AC-03
  *
  * 手元の Supabase とメール受け（Mailpit）だけを使う。印（token_hash）は管理 API の generateLink で作る（メールは送られない）。
  *
@@ -23,6 +23,10 @@
  * そのメールの登録を、Playwright の context（ブラウザ A）の /login の画面から送る（会員がいるので 202 が返る）。
  * 登録の応答で、アプリが「登録を始めた」目印の Cookie をそのブラウザに置くなら、ブラウザ A の context に入る。
  * 確認のリンクは、同じ context（SEC-AUTH-006-AC-02）か、Cookie の無い別の context（SEC-AUTH-007-AC-01）で開く。
+ *
+ * 行き先（波 1-A、SEC-AUTH-026・ADR-0412）: 確認のリンクの URL の値（redirect_to など）は読まない。
+ * 登録の時に /login?next=… から送った戻り先をサーバーに控え、同じ端末の Cookie（sb-return-intent）で使い切る。
+ * 控えが無い端末（別のブラウザ）は戻り先を使わず / へ送る（/login へ切り替えるのは SEC-AUTH-007 の作業）。
  *
  * 結び付けの規則（コードを直す人への前提。SEC-AUTH-007・SEC-AUTH-016）:
  * /api/auth/register の 202 は 2 通りある（新規の登録＝signUp を呼ぶ枝と、登録済みのメール＝見つかった枝）。
@@ -47,7 +51,7 @@ const viewports = [
 
 const ACCESS_COOKIE = 'sb-access-token';
 const REFRESH_COOKIE = 'sb-refresh-token';
-const REDIRECT_PATH = '/auth/verified';
+const RETURN_PATH = '/stockist';
 
 function localSupabase(): { admin: SupabaseClient; url: string; anonKey: string } {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -205,15 +209,18 @@ function confirmLinkOf(mail: MailpitMessage): string {
   return link as string;
 }
 
-/** ブラウザ（page の context）の /login の画面から会員登録を送る。確認メールを送った旨が出るまで待つ。 */
-async function submitSignupFromBrowser(page: Page, email: string): Promise<void> {
+/**
+ * ブラウザ（page の context）の /login の画面から会員登録を送る。確認メールを送った旨が出るまで待つ。
+ * next を渡すと /login?next=… から入り、登録の本文の next としてサーバーに控えられる。
+ */
+async function submitSignupFromBrowser(page: Page, email: string, next?: string): Promise<void> {
   const password = strongPassword();
   await stubTurnstileScript(page);
   const sourceIp = uniqueForwardedFor();
   await page.route('**/api/auth/register', (route) =>
     route.continue({ headers: { ...route.request().headers(), 'x-forwarded-for': sourceIp } }),
   );
-  await page.goto('/login');
+  await page.goto(next === undefined ? '/login' : `/login?next=${encodeURIComponent(next)}`);
   await page.getByRole('tab', { name: '会員登録' }).click();
   const panel = page.getByRole('tabpanel');
   await panel.getByLabel('Email').fill(email);
@@ -314,24 +321,24 @@ for (const viewport of viewports) {
       }
     });
 
-    test('SEC-AUTH-006-AC-02 signup token opened on the browser that submitted the signup writes session cookies and redirects with 303', async ({ page }) => {
+    test('SEC-AUTH-006-AC-02 signup token opened on the browser that submitted the signup writes session cookies and redirects with 303 to the saved return path', async ({ page }) => {
       test.setTimeout(120_000);
       const { admin } = localSupabase();
       const issued = await issueTokenHash(admin, 'signup', `006b-${viewport.name}`);
       try {
         // ブラウザ A（この page の context）で登録を送る。
-        await submitSignupFromBrowser(page, issued.email);
+        await submitSignupFromBrowser(page, issued.email, RETURN_PATH);
         const before = await page.context().cookies();
         expect(before.find((cookie) => cookie.name === ACCESS_COOKIE && cookie.value !== ''), '確認のリンクを開く前に session の Cookie がある').toBeUndefined();
 
-        // 同じブラウザ A で確認のリンクを開く。
-        const hop = await openConfirmLinkInBrowser(page, { tokenHash: issued.tokenHash, type: 'signup', redirectTo: REDIRECT_PATH });
+        // 同じブラウザ A で確認のリンクを開く。URL の redirect_to は読まれない（別の道を付けて、無視されることも確かめる）。
+        const hop = await openConfirmLinkInBrowser(page, { tokenHash: issued.tokenHash, type: 'signup', redirectTo: '/item' });
 
-        // 登録を始めたブラウザで type=signup の印を開くと、session の Cookie が書かれ、redirect_to の内部の道へ 303 で送られる。
+        // 登録を始めたブラウザで type=signup の印を開くと、session の Cookie が書かれ、登録の時に控えた戻り先へ 303 で送られる。
         expect(hop.status()).toBe(303);
         const location = hop.headers()['location'];
         expect(location, 'Location が無い').toBeTruthy();
-        expect(new URL(location, 'http://localhost').pathname).toBe(REDIRECT_PATH);
+        expect(new URL(location, 'http://localhost').pathname).toBe(RETURN_PATH);
         const after = await page.context().cookies();
         expect(after.find((cookie) => cookie.name === ACCESS_COOKIE && cookie.value !== ''), `${ACCESS_COOKIE} の Cookie が書かれない`).toBeTruthy();
         expect(after.find((cookie) => cookie.name === REFRESH_COOKIE && cookie.value !== ''), `${REFRESH_COOKIE} の Cookie が書かれない`).toBeTruthy();
@@ -356,9 +363,9 @@ for (const viewport of viewports) {
         // 登録を始めていないブラウザ B で、確認のリンクを開く。
         expect(await otherBrowser.cookies(), 'ブラウザ B に Cookie が残っている').toEqual([]);
         const pageB = await otherBrowser.newPage();
-        const hop = await openConfirmLinkInBrowser(pageB, { tokenHash: issued.tokenHash, type: 'signup', redirectTo: REDIRECT_PATH });
+        const hop = await openConfirmLinkInBrowser(pageB, { tokenHash: issued.tokenHash, type: 'signup' });
 
-        // 303 で /login へ送られる（redirect_to の道へは送られない）。
+        // 303 で /login へ送られる。
         expect(hop.status()).toBe(303);
         const location = hop.headers()['location'];
         expect(location, 'Location が無い').toBeTruthy();
@@ -382,6 +389,30 @@ for (const viewport of viewports) {
         await expect(pageB.getByText(/ログインしてください/).first()).toBeVisible();
         await expect(pageB.getByText(/このアカウントでログイン/)).toHaveCount(0);
         await expectLoggedOutHeader(pageB);
+      } finally {
+        await otherBrowser.close();
+        await removeUsers(admin, [issued.userId]);
+      }
+    });
+
+    test('FR-AUTH-005-AC-03 signup token opened on a browser without the return-intent cookie ignores the saved return path and goes to /', async ({ page, browser, baseURL }) => {
+      test.setTimeout(120_000);
+      const { admin } = localSupabase();
+      const issued = await issueTokenHash(admin, 'signup', `005c-${viewport.name}`);
+      // ブラウザ B は、Cookie も保存も共有しない別の context。
+      const otherBrowser = await browser.newContext({ baseURL, viewport: { width: viewport.width, height: viewport.height } });
+      try {
+        // ブラウザ A で戻り先つきの登録を送る。控えの Cookie はブラウザ A にだけ入る。
+        await submitSignupFromBrowser(page, issued.email, RETURN_PATH);
+        expect(await otherBrowser.cookies(), 'ブラウザ B に Cookie が残っている').toEqual([]);
+
+        // 控えの Cookie を持たないブラウザ B で開く。戻り先は使わず、既定の / へ送る（URL の redirect_to も読まない）。
+        const pageB = await otherBrowser.newPage();
+        const hop = await openConfirmLinkInBrowser(pageB, { tokenHash: issued.tokenHash, type: 'signup', redirectTo: RETURN_PATH });
+        expect(hop.status()).toBe(303);
+        const location = hop.headers()['location'];
+        expect(location, 'Location が無い').toBeTruthy();
+        expect(new URL(location, 'http://localhost').pathname).toBe('/');
       } finally {
         await otherBrowser.close();
         await removeUsers(admin, [issued.userId]);

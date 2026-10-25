@@ -1,4 +1,10 @@
-import { clearCookieOptions, cookieOptionsForCsrf, cookieOptionsForRefresh } from '@/lib/cookie';
+import {
+  clearCookieOptions,
+  cookieOptionsForCsrf,
+  cookieOptionsForRefresh,
+  cookieOptionsForReturnIntent,
+  returnIntentCookieName,
+} from '@/lib/cookie';
 
 describe('cookie helpers', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -22,6 +28,20 @@ describe('cookie helpers', () => {
     expect(options.httpOnly).toBe(false);
     expect(options.sameSite).toBe('lax');
     expect(options.secure).toBe(false);
+  });
+
+  test('DD-AUTH-034 return intent cookie options: HttpOnly, SameSite lax, Path /, secure only in production', () => {
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+    expect(cookieOptionsForReturnIntent(900)).toEqual({
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 900,
+    });
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
+    expect(cookieOptionsForReturnIntent(3600).secure).toBe(false);
+    expect(returnIntentCookieName).toBe('sb-return-intent');
   });
 
   test('clear cookie sets maxAge 0', () => {

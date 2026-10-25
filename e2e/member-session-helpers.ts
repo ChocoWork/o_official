@@ -53,7 +53,7 @@ export async function createTestMember(label: string): Promise<TestMember> {
   return { userId: data.user.id, email };
 }
 
-async function readMailpitMessages(email: string): Promise<Array<{ ID: string }>> {
+export async function readMailpitMessages(email: string): Promise<Array<{ ID: string }>> {
   const searchUrl = new URL('/api/v1/search', localMailUrl());
   searchUrl.searchParams.set('query', `to:${email}`);
   // 確認コード入りの応答をブラウザの文脈の通信記録へ載せないため、Node で読む。
@@ -72,7 +72,7 @@ async function readMailpitMessages(email: string): Promise<Array<{ ID: string }>
   return body.messages ?? [];
 }
 
-async function readLatestCode(email: string, previousMessageIds: ReadonlySet<string>): Promise<string> {
+export async function readLatestCode(email: string, previousMessageIds: ReadonlySet<string>): Promise<string> {
   const mailUrl = localMailUrl();
   for (let attempt = 0; attempt < 30; attempt += 1) {
     const messages = await readMailpitMessages(email);

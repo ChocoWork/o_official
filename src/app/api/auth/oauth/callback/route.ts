@@ -5,17 +5,20 @@
  * @impl IMPL-AUTH-166
  * @design DD-AUTH-021
  * @remarks 交換の相手になる PKCE の検証の値は、開始の窓口が Cookie に溜めているので要求から読み直す。
- * 既定の送り先は管理の役割の TOTP の画面なので、一般の会員をそこへ着けず会員の画面へ振り替える。
+ * 戻り先は URL から読まず、保存の成功の後に Cookie の控えを使い切って 303 の行き先を差し替える（保存の失敗で戻り先だけが焼けるのを防ぐ）。
+ * 管理の役割は交換直後が aal1 なので、必ず TOTP の画面へ送り、控えは使い切らない。
  * 保存に失敗しても交換は済んでライブラリが Cookie を溜めているため、それを付けた応答を返して利用者を行き止まりにせず、失敗は監査に残す。
  */
 import { NextResponse } from 'next/server';
 import type { CookieOptions } from '@supabase/ssr';
 import { createServerClient } from '@supabase/ssr';
 import { z } from 'zod';
-import { getRequestOrigin, sanitizeRedirectPath } from '@/lib/redirect';
+import { getRequestOrigin } from '@/lib/redirect';
+import {
+  applyReturnIntentCookie,
+  resolveReturnDestination,
+} from '@/features/auth/return-intent/return-intent-service';
 import { logAudit } from '@/lib/audit';
-
-const DEFAULT_REDIRECT_PATH = '/auth/verified';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -23,7 +26,6 @@ const isUserRole = (role: unknown): role is UserRole => role === 'admin' || role
 
 const CallbackQuerySchema = z.object({
   code: z.string().min(1),
-  next: z.string().optional(),
 });
 
 const TokenResponseSchema = z.object({
@@ -80,7 +82,6 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const parsed = CallbackQuerySchema.safeParse({
       code: url.searchParams.get('code'),
-      next: url.searchParams.get('next') || undefined,
     });
 
     if (!parsed.success) {
@@ -88,7 +89,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Bad Request' }, { status: 400 });
     }
 
-    const { code, next } = parsed.data;
+    const { code } = parsed.data;
 
     const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -151,14 +152,12 @@ export async function GET(request: Request) {
       token_type: tokenParsed.data.token_type,
     };
 
-    const requestedRedirectPath = sanitizeRedirectPath(next, DEFAULT_REDIRECT_PATH);
     const role = isUserRole(user.app_metadata?.role) ? user.app_metadata.role : 'user';
     const isPrivileged = role === 'admin' || role === 'supporter';
-    const redirectPath = !isPrivileged && requestedRedirectPath === DEFAULT_REDIRECT_PATH
-      ? '/account'
-      : requestedRedirectPath;
+    // 保存が成功するまで戻り先は使い切らないので、応答は既定の行き先で先に作る。
+    const defaultPath = isPrivileged ? '/auth/verified' : '/';
 
-    const res = NextResponse.redirect(new URL(redirectPath, origin), { status: 303 });
+    const res = NextResponse.redirect(new URL(defaultPath, origin), { status: 303 });
     res.headers.set('Cache-Control', 'no-store');
     res.headers.set('Referrer-Policy', 'no-referrer');
     for (const cookie of cookiesToSet) {
@@ -179,6 +178,15 @@ export async function GET(request: Request) {
       await logAudit({ action: 'auth.oauth.callback', outcome: 'error', detail: String(e), resource_id: user.id });
       return res;
     }
+
+    // 交換直後は Google のログインなので aal1。特権は必ず 2 段目の画面へ送り、控えはそこでの完了まで使い切らない。
+    const resolved = await resolveReturnDestination({
+      cookieHeader: request.headers.get('cookie'),
+      purpose: 'login',
+      viewer: { id: user.id, role, aal: 'aal1' },
+    });
+    res.headers.set('location', new URL(resolved.path, origin).toString());
+    applyReturnIntentCookie(res, resolved.action);
 
     await logAudit({ action: 'auth.oauth.callback', outcome: 'success', actor_email: user.email ?? null, resource_id: user.id });
     return res;

@@ -1,9 +1,9 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import LoginModal from '@/components/LoginModal';
 import RegisterModal from '@/components/RegisterModal';
 import { LoginProvider } from '@/contexts/LoginContext';
-import { GET as oauthStart } from '@/app/api/auth/oauth/start/route';
+import { GET as oauthStart, POST as oauthStartPost } from '@/app/api/auth/oauth/start/route';
 import { GET as oauthCallback } from '@/app/api/auth/oauth/callback/route';
 
 /**
@@ -17,7 +17,10 @@ type FakeResponse = {
   status: number;
   body?: unknown;
   headers: { get: (name: string) => string | null; set: (name: string, value: string) => void };
-  cookies: { jar: Map<string, { value: string; options?: unknown }>; set: (name: string, value: string, options?: unknown) => void };
+  cookies: {
+    jar: Map<string, { value: string; options?: unknown }>;
+    set: (nameOrCookie: string | { name: string; value: string }, value?: string, options?: unknown) => void;
+  };
   json: () => Promise<unknown>;
 };
 
@@ -34,6 +37,8 @@ const mockSignOut = jest.fn();
 const mockPersist = jest.fn();
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
 const mockCreateServerClient = jest.fn();
+const mockCreateReturnIntent = jest.fn();
+const mockConsumeReturnIntent = jest.fn();
 
 jest.mock('next/server', () => {
   const build = (status: number, body?: unknown): FakeResponse => {
@@ -50,8 +55,13 @@ jest.mock('next/server', () => {
       },
       cookies: {
         jar,
-        set: (name, value, options) => {
-          jar.set(name, { value, options });
+        // 戻り先の控えの Cookie は { name, value, ...属性 } の形で渡される
+        set: (nameOrCookie, value, options) => {
+          if (typeof nameOrCookie === 'object') {
+            jar.set(nameOrCookie.name, { value: nameOrCookie.value, options: nameOrCookie });
+          } else {
+            jar.set(nameOrCookie, { value: value as string, options });
+          }
         },
       },
       json: async () => body,
@@ -92,6 +102,12 @@ jest.mock('next/link', () => {
 });
 jest.mock('@supabase/ssr', () => ({
   createServerClient: (...args: unknown[]) => mockCreateServerClient(...args),
+}));
+// 戻り先の控えの保存だけを差し替える（確かめと Cookie の動作、出口の解決は本物）
+jest.mock('@/features/auth/return-intent/return-intent-store', () => ({
+  ...jest.requireActual('@/features/auth/return-intent/return-intent-store'),
+  createReturnIntent: (...args: unknown[]) => mockCreateReturnIntent(...args),
+  consumeReturnIntent: (...args: unknown[]) => mockConsumeReturnIntent(...args),
 }));
 
 const ORIGIN = 'http://localhost:3000';
@@ -161,19 +177,53 @@ async function start(redirectTo?: string) {
   return asFake(await oauthStart(new Request(startUrl(redirectTo))));
 }
 
+function startPostRequest(body: unknown) {
+  return new Request(new URL('/api/auth/oauth/start', ORIGIN).toString(), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+async function startPost(next?: unknown) {
+  return asFake(await oauthStartPost(startPostRequest(next === undefined ? { provider: 'google' } : { provider: 'google', next })));
+}
+
+// ブラウザが次の要求に付ける Cookie。消された物（空の値）は付けない。
 function pkceCookieHeader(started: FakeResponse) {
   return Array.from(started.cookies.jar.entries())
+    .filter(([, { value }]) => value !== '')
     .map(([name, { value }]) => `${name}=${value}`)
     .join('; ');
 }
 
+// GET の開始は Location、POST の開始は本文の url に Google の同意の画面の住所が入る。
+function authorizeUrlOf(started: FakeResponse) {
+  return started.headers.get('location') ?? (started.body as { url: string }).url;
+}
+
 // Google が戻してくる形を作る。戻り先は開始の窓口が Google へ渡した値をそのまま使う。
 async function comeBack(started: FakeResponse, code = 'good-code', withCookie = true) {
-  const authorize = new URL(started.headers.get('location') as string);
+  const authorize = new URL(authorizeUrlOf(started));
   const callback = new URL(authorize.searchParams.get('redirect_to') as string);
   callback.searchParams.set('code', code);
   const headers: Record<string, string> = withCookie ? { cookie: pkceCookieHeader(started) } : {};
   return asFake(await oauthCallback(new Request(callback.toString(), { headers })));
+}
+
+// 画面の fetch を開始の窓口の本物につなぐ。画面が受け取る応答と、窓口が作った Cookie（開始の応答）を控える。
+let lastStarted: FakeResponse | null = null;
+function routeFetchToOauthStart() {
+  lastStarted = null;
+  global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === '/api/auth/oauth/start') {
+      const res = asFake(await oauthStartPost(new Request(new URL(url, ORIGIN).toString(), init)));
+      lastStarted = res;
+      return { ok: res.status >= 200 && res.status < 300, status: res.status, json: async () => res.body } as unknown as Response;
+    }
+    return { ok: true, status: 200, json: async () => ({ authenticated: false }) } as unknown as Response;
+  }) as unknown as typeof fetch;
 }
 
 function locationPath(res: FakeResponse) {
@@ -191,6 +241,18 @@ describe('Google のログインの画面遷移', () => {
     mockState.authorizeError = false;
     mockState.exchangeError = false;
     mockState.rateLimited = false;
+    // 1 回で使い切る控えの表の写し（番号は固定。作った道筋を、用途が合う最初の 1 回だけ返す）
+    const intents = new Map<string, { returnPath: string; purpose: string; used: boolean }>();
+    mockCreateReturnIntent.mockImplementation(async ({ returnPath, purpose }: { returnPath: string; purpose: string }) => {
+      intents.set('T'.repeat(43), { returnPath, purpose, used: false });
+      return { token: 'T'.repeat(43), maxAgeSeconds: 900 };
+    });
+    mockConsumeReturnIntent.mockImplementation(async ({ token, purpose }: { token: string; purpose: string }) => {
+      const intent = intents.get(token);
+      if (!intent || intent.used || intent.purpose !== purpose) return null;
+      intent.used = true;
+      return intent.returnPath;
+    });
     mockPersist.mockImplementation(async (res: FakeResponse) => {
       res.cookies.set('sb-access-token', 'access-1', { httpOnly: true });
       return { ok: true };
@@ -212,28 +274,79 @@ describe('Google のログインの画面遷移', () => {
   });
 
   describe('画面から開始の窓口へ', () => {
-    test('FLOW-AUTH-002 ログインの画面の Google のボタンは窓口の開始へ移る', async () => {
+    test('FLOW-AUTH-002 ログインの画面の Google のボタンは開始の窓口へ POST し、返った Google の住所へ移る', async () => {
+      routeFetchToOauthStart();
       await mount(<LoginModal open={true} />);
 
       fireEvent.click(screen.getByRole('button', { name: /Googleでサインイン/ }));
 
-      expect(mockNavigate).toHaveBeenCalledTimes(1);
-      expect(mockNavigate).toHaveBeenCalledWith('/api/auth/oauth/start?provider=google&redirect_to=%2Fauth%2Fverified');
+      await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
+      const target = new URL(mockNavigate.mock.calls[0][0] as string);
+      expect(target.origin).toBe('https://accounts.example.test');
+      const startCall = (global.fetch as jest.Mock).mock.calls.find((call) => String(call[0]) === '/api/auth/oauth/start');
+      expect(startCall[1]).toMatchObject({ method: 'POST', credentials: 'same-origin', cache: 'no-store' });
+      expect(JSON.parse(startCall[1].body)).toEqual({ provider: 'google' });
+      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
     });
 
-    test('FLOW-AUTH-002 会員登録の画面の Google のボタンも同じ窓口の開始へ移る', async () => {
+    test('FLOW-AUTH-002 会員登録の画面の Google のボタンも同じ窓口へ POST して移る', async () => {
+      routeFetchToOauthStart();
       await mount(<RegisterModal />);
 
       fireEvent.click(screen.getByRole('button', { name: /Googleで登録/ }));
 
-      expect(mockNavigate).toHaveBeenCalledWith('/api/auth/oauth/start?provider=google&redirect_to=%2Fauth%2Fverified');
+      await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
+      expect(new URL(mockNavigate.mock.calls[0][0] as string).origin).toBe('https://accounts.example.test');
     });
 
-    test('FLOW-AUTH-002 画面はパスワードの窓口を呼ばず、認証コードの画面へも移らない', async () => {
+    test('FLOW-AUTH-002 戻り先つきの画面から、控えて Google へ移り、戻りで元の頁へ着く（番号は URL に載らない）', async () => {
+      mockState.role = 'user';
+      routeFetchToOauthStart();
+      await mount(<LoginModal open={true} returnTo="/item/3?color=red" />);
+
+      fireEvent.click(screen.getByRole('button', { name: /Googleでサインイン/ }));
+
+      await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
+      expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/item/3?color=red', purpose: 'login' });
+      expect(mockNavigate.mock.calls[0][0]).not.toContain('T'.repeat(43));
+      const res = await comeBack(lastStarted as FakeResponse);
+      expect(res.status).toBe(303);
+      expect(locationPath(res)).toBe('/item/3?color=red');
+    });
+
+    test('FLOW-AUTH-002 戻り先つきの会員登録の画面も、Google のログインの戻り先として控える', async () => {
+      routeFetchToOauthStart();
+      await mount(<RegisterModal returnTo="/account" />);
+
+      fireEvent.click(screen.getByRole('button', { name: /Googleで登録/ }));
+
+      await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
+      expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/account', purpose: 'login' });
+    });
+
+    test('FLOW-AUTH-002 開始の窓口が失敗したら移らない', async () => {
+      routeFetchToOauthStart();
+      mockState.authorizeError = true;
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
       await mount(<LoginModal open={true} />);
 
       fireEvent.click(screen.getByRole('button', { name: /Googleでサインイン/ }));
 
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/auth/oauth/start', expect.anything()));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockNavigate).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
+
+    test('FLOW-AUTH-002 画面はパスワードの窓口を呼ばず、認証コードの画面へも移らない', async () => {
+      routeFetchToOauthStart();
+      await mount(<LoginModal open={true} />);
+
+      fireEvent.click(screen.getByRole('button', { name: /Googleでサインイン/ }));
+
+      await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
       const urls = (global.fetch as jest.Mock).mock.calls.map((call) => String(call[0]));
       expect(urls).not.toContain('/api/auth/login');
       expect(urls).not.toContain('/api/auth/otp/verify');
@@ -243,7 +356,7 @@ describe('Google のログインの画面遷移', () => {
 
   describe('開始の窓口', () => {
     test('FLOW-AUTH-002 Google の同意の画面へ 302 で送り、毎回アカウントを選ばせる', async () => {
-      const res = await start('/auth/verified');
+      const res = await start();
 
       expect(res.status).toBe(302);
       const authorize = new URL(res.headers.get('location') as string);
@@ -253,13 +366,46 @@ describe('Google のログインの画面遷移', () => {
       expect(res.headers.get('referrer-policy')).toBe('no-referrer');
     });
 
-    test('FLOW-AUTH-002 PKCE の検証の値を窓口の Cookie に持たせ、戻り先は窓口の戻りにする', async () => {
-      const res = await start('/auth/verified');
+    test('FLOW-AUTH-002 PKCE の検証の値を窓口の Cookie に持たせ、戻りの住所には道筋も番号も載せない', async () => {
+      const res = await start();
 
       expect(res.cookies.jar.get(PKCE_COOKIE)).toEqual({ value: 'verifier-1', options: { httpOnly: true } });
       const callback = new URL(new URL(res.headers.get('location') as string).searchParams.get('redirect_to') as string);
       expect(callback.origin + callback.pathname).toBe(`${ORIGIN}/api/auth/oauth/callback`);
-      expect(callback.searchParams.get('next')).toBe('/auth/verified');
+      expect(callback.search).toBe('');
+    });
+
+    test('FLOW-AUTH-002 GET は redirect_to を読まず、戻り先の控えを作らず、残っている控えの Cookie を消す', async () => {
+      const res = await start('/account/orders');
+
+      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+      expect(res.cookies.jar.get('sb-return-intent')).toMatchObject({ value: '', options: expect.objectContaining({ maxAge: 0 }) });
+      const callback = new URL(new URL(res.headers.get('location') as string).searchParams.get('redirect_to') as string);
+      expect(callback.search).toBe('');
+    });
+
+    test('FLOW-AUTH-002 POST は 200 の { url } を返し、リダイレクトにしない（CSP の form-action のため）', async () => {
+      const res = await startPost('/account/orders');
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('location')).toBeNull();
+      const authorize = new URL((res.body as { url: string }).url);
+      expect(authorize.origin).toBe('https://accounts.example.test');
+      expect(authorize.searchParams.get('prompt')).toBe('select_account');
+      expect(res.cookies.jar.get(PKCE_COOKIE)).toBeDefined();
+    });
+
+    test('FLOW-AUTH-002 内部の道の送り先は控えて、番号は Cookie だけで渡す（本文にも戻りの住所にも載せない）', async () => {
+      const res = await startPost('/account/orders');
+
+      expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/account/orders', purpose: 'login' });
+      expect(res.cookies.jar.get('sb-return-intent')).toMatchObject({
+        value: 'T'.repeat(43),
+        options: expect.objectContaining({ httpOnly: true, sameSite: 'lax', path: '/', maxAge: 900 }),
+      });
+      expect(JSON.stringify(res.body)).not.toContain('T'.repeat(43));
+      const callback = new URL(new URL((res.body as { url: string }).url).searchParams.get('redirect_to') as string);
+      expect(callback.search).toBe('');
     });
 
     test.each([
@@ -267,25 +413,22 @@ describe('Google のログインの画面遷移', () => {
       ['2本のスラッシュ', '//evil.example'],
       ['バックスラッシュ', '/\\evil.example'],
       ['道の形でない文字', 'account'],
-    ])('FLOW-AUTH-002 送り先に%sを渡すと既定の /auth/verified に替える', async (_label, redirectTo) => {
-      const res = await start(redirectTo);
+      ['タブを含む道', '/%09/evil.example'],
+      ['数値', 123],
+    ])('FLOW-AUTH-002 送り先に%sを渡しても開始は 200 のまま、控えを作らず Cookie を消す', async (_label, next) => {
+      const res = await startPost(next);
 
-      const callback = new URL(new URL(res.headers.get('location') as string).searchParams.get('redirect_to') as string);
-      expect(callback.searchParams.get('next')).toBe('/auth/verified');
+      expect(res.status).toBe(200);
+      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+      expect(res.cookies.jar.get('sb-return-intent')).toMatchObject({ value: '', options: expect.objectContaining({ maxAge: 0 }) });
     });
 
-    test('FLOW-AUTH-002 内部の道の送り先はそのまま戻りへ運ぶ', async () => {
-      const res = await start('/account/orders');
+    test('FLOW-AUTH-002 送り先を渡さなければ控えを作らず、古い控えの Cookie を消す', async () => {
+      const res = await startPost();
 
-      const callback = new URL(new URL(res.headers.get('location') as string).searchParams.get('redirect_to') as string);
-      expect(callback.searchParams.get('next')).toBe('/account/orders');
-    });
-
-    test('FLOW-AUTH-002 送り先を渡さなければ既定の /auth/verified にする', async () => {
-      const res = await start();
-
-      const callback = new URL(new URL(res.headers.get('location') as string).searchParams.get('redirect_to') as string);
-      expect(callback.searchParams.get('next')).toBe('/auth/verified');
+      expect(res.status).toBe(200);
+      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+      expect(res.cookies.jar.get('sb-return-intent')).toMatchObject({ value: '', options: expect.objectContaining({ maxAge: 0 }) });
     });
 
     test('FLOW-AUTH-002 対応しない供給元は画面へ戻さず 400 の JSON を返す', async () => {
@@ -307,7 +450,7 @@ describe('Google のログインの画面遷移', () => {
       mockState.authorizeError = true;
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
-      const res = await start('/auth/verified');
+      const res = await start();
 
       expect(res.status).toBe(502);
       expect(res.body).toEqual({ error: 'OAuth start failed' });
@@ -317,7 +460,7 @@ describe('Google のログインの画面遷移', () => {
     test('FLOW-AUTH-002 Supabase の設定が無ければ 500 の JSON を返す', async () => {
       delete env.NEXT_PUBLIC_SUPABASE_URL;
 
-      const res = await start('/auth/verified');
+      const res = await start();
 
       expect(res.status).toBe(500);
       expect(res.body).toEqual({ error: 'Server misconfiguration' });
@@ -326,7 +469,7 @@ describe('Google のログインの画面遷移', () => {
     test('FLOW-AUTH-002 回数制限に当たったら、その応答をそのまま返す', async () => {
       mockState.rateLimited = 'reply';
 
-      const res = await start('/auth/verified');
+      const res = await start();
 
       expect(res.status).toBe(429);
       expect(mockCreateServerClient).not.toHaveBeenCalled();
@@ -336,7 +479,7 @@ describe('Google のログインの画面遷移', () => {
       mockState.rateLimited = 'throw';
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
-      const res = await start('/auth/verified');
+      const res = await start();
 
       expect(res.status).toBe(302);
       errorSpy.mockRestore();
@@ -348,7 +491,7 @@ describe('Google のログインの画面遷移', () => {
       });
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
-      const res = await start('/auth/verified');
+      const res = await start();
 
       expect(res.status).toBe(500);
       expect(res.body).toEqual({ error: 'Internal server error' });
@@ -357,50 +500,80 @@ describe('Google のログインの画面遷移', () => {
   });
 
   describe('戻りの窓口と行き先', () => {
-    test('FLOW-AUTH-002 一般の会員は既定の送り先なら /auth/verified を通らず /account へ 303 で送る', async () => {
+    test('FLOW-AUTH-002 戻り先を控えていない一般の会員は /auth/verified を通らず / へ 303 で送る', async () => {
       mockState.role = 'user';
 
-      const res = await comeBack(await start('/auth/verified'));
+      const res = await comeBack(await start());
 
       expect(res.status).toBe(303);
-      expect(locationPath(res)).toBe('/account');
+      expect(locationPath(res)).toBe('/');
       expect(res.headers.get('cache-control')).toBe('no-store');
       expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+      expect(mockConsumeReturnIntent).not.toHaveBeenCalled();
     });
 
-    test('FLOW-AUTH-002 役割が無い会員も一般として /account へ送る', async () => {
+    test('FLOW-AUTH-002 役割が無い会員も一般として / へ送る', async () => {
       mockState.role = undefined;
 
-      const res = await comeBack(await start('/auth/verified'));
+      const res = await comeBack(await start());
 
-      expect(locationPath(res)).toBe('/account');
+      expect(locationPath(res)).toBe('/');
     });
 
-    test.each(['admin', 'supporter'] as const)('FLOW-AUTH-002 %s は /auth/verified へ送り、そこで TOTP を通す', async (role) => {
+    test.each(['admin', 'supporter'] as const)('FLOW-AUTH-002 %s は /auth/verified へ送り、そこで TOTP を通す（控えは使い切らない）', async (role) => {
       mockState.role = role;
 
-      const res = await comeBack(await start('/auth/verified'));
+      const res = await comeBack(await startPost('/admin/orders'));
 
       expect(res.status).toBe(303);
       expect(locationPath(res)).toBe('/auth/verified');
+      expect(mockConsumeReturnIntent).not.toHaveBeenCalled();
+      expect(res.cookies.jar.get('sb-return-intent')).toBeUndefined();
     });
 
-    test('FLOW-AUTH-002 既定でない内部の送り先は会員でもそのまま使う', async () => {
+    test('FLOW-AUTH-002 開始で控えた内部の道へ、保存の後に控えを使い切って 303 で送り、控えの Cookie を消す', async () => {
       mockState.role = 'user';
 
-      const res = await comeBack(await start('/account/orders'));
+      const res = await comeBack(await startPost('/item/3?color=red'));
 
-      expect(locationPath(res)).toBe('/account/orders');
+      expect(res.status).toBe(303);
+      expect(locationPath(res)).toBe('/item/3?color=red');
+      expect(mockConsumeReturnIntent).toHaveBeenCalledWith({ token: 'T'.repeat(43), purpose: 'login', userId: 'user-1' });
+      expect(res.cookies.jar.get('sb-return-intent')).toMatchObject({
+        value: '',
+        options: expect.objectContaining({ maxAge: 0 }),
+      });
+      expect(mockPersist.mock.invocationCallOrder[0]).toBeLessThan(mockConsumeReturnIntent.mock.invocationCallOrder[0]);
+    });
+
+    test('FLOW-AUTH-002 使った控えは 2 回目の戻りでは使えず / になる', async () => {
+      mockState.role = 'user';
+      const started = await startPost('/item/3');
+
+      const first = await comeBack(started);
+      const second = await comeBack(started);
+
+      expect(locationPath(first)).toBe('/item/3');
+      expect(locationPath(second)).toBe('/');
+    });
+
+    test('FLOW-AUTH-002 控えが /admin を指していても一般の会員は / へ送る（出口で役割を確かめ直す）', async () => {
+      mockState.role = 'user';
+
+      const res = await comeBack(await startPost('/admin'));
+
+      expect(locationPath(res)).toBe('/');
     });
 
     test.each([
+      ['内部の道', '/account/orders'],
       ['外の住所', 'https://evil.example/steal'],
       ['2本のスラッシュ', '//evil.example'],
       ['バックスラッシュ', '/\\evil.example'],
-    ])('FLOW-AUTH-002 戻りでも送り先の%sは受けず、既定の行き先へ替える', async (_label, next) => {
+    ])('FLOW-AUTH-002 戻りの URL に古い形の next（%s）が付いても読まず、/ へ送る', async (_label, next) => {
       mockState.role = 'user';
-      const started = await start('/auth/verified');
-      const callback = new URL(new URL(started.headers.get('location') as string).searchParams.get('redirect_to') as string);
+      const started = await start();
+      const callback = new URL(new URL(authorizeUrlOf(started)).searchParams.get('redirect_to') as string);
       callback.searchParams.set('code', 'good-code');
       callback.searchParams.set('next', next);
 
@@ -409,11 +582,11 @@ describe('Google のログインの画面遷移', () => {
       );
 
       expect(new URL(res.headers.get('location') as string).origin).toBe(ORIGIN);
-      expect(locationPath(res)).toBe('/account');
+      expect(locationPath(res)).toBe('/');
     });
 
     test('FLOW-AUTH-002 メールの認証コードの画面を通らずに最後の行き先へ着く', async () => {
-      const res = await comeBack(await start('/auth/verified'));
+      const res = await comeBack(await start());
 
       expect(locationPath(res)).not.toContain('/login');
     });
@@ -421,7 +594,7 @@ describe('Google のログインの画面遷移', () => {
     test('FLOW-AUTH-002 交換した session を保存し、認証の Cookie を応答に付ける', async () => {
       mockState.role = 'user';
 
-      const res = await comeBack(await start('/auth/verified'));
+      const res = await comeBack(await start());
 
       expect(mockPersist).toHaveBeenCalledTimes(1);
       const [persistedRes, session, user] = mockPersist.mock.calls[0];
@@ -441,7 +614,7 @@ describe('Google のログインの画面遷移', () => {
     });
 
     test('FLOW-AUTH-002 トークンは画面に渡さず、行き先の住所にも載せない', async () => {
-      const res = await comeBack(await start('/auth/verified'));
+      const res = await comeBack(await start());
 
       const location = res.headers.get('location') as string;
       expect(location).not.toContain('access-1');
@@ -452,10 +625,11 @@ describe('Google のログインの画面遷移', () => {
     test('FLOW-AUTH-002 保存に失敗しても交換済みの応答を 303 のまま返し、理由を監査に残す', async () => {
       mockPersist.mockResolvedValue({ ok: false, error: 'db down' });
 
-      const res = await comeBack(await start('/auth/verified'));
+      const res = await comeBack(await startPost('/item/3'));
 
       expect(res.status).toBe(303);
-      expect(locationPath(res)).toBe('/account');
+      expect(locationPath(res)).toBe('/');
+      expect(mockConsumeReturnIntent).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledWith(
         expect.objectContaining({ outcome: 'error', detail: 'session_persist_failed: db down' }),
       );
@@ -464,7 +638,7 @@ describe('Google のログインの画面遷移', () => {
     test('FLOW-AUTH-002 保存が理由を返さずに失敗しても 303 のまま、理由は unknown で残す', async () => {
       mockPersist.mockResolvedValue(undefined);
 
-      const res = await comeBack(await start('/auth/verified'));
+      const res = await comeBack(await start());
 
       expect(res.status).toBe(303);
       expect(mockLogAudit).toHaveBeenCalledWith(
@@ -476,10 +650,11 @@ describe('Google のログインの画面遷移', () => {
       mockPersist.mockRejectedValue(new Error('persist exploded'));
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
-      const res = await comeBack(await start('/auth/verified'));
+      const res = await comeBack(await startPost('/item/3'));
 
       expect(res.status).toBe(303);
-      expect(locationPath(res)).toBe('/account');
+      expect(locationPath(res)).toBe('/');
+      expect(mockConsumeReturnIntent).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledWith(
         expect.objectContaining({ outcome: 'error', detail: 'Error: persist exploded' }),
       );
@@ -487,7 +662,7 @@ describe('Google のログインの画面遷移', () => {
     });
 
     test('FLOW-AUTH-002 code が無ければ画面へ戻さず 400 の JSON を返す', async () => {
-      const res = asFake(await oauthCallback(new Request(`${ORIGIN}/api/auth/oauth/callback?next=%2Fauth%2Fverified`)));
+      const res = asFake(await oauthCallback(new Request(`${ORIGIN}/api/auth/oauth/callback?next=%2Faccount`)));
 
       expect(res.status).toBe(400);
       expect(res.body).toEqual({ error: 'Bad Request' });
@@ -497,7 +672,7 @@ describe('Google のログインの画面遷移', () => {
     test('FLOW-AUTH-002 検証の Cookie が無い戻りは交換できず 502 の JSON を返す', async () => {
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
-      const res = await comeBack(await start('/auth/verified'), 'good-code', false);
+      const res = await comeBack(await start(), 'good-code', false);
 
       expect(res.status).toBe(502);
       expect(res.body).toEqual({ error: 'OAuth exchange failed' });
@@ -508,7 +683,7 @@ describe('Google のログインの画面遷移', () => {
     test('FLOW-AUTH-002 偽りの code は交換できず 502 を返し、失敗を監査に残す', async () => {
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
-      const res = await comeBack(await start('/auth/verified'), 'forged-code');
+      const res = await comeBack(await start(), 'forged-code');
 
       expect(res.status).toBe(502);
       expect(mockLogAudit).toHaveBeenCalledWith(

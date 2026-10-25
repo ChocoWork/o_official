@@ -3,9 +3,9 @@
  * 対応: FREQ-320-AC-02 / SEC-AUTH-021-AC-01 / SEC-AUTH-022-AC-01 / SEC-AUTH-022-AC-02 / SEC-AUTH-024-AC-01 / SEC-AUTH-026-AC-01
  *
  * 会員は createTestMember で作り、loginAsMember（確認コードの本物のログイン）で本物の Cookie を受け取る。
- * 窓口は Playwright の request（HTTP）で叩き、/auth/callback だけ画面を開く。
+ * 窓口は Playwright の request（HTTP）で叩き、/auth/callback（消えた画面）だけ画面として開く。
  * - SEC-AUTH-022-AC-01 / SEC-AUTH-022-AC-02 は、現行のコードが満たさないと文書に書いてある（今は赤になるのが想定）。
- * - SEC-AUTH-026-AC-01 も、/auth/callback の画面が満たさないと文書に書いてある（今は赤になるのが想定）。
+ * - SEC-AUTH-026-AC-01 は、/auth/callback の画面を消した（404）ことを確かめる（波 1-A、ADR-0412。以前は赤だった試験の反転）。
  * - SEC-AUTH-024-AC-01 の Secure は、AC の文面に無いので確かめない（本番ビルドの手元では付くが、別の AC に分ける）。
  * 通信記録にトークンが残らないよう trace は切る。失敗の報告にもトークンの値を出さない（真偽だけで比べる）。
  */
@@ -334,11 +334,10 @@ for (const viewport of viewports) {
   test.describe(`FR-LOGIN-030 callback screen (${viewport.name})`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test(`SEC-AUTH-026-AC-01 ログイン済みで /auth/callback?next=//evil.example を開いても、店のサイトの中（/auth/verified）に留まる (${viewport.name})`, async ({
+    test(`SEC-AUTH-026-AC-01 ログイン済みで /auth/callback?next=//evil.example を開くと画面は無く（404）、evil.example へも店のサイトの外へも移らない (${viewport.name})`, async ({
       page,
       baseURL,
     }) => {
-      test.fail(true, 'SEC-AUTH-026 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
       const origin = originOf(baseURL);
       await loginCapturingOtpVerify(page, 'open-redirect');
 
@@ -353,20 +352,11 @@ for (const viewport of viewports) {
         if (frame === page.mainFrame()) visited.push(frame.url());
       });
 
-      await page.goto('/auth/callback?next=//evil.example');
+      const response = await page.goto('/auth/callback?next=//evil.example');
 
-      const atVerifiedOrOutside = () =>
-        requestedEvil.length > 0 ||
-        visited.some((visitedUrl) => {
-          try {
-            const parsed = new URL(visitedUrl);
-            return parsed.origin !== origin || parsed.pathname === '/auth/verified';
-          } catch {
-            return true;
-          }
-        });
-      await expect.poll(atVerifiedOrOutside, { timeout: 15_000 }).toBe(true);
-
+      expect(response?.status(), '/auth/callback の画面は無い（404）').toBe(404);
+      // 画面が無くても、移動の途中の寄り道（クライアントの遷移）が出ないことを少し待って確かめる。
+      await page.waitForTimeout(1_000);
       expect(requestedEvil, 'evil.example へ要求が出ない').toEqual([]);
       expect(
         visited.filter((visitedUrl) => {
@@ -378,10 +368,6 @@ for (const viewport of viewports) {
         }),
         '店のサイトの外へ移らない',
       ).toEqual([]);
-      expect(
-        visited.some((visitedUrl) => new URL(visitedUrl).pathname === '/auth/verified'),
-        '既定の道（/auth/verified）に替わる',
-      ).toBe(true);
     });
   });
 }

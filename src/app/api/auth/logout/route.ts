@@ -4,7 +4,7 @@
  * @packageDocumentation
  * @impl IMPL-AUTH-202
  * @design DD-AUTH-028
- * @remarks 未認証でも 200 を返す。401 にすると「まだ有効なセッション」の有無が漏れるため。実際の失効は、CSRF トークンが通った時だけ、期限切れでも署名を検証した JWT の session_id（取れない時は自前 sessions 行の user_id）で行う。失効の成否に関わらず Cookie は必ず消し、CSRF 拒否でも認証の印が端末に残らないようにする。
+ * @remarks 未認証でも 200 を返す。401 にすると「まだ有効なセッション」の有無が漏れるため。実際の失効は、CSRF トークンが通った時だけ、期限切れでも署名を検証した JWT の session_id（取れない時は自前 sessions 行の user_id）で行う。失効の成否に関わらず Cookie は必ず消し、CSRF 拒否でも認証の印が端末に残らないようにする。戻り先の控えの Cookie も消し、次の人に前の人の戻り先を持ち越さない。
  */
 
 import { NextResponse } from 'next/server';
@@ -135,6 +135,7 @@ export async function POST() {
       sessionCookieName,
       loginTwoFactorSessionCookieName,
       passwordResetSessionCookieName,
+      returnIntentCookieName,
       cartCookieName,
       wishlistCookieName,
       clearCookieOptions,
@@ -153,6 +154,7 @@ export async function POST() {
       csrfCookieName,
       loginTwoFactorSessionCookieName,
       passwordResetSessionCookieName,
+      returnIntentCookieName,
       cartCookieName,
       wishlistCookieName,
     ]) {

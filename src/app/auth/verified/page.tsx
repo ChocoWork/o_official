@@ -7,16 +7,18 @@
  * @remarks 一般の会員を管理者用の確認に通さず、管理者とサポーターは aal2 になるまで管理画面へ送らない
  * （SEC-AUTH-008）。振り分けは認証の窓口が返す役割で決め、画面側の判定は表示だけ（SEC-AUTH-028）。
  * 確認が通ったら全体のログインの状態を同期し直してから移る。省くと管理画面が古い確認済みの印を読み、
- * 「2要素認証が必要です」を誤って出す。
+ * 「2要素認証が必要です」を誤って出す。移る先はサーバーが戻り先を使い切って決める（URL の値は読まない）。
  */
 "use client";
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLogin } from '@/contexts/LoginContext';
 import { Button } from '@/components/ui/Button/Button';
 import { LiveMessage } from '@/components/ui/LiveMessage/LiveMessage';
 import { SingleSelect } from '@/components/ui/SingleSelect/SingleSelect';
+import { sanitizeReturnPath } from '@/features/auth/return-intent/return-path';
 
 function Spinner() {
   return (
@@ -35,6 +37,11 @@ type AuthMeResponse = {
     role?: unknown;
     mfaVerified?: boolean;
   };
+};
+
+type PostLoginResponse = {
+  redirectTo?: unknown;
+  needsMfa?: unknown;
 };
 
 type MfaStatusResponse = {
@@ -130,6 +137,30 @@ export default function VerifiedPage() {
     setMode('mfa-challenge');
   }, []);
 
+  // ログインの後の行き先はサーバーが戻り先を使い切って決める。引けない時は fallback（特権 /admin、一般 /）へ移る。
+  // 特権が aal1 のままの時（me と post-login の食い違い）は移らず、呼び出し側が 2 段目を出す。
+  const goAfterLogin = React.useCallback(async (fallback: string): Promise<'moved' | 'needs-mfa'> => {
+    let target = fallback;
+    try {
+      const response = await fetch('/api/auth/post-login', {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
+      if (response.ok) {
+        const body = (await response.json().catch(() => null)) as PostLoginResponse | null;
+        if (body?.needsMfa === true) {
+          return 'needs-mfa';
+        }
+        target = sanitizeReturnPath(body?.redirectTo, fallback, { origin: window.location.origin });
+      }
+    } catch (error) {
+      console.error('Failed to resolve post-login destination:', error);
+    }
+    router.replace(target);
+    return 'moved';
+  }, [router]);
+
   useEffect(() => {
     let cancelled = false;
     let nonPrivilegedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -160,7 +191,10 @@ export default function VerifiedPage() {
           if (mfaVerified) {
             if (!cancelled) {
               setMessage('認証が完了しました。管理画面へ移動します…');
-              router.replace('/admin');
+              const moved = await goAfterLogin('/admin');
+              if (moved === 'needs-mfa' && !cancelled) {
+                await loadMfaStatus();
+              }
             }
             return;
           }
@@ -173,9 +207,9 @@ export default function VerifiedPage() {
 
         if (!cancelled) {
           setMode('non-privileged');
-          setMessage('確認完了。アカウントへ移動します…');
+          setMessage('確認完了。移動します…');
           nonPrivilegedTimer = setTimeout(() => {
-            router.replace('/account');
+            void goAfterLogin('/');
           }, 800);
         }
       } catch (error) {
@@ -193,7 +227,7 @@ export default function VerifiedPage() {
         clearTimeout(nonPrivilegedTimer);
       }
     };
-  }, [loadMfaStatus, router]);
+  }, [loadMfaStatus, goAfterLogin]);
 
   const handleEnrollTotp = async (isAutomatic = false) => {
     setErrorMessage(null);
@@ -280,7 +314,10 @@ export default function VerifiedPage() {
       await refreshAuthState();
 
       setMessage('2要素認証が完了しました。管理画面へ移動します…');
-      router.replace('/admin');
+      const moved = await goAfterLogin('/admin');
+      if (moved === 'needs-mfa') {
+        setErrorMessage('2要素認証の完了を確認できませんでした。もう一度お試しください。');
+      }
     } catch (error) {
       console.error('Failed to verify MFA code:', error);
       setErrorMessage(error instanceof Error ? error.message : '2要素認証コードの検証に失敗しました。');
@@ -290,7 +327,7 @@ export default function VerifiedPage() {
   };
 
   const renderBody = () => {
-    // 読み込み中から「確認完了。アカウントへ移動します…」へは、同じ status の中身だけを入れ替える（FREQ-377）。
+    // 読み込み中から「確認完了。移動します…」へは、同じ status の中身だけを入れ替える（FREQ-377）。
     // 別々の要素で描くと、案内ごと差し込み直すことになり読み上げられないことがある
     if (mode === 'loading' || mode === 'non-privileged') {
       return (
@@ -305,7 +342,7 @@ export default function VerifiedPage() {
             {message}
           </p>
           {mode === 'non-privileged' ? (
-            <a href="/account" className="inline-block underline underline-offset-4 hover:text-[#474747] transition-colors">アカウントへ</a>
+            <Link href="/" className="inline-block underline underline-offset-4 hover:text-[#474747] transition-colors">トップへ</Link>
           ) : null}
         </div>
       );

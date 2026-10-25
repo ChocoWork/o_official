@@ -32,8 +32,15 @@ jest.mock('@/lib/supabase/server', () => {
 });
 
 // Mock audit log
-jest.mock('@/lib/audit', () => ({
-  logAudit: jest.fn().mockResolvedValue(undefined),
+jest.mock('@/lib/audit', () => {
+  const logAudit = jest.fn().mockResolvedValue(undefined);
+  return { __esModule: true, default: logAudit, logAudit };
+});
+
+// 戻り先の控えの保存だけを差し替える（確かめと Cookie の動作は本物）
+jest.mock('@/features/auth/return-intent/return-intent-store', () => ({
+  ...jest.requireActual('@/features/auth/return-intent/return-intent-store'),
+  createReturnIntent: jest.fn(),
 }));
 
 // Mock the signed pending-2FA token service
@@ -44,6 +51,7 @@ jest.mock('@/features/auth/services/login-2fa-session', () => ({
 
 // Mock cookie utilities used by the login route
 jest.mock('@/lib/cookie', () => ({
+  ...jest.requireActual('@/lib/cookie'),
   loginTwoFactorSessionCookieName: 'sb-login-2fa-session',
   cookieOptionsForLoginTwoFactor: jest.fn(() => ({
     httpOnly: true,
@@ -80,6 +88,7 @@ jest.mock('next/server', () => ({
 
 const { __mockSignInWithPassword, __mockSignInWithOtp } = require('@/lib/supabase/server');
 const { logAudit } = require('@/lib/audit');
+const { createReturnIntent } = require('@/features/auth/return-intent/return-intent-store');
 let loginHandler: any;
 
 const validSession = {
@@ -96,6 +105,7 @@ describe('POST /api/auth/login - Integration Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     __mockSignInWithOtp.mockResolvedValue({ data: {}, error: null });
+    createReturnIntent.mockResolvedValue({ token: 'L'.repeat(43), maxAgeSeconds: 900 });
   });
 
   describe('正常系', () => {
@@ -143,6 +153,78 @@ describe('POST /api/auth/login - Integration Tests', () => {
       });
     });
   });
+
+  describe('戻り先の控え', () => {
+    const loginRequest = (next?: unknown) =>
+      new Request('http://localhost/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          email: 'test@example.com',
+          password: 'ValidPassword123!',
+          ...(next === undefined ? {} : { next }),
+        }),
+      });
+
+    beforeEach(() => {
+      __mockSignInWithPassword.mockResolvedValue({
+        data: { session: validSession, user: { id: 'user-123', email: 'test@example.com' } },
+        error: null,
+      });
+    });
+
+    test('API-AUTH-001 [SUCCESS] next が通ると login の用途で控え、控えの Cookie（HttpOnly・Lax・Max-Age 900）と保留の Cookie の両方を付ける', async () => {
+      const res: any = await loginHandler(loginRequest('/search?q=coat'));
+
+      expect(res.status).toBe(200);
+      expect(createReturnIntent).toHaveBeenCalledWith({ returnPath: '/search?q=coat', purpose: 'login' });
+      expect(res.cookies.get('sb-login-2fa-session')).toBeDefined();
+      expect(res.cookies.get('sb-return-intent')).toEqual(
+        expect.objectContaining({ value: 'L'.repeat(43), httpOnly: true, sameSite: 'lax', path: '/', maxAge: 900 }),
+      );
+      expect(JSON.stringify(await res.json())).not.toContain('L'.repeat(43));
+    });
+
+    test.each([
+      ['next が無い', undefined],
+      ['外の住所', '//evil.example'],
+      ['タブ入り', '/\t/evil.example'],
+      ['数値', 123],
+      ['長すぎる値', '/item/' + 'a'.repeat(3000)],
+    ])('API-AUTH-001 [SECURITY] %s でもログインは 200 の step otp で、控えを作らず控えの Cookie は消す側になる', async (_label, next) => {
+      const res: any = await loginHandler(loginRequest(next));
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body.step).toBe('otp');
+      expect(createReturnIntent).not.toHaveBeenCalled();
+      expect(res.cookies.get('sb-return-intent')).toEqual(expect.objectContaining({ value: '', maxAge: 0 }));
+    });
+
+    test('API-AUTH-001 [ERROR] 控えの保存が失敗してもログインは止まらない', async () => {
+      createReturnIntent.mockResolvedValue(null);
+
+      const res: any = await loginHandler(loginRequest('/account'));
+
+      expect(res.status).toBe(200);
+      expect(res.cookies.get('sb-login-2fa-session')).toBeDefined();
+      expect(res.cookies.get('sb-return-intent')).toEqual(expect.objectContaining({ value: '', maxAge: 0 }));
+    });
+
+    test('API-AUTH-001 [SECURITY] パスワードの誤りと確認コードの送信の失敗には控えの Cookie を付けず、控えも作らない', async () => {
+      __mockSignInWithPassword.mockResolvedValueOnce({ data: { session: null, user: null }, error: { message: 'bad' } });
+      const wrongPassword: any = await loginHandler(loginRequest('/account'));
+
+      __mockSignInWithOtp.mockResolvedValueOnce({ data: {}, error: { message: 'mailer error' } });
+      const otpFailed: any = await loginHandler(loginRequest('/account'));
+
+      expect([wrongPassword.status, otpFailed.status]).toEqual([401, 500]);
+      expect(wrongPassword.cookies.get('sb-return-intent')).toBeUndefined();
+      expect(otpFailed.cookies.get('sb-return-intent')).toBeUndefined();
+      expect(createReturnIntent).not.toHaveBeenCalled();
+    });
+  });
+
 
   describe('異常系', () => {
     test('API-AUTH-001 [ERROR] 誤ったパスワードで 401（OTP は送信しない）', async () => {

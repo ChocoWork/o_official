@@ -1,6 +1,6 @@
 /**
  * Google のログインの開始の窓口の単体テスト（DD-AUTH-020）。
- * 外へ出る先（制限・監査・Supabase のクライアント）だけ差し替え、住所の整形は本物を通す。
+ * 外へ出る先（制限・監査・Supabase のクライアント・控えの保存）だけ差し替え、戻り先の確かめと控えの Cookie の動作は本物を通す。
  */
 
 const enforceRateLimitMock = jest.fn();
@@ -10,7 +10,15 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 
 const logAuditMock = jest.fn();
 jest.mock('@/lib/audit', () => ({
+  __esModule: true,
+  default: (...args: unknown[]) => logAuditMock(...args),
   logAudit: (...args: unknown[]) => logAuditMock(...args),
+}));
+
+const createReturnIntentMock = jest.fn();
+jest.mock('@/features/auth/return-intent/return-intent-store', () => ({
+  ...jest.requireActual('@/features/auth/return-intent/return-intent-store'),
+  createReturnIntent: (...args: unknown[]) => createReturnIntentMock(...args),
 }));
 
 type ClientOptions = {
@@ -34,6 +42,7 @@ jest.mock('next/server', () => ({
       status: init?.status ?? 200,
       json: async () => body,
       headers: new Map<string, string>(),
+      cookies: { set: cookieSetMock },
     }),
     redirect: (url: URL, init?: { status?: number }) => ({
       status: init?.status ?? 302,
@@ -57,14 +66,36 @@ function lastClientOptions(): ClientOptions {
   return calls[calls.length - 1][2] as ClientOptions;
 }
 
+type RouteResponse = {
+  status: number;
+  headers: Map<string, string>;
+  json: () => Promise<{ error: string; url?: string }>;
+};
+
 async function callGet(request: Request) {
   const { GET } = await import('@/app/api/auth/oauth/start/route');
-  return (await GET(request)) as unknown as {
-    status: number;
-    headers: Map<string, string>;
-    json: () => Promise<{ error: string }>;
-  };
+  return (await GET(request)) as unknown as RouteResponse;
 }
+
+function postRequest(body: unknown, raw = false) {
+  return new Request('http://localhost:3000/api/auth/oauth/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: raw ? (body as string) : JSON.stringify(body),
+  });
+}
+
+async function callPost(request: Request) {
+  const { POST } = await import('@/app/api/auth/oauth/start/route');
+  return (await POST(request)) as unknown as RouteResponse;
+}
+
+/** PKCE などの Cookie は (名前, 値, 設定) の 3 引数、戻り先の控えは 1 つのオブジェクトで付くので、呼び出しの形で分ける。 */
+const libraryCookieCalls = () => cookieSetMock.mock.calls.filter((call) => typeof call[0] === 'string');
+const returnIntentCookies = () =>
+  cookieSetMock.mock.calls
+    .map((call) => call[0])
+    .filter((cookie): cookie is Record<string, unknown> => typeof cookie === 'object' && cookie?.name === 'sb-return-intent');
 
 describe('Google のログインの開始の窓口', () => {
   const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
@@ -87,6 +118,7 @@ describe('Google のログインの開始の窓口', () => {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon';
     enforceRateLimitMock.mockResolvedValue(undefined);
     logAuditMock.mockResolvedValue(undefined);
+    createReturnIntentMock.mockResolvedValue({ token: 'G'.repeat(43), maxAgeSeconds: 900 });
     signInWithOAuthMock.mockResolvedValue({ data: { url: AUTHORIZE_URL }, error: null });
     createServerClientMock.mockImplementation(() => ({ auth: { signInWithOAuth: signInWithOAuthMock } }));
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -97,8 +129,8 @@ describe('Google のログインの開始の窓口', () => {
   });
 
   describe('正常フロー', () => {
-    it('DD-AUTH-020 google で 302 にし、select_account と戻り先の next を付けて同意の画面へ送る', async () => {
-      const res = await callGet(startRequest('?provider=google&redirect_to=%2Fauth%2Fverified'));
+    it('DD-AUTH-020 google で 302 にし、select_account を付け、戻りの URL にクエリを付けずに同意の画面へ送る', async () => {
+      const res = await callGet(startRequest('?provider=google'));
 
       expect(res.status).toBe(302);
       expect(res.headers.get('location')).toBe(AUTHORIZE_URL);
@@ -107,7 +139,7 @@ describe('Google のログインの開始の窓口', () => {
       expect(signInWithOAuthMock).toHaveBeenCalledWith({
         provider: 'google',
         options: {
-          redirectTo: 'http://localhost:3000/api/auth/oauth/callback?next=%2Fauth%2Fverified',
+          redirectTo: 'http://localhost:3000/api/auth/oauth/callback',
           queryParams: { prompt: 'select_account' },
         },
       });
@@ -117,13 +149,13 @@ describe('Google のログインの開始の窓口', () => {
       );
     });
 
-    it('DD-AUTH-020 成功を auth.oauth.start の success として送り先つきで監査に残す', async () => {
+    it('DD-AUTH-020 成功を auth.oauth.start の success として監査に残し、戻り先の道筋は残さない', async () => {
       await callGet(startRequest('?provider=google&redirect_to=%2Fcheckout'));
 
       expect(logAuditMock).toHaveBeenCalledWith({
         action: 'auth.oauth.start',
         outcome: 'success',
-        metadata: { provider: 'google', redirect_to: '/checkout' },
+        metadata: { provider: 'google' },
       });
     });
 
@@ -138,15 +170,16 @@ describe('Google のログインの開始の窓口', () => {
 
       await callGet(startRequest('?provider=google'));
 
-      expect(cookieSetMock).toHaveBeenCalledTimes(2);
-      expect(cookieSetMock).toHaveBeenNthCalledWith(1, 'sb-pkce-code-verifier', 'verifier', { httpOnly: true, path: '/' });
-      expect(cookieSetMock).toHaveBeenNthCalledWith(2, 'sb-other', 'x', undefined);
+      expect(libraryCookieCalls()).toEqual([
+        ['sb-pkce-code-verifier', 'verifier', { httpOnly: true, path: '/' }],
+        ['sb-other', 'x', undefined],
+      ]);
     });
 
-    it('DD-AUTH-020 溜まった Cookie が無ければ応答に Cookie を付けない', async () => {
+    it('DD-AUTH-020 溜まった Cookie が無ければ PKCE の Cookie は付けない', async () => {
       await callGet(startRequest('?provider=google'));
 
-      expect(cookieSetMock).not.toHaveBeenCalled();
+      expect(libraryCookieCalls()).toHaveLength(0);
     });
   });
 
@@ -202,18 +235,21 @@ describe('Google のログインの開始の窓口', () => {
     it.each([
       ['redirect_to が空', '?provider=google&redirect_to='],
       ['redirect_to が無い', '?provider=google'],
+      ['内部の道筋', '?provider=google&redirect_to=%2Faccount'],
       ['外の住所', '?provider=google&redirect_to=https%3A%2F%2Fevil.example%2Fx'],
       ['// で始まる住所', '?provider=google&redirect_to=%2F%2Fevil.example'],
-    ])('DD-AUTH-020 %s なら既定の /auth/verified を戻り先にする', async (_label, query) => {
-      await callGet(startRequest(query));
+      ['next', '?provider=google&next=%2Faccount'],
+    ])('DD-AUTH-020 GET は %s を読まず、戻りの URL にクエリを付けず、控えを作らず控えの Cookie を消す', async (_label, query) => {
+      const res = await callGet(startRequest(query));
 
+      expect(res.status).toBe(302);
       expect(signInWithOAuthMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          options: expect.objectContaining({
-            redirectTo: 'http://localhost:3000/api/auth/oauth/callback?next=%2Fauth%2Fverified',
-          }),
+          options: expect.objectContaining({ redirectTo: 'http://localhost:3000/api/auth/oauth/callback' }),
         })
       );
+      expect(createReturnIntentMock).not.toHaveBeenCalled();
+      expect(returnIntentCookies()).toEqual([expect.objectContaining({ value: '', maxAge: 0 })]);
     });
   });
 
@@ -323,6 +359,7 @@ describe('Google のログインの開始の窓口', () => {
 
       expect(res.status).toBe(502);
       expect(cookieSetMock).not.toHaveBeenCalled();
+      expect(createReturnIntentMock).not.toHaveBeenCalled();
     });
 
     it('DD-AUTH-020 client の作成が投げたら error を残して 500', async () => {
@@ -339,6 +376,142 @@ describe('Google のログインの開始の窓口', () => {
         outcome: 'error',
         detail: 'Error: client boom',
       });
+    });
+  });
+
+  describe('POST（本文の JSON で戻り先を受け、200 の { url } を返す）', () => {
+    it('DD-AUTH-020 POST は 200 の { url } を返し（Location は無い）、戻り先の控えの Cookie と PKCE の Cookie を付ける', async () => {
+      signInWithOAuthMock.mockImplementationOnce(async () => {
+        lastClientOptions().cookies.setAll([{ name: 'sb-pkce-code-verifier', value: 'verifier', options: { httpOnly: true } }]);
+        return { data: { url: AUTHORIZE_URL }, error: null };
+      });
+
+      const res = await callPost(postRequest({ provider: 'google', next: '/account' }));
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ url: AUTHORIZE_URL });
+      expect(res.headers.has('location')).toBe(false);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
+      expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
+      expect(createReturnIntentMock).toHaveBeenCalledWith({ returnPath: '/account', purpose: 'login' });
+      expect(returnIntentCookies()).toEqual([
+        expect.objectContaining({ value: 'G'.repeat(43), httpOnly: true, sameSite: 'lax', path: '/', maxAge: 900 }),
+      ]);
+      expect(libraryCookieCalls()).toEqual([['sb-pkce-code-verifier', 'verifier', { httpOnly: true }]]);
+    });
+
+    it('DD-AUTH-020 POST の本文に番号も戻り先の道筋も載らず、戻りの URL にもクエリを付けない', async () => {
+      const res = await callPost(postRequest({ provider: 'google', next: '/item/3?color=red' }));
+
+      const text = JSON.stringify(await res.json());
+      expect(text).not.toContain('G'.repeat(43));
+      expect(text).not.toContain('/item/3');
+      expect(signInWithOAuthMock).toHaveBeenCalledWith({
+        provider: 'google',
+        options: {
+          redirectTo: 'http://localhost:3000/api/auth/oauth/callback',
+          queryParams: { prompt: 'select_account' },
+        },
+      });
+    });
+
+    it('DD-AUTH-020 POST の成功の監査にも戻り先の道筋を残さない', async () => {
+      await callPost(postRequest({ provider: 'google', next: '/item/3?color=red' }));
+
+      expect(logAuditMock).toHaveBeenCalledWith({
+        action: 'auth.oauth.start',
+        outcome: 'success',
+        metadata: { provider: 'google' },
+      });
+      expect(JSON.stringify(logAuditMock.mock.calls)).not.toContain('/item/3');
+    });
+
+    it('DD-AUTH-020 POST の控えは Google の URL を作れた後にだけ作る（失敗の 502 では作らない）', async () => {
+      signInWithOAuthMock.mockResolvedValueOnce({ data: { url: null }, error: { message: 'failed' } });
+
+      const res = await callPost(postRequest({ provider: 'google', next: '/account' }));
+
+      expect(res.status).toBe(502);
+      expect(createReturnIntentMock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['next が無い', { provider: 'google' }],
+      ['外の住所', { provider: 'google', next: '//evil.example' }],
+      ['除外の道筋', { provider: 'google', next: '/api/auth/me' }],
+      ['数値', { provider: 'google', next: 123 }],
+      ['長すぎる値', { provider: 'google', next: '/item/' + 'a'.repeat(3000) }],
+    ])('DD-AUTH-020 POST の %s でも 200 の { url } を返し（ログインを止めない）、控えを作らず控えの Cookie を消す', async (_label, body) => {
+      const res = await callPost(postRequest(body));
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).url).toBe(AUTHORIZE_URL);
+      expect(createReturnIntentMock).not.toHaveBeenCalled();
+      expect(returnIntentCookies()).toEqual([expect.objectContaining({ value: '', maxAge: 0 })]);
+    });
+
+    it('DD-AUTH-020 外の住所を断った時は理由の符号だけを rejected として監査に残す', async () => {
+      await callPost(postRequest({ provider: 'google', next: '//evil.example' }));
+
+      const rejected = logAuditMock.mock.calls.map((call) => call[0]).find((event) => event.action === 'auth.return_intent');
+      expect(rejected).toEqual({ action: 'auth.return_intent', outcome: 'rejected', detail: 'not_relative' });
+      expect(JSON.stringify(logAuditMock.mock.calls)).not.toContain('evil.example');
+    });
+
+    it('DD-AUTH-020 控えの保存が失敗しても 200 の { url } を返し、控えの Cookie は消す側になる', async () => {
+      createReturnIntentMock.mockResolvedValue(null);
+
+      const res = await callPost(postRequest({ provider: 'google', next: '/account' }));
+
+      expect(res.status).toBe(200);
+      expect(returnIntentCookies()).toEqual([expect.objectContaining({ value: '', maxAge: 0 })]);
+    });
+
+    it('DD-AUTH-020 POST の provider が google 以外なら unsupported_provider を残して 400', async () => {
+      const res = await callPost(postRequest({ provider: 'github', next: '/account' }));
+
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('Unsupported provider');
+      expect(createServerClientMock).not.toHaveBeenCalled();
+      expect(createReturnIntentMock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['JSON でない', '{not json', true],
+      ['provider が無い', { next: '/account' }, false],
+      ['オブジェクトでない', 'null', true],
+    ])('DD-AUTH-020 POST の本文が %s なら invalid_body を残して 400', async (_label, body, raw) => {
+      const res = await callPost(postRequest(body, raw));
+
+      expect(res.status).toBe(400);
+      expect(logAuditMock).toHaveBeenCalledWith({ action: 'auth.oauth.start', outcome: 'failure', detail: 'invalid_body' });
+      expect(createServerClientMock).not.toHaveBeenCalled();
+    });
+
+    it('DD-AUTH-020 POST も GET と同じ枠（auth:oauth:start）で数え、制限の応答をそのまま返して本文を読まない', async () => {
+      const limited = { status: 429 };
+      enforceRateLimitMock.mockResolvedValueOnce(limited);
+      const request = postRequest({ provider: 'google' });
+      const jsonSpy = jest.spyOn(request, 'json');
+
+      const res = await callPost(request);
+
+      expect(res).toBe(limited);
+      expect(jsonSpy).not.toHaveBeenCalled();
+      expect(enforceRateLimitMock).toHaveBeenCalledWith(
+        expect.objectContaining({ endpoint: 'auth:oauth:start', limit: 50, windowSeconds: 600 })
+      );
+    });
+
+    it('DD-AUTH-020 POST の中で client の作成が投げたら error を残して 500', async () => {
+      createServerClientMock.mockImplementationOnce(() => {
+        throw new Error('client boom');
+      });
+
+      const res = await callPost(postRequest({ provider: 'google' }));
+
+      expect(res.status).toBe(500);
+      expect((await res.json()).error).toBe('Internal server error');
     });
   });
 });

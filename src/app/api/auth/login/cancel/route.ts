@@ -4,12 +4,13 @@
  * @packageDocumentation
  * @impl IMPL-AUTH-162
  * @design DD-AUTH-017
- * @remarks 公開の窓口で、副作用は 2FA Cookie の破棄のみ。CSRF は proxy の Origin 検査（FREQ-327）が /api 配下の POST を既定で覆うため、ここでは扱わない。踏まれても被害は「ログインの中断」だけなのでレート制限も置かない。
+ * @remarks 公開の窓口で、副作用は 2FA Cookie と戻り先の控えの Cookie の破棄のみ。CSRF は proxy の Origin 検査（FREQ-327）が /api 配下の POST を既定で覆うため、ここでは扱わない。踏まれても被害は「ログインの中断」だけなのでレート制限も置かない。
  */
 import { NextResponse } from 'next/server';
 import { logAudit } from '@/lib/audit';
 import { clearCookieOptions, loginTwoFactorSessionCookieName } from '@/lib/cookie';
 import { readLoginTwoFactorSessionFromCookieHeader } from '@/features/auth/services/login-2fa-session';
+import { applyReturnIntentCookie } from '@/features/auth/return-intent/return-intent-service';
 
 export async function POST(request: Request) {
   const pending = readLoginTwoFactorSessionFromCookieHeader(
@@ -23,6 +24,8 @@ export async function POST(request: Request) {
     value: '',
     ...clearCookieOptions(),
   });
+  // 中断したログインの戻り先の控えも端末から消す（次の試みに古い番号を持ち越さない）。
+  applyReturnIntentCookie(res, { kind: 'clear' });
 
   // 記録するのは実際に保留セッションを捨てたときだけ。Cookie が無ければ捨てるものが無く、記録すべき事実も無い。
   // 無条件に書くと、レート制限の無いこの口から監査行を水増しできる。

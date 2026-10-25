@@ -22,13 +22,14 @@ for (const viewport of viewports) {
 
       const oauthStartResponsePromise = page.waitForResponse((response) => {
         const url = new URL(response.url());
-        return url.pathname === '/api/auth/oauth/start';
+        return url.pathname === '/api/auth/oauth/start' && response.request().method() === 'POST';
       });
 
       await page.getByRole('button', { name: /Googleでサインイン/i }).click();
 
+      // ボタンは fetch の POST で開始を頼み、本文の url へ端末が移る（SEC-AUTH-026、ADR-0412。CSP の form-action 'self' を避けるため）。
       const oauthStartResponse = await oauthStartResponsePromise;
-      expect(oauthStartResponse.status(), 'OAuth start route must redirect instead of returning 404').toBe(302);
+      expect(oauthStartResponse.status(), 'OAuth start route must return 200 with the authorize url').toBe(200);
 
       await expect
         .poll(

@@ -24,9 +24,11 @@ const TABS: Array<{ key: AuthTab; label: string; path: string }> = [
 interface AuthTabsProps {
   initialTab: AuthTab;
   initialEmail?: string;
+  /** ログインの後の戻り先（サーバーが確かめた道筋）。タブを替えても保つ */
+  returnTo?: string;
 }
 
-const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab, initialEmail }) => {
+const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab, initialEmail, returnTo }) => {
   const [activeTab, setActiveTab] = useState<AuthTab>(initialTab);
   const tabRefs = useRef<Partial<Record<AuthTab, HTMLButtonElement | null>>>(
     {},
@@ -91,13 +93,14 @@ const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab, initialEmail }) => {
       >
         {activeTab === "login" ? (
           <>
-            <LoginModal open={true} />
+            <LoginModal open={true} returnTo={returnTo} />
           </>
         ) : (
           <>
             <RegisterModal
               onSwitchToLogin={() => switchTab("login")}
               initialEmail={initialEmail}
+              returnTo={returnTo}
             />
           </>
         )}

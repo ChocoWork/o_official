@@ -110,7 +110,7 @@ describe('LoginModal', () => {
     await user.click(screen.getByRole('button', { name: 'ログイン' }));
 
     await waitFor(() =>
-      expect(loginMock).toHaveBeenCalledWith('user@example.com', 'password123456789', undefined),
+      expect(loginMock).toHaveBeenCalledWith('user@example.com', 'password123456789', undefined, { next: undefined }),
     );
 
     // FREQ-334-REQ-02: push だと戻るボタンで資格情報フォームに戻れてしまい、
@@ -189,7 +189,8 @@ describe('LoginModal', () => {
 
       submitForm();
 
-      await waitFor(() => expect(loginMock).toHaveBeenCalledWith(VALID_EMAIL, VALID_PASSWORD, undefined));
+      await waitFor(() => expect(loginMock).toHaveBeenCalledWith(VALID_EMAIL, VALID_PASSWORD, undefined, { next: undefined }),
+      );
       expect(screen.queryByTestId('turnstile-script')).not.toBeInTheDocument();
       expect(mockTurnstile.siteKey).toBe('');
       expect(mockTurnstile.containerRef).not.toHaveBeenCalledWith(expect.any(HTMLElement));
@@ -231,7 +232,7 @@ describe('LoginModal', () => {
       submitForm();
 
       await waitFor(() =>
-        expect(loginMock).toHaveBeenCalledWith(VALID_EMAIL, VALID_PASSWORD, 'turnstile-token'),
+        expect(loginMock).toHaveBeenCalledWith(VALID_EMAIL, VALID_PASSWORD, 'turnstile-token', { next: undefined }),
       );
     });
 
@@ -386,13 +387,33 @@ describe('LoginModal', () => {
     });
   });
 
-  test('DD-AUTH-008 Google のボタンで loginWithGoogle を /auth/verified つきで呼ぶ', async () => {
+  test('DD-AUTH-008 Google のボタンで loginWithGoogle を returnTo つきで呼ぶ', async () => {
+    const user = userEvent.setup();
+    render(<LoginModal open={true} returnTo="/item/3?color=red" />);
+
+    await user.click(screen.getByRole('button', { name: /Googleでサインイン/ }));
+
+    expect(loginWithGoogleMock).toHaveBeenCalledWith({ next: '/item/3?color=red' });
+    expect(loginMock).not.toHaveBeenCalled();
+  });
+
+  test('DD-AUTH-008 returnTo が無ければ Google の next も無い（/auth/verified を決め打ちしない）', async () => {
     const user = userEvent.setup();
     render(<LoginModal open={true} />);
 
     await user.click(screen.getByRole('button', { name: /Googleでサインイン/ }));
 
-    expect(loginWithGoogleMock).toHaveBeenCalledWith({ next: '/auth/verified' });
-    expect(loginMock).not.toHaveBeenCalled();
+    expect(loginWithGoogleMock).toHaveBeenCalledWith({ next: undefined });
+  });
+
+  test('DD-AUTH-008 returnTo を login の next として渡す', async () => {
+    render(<LoginModal open={true} returnTo="/account" />);
+    fillForm();
+
+    submitForm();
+
+    await waitFor(() =>
+      expect(loginMock).toHaveBeenCalledWith(VALID_EMAIL, VALID_PASSWORD, undefined, { next: '/account' }),
+    );
   });
 });

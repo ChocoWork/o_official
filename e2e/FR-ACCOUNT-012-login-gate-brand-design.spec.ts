@@ -62,7 +62,7 @@ for (const viewport of viewports) {
       // FREQ-72-AC-04（ヘッダーのナビリンクと区別するためコンテンツ領域に絞る）
       await expect(
         page.locator('#main-content').getByRole('link', { name: 'ログイン' }),
-      ).toHaveAttribute('href', '/login');
+      ).toHaveAttribute('href', '/login?next=%2Faccount');
     });
   });
 }

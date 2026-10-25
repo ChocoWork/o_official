@@ -1,19 +1,19 @@
 # AUTH の要件
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-25 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
 AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡できる項目（`### <ID> <題>` と属性の表）で書く。
-要求の表（`requirements.md`）の AUTH にかかる行を丸ごと写し、上位の無い要件には新しい要求 `SR-AUTH-` を起こし、受け入れ条件の無い要件には `<要件ID>-AC-NN` を起こした。番号が重なっていたドロワーの4行（FREQ-24〜27 の2つ目）は `SR-AUTH-004`〜`007` と `FR-AUTH-001`〜`004` に振り替えた。要件が求めていないのにコードがしている動きは派生要件 `DRV-AUTH-` に書いた。セキュリティ要件は脅威の文書（`THR-AUTH-001`〜`031`）から1対1で起こした。
+要求の表（`requirements.md`）の AUTH にかかる行を丸ごと写し、上位の無い要件には新しい要求 `SR-AUTH-` を起こし、受け入れ条件の無い要件には `<要件ID>-AC-NN` を起こした。番号が重なっていたドロワーの4行（FREQ-24〜27 の2つ目）は `SR-AUTH-004`〜`007` と `FR-AUTH-001`〜`004` に振り替えた。要件が求めていないのにコードがしている動きは派生要件 `DRV-AUTH-` に書いた。セキュリティ要件は脅威の文書（`THR-AUTH-001`〜`032`）から1対1で起こした。ログインの後の戻り先（2026-10-25）は `SR-AUTH-008`・`FR-AUTH-005` として新しく起こした。
 
 | 段 | 数 | ID |
 | --- | --- | --- |
-| 要求 | 46 | 既存の `FREQ-` 39（うち廃止 1。FREQ-316・327・515 を含む）、新しい `SR-AUTH-001`〜`007`（うち `004`〜`007` は振り替え） |
-| 要件 | 106 | 既存の `FREQ-NN-REQ-NN` 94（うち廃止 1）、`FR-LOGIN-001`〜`008`、新しい `FR-AUTH-001`〜`004`（振り替え） |
-| 受け入れ条件 | 158 | 既存の `FREQ-NN-AC-NN` 138（うち廃止 2）、新しい `<要件ID>-AC-NN` 20（`FR-…-AC-NN` 16、`FREQ-330-REQ-02-AC-01`、`FREQ-316-REQ-01`〜`03-AC-01`） |
+| 要求 | 47 | 既存の `FREQ-` 39（うち廃止 1。FREQ-316・327・515 を含む）、新しい `SR-AUTH-001`〜`008`（うち `004`〜`007` は振り替え） |
+| 要件 | 107 | 既存の `FREQ-NN-REQ-NN` 94（うち廃止 1）、`FR-LOGIN-001`〜`008`、新しい `FR-AUTH-001`〜`005`（`001`〜`004` は振り替え） |
+| 受け入れ条件 | 165 | 既存の `FREQ-NN-AC-NN` 138（うち廃止 2）、新しい `<要件ID>-AC-NN` 27（`FR-…-AC-NN` 23（`FR-AUTH-005-AC-01`〜`07` を含む）、`FREQ-330-REQ-02-AC-01`、`FREQ-316-REQ-01`〜`03-AC-01`） |
 | 派生要件 | 9 | `DRV-AUTH-001`〜`009` |
-| セキュリティ要件 | 31 | `SEC-AUTH-001`〜`031`（上位は脅威の文書 `docs/05_Quality/security/threats/auth.md` の同じ番号）。受け入れ条件 `SEC-AUTH-NNN-AC-NN` 50。全部「推定」 |
+| セキュリティ要件 | 32 | `SEC-AUTH-001`〜`032`（上位は脅威の文書 `docs/05_Quality/security/threats/auth.md` の同じ番号）。受け入れ条件 `SEC-AUTH-NNN-AC-NN` 54。全部「推定」 |
 
 - 状態: 写した要求・要件の行は、元の行に理由の記述がある物だけ「現行」。元の行に理由が無く、根拠の「なぜ」を推定で補った行は「推定」。写した受け入れ条件は元の文のままなので「現行」。後の行が置き換えたのに廃止の印が無い行・コードと合わない行・新しく起こした項目・実装から読み取った項目も「推定」。行の中に廃止と書いてある FREQ-62 だけを「廃止」にした。食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せる
 - 結論: ログインの入口・パスワードの再設定・管理者の TOTP を求める元の要求は表に無かった（`SR-AUTH-001`〜`003` を推定で起こした）。`/register` を求める FR-LOGIN-004・FREQ-59・61 と、角丸の見た目の FREQ-64・70 は、後の行が置き換えたのに印が無い。廃止にするかはユーザーに決めてもらう
@@ -40,7 +40,7 @@ AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | FREQ-24〜27（1つ目、`requirements.md`） | お問い合わせ・会員ページ・管理の行（持ち主は全領域の持ち主の割り当てのとおり ADMIN か範囲外）。2つ目（ドロワー）は SR-AUTH-004〜007 に振り替えた |
 | FREQ-01 | ヘッダーの虫眼鏡から検索する要求で、持ち主は SEARCH |
 | FREQ-38 | ITEM 一覧のフィルターの話（ITEM は範囲に無い）。ヘッダーの自動の隠れは DRV-AUTH-001 に書いた |
-| FREQ-72 | 未ログインの会員ページ（範囲外）。ログインの導線は `/login` へのリンクだけ |
+| FREQ-72 | 未ログインの会員ページ（範囲外）。ログインの導線は `/login` へのリンクだけ（戻り先 `next` を付ける。戻り先は SR-AUTH-008 の確かめを通る） |
 | FREQ-75・76 | 主な頁は `/loading`（範囲外）。ヘッダーの LOADING の入口は FREQ-76 が求め、DRV-AUTH-004 から範囲外として指す |
 | FREQ-93・94 | 会員ページの配送先・お客様情報の行。ログインの E2E（FR-LOGIN-022・023）が同じ番号を別の意味で書く（食い違い） |
 | FREQ-150・151・192 | LOOK・SEARCH の下線を「ヘッダーのナビと同じ」にする要求。ヘッダーは比べる元にすぎない |
@@ -184,6 +184,16 @@ FREQ-194-AC-01・02 を試す E2E は SEARCH の範囲の `e2e/FR-SEARCH-013-und
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（ヘッダー Drawer UI 改善）」節） |
 
 要求の文: Drawerのアコーディオン展開時に子要素と次の親要素との間に十分な余白があること
+
+### SR-AUTH-008 ログインの後に、会員だけの頁またはログインを始めた頁へ戻れる
+
+| 属性 | 値 |
+| --- | --- |
+| 根拠 | ログインのたびに決まった頁へ送ると、会員だけの頁を開こうとした人も、買い物の途中でヘッダーのログインを押した人も、元の頁を探し直すことになる。戻り先を URL の `next` に載せると外の住所へ送る罠にも使われるため、行き先はサーバーが控えた内部の頁に限る（SEC-AUTH-026、SEC-AUTH-032） |
+| 状態 | 推定 |
+| 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
+
+要求の文: 会員だけの頁（`/account`・注文の履歴など）をログインせずに開いた人は、ログインの後にその頁へ戻る。ヘッダーのログインから入った人は、ログインを始めた頁へ戻る。戻り先が無い・確かめに通らない時はホーム `/` へ送る。管理者・サポーターは先に 2 段目（TOTP）を通し、その後で戻り先へ送る。
 
 ### FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く
 
@@ -2023,6 +2033,19 @@ SNSアイコンが横・縦ともに枠内で視覚的に中央揃えされる�
 | 旧所在 | `docs/02_Requirements/requirements.md`（「要求トレーサビリティ追記（ヘッダー Drawer UI 改善）」節の FREQ-27 の行） |
 
 アコーディオンのコンテンツエリア下部に十分なパディングを設けること
+
+### FR-AUTH-005 ログインの後の行き先は、サーバーに控えた内部の頁だけにする
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SR-AUTH-008 |
+| 根拠 | SR-AUTH-008 の「元の頁へ戻る」を、入口で確かめて控えた内部の頁だけに限って満たす。行き先を URL の値で決めると外の住所へ送れてしまう（SEC-AUTH-026） |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
+| 優先度 | MUST |
+
+戻ってよい頁は、公開の `/`・`/item`・`/look`・`/news`・`/stockist`・`/about`・`/search`・`/privacy`・`/contact`、会員の `/account`・`/wishlist`・`/cart`・`/checkout`（それぞれ `/x` と `/x/…`。`/` は完全一致）と、2 段目を済ませた管理者・サポーターだけの `/admin`。戻り先が `/login`・`/register`・`/auth/*`・`/api/*` の時と、確かめに通らない時は `/` へ送る。戻り先はログインを始める POST の時だけサーバーに控え、ログインが確定する所で 1 回だけ使う。管理者・サポーターは 2 段目の後で使い、戻り先が無ければ今までどおり `/admin` へ送る。
 
 ## 受け入れ条件
 
@@ -4075,6 +4098,90 @@ SNSアイコンのリンク要素が flex かつ items-center justify-center で
 
 アコーディオン展開時、子要素の末尾から次の親アコーディオン項目のborder-topまでの間隔が20px以上あること
 
+### FR-AUTH-005-AC-01 ヘッダーのログインから入ると、開いていた頁へ戻る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-005 |
+| 根拠 | FR-AUTH-005 の「ログインを始めた頁へ戻る」を、検索条件と fragment の扱いまで確かめる |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
+
+`/stockist?from=e2e` のような検索条件付きの公開頁でヘッダーのログインを押し、ログインを終えると、同じ道筋と検索条件の頁に着くこと。fragment は付かないこと。
+
+### FR-AUTH-005-AC-02 未ログインで `/account` を開いてログインすると `/account` へ戻る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-005 |
+| 根拠 | FR-AUTH-005 の「会員だけの頁へ戻る」を確かめる |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
+
+未ログインで `/account` を開き、ログインの入口からログインを終えると `/account` に着くこと。
+
+### FR-AUTH-005-AC-03 戻り先が無いログインは `/` に着く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-005 |
+| 根拠 | FR-AUTH-005 の「戻り先が無い時はホーム」を確かめる。今まで `/account` へ送っていた所が変わるため |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
+
+`/login` を直接開いてログインした一般の会員が `/` に着くこと。
+
+### FR-AUTH-005-AC-04 外の住所・不正な値の戻り先は `/` に着く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-005 |
+| 根拠 | FR-AUTH-005 の「確かめに通らない時はホーム」を、外の住所とタブ文字を使った迂回で確かめる |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
+
+`next=//evil.example`・`/%09/evil.example` を付けたログインは `/` に着き、店のサイトの外へ出ないこと。
+
+### FR-AUTH-005-AC-05 管理者・サポーターは先に 2 段目を通してから戻り先へ着く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-005 |
+| 根拠 | FR-AUTH-005 の「2 段目の後で戻り先へ送る」と「戻り先が無ければ `/admin`」を確かめる |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
+
+管理者・サポーターが戻り先を持ってログインすると、確認コードの後に `/auth/verified` で TOTP を通し、その後で戻り先に着くこと。戻り先が無ければ `/admin` に着くこと。TOTP を通すまでは戻り先に着かないこと。
+
+### FR-AUTH-005-AC-06 `/login`・`/api/*` などへの戻り先は `/` に着く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-005 |
+| 根拠 | FR-AUTH-005 の除外の道筋（ログインの画面と API へ戻ると輪になる）を確かめる |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
+
+戻り先が `/login`・`/register`・`/auth/*`・`/api/*` のいずれかのログインは `/` に着くこと。
+
+### FR-AUTH-005-AC-07 使った戻り先は 2 回目に使えない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | FR-AUTH-005 |
+| 根拠 | FR-AUTH-005 の「1 回だけ使う」を、窓口を続けて呼んで確かめる |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | ユーザーの発言 2026-10-25（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`） |
+
+`POST /api/auth/post-login` を続けて 2 回呼ぶと、2 回目は `/` を返すこと。
+
 ## セキュリティ要件
 
 ### SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める
@@ -4297,7 +4404,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | 確かめ方 | E2E（ブラウザ A で登録を送信し、同じブラウザ A で確認のリンクを開く） |
 | 出どころ | ユーザーの決定（2026-10-25）。`tests/integration/api/auth/confirm.test.ts` |
 
-登録を始めたブラウザ（登録の送信をしたブラウザ）で `type=signup` の印を開くと、session の Cookie（`sb-access-token`・`sb-refresh-token`）が書かれ、`redirect_to` の内部の道へ 303 で送られること。
+登録を始めたブラウザ（登録の送信をしたブラウザ）で `type=signup` の印を開くと、session の Cookie（`sb-access-token`・`sb-refresh-token`）が書かれ、戻り先（登録の時に控えた物。無ければ `/`）へ 303 で送られること（`redirect_to` は読まない。SEC-AUTH-026-AC-02）。
 
 ### SEC-AUTH-007 確認のリンクで、開いた端末を印を作った人以外のアカウントでログインさせない
 
@@ -4906,25 +5013,49 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-AUTH-026 |
-| 根拠 | 店のドメインを経由して偽のログイン画面へ送らせないため。サーバーの側は `//`・`\` を断るのに、`/auth/callback` の画面だけが `/` で始まるかしか見ない |
+| 根拠 | 店のドメインを経由して偽のログイン画面へ送らせないため。`/auth/callback` の画面と共有関数 `sanitizeRedirectPath` の両方に穴があった（タブ・改行を含む `/%09/evil.example` などを通す）。画面は消し、共有関数は戻り先の確かめの部品に置き換えた |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
-| 出どころ | OWASP ASVS 4.0.3 V5.1.5。`docs/05_Quality/reviews/security/security_review_overview.md`、`docs/05_Quality/reviews/security/security_review_auth_callback.md` |
+| 出どころ | OWASP ASVS 4.0.3 V5.1.5。`docs/05_Quality/reviews/security/security_review_overview.md`、`docs/05_Quality/reviews/security/security_review_auth_callback.md`、`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md` |
 | 優先度 | MUST |
 
-`next`・`redirect_to` などの送り先は、画面でもサーバーでも `//`・`\` を含む値と外の住所を断り、既定の道に替える。サーバーは今のコードが満たす（`src/lib/redirect.ts`）。`/auth/callback` の画面は満たさない。
+ログインの後の送り先は、入口で確かめて控えた内部の道だけにする。`next`・`redirect_to` などの URL の値で出口を決めない。確かめは、長さ・空白・制御文字・`\`・1 回デコードした後の同じ検査・`/` の次の字・サイトの origin との一致・戻ってよい頁の一覧への当たりを 1 つの部品で行い、外れたら `/` に替える（FR-AUTH-005）。`/auth/callback` の画面は無い。
 
-#### SEC-AUTH-026-AC-01 `/auth/callback?next=//evil.example` で外へ出ない
+#### SEC-AUTH-026-AC-01 `/auth/callback?next=//evil.example` を開いても外へ出ない（画面が無い）
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-AUTH-026 |
-| 根拠 | open redirect が塞がったかを見るため |
+| 根拠 | 穴のあった画面が消えて、open redirect の入口が無くなったかを見るため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（ログイン済みの状態で開く） |
+| 確かめ方 | E2E |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_auth_callback.md` |
 
-ログイン済みで `/auth/callback?next=//evil.example` を開くと、店のサイトの中（`/auth/verified`）に留まること。
+`/auth/callback?next=//evil.example` を開くと 404 になり、店のサイトの外へ出ないこと。
+
+#### SEC-AUTH-026-AC-02 確認のリンクの `redirect_to` で外へ出ない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-026 |
+| 根拠 | 確認のメールのリンクの `redirect_to` を出口に使わなくなったかを、タブ文字を使った迂回で見るため |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md` |
+
+`GET /api/auth/confirm?redirect_to=%2F%09%2Fevil.example` が、店のサイトの外へ 303 しないこと。
+
+#### SEC-AUTH-026-AC-03 ログインの窓口へ外の `next` を送っても `/` に着く
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-026 |
+| 根拠 | 入口で外の `next` を確かめて断り、戻り先が控えられないかを見るため |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md` |
+
+`/api/auth/login` へ `next=https://evil.example/` を付けて送り、ログインを終えると `/` に着き、店のサイトの外へ出ないこと。
 
 ### SEC-AUTH-027 署名した Cookie は用途ごとに別の鍵で署名する
 
@@ -5086,6 +5217,43 @@ TOTP の登録と確認の後に、`audit_logs` に利用者の ID と成功の�
 | 出どころ | 実装から推定 |
 
 TOTP をまだ登録していない管理者が、メール OTP を通らずに得た access token で `/api/auth/mfa/enroll-totp` を呼ぶと断られ、要素が作られないこと。登録の成功と断りが監査に残ること。
+
+### SEC-AUTH-032 戻り先の控えは、番号だけを HttpOnly の Cookie に持ち、表には番号のハッシュだけを持つ
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-032 |
+| 根拠 | 戻り先の番号が URL・応答の本文・ログに出ると、他人が盗んで使える。表に番号そのものがあると、DB を読めた人が他人の控えを使える。番号を 128 ビット以上の乱数にし、表にはハッシュだけを置き、1 回で使い切る（ADR-0412） |
+| 状態 | 推定 |
+| 確かめ方 | E2E・結合テスト・単体テスト |
+| 出どころ | OWASP ASVS 4.0.3 V3.2・V5.1.5・V8.3。`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md` |
+| 優先度 | MUST |
+
+戻り先の番号は、128 ビット以上の乱数（base64url）にし、Cookie `sb-return-intent`（HttpOnly・本番は Secure・SameSite=Lax・Path=/・`Max-Age` は期限と同じ）にだけ持つ。URL・応答の本文・`Location`・ログ・監査には載せない。表 `private.auth_return_intents` には番号の sha256 だけを持ち、`anon`・`authenticated`・PUBLIC に権限を与えない。期限は login が 15 分、signup（確認のリンク）が 1 時間。ログアウトで Cookie を消す。
+
+#### SEC-AUTH-032-AC-01 Cookie の属性が決まりどおりで、番号が URL・本文・Location に出ない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-032 |
+| 根拠 | 番号を端末の外へ漏らす道が無いかを、応答の Set-Cookie・本文・Location で見るため |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md` |
+
+戻り先を付けてログインを始めると、`sb-return-intent` の Set-Cookie が HttpOnly・SameSite=Lax・Path=/ になり、その値が、応答の本文・`Location`・遷移先の URL のどこにも出ないこと。
+
+#### SEC-AUTH-032-AC-02 ログアウトで Cookie が消える
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-032 |
+| 根拠 | 共用の端末で、前の人の控えが次の人のログインに残らないかを見るため |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md` |
+
+戻り先の Cookie を持った状態でログアウトすると、`sb-return-intent` が消える（Max-Age=0）こと。
 
 ## 派生要件
 

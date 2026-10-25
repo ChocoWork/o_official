@@ -5,6 +5,7 @@ export const LoginRequestSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   turnstileToken: z.string().min(1).optional(),
+  next: z.unknown().optional(),
 });
 
 export type LoginRequest = z.infer<typeof LoginRequestSchema>;

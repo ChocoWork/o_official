@@ -39,7 +39,18 @@ jest.mock('@/lib/pwned-password', () => ({
 }));
 
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
-jest.mock('@/lib/audit', () => ({ logAudit: (...args: unknown[]) => mockLogAudit(...args) }));
+jest.mock('@/lib/audit', () => ({
+  __esModule: true,
+  default: (...args: unknown[]) => mockLogAudit(...args),
+  logAudit: (...args: unknown[]) => mockLogAudit(...args),
+}));
+
+// 戻り先の控えの保存だけを差し替える（確かめと Cookie の動作は本物）
+const mockCreateReturnIntent = jest.fn();
+jest.mock('@/features/auth/return-intent/return-intent-store', () => ({
+  ...jest.requireActual('@/features/auth/return-intent/return-intent-store'),
+  createReturnIntent: (...args: unknown[]) => mockCreateReturnIntent(...args),
+}));
 
 jest.mock('@/lib/mail', () => ({ __esModule: true, default: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('@/lib/ops/site-url-alert', () => ({ notifySiteUrlInvalid: jest.fn().mockResolvedValue(undefined) }), { virtual: true });
@@ -92,6 +103,7 @@ describe('API-AUTH-005 POST /api/auth/register 公開の登録', () => {
     mockRpc.mockResolvedValue({ data: null, error: null });
     mockSignUp.mockResolvedValue({ data: { session: null, user: { id: 'new-1' } }, error: null });
     mockPersistSessionAndCookies.mockResolvedValue({ ok: true });
+    mockCreateReturnIntent.mockResolvedValue({ token: 'R'.repeat(43), maxAgeSeconds: 3600 });
     process.env.ADMIN_API_KEY = 'test-admin-key';
   });
 
@@ -196,8 +208,8 @@ describe('API-AUTH-005 POST /api/auth/register 公開の登録', () => {
     );
   });
 
-  test('API-AUTH-005 新規は 202 の固定の本文を返し、確認のリンクに送り先を載せて signUp する', async () => {
-    const res = await handler(publicRequest({ display_name: '花子', redirect_to: '/account/orders' }));
+  test('API-AUTH-005 新規は 202 の固定の本文を返し、確認のリンクはクエリの無い /api/auth/confirm で signUp する', async () => {
+    const res = await handler(publicRequest({ display_name: '花子', next: '/account/orders' }));
 
     expect(res.status).toBe(202);
     expect(await res.json()).toEqual({ message: 'Confirmation email sent' });
@@ -206,7 +218,7 @@ describe('API-AUTH-005 POST /api/auth/register 公開の登録', () => {
       password: PASSWORD,
       options: {
         data: { display_name: '花子' },
-        emailRedirectTo: 'http://localhost:3000/api/auth/confirm?redirect_to=%2Faccount%2Forders',
+        emailRedirectTo: 'http://localhost:3000/api/auth/confirm',
       },
     });
     expect(mockLogAudit).toHaveBeenCalledWith(
@@ -220,24 +232,49 @@ describe('API-AUTH-005 POST /api/auth/register 公開の登録', () => {
     expect(mockSignUp.mock.calls[0][0].options.data).toBeUndefined();
   });
 
-  test.each([
-    ['外部の住所', { redirect_to: 'https://evil.example.net/' }],
-    ['プロトコル相対', { redirect_to: '//evil.example.net/' }],
-    ['バックスラッシュ入り', { redirect_to: '/\\evil.example.net' }],
-    ['指定なし', {}],
-  ])('API-AUTH-005 送り先が内部の道でなければ既定の /auth/verified に直す（%s）', async (_label, override) => {
-    await handler(publicRequest(override));
+  test('API-AUTH-005 next が通ると signup の用途で控え、控えの Cookie（HttpOnly・Lax・Max-Age 3600）を付ける。番号は本文に出ない', async () => {
+    const res = await handler(publicRequest({ next: '/account/orders' }));
 
-    const url = new URL(mockSignUp.mock.calls[0][0].options.emailRedirectTo);
-    expect(url.pathname).toBe('/api/auth/confirm');
-    expect(url.searchParams.get('redirect_to')).toBe('/auth/verified');
+    expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/account/orders', purpose: 'signup' });
+    expect(res.cookies.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'sb-return-intent',
+        value: 'R'.repeat(43),
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 3600,
+      }),
+    );
+    expect(JSON.stringify(await res.json())).not.toContain('R'.repeat(43));
   });
 
-  test('API-AUTH-005 redirect_to が無ければ emailRedirectTo を送り先に使う', async () => {
-    await handler(publicRequest({ emailRedirectTo: '/account' }));
+  test.each([
+    ['外部の住所', { next: 'https://evil.example.net/' }],
+    ['プロトコル相対', { next: '//evil.example.net/' }],
+    ['バックスラッシュ入り', { next: '/\\evil.example.net' }],
+    ['タブ入り', { next: '/\t/evil.example.net' }],
+    ['解釈で外へ向く', { next: '/.//evil.example.net' }],
+    ['数値', { next: 123 }],
+    ['指定なし', {}],
+  ])('API-AUTH-005 戻り先が内部の道でなければ、登録は 202 のまま控えを作らず、控えの Cookie を消す（%s）', async (_label, override) => {
+    const res = await handler(publicRequest(override));
 
-    const url = new URL(mockSignUp.mock.calls[0][0].options.emailRedirectTo);
-    expect(url.searchParams.get('redirect_to')).toBe('/account');
+    expect(res.status).toBe(202);
+    expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+    expect(res.cookies.set).toHaveBeenCalledWith(expect.objectContaining({ name: 'sb-return-intent', value: '', maxAge: 0 }));
+    expect(new URL(mockSignUp.mock.calls[0][0].options.emailRedirectTo).search).toBe('');
+  });
+
+  test.each([
+    ['redirect_to', { redirect_to: '/account' }],
+    ['emailRedirectTo', { emailRedirectTo: '/account' }],
+  ])('API-AUTH-005 古いクライアントが送る %s は戻り先として読まれず、確認のリンクにも載らない', async (_label, override) => {
+    const res = await handler(publicRequest(override));
+
+    expect(res.status).toBe(202);
+    expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+    expect(mockSignUp.mock.calls[0][0].options.emailRedirectTo).toBe('http://localhost:3000/api/auth/confirm');
   });
 
   test('API-AUTH-005 重複と見なせない signUp の失敗は 500 で、本文に内部の理由を出さず監査に残す', async () => {

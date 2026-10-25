@@ -19,7 +19,8 @@ const mockState = {
   setView: (_view: { node: React.ReactNode; route: string }) => {},
   login: { status: 200, body: { message: 'sent' } } as ApiReply,
   otp: { status: 200, body: { message: 'ok' } } as ApiReply,
-  me: { status: 200, body: { authenticated: true, user: { role: 'user' } } } as ApiReply | 'throw',
+  me: { status: 200, body: { authenticated: false } } as ApiReply | 'throw',
+  postLogin: { status: 200, body: { redirectTo: '/', needsMfa: false } } as ApiReply | 'throw',
   fetchCalls: [] as Array<{ url: string; method: string }>,
 };
 const mockPush = jest.fn();
@@ -76,7 +77,7 @@ async function resolvePage(
     if (!redirected) throw error;
     return resolvePage(redirected[1], searchParams);
   }
-  // /account・/auth/verified・/admin は範囲外の頁。着いた先の名前だけを残す。
+  // /account・/item・/auth/verified・/admin などは範囲外の頁。着いた先の名前だけを残す。
   return { node: <p>行き先 {path}</p>, route: path };
 }
 
@@ -132,6 +133,10 @@ function installFetch() {
       if (mockState.me === 'throw') throw new Error('network');
       return reply(mockState.me.status, mockState.me.body);
     }
+    if (url === '/api/auth/post-login') {
+      if (mockState.postLogin === 'throw') throw new Error('network');
+      return reply(mockState.postLogin.status, mockState.postLogin.body);
+    }
     if (url === '/api/auth/login') {
       if (mockState.login.status === 200) mockState.pending = { email: VALID_EMAIL };
       return reply(mockState.login.status, mockState.login.body);
@@ -175,7 +180,8 @@ describe('メールとパスワードのログインの画面遷移', () => {
     mockState.fetchCalls = [];
     mockState.login = { status: 200, body: { message: 'sent' } };
     mockState.otp = { status: 200, body: { message: 'ok' } };
-    mockState.me = { status: 200, body: { authenticated: true, user: { role: 'user' } } };
+    mockState.me = { status: 200, body: { authenticated: false } };
+    mockState.postLogin = { status: 200, body: { redirectTo: '/', needsMfa: false } };
     installFetch();
   });
 
@@ -231,15 +237,15 @@ describe('メールとパスワードのログインの画面遷移', () => {
       expect(screen.queryByLabelText('認証コード 1 桁目')).not.toBeInTheDocument();
     });
 
-    test('FLOW-AUTH-001 ?next= のような送り先は受けない', async () => {
+    test('FLOW-AUTH-001 ?next= のような送り先は URL からは受けず、行き先は窓口の答えだけで決める', async () => {
       await openLoginPage({ next: '/admin' });
       submitCredentials();
       await screen.findByRole('heading', { name: '認証コードを入力' });
 
       submitCode();
 
-      await waitFor(() => expect(currentRoute()).toBe('/account'));
-      expect(mockState.replaceCalls).toEqual(['/login/verify', '/account']);
+      await waitFor(() => expect(currentRoute()).toBe('/'));
+      expect(mockState.replaceCalls).toEqual(['/login/verify', '/']);
     });
   });
 
@@ -259,19 +265,44 @@ describe('メールとパスワードのログインの画面遷移', () => {
   });
 
   describe('認証コードの後の行き先', () => {
-    test('FLOW-AUTH-001 一般の会員は管理者用の確認を通らず /account へ', async () => {
+    test('FLOW-AUTH-001 戻り先が無い一般の会員は管理者用の確認を通らず / へ。行き先は post-login で決める', async () => {
       await goToVerifyScreen();
 
       submitCode();
 
-      await waitFor(() => expect(currentRoute()).toBe('/account'));
+      await waitFor(() => expect(currentRoute()).toBe('/'));
       expect(mockState.fetchCalls).toContainEqual({ url: '/api/auth/otp/verify', method: 'POST' });
+      expect(mockState.fetchCalls).toContainEqual({ url: '/api/auth/post-login', method: 'POST' });
       expect(mockState.pending).toBeNull();
-      expect(mockState.replaceCalls).toEqual(['/login/verify', '/account']);
+      expect(mockState.replaceCalls).toEqual(['/login/verify', '/']);
     });
 
-    test.each(['admin', 'supporter'])('FLOW-AUTH-001 %s は /auth/verified へ送り、/admin へは直接移らない', async (role) => {
-      mockState.me = { status: 200, body: { authenticated: true, user: { role } } };
+    test('FLOW-AUTH-001 控えた戻り先があれば、確定の後にその頁へ置き換える', async () => {
+      mockState.postLogin = { status: 200, body: { redirectTo: '/item/3?color=red', needsMfa: false } };
+      await goToVerifyScreen();
+
+      submitCode();
+
+      await waitFor(() => expect(currentRoute()).toBe('/item/3?color=red'));
+      expect(mockState.replaceCalls).toEqual(['/login/verify', '/item/3?color=red']);
+    });
+
+    test.each([
+      ['外の住所', 'https://evil.example/'],
+      ['プロトコル相対', '//evil.example'],
+      ['/auth/verified（needsMfa の印なし）', '/auth/verified'],
+    ])('FLOW-AUTH-001 窓口が不正な戻り先（%s）を返してもクライアントの確かめで / に直す', async (_label, redirectTo) => {
+      mockState.postLogin = { status: 200, body: { redirectTo, needsMfa: false } };
+      await goToVerifyScreen();
+
+      submitCode();
+
+      await waitFor(() => expect(currentRoute()).toBe('/'));
+      expect(mockState.replaceCalls).toEqual(['/login/verify', '/']);
+    });
+
+    test('FLOW-AUTH-001 管理者・サポーターは 2 段目が要る（needsMfa）ので /auth/verified へ送り、/admin へは直接移らない', async () => {
+      mockState.postLogin = { status: 200, body: { redirectTo: '/auth/verified', needsMfa: true } };
       await goToVerifyScreen();
 
       submitCode();
@@ -280,17 +311,8 @@ describe('メールとパスワードのログインの画面遷移', () => {
       expect(mockState.replaceCalls).not.toContain('/admin');
     });
 
-    test('FLOW-AUTH-001 知らない役割は一般と同じに /account へ', async () => {
-      mockState.me = { status: 200, body: { authenticated: true, user: { role: 'staff' } } };
-      await goToVerifyScreen();
-
-      submitCode();
-
-      await waitFor(() => expect(currentRoute()).toBe('/account'));
-    });
-
-    test('FLOW-AUTH-001 me が未ログインと答えたら /login へ戻す', async () => {
-      mockState.me = { status: 200, body: { authenticated: false } };
+    test('FLOW-AUTH-001 post-login が 401 なら未ログインとして /login へ戻す', async () => {
+      mockState.postLogin = { status: 401, body: { error: 'Unauthorized' } };
       await goToVerifyScreen();
 
       submitCode();
@@ -299,24 +321,24 @@ describe('メールとパスワードのログインの画面遷移', () => {
       expect(screen.getByLabelText('Email')).toBeInTheDocument();
     });
 
-    test('FLOW-AUTH-001 me が 401 なら未ログインとして /login へ戻す', async () => {
-      mockState.me = { status: 401, body: { authenticated: false } };
+    test.each([503, 429, 500])('FLOW-AUTH-001 post-login が %i なら /auth/verified へ倒す（特権が 2 段目を飛ばさない）', async (status) => {
+      mockState.postLogin = { status, body: {} };
       await goToVerifyScreen();
 
       submitCode();
 
-      await waitFor(() => expect(currentRoute()).toBe('/login'));
+      await waitFor(() => expect(currentRoute()).toBe('/auth/verified'));
+      expect(mockState.replaceCalls).not.toContain('/admin');
+      expect(mockState.replaceCalls).not.toContain('/account');
     });
 
-    test('FLOW-AUTH-001 me の呼び出しが落ちたら /account へ送る', async () => {
-      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-      mockState.me = 'throw';
+    test('FLOW-AUTH-001 post-login の呼び出しが落ちたら /auth/verified へ倒す', async () => {
+      mockState.postLogin = 'throw';
       await goToVerifyScreen();
 
       submitCode();
 
-      await waitFor(() => expect(currentRoute()).toBe('/account'));
-      errorSpy.mockRestore();
+      await waitFor(() => expect(currentRoute()).toBe('/auth/verified'));
     });
 
     test('FLOW-AUTH-001 認証コードが誤りなら /login/verify に留まり、保留も残す', async () => {

@@ -6,6 +6,8 @@
  * @design DD-AUTH-014
  * @remarks セッションはここでは発行せず、確認コードの検証に成功した時に確定する（/api/auth/otp/verify）。
  * そのためパスワードを通った印は短命の署名つき Cookie にだけ持たせる。
+ * ログインの後の戻り先は、確認コードを送れた所（保留の Cookie を置く所）でだけ控える。パスワードの誤り・ボット判定・制限の応答で表の行を増やさないため。
+ * 戻り先の値の型や長さでログインを 400 にせず（ログインそのものは止めない）、番号は Cookie だけに置いて本文には出さない。
  * 各段の順番と送り先の設定の理由は、その行のコメントに書いた。
  */
 import { NextResponse } from 'next/server';
@@ -13,6 +15,7 @@ import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { LoginRequestSchema } from '@/features/auth/schemas/login';
 import { formatZodError } from '@/features/auth/schemas/common';
+import { applyReturnIntentCookie, issueReturnIntent } from '@/features/auth/return-intent/return-intent-service';
 
 export async function POST(request: Request) {
   try {
@@ -87,6 +90,10 @@ export async function POST(request: Request) {
       value: pendingToken,
       ...cookieOptionsForLoginTwoFactor(loginTwoFactorSessionMaxAgeSeconds),
     });
+
+    // 戻り先が無い・不正・保存の失敗でも、前の試みの古い控えの Cookie を使わせないよう必ず消す側へ倒す。
+    const { action: returnIntentAction } = await issueReturnIntent({ rawNext: parsed.data.next, purpose: 'login' });
+    applyReturnIntentCookie(res, returnIntentAction);
 
     await logAudit({ action: 'login', actor_email: email, outcome: 'password_verified', detail: 'otp_sent', resource_id: data.user.id });
 

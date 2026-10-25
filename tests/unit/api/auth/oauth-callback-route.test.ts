@@ -1,7 +1,7 @@
 /**
  * Google のログインの戻りの窓口の単体テスト（DD-AUTH-021）。
- * 外へ出る先（制限・監査・Supabase のクライアント・セッションの保存）だけ差し替え、
- * 住所の整形とゲストの印の読み取りは本物を通す。
+ * 外へ出る先（制限・監査・Supabase のクライアント・セッションの保存・戻り先の控え）だけ差し替え、
+ * 住所の整形とゲストの印の読み取りは本物を通す。控えの使い切り自体は return-intent-service の単体試験が見る。
  */
 
 const enforceRateLimitMock = jest.fn();
@@ -12,6 +12,13 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
 const logAuditMock = jest.fn();
 jest.mock('@/lib/audit', () => ({
   logAudit: (...args: unknown[]) => logAuditMock(...args),
+}));
+
+const resolveReturnDestinationMock = jest.fn();
+const applyReturnIntentCookieMock = jest.fn();
+jest.mock('@/features/auth/return-intent/return-intent-service', () => ({
+  resolveReturnDestination: (...args: unknown[]) => resolveReturnDestinationMock(...args),
+  applyReturnIntentCookie: (...args: unknown[]) => applyReturnIntentCookieMock(...args),
 }));
 
 const persistSessionAndCookiesMock = jest.fn();
@@ -117,6 +124,11 @@ describe('Google のログインの戻りの窓口', () => {
     enforceRateLimitMock.mockResolvedValue(undefined);
     logAuditMock.mockResolvedValue(undefined);
     persistSessionAndCookiesMock.mockResolvedValue({ ok: true });
+    resolveReturnDestinationMock.mockImplementation(async ({ viewer }: { viewer: { role: string } }) =>
+      viewer.role === 'admin' || viewer.role === 'supporter'
+        ? { path: '/auth/verified', needsMfa: true, action: { kind: 'keep' } }
+        : { path: '/', needsMfa: false, action: { kind: 'keep' } },
+    );
     exchangeCodeForSessionMock.mockResolvedValue(exchangeSuccess());
     createServerClientMock.mockImplementation(() => ({
       auth: { exchangeCodeForSession: exchangeCodeForSessionMock },
@@ -129,11 +141,11 @@ describe('Google のログインの戻りの窓口', () => {
   });
 
   describe('正常フローと送り先', () => {
-    it('DD-AUTH-021 一般の会員で既定の送り先なら 303 で /account へ送り、session を保存して success を残す', async () => {
-      const res = await callGet(callbackRequest('?code=good&next=%2Fauth%2Fverified'));
+    it('DD-AUTH-021 一般の会員で控えが無ければ 303 で / へ送り、session を保存して success を残す', async () => {
+      const res = await callGet(callbackRequest('?code=good'));
 
       expect(res.status).toBe(303);
-      expect(res.headers.get('location')).toBe('http://localhost:3000/account');
+      expect(res.headers.get('location')).toBe('http://localhost:3000/');
       expect(res.headers.get('Cache-Control')).toBe('no-store');
       expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
       expect(exchangeCodeForSessionMock).toHaveBeenCalledWith('good');
@@ -161,48 +173,59 @@ describe('Google のログインの戻りの窓口', () => {
       });
     });
 
-    it('DD-AUTH-021 next が無い一般の会員も既定の送り先とみなして /account へ送る', async () => {
-      const res = await callGet(callbackRequest('?code=good'));
-
-      expect(res.headers.get('location')).toBe('http://localhost:3000/account');
-    });
-
-    it('DD-AUTH-021 next が空でも無いのと同じに扱う', async () => {
-      const res = await callGet(callbackRequest('?code=good&next='));
-
-      expect(res.headers.get('location')).toBe('http://localhost:3000/account');
-    });
-
-    it.each(['admin', 'supporter'])('DD-AUTH-021 役割が %s なら既定の /auth/verified へ送る', async (role) => {
+    it.each(['admin', 'supporter'])('DD-AUTH-021 役割が %s なら aal1 で解決し、/auth/verified へ送る（控えは使い切らない）', async (role) => {
       exchangeCodeForSessionMock.mockResolvedValueOnce(
         exchangeSuccess({ id: 'staff-1', email: 'staff@example.com', app_metadata: { role } })
       );
 
-      const res = await callGet(callbackRequest('?code=good'));
+      const res = await callGet(callbackRequest('?code=good', 'sb-return-intent=x'));
 
       expect(res.headers.get('location')).toBe('http://localhost:3000/auth/verified');
+      expect(resolveReturnDestinationMock).toHaveBeenCalledWith({
+        cookieHeader: 'sb-return-intent=x',
+        purpose: 'login',
+        viewer: { id: 'staff-1', role, aal: 'aal1' },
+      });
+      expect(applyReturnIntentCookieMock).toHaveBeenCalledWith(expect.anything(), { kind: 'keep' });
     });
 
-    it('DD-AUTH-021 一般の会員でも既定でない送り先を指定すればその道へ送る', async () => {
-      const res = await callGet(callbackRequest('?code=good&next=%2Fcheckout'));
+    it('DD-AUTH-021 保存の成功の後で控えを解決し、戻り先へ Location を差し替えて Cookie の動作を当てる', async () => {
+      const action = { kind: 'clear' };
+      const order: string[] = [];
+      persistSessionAndCookiesMock.mockImplementationOnce(async () => {
+        order.push('persist');
+        return { ok: true };
+      });
+      resolveReturnDestinationMock.mockImplementationOnce(async () => {
+        order.push('resolve');
+        return { path: '/item/3?color=red', needsMfa: false, action };
+      });
 
-      expect(res.headers.get('location')).toBe('http://localhost:3000/checkout');
+      const res = await callGet(callbackRequest('?code=good', 'sb-return-intent=x'));
+
+      expect(order).toEqual(['persist', 'resolve']);
+      expect(res.status).toBe(303);
+      expect(res.headers.get('location')).toBe('http://localhost:3000/item/3?color=red');
+      expect(applyReturnIntentCookieMock).toHaveBeenCalledWith(res, action);
+      expect(resolveReturnDestinationMock).toHaveBeenCalledWith({
+        cookieHeader: 'sb-return-intent=x',
+        purpose: 'login',
+        viewer: { id: 'user-123', role: 'user', aal: 'aal1' },
+      });
     });
 
-    it('DD-AUTH-021 管理者が既定でない送り先を指定してもその道へ送る', async () => {
-      exchangeCodeForSessionMock.mockResolvedValueOnce(
-        exchangeSuccess({ id: 'staff-1', email: 'staff@example.com', app_metadata: { role: 'admin' } })
-      );
+    it.each([
+      ['外の住所', '%2F%2Fevil.example'],
+      ['/account', '%2Faccount'],
+      ['/auth/verified', '%2Fauth%2Fverified'],
+      ['タブ入り', '%2F%09%2Fevil.example'],
+    ])('DD-AUTH-021 古い形の next（%s）は読まず、行き先は解決の結果だけで決める', async (_label, encoded) => {
+      const res = await callGet(callbackRequest(`?code=good&next=${encoded}`));
 
-      const res = await callGet(callbackRequest('?code=good&next=%2Fadmin'));
-
-      expect(res.headers.get('location')).toBe('http://localhost:3000/admin');
-    });
-
-    it('DD-AUTH-021 外の住所の next は既定へ戻し、一般の会員なら /account にする', async () => {
-      const res = await callGet(callbackRequest('?code=good&next=https%3A%2F%2Fevil.example%2F'));
-
-      expect(res.headers.get('location')).toBe('http://localhost:3000/account');
+      expect(res.headers.get('location')).toBe('http://localhost:3000/');
+      const [arg] = resolveReturnDestinationMock.mock.calls[0];
+      expect(JSON.stringify(arg)).not.toContain('next');
+      expect(JSON.stringify(arg)).not.toContain('evil');
     });
 
     it.each([
@@ -211,14 +234,17 @@ describe('Google のログインの戻りの窓口', () => {
       ['app_metadata が無い', undefined],
       ['許可の3つに無い役割', { role: 'owner' }],
       ['文字でない役割', { role: 42 }],
-    ])('DD-AUTH-021 %s なら user とみなして /account へ送る', async (_label, appMetadata) => {
+    ])('DD-AUTH-021 %s なら user とみなして解決に渡し、/ へ送る', async (_label, appMetadata) => {
       exchangeCodeForSessionMock.mockResolvedValueOnce(
         exchangeSuccess({ id: 'user-9', email: 'u@example.com', app_metadata: appMetadata })
       );
 
       const res = await callGet(callbackRequest('?code=good'));
 
-      expect(res.headers.get('location')).toBe('http://localhost:3000/account');
+      expect(res.headers.get('location')).toBe('http://localhost:3000/');
+      expect(resolveReturnDestinationMock).toHaveBeenCalledWith(
+        expect.objectContaining({ viewer: { id: 'user-9', role: 'user', aal: 'aal1' } }),
+      );
     });
 
     it('DD-AUTH-021 ライブラリが溜めた Cookie を 303 の応答へ付け替える', async () => {
@@ -279,8 +305,8 @@ describe('Google のログインの戻りの窓口', () => {
 
   describe('問い合わせと環境変数', () => {
     it.each([
-      ['code が無い', '?next=%2Fauth%2Fverified'],
-      ['code が空', '?code=&next=%2Fauth%2Fverified'],
+      ['code が無い', '?next=%2Faccount'],
+      ['code が空', '?code=&next=%2Faccount'],
       ['問い合わせが無い', ''],
     ])('DD-AUTH-021 %s と missing_code を残して 400', async (_label, query) => {
       const res = await callGet(callbackRequest(query));
@@ -444,7 +470,9 @@ describe('Google のログインの戻りの窓口', () => {
       const res = await callGet(callbackRequest('?code=good'));
 
       expect(res.status).toBe(303);
-      expect(res.headers.get('location')).toBe('http://localhost:3000/account');
+      expect(res.headers.get('location')).toBe('http://localhost:3000/');
+      expect(resolveReturnDestinationMock).not.toHaveBeenCalled();
+      expect(applyReturnIntentCookieMock).not.toHaveBeenCalled();
       expect(logAuditMock).toHaveBeenCalledWith({
         action: 'auth.oauth.callback',
         outcome: 'error',
@@ -452,6 +480,18 @@ describe('Google のログインの戻りの窓口', () => {
         resource_id: 'user-123',
       });
       expect(logAuditMock).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }));
+    });
+
+    it('DD-AUTH-021 保存に失敗した特権の会員は /auth/verified のまま（控えは使い切らない）', async () => {
+      persistSessionAndCookiesMock.mockResolvedValueOnce({ ok: false, error: 'db down' });
+      exchangeCodeForSessionMock.mockResolvedValueOnce(
+        exchangeSuccess({ id: 'staff-1', email: 'staff@example.com', app_metadata: { role: 'admin' } })
+      );
+
+      const res = await callGet(callbackRequest('?code=good', 'sb-return-intent=x'));
+
+      expect(res.headers.get('location')).toBe('http://localhost:3000/auth/verified');
+      expect(resolveReturnDestinationMock).not.toHaveBeenCalled();
     });
 
     it('DD-AUTH-021 保存の結果に理由が無ければ unknown を残す', async () => {
@@ -482,6 +522,9 @@ describe('Google のログインの戻りの窓口', () => {
       const res = await callGet(callbackRequest('?code=good'));
 
       expect(res.status).toBe(303);
+      expect(res.headers.get('location')).toBe('http://localhost:3000/');
+      expect(resolveReturnDestinationMock).not.toHaveBeenCalled();
+      expect(applyReturnIntentCookieMock).not.toHaveBeenCalled();
       expect(console.error).toHaveBeenCalledWith('persistSessionAndCookies failed:', expect.any(Error));
       expect(logAuditMock).toHaveBeenCalledWith({
         action: 'auth.oauth.callback',

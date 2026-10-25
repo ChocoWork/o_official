@@ -8,6 +8,6 @@ test.describe('FR-ACCOUNT-003 login required handling', () => {
     await expect(page.getByText('会員情報の確認には、ログインが必要です。')).toBeVisible();
     await expect(
       page.locator('#main-content').getByRole('link', { name: 'ログイン' }),
-    ).toHaveAttribute('href', '/login');
+    ).toHaveAttribute('href', '/login?next=%2Faccount');
   });
 });

@@ -98,18 +98,6 @@ export function getRequestOrigin(request: Request): string {
   return siteOrigin;
 }
 
-export function sanitizeRedirectPath(input: string | null | undefined, fallbackPath: string): string {
-  if (!input) return fallbackPath;
-
-  const trimmed = input.trim();
-  if (!trimmed.startsWith('/')) return fallbackPath;
-  if (trimmed.startsWith('//')) return fallbackPath;
-  if (trimmed.includes('\\')) return fallbackPath;
-  if (trimmed.startsWith('/\\')) return fallbackPath;
-
-  return trimmed;
-}
-
 /**
  * オリジンが許可リストに含まれるか。
  *

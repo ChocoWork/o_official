@@ -5,14 +5,21 @@
  * @impl IMPL-AUTH-164
  * @design DD-AUTH-019
  * @remarks メールのリンクは未ログインの端末で開かれるので、認証は求めず token_hash の検証だけを根拠にセッションを発行する。
+ * 行き先は URL の値を読まない。失敗は固定のログイン画面へ、成功はセッションの保存の後に登録の控えを使い切って決める
+ * （保存の失敗で戻り先だけが焼けるのを防ぐ）。登録の確認以外の印では、登録の控えを使わない。
  */
 import { NextResponse } from 'next/server';
 import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
-import { getRequestOrigin, sanitizeRedirectPath } from '@/lib/redirect';
+import { getRequestOrigin } from '@/lib/redirect';
+import {
+  applyReturnIntentCookie,
+  resolveReturnDestination,
+} from '@/features/auth/return-intent/return-intent-service';
 import { linkGuestOrdersByEmail } from '@/lib/orders/link-guest-orders';
 
-const DEFAULT_REDIRECT_PATH = '/account';
+const SUCCESS_REDIRECT_PATH = '/';
+const FAILURE_REDIRECT_PATH = '/login';
 type OtpType = 'signup' | 'email' | 'magiclink' | 'recovery';
 const ALLOWED_OTP_TYPES = new Set<OtpType>(['signup', 'email', 'magiclink', 'recovery']);
 
@@ -53,11 +60,10 @@ export async function GET(request: Request) {
   const tokenHash = url.searchParams.get('token_hash') || url.searchParams.get('token');
   const rawType = url.searchParams.get('type') || 'signup';
   const otpType: OtpType = ALLOWED_OTP_TYPES.has(rawType as OtpType) ? (rawType as OtpType) : 'signup';
-  const redirectPath = sanitizeRedirectPath(url.searchParams.get('redirect_to'), DEFAULT_REDIRECT_PATH);
 
   if (!tokenHash) {
     await logAudit({ action: 'auth.confirm', outcome: 'failure', detail: 'missing_token_hash', metadata: { reason: 'missing_token' } });
-    return buildRedirectResponse(origin, redirectPath);
+    return buildRedirectResponse(origin, FAILURE_REDIRECT_PATH);
   }
 
   try {
@@ -77,10 +83,11 @@ export async function GET(request: Request) {
         metadata: { reason },
       });
 
-      return buildRedirectResponse(origin, redirectPath);
+      return buildRedirectResponse(origin, FAILURE_REDIRECT_PATH);
     }
 
-    const res = buildRedirectResponse(origin, redirectPath);
+    // 保存が成功するまで戻り先は使い切らないので、応答は既定の行き先で先に作る。
+    const res = buildRedirectResponse(origin, SUCCESS_REDIRECT_PATH);
 
     const { persistSessionAndCookies } = await import('@/features/auth/services/register');
     // ゲストのカートとお気に入りの印を、ログインの保存の後で会員の分へ合わせるために渡す。
@@ -105,6 +112,21 @@ export async function GET(request: Request) {
       emailConfirmedAt: data.user.email_confirmed_at ?? null,
     });
 
+    if (otpType === 'signup') {
+      const role = data.user.app_metadata?.role;
+      const resolved = await resolveReturnDestination({
+        cookieHeader: request.headers.get('cookie'),
+        purpose: 'signup',
+        viewer: {
+          id: data.user.id,
+          role: role === 'admin' || role === 'supporter' ? role : 'user',
+          aal: 'aal1',
+        },
+      });
+      res.headers.set('location', new URL(resolved.path, origin).toString());
+      applyReturnIntentCookie(res, resolved.action);
+    }
+
     await logAudit({
       action: 'auth.confirm',
       actor_email: data.user?.email ?? null,
@@ -115,6 +137,6 @@ export async function GET(request: Request) {
     return res;
   } catch (err) {
     await logAudit({ action: 'auth.confirm', outcome: 'error', detail: String(err), metadata: { reason: 'unexpected' } });
-    return buildRedirectResponse(origin, redirectPath);
+    return buildRedirectResponse(origin, FAILURE_REDIRECT_PATH);
   }
 }

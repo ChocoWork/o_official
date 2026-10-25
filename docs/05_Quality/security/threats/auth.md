@@ -1,6 +1,6 @@
 # AUTH の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-24 | 対象: ログイン・メール OTP・会員登録・パスワード再設定・Google のログイン・TOTP・ログアウト・トークンの更新・ヘッダー、その裏の Supabase Auth と `sessions`・`password_reset_tokens`・`profiles` の DB | 基準コミット: `973dc336`（読んだのは作業ツリー。本文の `ファイル:行` の行番号は、この基準コミットのコードを指す）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-25 | 対象: ログイン・メール OTP・会員登録・パスワード再設定・Google のログイン・TOTP・ログアウト・トークンの更新・ヘッダー、その裏の Supabase Auth と `sessions`・`password_reset_tokens`・`profiles` の DB | 基準コミット: `973dc336`（読んだのは作業ツリー。本文の `ファイル:行` の行番号は、この基準コミットのコードを指す）
 
 ---
 
@@ -10,9 +10,9 @@ AUTH（ログインと認証、ヘッダー）の領域で考える脅威を、1
 
 | 項目 | 内容 |
 | --- | --- |
-| 項目の数 | 31（THR-AUTH-001〜031） |
+| 項目の数 | 32（THR-AUTH-001〜032） |
 | 守りがある物 | パスワードと OTP の総当たり（001・002）、OTP だけのログイン（003）、保留の延長（004）、漏洩・短いパスワード（014）、列挙の応答（016）、再設定のリンク（018）、メールの住所の差し替え（019）、パスワード変更・ログアウト後のセッション（020・021）、Cookie の属性（024）、CSRF（025）、ヘッダーの出し分け（028） |
-| 守りが欠ける・弱い物 | Supabase Auth を直接呼んでメール OTP を飛ばす（005）、メールの確認のリンクの入口（006・007）、TOTP の総当たり（009）、DB が aal2 を見ない（010）、表の権限（011）、回数の制限の IP（013）、直接の登録・変更（015）、トークンを JS に渡す（022・023）、`/auth/callback` の open redirect（026）、本番の設定（029）、監査の抜け（030）、会員登録の宛先単位の制限（016）、認証の関数を anon・authenticated が呼べる（012、本番は未確認）、ログアウト時に refresh の Cookie が無いと Supabase のセッションを切らない（021）、初めての TOTP の登録の乗っ取り（031） |
+| 守りが欠ける・弱い物 | Supabase Auth を直接呼んでメール OTP を飛ばす（005）、メールの確認のリンクの入口（006・007）、TOTP の総当たり（009）、DB が aal2 を見ない（010）、表の権限（011）、回数の制限の IP（013）、直接の登録・変更（015）、トークンを JS に渡す（022・023）、ログインの後の送り先の open redirect（026。画面は消し、確かめの部品に置き換える作業中）、本番の設定（029）、監査の抜け（030）、会員登録の宛先単位の制限（016）、認証の関数を anon・authenticated が呼べる（012、本番は未確認）、ログアウト時に refresh の Cookie が無いと Supabase のセッションを切らない（021）、初めての TOTP の登録の乗っ取り（031）、戻り先の控えの番号の盗み・使い回し（032。控えを作る作業中） |
 | 対策の書き先 | 対策のセキュリティ要件 `SEC-AUTH-NNN` は要件の文書（`docs/02_Requirements/areas/auth.md`）に書く。下の「対策」の欄は読み手のための写し |
 | 状態の付け方 | 全部「推定」。実装と過去のレビューから起こし、ユーザーの確認を受けていないため（`.claude/skills/documentation-guide/SKILL.md` の 7）。コードで確かめた物も、本番の設定・ライブラリの既定・推論に頼る物も同じ。どれも実行しての確かめはしていない |
 
@@ -401,19 +401,19 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_overview.md:38`、`docs/05_Quality/reviews/security/security_review_auth_verified.md:30` |
 
-### THR-AUTH-026 `/auth/callback` の画面からの open redirect
+### THR-AUTH-026 ログインの後の送り先を使った open redirect
 
 | 属性 | 値 |
 | --- | --- |
 | 守るもの | 利用者（ログインの後に偽のサイトへ送られない） |
-| 脅威 | 攻撃者が `/auth/callback?next=//攻撃者のサイト` のリンクを配り、店のサイトを経由して偽のサイトへ送る |
-| 起こり方 | 画面は `next` が `/` で始まるかだけを見る（`src/app/auth/callback/page.tsx:19-22`）。ログイン済みなら `router.replace(next)` で送る（`:53-54`）。`//` で始まる値が通る。サーバーの側の `sanitizeRedirectPath` は `//`・`\` を断る（`src/lib/redirect.ts:101-111`） |
+| 脅威 | 攻撃者が `/auth/callback?next=//攻撃者のサイト` や、`next`・`redirect_to` にタブ文字を混ぜたリンク（`/%09/evil.example`）を配り、店のサイトを経由して偽のサイトへ送る |
+| 起こり方 | 2 つの穴があった。(1) 画面 `/auth/callback` は `next` が `/` で始まるかだけを見て、ログイン済みなら `router.replace(next)` で送るので、`//` で始まる値が通る。(2) 共有関数 `sanitizeRedirectPath` は `//`・`\` を断るが、タブ・改行を含む値を断らず、ブラウザがタブを取り除いて外の住所として読む（`/%09/evil.example`）。確認のメールのリンク・Google の開始と戻り・登録の 4 つの窓口がこの関数を使っていた |
 | 影響 | 店のドメインを信じた利用者が偽のログイン画面に入力する |
-| 対策 | SEC-AUTH-026 |
+| 対策 | SEC-AUTH-026、SEC-AUTH-032 |
 | ASVS | V5.1.5 |
-| 根拠 | 過去のレビューの X-02 が Open のまま。この画面はどこからも呼ばれない（Google の戻り先は `/api/auth/oauth/callback`。`oauth/start/route.ts:81`）が、URL を直接開けば動く |
+| 根拠 | 過去のレビューの X-02 が Open のまま残っていた。画面はどこからも呼ばれない（Google の戻り先は `/api/auth/oauth/callback`）が、URL を直接開けば動く。2026-10-25 のユーザーの決定で、画面は消し、共有関数は戻り先の確かめの部品 1 つに置き換え、行き先は URL の値ではなくサーバーに控えた戻り先で決める（ADR-0412） |
 | 状態 | 推定 |
-| 出どころ | `docs/05_Quality/reviews/security/security_review_overview.md:37`、`docs/05_Quality/reviews/security/security_review_auth_callback.md:30-31` |
+| 出どころ | `docs/05_Quality/reviews/security/security_review_overview.md:37`、`docs/05_Quality/reviews/security/security_review_auth_callback.md:30-31`、`.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md` |
 
 ### THR-AUTH-027 1つの鍵で複数の署名を兼ねる
 
@@ -485,6 +485,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | 実装から推定（2026-10-24 の見直しで気づいた） |
 
+### THR-AUTH-032 戻り先の控えの番号の盗み・使い回し・総当たり
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | ログイン直後の行き先と、その控え（戻り先の道筋と、控えを引く番号） |
+| 脅威 | 他人の控えの番号を盗む。番号を総当たりで当てる。別の端末で使う。使い終えた番号を使い回す。ログインの用途（login）と登録の用途（signup）の控えを取り違える |
+| 起こり方 | 番号が URL・応答の本文・ログ・Referer に出ると、盗まれる。番号が短いか予測できると、当てられる。表に番号そのものがあると、DB を読めた人が使える。使った後も残ると、2 回使える。ログアウトの後も Cookie が残ると、共用の端末で次の人のログインに前の人の戻り先が使われる。同じ親ドメインの別のサブドメインや平文の通信から `sb-return-intent` を差し込まれると、被害者が攻撃者の控えを使う形になる（残る危険。戻り先は許可した内部の頁に限るので影響は小さい） |
+| 影響 | 利用者が意図しない頁へ送られる（戻り先は内部の頁に限るので、外のサイトへは出ない。SEC-AUTH-026）。他人の戻り先の道筋（検索条件など）が読まれる |
+| 対策 | SEC-AUTH-032（128 ビット以上の乱数・HttpOnly・SameSite=Lax・表にはハッシュだけ・1 回で使い切る・短い期限・ログアウトで消す。ADR-0412） |
+| ASVS | V3.2・V5.1.5・V8.3 |
+| 根拠 | 2026-10-25 のユーザーの決定で、戻り先をサーバーに控え、番号だけを渡すことにした。控えと番号を新しく持つので、その扱いの脅威を考える |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md` |
+
 ---
 
 ## 未確認事項
@@ -500,3 +514,4 @@ flowchart LR
 - 再設定の申請の応答時間が、アカウントの有無で測れるほど違うか（THR-AUTH-016）
 - 本番の Supabase Auth の `double_confirm_changes`（メールの差し替えに新旧両方の確認を求める設定）が ON か。手元は true（`supabase/config.toml:223`）（THR-AUTH-015）
 - 本番に TOTP をまだ登録していない管理者・サポーターがいるか（THR-AUTH-031）。いれば、その間はパスワードだけで管理に届く
+- 本番で `sb-return-intent` に `__Host-` の接頭辞を付けるか（別のサブドメインや平文の通信からの差し込みを防ぐ。今の Cookie の名前の付け方と合わないので、この波では決めていない。THR-AUTH-032）

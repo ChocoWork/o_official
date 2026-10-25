@@ -1,6 +1,6 @@
 # DB マイグレーション運用
 
-> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで。G-3 は Task 1 の基盤・Task 2 の読取・Task 4 の書き手の移行・Task 6 の発送の取消を追記） | 確認日: 2026-10-25 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み
+> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで。G-3 は Task 1 の基盤・Task 2 の読取・Task 4 の書き手の移行・Task 6 の発送の取消を追記） | 確認日: 2026-10-26 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み
 
 ## 概要
 
@@ -35,6 +35,65 @@ for f in migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; d
 Supabase CLI の `db push` は `supabase_migrations.schema_migrations` を台帳として
 適用済みをスキップするので 1 が解決する。2 は各ファイルへ明示的に `BEGIN;` / `COMMIT;`
 を書いて塞ぐ（ツールの挙動に依存しない）。3 はベースライン化で解決する（下記）。
+
+## 波 1-A 戻り先の控えの移行（本番未適用）
+
+確認日: 2026-10-26。**本番未適用（G-3 の本番適用の後に適用する）。**
+
+ログインの後の戻り先（SEC-AUTH-026・SEC-AUTH-032、DATA-AUTH-005、ADR-0412）をサーバーに控えるための移行 1 本。`20261026010000_auth_return_intents.sql`（8163 バイト、MD5 `21bd78bac76bc6f2c119a10f3dcf9a80`。Git に入った LF の内容の値で、作業ツリーが CRLF になると合わない。コミット後は `git show HEAD:supabase/migrations/20261026010000_auth_return_intents.sql | md5sum` で取る。ファイルを変えたらこの値を取り直す）。時刻は G-3 の移行 4 本（最後は `20261025134538_group_g3_shipping_actions.sql`）より後で、適用の順も全部の G-3 の移行の後。
+
+### 何をするか
+
+| 順 | 内容 |
+| --- | --- |
+| 1 | `private.auth_return_intents` を作る。列は id・token_hash（番号の sha256、16 進 64 桁、一意）・return_path（1〜512 文字、`/` で始まり、空白・制御文字・`\` を含まない）・purpose（`login` / `signup`）・created_at・expires_at・consumed_at・user_id。番号そのものの列は無い。`auth.users` への外部キーは付けない。所有者 postgres、RLS 有効、`PUBLIC`・`anon`・`authenticated`・`service_role` の表の権限を全部外す（関数だけで触る） |
+| 2 | `public.create_auth_return_intent(text,text,text)`: 行を作り、期限の秒数（login 900、signup 3600）を返す。Cookie の `Max-Age` にそのまま使う |
+| 3 | `public.consume_auth_return_intent(text,text,uuid)`: 1 回の `UPDATE … RETURNING` で使い切り、`return_path` を返す。期限切れ・使用済み・別の用途・存在しないは NULL。`STRICT` |
+| 4 | 2 本とも `SECURITY DEFINER`・`SET search_path = ''`・所有者 postgres。`PUBLIC`・`anon`・`authenticated`・`service_role` から `REVOKE ALL` してから `service_role` に `EXECUTE` だけを付ける（先例 `20261022084844_order_status_links`。Database Advisor の lint 0028・0029 の解決策） |
+| 5 | pg_cron のジョブ `auth-return-intents-cleanup` を毎日 03:20（UTC）に登録し、期限の 1 日後を過ぎた行を消す。cron スキーマへの自己付与は書かない |
+| 6 | 末尾の確かめと `NOTIFY pgrst, 'reload schema'` |
+
+触らないもの: 既存の移行ファイル、G の表・関数、書き手の許可一覧（`group_g_writer_allowlist()` は変えない。この 2 本は G の書き手ではない）、`private` スキーマの USAGE、cron の既存ジョブ。
+
+### 末尾の確かめ
+
+`-- AUTH_RETURN_INTENT_ASSERT_BEGIN` から `-- AUTH_RETURN_INTENT_ASSERT_END` の間の `DO $auth_return_intents_final$`。失敗は `AUTH_RETURN_INTENT_ASSERTION_FAILED`（SQLSTATE 55000）、DETAIL は項目名だけ。
+
+| DETAIL の項目 | 確認する内容 |
+| --- | --- |
+| auth_return_intents_table | 表の存在・所有者 postgres・RLS 有効・列の並びが 8 列のとおり（平文の番号の列が無い）・`anon`/`authenticated`/`service_role` に表の権限が無い・PUBLIC への付与が無い |
+| auth_return_intents_functions | 2 本の存在・所有者・DEFINER・STRICT（consume だけ）・言語と戻り値の型・`search_path=""`・`anon`/`authenticated`/PUBLIC の EXECUTE が無い・`service_role` の EXECUTE がある・同名の関数が public と private を合わせて 2 本だけ |
+| auth_return_intents_cleanup_job | `cron.job` に `auth-return-intents-cleanup` があり、スケジュールが `20 3 * * *`、対象が `private.auth_return_intents` |
+
+区間は何度流し直しても副作用が無い（読み取りだけ）。
+
+### 試験（controller が `db reset` の後に流す）
+
+- 移行の文面（DB なし）: `npx jest tests/unit/migrations/auth-return-intents.test.ts tests/unit/migrations/security-definer-search-path-guard.test.ts --runInBand`
+- DB 結合: `npx jest tests/integration/db/auth_return_intents --runInBand`（手元の DB に `DATABASE_URL` を向けて流す）。権限・構造・作る・使い切る・期限切れ・用途違い・STRICT・CHECK・掃除・末尾の確かめの改変 16 通り・2 接続の同時の使い切りを確かめる。`LOCAL_SUPABASE_URL`・`LOCAL_SUPABASE_SERVICE_ROLE_KEY`・`LOCAL_SUPABASE_ANON_KEY` が揃えば、本物の PostgREST で service_role が呼べ、anon が呼べないことも確かめる。
+
+### 適用の境界
+
+- **本番の適用は G-3 の本番適用の後**（本番アプリは未公開なので待てる）。手元は `npm run db:reset` で G-3 の移行 4 本の後に自然に当たる。
+- 適用の前に: アプリの `rpc` 呼び出し（Task 4 以降）は、この移行が本番に入る前に本番へ出さない。表と関数が無い間は戻り先の控えが作れず、`/`（管理者は `/admin`）へ送る作りなので、ログインは止まらない。
+- 当て方: `supabase db push --linked`（`supabase migration list --linked` で本番に無いのが G-3 の残りとこの 1 本だけであることを確かめてから）。MCP の `apply_migration` で当てる場合は、当てた文を `schema_migrations` の `md5(statements[1])` でファイルと突き合わせ、`return_path` の CHECK の正規表現（`pg_get_constraintdef`）に `\\` が 2 個残っていることを確かめる。
+- 適用後の読み取りの確かめ: 表の ACL（`has_table_privilege` が 3 役とも偽）、関数の ACL（`anon`/`authenticated` が偽、`service_role` が真）、`cron.job` の `auth-return-intents-cleanup`。本番で試験の行は作らない。
+
+### ロールバック
+
+アプリが `rpc` を呼ばなくなってから、新しい移行で次を流す（適用済みのファイルは書き換えない）。
+
+```sql
+BEGIN;
+SELECT cron.unschedule('auth-return-intents-cleanup');
+DROP FUNCTION IF EXISTS public.consume_auth_return_intent(text, text, uuid);
+DROP FUNCTION IF EXISTS public.create_auth_return_intent(text, text, text);
+DROP TABLE IF EXISTS private.auth_return_intents;
+NOTIFY pgrst, 'reload schema';
+COMMIT;
+```
+
+表の行は戻り先（内部の道筋）と番号のハッシュだけで、個人情報は持たない（`user_id` は使い切った利用者の id）。消しても失うのは未使用の戻り先だけ。
 
 ## ベースライン化（初回のみ・要 Docker と DB パスワード）
 

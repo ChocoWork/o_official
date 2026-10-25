@@ -1,6 +1,6 @@
 # ログイン・追加認証シーケンス
 
-> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直した。ユーザーの確認は未） | 確認日: 2026-10-24 | 対象: パスワード、メールOTP、特権TOTP
+> 状態: 推定（2026-10-04 にソースと照合し、2026-10-24 に一部を直した。ユーザーの確認は未） | 確認日: 2026-10-25 | 対象: パスワード、メールOTP、特権TOTP
 
 ## 概要
 
@@ -296,6 +296,46 @@ sequenceDiagram
 ```
 
 実際の前段順序はIP制限→入力→client→認証→role。入力不正400、認証失敗401／生存確認不能503、一般user403。challengeの対象無しは404、その他challenge失敗は400、verify失敗は400。AAL照会失敗はログを残して継続する。DB保存失敗でもSupabaseが発行した新tokenを配る。保存処理のCookie準備自体に例外が起きた場合は、同じ200でも準備済みCookieの範囲が異なる。管理APIの利用には別途DB ACLとJWT aal2が必要である。外側例外は500。
+
+## SQ-AUTH-LOGIN-RETURN: 戻り先の控えと使い切り（2026-10-25、波 1-A）
+
+開始契機は検索条件つきの公開頁や会員だけの頁からのログイン。事前条件は `/login?next=` に戻り先の確かめを通した道筋があること。終了結果は戻り先（無ければ `/`、管理者・サポーターは `/admin`）への移動。設計は [AUTH の構造設計](../../03_BasicDesign/areas/auth.md) の ARC-AUTH-010・API-AUTH-019、決定は `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md`。
+
+```mermaid
+sequenceDiagram
+  actor User as 利用者
+  participant UI as ブラウザ
+  participant Login as login API
+  participant Store as 戻り先の控え
+  participant OTP as OTP API
+  participant Post as post-login API
+  participant Totp as verified 画面と mfa API
+  User->>UI: 検索条件つきの頁でヘッダーのログインを押す
+  UI->>Login: POST /api/auth/login（next つき）
+  Login->>Login: パスワード確認とOTP送信
+  Login->>Login: next を戻り先の確かめに通す
+  Login->>Store: 番号の sha256 と道筋を控える（用途 login、15 分）
+  Login-->>UI: 200 と保留Cookieと sb-return-intent
+  UI->>OTP: POST /api/auth/otp/verify
+  OTP-->>UI: 200 と認証Cookie
+  UI->>Post: POST /api/auth/post-login
+  alt 一般の会員
+    Post->>Store: 1 回で使い切る
+    Post-->>UI: 戻り先か / と Cookie 削除
+  else 管理者・サポーターで aal1
+    Post-->>UI: /auth/verified と needsMfa（使い切らない）
+    UI->>Totp: TOTP を確認して aal2 になる
+    Totp-->>UI: 200
+    UI->>Post: POST /api/auth/post-login
+    Post->>Store: 1 回で使い切る
+    Post-->>UI: 戻り先か /admin と Cookie 削除
+  end
+```
+
+- 控えを作るのはパスワードの確認とOTPの送信が成功した後だけ。誤りやボット判定では作らない
+- 番号は `sb-return-intent`（HttpOnly）の Cookie だけを通り、URL・本文には出ない
+- 使い切った戻り先は、役割と aal2 を渡してもう一度確かめる。外れた・使えない時は `/`（管理者・サポーターは `/admin`）
+- 取消（cancel）とログアウトで Cookie を消す
 
 ## 関連テスト
 

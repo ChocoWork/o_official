@@ -18,8 +18,8 @@ interface LoginContextType {
   isMfaVerified: boolean;
   isAuthResolved: boolean;
   refreshAuthState: () => Promise<void>;
-  login: (email: string, password: string, turnstileToken?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
-  register: (email: string, password: string, turnstileToken?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
+  login: (email: string, password: string, turnstileToken?: string, options?: { next?: string }) => Promise<{ success: boolean; error?: string; message?: string }>;
+  register: (email: string, password: string, turnstileToken?: string, options?: { next?: string }) => Promise<{ success: boolean; error?: string; message?: string }>;
   verifyOtp: (code: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   loginWithGoogle: (params?: { next?: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<{ success: boolean; error?: string }>;
@@ -92,7 +92,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [applyAuthState]);
 
-  const login = async (email: string, password: string, turnstileToken?: string) => {
+  const login = async (email: string, password: string, turnstileToken?: string, options?: { next?: string }) => {
     try {
       const { LoginRequestSchema } = await import('@/features/auth/schemas/login');
       const parsed = LoginRequestSchema.safeParse({ email, password, turnstileToken });
@@ -104,7 +104,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ email, password, turnstileToken }),
+        body: JSON.stringify({ email, password, turnstileToken, ...(options?.next ? { next: options.next } : {}) }),
       });
 
       const body: unknown = await resp.json().catch(() => null);
@@ -128,7 +128,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const register = async (email: string, password: string, turnstileToken?: string) => {
+  const register = async (email: string, password: string, turnstileToken?: string, options?: { next?: string }) => {
     try {
       const { RegisterRequestSchema } = await import('@/features/auth/schemas/register');
       const parsed = RegisterRequestSchema.safeParse({ email, password, turnstileToken });
@@ -139,7 +139,7 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
       const resp = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, turnstileToken, redirect_to: '/auth/verified' }),
+        body: JSON.stringify({ email, password, turnstileToken, ...(options?.next ? { next: options.next } : {}) }),
       });
 
       const body: unknown = await resp.json().catch(() => null);
@@ -203,14 +203,31 @@ export const LoginProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const loginWithGoogle = async (params?: { next?: string }) => {
+    const failure = { success: false, error: 'OAuthログインに失敗しました' };
     try {
-      const next = params?.next && params.next.startsWith('/') ? params.next : '/auth/verified';
+      // 戻り先は本文で渡す（URL に載せない）。確かめはサーバーが行い、番号は Cookie だけで返る。
+      // フォームの POST から外へ 303 する形は CSP の form-action 'self' に止められるので、fetch で URL を受けて移る。
+      const resp = await fetch('/api/auth/oauth/start', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'google', ...(params?.next ? { next: params.next } : {}) }),
+      });
+      if (resp.status !== 200) return failure;
 
-      navigateBrowser(`/api/auth/oauth/start?provider=google&redirect_to=${encodeURIComponent(next)}`);
+      const body: unknown = await resp.json().catch(() => null);
+      const url = typeof body === 'object' && body ? (body as { url?: unknown }).url : undefined;
+      if (typeof url !== 'string') return failure;
+
+      const { protocol } = new URL(url);
+      if (protocol !== 'https:' && protocol !== 'http:') return failure;
+
+      navigateBrowser(url);
       return { success: true };
     } catch (e) {
       console.error('OAuth login error', e);
-      return { success: false, error: 'OAuthログインに失敗しました' };
+      return failure;
     }
   };
 

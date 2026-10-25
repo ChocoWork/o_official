@@ -95,16 +95,16 @@ describe('OTP verification and resend feedback', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('認証コードの送信に失敗しました');
     consoleError.mockRestore();
   });
-  test('DD-AUTH-002 valid OTP completes login using the verified account response', async () => {
+  test('DD-AUTH-002 valid OTP completes login using the post-login destination', async () => {
     mockVerifyOtp.mockResolvedValue({ success: true });
-    jest.mocked(global.fetch).mockResolvedValue(new Response('{"authenticated":true,"user":{"role":"user"}}'));
+    jest.mocked(global.fetch).mockResolvedValue(new Response('{"redirectTo":"/","needsMfa":false}'));
     render(<VerifyOtpClient email="one@example.invalid" />);
     fireEvent.paste(screen.getByLabelText('認証コード 1 桁目'), {
       clipboardData: { getData: () => '12345678' },
     });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'サインイン' })); });
     expect(mockVerifyOtp).toHaveBeenCalledWith('12345678');
-    expect(mockReplace).toHaveBeenCalledWith('/account');
+    expect(mockReplace).toHaveBeenCalledWith('/');
   });
 
   describe('resend after a successful request', () => {
@@ -454,61 +454,90 @@ describe('OTP verification and resend feedback', () => {
   });
 
   describe('destination after a successful code', () => {
-    async function confirmWith(meResponse: Response | Error) {
+    async function confirmWith(postLoginResponse: Response | Error) {
       mockVerifyOtp.mockResolvedValue({ success: true });
-      if (meResponse instanceof Error) {
-        jest.mocked(global.fetch).mockRejectedValue(meResponse);
+      if (postLoginResponse instanceof Error) {
+        jest.mocked(global.fetch).mockRejectedValue(postLoginResponse);
       } else {
-        jest.mocked(global.fetch).mockResolvedValue(meResponse);
+        jest.mocked(global.fetch).mockResolvedValue(postLoginResponse);
       }
       render(<VerifyOtpClient email={EMAIL} />);
       pasteAt(0, '12345678');
       await submitForm();
     }
 
-    test.each(['admin', 'supporter'])('DD-AUTH-002 me の役割が %s なら /auth/verified へ置き換える', async role => {
-      await confirmWith(new Response(JSON.stringify({ authenticated: true, user: { role } })));
+    function postLoginBody(redirectTo: unknown, needsMfa = false) {
+      return new Response(JSON.stringify({ redirectTo, needsMfa }));
+    }
 
-      expect(global.fetch).toHaveBeenCalledWith('/api/auth/me', {
-        method: 'GET', cache: 'no-store', credentials: 'same-origin',
+    test('DD-AUTH-002 確定の後に post-login を POST で呼び、/api/auth/me は呼ばない', async () => {
+      await confirmWith(postLoginBody('/'));
+
+      expect(global.fetch).toHaveBeenCalledWith('/api/auth/post-login', {
+        method: 'POST', cache: 'no-store', credentials: 'same-origin',
       });
+      expect(jest.mocked(global.fetch).mock.calls.map(([url]) => url)).not.toContain('/api/auth/me');
+    });
+
+    test('DD-AUTH-002 post-login が返した戻り先へ置き換える', async () => {
+      await confirmWith(postLoginBody('/item/3?color=red'));
+
+      expect(mockReplace).toHaveBeenCalledWith('/item/3?color=red');
+    });
+
+    test('DD-AUTH-002 戻り先が /account でも、そのまま /account へ置き換える（既定の /account は残っていない）', async () => {
+      await confirmWith(postLoginBody('/account'));
+
+      expect(mockReplace).toHaveBeenCalledWith('/account');
+    });
+
+    test('DD-AUTH-002 特権（admin・supporter）の needsMfa:true なら /auth/verified へ置き換える', async () => {
+      await confirmWith(postLoginBody('/auth/verified', true));
+
       expect(mockReplace).toHaveBeenCalledWith('/auth/verified');
     });
 
-    test('DD-AUTH-002 me の役割がほかなら /account へ置き換える', async () => {
-      await confirmWith(new Response('{"authenticated":true,"user":{"role":"customer"}}'));
+    test('DD-AUTH-002 needsMfa:true は redirectTo が何でも /auth/verified に固定する', async () => {
+      await confirmWith(postLoginBody('/admin', true));
 
-      expect(mockReplace).toHaveBeenCalledWith('/account');
+      expect(mockReplace).toHaveBeenCalledWith('/auth/verified');
     });
 
-    test('DD-AUTH-002 me に user が無くても認証済みなら /account へ置き換える', async () => {
-      await confirmWith(new Response('{"authenticated":true}'));
+    test.each([
+      ['外の住所', 'https://evil.example/'],
+      ['プロトコル相対', '//evil.example'],
+      ['タブ入り', '/\t/evil.example'],
+      ['文字でない値', 42],
+      ['途中の画面', '/auth/verified'],
+    ])('DD-AUTH-002 戻り先が不正（%s）なら / に直して置き換える（二重の確かめ）', async (_label, redirectTo) => {
+      await confirmWith(postLoginBody(redirectTo));
 
-      expect(mockReplace).toHaveBeenCalledWith('/account');
+      expect(mockReplace).toHaveBeenCalledTimes(1);
+      expect(mockReplace).toHaveBeenCalledWith('/');
     });
 
-    test('DD-AUTH-002 me が 200 以外なら /login へ置き換える', async () => {
-      await confirmWith(new Response('{"authenticated":true,"user":{"role":"admin"}}', { status: 401 }));
+    test('DD-AUTH-002 post-login が 401 なら /login へ置き換える', async () => {
+      await confirmWith(new Response('{"error":"Unauthorized"}', { status: 401 }));
 
       expect(mockReplace).toHaveBeenCalledWith('/login');
     });
 
-    test('DD-AUTH-002 me の本文が JSON でなければ /login へ置き換える', async () => {
+    test.each([503, 429, 500])('DD-AUTH-002 post-login が %i なら /auth/verified へ倒す（特権が 2 段目を飛ばさない）', async status => {
+      await confirmWith(new Response('{}', { status }));
+
+      expect(mockReplace).toHaveBeenCalledWith('/auth/verified');
+    });
+
+    test('DD-AUTH-002 post-login の本文が JSON でなければ /auth/verified へ倒す', async () => {
       await confirmWith(new Response('<html>not json</html>'));
 
-      expect(mockReplace).toHaveBeenCalledWith('/login');
+      expect(mockReplace).toHaveBeenCalledWith('/auth/verified');
     });
 
-    test('DD-AUTH-002 me の authenticated が真でなければ /login へ置き換える', async () => {
-      await confirmWith(new Response('{"authenticated":false}'));
-
-      expect(mockReplace).toHaveBeenCalledWith('/login');
-    });
-
-    test('DD-AUTH-002 me の通信が投げれば /account へ置き換える', async () => {
+    test('DD-AUTH-002 post-login の通信が投げれば /auth/verified へ倒す', async () => {
       await confirmWith(new Error('offline'));
 
-      expect(mockReplace).toHaveBeenCalledWith('/account');
+      expect(mockReplace).toHaveBeenCalledWith('/auth/verified');
     });
   });
 

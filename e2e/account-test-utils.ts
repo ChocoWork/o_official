@@ -29,6 +29,16 @@ export async function mockOtpAuthentication(page: Page, email = 'user@example.co
     });
   });
 
+  // ログインの後の行き先はサーバーが戻り先を使い切って返す（POST /api/auth/post-login）。
+  // 偽の印のままだと実 API は 401 で /login へ倒れるので、/account の門から入った会員の戻り先として固定する。
+  await page.route('**/api/auth/post-login', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ redirectTo: '/account' }),
+    });
+  });
+
   await page.route('**/api/auth/me', async (route) => {
     await route.fulfill({
       status: 200,
@@ -80,7 +90,7 @@ export async function loginAndOpenAccount(page: Page, email = 'user@example.com'
   }
 
   await page.getByRole('button', { name: 'サインイン' }).click();
-  // 認証フロー刷新後、ログイン成功時のリダイレクト先は /account
+  // 行き先は mockOtpAuthentication の post-login の戻り先（/account の門から入った会員）
   await page.waitForURL('**/account');
 
   const origin = new URL(page.url()).origin;

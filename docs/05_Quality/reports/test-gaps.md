@@ -1,6 +1,6 @@
 # 試験の穴
 
-> 状態: 自動生成 | 生成日: 2026-10-25 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
+> 状態: 自動生成 | 生成日: 2026-10-26 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
 
 ## 概要
 
@@ -44,26 +44,26 @@
 | SEC-PRIVACY-004-AC-01 回数の上限を超えると DB を読まない | E2E | `docs/02_Requirements/areas/privacy.md:363` |
 | SEC-PRIVACY-006-AC-02 鍵が無くても設定がオンなら一文が表示される | E2E | `docs/02_Requirements/areas/privacy.md:425` |
 | SEC-PRIVACY-018-AC-01 運用の文書に迷惑メールの選別と見直しの手順が在る | E2E | `docs/02_Requirements/areas/privacy.md:761` |
-| FREQ-59-AC-01 /register に EMAIL・PASSWORD・PASSWORD（確認）が出る | E2E | `docs/02_Requirements/areas/auth.md:2083` |
-| FREQ-61-AC-02 新規登録タブで PASSWORD（確認）が出て URL が /register になる | E2E | `docs/02_Requirements/areas/auth.md:2135` |
-| FREQ-61-AC-03 /register で新規登録タブが選ばれ、ログインタブで URL が /login になる | E2E | `docs/02_Requirements/areas/auth.md:2148` |
-| FREQ-63-AC-03 「既にアカウントをお持ちの方はこちら」がタブ切替のボタンになる | E2E | `docs/02_Requirements/areas/auth.md:2213` |
-| FREQ-64-AC-01 カードの枠・EMAIL の欄・ログインボタンの角が丸い | E2E | `docs/02_Requirements/areas/auth.md:2226` |
-| FREQ-64-AC-03 カードの枠線が純黒でないグレー | E2E | `docs/02_Requirements/areas/auth.md:2252` |
-| FREQ-64-AC-04 ログインボタンの角が 4px〜12px の中ほどの丸み | E2E | `docs/02_Requirements/areas/auth.md:2265` |
-| FREQ-65-AC-05 タブに区切り線が無い | E2E | `docs/02_Requirements/areas/auth.md:2330` |
-| FREQ-70-AC-01 角丸のカードがあり、送信ボタンの角が 4px〜12px | E2E | `docs/02_Requirements/areas/auth.md:2486` |
-| FREQ-320-AC-01 DB の関数が失敗すると再設定は 500、登録は 503 で、監査が success にならない | E2E | `docs/02_Requirements/areas/auth.md:3120` |
-| FREQ-323-AC-02 HIBP が応答しなくても登録でき、監査に検査不能が残る | E2E | `docs/02_Requirements/areas/auth.md:3185` |
-| FREQ-330-REQ-02-AC-01 ログイン・会員登録・再設定のウィジェットの引き直しが useTurnstileWidget の1か所にある | E2E | `docs/02_Requirements/areas/auth.md:3433` |
-| FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | E2E | `docs/02_Requirements/areas/auth.md:3744` |
-| FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:3835` |
-| FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | E2E | `docs/02_Requirements/areas/auth.md:3861` |
-| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:4346` |
-| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:4507` |
-| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:4593` |
-| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:4730` |
-| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:4842` |
+| FREQ-59-AC-01 /register に EMAIL・PASSWORD・PASSWORD（確認）が出る | E2E | `docs/02_Requirements/areas/auth.md:2106` |
+| FREQ-61-AC-02 新規登録タブで PASSWORD（確認）が出て URL が /register になる | E2E | `docs/02_Requirements/areas/auth.md:2158` |
+| FREQ-61-AC-03 /register で新規登録タブが選ばれ、ログインタブで URL が /login になる | E2E | `docs/02_Requirements/areas/auth.md:2171` |
+| FREQ-63-AC-03 「既にアカウントをお持ちの方はこちら」がタブ切替のボタンになる | E2E | `docs/02_Requirements/areas/auth.md:2236` |
+| FREQ-64-AC-01 カードの枠・EMAIL の欄・ログインボタンの角が丸い | E2E | `docs/02_Requirements/areas/auth.md:2249` |
+| FREQ-64-AC-03 カードの枠線が純黒でないグレー | E2E | `docs/02_Requirements/areas/auth.md:2275` |
+| FREQ-64-AC-04 ログインボタンの角が 4px〜12px の中ほどの丸み | E2E | `docs/02_Requirements/areas/auth.md:2288` |
+| FREQ-65-AC-05 タブに区切り線が無い | E2E | `docs/02_Requirements/areas/auth.md:2353` |
+| FREQ-70-AC-01 角丸のカードがあり、送信ボタンの角が 4px〜12px | E2E | `docs/02_Requirements/areas/auth.md:2509` |
+| FREQ-320-AC-01 DB の関数が失敗すると再設定は 500、登録は 503 で、監査が success にならない | E2E | `docs/02_Requirements/areas/auth.md:3143` |
+| FREQ-323-AC-02 HIBP が応答しなくても登録でき、監査に検査不能が残る | E2E | `docs/02_Requirements/areas/auth.md:3208` |
+| FREQ-330-REQ-02-AC-01 ログイン・会員登録・再設定のウィジェットの引き直しが useTurnstileWidget の1か所にある | E2E | `docs/02_Requirements/areas/auth.md:3456` |
+| FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | E2E | `docs/02_Requirements/areas/auth.md:3767` |
+| FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:3858` |
+| FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | E2E | `docs/02_Requirements/areas/auth.md:3884` |
+| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:4453` |
+| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:4614` |
+| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:4700` |
+| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:4837` |
+| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:4949` |
 | FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:206` |
 | SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:422` |
 | SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:633` |
@@ -125,7 +125,6 @@
 | 段 | 場所 | 指す項目 | 名前 |
 | --- | --- | --- | --- |
 | e2e | `e2e/FR-LOOK-DETAIL-007-related-recommendations-wont.spec.ts:4` | FR-LOOK-DETAIL-007-AC-01 | FR-LOOK-DETAIL-007-AC-01 詳細に同じシーズンか関連のコーディネートを薦める節が出る（現フェーズ対象外のため未実装） |
-| unit | `tests/unit/app/auth/auth-callback-page.test.tsx:145` | DD-AUTH-006 | DD-AUTH-006 //で始まる外の住所の next は /auth/verified にする |
 | integration | `tests/integration/ui/auth-header-visibility.test.tsx:95` | ARC-AUTH-008 | ARC-AUTH-008 CSS が印の true の時にヘッダーの高さを、false の時に 0 を --site-header-offset に入れる（計算後の CSS で確かめる手段が要る） |
 | integration | `tests/integration/ui/auth-header-visibility.test.tsx:96` | ARC-AUTH-008 | ARC-AUTH-008 共有のレイアウトが html の初期値に data-header-visible="true" を持つ（レイアウトを描いて確かめる手段が要る） |
 
@@ -150,24 +149,28 @@
 - `src/features/search/services/search.service.ts:88` `rankText` の「語が空、または分けた語が空なら 0 を返す」側。語は空でなく、記号だけの語も `tokenizeQuery` が語全体を1語に戻すので分けた語は空にならない。確認: 未
 - `src/features/search/services/search.service.ts:102` `rankText` の `normalizedTexts[0] ?? ''` の右側。呼ぶ所が必ず題を先頭に1つ以上の欄を渡す。確認: 未
 - `src/features/search/components/SearchPageClient.tsx:416` 外を押す聞き手の `searchBoxRef.current` が `null` の側は通らない（分岐の網羅の数には入らない）。聞き手は候補のリストが開いている間、つまり検索の箱を描いた後にだけ付くため。確認: 未
-- `src/app/api/auth/confirm/route.ts:70` `GET` の入口の判断 `error || !data?.session || !data?.user` の `!data?.user` の `data` が `null` の側は通らない。直前の `!data?.session` が `data` が `null` の時に真になって先に抜けるため。確認: 済み
-- `src/app/api/auth/confirm/route.ts:93` `GET` のセッションの保存に失敗した時の監査の `data.user?.email` の `user` が無い側は通らない。70 行の確かめを通った後なので `user` がある。確認: 済み
-- `src/app/api/auth/confirm/route.ts:96` `GET` のセッションの保存に失敗した時の監査の `data.user?.id` の `user` が無い側は通らない。理由は 93 行と同じ。確認: 済み
-- `src/app/api/auth/confirm/route.ts:110` `GET` の成功の監査の `data.user?.email` の `user` が無い側は通らない。理由は 93 行と同じ。確認: 済み
-- `src/app/api/auth/confirm/route.ts:112` `GET` の成功の監査の `data.user?.id` の `user` が無い側は通らない。理由は 93 行と同じ。確認: 済み
+- `src/app/api/auth/confirm/route.ts:76` `GET` の入口の判断 `error || !data?.session || !data?.user` の `!data?.user` の `data` が `null` の側は通らない。直前の `!data?.session` が `data` が `null` の時に真になって先に抜けるため。確認: 済み
+- `src/app/api/auth/confirm/route.ts:100` `GET` のセッションの保存に失敗した時の監査の `data.user?.email` の `user` が無い側は通らない。76 行の確かめを通った後なので `user` がある。確認: 済み
+- `src/app/api/auth/confirm/route.ts:103` `GET` のセッションの保存に失敗した時の監査の `data.user?.id` の `user` が無い側は通らない。理由は 100 行と同じ。確認: 済み
+- `src/app/api/auth/confirm/route.ts:132` `GET` の成功の監査の `data.user?.email` の `user` が無い側は通らない。理由は 100 行と同じ。確認: 済み
+- `src/app/api/auth/confirm/route.ts:134` `GET` の成功の監査の `data.user?.id` の `user` が無い側は通らない。理由は 100 行と同じ。確認: 済み
 - `src/app/api/auth/otp/verify/route.ts:93` `POST` の入口の判断 `verifyError || !data?.session || !data?.user` の `!data?.user` の `data` が `null` の側は通らない。直前の `!data?.session` が `data` が `null` の時に真になって先に抜けるため。確認: 済み
-- `src/app/api/auth/register/route.ts:223` `POST` の `data.user?.id` の `user` が無い側（セッションの保存が結果を返さなかった時の監査）は通らない。手前の `if (!data.user)` で先に返るため。確認: 済み
-- `src/app/api/auth/register/route.ts:243` `POST` の `data.user?.id` の `user` が無い側（セッションの保存が例外を投げた時の監査）は通らない。理由は 223 行と同じ。確認: 済み
-- `src/app/api/auth/register/route.ts:247` `POST` の `data.user?.id` の `user` が無い側（成功の監査）は通らない。理由は 223 行と同じ。確認: 済み
+- `src/app/api/auth/register/route.ts:231` `POST` の `data.user?.id` の `user` が無い側（セッションの保存が結果を返さなかった時の監査）は通らない。手前の `if (!data.user)` で先に返るため。確認: 済み
+- `src/app/api/auth/register/route.ts:251` `POST` の `data.user?.id` の `user` が無い側（セッションの保存が例外を投げた時の監査）は通らない。理由は 231 行と同じ。確認: 済み
+- `src/app/api/auth/register/route.ts:257` `POST` の `data.user?.id` の `user` が無い側（成功の監査）は通らない。理由は 231 行と同じ。確認: 済み
 - `src/app/auth/password-reset/page.tsx:234` `PasswordResetPage` の `handleResend` の先頭の `siteKey && !turnstileToken` が真の側は通らない。再送のボタンが同じ描画の値（`disabled={loading || (!!siteKey && !turnstileToken)}`）で押せなくなっており、この関数に入る時点で常に偽のため。確認: 済み
-- `src/app/auth/verified/page.tsx:156` `VerifiedPage` の effect の `authBody?.user?.role` の `authBody?.` が `null` の側、三項の真側の `authBody?.` が `null` の側と `user?.` が `undefined` の側（3分岐）は通らない。直前の `authBody?.authenticated === true` を通った後なので `authBody` は `null` でなく、真側に入るには `role` を持つ `user` が要るため。確認: 済み
-- `src/app/auth/verified/page.tsx:157` `VerifiedPage` の effect の `authBody?.user?.mfaVerified` の `authBody?.` が `null` の側は通らない。理由は 156 行と同じ。確認: 済み
-- `src/app/login/verify/VerifyOtpClient.tsx:185` `VerifyOtpClient` の `resolvePostLoginPath` の `body?.user?.role` の `body` が `null` の側は通らない。直前の `body?.authenticated === true` を通った後なので `body` は `null` でない。確認: 済み
+- `src/app/auth/verified/page.tsx:187` `VerifiedPage` の effect の `authBody?.user?.role` の `authBody?.` が `null` の側、三項の真側の `authBody?.` が `null` の側と `user?.` が `undefined` の側（3分岐）は通らない。直前の `authBody?.authenticated === true` を通った後なので `authBody` は `null` でなく、真側に入るには `role` を持つ `user` が要るため。確認: 済み
+- `src/app/auth/verified/page.tsx:188` `VerifiedPage` の effect の `authBody?.user?.mfaVerified` の `authBody?.` が `null` の側は通らない。理由は 187 行と同じ。確認: 済み
+- `src/app/login/verify/VerifyOtpClient.tsx:192` `VerifyOtpClient` の `resolvePostLoginPath` の `body?.redirectTo` の `body` が `null` の側は通らない。直前の `body === null` で `/auth/verified` を返した後なので `body` は `null` でない。確認: 済み
 - `src/components/AuthResultScreen.tsx:114` `AuthResultScreen` の effect の `titleRef.current?.focus()` の `current` が `null` の側は通らない。見出しは条件なしで描かれ、描いた後に走る effect の時点で ref が入っているため。確認: 済み
-- `src/components/AuthTabs.tsx:38` `AuthTabs` の `switchTab` の `TABS.find(...)?.path` の見つからない側は通らない。引数の型が `TABS` の key だけのため。確認: 済み
-- `src/components/AuthTabs.tsx:49` `AuthTabs` の `handleTabKeyDown` の `tabRefs.current[next]?.focus()` の ref が無い側は通らない。2つのタブは常に描かれ、ref が入っているため。確認: 済み
-- `src/components/Header.tsx:124` `Header` の `isActiveMenuItem` の `href === "/"` の真の側は通らない。呼ぶのはナビの項目・`/loading`・`/admin` だけで `/` が無いため（使われていないコード）。確認: 済み
-- `src/components/Header.tsx:409` `Header` の `LoginModal` の引数の `open={loginOpen && !isLoggedIn}` の右側は通らない。`setLoginOpen(true)` の呼び出しがどこにも無く、`loginOpen` は初めの値 `false` のままのため（使われていないコード）。確認: 済み
+- `src/components/AuthTabs.tsx:40` `AuthTabs` の `switchTab` の `TABS.find(...)?.path` の見つからない側は通らない。引数の型が `TABS` の key だけのため。確認: 済み
+- `src/components/AuthTabs.tsx:51` `AuthTabs` の `handleTabKeyDown` の `tabRefs.current[next]?.focus()` の ref が無い側は通らない。2つのタブは常に描かれ、ref が入っているため。確認: 済み
+- `src/components/Header.tsx:126` `Header` の `isActiveMenuItem` の `href === "/"` の真の側は通らない。呼ぶのはナビの項目・`/loading`・`/admin` だけで `/` が無いため（使われていないコード）。確認: 済み
+- `src/components/Header.tsx:411` `Header` の `LoginModal` の引数の `open={loginOpen && !isLoggedIn}` の右側は通らない。`setLoginOpen(true)` の呼び出しがどこにも無く、`loginOpen` は初めの値 `false` のままのため（使われていないコード）。確認: 済み
+- `src/features/auth/return-intent/return-path.ts:114` `validateReturnPath` のデコード後の長さの判断 `decoded.length > RETURN_PATH_MAX_LENGTH` の真の側は通らない。`decodeURIComponent` の結果は元の値より長くならず、元の値は直前で 512 字以内と確かめ済みのため。確認: 未
+- `src/features/auth/return-intent/return-path.ts:129` `validateReturnPath` の `url.origin !== origin` の真の側は通らない。元の値は「`/` で始まり 2 文字目が `/` でも `\` でもない」と確かめ済みで、空白・制御文字も無いので、`new URL(値, origin)` は必ず同じ origin になるため。確認: 未
+- `src/features/auth/return-intent/return-path.ts:130` `validateReturnPath` の `url.username || url.password` の真の側は通らない。基準の origin は `new URL(...).origin` で作り直すので資格情報を持たず、相対の値の解釈でも付かないため。確認: 未
+- `src/features/auth/return-intent/return-path.ts:136` `validateReturnPath` の `new URL(out, origin).origin !== origin` の真の側は通らない。直前で `out` が `//` と `/\` で始まらないと確かめ済みで、`/` で始まる道筋の解釈は同じ origin になるため。確認: 未
 - `src/app/admin/look/edit/[id]/page.tsx:88` `AdminLookEditPage` の `if (!initialValues)` の真の側（読み込みが終わったのに値も誤りも無い形）は通らない。成功時は必ず値を入れ、失敗時は必ず誤りを入れ、`isLoading` を外すのはその後（同じ描き直しにまとめられる）ため。確認: 未
 - `src/app/api/admin/looks/[id]/route.ts:603` `PATCH` の catch の `error instanceof z.ZodError` の真の側（理由の文 `detail`）は通らない。本文の形は `safeParse` で確かめ、`request.json()` の失敗は `SyntaxError` で、`ZodError` を投げる部品がこの道に無いため。確認: 未
 - `src/app/api/admin/looks/[id]/route.ts:604` 同じ分岐の `metadata`（`invalid_fields`）の側は通らない。理由は 603 行と同じ。確認: 未

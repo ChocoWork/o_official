@@ -11,8 +11,15 @@ jest.mock('@/lib/turnstile', () => ({
   verifyTurnstile: jest.fn(),
 }));
 
-jest.mock('@/lib/audit', () => ({
-  logAudit: jest.fn().mockResolvedValue(undefined),
+jest.mock('@/lib/audit', () => {
+  const logAudit = jest.fn().mockResolvedValue(undefined);
+  return { __esModule: true, default: logAudit, logAudit };
+});
+
+// 戻り先の控えの保存だけを差し替える（確かめと Cookie の動作は本物）
+jest.mock('@/features/auth/return-intent/return-intent-store', () => ({
+  ...jest.requireActual('@/features/auth/return-intent/return-intent-store'),
+  createReturnIntent: jest.fn(),
 }));
 
 jest.mock('@/lib/supabase/server', () => {
@@ -55,6 +62,7 @@ import { verifyLoginTwoFactorSessionToken } from '@/features/auth/services/login
 const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 const { verifyTurnstile } = require('@/lib/turnstile');
 const { logAudit } = require('@/lib/audit');
+const { createReturnIntent } = require('@/features/auth/return-intent/return-intent-store');
 const {
   createPublicClient,
   __mockSignInWithPassword,
@@ -96,6 +104,7 @@ describe('API-AUTH-001 POST /api/auth/login', () => {
     __mockSignInWithOtp.mockReset();
     __mockSignInWithPassword.mockResolvedValue({ data: { session: SESSION, user: USER }, error: null });
     __mockSignInWithOtp.mockResolvedValue({ data: {}, error: null });
+    createReturnIntent.mockResolvedValue({ token: 'A'.repeat(43), maxAgeSeconds: 900 });
     jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -121,11 +130,36 @@ describe('API-AUTH-001 POST /api/auth/login', () => {
   test('API-AUTH-001 1段目で得た session は捨て、トークンを本文にも Cookie にも出さない', async () => {
     const res = await loginHandler(buildRequest(validBody()));
 
-    expect(res.cookies.all().map((c: { name: string }) => c.name)).toEqual(['sb-login-2fa-session']);
+    // 配るのは保留の印と、戻り先の控え（この要求は next が無いので消す側）だけ。認証のトークンの Cookie は無い
+    expect(res.cookies.all().map((c: { name: string }) => c.name)).toEqual(['sb-login-2fa-session', 'sb-return-intent']);
     const serialized = JSON.stringify(await res.json());
     expect(serialized).not.toContain(SESSION.access_token);
     expect(serialized).not.toContain(SESSION.refresh_token);
     expect(JSON.stringify(res.cookies.all())).not.toContain(SESSION.refresh_token);
+  });
+
+  test('API-AUTH-001 next が通ると控えの Cookie を HttpOnly・SameSite=Lax・15 分で保留の Cookie と一緒に配り、番号は本文に出さない', async () => {
+    const res = await loginHandler(buildRequest(validBody({ next: '/wishlist' })));
+
+    expect(createReturnIntent).toHaveBeenCalledWith({ returnPath: '/wishlist', purpose: 'login' });
+    expect(res.cookies.get('sb-login-2fa-session')).toBeDefined();
+    expect(res.cookies.get('sb-return-intent')).toEqual(
+      expect.objectContaining({ value: 'A'.repeat(43), httpOnly: true, sameSite: 'lax', path: '/', maxAge: 900 }),
+    );
+    expect(JSON.stringify(await res.json())).not.toContain('A'.repeat(43));
+  });
+
+  test('API-AUTH-001 next が外の住所・数値・長すぎる値でも 400 にならず 200 の step=otp で、控えの Cookie は消す側になる', async () => {
+    for (const next of ['//evil.example', 123, '/item/' + 'a'.repeat(3000)]) {
+      createReturnIntent.mockClear();
+
+      const res = await loginHandler(buildRequest(validBody({ next })));
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).step).toBe('otp');
+      expect(createReturnIntent).not.toHaveBeenCalled();
+      expect(res.cookies.get('sb-return-intent')).toEqual(expect.objectContaining({ value: '', maxAge: 0 }));
+    }
   });
 
   test('API-AUTH-001 保留の Cookie の中身にパスワードやトークンを入れない', async () => {

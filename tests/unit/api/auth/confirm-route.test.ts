@@ -1,7 +1,7 @@
 /**
  * DD-AUTH-019 確認のメールのリンクの窓口（src/app/api/auth/confirm/route.ts）の単体テスト。
- * Supabase・回数の制限・セッション保存・ゲスト注文の紐付け・監査は差し替え、窓口の分岐だけを確かめる。
- * 送り先の絞り込み（sanitizeRedirectPath）は本物を通す。
+ * Supabase・回数の制限・セッション保存・ゲスト注文の紐付け・監査・戻り先の控え（return-intent-service）は差し替え、窓口の分岐だけを確かめる。
+ * 控えの使い切り自体は return-intent-service の単体試験と API-AUTH-006 の結合試験が見る。
  */
 
 jest.mock('next/server', () => {
@@ -38,6 +38,12 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jes
 jest.mock('@/features/auth/services/register', () => ({ persistSessionAndCookies: jest.fn() }));
 jest.mock('@/features/cart/services/guest-shopping-token', () => ({ readGuestShoppingTokens: jest.fn() }));
 jest.mock('@/lib/orders/link-guest-orders', () => ({ linkGuestOrdersByEmail: jest.fn() }));
+const mockResolveReturnDestination = jest.fn();
+const mockApplyReturnIntentCookie = jest.fn();
+jest.mock('@/features/auth/return-intent/return-intent-service', () => ({
+  resolveReturnDestination: (...args: unknown[]) => mockResolveReturnDestination(...args),
+  applyReturnIntentCookie: (...args: unknown[]) => mockApplyReturnIntentCookie(...args),
+}));
 
 import { logAudit } from '@/lib/audit';
 import { createPublicClient } from '@/lib/supabase/server';
@@ -75,6 +81,7 @@ describe('GET /api/auth/confirm', () => {
     mockReadTokens.mockReturnValue(TOKENS);
     mockLink.mockResolvedValue(0);
     mockLogAudit.mockResolvedValue(undefined);
+    mockResolveReturnDestination.mockResolvedValue({ path: '/', needsMfa: false, action: { kind: 'keep' } });
   });
 
   afterEach(() => {
@@ -109,7 +116,7 @@ describe('GET /api/auth/confirm', () => {
     it('DD-AUTH-019 制限の呼び出しが投げたら記録して確かめへ進む', async () => {
       mockRateLimit.mockRejectedValue(new Error('rate down'));
 
-      const res: any = await GET(request('?token_hash=h&redirect_to=%2Fauth%2Fverified'));
+      const res: any = await GET(request('?token_hash=h'));
 
       expect(console.error).toHaveBeenCalledWith('Rate limit middleware error (confirm):', expect.any(Error));
       expect(res.status).toBe(303);
@@ -148,17 +155,35 @@ describe('GET /api/auth/confirm', () => {
       expect(verifyOtp).toHaveBeenCalledWith({ token_hash: 'h', type });
     });
 
-    it('DD-AUTH-019 redirect_to が無ければ既定の /account へ 303 で移す', async () => {
+    it('DD-AUTH-019 控えが無ければ（解決が既定の / を返す）/ へ 303 で移す', async () => {
       const res: any = await GET(request('?token_hash=h'));
 
       expect(res.status).toBe(303);
-      expect(res.headers.get('Location')).toBe('http://localhost:3000/account');
+      expect(res.headers.get('Location')).toBe('http://localhost:3000/');
     });
 
-    it('DD-AUTH-019 redirect_to に //evil.example を渡しても既定の /account へ移す', async () => {
-      const res: any = await GET(request('?token_hash=h&redirect_to=%2F%2Fevil.example'));
+    it.each([
+      ['外の住所', '%2F%2Fevil.example'],
+      ['/auth/verified', '%2Fauth%2Fverified'],
+      ['タブ入り /%09/evil.example', '%2F%09%2Fevil.example'],
+      ['/look（内部の道でも）', '%2Flook'],
+    ])('DD-AUTH-019 redirect_to（%s）は読まず、行き先は解決の結果だけで決める', async (_label, encoded) => {
+      const res: any = await GET(request(`?token_hash=h&redirect_to=${encoded}`));
 
-      expect(res.headers.get('Location')).toBe('http://localhost:3000/account');
+      expect(res.status).toBe(303);
+      expect(res.headers.get('Location')).toBe('http://localhost:3000/');
+      const [arg] = mockResolveReturnDestination.mock.calls[0];
+      expect(JSON.stringify(arg)).not.toContain('redirect_to');
+      expect(JSON.stringify(arg)).not.toContain('evil');
+    });
+
+    it('DD-AUTH-019 トークンが無い失敗の枝は redirect_to を読まず固定の /login へ移す（外へ向く値でも）', async () => {
+      const res: any = await GET(request('?redirect_to=%2F%09%2Fevil.example'));
+
+      expect(res.status).toBe(303);
+      expect(res.headers.get('Location')).toBe('http://localhost:3000/login');
+      expect(verifyOtp).not.toHaveBeenCalled();
+      expect(mockResolveReturnDestination).not.toHaveBeenCalled();
     });
   });
 
@@ -167,10 +192,11 @@ describe('GET /api/auth/confirm', () => {
       const res: any = await GET(request(''));
 
       expect(res.status).toBe(303);
-      expect(res.headers.get('Location')).toBe('http://localhost:3000/account');
+      expect(res.headers.get('Location')).toBe('http://localhost:3000/login');
       expect(res.headers.get('Cache-Control')).toBe('no-store');
       expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
       expect(mockCreatePublicClient).not.toHaveBeenCalled();
+      expect(mockResolveReturnDestination).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledWith({
         action: 'auth.confirm',
         outcome: 'failure',
@@ -190,10 +216,10 @@ describe('GET /api/auth/confirm', () => {
     ])('DD-AUTH-019 誤りの文 "%s" を %s に分けて failure を残し、303 を返す', async (message, reason) => {
       verifyOtp.mockResolvedValue({ data: { session: null, user: null }, error: { message } });
 
-      const res: any = await GET(request('?token_hash=h&redirect_to=%2Fauth%2Fverified'));
+      const res: any = await GET(request('?token_hash=h&redirect_to=%2Flook'));
 
       expect(res.status).toBe(303);
-      expect(res.headers.get('Location')).toBe('http://localhost:3000/auth/verified');
+      expect(res.headers.get('Location')).toBe('http://localhost:3000/login');
       expect(res.headers.get('Cache-Control')).toBe('no-store');
       expect(mockLogAudit).toHaveBeenCalledWith({
         action: 'auth.confirm',
@@ -203,6 +229,7 @@ describe('GET /api/auth/confirm', () => {
         metadata: { reason },
       });
       expect(mockPersist).not.toHaveBeenCalled();
+      expect(mockResolveReturnDestination).not.toHaveBeenCalled();
     });
 
     it('DD-AUTH-019 誤りが無くても data が null なら missing_session_or_user・unknown で 303 を返す', async () => {
@@ -211,6 +238,7 @@ describe('GET /api/auth/confirm', () => {
       const res: any = await GET(request('?token_hash=h'));
 
       expect(res.status).toBe(303);
+      expect(res.headers.get('Location')).toBe('http://localhost:3000/login');
       expect(mockLogAudit).toHaveBeenCalledWith({
         action: 'auth.confirm',
         actor_email: null,
@@ -265,13 +293,15 @@ describe('GET /api/auth/confirm', () => {
   });
 
   describe('成功', () => {
-    it('DD-AUTH-019 正しい印なら 303 で redirect_to へ移し、ゲストの印を添えて保存し、紐付けと success を残す', async () => {
-      const res: any = await GET(
-        request('?token_hash=h&type=email&redirect_to=%2Fauth%2Fverified', { cookie: 'guest=1' }),
-      );
+    it('DD-AUTH-019 正しい印なら 303 で解決した戻り先へ移し、ゲストの印を添えて保存し、紐付けと success を残す', async () => {
+      const action = { kind: 'clear' };
+      mockResolveReturnDestination.mockResolvedValue({ path: '/look', needsMfa: false, action });
+
+      const res: any = await GET(request('?token_hash=h&type=signup', { cookie: 'guest=1' }));
 
       expect(res.status).toBe(303);
-      expect(res.headers.get('Location')).toBe('http://localhost:3000/auth/verified');
+      expect(res.headers.get('Location')).toBe('http://localhost:3000/look');
+      expect(mockApplyReturnIntentCookie).toHaveBeenCalledWith(res, action);
       expect(res.headers.get('Cache-Control')).toBe('no-store');
       expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
       expect(mockReadTokens).toHaveBeenCalledWith('guest=1');
@@ -289,10 +319,85 @@ describe('GET /api/auth/confirm', () => {
       });
     });
 
+    it('DD-AUTH-019 登録の印では用途 signup・aal1 で控えを解決し、見出しと利用者の id・役割を渡す', async () => {
+      await GET(request('?token_hash=h&type=signup', { cookie: 'sb-return-intent=x' }));
+
+      expect(mockResolveReturnDestination).toHaveBeenCalledTimes(1);
+      expect(mockResolveReturnDestination).toHaveBeenCalledWith({
+        cookieHeader: 'sb-return-intent=x',
+        purpose: 'signup',
+        viewer: { id: 'user-1', role: 'user', aal: 'aal1' },
+      });
+    });
+
+    it('DD-AUTH-019 type が無い時も signup なので控えを解決する', async () => {
+      await GET(request('?token_hash=h'));
+
+      expect(mockResolveReturnDestination).toHaveBeenCalledWith(expect.objectContaining({ purpose: 'signup' }));
+    });
+
+    it.each(['admin', 'supporter'])('DD-AUTH-019 役割が %s なら viewer の役割にそのまま渡す（解決が 2 段目へ送る）', async (role) => {
+      verifyOtp.mockResolvedValue({
+        data: { session: SESSION, user: { ...USER, app_metadata: { role } } },
+        error: null,
+      });
+      mockResolveReturnDestination.mockResolvedValue({
+        path: '/auth/verified',
+        needsMfa: true,
+        action: { kind: 'keep' },
+      });
+
+      const res: any = await GET(request('?token_hash=h'));
+
+      expect(mockResolveReturnDestination).toHaveBeenCalledWith(
+        expect.objectContaining({ viewer: { id: 'user-1', role, aal: 'aal1' } }),
+      );
+      expect(res.headers.get('Location')).toBe('http://localhost:3000/auth/verified');
+    });
+
+    it('DD-AUTH-019 役割が未知の値なら user として渡す', async () => {
+      verifyOtp.mockResolvedValue({
+        data: { session: SESSION, user: { ...USER, app_metadata: { role: 'root' } } },
+        error: null,
+      });
+
+      await GET(request('?token_hash=h'));
+
+      expect(mockResolveReturnDestination).toHaveBeenCalledWith(
+        expect.objectContaining({ viewer: { id: 'user-1', role: 'user', aal: 'aal1' } }),
+      );
+    });
+
+    it.each(['email', 'magiclink', 'recovery'])('DD-AUTH-019 印の型が %s なら登録の控えを使い切らず既定の / へ移す', async (type) => {
+      const res: any = await GET(request(`?token_hash=h&type=${type}`, { cookie: 'sb-return-intent=x' }));
+
+      expect(res.status).toBe(303);
+      expect(res.headers.get('Location')).toBe('http://localhost:3000/');
+      expect(mockResolveReturnDestination).not.toHaveBeenCalled();
+      expect(mockApplyReturnIntentCookie).not.toHaveBeenCalled();
+      expect(mockPersist).toHaveBeenCalled();
+    });
+
     it('DD-AUTH-019 cookie ヘッダが無ければ null をゲストの印の読み取りへ渡す', async () => {
       await GET(request('?token_hash=h'));
 
       expect(mockReadTokens).toHaveBeenCalledWith(null);
+    });
+
+    it('DD-AUTH-019 保存の後で控えを解決する（保存の前には使い切らない）', async () => {
+      const order: string[] = [];
+      mockPersist.mockImplementation(async () => {
+        order.push('persist');
+        return { ok: true };
+      });
+      mockResolveReturnDestination.mockImplementation(async () => {
+        order.push('resolve');
+        return { path: '/', needsMfa: false, action: { kind: 'keep' } };
+      });
+
+      await GET(request('?token_hash=h'));
+
+      expect(order).toEqual(['persist', 'resolve']);
     });
 
     it('DD-AUTH-019 保存の後に紐付けを呼び、紐付けの後に success を残す', async () => {
@@ -334,9 +439,12 @@ describe('GET /api/auth/confirm', () => {
     it('DD-AUTH-019 保存が失敗したら error を残し、紐付けを呼ばずに作った 303 を返す', async () => {
       mockPersist.mockResolvedValue({ ok: false, error: 'db down' });
 
-      const res: any = await GET(request('?token_hash=h'));
+      const res: any = await GET(request('?token_hash=h', { cookie: 'sb-return-intent=x' }));
 
       expect(res.status).toBe(303);
+      expect(res.headers.get('Location')).toBe('http://localhost:3000/');
+      expect(mockResolveReturnDestination).not.toHaveBeenCalled();
+      expect(mockApplyReturnIntentCookie).not.toHaveBeenCalled();
       expect(mockLink).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledTimes(1);
       expect(mockLogAudit).toHaveBeenCalledWith({
@@ -380,10 +488,10 @@ describe('GET /api/auth/confirm', () => {
     it('DD-AUTH-019 確かめが投げたら error（unexpected）を残して 303 を返す', async () => {
       verifyOtp.mockRejectedValue(new Error('network'));
 
-      const res: any = await GET(request('?token_hash=h&redirect_to=%2Fauth%2Fverified'));
+      const res: any = await GET(request('?token_hash=h&redirect_to=%2Flook'));
 
       expect(res.status).toBe(303);
-      expect(res.headers.get('Location')).toBe('http://localhost:3000/auth/verified');
+      expect(res.headers.get('Location')).toBe('http://localhost:3000/login');
       expect(mockLogAudit).toHaveBeenCalledWith({
         action: 'auth.confirm',
         outcome: 'error',
@@ -398,6 +506,7 @@ describe('GET /api/auth/confirm', () => {
       const res: any = await GET(request('?token_hash=h'));
 
       expect(res.status).toBe(303);
+      expect(res.headers.get('Location')).toBe('http://localhost:3000/login');
       expect(mockLogAudit).toHaveBeenCalledWith(
         expect.objectContaining({ outcome: 'error', metadata: { reason: 'unexpected' } }),
       );

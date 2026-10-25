@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/Button/Button";
 import { useLogin } from "@/contexts/LoginContext";
 import { clientFetch } from "@/lib/client-fetch";
+import { useLoginHref } from "@/features/auth/return-intent/use-login-href";
 import {
   PARTIALLY_SHIPPED_LABEL,
   type OrderProgressKey,
@@ -171,6 +172,7 @@ const REFUND_STATUS_LABELS = {
 export default function AccountOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const { isLoggedIn, isAuthResolved } = useLogin();
+  const loginHref = useLoginHref();
   const [order, setOrder] = React.useState<OrderDetail | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
@@ -244,7 +246,7 @@ export default function AccountOrderDetailPage() {
         <p className="text-[#474747] mb-8" style={lgStyle}>
           注文詳細を確認するにはログインが必要です
         </p>
-        <Button href="/login" variant="primary" size="lg">
+        <Button href={loginHref} variant="primary" size="lg">
           ログイン
         </Button>
       </div>

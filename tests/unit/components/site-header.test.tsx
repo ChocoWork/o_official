@@ -347,6 +347,15 @@ describe('Header', () => {
     expect(cart.querySelector('[data-ui-badge]')).toBeNull();
   });
 
+  it('DD-AUTH-036 /login と /auth/* にいる時のログインのアイコンは next を付けない', () => {
+    const onLogin = renderHeader({ loggedIn: false, path: '/login' });
+    expect(within(onLogin.header).getByRole('link', { name: 'ログイン' })).toHaveAttribute('href', '/login');
+    onLogin.unmount();
+
+    const onAuth = renderHeader({ loggedIn: false, path: '/auth/verified' });
+    expect(within(onAuth.header).getByRole('link', { name: 'ログイン' })).toHaveAttribute('href', '/login');
+  });
+
   it('DD-AUTH-007 検索とお気に入りのアイコンを出す', () => {
     const { header } = renderHeader();
     expect(within(header).getByRole('link', { name: '検索' })).toHaveAttribute('href', '/search');
@@ -356,11 +365,11 @@ describe('Header', () => {
     );
   });
 
-  it('DD-AUTH-007 ログインしていれば /account のアイコン、いなければ /login のアイコンを出す', () => {
-    const out = renderHeader({ loggedIn: false });
+  it('DD-AUTH-007 ログインしていれば /account のアイコン、いなければ今の頁を next に載せた /login のアイコンを出す', () => {
+    const out = renderHeader({ loggedIn: false, path: '/stockist' });
     expect(within(out.header).getByRole('link', { name: 'ログイン' })).toHaveAttribute(
       'href',
-      '/login',
+      '/login?next=%2Fstockist',
     );
     expect(within(out.header).queryByRole('link', { name: 'アカウント' })).toBeNull();
     out.unmount();

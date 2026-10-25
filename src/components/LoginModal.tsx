@@ -26,9 +26,11 @@ import "@/components/AuthForm.css";
 interface LoginModalProps {
   open: boolean;
   onClose?: () => void;
+  /** ログインの後の戻り先（サーバーが確かめた道筋）。入口の POST の本文でサーバーに渡す */
+  returnTo?: string;
 }
 
-const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
+const LoginModal: React.FC<LoginModalProps> = ({ open, onClose, returnTo }) => {
   const { login, loginWithGoogle } = useLogin();
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -70,7 +72,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
 
     setLoading(true);
     try {
-      const res = await login(email, password, turnstileToken || undefined);
+      const res = await login(email, password, turnstileToken || undefined, { next: returnTo });
       if (!res.success) {
         setError(res.error || "ログインに失敗しました");
       } else {
@@ -189,7 +191,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
         <Button
           type="button"
           onClick={() => {
-            void loginWithGoogle({ next: "/auth/verified" });
+            void loginWithGoogle({ next: returnTo });
           }}
           variant="outline"
           size="md"

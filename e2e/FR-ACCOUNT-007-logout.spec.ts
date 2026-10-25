@@ -25,6 +25,15 @@ test.describe('FR-ACCOUNT-007 logout from account page', () => {
       });
     });
 
+    // ログインの後の行き先の窓口。偽の印のままだと実 API は 401 で /login へ倒れるので、/account の門から入った会員の戻り先に固定する。
+    await page.route('**/api/auth/post-login', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ redirectTo: '/account' }),
+      });
+    });
+
     // ログアウト要求が通ったら未認証に切り替える。
     // 固定で authenticated:true を返すと、ログアウト後もクライアントが在ログイン扱いになる。
     let authenticated = true;

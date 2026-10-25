@@ -4,13 +4,14 @@
  * @packageDocumentation
  * @impl IMPL-AUTH-163
  * @design DD-AUTH-018
- * @remarks 登録済みかどうかに関わらず同じ応答を返す。409 を返すと任意のアドレスを投げるだけで会員かどうかを判別でき、会員だけを狙った標的型フィッシングや漏洩した組の絞り込みに使われる（OWASP WSTG-IDNT-04、ASVS 2.1）。登録済みなら本人にメールで伝える。各段の順番と運用上の前提の理由は、その行のコメントに書いた。
+ * @remarks 登録済みかどうかに関わらず同じ応答（Set-Cookie の形まで）を返す。409 を返すと任意のアドレスを投げるだけで会員かどうかを判別でき、会員だけを狙った標的型フィッシングや漏洩した組の絞り込みに使われる（OWASP WSTG-IDNT-04、ASVS 2.1）。登録済みなら本人にメールで伝える。各段の順番と運用上の前提の理由は、その行のコメントに書いた。
  */
 import { NextResponse, after } from 'next/server';
 import sendMail from '@/lib/mail';
 import { checkPwnedPassword, PWNED_PASSWORD_MESSAGE } from '@/lib/pwned-password';
 import { createServiceRoleClient, createClient } from '@/lib/supabase/server';
-import { getRequestOrigin, sanitizeRedirectPath } from '@/lib/redirect';
+import { getRequestOrigin } from '@/lib/redirect';
+import { applyReturnIntentCookie, issueReturnIntent, type ReturnIntentCookieAction } from '@/features/auth/return-intent/return-intent-service';
 import { logAudit } from '@/lib/audit';
 import { RegisterRequestSchema } from '@/features/auth/schemas/register';
 import { formatZodError } from '@/features/auth/schemas/common';
@@ -25,8 +26,11 @@ import { notifySiteUrlInvalid } from '@/lib/ops/site-url-alert';
  * OWASP WSTG-IDNT-04 / ASVS 2.1 と Supabase 既定の挙動に合わせ、登録済みなら
  * 「既に登録済み」を本人にメールで伝え、HTTP 応答は新規登録時と同一にする。
  */
-function acceptedResponse() {
-  return NextResponse.json({ message: 'Confirmation email sent' }, { status: 202 });
+function acceptedResponse(returnIntentAction: ReturnIntentCookieAction) {
+  const res = NextResponse.json({ message: 'Confirmation email sent' }, { status: 202 });
+  // 新規・登録済み・重複の例外の 3 つの枝で、本文・状態・Set-Cookie の形まで同じにする。
+  applyReturnIntentCookie(res, returnIntentAction);
+  return res;
 }
 
 /** 既に登録済みのアドレスへ、ログイン導線を案内する。パスワードには触れない。 */
@@ -82,7 +86,6 @@ export async function POST(request: Request) {
     }
 
     const { email, password, display_name } = parsed.data;
-    const redirectPath = sanitizeRedirectPath(parsed.data.redirect_to ?? parsed.data.emailRedirectTo, '/auth/verified');
 
     // If admin token provided, use existing admin-create path (already implemented)
     if (provided && provided === adminApiKey) {
@@ -139,6 +142,11 @@ export async function POST(request: Request) {
         await logAudit({ action: "register", actor_email: email, outcome: "error", detail: `pwned_check_unavailable:${pwned.reason}` });
       }
 
+      // 戻り先の控えは、Turnstile・漏洩の確かめの後で、既存会員の照会の前に作る。
+      // 照会の後に置くと、枝ごとに Cookie の有無が変わり、登録済みかどうかが応答から分かってしまう。
+      // 作成に失敗しても応答の形は変えない（issueReturnIntent は失敗を clear に倒す）。
+      const { action: returnIntentAction } = await issueReturnIntent({ rawNext: parsed.data.next, purpose: 'signup' });
+
       // 既存ユーザーの確認。以前は listUsers({ perPage: 100 }) で先頭 100 件だけを
       // 走査していたため、101 人目以降の重複メールを検出できなかった。
       const service = await createServiceRoleClient();
@@ -156,12 +164,12 @@ export async function POST(request: Request) {
         // 応答は新規登録時と同一。存在は本人へのメールだけで伝える。
         await logAudit({ action: "register", actor_email: email, outcome: "conflict", detail: "already_registered_notified" });
         notifyAlreadyRegistered(email, new URL('/login', origin).toString());
-        return acceptedResponse();
+        return acceptedResponse(returnIntentAction);
       }
 
       const client = await createClient();
+      // 確認のリンクに戻り先は載せない（番号は Cookie だけで渡す）。
       const confirmUrl = new URL('/api/auth/confirm', origin);
-      confirmUrl.searchParams.set('redirect_to', redirectPath);
 
       const { data, error } = await client.auth.signUp({
         email,
@@ -180,7 +188,7 @@ export async function POST(request: Request) {
           // 論理削除）に当たったアドレス。上の found と同じ応答に揃える。
           await logAudit({ action: 'register', actor_email: email, outcome: 'conflict', detail: error.message });
           notifyAlreadyRegistered(email, new URL('/login', origin).toString());
-          return acceptedResponse();
+          return acceptedResponse(returnIntentAction);
         }
         await logAudit({ action: 'register', actor_email: email, outcome: 'error', detail: error.message });
         return NextResponse.json({ error: 'Failed to create user' }, { status: 500 });
@@ -244,13 +252,15 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
         }
 
+        // 即ログインの枝では確認のリンクを通らないので、控えを使う所が無い。残さないよう消す。
+        applyReturnIntentCookie(res, { kind: 'clear' });
         await logAudit({ action: 'register', actor_email: email, outcome: 'success', resource_id: data.user?.id });
         return res;
       }
 
       // If no session (email confirmation flows), return Accepted
       await logAudit({ action: 'register', actor_email: email, outcome: 'created_needs_confirmation' });
-      return acceptedResponse();
+      return acceptedResponse(returnIntentAction);
     } catch (e) {
       console.error('Public register flow error:', e);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

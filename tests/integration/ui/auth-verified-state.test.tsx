@@ -42,6 +42,7 @@ function calls(url: string) {
   return mockFetch.mock.calls.filter(([called]) => called === url).length;
 }
 
+const postLoginTo = (redirectTo: string) => () => json({ redirectTo, needsMfa: false });
 const me = (role: unknown, mfaVerified = false) => () =>
   json({ authenticated: true, user: { role, mfaVerified } });
 const noFactorStatus = () => json({ data: { hasVerifiedFactor: false, factors: [] } });
@@ -109,18 +110,20 @@ describe('/auth/verified の見せ方の移り変わり', () => {
     expect(await screen.findByRole('link', { name: 'ログインページへ' })).toBeInTheDocument();
   });
 
-  it('STATE-AUTH-003 役割が user なら読み込みから一般の会員へ移り、0.8 秒後にアカウントへ移る', async () => {
+  it('STATE-AUTH-003 役割が user なら読み込みから一般の会員へ移り、0.8 秒後に post-login が返した戻り先へ移る', async () => {
     jest.useFakeTimers();
-    route({ '/api/auth/me': me('user') });
+    route({ '/api/auth/me': me('user'), '/api/auth/post-login': postLoginTo('/item/3') });
     render(<VerifiedPage />);
 
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('確認完了。アカウントへ移動します…'));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('確認完了。移動します…'));
     expect(mockReplace).not.toHaveBeenCalled();
-    act(() => {
+    expect(calls('/api/auth/post-login')).toBe(0);
+    await act(async () => {
       jest.advanceTimersByTime(800);
     });
     expect(mockReplace).toHaveBeenCalledTimes(1);
-    expect(mockReplace).toHaveBeenCalledWith('/account');
+    expect(mockReplace).toHaveBeenCalledWith('/item/3');
+    expect(calls('/api/auth/post-login')).toBe(1);
     expect(calls('/api/auth/mfa/status')).toBe(0);
   });
 
@@ -128,35 +131,38 @@ describe('/auth/verified の見せ方の移り変わり', () => {
     'STATE-AUTH-003 役割が %p のように読めなければ user と同じく一般の会員へ移る',
     async (role) => {
       jest.useFakeTimers();
-      route({ '/api/auth/me': me(role, true) });
+      route({ '/api/auth/me': me(role, true), '/api/auth/post-login': postLoginTo('/') });
       render(<VerifiedPage />);
 
-      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('確認完了。アカウントへ移動します…'));
-      act(() => {
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('確認完了。移動します…'));
+      await act(async () => {
         jest.advanceTimersByTime(800);
       });
-      expect(mockReplace).toHaveBeenCalledWith('/account');
+      expect(mockReplace).toHaveBeenCalledWith('/');
+      expect(calls('/api/auth/mfa/status')).toBe(0);
     },
   );
 
-  it('STATE-AUTH-003 一般の会員が待つ間に画面を離れたら、アカウントへは移さない', async () => {
+  it('STATE-AUTH-003 一般の会員が待つ間に画面を離れたら、移さず post-login も呼ばない', async () => {
     jest.useFakeTimers();
-    route({ '/api/auth/me': me('user') });
+    route({ '/api/auth/me': me('user'), '/api/auth/post-login': postLoginTo('/item/3') });
     const { unmount } = render(<VerifiedPage />);
 
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('確認完了。アカウントへ移動します…'));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('確認完了。移動します…'));
     unmount();
     act(() => {
       jest.advanceTimersByTime(2000);
     });
     expect(mockReplace).not.toHaveBeenCalled();
+    expect(calls('/api/auth/post-login')).toBe(0);
   });
 
   it('STATE-AUTH-003 管理者で aal2 済みなら TOTP の見せ方を経ず管理画面へ移る', async () => {
-    route({ '/api/auth/me': me('admin', true) });
+    route({ '/api/auth/me': me('admin', true), '/api/auth/post-login': postLoginTo('/admin') });
     render(<VerifiedPage />);
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/admin'));
+    expect(calls('/api/auth/post-login')).toBe(1);
     expect(calls('/api/auth/mfa/status')).toBe(0);
     expect(calls('/api/auth/mfa/enroll-totp')).toBe(0);
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();

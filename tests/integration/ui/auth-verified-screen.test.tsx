@@ -104,37 +104,49 @@ describe('/auth/verified の画面', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
-  it('SCR-AUTH-007 一般の会員には同じ status の中身を「確認完了」に替え、リンクを置いて 0.8 秒後に /account へ置き換える', async () => {
+  it('SCR-AUTH-007 一般の会員には同じ status の中身を「確認完了」に替え、リンクを置いて 0.8 秒後に post-login が返した戻り先へ置き換える', async () => {
     jest.useFakeTimers();
-    route({ '/api/auth/me': () => json({ authenticated: true, user: { role: 'user', mfaVerified: false } }) });
+    route({
+      '/api/auth/me': () => json({ authenticated: true, user: { role: 'user', mfaVerified: false } }),
+      '/api/auth/post-login': () => json({ redirectTo: '/item/3?color=red', needsMfa: false }),
+    });
     render(<VerifiedPage />);
 
     const status = screen.getByRole('status');
-    await waitFor(() => expect(status).toHaveTextContent('確認完了。アカウントへ移動します…'));
+    await waitFor(() => expect(status).toHaveTextContent('確認完了。移動します…'));
     expect(screen.getByRole('status')).toBe(status);
-    expect(screen.getByRole('link', { name: 'アカウントへ' })).toHaveAttribute('href', '/account');
+    expect(screen.getByRole('link', { name: 'トップへ' })).toHaveAttribute('href', '/');
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
 
     act(() => {
       jest.advanceTimersByTime(799);
     });
     expect(mockReplace).not.toHaveBeenCalled();
-    act(() => {
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    await act(async () => {
       jest.advanceTimersByTime(1);
     });
-    expect(mockReplace).toHaveBeenCalledWith('/account');
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith('/item/3?color=red');
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch).toHaveBeenLastCalledWith('/api/auth/post-login', {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
   });
 
   it.each(['admin', 'supporter'])(
     'SCR-AUTH-007 %s が aal2 済みなら TOTP を出さず /admin へ置き換える',
     async (role) => {
-      route({ '/api/auth/me': () => json({ authenticated: true, user: { role, mfaVerified: true } }) });
+      route({
+        '/api/auth/me': () => json({ authenticated: true, user: { role, mfaVerified: true } }),
+        '/api/auth/post-login': () => json({ redirectTo: '/admin', needsMfa: false }),
+      });
       render(<VerifiedPage />);
 
       await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/admin'));
       expect(screen.getByRole('status')).toHaveTextContent('認証が完了しました。管理画面へ移動します…');
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     },
   );

@@ -19,6 +19,7 @@ import { useLogin } from "@/contexts/LoginContext";
 import { Button } from "@/components/ui/Button/Button";
 import { formatResendCountdown } from "@/lib/format-countdown";
 import { maskEmail } from "@/lib/mask-email";
+import { sanitizeReturnPath } from "@/features/auth/return-intent/return-path";
 import { LiveMessage } from "@/components/ui/LiveMessage/LiveMessage";
 import "@/components/AuthForm.css";
 
@@ -26,15 +27,12 @@ const OTP_LENGTH = 8;
 const EMPTY_OTP_DIGITS = Array.from({ length: OTP_LENGTH }, () => "");
 const RESEND_COOLDOWN_SECONDS = 60;
 
-type AuthMeResponse = {
-  authenticated?: boolean;
-  user?: {
-    role?: unknown;
-  };
+type PostLoginResponse = {
+  redirectTo?: unknown;
+  needsMfa?: unknown;
 };
 
-const isPrivilegedRole = (role: unknown): boolean =>
-  role === "admin" || role === "supporter";
+const MFA_PATH = "/auth/verified";
 
 export default function VerifyOtpClient({ email }: { email: string }) {
   const router = useRouter();
@@ -166,25 +164,36 @@ export default function VerifyOtpClient({ email }: { email: string }) {
     return () => clearInterval(interval);
   }, [resendAvailableAt]);
 
+  // 行き先はサーバーが戻り先を使い切って決める。失敗は /auth/verified へ倒す:
+  // 一般の会員はそこで行き先をもう一度引き、管理者・サポーターは 2 段目を通るので、どちらにも安全。
   const resolvePostLoginPath = useCallback(async (): Promise<string> => {
     try {
-      const response = await fetch("/api/auth/me", {
-        method: "GET",
+      const response = await fetch("/api/auth/post-login", {
+        method: "POST",
         cache: "no-store",
         credentials: "same-origin",
       });
 
-      const body = (await response
-        .json()
-        .catch(() => null)) as AuthMeResponse | null;
-      const authenticated = response.ok && body?.authenticated === true;
-      if (!authenticated) {
+      if (response.status === 401) {
         return "/login";
       }
+      if (!response.ok) {
+        return MFA_PATH;
+      }
 
-      return isPrivilegedRole(body?.user?.role) ? "/auth/verified" : "/account";
+      const body = (await response
+        .json()
+        .catch(() => null)) as PostLoginResponse | null;
+      // 読めない本文では特権かどうか分からないので、2 段目の判定を持つ画面へ倒す。
+      if (body === null || body.needsMfa === true) {
+        return MFA_PATH;
+      }
+
+      return sanitizeReturnPath(body?.redirectTo, "/", {
+        origin: window.location.origin,
+      });
     } catch {
-      return "/account";
+      return MFA_PATH;
     }
   }, []);
 

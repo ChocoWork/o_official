@@ -1,10 +1,10 @@
 # 画面遷移図
 
-> 状態: 全画面ルートと現行ソースの導線をレビュー | 確認日: 2026-10-03（購入の導線は2026-10-07、E-5は2026-10-22、G-1 の旧配送の入口の撤去は2026-10-24に、G-2 Task 3 の在庫一覧表の導線と Task 4 の発注の確定後の移動と Task 5 の発注一覧表・発注書の頁の導線と Task 6 の発注書の頁の操作と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の節と書類検索と G-3 Task 3 の荷作り表と Task 4 の発送票の頁（下書き）と Task 6 の発送の取消と Task 7 の伝票番号の入力・訂正と手動の配達済みは2026-10-25に反映） | 対象: 46画面ルート（2026-10-25 に数え直し、G-0 の権限画面と G-2 の発注一覧表・発注書の頁・取引書類の検索と G-3 の荷作り表・発送票の頁を足した）
+> 状態: 全画面ルートと現行ソースの導線をレビュー | 確認日: 2026-10-26（波1-Aで未使用の `/auth/callback` ページを削除。以下の日付は各項の反映日）、2026-10-03（購入の導線は2026-10-07、E-5は2026-10-22、G-1 の旧配送の入口の撤去は2026-10-24に、G-2 Task 3 の在庫一覧表の導線と Task 4 の発注の確定後の移動と Task 5 の発注一覧表・発注書の頁の導線と Task 6 の発注書の頁の操作と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の節と書類検索と G-3 Task 3 の荷作り表と Task 4 の発送票の頁（下書き）と Task 6 の発送の取消と Task 7 の伝票番号の入力・訂正と手動の配達済みは2026-10-25に反映） | 対象: 45画面ルート（2026-10-25 に数え直し、G-0 の権限画面と G-2 の発注一覧表・発注書の頁・取引書類の検索と G-3 の荷作り表・発送票の頁を足した）
 
 ## 概要
 
-[画面一覧](screen-list.md)の46ルートについて、ページと描画コンポーネントのリンク、自動遷移、認証・外部決済からの戻りを示す。従来の38ルートと、後から足した管理の7ルート（G-0 の権限画面・G-2 の在庫一覧表・発注一覧表・発注書の頁・取引書類の検索・G-3 の荷作り表・発送票の頁）は全画面図、E-5の1ルートと導線は末尾の追加図に示す。タブ、絞り込み、フォームの結果は同じルート内の状態として扱う。API、メール、外部サービス、エラー境界は画面ルート数に含めない。
+[画面一覧](screen-list.md)の45ルートについて、ページと描画コンポーネントのリンク、自動遷移、認証・外部決済からの戻りを示す。従来の37ルート（波1-Aで `/auth/callback` を削除した後）と、後から足した管理の7ルート（G-0 の権限画面・G-2 の在庫一覧表・発注一覧表・発注書の頁・取引書類の検索・G-3 の荷作り表・発送票の頁）は全画面図、E-5の1ルートと導線は末尾の追加図に示す。タブ、絞り込み、フォームの結果は同じルート内の状態として扱う。API、メール、外部サービス、エラー境界は画面ルート数に含めない。
 
 ## 図の読み方
 
@@ -53,7 +53,6 @@ flowchart LR
         direction TB
         Login["/login"]
         LoginVerify["/login/verify メール OTP"]
-        AuthCallback["/auth/callback 通常の入口未確認"]
         AuthVerified["/auth/verified"]
         PasswordReset["/auth/password-reset"]
         PasswordResetVerify["/auth/password-reset/verify"]
@@ -191,9 +190,6 @@ flowchart LR
     Google --> OAuthCallback
     OAuthCallback -->|自動: user・通常next| Account
     OAuthCallback -->|自動: 特権・通常next| AuthVerified
-    AuthCallback -->|codeを転送| OAuthCallback
-    AuthCallback -->|自動: 認証済・next既定| AuthVerified
-    AuthCallback -->|失敗時: リンク| Login
     AuthVerified -->|自動: user / リンク| Account
     AuthVerified -->|自動: MFA完了| Admin
     AuthVerified -. TOTP / 未認証 .-> AuthVerified
@@ -265,7 +261,6 @@ flowchart LR
 | 登録メール確認 | 登録UIは `redirect_to=/auth/verified` を指定する。確認 API 自体の既定は `/account`。確認失敗でも指定先に戻り、その先で未認証案内になる場合がある |
 | ログインOTP確認 | 成功後に `/api/auth/me` で認証・ロールを再確認する。一般利用者は `/account`、admin/supporterは `/auth/verified`。再確認が未認証なら `/login`、再確認の通信例外ならロールを問わず `/account`。OTP自体の検証エラーは確認画面に留まる |
 | Google OAuth | 通常の `next=/auth/verified` の場合、一般利用者だけ `/account` へ戻す。別の戻り先が指定された場合は API の検証済み指定先を使う。API が JSON エラーを返す分岐をログイン画面への自動遷移として描かない |
-| `/auth/callback` | src 内の通常の入口参照は未確認。ページ自体には `code` ありの API 転送、認証済みの `next` への遷移、失敗時のログインリンクがある。図の認証済み出口は `next` 既定値を示す |
 | パスワード再設定 | 現行メールは直接 `/auth/password-reset/verify?token=...` を指定する。確認画面が `POST /api/auth/password-reset/link` を呼び、成功・期限切れ・token不在に応じて再設定画面へ戻る。別入口の同APIのGETも確認画面へ中継する |
 | 決済 | `/checkout` の入力画面にStripeの部品を置かず、「確認へ進む」でSessionを作り、最終確認画面の `FinalConfirmationStep` に `CheckoutProvider` / `PaymentElement` を置く。「注文する」で受付・在庫確保の後に支払い、completeで完了表示する。外部認証からの復帰は `?session_id=...` をresumeで照会し、支払い済みならcomplete、開いていれば最終確認画面、ほかは入力画面へ進む。最終確認・完了の後もURLに`session_id`を残す（D9）。空カートでは同画面に案内を表示する |
 | 購入完了・注文詳細 | 完了表示の注文履歴リンクは `/account`。注文詳細の戻るリンクは `/account?tab=orders`。ゲスト登録カードは `/login?tab=register&email=...` でメール初期値を渡す。再度購入はカート追加後も注文詳細に留まる |
@@ -293,7 +288,7 @@ flowchart LR
 | ホーム・一覧・検索 | [ホーム](../../../src/app/page.tsx)、[公開商品一覧](../../../src/features/items/components/PublicItemGrid.tsx)、[公開LOOK一覧](../../../src/features/look/components/PublicLookGrid.tsx)、[公開NEWS一覧](../../../src/features/news/components/PublicNewsGrid.tsx)、[ホーム検索](../../../src/features/search/components/SearchHomePreview.tsx)、[検索画面](../../../src/features/search/components/SearchPageClient.tsx) |
 | 詳細・保存・取扱店 | [商品詳細](../../../src/app/item/%5Bid%5D/ItemDetailClient.tsx)、[関連商品](../../../src/features/items/components/RelatedItems.tsx)、[LOOK詳細](../../../src/app/look/%5Bid%5D/page.tsx)、[NEWS詳細](../../../src/app/news/%5Bid%5D/page.tsx)、[保存一覧](../../../src/app/wishlist/page.tsx)、[取扱店](../../../src/features/stockist/components/PublicStockistGrid.tsx) |
 | 購入 | [カート](../../../src/app/cart/page.tsx)、[注文概要](../../../src/app/cart/_components/OrderSummary.tsx)、[チェックアウト](../../../src/app/checkout/page.tsx)、[最終確認画面](../../../src/app/checkout/_components/FinalConfirmationStep.tsx)、[place-order](../../../src/app/api/checkout/place-order/route.ts)、[resume](../../../src/app/api/checkout/resume/route.ts)、[ゲスト登録案内](../../../src/features/checkout/components/GuestRegisterPrompt.tsx)、[エラー境界](../../../src/app/checkout/error.tsx) |
-| 認証・再設定 | [LoginContext](../../../src/contexts/LoginContext.tsx)、[ログイン](../../../src/app/login/page.tsx)、[OTP確認](../../../src/app/login/verify/VerifyOtpClient.tsx)、[callback画面](../../../src/app/auth/callback/page.tsx)、[OAuth callback API](../../../src/app/api/auth/oauth/callback/route.ts)、[認証確認](../../../src/app/auth/verified/page.tsx)、[登録メール確認API](../../../src/app/api/auth/confirm/route.ts)、[再設定メールAPI](../../../src/app/api/auth/password-reset/request/route.ts)、[再設定リンク確認](../../../src/app/auth/password-reset/verify/VerifyClient.tsx) |
+| 認証・再設定 | [LoginContext](../../../src/contexts/LoginContext.tsx)、[ログイン](../../../src/app/login/page.tsx)、[OTP確認](../../../src/app/login/verify/VerifyOtpClient.tsx)、[OAuth callback API](../../../src/app/api/auth/oauth/callback/route.ts)、[認証確認](../../../src/app/auth/verified/page.tsx)、[登録メール確認API](../../../src/app/api/auth/confirm/route.ts)、[再設定メールAPI](../../../src/app/api/auth/password-reset/request/route.ts)、[再設定リンク確認](../../../src/app/auth/password-reset/verify/VerifyClient.tsx) |
 | アカウント | [アカウント](../../../src/app/account/page.tsx)、[注文詳細](../../../src/app/account/orders/%5Bid%5D/page.tsx)、[返品・交換の申し込み](../../../src/app/account/orders/%5Bid%5D/return/page.tsx)、[再度購入](../../../src/features/account/hooks/useReorder.ts) |
 | 管理・開発補助 | [管理ページ](../../../src/app/admin/page.tsx)、[ITEMフォーム](../../../src/app/admin/item/ItemForm.tsx)、[LOOKフォーム](../../../src/app/admin/look/LookForm.tsx)、[NEWSフォーム](../../../src/app/admin/news/NewsForm.tsx)、[STOCKISTフォーム](../../../src/app/admin/stockist/StockistForm.tsx)、[ユーザー作成](../../../src/app/admin/create-user/page.tsx)、[UI](../../../src/app/ui/page.tsx)、[LOADING](../../../src/app/loading/page.tsx) |
 | Meta | [接続UI](../../../src/components/MetaKpiConnection.tsx)、[接続API](../../../src/app/api/admin/kpi/meta/connect/route.ts)、[callback API](../../../src/app/api/admin/kpi/meta/callback/route.ts) |

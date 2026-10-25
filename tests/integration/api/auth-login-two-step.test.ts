@@ -121,7 +121,7 @@ describe('ARC-AUTH-002 ログインの2段と保留の Cookie', () => {
 
     expect(first.status).toBe(200);
     expect(__sessionsInsert).not.toHaveBeenCalled();
-    expect(first.cookies.all().map((c: { name: string }) => c.name)).toEqual([COOKIE_NAME]);
+    expect(first.cookies.all().map((c: { name: string }) => c.name)).toEqual([COOKIE_NAME, 'sb-return-intent']);
 
     const second = await verify(post('/api/auth/otp/verify', { code: CODE }, cookieOf(first)));
 

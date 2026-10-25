@@ -52,11 +52,11 @@ function registerCalls() {
   return fetchMock.mock.calls.filter(([url]) => url === '/api/auth/register');
 }
 
-async function renderRegisterScreen(initialEmail?: string) {
+async function renderRegisterScreen(initialEmail?: string, returnTo?: string) {
   await act(async () => {
     render(
       <LoginProvider>
-        <AuthTabs initialTab="register" initialEmail={initialEmail} />
+        <AuthTabs initialTab="register" initialEmail={initialEmail} returnTo={returnTo} />
       </LoginProvider>,
     );
   });
@@ -105,6 +105,9 @@ describe('SCR-AUTH-003 会員登録のフォームはメール・パスワード
       remove: turnstileRemoveMock,
     };
     fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/oauth/start') {
+        return { ok: true, status: 200, json: async () => ({ url: 'https://accounts.example.test/authorize' }) };
+      }
       if (url !== '/api/auth/register') {
         return { ok: false, status: 401, json: async () => ({ authenticated: false }) };
       }
@@ -228,7 +231,7 @@ describe('SCR-AUTH-003 会員登録のフォームはメール・パスワード
     expect(registerCalls()).toHaveLength(1);
   });
 
-  it('SCR-AUTH-003 /api/auth/register へ redirect_to=/auth/verified を付けて POST する', async () => {
+  it('SCR-AUTH-003 /api/auth/register へ戻り先が無ければ redirect_to も next も付けずに POST する', async () => {
     const user = userEvent.setup();
     await renderRegisterScreen();
 
@@ -241,7 +244,22 @@ describe('SCR-AUTH-003 会員登録のフォームはメール・パスワード
     expect(JSON.parse(init.body)).toEqual({
       email: VALID_EMAIL,
       password: VALID_PASSWORD,
-      redirect_to: '/auth/verified',
+    });
+  });
+
+  it('SCR-AUTH-003 戻り先つきの画面は /api/auth/register の本文に next を載せる（redirect_to は載せない）', async () => {
+    const user = userEvent.setup();
+    await renderRegisterScreen(undefined, '/account');
+
+    await fillForm(user);
+    await submit(user);
+
+    await screen.findByText(DEFAULT_SENT_MESSAGE);
+    const [, init] = registerCalls()[0];
+    expect(JSON.parse(init.body)).toEqual({
+      email: VALID_EMAIL,
+      password: VALID_PASSWORD,
+      next: '/account',
     });
   });
 
@@ -389,15 +407,16 @@ describe('SCR-AUTH-003 会員登録のフォームはメール・パスワード
     expect(registerCalls()).toHaveLength(0);
   });
 
-  it('SCR-AUTH-003 Google のボタンは窓口の入口へブラウザを移す', async () => {
+  it('SCR-AUTH-003 Google のボタンは開始の窓口へ POST し、返った住所へブラウザを移す', async () => {
     const user = userEvent.setup();
-    await renderRegisterScreen();
+    await renderRegisterScreen(undefined, '/account');
 
     await user.click(screen.getByRole('button', { name: /Googleで登録/ }));
 
-    expect(navigateBrowser).toHaveBeenCalledWith(
-      '/api/auth/oauth/start?provider=google&redirect_to=%2Fauth%2Fverified',
-    );
+    await waitFor(() => expect(navigateBrowser).toHaveBeenCalledWith('https://accounts.example.test/authorize'));
+    const [, init] = fetchMock.mock.calls.find(([url]) => url === '/api/auth/oauth/start');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ provider: 'google', next: '/account' });
     expect(registerCalls()).toHaveLength(0);
   });
 

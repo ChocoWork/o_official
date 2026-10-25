@@ -12,6 +12,7 @@ jest.mock('@/features/auth/services/login-2fa-session', () => ({
 }));
 
 jest.mock('@/lib/cookie', () => ({
+  ...jest.requireActual('@/lib/cookie'),
   loginTwoFactorSessionCookieName: 'sb-login-2fa-session',
   clearCookieOptions: jest.fn(() => ({ path: '/', maxAge: 0, httpOnly: true })),
 }));
@@ -124,5 +125,15 @@ describe('POST /api/auth/login/cancel', () => {
     mockLogAudit.mockRejectedValue(new Error('audit down'));
 
     await expect(POST(buildRequest('sb-login-2fa-session=whatever'))).rejects.toThrow('audit down');
+  });
+
+  it('DD-AUTH-017 保留の有無に関わらず、戻り先の控えの Cookie を Max-Age 0 の空の値で消す', async () => {
+    const withPending: any = await POST(buildRequest('sb-return-intent=' + 'A'.repeat(43)));
+    mockReadPending.mockReturnValue(null);
+    const withoutPending: any = await POST(buildRequest());
+
+    for (const res of [withPending, withoutPending]) {
+      expect(res.cookies.get('sb-return-intent')).toEqual(expect.objectContaining({ value: '', maxAge: 0 }));
+    }
   });
 });

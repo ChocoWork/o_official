@@ -28,9 +28,11 @@ function focusOnMount(element: HTMLElement | null) {
 interface RegisterModalProps {
   onSwitchToLogin?: () => void;
   initialEmail?: string;
+  /** ログインの後の戻り先（サーバーが確かめた道筋）。入口の POST の本文でサーバーに渡す */
+  returnTo?: string;
 }
 
-const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialEmail }) => {
+const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialEmail, returnTo }) => {
   const { register, loginWithGoogle } = useLogin();
   const [email, setEmail] = useState(initialEmail ?? "");
   const [password, setPassword] = useState("");
@@ -67,7 +69,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialE
 
     setLoading(true);
     try {
-      const res = await register(email, password, turnstileToken || undefined);
+      const res = await register(email, password, turnstileToken || undefined, { next: returnTo });
       if (!res.success) {
         setError(res.error || "登録に失敗しました");
       } else {
@@ -243,7 +245,7 @@ const RegisterModal: React.FC<RegisterModalProps> = ({ onSwitchToLogin, initialE
         <Button
           type="button"
           onClick={() => {
-            void loginWithGoogle({ next: "/auth/verified" });
+            void loginWithGoogle({ next: returnTo });
           }}
           variant="outline"
           size="md"

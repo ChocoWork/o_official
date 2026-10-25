@@ -12,6 +12,7 @@ jest.mock('@/features/auth/services/login-2fa-session', () => ({
 }));
 
 jest.mock('@/lib/cookie', () => ({
+  ...jest.requireActual('@/lib/cookie'),
   loginTwoFactorSessionCookieName: 'sb-login-2fa-session',
   clearCookieOptions: jest.fn(() => ({ path: '/', maxAge: 0 })),
 }));
@@ -75,6 +76,18 @@ describe('POST /api/auth/login/cancel - Integration Tests', () => {
     const cleared = res.cookies.get('sb-login-2fa-session');
     expect(cleared).toBeDefined();
     expect(cleared.maxAge).toBe(0);
+  });
+
+  test('API-AUTH-004 [SUCCESS] 戻り先の控えの Cookie も、保留の有無に関わらず空の値と Max-Age 0 で消す', async () => {
+    const withPending: any = await cancelHandler(buildRequest());
+    readLoginTwoFactorSessionFromCookieHeader.mockReturnValue(null);
+    const withoutPending: any = await cancelHandler(
+      new Request('http://localhost/api/auth/login/cancel', { method: 'POST' }),
+    );
+
+    for (const res of [withPending, withoutPending]) {
+      expect(res.cookies.get('sb-return-intent')).toEqual(expect.objectContaining({ value: '', maxAge: 0 }));
+    }
   });
 
   test('API-AUTH-004 [AUDIT] 中断を監査ログに残す', async () => {
