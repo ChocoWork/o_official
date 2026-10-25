@@ -51,7 +51,7 @@ for (const viewport of viewports) {
 }
 
 // FREQ-336-AC-05: 偽造ヘルパを localhost 以外で動かせないこと。
-test('2FA Cookie の偽造ヘルパは localhost 以外で例外を投げる', async ({ page }) => {
+test('FREQ-336-AC-05 2FA Cookie の偽造ヘルパは localhost 以外で例外を投げる', async ({ page }) => {
   // 遷移前は about:blank でオリジンが localhost にならない。
   await expect(setLoginTwoFactorCookie(page)).rejects.toThrow(/localhost 専用/);
 });

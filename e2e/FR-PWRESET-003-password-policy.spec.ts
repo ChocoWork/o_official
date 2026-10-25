@@ -14,7 +14,7 @@ const viewports = [
 
 for (const viewport of viewports) {
   // FREQ-323-AC-04
-  test(`the password reset form states the 16 character minimum (${viewport.name})`, async ({ page }) => {
+  test(`FREQ-323-AC-04 the password reset form states the 16 character minimum (${viewport.name})`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto('/auth/password-reset');
 
@@ -38,7 +38,7 @@ const openConfirmForm = async (page: Page) => {
 };
 
 for (const viewport of viewports) {
-  test(`the new password fields carry the 16 character minimum (${viewport.name})`, async ({
+  test(`FREQ-323-AC-04 the new password fields carry the 16 character minimum (${viewport.name})`, async ({
     page,
   }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });

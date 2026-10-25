@@ -86,7 +86,7 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('ヘッダーのサイトタイトルは /admin でも他ページと同じフォント', async ({ page }) => {
+    test('FREQ-239-AC-01 ヘッダーのサイトタイトルは /admin でも他ページと同じフォント', async ({ page }) => {
       // FREQ-239-AC-01
       // 公開ページと管理画面の2ルートを跨ぐため、dev サーバーの初回コンパイル分を見込む。
       test.slow();
@@ -101,7 +101,7 @@ for (const viewport of viewports) {
       expect(adminFont).toBe(publicFont);
     });
 
-    test('フッターの見出しは /admin でも他ページと同じフォント', async ({ page }) => {
+    test('FREQ-239-AC-02 フッターの見出しは /admin でも他ページと同じフォント', async ({ page }) => {
       // FREQ-239-AC-02
       // 公開ページと管理画面の2ルートを跨ぐため、dev サーバーの初回コンパイル分を見込む。
       test.slow();
@@ -116,7 +116,7 @@ for (const viewport of viewports) {
       expect(adminFont).toBe(publicFont);
     });
 
-    test('管理コンテンツ側の見出しは Acumin のまま統一されている', async ({ page }) => {
+    test('FREQ-239-AC-03 管理コンテンツ側の見出しは Acumin のまま統一されている', async ({ page }) => {
       // FREQ-239-AC-03
       await mockAdminApis(page);
       await page.goto('/admin', { waitUntil: 'domcontentloaded' });
@@ -130,7 +130,7 @@ for (const viewport of viewports) {
       expect(contentFont).toBe('acumin-pro');
     });
 
-    test('横方向のページスクロールが発生しない', async ({ page }) => {
+    test('FREQ-239-AC-04 横方向のページスクロールが発生しない', async ({ page }) => {
       // FREQ-239-AC-04
       await mockAdminApis(page);
       await page.goto('/admin', { waitUntil: 'domcontentloaded' });

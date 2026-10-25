@@ -42,14 +42,14 @@ for (const viewport of viewports) {
       await page.goto('/auth/password-reset');
     });
 
-    test('AC-01: 結果の先頭に封筒の図を置き、パスワード更新の図は出さない', async ({ page }) => {
+    test('FREQ-331-AC-01 AC-01: 結果の先頭に封筒の図を置き、パスワード更新の図は出さない', async ({ page }) => {
       await sendResetMail(page);
 
       await expect(page.getByTestId('auth-result-icon-mail')).toBeVisible();
       await expect(page.getByTestId('auth-result-icon-password')).toHaveCount(0);
     });
 
-    test('AC-02: ページ見出しを畳み、結果のタイトルを唯一の h1 にする', async ({ page }) => {
+    test('FREQ-331-AC-02 AC-02: ページ見出しを畳み、結果のタイトルを唯一の h1 にする', async ({ page }) => {
       await expect(page.getByRole('heading', { level: 1 })).toHaveText('パスワード再設定');
 
       await sendResetMail(page);
@@ -63,7 +63,7 @@ for (const viewport of viewports) {
       expect(fontFamily).toContain('acumin-pro');
     });
 
-    test('AC-03: 注意書きはグレーの面に左寄せでまとめる', async ({ page }) => {
+    test('FREQ-331-AC-03 AC-03: 注意書きはグレーの面に左寄せでまとめる', async ({ page }) => {
       await sendResetMail(page);
 
       const note = page.getByTestId('auth-result-note');
@@ -79,7 +79,7 @@ for (const viewport of viewports) {
       expect(style.textAlign).toBe('left');
     });
 
-    test('AC-04: 隙間を意味の遠さに応じた 4 段階にする', async ({ page }) => {
+    test('FREQ-331-AC-04 AC-04: 隙間を意味の遠さに応じた 4 段階にする', async ({ page }) => {
       await sendResetMail(page);
       await expect(page.getByTestId('auth-result-note')).toBeVisible();
 
@@ -128,7 +128,7 @@ for (const viewport of viewports) {
       expect(Math.abs(g.noteToAction - g.actionToLinks)).toBeLessThan(3);
     });
 
-    test('AC-01: パスワード更新の完了は南京錠の図で示す', async ({ page }) => {
+    test('FREQ-331-AC-01 AC-01: パスワード更新の完了は南京錠の図で示す', async ({ page }) => {
       // 後から追加した route が優先されるので、confirm モードへ上書きする。
       await page.route('**/api/auth/password-reset/session', async (route) => {
         await route.fulfill({
@@ -154,7 +154,7 @@ for (const viewport of viewports) {
       );
     });
 
-    test('AC-06: 注意書きは 3 行で、どの画面幅でも折り返さない', async ({ page }) => {
+    test('FREQ-331-AC-06 AC-06: 注意書きは 3 行で、どの画面幅でも折り返さない', async ({ page }) => {
       await sendResetMail(page);
 
       const note = page.getByTestId('auth-result-note');
@@ -173,7 +173,7 @@ for (const viewport of viewports) {
       expect(lines).toEqual([1, 1, 1]);
     });
 
-    test('AC-07: 結果の宣言はひとまとまりに見える間隔にする', async ({ page }) => {
+    test('FREQ-331-AC-07 AC-07: 結果の宣言はひとまとまりに見える間隔にする', async ({ page }) => {
       await sendResetMail(page);
       await expect(page.getByTestId('auth-result-note')).toBeVisible();
 
@@ -206,7 +206,7 @@ for (const viewport of viewports) {
       expect(withinGroup).toBeLessThanOrEqual(gaps.detailToNote / 2);
     });
 
-    test('AC-05: 結果のタイトルはどの画面幅でも 1 行に収める', async ({ page }) => {
+    test('FREQ-331-AC-05 AC-05: 結果のタイトルはどの画面幅でも 1 行に収める', async ({ page }) => {
       await sendResetMail(page);
       // 結果画面へ差し替わる前の h1 を掴むと、評価時には要素が外れていて
       // 矩形が 0 個になる。差し替わりを待ってから測る。
@@ -227,7 +227,7 @@ for (const viewport of viewports) {
   });
 }
 
-test('AC-04: Bot 検証ウィジェットと再送信ボタンの間も最も広い段に揃える', async ({ page }) => {
+test('FREQ-331-AC-04 AC-04: Bot 検証ウィジェットと再送信ボタンの間も最も広い段に揃える', async ({ page }) => {
   // クールダウンは 60 秒。実時間で待つとテストが止まるので仮想時計で送る。
   await page.clock.install();
   await stubTurnstileScript(page);

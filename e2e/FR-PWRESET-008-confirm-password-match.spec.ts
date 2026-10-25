@@ -30,7 +30,7 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('AC-01: 一致しなければ送信しない', async ({ page }) => {
+    test('FREQ-333-AC-01 AC-01: 一致しなければ送信しない', async ({ page }) => {
       let posts = 0;
       page.on('request', (req) => {
         if (req.method() === 'POST' && req.url().includes('/api/auth/password-reset/confirm')) {
@@ -47,7 +47,7 @@ for (const viewport of viewports) {
       expect(posts).toBe(0);
     });
 
-    test('AC-02: 2 つの欄の表示文字と、確認欄の表示切り替え', async ({ page }) => {
+    test('FREQ-333-AC-02 AC-02: 2 つの欄の表示文字と、確認欄の表示切り替え', async ({ page }) => {
       await openConfirmForm(page);
 
       await expect(page.locator('#newPassword')).toHaveAttribute(
@@ -66,14 +66,14 @@ for (const viewport of viewports) {
       await expect(page.locator('#confirmNewPassword')).toHaveAttribute('type', 'text');
     });
 
-    test('AC-04: 再設定モードではメールアドレス欄を出さない', async ({ page }) => {
+    test('FREQ-333-AC-04 AC-04: 再設定モードではメールアドレス欄を出さない', async ({ page }) => {
       await openConfirmForm(page);
 
       // 宛先は直前に本人が入力した値で、この画面では変更もできない。
       await expect(page.locator('#email')).toHaveCount(0);
     });
 
-    test('AC-03: 片方だけでは押せず、一致すれば更新できる', async ({ page }) => {
+    test('FREQ-333-AC-03 AC-03: 片方だけでは押せず、一致すれば更新できる', async ({ page }) => {
       let body: unknown = null;
       await page.route('**/api/auth/password-reset/confirm', async (route) => {
         body = route.request().postDataJSON();

@@ -16,12 +16,12 @@ for (const viewport of viewports) {
       await expect(page.getByLabel('Confirm Password')).toBeVisible();
     });
 
-    test('AC-01: Email に mail、Password/確認 に lock アイコンが表示される', async ({ page }) => {
+    test('FREQ-91-AC-01 AC-01: Email に mail、Password/確認 に lock アイコンが表示される', async ({ page }) => {
       await expect(page.locator('i.ri-mail-line')).toBeVisible();
       await expect(page.locator('i.ri-lock-line')).toHaveCount(2);
     });
 
-    test('AC-02: 各入力欄は下線のみ（border-bottom のみ）で表示される', async ({ page }) => {
+    test('FREQ-91-AC-02 AC-02: 各入力欄は下線のみ（border-bottom のみ）で表示される', async ({ page }) => {
       for (const id of ['#email', '#password', '#confirm-password']) {
         const styles = await page.locator(id).evaluate((el) => {
           const s = getComputedStyle(el);
@@ -39,7 +39,7 @@ for (const viewport of viewports) {
       }
     });
 
-    test('AC-03: Password・確認の表示切替で type が切り替わる', async ({ page }) => {
+    test('FREQ-91-AC-03 AC-03: Password・確認の表示切替で type が切り替わる', async ({ page }) => {
       const password = page.locator('#password');
       const confirm = page.locator('#confirm-password');
       await expect(password).toHaveAttribute('type', 'password');
@@ -55,7 +55,7 @@ for (const viewport of viewports) {
       await expect(confirm).toHaveAttribute('type', 'text');
     });
 
-    test('AC-04: 「Googleで登録」が送信ボタンより下に配置される', async ({ page }) => {
+    test('FREQ-91-AC-04 AC-04: 「Googleで登録」が送信ボタンより下に配置される', async ({ page }) => {
       const submit = await page
         .getByRole('button', { name: '登録して確認メールを受け取る' })
         .boundingBox();

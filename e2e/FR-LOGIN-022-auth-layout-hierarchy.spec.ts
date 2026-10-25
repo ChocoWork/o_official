@@ -59,7 +59,7 @@ for (const viewport of viewports) {
       await expect(page.getByText('OR', { exact: true })).toHaveClass(/\blk-text-xs\b/);
     });
 
-    test('tabs, fields, primary action and alternate action share one grid', async ({ page }) => {
+    test('FREQ-90-AC-04 tabs, fields, primary action and alternate action share one grid', async ({ page }) => {
       const edges = await page.evaluate(() => {
         const rect = (selector: string) =>
           document.querySelector(selector)!.getBoundingClientRect();

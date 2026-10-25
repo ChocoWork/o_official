@@ -31,11 +31,11 @@ for (const viewport of viewports) {
       expect(await radiusOf(loginButton)).toBe(0);
     });
 
-    test('does not show a "ログインでお困りの方" link', async ({ page }) => {
+    test('FREQ-64-AC-02 does not show a "ログインでお困りの方" link', async ({ page }) => {
       await expect(page.getByText('ログインでお困りの方')).toHaveCount(0);
     });
 
-    test('the tab group has no surrounding card frame', async ({ page }) => {
+    test('FREQ-90-AC-01 the tab group has no surrounding card frame', async ({ page }) => {
       // FREQ-90: タブ群を囲む角丸カード枠（border/radius）を撤去
       const card = page.locator('#auth-panel').locator('xpath=..');
       const frame = await card.evaluate((el) => {

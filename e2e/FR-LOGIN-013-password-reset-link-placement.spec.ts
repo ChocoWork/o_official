@@ -9,7 +9,7 @@ const viewports = [
 
 for (const viewport of viewports) {
   test.describe(`FR-LOGIN-013 password reset link placement (${viewport.name})`, () => {
-    test('link sits below the password field, above the login button, right-aligned and closer to the password field', async ({
+    test('FREQ-66-AC-02 link sits below the password field, above the login button, right-aligned and closer to the password field', async ({
       page,
     }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });

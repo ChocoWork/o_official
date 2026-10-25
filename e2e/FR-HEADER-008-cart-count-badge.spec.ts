@@ -18,7 +18,7 @@ const cartIconOf = (page: Page) =>
 
 test.describe('FR-HEADER-008 header cart count badge', () => {
   for (const viewport of VIEWPORTS) {
-    test(`${viewport.name}（${viewport.width}px）でカート点数がバッジで示される`, async ({
+    test(`FREQ-309-AC-01 ${viewport.name}（${viewport.width}px）でカート点数がバッジで示される`, async ({
       page,
     }) => {
       let quantity = 3;

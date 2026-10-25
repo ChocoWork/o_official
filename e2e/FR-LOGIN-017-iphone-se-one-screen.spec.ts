@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 // FREQ-71: /login のログインフォームを iPhone SE（375×667）で 1 画面に収めること。tablet/PC は現状維持。
 
 test.describe('FR-LOGIN-017 iPhone SE one screen', () => {
-  test('login form fits within the iPhone SE viewport without scrolling', async ({ page }) => {
+  test('FREQ-71-AC-01 login form fits within the iPhone SE viewport without scrolling', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
     await page.goto('/login');
 
@@ -17,7 +17,7 @@ test.describe('FR-LOGIN-017 iPhone SE one screen', () => {
     expect(footer!.y).toBeGreaterThanOrEqual(667 - 1);
   });
 
-  test('register form also fits within the iPhone SE viewport without scrolling', async ({ page }) => {
+  test('FREQ-71-AC-03 register form also fits within the iPhone SE viewport without scrolling', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
     await page.goto('/login');
     await page.getByRole('tab', { name: '会員登録' }).click();
@@ -31,7 +31,7 @@ test.describe('FR-LOGIN-017 iPhone SE one screen', () => {
     expect(footer!.y).toBeGreaterThanOrEqual(667 - 1);
   });
 
-  test('desktop keeps the original (non-reduced) vertical spacing', async ({ page }) => {
+  test('FREQ-71-AC-02 desktop keeps the original (non-reduced) vertical spacing', async ({ page }) => {
     // FREQ-71-AC-02: desktop ではモバイル用の縮小が適用されない（sm: 以上は従来値）
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/login');

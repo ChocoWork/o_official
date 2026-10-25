@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForAnimationsToFinish } from './helpers';
 
 /**
  * FR-HEADER-005 Drawerの閉じる×ボタンがハンバーガーメニューと同じ座標に配置されること
@@ -13,7 +14,7 @@ const viewports = [
 
 test.describe('FR-HEADER-005 Drawer 閉じるボタンの座標', () => {
   for (const vp of viewports) {
-    test(`${vp.name} (${vp.width}px): ×ボタンの中心XがハンバーガーメニューのX座標と±2px以内`, async ({ page }) => {
+    test(`FREQ-28-AC-01 ${vp.name} (${vp.width}px): ×ボタンの中心XがハンバーガーメニューのX座標と±2px以内`, async ({ page }) => {
       test.setTimeout(60000);
 
       await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -30,7 +31,7 @@ test.describe('FR-HEADER-005 Drawer 閉じるボタンの座標', () => {
       await menuButton.click();
       const drawerShell = page.locator('.header-drawer-shell');
       await expect(drawerShell).toBeVisible({ timeout: 5000 });
-      await page.waitForTimeout(400);
+      await waitForAnimationsToFinish(page);
 
       // ×ボタンの中心Xを取得
       const closeButton = page.locator('button[aria-label="Close drawer"]');

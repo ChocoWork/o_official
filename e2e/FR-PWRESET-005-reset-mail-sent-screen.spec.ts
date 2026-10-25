@@ -40,7 +40,7 @@ for (const viewport of viewports) {
       await page.goto('/auth/password-reset');
     });
 
-    test('AC-01: 送信後はフォームを畳んで結果だけ残す', async ({ page }) => {
+    test('FREQ-329-AC-01 AC-01: 送信後はフォームを畳んで結果だけ残す', async ({ page }) => {
       await sendResetMail(page);
 
       await expect(page.getByText('再設定メールを送信しました')).toBeVisible();
@@ -48,7 +48,7 @@ for (const viewport of viewports) {
       await expect(page.locator('#email')).toHaveCount(0);
     });
 
-    test('AC-02: 前回のリンクが無効になる旨を示し、宛先は画面に残さない', async ({ page }) => {
+    test('FREQ-329-AC-02 AC-02: 前回のリンクが無効になる旨を示し、宛先は画面に残さない', async ({ page }) => {
       await sendResetMail(page);
 
       await expect(page.getByText('再送信すると前回のリンクは無効です')).toBeVisible();
@@ -58,14 +58,14 @@ for (const viewport of viewports) {
       await expect(page.getByText(EMAIL)).toHaveCount(0);
     });
 
-    test('AC-03: 送信直後は残り時間だけを出し、再送信ボタンを出さない', async ({ page }) => {
+    test('FREQ-329-AC-03 AC-03: 送信直後は残り時間だけを出し、再送信ボタンを出さない', async ({ page }) => {
       await sendResetMail(page);
 
       await expect(page.getByText(/後に再送可能/)).toBeVisible();
       await expect(page.getByRole('button', { name: '再送信する' })).toHaveCount(0);
     });
 
-    test('AC-05: パスワード更新の完了も同じ結果画面で、主アクションはログインへ', async ({ page }) => {
+    test('FREQ-329-AC-05 AC-05: パスワード更新の完了も同じ結果画面で、主アクションはログインへ', async ({ page }) => {
       // 後から追加した route が優先されるので、confirm モードへ上書きする。
       await page.route('**/api/auth/password-reset/session', async (route) => {
         await route.fulfill({
@@ -91,7 +91,7 @@ for (const viewport of viewports) {
   });
 }
 
-test('AC-04: 再送信が 429 なら上限を伝え、再送信ボタンを引っ込める', async ({ page }) => {
+test('FREQ-329-AC-04 AC-04: 再送信が 429 なら上限を伝え、再送信ボタンを引っ込める', async ({ page }) => {
   // クールダウンは 60 秒。実時間で待つとテストが止まるので仮想時計で送る。
   await page.clock.install();
   await stubTurnstileScript(page);

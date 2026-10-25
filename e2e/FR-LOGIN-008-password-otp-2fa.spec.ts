@@ -11,7 +11,7 @@ const viewports = [
 
 for (const viewport of viewports) {
   test.describe(`FR-LOGIN-008 password + OTP 2FA (${viewport.name})`, () => {
-    test('shows EMAIL and PASSWORD fields, then requires an OTP code', async ({ page }) => {
+    test('FREQ-58-AC-02 shows EMAIL and PASSWORD fields, then requires an OTP code', async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
 
       await page.route('**/api/auth/login', async (route) => {

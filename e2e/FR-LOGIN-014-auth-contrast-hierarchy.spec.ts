@@ -21,14 +21,14 @@ for (const viewport of viewports) {
       await page.goto('/login');
     });
 
-    test('primary login button has the largest font among controls', async ({ page }) => {
+    test('FREQ-67-AC-01 primary login button has the largest font among controls', async ({ page }) => {
       // FREQ-67-AC-01: ログインボタン font > EMAIL 入力欄 font
       const loginButton = page.getByRole('button', { name: 'ログイン', exact: true });
       const emailInput = page.locator('#email');
       expect(await fontPx(loginButton)).toBeGreaterThan(await fontPx(emailInput));
     });
 
-    test('forgot-password link is smaller than body text', async ({ page }) => {
+    test('FREQ-67-AC-02 forgot-password link is smaller than body text', async ({ page }) => {
       // FREQ-67-AC-02: 「パスワードをお忘れの方はこちら」font < 本文（タブ見出し）font
       // （FREQ-90 でタブ内「会員登録はこちら」導線は撤去。同じ本文 md スケールのタブ見出しを基準にする）
       const forgot = page.getByRole('link', { name: 'パスワードをお忘れの方はこちら' });
@@ -36,7 +36,7 @@ for (const viewport of viewports) {
       expect(await fontPx(forgot)).toBeLessThan(await fontPx(body));
     });
 
-    test('primary login button is the tallest control', async ({ page }) => {
+    test('FREQ-67-AC-03 primary login button is the tallest control', async ({ page }) => {
       // FREQ-67-AC-03: ログインボタン高さ >= EMAIL 入力欄・Google ボタン
       const loginButton = page.getByRole('button', { name: 'ログイン', exact: true });
       const emailInput = page.locator('#email');

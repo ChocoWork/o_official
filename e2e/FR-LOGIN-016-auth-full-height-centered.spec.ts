@@ -9,7 +9,7 @@ const viewports = [
 
 for (const viewport of viewports) {
   test.describe(`FR-LOGIN-016 auth full-height centered (${viewport.name})`, () => {
-    test('main fills the viewport, form is centered and footer is not visible initially', async ({
+    test('FREQ-69-AC-03 main fills the viewport, form is centered and footer is not visible initially', async ({
       page,
     }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });

@@ -14,7 +14,7 @@ for (const viewport of viewports) {
       await page.goto('/login');
     });
 
-    test('AC-01: タブが下線を持ち、タブ群を囲む角丸カード枠が無い', async ({ page }) => {
+    test('FREQ-90-AC-01 AC-01: タブが下線を持ち、タブ群を囲む角丸カード枠が無い', async ({ page }) => {
       // タブに可視の下線（border-bottom-width > 0）があること
       const loginTab = page.getByRole('tab', { name: 'ログイン' });
       const underline = await loginTab.evaluate(
@@ -42,7 +42,7 @@ for (const viewport of viewports) {
       expect(outer.radius).toBe(0);
     });
 
-    test('AC-04: タブの左右端が入力欄の左右端に整列している', async ({ page }) => {
+    test('FREQ-90-AC-04 AC-04: タブの左右端が入力欄の左右端に整列している', async ({ page }) => {
       // 整列: タブの下線と入力欄の下線が同じ列（左右端）に揃うこと
       const edges = await page.evaluate(() => {
         const r = (el: Element) => el.getBoundingClientRect();
@@ -60,13 +60,13 @@ for (const viewport of viewports) {
       expect(Math.abs(edges.rightDiff)).toBeLessThan(1);
     });
 
-    test('AC-02: ログインタブに「会員登録はこちら」ボタンが無い', async ({ page }) => {
+    test('FREQ-90-AC-02 AC-02: ログインタブに「会員登録はこちら」ボタンが無い', async ({ page }) => {
       await expect(
         page.getByRole('button', { name: '会員登録はこちら' }),
       ).toHaveCount(0);
     });
 
-    test('AC-03: 会員登録タブに「既にアカウントをお持ちの方はこちら」ボタンが無い', async ({ page }) => {
+    test('FREQ-90-AC-03 AC-03: 会員登録タブに「既にアカウントをお持ちの方はこちら」ボタンが無い', async ({ page }) => {
       await page.getByRole('tab', { name: '会員登録' }).click();
       await expect(
         page.getByRole('button', { name: '既にアカウントをお持ちの方はこちら' }),

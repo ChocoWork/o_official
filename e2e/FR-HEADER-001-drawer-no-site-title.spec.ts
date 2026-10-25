@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForAnimationsToFinish } from './helpers';
 
 /**
  * FR-HEADER-001 Drawer にサイトタイトルが表示されないこと
@@ -12,7 +13,7 @@ const viewports = [
 
 test.describe('FR-HEADER-001 Drawer にサイトタイトルが表示されないこと', () => {
   for (const vp of viewports) {
-    test(`${vp.name} (${vp.width}px): Drawer 内にサイトタイトルが存在しない`, async ({ page }) => {
+    test(`FR-AUTH-001-AC-01 ${vp.name} (${vp.width}px): Drawer 内にサイトタイトルが存在しない`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/');
 
@@ -21,8 +22,9 @@ test.describe('FR-HEADER-001 Drawer にサイトタイトルが表示されな�
       await expect(menuButton).toBeVisible();
       await menuButton.click();
 
-      // Drawer が開くまで待機
-      await page.waitForTimeout(300);
+      // Drawer が開いて動きが終わるまで待機
+      await expect(page.locator('.header-drawer-shell')).toBeVisible();
+      await waitForAnimationsToFinish(page);
 
       // Drawer 内のサイトタイトルが存在しないことを確認
       const drawerShell = page.locator('.header-drawer-shell');

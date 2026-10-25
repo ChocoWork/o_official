@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForAnimationsToFinish } from './helpers';
 
 /**
  * FR-HEADER-003 Drawer の SNS アイコンが白黒のみで描画されること
@@ -12,13 +13,14 @@ const viewports = [
 
 test.describe('FR-HEADER-003 Drawer SNS アイコン白黒フィルター', () => {
   for (const vp of viewports) {
-    test(`${vp.name} (${vp.width}px): SNS アイコンに brightness filter が適用されている`, async ({ page }) => {
+    test(`FR-AUTH-003-AC-01 ${vp.name} (${vp.width}px): SNS アイコンに brightness filter が適用されている`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/');
 
       const menuButton = page.locator('button[aria-label="Open menu"]');
       await menuButton.click();
-      await page.waitForTimeout(300);
+      await expect(page.locator('.header-drawer-shell')).toBeVisible();
+      await waitForAnimationsToFinish(page);
 
       const followSection = page.locator('.header-drawer-follow');
       await expect(followSection).toBeVisible();
@@ -36,20 +38,21 @@ test.describe('FR-HEADER-003 Drawer SNS アイコン白黒フィルター', () =
       }
     });
 
-    test(`${vp.name} (${vp.width}px): ホバー時に SNS アイコンが invert されること`, async ({ page }) => {
+    test(`FR-AUTH-003-AC-01 ${vp.name} (${vp.width}px): ホバー時に SNS アイコンが invert されること`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/');
 
       const menuButton = page.locator('button[aria-label="Open menu"]');
       await menuButton.click();
-      await page.waitForTimeout(300);
+      await expect(page.locator('.header-drawer-shell')).toBeVisible();
+      await waitForAnimationsToFinish(page);
 
       const followSection = page.locator('.header-drawer-follow');
       const firstLink = followSection.locator('a').first();
 
       // ホバー状態にする
       await firstLink.hover();
-      await page.waitForTimeout(250);
+      await waitForAnimationsToFinish(page);
 
       const icon = firstLink.locator('.header-drawer-follow-icon');
       const filter = await icon.evaluate((el) => getComputedStyle(el).filter);

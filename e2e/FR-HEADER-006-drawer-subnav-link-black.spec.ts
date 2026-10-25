@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForAnimationsToFinish } from './helpers';
 
 /**
  * FR-HEADER-006 Drawerのアコーディオン子要素リンクの文字色が黒であること
@@ -13,7 +14,7 @@ const viewports = [
 
 test.describe('FR-HEADER-006 Drawer アコーディオン子要素リンクの色', () => {
   for (const vp of viewports) {
-    test(`${vp.name} (${vp.width}px): 子要素リンクの色がrgb(17, 17, 17)`, async ({ page }) => {
+    test(`FREQ-29-AC-01 ${vp.name} (${vp.width}px): 子要素リンクの色がrgb(17, 17, 17)`, async ({ page }) => {
       test.setTimeout(60000);
 
       await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -25,13 +26,13 @@ test.describe('FR-HEADER-006 Drawer アコーディオン子要素リンクの�
 
       const drawerShell = page.locator('.header-drawer-shell');
       await expect(drawerShell).toBeVisible({ timeout: 5000 });
-      await page.waitForTimeout(400);
+      await waitForAnimationsToFinish(page);
 
       // アコーディオンを展開
       const firstTrigger = drawerShell.locator('[data-ui-accordion-trigger]').first();
       await expect(firstTrigger).toBeVisible();
       await firstTrigger.click();
-      await page.waitForTimeout(300);
+      await waitForAnimationsToFinish(page);
 
       const subnavLink = drawerShell.locator('.header-drawer-subnav-link').first();
       await expect(subnavLink).toBeVisible();

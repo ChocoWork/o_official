@@ -17,7 +17,7 @@ for (const viewport of viewports) {
   test.describe(`FR-PWRESET-004 turnstile widget render (${viewport.name})`, () => {
     test.skip(!siteKeyConfigured, 'NEXT_PUBLIC_TURNSTILE_SITE_KEY 未設定時はウィジェット自体を描画しない');
 
-    test('パスワード再設定画面に Turnstile が描画されトークンが発行される', async ({ page }) => {
+    test('FREQ-328-AC-01 パスワード再設定画面に Turnstile が描画されトークンが発行される', async ({ page }) => {
       await stubTurnstileScript(page);
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto('/auth/password-reset');

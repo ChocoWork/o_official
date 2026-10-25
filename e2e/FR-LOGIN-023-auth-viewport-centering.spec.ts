@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const viewports = [
   { name: 'iphone-se', width: 375, height: 667 },
@@ -11,7 +11,9 @@ const authRoutes = ['/login', '/auth/password-reset'] as const;
 
 for (const viewport of viewports) {
   for (const route of authRoutes) {
-    test(`${route} is centered in the dynamic viewport (${viewport.name})`, async ({ page }) => {
+    // 1 つの名前に付けられる ID は 1 つ。/login は FREQ-69-AC-03、/auth/password-reset は FREQ-70-AC-02 の観点なので、
+    // 試験の本体を共有し、名前は route ごとに ID を literal で書く
+    const centersInDynamicViewport = async ({ page }: { page: Page }) => {
       // FREQ-94-AC-01: 固定ヘッダー下のmainではなく、100dvh全体の中央へ配置する
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto(route);
@@ -40,7 +42,12 @@ for (const viewport of viewports) {
       expect(metrics.rootTop).toBeGreaterThanOrEqual(metrics.headerBottom);
       expect(metrics.footerTop).toBeGreaterThanOrEqual(viewport.height - 1);
       expect(metrics.hasHorizontalOverflow).toBe(false);
-    });
+    };
+    if (route === '/login') {
+      test(`FREQ-69-AC-03 ${route} is centered in the dynamic viewport (${viewport.name})`, centersInDynamicViewport);
+    } else {
+      test(`FREQ-70-AC-02 ${route} is centered in the dynamic viewport (${viewport.name})`, centersInDynamicViewport);
+    }
   }
 }
 

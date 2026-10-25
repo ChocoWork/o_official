@@ -19,7 +19,7 @@ for (const viewport of viewports) {
       ).toBeVisible();
     });
 
-    test('heading "Le Fil des Heures" uses the brand Didot serif font', async ({ page }) => {
+    test('FREQ-73-AC-01 heading "Le Fil des Heures" uses the brand Didot serif font', async ({ page }) => {
       const heading = page.locator('#main-content').getByRole('heading', { name: 'Le Fil des Heures' });
       await expect(heading).toBeVisible();
 
@@ -28,7 +28,7 @@ for (const viewport of viewports) {
       expect(fontFamily).toContain('didot');
     });
 
-    test('shows the thread hairline motif below the heading', async ({ page }) => {
+    test('FREQ-73-AC-04 shows the thread hairline motif below the heading', async ({ page }) => {
       // FREQ-73-AC-04: 糸モチーフの細いヘアライン（幅1pxの縦線）
       const hairline = page.locator('#main-content span[aria-hidden="true"]').first();
       await expect(hairline).toBeVisible();
@@ -36,14 +36,14 @@ for (const viewport of viewports) {
       expect(width).toBeLessThanOrEqual(2);
     });
 
-    test('login link points to /login', async ({ page }) => {
+    test('FREQ-73-AC-02 login link points to /login', async ({ page }) => {
       // FREQ-73-AC-02
       await expect(
         page.locator('#main-content').getByRole('link', { name: 'ログインページへ' }),
       ).toHaveAttribute('href', '/login');
     });
 
-    test('gate is vertically centered and footer is not visible', async ({ page }) => {
+    test('FREQ-73-AC-03 gate is vertically centered and footer is not visible', async ({ page }) => {
       const vh = viewport.height;
 
       // FREQ-73-AC-03: Footer が見えない（レイアウト確定を待ってポーリング）
@@ -62,7 +62,7 @@ for (const viewport of viewports) {
       expect(heading!.y).toBeLessThan(vh * 0.7);
     });
 
-    test('heading is larger than the body message (contrast)', async ({ page }) => {
+    test('FREQ-73-AC-05 heading is larger than the body message (contrast)', async ({ page }) => {
       // FREQ-73-AC-05
       const fontPx = (loc: import('@playwright/test').Locator) =>
         loc.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));

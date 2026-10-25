@@ -20,7 +20,7 @@ for (const viewport of viewports) {
       await page.goto('/login');
     });
 
-    test('google button and primary CTA share the same size on both tabs', async ({ page }) => {
+    test('FREQ-68-AC-01 google button and primary CTA share the same size on both tabs', async ({ page }) => {
       // login tab
       const loginGoogle = await metrics(page.getByRole('button', { name: /Google/ }));
       const loginPrimary = await metrics(

@@ -17,12 +17,12 @@ for (const viewport of viewports) {
       await page.goto('/login');
     });
 
-    test('AC-01: Email に mail アイコン / Password に lock アイコンが表示される', async ({ page }) => {
+    test('FREQ-89-AC-01 AC-01: Email に mail アイコン / Password に lock アイコンが表示される', async ({ page }) => {
       await expect(page.locator('i.ri-mail-line')).toBeVisible();
       await expect(page.locator('i.ri-lock-line')).toBeVisible();
     });
 
-    test('AC-02: 入力欄は下線のみ（border-bottom のみ）で表示される', async ({ page }) => {
+    test('FREQ-89-AC-02 AC-02: 入力欄は下線のみ（border-bottom のみ）で表示される', async ({ page }) => {
       const email = page.getByLabel('Email');
       const styles = await email.evaluate((el) => {
         const s = getComputedStyle(el);
@@ -39,7 +39,7 @@ for (const viewport of viewports) {
       expect(styles.left).toBe('none');
     });
 
-    test('AC-03: Password 表示切替ボタンで type が password↔text に切り替わる', async ({ page }) => {
+    test('FREQ-89-AC-03 AC-03: Password 表示切替ボタンで type が password↔text に切り替わる', async ({ page }) => {
       const password = page.getByLabel('Password', { exact: true });
       await expect(password).toHaveAttribute('type', 'password');
 
@@ -53,13 +53,13 @@ for (const viewport of viewports) {
       ).toBeVisible();
     });
 
-    test('AC-04: 先頭アイコンが入力本文より大きい（黄金比 √φ 倍相当）', async ({ page }) => {
+    test('FREQ-89-AC-04 AC-04: 先頭アイコンが入力本文より大きい（黄金比 √φ 倍相当）', async ({ page }) => {
       const iconSize = await fontPx(page.locator('i.ri-mail-line'));
       const inputSize = await fontPx(page.getByLabel('Email'));
       expect(iconSize).toBeGreaterThan(inputSize);
     });
 
-    test('AC-05: 左アイコンの左・右トグルの右に黄金比 x/y（font/φ）の余白がある', async ({ page }) => {
+    test('FREQ-89-AC-05 AC-05: 左アイコンの左・右トグルの右に黄金比 x/y（font/φ）の余白がある', async ({ page }) => {
       const spacing = await page.evaluate(() => {
         const email = document.querySelector('#email') as HTMLElement;
         const emailIcon = document.querySelector('.ri-mail-line') as HTMLElement;

@@ -26,14 +26,14 @@ for (const viewport of viewports) {
       });
     });
 
-    test('AC-01: 2FA Cookie が無ければ /login へ送り返す', async ({ page }) => {
+    test('FREQ-334-AC-01 AC-01: 2FA Cookie が無ければ /login へ送り返す', async ({ page }) => {
       await page.goto('/login/verify');
 
       await expect(page).toHaveURL(/\/login$/);
       await expect(page.getByLabel('認証コード 1 桁目')).toHaveCount(0);
     });
 
-    test('AC-04: 宛先はマスクして表示する', async ({ page }) => {
+    test('FREQ-334-AC-04 AC-04: 宛先はマスクして表示する', async ({ page }) => {
       await openVerify(page);
 
       await expect(page.getByText('14***56@gmail.com')).toBeVisible();
@@ -54,7 +54,7 @@ for (const viewport of viewports) {
       await expect(page.getByLabel('認証コード 1 桁目')).toBeVisible();
     });
 
-    test('AC-06: 別のアドレスでやり直すと Cookie が消える', async ({ page }) => {
+    test('FREQ-334-AC-06 AC-06: 別のアドレスでやり直すと Cookie が消える', async ({ page }) => {
       await openVerify(page);
 
       await page.getByRole('button', { name: '別のアドレスでやり直す' }).click();
@@ -68,7 +68,7 @@ for (const viewport of viewports) {
 }
 
 // 再送はクールダウン明けにしか出ないので、仮想時計で単独検証する。
-test('AC-05: 再送はパスワードも宛先も送らない', async ({ page }) => {
+test('FREQ-334-AC-05 AC-05: 再送はパスワードも宛先も送らない', async ({ page }) => {
   await page.clock.install();
   await page.goto('/login');
   await setLoginTwoFactorCookie(page, EMAIL);

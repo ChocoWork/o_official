@@ -48,7 +48,7 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('AC-02: /login で Turnstile・送信ボタン・Google ボタンの幅が一致する', async ({ page }) => {
+    test('FREQ-328-AC-02 AC-02: /login で Turnstile・送信ボタン・Google ボタンの幅が一致する', async ({ page }) => {
       await page.goto('/login');
       await waitForWidget(page);
 
@@ -61,7 +61,7 @@ for (const viewport of viewports) {
         .toBeLessThan(1);
     });
 
-    test('AC-02: /auth/password-reset で Turnstile と送信ボタンの幅が一致する', async ({ page }) => {
+    test('FREQ-328-AC-02 AC-02: /auth/password-reset で Turnstile と送信ボタンの幅が一致する', async ({ page }) => {
       await page.goto('/auth/password-reset');
       await waitForWidget(page);
 
@@ -74,7 +74,7 @@ for (const viewport of viewports) {
         .toBeLessThan(1);
     });
 
-    test('AC-03: 横スクロールが発生しない', async ({ page }) => {
+    test('FREQ-328-AC-03 AC-03: 横スクロールが発生しない', async ({ page }) => {
       await page.goto('/login');
       await waitForWidget(page);
 

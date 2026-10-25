@@ -13,7 +13,7 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('shows login tab selected on /login', async ({ page }) => {
+    test('FREQ-61-AC-01 shows login tab selected on /login', async ({ page }) => {
       await page.goto('/login');
 
       // FREQ-61-AC-01: ログイン・新規登録タブが表示され、ログインタブが選択状態
@@ -27,7 +27,7 @@ for (const viewport of viewports) {
       await expect(page.getByLabel('Confirm Password')).toHaveCount(0);
     });
 
-    test('switches to register form when register tab is clicked', async ({ page }) => {
+    test('FREQ-63-AC-02 switches to register form when register tab is clicked', async ({ page }) => {
       await page.goto('/login');
 
       // FREQ-63-AC-02: 新規登録タブを押すとPASSWORD（確認）が表示され、URLは /login のまま
@@ -37,7 +37,7 @@ for (const viewport of viewports) {
       await expect(page).toHaveURL(/\/login$/);
     });
 
-    test('can switch back to login from register tab', async ({ page }) => {
+    test('FREQ-63-AC-02 can switch back to login from register tab', async ({ page }) => {
       await page.goto('/login');
 
       await page.getByRole('tab', { name: '会員登録' }).click();
@@ -50,7 +50,7 @@ for (const viewport of viewports) {
       await expect(page).toHaveURL(/\/login$/);
     });
 
-    test('タブ内の切替リンクは撤去され、切替はタブのみで行う', async ({ page }) => {
+    test('FREQ-90-AC-02 タブ内の切替リンクは撤去され、切替はタブのみで行う', async ({ page }) => {
       await page.goto('/login');
 
       // FREQ-90: タブ内の「会員登録はこちら」「既にアカウントをお持ちの方はこちら」導線は撤去

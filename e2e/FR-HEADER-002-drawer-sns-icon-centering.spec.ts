@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForAnimationsToFinish } from './helpers';
 
 /**
  * FR-HEADER-002 Drawer の SNS アイコンが枠内中央に配置されること
@@ -12,13 +13,14 @@ const viewports = [
 
 test.describe('FR-HEADER-002 Drawer SNS アイコン中央配置', () => {
   for (const vp of viewports) {
-    test(`${vp.name} (${vp.width}px): SNS アイコンが枠内中央に配置されている`, async ({ page }) => {
+    test(`FR-AUTH-002-AC-01 ${vp.name} (${vp.width}px): SNS アイコンが枠内中央に配置されている`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/');
 
       const menuButton = page.locator('button[aria-label="Open menu"]');
       await menuButton.click();
-      await page.waitForTimeout(300);
+      await expect(page.locator('.header-drawer-shell')).toBeVisible();
+      await waitForAnimationsToFinish(page);
 
       const followSection = page.locator('.header-drawer-follow');
       await expect(followSection).toBeVisible();

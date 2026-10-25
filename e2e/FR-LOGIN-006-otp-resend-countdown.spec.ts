@@ -2,33 +2,45 @@ import { test, expect } from '@playwright/test';
 import { injectTurnstileToken } from './turnstile-test-utils';
 import { setLoginTwoFactorCookie } from './auth-2fa-test-utils';
 
-test.describe('FR-LOGIN-006 resend countdown', () => {
-  test('shows the resend countdown immediately after OTP send', async ({ page }) => {
-    await page.route('**/api/auth/login', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          step: 'otp',
-          message: '認証コードを送信しました。メールに届いたコードを入力してください。',
-        }),
-      });
+const viewports = [
+  { name: 'mobile', width: 390, height: 844 },
+  { name: 'tablet', width: 768, height: 1024 },
+  { name: 'desktop', width: 1280, height: 800 },
+];
+
+for (const viewport of viewports) {
+  test.describe(`FR-LOGIN-006 resend countdown (${viewport.name})`, () => {
+    test.beforeEach(async ({ page }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    await page.goto('/login');
+    test('FREQ-60-AC-01 shows the resend countdown immediately after OTP send', async ({ page }) => {
+      await page.route('**/api/auth/login', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            step: 'otp',
+            message: '認証コードを送信しました。メールに届いたコードを入力してください。',
+          }),
+        });
+      });
 
-    await injectTurnstileToken(page);
+      await page.goto('/login');
 
-    // /api/auth/login はモックなので本物の 2FA Cookie が発行されない。
-    // /login/verify はサーバーで Cookie を検証するため、テスト側で置く。
-    await setLoginTwoFactorCookie(page, 'user@example.com');
+      await injectTurnstileToken(page);
 
-    await page.getByLabel('EMAIL').fill('user@example.com');
-    await page.getByLabel('PASSWORD').fill('Password123456789!');
-    await page.getByRole('button', { name: 'ログイン' }).click();
+      // /api/auth/login はモックなので本物の 2FA Cookie が発行されない。
+      // /login/verify はサーバーで Cookie を検証するため、テスト側で置く。
+      await setLoginTwoFactorCookie(page, 'user@example.com');
 
-    await expect(page).toHaveURL(/\/login\/verify$/);
-    await expect(page.getByText(/後に再送可能/)).toBeVisible();
-    await expect(page.getByRole('button', { name: '再送信' })).toHaveCount(0);
+      await page.getByLabel('EMAIL').fill('user@example.com');
+      await page.getByLabel('PASSWORD').fill('Password123456789!');
+      await page.getByRole('button', { name: 'ログイン' }).click();
+
+      await expect(page).toHaveURL(/\/login\/verify$/);
+      await expect(page.getByText(/後に再送可能/)).toBeVisible();
+      await expect(page.getByRole('button', { name: '再送信' })).toHaveCount(0);
+    });
   });
-});
+}

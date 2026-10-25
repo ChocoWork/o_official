@@ -39,7 +39,7 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('AC-02: 有効なリンクは確認画面を経ずに新パスワード入力へ着地する', async ({ page }) => {
+    test('FREQ-332-AC-02 AC-02: 有効なリンクは確認画面を経ずに新パスワード入力へ着地する', async ({ page }) => {
       await mockValidLink(page);
       await page.goto(`/auth/password-reset/verify?token=${TOKEN}`);
 
@@ -48,7 +48,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('button', { name: 'パスワードを再設定する' })).toHaveCount(0);
     });
 
-    test('AC-01: 自動送信は 1 回だけ', async ({ page }) => {
+    test('FREQ-332-AC-01 AC-01: 自動送信は 1 回だけ', async ({ page }) => {
       let posts = 0;
       page.on('request', (req) => {
         if (req.method() === 'POST' && req.url().includes('/api/auth/password-reset/link')) {
@@ -62,7 +62,7 @@ for (const viewport of viewports) {
       expect(posts).toBe(1);
     });
 
-    test('AC-03: 通信エラーのときだけ手動の再試行を出す', async ({ page }) => {
+    test('FREQ-332-AC-03 AC-03: 通信エラーのときだけ手動の再試行を出す', async ({ page }) => {
       await page.route('**/api/auth/password-reset/link', async (route) => {
         if (route.request().method() !== 'POST') {
           await route.fallback();

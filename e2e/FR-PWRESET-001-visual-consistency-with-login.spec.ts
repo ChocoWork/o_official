@@ -22,7 +22,7 @@ for (const viewport of viewports) {
       await page.goto('/auth/password-reset');
     });
 
-    test('has no card frame and a square submit button (minimal design like login)', async ({ page }) => {
+    test('FREQ-92-AC-01 has no card frame and a square submit button (minimal design like login)', async ({ page }) => {
       // FREQ-92: 角丸カードを撤去し、送信ボタンは直角（ログインの下線ミニマルデザインへ統一）
       const container = page.locator('form').locator('xpath=..').locator('xpath=..');
       const submit = page.getByRole('button', { name: '再設定メールを送信' });
@@ -35,7 +35,7 @@ for (const viewport of viewports) {
       expect(await radiusOf(submit)).toBe(0);
     });
 
-    test('email input is an underline field with a leading mail icon', async ({ page }) => {
+    test('FREQ-92-AC-02 email input is an underline field with a leading mail icon', async ({ page }) => {
       // FREQ-92: 入力欄は下線のみ＋先頭アイコン（ログインと同じ）
       await expect(page.locator('i.ri-mail-line')).toBeVisible();
       const styles = await page.locator('#email').evaluate((el) => {
@@ -51,7 +51,7 @@ for (const viewport of viewports) {
       expect(styles.radius).toBe(0);
     });
 
-    test('is centered full-height with footer not visible', async ({ page }) => {
+    test('FREQ-70-AC-02 is centered full-height with footer not visible', async ({ page }) => {
       // FREQ-70-AC-02: Footer 非表示＋縦中央
       const vh = viewport.height;
       const footer = await page.locator('footer').boundingBox();
@@ -65,7 +65,7 @@ for (const viewport of viewports) {
       expect(Math.abs(cardCenter - vh / 2)).toBeLessThanOrEqual(vh * 0.15);
     });
 
-    test('heading uses the same font as login tabs and is the largest text (contrast)', async ({
+    test('FREQ-92-AC-03 heading uses the same font as login tabs and is the largest text (contrast)', async ({
       page,
     }) => {
       // FREQ-70-AC-04: 見出しは login タブと同じサンセリフ、かつ本文/入力より大きい
@@ -85,7 +85,7 @@ for (const viewport of viewports) {
       expect(headingFont.size).toBeGreaterThan(inputSize);
     });
 
-    test('submit button is disabled until email is filled', async ({ page }) => {
+    test('FREQ-70-AC-03 submit button is disabled until email is filled', async ({ page }) => {
       // FREQ-70-AC-03: 未入力時は無効、入力で有効
       const submit = page.getByRole('button', { name: '再設定メールを送信' });
       await expect(submit).toBeDisabled();
@@ -93,7 +93,7 @@ for (const viewport of viewports) {
       await expect(submit).toBeEnabled();
     });
 
-    test('does not introduce horizontal overflow', async ({ page }) => {
+    test('FREQ-328-AC-03 does not introduce horizontal overflow', async ({ page }) => {
       // FREQ-70-AC-08: 狭い画面を含め、共通フォーム幅がviewportを超えない
       const hasHorizontalOverflow = await page.evaluate(() => {
         const doc = document.documentElement;
@@ -129,7 +129,7 @@ for (const viewport of viewports) {
       expect(Math.abs(resetMetrics.button!.height - loginMetrics.button!.height)).toBeLessThan(1);
     });
 
-    test('repeats the login form 13px grid and LiftKit type hierarchy', async ({ page }) => {
+    test('FREQ-328-AC-04 repeats the login form 13px grid and LiftKit type hierarchy', async ({ page }) => {
       // FREQ-328-AC-04: 13pxグリッド＋CTA前8px（計21px）の近接階層を反復する。
       // Bot 検証ウィジェットが CTA の直前に入るため、入力欄からではなく
       // 「CTA 直前要素の下端 → CTA 上端」で測る。
@@ -149,7 +149,7 @@ for (const viewport of viewports) {
   });
 }
 
-test('completed reset exposes the login route as the primary action', async ({ page }) => {
+test('FREQ-329-AC-05 completed reset exposes the login route as the primary action', async ({ page }) => {
   // FREQ-329-AC-05: 完了後にこの画面ですることは1つしかないため、主ボタンで置く。
   // 補助リンク階層だった FREQ-70-AC-07 を上書きする。
   await page.route('**/api/auth/password-reset/session', async (route) => {

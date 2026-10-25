@@ -5,7 +5,7 @@ for (const viewport of [
   { width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 },
 ]) {
   for (const status of [429, 503]) {
-    test(`OTP resend ${status} feedback at ${viewport.width}px`, async ({ page }) => {
+    test(`FR-LOGIN-006-AC-02 OTP resend ${status} feedback at ${viewport.width}px`, async ({ page }) => {
       await page.setViewportSize(viewport);
       await page.clock.install();
       await page.route('**/api/auth/login/resend', route => route.fulfill({

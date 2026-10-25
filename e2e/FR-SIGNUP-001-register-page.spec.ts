@@ -9,7 +9,7 @@ const viewports = [
 
 for (const viewport of viewports) {
   test.describe(`FR-SIGNUP-001 register route removed (${viewport.name})`, () => {
-    test('returns 404 on /register', async ({ page }) => {
+    test('FREQ-63-AC-01 returns 404 on /register', async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       const response = await page.goto('/register');
 
@@ -17,7 +17,7 @@ for (const viewport of viewports) {
       expect(response?.status()).toBe(404);
     });
 
-    test('login page provides a path to registration via tab', async ({ page }) => {
+    test('FREQ-59-AC-02 login page provides a path to registration via tab', async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto('/login');
 

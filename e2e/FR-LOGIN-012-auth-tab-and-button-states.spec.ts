@@ -14,7 +14,7 @@ for (const viewport of viewports) {
       await page.goto('/login');
     });
 
-    test('unselected tab uses a grayish (non-pure-black) background', async ({ page }) => {
+    test('FREQ-65-AC-01 unselected tab uses a grayish (non-pure-black) background', async ({ page }) => {
       // FREQ-65-AC-01: 非選択タブの背景色が純黒でないグレー系
       const registerTab = page.getByRole('tab', { name: '会員登録' });
       const bg = await registerTab.evaluate(
@@ -24,7 +24,7 @@ for (const viewport of viewports) {
       expect(bg).not.toBe('rgb(17, 17, 17)');
     });
 
-    test('tabs use an underline (bottom border only), no box borders', async ({ page }) => {
+    test('FREQ-90-AC-01 tabs use an underline (bottom border only), no box borders', async ({ page }) => {
       // FREQ-90: タブは下線（border-bottom）のみで区別し、四方を囲む枠線は持たない
       // （FREQ-65-AC-05 の「塗りのみ・border なし」は下線デザインへ置き換え）
       const tabs = page.getByRole('tab');
@@ -46,7 +46,7 @@ for (const viewport of viewports) {
       }
     });
 
-    test('login button is disabled until email and password are filled', async ({ page }) => {
+    test('FREQ-65-AC-02 login button is disabled until email and password are filled', async ({ page }) => {
       const loginButton = page.getByRole('button', { name: 'ログイン', exact: true });
 
       // FREQ-65-AC-02: 未入力時は無効
@@ -58,7 +58,7 @@ for (const viewport of viewports) {
       await expect(loginButton).toBeEnabled();
     });
 
-    test('register button is disabled until all fields are filled', async ({ page }) => {
+    test('FREQ-65-AC-04 register button is disabled until all fields are filled', async ({ page }) => {
       await page.getByRole('tab', { name: '会員登録' }).click();
 
       const registerButton = page.getByRole('button', {
