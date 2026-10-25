@@ -1,6 +1,7 @@
 -- G-3 shipment-slip writers (Task 4 and later G-3 tasks): the lock helper for every shipment-slip writer, saving a draft
 -- (create / replace the selected lines) and discarding a draft (FREQ-531-AC-03, FREQ-532, FREQ-533-AC-01, FREQ-540-AC-10,
--- FREQ-540-AC-11), and the writer allowlist (65 G-1/G-2 entries + the writers of this file). Later G-3 tasks extend the body
+-- FREQ-540-AC-11), confirming a slip (Task 5), cancelling a whole slip with a single restore (Task 6: FREQ-533-AC-04,
+-- FREQ-534-AC-03), and the writer allowlist (65 G-1/G-2 entries + the writers of this file). Later G-3 tasks extend the body
 -- section of this file while it is not applied anywhere. Always applied after 20261025070821_group_g3_shipping_reads.sql.
 BEGIN;
 
@@ -664,8 +665,242 @@ ALTER FUNCTION public.admin_confirm_shipment_slip(uuid,integer,text,text,date,bo
 REVOKE ALL ON FUNCTION public.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid) TO service_role;
 
--- 7. The closed list of writers. The 65 entries of 20261024180500_group_g2_purchasing_writers.sql stay exactly as they were;
---    this file appends save/discard (66-67), consume/register/confirm (68-70). Later G-3 tasks append their writers while this file is not applied anywhere. Owner, ACL
+-- 7. Internal restore of one confirmed shipment (cancel of a whole slip calls it once per shipment). The caller holds the common
+--    advisory and the inventory closure and has already set cancelled_at on the shipment. For each shipment line (order item id
+--    ascending) and each consume event of the confirming operation on that item (event id ascending) four statements run in this
+--    order, so that the foreign keys of the next one are already satisfied and no check sees a half state it forbids:
+--      (1) ledger restock +n WITHOUT allocation_operation_id (untagged: the stock-ledger consistency check only reads tagged rows),
+--      (2) a new paid allocation of n (remaining n). The item bound "remaining <= quantity - active shipped" is a deferred check
+--          (commit time) and does not look at statements in between; the order is still chosen so that even this intermediate
+--          state stays within the bound, because the shipment is already cancelled,
+--      (3) ledger -n tagged with the cancelling operation (purchase, or exchange for an exchange item),
+--      (4) the restore event (sequence 1, reverses the consume event, points at the ledger row of step 3, reason shipment_cancel).
+--    Free stock F is +n and then -n, so it never drops below its start and is unchanged at the end; the original allocation is
+--    never touched. Restoring the same consume event twice stops at UNIQUE (reverses_event_id) of the events table.
+--    Returns the restored quantity. Internal helper: nobody but the owner can EXECUTE it.
+CREATE FUNCTION private.restore_group_g_shipment(_fulfillment_id uuid, _confirm_operation_id uuid, _operation_id uuid, _actor_id uuid, _slip_number text)
+RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_consume record;
+  v_allocation uuid;
+  v_movement bigint;
+  v_total integer := 0;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_locks AS l
+    WHERE l.pid = pg_catalog.pg_backend_pid() AND l.locktype = 'advisory'
+      AND l.classid = 190521 AND l.objid = 1 AND l.objsubid = 2 AND l.mode = 'ExclusiveLock' AND l.granted) THEN
+    RAISE EXCEPTION 'GROUP_G_INVENTORY_LOCK_REQUIRED' USING ERRCODE = '55000';
+  END IF;
+  IF _fulfillment_id IS NULL OR _confirm_operation_id IS NULL OR _operation_id IS NULL OR _actor_id IS NULL OR _slip_number IS NULL THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  FOR v_consume IN
+    SELECT e.id AS event_id, e.quantity, a.variant_id, a.order_item_id, oi.order_id, oi.exchange_return_line_id
+    FROM public.order_fulfillment_lines AS fl
+    JOIN public.order_items AS oi ON oi.id = fl.order_item_id
+    JOIN public.order_item_allocations AS a ON a.order_item_id = fl.order_item_id
+    JOIN public.order_item_allocation_events AS e ON e.allocation_id = a.id
+    WHERE fl.fulfillment_id = _fulfillment_id AND e.event_type = 'consume' AND e.operation_id = _confirm_operation_id
+    ORDER BY fl.order_item_id, e.id
+  LOOP
+    INSERT INTO public.stock_movements(variant_id, delta, reason, order_id, order_item_id, note, created_by)
+      VALUES(v_consume.variant_id, v_consume.quantity, 'restock', v_consume.order_id, v_consume.order_item_id,
+        U&'\767A\9001\7968 ' || _slip_number || U&' \306E\767A\9001\53D6\6D88\FF08\623B\3057\FF09', _actor_id);
+    INSERT INTO public.order_item_allocations(order_item_id, variant_id, quantity, remaining_quantity, kind, operation_id)
+      VALUES(v_consume.order_item_id, v_consume.variant_id, v_consume.quantity, v_consume.quantity, 'paid', _operation_id)
+      RETURNING id INTO v_allocation;
+    INSERT INTO public.stock_movements(variant_id, delta, reason, order_id, order_item_id, allocation_operation_id, note, created_by)
+      VALUES(v_consume.variant_id, -v_consume.quantity,
+        CASE WHEN v_consume.exchange_return_line_id IS NULL THEN 'purchase' ELSE 'exchange' END,
+        v_consume.order_id, v_consume.order_item_id, _operation_id,
+        U&'\767A\9001\7968 ' || _slip_number || U&' \306E\767A\9001\53D6\6D88\FF08\518D\78BA\4FDD\FF09', _actor_id)
+      RETURNING id INTO v_movement;
+    INSERT INTO public.order_item_allocation_events(allocation_id, event_type, quantity, operation_id, sequence, reverses_event_id, stock_movement_id, reason, actor_id)
+      VALUES(v_allocation, 'restore', v_consume.quantity, _operation_id, 1, v_consume.event_id, v_movement, 'shipment_cancel', _actor_id);
+    v_total := v_total + v_consume.quantity;
+  END LOOP;
+  RETURN v_total;
+END;
+$$;
+ALTER FUNCTION private.restore_group_g_shipment(uuid,uuid,uuid,uuid,text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.restore_group_g_shipment(uuid,uuid,uuid,uuid,text) FROM PUBLIC, anon, authenticated, service_role;
+
+-- 8. Cancel a whole confirmed slip (FREQ-533-AC-04, FREQ-534-AC-03). One transaction for every order of the slip; the stock goes
+--    back exactly once (the restore above), free stock F is unchanged.
+--    Order of work: argument check (22023) -> lock helper (advisory first; settings FOR SHARE because tracking is touched) ->
+--    permission (the four manage + read codes, 42501) -> fingerprint {operation, slip_id, actor_id} and replay / conflict (23505) ->
+--    existence (P0002) -> stage: cancelled is GROUP_G_SLIP_CANCELLED, anything but confirmed GROUP_G_SLIP_NOT_CONFIRMED -> version ->
+--    refusals for ALL orders before any write (the first kind found by this priority wins, nothing is written): (1) an order that
+--    is not paid / shipped -> GROUP_G_SLIP_CANCEL_NOT_ALLOWED, (2) a return line (status requested / open / closed) that points
+--    at one of the shipments -> GROUP_G_SLIP_HAS_RETURN, (3) shipped - this quantity < refunded after shipment (pending refunds
+--    count) -> GROUP_G_SLIP_REFUNDED.
+--    Writes, per shipment in order id ascending, in this order: cancelled_at / cancelled_by of the shipment (the existing cancel
+--    branch, no mark) -> its tracking registrations stopped as cancelled and its open attention closed -> restore (the allocation
+--    bounds, the ledger consistency and group_g_shipment_consumption are all deferred checks that see the final state at commit,
+--    where cancel and restores are balanced; the shipment is cancelled before the new allocations are inserted so that the
+--    intermediate states are meaningful too and stay within the item bound) -> an order that is shipped and has
+--    unshipped quantity left goes back to paid (shipped_at, carrier and number NULL) -> the shipped emails not yet sent
+--    (pending / retry_wait) are skipped. Then the slip (mark cancel: stage cancelled, cancelled_at / cancelled_by, version + 1),
+--    its cancel version row, the item-state differences (reason shipment_slip_cancel) and the operation row (operation
+--    shipment_slip_cancel). No email is created for the customer.
+--    Result {id, version, restoredQuantity, replayed}.
+CREATE FUNCTION private.admin_cancel_shipment_slip(_slip_id uuid, _expected_version integer, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_existing private.group_g_operations%ROWTYPE;
+  v_slip public.shipment_slips%ROWTYPE;
+  v_fingerprint text;
+  v_orders uuid[];
+  v_before jsonb;
+  v_shipment record;
+  v_status public.order_status;
+  v_unshipped integer;
+  v_restored integer := 0;
+  v_version integer;
+  v_result jsonb;
+  v_previous_operation text;
+  v_previous_actor text;
+  v_previous_reason text;
+  v_previous_change text;
+BEGIN
+  IF _slip_id IS NULL OR _expected_version IS NULL OR _expected_version < 1 OR _actor_id IS NULL OR _request_key IS NULL THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM private.lock_group_g_shipment_slips(ARRAY[_slip_id], ARRAY[]::uuid[], true);
+  IF NOT private.group_g_actor_has_permissions(_actor_id,
+      ARRAY['admin.shipping.manage', 'admin.shipping.read', 'admin.orders.manage', 'admin.orders.read']) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+
+  v_fingerprint := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+    'operation', 'shipment_slip_cancel', 'slip_id', _slip_id, 'actor_id', _actor_id)::text, 'UTF8')), 'hex');
+  SELECT op.* INTO v_existing FROM private.group_g_operations AS op
+    WHERE op.operation = 'shipment_slip_cancel' AND op.request_key = _request_key;
+  IF FOUND THEN
+    IF v_existing.fingerprint <> v_fingerprint THEN
+      RAISE EXCEPTION 'GROUP_G_REQUEST_KEY_CONFLICT' USING ERRCODE = '23505';
+    END IF;
+    RETURN v_existing.result || pg_catalog.jsonb_build_object('replayed', true);
+  END IF;
+
+  SELECT s.* INTO v_slip FROM public.shipment_slips AS s WHERE s.id = _slip_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_slip.stage = 'cancelled' THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_CANCELLED' USING ERRCODE = '55000';
+  END IF;
+  IF v_slip.stage <> 'confirmed' THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_NOT_CONFIRMED' USING ERRCODE = '55000';
+  END IF;
+  IF v_slip.version <> _expected_version THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_VERSION_CONFLICT' USING ERRCODE = '55000';
+  END IF;
+
+  -- refusals for every order of the slip, before any write
+  IF EXISTS (
+    SELECT 1 FROM public.shipment_slip_fulfillments AS sf JOIN public.orders AS o ON o.id = sf.order_id
+    WHERE sf.slip_id = _slip_id AND o.status NOT IN ('paid'::public.order_status, 'shipped'::public.order_status)
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_CANCEL_NOT_ALLOWED' USING ERRCODE = '22023';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.shipment_slip_fulfillments AS sf
+    JOIN public.order_return_lines AS rl ON rl.fulfillment_id = sf.fulfillment_id
+    JOIN public.order_returns AS r ON r.id = rl.return_id
+    WHERE sf.slip_id = _slip_id AND r.status IN ('requested', 'open', 'closed')
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_HAS_RETURN' USING ERRCODE = '22023';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.shipment_slip_fulfillments AS sf
+    JOIN public.order_fulfillment_lines AS fl ON fl.fulfillment_id = sf.fulfillment_id
+    CROSS JOIN LATERAL private.order_line_fulfillment(sf.order_id) AS l
+    WHERE sf.slip_id = _slip_id AND l.order_item_id = fl.order_item_id AND l.shipped - fl.quantity < l.refunded_after_shipment
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_REFUNDED' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT pg_catalog.array_agg(sf.order_id ORDER BY sf.order_id) INTO v_orders
+    FROM public.shipment_slip_fulfillments AS sf WHERE sf.slip_id = _slip_id;
+  v_before := private.capture_group_g_item_states(v_orders);
+  v_previous_operation := pg_catalog.current_setting('app.group_g_operation_id', true);
+  v_previous_actor := pg_catalog.current_setting('app.order_actor_id', true);
+  v_previous_reason := pg_catalog.current_setting('app.order_change_reason', true);
+  v_previous_change := pg_catalog.current_setting('app.group_g_slip_change', true);
+  BEGIN
+    PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+    FOR v_shipment IN
+      SELECT sf.order_id, f.id AS fulfillment_id
+      FROM public.shipment_slip_fulfillments AS sf JOIN public.order_fulfillments AS f ON f.id = sf.fulfillment_id
+      WHERE sf.slip_id = _slip_id AND f.cancelled_at IS NULL
+      ORDER BY sf.order_id
+    LOOP
+      UPDATE public.order_fulfillments SET cancelled_at = pg_catalog.now(), cancelled_by = _actor_id
+        WHERE id = v_shipment.fulfillment_id;
+      PERFORM private.stop_fulfillment_registrations(v_shipment.fulfillment_id, 'cancelled');
+      PERFORM private.close_delivery_attention(v_shipment.fulfillment_id);
+      v_restored := v_restored + private.restore_group_g_shipment(v_shipment.fulfillment_id, v_slip.confirm_operation_id,
+        v_operation, _actor_id, v_slip.number);
+      SELECT o.status INTO v_status FROM public.orders AS o WHERE o.id = v_shipment.order_id;
+      SELECT COALESCE(pg_catalog.sum(l.unshipped), 0)::integer INTO v_unshipped
+        FROM private.order_line_fulfillment(v_shipment.order_id) AS l;
+      IF v_status = 'shipped'::public.order_status AND v_unshipped > 0 THEN
+        PERFORM pg_catalog.set_config('app.order_actor_id', _actor_id::text, true);
+        PERFORM pg_catalog.set_config('app.order_change_reason', 'admin_cancel_fulfillment', true);
+        UPDATE public.orders SET status = 'paid'::public.order_status, shipped_at = NULL, shipping_carrier = NULL, tracking_number = NULL
+          WHERE id = v_shipment.order_id;
+      END IF;
+      UPDATE private.order_email_outbox AS e
+        SET status = 'skipped', finished_at = pg_catalog.now(), subject = NULL, body_text = NULL,
+            body_erased_at = CASE WHEN e.subject IS NOT NULL THEN pg_catalog.now() ELSE e.body_erased_at END,
+            last_error_code = 'fulfillment_cancelled'
+        WHERE e.fulfillment_id = v_shipment.fulfillment_id AND e.status IN ('pending', 'retry_wait');
+    END LOOP;
+    PERFORM pg_catalog.set_config('app.group_g_slip_change', 'cancel', true);
+    UPDATE public.shipment_slips SET stage = 'cancelled', cancelled_at = pg_catalog.now(), cancelled_by = _actor_id,
+      version = version + 1, updated_at = pg_catalog.now()
+      WHERE id = _slip_id RETURNING version INTO v_version;
+    INSERT INTO public.shipment_slip_versions(slip_id, version, kind, shipping_carrier, tracking_number, tracking_version, shipment_date, actor_id, operation_id)
+      VALUES(_slip_id, v_version, 'cancel', v_slip.shipping_carrier, v_slip.tracking_number, v_slip.tracking_version, v_slip.shipment_date, _actor_id, v_operation);
+    PERFORM private.record_group_g_item_state_changes(v_before, v_orders, v_operation, 1, 'shipment_slip_cancel', _actor_id);
+    v_result := pg_catalog.jsonb_build_object('id', _slip_id::text, 'version', v_version, 'restoredQuantity', v_restored, 'replayed', false);
+    INSERT INTO private.group_g_operations(id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+      VALUES(v_operation, 'shipment_slip_cancel', _request_key, v_fingerprint, 'shipment_slip', _slip_id::text, _actor_id, v_result);
+  EXCEPTION WHEN OTHERS THEN
+    PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+    PERFORM pg_catalog.set_config('app.order_actor_id', COALESCE(v_previous_actor, ''), true);
+    PERFORM pg_catalog.set_config('app.order_change_reason', COALESCE(v_previous_reason, ''), true);
+    PERFORM pg_catalog.set_config('app.group_g_slip_change', COALESCE(v_previous_change, ''), true);
+    RAISE;
+  END;
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  PERFORM pg_catalog.set_config('app.order_actor_id', COALESCE(v_previous_actor, ''), true);
+  PERFORM pg_catalog.set_config('app.order_change_reason', COALESCE(v_previous_reason, ''), true);
+  PERFORM pg_catalog.set_config('app.group_g_slip_change', COALESCE(v_previous_change, ''), true);
+  RETURN v_result;
+END;
+$$;
+ALTER FUNCTION private.admin_cancel_shipment_slip(uuid,integer,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_cancel_shipment_slip(uuid,integer,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_cancel_shipment_slip(uuid,integer,uuid,uuid) TO service_role;
+
+CREATE FUNCTION public.admin_cancel_shipment_slip(_slip_id uuid, _expected_version integer, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.admin_cancel_shipment_slip(_slip_id, _expected_version, _actor_id, _request_key); $$;
+ALTER FUNCTION public.admin_cancel_shipment_slip(uuid,integer,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_cancel_shipment_slip(uuid,integer,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_cancel_shipment_slip(uuid,integer,uuid,uuid) TO service_role;
+
+-- 9. The closed list of writers. The 65 entries of 20261024180500_group_g2_purchasing_writers.sql stay exactly as they were;
+--    this file appends save/discard (66-67), consume/register/confirm (68-70), restore/cancel (71-72). Later G-3 tasks append their writers while this file is not applied anywhere. Owner, ACL
 --    and signature of the function are unchanged (CREATE OR REPLACE keeps them). group_g1_writer_inventory scans
 --    pg_proc.prosrc against it.
 CREATE OR REPLACE FUNCTION private.group_g_writer_allowlist() RETURNS pg_catalog.regprocedure[]
@@ -741,20 +976,22 @@ AS $$
     'private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)',
     'private.consume_group_g_allocations(uuid,integer,uuid,uuid)',
     'private.register_group_g_slip_tracking(uuid,integer,uuid,uuid)',
-    'private.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)'
+    'private.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)',
+    'private.restore_group_g_shipment(uuid,uuid,uuid,uuid,text)',
+    'private.admin_cancel_shipment_slip(uuid,integer,uuid,uuid)'
   ]::pg_catalog.regprocedure[];
 $$;
 
 -- G3C_BODY_END
 
 -- G3C_FINAL_ASSERT_BEGIN
--- Expectation through Task 5: the nine new functions (owner, SECURITY, language, result type, argument names, search_path, and
--- the EXECUTE rights read from the effective ACL where a NULL proacl means the default that includes PUBLIC), the same nine as
--- a set (no function of these names beyond them; service_role may EXECUTE exactly the three operation writers and their three public
--- entrances, never the lock helper), the order of the lock helper (the common advisory is the first statement, then the
--- inventory closure, then the row locks) and of each writer (the lock helper before any table is read), and the allowlist:
--- exactly the 65 G-1/G-2 entries plus the five slip writers, every one resolving to a function, compared to the fixed set by
--- OID. The expected sets grow with every Task that adds to this file.
+-- Expectation through Task 6: the twelve new functions (owner, SECURITY, language, result type, argument names, search_path, and
+-- the EXECUTE rights read from the effective ACL where a NULL proacl means the default that includes PUBLIC), the same twelve as
+-- a set (no function of these names beyond them; service_role may EXECUTE exactly the four operation writers and their four public
+-- entrances, never the lock helper and never the internal consume / register / restore helpers), the order of the lock helper (the
+-- common advisory is the first statement, then the inventory closure, then the row locks) and of each writer (the lock helper
+-- before any table is read), and the allowlist: exactly the 65 G-1/G-2 entries plus the seven slip writers, every one resolving to
+-- a function, compared to the fixed set by OID. The expected sets grow with every Task that adds to this file.
 DO $g3c_final_objects$
 DECLARE
   v_failed text;
@@ -767,7 +1004,10 @@ DECLARE
     'private.consume_group_g_allocations(uuid,integer,uuid,uuid)',
     'private.register_group_g_slip_tracking(uuid,integer,uuid,uuid)',
     'private.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)',
-    'public.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)'
+    'public.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)',
+    'private.restore_group_g_shipment(uuid,uuid,uuid,uuid,text)',
+    'private.admin_cancel_shipment_slip(uuid,integer,uuid,uuid)',
+    'public.admin_cancel_shipment_slip(uuid,integer,uuid,uuid)'
   ];
   v_writers text[] := ARRAY[
     'private.apply_group_g_stock_movement(bigint,integer)',
@@ -839,7 +1079,9 @@ DECLARE
     'private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)',
     'private.consume_group_g_allocations(uuid,integer,uuid,uuid)',
     'private.register_group_g_slip_tracking(uuid,integer,uuid,uuid)',
-    'private.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)'
+    'private.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)',
+    'private.restore_group_g_shipment(uuid,uuid,uuid,uuid,text)',
+    'private.admin_cancel_shipment_slip(uuid,integer,uuid,uuid)'
   ];
 BEGIN
   IF EXISTS (
@@ -862,7 +1104,13 @@ BEGIN
       ('private.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)', true, true, 'plpgsql', 'jsonb',
         ARRAY['_slip_id', '_expected_version', '_carrier', '_tracking_number', '_shipment_date', '_notify_customer', '_actor_id', '_request_key']),
       ('public.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)', false, true, 'sql', 'jsonb',
-        ARRAY['_slip_id', '_expected_version', '_carrier', '_tracking_number', '_shipment_date', '_notify_customer', '_actor_id', '_request_key'])
+        ARRAY['_slip_id', '_expected_version', '_carrier', '_tracking_number', '_shipment_date', '_notify_customer', '_actor_id', '_request_key']),
+      ('private.restore_group_g_shipment(uuid,uuid,uuid,uuid,text)', true, false, 'plpgsql', 'integer',
+        ARRAY['_fulfillment_id', '_confirm_operation_id', '_operation_id', '_actor_id', '_slip_number']),
+      ('private.admin_cancel_shipment_slip(uuid,integer,uuid,uuid)', true, true, 'plpgsql', 'jsonb',
+        ARRAY['_slip_id', '_expected_version', '_actor_id', '_request_key']),
+      ('public.admin_cancel_shipment_slip(uuid,integer,uuid,uuid)', false, true, 'sql', 'jsonb',
+        ARRAY['_slip_id', '_expected_version', '_actor_id', '_request_key'])
     ) AS e(sig, definer, service, lang, ret, names)
     LEFT JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(e.sig)
     WHERE p.oid IS NULL
@@ -898,14 +1146,15 @@ BEGIN
       AND pg_catalog.substr(s.body, k.inventory, k.slips - k.inventory) LIKE '%public.shipment_slips%'
       AND pg_catalog.strpos(pg_catalog.substr(s.body, k.registrations), 'for update') > 0
   ) OR EXISTS (
-    -- the three public-operation writers: the text before the first call of the lock helper must not name a table (after from / join / into /
+    -- the four public-operation writers: the text before the first call of the lock helper must not name a table (after from / join / into /
     -- update / table, with or without ONLY) and must not call a function of public or private (a permission check or any other
     -- helper that reads a table). Compared in lower case, with any spacing and with quoted schema names, so a body written in
     -- another style cannot slip by. A body that never calls the lock helper fails too.
     SELECT 1 FROM pg_catalog.unnest(ARRAY[
       'private.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid)',
       'private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)',
-      'private.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)'
+      'private.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)',
+      'private.admin_cancel_shipment_slip(uuid,integer,uuid,uuid)'
     ]) AS w(sig)
     JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(w.sig)
     WHERE CASE
@@ -916,21 +1165,22 @@ BEGIN
   ) THEN
     v_failed := 'shipment_slip_lock_order';
   ELSIF EXISTS (SELECT 1 FROM pg_catalog.unnest(v_writers) AS w(s) WHERE pg_catalog.to_regprocedure(w.s) IS NULL)
-     OR (SELECT pg_catalog.count(DISTINCT pg_catalog.to_regprocedure(w.s)) FROM pg_catalog.unnest(v_writers) AS w(s)) <> 70
-     OR pg_catalog.cardinality(private.group_g_writer_allowlist()) <> 70 THEN
+     OR (SELECT pg_catalog.count(DISTINCT pg_catalog.to_regprocedure(w.s)) FROM pg_catalog.unnest(v_writers) AS w(s)) <> 72
+     OR pg_catalog.cardinality(private.group_g_writer_allowlist()) <> 72 THEN
     v_failed := 'shipment_slip_writer_allowlist_missing';
   ELSIF (SELECT pg_catalog.array_agg(x::oid ORDER BY x::oid) FROM pg_catalog.unnest(private.group_g_writer_allowlist()) AS a(x))
      IS DISTINCT FROM (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(w.s)::oid ORDER BY pg_catalog.to_regprocedure(w.s)::oid)
                        FROM pg_catalog.unnest(v_writers) AS w(s)) THEN
     v_failed := 'shipment_slip_writer_allowlist';
-  -- the functions of this file as a set: a function of one of these names (in public or private) is one of the nine listed
+  -- the functions of this file as a set: a function of one of these names (in public or private) is one of the twelve listed
   -- above and every listed one exists, so an extra overload or a missing function fails. Together with the per-function EXECUTE
-  -- flags checked first, the EXECUTE rights of service_role over these names are exactly the three operation writers and their entrances.
+  -- flags checked first, the EXECUTE rights of service_role over these names are exactly the four operation writers and their entrances.
   ELSIF (SELECT pg_catalog.array_agg(p.oid ORDER BY p.oid)
          FROM pg_catalog.pg_proc AS p JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
          WHERE n.nspname IN ('public', 'private')
            AND p.proname IN ('lock_group_g_shipment_slips', 'admin_save_shipment_slip_draft', 'admin_discard_shipment_slip_draft',
-             'consume_group_g_allocations', 'register_group_g_slip_tracking', 'admin_confirm_shipment_slip'))
+             'consume_group_g_allocations', 'register_group_g_slip_tracking', 'admin_confirm_shipment_slip',
+             'restore_group_g_shipment', 'admin_cancel_shipment_slip'))
         IS DISTINCT FROM
         (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(f.sig)::oid ORDER BY pg_catalog.to_regprocedure(f.sig)::oid)
          FROM pg_catalog.unnest(v_functions) AS f(sig)) THEN

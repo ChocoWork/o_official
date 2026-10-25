@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import ShipmentSlipSection from '@/components/ShipmentSlipSection';
+import { toOrderNumber } from '@/lib/orders/order-number';
 import { rememberSlipNotice } from '@/lib/orders/shipment-slips/shipment-slip-notice';
 import type { ShipmentSlipDetail } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import {
@@ -7,13 +8,14 @@ import {
   draftDetail,
   ITEM_ID,
   ITEM_ID_2,
+  ORDER_ID,
   ORDER_ID_2,
   packingRow,
   SLIP_ID,
 } from '../lib/orders/shipment-slips/shipment-slip-fixtures';
 
 /**
- * 発送票の頁（G-3 Task 4・5）: 下書きの編集・発送確認と確定・確定後の記録。
+ * 発送票の頁（G-3 Task 4・5・6）: 下書きの編集・発送確認と確定・確定後の記録・確定済みの票の取消。
  * 窓口（clientFetch）だけを差し替える。外す・追加は選択の全部を送って丸ごと入れ替える。
  */
 const mockClientFetch = jest.fn();
@@ -37,6 +39,7 @@ type State = {
   packing?: () => Response;
   draft?: (body: Draft) => Response | Promise<Response>;
   confirm?: (body: Record<string, unknown>) => Response | Promise<Response>;
+  cancel?: (body: { expectedVersion: number; requestKey: string }) => Response | Promise<Response>;
   discard?: (body: { expectedVersion: number; requestKey: string }) => Response | Promise<Response>;
 };
 
@@ -53,6 +56,7 @@ function serve(state: State) {
     if (init?.method === 'POST') {
       const body = JSON.parse(String(init.body));
       if (target.endsWith('/confirm')) return state.confirm ? state.confirm(body) : respond(500, {});
+      if (target.endsWith('/cancel')) return state.cancel ? state.cancel(body) : respond(500, {});
       if (target.endsWith('/draft')) return state.draft ? state.draft(body) : respond(200, { id: SLIP_ID, number: 'SL-20261025-0001', version: 2, replayed: false });
       return state.discard ? state.discard(body) : respond(200, { id: SLIP_ID, number: 'SL-20261025-0001', version: 2, replayed: false });
     }
@@ -773,5 +777,134 @@ describe('発送確定', () => {
     serve({ slip: () => twoLines(), confirm: () => respond(403, { code: 'GROUP_G_FORBIDDEN' }) });
     await open(); fireEvent.click(screen.getByRole('button', { name: '発送確定' }));
     expect(await screen.findByText('発送を扱う権限がありません。')).toBeInTheDocument();
+  });
+});
+
+describe('発送の取消', () => {
+  const cancelled = (version = 3) => ({ id: SLIP_ID, version, restoredQuantity: 4, replayed: false });
+  const openDialog = async () => {
+    render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    fireEvent.click(await screen.findByRole('button', { name: '発送を取り消す' }));
+    return screen.findByRole('dialog', { name: '発送を取り消す' });
+  };
+
+  test('FREQ-534-AC-03: 「発送を取り消す」は確定済みの票だけに出す（下書き・取消済みには出さない）', async () => {
+    serve({ slip: () => draftDetail() });
+    const { unmount } = render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    await screen.findByRole('heading', { level: 1 });
+    expect(screen.queryByRole('button', { name: '発送を取り消す' })).not.toBeInTheDocument();
+    unmount();
+
+    serve({ slip: () => confirmedDetail({ stage: 'cancelled', cancelledAt: '2026-10-25T05:00:00+00:00', cancelBlockers: [] }) });
+    render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    await waitFor(() => expect(screen.getByTestId('slip-stage')).toHaveTextContent('取消済み'));
+    expect(screen.queryByRole('button', { name: '発送を取り消す' })).not.toBeInTheDocument();
+  });
+
+  test('FREQ-534-AC-03: 確定済みの票に「発送を取り消す」を出し、押すとダイアログ（説明・「取り消す」「戻る」）を開く。cancelBlockers は注文番号つきで先に出す。「戻る」では何も送らない', async () => {
+    serve({ slip: () => confirmedDetail() });
+    const dialog = await openDialog();
+    expect(within(dialog).getByText('票に含まれるすべての注文の発送を取り消し、品物を発送準備中に戻します。')).toBeInTheDocument();
+    expect(within(dialog).getByText(`注文 ${toOrderNumber(ORDER_ID)} は返品の対象です`)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '取り消す' })).toBeEnabled();
+    fireEvent.click(within(dialog).getByRole('button', { name: '戻る' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(posts()).toHaveLength(0);
+  });
+
+  test('FREQ-533-AC-04: 「取り消す」で POST …/cancel へ expectedVersion・requestKey を送り、成功で「発送を取り消しました。」を出してダイアログを閉じ、票を読み直して「取消済み」にする', async () => {
+    let current = confirmedDetail({ cancelBlockers: [] });
+    serve({ slip: () => current, cancel: () => {
+      current = confirmedDetail({ stage: 'cancelled', version: 3, cancelledAt: '2026-10-25T05:00:00+00:00', cancelBlockers: [] });
+      return respond(200, cancelled());
+    } });
+    const dialog = await openDialog();
+    fireEvent.click(within(dialog).getByRole('button', { name: '取り消す' }));
+
+    expect(await screen.findByText('発送を取り消しました。')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(posts()).toHaveLength(1);
+    expect(posts()[0].url).toBe(`/api/admin/shipment-slips/${SLIP_ID}/cancel`);
+    expect(posts()[0].body).toEqual({ expectedVersion: 2, requestKey: expect.stringMatching(UUID) });
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    await waitFor(() => expect(screen.getByTestId('slip-stage')).toHaveTextContent('取消済み'));
+    expect(screen.queryByRole('button', { name: '発送を取り消す' })).not.toBeInTheDocument();
+  });
+
+  test('FREQ-534-AC-03: DB が断った（返品あり）時は表の本文をダイアログの中に出して開いたままにし、票を読み直して理由を注文番号つきで足す。票の段階は変わらない', async () => {
+    let current = confirmedDetail({ cancelBlockers: [] });
+    serve({ slip: () => current, cancel: () => {
+      current = confirmedDetail({ cancelBlockers: [{ orderId: ORDER_ID, reason: 'has_return' }] });
+      return respond(409, { code: 'GROUP_G_SLIP_HAS_RETURN', error: '返品の対象になっている注文があるため、発送を取り消せません。' });
+    } });
+    const dialog = await openDialog();
+    expect(within(dialog).queryByTestId('slip-cancel-blockers')).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: '取り消す' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('返品の対象になっている注文があるため、発送を取り消せません。');
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    expect(await within(dialog).findByText(`注文 ${toOrderNumber(ORDER_ID)} は返品の対象です`)).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '発送を取り消す' })).toBeInTheDocument();
+    expect(screen.getByTestId('slip-stage')).toHaveTextContent('発送済み');
+    expect(screen.queryByText('発送を取り消しました。')).not.toBeInTheDocument();
+  });
+
+  test('FREQ-534-AC-03: 別の人が先に取り消していて「取り消す」が断られ（GROUP_G_SLIP_CANCELLED）、読み直した票がすでに取消済みなら、ダイアログを閉じて「取消済み」の表示だけにする', async () => {
+    let current = confirmedDetail({ cancelBlockers: [] });
+    serve({ slip: () => current, cancel: () => {
+      current = confirmedDetail({ stage: 'cancelled', version: 3, cancelledAt: '2026-10-25T05:00:00+00:00', cancelBlockers: [] });
+      return respond(409, { code: 'GROUP_G_SLIP_CANCELLED', error: 'この発送票は取り消されています。' });
+    } });
+    const dialog = await openDialog();
+    fireEvent.click(within(dialog).getByRole('button', { name: '取り消す' }));
+
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    await waitFor(() => expect(screen.getByTestId('slip-stage')).toHaveTextContent('取消済み'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '発送を取り消す' })).not.toBeInTheDocument();
+    expect(posts()).toHaveLength(1);
+    expect(screen.queryByText('発送を取り消しました。')).not.toBeInTheDocument();
+  });
+
+  test('FREQ-533-AC-04: 取消の版競合（409）の後は読み直した新しい版・新しい requestKey で送り、二重押下は通信1回', async () => {
+    let current = confirmedDetail({ cancelBlockers: [] });
+    let attempts = 0;
+    serve({ slip: () => current, cancel: () => {
+      attempts += 1;
+      if (attempts === 1) {
+        current = confirmedDetail({ version: 4, cancelBlockers: [] });
+        return respond(409, { code: 'GROUP_G_SLIP_VERSION_CONFLICT' });
+      }
+      return respond(200, cancelled(5));
+    } });
+    const dialog = await openDialog();
+    const button = within(dialog).getByRole('button', { name: '取り消す' });
+    fireEvent.click(button); fireEvent.click(button);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('発送票が更新されました。内容を確認して、もう一度送ってください。');
+    expect(posts()).toHaveLength(1);
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '取り消す' }));
+    await waitFor(() => expect(posts()).toHaveLength(2));
+    expect(posts()[1].body.expectedVersion).toBe(4);
+    expect(posts()[1].body.requestKey).not.toBe(posts()[0].body.requestKey);
+    expect(await screen.findByText('発送を取り消しました。')).toBeInTheDocument();
+  });
+
+  test('FREQ-533-AC-04: 結果が分からない時は「もう一度確かめる」で同じ本文・requestKeyを送り直し、成功で票を読み直す', async () => {
+    let current = confirmedDetail({ cancelBlockers: [] });
+    let attempts = 0;
+    serve({ slip: () => current, cancel: () => {
+      attempts += 1;
+      if (attempts === 1) return respond(500, {});
+      current = confirmedDetail({ stage: 'cancelled', version: 3, cancelledAt: '2026-10-25T05:00:00+00:00', cancelBlockers: [] });
+      return respond(200, { ...cancelled(), replayed: true });
+    } });
+    const dialog = await openDialog();
+    fireEvent.click(within(dialog).getByRole('button', { name: '取り消す' }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'もう一度確かめる' }));
+    expect(await screen.findByText('発送を取り消しました。')).toBeInTheDocument();
+    expect(posts()).toHaveLength(2);
+    expect(posts()[1]).toEqual(posts()[0]);
+    await waitFor(() => expect(screen.getByTestId('slip-stage')).toHaveTextContent('取消済み'));
   });
 });

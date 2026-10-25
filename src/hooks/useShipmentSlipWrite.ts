@@ -6,10 +6,10 @@
 // 結果が分からない時（unknown）は、送った内容と同じ requestKey を取っておき、入力を止めて「もう一度確かめる」でその同じ中身だけを送り直す
 // （同じ番号なら DB は前の結果を返すので、記録は1回分のまま）。処理の前の断り（blocked）は番号も中身も保つ。処理の中の断り（refused）は新しい要求として送る。
 import { useRef, useState } from 'react';
-import type { ShipmentSlipSaved } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import type { DeliveryCallResult } from '@/lib/orders/tracking/delivery-types';
 
-export type SlipWriteResult = DeliveryCallResult<ShipmentSlipSaved>;
+/** 画面は成功した票の id だけを読む（下書き・破棄・確定・取消の戻りはどれもこれを満たす） */
+export type SlipWriteResult = DeliveryCallResult<{ id: string }>;
 
 type Attempt = {
   signature: string;

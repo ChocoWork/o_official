@@ -1,6 +1,6 @@
 # DB マイグレーション運用
 
-> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで。G-3 は Task 1 の基盤・Task 2 の読取・Task 4 の書き手の移行を追記） | 確認日: 2026-10-25 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み
+> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで。G-3 は Task 1 の基盤・Task 2 の読取・Task 4 の書き手の移行・Task 6 の発送の取消を追記） | 確認日: 2026-10-25 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み
 
 ## 概要
 
@@ -568,7 +568,7 @@ G-3 は4本を次の順で作る。Task 1 で存在するのは基盤の1本だ�
 | --- | --- | --- |
 | 1 | `20261025053324_group_g3_shipping_foundation.sql` | 発送票の6表・出荷日の列とCHECK・変更と消費の守り・割当イベントの理由17値・発注書のある商品の削除止め。Task 1 |
 | 2 | `20261025070821_group_g3_shipping_reads.sql`（作成済み・Fix round 1再適用待ち） | 読取5本と入口5本、内部3本の同梱・準備数の定義。Task 2。追跡の読取側の置換は同じ移行へTask 8で追記 |
-| 3 | `20261025100130_group_g3_shipping_slips.sql`（Task 4 で作成済み・ローカル DB に適用済み・本番未適用） | ロック helper、下書きの保存・破棄、書き手の閉じた一覧（G-2 の65本＋この移行の書き手）。Task 4。発送確定・取消の書き手は Task 5〜6 で同じ移行へ追記する（適用前なので追記してよい） |
+| 3 | `20261025100130_group_g3_shipping_slips.sql`（Task 4 で作成済み・ローカル DB に適用済み・本番未適用） | ロック helper、下書きの保存・破棄、書き手の閉じた一覧（G-2 の65本＋この移行の書き手）。Task 4。発送確定は Task 5、発送の取消（戻しの道具とともに）は Task 6 で同じ移行へ追記済み（適用前なので追記してよい）。72本 |
 | 4 | `<ts4>_group_g3_shipping_actions.sql`（未作成） | 伝票訂正、手動配達済み、出荷日訂正、配送反映の置換、許可一覧とassert。Task 7〜10 |
 
 `20261024180500 < ts1 < ts2 < ts3 < ts4`。各ファイルは先頭 BEGIN; から末尾assert・NOTIFY pgrst, 'reload schema';・COMMIT; までを1取引で当てる。基盤は G3A_BODY_BEGIN/END と G3A_FINAL_ASSERT_BEGIN/END、後続は G3B/G3C/G3D の印で区切る。基盤は書込み口を追加せず、読取は書込みを持たない。ファイルの大きさに上限はなく、バイト数とMD5をTaskの報告へ残す。
@@ -675,3 +675,16 @@ Fix round 1（Opus レビュー後、2026-10-25）は末尾の確かめ `shipmen
 本番未適用の [20261025100130_group_g3_shipping_slips.sql](../../supabase/migrations/20261025100130_group_g3_shipping_slips.sql) に、consume・追跡の親・確定のprivate本体とpublic確定入口を追記した。新規移行は作らず、G-1/G-2とTask 1/2の移行は変更しない。許可一覧とG3C末尾assertは67→70本へ更新した。
 
 確定の順・在庫とoutbox・出荷日の契約は[発送順序図](../04_DetailDesign/sequence/shipping.md)と[ER](../03_BasicDesign/data/er.md)を参照。[確定DB suite](../../tests/integration/db/group_g3_confirm.integration.test.ts)と下書き・書き手一覧・G-2末尾assert等をローカルで検査し、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。レビュー後の数量変数名の整理はcontrollerが再適用し、同じ範囲を再検証する。実PostgRESTはcontrollerの鍵で実行する。本番適用・外部追跡・メール送信・E2Eの証拠にはしない。
+
+## G-3 Task 6 発送の取消の追記（ローカル実測済み）
+
+確認日: 2026-10-25。本番未適用の [20261025100130_group_g3_shipping_slips.sql](../../supabase/migrations/20261025100130_group_g3_shipping_slips.sql) に、戻しの内部の道具 `private.restore_group_g_shipment(uuid,uuid,uuid,uuid,text)` と、取消のprivate本体 `private.admin_cancel_shipment_slip(uuid,integer,uuid,uuid)` とpublic入口（同名・同引数・SQL INVOKER）を追記した。**新規移行は作らず**、G-1/G-2とTask 1/2の移行は変更しない。表・列・制約・triggerは変えない。サイズ・MD5は **80,003 bytes / `4B45CBBE48D9A645A60F49042563C8A8`**（controllerがresetして適用した版は79,708 bytes / `9842FF3C9030F98F5B74C1CEBCFF7ED9`。その後のレビュー対応は関数の外のコメントだけで、関数の本文・ACL・assertは同一。直前のTask 5は62,630 bytes / `B984C9560FF6D62CE0DC6F7947B7B62C`）。ASCIIのみ・BOM/CRなし（台帳の備考の日本語は `U&'\767A…'` のUnicodeエスケープで書き、適用の途中で字が変わる事故を避ける）、BEGIN/NOTIFY/COMMITとG3Cの節印は各1組のまま。
+
+| 項目 | 内容 |
+| --- | --- |
+| 書き手の閉じた一覧 | 70本へ `restore_group_g_shipment`・`admin_cancel_shipment_slip` の2本を足した**72本**（`private.group_g_writer_allowlist()` の置換）。`G3C_ALLOWLIST`・`group_g1_writer_inventory`・`group_g3_draft`・`group_g3_confirm` の本数を72へ更新 |
+| 末尾のassert（G3C） | 関数の集合を9→12本（restore と cancel の private・public）、書き手の集合を70→72本、押さえ前の参照の検査対象へ取消を追加（保存・破棄・確定・取消の4本）。EXECUTEは取消の本体と入口だけがservice_role、restoreは誰も不可 |
+| 在庫 | 取消はFを動かさない（restock +n と purchase −n）。手元（F+A+H）が消費した数だけ戻る。元の割当は更新しない |
+| 書込みの順 | 発送ごとに、取消の印 → 追跡登録 cancelled・要対応 auto → restore → 注文 paid → 未送信メール skipped。割当の上限は遅延の確かめ（commit の時）だが、途中の状態も上限を超えないよう発送の取消を先にする。詳しくは[発送の取消](../04_DetailDesign/sequence/shipping.md) |
+
+実装者は本番・Docker・supabase CLI・db resetを使わず、DBへは接続して**取引の中で新しい節を当てて必ず戻す**形（実関数の置換・コミットなし）で先に確認した。その後controllerがresetして適用し、[発送の取消](../../tests/integration/db/group_g3_cancel.integration.test.ts)（別接続の試験を含む）・確定・下書き・書き手の閉じた一覧・G-2末尾assert（`group_g2_migration_asserts`・`group_g2_purchase_documents`）・`group_g3_model`・`group_g3_reads`・`group_g1_refund_cancel`・`group_g1_return_exchange`・`group_g2_purchase_receipt_reversals`・`order_return_*`・`order_refund_*` と、鍵を持つcontrollerが流した実鍵PostgRESTの[経路の試験](../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts)を含む**21 suiteで1,287/1,287成功**、全件の単体とDBで**18,318件成功**（別セッションの意図的なstockist_rlsの赤2件だけ）、G-0 cleanup 12/12を確認した（2026-10-25）。本番適用・実メール・外への停止・E2Eの証拠にはしない。

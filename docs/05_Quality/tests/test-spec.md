@@ -1,6 +1,6 @@
 # テスト仕様
 
-> 状態: 現行の方針（グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 4の発送票の下書きのDB・単体を追記）（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件
+> 状態: 現行の方針（グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 6の発送の取消のDB・単体を追記）（G-3 Task 4の発送票の下書きのDB・単体を追記）（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件
 
 ## 概要
 
@@ -277,3 +277,16 @@ E2E は後続 Task（Task 13）で扱う。この Task は E2E の期待を変�
 | [文書単体](../../../tests/unit/docs/delivery-status-traceability.test.ts) | 単体 | 要求と窓口 | AC-533は01〜05、AC-535は01/02/05。routeは151ファイル・193メソッド、一覧は150行・192メソッド |
 
 許可一覧はG3C_ALLOWLISTの70本。G-2の過去のassertは65本への取引内差替えを維持する。controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。レビュー後の数量変数名の整理はcontrollerの再適用対象。単体はDBのトリガー・RLS・追跡事業者・実メール・ブラウザの動作を証明しない。
+
+## G-3 Task 6 発送の取消（票全体・戻しは1回）
+
+確認日: 2026-10-25。実装者は先に、取引の中で新しい節を当てて必ず戻す形（実関数の置換・コミットなし）で確認した。その後controllerがresetして、別接続の試験と実鍵PostgRESTを含む21 suiteで1,287/1,287成功、全件の単体とDBで18,318件成功（別セッションの意図的なstockist_rlsの赤2件だけ）、G-0 cleanup 12/12を確認した。
+
+| 試験 | 段 | 対応 | 内容 |
+| --- | --- | --- | --- |
+| [group_g3_cancel](../../../tests/integration/db/group_g3_cancel.integration.test.ts) | DB結合（controller実測済み。別接続の試験を含む） | FREQ-533 AC-04・FREQ-534 AC-03・FREQ-540 AC-10/11 | 取消で各consumeごとに restock(+n・無タグ)・新しい割当・purchase/exchange(−n・タグ付き)・restore が書かれF不変・F+A+H保存・元の割当不変、戻しは1回（二重restoreは一意制約・再送replayed・取消済みの別キー）、品物状態 shipped/delivered→ready と注文 paid、追跡登録 cancelled と provider_stop_pending・要対応 auto・未送信メール skipped・送信済み不変・お客様メールなし、拒否の優先（CANCEL_NOT_ALLOWED→HAS_RETURN→REFUNDED）と全体不変・返品/返金の数え方の境界、再発送（票番号 n+1・発送番号2・復元分から消費・消費の裏付け）、引数/存在/段階/版、故障注入、権限4つ、advisory待ち中に行を持たない、押さえ前の参照の改変、構造と72本 |
+| [cancel route](../../../tests/unit/api/admin/shipment-slip-cancel-route.test.ts)・[store](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-store.test.ts)・[client](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-client.test.ts)・[型と言葉](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-types.test.ts) | 単体 | FREQ-533 AC-04・FREQ-534 AC-03・FREQ-540 AC-10 | 認可→CSRF→IP/actor→検証→RPC→監査の順、30回/600秒、4権限、全エラー表と取消の3つの拒否の本文（注文番号・氏名・住所なし）、崩れた戻り（0個・別の票・小数）、監査は票ID・戻した数量・再送・結果コードだけ、取消の言葉と理由の文 |
+| [取消のダイアログ](../../../tests/unit/components/ShipmentSlipCancelDialog.test.tsx)・[票の頁](../../../tests/unit/components/ShipmentSlipSection.test.tsx) | 単体 | FREQ-533 AC-04・FREQ-534 AC-03 | 説明・「取り消す」「戻る」、cancelBlockers を注文番号つきでボタンの上に、拒否の本文をダイアログの中に出し票は変えず読み直す、送信中は閉じず二重押下は通信1回、版競合の後は新しい版と要求番号、結果不明は同じ要求番号で確かめ直す、成功で通知と取消済み |
+| [文書単体](../../../tests/unit/docs/delivery-status-traceability.test.ts)・[書き手の閉じた一覧](../../../tests/integration/db/group_g1_writer_inventory.integration.test.ts) | 単体・DB構造 | 要求と窓口・FREQ-540 AC-11 | AC-534-03の追跡、routeは152ファイル・194メソッド、一覧は151行・193メソッド。許可一覧は72本、発送票の書込み関数は4本（入口4本）、service_roleがEXECUTEできるのは8本 |
+
+許可一覧はG3C_ALLOWLISTの72本。実PostgRESTの取消の経路（[group_g3_postgrest_paths](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts)）は鍵を持つcontrollerが流す。単体はDBのトリガー・RLS・追跡事業者・実メール・ブラウザの動作を証明しない。

@@ -22,8 +22,8 @@ beforeEach(() => {
 });
 
 describe('モジュールの形', () => {
-  test('FREQ-531-AC-01: 窓口の呼び出しは、Task 5までの読取3つと書込み3つ（下書き・破棄・確定）', () => {
-    expect(Object.keys(client).sort()).toEqual(['fetchPacking', 'fetchShipmentSlip', 'fetchShipmentSlips', 'submitSlipConfirm', 'submitSlipDiscard', 'submitSlipDraft']);
+  test('FREQ-531-AC-01: 窓口の呼び出しは、Task 6までの読取3つと書込み4つ（下書き・破棄・確定・取消）', () => {
+    expect(Object.keys(client).sort()).toEqual(['fetchPacking', 'fetchShipmentSlip', 'fetchShipmentSlips', 'submitSlipCancel', 'submitSlipConfirm', 'submitSlipDiscard', 'submitSlipDraft']);
   });
 });
 
@@ -298,6 +298,61 @@ describe('submitSlipConfirm', () => {
     }
     mockClientFetch.mockClear();
     expect(await client.submitSlipConfirm('../bad',body)).toEqual({kind:'refused',message:'発送票が見つかりません。'});
+    expect(mockClientFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('submitSlipCancel', () => {
+  const body = { expectedVersion: 2, requestKey: KEY };
+  const result = { id: SLIP_ID, version: 3, restoredQuantity: 4, replayed: false };
+  test('FREQ-533-AC-04: POST /api/admin/shipment-slips/[id]/cancel に { expectedVersion, requestKey } だけを送り、成功の答えを検査して ok で返す', async () => {
+    mockClientFetch.mockResolvedValue(respond(200, { ...result, secret: 'discard' }));
+    expect(await client.submitSlipCancel(SLIP_ID, { ...body, extra: 1 } as typeof body)).toEqual({ kind: 'ok', data: result });
+    const [url, init] = mockClientFetch.mock.calls[0];
+    expect(url).toBe(`/api/admin/shipment-slips/${SLIP_ID}/cancel`);
+    expect(init).toMatchObject({ method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    expect(JSON.parse(init.body)).toEqual(body);
+  });
+
+  test.each([
+    ['返品', 'GROUP_G_SLIP_HAS_RETURN', '返品の対象になっている注文があるため、発送を取り消せません。'],
+    ['発送後の返金', 'GROUP_G_SLIP_REFUNDED', '発送後に返金した注文があるため、発送を取り消せません。'],
+    ['取り消せない状態', 'GROUP_G_SLIP_CANCEL_NOT_ALLOWED', '取り消せない状態の注文があるため、発送を取り消せません。'],
+    ['版の競合', 'GROUP_G_SLIP_VERSION_CONFLICT', '発送票が更新されました。内容を確認して、もう一度送ってください。'],
+    ['取消済み', 'GROUP_G_SLIP_CANCELLED', 'この発送票は取り消されています。'],
+  ])('FREQ-534-AC-03: 取消の拒否（%s）は表の本文の refused', async (_name, code, message) => {
+    mockClientFetch.mockResolvedValue(respond(409, { code, error: 'PRIVATE-MARKER' }));
+    const refused = await client.submitSlipCancel(SLIP_ID, body);
+    expect(refused).toEqual({ kind: 'refused', message });
+    expect(JSON.stringify(refused)).not.toContain('PRIVATE-MARKER');
+  });
+
+  test('FREQ-534-AC-03: 処理の前の断り（401・403・429）は blocked、結果不明（500・通信切れ・読めない成功）は unknown', async () => {
+    mockClientFetch.mockResolvedValue(respond(403, { error: 'Forbidden', permission: 'admin.shipping.manage' }));
+    expect(await client.submitSlipCancel(SLIP_ID, body)).toEqual({ kind: 'blocked', message: '発送を扱う権限がありません。', forbidden: true });
+    mockClientFetch.mockResolvedValue(respond(403, { error: 'Forbidden', reason: 'CSRF validation failed' }));
+    expect(await client.submitSlipCancel(SLIP_ID, body)).toMatchObject({ kind: 'blocked', forbidden: false });
+    mockClientFetch.mockResolvedValue(respond(429, {}));
+    expect(await client.submitSlipCancel(SLIP_ID, body)).toMatchObject({ kind: 'blocked' });
+    mockClientFetch.mockResolvedValue(respond(401, { error: 'Unauthorized' }));
+    expect(await client.submitSlipCancel(SLIP_ID, body)).toMatchObject({ kind: 'blocked' });
+    mockClientFetch.mockResolvedValue(respond(500, {}));
+    expect(await client.submitSlipCancel(SLIP_ID, body)).toEqual({ kind: 'unknown' });
+    mockClientFetch.mockRejectedValue(new TypeError('network'));
+    expect(await client.submitSlipCancel(SLIP_ID, body)).toEqual({ kind: 'unknown' });
+    for (const data of [null, { ...result, restoredQuantity: 0 }, { ...result, version: undefined }, { ...result, id: 'PRIVATE-MARKER' }]) {
+      mockClientFetch.mockResolvedValue(respond(200, data));
+      expect(await client.submitSlipCancel(SLIP_ID, body)).toEqual({ kind: 'unknown' });
+    }
+  });
+
+  test('FREQ-534-AC-03: 別の票の id の答えは unknown、uuid でない票の id は窓口へ送らず「発送票が見つかりません。」の refused', async () => {
+    mockClientFetch.mockResolvedValue(respond(200, { ...result, id: '33333333-3333-4333-8333-333333333399' }));
+    expect(await client.submitSlipCancel(SLIP_ID, body)).toEqual({ kind: 'unknown' });
+    mockClientFetch.mockClear();
+    for (const id of ['abc', '../orders', '']) {
+      expect(await client.submitSlipCancel(id, body)).toEqual({ kind: 'refused', message: '発送票が見つかりません。' });
+    }
     expect(mockClientFetch).not.toHaveBeenCalled();
   });
 });

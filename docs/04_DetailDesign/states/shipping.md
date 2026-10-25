@@ -1,6 +1,6 @@
 # 発送票の状態（G-3）
 
-> 状態: 保存する4段階と、操作印ごとの遷移の定義は現行のソース（グループ G-3 Task 1・4・5）。下書きの保存・破棄（Task 4）と確定（Task 5）の関数を実装。Task 5まで、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。伝票番号・配達済み・出荷日の訂正・取消の遷移は定義済みだが、書く関数は後続 Task（本番へは未適用） | 確認日: 2026-10-25 | 対象: `shipment_slips.stage` と、票の更新を通す操作印 `app.group_g_slip_change`
+> 状態: 保存する4段階と、操作印ごとの遷移の定義は現行のソース（グループ G-3 Task 1・4・5・6）。下書きの保存・破棄（Task 4）と確定（Task 5）と取消（Task 6）の関数を実装。Task 5まで、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。取消（Task 6）を含む21 suiteで1,287/1,287成功も確認した（2026-10-25）。伝票番号・配達済み・出荷日の訂正の遷移は定義済みだが、書く関数は後続 Task（本番へは未適用） | 確認日: 2026-10-25 | 対象: `shipment_slips.stage` と、票の更新を通す操作印 `app.group_g_slip_change`
 
 ## 概要
 
@@ -29,7 +29,7 @@
 | --- | --- | --- | --- |
 | ST-SL-01 | `draft` | `expires_at` を持つ（下書きだけ） | 期限切れの下書きも保存し直せる。確定は期限切れを断る（Task 5） |
 | ST-SL-02 | `confirmed` | `confirmed_at`・`shipment_date`・`notify_customer`・確定の操作と要求番号を持つ | 版は確定で 1 つ進む（作成で 1）。以後の伝票・配達済み・出荷日の訂正でも版が進む |
-| ST-SL-03 | `cancelled` | `cancelled_at`・`cancelled_by` を持つ | 取消後に同じ品物を新しい票で再び発送できる |
+| ST-SL-03 | `cancelled` | `cancelled_at`・`cancelled_by` を持つ | 取消後に同じ品物を新しい票で再び発送できる。取消は票全体で、取消の版（種類 `cancel`）が残る。一度取り消した票は戻せない |
 | ST-SL-04 | `discarded` | `discarded_at`・`discarded_by` を持ち、`expires_at` は NULL | 破棄した票は戻せない |
 
 ## 図
@@ -56,7 +56,7 @@ stateDiagram-v2
 | ST-SL-T4 | `tracking` | `confirmed` → `confirmed` | 運送会社・伝票番号・追跡の版 | 伝票番号の後入力・訂正（Task 7） |
 | ST-SL-T5 | `deliver` | `confirmed` → `confirmed` | なし（版だけ） | 手動の配達済み（Task 7） |
 | ST-SL-T6 | `date` | `confirmed` → `confirmed` | 出荷日 | 出荷日の訂正（Task 9） |
-| ST-SL-T7 | `cancel` | `confirmed` → `cancelled` | `stage`・取消の時刻・実行者 | 発送の取消（Task 6） |
+| ST-SL-T7 | `cancel` | `confirmed` → `cancelled` | `stage`・取消の時刻・実行者 | `admin_cancel_shipment_slip`（Task 6） |
 
 印が無い・知らない値の UPDATE は、段階も列も見ずに拒否する。印を設定したまま関数を抜けないよう、書く関数は UPDATE の直前に印を置き、直後に元の値へ戻す。下書きの作成（INSERT）は守りの対象外で、`stage = draft`・版 1・有効期限あり・確定の列は空で作る（表の CHECK が段階と列の組を守る）。
 
@@ -69,10 +69,20 @@ stateDiagram-v2
 | 二重選択 | 2つの下書きが同じ明細を選べる。取り置かないので、片方が確定した後のもう片方は数量が足りなければ確定時に断られる（Task 5） |
 | 操作の記録 | 保存・破棄は `private.group_g_operations` に `(shipment_slip_save \| shipment_slip_discard, request_key)` で 1 件。最後に書く |
 
+## 発送の取消（G-3 Task 6）
+
+`confirmed` → `cancelled`（印 `cancel`。ST-SL-T7）は `admin_cancel_shipment_slip` が起こす。同じ取引で、票の全注文の発送が取り消され（発送の `cancelled_at`・`cancelled_by`）、品物の状態が `shipped`（配達済みなら `delivered`）から `ready` へ戻り、全部送っていた注文は `shipped` から `paid` へ戻る。取消の前に、返品・発送後の返金・`paid`・`shipped` でない注文が1つでもあれば全体を断り、何も変わらない（段階も版も変わらない）。順序の詳細は[発送の取消](../sequence/shipping.md)。
+
+| 前の段階 | 取消の結果 |
+| --- | --- |
+| `confirmed` | `cancelled`（版+1。取消の版 `cancel` を残す）。一部の注文だけ・一部の明細だけの取消はない |
+| `cancelled` | 別の要求番号の取消は `GROUP_G_SLIP_CANCELLED`。同じ要求番号の再送は保存した結果を返す |
+| `draft`・`discarded` | `GROUP_G_SLIP_NOT_CONFIRMED` |
+
 ## 関連テスト
 
-[発送票モデル](../../../tests/integration/db/group_g3_model.integration.test.ts)（印ごとの列の許可表と、許さない遷移の拒否）、[下書き](../../../tests/integration/db/group_g3_draft.integration.test.ts)（作成・入れ替え・破棄・期限切れ・原子性）、[発送票の頁](../../../tests/unit/components/ShipmentSlipSection.test.tsx)（段階ごとの画面）。
+[発送票モデル](../../../tests/integration/db/group_g3_model.integration.test.ts)（印ごとの列の許可表と、許さない遷移の拒否）、[下書き](../../../tests/integration/db/group_g3_draft.integration.test.ts)（作成・入れ替え・破棄・期限切れ・原子性）、[発送の取消](../../../tests/integration/db/group_g3_cancel.integration.test.ts)（戻しは1回・拒否の優先・再発送・原子性）、[発送票の頁](../../../tests/unit/components/ShipmentSlipSection.test.tsx)（段階ごとの画面）、[取消のダイアログ](../../../tests/unit/components/ShipmentSlipCancelDialog.test.tsx)。
 
 ## 未確認事項
 
-確定の遷移はTask 5のadmin_confirm_shipment_slipが起こし、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。取消・伝票・配達済み・出荷日の訂正の関数は後続Taskで足す。ここに書いたのは、Task 1 の守りが許す遷移の定義と、Task 4・5 が動かす作成・保存・破棄・確定の遷移。本番の実データでの状態は未確認。
+確定の遷移はTask 5のadmin_confirm_shipment_slipが起こし、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。取消の遷移はTask 6のadmin_cancel_shipment_slipが起こす（controllerのresetの後、21 suiteで1,287/1,287成功）。伝票・配達済み・出荷日の訂正の関数は後続Taskで足す。ここに書いたのは、Task 1 の守りが許す遷移の定義と、Task 4・5・6 が動かす作成・保存・破棄・確定・取消の遷移。本番の実データでの状態は未確認。

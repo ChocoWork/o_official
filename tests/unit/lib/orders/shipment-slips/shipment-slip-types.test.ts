@@ -1,5 +1,6 @@
 import { LEGACY_FULFILLMENT_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import {
+  formatCancelBlocker,
   formatOpenSlipLabel,
   formatOtherSlipNotice,
   isShipmentSlipErrorCode,
@@ -9,11 +10,14 @@ import {
   PACKING_HOLD_LABELS,
   PACKING_HOLD_REASONS,
   parsePackingRow,
+  parseShipmentSlipCancelled,
   parseShipmentSlipDetail,
   parseShipmentSlipLink,
   parseShipmentSlipListRow,
   parseShipmentSlipSaved,
   readShipmentSlipQueryInteger,
+  SHIPMENT_SLIP_CANCEL_BLOCKER_REASONS,
+  SHIPMENT_SLIP_CANCEL_BLOCKER_TEXT,
   SHIPMENT_SLIP_ERRORS,
   SHIPMENT_SLIP_FAILED,
   SHIPMENT_SLIP_ISSUE_CODES,
@@ -361,5 +365,29 @@ describe('下書きの言葉と保存の戻り（G-3 Task 4）', () => {
     ]) {
       expect(() => parseShipmentSlipSaved(bad)).toThrow(SHIPMENT_SLIP_READ_FAILED);
     }
+  });
+
+  test('FREQ-533-AC-04: 取消の戻りは id・版・戻した数量・replayed の4項目だけにする。戻した数量は1以上の整数。崩れていれば SHIPMENT_SLIP_READ_FAILED', () => {
+    const cancelled = { id: SLIP_ID, version: 3, restoredQuantity: 4, replayed: false };
+    expect(parseShipmentSlipCancelled({ ...cancelled, extra: 'PRIVATE-MARKER' })).toEqual(cancelled);
+    for (const bad of [
+      null, [], 'x', {}, { ...cancelled, id: 'x' }, { ...cancelled, version: 0 }, { ...cancelled, restoredQuantity: 0 },
+      { ...cancelled, restoredQuantity: 1.5 }, { ...cancelled, restoredQuantity: '4' }, { ...cancelled, replayed: 'false' },
+      { ...cancelled, restoredQuantity: undefined },
+    ]) {
+      expect(() => parseShipmentSlipCancelled(bad)).toThrow(SHIPMENT_SLIP_READ_FAILED);
+    }
+  });
+
+  test('FREQ-534-AC-03: 取消の言葉は計画の「画面の言葉」と完全一致。取消を止める理由の文は注文番号つきで出す', () => {
+    expect(SHIPMENT_SLIP_TEXT.cancelShipment).toBe('発送を取り消す');
+    expect(SHIPMENT_SLIP_TEXT.cancelDescription).toBe('票に含まれるすべての注文の発送を取り消し、品物を発送準備中に戻します。');
+    expect(SHIPMENT_SLIP_TEXT.cancelSubmit).toBe('取り消す');
+    expect(SHIPMENT_SLIP_TEXT.cancelled).toBe('発送を取り消しました。');
+    expect(SHIPMENT_SLIP_CANCEL_BLOCKER_TEXT).toEqual({ has_return: '返品の対象です', refunded: '発送後に返金済みです', not_cancellable: '取り消せない状態です' });
+    expect(Object.keys(SHIPMENT_SLIP_CANCEL_BLOCKER_TEXT).sort()).toEqual([...SHIPMENT_SLIP_CANCEL_BLOCKER_REASONS].sort());
+    expect(formatCancelBlocker('ORD-ABC', 'has_return')).toBe('注文 ORD-ABC は返品の対象です');
+    expect(formatCancelBlocker('ORD-ABC', 'refunded')).toBe('注文 ORD-ABC は発送後に返金済みです');
+    expect(formatCancelBlocker('ORD-ABC', 'not_cancellable')).toBe('注文 ORD-ABC は取り消せない状態です');
   });
 });

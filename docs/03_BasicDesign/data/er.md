@@ -1992,7 +1992,7 @@ public.item_delete_blockers(bigint[]) は戻り値の追加のため DROP → CR
 
 2026-10-25のFix round 1は上記のissue粒度・不正ID/票の拒否・準備数の共用を反映した。前版のローカル191件成功の後、Task 5までのSQLを適用してcontrollerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。先絞りはpaid割当なしのpaid注文も渡したG-1投影との数量比較、住所の前後空白は7項目それぞれのキー比較でも確かめる。
 
-## 発送票の書込み関数（G-3 Task 4・5）
+## 発送票の書込み関数（G-3 Task 4・5・6）
 
 確認日: 2026-10-25。[書き手の移行](../../../supabase/migrations/20261025100130_group_g3_shipping_slips.sql) は関数9本（Task 4の5本とTask 5の4本）を追加し、**表・FK・列・制約・trigger は変えない**（Task 1 の6表と守りを使う）。書き手の閉じた一覧（`private.group_g_writer_allowlist()`）は G-2 の65本＋保存・破棄・消費・追跡登録・確定の5本＝70本へ置換する。Task 5までローカルへ適用してcontrollerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。本番は未適用。レビュー後の数量変数名の整理は挙動を変えず、再適用をcontrollerが担当する。
 
@@ -2012,3 +2012,14 @@ public.item_delete_blockers(bigint[]) は戻り値の追加のため DROP → CR
 | `private.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)` | 引数→lock helper(true)→権限→指紋と再送→票/段階/版/期限→paid/阻害/同梱/数量/日付。注文ごとの発送ヘッダー→明細ごとの消費→その発送行INSERT→出来事・結びつき→必要なら注文shippedとoutbox。G-1即時境界を各文で満たし、最終の消費と行はG-3遅延ガードで一致させる。追跡の親→票confirmed→確定行・版・日付initial履歴→状態差分→操作結果 | service_roleのみ。public同名はINVOKER委譲 |
 
 発送の要求番号は `md5('slip_fulfillment:' || 確定request_key || ':' || order_id)::uuid`。出荷日は全注文のJST入金日以上・今日以下。initial履歴は同日も1行、previous_dateはJST今日。shipped_atとconfirmed_atは操作時刻。操作印は成功・失敗とも復帰する。消費ガードは確定済み発送数とconsumeの一致を取引末尾で検査する。旧4RPCは停止のまま。[DB試験](../../../tests/integration/db/group_g3_confirm.integration.test.ts)を含め、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。
+
+### 発送の取消で書く行（G-3 Task 6）
+
+確認日: 2026-10-25。同じ移行 `20261025100130_group_g3_shipping_slips.sql` に関数3本（`restore_group_g_shipment`・`admin_cancel_shipment_slip` とその public 入口）を追記した。**表・FK・列・制約・trigger は変えない**。書き手の閉じた一覧は70本へ restore・cancel の2本を足した72本へ置換する。controllerがresetして適用し、別接続の試験と実鍵PostgRESTを含む21 suiteで1,287/1,287成功、全件の単体とDBで18,318件成功（別セッションの意図的なstockist_rlsの赤2件だけ）を確認した（2026-10-25）。本番は未適用。
+
+| 関数 | 保存するもの・順 | 実行権限 |
+| --- | --- | --- |
+| `private.restore_group_g_shipment(uuid,uuid,uuid,uuid,text)` | 共通advisoryを確認。その発送の行の明細ごと・確定の操作の `consume` 出来事ごと（id昇順）に、① `stock_movements`（reason `restock`・+n・`allocation_operation_id` なし・`order_id`・`order_item_id`・備考）② 新しい割当（`kind` paid・数量=残り=n・取消の操作）③ `stock_movements`（reason `purchase`、交換の品は `exchange`・−n・取消の操作の印・備考）④ `order_item_allocation_events` の `restore`（`reverses_event_id`・台帳は③・連番1・理由 `shipment_cancel`）。戻した合計を返す。元の割当は更新しない。同じ consume の二重 restore は `reverses_event_id` の一意で止まる | 所有者のみ |
+| `private.admin_cancel_shipment_slip(uuid,integer,uuid,uuid)` と同名の public 入口 | 引数 → lock helper(true) → 権限 → 指紋と再送 → 存在 → 段階 → 版 → 拒否の検査（全注文分。`CANCEL_NOT_ALLOWED` → `HAS_RETURN` → `REFUNDED`）→ 状態の before と操作印 → 発送ごと（`order_id` 昇順）に、`order_fulfillments.cancelled_at`・`cancelled_by` → 追跡登録 cancelled と要対応 auto → restore → 注文を paid へ（shipped で未発送が残る時）→ 未送信の発送メールを skipped → 票 cancelled（印 `cancel`・版+1）・`shipment_slip_versions`（種類 `cancel`）→ 状態の差分（`shipment_slip_cancel`）→ `group_g_operations`（`shipment_slip_cancel`）。お客様向けのメールは作らない | service_roleのみ。public同名はINVOKER委譲 |
+
+取消の指紋は `{operation, slip_id, actor_id}` の SHA-256（版は含めない）。空き在庫Fは restock の +n と purchase の −n で動かず、手元（F+A+H）が消費した数だけ戻る。詳しい順序と即時の確かめとの関係は[発送の取消](../../04_DetailDesign/sequence/shipping.md)、段階は[発送票の状態](../../04_DetailDesign/states/shipping.md)。[DB試験](../../../tests/integration/db/group_g3_cancel.integration.test.ts)。

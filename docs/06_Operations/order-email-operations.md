@@ -577,3 +577,9 @@ Resendのクリック追跡（Click Tracking）は注文のメールで有効に
 運送会社か伝票番号がない材料でも、発送の材料があれば件名は従来のまま本文を作る。「配送業者:」「追跡番号:」「追跡はこちら:」「※ 追跡情報は反映までに…」の4行を出さず、商品一覧の後に空行を挟み「伝票番号が決まりましたら、あらためてお知らせいたします。」を1行足す。番号ありの出力は変更しない。
 
 [文面の完全一致試験](../../tests/unit/lib/orders/email/order-email-compose-shipped.test.ts)と[worker単体](../../tests/unit/lib/orders/email/order-email-worker.test.ts)で確認する。実DBのoutboxは[確定試験](../../tests/integration/db/group_g3_confirm.integration.test.ts)で検査し、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。実際のメール送信はこのTaskでは確認していない。
+
+## 発送の取消とメール（G-3 Task 6）
+
+発送票の取消（`admin_cancel_shipment_slip`）は、**お客様向けの取消のメールを作らない**。まだ送っていない発送メールだけを取りやめる。票の全注文の発送ごとに、その発送の行のうち状態が `pending`・`retry_wait` のものを `skipped` にし、`last_error_code` を `fulfillment_cancelled`、件名と本文を消し（件名があった行は `body_erased_at` を記録）、`finished_at` を取消の時刻にする。種類は問わない（発送・伝票番号の更新・配送の通知はどれも同じ発送の行）。`sent`（送信済み）と `sending`（送信中の行は、worker が中身を作る時に取消を見て取りやめる）は変えない。予約済みで送る前の発送メールがそのまま送られることはない。取消の後に同じ品物を新しい票で再発送した時のメールは、確定（Task 5）と同じく注文ごとに1通だけ作る。
+
+[取消のDB試験](../../tests/integration/db/group_g3_cancel.integration.test.ts)が、再送待ちの行が skipped になること・送信済みの行が変わらないこと・取消でoutboxの行が増えないことを検査する（controllerのreset後に実測済み。21 suiteで1,287/1,287成功、2026-10-25）。実際のメール送信はこのTaskでは確認していない。

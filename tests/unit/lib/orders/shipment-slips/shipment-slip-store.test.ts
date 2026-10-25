@@ -4,6 +4,7 @@ jest.mock('server-only', () => ({}), { virtual: true });
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { inspect } from 'util';
 import {
+  cancelShipmentSlip,
   classify,
   confirmShipmentSlip,
   discardShipmentSlipDraft,
@@ -399,5 +400,62 @@ describe('confirmShipmentSlip', () => {
   test.each([null, { ...CONFIRMED, id: SLIP_ID_2 }, { ...CONFIRMED, shipmentDate: null }, { ...CONFIRMED, fulfillments: [] }, { ...CONFIRMED, fulfillments: [{ ...CONFIRMED.fulfillments[0], completesOrder: 'false' }] }, { ...CONFIRMED, fulfillments: [CONFIRMED.fulfillments[0], CONFIRMED.fulfillments[0]] }])('FREQ-533-AC-02: 崩れた戻りは固定の500 (%j)', async (data) => {
     rpc.mockResolvedValue({ data, error: null });
     expect(await failure(() => confirmShipmentSlip(client, 'actor', CONFIRM_INPUT))).toMatchObject({ status: 500, code: undefined, message: FAILED });
+  });
+});
+
+const CANCELLED = { id: SLIP_ID, version: 3, restoredQuantity: 4, replayed: false };
+const CANCEL_INPUT = { slipId: SLIP_ID, expectedVersion: 2, requestKey: REQUEST_KEY };
+describe('cancelShipmentSlip', () => {
+  test('FREQ-533-AC-04: admin_cancel_shipment_slip を票の id・版・実行者・要求番号で1回呼び、追加項目を捨てた結果 { id, version, restoredQuantity, replayed } を返す', async () => {
+    rpc.mockResolvedValue({ data: { ...CANCELLED, secret: 'discard' }, error: null });
+    expect(await cancelShipmentSlip(client, 'actor-1', CANCEL_INPUT)).toEqual(CANCELLED);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('admin_cancel_shipment_slip', { _slip_id: SLIP_ID, _expected_version: 2, _actor_id: 'actor-1', _request_key: REQUEST_KEY });
+  });
+
+  test('FREQ-534-AC-03: 同じ要求番号の再送（replayed: true）はそのまま返す', async () => {
+    rpc.mockResolvedValue({ data: { ...CANCELLED, replayed: true }, error: null });
+    expect(await cancelShipmentSlip(client, 'actor-1', CANCEL_INPUT)).toEqual({ ...CANCELLED, replayed: true });
+  });
+
+  test.each(Object.entries(SHIPMENT_SLIP_ERRORS))('FREQ-534-AC-03: DB の %s は message と SQLSTATE の完全一致で表の状態・code・本文にし、SQLSTATE が違えば固定の500', async (code, [sqlstate, status, message]) => {
+    rpc.mockResolvedValue({ data: null, error: { message: code, code: sqlstate, details: 'PRIVATE-MARKER' } });
+    const result = await failure(() => cancelShipmentSlip(client, 'actor', CANCEL_INPUT));
+    expect(result).toMatchObject({ status, code, message });
+    expect(inspect(result.error, { depth: null, showHidden: true })).not.toContain('PRIVATE-MARKER');
+    rpc.mockResolvedValue({ data: null, error: { message: code, code: 'XXXXX' } });
+    expect(await failure(() => cancelShipmentSlip(client, 'actor', CANCEL_INPUT))).toMatchObject({ status: 500, code: undefined, message: FAILED });
+  });
+
+  test.each([
+    ['返品', 'GROUP_G_SLIP_HAS_RETURN', '返品の対象になっている注文があるため、発送を取り消せません。'],
+    ['発送後の返金', 'GROUP_G_SLIP_REFUNDED', '発送後に返金した注文があるため、発送を取り消せません。'],
+    ['取り消せない状態', 'GROUP_G_SLIP_CANCEL_NOT_ALLOWED', '取り消せない状態の注文があるため、発送を取り消せません。'],
+    ['取消済み', 'GROUP_G_SLIP_CANCELLED', 'この発送票は取り消されています。'],
+    ['確定前', 'GROUP_G_SLIP_NOT_CONFIRMED', '発送が確定した発送票だけで行える操作です。'],
+  ])('FREQ-534-AC-03: 取消の拒否（%s）は409と固定の本文で、注文番号・氏名・住所を含めない', async (_name, code, body) => {
+    rpc.mockResolvedValue({ data: null, error: { message: code, code: SHIPMENT_SLIP_ERRORS[code][0], details: 'ORD-PRIVATE 氏名 住所' } });
+    const result = await failure(() => cancelShipmentSlip(client, 'actor', CANCEL_INPUT));
+    expect(result).toMatchObject({ status: 409, code, message: body });
+    expect(inspect(result.error, { depth: null, showHidden: true })).not.toMatch(/PRIVATE|氏名|住所/);
+  });
+
+  test.each([
+    ['null', null], ['別の票の答え', { ...CANCELLED, id: SLIP_ID_2 }], ['版が無い', { ...CANCELLED, version: undefined }], ['戻した数が0', { ...CANCELLED, restoredQuantity: 0 }],
+    ['戻した数が小数', { ...CANCELLED, restoredQuantity: 1.5 }], ['replayedが文字', { ...CANCELLED, replayed: 'false' }], ['idが崩れている', { ...CANCELLED, id: 'PRIVATE-MARKER' }],
+  ])('FREQ-534-AC-03: 崩れた戻り（%s）は固定の500で、中身を出さない', async (_name, data) => {
+    rpc.mockResolvedValue({ data, error: null });
+    const result = await failure(() => cancelShipmentSlip(client, 'actor', CANCEL_INPUT));
+    expect(result).toMatchObject({ status: 500, code: undefined, message: FAILED });
+    expect(inspect(result.error, { depth: null, showHidden: true })).not.toContain('PRIVATE-MARKER');
+  });
+
+  test('FREQ-534-AC-03: 表に載せない誤りと通信の失敗は生の文を出さない固定の500', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'GROUP_G_SHIPMENT_CONSUMPTION', code: '23514', details: 'PRIVATE-MARKER' } });
+    expect(await failure(() => cancelShipmentSlip(client, 'actor', CANCEL_INPUT))).toMatchObject({ status: 500, code: undefined, message: FAILED });
+    rpc.mockRejectedValue(new Error('PRIVATE-MARKER'));
+    const result = await failure(() => cancelShipmentSlip(client, 'actor', CANCEL_INPUT));
+    expect(result).toMatchObject({ status: 500, code: undefined, message: FAILED });
+    expect(inspect(result.error, { depth: null, showHidden: true })).not.toContain('PRIVATE-MARKER');
   });
 });

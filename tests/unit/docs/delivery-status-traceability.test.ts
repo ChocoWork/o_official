@@ -166,14 +166,14 @@ test('3管理POSTと1webhookをAPIと入口一覧に記録し総数が実コー�
   });
   const routes = walk('src/app/api').filter((file) => file.endsWith('/route.ts'));
   const methods = routes.flatMap((file) => [...read(file).matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b|export\s+const\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g)]);
-  expect(routes).toHaveLength(151); expect(methods).toHaveLength(193);
-  contains(api, '151ファイル'); contains(api, '193組');
-  contains(api, 'HEAD/OPTIONSは193組に含めない');
+  expect(routes).toHaveLength(152); expect(methods).toHaveLength(194);
+  contains(api, '152ファイル'); contains(api, '194組');
+  contains(api, 'HEAD/OPTIONSは194組に含めない');
   for (const file of files.slice(0, 3)) contains(read(file), '配送の入口・表は E-4 の変更を 2026-10-21 に反映');
-  contains(inventory, '151ファイル・193メソッド');
+  contains(inventory, '152ファイル・194メソッド');
   const entries = inventory.split('\n').filter((line) => /^\| `\/api\//.test(line));
-  expect(entries).toHaveLength(150);
-  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(192);
+  expect(entries).toHaveLength(151);
+  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(193);
 });
 
 test('APIに設定と顧客の条件と全エラーを反映する', () => {
@@ -389,4 +389,26 @@ test('G-3 Task 5の確定・番号なしメール・出荷日と書き手70本�
   contains(row('FREQ-535'), '初回入金日時の記録は G-1、出荷日の初期値と範囲の検証は G-3');
   contains(row('FREQ-540'), 'consume・register・confirmを足した70本');
   contains(read(files[0]), 'POST /api/admin/shipment-slips/[id]/confirm');
+});
+test('G-3 Task 6の発送の取消（票全体・戻しは1回）と書き手72本を正本で追跡する', () => {
+  const rows = read(requirements).split(/\r?\n/);
+  const row = (id: string) => rows.find((line) => line.startsWith(`| ${id} |`))!;
+  const cancelSuite = 'tests/integration/db/group_g3_cancel.integration.test.ts';
+  const freq533 = row('FREQ-533');
+  for (const word of ['Task 6 の AC-04', cancelSuite, 'tests/unit/api/admin/shipment-slip-cancel-route.test.ts',
+    'tests/unit/components/ShipmentSlipCancelDialog.test.tsx', 'CANCEL_NOT_ALLOWED → HAS_RETURN → REFUNDED', 'reverses_event_id の一意']) contains(freq533, word);
+  // FREQ-534 は新規の行で、この Task が証明する AC-03 だけを持つ（残りの AC は後続Task）
+  const freq534 = row('FREQ-534');
+  expect(freq534.split('|')[5].match(/FREQ-534-AC-\d+/g)).toEqual(['FREQ-534-AC-03']);
+  for (const word of [cancelSuite, '発送の取消は票全体で、返品・発送後返金のある注文が1つでもあれば全体を拒否する', 'skipped', 'provider_stop_pending']) contains(freq534, word);
+  contains(row('FREQ-540'), 'restore・cancelを足した72本');
+  contains(row('FREQ-540'), 'consume・register・confirmを足した70本');
+  contains(read(files[0]), 'POST /api/admin/shipment-slips/[id]/cancel');
+  for (const file of [cancelSuite, 'tests/unit/api/admin/shipment-slip-cancel-route.test.ts', 'tests/unit/components/ShipmentSlipCancelDialog.test.tsx',
+    'src/components/ShipmentSlipCancelDialog.tsx', 'src/app/api/admin/shipment-slips/[id]/cancel/route.ts']) {
+    expect({ file, exists: existsSync(path.resolve(root, file)) }).toEqual({ file, exists: true });
+  }
+  for (const doc of ['docs/04_DetailDesign/sequence/shipping.md', 'docs/04_DetailDesign/states/shipping.md']) {
+    contains(read(doc), '発送の取消（G-3 Task 6）');
+  }
 });

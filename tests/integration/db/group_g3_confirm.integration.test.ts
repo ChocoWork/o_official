@@ -51,9 +51,9 @@ describe('G-3 confirm migration (no database)', () => {
     expect(lineLoop).toContain('INSERT INTO public.order_fulfillment_lines(');
     expect(lineLoop).toContain('VALUES(v_fulfillment, v_line.order_item_id, v_line.quantity)');
   });
-  test('FREQ-540-AC-11: consume・register・confirm の閉集合は70本で、末尾assertにも新関数を含む', () => {
-    expect(G3C_ALLOWLIST).toHaveLength(70);
-    expect(new Set(G3C_ALLOWLIST).size).toBe(70);
+  test('FREQ-540-AC-11: consume・register・confirm を含む閉集合は（Task 6 の restore・cancel を足して）72本で、末尾assertにも新関数を含む', () => {
+    expect(G3C_ALLOWLIST).toHaveLength(72);
+    expect(new Set(G3C_ALLOWLIST).size).toBe(72);
     for (const name of ['consume_group_g_allocations', 'register_group_g_slip_tracking', 'admin_confirm_shipment_slip']) {
       expect(sql).toContain(`CREATE FUNCTION private.${name}(`);
       expect(sql.slice(sql.indexOf('-- G3C_FINAL_ASSERT_BEGIN'))).toContain(name);
@@ -385,7 +385,7 @@ describeLocalDb('G-3 shipment slip confirm', (db) => {
       await refused(s.id,'GROUP_G_FORBIDDEN',{by},'42501');
     expect((await confirm(s.id)).version).toBe(2);
   });
-  test('FREQ-540-AC-11: 公開入口はINVOKER委譲、private本体はDEFINER、helperにEXECUTEなし、allowlist70本',async()=>{
+  test('FREQ-540-AC-11: 公開入口はINVOKER委譲、private本体はDEFINER、helperにEXECUTEなし、allowlist72本',async()=>{
     const rows=(await db().query(`select n.nspname,p.prosecdef,p.prosrc,has_function_privilege('service_role',p.oid,'EXECUTE') service,
       has_function_privilege('anon',p.oid,'EXECUTE') anon,has_function_privilege('authenticated',p.oid,'EXECUTE') authenticated
       from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.oid=any($1::regprocedure[])`,[[`public.${signature}`,`private.${signature}`,
@@ -395,7 +395,7 @@ describeLocalDb('G-3 shipment slip confirm', (db) => {
     expect(rows.find(r=>r.nspname==='public')).toMatchObject({prosecdef:false,service:true});
     expect(rows.find(r=>r.nspname==='public').prosrc).toContain('SELECT private.admin_confirm_shipment_slip(');
     expect(rows.filter(r=>!r.service)).toHaveLength(2);
-    expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(70);
+    expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(72);
   });
   test('FREQ-540-AC-11: consumeは共通advisoryなしでは拒否する',async()=>{
     const other=await connectLocalDb();try {

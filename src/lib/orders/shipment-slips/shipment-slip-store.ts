@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   isShipmentSlipErrorCode,
   parsePackingRow,
+  parseShipmentSlipCancelled,
   parseShipmentSlipConfirmed,
   parseShipmentSlipDetail,
   parseShipmentSlipLink,
@@ -12,6 +13,7 @@ import {
   SHIPMENT_SLIP_READ_FAILED,
   SHIPMENT_SLIP_TEXT,
   type PackingRow,
+  type ShipmentSlipCancelled,
   type ShipmentSlipConfirmed,
   type ShipmentSlipConfirmInput,
   type ShipmentSlipDetail,
@@ -255,6 +257,22 @@ export async function confirmShipmentSlip(
     _actor_id: actorId, _request_key: input.requestKey,
   });
   const result = guarded(() => parseShipmentSlipConfirmed(data));
+  if (result.id !== input.slipId.toLowerCase()) throw new ShipmentSlipError();
+  return result;
+}
+
+/**
+ * 確定済みの票を全体で取り消す（DB の関数 admin_cancel_shipment_slip を1回呼ぶ）。注文ごとの発送を取り消し、割当の消費を1回だけ戻す。
+ * 返品・発送後の返金・取り消せない状態の注文が1つでもあれば、DB が全体を断る（409、何も変えない）。
+ * actor は認可結果から渡し、崩れた成功の答えや別の票の答えは固定の500にする。
+ */
+export async function cancelShipmentSlip(
+  client: SupabaseClient, actorId: string, input: { slipId: string; expectedVersion: number; requestKey: string },
+): Promise<ShipmentSlipCancelled> {
+  const data = await callRpc(client, 'admin_cancel_shipment_slip', {
+    _slip_id: input.slipId, _expected_version: input.expectedVersion, _actor_id: actorId, _request_key: input.requestKey,
+  });
+  const result = guarded(() => parseShipmentSlipCancelled(data));
   if (result.id !== input.slipId.toLowerCase()) throw new ShipmentSlipError();
   return result;
 }

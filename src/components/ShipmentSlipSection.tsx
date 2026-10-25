@@ -4,8 +4,10 @@
 // 発送票の頁（G-3 / FREQ-531・FREQ-532・FREQ-533）。下書きの表示・編集と発送確定:
 // 「同梱する品物」の表（行を外す）、「品物を追加」（同梱できる候補だけ）、「送り先」、「下書きを破棄」。
 // 品物の外す・追加は、選択の全部を送って丸ごと入れ替える（版が違えば断られ、読み直しても入力は保つ）。
-// 発送票確認と確定を扱う。確定後の訂正・取消は後の段階で足す。権限は窓口と DB が守り、この部品は返事の状態で出し分ける。
+// 発送票確認と確定、確定済みの票の取消（ShipmentSlipCancelDialog）を扱う。確定後の訂正は後の段階で足す。
+// 権限は窓口と DB が守り、この部品は返事の状態で出し分ける。
 import { useEffect, useState } from 'react';
+import ShipmentSlipCancelDialog from '@/components/ShipmentSlipCancelDialog';
 import { Button } from '@/components/ui/Button/Button';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { useShipmentSlipWrite, type SlipWriteResult } from '@/hooks/useShipmentSlipWrite';
@@ -68,6 +70,7 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
   // 画面の中で止めた時の断りの文（最後の1行を外そうとした時。窓口へは送らない）
   const [localMessage, setLocalMessage] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [carrier, setCarrier] = useState<ShippingCarrierId | ''>('');
   const [trackingNumber, setTrackingNumber] = useState('');
@@ -404,7 +407,21 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
         {slip.dateHistory.map((entry) => <p key={entry.version}>{formatPurchaseOrderDateTime(entry.createdAt)} {entry.previousDate} → {entry.newDate}</p>)}
         <h2 className="lk-text-lg">荷物の履歴</h2>
         {slip.versions.map((entry) => <p key={entry.version}>{formatPurchaseOrderDateTime(entry.createdAt)} {entry.shipmentDate} {entry.trackingNumber}</p>)}
+        <div className="flex flex-wrap gap-3">
+          <Button type="button" variant="secondary" disabled={locked} onClick={() => { setNotice(null); setLocalMessage(null); setCancelOpen(true); }}>
+            {SHIPMENT_SLIP_TEXT.cancelShipment}
+          </Button>
+        </div>
       </section> : null}
+      {/* 読み直した票がすでに取り消されていた（別の人が取り消した）時は、取消のダイアログを閉じる（取消済みの表示だけが残る） */}
+      {cancelOpen && slip.stage === 'confirmed' ? (
+        <ShipmentSlipCancelDialog
+          slip={slip}
+          onClose={() => setCancelOpen(false)}
+          onCancelled={() => { setCancelOpen(false); setNotice(SHIPMENT_SLIP_TEXT.cancelled); reload(); }}
+          onStale={reload}
+        />
+      ) : null}
 
       {isDraft && !reviewing ? (
         <div className="flex flex-wrap gap-3">

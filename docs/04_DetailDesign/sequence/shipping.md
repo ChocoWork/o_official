@@ -1,6 +1,6 @@
 # 荷作り表から発送票の下書きまでの流れ（G-3）
 
-> 状態: 現行のソース（グループ G-3 Task 4・5。荷作り表で下書きを作り、票の頁で編集・破棄・確認・確定する。本番へは未適用） | 確認日: 2026-10-25 | 対象: 下書きの作成・入れ替え・破棄と発送確定の順序、発送票の書込みに共通のロックの順
+> 状態: 現行のソース（グループ G-3 Task 4・5・6。荷作り表で下書きを作り、票の頁で編集・破棄・確認・確定・取消する。本番へは未適用） | 確認日: 2026-10-25 | 対象: 下書きの作成・入れ替え・破棄と発送確定と発送の取消の順序、発送票の書込みに共通のロックの順
 
 ## 概要
 
@@ -139,7 +139,7 @@ sequenceDiagram
 | 5 | `shipment_slips`（id 昇順）`FOR UPDATE` | 在庫の行を全部取った後 |
 | 6 | 代表の `fulfillment_tracking_registrations`（`(fulfillment_id, tracking_version)` 昇順）`FOR UPDATE` | 追跡に触れる書込みだけ |
 
-誰も EXECUTE できない内部の道具で、public の入口はない。書込みの本体（保存・破棄）は、票・注文・操作の記録の表を読む前にこれを呼ぶ（構造は pg_proc の本文で試験し、移行の末尾の確かめも見る）。書き手の閉じた一覧は G-2 の65本に保存・破棄・消費・追跡登録・確定の5本を足した70本。
+誰も EXECUTE できない内部の道具で、public の入口はない。書込みの本体（保存・破棄）は、票・注文・操作の記録の表を読む前にこれを呼ぶ（構造は pg_proc の本文で試験し、移行の末尾の確かめも見る）。書き手の閉じた一覧は G-2 の65本に保存・破棄・消費・追跡登録・確定の5本と戻し・取消の2本を足した72本。
 
 ## 関連テスト
 
@@ -150,13 +150,14 @@ sequenceDiagram
 | 実 PostgREST | [group_g3_postgrest_paths](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts) |
 | 窓口 | [作成](../../../tests/unit/api/admin/shipment-slips-route.test.ts)、[入れ替えと破棄](../../../tests/unit/api/admin/shipment-slip-draft-route.test.ts) |
 | store・ブラウザの道具 | [store](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-store.test.ts)、[client](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-client.test.ts) |
-| 画面 | [荷作り表](../../../tests/unit/components/PackingSection.test.tsx)、[票の頁](../../../tests/unit/components/ShipmentSlipSection.test.tsx) |
+| 画面 | [荷作り表](../../../tests/unit/components/PackingSection.test.tsx)、[票の頁](../../../tests/unit/components/ShipmentSlipSection.test.tsx)、[取消のダイアログ](../../../tests/unit/components/ShipmentSlipCancelDialog.test.tsx) |
+| 発送の取消 | DB [group_g3_cancel](../../../tests/integration/db/group_g3_cancel.integration.test.ts)、窓口 [cancel](../../../tests/unit/api/admin/shipment-slip-cancel-route.test.ts) |
 
 ## 未確認事項
 
 - Task 5までの移行はローカルへ適用済み。controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。レビュー後の数量変数名の整理はcontrollerが再適用する。本番へは未適用。
 - 390/768/1280px の実測と、本番ビルドでの画面の動きは E2E の担当（Task 13）。この Task は単体で表の構造とクラスだけを確かめた。
-- 「発送票確認」「発送確定」は実装済み。確定後の伝票番号・配達済み・取消・出荷日の訂正は後続Task。
+- 「発送票確認」「発送確定」「発送を取り消す」は実装済み（取消は Task 6）。確定後の伝票番号・配達済み・出荷日の訂正は後続Task。
 
 ## 発送確定（G-3 Task 5）
 
@@ -203,3 +204,83 @@ sequenceDiagram
 割当消費は各発送行INSERTの前に行う。逆順ではG-1の即時境界が同じ数量を発送済みと残るpaid割当の両方に数え、FULFILLMENT_BOUNDS_VIOLATEDとなる。途中のconsumeと行の一時的な不一致は同一取引内だけで、G-3の遅延group_g_shipment_consumptionが最終的な一致を検査する。before取得・操作印・注文順・注文status・outbox・追跡登録・票更新・履歴・操作結果の順は維持する。
 
 [確定DB試験](../../../tests/integration/db/group_g3_confirm.integration.test.ts)・[窓口単体](../../../tests/unit/api/admin/shipment-slip-confirm-route.test.ts)・[メール完全一致](../../../tests/unit/lib/orders/email/order-email-compose-shipped.test.ts)。controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。
+
+## 発送の取消（G-3 Task 6）
+
+確定済みの票を**全体で**取り消す（FREQ-533-AC-04・FREQ-534-AC-03）。票に含まれるすべての注文の発送を取り消し、割当の消費を**1回だけ**戻す。空き在庫Fは動かさず、手元の在庫（F+A+H）は消費した数だけ戻る。DB の関数 `admin_cancel_shipment_slip`（`private` の DEFINER 本体と、同名・同引数の `public` の SQL INVOKER 入口。service_role だけが EXECUTE）と、内部の道具 `restore_group_g_shipment`（誰も EXECUTE できない）が、1取引で行う。
+
+### 順序
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant B as 発送票の頁（取消のダイアログ）
+  participant A as POST /api/admin/shipment-slips/[id]/cancel
+  participant D as DB 関数 admin_cancel_shipment_slip
+  participant R as restore_group_g_shipment
+  B->>B: 「発送を取り消す」→ ダイアログ（説明・取消を止める理由・「取り消す」「戻る」）
+  B->>A: expectedVersion と requestKey
+  A->>A: 認可 4権限、CSRF、IP と actor の回数制限（30回/600秒）、検証
+  A->>D: 認可済みの userId で RPC を1回
+  D->>D: 引数 → 押さえ（設定 FOR SHARE を含む）→ 権限 → 指紋と再送
+  D->>D: 存在 → 段階 → 版
+  D->>D: 拒否の検査（全注文分。違反があれば何も書かず終わる）
+  D->>D: 状態 before → 操作印
+  loop 注文 ID 昇順（発送ごと）
+    D->>D: 発送の取消（cancelled_at・cancelled_by。印なし）
+    D->>D: 追跡登録を cancelled で止める・要対応を auto で閉じる
+    D->>R: 発送の行の明細ごと・consume ごとに 4 文
+    D->>D: 全部送っていた注文は paid へ（shipped_at・運送会社・番号を NULL）
+    D->>D: まだ送っていない発送メールを skipped に
+  end
+  D->>D: 票 cancelled・版+1・cancel の版履歴
+  D->>D: 状態の差分（shipment_slip_cancel）・操作の記録
+  D-->>A: id・version・restoredQuantity・replayed
+  A->>A: 監査 admin.shipment_slips.cancel（票 ID・戻した数量・再送かどうか・結果コード）
+  A-->>B: 200
+  B->>B: 「発送を取り消しました。」、ダイアログを閉じて票を読み直す
+```
+
+| 順 | 内容 |
+| --- | --- |
+| 引数 | 版・実行者・要求番号の欠け（版は1以上）は `GROUP_G_ARGUMENT_INVALID`（22023）。表は読まない |
+| 押さえ〜再送 | `lock_group_g_shipment_slips(票, 空, true)`（追跡に触れるので設定を `FOR SHARE`）→ 4権限（42501）→ 指紋 `{operation, slip_id, actor_id}`（版は含めない）。同じ `request_key` で同じ指紋は保存した結果を `replayed: true` で返し、違えば `GROUP_G_REQUEST_KEY_CONFLICT`（23505） |
+| 票 | 無ければ `GROUP_G_SLIP_NOT_FOUND`（P0002）→ 段階が `cancelled` なら `GROUP_G_SLIP_CANCELLED`、`confirmed` でなければ `GROUP_G_SLIP_NOT_CONFIRMED` → 版が違えば `GROUP_G_SLIP_VERSION_CONFLICT`（55000） |
+| 拒否の検査 | 書込みの前に**全注文分**。1つでも違反があれば何も書かない（他の注文の発送・割当・台帳・メールを含む）。優先は ① 注文が `paid`・`shipped` でない発送 → `GROUP_G_SLIP_CANCEL_NOT_ALLOWED` ② その発送を指す返品行が `requested`・`open`・`closed` の返品に 1 つでもある → `GROUP_G_SLIP_HAS_RETURN` ③ 発送後の返金（返事待ちを含む）が取消で割れる（`shipped − この発送の数量 < 発送後に返金した数`）→ `GROUP_G_SLIP_REFUNDED`（いずれも 22023）。取消・お断りの返品と、失敗・エラーの返金は数えない |
+| 書込み | 発送ごと（`order_id` 昇順）に、後述の順 |
+
+### 書込みの順と、G-1 の即時の確かめ
+
+G-1 の割当の数（`group_g_allocation_bounds`）・台帳の対応（`group_g_stock_movement_consistency`）と、G-3 の消費の裏付け（`group_g_shipment_consumption`）は**遅延**の確かめで、commit の時に最終の状態を見る。割当の変更の守り（`GROUP_G_HISTORY_IMMUTABLE`）・外部キー・一意制約・在庫 F の下限（`stock_quantity >= 0`）は**即時**で、文ごとに働く。次の順にして、**各文の時点で即時の確かめが通り**、遅延の確かめが commit の時に取消と戻しが揃って通るようにした。割当の上限（`残りの合計 <= 明細の数量 − 取り消していない発送の数量`）も遅延の確かめなので、文の途中の状態は見られず、commit の時の最終の状態だけが検査される（順を変えても最終の状態は同じで通る）。そのうえで、途中の状態も意味が通るように、発送の取消を先にして、新しい割当を足す時点でも上限を超えない並びにした（旧の取消と同じ並びで、読取の関数が途中で呼ばれても矛盾しない）。試験は取引の最後に `SET CONSTRAINTS ALL IMMEDIATE` で最終の状態を確かめる。
+
+| 順 | 文 | この順にする理由 |
+| --- | --- | --- |
+| 1 | 発送の `cancelled_at`・`cancelled_by`（既存の取消の分岐。印なし） | 先に取り消すと、取り消していない発送の数量が減り、続く途中の状態でも新しい割当が明細の上限を超えない（上限そのものの検査は commit の時） |
+| 2 | 追跡登録を `cancelled` で止める・要対応を `auto` で閉じる（代表以外は何も変わらない） | 既存の道具 `stop_fulfillment_registrations`・`close_delivery_attention`。（配送業者, 番号）の組の鍵は行の鍵の後に取る |
+| 3 | `restore_group_g_shipment`（下の 4 文を consume ごとに） | 1 で途中の状態も上限に収まっている。割当の数・台帳の対応・消費の裏付けは commit の時に最終の状態で検査される |
+| 4 | 注文が `shipped` で取消後の未発送が 1 以上なら `paid`（`shipped_at`・運送会社・番号を NULL） | 既存の取消と同じ理由コード `admin_cancel_fulfillment` |
+| 5 | まだ送っていない発送メール（`pending`・`retry_wait`）を `skipped`（`last_error_code` は `fulfillment_cancelled`、本文を消す） | 既存の取消と同じ |
+
+`restore_group_g_shipment` は、その発送の行を明細順に、確定の操作の `consume` 出来事を `id` 昇順に取り、出来事ごとに次の 4 文を**この順に**書く（外部キーが先の行を要る）。
+
+| 順 | 文 | 内容 |
+| --- | --- | --- |
+| ① | 台帳 `restock` | `delta = +n`、`allocation_operation_id` を**付けない**、`order_id`・`order_item_id` つき、備考「発送票 ○○ の発送取消（戻し）」。台帳の対応の確かめは印の付いた行だけを見る |
+| ② | 新しい割当 | 同じ明細・variant、数量 = 残り = `n`、`kind = 'paid'`、`operation_id` = 取消の操作。元の割当は一切更新しない |
+| ③ | 台帳 `purchase`（交換の品は `exchange`） | `delta = −n`、取消の操作の印つき、備考「発送票 ○○ の発送取消（再確保）」 |
+| ④ | 出来事 `restore` | 新しい割当・数量 `n`・連番 1・`reverses_event_id` = その `consume` の id・台帳は ③・理由 `shipment_cancel` |
+
+F は ① で `+n`、③ で `−n` なので下限を割らず、最後は元のまま。戻しは 1 回で、同じ `consume` を 2 度戻そうとすると `order_item_allocation_events` の `reverses_event_id` の一意で止まる。
+
+### お客様向けのメールと追跡
+
+お客様向けの取消のメールは作らない。まだ送っていない発送メールだけを取りやめる（送信済みは変えない）。追跡は代表の登録だけが cancelled で止まり、一度でも外へ登録できた登録は外への停止の印（`provider_stop_pending`）が付く。参加の注文の発送に登録は無い。票×版の親の行は追記専用で変えない。取消後に同じ明細を新しい票へ選んで再発送でき、票番号は次の連番、発送の番号は取消済みも数えた次の番号になる。
+
+### 画面
+
+確定済みの票に「発送を取り消す」を出す（下書き・取消済みには出さない）。ダイアログは見出し「発送を取り消す」・説明「票に含まれるすべての注文の発送を取り消し、品物を発送準備中に戻します。」・「取り消す」「戻る」。`cancelBlockers` を持つ票は、ボタンの上に「注文 ○○ は返品の対象です／発送後に返金済みです／取り消せない状態です」を先に出す（それでもボタンは押せ、DB が最終の判断をする）。送信中は閉じず、二重に押しても通信は1回。DB が断った時（返品・返金・取り消せない状態・版の競合）は表の本文をダイアログの中に出して開いたまま票を読み直す。結果が分からない時は「もう一度確かめる」で同じ本文・同じ `requestKey` を送り直す。成功は「発送を取り消しました。」を出してダイアログを閉じ、票を読み直す。
+
+### 未確認事項
+
+- DB は controller が reset して実測した（別接続の試験と実鍵 PostgREST を含む21 suiteで1,287/1,287成功、全件の単体と DB で18,318件成功。2026-10-25）。実メール送信・実際の外への停止・本番の実データは未確認。
+- 390/768/1280px の実測は E2E の担当。

@@ -35,7 +35,7 @@ export const G2_ALLOWLIST: readonly string[] = readG2Allowlist();
 
 /**
  * G-3 の移行 group_g3_shipping_slips（G3C）が、その時点までに存在する書き手だけで持つ一覧。
- * Task 4: 下書きの保存・破棄の2本で67本。Task 5 で確定の書き手を足して70本、Task 6 で72本、…（まだ存在しない関数の署名を
+ * Task 4: 下書きの保存・破棄の2本で67本。Task 5 で確定の書き手を足して70本、Task 6 で戻し・取消を足して72本、…（まだ存在しない関数の署名を
  * ::regprocedure に通さない）。この定数で G3C の末尾の確かめを流すのは Task 10。
  */
 export const G3C_ALLOWLIST: readonly string[] = Object.freeze([
@@ -45,6 +45,8 @@ export const G3C_ALLOWLIST: readonly string[] = Object.freeze([
   'private.consume_group_g_allocations(uuid,integer,uuid,uuid)',
   'private.register_group_g_slip_tracking(uuid,integer,uuid,uuid)',
   'private.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)',
+  'private.restore_group_g_shipment(uuid,uuid,uuid,uuid,text)',
+  'private.admin_cancel_shipment_slip(uuid,integer,uuid,uuid)',
 ]);
 
 /** 書き手の閉じた一覧を、渡した一覧へ置き換える文（関数の所有者・SECURITY DEFINER・search_path 空は移行と同じ） */

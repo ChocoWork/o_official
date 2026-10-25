@@ -160,6 +160,11 @@ export const SHIPMENT_SLIP_TEXT = {
   csrfFailed: 'セキュリティ確認に失敗しました。ページを再読み込みして、もう一度送ってください。',
   /** 最後の1行を外そうとした時（DB の GROUP_G_SLIP_EMPTY と同じ文）。窓口へは送らない */
   emptyLines: SHIPMENT_SLIP_ERRORS.GROUP_G_SLIP_EMPTY[2],
+  // ---- 発送の取消（G-3 Task 6） ----
+  cancelShipment: '発送を取り消す',
+  cancelDescription: '票に含まれるすべての注文の発送を取り消し、品物を発送準備中に戻します。',
+  cancelSubmit: '取り消す',
+  cancelled: '発送を取り消しました。',
   slipBack: '荷作り表に戻る',
   slipFailed: '発送票を読み込めませんでした。',
   slipForbidden: '発送票を見る権限がありません。',
@@ -303,6 +308,18 @@ export type ShipmentSlipIssue = { code: ShipmentSlipIssueCode; orderItemId: stri
 export const SHIPMENT_SLIP_CANCEL_BLOCKER_REASONS = ['has_return', 'refunded', 'not_cancellable'] as const;
 export type ShipmentSlipCancelBlockerReason = (typeof SHIPMENT_SLIP_CANCEL_BLOCKER_REASONS)[number];
 export type ShipmentSlipCancelBlocker = { orderId: string; reason: ShipmentSlipCancelBlockerReason };
+
+/** 取消を止める理由ごとの文。取消のダイアログの上に、注文番号つきで先に出す（formatCancelBlocker） */
+export const SHIPMENT_SLIP_CANCEL_BLOCKER_TEXT: Record<ShipmentSlipCancelBlockerReason, string> = {
+  has_return: '返品の対象です',
+  refunded: '発送後に返金済みです',
+  not_cancellable: '取り消せない状態です',
+};
+
+/** 例: 注文 ORD-XXXX は返品の対象です */
+export function formatCancelBlocker(orderNumber: string, reason: ShipmentSlipCancelBlockerReason): string {
+  return `注文 ${orderNumber} は${SHIPMENT_SLIP_CANCEL_BLOCKER_TEXT[reason]}`;
+}
 
 export type ShipmentSlipOrderFulfillment = {
   orderId: string;
@@ -676,6 +693,15 @@ export type ShipmentSlipConfirmed = ShipmentSlipSaved & {
   shipmentDate: string;
   fulfillments: { orderId: string; fulfillmentId: string; number: number; completesOrder: boolean }[];
 };
+
+/** 発送の取消の戻り。restoredQuantity は戻した数量の合計。replayed は同じ要求番号・同じ内容の再送で true */
+export type ShipmentSlipCancelled = { id: string; version: number; restoredQuantity: number; replayed: boolean };
+
+/** 取消の戻り（DB の関数の戻り、または窓口の応答）を検査して、決まった項目だけにする。戻した数量は1以上。 */
+export function parseShipmentSlipCancelled(value: unknown): ShipmentSlipCancelled {
+  const raw = readObject(value);
+  return { id: readId(raw.id), version: readPositive(raw.version), restoredQuantity: readPositive(raw.restoredQuantity), replayed: readBoolean(raw.replayed) };
+}
 
 /** 確定の戻りを検査する。空・重複・順序の崩れは成功として扱わない。 */
 export function parseShipmentSlipConfirmed(value: unknown): ShipmentSlipConfirmed {

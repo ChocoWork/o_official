@@ -6,6 +6,7 @@ import {
   isShipmentSlipErrorCode,
   isShipmentSlipId,
   parsePackingRow,
+  parseShipmentSlipCancelled,
   parseShipmentSlipConfirmed,
   parseShipmentSlipDetail,
   parseShipmentSlipListRow,
@@ -13,6 +14,7 @@ import {
   SHIPMENT_SLIP_ERRORS,
   SHIPMENT_SLIP_TEXT,
   type PackingRow,
+  type ShipmentSlipCancelled,
   type ShipmentSlipConfirmed,
   type ShipmentSlipConfirmInput,
   type ShipmentSlipDetail,
@@ -175,7 +177,7 @@ function forbiddenResult(body: unknown): Extract<DeliveryCallResult<never>, { ki
 }
 
 /** 既にある票への書込みの答えが別の票の id だった時は、読み違い（記録されたか分からない）として unknown にする */
-async function forSlip<T extends ShipmentSlipSaved>(slipId: string, call: Promise<DeliveryCallResult<T>>): Promise<DeliveryCallResult<T>> {
+async function forSlip<T extends { id: string }>(slipId: string, call: Promise<DeliveryCallResult<T>>): Promise<DeliveryCallResult<T>> {
   const result = await call;
   return result.kind === 'ok' && result.data.id.toLowerCase() !== slipId.toLowerCase() ? { kind: 'unknown' } : result;
 }
@@ -212,4 +214,10 @@ export function submitSlipDiscard(
 export function submitSlipConfirm(slipId: string, body: ShipmentSlipConfirmInput): Promise<DeliveryCallResult<ShipmentSlipConfirmed>> {
   if (!isShipmentSlipId(slipId)) return Promise.resolve({ kind: 'refused', message: SHIPMENT_SLIP_TEXT.slipNotFound });
   return forSlip(slipId, callWriter(`/api/admin/shipment-slips/${slipId}/confirm`, body, parseShipmentSlipConfirmed));
+}
+
+/** 発送の取消（POST /api/admin/shipment-slips/[id]/cancel、本文 { expectedVersion, requestKey }）。結果不明の再送でも同じrequestKeyと本文を使う。 */
+export function submitSlipCancel(slipId: string, body: { expectedVersion: number; requestKey: string }): Promise<DeliveryCallResult<ShipmentSlipCancelled>> {
+  if (!isShipmentSlipId(slipId)) return Promise.resolve({ kind: 'refused', message: SHIPMENT_SLIP_TEXT.slipNotFound });
+  return forSlip(slipId, callWriter(`/api/admin/shipment-slips/${slipId}/cancel`, { expectedVersion: body.expectedVersion, requestKey: body.requestKey }, parseShipmentSlipCancelled));
 }
