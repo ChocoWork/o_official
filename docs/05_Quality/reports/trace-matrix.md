@@ -1,6 +1,6 @@
 # 追跡の一覧
 
-> 状態: 自動生成 | 生成日: 2026-10-24 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
+> 状態: 自動生成 | 生成日: 2026-10-25 | 対象: NEWS・HOME・LOOK・ABOUT・STOCKIST・SEARCH・PRIVACY・AUTH・ADMIN
 
 ## 概要
 
@@ -14,837 +14,837 @@
 
 | 要求・脅威 | 要件 | 受け入れ条件 | E2E |
 | --- | --- | --- | --- |
-| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-001 公開済みの記事を公開日の新しい順に並べる | FR-NEWS-ALL-001-AC-01 一覧の記事が公開日の新しい順に並ぶ | （なし） |
-| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-001 公開済みの記事を公開日の新しい順に並べる | FR-NEWS-ALL-001-AC-02 非公開の記事が一覧に出ない | （なし） |
-| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-002 ALL と6つの分類で絞り込む | FR-NEWS-ALL-002-AC-01 7つの分類の選択肢が出る | （なし） |
-| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-002 ALL と6つの分類で絞り込む | FR-NEWS-ALL-002-AC-02 分類を選ぶとその分類の記事だけが出る | （なし） |
-| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-002 ALL と6つの分類で絞り込む | FR-NEWS-ALL-002-AC-03 ALL を選ぶと全部の記事が出る | （なし） |
-| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-003 選んだ分類を URL の category に出し、共有できるようにする | FR-NEWS-ALL-003-AC-01 分類を選ぶと URL の category に出る | （なし） |
-| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-003 選んだ分類を URL の category に出し、共有できるようにする | FR-NEWS-ALL-003-AC-02 category 付きの URL を開くとその分類が選ばれている | （なし） |
-| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-004 記事カードに公開日・分類・題・概要を出し、押すと詳細へ移る | FR-NEWS-ALL-004-AC-01 カードに公開日・分類・題・概要が出る | （なし） |
-| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-004 記事カードに公開日・分類・題・概要を出し、押すと詳細へ移る | FR-NEWS-ALL-004-AC-02 カードを押すとその記事の詳細が出る | （なし） |
-| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-005 category を DB の取り出しに渡し、DB で絞る | FR-NEWS-ALL-005-AC-01 category 付きで開くとその分類の記事だけが出る | （なし） |
-| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-006 一覧のページの title と description を決めて出す | FR-NEWS-ALL-006-AC-01 一覧の title と description が出る | （なし） |
-| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-007 分類の変化を URL に残し、ブラウザの戻るで元に戻す | FR-NEWS-ALL-007-AC-01 分類を変えた後に戻ると前の選択に戻る | （なし） |
-| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-007 分類の変化を URL に残し、ブラウザの戻るで元に戻す | FR-NEWS-ALL-007-AC-02 詳細から戻ると一覧の選択が残っている | （なし） |
-| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-001 公開済みの記事の詳細のページを出す | FR-NEWS-DETAIL-001-AC-01 公開済みの記事の詳細に題が出る | （なし） |
-| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-001 公開済みの記事の詳細のページを出す | FR-NEWS-DETAIL-001-AC-02 無い記事・非公開の記事の詳細は 404 | （なし） |
-| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-002 題・公開日・分類・本文を載せる | FR-NEWS-DETAIL-002-AC-01 題・公開日・分類・本文が出る | （なし） |
-| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-003 前後の記事と一覧への入口を出す | FR-NEWS-DETAIL-003-AC-01 前後のリンクと VIEW ALL が出て、VIEW ALL で一覧へ移る | （なし） |
-| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-004 category があれば同じ分類の中で前後を辿り、正しくない値は ALL にする | FR-NEWS-DETAIL-004-AC-01 category 付きの詳細では VIEW ALL と前後に同じ category が付く | （なし） |
-| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-004 category があれば同じ分類の中で前後を辿り、正しくない値は ALL にする | FR-NEWS-DETAIL-004-AC-02 正しくない category は ALL として扱う | （なし） |
-| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-005 詳細の title と description を出す | FR-NEWS-DETAIL-005-AC-01 詳細の title に NEWS を含み、description が空でない | （なし） |
-| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-006 パンくずか分類へのリンクを出す | FR-NEWS-DETAIL-006-AC-01 一覧へのリンクと分類の一覧へのリンクが出る | （なし） |
-| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-007 前後のリンクに aria-label を付ける | FR-NEWS-DETAIL-007-AC-01 前後のリンクに行き先の題を含む aria-label が付く | （なし） |
-| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-008 本文を段落と改行で読みやすく出す | FR-NEWS-DETAIL-008-AC-01 本文が段落ごとの p で出る | （なし） |
-| FREQ-14 管理画面でニュースを登録・編集・削除する | FREQ-14-REQ-01 ニュースの管理の機能が動く | FREQ-14-AC-01 ニュースの管理でエラーが出ず登録・編集・削除が終わる | （なし） |
-| FREQ-14 管理画面でニュースを登録・編集・削除する | FR-ADMIN-003 NEWS タブで記事の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-003-AC-01 NEWS タブに記事の一覧が出る | （なし） |
-| FREQ-14 管理画面でニュースを登録・編集・削除する | FR-ADMIN-003 NEWS タブで記事の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-003-AC-02 作った記事が一覧に出る | （なし） |
-| FREQ-14 管理画面でニュースを登録・編集・削除する | FR-ADMIN-003 NEWS タブで記事の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-003-AC-03 直した内容が一覧に出る | （なし） |
-| FREQ-14 管理画面でニュースを登録・編集・削除する | FR-ADMIN-003 NEWS タブで記事の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-003-AC-04 消した記事が一覧から消える | （なし） |
-| FREQ-14 管理画面でニュースを登録・編集・削除する | FR-ADMIN-003 NEWS タブで記事の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-003-AC-05 公開・非公開を切り替えると状態の表示が変わる | （なし） |
-| FREQ-31 NEWS 一覧にページ見出し「NEWS」を出さない | FREQ-31-REQ-01 一覧からページの見出しの要素を外す | FREQ-31-AC-01 一覧に h1「NEWS」が無い | （なし） |
-| FREQ-32 NEWS 一覧の記事カードに画像を出さない | FREQ-32-REQ-01 記事カードから画像の表示を外す | FREQ-32-AC-01 記事カードに img が無い | （なし） |
-| FREQ-47 NEWS 一覧の FILTER ボタンを ITEM 一覧にそろえる | FREQ-47-REQ-01 FILTER ボタンの文字の大きさ・字間を ITEM と同じにする | FREQ-47-AC-01 モバイル・タブレットで FILTER ボタンの文字が ITEM と一致する | （なし） |
-| FREQ-48 NEWS 一覧の FILTER の選択肢を ITEM 一覧にそろえる | FREQ-48-REQ-01 選択肢の間隔と見た目を ITEM の MultiSelect と同じにする | FREQ-48-AC-01 選択肢の gap が ITEM と一致する | （なし） |
-| FREQ-48 NEWS 一覧の FILTER の選択肢を ITEM 一覧にそろえる | FREQ-48-REQ-01 選択肢の間隔と見た目を ITEM の MultiSelect と同じにする | FREQ-48-AC-02 選択肢の字間が ITEM と一致する | （なし） |
-| FREQ-49 NEWS 一覧のフィルターの縦線と本文の距離を ITEM にそろえる | FREQ-49-REQ-01 デスクトップで本文の列の左の余白を ITEM と同じにする | FREQ-49-AC-01 lg・xl・2xl で本文の列の左 padding が ITEM と一致する | （なし） |
-| FREQ-119 4つの一覧のフィルターの幅と本文までの余白をそろえる | FREQ-119-REQ-01 サイドバーの幅・内側の余白・本文の左の余白を同じ値にする | FREQ-119-AC-01 デスクトップで4ページのサイドバーの幅が一致する | （なし） |
-| FREQ-119 4つの一覧のフィルターの幅と本文までの余白をそろえる | FREQ-119-REQ-01 サイドバーの幅・内側の余白・本文の左の余白を同じ値にする | FREQ-119-AC-02 デスクトップで4ページの本文の左の余白が一致する | （なし） |
-| FREQ-126 ホームの区画の見出しの右に VIEW ALL を常に出す | FREQ-126-REQ-01 見出しを HomeSectionHeader に替え、下の中央の VIEW ALL と件数の条件を外す | FREQ-126-AC-01 ITEMS の見出しの右に /item への VIEW ALL がある | （なし） |
-| FREQ-126 ホームの区画の見出しの右に VIEW ALL を常に出す | FREQ-126-REQ-01 見出しを HomeSectionHeader に替え、下の中央の VIEW ALL と件数の条件を外す | FREQ-126-AC-02 LOOK の見出しの右に /look への VIEW ALL がある | （なし） |
-| FREQ-126 ホームの区画の見出しの右に VIEW ALL を常に出す | FREQ-126-REQ-01 見出しを HomeSectionHeader に替え、下の中央の VIEW ALL と件数の条件を外す | FREQ-126-AC-03 NEWS の見出しの右に /news への VIEW ALL がある | （なし） |
-| FREQ-126 ホームの区画の見出しの右に VIEW ALL を常に出す | FREQ-126-REQ-01 見出しを HomeSectionHeader に替え、下の中央の VIEW ALL と件数の条件を外す | FREQ-126-AC-04 下の中央の VIEW ALL ボタンが無い | （なし） |
-| FREQ-146 ホームの VIEW ALL を共通の Button にし、矢印を外す | FREQ-146-REQ-01 HomeSectionViewAll を共通の Button（secondary・square・href）で作る | FREQ-146-AC-01 VIEW ALL に data-ui-button と secondary が付く | （なし） |
-| FREQ-146 ホームの VIEW ALL を共通の Button にし、矢印を外す | FREQ-146-REQ-01 HomeSectionViewAll を共通の Button（secondary・square・href）で作る | FREQ-146-AC-02 VIEW ALL に右矢印のアイコンが無い | （なし） |
-| FREQ-149 ホームの NEWS はどの幅でも6件を出し、続きがある時だけ VIEW ALL を出す | FREQ-149-REQ-01 6件を取り、全部の幅で全部を出す（モバイルの3件の制限をやめる） | FREQ-149-AC-01 390・768・1280px で NEWS が最大6件出る | （なし） |
-| FREQ-149 ホームの NEWS はどの幅でも6件を出し、続きがある時だけ VIEW ALL を出す | FREQ-149-REQ-02 公開の総数を取り、6件より多い時だけ VIEW ALL を出す | FREQ-149-AC-02 総数が6件以下なら VIEW ALL が無く、多ければある | （なし） |
-| FREQ-185 検索の結果のサムネイルの画像を実際に出す | FREQ-185-REQ-01 検索の結果の imageUrl を署名つき URL にそろえる（置き場は公開にしない） | FREQ-185-AC-01 /api/search の画像の URL が署名つきの形になっている | （なし） |
-| FREQ-185 検索の結果のサムネイルの画像を実際に出す | FREQ-185-REQ-01 検索の結果の imageUrl を署名つき URL にそろえる（置き場は公開にしない） | FREQ-185-AC-02 3つの幅で検索の結果の画像が読み込まれる | （なし） |
-| FREQ-252 管理のニュースで画像を書き込む | FREQ-252-REQ-01 作成・編集のフォームに画像の欄を置き、キーボードでも選べ、選んだら見本を出す | FREQ-252-AC-01 作成と編集のフォームに画像の欄と file の入力がある | （なし） |
-| FREQ-252 管理のニュースで画像を書き込む | FREQ-252-REQ-02 作る時は画像が必須、直す時は付け直さなければ元の画像のまま | FREQ-252-AC-02 作る時に画像が無いと送らず、直す時は画像なしで更新できる | （なし） |
-| FREQ-252 管理のニュースで画像を書き込む | FREQ-252-REQ-03 JPEG・PNG・WebP・GIF で 5MB 以下だけを受ける | FREQ-252-AC-03 種類の外・5MB 超はそれぞれの文言で断る | （なし） |
-| FREQ-274 NEWS・ITEM・LOOK の PC でフィルターを画面の左端に寄せる | FREQ-274-REQ-01 幅の上限による中央寄せをやめ、1680px を超える画面でも左端に寄せる | FREQ-274-AC-01 1920px で左のフィルターの左端が 40px 以内にある | （なし） |
-| FREQ-274 NEWS・ITEM・LOOK の PC でフィルターを画面の左端に寄せる | FREQ-274-REQ-02 1680px 以下の画面では今までの位置を変えない | FREQ-274-AC-02 1280px で左のフィルターの左端が 40px 以内にある | （なし） |
-| FREQ-275 ホームの区画の見出しを共通の部品にし、下線を付ける | FREQ-275-REQ-01 5つの区画の見出しを SectionTitle 1つにする | FREQ-275-AC-01 3つの幅で5つの見出しの文字の大きさが同じ | （なし） |
+| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-001 公開済みの記事を公開日の新しい順に並べる | FR-NEWS-ALL-001-AC-01 一覧の記事が公開日の新しい順に並ぶ | `e2e/FR-NEWS-ALL-001-published-news-order.spec.ts:6` |
+| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-001 公開済みの記事を公開日の新しい順に並べる | FR-NEWS-ALL-001-AC-02 非公開の記事が一覧に出ない | `e2e/FR-NEWS-ALL-018-list-behaviour-and-layout.spec.ts:66` |
+| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-002 ALL と6つの分類で絞り込む | FR-NEWS-ALL-002-AC-01 7つの分類の選択肢が出る | `e2e/FR-NEWS-ALL-002-category-filter-options.spec.ts:6` |
+| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-002 ALL と6つの分類で絞り込む | FR-NEWS-ALL-002-AC-02 分類を選ぶとその分類の記事だけが出る | `e2e/FR-NEWS-ALL-018-list-behaviour-and-layout.spec.ts:98` |
+| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-002 ALL と6つの分類で絞り込む | FR-NEWS-ALL-002-AC-03 ALL を選ぶと全部の記事が出る | `e2e/FR-NEWS-ALL-018-list-behaviour-and-layout.spec.ts:114` |
+| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-003 選んだ分類を URL の category に出し、共有できるようにする | FR-NEWS-ALL-003-AC-01 分類を選ぶと URL の category に出る | `e2e/FR-NEWS-ALL-003-category-query-sync.spec.ts:6` |
+| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-003 選んだ分類を URL の category に出し、共有できるようにする | FR-NEWS-ALL-003-AC-02 category 付きの URL を開くとその分類が選ばれている | `e2e/FR-NEWS-ALL-018-list-behaviour-and-layout.spec.ts:145` |
+| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-004 記事カードに公開日・分類・題・概要を出し、押すと詳細へ移る | FR-NEWS-ALL-004-AC-01 カードに公開日・分類・題・概要が出る | `e2e/FR-NEWS-ALL-004-news-card-content-and-navigation.spec.ts:6` |
+| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-004 記事カードに公開日・分類・題・概要を出し、押すと詳細へ移る | FR-NEWS-ALL-004-AC-02 カードを押すとその記事の詳細が出る | `e2e/FR-NEWS-ALL-018-list-behaviour-and-layout.spec.ts:154` |
+| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-005 category を DB の取り出しに渡し、DB で絞る | FR-NEWS-ALL-005-AC-01 category 付きで開くとその分類の記事だけが出る | `e2e/FR-NEWS-ALL-005-server-category-filter.spec.ts:6` |
+| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-006 一覧のページの title と description を決めて出す | FR-NEWS-ALL-006-AC-01 一覧の title と description が出る | `e2e/FR-NEWS-ALL-006-news-metadata.spec.ts:4` |
+| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-007 分類の変化を URL に残し、ブラウザの戻るで元に戻す | FR-NEWS-ALL-007-AC-01 分類を変えた後に戻ると前の選択に戻る | `e2e/FR-NEWS-ALL-007-category-history-restore.spec.ts:6` |
+| SR-NEWS-001 訪問者が公開済みのニュースを一覧で読み、分類で絞れる | FR-NEWS-ALL-007 分類の変化を URL に残し、ブラウザの戻るで元に戻す | FR-NEWS-ALL-007-AC-02 詳細から戻ると一覧の選択が残っている | `e2e/FR-NEWS-ALL-007-detail-back-filter-restore.spec.ts:4`<br>`e2e/FR-NEWS-ALL-007-detail-back-filter-restore.spec.ts:19` |
+| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-001 公開済みの記事の詳細のページを出す | FR-NEWS-DETAIL-001-AC-01 公開済みの記事の詳細に題が出る | `e2e/FR-NEWS-DETAIL-001-published-news-detail-display.spec.ts:5` |
+| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-001 公開済みの記事の詳細のページを出す | FR-NEWS-DETAIL-001-AC-02 無い記事・非公開の記事の詳細は 404 | `e2e/FR-NEWS-DETAIL-009-detail-edge-cases-and-body-safety.spec.ts:94` |
+| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-002 題・公開日・分類・本文を載せる | FR-NEWS-DETAIL-002-AC-01 題・公開日・分類・本文が出る | `e2e/FR-NEWS-DETAIL-002-detail-content-elements.spec.ts:5` |
+| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-003 前後の記事と一覧への入口を出す | FR-NEWS-DETAIL-003-AC-01 前後のリンクと VIEW ALL が出て、VIEW ALL で一覧へ移る | `e2e/FR-NEWS-DETAIL-003-detail-navigation-links.spec.ts:5` |
+| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-004 category があれば同じ分類の中で前後を辿り、正しくない値は ALL にする | FR-NEWS-DETAIL-004-AC-01 category 付きの詳細では VIEW ALL と前後に同じ category が付く | `e2e/FR-NEWS-DETAIL-004-category-query-navigation.spec.ts:5` |
+| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-004 category があれば同じ分類の中で前後を辿り、正しくない値は ALL にする | FR-NEWS-DETAIL-004-AC-02 正しくない category は ALL として扱う | `e2e/FR-NEWS-DETAIL-009-detail-edge-cases-and-body-safety.spec.ts:115` |
+| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-005 詳細の title と description を出す | FR-NEWS-DETAIL-005-AC-01 詳細の title に NEWS を含み、description が空でない | `e2e/FR-NEWS-DETAIL-009-detail-edge-cases-and-body-safety.spec.ts:136` |
+| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-006 パンくずか分類へのリンクを出す | FR-NEWS-DETAIL-006-AC-01 一覧へのリンクと分類の一覧へのリンクが出る | `e2e/FR-NEWS-DETAIL-006-breadcrumb-or-category-link.spec.ts:5` |
+| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-007 前後のリンクに aria-label を付ける | FR-NEWS-DETAIL-007-AC-01 前後のリンクに行き先の題を含む aria-label が付く | `e2e/FR-NEWS-DETAIL-007-navigation-aria-labels.spec.ts:4` |
+| SR-NEWS-002 訪問者がニュースの記事を1件ずつ読み、前後の記事と一覧へ移れる | FR-NEWS-DETAIL-008 本文を段落と改行で読みやすく出す | FR-NEWS-DETAIL-008-AC-01 本文が段落ごとの p で出る | `e2e/FR-NEWS-DETAIL-009-detail-edge-cases-and-body-safety.spec.ts:152` |
+| FREQ-14 管理画面でニュースを登録・編集・削除する | FREQ-14-REQ-01 ニュースの管理の機能が動く | FREQ-14-AC-01 ニュースの管理でエラーが出ず登録・編集・削除が終わる | `e2e/FR-NEWS-ADMIN-001-admin-news-screens.spec.ts:335` |
+| FREQ-14 管理画面でニュースを登録・編集・削除する | FR-ADMIN-003 NEWS タブで記事の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-003-AC-01 NEWS タブに記事の一覧が出る | `e2e/FR-NEWS-ADMIN-001-admin-news-screens.spec.ts:191` |
+| FREQ-14 管理画面でニュースを登録・編集・削除する | FR-ADMIN-003 NEWS タブで記事の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-003-AC-02 作った記事が一覧に出る | `e2e/FR-NEWS-ADMIN-001-admin-news-screens.spec.ts:209` |
+| FREQ-14 管理画面でニュースを登録・編集・削除する | FR-ADMIN-003 NEWS タブで記事の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-003-AC-03 直した内容が一覧に出る | `e2e/FR-NEWS-ADMIN-001-admin-news-screens.spec.ts:250` |
+| FREQ-14 管理画面でニュースを登録・編集・削除する | FR-ADMIN-003 NEWS タブで記事の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-003-AC-04 消した記事が一覧から消える | `e2e/FR-NEWS-ADMIN-001-admin-news-screens.spec.ts:275` |
+| FREQ-14 管理画面でニュースを登録・編集・削除する | FR-ADMIN-003 NEWS タブで記事の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-003-AC-05 公開・非公開を切り替えると状態の表示が変わる | `e2e/FR-NEWS-ADMIN-001-admin-news-screens.spec.ts:307` |
+| FREQ-31 NEWS 一覧にページ見出し「NEWS」を出さない | FREQ-31-REQ-01 一覧からページの見出しの要素を外す | FREQ-31-AC-01 一覧に h1「NEWS」が無い | `e2e/FR-NEWS-ALL-012-no-page-title.spec.ts:16` |
+| FREQ-32 NEWS 一覧の記事カードに画像を出さない | FREQ-32-REQ-01 記事カードから画像の表示を外す | FREQ-32-AC-01 記事カードに img が無い | `e2e/FR-NEWS-ALL-013-no-card-image.spec.ts:16` |
+| FREQ-47 NEWS 一覧の FILTER ボタンを ITEM 一覧にそろえる | FREQ-47-REQ-01 FILTER ボタンの文字の大きさ・字間を ITEM と同じにする | FREQ-47-AC-01 モバイル・タブレットで FILTER ボタンの文字が ITEM と一致する | `e2e/FR-NEWS-ALL-014-filter-button-matches-item.spec.ts:21` |
+| FREQ-48 NEWS 一覧の FILTER の選択肢を ITEM 一覧にそろえる | FREQ-48-REQ-01 選択肢の間隔と見た目を ITEM の MultiSelect と同じにする | FREQ-48-AC-01 選択肢の gap が ITEM と一致する | `e2e/FR-NEWS-ALL-015-filter-options-match-item.spec.ts:18` |
+| FREQ-48 NEWS 一覧の FILTER の選択肢を ITEM 一覧にそろえる | FREQ-48-REQ-01 選択肢の間隔と見た目を ITEM の MultiSelect と同じにする | FREQ-48-AC-02 選択肢の字間が ITEM と一致する | `e2e/FR-NEWS-ALL-018-list-behaviour-and-layout.spec.ts:166` |
+| FREQ-49 NEWS 一覧のフィルターの縦線と本文の距離を ITEM にそろえる | FREQ-49-REQ-01 デスクトップで本文の列の左の余白を ITEM と同じにする | FREQ-49-AC-01 lg・xl・2xl で本文の列の左 padding が ITEM と一致する | `e2e/FR-NEWS-ALL-016-filter-content-gap-matches-item.spec.ts:15` |
+| FREQ-119 4つの一覧のフィルターの幅と本文までの余白をそろえる | FREQ-119-REQ-01 サイドバーの幅・内側の余白・本文の左の余白を同じ値にする | FREQ-119-AC-01 デスクトップで4ページのサイドバーの幅が一致する | `e2e/FR-NEWS-ALL-018-list-behaviour-and-layout.spec.ts:221` |
+| FREQ-119 4つの一覧のフィルターの幅と本文までの余白をそろえる | FREQ-119-REQ-01 サイドバーの幅・内側の余白・本文の左の余白を同じ値にする | FREQ-119-AC-02 デスクトップで4ページの本文の左の余白が一致する | `e2e/FR-NEWS-ALL-018-list-behaviour-and-layout.spec.ts:234` |
+| FREQ-126 ホームの区画の見出しの右に VIEW ALL を常に出す | FREQ-126-REQ-01 見出しを HomeSectionHeader に替え、下の中央の VIEW ALL と件数の条件を外す | FREQ-126-AC-01 ITEMS の見出しの右に /item への VIEW ALL がある | `e2e/FR-NEWS-HOME-001-home-news-section.spec.ts:116` |
+| FREQ-126 ホームの区画の見出しの右に VIEW ALL を常に出す | FREQ-126-REQ-01 見出しを HomeSectionHeader に替え、下の中央の VIEW ALL と件数の条件を外す | FREQ-126-AC-02 LOOK の見出しの右に /look への VIEW ALL がある | `e2e/FR-NEWS-HOME-001-home-news-section.spec.ts:123` |
+| FREQ-126 ホームの区画の見出しの右に VIEW ALL を常に出す | FREQ-126-REQ-01 見出しを HomeSectionHeader に替え、下の中央の VIEW ALL と件数の条件を外す | FREQ-126-AC-03 NEWS の見出しの右に /news への VIEW ALL がある | `e2e/FR-NEWS-HOME-001-home-news-section.spec.ts:130` |
+| FREQ-126 ホームの区画の見出しの右に VIEW ALL を常に出す | FREQ-126-REQ-01 見出しを HomeSectionHeader に替え、下の中央の VIEW ALL と件数の条件を外す | FREQ-126-AC-04 下の中央の VIEW ALL ボタンが無い | `e2e/FR-NEWS-HOME-001-home-news-section.spec.ts:139`<br>`e2e/FR-NEWS-HOME-001-home-news-section.spec.ts:153` |
+| FREQ-146 ホームの VIEW ALL を共通の Button にし、矢印を外す | FREQ-146-REQ-01 HomeSectionViewAll を共通の Button（secondary・square・href）で作る | FREQ-146-AC-01 VIEW ALL に data-ui-button と secondary が付く | `e2e/FR-NEWS-HOME-001-home-news-section.spec.ts:170`<br>`e2e/FR-HOME-012-view-all-button-ui.spec.ts:15` |
+| FREQ-146 ホームの VIEW ALL を共通の Button にし、矢印を外す | FREQ-146-REQ-01 HomeSectionViewAll を共通の Button（secondary・square・href）で作る | FREQ-146-AC-02 VIEW ALL に右矢印のアイコンが無い | `e2e/FR-NEWS-HOME-001-home-news-section.spec.ts:185` |
+| FREQ-149 ホームの NEWS はどの幅でも6件を出し、続きがある時だけ VIEW ALL を出す | FREQ-149-REQ-01 6件を取り、全部の幅で全部を出す（モバイルの3件の制限をやめる） | FREQ-149-AC-01 390・768・1280px で NEWS が最大6件出る | `e2e/FR-NEWS-HOME-001-home-news-section.spec.ts:196` |
+| FREQ-149 ホームの NEWS はどの幅でも6件を出し、続きがある時だけ VIEW ALL を出す | FREQ-149-REQ-02 公開の総数を取り、6件より多い時だけ VIEW ALL を出す | FREQ-149-AC-02 総数が6件以下なら VIEW ALL が無く、多ければある | `e2e/FR-NEWS-HOME-001-home-news-section.spec.ts:210` |
+| FREQ-185 検索の結果のサムネイルの画像を実際に出す | FREQ-185-REQ-01 検索の結果の imageUrl を署名つき URL にそろえる（置き場は公開にしない） | FREQ-185-AC-01 /api/search の画像の URL が署名つきの形になっている | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:466`<br>`e2e/FR-SEARCH-007-thumbnail-signed-urls.spec.ts:15` |
+| FREQ-185 検索の結果のサムネイルの画像を実際に出す | FREQ-185-REQ-01 検索の結果の imageUrl を署名つき URL にそろえる（置き場は公開にしない） | FREQ-185-AC-02 3つの幅で検索の結果の画像が読み込まれる | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:296`<br>`e2e/FR-SEARCH-007-thumbnail-signed-urls.spec.ts:40` |
+| FREQ-252 管理のニュースで画像を書き込む | FREQ-252-REQ-01 作成・編集のフォームに画像の欄を置き、キーボードでも選べ、選んだら見本を出す | FREQ-252-AC-01 作成と編集のフォームに画像の欄と file の入力がある | `e2e/FR-NEWS-ADMIN-001-admin-news-screens.spec.ts:395` |
+| FREQ-252 管理のニュースで画像を書き込む | FREQ-252-REQ-02 作る時は画像が必須、直す時は付け直さなければ元の画像のまま | FREQ-252-AC-02 作る時に画像が無いと送らず、直す時は画像なしで更新できる | `e2e/FR-NEWS-ADMIN-001-admin-news-screens.spec.ts:411` |
+| FREQ-252 管理のニュースで画像を書き込む | FREQ-252-REQ-03 JPEG・PNG・WebP・GIF で 5MB 以下だけを受ける | FREQ-252-AC-03 種類の外・5MB 超はそれぞれの文言で断る | `e2e/FR-NEWS-ADMIN-001-admin-news-screens.spec.ts:442` |
+| FREQ-274 NEWS・ITEM・LOOK の PC でフィルターを画面の左端に寄せる | FREQ-274-REQ-01 幅の上限による中央寄せをやめ、1680px を超える画面でも左端に寄せる | FREQ-274-AC-01 1920px で左のフィルターの左端が 40px 以内にある | `e2e/FR-NEWS-ALL-017-desktop-filter-left-edge.spec.ts:32` |
+| FREQ-274 NEWS・ITEM・LOOK の PC でフィルターを画面の左端に寄せる | FREQ-274-REQ-02 1680px 以下の画面では今までの位置を変えない | FREQ-274-AC-02 1280px で左のフィルターの左端が 40px 以内にある | `e2e/FR-NEWS-ALL-017-desktop-filter-left-edge.spec.ts:20` |
+| FREQ-275 ホームの区画の見出しを共通の部品にし、下線を付ける | FREQ-275-REQ-01 5つの区画の見出しを SectionTitle 1つにする | FREQ-275-AC-01 3つの幅で5つの見出しの文字の大きさが同じ | `e2e/FR-NEWS-HOME-001-home-news-section.spec.ts:221`<br>`e2e/FR-HOME-017-section-title-common.spec.ts:56` |
 | FREQ-275 ホームの区画の見出しを共通の部品にし、下線を付ける | FREQ-275-REQ-02 見出しの文字を 1024px 未満で 20px、以上で 28px にする | FREQ-275-AC-02 390・768px で 20px、1280px で 28px | （なし） |
-| FREQ-275 ホームの区画の見出しを共通の部品にし、下線を付ける | FREQ-275-REQ-03 ITEMS・LOOK・NEWS の見出しにも下線を出す | FREQ-275-AC-03 3つの幅で5つの見出しに下線がある | （なし） |
-| THR-NEWS-001 公開前の記事が公開の道から漏れる | SEC-NEWS-001 公開の道は公開済みの記事だけを返す | SEC-NEWS-001-AC-01 anon と一般会員の直接の読み出しに非公開の記事が出ない | （なし） |
-| THR-NEWS-001 公開前の記事が公開の道から漏れる | SEC-NEWS-001 公開の道は公開済みの記事だけを返す | SEC-NEWS-001-AC-02 公開の画面・API・検索に非公開の記事が出ない | （なし） |
-| THR-NEWS-002 権限を持つ人の session で、2要素認証と失効の確かめを飛ばして DB を直接触る | SEC-NEWS-002 DB でも管理の権限を使う操作に、生きている session と2要素認証の済みを求める | SEC-NEWS-002-AC-01 aal1 の session では非公開の記事を直接読めない | （なし） |
-| THR-NEWS-002 権限を持つ人の session で、2要素認証と失効の確かめを飛ばして DB を直接触る | SEC-NEWS-002 DB でも管理の権限を使う操作に、生きている session と2要素認証の済みを求める | SEC-NEWS-002-AC-02 aal1 の session では記事を直接書き換え・消去できない | （なし） |
-| THR-NEWS-002 権限を持つ人の session で、2要素認証と失効の確かめを飛ばして DB を直接触る | SEC-NEWS-002 DB でも管理の権限を使う操作に、生きている session と2要素認証の済みを求める | SEC-NEWS-002-AC-03 ログアウトした session の token では news_articles を直接読めない | （なし） |
+| FREQ-275 ホームの区画の見出しを共通の部品にし、下線を付ける | FREQ-275-REQ-03 ITEMS・LOOK・NEWS の見出しにも下線を出す | FREQ-275-AC-03 3つの幅で5つの見出しに下線がある | `e2e/FR-NEWS-HOME-001-home-news-section.spec.ts:247` |
+| THR-NEWS-001 公開前の記事が公開の道から漏れる | SEC-NEWS-001 公開の道は公開済みの記事だけを返す | SEC-NEWS-001-AC-01 anon と一般会員の直接の読み出しに非公開の記事が出ない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:209` |
+| THR-NEWS-001 公開前の記事が公開の道から漏れる | SEC-NEWS-001 公開の道は公開済みの記事だけを返す | SEC-NEWS-001-AC-02 公開の画面・API・検索に非公開の記事が出ない | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:242` |
+| THR-NEWS-002 権限を持つ人の session で、2要素認証と失効の確かめを飛ばして DB を直接触る | SEC-NEWS-002 DB でも管理の権限を使う操作に、生きている session と2要素認証の済みを求める | SEC-NEWS-002-AC-01 aal1 の session では非公開の記事を直接読めない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:260` |
+| THR-NEWS-002 権限を持つ人の session で、2要素認証と失効の確かめを飛ばして DB を直接触る | SEC-NEWS-002 DB でも管理の権限を使う操作に、生きている session と2要素認証の済みを求める | SEC-NEWS-002-AC-02 aal1 の session では記事を直接書き換え・消去できない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:304` |
+| THR-NEWS-002 権限を持つ人の session で、2要素認証と失効の確かめを飛ばして DB を直接触る | SEC-NEWS-002 DB でも管理の権限を使う操作に、生きている session と2要素認証の済みを求める | SEC-NEWS-002-AC-03 ログアウトした session の token では news_articles を直接読めない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:361` |
 | THR-NEWS-003 画像の置き場が公開になり、非公開の記事の画像が見える | SEC-NEWS-003 画像の置き場は非公開で、その設定を移行で持つ | SEC-NEWS-003-AC-01 移行だけを当てた DB で置き場が非公開になる | （なし） |
-| THR-NEWS-003 画像の置き場が公開になり、非公開の記事の画像が見える | SEC-NEWS-003 画像の置き場は非公開で、その設定を移行で持つ | SEC-NEWS-003-AC-02 公開の URL では記事の画像を開けない | （なし） |
-| THR-NEWS-004 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-NEWS-004 署名つき URL と最適化の画像を、短い期限で失わせる | SEC-NEWS-004-AC-01 署名つき URL の期限が1時間以下 | （なし） |
-| THR-NEWS-004 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-NEWS-004 署名つき URL と最適化の画像を、短い期限で失わせる | SEC-NEWS-004-AC-02 最適化の画像のキャッシュが署名の期限を超えない | （なし） |
-| THR-NEWS-004 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-NEWS-005 公開の応答に、画面で使わない画像の道筋を載せない | SEC-NEWS-005-AC-01 /api/news の応答に image_url が無い | （なし） |
-| THR-NEWS-004 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-NEWS-005 公開の応答に、画面で使わない画像の道筋を載せない | SEC-NEWS-005-AC-02 公開の一覧と詳細の頁に署名つき URL が無い | （なし） |
-| THR-NEWS-005 署名つき URL を含む応答が共有のキャッシュに残る | SEC-NEWS-006 署名つき URL を含む応答と失敗の応答を共有のキャッシュに残させない | SEC-NEWS-006-AC-01 /api/news の成功の応答に no-store が付く | （なし） |
-| THR-NEWS-005 署名つき URL を含む応答が共有のキャッシュに残る | SEC-NEWS-006 署名つき URL を含む応答と失敗の応答を共有のキャッシュに残させない | SEC-NEWS-006-AC-02 /api/news の失敗と回数の制限の応答に no-store が付く | （なし） |
-| THR-NEWS-006 画像の道筋を書き換えて、置き場の別の物に署名させる | SEC-NEWS-007 署名する前に、道筋が記事の画像の場所にあることを確かめる | SEC-NEWS-007-AC-01 news/ の外の道筋には署名しない | （なし） |
-| THR-NEWS-006 画像の道筋を書き換えて、置き場の別の物に署名させる | SEC-NEWS-007 署名する前に、道筋が記事の画像の場所にあることを確かめる | SEC-NEWS-007-AC-02 別のホストの URL には署名しない | （なし） |
-| THR-NEWS-007 署名に失敗した時に、置き場の素の道筋を返す | SEC-NEWS-008 署名に失敗した時は閉じる側へ倒れ、失敗を記録に残す | SEC-NEWS-008-AC-01 署名の失敗で元の値を返さない | （なし） |
+| THR-NEWS-003 画像の置き場が公開になり、非公開の記事の画像が見える | SEC-NEWS-003 画像の置き場は非公開で、その設定を移行で持つ | SEC-NEWS-003-AC-02 公開の URL では記事の画像を開けない | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:331` |
+| THR-NEWS-004 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-NEWS-004 署名つき URL と最適化の画像を、短い期限で失わせる | SEC-NEWS-004-AC-01 署名つき URL の期限が1時間以下 | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:344` |
+| THR-NEWS-004 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-NEWS-004 署名つき URL と最適化の画像を、短い期限で失わせる | SEC-NEWS-004-AC-02 最適化の画像のキャッシュが署名の期限を超えない | `e2e/FR-NEWS-SEC-003-http-hardening-and-rate-limit.spec.ts:108` |
+| THR-NEWS-004 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-NEWS-005 公開の応答に、画面で使わない画像の道筋を載せない | SEC-NEWS-005-AC-01 /api/news の応答に image_url が無い | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:368` |
+| THR-NEWS-004 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-NEWS-005 公開の応答に、画面で使わない画像の道筋を載せない | SEC-NEWS-005-AC-02 公開の一覧と詳細の頁に署名つき URL が無い | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:270` |
+| THR-NEWS-005 署名つき URL を含む応答が共有のキャッシュに残る | SEC-NEWS-006 署名つき URL を含む応答と失敗の応答を共有のキャッシュに残させない | SEC-NEWS-006-AC-01 /api/news の成功の応答に no-store が付く | `e2e/FR-NEWS-SEC-003-http-hardening-and-rate-limit.spec.ts:133` |
+| THR-NEWS-005 署名つき URL を含む応答が共有のキャッシュに残る | SEC-NEWS-006 署名つき URL を含む応答と失敗の応答を共有のキャッシュに残させない | SEC-NEWS-006-AC-02 /api/news の失敗と回数の制限の応答に no-store が付く | `e2e/FR-NEWS-SEC-003-http-hardening-and-rate-limit.spec.ts:193` |
+| THR-NEWS-006 画像の道筋を書き換えて、置き場の別の物に署名させる | SEC-NEWS-007 署名する前に、道筋が記事の画像の場所にあることを確かめる | SEC-NEWS-007-AC-01 news/ の外の道筋には署名しない | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:387` |
+| THR-NEWS-006 画像の道筋を書き換えて、置き場の別の物に署名させる | SEC-NEWS-007 署名する前に、道筋が記事の画像の場所にあることを確かめる | SEC-NEWS-007-AC-02 別のホストの URL には署名しない | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:399` |
+| THR-NEWS-007 署名に失敗した時に、置き場の素の道筋を返す | SEC-NEWS-008 署名に失敗した時は閉じる側へ倒れ、失敗を記録に残す | SEC-NEWS-008-AC-01 署名の失敗で元の値を返さない | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:412` |
 | THR-NEWS-007 署名に失敗した時に、置き場の素の道筋を返す | SEC-NEWS-008 署名に失敗した時は閉じる側へ倒れ、失敗を記録に残す | SEC-NEWS-008-AC-02 署名の失敗が記録に1件残る | （なし） |
-| THR-NEWS-008 公開の記事をまとめて吸い出し、DB に負荷をかける | SEC-NEWS-009 公開の読み出しに件数の上限と回数の制限を付ける | SEC-NEWS-009-AC-01 /api/news は20件を超えて返さない | （なし） |
-| THR-NEWS-008 公開の記事をまとめて吸い出し、DB に負荷をかける | SEC-NEWS-009 公開の読み出しに件数の上限と回数の制限を付ける | SEC-NEWS-009-AC-02 /api/news は10分に61回目を断る | （なし） |
+| THR-NEWS-008 公開の記事をまとめて吸い出し、DB に負荷をかける | SEC-NEWS-009 公開の読み出しに件数の上限と回数の制限を付ける | SEC-NEWS-009-AC-01 /api/news は20件を超えて返さない | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:425` |
+| THR-NEWS-008 公開の記事をまとめて吸い出し、DB に負荷をかける | SEC-NEWS-009 公開の読み出しに件数の上限と回数の制限を付ける | SEC-NEWS-009-AC-02 /api/news は10分に61回目を断る | `e2e/FR-NEWS-SEC-003-http-hardening-and-rate-limit.spec.ts:177` |
 | THR-NEWS-008 公開の記事をまとめて吸い出し、DB に負荷をかける | SEC-NEWS-009 公開の読み出しに件数の上限と回数の制限を付ける | SEC-NEWS-009-AC-03 公開の一覧の取り出しは上限を渡さなくても上限で止まる | （なし） |
 | THR-NEWS-008 公開の記事をまとめて吸い出し、DB に負荷をかける | SEC-NEWS-009 公開の読み出しに件数の上限と回数の制限を付ける | SEC-NEWS-009-AC-04 詳細の前後の取り出しは公開済みの全部を読まない | （なし） |
-| THR-NEWS-009 PostgREST・RPC を直接叩いて、アプリの制限を迂回する | SEC-NEWS-010 anon が PostgREST・RPC を直接叩いた時も件数に上限がある | SEC-NEWS-010-AC-01 anon の search_news は大きな件数を求めても上限で止まる | （なし） |
-| THR-NEWS-009 PostgREST・RPC を直接叩いて、アプリの制限を迂回する | SEC-NEWS-010 anon が PostgREST・RPC を直接叩いた時も件数に上限がある | SEC-NEWS-010-AC-02 anon は search_public_news を呼べない | （なし） |
-| THR-NEWS-010 回数の制限の送り元を偽って制限を逃れる | SEC-NEWS-011 回数の制限の送り元は、利用者が偽れない値から取る | SEC-NEWS-011-AC-01 x-forwarded-for を変えても61回目を断る | （なし） |
-| THR-NEWS-011 入口で確かめない値が取り出しに渡る | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-01 /api/news は許可の一覧に無い分類を取り出しに渡さない | （なし） |
-| THR-NEWS-011 入口で確かめない値が取り出しに渡る | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-02 数でない記事の id は 404 になる | （なし） |
-| THR-NEWS-011 入口で確かめない値が取り出しに渡る | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-03 編集のページは数でない id で窓口へ要求を送らない | （なし） |
-| THR-NEWS-012 本文に仕込んだスクリプトが閲覧者の端末で動く | SEC-NEWS-013 記事の文字は HTML として解釈させない | SEC-NEWS-013-AC-01 本文の HTML の印は文字として出る | （なし） |
-| THR-NEWS-012 本文に仕込んだスクリプトが閲覧者の端末で動く | SEC-NEWS-013 記事の文字は HTML として解釈させない | SEC-NEWS-013-AC-02 Markdown の javascript: のリンクは href にならない | （なし） |
-| THR-NEWS-013 管理の操作を他のサイトから送らせる | SEC-NEWS-014 管理の書き換えを他のサイトから送らせない | SEC-NEWS-014-AC-01 別のサイトの Origin の書き換えを断る | （なし） |
-| THR-NEWS-013 管理の操作を他のサイトから送らせる | SEC-NEWS-014 管理の書き換えを他のサイトから送らせない | SEC-NEWS-014-AC-02 Origin も Referer も無い削除を断る | （なし） |
-| THR-NEWS-014 権限の無い人が管理の操作をする | SEC-NEWS-015 管理の窓口は有効な session・権限・2要素認証の全部を求める | SEC-NEWS-015-AC-01 権限の無い利用者は管理の一覧を読めない | （なし） |
-| THR-NEWS-014 権限の無い人が管理の操作をする | SEC-NEWS-015 管理の窓口は有効な session・権限・2要素認証の全部を求める | SEC-NEWS-015-AC-02 aal1 の session は管理の窓口で断られる | （なし） |
-| THR-NEWS-014 権限の無い人が管理の操作をする | SEC-NEWS-015 管理の窓口は有効な session・権限・2要素認証の全部を求める | SEC-NEWS-015-AC-03 読むだけの権限では記事を変えられない | （なし） |
-| THR-NEWS-015 管理の操作の跡が残らず、不正や誤りを追えない | SEC-NEWS-016 管理の書き換えを正しく監査の記録に残す | SEC-NEWS-016-AC-01 記事を作ると監査の記録が1件残る | （なし） |
-| THR-NEWS-015 管理の操作の跡が残らず、不正や誤りを追えない | SEC-NEWS-016 管理の書き換えを正しく監査の記録に残す | SEC-NEWS-016-AC-02 存在しない記事への書き換えは 404 で成功と記録しない | （なし） |
-| THR-NEWS-016 中身や名前を偽った画像を置き場に入れる | SEC-NEWS-017 書き込む画像は中身で種類を確かめ、保存の名前を送られた名前から作らない | SEC-NEWS-017-AC-01 画像と偽った HTML を断る | （なし） |
-| THR-NEWS-016 中身や名前を偽った画像を置き場に入れる | SEC-NEWS-017 書き込む画像は中身で種類を確かめ、保存の名前を送られた名前から作らない | SEC-NEWS-017-AC-02 直す時の保存の名前は確かめた種類の拡張子になる | （なし） |
-| THR-NEWS-016 中身や名前を偽った画像を置き場に入れる | SEC-NEWS-017 書き込む画像は中身で種類を確かめ、保存の名前を送られた名前から作らない | SEC-NEWS-017-AC-03 5MB を超える画像を断る | （なし） |
-| THR-NEWS-017 消した・差し替えた記事の画像が置き場に残る | SEC-NEWS-018 使わなくなった記事の画像を置き場から消す | SEC-NEWS-018-AC-01 記事を消すと画像も置き場から消える | （なし） |
-| THR-NEWS-017 消した・差し替えた記事の画像が置き場に残る | SEC-NEWS-018 使わなくなった記事の画像を置き場から消す | SEC-NEWS-018-AC-02 画像を差し替えると前の画像が置き場から消える | （なし） |
+| THR-NEWS-009 PostgREST・RPC を直接叩いて、アプリの制限を迂回する | SEC-NEWS-010 anon が PostgREST・RPC を直接叩いた時も件数に上限がある | SEC-NEWS-010-AC-01 anon の search_news は大きな件数を求めても上限で止まる | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:409` |
+| THR-NEWS-009 PostgREST・RPC を直接叩いて、アプリの制限を迂回する | SEC-NEWS-010 anon が PostgREST・RPC を直接叩いた時も件数に上限がある | SEC-NEWS-010-AC-02 anon は search_public_news を呼べない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:433` |
+| THR-NEWS-010 回数の制限の送り元を偽って制限を逃れる | SEC-NEWS-011 回数の制限の送り元は、利用者が偽れない値から取る | SEC-NEWS-011-AC-01 x-forwarded-for を変えても61回目を断る | `e2e/FR-NEWS-SEC-003-http-hardening-and-rate-limit.spec.ts:218` |
+| THR-NEWS-011 入口で確かめない値が取り出しに渡る | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-01 /api/news は許可の一覧に無い分類を取り出しに渡さない | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:449` |
+| THR-NEWS-011 入口で確かめない値が取り出しに渡る | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-02 数でない記事の id は 404 になる | `e2e/FR-NEWS-DETAIL-009-detail-edge-cases-and-body-safety.spec.ts:169` |
+| THR-NEWS-011 入口で確かめない値が取り出しに渡る | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-03 編集のページは数でない id で窓口へ要求を送らない | `e2e/FR-NEWS-ADMIN-001-admin-news-screens.spec.ts:484` |
+| THR-NEWS-012 本文に仕込んだスクリプトが閲覧者の端末で動く | SEC-NEWS-013 記事の文字は HTML として解釈させない | SEC-NEWS-013-AC-01 本文の HTML の印は文字として出る | `e2e/FR-NEWS-DETAIL-009-detail-edge-cases-and-body-safety.spec.ts:174` |
+| THR-NEWS-012 本文に仕込んだスクリプトが閲覧者の端末で動く | SEC-NEWS-013 記事の文字は HTML として解釈させない | SEC-NEWS-013-AC-02 Markdown の javascript: のリンクは href にならない | `e2e/FR-NEWS-DETAIL-009-detail-edge-cases-and-body-safety.spec.ts:197` |
+| THR-NEWS-013 管理の操作を他のサイトから送らせる | SEC-NEWS-014 管理の書き換えを他のサイトから送らせない | SEC-NEWS-014-AC-01 別のサイトの Origin の書き換えを断る | `e2e/FR-NEWS-SEC-004-admin-api-access-control.spec.ts:63` |
+| THR-NEWS-013 管理の操作を他のサイトから送らせる | SEC-NEWS-014 管理の書き換えを他のサイトから送らせない | SEC-NEWS-014-AC-02 Origin も Referer も無い削除を断る | `e2e/FR-NEWS-SEC-004-admin-api-access-control.spec.ts:92` |
+| THR-NEWS-014 権限の無い人が管理の操作をする | SEC-NEWS-015 管理の窓口は有効な session・権限・2要素認証の全部を求める | SEC-NEWS-015-AC-01 権限の無い利用者は管理の一覧を読めない | `e2e/FR-NEWS-SEC-004-admin-api-access-control.spec.ts:112` |
+| THR-NEWS-014 権限の無い人が管理の操作をする | SEC-NEWS-015 管理の窓口は有効な session・権限・2要素認証の全部を求める | SEC-NEWS-015-AC-02 aal1 の session は管理の窓口で断られる | `e2e/FR-NEWS-SEC-004-admin-api-access-control.spec.ts:139` |
+| THR-NEWS-014 権限の無い人が管理の操作をする | SEC-NEWS-015 管理の窓口は有効な session・権限・2要素認証の全部を求める | SEC-NEWS-015-AC-03 読むだけの権限では記事を変えられない | `e2e/FR-NEWS-SEC-004-admin-api-access-control.spec.ts:170` |
+| THR-NEWS-015 管理の操作の跡が残らず、不正や誤りを追えない | SEC-NEWS-016 管理の書き換えを正しく監査の記録に残す | SEC-NEWS-016-AC-01 記事を作ると監査の記録が1件残る | `e2e/FR-NEWS-SEC-005-admin-write-aal2.spec.ts:251` |
+| THR-NEWS-015 管理の操作の跡が残らず、不正や誤りを追えない | SEC-NEWS-016 管理の書き換えを正しく監査の記録に残す | SEC-NEWS-016-AC-02 存在しない記事への書き換えは 404 で成功と記録しない | `e2e/FR-NEWS-SEC-005-admin-write-aal2.spec.ts:270` |
+| THR-NEWS-016 中身や名前を偽った画像を置き場に入れる | SEC-NEWS-017 書き込む画像は中身で種類を確かめ、保存の名前を送られた名前から作らない | SEC-NEWS-017-AC-01 画像と偽った HTML を断る | `e2e/FR-NEWS-SEC-005-admin-write-aal2.spec.ts:285` |
+| THR-NEWS-016 中身や名前を偽った画像を置き場に入れる | SEC-NEWS-017 書き込む画像は中身で種類を確かめ、保存の名前を送られた名前から作らない | SEC-NEWS-017-AC-02 直す時の保存の名前は確かめた種類の拡張子になる | `e2e/FR-NEWS-SEC-005-admin-write-aal2.spec.ts:304` |
+| THR-NEWS-016 中身や名前を偽った画像を置き場に入れる | SEC-NEWS-017 書き込む画像は中身で種類を確かめ、保存の名前を送られた名前から作らない | SEC-NEWS-017-AC-03 5MB を超える画像を断る | `e2e/FR-NEWS-SEC-005-admin-write-aal2.spec.ts:321` |
+| THR-NEWS-017 消した・差し替えた記事の画像が置き場に残る | SEC-NEWS-018 使わなくなった記事の画像を置き場から消す | SEC-NEWS-018-AC-01 記事を消すと画像も置き場から消える | `e2e/FR-NEWS-SEC-005-admin-write-aal2.spec.ts:338` |
+| THR-NEWS-017 消した・差し替えた記事の画像が置き場に残る | SEC-NEWS-018 使わなくなった記事の画像を置き場から消す | SEC-NEWS-018-AC-02 画像を差し替えると前の画像が置き場から消える | `e2e/FR-NEWS-SEC-005-admin-write-aal2.spec.ts:353` |
 | THR-NEWS-017 消した・差し替えた記事の画像が置き場に残る | SEC-NEWS-018 使わなくなった記事の画像を置き場から消す | SEC-NEWS-018-AC-03 作成の失敗で上げた画像が残らない | （なし） |
 | THR-NEWS-018 記録や応答から内部の情報が漏れる | SEC-NEWS-019 記録と応答に内部の情報を出さない | SEC-NEWS-019-AC-01 /api/news の失敗の応答は固定の文だけ | （なし） |
 | THR-NEWS-018 記録や応答から内部の情報が漏れる | SEC-NEWS-019 記録と応答に内部の情報を出さない | SEC-NEWS-019-AC-02 失敗の記録に鍵と token が含まれない | （なし） |
-| THR-NEWS-019 取り出しの失敗が「0件」「無い」に見えて気づけない | SEC-NEWS-020 取り出しの失敗を「0件」「無い」と区別する | SEC-NEWS-020-AC-01 管理の一覧の取得の失敗を0件と別に表示する | （なし） |
+| THR-NEWS-019 取り出しの失敗が「0件」「無い」に見えて気づけない | SEC-NEWS-020 取り出しの失敗を「0件」「無い」と区別する | SEC-NEWS-020-AC-01 管理の一覧の取得の失敗を0件と別に表示する | `e2e/FR-NEWS-ADMIN-001-admin-news-screens.spec.ts:471` |
 | THR-NEWS-019 取り出しの失敗が「0件」「無い」に見えて気づけない | SEC-NEWS-020 取り出しの失敗を「0件」「無い」と区別する | SEC-NEWS-020-AC-02 管理の1件の取得は DB の失敗を 404 にしない | （なし） |
 | THR-NEWS-019 取り出しの失敗が「0件」「無い」に見えて気づけない | SEC-NEWS-020 取り出しの失敗を「0件」「無い」と区別する | SEC-NEWS-020-AC-03 公開の一覧の取り出しの失敗が記録に残る | （なし） |
 | THR-NEWS-020 管理の窓口を回数の制限なしで叩かれる | SEC-NEWS-021 管理の窓口に回数の制限を付ける | SEC-NEWS-021-AC-01 決めた回数を超えた作成を断る | （なし） |
-| THR-NEWS-021 anon・authenticated に要らない表の権限を付けている | SEC-NEWS-022 anon・authenticated には使う表の権限だけを付ける | SEC-NEWS-022-AC-01 anon は news_articles を空にも書き換えもできない | （なし） |
-| THR-NEWS-022 画像の最適化の中継を、別の Supabase のプロジェクトに使われる | SEC-NEWS-023 画像の最適化の中継は自分のプロジェクトの画像だけを通す | SEC-NEWS-023-AC-01 別のプロジェクトの画像を最適化に通さない | （なし） |
-| THR-NEWS-023 守りの見出しが無く、枠の中への埋め込み・種類の取り違え・平文の通信を許す | SEC-NEWS-024 全部の応答に守りの見出しを付ける | SEC-NEWS-024-AC-01 NEWS の頁と API に守りの見出しが付く | （なし） |
-| THR-NEWS-024 編集のページの道筋を書き換えて、管理者の要求を別の窓口へ送らせる | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-01 /api/news は許可の一覧に無い分類を取り出しに渡さない | （なし） |
-| THR-NEWS-024 編集のページの道筋を書き換えて、管理者の要求を別の窓口へ送らせる | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-02 数でない記事の id は 404 になる | （なし） |
-| THR-NEWS-024 編集のページの道筋を書き換えて、管理者の要求を別の窓口へ送らせる | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-03 編集のページは数でない id で窓口へ要求を送らない | （なし） |
-| THR-NEWS-025 DB の段に入力の制約が無く、直接の書き込みが窓口の確かめを飛ばす | SEC-NEWS-025 表の段で記事の長さと画像の道の形を確かめる | SEC-NEWS-025-AC-01 長すぎる題と置き場の外の道を表が断る | （なし） |
-| SR-HOME-001 訪問者がホームの最初の画面でブランドの世界観を感じ、ブランドの考えへ進める | FR-HOME-001 ヒーローにブランドの世界観を伝える大きな画像を全画面で出す | FR-HOME-001-AC-01 3つの幅で最初の画面いっぱいにヒーローの画像が出て、ブランド名の h1 が重なる | （なし） |
-| SR-HOME-001 訪問者がホームの最初の画面でブランドの世界観を感じ、ブランドの考えへ進める | FR-HOME-003 ABOUT の区画から /about へ進める | FR-HOME-003-AC-01 ABOUT の区画のリンクから /about が開く | （なし） |
-| SR-HOME-002 訪問者がホームから ITEM・LOOK・NEWS・取扱店の新しい物を見て、それぞれの一覧へ進める | FR-HOME-002 ITEM・LOOK・NEWS・ABOUT の4つの区画をスクロールで並べる | FR-HOME-002-AC-01 3つの幅で ITEMS・LOOK・NEWS・ABOUT の区画が出る | （なし） |
-| SR-HOME-002 訪問者がホームから ITEM・LOOK・NEWS・取扱店の新しい物を見て、それぞれの一覧へ進める | FR-HOME-004 ITEM・LOOK・NEWS の区画の末尾に一覧へのボタンを置く | FR-HOME-004-AC-01 ITEM・LOOK・NEWS の区画の末尾から各一覧へ移れる | （なし） |
-| SR-HOME-002 訪問者がホームから ITEM・LOOK・NEWS・取扱店の新しい物を見て、それぞれの一覧へ進める | FR-HOME-005 取扱店の区画をホームに置き、最大6件を出す | FR-HOME-005-AC-01 ホームの取扱店は6件以下 | （なし） |
-| SR-HOME-003 検索や共有の場で、ホームが正しいブランド名と説明で示される | FR-HOME-006 ホーム固有の title と description を付ける | FR-HOME-006-AC-01 ホームの title と description がホーム用の文 | （なし） |
-| SR-HOME-004 ホームが携帯の回線でも速く、外のサービスが止まっても崩れずに出る | FR-HOME-007 ヒーロー画像を先に読み込み、LCP を小さくする | FR-HOME-007-AC-01 ヒーロー画像の先読みがあり、遅延読み込みでない | （なし） |
-| SR-HOME-004 ホームが携帯の回線でも速く、外のサービスが止まっても崩れずに出る | FR-HOME-008 ABOUT の画像を手元の画像にし、外の住所に頼らない | FR-HOME-008-AC-01 ABOUT の画像が手元の画像から読まれる | （なし） |
-| SR-HOME-004 ホームが携帯の回線でも速く、外のサービスが止まっても崩れずに出る | NFR-HOME-001 ホームの初回の表示を2秒以内にする | NFR-HOME-001-AC-01 携帯の 3G 相当の回線でホームの読み込みが2秒以内に終わる | （なし） |
-| SR-HOME-005 読み上げを使う人・色を見分けにくい人もホームを読める | FR-HOME-009 h1 を1つにし、区画の見出しを h2 にする | FR-HOME-009-AC-01 h1 がちょうど1つで、5つの区画の見出しが h2 | （なし） |
-| SR-HOME-005 読み上げを使う人・色を見分けにくい人もホームを読める | NFR-HOME-002 ホームの色のコントラストを WCAG 2.1 AA にする | NFR-HOME-002-AC-01 ヒーローと ABOUT の字のコントラスト比が AA の基準を満たす | （なし） |
-| FREQ-147 ホームの ITEM は決まった件数を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-147-REQ-01 ITEM を10件取り、11件目より後は描かない | FREQ-147-AC-02 1280px で ITEM が最大10件出る | （なし） |
-| FREQ-147 ホームの ITEM は決まった件数を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-147-REQ-02 描いたカードを CSS で幅ごとに出し分ける | FREQ-147-AC-01 390・768px で ITEM が最大6件出る | （なし） |
-| FREQ-147 ホームの ITEM は決まった件数を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-147-REQ-02 描いたカードを CSS で幅ごとに出し分ける | FREQ-147-AC-02 1280px で ITEM が最大10件出る | （なし） |
-| FREQ-147 ホームの ITEM は決まった件数を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-147-REQ-03 公開の総数を取り、その幅の表示数より多い時だけ VIEW ALL を出す | FREQ-147-AC-03 総数が表示数以下の幅では ITEM の VIEW ALL が無く、多ければある | （なし） |
-| FREQ-148 ホームの LOOK は8件を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-148-REQ-01 LOOK を8件取り、9件目より後は描かない | FREQ-148-AC-02 1280px で LOOK が最大8件出る | （なし） |
-| FREQ-148 ホームの LOOK は8件を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-148-REQ-02 描いたカードを CSS で幅ごとに出し分ける | FREQ-148-AC-01 390・768px で LOOK が最大6件出る | （なし） |
-| FREQ-148 ホームの LOOK は8件を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-148-REQ-02 描いたカードを CSS で幅ごとに出し分ける | FREQ-148-AC-02 1280px で LOOK が最大8件出る | （なし） |
-| FREQ-148 ホームの LOOK は8件を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-148-REQ-03 公開の総数を取り、その幅の表示数より多い時だけ VIEW ALL を出す | FREQ-148-AC-03 総数が表示数以下の幅では LOOK の VIEW ALL が無く、多ければある | （なし） |
-| FREQ-278 ホームのヒーローに動きを付ける | FREQ-278-REQ-01 ブランド名を TextReveal で1文字ずつ左から出す | FREQ-278-AC-01 3つの幅で h1 が1文字1つの span に分かれ、動きの後は全部見える | （なし） |
+| THR-NEWS-021 anon・authenticated に要らない表の権限を付けている | SEC-NEWS-022 anon・authenticated には使う表の権限だけを付ける | SEC-NEWS-022-AC-01 anon は news_articles を空にも書き換えもできない | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:483` |
+| THR-NEWS-022 画像の最適化の中継を、別の Supabase のプロジェクトに使われる | SEC-NEWS-023 画像の最適化の中継は自分のプロジェクトの画像だけを通す | SEC-NEWS-023-AC-01 別のプロジェクトの画像を最適化に通さない | `e2e/FR-NEWS-SEC-003-http-hardening-and-rate-limit.spec.ts:145` |
+| THR-NEWS-023 守りの見出しが無く、枠の中への埋め込み・種類の取り違え・平文の通信を許す | SEC-NEWS-024 全部の応答に守りの見出しを付ける | SEC-NEWS-024-AC-01 NEWS の頁と API に守りの見出しが付く | `e2e/FR-NEWS-SEC-003-http-hardening-and-rate-limit.spec.ts:155` |
+| THR-NEWS-024 編集のページの道筋を書き換えて、管理者の要求を別の窓口へ送らせる | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-01 /api/news は許可の一覧に無い分類を取り出しに渡さない | `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts:449` |
+| THR-NEWS-024 編集のページの道筋を書き換えて、管理者の要求を別の窓口へ送らせる | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-02 数でない記事の id は 404 になる | `e2e/FR-NEWS-DETAIL-009-detail-edge-cases-and-body-safety.spec.ts:169` |
+| THR-NEWS-024 編集のページの道筋を書き換えて、管理者の要求を別の窓口へ送らせる | SEC-NEWS-012 入口の値を許可の一覧と型で確かめる | SEC-NEWS-012-AC-03 編集のページは数でない id で窓口へ要求を送らない | `e2e/FR-NEWS-ADMIN-001-admin-news-screens.spec.ts:484` |
+| THR-NEWS-025 DB の段に入力の制約が無く、直接の書き込みが窓口の確かめを飛ばす | SEC-NEWS-025 表の段で記事の長さと画像の道の形を確かめる | SEC-NEWS-025-AC-01 長すぎる題と置き場の外の道を表が断る | `e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts:448` |
+| SR-HOME-001 訪問者がホームの最初の画面でブランドの世界観を感じ、ブランドの考えへ進める | FR-HOME-001 ヒーローにブランドの世界観を伝える大きな画像を全画面で出す | FR-HOME-001-AC-01 3つの幅で最初の画面いっぱいにヒーローの画像が出て、ブランド名の h1 が重なる | `e2e/FR-HOME-001-hero-banner.spec.ts:11` |
+| SR-HOME-001 訪問者がホームの最初の画面でブランドの世界観を感じ、ブランドの考えへ進める | FR-HOME-003 ABOUT の区画から /about へ進める | FR-HOME-003-AC-01 ABOUT の区画のリンクから /about が開く | `e2e/FR-HOME-021-home-grid-limits-and-links.spec.ts:128` |
+| SR-HOME-002 訪問者がホームから ITEM・LOOK・NEWS・取扱店の新しい物を見て、それぞれの一覧へ進める | FR-HOME-002 ITEM・LOOK・NEWS・ABOUT の4つの区画をスクロールで並べる | FR-HOME-002-AC-01 3つの幅で ITEMS・LOOK・NEWS・ABOUT の区画が出る | `e2e/FR-HOME-002-home-sections.spec.ts:16` |
+| SR-HOME-002 訪問者がホームから ITEM・LOOK・NEWS・取扱店の新しい物を見て、それぞれの一覧へ進める | FR-HOME-004 ITEM・LOOK・NEWS の区画の末尾に一覧へのボタンを置く | FR-HOME-004-AC-01 ITEM・LOOK・NEWS の区画の末尾から各一覧へ移れる | `e2e/FR-HOME-004-view-all-buttons.spec.ts:23` |
+| SR-HOME-002 訪問者がホームから ITEM・LOOK・NEWS・取扱店の新しい物を見て、それぞれの一覧へ進める | FR-HOME-005 取扱店の区画をホームに置き、最大6件を出す | FR-HOME-005-AC-01 ホームの取扱店は6件以下 | `e2e/FR-HOME-005-stockist-home.spec.ts:8` |
+| SR-HOME-003 検索や共有の場で、ホームが正しいブランド名と説明で示される | FR-HOME-006 ホーム固有の title と description を付ける | FR-HOME-006-AC-01 ホームの title と description がホーム用の文 | `e2e/FR-HOME-006-007-011-home-quality.spec.ts:4`<br>`e2e/FR-HOME-006-home-metadata.spec.ts:4` |
+| SR-HOME-004 ホームが携帯の回線でも速く、外のサービスが止まっても崩れずに出る | FR-HOME-007 ヒーロー画像を先に読み込み、LCP を小さくする | FR-HOME-007-AC-01 ヒーロー画像の先読みがあり、遅延読み込みでない | `e2e/FR-HOME-007-hero-priority.spec.ts:4` |
+| SR-HOME-004 ホームが携帯の回線でも速く、外のサービスが止まっても崩れずに出る | FR-HOME-008 ABOUT の画像を手元の画像にし、外の住所に頼らない | FR-HOME-008-AC-01 ABOUT の画像が手元の画像から読まれる | `e2e/FR-HOME-008-about-image.spec.ts:4` |
+| SR-HOME-004 ホームが携帯の回線でも速く、外のサービスが止まっても崩れずに出る | NFR-HOME-001 ホームの初回の表示を2秒以内にする | NFR-HOME-001-AC-01 携帯の 3G 相当の回線でホームの読み込みが2秒以内に終わる | `e2e/NFR-HOME-001-home-performance.spec.ts:13` |
+| SR-HOME-005 読み上げを使う人・色を見分けにくい人もホームを読める | FR-HOME-009 h1 を1つにし、区画の見出しを h2 にする | FR-HOME-009-AC-01 h1 がちょうど1つで、5つの区画の見出しが h2 | `e2e/FR-HOME-009-heading-structure.spec.ts:4` |
+| SR-HOME-005 読み上げを使う人・色を見分けにくい人もホームを読める | NFR-HOME-002 ホームの色のコントラストを WCAG 2.1 AA にする | NFR-HOME-002-AC-01 ヒーローと ABOUT の字のコントラスト比が AA の基準を満たす | `e2e/NFR-HOME-002-wcag-accessibility.spec.ts:165`<br>`e2e/NFR-HOME-002-wcag-accessibility.spec.ts:181`<br>`e2e/NFR-HOME-002-wcag-accessibility.spec.ts:195` |
+| FREQ-147 ホームの ITEM は決まった件数を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-147-REQ-01 ITEM を10件取り、11件目より後は描かない | FREQ-147-AC-02 1280px で ITEM が最大10件出る | `e2e/FR-HOME-021-home-grid-limits-and-links.spec.ts:48` |
+| FREQ-147 ホームの ITEM は決まった件数を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-147-REQ-02 描いたカードを CSS で幅ごとに出し分ける | FREQ-147-AC-01 390・768px で ITEM が最大6件出る | `e2e/FR-HOME-013-section-display-limits.spec.ts:83` |
+| FREQ-147 ホームの ITEM は決まった件数を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-147-REQ-02 描いたカードを CSS で幅ごとに出し分ける | FREQ-147-AC-02 1280px で ITEM が最大10件出る | `e2e/FR-HOME-021-home-grid-limits-and-links.spec.ts:48` |
+| FREQ-147 ホームの ITEM は決まった件数を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-147-REQ-03 公開の総数を取り、その幅の表示数より多い時だけ VIEW ALL を出す | FREQ-147-AC-03 総数が表示数以下の幅では ITEM の VIEW ALL が無く、多ければある | `e2e/FR-HOME-021-home-grid-limits-and-links.spec.ts:113` |
+| FREQ-148 ホームの LOOK は8件を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-148-REQ-01 LOOK を8件取り、9件目より後は描かない | FREQ-148-AC-02 1280px で LOOK が最大8件出る | `e2e/FR-HOME-021-home-grid-limits-and-links.spec.ts:70` |
+| FREQ-148 ホームの LOOK は8件を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-148-REQ-02 描いたカードを CSS で幅ごとに出し分ける | FREQ-148-AC-01 390・768px で LOOK が最大6件出る | `e2e/FR-HOME-021-home-grid-limits-and-links.spec.ts:59` |
+| FREQ-148 ホームの LOOK は8件を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-148-REQ-02 描いたカードを CSS で幅ごとに出し分ける | FREQ-148-AC-02 1280px で LOOK が最大8件出る | `e2e/FR-HOME-021-home-grid-limits-and-links.spec.ts:70` |
+| FREQ-148 ホームの LOOK は8件を取り、幅ごとの数だけ出し、続きがある時だけ VIEW ALL を出す | FREQ-148-REQ-03 公開の総数を取り、その幅の表示数より多い時だけ VIEW ALL を出す | FREQ-148-AC-03 総数が表示数以下の幅では LOOK の VIEW ALL が無く、多ければある | `e2e/FR-HOME-021-home-grid-limits-and-links.spec.ts:120` |
+| FREQ-278 ホームのヒーローに動きを付ける | FREQ-278-REQ-01 ブランド名を TextReveal で1文字ずつ左から出す | FREQ-278-AC-01 3つの幅で h1 が1文字1つの span に分かれ、動きの後は全部見える | `e2e/FR-HOME-018-hero-motion.spec.ts:15` |
 | FREQ-278 ホームのヒーローに動きを付ける | FREQ-278-REQ-02 SCROLL の下の縦線を threadDraw で上から下へ引く | FREQ-278-AC-02 3つの幅で縦線の動きの名前が threadDraw | （なし） |
-| FREQ-278 ホームのヒーローに動きを付ける | FREQ-278-REQ-03 ブランド名の字の大きさを 6xl にする | FREQ-278-AC-03 3つの幅で h1 の字の大きさが 6xl の算出値と同じ | （なし） |
-| FREQ-278 ホームのヒーローに動きを付ける | FREQ-278-REQ-04 1文字ずつの span を読み上げに出さず、見出しの名前を元の文字列にする | FREQ-278-AC-04 名前が「Le Fil des Heures」の見出しがちょうど1つ | （なし） |
-| FREQ-278 ホームのヒーローに動きを付ける | FREQ-278-REQ-05 動きを減らす設定ではヒーローの動きを止める | FREQ-278-AC-05 動きを減らす設定で文字は最初から見え、縦線は止まる | （なし） |
+| FREQ-278 ホームのヒーローに動きを付ける | FREQ-278-REQ-03 ブランド名の字の大きさを 6xl にする | FREQ-278-AC-03 3つの幅で h1 の字の大きさが 6xl の算出値と同じ | `e2e/FR-HOME-018-hero-motion.spec.ts:39` |
+| FREQ-278 ホームのヒーローに動きを付ける | FREQ-278-REQ-04 1文字ずつの span を読み上げに出さず、見出しの名前を元の文字列にする | FREQ-278-AC-04 名前が「Le Fil des Heures」の見出しがちょうど1つ | `e2e/FR-HOME-018-hero-motion.spec.ts:67` |
+| FREQ-278 ホームのヒーローに動きを付ける | FREQ-278-REQ-05 動きを減らす設定ではヒーローの動きを止める | FREQ-278-AC-05 動きを減らす設定で文字は最初から見え、縦線は止まる | `e2e/FR-HOME-018-hero-motion.spec.ts:81` |
 | FREQ-278 ホームのヒーローに動きを付ける | FREQ-278-REQ-06 縦線は1回だけ再生する | FREQ-278-AC-06 3つの幅で縦線は1回だけ再生し、終わりの形を保つ | （なし） |
-| FREQ-280 本番の CSP で React の style 属性を落とさず、CSS からの情報の盗み出しは塞いだままにする | FREQ-280-REQ-01 style-src に 'unsafe-inline' を常に含める | FREQ-280-AC-01 本番ビルドのホームで、style 属性で当てた価格の字の大きさが崩れない | （なし） |
-| FREQ-280 本番の CSP で React の style 属性を落とさず、CSS からの情報の盗み出しは塞いだままにする | FREQ-280-REQ-02 style-src-elem を分け、style 要素・link 要素は 'self' のまま締める | FREQ-280-AC-02 本番の応答の CSP に style-src-elem があり、'unsafe-inline' を含まない | （なし） |
-| FREQ-282 ヒーローの縦線は上から下へ伸びる動きだけを繰り返し、消える瞬間を作らない | FREQ-282-REQ-01 縦線を上端から伸ばす heroThreadLoop を無限に当てる | FREQ-282-AC-01 縦線が上端から無限に伸び、途中で消えない | （なし） |
-| FREQ-282 ヒーローの縦線は上から下へ伸びる動きだけを繰り返し、消える瞬間を作らない | FREQ-282-REQ-02 動きを減らす設定では縦線を動かさない | FREQ-282-AC-02 動きを減らす設定で縦線の動きが無い | （なし） |
-| FREQ-283 ヒーローの SCROLL の文字と縦線を暗い写真の上でもはっきり読めるようにする | FREQ-283-REQ-01 SCROLL の字と縦線を白 90% にする | FREQ-283-AC-01 SCROLL の字の色と縦線の色が白の 90% | （なし） |
-| THR-HOME-001 下書きの商品・LOOK・NEWS・取扱店がホームの集め口から漏れる | SEC-HOME-001 ホームは公開済みの商品・LOOK・NEWS・取扱店だけを出す | SEC-HOME-001-AC-01 未ログインのホームに下書きの物が出ない | （なし） |
-| THR-HOME-001 下書きの商品・LOOK・NEWS・取扱店がホームの集め口から漏れる | SEC-HOME-001 ホームは公開済みの商品・LOOK・NEWS・取扱店だけを出す | SEC-HOME-001-AC-02 下書きを読める管理者のホームにも下書きの物が出ない | （なし） |
-| THR-HOME-002 ホームの公開の読みが、閲覧者の session の権限で動く | SEC-HOME-002 ホームの公開の読みは、閲覧者の session を引き継がない公開の client で行う | SEC-HOME-002-AC-01 管理者でも未ログインでも、ホームの商品と取扱店の中身が同じ | （なし） |
-| THR-HOME-003 管理の権限を持つ人の2要素認証の済んでいない session で、ホームに出る商品の表を直接触る | SEC-HOME-003 ホームに出る商品の表で管理の権限を使う操作は、DB でも2要素認証の済みを求める | SEC-HOME-003-AC-01 aal1 の session では下書きの商品を直接読めない | （なし） |
-| THR-HOME-003 管理の権限を持つ人の2要素認証の済んでいない session で、ホームに出る商品の表を直接触る | SEC-HOME-003 ホームに出る商品の表で管理の権限を使う操作は、DB でも2要素認証の済みを求める | SEC-HOME-003-AC-02 aal1 の session ではホームに出る商品の行を直接書き換え・消去できない | （なし） |
-| THR-HOME-004 anon の鍵で、公開済みの商品の原価と内部の注記を直接読む | SEC-HOME-004 anon と一般会員が直接読める商品の列は、公開の画面で出す列だけにする | SEC-HOME-004-AC-01 anon の鍵で商品の原価と注記を読めない | （なし） |
-| THR-HOME-004 anon の鍵で、公開済みの商品の原価と内部の注記を直接読む | SEC-HOME-004 anon と一般会員が直接読める商品の列は、公開の画面で出す列だけにする | SEC-HOME-004-AC-02 列を絞ってもホームの商品の節が出る | （なし） |
-| THR-HOME-005 ホームに出る商品の表に、anon・authenticated へ要らない権限まで付いている | SEC-HOME-005 ホームに出る商品の表の anon・authenticated の権限は、使う物だけにする | SEC-HOME-005-AC-01 anon の鍵でホームに出る商品の行を書き換え・消去できない | （なし） |
-| THR-HOME-006 service role の読みと署名で、RLS を通らずに非公開の物に届く | SEC-HOME-006 service role で読む・署名するのは、公開済みの商品の物だけにする | SEC-HOME-006-AC-01 下書きの商品の在庫がホームの応答に出ない | （なし） |
-| THR-HOME-006 service role の読みと署名で、RLS を通らずに非公開の物に届く | SEC-HOME-006 service role で読む・署名するのは、公開済みの商品の物だけにする | SEC-HOME-006-AC-02 置き場の道筋でない画像の住所はホームに出ない | （なし） |
-| THR-HOME-007 ホームに出した商品の画像の署名つき URL が7日開ける | SEC-HOME-007 ホームに出す商品の画像の署名は、短い期限にする | SEC-HOME-007-AC-01 ホームの商品の画像の署名の期限が1時間以下 | （なし） |
-| THR-HOME-008 ホームの描画にスクリプトや style を差し込まれる | SEC-HOME-008 ホームは生の HTML を描かず、CSP で差し込みを止める | SEC-HOME-008-AC-01 商品名に仕込んだスクリプトがホームで動かない | （なし） |
-| THR-HOME-008 ホームの描画にスクリプトや style を差し込まれる | SEC-HOME-008 ホームは生の HTML を描かず、CSP で差し込みを止める | SEC-HOME-008-AC-02 ホームの応答の CSP が script に nonce を求める | （なし） |
-| THR-HOME-009 使わない CDN と広い接続先の許可を、乗っ取りや持ち出しに使われる | SEC-HOME-009 CSP の外の許可は、使う物だけにする | SEC-HOME-009-AC-01 ホームの応答の CSP に使わない CDN が無い | （なし） |
-| THR-HOME-009 使わない CDN と広い接続先の許可を、乗っ取りや持ち出しに使われる | SEC-HOME-009 CSP の外の許可は、使う物だけにする | SEC-HOME-009-AC-02 CDN の許可を外してもホームの見た目と動きが崩れない | （なし） |
-| THR-HOME-010 ホームを枠に埋め込まれ、平文に落とされ、種類を取り違えさせられる | SEC-HOME-010 ホームの応答に守りの見出しを付ける | SEC-HOME-010-AC-01 ホームの応答に守りの見出しがある | （なし） |
-| THR-HOME-010 ホームを枠に埋め込まれ、平文に落とされ、種類を取り違えさせられる | SEC-HOME-010 ホームの応答に守りの見出しを付ける | SEC-HOME-010-AC-02 ほかのサイトの枠の中にホームが表示されない | （なし） |
-| THR-HOME-013 ホームを大量に開かれ、1回ごとの DB と署名の呼び出しで止まる | SEC-HOME-013 ホームの1回の表示の呼び出しを抑え、大量の表示で止まらないようにする | SEC-HOME-013-AC-01 ホームは描く件数だけ商品を取る | （なし） |
+| FREQ-280 本番の CSP で React の style 属性を落とさず、CSS からの情報の盗み出しは塞いだままにする | FREQ-280-REQ-01 style-src に 'unsafe-inline' を常に含める | FREQ-280-AC-01 本番ビルドのホームで、style 属性で当てた価格の字の大きさが崩れない | `e2e/FR-HOME-021-home-grid-limits-and-links.spec.ts:140` |
+| FREQ-280 本番の CSP で React の style 属性を落とさず、CSS からの情報の盗み出しは塞いだままにする | FREQ-280-REQ-02 style-src-elem を分け、style 要素・link 要素は 'self' のまま締める | FREQ-280-AC-02 本番の応答の CSP に style-src-elem があり、'unsafe-inline' を含まない | `e2e/FR-HOME-018-hero-motion.spec.ts:98` |
+| FREQ-282 ヒーローの縦線は上から下へ伸びる動きだけを繰り返し、消える瞬間を作らない | FREQ-282-REQ-01 縦線を上端から伸ばす heroThreadLoop を無限に当てる | FREQ-282-AC-01 縦線が上端から無限に伸び、途中で消えない | `e2e/FR-HOME-019-hero-thread-loop.spec.ts:14` |
+| FREQ-282 ヒーローの縦線は上から下へ伸びる動きだけを繰り返し、消える瞬間を作らない | FREQ-282-REQ-02 動きを減らす設定では縦線を動かさない | FREQ-282-AC-02 動きを減らす設定で縦線の動きが無い | `e2e/FR-HOME-019-hero-thread-loop.spec.ts:66` |
+| FREQ-283 ヒーローの SCROLL の文字と縦線を暗い写真の上でもはっきり読めるようにする | FREQ-283-REQ-01 SCROLL の字と縦線を白 90% にする | FREQ-283-AC-01 SCROLL の字の色と縦線の色が白の 90% | `e2e/FR-HOME-020-hero-scroll-color.spec.ts:13` |
+| THR-HOME-001 下書きの商品・LOOK・NEWS・取扱店がホームの集め口から漏れる | SEC-HOME-001 ホームは公開済みの商品・LOOK・NEWS・取扱店だけを出す | SEC-HOME-001-AC-01 未ログインのホームに下書きの物が出ない | `e2e/FR-HOME-023-home-published-only-and-content.spec.ts:123` |
+| THR-HOME-001 下書きの商品・LOOK・NEWS・取扱店がホームの集め口から漏れる | SEC-HOME-001 ホームは公開済みの商品・LOOK・NEWS・取扱店だけを出す | SEC-HOME-001-AC-02 下書きを読める管理者のホームにも下書きの物が出ない | `e2e/FR-HOME-023-home-published-only-and-content.spec.ts:132` |
+| THR-HOME-002 ホームの公開の読みが、閲覧者の session の権限で動く | SEC-HOME-002 ホームの公開の読みは、閲覧者の session を引き継がない公開の client で行う | SEC-HOME-002-AC-01 管理者でも未ログインでも、ホームの商品と取扱店の中身が同じ | `e2e/FR-HOME-023-home-published-only-and-content.spec.ts:149` |
+| THR-HOME-003 管理の権限を持つ人の2要素認証の済んでいない session で、ホームに出る商品の表を直接触る | SEC-HOME-003 ホームに出る商品の表で管理の権限を使う操作は、DB でも2要素認証の済みを求める | SEC-HOME-003-AC-01 aal1 の session では下書きの商品を直接読めない | `e2e/FR-HOME-024-home-table-grants.spec.ts:95` |
+| THR-HOME-003 管理の権限を持つ人の2要素認証の済んでいない session で、ホームに出る商品の表を直接触る | SEC-HOME-003 ホームに出る商品の表で管理の権限を使う操作は、DB でも2要素認証の済みを求める | SEC-HOME-003-AC-02 aal1 の session ではホームに出る商品の行を直接書き換え・消去できない | `e2e/FR-HOME-024-home-table-grants.spec.ts:133` |
+| THR-HOME-004 anon の鍵で、公開済みの商品の原価と内部の注記を直接読む | SEC-HOME-004 anon と一般会員が直接読める商品の列は、公開の画面で出す列だけにする | SEC-HOME-004-AC-01 anon の鍵で商品の原価と注記を読めない | `e2e/FR-HOME-024-home-table-grants.spec.ts:184` |
+| THR-HOME-004 anon の鍵で、公開済みの商品の原価と内部の注記を直接読む | SEC-HOME-004 anon と一般会員が直接読める商品の列は、公開の画面で出す列だけにする | SEC-HOME-004-AC-02 列を絞ってもホームの商品の節が出る | `e2e/FR-HOME-023-home-published-only-and-content.spec.ts:178` |
+| THR-HOME-005 ホームに出る商品の表に、anon・authenticated へ要らない権限まで付いている | SEC-HOME-005 ホームに出る商品の表の anon・authenticated の権限は、使う物だけにする | SEC-HOME-005-AC-01 anon の鍵でホームに出る商品の行を書き換え・消去できない | `e2e/FR-HOME-024-home-table-grants.spec.ts:291`<br>`e2e/FR-HOME-024-home-table-grants.spec.ts:296` |
+| THR-HOME-006 service role の読みと署名で、RLS を通らずに非公開の物に届く | SEC-HOME-006 service role で読む・署名するのは、公開済みの商品の物だけにする | SEC-HOME-006-AC-01 下書きの商品の在庫がホームの応答に出ない | `e2e/FR-HOME-023-home-published-only-and-content.spec.ts:187` |
+| THR-HOME-006 service role の読みと署名で、RLS を通らずに非公開の物に届く | SEC-HOME-006 service role で読む・署名するのは、公開済みの商品の物だけにする | SEC-HOME-006-AC-02 置き場の道筋でない画像の住所はホームに出ない | `e2e/FR-HOME-023-home-published-only-and-content.spec.ts:202` |
+| THR-HOME-007 ホームに出した商品の画像の署名つき URL が7日開ける | SEC-HOME-007 ホームに出す商品の画像の署名は、短い期限にする | SEC-HOME-007-AC-01 ホームの商品の画像の署名の期限が1時間以下 | `e2e/FR-HOME-023-home-published-only-and-content.spec.ts:224` |
+| THR-HOME-008 ホームの描画にスクリプトや style を差し込まれる | SEC-HOME-008 ホームは生の HTML を描かず、CSP で差し込みを止める | SEC-HOME-008-AC-01 商品名に仕込んだスクリプトがホームで動かない | `e2e/FR-HOME-023-home-published-only-and-content.spec.ts:254` |
+| THR-HOME-008 ホームの描画にスクリプトや style を差し込まれる | SEC-HOME-008 ホームは生の HTML を描かず、CSP で差し込みを止める | SEC-HOME-008-AC-02 ホームの応答の CSP が script に nonce を求める | `e2e/FR-HOME-022-home-response-hardening.spec.ts:82` |
+| THR-HOME-009 使わない CDN と広い接続先の許可を、乗っ取りや持ち出しに使われる | SEC-HOME-009 CSP の外の許可は、使う物だけにする | SEC-HOME-009-AC-01 ホームの応答の CSP に使わない CDN が無い | `e2e/FR-HOME-022-home-response-hardening.spec.ts:93` |
+| THR-HOME-009 使わない CDN と広い接続先の許可を、乗っ取りや持ち出しに使われる | SEC-HOME-009 CSP の外の許可は、使う物だけにする | SEC-HOME-009-AC-02 CDN の許可を外してもホームの見た目と動きが崩れない | `e2e/FR-HOME-022-home-response-hardening.spec.ts:138`<br>`e2e/FR-HOME-022-home-response-hardening.spec.ts:148` |
+| THR-HOME-010 ホームを枠に埋め込まれ、平文に落とされ、種類を取り違えさせられる | SEC-HOME-010 ホームの応答に守りの見出しを付ける | SEC-HOME-010-AC-01 ホームの応答に守りの見出しがある | `e2e/FR-HOME-022-home-response-hardening.spec.ts:105` |
+| THR-HOME-010 ホームを枠に埋め込まれ、平文に落とされ、種類を取り違えさせられる | SEC-HOME-010 ホームの応答に守りの見出しを付ける | SEC-HOME-010-AC-02 ほかのサイトの枠の中にホームが表示されない | `e2e/FR-HOME-022-home-response-hardening.spec.ts:175` |
+| THR-HOME-013 ホームを大量に開かれ、1回ごとの DB と署名の呼び出しで止まる | SEC-HOME-013 ホームの1回の表示の呼び出しを抑え、大量の表示で止まらないようにする | SEC-HOME-013-AC-01 ホームは描く件数だけ商品を取る | `e2e/FR-HOME-023-home-published-only-and-content.spec.ts:324`<br>`e2e/FR-HOME-023-home-published-only-and-content.spec.ts:332` |
 | THR-HOME-014 1つの取得の失敗でホームが落ちる、または黙って空になる | SEC-HOME-014 ホームは1つの取得の失敗で全体を落とさず、失敗を記録する | SEC-HOME-014-AC-01 1つの領域の取得が失敗してもホームのほかの節が出る | （なし） |
-| THR-HOME-015 失敗の記録に、DB の誤りの中身を丸ごと出す | SEC-HOME-015 失敗の記録に、DB の誤りの中身を丸ごと出さない | SEC-HOME-015-AC-01 検索の窓の失敗が端末の記録に中身を出さない | （なし） |
-| THR-HOME-016 ホームを開くだけで、認証とカートの窓口を呼び、要らない個人の情報まで受け取る | SEC-HOME-016 ホームを開くだけでは、要らない個人の情報を流さない | SEC-HOME-016-AC-01 ホームを開いた時の認証の状態の応答に、メールの住所が無い | （なし） |
-| THR-HOME-017 使わない外の画像の場所の許可を、最適化の中継に使われる | SEC-HOME-017 画像の最適化と CSP の画像の許可は、使う場所だけにする | SEC-HOME-017-AC-01 許していない場所の画像を最適化の中継に通せない | （なし） |
-| THR-HOME-017 使わない外の画像の場所の許可を、最適化の中継に使われる | SEC-HOME-017 画像の最適化と CSP の画像の許可は、使う場所だけにする | SEC-HOME-017-AC-02 許可を絞ってもホームの画像が出る | （なし） |
-| THR-HOME-018 OG の画像と頁の住所が、設定の誤りで別の場所を指す | SEC-HOME-018 ホームの OG と頁の住所は、本番のサイトの住所から作る | SEC-HOME-018-AC-01 ホームの OG の画像の住所がサイトの住所を指す | （なし） |
-| THR-HOME-020 誰でも使える方針と全部の権限で、原価の履歴の表を直接読み・書き換え・消される | SEC-HOME-020 原価の履歴の表 `item_cost_history` は、誰にも直接読み・書き・消させない | SEC-HOME-020-AC-01 anon の鍵と一般会員の JWT で原価の履歴を読み・書き・消せない | （なし） |
-| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-001 公開済みの LOOK をカードの格子で並べる | FR-LOOK-ALL-001-AC-01 一覧に公開済みの LOOK がカードの格子で並ぶ | （なし） |
-| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-001 公開済みの LOOK をカードの格子で並べる | FR-LOOK-ALL-001-AC-02 非公開の LOOK が一覧に出ない | （なし） |
-| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-002 カードにシーズン・テーマ・画像・関連商品名を出し、押すと詳細へ移る | FR-LOOK-ALL-002-AC-01 カードにシーズン・テーマ・画像・関連商品名が出る | （なし） |
-| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-002 カードにシーズン・テーマ・画像・関連商品名を出し、押すと詳細へ移る | FR-LOOK-ALL-002-AC-02 カードを押すとその LOOK の詳細が出る | （なし） |
-| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-003 公開の LOOK を全部カタログで出し、ページングか無限スクロールで6件以上を出す | FR-LOOK-ALL-003-AC-01 公開の LOOK が7件以上ある時に6件以上のカードが出る | （なし） |
-| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-004 ホームの LOOK の区画を一覧の部品の home の形で出し、一覧へ誘う | FR-LOOK-ALL-004-AC-01 ホームに LOOK の区画があり、LOOK のカードが出る | （なし） |
-| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-004 ホームの LOOK の区画を一覧の部品の home の形で出し、一覧へ誘う | FR-LOOK-ALL-004-AC-02 公開の LOOK が表示数より多い時、ホームの LOOK の区画から /look へ移れる | （なし） |
-| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-005 一覧の title と description を決めて出す | FR-LOOK-ALL-005-AC-01 一覧の title に LOOK を含み、description が空でない | （なし） |
-| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-006 シーズン（ALL・SS・AW）で絞り、PC は左のサイドバー、タブレット・モバイルは FILTER と引き出しに置く | FR-LOOK-ALL-006-AC-01 SS を選ぶと SS の LOOK だけが出る | （なし） |
-| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-006 シーズン（ALL・SS・AW）で絞り、PC は左のサイドバー、タブレット・モバイルは FILTER と引き出しに置く | FR-LOOK-ALL-006-AC-02 ALL を選ぶと全部の LOOK が出る | （なし） |
-| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-001 公開済みの LOOK の詳細にテーマ・シーズン・画像・説明文を出す | FR-LOOK-DETAIL-001-AC-01 詳細にテーマの h1・シーズン・画像・説明文が出る | （なし） |
-| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-001 公開済みの LOOK の詳細にテーマ・シーズン・画像・説明文を出す | FR-LOOK-DETAIL-001-AC-02 非公開の LOOK の詳細は中身を出さない | （なし） |
-| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-002 詳細に紐づけた商品（STYLING ITEMS）を並べ、各商品へのリンクを出す | FR-LOOK-DETAIL-002-AC-01 紐づけた商品の名前と価格が並ぶ | （なし） |
-| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-002 詳細に紐づけた商品（STYLING ITEMS）を並べ、各商品へのリンクを出す | FR-LOOK-DETAIL-002-AC-02 商品を押すとその商品の頁へ移る | （なし） |
-| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-003 前後の LOOK へのリンクを出し、続けて見られるようにする | FR-LOOK-DETAIL-003-AC-01 前後の LOOK へのリンクが出て、押すとその LOOK へ移る | （なし） |
-| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-003 前後の LOOK へのリンクを出し、続けて見られるようにする | FR-LOOK-DETAIL-003-AC-02 先頭の LOOK は前へ、末尾の LOOK は次へのリンクが無い | （なし） |
-| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-004 無い LOOK の ID では知らせの文と /look への戻りのリンクを出す | FR-LOOK-DETAIL-004-AC-01 無い ID の詳細に「Look not found」が出る | （なし） |
-| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-004 無い LOOK の ID では知らせの文と /look への戻りのリンクを出す | FR-LOOK-DETAIL-004-AC-02 無い ID の詳細に /look への戻りのリンクが出る | （なし） |
-| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-005 複数の画像をサムネイル付きのギャラリーかカルーセルで出す | FR-LOOK-DETAIL-005-AC-01 PC で複数の画像の LOOK にサムネイルが並び、選ぶとメインの画像が替わる | （なし） |
-| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-006 詳細の title・description を出し、前後のリンクに aria-label を付ける | FR-LOOK-DETAIL-006-AC-01 詳細の title にテーマを含み、description が空でない | （なし） |
-| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-006 詳細の title・description を出し、前後のリンクに aria-label を付ける | FR-LOOK-DETAIL-006-AC-02 前後のリンクに行き先のテーマを含む aria-label が付く | （なし） |
-| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-007 同じシーズン・関連のコーディネートを薦める節を足す（将来対応） | FR-LOOK-DETAIL-007-AC-01 詳細に同じシーズンか関連のコーディネートを薦める節が出る | （なし） |
-| FREQ-11 訪問者が商品を使ったコーディネートを見られる | FREQ-11-REQ-01 コーディネートを見る機能が動く | FREQ-11-AC-01 コーディネートを見る時にエラーが出ず関連コーディネートが出る | （なし） |
+| THR-HOME-015 失敗の記録に、DB の誤りの中身を丸ごと出す | SEC-HOME-015 失敗の記録に、DB の誤りの中身を丸ごと出さない | SEC-HOME-015-AC-01 検索の窓の失敗が端末の記録に中身を出さない | `e2e/FR-HOME-022-home-response-hardening.spec.ts:202`<br>`e2e/FR-HOME-022-home-response-hardening.spec.ts:207` |
+| THR-HOME-016 ホームを開くだけで、認証とカートの窓口を呼び、要らない個人の情報まで受け取る | SEC-HOME-016 ホームを開くだけでは、要らない個人の情報を流さない | SEC-HOME-016-AC-01 ホームを開いた時の認証の状態の応答に、メールの住所が無い | `e2e/FR-HOME-022-home-response-hardening.spec.ts:214` |
+| THR-HOME-017 使わない外の画像の場所の許可を、最適化の中継に使われる | SEC-HOME-017 画像の最適化と CSP の画像の許可は、使う場所だけにする | SEC-HOME-017-AC-01 許していない場所の画像を最適化の中継に通せない | `e2e/FR-HOME-022-home-response-hardening.spec.ts:117` |
+| THR-HOME-017 使わない外の画像の場所の許可を、最適化の中継に使われる | SEC-HOME-017 画像の最適化と CSP の画像の許可は、使う場所だけにする | SEC-HOME-017-AC-02 許可を絞ってもホームの画像が出る | `e2e/FR-HOME-022-home-response-hardening.spec.ts:235` |
+| THR-HOME-018 OG の画像と頁の住所が、設定の誤りで別の場所を指す | SEC-HOME-018 ホームの OG と頁の住所は、本番のサイトの住所から作る | SEC-HOME-018-AC-01 ホームの OG の画像の住所がサイトの住所を指す | `e2e/FR-HOME-022-home-response-hardening.spec.ts:257` |
+| THR-HOME-020 誰でも使える方針と全部の権限で、原価の履歴の表を直接読み・書き換え・消される | SEC-HOME-020 原価の履歴の表 `item_cost_history` は、誰にも直接読み・書き・消させない | SEC-HOME-020-AC-01 anon の鍵と一般会員の JWT で原価の履歴を読み・書き・消せない | `e2e/FR-HOME-024-home-table-grants.spec.ts:305` |
+| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-001 公開済みの LOOK をカードの格子で並べる | FR-LOOK-ALL-001-AC-01 一覧に公開済みの LOOK がカードの格子で並ぶ | `e2e/FR-LOOK-ALL-001-published-looks-grid.spec.ts:4` |
+| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-001 公開済みの LOOK をカードの格子で並べる | FR-LOOK-ALL-001-AC-02 非公開の LOOK が一覧に出ない | `e2e/FR-LOOK-ALL-044-list-behaviour-and-grid-remaining.spec.ts:119` |
+| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-002 カードにシーズン・テーマ・画像・関連商品名を出し、押すと詳細へ移る | FR-LOOK-ALL-002-AC-01 カードにシーズン・テーマ・画像・関連商品名が出る | `e2e/FR-LOOK-ALL-002-look-card-fields-and-navigation.spec.ts:4` |
+| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-002 カードにシーズン・テーマ・画像・関連商品名を出し、押すと詳細へ移る | FR-LOOK-ALL-002-AC-02 カードを押すとその LOOK の詳細が出る | `e2e/FR-LOOK-ALL-044-list-behaviour-and-grid-remaining.spec.ts:153` |
+| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-003 公開の LOOK を全部カタログで出し、ページングか無限スクロールで6件以上を出す | FR-LOOK-ALL-003-AC-01 公開の LOOK が7件以上ある時に6件以上のカードが出る | `e2e/FR-LOOK-ALL-003-look-list-render-capacity.spec.ts:4` |
+| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-004 ホームの LOOK の区画を一覧の部品の home の形で出し、一覧へ誘う | FR-LOOK-ALL-004-AC-01 ホームに LOOK の区画があり、LOOK のカードが出る | `e2e/FR-LOOK-ALL-004-home-look-section-and-cta.spec.ts:4` |
+| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-004 ホームの LOOK の区画を一覧の部品の home の形で出し、一覧へ誘う | FR-LOOK-ALL-004-AC-02 公開の LOOK が表示数より多い時、ホームの LOOK の区画から /look へ移れる | `e2e/FR-LOOK-ALL-044-list-behaviour-and-grid-remaining.spec.ts:182` |
+| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-005 一覧の title と description を決めて出す | FR-LOOK-ALL-005-AC-01 一覧の title に LOOK を含み、description が空でない | `e2e/FR-LOOK-ALL-005-look-list-seo-metadata.spec.ts:4` |
+| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-006 シーズン（ALL・SS・AW）で絞り、PC は左のサイドバー、タブレット・モバイルは FILTER と引き出しに置く | FR-LOOK-ALL-006-AC-01 SS を選ぶと SS の LOOK だけが出る | `e2e/FR-LOOK-ALL-044-list-behaviour-and-grid-remaining.spec.ts:203` |
+| SR-LOOK-001 訪問者が公開済みの LOOK を一覧で見比べ、シーズンで絞れる | FR-LOOK-ALL-006 シーズン（ALL・SS・AW）で絞り、PC は左のサイドバー、タブレット・モバイルは FILTER と引き出しに置く | FR-LOOK-ALL-006-AC-02 ALL を選ぶと全部の LOOK が出る | `e2e/FR-LOOK-ALL-044-list-behaviour-and-grid-remaining.spec.ts:221` |
+| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-001 公開済みの LOOK の詳細にテーマ・シーズン・画像・説明文を出す | FR-LOOK-DETAIL-001-AC-01 詳細にテーマの h1・シーズン・画像・説明文が出る | `e2e/FR-LOOK-DETAIL-001-look-detail-core-display.spec.ts:4` |
+| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-001 公開済みの LOOK の詳細にテーマ・シーズン・画像・説明文を出す | FR-LOOK-DETAIL-001-AC-02 非公開の LOOK の詳細は中身を出さない | `e2e/FR-LOOK-DETAIL-019-detail-content-and-links-remaining.spec.ts:50` |
+| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-002 詳細に紐づけた商品（STYLING ITEMS）を並べ、各商品へのリンクを出す | FR-LOOK-DETAIL-002-AC-01 紐づけた商品の名前と価格が並ぶ | `e2e/FR-LOOK-DETAIL-002-styling-items-links.spec.ts:4` |
+| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-002 詳細に紐づけた商品（STYLING ITEMS）を並べ、各商品へのリンクを出す | FR-LOOK-DETAIL-002-AC-02 商品を押すとその商品の頁へ移る | `e2e/FR-LOOK-DETAIL-019-detail-content-and-links-remaining.spec.ts:96` |
+| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-003 前後の LOOK へのリンクを出し、続けて見られるようにする | FR-LOOK-DETAIL-003-AC-01 前後の LOOK へのリンクが出て、押すとその LOOK へ移る | `e2e/FR-LOOK-DETAIL-003-prev-next-navigation.spec.ts:4` |
+| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-003 前後の LOOK へのリンクを出し、続けて見られるようにする | FR-LOOK-DETAIL-003-AC-02 先頭の LOOK は前へ、末尾の LOOK は次へのリンクが無い | `e2e/FR-LOOK-DETAIL-019-detail-content-and-links-remaining.spec.ts:125` |
+| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-004 無い LOOK の ID では知らせの文と /look への戻りのリンクを出す | FR-LOOK-DETAIL-004-AC-01 無い ID の詳細に「Look not found」が出る | `e2e/FR-LOOK-DETAIL-019-detail-content-and-links-remaining.spec.ts:167` |
+| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-004 無い LOOK の ID では知らせの文と /look への戻りのリンクを出す | FR-LOOK-DETAIL-004-AC-02 無い ID の詳細に /look への戻りのリンクが出る | `e2e/FR-LOOK-DETAIL-004-not-found-and-back-link.spec.ts:4` |
+| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-005 複数の画像をサムネイル付きのギャラリーかカルーセルで出す | FR-LOOK-DETAIL-005-AC-01 PC で複数の画像の LOOK にサムネイルが並び、選ぶとメインの画像が替わる | `e2e/FR-LOOK-DETAIL-005-multi-image-gallery.spec.ts:4` |
+| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-006 詳細の title・description を出し、前後のリンクに aria-label を付ける | FR-LOOK-DETAIL-006-AC-01 詳細の title にテーマを含み、description が空でない | `e2e/FR-LOOK-DETAIL-006-metadata-backlink-aria.spec.ts:5` |
+| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-006 詳細の title・description を出し、前後のリンクに aria-label を付ける | FR-LOOK-DETAIL-006-AC-02 前後のリンクに行き先のテーマを含む aria-label が付く | `e2e/FR-LOOK-DETAIL-019-detail-content-and-links-remaining.spec.ts:178` |
+| SR-LOOK-002 訪問者が LOOK を1件ずつ見て、使った商品と前後の LOOK へ移れる | FR-LOOK-DETAIL-007 同じシーズン・関連のコーディネートを薦める節を足す（将来対応） | FR-LOOK-DETAIL-007-AC-01 詳細に同じシーズンか関連のコーディネートを薦める節が出る | `e2e/FR-LOOK-DETAIL-007-related-recommendations-wont.spec.ts:4` |
+| FREQ-11 訪問者が商品を使ったコーディネートを見られる | FREQ-11-REQ-01 コーディネートを見る機能が動く | FREQ-11-AC-01 コーディネートを見る時にエラーが出ず関連コーディネートが出る | `e2e/FR-LOOK-DETAIL-019-detail-content-and-links-remaining.spec.ts:222` |
 | FREQ-12 訪問者がほかの利用者のコーディネートを見られる | FREQ-12-REQ-01 ほかの利用者のコーディネートを見る機能が動く | FREQ-12-AC-01 ほかの利用者のコーディネートを見る時にエラーが出ず関連コーディネートが出る | （なし） |
-| FREQ-17 管理画面で LOOK を登録・編集・削除する | FREQ-17-REQ-01 LOOK の管理の機能が動く | FREQ-17-AC-01 LOOK の管理でエラーが出ず登録・編集・削除が終わる | （なし） |
-| FREQ-17 管理画面で LOOK を登録・編集・削除する | FR-ADMIN-005 LOOK タブで LOOK の一覧・作成・編集・削除・商品の紐づけをする | FR-ADMIN-005-AC-01 LOOK タブに LOOK の一覧が出る | （なし） |
-| FREQ-17 管理画面で LOOK を登録・編集・削除する | FR-ADMIN-005 LOOK タブで LOOK の一覧・作成・編集・削除・商品の紐づけをする | FR-ADMIN-005-AC-02 作った LOOK が一覧に出る | （なし） |
-| FREQ-17 管理画面で LOOK を登録・編集・削除する | FR-ADMIN-005 LOOK タブで LOOK の一覧・作成・編集・削除・商品の紐づけをする | FR-ADMIN-005-AC-03 直した内容が一覧に出る | （なし） |
-| FREQ-17 管理画面で LOOK を登録・編集・削除する | FR-ADMIN-005 LOOK タブで LOOK の一覧・作成・編集・削除・商品の紐づけをする | FR-ADMIN-005-AC-04 消した LOOK が一覧から消える | （なし） |
-| FREQ-17 管理画面で LOOK を登録・編集・削除する | FR-ADMIN-005 LOOK タブで LOOK の一覧・作成・編集・削除・商品の紐づけをする | FR-ADMIN-005-AC-05 紐づけた商品が公開の詳細の商品の並びに出る | （なし） |
-| FREQ-50 LOOK 一覧に見出し「LOOK BOOK」を出さない | FREQ-50-REQ-01 一覧から「LOOK BOOK」の h1 を外す | FREQ-50-AC-01 一覧に「LOOK BOOK」の見出しが無い | （なし） |
-| FREQ-51 LOOK 一覧のフィルターを NEWS 一覧と同じ置き場にする | FREQ-51-REQ-01 SEASON のフィルターを横並びのタブから左のサイドバーと FILTER の引き出しに替える | FREQ-51-AC-01 PC で SEASON のフィルターが左のサイドバーにあり、横並びのタブが無い | （なし） |
-| FREQ-51 LOOK 一覧のフィルターを NEWS 一覧と同じ置き場にする | FREQ-51-REQ-01 SEASON のフィルターを横並びのタブから左のサイドバーと FILTER の引き出しに替える | FREQ-51-AC-02 モバイル・タブレットで FILTER を押すと引き出しが開き、SEASON を替えられる | （なし） |
-| FREQ-52 LOOK 一覧のフィルターの選択肢の間隔を NEWS にそろえる | FREQ-52-REQ-01 .filter-sections で包み、選択肢の間隔の式と大きさを NEWS と同じにする | FREQ-52-AC-01 PC で選択肢の並びの gap が NEWS と一致する | （なし） |
-| FREQ-53 LOOK カードの関連商品どうしの間隔を詰める | FREQ-53-REQ-01 関連商品のリンクの上下の padding を外し、行の間隔を gap だけで決める | FREQ-53-AC-01 関連商品のリンクの上下の padding が 1px 以下になる | （なし） |
-| FREQ-53 LOOK カードの関連商品どうしの間隔を詰める | FREQ-53-REQ-01 関連商品のリンクの上下の padding を外し、行の間隔を gap だけで決める | FREQ-53-AC-02 関連商品どうしの縦の間隔が文字の大きさ÷φ に一致する | （なし） |
-| FREQ-54 LOOK カードの時期・名前・関連アイテムの縦の間隔を近接の原則で整える | FREQ-54-REQ-01 「時期↔名前」の間隔を「名前↔関連アイテム」より狭くする | FREQ-54-AC-01 時期と名前の間隔が名前と最初の関連アイテムの間隔より狭い | （なし） |
-| FREQ-55 LOOK 一覧の格子のカードの行どうしの縦の間隔を広げる | FREQ-55-REQ-01 一覧の格子の row-gap を column-gap より広くし、幅に応じて段階的に広げる | FREQ-55-AC-01 各幅で一覧の row-gap が column-gap より大きい | （なし） |
-| FREQ-55 LOOK 一覧の格子のカードの行どうしの縦の間隔を広げる | FREQ-55-REQ-01 一覧の格子の row-gap を column-gap より広くし、幅に応じて段階的に広げる | FREQ-55-AC-02 モバイルで一覧の row-gap が 16px より大きい | （なし） |
-| FREQ-56 モバイルの LOOK カードで関連アイテムの名前と価格を縦に積む | FREQ-56-REQ-01 モバイルは名前と価格を2行に積み、タブレット・PC は1行の両端に並べる | FREQ-56-AC-01 モバイルで関連アイテムの名前と価格が縦に積まれる | （なし） |
-| FREQ-56 モバイルの LOOK カードで関連アイテムの名前と価格を縦に積む | FREQ-56-REQ-01 モバイルは名前と価格を2行に積み、タブレット・PC は1行の両端に並べる | FREQ-56-AC-02 タブレット・PC で関連アイテムの名前と価格が同じ行に並ぶ | （なし） |
-| FREQ-127 LOOK カードのシーズンの表記を「2026AW」の形にする | FREQ-127-REQ-01 シーズンの表記を年とシーズンを空白なしでつないだ形にする | FREQ-127-AC-01 シーズンの表記が「2026AW」の形で出る | （なし） |
-| FREQ-127 LOOK カードのシーズンの表記を「2026AW」の形にする | FREQ-127-REQ-01 シーズンの表記を年とシーズンを空白なしでつないだ形にする | FREQ-127-AC-02 シーズンの表記に「COLLECTION」が無い | （なし） |
-| FREQ-127 LOOK カードのシーズンの表記を「2026AW」の形にする | FREQ-127-REQ-01 シーズンの表記を年とシーズンを空白なしでつないだ形にする | FREQ-127-AC-03 シーズンの表記の年とシーズンの間に空白が無い | （なし） |
-| FREQ-128 PC だけ、シーズンとテーマをカードの画像の下部に白い文字で重ねる | FREQ-128-REQ-01 画像の中に PC だけのオーバーレイを置き、画像の下の文字を PC で隠す | FREQ-128-AC-01 PC で画像の下部にシーズンとテーマが白い文字で出る | （なし） |
-| FREQ-128 PC だけ、シーズンとテーマをカードの画像の下部に白い文字で重ねる | FREQ-128-REQ-01 画像の中に PC だけのオーバーレイを置き、画像の下の文字を PC で隠す | FREQ-128-AC-02 PC で画像の下の文字（look-card-caption）が出ない | （なし） |
-| FREQ-128 PC だけ、シーズンとテーマをカードの画像の下部に白い文字で重ねる | FREQ-128-REQ-01 画像の中に PC だけのオーバーレイを置き、画像の下の文字を PC で隠す | FREQ-128-AC-03 モバイル・タブレットでオーバーレイが出ず、画像の下の文字が出る | （なし） |
-| FREQ-128 PC だけ、シーズンとテーマをカードの画像の下部に白い文字で重ねる | FREQ-128-REQ-01 画像の中に PC だけのオーバーレイを置き、画像の下の文字を PC で隠す | FREQ-128-AC-04 オーバーレイの文字が画像の下半分にある | （なし） |
-| FREQ-129 PC のオーバーレイのテーマをセリフ体・大文字にし、画像の下部に黒のグラデーションを敷く | FREQ-129-REQ-01 テーマを font-display・uppercase にし、オーバーレイに下から透明になる黒のグラデーションを敷く | FREQ-129-AC-01 PC でオーバーレイのテーマがセリフ体で出る | （なし） |
-| FREQ-129 PC のオーバーレイのテーマをセリフ体・大文字にし、画像の下部に黒のグラデーションを敷く | FREQ-129-REQ-01 テーマを font-display・uppercase にし、オーバーレイに下から透明になる黒のグラデーションを敷く | FREQ-129-AC-02 テーマが大文字で出る | （なし） |
-| FREQ-129 PC のオーバーレイのテーマをセリフ体・大文字にし、画像の下部に黒のグラデーションを敷く | FREQ-129-REQ-01 テーマを font-display・uppercase にし、オーバーレイに下から透明になる黒のグラデーションを敷く | FREQ-129-AC-03 オーバーレイの背景に下から上へ透明になる黒の linear-gradient がある | （なし） |
-| FREQ-130 オーバーレイの黒のグラデーションを上端で滑らかに消す | FREQ-130-REQ-01 グラデーションを5段の多段にし、上端を完全な透明にする | FREQ-130-AC-01 グラデーションの色の段が4つ以上ある | （なし） |
-| FREQ-130 オーバーレイの黒のグラデーションを上端で滑らかに消す | FREQ-130-REQ-01 グラデーションを5段の多段にし、上端を完全な透明にする | FREQ-130-AC-02 グラデーションの上端の色が完全な透明になる | （なし） |
-| FREQ-131 PC でカードに乗るとシーズンとテーマを消し、関連アイテムの名前と価格に入れ替える | FREQ-131-REQ-01 題のブロックと関連アイテムのブロックの不透明度をホバーで入れ替える | FREQ-131-AC-01 PC で関連アイテムのあるカードに乗ると題のブロックの opacity が 0 になる | （なし） |
-| FREQ-131 PC でカードに乗るとシーズンとテーマを消し、関連アイテムの名前と価格に入れ替える | FREQ-131-REQ-01 題のブロックと関連アイテムのブロックの不透明度をホバーで入れ替える | FREQ-131-AC-02 乗った時に関連アイテムのブロックの opacity が 1 になる | （なし） |
-| FREQ-131 PC でカードに乗るとシーズンとテーマを消し、関連アイテムの名前と価格に入れ替える | FREQ-131-REQ-01 題のブロックと関連アイテムのブロックの不透明度をホバーで入れ替える | FREQ-131-AC-03 乗っていない時は題が出て、関連アイテムのブロックの opacity が 0 になる | （なし） |
-| FREQ-132 カードに乗った時の画像の拡大をやめ、2枚目の画像があれば出す | FREQ-132-REQ-01 1枚目の拡大を外し、2枚目がある時だけホバー用の画像を重ねて替える | FREQ-132-AC-01 乗っても1枚目の画像が拡大されない | （なし） |
-| FREQ-132 カードに乗った時の画像の拡大をやめ、2枚目の画像があれば出す | FREQ-132-REQ-01 1枚目の拡大を外し、2枚目がある時だけホバー用の画像を重ねて替える | FREQ-132-AC-02 2枚目のあるカードに乗ると2枚目の画像の opacity が 1 になる | （なし） |
-| FREQ-132 カードに乗った時の画像の拡大をやめ、2枚目の画像があれば出す | FREQ-132-REQ-01 1枚目の拡大を外し、2枚目がある時だけホバー用の画像を重ねて替える | FREQ-132-AC-03 2枚目の無いカードにホバー用の画像が無い | （なし） |
-| FREQ-133 PC ではカードの下に関連アイテムの名前・価格の並びを出さない | FREQ-133-REQ-01 カードの下の関連アイテムの並びを lg 以上で隠す | FREQ-133-AC-01 PC でカードの下に関連アイテムの並びが出ない | （なし） |
-| FREQ-133 PC ではカードの下に関連アイテムの名前・価格の並びを出さない | FREQ-133-REQ-01 カードの下の関連アイテムの並びを lg 以上で隠す | FREQ-133-AC-02 モバイル・タブレットで関連アイテムのあるカードの下に並びが出る | （なし） |
-| FREQ-134 オーバーレイのホバーの前後で文字の位置をそろえる | FREQ-134-REQ-01 2つのブロックを同じ格子のセルに重ね、下端でそろえる | FREQ-134-AC-01 PC で2つのブロックの下端がほぼ一致する | （なし） |
-| FREQ-134 オーバーレイのホバーの前後で文字の位置をそろえる | FREQ-134-REQ-01 2つのブロックを同じ格子のセルに重ね、下端でそろえる | FREQ-134-AC-02 2つのブロックの左端が一致する | （なし） |
-| FREQ-135 オーバーレイの最後の関連アイテムとテーマの文字の下のラインをそろえる | FREQ-135-REQ-01 2つのブロックの align-self を last baseline にする | FREQ-135-AC-01 PC でテーマと最後の関連アイテムの文字の下端がそろう | （なし） |
-| FREQ-136 PC では画像の下の margin を無くす | FREQ-136-REQ-01 画像の箱に lg:mb-0 を付ける | FREQ-136-AC-01 PC で画像の箱の margin-bottom が 0px になる | （なし） |
+| FREQ-17 管理画面で LOOK を登録・編集・削除する | FREQ-17-REQ-01 LOOK の管理の機能が動く | FREQ-17-AC-01 LOOK の管理でエラーが出ず登録・編集・削除が終わる | `e2e/FR-LOOK-ADMIN-001-look-tab-crud.spec.ts:222` |
+| FREQ-17 管理画面で LOOK を登録・編集・削除する | FR-ADMIN-005 LOOK タブで LOOK の一覧・作成・編集・削除・商品の紐づけをする | FR-ADMIN-005-AC-01 LOOK タブに LOOK の一覧が出る | `e2e/FR-LOOK-ADMIN-001-look-tab-crud.spec.ts:127` |
+| FREQ-17 管理画面で LOOK を登録・編集・削除する | FR-ADMIN-005 LOOK タブで LOOK の一覧・作成・編集・削除・商品の紐づけをする | FR-ADMIN-005-AC-02 作った LOOK が一覧に出る | `e2e/FR-LOOK-ADMIN-001-look-tab-crud.spec.ts:150` |
+| FREQ-17 管理画面で LOOK を登録・編集・削除する | FR-ADMIN-005 LOOK タブで LOOK の一覧・作成・編集・削除・商品の紐づけをする | FR-ADMIN-005-AC-03 直した内容が一覧に出る | `e2e/FR-LOOK-ADMIN-001-look-tab-crud.spec.ts:163` |
+| FREQ-17 管理画面で LOOK を登録・編集・削除する | FR-ADMIN-005 LOOK タブで LOOK の一覧・作成・編集・削除・商品の紐づけをする | FR-ADMIN-005-AC-04 消した LOOK が一覧から消える | `e2e/FR-LOOK-ADMIN-001-look-tab-crud.spec.ts:176` |
+| FREQ-17 管理画面で LOOK を登録・編集・削除する | FR-ADMIN-005 LOOK タブで LOOK の一覧・作成・編集・削除・商品の紐づけをする | FR-ADMIN-005-AC-05 紐づけた商品が公開の詳細の商品の並びに出る | `e2e/FR-LOOK-ADMIN-001-look-tab-crud.spec.ts:198` |
+| FREQ-50 LOOK 一覧に見出し「LOOK BOOK」を出さない | FREQ-50-REQ-01 一覧から「LOOK BOOK」の h1 を外す | FREQ-50-AC-01 一覧に「LOOK BOOK」の見出しが無い | `e2e/FR-LOOK-ALL-008-no-lookbook-heading.spec.ts:10` |
+| FREQ-51 LOOK 一覧のフィルターを NEWS 一覧と同じ置き場にする | FREQ-51-REQ-01 SEASON のフィルターを横並びのタブから左のサイドバーと FILTER の引き出しに替える | FREQ-51-AC-01 PC で SEASON のフィルターが左のサイドバーにあり、横並びのタブが無い | `e2e/FR-LOOK-ALL-006-look-filter-sort-wont.spec.ts:13` |
+| FREQ-51 LOOK 一覧のフィルターを NEWS 一覧と同じ置き場にする | FREQ-51-REQ-01 SEASON のフィルターを横並びのタブから左のサイドバーと FILTER の引き出しに替える | FREQ-51-AC-02 モバイル・タブレットで FILTER を押すと引き出しが開き、SEASON を替えられる | `e2e/FR-LOOK-ALL-006-look-filter-sort-wont.spec.ts:38` |
+| FREQ-52 LOOK 一覧のフィルターの選択肢の間隔を NEWS にそろえる | FREQ-52-REQ-01 .filter-sections で包み、選択肢の間隔の式と大きさを NEWS と同じにする | FREQ-52-AC-01 PC で選択肢の並びの gap が NEWS と一致する | `e2e/FR-LOOK-ALL-009-filter-spacing-match-news.spec.ts:45` |
+| FREQ-53 LOOK カードの関連商品どうしの間隔を詰める | FREQ-53-REQ-01 関連商品のリンクの上下の padding を外し、行の間隔を gap だけで決める | FREQ-53-AC-01 関連商品のリンクの上下の padding が 1px 以下になる | `e2e/FR-LOOK-ALL-010-related-item-proximity.spec.ts:46`<br>`e2e/FR-LOOK-ALL-010-related-item-proximity.spec.ts:56` |
+| FREQ-53 LOOK カードの関連商品どうしの間隔を詰める | FREQ-53-REQ-01 関連商品のリンクの上下の padding を外し、行の間隔を gap だけで決める | FREQ-53-AC-02 関連商品どうしの縦の間隔が文字の大きさ÷φ に一致する | `e2e/FR-LOOK-ALL-007-related-item-spacing.spec.ts:75`<br>`e2e/FR-LOOK-ALL-007-related-item-spacing.spec.ts:87` |
+| FREQ-54 LOOK カードの時期・名前・関連アイテムの縦の間隔を近接の原則で整える | FREQ-54-REQ-01 「時期↔名前」の間隔を「名前↔関連アイテム」より狭くする | FREQ-54-AC-01 時期と名前の間隔が名前と最初の関連アイテムの間隔より狭い | `e2e/FR-LOOK-ALL-011-card-text-proximity.spec.ts:66`<br>`e2e/FR-LOOK-ALL-011-card-text-proximity.spec.ts:73` |
+| FREQ-55 LOOK 一覧の格子のカードの行どうしの縦の間隔を広げる | FREQ-55-REQ-01 一覧の格子の row-gap を column-gap より広くし、幅に応じて段階的に広げる | FREQ-55-AC-01 mobile・tablet の幅で一覧の row-gap が column-gap より大きい | `e2e/FR-LOOK-ALL-012-grid-row-gap.spec.ts:34` |
+| FREQ-55 LOOK 一覧の格子のカードの行どうしの縦の間隔を広げる | FREQ-55-REQ-01 一覧の格子の row-gap を column-gap より広くし、幅に応じて段階的に広げる | FREQ-55-AC-02 モバイルで一覧の row-gap が 16px より大きい | `e2e/FR-LOOK-ALL-012-grid-row-gap.spec.ts:43` |
+| FREQ-56 モバイルの LOOK カードで関連アイテムの名前と価格を縦に積む | FREQ-56-REQ-01 モバイルは名前と価格を2行に積み、タブレット・PC は1行の両端に並べる | FREQ-56-AC-01 モバイルで関連アイテムの名前と価格が縦に積まれる | `e2e/FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts:34` |
+| FREQ-56 モバイルの LOOK カードで関連アイテムの名前と価格を縦に積む | FREQ-56-REQ-01 モバイルは名前と価格を2行に積み、タブレット・PC は1行の両端に並べる | FREQ-56-AC-02 タブレット・PC で関連アイテムの名前と価格が同じ行に並ぶ | `e2e/FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts:45` |
+| FREQ-127 LOOK カードのシーズンの表記を「2026AW」の形にする | FREQ-127-REQ-01 シーズンの表記を年とシーズンを空白なしでつないだ形にする | FREQ-127-AC-01 シーズンの表記が「2026AW」の形で出る | `e2e/FR-LOOK-ALL-014-season-label-format.spec.ts:68`<br>`e2e/FR-LOOK-ALL-014-season-label-format.spec.ts:72`<br>`e2e/FR-LOOK-ALL-042-season-label-and-hover-image-remaining.spec.ts:68` |
+| FREQ-127 LOOK カードのシーズンの表記を「2026AW」の形にする | FREQ-127-REQ-01 シーズンの表記を年とシーズンを空白なしでつないだ形にする | FREQ-127-AC-02 シーズンの表記に「COLLECTION」が無い | `e2e/FR-LOOK-ALL-042-season-label-and-hover-image-remaining.spec.ts:95` |
+| FREQ-127 LOOK カードのシーズンの表記を「2026AW」の形にする | FREQ-127-REQ-01 シーズンの表記を年とシーズンを空白なしでつないだ形にする | FREQ-127-AC-03 シーズンの表記の年とシーズンの間に空白が無い | `e2e/FR-LOOK-ALL-042-season-label-and-hover-image-remaining.spec.ts:79` |
+| FREQ-128 PC だけ、シーズンとテーマをカードの画像の下部に白い文字で重ねる | FREQ-128-REQ-01 画像の中に PC だけのオーバーレイを置き、画像の下の文字を PC で隠す | FREQ-128-AC-01 PC で画像の下部にシーズンとテーマが白い文字で出る | `e2e/FR-LOOK-ALL-015-card-overlay-desktop.spec.ts:48` |
+| FREQ-128 PC だけ、シーズンとテーマをカードの画像の下部に白い文字で重ねる | FREQ-128-REQ-01 画像の中に PC だけのオーバーレイを置き、画像の下の文字を PC で隠す | FREQ-128-AC-02 PC で画像の下の文字（look-card-caption）が出ない | `e2e/FR-LOOK-ALL-041-card-overlay-desktop-remaining.spec.ts:78` |
+| FREQ-128 PC だけ、シーズンとテーマをカードの画像の下部に白い文字で重ねる | FREQ-128-REQ-01 画像の中に PC だけのオーバーレイを置き、画像の下の文字を PC で隠す | FREQ-128-AC-03 モバイル・タブレットでオーバーレイが出ず、画像の下の文字が出る | `e2e/FR-LOOK-ALL-015-card-overlay-desktop.spec.ts:80`<br>`e2e/FR-LOOK-ALL-016-overlay-serif-gradient.spec.ts:60`<br>`e2e/FR-LOOK-ALL-017-overlay-gradient-smooth.spec.ts:46`<br>`e2e/FR-LOOK-ALL-018-hover-related-items.spec.ts:52`<br>`e2e/FR-LOOK-ALL-021-overlay-text-alignment.spec.ts:64`<br>`e2e/FR-LOOK-ALL-022-overlay-last-baseline.spec.ts:68` |
+| FREQ-128 PC だけ、シーズンとテーマをカードの画像の下部に白い文字で重ねる | FREQ-128-REQ-01 画像の中に PC だけのオーバーレイを置き、画像の下の文字を PC で隠す | FREQ-128-AC-04 オーバーレイの文字が画像の下半分にある | `e2e/FR-LOOK-ALL-041-card-overlay-desktop-remaining.spec.ts:102` |
+| FREQ-129 PC のオーバーレイのテーマをセリフ体・大文字にし、画像の下部に黒のグラデーションを敷く | FREQ-129-REQ-01 テーマを font-display・uppercase にし、オーバーレイに下から透明になる黒のグラデーションを敷く | FREQ-129-AC-01 PC でオーバーレイのテーマがセリフ体で出る | `e2e/FR-LOOK-ALL-016-overlay-serif-gradient.spec.ts:38` |
+| FREQ-129 PC のオーバーレイのテーマをセリフ体・大文字にし、画像の下部に黒のグラデーションを敷く | FREQ-129-REQ-01 テーマを font-display・uppercase にし、オーバーレイに下から透明になる黒のグラデーションを敷く | FREQ-129-AC-02 テーマが大文字で出る | `e2e/FR-LOOK-ALL-041-card-overlay-desktop-remaining.spec.ts:123` |
+| FREQ-129 PC のオーバーレイのテーマをセリフ体・大文字にし、画像の下部に黒のグラデーションを敷く | FREQ-129-REQ-01 テーマを font-display・uppercase にし、オーバーレイに下から透明になる黒のグラデーションを敷く | FREQ-129-AC-03 オーバーレイの背景に下から上へ透明になる黒の linear-gradient がある | `e2e/FR-LOOK-ALL-041-card-overlay-desktop-remaining.spec.ts:131` |
+| FREQ-130 オーバーレイの黒のグラデーションを上端で滑らかに消す | FREQ-130-REQ-01 グラデーションを5段の多段にし、上端を完全な透明にする | FREQ-130-AC-01 グラデーションの色の段が4つ以上ある | `e2e/FR-LOOK-ALL-017-overlay-gradient-smooth.spec.ts:23` |
+| FREQ-130 オーバーレイの黒のグラデーションを上端で滑らかに消す | FREQ-130-REQ-01 グラデーションを5段の多段にし、上端を完全な透明にする | FREQ-130-AC-02 グラデーションの上端の色が完全な透明になる | `e2e/FR-LOOK-ALL-041-card-overlay-desktop-remaining.spec.ts:149` |
+| FREQ-131 PC でカードに乗るとシーズンとテーマを消し、関連アイテムの名前と価格に入れ替える | FREQ-131-REQ-01 題のブロックと関連アイテムのブロックの不透明度をホバーで入れ替える | FREQ-131-AC-01 PC で関連アイテムのあるカードに乗ると題のブロックの opacity が 0 になる | `e2e/FR-LOOK-ALL-018-hover-related-items.spec.ts:13` |
+| FREQ-131 PC でカードに乗るとシーズンとテーマを消し、関連アイテムの名前と価格に入れ替える | FREQ-131-REQ-01 題のブロックと関連アイテムのブロックの不透明度をホバーで入れ替える | FREQ-131-AC-02 乗った時に関連アイテムのブロックの opacity が 1 になる | `e2e/FR-LOOK-ALL-041-card-overlay-desktop-remaining.spec.ts:160` |
+| FREQ-131 PC でカードに乗るとシーズンとテーマを消し、関連アイテムの名前と価格に入れ替える | FREQ-131-REQ-01 題のブロックと関連アイテムのブロックの不透明度をホバーで入れ替える | FREQ-131-AC-03 乗っていない時は題が出て、関連アイテムのブロックの opacity が 0 になる | `e2e/FR-LOOK-ALL-041-card-overlay-desktop-remaining.spec.ts:173` |
+| FREQ-132 カードに乗った時の画像の拡大をやめ、2枚目の画像があれば出す | FREQ-132-REQ-01 1枚目の拡大を外し、2枚目がある時だけホバー用の画像を重ねて替える | FREQ-132-AC-01 乗っても1枚目の画像が拡大されない | `e2e/FR-LOOK-ALL-019-hover-second-image.spec.ts:7` |
+| FREQ-132 カードに乗った時の画像の拡大をやめ、2枚目の画像があれば出す | FREQ-132-REQ-01 1枚目の拡大を外し、2枚目がある時だけホバー用の画像を重ねて替える | FREQ-132-AC-02 2枚目のあるカードに乗ると2枚目の画像の opacity が 1 になる | `e2e/FR-LOOK-ALL-019-hover-second-image.spec.ts:27` |
+| FREQ-132 カードに乗った時の画像の拡大をやめ、2枚目の画像があれば出す | FREQ-132-REQ-01 1枚目の拡大を外し、2枚目がある時だけホバー用の画像を重ねて替える | FREQ-132-AC-03 2枚目の無いカードにホバー用の画像が無い | `e2e/FR-LOOK-ALL-042-season-label-and-hover-image-remaining.spec.ts:150` |
+| FREQ-133 PC ではカードの下に関連アイテムの名前・価格の並びを出さない | FREQ-133-REQ-01 カードの下の関連アイテムの並びを lg 以上で隠す | FREQ-133-AC-01 PC でカードの下に関連アイテムの並びが出ない | `e2e/FR-LOOK-ALL-013-related-item-mobile-stack.spec.ts:56`<br>`e2e/FR-LOOK-ALL-020-desktop-hide-below-related-items.spec.ts:14` |
+| FREQ-133 PC ではカードの下に関連アイテムの名前・価格の並びを出さない | FREQ-133-REQ-01 カードの下の関連アイテムの並びを lg 以上で隠す | FREQ-133-AC-02 モバイル・タブレットで関連アイテムのあるカードの下に並びが出る | `e2e/FR-LOOK-ALL-020-desktop-hide-below-related-items.spec.ts:36` |
+| FREQ-134 オーバーレイのホバーの前後で文字の位置をそろえる | FREQ-134-REQ-01 2つのブロックを同じ格子のセルに重ね、下端でそろえる | FREQ-134-AC-01 PC で2つのブロックの下端がほぼ一致する | `e2e/FR-LOOK-ALL-021-overlay-text-alignment.spec.ts:40` |
+| FREQ-134 オーバーレイのホバーの前後で文字の位置をそろえる | FREQ-134-REQ-01 2つのブロックを同じ格子のセルに重ね、下端でそろえる | FREQ-134-AC-02 2つのブロックの左端が一致する | `e2e/FR-LOOK-ALL-041-card-overlay-desktop-remaining.spec.ts:188` |
+| FREQ-135 オーバーレイの最後の関連アイテムとテーマの文字の下のラインをそろえる | FREQ-135-REQ-01 2つのブロックの align-self を last baseline にする | FREQ-135-AC-01 PC でテーマと最後の関連アイテムの文字の下端がそろう | `e2e/FR-LOOK-ALL-022-overlay-last-baseline.spec.ts:47` |
+| FREQ-136 PC では画像の下の margin を無くす | FREQ-136-REQ-01 画像の箱に lg:mb-0 を付ける | FREQ-136-AC-01 PC で画像の箱の margin-bottom が 0px になる | `e2e/FR-LOOK-ALL-023-desktop-image-no-margin.spec.ts:29` |
 | FREQ-137 カードの間の縦と横の空間を同じにする | FREQ-137-REQ-01 LOOK の格子の xl:gap-x-6 を xl:gap-6 にし、どの幅でも縦横を同じにする | FREQ-137-AC-01 各幅で HOME と一覧の格子の row-gap と column-gap が等しい | （なし） |
-| FREQ-137 カードの間の縦と横の空間を同じにする | FREQ-137-REQ-01 LOOK の格子の xl:gap-x-6 を xl:gap-6 にし、どの幅でも縦横を同じにする | FREQ-137-AC-02 PC（1280px）で縦横とも 24px になる | （なし） |
-| FREQ-138 モバイル・タブレットの LOOK カードを画像の下の情報パネルの形にする | FREQ-138-REQ-01 画像の下の情報パネルにシーズン（空白あり）・セリフ体のテーマ・罫線・関連アイテムの行を出す | FREQ-138-AC-01 モバイル・タブレットでシーズンが「2026 AW」の形で画像の下に出る | （なし） |
-| FREQ-138 モバイル・タブレットの LOOK カードを画像の下の情報パネルの形にする | FREQ-138-REQ-01 画像の下の情報パネルにシーズン（空白あり）・セリフ体のテーマ・罫線・関連アイテムの行を出す | FREQ-138-AC-02 モバイル・タブレットでテーマがセリフ体・大文字で画像の下に出る | （なし） |
-| FREQ-138 モバイル・タブレットの LOOK カードを画像の下の情報パネルの形にする | FREQ-138-REQ-01 画像の下の情報パネルにシーズン（空白あり）・セリフ体のテーマ・罫線・関連アイテムの行を出す | FREQ-138-AC-03 関連アイテムのあるカードでテーマと並びの間に罫線が出る | （なし） |
-| FREQ-138 モバイル・タブレットの LOOK カードを画像の下の情報パネルの形にする | FREQ-138-REQ-01 画像の下の情報パネルにシーズン（空白あり）・セリフ体のテーマ・罫線・関連アイテムの行を出す | FREQ-138-AC-04 タブレットで関連アイテムの価格が右端に寄る | （なし） |
-| FREQ-138 モバイル・タブレットの LOOK カードを画像の下の情報パネルの形にする | FREQ-138-REQ-01 画像の下の情報パネルにシーズン（空白あり）・セリフ体のテーマ・罫線・関連アイテムの行を出す | FREQ-138-AC-05 PC ではオーバーレイが出て、画像の下の文字・罫線・並びが出ない | （なし） |
-| FREQ-139 情報パネル（lg 未満）の余白と文字の大きさをデザインの4原則で整える | FREQ-139-REQ-01 パネルのテーマの文字を関連アイテムの φ 倍にし、画像の下の margin をモバイル 13px・タブレット 21px にする | FREQ-139-AC-01 画像の箱の margin-bottom がモバイル 13px・タブレット 21px になる | （なし） |
-| FREQ-139 情報パネル（lg 未満）の余白と文字の大きさをデザインの4原則で整える | FREQ-139-REQ-01 パネルのテーマの文字を関連アイテムの φ 倍にし、画像の下の margin をモバイル 13px・タブレット 21px にする | FREQ-139-AC-02 モバイル・タブレットでテーマの文字が関連アイテムの文字の 1.5 倍以上になる | （なし） |
-| FREQ-139 情報パネル（lg 未満）の余白と文字の大きさをデザインの4原則で整える | FREQ-139-REQ-01 パネルのテーマの文字を関連アイテムの φ 倍にし、画像の下の margin をモバイル 13px・タブレット 21px にする | FREQ-139-AC-03 シーズンとテーマの間隔がテーマと罫線の間隔より小さい | （なし） |
-| FREQ-139 情報パネル（lg 未満）の余白と文字の大きさをデザインの4原則で整える | FREQ-139-REQ-01 パネルのテーマの文字を関連アイテムの φ 倍にし、画像の下の margin をモバイル 13px・タブレット 21px にする | FREQ-139-AC-04 罫線の上と下の余白が等しい | （なし） |
-| FREQ-139 情報パネル（lg 未満）の余白と文字の大きさをデザインの4原則で整える | FREQ-139-REQ-01 パネルのテーマの文字を関連アイテムの φ 倍にし、画像の下の margin をモバイル 13px・タブレット 21px にする | FREQ-139-AC-05 PC では画像の下の文字が出ず、margin-bottom が 0 のままになる | （なし） |
-| FREQ-140 lg 未満だけカードの間の縦の間隔を広げる | FREQ-140-REQ-01 row-gap をモバイル 34px・sm 以上 55px にし、lg 以上は縦横を同じに戻す | FREQ-140-AC-01 モバイルで row-gap が 34px、column-gap が 16px になる | （なし） |
-| FREQ-140 lg 未満だけカードの間の縦の間隔を広げる | FREQ-140-REQ-01 row-gap をモバイル 34px・sm 以上 55px にし、lg 以上は縦横を同じに戻す | FREQ-140-AC-02 タブレットで row-gap が 55px、column-gap が HOME 24px・一覧 32px になる | （なし） |
-| FREQ-140 lg 未満だけカードの間の縦の間隔を広げる | FREQ-140-REQ-01 row-gap をモバイル 34px・sm 以上 55px にし、lg 以上は縦横を同じに戻す | FREQ-140-AC-03 モバイル・タブレットで row-gap が column-gap より大きい | （なし） |
-| FREQ-140 lg 未満だけカードの間の縦の間隔を広げる | FREQ-140-REQ-01 row-gap をモバイル 34px・sm 以上 55px にし、lg 以上は縦横を同じに戻す | FREQ-140-AC-04 PC で row-gap と column-gap が等しく 24px になる | （なし） |
-| FREQ-141 /look 一覧の lg 未満の見た目をホームの LOOK の区画にそろえる | FREQ-141-REQ-01 一覧の本文の列の左右の padding をホームと同じにし、タブレットの列の間隔を 24px にする | FREQ-141-AC-01 モバイルで一覧の本文の列の左右の padding が 13px になる | （なし） |
-| FREQ-141 /look 一覧の lg 未満の見た目をホームの LOOK の区画にそろえる | FREQ-141-REQ-01 一覧の本文の列の左右の padding をホームと同じにし、タブレットの列の間隔を 24px にする | FREQ-141-AC-02 タブレットで一覧の column-gap が 24px になる | （なし） |
-| FREQ-141 /look 一覧の lg 未満の見た目をホームの LOOK の区画にそろえる | FREQ-141-REQ-01 一覧の本文の列の左右の padding をホームと同じにし、タブレットの列の間隔を 24px にする | FREQ-141-AC-03 モバイル・タブレットで一覧とホームの row-gap・column-gap が一致する | （なし） |
-| FREQ-141 /look 一覧の lg 未満の見た目をホームの LOOK の区画にそろえる | FREQ-141-REQ-01 一覧の本文の列の左右の padding をホームと同じにし、タブレットの列の間隔を 24px にする | FREQ-141-AC-04 PC の一覧の gap と左の padding が今までどおりになる | （なし） |
-| FREQ-142 lg 未満だけ LOOK カード全体をグレーの枠線で囲む | FREQ-142-REQ-01 カードの外側に枠線を付け、画像は枠に付け、情報パネルだけ内側に余白を取る | FREQ-142-AC-01 モバイル・タブレットでカードに 1px のグレーの枠線が出る | （なし） |
-| FREQ-142 lg 未満だけ LOOK カード全体をグレーの枠線で囲む | FREQ-142-REQ-01 カードの外側に枠線を付け、画像は枠に付け、情報パネルだけ内側に余白を取る | FREQ-142-AC-02 モバイル・タブレットで画像の左右の端が枠線の内側に付く | （なし） |
-| FREQ-142 lg 未満だけ LOOK カード全体をグレーの枠線で囲む | FREQ-142-REQ-01 カードの外側に枠線を付け、画像は枠に付け、情報パネルだけ内側に余白を取る | FREQ-142-AC-03 モバイル・タブレットで情報パネルの文字が枠線から離れる | （なし） |
-| FREQ-142 lg 未満だけ LOOK カード全体をグレーの枠線で囲む | FREQ-142-REQ-01 カードの外側に枠線を付け、画像は枠に付け、情報パネルだけ内側に余白を取る | FREQ-142-AC-04 PC でカードに枠線が出ない | （なし） |
-| FREQ-143 モバイル・タブレットのシーズンの表記を濃く・太く・字間を広くする | FREQ-143-REQ-01 シーズンの文字の色を黒 50% より濃くする | FREQ-143-AC-01 モバイル・タブレットでシーズンの文字の不透明度が 0.5 より大きい | （なし） |
-| FREQ-143 モバイル・タブレットのシーズンの表記を濃く・太く・字間を広くする | FREQ-143-REQ-02 シーズンの文字を 400 より太くする | FREQ-143-AC-02 モバイル・タブレットでシーズンの font-weight が 500 以上になる | （なし） |
-| FREQ-143 モバイル・タブレットのシーズンの表記を濃く・太く・字間を広くする | FREQ-143-REQ-04 シーズンの表記に番号を足さない | FREQ-143-AC-04 シーズンが「2026 AW」の形のままで番号が無い | （なし） |
-| FREQ-144 モバイル・タブレットの関連 ITEM の名前と価格を ITEM カードの見た目にそろえる | FREQ-144-REQ-01 関連 ITEM の名前を ITEM カードと同じ書体・字間・太さ・色にする | FREQ-144-AC-01 関連 ITEM の名前の書体・太さ・字間が ITEM カードと一致する | （なし） |
-| FREQ-144 モバイル・タブレットの関連 ITEM の名前と価格を ITEM カードの見た目にそろえる | FREQ-144-REQ-01 関連 ITEM の名前を ITEM カードと同じ書体・字間・太さ・色にする | FREQ-144-AC-04 関連 ITEM の名前・価格の文字が黒になる | （なし） |
-| FREQ-144 モバイル・タブレットの関連 ITEM の名前と価格を ITEM カードの見た目にそろえる | FREQ-144-REQ-02 価格を ITEM カードと同じ色・太さにし、「¥」とカンマ区切りで出す | FREQ-144-AC-02 関連 ITEM の価格の太さ・色が ITEM カードと一致する | （なし） |
-| FREQ-144 モバイル・タブレットの関連 ITEM の名前と価格を ITEM カードの見た目にそろえる | FREQ-144-REQ-02 価格を ITEM カードと同じ色・太さにし、「¥」とカンマ区切りで出す | FREQ-144-AC-03 関連 ITEM の価格が半角の「¥」で始まる | （なし） |
-| FREQ-144 モバイル・タブレットの関連 ITEM の名前と価格を ITEM カードの見た目にそろえる | FREQ-144-REQ-02 価格を ITEM カードと同じ色・太さにし、「¥」とカンマ区切りで出す | FREQ-144-AC-04 関連 ITEM の名前・価格の文字が黒になる | （なし） |
-| FREQ-145 モバイル・タブレットのシーズンの表記の字間を詰める | FREQ-145-REQ-01 シーズンの字間を 0.1em より狭くする | FREQ-145-AC-01 モバイル・タブレットでシーズンの字間が文字の大きさの 10% より狭い | （なし） |
-| FREQ-145 モバイル・タブレットのシーズンの表記の字間を詰める | FREQ-145-REQ-01 シーズンの字間を 0.1em より狭くする | FREQ-145-AC-02 シーズンの濃さと太さの強調が残っている | （なし） |
-| FREQ-150 PC のオーバーレイの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-150-REQ-01 オーバーレイの関連 ITEM の行を role="link" にし、押すか Enter で /item/{id} へ移る | FREQ-150-AC-03 PC で関連 ITEM の行を押すとその ITEM の頁へ移る | （なし） |
-| FREQ-150 PC のオーバーレイの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-150-REQ-01 オーバーレイの関連 ITEM の行を role="link" にし、押すか Enter で /item/{id} へ移る | FREQ-150-AC-04 モバイル・タブレットではオーバーレイの関連 ITEM の行が出ない | （なし） |
-| FREQ-150 PC のオーバーレイの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-150-REQ-02 関連 ITEM の行に乗ると白い下線が左から右へ出る | FREQ-150-AC-01 PC で関連 ITEM の行に乗ると下線が左起点で出る | （なし） |
-| FREQ-150 PC のオーバーレイの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-150-REQ-02 関連 ITEM の行に乗ると白い下線が左から右へ出る | FREQ-150-AC-02 PC で関連 ITEM の行に乗っていない時は下線が出ない | （なし） |
-| FREQ-151 lg 未満の情報パネルの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-151-REQ-01 情報パネルの関連 ITEM のリンクに乗ると黒い下線が左から右へ出る | FREQ-151-AC-01 モバイル・タブレットで関連 ITEM のリンクに乗ると下線が左起点で出る | （なし） |
-| FREQ-151 lg 未満の情報パネルの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-151-REQ-01 情報パネルの関連 ITEM のリンクに乗ると黒い下線が左から右へ出る | FREQ-151-AC-02 モバイル・タブレットで関連 ITEM のリンクに乗っていない時は下線が出ない | （なし） |
-| FREQ-151 lg 未満の情報パネルの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-151-REQ-01 情報パネルの関連 ITEM のリンクに乗ると黒い下線が左から右へ出る | FREQ-151-AC-03 モバイル・タブレットで関連 ITEM のリンクを押すとその ITEM の頁へ移る | （なし） |
-| FREQ-151 lg 未満の情報パネルの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-151-REQ-01 情報パネルの関連 ITEM のリンクに乗ると黒い下線が左から右へ出る | FREQ-151-AC-04 PC では情報パネルの関連 ITEM のリンクが出ない | （なし） |
-| FREQ-176 詳細の関連アイテムの並びの上下の外枠の線を区切り線と同じにする | FREQ-176-REQ-01 外枠の線を border-black/10 の 1px にし、1px の隙間を外す | FREQ-176-AC-01 3つの幅で並びの上端・下端の線の色が区切り線と同じになる | （なし） |
-| FREQ-176 詳細の関連アイテムの並びの上下の外枠の線を区切り線と同じにする | FREQ-176-REQ-01 外枠の線を border-black/10 の 1px にし、1px の隙間を外す | FREQ-176-AC-02 3つの幅で上端・下端・区切りの全部の線が 1px になる | （なし） |
-| FREQ-177 詳細の関連アイテムのサムネイルを少し大きくする | FREQ-177-REQ-01 List の見本の大きさに倍率の変数を入れ、LOOK 詳細で √φ 倍にする | FREQ-177-AC-01 3つの幅で関連アイテムの見本の高さが文字の大きさ×φ³×√φ になる | （なし） |
-| FREQ-178 詳細の通常の表示から「Back to Lookbook」のリンクを外す | FREQ-178-REQ-01 通常の表示の上の「Back to Lookbook」のリンクを消し、無い LOOK の表示のリンクは残す | FREQ-178-AC-01 3つの幅で通常の表示に「Back to Lookbook」が無い | （なし） |
-| FREQ-178 詳細の通常の表示から「Back to Lookbook」のリンクを外す | FREQ-178-REQ-01 通常の表示の上の「Back to Lookbook」のリンクを消し、無い LOOK の表示のリンクは残す | FREQ-178-AC-02 無い LOOK の URL では「Back to Lookbook」が出る | （なし） |
-| FREQ-179 詳細の画像の見せ方をモバイル・タブレット・PC とも ITEM 詳細と同じにする | FREQ-179-REQ-01 モバイルは端まで広げたスワイプのカルーセルにし、サムネイルを出さない | FREQ-179-AC-01 モバイルでカルーセルが出て、サムネイルとメインの画像の枠が出ない | （なし） |
-| FREQ-179 詳細の画像の見せ方をモバイル・タブレット・PC とも ITEM 詳細と同じにする | FREQ-179-REQ-02 タブレットはスワイプのカルーセルに前送り・次送りのボタンを付ける | FREQ-179-AC-02 タブレットでカルーセルが出て、次送りを押すと前送りが出る | （なし） |
-| FREQ-179 詳細の画像の見せ方をモバイル・タブレット・PC とも ITEM 詳細と同じにする | FREQ-179-REQ-03 PC は左にサムネイルの縦の列、右にメインの画像を出す | FREQ-179-AC-03 PC でサムネイルの列とメインの画像が出て、サムネイルで画像が替わる | （なし） |
-| FREQ-180 詳細の PC でメインの画像が右の文字の列にかぶらないようにする | FREQ-180-REQ-01 メインの画像の枠を幅基準にし、列の中に収める | FREQ-180-AC-01 1024px と 1280px で画像の枠の右端が文字の列の左端と重ならない | （なし） |
-| FREQ-180 詳細の PC でメインの画像が右の文字の列にかぶらないようにする | FREQ-180-REQ-01 メインの画像の枠を幅基準にし、列の中に収める | FREQ-180-AC-02 1024px と 1280px で画像の枠の縦横比が 2/3 になる | （なし） |
-| FREQ-181 詳細の前後のナビを「PREV LOOK / LOOK LIST / NEXT LOOK」の3列にする | FREQ-181-REQ-01 3等分の格子に前・一覧・次のリンクを置き、前後が無い時は薄い非リンクにする | FREQ-181-AC-01 3つの幅で3つのラベルが出て、LOOK LIST が /look へのリンクになる | （なし） |
-| FREQ-181 詳細の前後のナビを「PREV LOOK / LOOK LIST / NEXT LOOK」の3列にする | FREQ-181-REQ-01 3等分の格子に前・一覧・次のリンクを置き、前後が無い時は薄い非リンクにする | FREQ-181-AC-02 3つの幅で中と右の列の左に 1px の縦の区切り線が出る | （なし） |
-| FREQ-181 詳細の前後のナビを「PREV LOOK / LOOK LIST / NEXT LOOK」の3列にする | FREQ-181-REQ-01 3等分の格子に前・一覧・次のリンクを置き、前後が無い時は薄い非リンクにする | FREQ-181-AC-03 ナビの中に LOOK のテーマ名が出ない | （なし） |
-| FREQ-182 3列のナビのアイコンをにじまない細い線で描く | FREQ-182-REQ-01 3つのアイコンを線幅1のインラインの SVG にする | FREQ-182-AC-01 3つの幅で3つのアイコンが svg で、アイコンのフォントの要素が無い | （なし） |
-| FREQ-182 3列のナビのアイコンをにじまない細い線で描く | FREQ-182-REQ-01 3つのアイコンを線幅1のインラインの SVG にする | FREQ-182-AC-02 3つの幅でアイコンの線幅が1・塗りなし・線の色が文字の色になる | （なし） |
-| FREQ-183 3列のナビの色・アイコンの大きさ・ラベルの字間を参考のデザインに合わせる | FREQ-183-REQ-01 ラベルとアイコンを黒にし、乗った時に #474747 にする | FREQ-183-AC-01 3つの幅でラベルとアイコンの色が rgb(0, 0, 0) になる | （なし） |
-| FREQ-183 3列のナビの色・アイコンの大きさ・ラベルの字間を参考のデザインに合わせる | FREQ-183-REQ-02 アイコンを --lk-size-7xl に大きくする | FREQ-183-AC-02 3つの幅でアイコンの大きさが --lk-size-7xl になる | （なし） |
-| FREQ-183 3列のナビの色・アイコンの大きさ・ラベルの字間を参考のデザインに合わせる | FREQ-183-REQ-03 3列のラベルの字間を tracking-wider にそろえる | FREQ-183-AC-03 3つの幅で3列のラベルの字間が同じになる | （なし） |
+| FREQ-137 カードの間の縦と横の空間を同じにする | FREQ-137-REQ-01 LOOK の格子の xl:gap-x-6 を xl:gap-6 にし、どの幅でも縦横を同じにする | FREQ-137-AC-02 PC（1280px）で縦横とも 24px になる | `e2e/FR-LOOK-ALL-024-equal-card-gaps.spec.ts:38` |
+| FREQ-138 モバイル・タブレットの LOOK カードを画像の下の情報パネルの形にする | FREQ-138-REQ-01 画像の下の情報パネルにシーズン（空白あり）・セリフ体のテーマ・罫線・関連アイテムの行を出す | FREQ-138-AC-01 モバイル・タブレットでシーズンが「2026 AW」の形で画像の下に出る | `e2e/FR-LOOK-ALL-014-season-label-format.spec.ts:57`<br>`e2e/FR-LOOK-ALL-014-season-label-format.spec.ts:61`<br>`e2e/FR-LOOK-ALL-025-card-info-panel.spec.ts:27` |
+| FREQ-138 モバイル・タブレットの LOOK カードを画像の下の情報パネルの形にする | FREQ-138-REQ-01 画像の下の情報パネルにシーズン（空白あり）・セリフ体のテーマ・罫線・関連アイテムの行を出す | FREQ-138-AC-02 モバイル・タブレットでテーマがセリフ体・大文字で画像の下に出る | `e2e/FR-LOOK-ALL-025-card-info-panel.spec.ts:51` |
+| FREQ-138 モバイル・タブレットの LOOK カードを画像の下の情報パネルの形にする | FREQ-138-REQ-01 画像の下の情報パネルにシーズン（空白あり）・セリフ体のテーマ・罫線・関連アイテムの行を出す | FREQ-138-AC-03 関連アイテムのあるカードでテーマと並びの間に罫線が出る | `e2e/FR-LOOK-ALL-025-card-info-panel.spec.ts:65` |
+| FREQ-138 モバイル・タブレットの LOOK カードを画像の下の情報パネルの形にする | FREQ-138-REQ-01 画像の下の情報パネルにシーズン（空白あり）・セリフ体のテーマ・罫線・関連アイテムの行を出す | FREQ-138-AC-04 タブレットで関連アイテムの価格が右端に寄る | `e2e/FR-LOOK-ALL-025-card-info-panel.spec.ts:94` |
+| FREQ-138 モバイル・タブレットの LOOK カードを画像の下の情報パネルの形にする | FREQ-138-REQ-01 画像の下の情報パネルにシーズン（空白あり）・セリフ体のテーマ・罫線・関連アイテムの行を出す | FREQ-138-AC-05 PC ではオーバーレイが出て、画像の下の文字・罫線・並びが出ない | `e2e/FR-LOOK-ALL-025-card-info-panel.spec.ts:114` |
+| FREQ-139 情報パネル（lg 未満）の余白と文字の大きさをデザインの4原則で整える | FREQ-139-REQ-01 パネルのテーマの文字を関連アイテムの φ 倍にし、画像の下の margin をモバイル 13px・タブレット 21px にする | FREQ-139-AC-01 画像の箱の margin-bottom がモバイル 13px・タブレット 21px になる | `e2e/FR-LOOK-ALL-023-desktop-image-no-margin.spec.ts:55`<br>`e2e/FR-LOOK-ALL-026-panel-spacing-typography.spec.ts:85` |
+| FREQ-139 情報パネル（lg 未満）の余白と文字の大きさをデザインの4原則で整える | FREQ-139-REQ-01 パネルのテーマの文字を関連アイテムの φ 倍にし、画像の下の margin をモバイル 13px・タブレット 21px にする | FREQ-139-AC-02 モバイル・タブレットでテーマの文字が関連アイテムの文字の 1.5 倍以上になる | `e2e/FR-LOOK-ALL-043-card-info-panel-remaining.spec.ts:80` |
+| FREQ-139 情報パネル（lg 未満）の余白と文字の大きさをデザインの4原則で整える | FREQ-139-REQ-01 パネルのテーマの文字を関連アイテムの φ 倍にし、画像の下の margin をモバイル 13px・タブレット 21px にする | FREQ-139-AC-03 シーズンとテーマの間隔がテーマと罫線の間隔より小さい | `e2e/FR-LOOK-ALL-043-card-info-panel-remaining.spec.ts:104` |
+| FREQ-139 情報パネル（lg 未満）の余白と文字の大きさをデザインの4原則で整える | FREQ-139-REQ-01 パネルのテーマの文字を関連アイテムの φ 倍にし、画像の下の margin をモバイル 13px・タブレット 21px にする | FREQ-139-AC-04 罫線の上と下の余白が等しい | `e2e/FR-LOOK-ALL-043-card-info-panel-remaining.spec.ts:130` |
+| FREQ-139 情報パネル（lg 未満）の余白と文字の大きさをデザインの4原則で整える | FREQ-139-REQ-01 パネルのテーマの文字を関連アイテムの φ 倍にし、画像の下の margin をモバイル 13px・タブレット 21px にする | FREQ-139-AC-05 PC では画像の下の文字が出ず、margin-bottom が 0 のままになる | `e2e/FR-LOOK-ALL-026-panel-spacing-typography.spec.ts:115` |
+| FREQ-140 lg 未満だけカードの間の縦の間隔を広げる | FREQ-140-REQ-01 row-gap をモバイル 34px・sm 以上 55px にし、lg 以上は縦横を同じに戻す | FREQ-140-AC-01 モバイルで row-gap が 34px、column-gap が 16px になる | `e2e/FR-LOOK-ALL-027-mobile-tablet-row-gap.spec.ts:33` |
+| FREQ-140 lg 未満だけカードの間の縦の間隔を広げる | FREQ-140-REQ-01 row-gap をモバイル 34px・sm 以上 55px にし、lg 以上は縦横を同じに戻す | FREQ-140-AC-02 タブレットで row-gap が 55px、column-gap が HOME 24px・一覧 32px になる | `e2e/FR-LOOK-ALL-027-mobile-tablet-row-gap.spec.ts:47` |
+| FREQ-140 lg 未満だけカードの間の縦の間隔を広げる | FREQ-140-REQ-01 row-gap をモバイル 34px・sm 以上 55px にし、lg 以上は縦横を同じに戻す | FREQ-140-AC-03 モバイル・タブレットで row-gap が column-gap より大きい | `e2e/FR-LOOK-ALL-044-list-behaviour-and-grid-remaining.spec.ts:243`<br>`e2e/FR-LOOK-ALL-044-list-behaviour-and-grid-remaining.spec.ts:252` |
+| FREQ-140 lg 未満だけカードの間の縦の間隔を広げる | FREQ-140-REQ-01 row-gap をモバイル 34px・sm 以上 55px にし、lg 以上は縦横を同じに戻す | FREQ-140-AC-04 PC で row-gap と column-gap が等しく 24px になる | `e2e/FR-LOOK-ALL-027-mobile-tablet-row-gap.spec.ts:61` |
+| FREQ-141 /look 一覧の lg 未満の見た目をホームの LOOK の区画にそろえる | FREQ-141-REQ-01 一覧の本文の列の左右の padding をホームと同じにし、タブレットの列の間隔を 24px にする | FREQ-141-AC-01 モバイルで一覧の本文の列の左右の padding が 13px になる | `e2e/FR-LOOK-ALL-028-catalog-match-home-mobile.spec.ts:70` |
+| FREQ-141 /look 一覧の lg 未満の見た目をホームの LOOK の区画にそろえる | FREQ-141-REQ-01 一覧の本文の列の左右の padding をホームと同じにし、タブレットの列の間隔を 24px にする | FREQ-141-AC-02 タブレットで一覧の column-gap が 24px になる | `e2e/FR-LOOK-ALL-044-list-behaviour-and-grid-remaining.spec.ts:264` |
+| FREQ-141 /look 一覧の lg 未満の見た目をホームの LOOK の区画にそろえる | FREQ-141-REQ-01 一覧の本文の列の左右の padding をホームと同じにし、タブレットの列の間隔を 24px にする | FREQ-141-AC-03 モバイル・タブレットで一覧とホームの row-gap・column-gap が一致する | `e2e/FR-LOOK-ALL-028-catalog-match-home-mobile.spec.ts:79` |
+| FREQ-141 /look 一覧の lg 未満の見た目をホームの LOOK の区画にそろえる | FREQ-141-REQ-01 一覧の本文の列の左右の padding をホームと同じにし、タブレットの列の間隔を 24px にする | FREQ-141-AC-04 PC の一覧の gap と左の padding が今までどおりになる | `e2e/FR-LOOK-ALL-028-catalog-match-home-mobile.spec.ts:101` |
+| FREQ-142 lg 未満だけ LOOK カード全体をグレーの枠線で囲む | FREQ-142-REQ-01 カードの外側に枠線を付け、画像は枠に付け、情報パネルだけ内側に余白を取る | FREQ-142-AC-01 モバイル・タブレットでカードに 1px のグレーの枠線が出る | `e2e/FR-LOOK-ALL-029-card-gray-border.spec.ts:27` |
+| FREQ-142 lg 未満だけ LOOK カード全体をグレーの枠線で囲む | FREQ-142-REQ-01 カードの外側に枠線を付け、画像は枠に付け、情報パネルだけ内側に余白を取る | FREQ-142-AC-02 モバイル・タブレットで画像の左右の端が枠線の内側に付く | `e2e/FR-LOOK-ALL-029-card-gray-border.spec.ts:57` |
+| FREQ-142 lg 未満だけ LOOK カード全体をグレーの枠線で囲む | FREQ-142-REQ-01 カードの外側に枠線を付け、画像は枠に付け、情報パネルだけ内側に余白を取る | FREQ-142-AC-03 モバイル・タブレットで情報パネルの文字が枠線から離れる | `e2e/FR-LOOK-ALL-043-card-info-panel-remaining.spec.ts:147` |
+| FREQ-142 lg 未満だけ LOOK カード全体をグレーの枠線で囲む | FREQ-142-REQ-01 カードの外側に枠線を付け、画像は枠に付け、情報パネルだけ内側に余白を取る | FREQ-142-AC-04 PC でカードに枠線が出ない | `e2e/FR-LOOK-ALL-029-card-gray-border.spec.ts:96` |
+| FREQ-143 モバイル・タブレットのシーズンの表記を濃く・太く・字間を広くする | FREQ-143-REQ-01 シーズンの文字の色を黒 50% より濃くする | FREQ-143-AC-01 モバイル・タブレットでシーズンの文字の不透明度が 0.5 より大きい | `e2e/FR-LOOK-ALL-030-season-label-emphasis.spec.ts:52` |
+| FREQ-143 モバイル・タブレットのシーズンの表記を濃く・太く・字間を広くする | FREQ-143-REQ-02 シーズンの文字を 400 より太くする | FREQ-143-AC-02 モバイル・タブレットでシーズンの font-weight が 500 以上になる | `e2e/FR-LOOK-ALL-042-season-label-and-hover-image-remaining.spec.ts:114` |
+| FREQ-143 モバイル・タブレットのシーズンの表記を濃く・太く・字間を広くする | FREQ-143-REQ-04 シーズンの表記に番号を足さない | FREQ-143-AC-04 シーズンが「2026 AW」の形のままで番号が無い | `e2e/FR-LOOK-ALL-042-season-label-and-hover-image-remaining.spec.ts:123` |
+| FREQ-144 モバイル・タブレットの関連 ITEM の名前と価格を ITEM カードの見た目にそろえる | FREQ-144-REQ-01 関連 ITEM の名前を ITEM カードと同じ書体・字間・太さ・色にする | FREQ-144-AC-01 関連 ITEM の名前の書体・太さ・字間が ITEM カードと一致する | `e2e/FR-LOOK-ALL-031-related-item-match-item-card.spec.ts:65` |
+| FREQ-144 モバイル・タブレットの関連 ITEM の名前と価格を ITEM カードの見た目にそろえる | FREQ-144-REQ-01 関連 ITEM の名前を ITEM カードと同じ書体・字間・太さ・色にする | FREQ-144-AC-04 関連 ITEM の名前・価格の文字が黒になる | `e2e/FR-LOOK-ALL-043-card-info-panel-remaining.spec.ts:216` |
+| FREQ-144 モバイル・タブレットの関連 ITEM の名前と価格を ITEM カードの見た目にそろえる | FREQ-144-REQ-02 価格を ITEM カードと同じ色・太さにし、「¥」とカンマ区切りで出す | FREQ-144-AC-02 関連 ITEM の価格の太さ・色が ITEM カードと一致する | `e2e/FR-LOOK-ALL-043-card-info-panel-remaining.spec.ts:177` |
+| FREQ-144 モバイル・タブレットの関連 ITEM の名前と価格を ITEM カードの見た目にそろえる | FREQ-144-REQ-02 価格を ITEM カードと同じ色・太さにし、「¥」とカンマ区切りで出す | FREQ-144-AC-03 関連 ITEM の価格が半角の「¥」で始まる | `e2e/FR-LOOK-ALL-043-card-info-panel-remaining.spec.ts:203` |
+| FREQ-144 モバイル・タブレットの関連 ITEM の名前と価格を ITEM カードの見た目にそろえる | FREQ-144-REQ-02 価格を ITEM カードと同じ色・太さにし、「¥」とカンマ区切りで出す | FREQ-144-AC-04 関連 ITEM の名前・価格の文字が黒になる | `e2e/FR-LOOK-ALL-043-card-info-panel-remaining.spec.ts:216` |
+| FREQ-145 モバイル・タブレットのシーズンの表記の字間を詰める | FREQ-145-REQ-01 シーズンの字間を 0.1em より狭くする | FREQ-145-AC-01 モバイル・タブレットでシーズンの字間が文字の大きさの 10% より狭い | `e2e/FR-LOOK-ALL-032-season-label-tracking-narrow.spec.ts:49` |
+| FREQ-145 モバイル・タブレットのシーズンの表記の字間を詰める | FREQ-145-REQ-01 シーズンの字間を 0.1em より狭くする | FREQ-145-AC-02 シーズンの濃さと太さの強調が残っている | `e2e/FR-LOOK-ALL-042-season-label-and-hover-image-remaining.spec.ts:135` |
+| FREQ-150 PC のオーバーレイの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-150-REQ-01 オーバーレイの関連 ITEM の行を role="link" にし、押すか Enter で /item/{id} へ移る | FREQ-150-AC-03 PC で関連 ITEM の行を押すとその ITEM の頁へ移る | `e2e/FR-LOOK-ALL-033-overlay-item-underline-link.spec.ts:73` |
+| FREQ-150 PC のオーバーレイの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-150-REQ-01 オーバーレイの関連 ITEM の行を role="link" にし、押すか Enter で /item/{id} へ移る | FREQ-150-AC-04 モバイル・タブレットではオーバーレイの関連 ITEM の行が出ない | `e2e/FR-LOOK-ALL-033-overlay-item-underline-link.spec.ts:109` |
+| FREQ-150 PC のオーバーレイの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-150-REQ-02 関連 ITEM の行に乗ると白い下線が左から右へ出る | FREQ-150-AC-01 PC で関連 ITEM の行に乗ると下線が左起点で出る | `e2e/FR-LOOK-ALL-033-overlay-item-underline-link.spec.ts:27` |
+| FREQ-150 PC のオーバーレイの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-150-REQ-02 関連 ITEM の行に乗ると白い下線が左から右へ出る | FREQ-150-AC-02 PC で関連 ITEM の行に乗っていない時は下線が出ない | `e2e/FR-LOOK-ALL-041-card-overlay-desktop-remaining.spec.ts:200` |
+| FREQ-151 lg 未満の情報パネルの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-151-REQ-01 情報パネルの関連 ITEM のリンクに乗ると黒い下線が左から右へ出る | FREQ-151-AC-01 モバイル・タブレットで関連 ITEM のリンクに乗ると下線が左起点で出る | `e2e/FR-LOOK-ALL-034-panel-item-underline-link.spec.ts:34` |
+| FREQ-151 lg 未満の情報パネルの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-151-REQ-01 情報パネルの関連 ITEM のリンクに乗ると黒い下線が左から右へ出る | FREQ-151-AC-02 モバイル・タブレットで関連 ITEM のリンクに乗っていない時は下線が出ない | `e2e/FR-LOOK-ALL-043-card-info-panel-remaining.spec.ts:234` |
+| FREQ-151 lg 未満の情報パネルの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-151-REQ-01 情報パネルの関連 ITEM のリンクに乗ると黒い下線が左から右へ出る | FREQ-151-AC-03 モバイル・タブレットで関連 ITEM のリンクを押すとその ITEM の頁へ移る | `e2e/FR-LOOK-ALL-043-card-info-panel-remaining.spec.ts:251` |
+| FREQ-151 lg 未満の情報パネルの関連 ITEM に下線の動きを付け、押すと ITEM の頁へ移る | FREQ-151-REQ-01 情報パネルの関連 ITEM のリンクに乗ると黒い下線が左から右へ出る | FREQ-151-AC-04 PC では情報パネルの関連 ITEM のリンクが出ない | `e2e/FR-LOOK-ALL-034-panel-item-underline-link.spec.ts:72` |
+| FREQ-176 詳細の関連アイテムの並びの上下の外枠の線を区切り線と同じにする | FREQ-176-REQ-01 外枠の線を border-black/10 の 1px にし、1px の隙間を外す | FREQ-176-AC-01 3つの幅で並びの上端・下端の線の色が区切り線と同じになる | `e2e/FR-LOOK-DETAIL-008-related-items-divider-unify.spec.ts:25` |
+| FREQ-176 詳細の関連アイテムの並びの上下の外枠の線を区切り線と同じにする | FREQ-176-REQ-01 外枠の線を border-black/10 の 1px にし、1px の隙間を外す | FREQ-176-AC-02 3つの幅で上端・下端・区切りの全部の線が 1px になる | `e2e/FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining.spec.ts:45` |
+| FREQ-177 詳細の関連アイテムのサムネイルを少し大きくする | FREQ-177-REQ-01 List の見本の大きさに倍率の変数を入れ、LOOK 詳細で √φ 倍にする | FREQ-177-AC-01 3つの幅で関連アイテムの見本の高さが文字の大きさ×φ³×√φ になる | `e2e/FR-LOOK-DETAIL-009-related-item-preview-size.spec.ts:18` |
+| FREQ-178 詳細の通常の表示から「Back to Lookbook」のリンクを外す | FREQ-178-REQ-01 通常の表示の上の「Back to Lookbook」のリンクを消し、無い LOOK の表示のリンクは残す | FREQ-178-AC-01 3つの幅で通常の表示に「Back to Lookbook」が無い | `e2e/FR-LOOK-DETAIL-010-remove-back-link.spec.ts:15` |
+| FREQ-178 詳細の通常の表示から「Back to Lookbook」のリンクを外す | FREQ-178-REQ-01 通常の表示の上の「Back to Lookbook」のリンクを消し、無い LOOK の表示のリンクは残す | FREQ-178-AC-02 無い LOOK の URL では「Back to Lookbook」が出る | `e2e/FR-LOOK-DETAIL-010-remove-back-link.spec.ts:28` |
+| FREQ-179 詳細の画像の見せ方をモバイル・タブレット・PC とも ITEM 詳細と同じにする | FREQ-179-REQ-01 モバイルは端まで広げたスワイプのカルーセルにし、サムネイルを出さない | FREQ-179-AC-01 モバイルでカルーセルが出て、サムネイルとメインの画像の枠が出ない | `e2e/FR-LOOK-DETAIL-011-image-gallery-match-item.spec.ts:9` |
+| FREQ-179 詳細の画像の見せ方をモバイル・タブレット・PC とも ITEM 詳細と同じにする | FREQ-179-REQ-02 タブレットはスワイプのカルーセルに前送り・次送りのボタンを付ける | FREQ-179-AC-02 タブレットでカルーセルが出て、次送りを押すと前送りが出る | `e2e/FR-LOOK-DETAIL-011-image-gallery-match-item.spec.ts:33`<br>`e2e/FR-LOOK-DETAIL-012-desktop-image-no-overlap.spec.ts:43` |
+| FREQ-179 詳細の画像の見せ方をモバイル・タブレット・PC とも ITEM 詳細と同じにする | FREQ-179-REQ-03 PC は左にサムネイルの縦の列、右にメインの画像を出す | FREQ-179-AC-03 PC でサムネイルの列とメインの画像が出て、サムネイルで画像が替わる | `e2e/FR-LOOK-DETAIL-011-image-gallery-match-item.spec.ts:70` |
+| FREQ-180 詳細の PC でメインの画像が右の文字の列にかぶらないようにする | FREQ-180-REQ-01 メインの画像の枠を幅基準にし、列の中に収める | FREQ-180-AC-01 1024px と 1280px で画像の枠の右端が文字の列の左端と重ならない | `e2e/FR-LOOK-DETAIL-012-desktop-image-no-overlap.spec.ts:14` |
+| FREQ-180 詳細の PC でメインの画像が右の文字の列にかぶらないようにする | FREQ-180-REQ-01 メインの画像の枠を幅基準にし、列の中に収める | FREQ-180-AC-02 1024px と 1280px で画像の枠の縦横比が 2/3 になる | `e2e/FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining.spec.ts:77` |
+| FREQ-181 詳細の前後のナビを「PREV LOOK / LOOK LIST / NEXT LOOK」の3列にする | FREQ-181-REQ-01 3等分の格子に前・一覧・次のリンクを置き、前後が無い時は薄い非リンクにする | FREQ-181-AC-01 3つの幅で3つのラベルが出て、LOOK LIST が /look へのリンクになる | `e2e/FR-LOOK-DETAIL-013-bottom-nav-three-columns.spec.ts:16` |
+| FREQ-181 詳細の前後のナビを「PREV LOOK / LOOK LIST / NEXT LOOK」の3列にする | FREQ-181-REQ-01 3等分の格子に前・一覧・次のリンクを置き、前後が無い時は薄い非リンクにする | FREQ-181-AC-02 tablet・PC の2つの幅で中と右の列の左に 1px の縦の区切り線が出る | `e2e/FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining.spec.ts:98` |
+| FREQ-181 詳細の前後のナビを「PREV LOOK / LOOK LIST / NEXT LOOK」の3列にする | FREQ-181-REQ-01 3等分の格子に前・一覧・次のリンクを置き、前後が無い時は薄い非リンクにする | FREQ-181-AC-03 ナビの中に LOOK のテーマ名が出ない | `e2e/FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining.spec.ts:132` |
+| FREQ-182 3列のナビのアイコンをにじまない細い線で描く | FREQ-182-REQ-01 3つのアイコンを線幅1のインラインの SVG にする | FREQ-182-AC-01 3つの幅で3つのアイコンが svg で、アイコンのフォントの要素が無い | `e2e/FR-LOOK-DETAIL-014-nav-icon-thin-svg.spec.ts:16` |
+| FREQ-182 3列のナビのアイコンをにじまない細い線で描く | FREQ-182-REQ-01 3つのアイコンを線幅1のインラインの SVG にする | FREQ-182-AC-02 tablet・PC の2つの幅でアイコンの線幅が1・塗りなし・線の色が文字の色になる | `e2e/FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining.spec.ts:154` |
+| FREQ-183 3列のナビの色・アイコンの大きさ・ラベルの字間を参考のデザインに合わせる | FREQ-183-REQ-01 ラベルとアイコンを黒にし、乗った時に #474747 にする | FREQ-183-AC-01 3つの幅でラベルとアイコンの色が rgb(0, 0, 0) になる | `e2e/FR-LOOK-DETAIL-015-nav-black-and-icon-size.spec.ts:18` |
+| FREQ-183 3列のナビの色・アイコンの大きさ・ラベルの字間を参考のデザインに合わせる | FREQ-183-REQ-02 アイコンを --lk-size-7xl に大きくする | FREQ-183-AC-02 tablet・PC の2つの幅でアイコンの大きさが --lk-size-7xl になる | `e2e/FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining.spec.ts:184` |
+| FREQ-183 3列のナビの色・アイコンの大きさ・ラベルの字間を参考のデザインに合わせる | FREQ-183-REQ-03 3列のラベルの字間を tracking-wider にそろえる | FREQ-183-AC-03 tablet・PC の2つの幅で3列のラベルの字間が同じになる | `e2e/FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining.spec.ts:214` |
 | FREQ-277 /look とホームの LOOK の格子の列数を ITEM と同じ区切りにする | FREQ-277-REQ-01 列数を md 未満2・md〜2xl 未満3・2xl 以上4にする | FREQ-277-AC-01 4つの幅で /look の列数が /item と一致する | `e2e/FR-LOOK-ALL-036-grid-columns-match-item.spec.ts:38` |
 | FREQ-277 /look とホームの LOOK の格子の列数を ITEM と同じ区切りにする | FREQ-277-REQ-02 どの幅でもカードの幅を極端に小さくしない | FREQ-277-AC-02 4つの幅で LOOK カードの幅が 200px 以上になる | `e2e/FR-LOOK-ALL-036-grid-columns-match-item.spec.ts:54` |
 | FREQ-277 /look とホームの LOOK の格子の列数を ITEM と同じ区切りにする | FREQ-277-REQ-03 ホームの LOOK の数を 2xl 未満6件・2xl 以上8件にする | FREQ-277-AC-03 ホームで 390・768・1280px は6件まで、1536px は8件までの LOOK が出る | `e2e/FR-LOOK-ALL-036-grid-columns-match-item.spec.ts:72` |
-| FREQ-279 ITEM と LOOK のカードを画面に入った物から順にリビールで見せる | FREQ-279-REQ-01 画像と文字を別々に見張り、画面に入ったら data-reveal を立て、外さない | FREQ-279-AC-01 初めに画面の外の画像の枠に data-reveal="true" が無く、スクロールすると付く | （なし） |
-| FREQ-279 ITEM と LOOK のカードを画面に入った物から順にリビールで見せる | FREQ-279-REQ-02 画像は白いカバーが右へ退いて左から右へ現れる | FREQ-279-AC-02 リビールの後の画像の枠の ::after の animation-name が reveal-cover-act になる | （なし） |
-| FREQ-279 ITEM と LOOK のカードを画面に入った物から順にリビールで見せる | FREQ-279-REQ-03 文字はマスクの下からせり上がる | FREQ-279-AC-03 リビールの後の商品名・LOOK のテーマの transform が none になる | （なし） |
-| FREQ-279 ITEM と LOOK のカードを画面に入った物から順にリビールで見せる | FREQ-279-REQ-04 ホーム・/item・/look の全部に付ける | FREQ-279-AC-04 /・/item・/look のカードに data-reveal-group と .reveal-cover がある | （なし） |
-| FREQ-279 ITEM と LOOK のカードを画面に入った物から順にリビールで見せる | FREQ-279-REQ-05 カードの上端だけが画面に入った時は、まだ外の文字を動かさない | FREQ-279-AC-05 カードの上端だけを見せて2秒待っても文字が出ず、文字まで進むと出る | （なし） |
-| FREQ-288 詳細のタブレット・PC の画像の大きさ・インジケータ・情報の列の幅を ITEM 詳細と同じにする | FREQ-288-REQ-01 画像が複数の時、全部の幅で画像の下に枚数分の線のインジケータを出す | FREQ-288-AC-01 3つの幅で画像の下に枚数分の線が出て、選んだ線だけに色が付く | （なし） |
-| FREQ-288 詳細のタブレット・PC の画像の大きさ・インジケータ・情報の列の幅を ITEM 詳細と同じにする | FREQ-288-REQ-02 タブレットの送りのボタンを画像の枠の縦の中央に置き、大きさを枠の幅の 4.5% にする | FREQ-288-AC-02 タブレットで送りのボタンの上下の中心が画像の枠の中心と一致する | （なし） |
-| FREQ-288 詳細のタブレット・PC の画像の大きさ・インジケータ・情報の列の幅を ITEM 詳細と同じにする | FREQ-288-REQ-03 PC のメインの画像の枠を高さ基準の 2:3 にし、md 以上を ITEM と同じ2列の格子にする | FREQ-288-AC-03 PC で画像の枠が 2:3 で画面の縦に収まり、情報の列の幅が画像の幅と等しい | （なし） |
-| FREQ-289 PC で画面の縦が狭い時、インジケータと画面の下端の間に余白を入れる | FREQ-289-REQ-01 ITEM 詳細・LOOK 詳細の PC のメインの画像の枠の高さの上限を min(48rem, 100svh-7rem) にする | FREQ-289-AC-01 1280×725 で ITEM 詳細のインジケータの下端が画面の下端から 12px 以上離れる | （なし） |
-| FREQ-289 PC で画面の縦が狭い時、インジケータと画面の下端の間に余白を入れる | FREQ-289-REQ-01 ITEM 詳細・LOOK 詳細の PC のメインの画像の枠の高さの上限を min(48rem, 100svh-7rem) にする | FREQ-289-AC-02 1280×725 で LOOK 詳細のインジケータの下端が画面の下端から 12px 以上離れる | （なし） |
+| FREQ-279 ITEM と LOOK のカードを画面に入った物から順にリビールで見せる | FREQ-279-REQ-01 画像と文字を別々に見張り、画面に入ったら data-reveal を立て、外さない | FREQ-279-AC-01 初めに画面の外の画像の枠に data-reveal="true" が無く、スクロールすると付く | `e2e/FR-LOOK-ALL-037-card-scroll-reveal.spec.ts:33` |
+| FREQ-279 ITEM と LOOK のカードを画面に入った物から順にリビールで見せる | FREQ-279-REQ-02 画像は白いカバーが右へ退いて左から右へ現れる | FREQ-279-AC-02 リビールの後の画像の枠の ::after の animation-name が reveal-cover-act になる | `e2e/FR-LOOK-ALL-037-card-scroll-reveal.spec.ts:87` |
+| FREQ-279 ITEM と LOOK のカードを画面に入った物から順にリビールで見せる | FREQ-279-REQ-03 文字はマスクの下からせり上がる | FREQ-279-AC-03 リビールの後の商品名・LOOK のテーマの transform が none になる | `e2e/FR-LOOK-ALL-044-list-behaviour-and-grid-remaining.spec.ts:274`<br>`e2e/FR-LOOK-ALL-044-list-behaviour-and-grid-remaining.spec.ts:303` |
+| FREQ-279 ITEM と LOOK のカードを画面に入った物から順にリビールで見せる | FREQ-279-REQ-04 ホーム・/item・/look の全部に付ける | FREQ-279-AC-04 /・/item・/look のカードに data-reveal-group と .reveal-cover がある | `e2e/FR-LOOK-ALL-037-card-scroll-reveal.spec.ts:112` |
+| FREQ-279 ITEM と LOOK のカードを画面に入った物から順にリビールで見せる | FREQ-279-REQ-05 カードの上端だけが画面に入った時は、まだ外の文字を動かさない | FREQ-279-AC-05 カードの上端だけを見せて2秒待っても文字が出ず、文字まで進むと出る | `e2e/FR-LOOK-ALL-037-card-scroll-reveal.spec.ts:53` |
+| FREQ-288 詳細のタブレット・PC の画像の大きさ・インジケータ・情報の列の幅を ITEM 詳細と同じにする | FREQ-288-REQ-01 画像が複数の時、全部の幅で画像の下に枚数分の線のインジケータを出す | FREQ-288-AC-01 3つの幅で画像の下に枚数分の線が出て、選んだ線だけに色が付く | `e2e/FR-LOOK-DETAIL-016-tablet-desktop-match-item.spec.ts:16` |
+| FREQ-288 詳細のタブレット・PC の画像の大きさ・インジケータ・情報の列の幅を ITEM 詳細と同じにする | FREQ-288-REQ-02 タブレットの送りのボタンを画像の枠の縦の中央に置き、大きさを枠の幅の 4.5% にする | FREQ-288-AC-02 タブレットで送りのボタンの上下の中心が画像の枠の中心と一致する | `e2e/FR-LOOK-DETAIL-016-tablet-desktop-match-item.spec.ts:46` |
+| FREQ-288 詳細のタブレット・PC の画像の大きさ・インジケータ・情報の列の幅を ITEM 詳細と同じにする | FREQ-288-REQ-03 PC のメインの画像の枠を高さ基準の 2:3 にし、md 以上を ITEM と同じ2列の格子にする | FREQ-288-AC-03 PC で画像の枠が 2:3 で画面の縦に収まり、情報の列の幅が画像の幅と等しい | `e2e/FR-LOOK-DETAIL-016-tablet-desktop-match-item.spec.ts:68` |
+| FREQ-289 PC で画面の縦が狭い時、インジケータと画面の下端の間に余白を入れる | FREQ-289-REQ-01 ITEM 詳細・LOOK 詳細の PC のメインの画像の枠の高さの上限を min(48rem, 100svh-7rem) にする | FREQ-289-AC-01 1280×725 で ITEM 詳細のインジケータの下端が画面の下端から 12px 以上離れる | `e2e/FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining.spec.ts:289` |
+| FREQ-289 PC で画面の縦が狭い時、インジケータと画面の下端の間に余白を入れる | FREQ-289-REQ-01 ITEM 詳細・LOOK 詳細の PC のメインの画像の枠の高さの上限を min(48rem, 100svh-7rem) にする | FREQ-289-AC-02 1280×725 で LOOK 詳細のインジケータの下端が画面の下端から 12px 以上離れる | `e2e/FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining.spec.ts:307` |
 | FREQ-337 モバイルの LOOK カードで関連アイテムどうしの間隔を広げる | FREQ-337-REQ-01 sm 未満で関連アイテムの間の余白を商品の中の余白の φ 倍以上にし、sm 以上は変えない | FREQ-337-AC-01 モバイルで「価格↔次の名前」の余白が「名前↔価格」の 1.618 倍以上になる | `e2e/FR-LOOK-ALL-038-mobile-related-item-group-gap.spec.ts:150` |
 | FREQ-337 モバイルの LOOK カードで関連アイテムどうしの間隔を広げる | FREQ-337-REQ-01 sm 未満で関連アイテムの間の余白を商品の中の余白の φ 倍以上にし、sm 以上は変えない | FREQ-337-AC-02 タブレットで名前と価格が1行のままで、商品の間の余白が文字の 0.618 倍になる | `e2e/FR-LOOK-ALL-038-mobile-related-item-group-gap.spec.ts:172` |
 | FREQ-337 モバイルの LOOK カードで関連アイテムどうしの間隔を広げる | FREQ-337-REQ-01 sm 未満で関連アイテムの間の余白を商品の中の余白の φ 倍以上にし、sm 以上は変えない | FREQ-337-AC-03 PC でカードの下に関連アイテムの並びが出ない | `e2e/FR-LOOK-ALL-038-mobile-related-item-group-gap.spec.ts:198` |
-| FREQ-338 LOOK カードのリビールで文字も画像と同じ左から右の向きで出す | FREQ-338-REQ-01 情報パネルの文字をマスクの左の外から横に滑り込ませ、ITEM カードは下からのままにする | FREQ-338-AC-01 リビールの前の LOOK カードの文字が横にだけ退いている | `e2e/FR-LOOK-ALL-039-card-text-reveal-left-to-right.spec.ts:52` |
-| FREQ-338 LOOK カードのリビールで文字も画像と同じ左から右の向きで出す | FREQ-338-REQ-01 情報パネルの文字をマスクの左の外から横に滑り込ませ、ITEM カードは下からのままにする | FREQ-338-AC-02 リビールの後の LOOK カードの文字の animation-name が reveal-rise-x-act になり定位置に戻る | `e2e/FR-LOOK-ALL-039-card-text-reveal-left-to-right.spec.ts:72` |
-| FREQ-338 LOOK カードのリビールで文字も画像と同じ左から右の向きで出す | FREQ-338-REQ-01 情報パネルの文字をマスクの左の外から横に滑り込ませ、ITEM カードは下からのままにする | FREQ-338-AC-03 ITEM カードの文字の animation-name が reveal-rise-act のままになる | `e2e/FR-LOOK-ALL-039-card-text-reveal-left-to-right.spec.ts:88` |
+| FREQ-338 LOOK カードのリビールで文字も画像と同じ左から右の向きで出す | FREQ-338-REQ-01 情報パネルの文字をマスクの左の外から横に滑り込ませ、ITEM カードは下からのままにする | FREQ-338-AC-01 リビールの前の LOOK カードの文字が横にだけ退いている | `e2e/FR-LOOK-ALL-039-card-text-reveal-left-to-right.spec.ts:49` |
+| FREQ-338 LOOK カードのリビールで文字も画像と同じ左から右の向きで出す | FREQ-338-REQ-01 情報パネルの文字をマスクの左の外から横に滑り込ませ、ITEM カードは下からのままにする | FREQ-338-AC-02 リビールの後の LOOK カードの文字の animation-name が reveal-rise-x-act になり定位置に戻る | `e2e/FR-LOOK-ALL-039-card-text-reveal-left-to-right.spec.ts:70` |
+| FREQ-338 LOOK カードのリビールで文字も画像と同じ左から右の向きで出す | FREQ-338-REQ-01 情報パネルの文字をマスクの左の外から横に滑り込ませ、ITEM カードは下からのままにする | FREQ-338-AC-03 ITEM カードの文字の animation-name が reveal-rise-act のままになる | `e2e/FR-LOOK-ALL-039-card-text-reveal-left-to-right.spec.ts:86` |
 | FREQ-339 LOOK カードのリビールの前に情報パネルの文字を覗かせない | FREQ-339-REQ-01 情報パネルの余白をマスクではなく動く側（.reveal-rise）に持たせる | FREQ-339-AC-01 リビールの前の文字の右端がカードの左端以下にある | `e2e/FR-LOOK-ALL-040-reveal-initial-outside-card.spec.ts:42` |
-| FREQ-339 LOOK カードのリビールの前に情報パネルの文字を覗かせない | FREQ-339-REQ-01 情報パネルの余白をマスクではなく動く側（.reveal-rise）に持たせる | FREQ-339-AC-02 リビールの後は文字がカードの中の定位置に戻る | `e2e/FR-LOOK-ALL-040-reveal-initial-outside-card.spec.ts:64` |
-| FREQ-343 詳細のモバイルで3項目を画面の下に固定した BottomNavigation で出す | FREQ-343-REQ-01 md 未満は3列のナビを隠し、3項目の BottomNavigation を画面の下に固定する | FREQ-343-AC-01 モバイルで固定のナビが出て、下端が画面の下端に付いたまま動かない | （なし） |
-| FREQ-343 詳細のモバイルで3項目を画面の下に固定した BottomNavigation で出す | FREQ-343-REQ-01 md 未満は3列のナビを隠し、3項目の BottomNavigation を画面の下に固定する | FREQ-343-AC-02 モバイルの固定のナビに3つのラベルが出て、LOOK LIST が /look へのリンクになる | （なし） |
-| FREQ-343 詳細のモバイルで3項目を画面の下に固定した BottomNavigation で出す | FREQ-343-REQ-01 md 未満は3列のナビを隠し、3項目の BottomNavigation を画面の下に固定する | FREQ-343-AC-03 モバイルは3列のナビが出ず、タブレット・PC は3列のナビだけが出る | （なし） |
-| FREQ-343 詳細のモバイルで3項目を画面の下に固定した BottomNavigation で出す | FREQ-343-REQ-02 固定のナビがフッターの著作権・法務のリンクを覆わないよう、フッターに下の余白を足す | FREQ-343-AC-04 モバイルで最下部まで進むと法務の3つのリンクが固定のナビより上にある | （なし） |
-| FREQ-343 詳細のモバイルで3項目を画面の下に固定した BottomNavigation で出す | FREQ-343-REQ-03 固定のナビのラベルを --lk-size-7xs にする | FREQ-343-AC-05 モバイルで固定のナビのラベルの文字の大きさが --lk-size-7xs になる | （なし） |
-| FREQ-344 詳細で横のスクロールを起こさない | FREQ-344-REQ-01 カルーセルの負の margin を main の余白と同じ -mx-4 にし、頁の横幅を画面に収める | FREQ-344-AC-01 3つの幅で頁の scrollWidth が clientWidth 以下になる | （なし） |
-| FREQ-344 詳細で横のスクロールを起こさない | FREQ-344-REQ-01 カルーセルの負の margin を main の余白と同じ -mx-4 にし、頁の横幅を画面に収める | FREQ-344-AC-02 3つの幅で画面の右端を越える要素が無い | （なし） |
-| FREQ-344 詳細で横のスクロールを起こさない | FREQ-344-REQ-01 カルーセルの負の margin を main の余白と同じ -mx-4 にし、頁の横幅を画面に収める | FREQ-344-AC-03 モバイルで固定のナビの下端が画面の下端と一致する | （なし） |
-| THR-LOOK-001 公開前の LOOK が公開の道から漏れる | SEC-LOOK-001 公開の道は公開済みの LOOK だけを返す | SEC-LOOK-001-AC-01 anon と一般会員の直接の読み出しに非公開の LOOK が出ない | （なし） |
-| THR-LOOK-001 公開前の LOOK が公開の道から漏れる | SEC-LOOK-001 公開の道は公開済みの LOOK だけを返す | SEC-LOOK-001-AC-02 公開の画面に非公開の LOOK が出ない | （なし） |
-| THR-LOOK-002 公開の LOOK に紐づく非公開の商品の ID が読める | SEC-LOOK-002 LOOK の関連の公開の読み出しは、公開の商品の紐づきだけを返す | SEC-LOOK-002-AC-01 anon の直接の読み出しに非公開の商品の紐づきが出ない | （なし） |
-| THR-LOOK-002 公開の LOOK に紐づく非公開の商品の ID が読める | SEC-LOOK-002 LOOK の関連の公開の読み出しは、公開の商品の紐づきだけを返す | SEC-LOOK-002-AC-02 一般会員の直接の読み出しに非公開の商品の紐づきが出ない | （なし） |
-| THR-LOOK-003 権限を持つ人が2要素認証を飛ばして DB を直接書き換える | SEC-LOOK-003 DB でも LOOK の管理の権限を使う操作に2要素認証の済みを求める | SEC-LOOK-003-AC-01 aal1 の session では非公開の LOOK を直接読めない | （なし） |
-| THR-LOOK-003 権限を持つ人が2要素認証を飛ばして DB を直接書き換える | SEC-LOOK-003 DB でも LOOK の管理の権限を使う操作に2要素認証の済みを求める | SEC-LOOK-003-AC-02 aal1 の session では LOOK と関連を直接書き換え・消去できない | （なし） |
-| THR-LOOK-004 anon・authenticated に要らない表の権限を付けている | SEC-LOOK-004 LOOK の表の権限を、使う操作だけに絞る | SEC-LOOK-004-AC-01 anon に LOOK の表の書き込みの権限が無い | （なし） |
-| THR-LOOK-004 anon・authenticated に要らない表の権限を付けている | SEC-LOOK-004 LOOK の表の権限を、使う操作だけに絞る | SEC-LOOK-004-AC-02 authenticated に LOOK の表の要らない権限が無い | （なし） |
-| THR-LOOK-005 画像の置き場が公開になり、非公開の LOOK の画像が見える | SEC-LOOK-005 LOOK の画像の置き場は非公開で、その設定を移行で持つ | SEC-LOOK-005-AC-01 移行だけを当てた DB で置き場が非公開になる | （なし） |
-| THR-LOOK-005 画像の置き場が公開になり、非公開の LOOK の画像が見える | SEC-LOOK-005 LOOK の画像の置き場は非公開で、その設定を移行で持つ | SEC-LOOK-005-AC-02 公開の URL では LOOK の画像を開けない | （なし） |
-| THR-LOOK-006 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-LOOK-006 非公開にした LOOK の画像の URL を、新しく出さず長く残さない | SEC-LOOK-006-AC-01 非公開にした後に開いた頁に、その LOOK の画像の URL が出ない | （なし） |
-| THR-LOOK-006 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-LOOK-006 非公開にした LOOK の画像の URL を、新しく出さず長く残さない | SEC-LOOK-006-AC-02 詳細の頁の `og:image` が期限の切れる署名つき URL でない | （なし） |
-| THR-LOOK-007 画像の道筋を書き換えて、置き場の別の物に署名させる | SEC-LOOK-007 署名の前に、画像の道筋を LOOK の画像の形に限る | SEC-LOOK-007-AC-01 決まりの外の道筋は署名されない | （なし） |
-| THR-LOOK-008 署名や取り出しに失敗した時に、素の道筋や外の URL をそのまま返す | SEC-LOOK-008 署名や取り出しに失敗した時は、元の値でなく決まった代わりを返す | SEC-LOOK-008-AC-01 外の URL や署名できない値が画像の読み込み先にならない | （なし） |
-| THR-LOOK-009 公開の LOOK を毎回全件取り、全部の画像に署名して負荷をかける | SEC-LOOK-009 公開の取り出しに件数の上限をかけ、表示に要る項目だけを返す | SEC-LOOK-009-AC-01 一覧の頁に、一覧で表示しない項目が含まれない | （なし） |
+| FREQ-339 LOOK カードのリビールの前に情報パネルの文字を覗かせない | FREQ-339-REQ-01 情報パネルの余白をマスクではなく動く側（.reveal-rise）に持たせる | FREQ-339-AC-02 リビールの後は文字がカードの中の定位置に戻る | `e2e/FR-LOOK-ALL-040-reveal-initial-outside-card.spec.ts:65` |
+| FREQ-343 詳細のモバイルで3項目を画面の下に固定した BottomNavigation で出す | FREQ-343-REQ-01 md 未満は3列のナビを隠し、3項目の BottomNavigation を画面の下に固定する | FREQ-343-AC-01 モバイルで固定のナビが出て、下端が画面の下端に付いたまま動かない | `e2e/FR-LOOK-DETAIL-017-mobile-fixed-bottom-nav.spec.ts:18` |
+| FREQ-343 詳細のモバイルで3項目を画面の下に固定した BottomNavigation で出す | FREQ-343-REQ-01 md 未満は3列のナビを隠し、3項目の BottomNavigation を画面の下に固定する | FREQ-343-AC-02 モバイルの固定のナビに3つのラベルが出て、LOOK LIST が /look へのリンクになる | `e2e/FR-LOOK-DETAIL-017-mobile-fixed-bottom-nav.spec.ts:38` |
+| FREQ-343 詳細のモバイルで3項目を画面の下に固定した BottomNavigation で出す | FREQ-343-REQ-01 md 未満は3列のナビを隠し、3項目の BottomNavigation を画面の下に固定する | FREQ-343-AC-03 モバイルは3列のナビが出ず、タブレット・PC は3列のナビだけが出る | `e2e/FR-LOOK-DETAIL-017-mobile-fixed-bottom-nav.spec.ts:55`<br>`e2e/FR-LOOK-DETAIL-017-mobile-fixed-bottom-nav.spec.ts:108` |
+| FREQ-343 詳細のモバイルで3項目を画面の下に固定した BottomNavigation で出す | FREQ-343-REQ-02 固定のナビがフッターの著作権・法務のリンクを覆わないよう、フッターに下の余白を足す | FREQ-343-AC-04 モバイルで最下部まで進むと法務の3つのリンクが固定のナビより上にある | `e2e/FR-LOOK-DETAIL-017-mobile-fixed-bottom-nav.spec.ts:63` |
+| FREQ-343 詳細のモバイルで3項目を画面の下に固定した BottomNavigation で出す | FREQ-343-REQ-03 固定のナビのラベルを --lk-size-7xs にする | FREQ-343-AC-05 モバイルで固定のナビのラベルの文字の大きさが --lk-size-7xs になる | `e2e/FR-LOOK-DETAIL-017-mobile-fixed-bottom-nav.spec.ts:82` |
+| FREQ-344 詳細で横のスクロールを起こさない | FREQ-344-REQ-01 カルーセルの負の margin を main の余白と同じ -mx-4 にし、頁の横幅を画面に収める | FREQ-344-AC-01 3つの幅で頁の scrollWidth が clientWidth 以下になる | `e2e/FR-LOOK-DETAIL-018-no-horizontal-overflow.spec.ts:17` |
+| FREQ-344 詳細で横のスクロールを起こさない | FREQ-344-REQ-01 カルーセルの負の margin を main の余白と同じ -mx-4 にし、頁の横幅を画面に収める | FREQ-344-AC-02 3つの幅で画面の右端を越える要素が無い | `e2e/FR-LOOK-DETAIL-020-detail-layout-and-nav-remaining.spec.ts:233` |
+| FREQ-344 詳細で横のスクロールを起こさない | FREQ-344-REQ-01 カルーセルの負の margin を main の余白と同じ -mx-4 にし、頁の横幅を画面に収める | FREQ-344-AC-03 モバイルで固定のナビの下端が画面の下端と一致する | `e2e/FR-LOOK-DETAIL-018-no-horizontal-overflow.spec.ts:77` |
+| THR-LOOK-001 公開前の LOOK が公開の道から漏れる | SEC-LOOK-001 公開の道は公開済みの LOOK だけを返す | SEC-LOOK-001-AC-01 anon と一般会員の直接の読み出しに非公開の LOOK が出ない | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:202` |
+| THR-LOOK-001 公開前の LOOK が公開の道から漏れる | SEC-LOOK-001 公開の道は公開済みの LOOK だけを返す | SEC-LOOK-001-AC-02 公開の画面に非公開の LOOK が出ない | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:254` |
+| THR-LOOK-002 公開の LOOK に紐づく非公開の商品の ID が読める | SEC-LOOK-002 LOOK の関連の公開の読み出しは、公開の商品の紐づきだけを返す | SEC-LOOK-002-AC-01 anon の直接の読み出しに非公開の商品の紐づきが出ない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:223` |
+| THR-LOOK-002 公開の LOOK に紐づく非公開の商品の ID が読める | SEC-LOOK-002 LOOK の関連の公開の読み出しは、公開の商品の紐づきだけを返す | SEC-LOOK-002-AC-02 一般会員の直接の読み出しに非公開の商品の紐づきが出ない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:245` |
+| THR-LOOK-003 権限を持つ人が2要素認証を飛ばして DB を直接書き換える | SEC-LOOK-003 DB でも LOOK の管理の権限を使う操作に2要素認証の済みを求める | SEC-LOOK-003-AC-01 aal1 の session では非公開の LOOK を直接読めない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:268` |
+| THR-LOOK-003 権限を持つ人が2要素認証を飛ばして DB を直接書き換える | SEC-LOOK-003 DB でも LOOK の管理の権限を使う操作に2要素認証の済みを求める | SEC-LOOK-003-AC-02 aal1 の session では LOOK と関連を直接書き換え・消去できない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:294` |
+| THR-LOOK-004 anon・authenticated に要らない表の権限を付けている | SEC-LOOK-004 LOOK の表の権限を、使う操作だけに絞る | SEC-LOOK-004-AC-01 anon に LOOK の表の書き込みの権限が無い | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:368` |
+| THR-LOOK-004 anon・authenticated に要らない表の権限を付けている | SEC-LOOK-004 LOOK の表の権限を、使う操作だけに絞る | SEC-LOOK-004-AC-02 authenticated に LOOK の表の要らない権限が無い | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:395` |
+| THR-LOOK-005 画像の置き場が公開になり、非公開の LOOK の画像が見える | SEC-LOOK-005 LOOK の画像の置き場は非公開で、その設定を移行で持つ | SEC-LOOK-005-AC-01 移行だけを当てた DB で置き場が非公開になる | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:407` |
+| THR-LOOK-005 画像の置き場が公開になり、非公開の LOOK の画像が見える | SEC-LOOK-005 LOOK の画像の置き場は非公開で、その設定を移行で持つ | SEC-LOOK-005-AC-02 公開の URL では LOOK の画像を開けない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:424` |
+| THR-LOOK-006 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-LOOK-006 非公開にした LOOK の画像の URL を、新しく出さず長く残さない | SEC-LOOK-006-AC-01 非公開にした後に開いた頁に、その LOOK の画像の URL が出ない | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:289` |
+| THR-LOOK-006 外へ出した署名つき URL で、非公開にした後も画像が見える | SEC-LOOK-006 非公開にした LOOK の画像の URL を、新しく出さず長く残さない | SEC-LOOK-006-AC-02 詳細の頁の `og:image` が期限の切れる署名つき URL でない | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:327` |
+| THR-LOOK-007 画像の道筋を書き換えて、置き場の別の物に署名させる | SEC-LOOK-007 署名の前に、画像の道筋を LOOK の画像の形に限る | SEC-LOOK-007-AC-01 決まりの外の道筋は署名されない | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:356` |
+| THR-LOOK-008 署名や取り出しに失敗した時に、素の道筋や外の URL をそのまま返す | SEC-LOOK-008 署名や取り出しに失敗した時は、元の値でなく決まった代わりを返す | SEC-LOOK-008-AC-01 外の URL や署名できない値が画像の読み込み先にならない | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:388` |
+| THR-LOOK-009 公開の LOOK を毎回全件取り、全部の画像に署名して負荷をかける | SEC-LOOK-009 公開の取り出しに件数の上限をかけ、表示に要る項目だけを返す | SEC-LOOK-009-AC-01 一覧の頁に、一覧で表示しない項目が含まれない | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:424` |
 | THR-LOOK-009 公開の LOOK を毎回全件取り、全部の画像に署名して負荷をかける | SEC-LOOK-009 公開の取り出しに件数の上限をかけ、表示に要る項目だけを返す | SEC-LOOK-009-AC-02 上限を超える公開の LOOK があっても、一覧の1回の表示は上限まで | （なし） |
 | THR-LOOK-010 LOOK の検索の関数を直接叩いて、件数と回数の制限を迂回する | SEC-LOOK-010 LOOK の検索の関数は件数を上限に丸め、使わない関数を閉じる | SEC-LOOK-010-AC-01 大きな件数を求めても上限までしか返らない | （なし） |
-| THR-LOOK-010 LOOK の検索の関数を直接叩いて、件数と回数の制限を迂回する | SEC-LOOK-010 LOOK の検索の関数は件数を上限に丸め、使わない関数を閉じる | SEC-LOOK-010-AC-02 使わない検索の関数を anon が呼べない | （なし） |
-| THR-LOOK-011 回数の制限の送り元を偽って制限を逃れる | SEC-LOOK-011 回数の制限の送り元は信頼できる値から取り、操作者の段を必ず持つ | SEC-LOOK-011-AC-01 送り元の見出しを変えても、同じ操作者の回数は止まる | （なし） |
-| THR-LOOK-012 管理の窓口の乱用で、置き場と処理を使い切る | SEC-LOOK-012 管理の窓口に、大きさ・枚数・時間あたりの量の上限をかける | SEC-LOOK-012-AC-01 5MB を超える画像は断られ、置き場に残らない | （なし） |
-| THR-LOOK-012 管理の窓口の乱用で、置き場と処理を使い切る | SEC-LOOK-012 管理の窓口に、大きさ・枚数・時間あたりの量の上限をかける | SEC-LOOK-012-AC-02 7枚以上の画像は断られる | （なし） |
-| THR-LOOK-012 管理の窓口の乱用で、置き場と処理を使い切る | SEC-LOOK-012 管理の窓口に、大きさ・枚数・時間あたりの量の上限をかける | SEC-LOOK-012-AC-03 作成と更新を合わせた1時間の量で止まる | （なし） |
-| THR-LOOK-013 中身や名前を偽った画像を置き場に入れる | SEC-LOOK-013 画像の中身を確かめ、保存の名前と種類をサーバーが決める | SEC-LOOK-013-AC-01 画像でない中身は、申告が画像でも断られる | （なし） |
-| THR-LOOK-013 中身や名前を偽った画像を置き場に入れる | SEC-LOOK-013 画像の中身を確かめ、保存の名前と種類をサーバーが決める | SEC-LOOK-013-AC-02 保存の道筋はファイル名に左右されない | （なし） |
-| THR-LOOK-014 消した・差し替えた LOOK の画像が置き場に残る | SEC-LOOK-014 消した・差し替えた LOOK の画像を置き場から消す | SEC-LOOK-014-AC-01 LOOK を消すと画像も置き場から消える | （なし） |
-| THR-LOOK-014 消した・差し替えた LOOK の画像が置き場に残る | SEC-LOOK-014 消した・差し替えた LOOK の画像を置き場から消す | SEC-LOOK-014-AC-02 画像を差し替えると古い画像が置き場から消える | （なし） |
-| THR-LOOK-015 更新の途中で失敗し、公開中の LOOK の関連商品が消えたまま残る | SEC-LOOK-015 LOOK と関連商品の書き換えを、1つのまとまりで行う | SEC-LOOK-015-AC-01 関連の追加が失敗しても、前の関連商品が残る | （なし） |
-| THR-LOOK-016 入口で確かめない値が取り出しに渡る | SEC-LOOK-016 入口の値を、決まった形で確かめる | SEC-LOOK-016-AC-01 形の合わない id の詳細は「見つからない」になる | （なし） |
-| THR-LOOK-016 入口で確かめない値が取り出しに渡る | SEC-LOOK-016 入口の値を、決まった形で確かめる | SEC-LOOK-016-AC-02 管理の1件の窓口は数でない id を 400 で断る | （なし） |
-| THR-LOOK-016 入口で確かめない値が取り出しに渡る | SEC-LOOK-016 入口の値を、決まった形で確かめる | SEC-LOOK-016-AC-03 状態の変更の本文が JSON でないと 400 になる | （なし） |
-| THR-LOOK-017 テーマ・説明文に仕込んだスクリプトが閲覧者の端末で動く | SEC-LOOK-017 LOOK の文字はエスケープして出し、生の HTML を差し込まない | SEC-LOOK-017-AC-01 テーマと説明文のタグは文字として出る | （なし） |
-| THR-LOOK-018 管理の操作を他のサイトから送らせる | SEC-LOOK-018 管理の状態を変える要求は、送り元のオリジンを確かめる | SEC-LOOK-018-AC-01 他のオリジンからの変更は 403 で断られる | （なし） |
-| THR-LOOK-018 管理の操作を他のサイトから送らせる | SEC-LOOK-018 管理の状態を変える要求は、送り元のオリジンを確かめる | SEC-LOOK-018-AC-02 Origin も Referer も無い変更は 403 で断られる | （なし） |
-| THR-LOOK-019 権限の無い人が管理の操作をする・管理の画面を見る | SEC-LOOK-019 管理の窓口は操作ごとの権限と2要素を確かめ、画面は権限で出し分ける | SEC-LOOK-019-AC-01 ログインしていない要求は 401 で断られる | （なし） |
-| THR-LOOK-019 権限の無い人が管理の操作をする・管理の画面を見る | SEC-LOOK-019 管理の窓口は操作ごとの権限と2要素を確かめ、画面は権限で出し分ける | SEC-LOOK-019-AC-02 2要素を済ませていない session は 403 で断られる | （なし） |
-| THR-LOOK-019 権限の無い人が管理の操作をする・管理の画面を見る | SEC-LOOK-019 管理の窓口は操作ごとの権限と2要素を確かめ、画面は権限で出し分ける | SEC-LOOK-019-AC-03 権限ごとに、読み出しと変更が分かれる | （なし） |
-| THR-LOOK-019 権限の無い人が管理の操作をする・管理の画面を見る | SEC-LOOK-019 管理の窓口は操作ごとの権限と2要素を確かめ、画面は権限で出し分ける | SEC-LOOK-019-AC-04 変更の権限が無い人には、LOOK の操作のボタンが出ない | （なし） |
-| THR-LOOK-020 管理の操作の跡が残らず、不正や誤りを追えない | SEC-LOOK-020 管理の変更は、成功も失敗も操作者と送り元とともに監査に残す | SEC-LOOK-020-AC-01 管理の変更ごとに監査の行が残る | （なし） |
-| THR-LOOK-020 管理の操作の跡が残らず、不正や誤りを追えない | SEC-LOOK-020 管理の変更は、成功も失敗も操作者と送り元とともに監査に残す | SEC-LOOK-020-AC-02 監査の行に送り元が入る | （なし） |
-| THR-LOOK-021 応答や記録から内部の情報が漏れる | SEC-LOOK-021 応答と記録に、置き場や DB の内部の誤りの文言を出さない | SEC-LOOK-021-AC-01 画像の書き込みの失敗は決まった文言で返る | （なし） |
-| THR-LOOK-022 取り出しの失敗が「0件」「見つからない」に見えて気づけない | SEC-LOOK-022 取り出しの失敗を「0件」「見つからない」と分けて扱う | SEC-LOOK-022-AC-01 DB の失敗の時、公開の一覧は「LOOK が無い」ではなく誤りの画面を出す | （なし） |
-| THR-LOOK-022 取り出しの失敗が「0件」「見つからない」に見えて気づけない | SEC-LOOK-022 取り出しの失敗を「0件」「見つからない」と分けて扱う | SEC-LOOK-022-AC-02 管理の1件の取得は、DB の失敗を 404 にしない | （なし） |
-| THR-LOOK-023 DB の段に入力の制約が無く、直接の書き込みが窓口の確かめを飛ばす | SEC-LOOK-023 表の段で LOOK の長さと画像の道筋の形を確かめる | SEC-LOOK-023-AC-01 長すぎるテーマと置き場の外の道筋を表が断る | （なし） |
-| SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-001 ブランド哲学の節を表示する | FR-ABOUT-001-AC-01 ブランド哲学の見出しと文が見える | （なし） |
-| SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-002 服をつくる理由と Founder の言葉の節を表示する | FR-ABOUT-002-AC-01 服をつくる理由の見出しと Founder の名乗りが見える | （なし） |
-| SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-003 取り組みの節に3つの原則を番号・日本語見出し・説明付きで載せる | FR-ABOUT-003-AC-01 3つの原則が番号・英語のラベル・日本語の見出し付きで見える | （なし） |
-| SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-004 商品設計の考え方の節と、商品・LOOK への CTA を幅に合わせて並べる | FR-ABOUT-004-AC-01 商品設計の考え方の見出しと、商品・LOOK への CTA がある | （なし） |
-| SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-004 商品設計の考え方の節と、商品・LOOK への CTA を幅に合わせて並べる | FR-ABOUT-004-AC-02 CTA が 390px で縦、768px 以上で横に並び、横にずれない | （なし） |
-| SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-006 ブランドの話の後に COLLECTION・LOOKBOOK・CONTACT への CTA を置く | FR-ABOUT-006-AC-01 COLLECTION・LOOKBOOK・CONTACT への CTA がある | （なし） |
-| SR-ABOUT-002 ABOUT ページが検索エンジンと支援技術で正しく読め、外のサービスが止まっても壊れない | FR-ABOUT-005 h1 を含む見出しの階層と、ページの題・説明を持つ | FR-ABOUT-005-AC-01 h1 の見出しが1つ見える | （なし） |
-| SR-ABOUT-002 ABOUT ページが検索エンジンと支援技術で正しく読め、外のサービスが止まっても壊れない | FR-ABOUT-005 h1 を含む見出しの階層と、ページの題・説明を持つ | FR-ABOUT-005-AC-02 ページの題と説明がある | （なし） |
-| SR-ABOUT-002 ABOUT ページが検索エンジンと支援技術で正しく読め、外のサービスが止まっても壊れない | FR-ABOUT-007 装飾のアイコンを読み上げから外し、画像の代わりの文を具体にする | FR-ABOUT-007-AC-01 装飾のアイコンが読み上げから外れている | （なし） |
-| SR-ABOUT-002 ABOUT ページが検索エンジンと支援技術で正しく読め、外のサービスが止まっても壊れない | FR-ABOUT-007 装飾のアイコンを読み上げから外し、画像の代わりの文を具体にする | FR-ABOUT-007-AC-02 画像の代わりの文が具体的である | （なし） |
-| SR-ABOUT-002 ABOUT ページが検索エンジンと支援技術で正しく読め、外のサービスが止まっても壊れない | FR-ABOUT-008 画像を外の動的な生成の URL から自分の置き場へ移す | FR-ABOUT-008-AC-01 画像が readdy.ai から読まれない | （なし） |
-| THR-ABOUT-001 外の配信元から読む画像で、頁の表示が壊れる・別の画像に差し替わる | SEC-ABOUT-001 ABOUT の画像と OG の画像は同じオリジンからだけ出す | SEC-ABOUT-001-AC-01 本文の画像と OG の画像が外のオリジンを指さない | （なし） |
-| THR-ABOUT-001 外の配信元から読む画像で、頁の表示が壊れる・別の画像に差し替わる | SEC-ABOUT-001 ABOUT の画像と OG の画像は同じオリジンからだけ出す | SEC-ABOUT-001-AC-02 OG の画像が取得できる | （なし） |
-| THR-ABOUT-002 守りの見出しが無く、枠への埋め込み・種類の取り違え・平文の通信を許す | SEC-ABOUT-002 ABOUT の応答に守りの見出しを付ける | SEC-ABOUT-002-AC-01 /about の応答に守りの見出しが付く | （なし） |
-| THR-ABOUT-003 CSP の許可が ABOUT に要らない外部まで広く、差し込まれた時の被害を広げる | SEC-ABOUT-003 ABOUT の応答の CSP と画像の最適化の許可は ABOUT が使わない外のオリジンを許さない | SEC-ABOUT-003-AC-01 /about の CSP に使わない外のオリジンが無い | （なし） |
-| THR-ABOUT-003 CSP の許可が ABOUT に要らない外部まで広く、差し込まれた時の被害を広げる | SEC-ABOUT-003 ABOUT の応答の CSP と画像の最適化の許可は ABOUT が使わない外のオリジンを許さない | SEC-ABOUT-003-AC-02 画像の最適化の入口が使わない外のオリジンの画像を取りに行かない | （なし） |
-| THR-ABOUT-004 応答が共有のキャッシュに残り、別の閲覧者に同じセッションの id や CSP の nonce が配られる | SEC-ABOUT-004 ABOUT の応答を共有のキャッシュに残させない | SEC-ABOUT-004-AC-01 Cookie を付けた /about の応答が共有のキャッシュに残らない指定を持つ | （なし） |
-| THR-ABOUT-004 応答が共有のキャッシュに残り、別の閲覧者に同じセッションの id や CSP の nonce が配られる | SEC-ABOUT-004 ABOUT の応答を共有のキャッシュに残させない | SEC-ABOUT-004-AC-02 Cookie を持つ要求への /about の応答も共有のキャッシュに残らない指定を持つ | （なし） |
-| THR-ABOUT-005 OG の URL が別のサイトや手元の URL を指し、共有のカードが壊れる・差し替わる | SEC-ABOUT-005 OG の絶対の URL は要求の見出しから作らず、設定のサイトの URL だけから作る | SEC-ABOUT-005-AC-01 要求の見出しを偽っても OG の URL が変わらない | （なし） |
+| THR-LOOK-010 LOOK の検索の関数を直接叩いて、件数と回数の制限を迂回する | SEC-LOOK-010 LOOK の検索の関数は件数を上限に丸め、使わない関数を閉じる | SEC-LOOK-010-AC-02 使わない検索の関数を anon が呼べない | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:441` |
+| THR-LOOK-011 回数の制限の送り元を偽って制限を逃れる | SEC-LOOK-011 回数の制限の送り元は信頼できる値から取り、操作者の段を必ず持つ | SEC-LOOK-011-AC-01 送り元の見出しを変えても、同じ操作者の回数は止まる | `e2e/FR-LOOK-SEC-003-admin-api-authz.spec.ts:338` |
+| THR-LOOK-012 管理の窓口の乱用で、置き場と処理を使い切る | SEC-LOOK-012 管理の窓口に、大きさ・枚数・時間あたりの量の上限をかける | SEC-LOOK-012-AC-01 5MB を超える画像は断られ、置き場に残らない | `e2e/FR-LOOK-SEC-004-admin-write-integrity.spec.ts:274` |
+| THR-LOOK-012 管理の窓口の乱用で、置き場と処理を使い切る | SEC-LOOK-012 管理の窓口に、大きさ・枚数・時間あたりの量の上限をかける | SEC-LOOK-012-AC-02 7枚以上の画像は断られる | `e2e/FR-LOOK-SEC-004-admin-write-integrity.spec.ts:286` |
+| THR-LOOK-012 管理の窓口の乱用で、置き場と処理を使い切る | SEC-LOOK-012 管理の窓口に、大きさ・枚数・時間あたりの量の上限をかける | SEC-LOOK-012-AC-03 作成と更新を合わせた1時間の量で止まる | `e2e/FR-LOOK-SEC-004-admin-write-integrity.spec.ts:298` |
+| THR-LOOK-013 中身や名前を偽った画像を置き場に入れる | SEC-LOOK-013 画像の中身を確かめ、保存の名前と種類をサーバーが決める | SEC-LOOK-013-AC-01 画像でない中身は、申告が画像でも断られる | `e2e/FR-LOOK-SEC-004-admin-write-integrity.spec.ts:329` |
+| THR-LOOK-013 中身や名前を偽った画像を置き場に入れる | SEC-LOOK-013 画像の中身を確かめ、保存の名前と種類をサーバーが決める | SEC-LOOK-013-AC-02 保存の道筋はファイル名に左右されない | `e2e/FR-LOOK-SEC-004-admin-write-integrity.spec.ts:343` |
+| THR-LOOK-014 消した・差し替えた LOOK の画像が置き場に残る | SEC-LOOK-014 消した・差し替えた LOOK の画像を置き場から消す | SEC-LOOK-014-AC-01 LOOK を消すと画像も置き場から消える | `e2e/FR-LOOK-SEC-004-admin-write-integrity.spec.ts:359` |
+| THR-LOOK-014 消した・差し替えた LOOK の画像が置き場に残る | SEC-LOOK-014 消した・差し替えた LOOK の画像を置き場から消す | SEC-LOOK-014-AC-02 画像を差し替えると古い画像が置き場から消える | `e2e/FR-LOOK-SEC-004-admin-write-integrity.spec.ts:374` |
+| THR-LOOK-015 更新の途中で失敗し、公開中の LOOK の関連商品が消えたまま残る | SEC-LOOK-015 LOOK と関連商品の書き換えを、1つのまとまりで行う | SEC-LOOK-015-AC-01 関連の追加が失敗しても、前の関連商品が残る | `e2e/FR-LOOK-SEC-004-admin-write-integrity.spec.ts:453` |
+| THR-LOOK-016 入口で確かめない値が取り出しに渡る | SEC-LOOK-016 入口の値を、決まった形で確かめる | SEC-LOOK-016-AC-01 形の合わない id の詳細は「見つからない」になる | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:470` |
+| THR-LOOK-016 入口で確かめない値が取り出しに渡る | SEC-LOOK-016 入口の値を、決まった形で確かめる | SEC-LOOK-016-AC-02 管理の1件の窓口は数でない id を 400 で断る | `e2e/FR-LOOK-SEC-003-admin-api-authz.spec.ts:297` |
+| THR-LOOK-016 入口で確かめない値が取り出しに渡る | SEC-LOOK-016 入口の値を、決まった形で確かめる | SEC-LOOK-016-AC-03 状態の変更の本文が JSON でないと 400 になる | `e2e/FR-LOOK-SEC-003-admin-api-authz.spec.ts:315` |
+| THR-LOOK-017 テーマ・説明文に仕込んだスクリプトが閲覧者の端末で動く | SEC-LOOK-017 LOOK の文字はエスケープして出し、生の HTML を差し込まない | SEC-LOOK-017-AC-01 テーマと説明文のタグは文字として出る | `e2e/FR-LOOK-SEC-001-public-visibility.spec.ts:488` |
+| THR-LOOK-018 管理の操作を他のサイトから送らせる | SEC-LOOK-018 管理の状態を変える要求は、送り元のオリジンを確かめる | SEC-LOOK-018-AC-01 他のオリジンからの変更は 403 で断られる | `e2e/FR-LOOK-SEC-003-admin-api-authz.spec.ts:262` |
+| THR-LOOK-018 管理の操作を他のサイトから送らせる | SEC-LOOK-018 管理の状態を変える要求は、送り元のオリジンを確かめる | SEC-LOOK-018-AC-02 Origin も Referer も無い変更は 403 で断られる | `e2e/FR-LOOK-SEC-003-admin-api-authz.spec.ts:279` |
+| THR-LOOK-019 権限の無い人が管理の操作をする・管理の画面を見る | SEC-LOOK-019 管理の窓口は操作ごとの権限と2要素を確かめ、画面は権限で出し分ける | SEC-LOOK-019-AC-01 ログインしていない要求は 401 で断られる | `e2e/FR-LOOK-SEC-003-admin-api-authz.spec.ts:156` |
+| THR-LOOK-019 権限の無い人が管理の操作をする・管理の画面を見る | SEC-LOOK-019 管理の窓口は操作ごとの権限と2要素を確かめ、画面は権限で出し分ける | SEC-LOOK-019-AC-02 2要素を済ませていない session は 403 で断られる | `e2e/FR-LOOK-SEC-003-admin-api-authz.spec.ts:185` |
+| THR-LOOK-019 権限の無い人が管理の操作をする・管理の画面を見る | SEC-LOOK-019 管理の窓口は操作ごとの権限と2要素を確かめ、画面は権限で出し分ける | SEC-LOOK-019-AC-03 権限ごとに、読み出しと変更が分かれる | `e2e/FR-LOOK-SEC-003-admin-api-authz.spec.ts:205` |
+| THR-LOOK-019 権限の無い人が管理の操作をする・管理の画面を見る | SEC-LOOK-019 管理の窓口は操作ごとの権限と2要素を確かめ、画面は権限で出し分ける | SEC-LOOK-019-AC-04 変更の権限が無い人には、LOOK の操作のボタンが出ない | `e2e/FR-LOOK-SEC-003-admin-api-authz.spec.ts:231` |
+| THR-LOOK-020 管理の操作の跡が残らず、不正や誤りを追えない | SEC-LOOK-020 管理の変更は、成功も失敗も操作者と送り元とともに監査に残す | SEC-LOOK-020-AC-01 管理の変更ごとに監査の行が残る | `e2e/FR-LOOK-SEC-004-admin-write-integrity.spec.ts:414` |
+| THR-LOOK-020 管理の操作の跡が残らず、不正や誤りを追えない | SEC-LOOK-020 管理の変更は、成功も失敗も操作者と送り元とともに監査に残す | SEC-LOOK-020-AC-02 監査の行に送り元が入る | `e2e/FR-LOOK-SEC-004-admin-write-integrity.spec.ts:432` |
+| THR-LOOK-021 応答や記録から内部の情報が漏れる | SEC-LOOK-021 応答と記録に、置き場や DB の内部の誤りの文言を出さない | SEC-LOOK-021-AC-01 画像の書き込みの失敗は決まった文言で返る | `e2e/FR-LOOK-SEC-005-global-faults.spec.ts:49` |
+| THR-LOOK-022 取り出しの失敗が「0件」「見つからない」に見えて気づけない | SEC-LOOK-022 取り出しの失敗を「0件」「見つからない」と分けて扱う | SEC-LOOK-022-AC-01 DB の失敗の時、公開の一覧は「LOOK が無い」ではなく誤りの画面を出す | `e2e/FR-LOOK-SEC-005-global-faults.spec.ts:99` |
+| THR-LOOK-022 取り出しの失敗が「0件」「見つからない」に見えて気づけない | SEC-LOOK-022 取り出しの失敗を「0件」「見つからない」と分けて扱う | SEC-LOOK-022-AC-02 管理の1件の取得は、DB の失敗を 404 にしない | `e2e/FR-LOOK-SEC-005-global-faults.spec.ts:133` |
+| THR-LOOK-023 DB の段に入力の制約が無く、直接の書き込みが窓口の確かめを飛ばす | SEC-LOOK-023 表の段で LOOK の長さと画像の道筋の形を確かめる | SEC-LOOK-023-AC-01 長すぎるテーマと置き場の外の道筋を表が断る | `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts:459` |
+| SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-001 ブランド哲学の節を表示する | FR-ABOUT-001-AC-01 ブランド哲学の見出しと文が見える | `e2e/FR-ABOUT-001-brand-philosophy-section.spec.ts:4` |
+| SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-002 服をつくる理由と Founder の言葉の節を表示する | FR-ABOUT-002-AC-01 服をつくる理由の見出しと Founder の名乗りが見える | `e2e/FR-ABOUT-002-quality-craftsmanship-section.spec.ts:4` |
+| SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-003 取り組みの節に3つの原則を番号・日本語見出し・説明付きで載せる | FR-ABOUT-003-AC-01 3つの原則が番号・英語のラベル・日本語の見出し付きで見える | `e2e/FR-ABOUT-003-our-values-icons.spec.ts:4` |
+| SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-004 商品設計の考え方の節と、商品・LOOK への CTA を幅に合わせて並べる | FR-ABOUT-004-AC-01 商品設計の考え方の見出しと、商品・LOOK への CTA がある | `e2e/FR-ABOUT-004-responsive-story-layout.spec.ts:11` |
+| SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-004 商品設計の考え方の節と、商品・LOOK への CTA を幅に合わせて並べる | FR-ABOUT-004-AC-02 CTA が 390px で縦、768px 以上で横に並び、横にずれない | `e2e/FR-ABOUT-009-page-layout-and-meta-remaining.spec.ts:16` |
+| SR-ABOUT-001 訪問者がブランドの思想とものづくりを1つのページで読み、商品と LOOK へ進める | FR-ABOUT-006 ブランドの話の後に COLLECTION・LOOKBOOK・CONTACT への CTA を置く | FR-ABOUT-006-AC-01 COLLECTION・LOOKBOOK・CONTACT への CTA がある | `e2e/FR-ABOUT-006-cta-links.spec.ts:4` |
+| SR-ABOUT-002 ABOUT ページが検索エンジンと支援技術で正しく読め、外のサービスが止まっても壊れない | FR-ABOUT-005 h1 を含む見出しの階層と、ページの題・説明を持つ | FR-ABOUT-005-AC-01 h1 の見出しが1つ見える | `e2e/FR-ABOUT-005-heading-and-metadata.spec.ts:4` |
+| SR-ABOUT-002 ABOUT ページが検索エンジンと支援技術で正しく読め、外のサービスが止まっても壊れない | FR-ABOUT-005 h1 を含む見出しの階層と、ページの題・説明を持つ | FR-ABOUT-005-AC-02 ページの題と説明がある | `e2e/FR-ABOUT-009-page-layout-and-meta-remaining.spec.ts:33` |
+| SR-ABOUT-002 ABOUT ページが検索エンジンと支援技術で正しく読め、外のサービスが止まっても壊れない | FR-ABOUT-007 装飾のアイコンを読み上げから外し、画像の代わりの文を具体にする | FR-ABOUT-007-AC-01 装飾のアイコンが読み上げから外れている | `e2e/FR-ABOUT-007-icon-aria-and-image-alt.spec.ts:4` |
+| SR-ABOUT-002 ABOUT ページが検索エンジンと支援技術で正しく読め、外のサービスが止まっても壊れない | FR-ABOUT-007 装飾のアイコンを読み上げから外し、画像の代わりの文を具体にする | FR-ABOUT-007-AC-02 画像の代わりの文が具体的である | `e2e/FR-ABOUT-009-page-layout-and-meta-remaining.spec.ts:44` |
+| SR-ABOUT-002 ABOUT ページが検索エンジンと支援技術で正しく読め、外のサービスが止まっても壊れない | FR-ABOUT-008 画像を外の動的な生成の URL から自分の置き場へ移す | FR-ABOUT-008-AC-01 画像が readdy.ai から読まれない | `e2e/FR-ABOUT-008-static-image-source.spec.ts:4` |
+| THR-ABOUT-001 外の配信元から読む画像で、頁の表示が壊れる・別の画像に差し替わる | SEC-ABOUT-001 ABOUT の画像と OG の画像は同じオリジンからだけ出す | SEC-ABOUT-001-AC-01 本文の画像と OG の画像が外のオリジンを指さない | `e2e/FR-ABOUT-009-page-layout-and-meta-remaining.spec.ts:58` |
+| THR-ABOUT-001 外の配信元から読む画像で、頁の表示が壊れる・別の画像に差し替わる | SEC-ABOUT-001 ABOUT の画像と OG の画像は同じオリジンからだけ出す | SEC-ABOUT-001-AC-02 OG の画像が取得できる | `e2e/FR-ABOUT-010-security-http-contract.spec.ts:36` |
+| THR-ABOUT-002 守りの見出しが無く、枠への埋め込み・種類の取り違え・平文の通信を許す | SEC-ABOUT-002 ABOUT の応答に守りの見出しを付ける | SEC-ABOUT-002-AC-01 /about の応答に守りの見出しが付く | `e2e/FR-ABOUT-010-security-http-contract.spec.ts:53` |
+| THR-ABOUT-003 CSP の許可が ABOUT に要らない外部まで広く、差し込まれた時の被害を広げる | SEC-ABOUT-003 ABOUT の応答の CSP と画像の最適化の許可は ABOUT が使わない外のオリジンを許さない | SEC-ABOUT-003-AC-01 /about の CSP に使わない外のオリジンが無い | `e2e/FR-ABOUT-010-security-http-contract.spec.ts:73` |
+| THR-ABOUT-003 CSP の許可が ABOUT に要らない外部まで広く、差し込まれた時の被害を広げる | SEC-ABOUT-003 ABOUT の応答の CSP と画像の最適化の許可は ABOUT が使わない外のオリジンを許さない | SEC-ABOUT-003-AC-02 画像の最適化の入口が使わない外のオリジンの画像を取りに行かない | `e2e/FR-ABOUT-010-security-http-contract.spec.ts:90`<br>`e2e/FR-ABOUT-010-security-http-contract.spec.ts:99` |
+| THR-ABOUT-004 応答が共有のキャッシュに残り、別の閲覧者に同じセッションの id や CSP の nonce が配られる | SEC-ABOUT-004 ABOUT の応答を共有のキャッシュに残させない | SEC-ABOUT-004-AC-01 Cookie を付けた /about の応答が共有のキャッシュに残らない指定を持つ | `e2e/FR-ABOUT-010-security-http-contract.spec.ts:118` |
+| THR-ABOUT-004 応答が共有のキャッシュに残り、別の閲覧者に同じセッションの id や CSP の nonce が配られる | SEC-ABOUT-004 ABOUT の応答を共有のキャッシュに残させない | SEC-ABOUT-004-AC-02 Cookie を持つ要求への /about の応答も共有のキャッシュに残らない指定を持つ | `e2e/FR-ABOUT-010-security-http-contract.spec.ts:136` |
+| THR-ABOUT-005 OG の URL が別のサイトや手元の URL を指し、共有のカードが壊れる・差し替わる | SEC-ABOUT-005 OG の絶対の URL は要求の見出しから作らず、設定のサイトの URL だけから作る | SEC-ABOUT-005-AC-01 要求の見出しを偽っても OG の URL が変わらない | `e2e/FR-ABOUT-010-security-http-contract.spec.ts:166` |
 | THR-ABOUT-005 OG の URL が別のサイトや手元の URL を指し、共有のカードが壊れる・差し替わる | SEC-ABOUT-007 サイトの URL の設定が無い時に OG の URL が手元の URL に落ちない | SEC-ABOUT-007-AC-01 設定が無い時に OG の URL が手元の URL にならない | （なし） |
 | THR-ABOUT-006 毎回サーバーで描く頁を大量に要求され、サーバーに負荷をかける | SEC-ABOUT-006 ABOUT の描画はサーバーで DB と外のサービスを読まない | SEC-ABOUT-006-AC-01 Supabase に届かない状態でも /about が表示される | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FREQ-13-REQ-01 取扱店を確かめる機能が動く | FREQ-13-AC-01 取扱店の確認でエラーが出ず、正しい店の情報が出る | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-001 公開済みの取扱店を格子に並べ、幅に応じて列を変える | FR-STOCKIST-001-AC-01 一覧の列の数が幅で変わる | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-001 公開済みの取扱店を格子に並べ、幅に応じて列を変える | FR-STOCKIST-001-AC-02 1536px 以上では4列になる | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-002 各カードに店舗名・住所・電話・営業時間・定休日を載せる | FR-STOCKIST-002-AC-01 640px 以上のカードに5つの情報が出る | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-002 各カードに店舗名・住所・電話・営業時間・定休日を載せる | FR-STOCKIST-002-AC-02 モバイルのカードに店舗名と住所が出る | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-003 公開の店だけを取り、取れない時は空として出す | FR-STOCKIST-003-AC-01 非公開の店が一覧とホームに出ない | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-003 公開の店だけを取り、取れない時は空として出す | FR-STOCKIST-003-AC-02 公開の店が無い時も頁が出て、空の文が出る | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-004 ホームは最大6件、モバイルは上の3件、タブレット以上で全部を出す | FR-STOCKIST-004-AC-01 モバイルのホームの取扱店は3件まで | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-004 ホームは最大6件、モバイルは上の3件、タブレット以上で全部を出す | FR-STOCKIST-004-AC-02 タブレット以上のホームの取扱店は最大6件を全部出す | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-005 取扱店の頁の title と description を決めて出す | FR-STOCKIST-005-AC-01 取扱店の頁の title と description が出る | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-006 言葉の検索・並び替え・ページ分けは今は作らない | FR-STOCKIST-006-AC-01 一覧に言葉の検索・並び替え・ページ分けが無い | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-007 地図のリンク・外のリンク・分類・画像は今は付けない | FR-STOCKIST-007-AC-01 カードに取扱の分類と店の画像・ロゴが無い | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-008 カードの区別に id を使い、読み上げで扱いやすくする | FR-STOCKIST-008-AC-01 同じ名前の店が2つあっても両方のカードが出る | （なし） |
-| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-008 カードの区別に id を使い、読み上げで扱いやすくする | FR-STOCKIST-008-AC-02 各カードの店舗名が見出しとして読める | （なし） |
-| FREQ-18 管理画面で取扱店を登録・編集・削除する | FREQ-18-REQ-01 取扱店の管理の機能が動く | FREQ-18-AC-01 取扱店の管理でエラーが出ず登録・編集・削除が終わる | （なし） |
-| FREQ-18 管理画面で取扱店を登録・編集・削除する | FR-ADMIN-006 STOCKIST タブで店の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-006-AC-01 STOCKIST タブに全部の店が公開の状態つきで出る | （なし） |
-| FREQ-18 管理画面で取扱店を登録・編集・削除する | FR-ADMIN-006 STOCKIST タブで店の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-006-AC-02 作成のフォームで保存すると一覧に新しい店が出る | （なし） |
-| FREQ-18 管理画面で取扱店を登録・編集・削除する | FR-ADMIN-006 STOCKIST タブで店の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-006-AC-03 編集のフォームで更新すると一覧の中身が変わる | （なし） |
-| FREQ-18 管理画面で取扱店を登録・編集・削除する | FR-ADMIN-006 STOCKIST タブで店の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-006-AC-04 公開の切り替えで札と公開の頁が変わる | （なし） |
-| FREQ-18 管理画面で取扱店を登録・編集・削除する | FR-ADMIN-006 STOCKIST タブで店の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-006-AC-05 削除を確かめると一覧から店が消える | （なし） |
-| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FREQ-57-REQ-01 ALL・地方・都道府県の入れ子のチェックボックスで絞り込む | FREQ-57-AC-01 地方を選ぶとその地方の県の店だけが出る | （なし） |
-| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FREQ-57-REQ-01 ALL・地方・都道府県の入れ子のチェックボックスで絞り込む | FREQ-57-AC-02 都道府県を選ぶとその県の店だけが出る | （なし） |
-| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FREQ-57-REQ-01 ALL・地方・都道府県の入れ子のチェックボックスで絞り込む | FREQ-57-AC-03 モバイル・タブレットでは FILTER の引き出しから絞れる | （なし） |
-| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FR-STOCKIST-010 地方→都道府県の入れ子の絞り込みを出す | FR-STOCKIST-010-AC-01 店の無い地方と県はフィルターに出ない | （なし） |
-| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FR-STOCKIST-010 地方→都道府県の入れ子の絞り込みを出す | FR-STOCKIST-010-AC-02 県が1つの地方は1つのチェックボックスで出る | （なし） |
-| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FR-STOCKIST-010 地方→都道府県の入れ子の絞り込みを出す | FR-STOCKIST-010-AC-03 ALL を選ぶと絞り込みが解けて全部の店が出る | （なし） |
-| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FR-STOCKIST-010 地方→都道府県の入れ子の絞り込みを出す | FR-STOCKIST-010-AC-04 1024px 以上は左の列、未満は FILTER のボタンでフィルターを出す | （なし） |
-| THR-STOCKIST-001 非公開の店舗が公開の道から漏れる | SEC-STOCKIST-001 公開の道は公開済みの店舗だけを返す | SEC-STOCKIST-001-AC-01 anon と一般会員の直接の読み出しに非公開の店舗が出ない | （なし） |
-| THR-STOCKIST-001 非公開の店舗が公開の道から漏れる | SEC-STOCKIST-001 公開の道は公開済みの店舗だけを返す | SEC-STOCKIST-001-AC-02 公開の画面に非公開の店舗が出ない | （なし） |
-| THR-STOCKIST-002 公開の取り出しが閲覧者の session の権限で動く | SEC-STOCKIST-002 公開の取り出しは閲覧者の session を引き継がない client で読む | SEC-STOCKIST-002-AC-01 管理の権限でログインしたまま公開の画面を開いても非公開の店舗が出ない | （なし） |
-| THR-STOCKIST-003 権限を持つ人の aal1・失効した session の token で DB を直接書き換える | SEC-STOCKIST-003 DB でも管理の権限を使う操作に2要素認証の済みと有効な session を求める | SEC-STOCKIST-003-AC-01 aal1 の session では非公開の店舗を直接読めない | （なし） |
-| THR-STOCKIST-003 権限を持つ人の aal1・失効した session の token で DB を直接書き換える | SEC-STOCKIST-003 DB でも管理の権限を使う操作に2要素認証の済みと有効な session を求める | SEC-STOCKIST-003-AC-02 aal1 の session では店舗を直接作る・書き換える・消すことができない | （なし） |
-| THR-STOCKIST-003 権限を持つ人の aal1・失効した session の token で DB を直接書き換える | SEC-STOCKIST-003 DB でも管理の権限を使う操作に2要素認証の済みと有効な session を求める | SEC-STOCKIST-003-AC-03 失効させた session の token では店舗を直接書き換えられない | （なし） |
-| THR-STOCKIST-004 なりすましの送信で管理の変更をさせる | SEC-STOCKIST-004 変更の窓口は Origin と CSRF の token を確かめ、判定できない時は拒む | SEC-STOCKIST-004-AC-01 別のオリジンからの変更の要求は拒まれる | （なし） |
-| THR-STOCKIST-004 なりすましの送信で管理の変更をさせる | SEC-STOCKIST-004 変更の窓口は Origin と CSRF の token を確かめ、判定できない時は拒む | SEC-STOCKIST-004-AC-02 CSRF の token が無い・違う変更の要求は拒まれる | （なし） |
-| THR-STOCKIST-005 別のサイトからの送信で管理者の回数の枠を使い切らせる | SEC-STOCKIST-005 別のオリジンからの変更の要求は回数の枠を使う前に拒む | SEC-STOCKIST-005-AC-01 別のオリジンからの要求を続けて送っても本人の変更が 429 にならない | （なし） |
-| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-01 未ログインの要求は 401 になる | （なし） |
-| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-02 取扱店の権限を持たない管理者は 403 になる | （なし） |
-| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-03 aal1 の session の要求は 403 になる | （なし） |
-| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-04 読みの権限だけでは変更できない | （なし） |
-| THR-STOCKIST-007 漏れた session で大量に列挙・書き換える | SEC-STOCKIST-007 管理の窓口は送り元と操作者の2本で回数を制限し、送り元は信頼できる値から取る | SEC-STOCKIST-007-AC-01 変更の21回目は 429 になる | （なし） |
-| THR-STOCKIST-007 漏れた session で大量に列挙・書き換える | SEC-STOCKIST-007 管理の窓口は送り元と操作者の2本で回数を制限し、送り元は信頼できる値から取る | SEC-STOCKIST-007-AC-02 送り元の見出しを変えても操作者の枠で止まる | （なし） |
+| FREQ-13 利用者が取扱店を確かめられる | FREQ-13-REQ-01 取扱店を確かめる機能が動く | FREQ-13-AC-01 取扱店の確認でエラーが出ず、正しい店の情報が出る | `e2e/FR-STOCKIST-001-catalog-grid.spec.ts:5` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-001 公開済みの取扱店を格子に並べ、幅に応じて列を変える | FR-STOCKIST-001-AC-01 一覧の列の数が幅で変わる | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:67` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-001 公開済みの取扱店を格子に並べ、幅に応じて列を変える | FR-STOCKIST-001-AC-02 1536px 以上では4列になる | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:74` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-002 各カードに店舗名・住所・電話・営業時間・定休日を載せる | FR-STOCKIST-002-AC-01 640px 以上のカードに5つの情報が出る | `e2e/FR-STOCKIST-002-card-fields.spec.ts:12` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-002 各カードに店舗名・住所・電話・営業時間・定休日を載せる | FR-STOCKIST-002-AC-02 モバイルのカードに店舗名と住所が出る | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:81` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-003 公開の店だけを取り、取れない時は空として出す | FR-STOCKIST-003-AC-01 非公開の店が一覧とホームに出ない | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:72` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-003 公開の店だけを取り、取れない時は空として出す | FR-STOCKIST-003-AC-02 公開の店が無い時も頁が出て、空の文が出る | `e2e/FR-STOCKIST-017-global-state-windows.spec.ts:74` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-004 ホームは最大6件、モバイルは上の3件、タブレット以上で全部を出す | FR-STOCKIST-004-AC-01 モバイルのホームの取扱店は3件まで | `e2e/FR-STOCKIST-004-home-limit-behavior.spec.ts:4` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-004 ホームは最大6件、モバイルは上の3件、タブレット以上で全部を出す | FR-STOCKIST-004-AC-02 タブレット以上のホームの取扱店は最大6件を全部出す | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:96` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-005 取扱店の頁の title と description を決めて出す | FR-STOCKIST-005-AC-01 取扱店の頁の title と description が出る | `e2e/FR-STOCKIST-005-stockist-metadata.spec.ts:4` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-006 言葉の検索・並び替え・ページ分けは今は作らない | FR-STOCKIST-006-AC-01 一覧に言葉の検索・並び替え・ページ分けが無い | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:111` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-007 地図のリンク・外のリンク・分類・画像は今は付けない | FR-STOCKIST-007-AC-01 カードに取扱の分類と店の画像・ロゴが無い | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:135` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-008 カードの区別に id を使い、読み上げで扱いやすくする | FR-STOCKIST-008-AC-01 同じ名前の店が2つあっても両方のカードが出る | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:139` |
+| FREQ-13 利用者が取扱店を確かめられる | FR-STOCKIST-008 カードの区別に id を使い、読み上げで扱いやすくする | FR-STOCKIST-008-AC-02 各カードの店舗名が見出しとして読める | `e2e/FR-STOCKIST-008-unique-key-and-a11y.spec.ts:5` |
+| FREQ-18 管理画面で取扱店を登録・編集・削除する | FREQ-18-REQ-01 取扱店の管理の機能が動く | FREQ-18-AC-01 取扱店の管理でエラーが出ず登録・編集・削除が終わる | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:236`<br>`e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:260` |
+| FREQ-18 管理画面で取扱店を登録・編集・削除する | FR-ADMIN-006 STOCKIST タブで店の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-006-AC-01 STOCKIST タブに全部の店が公開の状態つきで出る | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:84` |
+| FREQ-18 管理画面で取扱店を登録・編集・削除する | FR-ADMIN-006 STOCKIST タブで店の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-006-AC-02 作成のフォームで保存すると一覧に新しい店が出る | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:118` |
+| FREQ-18 管理画面で取扱店を登録・編集・削除する | FR-ADMIN-006 STOCKIST タブで店の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-006-AC-03 編集のフォームで更新すると一覧の中身が変わる | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:137` |
+| FREQ-18 管理画面で取扱店を登録・編集・削除する | FR-ADMIN-006 STOCKIST タブで店の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-006-AC-04 公開の切り替えで札と公開の頁が変わる | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:164` |
+| FREQ-18 管理画面で取扱店を登録・編集・削除する | FR-ADMIN-006 STOCKIST タブで店の一覧・作成・編集・削除・公開の切り替えをする | FR-ADMIN-006-AC-05 削除を確かめると一覧から店が消える | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:194` |
+| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FREQ-57-REQ-01 ALL・地方・都道府県の入れ子のチェックボックスで絞り込む | FREQ-57-AC-01 地方を選ぶとその地方の県の店だけが出る | `e2e/FR-STOCKIST-010-region-prefecture-filter.spec.ts:17` |
+| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FREQ-57-REQ-01 ALL・地方・都道府県の入れ子のチェックボックスで絞り込む | FREQ-57-AC-02 都道府県を選ぶとその県の店だけが出る | `e2e/FR-STOCKIST-010-region-prefecture-filter.spec.ts:44` |
+| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FREQ-57-REQ-01 ALL・地方・都道府県の入れ子のチェックボックスで絞り込む | FREQ-57-AC-03 モバイル・タブレットでは FILTER の引き出しから絞れる | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:198` |
+| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FR-STOCKIST-010 地方→都道府県の入れ子の絞り込みを出す | FR-STOCKIST-010-AC-01 店の無い地方と県はフィルターに出ない | `e2e/FR-STOCKIST-010-region-prefecture-filter.spec.ts:64` |
+| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FR-STOCKIST-010 地方→都道府県の入れ子の絞り込みを出す | FR-STOCKIST-010-AC-02 県が1つの地方は1つのチェックボックスで出る | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:157` |
+| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FR-STOCKIST-010 地方→都道府県の入れ子の絞り込みを出す | FR-STOCKIST-010-AC-03 ALL を選ぶと絞り込みが解けて全部の店が出る | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:149` |
+| FREQ-57 取扱店の一覧に地方→都道府県の入れ子の絞り込みを付ける | FR-STOCKIST-010 地方→都道府県の入れ子の絞り込みを出す | FR-STOCKIST-010-AC-04 1024px 以上は左の列、未満は FILTER のボタンでフィルターを出す | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:178` |
+| THR-STOCKIST-001 非公開の店舗が公開の道から漏れる | SEC-STOCKIST-001 公開の道は公開済みの店舗だけを返す | SEC-STOCKIST-001-AC-01 anon と一般会員の直接の読み出しに非公開の店舗が出ない | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:111` |
+| THR-STOCKIST-001 非公開の店舗が公開の道から漏れる | SEC-STOCKIST-001 公開の道は公開済みの店舗だけを返す | SEC-STOCKIST-001-AC-02 公開の画面に非公開の店舗が出ない | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:91` |
+| THR-STOCKIST-002 公開の取り出しが閲覧者の session の権限で動く | SEC-STOCKIST-002 公開の取り出しは閲覧者の session を引き継がない client で読む | SEC-STOCKIST-002-AC-01 管理の権限でログインしたまま公開の画面を開いても非公開の店舗が出ない | `e2e/FR-STOCKIST-016-direct-db-access-and-session.spec.ts:179` |
+| THR-STOCKIST-003 権限を持つ人の aal1・失効した session の token で DB を直接書き換える | SEC-STOCKIST-003 DB でも管理の権限を使う操作に2要素認証の済みと有効な session を求める | SEC-STOCKIST-003-AC-01 aal1 の session では非公開の店舗を直接読めない | `e2e/FR-STOCKIST-016-direct-db-access-and-session.spec.ts:213` |
+| THR-STOCKIST-003 権限を持つ人の aal1・失効した session の token で DB を直接書き換える | SEC-STOCKIST-003 DB でも管理の権限を使う操作に2要素認証の済みと有効な session を求める | SEC-STOCKIST-003-AC-02 aal1 の session では店舗を直接作る・書き換える・消すことができない | `e2e/FR-STOCKIST-016-direct-db-access-and-session.spec.ts:252` |
+| THR-STOCKIST-003 権限を持つ人の aal1・失効した session の token で DB を直接書き換える | SEC-STOCKIST-003 DB でも管理の権限を使う操作に2要素認証の済みと有効な session を求める | SEC-STOCKIST-003-AC-03 失効させた session の token では店舗を直接書き換えられない | `e2e/FR-STOCKIST-016-direct-db-access-and-session.spec.ts:309` |
+| THR-STOCKIST-004 なりすましの送信で管理の変更をさせる | SEC-STOCKIST-004 変更の窓口は Origin と CSRF の token を確かめ、判定できない時は拒む | SEC-STOCKIST-004-AC-01 別のオリジンからの変更の要求は拒まれる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:433` |
+| THR-STOCKIST-004 なりすましの送信で管理の変更をさせる | SEC-STOCKIST-004 変更の窓口は Origin と CSRF の token を確かめ、判定できない時は拒む | SEC-STOCKIST-004-AC-02 CSRF の token が無い・違う変更の要求は拒まれる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:456` |
+| THR-STOCKIST-005 別のサイトからの送信で管理者の回数の枠を使い切らせる | SEC-STOCKIST-005 別のオリジンからの変更の要求は回数の枠を使う前に拒む | SEC-STOCKIST-005-AC-01 別のオリジンからの要求を続けて送っても本人の変更が 429 にならない | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:486` |
+| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-01 未ログインの要求は 401 になる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:330` |
+| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-02 取扱店の権限を持たない管理者は 403 になる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:353` |
+| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-03 aal1 の session の要求は 403 になる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:376` |
+| THR-STOCKIST-006 権限の無い人が管理の窓口を使う | SEC-STOCKIST-006 管理の窓口は署名を確かめた token・有効な session・DB の ACL の権限・aal2 を全部求める | SEC-STOCKIST-006-AC-04 読みの権限だけでは変更できない | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:401` |
+| THR-STOCKIST-007 漏れた session で大量に列挙・書き換える | SEC-STOCKIST-007 管理の窓口は送り元と操作者の2本で回数を制限し、送り元は信頼できる値から取る | SEC-STOCKIST-007-AC-01 変更の21回目は 429 になる | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:195` |
+| THR-STOCKIST-007 漏れた session で大量に列挙・書き換える | SEC-STOCKIST-007 管理の窓口は送り元と操作者の2本で回数を制限し、送り元は信頼できる値から取る | SEC-STOCKIST-007-AC-02 送り元の見出しを変えても操作者の枠で止まる | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:209` |
 | THR-STOCKIST-008 表・連番の権限が広く、RLS の外の操作が残る | SEC-STOCKIST-008 表・連番の権限は使う操作だけに絞る | SEC-STOCKIST-008-AC-01 anon・authenticated に表の余分な権限が無い | （なし） |
-| THR-STOCKIST-009 管理の応答が全部の列を返す | SEC-STOCKIST-009 管理の応答は画面で使う列だけを返す | SEC-STOCKIST-009-AC-01 管理の応答に決めた列のほかが出ない | （なし） |
-| THR-STOCKIST-010 管理の応答が共有のキャッシュに残る | SEC-STOCKIST-010 管理の応答は共有のキャッシュに残さない | SEC-STOCKIST-010-AC-01 管理の応答に no-store が付く | （なし） |
-| THR-STOCKIST-011 入力の形を確かめず、不正な値が店舗に入る | SEC-STOCKIST-011 店舗の値は形の許可で確かめる | SEC-STOCKIST-011-AC-01 制御文字を含む値は保存されない | （なし） |
-| THR-STOCKIST-012 監査の記録を偽る・汚す | SEC-STOCKIST-012 監査の記録は信頼できる送り元と、整えた値で残す | SEC-STOCKIST-012-AC-01 偽の送り元の見出しが監査の ip にそのまま入らない | （なし） |
-| THR-STOCKIST-013 変更の跡が正しく残らず、消した店舗を戻せない | SEC-STOCKIST-013 変更の監査は実際に変わった行だけを成功とし、消した中身を残す | SEC-STOCKIST-013-AC-01 無い店舗への変更は 404 になり成功の監査が残らない | （なし） |
-| THR-STOCKIST-013 変更の跡が正しく残らず、消した店舗を戻せない | SEC-STOCKIST-013 変更の監査は実際に変わった行だけを成功とし、消した中身を残す | SEC-STOCKIST-013-AC-02 削除の監査に消した店舗の中身が残る | （なし） |
-| THR-STOCKIST-014 誤りの応答と記録から内部の様子が漏れる | SEC-STOCKIST-014 誤りの応答は決まった文だけを返し、記録には要る項目だけを書く | SEC-STOCKIST-014-AC-01 検証の誤りの応答に制約の中身が出ない | （なし） |
-| THR-STOCKIST-014 誤りの応答と記録から内部の様子が漏れる | SEC-STOCKIST-014 誤りの応答は決まった文だけを返し、記録には要る項目だけを書く | SEC-STOCKIST-014-AC-02 JSON でない本文は 400 になる | （なし） |
-| THR-STOCKIST-015 編集の頁の id で、ほかの管理 API を呼ばせる | SEC-STOCKIST-015 編集の頁は id を正の整数と確かめてから API の道を組む | SEC-STOCKIST-015-AC-01 数でない id の編集の頁は API を呼ばない | （なし） |
-| THR-STOCKIST-016 店舗の値で公開の画面に台本や別の URL を差し込む | SEC-STOCKIST-016 店舗の値は文字として出し、外へのリンクは決まった形で作る | SEC-STOCKIST-016-AC-01 店名と住所に入れた台本が動かず文字として出る | （なし） |
-| THR-STOCKIST-016 店舗の値で公開の画面に台本や別の URL を差し込む | SEC-STOCKIST-016 店舗の値は文字として出し、外へのリンクは決まった形で作る | SEC-STOCKIST-016-AC-02 住所のリンクは決まった先にだけ向く | （なし） |
-| THR-STOCKIST-017 URL の pref で絞り込みを壊す | SEC-STOCKIST-017 URL の pref は県名の許可の一覧で絞る | SEC-STOCKIST-017-AC-01 一覧に無い pref は無視され全件が出る | （なし） |
-| THR-STOCKIST-018 公開の読み出しを大量に叩く | SEC-STOCKIST-018 公開の読み出しは件数と回数に上限を持つ | SEC-STOCKIST-018-AC-01 anon の直接の読み出しが行の上限を超えない | （なし） |
-| THR-STOCKIST-019 権限の無い人が管理の作成・編集の頁を開く | SEC-STOCKIST-019 管理の作成・編集の頁は入口で権限を確かめる | SEC-STOCKIST-019-AC-01 未ログインで管理の作成の頁を開くとフォームが出ない | （なし） |
-| THR-STOCKIST-019 権限の無い人が管理の作成・編集の頁を開く | SEC-STOCKIST-019 管理の作成・編集の頁は入口で権限を確かめる | SEC-STOCKIST-019-AC-02 取扱店の権限を持たない管理者には管理の作成の頁のフォームが出ない | （なし） |
-| THR-STOCKIST-020 認可で断られる要求を際限なく送り、DB に往復をさせる | SEC-STOCKIST-020 管理の窓口は認可の前に送り元の枠で回数を数える | SEC-STOCKIST-020-AC-01 権限の無い token の要求を続けて送ると 429 になる | （なし） |
-| THR-STOCKIST-021 認可で断られた要求の跡が残らない | SEC-STOCKIST-021 認可で断った管理の要求を監査に残す | SEC-STOCKIST-021-AC-01 権限の無い管理の要求の監査が残る | （なし） |
-| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-01 /search?q=<語> を開くと入力欄に語が入り、4つのタブが出る | （なし） |
-| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-02 タブを押すと URL の tab が変わり、その種別の結果が出る | （なし） |
-| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-03 tab 付きの URL を開くとそのタブが選ばれている | （なし） |
-| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-002 ヘッダーの検索のアイコンから検索のページへ移り、/?q= でホームにプレビューを出す | FR-SEARCH-002-AC-01 ヘッダーの検索のアイコンを押すと /search へ移る | （なし） |
-| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-002 ヘッダーの検索のアイコンから検索のページへ移り、/?q= でホームにプレビューを出す | FR-SEARCH-002-AC-02 /?q=<語> を開くとホームにプレビューが出る | （なし） |
-| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-003 3種への検索と、結果の中の一致の強調 | FR-SEARCH-003-AC-01 結果の題の中の語に合う部分が mark で強調される | （なし） |
-| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-003 3種への検索と、結果の中の一致の強調 | FR-SEARCH-003-AC-02 商品・ルック・ニュースのそれぞれの題に含まれる語で、その種別の結果が出る | （なし） |
-| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-004 0件の時は「○○ の検索結果はありません」と人気商品を出す | FR-SEARCH-004-AC-01 一致の無い語で開くと、0件の文と POPULAR ITEMS が出る | （なし） |
-| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FREQ-01-REQ-01 ヘッダーの虫眼鏡のアイコンから語で商品を探せる | FREQ-01-AC-01 商品の検索でエラーが出ず、関連する商品が出る | （なし） |
-| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FREQ-01-REQ-02 ヘッダーの虫眼鏡のアイコンから語で商品を探せる（2つ目） | FREQ-01-AC-01 商品の検索でエラーが出ず、関連する商品が出る | （なし） |
-| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-01 /search?q=<語> を開くと入力欄に語が入り、4つのタブが出る | （なし） |
-| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-02 タブを押すと URL の tab が変わり、その種別の結果が出る | （なし） |
-| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-03 tab 付きの URL を開くとそのタブが選ばれている | （なし） |
-| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-002 ヘッダーの検索のアイコンから検索のページへ移り、/?q= でホームにプレビューを出す | FR-SEARCH-002-AC-01 ヘッダーの検索のアイコンを押すと /search へ移る | （なし） |
-| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-002 ヘッダーの検索のアイコンから検索のページへ移り、/?q= でホームにプレビューを出す | FR-SEARCH-002-AC-02 /?q=<語> を開くとホームにプレビューが出る | （なし） |
-| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-003 3種への検索と、結果の中の一致の強調 | FR-SEARCH-003-AC-01 結果の題の中の語に合う部分が mark で強調される | （なし） |
-| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-003 3種への検索と、結果の中の一致の強調 | FR-SEARCH-003-AC-02 商品・ルック・ニュースのそれぞれの題に含まれる語で、その種別の結果が出る | （なし） |
-| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-004 0件の時は「○○ の検索結果はありません」と人気商品を出す | FR-SEARCH-004-AC-01 一致の無い語で開くと、0件の文と POPULAR ITEMS が出る | （なし） |
+| THR-STOCKIST-009 管理の応答が全部の列を返す | SEC-STOCKIST-009 管理の応答は画面で使う列だけを返す | SEC-STOCKIST-009-AC-01 管理の応答に決めた列のほかが出ない | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:218` |
+| THR-STOCKIST-010 管理の応答が共有のキャッシュに残る | SEC-STOCKIST-010 管理の応答は共有のキャッシュに残さない | SEC-STOCKIST-010-AC-01 管理の応答に no-store が付く | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:240` |
+| THR-STOCKIST-011 入力の形を確かめず、不正な値が店舗に入る | SEC-STOCKIST-011 店舗の値は形の許可で確かめる | SEC-STOCKIST-011-AC-01 制御文字を含む値は保存されない | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:261` |
+| THR-STOCKIST-012 監査の記録を偽る・汚す | SEC-STOCKIST-012 監査の記録は信頼できる送り元と、整えた値で残す | SEC-STOCKIST-012-AC-01 偽の送り元の見出しが監査の ip にそのまま入らない | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:283` |
+| THR-STOCKIST-013 変更の跡が正しく残らず、消した店舗を戻せない | SEC-STOCKIST-013 変更の監査は実際に変わった行だけを成功とし、消した中身を残す | SEC-STOCKIST-013-AC-01 無い店舗への変更は 404 になり成功の監査が残らない | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:299` |
+| THR-STOCKIST-013 変更の跡が正しく残らず、消した店舗を戻せない | SEC-STOCKIST-013 変更の監査は実際に変わった行だけを成功とし、消した中身を残す | SEC-STOCKIST-013-AC-02 削除の監査に消した店舗の中身が残る | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:313` |
+| THR-STOCKIST-014 誤りの応答と記録から内部の様子が漏れる | SEC-STOCKIST-014 誤りの応答は決まった文だけを返し、記録には要る項目だけを書く | SEC-STOCKIST-014-AC-01 検証の誤りの応答に制約の中身が出ない | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:329` |
+| THR-STOCKIST-014 誤りの応答と記録から内部の様子が漏れる | SEC-STOCKIST-014 誤りの応答は決まった文だけを返し、記録には要る項目だけを書く | SEC-STOCKIST-014-AC-02 JSON でない本文は 400 になる | `e2e/FR-STOCKIST-015-admin-api-behaviour.spec.ts:341` |
+| THR-STOCKIST-015 編集の頁の id で、ほかの管理 API を呼ばせる | SEC-STOCKIST-015 編集の頁は id を正の整数と確かめてから API の道を組む | SEC-STOCKIST-015-AC-01 数でない id の編集の頁は API を呼ばない | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:293` |
+| THR-STOCKIST-016 店舗の値で公開の画面に台本や別の URL を差し込む | SEC-STOCKIST-016 店舗の値は文字として出し、外へのリンクは決まった形で作る | SEC-STOCKIST-016-AC-01 店名と住所に入れた台本が動かず文字として出る | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:196` |
+| THR-STOCKIST-016 店舗の値で公開の画面に台本や別の URL を差し込む | SEC-STOCKIST-016 店舗の値は文字として出し、外へのリンクは決まった形で作る | SEC-STOCKIST-016-AC-02 住所のリンクは決まった先にだけ向く | `e2e/FR-STOCKIST-012-public-screens-with-seeded-rows.spec.ts:222` |
+| THR-STOCKIST-017 URL の pref で絞り込みを壊す | SEC-STOCKIST-017 URL の pref は県名の許可の一覧で絞る | SEC-STOCKIST-017-AC-01 一覧に無い pref は無視され全件が出る | `e2e/FR-STOCKIST-011-public-layout-and-filter-ui.spec.ts:222` |
+| THR-STOCKIST-018 公開の読み出しを大量に叩く | SEC-STOCKIST-018 公開の読み出しは件数と回数に上限を持つ | SEC-STOCKIST-018-AC-01 anon の直接の読み出しが行の上限を超えない | `e2e/FR-STOCKIST-017-global-state-windows.spec.ts:109`<br>`e2e/FR-STOCKIST-017-global-state-windows.spec.ts:126` |
+| THR-STOCKIST-019 権限の無い人が管理の作成・編集の頁を開く | SEC-STOCKIST-019 管理の作成・編集の頁は入口で権限を確かめる | SEC-STOCKIST-019-AC-01 未ログインで管理の作成の頁を開くとフォームが出ない | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:319`<br>`e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:325` |
+| THR-STOCKIST-019 権限の無い人が管理の作成・編集の頁を開く | SEC-STOCKIST-019 管理の作成・編集の頁は入口で権限を確かめる | SEC-STOCKIST-019-AC-02 取扱店の権限を持たない管理者には管理の作成の頁のフォームが出ない | `e2e/FR-STOCKIST-013-admin-stockist-screens.spec.ts:331` |
+| THR-STOCKIST-020 認可で断られる要求を際限なく送り、DB に往復をさせる | SEC-STOCKIST-020 管理の窓口は認可の前に送り元の枠で回数を数える | SEC-STOCKIST-020-AC-01 権限の無い token の要求を続けて送ると 429 になる | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:519` |
+| THR-STOCKIST-021 認可で断られた要求の跡が残らない | SEC-STOCKIST-021 認可で断った管理の要求を監査に残す | SEC-STOCKIST-021-AC-01 権限の無い管理の要求の監査が残る | `e2e/FR-STOCKIST-014-admin-api-authn-authz-csrf.spec.ts:549` |
+| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-01 /search?q=<語> を開くと入力欄に語が入り、4つのタブが出る | `e2e/FR-SEARCH-001-cross-content-search.spec.ts:5` |
+| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-02 タブを押すと URL の tab が変わり、その種別の結果が出る | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:85` |
+| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-03 tab 付きの URL を開くとそのタブが選ばれている | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:108` |
+| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-002 ヘッダーの検索のアイコンから検索のページへ移り、/?q= でホームにプレビューを出す | FR-SEARCH-002-AC-01 ヘッダーの検索のアイコンを押すと /search へ移る | `e2e/FR-SEARCH-002-search-entry-preview.spec.ts:5` |
+| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-002 ヘッダーの検索のアイコンから検索のページへ移り、/?q= でホームにプレビューを出す | FR-SEARCH-002-AC-02 /?q=<語> を開くとホームにプレビューが出る | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:122` |
+| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-003 3種への検索と、結果の中の一致の強調 | FR-SEARCH-003-AC-01 結果の題の中の語に合う部分が mark で強調される | `e2e/FR-SEARCH-003-fulltext-highlight.spec.ts:5` |
+| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-003 3種への検索と、結果の中の一致の強調 | FR-SEARCH-003-AC-02 商品・ルック・ニュースのそれぞれの題に含まれる語で、その種別の結果が出る | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:134` |
+| SR-SEARCH-001 訪問者が語でサイトの商品・ルック・ニュースを横断して探せる | FR-SEARCH-004 0件の時は「○○ の検索結果はありません」と人気商品を出す | FR-SEARCH-004-AC-01 一致の無い語で開くと、0件の文と POPULAR ITEMS が出る | `e2e/FR-SEARCH-004-empty-results.spec.ts:4` |
+| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FREQ-01-REQ-01 ヘッダーの虫眼鏡のアイコンから語で商品を探せる | FREQ-01-AC-01 商品の検索でエラーが出ず、関連する商品が出る | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:60` |
+| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FREQ-01-REQ-02 ヘッダーの虫眼鏡のアイコンから語で商品を探せる（2つ目） | FREQ-01-AC-01 商品の検索でエラーが出ず、関連する商品が出る | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:60` |
+| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-01 /search?q=<語> を開くと入力欄に語が入り、4つのタブが出る | `e2e/FR-SEARCH-001-cross-content-search.spec.ts:5` |
+| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-02 タブを押すと URL の tab が変わり、その種別の結果が出る | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:85` |
+| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-001 /search?q= で語を URL から受け、3種を横断して探し、種別のタブで切り替える | FR-SEARCH-001-AC-03 tab 付きの URL を開くとそのタブが選ばれている | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:108` |
+| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-002 ヘッダーの検索のアイコンから検索のページへ移り、/?q= でホームにプレビューを出す | FR-SEARCH-002-AC-01 ヘッダーの検索のアイコンを押すと /search へ移る | `e2e/FR-SEARCH-002-search-entry-preview.spec.ts:5` |
+| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-002 ヘッダーの検索のアイコンから検索のページへ移り、/?q= でホームにプレビューを出す | FR-SEARCH-002-AC-02 /?q=<語> を開くとホームにプレビューが出る | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:122` |
+| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-003 3種への検索と、結果の中の一致の強調 | FR-SEARCH-003-AC-01 結果の題の中の語に合う部分が mark で強調される | `e2e/FR-SEARCH-003-fulltext-highlight.spec.ts:5` |
+| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-003 3種への検索と、結果の中の一致の強調 | FR-SEARCH-003-AC-02 商品・ルック・ニュースのそれぞれの題に含まれる語で、その種別の結果が出る | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:134` |
+| FREQ-01 スマホ・PC・タブレットで商品を検索できる | FR-SEARCH-004 0件の時は「○○ の検索結果はありません」と人気商品を出す | FR-SEARCH-004-AC-01 一致の無い語で開くと、0件の文と POPULAR ITEMS が出る | `e2e/FR-SEARCH-004-empty-results.spec.ts:4` |
 | FREQ-184 検索のページを2カラムの構成にする | FREQ-184-REQ-01 1024px 以上は黄金比の2カラムにし、左を sticky にする | FREQ-184-AC-01 1280px で左右の2カラム、390・768px で縦積みになり横にはみ出さない | （なし） |
 | FREQ-184 検索のページを2カラムの構成にする | FREQ-184-REQ-02 結果の見出しの行と、結果の行の作り、ALL の混ぜ方 | FREQ-184-AC-02 「N RESULTS」「SORT BY」「RELEVANCE」と、行の種別・題・サムネイル・矢印が出る | （なし） |
-| FREQ-184 検索のページを2カラムの構成にする | FREQ-184-REQ-03 初めは8行、LOAD MORE で8行ずつ足し、条件を変えたら戻す | FREQ-184-AC-03 8件を超える時だけ LOAD MORE が出て、押すと行が増える | （なし） |
-| FREQ-186 POPULAR ITEMS を購入数の多い順にし、語が無くても出す | FREQ-186-REQ-01 購入数を paid の注文の数量の合計とし、公開の ITEM を多い順に返す | FREQ-186-AC-01 RPC が paid の数量の合計の順に返し、popularItems は公開の ITEM だけ | （なし） |
-| FREQ-186 POPULAR ITEMS を購入数の多い順にし、語が無くても出す | FREQ-186-REQ-02 RPC は service_role だけが呼び、購入数を応答に出さない | FREQ-186-AC-02 anon・authenticated に EXECUTE が無く、応答に purchase_count が無い | （なし） |
-| FREQ-186 POPULAR ITEMS を購入数の多い順にし、語が無くても出す | FREQ-186-REQ-03 語が無くても検索の窓口を呼び、POPULAR ITEMS を出す | FREQ-186-AC-03 3つの幅で語なしの /search に POPULAR ITEMS と ITEM の行が出る | （なし） |
-| FREQ-187 preview を付けない検索がプレビュー扱いになる不具合を直す | FREQ-187-REQ-01 preview は文字が 'true' の時だけ真とし、件数と回数の制限を分ける | FREQ-187-AC-01 preview を付けない検索は1種別で3件を超えて返り得る | （なし） |
-| FREQ-187 preview を付けない検索がプレビュー扱いになる不具合を直す | FREQ-187-REQ-01 preview は文字が 'true' の時だけ真とし、件数と回数の制限を分ける | FREQ-187-AC-02 preview=true の検索は各種別3件以下 | （なし） |
-| FREQ-187 preview を付けない検索がプレビュー扱いになる不具合を直す | FREQ-187-REQ-01 preview は文字が 'true' の時だけ真とし、件数と回数の制限を分ける | FREQ-187-AC-03 preview を付けない検索を20回続けても 429 にならない | （なし） |
-| FREQ-188 検索のページを画面の縦いっぱいに出す | FREQ-188-REQ-01 ページの入れ物の最小の高さを画面の高さから余白を引いた値にする | FREQ-188-AC-01 3つの幅でフッターが最初の画面に出ない | （なし） |
-| FREQ-188 検索のページを画面の縦いっぱいに出す | FREQ-188-REQ-01 ページの入れ物の最小の高さを画面の高さから余白を引いた値にする | FREQ-188-AC-03 3つの幅で横にはみ出さない | （なし） |
-| FREQ-188 検索のページを画面の縦いっぱいに出す | FREQ-188-REQ-02 左のカラムをヘッダーの下に画面の高さで留め、中身を縦の中央に置く | FREQ-188-AC-02 1280px で左のカラムの中身が縦の中央寄りにある | （なし） |
-| FREQ-188 検索のページを画面の縦いっぱいに出す | FREQ-188-REQ-02 左のカラムをヘッダーの下に画面の高さで留め、中身を縦の中央に置く | FREQ-188-AC-03 3つの幅で横にはみ出さない | （なし） |
-| FREQ-189 RECENT SEARCHES の表示を消す | FREQ-189-REQ-01 RECENT SEARCHES の表示と search.history の保存・読み出しを外す | FREQ-189-AC-01 語なしで入力欄に触れても RECENT SEARCHES が出ない | （なし） |
-| FREQ-189 RECENT SEARCHES の表示を消す | FREQ-189-REQ-01 RECENT SEARCHES の表示と search.history の保存・読み出しを外す | FREQ-189-AC-02 検索しても localStorage に search.history が残らない | （なし） |
+| FREQ-184 検索のページを2カラムの構成にする | FREQ-184-REQ-03 初めは8行、LOAD MORE で8行ずつ足し、条件を変えたら戻す | FREQ-184-AC-03 8件を超える時だけ LOAD MORE が出て、押すと行が増える | `e2e/FR-SEARCH-006-two-column-redesign.spec.ts:29`<br>`e2e/FR-SEARCH-006-two-column-redesign.spec.ts:101` |
+| FREQ-186 POPULAR ITEMS を購入数の多い順にし、語が無くても出す | FREQ-186-REQ-01 購入数を paid の注文の数量の合計とし、公開の ITEM を多い順に返す | FREQ-186-AC-01 RPC が paid の数量の合計の順に返し、popularItems は公開の ITEM だけ | `e2e/FR-SEARCH-008-popular-items-by-purchases.spec.ts:23` |
+| FREQ-186 POPULAR ITEMS を購入数の多い順にし、語が無くても出す | FREQ-186-REQ-02 RPC は service_role だけが呼び、購入数を応答に出さない | FREQ-186-AC-02 anon・authenticated に EXECUTE が無く、応答に purchase_count が無い | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:216` |
+| FREQ-186 POPULAR ITEMS を購入数の多い順にし、語が無くても出す | FREQ-186-REQ-03 語が無くても検索の窓口を呼び、POPULAR ITEMS を出す | FREQ-186-AC-03 3つの幅で語なしの /search に POPULAR ITEMS と ITEM の行が出る | `e2e/FR-SEARCH-008-popular-items-by-purchases.spec.ts:44` |
+| FREQ-187 preview を付けない検索がプレビュー扱いになる不具合を直す | FREQ-187-REQ-01 preview は文字が 'true' の時だけ真とし、件数と回数の制限を分ける | FREQ-187-AC-01 preview を付けない検索は1種別で3件を超えて返り得る | `e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:50` |
+| FREQ-187 preview を付けない検索がプレビュー扱いになる不具合を直す | FREQ-187-REQ-01 preview は文字が 'true' の時だけ真とし、件数と回数の制限を分ける | FREQ-187-AC-02 preview=true の検索は各種別3件以下 | `e2e/FR-SEARCH-009-preview-flag-parsing.spec.ts:16` |
+| FREQ-187 preview を付けない検索がプレビュー扱いになる不具合を直す | FREQ-187-REQ-01 preview は文字が 'true' の時だけ真とし、件数と回数の制限を分ける | FREQ-187-AC-03 preview を付けない検索を20回続けても 429 にならない | `e2e/FR-SEARCH-009-preview-flag-parsing.spec.ts:39` |
+| FREQ-188 検索のページを画面の縦いっぱいに出す | FREQ-188-REQ-01 ページの入れ物の最小の高さを画面の高さから余白を引いた値にする | FREQ-188-AC-01 3つの幅でフッターが最初の画面に出ない | `e2e/FR-SEARCH-010-full-height-layout.spec.ts:14` |
+| FREQ-188 検索のページを画面の縦いっぱいに出す | FREQ-188-REQ-01 ページの入れ物の最小の高さを画面の高さから余白を引いた値にする | FREQ-188-AC-03 3つの幅で横にはみ出さない | `e2e/FR-SEARCH-023-search-two-column-heading-results-header.spec.ts:31` |
+| FREQ-188 検索のページを画面の縦いっぱいに出す | FREQ-188-REQ-02 左のカラムをヘッダーの下に画面の高さで留め、中身を縦の中央に置く | FREQ-188-AC-02 1280px で左のカラムの中身が縦の中央寄りにある | `e2e/FR-SEARCH-010-full-height-layout.spec.ts:44` |
+| FREQ-188 検索のページを画面の縦いっぱいに出す | FREQ-188-REQ-02 左のカラムをヘッダーの下に画面の高さで留め、中身を縦の中央に置く | FREQ-188-AC-03 3つの幅で横にはみ出さない | `e2e/FR-SEARCH-023-search-two-column-heading-results-header.spec.ts:31` |
+| FREQ-189 RECENT SEARCHES の表示を消す | FREQ-189-REQ-01 RECENT SEARCHES の表示と search.history の保存・読み出しを外す | FREQ-189-AC-01 語なしで入力欄に触れても RECENT SEARCHES が出ない | `e2e/FR-SEARCH-005-search-history.spec.ts:9` |
+| FREQ-189 RECENT SEARCHES の表示を消す | FREQ-189-REQ-01 RECENT SEARCHES の表示と search.history の保存・読み出しを外す | FREQ-189-AC-02 検索しても localStorage に search.history が残らない | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:163` |
 | FREQ-190 入力中の予測候補を combobox の定石に沿って直す | FREQ-190-REQ-01 候補を入力欄の下に重ねて出し、一致を描き分け、最大8件にする | FREQ-190-AC-01 入力すると種別付きの候補が最大8件、行の高さ 44px 以上で出る | （なし） |
-| FREQ-190 入力中の予測候補を combobox の定石に沿って直す | FREQ-190-REQ-02 combobox の ARIA とキー操作、選択の縦線、件数の読み上げ | FREQ-190-AC-02 combobox の ARIA が付き、↓ と Escape で状態が変わる | （なし） |
-| FREQ-190 入力中の予測候補を combobox の定石に沿って直す | FREQ-190-REQ-02 combobox の ARIA とキー操作、選択の縦線、件数の読み上げ | FREQ-190-AC-03 選んだ候補を Enter かクリックで確定すると、URL の q と tab が候補に合う | （なし） |
-| FREQ-190 入力中の予測候補を combobox の定石に沿って直す | FREQ-190-REQ-03 ラベルに入力語を含む候補だけを返す | FREQ-190-AC-04 出る候補のラベルが全部入力語を含む | （なし） |
+| FREQ-190 入力中の予測候補を combobox の定石に沿って直す | FREQ-190-REQ-02 combobox の ARIA とキー操作、選択の縦線、件数の読み上げ | FREQ-190-AC-02 combobox の ARIA が付き、↓ と Escape で状態が変わる | `e2e/FR-SEARCH-011-suggestions-combobox.spec.ts:49` |
+| FREQ-190 入力中の予測候補を combobox の定石に沿って直す | FREQ-190-REQ-02 combobox の ARIA とキー操作、選択の縦線、件数の読み上げ | FREQ-190-AC-03 選んだ候補を Enter かクリックで確定すると、URL の q と tab が候補に合う | `e2e/FR-SEARCH-011-suggestions-combobox.spec.ts:73` |
+| FREQ-190 入力中の予測候補を combobox の定石に沿って直す | FREQ-190-REQ-03 ラベルに入力語を含む候補だけを返す | FREQ-190-AC-04 出る候補のラベルが全部入力語を含む | `e2e/FR-SEARCH-011-suggestions-combobox.spec.ts:20` |
 | FREQ-191 結果の見出しの行から「SORT BY」を消し RELEVANCE だけにする | FREQ-191-REQ-01 並び順の表示から「SORT BY」を消し、RELEVANCE とシェブロンだけにする | FREQ-191-AC-01 RELEVANCE が出て、SORT BY が出ない | （なし） |
-| FREQ-191 結果の見出しの行から「SORT BY」を消し RELEVANCE だけにする | FREQ-191-REQ-01 並び順の表示から「SORT BY」を消し、RELEVANCE とシェブロンだけにする | FREQ-191-AC-02 「{件数} RESULTS」が今までどおり出る（FREQ-191） | （なし） |
-| FREQ-192 フォームと候補を詰め、種別のタブの下線をヘッダーのナビにそろえる | FREQ-192-REQ-01 入力欄・送信のボタン・候補の行の高さを詰める | FREQ-192-AC-01 フォームの高さが 36px 以上 44px 未満、候補の行が 40px 以上 44px 未満 | （なし） |
-| FREQ-192 フォームと候補を詰め、種別のタブの下線をヘッダーのナビにそろえる | FREQ-192-REQ-02 種別のタブの下線をヘッダーのナビと同じ伸びる線にする | FREQ-192-AC-02 タブの下線が共通の線のクラスを持ち、高さ 1px・黒・0.3s | （なし） |
-| FREQ-192 フォームと候補を詰め、種別のタブの下線をヘッダーのナビにそろえる | FREQ-192-REQ-02 種別のタブの下線をヘッダーのナビと同じ伸びる線にする | FREQ-192-AC-03 選んだタブの下線の横の伸びが 1、ほかは 0 で、触れると 1 になる | （なし） |
+| FREQ-191 結果の見出しの行から「SORT BY」を消し RELEVANCE だけにする | FREQ-191-REQ-01 並び順の表示から「SORT BY」を消し、RELEVANCE とシェブロンだけにする | FREQ-191-AC-02 「{件数} RESULTS」が今までどおり出る（FREQ-191） | `e2e/FR-SEARCH-023-search-two-column-heading-results-header.spec.ts:36` |
+| FREQ-192 フォームと候補を詰め、種別のタブの下線をヘッダーのナビにそろえる | FREQ-192-REQ-01 入力欄・送信のボタン・候補の行の高さを詰める | FREQ-192-AC-01 フォームの高さが 36px 以上 44px 未満、候補の行が 40px 以上 44px 未満 | `e2e/FR-SEARCH-012-compact-form-and-tab-underline.spec.ts:13` |
+| FREQ-192 フォームと候補を詰め、種別のタブの下線をヘッダーのナビにそろえる | FREQ-192-REQ-02 種別のタブの下線をヘッダーのナビと同じ伸びる線にする | FREQ-192-AC-02 タブの下線が共通の線のクラスを持ち、高さ 1px・黒・0.3s | `e2e/FR-SEARCH-012-compact-form-and-tab-underline.spec.ts:37` |
+| FREQ-192 フォームと候補を詰め、種別のタブの下線をヘッダーのナビにそろえる | FREQ-192-REQ-02 種別のタブの下線をヘッダーのナビと同じ伸びる線にする | FREQ-192-AC-03 選んだタブの下線の横の伸びが 1、ほかは 0 で、触れると 1 になる | `e2e/FR-SEARCH-024-search-tab-rows-viewport-details.spec.ts:62` |
 | FREQ-193 種別のタブの下線を文字の真下にそろえる | FREQ-193-REQ-01 下線の幅から末尾の字間の分を引く | FREQ-193-AC-01 3つの幅でタブの下線の右端が最後の文字の右端と 1px 以内 | `e2e/FR-SEARCH-012-compact-form-and-tab-underline.spec.ts:80` |
-| FREQ-193 種別のタブの下線を文字の真下にそろえる | FREQ-193-REQ-01 下線の幅から末尾の字間の分を引く | FREQ-193-AC-02 3つの幅でタブの下線の左端が最初の文字の左端と 1px 以内 | （なし） |
+| FREQ-193 種別のタブの下線を文字の真下にそろえる | FREQ-193-REQ-01 下線の幅から末尾の字間の分を引く | FREQ-193-AC-02 3つの幅でタブの下線の左端が最初の文字の左端と 1px 以内 | `e2e/FR-SEARCH-024-search-tab-rows-viewport-details.spec.ts:91` |
 | FREQ-195 候補のドロップダウンの後ろから「ALL」が覗くのを直す | FREQ-195-REQ-01 候補のドロップダウンを左右に 1px ずつ広げる | FREQ-195-AC-01 3つの幅で候補のドロップダウンの左端が「ALL」の字の形の左端以下 | `e2e/FR-SEARCH-013-underline-and-dropdown-edges.spec.ts:57` |
-| FREQ-195 候補のドロップダウンの後ろから「ALL」が覗くのを直す | FREQ-195-REQ-01 候補のドロップダウンを左右に 1px ずつ広げる | FREQ-195-AC-02 3つの幅で横にはみ出さない（FREQ-195） | （なし） |
-| FREQ-196 並び順の表示（RELEVANCE）をいったん隠す | FREQ-196-REQ-01 並び順の表示を消さずにコメントにして残す | FREQ-196-AC-01 結果を出した時に RELEVANCE が出ない | （なし） |
-| FREQ-196 並び順の表示（RELEVANCE）をいったん隠す | FREQ-196-REQ-01 並び順の表示を消さずにコメントにして残す | FREQ-196-AC-02 「{件数} RESULTS」が今までどおり出る（FREQ-196） | （なし） |
-| FREQ-197 タブレットの見た目を PC と同じにする | FREQ-197-REQ-01 2カラムにする幅を md（768px）に下げる | FREQ-197-AC-01 768px で2カラムになり、タブが縦に並び、左が sticky | （なし） |
-| FREQ-197 タブレットの見た目を PC と同じにする | FREQ-197-REQ-01 2カラムにする幅を md（768px）に下げる | FREQ-197-AC-02 768px で左のカラムの中身が縦の中央寄りにある | （なし） |
-| FREQ-197 タブレットの見た目を PC と同じにする | FREQ-197-REQ-01 2カラムにする幅を md（768px）に下げる | FREQ-197-AC-03 390px は縦積み・タブ横並びのままで、どの幅も横にはみ出さない | （なし） |
-| FREQ-198 モバイルで「SEARCH」の見出しを見せない | FREQ-198-REQ-01 見出しを md 未満で sr-only にし、DOM には残す | FREQ-198-AC-01 390px で h1 の描かれる高さが 1px 以下 | （なし） |
-| FREQ-198 モバイルで「SEARCH」の見出しを見せない | FREQ-198-REQ-01 見出しを md 未満で sr-only にし、DOM には残す | FREQ-198-AC-02 390px でも h1 が DOM にあり「SEARCH」の字を持つ | （なし） |
-| FREQ-198 モバイルで「SEARCH」の見出しを見せない | FREQ-198-REQ-01 見出しを md 未満で sr-only にし、DOM には残す | FREQ-198-AC-03 768・1280px で h1 が今までどおり見える | （なし） |
+| FREQ-195 候補のドロップダウンの後ろから「ALL」が覗くのを直す | FREQ-195-REQ-01 候補のドロップダウンを左右に 1px ずつ広げる | FREQ-195-AC-02 3つの幅で横にはみ出さない（FREQ-195） | `e2e/FR-SEARCH-024-search-tab-rows-viewport-details.spec.ts:103` |
+| FREQ-196 並び順の表示（RELEVANCE）をいったん隠す | FREQ-196-REQ-01 並び順の表示を消さずにコメントにして残す | FREQ-196-AC-01 結果を出した時に RELEVANCE が出ない | `e2e/FR-SEARCH-023-search-two-column-heading-results-header.spec.ts:41` |
+| FREQ-196 並び順の表示（RELEVANCE）をいったん隠す | FREQ-196-REQ-01 並び順の表示を消さずにコメントにして残す | FREQ-196-AC-02 「{件数} RESULTS」が今までどおり出る（FREQ-196） | `e2e/FR-SEARCH-023-search-two-column-heading-results-header.spec.ts:46` |
+| FREQ-197 タブレットの見た目を PC と同じにする | FREQ-197-REQ-01 2カラムにする幅を md（768px）に下げる | FREQ-197-AC-01 768px で2カラムになり、タブが縦に並び、左が sticky | `e2e/FR-SEARCH-023-search-two-column-heading-results-header.spec.ts:57` |
+| FREQ-197 タブレットの見た目を PC と同じにする | FREQ-197-REQ-01 2カラムにする幅を md（768px）に下げる | FREQ-197-AC-02 768px で左のカラムの中身が縦の中央寄りにある | `e2e/FR-SEARCH-023-search-two-column-heading-results-header.spec.ts:90` |
+| FREQ-197 タブレットの見た目を PC と同じにする | FREQ-197-REQ-01 2カラムにする幅を md（768px）に下げる | FREQ-197-AC-03 390px は縦積み・タブ横並びのままで、どの幅も横にはみ出さない | `e2e/FR-SEARCH-023-search-two-column-heading-results-header.spec.ts:51`<br>`e2e/FR-SEARCH-023-search-two-column-heading-results-header.spec.ts:107` |
+| FREQ-198 モバイルで「SEARCH」の見出しを見せない | FREQ-198-REQ-01 見出しを md 未満で sr-only にし、DOM には残す | FREQ-198-AC-01 390px で h1 の描かれる高さが 1px 以下 | `e2e/FR-SEARCH-023-search-two-column-heading-results-header.spec.ts:133` |
+| FREQ-198 モバイルで「SEARCH」の見出しを見せない | FREQ-198-REQ-01 見出しを md 未満で sr-only にし、DOM には残す | FREQ-198-AC-02 390px でも h1 が DOM にあり「SEARCH」の字を持つ | `e2e/FR-SEARCH-014-tablet-desktop-parity-and-mobile-title.spec.ts:14` |
+| FREQ-198 モバイルで「SEARCH」の見出しを見せない | FREQ-198-REQ-01 見出しを md 未満で sr-only にし、DOM には残す | FREQ-198-AC-03 768・1280px で h1 が今までどおり見える | `e2e/FR-SEARCH-023-search-two-column-heading-results-header.spec.ts:140` |
 | FREQ-199 モバイルの文字の大きさと余白を詰める | FREQ-199-REQ-01 モバイルの種別のタブを全幅に均等に並べる | FREQ-199-AC-01 390px で4つのタブが横一列で、先頭と末尾がタブの列の端に合う | （なし） |
-| FREQ-199 モバイルの文字の大きさと余白を詰める | FREQ-199-REQ-02 モバイルの文字の大きさを LiftKit の段で1段ずつ下げる | FREQ-199-AC-02 390px で結果の行の文字が 768・1280px より小さく、大小の順が保たれる | （なし） |
-| FREQ-199 モバイルの文字の大きさと余白を詰める | FREQ-199-REQ-03 モバイルの余白を詰める | FREQ-199-AC-03 390px の結果の行が 768・1280px より低く、どの幅も横にはみ出さない | （なし） |
-| FREQ-200 モバイルの種別のタブを端から離し、字間を詰める | FREQ-200-REQ-01 モバイルのタブの列に左右の内側の余白を足す | FREQ-200-AC-01 390px で先頭と末尾のタブがタブの列の端より 8px 以上内側にある | （なし） |
-| FREQ-200 モバイルの種別のタブを端から離し、字間を詰める | FREQ-200-REQ-02 タブの字間を tracking-widest に詰め、下線の引く値を合わせる | FREQ-200-AC-02 3つの幅でタブの字間が文字の大きさの 0.1 倍 | （なし） |
-| FREQ-200 モバイルの種別のタブを端から離し、字間を詰める | FREQ-200-REQ-02 タブの字間を tracking-widest に詰め、下線の引く値を合わせる | FREQ-200-AC-03 3つの幅で下線の両端が文字の両端と 1px 以内 | （なし） |
-| FREQ-201 ITEM のメタの表示を価格にする | FREQ-201-REQ-01 ITEM の行のメタを「¥」とカンマ区切りの価格にし、RPC に price を足す | FREQ-201-AC-01 3つの幅で ITEM の行のメタが「¥」で始まる価格で、カテゴリ名でない | （なし） |
-| FREQ-201 ITEM のメタの表示を価格にする | FREQ-201-REQ-01 ITEM の行のメタを「¥」とカンマ区切りの価格にし、RPC に price を足す | FREQ-201-AC-02 3つの幅で LOOK はシーズン、NEWS は公開日のまま | （なし） |
-| FREQ-201 ITEM のメタの表示を価格にする | FREQ-201-REQ-02 検索の応答の ITEM の meta を価格の文字にし、購入数は出さない | FREQ-201-AC-03 応答の items の meta が価格の形で、purchase_count が無い | （なし） |
-| THR-SEARCH-001 公開前の商品・ルック・ニュースが検索とサジェストから漏れる | SEC-SEARCH-001 検索とサジェストは公開済みの商品・ルック・ニュースだけを返す | SEC-SEARCH-001-AC-01 検索の結果とサジェストに非公開の物の題が出ない | （なし） |
-| THR-SEARCH-001 公開前の商品・ルック・ニュースが検索とサジェストから漏れる | SEC-SEARCH-001 検索とサジェストは公開済みの商品・ルック・ニュースだけを返す | SEC-SEARCH-001-AC-02 人気商品に非公開の商品が出ない | （なし） |
-| THR-SEARCH-002 管理の権限を持つ session では、RLS が下書きを検索の関数に通す | SEC-SEARCH-002 検索の関数は呼び手の権限に関わらず、関数の中で公開済みに絞る | SEC-SEARCH-002-AC-01 管理の読み取りの権限を持つ aal1 の session でも、検索の関数が下書きを返さない | （なし） |
-| THR-SEARCH-003 検索の語で検索の条件を書き換える | SEC-SEARCH-003 検索の語は関数の引数で渡し、ILIKE の記号を字として扱う | SEC-SEARCH-003-AC-01 記号だけの語で全件が返らない | （なし） |
-| THR-SEARCH-004 入口の確かめの決まりが検索とサジェストで違う | SEC-SEARCH-004 検索とサジェストの入口は同じ決まりで語を確かめる | SEC-SEARCH-004-AC-01 制御文字を含む語は検索でも 400 になる | （なし） |
-| THR-SEARCH-005 検索とサジェストを続けて叩き、DB と署名の処理を詰まらせる | SEC-SEARCH-005 公開の検索に回数の制限を掛け、画面は要らない呼び出しをしない | SEC-SEARCH-005-AC-01 上限を超えた検索とサジェストは 429 になる | （なし） |
-| THR-SEARCH-005 検索とサジェストを続けて叩き、DB と署名の処理を詰まらせる | SEC-SEARCH-005 公開の検索に回数の制限を掛け、画面は要らない呼び出しをしない | SEC-SEARCH-005-AC-02 速く打ってもサジェストは入力が止まってから呼ぶ | （なし） |
-| THR-SEARCH-006 回数の制限の送り元を偽って制限を逃れる | SEC-SEARCH-006 回数の制限の送り元は、利用者が偽れない値から取る | SEC-SEARCH-006-AC-01 送り元の見出しを変えても制限を逃れられない | （なし） |
-| THR-SEARCH-007 PostgREST から検索の関数を直接叩き、アプリの制限を迂回する | SEC-SEARCH-007 検索の関数は件数を上限に丸め、直接の呼び出しでも重くならない | SEC-SEARCH-007-AC-01 大きな件数で直接呼んでも上限を超えて返らない | （なし） |
-| THR-SEARCH-008 使われていない検索の関数が誰にでも開いている | SEC-SEARCH-008 使わない検索の関数を外へ開かない | SEC-SEARCH-008-AC-01 anon は使わない検索の関数を呼べない | （なし） |
-| THR-SEARCH-009 商品ごとの売れ行きが人気商品の道から漏れる | SEC-SEARCH-009 人気商品は購入数を外へ出さず、集める関数は service_role だけが呼べる | SEC-SEARCH-009-AC-01 anon と一般会員は人気商品の関数を呼べない | （なし） |
-| THR-SEARCH-009 商品ごとの売れ行きが人気商品の道から漏れる | SEC-SEARCH-009 人気商品は購入数を外へ出さず、集める関数は service_role だけが呼べる | SEC-SEARCH-009-AC-02 検索の応答に購入数が含まれない | （なし） |
-| THR-SEARCH-010 検索語と署名つき URL を含む応答が共有のキャッシュに残る | SEC-SEARCH-010 検索とサジェストの応答を共有のキャッシュに残させない | SEC-SEARCH-010-AC-01 検索とサジェストの応答に no-store が付く | （なし） |
-| THR-SEARCH-011 検索語が URL と端末に残る | SEC-SEARCH-011 検索語を利用者の端末に保存しない | SEC-SEARCH-011-AC-01 検索の後に端末の保存の場所に検索語が残らない | （なし） |
-| THR-SEARCH-012 外へ移る時の Referer で検索語が漏れる | SEC-SEARCH-012 検索の頁は Referer で検索語を外へ送らない | SEC-SEARCH-012-AC-01 検索の頁の応答に Referrer-Policy が付く | （なし） |
-| THR-SEARCH-013 結果と候補の表示でスクリプトが動く | SEC-SEARCH-013 結果と候補の文字は HTML として解釈させない | SEC-SEARCH-013-AC-01 HTML を含む題と語が文字として表示される | （なし） |
-| THR-SEARCH-014 外へ出た ITEM の署名つき URL で、非公開にした後も7日画像が見える | SEC-SEARCH-014 検索の結果の画像の署名つき URL は短い期限にそろえる | SEC-SEARCH-014-AC-01 検索の応答の画像の URL が1時間で切れる | （なし） |
-| THR-SEARCH-015 署名に失敗した時に、ITEM・LOOK の元の値をそのまま返す | SEC-SEARCH-015 署名に失敗した時は画像を出さず、失敗を記録に残す | SEC-SEARCH-015-AC-01 署名できない画像の値は null になる | （なし） |
-| THR-SEARCH-016 画像の道筋を書き換えて、置き場の別の物に署名させる | SEC-SEARCH-016 署名する前に、道筋が自分の置き場の決まった場所にあることを確かめる | SEC-SEARCH-016-AC-01 決まった場所の外の道筋には署名しない | （なし） |
-| THR-SEARCH-017 取り出しの失敗が「検索結果はありません」に見えて気づけない | SEC-SEARCH-017 取り出しの失敗を「検索結果はありません」と区別する | SEC-SEARCH-017-AC-01 関数の失敗で「検索結果はありません」を出さない | （なし） |
+| FREQ-199 モバイルの文字の大きさと余白を詰める | FREQ-199-REQ-02 モバイルの文字の大きさを LiftKit の段で1段ずつ下げる | FREQ-199-AC-02 390px で結果の行の文字が 768・1280px より小さく、大小の順が保たれる | `e2e/FR-SEARCH-015-mobile-density.spec.ts:50` |
+| FREQ-199 モバイルの文字の大きさと余白を詰める | FREQ-199-REQ-03 モバイルの余白を詰める | FREQ-199-AC-03 390px の結果の行が 768・1280px より低く、どの幅も横にはみ出さない | `e2e/FR-SEARCH-024-search-tab-rows-viewport-details.spec.ts:159` |
+| FREQ-200 モバイルの種別のタブを端から離し、字間を詰める | FREQ-200-REQ-01 モバイルのタブの列に左右の内側の余白を足す | FREQ-200-AC-01 390px で先頭と末尾のタブがタブの列の端より 8px 以上内側にある | `e2e/FR-SEARCH-016-tab-inset-and-letter-spacing.spec.ts:13` |
+| FREQ-200 モバイルの種別のタブを端から離し、字間を詰める | FREQ-200-REQ-02 タブの字間を tracking-widest に詰め、下線の引く値を合わせる | FREQ-200-AC-02 3つの幅でタブの字間が文字の大きさの 0.1 倍 | `e2e/FR-SEARCH-016-tab-inset-and-letter-spacing.spec.ts:43` |
+| FREQ-200 モバイルの種別のタブを端から離し、字間を詰める | FREQ-200-REQ-02 タブの字間を tracking-widest に詰め、下線の引く値を合わせる | FREQ-200-AC-03 3つの幅で下線の両端が文字の両端と 1px 以内 | `e2e/FR-SEARCH-024-search-tab-rows-viewport-details.spec.ts:116` |
+| FREQ-201 ITEM のメタの表示を価格にする | FREQ-201-REQ-01 ITEM の行のメタを「¥」とカンマ区切りの価格にし、RPC に price を足す | FREQ-201-AC-01 3つの幅で ITEM の行のメタが「¥」で始まる価格で、カテゴリ名でない | `e2e/FR-SEARCH-017-item-meta-price.spec.ts:31` |
+| FREQ-201 ITEM のメタの表示を価格にする | FREQ-201-REQ-01 ITEM の行のメタを「¥」とカンマ区切りの価格にし、RPC に price を足す | FREQ-201-AC-02 3つの幅で LOOK はシーズン、NEWS は公開日のまま | `e2e/FR-SEARCH-024-search-tab-rows-viewport-details.spec.ts:129` |
+| FREQ-201 ITEM のメタの表示を価格にする | FREQ-201-REQ-02 検索の応答の ITEM の meta を価格の文字にし、購入数は出さない | FREQ-201-AC-03 応答の items の meta が価格の形で、purchase_count が無い | `e2e/FR-SEARCH-017-item-meta-price.spec.ts:59` |
+| THR-SEARCH-001 公開前の商品・ルック・ニュースが検索とサジェストから漏れる | SEC-SEARCH-001 検索とサジェストは公開済みの商品・ルック・ニュースだけを返す | SEC-SEARCH-001-AC-01 検索の結果とサジェストに非公開の物の題が出ない | `e2e/FR-SEARCH-021-search-injected-rows.spec.ts:311` |
+| THR-SEARCH-001 公開前の商品・ルック・ニュースが検索とサジェストから漏れる | SEC-SEARCH-001 検索とサジェストは公開済みの商品・ルック・ニュースだけを返す | SEC-SEARCH-001-AC-02 人気商品に非公開の商品が出ない | `e2e/FR-SEARCH-021-search-injected-rows.spec.ts:255` |
+| THR-SEARCH-002 管理の権限を持つ session では、RLS が下書きを検索の関数に通す | SEC-SEARCH-002 検索の関数は呼び手の権限に関わらず、関数の中で公開済みに絞る | SEC-SEARCH-002-AC-01 管理の読み取りの権限を持つ aal1 の session でも、検索の関数が下書きを返さない | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:246` |
+| THR-SEARCH-003 検索の語で検索の条件を書き換える | SEC-SEARCH-003 検索の語は関数の引数で渡し、ILIKE の記号を字として扱う | SEC-SEARCH-003-AC-01 記号だけの語で全件が返らない | `e2e/FR-SEARCH-021-search-injected-rows.spec.ts:217`<br>`e2e/FR-SEARCH-021-search-injected-rows.spec.ts:237` |
+| THR-SEARCH-004 入口の確かめの決まりが検索とサジェストで違う | SEC-SEARCH-004 検索とサジェストの入口は同じ決まりで語を確かめる | SEC-SEARCH-004-AC-01 制御文字を含む語は検索でも 400 になる | `e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:61`<br>`e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:68`<br>`e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:73` |
+| THR-SEARCH-005 検索とサジェストを続けて叩き、DB と署名の処理を詰まらせる | SEC-SEARCH-005 公開の検索に回数の制限を掛け、画面は要らない呼び出しをしない | SEC-SEARCH-005-AC-01 上限を超えた検索とサジェストは 429 になる | `e2e/FR-SEARCH-022-search-rate-limit.spec.ts:187` |
+| THR-SEARCH-005 検索とサジェストを続けて叩き、DB と署名の処理を詰まらせる | SEC-SEARCH-005 公開の検索に回数の制限を掛け、画面は要らない呼び出しをしない | SEC-SEARCH-005-AC-02 速く打ってもサジェストは入力が止まってから呼ぶ | `e2e/FR-SEARCH-022-search-rate-limit.spec.ts:213` |
+| THR-SEARCH-006 回数の制限の送り元を偽って制限を逃れる | SEC-SEARCH-006 回数の制限の送り元は、利用者が偽れない値から取る | SEC-SEARCH-006-AC-01 送り元の見出しを変えても制限を逃れられない | `e2e/FR-SEARCH-022-search-rate-limit.spec.ts:279` |
+| THR-SEARCH-007 PostgREST から検索の関数を直接叩き、アプリの制限を迂回する | SEC-SEARCH-007 検索の関数は件数を上限に丸め、直接の呼び出しでも重くならない | SEC-SEARCH-007-AC-01 大きな件数で直接呼んでも上限を超えて返らない | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:296` |
+| THR-SEARCH-008 使われていない検索の関数が誰にでも開いている | SEC-SEARCH-008 使わない検索の関数を外へ開かない | SEC-SEARCH-008-AC-01 anon は使わない検索の関数を呼べない | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:319` |
+| THR-SEARCH-009 商品ごとの売れ行きが人気商品の道から漏れる | SEC-SEARCH-009 人気商品は購入数を外へ出さず、集める関数は service_role だけが呼べる | SEC-SEARCH-009-AC-01 anon と一般会員は人気商品の関数を呼べない | `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts:330` |
+| THR-SEARCH-009 商品ごとの売れ行きが人気商品の道から漏れる | SEC-SEARCH-009 人気商品は購入数を外へ出さず、集める関数は service_role だけが呼べる | SEC-SEARCH-009-AC-02 検索の応答に購入数が含まれない | `e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:81` |
+| THR-SEARCH-010 検索語と署名つき URL を含む応答が共有のキャッシュに残る | SEC-SEARCH-010 検索とサジェストの応答を共有のキャッシュに残させない | SEC-SEARCH-010-AC-01 検索とサジェストの応答に no-store が付く | `e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:98` |
+| THR-SEARCH-011 検索語が URL と端末に残る | SEC-SEARCH-011 検索語を利用者の端末に保存しない | SEC-SEARCH-011-AC-01 検索の後に端末の保存の場所に検索語が残らない | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:181` |
+| THR-SEARCH-012 外へ移る時の Referer で検索語が漏れる | SEC-SEARCH-012 検索の頁は Referer で検索語を外へ送らない | SEC-SEARCH-012-AC-01 検索の頁の応答に Referrer-Policy が付く | `e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:117` |
+| THR-SEARCH-013 結果と候補の表示でスクリプトが動く | SEC-SEARCH-013 結果と候補の文字は HTML として解釈させない | SEC-SEARCH-013-AC-01 HTML を含む題と語が文字として表示される | `e2e/FR-SEARCH-021-search-injected-rows.spec.ts:354` |
+| THR-SEARCH-014 外へ出た ITEM の署名つき URL で、非公開にした後も7日画像が見える | SEC-SEARCH-014 検索の結果の画像の署名つき URL は短い期限にそろえる | SEC-SEARCH-014-AC-01 検索の応答の画像の URL が1時間で切れる | `e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:123`<br>`e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:141` |
+| THR-SEARCH-015 署名に失敗した時に、ITEM・LOOK の元の値をそのまま返す | SEC-SEARCH-015 署名に失敗した時は画像を出さず、失敗を記録に残す | SEC-SEARCH-015-AC-01 署名できない画像の値は null になる | `e2e/FR-SEARCH-021-search-injected-rows.spec.ts:382` |
+| THR-SEARCH-016 画像の道筋を書き換えて、置き場の別の物に署名させる | SEC-SEARCH-016 署名する前に、道筋が自分の置き場の決まった場所にあることを確かめる | SEC-SEARCH-016-AC-01 決まった場所の外の道筋には署名しない | `e2e/FR-SEARCH-021-search-injected-rows.spec.ts:272` |
+| THR-SEARCH-017 取り出しの失敗が「検索結果はありません」に見えて気づけない | SEC-SEARCH-017 取り出しの失敗を「検索結果はありません」と区別する | SEC-SEARCH-017-AC-01 関数の失敗で「検索結果はありません」を出さない | `e2e/FR-SEARCH-022-search-rate-limit.spec.ts:383` |
 | THR-SEARCH-018 記録に検索語や DB の誤りの中身が残る | SEC-SEARCH-018 記録に検索語と DB の誤りの中身を丸ごと書かない | SEC-SEARCH-018-AC-01 検索とサジェストの失敗の記録に検索語と誤りの全体が無い | （なし） |
-| THR-SEARCH-019 応答の見出しで内部の処理の時間が分かる | SEC-SEARCH-019 応答の見出しに内部の処理の時間を出さない | SEC-SEARCH-019-AC-01 検索の応答に処理の時間の見出しが無い | （なし） |
-| THR-SEARCH-020 回数の制限を使い切らせて、ほかの利用者の検索を止める | SEC-SEARCH-020 回数の制限で、ほかの利用者を締め出させない | SEC-SEARCH-020-AC-01 他人の送り元を名乗っても、その利用者の検索が止まらない | （なし） |
-| THR-SEARCH-021 ホームの `/?q=` の文に語を入れて、偽の知らせを出す | SEC-SEARCH-021 ホームの文に利用者の語を埋めて出さない | SEC-SEARCH-021-AC-01 /?q=<文> で、ホームの説明の文にその文が埋まらない | （なし） |
-| SR-PRIVACY-001 訪問者とお客様が、店の個人情報の扱いをいつでも読める | FR-PRIVACY-001 プライバシーポリシーの内容を頁として出す | FR-PRIVACY-001-AC-01 頁の見出しと、FREQ-100 以外の節の見出しが出る | （なし） |
-| SR-PRIVACY-001 訪問者とお客様が、店の個人情報の扱いをいつでも読める | FR-PRIVACY-002 頁の title と description を決めて出す | FR-PRIVACY-002-AC-01 頁の title と description が出る | （なし） |
-| FREQ-100 プライバシーポリシーに不足していた法的な節を足す | FREQ-100-REQ-01 委託・保有期間・国外移転・開示などの請求・変更・窓口の節を足す | FREQ-100-AC-01 足した6つの節の見出しが出る | （なし） |
-| FREQ-100 プライバシーポリシーに不足していた法的な節を足す | FREQ-100-REQ-01 委託・保有期間・国外移転・開示などの請求・変更・窓口の節を足す | FREQ-100-AC-02 窓口のメールが出る | （なし） |
-| FREQ-101 プライバシーポリシー・利用規約の字の大きさと余白を読みやすくする | FREQ-101-REQ-01 本文の行間を広げ、見出しを大きくし、節の間を空ける | FREQ-101-AC-01 本文の行間が字の大きさの 1.5 倍より広い | （なし） |
-| FREQ-101 プライバシーポリシー・利用規約の字の大きさと余白を読みやすくする | FREQ-101-REQ-01 本文の行間を広げ、見出しを大きくし、節の間を空ける | FREQ-101-AC-02 節の見出しの字が本文より大きい | （なし） |
-| THR-PRIVACY-001 公開の頁の処理に、設定を変えた担当者のメールが渡る | SEC-PRIVACY-001 設定の関数と表は、anon・一般会員から直接読めない | SEC-PRIVACY-001-AC-01 anon と一般会員の鍵で設定の関数を呼べない | （なし） |
-| THR-PRIVACY-001 公開の頁の処理に、設定を変えた担当者のメールが渡る | SEC-PRIVACY-001 設定の関数と表は、anon・一般会員から直接読めない | SEC-PRIVACY-001-AC-02 anon と一般会員の鍵で設定の表を読めない | （なし） |
-| THR-PRIVACY-001 公開の頁の処理に、設定を変えた担当者のメールが渡る | SEC-PRIVACY-002 公開の頁は、表示に要る設定の値だけを受け取る | SEC-PRIVACY-002-AC-01 頁に担当者のメールが表示されない | （なし） |
+| THR-SEARCH-019 応答の見出しで内部の処理の時間が分かる | SEC-SEARCH-019 応答の見出しに内部の処理の時間を出さない | SEC-SEARCH-019-AC-01 検索の応答に処理の時間の見出しが無い | `e2e/FR-SEARCH-019-search-api-contract-and-headers.spec.ts:159` |
+| THR-SEARCH-020 回数の制限を使い切らせて、ほかの利用者の検索を止める | SEC-SEARCH-020 回数の制限で、ほかの利用者を締め出させない | SEC-SEARCH-020-AC-01 他人の送り元を名乗っても、その利用者の検索が止まらない | `e2e/FR-SEARCH-022-search-rate-limit.spec.ts:297` |
+| THR-SEARCH-021 ホームの `/?q=` の文に語を入れて、偽の知らせを出す | SEC-SEARCH-021 ホームの文に利用者の語を埋めて出さない | SEC-SEARCH-021-AC-01 /?q=<文> で、ホームの説明の文にその文が埋まらない | `e2e/FR-SEARCH-018-search-page-flows.spec.ts:216` |
+| SR-PRIVACY-001 訪問者とお客様が、店の個人情報の扱いをいつでも読める | FR-PRIVACY-001 プライバシーポリシーの内容を頁として出す | FR-PRIVACY-001-AC-01 頁の見出しと、FREQ-100 以外の節の見出しが出る | `e2e/FR-PRIVACY-001-policy-content.spec.ts:4`<br>`e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:43` |
+| SR-PRIVACY-001 訪問者とお客様が、店の個人情報の扱いをいつでも読める | FR-PRIVACY-002 頁の title と description を決めて出す | FR-PRIVACY-002-AC-01 頁の title と description が出る | `e2e/FR-PRIVACY-002-metadata.spec.ts:4`<br>`e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:58` |
+| FREQ-100 プライバシーポリシーに不足していた法的な節を足す | FREQ-100-REQ-01 委託・保有期間・国外移転・開示などの請求・変更・窓口の節を足す | FREQ-100-AC-01 足した6つの節の見出しが出る | `e2e/FR-PRIVACY-003-additional-legal-sections.spec.ts:20` |
+| FREQ-100 プライバシーポリシーに不足していた法的な節を足す | FREQ-100-REQ-01 委託・保有期間・国外移転・開示などの請求・変更・窓口の節を足す | FREQ-100-AC-02 窓口のメールが出る | `e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:23` |
+| FREQ-101 プライバシーポリシー・利用規約の字の大きさと余白を読みやすくする | FREQ-101-REQ-01 本文の行間を広げ、見出しを大きくし、節の間を空ける | FREQ-101-AC-01 本文の行間が字の大きさの 1.5 倍より広い | `e2e/FR-PRIVACY-004-typography-spacing.spec.ts:15` |
+| FREQ-101 プライバシーポリシー・利用規約の字の大きさと余白を読みやすくする | FREQ-101-REQ-01 本文の行間を広げ、見出しを大きくし、節の間を空ける | FREQ-101-AC-02 節の見出しの字が本文より大きい | `e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:28` |
+| THR-PRIVACY-001 公開の頁の処理に、設定を変えた担当者のメールが渡る | SEC-PRIVACY-001 設定の関数と表は、anon・一般会員から直接読めない | SEC-PRIVACY-001-AC-01 anon と一般会員の鍵で設定の関数を呼べない | `e2e/FR-PRIVACY-007-settings-postgrest-access.spec.ts:171` |
+| THR-PRIVACY-001 公開の頁の処理に、設定を変えた担当者のメールが渡る | SEC-PRIVACY-001 設定の関数と表は、anon・一般会員から直接読めない | SEC-PRIVACY-001-AC-02 anon と一般会員の鍵で設定の表を読めない | `e2e/FR-PRIVACY-007-settings-postgrest-access.spec.ts:195` |
+| THR-PRIVACY-001 公開の頁の処理に、設定を変えた担当者のメールが渡る | SEC-PRIVACY-002 公開の頁は、表示に要る設定の値だけを受け取る | SEC-PRIVACY-002-AC-01 頁に担当者のメールが表示されない | `e2e/FR-PRIVACY-008-tracking-setting-and-read-failure.spec.ts:55` |
 | THR-PRIVACY-002 頁の連打で DB の重い数え上げを走らせる | SEC-PRIVACY-003 頁を開くたびに重い数え上げを走らせない | SEC-PRIVACY-003-AC-01 発送が多くても頁の表示が遅くならない | （なし） |
 | THR-PRIVACY-002 頁の連打で DB の重い数え上げを走らせる | SEC-PRIVACY-004 頁の連打を回数で止める | SEC-PRIVACY-004-AC-01 回数の上限を超えると DB を読まない | （なし） |
-| THR-PRIVACY-003 公表する委託の一覧が、実際の扱いと食い違う | SEC-PRIVACY-005 設定を読めない時は、委託の一覧を出さずに頁を失敗にする | SEC-PRIVACY-005-AC-01 設定を読めない時に委託の一覧が表示されない | （なし） |
-| THR-PRIVACY-003 公表する委託の一覧が、実際の扱いと食い違う | SEC-PRIVACY-006 委託の一文は、ショップの追跡の設定がオンの時だけ出す | SEC-PRIVACY-006-AC-01 追跡がオフの時に 17TRACK の一文が表示されない | （なし） |
+| THR-PRIVACY-003 公表する委託の一覧が、実際の扱いと食い違う | SEC-PRIVACY-005 設定を読めない時は、委託の一覧を出さずに頁を失敗にする | SEC-PRIVACY-005-AC-01 設定を読めない時に委託の一覧が表示されない | `e2e/FR-PRIVACY-009-tracking-setting-read-failure.spec.ts:48` |
+| THR-PRIVACY-003 公表する委託の一覧が、実際の扱いと食い違う | SEC-PRIVACY-006 委託の一文は、ショップの追跡の設定がオンの時だけ出す | SEC-PRIVACY-006-AC-01 追跡がオフの時に 17TRACK の一文が表示されない | `e2e/FR-PRIVACY-008-tracking-setting-and-read-failure.spec.ts:30` |
 | THR-PRIVACY-003 公表する委託の一覧が、実際の扱いと食い違う | SEC-PRIVACY-006 委託の一文は、ショップの追跡の設定がオンの時だけ出す | SEC-PRIVACY-006-AC-02 鍵が無くても設定がオンなら一文が表示される | （なし） |
-| THR-PRIVACY-003 公表する委託の一覧が、実際の扱いと食い違う | SEC-PRIVACY-007 方針の応答を共有のキャッシュに残さない | SEC-PRIVACY-007-AC-01 応答の見出しが共有のキャッシュを止める | （なし） |
-| THR-PRIVACY-004 DB が使えない間、プライバシーポリシーそのものが読めない | SEC-PRIVACY-008 頁の失敗の時は、中の事情を出さない | SEC-PRIVACY-008-AC-01 失敗の画面に DB の誤りの文が表示されない | （なし） |
-| THR-PRIVACY-004 DB が使えない間、プライバシーポリシーそのものが読めない | SEC-PRIVACY-009 DB が使えない間も、方針を知る道を残す | SEC-PRIVACY-009-AC-01 失敗の画面に窓口の案内が表示される | （なし） |
-| THR-PRIVACY-005 権限の無い者が追跡を切り替え、公表の文を書き換える | SEC-PRIVACY-010 公表の文を変える追跡の切り替えは、aal2 の管理者だけができる | SEC-PRIVACY-010-AC-01 aal1 の管理者は直接も窓口からも切り替えられない | （なし） |
-| THR-PRIVACY-005 権限の無い者が追跡を切り替え、公表の文を書き換える | SEC-PRIVACY-010 公表の文を変える追跡の切り替えは、aal2 の管理者だけができる | SEC-PRIVACY-010-AC-02 anon と一般会員は切り替えられない | （なし） |
-| THR-PRIVACY-006 公表の中身が、実際に個人情報を渡す先・使い道と合わない | SEC-PRIVACY-011 個人情報を渡す外部のサービスと使い道を、実際と合わせて公表する | SEC-PRIVACY-011-AC-01 外部サービスの名前が表示される | （なし） |
-| THR-PRIVACY-006 公表の中身が、実際に個人情報を渡す先・使い道と合わない | SEC-PRIVACY-011 個人情報を渡す外部のサービスと使い道を、実際と合わせて公表する | SEC-PRIVACY-011-AC-02 無い機能の使い道が表示されない | （なし） |
-| THR-PRIVACY-006 公表の中身が、実際に個人情報を渡す先・使い道と合わない | SEC-PRIVACY-012 公表の中身が変わったら、改定日も変わる | SEC-PRIVACY-012-AC-01 追跡をオンにすると改定日がオンにした日になる | （なし） |
-| THR-PRIVACY-007 頁を枠に埋め込む・外の script を差し込む | SEC-PRIVACY-013 頁を外のサイトの枠に入れさせない | SEC-PRIVACY-013-AC-01 応答に枠の禁止と基本の守りの見出しが付く | （なし） |
-| THR-PRIVACY-007 頁を枠に埋め込む・外の script を差し込む | SEC-PRIVACY-014 頁で動く script を、店の物と必要な外の物だけにする | SEC-PRIVACY-014-AC-01 CSP が nonce を求める | （なし） |
-| THR-PRIVACY-007 頁を枠に埋め込む・外の script を差し込む | SEC-PRIVACY-014 頁で動く script を、店の物と必要な外の物だけにする | SEC-PRIVACY-014-AC-02 CSP が頁で使わない外のドメインを許さない | （なし） |
-| THR-PRIVACY-008 方針を読むだけの閲覧者に、識別子とメールを配る | SEC-PRIVACY-015 方針を読むだけの閲覧者に、要らない識別子の Cookie を付けない | SEC-PRIVACY-015-AC-01 初めての閲覧で session_id が発行されない | （なし） |
-| THR-PRIVACY-008 方針を読むだけの閲覧者に、識別子とメールを配る | SEC-PRIVACY-016 全頁で呼ぶ認証の状態の応答に、メールを載せない | SEC-PRIVACY-016-AC-01 頁を開いた時の認証の状態の応答にメールが無い | （なし） |
-| THR-PRIVACY-009 開示などの請求が、窓口に届かない | SEC-PRIVACY-017 頁に書いた窓口は、受けて応える運用につながっている | SEC-PRIVACY-017-AC-01 頁に窓口のメールとフォームが表示される | （なし） |
+| THR-PRIVACY-003 公表する委託の一覧が、実際の扱いと食い違う | SEC-PRIVACY-007 方針の応答を共有のキャッシュに残さない | SEC-PRIVACY-007-AC-01 応答の見出しが共有のキャッシュを止める | `e2e/FR-PRIVACY-006-response-headers-and-cookies.spec.ts:24` |
+| THR-PRIVACY-004 DB が使えない間、プライバシーポリシーそのものが読めない | SEC-PRIVACY-008 頁の失敗の時は、中の事情を出さない | SEC-PRIVACY-008-AC-01 失敗の画面に DB の誤りの文が表示されない | `e2e/FR-PRIVACY-009-tracking-setting-read-failure.spec.ts:69` |
+| THR-PRIVACY-004 DB が使えない間、プライバシーポリシーそのものが読めない | SEC-PRIVACY-009 DB が使えない間も、方針を知る道を残す | SEC-PRIVACY-009-AC-01 失敗の画面に窓口の案内が表示される | `e2e/FR-PRIVACY-009-tracking-setting-read-failure.spec.ts:86` |
+| THR-PRIVACY-005 権限の無い者が追跡を切り替え、公表の文を書き換える | SEC-PRIVACY-010 公表の文を変える追跡の切り替えは、aal2 の管理者だけができる | SEC-PRIVACY-010-AC-01 aal1 の管理者は直接も窓口からも切り替えられない | `e2e/FR-PRIVACY-007-settings-postgrest-access.spec.ts:210` |
+| THR-PRIVACY-005 権限の無い者が追跡を切り替え、公表の文を書き換える | SEC-PRIVACY-010 公表の文を変える追跡の切り替えは、aal2 の管理者だけができる | SEC-PRIVACY-010-AC-02 anon と一般会員は切り替えられない | `e2e/FR-PRIVACY-007-settings-postgrest-access.spec.ts:248` |
+| THR-PRIVACY-006 公表の中身が、実際に個人情報を渡す先・使い道と合わない | SEC-PRIVACY-011 個人情報を渡す外部のサービスと使い道を、実際と合わせて公表する | SEC-PRIVACY-011-AC-01 外部サービスの名前が表示される | `e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:66`<br>`e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:70`<br>`e2e/FR-PRIVACY-008-tracking-setting-and-read-failure.spec.ts:43` |
+| THR-PRIVACY-006 公表の中身が、実際に個人情報を渡す先・使い道と合わない | SEC-PRIVACY-011 個人情報を渡す外部のサービスと使い道を、実際と合わせて公表する | SEC-PRIVACY-011-AC-02 無い機能の使い道が表示されない | `e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:78` |
+| THR-PRIVACY-006 公表の中身が、実際に個人情報を渡す先・使い道と合わない | SEC-PRIVACY-012 公表の中身が変わったら、改定日も変わる | SEC-PRIVACY-012-AC-01 追跡をオンにすると改定日がオンにした日になる | `e2e/FR-PRIVACY-008-tracking-setting-and-read-failure.spec.ts:78` |
+| THR-PRIVACY-007 頁を枠に埋め込む・外の script を差し込む | SEC-PRIVACY-013 頁を外のサイトの枠に入れさせない | SEC-PRIVACY-013-AC-01 応答に枠の禁止と基本の守りの見出しが付く | `e2e/FR-PRIVACY-006-response-headers-and-cookies.spec.ts:34` |
+| THR-PRIVACY-007 頁を枠に埋め込む・外の script を差し込む | SEC-PRIVACY-014 頁で動く script を、店の物と必要な外の物だけにする | SEC-PRIVACY-014-AC-01 CSP が nonce を求める | `e2e/FR-PRIVACY-006-response-headers-and-cookies.spec.ts:45` |
+| THR-PRIVACY-007 頁を枠に埋め込む・外の script を差し込む | SEC-PRIVACY-014 頁で動く script を、店の物と必要な外の物だけにする | SEC-PRIVACY-014-AC-02 CSP が頁で使わない外のドメインを許さない | `e2e/FR-PRIVACY-006-response-headers-and-cookies.spec.ts:56` |
+| THR-PRIVACY-008 方針を読むだけの閲覧者に、識別子とメールを配る | SEC-PRIVACY-015 方針を読むだけの閲覧者に、要らない識別子の Cookie を付けない | SEC-PRIVACY-015-AC-01 初めての閲覧で session_id が発行されない | `e2e/FR-PRIVACY-006-response-headers-and-cookies.spec.ts:67` |
+| THR-PRIVACY-008 方針を読むだけの閲覧者に、識別子とメールを配る | SEC-PRIVACY-016 全頁で呼ぶ認証の状態の応答に、メールを載せない | SEC-PRIVACY-016-AC-01 頁を開いた時の認証の状態の応答にメールが無い | `e2e/FR-PRIVACY-006-response-headers-and-cookies.spec.ts:92` |
+| THR-PRIVACY-009 開示などの請求が、窓口に届かない | SEC-PRIVACY-017 頁に書いた窓口は、受けて応える運用につながっている | SEC-PRIVACY-017-AC-01 頁に窓口のメールとフォームが表示される | `e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:84` |
 | THR-PRIVACY-010 平文の窓口のメールが集められ、迷惑メールに埋もれる | SEC-PRIVACY-018 迷惑メールが増えても、請求を取りこぼさない | SEC-PRIVACY-018-AC-01 運用の文書に迷惑メールの選別と見直しの手順が在る | （なし） |
-| THR-PRIVACY-011 他人になりすまして、開示の請求で個人情報を得る | SEC-PRIVACY-019 開示などの請求は、本人を確かめてから応える | SEC-PRIVACY-019-AC-01 頁に本人の確かめの後に応える旨が表示される | （なし） |
-| SR-AUTH-001 会員がメールとパスワード、または Google のアカウントでログインできる | FR-LOGIN-002 Google のアカウントでログインするボタンを出す | FR-LOGIN-002-AC-01 Google のボタンが出て、押すとアカウントを選ぶ Google の画面へ移る | （なし） |
-| SR-AUTH-001 会員がメールとパスワード、または Google のアカウントでログインできる | FR-LOGIN-005 ログインのページの題と説明を設定する | FR-LOGIN-005-AC-01 題が「LOGIN \| Le Fil des Heures」で説明が入る | （なし） |
-| SR-AUTH-002 パスワードを忘れた会員が自分で新しいパスワードに変えられる | FR-LOGIN-003 パスワードの再設定のページとメールでの再発行を設ける | FR-LOGIN-003-AC-01 ログインの画面から再設定のページへ移れる | （なし） |
-| SR-AUTH-003 管理者とサポーターは認証アプリの確認も通ってから管理画面に入る | FR-LOGIN-007 一般はパスワードとメール OTP、管理者とサポーターは TOTP も求める | FR-LOGIN-007-AC-01 一般の会員はメール OTP の後に会員ページへ移る | （なし） |
-| SR-AUTH-003 管理者とサポーターは認証アプリの確認も通ってから管理画面に入る | FR-LOGIN-007 一般はパスワードとメール OTP、管理者とサポーターは TOTP も求める | FR-LOGIN-007-AC-02 管理者とサポーターは TOTP を通るまで管理画面へ進めない | （なし） |
-| SR-AUTH-004 ドロワーにサイトの題を出さない | FR-AUTH-001 ドロワーを開いた時にサイトの題の文字を置かない | FR-AUTH-001-AC-01 ドロワーに「Le Fil des Heures」の文字が出ない | （なし） |
-| SR-AUTH-005 ドロワーの SNS のアイコンを枠の中央に置く | FR-AUTH-002 SNS のアイコンを枠の縦横の中央にそろえる | FR-AUTH-002-AC-01 SNS のリンクが flex で縦横の中央寄せになっている | （なし） |
-| SR-AUTH-006 ドロワーの SNS のアイコンを白と黒だけで出す | FR-AUTH-003 アイコンのグレーの画素を消し、通常は純黒・ホバーは純白で描く | FR-AUTH-003-AC-01 通常は brightness(0)、ホバーは brightness(0) invert(1) が効く | （なし） |
-| SR-AUTH-007 ドロワーのアコーディオンを開いた時に子と次の親の間を空ける | FR-AUTH-004 アコーディオンの中身の下に十分な余白を置く | FR-AUTH-004-AC-01 子の末尾から次の親の上の線まで 20px 以上ある | （なし） |
-| FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く | FREQ-28-REQ-01 × ボタンをハンバーガーと横の位置でそろえる | FREQ-28-AC-01 × の中心の X 座標がハンバーガーと ±2px で一致する | （なし） |
-| FREQ-29 ドロワーの子のリンクの文字を黒にする | FREQ-29-REQ-01 アコーディオンの子のリンクの色をグレーから黒に変える | FREQ-29-AC-01 開いた時の子のリンクの color が rgb(17, 17, 17) | （なし） |
-| FREQ-58 ログインをパスワードとメールの確認コードの2要素にする | FREQ-58-REQ-01 EMAIL・PASSWORD の確かめの後に 8 桁のメール OTP で本人を確かめる | FREQ-58-AC-01 ログインページに EMAIL と PASSWORD の欄が出る | （なし） |
-| FREQ-58 ログインをパスワードとメールの確認コードの2要素にする | FREQ-58-REQ-01 EMAIL・PASSWORD の確かめの後に 8 桁のメール OTP で本人を確かめる | FREQ-58-AC-02 パスワードの後に 8 桁のコードの欄が出る | （なし） |
-| FREQ-58 ログインをパスワードとメールの確認コードの2要素にする | FR-LOGIN-001 パスワードの確かめの後にメール OTP で本人を確かめる2段のログイン | FR-LOGIN-001-AC-01 パスワードの後に認証コードの画面へ移り、コードを入れるまでログインしない | （なし） |
-| FREQ-58 ログインをパスワードとメールの確認コードの2要素にする | FR-LOGIN-001 パスワードの確かめの後にメール OTP で本人を確かめる2段のログイン | FR-LOGIN-001-AC-02 パスワードを通っていないと認証コードだけではログインできない | （なし） |
-| FREQ-58 ログインをパスワードとメールの確認コードの2要素にする | FR-LOGIN-007 一般はパスワードとメール OTP、管理者とサポーターは TOTP も求める | FR-LOGIN-007-AC-01 一般の会員はメール OTP の後に会員ページへ移る | （なし） |
-| FREQ-58 ログインをパスワードとメールの確認コードの2要素にする | FR-LOGIN-007 一般はパスワードとメール OTP、管理者とサポーターは TOTP も求める | FR-LOGIN-007-AC-02 管理者とサポーターは TOTP を通るまで管理画面へ進めない | （なし） |
+| THR-PRIVACY-011 他人になりすまして、開示の請求で個人情報を得る | SEC-PRIVACY-019 開示などの請求は、本人を確かめてから応える | SEC-PRIVACY-019-AC-01 頁に本人の確かめの後に応える旨が表示される | `e2e/FR-PRIVACY-005-policy-text-viewports.spec.ts:92` |
+| SR-AUTH-001 会員がメールとパスワード、または Google のアカウントでログインできる | FR-LOGIN-002 Google のアカウントでログインするボタンを出す | FR-LOGIN-002-AC-01 Google のボタンが出て、押すとアカウントを選ぶ Google の画面へ移る | `e2e/FR-LOGIN-002-google-oauth.spec.ts:15`<br>`e2e/FR-LOGIN-002-google-oauth.spec.ts:20` |
+| SR-AUTH-001 会員がメールとパスワード、または Google のアカウントでログインできる | FR-LOGIN-005 ログインのページの題と説明を設定する | FR-LOGIN-005-AC-01 題が「LOGIN \| Le Fil des Heures」で説明が入る | `e2e/FR-LOGIN-005-metadata.spec.ts:15` |
+| SR-AUTH-002 パスワードを忘れた会員が自分で新しいパスワードに変えられる | FR-LOGIN-003 パスワードの再設定のページとメールでの再発行を設ける | FR-LOGIN-003-AC-01 ログインの画面から再設定のページへ移れる | `e2e/FR-LOGIN-003-password-reset-link.spec.ts:15` |
+| SR-AUTH-003 管理者とサポーターは認証アプリの確認も通ってから管理画面に入る | FR-LOGIN-007 一般はパスワードとメール OTP、管理者とサポーターは TOTP も求める | FR-LOGIN-007-AC-01 一般の会員はメール OTP の後に会員ページへ移る | `e2e/FR-LOGIN-034-otp-verify-screen-entry-and-expiry.spec.ts:204` |
+| SR-AUTH-003 管理者とサポーターは認証アプリの確認も通ってから管理画面に入る | FR-LOGIN-007 一般はパスワードとメール OTP、管理者とサポーターは TOTP も求める | FR-LOGIN-007-AC-02 管理者とサポーターは TOTP を通るまで管理画面へ進めない | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:303` |
+| SR-AUTH-004 ドロワーにサイトの題を出さない | FR-AUTH-001 ドロワーを開いた時にサイトの題の文字を置かない | FR-AUTH-001-AC-01 ドロワーに「Le Fil des Heures」の文字が出ない | `e2e/FR-HEADER-001-drawer-no-site-title.spec.ts:16` |
+| SR-AUTH-005 ドロワーの SNS のアイコンを枠の中央に置く | FR-AUTH-002 SNS のアイコンを枠の縦横の中央にそろえる | FR-AUTH-002-AC-01 SNS のリンクが flex で縦横の中央寄せになっている | `e2e/FR-HEADER-002-drawer-sns-icon-centering.spec.ts:16` |
+| SR-AUTH-006 ドロワーの SNS のアイコンを白と黒だけで出す | FR-AUTH-003 アイコンのグレーの画素を消し、通常は純黒・ホバーは純白で描く | FR-AUTH-003-AC-01 通常は brightness(0)、ホバーは brightness(0) invert(1) が効く | `e2e/FR-HEADER-003-drawer-sns-icon-bw-filter.spec.ts:16`<br>`e2e/FR-HEADER-003-drawer-sns-icon-bw-filter.spec.ts:41` |
+| SR-AUTH-007 ドロワーのアコーディオンを開いた時に子と次の親の間を空ける | FR-AUTH-004 アコーディオンの中身の下に十分な余白を置く | FR-AUTH-004-AC-01 子の末尾から次の親の上の線まで 20px 以上ある | `e2e/FR-HEADER-004-drawer-accordion-child-spacing.spec.ts:17` |
+| FREQ-28 ドロワーの閉じるボタンをハンバーガーと同じ位置に置く | FREQ-28-REQ-01 × ボタンをハンバーガーと横の位置でそろえる | FREQ-28-AC-01 × の中心の X 座標がハンバーガーと ±2px で一致する | `e2e/FR-HEADER-005-drawer-close-button-position.spec.ts:17` |
+| FREQ-29 ドロワーの子のリンクの文字を黒にする | FREQ-29-REQ-01 アコーディオンの子のリンクの色をグレーから黒に変える | FREQ-29-AC-01 開いた時の子のリンクの color が rgb(17, 17, 17) | `e2e/FR-HEADER-006-drawer-subnav-link-black.spec.ts:17` |
+| FREQ-58 ログインをパスワードとメールの確認コードの2要素にする | FREQ-58-REQ-01 EMAIL・PASSWORD の確かめの後に 8 桁のメール OTP で本人を確かめる | FREQ-58-AC-01 ログインページに EMAIL と PASSWORD の欄が出る | `e2e/FR-LOGIN-029-login-form-layout-split-acs.spec.ts:26` |
+| FREQ-58 ログインをパスワードとメールの確認コードの2要素にする | FREQ-58-REQ-01 EMAIL・PASSWORD の確かめの後に 8 桁のメール OTP で本人を確かめる | FREQ-58-AC-02 パスワードの後に 8 桁のコードの欄が出る | `e2e/FR-LOGIN-008-password-otp-2fa.spec.ts:14` |
+| FREQ-58 ログインをパスワードとメールの確認コードの2要素にする | FR-LOGIN-001 パスワードの確かめの後にメール OTP で本人を確かめる2段のログイン | FR-LOGIN-001-AC-01 パスワードの後に認証コードの画面へ移り、コードを入れるまでログインしない | `e2e/FR-LOGIN-001-otp-turnstile.spec.ts:17` |
+| FREQ-58 ログインをパスワードとメールの確認コードの2要素にする | FR-LOGIN-001 パスワードの確かめの後にメール OTP で本人を確かめる2段のログイン | FR-LOGIN-001-AC-02 パスワードを通っていないと認証コードだけではログインできない | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:254` |
+| FREQ-58 ログインをパスワードとメールの確認コードの2要素にする | FR-LOGIN-007 一般はパスワードとメール OTP、管理者とサポーターは TOTP も求める | FR-LOGIN-007-AC-01 一般の会員はメール OTP の後に会員ページへ移る | `e2e/FR-LOGIN-034-otp-verify-screen-entry-and-expiry.spec.ts:204` |
+| FREQ-58 ログインをパスワードとメールの確認コードの2要素にする | FR-LOGIN-007 一般はパスワードとメール OTP、管理者とサポーターは TOTP も求める | FR-LOGIN-007-AC-02 管理者とサポーターは TOTP を通るまで管理画面へ進めない | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:303` |
 | FREQ-59 会員登録とログインを分け、専用の登録ページを設ける | FREQ-59-REQ-01 /register に3つの欄の登録ページを置き、確認メールで登録を終える | FREQ-59-AC-01 /register に EMAIL・PASSWORD・PASSWORD（確認）が出る | （なし） |
-| FREQ-59 会員登録とログインを分け、専用の登録ページを設ける | FREQ-59-REQ-01 /register に3つの欄の登録ページを置き、確認メールで登録を終える | FREQ-59-AC-02 ログインページに新規登録への導線が出る | （なし） |
-| FREQ-59 会員登録とログインを分け、専用の登録ページを設ける | FR-LOGIN-004 新規登録で EMAIL とパスワードからアカウントを作る | FR-LOGIN-004-AC-01 会員登録タブから確認メールを受け取り、リンクで登録を終える | （なし） |
-| FREQ-60 メール OTP の有効期限を5分にする | FREQ-60-REQ-01 Supabase の Email OTP Expiration を 300 秒にし、再送の待ちは 60 秒のまま | FREQ-60-AC-01 コードを送った後に再送の残り時間が出る | （なし） |
-| FREQ-60 メール OTP の有効期限を5分にする | FR-LOGIN-006 OTP を送った後に再送の待ちの時間を置く | FR-LOGIN-006-AC-01 送った後 60 秒は再送できず、残り時間が出る | （なし） |
-| FREQ-60 メール OTP の有効期限を5分にする | FR-LOGIN-006 OTP を送った後に再送の待ちの時間を置く | FR-LOGIN-006-AC-02 再送が断られた時に理由と待ちを出し、中の文を出さない | （なし） |
-| FREQ-60 メール OTP の有効期限を5分にする | FR-LOGIN-008 メール OTP の有効期限を5分にし、再送の待ちは 60 秒を保つ | FR-LOGIN-008-AC-01 確認の画面に5分の有効期限が出る | （なし） |
-| FREQ-60 メール OTP の有効期限を5分にする | FR-LOGIN-008 メール OTP の有効期限を5分にし、再送の待ちは 60 秒を保つ | FR-LOGIN-008-AC-02 送ってから5分を過ぎたコードではログインできない | （なし） |
-| FREQ-61 ログインと新規登録を1ページのタブで切り替える | FREQ-61-REQ-01 /login と /register を1つの認証の画面にまとめ、タブと URL を同期する | FREQ-61-AC-01 /login にタブが出てログインが選ばれ、PASSWORD（確認）が無い | （なし） |
+| FREQ-59 会員登録とログインを分け、専用の登録ページを設ける | FREQ-59-REQ-01 /register に3つの欄の登録ページを置き、確認メールで登録を終える | FREQ-59-AC-02 ログインページに新規登録への導線が出る | `e2e/FR-SIGNUP-001-register-page.spec.ts:20` |
+| FREQ-59 会員登録とログインを分け、専用の登録ページを設ける | FR-LOGIN-004 新規登録で EMAIL とパスワードからアカウントを作る | FR-LOGIN-004-AC-01 会員登録タブから確認メールを受け取り、リンクで登録を終える | `e2e/FR-SIGNUP-003-signup-confirm-link.spec.ts:255` |
+| FREQ-60 メール OTP の有効期限を5分にする | FREQ-60-REQ-01 Supabase の Email OTP Expiration を 300 秒にし、再送の待ちは 60 秒のまま | FREQ-60-AC-01 コードを送った後に再送の残り時間が出る | `e2e/FR-LOGIN-006-otp-resend-countdown.spec.ts:17` |
+| FREQ-60 メール OTP の有効期限を5分にする | FR-LOGIN-006 OTP を送った後に再送の待ちの時間を置く | FR-LOGIN-006-AC-01 送った後 60 秒は再送できず、残り時間が出る | `e2e/FR-LOGIN-034-otp-verify-screen-entry-and-expiry.spec.ts:183` |
+| FREQ-60 メール OTP の有効期限を5分にする | FR-LOGIN-006 OTP を送った後に再送の待ちの時間を置く | FR-LOGIN-006-AC-02 再送が断られた時に理由と待ちを出し、中の文を出さない | `e2e/login-otp-resend-errors.spec.ts:8` |
+| FREQ-60 メール OTP の有効期限を5分にする | FR-LOGIN-008 メール OTP の有効期限を5分にし、再送の待ちは 60 秒を保つ | FR-LOGIN-008-AC-01 確認の画面に5分の有効期限が出る | `e2e/FR-LOGIN-034-otp-verify-screen-entry-and-expiry.spec.ts:234` |
+| FREQ-60 メール OTP の有効期限を5分にする | FR-LOGIN-008 メール OTP の有効期限を5分にし、再送の待ちは 60 秒を保つ | FR-LOGIN-008-AC-02 送ってから5分を過ぎたコードではログインできない | `e2e/FR-LOGIN-034-otp-verify-screen-entry-and-expiry.spec.ts:242` |
+| FREQ-61 ログインと新規登録を1ページのタブで切り替える | FREQ-61-REQ-01 /login と /register を1つの認証の画面にまとめ、タブと URL を同期する | FREQ-61-AC-01 /login にタブが出てログインが選ばれ、PASSWORD（確認）が無い | `e2e/FR-LOGIN-009-auth-tabs.spec.ts:16` |
 | FREQ-61 ログインと新規登録を1ページのタブで切り替える | FREQ-61-REQ-01 /login と /register を1つの認証の画面にまとめ、タブと URL を同期する | FREQ-61-AC-02 新規登録タブで PASSWORD（確認）が出て URL が /register になる | （なし） |
 | FREQ-61 ログインと新規登録を1ページのタブで切り替える | FREQ-61-REQ-01 /login と /register を1つの認証の画面にまとめ、タブと URL を同期する | FREQ-61-AC-03 /register で新規登録タブが選ばれ、ログインタブで URL が /login になる | （なし） |
-| FREQ-63 会員登録とログインを /login に一本化し、/register を廃止する | FREQ-63-REQ-01 /register を消し、タブの切り替えで URL を変えない | FREQ-63-AC-01 /register を開くと 404 になる | （なし） |
-| FREQ-63 会員登録とログインを /login に一本化し、/register を廃止する | FREQ-63-REQ-01 /register を消し、タブの切り替えで URL を変えない | FREQ-63-AC-02 新規登録タブで PASSWORD（確認）が出て、URL は /login のまま | （なし） |
+| FREQ-63 会員登録とログインを /login に一本化し、/register を廃止する | FREQ-63-REQ-01 /register を消し、タブの切り替えで URL を変えない | FREQ-63-AC-01 /register を開くと 404 になる | `e2e/FR-SIGNUP-001-register-page.spec.ts:12` |
+| FREQ-63 会員登録とログインを /login に一本化し、/register を廃止する | FREQ-63-REQ-01 /register を消し、タブの切り替えで URL を変えない | FREQ-63-AC-02 新規登録タブで PASSWORD（確認）が出て、URL は /login のまま | `e2e/FR-LOGIN-009-auth-tabs.spec.ts:30`<br>`e2e/FR-LOGIN-009-auth-tabs.spec.ts:40` |
 | FREQ-63 会員登録とログインを /login に一本化し、/register を廃止する | FREQ-63-REQ-01 /register を消し、タブの切り替えで URL を変えない | FREQ-63-AC-03 「既にアカウントをお持ちの方はこちら」がタブ切替のボタンになる | （なし） |
 | FREQ-64 認証の画面を角丸の見た目にする | FREQ-64-REQ-01 カードの枠・入力欄・ボタンを角丸にし、枠線をグレーにする | FREQ-64-AC-01 カードの枠・EMAIL の欄・ログインボタンの角が丸い | （なし） |
-| FREQ-64 認証の画面を角丸の見た目にする | FREQ-64-REQ-01 カードの枠・入力欄・ボタンを角丸にし、枠線をグレーにする | FREQ-64-AC-02 「ログインでお困りの方」の導線が出ない | （なし） |
+| FREQ-64 認証の画面を角丸の見た目にする | FREQ-64-REQ-01 カードの枠・入力欄・ボタンを角丸にし、枠線をグレーにする | FREQ-64-AC-02 「ログインでお困りの方」の導線が出ない | `e2e/FR-LOGIN-011-auth-rounded-design.spec.ts:34` |
 | FREQ-64 認証の画面を角丸の見た目にする | FREQ-64-REQ-01 カードの枠・入力欄・ボタンを角丸にし、枠線をグレーにする | FREQ-64-AC-03 カードの枠線が純黒でないグレー | （なし） |
 | FREQ-64 認証の画面を角丸の見た目にする | FREQ-64-REQ-01 カードの枠・入力欄・ボタンを角丸にし、枠線をグレーにする | FREQ-64-AC-04 ログインボタンの角が 4px〜12px の中ほどの丸み | （なし） |
-| FREQ-65 非選択のタブをグレーにし、未入力の間は送信ボタンを押せなくする | FREQ-65-REQ-01 非選択のタブをグレー、未入力の間はボタンを disabled のグレーにする | FREQ-65-AC-01 非選択のタブの背景が純黒でないグレー | （なし） |
-| FREQ-65 非選択のタブをグレーにし、未入力の間は送信ボタンを押せなくする | FREQ-65-REQ-01 非選択のタブをグレー、未入力の間はボタンを disabled のグレーにする | FREQ-65-AC-02 EMAIL・PASSWORD が空の間はログインボタンが無効 | （なし） |
-| FREQ-65 非選択のタブをグレーにし、未入力の間は送信ボタンを押せなくする | FREQ-65-REQ-01 非選択のタブをグレー、未入力の間はボタンを disabled のグレーにする | FREQ-65-AC-03 EMAIL・PASSWORD を入れるとログインボタンが有効になる | （なし） |
-| FREQ-65 非選択のタブをグレーにし、未入力の間は送信ボタンを押せなくする | FREQ-65-REQ-01 非選択のタブをグレー、未入力の間はボタンを disabled のグレーにする | FREQ-65-AC-04 会員登録タブで3つの欄が空の間は登録ボタンが無効 | （なし） |
+| FREQ-65 非選択のタブをグレーにし、未入力の間は送信ボタンを押せなくする | FREQ-65-REQ-01 非選択のタブをグレー、未入力の間はボタンを disabled のグレーにする | FREQ-65-AC-01 非選択のタブの背景が純黒でないグレー | `e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts:17` |
+| FREQ-65 非選択のタブをグレーにし、未入力の間は送信ボタンを押せなくする | FREQ-65-REQ-01 非選択のタブをグレー、未入力の間はボタンを disabled のグレーにする | FREQ-65-AC-02 EMAIL・PASSWORD が空の間はログインボタンが無効 | `e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts:49` |
+| FREQ-65 非選択のタブをグレーにし、未入力の間は送信ボタンを押せなくする | FREQ-65-REQ-01 非選択のタブをグレー、未入力の間はボタンを disabled のグレーにする | FREQ-65-AC-03 EMAIL・PASSWORD を入れるとログインボタンが有効になる | `e2e/FR-LOGIN-029-login-form-layout-split-acs.spec.ts:31` |
+| FREQ-65 非選択のタブをグレーにし、未入力の間は送信ボタンを押せなくする | FREQ-65-REQ-01 非選択のタブをグレー、未入力の間はボタンを disabled のグレーにする | FREQ-65-AC-04 会員登録タブで3つの欄が空の間は登録ボタンが無効 | `e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts:61` |
 | FREQ-65 非選択のタブをグレーにし、未入力の間は送信ボタンを押せなくする | FREQ-65-REQ-01 非選択のタブをグレー、未入力の間はボタンを disabled のグレーにする | FREQ-65-AC-05 タブに区切り線が無い | （なし） |
-| FREQ-66 「パスワードをお忘れの方はこちら」をパスワードの欄の直下に右寄せで置く | FREQ-66-REQ-01 リンクをパスワードの欄の直下・ログインボタンの上へ移し右寄せにする | FREQ-66-AC-01 リンクがログインボタンより上に出る | （なし） |
-| FREQ-66 「パスワードをお忘れの方はこちら」をパスワードの欄の直下に右寄せで置く | FREQ-66-REQ-01 リンクをパスワードの欄の直下・ログインボタンの上へ移し右寄せにする | FREQ-66-AC-02 リンクとパスワードの欄の間隔がボタンとの間隔より狭い | （なし） |
-| FREQ-66 「パスワードをお忘れの方はこちら」をパスワードの欄の直下に右寄せで置く | FREQ-66-REQ-01 リンクをパスワードの欄の直下・ログインボタンの上へ移し右寄せにする | FREQ-66-AC-03 リンクの右端がパスワードの欄の右端とほぼそろう | （なし） |
-| FREQ-67 文字と部品の大きさで、認証の画面の要素の優先度を示す | FREQ-67-REQ-01 主ボタンを最大、入力欄を次、忘れた方のリンクを最下位の大きさにする | FREQ-67-AC-01 ログインボタンの文字が EMAIL の欄の文字より大きい | （なし） |
-| FREQ-67 文字と部品の大きさで、認証の画面の要素の優先度を示す | FREQ-67-REQ-01 主ボタンを最大、入力欄を次、忘れた方のリンクを最下位の大きさにする | FREQ-67-AC-02 忘れた方のリンクの文字が本文より小さい | （なし） |
-| FREQ-67 文字と部品の大きさで、認証の画面の要素の優先度を示す | FREQ-67-REQ-01 主ボタンを最大、入力欄を次、忘れた方のリンクを最下位の大きさにする | FREQ-67-AC-03 ログインボタンが一番高い操作の要素 | （なし） |
-| FREQ-68 認証の画面のボタンの大きさをそろえる | FREQ-68-REQ-01 Google ボタンと主ボタンを同じ高さ・文字にし、2つのタブでもそろえる | FREQ-68-AC-01 Google ボタンと主ボタンの高さと文字の大きさが一致する | （なし） |
-| FREQ-68 認証の画面のボタンの大きさをそろえる | FREQ-68-REQ-01 Google ボタンと主ボタンを同じ高さ・文字にし、2つのタブでもそろえる | FREQ-68-AC-02 2つのタブで対応するボタンの高さと文字の大きさが一致する | （なし） |
-| FREQ-69 /login の main を画面の高さいっぱいにしてフォームを中央に置く | FREQ-69-REQ-01 main をヘッダーを除いた 100dvh 以上にし、フッターを折り返しの下へ送る | FREQ-69-AC-01 初めの表示でフッターが見えない | （なし） |
-| FREQ-69 /login の main を画面の高さいっぱいにしてフォームを中央に置く | FREQ-69-REQ-01 main をヘッダーを除いた 100dvh 以上にし、フッターを折り返しの下へ送る | FREQ-69-AC-02 main の下端がビューポートの下端に届く | （なし） |
-| FREQ-69 /login の main を画面の高さいっぱいにしてフォームを中央に置く | FREQ-69-REQ-01 main をヘッダーを除いた 100dvh 以上にし、フッターを折り返しの下へ送る | FREQ-69-AC-03 フォームが縦のほぼ中央にあり、ヘッダーに重ならない | （なし） |
+| FREQ-66 「パスワードをお忘れの方はこちら」をパスワードの欄の直下に右寄せで置く | FREQ-66-REQ-01 リンクをパスワードの欄の直下・ログインボタンの上へ移し右寄せにする | FREQ-66-AC-01 リンクがログインボタンより上に出る | `e2e/FR-LOGIN-029-login-form-layout-split-acs.spec.ts:40` |
+| FREQ-66 「パスワードをお忘れの方はこちら」をパスワードの欄の直下に右寄せで置く | FREQ-66-REQ-01 リンクをパスワードの欄の直下・ログインボタンの上へ移し右寄せにする | FREQ-66-AC-02 リンクとパスワードの欄の間隔がボタンとの間隔より狭い | `e2e/FR-LOGIN-013-password-reset-link-placement.spec.ts:12` |
+| FREQ-66 「パスワードをお忘れの方はこちら」をパスワードの欄の直下に右寄せで置く | FREQ-66-REQ-01 リンクをパスワードの欄の直下・ログインボタンの上へ移し右寄せにする | FREQ-66-AC-03 リンクの右端がパスワードの欄の右端とほぼそろう | `e2e/FR-LOGIN-029-login-form-layout-split-acs.spec.ts:53` |
+| FREQ-67 文字と部品の大きさで、認証の画面の要素の優先度を示す | FREQ-67-REQ-01 主ボタンを最大、入力欄を次、忘れた方のリンクを最下位の大きさにする | FREQ-67-AC-01 ログインボタンの文字が EMAIL の欄の文字より大きい | `e2e/FR-LOGIN-014-auth-contrast-hierarchy.spec.ts:24` |
+| FREQ-67 文字と部品の大きさで、認証の画面の要素の優先度を示す | FREQ-67-REQ-01 主ボタンを最大、入力欄を次、忘れた方のリンクを最下位の大きさにする | FREQ-67-AC-02 忘れた方のリンクの文字が本文より小さい | `e2e/FR-LOGIN-014-auth-contrast-hierarchy.spec.ts:31` |
+| FREQ-67 文字と部品の大きさで、認証の画面の要素の優先度を示す | FREQ-67-REQ-01 主ボタンを最大、入力欄を次、忘れた方のリンクを最下位の大きさにする | FREQ-67-AC-03 ログインボタンが一番高い操作の要素 | `e2e/FR-LOGIN-014-auth-contrast-hierarchy.spec.ts:39` |
+| FREQ-68 認証の画面のボタンの大きさをそろえる | FREQ-68-REQ-01 Google ボタンと主ボタンを同じ高さ・文字にし、2つのタブでもそろえる | FREQ-68-AC-01 Google ボタンと主ボタンの高さと文字の大きさが一致する | `e2e/FR-LOGIN-015-auth-button-alignment.spec.ts:23` |
+| FREQ-68 認証の画面のボタンの大きさをそろえる | FREQ-68-REQ-01 Google ボタンと主ボタンを同じ高さ・文字にし、2つのタブでもそろえる | FREQ-68-AC-02 2つのタブで対応するボタンの高さと文字の大きさが一致する | `e2e/FR-LOGIN-029-login-form-layout-split-acs.spec.ts:69` |
+| FREQ-69 /login の main を画面の高さいっぱいにしてフォームを中央に置く | FREQ-69-REQ-01 main をヘッダーを除いた 100dvh 以上にし、フッターを折り返しの下へ送る | FREQ-69-AC-01 初めの表示でフッターが見えない | `e2e/FR-LOGIN-029-login-form-layout-split-acs.spec.ts:91` |
+| FREQ-69 /login の main を画面の高さいっぱいにしてフォームを中央に置く | FREQ-69-REQ-01 main をヘッダーを除いた 100dvh 以上にし、フッターを折り返しの下へ送る | FREQ-69-AC-02 main の下端がビューポートの下端に届く | `e2e/FR-LOGIN-029-login-form-layout-split-acs.spec.ts:100` |
+| FREQ-69 /login の main を画面の高さいっぱいにしてフォームを中央に置く | FREQ-69-REQ-01 main をヘッダーを除いた 100dvh 以上にし、フッターを折り返しの下へ送る | FREQ-69-AC-03 フォームが縦のほぼ中央にあり、ヘッダーに重ならない | `e2e/FR-LOGIN-016-auth-full-height-centered.spec.ts:12`<br>`e2e/FR-LOGIN-023-auth-viewport-centering.spec.ts:47` |
 | FREQ-70 パスワード再設定のページの見た目を /login とそろえる | FREQ-70-REQ-01 /login と同じ角丸のカード・角丸の欄とボタンにし、画面の中央に置く | FREQ-70-AC-01 角丸のカードがあり、送信ボタンの角が 4px〜12px | （なし） |
-| FREQ-70 パスワード再設定のページの見た目を /login とそろえる | FREQ-70-REQ-01 /login と同じ角丸のカード・角丸の欄とボタンにし、画面の中央に置く | FREQ-70-AC-02 初めの表示でフッターが見えず、フォームが縦のほぼ中央にある | （なし） |
-| FREQ-70 パスワード再設定のページの見た目を /login とそろえる | FREQ-70-REQ-01 /login と同じ角丸のカード・角丸の欄とボタンにし、画面の中央に置く | FREQ-70-AC-03 EMAIL が空の間は送信ボタンが無効で、入れると有効になる | （なし） |
-| FREQ-70 パスワード再設定のページの見た目を /login とそろえる | FREQ-70-REQ-01 /login と同じ角丸のカード・角丸の欄とボタンにし、画面の中央に置く | FREQ-70-AC-04 見出し「パスワード再設定の申請」が /login のタブと同じ書体で一番大きい | （なし） |
-| FREQ-71 iPhone SE の大きさでログイン・会員登録のフォームを1画面に収める | FREQ-71-REQ-01 sm 未満でだけ縦の余白と欄の高さを縮め、375×667 で両タブを収める | FREQ-71-AC-01 375×667 でログインタブのカードが画面に収まりフッターが見えない | （なし） |
-| FREQ-71 iPhone SE の大きさでログイン・会員登録のフォームを1画面に収める | FREQ-71-REQ-01 sm 未満でだけ縦の余白と欄の高さを縮め、375×667 で両タブを収める | FREQ-71-AC-02 1280 幅でモバイル用の縮みが効かない | （なし） |
-| FREQ-71 iPhone SE の大きさでログイン・会員登録のフォームを1画面に収める | FREQ-71-REQ-01 sm 未満でだけ縦の余白と欄の高さを縮め、375×667 で両タブを収める | FREQ-71-AC-03 375×667 で会員登録タブのカードが画面に収まる | （なし） |
-| FREQ-73 /auth/verified をブランドの世界観に合う画面にする | FREQ-73-REQ-01 Didot の見出し・糸のヘアライン・モノクロ・中央寄せにし、未認証には /login の導線を出す | FREQ-73-AC-01 見出し「Le Fil des Heures」が Didot 系で出る | （なし） |
-| FREQ-73 /auth/verified をブランドの世界観に合う画面にする | FREQ-73-REQ-01 Didot の見出し・糸のヘアライン・モノクロ・中央寄せにし、未認証には /login の導線を出す | FREQ-73-AC-02 未認証で開くと「ログインページへ」のリンクが出る | （なし） |
-| FREQ-73 /auth/verified をブランドの世界観に合う画面にする | FREQ-73-REQ-01 Didot の見出し・糸のヘアライン・モノクロ・中央寄せにし、未認証には /login の導線を出す | FREQ-73-AC-03 初めの表示でフッターが見えず、見出しが縦のほぼ中央にある | （なし） |
-| FREQ-73 /auth/verified をブランドの世界観に合う画面にする | FREQ-73-REQ-01 Didot の見出し・糸のヘアライン・モノクロ・中央寄せにし、未認証には /login の導線を出す | FREQ-73-AC-04 見出しの直下に幅約 1px の縦のヘアラインが出る | （なし） |
-| FREQ-73 /auth/verified をブランドの世界観に合う画面にする | FREQ-73-REQ-01 Didot の見出し・糸のヘアライン・モノクロ・中央寄せにし、未認証には /login の導線を出す | FREQ-73-AC-05 見出しの文字が本文より大きい | （なし） |
-| FREQ-89 ログインの入力欄を下線・先頭のアイコン・パスワードの表示切替にする | FREQ-89-REQ-01 TextField に下線の形と右端の要素を足し、ログインの2つの欄に使う | FREQ-89-AC-01 Email の欄にメール、Password の欄に鍵のアイコンが出る | （なし） |
-| FREQ-89 ログインの入力欄を下線・先頭のアイコン・パスワードの表示切替にする | FREQ-89-REQ-01 TextField に下線の形と右端の要素を足し、ログインの2つの欄に使う | FREQ-89-AC-02 入力欄が下線だけで出る | （なし） |
-| FREQ-89 ログインの入力欄を下線・先頭のアイコン・パスワードの表示切替にする | FREQ-89-REQ-01 TextField に下線の形と右端の要素を足し、ログインの2つの欄に使う | FREQ-89-AC-03 表示切替のボタンで type が password と text で切り替わる | （なし） |
-| FREQ-89 ログインの入力欄を下線・先頭のアイコン・パスワードの表示切替にする | FREQ-89-REQ-01 TextField に下線の形と右端の要素を足し、ログインの2つの欄に使う | FREQ-89-AC-04 先頭のアイコンが本文の文字より大きい | （なし） |
-| FREQ-89 ログインの入力欄を下線・先頭のアイコン・パスワードの表示切替にする | FREQ-89-REQ-01 TextField に下線の形と右端の要素を足し、ログインの2つの欄に使う | FREQ-89-AC-05 アイコンの左と切替ボタンの右に font-size÷φ の余白がある | （なし） |
-| FREQ-90 タブを下線の形にし、カードの枠と切替のリンクを撤去する | FREQ-90-REQ-01 タブを下線の形にし、角丸のカードの枠と切替のボタンを消す | FREQ-90-AC-01 タブが下線を持ち、タブを囲む角丸の枠が無い | （なし） |
-| FREQ-90 タブを下線の形にし、カードの枠と切替のリンクを撤去する | FREQ-90-REQ-01 タブを下線の形にし、角丸のカードの枠と切替のボタンを消す | FREQ-90-AC-02 ログインタブに「会員登録はこちら」が出ない | （なし） |
-| FREQ-90 タブを下線の形にし、カードの枠と切替のリンクを撤去する | FREQ-90-REQ-01 タブを下線の形にし、角丸のカードの枠と切替のボタンを消す | FREQ-90-AC-03 会員登録タブに「既にアカウントをお持ちの方はこちら」が出ない | （なし） |
-| FREQ-90 タブを下線の形にし、カードの枠と切替のリンクを撤去する | FREQ-90-REQ-01 タブを下線の形にし、角丸のカードの枠と切替のボタンを消す | FREQ-90-AC-04 タブの左右の端が入力欄・ボタンの端とそろう | （なし） |
-| FREQ-91 会員登録タブをログインタブと同じ見た目にそろえる | FREQ-91-REQ-01 登録の3つの欄を下線とアイコンにし、並びを フォーム→OR→Google にする | FREQ-91-AC-01 登録の欄にメールと鍵のアイコンが出る | （なし） |
-| FREQ-91 会員登録タブをログインタブと同じ見た目にそろえる | FREQ-91-REQ-01 登録の3つの欄を下線とアイコンにし、並びを フォーム→OR→Google にする | FREQ-91-AC-02 登録の欄が下線だけで出る | （なし） |
-| FREQ-91 会員登録タブをログインタブと同じ見た目にそろえる | FREQ-91-REQ-01 登録の3つの欄を下線とアイコンにし、並びを フォーム→OR→Google にする | FREQ-91-AC-03 Password と Password（確認）に表示切替がある | （なし） |
-| FREQ-91 会員登録タブをログインタブと同じ見た目にそろえる | FREQ-91-REQ-01 登録の3つの欄を下線とアイコンにし、並びを フォーム→OR→Google にする | FREQ-91-AC-04 「Googleで登録」が送信ボタンより下にある | （なし） |
-| FREQ-92 パスワード再設定のページを下線のミニマルな見た目にする | FREQ-92-REQ-01 カードの枠を消し、欄を下線とアイコンにし、ボタンを直角にする | FREQ-92-AC-01 カードの枠が無く、送信ボタンが直角 | （なし） |
-| FREQ-92 パスワード再設定のページを下線のミニマルな見た目にする | FREQ-92-REQ-01 カードの枠を消し、欄を下線とアイコンにし、ボタンを直角にする | FREQ-92-AC-02 Email の欄が下線だけで先頭にメールのアイコンがある | （なし） |
-| FREQ-92 パスワード再設定のページを下線のミニマルな見た目にする | FREQ-92-REQ-01 カードの枠を消し、欄を下線とアイコンにし、ボタンを直角にする | FREQ-92-AC-03 見出しが acumin-pro 系で入力欄より大きい | （なし） |
-| FREQ-194 ヘッダーのナビの下線を文字の幅にそろえる | FREQ-194-REQ-01 ヘッダーの下線の幅を calc(100% - 0.1em) にし、共通のクラスは変えない | FREQ-194-AC-01 下線の右端と最後の文字の右端の差が 1px 以内 | `e2e/FR-SEARCH-013-underline-and-dropdown-edges.spec.ts:13` |
-| FREQ-194 ヘッダーのナビの下線を文字の幅にそろえる | FREQ-194-REQ-01 ヘッダーの下線の幅を calc(100% - 0.1em) にし、共通のクラスは変えない | FREQ-194-AC-02 下線の左端と最初の文字の左端の差が 1px 以内 | （なし） |
-| FREQ-239 管理画面のフォントの一括指定からヘッダーとフッターを外す | FREQ-239-REQ-01 ヘッダーとドロワーに site-chrome を付け、一括指定から外す | FREQ-239-AC-01 /admin のヘッダーのサイトの題が Didot で公開ページと一致する | （なし） |
-| FREQ-239 管理画面のフォントの一括指定からヘッダーとフッターを外す | FREQ-239-REQ-01 ヘッダーとドロワーに site-chrome を付け、一括指定から外す | FREQ-239-AC-04 3つの幅で横のスクロールが出ない | （なし） |
-| FREQ-239 管理画面のフォントの一括指定からヘッダーとフッターを外す | FREQ-239-REQ-02 フッターも同じく外し、管理画面と公開ページで表示をそろえる | FREQ-239-AC-02 /admin のフッターの見出しが Didot で公開ページと一致する | （なし） |
-| FREQ-239 管理画面のフォントの一括指定からヘッダーとフッターを外す | FREQ-239-REQ-02 フッターも同じく外し、管理画面と公開ページで表示をそろえる | FREQ-239-AC-04 3つの幅で横のスクロールが出ない | （なし） |
-| FREQ-239 管理画面のフォントの一括指定からヘッダーとフッターを外す | FREQ-239-REQ-03 管理の中身とポータルの管理の部品のフォントの統一は保つ | FREQ-239-AC-03 ACCOUNTING の見出しは acumin-pro のまま | （なし） |
-| FREQ-309 ヘッダーのカートの点数のバッジを共通の StatusBadge にする | FREQ-309-REQ-01 カートのバッジを StatusBadge の count・2xs にし、独自の指定を消す | FREQ-309-AC-01 商品がある時に count のバッジが1つ出て点数が出る | （なし） |
-| FREQ-309 ヘッダーのカートの点数のバッジを共通の StatusBadge にする | FREQ-309-REQ-02 2xs の φ の寸法を使い、2桁でも正円を保つ | FREQ-309-AC-02 1桁でも2桁でもバッジの幅と高さが等しい | （なし） |
-| FREQ-309 ヘッダーのカートの点数のバッジを共通の StatusBadge にする | FREQ-309-REQ-03 点数が 99 を超えたら 99+ にする | FREQ-309-AC-03 点数が 128 の時に 99+ と出る | （なし） |
-| FREQ-309 ヘッダーのカートの点数のバッジを共通の StatusBadge にする | FREQ-309-REQ-04 バッジをアイコンの右上の角にまたがせ、白いリングで線から分ける | FREQ-309-AC-04 バッジの中心が右上の角にあり、白いリングが付く | （なし） |
-| FREQ-309 ヘッダーのカートの点数のバッジを共通の StatusBadge にする | FREQ-309-REQ-05 カートが空ならバッジを出さない | FREQ-309-AC-05 カートが空の時にバッジが無い | （なし） |
-| FREQ-316 管理の窓口の認可を1つの確かめ方にそろえ、更新の呼び出しで回数の制限を自分で潰さない | FREQ-316-REQ-01 管理の窓口の認可は Cookie の access token も受け、署名・期限・iss・aud を確かめる | FREQ-316-REQ-01-AC-01 Cookie の access token だけで管理の窓口が通り、iss か aud の違うトークンは断られる | （なし） |
-| FREQ-316 管理の窓口の認可を1つの確かめ方にそろえ、更新の呼び出しで回数の制限を自分で潰さない | FREQ-316-REQ-02 2要素の判定を JWT の aal で行い、TOTP の確認で上がったセッションを Cookie に書き戻す | FREQ-316-REQ-02-AC-01 TOTP の確認の後の Cookie の access token が aal2 になり、aal1 のトークンでは管理の窓口が 403 になる | （なし） |
-| FREQ-316 管理の窓口の認可を1つの確かめ方にそろえ、更新の呼び出しで回数の制限を自分で潰さない | FREQ-316-REQ-03 ログアウトと管理者の強制の失効で Supabase のセッションも切り、管理の窓口は毎回セッションの生存を確かめる | FREQ-316-REQ-03-AC-01 ログアウトの後、その前の access token で管理の窓口が 401 になる | （なし） |
-| FREQ-316 管理の窓口の認可を1つの確かめ方にそろえ、更新の呼び出しで回数の制限を自分で潰さない | FREQ-316-REQ-04 更新は 401 の時だけ呼び、失敗の種類ごとに待ち時間を置き、戻れない 401 では未ログインにする | FREQ-316-AC-01 管理の窓口が 401・更新が 429 でも、更新の呼び出しが1回以下 | （なし） |
-| FREQ-316 管理の窓口の認可を1つの確かめ方にそろえ、更新の呼び出しで回数の制限を自分で潰さない | FREQ-316-REQ-04 更新は 401 の時だけ呼び、失敗の種類ごとに待ち時間を置き、戻れない 401 では未ログインにする | FREQ-316-AC-02 更新が 401 の時に「アクセス権限がありません」が出て、更新の呼び出しが1回以下 | （なし） |
-| FREQ-319 パスワード再設定の 500 を直し、OWASP の Forgot Password に沿わせる | FREQ-319-REQ-01 メールからユーザーを引くのを SECURITY DEFINER の関数1回にする | FREQ-319-AC-01 「再設定メールを送信」で 500 にならず 200 が返る | （なし） |
-| FREQ-319 パスワード再設定の 500 を直し、OWASP の Forgot Password に沿わせる | FREQ-319-REQ-02 アカウントが無い宛先には送らず、応答は有る時と同じにする | FREQ-319-AC-02 未登録の宛先でも応答が同じで、メールが送られない | （なし） |
-| FREQ-319 パスワード再設定の 500 を直し、OWASP の Forgot Password に沿わせる | FREQ-319-REQ-03 リンクの先を副作用の無い確認ページにし、消費はパスワードを変えた時だけにする | FREQ-319-AC-03 リンクを開いても link の POST を繰り返しても消費されない | （なし） |
-| FREQ-319 パスワード再設定の 500 を直し、OWASP の Forgot Password に沿わせる | FREQ-319-REQ-04 無効・期限切れ・使用済みのリンクは理由を画面に出す | FREQ-319-AC-04 期限切れのリンクで理由の文が出る | （なし） |
-| FREQ-319 パスワード再設定の 500 を直し、OWASP の Forgot Password に沿わせる | FREQ-319-REQ-05 更新の失敗を成功にせず、成功後は全セッションを失効し本人に知らせる | FREQ-319-AC-05 更新の失敗で 500 になり、成功後は古いトークンが 401 になる | （なし） |
+| FREQ-70 パスワード再設定のページの見た目を /login とそろえる | FREQ-70-REQ-01 /login と同じ角丸のカード・角丸の欄とボタンにし、画面の中央に置く | FREQ-70-AC-02 初めの表示でフッターが見えず、フォームが縦のほぼ中央にある | `e2e/FR-LOGIN-023-auth-viewport-centering.spec.ts:49`<br>`e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts:54` |
+| FREQ-70 パスワード再設定のページの見た目を /login とそろえる | FREQ-70-REQ-01 /login と同じ角丸のカード・角丸の欄とボタンにし、画面の中央に置く | FREQ-70-AC-03 EMAIL が空の間は送信ボタンが無効で、入れると有効になる | `e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts:88` |
+| FREQ-70 パスワード再設定のページの見た目を /login とそろえる | FREQ-70-REQ-01 /login と同じ角丸のカード・角丸の欄とボタンにし、画面の中央に置く | FREQ-70-AC-04 見出し「パスワード再設定」が /login のタブと同じ書体で一番大きい | `e2e/FR-PWRESET-009-reset-link-lifecycle-real-mail.spec.ts:98` |
+| FREQ-71 iPhone SE の大きさでログイン・会員登録のフォームを1画面に収める | FREQ-71-REQ-01 sm 未満でだけ縦の余白と欄の高さを縮め、375×667 で両タブを収める | FREQ-71-AC-01 375×667 でログインタブのカードが画面に収まりフッターが見えない | `e2e/FR-LOGIN-017-iphone-se-one-screen.spec.ts:6` |
+| FREQ-71 iPhone SE の大きさでログイン・会員登録のフォームを1画面に収める | FREQ-71-REQ-01 sm 未満でだけ縦の余白と欄の高さを縮め、375×667 で両タブを収める | FREQ-71-AC-02 1280 幅でモバイル用の縮みが効かない | `e2e/FR-LOGIN-017-iphone-se-one-screen.spec.ts:34` |
+| FREQ-71 iPhone SE の大きさでログイン・会員登録のフォームを1画面に収める | FREQ-71-REQ-01 sm 未満でだけ縦の余白と欄の高さを縮め、375×667 で両タブを収める | FREQ-71-AC-03 375×667 で会員登録タブのカードが画面に収まる | `e2e/FR-LOGIN-017-iphone-se-one-screen.spec.ts:20` |
+| FREQ-73 /auth/verified をブランドの世界観に合う画面にする | FREQ-73-REQ-01 Didot の見出し・糸のヘアライン・モノクロ・中央寄せにし、未認証には /login の導線を出す | FREQ-73-AC-01 見出し「Le Fil des Heures」が Didot 系で出る | `e2e/FR-LOGIN-018-verified-brand-design.spec.ts:22` |
+| FREQ-73 /auth/verified をブランドの世界観に合う画面にする | FREQ-73-REQ-01 Didot の見出し・糸のヘアライン・モノクロ・中央寄せにし、未認証には /login の導線を出す | FREQ-73-AC-02 未認証で開くと「ログインページへ」のリンクが出る | `e2e/FR-LOGIN-018-verified-brand-design.spec.ts:39` |
+| FREQ-73 /auth/verified をブランドの世界観に合う画面にする | FREQ-73-REQ-01 Didot の見出し・糸のヘアライン・モノクロ・中央寄せにし、未認証には /login の導線を出す | FREQ-73-AC-03 初めの表示でフッターが見えず、見出しが縦のほぼ中央にある | `e2e/FR-LOGIN-018-verified-brand-design.spec.ts:46` |
+| FREQ-73 /auth/verified をブランドの世界観に合う画面にする | FREQ-73-REQ-01 Didot の見出し・糸のヘアライン・モノクロ・中央寄せにし、未認証には /login の導線を出す | FREQ-73-AC-04 見出しの直下に幅約 1px の縦のヘアラインが出る | `e2e/FR-LOGIN-018-verified-brand-design.spec.ts:31` |
+| FREQ-73 /auth/verified をブランドの世界観に合う画面にする | FREQ-73-REQ-01 Didot の見出し・糸のヘアライン・モノクロ・中央寄せにし、未認証には /login の導線を出す | FREQ-73-AC-05 見出しの文字が本文より大きい | `e2e/FR-LOGIN-018-verified-brand-design.spec.ts:65` |
+| FREQ-89 ログインの入力欄を下線・先頭のアイコン・パスワードの表示切替にする | FREQ-89-REQ-01 TextField に下線の形と右端の要素を足し、ログインの2つの欄に使う | FREQ-89-AC-01 Email の欄にメール、Password の欄に鍵のアイコンが出る | `e2e/FR-LOGIN-019-underline-input-fields.spec.ts:20` |
+| FREQ-89 ログインの入力欄を下線・先頭のアイコン・パスワードの表示切替にする | FREQ-89-REQ-01 TextField に下線の形と右端の要素を足し、ログインの2つの欄に使う | FREQ-89-AC-02 入力欄が下線だけで出る | `e2e/FR-LOGIN-019-underline-input-fields.spec.ts:25` |
+| FREQ-89 ログインの入力欄を下線・先頭のアイコン・パスワードの表示切替にする | FREQ-89-REQ-01 TextField に下線の形と右端の要素を足し、ログインの2つの欄に使う | FREQ-89-AC-03 表示切替のボタンで type が password と text で切り替わる | `e2e/FR-LOGIN-019-underline-input-fields.spec.ts:42` |
+| FREQ-89 ログインの入力欄を下線・先頭のアイコン・パスワードの表示切替にする | FREQ-89-REQ-01 TextField に下線の形と右端の要素を足し、ログインの2つの欄に使う | FREQ-89-AC-04 先頭のアイコンが本文の文字より大きい | `e2e/FR-LOGIN-019-underline-input-fields.spec.ts:56` |
+| FREQ-89 ログインの入力欄を下線・先頭のアイコン・パスワードの表示切替にする | FREQ-89-REQ-01 TextField に下線の形と右端の要素を足し、ログインの2つの欄に使う | FREQ-89-AC-05 アイコンの左と切替ボタンの右に font-size÷φ の余白がある | `e2e/FR-LOGIN-019-underline-input-fields.spec.ts:62` |
+| FREQ-90 タブを下線の形にし、カードの枠と切替のリンクを撤去する | FREQ-90-REQ-01 タブを下線の形にし、角丸のカードの枠と切替のボタンを消す | FREQ-90-AC-01 タブが下線を持ち、タブを囲む角丸の枠が無い | `e2e/FR-LOGIN-011-auth-rounded-design.spec.ts:38`<br>`e2e/FR-LOGIN-012-auth-tab-and-button-states.spec.ts:27`<br>`e2e/FR-LOGIN-020-tab-underline-no-switch-links.spec.ts:17` |
+| FREQ-90 タブを下線の形にし、カードの枠と切替のリンクを撤去する | FREQ-90-REQ-01 タブを下線の形にし、角丸のカードの枠と切替のボタンを消す | FREQ-90-AC-02 ログインタブに「会員登録はこちら」が出ない | `e2e/FR-LOGIN-009-auth-tabs.spec.ts:53`<br>`e2e/FR-LOGIN-020-tab-underline-no-switch-links.spec.ts:63` |
+| FREQ-90 タブを下線の形にし、カードの枠と切替のリンクを撤去する | FREQ-90-REQ-01 タブを下線の形にし、角丸のカードの枠と切替のボタンを消す | FREQ-90-AC-03 会員登録タブに「既にアカウントをお持ちの方はこちら」が出ない | `e2e/FR-LOGIN-020-tab-underline-no-switch-links.spec.ts:69` |
+| FREQ-90 タブを下線の形にし、カードの枠と切替のリンクを撤去する | FREQ-90-REQ-01 タブを下線の形にし、角丸のカードの枠と切替のボタンを消す | FREQ-90-AC-04 タブの左右の端が入力欄・ボタンの端とそろう | `e2e/FR-LOGIN-020-tab-underline-no-switch-links.spec.ts:45`<br>`e2e/FR-LOGIN-022-auth-layout-hierarchy.spec.ts:62` |
+| FREQ-91 会員登録タブをログインタブと同じ見た目にそろえる | FREQ-91-REQ-01 登録の3つの欄を下線とアイコンにし、並びを フォーム→OR→Google にする | FREQ-91-AC-01 登録の欄にメールと鍵のアイコンが出る | `e2e/FR-LOGIN-021-register-underline-fields.spec.ts:19` |
+| FREQ-91 会員登録タブをログインタブと同じ見た目にそろえる | FREQ-91-REQ-01 登録の3つの欄を下線とアイコンにし、並びを フォーム→OR→Google にする | FREQ-91-AC-02 登録の欄が下線だけで出る | `e2e/FR-LOGIN-021-register-underline-fields.spec.ts:24` |
+| FREQ-91 会員登録タブをログインタブと同じ見た目にそろえる | FREQ-91-REQ-01 登録の3つの欄を下線とアイコンにし、並びを フォーム→OR→Google にする | FREQ-91-AC-03 Password と Password（確認）に表示切替がある | `e2e/FR-LOGIN-021-register-underline-fields.spec.ts:42` |
+| FREQ-91 会員登録タブをログインタブと同じ見た目にそろえる | FREQ-91-REQ-01 登録の3つの欄を下線とアイコンにし、並びを フォーム→OR→Google にする | FREQ-91-AC-04 「Googleで登録」が送信ボタンより下にある | `e2e/FR-LOGIN-021-register-underline-fields.spec.ts:58` |
+| FREQ-92 パスワード再設定のページを下線のミニマルな見た目にする | FREQ-92-REQ-01 カードの枠を消し、欄を下線とアイコンにし、ボタンを直角にする | FREQ-92-AC-01 カードの枠が無く、送信ボタンが直角 | `e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts:25` |
+| FREQ-92 パスワード再設定のページを下線のミニマルな見た目にする | FREQ-92-REQ-01 カードの枠を消し、欄を下線とアイコンにし、ボタンを直角にする | FREQ-92-AC-02 Email の欄が下線だけで先頭にメールのアイコンがある | `e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts:38` |
+| FREQ-92 パスワード再設定のページを下線のミニマルな見た目にする | FREQ-92-REQ-01 カードの枠を消し、欄を下線とアイコンにし、ボタンを直角にする | FREQ-92-AC-03 見出しが acumin-pro 系で入力欄より大きい | `e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts:68` |
+| FREQ-194 ヘッダーのナビの下線を文字の幅にそろえる | FREQ-194-REQ-01 ヘッダーの下線の幅を calc(100% - 0.1em) にし、共通のクラスは変えない | FREQ-194-AC-01 下線の右端と最後の文字の右端の差が 1px 以内 | `e2e/FR-SEARCH-013-underline-and-dropdown-edges.spec.ts:13`<br>`e2e/FR-HEADER-009-cart-badge-and-nav-underline.spec.ts:136` |
+| FREQ-194 ヘッダーのナビの下線を文字の幅にそろえる | FREQ-194-REQ-01 ヘッダーの下線の幅を calc(100% - 0.1em) にし、共通のクラスは変えない | FREQ-194-AC-02 下線の左端と最初の文字の左端の差が 1px 以内 | `e2e/FR-HEADER-009-cart-badge-and-nav-underline.spec.ts:146` |
+| FREQ-239 管理画面のフォントの一括指定からヘッダーとフッターを外す | FREQ-239-REQ-01 ヘッダーとドロワーに site-chrome を付け、一括指定から外す | FREQ-239-AC-01 /admin のヘッダーのサイトの題が Didot で公開ページと一致する | `e2e/FR-HEADER-007-admin-font-scope-excludes-chrome.spec.ts:89` |
+| FREQ-239 管理画面のフォントの一括指定からヘッダーとフッターを外す | FREQ-239-REQ-01 ヘッダーとドロワーに site-chrome を付け、一括指定から外す | FREQ-239-AC-04 3つの幅で横のスクロールが出ない | `e2e/FR-HEADER-007-admin-font-scope-excludes-chrome.spec.ts:133` |
+| FREQ-239 管理画面のフォントの一括指定からヘッダーとフッターを外す | FREQ-239-REQ-02 フッターも同じく外し、管理画面と公開ページで表示をそろえる | FREQ-239-AC-02 /admin のフッターの見出しが Didot で公開ページと一致する | `e2e/FR-HEADER-007-admin-font-scope-excludes-chrome.spec.ts:104` |
+| FREQ-239 管理画面のフォントの一括指定からヘッダーとフッターを外す | FREQ-239-REQ-02 フッターも同じく外し、管理画面と公開ページで表示をそろえる | FREQ-239-AC-04 3つの幅で横のスクロールが出ない | `e2e/FR-HEADER-007-admin-font-scope-excludes-chrome.spec.ts:133` |
+| FREQ-239 管理画面のフォントの一括指定からヘッダーとフッターを外す | FREQ-239-REQ-03 管理の中身とポータルの管理の部品のフォントの統一は保つ | FREQ-239-AC-03 ACCOUNTING の見出しは acumin-pro のまま | `e2e/FR-HEADER-007-admin-font-scope-excludes-chrome.spec.ts:119` |
+| FREQ-309 ヘッダーのカートの点数のバッジを共通の StatusBadge にする | FREQ-309-REQ-01 カートのバッジを StatusBadge の count・2xs にし、独自の指定を消す | FREQ-309-AC-01 商品がある時に count のバッジが1つ出て点数が出る | `e2e/FR-HEADER-008-cart-count-badge.spec.ts:21` |
+| FREQ-309 ヘッダーのカートの点数のバッジを共通の StatusBadge にする | FREQ-309-REQ-02 2xs の φ の寸法を使い、2桁でも正円を保つ | FREQ-309-AC-02 1桁でも2桁でもバッジの幅と高さが等しい | `e2e/FR-HEADER-009-cart-badge-and-nav-underline.spec.ts:41` |
+| FREQ-309 ヘッダーのカートの点数のバッジを共通の StatusBadge にする | FREQ-309-REQ-03 点数が 99 を超えたら 99+ にする | FREQ-309-AC-03 点数が 128 の時に 99+ と出る | `e2e/FR-HEADER-009-cart-badge-and-nav-underline.spec.ts:59` |
+| FREQ-309 ヘッダーのカートの点数のバッジを共通の StatusBadge にする | FREQ-309-REQ-04 バッジをアイコンの右上の角にまたがせ、白いリングで線から分ける | FREQ-309-AC-04 バッジの中心が右上の角にあり、白いリングが付く | `e2e/FR-HEADER-009-cart-badge-and-nav-underline.spec.ts:67` |
+| FREQ-309 ヘッダーのカートの点数のバッジを共通の StatusBadge にする | FREQ-309-REQ-05 カートが空ならバッジを出さない | FREQ-309-AC-05 カートが空の時にバッジが無い | `e2e/FR-HEADER-009-cart-badge-and-nav-underline.spec.ts:88` |
+| FREQ-316 管理の窓口の認可を1つの確かめ方にそろえ、更新の呼び出しで回数の制限を自分で潰さない | FREQ-316-REQ-01 管理の窓口の認可は Cookie の access token も受け、署名・期限・iss・aud を確かめる | FREQ-316-REQ-01-AC-01 Cookie の access token だけで管理の窓口が通り、iss か aud の違うトークンは断られる | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:460` |
+| FREQ-316 管理の窓口の認可を1つの確かめ方にそろえ、更新の呼び出しで回数の制限を自分で潰さない | FREQ-316-REQ-02 2要素の判定を JWT の aal で行い、TOTP の確認で上がったセッションを Cookie に書き戻す | FREQ-316-REQ-02-AC-01 TOTP の確認の後の Cookie の access token が aal2 になり、aal1 のトークンでは管理の窓口が 403 になる | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:487` |
+| FREQ-316 管理の窓口の認可を1つの確かめ方にそろえ、更新の呼び出しで回数の制限を自分で潰さない | FREQ-316-REQ-03 ログアウトと管理者の強制の失効で Supabase のセッションも切り、管理の窓口は毎回セッションの生存を確かめる | FREQ-316-REQ-03-AC-01 ログアウトの後、その前の access token で管理の窓口が 401 になる | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:512` |
+| FREQ-316 管理の窓口の認可を1つの確かめ方にそろえ、更新の呼び出しで回数の制限を自分で潰さない | FREQ-316-REQ-04 更新は 401 の時だけ呼び、失敗の種類ごとに待ち時間を置き、戻れない 401 では未ログインにする | FREQ-316-AC-01 管理の窓口が 401・更新が 429 でも、更新の呼び出しが1回以下 | `e2e/FR-LOGIN-033-verify-screen-and-admin-refresh-mocks.spec.ts:120` |
+| FREQ-316 管理の窓口の認可を1つの確かめ方にそろえ、更新の呼び出しで回数の制限を自分で潰さない | FREQ-316-REQ-04 更新は 401 の時だけ呼び、失敗の種類ごとに待ち時間を置き、戻れない 401 では未ログインにする | FREQ-316-AC-02 更新が 401 の時に「アクセス権限がありません」が出て、更新の呼び出しが1回以下 | `e2e/FR-LOGIN-033-verify-screen-and-admin-refresh-mocks.spec.ts:150` |
+| FREQ-319 パスワード再設定の 500 を直し、OWASP の Forgot Password に沿わせる | FREQ-319-REQ-01 メールからユーザーを引くのを SECURITY DEFINER の関数1回にする | FREQ-319-AC-01 「再設定メールを送信」で 500 にならず 200 が返る | `e2e/FR-PWRESET-002-password-reset-hardening.spec.ts:91` |
+| FREQ-319 パスワード再設定の 500 を直し、OWASP の Forgot Password に沿わせる | FREQ-319-REQ-02 アカウントが無い宛先には送らず、応答は有る時と同じにする | FREQ-319-AC-02 未登録の宛先でも応答が同じで、メールが送られない | `e2e/FR-PWRESET-009-reset-link-lifecycle-real-mail.spec.ts:193` |
+| FREQ-319 パスワード再設定の 500 を直し、OWASP の Forgot Password に沿わせる | FREQ-319-REQ-03 リンクの先を副作用の無い確認ページにし、消費はパスワードを変えた時だけにする | FREQ-319-AC-03 リンクを開いても link の POST を繰り返しても消費されない | `e2e/FR-PWRESET-009-reset-link-lifecycle-real-mail.spec.ts:210` |
+| FREQ-319 パスワード再設定の 500 を直し、OWASP の Forgot Password に沿わせる | FREQ-319-REQ-04 無効・期限切れ・使用済みのリンクは理由を画面に出す | FREQ-319-AC-04 期限切れのリンクで理由の文が出る | `e2e/FR-PWRESET-002-password-reset-hardening.spec.ts:28` |
+| FREQ-319 パスワード再設定の 500 を直し、OWASP の Forgot Password に沿わせる | FREQ-319-REQ-05 更新の失敗を成功にせず、成功後は全セッションを失効し本人に知らせる | FREQ-319-AC-05 更新の失敗で 500 になり、成功後は古いトークンが 401 になる | `e2e/FR-PWRESET-010-reset-completion-security.spec.ts:122` |
 | FREQ-320 認証の失敗を成功にせず、ログアウトで他の端末を巻き込まず、登録の有無を判らせない | FREQ-320-REQ-01 ユーザーを引く処理で「該当なし」と「引けなかった」を分ける | FREQ-320-AC-01 DB の関数が失敗すると再設定は 500、登録は 503 で、監査が success にならない | （なし） |
-| FREQ-320 認証の失敗を成功にせず、ログアウトで他の端末を巻き込まず、登録の有無を判らせない | FREQ-320-REQ-02 access token の Cookie の Max-Age を refresh と同じ7日にする | FREQ-320-AC-02 sb-access-token の Max-Age が 604800 で、ログアウトで他の端末が切れない | （なし） |
-| FREQ-320 認証の失敗を成功にせず、ログアウトで他の端末を巻き込まず、登録の有無を判らせない | FREQ-320-REQ-03 登録の応答を登録済みでも同じにし、本人にだけメールで知らせる | FREQ-320-AC-03 登録済みと未登録で /api/auth/register の応答が一致する | （なし） |
-| FREQ-320 認証の失敗を成功にせず、ログアウトで他の端末を巻き込まず、登録の有無を判らせない | FREQ-320-REQ-04 登録の画面に「既に登録されています」の類を出さない | FREQ-320-AC-04 登録の後の画面に「既に登録」の文言が出ない | （なし） |
-| FREQ-323 漏れたパスワードを断り、最小の長さを 16 文字にする | FREQ-323-REQ-01 登録と再設定で HIBP の k-匿名の照合をし、漏れていれば 400 | FREQ-323-AC-01 漏れたパスワードで 400 になり、外へ出る URL に本体と6文字目以降が無い | （なし） |
+| FREQ-320 認証の失敗を成功にせず、ログアウトで他の端末を巻き込まず、登録の有無を判らせない | FREQ-320-REQ-02 access token の Cookie の Max-Age を refresh と同じ7日にする | FREQ-320-AC-02 sb-access-token の Max-Age が 604800 で、ログアウトで他の端末が切れない | `e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts:124` |
+| FREQ-320 認証の失敗を成功にせず、ログアウトで他の端末を巻き込まず、登録の有無を判らせない | FREQ-320-REQ-03 登録の応答を登録済みでも同じにし、本人にだけメールで知らせる | FREQ-320-AC-03 登録済みと未登録で /api/auth/register の応答が一致する | `e2e/FR-LOGIN-024-register-no-account-enumeration.spec.ts:103` |
+| FREQ-320 認証の失敗を成功にせず、ログアウトで他の端末を巻き込まず、登録の有無を判らせない | FREQ-320-REQ-04 登録の画面に「既に登録されています」の類を出さない | FREQ-320-AC-04 登録の後の画面に「既に登録」の文言が出ない | `e2e/FR-LOGIN-024-register-no-account-enumeration.spec.ts:63` |
+| FREQ-323 漏れたパスワードを断り、最小の長さを 16 文字にする | FREQ-323-REQ-01 登録と再設定で HIBP の k-匿名の照合をし、漏れていれば 400 | FREQ-323-AC-01 漏れたパスワードで 400 になり、外へ出る URL に本体と6文字目以降が無い | `e2e/FR-SIGNUP-002-register-api-and-password-policy.spec.ts:128` |
 | FREQ-323 漏れたパスワードを断り、最小の長さを 16 文字にする | FREQ-323-REQ-02 外の API に届かない時は止めず、監査に残す | FREQ-323-AC-02 HIBP が応答しなくても登録でき、監査に検査不能が残る | （なし） |
-| FREQ-323 漏れたパスワードを断り、最小の長さを 16 文字にする | FREQ-323-REQ-03 最小の長さを 16 文字にし、文字の種類の決まりは足さない | FREQ-323-AC-03 15 文字は断られ 16 文字は通り、記号や数字が無くても通る | （なし） |
-| FREQ-323 漏れたパスワードを断り、最小の長さを 16 文字にする | FREQ-323-REQ-04 欄に 16 文字以上と示し、再設定では placeholder だけに入れる | FREQ-323-AC-04 再設定の2つの欄の placeholder に「16+ characters」があり、「8文字以上」が無い | （なし） |
-| FREQ-327 状態を変える窓口の CSRF の守りを、守る道を並べる形から外す道だけを書く形にする | FREQ-327-REQ-01 /api の POST・PUT・PATCH・DELETE を既定で全部 Origin の確かめにかける | FREQ-327-AC-01 proxy に並べていない /api の窓口へ許可の外のオリジンから POST すると 403 | （なし） |
-| FREQ-327 状態を変える窓口の CSRF の守りを、守る道を並べる形から外す道だけを書く形にする | FREQ-327-REQ-02 外すのは、署名か共有の秘密で送り元を確かめる外からの POST だけにする | FREQ-327-AC-02 外した道への Origin 無しの POST と、/api の外への POST は 403 にならない | （なし） |
-| FREQ-327 状態を変える窓口の CSRF の守りを、守る道を並べる形から外す道だけを書く形にする | FREQ-327-REQ-03 Origin の確かめは proxy の1か所にだけ書く | FREQ-327-AC-03 許可の外のオリジンからの /api/contact への POST に proxy の応答が 403 で返る | （なし） |
-| FREQ-327 状態を変える窓口の CSRF の守りを、守る道を並べる形から外す道だけを書く形にする | FREQ-327-REQ-04 ログインした利用者の問い合わせの返信を、利用者単位で回数の制限にかける | FREQ-327-AC-04 同じ利用者の問い合わせの返信が1時間に30件を超えると 429 | （なし） |
-| FREQ-328 認証のフォームのボット検証を全画面で確かに描き、幅をそろえる | FREQ-328-REQ-01 再設定の Turnstile を useTurnstileWidget の明示の描画にそろえる | FREQ-328-AC-01 /auth/password-reset に Turnstile が描かれトークンが出る | （なし） |
-| FREQ-328 認証のフォームのボット検証を全画面で確かに描き、幅をそろえる | FREQ-328-REQ-02 flexible で描き、300px を下回る時は縮めて収める | FREQ-328-AC-02 Turnstile の幅が送信ボタン（/login では Google ボタンも）と一致する | （なし） |
-| FREQ-328 認証のフォームのボット検証を全画面で確かに描き、幅をそろえる | FREQ-328-REQ-03 横のスクロールを起こさない | FREQ-328-AC-03 375px で横のスクロールが出ない | （なし） |
-| FREQ-328 認証のフォームのボット検証を全画面で確かに描き、幅をそろえる | FREQ-328-REQ-04 CTA の前の間隔は直前の要素の下端から測る | FREQ-328-AC-04 送信ボタンの直前の要素との間隔が 21px | （なし） |
-| FREQ-329 再設定のメールを送った後はフォームを畳み、結果の画面を出す | FREQ-329-REQ-01 送信に成功したら欄・ウィジェット・ボタンを消し結果だけを出す | FREQ-329-AC-01 送信の後に送信ボタンと Email の欄が出ない | （なし） |
-| FREQ-329 再設定のメールを送った後はフォームを畳み、結果の画面を出す | FREQ-329-REQ-02 結果に迷惑メールの確認と「再送で前のリンクは無効」を出し、宛先は出さない | FREQ-329-AC-02 「再送信すると前回のリンクは無効です」が出て宛先が出ない | （なし） |
-| FREQ-329 再設定のメールを送った後はフォームを畳み、結果の画面を出す | FREQ-329-REQ-03 再送は 60 秒待たせ、待つ間は残り時間だけを出す | FREQ-329-AC-03 送信の直後に残り時間が出て「再送信する」が無い | （なし） |
-| FREQ-329 再設定のメールを送った後はフォームを畳み、結果の画面を出す | FREQ-329-REQ-04 再送が 429 なら Retry-After を待ちに入れ、上限の旨を出す | FREQ-329-AC-04 再送が 429 の時に上限の文が出て「再送信する」が無い | （なし） |
-| FREQ-329 再設定のメールを送った後はフォームを畳み、結果の画面を出す | FREQ-329-REQ-05 パスワードの更新の完了も同じ結果の画面にし、主の操作を「ログインへ」にする | FREQ-329-AC-05 更新の成功の後に「パスワードを更新しました」と「ログインへ」が出る | （なし） |
-| FREQ-330 Turnstile のトークンを使い捨てにし、送るたびに引き直す | FREQ-330-REQ-01 送った直後に成否によらずウィジェットをリセットする | FREQ-330-AC-01 ログインの再試行で2回目に違うトークンを送る | （なし） |
-| FREQ-330 Turnstile のトークンを使い捨てにし、送るたびに引き直す | FREQ-330-REQ-01 送った直後に成否によらずウィジェットをリセットする | FREQ-330-AC-03 再設定の再試行で2回目に違うトークンを送る | （なし） |
+| FREQ-323 漏れたパスワードを断り、最小の長さを 16 文字にする | FREQ-323-REQ-03 最小の長さを 16 文字にし、文字の種類の決まりは足さない | FREQ-323-AC-03 15 文字は断られ 16 文字は通り、記号や数字が無くても通る | `e2e/FR-SIGNUP-002-register-api-and-password-policy.spec.ts:143` |
+| FREQ-323 漏れたパスワードを断り、最小の長さを 16 文字にする | FREQ-323-REQ-04 欄に 16 文字以上と示し、再設定では placeholder だけに入れる | FREQ-323-AC-04 再設定の2つの欄の placeholder に「16+ characters」があり、「8文字以上」が無い | `e2e/FR-PWRESET-003-password-policy.spec.ts:17`<br>`e2e/FR-PWRESET-003-password-policy.spec.ts:41` |
+| FREQ-327 状態を変える窓口の CSRF の守りを、守る道を並べる形から外す道だけを書く形にする | FREQ-327-REQ-01 /api の POST・PUT・PATCH・DELETE を既定で全部 Origin の確かめにかける | FREQ-327-AC-01 proxy に並べていない /api の窓口へ許可の外のオリジンから POST すると 403 | `e2e/FR-LOGIN-037-proxy-origin-csrf.spec.ts:19` |
+| FREQ-327 状態を変える窓口の CSRF の守りを、守る道を並べる形から外す道だけを書く形にする | FREQ-327-REQ-02 外すのは、署名か共有の秘密で送り元を確かめる外からの POST だけにする | FREQ-327-AC-02 外した道への Origin 無しの POST と、/api の外への POST は 403 にならない | `e2e/FR-LOGIN-037-proxy-origin-csrf.spec.ts:38` |
+| FREQ-327 状態を変える窓口の CSRF の守りを、守る道を並べる形から外す道だけを書く形にする | FREQ-327-REQ-03 Origin の確かめは proxy の1か所にだけ書く | FREQ-327-AC-03 許可の外のオリジンからの /api/contact への POST に proxy の応答が 403 で返る | `e2e/FR-LOGIN-037-proxy-origin-csrf.spec.ts:61` |
+| FREQ-327 状態を変える窓口の CSRF の守りを、守る道を並べる形から外す道だけを書く形にする | FREQ-327-REQ-04 ログインした利用者の問い合わせの返信を、利用者単位で回数の制限にかける | FREQ-327-AC-04 同じ利用者の問い合わせの返信が1時間に30件を超えると 429 | `e2e/FR-LOGIN-037-proxy-origin-csrf.spec.ts:78` |
+| FREQ-328 認証のフォームのボット検証を全画面で確かに描き、幅をそろえる | FREQ-328-REQ-01 再設定の Turnstile を useTurnstileWidget の明示の描画にそろえる | FREQ-328-AC-01 /auth/password-reset に Turnstile が描かれトークンが出る | `e2e/FR-PWRESET-004-turnstile-widget-render.spec.ts:20` |
+| FREQ-328 認証のフォームのボット検証を全画面で確かに描き、幅をそろえる | FREQ-328-REQ-02 flexible で描き、300px を下回る時は縮めて収める | FREQ-328-AC-02 Turnstile の幅が送信ボタン（/login では Google ボタンも）と一致する | `e2e/FR-LOGIN-025-turnstile-width-fit.spec.ts:51`<br>`e2e/FR-LOGIN-025-turnstile-width-fit.spec.ts:64` |
+| FREQ-328 認証のフォームのボット検証を全画面で確かに描き、幅をそろえる | FREQ-328-REQ-03 横のスクロールを起こさない | FREQ-328-AC-03 375px で横のスクロールが出ない | `e2e/FR-LOGIN-025-turnstile-width-fit.spec.ts:77`<br>`e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts:96` |
+| FREQ-328 認証のフォームのボット検証を全画面で確かに描き、幅をそろえる | FREQ-328-REQ-04 CTA の前の間隔は直前の要素の下端から測る | FREQ-328-AC-04 送信ボタンの直前の要素との間隔が 21px | `e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts:132` |
+| FREQ-329 再設定のメールを送った後はフォームを畳み、結果の画面を出す | FREQ-329-REQ-01 送信に成功したら欄・ウィジェット・ボタンを消し結果だけを出す | FREQ-329-AC-01 送信の後に送信ボタンと Email の欄が出ない | `e2e/FR-PWRESET-005-reset-mail-sent-screen.spec.ts:43` |
+| FREQ-329 再設定のメールを送った後はフォームを畳み、結果の画面を出す | FREQ-329-REQ-02 結果に迷惑メールの確認と「再送で前のリンクは無効」を出し、宛先は出さない | FREQ-329-AC-02 「再送信すると前回のリンクは無効です」が出て宛先が出ない | `e2e/FR-PWRESET-005-reset-mail-sent-screen.spec.ts:51` |
+| FREQ-329 再設定のメールを送った後はフォームを畳み、結果の画面を出す | FREQ-329-REQ-03 再送は 60 秒待たせ、待つ間は残り時間だけを出す | FREQ-329-AC-03 送信の直後に残り時間が出て「再送信する」が無い | `e2e/FR-PWRESET-005-reset-mail-sent-screen.spec.ts:61` |
+| FREQ-329 再設定のメールを送った後はフォームを畳み、結果の画面を出す | FREQ-329-REQ-04 再送が 429 なら Retry-After を待ちに入れ、上限の旨を出す | FREQ-329-AC-04 再送が 429 の時に上限の文が出て「再送信する」が無い | `e2e/FR-PWRESET-005-reset-mail-sent-screen.spec.ts:94` |
+| FREQ-329 再設定のメールを送った後はフォームを畳み、結果の画面を出す | FREQ-329-REQ-05 パスワードの更新の完了も同じ結果の画面にし、主の操作を「ログインへ」にする | FREQ-329-AC-05 更新の成功の後に「パスワードを更新しました」と「ログインへ」が出る | `e2e/FR-PWRESET-001-visual-consistency-with-login.spec.ts:152`<br>`e2e/FR-PWRESET-005-reset-mail-sent-screen.spec.ts:68` |
+| FREQ-330 Turnstile のトークンを使い捨てにし、送るたびに引き直す | FREQ-330-REQ-01 送った直後に成否によらずウィジェットをリセットする | FREQ-330-AC-01 ログインの再試行で2回目に違うトークンを送る | `e2e/FR-LOGIN-026-turnstile-token-single-use.spec.ts:44` |
+| FREQ-330 Turnstile のトークンを使い捨てにし、送るたびに引き直す | FREQ-330-REQ-01 送った直後に成否によらずウィジェットをリセットする | FREQ-330-AC-03 再設定の再試行で2回目に違うトークンを送る | `e2e/FR-LOGIN-026-turnstile-token-single-use.spec.ts:128` |
 | FREQ-330 Turnstile のトークンを使い捨てにし、送るたびに引き直す | FREQ-330-REQ-02 リセットの手段を useTurnstileWidget に集める | FREQ-330-REQ-02-AC-01 ログイン・会員登録・再設定のウィジェットの引き直しが useTurnstileWidget の1か所にある | （なし） |
-| FREQ-330 Turnstile のトークンを使い捨てにし、送るたびに引き直す | FREQ-330-REQ-03 ログイン・OTP の再送・会員登録・再設定の全部の送信に当てる | FREQ-330-AC-02 OTP の再送が /api/auth/login/resend へ本文なしで送られる | （なし） |
-| FREQ-330 Turnstile のトークンを使い捨てにし、送るたびに引き直す | FREQ-330-REQ-03 ログイン・OTP の再送・会員登録・再設定の全部の送信に当てる | FREQ-330-AC-03 再設定の再試行で2回目に違うトークンを送る | （なし） |
-| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-01 結果の画面の先頭に、封筒か南京錠の図と完了のバッジを置く | FREQ-331-AC-01 送信の後に封筒の図が出て南京錠が出ない（完了の画面は逆） | （なし） |
-| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-02 結果の画面ではページの見出しを描かず、結果の題を h1 にする | FREQ-331-AC-02 送信の後の h1 が1つで「再設定メールを送信しました」 | （なし） |
-| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-03 注意書きをグレーの面と情報のアイコンの左寄せのパネルにする | FREQ-331-AC-03 注意書きが背景 rgb(237, 237, 237) の左寄せの要素の中にある | （なし） |
-| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-04 縦の隙間をまとまりの遠さで4段にし、黄金比で割った値にする | FREQ-331-AC-04 隙間が ① < ② < ③ < ④ で、④ の3か所が 3px 未満の差でそろう | （なし） |
-| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-05 結果の題をどの幅でも1行に収める | FREQ-331-AC-05 送信の後と完了の画面で h1 が1行 | （なし） |
-| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-06 注意書きを3行に分け、各行を 17 文字以内にする | FREQ-331-AC-06 注意書きが3行で、どの行も1行に収まる | （なし） |
-| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-07 図・題・詳細の中の隙間を、外の隙間より明らかに狭くする | FREQ-331-AC-07 図・題・詳細の中の隙間がパネルまでの隙間の半分以下 | （なし） |
-| FREQ-332 再設定のリンクから確認の画面を挟まず新しいパスワードの入力へ進み、期限を 10 分にする | FREQ-332-REQ-01 /auth/password-reset/verify に着いたら link の POST を1回だけ自動で送る | FREQ-332-AC-01 verify を開くと「パスワードを再設定する」が出ず、link の POST がちょうど1回 | （なし） |
-| FREQ-332 再設定のリンクから確認の画面を挟まず新しいパスワードの入力へ進み、期限を 10 分にする | FREQ-332-REQ-02 有効なリンクからは新しいパスワードの欄へ直に着く | FREQ-332-AC-02 link の POST が通ると New Password の欄が出る | （なし） |
-| FREQ-332 再設定のリンクから確認の画面を挟まず新しいパスワードの入力へ進み、期限を 10 分にする | FREQ-332-REQ-03 自動の送信が通信の誤りで失敗した時だけ再試行の手段を出す | FREQ-332-AC-03 link の POST が通信の誤りの時に再試行のボタンが出る | （なし） |
-| FREQ-332 再設定のリンクから確認の画面を挟まず新しいパスワードの入力へ進み、期限を 10 分にする | FREQ-332-REQ-04 トークンと再設定の Cookie の寿命を 10 分にし、メールに期限を書く | FREQ-332-AC-04 expires_at が 10 分後、Cookie の Max-Age が 600、本文に「10分間有効」 | （なし） |
-| FREQ-333 再設定で新しいパスワードを2回入れさせ、打ち間違いをその場で捕まえる | FREQ-333-REQ-01 確認の欄を設け、2つが一致しない限り送らない。一致の確かめは長さの後 | FREQ-333-AC-01 2つが違うと「パスワードが一致しません」が出て confirm が送られない | （なし） |
-| FREQ-333 再設定で新しいパスワードを2回入れさせ、打ち間違いをその場で捕まえる | FREQ-333-REQ-02 2つの欄の文字を New Password・Confirm New Password (16+ characters) にし、確認の欄にも表示切替を置く | FREQ-333-AC-02 確認の欄に表示切替があり、2つの placeholder が決まりどおり | （なし） |
-| FREQ-333 再設定で新しいパスワードを2回入れさせ、打ち間違いをその場で捕まえる | FREQ-333-REQ-03 2つが埋まるまで送れず、確認の欄の値はサーバーへ送らない | FREQ-333-AC-03 片方だけでは更新ボタンが無効で、送る本文のキーが new_password だけ | （なし） |
-| FREQ-333 再設定で新しいパスワードを2回入れさせ、打ち間違いをその場で捕まえる | FREQ-333-REQ-04 再設定のモードではメールの欄を出さない | FREQ-333-AC-04 再設定のモードで #email が無い | （なし） |
-| FREQ-334 ログインの第2要素（メール OTP）の入力を専用の画面にする | FREQ-334-REQ-01 OTP の入力を /login/verify に置き、2FA の Cookie が有効な時だけ出す | FREQ-334-AC-01 2FA の Cookie なしで /login/verify を開くと /login へ移り、入力欄が出ない | （なし） |
-| FREQ-334 ログインの第2要素（メール OTP）の入力を専用の画面にする | FREQ-334-REQ-02 パスワードの確かめが通ったら router.replace で /login/verify へ移る | FREQ-334-AC-02 パスワードの後に /login/verify へ着き、戻るでフォームへ戻らない | （なし） |
-| FREQ-334 ログインの第2要素（メール OTP）の入力を専用の画面にする | FREQ-334-REQ-03 有効な 2FA の Cookie で /login に来たら /login/verify へ送る | FREQ-334-AC-03 有効な Cookie で /login を開くと /login/verify へ移る | （なし） |
-| FREQ-334 ログインの第2要素（メール OTP）の入力を専用の画面にする | FREQ-334-REQ-04 宛先のメールを決まった形で伏せて出す | FREQ-334-AC-04 検証の画面に生のメールが出ず、伏せた文字が出る | （なし） |
-| FREQ-334 ログインの第2要素（メール OTP）の入力を専用の画面にする | FREQ-334-REQ-05 OTP の再送をパスワード無しにし、宛先を本文に取らない | FREQ-334-AC-05 再送で /api/auth/login/resend が呼ばれ、本文にメールもパスワードも無い | （なし） |
-| FREQ-334 ログインの第2要素（メール OTP）の入力を専用の画面にする | FREQ-334-REQ-06 「別のアドレスでやり直す」で Cookie を捨ててから /login へ戻す | FREQ-334-AC-06 やり直しの後に /login/verify を開いても入力の画面が出ない | （なし） |
-| FREQ-335 メール OTP の検証の総当たりの守りを強め、トークンの用途を絞る | FREQ-335-REQ-01 /api/auth/otp/verify にアカウント単位の制限（5回／600秒）を足す | FREQ-335-AC-01 同じアカウントで誤りを5回送ると6回目が 429 で、他のアカウントは減らない | （なし） |
+| FREQ-330 Turnstile のトークンを使い捨てにし、送るたびに引き直す | FREQ-330-REQ-03 ログイン・OTP の再送・会員登録・再設定の全部の送信に当てる | FREQ-330-AC-02 OTP の再送が /api/auth/login/resend へ本文なしで送られる | `e2e/FR-LOGIN-026-turnstile-token-single-use.spec.ts:82` |
+| FREQ-330 Turnstile のトークンを使い捨てにし、送るたびに引き直す | FREQ-330-REQ-03 ログイン・OTP の再送・会員登録・再設定の全部の送信に当てる | FREQ-330-AC-03 再設定の再試行で2回目に違うトークンを送る | `e2e/FR-LOGIN-026-turnstile-token-single-use.spec.ts:128` |
+| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-01 結果の画面の先頭に、封筒か南京錠の図と完了のバッジを置く | FREQ-331-AC-01 送信の後に封筒の図が出て南京錠が出ない（完了の画面は逆） | `e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts:45`<br>`e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts:131` |
+| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-02 結果の画面ではページの見出しを描かず、結果の題を h1 にする | FREQ-331-AC-02 送信の後の h1 が1つで「再設定メールを送信しました」 | `e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts:52` |
+| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-03 注意書きをグレーの面と情報のアイコンの左寄せのパネルにする | FREQ-331-AC-03 注意書きが背景 rgb(237, 237, 237) の左寄せの要素の中にある | `e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts:66` |
+| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-04 縦の隙間をまとまりの遠さで4段にし、黄金比で割った値にする | FREQ-331-AC-04 隙間が ① < ② < ③ < ④ で、④ の3か所が 3px 未満の差でそろう | `e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts:82`<br>`e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts:230` |
+| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-05 結果の題をどの幅でも1行に収める | FREQ-331-AC-05 送信の後と完了の画面で h1 が1行 | `e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts:209` |
+| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-06 注意書きを3行に分け、各行を 17 文字以内にする | FREQ-331-AC-06 注意書きが3行で、どの行も1行に収まる | `e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts:157` |
+| FREQ-331 再設定のメールを送った後の画面を、結果が一目で読める階層にする | FREQ-331-REQ-07 図・題・詳細の中の隙間を、外の隙間より明らかに狭くする | FREQ-331-AC-07 図・題・詳細の中の隙間がパネルまでの隙間の半分以下 | `e2e/FR-PWRESET-006-reset-mail-sent-visual.spec.ts:176` |
+| FREQ-332 再設定のリンクから確認の画面を挟まず新しいパスワードの入力へ進み、期限を 10 分にする | FREQ-332-REQ-01 /auth/password-reset/verify に着いたら link の POST を1回だけ自動で送る | FREQ-332-AC-01 verify を開くと「パスワードを再設定する」が出ず、link の POST がちょうど1回 | `e2e/FR-PWRESET-002-password-reset-hardening.spec.ts:39`<br>`e2e/FR-PWRESET-007-verify-auto-advance.spec.ts:51` |
+| FREQ-332 再設定のリンクから確認の画面を挟まず新しいパスワードの入力へ進み、期限を 10 分にする | FREQ-332-REQ-02 有効なリンクからは新しいパスワードの欄へ直に着く | FREQ-332-AC-02 link の POST が通ると New Password の欄が出る | `e2e/FR-PWRESET-007-verify-auto-advance.spec.ts:42` |
+| FREQ-332 再設定のリンクから確認の画面を挟まず新しいパスワードの入力へ進み、期限を 10 分にする | FREQ-332-REQ-03 自動の送信が通信の誤りで失敗した時だけ再試行の手段を出す | FREQ-332-AC-03 link の POST が通信の誤りの時に再試行のボタンが出る | `e2e/FR-PWRESET-007-verify-auto-advance.spec.ts:65` |
+| FREQ-332 再設定のリンクから確認の画面を挟まず新しいパスワードの入力へ進み、期限を 10 分にする | FREQ-332-REQ-04 トークンと再設定の Cookie の寿命を 10 分にし、メールに期限を書く | FREQ-332-AC-04 expires_at が 10 分後、Cookie の Max-Age が 600、本文に「10分間有効」 | `e2e/FR-PWRESET-009-reset-link-lifecycle-real-mail.spec.ts:236` |
+| FREQ-333 再設定で新しいパスワードを2回入れさせ、打ち間違いをその場で捕まえる | FREQ-333-REQ-01 確認の欄を設け、2つが一致しない限り送らない。一致の確かめは長さの後 | FREQ-333-AC-01 2つが違うと「パスワードが一致しません」が出て confirm が送られない | `e2e/FR-PWRESET-008-confirm-password-match.spec.ts:33` |
+| FREQ-333 再設定で新しいパスワードを2回入れさせ、打ち間違いをその場で捕まえる | FREQ-333-REQ-02 2つの欄の文字を New Password・Confirm New Password (16+ characters) にし、確認の欄にも表示切替を置く | FREQ-333-AC-02 確認の欄に表示切替があり、2つの placeholder が決まりどおり | `e2e/FR-PWRESET-008-confirm-password-match.spec.ts:50` |
+| FREQ-333 再設定で新しいパスワードを2回入れさせ、打ち間違いをその場で捕まえる | FREQ-333-REQ-03 2つが埋まるまで送れず、確認の欄の値はサーバーへ送らない | FREQ-333-AC-03 片方だけでは更新ボタンが無効で、送る本文のキーが new_password だけ | `e2e/FR-PWRESET-008-confirm-password-match.spec.ts:76` |
+| FREQ-333 再設定で新しいパスワードを2回入れさせ、打ち間違いをその場で捕まえる | FREQ-333-REQ-04 再設定のモードではメールの欄を出さない | FREQ-333-AC-04 再設定のモードで #email が無い | `e2e/FR-PWRESET-008-confirm-password-match.spec.ts:69` |
+| FREQ-334 ログインの第2要素（メール OTP）の入力を専用の画面にする | FREQ-334-REQ-01 OTP の入力を /login/verify に置き、2FA の Cookie が有効な時だけ出す | FREQ-334-AC-01 2FA の Cookie なしで /login/verify を開くと /login へ移り、入力欄が出ない | `e2e/FR-LOGIN-027-otp-dedicated-screen.spec.ts:29` |
+| FREQ-334 ログインの第2要素（メール OTP）の入力を専用の画面にする | FREQ-334-REQ-02 パスワードの確かめが通ったら router.replace で /login/verify へ移る | FREQ-334-AC-02 パスワードの後に /login/verify へ着き、戻るでフォームへ戻らない | `e2e/FR-LOGIN-034-otp-verify-screen-entry-and-expiry.spec.ts:142` |
+| FREQ-334 ログインの第2要素（メール OTP）の入力を専用の画面にする | FREQ-334-REQ-03 有効な 2FA の Cookie で /login に来たら /login/verify へ送る | FREQ-334-AC-03 有効な Cookie で /login を開くと /login/verify へ移る | `e2e/FR-LOGIN-034-otp-verify-screen-entry-and-expiry.spec.ts:168` |
+| FREQ-334 ログインの第2要素（メール OTP）の入力を専用の画面にする | FREQ-334-REQ-04 宛先のメールを決まった形で伏せて出す | FREQ-334-AC-04 検証の画面に生のメールが出ず、伏せた文字が出る | `e2e/FR-LOGIN-027-otp-dedicated-screen.spec.ts:36` |
+| FREQ-334 ログインの第2要素（メール OTP）の入力を専用の画面にする | FREQ-334-REQ-05 OTP の再送をパスワード無しにし、宛先を本文に取らない | FREQ-334-AC-05 再送で /api/auth/login/resend が呼ばれ、本文にメールもパスワードも無い | `e2e/FR-LOGIN-027-otp-dedicated-screen.spec.ts:71` |
+| FREQ-334 ログインの第2要素（メール OTP）の入力を専用の画面にする | FREQ-334-REQ-06 「別のアドレスでやり直す」で Cookie を捨ててから /login へ戻す | FREQ-334-AC-06 やり直しの後に /login/verify を開いても入力の画面が出ない | `e2e/FR-LOGIN-027-otp-dedicated-screen.spec.ts:57` |
+| FREQ-335 メール OTP の検証の総当たりの守りを強め、トークンの用途を絞る | FREQ-335-REQ-01 /api/auth/otp/verify にアカウント単位の制限（5回／600秒）を足す | FREQ-335-AC-01 同じアカウントで誤りを5回送ると6回目が 429 で、他のアカウントは減らない | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:276` |
 | FREQ-335 メール OTP の検証の総当たりの守りを強め、トークンの用途を絞る | FREQ-335-REQ-02 上限に達したら 2FA の Cookie を捨てる | FREQ-335-AC-02 上限の後に /login/verify を開くと /login へ移る | `e2e/FR-LOGIN-028-otp-verify-hardening.spec.ts:12` |
 | FREQ-335 メール OTP の検証の総当たりの守りを強め、トークンの用途を絞る | FREQ-335-REQ-03 verifyOtp の type を email に固定する | FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | （なし） |
-| FREQ-335 メール OTP の検証の総当たりの守りを強め、トークンの用途を絞る | FREQ-335-REQ-04 2FA の Cookie の寿命を OTP の有効期限以下（300 秒）にする | FREQ-335-AC-04 ログインが出す sb-login-2fa-session の Max-Age が 300 | （なし） |
-| FREQ-336 ログインの第2要素まわりのレビューの指摘を直す | FREQ-336-REQ-01 保留の 2FA のセッションに発行から 30 分の絶対の上限を置き、再送で iat を引き継ぐ | FREQ-336-AC-01 発行から 30 分を超えたトークンは exp が先でも無効で、再送で上限が延びない | （なし） |
-| FREQ-336 ログインの第2要素まわりのレビューの指摘を直す | FREQ-336-REQ-02 /api/auth/login/resend に IP 単位の制限（50回／600秒）を足す | FREQ-336-AC-02 resend が IP 単位とアカウント単位の両方の制限を呼び、IP の上限で 429 | （なし） |
-| FREQ-336 ログインの第2要素まわりのレビューの指摘を直す | FREQ-336-REQ-03 /api/auth/otp/verify の本文から email を外す | FREQ-336-AC-03 otp/verify の本文が code だけで、email を混ぜても宛先が変わらない | （なし） |
-| FREQ-336 ログインの第2要素まわりのレビューの指摘を直す | FREQ-336-REQ-04 cancel の監査を、有効な保留があった時だけ残す | FREQ-336-AC-04 Cookie なしの cancel は 200 と破棄の指示を返し、監査を残さない | （なし） |
-| FREQ-336 ログインの第2要素まわりのレビューの指摘を直す | FREQ-336-REQ-05 E2E の 2FA の Cookie の偽造の道具を localhost だけで動かす | FREQ-336-AC-05 localhost・127.0.0.1 でない時に setLoginTwoFactorCookie が例外を投げる | （なし） |
+| FREQ-335 メール OTP の検証の総当たりの守りを強め、トークンの用途を絞る | FREQ-335-REQ-04 2FA の Cookie の寿命を OTP の有効期限以下（300 秒）にする | FREQ-335-AC-04 ログインが出す sb-login-2fa-session の Max-Age が 300 | `e2e/FR-LOGIN-035-login-throttling-and-turnstile.spec.ts:173` |
+| FREQ-336 ログインの第2要素まわりのレビューの指摘を直す | FREQ-336-REQ-01 保留の 2FA のセッションに発行から 30 分の絶対の上限を置き、再送で iat を引き継ぐ | FREQ-336-AC-01 発行から 30 分を超えたトークンは exp が先でも無効で、再送で上限が延びない | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:297` |
+| FREQ-336 ログインの第2要素まわりのレビューの指摘を直す | FREQ-336-REQ-02 /api/auth/login/resend に IP 単位の制限（50回／600秒）を足す | FREQ-336-AC-02 resend が IP 単位とアカウント単位の両方の制限を呼び、IP の上限で 429 | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:340` |
+| FREQ-336 ログインの第2要素まわりのレビューの指摘を直す | FREQ-336-REQ-03 /api/auth/otp/verify の本文から email を外す | FREQ-336-AC-03 otp/verify の本文が code だけで、email を混ぜても宛先が変わらない | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:379`<br>`e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:401` |
+| FREQ-336 ログインの第2要素まわりのレビューの指摘を直す | FREQ-336-REQ-04 cancel の監査を、有効な保留があった時だけ残す | FREQ-336-AC-04 Cookie なしの cancel は 200 と破棄の指示を返し、監査を残さない | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:430` |
+| FREQ-336 ログインの第2要素まわりのレビューの指摘を直す | FREQ-336-REQ-05 E2E の 2FA の Cookie の偽造の道具を localhost だけで動かす | FREQ-336-AC-05 localhost・127.0.0.1 でない時に setLoginTwoFactorCookie が例外を投げる | `e2e/FR-LOGIN-028-otp-verify-hardening.spec.ts:54` |
 | FREQ-515 管理画面とログインの確認の選択欄で、選んだ値を使う | FREQ-515-REQ-01 選択欄は部品に合う受け方で選んだ値を受け、ログインの確認では選んだ認証要素で確かめる | FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | （なし） |
-| FREQ-515 管理画面とログインの確認の選択欄で、選んだ値を使う | FREQ-515-REQ-01 選択欄は部品に合う受け方で選んだ値を受け、ログインの確認では選んだ認証要素で確かめる | FREQ-515-AC-02 ログインの確認で2つ目の認証要素を選んでコードを送ると、2つ目で確かめる | （なし） |
+| FREQ-515 管理画面とログインの確認の選択欄で、選んだ値を使う | FREQ-515-REQ-01 選択欄は部品に合う受け方で選んだ値を受け、ログインの確認では選んだ認証要素で確かめる | FREQ-515-AC-02 ログインの確認で2つ目の認証要素を選んでコードを送ると、2つ目で確かめる | `e2e/FR-LOGIN-033-verify-screen-and-admin-refresh-mocks.spec.ts:66` |
 | FREQ-515 管理画面とログインの確認の選択欄で、選んだ値を使う | FREQ-515-REQ-01 選択欄は部品に合う受け方で選んだ値を受け、ログインの確認では選んだ認証要素で確かめる | FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | （なし） |
-| THR-AUTH-001 パスワードの総当たり・リスト型攻撃 | SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める | SEC-AUTH-001-AC-01 同じメールで6回目のログインが 429 になる | （なし） |
-| THR-AUTH-001 パスワードの総当たり・リスト型攻撃 | SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める | SEC-AUTH-001-AC-02 Turnstile に落ちた送信はメールの枠を減らさない | （なし） |
-| THR-AUTH-002 メール OTP の総当たり | SEC-AUTH-002 メール OTP の検証は総当たりを保留の宛先単位で止め、上限で保留を捨てる | SEC-AUTH-002-AC-01 誤ったコードを6回送ると保留が消える | （なし） |
-| THR-AUTH-002 メール OTP の総当たり | SEC-AUTH-002 メール OTP の検証は総当たりを保留の宛先単位で止め、上限で保留を捨てる | SEC-AUTH-002-AC-02 本文に別の宛先を書いても、数えるのは保留の宛先 | （なし） |
-| THR-AUTH-003 パスワードを通らずにメール OTP だけでログインする | SEC-AUTH-003 OTP の検証は、パスワード確認済みの署名した保留が無ければ断る | SEC-AUTH-003-AC-01 保留の Cookie が無い OTP の送信は 401 | （なし） |
-| THR-AUTH-003 パスワードを通らずにメール OTP だけでログインする | SEC-AUTH-003 OTP の検証は、パスワード確認済みの署名した保留が無ければ断る | SEC-AUTH-003-AC-02 署名を書き換えた保留の Cookie は 401 | （なし） |
-| THR-AUTH-004 保留の2段目の状態を延ばす・宛先を差し替える | SEC-AUTH-004 保留の2段目は 30 分の絶対上限を持ち、再送は保留の宛先にだけ送る | SEC-AUTH-004-AC-01 30 分を過ぎた保留での再送は 401 | （なし） |
-| THR-AUTH-004 保留の2段目の状態を延ばす・宛先を差し替える | SEC-AUTH-004 保留の2段目は 30 分の絶対上限を持ち、再送は保留の宛先にだけ送る | SEC-AUTH-004-AC-02 本文に別の宛先を書いても、再送は保留の宛先にだけ届く | （なし） |
-| THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす | SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする | SEC-AUTH-005-AC-01 Supabase Auth の password grant で得た JWT ではアプリの会員の窓口が通らない | （なし） |
-| THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす | SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする | SEC-AUTH-005-AC-02 同じ JWT で PostgREST から `profiles` と注文が読めない | （なし） |
-| THR-AUTH-006 メールの確認のリンクの入口で、パスワードとメール OTP を飛ばす | SEC-AUTH-006 メールの確認のリンクの入口は、会員登録の確認だけを受ける | SEC-AUTH-006-AC-01 マジックリンクの印で確認のリンクを開いても session ができない | （なし） |
-| THR-AUTH-006 メールの確認のリンクの入口で、パスワードとメール OTP を飛ばす | SEC-AUTH-006 メールの確認のリンクの入口は、会員登録の確認だけを受ける | SEC-AUTH-006-AC-02 会員登録の確認の印では今どおり session ができる | （なし） |
-| THR-AUTH-007 他人の端末を攻撃者のアカウントでログインさせる（ログインの CSRF） | SEC-AUTH-007 確認のリンクで、開いた端末を印を作った人以外のアカウントでログインさせない | SEC-AUTH-007-AC-01 登録を始めていない端末で確認のリンクを開いても、黙ってログインしない | （なし） |
+| THR-AUTH-001 パスワードの総当たり・リスト型攻撃 | SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める | SEC-AUTH-001-AC-01 同じメールで6回目のログインが 429 になる | `e2e/FR-LOGIN-035-login-throttling-and-turnstile.spec.ts:118` |
+| THR-AUTH-001 パスワードの総当たり・リスト型攻撃 | SEC-AUTH-001 ログインはパスワードの総当たりを IP とメールの2段で止める | SEC-AUTH-001-AC-02 Turnstile に落ちた送信はメールの枠を減らさない | `e2e/FR-LOGIN-035-login-throttling-and-turnstile.spec.ts:148` |
+| THR-AUTH-002 メール OTP の総当たり | SEC-AUTH-002 メール OTP の検証は総当たりを保留の宛先単位で止め、上限で保留を捨てる | SEC-AUTH-002-AC-01 誤ったコードを6回送ると保留が消える | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:453` |
+| THR-AUTH-002 メール OTP の総当たり | SEC-AUTH-002 メール OTP の検証は総当たりを保留の宛先単位で止め、上限で保留を捨てる | SEC-AUTH-002-AC-02 本文に別の宛先を書いても、数えるのは保留の宛先 | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:487` |
+| THR-AUTH-003 パスワードを通らずにメール OTP だけでログインする | SEC-AUTH-003 OTP の検証は、パスワード確認済みの署名した保留が無ければ断る | SEC-AUTH-003-AC-01 保留の Cookie が無い OTP の送信は 401 | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:517` |
+| THR-AUTH-003 パスワードを通らずにメール OTP だけでログインする | SEC-AUTH-003 OTP の検証は、パスワード確認済みの署名した保留が無ければ断る | SEC-AUTH-003-AC-02 署名を書き換えた保留の Cookie は 401 | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:533` |
+| THR-AUTH-004 保留の2段目の状態を延ばす・宛先を差し替える | SEC-AUTH-004 保留の2段目は 30 分の絶対上限を持ち、再送は保留の宛先にだけ送る | SEC-AUTH-004-AC-01 30 分を過ぎた保留での再送は 401 | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:565` |
+| THR-AUTH-004 保留の2段目の状態を延ばす・宛先を差し替える | SEC-AUTH-004 保留の2段目は 30 分の絶対上限を持ち、再送は保留の宛先にだけ送る | SEC-AUTH-004-AC-02 本文に別の宛先を書いても、再送は保留の宛先にだけ届く | `e2e/FR-LOGIN-036-otp-verify-and-resend-pending-cookie.spec.ts:584` |
+| THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす | SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする | SEC-AUTH-005-AC-01 Supabase Auth の password grant で得た JWT ではアプリの会員の窓口が通らない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:237` |
+| THR-AUTH-005 アプリを通らず Supabase Auth を直接呼んでメール OTP の2段目を飛ばす | SEC-AUTH-005 2段階のログインを、Supabase Auth を直接呼ぶ道でも飛ばせないようにする | SEC-AUTH-005-AC-02 同じ JWT で PostgREST から `profiles` と注文が読めない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:261` |
+| THR-AUTH-006 メールの確認のリンクの入口で、パスワードとメール OTP を飛ばす | SEC-AUTH-006 メールの確認のリンクの入口は、会員登録の確認だけを受ける | SEC-AUTH-006-AC-01 マジックリンクの印で確認のリンクを開いても session ができない | `e2e/FR-SIGNUP-003-signup-confirm-link.spec.ts:290` |
+| THR-AUTH-006 メールの確認のリンクの入口で、パスワードとメール OTP を飛ばす | SEC-AUTH-006 メールの確認のリンクの入口は、会員登録の確認だけを受ける | SEC-AUTH-006-AC-02 会員登録の確認の印は、登録を始めたブラウザで開くと今どおり session ができる | `e2e/FR-SIGNUP-003-signup-confirm-link.spec.ts:317` |
+| THR-AUTH-007 他人の端末を攻撃者のアカウントでログインさせる（ログインの CSRF） | SEC-AUTH-007 確認のリンクで、開いた端末を印を作った人以外のアカウントでログインさせない | SEC-AUTH-007-AC-01 登録を始めていないブラウザで確認のリンクを開くと、メールは確認されるがログインしない | `e2e/FR-SIGNUP-003-signup-confirm-link.spec.ts:343` |
 | THR-AUTH-008 Google でのログインがメール OTP を通らない | SEC-AUTH-008 Google でのログインは、管理者・サポーターに TOTP を求め、会員の2段目の扱いを明示する | SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | （なし） |
-| THR-AUTH-009 TOTP の総当たり | SEC-AUTH-009 TOTP の確認はアカウント単位でも回数を制限し、成否を監査に残す | SEC-AUTH-009-AC-01 同じ利用者の6回目の TOTP の確認が 429 | （なし） |
-| THR-AUTH-009 TOTP の総当たり | SEC-AUTH-009 TOTP の確認はアカウント単位でも回数を制限し、成否を監査に残す | SEC-AUTH-009-AC-02 TOTP の失敗が監査に残る | （なし） |
-| THR-AUTH-010 TOTP を済ませていない管理者の JWT で DB を直接触る | SEC-AUTH-010 管理の権限で触る表は、DB の側でも aal2 の JWT だけを受ける | SEC-AUTH-010-AC-01 aal1 の管理者の JWT で、他人の注文が読めない | （なし） |
-| THR-AUTH-010 TOTP を済ませていない管理者の JWT で DB を直接触る | SEC-AUTH-010 管理の権限で触る表は、DB の側でも aal2 の JWT だけを受ける | SEC-AUTH-010-AC-02 aal2 の管理者の JWT では今どおり読める | （なし） |
-| THR-AUTH-011 認証の表の権限が広く、RLS の拒否だけで守っている | SEC-AUTH-011 認証の表は anon・authenticated に表の権限を付けない | SEC-AUTH-011-AC-01 anon・会員の JWT で認証の表を読むと権限の誤りになる | （なし） |
-| THR-AUTH-012 直接の RPC で会員の有無を調べる・他人のセッションを切る | SEC-AUTH-012 認証の関数は service role だけが呼べる | SEC-AUTH-012-AC-01 anon・会員の JWT で認証の関数を呼ぶと権限の誤りになる | （なし） |
-| THR-AUTH-013 回数の制限を IP の偽り・窓の境目で越える、全員を止める | SEC-AUTH-013 回数の制限は偽れない送り元で数え、Supabase 側の枠を全員で潰されないようにする | SEC-AUTH-013-AC-01 `x-forwarded-for` を毎回変えても IP 単位の制限が効く | （なし） |
+| THR-AUTH-009 TOTP の総当たり | SEC-AUTH-009 TOTP の確認はアカウント単位でも回数を制限し、成否を監査に残す | SEC-AUTH-009-AC-01 同じ利用者の6回目の TOTP の確認が 429 | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:351` |
+| THR-AUTH-009 TOTP の総当たり | SEC-AUTH-009 TOTP の確認はアカウント単位でも回数を制限し、成否を監査に残す | SEC-AUTH-009-AC-02 TOTP の失敗が監査に残る | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:367` |
+| THR-AUTH-010 TOTP を済ませていない管理者の JWT で DB を直接触る | SEC-AUTH-010 管理の権限で触る表は、DB の側でも aal2 の JWT だけを受ける | SEC-AUTH-010-AC-01 aal1 の管理者の JWT で、他人の注文が読めない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:285` |
+| THR-AUTH-010 TOTP を済ませていない管理者の JWT で DB を直接触る | SEC-AUTH-010 管理の権限で触る表は、DB の側でも aal2 の JWT だけを受ける | SEC-AUTH-010-AC-02 aal2 の管理者の JWT では今どおり読める | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:381` |
+| THR-AUTH-011 認証の表の権限が広く、RLS の拒否だけで守っている | SEC-AUTH-011 認証の表は anon・authenticated に表の権限を付けない | SEC-AUTH-011-AC-01 anon・会員の JWT で認証の表を読むと権限の誤りになる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:328` |
+| THR-AUTH-012 直接の RPC で会員の有無を調べる・他人のセッションを切る | SEC-AUTH-012 認証の関数は service role だけが呼べる | SEC-AUTH-012-AC-01 anon・会員の JWT で認証の関数を呼ぶと権限の誤りになる | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:368` |
+| THR-AUTH-013 回数の制限を IP の偽り・窓の境目で越える、全員を止める | SEC-AUTH-013 回数の制限は偽れない送り元で数え、Supabase 側の枠を全員で潰されないようにする | SEC-AUTH-013-AC-01 `x-forwarded-for` を毎回変えても IP 単位の制限が効く | `e2e/FR-LOGIN-035-login-throttling-and-turnstile.spec.ts:227` |
 | THR-AUTH-013 回数の制限を IP の偽り・窓の境目で越える、全員を止める | SEC-AUTH-013 回数の制限は偽れない送り元で数え、Supabase 側の枠を全員で潰されないようにする | SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | （なし） |
-| THR-AUTH-014 漏洩済み・短いパスワードを使わせる | SEC-AUTH-014 会員登録と再設定は 16 文字以上・漏洩していないパスワードだけを受ける | SEC-AUTH-014-AC-01 漏洩済みのパスワードでの会員登録が 400 | （なし） |
-| THR-AUTH-014 漏洩済み・短いパスワードを使わせる | SEC-AUTH-014 会員登録と再設定は 16 文字以上・漏洩していないパスワードだけを受ける | SEC-AUTH-014-AC-02 15 文字のパスワードでの再設定が 400 | （なし） |
-| THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-01 直接の `/auth/v1/signup` で 15 文字のパスワードの登録ができない | （なし） |
-| THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-02 直接の `/auth/v1/user` で再認証なしにパスワードを変えられない | （なし） |
+| THR-AUTH-014 漏洩済み・短いパスワードを使わせる | SEC-AUTH-014 会員登録と再設定は 16 文字以上・漏洩していないパスワードだけを受ける | SEC-AUTH-014-AC-01 漏洩済みのパスワードでの会員登録が 400 | `e2e/FR-SIGNUP-002-register-api-and-password-policy.spec.ts:168` |
+| THR-AUTH-014 漏洩済み・短いパスワードを使わせる | SEC-AUTH-014 会員登録と再設定は 16 文字以上・漏洩していないパスワードだけを受ける | SEC-AUTH-014-AC-02 15 文字のパスワードでの再設定が 400 | `e2e/FR-PWRESET-010-reset-completion-security.spec.ts:157` |
+| THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-01 直接の `/auth/v1/signup` で 15 文字のパスワードの登録ができない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:396` |
+| THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-02 直接の `/auth/v1/user` で再認証なしにパスワードを変えられない | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:427` |
 | THR-AUTH-015 アプリを通らない会員登録・パスワード変更で、パスワードの決まりと Turnstile を飛ばす | SEC-AUTH-015 Supabase Auth を直接呼ぶ会員登録・パスワード変更にも、アプリと同じ決まりを課す | SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | （なし） |
-| THR-AUTH-016 会員登録・再設定でアカウントの有無を知られる、メールの踏み台にされる | SEC-AUTH-016 会員登録と再設定は、アカウントの有無で応答の中身と時間を変えない | SEC-AUTH-016-AC-01 登録済みと未登録のメールで会員登録の応答が同じ | （なし） |
-| THR-AUTH-016 会員登録・再設定でアカウントの有無を知られる、メールの踏み台にされる | SEC-AUTH-016 会員登録と再設定は、アカウントの有無で応答の中身と時間を変えない | SEC-AUTH-016-AC-02 未登録のメールで再設定を申請してもメールが届かない | （なし） |
-| THR-AUTH-016 会員登録・再設定でアカウントの有無を知られる、メールの踏み台にされる | SEC-AUTH-016 会員登録と再設定は、アカウントの有無で応答の中身と時間を変えない | SEC-AUTH-016-AC-03 同じ宛先への会員登録を続けると、宛先単位の上限で断られる | （なし） |
-| THR-AUTH-017 管理の登録の経路が公開の窓口に同居する | SEC-AUTH-017 管理の会員作成は公開の会員登録の窓口で受けない | SEC-AUTH-017-AC-01 管理の鍵を付けて登録済みのメールを送っても 409 にならない | （なし） |
-| THR-AUTH-018 パスワード再設定のリンクの漏れ・使い回し | SEC-AUTH-018 再設定のリンクの印は 10 分・1回限り・最新の1本だけで、使い終わった行は残さない | SEC-AUTH-018-AC-01 使い終わったリンクをもう一度開いても再設定できない | （なし） |
-| THR-AUTH-018 パスワード再設定のリンクの漏れ・使い回し | SEC-AUTH-018 再設定のリンクの印は 10 分・1回限り・最新の1本だけで、使い終わった行は残さない | SEC-AUTH-018-AC-02 新しく申請すると前のリンクが使えない | （なし） |
+| THR-AUTH-016 会員登録・再設定でアカウントの有無を知られる、メールの踏み台にされる | SEC-AUTH-016 会員登録と再設定は、アカウントの有無で応答の中身と時間を変えない | SEC-AUTH-016-AC-01 登録済みと未登録のメールで会員登録の応答が同じ | `e2e/FR-SIGNUP-002-register-api-and-password-policy.spec.ts:180` |
+| THR-AUTH-016 会員登録・再設定でアカウントの有無を知られる、メールの踏み台にされる | SEC-AUTH-016 会員登録と再設定は、アカウントの有無で応答の中身と時間を変えない | SEC-AUTH-016-AC-02 未登録のメールで再設定を申請してもメールが届かない | `e2e/FR-PWRESET-009-reset-link-lifecycle-real-mail.spec.ts:276` |
+| THR-AUTH-016 会員登録・再設定でアカウントの有無を知られる、メールの踏み台にされる | SEC-AUTH-016 会員登録と再設定は、アカウントの有無で応答の中身と時間を変えない | SEC-AUTH-016-AC-03 同じ宛先への会員登録を続けると、宛先単位の上限で断られる | `e2e/FR-SIGNUP-002-register-api-and-password-policy.spec.ts:200` |
+| THR-AUTH-017 管理の登録の経路が公開の窓口に同居する | SEC-AUTH-017 管理の会員作成は公開の会員登録の窓口で受けない | SEC-AUTH-017-AC-01 管理の鍵を付けて登録済みのメールを送っても 409 にならない | `e2e/FR-SIGNUP-002-register-api-and-password-policy.spec.ts:225` |
+| THR-AUTH-018 パスワード再設定のリンクの漏れ・使い回し | SEC-AUTH-018 再設定のリンクの印は 10 分・1回限り・最新の1本だけで、使い終わった行は残さない | SEC-AUTH-018-AC-01 使い終わったリンクをもう一度開いても再設定できない | `e2e/FR-PWRESET-009-reset-link-lifecycle-real-mail.spec.ts:144` |
+| THR-AUTH-018 パスワード再設定のリンクの漏れ・使い回し | SEC-AUTH-018 再設定のリンクの印は 10 分・1回限り・最新の1本だけで、使い終わった行は残さない | SEC-AUTH-018-AC-02 新しく申請すると前のリンクが使えない | `e2e/FR-PWRESET-009-reset-link-lifecycle-real-mail.spec.ts:170` |
 | THR-AUTH-019 メールのリンクの住所を差し替える | SEC-AUTH-019 確認・再設定のメールのリンクは許可した住所だけで作る | SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | （なし） |
-| THR-AUTH-020 パスワードを変えた後も盗まれたセッションが残る | SEC-AUTH-020 パスワードを変えたら、その利用者の全部のセッションを切り、切れなければ気づけるようにする | SEC-AUTH-020-AC-01 再設定の後、別の端末のセッションが 401 になる | （なし） |
-| THR-AUTH-021 ログアウトしてもサーバーのセッションが残る | SEC-AUTH-021 ログアウトはサーバーのセッションを切り、Cookie を必ず消す | SEC-AUTH-021-AC-01 ログアウトの前の refresh token が使えない | （なし） |
-| THR-AUTH-022 トークン・秘密を JS が読める所に出す、応答がキャッシュに残る | SEC-AUTH-022 トークンと利用者の記録を応答の本文に出さず、認証の応答はキャッシュさせない | SEC-AUTH-022-AC-01 トークンの更新と OTP の検証の応答の本文にトークンが無い | （なし） |
-| THR-AUTH-022 トークン・秘密を JS が読める所に出す、応答がキャッシュに残る | SEC-AUTH-022 トークンと利用者の記録を応答の本文に出さず、認証の応答はキャッシュさせない | SEC-AUTH-022-AC-02 認証の応答に no-store が付く | （なし） |
+| THR-AUTH-020 パスワードを変えた後も盗まれたセッションが残る | SEC-AUTH-020 パスワードを変えたら、その利用者の全部のセッションを切り、切れなければ気づけるようにする | SEC-AUTH-020-AC-01 再設定の後、別の端末のセッションが 401 になる | `e2e/FR-PWRESET-010-reset-completion-security.spec.ts:182` |
+| THR-AUTH-021 ログアウトしてもサーバーのセッションが残る | SEC-AUTH-021 ログアウトはサーバーのセッションを切り、Cookie を必ず消す | SEC-AUTH-021-AC-01 ログアウトの前の refresh token が使えない | `e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts:174` |
+| THR-AUTH-022 トークン・秘密を JS が読める所に出す、応答がキャッシュに残る | SEC-AUTH-022 トークンと利用者の記録を応答の本文に出さず、認証の応答はキャッシュさせない | SEC-AUTH-022-AC-01 トークンの更新と OTP の検証の応答の本文にトークンが無い | `e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts:206` |
+| THR-AUTH-022 トークン・秘密を JS が読める所に出す、応答がキャッシュに残る | SEC-AUTH-022 トークンと利用者の記録を応答の本文に出さず、認証の応答はキャッシュさせない | SEC-AUTH-022-AC-02 認証の応答に no-store が付く | `e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts:231` |
 | THR-AUTH-023 Google でのログインが JS から読める Cookie にトークンを書く | SEC-AUTH-023 Google でのログインは、トークンを JS が読める Cookie に残さない | SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | （なし） |
-| THR-AUTH-024 認証の Cookie の属性が弱い | SEC-AUTH-024 認証の Cookie は HttpOnly・Secure・SameSite を付ける | SEC-AUTH-024-AC-01 ログインの後の Cookie の属性が決まりどおり | （なし） |
-| THR-AUTH-025 状態を変える認証の窓口への CSRF | SEC-AUTH-025 状態を変える認証の窓口は、許可したオリジンからの送信だけを受ける | SEC-AUTH-025-AC-01 別のオリジンからの再設定の完了が 403 | （なし） |
-| THR-AUTH-026 `/auth/callback` の画面からの open redirect | SEC-AUTH-026 ログインの後の送り先は、内部の道だけにする | SEC-AUTH-026-AC-01 `/auth/callback?next=//evil.example` で外へ出ない | （なし） |
-| THR-AUTH-027 1つの鍵で複数の署名を兼ねる | SEC-AUTH-027 署名した Cookie は用途ごとに別の鍵で署名する | SEC-AUTH-027-AC-01 再設定の Cookie を保留の2段目の Cookie に入れても通らない | （なし） |
-| THR-AUTH-028 画面の表示だけで管理の入口を出し分ける | SEC-AUTH-028 管理の入口の出し分けは表示だけとし、役割は利用者が書き換えられない所から読む | SEC-AUTH-028-AC-01 一般の会員のヘッダーに MANAGE・LOADING が出ない | （なし） |
-| THR-AUTH-028 画面の表示だけで管理の入口を出し分ける | SEC-AUTH-028 管理の入口の出し分けは表示だけとし、役割は利用者が書き換えられない所から読む | SEC-AUTH-028-AC-02 `user_metadata` に admin を書いた会員は管理の窓口が 403 | （なし） |
-| THR-AUTH-029 本番の Supabase Auth の設定が守りの前提と違う | SEC-AUTH-029 本番の Supabase Auth の設定を、コードの守りの前提に合わせて確かめる | SEC-AUTH-029-AC-01 会員登録の応答が 201 にならない | （なし） |
-| THR-AUTH-029 本番の Supabase Auth の設定が守りの前提と違う | SEC-AUTH-029 本番の Supabase Auth の設定を、コードの守りの前提に合わせて確かめる | SEC-AUTH-029-AC-02 5 分を過ぎたメール OTP が通らない | （なし） |
-| THR-AUTH-030 認証の出来事が監査に残らない | SEC-AUTH-030 認証の出来事は成功も失敗も監査に残す | SEC-AUTH-030-AC-01 TOTP の登録と確認の成功が監査に残る | （なし） |
-| THR-AUTH-030 認証の出来事が監査に残らない | SEC-AUTH-030 認証の出来事は成功も失敗も監査に残す | SEC-AUTH-030-AC-02 ログインの失敗が伏せた形で監査に残る | （なし） |
-| THR-AUTH-031 管理者・サポーターの初めての TOTP の登録を先に取られる | SEC-AUTH-031 管理者・サポーターの初めての TOTP の登録は、本人の確かめを済ませた経路に限る | SEC-AUTH-031-AC-01 メール OTP を通っていない aal1 の session では初めての TOTP を登録できない | （なし） |
-| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FREQ-25-REQ-01 CONTACT タブで一覧・詳細・返信・状態の変更・テンプレートの作成から削除までが動く | FREQ-25-AC-01 返信が顧客へメールで届き、スレッドに出る | （なし） |
-| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FR-ADMIN-009 CONTACT タブで問い合わせの一覧・詳細・返信・状態の変更・テンプレートの管理をする | FR-ADMIN-009-AC-01 管理画面に CONTACT のタブが出て、押すと問い合わせの一覧が表示される | （なし） |
-| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FR-ADMIN-009 CONTACT タブで問い合わせの一覧・詳細・返信・状態の変更・テンプレートの管理をする | FR-ADMIN-009-AC-02 一覧が最後のやり取りの新しい順に 20 件ずつ出て、状態・種別・検索語で絞れる | （なし） |
-| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FR-ADMIN-009 CONTACT タブで問い合わせの一覧・詳細・返信・状態の変更・テンプレートの管理をする | FR-ADMIN-009-AC-03 詳細に名前・メール・種別・件名・注文番号とやり取りが古い順に出る | （なし） |
-| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FR-ADMIN-009 CONTACT タブで問い合わせの一覧・詳細・返信・状態の変更・テンプレートの管理をする | FR-ADMIN-009-AC-04 状態を4つの値のどれかに変えられ、ほかの値は断る | （なし） |
-| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FR-ADMIN-009 CONTACT タブで問い合わせの一覧・詳細・返信・状態の変更・テンプレートの管理をする | FR-ADMIN-009-AC-05 返信のテンプレートを作り・直し・消せ、選ぶと返信の本文に入る | （なし） |
-| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FR-ADMIN-009 CONTACT タブで問い合わせの一覧・詳細・返信・状態の変更・テンプレートの管理をする | FR-ADMIN-009-AC-06 閲覧の権限が無いと読めず、管理の権限が無いと返信・状態の変更・テンプレートの変更ができない | （なし） |
-| FREQ-508 監査ログを読む権限を店長に付ける | FREQ-508-REQ-01 監査ログの権限を登録して店長だけに付け、ほかの結び付きを保つ | FREQ-508-AC-01 店長だけに閲覧の権限が付き、権限のある店長に監査ログの一覧が表示される | （なし） |
-| FREQ-508 監査ログを読む権限を店長に付ける | FREQ-508-REQ-01 監査ログの権限を登録して店長だけに付け、ほかの結び付きを保つ | FREQ-508-AC-02 店長以外には付けず、権限が無ければ店長でも 403 で監査ログを読まない | （なし） |
+| THR-AUTH-024 認証の Cookie の属性が弱い | SEC-AUTH-024 認証の Cookie は HttpOnly・Secure・SameSite を付ける | SEC-AUTH-024-AC-01 ログインの後の Cookie の属性が決まりどおり | `e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts:286` |
+| THR-AUTH-025 状態を変える認証の窓口への CSRF | SEC-AUTH-025 状態を変える認証の窓口は、許可したオリジンからの送信だけを受ける | SEC-AUTH-025-AC-01 別のオリジンからの再設定の完了が 403 | `e2e/FR-LOGIN-037-proxy-origin-csrf.spec.ts:105` |
+| THR-AUTH-026 `/auth/callback` の画面からの open redirect | SEC-AUTH-026 ログインの後の送り先は、内部の道だけにする | SEC-AUTH-026-AC-01 `/auth/callback?next=//evil.example` で外へ出ない | `e2e/FR-LOGIN-030-session-cookies-and-responses.spec.ts:337` |
+| THR-AUTH-027 1つの鍵で複数の署名を兼ねる | SEC-AUTH-027 署名した Cookie は用途ごとに別の鍵で署名する | SEC-AUTH-027-AC-01 再設定の Cookie を保留の2段目の Cookie に入れても通らない | `e2e/FR-PWRESET-010-reset-completion-security.spec.ts:221` |
+| THR-AUTH-028 画面の表示だけで管理の入口を出し分ける | SEC-AUTH-028 管理の入口の出し分けは表示だけとし、役割は利用者が書き換えられない所から読む | SEC-AUTH-028-AC-01 一般の会員のヘッダーに MANAGE・LOADING が出ない | `e2e/FR-LOGIN-033-verify-screen-and-admin-refresh-mocks.spec.ts:173` |
+| THR-AUTH-028 画面の表示だけで管理の入口を出し分ける | SEC-AUTH-028 管理の入口の出し分けは表示だけとし、役割は利用者が書き換えられない所から読む | SEC-AUTH-028-AC-02 `user_metadata` に admin を書いた会員は管理の窓口が 403 | `e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts:456` |
+| THR-AUTH-029 本番の Supabase Auth の設定が守りの前提と違う | SEC-AUTH-029 本番の Supabase Auth の設定を、コードの守りの前提に合わせて確かめる | SEC-AUTH-029-AC-01 会員登録の応答が 201 にならない | `e2e/FR-SIGNUP-002-register-api-and-password-policy.spec.ts:244` |
+| THR-AUTH-029 本番の Supabase Auth の設定が守りの前提と違う | SEC-AUTH-029 本番の Supabase Auth の設定を、コードの守りの前提に合わせて確かめる | SEC-AUTH-029-AC-02 5 分を過ぎたメール OTP が通らない | `e2e/FR-LOGIN-034-otp-verify-screen-entry-and-expiry.spec.ts:280` |
+| THR-AUTH-030 認証の出来事が監査に残らない | SEC-AUTH-030 認証の出来事は成功も失敗も監査に残す | SEC-AUTH-030-AC-01 TOTP の登録と確認の成功が監査に残る | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:401` |
+| THR-AUTH-030 認証の出来事が監査に残らない | SEC-AUTH-030 認証の出来事は成功も失敗も監査に残す | SEC-AUTH-030-AC-02 ログインの失敗が伏せた形で監査に残る | `e2e/FR-LOGIN-035-login-throttling-and-turnstile.spec.ts:200` |
+| THR-AUTH-031 管理者・サポーターの初めての TOTP の登録を先に取られる | SEC-AUTH-031 管理者・サポーターの初めての TOTP の登録は、本人の確かめを済ませた経路に限る | SEC-AUTH-031-AC-01 メール OTP を通っていない aal1 の session では初めての TOTP を登録できない | `e2e/FR-LOGIN-032-admin-totp-aal2.spec.ts:418` |
+| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FREQ-25-REQ-01 CONTACT タブで一覧・詳細・返信・状態の変更・テンプレートの作成から削除までが動く | FREQ-25-AC-01 返信が顧客へメールで届き、スレッドに出る | `e2e/FR-ADMIN-MISC-007-contact-reply-mail-and-threading.spec.ts:259` |
+| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FR-ADMIN-009 CONTACT タブで問い合わせの一覧・詳細・返信・状態の変更・テンプレートの管理をする | FR-ADMIN-009-AC-01 管理画面に CONTACT のタブが出て、押すと問い合わせの一覧が表示される | `e2e/FR-ADMIN-MISC-006-contact-management.spec.ts:241` |
+| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FR-ADMIN-009 CONTACT タブで問い合わせの一覧・詳細・返信・状態の変更・テンプレートの管理をする | FR-ADMIN-009-AC-02 一覧が最後のやり取りの新しい順に 20 件ずつ出て、状態・種別・検索語で絞れる | `e2e/FR-ADMIN-MISC-006-contact-management.spec.ts:286` |
+| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FR-ADMIN-009 CONTACT タブで問い合わせの一覧・詳細・返信・状態の変更・テンプレートの管理をする | FR-ADMIN-009-AC-03 詳細に名前・メール・種別・件名・注文番号とやり取りが古い順に出る | `e2e/FR-ADMIN-MISC-006-contact-management.spec.ts:360` |
+| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FR-ADMIN-009 CONTACT タブで問い合わせの一覧・詳細・返信・状態の変更・テンプレートの管理をする | FR-ADMIN-009-AC-04 状態を4つの値のどれかに変えられ、ほかの値は断る | `e2e/FR-ADMIN-MISC-006-contact-management.spec.ts:399` |
+| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FR-ADMIN-009 CONTACT タブで問い合わせの一覧・詳細・返信・状態の変更・テンプレートの管理をする | FR-ADMIN-009-AC-05 返信のテンプレートを作り・直し・消せ、選ぶと返信の本文に入る | `e2e/FR-ADMIN-MISC-006-contact-management.spec.ts:261`<br>`e2e/FR-ADMIN-MISC-006-contact-management.spec.ts:433` |
+| FREQ-25 管理画面で問い合わせを確認し、テンプレートを選んで返信する | FR-ADMIN-009 CONTACT タブで問い合わせの一覧・詳細・返信・状態の変更・テンプレートの管理をする | FR-ADMIN-009-AC-06 閲覧の権限が無いと読めず、管理の権限が無いと返信・状態の変更・テンプレートの変更ができない | `e2e/FR-ADMIN-MISC-006-contact-management.spec.ts:520` |
+| FREQ-508 監査ログを読む権限を店長に付ける | FREQ-508-REQ-01 監査ログの権限を登録して店長だけに付け、ほかの結び付きを保つ | FREQ-508-AC-01 店長だけに閲覧の権限が付き、権限のある店長に監査ログの一覧が表示される | `e2e/FR-ADMIN-MISC-004-audit-log-read.spec.ts:136` |
+| FREQ-508 監査ログを読む権限を店長に付ける | FREQ-508-REQ-01 監査ログの権限を登録して店長だけに付け、ほかの結び付きを保つ | FREQ-508-AC-02 店長以外には付けず、権限が無ければ店長でも 403 で監査ログを読まない | `e2e/FR-ADMIN-MISC-004-audit-log-read.spec.ts:172` |
 | FREQ-508 監査ログを読む権限を店長に付ける | FREQ-508-REQ-01 監査ログの権限を登録して店長だけに付け、ほかの結び付きを保つ | FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | （なし） |
-| THR-ADMIN-001 権限の無い人が管理 API を直接呼ぶ | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-01 JWT の無い要求を 401 で断る | （なし） |
-| THR-ADMIN-001 権限の無い人が管理 API を直接呼ぶ | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-02 2要素を済ませていない session の JWT を 403 で断る | （なし） |
-| THR-ADMIN-001 権限の無い人が管理 API を直接呼ぶ | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-03 サポーターは店長だけの窓口を使えない | （なし） |
-| THR-ADMIN-001 権限の無い人が管理 API を直接呼ぶ | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-04 ユーザー作成の画面を開けても、権限が無ければ作れない | （なし） |
-| THR-ADMIN-002 2要素認証を済ませていない、または失効した session の JWT で色見本を DB に直接書く | SEC-ADMIN-002 DB の直接の読み書きも aal2 と有効な session を求める | SEC-ADMIN-002-AC-01 aal1 の JWT で色見本を直接書けない | （なし） |
-| THR-ADMIN-002 2要素認証を済ませていない、または失効した session の JWT で色見本を DB に直接書く | SEC-ADMIN-002 DB の直接の読み書きも aal2 と有効な session を求める | SEC-ADMIN-002-AC-02 強制失効の後の JWT で色見本を直接読めない | （なし） |
-| THR-ADMIN-003 表の権限が anon・authenticated に全部付き、RLS だけが守りになる | SEC-ADMIN-003 管理の表は anon・authenticated の直接の読み書きを、方針と表の権限の両方で断る | SEC-ADMIN-003-AC-01 anon と一般会員の JWT で管理の表を読めない・書けない | （なし） |
+| THR-ADMIN-001 権限の無い人が管理 API を直接呼ぶ | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-01 JWT の無い要求を 401 で断る | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:164` |
+| THR-ADMIN-001 権限の無い人が管理 API を直接呼ぶ | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-02 2要素を済ませていない session の JWT を 403 で断る | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:199` |
+| THR-ADMIN-001 権限の無い人が管理 API を直接呼ぶ | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-03 サポーターは店長だけの窓口を使えない | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:229` |
+| THR-ADMIN-001 権限の無い人が管理 API を直接呼ぶ | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-04 ユーザー作成の画面を開けても、権限が無ければ作れない | `e2e/FR-ADMIN-MISC-002-create-user-screen-and-api.spec.ts:133` |
+| THR-ADMIN-002 2要素認証を済ませていない、または失効した session の JWT で色見本を DB に直接書く | SEC-ADMIN-002 DB の直接の読み書きも aal2 と有効な session を求める | SEC-ADMIN-002-AC-01 aal1 の JWT で色見本を直接書けない | `e2e/FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access.spec.ts:157` |
+| THR-ADMIN-002 2要素認証を済ませていない、または失効した session の JWT で色見本を DB に直接書く | SEC-ADMIN-002 DB の直接の読み書きも aal2 と有効な session を求める | SEC-ADMIN-002-AC-02 強制失効の後の JWT で色見本を直接読めない | `e2e/FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access.spec.ts:201` |
+| THR-ADMIN-003 表の権限が anon・authenticated に全部付き、RLS だけが守りになる | SEC-ADMIN-003 管理の表は anon・authenticated の直接の読み書きを、方針と表の権限の両方で断る | SEC-ADMIN-003-AC-01 anon と一般会員の JWT で管理の表を読めない・書けない | `e2e/FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access.spec.ts:248` |
 | THR-ADMIN-003 表の権限が anon・authenticated に全部付き、RLS だけが守りになる | SEC-ADMIN-003 管理の表は anon・authenticated の直接の読み書きを、方針と表の権限の両方で断る | SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | （なし） |
-| THR-ADMIN-004 特権の RPC を利用者の JWT で直接呼び、他人の session を消す | SEC-ADMIN-004 他人の session を消す RPC は service role だけが実行できる | SEC-ADMIN-004-AC-01 anon・一般会員・店長の JWT で RPC を呼べない | （なし） |
-| THR-ADMIN-005 別のサイトが管理者のブラウザに書き込みの要求を送らせる | SEC-ADMIN-005 管理の書き込み API は、許可した Origin からの要求だけを通す | SEC-ADMIN-005-AC-01 Origin も Referer も無い書き込みを 403 で断る | （なし） |
-| THR-ADMIN-005 別のサイトが管理者のブラウザに書き込みの要求を送らせる | SEC-ADMIN-005 管理の書き込み API は、許可した Origin からの要求だけを通す | SEC-ADMIN-005-AC-02 別のオリジンからの書き込みを 403 で断る | （なし） |
-| THR-ADMIN-006 管理の書き込み API を回数の制限なしに繰り返す | SEC-ADMIN-006 管理の書き込み API に管理者単位の回数の制限をかける | SEC-ADMIN-006-AC-01 回数を超えた書き込みを 429 で断る | （なし） |
-| THR-ADMIN-006 管理の書き込み API を回数の制限なしに繰り返す | SEC-ADMIN-006 管理の書き込み API に管理者単位の回数の制限をかける | SEC-ADMIN-006-AC-02 送る IP の見出しを変えても数え直されない | （なし） |
-| THR-ADMIN-007 認可に失敗する要求を繰り返して監査ログを水増しする | SEC-ADMIN-007 認可に失敗した要求で監査ログを無制限に増やさない | SEC-ADMIN-007-AC-01 JWT の無い強制失効の要求を繰り返しても監査ログが際限なく増えない | （なし） |
-| THR-ADMIN-008 監査ログに個人情報や内部の誤りの文が平文で残る | SEC-ADMIN-008 監査ログに個人情報・理由の文・内部の誤りの文を平文で残さない | SEC-ADMIN-008-AC-01 MFA のリセットの記録に対象のメールと理由の文が平文で出ない | （なし） |
-| THR-ADMIN-008 監査ログに個人情報や内部の誤りの文が平文で残る | SEC-ADMIN-008 監査ログに個人情報・理由の文・内部の誤りの文を平文で残さない | SEC-ADMIN-008-AC-02 ユーザー作成の失敗の記録に Supabase の誤りの文が出ない | （なし） |
-| THR-ADMIN-009 監査ログの IP を送る側が偽る | SEC-ADMIN-009 監査ログの IP は、信頼できる中継が付けた値から取る | SEC-ADMIN-009-AC-01 送る側が足した IP が監査ログに残らない | （なし） |
+| THR-ADMIN-004 特権の RPC を利用者の JWT で直接呼び、他人の session を消す | SEC-ADMIN-004 他人の session を消す RPC は service role だけが実行できる | SEC-ADMIN-004-AC-01 anon・一般会員・店長の JWT で RPC を呼べない | `e2e/FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access.spec.ts:329` |
+| THR-ADMIN-005 別のサイトが管理者のブラウザに書き込みの要求を送らせる | SEC-ADMIN-005 管理の書き込み API は、許可した Origin からの要求だけを通す | SEC-ADMIN-005-AC-01 Origin も Referer も無い書き込みを 403 で断る | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:327` |
+| THR-ADMIN-005 別のサイトが管理者のブラウザに書き込みの要求を送らせる | SEC-ADMIN-005 管理の書き込み API は、許可した Origin からの要求だけを通す | SEC-ADMIN-005-AC-02 別のオリジンからの書き込みを 403 で断る | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:337` |
+| THR-ADMIN-006 管理の書き込み API を回数の制限なしに繰り返す | SEC-ADMIN-006 管理の書き込み API に管理者単位の回数の制限をかける | SEC-ADMIN-006-AC-01 回数を超えた書き込みを 429 で断る | `e2e/FR-ADMIN-MISC-007-contact-reply-mail-and-threading.spec.ts:289` |
+| THR-ADMIN-006 管理の書き込み API を回数の制限なしに繰り返す | SEC-ADMIN-006 管理の書き込み API に管理者単位の回数の制限をかける | SEC-ADMIN-006-AC-02 送る IP の見出しを変えても数え直されない | `e2e/FR-ADMIN-MISC-007-contact-reply-mail-and-threading.spec.ts:314` |
+| THR-ADMIN-007 認可に失敗する要求を繰り返して監査ログを水増しする | SEC-ADMIN-007 認可に失敗した要求で監査ログを無制限に増やさない | SEC-ADMIN-007-AC-01 JWT の無い強制失効の要求を繰り返しても監査ログが際限なく増えない | `e2e/FR-ADMIN-MISC-003-session-revocation-and-mfa-reset.spec.ts:193` |
+| THR-ADMIN-008 監査ログに個人情報や内部の誤りの文が平文で残る | SEC-ADMIN-008 監査ログに個人情報・理由の文・内部の誤りの文を平文で残さない | SEC-ADMIN-008-AC-01 MFA のリセットの記録に対象のメールと理由の文が平文で出ない | `e2e/FR-ADMIN-MISC-003-session-revocation-and-mfa-reset.spec.ts:225` |
+| THR-ADMIN-008 監査ログに個人情報や内部の誤りの文が平文で残る | SEC-ADMIN-008 監査ログに個人情報・理由の文・内部の誤りの文を平文で残さない | SEC-ADMIN-008-AC-02 ユーザー作成の失敗の記録に Supabase の誤りの文が出ない | `e2e/FR-ADMIN-MISC-002-create-user-screen-and-api.spec.ts:163` |
+| THR-ADMIN-009 監査ログの IP を送る側が偽る | SEC-ADMIN-009 監査ログの IP は、信頼できる中継が付けた値から取る | SEC-ADMIN-009-AC-01 送る側が足した IP が監査ログに残らない | `e2e/FR-ADMIN-MISC-003-session-revocation-and-mfa-reset.spec.ts:248` |
 | THR-ADMIN-010 監査ログを消す・書き換える | SEC-ADMIN-010 監査ログは追記だけにし、消去と書き換えを検知できるようにする | SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | （なし） |
 | THR-ADMIN-010 監査ログを消す・書き換える | SEC-ADMIN-010 監査ログは追記だけにし、消去と書き換えを検知できるようにする | SEC-ADMIN-010-AC-02 保持の期間を過ぎた行は写しを残してから消える | （なし） |
-| THR-ADMIN-011 監査ログを権限の無い人が読む・読み出しで個人情報が出る | SEC-ADMIN-011 監査ログは閲覧の権限を持つ人だけが、安全な列だけを読める | SEC-ADMIN-011-AC-01 店長の応答に行為者のメール・IP・ブラウザの情報・metadata が出ない | （なし） |
-| THR-ADMIN-012 管理者が作るユーザーに弱いパスワードや漏れたパスワードを付ける | SEC-ADMIN-012 管理者が作るユーザーのパスワードにも、会員と同じ長さと漏洩の照合を当てる | SEC-ADMIN-012-AC-01 15 文字のパスワードでの作成を断る | （なし） |
+| THR-ADMIN-011 監査ログを権限の無い人が読む・読み出しで個人情報が出る | SEC-ADMIN-011 監査ログは閲覧の権限を持つ人だけが、安全な列だけを読める | SEC-ADMIN-011-AC-01 店長の応答に行為者のメール・IP・ブラウザの情報・metadata が出ない | `e2e/FR-ADMIN-MISC-004-audit-log-read.spec.ts:207` |
+| THR-ADMIN-012 管理者が作るユーザーに弱いパスワードや漏れたパスワードを付ける | SEC-ADMIN-012 管理者が作るユーザーのパスワードにも、会員と同じ長さと漏洩の照合を当てる | SEC-ADMIN-012-AC-01 15 文字のパスワードでの作成を断る | `e2e/FR-ADMIN-MISC-002-create-user-screen-and-api.spec.ts:198` |
 | THR-ADMIN-012 管理者が作るユーザーに弱いパスワードや漏れたパスワードを付ける | SEC-ADMIN-012 管理者が作るユーザーのパスワードにも、会員と同じ長さと漏洩の照合を当てる | SEC-ADMIN-012-AC-02 漏れたパスワードでの作成を断る | （なし） |
-| THR-ADMIN-013 ユーザー作成の入力の確かめが緩い | SEC-ADMIN-013 ユーザー作成・強制失効・色見本の入力を型と長さで確かめ、壊れた本文を 400 で断る | SEC-ADMIN-013-AC-01 長すぎる表示名での作成を断る | （なし） |
-| THR-ADMIN-013 ユーザー作成の入力の確かめが緩い | SEC-ADMIN-013 ユーザー作成・強制失効・色見本の入力を型と長さで確かめ、壊れた本文を 400 で断る | SEC-ADMIN-013-AC-02 壊れた JSON と UUID でない id を 400 で断る | （なし） |
-| THR-ADMIN-014 MFA のリセットで別の特権者の2要素を外す | SEC-ADMIN-014 MFA のリセットは DB の ACL で対象の役割を決め、消した後に対象の session を失効させる | SEC-ADMIN-014-AC-01 ACL で特権を外した人の MFA はリセットしない | （なし） |
-| THR-ADMIN-014 MFA のリセットで別の特権者の2要素を外す | SEC-ADMIN-014 MFA のリセットは DB の ACL で対象の役割を決め、消した後に対象の session を失効させる | SEC-ADMIN-014-AC-02 リセットの後、対象の session が全部失効する | （なし） |
-| THR-ADMIN-015 強制失効で店長を締め出す | SEC-ADMIN-015 強制失効は自分自身と存在しない利用者を断る | SEC-ADMIN-015-AC-01 自分自身の失効を断る | （なし） |
-| THR-ADMIN-015 強制失効で店長を締め出す | SEC-ADMIN-015 強制失効は自分自身と存在しない利用者を断る | SEC-ADMIN-015-AC-02 存在しない利用者の失効を 404 で断る | （なし） |
-| THR-ADMIN-016 強制失効が一部だけ効き、成功と記録される | SEC-ADMIN-002 DB の直接の読み書きも aal2 と有効な session を求める | SEC-ADMIN-002-AC-01 aal1 の JWT で色見本を直接書けない | （なし） |
-| THR-ADMIN-016 強制失効が一部だけ効き、成功と記録される | SEC-ADMIN-002 DB の直接の読み書きも aal2 と有効な session を求める | SEC-ADMIN-002-AC-02 強制失効の後の JWT で色見本を直接読めない | （なし） |
-| THR-ADMIN-016 強制失効が一部だけ効き、成功と記録される | SEC-ADMIN-016 強制失効は、自前と Auth の session の両方を消せた時だけ成功を返す | SEC-ADMIN-016-AC-01 失効の後、自前と Auth の session が全部止まる | （なし） |
-| THR-ADMIN-017 第三者が問い合わせのスレッドにメールで書き込む | SEC-ADMIN-017 問い合わせの返信の宛先は、推測できない印でスレッドに結ぶ | SEC-ADMIN-017-AC-01 印を変えた宛先への返信はスレッドに出ない | （なし） |
+| THR-ADMIN-013 ユーザー作成の入力の確かめが緩い | SEC-ADMIN-013 ユーザー作成・強制失効・色見本の入力を型と長さで確かめ、壊れた本文を 400 で断る | SEC-ADMIN-013-AC-01 長すぎる表示名での作成を断る | `e2e/FR-ADMIN-MISC-002-create-user-screen-and-api.spec.ts:210` |
+| THR-ADMIN-013 ユーザー作成の入力の確かめが緩い | SEC-ADMIN-013 ユーザー作成・強制失効・色見本の入力を型と長さで確かめ、壊れた本文を 400 で断る | SEC-ADMIN-013-AC-02 壊れた JSON と UUID でない id を 400 で断る | `e2e/FR-ADMIN-MISC-002-create-user-screen-and-api.spec.ts:223`<br>`e2e/FR-ADMIN-MISC-002-create-user-screen-and-api.spec.ts:232` |
+| THR-ADMIN-014 MFA のリセットで別の特権者の2要素を外す | SEC-ADMIN-014 MFA のリセットは DB の ACL で対象の役割を決め、消した後に対象の session を失効させる | SEC-ADMIN-014-AC-01 ACL で特権を外した人の MFA はリセットしない | `e2e/FR-ADMIN-MISC-003-session-revocation-and-mfa-reset.spec.ts:278` |
+| THR-ADMIN-014 MFA のリセットで別の特権者の2要素を外す | SEC-ADMIN-014 MFA のリセットは DB の ACL で対象の役割を決め、消した後に対象の session を失効させる | SEC-ADMIN-014-AC-02 リセットの後、対象の session が全部失効する | `e2e/FR-ADMIN-MISC-003-session-revocation-and-mfa-reset.spec.ts:301` |
+| THR-ADMIN-015 強制失効で店長を締め出す | SEC-ADMIN-015 強制失効は自分自身と存在しない利用者を断る | SEC-ADMIN-015-AC-01 自分自身の失効を断る | `e2e/FR-ADMIN-MISC-003-session-revocation-and-mfa-reset.spec.ts:319` |
+| THR-ADMIN-015 強制失効で店長を締め出す | SEC-ADMIN-015 強制失効は自分自身と存在しない利用者を断る | SEC-ADMIN-015-AC-02 存在しない利用者の失効を 404 で断る | `e2e/FR-ADMIN-MISC-003-session-revocation-and-mfa-reset.spec.ts:338` |
+| THR-ADMIN-016 強制失効が一部だけ効き、成功と記録される | SEC-ADMIN-002 DB の直接の読み書きも aal2 と有効な session を求める | SEC-ADMIN-002-AC-01 aal1 の JWT で色見本を直接書けない | `e2e/FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access.spec.ts:157` |
+| THR-ADMIN-016 強制失効が一部だけ効き、成功と記録される | SEC-ADMIN-002 DB の直接の読み書きも aal2 と有効な session を求める | SEC-ADMIN-002-AC-02 強制失効の後の JWT で色見本を直接読めない | `e2e/FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access.spec.ts:201` |
+| THR-ADMIN-016 強制失効が一部だけ効き、成功と記録される | SEC-ADMIN-016 強制失効は、自前と Auth の session の両方を消せた時だけ成功を返す | SEC-ADMIN-016-AC-01 失効の後、自前と Auth の session が全部止まる | `e2e/FR-ADMIN-MISC-003-session-revocation-and-mfa-reset.spec.ts:359` |
+| THR-ADMIN-017 第三者が問い合わせのスレッドにメールで書き込む | SEC-ADMIN-017 問い合わせの返信の宛先は、推測できない印でスレッドに結ぶ | SEC-ADMIN-017-AC-01 印を変えた宛先への返信はスレッドに出ない | `e2e/FR-ADMIN-MISC-007-contact-reply-mail-and-threading.spec.ts:346` |
 | THR-ADMIN-017 第三者が問い合わせのスレッドにメールで書き込む | SEC-ADMIN-017 問い合わせの返信の宛先は、推測できない印でスレッドに結ぶ | SEC-ADMIN-017-AC-02 秘密が未設定なら Reply-To の無いメールを送る | （なし） |
-| THR-ADMIN-018 問い合わせの件名に改行を入れ、管理の返信のメールの見出しを足させる | SEC-ADMIN-018 管理の返信のメールの件名に改行を残さない | SEC-ADMIN-018-AC-01 改行入りの件名に返信しても、送るメールの件名に改行が無い | （なし） |
-| THR-ADMIN-019 検索語で PostgREST の絞り込みを壊す | SEC-ADMIN-019 問い合わせの検索語は、絞り込みの区切りの字を消して長さを切ってから使う | SEC-ADMIN-019-AC-01 区切りの字を含む検索語で、ほかの条件が足されない | （なし） |
-| THR-ADMIN-020 問い合わせの個人情報を、役割に要らない分まで読める | SEC-ADMIN-020 問い合わせの詳細の個人情報は、役割に要る分だけ返す | SEC-ADMIN-020-AC-01 サポーターの詳細に IP とブラウザの情報が出ない | （なし） |
-| THR-ADMIN-021 存在しない対象や DB の誤りでも成功と返し、操作の結果を取り違える | SEC-ADMIN-021 管理の書き込みは、対象が無い時と誤りの時に成功を返さない | SEC-ADMIN-021-AC-01 存在しない id への変更を 404 で返し、成功を記録しない | （なし） |
+| THR-ADMIN-018 問い合わせの件名に改行を入れ、管理の返信のメールの見出しを足させる | SEC-ADMIN-018 管理の返信のメールの件名に改行を残さない | SEC-ADMIN-018-AC-01 改行入りの件名に返信しても、送るメールの件名に改行が無い | `e2e/FR-ADMIN-MISC-007-contact-reply-mail-and-threading.spec.ts:385` |
+| THR-ADMIN-019 検索語で PostgREST の絞り込みを壊す | SEC-ADMIN-019 問い合わせの検索語は、絞り込みの区切りの字を消して長さを切ってから使う | SEC-ADMIN-019-AC-01 区切りの字を含む検索語で、ほかの条件が足されない | `e2e/FR-ADMIN-MISC-006-contact-management.spec.ts:599` |
+| THR-ADMIN-020 問い合わせの個人情報を、役割に要らない分まで読める | SEC-ADMIN-020 問い合わせの詳細の個人情報は、役割に要る分だけ返す | SEC-ADMIN-020-AC-01 サポーターの詳細に IP とブラウザの情報が出ない | `e2e/FR-ADMIN-MISC-006-contact-management.spec.ts:629` |
+| THR-ADMIN-021 存在しない対象や DB の誤りでも成功と返し、操作の結果を取り違える | SEC-ADMIN-021 管理の書き込みは、対象が無い時と誤りの時に成功を返さない | SEC-ADMIN-021-AC-01 存在しない id への変更を 404 で返し、成功を記録しない | `e2e/FR-ADMIN-MISC-006-contact-management.spec.ts:651` |
 | THR-ADMIN-021 存在しない対象や DB の誤りでも成功と返し、操作の結果を取り違える | SEC-ADMIN-021 管理の書き込みは、対象が無い時と誤りの時に成功を返さない | SEC-ADMIN-021-AC-02 メールを送らなかった返信は mailSent を false で返す | （なし） |
-| THR-ADMIN-022 管理の変更が行為者付きで記録に残らない | SEC-ADMIN-022 管理の変更は全部、行為者の id・メール・IP 付きで監査ログに残す | SEC-ADMIN-022-AC-01 色見本の作成と削除が行為者付きで記録される | （なし） |
-| THR-ADMIN-022 管理の変更が行為者付きで記録に残らない | SEC-ADMIN-022 管理の変更は全部、行為者の id・メール・IP 付きで監査ログに残す | SEC-ADMIN-022-AC-02 問い合わせの変更の記録に行為者のメールと IP が入る | （なし） |
-| THR-ADMIN-023 管理の画面を誰でも開ける | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-01 JWT の無い要求を 401 で断る | （なし） |
-| THR-ADMIN-023 管理の画面を誰でも開ける | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-02 2要素を済ませていない session の JWT を 403 で断る | （なし） |
-| THR-ADMIN-023 管理の画面を誰でも開ける | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-03 サポーターは店長だけの窓口を使えない | （なし） |
-| THR-ADMIN-023 管理の画面を誰でも開ける | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-04 ユーザー作成の画面を開けても、権限が無ければ作れない | （なし） |
-| THR-ADMIN-024 画面から使われない管理の窓口と関数が残り、攻撃の面を広げる | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-01 JWT の無い要求を 401 で断る | （なし） |
-| THR-ADMIN-024 画面から使われない管理の窓口と関数が残り、攻撃の面を広げる | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-02 2要素を済ませていない session の JWT を 403 で断る | （なし） |
-| THR-ADMIN-024 画面から使われない管理の窓口と関数が残り、攻撃の面を広げる | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-03 サポーターは店長だけの窓口を使えない | （なし） |
-| THR-ADMIN-024 画面から使われない管理の窓口と関数が残り、攻撃の面を広げる | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-04 ユーザー作成の画面を開けても、権限が無ければ作れない | （なし） |
-| THR-ADMIN-024 画面から使われない管理の窓口と関数が残り、攻撃の面を広げる | SEC-ADMIN-006 管理の書き込み API に管理者単位の回数の制限をかける | SEC-ADMIN-006-AC-01 回数を超えた書き込みを 429 で断る | （なし） |
-| THR-ADMIN-024 画面から使われない管理の窓口と関数が残り、攻撃の面を広げる | SEC-ADMIN-006 管理の書き込み API に管理者単位の回数の制限をかける | SEC-ADMIN-006-AC-02 送る IP の見出しを変えても数え直されない | （なし） |
-| THR-ADMIN-025 個人情報と監査ログを読んでも記録に残らず、読んだ事実を否定できる | SEC-ADMIN-023 個人情報と監査ログの読み出しを、行為者付きで監査ログに残す | SEC-ADMIN-023-AC-01 問い合わせの詳細と監査ログを読むと、読んだ人付きの記録が増える | （なし） |
+| THR-ADMIN-022 管理の変更が行為者付きで記録に残らない | SEC-ADMIN-022 管理の変更は全部、行為者の id・メール・IP 付きで監査ログに残す | SEC-ADMIN-022-AC-01 色見本の作成と削除が行為者付きで記録される | `e2e/FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access.spec.ts:372` |
+| THR-ADMIN-022 管理の変更が行為者付きで記録に残らない | SEC-ADMIN-022 管理の変更は全部、行為者の id・メール・IP 付きで監査ログに残す | SEC-ADMIN-022-AC-02 問い合わせの変更の記録に行為者のメールと IP が入る | `e2e/FR-ADMIN-MISC-007-contact-reply-mail-and-threading.spec.ts:413` |
+| THR-ADMIN-023 管理の画面を誰でも開ける | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-01 JWT の無い要求を 401 で断る | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:164` |
+| THR-ADMIN-023 管理の画面を誰でも開ける | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-02 2要素を済ませていない session の JWT を 403 で断る | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:199` |
+| THR-ADMIN-023 管理の画面を誰でも開ける | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-03 サポーターは店長だけの窓口を使えない | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:229` |
+| THR-ADMIN-023 管理の画面を誰でも開ける | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-04 ユーザー作成の画面を開けても、権限が無ければ作れない | `e2e/FR-ADMIN-MISC-002-create-user-screen-and-api.spec.ts:133` |
+| THR-ADMIN-024 画面から使われない管理の窓口と関数が残り、攻撃の面を広げる | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-01 JWT の無い要求を 401 で断る | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:164` |
+| THR-ADMIN-024 画面から使われない管理の窓口と関数が残り、攻撃の面を広げる | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-02 2要素を済ませていない session の JWT を 403 で断る | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:199` |
+| THR-ADMIN-024 画面から使われない管理の窓口と関数が残り、攻撃の面を広げる | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-03 サポーターは店長だけの窓口を使えない | `e2e/FR-ADMIN-MISC-001-admin-api-authorization-gates.spec.ts:229` |
+| THR-ADMIN-024 画面から使われない管理の窓口と関数が残り、攻撃の面を広げる | SEC-ADMIN-001 管理 API は DB の ACL・有効な session・aal2 の3つを満たす要求だけを通す | SEC-ADMIN-001-AC-04 ユーザー作成の画面を開けても、権限が無ければ作れない | `e2e/FR-ADMIN-MISC-002-create-user-screen-and-api.spec.ts:133` |
+| THR-ADMIN-024 画面から使われない管理の窓口と関数が残り、攻撃の面を広げる | SEC-ADMIN-006 管理の書き込み API に管理者単位の回数の制限をかける | SEC-ADMIN-006-AC-01 回数を超えた書き込みを 429 で断る | `e2e/FR-ADMIN-MISC-007-contact-reply-mail-and-threading.spec.ts:289` |
+| THR-ADMIN-024 画面から使われない管理の窓口と関数が残り、攻撃の面を広げる | SEC-ADMIN-006 管理の書き込み API に管理者単位の回数の制限をかける | SEC-ADMIN-006-AC-02 送る IP の見出しを変えても数え直されない | `e2e/FR-ADMIN-MISC-007-contact-reply-mail-and-threading.spec.ts:314` |
+| THR-ADMIN-025 個人情報と監査ログを読んでも記録に残らず、読んだ事実を否定できる | SEC-ADMIN-023 個人情報と監査ログの読み出しを、行為者付きで監査ログに残す | SEC-ADMIN-023-AC-01 問い合わせの詳細と監査ログを読むと、読んだ人付きの記録が増える | `e2e/FR-ADMIN-MISC-004-audit-log-read.spec.ts:250` |
 | （派生要件） | DRV-NEWS-001 分類は複数を選べ、ALL とは一緒に選べない | （なし） | （なし） |
 | （派生要件） | DRV-NEWS-002 モバイル・タブレットの FILTER のバーをヘッダーの真下に付けて一緒に動かす | （なし） | （なし） |
 | （派生要件） | DRV-NEWS-003 デスクトップの左のフィルターをヘッダーの真下に留める | （なし） | （なし） |
@@ -1024,7 +1024,7 @@
 | API-STOCKIST-005 `PATCH /api/admin/stockists/[id]` 公開の状態だけの切り替え | FR-ADMIN-006、SEC-STOCKIST-006、SEC-STOCKIST-007、ADR-0258、ADR-0259、ADR-0260、ADR-0261、ADR-0263 | `tests/integration/api/stockist-admin-item-patch-api.test.ts:209`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:227`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:241`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:255`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:268`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:278`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:299`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:316`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:333`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:347`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:356`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:370`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:388`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:407`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:424`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:437`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:456`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:472`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:484`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:495`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:524`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:533`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:549`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:557`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:565`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:573`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:585`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:594`<br>`tests/integration/api/stockist-admin-item-patch-api.test.ts:605` |
 | API-STOCKIST-006 `DELETE /api/admin/stockists/[id]` 取扱店の削除 | FR-ADMIN-006、SEC-STOCKIST-006、SEC-STOCKIST-007、ADR-0258、ADR-0259、ADR-0260、ADR-0261、ADR-0264 | `tests/integration/api/stockist-admin-item-delete-api.test.ts:201`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:219`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:233`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:247`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:260`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:270`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:291`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:308`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:325`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:339`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:348`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:362`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:380`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:399`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:416`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:429`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:448`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:464`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:476`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:487`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:513`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:523`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:531`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:539`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:551`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:560`<br>`tests/integration/api/stockist-admin-item-delete-api.test.ts:569` |
 | DATA-STOCKIST-001 取扱店の表 `stockists` | FR-ADMIN-006、FR-STOCKIST-002、DRV-STOCKIST-001、DRV-STOCKIST-015、ADR-0256、ADR-0257、ADR-0263 | `tests/integration/db/stockist_table.integration.test.ts:70`<br>`tests/integration/db/stockist_table.integration.test.ts:99`<br>`tests/integration/db/stockist_table.integration.test.ts:112`<br>`tests/integration/db/stockist_table.integration.test.ts:127`<br>`tests/integration/db/stockist_table.integration.test.ts:134`<br>`tests/integration/db/stockist_table.integration.test.ts:140`<br>`tests/integration/db/stockist_table.integration.test.ts:146`<br>`tests/integration/db/stockist_table.integration.test.ts:155`<br>`tests/integration/db/stockist_table.integration.test.ts:165`<br>`tests/integration/db/stockist_table.integration.test.ts:180`<br>`tests/integration/db/stockist_table.integration.test.ts:190`<br>`tests/integration/db/stockist_table.integration.test.ts:198`<br>`tests/integration/db/stockist_table.integration.test.ts:219`<br>`tests/integration/db/stockist_table.integration.test.ts:241` |
-| DATA-STOCKIST-002 `stockists` の RLS の方針と表の付与 | SEC-STOCKIST-001、FR-ADMIN-006、ADR-0254、ADR-0258 | `tests/integration/db/stockist_rls.integration.test.ts:160`<br>`tests/integration/db/stockist_rls.integration.test.ts:168`<br>`tests/integration/db/stockist_rls.integration.test.ts:189`<br>`tests/integration/db/stockist_rls.integration.test.ts:200`<br>`tests/integration/db/stockist_rls.integration.test.ts:211`<br>`tests/integration/db/stockist_rls.integration.test.ts:220`<br>`tests/integration/db/stockist_rls.integration.test.ts:224`<br>`tests/integration/db/stockist_rls.integration.test.ts:238`<br>`tests/integration/db/stockist_rls.integration.test.ts:242`<br>`tests/integration/db/stockist_rls.integration.test.ts:256`<br>`tests/integration/db/stockist_rls.integration.test.ts:270`<br>`tests/integration/db/stockist_rls.integration.test.ts:279`<br>`tests/integration/db/stockist_rls.integration.test.ts:295`<br>`tests/integration/db/stockist_rls.integration.test.ts:310` |
+| DATA-STOCKIST-002 `stockists` の RLS の方針と表の付与 | SEC-STOCKIST-001、FR-ADMIN-006、ADR-0254、ADR-0258 | `tests/integration/db/stockist_rls.integration.test.ts:160`<br>`tests/integration/db/stockist_rls.integration.test.ts:168`<br>`tests/integration/db/stockist_rls.integration.test.ts:189`<br>`tests/integration/db/stockist_rls.integration.test.ts:200`<br>`tests/integration/db/stockist_rls.integration.test.ts:212`<br>`tests/integration/db/stockist_rls.integration.test.ts:231`<br>`tests/integration/db/stockist_rls.integration.test.ts:240`<br>`tests/integration/db/stockist_rls.integration.test.ts:244`<br>`tests/integration/db/stockist_rls.integration.test.ts:258`<br>`tests/integration/db/stockist_rls.integration.test.ts:262`<br>`tests/integration/db/stockist_rls.integration.test.ts:276`<br>`tests/integration/db/stockist_rls.integration.test.ts:290`<br>`tests/integration/db/stockist_rls.integration.test.ts:299`<br>`tests/integration/db/stockist_rls.integration.test.ts:316`<br>`tests/integration/db/stockist_rls.integration.test.ts:328` |
 | DATA-STOCKIST-003 地方と都道府県の対応 `STOCKIST_REGIONS` | FREQ-57-REQ-01、FR-STOCKIST-010、SEC-STOCKIST-017、ADR-0251 | `tests/integration/ui/stockist-region-data.test.tsx:98`<br>`tests/integration/ui/stockist-region-data.test.tsx:112`<br>`tests/integration/ui/stockist-region-data.test.tsx:118`<br>`tests/integration/ui/stockist-region-data.test.tsx:124`<br>`tests/integration/ui/stockist-region-data.test.tsx:130`<br>`tests/integration/ui/stockist-region-data.test.tsx:139`<br>`tests/integration/ui/stockist-region-data.test.tsx:153`<br>`tests/integration/ui/stockist-region-data.test.tsx:171`<br>`tests/integration/ui/stockist-region-data.test.tsx:181`<br>`tests/integration/ui/stockist-region-data.test.tsx:192`<br>`tests/integration/ui/stockist-region-data.test.tsx:199` |
 | DATA-STOCKIST-004 取扱店の権限 `admin.stockists.read`・`admin.stockists.manage` と初めの割り当て | FR-ADMIN-006、SEC-STOCKIST-006、ADR-0262、FREQ-540-REQ-01（範囲外） | `tests/integration/db/stockist_permissions.integration.test.ts:149`<br>`tests/integration/db/stockist_permissions.integration.test.ts:160`<br>`tests/integration/db/stockist_permissions.integration.test.ts:164`<br>`tests/integration/db/stockist_permissions.integration.test.ts:177`<br>`tests/integration/db/stockist_permissions.integration.test.ts:183`<br>`tests/integration/db/stockist_permissions.integration.test.ts:191`<br>`tests/integration/db/stockist_permissions.integration.test.ts:196`<br>`tests/integration/db/stockist_permissions.integration.test.ts:206`<br>`tests/integration/db/stockist_permissions.integration.test.ts:218` |
 | ARC-SEARCH-001 検索は端末の部品から2つの窓口を呼び、窓口が取り出しの関数を通して DB の検索の関数を呼ぶ | FR-SEARCH-001、FR-SEARCH-003、SEC-SEARCH-001、ADR-0300、ADR-0302、ADR-0310 | `tests/integration/api/search-request-path.test.ts:84`<br>`tests/integration/api/search-request-path.test.ts:102`<br>`tests/integration/api/search-request-path.test.ts:112`<br>`tests/integration/api/search-request-path.test.ts:119`<br>`tests/integration/api/search-request-path.test.ts:126`<br>`tests/integration/api/search-request-path.test.ts:131`<br>`tests/integration/api/search-request-path.test.ts:142`<br>`tests/integration/api/search-request-path.test.ts:149`<br>`tests/integration/api/search-request-path.test.ts:154`<br>`tests/integration/api/search-request-path.test.ts:168`<br>`tests/integration/api/search-request-path.test.ts:182`<br>`tests/integration/api/search-request-path.test.ts:199`<br>`tests/integration/api/search-request-path.test.ts:206`<br>`tests/integration/api/search-request-path.test.ts:214` |
@@ -1100,7 +1100,7 @@
 | API-AUTH-018 POST /api/auth/mfa/verify は TOTP のコードを確かめ、aal2 のトークンを Cookie に書き戻す | FR-LOGIN-007、FREQ-316-REQ-02、SEC-AUTH-008、ADR-0409 | `tests/integration/api/auth/mfa-verify.test.ts:108`<br>`tests/integration/api/auth/mfa-verify.test.ts:127`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:114`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:139`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:148`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:161`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:172`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:185`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:197`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:207`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:218`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:227`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:246`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:254`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:264`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:273`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:284`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:293`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:303`<br>`tests/integration/api/auth-mfa-verify-api.test.ts:314` |
 | DATA-AUTH-001 sessions の表は refresh token のハッシュを控える監査用の表で、明示の失効の印だけを門に使う | DRV-AUTH-008、SEC-AUTH-021、ADR-0406 | `tests/integration/db/auth_sessions_table.integration.test.ts:73`<br>`tests/integration/db/auth_sessions_table.integration.test.ts:104`<br>`tests/integration/db/auth_sessions_table.integration.test.ts:128`<br>`tests/integration/db/auth_sessions_table.integration.test.ts:134`<br>`tests/integration/db/auth_sessions_table.integration.test.ts:142`<br>`tests/integration/db/auth_sessions_table.integration.test.ts:162`<br>`tests/integration/db/auth_sessions_table.integration.test.ts:182`<br>`tests/integration/db/auth_sessions_table.integration.test.ts:191`<br>`tests/integration/db/auth_sessions_table.integration.test.ts:207`<br>`tests/integration/db/auth_sessions_table.integration.test.ts:223`<br>`tests/integration/db/auth_sessions_table.integration.test.ts:240`<br>`tests/integration/db/auth_sessions_table.integration.test.ts:261`<br>`tests/integration/db/auth_sessions_table.integration.test.ts:274` |
 | DATA-AUTH-002 password_reset_tokens の表は再設定の印のハッシュ・宛先・期限・使用の印を持つ | FREQ-319-REQ-03、FREQ-332-REQ-04、ADR-0403 | `tests/integration/db/auth_password_reset_tokens_table.integration.test.ts:77`<br>`tests/integration/db/auth_password_reset_tokens_table.integration.test.ts:100`<br>`tests/integration/db/auth_password_reset_tokens_table.integration.test.ts:114`<br>`tests/integration/db/auth_password_reset_tokens_table.integration.test.ts:124`<br>`tests/integration/db/auth_password_reset_tokens_table.integration.test.ts:136`<br>`tests/integration/db/auth_password_reset_tokens_table.integration.test.ts:147`<br>`tests/integration/db/auth_password_reset_tokens_table.integration.test.ts:169`<br>`tests/integration/db/auth_password_reset_tokens_table.integration.test.ts:186`<br>`tests/integration/db/auth_password_reset_tokens_table.integration.test.ts:205`<br>`tests/integration/db/auth_password_reset_tokens_table.integration.test.ts:240`<br>`tests/integration/db/auth_password_reset_tokens_table.integration.test.ts:253` |
-| DATA-AUTH-003 認証の DB の関数はアカウントの照会とセッションの失効と回数の数えを受け持ち、service role が呼ぶ | FREQ-319-REQ-01、FREQ-320-REQ-01 | `tests/integration/db/auth_db_functions.integration.test.ts:110`<br>`tests/integration/db/auth_db_functions.integration.test.ts:121`<br>`tests/integration/db/auth_db_functions.integration.test.ts:134`<br>`tests/integration/db/auth_db_functions.integration.test.ts:152`<br>`tests/integration/db/auth_db_functions.integration.test.ts:159`<br>`tests/integration/db/auth_db_functions.integration.test.ts:166`<br>`tests/integration/db/auth_db_functions.integration.test.ts:172`<br>`tests/integration/db/auth_db_functions.integration.test.ts:179`<br>`tests/integration/db/auth_db_functions.integration.test.ts:186`<br>`tests/integration/db/auth_db_functions.integration.test.ts:196`<br>`tests/integration/db/auth_db_functions.integration.test.ts:213`<br>`tests/integration/db/auth_db_functions.integration.test.ts:222`<br>`tests/integration/db/auth_db_functions.integration.test.ts:230`<br>`tests/integration/db/auth_db_functions.integration.test.ts:243`<br>`tests/integration/db/auth_db_functions.integration.test.ts:253`<br>`tests/integration/db/auth_db_functions.integration.test.ts:266`<br>`tests/integration/db/auth_db_functions.integration.test.ts:278`<br>`tests/integration/db/auth_db_functions.integration.test.ts:286`<br>`tests/integration/db/auth_db_functions.integration.test.ts:295`<br>`tests/integration/db/auth_db_functions.integration.test.ts:307`<br>`tests/integration/db/auth_db_functions.integration.test.ts:314`<br>`tests/integration/db/auth_db_functions.integration.test.ts:323`<br>`tests/integration/db/auth_db_functions.integration.test.ts:341`<br>`tests/integration/db/auth_db_functions.integration.test.ts:355`<br>`tests/integration/db/auth_db_functions.integration.test.ts:368` |
+| DATA-AUTH-003 認証の DB の関数はアカウントの照会とセッションの失効と回数の数えを受け持ち、service role が呼ぶ | FREQ-319-REQ-01、FREQ-320-REQ-01 | `tests/integration/db/auth_db_functions.integration.test.ts:110`<br>`tests/integration/db/auth_db_functions.integration.test.ts:121`<br>`tests/integration/db/auth_db_functions.integration.test.ts:134`<br>`tests/integration/db/auth_db_functions.integration.test.ts:152`<br>`tests/integration/db/auth_db_functions.integration.test.ts:159`<br>`tests/integration/db/auth_db_functions.integration.test.ts:167`<br>`tests/integration/db/auth_db_functions.integration.test.ts:175`<br>`tests/integration/db/auth_db_functions.integration.test.ts:181`<br>`tests/integration/db/auth_db_functions.integration.test.ts:188`<br>`tests/integration/db/auth_db_functions.integration.test.ts:195`<br>`tests/integration/db/auth_db_functions.integration.test.ts:205`<br>`tests/integration/db/auth_db_functions.integration.test.ts:222`<br>`tests/integration/db/auth_db_functions.integration.test.ts:231`<br>`tests/integration/db/auth_db_functions.integration.test.ts:239`<br>`tests/integration/db/auth_db_functions.integration.test.ts:252`<br>`tests/integration/db/auth_db_functions.integration.test.ts:262`<br>`tests/integration/db/auth_db_functions.integration.test.ts:275`<br>`tests/integration/db/auth_db_functions.integration.test.ts:287`<br>`tests/integration/db/auth_db_functions.integration.test.ts:295`<br>`tests/integration/db/auth_db_functions.integration.test.ts:304`<br>`tests/integration/db/auth_db_functions.integration.test.ts:316`<br>`tests/integration/db/auth_db_functions.integration.test.ts:323`<br>`tests/integration/db/auth_db_functions.integration.test.ts:332`<br>`tests/integration/db/auth_db_functions.integration.test.ts:350`<br>`tests/integration/db/auth_db_functions.integration.test.ts:364`<br>`tests/integration/db/auth_db_functions.integration.test.ts:377` |
 | DATA-AUTH-004 認証の Cookie は用途ごとに名前・寿命・属性を分け、保留と再設定は署名した印にする | SEC-AUTH-024、FREQ-320-REQ-02、FREQ-335-REQ-04、FREQ-332-REQ-04、FREQ-58-REQ-01、ADR-0400 | `tests/integration/api/auth/cookieFlags.test.ts:78`<br>`tests/integration/api/auth/cookieFlags.test.ts:106`<br>`tests/integration/api/auth/cookieFlags.test.ts:157`<br>`tests/integration/api/auth-cookie-data.test.ts:109`<br>`tests/integration/api/auth-cookie-data.test.ts:122`<br>`tests/integration/api/auth-cookie-data.test.ts:131`<br>`tests/integration/api/auth-cookie-data.test.ts:136`<br>`tests/integration/api/auth-cookie-data.test.ts:147`<br>`tests/integration/api/auth-cookie-data.test.ts:168`<br>`tests/integration/api/auth-cookie-data.test.ts:191`<br>`tests/integration/api/auth-cookie-data.test.ts:207`<br>`tests/integration/api/auth-cookie-data.test.ts:227`<br>`tests/integration/api/auth-cookie-data.test.ts:236`<br>`tests/integration/api/auth-cookie-data.test.ts:246`<br>`tests/integration/api/auth-cookie-data.test.ts:282`<br>`tests/integration/api/auth-cookie-data.test.ts:294`<br>`tests/integration/api/auth-cookie-data.test.ts:305`<br>`tests/integration/api/auth-cookie-data.test.ts:315`<br>`tests/integration/api/auth-cookie-data.test.ts:326`<br>`tests/integration/api/auth-cookie-data.test.ts:334`<br>`tests/integration/api/auth-cookie-data.test.ts:351`<br>`tests/integration/api/auth-cookie-data.test.ts:367`<br>`tests/integration/api/auth-cookie-data.test.ts:386`<br>`tests/integration/api/auth-cookie-data.test.ts:393` |
 | ARC-ADMIN-001 管理のそのほかの窓口は頭で共有の認可を通し、通った後にだけ service role で DB と Auth の管理の機能を使う | SEC-ADMIN-001、ADR-0450、ADR-0451、FREQ-316-REQ-01（範囲外）、FREQ-316-REQ-02（範囲外）、FREQ-316-REQ-03（範囲外）、NFR-SEC-005（範囲外） | `tests/integration/api/admin-misc/admin-authorization-path.test.ts:252`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:266`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:279`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:300`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:312`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:340`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:352`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:364`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:377`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:389`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:405`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:419`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:436`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:446`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:457`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:467`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:488`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:498`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:508`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:521`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:535`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:550`<br>`tests/integration/api/admin-misc/admin-authorization-path.test.ts:571` |
 | ARC-ADMIN-002 書き込みの窓口は共有の proxy の Origin の照合で守り、窓口では CSRF の印と回数を見ない | SEC-ADMIN-005、FREQ-327-REQ-01（範囲外）、FREQ-327-REQ-03（範囲外） | `tests/integration/api/admin-misc/admin-origin-guard.test.ts:173`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:188`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:201`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:213`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:221`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:229`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:237`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:247`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:255`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:265`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:279`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:287`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:311`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:319`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:333`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:341`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:349`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:360`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:397`<br>`tests/integration/api/admin-misc/admin-origin-guard.test.ts:417` |
@@ -1377,7 +1377,7 @@
 
 ## 食い違い
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: NEWS | 基準コミット: `a03beaff`（作業ツリー）
+> 状態: 推定 | 確認日: 2026-10-25 | 対象: NEWS | 基準コミット: `a03beaff`（作業ツリー）
 
 手書きの節。文書とコードが違う所、文書どうしが違う所を、どちらが正しいかを決めずに載せる。生成し直しても残る。
 
@@ -1387,7 +1387,7 @@ NEWS の要件・脅威・構造設計・ADR・詳細設計を、今のコード
 
 | 区分 | 番号 | 件数 | 中身 |
 | --- | --- | --- | --- |
-| 文書とコードの食い違い | TM-NEWS-01〜TM-NEWS-47 | 47 | 要件・設計・ADR・詳細設計・旧文書と、今のコードの動きが合わない所 |
+| 文書とコードの食い違い | TM-NEWS-01〜TM-NEWS-47、TM-NEWS-76 | 48 | 要件・設計・ADR・詳細設計・旧文書と、今のコードの動きが合わない所 |
 | セキュリティ要件を満たさない所 | TM-NEWS-48〜TM-NEWS-71 | 24 | `SEC-NEWS-…` が求める事を今のコードが満たさない所。試すテストだけが無い物を含む |
 | 書き方の判断待ち | TM-NEWS-72〜TM-NEWS-74 | 3 | 検査の決まりと文書の置き方で、ユーザーの確認が要る所 |
 | コードの隠れた不具合 | TM-NEWS-75 | 1 | 実際には起きないが、起きれば監査と応答が食い違う所。試験が今の動きを固定している |
@@ -1401,7 +1401,7 @@ NEWS の要件・脅威・構造設計・ADR・詳細設計を、今のコード
 
 | 番号 | 何と何が食い違うか | 今のコードの動き | 関係する ID | 判断する人 |
 | --- | --- | --- | --- | --- |
-| TM-NEWS-01 | ホームの NEWS の VIEW ALL の出し方。FREQ-126 は見出しの右に常に出し、下の中央のボタンと件数の条件を外すと決める。FREQ-149 は総数が6件より多い時だけ出すと決める。どちらにも置き換えの注記が無い。FR-HOME-004 は各区画の末尾に「もっと見る」ボタン | `PublicNewsGrid` の home の形は、区画の見出しと、下の中央の VIEW ALL（総数が6件より多い時だけ表示）を出す。見出しの右のリンクは無い。FREQ-149・FREQ-146（共通の Button、矢印なし）・FR-HOME-004 の形 | FREQ-126、FREQ-149、FREQ-146、FR-HOME-004、ADR-0016、SCR-NEWS-006 | ユーザー |
+| TM-NEWS-01 | ホームの NEWS の VIEW ALL の出し方。FREQ-126 は見出しの右に常に出し、下の中央のボタンと件数の条件を外すと決める。FREQ-149 は総数が6件より多い時だけ出すと決める。どちらにも置き換えの注記が無い。FR-HOME-004 は各区画の末尾に「もっと見る」ボタン | `PublicNewsGrid` の home の形は、区画の見出しと、下の中央の VIEW ALL（総数が6件より多い時だけ表示）を出す。見出しの右のリンクは無い。FREQ-149・FREQ-146（共通の Button、矢印なし）・FR-HOME-004 の形。E2E `FR-NEWS-HOME-001` の FREQ-126-AC-04 は2本に分かれ、「従来の文字（VIEW ALL ITEMS など）が無い」側は通り、「区画の下に VIEW ALL が無い」側が赤（`test.fail`）。2本とも名前の先頭の ID が同じ FREQ-126-AC-04 なので、ID だけで数えると AC-04 に通る試験があるように見えるが、AC の中身（下の中央のボタンが無い）を決めるのは赤の側 | FREQ-126、FREQ-149、FREQ-146、FR-HOME-004、ADR-0016、SCR-NEWS-006 | ユーザー |
 | TM-NEWS-02 | 分類を選ぶのは1つか複数か。FR-NEWS-ALL-002・003・005 と FR-NEWS-DETAIL-004 は値1つの書き方、旧詳細設計と ADR は「タブ」。画面一覧は複数選択 | 左のサイドバーの複数選択で、URL の `category` はカンマ区切り。E2E も複数を試す。1つだけ選ぶタブの `NewsCategoryTabs` はどこからも使われない | FR-NEWS-ALL-002、FR-NEWS-ALL-003、FR-NEWS-ALL-005、FR-NEWS-DETAIL-004、DRV-NEWS-001、STATE-NEWS-002、ADR-0012、ADR-0013、DD-NEWS-005 | ユーザー |
 | TM-NEWS-03 | BLOG の分類。FR-NEWS-ALL-002 は ALL と6つ（BLOG を含む）。`api-spec.md` の管理の入力は BLOG を含まない | 一覧の画面の分類表（`src/lib/news-data.ts`）とヘッダーの引き出しは BLOG を出す。DB の CHECK・管理のフォーム・型・管理の入力の形に BLOG が無いので BLOG の記事は作れず、選ぶと必ず0件（推定）。一覧の description も5つだけを挙げる | FR-NEWS-ALL-002、FR-NEWS-ALL-006、DATA-NEWS-001 | ユーザー |
 | TM-NEWS-04 | 一覧の DB での絞り込み。FR-NEWS-ALL-005 は `category` を DB の取り出しへ渡して絞る。旧詳細設計は「済」 | 正しい分類が1つの時だけ DB で絞る。複数・正しくない値は ALL で全部を取り、画面で絞る（`src/app/news/page.tsx`） | FR-NEWS-ALL-005、DD-NEWS-002、ADR-0013 | ユーザー |
@@ -1448,6 +1448,7 @@ NEWS の要件・脅威・構造設計・ADR・詳細設計を、今のコード
 | TM-NEWS-45 | 切り替え・削除の後の読み直しの失敗。SEC-NEWS-020 の AC-01 は一覧の取得の失敗を0件と別に出すと求める | 切り替え・削除は成功したのに読み直しが失敗すると、前の一覧のまま何も出ない（`src/components/NewsSection.tsx`、推定） | SEC-NEWS-020、DD-NEWS-060 | ユーザー |
 | TM-NEWS-46 | 旧詳細設計の署名 URL の変換は、頁の動きとして書かれている | 詳細の頁は画像を描かない。署名は取り出しの中で行い、結果を使わない | DD-NEWS-030、DD-NEWS-031、SEC-NEWS-005 | ユーザー |
 | TM-NEWS-47 | 旧詳細設計の表は全行「済」 | 状態の欄は今の決まり（現行・推定・廃止）に合わないので全部「推定」にした。中身の食い違いは TM-NEWS-18・TM-NEWS-46 だけ | DD-NEWS-030 | ユーザー |
+| TM-NEWS-76 | SEC-NEWS-004 の本文は、最適化の画像のキャッシュの長さを「設定が無い」とだけ書き、他の SEC のように「今のコードは満たさない」と言い切っていない。受け入れ条件 SEC-NEWS-004-AC-02 は、署名つき URL の最適化の画像の `Cache-Control` の max-age が3600以下と求める。TM-NEWS-51 は満たさないと数えている | `next.config.ts` に `images.minimumCacheTTL` の設定が無く、Next.js の既定（14400秒）になる。E2E `FR-NEWS-SEC-003` の SEC-NEWS-004-AC-02 は赤（`test.fail`）。本文を「満たさない」と書き直すか、AC-02 を直すかは決まっていない | SEC-NEWS-004、SEC-NEWS-004-AC-02、THR-NEWS-004 | ユーザー |
 
 ### セキュリティ要件を満たさない所
 
@@ -1498,14 +1499,14 @@ NEWS の要件・脅威・構造設計・ADR・詳細設計を、今のコード
 
 #### 概要
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: HOME | 基準コミット: `a03beaff`（作業ツリー）
+> 状態: 推定 | 確認日: 2026-10-25 | 対象: HOME | 基準コミット: `a03beaff`（作業ツリー）
 
 HOME の要件・脅威・構造設計・ADR・詳細設計を、今のコードを読んで書く中で見つかった食い違い。どれも直していない。判断する人は全部ユーザー。
 番号は HOME の文書（`docs/02_Requirements/areas/home.md` ほか）が指している。SEC の「満たさない」の中身は、その SEC の項目に1度だけ書いてある。
 
 | 区分 | 番号 | 件数 |
 | --- | --- | --- |
-| 文書とコードの食い違い | TM-HOME-01〜TM-HOME-28 | 28 |
+| 文書とコードの食い違い | TM-HOME-01〜TM-HOME-28、TM-HOME-54・TM-HOME-55 | 30 |
 | セキュリティ要件を満たさない所 | TM-HOME-29〜TM-HOME-47（39・40・47 は欠番） | 16 |
 | 書き方の判断待ち | TM-HOME-48〜TM-HOME-52 | 5 |
 | 範囲外の表の守り | TM-HOME-53 | 1 |
@@ -1520,7 +1521,7 @@ HOME の要件・脅威・構造設計・ADR・詳細設計を、今のコード
 | TM-HOME-04 | ヒーローの縦線。FREQ-278-REQ-02・06 と AC-02・06 は threadDraw を1回だけ。FREQ-282 は heroThreadLoop を無限に繰り返す。FREQ-278 の行に置き換えの印が無い | heroThreadLoop を無限に繰り返す（`globals.css` の `.hero-thread`）。E2E `FR-HOME-018` の2つ目は注に「AC-02」と書きながら FREQ-282 の動きを試す。FREQ-278-AC-02・06 を試す E2E は無い | FREQ-278-REQ-02、FREQ-278-REQ-06、FREQ-278-AC-02、FREQ-278-AC-06、FREQ-282、ADR-0103 | ユーザー |
 | TM-HOME-05 | ヒーローに CTA を置くか。付録 D.1 の WF-HOME-003（フル幅のスライダーと CTA）、AC-WF-HOME-001（ファーストビューに CTA、2タップ以内）、付録 B.1 の WF-HOME-B01・B02。UI/UX レビューの H-1 に対し、ユーザーが「名前のみ」を選んだ | ヒーローは写真・暗くする重ね・ブランド名の h1・SCROLL の印だけ。CTA もスライダーも無い | DRV-HOME-001、ADR-0101、FR-HOME-001、SCR-HOME-002 | ユーザー |
 | TM-HOME-06 | ホームの「もっと見る」の出し方。FR-HOME-004 は3つの区画の末尾に「配置する」。FREQ-126（NEWS が定義）は見出しの右に常に出し、下の中央の条件つきのボタンをやめる。FREQ-146〜149 は下の中央の共通のボタンを、総数が表示数より多い時だけ出す | 下の中央に共通の VIEW ALL を置き、総数が表示数以下の幅では隠す。隠れた区画からは一覧への出口が無い | FR-HOME-004、FR-HOME-004-AC-01、FREQ-126（範囲外）、FREQ-146（範囲外）、FREQ-147-REQ-03、FREQ-148-REQ-03、ADR-0105、FLOW-HOME-001 | ユーザー |
-| TM-HOME-07 | NFR-HOME-001 は「モバイル 3G 相当で 2 秒以内」 | E2E `NFR-HOME-001` は回線を絞らず、手元の本番ビルドで load までを測る。1つの幅だけ。3G を模す試験は無い | NFR-HOME-001、NFR-HOME-001-AC-01 | ユーザー |
+| TM-HOME-07 | NFR-HOME-001 は「モバイル 3G 相当で 2 秒以内」 | E2E `NFR-HOME-001` は mobile の1つの幅で Fast 3G を模して load までを測る（結果は TM-HOME-55）。残る食い違いは、`docs/02_Requirements/areas/home.md` の NFR-HOME-001-AC-01 の根拠と未確認事項が「今の E2E は回線を模していない」と書いたままな事（文書が古い） | NFR-HOME-001、NFR-HOME-001-AC-01 | ユーザー |
 | TM-HOME-08 | FREQ-278-AC-01 は「完了後の transform が none」 | 終わりの値は `translateY(0)` で、算出値は none でなく単位の行列。E2E も単位の行列で試す | FREQ-278-AC-01、FREQ-278-REQ-01 | ユーザー |
 | TM-HOME-09 | FR-HOME-001 の要件の文が `requirements.md` の欄に無い（「レビュー:」の注だけ） | 文は `01_home.md` の旧版の対応表から取って写した。`/mainphoto.png` を画面の高さいっぱいに敷き、ブランド名の h1 を重ねる | FR-HOME-001、FR-HOME-001-AC-01 | ユーザー |
 | TM-HOME-10 | `requirements.md` の「1.1 ホームページ（HOME）」節の「レビュー:」の注が古い。FR-HOME-003「Link 未設置」、006「generateMetadata が存在しない」、007「priority 未設定」、008「readdy.ai」 | どれも済み。READ OUR STORY が `/about` へ移る、`generateMetadata` がある、画像に優先の印と先読みがある、ABOUT の画像は手元の `/about.png` | FR-HOME-003、FR-HOME-006、FR-HOME-007、FR-HOME-008 | ユーザー |
@@ -1542,6 +1543,8 @@ HOME の要件・脅威・構造設計・ADR・詳細設計を、今のコード
 | TM-HOME-26 | ホームが呼ぶ7つの取得の失敗の扱いがそろわない | NEWS の取得（`getPublishedNews`）だけ DB の誤りを見ず `data ?? []` で空にして記録しない。ほかの6つは誤りを記録して空か 0 を返す。NEWS の範囲のコード | DD-HOME-001、SEC-HOME-014 | ユーザー |
 | TM-HOME-27 | `Home` の画像寸法の注記「実際の横幅に合わせて調整してください」 | 注記は古い（実物 2752×1536 と一致）。`mainphoto.png`・`about.png` は拡張子が png だが中身は JPEG | DD-HOME-001 | ユーザー |
 | TM-HOME-28 | 過去の security レビューは「LOOK・NEWS・ITEM の画像の署名は service role だが、DB の読みは公開の client で分離済み」（Fixed）と書く。同じ文書の 2026-04-29 の追記は ITEM の DB の読みを Open とする | ITEM の DB の読みは閲覧者の session の client。在庫の読みは service role。LOOK・NEWS は公開の client | THR-HOME-001、THR-HOME-002、THR-HOME-006、ARC-HOME-002 | ユーザー |
+| TM-HOME-54 | SEC-HOME-009-AC-02 は「ホームを開いた時に CSP の違反の記録が出ず、h1 のブランド名と5つの節の見出しが表示される」。SEC-HOME-009 の本文は CDN（`cdn.jsdelivr.net`）と Supabase の総当たりだけを満たさないと書き、`script-src` の `eval` の違反には触れない | ホームを開くと `securitypolicyviolation` が1件（`script-src eval`）記録される。2026-10-25 の全件の E2E で `FR-HOME-022` の SEC-HOME-009-AC-02 が3つの幅とも赤（見出しの表示は通る）。原因の見当（読みの推定。動かして確かめていない）: `src/features/auth/schemas/login.ts` の `LoginRequestSchema = z.object(...)` が読み込み時に作られ、zod（4.3.6）のオブジェクトの組み立てが `Function("")` の探り（`allowsEval`）を動かす。`src/components/LoginModal.tsx` が import し、`src/components/Header.tsx` が `LoginModal` を使い、`Header` は `src/contexts/Providers.tsx` から全頁に入る。探りは try/catch で握るが CSP の違反の event は出る。`z.config({ jitless: true })` は `src` のどこにも無い。CDN を外してもこの違反は残る見込み。直す（探りを避ける）か、AC の文を実害のある違反に絞るかは未決。E2E は `test.fail` で止めてある | SEC-HOME-009、SEC-HOME-009-AC-02、THR-HOME-009、TM-HOME-37 | ユーザー |
+| TM-HOME-55 | NFR-HOME-001-AC-01 は「mobile で 3G 相当の回線を模した条件で、読み込み（load）が2秒以内」。TM-HOME-07 は「E2E が回線を模さない」食い違いを載せたが、E2E は後に Chromium の Fast 3G（下り 1.6Mbps・上り 750Kbps・遅延 150ms）を模す形に直った | 2026-10-25 の全件の E2E（並べて流した中の1回の測り）で `loadEventEnd` が 4692ms となり、上限 2000ms を超えて `NFR-HOME-001` が赤。単独での測り直しは未。原因は未確認: `src/app/page.tsx` のヒーローは 3.3MB の `public/mainphoto.png` を `ReactDOM.preload` と `Image`（`priority`）で読む。模した回線の下りは約 209,715 B/s で、生の画像が load を待つなら 15.8 秒を超えるが、測った値は 4.7 秒なので、どの物が load を遅らせたかは通信の時間の並びを測るまで分からない。文書は「回線を模していない」とだけ書き、コードが2秒を超えるとは書いていない。E2E は `test.fail` で止めてある | NFR-HOME-001、NFR-HOME-001-AC-01、TM-HOME-07 | ユーザー |
 
 #### セキュリティ要件を満たさない所
 
@@ -1588,13 +1591,13 @@ HOME の要件・脅威・構造設計・ADR・詳細設計を、今のコード
 
 #### 概要
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: LOOK | 基準コミット: `4facf63b`（作業ツリー）
+> 状態: 推定 | 確認日: 2026-10-25 | 対象: LOOK | 基準コミット: `4facf63b`（作業ツリー）
 
 LOOK の要件・脅威・構造設計・ADR・詳細設計を書く中で見つかった食い違い。どれも直していない。直すか、どちらに合わせるかは、判断する人（ユーザー）が決める。番号は TM-LOOK-01 から連番で、NEWS の TM-NEWS-NN と同じ形。
 
 | 区分 | 番号 | 件数 | 中身 |
 | --- | --- | --- | --- |
-| 文書とコードの食い違い | TM-LOOK-01〜TM-LOOK-60 | 60 | 要件・設計・ADR・詳細設計・旧文書と、今のコードの動きが合わない所。後の行が前の行を置き換えたが元の行に印が無い所を含む |
+| 文書とコードの食い違い | TM-LOOK-01〜TM-LOOK-60、TM-LOOK-99・TM-LOOK-100 | 62 | 要件・設計・ADR・詳細設計・旧文書と、今のコードの動きが合わない所。後の行が前の行を置き換えたが元の行に印が無い所を含む |
 | セキュリティ要件を満たさない所 | TM-LOOK-61〜TM-LOOK-82、TM-LOOK-98 | 23 | `SEC-LOOK-…` が求める事を今のコードが満たさない所。試すテストだけが無い物を含む。満たさない所は SEC の本文に1回だけ書いたので、この表は SEC の ID だけを挙げる |
 | 書き方の判断待ち | TM-LOOK-83〜TM-LOOK-91 | 9 | 検査の決まりと文書の置き方で、ユーザーの確認が要る所 |
 | コードの隠れた不具合 | TM-LOOK-92〜TM-LOOK-97 | 6 | 今は表に出ないか、文書に無い動き。試験が今の動きを固定している物もある |
@@ -1669,6 +1672,8 @@ LOOK の要件・脅威・構造設計・ADR・詳細設計を書く中で見つ
 | TM-LOOK-58 | 編集の頁の取り出しの失敗の文 | 応答が `ok` でない時、サーバーの `error`（`Look not found`・`Forbidden` など英語）をそのまま画面に出す（`src/app/admin/look/edit/[id]/page.tsx`）。日本語の固定の文との混在 | DD-LOOK-062、SCR-LOOK-008 | ユーザー |
 | TM-LOOK-59 | 詳細のページの価格の書式。旧版は価格の書式を表示ごとに作る件を書かない。UI/UX レビューは「対応済」 | 詳細のページは価格の書式を表示のたびに作る。一覧の部品はモジュールで1度だけ作る | DD-LOOK-030、DD-LOOK-001 | ユーザー |
 | TM-LOOK-60 | API-LOOK-004 の処理の順。構造設計は「有無を確かめる → 商品 → 量 → …」と書く | 有無を確かめる前に、入力の形・枚数・種類・大きさを確かめる。無い LOOK に誤った画像を送ると 404 でなく 400 になる | API-LOOK-004、DD-LOOK-064 | ユーザー |
+| TM-LOOK-99 | md 未満の前後のリンクの名前。FR-LOOK-DETAIL-006-AC-02 は「詳細の前後のリンクの aria-label に、行き先の LOOK のテーマが含まれる」で、上位の FR-LOOK-DETAIL-006 は mobile を除いていない。FR-LOOK-DETAIL-006 の「今のコード（推定）」と `docs/03_BasicDesign/areas/look.md` は md 以上のインラインのナビの読み上げの名前だけを書き、FREQ-343（md 未満を固定ナビに置き換える）は行き先のテーマに触れない（TM-LOOK-34 も参照） | `src/app/look/[id]/page.tsx` の `LookDetailPage` は、md 以上のインラインのナビ（`hidden md:grid`）の `<a>` に `Previous look: <テーマ>`・`Next look: <テーマ>` の `aria-label` を付ける。md 未満（`md:hidden` の `look-detail-fixed-nav`）の `BottomNavigation` は `items` の `label` が `PREV LOOK`・`NEXT LOOK` だけで、`src/components/ui/BottomNavigation/BottomNavigation.tsx` の `renderContent` は `label` を文字で出すだけで `aria-label` を持たない。390px では読み上げの名前に行き先のテーマが入らず、インラインのナビは md 未満で非表示なので別の道も無い。2026-10-25 の全件の E2E で `FR-LOOK-DETAIL-019` の FR-LOOK-DETAIL-006-AC-02 は mobile だけ赤、tablet・desktop は通る（mobile だけ `test.fail`）。固定ナビの各リンクに行き先のテーマを含む名前を付けるか、AC の対象を md 以上に絞るかは未決 | FR-LOOK-DETAIL-006、FR-LOOK-DETAIL-006-AC-02、FREQ-343、TM-LOOK-34 | ユーザー |
+| TM-LOOK-100 | 管理の作成・更新で1回に送れる量。SEC-LOOK-012 は「1枚5MB、1回6枚・20MB」と決めるが、proxy の本文の上限は文書のどこにも無い | 推定（コードと依存の読み。動かして確かめていない）: `src/proxy.ts` の `matcher` が全部の要求（`/:path*`）に掛かり、`next.config.ts` に `experimental.proxyClientMaxBodySize` の上書きが無い。Next 16.3.6 の既定は 10485760（10MB）で、上限を超えた本文は先頭の 10MB で切れる（`node_modules/next/dist/server/body-streams.js`）。`src/app/api/admin/looks/route.ts` の POST と `src/app/api/admin/looks/[id]/route.ts` の PUT は `request.formData()` で受けるので、画像の合計が約10MB を超える作成・更新（5MB の画像2枚と multipart の上乗せで届く）は本文が切れて `formData()` が投げ、500 になる見込み。2026-10-25 の全件の E2E では、20MB を1回で送る SEC-LOOK-012-AC-03 を1回 10MB 未満に組み直して流す形に変えたため、この見込みを直に確かめる試験は無い。`experimental.proxyClientMaxBodySize` を 20MB 以上に上げるか、SEC-LOOK-012 の1回の上限を 10MB 未満に書き直すかは未決 | SEC-LOOK-012、SEC-LOOK-012-AC-03、THR-LOOK-012、API-LOOK-002、API-LOOK-004、TM-LOOK-72 | ユーザー |
 
 #### セキュリティ要件を満たさない所
 
@@ -1792,13 +1797,13 @@ LOOK の要件・脅威・構造設計・ADR・詳細設計を書く中で見つ
 
 #### 概要
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: STOCKIST | 基準コミット: `4facf63b`（作業ツリー）
+> 状態: 推定 | 確認日: 2026-10-25 | 対象: STOCKIST | 基準コミット: `4facf63b`（作業ツリー）
 
 書式は NEWS の行（TM-NEWS-NN）と同じで、番号は `TM-STOCKIST-NN`。場所は関数・部品の名前で書き、行番号は書かない。判断する人は全部ユーザー。
 
 | 区分 | 番号 | 件数 | 中身 |
 | --- | --- | --- | --- |
-| 文書とコードの食い違い | TM-STOCKIST-01〜TM-STOCKIST-36、TM-STOCKIST-61、TM-STOCKIST-62 | 38 | 要件・設計・ADR・詳細設計・旧文書・テストと、今のコードの動きが合わない所 |
+| 文書とコードの食い違い | TM-STOCKIST-01〜TM-STOCKIST-36、TM-STOCKIST-61〜TM-STOCKIST-63 | 39 | 要件・設計・ADR・詳細設計・旧文書・テストと、今のコードの動きが合わない所 |
 | セキュリティ要件を満たさない所 | TM-STOCKIST-37〜TM-STOCKIST-57 | 21 | `SEC-STOCKIST-001〜021` が求める事を今のコードが満たさない所。試すテストだけが無い物（001・005・006・016・017）を含む。中身は各 `SEC-` の項目に書いた |
 | 書き方の判断待ち | TM-STOCKIST-58〜TM-STOCKIST-60 | 3 | 検査の決まりと文書の置き方で、ユーザーの確認が要る所 |
 
@@ -1848,6 +1853,7 @@ LOOK の要件・脅威・構造設計・ADR・詳細設計を書く中で見つ
 | TM-STOCKIST-36 | FREQ-540（範囲外）は「DB の ACL・有効な session・2要素認証で管理操作を守る」。`stockists` の表を含むかが書かれていない | `stockists` の管理の RLS の方針は ACL（`has_permission`）だけを見て、aal2 も session の生存も見ない。SEC-STOCKIST-003 の行を参照。DATA-STOCKIST-002 は `has_permission` の役の近道を外して DB の ACL にそろえた所（FREQ-540-AC-03（範囲外））だけを受け継ぎ、FREQ-540-REQ-01（範囲外）は上位にしていない。aal2 と session の生存を DB が見ない所は SEC-STOCKIST-003 に書いてある | DATA-STOCKIST-002、ADR-0258 | ユーザー |
 | TM-STOCKIST-61 | 回数の制限の数え方。SEC-STOCKIST-007 は「600 秒に 20 回（読みは 120 回）」を求める | 共有の `enforceRateLimit` は時刻を 600 秒で割った境で区切った固定の窓で数える（`rateLimit.ts` の `bucketTs`）。区切りをまたぐと最大で枠の2倍まで通り、またぐ21回目は 429 にならない。受け入れ条件は「同じ 600 秒の区切りの中で」と書いた。動く窓にするかは共有の部品の判断で、取扱店以外にも響く | SEC-STOCKIST-007、SEC-STOCKIST-007-AC-01、SEC-STOCKIST-020-AC-01、ARC-STOCKIST-003、DD-STOCKIST-038、ADR-0259 | ユーザー |
 | TM-STOCKIST-62 | DATA-STOCKIST-002 と設計は「`admin.stockists.manage` を持つ人は店を追加・更新できる」と読める | `admin.stockists.read` を持たず manage だけの人は、SELECT の方針（`status='published'` か `admin.stockists.read`）で非公開の行が見えない。WHERE 付きの UPDATE と RETURNING 付きの INSERT は SELECT の権利も要り、更新後・追加後の行も SELECT の方針で確かめられる。DB の段では、RETURNING の無い素の INSERT は非公開の行も通るが、公開の店を非公開に変える UPDATE は RLS の違反（42501）で断られ、行は公開のまま残る。管理の窓口は service role でなく、`createClient(request)`（`src/lib/supabase/server.ts`）の利用者の JWT の client で表を書くので、窓口では次のようになる。(1) `src/app/api/admin/stockists/route.ts` の `POST` は `.select('id')` で RETURNING を付けるので、非公開の店の作成は 42501 で断られ、作成の失敗になる（公開の店は作れる）。(2) `src/app/api/admin/stockists/[id]/route.ts` の `PUT`・`PATCH` で公開から非公開へは 42501 で断られる。(3) 同じ `PUT`・`PATCH`・`DELETE` で既に非公開の店を対象にすると、行が見えないので0件のまま `error` が無く、窓口は件数を見ないので成功を返し、成功として監査に残る（THR-STOCKIST-013 の「0件で 200」と同じ形）。窓口の認可は PUT・PATCH・DELETE に manage だけを求める（GET が read）。read 無しの manage だけの役を作ると、非公開の店を作れず、編集・公開・削除もできないまま成功に見える。試験は `tests/integration/db/stockist_rls.integration.test.ts`（「現状の記録」。DB の段の素の INSERT と UPDATE の断りだけを見る） | DATA-STOCKIST-002、API-STOCKIST-002、API-STOCKIST-004、API-STOCKIST-005、API-STOCKIST-006、THR-STOCKIST-013 | ユーザー |
+| TM-STOCKIST-63 | SEC-STOCKIST-015 の本文は「id が正の整数でない時は API を呼ばずに誤りを表示する。今のコードは満たさない」。AC-01 は「`/api/admin/stockists/` で始まらない管理 API への要求が送られず、誤りの文が表示される」で、要件の「id を確かめてから」より弱い | `src/app/admin/stockist/edit/[id]/page.tsx` は `useParams` の `id` を確かめずに `/api/admin/stockists/${stockistId}` へそのまま組む。細工した id でも要求は `/api/admin/stockists/` の下にとどまるので、2026-10-25 の全件の E2E で `FR-STOCKIST-013` の SEC-STOCKIST-015-AC-01 は今のコードで通り、本文の「満たさない」と食い違って見える（コードは要件を満たさない。AC が要件の全部を見ていない）。TM-STOCKIST-51 と同じ項目を AC の側から見た行。AC を「送られた要求の末尾が正の整数であること」などに強めるか、本文を直すかは未決 | SEC-STOCKIST-015、SEC-STOCKIST-015-AC-01、THR-STOCKIST-015、TM-STOCKIST-51 | ユーザー |
 
 #### セキュリティ要件を満たさない所
 
@@ -1889,13 +1895,13 @@ LOOK の要件・脅威・構造設計・ADR・詳細設計を書く中で見つ
 
 #### 概要
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: SEARCH（`docs/02_Requirements/areas/search.md`・`docs/05_Quality/security/threats/search.md`・`docs/03_BasicDesign/areas/search.md`・ADR-0300〜0310・`docs/04_DetailDesign/pages/19_search.md`）
+> 状態: 推定 | 確認日: 2026-10-25 | 対象: SEARCH（`docs/02_Requirements/areas/search.md`・`docs/05_Quality/security/threats/search.md`・`docs/03_BasicDesign/areas/search.md`・ADR-0300〜0310・`docs/04_DetailDesign/pages/19_search.md`）
 
 SEC を満たさない所の行は、事実と今のコードの動きを `SEC-SEARCH-…` の項目の本文にだけ書いてあるので、番号と ID だけを挙げる。判断する人は全部ユーザー。
 
 | 区分 | 番号 | 件数 |
 | --- | --- | --- |
-| 文書とコードの食い違い | TM-SEARCH-01〜TM-SEARCH-28、TM-SEARCH-56 | 29 |
+| 文書とコードの食い違い | TM-SEARCH-01〜TM-SEARCH-28、TM-SEARCH-56・TM-SEARCH-57 | 30 |
 | セキュリティ要件を満たさない所 | TM-SEARCH-29〜TM-SEARCH-47 | 19 |
 | 書き方の判断待ち | TM-SEARCH-48〜TM-SEARCH-55 | 8 |
 
@@ -1932,6 +1938,7 @@ SEC を満たさない所の行は、事実と今のコードの動きを `SEC-S
 | TM-SEARCH-27 | 候補の窓口の回数の上限（200回／600秒）が文書に無い。過去のセキュリティのレビューは `Referrer-Policy` の無さ（Medium）と `search.history` の平文の保存（Low）を Open のままにしている | 候補の窓口は 200 回。`Referrer-Policy: no-referrer` は共有の proxy が全部の応答に付け、履歴の保存は FREQ-189 で撤去済み。レビューの記録の状態は古い | ADR-0306、ADR-0308、SEC-SEARCH-011、SEC-SEARCH-012 | ユーザー |
 | TM-SEARCH-28 | 説明の切り出しの位置。DRV-SEARCH-002 は一致の前後を切り出す。検索の関数の `search_path` に `public` を2回書く | `buildSnippet` は前後の空白を除いて小文字にした文で位置を探し、切るのは元の文なので、元の文の頭に空白がある、または小文字にすると長さの変わる字がある時に切る位置がずれる（推定、害は表示だけ）。`search_path` の重複は害が無いと推定 | DRV-SEARCH-002、DD-SEARCH-006、DATA-SEARCH-001、DATA-SEARCH-003 | ユーザー |
 | TM-SEARCH-56 | 検索の窓口の結果の要素は `id`・`type`・`title`・`description`・`href`・`imageUrl`・`meta` と書いた（API-SEARCH-001、DD-SEARCH-006 の出力）が、コードは並べ替えに使った `score` を `items`・`looks`・`news` の各要素に残したまま返す | コードは変えず記録だけ。応答に `score` が載る。文書を `score` ありに直すか、コードで落とすかは決めていない（点の付け方は ARC-SEARCH-002）。テストは `score` の値を固めていない | API-SEARCH-001、DD-SEARCH-006、ARC-SEARCH-002 | ユーザー |
+| TM-SEARCH-57 | SEC-SEARCH-003 の本文は「語の `\%`・`\_` は `\\%`・`\\_` になり、`\` を含む行に広く当たる」と書く。同じ項目の AC-01 は、`q=\%`・`q=\_` で `/api/search` の `counts.all` が 0 と決める。本文がどの段の話か（DB の関数か API の応答か）を書いていない | DB の関数の段の動きは本文のとおり（`\` を逃がさない。ここでは動かして確かめていない）。`/api/search` の段では、`src/features/search/services/search.service.ts` の `executeSearch` が関数の返した行を `rankText` にかけ、語の文字列そのもの（または全部の語）を含まない行を落とす。`\%` を含む行は無いので 0 件になり、AC-01 の「0」は今のコードで満たされる。本文の「広く当たる」は API の応答では起きない。段を書き分けるか、AC を関数の段でも見る形にするかは未決 | SEC-SEARCH-003、SEC-SEARCH-003-AC-01、THR-SEARCH-003、DATA-SEARCH-001、TM-SEARCH-31 | ユーザー |
 
 #### セキュリティ要件を満たさない所
 
@@ -1976,13 +1983,13 @@ SEC を満たさない所の行は、事実と今のコードの動きを `SEC-S
 
 #### 概要
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: PRIVACY | 基準コミット: `8099a52e`（作業ツリー）
+> 状態: 推定 | 確認日: 2026-10-25 | 対象: PRIVACY | 基準コミット: `8099a52e`（作業ツリー）
 
 PRIVACY の要件・脅威・構造設計・ADR・詳細設計を書く中で見つかった食い違い（番号 TM-PRIVACY-NN）。どれも直していない。判断する人は全部ユーザー。
 
 | 区分 | 番号 | 件数 | 中身 |
 | --- | --- | --- | --- |
-| 文書とコードの食い違い | TM-PRIVACY-01〜21 | 21 | 要件・設計・旧文書・レビューの記録と、今のコードの動きが合わない所 |
+| 文書とコードの食い違い | TM-PRIVACY-01〜21、TM-PRIVACY-56 | 22 | 要件・設計・旧文書・レビューの記録と、今のコードの動きが合わない所 |
 | セキュリティ要件を満たさない所 | TM-PRIVACY-22〜39 | 18 | `SEC-PRIVACY-…` が求める事を今のコードが満たさない所。試すテストだけが無い物を含む |
 | 書き方の判断待ち | TM-PRIVACY-40〜55 | 16 | 検査の決まりと文書の置き方で、ユーザーの確認が要る所 |
 
@@ -2015,6 +2022,7 @@ PRIVACY の要件・脅威・構造設計・ADR・詳細設計を書く中で見
 | TM-PRIVACY-19 | 追跡の設計の資料は PRIVACY を「コード —」（開店までの作業が触らない領域）とする | 頁が `delivery-store.ts` と `lib/supabase/server.ts` を import する。在庫の作業が `delivery-store.ts` の返り値の形を変えると、頁と単体テストの差し替えが要る（今の計画は頁を「維持」） | ARC-PRIVACY-001、DD-PRIVACY-001 | ユーザー |
 | TM-PRIVACY-20 | 旧詳細設計 `17_privacy.md` は、試験が配送の追跡の追加の節の文言を固定しているので項目の形に書き直せない | 新しい頁 `17-1_privacy.md` に項目を置き、旧版は残した。同じ頁を2つの文書が説明する。旧版を目次に置き換えるかは、試験の固定を外す時に決める | DD-PRIVACY-001 | ユーザー |
 | TM-PRIVACY-21 | 「最終改定日」は、委託の一覧が追跡の切り替えで変わる時にも変わると読める（11 節は掲載した時点から効力を生じると書く）が、頁と単体テストは日付を固定している | 「最終改定日：2026年7月11日」は固定の字。SEC は別の行にある | ADR-0351、DRV-PRIVACY-003、SCR-PRIVACY-001 | ユーザー |
+| TM-PRIVACY-56 | SEC-PRIVACY-009-AC-01 は「設定を読めない状態で `/privacy` を開くと、時間を置いて開き直す案内か、窓口（メールかお問い合わせのフォーム）が表示される」。設定を読めない時の既定の誤りの頁が出す英語の「Reload to try again.」を「開き直す案内」と数えるかを、文書が決めていない（TM-PRIVACY-16 の「どちらを優先するか」とは別の点） | `/privacy` には `error.tsx`・`global-error.tsx` が無く（`src/app` にあるのは `checkout` と `order-status/[token]` の `error.tsx` だけ）、Next.js の既定の頁（`node_modules/next/dist/client/components/builtin/app-error.js`）が 500 で「A server error occurred. Reload to try again.」を出す。`e2e/FR-PRIVACY-009-tracking-setting-read-failure.spec.ts` の探し方は日本語の案内（時間を置く・もう一度・開き直す・再読み込みなど）と窓口だけを数え、英語は数えないので、SEC-PRIVACY-009-AC-01 は3つの幅とも赤（`test.fail`）。ユーザーが英語の「Reload」で足りると決めれば、この赤は外れる | SEC-PRIVACY-009、SEC-PRIVACY-009-AC-01、SEC-PRIVACY-005、ADR-0350、TM-PRIVACY-16 | ユーザー |
 
 #### セキュリティ要件を満たさない所
 
@@ -2066,12 +2074,14 @@ PRIVACY の要件・脅威・構造設計・ADR・詳細設計を書く中で見
 
 #### 概要
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: AUTH の要件・脅威・構造設計・ADR-0400〜0411・詳細設計（`14_login.md`・`sequence/auth-*.md`）に今ある食い違い | 判断する人は全部ユーザー
+> 状態: 推定 | 確認日: 2026-10-25 | 対象: AUTH の要件・脅威・構造設計・ADR-0400〜0411・詳細設計（`14_login.md`・`sequence/auth-*.md`）に今ある食い違い | 判断する人は全部ユーザー
 
 AUTH の文書を読んで見つけた食い違いを、「食い違い」節の表の形に載せた。どちらが正しいかは決めていない。文書には今のコードの動きを書いてある。
 
 - 01 から 41 は文書どうし・文書とコードの食い違い
 - 42 から 63 は、今のコードが満たさないセキュリティ要件。行には `SEC-AUTH-NNN` だけを書く。中身（どう満たさないか）は要件の文書の同じ番号の項目に1か所だけ書いてある
+- 64 は、ユーザーが決めた要件（2026-10-25）にコードがまだ追い付いていない物。どちらが正しいかは決まっていて、コードの直しの時期だけをユーザーが決める
+- 65 は、全件の E2E（2026-10-25）で見つかった、要件の文書に無い食い違い。文書とコードの食い違いの種類で、表の末尾に足した
 - 直し済みで文書から消えた物（`DRV-AUTH-008` の「行が無い時は断る」、構造設計 `API-AUTH-005` の 202 の本文、`API-AUTH-007` の 303、`API-AUTH-017` の `forceReEnroll` など）は載せていない
 
 #### 表
@@ -2141,6 +2151,8 @@ AUTH の文書を読んで見つけた食い違いを、「食い違い」節の
 | TM-AUTH-61 | SEC-AUTH-030 を今のコードが一部満たさない | SEC-AUTH-030 に書いた | SEC-AUTH-030 | ユーザー |
 | TM-AUTH-62 | SEC-AUTH-031 を今のコードが満たさない | SEC-AUTH-031 に書いた | SEC-AUTH-031 | ユーザー |
 | TM-AUTH-63 | SEC-AUTH-012 を移行から作った DB が満たさない（本番は未確認） | SEC-AUTH-012 に書いた | SEC-AUTH-012 | ユーザー |
+| TM-AUTH-64 | 確認のリンクは、登録を始めたブラウザでだけログインさせ、別のブラウザで開いた時はメールを確認して `/login` へ送る（ユーザーの決定、2026-10-25。確かめ画面の形は弱いので採らない） | 要件は決まった（SEC-AUTH-006-AC-02・SEC-AUTH-007・SEC-AUTH-007-AC-01）。`/api/auth/confirm` は登録を始めたブラウザに結ばず、どのブラウザで開いても session を作る。コードの直しはまだ。いつ直すかはユーザーが決める。E2E（`e2e/FR-SIGNUP-003-signup-confirm-link.spec.ts`）で直るまで赤なのは SEC-AUTH-007-AC-01 だけ（SEC-AUTH-006-AC-02 は今のコードで通り、直した後も緑のままでなければならない守り）。登録の 202 は新規・登録済みの両方の枝で同じ結び付けの Cookie を置く（応答を同じに保つ。SEC-AUTH-016） | SEC-AUTH-006-AC-02、SEC-AUTH-007、SEC-AUTH-007-AC-01、THR-AUTH-007、API-AUTH-006 | ユーザー |
+| TM-AUTH-65 | OTP の再送の窓口が返す誤り。FR-LOGIN-006-AC-02・FREQ-329-REQ-04 は、再送が 429 を返した時に Retry-After を待ちに入れて上限の旨を出すと決める。TM-AUTH-26 のとおり、再送の最短の間隔は Supabase Auth 側の送信間隔にも頼る | `src/app/api/auth/login/resend/route.ts` が返す 429 は自前の回数の制限の物だけ。`signInWithOtp` の誤りは種類（送信間隔の 429 など）を見ずに全部 500「認証コードの送信に失敗しました。時間をおいて再度お試しください。」にして、監査に `otp_resend_failed` を残す。このため Supabase Auth の送信間隔（手元の `supabase/config.toml` の `[auth.email]` は `max_frequency = "1s"`。本番の値は未確認）に当たると、画面の「待つ」案内でなく 500 の案内になる。別の端末から間隔内に続けてログインすると起きうる（推定）。2026-10-25 の全件の E2E で `FR-ADMIN-MISC-003` の SEC-ADMIN-016-AC-01 が、2つのブラウザで続けてログインする準備の確認コードの再送（`e2e/member-session-helpers.ts`）の 500 で落ちたのも、これが原因と疑われる（推定。その時の監査の記録は消えていて確かめていない）。送信間隔の 429 を 429 で返して Retry-After を渡すか、500 のままにするかは未決。FR-LOGIN-006-AC-02 の赤ではない | FR-LOGIN-006-AC-02、FREQ-329-REQ-04、API-AUTH-003、TM-AUTH-26 | ユーザー |
 
 #### 表に載せなかった物（`unused-code.md` の候補）
 
