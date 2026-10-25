@@ -1,6 +1,6 @@
 # 要件IDの参照状況
 
-> 状態: 自動生成 | 生成日: 2026-10-24 | 対象: リポジトリ内の文字列参照
+> 状態: 自動生成 | 生成日: 2026-10-25 | 対象: リポジトリ内の文字列参照
 
 ## 概要
 
@@ -8,11 +8,11 @@
 
 | 指標 | 件数 |
 | --- | ---: |
-| 要件定義書の対象ID | 2116 |
-| 設計にID参照あり | 567 |
-| テストにID参照あり | 1185 |
-| 設計にID参照なし | 1549 |
-| テストにID参照なし | 931 |
+| 要件定義書の対象ID | 2146 |
+| 設計にID参照あり | 570 |
+| テストにID参照あり | 1221 |
+| 設計にID参照なし | 1576 |
+| テストにID参照なし | 925 |
 
 ## 参照一覧
 
@@ -60,6 +60,7 @@
 | `FR-ADMIN-007` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | なし |
 | `FR-ADMIN-008` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-008-remove-kpi-heading.spec.ts](../../../e2e/FR-ADMIN-008-remove-kpi-heading.spec.ts)） |
 | `FR-ADMIN-009` | 3件（[admin.md](../../03_BasicDesign/areas/admin.md)） | 1件（[FR-ADMIN-009-kpi-icon-tooltip.spec.ts](../../../e2e/FR-ADMIN-009-kpi-icon-tooltip.spec.ts)） |
+| `FR-ADMIN-029` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 1件（[FR-ADMIN-029-accounting-tab.spec.ts](../../../e2e/FR-ADMIN-029-accounting-tab.spec.ts)） |
 | `FR-ADMIN-050` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 2件（[FR-ADMIN-050-order-shipping.spec.ts](../../../e2e/FR-ADMIN-050-order-shipping.spec.ts)） |
 | `FR-ADMIN-063` | なし | 1件（[FR-ADMIN-063-order-cancel-dialog.spec.ts](../../../e2e/FR-ADMIN-063-order-cancel-dialog.spec.ts)） |
 | `FR-ADMIN-065` | なし | 2件（[FR-ADMIN-065-order-history-and-email-resend.spec.ts](../../../e2e/FR-ADMIN-065-order-history-and-email-resend.spec.ts)） |
@@ -107,10 +108,15 @@
 | `FR-ADMIN-107` | なし | 1件（[FR-ADMIN-107-dialog-order-number-close.spec.ts](../../../e2e/FR-ADMIN-107-dialog-order-number-close.spec.ts)） |
 | `FR-ADMIN-108` | 1件（[ADR-0018-admin-category-select-onvaluechange.md](../../03_BasicDesign/decisions/ADR-0018-admin-category-select-onvaluechange.md)） | 1件（[FR-ADMIN-108-select-fields.spec.ts](../../../e2e/FR-ADMIN-108-select-fields.spec.ts)） |
 | `FR-ADMIN-109` | 2件（[ADR-0007-news-permissions-not-default-for-supporter.md](../../03_BasicDesign/decisions/ADR-0007-news-permissions-not-default-for-supporter.md)） | 1件（[FR-ADMIN-109-permission-settings.spec.ts](../../../e2e/FR-ADMIN-109-permission-settings.spec.ts)） |
+| `FR-ADMIN-111` | なし | 1件（[FR-ADMIN-111-inventory-fifo.spec.ts](../../../e2e/FR-ADMIN-111-inventory-fifo.spec.ts)） |
 | `FR-ADMIN-112` | なし | なし |
+| `FR-ADMIN-113` | なし | 1件（[FR-ADMIN-113-purchase-order-create.spec.ts](../../../e2e/FR-ADMIN-113-purchase-order-create.spec.ts)） |
+| `FR-ADMIN-114` | なし | 1件（[FR-ADMIN-114-purchase-order-quantities.spec.ts](../../../e2e/FR-ADMIN-114-purchase-order-quantities.spec.ts)） |
+| `FR-ADMIN-115` | なし | 1件（[FR-ADMIN-115-purchase-order-receipts.spec.ts](../../../e2e/FR-ADMIN-115-purchase-order-receipts.spec.ts)） |
 | `FR-ADMIN-118` | なし | なし |
+| `FR-ADMIN-119` | なし | 1件（[FR-ADMIN-119-purchase-order-attachments.spec.ts](../../../e2e/FR-ADMIN-119-purchase-order-attachments.spec.ts)） |
 | `FR-ADMIN-120` | なし | なし |
-| `FR-ADMIN-123` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 5件（[FR-ADMIN-050-order-shipping.spec.ts](../../../e2e/FR-ADMIN-050-order-shipping.spec.ts)） |
+| `FR-ADMIN-123` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 10件（[FR-ADMIN-050-order-shipping.spec.ts](../../../e2e/FR-ADMIN-050-order-shipping.spec.ts)） |
 | `FR-CART-001` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | 1件（[FR-CART-001-008-cart-ui-and-actions.spec.ts](../../../e2e/FR-CART-001-008-cart-ui-and-actions.spec.ts)） |
 | `FR-CART-002` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | 1件（[FR-CART-002-005-006-007-summary-session-empty.spec.ts](../../../e2e/FR-CART-002-005-006-007-summary-session-empty.spec.ts)） |
 | `FR-CART-003` | 1件（[12_cart.md](../../04_DetailDesign/pages/12_cart.md)） | なし |
@@ -551,11 +557,11 @@
 | `FREQ-192-AC-01` | なし | なし |
 | `FREQ-192-AC-02` | なし | なし |
 | `FREQ-192-AC-03` | なし | なし |
-| `FREQ-193-AC-01` | なし | なし |
+| `FREQ-193-AC-01` | なし | 1件（[FR-SEARCH-012-compact-form-and-tab-underline.spec.ts](../../../e2e/FR-SEARCH-012-compact-form-and-tab-underline.spec.ts)） |
 | `FREQ-193-AC-02` | なし | なし |
-| `FREQ-194-AC-01` | なし | なし |
+| `FREQ-194-AC-01` | なし | 1件（[FR-SEARCH-013-underline-and-dropdown-edges.spec.ts](../../../e2e/FR-SEARCH-013-underline-and-dropdown-edges.spec.ts)） |
 | `FREQ-194-AC-02` | なし | なし |
-| `FREQ-195-AC-01` | なし | なし |
+| `FREQ-195-AC-01` | なし | 1件（[FR-SEARCH-013-underline-and-dropdown-edges.spec.ts](../../../e2e/FR-SEARCH-013-underline-and-dropdown-edges.spec.ts)） |
 | `FREQ-195-AC-02` | なし | なし |
 | `FREQ-196-AC-01` | なし | なし |
 | `FREQ-196-AC-02` | なし | なし |
@@ -1909,24 +1915,48 @@
 | `FREQ-52-AC-01` | なし | なし |
 | `FREQ-520-AC-01` | なし | なし |
 | `FREQ-520-AC-02` | なし | なし |
-| `FREQ-521-AC-01` | なし | なし |
+| `FREQ-521-AC-01` | なし | 1件（[FR-ADMIN-111-inventory-fifo.spec.ts](../../../e2e/FR-ADMIN-111-inventory-fifo.spec.ts)） |
 | `FREQ-521-AC-02` | なし | なし |
-| `FREQ-522-AC-01` | なし | なし |
-| `FREQ-522-AC-02` | なし | 1件（[group_g1_writer_inventory.integration.test.ts](../../../tests/integration/db/group_g1_writer_inventory.integration.test.ts)） |
+| `FREQ-522-AC-01` | なし | 1件（[FR-ADMIN-111-inventory-fifo.spec.ts](../../../e2e/FR-ADMIN-111-inventory-fifo.spec.ts)） |
+| `FREQ-522-AC-02` | なし | 2件（[FR-ADMIN-111-inventory-fifo.spec.ts](../../../e2e/FR-ADMIN-111-inventory-fifo.spec.ts)） |
 | `FREQ-523-AC-01` | なし | なし |
 | `FREQ-524-AC-01` | なし | なし |
 | `FREQ-524-AC-02` | なし | なし |
 | `FREQ-524-AC-03` | なし | 4件（[FR-ADMIN-069-made-to-order-completion.spec.ts](../../../e2e/FR-ADMIN-069-made-to-order-completion.spec.ts)） |
 | `FREQ-524-AC-04` | なし | 1件（[FR-ADMIN-069-made-to-order-completion.spec.ts](../../../e2e/FR-ADMIN-069-made-to-order-completion.spec.ts)） |
+| `FREQ-525-AC-01` | なし | 11件（[FR-ADMIN-111-inventory-fifo.spec.ts](../../../e2e/FR-ADMIN-111-inventory-fifo.spec.ts)） |
+| `FREQ-525-AC-02` | なし | 7件（[FR-ADMIN-111-inventory-fifo.spec.ts](../../../e2e/FR-ADMIN-111-inventory-fifo.spec.ts)） |
+| `FREQ-525-AC-03` | なし | 2件（[group_g2_g1_followups.integration.test.ts](../../../tests/integration/db/group_g2_g1_followups.integration.test.ts)） |
+| `FREQ-526-AC-01` | なし | 5件（[FR-ADMIN-113-purchase-order-create.spec.ts](../../../e2e/FR-ADMIN-113-purchase-order-create.spec.ts)） |
+| `FREQ-526-AC-02` | なし | 7件（[FR-ADMIN-113-purchase-order-create.spec.ts](../../../e2e/FR-ADMIN-113-purchase-order-create.spec.ts)） |
+| `FREQ-526-AC-03` | なし | 5件（[FR-ADMIN-113-purchase-order-create.spec.ts](../../../e2e/FR-ADMIN-113-purchase-order-create.spec.ts)） |
+| `FREQ-526-AC-04` | なし | 8件（[FR-ADMIN-114-purchase-order-quantities.spec.ts](../../../e2e/FR-ADMIN-114-purchase-order-quantities.spec.ts)） |
+| `FREQ-526-AC-05` | なし | 8件（[FR-ADMIN-113-purchase-order-create.spec.ts](../../../e2e/FR-ADMIN-113-purchase-order-create.spec.ts)） |
+| `FREQ-527-AC-01` | なし | 9件（[FR-ADMIN-114-purchase-order-quantities.spec.ts](../../../e2e/FR-ADMIN-114-purchase-order-quantities.spec.ts)） |
+| `FREQ-527-AC-02` | なし | 6件（[FR-ADMIN-114-purchase-order-quantities.spec.ts](../../../e2e/FR-ADMIN-114-purchase-order-quantities.spec.ts)） |
+| `FREQ-528-AC-01` | なし | 5件（[FR-ADMIN-114-purchase-order-quantities.spec.ts](../../../e2e/FR-ADMIN-114-purchase-order-quantities.spec.ts)） |
+| `FREQ-528-AC-02` | なし | 5件（[FR-ADMIN-114-purchase-order-quantities.spec.ts](../../../e2e/FR-ADMIN-114-purchase-order-quantities.spec.ts)） |
+| `FREQ-529-AC-01` | なし | 9件（[FR-ADMIN-111-inventory-fifo.spec.ts](../../../e2e/FR-ADMIN-111-inventory-fifo.spec.ts)） |
+| `FREQ-529-AC-02` | なし | 5件（[FR-ADMIN-115-purchase-order-receipts.spec.ts](../../../e2e/FR-ADMIN-115-purchase-order-receipts.spec.ts)） |
+| `FREQ-529-AC-03` | なし | 1件（[group_g2_concurrency.integration.test.ts](../../../tests/integration/db/group_g2_concurrency.integration.test.ts)） |
+| `FREQ-529-AC-04` | なし | 8件（[FR-ADMIN-115-purchase-order-receipts.spec.ts](../../../e2e/FR-ADMIN-115-purchase-order-receipts.spec.ts)） |
+| `FREQ-529-AC-05` | なし | 5件（[FR-ADMIN-115-purchase-order-receipts.spec.ts](../../../e2e/FR-ADMIN-115-purchase-order-receipts.spec.ts)） |
 | `FREQ-53-AC-01` | なし | なし |
 | `FREQ-53-AC-02` | なし | なし |
-| `FREQ-535-AC-01` | なし | なし |
+| `FREQ-530-AC-01` | なし | 5件（[FR-ADMIN-119-purchase-order-attachments.spec.ts](../../../e2e/FR-ADMIN-119-purchase-order-attachments.spec.ts)） |
+| `FREQ-530-AC-02` | なし | 12件（[FR-ADMIN-119-purchase-order-attachments.spec.ts](../../../e2e/FR-ADMIN-119-purchase-order-attachments.spec.ts)） |
+| `FREQ-530-AC-03` | なし | 7件（[FR-ADMIN-119-purchase-order-attachments.spec.ts](../../../e2e/FR-ADMIN-119-purchase-order-attachments.spec.ts)） |
+| `FREQ-535-AC-01` | なし | 1件（[group_g2_g1_followups.integration.test.ts](../../../tests/integration/db/group_g2_g1_followups.integration.test.ts)） |
 | `FREQ-54-AC-01` | なし | なし |
 | `FREQ-540-AC-01` | なし | 2件（[FR-ADMIN-123-group-g-permissions.spec.ts](../../../e2e/FR-ADMIN-123-group-g-permissions.spec.ts)） |
 | `FREQ-540-AC-02` | なし | 1件（[delivery-status-traceability.test.ts](../../../tests/unit/docs/delivery-status-traceability.test.ts)） |
 | `FREQ-540-AC-03` | 1件（[stockist.md](../../03_BasicDesign/areas/stockist.md)） | 1件（[delivery-status-traceability.test.ts](../../../tests/unit/docs/delivery-status-traceability.test.ts)） |
 | `FREQ-540-AC-04` | なし | 1件（[delivery-status-traceability.test.ts](../../../tests/unit/docs/delivery-status-traceability.test.ts)） |
 | `FREQ-540-AC-05` | なし | 4件（[FR-ADMIN-123-group-g-permissions.spec.ts](../../../e2e/FR-ADMIN-123-group-g-permissions.spec.ts)） |
+| `FREQ-540-AC-06` | 1件（[16_admin.md](../../04_DetailDesign/pages/16_admin.md)） | 7件（[FR-ADMIN-123-group-g-permissions.spec.ts](../../../e2e/FR-ADMIN-123-group-g-permissions.spec.ts)） |
+| `FREQ-540-AC-07` | 1件（[purchasing.md](../../04_DetailDesign/sequence/purchasing.md)） | 29件（[FR-ADMIN-123-group-g-permissions.spec.ts](../../../e2e/FR-ADMIN-123-group-g-permissions.spec.ts)） |
+| `FREQ-540-AC-08` | なし | 4件（[group_g1_writer_inventory.integration.test.ts](../../../tests/integration/db/group_g1_writer_inventory.integration.test.ts)） |
+| `FREQ-540-AC-09` | なし | 2件（[group_g2_public_function_acl.integration.test.ts](../../../tests/integration/db/group_g2_public_function_acl.integration.test.ts)） |
 | `FREQ-541-AC-01` | なし | なし |
 | `FREQ-541-AC-02` | なし | なし |
 | `FREQ-55-AC-01` | なし | なし |

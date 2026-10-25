@@ -1,6 +1,6 @@
 # DB マイグレーション運用
 
-> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕まで） | 確認日: 2026-10-25 | 本番適用状況は未確認（G-1 の移行は 2026-10-24 に適用済み。G-2 の移行は2本とも未適用）
+> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで） | 確認日: 2026-10-25 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み
 
 ## 概要
 
@@ -403,15 +403,15 @@ CI（DB）とホスティング（アプリ）のどちらが先に終わるか�
 
 ## グループ G-2 発注・受け取りの移行（20261024153505〜）
 
-[設計書](../superpowers/specs/2026-10-23-group-g-design.md)と[実装計画](../superpowers/plans/2026-10-24-group-g2-purchasing.md)に従う。移行は2本（Task 1 で作り Task 2 以降が足す基盤と、Task 4 で作り Task 6 以降が足す書込みの `writers`）。ここには基盤の移行を書き（Task 1 の分と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と Task 5 の発注の読取）、`writers` の移行は下の「writers の移行」に書く。**どちらも本番へは未適用**（controller が全体の検証の後に当てる。常に基盤の後）。基盤のファイルの 100,000 バイトの上限は Task 3 で外した（本番は `npx supabase db push --linked` でファイルごとに1取引で当て、CLI は大きなファイルも扱える）。移行は2本のまま。
+[設計書](../superpowers/specs/2026-10-23-group-g-design.md)と[実装計画](../superpowers/plans/2026-10-24-group-g2-purchasing.md)に従う。移行は2本（Task 1 で作り Task 2 以降が足す基盤と、Task 4 で作り Task 6 以降が足す書込みの `writers`）。ここには基盤の移行を書き（Task 1 の分と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と Task 5 の発注の読取）、`writers` の移行は下の「writers の移行」に書く。**2本とも 2026-10-25 12:39 JST に本番へ適用済み**（全体の検証の後に、基盤・書込みの順で。記録は下の「本番適用の記録」）。基盤のファイルの 100,000 バイトの上限は Task 3 で外した（本番は `npx supabase db push --linked` でファイルごとに1取引で当て、CLI は大きなファイルも扱える）。移行は2本のまま。
 
 ### 記録（Task 1 の基盤）
 
 | 項目 | 値 |
 | --- | --- |
 | 移行ファイル | `supabase/migrations/20261024153505_group_g2_purchasing_foundation.sql`（先頭の `BEGIN;` と末尾の `COMMIT;` を1組だけ持つ。本体は `-- G2A_BODY_BEGIN`〜`-- G2A_BODY_END`、末尾の確かめは `-- G2A_FINAL_ASSERT_BEGIN`〜`-- G2A_FINAL_ASSERT_END`。UTF-8・BOMなし・LF） |
-| 本番適用版 | 未適用（適用の直前に、バイト数と MD5 を固定して記録する） |
-| 書込みの移行 | `supabase/migrations/20261024180500_group_g2_purchasing_writers.sql`（Task 4。常に基盤の後。節の印は `-- G2B_BODY_BEGIN`〜`-- G2B_BODY_END` と `-- G2B_FINAL_ASSERT_BEGIN`〜`-- G2B_FINAL_ASSERT_END`。UTF-8・BOMなし・LF・ASCII のみ）。未適用（同じく適用の直前に固定して記録する） |
+| 本番適用版 | `20261024153505`（2026-10-25 12:39 JST、Supabase CLI の `db push --linked` で適用。版はファイルのまま） |
+| 書込みの移行 | `supabase/migrations/20261024180500_group_g2_purchasing_writers.sql`（Task 4。常に基盤の後。節の印は `-- G2B_BODY_BEGIN`〜`-- G2B_BODY_END` と `-- G2B_FINAL_ASSERT_BEGIN`〜`-- G2B_FINAL_ASSERT_END`。UTF-8・BOMなし・LF・ASCII のみ）。本番適用版 `20261024180500`（同じ push で基盤の直後に適用） |
 
 ### 何をするか
 
@@ -539,6 +539,18 @@ WHERE n.nspname IN ('public', 'private')
 - 9つの書込み関数のそれぞれが共通の鍵 `(190521,1)` を、発注書の表・`item_variants`・`stock_movements` への最初の参照より前に取る（`group_g1_writer_inventory`）。別接続の並行は `group_g2_concurrency`（各関数が鍵だけを別接続が持つ間は行の鍵を取らず待つこと、受け取り対受け取り・入荷・入金・返金の受理・数量確定・残りの打切り・取消対入金／FIFO／棚卸減で deadlock が無く二重に動かないこと）。この試験が commit した材料（発注書・受取・注文、原本の予約・添付）は追記専用なので残り、DB 結合の他の試験は自分の発注書の id か番号に絞って確かめる（局所の DB を `db reset` しなくても、続けて何度流しても通る）。
 
 **先絞りの索引（Task 1 の確かめ直しで残った点）**: `group_g_open_work_order_ids` の発送済みの注文ごとの合計が引く列（`order_fulfillment_lines.order_item_id`・`order_refund_lines.order_item_id`・`order_items.order_id`・`order_item_allocations.order_item_id`・`order_returns.order_id`〔`(order_id, number)` の一意制約の先頭〕・`order_refunds.order_id`・`order_cancel_requests.order_id`、結合は主キー）には、先頭の列が全行を覆う索引がすでにある。**新しい索引は足さない**（`group_g2_g1_followups` が、これらの索引が先頭の列に残っていることを確かめる）。実測（2026-10-25、手元の DB で取引の中に作って戻した材料: 注文 30,490・明細 60,511・発送の明細 60,045・返金約 6,000）: variant を絞った読み（`list_group_g_variant_inventory` の経路）は 27 ms で、発送の明細の合計・返金の明細の合計・注文の明細・注文の主キーのどれも索引走査（`order_fulfillment_lines_order_item_idx`・`order_refund_lines_item_idx`・`idx_order_items_order_id`・`order_items_variant_id_idx`・各主キー）。逐次走査になったのは件数が数十行の表（返品・取消申請）だけ。全 variant の読み（`list_admin_inventory` の経路、NULL）は 166 ms で、注文・明細・発送の明細を各1回ずつ走査する（全件を見る読みなので避けられない）が、行ごとの合計は索引走査のまま（60,511 回）。返金の表が小さい（数十行）間は計画が逐次走査を選ぶが、約 6,000 行では `order_refund_lines_item_idx` を使う。
+
+### 本番適用の記録（2026-10-25）
+
+| 段 | 結果 |
+| --- | --- |
+| 適用前の読み取り（MCP、読み取りだけ・件数だけ） | 台帳の末尾 `20261023211425`、G-2 の版・9表・置き場は無し。`role_permissions` は店長30・サポーター8（G-0／G-1 の記録と同じ）。注文0・明細0・台帳0・variant 21・在庫の合計0（G-1 の清掃の後のまま）。`storage.objects` の方針は0件。G-2 の20の名前の関数は0。anon・authenticated・service_role の役割の所属は無し。11関数は anon・authenticated・PUBLIC が EXECUTE できず service_role だけ（Task 1 の REVOKE は本番では何も変えない） |
+| 置き換える関数の照合 | `admin_record_stock_movement`（public・private）・`list_group_g_variant_inventory`（public・private）・`private.guard_group_g_paid_at()` の5つの `pg_get_functiondef` の MD5 が、本番と手元で G-1 まで当てた DB（`db reset --version 20261023211425`）で全部一致 |
+| ファイルの固定 | 基盤 121,715 バイト・`5248d3da2923b2476f79b6be1c42acca`、書込み 106,412 バイト・`b4813a3fb1a2c360264b02d6a441214b`。BOM・CR・全角空白・NBSP は0、トップレベルの `BEGIN;`・`COMMIT;` は各1 |
+| 適用 | `supabase migration list --linked` で本番に無いのは G-2 の2本だけ、`db push --linked --dry-run` も2本だけ（seed・役割なし）を確かめ、`db push --linked --yes` で基盤・書込みの順に適用（2026-10-25 12:39 JST、パスワードの入力なし） |
+| 当てた文の照合 | `20261024153505`: 文 137・`md5(array_to_string(statements, E'\n'))` `14ececdfee43e8d464349c2150d72a45`。`20261024180500`: 文 81・`e2cfbddd720d2f18a5eac48949efe1f9`。本番と手元の `db reset` の履歴で一致 |
+| 適用後の形の照合（本番と手元で同じ値） | 発注書の9表（RLS・強制 RLS・anon／authenticated／service_role の表の権限）、方針9、トリガー30、public 186・private 175 の関数（定義〔CR を除く〕・`SECURITY DEFINER`・設定・3役割の EXECUTE）の指紋が全部一致（G-0／G-1 の既存の関数は置き換えた3つ以外変わらず、前回の記録の「本番だけ ACL が狭い11関数」の差も無くなった）。置き場 `purchase-order-documents` は非公開・20,971,520 バイト・PDF／JPEG／PNG。書き手の一覧 65本。`role_permissions` は店長30・サポーター8 のまま |
+| 適用後の件数 | 発注書の9表・置き場の物はすべて0。注文0・台帳0・在庫の合計0（データを変える文は無い）。本番で試験の発注書は作っていない |
 
 ### 試験
 
