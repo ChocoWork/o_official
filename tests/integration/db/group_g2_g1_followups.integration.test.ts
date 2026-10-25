@@ -4,6 +4,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import { holdsCommonLock, seedGroupG1Allocation, seedGroupG1Shipment, withGroupG1FixtureTransaction } from './helpers/group-g1-fixtures';
+import { withCleanup } from './helpers/with-cleanup';
 import { PRICE, createCatalogFixture, insertCancelRequest, insertOrderWithLines, insertRefundRecord, insertReturnRecord } from './helpers/order-fixtures';
 
 /**
@@ -367,6 +368,23 @@ describeLocalDb('G-2 Task 1: open work orders and the waiting count', (db) => {
       where t.tgrelid = 'public.orders'::regclass and t.tgname = 'orders_paid_at_once'
         and t.tgfoid = 'private.guard_group_g_paid_at()'::regprocedure`)).rows).toEqual([{ type: 19, enabled: 'O' }]);
   });
+
+  // G-2 Task 9（Task 1 の確かめ直しで残った点）: 先絞りの発送済みの注文ごとの合計と、未解決の作業の探し方が引く列には、
+  // 先頭の列が全行を覆う索引がすでにある（新しい索引は要らない）。消えたらここで気づく。実測の計画は Task 9 の報告に書いた。
+  test('FREQ-525-AC-03: group_g_open_work_order_ids の発送済みの合計・未解決の作業の探し方が引く列には、全行を覆う索引が先頭の列にある', async () => {
+    const leading = async (table: string) => (await db().query(`select a.attname::text as column_name
+      from pg_index i join pg_class c on c.oid = i.indrelid join pg_namespace n on n.oid = c.relnamespace
+      join pg_attribute a on a.attrelid = c.oid and a.attnum = i.indkey[0]
+      where n.nspname = 'public' and c.relname = $1 and i.indisvalid and i.indpred is null`, [table])).rows.map((row) => row.column_name as string);
+    const wanted: Array<[string, string]> = [
+      ['order_fulfillment_lines', 'order_item_id'], ['order_refund_lines', 'order_item_id'], ['order_items', 'order_id'],
+      ['order_item_allocations', 'order_item_id'], ['order_returns', 'order_id'], ['order_refunds', 'order_id'],
+      ['order_cancel_requests', 'order_id'], ['order_fulfillments', 'id'], ['order_refunds', 'id'], ['orders', 'status'],
+    ];
+    for (const [table, column] of wanted) {
+      expect({ table, column, indexed: (await leading(table)).includes(column) }).toEqual({ table, column, indexed: true });
+    }
+  });
 });
 
 describeLocalDb('G-2 Task 1: orders.paid_at needs the common advisory for its first value', (db) => {
@@ -401,6 +419,9 @@ describeLocalDb('G-2 Task 1: orders.paid_at needs the common advisory for its fi
     db().query(`update public.orders set paid_at = ${value} where id = $1`, [orderId]);
   const paidAt = async (orderId: string) =>
     (await db().query('select paid_at from public.orders where id = $1', [orderId])).rows[0].paid_at as Date | null;
+  /** 注文が持つ割当（仮確保・支払い済み）の残りの合計 */
+  const holdLeft = async (orderId: string) => (await db().query(`select coalesce(sum(a.remaining_quantity), 0)::int as n
+    from public.order_item_allocations a join public.order_items oi on oi.id = a.order_item_id where oi.order_id = $1`, [orderId])).rows[0].n as number;
 
   test('FREQ-535-AC-01: 共通 advisory 無しの NULL→値は GROUP_G_INVENTORY_LOCK_REQUIRED / 55000 で何も書かれない', async () => {
     const orderId = await newOrder();
@@ -478,14 +499,28 @@ describeLocalDb('G-2 Task 1: orders.paid_at needs the common advisory for its fi
         lines: [{ itemId: c.itemId, variantId: c.variantId, quantity: 1, fulfillmentType: 'stock' }] })).orderId;
     });
     await db().query('begin');
-    expect(await holdsCommonLock(db())).toBe(false);
+    const abandoned: { released?: { rows: unknown[] } } = {};
+    await withCleanup(async () => {
+      expect(await holdsCommonLock(db())).toBe(false);
 
-    const result = (await db().query(`select updated, amount_matches, needs_review from public.mark_order_paid(
-      $1::uuid, 'payment_in_progress'::public.order_status, $2::text, $3::integer, 'jpy', true, 'order_confirmed', $4::text)`,
-    [orderId, `pi_${randomUUID().replaceAll('-', '')}`, PRICE, null])).rows[0];
+      const result = (await db().query(`select updated, amount_matches, needs_review from public.mark_order_paid(
+        $1::uuid, 'payment_in_progress'::public.order_status, $2::text, $3::integer, 'jpy', true, 'order_confirmed', $4::text)`,
+      [orderId, `pi_${randomUUID().replaceAll('-', '')}`, PRICE, null])).rows[0];
 
-    expect(result).toEqual({ updated: true, amount_matches: true, needs_review: false });
-    expect(await holdsCommonLock(db())).toBe(true);
-    expect(await paidAt(orderId)).not.toBeNull();
+      expect(result).toEqual({ updated: true, amount_matches: true, needs_review: false });
+      expect(await holdsCommonLock(db())).toBe(true);
+      expect(await paidAt(orderId)).not.toBeNull();
+    }, async () => {
+      // 材料は押さえを持たない取引から呼ぶために先に確定した物（注文は消せない）。入金はこの取引ごと戻し、
+      // 支払い前の注文は放棄にして仮確保の 1 点を空き在庫へ戻す（試験の後に仮確保を持つ注文を残さない）。
+      // 後始末の失敗は、試験が通った時だけ失敗にする（試験の失敗を上書きしない）。結果の確かめは後始末の外で行う
+      await db().query('rollback');
+      await db().query('select pg_catalog.pg_advisory_unlock_all()');
+      abandoned.released = await withGroupG1FixtureTransaction(db(), () => db().query(
+        `select released from public.release_stock_for_unpaid_order($1::uuid, 'payment_in_progress', 'abandoned', 'stripe_checkout_expired')`, [orderId]));
+    });
+    expect(abandoned.released?.rows).toEqual([{ released: true }]);
+    expect((await db().query('select status::text as status from public.orders where id = $1', [orderId])).rows).toEqual([{ status: 'abandoned' }]);
+    expect(await holdLeft(orderId)).toBe(0);
   });
 });

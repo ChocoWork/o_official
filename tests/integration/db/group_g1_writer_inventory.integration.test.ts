@@ -15,7 +15,10 @@ import { createCatalogFixture } from './helpers/order-fixtures';
  * 60本に、G-2 Task 7 で受け取り private.admin_receive_purchase_order と受け取りの取消・数量訂正
  * private.admin_reverse_purchase_order_receipt を足した62本に、G-2 Task 8 で原本の予約 private.admin_reserve_purchase_order_attachment、
  * 確定 private.admin_attach_purchase_order_document、訂正・無効化 private.admin_revise_purchase_order_document を足した65本
- * （G-2 の後続 Task が書き手を足すたびに増える）。
+ * （G-2 の Task 9 で閉じた。書き手は65本のまま）。走査する表には G-2 の発注書の9表を足した（TABLES）。
+ * G-2 Task 9（FREQ-540-AC-08）: 新しい書込み関数9本とその公開入口9本・内部の道具4本・読取4本の構造（private・SECURITY DEFINER・
+ * search_path 空・EXECUTE の集合）と、各本体が共通の押さえ lock_group_g_purchase_orders を発注書の表・item_variants・
+ * stock_movements への最初の参照より前に呼ぶ順を、pg_proc の prosrc で確かめる。
  */
 jest.setTimeout(60000);
 
@@ -95,10 +98,28 @@ const LEGACY_RETURN_ENTRIES = [
   'admin_reopen_return', 'admin_record_return_fee_payment', 'admin_release_return_exchange',
 ];
 
+/** G-2 の発注書の9表。G-1 の7表と同じ走査で、書く関数は閉じた一覧の中だけにあることを見る */
+const PURCHASE_TABLES = [
+  'purchase_orders', 'purchase_order_lines', 'purchase_order_revisions', 'purchase_order_short_closures',
+  'purchase_order_receipts', 'purchase_order_receipt_lines', 'purchase_order_attachment_reservations',
+  'purchase_order_attachments', 'purchase_order_attachment_revisions',
+];
+
 const TABLES = [
   'stock_movements', 'order_fulfillments', 'order_item_completions', 'order_item_allocations',
   'order_item_allocation_events', 'order_item_state_events', 'group_g_operations',
+  ...PURCHASE_TABLES,
 ];
+
+/** G-2 の書込み関数9本（private の本体と public の入口が同名）・読取4本・内部の道具4本・追記専用の表を守る trigger 関数3本 */
+const PURCHASE_WRITER_NAMES = [
+  'admin_create_purchase_order', 'admin_update_purchase_order_header', 'admin_confirm_purchase_order_quantities',
+  'admin_short_close_purchase_order', 'admin_receive_purchase_order', 'admin_reverse_purchase_order_receipt',
+  'admin_reserve_purchase_order_attachment', 'admin_attach_purchase_order_document', 'admin_revise_purchase_order_document',
+];
+const PURCHASE_READER_NAMES = ['list_admin_inventory', 'list_admin_purchase_order_lines', 'get_admin_purchase_order', 'search_purchase_order_documents'];
+const PURCHASE_INTERNAL_NAMES = ['lock_group_g_purchase_orders', 'group_g_actor_has_permissions', 'group_g_open_work_order_ids', 'purchase_order_display_stages'];
+const PURCHASE_TRIGGER_NAMES = ['guard_group_g_purchase_order_change', 'check_purchase_order_receipt_line', 'check_purchase_order_line_received'];
 
 type Proc = { oid: string; schema: string; name: string; identity: string; key: string; secdef: boolean; language: string; src: string };
 
@@ -321,5 +342,124 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
     // 材料の道具（createCatalogFixture）も押さえの下で入荷を書く
     const fx = await createCatalogFixture(db(), { stock: 3 });
     expect(Number((await db().query('select stock_quantity from public.item_variants where id = $1', [fx.variantId])).rows[0].stock_quantity)).toBe(3);
+  });
+
+  // ---- G-2 Task 9（FREQ-540-AC-08）: 発注書の関数の構造 ----
+
+  /** 関数 1 本の所有者・SECURITY・search_path と、EXECUTE の有無（意味で見る。PUBLIC は有効な ACL から読む） */
+  async function aclOf(oid: string) {
+    return (await db().query(`select p.proowner::regrole::text as owner, p.prosecdef, p.proconfig,
+        has_function_privilege('anon', p.oid, 'EXECUTE') as anon,
+        has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated,
+        has_function_privilege('service_role', p.oid, 'EXECUTE') as service_role,
+        exists(select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+          where a.grantee = 0 and a.privilege_type = 'EXECUTE') as public_execute
+      from pg_proc p where p.oid = $1::oid`, [oid])).rows[0];
+  }
+  const NO_ONE = { anon: false, authenticated: false, service_role: false, public_execute: false };
+  const SERVICE_ROLE_ONLY = { anon: false, authenticated: false, service_role: true, public_execute: false };
+
+  test('FREQ-540-AC-08: 発注の書込み関数9本は private の SECURITY DEFINER・search_path 空で閉じた一覧の中にあり、public の入口9本は同名 private へ委ねるだけの SQL INVOKER。どちらも service_role だけが EXECUTE できる', async () => {
+    const procs = await loadProcs(db());
+    const allow = await allowlistOids(db());
+    for (const name of PURCHASE_WRITER_NAMES) {
+      const bodies = procs.filter((proc) => proc.schema === 'private' && proc.name === name);
+      const entries = procs.filter((proc) => proc.schema === 'public' && proc.name === name);
+      expect({ name, bodies: bodies.length, entries: entries.length }).toEqual({ name, bodies: 1, entries: 1 });
+      // 走査が本体を書き手として見つけ（空振りで通らない）、閉じた一覧に載っている。入口は何も書かず、一覧に載らない
+      expect({ name, definer: bodies[0].secdef, allowed: allow.has(bodies[0].key), writer: isDirectWriter(bodies[0]) })
+        .toEqual({ name, definer: true, allowed: true, writer: true });
+      expect({ name, delegate: isPublicDelegate(entries[0], allow, procs), writer: isDirectWriter(entries[0]), allowed: allow.has(entries[0].key) })
+        .toEqual({ name, delegate: true, writer: false, allowed: false });
+      expect({ name, acl: await aclOf(bodies[0].oid) })
+        .toEqual({ name, acl: { owner: 'postgres', prosecdef: true, proconfig: ['search_path=""'], ...SERVICE_ROLE_ONLY } });
+      expect({ name, acl: await aclOf(entries[0].oid) })
+        .toEqual({ name, acl: { owner: 'postgres', prosecdef: false, proconfig: ['search_path=""'], ...SERVICE_ROLE_ONLY } });
+    }
+  });
+
+  test('FREQ-540-AC-08: 内部の道具4本と trigger 関数3本は誰も（service_role も）EXECUTE できず何も書かない。読取4本は private の本体と public の入口の両方を service_role だけが EXECUTE できて何も書かない', async () => {
+    const procs = await loadProcs(db());
+    const allow = await allowlistOids(db());
+    for (const name of PURCHASE_INTERNAL_NAMES) {
+      const found = procs.filter((proc) => proc.schema === 'private' && proc.name === name);
+      expect({ name, count: found.length }).toEqual({ name, count: 1 });
+      expect({ name, acl: await aclOf(found[0].oid), writer: isDirectWriter(found[0]), allowed: allow.has(found[0].key) })
+        .toEqual({ name, acl: { owner: 'postgres', prosecdef: true, proconfig: ['search_path=""'], ...NO_ONE }, writer: false, allowed: false });
+    }
+    // trigger 関数: 守りの関数だけ INVOKER（G-2 の移行の本文のとおり）
+    for (const [name, definer] of [['guard_group_g_purchase_order_change', false], ['check_purchase_order_receipt_line', true], ['check_purchase_order_line_received', true]] as const) {
+      const found = procs.filter((proc) => proc.schema === 'private' && proc.name === name);
+      expect({ name, count: found.length }).toEqual({ name, count: 1 });
+      expect({ name, acl: await aclOf(found[0].oid), writer: isDirectWriter(found[0]), allowed: allow.has(found[0].key) })
+        .toEqual({ name, acl: { owner: 'postgres', prosecdef: definer, proconfig: ['search_path=""'], ...NO_ONE }, writer: false, allowed: false });
+    }
+    for (const name of PURCHASE_READER_NAMES) {
+      const bodies = procs.filter((proc) => proc.schema === 'private' && proc.name === name);
+      const entries = procs.filter((proc) => proc.schema === 'public' && proc.name === name);
+      expect({ name, bodies: bodies.length, entries: entries.length }).toEqual({ name, bodies: 1, entries: 1 });
+      expect({ name, body: await aclOf(bodies[0].oid), writer: isDirectWriter(bodies[0]), allowed: allow.has(bodies[0].key) })
+        .toEqual({ name, body: { owner: 'postgres', prosecdef: true, proconfig: ['search_path=""'], ...SERVICE_ROLE_ONLY }, writer: false, allowed: false });
+      expect({ name, entry: await aclOf(entries[0].oid), language: entries[0].language, writer: isDirectWriter(entries[0]) })
+        .toEqual({ name, entry: { owner: 'postgres', prosecdef: false, proconfig: ['search_path=""'], ...SERVICE_ROLE_ONLY }, language: 'sql', writer: false });
+    }
+  });
+
+  test('FREQ-540-AC-08: service_role が EXECUTE できる発注書の関数は、書込みの本体9本とその入口9本・読取の本体4本とその入口4本の26本だけ（同名の別の overload が増えれば見つかる）', async () => {
+    const names = [...PURCHASE_WRITER_NAMES, ...PURCHASE_READER_NAMES, ...PURCHASE_INTERNAL_NAMES, ...PURCHASE_TRIGGER_NAMES];
+    const actual = (await db().query(`select p.oid::text as oid from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname in ('public', 'private') and p.proname = any($1::text[]) and has_function_privilege('service_role', p.oid, 'EXECUTE')`,
+    [names])).rows.map((row) => String(row.oid)).sort();
+    const procs = await loadProcs(db());
+    const expected = procs.filter((proc) => [...PURCHASE_WRITER_NAMES, ...PURCHASE_READER_NAMES].includes(proc.name)).map((proc) => proc.oid).sort();
+    expect(expected).toHaveLength(26);
+    expect(actual).toEqual(expected);
+    // 内部の道具・trigger 関数は同名の overload も含めて 1 本ずつ（増えていない）
+    for (const name of [...PURCHASE_INTERNAL_NAMES, ...PURCHASE_TRIGGER_NAMES]) {
+      expect({ name, count: procs.filter((proc) => proc.name === name && ['public', 'private'].includes(proc.schema)).length }).toEqual({ name, count: 1 });
+    }
+  });
+
+  test('FREQ-540-AC-08: 発注の書込み本体9本は、共通の押さえ lock_group_g_purchase_orders を、発注書の表・item_variants・stock_movements への最初の参照より前に呼ぶ（先にあるのは引数の検証だけ）', async () => {
+    const procs = await loadProcs(db());
+    const CALL = 'lock_group_g_purchase_orders';
+    for (const name of PURCHASE_WRITER_NAMES) {
+      const body = procs.find((proc) => proc.schema === 'private' && proc.name === name)!;
+      const code = normalize(body.src, true);
+      const firstCall = code.indexOf(`${CALL}(`);
+      // 呼び出し名の purchase_orders を表の参照に取り違えないよう、名前を同じ長さの空白に替えてから探す（位置は動かない）
+      const withoutCall = code.split(CALL).join(' '.repeat(CALL.length));
+      const references = [...withoutCall.matchAll(/\b(?:from|join|into|update)\s+(?:public\.)?(purchase_[a-z_]+|item_variants|stock_movements)\b/g)];
+      // 空振りで通らない: 押さえの呼び出しがあり、表の参照も 1 つ以上ある
+      expect({ name, called: firstCall >= 0, references: references.length > 0 }).toEqual({ name, called: true, references: true });
+      expect({ name, lockFirst: firstCall < (references[0].index ?? -1) }).toEqual({ name, lockFirst: true });
+    }
+  });
+
+  test('FREQ-540-AC-08: 走査は、発注書の9表へ書く試験用の関数を未許可として見つけ、読むだけ・FOR UPDATE だけの関数は書き手にしない（取引は戻す）', async () => {
+    await db().query('savepoint g2_probes');
+    try {
+      const statements = ['insert into public.@ default values', 'update public.@ set id = id where false', 'delete from public.@ where false', 'truncate public.@'];
+      for (const [index, table] of PURCHASE_TABLES.entries()) {
+        await db().query(`create function private.g2_probe_write_${index}() returns void language plpgsql as $$
+          begin ${statements[index % statements.length].replace('@', table)}; end; $$`);
+      }
+      await db().query(`create function private.g2_probe_lock() returns uuid language sql as $$
+        select id from public.purchase_orders order by id limit 1 for update $$`);
+      await db().query(`create function private.g2_probe_read() returns bigint language sql as $$
+        select count(*) from public.purchase_orders po join public.purchase_order_lines l on l.purchase_order_id = po.id $$`);
+
+      const procs = await loadProcs(db());
+      const allow = await allowlistOids(db());
+      const { direct, closure } = analyze(procs);
+      const outside = (set: Set<string>) => procs.filter((proc) => set.has(proc.key) && !allow.has(proc.key)
+        && !isPublicDelegate(proc, allow, procs)).map((proc) => `${proc.schema}.${proc.name}`).sort();
+      const probes = PURCHASE_TABLES.map((_, index) => `private.g2_probe_write_${index}`).sort();
+      expect(outside(direct)).toEqual(probes);
+      expect(outside(closure)).toEqual(probes);
+    } finally {
+      await db().query('rollback to savepoint g2_probes');
+    }
+    expect((await db().query("select to_regprocedure('private.g2_probe_write_0()') as fn")).rows[0].fn).toBeNull();
   });
 });

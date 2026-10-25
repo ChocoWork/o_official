@@ -1230,9 +1230,10 @@ BEGIN
 END;
 $g2a_final_public_function_acl$;
 
--- Task 2 expectation: the nine purchase-order tables (rows, RLS, owner, policies, columns, constraints, indexes, triggers),
--- the three trigger functions and the private bucket. The table privileges are compared by meaning in the next block.
--- The expected sets grow with every Task that adds to this file.
+-- Task 2 and Task 9 expectation: the nine purchase-order tables (rows, RLS, owner, policies, columns, constraints, indexes,
+-- triggers), the three trigger functions, the private bucket, and the functions of this file as a set (the two helpers, the
+-- three G-1 functions this file replaced, and no function of these names beyond the fourteen listed below). The table
+-- privileges are compared by meaning in the next block. The expected sets grow with every Task that adds to this file.
 DO $g2a_final_objects$
 DECLARE
   v_failed text;
@@ -1243,16 +1244,56 @@ DECLARE
     'public.purchase_order_attachment_reservations'::regclass, 'public.purchase_order_attachments'::regclass,
     'public.purchase_order_attachment_revisions'::regclass
   ];
+  -- every function this file adds (the five internal ones that nobody can EXECUTE, then the four readers and their four public
+  -- entrances); a function of one of these names that is not in the list (an extra overload) fails the check
+  v_functions text[] := ARRAY[
+    'private.group_g_actor_has_permissions(uuid,text[])',
+    'private.group_g_open_work_order_ids(bigint[])',
+    'private.purchase_order_display_stages(uuid[])',
+    'private.guard_group_g_purchase_order_change()',
+    'private.check_purchase_order_receipt_line()',
+    'private.check_purchase_order_line_received()',
+    'private.list_admin_inventory(uuid)',
+    'public.list_admin_inventory(uuid)',
+    'private.list_admin_purchase_order_lines(integer,integer,uuid)',
+    'public.list_admin_purchase_order_lines(integer,integer,uuid)',
+    'private.get_admin_purchase_order(uuid,uuid)',
+    'public.get_admin_purchase_order(uuid,uuid)',
+    'private.search_purchase_order_documents(date,date,bigint,bigint,text,text,text,boolean,integer,integer,uuid)',
+    'public.search_purchase_order_documents(date,date,bigint,bigint,text,text,text,boolean,integer,integer,uuid)'
+  ];
+  -- the only ones of them that service_role may EXECUTE
+  v_service_functions text[] := ARRAY[
+    'private.list_admin_inventory(uuid)',
+    'public.list_admin_inventory(uuid)',
+    'private.list_admin_purchase_order_lines(integer,integer,uuid)',
+    'public.list_admin_purchase_order_lines(integer,integer,uuid)',
+    'private.get_admin_purchase_order(uuid,uuid)',
+    'public.get_admin_purchase_order(uuid,uuid)',
+    'private.search_purchase_order_documents(date,date,bigint,bigint,text,text,text,boolean,integer,integer,uuid)',
+    'public.search_purchase_order_documents(date,date,bigint,bigint,text,text,text,boolean,integer,integer,uuid)'
+  ];
+  -- the names of those functions (any schema of public / private)
+  v_function_names text[] := ARRAY[
+    'group_g_actor_has_permissions', 'group_g_open_work_order_ids', 'purchase_order_display_stages',
+    'guard_group_g_purchase_order_change', 'check_purchase_order_receipt_line', 'check_purchase_order_line_received',
+    'list_admin_inventory', 'list_admin_purchase_order_lines', 'get_admin_purchase_order', 'search_purchase_order_documents'
+  ];
 BEGIN
-  -- ordinary tables with row security, owned by postgres, still empty
+  -- ordinary tables with row security, owned by postgres, and no row written by the transaction that runs this check
+  -- (the file itself writes no data; rows that other transactions committed later are not its doing, so a re-run is still valid)
   IF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_class AS c
       WHERE c.oid = ANY (v_tables) AND c.relkind = 'r' AND c.relrowsecurity AND c.relowner = 'postgres'::regrole) <> 9 THEN
     v_failed := 'purchase_tables';
-  ELSIF EXISTS (SELECT 1 FROM public.purchase_orders) OR EXISTS (SELECT 1 FROM public.purchase_order_lines)
-     OR EXISTS (SELECT 1 FROM public.purchase_order_revisions) OR EXISTS (SELECT 1 FROM public.purchase_order_short_closures)
-     OR EXISTS (SELECT 1 FROM public.purchase_order_receipts) OR EXISTS (SELECT 1 FROM public.purchase_order_receipt_lines)
-     OR EXISTS (SELECT 1 FROM public.purchase_order_attachment_reservations) OR EXISTS (SELECT 1 FROM public.purchase_order_attachments)
-     OR EXISTS (SELECT 1 FROM public.purchase_order_attachment_revisions) THEN
+  ELSIF EXISTS (SELECT 1 FROM public.purchase_orders WHERE created_at = pg_catalog.transaction_timestamp())
+     OR EXISTS (SELECT 1 FROM public.purchase_order_lines WHERE created_at = pg_catalog.transaction_timestamp())
+     OR EXISTS (SELECT 1 FROM public.purchase_order_revisions WHERE created_at = pg_catalog.transaction_timestamp())
+     OR EXISTS (SELECT 1 FROM public.purchase_order_short_closures WHERE created_at = pg_catalog.transaction_timestamp())
+     OR EXISTS (SELECT 1 FROM public.purchase_order_receipts WHERE created_at = pg_catalog.transaction_timestamp())
+     OR EXISTS (SELECT 1 FROM public.purchase_order_receipt_lines WHERE created_at = pg_catalog.transaction_timestamp())
+     OR EXISTS (SELECT 1 FROM public.purchase_order_attachment_reservations WHERE created_at = pg_catalog.transaction_timestamp())
+     OR EXISTS (SELECT 1 FROM public.purchase_order_attachments WHERE created_at = pg_catalog.transaction_timestamp())
+     OR EXISTS (SELECT 1 FROM public.purchase_order_attachment_revisions WHERE created_at = pg_catalog.transaction_timestamp()) THEN
     v_failed := 'purchase_table_rows';
   -- one restrictive policy per table that denies anon and authenticated everything
   ELSIF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_policy AS p WHERE p.polrelid = ANY (v_tables)) <> 9
@@ -1430,6 +1471,50 @@ BEGIN
       AND (COALESCE(p.qual, '') LIKE '%purchase-order-documents%' OR COALESCE(p.with_check, '') LIKE '%purchase-order-documents%')
   ) THEN
     v_failed := 'purchase_bucket_policies';
+  -- the two helpers and the three G-1 functions this file replaced (CREATE OR REPLACE keeps the owner and the ACL; the flags are
+  -- the G-1 ones): owner postgres, SECURITY DEFINER or not, volatility, search_path empty, and who may EXECUTE. Nobody may
+  -- EXECUTE the helpers and the paid_at guard; service_role may EXECUTE the stock entry and the stock reader; anon,
+  -- authenticated and PUBLIC (read from the effective ACL) may EXECUTE none of them.
+  ELSIF EXISTS (
+    SELECT 1
+    FROM (VALUES
+      ('private.group_g_actor_has_permissions(uuid,text[])', true, 's', false),
+      ('private.group_g_open_work_order_ids(bigint[])', true, 's', false),
+      ('private.admin_record_stock_movement(bigint,bigint,integer,text,text,uuid,uuid,integer)', true, 'v', true),
+      ('private.list_group_g_variant_inventory(bigint[])', true, 's', true),
+      ('private.guard_group_g_paid_at()', false, 'v', false)
+    ) AS e(sig, definer, vol, service)
+    LEFT JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(e.sig)
+    WHERE p.oid IS NULL
+       OR p.proowner <> 'postgres'::regrole
+       OR p.prosecdef <> e.definer
+       OR p.provolatile::text <> e.vol
+       OR NOT ('search_path=""' = ANY (COALESCE(p.proconfig, ARRAY[]::text[])))
+       OR pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE') <> e.service
+       OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) AS x
+                  WHERE x.grantee = 0 AND x.privilege_type = 'EXECUTE')
+  ) THEN
+    v_failed := 'foundation_functions';
+  -- the functions of this file as a set: a function of one of these names (in public or private) is one of the fourteen listed
+  -- above and every listed one exists, so an extra overload or a missing function fails
+  ELSIF (SELECT pg_catalog.array_agg(p.oid ORDER BY p.oid)
+         FROM pg_catalog.pg_proc AS p JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
+         WHERE n.nspname IN ('public', 'private') AND p.proname::text = ANY (v_function_names))
+        IS DISTINCT FROM
+        (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(f.sig)::oid ORDER BY pg_catalog.to_regprocedure(f.sig)::oid)
+         FROM pg_catalog.unnest(v_functions) AS f(sig)) THEN
+    v_failed := 'foundation_function_set';
+  -- the EXECUTE rights of service_role over that set are exactly the four readers and their four public entrances
+  ELSIF (SELECT pg_catalog.array_agg(p.oid ORDER BY p.oid)
+         FROM pg_catalog.pg_proc AS p JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
+         WHERE n.nspname IN ('public', 'private') AND p.proname::text = ANY (v_function_names)
+           AND pg_catalog.has_function_privilege('service_role', p.oid, 'EXECUTE'))
+        IS DISTINCT FROM
+        (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(f.sig)::oid ORDER BY pg_catalog.to_regprocedure(f.sig)::oid)
+         FROM pg_catalog.unnest(v_service_functions) AS f(sig)) THEN
+    v_failed := 'foundation_service_role_execute';
   END IF;
 
   IF v_failed IS NOT NULL THEN

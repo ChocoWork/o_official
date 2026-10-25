@@ -104,7 +104,7 @@ describeLocalDb('G-1 stock RPC', (db) => {
     const release = (await db().query(`select e.quantity,m.reason,m.delta,e.actor_id,m.note,e.reason as event_reason
       from public.order_item_allocation_events e
       join public.stock_movements m on m.id=e.stock_movement_id join private.group_g_operations op on op.id=e.operation_id
-      where op.operation='stock_move' and e.event_type='release' order by e.quantity`)).rows;
+      where op.operation='stock_move' and e.event_type='release' and m.variant_id=$1 order by e.quantity`, [c.variantId])).rows;
     // The admin memo stays on the ledger only; the allocation history holds the fixed code.
     expect(release).toEqual([1,2].map(quantity => ({ quantity, reason: 'allocation_release', delta: quantity, actor_id: actor, note: '棚卸',
       event_reason: 'stock_adjustment' })));

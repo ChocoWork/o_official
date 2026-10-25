@@ -456,4 +456,90 @@ describe('resumePurchaseOrderDocument（続きから保存）', () => {
     expect(await resume()).toEqual({ kind: 'error', message: '発注の記録に失敗しました' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  // Task 8 の確かめ直しで残った点: 予約の応答を失った（5xx）後に残した要求番号で後から送り直すと、続きから保存で終えた予約を再生する
+  describe('予約を取れなかった時に残した要求番号と、続きから保存で終わった予約', () => {
+    const reserveKeysOf = () => callsTo(`${BASE}/reservations`).map((call) => bodyOf(call).requestKey);
+    /** 予約が 503 で取れなかった書類（要求番号が残る）。名前は試験ごとに変えて、残った番号が他の試験に影響しないようにする */
+    async function reserveFails(name: string) {
+      route({ reserve: json({ code: 'DOCUMENT_STORAGE_UNAVAILABLE', error: 'x' }, 503) });
+      await uploadPurchaseOrderDocument({ purchaseOrderId: ORDER_ID, file: fileOf(name, 'application/pdf'), kind: 'invoice', meta: UPLOAD_META });
+    }
+    const uploadAgain = (name: string) => uploadPurchaseOrderDocument({
+      purchaseOrderId: ORDER_ID, file: fileOf(name, 'application/pdf'), kind: 'invoice', meta: UPLOAD_META,
+    });
+
+    test.each([
+      ['確定できた（ok）', { uploadUrl: json({ uploaded: true }), attach: attached() }],
+      ['種類の検査で断られて使えなくなった（rejected）', { uploadUrl: json({ uploaded: true }), attach: json({ code: 'DOCUMENT_TYPE_UNSUPPORTED', error: 'x' }, 422) }],
+    ])('FREQ-530-AC-03: 同じ発注書・ファイル名の予約が続きから保存で%sら、残した要求番号は忘れ、次の保存は新しい番号で予約を取る', async (_name, handlers) => {
+      await reserveFails('kept-and-finished.pdf');
+      route(handlers);
+      const finished = await resume({ reservationFileName: 'kept-and-finished.pdf', file: null });
+      expect(['ok', 'rejected']).toContain(finished.kind);
+
+      route({ reserve: reserved(), attach: attached() });
+      await uploadAgain('kept-and-finished.pdf');
+      const keys = reserveKeysOf();
+      expect(keys).toHaveLength(2);
+      expect(keys[1]).not.toBe(keys[0]);
+    });
+
+    test.each([
+      [404, 'GROUP_G_PO_NOT_FOUND'],
+      [409, 'GROUP_G_PO_DOCUMENT_RESERVATION_INVALID'],
+      [409, 'GROUP_G_PO_DOCUMENT_ALREADY_ATTACHED'],
+    ])('FREQ-530-AC-03: 続きから保存で送り先を出す窓口が予約は無い・使われたと断った（%i %s）ら、残した要求番号も忘れ、次の保存は新しい番号で予約を取る', async (status, code) => {
+      await reserveFails(`kept-and-gone-${code}.pdf`);
+      route({ uploadUrl: json({ code, error: 'x' }, status) });
+      expect(await resume({ reservationFileName: `kept-and-gone-${code}.pdf`, file: null })).toMatchObject({ kind: 'error' });
+
+      route({ reserve: reserved(), attach: attached() });
+      await uploadAgain(`kept-and-gone-${code}.pdf`);
+      const keys = reserveKeysOf();
+      expect(keys).toHaveLength(2);
+      expect(keys[1]).not.toBe(keys[0]);
+    });
+
+    test('FREQ-530-AC-03: 送り先を出す窓口が一時的に失敗した（503）間は予約が終わったか分からないので、残した要求番号は残す', async () => {
+      await reserveFails('kept-and-unavailable.pdf');
+      route({ uploadUrl: json({ code: 'DOCUMENT_STORAGE_UNAVAILABLE', error: 'x' }, 503) });
+      expect(await resume({ reservationFileName: 'kept-and-unavailable.pdf', file: null })).toMatchObject({ kind: 'error' });
+
+      route({ reserve: reserved(), attach: attached() });
+      await uploadAgain('kept-and-unavailable.pdf');
+      const keys = reserveKeysOf();
+      expect(keys).toHaveLength(2);
+      expect(keys[1]).toBe(keys[0]);
+    });
+
+    test('FREQ-530-AC-03: 予約がまだ終わっていない（PUT が失敗して pending・選び直し待ち）間は番号を残し、送り直しは同じ予約を受け取る', async () => {
+      await reserveFails('kept-and-pending.pdf');
+      fetchMock.mockImplementation(async () => ({ ok: false, status: 500 }));
+      route({ uploadUrl: json({ uploaded: false, signedUrl: SIGNED_URL }), attach: attached() });
+      expect(await resume({ reservationFileName: 'kept-and-pending.pdf' })).toMatchObject({ kind: 'pending' });
+      expect(await resume({ reservationFileName: 'kept-and-pending.pdf', file: null })).toMatchObject({ kind: 'needs_file' });
+
+      route({ reserve: reserved(), attach: attached() });
+      await uploadAgain('kept-and-pending.pdf');
+      const keys = reserveKeysOf();
+      expect(keys).toHaveLength(2);
+      expect(keys[1]).toBe(keys[0]);
+    });
+
+    test('FREQ-530-AC-03: 忘れるのは終わった予約の発注書・ファイル名の番号だけ。別のファイル名・別の発注書の残した番号は残る', async () => {
+      await reserveFails('kept-other-name.pdf');
+      // どの発注書の窓口でも、送り先は保存済み・確定は成功を返す
+      mockClientFetch.mockImplementation(async (url: string) => (url.endsWith('/upload-url') ? json({ uploaded: true }) : attached()));
+      expect(await resume({ reservationFileName: 'finished-name.pdf', file: null })).toMatchObject({ kind: 'ok' });
+      expect(await resume({ purchaseOrderId: '00000000-0000-4000-8000-0000000000ff', reservationFileName: 'kept-other-name.pdf', file: null }))
+        .toMatchObject({ kind: 'ok' });
+
+      route({ reserve: reserved(), attach: attached() });
+      await uploadAgain('kept-other-name.pdf');
+      const keys = reserveKeysOf();
+      expect(keys).toHaveLength(2);
+      expect(keys[1]).toBe(keys[0]);
+    });
+  });
 });

@@ -1309,13 +1309,37 @@ $$;
 -- G2B_BODY_END
 
 -- G2B_FINAL_ASSERT_BEGIN
--- Expectation of Tasks 4, 6, 7 and 8: the nineteen new functions (owner, SECURITY, language, result type, argument names, search_path,
--- and the EXECUTE rights read from the effective ACL where a NULL proacl means the default that includes PUBLIC), the order of
--- the lock helper (the common advisory before any other lock), and the allowlist: exactly the 56 G-1 entries plus the nine
--- purchase-order writers, every one resolving to a function. The expected sets grow with every Task that adds to this file.
+-- Expectation of Tasks 4, 6, 7, 8 and 9: the nineteen new functions (owner, SECURITY, language, result type, argument names,
+-- search_path, and the EXECUTE rights read from the effective ACL where a NULL proacl means the default that includes PUBLIC),
+-- the same nineteen as a set (no function of these names beyond them, and service_role may EXECUTE exactly the nine writers and
+-- their nine public entrances, never the lock helper), the order of the lock helper (the common advisory before any other
+-- lock), and the allowlist: exactly the 56 G-1 entries plus the nine purchase-order writers, every one resolving to a function,
+-- compared to the fixed set by OID. The expected sets grow with every Task that adds to this file.
 DO $g2b_final_objects$
 DECLARE
   v_failed text;
+  -- the lock helper first, then the nine writers and their nine public entrances: no other function of these names may exist
+  v_functions text[] := ARRAY[
+    'private.lock_group_g_purchase_orders(uuid[],boolean)',
+    'private.admin_create_purchase_order(text,text,jsonb,uuid,uuid)',
+    'public.admin_create_purchase_order(text,text,jsonb,uuid,uuid)',
+    'private.admin_update_purchase_order_header(uuid,integer,text,text,text,uuid,uuid)',
+    'public.admin_update_purchase_order_header(uuid,integer,text,text,text,uuid,uuid)',
+    'private.admin_confirm_purchase_order_quantities(uuid,integer,jsonb,text,uuid,uuid)',
+    'public.admin_confirm_purchase_order_quantities(uuid,integer,jsonb,text,uuid,uuid)',
+    'private.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)',
+    'public.admin_short_close_purchase_order(uuid,integer,uuid[],text,uuid,uuid)',
+    'private.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid)',
+    'public.admin_receive_purchase_order(uuid,integer,date,text,jsonb,uuid,uuid)',
+    'private.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)',
+    'public.admin_reverse_purchase_order_receipt(uuid,integer,uuid,jsonb,text,integer,uuid,uuid)',
+    'private.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid)',
+    'public.admin_reserve_purchase_order_attachment(uuid,text,text,uuid,uuid,uuid)',
+    'private.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid)',
+    'public.admin_attach_purchase_order_document(uuid,uuid,text,bigint,text,text,date,bigint,text,text,uuid,uuid)',
+    'private.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid)',
+    'public.admin_revise_purchase_order_document(uuid,uuid,date,bigint,text,text,boolean,text,uuid,uuid)'
+  ];
   v_writers text[] := ARRAY[
     'private.apply_group_g_stock_movement(bigint,integer)',
     'private.allocate_group_g_fifo(bigint[],uuid,uuid)',
@@ -1460,6 +1484,22 @@ BEGIN
      IS DISTINCT FROM (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(w.s)::oid ORDER BY pg_catalog.to_regprocedure(w.s)::oid)
                        FROM pg_catalog.unnest(v_writers) AS w(s)) THEN
     v_failed := 'purchase_writer_allowlist';
+  -- the functions of this file as a set: a function of one of these names (in public or private) is one of the nineteen listed
+  -- above and every listed one exists, so an extra overload or a missing function fails. Together with the per-function EXECUTE
+  -- flags checked first (service_role: the nine writers and their nine public entrances, never the lock helper), the EXECUTE
+  -- rights of service_role over these names are exactly that set.
+  ELSIF (SELECT pg_catalog.array_agg(p.oid ORDER BY p.oid)
+         FROM pg_catalog.pg_proc AS p JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
+         WHERE n.nspname IN ('public', 'private')
+           AND p.proname IN ('lock_group_g_purchase_orders', 'admin_create_purchase_order', 'admin_update_purchase_order_header',
+                             'admin_confirm_purchase_order_quantities', 'admin_short_close_purchase_order',
+                             'admin_receive_purchase_order', 'admin_reverse_purchase_order_receipt',
+                             'admin_reserve_purchase_order_attachment', 'admin_attach_purchase_order_document',
+                             'admin_revise_purchase_order_document'))
+        IS DISTINCT FROM
+        (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(f.sig)::oid ORDER BY pg_catalog.to_regprocedure(f.sig)::oid)
+         FROM pg_catalog.unnest(v_functions) AS f(sig)) THEN
+    v_failed := 'purchase_writer_function_set';
   END IF;
 
   IF v_failed IS NOT NULL THEN

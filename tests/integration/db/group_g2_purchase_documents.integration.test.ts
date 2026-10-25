@@ -58,7 +58,11 @@ const ATTACH_TEXT = functionText(WRITERS, 'CREATE FUNCTION private.admin_attach_
 const REVISE_TEXT = functionText(WRITERS, 'CREATE FUNCTION private.admin_revise_purchase_order_document(', 'ALTER FUNCTION private.admin_revise_purchase_order_document(');
 const SEARCH_TEXT = functionText(FOUNDATION, 'CREATE FUNCTION private.search_purchase_order_documents(', 'ALTER FUNCTION private.search_purchase_order_documents(');
 
-/** DO $tag$ … $tag; の全体 */
+/**
+ * DO $tag$ … $tag; の全体。
+ * G-3 以降へ: 書き手の閉じた一覧が 65 本を超える・この移行の関数を置き換える時は、この確かめを今の DB で流す試験
+ * （group_g2_migration_asserts と、finalAssertBlock を使う G-2 の DB 試験）を、その変更と同じコミットで直す。
+ */
 function finalAssertBlock(sql: string, tag: string): string {
   const start = sql.indexOf(`DO ${tag}`);
   const end = sql.indexOf(`${tag};`, start + 1);
@@ -647,7 +651,7 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
     expect(voided.revisionNo).toBe(2);
     let [current] = (await detailOf(s.actor, s.order.id)).attachments as Array<{ current: Row }>;
     expect(current.current).toMatchObject({ revisionNo: 2, voided: true, reason: '二重に登録した' });
-    expect((await search(s.actor)).map((row) => [row.original_file_name, row.voided])).toEqual([['invoice.pdf', true]]);
+    expect((await scoped(s)).map((row) => [row.original_file_name, row.voided])).toEqual([['invoice.pdf', true]]);
 
     const restored = await revise(attached.attachmentId, s.order.id, s.actor, { date: '2026-10-26', amount: 6000, counterparty: '工場A', voided: false, reason: '誤って無効にした' });
     expect(restored.revisionNo).toBe(3);
@@ -769,28 +773,51 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
 
   // ---- FREQ-530-AC-02: 検索 ----
 
-  /** 検索用の材料: 4つの書類（発注書2つ）。並びは 取引日の新しい順 */
-  async function searchData() {
+  /**
+   * 検索用の材料: 4つの書類。並びは 取引日の新しい順。既定は発注書2つ（a・b が s.order、c・d が s.other）。
+   * single: true なら 4 つとも s.order に置く（s.other は空）。
+   * 同じ DB には他の試験（発注書の並行の試験など）が確定した原本の行が残ることがあるので、検索の結果や件数を比べる試験は、
+   * その発注書にしか当たらない発注書番号の全桁を検索に足す（scoped）か、頁をたどって集めた結果をこの試験の発注書の行に絞る（searchOwn）。
+   */
+  async function searchData(options: { single?: boolean } = {}) {
     const s = await setup();
     const a = await addDocument(s, { fileName: 'a.pdf', kind: 'invoice', date: '2026-10-26', amount: 6000, counterparty: '工場A' });
     const b = await addDocument(s, { fileName: 'b.pdf', kind: 'quote', date: '2026-09-15', amount: 1000, counterparty: 'Alpha_100%' });
-    const c = await addDocument(s, { fileName: 'c.pdf', kind: 'invoice', date: '2026-10-01', amount: 99999, counterparty: 'beta\\corp' }, s.other.id);
-    const d = await addDocument(s, { fileName: 'd.pdf', kind: 'quote', date: '2026-10-26', amount: 6000, counterparty: 'ALPHA corp' }, s.other.id);
+    const otherId = options.single ? s.order.id : s.other.id;
+    const c = await addDocument(s, { fileName: 'c.pdf', kind: 'invoice', date: '2026-10-01', amount: 99999, counterparty: 'beta\\corp' }, otherId);
+    const d = await addDocument(s, { fileName: 'd.pdf', kind: 'quote', date: '2026-10-26', amount: 6000, counterparty: 'ALPHA corp' }, otherId);
     return { s, a, b, c, d };
   }
   const names = (rows: Row[]) => rows.map((row) => row.original_file_name as string);
   const sorted = (rows: Row[]) => names(rows).sort();
+  type Scope = { actor: string; order: { id: string; number: string }; other: { id: string; number: string } };
+  /** 検索を、その発注書の番号の全桁（その発注書にしか当たらない）で絞る。total・頁・件数も、この発注書だけの数になる */
+  const scoped = (s: Scope, args: Record<string, unknown> = {}) => search(s.actor, { number: s.order.number, ...args });
+  /**
+   * 発注書番号の前方一致・種類のように、他の発注書にも当たる検索に使う。1 頁の上限（100 件）に頼らないよう、total まで頁をたどって
+   * 全件を集めてから、この試験の発注書（s.order・s.other）の行だけに絞る（同じ DB に何件の他の行が残っていても結果は変わらない）。
+   */
+  async function searchOwn(s: Scope, args: Record<string, unknown> = {}): Promise<Row[]> {
+    const collected: Row[] = [];
+    for (let offset = 0; ; offset += 100) {
+      const page = await search(s.actor, { ...args, limit: 100, offset });
+      collected.push(...page);
+      if (page.length === 0 || offset + page.length >= Number(page[0].total)) break;
+    }
+    return collected.filter((row) => [s.order.id, s.other.id].includes(String(row.purchase_order_id)));
+  }
 
   test('FREQ-530-AC-02: 検索の結果は 18列だけ（storage_path を含まない）。既定は各添付の最新の版だけ。並びは 取引日 DESC・版の記録 DESC・版の id', async () => {
-    const { s } = await searchData();
-    const rows = await search(s.actor);
+    const { s } = await searchData({ single: true });
+    const rows = await scoped(s);
     expect(Object.keys(rows[0])).toEqual(['total', 'attachment_id', 'purchase_order_id', 'purchase_order_number', 'kind', 'original_file_name', 'mime_type', 'size_bytes',
       'revision_no', 'is_current', 'transaction_date', 'amount_yen', 'currency', 'counterparty', 'voided', 'reason', 'replaces_attachment_id', 'created_at']);
     expect(rows).toHaveLength(4);
     expect(rows.every((row) => Number(row.total) === 4 && row.is_current === true && row.revision_no === 1)).toBe(true);
     const expected = (await db().query(`select a.original_file_name as name from public.purchase_order_attachment_revisions r
       join public.purchase_order_attachments a on a.id = r.attachment_id
-      order by r.transaction_date desc, r.created_at desc, r.id`)).rows.map((row) => row.name);
+      where a.purchase_order_id = $1
+      order by r.transaction_date desc, r.created_at desc, r.id`, [s.order.id])).rows.map((row) => row.name);
     expect(names(rows)).toEqual(expected);
     expect(names(rows).slice(2)).toEqual(['c.pdf', 'b.pdf']);
     const first = rows[0];
@@ -800,69 +827,71 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
   });
 
   test('FREQ-530-AC-02: 取引日の範囲は両端を含む', async () => {
-    const { s } = await searchData();
-    expect(sorted(await search(s.actor, { from: '2026-10-01', to: '2026-10-26' }))).toEqual(['a.pdf', 'c.pdf', 'd.pdf']);
-    expect(sorted(await search(s.actor, { from: '2026-10-26' }))).toEqual(['a.pdf', 'd.pdf']);
-    expect(sorted(await search(s.actor, { to: '2026-09-15' }))).toEqual(['b.pdf']);
-    expect(sorted(await search(s.actor, { from: '2026-10-02', to: '2026-10-25' }))).toEqual([]);
-    expect(sorted(await search(s.actor, { from: '2026-10-27' }))).toEqual([]);
+    const { s } = await searchData({ single: true });
+    expect(sorted(await scoped(s, { from: '2026-10-01', to: '2026-10-26' }))).toEqual(['a.pdf', 'c.pdf', 'd.pdf']);
+    expect(sorted(await scoped(s, { from: '2026-10-26' }))).toEqual(['a.pdf', 'd.pdf']);
+    expect(sorted(await scoped(s, { to: '2026-09-15' }))).toEqual(['b.pdf']);
+    expect(sorted(await scoped(s, { from: '2026-10-02', to: '2026-10-25' }))).toEqual([]);
+    expect(sorted(await scoped(s, { from: '2026-10-27' }))).toEqual([]);
   });
 
   test('FREQ-530-AC-02: 金額の範囲は両端を含む', async () => {
-    const { s } = await searchData();
-    expect(sorted(await search(s.actor, { min: 1000, max: 6000 }))).toEqual(['a.pdf', 'b.pdf', 'd.pdf']);
-    expect(sorted(await search(s.actor, { min: 6001 }))).toEqual(['c.pdf']);
-    expect(sorted(await search(s.actor, { max: 999 }))).toEqual([]);
-    expect(sorted(await search(s.actor, { min: 99999, max: 99999 }))).toEqual(['c.pdf']);
+    const { s } = await searchData({ single: true });
+    expect(sorted(await scoped(s, { min: 1000, max: 6000 }))).toEqual(['a.pdf', 'b.pdf', 'd.pdf']);
+    expect(sorted(await scoped(s, { min: 6001 }))).toEqual(['c.pdf']);
+    expect(sorted(await scoped(s, { max: 999 }))).toEqual([]);
+    expect(sorted(await scoped(s, { min: 99999, max: 99999 }))).toEqual(['c.pdf']);
   });
 
   test('FREQ-530-AC-02: 取引先は大文字小文字を区別しない部分一致で、% _ \\ は文字として扱う', async () => {
-    const { s } = await searchData();
-    expect(sorted(await search(s.actor, { counterparty: 'alpha' }))).toEqual(['b.pdf', 'd.pdf']);
-    expect(sorted(await search(s.actor, { counterparty: 'ALPHA CORP' }))).toEqual(['d.pdf']);
-    expect(sorted(await search(s.actor, { counterparty: '工場' }))).toEqual(['a.pdf']);
-    expect(sorted(await search(s.actor, { counterparty: 'ha_1' }))).toEqual(['b.pdf']);
-    expect(sorted(await search(s.actor, { counterparty: '0%' }))).toEqual(['b.pdf']);
-    expect(sorted(await search(s.actor, { counterparty: '%' }))).toEqual(['b.pdf']);
-    expect(sorted(await search(s.actor, { counterparty: '_' }))).toEqual(['b.pdf']);
-    expect(sorted(await search(s.actor, { counterparty: '\\' }))).toEqual(['c.pdf']);
-    expect(sorted(await search(s.actor, { counterparty: 'a%a' }))).toEqual([]);
-    expect(sorted(await search(s.actor, { counterparty: 'zzz' }))).toEqual([]);
+    const { s } = await searchData({ single: true });
+    expect(sorted(await scoped(s, { counterparty: 'alpha' }))).toEqual(['b.pdf', 'd.pdf']);
+    expect(sorted(await scoped(s, { counterparty: 'ALPHA CORP' }))).toEqual(['d.pdf']);
+    expect(sorted(await scoped(s, { counterparty: '工場' }))).toEqual(['a.pdf']);
+    expect(sorted(await scoped(s, { counterparty: 'ha_1' }))).toEqual(['b.pdf']);
+    expect(sorted(await scoped(s, { counterparty: '0%' }))).toEqual(['b.pdf']);
+    expect(sorted(await scoped(s, { counterparty: '%' }))).toEqual(['b.pdf']);
+    expect(sorted(await scoped(s, { counterparty: '_' }))).toEqual(['b.pdf']);
+    expect(sorted(await scoped(s, { counterparty: '\\' }))).toEqual(['c.pdf']);
+    expect(sorted(await scoped(s, { counterparty: 'a%a' }))).toEqual([]);
+    expect(sorted(await scoped(s, { counterparty: 'zzz' }))).toEqual([]);
   });
 
   test('FREQ-530-AC-02: 発注書番号は前方一致（大文字小文字を区別しない）。種類で絞る。組合せは AND', async () => {
     const { s } = await searchData();
     const mine = s.order.number;
     const theirs = s.other.number;
+    // 全桁の番号と、どの番号にも当たらない前方一致は、他の試験の行が同じ DB にあっても同じ結果。
+    // 前方が日付までの番号・種類だけの検索は、同じ日の他の発注書にも当たるので、この試験の発注書の行に絞って比べる
     expect(sorted(await search(s.actor, { number: mine }))).toEqual(['a.pdf', 'b.pdf']);
     expect(sorted(await search(s.actor, { number: theirs.toLowerCase() }))).toEqual(['c.pdf', 'd.pdf']);
-    expect(sorted(await search(s.actor, { number: mine.slice(0, 11) }))).toEqual(['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf']);
+    expect(sorted(await searchOwn(s, { number: mine.slice(0, 11) }))).toEqual(['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf']);
     expect(sorted(await search(s.actor, { number: mine.slice(3) }))).toEqual([]);
-    expect(sorted(await search(s.actor, { number: 'PO-' }))).toEqual(['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf']);
-    expect(sorted(await search(s.actor, { kind: 'quote' }))).toEqual(['b.pdf', 'd.pdf']);
-    expect(sorted(await search(s.actor, { kind: 'invoice' }))).toEqual(['a.pdf', 'c.pdf']);
-    expect(sorted(await search(s.actor, { kind: 'quote', counterparty: 'alpha', from: '2026-10-01' }))).toEqual(['d.pdf']);
+    expect(sorted(await searchOwn(s, { number: 'PO-' }))).toEqual(['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf']);
+    expect(sorted(await searchOwn(s, { kind: 'quote' }))).toEqual(['b.pdf', 'd.pdf']);
+    expect(sorted(await searchOwn(s, { kind: 'invoice' }))).toEqual(['a.pdf', 'c.pdf']);
+    expect(sorted(await searchOwn(s, { kind: 'quote', counterparty: 'alpha', from: '2026-10-01' }))).toEqual(['d.pdf']);
     expect(sorted(await search(s.actor, { kind: 'invoice', number: theirs, min: 50000, max: 100000, from: '2026-10-01', to: '2026-10-01', counterparty: 'BETA' }))).toEqual(['c.pdf']);
     expect(sorted(await search(s.actor, { kind: 'quote', number: theirs, counterparty: '工場' }))).toEqual([]);
   });
 
   test('FREQ-530-AC-02: 既定は最新の版だけ。includeHistory で訂正前の取引日・金額・取引先でも見つかり、訂正前の版は is_current=false', async () => {
-    const { s, a } = await searchData();
+    const { s, a } = await searchData({ single: true });
     await revise(a.attached.attachmentId, s.order.id, s.actor, { date: '2026-11-02', amount: 7700, counterparty: '新工場', reason: '訂正' });
     // 既定: 最新の版だけ
-    expect(sorted(await search(s.actor, { counterparty: '新工場' }))).toEqual(['a.pdf']);
-    expect(await search(s.actor, { counterparty: '工場A' })).toEqual([]);
-    expect(await search(s.actor, { from: '2026-10-26', to: '2026-10-26', kind: 'invoice' })).toEqual([]);
-    expect(await search(s.actor, { min: 6000, max: 6000, kind: 'invoice' })).toEqual([]);
+    expect(sorted(await scoped(s, { counterparty: '新工場' }))).toEqual(['a.pdf']);
+    expect(await scoped(s, { counterparty: '工場A' })).toEqual([]);
+    expect(await scoped(s, { from: '2026-10-26', to: '2026-10-26', kind: 'invoice' })).toEqual([]);
+    expect(await scoped(s, { min: 6000, max: 6000, kind: 'invoice' })).toEqual([]);
     // 履歴を含める: 訂正前の値でも見つかる
-    const byOldParty = await search(s.actor, { counterparty: '工場A', history: true });
+    const byOldParty = await scoped(s, { counterparty: '工場A', history: true });
     expect(byOldParty.map((row) => [row.original_file_name, row.revision_no, row.is_current, row.counterparty])).toEqual([['a.pdf', 1, false, '工場A']]);
-    const byOldDate = await search(s.actor, { from: '2026-10-26', to: '2026-10-26', kind: 'invoice', history: true });
+    const byOldDate = await scoped(s, { from: '2026-10-26', to: '2026-10-26', kind: 'invoice', history: true });
     expect(byOldDate.map((row) => [row.revision_no, row.is_current])).toEqual([[1, false]]);
-    const byOldAmount = await search(s.actor, { min: 6000, max: 6000, kind: 'invoice', history: true });
+    const byOldAmount = await scoped(s, { min: 6000, max: 6000, kind: 'invoice', history: true });
     expect(byOldAmount.map((row) => [row.revision_no, row.is_current])).toEqual([[1, false]]);
     // 新しい値でも見つかり、最新の版は is_current=true
-    const all = await search(s.actor, { history: true });
+    const all = await scoped(s, { history: true });
     expect(all).toHaveLength(5);
     expect(all.filter((row) => row.original_file_name === 'a.pdf').map((row) => [row.revision_no, row.is_current]).sort()).toEqual([[1, false], [2, true]]);
     expect(all.every((row) => Number(row.total) === 5)).toBe(true);
@@ -878,19 +907,19 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
         (attachment_id, revision_no, transaction_date, amount_yen, currency, counterparty, voided, reason, actor_id, operation_id, created_at)
       values ($1, 2, '2026-10-26', 6000, 'JPY', '工場A', true, '後から無効', $2, $3, now() + interval '1 hour')`, [attached.attachmentId, s.actor, operationId]);
     await flush();
-    const rows = await search(s.actor, { history: true });
+    const rows = await scoped(s, { history: true });
     expect(rows.map((row) => row.revision_no)).toEqual([2, 1]);
   });
 
   test('FREQ-530-AC-02: ページ送り（limit・offset）。total は頁を切る前の件数', async () => {
-    const { s } = await searchData();
-    const all = names(await search(s.actor));
-    const page1 = await search(s.actor, { limit: 1, offset: 0 });
-    const page2 = await search(s.actor, { limit: 1, offset: 1 });
-    const page5 = await search(s.actor, { limit: 3, offset: 3 });
+    const { s } = await searchData({ single: true });
+    const all = names(await scoped(s));
+    const page1 = await scoped(s, { limit: 1, offset: 0 });
+    const page2 = await scoped(s, { limit: 1, offset: 1 });
+    const page5 = await scoped(s, { limit: 3, offset: 3 });
     expect([names(page1), names(page2), names(page5)]).toEqual([[all[0]], [all[1]], [all[3]]]);
     expect([page1, page2, page5].every((rows) => rows.every((row) => Number(row.total) === 4))).toBe(true);
-    expect(await search(s.actor, { limit: 5, offset: 10 })).toEqual([]);
+    expect(await scoped(s, { limit: 5, offset: 10 })).toEqual([]);
   });
 
   test.each([
@@ -902,10 +931,11 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
   });
 
   test('FREQ-530-AC-02: 検索は何も書かない（表・操作の記録の行数と中身が変わらない）。公開入口と private 本体は同じ結果', async () => {
-    const { s } = await searchData();
+    const { s } = await searchData({ single: true });
     const before = await snapshot();
-    const viaPublic = await search(s.actor, { history: true });
-    const viaPrivate = await search(s.actor, { history: true, schema: 'private' });
+    const viaPublic = await scoped(s, { history: true });
+    const viaPrivate = await scoped(s, { history: true, schema: 'private' });
+    expect(viaPublic).toHaveLength(4);
     expect(viaPrivate).toEqual(viaPublic);
     expect(await snapshot()).toEqual(before);
   });
@@ -965,8 +995,9 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
         await db().query('release savepoint role_attempt');
       }
     };
-    expect(await attempt('service_role', 'select id from public.purchase_order_attachments')).toEqual({ rows: 1 });
-    expect(await attempt('service_role', 'select id from public.purchase_order_attachment_reservations')).toEqual({ rows: 1 });
+    // 同じ DB に他の試験が確定した行があっても数えない: この試験の添付と、その予約の 1 行だけを読む
+    expect(await attempt('service_role', 'select id from public.purchase_order_attachments where id = $1', [attached.attachmentId])).toEqual({ rows: 1 });
+    expect(await attempt('service_role', 'select id from public.purchase_order_attachment_reservations where purchase_order_id = $1', [s.order.id])).toEqual({ rows: 1 });
     expect(await attempt('service_role', 'select id from public.purchase_order_attachment_revisions')).toEqual({ code: '42501' });
     for (const table of ['purchase_order_attachment_reservations', 'purchase_order_attachments', 'purchase_order_attachment_revisions']) {
       expect(await attempt('service_role', `update public.${table} set id = id`)).toEqual({ code: '42501' });
@@ -985,7 +1016,7 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
     const reserved = await reserve(s.order.id, s.actor);
     const check = async () => {
       const detail = JSON.stringify(await detailOf(s.actor, s.order.id));
-      const found = JSON.stringify(await search(s.actor, { history: true }));
+      const found = JSON.stringify(await scoped(s, { history: true }));
       for (const text of [detail, found]) {
         expect(text).not.toContain(reserved.storagePath);
         expect(text).not.toContain(reserved.storagePath.split('/')[1]);
@@ -1050,7 +1081,7 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
   });
 
   test('FREQ-540-AC-07: 検索は purchase_orders.read を持たない実行者に GROUP_G_FORBIDDEN / 42501（無効・期限切れ・役割なし・存在しない実行者・NULL・manage だけ・items.*・在庫・受け取りだけ）。read だけの人は検索できる', async () => {
-    await searchData();
+    const { s: data } = await searchData({ single: true });
     const inactive = await createActor(['admin'], { inactive: ['admin'] });
     const expired = await createActor(['admin'], { expired: ['admin'] });
     const noRoles = await createActor([]);
@@ -1066,12 +1097,12 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
     // 権限の確かめが引数の確かめより先: 権限が無ければ範囲外の引数でも 42501
     expect(await rejected(() => search(noRead, { limit: 0 }))).toEqual(FORBIDDEN);
     await grant('supporter', ['admin.purchase_orders.read']);
-    expect(await search(noRead)).toHaveLength(4);
+    expect(await search(noRead, { number: data.order.number })).toHaveLength(4);
   });
 
   test('FREQ-540-AC-07: 実行者の現在の権限を毎回確かめる。read を外すと検索もその場から断られる', async () => {
-    const { s } = await searchData();
-    expect(await search(s.actor)).toHaveLength(4);
+    const { s } = await searchData({ single: true });
+    expect(await scoped(s)).toHaveLength(4);
     await revoke('admin', ['admin.purchase_orders.read']);
     expect(await rejected(() => search(s.actor))).toEqual(FORBIDDEN);
   });
@@ -1214,7 +1245,7 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
         [reserved.reservationId, s.order.id, 'application/pdf', 100, SHA, 'browser', '2026-10-26', 100, 'JPY', '工場A', s.actor, randomUUID()]],
       [`select ${schema}.admin_revise_purchase_order_document($1::uuid, $2::uuid, $3::date, $4::bigint, $5::text, $6::text, $7::boolean, $8::text, $9::uuid, $10::uuid) as r`,
         [attached.attachmentId, s.order.id, '2026-10-27', 200, 'JPY', '工場B', false, '訂正', s.actor, randomUUID()]],
-      [`select * from ${schema}.search_purchase_order_documents(null, null, null, null, null, null, null, false, 10, 0, $1::uuid)`, [s.actor]],
+      [`select * from ${schema}.search_purchase_order_documents(null, null, null, null, null, $2::text, null, false, 10, 0, $1::uuid)`, [s.actor, s.order.number]],
     ];
     for (const role of ['anon', 'authenticated']) {
       for (const schema of ['public', 'private'] as const) {

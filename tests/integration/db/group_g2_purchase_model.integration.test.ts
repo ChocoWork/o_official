@@ -52,7 +52,11 @@ type Outcome = { rows: Array<Record<string, unknown>>; rowCount: number } | { co
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
-/** 移行の最後の確かめ（G2A_FINAL_ASSERT の DO 文）を取り出す */
+/**
+ * 移行の最後の確かめ（G2A_FINAL_ASSERT の DO 文）を取り出す。
+ * G-3 以降へ: 書き手の閉じた一覧が 65 本を超える・この移行の関数を置き換える時は、この確かめを今の DB で流す試験
+ * （group_g2_migration_asserts と、finalAssertBlock を使う G-2 の DB 試験）を、その変更と同じコミットで直す。
+ */
 function finalAssertBlock(tag: string): string {
   const section = FOUNDATION_SQL.slice(FOUNDATION_SQL.indexOf('-- G2A_FINAL_ASSERT_BEGIN'), FOUNDATION_SQL.indexOf('-- G2A_FINAL_ASSERT_END'));
   const start = section.indexOf(`DO ${tag}`);
@@ -377,8 +381,9 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
     await violated(() => insert({ stage: 'received' }), '23514', 'purchase_orders_stage_check');
     await violated(() => insert({ version: 0 }), '23514', 'purchase_orders_version_check');
 
-    const first = await insert({ number: 'PO-20261025-0001', supplier_name: 'x'.repeat(100), memo: 'y'.repeat(500) });
-    await violated(() => insert({ number: 'PO-20261025-0001' }), '23505', 'purchase_orders_number_key');
+    // 番号は他の試験が確定した本物の発注書（今日の日付）と重ならない遠い日付にする（一意の確かめは同じ番号を 2 回入れて見る）
+    const first = await insert({ number: 'PO-29991231-0001', supplier_name: 'x'.repeat(100), memo: 'y'.repeat(500) });
+    await violated(() => insert({ number: 'PO-29991231-0001' }), '23505', 'purchase_orders_number_key');
     expect((await db().query('select stage, version, memo is null as no_memo from public.purchase_orders where id = $1', [first])).rows[0])
       .toEqual({ stage: 'ordered', version: 1, no_memo: false });
     const noMemo = await insert({});
@@ -811,7 +816,8 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
 
     for (const role of ['anon', 'authenticated', 'service_role']) {
       for (const table of TABLES) {
-        const read = await attempt(role, `select count(*)::int as n from public.${table}`);
+        // 同じ DB に他の試験が確定した行があっても数えないよう、この試験の 1 行だけを読む
+        const read = await attempt(role, `select count(*)::int as n from public.${table} where id = '${ids[table]}'`);
         if (role === 'service_role' && SERVICE_READABLE.includes(table)) {
           expect({ role, table, read }).toEqual({ role, table, read: { rows: [{ n: 1 }], rowCount: 1 } });
         } else {
@@ -944,7 +950,7 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
 
     test.each([
       ['RLS を外す', 'alter table public.purchase_orders disable row level security', 'purchase_tables'],
-      ['行を 1 つ足す', "insert into public.purchase_orders (number, supplier_name, created_by) values ('PO-20261025-0001', 'S', gen_random_uuid())", 'purchase_table_rows'],
+      ['行を 1 つ足す', "insert into public.purchase_orders (number, supplier_name, created_by) values ('PO-29991231-0001', 'S', gen_random_uuid())", 'purchase_table_rows'],
       ['拒否の方針を外す', 'drop policy "deny direct client access" on public.purchase_order_lines', 'purchase_table_policies'],
       ['列を足す', 'alter table public.purchase_orders add column extra integer', 'purchase_table_columns'],
       ['NOT NULL を外す', 'alter table public.purchase_orders alter column supplier_name drop not null', 'purchase_table_columns'],

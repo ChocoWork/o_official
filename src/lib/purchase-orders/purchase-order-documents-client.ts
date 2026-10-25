@@ -99,16 +99,26 @@ function attachRequestKey(reservationId: string, signature: string): string {
 
 /**
  * 予約の要求番号。予約は取れたが送り先を作れなかった（503）・応答を失った後の同じ書類の送り直しは、同じ番号で送って同じ予約を
- * 受け取る（送るたびに別の予約が増えない）。予約の応答を受けたら忘れる。
+ * 受け取る（送るたびに別の予約が増えない）。予約の応答を受けたら忘れる。応答を失った予約は ID が分からないまま続きから保存で
+ * 終わることがあり、その後に同じ番号で送ると終わった予約を受け取ってしまうので、続きから保存で予約が終わった時
+ * （forgetReserveKeys）にも、その発注書・ファイル名の番号を忘れる。
  */
-const reserveKeys = new Map<string, string>();
+const reserveKeys = new Map<string, { requestKey: string; purchaseOrderId: string; fileName: string }>();
 
-function reserveRequestKey(signature: string): string {
+function reserveRequestKey(signature: string, purchaseOrderId: string, fileName: string): string {
   const known = reserveKeys.get(signature);
-  if (known !== undefined) return known;
+  if (known !== undefined) return known.requestKey;
   const requestKey = crypto.randomUUID();
-  reserveKeys.set(signature, requestKey);
+  reserveKeys.set(signature, { requestKey, purchaseOrderId, fileName: fileName.trim() });
   return requestKey;
+}
+
+/** 続きから保存で予約が終わった（確定できた・種類の検査で断られて使えなくなった）発注書・ファイル名の、残した予約の要求番号を忘れる */
+function forgetReserveKeys(purchaseOrderId: string, fileName: string): void {
+  const name = fileName.trim();
+  for (const [signature, entry] of reserveKeys) {
+    if (entry.purchaseOrderId === purchaseOrderId && entry.fileName === name) reserveKeys.delete(signature);
+  }
 }
 
 const isUuid = (value: unknown): value is string =>
@@ -229,7 +239,7 @@ export async function uploadPurchaseOrderDocument(input: {
         kind: input.kind,
         fileName: input.file.name,
         replacesAttachmentId,
-        requestKey: reserveRequestKey(reserveSignature),
+        requestKey: reserveRequestKey(reserveSignature, input.purchaseOrderId, input.file.name),
       }),
     });
   } catch {
@@ -259,14 +269,24 @@ export async function uploadPurchaseOrderDocument(input: {
  * 最初に署名つきの送り先を出し直す窓口を呼ぶ。すでに置き場にあれば PUT は省く（file があればそのハッシュ、無ければ sha256 なしで確定し、
  * サーバーが読み戻した本文のハッシュを記録する）。置き場に無ければ、file が無い時は needs_file（選び直しを頼む）、あれば PUT して
  * sha256 つきで確定する。差し替えの関係は予約に残っているので送らない。確定が種類の検査で断られたら rejected。
+ * ok か rejected で予約が終わった時と、送り先を出す窓口が予約は無い・使われたと断った（404・409）時は、予約を取れなかった時に残した
+ * 同じ書類の要求番号を忘れる（終わった予約を次の保存で受け取らない）。
  */
-export async function resumePurchaseOrderDocument(input: {
+export async function resumePurchaseOrderDocument(input: PurchaseOrderDocumentResumeInput): Promise<PurchaseOrderDocumentResumeResult> {
+  const result = await resumeReservation(input);
+  if (result.kind === 'ok' || result.kind === 'rejected') forgetReserveKeys(input.purchaseOrderId, input.reservationFileName);
+  return result;
+}
+
+type PurchaseOrderDocumentResumeInput = {
   purchaseOrderId: string;
   reservationId: string;
   reservationFileName: string;
   file: File | null;
   meta: PurchaseOrderDocumentMeta;
-}): Promise<PurchaseOrderDocumentResumeResult> {
+};
+
+async function resumeReservation(input: PurchaseOrderDocumentResumeInput): Promise<PurchaseOrderDocumentResumeResult> {
   const { purchaseOrderId, reservationId, file, meta } = input;
   const expectedMime = purchaseOrderDocumentMimeOfName(input.reservationFileName);
   if (expectedMime === null) return { kind: 'error', message: PURCHASE_ORDER_TEXT.failed };
@@ -285,7 +305,12 @@ export async function resumePurchaseOrderDocument(input: {
     return { kind: 'error', message: PURCHASE_ORDER_TEXT.failed };
   }
   const body = await readBody(response);
-  if (!response.ok) return { kind: 'error', message: purchaseOrderFailureMessage(response.status, body) };
+  if (!response.ok) {
+    // 窓口が「その予約は無い（404）・この発注書の予約ではない／もう添付に使われた（409）」と断ったら、予約は終わっている。
+    // 予約を取れなかった時に残した同じ書類の要求番号を持ち越すと、次の保存で終わった予約を受け取ってしまうので忘れる（5xx・通信の失敗は残す）
+    if (response.status === 404 || response.status === 409) forgetReserveKeys(purchaseOrderId, input.reservationFileName);
+    return { kind: 'error', message: purchaseOrderFailureMessage(response.status, body) };
+  }
 
   if (body?.uploaded === true) {
     try {

@@ -71,7 +71,11 @@ const HELPER_TEXT = functionText('CREATE FUNCTION private.purchase_order_display
 const LIST_TEXT = functionText('CREATE FUNCTION private.list_admin_purchase_order_lines(', 'ALTER FUNCTION private.list_admin_purchase_order_lines(');
 const DETAIL_TEXT = functionText('CREATE FUNCTION private.get_admin_purchase_order(', 'ALTER FUNCTION private.get_admin_purchase_order(');
 
-/** 移行の最後の確かめ（G2A_FINAL_ASSERT の DO 文）を取り出す */
+/**
+ * 移行の最後の確かめ（G2A_FINAL_ASSERT の DO 文）を取り出す。
+ * G-3 以降へ: 書き手の閉じた一覧が 65 本を超える・この移行の関数を置き換える時は、この確かめを今の DB で流す試験
+ * （group_g2_migration_asserts と、finalAssertBlock を使う G-2 の DB 試験）を、その変更と同じコミットで直す。
+ */
 function finalAssertBlock(tag: string): string {
   const section = FOUNDATION_SQL.slice(FOUNDATION_SQL.indexOf('-- G2A_FINAL_ASSERT_BEGIN'), FOUNDATION_SQL.indexOf('-- G2A_FINAL_ASSERT_END'));
   const start = section.indexOf(`DO ${tag}`);
