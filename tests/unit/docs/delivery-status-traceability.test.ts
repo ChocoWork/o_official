@@ -273,11 +273,11 @@ test('G-1の要求8行（FREQ-520〜524・535・540・541）とFREQ-401の在庫
   const ids = lines.filter((line) => /^\| FREQ-(52[0-4]|535|54[01]) \|/.test(line)).map((line) => line.split('|')[1].trim());
   expect(ids).toEqual(['FREQ-520', 'FREQ-521', 'FREQ-522', 'FREQ-523', 'FREQ-524', 'FREQ-535', 'FREQ-540', 'FREQ-541']);
   const freq540 = lines.find((line) => line.startsWith('| FREQ-540 |'))!;
-  // G-1 の AC-01〜05 と G-2 の追加4件を保ち、G-3 Task 1 は直接DML・追記専用・末尾assertの AC-12 だけを足す。
+  // G-1/G-2を保ち、G-3 Task 1のAC-12とTask 2の読取部分AC-10を追跡する。
   const G2_FREQ_540_ADDITIONS = ['FREQ-540-AC-06', 'FREQ-540-AC-07', 'FREQ-540-AC-08', 'FREQ-540-AC-09'];
   const freq540Acs = freq540.split('|')[5].match(/FREQ-540-AC-\d+/g);
   expect(freq540Acs!.slice(0, 5)).toEqual(['FREQ-540-AC-01', 'FREQ-540-AC-02', 'FREQ-540-AC-03', 'FREQ-540-AC-04', 'FREQ-540-AC-05']);
-  expect(freq540Acs!.slice(5)).toEqual([...G2_FREQ_540_ADDITIONS, 'FREQ-540-AC-12']);
+  expect(freq540Acs!.slice(5)).toEqual([...G2_FREQ_540_ADDITIONS, 'FREQ-540-AC-10', 'FREQ-540-AC-12']);
   const freq533 = lines.find((line) => line.startsWith('| FREQ-533 |'))!;
   expect(freq533.split('|')[5].match(/FREQ-533-AC-\d+/g)).toEqual(['FREQ-533-AC-02', 'FREQ-533-AC-04']);
   contains(freq533, 'consume の裏付けの守りだけ');
@@ -290,6 +290,33 @@ test('G-1の要求8行（FREQ-520〜524・535・540・541）とFREQ-401の在庫
   contains(lines.find((line) => line.startsWith('| FREQ-524 |'))!, 'LEGACY_FULFILLMENT_DISABLED');
   const freq401 = lines.find((line) => line.startsWith('| FREQ-401 |'))!;
   contains(freq401, '在庫復元は商品行を KEY SHARE だけで取り、通常の編集（NO KEY UPDATE）を待たない。削除だけは待たせる');
+});
+
+test('G-3 Task 2の荷作り表・同梱・会計入力のDB部分と未確認境界を正本で追跡する', () => {
+  const lines = read(requirements).split(/\r?\n/);
+  for (const [id, acs] of [['FREQ-531', ['01', '02', '03', '04']], ['FREQ-532', ['01', '02', '03', '04', '05']]] as const) {
+    const row = lines.find((line) => line.startsWith(`| ${id} |`));
+    expect(row).toBeDefined();
+    expect(row!.split('|')[5].match(new RegExp(`${id}-AC-\\d+`, 'g'))).toEqual(acs.map((ac) => `${id}-AC-${ac}`));
+    contains(row!, 'tests/integration/db/group_g3_reads.integration.test.ts');
+    contains(row!, 'DB');
+  }
+  const accounting = lines.find((line) => line.startsWith('| FREQ-535 |'))!;
+  expect(accounting.split('|')[5].match(/FREQ-535-AC-\d+/g)).toEqual(['FREQ-535-AC-01', 'FREQ-535-AC-05']);
+  contains(accounting, 'actor');
+  contains(accounting, 'list_shipment_accounting_inputs');
+});
+
+test('G-3 Task 2 Fix round 1は会計入力の打切りとTask 8の追記を記録する', () => {
+  for (const file of ['docs/03_BasicDesign/data/er.md', 'docs/06_Operations/db-migrations.md']) {
+    const text = read(file);
+    contains(text, 'rows = _limit');
+    contains(text, 'より多い行がある可能性');
+  }
+  const migrationRow = read('docs/06_Operations/db-migrations.md').split(/\r?\n/)
+    .find((line) => line.startsWith('| 2 | `20261025070821_group_g3_shipping_reads.sql`'))!;
+  contains(migrationRow, '追跡の読取側の置換');
+  contains(migrationRow, 'Task 8');
 });
 
 test('従来本文や後続節の言葉と別行のHTTPではE-4の不足を補えない', () => {

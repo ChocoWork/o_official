@@ -6,6 +6,8 @@
 
 G-3 Task 1 の発送票の基盤を 2026-10-25 に追記した。ローカルはcontroller reset後のDB全件でTask 1の新規失敗0。全体は既知stockist2失敗によりexit 1。本番へのG-3適用は未実施。
 
+G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成した。今回のSQLは未適用で、controller reset後のDB・PostgREST検証を待つ。
+
 本書はデータベースマイグレーションの現行手順と過去の移行記録をまとめる。実際の適用対象は `supabase/migrations/` と `.github/workflows/db-migrations.yml` で確認し、本番台帳は実行前に読み直す。グループ G-1 の移行（本番のテスト用の注文を消す清掃を含む1本）の内容・当て方・記録は「グループ G-1 在庫の割当の移行」に書く。グループ G-2 の移行（発注・受け取り・原本の添付）は末尾の「グループ G-2 発注・受け取りの移行」に書く。
 
 本番 Supabase（`pjidrgofvaglnuuznnyj`）へのスキーマ適用手順と、
@@ -565,7 +567,7 @@ G-3 は4本を次の順で作る。Task 1 で存在するのは基盤の1本だ�
 | 順 | ファイル | 役割・作成する Task |
 | --- | --- | --- |
 | 1 | `20261025053324_group_g3_shipping_foundation.sql` | 発送票の6表・出荷日の列とCHECK・変更と消費の守り・割当イベントの理由17値・発注書のある商品の削除止め。Task 1 |
-| 2 | `<ts2>_group_g3_shipping_reads.sql`（未作成） | 読取と同梱・準備数の定義、追跡の読取側の置換。Task 2 |
+| 2 | `20261025070821_group_g3_shipping_reads.sql`（作成済み・Fix round 1再適用待ち） | 読取5本と入口5本、内部3本の同梱・準備数の定義。Task 2。追跡の読取側の置換は同じ移行へTask 8で追記 |
 | 3 | `<ts3>_group_g3_shipping_slips.sql`（未作成） | ロック helper、下書き、発送確定、取消。Task 4〜6 |
 | 4 | `<ts4>_group_g3_shipping_actions.sql`（未作成） | 伝票訂正、手動配達済み、出荷日訂正、配送反映の置換、許可一覧とassert。Task 7〜10 |
 
@@ -610,3 +612,26 @@ G-0の基準専用の材料では、order-fixtures.tsの非G分岐はshipment_da
 | DB全件 `npx.cmd jest tests/integration/db --runInBand` | exit 1。suiteは118成功・stockistの1失敗・11 skip・計130、testは3266成功・stockistの2失敗・12 skip・計3280。205.889秒。Task 1の新規失敗0 |
 | レビュー修正後の対象DB6 suite | 234件成功。DB全件の既知stockist2失敗と区別する |
 | G-0基準のG-1清掃suite | G1_CLEANUP_SUITE=1の特別実行はcontroller判断待ち。通常全件のskipやsuiteの成功表示は、G-0基準の清掃の成功を証明しない |
+
+## G-3 Task 2 読取移行の適用境界
+
+確認日: 2026-10-25。[読取移行](../../supabase/migrations/20261025070821_group_g3_shipping_reads.sql) はTask 1の後に適用する。ASCII・BOMなし・LF、BEGIN / NOTIFY / COMMITは各1組、本体と末尾assertの印はG3B。適用済みG-1/G-2とTask 1の移行は変更しない。業務データ・表権限・private schemaのUSAGEを書き換えない。
+
+| 末尾assertのDETAIL | 確かめる内容 |
+| --- | --- |
+| `shipping_read_functions` | actorつき4本＋会計入力1本のprivate本体とpublic入口の10本。関数集合に余分なoverloadがない、postgres所有、STABLE、DEFINER/INVOKER、空search_path、引数名・戻り型・列名・型・順序、service_roleのみのEXECUTE、publicは同名privateへ委譲するSQLだけ |
+| `shipping_internal_functions` | 準備数・同梱判定・同梱キーの3本。存在、postgres所有、STABLE DEFINER、空search_path、引数・戻り型と列、PUBLIC・anon・authenticated・service_roleのEXECUTEなし |
+
+ACLはhas_function_privilegeとaclexplodeで意味を比較する。proaclの文字列表現、環境依存のOID値・ACL順には依存しない。この移行に表権限の変更はなく、PG17のMAINTAINを扱うTask 1の版ガードはそのまま保つ。
+
+実装者の非DB検証後、controllerがローカルreset・匿名と実authenticatedのPostgREST共通smokeを行う。再開後は指定のgroup_g3_reads・group_g3_postgrest_paths・group_g1_writer_inventory・group_g3_model・group_g2_inventory_list・group_g1_item_statesの6 suiteをローカル限定で実行する。会計入力はactorなしのservice_role窓口で、HTTP routeは作らない。SQL修正が必要になれば再reset待ちへ戻る。DB・PostgREST・本番適用はこの段階では未確認。
+
+### Task 2 Fix round 1の契約（2026-10-25）
+
+前版はローカル6 suite・191件が成功した。Opusレビュー後の本修正はSQLを変更したため、再reset・再検証待ち。署名・ACL・writer65本は保つ。
+
+会計入力の`_limit`は結果を切り詰める。会計Taskは **`rows = _limit`なら、より多い行がある可能性がある** と扱い、読み切った成功や全件0件の結論に使わない。範囲を狭めるか上限を上げて、`rows < _limit`になるまで確認する。1日だけでも上限に達した場合は未完了として扱う。今回の署名は固定し、ページ引数と索引は追加しない。
+
+荷作り表は指定票が不在なら`GROUP_G_SLIP_NOT_FOUND / P0002`、下書き以外なら共通値の`GROUP_G_SLIP_NOT_DRAFT / 55000`。どちらもactorの2権限を確認した後に判定する。詳細の住所不足・入金日時なし・注文状態・支払確認などは明細IDつきで示し、顧客/住所の不一致と期限切れは票単位。入金日時なしはpaid注文だけに付ける。準備数のMATERIALIZED集合は詳細1回につき1度計算し、linesとissuesで共用する。
+
+同梱判定は空/NULL配列・不在ID・NULL要素を`address_incomplete`にする。重複する実在IDは同じ注文として扱い、キーは不在/NULL IDでNULL。PostgRESTの再検証には`LOCAL_SUPABASE_ANON_KEY`も必要で、未設定は理由つきskip。anonと実ユーザーJWTのclientは実anonキー、service_roleだけはserviceキーを使う。材料の票は最初から期限切れ、認証の利用者はactorと共用する1人だけとし、終了時は準備注文を閉じてsignOut・認証利用者の削除を行う。追記専用の票・注文・在庫の材料は残る。

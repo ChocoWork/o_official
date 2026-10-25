@@ -361,6 +361,36 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
   const NO_ONE = { anon: false, authenticated: false, service_role: false, public_execute: false };
   const SERVICE_ROLE_ONLY = { anon: false, authenticated: false, service_role: true, public_execute: false };
 
+  test('FREQ-540-AC-10: 発送の読取5本と内部の道具3本は書き手でなく、65本の許可一覧を増やさない', async () => {
+    const procs = await loadProcs(db());
+    const allow = await allowlistOids(db());
+    const { direct, closure } = analyze(procs);
+    expect(ALLOWLIST).toHaveLength(65);
+    const readers = ['list_admin_packing', 'list_admin_shipment_slips', 'get_admin_shipment_slip',
+      'list_admin_order_shipment_slips', 'list_shipment_accounting_inputs'];
+    const internal = ['group_g_shipment_ready', 'group_g_bundle_verdict', 'group_g_bundle_key'];
+    for (const name of [...readers, ...internal]) {
+      const found = procs.filter((proc) => ['private', 'public'].includes(proc.schema) && proc.name === name);
+      expect({ name, count: found.length }).toEqual({ name, count: readers.includes(name) ? 2 : 1 });
+      for (const fn of found) {
+        expect({ name, schema: fn.schema, writer: direct.has(fn.key), closure: closure.has(fn.key), allowed: allow.has(fn.key),
+          acl: await aclOf(fn.oid) }).toEqual({ name, schema: fn.schema, writer: false, closure: false, allowed: false,
+          acl: { owner: 'postgres', prosecdef: fn.schema === 'private', proconfig: ['search_path=""'],
+            ...(readers.includes(name) ? SERVICE_ROLE_ONLY : NO_ONE) } });
+        if (fn.schema === 'public') {
+          expect(fn.language).toBe('sql');
+          expect(normalize(fn.src, true).trim()).toMatch(new RegExp(`^select (?:\\* from )?private\\.${name}\\([^;]*\\);?$`));
+        }
+      }
+    }
+    const actual = procs.filter((p) => [...readers, ...internal].includes(p.name)
+      && ['public', 'private'].includes(p.schema));
+    const executable: string[] = [];
+    for (const p of actual) if ((await aclOf(p.oid)).service_role) executable.push(p.oid);
+    expect(executable.sort()).toEqual(actual.filter((p) => readers.includes(p.name)).map((p) => p.oid).sort());
+    expect(executable).toHaveLength(10);
+  });
+
   test('FREQ-540-AC-08: 発注の書込み関数9本は private の SECURITY DEFINER・search_path 空で閉じた一覧の中にあり、public の入口9本は同名 private へ委ねるだけの SQL INVOKER。どちらも service_role だけが EXECUTE できる', async () => {
     const procs = await loadProcs(db());
     const allow = await allowlistOids(db());

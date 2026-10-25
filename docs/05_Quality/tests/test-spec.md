@@ -1,6 +1,6 @@
 # テスト仕様
 
-> 状態: 現行の方針（グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件
+> 状態: 現行の方針（グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件
 
 ## 概要
 
@@ -209,3 +209,20 @@ G-0の基準専用のorder-fixtures.tsの非G分岐は、G-3のshipment_date列�
 | DB全件 `npx.cmd jest tests/integration/db --runInBand` | exit 1。suiteは118成功・stockistの1失敗・11 skip・計130、testは3266成功・stockistの2失敗・12 skip・計3280。205.889秒。Task 1の新規失敗0 |
 | レビュー修正後の対象DB6 suite | 234件成功。DB全件の既知stockist2失敗と区別する |
 | G-0基準のG-1清掃suite | G1_CLEANUP_SUITE=1の特別実行はcontroller判断待ち。通常全件のskipやsuiteの成功表示は、G-0基準の清掃の成功を証明しない |
+
+## G-3 Task 2 荷作り表と発送票の読取
+
+確認日: 2026-10-25。下記のDB試験は作成済み・controller reset後の実行待ち。非DB検証の成功をDB・PostgRESTの証明に含めない。
+
+| ファイル | 層 | 対象 | 入力と期待 |
+| --- | --- | --- | --- |
+| [group_g3_reads](../../../tests/integration/db/group_g3_reads.integration.test.ts) | DB結合 | FREQ-531-AC-01〜04、FREQ-532-AC-01〜05、FREQ-535-AC-05、FREQ-540-AC-10 | paid割当と除外状態、一部準備数、同時刻のID順、頁とbigint総数、5阻害理由の和、相互の下書き番号・期限・選択数。同梱の会員・ゲスト・混在・別ID・7住所差分・必須の空・メールの連鎖拒否・JSON文字境界を表で確かめ、キー全一致と判定NULLを突き合わせる。役割の和集合・取消・期限、詳細issuesと取消阻害3種、履歴・注文の票・7列会計入力と取消時刻。在庫減・割当入替・受取後の数を再読取する |
+| [group_g3_postgrest_paths](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts) | 実PostgREST結合 | FREQ-531-AC-01・04、FREQ-540-AC-10 | supabase-js rpcから公開5入口をservice_roleで呼ぶ。権限なしactorはGROUP_G_FORBIDDEN / 42501。Authorizationを送らないanonと実Authで得たauthenticated JWTは5本とも42501。鍵・JWT・認証エラーは出力しない。storeはTask 3以降 |
+| [group_g1_writer_inventory](../../../tests/integration/db/group_g1_writer_inventory.integration.test.ts) | DB構造・回帰 | FREQ-540-AC-10 | 読取本体5本・入口5本・内部3本の所有者、SECURITY、空search_path、EXECUTE集合。直接・推移的な書き手に入らず、許可一覧は65本 |
+| [delivery-status-traceability](../../../tests/unit/docs/delivery-status-traceability.test.ts) | 文書単体 | 要求表の追跡 | FREQ-531・532のAC一覧、FREQ-535の会計入力AC-05、FREQ-540の読取部分AC-10を固定し、既存の一覧と検査を保つ |
+
+準備数の材料はpaid_atをpending時に一度設定してからpaidへ進め、発送行はseedGroupG1Shipmentのconsumeを持つ。取消はrestoreGroupG1Shipmentで戻す。seedGroupG3SlipとattachGroupG3SlipShipmentは票・行・発送との対応と履歴だけを足し、発送のconsumeを代用しない。variant欠落と古い割当の併存はG-1がcommitを拒むため、その防御的読取はrollbackする取引内だけで観測する。
+
+実行時はDATABASE_URLのlocalhost guardを使う。PostgREST用はLOCAL_SUPABASE_URL・LOCAL_SUPABASE_SERVICE_ROLE_KEY・LOCAL_SUPABASE_ANON_KEYが必要で、未設定は理由つきskip、localhost以外は失敗。anonと実ユーザーJWTのclientは実anonキーで作る。材料は期限切れの下書き、認証利用者はactorと共用する1人、終了時は準備注文を閉じてsignOut・認証利用者の削除を行う。DB6 suiteの実行・再reset・件数はTask 2報告に記録する。画面・HTTP route・外部追跡・メール・E2E・本番は本Taskの検証外。
+
+2026-10-25 Fix round 1の追加検査: 住所不足は該当明細だけに1件ずつ、paid以外にはpaid_at_missingなし、詳細の準備数呼出しは1回、不正/不在の票、空/不在IDの同梱拒否、住所7項目の前後空白、全段階と不正stage・確定票の2注文/3点、paid割当なしのpaid注文を含むG-1投影との先絞りの同値性。会計入力の打切りの扱いとTask 8の追跡読取側の追記は文書単体でも固定する。前版191件成功の後でSQLを変更したため、これらのDB・実anonキーによるPostgREST検証はcontroller再reset後まで未実施。

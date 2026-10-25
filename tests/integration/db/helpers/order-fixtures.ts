@@ -592,6 +592,11 @@ export async function insertOrderWithLines(
     status: string;
     lines: FixtureLine[];
     shippingEmail?: string;
+    /** Legal shipping snapshots are chosen at INSERT time; their later UPDATE is forbidden. */
+    shipping?: {
+      fullName?: string; postalCode?: string; prefecture?: string; city?: string;
+      address?: string; building?: string | null; phone?: string;
+    };
     shipped?: { carrier: 'yamato' | 'sagawa' | 'japanpost' | null; trackingNumber: string | null };
     /** 送料（既定 0） */
     shippingAmount?: number;
@@ -621,11 +626,12 @@ export async function insertOrderWithLines(
         subtotal_amount, shipping_amount, discount_amount, total_amount, currency,
         paid_amount, refunded_amount, refunded_at,
         shipping_email, shipping_full_name, shipping_postal_code, shipping_prefecture,
-        shipping_city, shipping_address, shipping_phone, shipped_at, shipping_carrier, tracking_number, created_at)
+        shipping_city, shipping_address, shipping_phone, shipped_at, shipping_carrier, tracking_number, created_at,
+        shipping_building)
      values ($1, $2, $3, $4::public.order_status,
              $5, $6, $7, $8, 'jpy',
              $9, $10, case when $10::integer > 0 then now() else null end,
-             $11, '山田 花子', '1500001', '東京都', '渋谷区', '神宮前1-1-1', '0311112222', $12, $13, $14, coalesce($15::timestamptz,now()))
+             $11, $16, $17, $18, $19, $20, $21, $12, $13, $14, coalesce($15::timestamptz,now()), $22)
      returning id`,
     [
       `fx-order-${suffix}`,
@@ -643,6 +649,13 @@ export async function insertOrderWithLines(
       options.shipped?.carrier ?? null,
       options.shipped?.trackingNumber ?? null,
       options.createdAt ?? null,
+      options.shipping?.fullName ?? '山田 花子',
+      options.shipping?.postalCode ?? '1500001',
+      options.shipping?.prefecture ?? '東京都',
+      options.shipping?.city ?? '渋谷区',
+      options.shipping?.address ?? '神宮前1-1-1',
+      options.shipping?.phone ?? '0311112222',
+      options.shipping?.building ?? null,
     ],
   );
   const orderId = order.rows[0].id as string;

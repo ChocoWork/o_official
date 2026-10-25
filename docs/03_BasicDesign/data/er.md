@@ -1,6 +1,6 @@
 # ER 図（現行リポジトリの実装）
 
-> 状態: 現行のソース（グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ適用済み（Task 1 の依頼で確認）。G-3 Task 1 の新6表・出荷日・守りを同日に追記し、controller reset後のDB全件でTask 1の新規失敗0を2026-10-25に確認した（全体は既知stockist2失敗によりexit 1）。G-2 Task 9 で手元の DB と突き合わせ、発注書の9表・22 FK、FK の合計 142〔public 起点 131・private 起点 11〕が DB と一致することを確かめた） | 確認日: 2026-10-25 | 対象: `supabase/migrations/` の基準スキーマと後続変更
+> 状態: 現行のソース（グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ適用済み（Task 1 の依頼で確認）。G-3 Task 1 の新6表・出荷日・守りを同日に追記し、controller reset後のDB全件でTask 1の新規失敗0を2026-10-25に確認した（全体は既知stockist2失敗によりexit 1）。G-2 Task 9 で手元の DB と突き合わせ、発注書の9表・22 FK、FK の合計 142〔public 起点 131・private 起点 11〕が DB と一致することを確かめた） | 確認日: 2026-10-25（G-3 Task 2の読取DB部分を追記） | 対象: `supabase/migrations/` の基準スキーマと後続変更
 
 ## 概要
 
@@ -1969,3 +1969,25 @@ public.item_delete_blockers(bigint[]) は戻り値の追加のため DROP → CR
 | DB全件 `npx.cmd jest tests/integration/db --runInBand` | exit 1。suiteは118成功・stockistの1失敗・11 skip・計130、testは3266成功・stockistの2失敗・12 skip・計3280。205.889秒。Task 1の新規失敗0 |
 | レビュー修正後の対象DB6 suite | 234件成功。DB全件の既知stockist2失敗と区別する |
 | G-0基準のG-1清掃suite | G1_CLEANUP_SUITE=1の特別実行はcontroller判断待ち。通常全件のskipやsuiteの成功表示は、G-0基準の清掃の成功を証明しない |
+
+## 荷作り表・発送票の読取（G-3 Task 2）
+
+確認日: 2026-10-25。[読取の移行](../../../supabase/migrations/20261025070821_group_g3_shipping_reads.sql) は関数13本だけを追加し、表・FK・G-1/G-2の投影と書き手65本は変えない。DB適用・実測はcontroller reset待ち。
+
+| private関数 | 責務・戻り値 | 権限 |
+| --- | --- | --- |
+| `group_g_shipment_ready(uuid[])` | paid注文かつpaid割当の残数が正の注文をMATERIALIZEDで先に絞り、既存の状態範囲からreadyを合計する。NULL配列は全候補、空配列は0件。阻害理由はpayment_review・exchange_fee_waiting・variant_missing・address_incomplete・paid_at_missingの順。理由があればshippable=0。発送準備数の唯一の定義で、後続の下書き保存・発送確定も使う | 所有者内部のみ |
+| `group_g_bundle_key(uuid)` / `group_g_bundle_verdict(uuid[])` | キーは顧客種別・IDか正規化メール・配送先をJSON配列にしてmd5。会員メールは同一性に含めず、建物の空は空文字。判定は空/NULL配列・不在ID・NULL要素を住所不足とし、住所不足→顧客不一致→住所不一致→NULL。非空かつ全IDが実在するとき、非NULLキー全一致と判定NULLが同値。不在/NULL IDのキーはNULL、重複する実在IDは同じ注文 | 所有者内部のみ |
+| `list_admin_packing(uuid,integer,integer,uuid)` | 18列。準備数・選択数・阻害理由・他の有効な下書き番号・bundle_ok・bundle_key・bigintのtotal_count。注文日、注文ID、明細IDの順。指定票が不在ならGROUP_G_SLIP_NOT_FOUND / P0002、下書き以外ならGROUP_G_SLIP_NOT_DRAFT / 55000 | service_role + actorのshipping.readとorders.read。存在確認より先に判定 |
+| `list_admin_shipment_slips(text,integer,integer,uuid)` | 12列。全段階または指定段階、期限・注文数・数量・総数、updated_at降順・ID順 | 同上 |
+| `get_admin_shipment_slip(uuid,uuid)` | camelCaseのJSON。下書きはdraft_linesと現在のshippable、確定・取消は発送票行。準備数をMATERIALIZEDで1回だけ計算しlines/issuesで共有。住所不足は該当明細ごとにorderItemIdつきで1件、入金日時なしはpaid注文だけ。他の注文状態・阻害理由・数量超過も明細単位。期限・顧客/住所不一致は票単位。cancelBlockersは発送ごとに返品・発送後返金・注文状態を調べる。履歴・発送・代表登録の要約も返す | 同上。不在はGROUP_G_SLIP_NOT_FOUND / P0002 |
+| `list_admin_order_shipment_slips(uuid,uuid)` | 注文の発送が属する票の4列。下書きは含まない | 同上 |
+| `list_shipment_accounting_inputs(date,date,integer)` | 確定・取消票の発送行を出荷日範囲で読む7列。最新日付履歴IDと発送のcancelled_atを含む。actorなし、HTTP窓口なし | service_roleのみ |
+
+新しい本体8本はpostgres所有のSTABLE DEFINER・空search_path。読取5本だけに同名・同引数・同戻り型のpublic SQL INVOKER入口を置き、双方をservice_role専用にする。内部3本はservice_roleもEXECUTEできない。private schemaのUSAGEは操作しない。
+
+準備数の先絞りはG-3の読取だけに作用する。既存のG-1投影とG-2在庫一覧は置換しない。G-1のreadyにはpaid割当が必要なため候補を落とさず、閉じた注文の長い履歴を投影へ渡さない。DB [読取](../../../tests/integration/db/group_g3_reads.integration.test.ts)・[PostgREST](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts)と既存G-1/G-2回帰の実測は未実施。
+
+会計入力の`_limit`は切り詰めで、署名は変更しない。会計Taskは **`rows = _limit`なら、より多い行がある可能性がある** として、全件を読めた扱いにしない。範囲や上限を調整して`rows < _limit`を確認し、1日だけでも上限に達する場合は未完了として扱う。今回ページ引数と索引は追加しない。
+
+2026-10-25のFix round 1は上記のissue粒度・不正ID/票の拒否・準備数の共用を反映した。前版のローカル191件成功と区別し、今回のSQLはcontroller再reset後に再検証する。先絞りはpaid割当なしのpaid注文も渡したG-1投影との数量比較、住所の前後空白は7項目それぞれのキー比較でも確かめる。
