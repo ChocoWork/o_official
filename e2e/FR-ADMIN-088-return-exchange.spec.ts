@@ -9,9 +9,11 @@
  *
  * G-1: 旧の発送の画面と発送の関数は停止し、仕上がりの手動の記録は終了した。発送の材料は合成の発送（createFulfillment。入金済みの割当 A を消費）で、
  * 作って送る品・手数料待ちの交換の品は、A が付くまで受注生産中として止まる（A が付くのは入荷の自動の割当、手数料の受け取り・支払いを待たずに送るの後）。
- * 実際の発送の画面の確かめは G-3 FR-ADMIN-116・120 で新しい発送票へ書き換えて再開する。
+ * G-3: 発送の画面で交換の品に「交換の品」の印と手数料待ちの知らせが出て、手数料待ちの断りの文が画面の中に出る確かめ（FREQ-465-AC-03）は、
+ * 荷作り表へ移した（ケースは削除）→ FR-ADMIN-116 の ②（交換の品の印・交換手数料待ちの理由で選べない・開いた後に止めが付いた行の断りの文）と、
+ * FR-ADMIN-118 の ④（本物の交換の返品から手数料の入金後に送れる）。
  */
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { PRICE } from '../tests/integration/db/helpers/order-fixtures';
 import { seedE2eRestock } from './group-g1-test-utils';
@@ -25,12 +27,9 @@ import {
   withLocalDb,
 } from './order-email-test-utils';
 import {
-  adminOrder,
-  fulfillJson,
   mockOrderList,
   openOrderTab,
   orderNumberOf,
-  shipMaterials,
   viewports,
 } from './order-fulfillment-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
@@ -44,9 +43,7 @@ import {
   createReturnInDb,
   createShippedOrder,
   exchangeItemRows,
-  exchangeMaterialLine,
   exchangeOf,
-  exchangeOrderLine,
   formatYen,
   lineProgressOf,
   mockReturnRoutes,
@@ -251,54 +248,6 @@ for (const viewport of viewports) {
         refundChoice: 'consult',
         exchangeOverrides: [{ returnLineId: LINE_B, action: 'refund' }],
       });
-    });
-
-    test('発送の画面で交換の品に「交換の品」の印と手数料待ちの知らせが出て、手数料待ちの断りの文は発送の画面の中に出る', async ({ page }) => {
-      // FREQ-465-AC-03
-      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-116/120で新票へ書換・再開');
-      const state = { onHold: 1, posts: 0 };
-      await mockAdminSessionAs(page, 'admin');
-      await mockOrderList(page, () => [
-        adminOrder({
-          id: ORDER_ID,
-          status: '発送準備中',
-          orderStatus: 'paid',
-          items: [exchangeOrderLine({ id: EXCHANGE_ITEM, name: 'E2Eシャツ', color: 'ホワイト', size: 'L', quantity: 1, readyUnshipped: 1 })],
-        }),
-      ]);
-      await page.route(`**/api/admin/orders/${ORDER_ID}/fulfillments`, async (route: Route) => {
-        if (route.request().method() === 'GET') {
-          await fulfillJson(
-            route,
-            shipMaterials({ orderId: ORDER_ID, lines: [exchangeMaterialLine({ orderItemId: EXCHANGE_ITEM, onHold: state.onHold })] }),
-          );
-          return;
-        }
-        state.posts += 1;
-        await fulfillJson(route, { error: RETURN_TEXT.shipHoldRefusal, code: 'fulfillment_exchange_on_hold' }, 409);
-      });
-      await openOrderTab(page);
-      await page.getByRole('button', { name: '発送済みにする' }).click();
-      const dialog = page.getByRole('dialog', { name: '発送済みにする' });
-
-      // 手数料のお支払いを待っている交換の品: 印と知らせが出て、送れる数は0
-      await expect(dialog.getByText('交換の品', { exact: true })).toBeVisible();
-      await expect(dialog.getByText(RETURN_TEXT.shipHold(1))).toBeVisible();
-      await expect(dialog.getByLabel('今回送る数')).toHaveValue('0');
-      await dialog.getByRole('button', { name: 'キャンセル', exact: true }).click();
-      await expect(dialog).toHaveCount(0);
-
-      // お支払い待ちが始まる前に開いた画面で押した時: 窓口の断りの文が画面の中に出る
-      state.onHold = 0;
-      await page.getByRole('button', { name: '発送済みにする' }).click();
-      const again = page.getByRole('dialog', { name: '発送済みにする' });
-      await expect(again.getByText('交換の品', { exact: true })).toBeVisible();
-      await expect(again.getByText(RETURN_TEXT.shipHold(1))).toHaveCount(0);
-      await again.getByLabel('追跡番号').fill('E2E-HOLD');
-      await again.getByRole('button', { name: '発送する' }).click();
-      await expect(again.getByRole('alert').filter({ hasText: RETURN_TEXT.shipHoldRefusal })).toBeVisible();
-      expect(state.posts).toBe(1);
-      await expect(again).toBeVisible();
     });
 
     test('手数料のお支払い待ちの返品に、店長だけの「手数料の受け取りを記録する」と「支払いを待たずに送る」が出て、それぞれの画面から窓口へ届く', async ({ page }) => {

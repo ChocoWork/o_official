@@ -243,6 +243,8 @@ export type ShippingMaterialInput = {
   paidAt?: string | null;
   /** 配送先（省いた項目は DEFAULT_SHIP_TO） */
   shipTo?: Partial<ShipTo>;
+  /** 決済の番号。返品・発送後の返金を作る試験（FR-ADMIN-117 ⑤）だけが渡す。省くと空（従来どおり） */
+  paymentIntentId?: string;
 };
 
 export type ShippingMaterial = {
@@ -318,15 +320,15 @@ export async function createShippingMaterial(client: PgClient, input: ShippingMa
         `insert into public.orders
            (session_id, checkout_session_id, status, subtotal_amount, shipping_amount, discount_amount, total_amount, paid_amount, paid_at, currency,
             shipping_email, shipping_full_name, shipping_postal_code, shipping_prefecture, shipping_city, shipping_address, shipping_building,
-            shipping_phone, user_id, created_at)
+            shipping_phone, user_id, created_at, payment_intent_id)
          values ($1, $2, $3::public.order_status, $4, 0, 0, $4, $5,
                  case when $17::boolean then null else coalesce($6::timestamptz, $16::timestamptz, now()) end, 'jpy',
-                 $7, $8, $9, $10, $11, $12, $13, $14, $15, coalesce($16::timestamptz, now()))
+                 $7, $8, $9, $10, $11, $12, $13, $14, $15, coalesce($16::timestamptz, now()), $18)
          returning id, created_at`,
         [
           `e2e-g3-${suffix}`, `cs_e2e_g3_${suffix}`, status, total, status === 'paid' ? total : null, paidAt,
           email, shipTo.fullName, shipTo.postalCode, shipTo.prefecture, shipTo.city, shipTo.address, shipTo.building,
-          shipTo.phone, userId, orderedAt, noPaidAt,
+          shipTo.phone, userId, orderedAt, noPaidAt, input.paymentIntentId ?? null,
         ],
       )
     ).rows[0] as { id: string; created_at: Date };
@@ -383,8 +385,10 @@ export type ExchangeFeeMaterial = {
 };
 
 /**
- * 交換手数料のお支払い待ちの交換の品（準備中・割当済み）を足した注文。元の品を1点発送した形にして返品（交換）を作り、
- * 手数料（100円）を未払いにしたまま、交換の品に入金済みの割当を付ける（荷作り表が「交換手数料待ち」で止める行。本物の流れでは割当が付く前に止まるので、合成の材料）。
+ * 合成状態: 割当済みの交換品が exchange_fee_waiting を持ち、荷作り表で選べず下書きも EXCHANGE_ON_HOLD で断られる注文。
+ * 元の品を1点発送した形にして返品（交換）を作り、手数料（100円）を未払いにしたまま、交換品に入金済みの割当を付ける。
+ * 実際には「相談」で受け取って交換品に割当が付いた後、手数料より少ない返金で手数料待ちになった時などに起きる（G-1 移行の受取・返金の処理）。
+ * 普通の流れの未割当で受注生産中となり荷作り表に出ない手数料待ちは FR-ADMIN-118 ④で確かめる。
  */
 export async function createExchangeFeeMaterial(
   client: PgClient,
@@ -837,6 +841,22 @@ export async function prepareShippingPage(
   await mockShippingUiBridge(page, ctx.client, options.actorId ?? ctx.actorId);
   // 荷作り表の並びを読む実行者は、画面の実行者（サポーターなど）によらず、読める権限のある役割 admin
   snapshotActors.set(page, ctx.actorId);
+}
+
+/**
+ * 窓口を画面なしで呼ぶ（画面が呼ぶのと同じ bridge の中核 dispatchShippingRequest を直に呼ぶ。実行者は省くと役割 admin の ctx.actorId）。
+ * 権限の許否は DB の関数が決める。bridge が決めていない方法・道は投げる。FR-ADMIN-117・118 が拒否の答えや履歴の形を確かめるのに使う。
+ */
+export async function callShippingApi(
+  ctx: ShippingContext,
+  method: 'GET' | 'POST',
+  path: string,
+  body: Record<string, unknown> = {},
+  actorId: string = ctx.actorId,
+): Promise<ShippingReply> {
+  const reply = await dispatchShippingRequest(ctx.client, actorId, method, new URL(path, 'http://localhost:3000'), body);
+  if (reply === null) throw new Error(`E2E_BRIDGE_UNHANDLED:${method} ${path}`);
+  return reply;
 }
 
 /** 画面の中から窓口を呼ぶ（ログインの cookie は同じ origin のまま付く。bridge が DB の関数へ渡す） */

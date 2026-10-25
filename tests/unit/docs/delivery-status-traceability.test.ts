@@ -22,13 +22,14 @@ const expectedAcs = counts.flatMap((count, index) =>
   Array.from({ length: count }, (_, ac) => `FREQ-${488 + index}-AC-${String(ac + 1).padStart(2, '0')}`),
 );
 // 指示書の40 ACの割り当て。E2Eの無いACをE2Eの証拠に変えない。
+// G-3 Task 12: 伝票番号の訂正・手動の配達済みの E2E（旧 FR-ADMIN-100・101）は、発送票の操作の FR-ADMIN-117 へ移った（100・101 のファイルにケースは残っていない）。
 const e2eByAc: string[][] = [
-  ['ADMIN-100'], ['ADMIN-100'], ['ADMIN-100'], [],
-  ['ADMIN-101'], ['ADMIN-101'], ['ADMIN-101'],
+  ['ADMIN-117'], ['ADMIN-117'], ['ADMIN-117'], [],
+  ['ADMIN-117'], ['ADMIN-117'], ['ADMIN-117'],
   ['ADMIN-102', 'ACCOUNT-041'], [], [], [], [],
   ['ADMIN-102'], ['ADMIN-102'], [], [],
-  ['ADMIN-100', 'ADMIN-101', 'ADMIN-102'], ['ADMIN-102'], [], ['ADMIN-100'],
-  ['ADMIN-100', 'ADMIN-101'], ['ADMIN-103'], ['ADMIN-103'], [],
+  ['ADMIN-102', 'ADMIN-117'], ['ADMIN-102'], [], ['ADMIN-117'],
+  ['ADMIN-117'], ['ADMIN-103'], ['ADMIN-103'], [],
   ['ACCOUNT-043'], ['ACCOUNT-041', 'ACCOUNT-042'], ['ACCOUNT-043'], ['ACCOUNT-041', 'ACCOUNT-042'], ['ACCOUNT-042'],
   ['ADMIN-104'], ['ADMIN-104'], ['ADMIN-104', 'ACCOUNT-043'], ['ADMIN-104'], ['ACCOUNT-043'],
   [], [], [], [], [], ['ACCOUNT-043'],
@@ -119,8 +120,8 @@ test('配送追跡はStripe受け口のafterからも借りの印とprovider枠�
 
 test('E2EのACコメントが要求表に存在し対応するspecだけを指す', () => {
   const known = new Set(rows().flatMap((line) => line.split('|')[5].match(/FREQ-\d+-AC-\d+/g) ?? []));
-  const specs = walk('e2e').filter((file) => /FR-(ADMIN-10[0-4]|ACCOUNT-04[1-3])-.*\.spec\.ts$/.test(file));
-  expect(specs).toHaveLength(8);
+  const specs = walk('e2e').filter((file) => /FR-(ADMIN-(10[2-4]|117)|ACCOUNT-04[1-3])-.*\.spec\.ts$/.test(file));
+  expect(specs).toHaveLength(7);
   const unknownComments: string[] = [];
   specs.forEach((file) => {
     const id = /FR-((?:ADMIN|ACCOUNT)-\d+)/.exec(file)![1];

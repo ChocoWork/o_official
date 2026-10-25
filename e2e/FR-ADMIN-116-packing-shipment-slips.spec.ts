@@ -21,11 +21,13 @@ import {
   SHIPMENT_SLIP_TEXT,
   formatOtherSlipNotice,
 } from '@/lib/orders/shipment-slips/shipment-slip-types';
-import { uniqueEmail } from './order-email-test-utils';
+import { SHIPPING_CARRIERS } from '@/lib/orders/shipping-carriers';
+import { beginRefund, recordRefundResult, uniqueEmail } from './order-email-test-utils';
 import { viewports } from './order-fulfillment-test-utils';
 import { createPermissionActor, mockPermissionUiBridge } from './permission-settings-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
 import {
+  UNIT_PRICE,
   adjustStock,
   callFromPage,
   confirmOnSlipPage,
@@ -118,6 +120,16 @@ for (const viewport of viewports) {
         const unpaid = await createShippingMaterial(client, { orderedDaysAgo: 70, quantity: 2, status: 'pending' });
         const shipped = await createShippingMaterial(client, { orderedDaysAgo: 60, quantity: 2 });
         await shipMaterialsInDb(ctx, [shipped], { notifyCustomer: false });
+        // 発送前に返金した商品は出ない（一部だけ返金した行は、残りの数だけ出る）。返金は本物の入口で受け付けて結果を記録する
+        const paymentIntent = () => `pi_e2e_${randomUUID().replaceAll('-', '').slice(0, 20)}`;
+        const partlyRefunded = await createShippingMaterial(client, { orderedDaysAgo: 55, quantity: 3, paymentIntentId: paymentIntent() });
+        const fullyRefunded = await createShippingMaterial(client, { orderedDaysAgo: 54, quantity: 2, paymentIntentId: paymentIntent() });
+        for (const material of [partlyRefunded, fullyRefunded]) {
+          const began = await beginRefund(client, material.orderId, {
+            actorId: ctx.actorId, lines: [{ orderItemId: material.orderItemId, quantity: 2, beforeShipment: true }], amount: UNIT_PRICE * 2,
+          });
+          await recordRefundResult(client, began.refundId);
+        }
         await startPacking(page, ctx);
 
         // 9列の見出し（選択欄の列は見出しを視覚的に隠す）
@@ -141,6 +153,21 @@ for (const viewport of viewports) {
         }
         expect(await readyQuantityOf(client, older)).toBe(3);
         expect(await readyQuantityOf(client, shipped)).toBe(0);
+        // 発送前に全部返金した行は出ない。一部だけ返金した行は、返金していない残りの数（1点）だけが出る
+        expect(packingIndexOf(snapshot, fullyRefunded.orderItemId), '発送前に全部返金した行は荷作り表に出ない').toBe(-1);
+        const partlyIndex = packingIndexOf(snapshot, partlyRefunded.orderItemId);
+        expect(partlyIndex, '一部だけ返金した行は残りが出る').toBeGreaterThanOrEqual(0);
+        expect(snapshot[partlyIndex].readyQuantity).toBe(1);
+        expect(await readyQuantityOf(client, partlyRefunded)).toBe(1);
+        expect(await readyQuantityOf(client, fullyRefunded)).toBe(0);
+        // 返金した分は画面を通さずに窓口を直に呼んでも送らせない（下書きも作られない）
+        const refundedDraft = await callFromPage(page, 'POST', '/api/admin/shipment-slips', {
+          lines: [{ orderItemId: partlyRefunded.orderItemId, quantity: 2 }], requestKey: randomUUID(),
+        });
+        expect(refundedDraft).toEqual({
+          status: 409,
+          body: { code: 'GROUP_G_SLIP_QUANTITY_EXCEEDS_READY', error: SHIPMENT_SLIP_ERRORS.GROUP_G_SLIP_QUANTITY_EXCEEDS_READY[2] },
+        });
 
         // 画面: 自分の行を出して、1行の中身（左から 選択・注文ID・注文日・顧客名・メールアドレス・商品名・色・サイズ・数量・単価）を確かめる
         const row = await revealPackingRow(page, older);
@@ -170,6 +197,7 @@ for (const viewport of viewports) {
         const review = await createShippingMaterial(client, { orderedDaysAgo: 100, quantity: 2 });
         await holdPaymentReview(client, review.orderId);
         const incomplete = await createShippingMaterial(client, { orderedDaysAgo: 99, quantity: 2, shipTo: { phone: ' ' } });
+        // 割当済みの交換品が exchange_fee_waiting を持つ合成状態。実際には「相談」で受け取って割当が付いた後に手数料より少ない返金をした時などに起きる。普通の未割当で表に出ない手数料待ちは118④で確かめる。
         const exchange = await createExchangeFeeMaterial(client, ctx.actorId, { orderedDaysAgo: 98 });
         const ok = await createShippingMaterial(client, { orderedDaysAgo: 97, quantity: 2 });
         await startPacking(page, ctx);
@@ -199,6 +227,13 @@ for (const viewport of viewports) {
         await expect(selectBoxOf(okRow, ok.label)).toBeEnabled();
         await expect(packingNoteOf(okRow)).toHaveCount(0);
         await expectNoPageOverflow(page);
+
+        // 画面を開いた後に止めが付いた行（画面は古いまま）を選んで発送すると、DB の断りの文が画面の中に出て、票の頁へは移らず、下書きも作られない
+        await selectBoxOf(okRow, ok.label).check();
+        await holdPaymentReview(client, ok.orderId);
+        await shipButton(page).click();
+        await expect(page.getByRole('alert').filter({ hasText: SHIPMENT_SLIP_ERRORS.GROUP_G_SLIP_PAYMENT_REVIEW_REQUIRED[2] })).toBeVisible();
+        await expect(page).toHaveURL(/\/admin\/packing$/);
 
         // 画面を通さずに窓口を直接呼んでも、DB が同じ理由で断り、下書きは作られない
         const refuse = async (orderItemId: string, code: string): Promise<void> => {
@@ -232,11 +267,15 @@ for (const viewport of viewports) {
         await expect(line).toHaveCount(1);
         await expect(line.getByRole('cell').nth(5)).toHaveText('2');
         await expect(line.getByRole('cell').nth(6)).toHaveText('5');
+        // 「お客様に発送のメールを送る」は最初から入っている（そのまま確定すると発送のメールの予定が1つできる）
+        const notifyBox = page.getByRole('checkbox', { name: 'お客様に発送のメールを送る', exact: true });
+        await expect(notifyBox).toBeChecked();
         await confirmOnSlipPage(page);
 
         // 部分発送: 注文は入金済みのまま、発送は 2 点、準備中は 3 点
         expect(await orderStatusOf(client, material.orderId)).toBe('paid');
-        expect(await fulfillmentsOf(client, material.orderId)).toMatchObject([{ number: 1, quantity: 2, completesOrder: false }]);
+        expect(await fulfillmentsOf(client, material.orderId)).toMatchObject([{ number: 1, quantity: 2, completesOrder: false, notifyCustomer: true }]);
+        expect(await outboxCount(client, [material.orderId], ['shipped'])).toBe(1);
         expect(await readyQuantityOf(client, material)).toBe(3);
         expect((await readSlip(client, ctx.actorId, first.slipId)).stage).toBe('confirmed');
 
@@ -249,13 +288,17 @@ for (const viewport of viewports) {
         await expect(sendQuantityOf(row, material.label)).toHaveValue('3');
         const second = await shipSelected(page);
         expect(second.slipId).not.toBe(first.slipId);
+        // チェックを外して確定すると「送らない」になり、この発送のメールの予定は作られない（先の発送の予定は1つのまま）
+        await expect(notifyBox).toBeChecked();
+        await notifyBox.uncheck();
         await confirmOnSlipPage(page);
 
         expect(await orderStatusOf(client, material.orderId)).toBe('shipped');
         expect(await fulfillmentsOf(client, material.orderId)).toMatchObject([
-          { number: 1, quantity: 2, completesOrder: false },
-          { number: 2, quantity: 3, completesOrder: true },
+          { number: 1, quantity: 2, completesOrder: false, notifyCustomer: true },
+          { number: 2, quantity: 3, completesOrder: true, notifyCustomer: false },
         ]);
+        expect(await outboxCount(client, [material.orderId], ['shipped'])).toBe(1);
         expect(await readyQuantityOf(client, material)).toBe(0);
 
         // 全部送ったので、荷作り表のどこにも出ない（一時点の1回の読み取りで確かめる。頁を歩いた「どの頁にも無い」は、行がずれても通ってしまう）
@@ -287,22 +330,35 @@ for (const viewport of viewports) {
 
         const slip = await shipSelected(page);
         await expect(page.getByTestId('slip-line')).toHaveCount(2);
+        // 荷物の情報（運送会社と伝票番号）を入れる。票の全注文に同じ値が入る
+        const trackingNumber = `E2E-BUNDLE-${randomUUID().slice(0, 8).toUpperCase()}`;
+        await page.getByRole('combobox', { name: SHIPMENT_SLIP_TEXT.carrierLabel, exact: true }).selectOption('yamato');
+        await page.getByLabel('伝票番号', { exact: true }).fill(trackingNumber);
 
-        // 確認の段: 注文ごとに品物と数が並ぶ
+        // 確認の段: 注文ごとに品物と数が並び、運送会社と伝票番号が出る
         await page.getByRole('button', { name: '発送票確認', exact: true }).click();
         for (const order of [first, second]) {
           const section = page.getByRole('heading', { level: 3, name: `注文 ${order.orderNumber}`, exact: true });
           await expect(section).toBeVisible();
           await expect(section.locator('xpath=following-sibling::ul[1]')).toContainText(`${order.label} ×${order.quantity}`);
         }
+        await expect(page.getByText(`運送会社: ${SHIPPING_CARRIERS.yamato.label}`, { exact: true })).toBeVisible();
+        await expect(page.getByText(`伝票番号: ${trackingNumber}`, { exact: true })).toBeVisible();
         await page.getByRole('button', { name: '発送確定', exact: true }).click();
         await expect(noticeOf(page, '発送を確定しました。')).toBeVisible();
 
-        // 注文ごとに発送が 1 つ（その注文の品の全部）。どちらの注文も発送済み
-        expect(await fulfillmentsOf(client, first.orderId)).toMatchObject([{ number: 1, quantity: 2, completesOrder: true }]);
-        expect(await fulfillmentsOf(client, second.orderId)).toMatchObject([{ number: 1, quantity: 3, completesOrder: true }]);
+        // 注文ごとに発送が 1 つ（その注文の品の全部）。どちらの注文も発送済みで、運送会社と伝票番号が入る
+        expect(await fulfillmentsOf(client, first.orderId)).toMatchObject([
+          { number: 1, quantity: 2, completesOrder: true, carrier: 'yamato', trackingNumber },
+        ]);
+        expect(await fulfillmentsOf(client, second.orderId)).toMatchObject([
+          { number: 1, quantity: 3, completesOrder: true, carrier: 'yamato', trackingNumber },
+        ]);
         expect(await orderStatusOf(client, first.orderId)).toBe('shipped');
         expect(await orderStatusOf(client, second.orderId)).toBe('shipped');
+        expect((await client.query(
+          'select shipping_carrier, tracking_number from public.orders where id = any($1::uuid[]) order by id', [[first.orderId, second.orderId]],
+        )).rows).toEqual([{ shipping_carrier: 'yamato', tracking_number: trackingNumber }, { shipping_carrier: 'yamato', tracking_number: trackingNumber }]);
         const detail = await readSlip(client, ctx.actorId, slip.slipId);
         expect(detail.orders.map((order) => order.orderId).sort()).toEqual([first.orderId, second.orderId].sort());
         await expectNoPageOverflow(page);
@@ -450,6 +506,8 @@ for (const viewport of viewports) {
         const doubled = await createShippingMaterial(client, { quantity: 2 });
         const doubledDraft = await createDraftInDb(ctx, [doubled]);
         await openSlip(page, doubledDraft.id);
+        // 「お客様に発送のメールを送る」は最初から入っているので、そのまま確定すると発送のメールの予定が1つできる（下の outbox の数）
+        await expect(page.getByRole('checkbox', { name: 'お客様に発送のメールを送る', exact: true })).toBeChecked();
         await page.getByRole('button', { name: '発送票確認', exact: true }).click();
         await expect(page.getByRole('heading', { name: '発送票の確認', level: 2, exact: true })).toBeVisible();
         await page.getByRole('button', { name: '発送確定', exact: true }).dblclick();
@@ -486,6 +544,36 @@ for (const viewport of viewports) {
         expect(await fulfillmentsOf(client, lost.orderId)).toHaveLength(1);
         expect(await outboxCount(client, [lost.orderId], ['shipped'])).toBe(1);
         expect((await readSlip(client, ctx.actorId, lostDraft.id)).stage).toBe('confirmed');
+
+        // サーバーが 500 を返した時も同じ: DB には記録されたが、画面は結果を知らない。「もう一度確かめる」で二重にならない
+        const failedOrder = await createShippingMaterial(client, { quantity: 2 });
+        const failedDraft = await createDraftInDb(ctx, [failedOrder]);
+        confirmRequests.length = 0;
+        let answered500 = 0;
+        await page.route(/\/api\/admin\/shipment-slips\/[0-9a-f-]{36}\/confirm$/, async (route) => {
+          if (answered500 > 0) {
+            await route.fallback();
+            return;
+          }
+          answered500 += 1;
+          const request = route.request();
+          await dispatchShippingRequest(client, ctx.actorId, request.method(), new URL(request.url()), request.postDataJSON() as Record<string, unknown>);
+          await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: SHIPMENT_SLIP_TEXT.failed }) });
+        });
+        await openSlip(page, failedDraft.id);
+        await page.getByRole('button', { name: '発送票確認', exact: true }).click();
+        await page.getByRole('button', { name: '発送確定', exact: true }).click();
+        await expect(page.getByRole('alert').filter({ hasText: UNKNOWN_TEXT })).toBeVisible();
+        // 結果が分からない間は「もう一度確かめる」と「戻る」だけが出て、入力は止まる
+        await expect(page.getByRole('button', { name: 'もう一度確かめる', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: '発送確定', exact: true })).toBeDisabled();
+        expect(await fulfillmentsOf(client, failedOrder.orderId)).toHaveLength(1);
+        await page.getByRole('button', { name: 'もう一度確かめる', exact: true }).click();
+        await expect(noticeOf(page, '発送を確定しました。')).toBeVisible();
+        expect(confirmRequests).toHaveLength(2);
+        expect(await fulfillmentsOf(client, failedOrder.orderId)).toHaveLength(1);
+        expect(await outboxCount(client, [failedOrder.orderId], ['shipped'])).toBe(1);
+        expect((await readSlip(client, ctx.actorId, failedDraft.id)).stage).toBe('confirmed');
         await expectNoPageOverflow(page);
       });
     });
@@ -563,6 +651,14 @@ for (const viewport of viewports) {
         await page.keyboard.press('Control+A');
         await page.keyboard.type('2');
         await expect(quantity).toHaveValue('2');
+        // 送る数が0（または準備中の数を超える）では発送を押せない。送らずに、入力が無効の印になる
+        await quantity.fill('0');
+        await expect(quantity).toHaveAttribute('aria-invalid', 'true');
+        await expect(shipButton(page)).toBeDisabled();
+        await quantity.fill(String(material.quantity + 1));
+        await expect(shipButton(page)).toBeDisabled();
+        await quantity.fill('2');
+        await expect(quantity).toHaveAttribute('aria-invalid', 'false');
 
         // 注文IDを押して履歴のダイアログを開いて閉じても、遷移せず、選択と送る数は消えない
         const history = row.getByRole('button', { name: `${material.orderNumber} の履歴を開く`, exact: true });

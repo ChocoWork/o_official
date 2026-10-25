@@ -107,6 +107,12 @@ for (const viewport of viewports) {
         expect(toB[0].Subject).toBe(`【Le Fil des Heures】商品を発送いたしました（${b.orderNumber}）`);
         expect(await mailsTo(request, a.email)).toHaveLength(1);
         expect(await mailsTo(request, b.email)).toHaveLength(1);
+        // 注文のメールの表には、発送ごとに自動の1行（発送のメールの予定）。票の発送の1つずつに結び付く
+        const rows = (await ctx.client.query(
+          "select fulfillment_id, origin from private.order_email_outbox where order_id = any($1::uuid[]) and kind = 'shipped'", [[a.orderId, b.orderId]],
+        )).rows;
+        expect(rows.map((row) => row.origin)).toEqual(['auto', 'auto']);
+        expect(rows.map((row) => row.fulfillment_id as string).sort()).toEqual(confirmed.fulfillments.map((entry) => entry.fulfillmentId).sort());
       });
     });
 
@@ -146,7 +152,24 @@ for (const viewport of viewports) {
         for (const text of [textA, textB]) {
           expect(text).toContain(`配送業者: ${SHIPPING_CARRIERS.yamato.label}`);
           expect(text).toContain('追跡番号: E2E-MAIL-');
+          // 値段は書かない
+          expect(text).not.toMatch(/[¥￥]/);
         }
+
+        // 同じ注文の残りを別の票で送ると、2通目はその発送の品物と数だけで残りの案内は入らない。最初のメールは残りの案内のまま
+        await shipMaterialsInDb(ctx, [a], {
+          quantities: [2], carrier: 'sagawa', trackingNumber: `E2E-MAIL-${randomUUID().slice(0, 8).toUpperCase()}`, notifyCustomer: true,
+        });
+        const sentToA = await pollMails(request, a.email, SHIPPED, 2);
+        const withRemaining = sentToA.filter((mail) => mail.Text.includes(REMAINING));
+        const withoutRemaining = sentToA.filter((mail) => !mail.Text.includes(REMAINING));
+        expect(withRemaining).toHaveLength(1);
+        expect(withoutRemaining).toHaveLength(1);
+        expect(withRemaining[0].Text).toContain(`配送業者: ${SHIPPING_CARRIERS.yamato.label}`);
+        expect(withoutRemaining[0].Text).toContain(itemLine(a, 2));
+        expect(withoutRemaining[0].Text).toContain(`配送業者: ${SHIPPING_CARRIERS.sagawa.label}`);
+        expect(withoutRemaining[0].Text).not.toMatch(/[¥￥]/);
+        expect(await outboxCount(ctx.client, [a.orderId], ['shipped'])).toBe(2);
       });
     });
 

@@ -14,7 +14,6 @@ import type {
   OrderHistoryReturnEntry,
   OrderHistoryReturnEntryKind,
 } from '@/lib/orders/email/order-history';
-import type { FulfillmentMaterialLine } from '@/lib/orders/fulfillment/fulfillment-types';
 import type {
   ExchangeMethod,
   OrderReturnDetail,
@@ -44,7 +43,7 @@ import {
   type MailBody,
 } from './order-email-test-utils';
 import { seedE2eRestock, withGroupG1Material } from './group-g1-test-utils';
-import { adminOrder, fulfillJson, materialLine, orderLine, orderNumberOf } from './order-fulfillment-test-utils';
+import { adminOrder, fulfillJson, orderLine, orderNumberOf } from './order-fulfillment-test-utils';
 import { formatYen } from './refund-test-utils';
 
 // ---- 言葉（共通の約束 C-5・C-6）。実装の定数を import せず、試験が自分で持つ。金額は画面と同じ全角の ￥ と桁区切り ----
@@ -98,10 +97,6 @@ export const RETURN_TEXT = {
   releaseBody: '手数料のお支払いを待たずに、交換の品を送れるようにします。手数料はお支払い待ちのまま残ります。',
   /** 受け取りの画面の、押す前のお支払い待ちの見込み（引けない手数料か、返金の品が無い受け取りで付く手数料がある時だけ。C-5） */
   awaitingPayment: (yen: string) => `お支払い待ち ${yen}（交換の品は、お支払いを確かめてから送ります）`,
-  shipHold: (count: number) =>
-    `手数料のお支払いを待っている交換の品があります（${count}点）。送るには、返品の画面で受け取りを記録するか「支払いを待たずに送る」を押してください。`,
-  shipHoldRefusal: '手数料のお支払いを待っている交換の品は送れません。',
-  hasReturnRefusal: '返品のある発送は取り消せません。',
   remaining: (count: number) => `返品できる品: あと${count}点`,
   deadline: (day: string) => `受付の期限: ${day}まで`,
   pastDeadline: (day: string) => `期限を過ぎています（${day}まで）`,
@@ -1147,21 +1142,6 @@ export async function mockOrderListWithAttention(
 /** 一覧の購入商品の、交換の品の行（印 lineKind は Task 8・11 が足した欄。型を足す前でも書けるよう、欄を足した物として渡す） */
 export function exchangeOrderLine(overrides: Partial<OrderLineItem> = {}): OrderLineItem {
   return orderLine({ ...overrides, lineKind: 'exchange' } as Partial<OrderLineItem>);
-}
-
-/**
- * 発送の画面の材料の、交換の品の行。印 lineKind と、手数料のお支払いを待っていて送れない数 exchangeOnHold は Task 8 が足した欄
- * （窓口は必ず返す。交換の品の行は、お支払い待ちの間、その行の未発送の数の全部が exchangeOnHold になる）。
- */
-export function exchangeMaterialLine(
-  input: { orderItemId: string; onHold: number } & Partial<FulfillmentMaterialLine>,
-): FulfillmentMaterialLine {
-  const { onHold, ...rest } = input;
-  return {
-    ...materialLine({ name: 'E2Eシャツ', color: 'ホワイト', size: 'L', quantity: 1, readyUnshipped: 1, ...rest }),
-    lineKind: 'exchange',
-    exchangeOnHold: onHold,
-  } as FulfillmentMaterialLine;
 }
 
 /**

@@ -311,14 +311,15 @@ describeLocalDb('G-3 shipment slip cancel', (db) => {
     const f = await ready();
     const { slip, confirmed } = await ship([{ orderItemId: f.orderItemId, quantity: 4 }]);
     const fulfillmentId = confirmed.fulfillments[0].fulfillmentId;
-    // The confirm stamped shipped_at with the transaction time (microseconds), so deliver with now() as well: the shared
-    // fixture reads shipped_at through a JS Date (milliseconds) and would violate delivered_at >= shipped_at.
-    await db().query("select set_config('app.fulfillment_change', 'manual', true)");
-    await db().query("update public.order_fulfillments set delivery_status='delivered', delivery_status_at=now(), delivered_at=now() where id=$1", [fulfillmentId]);
-    await db().query("select set_config('app.fulfillment_change', '', true)");
+    // Deliver through the slip's manual-delivered writer (Task 7), not a direct UPDATE, so the delivered event, the
+    // item-state change and the slip's version row exist exactly as in production. The writer bumps the slip to version 3.
+    await db().query('select public.admin_mark_shipment_slip_delivered($1,2,$2::date,false,$3,$4)', [slip.id, today, actor, randomUUID()]);
     expect((await db().query('select delivered_at is not null as delivered from public.order_fulfillments where id=$1', [fulfillmentId])).rows[0].delivered).toBe(true);
+    expect((await db().query("select count(*)::int as n from public.order_fulfillment_events where fulfillment_id=$1 and status='delivered' and source='manual'", [fulfillmentId])).rows[0].n).toBe(1);
+    expect((await db().query('select version,kind from public.shipment_slip_versions where slip_id=$1 order by version', [slip.id])).rows)
+      .toEqual([{ version: 2, kind: 'confirm' }, { version: 3, kind: 'delivered' }]);
     const key = randomUUID();
-    await cancel(slip.id, { key });
+    await cancel(slip.id, { key, version: 3 });
     const op = await operationOf(key);
     expect((await db().query(`select from_status,to_status,unit_to-unit_from as n,reason from public.order_item_state_events where operation_id=$1`, [op.id])).rows)
       .toEqual([{ from_status: 'delivered', to_status: 'ready', n: 4, reason: 'shipment_slip_cancel' }]);

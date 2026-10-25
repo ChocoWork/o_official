@@ -6,9 +6,6 @@
 import type { Page, Route } from '@playwright/test';
 import type { OrderItem, OrderLineItem } from '@/components/OrderSection';
 import type { OrderHistoryResponse } from '@/lib/orders/email/order-history';
-import type { FulfillmentMaterialLine, FulfillmentMaterials } from '@/lib/orders/fulfillment/fulfillment-types';
-import type { OrderStatus } from '@/lib/orders/order-payment-types';
-import type { OrderProgress } from '@/lib/orders/order-progress';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 
 export const viewports = [
@@ -61,8 +58,6 @@ export async function openOrderTab(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'ORDER' }).click();
 }
 
-export const READY_PROGRESS: OrderProgress = { key: 'ready', label: '発送準備中', partiallyShipped: false };
-
 /** 一覧の商品の行（既定は、在庫の品1つが発送準備中） */
 export function orderLine(overrides: Partial<OrderLineItem> = {}): OrderLineItem {
   return {
@@ -97,44 +92,6 @@ export function adminOrder(overrides: Partial<OrderItem> & { id: string }): Orde
     canShip: true,
     canRecordCompletion: false,
     ...overrides,
-  };
-}
-
-/** 発送の材料の商品の行。未発送の数は、渡さなければ「数 − 発送した数」 */
-export function materialLine(overrides: Partial<FulfillmentMaterialLine> & { orderItemId: string }): FulfillmentMaterialLine {
-  const merged = {
-    name: 'シルクブラウス',
-    color: 'ホワイト',
-    size: 'M',
-    fulfillmentType: 'stock' as const,
-    quantity: 1,
-    shipped: 0,
-    inProduction: 0,
-    readyUnshipped: 1,
-    ...overrides,
-  };
-  return { ...merged, unshipped: overrides.unshipped ?? merged.quantity - merged.shipped };
-}
-
-/** GET /api/admin/orders/[id]/fulfillments の答え */
-export function shipMaterials(input: {
-  orderId: string;
-  lines: FulfillmentMaterialLine[];
-  status?: OrderStatus;
-  progress?: OrderProgress;
-  blockedReason?: FulfillmentMaterials['blockedReason'];
-  fulfillments?: FulfillmentMaterials['fulfillments'];
-}): FulfillmentMaterials {
-  return {
-    order: {
-      id: input.orderId,
-      orderNumber: orderNumberOf(input.orderId),
-      status: input.status ?? 'paid',
-      progress: input.progress ?? READY_PROGRESS,
-    },
-    blockedReason: input.blockedReason ?? null,
-    lines: input.lines,
-    fulfillments: input.fulfillments ?? [],
   };
 }
 

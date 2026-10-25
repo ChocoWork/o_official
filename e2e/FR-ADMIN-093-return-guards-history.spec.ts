@@ -2,6 +2,9 @@
  * FR-ADMIN-093 返品の守り（発送の取消・ふつうの返金の数）と、履歴・在庫の履歴の返品の行
  * 対応 FREQ: FREQ-469（AC-08）、FREQ-471（AC-01〜AC-05）、FREQ-474（AC-01〜AC-04）
  *
+ * G-3: 発送の取消に関する2つのケース（AC-01 の返品が指す発送は取り消せない／AC-02 の履歴から取消が断られる）は、発送票の取消へ移した（ケースは削除）。
+ * → FR-ADMIN-117 の ⑤（受付中・完了の返品がある注文を含む票は取消が断られ、取消の返品しか指さない票は取り消せる）と
+ *   ⑧（履歴に取消の入口は無く、発送の行から発送票を開く）。
  * 画面（履歴・発送の取消の断り・ふつうの返金の画面・在庫の履歴）は窓口の答えを差し替えて確かめ、守り（発送の取消の断り・ふつうの返金の数・
  * 届かない品の二重の返金）と在庫の履歴の返品の番号は、窓口が呼ぶのと同じ DB の関数を手元の DB に直に呼んで確かめる（実装計画 P11）。
  * 履歴の返品の行は、窓口が題（title）と細目（details）とした人（actorEmail）を組み立て済みの形（Task 8 の OrderHistoryReturnEntry。returnHistoryEntry）で
@@ -10,10 +13,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import { PRICE } from '../tests/integration/db/helpers/order-fixtures';
 import type { AllocationHistoryEvent } from '@/lib/inventory/allocation-types';
-import type { OrderHistoryFulfillmentEntry, OrderHistoryRefundEntry } from '@/lib/orders/email/order-history';
+import type { OrderHistoryRefundEntry } from '@/lib/orders/email/order-history';
 import {
   beginRefund,
-  cancelFulfillment,
   expectDbError,
   recordRefundResult,
   withLocalDb,
@@ -38,7 +40,6 @@ import {
   refundMaterialsOf,
 } from './refund-test-utils';
 import {
-  RETURN_TEXT,
   addVariant,
   cancelReturnInDb,
   closeMissingInDb,
@@ -173,91 +174,6 @@ for (const viewport of viewports) {
   test.describe(`FR-ADMIN-093 return guards and history (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    });
-
-    test('申し込み・受付中・完了の返品が指す発送は取り消せず、取消の返品しか指さない発送は取り消せる（手元の DB）', async () => {
-      // FREQ-471-AC-01
-      // 発送の取消の DB の関数は G-1 で止まった（成功も FULFILLMENT_HAS_RETURN も返さない）。新しい発送票の取消で書き換えて再開する
-      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/120で新票へ書換・再開');
-      await withLocalDb(async (db) => {
-        const fx = await createShippedOrder(
-          db,
-          `guard-ship-${viewport.name}`,
-          [
-            { name: 'E2Eシャツ', quantity: 1, fulfillmentType: 'stock' },
-            { name: 'E2Eスカート', quantity: 1, fulfillmentType: 'stock' },
-            { name: 'E2Eコート', quantity: 1, fulfillmentType: 'stock' },
-          ],
-          { separate: true },
-        );
-        const [shirt, skirt, coat] = fx.orderItemIds;
-        const [first, second, third] = fx.fulfillmentIds;
-        const create = (orderItemId: string, fulfillmentId: string) =>
-          createReturnInDb(db, { ...fx, fulfillmentId }, { lines: [{ orderItemId, quantity: 1 }], notify: false });
-
-        // 受付中の返品が指す発送
-        await create(shirt, first);
-        // 完了した返品（お返しで終えた）が指す発送
-        const done = await create(skirt, second);
-        await receiveReturnInDb(db, done.returnId, fx.actorId, {
-          units: [{ lineId: done.lineIds[skirt], disposition: 'sent_back', quantity: 1 }],
-          choice: 'none',
-          notify: true,
-          sentBack: { message: 'お返しします。' },
-        });
-        // 取り消した返品しか指さない発送
-        const cancelled = await create(coat, third);
-        await cancelReturnInDb(db, cancelled.returnId, fx.actorId);
-
-        await expectDbError(cancelFulfillment(db, fx.orderId, first, fx.actorId), 'FULFILLMENT_HAS_RETURN');
-        await expectDbError(cancelFulfillment(db, fx.orderId, second, fx.actorId), 'FULFILLMENT_HAS_RETURN');
-        expect(await cancelFulfillment(db, fx.orderId, third, fx.actorId)).toEqual({ outcome: 'cancelled', orderStatus: 'paid' });
-      });
-    });
-
-    test('履歴から発送の取消が断られると、「返品のある発送は取り消せません。」が確かめの画面の中に出て、発送の行は残る', async ({ page }) => {
-      // FREQ-471-AC-02
-      // 「この発送を取り消す」の入口は G-1 で撤去した。新しい発送票の取消・通知で書き換えて再開する
-      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/120で新票へ書換・再開');
-      const fulfillmentId = 'f3b2c3d4-0000-4000-8000-000000000001';
-      const shipment = {
-        type: 'fulfillment',
-        at: '2026-10-10T03:00:00.000Z',
-        fulfillmentId,
-        number: 1,
-        carrierLabel: 'ヤマト運輸',
-        trackingNumber: '1234-5678-9012',
-        items: [{ name: 'シルクブラウス', quantity: 2 }],
-        actorEmail: 'admin@example.com',
-        notifyCustomer: true,
-        completesOrder: true,
-        cancelled: false,
-        cancellable: true,
-        legacy: false,
-        slipId: null,
-        slipNumber: null,
-      } satisfies OrderHistoryFulfillmentEntry;
-      const posts: string[] = [];
-      await mockAdminSession(page);
-      await mockOrderList(page, () => [
-        adminOrder({ id: ORDER_ID, status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false }),
-      ]);
-      await page.route(`**/api/admin/orders/${ORDER_ID}/history`, (route) =>
-        fulfillJson(route, historyOf(ORDER_ID, [shipment, { type: 'created', at: '2026-10-09T00:59:00.000Z' }])));
-      await page.route(`**/api/admin/orders/${ORDER_ID}/fulfillments/${fulfillmentId}/cancel`, async (route) => {
-        posts.push(route.request().url());
-        await fulfillJson(route, { error: RETURN_TEXT.hasReturnRefusal, code: 'fulfillment_has_return' }, 409);
-      });
-      await openOrderTab(page);
-      const dialog = await openHistoryDialog(page, ORDER_ID);
-      const entry = dialog.getByRole('listitem').filter({ hasText: 'ヤマト運輸' });
-
-      await entry.getByRole('button', { name: 'この発送を取り消す' }).click();
-      await page.getByRole('button', { name: '取り消す', exact: true }).click();
-
-      await expect(page.getByText(RETURN_TEXT.hasReturnRefusal)).toBeVisible();
-      expect(posts).toHaveLength(1);
-      await expect(page.getByText('発送（1回目）を取り消しました')).toHaveCount(0);
     });
 
     test('ふつうの返金で選べる発送済みの数は、返品中・返金待ち・交換にした品を除く。画面の材料の数も同じで、DB も REFUND_QUANTITY_EXCEEDS_SHIPPED で断り、受付中の返品を取り消すと返せるようになる（手元の DB）', async () => {
