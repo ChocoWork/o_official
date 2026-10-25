@@ -1,6 +1,6 @@
 # DB マイグレーション運用
 
-> G-3 Task 10 確認: 2026-10-26（4移行assert・75本・並行/PostgREST試験。controllerのfresh resetでgroup_g* 47 suiteを検証、SQLは不変で試験材料3件を直し、group_g3_concurrency 24/24を3回連続・group_g3_migration_asserts 64/64で通過） | 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで。G-3 は Task 1 の基盤・Task 2 の読取・Task 4 の書き手の移行・Task 6 の発送の取消を追記） | 確認日: 2026-10-26 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
+> G-3 本番適用: 2026-10-26 08:33 JST（`20261025053324`・`20261025070821`・`20261025100130`・`20261025134538`。照合は G-3 の節の末尾） | G-3 Task 10 確認: 2026-10-26（4移行assert・75本・並行/PostgREST試験。controllerのfresh resetでgroup_g* 47 suiteを検証、SQLは不変で試験材料3件を直し、group_g3_concurrency 24/24を3回連続・group_g3_migration_asserts 64/64で通過） | 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで。G-3 は Task 1 の基盤・Task 2 の読取・Task 4 の書き手の移行・Task 6 の発送の取消を追記） | 確認日: 2026-10-26 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
 
@@ -775,7 +775,7 @@ Fix round 1: Task 8のactions移行は72,255 bytes / MD5 4C2AA20FBDAF43F3E4CC08B
 
 ## G-3 Task 10 書き手75本・並行試験・最終assert
 
-確認日: 2026-10-26。以下が4ファイルの現行値。上のTask別サイズと実測は過去の記録であり、Task 10の適用証明ではない。本番未適用。変更は末尾assertだけで、4本のBODY節はHEAD `6ccbd9b0` とバイト一致する。末尾assertのDETAIL名はTask 10で `shipping_*` に統一した。上のTask 1〜9の節に残る `shipment_slip_*`・`tracking_parent_*` などの名は当時のもので、現行は下の表。
+確認日: 2026-10-26。以下が4ファイルの現行値。上のTask別サイズと実測は過去の記録であり、Task 10の適用証明ではない。2026-10-26 08:33 JST に本番へ適用した（下の「本番適用の記録」）。変更は末尾assertだけで、4本のBODY節はHEAD `6ccbd9b0` とバイト一致する。末尾assertのDETAIL名はTask 10で `shipping_*` に統一した。上のTask 1〜9の節に残る `shipment_slip_*`・`tracking_parent_*` などの名は当時のもので、現行は下の表。
 
 | 順 | ファイル | bytes | MD5 |
 | --- | --- | --- | --- |
@@ -829,3 +829,16 @@ controllerがresetとanon／実authenticatedのPostgREST smoke（各200）を完
 Task 10 Fix round 1（2026-10-26、レビューの指摘対応）: 変えた移行はactionsだけで、末尾assertの節の中に限る（本体の節はHEAD `6ccbd9b0` とバイト一致）。(1) 末尾assertの注釈を実際の6関数・書込み本体3本・75本に合わせた。(2) 置き換えた `record_delivery_read_result` の本体の確かめを小文字化して読み、`FOR UPDATE`・`FOR SHARE` が本体に無ければ失敗とし（飛ばさない）、最初のそれが共通の押さえの前にあっても失敗にする。ほかに試験では、書込み範囲の走査が `UPDATE <表> <別名> SET`・`UPDATE ONLY`・`MERGE INTO` も見つけ、返品作成の設定は取引の中だけ、確定の後の棚卸減（消費済みの割当を外さない）の並行を足し、`delivery_tracking_records` の「最初は追跡オフ」の読取は自分の発送・注文に絞った。サイズ・MD5は上の表のとおり（actionsは84,383 bytes）。この後のDBは、controllerのreset後に再実測する（assertの節だけをローカルDBで流した限りでは通過）。
 
 [実PostgREST経路](../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts) は `LOCAL_SUPABASE_URL`・`LOCAL_SUPABASE_SERVICE_ROLE_KEY`・`LOCAL_SUPABASE_ANON_KEY` を環境から渡すcontrollerが実行する。未設定なら理由付きskip。公開RPC12本を実store→supabase-js→PostgREST→SQLで通し、anon／実authenticatedは拒否する。エラー表28行を実材料で発生させ、storeの状態コード・固定本文も検査する。単体・静的試験の成功はDB・PostgREST・外部登録・実メール・本番の証明にはしない。
+
+### 本番適用の記録（2026-10-26）
+
+| 段 | 結果 |
+| --- | --- |
+| 適用前の読み取り（MCP、読み取りだけ・件数だけ） | 台帳の末尾 `20261024180500`（G-2）。G-3 の4版と別セッションの `20261026010000` は無し。G-3 の6表・`order_fulfillments.shipment_date` の列は無し。`order_fulfillments` は全体0・`legacy` でない行0（新しい CHECK に当たる行が無い）。`role_permissions` は店長30・サポーター8、書き手の一覧65本（G-2 のまま）。注文0・明細0・台帳0・variant 21・在庫の合計0（G-2 の記録と同じ） |
+| 置き換える関数の照合 | `item_delete_blockers`・`restrict_fulfillment_record_update`・`delivery_tracking_backfill_targets`・`get_order_delivery_detail`・`get_order_status_public_material`・`record_delivery_read_result`・`group_g_writer_allowlist` の7つの `pg_get_functiondef` と、制約 `order_fulfillments_tracking_check`・`order_item_allocation_events_reason_check` の定義の MD5 が、本番と手元で G-2 まで当てた DB（`db reset --version 20261024180500`）で9つとも一致 |
+| ファイルの固定 | 上の表の4本（40,844／50,712／82,615／84,383 バイト、MD5 は表のとおり）。BOM・CR・全角空白・NBSP・ゼロ幅文字・非 ASCII は0、`BEGIN;`・`COMMIT;` は各1。本体は HEAD から変えていない |
+| 別セッションの移行 | `db push --linked --dry-run` が別セッションの `20261026010000_auth_return_intents.sql` も示したため、オーナーの決定（G-3 の4本だけを当てる）で、適用の間だけそのファイルをリポジトリの外へ移し、適用の後に同じ中身で戻した（SHA256 と git の blob `a91d8a3` が一致、`git diff` の差なし）。別セッションには前後で知らせた。本番に別セッションの移行は入っていない |
+| 適用 | `db push --linked --dry-run` が G-3 の4本だけをこの順で示すことを確かめ（seed・役割なし）、`db push --linked --yes` で基盤・読取・票・操作の順に適用（2026-10-26 08:33 JST、パスワードの入力なし） |
+| 当てた文の照合 | `20261025053324`: 文 71・`md5(array_to_string(statements, E'\n'))` `ca4164428adabd1d850063a308adadfb`。`20261025070821`: 文 60・`cc393b1065d9579c9bcdf615f16edffe`。`20261025100130`: 文 50・`b9866f41de2c69d3bbea5ae355771c43`。`20261025134538`: 文 31・`e25bc6b68302a3fac4515a58b73684d9`。本番と手元の `db reset` の履歴で一致 |
+| 適用後の形の照合（本番と手元で同じ値） | G-3 の6表と `order_fulfillments`・`order_fulfillment_lines` の8表（RLS・強制 RLS・3役割の表の権限）、列の型と NOT NULL、制約75（遅延の有無と定義）、public・private の方針186、トリガー158（有効・関数・遅延）、public 198・private 197 の関数（定義〔CR を除く〕・`SECURITY DEFINER`・設定・3役割の EXECUTE。手元にだけある別セッションの2関数は除く）の指紋が全部一致。置き換えた9つの定義の MD5 も手元の最新と一致。書き手の一覧75本。`role_permissions` は店長30・サポーター8 のまま |
+| 適用後の件数 | G-3 の6表はすべて0行。データを変える文は無い。本番で試験の票は作っていない |
