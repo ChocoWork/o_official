@@ -781,7 +781,7 @@ SETTINGS のショップ設定の前に `nav aria-label="設定メニュー"` �
 | --- | --- |
 | 固定2行 | `admin.users.manage`・`admin.permissions.manage` は両役割欄をまたぐ「店長のみ・変更不可」。switch は置かない。DB関数と行トリガーでも解除・他役割への付与を拒否する |
 | その他28行 | 役割ごとに switch。名前は `${roleLabel}：${operationLabel}`。操作ラベルは行見出しにだけ出し、共通 SwitchToggle の `ariaLabel` を使う |
-| 準備中の行 | 「この権限は、対応する画面の公開後に使われます。」。G-0 では新業務9行に付けたが、G-2 Task 1 から `ROLE_PERMISSION_CATALOG` の `upcoming`（未使用の4コード `admin.orders.allocate`・`admin.shipping.read`・`admin.shipping.manage`・`admin.shipping.correct_date`）だけに付く（在庫・発注・受け取りの権限は G-2 の窓口がすでに使っているので外れる。発注・受け取りの3権限〔`admin.purchase_orders.read`・`admin.purchase_orders.manage`・`admin.receiving.manage`〕にも「準備中」の印は付けない。FREQ-540-AC-06） |
+| 準備中の行 | 「この権限は、対応する画面の公開後に使われます。」。G-0 では新業務9行、G-2 Task 1 から4行に付けたが、G-3 の発送画面の公開後は `ROLE_PERMISSION_CATALOG` の `upcoming`（G-4 の未使用の1コード `admin.orders.allocate`）だけに付く。在庫・発注・受け取りの権限と発送の3権限〔`admin.shipping.read`・`admin.shipping.manage`・`admin.shipping.correct_date`〕には「準備中」の印は付けない（FREQ-540-AC-06） |
 | 依存不足 | 役割別に「操作に必要な権限が不足しています：{不足コードの操作ラベルを「、」で結合}。」。共有関数で重複除去・コード辞書順。権限を自動追加せず、保存も禁止しない |
 
 切替では値を変えず「権限を変更する」を開き、「{役割}の「{操作}」を許可/解除します。変更しますか？」を表示する。「戻る」は送信しない。「変更する」で UUID を1回生成し、その役割の取得済み一覧に1コードだけ差分を加えた `RolePermissionChange`（`roleCode`・`permissionCodes`・文字列の `expectedVersion`・`requestKey`）を `POST /api/admin/role-permissions` へ送る。30コード外は扱わない。CSRF は既存 `clientFetch` に任せる。

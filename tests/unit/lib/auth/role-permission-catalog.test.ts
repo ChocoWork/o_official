@@ -34,21 +34,21 @@ const ROWS = [
   ['権限管理', '権限設定の閲覧・保存', 'admin.permissions.manage'],
 ] as const;
 
-test('全30行の表示順・分野・ラベルと固定2件・準備中4件を返す', () => {
+test('全30行の表示順・分野・ラベルと固定2件・準備中1件を返す', () => {
   expect(ROLE_PERMISSION_CATALOG).toHaveLength(30);
   expect(ROLE_PERMISSION_CATALOG.map(({ area, label, code }) => [area, label, code])).toEqual(ROWS);
   expect(FIXED_PERMISSION_CODES).toEqual(['admin.users.manage', 'admin.permissions.manage']);
   expect(ROLE_PERMISSION_CATALOG.filter((p) => p.fixed).map((p) => p.code)).toEqual(['admin.users.manage', 'admin.permissions.manage']);
 });
 
-// 在庫（stock）・発注・受け取りの権限は G-2 の窓口がすでに使っているので「準備中」の印は付けない。「準備中」は割り当て入替と発送の 4 コードだけ
-test('FREQ-540-AC-06: upcoming（準備中）は未使用の4コードだけで、並びは表の順', () => {
+// G-2 の在庫・発注・受け取りと G-3 の発送は公開済み。「準備中」は G-4 の割り当て入替の1コードだけ
+test('FREQ-540-AC-06: upcoming（準備中）はG-4の未使用の1コードだけで、並びは表の順', () => {
   expect(ROLE_PERMISSION_CATALOG.filter((p) => p.upcoming).map((p) => p.code)).toEqual([
-    'admin.orders.allocate', 'admin.shipping.read', 'admin.shipping.manage', 'admin.shipping.correct_date',
+    'admin.orders.allocate',
   ]);
-  expect(ROLE_PERMISSION_CATALOG.filter((p) => !p.upcoming)).toHaveLength(26);
+  expect(ROLE_PERMISSION_CATALOG.filter((p) => !p.upcoming)).toHaveLength(29);
   for (const code of ['admin.stock.read', 'admin.stock.manage', 'admin.purchase_orders.read', 'admin.purchase_orders.manage',
-    'admin.receiving.manage', 'admin.permissions.manage']) {
+    'admin.receiving.manage', 'admin.shipping.read', 'admin.shipping.manage', 'admin.shipping.correct_date', 'admin.permissions.manage']) {
     expect(ROLE_PERMISSION_CATALOG.find((p) => p.code === code)?.upcoming).toBe(false);
   }
 });

@@ -210,7 +210,7 @@ for (const viewport of viewports) {
         const rowLabels = await table(page).locator('th[scope="row"]').evaluateAll((cells) =>
           cells.map((cell) => cell.firstChild?.textContent ?? ''));
         expect(rowLabels).toEqual(AREAS.flatMap(([, labels]) => labels));
-        await expect(table(page).getByText(UPCOMING, { exact: true })).toHaveCount(4);
+        await expect(table(page).getByText(UPCOMING, { exact: true })).toHaveCount(1);
 
         // 固定2行は両方の役割の欄をまたいで「店長のみ・変更不可」。スイッチは無い
         for (const label of FIXED_LABELS) {

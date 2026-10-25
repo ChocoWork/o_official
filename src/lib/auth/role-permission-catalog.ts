@@ -40,9 +40,6 @@ const rows: readonly (readonly [PermissionCode, string, string])[] = [
 // 画面に「対応する画面の公開後に使われます。」と出す権限（割り当て入れ替えと発送の4つ）。在庫・発注・受け取りの権限は G-2 の窓口がすでに使っているので、印は付けない
 const UPCOMING_PERMISSION_CODES: ReadonlySet<PermissionCode> = new Set<PermissionCode>([
   'admin.orders.allocate',
-  'admin.shipping.read',
-  'admin.shipping.manage',
-  'admin.shipping.correct_date',
 ]);
 
 const dependencies: Partial<Record<PermissionCode, PermissionCode[]>> = {
