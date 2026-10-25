@@ -1,6 +1,6 @@
 # テスト仕様
 
-> 状態: 現行の方針（グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25 | 対象: 要件からテストへの追跡、テストの層、開始・終了条件
+> 状態: 現行の方針（グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件
 
 ## 概要
 
@@ -183,3 +183,29 @@ Playwright は `http://localhost:3000` を使い、手元の Supabase に対し�
 ## 開始・終了条件
 
 開始前に変更範囲、対応要件、対象リビジョン、必要な環境変数とテストデータ、ポート 3000 の実サーバーを確認する。終了時は対象テストを実行し、失敗を分類して修正または未解決として記録する。要件ごとの判定には実行ログと環境を添える。対象外テストや未実施の本番確認を成功扱いしない。
+
+## グループ G-3（発送票・出荷日）のテスト
+
+Task 1 は発送票の基盤と消費の裏付けの守りを対象とする。2026-10-25のcontroller reset後の実装者DB全件でTask 1の新規失敗は0。全体は既知stockistの2件の失敗によりexit 1。一括確定のRPC・UI・メール・追跡は後続Taskの範囲。
+
+| ファイル | 層 | 要件・受け入れ条件 | 確認する振る舞い |
+| --- | --- | --- | --- |
+| `tests/integration/db/group_g3_model.integration.test.ts` | DB結合 | FREQ-540-AC-12、FREQ-533-AC-02・AC-04 | 6表の列・RLS・restrictive deny・意味によるACL（別granteeでも可、PG17のMAINTAINを含む）、追記専用5表のUPDATE/DELETE/TRUNCATEと票のDELETE/TRUNCATE拒否、7つの操作印の列・段階・版。出荷日必須、運送会社と番号の対、shipment_date印で列を限定、既存の更新の契約。発送行とconsume・取消とrestoreが同じ取引で必要で、4種類の不一致とslip_partial_cancelを拒否。理由17値、票番号・確定キー・票×注文・発送IDの一意、末尾assertの再実行。AC-02はconsumeの裏付けだけ、AC-04はshipment_confirm/shipment_cancelの理由CHECKの2値だけ（在庫の1回減・取消の1回戻り・空き在庫の不変の業務処理の証明は後続Task） |
+| 同 suite の `group_g3_fixtures` | DB結合（実commit） | FREQ-533-AC-02 | seedGroupG1Shipment・shipFixtureOrder・交換の発送・配送の材料とwithFixtureConsumption・取消済みの材料がJSTの出荷日と同じ取引の消費・復元を持ち、実commitまで進む。自動commitで発送行だけを書く場合は拒否 |
+| `tests/integration/db/item_checkout_guards.integration.test.ts` | DB結合 | FREQ-540-AC-12（G-2持越しM1） | 注文・在庫記録・決済中が無くても発注書の行がある商品はhas_purchase_orders=true。戻り値5列、所有者・属性・ACLは元の契約を保つ |
+| `tests/integration/db/group_g1_writer_inventory.integration.test.ts` | DB結合・定義走査 | FREQ-540-AC-12 | 新6表を直接書く関数も走査対象へ足す。書き手の許可一覧はTask 1では変更しない |
+| `tests/unit/lib/inventory/allocation-event-reasons.test.ts` | 単体 | FREQ-533-AC-04 | Task 1の部分的な証明として最新の理由CHECKとTSが同じ17値、shipment_confirm/shipment_cancelを「発送の確定」「発送の取消」と表示し、未知値は「システム」。AC-04の在庫の1回減・取消での1回戻り・空き在庫の不変の業務処理は後続Taskで証明する |
+| `tests/unit/lib/items/item-checkout-guards.test.ts` | 単体 | FREQ-540-AC-12（G-2持越しM1） | RPCのhas_purchase_ordersをhasPurchaseOrdersへ写し、発注書だけでも削除できない。理由は注文・在庫記録・決済中・発注書の順 |
+| `tests/unit/api/admin/items-checkout-guards-route.test.ts`・`items-return-ineligible-route.test.ts` | 単体 | FREQ-540-AC-12（型の付け替え） | 既存の削除止めの材料にhasPurchaseOrdersを足し、既存の窓口の期待を維持する |
+
+既存DB/E2Eの材料の付け替えは非legacyのshipment_dateにshipped_atのJST暦日を入れ、発送行とconsumeを同じ取引で書き、取消はrestoreの対を持つ。割当境界・台帳整合だけを見る試験は `SET CONSTRAINTS group_g_allocation_bounds, group_g_stock_movement_consistency IMMEDIATE` を名指しし、G-3のcommit時の検査を早めない。E2Eの材料の単体は tests/unit/e2e で確認し、ブラウザ・DBの実行と区別する。
+
+
+G-0の基準専用のorder-fixtures.tsの非G分岐は、G-3のshipment_date列も遅延triggerも存在しないため、shipment_dateを書かない形を保つ（controllerのI-1裁定により付け替えから除外）。G1_CLEANUP_SUITE=1でのG-1清掃suiteの再実行はcontroller判断待ちで、通常のDB全件の成功件数からこの特別な清掃の成功を推定しない。
+
+
+| Fix round 2 実装者検証（2026-10-25） | 結果 |
+| --- | --- |
+| DB全件 `npx.cmd jest tests/integration/db --runInBand` | exit 1。suiteは118成功・stockistの1失敗・11 skip・計130、testは3266成功・stockistの2失敗・12 skip・計3280。205.889秒。Task 1の新規失敗0 |
+| レビュー修正後の対象DB6 suite | 234件成功。DB全件の既知stockist2失敗と区別する |
+| G-0基準のG-1清掃suite | G1_CLEANUP_SUITE=1の特別実行はcontroller判断待ち。通常全件のskipやsuiteの成功表示は、G-0基準の清掃の成功を証明しない |

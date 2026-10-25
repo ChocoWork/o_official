@@ -53,8 +53,8 @@ jest.mock('@/lib/stripe/server', () => ({ getStripeServerClient: jest.fn() }));
 jest.mock('@/lib/items/item-checkout-guards', () => ({
   ...jest.requireActual('@/lib/items/item-checkout-guards'),
   fetchItemDeleteBlockers: jest.fn(async () => new Map([
-    [7, { hasOrders: false, hasStockMovements: false, hasOpenCheckouts: false }],
-    [8, { hasOrders: false, hasStockMovements: false, hasOpenCheckouts: false }],
+    [7, { hasOrders: false, hasStockMovements: false, hasOpenCheckouts: false, hasPurchaseOrders: false }],
+    [8, { hasOrders: false, hasStockMovements: false, hasOpenCheckouts: false, hasPurchaseOrders: false }],
   ])),
   expireOpenCheckoutsForItem: jest.fn(async () => ({ expired: 0, failed: 0 })),
 }));

@@ -1,4 +1,5 @@
 /** @jest-environment node */
+import { restoreGroupG1Shipment } from './helpers/group-g1-fixtures';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { createCatalogFixture, insertOrderWithLines, uniqueSuffix, withFixtureConsumption } from './helpers/order-fixtures';
 
@@ -54,8 +55,8 @@ async function insertFulfillment(
   }, async () => {
     const res = await db.query(
       `insert into public.order_fulfillments
-         (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, created_by)
-       values ($1, $2, gen_random_uuid(), 'yamato', '1234-5678-9012', true, false, $3) returning id`,
+         (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, created_by, shipment_date)
+       values ($1, $2, gen_random_uuid(), 'yamato', '1234-5678-9012', true, false, $3,((pg_catalog.now()) AT TIME ZONE 'Asia/Tokyo')::date) returning id`,
       [orderId, number, createdBy],
     );
     const fulfillmentId = res.rows[0].id as string;
@@ -157,7 +158,7 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
       await expectRejected(db(), 'delete from public.order_fulfillments where id = $1', [fulfillmentId], { code: '55000' });
       await expectRejected(db(), "update public.order_fulfillments set tracking_number = '9999' where id = $1", [fulfillmentId], { code: '55000' });
 
-      await db().query('update public.order_fulfillments set cancelled_at = now(), cancelled_by = $2 where id = $1', [fulfillmentId, actor.id]);
+      await restoreGroupG1Shipment(db(), fulfillmentId, actor.id);
       await expectRejected(db(), 'update public.order_fulfillments set cancelled_at = now() where id = $1', [fulfillmentId], { code: '55000' });
 
       // 仕上がりは関数でも所有者の直接の SQL でも新しく書けない
@@ -207,11 +208,12 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
         { orderItemId: madeItemId, quantity: 1 },
       ]);
       const cancelledId = await insertFulfillment(db(), orderId, [{ orderItemId: madeItemId, quantity: 1 }], 2);
-      await db().query('update public.order_fulfillments set cancelled_at = now() where id = $1', [cancelledId]);
+      await restoreGroupG1Shipment(db(), cancelledId, null);
 
       const counts = await lineCounts(db(), orderId);
       expect(counts[stockItemId]).toMatchObject({ shipped: 2, completed: 2, ready_unshipped: 0, unshipped: 0 });
-      expect(counts[madeItemId]).toMatchObject({ shipped: 1, completed: 1, in_production: 2, ready_unshipped: 0, unshipped: 2 });
+      // 取消で1点のpaid割当が復元され、発送準備中へ戻る。取消済みの発送自体は数えない。
+      expect(counts[madeItemId]).toMatchObject({ shipped: 1, completed: 2, in_production: 1, ready_unshipped: 1, unshipped: 2 });
       expect(shippedId).toBeTruthy();
     });
 
@@ -352,7 +354,7 @@ describeLocalDb('integration: 発送と仕上がりの記録（移行 A）', (db
       const actor = await createActor(db());
       const firstId = await insertFulfillment(db(), orderId, [{ orderItemId: stockItemId, quantity: 1 }], 1, actor.id);
       const secondId = await insertFulfillment(db(), orderId, [{ orderItemId: stockItemId, quantity: 1 }], 2);
-      await db().query('update public.order_fulfillments set cancelled_at = now(), cancelled_by = $2 where id = $1', [secondId, actor.id]);
+      await restoreGroupG1Shipment(db(), secondId, actor.id);
 
       const res = await db().query('select * from public.list_order_fulfillments($1)', [orderId]);
       expect(res.rows.map((row) => row.number)).toEqual([2, 1]);

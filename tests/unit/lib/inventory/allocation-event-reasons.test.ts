@@ -11,8 +11,13 @@ import {
  * 一覧を移行の文から読むので、片方だけを足すと赤になる。
  */
 const MIGRATION_DIRECTORY = path.join(process.cwd(), 'supabase/migrations');
-const MIGRATION_FILE = fs.readdirSync(MIGRATION_DIRECTORY).filter((name) => name.endsWith('_group_g1_allocation.sql'));
-const MIGRATION_SQL = fs.readFileSync(path.join(MIGRATION_DIRECTORY, MIGRATION_FILE[0]), 'utf8');
+const MIGRATION_FILES = fs.readdirSync(MIGRATION_DIRECTORY).filter((name) => name.endsWith('.sql')).sort();
+const REASON_MIGRATIONS = MIGRATION_FILES.map((name) => ({
+  name,
+  sql: fs.readFileSync(path.join(MIGRATION_DIRECTORY, name), 'utf8'),
+})).filter(({ sql }) => /CONSTRAINT order_item_allocation_events_reason_check CHECK/.test(sql));
+const MIGRATION_SQL = REASON_MIGRATIONS.at(-1)!.sql;
+const G1_MIGRATION_SQL = REASON_MIGRATIONS.find(({ name }) => name.endsWith('_group_g1_allocation.sql'))!.sql;
 
 function checkCodes(): string[] {
   const match = MIGRATION_SQL.match(
@@ -23,8 +28,15 @@ function checkCodes(): string[] {
 }
 
 describe('割当の履歴の理由の決まった値', () => {
-  test('移行は G-1 の1本で、CHECK は1か所だけ', () => {
-    expect(MIGRATION_FILE).toHaveLength(1);
+  test('FREQ-533-AC-04: 発送の確定と取消の理由を日本語で表示する', () => {
+    expect(ALLOCATION_EVENT_REASON_CODES).toContain('shipment_confirm');
+    expect(ALLOCATION_EVENT_REASON_CODES).toContain('shipment_cancel');
+    expect(allocationEventReasonLabel('shipment_confirm')).toBe('発送の確定');
+    expect(allocationEventReasonLabel('shipment_cancel')).toBe('発送の取消');
+  });
+
+  test('FREQ-533-AC-04: 最後の理由CHECKはG-3のfoundationで、定義は1か所だけ', () => {
+    expect(REASON_MIGRATIONS.at(-1)!.name).toMatch(/_group_g3_shipping_foundation\.sql$/);
     expect(MIGRATION_SQL.split('order_item_allocation_events_reason_check CHECK')).toHaveLength(2);
   });
 
@@ -50,7 +62,7 @@ describe('割当の履歴の理由の決まった値', () => {
 
   test('移行の割当の履歴への INSERT が書く文字の理由は、すべて決まった値', () => {
     // `--` comments are removed first: a `;` inside a comment would otherwise end the INSERT early (review M1).
-    const withoutComments = MIGRATION_SQL.replace(/--[^\n]*/g, '');
+    const withoutComments = G1_MIGRATION_SQL.replace(/--[^\n]*/g, '');
     const inserts = [...withoutComments.matchAll(/INSERT INTO public\.order_item_allocation_events[\s\S]*?;/g)].map((m) => m[0]);
     expect(inserts.length).toBeGreaterThanOrEqual(6);
     // The CASE of release_group_g_payment_holds (the codes it passes through and its status_change fallback) is scanned.

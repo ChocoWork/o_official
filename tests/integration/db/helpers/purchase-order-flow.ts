@@ -81,7 +81,7 @@ export function createPurchaseFlow(db: () => PgClient) {
 
   /** 遅延の確かめを取引の中で発火させる */
   async function flush() {
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency, order_item_allocations_operation_id_fkey, order_item_allocation_events_operation_id_fkey, order_item_state_events_operation_id_fkey, stock_movements_allocation_operation_id_fkey, group_g_po_line_received, purchase_order_revisions_operation_id_fkey, purchase_order_receipts_operation_id_fkey, purchase_order_attachment_reservations_operation_id_fkey, purchase_order_attachments_operation_id_fkey, purchase_order_attachment_revisions_operation_id_fkey immediate');
     await db().query('set constraints all deferred');
   }
 

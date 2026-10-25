@@ -86,7 +86,7 @@ describeLocalDb('G-2 Task 9: 発注書の全入口の別接続の並行', (db) =
   /** 成功なら遅延の確かめを発火させて commit、失敗なら rollback */
   async function finish(c: PgClient, outcome: Outcome) {
     if (outcome.ok) {
-      await c.query('set constraints all immediate');
+      await c.query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
       await c.query('commit');
     } else {
       await c.query('rollback');

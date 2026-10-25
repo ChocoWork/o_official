@@ -1,8 +1,24 @@
 import type { ShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import { randomUUID } from 'node:crypto';
-import { holdsCommonLock, isInTransaction, withGroupG1FixtureTransaction } from './group-g1-fixtures';
+import { restoreGroupG1Shipment, holdsCommonLock, isInTransaction, withGroupG1FixtureTransaction } from './group-g1-fixtures';
 import { connectLocalDb, type PgClient } from './local-db';
 import { createCatalogFixture, insertOrderWithLines, shipFixtureOrder, uniqueSuffix, withFixtureConsumption } from './order-fixtures';
+
+// Fixture connections keep one G-3 schema baseline; reconnect after applying/removing G-3.
+const shipmentDateColumns = new WeakMap<PgClient, boolean>();
+
+/** The cleanup client starts at G-0; its G-1 migration also has no G-3 date column. */
+async function hasShipmentDateColumn(client: PgClient): Promise<boolean> {
+  const cached = shipmentDateColumns.get(client);
+  if (cached !== undefined) return cached;
+  const present = (await client.query(`select exists (
+    select 1 from pg_catalog.pg_attribute
+    where attrelid=pg_catalog.to_regclass('public.order_fulfillments')
+      and attname='shipment_date' and attnum>0 and not attisdropped
+  ) as present`)).rows[0].present as boolean;
+  shipmentDateColumns.set(client, present);
+  return present;
+}
 
 /** 管理 RPC の実装と独立して記録の守りを試すため、発送の行だけを SQL で作る。商品行は呼び出し側が用意する。配送業者か番号が空の行は、表の決まりで旧データの写し（legacy）だけが持てるので legacy で作る。 */
 export async function insertDeliveryFixture(
@@ -16,12 +32,14 @@ export async function insertDeliveryFixture(
     deliveredAt?: string;
   },
 ): Promise<{ fulfillmentId: string }> {
+  const shipmentDate = await hasShipmentDateColumn(client);
   const result = await client.query(
     `insert into public.order_fulfillments
        (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer,
-        completes_order, shipped_at, delivery_status_at, delivery_status, delivered_at, legacy)
+        completes_order, shipped_at, delivery_status_at, delivery_status, delivered_at, legacy${shipmentDate ? ', shipment_date' : ''})
      select $1, coalesce(max(number), 0) + 1, gen_random_uuid(), $3, $4, $5, false, $2,
             coalesce($6::timestamptz, $2), case when $6::timestamptz is null then 'confirmed' else 'delivered' end, $6, ($3::text is null or $4::text is null)
+            ${shipmentDate ? ", (($2::timestamptz) AT TIME ZONE 'Asia/Tokyo')::date" : ''}
      from public.order_fulfillments where order_id = $1
      returning id`,
     [input.orderId, input.shippedAt, input.carrier === undefined ? 'yamato' : input.carrier,
@@ -40,11 +58,11 @@ export async function createDeliveryActor(client: PgClient): Promise<{ id: strin
   return { id: result.rows[0].id as string, email };
 }
 
-export async function createDeliveryOrder(client: PgClient, quantity = 3) {
+export async function createDeliveryOrder(client: PgClient, quantity = 3, options: { reserved?: boolean } = {}) {
   const catalog = await createCatalogFixture(client, { stock: quantity });
   const order = await insertOrderWithLines(client, {
     status: 'paid', paidAmount: quantity * 5000,
-    lines: [{ itemId: catalog.itemId, variantId: catalog.variantId, quantity, fulfillmentType: 'stock' }],
+    lines: [{ itemId: catalog.itemId, variantId: catalog.variantId, quantity, fulfillmentType: 'stock', reserved: options.reserved }],
   });
   return { ...order, orderItemId: order.orderItemIds[0], ...catalog };
 }
@@ -223,7 +241,7 @@ export async function cancelDeliveryFixture(client: PgClient, input: DeliveryTar
       'select cancelled_at from public.order_fulfillments where id=$1 and order_id=$2', [input.fulfillmentId, input.orderId],
     )).rows[0];
     if (!current || current.cancelled_at !== null) throw new Error('GROUP_G_FIXTURE_CANCEL_INVALID');
-    await client.query('update public.order_fulfillments set cancelled_at=now(), cancelled_by=$2 where id=$1', [input.fulfillmentId, input.actorId]);
+    await restoreGroupG1Shipment(client, input.fulfillmentId, input.actorId);
     await client.query("select private.stop_fulfillment_registrations($1, 'cancelled')", [input.fulfillmentId]);
     await client.query('select private.close_delivery_attention($1)', [input.fulfillmentId]);
     const order = (await client.query(
@@ -265,21 +283,25 @@ export async function deliveryShipment(client: PgClient, input: {
   shippedAt?: string; quantity?: number; shippedQuantity?: number; notifyCustomer?: boolean;
   carrier?: ShippingCarrierId | null; trackingNumber?: string | null; deliveredAt?: string;
 } = {}) {
-  const order = await createDeliveryOrder(client, input.quantity ?? 3);
+  const legacy = input.carrier === null || input.trackingNumber === null;
+  const order = await createDeliveryOrder(client, input.quantity ?? 3, { reserved: !legacy });
   const actor = await createDeliveryActor(client);
   const clock = await deliveryClock(client);
   const shippedAt = input.shippedAt ?? `${clock.two_days_ago}T09:00:00+09:00`;
   // 発送した数の割当を G-1 で消費してから、発送の行を SQL で作る（旧の発送の関数は Task 14 で止める）
   const shippedQuantity = input.shippedQuantity ?? 1;
-  const shipment = await withFixtureConsumption(client, {
-    orderId: order.orderId, lines: [{ order_item_id: order.orderItemId, quantity: shippedQuantity }],
-  }, async () => {
+  const write = async () => {
     const inserted = await insertDeliveryFixture(client, { ...input, orderId: order.orderId, shippedAt });
     await client.query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,$3)', [
       inserted.fulfillmentId, order.orderItemId, shippedQuantity,
     ]);
     return inserted;
-  });
+  };
+  const shipment = legacy
+    ? await withGroupG1FixtureTransaction(client, write)
+    : await withFixtureConsumption(client, {
+      orderId: order.orderId, lines: [{ order_item_id: order.orderItemId, quantity: shippedQuantity }],
+    }, write);
   return { ...order, ...shipment, actorId: actor.id, actorEmail: actor.email, shippedAt, clock };
 }
 

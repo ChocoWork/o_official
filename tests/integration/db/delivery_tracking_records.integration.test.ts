@@ -1,4 +1,5 @@
 /** @jest-environment node */
+import { restoreGroupG1Shipment } from './helpers/group-g1-fixtures';
 import { randomUUID } from 'crypto';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { insertDeliveryFixture } from './helpers/delivery-tracking-fixtures';
@@ -182,8 +183,8 @@ describeLocalDb('integration: 配送の記録と守り（移行 A）', (db) => {
     const invalidKind = await sqlError(db(), 'insert into public.order_fulfillment_attention (fulfillment_id, kind) values ($1, $2)', [fulfillmentId, 'unknown']);
     expect(invalidKind.code).toBe('23514');
     const invalidCurrent = await sqlError(db(),
-      `insert into public.order_fulfillments (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, delivery_status)
-       values ($1, 2, gen_random_uuid(), 'yamato', 'VALID-123', false, false, 'unknown')`, [orderId]);
+      `insert into public.order_fulfillments (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, delivery_status, shipment_date)
+       values ($1, 2, gen_random_uuid(), 'yamato', 'VALID-123', false, false, 'unknown',((pg_catalog.now()) AT TIME ZONE 'Asia/Tokyo')::date)`, [orderId]);
     expect(invalidCurrent.code).toBe('23514');
   });
 
@@ -220,8 +221,8 @@ describeLocalDb('integration: 配送の記録と守り（移行 A）', (db) => {
     const { orderId } = await createOrder(db());
     const sql = `insert into public.order_fulfillments
       (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order,
-       shipped_at, delivery_status, delivered_at)
-      values ($1, 1, gen_random_uuid(), 'yamato', 'VALID-123', false, false, $2, $3, $4)`;
+       shipped_at, delivery_status, delivered_at, shipment_date)
+      values ($1, 1, gen_random_uuid(), 'yamato', 'VALID-123', false, false, $2, $3, $4,(($2::timestamptz) AT TIME ZONE 'Asia/Tokyo')::date)`;
     const beforeShipment = await sqlError(db(), sql, [orderId, SHIPPED_AT, 'delivered', '2026-10-20T02:59:59.000Z']);
     expect(beforeShipment.code).toBe('23514');
     expect((await sqlError(db(), sql, [orderId, SHIPPED_AT, 'delivered', null])).code).toBe('23514');
@@ -318,7 +319,7 @@ describeLocalDb('integration: 配送の記録と守り（移行 A）', (db) => {
   test('取消済みの配送変更・飛び越した版・追跡による配達済みの戻しはownerも拒む', async () => {
     const active = await createShipment(db());
     const cancelled = await createShipment(db());
-    await db().query('update public.order_fulfillments set cancelled_at = now() where id = $1', [cancelled.fulfillmentId]);
+    await restoreGroupG1Shipment(db(), cancelled.fulfillmentId, null);
     await db().query("select set_config('app.fulfillment_change', 'tracking_edit', true)");
     expect((await sqlError(db(), "update public.order_fulfillments set tracking_version = 2, tracking_number = 'EDIT-123' where id = $1", [cancelled.fulfillmentId])).code).toBe('55000');
     expect((await sqlError(db(), "update public.order_fulfillments set tracking_version = 3, tracking_number = 'EDIT-123' where id = $1", [active.fulfillmentId])).code).toBe('55000');
@@ -488,7 +489,7 @@ describeLocalDb('integration: 配送の記録と守り（移行 A）', (db) => {
     await db().query('select private.backfill_delivery_events()');
     const active = await createShipment(db());
     const cancelled = await createShipment(db());
-    await db().query('update public.order_fulfillments set cancelled_at = now() where id = $1', [cancelled.fulfillmentId]);
+    await restoreGroupG1Shipment(db(), cancelled.fulfillmentId, null);
     const legacyOrder = await createOrder(db());
     const legacyId = (await db().query(
       `insert into public.order_fulfillments (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, shipped_at, delivery_status_at, legacy)

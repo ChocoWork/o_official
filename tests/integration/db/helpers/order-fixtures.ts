@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import type { PgClient } from './local-db';
 import { isInTransaction, seedGroupG1Allocation, seedGroupG1Shipment, withGroupG1FixtureTransaction } from './group-g1-fixtures';
 
@@ -183,7 +183,9 @@ export async function releaseFixtureAllocation(
  * For suites that write their own fulfillment rows (legacy/NULL-carrier or delivered material that
  * seedGroupG1Shipment cannot express): under the common lock, the shipped quantity's paid A is
  * consumed in one operation before `write` inserts the fulfillment lines, and the item-state history
- * is recorded afterwards, as one G-1 shipment.
+ * is recorded afterwards, as one G-1 shipment. The two operation FKs below are explicitly set to
+ * DEFERRED and left that way: the operation row is written after the callback supplies its targets.
+ * Callers may flush constraints after the complete shipment has been written.
  */
 export async function withFixtureConsumption<T>(
   db: PgClient,
@@ -192,12 +194,14 @@ export async function withFixtureConsumption<T>(
 ): Promise<T> {
   await lockGroupGFixture(db);
   return withGroupG1FixtureTransaction(db, async () => {
+    await db.query('set constraints order_item_allocation_events_operation_id_fkey, order_item_state_events_operation_id_fkey deferred');
     await ensureFixturePaidAllocation(db, input.lines);
     const before = (await db.query('select private.capture_group_g_item_states($1) as states', [[input.orderId]])).rows[0].states;
-    const op = (await db.query(`insert into private.group_g_operations
-      (id,operation,request_key,fingerprint,cause_type,cause_id,result)
-      values (gen_random_uuid(),'fixture_shipment',gen_random_uuid(),repeat('d',64),'order',$1::text,'{}') returning id`,
-    [input.orderId])).rows[0].id as string;
+    const op = randomUUID();
+    const previousLines = (await db.query(`select fl.fulfillment_id,fl.order_item_id
+      from public.order_fulfillment_lines fl join public.order_fulfillments f on f.id=fl.fulfillment_id
+      where f.order_id=$1`, [input.orderId])).rows;
+    const previousLineKeys = new Set(previousLines.map((row) => `${row.fulfillment_id}:${row.order_item_id}`));
     let sequence = 0;
     for (const line of [...input.lines].sort((a, b) => a.order_item_id.localeCompare(b.order_item_id))) {
       let remaining = line.quantity;
@@ -216,6 +220,17 @@ export async function withFixtureConsumption<T>(
       }
     }
     const result = await write();
+    const writtenLines = (await db.query(`select fl.fulfillment_id,fl.order_item_id
+      from public.order_fulfillment_lines fl join public.order_fulfillments f on f.id=fl.fulfillment_id
+      where f.order_id=$1 and fl.order_item_id=any($2::uuid[])`,
+    [input.orderId, input.lines.map((line) => line.order_item_id)])).rows;
+    const fulfillmentIds = [...new Set(writtenLines
+      .filter((row) => !previousLineKeys.has(`${row.fulfillment_id}:${row.order_item_id}`))
+      .map((row) => row.fulfillment_id as string))];
+    await db.query(`insert into private.group_g_operations
+      (id,operation,request_key,fingerprint,cause_type,cause_id,result)
+      values ($1,'fixture_shipment',gen_random_uuid(),repeat('d',64),'order',$2::text,$3::jsonb)`,
+    [op, input.orderId, JSON.stringify({ fulfillmentIds })]);
     await db.query('select private.record_group_g_item_state_changes($1,$2,$3,1,$4,$5)',
       [JSON.stringify(before), [input.orderId], op, 'fixture_shipment', null]);
     return result;
@@ -825,6 +840,7 @@ export async function createShippedOrderFixture(
         carrier: 'yamato', trackingNumber: '1234-5678-9012', notifyCustomer: false,
       });
       else {
+        // G-0 cleanup baseline only: G-3 columns and deferred shipment guards do not exist yet.
         id = (await db.query(`insert into public.order_fulfillments
           (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at)
           values($1,$2,gen_random_uuid(),'yamato','1234-5678-9012',false,false,coalesce($3::timestamptz,now())) returning id`,

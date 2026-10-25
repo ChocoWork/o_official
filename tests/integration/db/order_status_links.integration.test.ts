@@ -1,4 +1,6 @@
 /** @jest-environment node */
+import { restoreGroupG1Shipment } from './helpers/group-g1-fixtures';
+import { withFixtureConsumption } from './helpers/order-fixtures';
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { createDeliveryActor, insertDeliveryFixture, insertDeliveryRegistration } from './helpers/delivery-tracking-fixtures';
@@ -263,11 +265,14 @@ describeLocalDb('integration: 注文状況のリンク・本人確認・公開�
   test('公開材料のDBの答えに個人情報と番号のキーが無い', async () => {
     const order = await createOrderStatusFixture(db());
     const clock = await orderStatusClock(db());
-    const shipment = await insertDeliveryFixture(db(), {
-      orderId: order.orderId, shippedAt: clock.past, deliveredAt: clock.past, trackingNumber: ORDER_STATUS_PRIVATE_SENTINEL,
+    const shipment = await withFixtureConsumption(db(), { orderId: order.orderId, lines: [{ order_item_id: order.orderItemId, quantity: 1 }] }, async () => {
+      const shipment = await insertDeliveryFixture(db(), {
+        orderId: order.orderId, shippedAt: clock.past, deliveredAt: clock.past, trackingNumber: ORDER_STATUS_PRIVATE_SENTINEL,
+      });
+      await db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)',
+        [shipment.fulfillmentId, order.orderItemId]);
+      return shipment;
     });
-    await db().query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)',
-      [shipment.fulfillmentId, order.orderItemId]);
     await insertDeliveryRegistration(db(), shipment.fulfillmentId, { state: 'registered', everRegistered: true });
     await db().query(
       `insert into public.order_fulfillment_events
@@ -278,7 +283,7 @@ describeLocalDb('integration: 注文状況のリンク・本人確認・公開�
       [shipment.fulfillmentId, ORDER_STATUS_PRIVATE_SENTINEL],
     );
     const cancelled = await insertDeliveryFixture(db(), { orderId: order.orderId, shippedAt: clock.past });
-    await db().query('update public.order_fulfillments set cancelled_at=now() where id=$1', [cancelled.fulfillmentId]);
+    await restoreGroupG1Shipment(db(), cancelled.fulfillmentId, null);
     await db().query(
       `insert into public.order_fulfillment_tracking_changes
          (fulfillment_id,from_carrier,to_carrier,from_tracking_number,to_tracking_number,

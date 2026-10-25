@@ -232,8 +232,8 @@ async function createDeliveryMaterial(db: PgClient, order: Scenario): Promise<vo
     async () => {
       const id = (await db.query(`insert into public.order_fulfillments
         (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at,
-         tracking_version,delivery_status,delivery_status_at)
-        values ($1,1,gen_random_uuid(),'yamato',$2,false,false,now()-interval '2 hours',2,'in_transit',now()-interval '1 hour') returning id`,
+         tracking_version,delivery_status,delivery_status_at, shipment_date)
+        values ($1,1,gen_random_uuid(),'yamato',$2,false,false,now()-interval '2 hours',2,'in_transit',now()-interval '1 hour',((now()-interval '2 hours') AT TIME ZONE 'Asia/Tokyo')::date) returning id`,
       [order.orderId, `${STATUS_PRIVATE.tracking}-${randomUUID().slice(0, 8)}`])).rows[0].id as string;
       await db.query(`insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,1)`, [id, order.orderItemId]);
       return id;

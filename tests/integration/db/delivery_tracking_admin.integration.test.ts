@@ -1,7 +1,8 @@
 /** @jest-environment node */
+import { restoreGroupG1Shipment } from './helpers/group-g1-fixtures';
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb, type PgClient } from './helpers/local-db';
-import { createCatalogFixture, createShippedOrderFixture, insertOrderWithLines, insertRefundRecord, insertReturnRecord } from './helpers/order-fixtures';
+import { withFixtureConsumption, createCatalogFixture, createShippedOrderFixture, insertOrderWithLines, insertRefundRecord, insertReturnRecord } from './helpers/order-fixtures';
 import {
   cancelDeliveryFixture, correctDeliveryTrackingFixture, createDeliveryActor, createDeliveryOrder, createDeliveryFulfillment,
   deliveryClock, deliveryEvents, deliveryRecord, deliveryRegistrations, deliveryShipment, expectDeliveryRejected,
@@ -706,20 +707,27 @@ describeLocalDb('integration: 配送のお店の関数（移行 B）', (db) => {
   test('集計は1000行を超える発送も数える', async () => {
     const order = await createDeliveryOrder(db(), 1002);
     const clock = await deliveryClock(db());
-    await db().query(`insert into public.order_fulfillments
-      (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at,
-       delivery_status,delivery_status_at,delivered_at)
-      select $1,n,gen_random_uuid(),'yamato','BULK-'||n,false,false,$2,'delivered',$3,$3 from generate_series(1,1001) n`,
-    [order.orderId, `${clock.two_days_ago}T09:00:00+09:00`, `${clock.yesterday}T12:00:00+09:00`]);
-    // 行ごとの数の守り（AFTER INSERT。1行ごとに注文の全発送を数え直す）は 1001 行で二乗に遅くなり、
-    // 統計の無い作り直し直後の DB では 24 秒以上かかる。この試験が見るのは関数の数え方で、守りではないので、
-    // この取引の間だけ外す（数は 1001 ≤ 1002 で守りを満たす。取引は afterEach で巻き戻り、状態も戻る）。
-    await db().query('alter table public.order_fulfillment_lines disable trigger order_fulfillment_lines_bounds_check');
-    await db().query(`insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity)
-      select id,$2,1 from public.order_fulfillments where order_id=$1`, [order.orderId, order.orderItemId]);
-    await db().query('alter table public.order_fulfillment_lines enable trigger order_fulfillment_lines_bounds_check');
+    await withFixtureConsumption(db(), { orderId: order.orderId, lines: [{ order_item_id: order.orderItemId, quantity: 1001 }] }, async () => {
+      await db().query(`insert into public.order_fulfillments
+        (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at,
+         delivery_status,delivery_status_at,delivered_at, shipment_date)
+        select $1,n,gen_random_uuid(),'yamato','BULK-'||n,false,false,$2,'delivered',$3,$3,(($2::timestamptz) AT TIME ZONE 'Asia/Tokyo')::date from generate_series(1,1001) n`,
+      [order.orderId, `${clock.two_days_ago}T09:00:00+09:00`, `${clock.yesterday}T12:00:00+09:00`]);
+      // 行ごとの数の守り（AFTER INSERT。1行ごとに注文の全発送を数え直す）は 1001 行で二乗に遅くなり、
+      // 統計の無い作り直し直後の DB では 24 秒以上かかる。この試験が見るのは関数の数え方で、守りではないので、
+      // この取引の間だけ外す（数は 1001 ≤ 1002 で守りを満たす。取引は afterEach で巻き戻り、状態も戻る）。
+      await db().query('alter table public.order_fulfillment_lines disable trigger order_fulfillment_lines_bounds_check');
+      await db().query(`insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity)
+        select id,$2,1 from public.order_fulfillments where order_id=$1`, [order.orderId, order.orderItemId]);
+      // The deferred guard reads these 1,001 rows repeatedly. Give its joins current fixture statistics
+      // before flushing; autovacuum cannot see rows in this uncommitted test transaction.
+      await db().query('analyze public.order_fulfillments, public.order_fulfillment_lines, public.order_item_allocations, public.order_item_allocation_events');
+      await db().query('set constraints group_g_shipment_consumption immediate');
+      await db().query('set constraints group_g_shipment_consumption deferred');
+      await db().query('alter table public.order_fulfillment_lines enable trigger order_fulfillment_lines_bounds_check');
+    });
     const cancelled = await insertDeliveryFixture(db(), { orderId: order.orderId, shippedAt: `${clock.two_days_ago}T09:00:00+09:00` });
-    await db().query('update public.order_fulfillments set cancelled_at=now() where id=$1', [cancelled.fulfillmentId]);
+    await restoreGroupG1Shipment(db(), cancelled.fulfillmentId, null);
     const result = await summary(db(), order.orderId);
     expect(result).toEqual({ order_id: order.orderId, active_count: 1001, delivered_count: 1001, attention_kind: null });
     const empty = await createDeliveryOrder(db());

@@ -15,7 +15,7 @@ describeLocalDb('G-1 stock RPC', (db) => {
   });
   afterEach(async () => { await db().query('rollback'); });
   async function flush() {
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
     await db().query('set constraints all deferred');
   }
   async function move(item: number, variant: number, delta: number, options: {

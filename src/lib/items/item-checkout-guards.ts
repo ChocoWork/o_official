@@ -6,6 +6,7 @@ export type ItemDeleteBlockers = {
   hasOrders: boolean;
   hasStockMovements: boolean;
   hasOpenCheckouts: boolean;
+  hasPurchaseOrders: boolean;
 };
 
 type BlockerRow = {
@@ -13,6 +14,7 @@ type BlockerRow = {
   has_orders: boolean;
   has_stock_movements: boolean;
   has_open_checkouts: boolean;
+  has_purchase_orders: boolean;
 };
 
 /** 削除できない理由を商品 ID ごとに読む（R-44） */
@@ -36,6 +38,7 @@ export async function fetchItemDeleteBlockers(
         hasOrders: row.has_orders,
         hasStockMovements: row.has_stock_movements,
         hasOpenCheckouts: row.has_open_checkouts,
+        hasPurchaseOrders: row.has_purchase_orders,
       },
     ]),
   );
@@ -43,7 +46,8 @@ export async function fetchItemDeleteBlockers(
 
 /** 理由が1つも無い商品だけ削除できる。読めなかった商品は削除できない扱いにする */
 export function isItemDeletable(blockers: ItemDeleteBlockers | undefined): boolean {
-  return Boolean(blockers) && !blockers!.hasOrders && !blockers!.hasStockMovements && !blockers!.hasOpenCheckouts;
+  return Boolean(blockers) && !blockers!.hasOrders && !blockers!.hasStockMovements
+    && !blockers!.hasOpenCheckouts && !blockers!.hasPurchaseOrders;
 }
 
 export function describeDeleteBlockers(blockers: ItemDeleteBlockers): string[] {
@@ -51,6 +55,7 @@ export function describeDeleteBlockers(blockers: ItemDeleteBlockers): string[] {
     blockers.hasOrders ? '注文がある' : null,
     blockers.hasStockMovements ? '在庫の記録がある' : null,
     blockers.hasOpenCheckouts ? '決済中のお客様がいる' : null,
+    blockers.hasPurchaseOrders ? '発注書がある' : null,
   ].filter((reason): reason is string => reason !== null);
 }
 

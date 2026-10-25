@@ -4,6 +4,8 @@
 
 ## 概要
 
+G-3 Task 1 の発送票の基盤を 2026-10-25 に追記した。ローカルはcontroller reset後のDB全件でTask 1の新規失敗0。全体は既知stockist2失敗によりexit 1。本番へのG-3適用は未実施。
+
 本書はデータベースマイグレーションの現行手順と過去の移行記録をまとめる。実際の適用対象は `supabase/migrations/` と `.github/workflows/db-migrations.yml` で確認し、本番台帳は実行前に読み直す。グループ G-1 の移行（本番のテスト用の注文を消す清掃を含む1本）の内容・当て方・記録は「グループ G-1 在庫の割当の移行」に書く。グループ G-2 の移行（発注・受け取り・原本の添付）は末尾の「グループ G-2 発注・受け取りの移行」に書く。
 
 本番 Supabase（`pjidrgofvaglnuuznnyj`）へのスキーマ適用手順と、
@@ -555,3 +557,56 @@ WHERE n.nspname IN ('public', 'private')
 ### 試験
 
 DB 結合は `group_g2_stock_permissions`・`group_g2_g1_followups`・`group_g2_public_function_acl`・`group_g2_purchase_model`・`group_g2_inventory_list`（Task 3）・`group_g2_purchase_create`（Task 4）・`group_g2_purchase_reads`（Task 5）・`group_g2_purchase_quantities`（Task 6）・`group_g2_purchase_receipts`・`group_g2_purchase_receipt_reversals`（Task 7）・`group_g2_purchase_documents`（Task 8）・`group_g2_concurrency`・`group_g2_migration_asserts`（Task 9）の13本（共通の確認は `db reset` の後に PostgREST の smoke → 上の13本と、`admin_revoke_sessions_function`・`auth_db_functions`・`rate_limit_counters`・G-1 の `group_g1_stock_api`・`group_g1_inventory_reads`・`group_g1_payment`・`group_g1_exchange_fee`・`group_g1_concurrency`・`group_g1_fifo`・`group_g1_model`・`group_g1_writer_inventory`・`stock_movements`）。対応は[試験仕様](../05_Quality/tests/test-spec.md)の「グループ G-2 のテスト」。
+
+## グループ G-3: 発送票と出荷日（FREQ-533・540、2026-10-25）
+
+G-3 は4本を次の順で作る。Task 1 で存在するのは基盤の1本だけで、後続3本の時刻は作成時のUTCで決める。既に本番へ適用したG-1・G-2の移行は変更しない。
+
+| 順 | ファイル | 役割・作成する Task |
+| --- | --- | --- |
+| 1 | `20261025053324_group_g3_shipping_foundation.sql` | 発送票の6表・出荷日の列とCHECK・変更と消費の守り・割当イベントの理由17値・発注書のある商品の削除止め。Task 1 |
+| 2 | `<ts2>_group_g3_shipping_reads.sql`（未作成） | 読取と同梱・準備数の定義、追跡の読取側の置換。Task 2 |
+| 3 | `<ts3>_group_g3_shipping_slips.sql`（未作成） | ロック helper、下書き、発送確定、取消。Task 4〜6 |
+| 4 | `<ts4>_group_g3_shipping_actions.sql`（未作成） | 伝票訂正、手動配達済み、出荷日訂正、配送反映の置換、許可一覧とassert。Task 7〜10 |
+
+`20261024180500 < ts1 < ts2 < ts3 < ts4`。各ファイルは先頭 BEGIN; から末尾assert・NOTIFY pgrst, 'reload schema';・COMMIT; までを1取引で当てる。基盤は G3A_BODY_BEGIN/END と G3A_FINAL_ASSERT_BEGIN/END、後続は G3B/G3C/G3D の印で区切る。基盤は書込み口を追加せず、読取は書込みを持たない。ファイルの大きさに上限はなく、バイト数とMD5をTaskの報告へ残す。
+
+### Task 1 の基盤と末尾の確かめ
+
+所有者 postgres の public 5表・private 1表を作り、RLS・restrictive deny・表の権限剥奪で service_role からの SELECT も止める。票以外の5表は追記専用、票本体は7つの操作印で列・段階・版を制限する。order_fulfillments.shipment_date は非legacyで必須、運送会社と番号は両方空にできる。発送行の数と consume − restore は3か所の遅延constraint triggerで取引末尾に一致させる（内部エラー `GROUP_G_SHIPMENT_CONSUMPTION / 23514`）。
+
+前提はG-1清掃後のorder_fulfillmentsが0行で、controllerが適用直前に再確認する。基盤移行も0行を確認し、1行でもあれば `GROUP_G_MIGRATION_ASSERTION_FAILED / 55000 / shipping_fulfillment_rows` で取引全体を巻き戻す。shipment_dateのCHECKは直接追加し、既存行の埋戻しもtriggerの停止・再開も行わない。
+
+item_delete_blockers(bigint[]) は戻り値が5列になるので DROP → CREATE する。既存の STABLE・SECURITY DEFINER・空の search_path・postgres 所有・service_role 専用の EXECUTE を復元する。private schema の USAGE は変更しない。
+
+末尾の `$g3a_final_objects$`・`$g3a_final_table_acl$` は次を確認する。失敗は `GROUP_G_MIGRATION_ASSERTION_FAILED / 55000`、DETAIL は項目名だけ。
+
+| DETAIL の項目 | 確認する内容 |
+| --- | --- |
+| shipping_tables | 6表・列数・所有者・RLS・restrictive deny・主な制約 |
+| shipping_table_acl | PUBLIC/anon/authenticated/service_role に表の権限が無く postgres は持つ（PG17以降は MAINTAIN も） |
+| shipping_table_triggers | 票の変更とTRUNCATE拒否、残り5表のUPDATE/DELETE/TRUNCATE拒否の名前と種類 |
+| shipping_consumption_triggers | 発送行・取消・consume/restore に付く3つの遅延constraint trigger |
+| shipping_table_rows | 6表に、この取引が書いた `created_at = transaction_timestamp()` の行が無い |
+| shipping_fulfillment_columns | shipment_date が date、非legacyの出荷日必須と運送会社/番号の対のCHECK |
+| shipping_guard_functions | 新しい守り2本の postgres 所有・DEFINER・空のsearch_path・EXECUTEなし。置換した発送の守りは既存の INVOKER・所有者・search_path・ACL を保つ |
+| shipping_reason_codes | 割当イベントの理由が既存15値＋shipment_confirm/shipment_cancelの17値 |
+| shipping_delete_blockers | 削除止めの戻り値5列とACL |
+
+ACL は relacl::text/proacl::text の文字列ではなく有効な権限の意味で比べ、別の grantee の有無に依存しない。既存データを全件0件と比べず、この取引による行の作成だけを検査するため、末尾assertを後で流し直すこともできる。
+
+### Task 1 の試験と適用の境界
+
+[発送票モデル](../../tests/integration/db/group_g3_model.integration.test.ts) は6表・操作印・消費の守り・理由・一意制約・削除止め・末尾assertを確認し、group_g3_fixtures の describe は既存材料が発送日のJST暦日と同じ取引の消費・取消時の復元を持って実際にcommitできることを確認する。[商品削除の守り](../../tests/integration/db/item_checkout_guards.integration.test.ts) と既存の書き手一覧の試験も対象とする。
+
+Task 1 の実装者はSQL・試験・単体・型・lint・文書の検査までを担当する。controllerがローカルでresetしてSQLを適用し、2026-10-25のDB全件でTask 1の新規失敗0を確認した。全体は既知stockist2失敗によりexit 1。PostgRESTの共通smokeはDB suiteと別に記録する。本番へのG-3適用は未実施。
+
+
+G-0の基準専用の材料では、order-fixtures.tsの非G分岐はshipment_dateを意図的に書かない（controllerのI-1裁定）。G-0にはG-3の列と遅延triggerがまだ無いため、この分岐はTask 1の一般的な材料の付け替えから除外する。G1_CLEANUP_SUITE=1によるG-1清掃suiteの再実行はcontroller判断待ち。
+
+
+| Fix round 2 実装者検証（2026-10-25） | 結果 |
+| --- | --- |
+| DB全件 `npx.cmd jest tests/integration/db --runInBand` | exit 1。suiteは118成功・stockistの1失敗・11 skip・計130、testは3266成功・stockistの2失敗・12 skip・計3280。205.889秒。Task 1の新規失敗0 |
+| レビュー修正後の対象DB6 suite | 234件成功。DB全件の既知stockist2失敗と区別する |
+| G-0基準のG-1清掃suite | G1_CLEANUP_SUITE=1の特別実行はcontroller判断待ち。通常全件のskipやsuiteの成功表示は、G-0基準の清掃の成功を証明しない |

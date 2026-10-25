@@ -90,7 +90,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       await c.query('rollback');
       await a.query('rollback');
       await expect(pending).resolves.toMatchObject({ rows: [{ lock_group_g_inventory: material.closedOrders }] });
-      await b.query('set constraints all immediate');
+      await b.query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
       // The open return's exchange variant and the related waiting order's other variant
       // belong to the active closure; closed historical orders must not extend it.
       await c.query('begin');
@@ -556,7 +556,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       await c.query('rollback');
       await a.query('rollback');
       check((await pending).rows);
-      await b.query('set constraints all immediate');
+      await b.query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
       // Verify input-only exchange rows and their waiting order are held by the completed body.
       await c.query('begin');
       for (const [sql, params] of [
@@ -796,7 +796,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
         group by oi.id order by oi.id`, [[item, ...fx.older.orderItemIds, ...fx.newer.orderItemIds]])).rows).toEqual([
         { id: fx.older.orderItemIds[0], n: 1 }, { id: item, n: 1 }, { id: fx.newer.orderItemIds[0], n: 0 },
       ].sort((x, y) => x.id.localeCompare(y.id)));
-      await b.query('set constraints all immediate'); await b.query('commit');
+      await b.query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate'); await b.query('commit');
       expect((await db().query('select stock_quantity from public.item_variants where id=$1', [fx.exchange.variantId])).rows)
         .toEqual([{ stock_quantity: 0 }]);
       expect((await db().query('select * from public.verify_stock_integrity() where variant_id=$1', [fx.exchange.variantId])).rows).toEqual([]);
@@ -867,7 +867,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       await expect(fee(b)).rejects.toMatchObject({ code: '22023', message: 'RETURN_STATE_CONFLICT' });
       await b.query('rollback to savepoint fee_repeat'); await b.query('release savepoint fee_repeat');
       expect((await restock(b)).rows[0].result).toMatchObject({ allocatedQuantity: 2, replayed: true });
-      await b.query('set constraints all immediate'); await b.query('commit');
+      await b.query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate'); await b.query('commit');
       const rows = (await db().query(`select oi.id,coalesce(sum(a.remaining_quantity),0)::int n from public.order_items oi
         left join public.order_item_allocations a on a.order_item_id=oi.id where oi.id=any($1::uuid[])
         group by oi.id order by oi.id`, [[fx.exchangeId, ...fx.older.orderItemIds, ...fx.newer.orderItemIds]])).rows;
@@ -944,7 +944,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       else if (peer === 'payment') expect(completed.rows).toEqual([{ updated: true, amount_matches: true }]);
       else expect(completed.rows[0].result).toMatchObject({ allocatedQuantity: 1, replayed: false });
       expect((await receive(b)).rows).toEqual([{ replayed: true }]);
-      await b.query('set constraints all immediate'); await b.query('commit');
+      await b.query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate'); await b.query('commit');
       const quantities = (await db().query(`select oi.order_id,a.kind,sum(a.remaining_quantity)::int n
         from public.order_items oi join public.order_item_allocations a on a.order_item_id=oi.id
         where oi.order_id=any($1::uuid[]) and a.remaining_quantity>0 group by oi.order_id,a.kind order by oi.order_id`,
@@ -1103,7 +1103,7 @@ describeLocalDb('G-1 advisory-first locking across separate connections', (db) =
       await c.query('rollback');
       await a.query('rollback');
       expect((await pending).rows).toEqual([{ applied: true, changed: true, stopped: true }]);
-      await b.query('set constraints all immediate');
+      await b.query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
       expect((await b.query(`select count(*)::integer as n from private.group_g_operations
         where operation='delivery_reflect' and cause_id=$1`, [m.target.fulfillmentId])).rows[0].n).toBe(1);
       // The completed body holds the settings row (share), the order, the fulfillment and the registration.

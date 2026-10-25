@@ -210,8 +210,8 @@ describeLocalDb('integration: 止めた関数は共通の押さえも注文の�
         'fixture@example.com', '山田 花子', '1500001', '東京都', '渋谷区', '神宮前1-1-1', '0311112222') returning id`,
     [`g1-legacy-wait-${uniqueSuffix()}`, `cs_g1_legacy_wait_${uniqueSuffix()}`])).rows[0].id as string;
     const fulfillmentId = (await db().query(`insert into public.order_fulfillments
-      (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, shipped_at)
-      values ($1, 1, gen_random_uuid(), 'yamato', 'G1-LEGACY-WAIT', false, false, now()) returning id`, [orderId])).rows[0].id as string;
+      (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, shipped_at, shipment_date)
+      values ($1, 1, gen_random_uuid(), 'yamato', 'G1-LEGACY-WAIT', false, false, now(),((now()) AT TIME ZONE 'Asia/Tokyo')::date) returning id`, [orderId])).rows[0].id as string;
     await db().query('commit');
     target = { orderId, orderItemId: crypto.randomUUID(), fulfillmentId, actorId: crypto.randomUUID() };
   });

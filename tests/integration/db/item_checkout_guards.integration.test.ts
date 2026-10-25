@@ -16,13 +16,14 @@ async function openSessions(db: PgClient, itemId: number): Promise<string[]> {
 
 async function blockers(db: PgClient, itemIds: number[]) {
   const res = await db.query(
-    'select item_id, has_orders, has_stock_movements, has_open_checkouts from public.item_delete_blockers($1::bigint[])',
+    'select item_id, has_orders, has_stock_movements, has_open_checkouts, has_purchase_orders from public.item_delete_blockers($1::bigint[])',
     [itemIds],
   );
   return Object.fromEntries(res.rows.map((row) => [Number(row.item_id), {
     hasOrders: row.has_orders,
     hasStockMovements: row.has_stock_movements,
     hasOpenCheckouts: row.has_open_checkouts,
+    hasPurchaseOrders: row.has_purchase_orders,
   }]));
 }
 
@@ -61,11 +62,36 @@ describeLocalDb('integration: 商品の非公開・削除の確かめ', (db) => 
     await createDraft(db(), { itemId: checkingOut.itemId, quantity: 1 });
 
     expect(await blockers(db(), [plain.itemId, stocked.itemId, ordered.itemId, checkingOut.itemId])).toEqual({
-      [plain.itemId]: { hasOrders: false, hasStockMovements: false, hasOpenCheckouts: false },
-      [stocked.itemId]: { hasOrders: false, hasStockMovements: true, hasOpenCheckouts: false },
-      [ordered.itemId]: { hasOrders: true, hasStockMovements: false, hasOpenCheckouts: false },
-      [checkingOut.itemId]: { hasOrders: false, hasStockMovements: false, hasOpenCheckouts: true },
+      [plain.itemId]: { hasOrders: false, hasStockMovements: false, hasOpenCheckouts: false, hasPurchaseOrders: false },
+      [stocked.itemId]: { hasOrders: false, hasStockMovements: true, hasOpenCheckouts: false, hasPurchaseOrders: false },
+      [ordered.itemId]: { hasOrders: true, hasStockMovements: false, hasOpenCheckouts: false, hasPurchaseOrders: false },
+      [checkingOut.itemId]: { hasOrders: false, hasStockMovements: false, hasOpenCheckouts: true, hasPurchaseOrders: false },
     });
+  });
+
+  test('FREQ-540-AC-12: 発注書だけがある商品は has_purchase_orders で削除を止める', async () => {
+    await db().query('begin');
+    try {
+      await db().query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
+      const fx = await createCatalogFixture(db(), { stock: 0 });
+      const purchase = (await db().query(`insert into public.purchase_orders(number,supplier_name,created_by)
+        values('PO-29991231-9876','Fixture supplier',gen_random_uuid()) returning id`)).rows[0].id as string;
+      await db().query(`insert into public.purchase_order_lines
+        (purchase_order_id,line_no,variant_id,item_name,provisional_quantity)
+        values($1,1,$2,'Fixture item',1)`, [purchase, fx.variantId]);
+      expect(await blockers(db(), [fx.itemId])).toEqual({
+        [fx.itemId]: { hasOrders: false, hasStockMovements: false, hasOpenCheckouts: false, hasPurchaseOrders: true },
+      });
+      const row = (await db().query('select * from public.item_delete_blockers($1::bigint[])', [[fx.itemId]])).rows[0];
+      expect(Object.keys(row)).toEqual(['item_id', 'has_orders', 'has_stock_movements', 'has_open_checkouts', 'has_purchase_orders']);
+      const definition = (await db().query(`select pg_catalog.pg_get_userbyid(proowner) as owner,
+        prosecdef as definer, provolatile as volatility, proconfig from pg_catalog.pg_proc
+        where oid='public.item_delete_blockers(bigint[])'::regprocedure`)).rows[0];
+      expect(definition).toMatchObject({ owner: 'postgres', definer: true, volatility: 's' });
+      expect(definition.proconfig).toContain('search_path=""');
+    } finally {
+      await db().query('rollback');
+    }
   });
 
   test('anon・authenticated は実行できない', async () => {

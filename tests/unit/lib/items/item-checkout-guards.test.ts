@@ -26,21 +26,32 @@ describe('item-checkout-guards', () => {
 
   it('削除できない理由を商品 ID ごとに読む', async () => {
     const rpc = jest.fn().mockResolvedValue({
-      data: [{ item_id: '7', has_orders: true, has_stock_movements: false, has_open_checkouts: true }],
+      data: [{ item_id: '7', has_orders: true, has_stock_movements: false, has_open_checkouts: true, has_purchase_orders: true }],
       error: null,
     });
 
     const result = await fetchItemDeleteBlockers(clientWith(rpc), [7]);
 
     expect(rpc).toHaveBeenCalledWith('item_delete_blockers', { _item_ids: [7] });
-    expect(result.get(7)).toEqual({ hasOrders: true, hasStockMovements: false, hasOpenCheckouts: true });
-    expect(describeDeleteBlockers(result.get(7)!)).toEqual(['注文がある', '決済中のお客様がいる']);
+    expect(result.get(7)).toEqual({ hasOrders: true, hasStockMovements: false, hasOpenCheckouts: true, hasPurchaseOrders: true });
+    expect(describeDeleteBlockers(result.get(7)!)).toEqual(['注文がある', '決済中のお客様がいる', '発注書がある']);
   });
 
   it('理由が無い商品だけを削除できる。読めなかった商品は削除できない扱いにする', () => {
-    expect(isItemDeletable({ hasOrders: false, hasStockMovements: false, hasOpenCheckouts: false })).toBe(true);
-    expect(isItemDeletable({ hasOrders: false, hasStockMovements: true, hasOpenCheckouts: false })).toBe(false);
+    expect(isItemDeletable({ hasOrders: false, hasStockMovements: false, hasOpenCheckouts: false, hasPurchaseOrders: false })).toBe(true);
+    expect(isItemDeletable({ hasOrders: false, hasStockMovements: true, hasOpenCheckouts: false, hasPurchaseOrders: false })).toBe(false);
     expect(isItemDeletable(undefined)).toBe(false);
+  });
+
+  it('FREQ-540-AC-12: 発注書だけがある商品も削除できない', () => {
+    const blockers = { hasOrders: false, hasStockMovements: false, hasOpenCheckouts: false, hasPurchaseOrders: true };
+    expect(isItemDeletable(blockers)).toBe(false);
+    expect(describeDeleteBlockers(blockers)).toEqual(['発注書がある']);
+  });
+
+  it('FREQ-540-AC-12: 削除を止める4つの理由は決まった順で表示する', () => {
+    expect(describeDeleteBlockers({ hasOrders: true, hasStockMovements: true, hasOpenCheckouts: true, hasPurchaseOrders: true }))
+      .toEqual(['注文がある', '在庫の記録がある', '決済中のお客様がいる', '発注書がある']);
   });
 
   it('非公開を促す案内の文にする', () => {

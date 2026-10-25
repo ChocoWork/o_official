@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import { connectLocalDb, describeLocalDb, type PgClient } from './helpers/local-db';
 import {
+  withFixtureConsumption,
   addItemVariant,
   createCatalogFixture,
   createShippedOrderFixture,
@@ -383,17 +384,19 @@ async function insertExchangeItem(db: PgClient, order: CustomerOrder, returnLine
 
 /** 交換の品を 2 回目の発送で送ったことにする */
 async function shipExchangeItem(db: PgClient, order: CustomerOrder, exchangeItemId: string): Promise<void> {
-  const shipment = await db.query(
-    `insert into public.order_fulfillments
-       (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, shipped_at)
-     values ($1, 2, gen_random_uuid(), 'yamato', '1234-5678-9012', false, false, now())
-     returning id`,
-    [order.orderId],
-  );
-  await db.query('insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, 1)', [
-    shipment.rows[0].id,
-    exchangeItemId,
-  ]);
+  await withFixtureConsumption(db, { orderId: order.orderId, lines: [{ order_item_id: exchangeItemId, quantity: 1 }] }, async () => {
+    const shipment = await db.query(
+      `insert into public.order_fulfillments
+         (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, shipped_at, shipment_date)
+       values ($1, 2, gen_random_uuid(), 'yamato', '1234-5678-9012', false, false, now(),((now()) AT TIME ZONE 'Asia/Tokyo')::date)
+       returning id`,
+      [order.orderId],
+    );
+    await db.query('insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, 1)', [
+      shipment.rows[0].id,
+      exchangeItemId,
+    ]);
+  });
 }
 
 /** お返し（sent_back）の受け取りを、お返しのメッセージ・配送業者・伝票番号つきで直接書く */

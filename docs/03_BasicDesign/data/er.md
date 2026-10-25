@@ -1,10 +1,10 @@
 # ER 図（現行リポジトリの実装）
 
-> 状態: 現行のソース（グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ未適用。G-2 Task 9 で手元の DB と突き合わせ、発注書の9表・22 FK、FK の合計 142〔public 起点 131・private 起点 11〕が DB と一致することを確かめた） | 確認日: 2026-10-25 | 対象: `supabase/migrations/` の基準スキーマと後続変更
+> 状態: 現行のソース（グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ適用済み（Task 1 の依頼で確認）。G-3 Task 1 の新6表・出荷日・守りを同日に追記し、controller reset後のDB全件でTask 1の新規失敗0を2026-10-25に確認した（全体は既知stockist2失敗によりexit 1）。G-2 Task 9 で手元の DB と突き合わせ、発注書の9表・22 FK、FK の合計 142〔public 起点 131・private 起点 11〕が DB と一致することを確かめた） | 確認日: 2026-10-25 | 対象: `supabase/migrations/` の基準スキーマと後続変更
 
 ## 概要
 
-`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 段1・段2・E-4・E-5・G-1・G-2（発注書の9表）の追記を反映した掲載対象は **99 テーブル（public 89、private 8、security 2）と 142 FK（public 起点 131、private 起点 11）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
+`supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 段1・段2・E-4・E-5・G-1・G-2（発注書の9表）・G-3 Task 1（発送票の6表）の追記を反映した掲載対象は **105 テーブル（public 94、private 9、security 2）と 155 FK（public 起点 141、private 起点 14）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
 
 基準の確認日: **2026-10-03**。ソース基準コミット: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06`。基準は [20260901102912_remote_schema.sql](../../../supabase/migrations/20260901102912_remote_schema.sql)、基準集計の最後の対象ファイルは [20260927100800_retire_legacy_order_rpcs.sql](../../../supabase/migrations/20260927100800_retire_legacy_order_rpcs.sql)。対象の 40 SQL ファイルの基準は59テーブル・63 FKで、後続の記載済みの追記を含む一覧は2026-10-09に数え直し、グループ E-1 の分を2026-10-10 に、グループ E-2 の分を2026-10-11 に、グループ E-3 の分を2026-10-13 に足した。配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文状況のリンクの表は E-5 の変更を 2026-10-22 に反映。本番 DB の適用状況は確認していない。
 
@@ -920,7 +920,7 @@ G-2で `item_variants`（+1）・`stock_movements`（+1）・`private.group_g_op
 
 | 表 | 列と制約 |
 | --- | --- |
-| `order_fulfillments` | `id uuid` PK（gen_random_uuid）、`order_id uuid` NOT NULL（RESTRICT）、`number integer` NOT NULL（1以上。`(order_id, number)` UNIQUE。取り消した分の番号は使い回さない）、`request_key uuid` NOT NULL UNIQUE、`shipping_carrier text`（yamato・sagawa・japanpost）、`tracking_number text`（`^[0-9A-Za-z-]{1,64}$`）、`notify_customer boolean` NOT NULL、`completes_order boolean` NOT NULL、`shipped_at timestamptz` NOT NULL（now）、`created_by uuid`・`cancelled_by uuid`（`auth.users` の番号。外部キーにしない: 消した人を空にする ON DELETE SET NULL は UPDATE として動き、取消の列しか変えさせない守りとぶつかるため。`stock_movements.created_by` と同じ）、`cancelled_at timestamptz`、`legacy boolean` NOT NULL（false）。CHECK は `legacy OR (shipping_carrier IS NOT NULL AND tracking_number IS NOT NULL)` と `cancelled_by IS NULL OR cancelled_at IS NOT NULL` |
+| `order_fulfillments` | `id uuid` PK（gen_random_uuid）、`order_id uuid` NOT NULL（RESTRICT）、`number integer` NOT NULL（1以上。`(order_id, number)` UNIQUE。取り消した分の番号は使い回さない）、`request_key uuid` NOT NULL UNIQUE、`shipping_carrier text`（yamato・sagawa・japanpost）、`tracking_number text`（`^[0-9A-Za-z-]{1,64}$`）、`notify_customer boolean` NOT NULL、`completes_order boolean` NOT NULL、`shipped_at timestamptz` NOT NULL（now）、`created_by uuid`・`cancelled_by uuid`（`auth.users` の番号。外部キーにしない: 消した人を空にする ON DELETE SET NULL は UPDATE として動き、取消の列しか変えさせない守りとぶつかるため。`stock_movements.created_by` と同じ）、`cancelled_at timestamptz`、`legacy boolean` NOT NULL（false）。G-3 Task 1 で `shipment_date date` を追加し、CHECK は `legacy OR shipment_date IS NOT NULL`、`legacy OR ((shipping_carrier IS NULL) = (tracking_number IS NULL))` と `cancelled_by IS NULL OR cancelled_at IS NOT NULL` |
 | `order_fulfillment_lines` | `fulfillment_id uuid`・`order_item_id uuid`（どちらも RESTRICT）、`quantity integer` NOT NULL（1以上）。PK は `(fulfillment_id, order_item_id)`。追記だけ（変更と削除をトリガーで拒む） |
 | `order_item_completions` | `id uuid` PK、`order_id uuid`・`order_item_id uuid`（RESTRICT。受注生産の品だけ）、`quantity integer` NOT NULL（1以上）、`request_key uuid` NOT NULL（`(request_key, order_item_id)` UNIQUE）、`created_by uuid`・`cancelled_by uuid`（`auth.users` の番号。外部キーにしない: 消した人を空にする ON DELETE SET NULL は UPDATE として動き、取消の列しか変えさせない守りとぶつかるため。`stock_movements.created_by` と同じ）、`created_at timestamptz` NOT NULL、`cancelled_at timestamptz`、`legacy boolean` NOT NULL。CHECK は `cancelled_by IS NULL OR cancelled_at IS NOT NULL` |
 | `private.order_email_outbox` | `fulfillment_id uuid`（`order_fulfillments(id)`、RESTRICT）を足す。CHECK は `(kind = 'shipped') = (fulfillment_id IS NOT NULL)` |
@@ -1894,3 +1894,78 @@ publicのRPCは完全修飾名・`SECURITY DEFINER`・`SET search_path = ''`・�
 - [在庫の割当の流れ（G-1）](../../04_DetailDesign/sequence/inventory-allocation.md)
 - [在庫の割当の状態（G-1）](../../04_DetailDesign/states/inventory-allocation.md)
 - [DB マイグレーション運用](../../06_Operations/db-migrations.md)
+
+## 発送票と出荷日（G-3 Task 1 / FREQ-533・540）
+
+[基盤の移行](../../../supabase/migrations/20261025053324_group_g3_shipping_foundation.sql) は public 5表・private 1表と13 FKを追加する。99表・142 FK から105表・155 FKへのソース上の差分であり、ローカルDBにはcontroller resetで適用し、2026-10-25のDB全件でTask 1の新規失敗0を確認した（全体は既知stockist2失敗によりexit 1）。実行者の UUID 列には FK を付けず、利用者の削除が追記専用の表を更新しないようにする。
+
+```mermaid
+erDiagram
+    shipment_slips ||--o{ shipment_slip_lines : contains
+    order_items ||--o{ shipment_slip_lines : selected
+    shipment_slips ||--o{ shipment_slip_fulfillments : groups
+    orders ||--o{ shipment_slip_fulfillments : participates
+    order_fulfillments ||--o| shipment_slip_fulfillments : linked
+    shipment_slips ||--o{ shipment_slip_versions : versions
+    shipment_slips ||--o{ shipment_date_history : dates
+    shipment_slips ||--o{ shipment_tracking_registrations : tracking
+    order_fulfillments ||--o{ shipment_tracking_registrations : leader
+    group_g_operations ||--o{ shipment_slips : confirm
+    group_g_operations ||--o{ shipment_slip_versions : operation
+    group_g_operations ||--o{ shipment_date_history : operation
+    group_g_operations ||--o{ shipment_tracking_registrations : operation
+```
+
+図の shipment_tracking_registrations と group_g_operations は private、他は public。矢印は FK を表し、4本の操作IDへの FK は DEFERRABLE INITIALLY DEFERRED、票・明細・注文・発送への FK は RESTRICT である。
+
+### 列・制約・索引
+
+全6表に `created_at timestamptz NOT NULL DEFAULT pg_catalog.now()` を持つ。票と出荷日履歴の `id uuid` は `DEFAULT gen_random_uuid()` の主キーで、新sequenceは作らない。下表の FK 列と主キーの列は NOT NULL（票の confirm_operation_id は確定前だけNULL）。
+
+| 表 | 列・制約・索引 |
+| --- | --- |
+| `public.shipment_slips` | `id uuid PK`、`number text NOT NULL UNIQUE`（`^SL-[0-9]{8}-[0-9]{4}$`）、`stage text NOT NULL`（draft/confirmed/cancelled/discarded）、`version integer NOT NULL DEFAULT 1`（1以上）、`customer_kind text NOT NULL`（member/guest）、`customer_user_id uuid`、`customer_email text`、`ship_to_full_name/ship_to_postal_code/ship_to_prefecture/ship_to_city/ship_to_address/ship_to_phone text NOT NULL`（各1文字以上）、`ship_to_building text`、`draft_lines jsonb NOT NULL DEFAULT '[]'`（配列）、`shipping_carrier text`（yamato/sagawa/japanpost）、`tracking_number text`（`^[0-9A-Za-z-]{1,64}$`）、`notify_customer boolean`、`shipment_date date`、`tracking_version integer NOT NULL DEFAULT 1`（1以上）、`expires_at timestamptz`、`confirm_request_key uuid UNIQUE`、`confirm_operation_id uuid`（private.group_g_operations へ遅延FK）、`confirmed_at/cancelled_at/discarded_at timestamptz`、`confirmed_by/cancelled_by/discarded_by uuid`、`created_by uuid NOT NULL`、`updated_at timestamptz NOT NULL DEFAULT now()`。索引 `(stage, updated_at DESC)` |
+| `public.shipment_slip_lines` | `slip_id uuid` → shipment_slips、`order_item_id uuid` → order_items、`quantity integer NOT NULL`（1〜99999）、PK `(slip_id, order_item_id)`、索引 `(order_item_id)` |
+| `public.shipment_slip_fulfillments` | `slip_id uuid` → shipment_slips、`order_id uuid` → orders、`fulfillment_id uuid NOT NULL UNIQUE` → order_fulfillments、PK `(slip_id, order_id)` |
+| `public.shipment_slip_versions` | `slip_id uuid` → shipment_slips、`version integer NOT NULL`、`kind text NOT NULL`（confirm/tracking_update/delivered/date_correction/cancel）、その版の `shipping_carrier text`・`tracking_number text`・`tracking_version integer`・`shipment_date date`、`reason text`（入れる時は1〜200文字）、`actor_id uuid NOT NULL`、`operation_id uuid NOT NULL` → group_g_operations（遅延）、PK `(slip_id, version)` |
+| `public.shipment_date_history` | `id uuid PK`、`slip_id uuid` → shipment_slips、`version integer NOT NULL`、`kind text NOT NULL`（initial/correction）、`previous_date/new_date date NOT NULL`、`reason text`（correction の時だけ非NULL・1〜200文字）、`actor_id uuid NOT NULL`、`operation_id uuid NOT NULL` → group_g_operations（遅延）、UNIQUE `(slip_id, version)` |
+| `private.shipment_tracking_registrations` | `slip_id uuid` → shipment_slips、`tracking_version integer NOT NULL`（1以上）、`leader_fulfillment_id uuid NOT NULL` → order_fulfillments、`carrier text NOT NULL`（yamato/sagawa/japanpost）、`tracking_number text NOT NULL`（`^[0-9A-Z-]{1,64}$`。大文字）、`operation_id uuid NOT NULL` → group_g_operations（遅延）、PK `(slip_id, tracking_version)`、UNIQUE `(leader_fulfillment_id, tracking_version)` |
+
+票の CHECK は `(customer_kind='member') = (customer_user_id IS NOT NULL)` と `(customer_kind='guest') = (customer_email IS NOT NULL)`、`(stage='draft') = (expires_at IS NOT NULL)`、`(stage='cancelled') = (cancelled_at IS NOT NULL)`、`(stage='discarded') = (discarded_at IS NOT NULL)`、`(shipping_carrier IS NULL) = (tracking_number IS NULL)`。confirmed/cancelled は confirmed_at・shipment_date・notify_customer・confirm_operation_id・confirm_request_key がすべて非NULL。
+
+`public.order_fulfillments` に `shipment_date date` を足し、`order_fulfillments_shipment_date_check` は `legacy OR shipment_date IS NOT NULL`、`order_fulfillments_tracking_check` は `legacy OR ((shipping_carrier IS NULL) = (tracking_number IS NULL))` とする。発送時刻 shipped_at を出荷日で置き換えない。
+
+### RLS・権限・変更の守り
+
+6表の所有者は postgres、RLS 有効、restrictive policy `deny direct client access` は anon/authenticated に `USING (false) WITH CHECK (false)`。PUBLIC・anon・authenticated・service_role は表の権限を一切持たず、service_role にも直接 SELECT を付けない。5表（票本体以外）は `<表名>_no_update/_no_delete/_no_truncate` が `private.reject_group_g_event_mutation()` で UPDATE/DELETE/TRUNCATE を拒否する。
+
+shipment_slips_change_guard は private.guard_group_g_shipment_slip_change() で DELETE を拒否し、shipment_slips_no_truncate は TRUNCATE を拒否する。UPDATE は app.group_g_slip_change の印が必要で、id/number/created_at/created_by は不変、版は必ず旧版+1、updated_at は変更可。違反は `GROUP_G_HISTORY_IMMUTABLE / 55000`。
+
+| 操作印 | 段階の遷移 | 版・updated_at 以外に変更できる列 |
+| --- | --- | --- |
+| draft | draft → draft | draft_lines・customer_kind・customer_user_id・customer_email・ship_to_*・expires_at |
+| discard | draft → discarded | stage・discarded_at・discarded_by・expires_at（NULL） |
+| confirm | draft → confirmed | stage・confirmed_at・confirmed_by・confirm_operation_id・confirm_request_key・shipping_carrier・tracking_number・notify_customer・shipment_date・expires_at（NULL） |
+| tracking | confirmed → confirmed | shipping_carrier・tracking_number・tracking_version |
+| deliver | confirmed → confirmed | なし |
+| date | confirmed → confirmed | shipment_date |
+| cancel | confirmed → cancelled | stage・cancelled_at・cancelled_by |
+
+private.restrict_fulfillment_record_update() の既存の分岐を保ち、shipment_date の印では未取消の発送の shipment_date だけを変更できる。tracking_version も変えられない。
+
+遅延 constraint trigger `group_g_shipment_consumption` は、発送行の INSERT・発送の cancelled_at UPDATE・割当イベント consume/restore の INSERT の3か所で、private.check_group_g_shipment_consumption() を呼ぶ。明細ごとに有効な非legacyの発送行の合計と consume − restore を比較し、取引末尾で一致させる。不一致は `GROUP_G_SHIPMENT_CONSUMPTION / 23514`、DETAIL は line_without_consume/consume_without_line/cancel_without_restore/restore_without_cancel。同じ票で取消の状態が食い違う場合は slip_partial_cancel。最初から取消済みで消費・復元のない材料は0=0で通る。
+
+新しい守りの2関数は private・postgres 所有・SECURITY DEFINER・search_path=''、誰にも EXECUTE を付けない。置換する発送の更新の守りも既存の所有者・属性・ACLを保つ。理由の CHECK は既存15値に `shipment_confirm`（発送の確定）・`shipment_cancel`（発送の取消）を足す。
+
+public.item_delete_blockers(bigint[]) は戻り値の追加のため DROP → CREATE し、item_id/has_orders/has_stock_movements/has_open_checkouts/has_purchase_orders の5列を返す。発注書の行と variant から商品を判定し、発注書だけがある商品も削除を止める。STABLE・SECURITY DEFINER・search_path=''・postgres 所有、service_role だけ EXECUTE 可。画面の理由は「注文がある」「在庫の記録がある」「決済中のお客様がいる」「発注書がある」の順。
+
+末尾 assert はオブジェクト・権限を意味で照合し、PG17以降の MAINTAIN も検査する。この取引で6表の行を書いていないことは `created_at = transaction_timestamp()` の行がないことで確かめる。[発送票モデル](../../../tests/integration/db/group_g3_model.integration.test.ts) と [商品削除の守り](../../../tests/integration/db/item_checkout_guards.integration.test.ts) を含むcontroller reset後の実装者DB全件で、2026-10-25にTask 1の新規失敗0を確認した。全体は既知stockist2失敗によりexit 1であり、全件GREENではない。
+
+### Fix round 2 実装者の検証記録
+
+
+| Fix round 2 実装者検証（2026-10-25） | 結果 |
+| --- | --- |
+| DB全件 `npx.cmd jest tests/integration/db --runInBand` | exit 1。suiteは118成功・stockistの1失敗・11 skip・計130、testは3266成功・stockistの2失敗・12 skip・計3280。205.889秒。Task 1の新規失敗0 |
+| レビュー修正後の対象DB6 suite | 234件成功。DB全件の既知stockist2失敗と区別する |
+| G-0基準のG-1清掃suite | G1_CLEANUP_SUITE=1の特別実行はcontroller判断待ち。通常全件のskipやsuiteの成功表示は、G-0基準の清掃の成功を証明しない |

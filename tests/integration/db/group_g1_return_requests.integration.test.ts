@@ -118,7 +118,7 @@ describeLocalDb('G-1 return request quantities, history and operations', getDb =
     expect(await request(f, 2, key)).toEqual({ ...r, replayed: true });
     await operation(f, 'customer_request_return', r.return_id, 'shipped', 'return_requested', 2);
     await operation(f, 'admin_approve_return', r.return_id, 'return_requested', 'return_in_progress', 2);
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
   });
 
   test('却下は対象数量を管理の配達済みに戻し、配送event/delivered_atを作らない', async () => {

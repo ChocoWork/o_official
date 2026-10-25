@@ -199,6 +199,10 @@ describe('createFulfillment（旧の発送の関数を呼ばず、A を消費す
     });
     expect(shipment).toEqual({ fulfillmentId: 'fulfillment-1', number: 1, completesOrder: true, orderStatus: 'shipped', replayed: false });
     expect(db.all(/admin_create_fulfillment\(/)).toEqual([]);
+    const fulfillment = db.all(/^insert into public\.order_fulfillments/)[0];
+    expect(fulfillment.sql).toContain('shipment_date');
+    expect(fulfillment.sql).toContain("(($7::timestamptz) at time zone 'asia/tokyo')::date");
+    expect(fulfillment.params[6]).toBe('2026-10-24T00:00:00.000Z');
     expect(db.calls[db.index(/private\.lock_group_g_inventory/)].params).toEqual([[], ['order-1']]);
     expect(db.index(/private\.lock_group_g_inventory/)).toBeLessThan(db.index(/^update public\.order_item_allocations/));
     expect(db.all(/^insert into public\.order_item_allocation_events/)[0].sql).toContain("'consume'");

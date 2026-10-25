@@ -11,7 +11,7 @@ import { addItemVariant, createCatalogFixture, variantStock, withLedgerLock } fr
  * purchase_order_attachments・purchase_order_attachment_revisions）、追記専用 trigger、受取行・納品数の確かめ、個別の ACL、
  * 非公開の bucket purchase-order-documents、移行の最後の確かめ。
  * 実行は controller の使い捨てローカル DB（ふつうの db reset の後）。試験ごとに BEGIN … ROLLBACK で包み、想定の拒否は
- * SAVEPOINT で回収する。遅延の確かめは `set constraints all immediate` で取引の中で発火させる。
+ * SAVEPOINT で回収する。遅延の確かめは `set constraints group_g_allocation_bounds, group_g_stock_movement_consistency, order_item_allocations_operation_id_fkey, order_item_allocation_events_operation_id_fkey, order_item_state_events_operation_id_fkey, stock_movements_allocation_operation_id_fkey, group_g_po_line_received, purchase_order_revisions_operation_id_fkey, purchase_order_receipts_operation_id_fkey, purchase_order_attachment_reservations_operation_id_fkey, purchase_order_attachments_operation_id_fkey, purchase_order_attachment_revisions_operation_id_fkey immediate` で取引の中で発火させる。
  */
 jest.setTimeout(60000);
 
@@ -129,11 +129,11 @@ describeLocalDb('integration: G-2 発注書のモデル', (db) => {
     return db().query(sql, params);
   }
 
-  const immediate = () => db().query('set constraints all immediate');
+  const immediate = () => db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency, order_item_allocations_operation_id_fkey, order_item_allocation_events_operation_id_fkey, order_item_state_events_operation_id_fkey, stock_movements_allocation_operation_id_fkey, group_g_po_line_received, purchase_order_revisions_operation_id_fkey, purchase_order_receipts_operation_id_fkey, purchase_order_attachment_reservations_operation_id_fkey, purchase_order_attachments_operation_id_fkey, purchase_order_attachment_revisions_operation_id_fkey immediate');
 
   /** ここまでの遅延の確かめを流してから、遅延へ戻す */
   async function flush() {
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency, order_item_allocations_operation_id_fkey, order_item_allocation_events_operation_id_fkey, order_item_state_events_operation_id_fkey, stock_movements_allocation_operation_id_fkey, group_g_po_line_received, purchase_order_revisions_operation_id_fkey, purchase_order_receipts_operation_id_fkey, purchase_order_attachment_reservations_operation_id_fkey, purchase_order_attachments_operation_id_fkey, purchase_order_attachment_revisions_operation_id_fkey immediate');
     await db().query('set constraints all deferred');
   }
 

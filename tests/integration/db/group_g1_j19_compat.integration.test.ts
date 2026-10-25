@@ -50,7 +50,7 @@ describeLocalDb('G-1 Task 16: J-19（状態の変更の理由と移り方）を�
   }
 
   async function flush() {
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
     await db().query('set constraints all deferred');
   }
 

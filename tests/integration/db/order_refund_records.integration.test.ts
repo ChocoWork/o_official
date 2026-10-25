@@ -94,8 +94,8 @@ async function insertFulfillment(
   }, async () => {
     const res = await db.query(
       `insert into public.order_fulfillments
-         (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order)
-       values ($1, 1, gen_random_uuid(), 'yamato', '1234-5678-9012', true, false)
+         (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, shipment_date)
+       values ($1, 1, gen_random_uuid(), 'yamato', '1234-5678-9012', true, false,((pg_catalog.now()) AT TIME ZONE 'Asia/Tokyo')::date)
        returning id`,
       [orderId],
     );
@@ -1184,8 +1184,8 @@ describeLocalDb('E-3: 交換の行の割引と人気と返金の支払額',db=>{
       lines:[{itemId:cat.itemId,variantId:cat.variantId,quantity:3,fulfillmentType:'stock'}]});
     // 発送した数の割当を G-1 で消費してから、発送の行を SQL で作る
     const ship=await withFixtureConsumption(db(),{orderId:order.orderId,lines:[{order_item_id:order.orderItemIds[0],quantity:3}]},async()=>{
-      const id=(await db().query(`insert into public.order_fulfillments(order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order)
-        values($1,1,gen_random_uuid(),'yamato','TEST-4',false,true) returning id`,[order.orderId])).rows[0].id;
+      const id=(await db().query(`insert into public.order_fulfillments(order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order, shipment_date)
+        values($1,1,gen_random_uuid(),'yamato','TEST-4',false,true,((pg_catalog.now()) AT TIME ZONE 'Asia/Tokyo')::date) returning id`,[order.orderId])).rows[0].id;
       await db().query('insert into public.order_fulfillment_lines(fulfillment_id,order_item_id,quantity) values($1,$2,3)',[id,order.orderItemIds[0]]);
       return id;
     });

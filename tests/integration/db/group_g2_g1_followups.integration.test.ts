@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import { holdsCommonLock, seedGroupG1Allocation, seedGroupG1Shipment, withGroupG1FixtureTransaction } from './helpers/group-g1-fixtures';
 import { withCleanup } from './helpers/with-cleanup';
-import { PRICE, createCatalogFixture, insertCancelRequest, insertOrderWithLines, insertRefundRecord, insertReturnRecord } from './helpers/order-fixtures';
+import { withFixtureConsumption, PRICE, createCatalogFixture, insertCancelRequest, insertOrderWithLines, insertRefundRecord, insertReturnRecord } from './helpers/order-fixtures';
 
 /**
  * G-2 Task 1: G-1 から持ち越した 2 件。
@@ -38,7 +38,7 @@ describeLocalDb('G-2 Task 1: open work orders and the waiting count', (db) => {
   type Catalog = Awaited<ReturnType<typeof createCatalogFixture>>;
 
   async function flush() {
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
     await db().query('set constraints all deferred');
   }
 
@@ -89,13 +89,15 @@ describeLocalDb('G-2 Task 1: open work orders and the waiting count', (db) => {
   }
   const failedPreShipmentRefundOrder = (c: Catalog) => preShipmentRefundOrder(c, 'failed');
 
-  /** 注文の明細を 1 回の発送で quantity 点出した記録を直接書く（割当を使わない。入金の記録が無い注文の「発送だけ」の形に使う） */
+  /** 入金の記録が無い注文の発送材料。paid_atは補わず、発送行の数だけ割当を消費する。 */
   async function shipDirectly(orderId: string, orderItemId: string, quantity: number) {
-    const id = (await db().query(`insert into public.order_fulfillments
-      (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at,delivery_status)
-      values ($1,1,$2,'yamato','G2-DIRECT',false,false,'2026-10-20T00:00:00Z','confirmed') returning id`,
-    [orderId, randomUUID()])).rows[0].id as string;
-    await db().query('insert into public.order_fulfillment_lines values ($1,$2,$3)', [id, orderItemId, quantity]);
+    return withFixtureConsumption(db(), { orderId, lines: [{ order_item_id: orderItemId, quantity }] }, async () => {
+      const id = (await db().query(`insert into public.order_fulfillments
+        (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at,delivery_status, shipment_date)
+        values ($1,1,$2,'yamato','G2-DIRECT',false,false,'2026-10-20T00:00:00Z','confirmed',(('2026-10-20T00:00:00Z'::timestamptz) AT TIME ZONE 'Asia/Tokyo')::date) returning id`,
+      [orderId, randomUUID()])).rows[0].id as string;
+      await db().query('insert into public.order_fulfillment_lines values ($1,$2,$3)', [id, orderItemId, quantity]);
+    });
   }
 
   /** 明細の数と明細の番号つきで注文を作る（plainOrder は注文の番号しか返さない） */

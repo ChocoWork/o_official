@@ -40,7 +40,7 @@ describeLocalDb('G-1 FIFO, ledger and minimal synthetic fixtures', (db) => {
   }
 
   async function flush() {
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
     await db().query('set constraints all deferred');
   }
 

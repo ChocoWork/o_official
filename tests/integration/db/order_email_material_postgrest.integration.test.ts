@@ -11,7 +11,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { loadOrderEmailMaterial } from '@/lib/orders/email/order-email-compose';
 import { describeLocalDb, isLocalDatabase } from './helpers/local-db';
-import { createCatalogFixture, insertOrderWithLines, insertRefundRecord } from './helpers/order-fixtures';
+import { withFixtureConsumption, createCatalogFixture, insertOrderWithLines, insertRefundRecord } from './helpers/order-fixtures';
 
 jest.setTimeout(30000);
 
@@ -86,15 +86,17 @@ describeLocalDb('integration: 返金のお知らせの材料を、実際の Post
       lines: [{ itemId: fx.itemId, variantId: fx.variantId, quantity: 3, fulfillmentType: 'stock' }],
     });
     const orderItemId = orderItemIds[0];
-    const fulfillment = await db().query(
-      `insert into public.order_fulfillments
-         (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order)
-       values ($1, 1, gen_random_uuid(), 'yamato', '1234-5678', true, true)
-       returning id`,
-      [orderId],
-    );
-    const fulfillmentId = fulfillment.rows[0].id as string;
-    await db().query('insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, 3)', [fulfillmentId, orderItemId]);
+    const fulfillmentId = await withFixtureConsumption(db(), { orderId, lines: [{ order_item_id: orderItemId, quantity: 3 }] }, async () => {
+      const fulfillment = await db().query(
+        `insert into public.order_fulfillments
+           (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, shipment_date)
+         values ($1, 1, gen_random_uuid(), 'yamato', '1234-5678', true, true,((pg_catalog.now()) AT TIME ZONE 'Asia/Tokyo')::date)
+         returning id`,
+        [orderId],
+      );
+      await db().query('insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, 3)', [fulfillment.rows[0].id, orderItemId]);
+      return fulfillment.rows[0].id as string;
+    });
 
     const returned = await db().query(
       `insert into public.order_returns
@@ -265,17 +267,20 @@ describeLocalDb('integration: 返金のお知らせの材料を、実際の Post
        returning id`,
       [orderId, itemId, exchangeVariantId, exchangeLine],
     );
-    const second = await db().query(
-      `insert into public.order_fulfillments
-         (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order)
-       values ($1, 2, gen_random_uuid(), 'yamato', '9999-0000', true, true)
-       returning id`,
-      [orderId],
-    );
-    await db().query('insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, 1)', [
-      second.rows[0].id,
-      exchangeItem.rows[0].id,
-    ]);
+    const second = await withFixtureConsumption(db(), { orderId, lines: [{ order_item_id: exchangeItem.rows[0].id as string, quantity: 1 }] }, async () => {
+      const second = await db().query(
+        `insert into public.order_fulfillments
+           (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, shipment_date)
+         values ($1, 2, gen_random_uuid(), 'yamato', '9999-0000', true, true,((pg_catalog.now()) AT TIME ZONE 'Asia/Tokyo')::date)
+         returning id`,
+        [orderId],
+      );
+      await db().query('insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, 1)', [
+        second.rows[0].id,
+        exchangeItem.rows[0].id,
+      ]);
+      return second;
+    });
 
     const first = await loadOrderEmailMaterial(client, orderId, fulfillmentId, null);
     const exchange = await loadOrderEmailMaterial(client, orderId, second.rows[0].id as string, null);

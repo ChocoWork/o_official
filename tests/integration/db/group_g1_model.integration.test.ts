@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { connectLocalDb, describeLocalDb } from './helpers/local-db';
 import {
+  withFixtureConsumption,
   addItemVariant, createCatalogFixture, insertOrderWithLines, insertOrderWithStockLine, variantStock, withLedgerLock,
 } from './helpers/order-fixtures';
 
@@ -9,7 +10,7 @@ import {
  * G-1 Task 2: 割当・履歴のモデル（private.group_g_operations・order_item_allocations・order_item_allocation_events・
  * order_item_state_events、orders.paid_at・stock_movements.allocation_operation_id）と、追記の守り・数の確かめ・個別の権限。
  * 実行は controller の使い捨てローカル DB（ふつうの db reset の後）。試験ごとに BEGIN … ROLLBACK で包み、
- * 想定の拒否は SAVEPOINT で回収する。遅延の確かめは `set constraints all immediate` で取引の中で発火させる。
+ * 想定の拒否は SAVEPOINT で回収する。遅延の確かめは `set constraints group_g_allocation_bounds, group_g_stock_movement_consistency, order_item_allocations_operation_id_fkey, order_item_allocation_events_operation_id_fkey, order_item_state_events_operation_id_fkey, stock_movements_allocation_operation_id_fkey immediate` で取引の中で発火させる。
  */
 
 const NEW_TABLES = [
@@ -37,6 +38,11 @@ const OPERATION_FKEYS = [
   ['purchase_order_attachment_reservations', 'purchase_order_attachment_reservations_operation_id_fkey'],
   ['purchase_order_attachments', 'purchase_order_attachments_operation_id_fkey'],
   ['purchase_order_attachment_revisions', 'purchase_order_attachment_revisions_operation_id_fkey'],
+  // G-3: 発送票の操作を指す4本も同じ遅延・RESTRICTの契約。
+  ['shipment_slips', 'shipment_slips_confirm_operation_id_fkey'],
+  ['shipment_slip_versions', 'shipment_slip_versions_operation_id_fkey'],
+  ['shipment_date_history', 'shipment_date_history_operation_id_fkey'],
+  ['private.shipment_tracking_registrations', 'shipment_tracking_registrations_operation_id_fkey'],
 ];
 
 type DbFailure = { code?: string; message?: string; detail?: string; constraint?: string };
@@ -72,7 +78,7 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
     expect({ code: caught.code, constraint: caught.constraint }).toEqual({ code, constraint });
   }
 
-  const immediate = () => db().query('set constraints all immediate');
+  const immediate = () => db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency, order_item_allocations_operation_id_fkey, order_item_allocation_events_operation_id_fkey, order_item_state_events_operation_id_fkey, stock_movements_allocation_operation_id_fkey immediate');
 
   async function bounds(run: () => Promise<unknown>, detail: string) {
     await rejected(async () => { await run(); await immediate(); }, 'GROUP_G_ALLOCATION_BOUNDS', '23514', detail);
@@ -80,7 +86,7 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
 
   /** ここまでの遅延の確かめを流してから、遅延へ戻す（受付の行を後から書く書き方のまま続けるため） */
   async function flush() {
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency, order_item_allocations_operation_id_fkey, order_item_allocation_events_operation_id_fkey, order_item_state_events_operation_id_fkey, stock_movements_allocation_operation_id_fkey immediate');
     await db().query('set constraints all deferred');
   }
 
@@ -190,16 +196,18 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
   }
 
   async function ship(orderId: string, orderItemId: string, quantity: number) {
-    const fulfillment = await db().query(
-      `insert into public.order_fulfillments
-         (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order)
-       values ($1, 1, gen_random_uuid(), 'yamato', '1234-5678-9012', false, false) returning id`,
-      [orderId],
-    );
-    await db().query(
-      'insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, $3)',
-      [fulfillment.rows[0].id, orderItemId, quantity],
-    );
+    return withFixtureConsumption(db(), { orderId, lines: [{ order_item_id: orderItemId, quantity }] }, async () => {
+      const fulfillment = await db().query(
+        `insert into public.order_fulfillments
+           (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, shipment_date)
+         values ($1, 1, gen_random_uuid(), 'yamato', '1234-5678-9012', false, false,((pg_catalog.now()) AT TIME ZONE 'Asia/Tokyo')::date) returning id`,
+        [orderId],
+      );
+      await db().query(
+        'insert into public.order_fulfillment_lines (fulfillment_id, order_item_id, quantity) values ($1, $2, $3)',
+        [fulfillment.rows[0].id, orderItemId, quantity],
+      );
+    });
   }
 
   async function allocationTotals(variantId: number) {
@@ -390,7 +398,9 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
         [f.items[0], stateOperation],
       );
       await insertOperation(stateOperation);
-      await flush();
+      // この材料には発送とconsumeの片側だけの行が無い。TRUNCATE前に操作FKも含め全てを検査する。
+      await db().query('set constraints all immediate');
+      await db().query('set constraints all deferred');
 
       const rows: Array<[string, string, string]> = [
         ['public.order_item_allocation_events', 'reason = reason', eventId],
@@ -400,13 +410,15 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
       const truncates = [
         'truncate public.order_item_allocation_events',
         'truncate public.order_item_state_events',
-        // 操作の表は G-1 の 4 つの表と G-2 の発注書の 5 つの表から外部キーで指されるので、指す側（それを指す表も）を後ろに並べて
+        // 操作を指すG-1/G-2/G-3の表と、それらを指す表を後ろに並べて
         // 操作の表の文のトリガーを先に発火させる
         `truncate private.group_g_operations, public.order_item_allocations, public.order_item_allocation_events,
            public.order_item_state_events, public.stock_movements, public.purchase_order_revisions,
            public.purchase_order_short_closures, public.purchase_order_receipts, public.purchase_order_receipt_lines,
            public.purchase_order_attachment_reservations, public.purchase_order_attachments,
-           public.purchase_order_attachment_revisions`,
+           public.purchase_order_attachment_revisions, public.shipment_slips, public.shipment_slip_lines,
+           public.shipment_slip_fulfillments, public.shipment_slip_versions, public.shipment_date_history,
+           private.shipment_tracking_registrations`,
       ];
 
       for (const role of ['postgres', 'service_role']) {
@@ -415,6 +427,8 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
             ...rows.map(([table]) => table), 'public.order_item_allocations', 'public.stock_movements',
             ...['revisions', 'short_closures', 'receipts', 'receipt_lines', 'attachment_reservations', 'attachments', 'attachment_revisions']
               .map((name) => `public.purchase_order_${name}`),
+            'public.shipment_slips', 'public.shipment_slip_lines', 'public.shipment_slip_fulfillments',
+            'public.shipment_slip_versions', 'public.shipment_date_history', 'private.shipment_tracking_registrations',
           ]) {
             await db().query(`grant select, insert, update, delete, truncate on ${table} to service_role`);
           }
@@ -548,7 +562,8 @@ describeLocalDb('integration: G-1 割当・履歴のモデル', (db) => {
       await allocated(f.items[0], f.variantId, 1);
       await allocated(f.items[1], f.variantId, 2);
       await flush();
-      expect(await allocationTotals(f.variantId)).toEqual({ remaining: 3, rows: 2 });
+      // 発送2個の材料が作った消費済み割当1行と、残り3個の割当2行を保持する。
+      expect(await allocationTotals(f.variantId)).toEqual({ remaining: 3, rows: 3 });
     });
 
     test('作る履歴はちょうど 1 つで、数・操作・種類が行と合う。consume は A だけ', async () => {

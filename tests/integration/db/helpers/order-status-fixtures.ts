@@ -6,6 +6,7 @@ import type { OrderEmailKind } from '@/lib/orders/email/order-email-types';
 import { connectLocalDb, type PgClient } from './local-db';
 import { createDeliveryActor, insertDeliveryFixture } from './delivery-tracking-fixtures';
 import {
+  withFixtureConsumption,
   addItemVariant, createCatalogFixture, createShippedOrderFixture, insertCancelRequest, insertRefundRecord,
   insertReturnReceipt, insertReturnRecord, insertReturnRefund,
   PRICE, uniqueSuffix,
@@ -131,14 +132,16 @@ export async function createOrderStatusReturnsFixture(
       [order.orderId, order.itemIds[0], confirmedVariant, lineIds[0]],
     );
     if (scenario === 'exchange_shipped') {
-      const shipment = await db.query(
-        `insert into public.order_fulfillments
-           (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at)
-         values ($1,2,pg_catalog.gen_random_uuid(),'yamato','EXCHANGE-123',false,false,pg_catalog.now()) returning id`,
-        [order.orderId],
-      );
-      await db.query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,2)',
-        [shipment.rows[0].id, item.rows[0].id]);
+      await withFixtureConsumption(db, { orderId: order.orderId, lines: [{ order_item_id: item.rows[0].id as string, quantity: 2 }] }, async () => {
+        const shipment = await db.query(
+          `insert into public.order_fulfillments
+             (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at, shipment_date)
+           values ($1,2,pg_catalog.gen_random_uuid(),'yamato','EXCHANGE-123',false,false,pg_catalog.now(),((pg_catalog.now()) AT TIME ZONE 'Asia/Tokyo')::date) returning id`,
+          [order.orderId],
+        );
+        await db.query('insert into public.order_fulfillment_lines (fulfillment_id,order_item_id,quantity) values ($1,$2,2)',
+          [shipment.rows[0].id, item.rows[0].id]);
+      });
     }
   }
   return { ...order, customerId, returnId: created.returnId, lineIds };

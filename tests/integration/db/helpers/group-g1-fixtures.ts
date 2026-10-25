@@ -96,13 +96,13 @@ export async function setOrderStatusForFixture(
   await client.query("select pg_catalog.set_config('app.order_change_reason', $1, true)", [previous]);
 }
 
-async function operation(client: PgClient, name: string, causeId: string, input: object, actorId: string | null = null) {
+async function operation(client: PgClient, name: string, causeId: string, input: object, actorId: string | null = null, result: object = {}) {
   const id = randomUUID();
   await client.query(`insert into private.group_g_operations
     (id,operation,request_key,fingerprint,cause_type,cause_id,actor_id,result)
     values($1,$2,$3,pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to($4::jsonb::text,'UTF8')),'hex'),
-      case when $2::text='fixture_allocation' then 'order_item' else 'order' end,$5,$6,'{}')`,
-  [id, name, randomUUID(), JSON.stringify(input), causeId, actorId]);
+      case when $2::text='fixture_allocation' then 'order_item' else 'order' end,$5,$6,$7::jsonb)`,
+  [id, name, randomUUID(), JSON.stringify(input), causeId, actorId, JSON.stringify(result)]);
   return id;
 }
 
@@ -181,8 +181,9 @@ export async function seedGroupG1Shipment(client: PgClient, input: {
     if (standalone) await client.query('select private.lock_group_g_inventory($1,$2)', [[], [input.orderId]]);
     const before = (await client.query('select private.capture_group_g_item_states($1) as states', [[input.orderId]])).rows[0].states;
     const lines = [...input.lines].sort((a, b) => a.orderItemId.localeCompare(b.orderItemId));
+    const fulfillmentId = randomUUID();
     const op = input.cancelledAt ? null : await operation(client, 'fixture_shipment', input.orderId,
-      { ...input, lines, actorId: input.actorId ?? null }, input.actorId ?? null);
+      { ...input, lines, actorId: input.actorId ?? null }, input.actorId ?? null, { fulfillmentIds: [fulfillmentId] });
     let sequence = 0;
     for (const line of lines) {
       const item = (await client.query('select order_id from public.order_items where id=$1', [line.orderItemId])).rows[0];
@@ -205,17 +206,74 @@ export async function seedGroupG1Shipment(client: PgClient, input: {
     }
     const f = (await client.query(`insert into public.order_fulfillments
       (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,
-       shipped_at,delivered_at,cancelled_at,cancelled_by,created_by,delivery_status,delivery_status_at)
+       shipped_at,delivered_at,cancelled_at,cancelled_by,created_by,delivery_status,delivery_status_at, shipment_date,id)
       values($1,(select coalesce(max(number),0)+1 from public.order_fulfillments where order_id=$2),$3,$4,$5,$6,$14,
-        $7,$8,$9,$10,$11,$12,$13) returning id`, [input.orderId, input.orderId, input.requestKey ?? randomUUID(),
+        $7,$8,$9,$10,$11,$12,$13,(($7::timestamptz) AT TIME ZONE 'Asia/Tokyo')::date,$15) returning id`, [input.orderId, input.orderId, input.requestKey ?? randomUUID(),
       input.carrier ?? 'yamato', input.trackingNumber ?? `G1-${randomUUID().replaceAll('-', '')}`, input.notifyCustomer ?? false,
       input.shippedAt, input.deliveredAt ?? null, input.cancelledAt ?? null, input.cancelledAt ? input.actorId ?? null : null,
       input.actorId ?? null, input.deliveredAt ? 'delivered' : 'confirmed', input.deliveredAt ?? input.shippedAt,
-      input.completesOrder ?? false])).rows[0].id as string;
+      input.completesOrder ?? false, fulfillmentId])).rows[0].id as string;
     for (const line of lines) await client.query(`insert into public.order_fulfillment_lines
       (fulfillment_id,order_item_id,quantity) values($1,$2,$3)`, [f, line.orderItemId, line.quantity]);
     if (op) await client.query('select private.record_group_g_item_state_changes($1,$2,$3,1,$4,$5)',
       [JSON.stringify(before), [input.orderId], op, 'fixture_shipment', input.actorId ?? null]);
     return f;
+  });
+}
+
+/** Cancel synthetic shipping and restore each consumed allocation in the same transaction. */
+export async function restoreGroupG1Shipment(
+  client: PgClient, fulfillmentId: string, actorId: string | null,
+): Promise<void> {
+  assertLocal(client);
+  await runGroupG1Fixture(client, async (standalone) => {
+    const fulfillment = (await client.query(
+      'select order_id,cancelled_at,legacy from public.order_fulfillments where id=$1', [fulfillmentId],
+    )).rows[0];
+    if (!fulfillment || fulfillment.cancelled_at !== null) throw new Error('GROUP_G_FIXTURE_CANCEL_INVALID');
+    if (standalone) await client.query('select private.lock_group_g_inventory($1,$2)', [[], [fulfillment.order_id]]);
+    const before = (await client.query('select private.capture_group_g_item_states($1) as states', [[fulfillment.order_id]])).rows[0].states;
+    const op = await operation(client, 'fixture_release', fulfillment.order_id, { fulfillmentId, actorId }, actorId);
+    await client.query('update public.order_fulfillments set cancelled_at=now(),cancelled_by=$2 where id=$1', [fulfillmentId, actorId]);
+    const lines = (await client.query(`select order_item_id,quantity from public.order_fulfillment_lines
+      where fulfillment_id=$1 order by order_item_id`, [fulfillmentId])).rows;
+    let sequence = 0;
+    for (const line of fulfillment.legacy ? [] : lines) {
+      let remaining = Number(line.quantity);
+      const consumed = (await client.query(`select e.id,e.quantity,a.variant_id,
+          coalesce((o.result->'fulfillmentIds') ? $2::text,false) as attributed,
+          o.result ? 'fulfillmentIds' as has_attribution
+        from public.order_item_allocation_events e join public.order_item_allocations a on a.id=e.allocation_id
+        join private.group_g_operations o on o.id=e.operation_id
+        where a.order_item_id=$1 and e.event_type='consume'
+          and not exists(select 1 from public.order_item_allocation_events r where r.reverses_event_id=e.id)
+        order by e.created_at desc,e.id`, [line.order_item_id, fulfillmentId])).rows;
+      // Old fixtures predate attribution; never use another explicitly attributed shipment.
+      const matching = consumed.some((event) => event.attributed)
+        ? consumed.filter((event) => event.attributed)
+        : consumed.filter((event) => !event.has_attribution);
+      for (const event of matching) {
+        const quantity = Number(event.quantity);
+        if (!remaining) break;
+        if (quantity > remaining) continue;
+        await client.query(`insert into public.stock_movements (variant_id,delta,reason,order_id,order_item_id)
+          values($1,$2,'restock',$3,$4)`, [event.variant_id, quantity, fulfillment.order_id, line.order_item_id]);
+        const movement = (await client.query(`insert into public.stock_movements
+          (variant_id,delta,reason,order_id,order_item_id,allocation_operation_id)
+          values($1,$2,'purchase',$3,$4,$5) returning id`,
+        [event.variant_id, -quantity, fulfillment.order_id, line.order_item_id, op])).rows[0].id;
+        const allocation = (await client.query(`insert into public.order_item_allocations
+          (order_item_id,variant_id,quantity,remaining_quantity,kind,operation_id)
+          values($1,$2,$3,$3,'paid',$4) returning id`, [line.order_item_id, event.variant_id, quantity, op])).rows[0].id;
+        await client.query(`insert into public.order_item_allocation_events
+          (allocation_id,event_type,quantity,operation_id,sequence,reverses_event_id,stock_movement_id,reason,actor_id)
+          values($1,'restore',$2,$3,$4,$5,$6,'fixture_release',$7)`,
+        [allocation, quantity, op, ++sequence, event.id, movement, actorId]);
+        remaining -= quantity;
+      }
+      if (remaining) throw new Error('GROUP_G_FIXTURE_CONSUMPTION_REQUIRED');
+    }
+    await client.query('select private.record_group_g_item_state_changes($1,$2,$3,1,$4,$5)',
+      [JSON.stringify(before), [fulfillment.order_id], op, 'fixture_release', actorId]);
   });
 }

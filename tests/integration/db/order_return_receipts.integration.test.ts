@@ -55,8 +55,7 @@ async function progress(db:PgClient,f:Fx) {return (await db.query('select * from
 // 既定値の変更と設定は beforeEach の取引内だけで、afterEach の rollback により元へ戻る。
 async function returnEventTime(db:PgClient,time:string) {
   await db.query("select set_config('test.return_event_time',$1,true)",[time]);
-  // 後回しの外部キー（受け取りの refund_id。後回しにできる制約はこれだけ）の確かめが残っていると表の定義を
-  // 変えられないので、先に済ませてから既定値を変え、元の後回しに戻す。
+  // 発送行とconsumeが揃った材料の全遅延検査（受取のrefund_id等も）を済ませ、ALTER前の未処理イベントを残さない。
   await db.query('set constraints all immediate');
   await db.query(`alter table public.order_return_receipts alter column created_at
     set default current_setting('test.return_event_time')::timestamptz`);

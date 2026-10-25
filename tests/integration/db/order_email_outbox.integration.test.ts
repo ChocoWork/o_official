@@ -56,8 +56,8 @@ async function enqueue(
 async function insertFulfillmentRecord(db: PgClient, orderId: string, trackingVersion = 1): Promise<string> {
   const res = await db.query(
     `insert into public.order_fulfillments
-       (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, tracking_version)
-     values ($1, 1, gen_random_uuid(), 'yamato', '1234-5678', true, true, $2)
+       (order_id, number, request_key, shipping_carrier, tracking_number, notify_customer, completes_order, tracking_version, shipment_date)
+     values ($1, 1, gen_random_uuid(), 'yamato', '1234-5678', true, true, $2,((pg_catalog.now()) AT TIME ZONE 'Asia/Tokyo')::date)
      returning id`,
     [orderId, trackingVersion],
   );

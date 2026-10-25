@@ -106,6 +106,8 @@ const PURCHASE_TABLES = [
 ];
 
 const TABLES = [
+  'shipment_slips', 'shipment_slip_lines', 'shipment_slip_fulfillments',
+  'shipment_slip_versions', 'shipment_date_history', 'shipment_tracking_registrations',
   'stock_movements', 'order_fulfillments', 'order_item_completions', 'order_item_allocations',
   'order_item_allocation_events', 'order_item_state_events', 'group_g_operations',
   ...PURCHASE_TABLES,

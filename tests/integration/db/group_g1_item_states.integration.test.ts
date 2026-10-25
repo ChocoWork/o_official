@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
-import { createCatalogFixture, insertOrderWithLines } from './helpers/order-fixtures';
+import { withFixtureConsumption, createCatalogFixture, insertOrderWithLines } from './helpers/order-fixtures';
 import { setOrderStatusForFixture } from './helpers/group-g1-fixtures';
 
 type Fx = { orderId: string; itemId: string; variantId: number; catalogId: number; quantity: number };
@@ -44,15 +44,19 @@ describeLocalDb('G-1 exclusive item states and interval history', (db) => {
   }
 
   async function ship(f: Fx, quantity: number, number = 1, delivered = false, cancelled = false) {
-    const id = (await db().query(`insert into public.order_fulfillments
-      (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at,
-       delivered_at,cancelled_at,delivery_status)
-      values ($1,$2,$3,'yamato','G1-TEST',false,false,'2026-10-20'::timestamptz + $6::int * interval '1 hour',
-        case when $4 then '2026-10-21'::timestamptz end,case when $5 then now() end,
-        case when $4 then 'delivered' else 'confirmed' end) returning id`,
-    [f.orderId, number, randomUUID(), delivered, cancelled, number])).rows[0].id as string;
-    await db().query('insert into public.order_fulfillment_lines values ($1,$2,$3)', [id, f.itemId, quantity]);
-    return id;
+    const write = async () => {
+      const id = (await db().query(`insert into public.order_fulfillments
+        (order_id,number,request_key,shipping_carrier,tracking_number,notify_customer,completes_order,shipped_at,
+         delivered_at,cancelled_at,delivery_status, shipment_date)
+        values ($1,$2,$3,'yamato','G1-TEST',false,false,'2026-10-20'::timestamptz + $6::int * interval '1 hour',
+          case when $4 then '2026-10-21'::timestamptz end,case when $5 then now() end,
+          case when $4 then 'delivered' else 'confirmed' end,(('2026-10-20'::timestamptz + $6::int * interval '1 hour') AT TIME ZONE 'Asia/Tokyo')::date) returning id`,
+      [f.orderId, number, randomUUID(), delivered, cancelled, number])).rows[0].id as string;
+      await db().query('insert into public.order_fulfillment_lines values ($1,$2,$3)', [id, f.itemId, quantity]);
+      return id;
+    };
+    return cancelled ? write() : withFixtureConsumption(db(), { orderId: f.orderId,
+      lines: [{ order_item_id: f.itemId, quantity }] }, write);
   }
 
   async function cancelRequest(f: Fx, quantity: number) {
@@ -118,7 +122,7 @@ describeLocalDb('G-1 exclusive item states and interval history', (db) => {
     const aggregated = (await db().query(`select status,sum(quantity)::int as quantity
       from public.list_admin_order_item_states($1) where order_item_id=$2 group by status`, [[f.orderId], f.itemId])).rows;
     expect(Object.fromEntries(aggregated.map((r) => [r.status, r.quantity]))).toEqual(counts);
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
     await db().query('set constraints all deferred');
   }
 
@@ -412,7 +416,7 @@ describeLocalDb('G-1 exclusive item states and interval history', (db) => {
         await db().query('release savepoint read_limit');
       }
     }
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
   }, 20000);
 
   test('no backfill, no-op zero, changed intersections only, adjacent transitions merged, retry zero', async () => {
@@ -500,7 +504,11 @@ describeLocalDb('G-1 exclusive item states and interval history', (db) => {
       decline_message='fixture' where id=$1`, [r.id]);
     expect(await record(f, before, op, 1, 'return_declined_restore')).toBe(1);
     await assertStates(f, { delivered: 2, shipped: 4 });
-    expect((await events(f))[0]).toMatchObject({ quantity: 2, from_status: 'return_requested', to_status: 'delivered',
+    // Material history has its own operations. The decline operation must add exactly this first and only row.
+    const restored = (await db().query(`select quantity,from_status,to_status,reason
+      from public.order_item_state_events where order_item_id=$1 and operation_id=$2 order by version`, [f.itemId, op])).rows;
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({ quantity: 2, from_status: 'return_requested', to_status: 'delivered',
       reason: 'return_declined_restore' });
     expect((await db().query('select delivered_at from public.order_fulfillments where id=$1', [s])).rows[0].delivered_at).toBeNull();
     expect((await db().query('select count(*)::int n from public.order_fulfillment_events where fulfillment_id=$1', [s])).rows[0].n).toBe(0);

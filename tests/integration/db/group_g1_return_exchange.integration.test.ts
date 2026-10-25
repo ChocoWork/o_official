@@ -133,7 +133,7 @@ describeLocalDb('G-1 return receipt, inspection, amount decision and exchange FI
     expect(before.paid_at).toEqual(paidAt);
     expect(await receive(f, { key, choice: 'none' })).toEqual({ ...r, replayed: true });
     expect(await snapshot(f)).toEqual(before);
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
   });
 
   test('手数料待ちの交換はFを確保せず、次の注文へ通常割当する', async () => {
@@ -198,7 +198,7 @@ describeLocalDb('G-1 return receipt, inspection, amount decision and exchange FI
     expect(await snapshot(f)).toEqual(after); expect(after.paid_at).toEqual(paidAt);
     expect(r.return_status).toBe('open');
     await refusal(db(), () => inspect(f, 1, 0), 'RETURN_RECEIPT_EXCEEDS');
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
   });
 
   test('相談→金額決定→pending→failed→不要は返品在庫を再度戻さず、再送は履歴を増やさない', async () => {
@@ -224,7 +224,7 @@ describeLocalDb('G-1 return receipt, inspection, amount decision and exchange FI
     const after = await snapshot(f);
     expect(await amount(f, 0, waiveKey)).toEqual({ ...waived, replayed: true }); expect(await snapshot(f)).toEqual(after);
     expect(after.paid_at).toEqual(paidAt); expect(after.free).toBe(1);
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
   });
 
   test('検品で戻さない決定は在庫を増やさず、受取の障害は在庫・交換明細・履歴・operationを全rollback', async () => {

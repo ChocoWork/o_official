@@ -45,7 +45,7 @@ import { DELETE, PATCH, PUT } from '@/app/api/admin/items/[id]/route';
 
 type RouteResponse = { status: number; body: Record<string, unknown> };
 const CONTEXT = { params: Promise.resolve({ id: '7' }) };
-const NO_BLOCKERS = { hasOrders: false, hasStockMovements: false, hasOpenCheckouts: false };
+const NO_BLOCKERS = { hasOrders: false, hasStockMovements: false, hasOpenCheckouts: false, hasPurchaseOrders: false };
 
 function list() {
   return listItems(new Request('http://localhost/api/admin/items')) as unknown as Promise<RouteResponse>;
@@ -140,7 +140,7 @@ describe('管理画面の商品 API（①・R-44）', () => {
   });
 
   it('注文・在庫の記録・決済中のある商品は削除せず、理由付きの 409 で非公開を促す', async () => {
-    mockFetchBlockers.mockResolvedValue(new Map([[7, { hasOrders: true, hasStockMovements: true, hasOpenCheckouts: false }]]));
+    mockFetchBlockers.mockResolvedValue(new Map([[7, { hasOrders: true, hasStockMovements: true, hasOpenCheckouts: false, hasPurchaseOrders: false }]]));
 
     const res = await remove();
 
@@ -269,7 +269,7 @@ describe('管理画面の商品 API（①・R-44）', () => {
         error: null,
       });
       mockFetchBlockers.mockResolvedValue(new Map([
-        [7, { hasOrders: true, hasStockMovements: false, hasOpenCheckouts: true }],
+        [7, { hasOrders: true, hasStockMovements: false, hasOpenCheckouts: true, hasPurchaseOrders: false }],
         [8, NO_BLOCKERS],
       ]));
 

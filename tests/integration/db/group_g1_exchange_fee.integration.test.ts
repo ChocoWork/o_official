@@ -141,7 +141,7 @@ describeLocalDb('G-1 exchange fee payment, waiver and shipping hold release', ge
     if (action !== 'release') await refusal(db(), () => act(db(), action === 'payment' ? 'waiver' : 'payment', f.returnId, f.actor), 'RETURN_STATE_CONFLICT');
     expect(await snapshot(f)).toEqual(after);
     expect((await db().query('select * from public.verify_stock_integrity() where variant_id=$1', [f.variantIds[0]])).rows).toEqual([]);
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
   });
 
   test.each(ACTIONS)('%s leaves another active payment-review hold intact and allocates zero to the exchange', async action => {
@@ -156,7 +156,7 @@ describeLocalDb('G-1 exchange fee payment, waiver and shipping hold release', ge
     ].sort((a, b) => a.id.localeCompare(b.id)));
     expect((await db().query('select resolved_at from public.payment_exceptions where id=$1', [f.exceptionId])).rows).toEqual([{ resolved_at: null }]);
     expect((await snapshot(f)).paid_at).toEqual(before.paid_at);
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
   });
 
   test('payment after approval to ship settles the fee without allocating the same exchange twice', async () => {
@@ -172,7 +172,7 @@ describeLocalDb('G-1 exchange fee payment, waiver and shipping hold release', ge
       exchange_released_by: f.actor, fee_received_by: f.actor });
     await refusal(db(), () => act(db(), 'release', f.returnId, f.actor), 'RETURN_STATE_CONFLICT');
     expect(await snapshot(f)).toEqual(after);
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
   });
 
   test.each(['payment', 'waiver'] as const)('a new fee debt after %s can be paid on the same return, with two operations and zero replay delta', async firstAction => {
@@ -227,7 +227,7 @@ describeLocalDb('G-1 exchange fee payment, waiver and shipping hold release', ge
     expect(await operations()).toEqual(before);
     expect(await snapshotPayment()).toEqual(quantitiesBeforeReplay);
     expect((await db().query('select paid_at from public.orders where id=$1', [f.orderId])).rows[0].paid_at).toEqual(paidAt);
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
   });
 
   test.each(ACTIONS)('%s rolls back fee, FIFO, state history and operation when history fails', async action => {

@@ -15,7 +15,7 @@ describeLocalDb('G-1 Task 7: payment, H->A and the first paid_at', (db) => {
   afterEach(async () => { await db().query('rollback'); });
 
   async function flush() {
-    await db().query('set constraints all immediate');
+    await db().query('set constraints group_g_allocation_bounds, group_g_stock_movement_consistency immediate');
     await db().query('set constraints all deferred');
   }
 
