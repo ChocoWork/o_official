@@ -557,7 +557,7 @@ describeLocalDb('G-3 shipment slip cancel', (db) => {
       expect(tampered).not.toBe(definition);
       const start = sql.indexOf('DO $g3c_final_objects$'); const end = sql.indexOf('$g3c_final_objects$;', start) + '$g3c_final_objects$;'.length;
       expect(await flow.rejected(async () => { await db().query(tampered); await db().query(sql.slice(start, end)); }))
-        .toEqual({ message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', code: '55000', detail: 'shipment_slip_lock_order' });
+        .toEqual({ message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', code: '55000', detail: 'shipping_slip_lock_order' });
     },
   );
 

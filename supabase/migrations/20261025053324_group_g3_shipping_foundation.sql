@@ -611,7 +611,7 @@ BEGIN
   ) THEN
     v_failed := 'shipping_reason_codes';
   ELSIF NOT EXISTS (
-    SELECT 1 FROM pg_catalog.pg_proc AS p WHERE p.oid = 'public.item_delete_blockers(bigint[])'::regprocedure
+    SELECT 1 FROM pg_catalog.pg_proc AS p WHERE p.oid = pg_catalog.to_regprocedure('public.item_delete_blockers(bigint[])')
       AND p.proowner = 'postgres'::regrole AND p.prosecdef AND p.provolatile = 's' AND p.proretset
       AND p.prorettype = 'record'::regtype AND p.proargnames = ARRAY['_item_ids','item_id','has_orders','has_stock_movements','has_open_checkouts','has_purchase_orders']
       AND p.proallargtypes = ARRAY['bigint[]'::regtype::oid,'bigint'::regtype::oid,'boolean'::regtype::oid,'boolean'::regtype::oid,'boolean'::regtype::oid,'boolean'::regtype::oid]
@@ -649,6 +649,10 @@ BEGIN
     WHERE t.r IS NULL
        OR EXISTS (SELECT 1 FROM pg_catalog.unnest(v_all) AS p(priv)
          WHERE NOT pg_catalog.has_table_privilege('postgres',t.r,p.priv))
+       OR EXISTS (SELECT 1 FROM pg_catalog.unnest(v_all) AS p(priv)
+         WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(
+           (SELECT c.relacl FROM pg_catalog.pg_class AS c WHERE c.oid = t.r),pg_catalog.acldefault('r','postgres'::regrole))) AS x
+           WHERE x.grantee = 'postgres'::regrole AND x.privilege_type = p.priv))
        OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(
          (SELECT c.relacl FROM pg_catalog.pg_class AS c WHERE c.oid = t.r),pg_catalog.acldefault('r','postgres'::regrole))) AS x
          WHERE x.grantee = 0)

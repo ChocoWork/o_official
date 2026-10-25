@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { createCatalogFixture } from './helpers/order-fixtures';
+import { G2_ALLOWLIST, G3D_ALLOWLIST } from './helpers/group-g-allowlist';
 
 /**
  * G-1 Task 14（FREQ-522-AC-02・FREQ-524・FREQ-540-AC-05）: 書き手の閉じた一覧の構造の確かめ。
@@ -201,6 +202,8 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
   afterEach(async () => { await db().query('rollback'); });
 
   test('一覧は決めた75本と同じ集合で、関数は postgres の SECURITY DEFINER・search_path 空・だれも EXECUTE できない', async () => {
+    expect(ALLOWLIST).toEqual(G3D_ALLOWLIST);
+    expect(ALLOWLIST.slice(0, 65)).toEqual(G2_ALLOWLIST);
     const expected = (await db().query('select to_regprocedure(s)::oid::text as oid, s from unnest($1::text[]) as s', [ALLOWLIST])).rows;
     expect(expected.filter((row) => row.oid === null).map((row) => row.s)).toEqual([]);
     expect(new Set(expected.map((row) => row.oid)).size).toBe(75);
@@ -374,14 +377,15 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
   const NO_ONE = { anon: false, authenticated: false, service_role: false, public_execute: false };
   const SERVICE_ROLE_ONLY = { anon: false, authenticated: false, service_role: true, public_execute: false };
 
-  test('FREQ-540-AC-10: 発送の読取5本と内部の道具3本は書き手でなく、許可一覧（G-3 Task 7 で75本）を増やさない', async () => {
+  test('FREQ-540-AC-10: 発送の読取5本と内部の道具4本・守りのtrigger関数2本は書き手でなく、許可一覧（75本）を増やさない', async () => {
     const procs = await loadProcs(db());
     const allow = await allowlistOids(db());
     const { direct, closure } = analyze(procs);
     expect(ALLOWLIST).toHaveLength(75);
     const readers = ['list_admin_packing', 'list_admin_shipment_slips', 'get_admin_shipment_slip',
       'list_admin_order_shipment_slips', 'list_shipment_accounting_inputs'];
-    const internal = ['group_g_shipment_ready', 'group_g_bundle_verdict', 'group_g_bundle_key'];
+    const internal = ['group_g_shipment_ready', 'group_g_bundle_verdict', 'group_g_bundle_key', 'tracking_registration_owner',
+      'guard_group_g_shipment_slip_change', 'check_group_g_shipment_consumption'];
     for (const name of [...readers, ...internal]) {
       const found = procs.filter((proc) => ['private', 'public'].includes(proc.schema) && proc.name === name);
       expect({ name, count: found.length }).toEqual({ name, count: readers.includes(name) ? 2 : 1 });
@@ -554,11 +558,50 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
       const code = normalize(body.src, true);
       const firstCall = code.indexOf(`${SLIP_LOCK}(`);
       const withoutCall = code.split(SLIP_LOCK).join(' '.repeat(SLIP_LOCK.length));
-      const references = [...withoutCall.matchAll(/\b(?:from|join|into|update)\s+(?:public\.|private\.)(shipment_slips?|shipment_slip_[a-z_]+|order_items|orders|group_g_operations)\b/g)];
+      const references = [...withoutCall.matchAll(/\b(?:from|join|into|update)\s+(?:public\.)?(shipment_[a-z_]+|order_fulfillments|order_item_allocations|stock_movements|item_variants|orders)\b/g)];
       expect({ name, called: firstCall >= 0, references: references.length > 0 }).toEqual({ name, called: true, references: true });
       expect({ name, lockFirst: firstCall < (references[0].index ?? -1) }).toEqual({ name, lockFirst: true });
     }
     const helper = procs.find((proc) => proc.schema === 'private' && proc.name === SLIP_LOCK)!;
     expect(helper.src).toMatch(/BEGIN\s+PERFORM pg_catalog\.pg_advisory_xact_lock\(190521,1\);/);
+  });
+
+  test('FREQ-540-AC-11: consume/register/restore require the advisory and are called only by allowlisted private writers', async () => {
+    const procs = await loadProcs(db());
+    const allow = await allowlistOids(db());
+    const helpers = ['consume_group_g_allocations', 'register_group_g_slip_tracking', 'restore_group_g_shipment'];
+    for (const name of helpers) {
+      const functions = procs.filter((p) => p.name === name);
+      expect(functions).toHaveLength(1);
+      const helper = functions[0];
+      expect(helper.schema).toBe('private');
+      expect(allow.has(helper.key)).toBe(true);
+      expect(await aclOf(helper.oid)).toEqual({ owner: 'postgres', prosecdef: true, proconfig: ['search_path=""'], ...NO_ONE });
+      const src = normalize(helper.src, false);
+      expect(src).toContain('pg_locks');
+      expect(src).toContain('group_g_inventory_lock_required');
+      expect(src).toMatch(/classid\s*=\s*190521/);
+      expect(src).toMatch(/objid\s*=\s*1/);
+      const callers = procs.filter((p) => normalize(p.src, true).includes(`private.${name}(`));
+      expect(callers.length).toBeGreaterThan(0);
+      for (const caller of callers) {
+        expect({ schema: caller.schema, definer: caller.secdef, allowed: allow.has(caller.key) })
+          .toEqual({ schema: 'private', definer: true, allowed: true });
+      }
+    }
+    const names = [...SLIP_WRITER_NAMES, ...helpers, SLIP_LOCK, 'group_g_shipment_ready', 'group_g_bundle_verdict',
+      'group_g_bundle_key', 'tracking_registration_owner', 'guard_group_g_shipment_slip_change', 'check_group_g_shipment_consumption',
+      'list_admin_packing', 'list_admin_shipment_slips', 'get_admin_shipment_slip', 'list_admin_order_shipment_slips', 'list_shipment_accounting_inputs'];
+    const executable = procs.filter((p) => names.includes(p.name));
+    const service: string[] = [];
+    for (const p of executable) {
+      const acl = await aclOf(p.oid);
+      expect({ public: acl.public_execute, anon: acl.anon, authenticated: acl.authenticated })
+        .toEqual({ public: false, anon: false, authenticated: false });
+      if (acl.service_role) service.push(`${p.schema}.${p.name}`);
+    }
+    const readers = ['list_admin_packing', 'list_admin_shipment_slips', 'get_admin_shipment_slip', 'list_admin_order_shipment_slips', 'list_shipment_accounting_inputs'];
+    expect(service.sort()).toEqual([...SLIP_WRITER_NAMES, ...readers].flatMap((name) => [`private.${name}`, `public.${name}`]).sort());
+    expect(service).toHaveLength(24);
   });
 });

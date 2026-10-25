@@ -597,19 +597,19 @@ describeLocalDb('G-3 tracking parent: leader registration and fan-out of read re
   });
 
   test('FREQ-540-AC-11: reads の末尾 assert（追跡の親の節）は再実行でき、助けの ACL・volatility・置換した3つの読取の変更行の欠落を検出する', async () => {
-    const section = between(READS, 'DO $g3b_tracking_parent$', '$g3b_tracking_parent$;') + '$g3b_tracking_parent$;';
+    const section = between(READS, '-- G3B_FINAL_ASSERT_BEGIN', '-- G3B_FINAL_ASSERT_END').replace('-- G3B_FINAL_ASSERT_BEGIN', '');
     await db().query(section);
     const probes: Array<[string, string]> = [
-      ['grant execute on function private.tracking_registration_owner(uuid,integer) to service_role', 'tracking_parent_functions'],
-      ['alter function private.tracking_registration_owner(uuid,integer) volatile', 'tracking_parent_functions'],
-      ['alter function private.delivery_tracking_backfill_targets() volatile', 'tracking_parent_functions'],
-      ['grant execute on function public.get_order_delivery_detail(uuid) to authenticated', 'tracking_parent_functions'],
-      ["alter function public.get_order_status_public_material(uuid) set search_path = 'public'", 'tracking_parent_functions'],
+      ['grant execute on function private.tracking_registration_owner(uuid,integer) to service_role', 'shipping_internal_functions'],
+      ['alter function private.tracking_registration_owner(uuid,integer) volatile', 'shipping_internal_functions'],
+      ['alter function private.delivery_tracking_backfill_targets() volatile', 'shipping_replaced_readers'],
+      ['grant execute on function public.get_order_delivery_detail(uuid) to authenticated', 'shipping_replaced_readers'],
+      ["alter function public.get_order_status_public_material(uuid) set search_path = 'public'", 'shipping_replaced_readers'],
       [`create or replace function public.get_order_delivery_detail(_order_id uuid) returns jsonb language plpgsql stable security definer
-        set search_path = '' as $$ begin return '{}'::jsonb; end $$`, 'tracking_parent_callers'],
+        set search_path = '' as $$ begin return '{}'::jsonb; end $$`, 'shipping_replaced_readers'],
       [`create or replace function private.delivery_tracking_backfill_targets()
         returns table (fulfillment_id uuid, tracking_version integer, expires_at timestamptz) language sql stable set search_path = ''
-        as $$ select f.id, f.tracking_version, now() from public.order_fulfillments f where false $$`, 'tracking_parent_callers'],
+        as $$ select f.id, f.tracking_version, now() from public.order_fulfillments f where false $$`, 'shipping_replaced_readers'],
     ];
     for (const [statement, detail] of probes) {
       await db().query('savepoint tracking_parent_probe');
@@ -627,10 +627,10 @@ describeLocalDb('G-3 tracking parent: leader registration and fan-out of read re
       returns table (applied boolean, changed boolean, stopped boolean) language plpgsql security definer set search_path = ''
       as $$ begin return query select false, false, false; end $$`;
     const probes: Array<[string, string]> = [
-      ['grant execute on function public.record_delivery_read_result(uuid,integer,uuid,jsonb) to authenticated', 'shipment_slip_read_result_function'],
-      ['revoke execute on function private.record_delivery_read_result(uuid,integer,uuid,jsonb) from service_role', 'shipment_slip_read_result_function'],
-      ["alter function private.record_delivery_read_result(uuid,integer,uuid,jsonb) set search_path = 'public'", 'shipment_slip_read_result_function'],
-      [replacement, 'shipment_slip_read_result_body'],
+      ['grant execute on function public.record_delivery_read_result(uuid,integer,uuid,jsonb) to authenticated', 'shipping_action_replaced'],
+      ['revoke execute on function private.record_delivery_read_result(uuid,integer,uuid,jsonb) from service_role', 'shipping_action_replaced'],
+      ["alter function private.record_delivery_read_result(uuid,integer,uuid,jsonb) set search_path = 'public'", 'shipping_action_replaced'],
+      [replacement, 'shipping_action_replaced'],
     ];
     for (const [statement, detail] of probes) {
       await db().query('savepoint read_result_probe');

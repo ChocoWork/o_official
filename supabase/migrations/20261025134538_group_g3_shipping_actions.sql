@@ -1043,12 +1043,12 @@ $$;
 -- G3D_BODY_END
 
 -- G3D_FINAL_ASSERT_BEGIN
--- Expectation through Task 7: the four new functions (owner, SECURITY, language, result type, argument names, search_path, and the
--- EXECUTE rights read from the effective ACL where a NULL proacl means the default that includes PUBLIC), the same four as a set (no
--- function of these names beyond them; service_role may EXECUTE exactly the two operation writers and their two public entrances),
+-- Expectation through Task 9: the six new functions (owner, SECURITY, language, result type, argument names, search_path, and the
+-- EXECUTE rights read from the effective ACL where a NULL proacl means the default that includes PUBLIC), the same six as a set (no
+-- function of these names beyond them; service_role may EXECUTE exactly the three operation writers and their three public entrances),
 -- the order of each writer (the lock helper before any table is read), the replaced delivery read result (owner, SECURITY, language,
 -- argument and output names, search_path and EXECUTE rights unchanged; exactly one common advisory call, before the first row lock;
--- no lock helper), and the allowlist: exactly the 72 entries of the previous file plus the two writers of this file, every one
+-- no lock helper), and the allowlist: exactly the 72 entries of the previous file plus the three writers of this file (75), every one
 -- resolving to a function, compared to the fixed set by OID. The expected sets grow with every Task that adds to this file.
 DO $g3d_final_objects$
 DECLARE
@@ -1164,6 +1164,8 @@ BEGIN
        OR p.prolang <> (SELECT l.oid FROM pg_catalog.pg_language AS l WHERE l.lanname = e.lang)
        OR p.prorettype <> e.ret::regtype::oid
        OR p.proargnames IS DISTINCT FROM e.names
+       OR (NOT e.definer AND pg_catalog.regexp_replace(pg_catalog.lower(p.prosrc),'\s','','g')
+         <> 'selectprivate.' || p.proname || '(' || pg_catalog.array_to_string(e.names,',') || ');')
        OR NOT ('search_path=""' = ANY (COALESCE(p.proconfig, ARRAY[]::text[])))
        OR pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
        OR pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
@@ -1171,7 +1173,7 @@ BEGIN
        OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) AS x
                   WHERE x.grantee = 0 AND x.privilege_type = 'EXECUTE')
   ) THEN
-    v_failed := 'shipment_slip_action_functions';
+    v_failed := 'shipping_action_functions';
   ELSIF EXISTS (
     -- the replaced delivery read result and its public entrance keep every attribute of the G-1 functions
     SELECT 1
@@ -1188,6 +1190,9 @@ BEGIN
        OR p.prolang <> (SELECT l.oid FROM pg_catalog.pg_language AS l WHERE l.lanname = e.lang)
        OR p.prorettype <> 'record'::regtype::oid
        OR p.proargnames IS DISTINCT FROM ARRAY['_fulfillment_id', '_tracking_version', '_lease_token', '_result', 'applied', 'changed', 'stopped']
+       OR p.proallargtypes IS DISTINCT FROM ARRAY['uuid'::regtype::oid,'integer'::regtype::oid,'uuid'::regtype::oid,'jsonb'::regtype::oid,
+         'boolean'::regtype::oid,'boolean'::regtype::oid,'boolean'::regtype::oid]
+       OR p.proargmodes IS DISTINCT FROM ARRAY['i','i','i','i','t','t','t']::"char"[]
        OR p.proconfig IS DISTINCT FROM ARRAY['search_path=""']::text[]
        OR pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
        OR pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
@@ -1195,21 +1200,25 @@ BEGIN
        OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) AS x
                   WHERE x.grantee = 0 AND x.privilege_type = 'EXECUTE')
   ) THEN
-    v_failed := 'shipment_slip_read_result_function';
+    v_failed := 'shipping_action_replaced';
   ELSIF EXISTS (
-    -- the replaced body takes the common advisory exactly once and before its first row lock, never the shared inventory lock helper,
-    -- and fans the result out through the targets
+    -- the replaced body (read in lower case) takes the common advisory exactly once and before its first row lock, never the shared
+    -- inventory lock helper, and fans the result out through the targets. Its FOR UPDATE and FOR SHARE clauses must exist, and the first
+    -- of each must come after the advisory: a body without them fails here, it is never skipped.
     SELECT 1 FROM pg_catalog.pg_proc AS p
+    CROSS JOIN LATERAL (SELECT pg_catalog.lower(p.prosrc) AS body) AS s
     WHERE p.oid = pg_catalog.to_regprocedure('private.record_delivery_read_result(uuid,integer,uuid,jsonb)')
-      AND (pg_catalog.length(p.prosrc) - pg_catalog.length(pg_catalog.replace(p.prosrc, 'pg_advisory_xact_lock', ''))
+      AND (pg_catalog.length(s.body) - pg_catalog.length(pg_catalog.replace(s.body, 'pg_advisory_xact_lock', ''))
              <> pg_catalog.length('pg_advisory_xact_lock')
-        OR pg_catalog.strpos(p.prosrc, 'pg_advisory_xact_lock') = 0
-        OR pg_catalog.strpos(p.prosrc, 'FOR UPDATE') < pg_catalog.strpos(p.prosrc, 'pg_advisory_xact_lock')
-        OR pg_catalog.strpos(p.prosrc, 'FOR SHARE') < pg_catalog.strpos(p.prosrc, 'pg_advisory_xact_lock')
-        OR pg_catalog.strpos(p.prosrc, 'lock_group_g_inventory') > 0
-        OR pg_catalog.strpos(p.prosrc, 'v_targets') = 0)
+        OR pg_catalog.strpos(s.body, 'pg_advisory_xact_lock') = 0
+        OR pg_catalog.strpos(s.body, 'for update') = 0
+        OR pg_catalog.strpos(s.body, 'for update') < pg_catalog.strpos(s.body, 'pg_advisory_xact_lock')
+        OR pg_catalog.strpos(s.body, 'for share') = 0
+        OR pg_catalog.strpos(s.body, 'for share') < pg_catalog.strpos(s.body, 'pg_advisory_xact_lock')
+        OR pg_catalog.strpos(s.body, 'lock_group_g_inventory') > 0
+        OR pg_catalog.strpos(s.body, 'v_targets') = 0)
   ) THEN
-    v_failed := 'shipment_slip_read_result_body';
+    v_failed := 'shipping_action_replaced';
   ELSIF EXISTS (
     -- the three writers: the text before the first call of the lock helper must not name a table (after from / join / into /
     -- update / table, with or without ONLY) and must not call a function of public or private (a permission check or any other
@@ -1227,16 +1236,16 @@ BEGIN
         ~ '((from|join|into|update|table)\s+(only\s+)?"?(public|private)"?\s*\.)|("?(public|private)"?\s*\.\s*"?[a-z_][a-z0-9_]*"?\s*\()'
     END
   ) THEN
-    v_failed := 'shipment_slip_action_lock_order';
+    v_failed := 'shipping_action_functions';
   ELSIF EXISTS (SELECT 1 FROM pg_catalog.unnest(v_writers) AS w(s) WHERE pg_catalog.to_regprocedure(w.s) IS NULL)
      OR (SELECT pg_catalog.count(DISTINCT pg_catalog.to_regprocedure(w.s)) FROM pg_catalog.unnest(v_writers) AS w(s)) <> 75
      OR pg_catalog.cardinality(private.group_g_writer_allowlist()) <> 75 THEN
-    v_failed := 'shipment_slip_action_writer_allowlist_missing';
+    v_failed := 'shipping_action_allowlist';
   ELSIF (SELECT pg_catalog.array_agg(x::oid ORDER BY x::oid) FROM pg_catalog.unnest(private.group_g_writer_allowlist()) AS a(x))
      IS DISTINCT FROM (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(w.s)::oid ORDER BY pg_catalog.to_regprocedure(w.s)::oid)
                        FROM pg_catalog.unnest(v_writers) AS w(s)) THEN
-    v_failed := 'shipment_slip_action_writer_allowlist';
-  -- the functions of this file as a set: a function of one of these names (in public or private) is one of the four listed above
+    v_failed := 'shipping_action_allowlist';
+  -- the functions of this file as a set: a function of one of these names (in public or private) is one of the six listed above
   -- and every listed one exists, so an extra overload or a missing function fails.
   ELSIF (SELECT pg_catalog.array_agg(p.oid ORDER BY p.oid)
          FROM pg_catalog.pg_proc AS p JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
@@ -1245,7 +1254,7 @@ BEGIN
         IS DISTINCT FROM
         (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(f.sig)::oid ORDER BY pg_catalog.to_regprocedure(f.sig)::oid)
          FROM pg_catalog.unnest(v_functions) AS f(sig)) THEN
-    v_failed := 'shipment_slip_action_function_set';
+    v_failed := 'shipping_action_function_set';
   END IF;
 
   IF v_failed IS NOT NULL THEN
@@ -1253,6 +1262,43 @@ BEGIN
   END IF;
 END
 $g3d_final_objects$;
+-- Semantic table and column ACL checks tolerate unrelated grantees and ACL ordering.
+-- PostgreSQL 17 adds MAINTAIN: it is also forbidden to every application role.
+DO $g3d_final_table_acl$
+DECLARE
+  v_maintain text[] := CASE WHEN pg_catalog.current_setting('server_version_num')::integer >= 170000
+    THEN ARRAY['MAINTAIN'] ELSE ARRAY[]::text[] END;
+  v_all text[] := ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'] || v_maintain;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_catalog.unnest(ARRAY[
+      'public.shipment_slips','public.shipment_slip_lines','public.shipment_slip_fulfillments',
+      'public.shipment_slip_versions','public.shipment_date_history','private.shipment_tracking_registrations'
+    ]) AS e(rel)
+    CROSS JOIN LATERAL (SELECT pg_catalog.to_regclass(e.rel) AS r) AS t
+    WHERE t.r IS NULL
+       OR EXISTS (SELECT 1 FROM pg_catalog.unnest(v_all) AS p(priv)
+         WHERE NOT pg_catalog.has_table_privilege('postgres',t.r,p.priv))
+       OR EXISTS (SELECT 1 FROM pg_catalog.unnest(v_all) AS p(priv)
+         WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(
+           (SELECT c.relacl FROM pg_catalog.pg_class AS c WHERE c.oid = t.r),pg_catalog.acldefault('r','postgres'::regrole))) AS x
+           WHERE x.grantee = 'postgres'::regrole AND x.privilege_type = p.priv))
+       OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(
+         (SELECT c.relacl FROM pg_catalog.pg_class AS c WHERE c.oid = t.r),pg_catalog.acldefault('r','postgres'::regrole))) AS x
+         WHERE x.grantee = 0)
+       OR EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['anon','authenticated','service_role']) AS g(role)
+         CROSS JOIN pg_catalog.unnest(v_all) AS p(priv) WHERE pg_catalog.has_table_privilege(g.role,t.r,p.priv))
+       OR EXISTS (SELECT 1 FROM pg_catalog.unnest(ARRAY['anon','authenticated','service_role']) AS g(role)
+         CROSS JOIN pg_catalog.unnest(ARRAY['SELECT','INSERT','UPDATE','REFERENCES']) AS p(priv)
+         WHERE pg_catalog.has_any_column_privilege(g.role,t.r,p.priv))
+       OR EXISTS (SELECT 1 FROM pg_catalog.pg_attribute AS a
+         CROSS JOIN LATERAL pg_catalog.aclexplode(a.attacl) AS x
+         WHERE a.attrelid = t.r AND a.attnum > 0 AND NOT a.attisdropped AND x.grantee = 0)
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'shipping_action_table_acl';
+  END IF;
+END
+$g3d_final_table_acl$;
 -- G3D_FINAL_ASSERT_END
 
 NOTIFY pgrst, 'reload schema';

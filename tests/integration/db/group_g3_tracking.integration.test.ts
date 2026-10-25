@@ -717,7 +717,7 @@ describeLocalDb('G-3 shipment slip tracking / delivered', (db) => {
       expect(tampered).not.toBe(definition);
       const start = sql.indexOf('DO $g3d_final_objects$'); const end = sql.indexOf('$g3d_final_objects$;', start) + '$g3d_final_objects$;'.length;
       expect(await flow.rejected(async () => { await db().query(tampered); await db().query(sql.slice(start, end)); }))
-        .toEqual({ message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', code: '55000', detail: 'shipment_slip_action_lock_order' });
+        .toEqual({ message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', code: '55000', detail: 'shipping_action_functions' });
     });
 
     test('FREQ-540-AC-11: G3D の末尾assertは今のDBで通り、崩れ（入口の欠落・EXECUTE・DEFINER・search_path・overload・一覧の増減と差し替え）で項目名つきで止まる', async () => {
@@ -741,17 +741,17 @@ describeLocalDb('G-3 shipment slip tracking / delivered', (db) => {
       const failed = (detail: string) => ({ code: '55000', message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', detail });
       expect(G3D_ALLOWLIST).toHaveLength(75);
       expect(await run(null)).toBeNull();
-      expect(await run(`drop function ${trackEntry}`)).toEqual(failed('shipment_slip_action_functions'));
-      expect(await run(`grant execute on function ${track} to anon`)).toEqual(failed('shipment_slip_action_functions'));
-      expect(await run(`grant execute on function ${trackEntry} to public`)).toEqual(failed('shipment_slip_action_functions'));
-      expect(await run(`revoke execute on function ${track} from service_role`)).toEqual(failed('shipment_slip_action_functions'));
-      expect(await run(`alter function ${trackEntry} security definer`)).toEqual(failed('shipment_slip_action_functions'));
-      expect(await run(`alter function ${track} set search_path = public`)).toEqual(failed('shipment_slip_action_functions'));
+      expect(await run(`drop function ${trackEntry}`)).toEqual(failed('shipping_action_functions'));
+      expect(await run(`grant execute on function ${track} to anon`)).toEqual(failed('shipping_action_functions'));
+      expect(await run(`grant execute on function ${trackEntry} to public`)).toEqual(failed('shipping_action_functions'));
+      expect(await run(`revoke execute on function ${track} from service_role`)).toEqual(failed('shipping_action_functions'));
+      expect(await run(`alter function ${trackEntry} security definer`)).toEqual(failed('shipping_action_functions'));
+      expect(await run(`alter function ${track} set search_path = public`)).toEqual(failed('shipping_action_functions'));
       expect(await run(`create function private.admin_update_shipment_slip_tracking(uuid) returns integer language sql as $$ select 1 $$`))
-        .toEqual(failed('shipment_slip_action_function_set'));
-      expect(await run(replaceAllowlistSql(G3D_ALLOWLIST.slice(0, -1)))).toEqual(failed('shipment_slip_action_writer_allowlist_missing'));
-      expect(await run(replaceAllowlistSql([...G3D_ALLOWLIST, 'private.lock_group_g_shipment_slips(uuid[],uuid[],boolean)']))).toEqual(failed('shipment_slip_action_writer_allowlist_missing'));
-      expect(await run(replaceAllowlistSql(['private.lock_group_g_shipment_slips(uuid[],uuid[],boolean)', ...G3D_ALLOWLIST.slice(1)]))).toEqual(failed('shipment_slip_action_writer_allowlist'));
+        .toEqual(failed('shipping_action_function_set'));
+      expect(await run(replaceAllowlistSql(G3D_ALLOWLIST.slice(0, -1)))).toEqual(failed('shipping_action_allowlist'));
+      expect(await run(replaceAllowlistSql([...G3D_ALLOWLIST, 'private.lock_group_g_shipment_slips(uuid[],uuid[],boolean)']))).toEqual(failed('shipping_action_allowlist'));
+      expect(await run(replaceAllowlistSql(['private.lock_group_g_shipment_slips(uuid[],uuid[],boolean)', ...G3D_ALLOWLIST.slice(1)]))).toEqual(failed('shipping_action_allowlist'));
     });
 
     test('FREQ-540-AC-11: 公開入口は INVOKER 委譲、private 本体は DEFINER で service_role だけが EXECUTE でき、許可一覧は75本で2本が入り入口は入らない', async () => {

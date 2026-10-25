@@ -1307,6 +1307,9 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
     }
 
     test('FREQ-540-AC-07: 今の DB で 3つの確かめ（検索の関数・書き手の関数と65本・書く表の権限）が通る（書き手は一覧を G-2 の65本へ入れ替えてから）', async () => {
+      expect(G3D_ALLOWLIST).toHaveLength(75);
+      expect(G3D_ALLOWLIST.slice(0, 65)).toEqual(G2_ALLOWLIST);
+      const before = (await db().query('select private.group_g_writer_allowlist()::oid[] as ids')).rows[0].ids;
       expect(READS).not.toBe('');
       expect(OBJECTS).not.toBe('');
       expect(TABLE_ACL).not.toBe('');
@@ -1315,6 +1318,7 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
       expect(await run(TABLE_ACL)).toBeNull();
       // 今の DB の一覧（G-3 の書き手が加わった本数）のままでは、固定の65本の確かめは止まる
       expect(await run(OBJECTS)).toEqual(failed('purchase_writer_allowlist_missing'));
+      expect((await db().query('select private.group_g_writer_allowlist()::oid[] as ids')).rows[0].ids).toEqual(before);
     });
 
     test.each([

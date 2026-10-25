@@ -4,8 +4,10 @@ jest.mock('server-only', () => ({}), { virtual: true });
 import { randomUUID } from 'node:crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { connectLocalDb, describeLocalDb, isLocalDatabase } from './helpers/local-db';
-import { withGroupG1FixtureTransaction, setOrderStatusForFixture } from './helpers/group-g1-fixtures';
-import { seedGroupG3ReadyOrder, seedGroupG3Slip } from './helpers/group-g3-fixtures';
+import { withGroupG1FixtureTransaction, setOrderStatusForFixture, seedGroupG1Shipment, seedGroupG1Allocation } from './helpers/group-g1-fixtures';
+import { seedGroupG3ReadyOrder, seedGroupG3Slip, attachGroupG3SlipShipment } from './helpers/group-g3-fixtures';
+import { insertRefundRecord, insertReturnRecord } from './helpers/order-fixtures';
+import { createPurchaseFlow } from './helpers/purchase-order-flow';
 import {
   enableDeliveryTracking, leaseDeliveryRegistration, patchDeliveryRegistration, recordReadResult, restoreCommittedDeliveryState,
 } from './helpers/delivery-tracking-fixtures';
@@ -22,11 +24,13 @@ import {
   listAdminOrderShipmentSlips,
   listAdminPacking,
   listAdminShipmentSlips,
+  listShipmentAccountingInputs,
   markShipmentSlipDelivered,
   saveShipmentSlipDraft,
   ShipmentSlipError,
   updateShipmentSlipTracking,
 } from '@/lib/orders/shipment-slips/shipment-slip-store';
+import { SHIPMENT_SLIP_ERRORS } from '@/lib/orders/shipment-slips/shipment-slip-types';
 
 const apiUrl = process.env.LOCAL_SUPABASE_URL;
 const serviceKey = process.env.LOCAL_SUPABASE_SERVICE_ROLE_KEY;
@@ -48,6 +52,8 @@ describeLocalDb('G-3 real supabase-js -> PostgREST -> SQL read paths', (db) => {
   let authenticated: SupabaseClient;
   let authUserId: string | undefined;
   let actor: string; let orderId: string; let itemId: string; let slipId: string;
+  let manager: string;
+  const flow = createPurchaseFlow(db);
   const calls = (): Array<[string, Record<string, unknown>]> => [
     ['list_admin_packing', { _slip_id: slipId, _limit: 100, _offset: 0, _actor_id: actor }],
     ['list_admin_shipment_slips', { _stage: null, _limit: 100, _offset: 0, _actor_id: actor }],
@@ -72,6 +78,7 @@ describeLocalDb('G-3 real supabase-js -> PostgREST -> SQL read paths', (db) => {
       const f = await seedGroupG3ReadyOrder(db()); orderId = f.orderId; itemId = f.orderItemId;
       slipId = await seedGroupG3Slip(db(), { actorId: actor, expired: true,
         draftLines: [{ orderItemId: itemId, quantity: 2 }] });
+      manager = await flow.manager();
     }); // Commit is required: PostgREST reads from a separate connection.
   });
   afterAll(async () => {
@@ -335,6 +342,140 @@ describeLocalDb('G-3 real supabase-js -> PostgREST -> SQL read paths', (db) => {
       try { await cancelShipmentSlip(service, actor, { slipId: drafted.id, expectedVersion: version, requestKey: randomUUID() }); }
       finally { await withGroupG1FixtureTransaction(db(), () => db().query("delete from public.user_roles where user_id=$1 and role_id=(select id from public.roles where code='admin')", [actor])); }
     }
+  });
+
+  test('FREQ-535-AC-05: the twelfth real store path reads accounting revisions and cancellation through PostgREST', async () => {
+    const f = await withGroupG1FixtureTransaction(db(), () => seedGroupG3ReadyOrder(db()));
+    const saved = await saveShipmentSlipDraft(service, manager, { slipId: null, expectedVersion: null,
+      lines: [{ orderItemId: f.orderItemId, quantity: 1 }], requestKey: randomUUID() });
+    const today = await flow.today(); const yesterday = await flow.today(-1);
+    const confirmed = await confirmShipmentSlip(service, manager, { slipId: saved.id, expectedVersion: 1, carrier: null,
+      trackingNumber: null, shipmentDate: today, notifyCustomer: false, requestKey: randomUUID() });
+    // SQL material is read-only here: discover a sufficiently selective limit without depending on a global row count.
+    const count = Number((await db().query(`select count(*) as n from public.shipment_slip_lines l
+      join public.shipment_slips s on s.id=l.slip_id where s.shipment_date between $1::date and $2::date`, [yesterday, today])).rows[0].n);
+    const read = async () => (await listShipmentAccountingInputs(service, { from: yesterday, to: today, limit: Math.max(count + 10, 100) }))
+      .filter((r) => r.slipId === saved.id);
+    const first = await read();
+    expect(first).toEqual([{ slipId: saved.id, fulfillmentId: confirmed.fulfillments[0].fulfillmentId,
+      orderItemId: f.orderItemId, quantity: 1, shipmentDate: today, revisionId: expect.any(String), cancelledAt: null }]);
+    await correctShipmentDate(service, manager, { slipId: saved.id, expectedVersion: 2, shipmentDate: yesterday,
+      reason: 'fixture correction', requestKey: randomUUID() });
+    const corrected = await read();
+    expect(corrected[0]).toMatchObject({ shipmentDate: yesterday, cancelledAt: null });
+    expect(corrected[0].revisionId).not.toBe(first[0].revisionId);
+    await cancelShipmentSlip(service, manager, { slipId: saved.id, expectedVersion: 3, requestKey: randomUUID() });
+    expect((await read())[0]).toMatchObject({ revisionId: corrected[0].revisionId, cancelledAt: expect.any(String) });
+  });
+
+  /** Each table row is produced by real database material, then classified by the production store over HTTP. */
+  test.each(Object.keys(SHIPMENT_SLIP_ERRORS))('FREQ-540-AC-12: real PostgREST store classifies %s with the exact status and body', async (code) => {
+    const local = <T>(run: () => Promise<T>) => withGroupG1FixtureTransaction(db(), run);
+    const f = await local(() => seedGroupG3ReadyOrder(db(), { paidAt: `${new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10)}T00:00:00Z` }));
+    const today = await flow.today(); const yesterday = await flow.today(-1);
+    const save = (quantity = 2, requestKey = randomUUID()) => saveShipmentSlipDraft(service, manager, {
+      slipId: null, expectedVersion: null, lines: [{ orderItemId: f.orderItemId, quantity }], requestKey });
+    const s = await save();
+    const confirmation = { slipId: s.id, expectedVersion: 1, carrier: null, trackingNumber: null,
+      shipmentDate: today, notifyCustomer: false, requestKey: randomUUID() };
+    const action = { slipId: s.id, expectedVersion: 2, requestKey: randomUUID() };
+    const track = { ...action, carrier: 'yamato' as const, trackingNumber: `PG-${randomUUID().replaceAll('-', '')}`, notifyCustomer: false };
+    const date = { ...action, shipmentDate: yesterday, reason: 'fixture correction' };
+    const delivery = { ...action, deliveredOn: today, notifyCustomer: false };
+    let call: () => Promise<unknown>;
+    switch (code) {
+      case 'GROUP_G_ARGUMENT_INVALID': call = () => listAdminPacking(service, manager, { slipId: null, limit: 0, page: 1 }); break;
+      case 'GROUP_G_FORBIDDEN': call = () => getAdminShipmentSlip(service, randomUUID(), s.id); break;
+      case 'GROUP_G_REQUEST_KEY_CONFLICT': {
+        const key = randomUUID(); await save(1, key); call = () => save(2, key); break;
+      }
+      case 'GROUP_G_SLIP_NOT_FOUND': call = () => getAdminShipmentSlip(service, manager, randomUUID()); break;
+      case 'GROUP_G_SLIP_VERSION_CONFLICT': call = () => discardShipmentSlipDraft(service, manager, { ...action, expectedVersion: 99 }); break;
+      case 'GROUP_G_SLIP_NOT_DRAFT':
+        await discardShipmentSlipDraft(service, manager, { ...action, expectedVersion: 1 });
+        call = () => discardShipmentSlipDraft(service, manager, { ...action, requestKey: randomUUID() }); break;
+      case 'GROUP_G_SLIP_NOT_CONFIRMED': call = () => cancelShipmentSlip(service, manager, { ...action, expectedVersion: 1 }); break;
+      case 'GROUP_G_SLIP_CANCELLED':
+        await confirmShipmentSlip(service, manager, confirmation); await cancelShipmentSlip(service, manager, action);
+        call = () => updateShipmentSlipTracking(service, manager, { ...track, expectedVersion: 3 }); break;
+      case 'GROUP_G_SLIP_DRAFT_EXPIRED': {
+        const expired = await local(() => seedGroupG3Slip(db(), { actorId: manager, expired: true, draftLines: [{ orderItemId: f.orderItemId, quantity: 1 }] }));
+        call = () => confirmShipmentSlip(service, manager, { ...confirmation, slipId: expired }); break;
+      }
+      case 'GROUP_G_SLIP_EMPTY': call = () => saveShipmentSlipDraft(service, manager, { slipId: null, expectedVersion: null, lines: [], requestKey: randomUUID() }); break;
+      case 'GROUP_G_SLIP_CUSTOMER_MISMATCH':
+      case 'GROUP_G_SLIP_ADDRESS_MISMATCH':
+      case 'GROUP_G_SLIP_ADDRESS_INCOMPLETE': {
+        const other = await local(() => seedGroupG3ReadyOrder(db(), code === 'GROUP_G_SLIP_CUSTOMER_MISMATCH' ? { email: 'different@example.invalid' }
+          : { shipping: { address: code === 'GROUP_G_SLIP_ADDRESS_INCOMPLETE' ? '' : 'Different fixture' } }));
+        call = () => saveShipmentSlipDraft(service, manager, { slipId: null, expectedVersion: null,
+          lines: [{ orderItemId: f.orderItemId, quantity: 1 }, { orderItemId: other.orderItemId, quantity: 1 }], requestKey: randomUUID() }); break;
+      }
+      case 'GROUP_G_SLIP_ORDER_NOT_SHIPPABLE':
+        await local(() => setOrderStatusForFixture(db(), [f.orderId], 'cancelled')); call = () => confirmShipmentSlip(service, manager, confirmation); break;
+      case 'GROUP_G_SLIP_PAYMENT_REVIEW_REQUIRED':
+        await local(() => db().query("select private.ensure_group_g_payment_review_hold($1,'fixture review',null,null,null)", [f.orderId]));
+        call = () => confirmShipmentSlip(service, manager, confirmation); break;
+      case 'GROUP_G_SLIP_EXCHANGE_ON_HOLD': {
+        const exchange = await local(async () => {
+          const fid = await seedGroupG1Shipment(db(), { orderId: f.orderId, actorId: manager, lines: [{ orderItemId: f.orderItemId, quantity: 1 }], shippedAt: `${yesterday}T00:00:00Z` });
+          const r = await insertReturnRecord(db(), { orderId: f.orderId, lines: [{ fulfillmentId: fid, orderItemId: f.orderItemId, quantity: 1, resolution: 'exchange', exchangeVariantId: f.variantId, exchangeMethod: 'make' }] });
+          const id = (await db().query(`insert into public.order_items(order_id,item_id,variant_id,item_name,item_price,quantity,line_total,
+            fulfillment_type,line_kind,exchange_return_line_id,exchange_paid_amount) values($1,$2,$3,'fixture exchange',0,1,0,'backorder','exchange',$4,5000) returning id`,
+          [f.orderId, f.itemId, f.variantId, r.lineIds[0]])).rows[0].id as string;
+          await seedGroupG1Allocation(db(), { orderItemId: id, quantity: 1, kind: 'paid' });
+          await db().query('update public.order_returns set fee_due_amount=100 where id=$1', [r.returnId]);
+          return id;
+        });
+        call = () => saveShipmentSlipDraft(service, manager, { slipId: null, expectedVersion: null, lines: [{ orderItemId: exchange, quantity: 1 }], requestKey: randomUUID() }); break;
+      }
+      case 'GROUP_G_SLIP_QUANTITY_EXCEEDS_READY': call = () => save(5); break;
+      case 'GROUP_G_SLIP_TRACKING_INCOMPLETE': call = () => confirmShipmentSlip(service, manager, { ...confirmation, carrier: 'yamato' }); break;
+      case 'GROUP_G_SLIP_TRACKING_UNCHANGED':
+        await confirmShipmentSlip(service, manager, { ...confirmation, carrier: track.carrier, trackingNumber: track.trackingNumber });
+        call = () => updateShipmentSlipTracking(service, manager, track); break;
+      case 'GROUP_G_SHIPMENT_DATE_INVALID': call = () => confirmShipmentSlip(service, manager, { ...confirmation, shipmentDate: '2999-01-01' }); break;
+      case 'GROUP_G_SHIPMENT_DATE_AFTER_DELIVERY': {
+        const past = await local(async () => {
+          const shipped = await flow.today(-3); const arrived = await flow.today(-2);
+          const fid = await seedGroupG1Shipment(db(), { orderId: f.orderId, actorId: manager, lines: [{ orderItemId: f.orderItemId, quantity: 1 }], shippedAt: `${shipped}T00:00:00Z` });
+          const id = await seedGroupG3Slip(db(), { actorId: manager, stage: 'confirmed', shipmentDate: shipped });
+          await attachGroupG3SlipShipment(db(), { slipId: id, orderId: f.orderId, orderItemId: f.orderItemId, fulfillmentId: fid, quantity: 1, actorId: manager });
+          await db().query("select set_config('app.fulfillment_change','manual',true)");
+          await db().query("update public.order_fulfillments set delivery_status='delivered',delivery_status_at=$2::timestamptz,delivered_at=$2::timestamptz where id=$1", [fid, `${arrived}T00:00:00Z`]);
+          return id;
+        });
+        call = () => correctShipmentDate(service, manager, { ...date, slipId: past, expectedVersion: 1 }); break;
+      }
+      case 'GROUP_G_SHIPMENT_DATE_UNCHANGED':
+        await confirmShipmentSlip(service, manager, confirmation); call = () => correctShipmentDate(service, manager, { ...date, shipmentDate: today }); break;
+      case 'GROUP_G_SLIP_REASON_REQUIRED': call = () => correctShipmentDate(service, manager, { ...date, expectedVersion: 1, reason: ' ' }); break;
+      case 'GROUP_G_SLIP_ALREADY_DELIVERED':
+        await confirmShipmentSlip(service, manager, confirmation); await markShipmentSlipDelivered(service, manager, delivery);
+        call = () => markShipmentSlipDelivered(service, manager, { ...delivery, expectedVersion: 3, requestKey: randomUUID() }); break;
+      case 'GROUP_G_SLIP_DELIVERY_DATE_INVALID':
+        await confirmShipmentSlip(service, manager, confirmation); call = () => markShipmentSlipDelivered(service, manager, { ...delivery, deliveredOn: '2000-01-01' }); break;
+      case 'GROUP_G_SLIP_HAS_RETURN':
+      case 'GROUP_G_SLIP_REFUNDED':
+      case 'GROUP_G_SLIP_CANCEL_NOT_ALLOWED': {
+        const shipped = await confirmShipmentSlip(service, manager, confirmation);
+        await local(async () => {
+          if (code === 'GROUP_G_SLIP_HAS_RETURN') await insertReturnRecord(db(), { orderId: f.orderId,
+            lines: [{ fulfillmentId: shipped.fulfillments[0].fulfillmentId, orderItemId: f.orderItemId, quantity: 1 }] });
+          else if (code === 'GROUP_G_SLIP_REFUNDED') await insertRefundRecord(db(), { orderId: f.orderId, status: 'pending',
+            lines: [{ orderItemId: f.orderItemId, quantity: 1, beforeShipment: false }] });
+          else await setOrderStatusForFixture(db(), [f.orderId], 'cancelled');
+        });
+        call = () => cancelShipmentSlip(service, manager, action); break;
+      }
+      default: throw new Error('G3_POSTGREST_ERROR_CASE_MISSING');
+    }
+    const error = await call().then(() => null, (e: unknown) => e);
+    expect(error instanceof ShipmentSlipError).toBe(true);
+    const typed = error as ShipmentSlipError;
+    expect({ code: typed.code, status: typed.status, body: typed.message })
+      .toEqual({ code, status: SHIPMENT_SLIP_ERRORS[code][1], body: SHIPMENT_SLIP_ERRORS[code][2] });
+    expect(Object.keys(typed).sort()).toEqual(['code', 'name', 'status']);
   });
 
   test('FREQ-540-AC-10: 下書きの保存・破棄・確定・取消・伝票番号・配達済み・出荷日の公開入口も、anon・実authenticated JWTはactor権限があってもEXECUTEを拒み（42501）、何も書かない', async () => {

@@ -82,8 +82,9 @@ describe('G-3 発送票の下書きの移行ファイルの形（DB なし）', 
     expect(code).not.toMatch(/relacl::text|proacl::text/);
     const assertSection = sectionOf(SLIPS_SQL, '-- G3C_FINAL_ASSERT_BEGIN', '-- G3C_FINAL_ASSERT_END');
     const raises = assertSection.match(/RAISE EXCEPTION [^;]*;/g) ?? [];
-    expect(raises).toHaveLength(1);
+    expect(raises).toHaveLength(2);
     expect(raises[0]).toMatch(/^RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = v_failed;$/);
+    expect(raises[1]).toBe("RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'shipping_slip_table_acl';");
     for (const [, name] of assertSection.matchAll(/v_failed := '([^']*)'/g)) expect(name).toMatch(/^[a-z_]+$/);
   });
 });
@@ -636,27 +637,27 @@ describeLocalDb('G-3 発送票の下書き（保存・入替・破棄）', (db) 
     });
 
     test.each([
-      ['公開の入口を1つ落とす', `drop function ${SAVE_ENTRY}`, 'shipment_slip_functions'],
-      ['書込みの本体に anon の EXECUTE を付ける', `grant execute on function ${SAVE} to anon`, 'shipment_slip_functions'],
-      ['公開の入口に PUBLIC の EXECUTE を付ける', `grant execute on function ${SAVE_ENTRY} to public`, 'shipment_slip_functions'],
-      ['押さえの道具に service_role の EXECUTE を付ける', `grant execute on function ${LOCK} to service_role`, 'shipment_slip_functions'],
-      ['書込みの本体から service_role の EXECUTE を外す', `revoke execute on function ${SAVE} from service_role`, 'shipment_slip_functions'],
-      ['公開の入口を DEFINER にする', `alter function ${SAVE_ENTRY} security definer`, 'shipment_slip_functions'],
-      ['書込みの本体の search_path を変える', `alter function ${SAVE} set search_path = public`, 'shipment_slip_functions'],
+      ['公開の入口を1つ落とす', `drop function ${SAVE_ENTRY}`, 'shipping_slip_functions'],
+      ['書込みの本体に anon の EXECUTE を付ける', `grant execute on function ${SAVE} to anon`, 'shipping_slip_functions'],
+      ['公開の入口に PUBLIC の EXECUTE を付ける', `grant execute on function ${SAVE_ENTRY} to public`, 'shipping_slip_functions'],
+      ['押さえの道具に service_role の EXECUTE を付ける', `grant execute on function ${LOCK} to service_role`, 'shipping_slip_functions'],
+      ['書込みの本体から service_role の EXECUTE を外す', `revoke execute on function ${SAVE} from service_role`, 'shipping_slip_functions'],
+      ['公開の入口を DEFINER にする', `alter function ${SAVE_ENTRY} security definer`, 'shipping_slip_functions'],
+      ['書込みの本体の search_path を変える', `alter function ${SAVE} set search_path = public`, 'shipping_slip_functions'],
       ['押さえの道具の順（共通の押さえが最初）を崩す', `create or replace function ${LOCK.replace('(uuid[],uuid[],boolean)', '(_slip_ids uuid[], _order_item_ids uuid[], _with_settings boolean)')}
         returns uuid[] language plpgsql security definer set search_path = '' as $$
         begin
           perform s.id from public.shipment_slips as s where s.id = any(_slip_ids) order by s.id for update;
           perform pg_catalog.pg_advisory_xact_lock(190521,1);
           return array[]::uuid[];
-        end; $$`, 'shipment_slip_lock_order'],
+        end; $$`, 'shipping_slip_lock_order'],
       ['書込みの本体が押さえの前に表を読む', `create or replace function ${SAVE.replace('(uuid,integer,jsonb,uuid,uuid)', '(_slip_id uuid, _expected_version integer, _lines jsonb, _actor_id uuid, _request_key uuid)')}
         returns jsonb language plpgsql security definer set search_path = '' as $$
         begin
           perform 1 from public.orders limit 1;
           perform private.lock_group_g_shipment_slips(array[_slip_id], array[]::uuid[], false);
           return null;
-        end; $$`, 'shipment_slip_lock_order'],
+        end; $$`, 'shipping_slip_lock_order'],
       // 書き方を変えても押さえの前の表の参照は見つかる（大文字小文字・空白の数・引用符・UPDATE・破棄の本体）
       ['書込みの本体が押さえの前に表を読む（大文字・空白を多く）', `create or replace function ${SAVE.replace('(uuid,integer,jsonb,uuid,uuid)', '(_slip_id uuid, _expected_version integer, _lines jsonb, _actor_id uuid, _request_key uuid)')}
         returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -664,28 +665,28 @@ describeLocalDb('G-3 発送票の下書き（保存・入替・破棄）', (db) 
           PERFORM 1 FROM   public.orders LIMIT 1;
           perform private.lock_group_g_shipment_slips(array[_slip_id], array[]::uuid[], false);
           return null;
-        end; $$`, 'shipment_slip_lock_order'],
+        end; $$`, 'shipping_slip_lock_order'],
       ['書込みの本体が押さえの前に表を読む（スキーマ名を引用符で書く）', `create or replace function ${SAVE.replace('(uuid,integer,jsonb,uuid,uuid)', '(_slip_id uuid, _expected_version integer, _lines jsonb, _actor_id uuid, _request_key uuid)')}
         returns jsonb language plpgsql security definer set search_path = '' as $$
         begin
           perform 1 from "public"."orders" limit 1;
           perform private.lock_group_g_shipment_slips(array[_slip_id], array[]::uuid[], false);
           return null;
-        end; $$`, 'shipment_slip_lock_order'],
+        end; $$`, 'shipping_slip_lock_order'],
       ['書込みの本体が押さえの前に表を書く（UPDATE）', `create or replace function ${SAVE.replace('(uuid,integer,jsonb,uuid,uuid)', '(_slip_id uuid, _expected_version integer, _lines jsonb, _actor_id uuid, _request_key uuid)')}
         returns jsonb language plpgsql security definer set search_path = '' as $$
         begin
           update public.orders set updated_at = updated_at where false;
           perform private.lock_group_g_shipment_slips(array[_slip_id], array[]::uuid[], false);
           return null;
-        end; $$`, 'shipment_slip_lock_order'],
+        end; $$`, 'shipping_slip_lock_order'],
       ['破棄の本体が押さえの前に表を読む', `create or replace function private.admin_discard_shipment_slip_draft(_slip_id uuid, _expected_version integer, _actor_id uuid, _request_key uuid)
         returns jsonb language plpgsql security definer set search_path = '' as $$
         begin
           perform 1 from public.shipment_slips limit 1;
           perform private.lock_group_g_shipment_slips(array[_slip_id], array[]::uuid[], false);
           return null;
-        end; $$`, 'shipment_slip_lock_order'],
+        end; $$`, 'shipping_slip_lock_order'],
       // 表を読む関数の呼び出しを押さえの前へ移しても見つかる（権限の確かめは押さえの後）
       ['書込みの本体が権限の確かめを押さえの前に移す', `create or replace function ${SAVE.replace('(uuid,integer,jsonb,uuid,uuid)', '(_slip_id uuid, _expected_version integer, _lines jsonb, _actor_id uuid, _request_key uuid)')}
         returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -695,28 +696,28 @@ describeLocalDb('G-3 発送票の下書き（保存・入替・破棄）', (db) 
           end if;
           perform private.lock_group_g_shipment_slips(array[_slip_id], array[]::uuid[], false);
           return null;
-        end; $$`, 'shipment_slip_lock_order'],
+        end; $$`, 'shipping_slip_lock_order'],
       ['書込みの本体が押さえの前に FROM ONLY で表を読む', `create or replace function ${SAVE.replace('(uuid,integer,jsonb,uuid,uuid)', '(_slip_id uuid, _expected_version integer, _lines jsonb, _actor_id uuid, _request_key uuid)')}
         returns jsonb language plpgsql security definer set search_path = '' as $$
         begin
           perform 1 from only public.orders limit 1;
           perform private.lock_group_g_shipment_slips(array[_slip_id], array[]::uuid[], false);
           return null;
-        end; $$`, 'shipment_slip_lock_order'],
+        end; $$`, 'shipping_slip_lock_order'],
       ['書込みの本体が押さえの前に TABLE で表を読む', `create or replace function ${SAVE.replace('(uuid,integer,jsonb,uuid,uuid)', '(_slip_id uuid, _expected_version integer, _lines jsonb, _actor_id uuid, _request_key uuid)')}
         returns jsonb language plpgsql security definer set search_path = '' as $$
         begin
           perform 1 from (table public.orders) as t limit 1;
           perform private.lock_group_g_shipment_slips(array[_slip_id], array[]::uuid[], false);
           return null;
-        end; $$`, 'shipment_slip_lock_order'],
+        end; $$`, 'shipping_slip_lock_order'],
       ['破棄の本体が権限の確かめを押さえの前に移す', `create or replace function private.admin_discard_shipment_slip_draft(_slip_id uuid, _expected_version integer, _actor_id uuid, _request_key uuid)
         returns jsonb language plpgsql security definer set search_path = '' as $$
         begin
           perform private.group_g_actor_has_permissions(_actor_id, array['admin.shipping.manage']);
           perform private.lock_group_g_shipment_slips(array[_slip_id], array[]::uuid[], false);
           return null;
-        end; $$`, 'shipment_slip_lock_order'],
+        end; $$`, 'shipping_slip_lock_order'],
       // 押さえの道具の中の順: 票の行を取る前に追跡の登録の行を取る
       ['押さえの道具が票より先に追跡の登録の行を取る', `create or replace function ${LOCK.replace('(uuid[],uuid[],boolean)', '(_slip_ids uuid[], _order_item_ids uuid[], _with_settings boolean)')}
         returns uuid[] language plpgsql security definer set search_path = '' as $$
@@ -730,7 +731,7 @@ describeLocalDb('G-3 発送票の下書き（保存・入替・破棄）', (db) 
           perform r.fulfillment_id from private.fulfillment_tracking_registrations as r where r.fulfillment_id = any(array[]::uuid[]) for update;
           perform s.id from public.shipment_slips as s where s.id = any(_slip_ids) order by s.id for update;
           return v_locked;
-        end; $$`, 'shipment_slip_lock_order'],
+        end; $$`, 'shipping_slip_lock_order'],
       ['押さえの道具が在庫の閉包を取る前に票の行を取る', `create or replace function ${LOCK.replace('(uuid[],uuid[],boolean)', '(_slip_ids uuid[], _order_item_ids uuid[], _with_settings boolean)')}
         returns uuid[] language plpgsql security definer set search_path = '' as $$
         declare v_locked uuid[];
@@ -743,16 +744,16 @@ describeLocalDb('G-3 発送票の下書き（保存・入替・破棄）', (db) 
           v_locked := private.lock_group_g_inventory(array[]::bigint[], array[]::uuid[], null);
           perform r.fulfillment_id from private.fulfillment_tracking_registrations as r where r.fulfillment_id = any(array[]::uuid[]) for update;
           return v_locked;
-        end; $$`, 'shipment_slip_lock_order'],
+        end; $$`, 'shipping_slip_lock_order'],
       ['書込みの本体が押さえを呼ばない', `create or replace function ${SAVE.replace('(uuid,integer,jsonb,uuid,uuid)', '(_slip_id uuid, _expected_version integer, _lines jsonb, _actor_id uuid, _request_key uuid)')}
         returns jsonb language plpgsql security definer set search_path = '' as $$
         begin
           return null;
-        end; $$`, 'shipment_slip_lock_order'],
-      ['書き手の一覧から1本外す', '__without_last__', 'shipment_slip_writer_allowlist_missing'],
-      ['書き手の一覧に1本足す', '__with_extra__', 'shipment_slip_writer_allowlist_missing'],
-      ['書き手の一覧の1本を別の関数に替える', '__swapped__', 'shipment_slip_writer_allowlist'],
-      ['同名の別の overload を足す', 'create function private.admin_save_shipment_slip_draft(uuid) returns integer language sql as $$ select 1 $$', 'shipment_slip_function_set'],
+        end; $$`, 'shipping_slip_lock_order'],
+      ['書き手の一覧から1本外す', '__without_last__', 'shipping_slip_allowlist'],
+      ['書き手の一覧に1本足す', '__with_extra__', 'shipping_slip_allowlist'],
+      ['書き手の一覧の1本を別の関数に替える', '__swapped__', 'shipping_slip_allowlist'],
+      ['同名の別の overload を足す', 'create function private.admin_save_shipment_slip_draft(uuid) returns integer language sql as $$ select 1 $$', 'shipping_slip_function_set'],
     ])('FREQ-540-AC-11: %s と GROUP_G_MIGRATION_ASSERTION_FAILED で止まり DETAIL は項目名（%#）', async (_name, change, detail) => {
       const list = [...G3C_ALLOWLIST];
       const sql = change === '__without_last__' ? replaceAllowlistSql(list.slice(0, -1))

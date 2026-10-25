@@ -1,6 +1,6 @@
 # DB マイグレーション運用
 
-> 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで。G-3 は Task 1 の基盤・Task 2 の読取・Task 4 の書き手の移行・Task 6 の発送の取消を追記） | 確認日: 2026-10-26 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
+> G-3 Task 10 確認: 2026-10-26（4移行assert・75本・並行/PostgREST試験。controllerのfresh resetでgroup_g* 47 suiteを検証、SQLは不変で試験材料3件を直し、group_g3_concurrency 24/24を3回連続・group_g3_migration_asserts 64/64で通過） | 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで。G-3 は Task 1 の基盤・Task 2 の読取・Task 4 の書き手の移行・Task 6 の発送の取消を追記） | 確認日: 2026-10-26 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
 
@@ -772,3 +772,60 @@ Fix round 1（Opus レビュー後、2026-10-25）は末尾の確かめ `shipmen
 引数検証→lock(false)→訂正3権限→指紋と再送→票存在→段階→版→同日→JST範囲→配達日→票と有効発送の日付→correction履歴→date_correction版→操作。途中失敗は全てrollback、操作印は復元する。shipped_at・confirmed_at・delivered_at、返品期限、メール、品物状態、割当、在庫、追跡は不変。controllerが修正前のTask 9をfresh resetし、実鍵PostgRESTを含む12 suite・639/639成功（2026-10-26）。Fix round 1の後も、controllerがfresh resetし実鍵PostgRESTを含む12 suite・642/642成功（2026-10-26）。実装者はDB・supabase CLI・Docker・Playwrightを実行していない。本番未適用。
 
 Fix round 1: Task 8のactions移行は72,255 bytes / MD5 4C2AA20FBDAF43F3E4CC08B5AFA5E5CCとして記録を復元した。Task 9初回は80,411 bytes / MD5 09B757157099A8222B7818EEBCFA8217で、上の現行値と区別する。理由のtrim集合をJavaScriptと一致させ、発送更新直後に操作印を復元するSQL差分を加えた。修正前の639/639を新SQLの適用証明には使わない。
+
+## G-3 Task 10 書き手75本・並行試験・最終assert
+
+確認日: 2026-10-26。以下が4ファイルの現行値。上のTask別サイズと実測は過去の記録であり、Task 10の適用証明ではない。本番未適用。変更は末尾assertだけで、4本のBODY節はHEAD `6ccbd9b0` とバイト一致する。末尾assertのDETAIL名はTask 10で `shipping_*` に統一した。上のTask 1〜9の節に残る `shipment_slip_*`・`tracking_parent_*` などの名は当時のもので、現行は下の表。
+
+| 順 | ファイル | bytes | MD5 |
+| --- | --- | --- | --- |
+| 1 | `20261025053324_group_g3_shipping_foundation.sql` | 40,844 | `C7852621860190E1D2F52DEB4EC3F91A` |
+| 2 | `20261025070821_group_g3_shipping_reads.sql` | 50,712 | `556CF25E8895A6CBA47029AB301E647D` |
+| 3 | `20261025100130_group_g3_shipping_slips.sql` | 82,615 | `0D6E89EBAD5026B4AF110870B1E35A30` |
+| 4 | `20261025134538_group_g3_shipping_actions.sql` | 84,383 | `7A448D97181B4D2587EEA32ED5C1A7C7` |
+
+全て150 KB以下。BOM・CR・全角空白・NBSP・ゼロ幅文字なし、BEGIN／末尾assert／NOTIFY／COMMITは1組。関数本体の外にINSERT・UPDATE・DELETE・TRUNCATEを置かず、private schemaのUSAGEは操作しない。
+
+| 節 | 最終DETAIL・内容 |
+| --- | --- |
+| G3A | `shipping_tables`・`shipping_table_triggers`・`shipping_consumption_triggers`・`shipping_table_rows`・`shipping_fulfillment_columns`・`shipping_guard_functions`・`shipping_reason_codes`・`shipping_delete_blockers`・`shipping_table_acl`。6表、遅延検査、CHECK、削除止め5列と意味で比べるACL。行検査はこの取引の `created_at = transaction_timestamp()` だけ |
+| G3B | `shipping_read_functions`・`shipping_internal_functions`・`shipping_replaced_readers`。読取5本と入口5本、内部4本、既存読取3本の置換。追跡の親の検査は既存の `$g3b_tracking_parent$` 節を保ち、DETAILを統一 |
+| G3C | `shipping_slip_functions`・`shipping_slip_lock_order`・`shipping_slip_allowlist`・`shipping_slip_function_set`・`shipping_slip_table_acl`。12関数、共通advisory→設定→在庫閉包→票→登録、固定72本のOID集合、余分なoverloadなし、新6表のACL |
+| G3D | `shipping_action_functions`・`shipping_action_allowlist`・`shipping_action_function_set`・`shipping_action_replaced`・`shipping_action_table_acl`。本体3本と入口3本、配送結果の置換の戻り型を含む属性、固定75本のOID集合、新6表のACL |
+
+失敗は全て `GROUP_G_MIGRATION_ASSERTION_FAILED / 55000`、DETAILは項目名だけ。表・列ACLは `has_table_privilege`・`has_any_column_privilege`・`aclexplode` で比べ、所有者のACLからの権限欠落も調べる。PG17以降だけMAINTAINを検査する。ACLの並びや環境固有のOID値には依存しない。
+
+閉集合はG-2の65本＋G-3の10本＝75本。service_roleがEXECUTEできるG-3の新関数は、書込み7本と入口7本・読取5本と入口5本の24本だけ。内部の道具・守りの関数は誰にも付けず、PUBLIC／anon／authenticatedは全て拒否する。過去の末尾assertを流す試験は、[共有helper](../../tests/integration/db/helpers/group-g-allowlist.ts) の `runWithAllowlist` で、G3Cは72本・G2Bは65本へ取引内だけ差し替え、SAVEPOINTへのROLLBACKで75本へ戻ることも確認する。
+
+### 適用前の読取と適用順
+
+本番でG-3を初めて適用する前に、次の名前の重なりを読取りだけで数える。新関数なので全行の `matches = 0` が期待値。置換対象の既存6関数はこの一覧に含めない。1件でもあればoverloadを含む署名を調べ、意図しない関数の上書きを避ける。
+
+```sql
+WITH names(name) AS (VALUES
+  ('guard_group_g_shipment_slip_change'),('check_group_g_shipment_consumption'),
+  ('group_g_shipment_ready'),('group_g_bundle_verdict'),('group_g_bundle_key'),('tracking_registration_owner'),
+  ('list_admin_packing'),('list_admin_shipment_slips'),('get_admin_shipment_slip'),
+  ('list_admin_order_shipment_slips'),('list_shipment_accounting_inputs'),('lock_group_g_shipment_slips'),
+  ('admin_save_shipment_slip_draft'),('admin_discard_shipment_slip_draft'),('consume_group_g_allocations'),
+  ('register_group_g_slip_tracking'),('admin_confirm_shipment_slip'),('restore_group_g_shipment'),
+  ('admin_cancel_shipment_slip'),('admin_update_shipment_slip_tracking'),
+  ('admin_mark_shipment_slip_delivered'),('admin_correct_shipment_date')
+)
+SELECT names.name, count(p.oid) AS matches
+FROM names LEFT JOIN pg_catalog.pg_proc p ON p.proname = names.name
+  AND p.pronamespace IN (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname IN ('public','private'))
+GROUP BY names.name ORDER BY names.name;
+```
+
+順序は `20261024180500 < 20261025053324 < 20261025070821 < 20261025100130 < 20261025134538`。適用前にサイズ・MD5・基盤の発送0行前提・移行履歴を再確認し、本番担当者が `npx.cmd supabase db push --linked` を実行する。各ファイルのassertが失敗すれば、そのファイル全体がROLLBACKされる。別セッションの後続移行をG-3の検証前提にしない。
+
+### controllerのローカル検証
+
+controllerがresetとanon／実authenticatedのPostgREST smoke（各200）を完了してから、[並行](../../tests/integration/db/group_g3_concurrency.integration.test.ts)・[最終assert](../../tests/integration/db/group_g3_migration_asserts.integration.test.ts)・G-1 writer inventory・G-2 migration asserts／purchase documentsを `--runInBand` で実行する。並行suiteは3回連続で成功を記録し、その後PostgREST以外の `group_g3_*`・`group_g2_*`・`group_g1_*` 全suiteを流す。SQL修正が必要なら再reset待ちへ戻る。
+
+実測（2026-10-26）: controllerのfresh reset（上のSQL）で、実鍵PostgRESTを含むgroup_g* 47 suiteは初回1,492通過・4失敗。4件は試験材料の誤りで、SQLは変えていない。(1) 重なる2つの下書き: 全数を発送済みにした注文は先に `GROUP_G_SLIP_ORDER_NOT_SHIPPABLE` で断られるため、4個中3個ずつの選択に直し、負けた側が `GROUP_G_SLIP_QUANTITY_EXCEEDS_READY` になるようにした。(2) 取消と返品作成（2順）: 返送先の設定が空で `RETURN_ADDRESS_REQUIRED` だったため、返送先・理由設定を返品を作る接続の取引の中だけで設定し、RPCの直後に同じ取引の中で元へ戻す（設定は何もコミットしない。Fix round 1で、最初のコミットして`afterEach`で戻す形から直した）。(3) 「この取引で書いた行だけが失敗する」: 試験の行に必須の `stage` が無かった。修正後は `group_g3_concurrency` 24/24を3回連続、`group_g3_migration_asserts` 64/64が通過し、設定の復元（返送先・追跡の設定）も確かめた。
+
+Task 10 Fix round 1（2026-10-26、レビューの指摘対応）: 変えた移行はactionsだけで、末尾assertの節の中に限る（本体の節はHEAD `6ccbd9b0` とバイト一致）。(1) 末尾assertの注釈を実際の6関数・書込み本体3本・75本に合わせた。(2) 置き換えた `record_delivery_read_result` の本体の確かめを小文字化して読み、`FOR UPDATE`・`FOR SHARE` が本体に無ければ失敗とし（飛ばさない）、最初のそれが共通の押さえの前にあっても失敗にする。ほかに試験では、書込み範囲の走査が `UPDATE <表> <別名> SET`・`UPDATE ONLY`・`MERGE INTO` も見つけ、返品作成の設定は取引の中だけ、確定の後の棚卸減（消費済みの割当を外さない）の並行を足し、`delivery_tracking_records` の「最初は追跡オフ」の読取は自分の発送・注文に絞った。サイズ・MD5は上の表のとおり（actionsは84,383 bytes）。この後のDBは、controllerのreset後に再実測する（assertの節だけをローカルDBで流した限りでは通過）。
+
+[実PostgREST経路](../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts) は `LOCAL_SUPABASE_URL`・`LOCAL_SUPABASE_SERVICE_ROLE_KEY`・`LOCAL_SUPABASE_ANON_KEY` を環境から渡すcontrollerが実行する。未設定なら理由付きskip。公開RPC12本を実store→supabase-js→PostgREST→SQLで通し、anon／実authenticatedは拒否する。エラー表28行を実材料で発生させ、storeの状態コード・固定本文も検査する。単体・静的試験の成功はDB・PostgREST・外部登録・実メール・本番の証明にはしない。

@@ -206,6 +206,8 @@ describe('G-2 の移行 2 本の形（DB なし）', () => {
     expect(allowlist.slice(0, 56)).toEqual(g1);
     expect(allowlist.slice(56).map((signature) => signature.slice(0, signature.indexOf('(')))).toEqual(WRITER_NAMES.map((name) => `private.${name}`));
     expect(fixed).toEqual(allowlist);
+    expect(G2_ALLOWLIST).toEqual(allowlist);
+    expect(G3D_ALLOWLIST.slice(0, 65)).toEqual(allowlist);
   });
 
   test('FREQ-540-AC-08: 末尾の確かめは名前の付いた制約・trigger と意味の ACL だけで見る（局所で作られる名前・ACL の文字列の完全一致を使わない）', () => {
@@ -262,8 +264,10 @@ describeLocalDb('integration: G-2 の移行の末尾の確かめを流す（両�
   const failed = (detail: string): Failure => ({ code: '55000', message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', detail });
 
   test('FREQ-540-AC-08: 今の DB で両ファイルの末尾の確かめの節が通る（G2B は取引の中で一覧を G-2 の65本へ入れ替えてから）', async () => {
+    const before = (await db().query('select private.group_g_writer_allowlist()::oid[] as ids')).rows[0].ids;
     expect(await run(FOUNDATION_ASSERT)).toBeNull();
     expect(await run(WRITERS_ASSERT, G2_ALLOWLIST)).toBeNull();
+    expect((await db().query('select private.group_g_writer_allowlist()::oid[] as ids')).rows[0].ids).toEqual(before);
   });
 
   test('FREQ-540-AC-10: 今の DB の書き手の一覧のままでは G2B の確かめは止まる（G-3 の書き手が加わった75本。一覧の本数・並びは G3D_ALLOWLIST と同じ）', async () => {

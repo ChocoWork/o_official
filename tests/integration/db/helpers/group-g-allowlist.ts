@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { PgClient } from './local-db';
+import { isInTransaction } from './group-g1-fixtures';
 
 /**
  * G-3 Task 4: 書き手の閉じた一覧（private.group_g_writer_allowlist()）を、取引の中で決めた一覧へ入れ替える共有の道具。
@@ -69,6 +70,7 @@ export function replaceAllowlistSql(entries: readonly string[]): string {
 
 /** 呼び出し元の取引の中で一覧を入れ替えてから、末尾の確かめの節を流す。戻すのは呼び出し元の rollback */
 export async function runWithAllowlist(client: PgClient, entries: readonly string[], assertSql: string): Promise<void> {
+  if (!(await isInTransaction(client))) throw new Error('GROUP_G_ALLOWLIST_TRANSACTION_REQUIRED');
   await client.query(replaceAllowlistSql(entries));
   await client.query(assertSql);
 }

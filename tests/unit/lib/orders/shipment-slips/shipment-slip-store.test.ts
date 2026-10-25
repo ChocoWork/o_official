@@ -14,6 +14,7 @@ import {
   listAdminOrderShipmentSlips,
   listAdminPacking,
   listAdminShipmentSlips,
+  listShipmentAccountingInputs,
   markShipmentSlipDelivered,
   saveShipmentSlipDraft,
   ShipmentSlipError,
@@ -38,6 +39,36 @@ import {
 const rpc = jest.fn();
 const client = { rpc } as unknown as SupabaseClient;
 const FAILED = '発送の記録に失敗しました';
+
+describe('listShipmentAccountingInputs', () => {
+  const raw = { slip_id: SLIP_ID, fulfillment_id: FULFILLMENT_ID, order_item_id: ITEM_ID_2, quantity: 2,
+    shipment_date: '2026-10-25', revision_id: SLIP_ID_2, cancelled_at: null };
+  test('FREQ-535-AC-05: service-role accounting reader sends its exact three arguments and projects only approved fields', async () => {
+    rpc.mockResolvedValue({ data: [{ ...raw, private_value: 'PRIVATE' }], error: null });
+    expect(await listShipmentAccountingInputs(client, { from: '2026-10-01', to: '2026-10-31', limit: 100 })).toEqual([
+      { slipId: SLIP_ID, fulfillmentId: FULFILLMENT_ID, orderItemId: ITEM_ID_2, quantity: 2, shipmentDate: '2026-10-25', revisionId: SLIP_ID_2, cancelledAt: null },
+    ]);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('list_shipment_accounting_inputs', { _from: '2026-10-01', _to: '2026-10-31', _limit: 100 });
+  });
+  test.each([null, {}, [null], [{ ...raw, quantity: 0 }], [{ ...raw, shipment_date: '2026-02-30' }],
+    [{ ...raw, revision_id: 'bad' }], [{ ...raw, cancelled_at: 'bad' }], [raw, raw]])('FREQ-535-AC-05: malformed accounting material is a fixed 500 (%#)', async (data) => {
+    rpc.mockResolvedValue({ data, error: null });
+    await expect(listShipmentAccountingInputs(client, { from: '2026-10-01', to: '2026-10-31', limit: 100 })).rejects.toMatchObject({ status: 500, message: FAILED });
+  });
+  test('FREQ-535-AC-05: empty input, cancellation time, business denial and transport failure retain the store contract', async () => {
+    rpc.mockResolvedValueOnce({ data: [], error: null });
+    expect(await listShipmentAccountingInputs(client, { from: '2026-10-01', to: '2026-10-31', limit: 100 })).toEqual([]);
+    rpc.mockResolvedValueOnce({ data: [{ ...raw, cancelled_at: '2026-10-26T01:00:00+00:00' }], error: null });
+    expect((await listShipmentAccountingInputs(client, { from: '2026-10-01', to: '2026-10-31', limit: 100 }))[0].cancelledAt).toBe('2026-10-26T01:00:00+00:00');
+    rpc.mockResolvedValueOnce({ data: [{ ...raw, revision_id: null }], error: null });
+    expect((await listShipmentAccountingInputs(client, { from: '2026-10-01', to: '2026-10-31', limit: 100 }))[0].revisionId).toBeNull();
+    rpc.mockResolvedValueOnce({ data: null, error: { code: '22023', message: 'GROUP_G_ARGUMENT_INVALID' } });
+    await expect(listShipmentAccountingInputs(client, { from: '2026-10-01', to: '2026-10-31', limit: 0 })).rejects.toMatchObject({ status: 400, code: 'GROUP_G_ARGUMENT_INVALID' });
+    rpc.mockRejectedValueOnce(new Error('PRIVATE'));
+    await expect(listShipmentAccountingInputs(client, { from: '2026-10-01', to: '2026-10-31', limit: 100 })).rejects.toMatchObject({ status: 500, message: FAILED });
+  });
+});
 
 describe('canCorrectShipmentDate', () => {
   const required = ['admin.shipping.correct_date', 'admin.shipping.read', 'admin.orders.read'];

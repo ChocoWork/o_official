@@ -708,12 +708,13 @@ BEGIN
   END IF;
   IF (SELECT pg_catalog.count(*) FROM pg_catalog.pg_proc AS p
       JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
-      WHERE n.nspname IN ('public','private') AND p.proname = ANY(v_names[1:3])) <> 3
+      WHERE n.nspname IN ('public','private') AND p.proname = ANY(v_names[1:3] || ARRAY['tracking_registration_owner'])) <> 4
     OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc AS p JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
-      WHERE n.nspname = 'public' AND p.proname = ANY(v_names[1:3])) THEN
+      WHERE n.nspname = 'public' AND p.proname = ANY(v_names[1:3] || ARRAY['tracking_registration_owner'])) THEN
     RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = 'shipping_internal_functions';
   END IF;
   FOR v IN SELECT * FROM (VALUES
+    ('private.tracking_registration_owner(uuid,integer)', true, false, ARRAY['_fulfillment_id','_tracking_version']::text[], ARRAY[]::text[], ARRAY[]::text[], 'uuid', ''),
     ('private.group_g_shipment_ready(uuid[])', true, false, ARRAY['_order_ids']::text[], ARRAY['order_id','order_item_id','ready','shippable','blocked_reasons']::text[], ARRAY['uuid','uuid','integer','integer','text[]']::text[], 'record', ''),
     ('private.group_g_bundle_key(uuid)', true, false, ARRAY['_order_id']::text[], ARRAY[]::text[], ARRAY[]::text[], 'text', ''),
     ('private.group_g_bundle_verdict(uuid[])', true, false, ARRAY['_order_ids']::text[], ARRAY[]::text[], ARRAY[]::text[], 'text', ''),
@@ -769,7 +770,6 @@ BEGIN
   IF EXISTS (
     SELECT 1
     FROM (VALUES
-      ('private.tracking_registration_owner(uuid,integer)', true, 'sql', false),
       ('private.delivery_tracking_backfill_targets()', false, 'sql', false),
       ('public.get_order_delivery_detail(uuid)', true, 'plpgsql', true),
       ('public.get_order_status_public_material(uuid)', true, 'plpgsql', true)
@@ -780,6 +780,10 @@ BEGIN
        OR p.prosecdef <> e.definer
        OR p.provolatile <> 's'
        OR p.prolang <> (SELECT l.oid FROM pg_catalog.pg_language AS l WHERE l.lanname = e.lang)
+       OR p.prorettype <> CASE WHEN e.sig = 'private.delivery_tracking_backfill_targets()' THEN 'record'::regtype ELSE 'jsonb'::regtype END
+       OR p.proretset <> (e.sig = 'private.delivery_tracking_backfill_targets()')
+       OR p.proargnames IS DISTINCT FROM CASE WHEN e.sig = 'private.delivery_tracking_backfill_targets()'
+         THEN ARRAY['fulfillment_id','tracking_version','expires_at'] ELSE ARRAY['_order_id'] END
        OR p.proconfig IS DISTINCT FROM ARRAY['search_path=""']::text[]
        OR pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')
        OR pg_catalog.has_function_privilege('authenticated', p.oid, 'EXECUTE')
@@ -788,7 +792,7 @@ BEGIN
        OR EXISTS (SELECT 1 FROM pg_catalog.aclexplode(COALESCE(p.proacl, pg_catalog.acldefault('f', p.proowner))) AS a
                   WHERE a.grantee = 0 AND a.privilege_type = 'EXECUTE')
   ) THEN
-    v_failed := 'tracking_parent_functions';
+    v_failed := 'shipping_replaced_readers';
   ELSIF EXISTS (
     SELECT 1
     FROM pg_catalog.unnest(ARRAY['public.get_order_delivery_detail(uuid)', 'public.get_order_status_public_material(uuid)']) AS w(sig)
@@ -800,7 +804,7 @@ BEGIN
     WHERE p.oid = pg_catalog.to_regprocedure('private.delivery_tracking_backfill_targets()')
       AND pg_catalog.strpos(p.prosrc, 'AND private.tracking_registration_owner(f.id, f.tracking_version) = f.id') > 0
   ) THEN
-    v_failed := 'tracking_parent_callers';
+    v_failed := 'shipping_replaced_readers';
   END IF;
   IF v_failed IS NOT NULL THEN
     RAISE EXCEPTION 'GROUP_G_MIGRATION_ASSERTION_FAILED' USING ERRCODE = '55000', DETAIL = v_failed;

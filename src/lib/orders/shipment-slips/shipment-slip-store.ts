@@ -353,3 +353,32 @@ export async function correctShipmentDate(
   if (result.id !== input.slipId.toLowerCase()) throw new ShipmentSlipError();
   return result;
 }
+
+export type ShipmentAccountingInput = {
+  slipId: string; fulfillmentId: string; orderItemId: string; quantity: number;
+  shipmentDate: string; revisionId: string | null; cancelledAt: string | null;
+};
+
+/** 会計への接続前の読取。service_role 専用RPCの許可された7項目だけを返す。 */
+export async function listShipmentAccountingInputs(
+  client: SupabaseClient, input: { from: string; to: string; limit: number },
+): Promise<ShipmentAccountingInput[]> {
+  const data = await callRpc(client, 'list_shipment_accounting_inputs', { _from: input.from, _to: input.to, _limit: input.limit });
+  if (!Array.isArray(data)) throw new ShipmentSlipError();
+  const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+  const seen = new Set<string>();
+  return data.map((raw: unknown) => {
+    if (!isObject(raw) || !uuid(raw.slip_id) || !uuid(raw.fulfillment_id) || !uuid(raw.order_item_id) || (raw.revision_id !== null && !uuid(raw.revision_id))
+      || typeof raw.quantity !== 'number' || !Number.isSafeInteger(raw.quantity) || raw.quantity < 1
+      || typeof raw.shipment_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw.shipment_date)
+      || !Number.isFinite(Date.parse(raw.shipment_date)) || new Date(raw.shipment_date).toISOString().slice(0, 10) !== raw.shipment_date
+      || (raw.cancelled_at !== null && (typeof raw.cancelled_at !== 'string' || !Number.isFinite(Date.parse(raw.cancelled_at))))) {
+      throw new ShipmentSlipError();
+    }
+    const key = `${raw.fulfillment_id}:${raw.order_item_id}`;
+    if (seen.has(key)) throw new ShipmentSlipError();
+    seen.add(key);
+    return { slipId: raw.slip_id, fulfillmentId: raw.fulfillment_id, orderItemId: raw.order_item_id,
+      quantity: raw.quantity, shipmentDate: raw.shipment_date, revisionId: raw.revision_id as string | null, cancelledAt: raw.cancelled_at as string | null };
+  });
+}

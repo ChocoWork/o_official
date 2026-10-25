@@ -239,6 +239,6 @@ describeLocalDb('G-3 date correction (local DB only)', (db) => {
     const from = sql.indexOf('DO $g3d_final_objects$');
     const final = sql.slice(from, sql.indexOf('$g3d_final_objects$;', from) + '$g3d_final_objects$;'.length);
     expect(await flow.rejected(async () => { await db().query(altered); await db().query(final); }))
-      .toEqual({ code: '55000', message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', detail: 'shipment_slip_action_lock_order' });
+      .toEqual({ code: '55000', message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', detail: 'shipping_action_functions' });
   });
 });
