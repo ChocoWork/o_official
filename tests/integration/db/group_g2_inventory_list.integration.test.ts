@@ -11,7 +11,7 @@ import { seedGroupG1Allocation } from './helpers/group-g1-fixtures';
 
 /**
  * G-2 Task 3（FREQ-525・FREQ-540-AC-07）: 在庫一覧表の読取 private.list_admin_inventory(_actor_id) と public 入口。
- * 注文数（受注生産中と仕上がり待ち）・在庫（空き + 入金済みの割当 + 支払い前の仮確保）・発注済み（数量確定済みの未納）・
+ * 注文数（受注生産中と発送準備中）・在庫（空き + 入金済みの割当 + 支払い前の仮確保）・発注済み（数量確定済みの未納）・
  * 発注必要数 max(0, 注文数 − 在庫 − 発注済み) を variant ごとに1つの snapshot で返す。何も書かず、variant を作らない。
  * 実行は controller の使い捨てローカル DB（ふつうの db reset の後）。試験ごとに BEGIN … ROLLBACK で包む。
  * 発注書は Task 6 の関数が無い間、直接 INSERT/UPDATE の材料で作る（遅延の確かめは取引を終えないので発火しない）。
@@ -196,7 +196,7 @@ describeLocalDb('integration: G-2 在庫一覧表の読取', (db) => {
     });
     expect(numbers(row)).toEqual({ free: 0, paid_allocated: 2, payment_held: 0, on_hand: 2, order_quantity: 5, on_order: 1, required: 2 });
     expect(Object.keys(row as object)).toEqual(COLUMNS);
-    // 注文数の内訳は G-1 の投影と同じ: 受注生産中 3 + 仕上がり待ち 2
+    // 注文数の内訳は G-1 の投影と同じ: 受注生産中 3 + 発送準備中 2
     const states = (await db().query('select status, sum(quantity)::int as quantity from public.list_admin_order_item_states($1) group by status order by status', [[order.orderId]])).rows;
     expect(states).toEqual([{ status: 'in_production', quantity: 3 }, { status: 'ready', quantity: 2 }]);
   });
@@ -281,7 +281,7 @@ describeLocalDb('integration: G-2 在庫一覧表の読取', (db) => {
       lines: [{ orderItemId: returned.orderItemIds[0], fulfillmentId: returned.fulfillments[0].id, quantity: 1 }],
     });
 
-    /** 先絞りをしない投影: その variant を持つ全注文を投影に渡し、受注生産中と仕上がり待ちの数を足す */
+    /** 先絞りをしない投影: その variant を持つ全注文を投影に渡し、受注生産中と発送準備中の数を足す */
     const unfiltered = async (variantId: number) => (await db().query(
       `select coalesce(sum(s.unit_to - s.unit_from), 0)::int as quantity
        from private.group_g_item_state_ranges(array(select distinct oi2.order_id from public.order_items oi2 where oi2.variant_id = $1)) s

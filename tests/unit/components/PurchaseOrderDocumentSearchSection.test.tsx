@@ -25,6 +25,13 @@ function row(overrides: Partial<PurchaseOrderDocumentSearchRow> = {}): PurchaseO
   };
 }
 
+/** window.open が返す空のタブの代わり（クリックの中で開き、リンクが取れたら location.href を替え、取れなければ close する） */
+function mockNewTab() {
+  const tab = { close: jest.fn(), opener: {} as unknown, location: { href: '' } };
+  const open = jest.spyOn(window, 'open').mockImplementation(() => tab as unknown as Window);
+  return { open, tab };
+}
+
 const page = (rows: PurchaseOrderDocumentSearchRow[], total = rows.length) => json({ rows, total, page: 1, limit: 50 });
 const lastUrl = () => new URL(String(fetchMock.mock.calls.at(-1)?.[0]), 'https://example.test');
 
@@ -80,16 +87,20 @@ describe('PurchaseOrderDocumentSearchSection', () => {
   describe('原本を見る', () => {
     test('FREQ-530-AC-02: 押すとその行の発注書・添付の窓口（GET …/attachments/[attachmentId]/url。no-store・表示用）から60秒の署名つきリンクをもらい、新しいタブで開く。リンクは画面に出さない', async () => {
       const user = userEvent.setup();
-      const open = jest.spyOn(window, 'open').mockImplementation(() => null);
+      const { open, tab } = mockNewTab();
       const other = '99999999-9999-4999-8999-999999999991';
       const otherOrder = '88888888-8888-4888-8888-888888888881';
       await loaded([row(), row({ attachmentId: other, purchaseOrderId: otherOrder, fileName: 'other.pdf' })]);
       fetchMock.mockResolvedValueOnce(json({ url: SIGNED_VIEW, expiresInSeconds: 60 }));
       const second = screen.getAllByTestId('purchase-order-document-row')[1];
       await user.click(within(second).getByRole('button', { name: '原本を見る' }));
-      await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(tab.location.href).toBe(SIGNED_VIEW));
+      expect(open).toHaveBeenCalledTimes(1);
       expect(fetchMock).toHaveBeenLastCalledWith(URL_ENDPOINT(otherOrder, other), { cache: 'no-store' });
-      expect(open).toHaveBeenCalledWith(SIGNED_VIEW, '_blank', 'noopener,noreferrer');
+      // 空のタブを先に開き、opener を切ってから、リンクが取れたタブを移す（リンクは window.open の引数に渡さない）
+      expect(open).toHaveBeenCalledWith('', '_blank');
+      expect(tab.opener).toBeNull();
+      expect(tab.close).not.toHaveBeenCalled();
       expect(document.body.textContent).not.toContain('SECRET-VIEW-TOKEN');
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
       // 開いた後はまた押せる
@@ -103,20 +114,21 @@ describe('PurchaseOrderDocumentSearchSection', () => {
       ['2要素認証が無い', 403, { error: 'Forbidden', reason: 'MFA required' }, '2要素認証が必要です'],
       ['ログインが切れた（401）', 401, { error: 'Unauthorized' }, 'ログインし直してください。'],
       ['想定外の失敗（500）', 500, { error: 'x' }, '発注の記録に失敗しました'],
-    ])('FREQ-530-AC-02: リンクをもらえない（%s）時は発注書の頁と同じ文を role=alert で出し、タブは開かない', async (_name, status, body, message) => {
+    ])('FREQ-530-AC-02: リンクをもらえない（%s）時は発注書の頁と同じ文を role=alert で出し、先に開いた空のタブを閉じて、原本へは移さない', async (_name, status, body, message) => {
       const user = userEvent.setup();
-      const open = jest.spyOn(window, 'open').mockImplementation(() => null);
+      const { tab } = mockNewTab();
       await loaded();
       fetchMock.mockResolvedValueOnce(json(body, status));
       await user.click(screen.getByRole('button', { name: '原本を見る' }));
       expect(await screen.findByRole('alert')).toHaveTextContent(message);
-      expect(open).not.toHaveBeenCalled();
+      expect(tab.close).toHaveBeenCalledTimes(1);
+      expect(tab.location.href).toBe('');
       expect(screen.getByRole('button', { name: '原本を見る' })).toBeEnabled();
     });
 
-    test('FREQ-530-AC-02: リンクの応答が崩れている・通信が失敗した時は「原本を取得できません。」。次に成功すれば文は消える', async () => {
+    test('FREQ-530-AC-02: リンクの応答が崩れている・通信が失敗した時は「原本を取得できません。」で、空のタブを閉じる。次に成功すれば文は消える', async () => {
       const user = userEvent.setup();
-      const open = jest.spyOn(window, 'open').mockImplementation(() => null);
+      const { open, tab } = mockNewTab();
       await loaded();
       fetchMock.mockResolvedValueOnce(json({}));
       await user.click(screen.getByRole('button', { name: '原本を見る' }));
@@ -125,16 +137,46 @@ describe('PurchaseOrderDocumentSearchSection', () => {
       await user.click(screen.getByRole('button', { name: '原本を見る' }));
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
       expect(await screen.findByRole('alert')).toHaveTextContent('原本を取得できません。');
-      expect(open).not.toHaveBeenCalled();
+      await waitFor(() => expect(tab.close).toHaveBeenCalledTimes(2));
+      expect(tab.location.href).toBe('');
       fetchMock.mockResolvedValueOnce(json({ url: SIGNED_VIEW, expiresInSeconds: 60 }));
       await user.click(screen.getByRole('button', { name: '原本を見る' }));
-      await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(tab.location.href).toBe(SIGNED_VIEW));
+      expect(open).toHaveBeenCalledTimes(3);
+      expect(tab.close).toHaveBeenCalledTimes(2);
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    test('FREQ-530-AC-02: 新しいタブはリンクを待つ前に（クリックの中で）開く。リンクが取れるまでタブは空のまま', async () => {
+      const user = userEvent.setup();
+      const { open, tab } = mockNewTab();
+      await loaded();
+      let release: (value: Response) => void = () => undefined;
+      fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => { release = resolve; }));
+      await user.click(screen.getByRole('button', { name: '原本を見る' }));
+      // 窓口の応答はまだ無い。その時点で空のタブは開いていて、まだ移していない
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(open).toHaveBeenCalledWith('', '_blank');
+      expect(tab.location.href).toBe('');
+      release(json({ url: SIGNED_VIEW, expiresInSeconds: 60 }));
+      await waitFor(() => expect(tab.location.href).toBe(SIGNED_VIEW));
+    });
+
+    test('FREQ-530-AC-02: ブラウザが新しいタブを止めた時は、role=alert で止められたことを知らせ、リンクは取りに行かない', async () => {
+      const user = userEvent.setup();
+      const open = jest.spyOn(window, 'open').mockImplementation(() => null);
+      await loaded();
+      await user.click(screen.getByRole('button', { name: '原本を見る' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('新しいタブがブラウザに止められました。このサイトのポップアップを許可して、もう一度押してください。');
+      expect(open).toHaveBeenCalledTimes(1);
+      // 取りに行くのは最初の検索の1回だけ。署名つきリンクの窓口は呼んでいない
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: '原本を見る' })).toBeEnabled();
     });
 
     test('FREQ-530-AC-02: リンクをもらう間は全行のボタンを押せず、二重に取りに行かない', async () => {
       const user = userEvent.setup();
-      jest.spyOn(window, 'open').mockImplementation(() => null);
+      const { open } = mockNewTab();
       await loaded([row(), row({ attachmentId: '99999999-9999-4999-8999-999999999991', fileName: 'other.pdf' })]);
       let release: (value: Response) => void = () => undefined;
       fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => { release = resolve; }));
@@ -144,12 +186,14 @@ describe('PurchaseOrderDocumentSearchSection', () => {
       expect(buttons[0]).toBeDisabled();
       fireEvent.click(buttons[1]);
       expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(open).toHaveBeenCalledTimes(1);
       release(json({ url: SIGNED_VIEW, expiresInSeconds: 60 }));
       await waitFor(() => expect(buttons[0]).toBeEnabled());
     });
 
     test('FREQ-530-AC-02: 新しく検索すると、前の「原本を見る」の失敗の文は消える', async () => {
       const user = userEvent.setup();
+      mockNewTab();
       await loaded();
       fetchMock.mockResolvedValueOnce(json({ code: 'DOCUMENT_NOT_FOUND', error: 'x' }, 404));
       await user.click(screen.getByRole('button', { name: '原本を見る' }));

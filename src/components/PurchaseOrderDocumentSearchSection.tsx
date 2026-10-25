@@ -9,7 +9,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/Button/Button';
 import { adminLoadFailureMessage } from '@/lib/admin/admin-load-failure';
 import { clientFetch } from '@/lib/client-fetch';
-import { fetchPurchaseOrderDocumentUrl } from '@/lib/purchase-orders/purchase-order-documents-client';
+import { fetchPurchaseOrderDocumentUrl, openBlankDocumentTab } from '@/lib/purchase-orders/purchase-order-documents-client';
 import {
   formatNumber,
   formatPurchaseOrderDay,
@@ -141,19 +141,30 @@ export default function PurchaseOrderDocumentSearchSection(): React.JSX.Element 
     setState({ phase: 'loading' });
     setPage(next);
   };
-  /** 発注書の頁の「表示」と同じ窓口（60秒の署名つきリンク）をもらい、原本を新しいタブで開く。リンクは文にも記録にも出さない */
+  /**
+   * 発注書の頁の「表示」と同じ窓口（60秒の署名つきリンク）をもらい、原本を新しいタブで開く。リンクは文にも記録にも出さない。
+   * タブはリンクを待つ前にクリックの中で空で開き、リンクが取れてからそのタブを移す（待った後の window.open は Safari が止めることがあるため）。
+   * 止められたら文を出し、リンクは取らない。取れなければタブを閉じる。
+   */
   const openOriginal = async (row: PurchaseOrderDocumentSearchRow): Promise<void> => {
     if (opening !== null) return;
+    const tab = openBlankDocumentTab();
+    if (tab === null) {
+      setOpenMessage(TEXT.openBlocked);
+      return;
+    }
     setOpening(row.attachmentId);
     setOpenMessage(null);
     try {
       const result = await fetchPurchaseOrderDocumentUrl(row.purchaseOrderId, row.attachmentId, false);
       if (!result.ok) {
+        tab.close();
         setOpenMessage(result.message);
         return;
       }
-      window.open(result.url, '_blank', 'noopener,noreferrer');
+      tab.location.href = result.url;
     } catch {
+      tab.close();
       setOpenMessage(TEXT.openFailed);
     } finally {
       setOpening(null);

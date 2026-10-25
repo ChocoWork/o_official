@@ -331,6 +331,39 @@ describe('ItemStockSection の権限が無い時（FREQ-540-AC-06）', () => {
     expect(mockedFetch).toHaveBeenCalledTimes(2);
   });
 
+  // 窓口は CSRF の失敗・MFA なしでも 403 を返す。記録の失敗も、読み込みと同じく本文の reason を先に見る（最終レビュー M2）
+  it('FREQ-540-AC-06: 記録が CSRF の失敗の 403 なら、権限の文ではなく「再読み込みして、もう一度」の文を出す', async () => {
+    mockedFetch.mockResolvedValue(json({ variants: [VARIANT], movements: [PURCHASE, RESTOCK] }));
+    render(<ItemStockSection itemId="7" />);
+    await screen.findByRole('heading', { name: '履歴' });
+    mockedFetch.mockResolvedValueOnce(json({ error: 'Forbidden', reason: 'CSRF validation failed' }, 403));
+
+    await userEvent.type(screen.getByTestId('variant-delta'), '3');
+    await userEvent.click(screen.getByTestId('variant-submit'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /^セキュリティ確認に失敗しました。ページを再読み込みして、もう一度記録してください。$/,
+    );
+    expect(screen.queryByText('在庫を変更する権限がありません。')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Forbidden/)).not.toBeInTheDocument();
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('FREQ-540-AC-06: 記録が MFA なしの 403 なら、権限の文ではなく「2要素認証が必要です」を出す', async () => {
+    mockedFetch.mockResolvedValue(json({ variants: [VARIANT], movements: [PURCHASE, RESTOCK] }));
+    render(<ItemStockSection itemId="7" />);
+    await screen.findByRole('heading', { name: '履歴' });
+    mockedFetch.mockResolvedValueOnce(json({ error: 'Forbidden', reason: 'MFA required' }, 403));
+
+    await userEvent.type(screen.getByTestId('variant-delta'), '3');
+    await userEvent.click(screen.getByTestId('variant-submit'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^2要素認証が必要です$/);
+    expect(screen.queryByText('在庫を変更する権限がありません。')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Forbidden/)).not.toBeInTheDocument();
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+  });
+
   it('DB の関数が権限で断った時（本文が日本語の 403）も、同じ固定の文を出す', async () => {
     mockedFetch.mockResolvedValue(json({ variants: [VARIANT], movements: [PURCHASE, RESTOCK] }));
     render(<ItemStockSection itemId="7" />);

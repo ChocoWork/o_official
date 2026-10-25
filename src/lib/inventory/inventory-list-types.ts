@@ -4,7 +4,7 @@
 /**
  * 在庫一覧表の1行（variant ごと）。
  * onHand = free + paidAllocated + paymentHeld（G-1 の在庫の数え方と同じ）。
- * orderQuantity は受注生産中と仕上がり待ちの注文の数（未払い・取消申請中・返品申請中は含まない）。
+ * orderQuantity は受注生産中と発送準備中の注文の数（未払い・取消申請中・返品申請中は含まない）。
  * onOrder は数量が確定した発注の未納の数。required = max(0, orderQuantity - onHand - onOrder)。
  */
 export type AdminInventoryRow = {

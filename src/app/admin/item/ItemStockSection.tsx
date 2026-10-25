@@ -89,6 +89,20 @@ const LOAD_ERROR_MESSAGE = "在庫の取得に失敗しました。";
 // 窓口が 403 を返した時（admin.stock.read / admin.stock.manage が無い）は、英語の Forbidden を出さずにこの文にする
 const READ_FORBIDDEN_MESSAGE = "在庫を見る権限がありません。";
 const WRITE_FORBIDDEN_MESSAGE = "在庫を変更する権限がありません。";
+// 変更の窓口の CSRF の確かめで断られた 403（権限の不足ではない）。他の管理画面と同じ「再読み込みして、もう一度」の文
+const WRITE_CSRF_MESSAGE = "セキュリティ確認に失敗しました。ページを再読み込みして、もう一度記録してください。";
+const WRITE_FAILED_MESSAGE = "在庫の記録に失敗しました";
+
+/**
+ * 記録の POST が失敗した時の文。403 は本文の reason を先に見る（CSRF の失敗と MFA なしの 403 を「権限なし」と出さない）。
+ * 本物の権限の 403（reason なし・DB の GROUP_G_FORBIDDEN）だけ権限の文。403 以外は窓口の日本語の文をそのまま出す。
+ */
+function writeFailureMessage(status: number, json: unknown): string {
+  const body = (typeof json === "object" && json !== null ? json : {}) as { reason?: unknown; error?: unknown };
+  if (status === 403 && body.reason === "CSRF validation failed") return WRITE_CSRF_MESSAGE;
+  if (status === 403) return adminLoadFailureMessage(status, body, WRITE_FORBIDDEN_MESSAGE, WRITE_FAILED_MESSAGE);
+  return typeof body.error === "string" && body.error ? body.error : WRITE_FAILED_MESSAGE;
+}
 
 // 管理画面から打てる理由。注文の処理が書くものは含めない（API 側でも拒否する）。
 const ADMIN_REASONS = [
@@ -195,7 +209,7 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
           setConfirmation({ variant, delta, reason, quantity: json.releasedQuantity, note });
         } else {
           if (response.status < 500) retries.current.delete(variant.id);
-          setActionError(response.status === 403 ? WRITE_FORBIDDEN_MESSAGE : (json?.error ?? "在庫の記録に失敗しました"));
+          setActionError(writeFailureMessage(response.status, json));
         }
         return;
       }
@@ -205,7 +219,7 @@ export function ItemStockSection({ itemId }: { itemId: string }) {
       setNotice(`${variantLabel(variant)} の在庫を ${formatDelta(delta)} しました。`);
       await load();
     } catch {
-      setActionError("在庫の記録に失敗しました");
+      setActionError(WRITE_FAILED_MESSAGE);
     } finally {
       sending.current = false;
       setPendingVariantId(null);

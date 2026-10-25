@@ -6,6 +6,7 @@ jest.mock('@/lib/client-fetch', () => ({
 import {
   checkPurchaseOrderDocumentFile,
   fetchPurchaseOrderDocumentUrl,
+  openBlankDocumentTab,
   PURCHASE_ORDER_DOCUMENT_ACCEPT,
   resumePurchaseOrderDocument,
   uploadPurchaseOrderDocument,
@@ -160,6 +161,31 @@ describe('fetchPurchaseOrderDocumentUrl（原本を開く60秒の署名つきリ
     const result = await fetchPurchaseOrderDocumentUrl(ORDER_ID, ATTACHMENT_ID, false);
     expect(result).toEqual({ ok: false, message: '原本を取得できません。' });
     noSecret(result);
+  });
+});
+
+describe('openBlankDocumentTab（原本の新しいタブを、リンクを待つ前に空で開く）', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  test('FREQ-530-AC-03: window.open("", "_blank") で空のタブを開き、opener を切ってから返す（リンクは渡さない）', () => {
+    const tab = { opener: { sentinel: true } as unknown, close: jest.fn(), location: { href: '' } };
+    const open = jest.spyOn(window, 'open').mockImplementation(() => tab as unknown as Window);
+    expect(openBlankDocumentTab()).toBe(tab);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith('', '_blank');
+    expect(tab.opener).toBeNull();
+  });
+
+  test('FREQ-530-AC-03: ブラウザが止めた時（null）は null を返す', () => {
+    jest.spyOn(window, 'open').mockImplementation(() => null);
+    expect(openBlankDocumentTab()).toBeNull();
+  });
+
+  test('FREQ-530-AC-03: opener を切れないタブでも、そのタブを返す', () => {
+    const tab = { close: jest.fn(), location: { href: '' } } as Record<string, unknown>;
+    Object.defineProperty(tab, 'opener', { configurable: false, get: () => ({}), set: () => { throw new Error('read-only'); } });
+    jest.spyOn(window, 'open').mockImplementation(() => tab as unknown as Window);
+    expect(openBlankDocumentTab()).toBe(tab);
   });
 });
 

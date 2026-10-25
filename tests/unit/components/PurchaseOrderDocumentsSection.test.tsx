@@ -47,6 +47,13 @@ function renderSection(purchaseOrder: PurchaseOrderDetail = detail()) {
   return render(<PurchaseOrderDocumentsSection purchaseOrder={purchaseOrder} onSaved={onSaved} onReload={onReload} />);
 }
 
+/** window.open が返す空のタブの代わり（クリックの中で開き、リンクが取れたら location.href を替え、取れなければ close する） */
+function mockNewTab() {
+  const tab = { close: jest.fn(), opener: {} as unknown, location: { href: '' } };
+  const open = jest.spyOn(window, 'open').mockImplementation(() => tab as unknown as Window);
+  return { open, tab };
+}
+
 const documentOf = (fileName: string) => screen.getAllByTestId('purchase-order-document').find((item) => item.textContent?.includes(fileName))!;
 const pdf = () => new File(['%PDF'], 'invoice.pdf', { type: 'application/pdf' });
 
@@ -118,24 +125,54 @@ describe('PurchaseOrderDocumentsSection: 一覧', () => {
 describe('PurchaseOrderDocumentsSection: 表示・ダウンロード・印刷', () => {
   test('FREQ-530-AC-03: 「表示」は表示用の署名つきリンクをもらって新しいタブで開く。リンクは画面に出さない', async () => {
     const user = userEvent.setup();
-    const open = jest.spyOn(window, 'open').mockImplementation(() => null);
+    const { open, tab } = mockNewTab();
     fetchMock.mockResolvedValueOnce(json({ url: SIGNED_VIEW, expiresInSeconds: 60 }));
     renderSection();
     await user.click(within(screen.getByRole('group', { name: 'invoice.pdf の操作' })).getByRole('button', { name: '表示' }));
-    await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(tab.location.href).toBe(SIGNED_VIEW));
+    expect(open).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(URL_ENDPOINT(ATTACHMENT_ID), { cache: 'no-store' });
-    expect(open).toHaveBeenCalledWith(SIGNED_VIEW, '_blank', 'noopener,noreferrer');
+    // 空のタブを先に開き、opener を切ってから、リンクが取れたタブを移す（リンクは window.open の引数に渡さない）
+    expect(open).toHaveBeenCalledWith('', '_blank');
+    expect(tab.opener).toBeNull();
+    expect(tab.close).not.toHaveBeenCalled();
     expect(document.body.textContent).not.toContain('SECRET-VIEW-TOKEN');
   });
 
   test('FREQ-530-AC-03: 「印刷」も表示用のリンクを新しいタブで開く（印刷はそのタブのブラウザの印刷で行う）', async () => {
     const user = userEvent.setup();
-    const open = jest.spyOn(window, 'open').mockImplementation(() => null);
+    const { open, tab } = mockNewTab();
     fetchMock.mockResolvedValueOnce(json({ url: SIGNED_VIEW, expiresInSeconds: 60 }));
     renderSection();
     await user.click(within(screen.getByRole('group', { name: 'old.pdf の操作' })).getByRole('button', { name: '印刷' }));
-    await waitFor(() => expect(open).toHaveBeenCalledWith(SIGNED_VIEW, '_blank', 'noopener,noreferrer'));
+    await waitFor(() => expect(tab.location.href).toBe(SIGNED_VIEW));
+    expect(open).toHaveBeenCalledWith('', '_blank');
     expect(fetchMock).toHaveBeenCalledWith(URL_ENDPOINT(VOIDED_ID), { cache: 'no-store' });
+  });
+
+  test('FREQ-530-AC-03: 新しいタブはリンクを待つ前に（クリックの中で）開く。リンクが取れるまでタブは空のまま', async () => {
+    const user = userEvent.setup();
+    const { open, tab } = mockNewTab();
+    let release: (value: Response) => void = () => undefined;
+    fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => { release = resolve; }));
+    renderSection();
+    await user.click(within(screen.getByRole('group', { name: 'invoice.pdf の操作' })).getByRole('button', { name: '表示' }));
+    // 窓口の応答はまだ無い。その時点で空のタブは開いていて、まだ移していない
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith('', '_blank');
+    expect(tab.location.href).toBe('');
+    release(json({ url: SIGNED_VIEW, expiresInSeconds: 60 }));
+    await waitFor(() => expect(tab.location.href).toBe(SIGNED_VIEW));
+  });
+
+  test.each(['表示', '印刷'])('FREQ-530-AC-03: ブラウザが新しいタブを止めた時（%s）は、role=alert で止められたことを知らせ、リンクは取りに行かない', async (name) => {
+    const user = userEvent.setup();
+    const open = jest.spyOn(window, 'open').mockImplementation(() => null);
+    renderSection();
+    await user.click(within(screen.getByRole('group', { name: 'invoice.pdf の操作' })).getByRole('button', { name }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('新しいタブがブラウザに止められました。このサイトのポップアップを許可して、もう一度押してください。');
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   test('FREQ-530-AC-03: 「ダウンロード」は download=1 のリンクをもらい、保存として開く（ページは移らない）', async () => {
@@ -160,19 +197,20 @@ describe('PurchaseOrderDocumentsSection: 表示・ダウンロード・印刷', 
     ['2要素認証が無い', 403, { error: 'Forbidden', reason: 'MFA required' }, '2要素認証が必要です'],
     ['ログインが切れた（401）', 401, { error: 'Unauthorized' }, 'ログインし直してください。'],
     ['想定外の失敗（500）', 500, { error: 'x' }, '発注の記録に失敗しました'],
-  ])('FREQ-530-AC-03: リンクをもらえない（%s）時は role=alert で文を出し、タブは開かない', async (_name, status, body, message) => {
+  ])('FREQ-530-AC-03: リンクをもらえない（%s）時は role=alert で文を出し、先に開いた空のタブを閉じて、原本へは移さない', async (_name, status, body, message) => {
     const user = userEvent.setup();
-    const open = jest.spyOn(window, 'open').mockImplementation(() => null);
+    const { tab } = mockNewTab();
     fetchMock.mockResolvedValueOnce(json(body, status));
     renderSection();
     await user.click(within(screen.getByRole('group', { name: 'invoice.pdf の操作' })).getByRole('button', { name: '表示' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(message);
-    expect(open).not.toHaveBeenCalled();
+    expect(tab.close).toHaveBeenCalledTimes(1);
+    expect(tab.location.href).toBe('');
   });
 
-  test('FREQ-530-AC-03: リンクの応答が崩れている・通信が失敗した時は「原本を取得できません。」', async () => {
+  test('FREQ-530-AC-03: リンクの応答が崩れている・通信が失敗した時は「原本を取得できません。」で、空のタブを閉じる', async () => {
     const user = userEvent.setup();
-    const open = jest.spyOn(window, 'open').mockImplementation(() => null);
+    const { tab } = mockNewTab();
     fetchMock.mockResolvedValueOnce(json({}));
     renderSection();
     await user.click(within(screen.getByRole('group', { name: 'invoice.pdf の操作' })).getByRole('button', { name: '表示' }));
@@ -181,7 +219,8 @@ describe('PurchaseOrderDocumentsSection: 表示・ダウンロード・印刷', 
     await user.click(within(screen.getByRole('group', { name: 'invoice.pdf の操作' })).getByRole('button', { name: '表示' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(screen.getByRole('alert')).toHaveTextContent('原本を取得できません。');
-    expect(open).not.toHaveBeenCalled();
+    await waitFor(() => expect(tab.close).toHaveBeenCalledTimes(2));
+    expect(tab.location.href).toBe('');
   });
 });
 

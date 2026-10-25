@@ -52,7 +52,7 @@ export const PURCHASE_ORDER_DISPLAY_STAGE_LABELS: Record<PurchaseOrderDisplaySta
 /**
  * DB が返す誤りの表。キーは message、値は [SQLSTATE, HTTP の状態, 利用者に見せる本文]。
  * store は message と SQLSTATE が両方そろった時だけこの表で分類し、表に無い物は生の文を出さない500にする。
- * 発注の作成が返し得る3つと、数量の確定・訂正、打切り、発注先・メモの訂正（Task 6）が返し得る5つ。後続の Task が自分の窓口の誤りをここへ足す。
+ * 発注の作成が返し得る3つ、数量の確定・訂正、打切り、発注先・メモの訂正が返し得る5つ、受け取りとその取消・数量訂正、取引書類の原本が返し得る誤りを、下に並べてある。窓口ごとの誤りはみなここにある。
  */
 export const PURCHASE_ORDER_ERRORS: Record<string, readonly [sqlstate: string, status: number, body: string]> = {
   GROUP_G_ARGUMENT_INVALID: ['22023', 400, '入力を確かめてください。'],
@@ -910,6 +910,8 @@ export const PURCHASE_ORDER_DOCUMENT_TEXT = {
   voidedNotice: '書類を無効にしました。',
   pendingNotice: '書類の保存が終わっていません。内容を確認して、続きから保存してください。',
   openFailed: '原本を取得できません。',
+  /** 原本を開く新しいタブをブラウザが止めた（ポップアップのブロック）。リンクはまだ取っていない */
+  openBlocked: '新しいタブがブラウザに止められました。このサイトのポップアップを許可して、もう一度押してください。',
   uploadFailed: 'ファイルを送れませんでした。続きから保存してください。',
   inputRequired: '取引日・金額・取引先を入力してください。',
   fileRequired: 'ファイルを選んでください。',

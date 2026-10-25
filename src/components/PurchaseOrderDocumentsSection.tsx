@@ -11,6 +11,7 @@ import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { usePurchaseOrderWrite } from '@/hooks/usePurchaseOrderWrite';
 import {
   fetchPurchaseOrderDocumentUrl,
+  openBlankDocumentTab,
   PURCHASE_ORDER_DOCUMENT_ACCEPT,
   resumePurchaseOrderDocument,
   uploadPurchaseOrderDocument,
@@ -376,26 +377,37 @@ export default function PurchaseOrderDocumentsSection({ purchaseOrder, onSaved, 
   // この画面で送れなかったファイルと入力。ページを読み直すと無くなる（その時は続きから保存でファイルを選び直す）
   const [remembered, setRemembered] = useState<ReadonlyMap<string, { file: File; meta: PurchaseOrderDocumentMeta }>>(new Map());
 
-  /** 署名つきリンクをもらって、表示・印刷は新しいタブ、ダウンロードは保存で開く（リンクは文にも記録にも出さない） */
+  /**
+   * 署名つきリンクをもらって、表示・印刷は新しいタブ、ダウンロードは保存で開く（リンクは文にも記録にも出さない）。
+   * 表示・印刷のタブは、リンクを待つ前にクリックの中で空で開き、リンクが取れてからそのタブを移す
+   * （待った後の window.open は Safari が止めることがあるため）。止められたら文を出し、リンクは取らない。取れなければタブを閉じる。
+   */
   const openDocument = async (attachment: PurchaseOrderAttachment, download: boolean): Promise<void> => {
     if (opening) return;
+    const tab = download ? null : openBlankDocumentTab();
+    if (!download && tab === null) {
+      setMessage(TEXT.openBlocked);
+      return;
+    }
     setOpening(true);
     setMessage(null);
     try {
       const result = await fetchPurchaseOrderDocumentUrl(purchaseOrder.id, attachment.id, download);
       if (!result.ok) {
+        tab?.close();
         setMessage(result.message);
         return;
       }
-      if (download) {
+      if (tab) {
+        tab.location.href = result.url;
+      } else {
         const link = document.createElement('a');
         link.href = result.url;
         link.rel = 'noopener';
         link.click();
-      } else {
-        window.open(result.url, '_blank', 'noopener,noreferrer');
       }
     } catch {
+      tab?.close();
       setMessage(TEXT.openFailed);
     } finally {
       setOpening(false);

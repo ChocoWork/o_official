@@ -30,14 +30,14 @@ const rows: readonly (readonly [PermissionCode, string, string])[] = [
   ['admin.orders.allocate', '注文', '割り当てを入れ替える'],
   ['admin.purchase_orders.read', '発注', '発注一覧・発注書・取引添付の閲覧/取得'],
   ['admin.purchase_orders.manage', '発注', '発注入力/確認/確定・数量/単価訂正・添付追加・打切り/再確定'],
-  ['admin.receiving.manage', '受け取り', '全部/一部受取・受取取消/訂正'],
+  ['admin.receiving.manage', '受け取り', '全部/一部受取・受取取消/訂正（取消・訂正で在庫が足りなくなる時は、新しい注文から順に支払い済みの割当を外す）'],
   ['admin.shipping.read', '発送', '荷作り・発送票閲覧'],
   ['admin.shipping.manage', '発送', '票の下書き/品物選択・発送・伝票訂正・手動配達済み・発送取消'],
   ['admin.shipping.correct_date', '発送', '確定後の出荷日訂正'],
   ['admin.permissions.manage', '権限管理', '権限設定の閲覧・保存'],
 ];
 
-// 画面に「対応する画面の公開後に使われます。」と出す権限（割り当て入れ替えと発送の4つ）。在庫はG-2 Task 1で窓口が使い始めた。発注・受け取りの権限は窓口が後の Task で作られるが、印は付けない
+// 画面に「対応する画面の公開後に使われます。」と出す権限（割り当て入れ替えと発送の4つ）。在庫・発注・受け取りの権限は G-2 の窓口がすでに使っているので、印は付けない
 const UPCOMING_PERMISSION_CODES: ReadonlySet<PermissionCode> = new Set<PermissionCode>([
   'admin.orders.allocate',
   'admin.shipping.read',

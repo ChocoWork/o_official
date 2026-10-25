@@ -27,7 +27,7 @@ const ROWS = [
   ['注文', '割り当てを入れ替える', 'admin.orders.allocate'],
   ['発注', '発注一覧・発注書・取引添付の閲覧/取得', 'admin.purchase_orders.read'],
   ['発注', '発注入力/確認/確定・数量/単価訂正・添付追加・打切り/再確定', 'admin.purchase_orders.manage'],
-  ['受け取り', '全部/一部受取・受取取消/訂正', 'admin.receiving.manage'],
+  ['受け取り', '全部/一部受取・受取取消/訂正（取消・訂正で在庫が足りなくなる時は、新しい注文から順に支払い済みの割当を外す）', 'admin.receiving.manage'],
   ['発送', '荷作り・発送票閲覧', 'admin.shipping.read'],
   ['発送', '票の下書き/品物選択・発送・伝票訂正・手動配達済み・発送取消', 'admin.shipping.manage'],
   ['発送', '確定後の出荷日訂正', 'admin.shipping.correct_date'],
@@ -41,7 +41,7 @@ test('全30行の表示順・分野・ラベルと固定2件・準備中4件を�
   expect(ROLE_PERMISSION_CATALOG.filter((p) => p.fixed).map((p) => p.code)).toEqual(['admin.users.manage', 'admin.permissions.manage']);
 });
 
-// 在庫（stock）の権限は G-2 Task 1 で窓口が使い始めたので「準備中」から外れる。発注・受け取りの3権限は窓口が G-2 の後の Task で作られるが、印は付けない。「準備中」は割り当て入替と発送の 4 コードだけ
+// 在庫（stock）・発注・受け取りの権限は G-2 の窓口がすでに使っているので「準備中」の印は付けない。「準備中」は割り当て入替と発送の 4 コードだけ
 test('FREQ-540-AC-06: upcoming（準備中）は未使用の4コードだけで、並びは表の順', () => {
   expect(ROLE_PERMISSION_CATALOG.filter((p) => p.upcoming).map((p) => p.code)).toEqual([
     'admin.orders.allocate', 'admin.shipping.read', 'admin.shipping.manage', 'admin.shipping.correct_date',

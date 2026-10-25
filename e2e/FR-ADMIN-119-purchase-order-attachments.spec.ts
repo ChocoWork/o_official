@@ -217,15 +217,19 @@ for (const viewport of viewports) {
         page.context().on('request', (request) => {
           if (request.url().includes('/storage/v1/object/sign/')) signed.push(request.url());
         });
-        // 原本は window.open(…, 'noopener,noreferrer') で開く。noopener の新しいタブは頁の popup の事象に出ないので、context の page の事象で受ける。
-        // 表示用の PDF を画面に描けない headless の Chromium では、新しいタブの最初の移動が保存（download）になり、その事象は新しいタブでなく開いた頁に出る
+        // 原本は、クリックの中で空のタブを開き（window.open('', '_blank')。opener は切る）、署名つきリンクが取れてからそのタブを移して開く。
+        // 表示用の PDF を画面に描けない headless の Chromium では、そのタブの移動が保存（download）になる。その事象は、新しいタブか開いた頁のどちらかに出るので、両方で受ける。
         const popupPromise = page.context().waitForEvent('page');
+        const popupDownload = new Promise<'download'>((resolve) => {
+          page.context().once('page', (tab) => { tab.once('download', () => resolve('download')); });
+        });
         const downloadPromise = page.waitForEvent('download', { timeout: 20_000 }).then(() => 'download' as const);
         await rows.first().getByRole('button', { name: '原本を見る', exact: true }).click();
         const popup = await popupPromise;
         // どちらか一方が起きればよい（Promise.any: 先に失敗した方が結果を決めない）。どちらも起きなければ AggregateError
         const opened = await Promise.any([
           downloadPromise,
+          popupDownload,
           popup.waitForURL(/\/storage\/v1\/object\/sign\//, { timeout: 20_000 }).then(() => 'loaded' as const),
         ]).catch(() => 'none' as const);
         expect(opened === 'download' || opened === 'loaded').toBe(true);

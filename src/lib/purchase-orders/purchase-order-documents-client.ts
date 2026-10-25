@@ -153,6 +153,24 @@ export async function fetchPurchaseOrderDocumentUrl(
   }
 }
 
+/**
+ * 原本を表示・印刷する新しいタブを、利用者のクリックの中で（署名つきリンクを待つ前に）空で開く。
+ * リンクを待った後の window.open は、Safari（特に iOS）が利用者の操作から外れたものとして止めることがあるため。
+ * 開けた後はタブの opener を切る（noopener と同じ。リンクを取れたら呼び出し側が location.href を替える）。
+ * ブラウザが止めた時は null（呼び出し側は PURCHASE_ORDER_DOCUMENT_TEXT.openBlocked を出す）。
+ * 呼び出し側は、リンクを取る await より前に（同じクリックの中で）呼ぶこと。
+ */
+export function openBlankDocumentTab(): Window | null {
+  const tab = window.open('', '_blank');
+  if (!tab) return null;
+  try {
+    tab.opener = null;
+  } catch {
+    // opener を切れないブラウザでも、空のタブにリンクを移すだけなので続ける
+  }
+  return tab;
+}
+
 /** 署名つきの送り先へ PUT する。種類は予約の拡張子の種類（置き場の記録とサーバーの検査が同じ種類を見る）。上書きできない形は送り先の側で決まる（x-upsert: false は添えるだけ） */
 async function putFile(signedUrl: string, file: File, mime: PurchaseOrderDocumentMime): Promise<boolean> {
   try {
