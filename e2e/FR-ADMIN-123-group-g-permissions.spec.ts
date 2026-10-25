@@ -9,7 +9,14 @@
  *   （窓口の固定の 410 の本文を返すだけ。窓口から DB までの完全な経路ではない）で確かめる。実際の guard（認可→CSRF→回数制限）と DB の拒否
  *   （LEGACY_FULFILLMENT_DISABLED / MANUAL_COMPLETION_DISABLED）は Task 14 の単体・DB 結合が別に確かめる。
  * - 注文の一覧と履歴（390/768/1280px・店長とサポーター）: 旧の入口が 0 で固定の停止文が出て、注文の取消・返金・返品・履歴の読み取りは残る。
- * 後段の G-2/G-3/G-4 の確かめは、この spec の合格に数えない。
+ * 後段の G-3/G-4 の確かめは、この spec の合格に数えない。
+ *
+ * G-2 の部分（下の「G-2」の節。FREQ-540-AC-06・AC-07、FREQ-525・FREQ-526 の権限）:
+ * - 新しい窓口15メソッド（在庫・発注・受け取り・原本・書類検索）と既存の variants の GET/POST: ログインしていない本物の HTTP は 401、
+ *   お客様の本物のログインの HTTP は 403。
+ * - 管理者のログインは差し替えのまま、窓口の代わりに e2e/purchasing-test-utils.ts の bridge が実行者を DB の公開関数へ渡す。bridge は権限を決めず、
+ *   サポーター（初期値）の拒否は DB の関数（42501）が決める。店長が権限の画面でサポーターに権限を付けると、表が見える。
+ * - 窓口の認可（authorizeAdminPermission(s)）の効きは、本物の 401/403 と各 route の単体が確かめる（bridge の下では DB の権限の確かめを確かめる）。
  *
  * - サポーター・一般利用者・権限なし（役割名は店長だが有効な割り当てが無い人）が権限の画面を直に開いても、表は出ない。
  *   ログインの形（/api/auth/me）は既存の mockAdminSessionAs と同じ差し替えで、拒否そのものは bridge が手元の DB の関数
@@ -56,6 +63,14 @@ import {
   readRolePermissionState,
   withPermissionScenario,
 } from './permission-settings-test-utils';
+import {
+  contentAlerts,
+  createCatalogMaterial,
+  createPurchaseOrderInDb,
+  inventoryRowOf,
+  mockPurchasingUiBridge,
+  withPurchasingScenario,
+} from './purchasing-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
 
 test.describe.configure({ mode: 'serial', timeout: 90_000 });
@@ -449,5 +464,254 @@ for (const viewport of viewports) {
         expect(stoppedCalls, '停止した窓口へ画面から要求が届かない').toEqual([]);
       });
     }
+  });
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// G-2: 在庫一覧表・発注・受け取り・原本の窓口の権限（FREQ-540-AC-06・AC-07。AC-08 の書き手の閉じた一覧・並行は DB 結合だけ）
+// ---------------------------------------------------------------------------------------------------------------------
+
+const G2_PO_ID = 'a1230000-0000-4000-8000-0000000002a1';
+const G2_RECEIPT_ID = 'a1230000-0000-4000-8000-0000000002b1';
+const G2_ATTACHMENT_ID = 'a1230000-0000-4000-8000-0000000002c1';
+const G2_RESERVATION_ID = 'a1230000-0000-4000-8000-0000000002d1';
+const G2_ORDERS = `/api/admin/purchase-orders/${G2_PO_ID}`;
+
+/** G-2 の新しい窓口15メソッド（在庫・発注・受け取り・原本・書類検索）と、権限の組を G-2 で変えた既存の variants の GET/POST（合わせて17） */
+const G2_OPERATIONS = [
+  { name: '在庫一覧表', method: 'GET', path: '/api/admin/inventory' },
+  { name: '発注一覧表', method: 'GET', path: '/api/admin/purchase-orders' },
+  { name: '発注の作成', method: 'POST', path: '/api/admin/purchase-orders' },
+  { name: '発注書の詳細', method: 'GET', path: G2_ORDERS },
+  { name: '発注先・メモの訂正', method: 'PATCH', path: G2_ORDERS },
+  { name: '数量の確定・訂正', method: 'POST', path: `${G2_ORDERS}/quantities` },
+  { name: '残りの打切り', method: 'POST', path: `${G2_ORDERS}/short-closures` },
+  { name: '受け取り', method: 'POST', path: `${G2_ORDERS}/receipts` },
+  { name: '受け取りの取消・数量訂正', method: 'POST', path: `${G2_ORDERS}/receipts/${G2_RECEIPT_ID}/reversals` },
+  { name: '原本の確定', method: 'POST', path: `${G2_ORDERS}/attachments` },
+  { name: '原本の予約', method: 'POST', path: `${G2_ORDERS}/attachments/reservations` },
+  { name: '署名つき送り先の出し直し', method: 'POST', path: `${G2_ORDERS}/attachments/reservations/${G2_RESERVATION_ID}/upload-url` },
+  { name: '書類の情報の訂正・無効化', method: 'POST', path: `${G2_ORDERS}/attachments/${G2_ATTACHMENT_ID}/revisions` },
+  { name: '原本を見る', method: 'GET', path: `${G2_ORDERS}/attachments/${G2_ATTACHMENT_ID}/url` },
+  { name: '書類の検索', method: 'GET', path: '/api/admin/purchase-order-documents' },
+  { name: '商品の在庫の読み取り（既存の variants）', method: 'GET', path: '/api/admin/items/1/variants' },
+  { name: '商品の在庫の更新（既存の variants）', method: 'POST', path: '/api/admin/items/1/variants' },
+] as const;
+
+const G2_FORBIDDEN_TEXT = {
+  inventory: '在庫一覧を見る権限がありません。',
+  orders: '発注一覧を見る権限がありません。',
+  documents: '取引書類を見る権限がありません。',
+  detail: '発注書を見る権限がありません。',
+  create: '発注を扱う権限がありません。',
+} as const;
+
+const STOCK_READ = '在庫一覧';
+const PURCHASE_ORDERS_READ = '発注一覧・発注書・取引添付の閲覧/取得';
+
+/** 表を出さず、権限の文を role=alert で出す（読み込み中のまま止まらない）。頁全体が横にはみ出さない */
+async function expectForbiddenPage(page: Page, path: string, heading: string, text: string): Promise<void> {
+  await page.goto(path);
+  await expect(page.getByRole('heading', { name: heading, level: 1, exact: true })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: text })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: '読み込み中...' })).toHaveCount(0);
+  await expect(page.getByRole('table')).toHaveCount(0);
+  const overflows = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+  expect(overflows).toBe(false);
+}
+
+/** 店長の権限の画面（bridge 経由の DB の関数）で、サポーターの1つの権限を付け外しする。保存が済み、スイッチが変わるまで待つ */
+async function setSupporterPermission(adminPage: Page, label: string, next: boolean): Promise<void> {
+  await adminPage.goto('/admin/settings/permissions');
+  await expect(adminPage.getByRole('table')).toBeVisible();
+  const toggle = adminPage.getByRole('switch', { name: `サポーター：${label}`, exact: true });
+  if ((await toggle.getAttribute('aria-checked')) === String(next)) return;
+  await toggle.click();
+  const dialog = adminPage.getByRole('dialog', { name: '権限を変更する', exact: true });
+  await dialog.getByRole('button', { name: '変更する', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(adminPage.getByRole('status').filter({ hasText: '権限を保存しました。' })).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-checked', String(next));
+}
+
+test('ログインしていない本物の新しい窓口15メソッドと既存の variants GET/POST は401', async ({ playwright, baseURL }) => {
+  // FREQ-540-AC-06, FREQ-540-AC-07。差し替えの無い request context（cookie なし）で本物の窓口を呼ぶ。画面を描かないので、画面幅ごとには繰り返さない
+  if (!baseURL) throw new Error('baseURL が無い（playwright.config.ts）');
+  expect(G2_OPERATIONS).toHaveLength(17);
+  const api = await playwright.request.newContext({ baseURL });
+  try {
+    for (const operation of G2_OPERATIONS) {
+      // Origin は同じ origin（proxy の Origin の検査の先の、窓口の認可まで届かせる）
+      const response = await api.fetch(operation.path, {
+        method: operation.method,
+        data: operation.method === 'GET' ? undefined : {},
+        headers: { origin: new URL(baseURL).origin },
+      });
+      expect(response.status(), `${operation.name}（${operation.method}）`).toBe(401);
+      expect(await response.json(), `${operation.name}（${operation.method}）の本文`).toEqual({ error: 'Unauthorized' });
+    }
+  } finally {
+    await api.dispose();
+  }
+});
+
+test('お客様の本物のログインでは同じ17メソッドが403', async ({ page }) => {
+  // FREQ-540-AC-06, FREQ-540-AC-07。本物のお客様のログイン（確認コードは Mailpit から読む）で、窓口の権限の確かめまで通す。画面幅ごとには繰り返さない
+  test.setTimeout(180_000);
+  await loginCustomer(page, 'g123g2');
+  for (const operation of G2_OPERATIONS) {
+    const result = await callFromPage(page, operation);
+    expect(result.status, `${operation.name}（${operation.method}）`).toBe(403);
+    // 窓口の認可の 403（{ error: 'Forbidden', permission, role }）。CSRF・Origin の 403 とは本文で区別する
+    expect(result.body, `${operation.name}（${operation.method}）の本文`).toMatchObject({ error: 'Forbidden' });
+  }
+});
+
+for (const viewport of viewports) {
+  test.describe(`FR-ADMIN-123 group G permissions, G-2 (${viewport.name})`, () => {
+    test.beforeEach(async ({ page }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    });
+
+    test('サポーター（初期値）は在庫一覧表・発注一覧表を開いても、DB関数の拒否で表が出ず権限の文が出る', async ({ page }) => {
+      // FREQ-540-AC-06, FREQ-540-AC-07。窓口の代わりの bridge は権限を決めず、DB の関数が実行者（サポーター）の権限を確かめて断る
+      await withPurchasingScenario(async (ctx) => {
+        const supporterId = await createPermissionActor(ctx.client, 'supporter');
+        await mockAdminSessionAs(page, 'supporter');
+        await mockOrderList(page, () => []);
+        await mockPurchasingUiBridge(page, ctx.client, supporterId);
+
+        await expectForbiddenPage(page, '/admin/inventory', '在庫一覧表', G2_FORBIDDEN_TEXT.inventory);
+        await expectForbiddenPage(page, '/admin/purchase-orders', '発注一覧表', G2_FORBIDDEN_TEXT.orders);
+        await expectForbiddenPage(page, '/admin/purchase-orders/documents', '取引書類の検索', G2_FORBIDDEN_TEXT.documents);
+        await page.goto(`/admin/purchase-orders/${G2_PO_ID}`);
+        await expect(page.getByRole('alert').filter({ hasText: G2_FORBIDDEN_TEXT.detail })).toBeVisible();
+        await expect(page.getByRole('table')).toHaveCount(0);
+        // 戻る道は残る
+        await expect(page.getByRole('link', { name: '発注一覧表に戻る', exact: true })).toBeVisible();
+      });
+    });
+
+    test('店長が権限画面でサポーターに admin.stock.read を付けると在庫一覧表が見え、発注（作成）は引き続き断られ、元に戻すと再び見えない', async ({ page }) => {
+      // FREQ-540-AC-06, FREQ-540-AC-07
+      await withPurchasingScenario(async (ctx) => {
+        const supporterId = await createPermissionActor(ctx.client, 'supporter');
+        const material = await createCatalogMaterial(ctx.client);
+        // 店長の画面（権限の保存は bridge 経由で DB の関数 admin_set_role_permissions へ）と、サポーターの画面は別のタブ
+        await mockAdminSessionAs(page, 'admin');
+        await mockPermissionUiBridge(page, ctx.client, ctx.actorId);
+        const supporterPage = await page.context().newPage();
+        try {
+          await supporterPage.setViewportSize({ width: viewport.width, height: viewport.height });
+          await mockAdminSessionAs(supporterPage, 'supporter');
+          await mockPurchasingUiBridge(supporterPage, ctx.client, supporterId);
+
+          // 付ける前: 見えない
+          await expectForbiddenPage(supporterPage, '/admin/inventory', '在庫一覧表', G2_FORBIDDEN_TEXT.inventory);
+
+          // 在庫の読み取りを付けると、在庫一覧表が見える
+          await setSupporterPermission(page, STOCK_READ, true);
+          await supporterPage.goto('/admin/inventory');
+          await expect(supporterPage.getByRole('heading', { name: '在庫一覧表', level: 1, exact: true })).toBeVisible();
+          await expect(inventoryRowOf(supporterPage, material)).toHaveCount(1);
+          // どの頁にも Next の経路の読み上げ（#__next-route-announcer__。role=alert）が1つあるので、それを除いた頁自身の alert が無いことを確かめる
+          await expect(contentAlerts(supporterPage)).toHaveCount(0);
+
+          // 発注（作成）は在庫の読み取りでは足りない: 断られ、発注書は増えない
+          const supplier = `E2E サポーター ${Date.now().toString(36)}`;
+          await supporterPage.getByRole('button', { name: '発注', exact: true }).click();
+          await supporterPage.getByLabel(`${material.itemName} ${material.colorName} ${material.sizeLabel} の発注数量`, { exact: true }).fill('1');
+          await supporterPage.getByRole('button', { name: '発注書確認', exact: true }).click();
+          await supporterPage.getByLabel('発注先', { exact: true }).fill(supplier);
+          await supporterPage.getByRole('button', { name: '発注確定', exact: true }).click();
+          await expect(supporterPage.getByRole('alert').filter({ hasText: G2_FORBIDDEN_TEXT.create })).toBeVisible();
+          const created = (await ctx.client.query('select count(*)::int as n from public.purchase_orders where supplier_name = $1', [supplier])).rows[0].n;
+          expect(created).toBe(0);
+
+          // 元に戻すと、再び見えない
+          await setSupporterPermission(page, STOCK_READ, false);
+          await expectForbiddenPage(supporterPage, '/admin/inventory', '在庫一覧表', G2_FORBIDDEN_TEXT.inventory);
+        } finally {
+          await supporterPage.close();
+        }
+      }, { changesPermissions: true });
+    });
+
+    test('サポーターの管理メニューに ORDER と INVENTORY があり SETTINGS は無い。INVENTORY の中に在庫一覧表と発注一覧表へのリンクがあり、権限の無い表は権限の文を出す', async ({ page }) => {
+      // FREQ-540-AC-06, FREQ-540-AC-07
+      await withPurchasingScenario(async (ctx) => {
+        const supporterId = await createPermissionActor(ctx.client, 'supporter');
+        await mockAdminSessionAs(page, 'supporter');
+        await mockOrderList(page, () => []);
+        await mockPurchasingUiBridge(page, ctx.client, supporterId);
+
+        await page.goto('/admin');
+        await expect(adminMenu(page).getByRole('button', { name: 'ORDER', exact: true })).toBeVisible();
+        await expect(adminMenu(page).getByRole('button', { name: 'INVENTORY', exact: true })).toBeVisible();
+        await expect(adminMenu(page).getByRole('button', { name: 'SETTINGS', exact: true })).toHaveCount(0);
+
+        // INVENTORY の中: 在庫一覧表と発注一覧表へのリンク（キーボードで開ける）
+        await adminMenu(page).getByRole('button', { name: 'INVENTORY', exact: true }).click();
+        const inventoryMenu = page.getByRole('navigation', { name: '在庫・発注メニュー', exact: true });
+        await expect(inventoryMenu.getByRole('link', { name: '在庫一覧表', exact: true })).toBeVisible();
+        await expect(inventoryMenu.getByRole('link', { name: '発注一覧表', exact: true })).toBeVisible();
+        await inventoryMenu.getByRole('link', { name: '在庫一覧表', exact: true }).focus();
+        await page.keyboard.press('Enter');
+        await expect(page).toHaveURL(/\/admin\/inventory$/);
+        await expect(page.getByRole('alert').filter({ hasText: G2_FORBIDDEN_TEXT.inventory })).toBeVisible();
+        await expect(page.getByRole('table')).toHaveCount(0);
+
+        // もう一方のリンクも、権限の無い表は権限の文を出す
+        await page.goto('/admin?tab=INVENTORY');
+        await page.getByRole('navigation', { name: '在庫・発注メニュー', exact: true }).getByRole('link', { name: '発注一覧表', exact: true }).click();
+        await expect(page).toHaveURL(/\/admin\/purchase-orders$/);
+        await expect(page.getByRole('alert').filter({ hasText: G2_FORBIDDEN_TEXT.orders })).toBeVisible();
+        await expect(page.getByRole('table')).toHaveCount(0);
+      });
+    });
+
+    test('店長がサポーターに admin.purchase_orders.read を付けると、サポーターは INVENTORY から発注一覧表へ入れる（URLを打たない）。店長の管理メニューにも INVENTORY がある', async ({ page }) => {
+      // FREQ-540-AC-06, FREQ-540-AC-07
+      await withPurchasingScenario(async (ctx) => {
+        const supporterId = await createPermissionActor(ctx.client, 'supporter');
+        const material = await createCatalogMaterial(ctx.client);
+        const order = await createPurchaseOrderInDb(ctx, { lines: [{ variantId: material.variantId, quantity: 1 }] });
+        await mockAdminSessionAs(page, 'admin');
+        await mockOrderList(page, () => []);
+        await mockPermissionUiBridge(page, ctx.client, ctx.actorId);
+
+        // 店長の管理メニューにも INVENTORY があり、その中に2つのリンクがある
+        await page.goto('/admin?tab=INVENTORY');
+        await expect(adminMenu(page).getByRole('button', { name: 'INVENTORY', exact: true })).toBeVisible();
+        const adminInventoryMenu = page.getByRole('navigation', { name: '在庫・発注メニュー', exact: true });
+        await expect(adminInventoryMenu.getByRole('link', { name: '在庫一覧表', exact: true })).toBeVisible();
+        await expect(adminInventoryMenu.getByRole('link', { name: '発注一覧表', exact: true })).toBeVisible();
+
+        const supporterPage = await page.context().newPage();
+        try {
+          await supporterPage.setViewportSize({ width: viewport.width, height: viewport.height });
+          await mockAdminSessionAs(supporterPage, 'supporter');
+          await mockOrderList(supporterPage, () => []);
+          await mockPurchasingUiBridge(supporterPage, ctx.client, supporterId);
+
+          await setSupporterPermission(page, PURCHASE_ORDERS_READ, true);
+
+          // URL を打たず、管理メニューの INVENTORY → 発注一覧表の順で入る
+          await supporterPage.goto('/admin');
+          await supporterPage.getByRole('navigation', { name: '管理メニュー', exact: true }).getByRole('button', { name: 'INVENTORY', exact: true }).click();
+          await supporterPage.getByRole('navigation', { name: '在庫・発注メニュー', exact: true }).getByRole('link', { name: '発注一覧表', exact: true }).click();
+          await expect(supporterPage).toHaveURL(/\/admin\/purchase-orders$/);
+          await expect(supporterPage.getByRole('heading', { name: '発注一覧表', level: 1, exact: true })).toBeVisible();
+          await expect(supporterPage.getByTestId('purchase-order-row').filter({ hasText: order.number })).toHaveCount(1);
+          await expect(contentAlerts(supporterPage)).toHaveCount(0);
+
+          // 元に戻すと、再び権限の文
+          await setSupporterPermission(page, PURCHASE_ORDERS_READ, false);
+          await expectForbiddenPage(supporterPage, '/admin/purchase-orders', '発注一覧表', G2_FORBIDDEN_TEXT.orders);
+        } finally {
+          await supporterPage.close();
+        }
+      }, { changesPermissions: true });
+    });
   });
 }
