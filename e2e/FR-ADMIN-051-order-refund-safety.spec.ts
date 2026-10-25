@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { OrderItem, OrderLineItem } from '@/components/OrderSection';
-import { LEGACY_FULFILLMENT_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
+import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import { mockAdminSession, mockOrderList, openOrderTab, viewports } from './order-fulfillment-test-utils';
 import {
   REFUND_TEXT,
@@ -96,8 +96,9 @@ for (const viewport of viewports) {
       await expect(orderTable.getByRole('button', { name: '返金', exact: true })).toHaveCount(2);
       // G-1: 窓口が canShip=true と答えても旧の「発送済みにする」は出さず、固定の停止文を表の外に1回だけ出す（発送能力の差は G-3 FR-ADMIN-116 で新票へ書換）
       await expect(orderTable.getByRole('button', { name: '発送済みにする', exact: true })).toHaveCount(0);
-      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toHaveCount(1);
-      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toBeVisible();
+      // G-3: 旧い停止文は、発送票へ誘導する案内（荷作り表から行います）に置き換わった
+      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toHaveCount(1);
+      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toBeVisible();
     });
 
     test('返金は確かめ付きの返金の画面から行い、保留で受け付けても注文は入金済みのまま、一覧を読み直して知らせる', async ({ page }) => {

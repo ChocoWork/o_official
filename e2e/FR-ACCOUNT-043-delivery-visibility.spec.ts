@@ -6,8 +6,9 @@
  * 「鍵なし」の時の画面は、窓口の答えの見本（delivery を外した本物の答え）であり、本物の環境変更の証拠ではない
  * （鍵の有無はアプリの環境で決まり、E2E のアプリは作り物の鍵で起動している）。
  *
- * G-1: 手動の配達済み（DB の関数）は停止した。2つのケースは手動の配達済みを契約に含むので、G-3 の発送票（FR-ADMIN-117・118・120）で
- * 書き換えて再開するまで止める。公開フィールドの拒否の確かめは DB・単体が維持する。
+ * G-1 で止まった旧の手動の配達済み（発送ごとの DB の関数）は、G-3 で発送票単位の関数（admin_mark_shipment_slip_delivered）に置き換わった。
+ * 発送の材料（shipFixture）は発送票を経由して作り、markDeliveredInDb は発送が属する票を引いてその関数を呼ぶ。期待は変えていない。
+ * 公開フィールドの拒否の確かめは DB・単体も維持する。
  */
 import { expect, test } from '@playwright/test';
 import {
@@ -51,7 +52,6 @@ for (const viewport of deliveryViewports) {
 
     // FREQ-494-AC-01, FREQ-495-AC-03
     test('登録待ちと失敗と鍵なしとオフで状況を隠す', async ({ page }) => {
-      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/118/120で新票へ書換・再開');
       test.setTimeout(420_000);
       await withDeliveryScenario(async ({ client, numberPrefix }) => {
         const actor = await createAdminActor(client);
@@ -132,7 +132,6 @@ for (const viewport of deliveryViewports) {
 
     // FREQ-494-AC-03, FREQ-495-AC-05, FREQ-497-AC-03
     test('オンだけ委託の文を出し顧客JSONに店内の情報を出さない', async ({ page, browser }) => {
-      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/118/120で新票へ書換・再開');
       test.setTimeout(420_000);
       await withDeliveryScenario(async ({ client, numberPrefix }) => {
         const actor = await createAdminActor(client);

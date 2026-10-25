@@ -3,10 +3,10 @@
  * 対応 FREQ: FREQ-490（AC-01）・FREQ-494（AC-02・AC-04）
  *
  * 本物のお客様のログイン（確認コードは Mailpit から読む）と本物の窓口（GET /api/orders/[id]）・画面を使い、
- * 配達済みは手元の DB の本物の関数（手で配達済み）で作る。追跡がオフの間は、17TRACK（作り物）へ何も送らない。
+ * 配達済みは手元の DB の本物の関数（発送票単位の手動の配達済み）で作る。追跡がオフの間は、17TRACK（作り物）へ何も送らない。
  *
- * G-1: 手動の配達済み（DB の関数）は停止した。2つのケースは手動の配達済みを契約に含むので、G-3 の発送票（FR-ADMIN-117・118・120）で
- * 書き換えて再開するまで止める。
+ * G-1 で止まった旧の手動の配達済み（発送ごとの DB の関数）は、G-3 で発送票単位の関数（admin_mark_shipment_slip_delivered）に置き換わった。
+ * 発送の材料（createShippedFixture）は発送票を経由して作り、markDeliveredInDb は発送が属する票を引いてその関数を呼ぶ。期待は変えていない。
  */
 import { expect, test } from '@playwright/test';
 import {
@@ -45,7 +45,6 @@ for (const viewport of deliveryViewports) {
 
     // FREQ-490-AC-01, FREQ-494-AC-02
     test('追跡オフはリンクだけで手の配達済みは見える', async ({ page }) => {
-      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/118/120で新票へ書換・再開');
       test.setTimeout(420_000);
       await withDeliveryScenario(async ({ client, numberPrefix }) => {
         await setTrackingFlagDirect(client, false);
@@ -113,7 +112,6 @@ for (const viewport of deliveryViewports) {
 
     // FREQ-490-AC-01, FREQ-494-AC-04
     test('追跡オフの知らせは無視し返品は届いた日を使う', async ({ page }) => {
-      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/118/120で新票へ書換・再開');
       test.setTimeout(420_000);
       await withDeliveryScenario(async ({ client, numberPrefix }) => {
         await setTrackingFlagDirect(client, false);

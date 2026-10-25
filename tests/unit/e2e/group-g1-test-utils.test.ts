@@ -2,7 +2,9 @@
 /**
  * G-1 Task 17: E2E の材料の道具が G-1 の取引の約束どおりに SQL を流すかを、偽の DB（本物の接続なし）で確かめる。
  * paid=A・未入金=H、注文と割当が1つの取引（BEGIN → 共通の鍵 → … → COMMIT）、台帳の purchase / restock を直に書かない、
- * 失敗で ROLLBACK、既存の引数と戻りの形、手元以外の拒否、止めた2つの道具の固定の拒否。
+ * 失敗で ROLLBACK、既存の引数と戻りの形、手元以外の拒否。
+ * G-3: 手での配達済み・伝票番号の直しの道具（markDeliveredInDb・editTrackingInDb）は、停止した旧の関数の代わりに、発送が属する発送票を引いて
+ * 票単位の公開関数を呼ぶ（票を持たない発送は断る）。
  */
 jest.mock('pg', () => ({ Client: jest.fn() }));
 jest.mock('@playwright/test', () => ({ expect: jest.fn(), test: { extend: jest.fn() } }));
@@ -255,15 +257,61 @@ describe('上位の道具も同じ取引を使う', () => {
   });
 });
 
-describe('止めた旧の発送の操作', () => {
-  it('markDeliveredInDb と editTrackingInDb は DB に触れずに LEGACY_FULFILLMENT_DISABLED で断る', async () => {
+describe('止めた旧の発送の操作と、発送票単位の置き換え（G-3）', () => {
+  const target = { orderId: 'order-1', fulfillmentId: 'fulfillment-1', actorId: 'actor-1' };
+
+  /** 発送が属する票（版 3・確定済み）と、票単位の公開関数の戻りを返す偽の DB。呼ばれた SQL は db.calls に記録する */
+  function withSlip(db: FakeDb): void {
+    const base = db.query;
+    db.query = async (text: string, params: unknown[] = []) => {
+      const sql = text.replace(/\s+/g, ' ').trim().toLowerCase();
+      const answer = (value: Row[]) => { db.calls.push({ sql, params }); return { rows: value, rowCount: value.length }; };
+      if (sql.includes('from public.shipment_slip_fulfillments')) return answer([{ id: 'slip-1', version: '3', stage: 'confirmed' }]);
+      if (sql.includes('public.admin_mark_shipment_slip_delivered(')) {
+        return answer([{ result: { id: 'slip-1', version: 4, deliveredAt: '2026-10-24T03:00:00.000Z', replayed: false } }]);
+      }
+      if (sql.includes('public.admin_update_shipment_slip_tracking(')) {
+        return answer([{ result: { id: 'slip-1', version: 4, trackingVersion: 2, replayed: true } }]);
+      }
+      if (sql.includes('from public.order_fulfillment_events')) return answer([{ id: 'event-1' }]);
+      if (sql.includes('from public.order_fulfillment_tracking_changes')) return answer([{ id: 'change-1' }]);
+      if (sql.includes('from public.order_fulfillments where id')) return answer([{ delivered_at: new Date('2026-10-24T03:00:00.000Z') }]);
+      return base(text, params);
+    };
+  }
+
+  it('発送が発送票を持たなければ、旧の関数を呼ばずに E2E_FULFILLMENT_HAS_NO_SLIP で断る（手での操作の成功を装わない）', async () => {
     const db = new FakeDb();
-    const target = { orderId: 'order-1', fulfillmentId: 'fulfillment-1', actorId: 'actor-1' };
-    await expect(markDeliveredInDb(db.client, { ...target, deliveredOn: '2026-10-24', notify: false }))
-      .rejects.toMatchObject({ message: 'LEGACY_FULFILLMENT_DISABLED', code: '55000' });
+    await expect(markDeliveredInDb(db.client, { ...target, deliveredOn: '2026-10-24', notify: false })).rejects.toThrow('E2E_FULFILLMENT_HAS_NO_SLIP');
     await expect(editTrackingInDb(db.client, { ...target, carrier: 'yamato', trackingNumber: 'E2E-2', notify: false }))
-      .rejects.toMatchObject({ message: 'LEGACY_FULFILLMENT_DISABLED', code: '55000' });
+      .rejects.toThrow('E2E_FULFILLMENT_HAS_NO_SLIP');
+    expect(db.all(/admin_mark_fulfillment_delivered|admin_update_fulfillment_tracking/)).toEqual([]);
+    expect(db.all(/admin_mark_shipment_slip_delivered|admin_update_shipment_slip_tracking/)).toEqual([]);
     expect(() => legacyFulfillmentDisabled()).toThrow('LEGACY_FULFILLMENT_DISABLED');
-    expect(db.calls).toEqual([]);
+  });
+
+  it('markDeliveredInDb は発送が属する票の今の版で、票単位の関数 admin_mark_shipment_slip_delivered を1回呼ぶ', async () => {
+    const db = new FakeDb();
+    withSlip(db);
+    const result = await markDeliveredInDb(db.client, { ...target, deliveredOn: '2026-10-24', notify: false, requestKey: '11111111-1111-4111-8111-111111111111' });
+    expect(result).toEqual({ eventId: 'event-1', deliveredAt: new Date('2026-10-24T03:00:00.000Z'), replayed: false });
+    const calls = db.all(/admin_mark_shipment_slip_delivered\(/);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sql).toContain('_slip_id => $1::uuid, _expected_version => $2::integer, _delivered_on => $3::date, _notify_customer => $4::boolean');
+    expect(calls[0].params).toEqual(['slip-1', 3, '2026-10-24', false, 'actor-1', '11111111-1111-4111-8111-111111111111']);
+    expect(db.all(/admin_mark_fulfillment_delivered/)).toEqual([]);
+  });
+
+  it('editTrackingInDb は発送が属する票の今の版で、票単位の関数 admin_update_shipment_slip_tracking を1回呼ぶ', async () => {
+    const db = new FakeDb();
+    withSlip(db);
+    const result = await editTrackingInDb(db.client, {
+      ...target, carrier: 'sagawa', trackingNumber: 'E2E-2', notify: true, requestKey: '22222222-2222-4222-8222-222222222222',
+    });
+    expect(result).toEqual({ trackingChangeId: 'change-1', trackingVersion: 2, replayed: true });
+    const calls = db.all(/admin_update_shipment_slip_tracking\(/);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].params).toEqual(['slip-1', 3, 'sagawa', 'E2E-2', true, 'actor-1', '22222222-2222-4222-8222-222222222222']);
+    expect(db.all(/admin_update_fulfillment_tracking/)).toEqual([]);
   });
 });

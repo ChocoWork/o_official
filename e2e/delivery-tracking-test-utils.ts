@@ -42,7 +42,16 @@ import {
   computeFake17TrackBuild,
   isLocalUrl,
 } from '../scripts/e2e/environment';
+import { setGroupG3PaidAt } from '../tests/integration/db/helpers/group-g3-fixtures';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
+import {
+  parseShipmentSlipConfirmed,
+  parseShipmentSlipSaved,
+  type ShipmentSlipConfirmed,
+  type ShipmentSlipDraftLine,
+  type ShipmentSlipLink,
+  type ShipmentSlipSaved,
+} from '@/lib/orders/shipment-slips/shipment-slip-types';
 import {
   createFulfillment,
   createOrderWithLines,
@@ -51,7 +60,7 @@ import {
   type E2eCreatedOrder,
   type MailBody,
 } from './order-email-test-utils';
-import { legacyFulfillmentDisabled, withGroupG1Material } from './group-g1-test-utils';
+import { withGroupG1Material } from './group-g1-test-utils';
 import { createTestMember, loginAsMember, type TestMember } from './member-session-helpers';
 import { adminOrder, fulfillJson, mockAdminSession, orderNumberOf } from './order-fulfillment-test-utils';
 
@@ -439,15 +448,26 @@ export async function withDeliveryScenario<T>(
 
 export type AdminActor = { id: string; email: string };
 
-/** 管理者の代わりの利用者（auth.users の行）。履歴の「操作」に出る人のメールを引けるよう、メールつきで返す */
+/**
+ * 管理者の代わりの利用者（auth.users の行）。履歴の「操作」に出る人のメールを引けるよう、メールつきで返す。
+ * G-3: 発送票の関数（下書き・確定・伝票番号・配達済み）は DB が実行者の有効な役割で権限を確かめるので、役割 admin（期限なし）も付ける。
+ * 作った行は消さない（追記専用の履歴が id を写すだけ。db reset で消える）。
+ */
 export async function createAdminActor(client: PgClient): Promise<AdminActor> {
   const email = uniqueEmail('delivery-admin');
   const res = await client.query(
-    `insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
-     values (gen_random_uuid(), $1, '{}'::jsonb, now(), now()) returning id`,
+    `insert into auth.users (id, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+     values (gen_random_uuid(), $1, jsonb_build_object('role', 'admin'), '{}'::jsonb, now(), now()) returning id`,
     [email],
   );
-  return { id: res.rows[0].id as string, email };
+  const id = res.rows[0].id as string;
+  const assigned = await client.query(
+    `insert into public.user_roles (user_id, role_id, active, expires_at)
+     select $1::uuid, r.id, true, null from public.roles r where r.code = 'admin'`,
+    [id],
+  );
+  if (assigned.rowCount !== 1) throw new Error('役割 admin の行が手元の DB に無い');
+  return { id, email };
 }
 
 export type PaidOrderFixture = E2eCreatedOrder & {
@@ -493,7 +513,87 @@ export type ShipmentFixture = {
   trackingNumber: string;
   /** 作り物の組（番号は大文字） */
   pair: TrackingPair;
+  /** この発送が属する発送票（G-3）。過去の届いた日の材料（deliveredAt。合成の発送）は票を持たないので undefined */
+  slipId?: string;
 };
+
+// ---- 発送票の DB の関数（G-3。本物の公開関数を postgres の接続から呼ぶ。材料づくりと E2E の窓口の橋渡しが共有する） ----
+
+type SlipDbArg = readonly [name: string, value: unknown, cast?: string];
+
+/** `select public.<fn>(_name => $1::cast, …) as result` を1回流して result（jsonb）を返す。誤りは pg の誤りのまま投げる */
+export async function callSlipDb(db: PgClient, fn: string, args: readonly SlipDbArg[]): Promise<Record<string, unknown>> {
+  const list = args.map(([name, , cast], index) => `${name} => $${index + 1}${cast ? `::${cast}` : ''}`).join(', ');
+  const result = await db.query(
+    `select public.${fn}(${list}) as result`,
+    args.map(([, value, cast]) => (cast === 'jsonb' ? JSON.stringify(value) : value)),
+  );
+  return result.rows[0].result as Record<string, unknown>;
+}
+
+/** 発送票の下書きを作る（slipId を渡すと、その下書きの品物を丸ごと入れ替える）。実行者は役割 admin の人 */
+export async function saveSlipDraftInDb(
+  db: PgClient,
+  actorId: string,
+  lines: readonly ShipmentSlipDraftLine[],
+  options: { slipId?: string; expectedVersion?: number; requestKey?: string } = {},
+): Promise<ShipmentSlipSaved> {
+  const result = await callSlipDb(db, 'admin_save_shipment_slip_draft', [
+    ['_slip_id', options.slipId ?? null, 'uuid'],
+    ['_expected_version', options.expectedVersion ?? null, 'integer'],
+    ['_lines', lines.map((line) => ({ orderItemId: line.orderItemId, quantity: line.quantity })), 'jsonb'],
+    ['_actor_id', actorId, 'uuid'],
+    ['_request_key', options.requestKey ?? randomUUID(), 'uuid'],
+  ]);
+  return parseShipmentSlipSaved(result);
+}
+
+/** 下書きを確定する（運送会社と伝票番号は両方指定するか両方省く。出荷日の初期値は日本時間の今日） */
+export async function confirmSlipInDb(
+  db: PgClient,
+  actorId: string,
+  slip: { id: string; version: number },
+  options: {
+    carrier?: ShippingCarrierId | null;
+    trackingNumber?: string | null;
+    shipmentDate?: string;
+    notifyCustomer?: boolean;
+    requestKey?: string;
+  } = {},
+): Promise<ShipmentSlipConfirmed> {
+  const result = await callSlipDb(db, 'admin_confirm_shipment_slip', [
+    ['_slip_id', slip.id, 'uuid'],
+    ['_expected_version', slip.version, 'integer'],
+    ['_carrier', options.carrier ?? null, 'text'],
+    ['_tracking_number', options.trackingNumber ?? null, 'text'],
+    ['_shipment_date', options.shipmentDate ?? (await jstToday(db)), 'date'],
+    ['_notify_customer', options.notifyCustomer ?? true, 'boolean'],
+    ['_actor_id', actorId, 'uuid'],
+    ['_request_key', options.requestKey ?? randomUUID(), 'uuid'],
+  ]);
+  return parseShipmentSlipConfirmed(result);
+}
+
+/** 発送が属する発送票と今の版（票を持たない合成の発送は null） */
+export async function slipOfFulfillment(db: PgClient, fulfillmentId: string): Promise<{ id: string; version: number; stage: string } | null> {
+  const row = (
+    await db.query(
+      `select s.id, s.version, s.stage from public.shipment_slip_fulfillments as sf
+       join public.shipment_slips as s on s.id = sf.slip_id where sf.fulfillment_id = $1::uuid`,
+      [fulfillmentId],
+    )
+  ).rows[0] as { id: string; version: string | number; stage: string } | undefined;
+  return row ? { id: row.id, version: Number(row.version), stage: row.stage } : null;
+}
+
+/** 入金日時（orders.paid_at）が空の入金済みの注文に、注文日時を入金日時として一度だけ書く（既存の材料は直接 paid で作られ、空のまま） */
+async function ensurePaidAt(db: PgClient, orderId: string): Promise<void> {
+  const row = (await db.query('select paid_at, created_at from public.orders where id = $1::uuid', [orderId])).rows[0] as
+    | { paid_at: Date | null; created_at: Date }
+    | undefined;
+  if (!row) throw new Error('E2E_ORDER_NOT_FOUND');
+  if (row.paid_at === null) await setGroupG3PaidAt(db, orderId, row.created_at.toISOString());
+}
 
 /**
  * これから作る発送（shipFixture・createShippedFixture に同じ numberPrefix と tag を渡す）の、作り物の組。
@@ -506,8 +606,10 @@ export function pairFor(numberPrefix: string, tag: string, carrier: ShippingCarr
 
 /**
  * 注文へ発送を足す。伝票番号は numberPrefix で始めて tag で分ける。
- * G-1: 旧の発送の関数（admin_create_fulfillment）は止まったので、合成の発送の材料（createFulfillment。A を消費する）で作る。
- * deliveredAt を渡すと、最初から配達済みの発送の材料にする（手で配達済みにする旧の関数の代わり。業務の操作の成功ではない）。
+ * G-3: 発送は発送票を経由して作る（本物の公開関数で、下書き → 確定。注文の実行者 order.actor は役割 admin）。
+ * 確定は発送・割当の消費・状態履歴・（通知オンなら）発送メールの予定・（追跡オンなら）追跡の登録を1つの取引で行う。
+ * deliveredAt を渡すと、最初から配達済みの発送の材料にする。届いた日が過去の材料は、発送票の確定が今の時刻でしか発送を作れないので、
+ * 従来の合成の発送（createFulfillment。A を消費する。票を持たない。業務の操作の成功ではない）で作る。
  */
 export async function shipFixture(
   client: PgClient,
@@ -516,25 +618,31 @@ export async function shipFixture(
 ): Promise<ShipmentFixture> {
   const carrier = input.carrier ?? 'yamato';
   const trackingNumber = `${input.numberPrefix}-${input.tag}`;
-  const shipment = await createFulfillment(client, order.orderId, order.actor.id, {
-    trackingNumber,
-    carrier,
-    notify: input.notify ?? true,
-    lines: [{ orderItemId: order.orderItemId, quantity: input.quantity ?? order.quantity }],
-    deliveredAt: input.deliveredAt,
+  const quantity = input.quantity ?? order.quantity;
+  const pair = { carrier: TRACKING_CARRIER_IDS[carrier], number: trackingNumber.toUpperCase() };
+  if (input.deliveredAt) {
+    const shipment = await createFulfillment(client, order.orderId, order.actor.id, {
+      trackingNumber,
+      carrier,
+      notify: input.notify ?? true,
+      lines: [{ orderItemId: order.orderItemId, quantity }],
+      deliveredAt: input.deliveredAt,
+    });
+    return { fulfillmentId: shipment.fulfillmentId, number: shipment.number, carrier, trackingNumber, pair };
+  }
+  await ensurePaidAt(client, order.orderId);
+  const draft = await saveSlipDraftInDb(client, order.actor.id, [{ orderItemId: order.orderItemId, quantity }]);
+  const confirmed = await confirmSlipInDb(client, order.actor.id, draft, {
+    carrier, trackingNumber, notifyCustomer: input.notify ?? true,
   });
-  return {
-    fulfillmentId: shipment.fulfillmentId,
-    number: shipment.number,
-    carrier,
-    trackingNumber,
-    pair: { carrier: TRACKING_CARRIER_IDS[carrier], number: trackingNumber.toUpperCase() },
-  };
+  const shipment = confirmed.fulfillments.find((entry) => entry.orderId === order.orderId);
+  if (!shipment) throw new Error('E2E_SLIP_FULFILLMENT_MISSING');
+  return { fulfillmentId: shipment.fulfillmentId, number: shipment.number, carrier, trackingNumber, pair, slipId: confirmed.id };
 }
 
 /**
- * 注文を作って、その全部を1つの発送で送る（数は quantity の全部）。G-1: 注文・A・発送（A の消費）は1つの G-1 の取引。
- * deliveredAt を渡すと、最初から配達済みの発送の材料にする。
+ * 注文を作って、その全部を1つの発送で送る（数は quantity の全部）。G-1: 注文・A は1つの G-1 の取引。G-3: 発送は発送票（下書き → 確定）を経由する。
+ * deliveredAt を渡すと、最初から配達済みの発送の材料にする（票を持たない合成の発送）。
  */
 export async function createShippedFixture(
   client: PgClient,
@@ -562,22 +670,43 @@ export async function createShippedFixture(
 }
 
 /**
- * 手で配達済みにする旧の DB の関数（admin_mark_fulfillment_delivered）は G-1 の Task 14 で止まった。
- * 手での操作の成功を装わず、DB に触れずに LEGACY_FULFILLMENT_DISABLED（55000）で断る。配達済みを材料に使う試験は、
- * shipFixture・createShippedFixture・createFulfillment の deliveredAt で最初から配達済みの発送を作る。
+ * 手で配達済みにする。G-3: 旧の DB の関数（admin_mark_fulfillment_delivered。G-1 で停止）の代わりに、その発送が属する発送票を引いて
+ * 票単位の公開関数 admin_mark_shipment_slip_delivered を呼ぶ（票の全注文の有効な発送が配達済みになる）。
+ * 票を持たない発送（deliveredAt で作った合成の発送・G-1 より前の発送）には使えない。
  */
 export async function markDeliveredInDb(
   client: PgClient,
   input: { orderId: string; fulfillmentId: string; actorId: string; deliveredOn: string; notify: boolean; requestKey?: string },
 ): Promise<{ eventId: string; deliveredAt: Date; replayed: boolean }> {
-  void client;
-  void input;
-  return legacyFulfillmentDisabled();
+  const slip = await slipOfFulfillment(client, input.fulfillmentId);
+  if (!slip) throw new Error('E2E_FULFILLMENT_HAS_NO_SLIP');
+  const result = await callSlipDb(client, 'admin_mark_shipment_slip_delivered', [
+    ['_slip_id', slip.id, 'uuid'],
+    ['_expected_version', slip.version, 'integer'],
+    ['_delivered_on', input.deliveredOn, 'date'],
+    ['_notify_customer', input.notify, 'boolean'],
+    ['_actor_id', input.actorId, 'uuid'],
+    ['_request_key', input.requestKey ?? randomUUID(), 'uuid'],
+  ]);
+  const event = (
+    await client.query(
+      `select id from public.order_fulfillment_events
+       where fulfillment_id = $1::uuid and status = 'delivered' and source = 'manual' order by recorded_at desc, id desc limit 1`,
+      [input.fulfillmentId],
+    )
+  ).rows[0] as { id: string } | undefined;
+  if (!event) throw new Error('E2E_DELIVERED_EVENT_MISSING');
+  return {
+    eventId: event.id,
+    deliveredAt: (await readFulfillment(client, input.fulfillmentId)).delivered_at as Date,
+    replayed: result.replayed === true,
+  };
 }
 
 /**
- * 伝票番号を直す旧の DB の関数（admin_update_fulfillment_tracking）は G-1 の Task 14 で止まった。
- * 手での操作の成功を装わず、DB に触れずに LEGACY_FULFILLMENT_DISABLED（55000）で断る。
+ * 伝票番号を直す。G-3: 旧の DB の関数（admin_update_fulfillment_tracking。G-1 で停止）の代わりに、その発送が属する発送票を引いて
+ * 票単位の公開関数 admin_update_shipment_slip_tracking を呼ぶ（票の全注文の有効な発送へ同じ運送会社と番号が入る）。
+ * 票を持たない発送には使えない。
  */
 export async function editTrackingInDb(
   client: PgClient,
@@ -591,9 +720,26 @@ export async function editTrackingInDb(
     requestKey?: string;
   },
 ): Promise<{ trackingChangeId: string; trackingVersion: number; replayed: boolean }> {
-  void client;
-  void input;
-  return legacyFulfillmentDisabled();
+  const slip = await slipOfFulfillment(client, input.fulfillmentId);
+  if (!slip) throw new Error('E2E_FULFILLMENT_HAS_NO_SLIP');
+  const result = await callSlipDb(client, 'admin_update_shipment_slip_tracking', [
+    ['_slip_id', slip.id, 'uuid'],
+    ['_expected_version', slip.version, 'integer'],
+    ['_carrier', input.carrier, 'text'],
+    ['_tracking_number', input.trackingNumber, 'text'],
+    ['_notify_customer', input.notify, 'boolean'],
+    ['_actor_id', input.actorId, 'uuid'],
+    ['_request_key', input.requestKey ?? randomUUID(), 'uuid'],
+  ]);
+  const trackingVersion = Number(result.trackingVersion);
+  const change = (
+    await client.query(
+      'select id from public.order_fulfillment_tracking_changes where fulfillment_id = $1::uuid and tracking_version = $2',
+      [input.fulfillmentId, trackingVersion],
+    )
+  ).rows[0] as { id: string } | undefined;
+  if (!change) throw new Error('E2E_TRACKING_CHANGE_MISSING');
+  return { trackingChangeId: change.id, trackingVersion, replayed: result.replayed === true };
 }
 
 /** 返品の設定のうち、届いた日からの期限に効く物 */
@@ -906,8 +1052,11 @@ function toOrderDeliveryDetail(raw: Record<string, unknown>): OrderDeliveryDetai
   };
 }
 
-/** 「この注文の履歴」の答え。窓口が使うのと同じ DB の読み出しと同じ組み立て（buildOrderHistory）で作る */
-async function bridgeHistory(client: PgClient, orderId: string) {
+/**
+ * 「この注文の履歴」の答え。窓口が使うのと同じ DB の読み出しと同じ組み立て（buildOrderHistory）で作る。
+ * G-3: slips（発送の ID → その発送が属する発送票。窓口が権限を確かめて読む物）を渡すと、発送の行に票の番号とリンクが付く。
+ */
+export async function bridgeHistory(client: PgClient, orderId: string, slips?: ReadonlyMap<string, ShipmentSlipLink>) {
   const order = (
     await client.query('select id, status::text as status, shipping_email, created_at from public.orders where id = $1', [orderId])
   ).rows[0] as { id: string; status: OrderStatus; shipping_email: string | null; created_at: Date } | undefined;
@@ -997,6 +1146,7 @@ async function bridgeHistory(client: PgClient, orderId: string) {
     cancelRequests: [],
     lines,
     delivery: toOrderDeliveryDetail(detail),
+    ...(slips ? { slips } : {}),
   });
 }
 

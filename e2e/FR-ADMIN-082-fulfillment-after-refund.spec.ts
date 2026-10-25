@@ -12,7 +12,7 @@
 import { expect, test } from '@playwright/test';
 import { PRICE } from '../tests/integration/db/helpers/order-fixtures';
 import type { OrderHistoryFulfillmentEntry } from '@/lib/orders/email/order-history';
-import { LEGACY_FULFILLMENT_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
+import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import {
   beginRefund,
   cancelFulfillment,
@@ -341,8 +341,9 @@ for (const viewport of viewports) {
       await expect(row.getByText('発送準備中', { exact: true })).toBeVisible();
       await expect(row.getByText('一部発送済み', { exact: true })).toBeVisible();
       await expect(row.getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
-      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toHaveCount(1);
-      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toBeVisible();
+      // G-3: 旧い停止文は、発送票へ誘導する案内（荷作り表から行います）に置き換わった
+      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toHaveCount(1);
+      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toBeVisible();
 
       // 発送前のスカート1つ（残りの商品の全部）を返金する
       const dialog = await openRefundDialog(page, orderId);
@@ -354,8 +355,8 @@ for (const viewport of viewports) {
       await expect(row.getByText('配送中', { exact: true })).toBeVisible();
       await expect(row.getByText('一部発送済み', { exact: true })).toHaveCount(0);
       await expect(row.getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
-      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toHaveCount(1);
-      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toBeVisible();
+      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toHaveCount(1);
+      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toBeVisible();
       await expect(row.getByText('一部返金', { exact: true })).toBeVisible();
     });
 

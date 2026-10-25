@@ -10,10 +10,8 @@
  * 停止の拒否そのもの（DB の関数・HTTP 410）は、手元の DB の関数を直に呼んで確かめる。
  */
 import { expect, test, type Page } from '@playwright/test';
-import {
-  LEGACY_FULFILLMENT_DISABLED_TEXT,
-  MANUAL_COMPLETION_DISABLED_TEXT,
-} from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
+import { MANUAL_COMPLETION_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
+import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import { seedE2eRestock } from './group-g1-test-utils';
 import {
   cancelCompletion,
@@ -81,8 +79,9 @@ for (const viewport of viewports) {
       for (const name of LEGACY_ENTRY_NAMES) {
         await expect(page.getByRole('button', { name }), `${name} の入口`).toHaveCount(0);
       }
-      // 停止文は表の外に1回ずつ（注文の行の中には出さない）
-      for (const text of [LEGACY_FULFILLMENT_DISABLED_TEXT, MANUAL_COMPLETION_DISABLED_TEXT]) {
+      // 案内（発送は荷作り表から）と停止文（仕上がり）は表の外に1回ずつ（注文の行の中には出さない）。
+      // G-3: 旧い発送の停止文は、発送票へ誘導する案内に置き換わった
+      for (const text of [SHIPMENT_SLIP_TEXT.orderSectionGuide, MANUAL_COMPLETION_DISABLED_TEXT]) {
         await expect(page.getByText(text, { exact: true })).toHaveCount(1);
         await expect(page.getByText(text, { exact: true })).toBeVisible();
         await expect(row.getByText(text, { exact: true })).toHaveCount(0);

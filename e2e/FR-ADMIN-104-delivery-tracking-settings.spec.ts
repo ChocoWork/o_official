@@ -16,6 +16,8 @@ import {
   deliveryViewports,
   expectDialogFits,
   expectNoHorizontalOverflow,
+  jstDateOf,
+  jstToday,
   mockAdminDeliveryBridge,
   newDeliveryBridgeLog,
   openOrderHistory,
@@ -33,6 +35,7 @@ import {
 } from './delivery-tracking-test-utils';
 import { fulfillJson, mockOrderList, openOrderTab } from './order-fulfillment-test-utils';
 import { formatJst, mockAdminSessionAs } from './refund-test-utils';
+import { expectSlipHeading, mockShippingUiBridge, noticeOf } from './shipping-test-utils';
 
 const TOGGLE_NAME = '配送の追跡（17TRACK）を使う';
 const EXPLANATIONS = [
@@ -220,9 +223,52 @@ for (const viewport of deliveryViewports) {
       });
     });
 
-    // FREQ-495-AC-04（追跡オフの間の能力の保証。旧の説明文の約束だけを独立させて停止した）
-    test('追跡がオフの間も、伝票番号の直しと、手で配達済みにすることができる', async () => {
-      test.skip(true, 'G-1: 旧配送操作停止。G-3 FR-ADMIN-117/118/120で新票へ書換・再開');
+    // FREQ-495-AC-04（追跡オフの間の能力の保証。G-1 で旧の説明文の約束だけを独立させて止めた物を、G-3 の発送票の操作で再開した）
+    test('追跡がオフの間も、伝票番号の直しと、手で配達済みにすることができる', async ({ page }) => {
+      test.setTimeout(420_000);
+      await withDeliveryScenario(async ({ client, numberPrefix }) => {
+        const actor = await createAdminActor(client);
+        await setTrackingFlagDirect(client, false);
+        // オフの間に発送した票（発送票の下書き → 確定の本物の関数）。オフの間は 17TRACK に登録しない
+        const fx = await createShippedFixture(client, { numberPrefix, tag: 'E104OFF', notify: false, actor });
+        const { fulfillmentId, slipId } = fx.shipment;
+        expect(slipId).toBeTruthy();
+        expect(await readRegistration(client, fulfillmentId)).toBeUndefined();
+
+        // 発送票の画面（窓口は bridge 経由で DB の関数へ）で、伝票番号を直す
+        await mockAdminSessionAs(page, 'admin');
+        await mockShippingUiBridge(page, client, actor.id);
+        await page.goto(`/admin/shipment-slips/${slipId}`);
+        await expectSlipHeading(page);
+        await page.getByRole('button', { name: '伝票番号を直す', exact: true }).click();
+        const editDialog = page.getByRole('dialog', { name: '伝票番号を直す', exact: true });
+        await expect(editDialog).toBeVisible();
+        const newNumber = `${numberPrefix}-E104NEW`;
+        await editDialog.getByLabel('伝票番号', { exact: true }).fill(newNumber);
+        await editDialog.getByRole('checkbox', { name: 'お客様に更新のメールを送る', exact: true }).uncheck();
+        await editDialog.getByRole('button', { name: '直す', exact: true }).click();
+        await expect(noticeOf(page, '伝票番号を更新しました。')).toBeVisible();
+        expect(await readFulfillment(client, fulfillmentId)).toMatchObject({ tracking_number: newNumber, tracking_version: 2 });
+
+        // 手で配達済みにする（届いた日の初期値は今日）
+        await page.getByRole('button', { name: '配達済みにする', exact: true }).click();
+        const deliveredDialog = page.getByRole('dialog', { name: '配達済みにする', exact: true });
+        await expect(deliveredDialog).toBeVisible();
+        await deliveredDialog.getByRole('checkbox', { name: 'お客様に配達済みのメールを送る', exact: true }).uncheck();
+        await deliveredDialog.getByRole('button', { name: '配達済みにする', exact: true }).click();
+        await expect(noticeOf(page, '配達済みにしました。')).toBeVisible();
+        const delivered = await readFulfillment(client, fulfillmentId);
+        expect(delivered.delivery_status).toBe('delivered');
+        expect(delivered.delivered_at).not.toBeNull();
+        // 届いた日の初期値は今日（日本時間）。届いた時刻の日本時間の日付が今日であること
+        expect(jstDateOf(delivered.delivered_at as Date)).toBe(await jstToday(client));
+        await expectNoHorizontalOverflow(page);
+
+        // 追跡がオフの間は、直しても配達済みにしても、17TRACK へ登録も呼び出しもしない
+        expect(await readRegistration(client, fulfillmentId)).toBeUndefined();
+        expect(await readFakeTrackingCalls(fx.shipment.pair)).toEqual([]);
+        expect(await readFakeTrackingCalls({ carrier: fx.shipment.pair.carrier, number: newNumber.toUpperCase() })).toEqual([]);
+      });
     });
   });
 }

@@ -18,6 +18,13 @@
  *   サポーター（初期値）の拒否は DB の関数（42501）が決める。店長が権限の画面でサポーターに権限を付けると、表が見える。
  * - 窓口の認可（authorizeAdminPermission(s)）の効きは、本物の 401/403 と各 route の単体が確かめる（bridge の下では DB の権限の確かめを確かめる）。
  *
+ * G-3 の部分（下の「G-3」の節。FREQ-540-AC-10、FREQ-534-AC-05、FREQ-531-AC-04 の権限）:
+ * - 荷作り表・発送票の新しい窓口11メソッド: ログインしていない本物の HTTP は 401、お客様の本物のログインの HTTP は 403。
+ * - 管理者のログインは差し替えのまま、窓口の代わりに e2e/shipping-test-utils.ts の bridge が実行者を DB の公開関数へ渡す。bridge は権限を決めず、
+ *   サポーター（初期値）の出荷日の訂正の拒否や、店長が権限の画面でオフにした権限の拒否は DB の関数（42501）が決める。
+ * - 旧4つの発送の入口は 410 のまま（DB の関数は LEGACY_FULFILLMENT_DISABLED で断る。窓口の 410 の形は明示した route bridge で確かめる）で、案内の文は発送票へ誘導する新しい文。
+ * - 窓口の認可（authorizeAdminPermissions）の効きは、本物の 401/403 と各 route の単体が確かめる（bridge の下では DB の権限の確かめを確かめる）。
+ *
  * - サポーター・一般利用者・権限なし（役割名は店長だが有効な割り当てが無い人）が権限の画面を直に開いても、表は出ない。
  *   ログインの形（/api/auth/me）は既存の mockAdminSessionAs と同じ差し替えで、拒否そのものは bridge が手元の DB の関数
  *   （public.admin_get_permissions・public.admin_set_role_permissions）で確かめる（e2e/permission-settings-test-utils.ts）。
@@ -40,9 +47,10 @@ import {
   MANUAL_COMPLETION_DISABLED_TEXT,
   legacyFulfillmentDisabledBody,
 } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
+import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { loginCustomer } from './delivery-tracking-test-utils';
-import { withLocalDb } from './order-email-test-utils';
+import { expectDbError, withLocalDb } from './order-email-test-utils';
 import {
   adminOrder,
   fulfillJson,
@@ -72,6 +80,27 @@ import {
   withPurchasingScenario,
 } from './purchasing-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
+import {
+  callFromPage as callWithBody,
+  confirmOnSlipPage,
+  createDraftInDb,
+  createShippingMaterial,
+  expectNoPageOverflow,
+  fulfillmentsOf,
+  noticeOf,
+  openPacking,
+  openSlip,
+  prepareShippingPage,
+  readSlip,
+  readyQuantityOf,
+  revealPackingRow,
+  selectBoxOf,
+  setSupporterPermissionOnScreen,
+  shipMaterialsInDb,
+  slipIdOfUrl,
+  expectSlipHeading,
+  withShippingScenario,
+} from './shipping-test-utils';
 
 test.describe.configure({ mode: 'serial', timeout: 90_000 });
 // G-1 の 403 の確かめは、お客様の本物のログイン（確認コードとログインの Cookie）をブラウザの通信に載せるので、通信記録（trace）を残さない
@@ -431,7 +460,8 @@ for (const viewport of viewports) {
         for (const name of G1_LEGACY_ENTRY_NAMES) {
           await expect(page.getByRole('button', { name }), `一覧の ${name}`).toHaveCount(0);
         }
-        for (const text of [LEGACY_FULFILLMENT_DISABLED_TEXT, MANUAL_COMPLETION_DISABLED_TEXT]) {
+        // （G-3: 旧い発送の停止文は、発送票へ誘導する案内 SHIPMENT_SLIP_TEXT.orderSectionGuide に置き換わった。期待は同じ「表の外に1回」）
+        for (const text of [SHIPMENT_SLIP_TEXT.orderSectionGuide, MANUAL_COMPLETION_DISABLED_TEXT]) {
           await expect(page.getByText(text, { exact: true })).toHaveCount(1);
           await expect(page.getByText(text, { exact: true })).toBeVisible();
           await expect(row.getByText(text, { exact: true })).toHaveCount(0);
@@ -453,8 +483,8 @@ for (const viewport of viewports) {
         for (const name of G1_LEGACY_ENTRY_NAMES) {
           await expect(dialog.getByRole('button', { name }), `履歴の ${name}`).toHaveCount(0);
         }
-        await expect(dialog.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toHaveCount(1);
-        await expect(dialog.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toBeVisible();
+        await expect(dialog.getByText(SHIPMENT_SLIP_TEXT.orderHistoryGuide, { exact: true })).toHaveCount(1);
+        await expect(dialog.getByText(SHIPMENT_SLIP_TEXT.orderHistoryGuide, { exact: true })).toBeVisible();
         await expect(dialog.getByText(MANUAL_COMPLETION_DISABLED_TEXT, { exact: true })).toHaveCount(0);
         await expect(dialog.getByRole('button', { name: '中身を見る', exact: true })).toBeEnabled();
         await expect(dialog.getByRole('button', { name: 'お客様へ再送', exact: true })).toBeEnabled();
@@ -650,6 +680,9 @@ for (const viewport of viewports) {
         await expect(adminMenu(page).getByRole('button', { name: 'INVENTORY', exact: true })).toBeVisible();
         await expect(adminMenu(page).getByRole('button', { name: 'SETTINGS', exact: true })).toHaveCount(0);
 
+        // G-3: 荷作り表への入口 PACKING も、サポーターの管理メニューに加わる（SETTINGS は無いまま。PACKING の中身は下の G-3 の節が確かめる）
+        await expect(adminMenu(page).getByRole('button', { name: 'PACKING', exact: true })).toBeVisible();
+
         // INVENTORY の中: 在庫一覧表と発注一覧表へのリンク（キーボードで開ける）
         await adminMenu(page).getByRole('button', { name: 'INVENTORY', exact: true }).click();
         const inventoryMenu = page.getByRole('navigation', { name: '在庫・発注メニュー', exact: true });
@@ -712,6 +745,342 @@ for (const viewport of viewports) {
           await supporterPage.close();
         }
       }, { changesPermissions: true });
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// G-3: 荷作り表・発送票の窓口の権限（FREQ-540-AC-10。FREQ-534-AC-05 の旧4つの発送の入口の停止）
+// ---------------------------------------------------------------------------------------------------------------------
+
+const G3_SLIP_ID = 'a1230000-0000-4000-8000-0000000003a1';
+const G3_SLIPS = '/api/admin/shipment-slips';
+const G3_SLIP = `${G3_SLIPS}/${G3_SLIP_ID}`;
+
+/** G-3 の新しい窓口11メソッド（荷作り表1・票の一覧と下書きの作成2・票の詳細1・票ごとの操作7） */
+const G3_OPERATIONS = [
+  { name: '荷作り表', method: 'GET', path: '/api/admin/packing' },
+  { name: '発送票の一覧', method: 'GET', path: G3_SLIPS },
+  { name: '下書きの作成', method: 'POST', path: G3_SLIPS },
+  { name: '発送票の詳細', method: 'GET', path: G3_SLIP },
+  { name: '下書きの入替', method: 'POST', path: `${G3_SLIP}/draft` },
+  { name: '下書きの破棄', method: 'POST', path: `${G3_SLIP}/discard` },
+  { name: '発送確定', method: 'POST', path: `${G3_SLIP}/confirm` },
+  { name: '伝票番号の入力・訂正', method: 'POST', path: `${G3_SLIP}/tracking` },
+  { name: '手動の配達済み', method: 'POST', path: `${G3_SLIP}/delivered` },
+  { name: '発送の取消', method: 'POST', path: `${G3_SLIP}/cancel` },
+  { name: '出荷日の訂正', method: 'POST', path: `${G3_SLIP}/shipment-date` },
+] as const;
+
+/** 旧4つの発送の入口（発送・発送取消・伝票番号の訂正・手動の配達済み）。G-3 でも 410 のまま */
+const G3_LEGACY_OPERATIONS = [
+  { name: '発送', method: 'POST', path: `/api/admin/orders/${G1_ORDER_ID}/fulfillments` },
+  { name: '発送の取消', method: 'POST', path: `/api/admin/orders/${G1_ORDER_ID}/fulfillments/${G1_FULFILLMENT_ID}/cancel` },
+  { name: '伝票番号の訂正', method: 'POST', path: `/api/admin/orders/${G1_ORDER_ID}/fulfillments/${G1_FULFILLMENT_ID}/tracking` },
+  { name: '手動の配達済み', method: 'POST', path: `/api/admin/orders/${G1_ORDER_ID}/fulfillments/${G1_FULFILLMENT_ID}/delivered` },
+] as const;
+
+const SHIPPING_MANAGE = 'admin.shipping.manage';
+const SHIPPING_READ = 'admin.shipping.read';
+
+test('ログインしていない本物の新しい窓口11メソッドは401', async ({ playwright, baseURL }) => {
+  // FREQ-540-AC-10。差し替えの無い request context（cookie なし）で本物の窓口を呼ぶ。画面を描かないので、画面幅ごとには繰り返さない
+  if (!baseURL) throw new Error('baseURL が無い（playwright.config.ts）');
+  expect(G3_OPERATIONS).toHaveLength(11);
+  const api = await playwright.request.newContext({ baseURL });
+  try {
+    for (const operation of G3_OPERATIONS) {
+      // Origin は同じ origin（proxy の Origin の検査の先の、窓口の認可まで届かせる）
+      const response = await api.fetch(operation.path, {
+        method: operation.method,
+        data: operation.method === 'GET' ? undefined : {},
+        headers: { origin: new URL(baseURL).origin },
+      });
+      expect(response.status(), `${operation.name}（${operation.method}）`).toBe(401);
+      expect(await response.json(), `${operation.name}（${operation.method}）の本文`).toEqual({ error: 'Unauthorized' });
+    }
+  } finally {
+    await api.dispose();
+  }
+});
+
+test('お客様の本物のログインでは同じ11メソッドが403', async ({ page }) => {
+  // FREQ-540-AC-10。本物のお客様のログイン（確認コードは Mailpit から読む）で、窓口の権限の確かめまで通す。画面幅ごとには繰り返さない
+  // （② は画面を描かない API だけの確かめで画面幅によらない。G-2 の節の同じ case と同じ扱い。お客様の本物のログインを3回重ねる回数制限の危険も避ける）
+  test.setTimeout(180_000);
+  await loginCustomer(page, 'g123g3');
+  for (const operation of G3_OPERATIONS) {
+    const result = await callFromPage(page, operation);
+    expect(result.status, `${operation.name}（${operation.method}）`).toBe(403);
+    // 窓口の認可の 403（{ error: 'Forbidden', permission, role }）。CSRF・Origin の 403 とは本文で区別する。
+    // 出荷日の訂正だけは、窓口が権限の不足の 403 の error の文を専用の文（SHIPMENT_SLIP_TEXT.dateForbidden）に書き換え、permission は残す
+    // （意図した作り。route の forbiddenMessage と単体 shipment-slip-shipment-date-route.test.ts の「403の訂正文」が確かめている）
+    const expected = operation.path.endsWith('/shipment-date')
+      ? { error: SHIPMENT_SLIP_TEXT.dateForbidden, permission: expect.any(String) }
+      : { error: 'Forbidden' };
+    expect(result.body, `${operation.name}（${operation.method}）の本文`).toMatchObject(expected);
+  }
+});
+
+for (const viewport of viewports) {
+  test.describe(`FR-ADMIN-123 group G permissions, G-3 (${viewport.name})`, () => {
+    test.beforeEach(async ({ page }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    });
+
+    test('サポーター（初期値）は荷作り表と票を操作でき、出荷日の訂正はDB関数の拒否で断られる', async ({ page }) => {
+      // FREQ-540-AC-10, FREQ-535-AC-03。窓口の代わりの bridge は権限を決めず、DB の関数が実行者（サポーター）の権限を確かめる
+      test.setTimeout(240_000);
+      await withShippingScenario(async (ctx) => {
+        const supporterId = await createPermissionActor(ctx.client, 'supporter');
+        const material = await createShippingMaterial(ctx.client, { quantity: 2 });
+        await prepareShippingPage(page, ctx, { role: 'supporter', actorId: supporterId });
+        await openPacking(page);
+
+        // 荷作り表を見て、選んで発送し、票を確定できる
+        const row = await revealPackingRow(page, material);
+        await selectBoxOf(row, material.label).check();
+        await page.getByRole('button', { name: SHIPMENT_SLIP_TEXT.ship, exact: true }).click();
+        await expectSlipHeading(page);
+        await confirmOnSlipPage(page);
+        expect(await fulfillmentsOf(ctx.client, material.orderId)).toMatchObject([{ number: 1, quantity: 2 }]);
+
+        // 出荷日の訂正は店長だけ: 画面は案内の文だけでボタンを出さない
+        await expect(page.getByText(SHIPMENT_SLIP_TEXT.dateOwnerOnly, { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: SHIPMENT_SLIP_TEXT.correctDate, exact: true })).toHaveCount(0);
+        // 窓口を直接呼んでも、DB の関数が断る。票の版・出荷日の履歴は変わらない
+        const slipId = slipIdOfUrl(page);
+        const before = await readSlip(ctx.client, ctx.actorId, slipId);
+        const refused = await callWithBody(page, 'POST', `${G3_SLIPS}/${slipId}/shipment-date`, {
+          expectedVersion: before.version, shipmentDate: before.shipmentDate, reason: '権限の確認', requestKey: randomUUID(),
+        });
+        expect(refused).toEqual({ status: 403, body: { code: 'GROUP_G_FORBIDDEN', error: SHIPMENT_SLIP_TEXT.dateForbidden } });
+        const after = await readSlip(ctx.client, ctx.actorId, slipId);
+        expect(after.version).toBe(before.version);
+        expect(after.dateHistory).toEqual(before.dateHistory);
+        expect(after.shipmentDate).toBe(before.shipmentDate);
+        await expectNoPageOverflow(page);
+      });
+    });
+
+    test('店長が権限画面でサポーターの admin.shipping.manage をオフにすると、サポーターは票を見られるが下書き・確定・取消が断られ、戻すと再びできる', async ({ page }) => {
+      // FREQ-540-AC-10
+      test.setTimeout(240_000);
+      await withShippingScenario(async (ctx) => {
+        const { client } = ctx;
+        const supporterId = await createPermissionActor(client, 'supporter');
+        const toConfirm = await createShippingMaterial(client, { quantity: 2 });
+        const toCancel = await createShippingMaterial(client, { quantity: 2 });
+        const toCreate = await createShippingMaterial(client, { quantity: 2 });
+        const draft = await createDraftInDb(ctx, [toConfirm]);
+        const shipped = await shipMaterialsInDb(ctx, [toCancel], { notifyCustomer: false });
+        // 店長の画面（権限の保存は bridge 経由で DB の関数 admin_set_role_permissions へ）と、サポーターの画面は別のタブ
+        await mockAdminSessionAs(page, 'admin');
+        await mockPermissionUiBridge(page, client, ctx.actorId);
+        const supporterPage = await page.context().newPage();
+        try {
+          await supporterPage.setViewportSize({ width: viewport.width, height: viewport.height });
+          await prepareShippingPage(supporterPage, ctx, { role: 'supporter', actorId: supporterId });
+          const forbiddenAlert = supporterPage.getByRole('alert').filter({ hasText: SHIPMENT_SLIP_TEXT.forbidden });
+
+          // 発送の操作権限を外す
+          await setSupporterPermissionOnScreen(page, SHIPPING_MANAGE, false);
+
+          // 票は見られる
+          await openSlip(supporterPage, draft.id);
+          await expect(supporterPage.getByTestId('slip-line')).toHaveCount(1);
+          // 操作の POST の答え（このタブへ届く窓口の答え）を待ってから、画面と DB を確かめる。
+          // 前の操作の断りの文が画面に残っていて、後の操作の断りの確かめを見かけ上満たすのを避けるため
+          const answerOf = (id: string, operation: string) => supporterPage.waitForResponse(
+            (response) => response.request().method() === 'POST' && new URL(response.url()).pathname === `${G3_SLIPS}/${id}/${operation}`,
+          );
+          // 確定が断られる: 票は下書きのまま、発送は作られない
+          await supporterPage.getByRole('button', { name: '発送票確認', exact: true }).click();
+          const [confirmAnswer] = await Promise.all([
+            answerOf(draft.id, 'confirm'),
+            supporterPage.getByRole('button', { name: '発送確定', exact: true }).click(),
+          ]);
+          expect(confirmAnswer.status()).toBe(403);
+          await expect(forbiddenAlert).toBeVisible();
+          expect(await fulfillmentsOf(client, toConfirm.orderId)).toEqual([]);
+          // 破棄が断られる
+          await supporterPage.getByRole('button', { name: '戻る', exact: true }).click();
+          await supporterPage.getByRole('button', { name: SHIPMENT_SLIP_TEXT.discardDraft, exact: true }).click();
+          const [discardAnswer] = await Promise.all([
+            answerOf(draft.id, 'discard'),
+            supporterPage.getByRole('dialog', { name: SHIPMENT_SLIP_TEXT.discardConfirm, exact: true })
+              .getByRole('button', { name: SHIPMENT_SLIP_TEXT.discardSubmit, exact: true }).click(),
+          ]);
+          expect(discardAnswer.status()).toBe(403);
+          await expect(forbiddenAlert).toBeVisible();
+          expect((await readSlip(client, ctx.actorId, draft.id)).stage).toBe('draft');
+          // 新しい下書きも作れない
+          const created = await callWithBody(supporterPage, 'POST', G3_SLIPS, {
+            lines: [{ orderItemId: toCreate.orderItemId, quantity: 1 }], requestKey: randomUUID(),
+          });
+          expect(created).toEqual({ status: 403, body: { code: 'GROUP_G_FORBIDDEN', error: SHIPMENT_SLIP_TEXT.forbidden } });
+          // 取消が断られる: 確定済みの票は変わらない
+          await openSlip(supporterPage, shipped.id);
+          await supporterPage.getByRole('button', { name: SHIPMENT_SLIP_TEXT.cancelShipment, exact: true }).click();
+          const cancelDialog = supporterPage.getByRole('dialog', { name: SHIPMENT_SLIP_TEXT.cancelShipment, exact: true });
+          const [cancelAnswer] = await Promise.all([
+            answerOf(shipped.id, 'cancel'),
+            cancelDialog.getByRole('button', { name: SHIPMENT_SLIP_TEXT.cancelSubmit, exact: true }).click(),
+          ]);
+          expect(cancelAnswer.status()).toBe(403);
+          await expect(cancelDialog.getByRole('alert').filter({ hasText: SHIPMENT_SLIP_TEXT.forbidden })).toBeVisible();
+          expect((await readSlip(client, ctx.actorId, shipped.id)).stage).toBe('confirmed');
+          expect((await fulfillmentsOf(client, toCancel.orderId))[0].cancelled).toBe(false);
+          await expectNoPageOverflow(supporterPage);
+
+          // 戻すと再びできる: 新しい下書きの作成も、取消も、確定も通る
+          await setSupporterPermissionOnScreen(page, SHIPPING_MANAGE, true);
+          const recreated = await callWithBody(supporterPage, 'POST', G3_SLIPS, {
+            lines: [{ orderItemId: toCreate.orderItemId, quantity: 1 }], requestKey: randomUUID(),
+          });
+          expect(recreated.status).toBe(201);
+          await openSlip(supporterPage, shipped.id);
+          await supporterPage.getByRole('button', { name: SHIPMENT_SLIP_TEXT.cancelShipment, exact: true }).click();
+          await supporterPage.getByRole('dialog', { name: SHIPMENT_SLIP_TEXT.cancelShipment, exact: true })
+            .getByRole('button', { name: SHIPMENT_SLIP_TEXT.cancelSubmit, exact: true }).click();
+          await expect(noticeOf(supporterPage, SHIPMENT_SLIP_TEXT.cancelled)).toBeVisible();
+          await expect(supporterPage.getByTestId('slip-stage')).toContainText('取消済み');
+          expect((await fulfillmentsOf(client, toCancel.orderId))[0].cancelled).toBe(true);
+          expect(await readyQuantityOf(client, toCancel)).toBe(2);
+          await openSlip(supporterPage, draft.id);
+          await confirmOnSlipPage(supporterPage);
+          expect(await fulfillmentsOf(client, toConfirm.orderId)).toMatchObject([{ number: 1, quantity: 2 }]);
+        } finally {
+          await supporterPage.close();
+        }
+      }, { changesPermissions: true });
+    });
+
+    test('admin.shipping.read をオフにすると荷作り表は権限の文だけになる', async ({ page }) => {
+      // FREQ-540-AC-10, FREQ-531-AC-04
+      test.setTimeout(240_000);
+      await withShippingScenario(async (ctx) => {
+        const { client } = ctx;
+        const supporterId = await createPermissionActor(client, 'supporter');
+        const material = await createShippingMaterial(client, { quantity: 2 });
+        const draft = await createDraftInDb(ctx, [material]);
+        await mockAdminSessionAs(page, 'admin');
+        await mockPermissionUiBridge(page, client, ctx.actorId);
+        const supporterPage = await page.context().newPage();
+        try {
+          await supporterPage.setViewportSize({ width: viewport.width, height: viewport.height });
+          await prepareShippingPage(supporterPage, ctx, { role: 'supporter', actorId: supporterId });
+
+          // 付けている間: 荷作り表の表が見える
+          await openPacking(supporterPage);
+          await expect(await revealPackingRow(supporterPage, material)).toBeVisible();
+
+          // 荷作り・発送票の閲覧をオフにする: 荷作り表は権限の文だけ（表も下書きの一覧も出ない）。票の頁も権限の文
+          await setSupporterPermissionOnScreen(page, SHIPPING_READ, false);
+          await expectForbiddenPage(supporterPage, '/admin/packing', SHIPMENT_SLIP_TEXT.packingHeading, SHIPMENT_SLIP_TEXT.packingForbidden);
+          await expect(supporterPage.getByRole('heading', { name: SHIPMENT_SLIP_TEXT.draftsHeading, level: 2, exact: true })).toHaveCount(0);
+          await supporterPage.goto(`/admin/shipment-slips/${draft.id}`);
+          await expect(supporterPage.getByRole('alert').filter({ hasText: SHIPMENT_SLIP_TEXT.slipForbidden })).toBeVisible();
+          await expect(supporterPage.getByTestId('slip-line')).toHaveCount(0);
+          // 窓口を直接呼んでも、DB の関数が断る
+          const list = await callWithBody(supporterPage, 'GET', G3_SLIPS);
+          expect(list).toEqual({ status: 403, body: { code: 'GROUP_G_FORBIDDEN', error: SHIPMENT_SLIP_TEXT.forbidden } });
+
+          // 戻すと、再び見える
+          await setSupporterPermissionOnScreen(page, SHIPPING_READ, true);
+          await openPacking(supporterPage);
+          await expect(await revealPackingRow(supporterPage, material)).toBeVisible();
+          await expectNoPageOverflow(supporterPage);
+        } finally {
+          await supporterPage.close();
+        }
+      }, { changesPermissions: true });
+    });
+
+    test('旧4つの発送の入口は410のままで、案内の文は発送票へ誘導する新しい文になっている', async ({ page }) => {
+      // FREQ-534-AC-05, FREQ-540-AC-05。窓口の 410 の形は明示した route bridge（G-1 の節と同じ）で確かめ、停止そのものは手元の DB の旧の関数が確かめる
+      expect(G3_LEGACY_OPERATIONS).toHaveLength(4);
+
+      // 停止の文: 発送票へ誘導する新しい文（荷作り表の発送票から行う）。旧い「再開」の約束ではない
+      expect(LEGACY_FULFILLMENT_DISABLED_TEXT).toContain('荷作り表の発送票');
+      expect(legacyFulfillmentDisabledBody(LEGACY_FULFILLMENT_DISABLED)).toEqual({ code: LEGACY_FULFILLMENT_DISABLED, error: LEGACY_FULFILLMENT_DISABLED_TEXT });
+
+      // 旧4つの DB の関数は、引数の確かめより先に固定の記号で断る（手元の DB の関数を直に呼ぶ）
+      await withLocalDb(async (db) => {
+        const id = () => randomUUID();
+        await expectDbError(db.query('select * from public.admin_create_fulfillment($1,$2,$3,$4,$5,$6,$7::jsonb)', [
+          id(), id(), id(), 'yamato', 'LEGACY-1', false, JSON.stringify([{ order_item_id: id(), quantity: 1 }]),
+        ]), LEGACY_FULFILLMENT_DISABLED);
+        await expectDbError(db.query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [id(), id(), id()]), LEGACY_FULFILLMENT_DISABLED);
+        await expectDbError(db.query('select * from public.admin_update_fulfillment_tracking($1,$2,$3,$4,$5,$6,$7)', [
+          id(), id(), id(), id(), 'sagawa', 'Valid-123', true,
+        ]), LEGACY_FULFILLMENT_DISABLED);
+        await expectDbError(db.query('select * from public.admin_mark_fulfillment_delivered($1,$2,$3,$4,$5::date,$6)', [
+          id(), id(), id(), id(), new Date().toISOString().slice(0, 10), false,
+        ]), LEGACY_FULFILLMENT_DISABLED);
+      });
+
+      // 認可済みの店長の窓口は固定の本文の 410（明示した route bridge。窓口の guard・DB には届かない）。
+      // この bridge が確かめるのは「画面が止めた4つの窓口を呼ばない」ことと、410 の本文の形・案内の文の置き換えだけで、「本物の窓口が 410 を返す」ことの証拠ではない。
+      // 本物の窓口の 410（権限 → CSRF → 回数の制限の後、入力を読まずに固定の本文）は route の単体 tests/unit/api/admin/order-fulfillment-routes.test.ts
+      // （発送・発送の取消）と order-delivery-routes.test.ts（伝票番号の訂正・手動の配達済み）が確かめ、DB の旧の関数の停止は上の手元の DB の呼び出しと DB 結合が確かめる。
+      await mockAdminSessionAs(page, 'admin');
+      const calls = await mockStoppedOperationBridge(page);
+      await mockOrderList(page, () => [legacyOrderRow()]);
+      await page.route(`**/api/admin/orders/${G1_ORDER_ID}/history`, (route) => fulfillJson(route, legacyHistoryResponse()));
+      await page.goto('/admin');
+      for (const operation of G3_LEGACY_OPERATIONS) {
+        const result = await callFromPage(page, operation);
+        expect(result, `${operation.name}（${operation.method}）`).toEqual({ status: 410, body: legacyFulfillmentDisabledBody(LEGACY_FULFILLMENT_DISABLED) });
+        expect((result.body as { error: string }).error, `${operation.name} の文は発送票へ誘導する`).toContain('発送票');
+      }
+      expect(calls).toEqual(G3_LEGACY_OPERATIONS.map((operation) => `${operation.method} ${operation.path}`));
+
+      // 画面: 注文の一覧は「荷作り表から行います」の案内と荷作り表への入口、履歴の上も発送票から行う案内。旧の停止文そのものは出ない
+      await openOrderTab(page);
+      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toHaveCount(1);
+      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toHaveCount(0);
+      await expect(page.getByRole('link', { name: SHIPMENT_SLIP_TEXT.openPacking, exact: true })).toHaveAttribute('href', '/admin/packing');
+      const row = page.getByRole('row', { name: new RegExp(G1_ORDER_ID) });
+      await row.getByRole('button', { name: `${orderNumberOf(G1_ORDER_ID)} の履歴`, exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'この注文の履歴' });
+      await expect(dialog.getByText(SHIPMENT_SLIP_TEXT.orderHistoryGuide, { exact: true })).toBeVisible();
+      await expect(dialog.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toHaveCount(0);
+      const overflows = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+      expect(overflows).toBe(false);
+    });
+
+    test('サポーターと店長の管理メニューに PACKING があり、SETTINGS はサポーターに無い', async ({ page }) => {
+      // FREQ-540-AC-10, FREQ-531-AC-01
+      await mockAdminSessionAs(page, 'supporter');
+      await mockOrderList(page, () => []);
+      await page.goto('/admin');
+      await expect(adminMenu(page).getByRole('button', { name: 'PACKING', exact: true })).toBeVisible();
+      await expect(adminMenu(page).getByRole('button', { name: 'SETTINGS', exact: true })).toHaveCount(0);
+      // PACKING の中: 荷作り表へのリンク（キーボードで開ける）。権限の文は荷作り表の頁が出す（窓口と DB が守る）
+      await adminMenu(page).getByRole('button', { name: 'PACKING', exact: true }).click();
+      const packingMenu = page.getByRole('navigation', { name: '荷作りメニュー', exact: true });
+      await expect(packingMenu.getByRole('link', { name: SHIPMENT_SLIP_TEXT.packingHeading, exact: true })).toBeVisible();
+      await packingMenu.getByRole('link', { name: SHIPMENT_SLIP_TEXT.packingHeading, exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(/\/admin\/packing$/);
+      await expect(page.getByRole('heading', { name: SHIPMENT_SLIP_TEXT.packingHeading, level: 1, exact: true })).toBeVisible();
+
+      // 店長の管理メニューにも PACKING があり（SETTINGS もある）、中のリンクも同じ
+      const adminPage = await page.context().newPage();
+      try {
+        await adminPage.setViewportSize({ width: viewport.width, height: viewport.height });
+        await mockAdminSessionAs(adminPage, 'admin');
+        await mockOrderList(adminPage, () => []);
+        await adminPage.goto('/admin?tab=PACKING');
+        await expect(adminMenu(adminPage).getByRole('button', { name: 'PACKING', exact: true })).toBeVisible();
+        await expect(adminMenu(adminPage).getByRole('button', { name: 'SETTINGS', exact: true })).toBeVisible();
+        await expect(
+          adminPage.getByRole('navigation', { name: '荷作りメニュー', exact: true }).getByRole('link', { name: SHIPMENT_SLIP_TEXT.packingHeading, exact: true }),
+        ).toBeVisible();
+      } finally {
+        await adminPage.close();
+      }
     });
   });
 }

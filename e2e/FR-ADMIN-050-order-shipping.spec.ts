@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { LEGACY_FULFILLMENT_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
+import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import {
   adminOrder,
   mockAdminSession,
@@ -81,8 +81,9 @@ for (const viewport of viewports) {
 
       await expect(page.getByText('配送先要確認')).toBeVisible();
       await expect(page.getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
-      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toHaveCount(1);
-      await expect(page.getByText(LEGACY_FULFILLMENT_DISABLED_TEXT, { exact: true })).toBeVisible();
+      // G-3: 旧い停止文は、発送票へ誘導する案内（荷作り表から行います）に置き換わった
+      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toHaveCount(1);
+      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toBeVisible();
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {
