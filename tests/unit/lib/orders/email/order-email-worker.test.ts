@@ -645,7 +645,7 @@ describe('processOrderEmails', () => {
     expect(h.calls.find((call) => call.name === 'skip_order_email')?.params).toMatchObject({ _reason: 'fulfillment_cancelled' });
   });
 
-  it('注文や明細が無い・発送の伝票番号が無いときは、すぐ送れなかったにする', async () => {
+  it('FREQ-533-AC-05: 材料不足は失敗、番号なしの発送は控えて送信済みにする', async () => {
     const missing = harness([row()], { material: null });
     await processOrderEmails(missing.deps);
     expect(missing.calls.find((call) => call.name === 'fail_order_email')?.params).toMatchObject({
@@ -656,10 +656,9 @@ describe('processOrderEmails', () => {
       material: material({ status: 'shipped' }, fulfillmentMaterial({ trackingNumber: null })),
     });
     await processOrderEmails(shipped.deps);
-    expect(shipped.calls.find((call) => call.name === 'fail_order_email')?.params).toMatchObject({
-      _error_code: 'source_missing', _category: 'permanent',
-    });
-    expect(shipped.send).not.toHaveBeenCalled();
+    expect(shipped.send).toHaveBeenCalledTimes(1);
+    expect(shipped.send).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('伝票番号が決まりましたら、あらためてお知らせいたします。') }));
+    expect(names(shipped.calls)).toEqual(['claim_order_email', 'save_order_email_content', 'complete_order_email', 'claim_order_email']);
   });
 
   it('返金のお知らせは、行の返金の番号で材料を読み、返金額と戻る時期を書いて、行の番号の重複防止キーで送る', async () => {

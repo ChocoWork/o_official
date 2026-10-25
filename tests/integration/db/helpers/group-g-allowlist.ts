@@ -42,6 +42,9 @@ export const G3C_ALLOWLIST: readonly string[] = Object.freeze([
   ...G2_ALLOWLIST,
   'private.admin_save_shipment_slip_draft(uuid,integer,jsonb,uuid,uuid)',
   'private.admin_discard_shipment_slip_draft(uuid,integer,uuid,uuid)',
+  'private.consume_group_g_allocations(uuid,integer,uuid,uuid)',
+  'private.register_group_g_slip_tracking(uuid,integer,uuid,uuid)',
+  'private.admin_confirm_shipment_slip(uuid,integer,text,text,date,boolean,uuid,uuid)',
 ]);
 
 /** 書き手の閉じた一覧を、渡した一覧へ置き換える文（関数の所有者・SECURITY DEFINER・search_path 空は移行と同じ） */

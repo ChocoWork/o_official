@@ -666,3 +666,26 @@ export function parseShipmentSlipDetail(value: unknown): ShipmentSlipDetail {
   if ((stage === 'draft') !== (detail.expiresAt !== null)) fail();
   return detail;
 }
+
+/** 発送確定の入力。日付はJSTの暦日。運送会社と番号は両方nullか両方あり。 */
+export type ShipmentSlipConfirmInput = {
+  expectedVersion: number; carrier: ShippingCarrierId | null; trackingNumber: string | null;
+  shipmentDate: string; notifyCustomer: boolean; requestKey: string;
+};
+export type ShipmentSlipConfirmed = ShipmentSlipSaved & {
+  shipmentDate: string;
+  fulfillments: { orderId: string; fulfillmentId: string; number: number; completesOrder: boolean }[];
+};
+
+/** 確定の戻りを検査する。空・重複・順序の崩れは成功として扱わない。 */
+export function parseShipmentSlipConfirmed(value: unknown): ShipmentSlipConfirmed {
+  const raw = readObject(value);
+  const saved = parseShipmentSlipSaved(raw);
+  const fulfillments = readList(raw.fulfillments, (value) => {
+    const row = readObject(value);
+    return { orderId: readId(row.orderId), fulfillmentId: readId(row.fulfillmentId), number: readPositive(row.number), completesOrder: readBoolean(row.completesOrder) };
+  });
+  if (fulfillments.length === 0 || new Set(fulfillments.map((row) => row.fulfillmentId)).size !== fulfillments.length
+    || fulfillments.some((row, index) => index > 0 && fulfillments[index - 1].orderId >= row.orderId)) fail();
+  return { ...saved, shipmentDate: readDay(raw.shipmentDate), fulfillments };
+}

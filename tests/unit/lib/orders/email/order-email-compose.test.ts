@@ -291,10 +291,6 @@ describe('composeOrderEmail', () => {
 
   const unsendableShipments: Array<[string, OrderEmailMaterial['fulfillment']]> = [
     ['発送の材料が無い', null],
-    ['配送業者が空', shipment({ carrier: null })],
-    ['配送業者が知らない業者', shipment({ carrier: 'unknown' })],
-    ['伝票番号が空', shipment({ trackingNumber: null })],
-    ['伝票番号が空白だけ', shipment({ trackingNumber: '  ' })],
   ];
 
   it.each(unsendableShipments)('発送のメールは、%s なら作らない（前からの発送の記録で空のものも同じ）', (_label, fulfillment) => {

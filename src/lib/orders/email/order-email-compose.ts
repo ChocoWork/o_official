@@ -1695,17 +1695,15 @@ function composePaidCanceled(material: OrderEmailMaterial): ComposedOrderEmail |
 }
 
 /**
- * 発送の材料が無い・配送業者か伝票番号が無ければ作らない（送れない材料の不足）。
+ * 発送の材料があれば、番号が未定でも発送を知らせる。
  * 値段は書かない。一部だけ送ると、注文の行の値段と送った数が合わなくなるため（グループ E-1 設計書 8-1）。
  * 発送の取消は、ここでなく worker が先に見る。
  */
 function composeShipped({ order, fulfillment }: OrderEmailMaterial): ComposedOrderEmail | null {
   const trackingNumber = fulfillment?.trackingNumber?.trim();
-  if (!fulfillment || !isShippingCarrierId(fulfillment.carrier) || !trackingNumber) {
-    return null;
-  }
+  if (!fulfillment) return null;
   const orderNumber = toOrderNumber(order.id);
-  const carrier = SHIPPING_CARRIERS[fulfillment.carrier];
+  const carrier = isShippingCarrierId(fulfillment.carrier) && trackingNumber ? SHIPPING_CARRIERS[fulfillment.carrier] : null;
   return {
     subject: `【Le Fil des Heures】商品を発送いたしました（${orderNumber}）`,
     text: [
@@ -1720,11 +1718,13 @@ function composeShipped({ order, fulfillment }: OrderEmailMaterial): ComposedOrd
       '発送した商品:',
       ...formatShipmentItemLines(fulfillment.lines),
       '',
-      `配送業者: ${carrier.label}`,
-      `追跡番号: ${trackingNumber}`,
-      `追跡はこちら: ${carrier.trackingUrl(trackingNumber)}`,
-      '',
-      '※ 追跡情報は反映までに数時間かかる場合があります。',
+      ...(carrier && trackingNumber ? [
+        `配送業者: ${carrier.label}`,
+        `追跡番号: ${trackingNumber}`,
+        `追跡はこちら: ${carrier.trackingUrl(trackingNumber)}`,
+        '',
+        '※ 追跡情報は反映までに数時間かかる場合があります。',
+      ] : ['伝票番号が決まりましたら、あらためてお知らせいたします。']),
       // 未発送の品が残る発送だけ、残りの案内を添える
       ...(fulfillment.completesOrder ? [] : [REMAINING_ITEMS_NOTICE]),
       '',

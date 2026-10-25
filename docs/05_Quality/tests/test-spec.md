@@ -212,7 +212,7 @@ G-0の基準専用のorder-fixtures.tsの非G分岐は、G-3のshipment_date列�
 
 ## G-3 Task 2 荷作り表と発送票の読取
 
-確認日: 2026-10-25。下記のDB試験は作成済み・controller reset後の実行待ち。非DB検証の成功をDB・PostgRESTの証明に含めない。
+確認日: 2026-10-25。下記の読取・モデル・書き手一覧を含むTask 5までの対象について、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。非DB検証の成功をDB・PostgRESTの証明に含めない。
 
 | ファイル | 層 | 対象 | 入力と期待 |
 | --- | --- | --- | --- |
@@ -225,7 +225,7 @@ G-0の基準専用のorder-fixtures.tsの非G分岐は、G-3のshipment_date列�
 
 実行時はDATABASE_URLのlocalhost guardを使う。PostgREST用はLOCAL_SUPABASE_URL・LOCAL_SUPABASE_SERVICE_ROLE_KEY・LOCAL_SUPABASE_ANON_KEYが必要で、未設定は理由つきskip、localhost以外は失敗。anonと実ユーザーJWTのclientは実anonキーで作る。材料は期限切れの下書き、認証利用者はactorと共用する1人、終了時は準備注文を閉じてsignOut・認証利用者の削除を行う。DB6 suiteの実行・再reset・件数はTask 2報告に記録する。画面・HTTP route・外部追跡・メール・E2E・本番は本Taskの検証外。
 
-2026-10-25 Fix round 1の追加検査: 住所不足は該当明細だけに1件ずつ、paid以外にはpaid_at_missingなし、詳細の準備数呼出しは1回、不正/不在の票、空/不在IDの同梱拒否、住所7項目の前後空白、全段階と不正stage・確定票の2注文/3点、paid割当なしのpaid注文を含むG-1投影との先絞りの同値性。会計入力の打切りの扱いとTask 8の追跡読取側の追記は文書単体でも固定する。前版191件成功の後でSQLを変更したため、これらのDB・実anonキーによるPostgREST検証はcontroller再reset後まで未実施。
+2026-10-25 Fix round 1の追加検査: 住所不足は該当明細だけに1件ずつ、paid以外にはpaid_at_missingなし、詳細の準備数呼出しは1回、不正/不在の票、空/不在IDの同梱拒否、住所7項目の前後空白、全段階と不正stage・確定票の2注文/3点、paid割当なしのpaid注文を含むG-1投影との先絞りの同値性。会計入力の打切りの扱いとTask 8の追跡読取側の追記は文書単体でも固定する。前版191件成功の後でSQLを変更したため、最新のTask 5までの対象ではcontrollerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。
 
 ## G-3 Task 3 荷作り表の画面と読取の窓口・管理メニュー・旧い案内の置換
 
@@ -266,3 +266,14 @@ E2E は後続 Task（Task 13）で扱う。G-1 から止めていた旧い案内
 | [delivery-status-traceability](../../../tests/unit/docs/delivery-status-traceability.test.ts)・[order-status-traceability](../../../tests/unit/docs/order-status-traceability.test.ts) | 文書単体 | 要求表の追跡・窓口の数 | route は150ファイル・192メソッド（表は149行・191メソッド）。FREQ-533 の AC は 01〜04、FREQ-540 の AC は AC-10・AC-11・AC-12 を含む。Task 4 の追跡（下書きの試験・窓口・共有の道具・順序図・状態図の実在と索引のリンク） |
 
 E2E は後続 Task（Task 13）で扱う。この Task は E2E の期待を変えていない（荷作り表・票の頁に触れる E2E は無い）。390/768/1280px の実測は E2E。
+## G-3 Task 5 発送確定と番号なしメール
+
+| 試験 | 段 | 対応 | 内容 |
+| --- | --- | --- | --- |
+| [group_g3_confirm](../../../tests/integration/db/group_g3_confirm.integration.test.ts) | DB結合（controller実測済み） | FREQ-533 AC-02〜05・FREQ-535 AC-02・FREQ-540 AC-10/11 | 複数注文の原子性、FIFO消費、F不変・Aと手元減、台帳不変、状態差分、再送、二重確定、数量再検証、故障巻戻し、追跡の親と代表1行、通知オン/オフ、JST境界と初回履歴、権限、消費ガード、押さえ順と末尾assert改変 |
+| [confirm route](../../../tests/unit/api/admin/shipment-slip-confirm-route.test.ts)・[store](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-store.test.ts) | 単体 | FREQ-533 AC-02/03/05 | 入力・両方null・書式・日付・全エラー表、認可済みactor、60回/600秒、監査、崩れた戻り |
+| [画面](../../../tests/unit/components/ShipmentSlipSection.test.tsx)・[client](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-client.test.ts) | 単体 | FREQ-533 AC-01/03・FREQ-535 AC-02 | JST今日・通知オン、確認と戻る、issues、二重押下1回、同じ要求番号で再確認、版競合入力保持、拒否時の確認終了・表とissues再表示、403、確定後再読込、発送・両履歴時刻のJST表示 |
+| [メール完全一致](../../../tests/unit/lib/orders/email/order-email-compose-shipped.test.ts)・[worker](../../../tests/unit/lib/orders/email/order-email-worker.test.ts) | 単体 | FREQ-533 AC-05 | 番号ありの全品・一部発送の出力不変、番号なし完全一致、注文の商品だけ、残りの案内、控えて送信する経路 |
+| [文書単体](../../../tests/unit/docs/delivery-status-traceability.test.ts) | 単体 | 要求と窓口 | AC-533は01〜05、AC-535は01/02/05。routeは151ファイル・193メソッド、一覧は150行・192メソッド |
+
+許可一覧はG3C_ALLOWLISTの70本。G-2の過去のassertは65本への取引内差替えを維持する。controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。レビュー後の数量変数名の整理はcontrollerの再適用対象。単体はDBのトリガー・RLS・追跡事業者・実メール・ブラウザの動作を証明しない。

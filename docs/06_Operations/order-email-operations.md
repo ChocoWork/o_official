@@ -569,3 +569,11 @@ Resendのクリック追跡（Click Tracking）は注文のメールで有効に
 `ORDER_STATUS_SESSION_SECRET` はサーバー専用で、空なら非空の `JWT_SECRET` を使用する。両方無いと確認印を発行できない。鍵をログへ出さず、公開環境変数へ移さない。`.env.example` に足すのは空の専用鍵と説明の2行だけ。
 
 本番のアクセスログ・解析・外部監視でtoken付きpathを記録しない設定を確認する。CDN/ホスティング・アプリ・解析の収集先ごとに `/order-status/*` と `/api/order-status/*` を除外するか、送信前にpathを伏せる。queryだけの削除では足りない。新しい合成リンクで確認し、リンク値・電話・Cookie・署名・秘密値・本文を確認結果や添付へ残さない。結果は記録の有無と件数だけにし、実URLを検索欄や報告へ貼らない。詳細は [適用と運用の確認](webhook-queue-operations.md)。
+
+## 伝票番号が未定の発送（G-3 Task 5）
+
+通知を選んだ発送票は、注文ごとにshippedの予定を1通だけ作る。再送は予定を増やさず、通知オフは作らない。メールにはその注文で発送した商品と、未発送が残る時の既存の案内だけを載せる。同梱した別注文の情報は載せない。
+
+運送会社か伝票番号がない材料でも、発送の材料があれば件名は従来のまま本文を作る。「配送業者:」「追跡番号:」「追跡はこちら:」「※ 追跡情報は反映までに…」の4行を出さず、商品一覧の後に空行を挟み「伝票番号が決まりましたら、あらためてお知らせいたします。」を1行足す。番号ありの出力は変更しない。
+
+[文面の完全一致試験](../../tests/unit/lib/orders/email/order-email-compose-shipped.test.ts)と[worker単体](../../tests/unit/lib/orders/email/order-email-worker.test.ts)で確認する。実DBのoutboxは[確定試験](../../tests/integration/db/group_g3_confirm.integration.test.ts)で検査し、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。実際のメール送信はこのTaskでは確認していない。

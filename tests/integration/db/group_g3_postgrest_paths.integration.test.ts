@@ -7,6 +7,7 @@ import { connectLocalDb, describeLocalDb, isLocalDatabase } from './helpers/loca
 import { withGroupG1FixtureTransaction, setOrderStatusForFixture } from './helpers/group-g1-fixtures';
 import { seedGroupG3ReadyOrder, seedGroupG3Slip } from './helpers/group-g3-fixtures';
 import {
+  confirmShipmentSlip,
   discardShipmentSlipDraft,
   getAdminShipmentSlip,
   listAdminOrderShipmentSlips,
@@ -192,10 +193,22 @@ describeLocalDb('G-3 real supabase-js -> PostgREST -> SQL read paths', (db) => {
     expect(await getAdminShipmentSlip(service, actor, created.id)).toMatchObject({ stage: 'discarded', version: 3 });
   });
 
+  test('FREQ-533-AC-02: 実storeの確定はPostgRESTを通り、再送で発送を増やさず、版違いと権限なしを分類する', async () => {
+    const created = await saveShipmentSlipDraft(service, actor, { slipId: null, expectedVersion: null, lines: [{ orderItemId: itemId, quantity: 1 }], requestKey: randomUUID() });
+    const input = { slipId: created.id, expectedVersion: 1, carrier: null, trackingNumber: null, shipmentDate: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date()), notifyCustomer: true, requestKey: randomUUID() };
+    await expect(confirmShipmentSlip(service, actor, { ...input, expectedVersion: 99 })).rejects.toMatchObject({ status: 409, code: 'GROUP_G_SLIP_VERSION_CONFLICT' });
+    await expect(confirmShipmentSlip(service, randomUUID(), input)).rejects.toMatchObject({ status: 403, code: 'GROUP_G_FORBIDDEN' });
+    const confirmed = await confirmShipmentSlip(service, actor, input);
+    expect(confirmed).toMatchObject({ id: created.id, version: 2, shipmentDate: input.shipmentDate, replayed: false });
+    expect(confirmed.fulfillments).toEqual([{ orderId, fulfillmentId: expect.any(String), number: 1, completesOrder: false }]);
+    expect(await confirmShipmentSlip(service, actor, input)).toEqual({ ...confirmed, replayed: true });
+  });
+
   test('FREQ-540-AC-10: 下書きの保存・破棄の公開入口も、anon・実authenticated JWTはactor権限があってもEXECUTEを拒み（42501）、何も書かない', async () => {
     const writes = (): Array<[string, Record<string, unknown>]> => [
       ['admin_save_shipment_slip_draft', { _slip_id: null, _expected_version: null, _lines: [{ orderItemId: itemId, quantity: 1 }], _actor_id: actor, _request_key: randomUUID() }],
       ['admin_discard_shipment_slip_draft', { _slip_id: slipId, _expected_version: 1, _actor_id: actor, _request_key: randomUUID() }],
+      ['admin_confirm_shipment_slip', { _slip_id: slipId, _expected_version: 1, _carrier: null, _tracking_number: null, _shipment_date: '2026-10-25', _notify_customer: false, _actor_id: actor, _request_key: randomUUID() }],
     ];
     const countBefore = (await service.rpc('list_admin_shipment_slips', { _stage: 'discarded', _limit: 1, _offset: 0, _actor_id: actor })).data?.[0]?.total_count;
     for (const client of [anon, authenticated]) for (const [name, args] of writes()) {

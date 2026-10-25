@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   isShipmentSlipErrorCode,
   parsePackingRow,
+  parseShipmentSlipConfirmed,
   parseShipmentSlipDetail,
   parseShipmentSlipLink,
   parseShipmentSlipListRow,
@@ -11,6 +12,8 @@ import {
   SHIPMENT_SLIP_READ_FAILED,
   SHIPMENT_SLIP_TEXT,
   type PackingRow,
+  type ShipmentSlipConfirmed,
+  type ShipmentSlipConfirmInput,
   type ShipmentSlipDetail,
   type ShipmentSlipDraftLine,
   type ShipmentSlipLink,
@@ -240,4 +243,18 @@ export async function discardShipmentSlipDraft(
     _request_key: input.requestKey,
   });
   return guarded(() => parseShipmentSlipSaved(data));
+}
+
+/** 票の全注文を1取引で確定する。actorは認可結果から渡し、崩れた成功の答えは固定の500にする。 */
+export async function confirmShipmentSlip(
+  client: SupabaseClient, actorId: string, input: ShipmentSlipConfirmInput & { slipId: string },
+): Promise<ShipmentSlipConfirmed> {
+  const data = await callRpc(client, 'admin_confirm_shipment_slip', {
+    _slip_id: input.slipId, _expected_version: input.expectedVersion, _carrier: input.carrier,
+    _tracking_number: input.trackingNumber, _shipment_date: input.shipmentDate, _notify_customer: input.notifyCustomer,
+    _actor_id: actorId, _request_key: input.requestKey,
+  });
+  const result = guarded(() => parseShipmentSlipConfirmed(data));
+  if (result.id !== input.slipId.toLowerCase()) throw new ShipmentSlipError();
+  return result;
 }

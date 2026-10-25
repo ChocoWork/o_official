@@ -6,12 +6,15 @@ import {
   isShipmentSlipErrorCode,
   isShipmentSlipId,
   parsePackingRow,
+  parseShipmentSlipConfirmed,
   parseShipmentSlipDetail,
   parseShipmentSlipListRow,
   parseShipmentSlipSaved,
   SHIPMENT_SLIP_ERRORS,
   SHIPMENT_SLIP_TEXT,
   type PackingRow,
+  type ShipmentSlipConfirmed,
+  type ShipmentSlipConfirmInput,
   type ShipmentSlipDetail,
   type ShipmentSlipDraftLine,
   type ShipmentSlipListRow,
@@ -132,7 +135,7 @@ function refusedMessage(body: unknown): string {
  * 書く窓口（POST）の答えを、画面が分けて扱う4つにする。処理の前の断り（401・403・429）は blocked、
  * 処理の中の断り（400・404・409・422）は refused、通信が切れた・500 番台・読めない成功は unknown（記録されたか分からない）。
  */
-async function callWriter(url: string, payload: unknown): Promise<DeliveryCallResult<ShipmentSlipSaved>> {
+async function callWriter<T = ShipmentSlipSaved>(url: string, payload: unknown, parse: (value: unknown) => T = parseShipmentSlipSaved as (value: unknown) => T): Promise<DeliveryCallResult<T>> {
   let response: Response;
   try {
     response = await clientFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -143,7 +146,7 @@ async function callWriter(url: string, payload: unknown): Promise<DeliveryCallRe
   const body: unknown = await response.json().catch(() => null);
   if (response.ok) {
     try {
-      return { kind: 'ok', data: parseShipmentSlipSaved(body) };
+      return { kind: 'ok', data: parse(body) };
     } catch {
       return { kind: 'unknown' };
     }
@@ -161,7 +164,7 @@ async function callWriter(url: string, payload: unknown): Promise<DeliveryCallRe
  * MFA が要る時もその文。窓口が権限の不足を返した時（permission がある・DB の GROUP_G_FORBIDDEN）だけ forbidden: true（画面は操作を隠す）。
  * どれにも当たらない 403 は文だけ出し、操作は隠さない。
  */
-function forbiddenResult(body: unknown): DeliveryCallResult<ShipmentSlipSaved> {
+function forbiddenResult(body: unknown): Extract<DeliveryCallResult<never>, { kind: 'blocked' }> {
   const { reason, code, permission } = (body !== null && typeof body === 'object' ? body : {}) as { reason?: unknown; code?: unknown; permission?: unknown };
   if (reason === 'CSRF validation failed') return { kind: 'blocked', message: SHIPMENT_SLIP_TEXT.csrfFailed, forbidden: false };
   if (reason === 'MFA required') return { kind: 'blocked', message: adminLoadFailureMessage(403, body, SHIPMENT_SLIP_TEXT.forbidden, SHIPMENT_SLIP_TEXT.failed), forbidden: false };
@@ -172,7 +175,7 @@ function forbiddenResult(body: unknown): DeliveryCallResult<ShipmentSlipSaved> {
 }
 
 /** 既にある票への書込みの答えが別の票の id だった時は、読み違い（記録されたか分からない）として unknown にする */
-async function forSlip(slipId: string, call: Promise<DeliveryCallResult<ShipmentSlipSaved>>): Promise<DeliveryCallResult<ShipmentSlipSaved>> {
+async function forSlip<T extends ShipmentSlipSaved>(slipId: string, call: Promise<DeliveryCallResult<T>>): Promise<DeliveryCallResult<T>> {
   const result = await call;
   return result.kind === 'ok' && result.data.id.toLowerCase() !== slipId.toLowerCase() ? { kind: 'unknown' } : result;
 }
@@ -203,4 +206,10 @@ export function submitSlipDiscard(
 ): Promise<DeliveryCallResult<ShipmentSlipSaved>> {
   if (!isShipmentSlipId(slipId)) return Promise.resolve({ kind: 'refused', message: SHIPMENT_SLIP_TEXT.slipNotFound });
   return forSlip(slipId, callWriter(`/api/admin/shipment-slips/${slipId}/discard`, { expectedVersion: body.expectedVersion, requestKey: body.requestKey }));
+}
+
+/** 発送確定。結果不明の再送でも同じrequestKeyと本文を使う。 */
+export function submitSlipConfirm(slipId: string, body: ShipmentSlipConfirmInput): Promise<DeliveryCallResult<ShipmentSlipConfirmed>> {
+  if (!isShipmentSlipId(slipId)) return Promise.resolve({ kind: 'refused', message: SHIPMENT_SLIP_TEXT.slipNotFound });
+  return forSlip(slipId, callWriter(`/api/admin/shipment-slips/${slipId}/confirm`, body, parseShipmentSlipConfirmed));
 }

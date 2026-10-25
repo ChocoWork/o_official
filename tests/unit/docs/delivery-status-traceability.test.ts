@@ -166,14 +166,14 @@ test('3管理POSTと1webhookをAPIと入口一覧に記録し総数が実コー�
   });
   const routes = walk('src/app/api').filter((file) => file.endsWith('/route.ts'));
   const methods = routes.flatMap((file) => [...read(file).matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b|export\s+const\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g)]);
-  expect(routes).toHaveLength(150); expect(methods).toHaveLength(192);
-  contains(api, '150ファイル'); contains(api, '192組');
-  contains(api, 'HEAD/OPTIONSは192組に含めない');
+  expect(routes).toHaveLength(151); expect(methods).toHaveLength(193);
+  contains(api, '151ファイル'); contains(api, '193組');
+  contains(api, 'HEAD/OPTIONSは193組に含めない');
   for (const file of files.slice(0, 3)) contains(read(file), '配送の入口・表は E-4 の変更を 2026-10-21 に反映');
-  contains(inventory, '150ファイル・192メソッド');
+  contains(inventory, '151ファイル・193メソッド');
   const entries = inventory.split('\n').filter((line) => /^\| `\/api\//.test(line));
-  expect(entries).toHaveLength(149);
-  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(191);
+  expect(entries).toHaveLength(150);
+  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(192);
 });
 
 test('APIに設定と顧客の条件と全エラーを反映する', () => {
@@ -280,7 +280,7 @@ test('G-1の要求8行（FREQ-520〜524・535・540・541）とFREQ-401の在庫
   expect(freq540Acs!.slice(0, 5)).toEqual(['FREQ-540-AC-01', 'FREQ-540-AC-02', 'FREQ-540-AC-03', 'FREQ-540-AC-04', 'FREQ-540-AC-05']);
   expect(freq540Acs!.slice(5)).toEqual([...G2_FREQ_540_ADDITIONS, 'FREQ-540-AC-10', 'FREQ-540-AC-11', 'FREQ-540-AC-12']);
   const freq533 = lines.find((line) => line.startsWith('| FREQ-533 |'))!;
-  expect(freq533.split('|')[5].match(/FREQ-533-AC-\d+/g)).toEqual(['FREQ-533-AC-01', 'FREQ-533-AC-02', 'FREQ-533-AC-03', 'FREQ-533-AC-04']);
+  expect(freq533.split('|')[5].match(/FREQ-533-AC-\d+/g)).toEqual(['FREQ-533-AC-01', 'FREQ-533-AC-02', 'FREQ-533-AC-03', 'FREQ-533-AC-04', 'FREQ-533-AC-05']);
   contains(freq533, 'consume の裏付けの守りだけ');
   contains(freq533, '手元在庫の1回減と取消での1回戻り（空き在庫は不変）');
   contains(freq533, 'Task 1 は理由 CHECK の2値だけ');
@@ -303,7 +303,7 @@ test('G-3 Task 2の荷作り表・同梱・会計入力のDB部分と未確認�
     contains(row!, 'DB');
   }
   const accounting = lines.find((line) => line.startsWith('| FREQ-535 |'))!;
-  expect(accounting.split('|')[5].match(/FREQ-535-AC-\d+/g)).toEqual(['FREQ-535-AC-01', 'FREQ-535-AC-05']);
+  expect(accounting.split('|')[5].match(/FREQ-535-AC-\d+/g)).toEqual(['FREQ-535-AC-01', 'FREQ-535-AC-02', 'FREQ-535-AC-05']);
   contains(accounting, 'actor');
   contains(accounting, 'list_shipment_accounting_inputs');
 });
@@ -379,4 +379,14 @@ test('G-3 Task 4の発送票の下書き（作成・入替・破棄）と書き�
   }
   contains(read('docs/04_DetailDesign/sequence/README.md'), '(shipping.md)');
   contains(read('docs/04_DetailDesign/states/README.md'), '(shipping.md)');
+});
+test('G-3 Task 5の確定・番号なしメール・出荷日と書き手70本を正本で追跡する', () => {
+  const rows = read(requirements).split(/\r?\n/);
+  const row = (id: string) => rows.find((line) => line.startsWith(`| ${id} |`))!;
+  contains(row('FREQ-533'), 'FREQ-533-AC-05');
+  contains(row('FREQ-533'), 'tests/integration/db/group_g3_confirm.integration.test.ts');
+  contains(row('FREQ-533'), 'tests/unit/lib/orders/email/order-email-compose-shipped.test.ts');
+  contains(row('FREQ-535'), '初回入金日時の記録は G-1、出荷日の初期値と範囲の検証は G-3');
+  contains(row('FREQ-540'), 'consume・register・confirmを足した70本');
+  contains(read(files[0]), 'POST /api/admin/shipment-slips/[id]/confirm');
 });

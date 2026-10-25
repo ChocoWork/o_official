@@ -628,7 +628,7 @@ describeLocalDb('G-3 発送票の下書き（保存・入替・破棄）', (db) 
     }
     test('FREQ-540-AC-11: 今の DB で末尾の確かめが通る（書き手の一覧は固定の一覧と同じ。G3C の確かめは今の一覧そのもので流し、入れ替えない）', async () => {
       expect(ASSERT).not.toBe('');
-      expect(G3C_ALLOWLIST).toHaveLength(67);
+      expect(G3C_ALLOWLIST).toHaveLength(70);
       expect(await run()).toBeNull();
     });
 

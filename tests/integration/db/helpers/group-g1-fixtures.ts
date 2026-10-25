@@ -129,8 +129,9 @@ export async function seedGroupG1Restock(client: PgClient, input: {
   });
 }
 
+/** Explicit id/createdAt allow deterministic FIFO fixtures; omitted values keep the normal UUID and transaction-time defaults. */
 export async function seedGroupG1Allocation(
-  client: PgClient, input: { orderItemId: string; quantity: number; kind: 'payment_hold' | 'paid' },
+  client: PgClient, input: { orderItemId: string; quantity: number; kind: 'payment_hold' | 'paid'; id?: string; createdAt?: string },
 ): Promise<string | null> {
   assertLocal(client);
   validQuantity(input.quantity, true);
@@ -147,8 +148,9 @@ export async function seedGroupG1Allocation(
       (variant_id,delta,reason,order_id,order_item_id,allocation_operation_id)
       values($1,$2,'purchase',$3,$4,$5) returning id`, [item.variant_id, -input.quantity, item.order_id, input.orderItemId, op])).rows[0].id;
     const allocation = (await client.query(`insert into public.order_item_allocations
-      (order_item_id,variant_id,quantity,remaining_quantity,kind,operation_id)
-      values($1,$2,$3,$3,$4,$5) returning id`, [input.orderItemId, item.variant_id, input.quantity, input.kind, op])).rows[0].id as string;
+      (order_item_id,variant_id,quantity,remaining_quantity,kind,operation_id,id,created_at)
+      values($1,$2,$3,$3,$4,$5,coalesce($6::uuid,pg_catalog.gen_random_uuid()),coalesce($7::timestamptz,pg_catalog.now())) returning id`,
+      [input.orderItemId, item.variant_id, input.quantity, input.kind, op, input.id ?? null, input.createdAt ?? null])).rows[0].id as string;
     await client.query(`insert into public.order_item_allocation_events
       (allocation_id,event_type,quantity,operation_id,sequence,stock_movement_id,reason)
       values($1,$2,$3,$4,1,$5,'fixture_allocation')`, [allocation, input.kind === 'paid' ? 'allocate' : 'hold', input.quantity, op, movement]);

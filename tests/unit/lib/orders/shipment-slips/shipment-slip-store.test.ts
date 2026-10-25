@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { inspect } from 'util';
 import {
   classify,
+  confirmShipmentSlip,
   discardShipmentSlipDraft,
   getAdminShipmentSlip,
   listAdminOrderShipmentSlips,
@@ -378,5 +379,25 @@ describe('discardShipmentSlipDraft', () => {
     const result = await failure(() => discardShipmentSlipDraft(client, 'actor-1', { slipId: SLIP_ID, expectedVersion: 1, requestKey: REQUEST_KEY }));
     expect(result).toMatchObject({ status: 500, code: undefined, message: FAILED });
     expect(inspect(result.error, { depth: null, showHidden: true })).not.toContain('PRIVATE-MARKER');
+  });
+});
+const CONFIRMED = { ...SAVED, version: 2, shipmentDate: '2026-10-25', fulfillments: [{ orderId: ORDER_ID, fulfillmentId: FULFILLMENT_ID, number: 1, completesOrder: false }] };
+const CONFIRM_INPUT = { slipId: SLIP_ID, expectedVersion: 1, carrier: null, trackingNumber: null, shipmentDate: '2026-10-25', notifyCustomer: true, requestKey: REQUEST_KEY };
+describe('confirmShipmentSlip', () => {
+  test('FREQ-533-AC-02: 全引数と認可済みactorでRPCを1回呼び、追加項目を捨てた結果を返す', async () => {
+    rpc.mockResolvedValue({ data: { ...CONFIRMED, secret: 'discard' }, error: null });
+    expect(await confirmShipmentSlip(client, 'actor-1', CONFIRM_INPUT)).toEqual(CONFIRMED);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('admin_confirm_shipment_slip', { _slip_id: SLIP_ID, _expected_version: 1, _carrier: null, _tracking_number: null, _shipment_date: '2026-10-25', _notify_customer: true, _actor_id: 'actor-1', _request_key: REQUEST_KEY });
+  });
+  test.each(Object.entries(SHIPMENT_SLIP_ERRORS))('FREQ-533-AC-02: %s のmessageとSQLSTATEを完全一致で分類する', async (code, [sqlstate, status, message]) => {
+    rpc.mockResolvedValue({ data: null, error: { message: code, code: sqlstate, details: 'PRIVATE-MARKER' } });
+    expect(await failure(() => confirmShipmentSlip(client, 'actor', CONFIRM_INPUT))).toMatchObject({ status, code, message });
+    rpc.mockResolvedValue({ data: null, error: { message: code, code: 'XXXXX' } });
+    expect(await failure(() => confirmShipmentSlip(client, 'actor', CONFIRM_INPUT))).toMatchObject({ status: 500, message: FAILED });
+  });
+  test.each([null, { ...CONFIRMED, id: SLIP_ID_2 }, { ...CONFIRMED, shipmentDate: null }, { ...CONFIRMED, fulfillments: [] }, { ...CONFIRMED, fulfillments: [{ ...CONFIRMED.fulfillments[0], completesOrder: 'false' }] }, { ...CONFIRMED, fulfillments: [CONFIRMED.fulfillments[0], CONFIRMED.fulfillments[0]] }])('FREQ-533-AC-02: 崩れた戻りは固定の500 (%j)', async (data) => {
+    rpc.mockResolvedValue({ data, error: null });
+    expect(await failure(() => confirmShipmentSlip(client, 'actor', CONFIRM_INPUT))).toMatchObject({ status: 500, code: undefined, message: FAILED });
   });
 });

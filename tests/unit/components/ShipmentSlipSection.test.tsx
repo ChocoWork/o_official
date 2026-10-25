@@ -13,7 +13,7 @@ import {
 } from '../lib/orders/shipment-slips/shipment-slip-fixtures';
 
 /**
- * 発送票の頁（G-3 Task 4）の下書き: 同梱する品物（この行を外す）・品物を追加・送り先・下書きを破棄。
+ * 発送票の頁（G-3 Task 4・5）: 下書きの編集・発送確認と確定・確定後の記録。
  * 窓口（clientFetch）だけを差し替える。外す・追加は選択の全部を送って丸ごと入れ替える。
  */
 const mockClientFetch = jest.fn();
@@ -33,9 +33,10 @@ const CANDIDATE = packingRow({ orderId: ORDER_ID_2, orderItemId: ITEM_ID_2, item
 type Draft = { expectedVersion: number; lines: Array<{ orderItemId: string; quantity: number }>; requestKey: string };
 type State = {
   slip: () => ShipmentSlipDetail;
-  slipResponse?: () => Response;
+  slipResponse?: () => Response | Promise<Response>;
   packing?: () => Response;
   draft?: (body: Draft) => Response | Promise<Response>;
+  confirm?: (body: Record<string, unknown>) => Response | Promise<Response>;
   discard?: (body: { expectedVersion: number; requestKey: string }) => Response | Promise<Response>;
 };
 
@@ -51,6 +52,7 @@ function serve(state: State) {
     const target = String(url);
     if (init?.method === 'POST') {
       const body = JSON.parse(String(init.body));
+      if (target.endsWith('/confirm')) return state.confirm ? state.confirm(body) : respond(500, {});
       if (target.endsWith('/draft')) return state.draft ? state.draft(body) : respond(200, { id: SLIP_ID, number: 'SL-20261025-0001', version: 2, replayed: false });
       return state.discard ? state.discard(body) : respond(200, { id: SLIP_ID, number: 'SL-20261025-0001', version: 2, replayed: false });
     }
@@ -107,15 +109,15 @@ describe('発送票の頁: 下書きの表示', () => {
     expect(screen.getByRole('button', { name: '下書きを破棄' })).toBeEnabled();
   });
 
-  test('FREQ-533-AC-01: この段階では「発送票確認」と荷物の情報の欄を出さない', async () => {
+  test('FREQ-535-AC-02: 荷物の情報はJSTの今日・未定・番号なし・通知オンで始まる', async () => {
     serve({ slip: () => twoLines() });
     render(<ShipmentSlipSection slipId={SLIP_ID} />);
     await screen.findByRole('heading', { level: 1 });
-
-    expect(screen.queryByRole('button', { name: '発送票確認' })).not.toBeInTheDocument();
-    expect(screen.queryByText('荷物の情報')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('伝票番号')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('運送会社')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('運送会社')).toHaveValue('');
+    expect(screen.getByLabelText('伝票番号')).toHaveValue('');
+    expect(screen.getByLabelText('出荷日')).toHaveValue(new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date()));
+    expect(screen.getByLabelText('お客様に発送のメールを送る')).toBeChecked();
+    expect(screen.getByRole('button', { name: '発送票確認' })).toBeEnabled();
   });
 
   test('FREQ-531-AC-02: 建物があれば送り先に出し、期限切れの下書きには「期限切れ」を付ける', async () => {
@@ -627,5 +629,149 @@ describe('発送票の頁: 下書き以外・読み込みの失敗', () => {
       expect(region).toHaveAccessibleName();
     }
     for (const cell of container.querySelectorAll('th')) expect(cell.className).toMatch(/sticky/);
+  });
+});
+
+describe('発送確定', () => {
+  const open = async () => {
+    render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    await screen.findByRole('button', { name: '発送票確認' });
+    fireEvent.click(screen.getByRole('button', { name: '発送票確認' }));
+    await screen.findByRole('heading', { name: '発送票の確認' });
+  };
+  test('FREQ-533-AC-01: 確認は注文ごとの商品・送り先・荷物の情報を表示し、戻るで入力を保つ', async () => {
+    serve({ slip: () => twoLines() });
+    await open();
+    expect(screen.getAllByRole('heading', { name: /注文 ORD-/ })).toHaveLength(2);
+    expect(screen.getByText('ニットベスト 黒 L ×1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '発送確定' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '戻る' }));
+    expect(screen.getByLabelText('お客様に発送のメールを送る')).toBeChecked();
+  });
+  test('FREQ-533-AC-03: 二重押下は通信1回、結果不明の再確認は同じ本文・requestKeyで、成功後に確定済みへ読む', async () => {
+    let finish: (r: Response) => void = () => {};
+    let current = twoLines(); let attempts = 0;
+    serve({ slip: () => current, confirm: () => {
+      attempts += 1;
+      if (attempts === 1) return new Promise<Response>((resolve) => { finish = resolve; });
+      current = confirmedDetail();
+      return respond(200, { id: SLIP_ID, number: current.number, version: 2, shipmentDate: '2026-10-25', fulfillments: [{ orderId: current.lines[0].orderId, fulfillmentId: current.orders[0].fulfillmentId, number: 1, completesOrder: true }], replayed: true });
+    } });
+    await open();
+    const submit = screen.getByRole('button', { name: '発送確定' });
+    fireEvent.click(submit); fireEvent.click(submit);
+    expect(posts()).toHaveLength(1);
+    finish(respond(500, {}));
+    fireEvent.click(await screen.findByRole('button', { name: 'もう一度確かめる' }));
+    await screen.findByText('発送を確定しました。');
+    expect(posts()).toHaveLength(2);
+    expect(posts()[0].body.requestKey).toMatch(UUID);
+    expect(posts()[1]).toEqual(posts()[0]);
+    await waitFor(() => expect(screen.getByTestId('slip-stage')).toHaveTextContent('発送済み'));
+  });
+  test('FREQ-533-AC-03: 版競合後も入力を保ち、変更した内容の次の確認は新しいrequestKey', async () => {
+    let current = twoLines();
+    serve({ slip: () => current, confirm: () => {
+      current = twoLines(); current.version = 2;
+      return respond(409, { code: 'GROUP_G_SLIP_VERSION_CONFLICT' });
+    } });
+    render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    await screen.findByLabelText('伝票番号');
+    fireEvent.change(screen.getByLabelText('伝票番号'), { target: { value: 'abc-123' } });
+    fireEvent.change(screen.getByLabelText('運送会社'), { target: { value: 'yamato' } });
+    fireEvent.change(screen.getByLabelText('出荷日'), { target: { value: '2026-10-24' } });
+    fireEvent.click(screen.getByLabelText('お客様に発送のメールを送る'));
+    fireEvent.click(screen.getByRole('button', { name: '発送票確認' }));
+    fireEvent.click(screen.getByRole('button', { name: '発送確定' }));
+    await screen.findByText('発送票が更新されました。内容を確認して、もう一度送ってください。');
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    expect(screen.queryByRole('heading', { name: '発送票の確認' })).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('slip-line')).toHaveLength(2);
+    expect(screen.getByLabelText('伝票番号')).toHaveValue('abc-123');
+    expect(screen.getByLabelText('運送会社')).toHaveValue('yamato');
+    expect(screen.getByLabelText('出荷日')).toHaveValue('2026-10-24');
+    expect(screen.getByLabelText('お客様に発送のメールを送る')).not.toBeChecked();
+    fireEvent.change(screen.getByLabelText('伝票番号'), { target: { value: 'abc-456' } });
+    fireEvent.click(screen.getByRole('button', { name: '発送票確認' }));
+    fireEvent.click(screen.getByRole('button', { name: '発送確定' }));
+    await waitFor(() => expect(posts()).toHaveLength(2));
+    expect(posts()[1].body).toMatchObject({ expectedVersion: 2, trackingNumber: 'abc-456', carrier: 'yamato', shipmentDate: '2026-10-24', notifyCustomer: false });
+    expect(posts()[1].body.requestKey).not.toBe(posts()[0].body.requestKey);
+  });
+  test.each([
+    ['GROUP_G_SLIP_QUANTITY_EXCEEDS_READY', 'quantity_exceeds_ready', '発送準備中の数を超えています。荷作り表を読み直してください。'],
+    ['GROUP_G_SLIP_PAYMENT_REVIEW_REQUIRED', 'payment_review', '支払額の確認が済むまで発送できません。'],
+    ['GROUP_G_SLIP_DRAFT_EXPIRED', 'expired', '下書きの期限が切れました。品物を選び直してください。'],
+  ] as const)('FREQ-533-AC-01: 再検証で%sなら確認を閉じ、読み直した表と問題を出して再確定を止める', async (code, issue, message) => {
+    let current = twoLines();
+    serve({ slip: () => current, confirm: () => {
+      current = draftDetail({ issues: [{ code: issue, orderItemId: issue === 'expired' ? null : ITEM_ID }], expired: issue === 'expired' });
+      return respond(409, { code });
+    } });
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: '発送確定' }));
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    expect(await screen.findByRole('table')).toBeInTheDocument();
+    const issues = issue === 'expired' ? screen.getByTestId('slip-issues') : screen.getByTestId('slip-line-note');
+    expect(issues).toHaveTextContent(message);
+    expect(screen.queryByRole('heading', { name: '発送票の確認' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '発送確定' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '発送票確認' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '発送票確認' }));
+    expect(posts()).toHaveLength(1);
+  });
+  test('FREQ-533-AC-03: NOT_DRAFTなら確認を閉じ、読み直した発送済みの表を出す', async () => {
+    let current = twoLines();
+    serve({ slip: () => current, confirm: () => {
+      current = confirmedDetail();
+      return respond(409, { code: 'GROUP_G_SLIP_NOT_DRAFT' });
+    } });
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: '発送確定' }));
+    await waitFor(() => expect(screen.getByTestId('slip-stage')).toHaveTextContent('発送済み'));
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '発送確定' })).not.toBeInTheDocument();
+  });
+  test('FREQ-533-AC-01: 確定拒否後の再読込が終わるまでは古い票で確認へ戻れない', async () => {
+    let reads = 0;
+    let finishRead: (response: Response) => void = () => {};
+    serve({
+      slip: () => twoLines(),
+      slipResponse: () => ++reads === 1 ? respond(200, { slip: twoLines() }) : new Promise<Response>((resolve) => { finishRead = resolve; }),
+      confirm: () => respond(409, { code: 'GROUP_G_SLIP_QUANTITY_EXCEEDS_READY' }),
+    });
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: '発送確定' }));
+    await waitFor(() => expect(slipReads()).toHaveLength(2));
+    expect(screen.getByRole('status')).toHaveTextContent('読み込み中');
+    expect(screen.queryByRole('button', { name: '発送票確認' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '発送確定' })).not.toBeInTheDocument();
+    finishRead(respond(200, { slip: draftDetail() }));
+    expect(await screen.findByTestId('slip-line-note')).toHaveTextContent('発送準備中の数を超えています。荷作り表を読み直してください。');
+    expect(screen.getByRole('button', { name: '発送票確認' })).toBeDisabled();
+  });
+  test('FREQ-535-AC-02: 発送した時刻・出荷日の履歴・荷物の履歴は日本時間で日付をまたいで表示する', async () => {
+    const detail = confirmedDetail();
+    serve({ slip: () => confirmedDetail({
+      confirmedAt: '2026-10-25T16:20:00Z',
+      dateHistory: [{ ...detail.dateHistory[0], createdAt: '2026-10-25T17:30:00Z' }],
+      versions: [{ ...detail.versions[0], createdAt: '2026-10-25T18:40:00Z' }],
+    }) });
+    render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    const record = await screen.findByRole('region', { name: '発送の記録' });
+    expect(within(record).getByText('発送した時刻: 2026/10/26 01:20')).toBeInTheDocument();
+    expect(within(record).getByRole('heading', { name: '出荷日の履歴' }).nextElementSibling).toHaveTextContent('2026/10/26 02:30');
+    expect(within(record).getByRole('heading', { name: '荷物の履歴' }).nextElementSibling).toHaveTextContent('2026/10/26 03:40');
+    expect(record).not.toHaveTextContent(/2026-10-25T/);
+  });
+  test('FREQ-533-AC-01: issuesがある下書きは確認不可', async () => {
+    serve({ slip: () => draftDetail({ issues: [{ code: 'quantity_exceeds_ready', orderItemId: ITEM_ID }] }) });
+    render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    expect(await screen.findByRole('button', { name: '発送票確認' })).toBeDisabled();
+  });
+  test('FREQ-540-AC-10: 確定の403は固定の文を出す', async () => {
+    serve({ slip: () => twoLines(), confirm: () => respond(403, { code: 'GROUP_G_FORBIDDEN' }) });
+    await open(); fireEvent.click(screen.getByRole('button', { name: '発送確定' }));
+    expect(await screen.findByText('発送を扱う権限がありません。')).toBeInTheDocument();
   });
 });

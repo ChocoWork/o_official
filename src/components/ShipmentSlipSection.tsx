@@ -1,16 +1,16 @@
 'use client';
 
 // File: src/components/ShipmentSlipSection.tsx
-// 発送票の頁（G-3 / FREQ-531・FREQ-532・FREQ-533）。この段階は下書きの表示と編集:
+// 発送票の頁（G-3 / FREQ-531・FREQ-532・FREQ-533）。下書きの表示・編集と発送確定:
 // 「同梱する品物」の表（行を外す）、「品物を追加」（同梱できる候補だけ）、「送り先」、「下書きを破棄」。
 // 品物の外す・追加は、選択の全部を送って丸ごと入れ替える（版が違えば断られ、読み直しても入力は保つ）。
-// 発送票確認・荷物の情報・確定済みの操作は後の段階で足す。権限は窓口と DB が守り、この部品は返事の状態で出し分ける。
+// 発送票確認と確定を扱う。確定後の訂正・取消は後の段階で足す。権限は窓口と DB が守り、この部品は返事の状態で出し分ける。
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button/Button';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { useShipmentSlipWrite, type SlipWriteResult } from '@/hooks/useShipmentSlipWrite';
 import { toOrderNumber } from '@/lib/orders/order-number';
-import { fetchPacking, fetchShipmentSlip, submitSlipDiscard, submitSlipDraft } from '@/lib/orders/shipment-slips/shipment-slip-client';
+import { fetchPacking, fetchShipmentSlip, submitSlipConfirm, submitSlipDiscard, submitSlipDraft } from '@/lib/orders/shipment-slips/shipment-slip-client';
 import { takeSlipNotice } from '@/lib/orders/shipment-slips/shipment-slip-notice';
 import {
   formatSlipHeading,
@@ -23,7 +23,10 @@ import {
   type ShipmentSlipDetailLine,
   type ShipmentSlipDraftLine,
 } from '@/lib/orders/shipment-slips/shipment-slip-types';
+import { SHIPPING_CARRIERS, SHIPPING_CARRIER_IDS, type ShippingCarrierId } from '@/lib/orders/shipping-carriers';
+import { DELIVERY_STATUS_LABELS } from '@/lib/orders/tracking/delivery-messages';
 import { DELIVERY_FORM_TEXT } from '@/lib/orders/tracking/delivery-client';
+import { formatPurchaseOrderDateTime } from '@/lib/purchase-orders/purchase-order-types';
 
 const HEAD_CELL = 'sticky top-0 z-10 whitespace-nowrap border-b border-black/15 bg-white p-3 font-normal';
 const NUMBER_CELL = 'p-3 text-right tabular-nums';
@@ -65,6 +68,11 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
   // 画面の中で止めた時の断りの文（最後の1行を外そうとした時。窓口へは送らない）
   const [localMessage, setLocalMessage] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [carrier, setCarrier] = useState<ShippingCarrierId | ''>('');
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [shipmentDate, setShipmentDate] = useState(() => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date()));
+  const [notifyCustomer, setNotifyCustomer] = useState(true);
   const [candidates, setCandidates] = useState<CandidateState>({ phase: 'loading' });
   // 追加するために選んだ候補（明細 ID）。外す・追加が断られても保つ
   const [picked, setPicked] = useState<string[]>([]);
@@ -182,6 +190,32 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
     );
   };
 
+  const confirmShipment = (): void => {
+    const body = { expectedVersion: slip.version, carrier: carrier || null, trackingNumber: trackingNumber.trim() || null, shipmentDate, notifyCustomer };
+    setNotice(null);
+    write.run(`confirm:${JSON.stringify(body)}`, (requestKey) => submitSlipConfirm(slip.id, { ...body, requestKey }), (result) => {
+      if (result.kind === 'ok') {
+        setNotice('発送を確定しました。');
+        setReviewing(false);
+        reload();
+      } else if (result.kind === 'refused') {
+        setReviewing(false);
+        setState({ phase: 'loading' });
+        reload();
+      }
+    });
+  };
+  const checkShipment = (): void => {
+    if ((carrier === '') !== (trackingNumber.trim() === '')) {
+      setLocalMessage('運送会社と伝票番号は、両方入れるか両方空にしてください。');
+      return;
+    }
+    if (!shipmentDate || (trackingNumber.trim() && !/^[0-9A-Za-z-]{1,64}$/.test(trackingNumber.trim()))) {
+      setLocalMessage('入力を確かめてください。'); return;
+    }
+    setLocalMessage(null); write.clearMessage(); setReviewing(true);
+  };
+
   return (
     <div className="w-full min-w-0 max-w-full space-y-8">
       <div className="flex flex-wrap gap-3">
@@ -214,7 +248,7 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
         </div>
       ) : null}
 
-      <section aria-labelledby={LINES_HEADING_ID} className="space-y-3">
+      {!reviewing ? <section aria-labelledby={LINES_HEADING_ID} className="space-y-3">
         <h2 id={LINES_HEADING_ID} className="lk-text-lg">{SHIPMENT_SLIP_TEXT.linesHeading}</h2>
         {slipIssues.length > 0 ? (
           <div className="space-y-1" data-testid="slip-issues">
@@ -259,9 +293,9 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
             </tbody>
           </table>
         </div>
-      </section>
+      </section> : null}
 
-      {isDraft ? (
+      {isDraft && !reviewing ? (
         <section aria-labelledby={ADD_HEADING_ID} className="space-y-3">
           <h2 id={ADD_HEADING_ID} className="lk-text-lg">{SHIPMENT_SLIP_TEXT.addHeading}</h2>
           {candidates.phase === 'loading' ? <p role="status">{SHIPMENT_SLIP_TEXT.loading}</p> : null}
@@ -312,6 +346,18 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
         </section>
       ) : null}
 
+      {isDraft && reviewing ? (
+        <section aria-labelledby="shipment-review-heading" className="space-y-4">
+          <h2 id="shipment-review-heading" className="lk-text-lg">発送票の確認</h2>
+          {[...new Set(slip.lines.map((line) => line.orderId))].map((orderId) => (
+            <div key={orderId} className="space-y-2">
+              <h3>注文 {toOrderNumber(orderId)}</h3>
+              <ul>{slip.lines.filter((line) => line.orderId === orderId).map((line) => <li key={line.orderItemId}>{lineLabel(line)} ×{line.quantity}</li>)}</ul>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
       <section aria-labelledby={SHIP_TO_HEADING_ID} className="space-y-2">
         <h2 id={SHIP_TO_HEADING_ID} className="lk-text-lg">{SHIPMENT_SLIP_TEXT.shipToHeading}</h2>
         <div className="space-y-1" data-testid="slip-ship-to">
@@ -324,6 +370,43 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
       </section>
 
       {isDraft ? (
+        <section aria-labelledby="shipment-package-heading" className="space-y-3">
+          <h2 id="shipment-package-heading" className="lk-text-lg">荷物の情報</h2>
+          {reviewing ? <div className="space-y-2">
+            <p>運送会社: {carrier ? SHIPPING_CARRIERS[carrier].label : '未定'}</p>
+            <p>伝票番号: {trackingNumber.trim() || '伝票番号なし'}</p>
+            <p>出荷日: {shipmentDate}</p>
+            <p>お客様に発送のメールを送る: {notifyCustomer ? 'はい' : 'いいえ'}</p>
+            <div className="flex flex-wrap gap-3">
+              <Button type="button" disabled={locked || slip.issues.length > 0 || slip.expired} onClick={confirmShipment}>発送確定</Button>
+              <Button type="button" variant="secondary" disabled={locked} onClick={() => setReviewing(false)}>戻る</Button>
+            </div>
+          </div> : <div className="space-y-3">
+            <label className="block">運送会社
+              <select value={carrier} disabled={locked} onChange={(event) => setCarrier(event.target.value as ShippingCarrierId | '')} className="block max-w-full border border-black/30 p-2">
+                <option value="">未定</option>
+                {SHIPPING_CARRIER_IDS.map((id) => <option key={id} value={id}>{SHIPPING_CARRIERS[id].label}</option>)}
+              </select>
+            </label>
+            <label className="block">伝票番号<input value={trackingNumber} disabled={locked} maxLength={64} onChange={(event) => setTrackingNumber(event.target.value)} className="block max-w-full border border-black/30 p-2" /></label>
+            <label className="block">出荷日<input type="date" value={shipmentDate} disabled={locked} onChange={(event) => setShipmentDate(event.target.value)} className="block max-w-full border border-black/30 p-2" /></label>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={notifyCustomer} disabled={locked} onChange={(event) => setNotifyCustomer(event.target.checked)} />お客様に発送のメールを送る</label>
+            <Button type="button" disabled={locked || slip.issues.length > 0 || slip.expired} onClick={checkShipment}>発送票確認</Button>
+          </div>}
+        </section>
+      ) : null}
+      {slip.stage === 'confirmed' ? <section aria-label="発送の記録" className="space-y-3">
+        <p>出荷日: {slip.shipmentDate}</p><p>発送した時刻: {slip.confirmedAt ? formatPurchaseOrderDateTime(slip.confirmedAt) : '—'}</p>
+        <p>{slip.carrier && slip.trackingNumber ? `${SHIPPING_CARRIERS[slip.carrier].label} ${slip.trackingNumber}` : '伝票番号は未入力です'}</p>
+        <h2 className="lk-text-lg">注文ごとの発送</h2>
+        {slip.orders.map((order) => <p key={order.fulfillmentId}>注文 {toOrderNumber(order.orderId)} 発送（{order.fulfillmentNumber}回目） {order.deliveryStatus ? DELIVERY_STATUS_LABELS[order.deliveryStatus] : ''}</p>)}
+        <h2 className="lk-text-lg">出荷日の履歴</h2>
+        {slip.dateHistory.map((entry) => <p key={entry.version}>{formatPurchaseOrderDateTime(entry.createdAt)} {entry.previousDate} → {entry.newDate}</p>)}
+        <h2 className="lk-text-lg">荷物の履歴</h2>
+        {slip.versions.map((entry) => <p key={entry.version}>{formatPurchaseOrderDateTime(entry.createdAt)} {entry.shipmentDate} {entry.trackingNumber}</p>)}
+      </section> : null}
+
+      {isDraft && !reviewing ? (
         <div className="flex flex-wrap gap-3">
           <Button type="button" variant="secondary" disabled={locked} onClick={() => setConfirmOpen(true)}>{SHIPMENT_SLIP_TEXT.discardDraft}</Button>
         </div>

@@ -135,7 +135,9 @@ describe('createOrderWithLines（注文と割当を同じ G-1 の取引で作る
     expect(lock).toBeLessThan(db.index(/^insert into public\.orders/));
     const allocations = db.all(ALLOCATION);
     expect(allocations).toHaveLength(1);
-    expect(allocations[0].params).toEqual(['item-1', 201, 2, 'paid', expect.any(String)]);
+    expect(allocations[0].params).toEqual(['item-1', 201, 2, 'paid', expect.any(String), null, null]);
+    expect(allocations[0].sql).toContain('coalesce($6::uuid,pg_catalog.gen_random_uuid())');
+    expect(allocations[0].sql).toContain('coalesce($7::timestamptz,pg_catalog.now())');
     expect(db.index(/^insert into public\.orders/)).toBeLessThan(db.index(ALLOCATION));
     expect(db.all(/^insert into public\.orders/)[0].params[3]).toBe('paid');
     expectNoDirectLedgerWrites(db);

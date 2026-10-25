@@ -22,8 +22,8 @@ beforeEach(() => {
 });
 
 describe('モジュールの形', () => {
-  test('FREQ-531-AC-01: 窓口の呼び出しは、この Task では 読取3つ（fetchPacking・fetchShipmentSlips・fetchShipmentSlip）と書込み2つ（submitSlipDraft・submitSlipDiscard）', () => {
-    expect(Object.keys(client).sort()).toEqual(['fetchPacking', 'fetchShipmentSlip', 'fetchShipmentSlips', 'submitSlipDiscard', 'submitSlipDraft']);
+  test('FREQ-531-AC-01: 窓口の呼び出しは、Task 5までの読取3つと書込み3つ（下書き・破棄・確定）', () => {
+    expect(Object.keys(client).sort()).toEqual(['fetchPacking', 'fetchShipmentSlip', 'fetchShipmentSlips', 'submitSlipConfirm', 'submitSlipDiscard', 'submitSlipDraft']);
   });
 });
 
@@ -280,5 +280,24 @@ describe('submitSlipDiscard', () => {
   test('FREQ-533-AC-03: 破棄の成功の答えが別の票の id なら unknown', async () => {
     mockClientFetch.mockResolvedValue(respond(200, { ...SAVED, id: '33333333-3333-4333-8333-333333333399', version: 3 }));
     expect(await client.submitSlipDiscard(SLIP_ID, { expectedVersion: 2, requestKey: KEY })).toEqual({ kind: 'unknown' });
+  });
+});
+
+describe('submitSlipConfirm', () => {
+  const body = { expectedVersion: 1, carrier: null, trackingNumber: null, shipmentDate: '2026-10-25', notifyCustomer: true, requestKey: KEY };
+  const result = { id: SLIP_ID, number: 'SL-20261025-0001', version: 2, shipmentDate: '2026-10-25', fulfillments: [{ orderId: '11111111-1111-4111-8111-111111111111', fulfillmentId: '22222222-2222-4222-8222-222222222222', number: 1, completesOrder: true }], replayed: false };
+  test('FREQ-533-AC-03: 確定は決まったURLと同じ本文を送り全結果を検査する', async () => {
+    mockClientFetch.mockResolvedValue(respond(200, result));
+    expect(await client.submitSlipConfirm(SLIP_ID, body)).toEqual({ kind: 'ok', data: result });
+    expect(mockClientFetch).toHaveBeenCalledWith(`/api/admin/shipment-slips/${SLIP_ID}/confirm`, expect.objectContaining({ method: 'POST', body: JSON.stringify(body) }));
+  });
+  test('FREQ-533-AC-03: 読めない成功と別票の戻りはunknown、不正idは送らない', async () => {
+    for (const data of [{...result,fulfillments:[]},{...result,id:'33333333-3333-4333-8333-333333333333'}]) {
+      mockClientFetch.mockResolvedValue(respond(200,data));
+      expect(await client.submitSlipConfirm(SLIP_ID,body)).toEqual({kind:'unknown'});
+    }
+    mockClientFetch.mockClear();
+    expect(await client.submitSlipConfirm('../bad',body)).toEqual({kind:'refused',message:'発送票が見つかりません。'});
+    expect(mockClientFetch).not.toHaveBeenCalled();
   });
 });

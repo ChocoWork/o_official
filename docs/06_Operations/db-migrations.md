@@ -6,7 +6,7 @@
 
 G-3 Task 1 の発送票の基盤を 2026-10-25 に追記した。ローカルはcontroller reset後のDB全件でTask 1の新規失敗0。全体は既知stockist2失敗によりexit 1。本番へのG-3適用は未実施。
 
-G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成した。今回のSQLは未適用で、controller reset後のDB・PostgREST検証を待つ。
+G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成した。Task 5までローカルへ適用後、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。
 
 本書はデータベースマイグレーションの現行手順と過去の移行記録をまとめる。実際の適用対象は `supabase/migrations/` と `.github/workflows/db-migrations.yml` で確認し、本番台帳は実行前に読み直す。グループ G-1 の移行（本番のテスト用の注文を消す清掃を含む1本）の内容・当て方・記録は「グループ G-1 在庫の割当の移行」に書く。グループ G-2 の移行（発注・受け取り・原本の添付）は末尾の「グループ G-2 発注・受け取りの移行」に書く。
 
@@ -624,11 +624,11 @@ G-0の基準専用の材料では、order-fixtures.tsの非G分岐はshipment_da
 
 ACLはhas_function_privilegeとaclexplodeで意味を比較する。proaclの文字列表現、環境依存のOID値・ACL順には依存しない。この移行に表権限の変更はなく、PG17のMAINTAINを扱うTask 1の版ガードはそのまま保つ。
 
-実装者の非DB検証後、controllerがローカルreset・匿名と実authenticatedのPostgREST共通smokeを行う。再開後は指定のgroup_g3_reads・group_g3_postgrest_paths・group_g1_writer_inventory・group_g3_model・group_g2_inventory_list・group_g1_item_statesの6 suiteをローカル限定で実行する。会計入力はactorなしのservice_role窓口で、HTTP routeは作らない。SQL修正が必要になれば再reset待ちへ戻る。DB・PostgREST・本番適用はこの段階では未確認。
+Task 2当時は読取・PostgREST・書き手一覧・モデル・在庫・商品状態の6 suiteを対象にした。最新のTask 5までの対象ではcontrollerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。会計入力はactorなしのservice_role窓口で、HTTP routeは作らない。SQL修正時のローカル再適用はcontrollerが担当する。本番は未適用。
 
 ### Task 2 Fix round 1の契約（2026-10-25）
 
-前版はローカル6 suite・191件が成功した。Opusレビュー後の本修正はSQLを変更したため、再reset・再検証待ち。署名・ACL・writer65本は保つ。
+前版はローカル6 suite・191件が成功した。Opusレビュー後の修正もTask 5までローカルへ適用され、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。署名・ACL・writer65本は保つ。
 
 会計入力の`_limit`は結果を切り詰める。会計Taskは **`rows = _limit`なら、より多い行がある可能性がある** と扱い、読み切った成功や全件0件の結論に使わない。範囲を狭めるか上限を上げて、`rows < _limit`になるまで確認する。1日だけでも上限に達した場合は未完了として扱う。今回の署名は固定し、ページ引数と索引は追加しない。
 
@@ -667,6 +667,11 @@ G-2 の末尾の確かめ（`$g2b_final_objects$`）は「適用した時点の6
 
 [発送票の下書き](../../tests/integration/db/group_g3_draft.integration.test.ts) は 作成・入れ替え・再送・同梱・優先順・数量・権限・原子性（故障注入）・破棄・期限切れ・構造・末尾の確かめの改変を確認する。[書き手の閉じた一覧](../../tests/integration/db/group_g1_writer_inventory.integration.test.ts)は67本と新しい関数の構造（押さえの道具の最初の文、書込み本体が表を読む前に押さえを呼ぶ順）を確認する。[実 PostgREST](../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts)の保存・破棄の経路は、鍵を持つ controller が流す。
 
-実装者は SQL・試験・単体・型・lint・文書の検査までを担当する。controller がローカルを reset して SQL を適用し、`group_g3_draft`・`group_g1_writer_inventory`・`group_g2_migration_asserts`・`group_g2_purchase_documents`・`group_g3_model`・`group_g3_reads`・`group_g2_concurrency`・`group_g1_concurrency` を流す。SQL に直しが必要になれば再 reset 待ちへ戻る。本番への適用は未実施。
+Task 4では実装者が SQL・試験・単体・型・lint・文書を検査し、controllerのローカル適用後に下書き・書き手一覧・G-2末尾assert・モデル・読取・並行性を検査する手順を定めた。Task 5までの最新の対象と実測結果は下記に記す。SQLを直した時の再適用はcontrollerが担当し、本番への適用は未実施。
 
-Fix round 1（Opus レビュー後、2026-10-25）は末尾の確かめ `shipment_slip_lock_order` の強化だけで SQL の本体（押さえの道具・保存・破棄・入口・許可一覧）は変えていない。強化した確かめを実DBの関数に当て直す試験（`group_g3_draft` の末尾の確かめの改変）に、`group_g_actor_has_permissions(` を押さえの前へ移す（保存・破棄）・`FROM ONLY`・`TABLE` で表を読む・押さえの道具が登録の行を票の行より先に取る・票の行を在庫の閉包より先に取る、の5つの改変を足した（既存の改変は残す）。連番の枯渇（`SL-<日本時間の日付>-9999` があると `GROUP_G_SLIP_NUMBER_EXHAUSTED / 55000`）の試験も足した。確かめの文が変わったので、コントローラーが再 reset してから流す。
+Fix round 1（Opus レビュー後、2026-10-25）は末尾の確かめ `shipment_slip_lock_order` の強化だけで SQL の本体（押さえの道具・保存・破棄・入口・許可一覧）は変えていない。強化した確かめを実DBの関数に当て直す試験（`group_g3_draft` の末尾の確かめの改変）に、`group_g_actor_has_permissions(` を押さえの前へ移す（保存・破棄）・`FROM ONLY`・`TABLE` で表を読む・押さえの道具が登録の行を票の行より先に取る・票の行を在庫の閉包より先に取る、の5つの改変を足した（既存の改変は残す）。連番の枯渇（`SL-<日本時間の日付>-9999` があると `GROUP_G_SLIP_NUMBER_EXHAUSTED / 55000`）の試験も足した。これらの下書きの末尾assert改変も、Task 5までの実鍵PostgRESTを含むcontrollerの12 suite・665/665成功に含まれる。
+## G-3 Task 5 発送確定の追記（ローカル実測済み）
+
+本番未適用の [20261025100130_group_g3_shipping_slips.sql](../../supabase/migrations/20261025100130_group_g3_shipping_slips.sql) に、consume・追跡の親・確定のprivate本体とpublic確定入口を追記した。新規移行は作らず、G-1/G-2とTask 1/2の移行は変更しない。許可一覧とG3C末尾assertは67→70本へ更新した。
+
+確定の順・在庫とoutbox・出荷日の契約は[発送順序図](../04_DetailDesign/sequence/shipping.md)と[ER](../03_BasicDesign/data/er.md)を参照。[確定DB suite](../../tests/integration/db/group_g3_confirm.integration.test.ts)と下書き・書き手一覧・G-2末尾assert等をローカルで検査し、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。レビュー後の数量変数名の整理はcontrollerが再適用し、同じ範囲を再検証する。実PostgRESTはcontrollerの鍵で実行する。本番適用・外部追跡・メール送信・E2Eの証拠にはしない。
