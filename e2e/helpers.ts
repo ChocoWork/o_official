@@ -150,3 +150,16 @@ export async function apiRequest(
       throw new Error(`Unsupported HTTP method: ${method}`);
   }
 }
+
+/**
+ * 走っている CSS の transition・animation が終わるまで待つ（固定の sleep の代わり）。
+ * 終わりの無い繰り返し（ヒーローの糸の動きなど）は、待つと戻らないので対象から外す。
+ */
+export async function waitForAnimationsToFinish(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const finite = document
+      .getAnimations()
+      .filter((animation) => Number.isFinite(animation.effect?.getComputedTiming().endTime as number));
+    await Promise.all(finite.map((animation) => animation.finished.catch(() => undefined)));
+  });
+}

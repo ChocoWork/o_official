@@ -83,6 +83,27 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      /*
+       * 全部の公開の店を一時的に非公開にする・1001 件足す試験（FR-STOCKIST-017）、検索の回数の枠を使い切る・検索の関数の権限を
+       * 一時的に外す試験（FR-SEARCH-022）、LOOK の読み出し・画像の置き場を一時的に壊す試験（FR-LOOK-SEC-005）、
+       * 追跡の設定を読めなくする試験（FR-PRIVACY-009）は、同時に流れる他の試験を壊すので、下の isolated-global に分けて、
+       * 他の全部が終わった後に流す。
+       */
+      testIgnore: /FR-(STOCKIST-017|SEARCH-022|LOOK-SEC-005|PRIVACY-009)-.*\.spec\.ts/,
+      teardown: 'isolated-global',
+    },
+    /*
+     * chromium の teardown になる project は 1 つだけにする。teardown を連鎖（A -> B -> C）させると、Playwright は
+     * 「teardown が、その setup から届く全部（teardown もたどる）が終わるまで待つ」ので、連鎖の中の project が互いに待ち合って
+     * 段に入らず、chromium 以外が全件の実行で流れない（隠れた skip）。
+     * 4 つの file は、fullyParallel: false・workers: 1 で 1 file ずつ直列に流すので、互いにも重ならない。
+     */
+    {
+      name: 'isolated-global',
+      testMatch: /FR-(STOCKIST-017|SEARCH-022|LOOK-SEC-005|PRIVACY-009)-.*\.spec\.ts/,
+      fullyParallel: false,
+      workers: 1,
+      use: { ...devices['Desktop Chrome'] },
     },
 
     /* Test against mobile viewports. */
