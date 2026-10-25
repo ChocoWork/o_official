@@ -46,7 +46,7 @@ async function readSeasonStyle(page: Page): Promise<SeasonStyle> {
 test.describe('FR-LOOK-ALL-032 シーズンタイトルの字間を狭める（mobile / tablet）', () => {
   for (const vp of VIEWPORTS) {
     for (const path of ['/', '/look'] as const) {
-      test(`${vp.name} ${path} でシーズンタイトルの字間が詰まっている`, async ({
+      test(`FREQ-145-AC-01 ${vp.name} ${path} でシーズンタイトルの字間が詰まっている`, async ({
         page,
       }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });

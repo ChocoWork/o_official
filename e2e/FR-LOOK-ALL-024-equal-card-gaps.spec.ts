@@ -35,7 +35,7 @@ const VIEWPORTS = [{ name: 'desktop', width: 1280, height: 800 }] as const;
 test.describe('FR-LOOK-ALL-024 LOOK グリッドの縦横 gap が等しい', () => {
   for (const target of PAGES) {
     for (const vp of VIEWPORTS) {
-      test(`${vp.name} ${target.label} で row-gap と column-gap が等しい`, async ({
+      test(`FREQ-137-AC-02 ${vp.name} ${target.label} で row-gap と column-gap が等しい`, async ({
         page,
       }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });

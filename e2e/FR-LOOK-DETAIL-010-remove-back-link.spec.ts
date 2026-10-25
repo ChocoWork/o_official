@@ -12,7 +12,7 @@ const VIEWPORTS = [
 
 test.describe('FR-LOOK-DETAIL-010 Back to Lookbook リンクの削除', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} 通常表示に Back to Lookbook が表示されない`, async ({
+    test(`FREQ-178-AC-01 ${vp.name} 通常表示に Back to Lookbook が表示されない`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -25,7 +25,7 @@ test.describe('FR-LOOK-DETAIL-010 Back to Lookbook リンクの削除', () => {
     });
   }
 
-  test('存在しない LOOK では Back to Lookbook が表示される', async ({
+  test('FREQ-178-AC-02 存在しない LOOK では Back to Lookbook が表示される', async ({
     page,
   }) => {
     await page.goto('/look/999999');

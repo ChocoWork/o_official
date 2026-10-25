@@ -36,28 +36,40 @@ function assertSeasonLabelFormat(labels: string[], format: RegExp, context: stri
   }
 }
 
+// テスト名の先頭の ID は文字のままでないと読まれないので、幅ごとに違う ID（mobile/tablet は FREQ-138-AC-01、
+// desktop は FREQ-127-AC-01）は、別々の test() で書く。
+async function checkHome(page: Page, vp: (typeof VIEWPORTS)[number]): Promise<void> {
+  await page.setViewportSize({ width: vp.width, height: vp.height });
+  await page.goto('/');
+  await expect(page.locator('#look')).toBeVisible();
+  assertSeasonLabelFormat(await readVisibleSeasonLabels(page, '#look'), vp.format, `HOME#look ${vp.name}`);
+}
+
+async function checkCatalog(page: Page, vp: (typeof VIEWPORTS)[number]): Promise<void> {
+  await page.setViewportSize({ width: vp.width, height: vp.height });
+  await page.goto('/look');
+  await expect(page.locator('main')).toBeVisible();
+  assertSeasonLabelFormat(await readVisibleSeasonLabels(page, 'main'), vp.format, `/look ${vp.name}`);
+}
+
 test.describe('FR-LOOK-ALL-014 シーズンラベルの表記', () => {
-  for (const vp of VIEWPORTS) {
-    test(`${vp.name} HOME の LOOK セクションで所定形式になる`, async ({ page }) => {
-      await page.setViewportSize({ width: vp.width, height: vp.height });
-      await page.goto('/');
-      await expect(page.locator('#look')).toBeVisible();
-      assertSeasonLabelFormat(
-        await readVisibleSeasonLabels(page, '#look'),
-        vp.format,
-        `HOME#look ${vp.name}`,
-      );
+  for (const vp of VIEWPORTS.filter((v) => v.name !== 'desktop')) {
+    test(`FREQ-138-AC-01 ${vp.name} HOME の LOOK セクションで所定形式になる`, async ({ page }) => {
+      await checkHome(page, vp);
     });
 
-    test(`${vp.name} /look 一覧で所定形式になる`, async ({ page }) => {
-      await page.setViewportSize({ width: vp.width, height: vp.height });
-      await page.goto('/look');
-      await expect(page.locator('main')).toBeVisible();
-      assertSeasonLabelFormat(
-        await readVisibleSeasonLabels(page, 'main'),
-        vp.format,
-        `/look ${vp.name}`,
-      );
+    test(`FREQ-138-AC-01 ${vp.name} /look 一覧で所定形式になる`, async ({ page }) => {
+      await checkCatalog(page, vp);
     });
   }
+
+  const desktop = VIEWPORTS[2];
+
+  test('FREQ-127-AC-01 desktop HOME の LOOK セクションで所定形式になる', async ({ page }) => {
+    await checkHome(page, desktop);
+  });
+
+  test('FREQ-127-AC-01 desktop /look 一覧で所定形式になる', async ({ page }) => {
+    await checkCatalog(page, desktop);
+  });
 });

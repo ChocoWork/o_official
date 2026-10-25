@@ -13,7 +13,7 @@ const VIEWPORTS = [
 
 test.describe('FR-LOOK-DETAIL-013 3カラムフッターナビ', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} 3ラベルと区切り線を表示しテーマ名を表示しない`, async ({
+    test(`FREQ-181-AC-01 ${vp.name} 3ラベルと区切り線を表示しテーマ名を表示しない`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });

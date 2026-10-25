@@ -31,7 +31,7 @@ async function readFirstRelatedItemLayout(page: Page): Promise<ItemLayout | null
 }
 
 test.describe('FR-LOOK-ALL-013 関連アイテムのモバイル縦積み', () => {
-  test('mobile では商品名と価格が縦積みになる', async ({ page }) => {
+  test('FREQ-56-AC-01 mobile では商品名と価格が縦積みになる', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 }); // iPhone SE
     await page.goto('/look');
     await expect(page.locator('main')).toBeVisible();
@@ -42,7 +42,7 @@ test.describe('FR-LOOK-ALL-013 関連アイテムのモバイル縦積み', () =
     expect(layout!.priceTop).toBeGreaterThanOrEqual(layout!.nameBottom);
   });
 
-  test('tablet では商品名と価格が同一行に並ぶ', async ({ page }) => {
+  test('FREQ-56-AC-02 tablet では商品名と価格が同一行に並ぶ', async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 });
     await page.goto('/look');
     await expect(page.locator('main')).toBeVisible();
@@ -53,7 +53,7 @@ test.describe('FR-LOOK-ALL-013 関連アイテムのモバイル縦積み', () =
   });
 
   // FREQ-133: desktop はカード下の関連アイテムリスト自体を表示しない
-  test('desktop ではカード下の関連アイテムが表示されない', async ({ page }) => {
+  test('FREQ-133-AC-01 desktop ではカード下の関連アイテムが表示されない', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/look');
     await expect(page.locator('main')).toBeVisible();

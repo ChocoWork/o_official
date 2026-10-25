@@ -17,7 +17,7 @@ test.describe('FR-LOOK-ALL-035 desktop filter left edge', () => {
   test('desktop（1280px）でフィルターが画面左端に寄っている', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/look');
-    await page.waitForLoadState('networkidle');
+    await expect(page.locator('main aside')).toBeVisible();
 
     expect(await asideLeft(page)).toBeLessThanOrEqual(40);
   });
@@ -25,7 +25,7 @@ test.describe('FR-LOOK-ALL-035 desktop filter left edge', () => {
   test('wide desktop（1920px）でもフィルターが画面左端に寄っている', async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1000 });
     await page.goto('/look');
-    await page.waitForLoadState('networkidle');
+    await expect(page.locator('main aside')).toBeVisible();
 
     expect(await asideLeft(page)).toBeLessThanOrEqual(40);
   });
@@ -34,8 +34,8 @@ test.describe('FR-LOOK-ALL-035 desktop filter left edge', () => {
     for (const width of [390, 768]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/look');
-      await page.waitForLoadState('networkidle');
-
+      // 一覧が描かれた（カードが出た）のを待ってから、デスクトップのフィルターが無いことを確かめる
+      await expect(page.locator('main [data-testid="look-card"]').first()).toBeVisible();
       await expect(page.locator('main aside')).toBeHidden();
     }
   });

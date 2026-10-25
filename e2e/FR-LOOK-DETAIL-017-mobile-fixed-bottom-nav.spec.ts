@@ -15,7 +15,7 @@ const FIXED_NAV = '[data-testid="look-detail-fixed-nav"]';
 const INLINE_NAV = '[data-testid="look-detail-bottom-nav"]';
 
 test.describe('FR-LOOK-DETAIL-017 モバイル固定ボトムナビ', () => {
-  test('mobile 固定ナビが画面下端に貼り付く', async ({ page }) => {
+  test('FREQ-343-AC-01 mobile 固定ナビが画面下端に貼り付く', async ({ page }) => {
     await page.setViewportSize(MOBILE);
     await gotoFirstLookDetail(page);
 
@@ -35,7 +35,7 @@ test.describe('FR-LOOK-DETAIL-017 モバイル固定ボトムナビ', () => {
     expect(scrolledBox!.y + scrolledBox!.height).toBeCloseTo(MOBILE.height, 0);
   });
 
-  test('mobile 固定ナビに3項目が並び LOOK LIST が /look へのリンク', async ({
+  test('FREQ-343-AC-02 mobile 固定ナビに3項目が並び LOOK LIST が /look へのリンク', async ({
     page,
   }) => {
     await page.setViewportSize(MOBILE);
@@ -52,7 +52,7 @@ test.describe('FR-LOOK-DETAIL-017 モバイル固定ボトムナビ', () => {
     );
   });
 
-  test('mobile ではインラインナビを表示しない', async ({ page }) => {
+  test('FREQ-343-AC-03 mobile ではインラインナビを表示しない', async ({ page }) => {
     await page.setViewportSize(MOBILE);
     await gotoFirstLookDetail(page);
 
@@ -60,7 +60,7 @@ test.describe('FR-LOOK-DETAIL-017 モバイル固定ボトムナビ', () => {
     await expect(page.locator(INLINE_NAV)).toBeHidden();
   });
 
-  test('mobile 固定ナビがフッターの著作権表示・法務リンクを覆わない', async ({
+  test('FREQ-343-AC-04 mobile 固定ナビがフッターの著作権表示・法務リンクを覆わない', async ({
     page,
   }) => {
     await page.setViewportSize(MOBILE);
@@ -79,7 +79,7 @@ test.describe('FR-LOOK-DETAIL-017 モバイル固定ボトムナビ', () => {
     }
   });
 
-  test('mobile 固定ナビのラベルが既定より 2 段階大きい', async ({ page }) => {
+  test('FREQ-343-AC-05 mobile 固定ナビのラベルが既定より 2 段階大きい', async ({ page }) => {
     await page.setViewportSize(MOBILE);
     await gotoFirstLookDetail(page);
 
@@ -105,7 +105,7 @@ test.describe('FR-LOOK-DETAIL-017 モバイル固定ボトムナビ', () => {
   });
 
   for (const vp of WIDER_VIEWPORTS) {
-    test(`${vp.name} ではインラインナビのみで固定ナビを表示しない`, async ({
+    test(`FREQ-343-AC-03 ${vp.name} ではインラインナビのみで固定ナビを表示しない`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });

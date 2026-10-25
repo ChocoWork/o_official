@@ -24,7 +24,7 @@ async function gotoScope(page: Page, path: string, scope: string): Promise<void>
 test.describe('FR-LOOK-ALL-025 LOOK カードの画像下情報パネル（lg 未満）', () => {
   for (const vp of PANEL_VIEWPORTS) {
     for (const target of TARGETS) {
-      test(`${vp.name} ${target.name} シーズンラベルが「{年} {SS|AW}」形式で画像下に表示される`, async ({ page }) => {
+      test(`FREQ-138-AC-01 ${vp.name} ${target.name} シーズンラベルが「{年} {SS|AW}」形式で画像下に表示される`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await gotoScope(page, target.path, target.scope);
 
@@ -48,7 +48,7 @@ test.describe('FR-LOOK-ALL-025 LOOK カードの画像下情報パネル（lg �
         expect(captionBox!.y).toBeGreaterThanOrEqual(imageBox!.y + imageBox!.height - 1);
       });
 
-      test(`${vp.name} ${target.name} テーマ名がセリフ体・大文字で表示される`, async ({ page }) => {
+      test(`FREQ-138-AC-02 ${vp.name} ${target.name} テーマ名がセリフ体・大文字で表示される`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await gotoScope(page, target.path, target.scope);
 
@@ -62,13 +62,13 @@ test.describe('FR-LOOK-ALL-025 LOOK カードの画像下情報パネル（lg �
         await expect(title).toHaveCSS('text-transform', 'uppercase');
       });
 
-      test(`${vp.name} ${target.name} テーマ名と関連アイテムの間に罫線が表示される`, async ({ page }) => {
+      test(`FREQ-138-AC-03 ${vp.name} ${target.name} テーマ名と関連アイテムの間に罫線が表示される`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await gotoScope(page, target.path, target.scope);
 
+        // 見本の LOOK 1 は商品が 2 つ紐づくので、罫線は必ずある（消えたら赤）
         const dividers = page.locator(`${target.scope} [data-testid="look-card-divider"]`);
-        const count = await dividers.count();
-        test.skip(count === 0, '関連アイテムを持つ LOOK がないため対象外');
+        await expect(dividers).not.toHaveCount(0);
 
         // AC-03: 罫線がテーマ名より下・関連アイテムリストより上にある
         const card = page
@@ -91,13 +91,13 @@ test.describe('FR-LOOK-ALL-025 LOOK カードの画像下情報パネル（lg �
   }
 
   // AC-04: tablet では商品名と価格が同一行で、価格が行の右端に右寄せされる
-  test('tablet /look 関連アイテムの価格が右寄せで表示される', async ({ page }) => {
+  test('FREQ-138-AC-04 tablet /look 関連アイテムの価格が右寄せで表示される', async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 });
     await gotoScope(page, '/look', 'main');
 
+    // 見本の LOOK 1 は商品が 2 つ紐づくので、関連アイテムの行は必ずある（消えたら赤）
     const rows = page.locator('main a.look-related-item-text');
-    const count = await rows.count();
-    test.skip(count === 0, '関連アイテムを持つ LOOK がないため対象外');
+    await expect(rows).not.toHaveCount(0);
 
     const row = rows.first();
     const rowBox = await row.boundingBox();
@@ -111,7 +111,7 @@ test.describe('FR-LOOK-ALL-025 LOOK カードの画像下情報パネル（lg �
   });
 
   // AC-05: desktop は従来どおりオーバーレイ表示で、画像下のパネルは表示されない
-  test('desktop /look ではオーバーレイが表示され画像下パネルが表示されない', async ({ page }) => {
+  test('FREQ-138-AC-05 desktop /look ではオーバーレイが表示され画像下パネルが表示されない', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await gotoScope(page, '/look', 'main');
 
@@ -121,9 +121,9 @@ test.describe('FR-LOOK-ALL-025 LOOK カードの画像下情報パネル（lg �
     await expect(
       page.locator('main [data-testid="look-card-caption"]').first(),
     ).toBeHidden();
-    const divider = page.locator('main [data-testid="look-card-divider"]').first();
-    if ((await divider.count()) > 0) {
-      await expect(divider).toBeHidden();
-    }
+    // 罫線は DOM にあり（見本の LOOK 1 に商品が紐づく）、desktop では見えない
+    const dividers = page.locator('main [data-testid="look-card-divider"]');
+    await expect(dividers).not.toHaveCount(0);
+    await expect(dividers.first()).toBeHidden();
   });
 });

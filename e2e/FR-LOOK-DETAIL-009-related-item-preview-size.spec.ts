@@ -15,15 +15,12 @@ const VIEWPORTS = [
 
 test.describe('FR-LOOK-DETAIL-009 関連アイテムのサムネイルを√φ倍に拡大', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} プレビュー高さが unit × φ³ × √φ`, async ({ page }) => {
+    test(`FREQ-177-AC-01 ${vp.name} プレビュー高さが unit × φ³ × √φ`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await gotoFirstLookDetail(page);
 
       const list = page.locator('[data-ui-list][data-ui-list-variant="showcase"]');
-      if ((await page.getByText('紐づけ商品はありません').count()) > 0) {
-        // 紐づけ商品がない LOOK の場合はリスト自体が無いため対象外
-        return;
-      }
+      // 先頭の LOOK（見本の LOOK 1）には商品が 2 つ紐づくので、リストは必ずある（無くなったら赤）
       await expect(list.first()).toBeVisible();
 
       const { unit, previewHeight } = await list.first().evaluate((el) => {

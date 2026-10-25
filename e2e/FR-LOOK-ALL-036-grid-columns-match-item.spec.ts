@@ -74,9 +74,10 @@ test.describe('FR-LOOK-ALL-036 LOOK グリッドの列数を ITEM に揃える',
     }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/');
-      await page.waitForLoadState('networkidle');
 
       const scope = page.locator('#look');
+      // カードが描かれた（先頭のカードが DOM に出た）のを待ってから数える
+      await expect(scope.locator(LOOK_CARD).first()).toBeAttached();
       const domCount = await scope.locator(LOOK_CARD).count();
       const visibleCount = await scope.locator(`${LOOK_CARD}:visible`).count();
 

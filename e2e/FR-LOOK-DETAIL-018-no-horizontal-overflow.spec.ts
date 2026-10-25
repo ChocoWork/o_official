@@ -14,7 +14,7 @@ const VIEWPORTS = [
 
 test.describe('FR-LOOK-DETAIL-018 横スクロールを発生させない', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} 横方向にはみ出す要素がない`, async ({ page }) => {
+    test(`FREQ-344-AC-01 ${vp.name} 横方向にはみ出す要素がない`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await gotoFirstLookDetail(page);
 
@@ -74,7 +74,7 @@ test.describe('FR-LOOK-DETAIL-018 横スクロールを発生させない', () =
     });
   }
 
-  test('mobile 固定ナビの下端が viewport 下端と一致する', async ({ page }) => {
+  test('FREQ-344-AC-03 mobile 固定ナビの下端が viewport 下端と一致する', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await gotoFirstLookDetail(page);
 

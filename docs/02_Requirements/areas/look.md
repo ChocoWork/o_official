@@ -1,6 +1,6 @@
 # LOOK の要件
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-25 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -1887,18 +1887,18 @@ LOOK カードの各関連商品リンクの上下 padding が 1px 以下であ�
 
 LOOK カードでコレクション時期と名前の縦間隔が、名前と最初の関連アイテムの縦間隔より狭いこと
 
-### FREQ-55-AC-01 各幅で一覧の row-gap が column-gap より大きい
+### FREQ-55-AC-01 mobile・tablet の幅で一覧の row-gap が column-gap より大きい
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-55-REQ-01 |
-| 根拠 | FREQ-55-REQ-01 の結果を、「各幅で一覧の row-gap が column-gap より大きい」ことで画面の外から確かめる。1280px は FREQ-137・140 で縦横とも 24px になり、この条件と合わない。今当たるのは lg 未満だけ |
+| 根拠 | FREQ-55-REQ-01 の結果を、「mobile・tablet の幅で一覧の row-gap が column-gap より大きい」ことで画面の外から確かめる。1280px は FREQ-137・140 で縦横とも 24px になり、この条件と合わない。今当たるのは lg 未満だけなので、この AC の対象は mobile・tablet の2つの幅だけ（desktop は FREQ-140-AC-04 が縦横同値を決める） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md` の「要求トレーサビリティ追記（ITEM 一覧 見出し・パンくず・終端表示の廃止）」節の FREQ-55 の行 |
 
-モバイル・タブレット・PC の各幅で LOOK 一覧グリッドの row-gap が column-gap より大きいこと
+mobile（390px）/ tablet（768px）で LOOK 一覧グリッドの row-gap が column-gap より大きいこと。desktop（lg 以上）は FREQ-140-AC-04 により縦横同値で、この AC の対象外
 
 ### FREQ-55-AC-02 モバイルで一覧の row-gap が 16px より大きい
 
@@ -2953,18 +2953,18 @@ desktop（1280px）でサムネイル縦列とメイン画像が表示され、�
 
 mobile（390px）/ tablet（768px）/ desktop（1280px）で「PREV LOOK」「LOOK LIST」「NEXT LOOK」の3ラベルが表示され、LOOK LIST が /look へのリンクであること
 
-### FREQ-181-AC-02 3つの幅で中と右の列の左に 1px の縦の区切り線が出る
+### FREQ-181-AC-02 tablet・PC の2つの幅で中と右の列の左に 1px の縦の区切り線が出る
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-181-REQ-01 |
-| 根拠 | FREQ-181-REQ-01 の結果を、「3つの幅で中と右の列の左に 1px の縦の区切り線が出る」ことで画面の外から確かめる。390px の分は FREQ-343 が固定のナビに置き換えた |
+| 根拠 | FREQ-181-REQ-01 の結果を、「tablet・PC の2つの幅で中と右の列の左に 1px の縦の区切り線が出る」ことで画面の外から確かめる。390px の分は FREQ-343 が固定のナビに置き換えたので、この AC の対象は tablet・PC の2つの幅だけ |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md` の「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-181 の行 |
 
-中央・右カラムの左側に 1px の縦区切り線が表示されること
+tablet（768px）/ desktop（1280px）で、中央・右カラムの左側に 1px の縦区切り線が表示されること
 
 ### FREQ-181-AC-03 ナビの中に LOOK のテーマ名が出ない
 
@@ -2992,18 +2992,18 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で「PREV LOOK」「LO
 
 mobile（390px）/ tablet（768px）/ desktop（1280px）で、ナビ内の3アイコンがいずれも `svg` 要素であり、`i.ri-*` のアイコンフォント要素が存在しないこと
 
-### FREQ-182-AC-02 3つの幅でアイコンの線幅が1・塗りなし・線の色が文字の色になる
+### FREQ-182-AC-02 tablet・PC の2つの幅でアイコンの線幅が1・塗りなし・線の色が文字の色になる
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-182-REQ-01 |
-| 根拠 | FREQ-182-REQ-01 の結果を、「3つの幅でアイコンの線幅が1・塗りなし・線の色が文字の色になる」ことで画面の外から確かめる。390px の分は FREQ-343 が固定のナビに置き換えた |
+| 根拠 | FREQ-182-REQ-01 の結果を、「tablet・PC の2つの幅でアイコンの線幅が1・塗りなし・線の色が文字の色になる」ことで画面の外から確かめる。390px の分は FREQ-343 が固定のナビに置き換えたので、この AC の対象は tablet・PC の2つの幅だけ |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md` の「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-182 の行 |
 
-同3画面幅で、各アイコンの `stroke-width` が 1・`fill` が none・`stroke` が親と同じ文字色（currentColor 由来）であること
+tablet（768px）/ desktop（1280px）で、各アイコンの `stroke-width` が 1・`fill` が none・`stroke` が親と同じ文字色（currentColor 由来）であること
 
 ### FREQ-182-AC-03 3つの幅でアイコンの大きさが --lk-size-6xl になる（廃止）
 
@@ -3031,31 +3031,31 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で、ナビ内の3ア�
 
 mobile（390px）/ tablet（768px）/ desktop（1280px）で、3カラムのラベルとアイコンの算出色が `rgb(0, 0, 0)` であること
 
-### FREQ-183-AC-02 3つの幅でアイコンの大きさが --lk-size-7xl になる
+### FREQ-183-AC-02 tablet・PC の2つの幅でアイコンの大きさが --lk-size-7xl になる
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-183-REQ-02 |
-| 根拠 | FREQ-183-REQ-02 の結果を、「3つの幅でアイコンの大きさが --lk-size-7xl になる」ことで画面の外から確かめる。390px の分は FREQ-343 が固定のナビに置き換えた |
+| 根拠 | FREQ-183-REQ-02 の結果を、「tablet・PC の2つの幅でアイコンの大きさが --lk-size-7xl になる」ことで画面の外から確かめる。390px の分は FREQ-343 が固定のナビに置き換えたので、この AC の対象は tablet・PC の2つの幅だけ |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md` の「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-183 の行 |
 
-同3画面幅で、各アイコンの描画サイズが `var(--lk-size-7xl)` の算出値と一致すること
+tablet（768px）/ desktop（1280px）で、各アイコンの描画サイズが `var(--lk-size-7xl)` の算出値と一致すること
 
-### FREQ-183-AC-03 3つの幅で3列のラベルの字間が同じになる
+### FREQ-183-AC-03 tablet・PC の2つの幅で3列のラベルの字間が同じになる
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-183-REQ-03 |
-| 根拠 | FREQ-183-REQ-03 の結果を、「3つの幅で3列のラベルの字間が同じになる」ことで画面の外から確かめる。390px の分は FREQ-343 が固定のナビに置き換えた |
+| 根拠 | FREQ-183-REQ-03 の結果を、「tablet・PC の2つの幅で3列のラベルの字間が同じになる」ことで画面の外から確かめる。390px の分は FREQ-343 が固定のナビに置き換えたので、この AC の対象は tablet・PC の2つの幅だけ |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
 | 旧所在 | `docs/02_Requirements/requirements.md` の「要求トレーサビリティ追記（LOGIN 2FA・登録/ログイン分離）」節の FREQ-183 の行 |
 
-同3画面幅で、3カラムのラベルの算出 letter-spacing がすべて同一であること
+tablet（768px）/ desktop（1280px）で、3カラムのラベルの算出 letter-spacing がすべて同一であること
 
 ### FREQ-277-AC-01 4つの幅で /look の列数が /item と一致する
 
@@ -3897,7 +3897,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 上位 | SEC-LOOK-004 |
 | 根拠 | 権限の段が RLS と独立に閉じているかを確かめるため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（手元の Supabase で `has_table_privilege` を anon について問い合わせる） |
+| 確かめ方 | E2E（手元の Supabase で `has_table_privilege` を anon について問い合わせ、anon の鍵での書き込みが RLS の誤りではなく `42501` の「permission denied for table」で断られることも確かめる） |
 | 出どころ | 実装から推定 |
 
 anon について、`looks`・`look_items` の INSERT・UPDATE・DELETE・TRUNCATE の権限が、どれも false であること。
@@ -3934,7 +3934,7 @@ authenticated について、`looks`・`look_items` の TRUNCATE・TRIGGER・REF
 | 上位 | SEC-LOOK-005 |
 | 根拠 | 見本のデータに頼らず、移行の中に置き場の設定があることを確かめるため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（見本を入れずに移行だけを当てた手元の DB で `storage.buckets` を読む） |
+| 確かめ方 | E2E（手元の Supabase の `storage.buckets` を読む。見本の SQL は `look-images` の行を `id`・`name`・`public` だけで足し、大きさと種類の上限を入れないので、上限と非公開は移行からしか来ない） |
 | 出どころ | 実装から推定 |
 
 `storage.buckets` の `look-images` の行があり、`public` が false、`file_size_limit` が 5MB、`allowed_mime_types` が4つの画像の種類であること。

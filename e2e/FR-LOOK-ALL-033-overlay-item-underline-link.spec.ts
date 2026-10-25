@@ -24,7 +24,7 @@ const getScaleX = (underline: Locator) =>
 
 test.describe('FR-LOOK-ALL-033 オーバーレイ関連 ITEM の下線アニメーションとリンク', () => {
   for (const target of PAGES) {
-    test(`desktop ${target.label} で関連 ITEM ホバー時に左起点の下線が出る`, async ({
+    test(`FREQ-150-AC-01 desktop ${target.label} で関連 ITEM ホバー時に左起点の下線が出る`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: 1280, height: 800 });
@@ -70,7 +70,7 @@ test.describe('FR-LOOK-ALL-033 オーバーレイ関連 ITEM の下線アニメ�
       expect(origin.startsWith('0px')).toBe(true);
     });
 
-    test(`desktop ${target.label} で関連 ITEM クリックで /item/{id} へ遷移する`, async ({
+    test(`FREQ-150-AC-03 desktop ${target.label} で関連 ITEM クリックで /item/{id} へ遷移する`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: 1280, height: 800 });
@@ -106,7 +106,7 @@ test.describe('FR-LOOK-ALL-033 オーバーレイ関連 ITEM の下線アニメ�
     { name: 'mobile', width: 390, height: 844 },
     { name: 'tablet', width: 768, height: 1024 },
   ] as const) {
-    test(`${vp.name} ではオーバーレイの関連 ITEM 行が表示されない`, async ({
+    test(`FREQ-150-AC-04 ${vp.name} ではオーバーレイの関連 ITEM 行が表示されない`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });

@@ -15,7 +15,7 @@ const BLACK = 'rgb(0, 0, 0)';
 
 test.describe('FR-LOOK-DETAIL-015 ナビの黒配色とアイコン拡大', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} ラベル・アイコンが黒で字間が揃いアイコンが 7xl`, async ({
+    test(`FREQ-183-AC-01 ${vp.name} ラベル・アイコンが黒で字間が揃いアイコンが 7xl`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });

@@ -13,7 +13,7 @@ const VIEWPORTS = [
 
 test.describe('FR-LOOK-DETAIL-014 ナビアイコンの細線 SVG 描画', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} アイコンがフォントではなく細線 SVG で描画される`, async ({
+    test(`FREQ-182-AC-01 ${vp.name} アイコンがフォントではなく細線 SVG で描画される`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });

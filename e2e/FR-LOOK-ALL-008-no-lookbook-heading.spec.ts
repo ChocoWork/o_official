@@ -7,10 +7,11 @@ for (const vp of [
   { name: 'desktop', width: 1280, height: 900 },
 ] as const) {
   test.describe(`FR-LOOK-ALL-008 LOOK BOOK 見出し非表示 (${vp.name})`, () => {
-    test('ページ最上部に LOOK BOOK 見出しが無い', async ({ page }) => {
+    test('FREQ-50-AC-01 ページ最上部に LOOK BOOK 見出しが無い', async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/look');
-      await page.waitForLoadState('networkidle');
+      // 一覧が描かれた（カードが出た）のを待ってから、見出しが無いことを確かめる
+      await expect(page.locator('main [data-testid="look-card"]').first()).toBeVisible();
 
       await expect(
         page.getByRole('heading', { name: 'LOOK BOOK' }),

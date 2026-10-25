@@ -11,7 +11,7 @@ const PAGES = [
 
 test.describe('FR-LOOK-ALL-020 PC ではカード下の関連アイテムを非表示', () => {
   for (const target of PAGES) {
-    test(`desktop ${target.label} でカード下の関連アイテムリストが表示されない`, async ({ page }) => {
+    test(`FREQ-133-AC-01 desktop ${target.label} でカード下の関連アイテムリストが表示されない`, async ({ page }) => {
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto(target.path);
       await expect(page.locator(target.scope)).toBeVisible();
@@ -33,7 +33,7 @@ test.describe('FR-LOOK-ALL-020 PC ではカード下の関連アイテムを非�
     { name: 'mobile', width: 390, height: 844 },
     { name: 'tablet', width: 768, height: 1024 },
   ] as const) {
-    test(`${vp.name} /look ではカード下に関連アイテムリストが表示される`, async ({ page }) => {
+    test(`FREQ-133-AC-02 ${vp.name} /look ではカード下に関連アイテムリストが表示される`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/look');
       await expect(page.locator('main')).toBeVisible();

@@ -22,17 +22,14 @@ const VIEWPORTS = [
 
 test.describe('FR-LOOK-DETAIL-008 関連アイテムの外枠線をアイテム間の線と統一', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} 上下の外枠線とアイテム間の線が同じ色・太さ`, async ({
+    test(`FREQ-176-AC-01 ${vp.name} 上下の外枠線とアイテム間の線が同じ色・太さ`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await gotoFirstLookDetail(page);
 
       const list = page.locator('[data-ui-list][data-ui-list-variant="showcase"]');
-      if ((await page.getByText('紐づけ商品はありません').count()) > 0) {
-        // 紐づけ商品がない LOOK の場合はリスト自体が無いため対象外
-        return;
-      }
+      // 先頭の LOOK（見本の LOOK 1）には商品が 2 つ紐づくので、リストは必ずある（無くなったら赤）
       await expect(list.first()).toBeVisible();
 
       const listStyles = await list.first().evaluate((el) => {
@@ -51,22 +48,21 @@ test.describe('FR-LOOK-DETAIL-008 関連アイテムの外枠線をアイテム�
       expect(parseBlackAlpha(listStyles.topColor)).toBeCloseTo(0.1, 5);
       expect(parseBlackAlpha(listStyles.bottomColor)).toBeCloseTo(0.1, 5);
 
-      // アイテムが2件以上あればアイテム間の区切り線と一致することを確認
+      // アイテム間の区切り線と一致することを確認（LOOK 1 には商品が 2 つ紐づくので、必ず 2 件以上ある）
       const items = list.first().locator('[data-list-item]');
-      if ((await items.count()) >= 2) {
-        const dividerStyles = await items.first().evaluate((el) => {
-          const cs = getComputedStyle(el);
-          return {
-            color: cs.borderBottomColor,
-            width: cs.borderBottomWidth,
-          };
-        });
-        expect(dividerStyles.width).toBe(listStyles.topWidth);
-        expect(parseBlackAlpha(dividerStyles.color)).toBeCloseTo(
-          parseBlackAlpha(listStyles.topColor),
-          5,
-        );
-      }
+      expect(await items.count()).toBeGreaterThanOrEqual(2);
+      const dividerStyles = await items.first().evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return {
+          color: cs.borderBottomColor,
+          width: cs.borderBottomWidth,
+        };
+      });
+      expect(dividerStyles.width).toBe(listStyles.topWidth);
+      expect(parseBlackAlpha(dividerStyles.color)).toBeCloseTo(
+        parseBlackAlpha(listStyles.topColor),
+        5,
+      );
     });
   }
 });

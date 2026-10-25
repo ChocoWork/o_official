@@ -62,7 +62,7 @@ async function readLookRelatedStyles(page: Page) {
 
 test.describe('FR-LOOK-ALL-031 関連 ITEM の文字を ITEM カードと同一の見た目にする', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} 関連 ITEM の商品名・価格が ITEM カードと一致する`, async ({
+    test(`FREQ-144-AC-01 ${vp.name} 関連 ITEM の商品名・価格が ITEM カードと一致する`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });

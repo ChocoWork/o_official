@@ -30,7 +30,7 @@ const TARGETS = [
 
 test.describe('FR-LOOK-ALL-027 lg 未満の LOOK カード行間拡大', () => {
   for (const target of TARGETS) {
-    test(`mobile ${target.name} row-gap 34px / column-gap 16px`, async ({ page }) => {
+    test(`FREQ-140-AC-01 mobile ${target.name} row-gap 34px / column-gap 16px`, async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.goto(target.path);
       await expect(page.locator(target.scope)).toBeVisible();
@@ -44,7 +44,7 @@ test.describe('FR-LOOK-ALL-027 lg 未満の LOOK カード行間拡大', () => {
       expect(gaps!.rowGap).toBeGreaterThan(gaps!.columnGap);
     });
 
-    test(`tablet ${target.name} row-gap 55px / column-gap 従来値`, async ({ page }) => {
+    test(`FREQ-140-AC-02 tablet ${target.name} row-gap 55px / column-gap 従来値`, async ({ page }) => {
       await page.setViewportSize({ width: 768, height: 1024 });
       await page.goto(target.path);
       await expect(page.locator(target.scope)).toBeVisible();
@@ -58,7 +58,7 @@ test.describe('FR-LOOK-ALL-027 lg 未満の LOOK カード行間拡大', () => {
       expect(gaps!.rowGap).toBeGreaterThan(gaps!.columnGap);
     });
 
-    test(`desktop ${target.name} は従来どおり縦横同値 24px`, async ({ page }) => {
+    test(`FREQ-140-AC-04 desktop ${target.name} は従来どおり縦横同値 24px`, async ({ page }) => {
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto(target.path);
       await expect(page.locator(target.scope)).toBeVisible();

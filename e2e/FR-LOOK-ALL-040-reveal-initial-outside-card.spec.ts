@@ -49,7 +49,8 @@ test.describe('FR-LOOK-ALL-040 リビール前の文字はカード内に入ら�
       ).toBeVisible();
 
       const target = await firstOffscreenCard(page);
-      test.skip(target === null, '画面外に出る LOOK カードがないため対象外');
+      // 見本の公開の LOOK は 7 件で、どの幅でも 1 画面目に収まらないので、画面外のカードは必ずある（無くなったら赤）
+      expect(target, '画面外に出る LOOK カードがありません').not.toBeNull();
       if (!target) return;
 
       const rects = await rectsOf(target);
@@ -69,11 +70,14 @@ test.describe('FR-LOOK-ALL-040 リビール前の文字はカード内に入ら�
 
       const card = page.locator('[data-testid="look-card"]').first();
       await expect(card).toBeVisible();
-      await page.waitForTimeout(2000);
 
-      const rects = await rectsOf(card);
-
-      expect(rects.riseRight).toBeGreaterThan(rects.cardLeft);
+      // アニメーションが終わってパネルがカード内に戻るまで待つ
+      await expect
+        .poll(async () => {
+          const rects = await rectsOf(card);
+          return rects.riseRight > rects.cardLeft;
+        }, { timeout: 10_000 })
+        .toBe(true);
     });
   }
 });

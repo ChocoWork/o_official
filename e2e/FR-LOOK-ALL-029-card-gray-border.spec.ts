@@ -24,7 +24,7 @@ async function gotoScope(page: Page, path: string, scope: string): Promise<void>
 test.describe('FR-LOOK-ALL-029 LOOK カードのグレー枠線（lg 未満）', () => {
   for (const vp of BORDER_VIEWPORTS) {
     for (const target of TARGETS) {
-      test(`${vp.name} ${target.name} カードに 1px のグレー枠線が表示される`, async ({ page }) => {
+      test(`FREQ-142-AC-01 ${vp.name} ${target.name} カードに 1px のグレー枠線が表示される`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await gotoScope(page, target.path, target.scope);
 
@@ -54,7 +54,7 @@ test.describe('FR-LOOK-ALL-029 LOOK カードのグレー枠線（lg 未満）',
         );
       });
 
-      test(`${vp.name} ${target.name} 画像は枠線に密着し情報パネルには内側余白がある`, async ({ page }) => {
+      test(`FREQ-142-AC-02 ${vp.name} ${target.name} 画像は枠線に密着し情報パネルには内側余白がある`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await gotoScope(page, target.path, target.scope);
 
@@ -93,7 +93,7 @@ test.describe('FR-LOOK-ALL-029 LOOK カードのグレー枠線（lg 未満）',
 
   // AC-04: desktop（lg 以上）はカード枠線なし
   for (const target of TARGETS) {
-    test(`desktop ${target.name} ではカードに枠線が表示されない`, async ({ page }) => {
+    test(`FREQ-142-AC-04 desktop ${target.name} ではカードに枠線が表示されない`, async ({ page }) => {
       await page.setViewportSize({ width: 1280, height: 800 });
       await gotoScope(page, target.path, target.scope);
 

@@ -26,7 +26,7 @@ const PAGES = [
 
 test.describe('FR-LOOK-ALL-023 PC では画像コンテナの下マージンをなくす', () => {
   for (const target of PAGES) {
-    test(`desktop ${target.label} で margin-bottom が 0px`, async ({
+    test(`FREQ-136-AC-01 desktop ${target.label} で margin-bottom が 0px`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: 1280, height: 800 });
@@ -52,7 +52,7 @@ test.describe('FR-LOOK-ALL-023 PC では画像コンテナの下マージンを�
     { name: 'mobile', width: 390, height: 844, expected: 13 },
     { name: 'tablet', width: 768, height: 1024, expected: 21 },
   ] as const) {
-    test(`${vp.name} では margin-bottom が ${vp.expected}px`, async ({
+    test(`FREQ-139-AC-01 ${vp.name} では margin-bottom が ${vp.expected}px`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });

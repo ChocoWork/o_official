@@ -13,7 +13,7 @@ const VIEWPORTS = [
 test.describe('FR-LOOK-DETAIL-016 タブレット・PC の画像仕様を ITEM 詳細と揃える', () => {
   for (const viewport of VIEWPORTS) {
     // AC-01: 画像が複数あるとき、枚数分のセグメント線が出て現在位置だけ active
-    test(`${viewport.name} 複数枚のときセグメント線インジケータが枚数分表示される`, async ({
+    test(`FREQ-288-AC-01 ${viewport.name} 複数枚のときセグメント線インジケータが枚数分表示される`, async ({
       page,
     }) => {
       await page.setViewportSize({
@@ -30,31 +30,28 @@ test.describe('FR-LOOK-DETAIL-016 タブレット・PC の画像仕様を ITEM �
         `[data-testid="${viewport.indicator}-segment"]`,
       );
 
-      if (imageCount > 1) {
-        await expect(indicator).toBeVisible();
-        await expect(segments).toHaveCount(imageCount);
-        await expect(
-          page.locator(
-            `[data-testid="${viewport.indicator}-segment"][data-active="true"]`,
-          ),
-        ).toHaveCount(1);
-      } else {
-        await expect(indicator).toHaveCount(0);
-      }
+      // 先頭の LOOK（見本の LOOK 1）は画像が 2 枚なので、複数枚の表示になる（1 枚になったら赤）
+      expect(imageCount).toBeGreaterThan(1);
+      await expect(indicator).toBeVisible();
+      await expect(segments).toHaveCount(imageCount);
+      await expect(
+        page.locator(
+          `[data-testid="${viewport.indicator}-segment"][data-active="true"]`,
+        ),
+      ).toHaveCount(1);
     });
   }
 
   // AC-02: タブレットの前後送りボタンは画像枠の縦方向中央にある
-  test('tablet 前後送りシェブロンが画像枠の縦中央にある', async ({ page }) => {
+  test('FREQ-288-AC-02 tablet 前後送りシェブロンが画像枠の縦中央にある', async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 });
     await gotoFirstLookDetail(page);
 
     const carousel = page.locator('[data-testid="look-detail-tablet-carousel"]');
     const next = page.locator('[data-testid="look-detail-tablet-carousel-next"]');
 
-    if ((await next.count()) === 0) {
-      test.skip(true, '画像が1枚のため送りボタンなし');
-    }
+    // 先頭の LOOK（見本の LOOK 1）は画像が 2 枚なので、送りボタンは必ずある（無くなったら赤）
+    await expect(next).toBeVisible();
 
     const carouselBox = await carousel.boundingBox();
     const nextBox = await next.boundingBox();
@@ -68,7 +65,7 @@ test.describe('FR-LOOK-DETAIL-016 タブレット・PC の画像仕様を ITEM �
   });
 
   // AC-03: PC のメイン画像枠は 2:3 で viewport 内に収まり、情報列は画像と同じ幅
-  test('desktop 画像枠が 2:3 で viewport に収まり情報列が画像と同幅', async ({
+  test('FREQ-288-AC-03 desktop 画像枠が 2:3 で viewport に収まり情報列が画像と同幅', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });

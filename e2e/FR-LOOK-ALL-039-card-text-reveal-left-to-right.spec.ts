@@ -10,9 +10,6 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1280, height: 800 },
 ] as const;
 
-/** リビールのアニメーション（カバー 0.5s+0.5s / 文字 1.0s+0.5s）が終わるまでの猶予 */
-const REVEAL_SETTLE_MS = 2000;
-
 type Translate = { x: number; y: number };
 
 /** computed transform（matrix(a, b, c, d, tx, ty)）から移動量だけを取り出す */
@@ -59,7 +56,8 @@ test.describe('FR-LOOK-ALL-039 LOOK カードの文字リビールを左→右�
       ).toBeVisible();
 
       const target = await firstOffscreenCard(page, 'look-card');
-      test.skip(target === null, '画面外に出る LOOK カードがないため対象外');
+      // 見本の公開の LOOK は 7 件で、どの幅でも 1 画面目に収まらないので、画面外のカードは必ずある（無くなったら赤）
+      expect(target, '画面外に出る LOOK カードがありません').not.toBeNull();
       if (!target) return;
 
       const rise = target.locator('.reveal-rise').first();
@@ -77,12 +75,12 @@ test.describe('FR-LOOK-ALL-039 LOOK カードの文字リビールを左→右�
 
       const card = page.locator('[data-testid="look-card"]').first();
       await expect(card).toBeVisible();
-      await page.waitForTimeout(REVEAL_SETTLE_MS);
 
       const rise = card.locator('.reveal-rise').first();
 
       expect(await animationNameOf(rise)).toBe('reveal-rise-x-act');
-      expect(await translateOf(rise)).toEqual({ x: 0, y: 0 });
+      // アニメーションが終わって定位置に戻るまで待つ
+      await expect.poll(() => translateOf(rise), { timeout: 10_000 }).toEqual({ x: 0, y: 0 });
     });
 
     test(`FREQ-338-AC-03: ${vp.name} ITEM カードの文字は下→上のまま`, async ({
@@ -93,9 +91,9 @@ test.describe('FR-LOOK-ALL-039 LOOK カードの文字リビールを左→右�
 
       const card = page.locator('[data-testid="item-card-link"]').first();
       await expect(card).toBeVisible();
-      await page.waitForTimeout(REVEAL_SETTLE_MS);
 
       const rise = page.locator('[data-testid="item-info"] .reveal-rise').first();
+      await expect(rise).toBeAttached();
 
       expect(await animationNameOf(rise)).toBe('reveal-rise-act');
     });

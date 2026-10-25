@@ -37,7 +37,7 @@ const PAGES = [
 
 test.describe('FR-LOOK-ALL-021 オーバーレイのホバー前後の文字位置揃え', () => {
   for (const target of PAGES) {
-    test(`desktop ${target.label} でタイトルと関連アイテムの下端・左端が揃う`, async ({ page }) => {
+    test(`FREQ-134-AC-01 desktop ${target.label} でタイトルと関連アイテムの下端・左端が揃う`, async ({ page }) => {
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto(target.path);
       await expect(page.locator(target.scope)).toBeVisible();
@@ -61,13 +61,17 @@ test.describe('FR-LOOK-ALL-021 オーバーレイのホバー前後の文字位�
     { name: 'mobile', width: 390, height: 844 },
     { name: 'tablet', width: 768, height: 1024 },
   ] as const) {
-    test(`${vp.name} ではオーバーレイが表示されない`, async ({ page }) => {
+    test(`FREQ-128-AC-03 ${vp.name} ではオーバーレイが表示されない`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/look');
       await expect(page.locator('main')).toBeVisible();
       await expect(
         page.locator('[data-testid="look-card-overlay"]').first(),
       ).toBeHidden();
+      // AC-03 の後半: 画像の下のキャプションが表示される
+      const caption = page.locator('[data-testid="look-card-caption"]').first();
+      await caption.scrollIntoViewIfNeeded();
+      await expect(caption).toBeVisible();
     });
   }
 });

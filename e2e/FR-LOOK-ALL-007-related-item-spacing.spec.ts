@@ -72,7 +72,7 @@ test.describe('FR-LOOK-ALL-007 related item spacing', () => {
   // 表示されるタブレット幅で計測する。
   test.use({ viewport: { width: 768, height: 1024 } });
 
-  test('HOME の LOOK セクションで関連商品の見た目 gap が phi 比率に一致する', async ({ page }) => {
+  test('FREQ-53-AC-02 HOME の LOOK セクションで関連商品の見た目 gap が phi 比率に一致する', async ({ page }) => {
     await test.step('HOME の LOOK セクションを開く', async () => {
       await page.goto('/');
       await expect(page.locator('#look')).toBeVisible();
@@ -84,7 +84,7 @@ test.describe('FR-LOOK-ALL-007 related item spacing', () => {
     });
   });
 
-  test('/look 一覧で関連商品の見た目 gap が phi 比率に一致する', async ({ page }) => {
+  test('FREQ-53-AC-02 /look 一覧で関連商品の見た目 gap が phi 比率に一致する', async ({ page }) => {
     await test.step('/look 一覧を開く', async () => {
       await page.goto('/look');
       await expect(page.locator('main')).toBeVisible();

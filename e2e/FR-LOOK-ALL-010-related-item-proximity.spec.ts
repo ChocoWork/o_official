@@ -43,7 +43,7 @@ const VIEWPORTS = [
 
 test.describe('FR-LOOK-ALL-010 関連商品の近接', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} HOME の LOOK で関連商品リンクに上下 padding が無い`, async ({ page }) => {
+    test(`FREQ-53-AC-01 ${vp.name} HOME の LOOK で関連商品リンクに上下 padding が無い`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/');
       await expect(page.locator('#look')).toBeVisible();
@@ -53,7 +53,7 @@ test.describe('FR-LOOK-ALL-010 関連商品の近接', () => {
       );
     });
 
-    test(`${vp.name} /look 一覧で関連商品リンクに上下 padding が無い`, async ({ page }) => {
+    test(`FREQ-53-AC-01 ${vp.name} /look 一覧で関連商品リンクに上下 padding が無い`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/look');
       await expect(page.locator('main')).toBeVisible();

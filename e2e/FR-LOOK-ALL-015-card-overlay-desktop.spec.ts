@@ -45,7 +45,7 @@ const PAGES = [
 
 test.describe('FR-LOOK-ALL-015 PC でのカード画像下部オーバーレイ', () => {
   for (const target of PAGES) {
-    test(`desktop ${target.label} で画像下部に白文字オーバーレイを表示する`, async ({ page }) => {
+    test(`FREQ-128-AC-01 desktop ${target.label} で画像下部に白文字オーバーレイを表示する`, async ({ page }) => {
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto(target.path);
       await expect(page.locator(target.scope)).toBeVisible();
@@ -77,7 +77,7 @@ test.describe('FR-LOOK-ALL-015 PC でのカード画像下部オーバーレイ'
     { name: 'tablet', width: 768, height: 1024 },
   ] as const) {
     for (const target of PAGES) {
-      test(`${vp.name} ${target.label} ではオーバーレイ非表示・キャプション表示`, async ({ page }) => {
+      test(`FREQ-128-AC-03 ${vp.name} ${target.label} ではオーバーレイ非表示・キャプション表示`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto(target.path);
         await expect(page.locator(target.scope)).toBeVisible();

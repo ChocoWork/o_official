@@ -8,9 +8,6 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1280, height: 800 },
 ] as const;
 
-/** リビールのアニメーション（カバー 0.5s+0.5s / 文字 1.0s+0.5s）が終わるまでの猶予 */
-const REVEAL_SETTLE_MS = 2000;
-
 /**
  * lg 以上では情報パネルの中身が lg:hidden になり .reveal-rise の高さが 0 になる。
  * translateY(105%) が 0 になるので transform では出し分けを判定できない
@@ -33,7 +30,7 @@ async function firstOffscreenCard(page: Page) {
 
 test.describe('FR-LOOK-ALL-037 LOOK カードのスクロール連動リビール', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} 画面外の画像はスクロールで data-reveal が true になる`, async ({
+    test(`FREQ-279-AC-01 ${vp.name} 画面外の画像はスクロールで data-reveal が true になる`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -41,7 +38,8 @@ test.describe('FR-LOOK-ALL-037 LOOK カードのスクロール連動リビー�
       await expect(page.locator('[data-testid="look-card"]').first()).toBeVisible();
 
       const target = await firstOffscreenCard(page);
-      test.skip(target === null, '画面外に出る LOOK カードがないため対象外');
+      // 見本の公開の LOOK は 7 件で、どの幅でも 1 画面目に収まらないので、画面外のカードは必ずある（無くなったら赤）
+      expect(target, '画面外に出る LOOK カードがありません').not.toBeNull();
       if (!target) return;
 
       // AC-01: 画面外では発火しない
@@ -52,14 +50,15 @@ test.describe('FR-LOOK-ALL-037 LOOK カードのスクロール連動リビー�
       await expect(cover).toHaveAttribute('data-reveal', 'true');
     });
 
-    test(`${vp.name} 画像だけが画面に入っている間は文字のモーションが始まらない`, async ({
+    test(`FREQ-279-AC-05 ${vp.name} 画像だけが画面に入っている間は文字のモーションが始まらない`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/look');
 
       const target = await firstOffscreenCard(page);
-      test.skip(target === null, '画面外に出る LOOK カードがないため対象外');
+      // 見本の公開の LOOK は 7 件で、どの幅でも 1 画面目に収まらないので、画面外のカードは必ずある（無くなったら赤）
+      expect(target, '画面外に出る LOOK カードがありません').not.toBeNull();
       if (!target) return;
 
       // カード上端だけが見える位置まで進める（画像は入るが文字はまだ画面外）
@@ -67,7 +66,9 @@ test.describe('FR-LOOK-ALL-037 LOOK カードのスクロール連動リビー�
         const top = el.getBoundingClientRect().top + window.scrollY;
         window.scrollTo({ top: top - window.innerHeight + 40, behavior: 'instant' });
       });
-      await page.waitForTimeout(REVEAL_SETTLE_MS);
+
+      // 画像が画面に入ってカバーが動き出した（＝監視が働いている）ことを待ってから、文字が始まっていないことを確かめる
+      await expect(target.locator('.reveal-cover').first()).toHaveAttribute('data-reveal', 'true');
 
       // AC-05: 文字は自分が画面に入るまで待つ
       // （監視対象は translateY で外に出ている .reveal-rise ではなくマスク側）
@@ -83,7 +84,7 @@ test.describe('FR-LOOK-ALL-037 LOOK カードのスクロール連動リビー�
       await expect(mask).toHaveAttribute('data-reveal', 'true');
     });
 
-    test(`${vp.name} リビール後は画像カバーが reveal-cover-act で動き、文字が定位置に戻る`, async ({
+    test(`FREQ-279-AC-02 ${vp.name} リビール後は画像カバーが reveal-cover-act で動き、文字が定位置に戻る`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -93,7 +94,6 @@ test.describe('FR-LOOK-ALL-037 LOOK カードのスクロール連動リビー�
       await expect(card).toBeVisible();
       const cover = card.locator('.reveal-cover').first();
       await expect(cover).toHaveAttribute('data-reveal', 'true');
-      await page.waitForTimeout(REVEAL_SETTLE_MS);
 
       // AC-02: 画像枠の ::after が左→右のカバーアニメーションを持つ
       const coverAnimation = await cover.evaluate(
@@ -104,11 +104,12 @@ test.describe('FR-LOOK-ALL-037 LOOK カードのスクロール連動リビー�
       // AC-03: 迫り上がり完了後は定位置に戻る（fill-mode forwards のため単位行列）
       const rise = card.locator('.reveal-rise').first();
       if (await riseHasHeight(rise)) {
+        // アニメーションが終わるまで、期待する値になるのを待つ（既定の待ち時間 5 秒に収まる）
         await expect(rise).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
       }
     });
 
-    test(`${vp.name} ホームの LOOK カードもリビールの対象になる`, async ({ page }) => {
+    test(`FREQ-279-AC-04 ${vp.name} ホームの LOOK カードもリビールの対象になる`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/');
 

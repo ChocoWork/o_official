@@ -49,7 +49,7 @@ async function readSeasonStyle(page: Page): Promise<SeasonStyle> {
 test.describe('FR-LOOK-ALL-030 シーズンラベルの強調（mobile / tablet）', () => {
   for (const vp of VIEWPORTS) {
     for (const path of ['/', '/look'] as const) {
-      test(`${vp.name} ${path} でシーズン表記が濃く・太くなる`, async ({
+      test(`FREQ-143-AC-01 ${vp.name} ${path} でシーズン表記が濃く・太くなる`, async ({
         page,
       }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });

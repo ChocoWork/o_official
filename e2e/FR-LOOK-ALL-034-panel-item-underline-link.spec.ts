@@ -31,7 +31,7 @@ const getScaleX = (underline: Locator) =>
 test.describe('FR-LOOK-ALL-034 情報パネル関連 ITEM の下線アニメーションとリンク', () => {
   for (const target of PAGES) {
     for (const vp of VIEWPORTS) {
-      test(`${vp.name} ${target.label} で関連 ITEM ホバーで下線が出てクリックで /item/{id} へ遷移する`, async ({
+      test(`FREQ-151-AC-01 ${vp.name} ${target.label} で関連 ITEM ホバーで下線が出てクリックで /item/{id} へ遷移する`, async ({
         page,
       }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -69,7 +69,7 @@ test.describe('FR-LOOK-ALL-034 情報パネル関連 ITEM の下線アニメー�
   }
 
   // AC-04: desktop では情報パネルの関連 ITEM リンクは表示されない
-  test('desktop では情報パネルの関連 ITEM リンクが表示されない', async ({
+  test('FREQ-151-AC-04 desktop では情報パネルの関連 ITEM リンクが表示されない', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });

@@ -6,7 +6,7 @@ import { gotoFirstLookDetail } from './look-detail-test-utils';
 // desktop: 左サムネイル縦列 + メイン画像
 
 test.describe('FR-LOOK-DETAIL-011 画像ギャラリーを ITEM 詳細と同一仕様にする', () => {
-  test('mobile スワイプカルーセルのみ表示される', async ({ page }) => {
+  test('FREQ-179-AC-01 mobile スワイプカルーセルのみ表示される', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await gotoFirstLookDetail(page);
 
@@ -30,7 +30,7 @@ test.describe('FR-LOOK-DETAIL-011 画像ギャラリーを ITEM 詳細と同一�
     ).toBeHidden();
   });
 
-  test('tablet カルーセルと前後送りボタンで切り替えできる', async ({
+  test('FREQ-179-AC-02 tablet カルーセルと前後送りボタンで切り替えできる', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 768, height: 1024 });
@@ -57,19 +57,17 @@ test.describe('FR-LOOK-DETAIL-011 画像ギャラリーを ITEM 詳細と同一�
       '[data-testid="look-detail-tablet-carousel-next"]',
     );
 
-    if (slideCount > 1) {
-      // AC-02: 先頭では次送りのみ表示され、押すと前送りが現れる
-      await expect(prev).toBeHidden();
-      await expect(next).toBeVisible();
-      await next.click();
-      await expect(prev).toBeVisible();
-    } else {
-      await expect(prev).toBeHidden();
-      await expect(next).toBeHidden();
-    }
+    // 先頭の LOOK（見本の LOOK 1）は画像が 2 枚なので、スライドは必ず 2 枚以上ある（1 枚になったら赤）
+    expect(slideCount).toBeGreaterThan(1);
+
+    // AC-02: 先頭では次送りのみ表示され、押すと前送りが現れる
+    await expect(prev).toBeHidden();
+    await expect(next).toBeVisible();
+    await next.click();
+    await expect(prev).toBeVisible();
   });
 
-  test('desktop サムネイル縦列とメイン画像で切り替えできる', async ({
+  test('FREQ-179-AC-03 desktop サムネイル縦列とメイン画像で切り替えできる', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -85,17 +83,17 @@ test.describe('FR-LOOK-DETAIL-011 画像ギャラリーを ITEM 詳細と同一�
       page.locator('[data-testid="look-detail-tablet-carousel"]'),
     ).toBeHidden();
 
+    // 先頭の LOOK（見本の LOOK 1）は画像が 2 枚なので、サムネイルは必ず 2 つある（1 つになったら赤）
     const thumbs = page.locator('[data-testid="look-thumb-button"]');
-    const count = await thumbs.count();
+    await expect(thumbs).toHaveCount(2);
 
-    if (count > 1) {
-      // サムネイル選択でメイン画像が切り替わる
-      const beforeSrc = await mainImage.getAttribute('src');
-      await thumbs.nth(1).click();
-      const afterSrc = await page
-        .locator('[data-testid="look-main-image"]')
-        .getAttribute('src');
-      expect(afterSrc).not.toBe(beforeSrc);
-    }
+    // サムネイル選択でメイン画像が切り替わる（切り替わるまで待つ）
+    const beforeSrc = await mainImage.getAttribute('src');
+    expect(beforeSrc).not.toBeNull();
+    await thumbs.nth(1).click();
+    await expect(page.locator('[data-testid="look-main-image"]')).not.toHaveAttribute(
+      'src',
+      beforeSrc as string,
+    );
   });
 });

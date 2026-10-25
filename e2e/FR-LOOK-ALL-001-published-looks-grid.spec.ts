@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('FR-LOOK-ALL-001 公開済みルック一覧', () => {
-  test('公開済みルックをカードグリッドで表示する', async ({ page }) => {
+  test('FR-LOOK-ALL-001-AC-01 公開済みルックをカードグリッドで表示する', async ({ page }) => {
     await page.goto('/look');
 
-    const lookLinks = page.locator('a[href^="/look/"]');
-    await expect(lookLinks.first()).toBeVisible();
+    const cards = page.locator('[data-testid="look-card"]');
+    await expect(cards.first()).toBeVisible();
 
-    const cardCount = await lookLinks.count();
-    expect(cardCount).toBeGreaterThan(0);
+    // 見本の公開の LOOK は 7 件（supabase/seed.sql）。他の spec が足した分は増えるだけ
+    expect(await cards.count()).toBeGreaterThanOrEqual(7);
   });
 });

@@ -11,7 +11,7 @@ const LG_VIEWPORTS = [
 
 test.describe('FR-LOOK-DETAIL-012 PC 表示で画像とテキストが重ならない', () => {
   for (const vp of LG_VIEWPORTS) {
-    test(`${vp.name} 画像枠がテキスト列に重ならず aspect 2/3 を保つ`, async ({
+    test(`FREQ-180-AC-01 ${vp.name} 画像枠がテキスト列に重ならず aspect 2/3 を保つ`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -40,7 +40,7 @@ test.describe('FR-LOOK-DETAIL-012 PC 表示で画像とテキストが重なら�
     });
   }
 
-  test('tablet（768px）ではメイン画像枠が表示されない（カルーセルのまま）', async ({
+  test('FREQ-179-AC-02 tablet（768px）ではメイン画像枠が表示されない（カルーセルのまま）', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 768, height: 1024 });

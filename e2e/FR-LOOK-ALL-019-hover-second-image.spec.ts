@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 // ホバーでクロスフェード表示し、ない場合は画像に何も起こらない。
 
 test.describe('FR-LOOK-ALL-019 ホバーでズームせず2枚目画像を表示', () => {
-  test('desktop ホバーしても1枚目画像が拡大されない', async ({ page }) => {
+  test('FREQ-132-AC-01 desktop ホバーしても1枚目画像が拡大されない', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/look');
     await expect(page.locator('main')).toBeVisible();
@@ -14,19 +14,24 @@ test.describe('FR-LOOK-ALL-019 ホバーでズームせず2枚目画像を表示
     await expect(firstImage).toBeVisible();
 
     await firstLink.hover();
-    // AC-01: scale クラス削除により transform は none のまま（遷移待ちの猶予をとる）
-    await page.waitForTimeout(700);
+    // AC-01: scale クラス削除により transform は none のまま。
+    // ホバーで始まる遷移（アニメーション）がすべて終わるのを待ってから確かめる
+    // （拡大が戻ってきた時に、遷移の途中の none を見て通ってしまわないように）
+    await firstLink.evaluate(async (el) => {
+      el.getBoundingClientRect(); // スタイルを確定させ、ホバーの遷移を始めさせる
+      await Promise.all(el.getAnimations({ subtree: true }).map((animation) => animation.finished));
+    });
     await expect(firstImage).toHaveCSS('transform', 'none');
   });
 
-  test('desktop 2枚目画像があるカードはホバーで opacity 1 になる', async ({ page }) => {
+  test('FREQ-132-AC-02 desktop 2枚目画像があるカードはホバーで opacity 1 になる', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/look');
     await expect(page.locator('main')).toBeVisible();
 
+    // 見本の LOOK 1 は画像が 2 枚あるので、2 枚目画像は必ずある（消えたら赤）
     const hoverImages = page.locator('main [data-testid="look-card-image-hover"]');
-    const count = await hoverImages.count();
-    test.skip(count === 0, '2枚目画像を持つ LOOK がないため対象外');
+    await expect(hoverImages).not.toHaveCount(0);
 
     const hoverImage = hoverImages.first();
     // AC-02: 非ホバー時 0 → ホバー時 1
@@ -48,9 +53,9 @@ test.describe('FR-LOOK-ALL-019 ホバーでズームせず2枚目画像を表示
       await page.goto('/look');
       await expect(page.locator('main')).toBeVisible();
 
+      // 見本の LOOK 1 は画像が 2 枚あるので、2 枚目画像は必ずある（消えたら赤）
       const hoverImages = page.locator('main [data-testid="look-card-image-hover"]');
-      const count = await hoverImages.count();
-      test.skip(count === 0, '2枚目画像を持つ LOOK がないため対象外');
+      await expect(hoverImages).not.toHaveCount(0);
       await expect(hoverImages.first()).toHaveCSS('opacity', '0');
     });
   }

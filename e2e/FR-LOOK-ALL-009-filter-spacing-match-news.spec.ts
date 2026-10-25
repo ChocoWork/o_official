@@ -6,7 +6,6 @@ import { expect, test, type Page } from '@playwright/test';
 
 async function readSidebarOptionListGap(page: Page, path: string): Promise<number> {
   await page.goto(path);
-  await page.waitForLoadState('networkidle');
 
   const optionList = page
     .getByRole('complementary')
@@ -21,9 +20,16 @@ async function readSidebarOptionListGap(page: Page, path: string): Promise<numbe
 
 async function readDrawerOptionListGap(page: Page, path: string): Promise<number> {
   await page.goto(path);
-  await page.waitForLoadState('networkidle');
 
-  await page.locator('[data-filter-button="floating"]').click();
+  // 押す前に、React がボタンを引き継いだ（イベントの処理が付いた）ことを待つ。付く前の操作は効かない
+  const filterButton = page.locator('[data-filter-button="floating"]');
+  await expect(filterButton).toBeVisible();
+  await expect
+    .poll(() => filterButton.evaluate((el) => Object.keys(el).some((key) => key.startsWith('__reactProps'))), {
+      timeout: 15_000,
+    })
+    .toBe(true);
+  await filterButton.click();
   const optionList = page
     .getByRole('dialog')
     .locator('.multiselect__option-list')
@@ -36,7 +42,7 @@ async function readDrawerOptionListGap(page: Page, path: string): Promise<number
 }
 
 test.describe('FR-LOOK-ALL-009 フィルター選択肢の間隔を NEWS と揃える', () => {
-  test('desktop でサイドバーの option-list gap が LOOK と NEWS で一致する', async ({ page }) => {
+  test('FREQ-52-AC-01 desktop でサイドバーの option-list gap が LOOK と NEWS で一致する', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const lookGap = await readSidebarOptionListGap(page, '/look');
     const newsGap = await readSidebarOptionListGap(page, '/news');

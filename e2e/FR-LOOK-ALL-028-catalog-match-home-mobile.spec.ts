@@ -51,24 +51,32 @@ const PANEL_VIEWPORTS = [
   { name: "tablet", width: 768, height: 1024, padding: 21 },
 ] as const;
 
+/** /look の左右 padding がホーム LOOK セクションと同値（ホームは vp.padding） */
+async function expectCatalogPaddingMatchesHome(page: Page, vp: (typeof PANEL_VIEWPORTS)[number]): Promise<void> {
+  await page.setViewportSize({ width: vp.width, height: vp.height });
+
+  // AC-01: ホーム section-space の padding と同値
+  const homePadding = await readHomeSectionPaddingLeft(page);
+  expect(homePadding).toBe(vp.padding);
+
+  await page.goto("/look");
+  const catalogPadding = await readCatalogPadding(page);
+  expect(catalogPadding.left).toBe(homePadding);
+  expect(catalogPadding.right).toBe(homePadding);
+}
+
 test.describe("FR-LOOK-ALL-028 /look 一覧のモバイル・タブレットをホームと揃える", () => {
+  // FREQ-141-AC-01 はモバイル（390px）だけの条件。タブレット（21px）の padding には受け入れ条件が無いので、タブレットにはタグを付けない
+  test("FREQ-141-AC-01 mobile /look の左右 padding がホーム LOOK セクションと同値", async ({ page }) => {
+    await expectCatalogPaddingMatchesHome(page, PANEL_VIEWPORTS[0]);
+  });
+
+  test("tablet /look の左右 padding がホーム LOOK セクションと同値", async ({ page }) => {
+    await expectCatalogPaddingMatchesHome(page, PANEL_VIEWPORTS[1]);
+  });
+
   for (const vp of PANEL_VIEWPORTS) {
-    test(`${vp.name} /look の左右 padding がホーム LOOK セクションと同値`, async ({
-      page,
-    }) => {
-      await page.setViewportSize({ width: vp.width, height: vp.height });
-
-      // AC-01: ホーム section-space の padding と同値
-      const homePadding = await readHomeSectionPaddingLeft(page);
-      expect(homePadding).toBe(vp.padding);
-
-      await page.goto("/look");
-      const catalogPadding = await readCatalogPadding(page);
-      expect(catalogPadding.left).toBe(homePadding);
-      expect(catalogPadding.right).toBe(homePadding);
-    });
-
-    test(`${vp.name} /look の row-gap / column-gap がホームと一致`, async ({
+    test(`FREQ-141-AC-03 ${vp.name} /look の row-gap / column-gap がホームと一致`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -90,7 +98,7 @@ test.describe("FR-LOOK-ALL-028 /look 一覧のモバイル・タブレットを�
   }
 
   // AC-04: desktop は従来どおり（gap 24px・左 padding 34px）
-  test("desktop /look の gap と左 padding が従来どおり", async ({ page }) => {
+  test("FREQ-141-AC-04 desktop /look の gap と左 padding が従来どおり", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/look");
     await expect(page.locator("main")).toBeVisible();

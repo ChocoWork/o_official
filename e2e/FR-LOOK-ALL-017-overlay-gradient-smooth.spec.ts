@@ -20,7 +20,7 @@ const PAGES = [
 
 test.describe('FR-LOOK-ALL-017 オーバーレイグラデーションの滑らかなフェード', () => {
   for (const target of PAGES) {
-    test(`desktop ${target.label} で多段ストップかつ上端が完全透明になる`, async ({ page }) => {
+    test(`FREQ-130-AC-01 desktop ${target.label} で多段ストップかつ上端が完全透明になる`, async ({ page }) => {
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto(target.path);
       await expect(page.locator(target.scope)).toBeVisible();
@@ -43,13 +43,17 @@ test.describe('FR-LOOK-ALL-017 オーバーレイグラデーションの滑ら�
     { name: 'mobile', width: 390, height: 844 },
     { name: 'tablet', width: 768, height: 1024 },
   ] as const) {
-    test(`${vp.name} ではオーバーレイが表示されない`, async ({ page }) => {
+    test(`FREQ-128-AC-03 ${vp.name} ではオーバーレイが表示されない`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/look');
       await expect(page.locator('main')).toBeVisible();
       await expect(
         page.locator('[data-testid="look-card-overlay"]').first(),
       ).toBeHidden();
+      // AC-03 の後半: 画像の下のキャプションが表示される
+      const caption = page.locator('[data-testid="look-card-caption"]').first();
+      await caption.scrollIntoViewIfNeeded();
+      await expect(caption).toBeVisible();
     });
   }
 });

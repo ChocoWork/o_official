@@ -82,7 +82,7 @@ const PANEL_VIEWPORTS = [
 test.describe('FR-LOOK-ALL-026 情報パネルの余白・文字サイズ（デザイン4原則）', () => {
   for (const vp of PANEL_VIEWPORTS) {
     for (const target of TARGETS) {
-      test(`${vp.name} ${target.name} 余白と文字サイズが4原則に従う`, async ({ page }) => {
+      test(`FREQ-139-AC-01 ${vp.name} ${target.name} 余白と文字サイズが4原則に従う`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto(target.path);
         await expect(page.locator(target.scope)).toBeVisible();
@@ -93,26 +93,26 @@ test.describe('FR-LOOK-ALL-026 情報パネルの余白・文字サイズ（デ�
         // AC-01（反復・整列）: 画像↔パネル間隔がフィボナッチ値
         expect(m!.imageMarginBottom).toBe(vp.imageGap);
 
+        // 見本の LOOK 1 は商品が 2 つ紐づくので、罫線とアイテムは必ずある（無くなったら赤）
+        expect(m!.itemFontSize).not.toBeNull();
+        expect(m!.titleToDividerGap).not.toBeNull();
+        expect(m!.dividerMarginTop).not.toBeNull();
+        expect(m!.dividerMarginBottom).not.toBeNull();
+
         // AC-02（対比）: タイトル font-size ≥ アイテム文字 × 1.5（φ 比）
-        if (m!.itemFontSize !== null) {
-          expect(m!.titleFontSize / m!.itemFontSize).toBeGreaterThanOrEqual(1.5);
-        }
+        expect(m!.titleFontSize / m!.itemFontSize!).toBeGreaterThanOrEqual(1.5);
 
         // AC-03（近接）: シーズン↔タイトルはタイトル↔罫線より密
-        if (m!.titleToDividerGap !== null) {
-          expect(m!.seasonToTitleGap).toBeLessThan(m!.titleToDividerGap);
-        }
+        expect(m!.seasonToTitleGap).toBeLessThan(m!.titleToDividerGap!);
 
         // AC-04（整列・反復）: 罫線の上余白 = 下余白
-        if (m!.dividerMarginTop !== null && m!.dividerMarginBottom !== null) {
-          expect(m!.dividerMarginTop).toBe(m!.dividerMarginBottom);
-        }
+        expect(m!.dividerMarginTop).toBe(m!.dividerMarginBottom);
       });
     }
   }
 
   // AC-05: desktop はキャプション非表示・画像 mb 0 のまま（FREQ-136 維持）
-  test('desktop /look ではキャプションが表示されず画像 mb が 0', async ({ page }) => {
+  test('FREQ-139-AC-05 desktop /look ではキャプションが表示されず画像 mb が 0', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/look');
     await expect(page.locator('main')).toBeVisible();

@@ -63,14 +63,14 @@ const VIEWPORTS = [
 
 test.describe('FR-LOOK-ALL-011 カードテキストの近接', () => {
   for (const vp of VIEWPORTS) {
-    test(`${vp.name} HOME の LOOK で 時期↔名前 < 名前↔関連 になる`, async ({ page }) => {
+    test(`FREQ-54-AC-01 ${vp.name} HOME の LOOK で 時期↔名前 < 名前↔関連 になる`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/');
       await expect(page.locator('#look')).toBeVisible();
       assertProximity(await collectCardGaps(page, '#look'), `HOME#look ${vp.name}`);
     });
 
-    test(`${vp.name} /look 一覧で 時期↔名前 < 名前↔関連 になる`, async ({ page }) => {
+    test(`FREQ-54-AC-01 ${vp.name} /look 一覧で 時期↔名前 < 名前↔関連 になる`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/look');
       await expect(page.locator('main')).toBeVisible();
