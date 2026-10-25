@@ -143,10 +143,11 @@ describeLocalDb('integration: 配送の記録と守り（移行 A）', (db) => {
   });
 
   test('最初は追跡オフで登録もメールも無い', async () => {
-    const { fulfillmentId } = await createShipment(db());
+    const { fulfillmentId, orderId } = await createShipment(db());
     const settings = (await db().query('select delivery_tracking_enabled, delivery_tracking_updated_at, delivery_tracking_updated_by from public.shop_settings where id = 1')).rows[0];
-    const registrations = (await db().query('select * from private.fulfillment_tracking_registrations')).rows;
-    const deliveryEmails = (await db().query("select * from private.order_email_outbox where kind in ('out_for_delivery', 'delivered', 'shipping_update')")).rows;
+    // Scoped to this test's own shipment and order: other suites commit rows of their own into these tables.
+    const registrations = (await db().query('select * from private.fulfillment_tracking_registrations where fulfillment_id = $1', [fulfillmentId])).rows;
+    const deliveryEmails = (await db().query("select * from private.order_email_outbox where order_id = $1 and kind in ('out_for_delivery', 'delivered', 'shipping_update')", [orderId])).rows;
     expect(settings.delivery_tracking_enabled).toBe(false);
     expect(settings.delivery_tracking_updated_at).toBeNull();
     expect(settings.delivery_tracking_updated_by).toBeNull();
