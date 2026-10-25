@@ -5,6 +5,7 @@ import {
   parsePackingRow,
   parseShipmentSlipCancelled,
   parseShipmentSlipConfirmed,
+  parseShipmentSlipDateCorrected,
   parseShipmentSlipDelivered,
   parseShipmentSlipDetail,
   parseShipmentSlipLink,
@@ -18,6 +19,8 @@ import {
   type ShipmentSlipCancelled,
   type ShipmentSlipConfirmed,
   type ShipmentSlipConfirmInput,
+  type ShipmentSlipDateCorrected,
+  type ShipmentSlipDateInput,
   type ShipmentSlipDelivered,
   type ShipmentSlipDeliveredInput,
   type ShipmentSlipDetail,
@@ -47,6 +50,28 @@ export class ShipmentSlipError extends Error {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** 表示用の訂正権限を有効・期限内の全役割の和集合で読む。不足はログに残さず、照会失敗は固定500。 */
+export async function canCorrectShipmentDate(client: SupabaseClient, actorId: string): Promise<boolean> {
+  try {
+    const { data, error } = await client.from('user_roles')
+      .select('roles!inner(role_permissions!inner(permissions!inner(code)))')
+      .eq('user_id', actorId).eq('active', true)
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`);
+    if (error || !Array.isArray(data)) throw new ShipmentSlipError();
+    const granted = new Set<string>();
+    for (const row of data as unknown[]) {
+      if (!isObject(row) || !isObject(row.roles) || !Array.isArray(row.roles.role_permissions)) throw new ShipmentSlipError();
+      for (const permission of row.roles.role_permissions as unknown[]) {
+        if (!isObject(permission) || !isObject(permission.permissions) || typeof permission.permissions.code !== 'string') throw new ShipmentSlipError();
+        granted.add(permission.permissions.code);
+      }
+    }
+    return ['admin.shipping.correct_date', 'admin.shipping.read', 'admin.orders.read'].every((code) => granted.has(code));
+  } catch {
+    throw new ShipmentSlipError();
+  }
 }
 
 /**
@@ -312,6 +337,19 @@ export async function cancelShipmentSlip(
     _slip_id: input.slipId, _expected_version: input.expectedVersion, _actor_id: actorId, _request_key: input.requestKey,
   });
   const result = guarded(() => parseShipmentSlipCancelled(data));
+  if (result.id !== input.slipId.toLowerCase()) throw new ShipmentSlipError();
+  return result;
+}
+
+/** 確定後の出荷日を理由とともに訂正する。実行者は認可結果から渡す。 */
+export async function correctShipmentDate(
+  client: SupabaseClient, actorId: string, input: ShipmentSlipDateInput & { slipId: string },
+): Promise<ShipmentSlipDateCorrected> {
+  const data = await callRpc(client, 'admin_correct_shipment_date', {
+    _slip_id: input.slipId, _expected_version: input.expectedVersion, _shipment_date: input.shipmentDate,
+    _reason: input.reason, _actor_id: actorId, _request_key: input.requestKey,
+  });
+  const result = guarded(() => parseShipmentSlipDateCorrected(data));
   if (result.id !== input.slipId.toLowerCase()) throw new ShipmentSlipError();
   return result;
 }

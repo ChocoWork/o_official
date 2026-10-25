@@ -8,6 +8,7 @@ import {
   parsePackingRow,
   parseShipmentSlipCancelled,
   parseShipmentSlipConfirmed,
+  parseShipmentSlipDateCorrected,
   parseShipmentSlipDelivered,
   parseShipmentSlipDetail,
   parseShipmentSlipListRow,
@@ -19,6 +20,8 @@ import {
   type ShipmentSlipCancelled,
   type ShipmentSlipConfirmed,
   type ShipmentSlipConfirmInput,
+  type ShipmentSlipDateCorrected,
+  type ShipmentSlipDateInput,
   type ShipmentSlipDelivered,
   type ShipmentSlipDeliveredInput,
   type ShipmentSlipDetail,
@@ -109,10 +112,12 @@ export function fetchShipmentSlips(input: { stage?: ShipmentSlipStage | null; li
   });
 }
 
-/** 発送票1件の詳細（GET /api/admin/shipment-slips/[id]。応答は { slip }）。無ければ「発送票が見つかりません。」 */
-export async function fetchShipmentSlip(id: string): Promise<SlipReadResult<ShipmentSlipDetail>> {
+/** 詳細GETだけが返すサーバーの権限。DBの詳細や役割名には混ぜない。 */
+export type ShipmentSlipView = ShipmentSlipDetail & { canCorrectDate: boolean };
+/** 発送票1件の詳細と訂正権限。権限の真偽が欠ける応答は読み違いとして断る。 */
+export async function fetchShipmentSlip(id: string): Promise<SlipReadResult<ShipmentSlipView>> {
   if (!isShipmentSlipId(id)) return { kind: 'error', message: SHIPMENT_SLIP_TEXT.slipNotFound, denied: false };
-  const failed: SlipReadResult<ShipmentSlipDetail> = { kind: 'error', message: SHIPMENT_SLIP_TEXT.slipFailed, denied: false };
+  const failed: SlipReadResult<ShipmentSlipView> = { kind: 'error', message: SHIPMENT_SLIP_TEXT.slipFailed, denied: false };
   try {
     const response = await clientFetch(`/api/admin/shipment-slips/${id}`, { cache: 'no-store' });
     const body: unknown = await response.json().catch(() => null);
@@ -124,8 +129,8 @@ export async function fetchShipmentSlip(id: string): Promise<SlipReadResult<Ship
         denied: response.status === 401 || response.status === 403,
       };
     }
-    if (body === null || typeof body !== 'object') return failed;
-    return { kind: 'ok', data: parseShipmentSlipDetail((body as { slip?: unknown }).slip) };
+    if (body === null || typeof body !== 'object' || !('canCorrectDate' in body) || typeof body.canCorrectDate !== 'boolean') return failed;
+    return { kind: 'ok', data: { ...parseShipmentSlipDetail((body as { slip?: unknown }).slip), canCorrectDate: body.canCorrectDate } };
   } catch {
     return failed;
   }
@@ -246,4 +251,15 @@ export function submitSlipDelivered(slipId: string, body: ShipmentSlipDeliveredI
 export function submitSlipCancel(slipId: string, body: { expectedVersion: number; requestKey: string }): Promise<DeliveryCallResult<ShipmentSlipCancelled>> {
   if (!isShipmentSlipId(slipId)) return Promise.resolve({ kind: 'refused', message: SHIPMENT_SLIP_TEXT.slipNotFound });
   return forSlip(slipId, callWriter(`/api/admin/shipment-slips/${slipId}/cancel`, { expectedVersion: body.expectedVersion, requestKey: body.requestKey }, parseShipmentSlipCancelled));
+}
+
+/** 日付訂正。結果不明なら同じ本文とrequestKeyで再確認する。 */
+export async function submitSlipDateCorrection(
+  slipId: string, body: ShipmentSlipDateInput,
+): Promise<DeliveryCallResult<ShipmentSlipDateCorrected>> {
+  if (!isShipmentSlipId(slipId)) return { kind: 'refused', message: SHIPMENT_SLIP_TEXT.slipNotFound };
+  const result = await forSlip(slipId, callWriter(`/api/admin/shipment-slips/${slipId}/shipment-date`, {
+    expectedVersion: body.expectedVersion, shipmentDate: body.shipmentDate, reason: body.reason, requestKey: body.requestKey,
+  }, parseShipmentSlipDateCorrected));
+  return result.kind === 'blocked' && result.forbidden ? { ...result, message: SHIPMENT_SLIP_TEXT.dateForbidden } : result;
 }

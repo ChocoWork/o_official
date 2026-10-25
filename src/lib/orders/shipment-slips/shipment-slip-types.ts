@@ -121,6 +121,14 @@ export const PACKING_COLUMN_HEADINGS = [
 
 /** 画面の言葉の部品（計画の「発送票の画面とメールの言葉」）。窓口は failed、画面は他も使う。 */
 export const SHIPMENT_SLIP_TEXT = {
+  correctDate: '出荷日を訂正する',
+  dateDescription: 'お客様の返品期限は変わりません。',
+  newShipmentDate: '新しい出荷日',
+  dateReason: '理由',
+  correctDateSubmit: '訂正する',
+  dateCorrected: '出荷日を訂正しました。',
+  dateOwnerOnly: '出荷日の訂正は店長だけができます。',
+  dateForbidden: '出荷日を訂正する権限がありません。',
   failed: SHIPMENT_SLIP_FAILED,
   packingHeading: '荷作り表',
   packingDescription: '発送準備中の品物だけを表示します。品物を選んで「発送」を押すと、発送票の下書きを作ります。',
@@ -744,6 +752,18 @@ export function parseShipmentSlipTrackingUpdated(value: unknown): ShipmentSlipTr
 export type ShipmentSlipDeliveredInput = { expectedVersion: number; deliveredOn: string; notifyCustomer: boolean; requestKey: string };
 /** 手動の配達済みの戻り。deliveredAt は届いたとして記録した時刻（ISO 8601） */
 export type ShipmentSlipDelivered = { id: string; version: number; deliveredAt: string; replayed: boolean };
+
+/** 出荷日だけの訂正。返品期限・発送時刻・通知は変えない。 */
+export type ShipmentSlipDateInput = { expectedVersion: number; shipmentDate: string; reason: string; requestKey: string };
+export type ShipmentSlipDateCorrected = { id: string; version: number; shipmentDate: string; replayed: boolean };
+/** 日付訂正の戻りの許可項目を検査し、余分な情報を落とす。 */
+export function parseShipmentSlipDateCorrected(value: unknown): ShipmentSlipDateCorrected {
+  const raw = readObject(value);
+  const shipmentDate = readDay(raw.shipmentDate);
+  const milliseconds = Date.parse(`${shipmentDate}T00:00:00Z`);
+  if (!Number.isFinite(milliseconds) || new Date(milliseconds).toISOString().slice(0, 10) !== shipmentDate) fail();
+  return { id: readId(raw.id), version: readPositive(raw.version), shipmentDate, replayed: readBoolean(raw.replayed) };
+}
 
 /** 手動の配達済みの戻り（DB の関数の戻り、または窓口の応答）を検査して、決まった項目だけにする。 */
 export function parseShipmentSlipDelivered(value: unknown): ShipmentSlipDelivered {

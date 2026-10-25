@@ -1206,7 +1206,7 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
     expect((privateSearch.names as string[]).slice(0, 11)).toEqual(searchNames);
   });
 
-  test('FREQ-540-AC-07: 書き手の一覧は G-3 の現在の本数（G-2 の65本 + 発送票の書き手9本 = 74本）で、3本の private 本体を含み、public 入口と検索は含まない', async () => {
+  test('FREQ-540-AC-07: 書き手の一覧は G-3 の現在の本数（G-2 の65本 + 発送票の書き手10本 = 75本）で、3本の private 本体を含み、public 入口と検索は含まない', async () => {
     const list = (await db().query('select x::oid::text as oid from unnest(private.group_g_writer_allowlist()) as a(x)')).rows;
     expect(list).toHaveLength(G3D_ALLOWLIST.length);
     const oids = new Set(list.map((row) => row.oid));

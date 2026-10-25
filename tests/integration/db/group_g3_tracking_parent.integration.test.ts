@@ -49,7 +49,7 @@ const codeLines = (text: string): string[] => text.split('\n').map((line) => lin
 const norm = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 const READ_RESULT_G1 = (): string => between(G1, 'CREATE FUNCTION private.record_delivery_read_result(', 'ALTER FUNCTION private.record_delivery_read_result(');
-const READ_RESULT_NEW = (): string => between(ACTIONS, 'CREATE OR REPLACE FUNCTION private.record_delivery_read_result(', '-- 3. The closed list of writers.');
+const READ_RESULT_NEW = (): string => functionText(ACTIONS, 'CREATE OR REPLACE FUNCTION private.record_delivery_read_result(');
 const LOCK_STATEMENT = /PERFORM \w+\.id FROM public\.(\w+) AS \w+[^;]*?FOR UPDATE;/g;
 const lockStatements = (text: string): Array<{ table: string; text: string }> =>
   [...codeLines(text).join(' ').matchAll(LOCK_STATEMENT)].map((match) => ({ table: match[1], text: norm(match[0]) }));

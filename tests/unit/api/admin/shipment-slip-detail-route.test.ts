@@ -15,6 +15,8 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { confirmedDetail, draftDetail, SLIP_ID } from '../../lib/orders/shipment-slips/shipment-slip-fixtures';
 
 const rpc = jest.fn();
+const permissionQuery = { select: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis(), or: jest.fn() };
+const from = jest.fn().mockReturnValue(permissionQuery);
 const authorize = authorizeAdminPermissions as jest.Mock;
 
 async function get(id: string = SLIP_ID) {
@@ -37,8 +39,11 @@ function useAcl(granted: readonly string[]) {
 beforeEach(() => {
   jest.resetAllMocks();
   jest.spyOn(console, 'error').mockImplementation(() => {});
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
   authorize.mockResolvedValue({ ok: true, userId: 'authorized-actor', role: 'admin' });
-  (createServiceRoleClient as jest.Mock).mockResolvedValue({ rpc });
+  permissionQuery.select.mockReturnThis(); permissionQuery.eq.mockReturnThis(); from.mockReturnValue(permissionQuery);
+  permissionQuery.or.mockResolvedValue({ data: [{ roles: { role_permissions: ['admin.shipping.correct_date', 'admin.shipping.read', 'admin.orders.read'].map((code) => ({ permissions: { code } })) } }], error: null });
+  (createServiceRoleClient as jest.Mock).mockResolvedValue({ rpc, from });
   rpc.mockResolvedValue({ data: confirmedDetail(), error: null });
 });
 afterEach(() => jest.restoreAllMocks());
@@ -48,7 +53,7 @@ describe('GET /api/admin/shipment-slips/[id]', () => {
     const { request, response, json } = await get();
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(json).toEqual({ slip: confirmedDetail() });
+    expect(json).toEqual({ slip: confirmedDetail(), canCorrectDate: true });
     expect(authorize).toHaveBeenCalledTimes(1);
     expect(authorize).toHaveBeenCalledWith(['admin.shipping.read', 'admin.orders.read'], request);
     expect(rpc).toHaveBeenCalledTimes(1);
@@ -57,7 +62,7 @@ describe('GET /api/admin/shipment-slips/[id]', () => {
 
   test('FREQ-531-AC-01: 下書きの詳細も返す（問題つき）', async () => {
     rpc.mockResolvedValue({ data: draftDetail(), error: null });
-    expect((await get()).json).toEqual({ slip: draftDetail() });
+    expect((await get()).json).toEqual({ slip: draftDetail(), canCorrectDate: true });
   });
 
   test('FREQ-531-AC-01: DB の余分な項目は応答に出さない', async () => {
@@ -146,4 +151,22 @@ describe('GET /api/admin/shipment-slips/[id]', () => {
       expect(inspect((console.error as jest.Mock).mock.calls, { depth: null })).not.toContain('PRIVATE-MARKER');
       expect((console.error as jest.Mock).mock.calls[0][0]).toBe('GET /api/admin/shipment-slips/[id] error:');
     });
+});
+
+test('FREQ-540-AC-10: 読取権限だけではcanCorrectDate=false、訂正の組が揃うとtrue', async () => {
+  useAcl(['admin.shipping.read', 'admin.orders.read']);
+  permissionQuery.or.mockResolvedValueOnce({ data: [], error: null });
+  expect((await get()).json.canCorrectDate).toBe(false);
+  expect(console.warn).not.toHaveBeenCalled();
+  useAcl(['admin.shipping.correct_date', 'admin.shipping.read', 'admin.orders.read']);
+  expect((await get()).json.canCorrectDate).toBe(true);
+  expect(authorize).toHaveBeenCalledTimes(2); // 2 views, one authorization per view.
+});
+test('FREQ-540-AC-10: 訂正権限の照会障害はfalseに潰さず固定500を返す', async () => {
+  permissionQuery.or.mockResolvedValueOnce({ data: null, error: { message: 'PRIVATE-MARKER' } });
+  const answer = await get();
+  expect(answer.status).toBe(500);
+  expect(answer.json).toEqual({ error: '発送の記録に失敗しました' });
+  expect(answer.text).not.toContain('PRIVATE-MARKER');
+  expect(rpc).not.toHaveBeenCalled();
 });

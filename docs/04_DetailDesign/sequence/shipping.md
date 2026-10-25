@@ -1,6 +1,6 @@
 # 荷作り表から発送票の下書きまでの流れ（G-3）
 
-> 状態: 現行のソース（グループ G-3 Task 4・5・6・7・8。荷作り表で下書きを作り、票の頁で編集・破棄・確認・確定・取消・伝票番号の入力と訂正・手動の配達済みをする。追跡の外への登録は票の代表の1行で、読み直しの結果は票の全注文へ展開する。本番へは未適用） | 確認日: 2026-10-26 | 対象: 下書きの作成・入れ替え・破棄と発送確定と発送の取消と伝票番号の後入力・訂正と手動の配達済みと追跡の親・配送の読み直しの結果の展開の順序、発送票の書込みに共通のロックの順
+> 状態: 現行のソース（グループ G-3 Task 4・5・6・7・8。荷作り表で下書きを作り、票の頁で編集・破棄・確認・確定・取消・伝票番号の入力と訂正・手動の配達済みをする。追跡の外への登録は票の代表の1行で、読み直しの結果は票の全注文へ展開する。本番へは未適用） | 確認日: 2026-10-26 | 対象: 下書きの作成・入れ替え・破棄と発送確定と発送の取消と伝票番号の後入力・訂正と手動の配達済みと追跡の親・配送の読み直しの結果の展開の順序、発送票の書込みに共通のロックの順 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
 
@@ -157,7 +157,7 @@ sequenceDiagram
 
 - Task 5までの移行はローカルへ適用済み。controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。レビュー後の数量変数名の整理はcontrollerが再適用する。本番へは未適用。
 - 390/768/1280px の実測と、本番ビルドでの画面の動きは E2E の担当（Task 13）。この Task は単体で表の構造とクラスだけを確かめた。
-- 「発送票確認」「発送確定」「発送を取り消す」は実装済み（取消は Task 6）。確定後の伝票番号・配達済み・出荷日の訂正は後続Task。
+- 「発送票確認」「発送確定」「発送を取り消す」は実装済み（取消は Task 6）。確定後の伝票番号・配達済みはTask 7、出荷日の訂正はTask 9で実装済み。
 
 ## 発送確定（G-3 Task 5）
 
@@ -417,5 +417,30 @@ sequenceDiagram
 
 ### 未確認事項（Task 8）
 
-- DB 結合（`group_g3_tracking_parent` ほか）は controller の reset 後の実測待ち。実鍵 PostgREST の顧客向けの経路（`group_g3_postgrest_paths`）も controller が流す。
+- controllerが修正前のTask 9をfresh resetし、実鍵PostgRESTを含む12 suite・639/639成功（2026-10-26）。Fix round 1の後も、controllerがfresh resetし実鍵PostgRESTを含む12 suite・642/642成功（2026-10-26）。追跡の親・顧客向けの実鍵PostgRESTの経路を含む。
 - 実際の 17TRACK・実メール・本番の実データでの票ごとの1回の登録は未確認。追跡はオフのまま開店する前提で、オンにする前の確認は[運用手順](../../06_Operations/webhook-queue-operations.md)にある。
+
+## 出荷日の訂正（G-3 Task 9）
+
+確認日: 2026-10-26。FREQ-535 AC-03・04・05、FREQ-540 AC-10・11。controllerが修正前のTask 9をfresh resetし、実鍵PostgRESTを含む12 suite・639/639成功（2026-10-26）。Fix round 1の後も、controllerがfresh resetし実鍵PostgRESTを含む12 suite・642/642成功（2026-10-26）。
+
+```mermaid
+sequenceDiagram
+  participant U as 訂正権限を持つ人
+  participant A as 訂正の窓口
+  participant D as admin_correct_shipment_date
+  U->>A: 票ID・版・新しい日・理由・キー
+  A->>A: 訂正3権限 → CSRF → IP30/600 → actor30/600 → 検証
+  A->>D: 認可actorと本文
+  D->>D: 引数 → lock(false) → 権限 → 指紋と再送
+  D->>D: 存在 → 段階 → 版 → 同日 → 範囲 → 配達日
+  D->>D: 票の日付と版 → 有効発送の日付 → 日付履歴 → 票の版 → 操作
+  D-->>A: id・version・shipmentDate・replayed
+  A-->>U: 監査後に200とno-store
+```
+
+指紋はSHA-256の `{operation:'shipment_date_correct',slip_id,shipment_date,reason,actor_id}`。理由はJavaScript trimと同じ空白集合を除去した後、版を含めない。lock前に表参照・public/private関数呼出しを置かない。lock_group_g_shipment_slips(票ID配列,空uuid配列,false)の共通advisoryから在庫閉包・票を既存順に固定する。空理由は他引数の検証後に専用エラー。
+
+全注文の最遅JST入金日以上・今日JST以下、有効な発送のどれかの配達日JSTより後は拒否。印dateで票の日付・version+1・updated_at、印shipment_dateで有効発送の日付を更新し、その直後に元のapp.fulfillment_changeへ戻す。correction（前後日付・理由・actor・版・操作）、date_correction（理由つき）、操作の順に追記。途中失敗は全て戻し、操作印は成功・失敗とも復元。
+
+shipped_at・confirmed_at・delivered_at、返品期限、メール、品物状態、割当、在庫、追跡の版・登録は不変。会計入力は訂正後の日と最新履歴idのrevision_idを返すが、KPI・会計・売上の計上基準には接続しない。

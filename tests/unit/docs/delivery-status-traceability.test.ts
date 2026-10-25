@@ -166,14 +166,14 @@ test('3管理POSTと1webhookをAPIと入口一覧に記録し総数が実コー�
   });
   const routes = walk('src/app/api').filter((file) => file.endsWith('/route.ts'));
   const methods = routes.flatMap((file) => [...read(file).matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b|export\s+const\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g)]);
-  expect(routes).toHaveLength(155); expect(methods).toHaveLength(198);
-  contains(api, '155ファイル'); contains(api, '198組');
-  contains(api, 'HEAD/OPTIONSは198組に含めない');
+  expect(routes).toHaveLength(156); expect(methods).toHaveLength(199);
+  contains(api, '156ファイル'); contains(api, '199組');
+  contains(api, 'HEAD/OPTIONSは199組に含めない');
   for (const file of files.slice(0, 3)) contains(read(file), '配送の入口・表は E-4 の変更を 2026-10-21 に反映');
-  contains(inventory, '155ファイル・198メソッド');
+  contains(inventory, '156ファイル・199メソッド');
   const entries = inventory.split('\n').filter((line) => /^\| `\/api\//.test(line));
-  expect(entries).toHaveLength(154);
-  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(197);
+  expect(entries).toHaveLength(155);
+  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(198);
 });
 
 test('APIに設定と顧客の条件と全エラーを反映する', () => {
@@ -303,7 +303,7 @@ test('G-3 Task 2の荷作り表・同梱・会計入力のDB部分と未確認�
     contains(row!, 'DB');
   }
   const accounting = lines.find((line) => line.startsWith('| FREQ-535 |'))!;
-  expect(accounting.split('|')[5].match(/FREQ-535-AC-\d+/g)).toEqual(['FREQ-535-AC-01', 'FREQ-535-AC-02', 'FREQ-535-AC-04', 'FREQ-535-AC-05']);
+  expect(accounting.split('|')[5].match(/FREQ-535-AC-\d+/g)).toEqual(['FREQ-535-AC-01', 'FREQ-535-AC-02', 'FREQ-535-AC-03', 'FREQ-535-AC-04', 'FREQ-535-AC-05']);
   contains(accounting, 'actor');
   contains(accounting, 'list_shipment_accounting_inputs');
 });
@@ -441,4 +441,17 @@ test('G-3 Task 7の伝票番号の後入力・訂正と手動の配達済み（�
   contains(read('docs/04_DetailDesign/pages/16_admin.md'), '伝票番号は入れた後は訂正できるが、空には戻せない');
   contains(read('docs/04_DetailDesign/pages/16_admin.md'), '追跡の登録の要約（`registration`');
   contains(read('docs/06_Operations/order-email-operations.md'), 'previousTrackingNumber');
+});
+
+test('FREQ-535-AC-03: G-3 Task 9の訂正・権限・日付隔離を正本で追跡する', () => {
+  const freq535 = read(requirements).split(/\r?\n/).find((line) => line.startsWith('| FREQ-535 |'))!;
+  for (const word of ['FREQ-535-AC-03', 'group_g3_date.integration.test.ts', 'shipment-date-isolation.test.ts', 'revision_id', '配達日JST', 'shipped_at']) contains(freq535, word);
+  contains(read(files[0]), 'POST /api/admin/shipment-slips/[id]/shipment-date');
+  for (const doc of ['docs/04_DetailDesign/pages/16_admin.md', 'docs/04_DetailDesign/sequence/shipping.md', 'docs/04_DetailDesign/states/shipping.md']) contains(read(doc), '出荷日の訂正（G-3 Task 9）');
+});
+
+test('FREQ-535-AC-03: Task 8の移行の履歴をTask 9のサイズで上書きしない', () => {
+  const migration = read('docs/06_Operations/db-migrations.md').split(/\r?\n/).find((line) => line.startsWith('| 4 |') && line.includes('20261025134538_group_g3_shipping_actions.sql'))!;
+  const task8 = migration.slice(migration.indexOf('Task 8'), migration.indexOf('Task 9'));
+  contains(task8, '72,255 bytes / `4C2AA20FBDAF43F3E4CC08B5AFA5E5CC`');
 });

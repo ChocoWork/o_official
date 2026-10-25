@@ -35,6 +35,7 @@ const CANDIDATE = packingRow({ orderId: ORDER_ID_2, orderItemId: ITEM_ID_2, item
 
 type Draft = { expectedVersion: number; lines: Array<{ orderItemId: string; quantity: number }>; requestKey: string };
 type State = {
+  canCorrectDate?: boolean;
   slip: () => ShipmentSlipDetail;
   slipResponse?: () => Response | Promise<Response>;
   packing?: () => Response;
@@ -68,7 +69,7 @@ function serve(state: State) {
     if (target.startsWith('/api/admin/packing')) {
       return withCanManage(state.packing ? state.packing() : respond(200, { rows: [], total: 0, page: 1, limit: 100 }));
     }
-    return state.slipResponse ? state.slipResponse() : respond(200, { slip: state.slip() });
+    return state.slipResponse ? state.slipResponse() : respond(200, { slip: state.slip(), canCorrectDate: state.canCorrectDate ?? false });
   });
 }
 
@@ -83,6 +84,28 @@ const twoLines = () => draftDetail({ lines: [draftDetail().lines[0], SECOND_LINE
 beforeEach(() => {
   mockClientFetch.mockReset();
   window.sessionStorage.clear();
+});
+
+test.each([true, false])('FREQ-540-AC-10: サーバーの訂正権限%sでボタンと店長の説明を切り替える', async (canCorrectDate) => {
+  serve({ slip: () => confirmedDetail(), canCorrectDate });
+  render(<ShipmentSlipSection slipId={SLIP_ID} />);
+  await screen.findByRole('heading', { name: '出荷日の履歴' });
+  if (canCorrectDate) {
+    fireEvent.click(screen.getByRole('button', { name: '出荷日を訂正する' }));
+    expect(screen.getByRole('dialog', { name: '出荷日を訂正する' })).toBeInTheDocument();
+    expect(screen.queryByText('出荷日の訂正は店長だけができます。')).not.toBeInTheDocument();
+  } else {
+    expect(screen.queryByRole('button', { name: '出荷日を訂正する' })).not.toBeInTheDocument();
+    expect(screen.getByText('出荷日の訂正は店長だけができます。')).toBeInTheDocument();
+  }
+});
+test('FREQ-535-AC-03: 日付履歴は初回と訂正の別・前後日付・理由・日時を表示する', async () => {
+  const initial = confirmedDetail().dateHistory[0];
+  serve({ slip: () => confirmedDetail({ dateHistory: [initial, { ...initial, version: 3, kind: 'correction', previousDate: '2026-10-25', newDate: '2026-10-24', reason: '記録の訂正' }] }) });
+  render(<ShipmentSlipSection slipId={SLIP_ID} />);
+  await screen.findByRole('heading', { name: '出荷日の履歴' });
+  expect(screen.getByText(/初回.*2026-10-25 → 2026-10-25/)).toBeInTheDocument();
+  expect(screen.getByText(/訂正.*2026-10-25 → 2026-10-24.*記録の訂正/)).toBeInTheDocument();
 });
 
 describe('発送票の頁: 下書きの表示', () => {
@@ -488,7 +511,7 @@ describe('発送票の頁: 行を外す・品物を追加', () => {
           : [CANDIDATE];
         return respond(200, { rows, total: 101, page, limit: 100, canManage: true });
       }
-      return respond(200, { slip: twoLines() });
+      return respond(200, { slip: twoLines(), canCorrectDate: false });
     });
     render(<ShipmentSlipSection slipId={SLIP_ID} />);
     await screen.findByRole('heading', { level: 1 });
@@ -746,7 +769,7 @@ describe('発送確定', () => {
     let finishRead: (response: Response) => void = () => {};
     serve({
       slip: () => twoLines(),
-      slipResponse: () => ++reads === 1 ? respond(200, { slip: twoLines() }) : new Promise<Response>((resolve) => { finishRead = resolve; }),
+      slipResponse: () => ++reads === 1 ? respond(200, { slip: twoLines(), canCorrectDate: false }) : new Promise<Response>((resolve) => { finishRead = resolve; }),
       confirm: () => respond(409, { code: 'GROUP_G_SLIP_QUANTITY_EXCEEDS_READY' }),
     });
     await open();
@@ -755,7 +778,7 @@ describe('発送確定', () => {
     expect(screen.getByRole('status')).toHaveTextContent('読み込み中');
     expect(screen.queryByRole('button', { name: '発送票確認' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '発送確定' })).not.toBeInTheDocument();
-    finishRead(respond(200, { slip: draftDetail() }));
+    finishRead(respond(200, { slip: draftDetail(), canCorrectDate: false }));
     expect(await screen.findByTestId('slip-line-note')).toHaveTextContent('発送準備中の数を超えています。荷作り表を読み直してください。');
     expect(screen.getByRole('button', { name: '発送票確認' })).toBeDisabled();
   });

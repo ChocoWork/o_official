@@ -3,7 +3,7 @@ import 'server-only';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermissions } from '@/lib/auth/admin-rbac';
-import { getAdminShipmentSlip, ShipmentSlipError } from '@/lib/orders/shipment-slips/shipment-slip-store';
+import { canCorrectShipmentDate, getAdminShipmentSlip, ShipmentSlipError } from '@/lib/orders/shipment-slips/shipment-slip-store';
 import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
@@ -34,8 +34,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
   try {
     const client = await createServiceRoleClient();
+    // 表示用の不足を認可拒否としてログに残さない。書込み時の窓口・DBの再認可が最終判断。
+    const canCorrectDate = await canCorrectShipmentDate(client, authz.userId);
     const slip = await getAdminShipmentSlip(client, authz.userId, id);
-    return noStore(NextResponse.json({ slip }));
+    return noStore(NextResponse.json({ slip, canCorrectDate }));
   } catch (error) {
     if (error instanceof ShipmentSlipError && error.code) {
       return noStore(NextResponse.json({ code: error.code, error: error.message }, { status: error.status }));

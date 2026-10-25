@@ -1,6 +1,6 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
-> 状態: 既存設計 | 実装状況は項目ごとに要再照合
+> 状態: 既存設計 | 実装状況は項目ごとに要再照合 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
 
@@ -943,7 +943,7 @@ G-2 の画面は、管理メニューの INVENTORY から入る。この節は T
 
 ## 荷作り表・発送票（G-3 / FREQ-531〜535）
 
-G-3 の画面は、管理メニューの PACKING から入る。この節は荷作り表（Task 3 で読むだけで作り、Task 4 で品物を選ぶ操作と「発送」を足した）、発送票の頁（`/admin/shipment-slips/[id]`。Task 4 は下書きの表示と編集だけ）と、旧い発送の案内の置換を記す。発送票確認・荷物の情報・発送確定は下のTask 5の節に、発送の取消は下のTask 6の節に記す。確定後の伝票番号・配達済み・出荷日の訂正は後続Task で足す。
+G-3 の画面は、管理メニューの PACKING から入る。この節は荷作り表（Task 3 で読むだけで作り、Task 4 で品物を選ぶ操作と「発送」を足した）、発送票の頁（`/admin/shipment-slips/[id]`。Task 4 は下書きの表示と編集だけ）と、旧い発送の案内の置換を記す。発送票確認・荷物の情報・発送確定は下のTask 5の節に、発送の取消は下のTask 6の節に記す。確定後の伝票番号・配達済みはTask 7、出荷日の訂正はTask 9で実装済み で足す。
 
 ### PACKING タブ
 
@@ -1041,3 +1041,16 @@ G-1 で止めた旧い発送の入口の案内を、G-3 の発送票へ向ける
 2. 配送の要対応（追跡の失敗・配達の問題）は、同梱の票では**代表の注文にだけ**出る。参加する他の注文には出ないので、票の画面の追跡の登録の要約（`registration`。追跡がオンかどうか・状態・一度でも登録できたか・代表の注文）で確かめる。伝票番号の訂正と手動の配達済みは、代表の登録を止め、代表の要対応を閉じる（参加の注文の要対応は扱わない）。
 
 検証: 単体 [伝票番号のダイアログ](../../../tests/unit/components/ShipmentSlipTrackingDialog.test.tsx)・[配達済みのダイアログ](../../../tests/unit/components/ShipmentSlipDeliveredDialog.test.tsx)・[票の頁](../../../tests/unit/components/ShipmentSlipSection.test.tsx)・[伝票番号の窓口](../../../tests/unit/api/admin/shipment-slip-tracking-route.test.ts)・[配達済みの窓口](../../../tests/unit/api/admin/shipment-slip-delivered-route.test.ts)・[store](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-store.test.ts)・[client](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-client.test.ts)・[型と言葉](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-types.test.ts)・[旧い呼び出しの道具の整理](../../../tests/unit/lib/orders/tracking/delivery-client.test.ts)。DB は[伝票番号・配達済み](../../../tests/integration/db/group_g3_tracking.integration.test.ts)（controller が fresh reset して19 suite・1,079/1,079成功を確認。2026-10-25）。3つの画面幅の確認は後続 Task の E2E。
+
+## 出荷日の訂正（G-3 Task 9）
+
+確認日: 2026-10-26。FREQ-535 AC-03・04、FREQ-540 AC-10。確定済みの発送票が対象。
+
+| 場所 | 表示と動き |
+| --- | --- |
+| 権限 | 詳細GETのcanCorrectDate。認証・読取認可を1回行った後、storeが有効・期限内の全役割からadmin.shipping.correct_date + admin.shipping.read + admin.orders.readを確認。不足のログは出さない。照会失敗は固定500、訂正POSTとDBで再認可。クライアントの役割名判定なし。権限なしはボタンの代わりに「出荷日の訂正は店長だけができます。」 |
+| ダイアログ | 見出し「出荷日を訂正する」、説明「お客様の返品期限は変わりません。」。「新しい出荷日」は今の出荷日、「理由」は必須。ボタン「訂正する」「戻る」 |
+| 送信 | POST /api/admin/shipment-slips/[id]/shipment-date。理由trim後1〜200字、二重押下防止。結果不明は入力を止め「もう一度確かめる」で同じ本文とキー。版競合は入力を保ち再読込、次回は新しい版とキー。権限を失う・取消済みに変わるとdialogを閉じる |
+| 履歴・通知 | 「出荷日の履歴」に初回／訂正・前後日付・理由・日時。成功は「出荷日を訂正しました。」の後に再読込 |
+
+全注文の最遅入金日JST以上・今日JST以下、配達日JST以下。発送時刻・返品期限・メール・品物状態は不変。390/768/1280pxとブラウザの実測はcontroller担当（未実行）。

@@ -1,6 +1,6 @@
 # 発送票の状態（G-3）
 
-> 状態: 保存する4段階と、操作印ごとの遷移の定義は現行のソース（グループ G-3 Task 1・4・5・6）。下書きの保存・破棄（Task 4）と確定（Task 5）と取消（Task 6）の関数を実装。Task 5まで、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。取消（Task 6）を含む21 suiteで1,287/1,287成功も確認した（2026-10-25）。伝票番号の入力・訂正と手動の配達済み（Task 7）の関数を実装（controller が fresh reset して19 suite・1,079/1,079成功を確認。2026-10-25）。出荷日の訂正の遷移は定義済みだが、書く関数は後続 Task（本番へは未適用） | 確認日: 2026-10-25 | 対象: `shipment_slips.stage` と、票の更新を通す操作印 `app.group_g_slip_change`
+> 状態: 保存する4段階と、操作印ごとの遷移の定義は現行のソース（グループ G-3 Task 1・4・5・6・7・8・9）。下書きの保存・破棄（Task 4）と確定（Task 5）と取消（Task 6）の関数を実装。Task 5まで、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。取消（Task 6）を含む21 suiteで1,287/1,287成功も確認した（2026-10-25）。伝票番号の入力・訂正と手動の配達済み（Task 7）の関数を実装（controller が fresh reset して19 suite・1,079/1,079成功を確認。2026-10-25）。出荷日の訂正（Task 9）の関数も実装済み（本番へは未適用） | 確認日: 2026-10-26 | 対象: `shipment_slips.stage` と、票の更新を通す操作印 `app.group_g_slip_change` | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
 
@@ -95,4 +95,18 @@ stateDiagram-v2
 
 ## 未確認事項
 
-確定の遷移はTask 5のadmin_confirm_shipment_slipが起こし、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。取消の遷移はTask 6のadmin_cancel_shipment_slipが起こす（controllerのresetの後、21 suiteで1,287/1,287成功）。伝票・配達済み・出荷日の訂正の関数は後続Taskで足す。ここに書いたのは、Task 1 の守りが許す遷移の定義と、Task 4・5・6 が動かす作成・保存・破棄・確定・取消の遷移。本番の実データでの状態は未確認。
+確定の遷移はTask 5のadmin_confirm_shipment_slipが起こし、controllerが実鍵PostgRESTを含む12 suiteで665/665成功を確認した（2026-10-25）。取消の遷移はTask 6のadmin_cancel_shipment_slipが起こす（controllerのresetの後、21 suiteで1,287/1,287成功）。伝票・配達済みはTask 7、出荷日の訂正はTask 9の関数が起こす。ここに書いたのは、Task 1 の守りが許す遷移の定義と、Task 4・5・6 が動かす作成・保存・破棄・確定・取消の遷移。本番の実データでの状態は未確認。
+
+## 出荷日の訂正（G-3 Task 9）
+
+確認日: 2026-10-26。FREQ-535 AC-03・04・05、FREQ-540 AC-10。controllerが修正前のTask 9をfresh resetし、実鍵PostgRESTを含む12 suite・639/639成功（2026-10-26）。Fix round 1の後も、controllerがfresh resetし実鍵PostgRESTを含む12 suite・642/642成功（2026-10-26）。
+
+| 前 | 条件 | 後と記録 |
+| --- | --- | --- |
+| confirmed | 訂正3権限、理由trim後1〜200字、版一致、異なる日付 | confirmedのまま版+1、全有効発送も同じ日付。correctionとdate_correctionを追記 |
+| confirmed | 全注文の最遅JST入金日未満／今日超 | GROUP_G_SHIPMENT_DATE_INVALID / 22023、全て不変 |
+| confirmed | 有効な発送の配達日JSTより後／同日訂正 | AFTER_DELIVERY／UNCHANGED / 22023、全て不変 |
+| draft・discarded／cancelled | 訂正 | NOT_CONFIRMED／CANCELLED、全て不変 |
+| 任意 | 同キー同指紋、現在も権限あり | 保存結果にreplayed:true、履歴・版は増やさない |
+
+品物状態・割当・在庫・台帳、shipped_at・confirmed_at・delivered_at、返品期限、メール・追跡は不変。履歴は初回／訂正・前後日付・理由・日時。権限なしは「出荷日の訂正は店長だけができます。」を出して訂正ボタンを出さない。

@@ -1,10 +1,10 @@
 # API仕様（現行実装）
 
-> 確認日: 2026-10-03（Checkout・カートの行はグループ F の変更を 2026-10-07、グループ C の変更を 2026-10-08、注文の発送・仕上がり・お客様の注文・在庫の行はグループ E-1 の変更を 2026-10-10 に、注文の返金・キャンセル・ショップの設定・Cron・Webhook・お客様の注文の行はグループ E-2 の変更を 2026-10-11 に、返品の窓口・注文の一覧と履歴・発送・在庫の履歴・要対応・KPI・ショップの設定・お客様の注文の行はグループ E-3 の変更を 2026-10-13 に反映、配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文の状況の窓口は E-5 の変更を 2026-10-22 に、在庫の窓口の権限は G-2 Task 1 の変更を、在庫一覧表の窓口は G-2 Task 3 の変更を、発注の作成の窓口は G-2 Task 4 の変更を、発注一覧表・発注書の詳細の窓口は G-2 Task 5 の変更を、発注書の数量の確定・訂正・打切り・発注先の訂正の窓口は G-2 Task 6 の変更を、発注書の受け取りと受け取りの取消の窓口は G-2 Task 7 の変更を、取引書類の原本の窓口は G-2 Task 8 の変更を、荷作り表・発送票の読取の窓口は G-3 Task 3 の変更を、発送票の下書きの窓口は G-3 Task 4 の変更を、発送確定の窓口は G-3 Task 5 の変更を、発送の取消の窓口は G-3 Task 6 の変更を、伝票番号の入力・訂正と手動の配達済みの窓口は G-3 Task 7 の変更を、Google ログイン開始の POST とログインの後の行き先の POST は波1-A の変更を 2026-10-25 に反映） | ソース基準: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06` の作業ツリー | 対象: `src/app/api/**/route.ts`
+> 確認日: 2026-10-03（Checkout・カートの行はグループ F の変更を 2026-10-07、グループ C の変更を 2026-10-08、注文の発送・仕上がり・お客様の注文・在庫の行はグループ E-1 の変更を 2026-10-10 に、注文の返金・キャンセル・ショップの設定・Cron・Webhook・お客様の注文の行はグループ E-2 の変更を 2026-10-11 に、返品の窓口・注文の一覧と履歴・発送・在庫の履歴・要対応・KPI・ショップの設定・お客様の注文の行はグループ E-3 の変更を 2026-10-13 に反映、配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文の状況の窓口は E-5 の変更を 2026-10-22 に、在庫の窓口の権限は G-2 Task 1 の変更を、在庫一覧表の窓口は G-2 Task 3 の変更を、発注の作成の窓口は G-2 Task 4 の変更を、発注一覧表・発注書の詳細の窓口は G-2 Task 5 の変更を、発注書の数量の確定・訂正・打切り・発注先の訂正の窓口は G-2 Task 6 の変更を、発注書の受け取りと受け取りの取消の窓口は G-2 Task 7 の変更を、取引書類の原本の窓口は G-2 Task 8 の変更を、荷作り表・発送票の読取の窓口は G-3 Task 3 の変更を、発送票の下書きの窓口は G-3 Task 4 の変更を、発送確定の窓口は G-3 Task 5 の変更を、発送の取消の窓口は G-3 Task 6 の変更を、伝票番号の入力・訂正と手動の配達済みの窓口は G-3 Task 7 の変更を、Google ログイン開始の POST とログインの後の行き先の POST は波1-A の変更を 2026-10-25 に反映） | ソース基準: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06` の作業ツリー | 対象: `src/app/api/**/route.ts` | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
 
-現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。155ファイル、明示exportされた198組（E2E 用の `/api/e2e/server-info` を除く154ファイル・197組を本書で記す。G-0 の2入口を 2026-10-24 に、G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口と Task 6 の発注先・メモの訂正（`PATCH /api/admin/purchase-orders/[id]`）・数量の確定と訂正・残りの打切りの入口と Task 7 の受け取り・受け取りの取消の入口と Task 8 の取引書類の原本の6入口と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）と G-3 Task 4 の発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）と G-3 Task 5 の発送確定の入口（`POST /api/admin/shipment-slips/[id]/confirm`）と G-3 Task 6 の発送の取消の入口（`POST /api/admin/shipment-slips/[id]/cancel`）と G-3 Task 7 の伝票番号の入力・訂正の入口（`POST /api/admin/shipment-slips/[id]/tracking`）と手動の配達済みの入口（`POST /api/admin/shipment-slips/[id]/delivered`）と 波1-A の Google ログイン開始の POST（`POST /api/auth/oauth/start`）とログインの後の行き先の POST（`POST /api/auth/post-login`）を 2026-10-25 に反映）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
+現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。156ファイル、明示exportされた199組（E2E 用の `/api/e2e/server-info` を除く155ファイル・198組を本書で記す。G-0 の2入口を 2026-10-24 に、G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口と Task 6 の発注先・メモの訂正（`PATCH /api/admin/purchase-orders/[id]`）・数量の確定と訂正・残りの打切りの入口と Task 7 の受け取り・受け取りの取消の入口と Task 8 の取引書類の原本の6入口と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）と G-3 Task 4 の発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）と G-3 Task 5 の発送確定の入口（`POST /api/admin/shipment-slips/[id]/confirm`）と G-3 Task 6 の発送の取消の入口（`POST /api/admin/shipment-slips/[id]/cancel`）と G-3 Task 7 の伝票番号の入力・訂正の入口（`POST /api/admin/shipment-slips/[id]/tracking`）と手動の配達済みの入口（`POST /api/admin/shipment-slips/[id]/delivered`）と 波1-A の Google ログイン開始の POST（`POST /api/auth/oauth/start`）とログインの後の行き先の POST（`POST /api/auth/post-login`）を 2026-10-25 に反映）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
 
 | 読み方 | 内容 |
 | --- | --- |
@@ -13,7 +13,7 @@
 | 入出力定義 | I/N/L/S/T/O/F/Pなどの再利用schema、応答の詳細と根拠へのリンク |
 | 入口の所在 | [APIルート一覧](route-inventory.md)（所在表） |
 
-表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは198組に含めない。
+表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは199組に含めない。
 
 ## 共通境界
 
@@ -894,3 +894,17 @@ X1は承認済み設計書5-2の401より controller の P8・P25 を優先す�
 不一致19回以下は `verifiable:true,reason:null`、20回目は `verifiable:false,reason:'locked'`。423/409/410もfalseと対応するreasonを返す。無い・隠す2状態・形不正は同じ404本文。Origin拒否403だけは `{error:'Forbidden origin'}` を維持。429と制限不能503は既存のRetry-Afterを保持し、制限の障害で無制限に続けない。DB・鍵・予期しない失敗は500。
 
 DB専用 `ORDER_STATUS_ARGUMENT_INVALID`/22023は400、`ORDER_NOT_FOUND`/P0002は404へ写す。元のDB文・SQLSTATEは返さず、ログは固定codeだけ。印の署名・Cookieの属性はページとERの契約を参照する。
+
+## 確定後の出荷日訂正（G-3 Task 9）
+
+確認日: 2026-10-26。本番未適用。controllerが修正前のTask 9をfresh resetし、実鍵PostgRESTを含む12 suite・639/639成功（2026-10-26）。Fix round 1の後も、controllerがfresh resetし実鍵PostgRESTを含む12 suite・642/642成功（2026-10-26）。
+
+| API | 認可と順序 | 入力 | 成功 | 失敗 | 副作用 |
+| --- | --- | --- | --- | --- | --- |
+| `POST /api/admin/shipment-slips/[id]/shipment-date` | `admin.shipping.correct_date` + `admin.shipping.read` + `admin.orders.read`。認可→CSRF→IP/actor各30回/600秒（`admin.shipment_slips.date`）→検証→RPC→監査 | Path id: uuid。JSON `{expectedVersion:int>=1,shipmentDate:YYYY-MM-DD,reason:string(trim後1〜200字),requestKey:uuid}`。actorは認可結果のuserIdのみ | 200 `{id,version,shipmentDate,replayed}`、no-store | 400 入力・理由・範囲、403 `出荷日を訂正する権限がありません。`、404 不在、409 版・段階・同日・配達日より後・キー衝突、429 制限、500 固定の失敗 | 票と有効な全発送の日付、版、履歴、操作を1取引で記録。監査 `admin.shipment_slips.date.correct` はID・再送・結果コードだけ |
+
+全注文の最遅paid_atのJST日以上・今日JST以下。配達日JSTより後は `GROUP_G_SHIPMENT_DATE_AFTER_DELIVERY / 22023`（409）、同日は `GROUP_G_SHIPMENT_DATE_UNCHANGED / 22023`（409）、空の理由は `GROUP_G_SLIP_REASON_REQUIRED / 22023`（400）、201字は `GROUP_G_ARGUMENT_INVALID / 22023`（400）。messageとSQLSTATEの完全一致で分類する。再送は保存結果にreplayed:trueを足し履歴を増やさない。
+
+詳細GETはslipに加えcanCorrectDate:booleanを返す。認証・読取の認可は1回だけ行い、storeのcanCorrectShipmentDateが有効かつ期限内の全役割の権限を1回の照会で読む。3権限が揃えばtrue、不足はログなしでfalse、照会障害は固定500。最初の認可の401・503などはそのまま返す。クライアントで役割名を判定しない。書込み時も窓口とDBで再認可する。
+
+Fix round 1: MFA-requiredの403はreasonを持つため訂正の権限文へ書き換えない。空白だけの理由はJavaScript trimと同じ25コードポイントをDBでも除去し、窓口の検証とDBの両方がGROUP_G_SLIP_REASON_REQUIREDを返す。ほかの本文項目も不正なら従来の入力エラーを先に返す。

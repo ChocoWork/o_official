@@ -1,8 +1,8 @@
 -- G-3 shipment-slip actions (Task 7): entering or correcting the tracking number of a whole confirmed slip and marking a whole
 -- confirmed slip as delivered by hand (FREQ-534-AC-01, FREQ-534-AC-02, FREQ-534-AC-04, FREQ-534-AC-05, FREQ-535-AC-04,
--- FREQ-540-AC-10, FREQ-540-AC-11), and the writer allowlist (72 entries of 20261025100130_group_g3_shipping_slips.sql + the two
--- writers of this file = 74). Task 8 (FREQ-534-AC-04, FREQ-541-AC-03) replaces private.record_delivery_read_result so that the
--- read result of the leader of a slip reaches every shipment of the slip (section 2b); it is already one of the 74 writers.
+-- FREQ-540-AC-10, FREQ-540-AC-11), and the writer allowlist (72 entries of 20261025100130_group_g3_shipping_slips.sql + the three
+-- writers of this file = 75). Task 8 (FREQ-534-AC-04, FREQ-541-AC-03) replaces private.record_delivery_read_result so that the
+-- read result of the leader of a slip reaches every shipment of the slip (section 2b); it is already one of the 75 writers.
 -- Later G-3 tasks extend the body section of this file while it is not applied anywhere.
 -- Always applied after 20261025100130_group_g3_shipping_slips.sql. The three migrations before it are not edited here.
 BEGIN;
@@ -833,8 +833,129 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
--- 3. The closed list of writers. The 72 entries of 20261025100130_group_g3_shipping_slips.sql stay exactly as they were; this file
---    appends the tracking update and the manual delivery (73-74). Later G-3 tasks append their writers while this file is not
+-- 3. Correct only the shipping calendar date; append the reason and revision, preserve every operational timestamp.
+--    Order of work: arguments (trim reason, reject other invalid arguments before an empty reason) -> lock(false) -> permissions
+--    -> fingerprint and replay/conflict -> existence -> cancelled/confirmed -> version -> unchanged -> paid/today JST bounds
+--    -> delivered JST bound -> slip date/version -> active fulfillment dates (restore mark immediately) -> correction history
+--    -> date_correction version -> operation result last. Every failure rolls back all writes; all marks are restored.
+CREATE FUNCTION private.admin_correct_shipment_date(_slip_id uuid, _expected_version integer, _shipment_date date,
+  _reason text, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_operation uuid := pg_catalog.gen_random_uuid();
+  v_existing private.group_g_operations%ROWTYPE;
+  v_slip public.shipment_slips%ROWTYPE;
+  v_reason text := pg_catalog.btrim(_reason, U&'\0009\000A\000B\000C\000D\0020\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000\FEFF');
+  v_fingerprint text;
+  v_version integer;
+  v_result jsonb;
+  v_previous_operation text;
+  v_previous_change text;
+  v_previous_fulfillment text;
+BEGIN
+  IF _slip_id IS NULL OR _expected_version IS NULL OR _expected_version < 1 OR _shipment_date IS NULL
+    OR _actor_id IS NULL OR _request_key IS NULL OR pg_catalog.char_length(v_reason) > 200 THEN
+    RAISE EXCEPTION 'GROUP_G_ARGUMENT_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF v_reason IS NULL OR v_reason = '' THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_REASON_REQUIRED' USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM private.lock_group_g_shipment_slips(ARRAY[_slip_id], ARRAY[]::uuid[], false);
+  IF NOT private.group_g_actor_has_permissions(_actor_id,
+      ARRAY['admin.shipping.correct_date', 'admin.shipping.read', 'admin.orders.read']) THEN
+    RAISE EXCEPTION 'GROUP_G_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+  v_fingerprint := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.jsonb_build_object(
+    'operation', 'shipment_date_correct', 'slip_id', _slip_id, 'shipment_date', _shipment_date,
+    'reason', v_reason, 'actor_id', _actor_id)::text, 'UTF8')), 'hex');
+  SELECT op.* INTO v_existing FROM private.group_g_operations AS op
+    WHERE op.operation = 'shipment_date_correct' AND op.request_key = _request_key;
+  IF FOUND THEN
+    IF v_existing.fingerprint <> v_fingerprint THEN
+      RAISE EXCEPTION 'GROUP_G_REQUEST_KEY_CONFLICT' USING ERRCODE = '23505';
+    END IF;
+    RETURN v_existing.result || pg_catalog.jsonb_build_object('replayed', true);
+  END IF;
+  SELECT s.* INTO v_slip FROM public.shipment_slips AS s WHERE s.id = _slip_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+  IF v_slip.stage = 'cancelled' THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_CANCELLED' USING ERRCODE = '55000';
+  END IF;
+  IF v_slip.stage <> 'confirmed' THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_NOT_CONFIRMED' USING ERRCODE = '55000';
+  END IF;
+  IF v_slip.version <> _expected_version THEN
+    RAISE EXCEPTION 'GROUP_G_SLIP_VERSION_CONFLICT' USING ERRCODE = '55000';
+  END IF;
+  IF v_slip.shipment_date = _shipment_date THEN
+    RAISE EXCEPTION 'GROUP_G_SHIPMENT_DATE_UNCHANGED' USING ERRCODE = '22023';
+  END IF;
+  IF _shipment_date > (pg_catalog.now() AT TIME ZONE 'Asia/Tokyo')::date OR EXISTS (
+    SELECT 1 FROM public.shipment_slip_fulfillments AS sf JOIN public.orders AS o ON o.id = sf.order_id
+    WHERE sf.slip_id = _slip_id AND (o.paid_at IS NULL OR (o.paid_at AT TIME ZONE 'Asia/Tokyo')::date > _shipment_date)
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_SHIPMENT_DATE_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.shipment_slip_fulfillments AS sf JOIN public.order_fulfillments AS f ON f.id = sf.fulfillment_id
+    WHERE sf.slip_id = _slip_id AND f.cancelled_at IS NULL AND f.delivered_at IS NOT NULL
+      AND _shipment_date > (f.delivered_at AT TIME ZONE 'Asia/Tokyo')::date
+  ) THEN
+    RAISE EXCEPTION 'GROUP_G_SHIPMENT_DATE_AFTER_DELIVERY' USING ERRCODE = '22023';
+  END IF;
+
+  v_previous_operation := pg_catalog.current_setting('app.group_g_operation_id', true);
+  v_previous_change := pg_catalog.current_setting('app.group_g_slip_change', true);
+  v_previous_fulfillment := pg_catalog.current_setting('app.fulfillment_change', true);
+  BEGIN
+    PERFORM pg_catalog.set_config('app.group_g_operation_id', v_operation::text, true);
+    PERFORM pg_catalog.set_config('app.group_g_slip_change', 'date', true);
+    UPDATE public.shipment_slips SET shipment_date = _shipment_date, version = version + 1, updated_at = pg_catalog.now()
+      WHERE id = _slip_id RETURNING version INTO v_version;
+    PERFORM pg_catalog.set_config('app.fulfillment_change', 'shipment_date', true);
+    UPDATE public.order_fulfillments AS f SET shipment_date = _shipment_date
+      FROM public.shipment_slip_fulfillments AS sf
+      WHERE sf.slip_id = _slip_id AND f.id = sf.fulfillment_id AND f.cancelled_at IS NULL;
+    PERFORM pg_catalog.set_config('app.fulfillment_change', COALESCE(v_previous_fulfillment, ''), true);
+    INSERT INTO public.shipment_date_history(slip_id, version, kind, previous_date, new_date, reason, actor_id, operation_id)
+      VALUES(_slip_id, v_version, 'correction', v_slip.shipment_date, _shipment_date, v_reason, _actor_id, v_operation);
+    INSERT INTO public.shipment_slip_versions(slip_id, version, kind, shipping_carrier, tracking_number, tracking_version, shipment_date, reason, actor_id, operation_id)
+      VALUES(_slip_id, v_version, 'date_correction', v_slip.shipping_carrier, v_slip.tracking_number, v_slip.tracking_version, _shipment_date, v_reason, _actor_id, v_operation);
+    v_result := pg_catalog.jsonb_build_object('id', _slip_id::text, 'version', v_version, 'shipmentDate', _shipment_date::text, 'replayed', false);
+    INSERT INTO private.group_g_operations(id, operation, request_key, fingerprint, cause_type, cause_id, actor_id, result)
+      VALUES(v_operation, 'shipment_date_correct', _request_key, v_fingerprint, 'shipment_slip', _slip_id::text, _actor_id, v_result);
+  EXCEPTION WHEN OTHERS THEN
+    PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+    PERFORM pg_catalog.set_config('app.group_g_slip_change', COALESCE(v_previous_change, ''), true);
+    PERFORM pg_catalog.set_config('app.fulfillment_change', COALESCE(v_previous_fulfillment, ''), true);
+    RAISE;
+  END;
+  PERFORM pg_catalog.set_config('app.group_g_operation_id', COALESCE(v_previous_operation, ''), true);
+  PERFORM pg_catalog.set_config('app.group_g_slip_change', COALESCE(v_previous_change, ''), true);
+  PERFORM pg_catalog.set_config('app.fulfillment_change', COALESCE(v_previous_fulfillment, ''), true);
+  RETURN v_result;
+END;
+$$;
+ALTER FUNCTION private.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION private.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid) TO service_role;
+
+CREATE FUNCTION public.admin_correct_shipment_date(_slip_id uuid, _expected_version integer, _shipment_date date,
+  _reason text, _actor_id uuid, _request_key uuid)
+RETURNS jsonb
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$ SELECT private.admin_correct_shipment_date(_slip_id, _expected_version, _shipment_date, _reason, _actor_id, _request_key); $$;
+ALTER FUNCTION public.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid) TO service_role;
+
+-- 4. The closed list of writers. The 72 entries of 20261025100130_group_g3_shipping_slips.sql stay exactly as they were; this file
+--    appends tracking update, manual delivery and date correction (73-75). Later tasks append their writers while this file is not
 --    applied anywhere. Owner, ACL and signature of the function are unchanged (CREATE OR REPLACE keeps them).
 --    group_g1_writer_inventory scans pg_proc.prosrc against it.
 CREATE OR REPLACE FUNCTION private.group_g_writer_allowlist() RETURNS pg_catalog.regprocedure[]
@@ -914,7 +1035,8 @@ AS $$
     'private.restore_group_g_shipment(uuid,uuid,uuid,uuid,text)',
     'private.admin_cancel_shipment_slip(uuid,integer,uuid,uuid)',
     'private.admin_update_shipment_slip_tracking(uuid,integer,text,text,boolean,uuid,uuid)',
-    'private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)'
+    'private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)',
+    'private.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid)'
   ]::pg_catalog.regprocedure[];
 $$;
 
@@ -935,7 +1057,9 @@ DECLARE
     'private.admin_update_shipment_slip_tracking(uuid,integer,text,text,boolean,uuid,uuid)',
     'public.admin_update_shipment_slip_tracking(uuid,integer,text,text,boolean,uuid,uuid)',
     'private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)',
-    'public.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)'
+    'public.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)',
+    'private.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid)',
+    'public.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid)'
   ];
   v_writers text[] := ARRAY[
     'private.apply_group_g_stock_movement(bigint,integer)',
@@ -1011,7 +1135,8 @@ DECLARE
     'private.restore_group_g_shipment(uuid,uuid,uuid,uuid,text)',
     'private.admin_cancel_shipment_slip(uuid,integer,uuid,uuid)',
     'private.admin_update_shipment_slip_tracking(uuid,integer,text,text,boolean,uuid,uuid)',
-    'private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)'
+    'private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)',
+    'private.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid)'
   ];
 BEGIN
   IF EXISTS (
@@ -1024,7 +1149,11 @@ BEGIN
       ('private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)', true, true, 'plpgsql', 'jsonb',
         ARRAY['_slip_id', '_expected_version', '_delivered_on', '_notify_customer', '_actor_id', '_request_key']),
       ('public.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)', false, true, 'sql', 'jsonb',
-        ARRAY['_slip_id', '_expected_version', '_delivered_on', '_notify_customer', '_actor_id', '_request_key'])
+        ARRAY['_slip_id', '_expected_version', '_delivered_on', '_notify_customer', '_actor_id', '_request_key']),
+      ('private.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid)', true, true, 'plpgsql', 'jsonb',
+        ARRAY['_slip_id', '_expected_version', '_shipment_date', '_reason', '_actor_id', '_request_key']),
+      ('public.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid)', false, true, 'sql', 'jsonb',
+        ARRAY['_slip_id', '_expected_version', '_shipment_date', '_reason', '_actor_id', '_request_key'])
     ) AS e(sig, definer, service, lang, ret, names)
     LEFT JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(e.sig)
     WHERE p.oid IS NULL
@@ -1082,13 +1211,14 @@ BEGIN
   ) THEN
     v_failed := 'shipment_slip_read_result_body';
   ELSIF EXISTS (
-    -- the two writers: the text before the first call of the lock helper must not name a table (after from / join / into /
+    -- the three writers: the text before the first call of the lock helper must not name a table (after from / join / into /
     -- update / table, with or without ONLY) and must not call a function of public or private (a permission check or any other
     -- helper that reads a table). Compared in lower case, with any spacing and with quoted schema names, so a body written in
     -- another style cannot slip by. A body that never calls the lock helper fails too.
     SELECT 1 FROM pg_catalog.unnest(ARRAY[
       'private.admin_update_shipment_slip_tracking(uuid,integer,text,text,boolean,uuid,uuid)',
-      'private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)'
+      'private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)',
+      'private.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid)'
     ]) AS w(sig)
     JOIN pg_catalog.pg_proc AS p ON p.oid = pg_catalog.to_regprocedure(w.sig)
     WHERE CASE
@@ -1099,8 +1229,8 @@ BEGIN
   ) THEN
     v_failed := 'shipment_slip_action_lock_order';
   ELSIF EXISTS (SELECT 1 FROM pg_catalog.unnest(v_writers) AS w(s) WHERE pg_catalog.to_regprocedure(w.s) IS NULL)
-     OR (SELECT pg_catalog.count(DISTINCT pg_catalog.to_regprocedure(w.s)) FROM pg_catalog.unnest(v_writers) AS w(s)) <> 74
-     OR pg_catalog.cardinality(private.group_g_writer_allowlist()) <> 74 THEN
+     OR (SELECT pg_catalog.count(DISTINCT pg_catalog.to_regprocedure(w.s)) FROM pg_catalog.unnest(v_writers) AS w(s)) <> 75
+     OR pg_catalog.cardinality(private.group_g_writer_allowlist()) <> 75 THEN
     v_failed := 'shipment_slip_action_writer_allowlist_missing';
   ELSIF (SELECT pg_catalog.array_agg(x::oid ORDER BY x::oid) FROM pg_catalog.unnest(private.group_g_writer_allowlist()) AS a(x))
      IS DISTINCT FROM (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(w.s)::oid ORDER BY pg_catalog.to_regprocedure(w.s)::oid)
@@ -1111,7 +1241,7 @@ BEGIN
   ELSIF (SELECT pg_catalog.array_agg(p.oid ORDER BY p.oid)
          FROM pg_catalog.pg_proc AS p JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
          WHERE n.nspname IN ('public', 'private')
-           AND p.proname IN ('admin_update_shipment_slip_tracking', 'admin_mark_shipment_slip_delivered'))
+           AND p.proname IN ('admin_update_shipment_slip_tracking', 'admin_mark_shipment_slip_delivered', 'admin_correct_shipment_date'))
         IS DISTINCT FROM
         (SELECT pg_catalog.array_agg(pg_catalog.to_regprocedure(f.sig)::oid ORDER BY pg_catalog.to_regprocedure(f.sig)::oid)
          FROM pg_catalog.unnest(v_functions) AS f(sig)) THEN

@@ -8,7 +8,7 @@ import { logAudit } from '@/lib/audit';
 import { authorizeAdminPermissions, type PermissionCode } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { ShipmentSlipError } from './shipment-slip-store';
-import { SHIPMENT_SLIP_LIMITS, SHIPMENT_SLIP_TEXT } from './shipment-slip-types';
+import { SHIPMENT_SLIP_ERRORS, SHIPMENT_SLIP_LIMITS, SHIPMENT_SLIP_TEXT } from './shipment-slip-types';
 
 /**
  * 発送票に対する書込みの窓口（G-3 Task 4: 下書きの作成・入替・破棄。後の Task の確定・伝票・配達済み・取消・出荷日の訂正）が共通で使う流れ。
@@ -21,6 +21,10 @@ import { SHIPMENT_SLIP_LIMITS, SHIPMENT_SLIP_TEXT } from './shipment-slip-types'
 /** 発送票の操作（下書き・破棄・確定・伝票番号・配達済み・取消）に要る権限（すべて） */
 export const SHIPMENT_SLIP_MANAGE_PERMISSIONS: readonly PermissionCode[] = [
   'admin.shipping.manage', 'admin.shipping.read', 'admin.orders.manage', 'admin.orders.read',
+];
+
+export const SHIPMENT_SLIP_DATE_PERMISSIONS: readonly PermissionCode[] = [
+  'admin.shipping.correct_date', 'admin.shipping.read', 'admin.orders.read',
 ];
 
 /** 回数制限の窓（秒） */
@@ -55,6 +59,10 @@ type WriteSpec<Body, Result extends { id: string }> = {
   errorCode: string;
   /** 必要な権限（すべて）。省くと SHIPMENT_SLIP_MANAGE_PERMISSIONS */
   permissions?: readonly PermissionCode[];
+  /** 操作固有の権限拒否文。認証/MFA/CSRFの失敗文は保持する。 */
+  forbiddenMessage?: string;
+  /** 空の理由だけが検証違反なら、DBと同じ理由必須の固定エラーを返す。 */
+  requiredReason?: boolean;
   schema: z.ZodType<Body>;
   status: 200 | 201;
   run: (client: SupabaseClient, actorId: string, slipId: string | null, body: Body) => Promise<Result>;
@@ -76,7 +84,15 @@ function describeErrorForLog(error: unknown): [name: string, code: unknown] {
 export async function handleShipmentSlipWrite<Body, Result extends { id: string }>(spec: WriteSpec<Body, Result>): Promise<Response> {
   try {
     const authz = await authorizeAdminPermissions(spec.permissions ?? SHIPMENT_SLIP_MANAGE_PERMISSIONS, spec.request);
-    if (!authz.ok) return noStore(authz.response);
+    if (!authz.ok) {
+      if (spec.forbiddenMessage && authz.response.status === 403) {
+        const body: unknown = await authz.response.clone().json().catch(() => null);
+        if (body !== null && typeof body === 'object' && 'permission' in body && !('reason' in body)) {
+          return noStore(NextResponse.json({ ...body, error: spec.forbiddenMessage }, { status: 403 }));
+        }
+      }
+      return noStore(authz.response);
+    }
 
     const { requireCsrfOrDeny } = await import('@/lib/csrfMiddleware');
     const csrfResult = await requireCsrfOrDeny();
@@ -103,6 +119,11 @@ export async function handleShipmentSlipWrite<Body, Result extends { id: string 
     }
     const parsedBody = spec.schema.safeParse(await spec.request.json().catch(() => ({})));
     if (!parsedBody.success) {
+      if (spec.requiredReason && parsedBody.error.issues.every((issue) => issue.path.length === 1 && issue.path[0] === 'reason' && issue.code === 'too_small' && issue.minimum === 1)) {
+        const code = 'GROUP_G_SLIP_REASON_REQUIRED';
+        await audit('failure', slipId, { code });
+        return noStore(NextResponse.json({ code, error: SHIPMENT_SLIP_ERRORS[code][2] }, { status: 400 }));
+      }
       await audit('failure', slipId, { code: 'INVALID_REQUEST' });
       return noStore(NextResponse.json({ error: 'Invalid request', details: parsedBody.error.flatten() }, { status: 400 }));
     }
@@ -118,7 +139,7 @@ export async function handleShipmentSlipWrite<Body, Result extends { id: string 
       await audit(failure.code ? 'failure' : 'error', slipId, { ...spec.auditFailure(body), code: failure.code ?? spec.errorCode });
       return noStore(NextResponse.json({
         ...(failure.code ? { code: failure.code } : {}),
-        error: failure.message,
+        error: failure.code === 'GROUP_G_FORBIDDEN' && spec.forbiddenMessage ? spec.forbiddenMessage : failure.message,
       }, { status: failure.status }));
     }
   } catch (error) {

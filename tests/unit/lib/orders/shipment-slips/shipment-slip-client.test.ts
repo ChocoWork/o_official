@@ -23,7 +23,7 @@ beforeEach(() => {
 
 describe('モジュールの形', () => {
   test('FREQ-531-AC-01: 窓口の呼び出しは、Task 7までの読取3つと書込み6つ（下書き・破棄・確定・伝票番号・配達済み・取消）。出荷日の訂正は後の Task が足す', () => {
-    expect(Object.keys(client).sort()).toEqual(['fetchPacking', 'fetchShipmentSlip', 'fetchShipmentSlips', 'submitSlipCancel', 'submitSlipConfirm', 'submitSlipDelivered',
+    expect(Object.keys(client).sort()).toEqual(['fetchPacking', 'fetchShipmentSlip', 'fetchShipmentSlips', 'submitSlipCancel', 'submitSlipConfirm', 'submitSlipDateCorrection', 'submitSlipDelivered',
       'submitSlipDiscard', 'submitSlipDraft', 'submitSlipTrackingEdit']);
   });
 });
@@ -116,12 +116,16 @@ describe('fetchShipmentSlips', () => {
 });
 
 describe('fetchShipmentSlip', () => {
+  test.each([undefined, 'true', null])('FREQ-540-AC-10: 訂正権限%jが真偽でなければ読み違い', async (canCorrectDate) => {
+    mockClientFetch.mockResolvedValue(respond(200, { slip: confirmedDetail(), canCorrectDate }));
+    expect(await client.fetchShipmentSlip(SLIP_ID)).toEqual({ kind: 'error', message: '発送票を読み込めませんでした。', denied: false });
+  });
   test('FREQ-531-AC-01: 票1件の窓口を読み、応答 { slip } の詳細を検査して返す（下書きも確定済みも）', async () => {
-    mockClientFetch.mockResolvedValue(respond(200, { slip: draftDetail() }));
-    await expect(client.fetchShipmentSlip(SLIP_ID)).resolves.toEqual({ kind: 'ok', data: draftDetail() });
+    mockClientFetch.mockResolvedValue(respond(200, { slip: draftDetail(), canCorrectDate: false }));
+    await expect(client.fetchShipmentSlip(SLIP_ID)).resolves.toEqual({ kind: 'ok', data: { ...draftDetail(), canCorrectDate: false } });
     expect(mockClientFetch).toHaveBeenCalledWith(`/api/admin/shipment-slips/${SLIP_ID}`, { cache: 'no-store' });
-    mockClientFetch.mockResolvedValue(respond(200, { slip: confirmedDetail() }));
-    await expect(client.fetchShipmentSlip(SLIP_ID)).resolves.toEqual({ kind: 'ok', data: confirmedDetail() });
+    mockClientFetch.mockResolvedValue(respond(200, { slip: confirmedDetail(), canCorrectDate: true }));
+    await expect(client.fetchShipmentSlip(SLIP_ID)).resolves.toEqual({ kind: 'ok', data: { ...confirmedDetail(), canCorrectDate: true } });
   });
 
   test.each([
@@ -153,6 +157,24 @@ describe('fetchShipmentSlip', () => {
       expect(mockClientFetch).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('submitSlipDateCorrection', () => {
+  const body = { expectedVersion: 2, shipmentDate: '2026-10-24', reason: '記録の訂正', requestKey: KEY };
+  const corrected = { id: SLIP_ID, version: 3, shipmentDate: body.shipmentDate, replayed: false };
+  test('FREQ-535-AC-03: 固定の窓口と本文で送信し、成功を検査する', async () => {
+    mockClientFetch.mockResolvedValue(respond(200, corrected));
+    expect(await client.submitSlipDateCorrection(SLIP_ID, body)).toEqual({ kind: 'ok', data: corrected });
+    expect(mockClientFetch).toHaveBeenCalledWith(`/api/admin/shipment-slips/${SLIP_ID}/shipment-date`, expect.objectContaining({ method: 'POST', body: JSON.stringify(body) }));
+    mockClientFetch.mockResolvedValue(respond(200, { ...corrected, id: ITEM_ID }));
+    expect(await client.submitSlipDateCorrection(SLIP_ID, body)).toEqual({ kind: 'unknown' });
+  });
+  test('FREQ-540-AC-10: 権限403は訂正の専用文、CSRFは再読込の文を維持する', async () => {
+    mockClientFetch.mockResolvedValue(respond(403, { permission: 'admin.shipping.correct_date' }));
+    expect(await client.submitSlipDateCorrection(SLIP_ID, body)).toEqual({ kind: 'blocked', forbidden: true, message: '出荷日を訂正する権限がありません。' });
+    mockClientFetch.mockResolvedValue(respond(403, { reason: 'CSRF validation failed' }));
+    expect(await client.submitSlipDateCorrection(SLIP_ID, body)).toEqual({ kind: 'blocked', forbidden: false, message: 'セキュリティ確認に失敗しました。ページを再読み込みして、もう一度送ってください。' });
+  });
 });
 
 describe('submitSlipDraft', () => {

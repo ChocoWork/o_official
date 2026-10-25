@@ -5,17 +5,18 @@
 // 「同梱する品物」の表（行を外す）、「品物を追加」（同梱できる候補だけ）、「送り先」、「下書きを破棄」。
 // 品物の外す・追加は、選択の全部を送って丸ごと入れ替える（版が違えば断られ、読み直しても入力は保つ）。
 // 発送票確認と確定、確定済みの票の伝票番号の入力・訂正（ShipmentSlipTrackingDialog）・手動の配達済み（ShipmentSlipDeliveredDialog）・
-// 取消（ShipmentSlipCancelDialog）を扱う。出荷日の訂正は後の段階で足す。
+// 取消（ShipmentSlipCancelDialog）と権限がある人の出荷日訂正（ShipmentSlipDateDialog）を扱う。
 // 権限は窓口と DB が守り、この部品は返事の状態で出し分ける。
 import { useEffect, useState } from 'react';
 import ShipmentSlipCancelDialog from '@/components/ShipmentSlipCancelDialog';
+import ShipmentSlipDateDialog from '@/components/ShipmentSlipDateDialog';
 import ShipmentSlipDeliveredDialog from '@/components/ShipmentSlipDeliveredDialog';
 import ShipmentSlipTrackingDialog from '@/components/ShipmentSlipTrackingDialog';
 import { Button } from '@/components/ui/Button/Button';
 import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { useShipmentSlipWrite, type SlipWriteResult } from '@/hooks/useShipmentSlipWrite';
 import { toOrderNumber } from '@/lib/orders/order-number';
-import { fetchPacking, fetchShipmentSlip, submitSlipConfirm, submitSlipDiscard, submitSlipDraft } from '@/lib/orders/shipment-slips/shipment-slip-client';
+import { fetchPacking, fetchShipmentSlip, submitSlipConfirm, submitSlipDiscard, submitSlipDraft, type ShipmentSlipView } from '@/lib/orders/shipment-slips/shipment-slip-client';
 import { takeSlipNotice } from '@/lib/orders/shipment-slips/shipment-slip-notice';
 import {
   formatSlipHeading,
@@ -47,7 +48,7 @@ const CANDIDATE_MAX_PAGES = 10;
 type SlipState =
   | { phase: 'loading' }
   | { phase: 'error'; message: string }
-  | { phase: 'ready'; slip: ShipmentSlipDetail };
+  | { phase: 'ready'; slip: ShipmentSlipView };
 
 type CandidateState =
   | { phase: 'loading' }
@@ -76,6 +77,7 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
   const [cancelOpen, setCancelOpen] = useState(false);
   const [trackingOpen, setTrackingOpen] = useState(false);
   const [deliveredOpen, setDeliveredOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [carrier, setCarrier] = useState<ShippingCarrierId | ''>('');
   const [trackingNumber, setTrackingNumber] = useState('');
@@ -409,10 +411,13 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
         <h2 className="lk-text-lg">注文ごとの発送</h2>
         {slip.orders.map((order) => <p key={order.fulfillmentId}>注文 {toOrderNumber(order.orderId)} 発送（{order.fulfillmentNumber}回目） {order.deliveryStatus ? DELIVERY_STATUS_LABELS[order.deliveryStatus] : ''}</p>)}
         <h2 className="lk-text-lg">出荷日の履歴</h2>
-        {slip.dateHistory.map((entry) => <p key={entry.version}>{formatPurchaseOrderDateTime(entry.createdAt)} {entry.previousDate} → {entry.newDate}</p>)}
+        {slip.dateHistory.map((entry) => <p key={entry.version}>{formatPurchaseOrderDateTime(entry.createdAt)} {entry.kind === 'initial' ? '初回' : '訂正'} {entry.previousDate} → {entry.newDate} {entry.reason}</p>)}
         <h2 className="lk-text-lg">荷物の履歴</h2>
         {slip.versions.map((entry) => <p key={entry.version}>{formatPurchaseOrderDateTime(entry.createdAt)} {entry.shipmentDate} {entry.trackingNumber}</p>)}
         <div className="flex flex-wrap gap-3">
+          {slip.canCorrectDate ? (
+            <Button type="button" variant="secondary" disabled={locked} onClick={() => { setNotice(null); setLocalMessage(null); setDateOpen(true); }}>{SHIPMENT_SLIP_TEXT.correctDate}</Button>
+          ) : <p>{SHIPMENT_SLIP_TEXT.dateOwnerOnly}</p>}
           <Button type="button" variant="secondary" disabled={locked} onClick={() => { setNotice(null); setLocalMessage(null); setTrackingOpen(true); }}>
             {slip.trackingNumber === null ? SHIPMENT_SLIP_TEXT.trackingEnter : SHIPMENT_SLIP_TEXT.trackingEdit}
           </Button>
@@ -428,6 +433,10 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
         </div>
       </section> : null}
       {/* 読み直した票が確定済みでなくなった（取り消された）時は、ダイアログを閉じる */}
+      {dateOpen && slip.stage === 'confirmed' && slip.canCorrectDate ? (
+        <ShipmentSlipDateDialog slip={slip} onClose={() => setDateOpen(false)}
+          onCorrected={() => { setDateOpen(false); setNotice(SHIPMENT_SLIP_TEXT.dateCorrected); reload(); }} onStale={reload} />
+      ) : null}
       {trackingOpen && slip.stage === 'confirmed' ? (
         <ShipmentSlipTrackingDialog
           slip={slip}

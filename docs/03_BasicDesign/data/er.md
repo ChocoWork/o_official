@@ -1,6 +1,6 @@
 # ER 図（現行リポジトリの実装）
 
-> 状態: 現行のソース（G-3 Task 8 の追跡の親と配送の結果の票への展開（表の変更なし、関数の置換）を 2026-10-26 に追記。グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ適用済み（Task 1 の依頼で確認）。G-3 Task 1 の新6表・出荷日・守りを同日に追記し、controller reset後のDB全件でTask 1の新規失敗0を2026-10-25に確認した（全体は既知stockist2失敗によりexit 1）。G-2 Task 9 で手元の DB と突き合わせ、発注書の9表・22 FK、FK の合計 142〔public 起点 131・private 起点 11〕が DB と一致することを確かめた） | 確認日: 2026-10-25（G-3 Task 5の確定まで追記。controllerの実鍵PostgRESTを含む12 suiteで665/665成功） | 対象: `supabase/migrations/` の基準スキーマと後続変更
+> 状態: 現行のソース（G-3 Task 8 の追跡の親と配送の結果の票への展開（表の変更なし、関数の置換）を 2026-10-26 に追記。グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ適用済み（Task 1 の依頼で確認）。G-3 Task 1 の新6表・出荷日・守りを同日に追記し、controller reset後のDB全件でTask 1の新規失敗0を2026-10-25に確認した（全体は既知stockist2失敗によりexit 1）。G-2 Task 9 で手元の DB と突き合わせ、発注書の9表・22 FK、FK の合計 142〔public 起点 131・private 起点 11〕が DB と一致することを確かめた） | 確認日: 2026-10-25（G-3 Task 5の確定まで追記。controllerの実鍵PostgRESTを含む12 suiteで665/665成功） | 対象: `supabase/migrations/` の基準スキーマと後続変更 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
 
@@ -2049,3 +2049,9 @@ public.item_delete_blockers(bigint[]) は戻り値の追加のため DROP → CR
 | `private.record_delivery_read_result(uuid,integer,uuid,jsonb)`（置換。書き手の閉じた一覧の中・名前も数も変わらない） | G-1 の本体との差は、(1) 代表の発送が票の代表（親の行がその発送を代表と呼ぶ）なら、行の鍵を**表ごとに票の全注文（`ANY(票の注文)`）でまとめて**取ってから次の表へ進む（orders → order_items → 割当 → 返品 → 返品の明細 → 返品の受取 → 受取の明細 → 返金 → 返金の明細 → 取消申請 → 取消申請の明細 → 発送、その後に代表の登録の行。前の表へは戻らない。票に属さない発送は従来どおり自分の注文だけ）、(2) 対象 = 代表（先頭）＋その票の他の有効な発送のうち同じ追跡の版でまだ配達済みでないもの（`order_id` 昇順）へ、出来事・状況・配達中/配達済みのメール・配達済みの反映（操作の記録と品物の状態。冪等キーは G-1 の式を対象の発送IDで）を同じ内容で書く、(3) 登録の行の更新・要対応の開閉・戻り値は代表について1回だけ | 変更なし（private・public とも service_role のみ） |
 
 在庫の閉包の道具（variant・商品・近隣の注文まで広げる）は、この worker の経路が今より多く取ることになるので呼ばない。末尾の確かめは reads の `tracking_parent_functions`／`tracking_parent_callers`、actions の `shipment_slip_read_result_function`／`shipment_slip_read_result_body`（属性と ACL の不変、共通の押さえの数と位置、対象への展開）。詳しい順序は[追跡の親と配送の読み直しの結果の票への展開](../../04_DetailDesign/sequence/shipping.md)、運用は[webhook-queue-operations](../../06_Operations/webhook-queue-operations.md)。[DB試験](../../../tests/integration/db/group_g3_tracking_parent.integration.test.ts)。
+
+## 出荷日の訂正（G-3 Task 9）
+
+確認日: 2026-10-26。表・列追加なし。第4移行actionsへprivate/publicのadmin_correct_shipment_dateを追記。本番未適用、controllerが修正前のTask 9をfresh resetし、実鍵PostgRESTを含む12 suite・639/639成功（2026-10-26）。Fix round 1の後も、controllerがfresh resetし実鍵PostgRESTを含む12 suite・642/642成功（2026-10-26）。
+
+票と有効発送のshipment_dateを更新し、shipment_date_historyにcorrection・新しい版・previous_date・new_date・reason・actor_id・operation_id、shipment_slip_versionsにdate_correctionと理由を追記する。履歴は更新・削除しない。group_g_operationsはshipment_date_correct、cause_type=shipment_slip。同キー同指紋は再送、異内容は23505。list_shipment_accounting_inputsのrevision_idは訂正ごとに変わる最新履歴id。shipped_at・confirmed_at・delivered_at、返品期限・計上基準は不変。

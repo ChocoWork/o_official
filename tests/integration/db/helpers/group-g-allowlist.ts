@@ -51,12 +51,13 @@ export const G3C_ALLOWLIST: readonly string[] = Object.freeze([
 
 /**
  * G-3 の移行 group_g3_shipping_actions（G3D）が、その時点までに存在する書き手だけで持つ一覧（G3C の72本 + 伝票番号の後入力・訂正と手動の
- * 配達済みの2本 = 74本）。今の DB の書き手の一覧はこれと同じ。G3C の末尾の確かめを今の DB で流す試験は、流す前に G3C_ALLOWLIST（72本）へ入れ替える。
+ * 配達済み・出荷日訂正の3本 = 75本）。今の DB の書き手の一覧はこれと同じ。G3C の末尾の確かめを今の DB で流す試験は、流す前に G3C_ALLOWLIST（72本）へ入れ替える。
  */
 export const G3D_ALLOWLIST: readonly string[] = Object.freeze([
   ...G3C_ALLOWLIST,
   'private.admin_update_shipment_slip_tracking(uuid,integer,text,text,boolean,uuid,uuid)',
   'private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)',
+  'private.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid)',
 ]);
 
 /** 書き手の閉じた一覧を、渡した一覧へ置き換える文（関数の所有者・SECURITY DEFINER・search_path 空は移行と同じ） */

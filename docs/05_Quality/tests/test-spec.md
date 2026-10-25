@@ -1,6 +1,6 @@
 # テスト仕様
 
-> 状態: 現行の方針（G-3 Task 8 のテストの節は 2026-10-26 に追記。グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 7の伝票番号の後入力・訂正と手動の配達済みのDB・単体を追記）（G-3 Task 6の発送の取消のDB・単体を追記）（G-3 Task 4の発送票の下書きのDB・単体を追記）（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件
+> 状態: 現行の方針（G-3 Task 8 のテストの節は 2026-10-26 に追記。グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 7の伝票番号の後入力・訂正と手動の配達済みのDB・単体を追記）（G-3 Task 6の発送の取消のDB・単体を追記）（G-3 Task 4の発送票の下書きのDB・単体を追記）（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
 
@@ -229,7 +229,7 @@ G-0の基準専用のorder-fixtures.tsの非G分岐は、G-3のshipment_date列�
 
 ## G-3 Task 3 荷作り表の画面と読取の窓口・管理メニュー・旧い案内の置換
 
-確認日: 2026-10-25。下記の単体は実行済み（件数は Task 3 報告）。DB・PostgREST の2件（実 store 経路）は作成済みで、controller の実行待ち。
+確認日: 2026-10-25。下記の単体は実行済み（件数は Task 3 報告）。DB・PostgRESTの実store経路を含め、controllerが修正前のTask 9をfresh resetし、実鍵PostgRESTを含む12 suite・639/639成功（2026-10-26）。Fix round 1の後も、controllerがfresh resetし実鍵PostgRESTを含む12 suite・642/642成功（2026-10-26）。
 
 | ファイル | 層 | 対象 | 入力と期待 |
 | --- | --- | --- | --- |
@@ -242,7 +242,7 @@ G-0の基準専用のorder-fixtures.tsの非G分岐は、G-3のshipment_date列�
 | [AdminGroupG1LegacyStop](../../../tests/unit/components/AdminGroupG1LegacyStop.test.tsx)・[AdminOrderHistoryWiring](../../../tests/unit/components/AdminOrderHistoryWiring.test.tsx)・[ShopSettingsSection](../../../tests/unit/components/ShopSettingsSection.test.tsx) | 単体（画面） | FREQ-524-AC-03、FREQ-533-AC-01 | 注文一覧は荷作り表への案内とリンク、履歴は発送票への案内と、票に属する発送の行への「発送票 ○○ を開く」。追跡の説明の第三の文の置換 |
 | [order-email-routes](../../../tests/unit/api/admin/order-email-routes.test.ts) | 単体（窓口） | FREQ-533-AC-01 | 履歴の窓口が slipId・slipNumber を付ける。票の読み込みに失敗した時は（DB が GROUP_G_FORBIDDEN で断った時も、他の失敗も）付けず履歴は200。FORBIDDEN 以外は例外名だけをログに出す |
 | [delivery-status-traceability](../../../tests/unit/docs/delivery-status-traceability.test.ts)・[order-status-traceability](../../../tests/unit/docs/order-status-traceability.test.ts) | 文書単体 | 窓口の数・停止の注記 | route は150ファイル・192メソッド（表は149行・191メソッド。Task 4 で票の下書きの3メソッドを足した）。G-3移行の注記をE-4節と旧入口の隣に置き、仕上がりの2メソッドは G-1停止 のまま |
-| [group_g3_postgrest_paths](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts)（追加2件） | 実PostgREST結合 | FREQ-531-AC-01・04 | 実 store の読取4本を service_role の supabase-js 経由で通し、行・詳細・結び付きが型検査を通る。権限なし・不在の票は固定の403・404の ShipmentSlipError。鍵・JWT・生の誤りは出さない。controller 実行待ち |
+| [group_g3_postgrest_paths](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts)（追加2件） | 実PostgREST結合 | FREQ-531-AC-01・04 | 実 store の読取4本を service_role の supabase-js 経由で通し、行・詳細・結び付きが型検査を通る。権限なし・不在の票は固定の403・404の ShipmentSlipError。鍵・JWT・生の誤りは出さない。修正前Task 9のcontroller fresh reset・12 suite・639/639成功に含む |
 
 E2E は後続 Task（Task 13）で扱う。G-1 から止めていた旧い案内の期待のうち、型の都合で最小限だけ触れた E2E: FR-ADMIN-072・082・093・123（slipId: null, slipNumber: null の追加）と FR-ADMIN-104（追跡の説明の第三の文）。
 
@@ -253,7 +253,7 @@ E2E は後続 Task（Task 13）で扱う。G-1 から止めていた旧い案内
 | ファイル | 層 | 対象 | 入力と期待 |
 | --- | --- | --- | --- |
 | [group_g3_draft](../../../tests/integration/db/group_g3_draft.integration.test.ts) | DB結合（構造は DB なし） | FREQ-531-AC-02・03、FREQ-532-AC-01〜05、FREQ-533-AC-03、FREQ-540-AC-10・11 | 作成（票1件・番号・stage・版・draft_lines・顧客と送り先の写し・有効期限7日・操作の記録を一度に保存、同日の2件目は次の番号、別の日は数えない、会員の写し）、一部の数量・入れ替え（先頭の明細の注文から写しを取り直す・明細の昇順）、再送と衝突と版違い（再送は票が進んでいても保存した結果）、保存でも同梱をサーバーが断る表（会員と別会員・会員とゲスト・ゲストのメール違い・別住所7項目・建物の片方空・必須の空・同じメールでの連鎖。拒否のとき票も操作の記録も増えない）、TS の bundleVerdict と DB の一致、拒否の優先順（未払い → 阻害理由 → 同梱 → 数量）、数量・形の不正（0・負・小数・文字・100000・重複・101件・空・余分な項目・不正 uuid）、阻害理由ごとの拒否コード（支払確認・配送先不足・入金日時なし・色サイズ未確定・交換手数料待ち）、2つの下書きが同じ明細を選べる、破棄（版+1・再送・破棄済み/確定済み/取消済みは NOT_DRAFT）、期限切れも保存し直せて期限が延びる、権限（4つ揃うと通る・1つ欠けると断る・無効/期限切れの役割・役割なし・存在しない実行者、権限が存在確認より先、役割の和集合）、在庫・割当・台帳・注文・発送が不変、途中の失敗（票の INSERT・UPDATE・操作の記録の INSERT に故障注入）で何も残らない、関数の構造（所有者・SECURITY・search_path・EXECUTE の集合、押さえの道具の最初の文、anon・authenticated は 42501）、末尾の確かめの改変検出（関数の欠け・ACL・押さえの順（押さえの前に表を読む・`FROM ONLY`・`TABLE`・権限の確かめの関数を押さえの前へ移す・押さえの道具が登録の行を票の行より先に取る・票の行を在庫の閉包より先に取る）・一覧の増減と差し替え・同名の overload）、連番の枯渇（`SL-<日本時間の日付>-9999` で `GROUP_G_SLIP_NUMBER_EXHAUSTED / 55000`、別の日の 9999 は数えない）、移行ファイルの形（ASCII・BOM/CR なし・印・USAGE を変えない） |
-| [group_g3_postgrest_paths](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts)（追加2件） | 実PostgREST結合 | FREQ-531-AC-03、FREQ-540-AC-10 | 実 store の保存・入れ替え・破棄を service_role の supabase-js 経由で通し、再送は replayed: true、版違い・数量超過・空・権限なし・不在の票は固定の 409・400・403・404 の ShipmentSlipError。anon・実 authenticated JWT は保存・破棄の公開入口を 42501 で拒み、何も書かない。controller 実行待ち |
+| [group_g3_postgrest_paths](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts)（追加2件） | 実PostgREST結合 | FREQ-531-AC-03、FREQ-540-AC-10 | 実 store の保存・入れ替え・破棄を service_role の supabase-js 経由で通し、再送は replayed: true、版違い・数量超過・空・権限なし・不在の票は固定の 409・400・403・404 の ShipmentSlipError。anon・実 authenticated JWT は保存・破棄の公開入口を 42501 で拒み、何も書かない。修正前Task 9のcontroller fresh reset・12 suite・639/639成功に含む |
 | [group_g1_writer_inventory](../../../tests/integration/db/group_g1_writer_inventory.integration.test.ts) | DB構造・回帰 | FREQ-540-AC-10・11 | 許可一覧は67本（保存・破棄を末尾に足した）。発送票の書込み関数2本は private の DEFINER・search_path 空で一覧にあり、public の入口は同名 private へ委ねるだけの INVOKER。押さえの道具は誰も EXECUTE できず書き手でない。service_role が EXECUTE できる発送票の書込みの関数は4本。書込み本体は押さえを表の参照より前に呼ぶ |
 | [group_g2_migration_asserts](../../../tests/integration/db/group_g2_migration_asserts.integration.test.ts)・[group_g2_purchase_documents](../../../tests/integration/db/group_g2_purchase_documents.integration.test.ts) | DB結合 | FREQ-540-AC-07・08・10 | G2B の末尾の確かめを実DBで流す前に、共有の道具の `runWithAllowlist(client, G2_ALLOWLIST, 節)` で取引の中の一覧を G-2 の65本へ入れ替える（戻すのは rollback）。今の DB の一覧（67本）のままだと `purchase_writer_allowlist_missing` で止まることも確かめる。今の DB の一覧が `G3C_ALLOWLIST` と同じことも確かめる。`group_g2_purchase_quantities`・`group_g2_purchase_receipts` の「今の DB の本数」は `G3C_ALLOWLIST.length` に合わせた |
 | [group-g-allowlist](../../../tests/integration/db/helpers/group-g-allowlist.ts) | 共有の道具 | FREQ-540-AC-11 | `G2_ALLOWLIST`（G2B 移行の `v_writers` から読み取って固定した65本）、`G3C_ALLOWLIST`（G-2 の65本＋この移行に存在する書き手だけ。Task 4 は67本）、`replaceAllowlistSql`、`runWithAllowlist`。`toBe(65)` の grep だけに頼らず、`g2b_final_objects`・`v_writers`・`group_g_writer_allowlist` を grep して、節を実行する suite を全部載せた（`group_g2_purchase_create`・`_receipts` の文字列読みは変更なし） |
@@ -319,3 +319,17 @@ E2E は後続 Task（Task 13）で扱う。この Task は E2E の期待を変�
 | [既存の単体](../../../tests/unit/lib/orders/customer-order-view.test.ts)・[配送 store](../../../tests/unit/lib/orders/tracking/delivery-store.test.ts)・[文書単体](../../../tests/unit/docs/delivery-status-traceability.test.ts) | 単体 | FREQ-541 AC-03・要求の追跡 | 出力が変わらない既存の単体は無修正。文書単体は FREQ-534 の AC 一覧に AC-04 を加えた |
 
 controller の reset 後に流す DB suite: `group_g3_tracking_parent`・`group_g1_delivery*`・`delivery_tracking_*`・`order_status_links*`・`group_g1_concurrency`・`group_g3_*`（`group_g3_postgrest_paths` は鍵を持つ controller）。既存の E-4・G-1 の suite は無修正で緑のまま（読み直しの結果の本体の文字の並びを確かめる `group_g1_delivery` は、票に属さない発送の道の文をそのまま残して通す）。単体は DB・実メール・17TRACK・ブラウザの動作を証明しない。
+
+## 出荷日の訂正（G-3 Task 9）
+
+確認日: 2026-10-26。DB・実鍵PostgREST・ブラウザはcontroller担当。本番未適用。
+
+| 試験 | 対象と期待 |
+| --- | --- |
+| [group_g3_date](../../../tests/integration/db/group_g3_date.integration.test.ts) | FREQ-535 AC-03/04/05・FREQ-540 AC-10/11。全有効発送と票の日付・履歴・版、権限、理由、JST範囲、配達日、返品起点不変、会計revision_id、再送・衝突・段階、故障rollback、公開入口、75本、prosrc限定集合、lock前参照の拒否 |
+| [shipment-date-isolation](../../../tests/unit/lib/orders/shipment-slips/shipment-date-isolation.test.ts) | FREQ-535 AC-04。KPI・finance・sales・KPI/accounting APIのソースにshipment_date/shipmentDateが無い。認証や他sessionのファイルに依存しない |
+| [route](../../../tests/unit/api/admin/shipment-slip-shipment-date-route.test.ts)・[store](../../../tests/unit/lib/orders/shipment-slips/shipment-slip-store.test.ts) | 訂正3権限、CSRF、IP/actor各30/600、認可actor、入力、固定エラー・監査、成功検査 |
+| [dialog](../../../tests/unit/components/ShipmentSlipDateDialog.test.tsx)・[画面](../../../tests/unit/components/ShipmentSlipSection.test.tsx) | 正式文、理由必須、二重防止、版競合・結果不明、権限切替・履歴 |
+| [実PostgREST](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts) | 実storeの訂正・再送・権限、anon/authenticatedのEXECUTE拒否。鍵を持つcontrollerが実行 |
+
+現行G3D_ALLOWLISTは74→75本、票の書込み本体7本と入口7本。G3Cの72本・G2の65本は履歴時点のassert用に維持。routeは156ファイル・199メソッド、表は155行・198メソッド（E2E専用GETは除外）。単体・静的確認をDB適用・RLS・実メール・事業者・ブラウザの証明にしない。

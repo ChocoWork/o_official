@@ -5,8 +5,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { inspect } from 'util';
 import {
   cancelShipmentSlip,
+  canCorrectShipmentDate,
   classify,
   confirmShipmentSlip,
+  correctShipmentDate,
   discardShipmentSlipDraft,
   getAdminShipmentSlip,
   listAdminOrderShipmentSlips,
@@ -36,6 +38,56 @@ import {
 const rpc = jest.fn();
 const client = { rpc } as unknown as SupabaseClient;
 const FAILED = '発送の記録に失敗しました';
+
+describe('canCorrectShipmentDate', () => {
+  const required = ['admin.shipping.correct_date', 'admin.shipping.read', 'admin.orders.read'];
+  const permissionRow = (codes: string[]) => ({ roles: { role_permissions: codes.map((code) => ({ permissions: { code } })) } });
+  test.each([[], required.slice(1), [required[0]], required].map((codes) => [codes]))('FREQ-540-AC-10: 権限集合%jを静かに読み、3権限が揃う時だけtrue', async (codes) => {
+    const query = { select: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis(), or: jest.fn().mockResolvedValue({ data: [permissionRow(codes)], error: null }) };
+    const from = jest.fn().mockReturnValue(query);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await canCorrectShipmentDate({ from } as unknown as SupabaseClient, 'authorized-actor')).toBe(codes.length === 3);
+      expect(from).toHaveBeenCalledWith('user_roles');
+      expect(query.eq).toHaveBeenCalledWith('user_id', 'authorized-actor');
+      expect(query.eq).toHaveBeenCalledWith('active', true);
+      expect(query.or).toHaveBeenCalledWith(expect.stringMatching(/^expires_at\.is\.null,expires_at\.gt\./));
+      expect(warn).not.toHaveBeenCalled(); expect(error).not.toHaveBeenCalled();
+    } finally { warn.mockRestore(); error.mockRestore(); }
+  });
+  test('FREQ-540-AC-10: 有効な複数役割の和集合で数え、照会失敗は固定500', async () => {
+    const query = { select: jest.fn().mockReturnThis(), eq: jest.fn().mockReturnThis(), or: jest.fn().mockResolvedValue({ data: [permissionRow(required.slice(0, 1)), permissionRow(required.slice(1))], error: null }) };
+    const aclClient = { from: jest.fn().mockReturnValue(query) } as unknown as SupabaseClient;
+    expect(await canCorrectShipmentDate(aclClient, 'actor')).toBe(true);
+    query.or.mockResolvedValueOnce({ data: null, error: { message: 'PRIVATE' } });
+    await expect(canCorrectShipmentDate(aclClient, 'actor')).rejects.toMatchObject({ status: 500, message: FAILED });
+  });
+});
+
+describe('correctShipmentDate', () => {
+  const input = { slipId: SLIP_ID, expectedVersion: 2, shipmentDate: '2026-10-24', reason: '記録の訂正', requestKey: SLIP_ID_2 };
+  const result = { id: SLIP_ID, version: 3, shipmentDate: input.shipmentDate, replayed: false };
+  test('FREQ-535-AC-03: 認可actorと全引数を1回RPCへ渡し、許可された成功項目だけ返す', async () => {
+    rpc.mockResolvedValue({ data: { ...result, private_value: 'PRIVATE' }, error: null });
+    expect(await correctShipmentDate(client, 'actor', input)).toEqual(result);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('admin_correct_shipment_date', { _slip_id: SLIP_ID, _expected_version: 2,
+      _shipment_date: input.shipmentDate, _reason: input.reason, _actor_id: 'actor', _request_key: SLIP_ID_2 });
+  });
+  test.each([null, {}, { ...result, id: SLIP_ID_2 }, { ...result, version: 0 }, { ...result, shipmentDate: '2026-02-30' }, { ...result, replayed: 'true' }])('FREQ-535-AC-03: 崩れた成功%jを固定500にする', async (data) => {
+    rpc.mockResolvedValue({ data, error: null });
+    await expect(correctShipmentDate(client, 'actor', input)).rejects.toMatchObject({ status: 500, message: FAILED });
+  });
+  test('FREQ-535-AC-03: 再送と既知・未知の失敗を分類する', async () => {
+    rpc.mockResolvedValueOnce({ data: { ...result, replayed: true }, error: null });
+    expect(await correctShipmentDate(client, 'actor', input)).toEqual({ ...result, replayed: true });
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'GROUP_G_SHIPMENT_DATE_AFTER_DELIVERY', code: '22023' } });
+    await expect(correctShipmentDate(client, 'actor', input)).rejects.toMatchObject({ status: 409, code: 'GROUP_G_SHIPMENT_DATE_AFTER_DELIVERY' });
+    rpc.mockRejectedValueOnce(new Error('PRIVATE'));
+    await expect(correctShipmentDate(client, 'actor', input)).rejects.toMatchObject({ status: 500, message: FAILED });
+  });
+});
 
 /** 失敗を捕まえて、状態・code・本文を返す */
 async function failure(action: () => Promise<unknown>): Promise<{ status: number; code: string | undefined; message: string; error: unknown }> {

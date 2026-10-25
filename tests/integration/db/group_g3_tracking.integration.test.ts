@@ -148,19 +148,19 @@ describe('G-3 tracking / delivered migration (no database)', () => {
     expect(body).not.toMatch(/UPDATE\s+public\.orders/);
   });
 
-  test('FREQ-540-AC-11: 74本の閉集合は G3C の72本 + 伝票番号の後入力・配達済みの2本で、移行の関数と末尾assertに載る', () => {
+  test('FREQ-540-AC-11: 75本の閉集合は G3C の72本 + 伝票番号・配達済み・出荷日の3本で、移行の関数と末尾assertに載る', () => {
     expect(G3C_ALLOWLIST).toHaveLength(72);
-    expect(G3D_ALLOWLIST).toHaveLength(74);
-    expect(new Set(G3D_ALLOWLIST).size).toBe(74);
+    expect(G3D_ALLOWLIST).toHaveLength(75);
+    expect(new Set(G3D_ALLOWLIST).size).toBe(75);
     expect(G3D_ALLOWLIST.slice(0, 72)).toEqual([...G3C_ALLOWLIST]);
-    expect(G3D_ALLOWLIST.slice(-2)).toEqual([`private.${trackingSignature}`, `private.${deliveredSignature}`]);
+    expect(G3D_ALLOWLIST.slice(72, 74)).toEqual([`private.${trackingSignature}`, `private.${deliveredSignature}`]);
     const bodyStart = sql.indexOf('CREATE OR REPLACE FUNCTION private.group_g_writer_allowlist()');
     const assertStart = sql.indexOf('-- G3D_FINAL_ASSERT_BEGIN');
     const writersStart = sql.indexOf('v_writers text[] := ARRAY[');
     for (const section of [sql.slice(bodyStart, assertStart), sql.slice(writersStart, sql.indexOf('];', writersStart))]) {
       for (const signature of G3D_ALLOWLIST) expect({ signature, once: section.split(`'${signature}'`).length - 1 }).toEqual({ signature, once: 1 });
     }
-    expect(sql.slice(assertStart)).toContain('<> 74');
+    expect(sql.slice(assertStart)).toContain('<> 75');
     for (const name of ['admin_update_shipment_slip_tracking', 'admin_mark_shipment_slip_delivered']) {
       expect(sql).toContain(`CREATE FUNCTION private.${name}(`);
       expect(sql).toContain(`CREATE FUNCTION public.${name}(`);
@@ -739,7 +739,7 @@ describeLocalDb('G-3 shipment slip tracking / delivered', (db) => {
         }
       };
       const failed = (detail: string) => ({ code: '55000', message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', detail });
-      expect(G3D_ALLOWLIST).toHaveLength(74);
+      expect(G3D_ALLOWLIST).toHaveLength(75);
       expect(await run(null)).toBeNull();
       expect(await run(`drop function ${trackEntry}`)).toEqual(failed('shipment_slip_action_functions'));
       expect(await run(`grant execute on function ${track} to anon`)).toEqual(failed('shipment_slip_action_functions'));
@@ -754,7 +754,7 @@ describeLocalDb('G-3 shipment slip tracking / delivered', (db) => {
       expect(await run(replaceAllowlistSql(['private.lock_group_g_shipment_slips(uuid[],uuid[],boolean)', ...G3D_ALLOWLIST.slice(1)]))).toEqual(failed('shipment_slip_action_writer_allowlist'));
     });
 
-    test('FREQ-540-AC-11: 公開入口は INVOKER 委譲、private 本体は DEFINER で service_role だけが EXECUTE でき、許可一覧は74本で2本が入り入口は入らない', async () => {
+    test('FREQ-540-AC-11: 公開入口は INVOKER 委譲、private 本体は DEFINER で service_role だけが EXECUTE でき、許可一覧は75本で2本が入り入口は入らない', async () => {
       const rows = (await db().query(`select n.nspname,p.proname,p.prosecdef,p.prosrc,has_function_privilege('service_role',p.oid,'EXECUTE') service,
         has_function_privilege('anon',p.oid,'EXECUTE') anon,has_function_privilege('authenticated',p.oid,'EXECUTE') authenticated,
         exists(select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0 and a.privilege_type = 'EXECUTE') public_execute,
@@ -771,11 +771,11 @@ describeLocalDb('G-3 shipment slip tracking / delivered', (db) => {
         expect(rows.find((row) => row.nspname === 'private' && row.proname === name)).toMatchObject({ prosecdef: true });
       }
       const allowlist = (await db().query('select x::oid::text as oid from unnest(private.group_g_writer_allowlist()) as a(x)')).rows.map((row) => row.oid);
-      expect(allowlist).toHaveLength(74);
+      expect(allowlist).toHaveLength(75);
       const expected = (await db().query('select to_regprocedure(s)::oid::text as oid from unnest($1::text[]) as s', [G3D_ALLOWLIST])).rows.map((row) => row.oid);
       expect([...allowlist].sort()).toEqual([...expected].sort());
       for (const row of rows) expect({ name: `${row.nspname}.${row.proname}`, listed: allowlist.includes(row.oid) }).toEqual({ name: `${row.nspname}.${row.proname}`, listed: row.nspname === 'private' });
-      expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(74);
+      expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(75);
     });
   });
 
