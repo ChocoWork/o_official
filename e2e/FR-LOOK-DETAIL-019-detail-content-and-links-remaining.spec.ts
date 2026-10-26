@@ -139,7 +139,7 @@ test.describe('FR-LOOK-DETAIL-003 前後の LOOK へのリンク', () => {
       const lastId = await withLocalDb(async (db) => {
         const result = await db.query(
           `INSERT INTO public.looks (season_year, season_type, theme, theme_description, image_urls, status, created_at, updated_at)
-           VALUES (2000, 'SS', $1, 'Synthetic last look.', ARRAY['e2e/look-1-1.png'], 'published', '1999-12-31T00:00:00Z', '1999-12-31T00:00:00Z')
+           VALUES (2000, 'SS', $1, 'Synthetic last look.', ARRAY['looks/e2e/look-1-1.png'], 'published', '1999-12-31T00:00:00Z', '1999-12-31T00:00:00Z')
            RETURNING id`,
           [theme],
         );

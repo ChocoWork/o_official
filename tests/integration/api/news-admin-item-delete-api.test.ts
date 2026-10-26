@@ -81,11 +81,11 @@ const OLD_IMAGE = 'news/2026-01-01/old.png';
 
 function setup(options: { deleteResult?: Result; removeResult?: Result; codes?: string[] } = {}) {
   // 削除は .select('id, image_url') で消した行を返す。既定は 1 行（0 行は 404 になる: SEC-NEWS-016）
-  userClient = createFakeClient({
-    news_articles: options.deleteResult ?? { data: [{ id: '7', image_url: OLD_IMAGE }], error: null },
-  });
+  // 書き込みは認可の後に service role の client 1 つで行う（ADR-0026）。利用者の JWT の client は作られないので、userClient は空のまま。
+  userClient = createFakeClient({});
   serviceClient = createFakeClient(
     {
+      news_articles: options.deleteResult ?? { data: [{ id: '7', image_url: OLD_IMAGE }], error: null },
       user_roles: { data: aclRows(options.codes ?? ['admin.news.read', 'admin.news.manage']), error: null },
       audit_logs: { data: null, error: null },
     },
@@ -98,7 +98,7 @@ function setup(options: { deleteResult?: Result; removeResult?: Result; codes?: 
 }
 
 function newsOps() {
-  return userClient.ops.filter((o) => o.table === 'news_articles');
+  return serviceClient.ops.filter((o) => o.table === 'news_articles');
 }
 
 function auditRows() {
@@ -127,6 +127,7 @@ describe('DELETE /api/admin/news/[id]（記事の削除）', () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: 'Forbidden', permission: 'admin.news.manage' });
     expect(createClient).not.toHaveBeenCalled();
+    expect(newsOps()).toHaveLength(0);
     expect(auditRows()).toHaveLength(0);
   });
 
@@ -139,9 +140,10 @@ describe('DELETE /api/admin/news/[id]（記事の削除）', () => {
     expect(res.status).toBe(503);
     expect(res.headers.get('Retry-After')).toBe('30');
     expect(createClient).not.toHaveBeenCalled();
+    expect(newsOps()).toHaveLength(0);
   });
 
-  test('API-NEWS-007 利用者の JWT の client で id の行を消し、200 と成功の監査を残す（SEC-NEWS-018 の画像の後始末の結果も残す）', async () => {
+  test('API-NEWS-007 認可の後に service role の client で id の行を消し、200 と成功の監査を残す（SEC-NEWS-018 の画像の後始末の結果も残す）', async () => {
     setup();
     const request = makeRequest();
 
@@ -149,14 +151,14 @@ describe('DELETE /api/admin/news/[id]（記事の削除）', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
-    expect(createClient).toHaveBeenCalledWith(request);
+    expect(createClient).not.toHaveBeenCalled();
+    expect(userClient.ops).toHaveLength(0);
     expect(newsOps()).toHaveLength(1);
     expect(newsOps()[0].calls).toEqual([
       ['delete', []],
       ['eq', ['id', '7']],
       ['select', ['id, image_url']],
     ]);
-    expect(serviceClient.ops.some((o) => o.table === 'news_articles')).toBe(false);
     const rows = auditRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -282,9 +284,14 @@ describe('DELETE /api/admin/news/[id]（記事の削除）', () => {
     expect(rows[0]).toMatchObject({ action: 'admin.news.delete.not_found', outcome: 'failure', resource_id: null });
   });
 
-  test('API-NEWS-007 client の作成で例外が起きれば 500 Internal server error を返し、監査しない', async () => {
+  test('API-NEWS-007 認可の後の service role の client の作成で例外が起きれば 500 Internal server error を返し、監査しない', async () => {
     setup();
-    createClient.mockRejectedValue(new Error('no cookies'));
+    // 認可の中身（client の作成回数）に頼らず、認可が ACL を読み終えた後の作成だけを失敗させる
+    createServiceRoleClient.mockReset();
+    createServiceRoleClient.mockImplementation(async () => {
+      if (serviceClient.ops.some((o) => o.table === 'user_roles')) throw new Error('no key');
+      return serviceClient;
+    });
 
     const res = await DELETE(makeRequest(), ctx());
 

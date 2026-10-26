@@ -1049,7 +1049,7 @@ mobile（390px）で 3G 相当の回線を模した条件のもと、ホーム�
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1 |
 | 優先度 | MUST |
 
-`items` の RLS のうち `admin.items.read`・`admin.items.manage` で許す方針は、JWT の `aal` が `aal2` の時だけ許す。今のコードは満たさない（TM-HOME-31）。`looks`・`look_items` は LOOK の SEC-LOOK-003、`stockists` は STOCKIST の SEC-STOCKIST-003 が同じ形で持つ。
+`items` の RLS のうち `admin.items.read`・`admin.items.manage` で許す方針は、JWT の `aal` が `aal2` の時だけ許す。読みの側は今のコードは満たさない（TM-HOME-31。波 5 の `has_permission` の aal2 で直す）。書き込みの側（AC-02）は、2026-10-26 から authenticated に `items` の INSERT・UPDATE・DELETE の権限が無い（SEC-HOME-005、ADR-0106）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。`looks`・`look_items` は LOOK の SEC-LOOK-003、`stockists` は STOCKIST の SEC-STOCKIST-003 が同じ形で持つ。
 
 #### SEC-HOME-003-AC-01 aal1 の session では下書きの商品を直接読めない
 
@@ -1080,25 +1080,25 @@ aal1 の JWT の update・delete が行を変えずに終わり（権限の誤�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-HOME-004 |
-| 根拠 | 原価と内部の注記を、ブラウザに出ている anon の鍵で読ませないため。RLS は行しか絞れないので、列は権限で絞る。注文の表で列を絞った前例（`supabase/migrations/20260927100900_hide_internal_order_columns.sql`）に合わせる。全体の NFR-SEC-005（範囲外）の最小権限に当てはめた |
+| 根拠 | 原価を、ブラウザに出ている anon の鍵で読ませないため。RLS は行しか絞れないので、列は権限で絞る。`product_note` はお客さん向けの注意書きで、商品の詳細に出す公開の列なので外さない（ユーザーの決定 Q7、2026-10-26。以前の文は内部の注記として外す対象に入れていた。ADR-0106）。注文の表で列を絞った前例（`supabase/migrations/20260927100900_hide_internal_order_columns.sql`）に合わせる。全体の NFR-SEC-005（範囲外）の最小権限に当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | E2E・結合テスト |
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3 |
 | 優先度 | MUST |
 
-`items` の `pattern_cost`・`mass_production_cost`・`product_note` は、anon・authenticated に SELECT を許さない（列の単位の権限で外す）。今のコードは満たさない（TM-HOME-32）。
+`items` の `pattern_cost`・`mass_production_cost`（原価の2列）は、anon・authenticated に SELECT を許さない（列の単位の権限で、残りの21列だけに SELECT を付ける）。新しい列は自動では見えない。2026-10-26 に移行 `sec_grants_hardening` で満たした（この移行を当てた DB でだけ満たす。DATA-HOME-001、ADR-0106）。
 
-#### SEC-HOME-004-AC-01 anon の鍵で商品の原価と注記を読めない
+#### SEC-HOME-004-AC-01 anon の鍵と一般会員の JWT で商品の原価を読めない
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-HOME-004 |
 | 根拠 | 誰でも持てる鍵で原価に届かないことを、アプリを通さずに確かめるため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（手元の Supabase の公開済みの商品に原価を入れ、anon の鍵と一般会員の JWT で3つの列を select する） |
+| 確かめ方 | E2E（手元の Supabase の公開済みの商品に原価を入れ、anon の鍵と一般会員の JWT で原価の2つの列を select する。対照として `product_note` が公開の列として読めることも確かめる） |
 | 出どころ | 実装から推定 |
 
-anon の鍵と一般会員の JWT の select が、どちらも権限の誤りで終わり、原価の値が返らないこと。
+anon の鍵と一般会員の JWT の原価の列の select が、どちらも権限の誤りで終わり、原価の値が返らないこと。`product_note` は200で値が返ること。
 
 #### SEC-HOME-004-AC-02 列を絞ってもホームの商品の節が出る
 
@@ -1123,7 +1123,7 @@ anon の鍵と一般会員の JWT の select が、どちらも権限の誤り�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3 |
 | 優先度 | SHOULD |
 
-`items` は、anon に SELECT だけを、authenticated に SELECT と管理の権限の方針が要る INSERT・UPDATE・DELETE だけを付ける。TRUNCATE・TRIGGER・REFERENCES・MAINTAIN は付けない。今のコードは満たさない（TM-HOME-33）。`looks`・`look_items` は LOOK の SEC-LOOK-004、`stockists` は STOCKIST の SEC-STOCKIST-008 が同じ形で持つ。
+`items` は、anon・authenticated に原価の2列を除く21列の SELECT（列の単位）だけを付ける。INSERT・UPDATE・DELETE・TRUNCATE・TRIGGER・REFERENCES・MAINTAIN は付けない（管理の書き込みは全部 service role の窓口で行う。ユーザーの決定 Q7、2026-10-26）。2026-10-26 に移行 `sec_grants_hardening` で満たした（この移行を当てた DB でだけ満たす。DATA-HOME-001、ADR-0106）。`looks`・`look_items` は LOOK の SEC-LOOK-004、`stockists` は STOCKIST の SEC-STOCKIST-008 が同じ形で持つ。
 
 #### SEC-HOME-005-AC-01 anon の鍵でホームに出る商品の行を書き換え・消去できない
 
@@ -1541,7 +1541,7 @@ SEARCH の SEC-SEARCH-021 が持つ。満たすかどうかと確かめ方はそ
 
 SEC-SEARCH-021 の受け入れ条件を見る。
 
-### SEC-HOME-020 原価の履歴の表 `item_cost_history` は、誰にも直接読み・書き・消させない
+### SEC-HOME-020 原価の履歴の表 `item_cost_history` は、管理者（`admin.finance.read`）の読みだけを DB で許し、書き込みは service role だけにする
 
 | 属性 | 値 |
 | --- | --- |
@@ -1552,9 +1552,9 @@ SEC-SEARCH-021 の受け入れ条件を見る。
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3。実装から推定（`supabase/migrations/20260901102912_remote_schema.sql` の読み直し） |
 | 優先度 | MUST |
 
-`item_cost_history` に「誰でも」を許す方針を置かず、anon と一般会員に権限を付けない。管理の画面が使うなら、`admin.items.*` の権限の方針で authenticated にだけ、2要素認証の済み（aal2）を求めて許す（SEC-HOME-003 と同じ形）。この表を使うコードは `src/` に無い（推定。移行の外に参照が無い）ので、使わないなら権限と方針を外すか表ごと消すかをユーザーが決める。今のコードは満たさない（TM-HOME-53）。表の持ち主が決まったら、その領域の SEC に移す。
+`item_cost_history` に「誰でも」を許す方針 `"Allow all"` を置かず、anon に権限を付けない。authenticated には SELECT だけを付け、RLS の方針 `has_permission('admin.finance.read')` で管理者だけが行を読める（一般会員の select は0件）。INSERT・UPDATE・DELETE・TRUNCATE は誰にも付けず、書くのは service role だけ。ユーザーの決定 Q8（2026-10-26）に従い、新しい権限の印は作らない。2026-10-26 に移行 `sec_grants_hardening` で満たした（この移行を当てた DB でだけ満たす。DATA-HOME-001、ADR-0107）。この表を読む画面・窓口・関数は `src/` にも `scripts/` にも無い（原価の画面 `ProductCostSection`・`CostProfitSection` は `/api/admin/accounting/product-costs`・`/api/admin/kpi/cost-profit` を通って `admin_costing_items`・`admin_finance_*` を読む）。将来この表を読む時は、`admin.finance.read` の窓口（service role）か、この方針を使う。波 5 で `has_permission` に aal2 が入ると、この方針も自動で締まる。表の持ち主が決まったら、その領域の SEC に移す。
 
-#### SEC-HOME-020-AC-01 anon の鍵と一般会員の JWT で原価の履歴を読み・書き・消せない
+#### SEC-HOME-020-AC-01 anon の鍵と一般会員の JWT で原価の履歴を書き・消せず、原価の値を読めない
 
 | 属性 | 値 |
 | --- | --- |
@@ -1564,7 +1564,7 @@ SEC-SEARCH-021 の受け入れ条件を見る。
 | 確かめ方 | E2E（手元の Supabase の `item_cost_history` に原価を入れ、anon の鍵と一般会員の JWT で select・insert・update・delete を送る） |
 | 出どころ | 実装から推定 |
 
-どちらの鍵でも、4つの操作が権限の誤りで終わり、原価の値が返らず、行が変わらないこと。
+anon の鍵では4つの操作が権限の誤りで終わること。一般会員の JWT では select が200で0件、insert・update・delete が権限の誤りで終わること。どちらでも原価の値が返らず、行が変わらないこと。
 
 ## 派生要件
 
@@ -1644,7 +1644,7 @@ VIEW ALL のボタンは、呼ぶ側が渡す行き先ごとの読み上げの�
 - 署名つき URL の期限（SEC-HOME-007）、ホームの回数の制限・キャッシュの値（SEC-HOME-013）は案。ユーザーに決めてもらう
 - 原価の列（SEC-HOME-004）・`items` の権限（SEC-HOME-005）・原価の履歴の表（SEC-HOME-020）の持ち主 ITEM は範囲に無い。HOME で持ち続けるか、ITEM が範囲に入った時に移すかは決めていない。`looks`・`look_items`・`stockists` の分は LOOK・STOCKIST の SEC が持つ
 - 検索の窓の回数の制限・応答のキャッシュ・URL の語の埋め込みは SEARCH の SEC-SEARCH-006・010・021 を正にして、SEC-HOME-011・012・019 を廃止にした。この分け方の確認
-- 原価の履歴の表（SEC-HOME-020）を `src/` が使っていないこと（推定）と、本番にその表の行があるか。使わないなら表ごと消すかの判断
+- 原価の履歴の表（SEC-HOME-020）を `src/`・`scripts/` が読んでいないこと（2026-10-26 に確かめた）と、本番にその表の行があるか（行があれば、権限を外すまで原価が公開されていた期間の記録として扱う）。使わないなら表ごと消すかの判断。一般会員の select を権限の誤りでなく「200で0件」にした読み（authenticated に SELECT を付け、方針で絞る）の確認
 - `/api/auth/me` からメールの住所を外した（SEC-HOME-016）。読み手のコード（`src/contexts/LoginContext.tsx`・`src/app/auth/verified/page.tsx`）は応答の `email` を読まないことを 2026-10-26 に確かめた。`id` を外せるかは確かめていない。E2E の補助（`e2e/account-test-utils.ts` ほか）の模擬の応答には `email` が残る（読み手が使わないので壊れない）
 - セキュリティ要件の優先度は元の文書に値が無いので案（過去のレビューの重さで付けた）
 - 本番の Supabase・中継・環境変数は見ていない（脅威の文書の「未確認事項」）

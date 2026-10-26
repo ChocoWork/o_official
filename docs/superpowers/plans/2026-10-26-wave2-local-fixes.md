@@ -20,11 +20,25 @@
 | 直す項目 | HOME 4（003 の AC-02・004・005・020）、AUTH 2（011・新規 033）、LOOK 7（002・003 の AC-02・004・005・010・015・023）、NEWS 6（002 の AC-02・003 の置き場・010・022・025 と書き手の移し替え）、SEARCH 3（003・007・008）、STOCKIST 4（003 の AC-02・AC-03・008・`type` の列）、ADMIN 1（002 の AC-01） |
 | タスク | 10 つ（見本の道筋 1・取扱店の列 1・窓口の書き手 1・権限 2・検索 1・制約と関数 1・置き場 1・権限の一覧 1・最終確認 1） |
 | 移行（6 本） | `stockists_type_optional`（Task 2）、`sec_grants_hardening`（Task 4）、`sec_grants_admin_tables`（Task 5。設計書の `sec_grants_hardening` から分けた）、`sec_search_functions`（Task 6）、`sec_rls_predicates_and_constraints`（Task 7）、`sec_storage_buckets`（Task 8）。置き場は `supabase/pending-wave2/` |
-| 新しい ADR | `ADR-0462`〜`ADR-0468`（下の ID の割当） |
+| 新しい ADR | 領域ごとの番号の帯で 9 本: `ADR-0026`（NEWS）、`ADR-0106`・`0107`（HOME）、`ADR-0162`〜`0164`（LOOK）、`ADR-0267`（STOCKIST）、`ADR-0315`（SEARCH）、`ADR-0414`（AUTH）（下の ID の割当。レビューで振り直した） |
 | 外す `test.fail` | 約 24 行（各タスクの「E2E の印」に行ごとに書く）。波 5（`has_permission` の aal2）で直る読み取りの印は外さない |
 | 触らない共有文書 | `requirements.md`・`test-spec.md`・作業と指摘の台帳・`api-spec.md`・`route-inventory.md`・`tests/unit/docs/*-traceability.test.ts`・`db-migrations.md`。要る変更は Task 10 の報告に書く（`er.md` も共有として触らない） |
 | 流さないもの | E2E・サーバー・3000 番・DB 結合試験・`db reset`・全体の `jest`・`trace:report`・`validate-trace --update-baseline`・`graphify update`。DB 結合試験と E2E は書くだけ |
 | 本番 | この波は本番に何も当てない。本番の適用は G-1 が G-4 と波 1-A の移行 `20261026010000_auth_return_intents.sql` と一緒に当てる（Q27）。適用の前後に本番の権限（`has_table_privilege` など、読むだけ）と `get_advisors`（security）を比べる（Task 10 の手順） |
+
+## 進み具合（2026-10-27）
+
+**Task 1〜10 は全部済み。** 以下はその後の controller の作業と実測。
+
+| 項目 | 結果 |
+| --- | --- |
+| 移し替え | 移行 6 本（`20261026130100`〜`130600`）を `supabase/migrations/` へ移した（`supabase/pending-wave2/` の写しとバイト単位で同一）。見本 `supabase/seed.sql`・`scripts/e2e/seed-storage.ts` も本物に反映済みで、`supabase/pending-wave2/` の写しと同一。写しは `supabase/pending-wave2/` に残っている（消すかは別の判断） |
+| 後から直した DB の物（`wave2-db-fixes.md`） | `stockists_id_seq` の service_role から UPDATE を外した（USAGE・SELECT だけ）。`looks_id_seq`・`news_articles_id_seq`・`item_color_presets_id_seq` を PUBLIC・anon・authenticated から外した（130300）。台帳系 5 表（`legal_archive_runs`・`order_revisions`・`stripe_balance_transactions`・`stripe_payouts`・`stripe_refunds`）の anon・authenticated から書き込み系 7 権限を、`order_revisions_id_seq` から全権限を外した（130200 の 5 の節。5 表は本番では変化なし、連番は本番の実変更）。`home_items_grants` の古い前提（退役済みの `finalize_order_from_checkout_draft`）を直した |
+| DB 結合 | `npm run db:reset` で 6 本の自己検査が通り、`DATABASE_URL`（54322）で `--runInBand`: **144 suite 通過・13 skip・0 失敗、4339 件通過・14 skip・1 todo** |
+| DB なしの jest 全体 | **19704 件通過・0 失敗** |
+| E2E 全件（本番ビルド・1 回） | **414 failed**・4602 passed・26 skipped（G-3 は 175 failed）。増えた赤は全部 G-4 の注文・返品の E2E か、再実行で通る揺れ。波 2 の対象ファイルは赤なし（外した `test.fail` 27 行も緑）。結果は `.superpowers/sdd/2026-10-25-security-gap-fixes/e2e-results-wave2-full.json` |
+| 共有文書 | Task 10 の「共有文書の変更案」を反映した: `docs/06_Operations/db-migrations.md`（6 本の行・事前の確認・ロールバック・「以後の移行は GRANT を明示する」）、`docs/03_BasicDesign/data/er.md`、`docs/05_Quality/tests/test-spec.md`、作業と指摘の台帳 W-08。`route-inventory.md` は client の列が無いので変更なし |
+| 本番 | **未適用**（本番は G-4 と一緒に当てる・オーナーの確認の後）。窓口（Task 3・7）の配備と移行は同じ日に |
 
 ## 前提の読み（決定文の解釈。controller の確認を求める点を含む）
 
@@ -38,9 +52,9 @@
 | P4 | Q8 の事実: 原価を計算する画面（`ProductCostSection`・`CostProfitSection`）は `/api/admin/accounting/product-costs` と `/api/admin/kpi/cost-profit` を呼び、どちらも `admin.finance.read` / `admin.finance.manage` で認可して service role で `admin_costing_items`・`admin_finance_*` を読む。**`item_cost_history` を読む画面・窓口・関数は `src` にも `scripts` にも 1 つも無い**（参照は E2E の `home-grant-test-utils.ts` が pg 直で行を入れるだけ）。だから表は残し、`admin.finance.read` を持つ authenticated の SELECT だけを方針で許す（新しい権限の印は作らない）。書き込みは service role だけ。この事実を報告する | 将来この表を読む画面を作る時は `admin.finance.read` の窓口（service role）か、この方針（`has_permission`）を使う。波 5 で `has_permission` に aal2 が入ると、この方針も自動で締まる |
 | P5 | `item_color_presets` は anon に SELECT を付けない（authenticated の SELECT だけ。管理の読み方針 `has_permission('admin.items.read')` が authenticated 向けのため、anon が読める行は元から 0 件）。設計書 R4-4 は「anon と authenticated に SELECT」と一括りだが、最小権限（Supabase 公式「Grant the minimum privileges each role needs」）に合わせて anon を外す。`looks`・`look_items`・`news_articles`・`stockists` は公開の読み方針があるので anon と authenticated の両方に SELECT | anon の `item_color_presets` の select が「0 件の 200」から「42501」に変わる。E2E `FR-ADMIN-MISC-005` は anon で色見本を読む試験を持たない（Task 5 Step 1 で grep して確かめる） |
 | P6 | 書き込みの RLS 方針（`admin … manage by permission insert/update/delete`）は **消さずに残す**。権限が無いので今は働かない二重の守りで、将来だれかが GRANT を戻した時の保険になる。波 5 が aal2 を足すのは「読みの管理の枝」だけ | 方針を消すと、戻す時の手順が増えるだけで得が無い |
-| P7 | DB の CHECK（`looks.image_urls`・`news_articles.image_url`）は **関数を作らず式を直に書く**。CHECK は書く役（service_role・将来の authenticated）が評価するので、補助関数を作ると EXECUTE の付与と G の「関数の ACL を数える自己検査」への影響が増える。配列は `array_to_string(image_urls, E'\n')` を 1 本の正規表現 `^(P(\nP)*)?$`（P は 1 つの道筋）で検査し、NULL の要素は `array_position(image_urls, NULL) IS NULL` で断る。設計書 §R5 の `private.look_image_paths_ok` 案は採らない | 理由を ADR-0466 に書く。式はアプリの `isOwnLookImagePath`・`isOwnNewsImagePath`（`/^looks\/[A-Za-z0-9][A-Za-z0-9._-]*(\/…)*$/`）と同じ。DB 結合試験で受理・拒否の表を持つ |
+| P7 | DB の CHECK（`looks.image_urls`・`news_articles.image_url`）は **関数を作らず式を直に書く**。CHECK は書く役（service_role・将来の authenticated）が評価するので、補助関数を作ると EXECUTE の付与と G の「関数の ACL を数える自己検査」への影響が増える。配列は `array_to_string(image_urls, E'\n')` を 1 本の正規表現 `^(P(\nP)*)?$`（P は 1 つの道筋）で検査し、NULL の要素は `array_position(image_urls, NULL) IS NULL` で断る。設計書 §R5 の `private.look_image_paths_ok` 案は採らない | 理由を ADR-0162 に書く。式はアプリの `isOwnLookImagePath`・`isOwnNewsImagePath`（`/^looks\/[A-Za-z0-9][A-Za-z0-9._-]*(\/…)*$/`）と同じ。DB 結合試験で受理・拒否の表を持つ |
 | P8 | CHECK は `NOT VALID` で入れ、`VALIDATE` はこの波では書かない。`NOT VALID` でも既存の行の UPDATE では新しい値が検査されるので、本番の既存行の点検・正規化が先（Task 10 の「本番の事前の確認」）。長さは `char_length`（コードポイント数）で、窓口の zod（UTF-16 の長さ）より緩いか同じ | 本番の行を移行の中で書き換えない（読むだけ）。VALIDATE は点検の後の別の移行 |
-| P9 | `admin_update_look(...)` は設計書の形（行の更新 → 関連の全削除 → 追加を 1 取引）に、**更新前の `image_urls` を返す**ことを足す。先頭で `SELECT … FOR UPDATE` で行を締めて古い値を読み、更新後に返す。窓口はその戻り値で「差し替えた古い画像」を決める。波 1-C のレビュー（Task 5 指摘 7）が記録した「同時の PUT で画像が残る」弱さを同じ関数で閉じるため。関数は SECURITY INVOKER・`search_path = ''`・service_role だけが EXECUTE | 設計書に無い戻り値の追加。controller の確認を求める（不要なら戻り値を `void` に戻し、Task 7 Step 4 の窓口の読みを元に戻すだけ） |
+| P9 | `admin_update_look(...)` は設計書の形（行の更新 → 関連の全削除 → 追加を 1 取引）に、**更新前の `image_urls` を返す**ことを足す。先頭で `SELECT … FOR UPDATE` で行を締めて古い値を読み、更新後に返す。窓口はその戻り値で「差し替えた古い画像」を決める。波 1-C のレビュー（Task 5 指摘 7）が記録した「同時の PUT で画像が残る」弱さを同じ関数で閉じるため。関数は SECURITY INVOKER・`search_path = ''`・service_role だけが EXECUTE。**レビューで足した 2 点**: (a) `_image_urls` が NULL なら今の画像を保つ（`image_urls = COALESCE(_image_urls, v_previous)`）。窓口は新しい画像が無い PUT で NULL を渡す。窓口が先に読んだ古い `image_urls` を渡すと、同時の PUT が差し替えた画像を古い値で上書きし、その新しい画像が誰も指さない残骸になるため。(b) 関連の削除・追加の段の失敗（外部キー違反 `23503` を除く）は、入れ子の `BEGIN … EXCEPTION WHEN foreign_key_violation THEN RAISE; WHEN OTHERS THEN RAISE EXCEPTION 'LOOK_ITEMS_WRITE_FAILED' USING ERRCODE = 'P0001'; END` で印を付け直して投げる（行の更新も含めて全部戻る）。窓口はこの印で今と同じ `500 Failed to update linked items`・監査 `Failed to update look-item links` を返す。`FR-LOOK-SEC-004:450`（SEC-LOOK-015-AC-01）が誤りの文 `Failed to update linked items` を確かめ、`16-3_admin_look.md:463-464` と単体・結合試験も同じ文を持つため、応答の契約を変えない | 設計書に無い戻り値の追加。controller の確認を求める（不要なら戻り値を `void` に戻し、Task 7 Step 4 の窓口の読みを元に戻すだけ） |
 | P10 | 置き場の移行は `ON CONFLICT (id) DO UPDATE` で `public = false`・`file_size_limit = 5242880`・`allowed_mime_types = {image/jpeg, image/png, image/webp, image/gif}` に合わせる（本番の置き場は既にある。LOOK.md SEC-LOOK-005）。`storage.objects` に置き場を名指しする方針を作らない。**本番に当てる前に本番の `storage.buckets` の現状と `storage.objects` の方針を読む**。`item-images` は設計書 R17 の対象外なのでこの波では触らない（「回す物」） | 移行の末尾で、置き場の設定と「名指しする方針が 0 件」を検査する。本番に名指しの方針があれば移行が落ちて止まる（意図した止まり方） |
 | P11 | 検索関数 3 本: 上限は 8、`limit_count` が NULL・0 以下でも 1〜8 に丸める（`GREATEST(1, LEAST(COALESCE(limit_count, 8), 8))`）。検索語は `left(search_query, 100)`。`\` を先に二重にしてから `%`・`_` を逃がす。**関数の署名・戻りの列・`SET search_path TO 'public', 'public', 'pg_temp'`・SECURITY INVOKER は変えない**（`CREATE OR REPLACE` で所有者と ACL が保たれる）。アプリの呼び元の最大は 8（`/api/search` の `limitPerType`、候補 8） | `search-functions.integration.test.ts` が今の挙動を固定している行（「21 を渡せば 21 件」「NULL は上限なし」「負は 2201W」「`search_public_*` は PUBLIC に許す」）は新しい挙動に書き換える |
 | P12 | `search_public_items/looks/news` は **DROP せず** `REVOKE ALL … FROM PUBLIC, anon, authenticated`（NEWS の試験が 42501 しか許さない）。postgres・service_role の EXECUTE は残す | 移行の末尾で `has_function_privilege` と `aclexplode`（PUBLIC=grantee 0）で検査する（G-2 の `group_g2_public_function_acl` と同じ作法） |
@@ -64,17 +78,26 @@
 
 ### ID の割当
 
-| 種類 | ID | 題 | タスク |
-| --- | --- | --- | --- |
-| ADR | `ADR-0462` | 表・列・関数の権限は移行が明示し、`items` は列単位、管理だけが書く表は authenticated に SELECT だけを付ける | 4・5 |
-| ADR | `ADR-0463` | `item_cost_history` は表を残し、`admin.finance.read` の SELECT 方針だけを持つ（読む画面は今は無い） | 4 |
-| ADR | `ADR-0464` | 取扱店・ニュースの管理の書き込みは、認可の後に service role で行う | 3 |
-| ADR | `ADR-0465` | 検索の関数は上限 8・検索語 100 字・`\` を先に逃がし、`search_public_*` は DROP せず REVOKE する | 6 |
-| ADR | `ADR-0466` | 画像の道筋と長さの CHECK は関数を作らず式を直に書き、`NOT VALID` で入れる | 7 |
-| ADR | `ADR-0467` | LOOK の更新は `admin_update_look` の 1 取引にし、更新前の画像を返す | 7 |
-| ADR | `ADR-0468` | 置き場 `look-images`・`news-images` の設定は移行が持つ | 8 |
-| 要件 | `SEC-AUTH-033`（AC-01・AC-02） | 公開スキーマの表・列・関数の権限は移行が明示し、一覧を DB 試験で守る | 9 |
-| 補助 | `findMigration`・`resolveSeedPath`（`tests/helpers/staged-supabase.ts`。`@impl` は付けない。試験の補助） | 移行・見本の写しの探し方 | 1 |
+ADR の番号は**領域ごとの帯**で振る（`scripts/trace/scope.json` の各領域の `docs` が ADR の番号の帯を持つ: NEWS `ADR-00*`、HOME `ADR-01[0-4]*`、LOOK `ADR-01[5-9]*`、STOCKIST `ADR-02[5-9]*`、SEARCH `ADR-03[0-4]*`、AUTH `ADR-04[0-4]*`、ADMIN `ADR-04[5-9]*`）。ADR は同じ領域の構造設計（`ARC-`・`API-`・`DATA-`）の「上位」に 1 つ以上載らないと `missing-child` になるので、各行に「上位に載せる構造設計」を書いた。波 1-B・1-C も帯で振っている（`ADR-0025`・`0161`・`0266`・`0314`・`0413`）。
+
+| 種類 | ID | 題 | 上位に載せる構造設計 | タスク |
+| --- | --- | --- | --- | --- |
+| ADR | `ADR-0106` | `items` は列単位の SELECT（原価 2 列を除く。`product_note` は公開）で、anon・authenticated の書き込みは付け直さない | `DATA-HOME-001`（新設） | 4 |
+| ADR | `ADR-0107` | `item_cost_history` は表を残し、`admin.finance.read` の SELECT 方針だけを持つ（読む画面は今は無い） | `DATA-HOME-001` | 4 |
+| ADR | `ADR-0414` | 公開スキーマの表・列・関数・連番の権限は移行が明示する（REVOKE してから要る物だけ GRANT。service_role も明示）。認証の表は anon・authenticated に権限なし。管理だけが書く表は SELECT だけ | `DATA-AUTH-001`・`002`・`003`、`DATA-AUTH-006`（新設。Task 9） | 4（作る）・5・9（決まりの節を足す） |
+| ADR | `ADR-0026` | ニュースの管理の書き込みは、認可の後に service role で行う | NEWS の管理の書き込みの `ARC-NEWS-003`（または管理の書き込みの `API-NEWS-`） | 3 |
+| ADR | `ADR-0267` | 取扱店の管理の書き込みは、認可の後に service role で行う | `DATA-STOCKIST-002`（または管理の書き込みの `API-STOCKIST-`） | 3 |
+| ADR | `ADR-0315` | 検索の関数は上限 8・検索語 100 字・`\` を先に逃がし、`search_public_*` は DROP せず REVOKE する | `DATA-SEARCH-001`・`003`（LOOK・NEWS の `DATA-LOOK-004`・`DATA-NEWS-003` も上位に載せてよい） | 6 |
+| ADR | `ADR-0162` | 画像の道筋と長さの CHECK は関数を作らず式を直に書き、`NOT VALID` で入れる | `DATA-LOOK-001`（`DATA-NEWS-001` も載せる） | 7 |
+| ADR | `ADR-0163` | LOOK の更新は `admin_update_look` の 1 取引にし、更新前の画像を返す（新しい画像が無い時は今の画像を関数の中で保つ） | `API-LOOK-004`・`DATA-LOOK-002` | 7 |
+| ADR | `ADR-0164` | 置き場 `look-images`・`news-images` の設定は移行が持つ | `DATA-LOOK-005`（`DATA-NEWS-004` も載せる） | 8 |
+| 構造設計 | `DATA-HOME-001` | `items` の列の付与と公開の列（上位 `SEC-HOME-004`・`005`・`020`、`ADR-0106`・`0107`）。`DD-HOME-001` の「上位」に足して DD の子を持たせる（無いと `missing-child`） | - | 4 |
+| 構造設計 | `DATA-AUTH-006` | 公開スキーマの付与の一覧（上位 `SEC-AUTH-033`・`ADR-0414`）。`DATA-AUTH-001` を上位に持つ既存の DD（`docs/04_DetailDesign/pages/14_login.md:968` の DD。`sessions` を service role だけで書く根拠）の「上位」に足す | - | 9 |
+| 要件 | `SEC-AUTH-033`（**AC を持たない**。確かめ方は結合テスト。子は `DATA-AUTH-006`） | 公開スキーマの表・列・関数の権限は移行が明示し、一覧を DB 試験で守る | - | 9 |
+| 補助 | `findMigration`・`resolveSeedPath`（`tests/helpers/staged-supabase.ts`。`@impl` は付けない。試験の補助） | 移行・見本の写しの探し方 | - | 1 |
+| 補助 | `insertLegacyImageRow`（`e2e/legacy-image-rows.ts`。E2E の補助） | CHECK より前からある旧い形の行を、試験のために 1 取引で作る（Task 7） | - | 7 |
+
+**結合試験のファイルの置き場（領域の glob に当てる）。** 構造設計の「結合テスト」の子は、その領域の `scope.json` の `tests` の glob に当たるファイルだけが数えられる。HOME の結合の glob は `tests/integration/**/home/**/*.test.{ts,tsx}` などなので、`DATA-HOME-001` の試験は `tests/integration/db/home/home_items_grants.integration.test.ts` に置く（`tests/integration/db/home_items_grants…` は HOME に当たらない）。Task 5 の試験も領域ごとに 4 本に分ける（Task 5 の Files）。
 
 ---
 
@@ -101,10 +124,11 @@
 | 移行（6 本） | `supabase/pending-wave2/<時刻>_{stockists_type_optional,sec_grants_hardening,sec_grants_admin_tables,sec_search_functions,sec_rls_predicates_and_constraints,sec_storage_buckets}.sql` | 新規 | 2・4・5・6・7・8 |
 | route | `src/app/api/admin/stockists/route.ts`・`[id]/route.ts`、`src/app/api/admin/news/route.ts`・`[id]/route.ts` | 変更 | 3 |
 | route | `src/app/api/admin/looks/[id]/route.ts`（PUT を rpc に） | 変更 | 7 |
-| DB 結合試験 | `tests/integration/db/` の新規 5 本と既存の書き換え（各タスク） | 新規・変更 | 2〜9 |
-| 文書 | `docs/02_Requirements/areas/{home,auth,look,news,search,stockist,admin}.md`、`docs/05_Quality/security/threats/{home,auth,look,news,search,stockist,admin}.md`、`docs/03_BasicDesign/areas/{home,auth,look,news,search,stockist,admin}.md`、`docs/03_BasicDesign/decisions/ADR-0462〜0468`（新規）、`docs/04_DetailDesign/pages/{16-1_admin_news,16-3_admin_look,16-4_admin_stockist,10_stockist,19_search,01_home}.md` | 追記・更新 | 全部 |
+| DB 結合試験 | `tests/integration/db/` の新規（Task 2 の 1 本、Task 4 の `home/home_items_grants`、Task 5 の領域ごとの 4 本、Task 7 の 3 本、Task 9 の 1 本）と既存の書き換え（各タスク。Task 4 は `admin-misc/admin_rls_policy` ほか、Task 7 は道筋が CHECK に当たる 6 本） | 新規・変更 | 2〜9 |
+| E2E の補助 | `e2e/legacy-image-rows.ts`（CHECK より前の旧い行を作る） | 新規 | 7 |
+| 文書 | `docs/02_Requirements/areas/{home,auth,look,news,search,stockist,admin}.md`、`docs/05_Quality/security/threats/{home,auth,look,news,search,stockist,admin}.md`、`docs/03_BasicDesign/areas/{home,auth,look,news,search,stockist,admin}.md`、`docs/03_BasicDesign/decisions/` の 9 本（`ADR-0026`・`0106`・`0107`・`0162`〜`0164`・`0267`・`0315`・`0414`。新規）、`docs/04_DetailDesign/pages/{16-1_admin_news,16-3_admin_look,16-4_admin_stockist,10_stockist,19_search,01_home}.md` | 追記・更新 | 全部 |
 
-**進める順。** 全体の順は Task 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10。並行にしてよいのは **(Task 2 → Task 3) と Task 4** だけ（src・試験・E2E・文書のファイルが重ならない）。それ以外は次のファイルが重なるので直列にする: `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts`（Task 1・5・6・7・8）、`e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts`（Task 5・6・7）、`tests/integration/db/look_rls.integration.test.ts`（Task 5・7）、`tests/integration/db/search-functions.integration.test.ts`（Task 6 だけ）、`docs/*/areas/{look,news}.md`（Task 5〜8）。
+**進める順。** 全体の順は Task 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10。並行にしてよいのは **(Task 2 → Task 3) と Task 4** だけ（src・試験・E2E・文書のファイルが重ならない）。それ以外は次のファイルが重なるので直列にする: `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts`（Task 1・5・6・7・8）、`e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts`（Task 5・6・7）、`tests/integration/db/look_rls.integration.test.ts`（Task 5・7）、`tests/integration/db/search-functions.integration.test.ts`（Task 6 だけ）、`docs/*/areas/{look,news}.md`（Task 5〜8）、`e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts`（Task 1・7）、`e2e/FR-SEARCH-021-search-injected-rows.spec.ts`（Task 6・7）、`e2e/FR-LOOK-SEC-001-public-visibility.spec.ts`（Task 7 だけ）、`docs/03_BasicDesign/areas/admin.md`（Task 4・5）、`docs/02_Requirements/areas/auth.md`・`docs/03_BasicDesign/decisions/ADR-0414`（Task 4・9）。Task 4 を (Task 2 → 3) と並べる時も、Task 4 が触る `admin.md`・`admin-misc/` の試験は Task 2・3 と重ならないことを確かめてある。
 
 ---
 
@@ -115,7 +139,7 @@
 **Files:**
 
 - Create: `tests/helpers/staged-supabase.ts`、`tests/unit/helpers/staged-supabase.test.ts`
-- Create: `supabase/pending-wave2/seed/supabase/seed.sql`（現在の `supabase/seed.sql` の全文の写しを直したもの）、`supabase/pending-wave2/seed/scripts/e2e/seed-storage.ts`（同）、`supabase/pending-wave2/seed/scripts/e2e/environment.ts`（`export * from '../../../../../../scripts/e2e/environment';` の 1 行。**controller は移さない**。写しの `./environment` の import を型検査と単体試験で解決するためだけにある）
+- Create: `supabase/pending-wave2/seed/supabase/seed.sql`（現在の `supabase/seed.sql` の全文の写しを直したもの）、`supabase/pending-wave2/seed/scripts/e2e/seed-storage.ts`（同）、`supabase/pending-wave2/seed/scripts/e2e/environment.ts`（`export * from '../../../../../scripts/e2e/environment';` の 1 行。**`../` は 5 つ**（`e2e`→`scripts`→`seed`→`pending-wave2`→`supabase`→リポジトリの根。6 つにすると根の外を指して `tsc` が落ちる。レビューで直した）。**controller は移さない**。写しの `./environment` の import を型検査と単体試験で解決するためだけにある）
 - Modify: `tests/unit/scripts/e2e/seed-storage.test.ts`
 - Modify（E2E。意図が「見本の画像そのもの」の参照だけ。置き換えは `replace_all` を種類ごとに）: `e2e/home-test-utils.ts`（`SEEDED_ITEM_IMAGE` と 2 か所の `'e2e/news-1.png'`）、`e2e/look-admin-test-utils.ts`（`e2e/look-1-1.png` 2 か所と説明の文）、`e2e/FR-LOOK-ALL-042-season-label-and-hover-image-remaining.spec.ts`、`FR-LOOK-ALL-044-list-behaviour-and-grid-remaining.spec.ts`（2 か所）、`FR-LOOK-DETAIL-019-detail-content-and-links-remaining.spec.ts`、`FR-LOOK-SEC-002-postgrest-policies.spec.ts`（`SEEDED_LOOK_IMAGE`・`ITEM_IMAGE`）、`FR-LOOK-SEC-005-global-faults.spec.ts`、`FR-NEWS-DETAIL-009-detail-edge-cases-and-body-safety.spec.ts`、`FR-NEWS-SEC-001-public-data-exposure.spec.ts`（3 か所）、`FR-NEWS-SEC-003-http-hardening-and-rate-limit.spec.ts`（`createSignedUrl` の道筋と冒頭の説明）、`FR-SEARCH-020-search-db-function-grants.spec.ts`（3 か所）
 - 読むだけ: `tests/unit/api/admin/looks/looks-id-*-route.test.ts`・`tests/unit/features/{look,news}/services/admin-images.test.ts`・`tests/integration/api/{look,news}-admin-item-*-api.test.ts`・`tests/unit/api/admin/news/news-admin-id-route.test.ts` の `'e2e/look-1-1.png'`・`'e2e/news-1.png'` は **「接頭辞の外の古い見本の道筋は消さない」ことを確かめる負の例なので変えない**（直すと意図が逆になる）。
@@ -142,12 +166,12 @@ export function resolveSeedPath(rel: string, root?: string): string;
 - [ ] **Step 1: 現状の確認（読むだけ）。** `git status --short supabase scripts/e2e` で `supabase/seed.sql`・`scripts/e2e/seed-storage.ts` が他者の変更中でないこと、行末（CRLF か）を確かめる（`file supabase/seed.sql`）。`grep -rnE "e2e/(item|look|news)-[0-9a-z]" e2e tests src scripts supabase --include=*.ts --include=*.tsx --include=*.sql` で参照の全部を出し、各参照が「見本の画像そのもの」か「接頭辞の外を表す負の例」かを 1 つずつ分ける。`grep -rn "extractItemImageObjectPath\|isOwnLookImagePath\|isOwnNewsImagePath" src` で本物の判定の関数名と所在を確かめる。
 - [ ] **Step 2（RED）: 補助の単体試験を書く。** `staged-supabase.test.ts`（先頭 `DD-LOOK-` ではなく補助なので `TEST-HELPER-` など ID を持たない名前でよいが、`describe` の題は「staged-supabase」）。`fs.mkdtempSync` で小さな偽の repo を作り、(a) `supabase/migrations/20260101000000_sec_x.sql` と `supabase/pending-wave2/20260102000000_sec_x.sql` の両方があれば前者の絶対パスを返す、(b) pending だけにあれば pending の物を返す、(c) どこにも無ければ `not found` を含む例外、(d) 同じ場所に `_sec_x.sql` が 2 本あれば `ambiguous` を含む例外、(e) `resolveSeedPath('supabase/seed.sql')` は `supabase/pending-wave2/seed/supabase/seed.sql` があればそれを、無ければ `supabase/seed.sql` を返す。
 - [ ] **Step 3（GREEN）: 補助を書く。** `tsc` を流す。
-- [ ] **Step 4: 見本の写しを作る。** `supabase/seed.sql` を `supabase/pending-wave2/seed/supabase/seed.sql` に **全文コピー**してから、Edit の `replace_all` で `'e2e/item-` → `'items/e2e/item-`、`'e2e/look-` → `'looks/e2e/look-`、`'e2e/news-` → `'news/e2e/news-` を直す（`ARRAY['e2e/item-1-1.png', 'e2e/item-1-2.png']` の 2 つ目の要素もカンマと空白の後の `'e2e/item-` なので、同じ部分一致で全部当たることを `grep -c` で確かめる。当たった数は商品 9 行×3、LOOK 7 行×2、NEWS 8 行）。冒頭の説明に「画像の道筋は `items/`・`looks/`・`news/` の下（DB の CHECK とアプリの判定と同じ形）」と 1 行足す。`scripts/e2e/seed-storage.ts` も同じく全文コピーして `path: \`items/e2e/item-${id}-${n}.png\``・`looks/e2e/look-…`・`news/e2e/news-${id}.png` に直し、`SEED_STORAGE_OBJECTS` の説明を直す。`./environment` の import は**そのまま**（写しの隣の `environment.ts` が再公開する）。`npx tsc --noEmit`。
+- [ ] **Step 4: 見本の写しを作る。** `supabase/seed.sql` を `supabase/pending-wave2/seed/supabase/seed.sql` に **全文コピー**してから、Edit の `replace_all` で `'e2e/item-` → `'items/e2e/item-`、`'e2e/look-` → `'looks/e2e/look-`、`'e2e/news-` → `'news/e2e/news-` を直す（`ARRAY['e2e/item-1-1.png', 'e2e/item-1-2.png']` の 2 つ目の要素もカンマと空白の後の `'e2e/item-` なので、同じ部分一致で全部当たることを `grep -c` で確かめる。当たった数は商品 9 行×3、LOOK 7 行×2、NEWS 8 行）。冒頭の説明に「画像の道筋は `items/`・`looks/`・`news/` の下（DB の CHECK とアプリの判定と同じ形）」と 1 行足す。`scripts/e2e/seed-storage.ts` も同じく全文コピーして `` path: `items/e2e/item-${id}-${n}.png` ``・`looks/e2e/look-…`・`news/e2e/news-${id}.png` に直し、`SEED_STORAGE_OBJECTS` の説明を直す。`./environment` の import は**そのまま**（写しの隣の `environment.ts` が再公開する）。`npx tsc --noEmit`。
 - [ ] **Step 5（RED→GREEN）: `seed-storage.test.ts` を直す。** 読む先を `resolveSeedPath` にする（`seed.sql` は `resolveSeedPath('supabase/seed.sql')`、モジュールは `require(resolveSeedPath('scripts/e2e/seed-storage.ts'))` で `SEED_STORAGE_OBJECTS`・`seedLocalStorage`・`SEED_IMAGE_PNG_BASE64` を受け、型は元の import の `type` を使う）。期待を直す: 件数 40 のまま、最初の `upload` の道筋は `items/e2e/item-1-1.png`、失敗の文は `item-images/items/e2e/item-1-1.png（Bucket not found）`。一致の試験は `seed.sql` を `/(?:items|looks|news)\/e2e\/(?:item|look|news)-[0-9-]+\.png/g` で読み、置く一覧と集合が等しいこと、各 `object.bucket` が先頭の語の対応（`items`→`item-images` など）になること。**足す断言**: (a) `seed.sql` に旧い形 `'e2e/(item|look|news)-` が 1 つも残らない（`expect(seed).not.toMatch(/'e2e\/(?:item|look|news)-/)`）。(b) `looks/`・`news/` で始まる見本の道筋が、アプリの `isOwnLookImagePath`・`isOwnNewsImagePath` を全部通る（DB の CHECK と同じ式を、アプリの判定で代表させる）。(c) `items/` の見本の道筋が `extractItemImageObjectPath` で変わらずに取り出せる。`npx jest tests/unit/scripts/e2e/seed-storage.test.ts tests/unit/helpers/staged-supabase.test.ts`。
 - [ ] **Step 6: E2E の参照を直す（書くだけ）。** Step 1 の表のうち「見本の画像そのもの」だけを、種類ごとの `replace_all` で直す。`FR-LOOK-SEC-002:38-39` は `SEEDED_LOOK_IMAGE = 'looks/e2e/look-1-1.png'`・`ITEM_IMAGE = 'items/e2e/item-3-1.png'`、`home-test-utils.ts:31` は `SEEDED_ITEM_IMAGE = 'items/e2e/item-3-1.png'`。`FR-NEWS-SEC-001:335` の `for (const path of [pubPath, 'news/e2e/news-1.png'])` は「置き場に本物の画像がある」前提を保つ。`FR-NEWS-SEC-001` の `otherPath`（`other/…`）・`missingPath` は見本ではないので変えない。`grep -rnE "e2e/(item|look|news)-" e2e` で `'e2e/…'` の旧い形が残るのは負の例（単体・結合試験側）だけであること、`items/e2e/`・`looks/e2e/`・`news/e2e/` の形に直した数が Step 1 の表と一致することを確かめる。
 - [ ] **Step 7: 文書。** 上の Docs。`docs/05_Quality/security/threats/{look,news}.md` に見本の道筋への言及があれば直す。
 - [ ] **Step 8: 確かめ。** `npx tsc --noEmit`（写しの `.ts` を含めて通ること）、`npm run validate-docs`、`npx jest tests/unit/scripts/e2e tests/unit/helpers`。
-- [ ] **Step 9: 報告。** controller が移す物の表（`supabase/pending-wave2/seed/supabase/seed.sql` → `supabase/seed.sql`、`…/scripts/e2e/seed-storage.ts` → `scripts/e2e/seed-storage.ts`、`environment.ts` は移さず写しのフォルダごと消す）と、移した後に流す物（`npx jest tests/unit/scripts/e2e`、`db reset`、E2E の画像が出ること）。共有文書の変更案は無し（`test-spec.md` の見本の道筋の記述があれば）。
+- [ ] **Step 9: 報告。** 写しを作った時の本物の `sha256sum supabase/seed.sql scripts/e2e/seed-storage.ts` を報告に残す（別セッション G が見本を足すことがあるので、controller は移す直前に同じ値かを比べ、違えば写しで上書きせず、今の本物に Step 4 の 3 つの置き換えだけをやり直す）。controller が移す物の表（`supabase/pending-wave2/seed/supabase/seed.sql` → `supabase/seed.sql`、`…/scripts/e2e/seed-storage.ts` → `scripts/e2e/seed-storage.ts`、`environment.ts` は移さず写しのフォルダごと消す）と、移した後に流す物（`npx jest tests/unit/scripts/e2e`、`db reset`、E2E の画像が出ること）。共有文書の変更案は無し（`test-spec.md` の見本の道筋の記述があれば）。
 
 **検証コマンド:** `npx tsc --noEmit`、`npx jest tests/unit/scripts/e2e tests/unit/helpers`、`npm run validate-docs`。
 
@@ -203,8 +227,8 @@ COMMIT;
 **Files:**
 
 - Modify: `src/app/api/admin/stockists/route.ts`（POST）、`src/app/api/admin/stockists/[id]/route.ts`（PUT・PATCH・DELETE。GET は `createClient` のまま）、`src/app/api/admin/news/route.ts`（POST。`dbSupabase`・`uploadSupabase` を 1 つの service role client にまとめる）、`src/app/api/admin/news/[id]/route.ts`（PUT・PATCH・DELETE。同上）
-- Test: `tests/unit/api/admin/stockists/stockists-route.test.ts`・`stockists-id-route.test.ts`・`tests/unit/api/admin/stockists-security.test.ts`、`tests/unit/api/admin/news/`（`news-admin-*` の単体）、`tests/integration/api/stockist-admin-{create,item-put,item-patch,item-delete,write-path,guards}*.test.ts`、`tests/integration/api/news-admin-{item-put,item-delete,write-path}*.test.ts`（`createClient` のモックに書き込みの連鎖を持たせている所を `createServiceRoleClient` に替える）
-- Docs: `docs/03_BasicDesign/decisions/ADR-0464-admin-stockist-news-writes-use-service-role.md`（新規）、`docs/03_BasicDesign/areas/{stockist,news}.md`（管理の書き込みの client の記述。`ARC-NEWS-003`・`ARC-STOCKIST-` 周辺）、`docs/04_DetailDesign/pages/{16-4_admin_stockist,16-1_admin_news}.md`（`@remarks` に対応する `DD-`）、`docs/05_Quality/security/threats/{stockist,news}.md`、`docs/02_Requirements/areas/{stockist,news}.md`（波 1-B が書いた「利用者の session の client なので aal2 でない時や RLS が隠す時に 403 でなく 404 になりうる」の注記を外す。`grep -rn "利用者の session の client\|RLS が隠す" docs`）
+- Test: `tests/unit/api/admin/stockists/stockists-route.test.ts`・`stockists-id-route.test.ts`・`tests/unit/api/admin/stockists-security.test.ts`、`tests/unit/api/admin/news/`（`news-admin-route.test.ts`・`news-admin-id-route.test.ts`）、`tests/integration/api/stockist-admin-*.test.ts`（create・item-put・item-patch・item-delete・write-path・guards・csrf-real-response・item-get・list の 9 本。GET の 2 本は `createClient` のままを確かめるだけ）、`tests/integration/api/news-admin-*.test.ts`（create・item-put・item-patch・item-delete・write-path・item-get・list の 7 本）（`createClient` のモックに書き込みの連鎖を持たせている所を `createServiceRoleClient` に替える。レビューで、元の一覧に無かった `news-admin-create-api`・`news-admin-item-patch-api`・`stockist-admin-csrf-real-response` を足した）
+- Docs: `docs/03_BasicDesign/decisions/ADR-0026-news-admin-writes-use-service-role.md`・`ADR-0267-stockist-admin-writes-use-service-role.md`（新規。領域ごとに 1 本。上位に載せる構造設計は「ID の割当」の表）、`docs/03_BasicDesign/areas/{stockist,news}.md`（管理の書き込みの client の記述。`ARC-NEWS-003`・`ARC-STOCKIST-` 周辺）、`docs/04_DetailDesign/pages/{16-4_admin_stockist,16-1_admin_news}.md`（`@remarks` に対応する `DD-`）、`docs/05_Quality/security/threats/{stockist,news}.md`、`docs/02_Requirements/areas/{stockist,news}.md`（波 1-B が書いた「利用者の session の client なので aal2 でない時や RLS が隠す時に 403 でなく 404 になりうる」の注記を外す。`grep -rn "利用者の session の client\|RLS が隠す" docs`）
 
 **Interfaces:**
 
@@ -219,11 +243,11 @@ COMMIT;
 
 - [ ] **Step 1: 現状の確認（読むだけ）。** `grep -n "createClient\|createServiceRoleClient" src/app/api/admin/stockists/route.ts src/app/api/admin/stockists/\[id\]/route.ts src/app/api/admin/news/route.ts src/app/api/admin/news/\[id\]/route.ts` で、どの関数がどの client を使うかを表にする（stockists POST=114 行、PUT=144、PATCH=271、DELETE=358、GET=43・65。news POST=115-116、PUT=166-167、PATCH=334、DELETE=380、GET=102-103・209-210）。**対象 5 表への書き込みを `src` 全体で洗う**: `grep -rnE "\.from\('(looks|look_items|news_articles|stockists|item_color_presets|item_cost_history)'\)" src --include=*.ts --include=*.tsx` の各行で、使われる client が `createServiceRoleClient` であること（`looks`・`look_items`・`item_color_presets` の窓口は確認済み）を 1 つずつ確かめ、利用者の JWT の書き込みが他に無いこと（`src/lib/look/server.ts` と `src/features/news/services/public.ts`・`src/features/stockist/services/public.ts` は読みだけ）を報告に書く。
 - [ ] **Step 2（RED）: 単体試験を直す・足す。** 各窓口の試験に、(a) POST・PUT・PATCH・DELETE が `createServiceRoleClient` を 1 回呼び、`createClient` を**呼ばない**（`expect(createClient).not.toHaveBeenCalled()`）。(b) GET は `createClient` を呼ぶ（変えていない）。(c) 認可が 401/403 の時はどちらの client も作らない。(d) 0 行 → 404・error → 500・監査の `outcome` は今までと同じ（既存の期待をそのまま通す）。テスト名の先頭は `DD-STOCKIST-034`・`035`・`DD-NEWS-065` など既存の `DD-`。
-- [ ] **Step 3（GREEN）: 4 ファイルを直す。** 書き込みの関数の `createClient(request)` を `createServiceRoleClient()` に替える。news の POST・PUT は `dbSupabase`・`uploadSupabase` を 1 つにまとめ、後始末（`cleanupClient`）の参照も揃える。`tsc` を流す。`@remarks` に「書き込みは認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（ADR-0464）」を足す。
+- [ ] **Step 3（GREEN）: 4 ファイルを直す。** 書き込みの関数の `createClient(request)` を `createServiceRoleClient()` に替える。news の POST・PUT は `dbSupabase`・`uploadSupabase` を 1 つにまとめ、後始末（`cleanupClient`）の参照も揃える。`tsc` を流す。`@remarks` に「書き込みは認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（NEWS は ADR-0026、取扱店は ADR-0267）」を足す。
 - [ ] **Step 4: 結合試験のモックを直す。** `createClient` のモックが書き込みの連鎖（`insert/update/delete().eq().select()`）を持つ所を、`createServiceRoleClient` のモックに移す。読みの連鎖（GET）は `createClient` に残す。
-- [ ] **Step 5: 対象の `jest`。** `npx jest tests/unit/api/admin/stockists tests/unit/api/admin/stockists-security.test.ts tests/unit/api/admin/news tests/integration/api/stockist-admin-create-api.test.ts tests/integration/api/stockist-admin-item-put-api.test.ts tests/integration/api/stockist-admin-item-patch-api.test.ts tests/integration/api/stockist-admin-item-delete-api.test.ts tests/integration/api/stockist-admin-write-path.test.ts tests/integration/api/stockist-admin-guards.test.ts tests/integration/api/news-admin-item-put-api.test.ts tests/integration/api/news-admin-item-delete-api.test.ts tests/integration/api/news-admin-write-path.test.ts`（存在しない名前は `ls tests/integration/api | grep -E "stockist-admin|news-admin"` で取り直す）。
+- [ ] **Step 5: 対象の `jest`。** `npx jest tests/unit/api/admin/stockists tests/unit/api/admin/stockists-security.test.ts tests/unit/api/admin/news tests/integration/api/stockist-admin- tests/integration/api/news-admin-`（パスの前方一致で 16 本。`ls tests/integration/api | grep -E "stockist-admin|news-admin"` で数を確かめる）。
 - [ ] **Step 6: E2E の印と期待（書くだけ）。** 外す印は無い。`FR-STOCKIST-015`・`FR-NEWS-SEC-005` の期待（404・監査）が変わらないことを読んで確かめる。
-- [ ] **Step 7: 文書。** 上の Docs。`ADR-0464` の「結果」に、窓口の認可が唯一の守りになるので `authorizeAdminPermission` の位置（本文の検証より前）を変えないこと、波 5 の `has_permission` の aal2 は読みの方針だけが対象になること。
+- [ ] **Step 7: 文書。** 上の Docs。`ADR-0026`・`ADR-0267` を「ID の割当」の構造設計の「上位」に載せる。両 ADR の「結果」に、窓口の認可が唯一の守りになるので `authorizeAdminPermission` の位置（本文の検証より前）を変えないこと、波 5 の `has_permission` の aal2 は読みの方針だけが対象になること。
 - [ ] **Step 8: 確かめ。** `npx tsc --noEmit`、`npm run validate-docs`、`npm run validate-trace -- STOCKIST`、`npm run validate-trace -- NEWS`。
 - [ ] **Step 9: 報告。** 設計書 R3・R4 の前提（管理の書き込みは全部 service role）の訂正、Step 1 の表、共有文書の変更案（`api-spec.md` は応答が変わらないので無し。`route-inventory.md` の client の列があれば）。
 
@@ -237,10 +261,10 @@ COMMIT;
 
 **Files:**
 
-- Create: `supabase/pending-wave2/<時刻>_sec_grants_hardening.sql`、`tests/integration/db/home_items_grants.integration.test.ts`
-- Modify: `tests/integration/db/auth_sessions_table.integration.test.ts`・`auth_password_reset_tokens_table.integration.test.ts`（anon・authenticated で「0 行」を期待する箇所を `42501` に。RLS の方針が 3 本ある旨の検査は残す）、`tests/integration/db/rate_limit_counters.integration.test.ts`・`sessions.integration.test.ts`（役を替えて読む行があれば）
-- Modify（E2E）: `e2e/FR-HOME-024-home-table-grants.spec.ts`（`test.fail` を 4 行外す。`columnSets`・`secrets`・結合の列の並びから `product_note` を外す）、`e2e/home-grant-test-utils.ts`（`product_note` が原価の仲間として扱われていれば）、`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`（011 の印を外し、`AUTH_TABLES` に `audit_logs_backups` を足す）
-- Docs: `docs/02_Requirements/areas/home.md`（SEC-HOME-004: 公開のままの列に `product_note` を入れ「原価 2 列」に言い直す。SEC-HOME-005: authenticated の INSERT・UPDATE・DELETE は「付け直さない（書き込みは service role）」に直す。SEC-HOME-020: 表は残し管理者の SELECT 方針だけ）、`areas/auth.md`（SEC-AUTH-011）、`docs/05_Quality/security/threats/{home,auth}.md`、`docs/03_BasicDesign/areas/home.md`（`DATA-HOME-001` を新設: `items` の列権限と公開の列）・`areas/auth.md`（`DATA-AUTH-001`・`002`・`003` の権限の記述）、`ADR-0462`・`ADR-0463`（新規）
+- Create: `supabase/pending-wave2/<時刻>_sec_grants_hardening.sql`、`tests/integration/db/home/home_items_grants.integration.test.ts`
+- Modify: `tests/integration/db/auth_sessions_table.integration.test.ts`・`auth_password_reset_tokens_table.integration.test.ts`（anon・authenticated で「0 行」を期待する箇所を `42501` に。RLS の方針が 3 本ある旨の検査は残す）、`tests/integration/db/rate_limit_counters.integration.test.ts`・`sessions.integration.test.ts`（役を替えて読む行があれば）、**`tests/integration/db/admin-misc/admin_rls_policy.integration.test.ts`**（レビューで足した。`DATA-ADMIN-002 %s には %s の権限が全部付いていて、守りは方針の1段だけ` が `audit_logs`・`sessions` の anon・authenticated に 8 権限を固定し、`DENIED_ACTORS` の「0 行が返る」「更新は 1 行も変えない」「削除は 1 行も消さない」も `audit_logs`・`sessions` では `42501` に変わる。問い合わせの 3 表は今のまま）、`tests/integration/db/admin-misc/admin_audit_logs_table.integration.test.ts`・`admin_revoke_sessions_function.integration.test.ts`・`auth_db_functions.integration.test.ts`（役を替えて `audit_logs`・`sessions` を読む行・権限を固定する行があれば）
+- Modify（E2E）: `e2e/FR-HOME-024-home-table-grants.spec.ts`（`test.fail` を 4 行外す。`columnSets`・`secrets`・結合の列の並びから `product_note` を外す。**`SEC-HOME-020-AC-01` の一般会員の JWT の select は「200 で 0 件・原価の値なし」に直す**（下の Step 6）。テスト名も直す）、`e2e/home-grant-test-utils.ts`（`product_note` が原価の仲間として扱われていれば）、`e2e/FR-LOGIN-031-supabase-direct-bypass.spec.ts`（011 の印を外し、`AUTH_TABLES` に `audit_logs_backups` を足す。テスト名の表の並びも）
+- Docs: `docs/02_Requirements/areas/home.md`（SEC-HOME-004: 公開のままの列に `product_note` を入れ「原価 2 列」に言い直す。SEC-HOME-005: authenticated の INSERT・UPDATE・DELETE は「付け直さない（書き込みは service role）」に直す。SEC-HOME-020: 表は残し管理者の SELECT 方針だけ。**`SEC-HOME-020-AC-01` の文を「anon の鍵では select・insert・update・delete が権限の誤り。一般会員の JWT では select が 0 件で原価の値が返らず、insert・update・delete が権限の誤り。どちらでも行が変わらない」に直す**）、`areas/auth.md`（SEC-AUTH-011。`SEC-AUTH-011-AC-01` の表の並びに `audit_logs_backups` を足す）、`docs/05_Quality/security/threats/{home,auth}.md`、`docs/03_BasicDesign/areas/home.md`（`DATA-HOME-001` を新設: `items` の列権限と公開の列）・`areas/auth.md`（`DATA-AUTH-001`・`002`・`003` の権限の記述）、`ADR-0106`・`ADR-0107`・`ADR-0414`（新規）、`docs/04_DetailDesign/pages/01_home.md`（`DD-HOME-001` の「上位」に `DATA-HOME-001` を足す）、`docs/03_BasicDesign/areas/admin.md`（`DATA-ADMIN-002`・`003`・`004` の「表の付与」の記述。`audit_logs`・`sessions` は anon・authenticated の権限なしに）
 
 **移行（骨格。列の一覧は書く時に `information_schema.columns` の現物と突き合わせる）:**
 
@@ -248,11 +272,13 @@ COMMIT;
 -- ROLLBACK（Task 4。適用前に本番の旧い状態を読んで、下を合わせる）:
 --   DROP POLICY IF EXISTS "admin item_cost_history read by finance permission" ON public.item_cost_history;
 --   CREATE POLICY "Allow all" ON public.item_cost_history FOR ALL TO PUBLIC USING (true) WITH CHECK (true);
---   REVOKE SELECT (id, name, ..., return_ineligible) ON TABLE public.items FROM anon, authenticated;
+--   REVOKE SELECT (id, name, description, price, category, image_url, image_urls, colors, sizes, product_details, status,
+--     created_at, updated_at, material, origin, sewing_region, care, season, product_note, made_to_order_lead_days,
+--     return_ineligible) ON TABLE public.items FROM anon, authenticated;   -- 列は省かず全部書く（「...」で略さない）
 --   GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE
 --     public.items, public.item_cost_history, public.sessions, public.password_reset_tokens,
 --     public.rate_limit_counters, public.audit_logs, public.audit_logs_backups, public.profiles TO anon, authenticated;
---   GRANT ALL ON SEQUENCE public.rate_limit_counters_id_seq TO anon, authenticated;
+--   GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.rate_limit_counters_id_seq TO anon, authenticated;   -- remote_schema.sql:4082 と同じ
 BEGIN;
 -- 1. items: 列単位
 REVOKE ALL ON TABLE public.items FROM PUBLIC, anon, authenticated;
@@ -288,18 +314,19 @@ COMMIT;
 
 - [ ] **Step 1: 現状の確認（読むだけ）。** `information_schema.columns` を読めないので、`remote_schema.sql:572-600` と `ALTER TABLE … items` を出す移行（`20260919065336`・`20260921121038`・`20261020144439`）で列の一覧を作り、P3 の 21 列と一致することを確かめる。**公開側の読みを全部洗う**: `grep -rn "select('\*')" src --include=*.ts --include=*.tsx` の各行の client が service role であること、`items(` の埋め込み（`cart-view.ts:32`・`availability.ts:64`）が許可内の列だけであること、`ITEM_SELECT_COLUMNS`（`src/lib/items/public.ts`）・`/api/items/[id]/route.ts`・wishlist・`look/server.ts`・`kpi/route.ts:315`（`id, status`）、`search_items` が許可内であること。方針・SECURITY INVOKER 関数・ビューが `items` の列を読む所: `grep -nE "(FROM|JOIN) (public\.)?\"?items\"?" supabase/migrations/*.sql` の方針・INVOKER の部分（`item_colors`・`item_sizes` の方針は `id`・`status` だけ）。SECURITY DEFINER の関数（`finalize_order…` 系）は列権限に左右されないこと（`pg_proc.prosecdef`）。結果を表で報告に書く。
 - [ ] **Step 2: 認証の 5 表と `profiles` の書き手を確かめる（読むだけ）。** `grep -rnE "\.from\('(sessions|password_reset_tokens|rate_limit_counters|audit_logs|audit_logs_backups)'\)" src` の各行の client が service role、`rate_limit_counters` は SECURITY DEFINER の rpc 経由、`profiles` は `/api/profile`・`/api/profile/addresses` が利用者の JWT で SELECT・upsert・DELETE すること（authenticated の 4 権限を残す理由）を報告に書く。
-- [ ] **Step 3（RED）: DB 結合試験を書く（流さない）。** `home_items_grants.integration.test.ts`（先頭 `DATA-HOME-001`）と、権限の一覧の試験は Task 9 に分ける。ここでは移行ごとの断言: (a) `has_column_privilege('anon', 'public.items', 'pattern_cost', 'SELECT')` と `mass_production_cost` が偽、同じ列を authenticated も偽。(b) 21 列は anon・authenticated ともに真（`test.each`）。(c) `has_table_privilege('anon', 'public.items', 'SELECT')` は偽（列単位だけ）、`has_any_column_privilege` は真。(d) anon・authenticated の `INSERT`・`UPDATE`・`DELETE`・`TRUNCATE`・`REFERENCES`・`TRIGGER`・`MAINTAIN` が `items` で偽（表単位・列単位の両方: `has_any_column_privilege(…, 'INSERT')`）。(e) 役を替えて（`set local role anon`）`select pattern_cost from public.items limit 1` と `select * from public.items limit 1` が SQLSTATE `42501`、`select id, name, product_note, status from public.items where status = 'published' limit 1` が通る（見本の商品が公開）。(f) `item_cost_history`: anon の `select` が `42501`、authenticated の会員（権限なし）の `select` は 0 行、`admin.finance.read` を持つ authenticated（`auth.users`・`user_roles`・`role_permissions` の行を取引の中で作り `request.jwt.claims` に `sub`・`role`・`aal2` を入れる。既存の `look_permissions.integration.test.ts` の補助を参照）は取引の中で入れた行が見える、`insert/update/delete/truncate` はどの役も `42501`（service_role は通る）、`"Allow all"` の方針が `pg_policies` に無い。(g) 5 表: `set local role anon / authenticated` での `select` が `42501`（0 行ではない）、`service_role` は通る。連番 `rate_limit_counters_id_seq` の `has_sequence_privilege('anon', …, 'USAGE')` が偽、service_role は真。(h) `profiles`: anon の `select` が `42501`、authenticated は自分の行を `select/insert/update/delete` でき、`truncate` は `42501`。(i) 移行の形（DB なし）: `readMigration('sec_grants_hardening')` に `GRANT SELECT (` の列の一覧があり、`pattern_cost`・`mass_production_cost` を含まない、`ALTER DEFAULT PRIVILEGES` を含まない、`ROLLBACK` の節がある、一覧の列が Step 1 で作った 21 列と一致する。
+- [ ] **Step 3（RED）: DB 結合試験を書く（流さない）。** `home/home_items_grants.integration.test.ts`（先頭 `DATA-HOME-001`）と、権限の一覧の試験は Task 9 に分ける。ここでは移行ごとの断言: (a) `has_column_privilege('anon', 'public.items', 'pattern_cost', 'SELECT')` と `mass_production_cost` が偽、同じ列を authenticated も偽。(b) 21 列は anon・authenticated ともに真（`test.each`）。(c) `has_table_privilege('anon', 'public.items', 'SELECT')` は偽（列単位だけ）、`has_any_column_privilege` は真。(d) anon・authenticated の `INSERT`・`UPDATE`・`DELETE`・`TRUNCATE`・`REFERENCES`・`TRIGGER`・`MAINTAIN` が `items` で偽（表単位・列単位の両方: `has_any_column_privilege(…, 'INSERT')`）。(e) 役を替えて（`set local role anon`）`select pattern_cost from public.items limit 1` と `select * from public.items limit 1` が SQLSTATE `42501`、`select id, name, product_note, status from public.items where status = 'published' limit 1` が通る（見本の商品が公開）。(f) `item_cost_history`: anon の `select` が `42501`、authenticated の会員（権限なし）の `select` は 0 行、`admin.finance.read` を持つ authenticated（`auth.users`・`user_roles`・`role_permissions` の行を取引の中で作り `request.jwt.claims` に `sub`・`role`・`aal2` を入れる。既存の `look_permissions.integration.test.ts` の補助を参照）は取引の中で入れた行が見える、`insert/update/delete/truncate` はどの役も `42501`（service_role は通る）、`"Allow all"` の方針が `pg_policies` に無い。(g) 5 表: `set local role anon / authenticated` での `select` が `42501`（0 行ではない）、`service_role` は通る。連番 `rate_limit_counters_id_seq` の `has_sequence_privilege('anon', …, 'USAGE')` が偽、service_role は真。(h) `profiles`: anon の `select` が `42501`、authenticated は自分の行を `select/insert/update/delete` でき、`truncate` は `42501`。(i) 移行の形（DB なし）: `readMigration('sec_grants_hardening')` に `GRANT SELECT (` の列の一覧があり、`pattern_cost`・`mass_production_cost` を含まない、`ALTER DEFAULT PRIVILEGES` を含まない、`ROLLBACK` の節がある、一覧の列が Step 1 で作った 21 列と一致する。
 - [ ] **Step 4（GREEN）: 移行を書く。** 上の骨格に自己検査を足す。
-- [ ] **Step 5: 既存の DB 試験を直す。** `auth_sessions_table`・`auth_password_reset_tokens_table` の「anon・authenticated からは行が見えない（0 行）」を `42501` に。`grep -rln "set local role \(anon\|authenticated\)" tests/integration/db | xargs grep -ln "sessions\|password_reset_tokens\|rate_limit_counters\|audit_logs"` で他にも無いか確かめる。
+- [ ] **Step 5: 既存の DB 試験を直す。** `auth_sessions_table`・`auth_password_reset_tokens_table` の「anon・authenticated からは行が見えない（0 行）」を `42501` に。`admin_rls_policy` の `ALL_TABLES` の付与の試験は、問い合わせの 3 表は今のまま「8 権限」、`audit_logs`・`sessions` は「anon・authenticated に権限なし・service_role に 8 権限」に分ける（題の ID は `DATA-ADMIN-002` のまま）。`DENIED_ACTORS` の読み・更新・削除の試験は `audit_logs`・`sessions` の行を `42501` に。`set local role` の文字だけでは補助（`runAs`・`asRole`・`errorCodeAs`）を使う試験を拾えないので、`grep -rlnE "sessions|password_reset_tokens|rate_limit_counters|audit_logs|item_cost_history|profiles" tests/integration/db | xargs grep -lnE "runAs|asRole|set local role|has_table_privilege"` で洗い、G の試験（`group_g*`・`order_*`）に当たれば触らず報告する（今は 0 件と確かめた）。
 - [ ] **Step 6: E2E の印と期待（書くだけ）。**
   - 外す: `FR-HOME-024:134`（`SEC-HOME-003-AC-02`。幅ごとの繰り返しの中の 1 本。aal1 の管理者の `items` の update・delete が `expectDeniedOrZero` で断られる）、`:185`（`SEC-HOME-004-AC-01`。`columnSets` の `'product_note'` と `'pattern_cost,mass_production_cost,product_note'` を `'pattern_cost,mass_production_cost'` に、`secrets` から `item.note` を外す。`product_note` を選ぶ対照の読みを足す: 公開の列として 200 で値が返る）、`:297`（`SEC-HOME-005-AC-01`）、`:306`（`SEC-HOME-020-AC-01`）。`FR-LOGIN-031:325` 付近（`SEC-AUTH-011-AC-01`）。
+  - **`:306` の期待を直す（レビューで足した。直さないと外した印のテストが落ちる）。** Q8 の答えどおり authenticated に SELECT を付けて `admin.finance.read` の方針で絞るので、一般会員の JWT の `select` は PostgREST で **200・`[]`** になり、今の `expectPermissionError`（401・403 だけ）に合わない。一般会員の select だけを「200 で、行が 0 件で、`expectNoLeak` が通る」に変え、anon の select と、両方の insert・update・delete は今のまま `expectPermissionError`（権限が無いので 401・403）。権限の誤りにしたいなら authenticated の SELECT を付けない形しか無く、それは Q8 の「管理者だけが見られる」と両立しない。この読みを Task 10 の報告の「ユーザーに確かめる点」に書く。
   - 外さない: `FR-HOME-024:96`（`SEC-HOME-003-AC-01` は非公開の行の読み取り。波 5）、`FR-LOGIN-031:234`・`:258`（`SEC-AUTH-005`）・`:282`（`SEC-AUTH-010` は `orders`。G の表）。
   - 予想は読んだだけなので、controller が流して「予想外の失敗」（外した印のテストが落ちる）が出たら、その印を元に戻して報告する。
-- [ ] **Step 7: 文書。** 上の Docs。`SEC-HOME-004` の「`product_note` も読めない」を訂正した経緯（Q7）を `ADR-0462` の根拠に書く。`ADR-0463` に P4 の事実（読む画面は無い）。
-- [ ] **Step 8: 確かめ。** `npx tsc --noEmit`、`npm run validate-docs`、`npm run validate-trace -- HOME`・`-- AUTH`、`npx jest tests/integration/db/home_items_grants.integration.test.ts`（DB なしの形の試験だけが走る）。
+- [ ] **Step 7: 文書。** 上の Docs。`SEC-HOME-004` の「`product_note` も読めない」を訂正した経緯（Q7）を `ADR-0106` の根拠に書く。`ADR-0414` に、認証の 5 表・`profiles` の付与と「管理だけが書く表は SELECT だけ」の考え（Task 5 が使う）を書き、上位に載せる構造設計は `DATA-AUTH-001`〜`003`。`ADR-0107` に P4 の事実（読む画面は無い）。
+- [ ] **Step 8: 確かめ。** `npx tsc --noEmit`、`npm run validate-docs`、`npm run validate-trace -- HOME`・`-- AUTH`、`npx jest tests/integration/db/home/home_items_grants.integration.test.ts`（DB なしの形の試験だけが走る）。
 - [ ] **Step 9: 報告。** Q8 の事実（原価の画面は `item_cost_history` を読まない）、Step 1・2 の表、共有文書の変更案（`db-migrations.md`: 移行の行と、本番の事前の確認「`has_table_privilege('anon','public.items','select')`・`has_column_privilege('anon','public.items','pattern_cost','select')`・`select count(*) from public.item_cost_history`」、`er.md`: `items` の列権限・`item_cost_history`・`profiles`）。**本番の事前の確認（読むだけ）**: 上の 3 つ、`select count(*) from item_cost_history`（行があれば原価が公開されていた期間の記録として報告）、`pg_policies` の `item_cost_history`・認証の 5 表。
 
-**検証コマンド:** `npx tsc --noEmit`、`npx jest tests/integration/db/home_items_grants.integration.test.ts`、`npm run validate-docs`、`npm run validate-trace -- HOME`・`-- AUTH`。
+**検証コマンド:** `npx tsc --noEmit`、`npx jest tests/integration/db/home/home_items_grants.integration.test.ts`、`npm run validate-docs`、`npm run validate-trace -- HOME`・`-- AUTH`。
 
 ---
 
@@ -309,7 +336,7 @@ COMMIT;
 
 **Files:**
 
-- Create: `supabase/pending-wave2/<時刻>_sec_grants_admin_tables.sql`、`tests/integration/db/look_sec_grants_admin_tables.integration.test.ts`（1 本にまとめ、`look_` で始めて LOOK の glob に当てる。テスト名の先頭の ID で領域を分ける: `DATA-LOOK-003`・`DATA-NEWS-002`・`DATA-STOCKIST-002`・`DATA-ADMIN-`）
+- Create: `supabase/pending-wave2/<時刻>_sec_grants_admin_tables.sql`、領域ごとに 4 本（各領域の `scope.json` の結合の glob に当てる。1 本にまとめると LOOK 以外の領域の検査がその試験を数えない。レビューで分けた）: `tests/integration/db/look_grants_admin_tables.integration.test.ts`（`DATA-LOOK-003`）、`news_grants_admin_tables.integration.test.ts`（`DATA-NEWS-002`）、`stockist_grants_admin_tables.integration.test.ts`（`DATA-STOCKIST-002`）、`tests/integration/db/admin-misc/admin_item_color_presets_grants.integration.test.ts`（`DATA-ADMIN-005`）。移行の形（DB なし）の試験は LOOK の 1 本に置く
 - Modify（DB 結合試験。管理者の JWT で書けることを期待する行を `42501` に）: `look_rls`・`look_permissions`・`look_items_table`・`look_table`・`look_status_state`、`news_articles_rls`・`news_permissions`・`news_articles_table`・`news_status_state`、`stockist_rls`・`stockist_permissions`・`stockist_table`・`stockist_status_state`、`admin-misc/admin_item_color_presets_table.integration.test.ts`（各 `.integration.test.ts`）
 - Modify（E2E）: `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts`、`e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts`、`e2e/FR-STOCKIST-016-direct-db-access-and-session.spec.ts`、`e2e/FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access.spec.ts`
 - Docs: `docs/02_Requirements/areas/{look,news,stockist,admin}.md`、`docs/05_Quality/security/threats/{look,news,stockist,admin}.md`、`docs/03_BasicDesign/areas/{look,news,stockist,admin}.md`（`DATA-LOOK-003`・`DATA-NEWS-002`・`DATA-STOCKIST-002` と色見本の DATA）
@@ -320,7 +347,7 @@ COMMIT;
 -- ROLLBACK（Task 5。本番の旧い状態を適用前に読んで合わせる）:
 --   GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE
 --     public.looks, public.look_items, public.news_articles, public.stockists, public.item_color_presets TO anon, authenticated;
---   GRANT ALL ON SEQUENCE public.stockists_id_seq TO anon, authenticated;
+--   GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.stockists_id_seq TO anon, authenticated;   -- remote_schema.sql:4086 と同じ
 BEGIN;
 REVOKE ALL ON TABLE public.looks, public.look_items, public.news_articles, public.stockists,
   public.item_color_presets FROM PUBLIC, anon, authenticated;
@@ -345,8 +372,8 @@ COMMIT;
   - 外す: `FR-LOOK-SEC-002:295`（`SEC-LOOK-003-AC-02`）・`:369`（`SEC-LOOK-004-AC-01`）・`:396`（`SEC-LOOK-004-AC-02`）、`FR-NEWS-SEC-002:305`（`SEC-NEWS-002-AC-02`）・`:484`（`SEC-NEWS-022-AC-01`）、`FR-STOCKIST-016:253`（`SEC-STOCKIST-003-AC-02`）・`:310`（`SEC-STOCKIST-003-AC-03`。失効後の token の update が権限の誤りで断られる）、`FR-ADMIN-MISC-005:158`（`SEC-ADMIN-002-AC-01`。対照は aal2 の管理者の SELECT で、SELECT を残すので通る）。
   - 外さない（波 5。`has_permission` の aal2 と session の生存）: `FR-LOOK-SEC-002:269`（`SEC-LOOK-003-AC-01`）、`FR-NEWS-SEC-002:261`・`:362`（`SEC-NEWS-002-AC-01`・`AC-03`）、`FR-STOCKIST-016:214`（`SEC-STOCKIST-003-AC-01`）、`FR-ADMIN-MISC-005:202`（`SEC-ADMIN-002-AC-02`）、`FR-HOME-024:96`。
   - `FR-LOOK-SEC-002:369` の期待は「`permission denied for table looks|look_items`」の 42501。`stockists`・`news_articles` にも同じ形の期待を足す必要は無い（DB 結合試験が持つ）。
-- [ ] **Step 6: 文書。** `areas/look.md`: `SEC-LOOK-003-AC-02`・`SEC-LOOK-004` の「今のコードは満たさない」を外す（`SEC-LOOK-003-AC-01` は残す）。要件の文「管理の方針が使う INSERT・UPDATE・DELETE は残す」を「付け直さない（書き込みは service role。ADR-0462）」に直す（FREQ-540 との食い違いを ADR に書く）。`areas/news.md`: `SEC-NEWS-002-AC-02`・`SEC-NEWS-022`。`areas/stockist.md`: `SEC-STOCKIST-003-AC-02`・`AC-03`・`SEC-STOCKIST-008`（表・連番の権限）。`areas/admin.md`: `SEC-ADMIN-002-AC-01`。各 `threats/*.md`（THR-LOOK-003・004、THR-NEWS-002・022、THR-STOCKIST-003・008、THR-ADMIN-002）の「今のコードは満たさない」。構造設計の DATA の「表の付与」。
-- [ ] **Step 7: 確かめ。** `npx tsc --noEmit`、`npm run validate-docs`、`npm run validate-trace -- LOOK`・`-- NEWS`・`-- STOCKIST`・`-- ADMIN`、`npx jest tests/integration/db/look_sec_grants_admin_tables.integration.test.ts`（DB なしの形）。
+- [ ] **Step 6: 文書。** `areas/look.md`: `SEC-LOOK-003-AC-02`・`SEC-LOOK-004` の「今のコードは満たさない」を外す（`SEC-LOOK-003-AC-01` は残す）。要件の文「管理の方針が使う INSERT・UPDATE・DELETE は残す」を「付け直さない（書き込みは service role。ADR-0414）」に直す（FREQ-540 との食い違いを ADR に書く）。`areas/news.md`: `SEC-NEWS-002-AC-02`・`SEC-NEWS-022`。`areas/stockist.md`: `SEC-STOCKIST-003-AC-02`・`AC-03`・`SEC-STOCKIST-008`（表・連番の権限）。`areas/admin.md`: `SEC-ADMIN-002-AC-01`。各 `threats/*.md`（THR-LOOK-003・004、THR-NEWS-002・022、THR-STOCKIST-003・008、THR-ADMIN-002）の「今のコードは満たさない」。構造設計の DATA の「表の付与」。
+- [ ] **Step 7: 確かめ。** `npx tsc --noEmit`、`npm run validate-docs`、`npm run validate-trace -- LOOK`・`-- NEWS`・`-- STOCKIST`・`-- ADMIN`、`npx jest tests/integration/db/look_grants_admin_tables.integration.test.ts tests/integration/db/news_grants_admin_tables.integration.test.ts tests/integration/db/stockist_grants_admin_tables.integration.test.ts tests/integration/db/admin-misc/admin_item_color_presets_grants.integration.test.ts`（DB なしの形）。
 - [ ] **Step 8: 報告。** 共有文書の変更案（`db-migrations.md`、`er.md` の付与の記述）。本番の事前の確認（読むだけ）: 5 表の `has_table_privilege('anon'|'authenticated', …, 'insert'|'truncate')`、`pg_policies`、`stockists_id_seq` の ACL。**必ず Task 3 の窓口が配備された後にこの移行を本番に当てること**（順序）を書く。
 
 **検証コマンド:** `npx tsc --noEmit`、上の `jest`、`npm run validate-docs`、`npm run validate-trace -- LOOK`・`-- NEWS`・`-- STOCKIST`・`-- ADMIN`。
@@ -362,15 +389,17 @@ COMMIT;
 - Create: `supabase/pending-wave2/<時刻>_sec_search_functions.sql`
 - Modify: `tests/integration/db/search-functions.integration.test.ts`（今の挙動を固定した行を書き換える）、`tests/integration/db/search-popular-items.integration.test.ts`（影響があれば）
 - Modify（E2E）: `e2e/FR-SEARCH-020-search-db-function-grants.spec.ts`、`e2e/FR-SEARCH-021-search-injected-rows.spec.ts`、`e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts`、`e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts`
-- Docs: `docs/02_Requirements/areas/{search,look,news}.md`、`docs/05_Quality/security/threats/{search,look,news}.md`、`docs/03_BasicDesign/areas/{search,look,news}.md`（`DATA-SEARCH-001`・`DATA-SEARCH-003`・`DATA-LOOK-004`・`DATA-NEWS-003`）、`docs/04_DetailDesign/pages/19_search.md`、`ADR-0465`（新規）
+- Docs: `docs/02_Requirements/areas/{search,look,news}.md`、`docs/05_Quality/security/threats/{search,look,news}.md`、`docs/03_BasicDesign/areas/{search,look,news}.md`（`DATA-SEARCH-001`・`DATA-SEARCH-003`・`DATA-LOOK-004`・`DATA-NEWS-003`）、`docs/04_DetailDesign/pages/19_search.md`、`ADR-0315`（新規）
 
 **移行（骨格）:** 関数の本体は `remote_schema.sql:2139-2237`（`search_items`・`search_looks`・`search_news`）と `:2240-2330`（`search_public_*`）の最新を**そのまま写し**、下だけを変える。
 
 ```sql
--- ROLLBACK（Task 6）: search_items / search_looks / search_news を remote_schema.sql の旧い本体（LIMIT limit_count と
---   replace(replace(…, '%', '\%'), '_', '\_')）に CREATE OR REPLACE で戻し、
+-- ROLLBACK（Task 6）: search_items / search_looks / search_news の旧い本体（remote_schema.sql:2139-2237 の 3 つの
+--   CREATE OR REPLACE FUNCTION の文。3 本とも後の移行で置き換わっていないことを確かめ済み）を、このヘッダーに
+--   1 字も変えずに全文写しておき（「…」で略さない）、それを流して戻す。続けて
 --   GRANT EXECUTE ON FUNCTION public.search_public_items(text, integer), public.search_public_looks(text, integer),
---     public.search_public_news(text, integer) TO PUBLIC, anon, authenticated;
+--     public.search_public_news(text, integer) TO PUBLIC, anon, authenticated;   -- remote_schema.sql:4020-4024 と同じ
+--   移行の形の試験（Step 2 (g)）で、ヘッダーに旧い本体の `LIMIT limit_count;` が 3 回あることを確かめる。
 BEGIN;
 CREATE OR REPLACE FUNCTION public.search_items (search_query text, limit_count integer DEFAULT 8)
   RETURNS TABLE (id bigint, name text, description text, category text, image_url text, price integer)
@@ -402,7 +431,7 @@ COMMIT;
 - [ ] **Step 3（GREEN）: 移行を書く。** `search_looks`・`search_news` は旧い本体の列・条件・並びを写して、`left(…, 100)`・LATERAL・上限だけを変える。
 - [ ] **Step 4: 既存の DB 試験を書き換える。** 固定行を (a)〜(e) の新しい期待に。
 - [ ] **Step 5: E2E の印と期待（書くだけ）。** 外す: `FR-SEARCH-020:297`（`SEC-SEARCH-007`）・`:320`（`SEC-SEARCH-008`）、`FR-SEARCH-021:238`（`SEC-SEARCH-003`）、`FR-NEWS-SEC-002:410`（`SEC-NEWS-010-AC-01`）・`:434`（`SEC-NEWS-010-AC-02`）、`FR-LOOK-SEC-002:442`（`SEC-LOOK-010-AC-02`）。外さない: `FR-SEARCH-021:273`・`:383`（`SEC-SEARCH-016`・`015` は署名。波 3）。`FR-SEARCH-020` が `MAX_ROWS = 8` で件数を見ていることを読んで確かめる。
-- [ ] **Step 6: 文書。** `areas/search.md`・`look.md`・`news.md` の該当 SEC の「今のコードは満たさない」を外す。`DATA-SEARCH-001` の「未使用（削除の判断待ち）の `search_public_*`」は「呼べない（REVOKE 済み）。DROP は NEWS の試験を直した後に別の判断」に。`ADR-0465`。
+- [ ] **Step 6: 文書。** `areas/search.md`・`look.md`・`news.md` の該当 SEC の「今のコードは満たさない」を外す。`DATA-SEARCH-001` の「未使用（削除の判断待ち）の `search_public_*`」は「呼べない（REVOKE 済み）。DROP は NEWS の試験を直した後に別の判断」に。`ADR-0315`。
 - [ ] **Step 7: 確かめ。** `npx tsc --noEmit`、`npm run validate-docs`、`npm run validate-trace -- SEARCH`・`-- LOOK`・`-- NEWS`、`npx jest tests/integration/db/search-functions.integration.test.ts`（DB なしの形だけ）。
 - [ ] **Step 8: 報告。** 共有文書の変更案（`db-migrations.md`、`er.md`）。本番の事前の確認: `has_function_privilege('anon', 'public.search_public_items(text,integer)', 'execute')` ほか 6 本、PostgREST の `max_rows`（運用）。
 
@@ -416,11 +445,13 @@ COMMIT;
 
 **Files:**
 
-- Create: `supabase/pending-wave2/<時刻>_sec_rls_predicates_and_constraints.sql`、`tests/integration/db/look_update_function.integration.test.ts`、`tests/integration/db/look_news_constraints.integration.test.ts`
+- Create: `supabase/pending-wave2/<時刻>_sec_rls_predicates_and_constraints.sql`、`tests/integration/db/look_update_function.integration.test.ts`、`tests/integration/db/look_constraints.integration.test.ts`（`DATA-LOOK-001`）、`tests/integration/db/news_constraints.integration.test.ts`（`DATA-NEWS-001`）（領域の glob ごとに分ける）
 - Modify: `src/app/api/admin/looks/[id]/route.ts`（PUT）
 - Test（単体・結合）: `tests/unit/api/admin/looks/looks-id-put-route.test.ts`、`tests/integration/api/look-admin-item-put-api.test.ts`・`look-admin-write-path.test.ts`・`look-image-signing.test.ts`、`tests/integration/db/look_rls.integration.test.ts`（`look_items` の読みと方針名の固定）、`look_items_table`・`look_table`・`news_articles_table`（長さ・道筋の制約の固定）
+- Modify（新しい CHECK に当たる試験の用意。**レビューで足した**。Step 1 の表）: DB 結合試験 `look_items_table`（`'integration/look-items.png'`）・`look_rls`（`'integration/look-rls.png'`）・`look_status_state`（`'integration/look-state.png'`）・`news_articles_rls`（`'integration/news-rls.png'`・`'integration/news-rls-new.png'`）・`news_articles_table`（`'integration/news-table.png'`・`dup.png`・`trigger.png`）・`news_status_state`（`'integration/news-state.png'`）の道筋を `looks/integration/…`・`news/integration/…` に（道筋の形はこれらの試験の意図に関係しない）。E2E `e2e/FR-NEWS-ALL-018-list-behaviour-and-layout.spec.ts:76`（`'e2e/private.png'` → `'news/e2e/private.png'`）。E2E で「外の値を持つ旧い行」を意図して作る試験（下の Step 1 の (B)）は新しい補助 `e2e/legacy-image-rows.ts` を使う: `e2e/FR-NEWS-SEC-001-public-data-exposure.spec.ts`（`insertArticles` の probe）、`e2e/FR-LOOK-SEC-001-public-visibility.spec.ts`（`SEC-LOOK-007`・`008`）、`e2e/FR-SEARCH-021-search-injected-rows.spec.ts`（`insertNews` の `image_url = ''` と `SEC-SEARCH-015` の LOOK の `https://example.com/x.jpg`）
+- Create: `e2e/legacy-image-rows.ts`（E2E の補助。下の Interfaces）
 - Modify（E2E）: `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts`、`e2e/FR-LOOK-SEC-004-admin-write-integrity.spec.ts`、`e2e/FR-NEWS-SEC-002-direct-db-access.spec.ts`
-- Docs: `docs/02_Requirements/areas/{look,news}.md`、`docs/05_Quality/security/threats/{look,news}.md`、`docs/03_BasicDesign/areas/{look,news}.md`（`DATA-LOOK-001`〜`003`・`DATA-NEWS-001`、`API-LOOK-` の PUT）、`docs/04_DetailDesign/pages/16-3_admin_look.md`（PUT の `DD-`）、`ADR-0466`・`ADR-0467`（新規）、`ADR-0160`（「同時の PUT の弱さ」の記述を「`admin_update_look` が閉じた」に）
+- Docs: `docs/02_Requirements/areas/{look,news}.md`、`docs/05_Quality/security/threats/{look,news}.md`、`docs/03_BasicDesign/areas/{look,news}.md`（`DATA-LOOK-001`〜`003`・`DATA-NEWS-001`、`API-LOOK-` の PUT）、`docs/04_DetailDesign/pages/16-3_admin_look.md`（PUT の `DD-`）、`ADR-0162`・`ADR-0163`（新規）、`ADR-0160`（「同時の PUT の弱さ」の記述を「`admin_update_look` が閉じた」に）
 
 **Interfaces:**
 
@@ -464,10 +495,16 @@ BEGIN
   SELECT l.image_urls INTO v_previous FROM public.looks AS l WHERE l.id = _look_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'LOOK_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   UPDATE public.looks SET season_year = _season_year, season_type = _season_type, theme = _theme,
-    theme_description = _theme_description, image_urls = _image_urls, status = _status WHERE id = _look_id;
-  DELETE FROM public.look_items WHERE look_id = _look_id;
-  INSERT INTO public.look_items (look_id, item_id)
-    SELECT _look_id, x FROM (SELECT DISTINCT unnest(COALESCE(_item_ids, ARRAY[]::bigint[])) AS x) AS d;
+    theme_description = _theme_description, image_urls = COALESCE(_image_urls, v_previous), status = _status
+    WHERE id = _look_id;                                   -- _image_urls が NULL = 新しい画像なし = 今の画像を保つ（P9 (a)）
+  BEGIN                                                    -- 関連の段の失敗に印を付け直す（P9 (b)）。投げれば行の更新も戻る
+    DELETE FROM public.look_items WHERE look_id = _look_id;
+    INSERT INTO public.look_items (look_id, item_id)
+      SELECT _look_id, x FROM (SELECT DISTINCT unnest(COALESCE(_item_ids, ARRAY[]::bigint[])) AS x) AS d;
+  EXCEPTION
+    WHEN foreign_key_violation THEN RAISE;
+    WHEN OTHERS THEN RAISE EXCEPTION 'LOOK_ITEMS_WRITE_FAILED' USING ERRCODE = 'P0001';
+  END;
   RETURN v_previous;
 END
 $admin_update_look$;
@@ -476,29 +513,45 @@ GRANT EXECUTE ON FUNCTION public.admin_update_look(bigint, integer, text, text, 
 ```
 
 ```ts
+// e2e/legacy-image-rows.ts（E2E の補助。レビューで足した）
+// CHECK より前からある旧い行を作る。1 つの取引で: 制約の定義を pg_get_constraintdef で読む → ALTER TABLE … DROP CONSTRAINT →
+// insert（returning id）→ 同じ定義で ADD CONSTRAINT … NOT VALID → commit。NOT VALID なので作った行は検査されない。
+// DDL は表に ACCESS EXCLUSIVE の鍵を取るので、別の接続からは制約の無い瞬間が見えない（FR-LOOK-SEC-004 が一時のトリガーを
+// 作るのと同じ考え）。制約が無い DB（移行の前）では制約を触らずに insert だけする。postgres の接続（withLocalDb）で使う。
+export async function insertLegacyImageRow(
+  db: PgClient, table: 'looks' | 'news_articles', constraint: 'looks_image_urls_path_check' | 'news_articles_image_url_path_check',
+  insertSql: string, params: unknown[]): Promise<number>;
+```
+
+```ts
 // src/app/api/admin/looks/[id]/route.ts PUT の更新の部分（置き場への上げ・古い画像の削除の順は波 1-C のまま）
 //   const { data: previousImageUrls, error } = await supabase.rpc('admin_update_look', {
-//     _look_id: Number(id), _season_year, _season_type, _theme, _theme_description, _image_urls: imageUrls,
+//     _look_id: Number(id), _season_year, _season_type, _theme, _theme_description,
+//     _image_urls: newImagePaths.length > 0 ? newImagePaths : null,   // 新しい画像が無ければ NULL（今の画像を関数が保つ）
 //     _status, _item_ids: parsedPayload.data.linkedItemIds });
+//   先に読む existingLook（404 の早い判定・監査の previous_status）と商品の存在の確かめは今のまま残す
 //   error.code === 'P0002' → 404 'Look not found'（監査 failure 'Look not found'。新しく上げた画像は消す）
 //   error.code === '23503' → 400 'Some linked items do not exist'（同上）
+//   error.message === 'LOOK_ITEMS_WRITE_FAILED' → 500 'Failed to update linked items'（監査 'Failed to update look-item links'。
+//     新しく上げた画像は消す。古い画像は消さない。行は 1 取引で戻っている）。今の応答の契約・E2E の期待と同じ文
 //   その他の error → 500 'Failed to update look'（新しく上げた画像は消す。行は 1 取引なので変わっていない）
+//   監査の image_count は「新しい画像の数、無ければ戻りの previousImageUrls の数」
 //   成功 → 差し替えた古い画像 = listRemovableLookImagePaths(previousImageUrls（rpc の戻り）, newImagePaths) を消す
 //   look_items の delete・insert の 2 つの呼び出し（deleteLookItemsError・insertLookItemsError の枝）は消える
 ```
 
-- [ ] **Step 1: 現状の確認（読むだけ）。** `remote_schema.sql:3499-3533` の `look_items` の方針名と式、`looks`・`news_articles` の CHECK の現状（`:639-680`）、`src/app/api/admin/looks/[id]/route.ts` の PUT（`:280-560`）の枝を表にする。E2E・結合試験・補助が DB に直に入れる `looks`・`news_articles` の値が新しい CHECK に当たらないか: `grep -rnE "insert into public\.(looks|news_articles)|insert into (looks|news_articles)" e2e tests` の各行の `image_urls`・`image_url`（Task 1 で直した見本か `looks/…`・`news/…` の形）、`theme`（201 字以上）、`content`（2001 字以上）を確かめる。長い値を入れる試験（`FR-LOOK-SEC-002:460` の 201 字は CHECK の違反を期待する側）以外は当たらないこと。
+- [ ] **Step 1: 現状の確認（読むだけ）。** `remote_schema.sql:3499-3533` の `look_items` の方針名と式、`looks`・`news_articles` の CHECK の現状（`:639-680`）、`src/app/api/admin/looks/[id]/route.ts` の PUT（`:280-560`）の枝を表にする。E2E・結合試験・補助が DB に直に入れる `looks`・`news_articles` の値が新しい CHECK に当たらないか: `grep -rnE "insert into public\.(looks|news_articles)|insert into (looks|news_articles)" e2e tests` の各行の `image_urls`・`image_url`（Task 1 で直した見本か `looks/…`・`news/…` の形）、`theme`（201 字以上）、`content`（2001 字以上）を確かめる。長い値を入れる試験（`FR-LOOK-SEC-002:460` の 201 字は CHECK の違反を期待する側）以外は当たらないこと。**レビューの実測（2026-10-26）では当たる物が多い**ので、`insert into` の SQL だけでなく supabase-js の `.from('news_articles').insert`・補助の引数（`imageUrl`・`imageUrls`）まで洗い、次の 3 つに分けて表にする。(A) 道筋の形が試験の意図に関係ない → `looks/…`・`news/…` の形に直す（Files の DB 結合試験 6 本、`FR-NEWS-ALL-018`）。(B) 外の値の行を意図して作り、アプリの扱い（署名しない・null にする）を確かめる → 今は緑の `FR-NEWS-SEC-001` の `SEC-NEWS-007-AC-01`・`AC-02`・`SEC-NEWS-008-AC-01`（`other/…`・別ホストの URL・置き場の URL でない値）と、`test.fail` の `FR-LOOK-SEC-001` の `SEC-LOOK-007-AC-01`（`../other/x.png`・`other/x.png`）・`SEC-LOOK-008-AC-01`（`https://evil.example/x.png`）、`FR-SEARCH-021` の `SEC-SEARCH-015-AC-01`（LOOK の `https://example.com/x.jpg`）と `insertNews` の `image_url = ''`（ファイルの全部の NEWS の行）。CHECK の後は insert が `23514` で落ちて、今は緑の試験が赤になる。これらは「CHECK より前からある旧い行」（`NOT VALID` が本番に残す行）を表すので、補助 `insertLegacyImageRow` で作る。(C) CHECK の違反を期待する側（`FR-LOOK-SEC-002:460`・`FR-NEWS-SEC-002:449`）→ そのまま。
 - [ ] **Step 2（RED）: DB 結合試験を書く（流さない）。**
-  - `look_news_constraints.integration.test.ts`（先頭 `DATA-LOOK-001`・`DATA-NEWS-001`）: 受理 — `looks/2026-10-24/00000000-0000-4000-8000-000000000000.png`、`looks/e2e/look-1-1.png`、`looks/a.png`、空配列。拒否（SQLSTATE `23514`）— `other/x.png`、`looks/../y.png`、`looks//y.png`、`/looks/y.png`、`looks/.hidden/y.png`、`https://evil.example/looks/x.png`、`looks/a.png\nother/b.png`（改行で 2 つ目が外）、配列に NULL を含む、201 字のテーマ、空のテーマ、4001 字の説明。`news_articles` も同じ形（`news/e2e/news-1.png` 受理、`e2e/news-1.png`・`news/../x.png` 拒否、201 字の題、2001 字の `content`、10001 字の `detailed_content`）。`NOT VALID` の確かめは `pg_constraint.convalidated` が 7 本とも偽であることだけにする（旧い形の行を CHECK を外さずに作る手段が無いため、「旧い行の UPDATE が 23514 で落ちる」は試験にせず ADR-0466 と Task 10 の本番の事前の確認で扱う）。
+  - `look_constraints.integration.test.ts`（先頭 `DATA-LOOK-001`）と `news_constraints.integration.test.ts`（先頭 `DATA-NEWS-001`）: 受理 — `looks/2026-10-24/00000000-0000-4000-8000-000000000000.png`、`looks/e2e/look-1-1.png`、`looks/a.png`、空配列。拒否（SQLSTATE `23514`）— `other/x.png`、`looks/../y.png`、`looks//y.png`、`/looks/y.png`、`looks/.hidden/y.png`、`https://evil.example/looks/x.png`、`looks/a.png\nother/b.png`（改行で 2 つ目が外）、配列に NULL を含む、201 字のテーマ、空のテーマ、4001 字の説明。`news_articles` も同じ形（`news/e2e/news-1.png` 受理、`e2e/news-1.png`・`news/../x.png` 拒否、201 字の題、2001 字の `content`、10001 字の `detailed_content`）。`NOT VALID` の確かめは `pg_constraint.convalidated` が 7 本とも偽であること。加えて、取引の中で `insertLegacyImageRow` と同じ手順（制約の定義を `pg_get_constraintdef` で読む → DROP → 旧い形の行を insert → 同じ定義で ADD（`NOT VALID`））で旧い行を作り、(i) その行が残る、(ii) 関係の無い列の UPDATE が `23514` で落ちる（I7）を確かめて rollback する。
   - `look_update_function.integration.test.ts`（先頭 `DATA-LOOK-001`・`API-LOOK-`）: (a) service_role で呼ぶと行・関連が更新され、戻り値が更新前の `image_urls`。(b) 存在しない `_look_id` は SQLSTATE `P0002`・メッセージ `LOOK_NOT_FOUND`。(c) 存在しない商品の id を含めると SQLSTATE `23503` で、**行・`look_items` が呼ぶ前のまま**（1 取引で戻る）。(d) 重なった `_item_ids` は 1 行ずつ。(e) 空配列で関連が 0 件になる。(f) ACL: anon・authenticated は `42501`（`set local role`）、service_role は通る、PUBLIC が無い（`aclexplode`）、`prosecdef` が偽、`proconfig` が `search_path=""`。(g) 同時: 別の接続（`connectLocalDb()`）で同じ LOOK を呼ぶと、先の取引が終わるまで待つ（`set lock_timeout = '300ms'` で `55P03`）。用意した行は commit して `finally` で消す。
   - `look_rls.integration.test.ts` に: anon・一般会員は「公開の LOOK につながる**非公開の商品**の関連」を読めない、公開の商品の関連は読める、`admin.looks.read` を持つ会員は非公開の関連も読める（今の穴の固定が 1 つ減る）、方針名が上の 2 本になっている（`DATA-LOOK-003 look_items の方針は設計の6つ…` の名前の一覧を新しい名前に）。
-  - 単体: `looks-id-put-route.test.ts`（先頭 `DD-LOOK-` の PUT の ID）— (a) 更新は `supabase.rpc('admin_update_look', {…})` 1 回で、`from('looks').update`・`from('look_items').delete/insert` を呼ばない。(b) rpc の引数の名前と値（`_look_id` が数値、`_item_ids` が `linkedItemIds`）。(c) `P0002` → 404・`23503` → 400・他 → 500。いずれも新しく上げた画像を消し、古い画像は消さない。(d) 成功では rpc の戻りと新しい画像から決めた古い画像だけを消す。(e) 戻りが `null`・非配列でも落ちない（消さない側に倒れる）。
-- [ ] **Step 3（GREEN）: 移行を書く。** 順番: 方針 → 関数 → CHECK（`NOT VALID`）→ 自己検査（`look_items` の方針名と式に `items` の `status` を含む、CHECK 7 本が `convalidated = false`、関数の ACL、`proconfig`）。ヘッダーのロールバック: 方針を旧い 2 本（`remote_schema.sql:3499-3504`・`:3528-3533`）に戻す、`ALTER TABLE … DROP CONSTRAINT` を 7 本、`DROP FUNCTION public.admin_update_look(...)`。
-- [ ] **Step 4（GREEN）: 窓口を直す。** `[id]/route.ts` の PUT の `update`・`delete`・`insert` を上の rpc に。`tsc` を流す。`@remarks` に ADR-0467。
+  - 単体: `looks-id-put-route.test.ts`（先頭 `DD-LOOK-` の PUT の ID）— (a) 更新は `supabase.rpc('admin_update_look', {…})` 1 回で、`from('looks').update`・`from('look_items').delete/insert` を呼ばない。(b) rpc の引数の名前と値（`_look_id` が数値、`_item_ids` が `linkedItemIds`）。(c) `P0002` → 404・`23503` → 400・`LOOK_ITEMS_WRITE_FAILED` → 500 `Failed to update linked items`（監査 `Failed to update look-item links`）・他 → 500 `Failed to update look`。いずれも新しく上げた画像を消し、古い画像は消さない。(c2) 新しい画像が無い PUT は `_image_urls: null` を渡す。今の `DD-LOOK-064` の 2 本（関連の削除の失敗・追加の失敗）は 1 本（`LOOK_ITEMS_WRITE_FAILED`）にまとめ、`16-3_admin_look.md:463-464` の表の 2 行も 1 行にする。(d) 成功では rpc の戻りと新しい画像から決めた古い画像だけを消す。(e) 戻りが `null`・非配列でも落ちない（消さない側に倒れる）。
+- [ ] **Step 3（GREEN）: 移行を書く。** 順番: 方針 → 関数 → CHECK（`NOT VALID`）→ 自己検査（`look_items` の方針名と式に `items` の `status` を含む、CHECK 7 本が `convalidated = false`、関数の ACL、`proconfig`）。ヘッダーのロールバック: 新しい 2 本の方針を `DROP POLICY IF EXISTS` してから、旧い 2 本（`remote_schema.sql:3499-3504`・`:3528-3533`。後の移行は変えていない）を全文で作り直す、`ALTER TABLE … DROP CONSTRAINT IF EXISTS` を 7 本（名前を全部書く）、`DROP FUNCTION IF EXISTS public.admin_update_look(bigint, integer, text, text, text, text[], text, bigint[])`。**関数を消すなら Task 7 の窓口の変更も同時に戻す**（戻さないと PUT が `PGRST202` で全部 500）と注記する。
+- [ ] **Step 4（GREEN）: 窓口を直す。** `[id]/route.ts` の PUT の `update`・`delete`・`insert` を上の rpc に。`tsc` を流す。`@remarks` に ADR-0163。
 - [ ] **Step 5: 既存の試験を直す。** `look-admin-item-put-api.test.ts`・`look-admin-write-path.test.ts`・`look-image-signing.test.ts` の supabase の連鎖のモックを `rpc` に。`look_table`・`look_items_table`・`news_articles_table` の長さ・道筋を通していた行を新しい期待に。
-- [ ] **Step 6: E2E の印と期待（書くだけ）。** 外す: `FR-LOOK-SEC-002:224`（`SEC-LOOK-002-AC-01`）・`:246`（`SEC-LOOK-002-AC-02`）・`:460`（`SEC-LOOK-023-AC-01`）、`FR-LOOK-SEC-004:450`（`SEC-LOOK-015-AC-01`。幅ごとの繰り返しの 1 本。rpc が 1 取引なので、関連の追加を失敗させても行が元のまま）、`FR-NEWS-SEC-002:449`（`SEC-NEWS-025-AC-01`）。外さない: `FR-LOOK-SEC-004:299`（`SEC-LOOK-012-AC-03`）・`:429`（`SEC-LOOK-020-AC-02` は IP。波 4）。
+- [ ] **Step 6: E2E の印と期待（書くだけ）。** 外す: `FR-LOOK-SEC-002:224`（`SEC-LOOK-002-AC-01`）・`:246`（`SEC-LOOK-002-AC-02`）・`:460`（`SEC-LOOK-023-AC-01`）、`FR-LOOK-SEC-004:450`（`SEC-LOOK-015-AC-01`。幅ごとの繰り返しの 1 本。rpc が 1 取引なので、関連の追加を失敗させても行が元のまま。試験が確かめる誤りの文 `Failed to update linked items` は P9 (b) で保つので、試験の本文は変えない）、`FR-NEWS-SEC-002:449`（`SEC-NEWS-025-AC-01`）。外さない: `FR-LOOK-SEC-004:299`（`SEC-LOOK-012-AC-03`）・`:429`（`SEC-LOOK-020-AC-02` は IP。波 4）。Step 1 の (B) の試験は、用意を `insertLegacyImageRow` に替えるだけで印は変えない（今は緑の `SEC-NEWS-007`・`008` は緑のまま、`test.fail` の `SEC-LOOK-007`・`008`・`SEC-SEARCH-015` は波 3 のまま）。(A) の書き換えも印は変えない。
 - [ ] **Step 7: 文書。** `areas/look.md`: `SEC-LOOK-002`・`015`・`023` の「今のコードは満たさない」を外し、`SEC-LOOK-023` の画像の道筋の式を「`looks/` の下の安全な文字」（LOOK-007 の判断）に。`areas/news.md`: `SEC-NEWS-025`。`ADR-0160` の「結果」を更新。`threats/look.md`・`news.md`。
-- [ ] **Step 8: 対象の `jest` と確かめ。** `npx jest tests/unit/api/admin/looks tests/integration/api/look-admin-item-put-api.test.ts tests/integration/api/look-admin-write-path.test.ts tests/integration/api/look-image-signing.test.ts tests/integration/db/look_update_function.integration.test.ts tests/integration/db/look_news_constraints.integration.test.ts`（DB の試験は skip）、`npx tsc --noEmit`、`npm run validate-docs`、`npm run validate-trace -- LOOK`・`-- NEWS`。
+- [ ] **Step 8: 対象の `jest` と確かめ。** `npx jest tests/unit/api/admin/looks tests/integration/api/look-admin-item-put-api.test.ts tests/integration/api/look-admin-write-path.test.ts tests/integration/api/look-image-signing.test.ts tests/integration/db/look_update_function.integration.test.ts tests/integration/db/look_constraints.integration.test.ts tests/integration/db/news_constraints.integration.test.ts`（DB の試験は skip）、`npx tsc --noEmit`、`npm run validate-docs`、`npm run validate-trace -- LOOK`・`-- NEWS`。
 - [ ] **Step 9: 報告。** 共有文書の変更案（`db-migrations.md`、`er.md` の CHECK と関数、`api-spec.md` は PUT の応答が変わらないので無し）。**本番の事前の確認（読むだけ）**: `select distinct split_part(image_urls[1], '/', 1) from looks`、`select distinct split_part(image_url, '/', 1) from news_articles`、`select id from looks where char_length(theme) > 200 or char_length(theme_description) > 4000`、`select id from news_articles where char_length(title) > 200 or char_length(content) > 2000 or char_length(detailed_content) > 10000`、旧い公開 URL（`…/object/public/…`）の行の数。ある行は VALIDATE の前に正規化する（この波では書かない）。**窓口の変更と移行は同じ日に移す**（Review Focus 3）。
 
 **検証コマンド:** `npx tsc --noEmit`、上の `jest`、`npm run validate-docs`、`npm run validate-trace -- LOOK`・`-- NEWS`。
@@ -514,7 +567,7 @@ GRANT EXECUTE ON FUNCTION public.admin_update_look(bigint, integer, text, text, 
 - Create: `supabase/pending-wave2/<時刻>_sec_storage_buckets.sql`
 - Modify: `tests/integration/db/look_images_bucket.integration.test.ts`（`:62` 付近の「上限を付けない」を新しい設定に）、`tests/integration/db/news_images_bucket.integration.test.ts`（同種）
 - Modify（E2E）: `e2e/FR-LOOK-SEC-002-postgrest-policies.spec.ts`（`:408`）。`FR-NEWS-SEC-001`・`FR-NEWS-SEC-003` の置き場の設定を見る試験があれば期待を合わせる
-- Docs: `docs/02_Requirements/areas/{look,news}.md`、`docs/05_Quality/security/threats/{look,news}.md`、`docs/03_BasicDesign/areas/{look,news}.md`（`DATA-LOOK-005`・`DATA-NEWS-004`）、`ADR-0468`（新規）
+- Docs: `docs/02_Requirements/areas/{look,news}.md`、`docs/05_Quality/security/threats/{look,news}.md`、`docs/03_BasicDesign/areas/{look,news}.md`（`DATA-LOOK-005`・`DATA-NEWS-004`）、`ADR-0164`（新規）
 
 **移行（骨格）:**
 
@@ -539,7 +592,7 @@ COMMIT;
 - [ ] **Step 3（GREEN）: 移行を書く。**
 - [ ] **Step 4: 既存の DB 試験を直す。** 「上限を付けない」を新しい設定に。
 - [ ] **Step 5: E2E の印（書くだけ）。** 外す: `FR-LOOK-SEC-002:408`（`SEC-LOOK-005-AC-01`）。`SEC-LOOK-005-AC-02`（公開の URL は 4xx）は印が無く、今も緑のまま。
-- [ ] **Step 6: 文書。** `areas/look.md`: `SEC-LOOK-005` の「今のコードは満たさない」を外す。`areas/news.md`: `SEC-NEWS-003` の置き場が移行に無い旨を外す。`threats/*`、`DATA-LOOK-005`・`DATA-NEWS-004`、`ADR-0468`（本番の置き場が既にあるので `DO UPDATE`、既存の 5 MB 超のファイルは残り新規だけ断られる）。
+- [ ] **Step 6: 文書。** `areas/look.md`: `SEC-LOOK-005` の「今のコードは満たさない」を外す。`areas/news.md`: `SEC-NEWS-003` の置き場が移行に無い旨を外す。`threats/*`、`DATA-LOOK-005`・`DATA-NEWS-004`、`ADR-0164`（本番の置き場が既にあるので `DO UPDATE`、既存の 5 MB 超のファイルは残り新規だけ断られる）。
 - [ ] **Step 7: 確かめ。** `npx tsc --noEmit`、`npm run validate-docs`、`npm run validate-trace -- LOOK`・`-- NEWS`。
 - [ ] **Step 8: 報告。** 共有文書の変更案（`db-migrations.md`、`er.md`）。**本番の事前の確認（読むだけ。移行を当てる前に必須）**: `select id, public, file_size_limit, allowed_mime_types from storage.buckets where id in ('look-images','news-images')`、`select policyname, qual, with_check from pg_policies where schemaname='storage' and tablename='objects'`（名指しの方針があれば移行の自己検査で止まる）、`select bucket_id, count(*), max(metadata->>'size') from storage.objects ... group by bucket_id`（5 MB 超の既存ファイルの数）。結果をロールバックの値として保存する。
 
@@ -554,7 +607,7 @@ COMMIT;
 **Files:**
 
 - Create: `tests/integration/db/auth_grants_inventory.integration.test.ts`（名前は AUTH の glob `tests/integration/db/auth_*.integration.test.ts` に当たる）
-- Modify: `docs/02_Requirements/areas/auth.md`（`SEC-AUTH-033` と `AC-01`・`AC-02` を新設。`SEC-AUTH-011` の上位に並べる）、`docs/05_Quality/security/threats/auth.md`（`THR-AUTH-033`）、`docs/03_BasicDesign/areas/auth.md`、`ADR-0462`（Task 4 が作った物に「決まり」の節）
+- Modify: `docs/02_Requirements/areas/auth.md`（`SEC-AUTH-033` を新設。**AC は作らない**（レビューで直した。下の Step 2 の注）。`SEC-AUTH-011` の近くに並べる）、`docs/05_Quality/security/threats/auth.md`（`THR-AUTH-033`）、`docs/03_BasicDesign/areas/auth.md`（`DATA-AUTH-006` を新設。上位 `SEC-AUTH-033`・`ADR-0414`）、`ADR-0414`（Task 4 が作った物に「決まり」の節）、`docs/04_DetailDesign/pages/14_login.md`（`DATA-AUTH-001` を上位に持つ DD の「上位」に `DATA-AUTH-006` を足す）
 - Docs（新規の運用の決まりは共有の `db-migrations.md` に書くので、本文は報告に）
 
 **一覧（試験の定数）:**
@@ -564,7 +617,7 @@ COMMIT;
 | 公開の読み | `looks`・`look_items`・`news_articles`・`stockists` | SELECT のみ | SELECT のみ | SELECT・INSERT・UPDATE・DELETE |
 | 管理の読み | `item_color_presets`・`item_cost_history` | なし | SELECT のみ | 同上 |
 | 閉じた表 | `sessions`・`password_reset_tokens`・`rate_limit_counters`・`audit_logs`・`audit_logs_backups` | なし | なし | 同上 |
-| 自分の行 | `profiles` | なし | SELECT・INSERT・UPDATE・DELETE（TRUNCATE・REFERENCES・TRIGGER・MAINTAIN は無し） | 同上 |
+| 自分の行 | `profiles` | なし | SELECT・INSERT・UPDATE・DELETE（TRUNCATE・REFERENCES・TRIGGER・MAINTAIN は無し）。**歯止め（下）では「意図して書ける表」として引く** | 同上 |
 | 列単位 | `items` | 21 列の SELECT のみ。表単位は無し。原価 2 列は無し | 同左 | 同上 |
 | 関数 | `search_items/looks/news` | EXECUTE 可 | EXECUTE 可 | 可 |
 | 関数 | `search_public_items/looks/news`・`admin_update_look` | 不可 | 不可 | 可（`search_public_*` は postgres も） |
@@ -574,11 +627,11 @@ COMMIT;
 **既知の例外（直さず一覧に載せる。他の領域・波の持ち物）:** `admin_finance_*`・`admin_kpi_*`・`admin_costing_items`・`admin_expense_cost_allocations`（会計）、`contact_inquiries`・`contact_messages`・`contact_reply_templates`（問い合わせ）、`carts`・`checkout_drafts`・`orders`・`order_items`・`wishlist`（注文・カート）、`permissions`・`roles`・`role_permissions`・`user_roles`（権限）、`postal_code_cache`・`refresh_token_history`・`stripe_webhook_events`。G の表（注文・発送・在庫・発注）は各移行が明示の GRANT を持つ前提で、歯止めの対象に含める（**例外に載せない**）。
 
 - [ ] **Step 1: 現状の確認（読むだけ）。** `remote_schema.sql:4100-4260` の「`TO "anon", "authenticated"` の全権限」の表を出し、上の既知の例外と一致することを確かめる。後の移行（`20261008220825_cart_wishlist_ownership.sql`・`20260927100000〜` の注文系・G の移行）が一部を締めている可能性があるので、**例外の一覧は「持っているかもしれない」上限**として扱う（締まっていても落ちない）。`tests/integration/db/helpers/local-db.ts` の `describeLocalDb` と、`group_g2_public_function_acl.integration.test.ts` の `failureAs`（役を替えて SQLSTATE を取る補助）を読む。
-- [ ] **Step 2（RED）: 試験を書く（流さない）。** 先頭は `SEC-AUTH-033-AC-01`・`SEC-AUTH-033-AC-02`。
-  - **AC-01**（一覧どおり）: 上の表の各行を `test.each` で確かめる。表: `has_table_privilege(role, table, 'SELECT'|'INSERT'|'UPDATE'|'DELETE'|'TRUNCATE'|'REFERENCES'|'TRIGGER'|'MAINTAIN')`。`items`: `has_table_privilege(…, 'SELECT')` が偽・`has_column_privilege` が 21 列で真・`pattern_cost`・`mass_production_cost` で偽。さらに「`items` の全列 − 原価 2 列 = anon が `SELECT` できる列」（`information_schema.columns` と突き合わせ。新しい列が足されたらこの試験が落ち、足した人に権限の判断を迫る）。関数: `has_function_privilege` と `aclexplode` の grantee 0（PUBLIC）。連番: `has_sequence_privilege`。置き場: `storage.buckets.public`。
-  - **AC-02**（歯止め）: `pg_class` の `public` の通常の表（`relkind in ('r','p')`）のうち、anon または authenticated が `INSERT`・`UPDATE`・`DELETE`・`TRUNCATE` のどれかを持つ表の集合から、**既知の例外**を引いた残りが空であること。残りがあれば表の名前を出して落ちる。あわせて「既知の例外のうち、今は広い権限を持たない表」を `console.info` に一覧で出す（締まった表を例外から外す目安。落ちない）。「既知の例外の表でも anon に `TRUNCATE` は付けない」という強い断言は、例外の実態が不明なので `test.todo('anon の TRUNCATE を既知の例外の表からも外す')` として残す（直すのは他領域の波）。
+- [ ] **Step 2（RED）: 試験を書く（流さない）。** 先頭は **`DATA-AUTH-006`**（レビューで直した。結合テストの名前は構造設計の ID で始める決まりで、`SEC-…-AC-…` で始めると `wrong-test-level` になる。AC は E2E の子が要る（`missing-child`）ので、E2E を持たないこの要件には AC を作らず、`SEC-AUTH-033` の子を構造設計 `DATA-AUTH-006` にする。`scripts/trace/rules.ts:41-45・119-121`）。
+  - **一覧どおり**: 上の表の各行を `test.each` で確かめる。表: `has_table_privilege(role, table, 'SELECT'|'INSERT'|'UPDATE'|'DELETE'|'TRUNCATE'|'REFERENCES'|'TRIGGER'|'MAINTAIN')`。`items`: `has_table_privilege(…, 'SELECT')` が偽・`has_column_privilege` が 21 列で真・`pattern_cost`・`mass_production_cost` で偽。さらに「`items` の全列 − 原価 2 列 = anon が `SELECT` できる列」（`information_schema.columns` と突き合わせ。新しい列が足されたらこの試験が落ち、足した人に権限の判断を迫る）。関数: `has_function_privilege` と `aclexplode` の grantee 0（PUBLIC）。連番: `has_sequence_privilege`。置き場: `storage.buckets.public`。
+  - **歯止め**: `pg_class` の `public` の通常の表（`relkind in ('r','p')`）のうち、anon または authenticated が `INSERT`・`UPDATE`・`DELETE`・`TRUNCATE` のどれかを持つ表（表単位の `has_table_privilege` に加えて、列単位の付与を見落とさないよう `INSERT`・`UPDATE` は `has_any_column_privilege` でも見る）の集合から、**既知の例外**と**一覧で意図して書ける表**（authenticated の `profiles`）を引いた残りが空であること。残りがあれば表の名前を出して落ちる。あわせて「既知の例外のうち、今は広い権限を持たない表」を `console.info` に一覧で出す（締まった表を例外から外す目安。落ちない）。「既知の例外の表でも anon に `TRUNCATE` は付けない」という強い断言は、例外の実態が不明なので `test.todo('anon の TRUNCATE を既知の例外の表からも外す')` として残す（直すのは他領域の波）。
   - 移行の形（DB なし）: 波 2 の 6 本のいずれにも `ALTER DEFAULT PRIVILEGES` が無い（Q9 は今回やらない）、各移行のヘッダーに `ROLLBACK` の節がある、各移行に service_role の GRANT が明示されている（`sec_grants_*` の 2 本）。
-- [ ] **Step 3: 要件・脅威・設計。** `areas/auth.md` に `SEC-AUTH-033`（上位 `THR-AUTH-033`、確かめ方「結合テスト」、出どころ「設計書 I8」）と `AC-01`・`AC-02` を 7 の形で書く。`SEC-AUTH-033` の本文に「Supabase 公式は既定の権限が project ごとに違い、自動で付く権限は外される方向（`hardening-data-api`）。だから移行が要る GRANT を明示し、広い権限を新しい表に残さない」。`threats/auth.md` に `THR-AUTH-033`。`ADR-0462` に「決まり」の節（以後の移行は、新しい表・関数ごとに anon・authenticated・service_role の GRANT/REVOKE を明示する。`ALTER DEFAULT PRIVILEGES` は project 全体に効くので別の判断（Q9））。
+- [ ] **Step 3: 要件・脅威・設計。** `areas/auth.md` に `SEC-AUTH-033`（上位 `THR-AUTH-033`、確かめ方「結合テスト」、出どころ「設計書 I8」）を 7 の形で書く（AC なし）。`docs/03_BasicDesign/areas/auth.md` に `DATA-AUTH-006`（一覧と歯止めの中身。上位 `SEC-AUTH-033`・`ADR-0414`）を書き、`14_login.md:968` の DD の「上位」に `DATA-AUTH-006` を足す（構造設計は DD の子が要る）。`npm run validate-trace -- AUTH` で基準より増えた違反が 0 件になることを確かめる。`SEC-AUTH-033` の本文に「Supabase 公式は既定の権限が project ごとに違い、自動で付く権限は外される方向（`hardening-data-api`）。だから移行が要る GRANT を明示し、広い権限を新しい表に残さない」。`threats/auth.md` に `THR-AUTH-033`。`ADR-0414` に「決まり」の節（以後の移行は、新しい表・関数ごとに anon・authenticated・service_role の GRANT/REVOKE を明示する。`ALTER DEFAULT PRIVILEGES` は project 全体に効くので別の判断（Q9））。
 - [ ] **Step 4: 確かめ。** `npx tsc --noEmit`、`npm run validate-docs`、`npm run validate-trace -- AUTH`、`npx jest tests/integration/db/auth_grants_inventory.integration.test.ts`（DB なしの形の試験だけが走る）。
 - [ ] **Step 5: 報告。** 共有文書の変更案: `db-migrations.md` に「以後の移行は GRANT を明示する」の決まりの本文（上の SEC-AUTH-033 の文と、新しい表の雛形 `REVOKE ALL … FROM PUBLIC, anon, authenticated; GRANT … TO …; GRANT ALL … TO service_role;`）。既知の例外の一覧が実態と合うかは、controller が DB で流した最初の結果で直す（落ちた表の名前を見て、本当に例外か・今回直すかを判断する）。
 
@@ -599,7 +652,7 @@ COMMIT;
   2. **共有文書の変更案**: `db-migrations.md`（6 本の行と、本番適用前の確認、GRANT 明示の決まり）、`er.md`（`items` の列権限・`item_cost_history`・`stockists.type`・CHECK 7 本・`admin_update_look`・置き場の設定）、`test-spec.md`（新しい試験と書き換えた試験）、作業と指摘の台帳（W-08 の状態欄: HOME-004・005・020、AUTH-011、LOOK-002・004・005・010・015・023、NEWS-010・022・025、SEARCH-003・007・008、STOCKIST の列、書き込みの穴の部分）、`requirements.md`（波 2 の要件は `areas/` に書いたので無し）、`api-spec.md`・`route-inventory.md`（窓口の増減・応答の変更は無し）、`tests/unit/docs/*-traceability.test.ts`（窓口の数は変わらない）。
   3. **設計書の訂正**: P2（取扱店・ニュースの管理の書き込みは利用者の JWT だった）、`product_note` は公開（Q7）、R4-4 の「anon にも SELECT」を `item_color_presets` では外した（P5）、CHECK の補助関数を作らない（P7）。
   4. **本番の事前の確認（読むだけの SQL。Q27 のとおり G-1 が G-4 を当てる前後に、controller かユーザーが Supabase MCP で）**: Task 2・4・5・6・7・8 の各報告の SQL をまとめて表にする。適用の前に `get_advisors`（security）を保存し、適用の後に比べる（`has_permission` の WARN が増えていないこと、`rls_enabled_no_policy`・`security_definer_view` などが増えていないこと。`item_cost_history` は方針が 1 件になるので INFO が 1 つ減る）。ロールバックの値（`storage.buckets` の 2 行・各表の旧い ACL）をその結果から確定する。
-  5. **ユーザーに確認を求める点**: P9（`admin_update_look` が更新前の画像を返す）、P5（`item_color_presets` の anon の SELECT を付けない）、Task 3（書き込みの client を service role に移すこと）。
+  5. **ユーザーに確認を求める点**: P9（`admin_update_look` が更新前の画像を返す。新しい画像が無い時は関数が今の画像を保つ。関連の段の失敗の印）、P5（`item_color_presets` の anon の SELECT を付けない）、Task 3（書き込みの client を service role に移すこと）、**Q8 の読み**（一般会員の JWT の `item_cost_history` の select は権限の誤りでなく「0 件」になる。`SEC-HOME-020-AC-01` の文と試験をそう直した）、**波 3 との関係**（Task 7 の CHECK の後は外の値の行を DB に新しく入れられないので、波 3 の署名の試験 `SEC-LOOK-007`・`008`、`SEC-NEWS-007`・`008`、`SEC-SEARCH-015` は「CHECK より前の旧い行」を `insertLegacyImageRow` で作る形になった）。
   6. **回す物**（下の表）。
 
 ---
@@ -668,7 +721,71 @@ COMMIT;
 | 4 | `items` の列権限・`item_cost_history`・認証の表・`profiles` | `sec_grants_hardening` | 1 |
 | 5 | 管理だけが書く表から書き込みを外す | `sec_grants_admin_tables` | 1・3 |
 | 6 | 検索の関数 3 本と `search_public_*` | `sec_search_functions` | 1 |
-| 7 | `look_items` の方針・CHECK・`admin_update_look` | `sec_rls_predicates_and_constraints` | 1・5 |
+| 7 | `look_items` の方針・CHECK・`admin_update_look`、CHECK に当たる試験の用意（`legacy-image-rows.ts`） | `sec_rls_predicates_and_constraints` | 1・5・6（`FR-SEARCH-021` が重なる） |
 | 8 | 置き場 `look-images`・`news-images` | `sec_storage_buckets` | 1・7 |
 | 9 | 権限の一覧の DB 試験と GRANT を明示する決まり | なし | 4〜8 |
 | 10 | 最終確認と controller への報告 | なし | 1〜9 |
+
+---
+
+## 計画のレビュー
+
+| 項目 | 内容 |
+| --- | --- |
+| 日付 | 2026-10-26 |
+| レビュアー | Claude Opus（計画のレビュー。コード・DB・試験は変えていない。この計画のファイルだけを直した） |
+| 突き合わせた物 | `wave2-decisions.md`、`design-final.md` の R4・R5・R8・R17・§3-4、触る窓口の今のコード（取扱店・ニュース・LOOK の管理の窓口、公開の読み）、`remote_schema.sql` とその後の移行、`seed.sql`、E2E と DB 結合試験、`scripts/trace/{rules.ts,scope.json}` |
+
+### 確かめて正しかった点
+
+- `items` の列は 23 本で、原価 2 列を除く 21 本は P3 の一覧と一致（`remote_schema.sql:572-600`、`20260919065336:84`、`20260921121038:633`、`20261020144439:20`。G の移行は `items` の列を足していない）。
+- 公開側の `items` の読みは全部が許す 21 列の中（`ITEM_SELECT_COLUMNS`、`/api/items/[id]`、wishlist、`look/server.ts`、checkout の 2 か所、`cart-view.ts`・`availability.ts` の埋め込み、`item/[id]/page.tsx`、`kpi`）。`select('*')`・`items(*)` は無い。`items` を読む SECURITY INVOKER の関数は `search_items`・`search_public_items`・`private.return_detail_json`（DEFINER の関数からだけ呼ばれる）だけ。方針の副問い合わせが読む `items` の列は `id`・`status` だけ（`item_colors`・`item_sizes`）。ビューは `variant_backorder_summary`（`items` を読まない）だけ。
+- 認証の 5 表・`profiles`・`item_color_presets` を `src` で読み書きする所は全部 service role か SECURITY DEFINER の関数（`increment_rate_limit_counter`・`is_auth_session_active` など）。`profiles` は `/api/profile`・`/api/profile/addresses` も service role。`profiles` を指す外部キーの検査は表の持ち主の権限で走るので、anon の権限を外しても `carts`・`wishlist` は影響を受けない。
+- P2 は正しい: 取扱店の窓口は 4 つの書き込みすべて、ニュースの窓口は POST・PUT・PATCH・DELETE が `createClient(request)` で書く。LOOK・色見本・商品の管理の窓口は service role。
+- Q8: `item_cost_history` を読む所は `src`・`scripts` に無い（E2E の補助だけ）。`admin.finance.read` は既存の印（`remote_schema.sql:3075` ほか）。`has_permission` は SECURITY DEFINER。計画の「表は残し、`admin.finance.read` の SELECT 方針、書き込みは service role だけ」は答えどおり。
+- 権限の文: 表は `REVOKE ALL … FROM PUBLIC, anon, authenticated` のあと要る物だけ GRANT、service_role を明示。関数は `REVOKE ALL ON FUNCTION … FROM PUBLIC, anon, authenticated` と `GRANT EXECUTE … TO service_role`。`MAINTAIN` は PostgreSQL 17 の権限で、手元（`config.toml` の `major_version = 17`）と本番（`remote_schema.sql` が `MAINTAIN` を付けている）の両方にある。表単位の REVOKE は列単位の権限も外すので、移行は繰り返しても同じ結果になる。
+- 検索の呼び元の最大は 8（`/api/search` は 8 か 3、`/api/suggest` は 8、既定 6）。`search_*` 3 本の今の本体は `remote_schema.sql` の物のまま（後の移行は置き換えていない）。`search_public_*` の署名は `(text, integer)`。
+- 窓口の zod の長さ（題 200・本文 2000・詳しい本文 10000・テーマ 200・説明 4000）と画像の種類・大きさ（4 種類・5 MB）は、CHECK と置き場の値と一致。
+- 時刻の案（`20261026130100`〜）は今の最新 `20261026101624_group_g4_orders_swap.sql` より後。`supabase/pending-wave2/` はまだ無い。
+- G の DB 試験（`group_g*`・`order_*`・`security_definer_search_path`）は、波 2 の表・関数の権限を固定していない（役を替えて波 2 の表を読む G の試験も無い）。`security_definer_search_path` は DEFINER の関数だけを見るので、INVOKER の `admin_update_look` は当たらない。
+- 共有部品・共有文書の編集は計画に無い（`proxy.ts`・`next.config.ts`・`rateLimit.ts`・`has_permission` 本体・G の表・`src/lib/orders/**`・共有文書 7 つ）。移行が要る変更を移行なしのタスクに隠した所も無い（Task 3 は窓口だけで、移行の前でも後でも動く。Task 7 の窓口の変更は同じタスクの移行と対）。
+
+### 見つけて直した点（この計画の本文を直した）
+
+| # | 重さ | 見つけた事 | 直し方（本文の場所） |
+| --- | --- | --- | --- |
+| 1 | 高 | `SEC-HOME-020-AC-01` の E2E（`FR-HOME-024:306`）は一般会員の JWT の select にも 401・403 を求める。Q8 どおり authenticated に SELECT を付けて方針で絞ると、一般会員の select は 200・`[]` になり、印を外すと赤になる | Task 4 の Files・Docs・Step 6 に、一般会員の select だけを「200・0 件・値の漏れなし」に直すことと AC の文の直しを足した。Task 10 の「ユーザーに確かめる点」に入れた |
+| 2 | 高 | Task 7 の CHECK に、今の試験の用意が多数当たる。DB 結合試験 6 本が `integration/…` の道筋、`FR-NEWS-ALL-018` が `e2e/private.png`、`FR-SEARCH-021` の `insertNews` が `image_url = ''`。さらに**今は緑の** `FR-NEWS-SEC-001` の `SEC-NEWS-007-AC-01`・`AC-02`・`SEC-NEWS-008-AC-01` は外の値の記事を insert するので、CHECK の後に赤になる。`test.fail` の `SEC-LOOK-007`・`008`・`SEC-SEARCH-015` も用意で落ちる。元の Step 1 は「当たらないこと」を前提にしていた | Task 7 の Files・Interfaces・Step 1・2・6 に、(A) 道筋を `looks/…`・`news/…` に直す試験と、(B) 「CHECK より前の旧い行」を 1 取引で作る E2E の補助 `insertLegacyImageRow`（`e2e/legacy-image-rows.ts`）を使う試験を分けて書いた。DB 結合試験で「旧い行の関係の無い列の UPDATE が 23514」（I7）も確かめられるようにした |
+| 3 | 高 | `FR-LOOK-SEC-004:450`（SEC-LOOK-015-AC-01）は誤りの文 `Failed to update linked items` を確かめる。計画の rpc の誤りの対応は「その他 → 500 `Failed to update look`」で、印を外すと赤になる。単体・結合試験と `16-3_admin_look.md:463-464` も同じ文を持つ | P9 (b)・関数の本体・窓口の対応表を直した。関連の段の失敗は入れ子の `EXCEPTION` で `LOOK_ITEMS_WRITE_FAILED` に付け直して投げ（行の更新も戻る）、窓口は今と同じ 500 の文と監査を返す |
+| 4 | 中 | P9 は「同時の PUT の弱さを閉じる」とするが、窓口が先に読んだ古い `image_urls` を新しい画像の無い PUT で渡すと、同時の PUT が差し替えた画像を古い値で上書きし、その画像が残骸になる | P9 (a)・関数・窓口: 新しい画像が無い時は `_image_urls = NULL` を渡し、関数が `COALESCE(_image_urls, v_previous)` で今の画像を保つ |
+| 5 | 高 | Task 1 の `environment.ts` の再公開の道が `../` 6 つで、リポジトリの根の外を指す。全体の `tsc` が落ちる（別セッションのコミットのフックも止まる） | `../` 5 つに直した |
+| 6 | 高 | ADR の番号 `ADR-0462`〜`0468` は全部 ADMIN の帯（`scope.json` の ADMIN が `ADR-04[5-9]*`）。HOME・LOOK・NEWS・STOCKIST・SEARCH の構造設計がそれを上位に持っても、ADMIN の検査では ADR の構造設計の子が無く `missing-child` になる。前の波は帯で振っている | 領域の帯で 9 本に振り直し（`ADR-0026`・`0106`・`0107`・`0162`〜`0164`・`0267`・`0315`・`0414`）、各 ADR を上位に載せる構造設計を「ID の割当」に書いた。取扱店とニュースの ADR は 2 本に分けた |
+| 7 | 高 | Task 9 の試験名 `SEC-AUTH-033-AC-01`・`AC-02` は結合テストなのに AC で始まる（`wrong-test-level`）。AC は E2E の子が要る（`missing-child`） | `SEC-AUTH-033` は AC を持たず、子を新しい構造設計 `DATA-AUTH-006` にした。試験名は `DATA-AUTH-006`。`DATA-AUTH-006` に DD の子を持たせるため `14_login.md:968` の DD の上位に足す |
+| 8 | 中 | 新しい `DATA-HOME-001` の試験 `tests/integration/db/home_items_grants…` は HOME の結合の glob（`tests/integration/**/home/**`）に当たらず、DD の子も無い。Task 5 の試験 1 本（`look_…`）は NEWS・STOCKIST・ADMIN の検査で数えられない | 試験を `tests/integration/db/home/` に置き、`DD-HOME-001` の上位に `DATA-HOME-001` を足す。Task 5 は領域ごとの 4 本、Task 7 の制約の試験は LOOK・NEWS の 2 本に分けた |
+| 9 | 中 | Task 4 の既存の DB 試験の一覧に `admin-misc/admin_rls_policy.integration.test.ts` が無い。この試験は `audit_logs`・`sessions` に anon・authenticated の 8 権限と「0 行」を固定していて、移行の後に赤になる。`set local role` の grep では補助（`runAs`）を使う試験を拾えない | Task 4 の Files・Step 5 に足し、補助まで拾う grep に替えた。`DATA-ADMIN-002`〜`004` の文の直しを Docs に足した |
+| 10 | 中 | Task 9 の歯止めは、authenticated が書ける `profiles` を例外に入れていないので必ず落ちる。表単位の `has_table_privilege` だけでは列単位の書き込みの付与を見落とす | 一覧で意図して書ける表（`profiles`）を引き、`has_any_column_privilege` でも見るようにした |
+| 11 | 中 | ロールバックの文が正確でない。`items` の列を「...」で略していた。連番は `GRANT ALL` だが、元は `SELECT, UPDATE, USAGE`。検索の関数の旧い本体を写す指示が無い。LOOK の方針を戻す時に新しい方針を消していない | 列を全部書いた。連番は `remote_schema.sql:4082・4086` と同じ文にした。Task 6 は旧い本体の全文の写しを求め、形の試験で確かめる。Task 7 は新しい方針の DROP・制約の名前・関数の署名を書き、窓口も同時に戻すと注記した |
+| 12 | 低 | Task 3 の結合試験の一覧から `news-admin-create-api`・`news-admin-item-patch-api`・`stockist-admin-csrf-real-response` が漏れていた | 前方一致の glob にした |
+| 13 | 低 | 見本の写しは全文のコピーなので、別セッション G が移す前に `seed.sql` を変えると、写しで上書きした時に G の変更が消える | Task 1 Step 9 で元の `sha256` を残し、controller が移す直前に比べ、違えば置き換えだけをやり直す手順にした |
+| 14 | 低 | `FR-LOGIN-031` の `AUTH_TABLES` に `audit_logs_backups` を足すのに、AC の文は 4 表のまま | Task 4 の Docs で `SEC-AUTH-011-AC-01` の文も直す |
+
+### 残る点（controller の判断）
+
+- 波 3 の試験の作り（#2）: 外の値の行は、CHECK の後は `insertLegacyImageRow`（DDL の一時の外し）でしか作れない。手元の共有の DB に短い ACCESS EXCLUSIVE の鍵が入る（`FR-LOOK-SEC-004` の一時のトリガーと同じ種類）。受け入れられないなら、(B) の 3 つの AC の確かめ方を波 3 で変える。
+- `item-images` の置き場の移行、`ALTER DEFAULT PRIVILEGES`（Q9）、VALIDATE は、計画どおり回す。
+- P5（`item_color_presets` の anon の SELECT を付けない）は設計書 R4-4 から外れる。窓口も E2E も anon で読んでいない（`admin_item_color_presets_table` の「anon は 0 件」の試験は Task 5 で `42501` に直す）。
+
+### 最終のタスクの一覧（レビューの後）
+
+| 順 | タスク | 移行 | 前に要るタスク | 主なファイル（重なりは「進める順」） |
+| --- | --- | --- | --- | --- |
+| 1 | 見本の画像の道筋と写しの補助 | なし | なし | `tests/helpers/staged-supabase.ts`、`supabase/pending-wave2/seed/**`（`environment.ts` は `../` 5 つ）、`seed-storage.test.ts`、E2E 11 本 |
+| 2 | `stockists.type` の NOT NULL を外す | `stockists_type_optional` | 1 | 移行、`stockist_type_optional` の試験、`FR-STOCKIST-013` |
+| 3 | 取扱店・ニュースの管理の書き込みを service role へ | なし | なし | 窓口 4 つ、単体・結合の試験（前方一致の 16 本）、`ADR-0026`・`ADR-0267` |
+| 4 | `items` の列権限・`item_cost_history`・認証の表・`profiles` | `sec_grants_hardening` | 1 | 移行、`home/home_items_grants`、`admin_rls_policy` ほか、`FR-HOME-024`（020 の会員の select を直す）、`FR-LOGIN-031`、`DATA-HOME-001`、`ADR-0106`・`0107`・`0414` |
+| 5 | 管理だけが書く表から書き込みを外す | `sec_grants_admin_tables` | 1・3 | 移行、領域ごとの試験 4 本、E2E 4 本 |
+| 6 | 検索の関数 3 本と `search_public_*` | `sec_search_functions` | 1 | 移行（旧い本体の全文をヘッダーに）、`search-functions` の試験、E2E 4 本、`ADR-0315` |
+| 7 | `look_items` の方針・CHECK・`admin_update_look`・CHECK に当たる試験の用意 | `sec_rls_predicates_and_constraints` | 1・5・6 | 移行、窓口の PUT（NULL の画像・`LOOK_ITEMS_WRITE_FAILED`）、`look_constraints`・`news_constraints`・`look_update_function`、DB 試験 6 本の道筋、`e2e/legacy-image-rows.ts`、`FR-NEWS-SEC-001`・`FR-LOOK-SEC-001`・`FR-SEARCH-021`・`FR-NEWS-ALL-018`、`ADR-0162`・`0163` |
+| 8 | 置き場 `look-images`・`news-images` | `sec_storage_buckets` | 1・7 | 移行、置き場の試験 2 本、`FR-LOOK-SEC-002`、`ADR-0164` |
+| 9 | 権限の一覧の DB 試験と GRANT を明示する決まり | なし | 4〜8 | `auth_grants_inventory`（`DATA-AUTH-006`）、`SEC-AUTH-033`（AC なし）、`ADR-0414` の決まりの節 |
+| 10 | 最終確認と controller への報告 | なし | 1〜9 | 読むだけ |

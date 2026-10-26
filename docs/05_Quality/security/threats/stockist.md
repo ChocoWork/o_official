@@ -29,7 +29,7 @@ STOCKIST（取扱店）の領域で考える脅威を、1つずつ `THR-STOCKIST
 - 外した物:
   - 署名つき URL・置き場: 取扱店は画像を持たず、表にも画像の列が無い（`remote_schema.sql:888-902`）。地図も埋め込まず、Google Maps の検索へのリンクだけ（`src/features/stockist/components/PublicStockistGrid.tsx:68-75`）。使われない埋め込みの URL の定数（`src/features/stockist/services/public.ts:4-5`）は固定の文字で、入力が入らない
   - 取扱店専用の RPC: 無い。表に付く関数は更新日時の trigger（`remote_schema.sql:2538,3067-3070`）だけで、trigger の関数は直接は呼べない（推定）。`has_permission` は authenticated が RPC で呼べるが、答えるのは呼んだ本人の権限だけなので脅威に数えなかった
-  - 作成がいつも 500 になる恐れ（`type` 列が NOT NULL で既定値なし、`remote_schema.sql:890,901`）は機能の食い違いで、脅威ではない。`docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せた
+  - 作成がいつも 500 になる恐れ（`type` 列が NOT NULL で既定値なし、`remote_schema.sql:890,901`）は機能の食い違いで、脅威ではない。`docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せた。2026-10-26 に移行 `stockists_type_optional` で `type` の NOT NULL を外して直した（列と CHECK は残す。決定 Q21）。`type` を列ごと消す案は、見本・E2E の補助・結合試験の全書き換えと本番の種別の消失を伴うので後回しにした
 
 ### 入口と守りの位置
 
@@ -88,7 +88,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 取扱店のデータの正しさと、管理の操作の監査の網羅 |
 | 脅威 | `admin.stockists.read`・`admin.stockists.manage` を持つ人の、2要素認証を済ませていない（`aal1`）session、または失効させた session の access token を手に入れた者が、非公開の店舗を読み、店舗を作る・書き換える・消す |
-| 起こり方 | 公開の anon キーと手に入れた JWT で、アプリの窓口を通らず PostgREST の `stockists` を直接叩く。RLS の判定 `has_permission` は ACL だけを見て、`aal` も session が有効かも見ない（`remote_schema.sql:3765-3784`、`supabase/migrations/20261023175712_group_g0_permissions.sql:186-215`）。access token の期限までは、失効させた session の token でも通る（推定） |
+| 起こり方 | 公開の anon キーと手に入れた JWT で、アプリの窓口を通らず PostgREST の `stockists` を直接叩く。RLS の判定 `has_permission` は ACL だけを見て、`aal` も session が有効かも見ない（`remote_schema.sql:3765-3784`、`supabase/migrations/20261023175712_group_g0_permissions.sql:186-215`）。access token の期限までは、失効させた session の token でも通る（推定）。**書き込みの側は 2026-10-26 に直した**: 移行 `sec_grants_admin_tables` が anon・authenticated から `stockists` の INSERT・UPDATE・DELETE を外したので、`aal1` の JWT でも失効させた session の token でも PostgREST から書けない（権限の誤り `42501`。この移行を当てた DB でだけ満たす。ADR-0414）。管理の窓口の書き込みは、移行の前に service role へ移した（ADR-0267）。読みの側（非公開の店を読める）は `has_permission` の `aal2` と session の生存の確かめを足すまで残る（波 5） |
 | 影響 | 2要素認証と session の失効の守りが、アプリの窓口だけになる。パスワードが漏れると店舗の改ざん・消去に届く。直接の書き換えは回数の制限・CSRF・監査（`logAudit`）を全部通らないので、跡も残らない |
 | 対策 | SEC-STOCKIST-003 |
 | ASVS | V4.3.1 |
@@ -134,7 +134,7 @@ flowchart LR
 | 影響 | 非公開の店舗が漏れる。店舗が書き換わる・消える |
 | 対策 | SEC-STOCKIST-006 |
 | ASVS | V4.1.1 |
-| 根拠 | 全部の窓口が `authorizeAdminPermission` を通る（`route.ts:27,58`、`[id]/route.ts:46,83,185,280`）。読みは `admin.stockists.read`、変更は `admin.stockists.manage`。認可は署名を確かめた JWT・session が有効か・DB の ACL・aal2 の順に見る（`src/lib/auth/admin-rbac.ts:178-262`）。DB の client は利用者の JWT の物（`createClient(request)`）で、RLS が2段目になる。2026-04-18 のレビューの service role の素通りは直っている。権限の名前と、店長は可・サポーターは不可の決まりは権限の移行で本番に当たっている（`group_g0_permissions.sql:18-19,51`）。ただし 401・403・MFA の道を試すテストが無い（`tests/unit/api/admin/stockists-security.test.ts` は回数の制限と CSRF だけ）。全体の NFR-SEC-005・008 と FREQ-316（範囲外。認可を1つの道に）に照らした |
+| 根拠 | 全部の窓口が `authorizeAdminPermission` を通る（`route.ts:27,58`、`[id]/route.ts:46,83,185,280`）。読みは `admin.stockists.read`、変更は `admin.stockists.manage`。認可は署名を確かめた JWT・session が有効か・DB の ACL・aal2 の順に見る（`src/lib/auth/admin-rbac.ts:178-262`）。読みの DB の client は利用者の JWT の物（`createClient(request)`）で、RLS が2段目になる。書き込みは認可・回数の制限・CSRF の後に service role の client で行う（ADR-0267。2026-10-26。表の書き込みの権限を外すため）ので、窓口の認可が書き込みの唯一の守りになる。2026-04-18 のレビューの service role の素通りは、認可の後の書き込みだけ service role に戻した。権限の名前と、店長は可・サポーターは不可の決まりは権限の移行で本番に当たっている（`group_g0_permissions.sql:18-19,51`）。ただし 401・403・MFA の道を試すテストが無い（`tests/unit/api/admin/stockists-security.test.ts` は回数の制限と CSRF だけ）。全体の NFR-SEC-005・008 と FREQ-316（範囲外。認可を1つの道に）に照らした |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_stockist.md:47,50`、`docs/05_Quality/reviews/code/2026-04-18-stockist-review.md:64-69` |
 
@@ -158,7 +158,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 取扱店の表の中身と、番号の連番 |
 | 脅威 | RLS が止めない操作（TRUNCATE・TRIGGER・REFERENCES など）や連番の書き換えを、anon・authenticated の権限で行う |
-| 起こり方 | `stockists` の表に anon・authenticated へ DELETE・INSERT・MAINTAIN・REFERENCES・SELECT・TRIGGER・TRUNCATE・UPDATE を全部付けている（`remote_schema.sql:4202`）。連番 `stockists_id_seq` にも anon・authenticated へ UPDATE を付けている（`:4086`）。RLS は TRUNCATE を止めない |
+| 起こり方 | `stockists` の表に anon・authenticated へ DELETE・INSERT・MAINTAIN・REFERENCES・SELECT・TRIGGER・TRUNCATE・UPDATE を全部付けている（`remote_schema.sql:4202`）。連番 `stockists_id_seq` にも anon・authenticated へ UPDATE を付けている（`:4086`）。RLS は TRUNCATE を止めない。**2026-10-26 に直した**: 移行 `sec_grants_admin_tables` が `stockists` の anon・authenticated の権限を SELECT だけにし、連番 `stockists_id_seq` の anon・authenticated の権限を全部外した（service_role には USAGE・SELECT を明示）。RLS の書き込み方針は消さずに二重の守りとして残した（この移行を当てた DB でだけ満たす。ADR-0414） |
 | 影響 | 今の PostgREST は TRUNCATE や連番の操作を出さないので、今の API からは打てない（推定）。DB へ別の道（関数の追加・権限の誤り）ができた時に、表を空にされる・番号を狂わされる |
 | 対策 | SEC-STOCKIST-008 |
 | ASVS | V4.1.3 |
@@ -228,7 +228,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 管理の操作の監査の網羅と、取扱店のデータを戻せる状態 |
 | 脅威 | 誤操作・不正な操作の後に、何が変わったかを追えない・戻せない |
-| 起こり方 | 書き換え・公開の切り替え・削除は、対象の行が0件でも DB は誤りを返さず、200 と「成功」の監査になる（`[id]/route.ts:128-138,156-168,230-233,251-263,301-304,322-334`、推定）。削除は物理削除で、監査には id だけを残す（`:329`）。削除の確かめは画面の `confirm` だけ（`src/components/StockistSection.tsx:68`）。認可が確かめる token と DB へ送る token が同じとは限らない。認可は期限の猶予を見ずに token を確かめる（`src/lib/auth/authenticate.ts:60-63,87-110`、`src/lib/auth/admin-rbac.ts:185`）が、DB の client は期限まで5秒以下の token を送らず、Cookie を読む client に落ちる（`src/lib/auth/request-token.ts:69-70,107-118`、`src/lib/supabase/server.ts:22,34,54`）。その client は Google OAuth の Cookie（`sb-<ref>-auth-token`）があればその別の session で、無ければ anon で動く。anon なら PUT・PATCH・DELETE は RLS で0件になり、200 と成功の監査になる（推定）。監査の書き込みの失敗は警告だけで握りつぶす（`src/lib/audit.ts:67-70,87-89`、共有部品）。DB の直接の道（THR-STOCKIST-003）は監査に何も残さない。2026-10-26 に、PUT・PATCH・DELETE が変えた行を `.select()` で受け取り、0 行は 404 と結果 `failure` の監査にした。削除の成功の監査には `metadata.deleted = { id, name, address, status }` を残す。0 行は「無い」と「RLS が隠した」の両方なので、aal2 でない session の書き込みも 404 になる。token の期限の落ち込み（DB の client が anon か別の session に落ちる件）は未確認のまま（SEC-STOCKIST-013） |
+| 起こり方 | 書き換え・公開の切り替え・削除は、対象の行が0件でも DB は誤りを返さず、200 と「成功」の監査になる（`[id]/route.ts:128-138,156-168,230-233,251-263,301-304,322-334`、推定）。削除は物理削除で、監査には id だけを残す（`:329`）。削除の確かめは画面の `confirm` だけ（`src/components/StockistSection.tsx:68`）。認可が確かめる token と DB へ送る token が同じとは限らない。認可は期限の猶予を見ずに token を確かめる（`src/lib/auth/authenticate.ts:60-63,87-110`、`src/lib/auth/admin-rbac.ts:185`）が、読みの DB の client は期限まで5秒以下の token を送らず、Cookie を読む client に落ちる（`src/lib/auth/request-token.ts:69-70,107-118`、`src/lib/supabase/server.ts:22,34,54`）。その client は Google OAuth の Cookie（`sb-<ref>-auth-token`）があればその別の session で、無ければ anon で動く。書き込みは 2026-10-26 に service role の client へ移したので、この落ち方の影響を受けない（ADR-0267）。監査の書き込みの失敗は警告だけで握りつぶす（`src/lib/audit.ts:67-70,87-89`、共有部品）。DB の直接の道（THR-STOCKIST-003）は監査に何も残さない。2026-10-26 に、PUT・PATCH・DELETE が変えた行を `.select()` で受け取り、0 行は 404 と結果 `failure` の監査にした。削除の成功の監査には `metadata.deleted = { id, name, address, status }` を残す。書き込みは service role の client で行い RLS は行を隠さないので、0 行は「その id の店が無い」だけを表し、aal2 でない session は書き込みの前に 403 で止まる。token の期限の落ち込み（読みの DB の client が anon か別の session に落ちる件）は未確認のまま（SEC-STOCKIST-013） |
 | 影響 | 消した店舗の名前・住所を監査から戻せない。無い店舗への操作が成功に見える。監査の抜けに気づけない |
 | 対策 | SEC-STOCKIST-013 |
 | ASVS | ASVS 未対応付け |

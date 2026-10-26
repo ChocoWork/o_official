@@ -45,7 +45,7 @@ describeLocalDb('integration: news_articles の RLS と付与', (db) => {
     const result = await db().query(
       `insert into public.news_articles
          (title, category, published_date, image_url, content, detailed_content, status)
-       values ($1, 'EVENT', '2026-05-01', 'integration/news-rls.png', 'summary', 'body', $2)
+       values ($1, 'EVENT', '2026-05-01', 'news/integration/news-rls.png', 'summary', 'body', $2)
        returning id::text as id`,
       [`${marker} ${status}`, status],
     );
@@ -138,7 +138,7 @@ describeLocalDb('integration: news_articles の RLS と付与', (db) => {
 
   const insertSql = `insert into public.news_articles
       (title, category, published_date, image_url, content, detailed_content, status)
-    values ($1, 'STORE', '2026-05-02', 'integration/news-rls-new.png', 'summary', 'body', 'private')`;
+    values ($1, 'STORE', '2026-05-02', 'news/integration/news-rls-new.png', 'summary', 'body', 'private')`;
 
   async function countByTitle(title: string): Promise<number> {
     const result = await db().query('select count(*)::int as count from public.news_articles where title = $1', [title]);
@@ -181,7 +181,7 @@ describeLocalDb('integration: news_articles の RLS と付与', (db) => {
     expect(byName['admin news manage by permission delete'].qual).toContain("has_permission('admin.news.manage'");
   });
 
-  test.each(['anon', 'authenticated'] as const)('DATA-NEWS-002 %s には表の権限が全部付いている', async (role) => {
+  test.each(['anon', 'authenticated'] as const)('DATA-NEWS-002 %s には表の SELECT だけが付いていて、書き込み系の権限は付いていない（ADR-0414）', async (role) => {
     const result = await db().query(
       `select privilege from unnest($2::text[]) as privilege
        where has_table_privilege($1, 'public.news_articles', privilege)
@@ -189,7 +189,7 @@ describeLocalDb('integration: news_articles の RLS と付与', (db) => {
       [role, TABLE_PRIVILEGES],
     );
 
-    expect(result.rows.map((row) => row.privilege)).toEqual(TABLE_PRIVILEGES);
+    expect(result.rows.map((row) => row.privilege)).toEqual(['SELECT']);
   });
 
   test('DATA-NEWS-002 anon は has_permission を呼べず、authenticated は呼べる', async () => {
@@ -205,16 +205,18 @@ describeLocalDb('integration: news_articles の RLS と付与', (db) => {
     expect(await visibleIds({ role: 'anon' })).toEqual([publishedId]);
   });
 
-  test('DATA-NEWS-002 anon の追加は RLS の違反で落ち、更新・削除は1行も変えない', async () => {
+  test('DATA-NEWS-002 anon の追加・更新・削除は権限の誤り（42501）で落ち、1行も変えない', async () => {
     const title = `${marker} anon insert`;
     expect(await errorCodeAs({ role: 'anon' }, insertSql, [title])).toBe('42501');
     expect(await countByTitle(title)).toBe(0);
 
-    const updated = await runAs({ role: 'anon' }, "update public.news_articles set status = 'private' where id = $1", [publishedId]);
-    const deleted = await runAs({ role: 'anon' }, 'delete from public.news_articles where id = any($1::bigint[])', [[publishedId, privateId]]);
+    expect(
+      await errorCodeAs({ role: 'anon' }, "update public.news_articles set status = 'private' where id = $1", [publishedId]),
+    ).toBe('42501');
+    expect(
+      await errorCodeAs({ role: 'anon' }, 'delete from public.news_articles where id = any($1::bigint[])', [[publishedId, privateId]]),
+    ).toBe('42501');
 
-    expect(updated.rowCount).toBe(0);
-    expect(deleted.rowCount).toBe(0);
     expect(await statusOf(publishedId)).toBe('published');
     expect(await statusOf(privateId)).toBe('private');
   });
@@ -230,10 +232,8 @@ describeLocalDb('integration: news_articles の RLS と付与', (db) => {
     expect(await visibleIds(actor)).toEqual([publishedId]);
     expect(await errorCodeAs(actor, insertSql, [title])).toBe('42501');
     expect(await countByTitle(title)).toBe(0);
-    const updated = await runAs(actor, "update public.news_articles set status = 'private' where id = $1", [publishedId]);
-    const deleted = await runAs(actor, 'delete from public.news_articles where id = $1', [publishedId]);
-    expect(updated.rowCount).toBe(0);
-    expect(deleted.rowCount).toBe(0);
+    expect(await errorCodeAs(actor, "update public.news_articles set status = 'private' where id = $1", [publishedId])).toBe('42501');
+    expect(await errorCodeAs(actor, 'delete from public.news_articles where id = $1', [publishedId])).toBe('42501');
     expect(await statusOf(publishedId)).toBe('published');
   });
 
@@ -244,10 +244,8 @@ describeLocalDb('integration: news_articles の RLS と付与', (db) => {
     expect(await visibleIds(actor)).toEqual([publishedId, privateId].sort((a, b) => Number(a) - Number(b)));
     expect(await errorCodeAs(actor, insertSql, [title])).toBe('42501');
     expect(await countByTitle(title)).toBe(0);
-    const updated = await runAs(actor, "update public.news_articles set status = 'published' where id = $1", [privateId]);
-    const deleted = await runAs(actor, 'delete from public.news_articles where id = $1', [privateId]);
-    expect(updated.rowCount).toBe(0);
-    expect(deleted.rowCount).toBe(0);
+    expect(await errorCodeAs(actor, "update public.news_articles set status = 'published' where id = $1", [privateId])).toBe('42501');
+    expect(await errorCodeAs(actor, 'delete from public.news_articles where id = $1', [privateId])).toBe('42501');
     expect(await statusOf(privateId)).toBe('private');
   });
 
@@ -260,40 +258,35 @@ describeLocalDb('integration: news_articles の RLS と付与', (db) => {
     expect(await visibleIds({ role: 'authenticated', sub: expired })).toEqual([publishedId]);
   });
 
-  test('DATA-NEWS-002 admin.news.read と admin.news.manage を持つ会員は追加・更新・削除ができる', async () => {
+  test('DATA-NEWS-002 admin.news.read と admin.news.manage を持つ会員でも、追加・更新・削除は権限の誤り（42501）で断られる（書き込みは service role だけ）', async () => {
     const actor: Actor = { role: 'authenticated', sub: manager };
     const title = `${marker} manager insert`;
 
-    const inserted = await runAs(actor, insertSql, [title]);
-    const updated = await runAs(actor, "update public.news_articles set status = 'published' where id = $1", [privateId]);
-    const deleted = await runAs(actor, 'delete from public.news_articles where id = $1', [publishedId]);
+    expect(await errorCodeAs(actor, insertSql, [title])).toBe('42501');
+    expect(await errorCodeAs(actor, "update public.news_articles set status = 'published' where id = $1", [privateId])).toBe('42501');
+    expect(await errorCodeAs(actor, 'delete from public.news_articles where id = $1', [publishedId])).toBe('42501');
 
-    expect(inserted.rowCount).toBe(1);
-    expect(await countByTitle(title)).toBe(1);
-    expect(updated.rowCount).toBe(1);
-    expect(await statusOf(privateId)).toBe('published');
-    expect(deleted.rowCount).toBe(1);
-    expect(await statusOf(publishedId)).toBeUndefined();
+    expect(await countByTitle(title)).toBe(0);
+    expect(await statusOf(privateId)).toBe('private');
+    expect(await statusOf(publishedId)).toBe('published');
   });
 
-  test('DATA-NEWS-002 admin.news.manage だけの会員は追加できるが、非公開は読めない', async () => {
+  test('DATA-NEWS-002 admin.news.manage だけの会員も追加は権限の誤り（42501）で、非公開は読めない', async () => {
     const actor: Actor = { role: 'authenticated', sub: manageOnly };
     const title = `${marker} manage-only insert`;
 
-    const inserted = await runAs(actor, insertSql, [title]);
+    expect(await errorCodeAs(actor, insertSql, [title])).toBe('42501');
 
-    expect(inserted.rowCount).toBe(1);
-    expect(await countByTitle(title)).toBe(1);
+    expect(await countByTitle(title)).toBe(0);
     expect(await visibleIds(actor)).toEqual([publishedId]);
   });
 
-  test('DATA-NEWS-002 DB は aal を見ないので、aal1 の JWT でも権限があれば非公開を読み書きできる', async () => {
+  test('DATA-NEWS-002 DB は aal を見ないので、aal1 の JWT でも権限があれば非公開を読めるが、書き込みは権限の誤り（42501）で断られる', async () => {
     const actor: Actor = { role: 'authenticated', sub: manager, aal: 'aal1' };
 
     expect(await visibleIds(actor)).toEqual([publishedId, privateId].sort((a, b) => Number(a) - Number(b)));
-    const updated = await runAs(actor, "update public.news_articles set status = 'published' where id = $1", [privateId]);
-    expect(updated.rowCount).toBe(1);
-    expect(await statusOf(privateId)).toBe('published');
+    expect(await errorCodeAs(actor, "update public.news_articles set status = 'published' where id = $1", [privateId])).toBe('42501');
+    expect(await statusOf(privateId)).toBe('private');
   });
 
   test('DATA-NEWS-002 service_role は全部を読み、追加・更新・削除ができる', async () => {

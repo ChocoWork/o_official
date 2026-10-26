@@ -1536,7 +1536,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で ITEM 検索結果�
 | 出どころ | OWASP ASVS 4.0.3 V5.3.4。`docs/05_Quality/reviews/code/2026-04-18-search-review.md` |
 | 優先度 | MUST |
 
-検索とサジェストは、語を `search_items`・`search_looks`・`search_news` の引数として渡し、関数は `%`・`_`・`\` を逃がしてから ILIKE に使う。今のコードは `%`・`_` を逃がす（`src/features/search/services/search.service.ts`、`remote_schema.sql`）が、`\` を逃がさない。このため語の `\%`・`\_` は `\\%`・`\\_`（字の `\` の後に生きたワイルドカード）になり、`\` を含む行に広く当たる。
+検索とサジェストは、語を `search_items`・`search_looks`・`search_news` の引数として渡し、関数は `%`・`_`・`\` を逃がしてから ILIKE に使う。以前のコードは `%`・`_` を逃がす（`remote_schema.sql`）が `\` を逃がさず、語の `\%`・`\_` が `\\%`・`\\_`（字の `\` の後に生きたワイルドカード）になって、`\` を含む行に広く当たっていた。2026-10-26 に移行 `sec_search_functions` で満たした（`\` を先に二重にしてから `%`・`_` を逃がす。この移行を当てた DB でだけ満たす。DATA-SEARCH-001・003、ADR-0315）。
 
 #### SEC-SEARCH-003-AC-01 記号だけの語で全件が返らない
 
@@ -1648,7 +1648,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で ITEM 検索結果�
 | 出どころ | OWASP ASVS 4.0.3 V11.1.4。実装から推定 |
 | 優先度 | SHOULD |
 
-`search_items`・`search_looks` は `limit_count` を1以上・決めた上限以下（案: 8）に丸め、NULL も既定の値か上限に置き換える。今のコードは丸めず、NULL では `LIMIT NULL` で上限が無くなり、負の値では誤りになる。空の語は全部の公開の行に一致するので、上限が無いとまとめて取れる。`search_news` の分は SEC-NEWS-010（範囲外）が持つ。
+`search_items`・`search_looks` は `limit_count` を1以上・決めた上限以下（8）に丸め、NULL も上限（8）に置き換える。語は先頭 100 字だけで比べる。以前のコードは丸めず、NULL では `LIMIT NULL` で上限が無くなり、負の値では誤りになっていた。空の語は全部の公開の行に一致するので、上限が無いとまとめて取れる。`search_news` の分は SEC-NEWS-010（範囲外）が持つ。2026-10-26 に移行 `sec_search_functions` で満たした（`LIMIT GREATEST(1, LEAST(COALESCE(limit_count, 8), 8))`。アプリの呼び元の最大は 8 なので欠けない。この移行を当てた DB でだけ満たす。DATA-SEARCH-001、ADR-0315）。
 
 #### SEC-SEARCH-007-AC-01 大きな件数で直接呼んでも上限を超えて返らない
 
@@ -1673,7 +1673,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で ITEM 検索結果�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3（当てはめは推定）。実装から推定 |
 | 優先度 | SHOULD |
 
-`search_public_items`・`search_public_looks`・`search_public_news` は、消すか、PUBLIC・anon・authenticated から EXECUTE を外す。今のコードは満たさない。
+`search_public_items`・`search_public_looks`・`search_public_news` は、消すか、PUBLIC・anon・authenticated から EXECUTE を外す。2026-10-26 に移行 `sec_search_functions` で、消さずに EXECUTE を外して満たした（postgres・service_role の EXECUTE は残す。NEWS の E2E が 42501 だけを許すので DROP は別の判断。この移行を当てた DB でだけ満たす。DATA-SEARCH-001・003、ADR-0315）。
 
 #### SEC-SEARCH-008-AC-01 anon は使わない検索の関数を呼べない
 

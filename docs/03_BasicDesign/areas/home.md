@@ -13,10 +13,11 @@ HOME の領域の構成・画面・画面遷移・状態遷移を、追跡でき
 | 画面 | 4 | `SCR-HOME-001`〜`004` | 区画の並び、ヒーロー、ABOUT の区画、ITEM・LOOK の件数と VIEW ALL |
 | 画面遷移 | 1 | `FLOW-HOME-001` | ホームから一覧・`/about`・検索へ移る |
 | 状態遷移 | 1 | `STATE-HOME-001` | ブランド名の1文字ずつの出方（隠れている・見えている） |
-| API・データ | 0 | — | HOME は窓口・表を持たない（理由は「範囲と根拠」） |
+| API | 0 | — | HOME は窓口を持たない（理由は「範囲と根拠」） |
+| データ | 1 | `DATA-HOME-001` | 商品の表 `items` の列の権限と、原価の履歴の表 `item_cost_history` の方針（表の持ち主は ITEM で、ここは権限の守りだけを持つ） |
 
 - 結論: ホームは `src/app/page.tsx` の Server Component 1つが、ITEM・LOOK・NEWS・取扱店の取得の関数（各領域の物）を一度に呼んで待ち、結果を各領域の格子の部品に渡して並べる。HOME が自分で持つ部品は、VIEW ALL のボタン（`HomeSectionViewAll`）と、ブランド名を1文字ずつ出す部品（`TextReveal`）だけ
-- 今のコードが満たさない（一部だけ満たす物を含む）セキュリティ要件（`SEC-HOME-002`〜`007`・`009`・`013`〜`018`・`020`）は、満たす構造が無いか構造が HOME の外にあるので上位につながず、「範囲と根拠」の表に理由を書いた。満たさない中身は各 `SEC-HOME-` の項目に1度だけ書き、ここでは SEC の ID を指す
+- 今のコードが満たさない（一部だけ満たす物を含む）セキュリティ要件（`SEC-HOME-002`・`003`・`006`・`007`・`009`・`013`〜`018`）は、満たす構造が無いか構造が HOME の外にあるので上位につながず、「範囲と根拠」の表に理由を書いた。満たさない中身は各 `SEC-HOME-` の項目に1度だけ書き、ここでは SEC の ID を指す
 - 置き換わった要件（`FREQ-278-REQ-02`・`06` の threadDraw を1回）も、今の構造が満たさないので上位につながない
 
 ## 範囲と根拠
@@ -24,7 +25,7 @@ HOME の領域の構成・画面・画面遷移・状態遷移を、追跡でき
 | 項目 | 内容 |
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の HOME |
-| 上位の文書 | [HOME の要件](../../02_Requirements/areas/home.md)（要件・`SEC-HOME-`・`DRV-HOME-`）、`docs/03_BasicDesign/decisions/ADR-0100`〜`ADR-0105` |
+| 上位の文書 | [HOME の要件](../../02_Requirements/areas/home.md)（要件・`SEC-HOME-`・`DRV-HOME-`）、`docs/03_BasicDesign/decisions/ADR-0100`〜`ADR-0107` |
 | 対象のコード | `src/app/page.tsx`（題・説明・OG を返す `generateMetadata` と、ページの本体 `Home`）、`src/features/home/components/HomeSectionViewAll.tsx`、`src/components/animations/TextReveal.tsx` |
 | 関連文書 | `docs/04_DetailDesign/pages/01_home.md`、`docs/03_BasicDesign/ui/design-guide.md`（ホームの行が古い。別の作業と並行しているので触らない。TM-HOME-12）、[NEWS の構造設計](news.md)の `SCR-NEWS-006`（ホームの NEWS の区画）、[ABOUT の構造設計](about.md)の `FLOW-ABOUT-001`（ホームからの入口） |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない） |
@@ -34,14 +35,14 @@ HOME の領域の構成・画面・画面遷移・状態遷移を、追跡でき
 | 種類 | 置かなかった理由 |
 | --- | --- |
 | API `API-` | HOME は Route Handler・Server Action を持たない。ホームの検索の窓が呼ぶ `/api/search` は SEARCH の窓口、ヘッダーが呼ぶ `/api/auth/me` は AUTH の窓口 |
-| データ `DATA-` | HOME の表・置き場は無い。読む `items`・`looks`・`news_articles`・`stockists` と画像の置き場は ITEM・LOOK・NEWS・STOCKIST の物。`public/mainphoto.png`・`public/about.png` はコードでない素材 |
+| データ `DATA-`（表の形・置き場） | HOME の表・置き場は無い。読む `items`・`looks`・`news_articles`・`stockists` と画像の置き場は ITEM・LOOK・NEWS・STOCKIST の物。`public/mainphoto.png`・`public/about.png` はコードでない素材。`items` と `item_cost_history` の権限の守りだけを `DATA-HOME-001` が持つ |
 
 つながなかったセキュリティ要件:
 
 | ID | つながなかった理由 |
 | --- | --- |
 | SEC-HOME-002 | 今のコードが満たさない。公開の読みの client の種類は ARC-HOME-002 に今の動きを書いた |
-| SEC-HOME-003・004・005・020 | 商品の表 `items` と原価の履歴の表の RLS・列・権限の話で、表は ITEM の物。HOME の構造に無い。`looks`・`look_items`・`stockists` の分は LOOK・STOCKIST の SEC が持つ |
+| SEC-HOME-003 | 商品の表 `items` の読みの RLS の aal2 の話で、表は ITEM の物。HOME の構造に無い。書き込みの側（AC-02）は `DATA-HOME-001` の権限で満たす。`looks`・`look_items`・`stockists` の分は LOOK・STOCKIST の SEC が持つ |
 | SEC-HOME-006 | 一部だけ満たす。在庫の側は ARC-HOME-002 が持つが、画像の署名の側は ITEM の `src/lib/storage/item-images.ts` の作りで HOME の構造に無い |
 | SEC-HOME-007 | 商品の画像の署名の期限は ITEM の `src/lib/storage/item-images.ts` が決める。HOME の構造に無い |
 | SEC-HOME-009・017 | 今のコードが満たさない。CSP と画像の最適化の許可は、共有の `src/proxy.ts`・`next.config.ts` が全部の頁に1つで持つ（ARC-HOME-003） |
@@ -359,6 +360,30 @@ stateDiagram-v2
 - 後始末: 部品が消える時に見張りと設定の購読をやめる（`TextReveal.tsx`）
 - JS が動かない時: サーバーの HTML は「隠れている」の形なので、ブランド名が見えないまま残る（推定。確かめていない）
 - 共用: `TextReveal` は `/loading` の見本（`src/app/loading/_components/AnimationShowcase.tsx`、範囲外）も使う
+
+## データ
+
+### DATA-HOME-001 商品の表 items の列の権限と、原価の履歴の表 item_cost_history の方針
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-HOME-004、SEC-HOME-005、SEC-HOME-020、ADR-0106、ADR-0107 |
+| 根拠 | 原価（`pattern_cost`・`mass_production_cost`）を anon の鍵・一般会員の JWT に読ませず、RLS の書き違いで商品を書き換えられないよう、権限を第1の門にする（SEC-HOME-004・005）。`item_cost_history` は管理者（`admin.finance.read`）の読みだけを DB で許す（SEC-HOME-020）。判断は ADR-0106・ADR-0107。表の持ち主は ITEM（範囲外）で、ホームの読みが壊れないかの確かめとして HOME が権限の守りを持つ |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト（`tests/integration/db/home/home_items_grants.integration.test.ts`）、E2E（`FR-HOME-024`） |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave2-decisions.md` の Q7・Q8（2026-10-26）、移行 `sec_grants_hardening` |
+
+| 表 | anon | authenticated | service_role |
+| --- | --- | --- | --- |
+| `items` | 公開の21列の SELECT（列の単位） | 同じ。書き込み系はどれも付けない | 全権限（明示） |
+| `item_cost_history` | 権限なし | SELECT のみ。RLS の方針で `admin.finance.read` を持つ人だけが行を読める | 全権限（明示） |
+
+- 公開の21列: `id`・`name`・`description`・`price`・`category`・`image_url`・`image_urls`・`colors`・`sizes`・`product_details`・`status`・`created_at`・`updated_at`・`material`・`origin`・`sewing_region`・`care`・`season`・`product_note`・`made_to_order_lead_days`・`return_ineligible`。`product_note` はお客さん向けの注意書きで公開（Q7）
+- 読めない列: `pattern_cost`・`mass_production_cost`。anon・一般会員が `select=*` や原価の列を選ぶと権限の誤り（42501）になるので、公開側の読みは列を並べて選ぶ（`src/lib/items/public.ts` の `ITEM_SELECT_COLUMNS`、`/api/items/[id]`、`cart-view.ts`、`checkout-cart.service.ts`）
+- 新しい列は GRANT を足さない限り anon・authenticated から見えない。移行の自己検査が、一覧に無い列を見つけると落ちる
+- 管理の書き込みは `src/app/api/admin/items/` が service role で行う（authenticated の書き込みの権限は無い）
+- 公開側の方針・関数への影響: `item_colors` などの方針は `items` の `id`・`status` だけを読む。`search_items`・`search_public_items` は公開の列だけを選ぶ。SECURITY DEFINER の `finalize_order_from_checkout_draft` は定義者の権限で動く
+- `item_cost_history` を読む画面・窓口・関数は今は無い（`src`・`scripts` を確かめた）。原価の画面は `admin_costing_items`・`admin_finance_*` を service role で読む
 
 ## 未確認事項
 

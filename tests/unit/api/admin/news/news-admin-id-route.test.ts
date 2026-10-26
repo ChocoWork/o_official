@@ -96,6 +96,9 @@ function paramsFor(id: string) {
 
 const OLD_IMAGE = 'news/2026-01-01/old.png';
 
+// 変更・削除・置き場は service role の 1 つの client（書き込みは認可の後に service role、ADR-0026）。GET の表の読みだけ利用者の JWT の client。
+let serviceClient: Record<string, unknown> = {};
+
 /**
  * 変更・削除は .eq().select(...) で変えた行を返す形（SEC-NEWS-016）。rows が空なら 0 行（無い、または RLS が隠した）。
  * 1件の読み（GET と、画像つき PUT が上げる前に古い image_url を読む所）は .eq().maybeSingle()。
@@ -121,6 +124,8 @@ function setupDb(result: {
   const del = jest.fn().mockReturnValue({ eq: deleteEq });
   const from = jest.fn().mockReturnValue({ select, update, delete: del });
   mockCreateClient.mockResolvedValue({ from });
+  Object.assign(serviceClient, { from });
+  mockCreateServiceRoleClient.mockResolvedValue(serviceClient);
   return { from, select, selectEq, maybeSingle, update, updateEq, updateSelect, del, deleteEq, deleteSelect };
 }
 
@@ -128,13 +133,15 @@ function setupStorage(uploadError: unknown = null, removeError: unknown = null) 
   const upload = jest.fn().mockResolvedValue({ error: uploadError });
   const remove = jest.fn().mockResolvedValue({ error: removeError });
   const storageFrom = jest.fn().mockReturnValue({ upload, remove });
-  const service = { storage: { from: storageFrom } };
+  Object.assign(serviceClient, { storage: { from: storageFrom } });
+  const service = serviceClient;
   mockCreateServiceRoleClient.mockResolvedValue(service);
   return { upload, remove, storageFrom, service };
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
+  serviceClient = {};
   mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1' });
   mockLogAudit.mockResolvedValue(undefined);
   Object.defineProperty(globalThis.crypto, 'randomUUID', {
@@ -258,6 +265,7 @@ describe('PUT /api/admin/news/:id', () => {
     expect(body.error).toBe('Invalid request');
     expect(body.details).toEqual(expect.objectContaining({ fieldErrors: expect.any(Object) }));
     expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
   });
 
   it('DD-NEWS-065 PUT で image が無い時は置き場を呼ばず、更新に image_url を入れない', async () => {
@@ -587,6 +595,7 @@ describe('PATCH /api/admin/news/:id', () => {
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'Internal server error' });
     expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
   });
 
   it('DD-NEWS-065 PATCH で値が draft の時は 400 Invalid request と details', async () => {
@@ -599,6 +608,7 @@ describe('PATCH /api/admin/news/:id', () => {
     expect(body.error).toBe('Invalid request');
     expect(body.details).toEqual(expect.objectContaining({ fieldErrors: expect.any(Object) }));
     expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
   });
 
   it('DD-NEWS-065 PATCH で表の失敗の時に監査 admin.news.status_update.failed と 500', async () => {
@@ -643,14 +653,15 @@ describe('PATCH /api/admin/news/:id', () => {
 });
 
 describe('DELETE /api/admin/news/:id', () => {
-  it('DD-NEWS-065 DELETE で表の失敗の時に監査 admin.news.delete.failed と 500 を返し、置き場は消さず service role の client も作らない', async () => {
+  it('DD-NEWS-065 DELETE で表の失敗の時に監査 admin.news.delete.failed と 500 を返し、置き場は消さず、書き込みは service role の client 1 つで行い利用者の JWT の client は作らない', async () => {
     setupDb({ error: { message: 'rls' } });
     const storage = setupStorage();
 
     const res = await DELETE(makeRequest(), paramsFor('7'));
 
     expect(storage.remove).not.toHaveBeenCalled();
-    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).toHaveBeenCalledTimes(1);
+    expect(mockCreateClient).not.toHaveBeenCalled();
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'Failed to delete article' });
     expect(mockLogAudit).toHaveBeenCalledWith(
@@ -699,6 +710,8 @@ describe('DELETE /api/admin/news/:id', () => {
     expect(storage.remove).toHaveBeenCalledTimes(1);
     expect(storage.remove).toHaveBeenCalledWith([OLD_IMAGE]);
     expect(sessionStorageFrom).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).toHaveBeenCalledTimes(1);
+    expect(mockCreateClient).not.toHaveBeenCalled();
   });
 
   it('DD-NEWS-065 DELETE で置き場の remove が失敗しても 200 success のままで、監査に imageCleanup:failed を残す', async () => {
@@ -719,19 +732,16 @@ describe('DELETE /api/admin/news/:id', () => {
     expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('secret');
   });
 
-  it('DD-NEWS-065 DELETE で service role の client を作れなくても、行は消えているので 200 success で imageCleanup:failed を残す', async () => {
-    setupDb({ error: null });
+  it('DD-NEWS-065 DELETE で service role の client を作れない時は、行も置き場も触れず 500 Internal server error で監査も書かない', async () => {
+    const db = setupDb({ error: null });
     mockCreateServiceRoleClient.mockRejectedValue(new Error('no key'));
 
     const res = await DELETE(makeRequest(), paramsFor('7'));
 
-    expect(res.status).toBe(200);
-    expect(mockLogAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'admin.news.delete',
-        metadata: { articleId: '7', imageCleanup: 'failed' },
-      }),
-    );
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'Internal server error' });
+    expect(db.del).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
   });
 
   it('DD-NEWS-065 DELETE で消した行の image_url が見本・外の URL・null なら、置き場から何も消さない', async () => {
@@ -744,8 +754,8 @@ describe('DELETE /api/admin/news/:id', () => {
     expect(storage.remove).not.toHaveBeenCalled();
   });
 
-  it('DD-NEWS-065 DELETE で createClient が例外を投げた時は 500 Internal server error', async () => {
-    mockCreateClient.mockRejectedValue(new Error('client boom'));
+  it('DD-NEWS-065 DELETE で createServiceRoleClient が例外を投げた時は 500 Internal server error', async () => {
+    mockCreateServiceRoleClient.mockRejectedValue(new Error('client boom'));
 
     const res = await DELETE(makeRequest(), paramsFor('7'));
 
@@ -835,6 +845,7 @@ describe('shared audit and zero-row behaviour', () => {
     }
 
     expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
     expect(db.del).not.toHaveBeenCalled();
     expect(storage.upload).not.toHaveBeenCalled();
@@ -850,5 +861,25 @@ describe('shared audit and zero-row behaviour', () => {
 
     expect(res.status).toBe(200);
     expect(db.deleteEq).toHaveBeenCalledWith('id', id);
+  });
+});
+
+describe('書き込みの client（ADR-0026）', () => {
+  it.each([
+    ['PUT', () => PUT(makeRequest(), paramsFor('7'))],
+    ['PATCH', () => PATCH(makeRequest({ body: { status: 'published' } }), paramsFor('7'))],
+    ['DELETE', () => DELETE(makeRequest(), paramsFor('7'))],
+  ])('DD-NEWS-065 %s は認可の後に service role の client を 1 回だけ作って書き、利用者の JWT の client は作らない', async (_method, call) => {
+    setupDb({ error: null });
+    setupStorage();
+
+    const res = await call();
+
+    expect(res.status).toBe(200);
+    expect(mockCreateServiceRoleClient).toHaveBeenCalledTimes(1);
+    expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockAuthorize.mock.invocationCallOrder[0]).toBeLessThan(
+      mockCreateServiceRoleClient.mock.invocationCallOrder[0],
+    );
   });
 });

@@ -491,9 +491,13 @@ describe('PUT /api/admin/stockists/[id]（取扱店の全体の更新）', () =>
     expect(verifyAccessToken).not.toHaveBeenCalled();
   });
 
-  test('API-STOCKIST-004 client を作れない例外も 500 Internal server error を返し、監査を残さない', async () => {
+  test('API-STOCKIST-004 書き込みの service role の client を作れない例外も 500 Internal server error を返し、監査を残さない', async () => {
     setup({ tables: okTables() });
-    createClient.mockRejectedValue(new Error('no client'));
+    // 認可・回数の制限を過ぎた後（書き込みの client の作成）だけ失敗させる。
+    createServiceRoleClient.mockImplementation(async () => {
+      if (incrementCounter.mock.calls.length > 0) throw new Error('no client');
+      return client;
+    });
 
     const res = await PUT(putRequest(), ctx());
 
@@ -502,7 +506,7 @@ describe('PUT /api/admin/stockists/[id]（取扱店の全体の更新）', () =>
     expect(auditRows()).toHaveLength(0);
   });
 
-  test('API-STOCKIST-004 6つの値で id の行を書き換え、利用者の client で 200 と成功の監査（店名の要約）を残す', async () => {
+  test('API-STOCKIST-004 6つの値で id の行を書き換え、認可の後に service role の client で 200 と成功の監査（店名の要約）を残す', async () => {
     setup({ tables: okTables() });
     const request = putRequest();
 
@@ -510,7 +514,7 @@ describe('PUT /api/admin/stockists/[id]（取扱店の全体の更新）', () =>
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
-    expect(createClient).toHaveBeenCalledWith(request);
+    expect(createClient).not.toHaveBeenCalled();
     expect(updatePayload()).toEqual(validBody);
     expect(tableCalls('stockists', 'update')[0].find(([m]) => m === 'eq')?.[1]).toEqual(['id', 7]);
     expect(tableCalls('stockists', 'update')[0].find(([m]) => m === 'select')?.[1]).toEqual(['id']);

@@ -109,9 +109,11 @@ function setup(
     rpcImpl?: (call: RpcCall) => Result;
   } = {},
 ) {
-  userClient = createFakeClient({ stockists: options.insertResult ?? { data: { id: 42 }, error: null } });
+  // 書き込みは認可の後に service role の client 1 つで行う（ADR-0267）。利用者の JWT の client は作られないので、userClient は空のまま。
+  userClient = createFakeClient({});
   serviceClient = createFakeClient(
     {
+      stockists: options.insertResult ?? { data: { id: 42 }, error: null },
       user_roles: { data: aclRows(options.codes ?? ['admin.stockists.manage']), error: null },
       audit_logs: { data: null, error: null },
     },
@@ -136,7 +138,7 @@ function setup(
 }
 
 function stockistsOp() {
-  return userClient.ops.find((o) => o.table === 'stockists');
+  return serviceClient.ops.find((o) => o.table === 'stockists');
 }
 
 function auditRows() {
@@ -164,6 +166,8 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
 
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ success: true, id: 42 });
+    expect(createClient).not.toHaveBeenCalled();
+    expect(userClient.ops).toHaveLength(0);
     expect(stockistsOp()?.calls).toEqual([
       ['insert', [[VALID]]],
       ['select', ['id']],
@@ -384,6 +388,7 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
     expect(await res.json()).toMatchObject({ error: 'Forbidden', permission: 'admin.stockists.manage' });
     expect(requireCsrfOrDeny).not.toHaveBeenCalled();
     expect(createClient).not.toHaveBeenCalled();
+    expect(stockistsOp()).toBeUndefined();
     expect(auditRows()).toHaveLength(0);
   });
 
@@ -485,9 +490,10 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
       order.push('body');
       return VALID;
     });
-    createClient.mockImplementation(async () => {
-      order.push('db');
-      return userClient;
+    const fromImpl = serviceClient.from.getMockImplementation() as (table: string) => Record<string, unknown>;
+    serviceClient.from.mockImplementation((table: string) => {
+      if (table === 'stockists') order.push('db');
+      return fromImpl(table);
     });
 
     await POST(request);

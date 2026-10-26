@@ -113,9 +113,11 @@ let userClient: ReturnType<typeof createFakeClient>;
 let serviceClient: ReturnType<typeof createFakeClient>;
 
 function setup(options: { insertResult?: Result; uploadResult?: Result; codes?: string[] } = {}) {
-  userClient = createFakeClient({ news_articles: options.insertResult ?? { data: { id: 42 }, error: null } });
+  // 書き込みは service role の client 1 つ（ADR-0026）。利用者の JWT の client は作られないことを userClient の ops の空で確かめる。
+  userClient = createFakeClient({});
   serviceClient = createFakeClient(
     {
+      news_articles: options.insertResult ?? { data: { id: 42 }, error: null },
       user_roles: { data: aclRows(options.codes ?? ['admin.news.read', 'admin.news.manage']), error: null },
       audit_logs: { data: null, error: null },
     },
@@ -128,7 +130,7 @@ function setup(options: { insertResult?: Result; uploadResult?: Result; codes?: 
 }
 
 function insertedRows() {
-  const op = userClient.ops.find((o) => o.table === 'news_articles');
+  const op = serviceClient.ops.find((o) => o.table === 'news_articles');
   return op?.calls.find(([m]) => m === 'insert')?.[1][0] as Array<Record<string, unknown>> | undefined;
 }
 
@@ -175,6 +177,8 @@ describe('POST /api/admin/news（記事の作成）', () => {
 
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ success: true, id: 42 });
+    expect(createClient).not.toHaveBeenCalled();
+    expect(userClient.ops).toHaveLength(0);
     expect(serviceClient.uploads).toHaveLength(1);
     const upload = serviceClient.uploads[0];
     expect(upload.bucket).toBe('news-images');
@@ -304,7 +308,7 @@ describe('POST /api/admin/news（記事の作成）', () => {
     expect(body.error).toBe('Invalid request');
     expect(body.details).toHaveProperty('fieldErrors');
     expect(serviceClient.uploads).toHaveLength(0);
-    expect(userClient.ops).toHaveLength(0);
+    expect(serviceClient.ops.filter((o) => o.table === 'news_articles')).toHaveLength(0);
   });
 
   it.each([

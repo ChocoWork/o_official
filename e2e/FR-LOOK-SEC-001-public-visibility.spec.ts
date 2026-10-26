@@ -24,6 +24,7 @@ import {
   restUrl,
   type MemberActor,
 } from './home-grant-test-utils';
+import { insertLegacyImageRow } from './legacy-image-rows';
 import { withLocalDb } from './order-email-test-utils';
 
 // 一般会員の JWT を通信記録に残さない
@@ -69,6 +70,8 @@ type LookSeed = {
   description?: string;
   status: 'published' | 'private';
   imageUrls?: string[];
+  /** true なら imageUrls は DB の CHECK（looks/ の下だけ）に合わない旧い行として入れる（ADR-0162。e2e/legacy-image-rows.ts） */
+  legacyImageUrls?: boolean;
 };
 
 class LookFixtures {
@@ -77,12 +80,14 @@ class LookFixtures {
 
   async addLook(seed: LookSeed): Promise<number> {
     const id = await withLocalDb(async (db) => {
-      const inserted = await db.query(
-        `insert into public.looks (season_year, season_type, theme, theme_description, image_urls, status, created_at, updated_at)
+      const insertSql = `insert into public.looks (season_year, season_type, theme, theme_description, image_urls, status, created_at, updated_at)
          values (2000, 'SS', $1, $2, $3::text[], $4, '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z')
-         returning id`,
-        [seed.theme, seed.description ?? '', seed.imageUrls ?? [], seed.status],
-      );
+         returning id`;
+      const params = [seed.theme, seed.description ?? '', seed.imageUrls ?? [], seed.status];
+      if (seed.legacyImageUrls) {
+        return insertLegacyImageRow(db, 'looks', 'looks_image_urls_path_check', insertSql, params);
+      }
+      const inserted = await db.query(insertSql, params);
       return Number(inserted.rows[0].id);
     });
     this.ids.push(id);
@@ -363,7 +368,7 @@ test.describe('FR-LOOK-SEC-001 決まりの外の道筋は署名されない', (
     try {
       // 署名は物があって初めて作られるので、決まりの外の道筋の先に本物の画像を置く
       await fx.uploadImage(`${dir}/x.png`);
-      const id = await fx.addLook({ theme, status: 'published', imageUrls: [`../${dir}/x.png`, `${dir}/x.png`] });
+      const id = await fx.addLook({ theme, status: 'published', imageUrls: [`../${dir}/x.png`, `${dir}/x.png`], legacyImageUrls: true });
 
       const signedForOther = new RegExp(`${escapeRegExp(dir)}/x\\.png[^\\s"'<>]*token=|object/sign/[^\\s"'<>]*${escapeRegExp(dir)}`);
       for (const path of [`/look/${id}`, '/look']) {
@@ -394,7 +399,7 @@ for (const vp of VIEWPORTS) {
       const theme = uniqueLookTag(`external-${vp.name}`);
       const fx = new LookFixtures();
       try {
-        const id = await fx.addLook({ theme, status: 'published', imageUrls: ['https://evil.example/x.png'] });
+        const id = await fx.addLook({ theme, status: 'published', imageUrls: ['https://evil.example/x.png'], legacyImageUrls: true });
 
         for (const path of [`/look/${id}`, '/look']) {
           const opened = await openHtml(page, path);

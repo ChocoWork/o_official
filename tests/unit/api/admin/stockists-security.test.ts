@@ -2,6 +2,7 @@ export {};
 
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
+  createServiceRoleClient: jest.fn(),
 }));
 
 jest.mock('@/lib/auth/admin-rbac', () => ({
@@ -39,7 +40,7 @@ jest.mock('next/server', () => ({
   },
 }));
 
-const { createClient: mockCreateClient } = require('@/lib/supabase/server');
+const { createClient: mockCreateClient, createServiceRoleClient: mockCreateServiceRoleClient } = require('@/lib/supabase/server');
 const { authorizeAdminPermission: mockAuthorizeAdminPermission } = require('@/lib/auth/admin-rbac');
 
 const stockistsRoute = require('@/app/api/admin/stockists/route');
@@ -91,6 +92,7 @@ describe('admin stockist security guards', () => {
       actorEmail: 'admin@example.com',
     });
     mockCreateClient.mockResolvedValue(createStockistServiceMock());
+    mockCreateServiceRoleClient.mockResolvedValue(createStockistServiceMock());
     mockEnforceRateLimit.mockResolvedValue(undefined);
     mockRequireCsrfOrDeny.mockResolvedValue(undefined);
   });
@@ -148,6 +150,8 @@ describe('admin stockist security guards', () => {
     const body = await response.json();
 
     expect(response.status).toBe(403);
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+    expect(mockCreateClient).not.toHaveBeenCalled();
     expect(body).toEqual({ error: 'Forbidden' });
   });
 
@@ -172,6 +176,8 @@ describe('admin stockist security guards', () => {
     const response = await stockistsRoute.POST(request);
 
     expect(response.status).toBe(201);
+    expect(mockCreateServiceRoleClient).toHaveBeenCalledTimes(1);
+    expect(mockCreateClient).not.toHaveBeenCalled();
     expect(response.cookies.set).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'sb-csrf-token',

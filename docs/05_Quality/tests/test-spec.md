@@ -663,6 +663,61 @@ DB結合 [group_g3_cancel](../../../tests/integration/db/group_g3_cancel.integra
 
 ## 開店前のセキュリティの穴 波 1-B のテスト（SEC-AUTH・SEC-ADMIN・SEC-STOCKIST・SEC-NEWS・SEC-HOME）
 
+## 開店前のセキュリティの穴 波 2 のテスト（権限・検索・制約・置き場。SEC-HOME・AUTH・LOOK・NEWS・SEARCH・STOCKIST・ADMIN）
+
+確認日: 2026-10-27（この節は波 2 の分。並びは時系列でなく、下の波 1-B・1-C の前に置く）。波 2 は移行 6 本（`20261026130100`〜`130600`）と、取扱店・ニュースの管理の書き込みを認可の後に service role へ寄せる窓口の変更、LOOK の PUT を `admin_update_look` の rpc 1 回にする変更を入れた。移行は本番未適用（本番は G-4 と一緒に当てる・オーナーの確認の後）。**実測（2026-10-27）**: 手元の `npm run db:reset` の後、DB 結合は `DATABASE_URL` を 54322 に向けて `--runInBand` で 144 suite 通過・13 skip・0 失敗（4339 件通過・14 skip・1 todo）。DB なしの jest 全体は 19704 件通過・0 失敗。本番ビルドの E2E 全件（1 回）は 414 failed・4602 passed・26 skipped で、G-3 の 175 failed より多いが、増えた赤は G-4 の注文・返品の E2E か、再実行で通る揺れだった。下の E2E の列に挙げた波 2 の対象ファイルは全件が期待どおり（赤なし。詳細は `.superpowers/sdd/2026-10-25-security-gap-fixes/e2e-results-wave2-full.json`）。
+
+### 新しく作った試験ファイル
+
+| ファイル | 先頭の ID | 確かめること |
+| --- | --- | --- |
+| [staged-supabase.test.ts](../../../tests/unit/helpers/staged-supabase.test.ts)（道具: `tests/helpers/staged-supabase.ts`） | （補助の単体。ID なし） | `findMigration`・`readMigration`・`resolveSeedPath`。`supabase/migrations/` と `supabase/pending-wave2/` の両方にあれば前者を返す。移行を名前の末尾で探すので、時刻を付け替えても結合試験は動く |
+| [stockist_type_optional](../../../tests/integration/db/stockist_type_optional.integration.test.ts) | `DATA-STOCKIST-001` | 130100。`type` が NULL 可・CHECK が残る・NULL と正しい値は入り、未知の値は 23514（DB なしの移行の形を含む） |
+| [home_items_grants](../../../tests/integration/db/home/home_items_grants.integration.test.ts) | `DATA-HOME-001` | 130200。`items` の公開 21 列だけを anon・authenticated が読める・原価 2 列は読めない・`item_cost_history` は `admin.finance.read` だけ。`finalize_order_from_checkout_draft` は退役済みで無いこと、後継の `place_order_from_checkout_draft` は service_role だけが EXECUTE できることも確かめる（古い前提を直した） |
+| [look_grants_admin_tables](../../../tests/integration/db/look_grants_admin_tables.integration.test.ts) | `DATA-LOOK-003` | 130300。`looks`・`look_items` は anon・authenticated が SELECT だけ。連番 `looks_id_seq` の権限が PUBLIC・anon・authenticated に無い（2026-10-27 追加） |
+| [news_grants_admin_tables](../../../tests/integration/db/news_grants_admin_tables.integration.test.ts) | `DATA-NEWS-002` | 130300。`news_articles` の SELECT だけと、連番 `news_articles_id_seq` の権限が無いこと（2026-10-27 追加） |
+| [stockist_grants_admin_tables](../../../tests/integration/db/stockist_grants_admin_tables.integration.test.ts) | `DATA-STOCKIST-002` | 130300。`stockists` の SELECT だけ。連番 `stockists_id_seq` は service_role が USAGE・SELECT だけ（UPDATE が無い）で、anon・authenticated に無い |
+| [admin_item_color_presets_grants](../../../tests/integration/db/admin-misc/admin_item_color_presets_grants.integration.test.ts) | `DATA-ADMIN-005` | 130300。`item_color_presets` は authenticated の SELECT だけで anon は何も持たない。連番 `item_color_presets_id_seq` の権限が無い（2026-10-27 追加） |
+| [look_constraints](../../../tests/integration/db/look_constraints.integration.test.ts)・[news_constraints](../../../tests/integration/db/news_constraints.integration.test.ts) | `DATA-LOOK-001`・`DATA-NEWS-001` | 130500。CHECK 7 本が `NOT VALID` で足され（`convalidated` が偽）、長さの超過と外の道筋（`other/x.png`・`https://…`・改行を含む要素・NULL 要素）の INSERT・UPDATE が 23514 で断られる |
+| [look_update_function](../../../tests/integration/db/look_update_function.integration.test.ts) | `API-LOOK-004`・`DATA-LOOK-001` | 130500。`admin_update_look` が SECURITY INVOKER・`search_path = ''`・service_role だけ EXECUTE。更新前の `image_urls` を返す・NULL なら今の画像を保つ・関連の段の失敗で行の更新も巻き戻る・同時の更新が順に走る（別接続に commit するため、プロセスが死ぬと `integration-look-update-lock-*` の行が残りうる） |
+| [auth_grants_inventory](../../../tests/integration/db/auth_grants_inventory.integration.test.ts) | `DATA-AUTH-006` | 公開スキーマの権限の一覧。波 2 の移行が `ALTER DEFAULT PRIVILEGES` を使わないこと（DB なし 15 本）、広い権限が残る表の「既知の例外」の一覧、台帳・保管の表（`legal_archive_runs`・`order_revisions`・`stripe_*` 3 表）の書き込み系 7 権限が anon・authenticated に無いこと、`order_revisions_id_seq` の権限が無いこと、`legal_archive_runs` の authenticated の SELECT が残ること（2026-10-27 追加）。「既知の例外」の一覧は変えていない |
+| 補助 [admin-table-grants.ts](../../../tests/integration/db/helpers/admin-table-grants.ts)・[legacy-image-rows.ts](../../../e2e/legacy-image-rows.ts) | （補助） | 4 本の権限の試験が共有する確かめの道具。`insertLegacyImageRow` は CHECK より前の旧い行を、制約を外す取引の間だけその表に ACCESS EXCLUSIVE の鍵を短く取って作る（波 3 の署名の試験用。並列 E2E での待ちは実測していない） |
+
+### 書き換えた試験
+
+| 領域 | ファイル | 変えたこと |
+| --- | --- | --- |
+| STOCKIST | `db/stockist_table`・`stockist_rls`・`stockist_permissions` | `type` の `is_nullable` は YES、必須の列から `type` を外し、「種別を省いた作成は 23502」を「通り NULL」に書き換えた（Task 2）。管理者の JWT の書き込みは 42501 に直し、service_role で通る確かめは新しい権限の試験（`DATA-STOCKIST-002`）へ移した（Task 5） |
+| AUTH | `db/auth_sessions_table`・`auth_password_reset_tokens_table` | anon・authenticated は表に権限が無い（42501）。service_role で確かめる |
+| ADMIN | `db/admin-misc/admin_rls_policy`・`admin_audit_logs_table`・`admin_revoke_sessions_function`・`admin_item_color_presets_table` | 同上。色見本は authenticated の SELECT だけ・anon は 42501 |
+| LOOK | `db/look_rls`・`look_permissions`・`look_table`・`look_images_bucket` | 書き込みの権限の誤り。`look_items` の読みが「親の LOOK と商品の両方が公開」。見本の画像の道筋を `looks/…` の形に。置き場の期待が「上限なし」から 5 MiB・4 種類（`DATA-LOOK-005`） |
+| NEWS | `db/news_articles_rls`・`news_permissions`・`news_articles_table`・`news_status_state`・`news_images_bucket` | 同上（置き場は `DATA-NEWS-004`）。道筋を `news/…` の形に |
+| SEARCH | `db/search-functions`（`DATA-SEARCH-001`） | 上限 8（21・10000・NULL・0・負数も 8 以下）、検索語 100 字、`\` 先逃がし、`search_public_*` が anon・authenticated に 42501、移行の形を 4 本足した |
+| 窓口 | 結合 `api/{stockist,news}-admin-*`・`api/look-admin-{item-put-api,write-path}`・`api/{look,news}-image-signing`、単体 `api/admin/{stockists,news,looks}` と `stockists-security`・`looks-audit`、`tests/unit/scripts/e2e/seed-storage` | 取扱店・ニュースの書き込み 4 窓口（POST・PUT・PATCH・DELETE）が認可（`authorizeAdminPermission`）の後に service role を使う（`DD-STOCKIST-034`・`035`、`DD-NEWS-065`）。news DELETE は service role の client を行の削除の前に作り、作れなければ 500（行も置き場も触らない）。LOOK の PUT は `admin_update_look` の rpc 1 回（更新前の画像を返す）。見本の seed-storage の道筋 |
+
+### E2E で外した `test.fail`（27 行）と補助の変更
+
+外した行は 10 ファイルの 27 行。本番ビルドの E2E 全件（2026-10-27）で、これらのファイルは全件が期待どおり（赤なし）だった。
+
+| ファイル（`e2e/FR-...`） | 外した要件 ID |
+| --- | --- |
+| `STOCKIST-013` | FR-ADMIN-006-AC-02、FREQ-18-AC-01 |
+| `HOME-024` | SEC-HOME-003-AC-02、SEC-HOME-004、SEC-HOME-005、SEC-HOME-020 |
+| `LOGIN-031` | SEC-AUTH-011-AC-01 |
+| `LOOK-SEC-002` | SEC-LOOK-002-AC-01・AC-02、SEC-LOOK-003-AC-02、SEC-LOOK-004-AC-01・AC-02、SEC-LOOK-005-AC-01、SEC-LOOK-010-AC-02、SEC-LOOK-023-AC-01 |
+| `LOOK-SEC-004` | SEC-LOOK-015-AC-01 |
+| `NEWS-SEC-002` | SEC-NEWS-002-AC-02、SEC-NEWS-010-AC-01・AC-02、SEC-NEWS-025-AC-01、SEC-NEWS-022-AC-01 |
+| `SEARCH-020` | SEC-SEARCH-007、SEC-SEARCH-008 |
+| `SEARCH-021` | SEC-SEARCH-003 |
+| `STOCKIST-016` | SEC-STOCKIST-003-AC-02・AC-03（AC-03 は失効の前の update も断られる形に直した。失効の前後で結果が同じ） |
+| `ADMIN-MISC-005` | SEC-ADMIN-002-AC-01 |
+
+残した `test.fail` は波 5 以降の物（`SEC-HOME-003-AC-01`、`SEC-LOOK-003-AC-01`、`SEC-NEWS-002-AC-01`・`AC-03`、`SEC-STOCKIST-003-AC-01`、`SEC-ADMIN-002-AC-02`、`SEC-AUTH-005`・`010`、`SEC-SEARCH-015`・`016`、`SEC-STOCKIST-019` など）。見本の画像の道筋が `items/e2e/`・`looks/e2e/`・`news/e2e/` に変わったので、画像を見る `FR-LOOK-ALL-042`・`044`、`FR-LOOK-DETAIL-019`、`FR-LOOK-SEC-001`・`005`、`FR-NEWS-SEC-001`・`003`、`FR-NEWS-DETAIL-009`、`FR-NEWS-ALL-018` と、補助 `e2e/home-grant-test-utils.ts`・`home-test-utils.ts`・`look-admin-test-utils.ts` も合わせた。
+
+### 本番へ当てる前の確認
+
+DB 結合の「DB なしの形」の試験は `supabase/migrations/` の 6 本の文面を読む。本番へ当てる前後の読むだけの確認と、本番で何が変わるか（`order_revisions_id_seq` のみ実変更・台帳系の 5 表は本番では変化なし）は [移行運用](../../06_Operations/db-migrations.md) の「波 2 権限・検索・制約・置き場の移行 6 本」に書いた。
+
 確認日: 2026-10-26。波 1-B（認証の窓口・登録と確認・管理の窓口・取扱店・お知らせ・ホーム）で書き直した試験をまとめる。単体・結合は実装者が流して通した（Task 1〜8 の報告。最後の確認は Task 9 の `--findRelatedTests` で 135 スイート 3121 件通過）。**E2E・DB 結合は書いただけで流していない**ので、下の E2E の列は controller の本番ビルドでの実測の後に確かめる（外した `test.fail` が緑になること）。試験名の先頭の ID は `validate-trace` の層の決まりに合わせた（単体・結合に `SEC-` を付けると `wrong-test-level` になるため、`DD-`・`API-`・`ARC-` にした）。対応表（`docs/05_Quality/reports/`）は `npm run trace:report` で作り直す。
 
 ### 新しく作った試験ファイル

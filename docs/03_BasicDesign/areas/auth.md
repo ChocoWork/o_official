@@ -14,7 +14,7 @@ AUTH の領域の構成・画面・画面遷移・状態遷移・API・データ
 | 画面遷移 | 4 | `FLOW-AUTH-001`〜`004` | メールとパスワードのログイン、Google のログイン、会員登録、パスワードの再設定 |
 | 状態遷移 | 6 | `STATE-AUTH-001`〜`006` | ログインの保留、再設定の印、`/auth/verified` の画面、再設定のページ、ヘッダーの出し隠し、戻り先の控え |
 | API | 19 | `API-AUTH-001`〜`019` | `/api/auth/*` の 19 本の窓口 |
-| データ | 5 | `DATA-AUTH-001`〜`005` | `sessions` の表、`password_reset_tokens` の表、認証の DB の関数、認証の Cookie、戻り先の控えの表と関数 |
+| データ | 6 | `DATA-AUTH-001`〜`006` | `sessions` の表、`password_reset_tokens` の表、認証の DB の関数、認証の Cookie、戻り先の控えの表と関数、公開スキーマの権限の一覧 |
 
 - 結論: 画面は利用者の端末で動く部品で、共有の `LoginContext` かページ自身が `/api/auth/*` を呼ぶ。窓口は Supabase Auth を呼び、結果のトークンを HttpOnly の Cookie に入れ、自前の `sessions` の表に控えを残す。ログインの2段目・再設定・会員登録の守り（保留の署名 Cookie・ボットの確かめ・回数の制限・列挙の対策・16 文字と漏洩の照合）は全部アプリの窓口の中にある
 - 今のコードが満たさないセキュリティ要件（SEC-AUTH-005・006・007・009・010・011・012・013・015・017・022・023・029・031）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた。一部だけ満たす物（SEC-AUTH-008・016・018・020・021・025・026・027・030）は、満たさない所がその項目の受け持つコードにある時は上位にせず、ほかの項目か共有部品にだけある時は上位にした（NEWS・SEARCH の構造設計と同じ決め方）。SEC-AUTH-025・027 は満たさない所を受け持つ項目が共有部品の説明になるので、どこの上位にもしなかった
@@ -1201,7 +1201,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | DRV-AUTH-008、SEC-AUTH-021、ADR-0406 |
+| 上位 | DRV-AUTH-008、SEC-AUTH-021、ADR-0406、ADR-0414 |
 | 根拠 | 本当のセッションは Supabase Auth が持つので、自前の表は監査と、ログアウト・管理の失効が Supabase へ届かなかった時の最後の砦にする（ADR-0406）。refresh token は生で置かずハッシュで控え、ログアウトで `revoked_at` を付ける（SEC-AUTH-021、DRV-AUTH-008） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -1217,13 +1217,13 @@ stateDiagram-v2
 
 - 書く: ログインの確定（otp/verify・confirm・oauth/callback・register の 201）で行を作り、refresh と TOTP の確認で差し替え、ログアウトと再設定の完了で `revoked_at` を付ける。全部 service role
 - 読む: refresh（行が無くても断らない）、logout、再設定の完了
-- RLS は anon・authenticated を拒否し、service role だけを通す。ただし表の権限は anon・authenticated にも付いたまま（SEC-AUTH-011 は満たさない）
+- 表の権限は anon・authenticated に付けない（2026-10-26 の移行 `sec_grants_hardening`、ADR-0414。SEC-AUTH-011）。service_role の権限は明示で付ける。RLS の全拒否の方針（anon・authenticated を拒み service role だけを通す）は二重の守りとして残す
 
 ### DATA-AUTH-002 password_reset_tokens の表は再設定の印のハッシュ・宛先・期限・使用の印を持つ
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-319-REQ-03、FREQ-332-REQ-04、ADR-0403 |
+| 上位 | FREQ-319-REQ-03、FREQ-332-REQ-04、ADR-0403、ADR-0414 |
 | 根拠 | Supabase の再設定のメールを使わず自前の印にしたので、印の行を自前で持つ。消費をパスワードの変更まで遅らせるため、使用の印を別の列に持つ（FREQ-319-REQ-03、ADR-0403）。期限は 10 分（FREQ-332-REQ-04） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -1241,13 +1241,13 @@ stateDiagram-v2
 
 - 状態の移り変わりは STATE-AUTH-002。読み書きは全部 service role
 - 掃除の関数 `cleanup_password_reset_tokens` があるが呼ぶ所が無く、使用済み・期限切れの行が残る（SEC-AUTH-018 の掃除は満たさない）
-- RLS は anon・authenticated を拒否するが、表の権限は付いたまま（SEC-AUTH-011 は満たさない）
+- 表の権限は anon・authenticated に付けない（2026-10-26 の移行 `sec_grants_hardening`、ADR-0414。SEC-AUTH-011）。RLS の全拒否の方針は二重の守りとして残す
 
 ### DATA-AUTH-003 認証の DB の関数はアカウントの照会とセッションの失効と回数の数えを受け持ち、service role が呼ぶ
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-319-REQ-01、FREQ-320-REQ-01 |
+| 上位 | FREQ-319-REQ-01、FREQ-320-REQ-01、ADR-0414 |
 | 根拠 | メールからアカウントを引くのを先頭の 100 件の走査でなく関数1回にし、200 人目以降でも壊れないようにする（FREQ-319-REQ-01）。見つかった・無い・引けなかったを分ける（FREQ-320-REQ-01）。呼べるのを service role だけに絞る要件は SEC-AUTH-012 だが、満たさないので上位にしない |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -1262,6 +1262,7 @@ stateDiagram-v2
 | `increment_rate_limit_counter` | 共有の回数の制限 |
 | `cleanup_password_reset_tokens` | 呼ぶ所が無い |
 
+- 回数の制限の表 `rate_limit_counters` と連番 `rate_limit_counters_id_seq` は anon・authenticated に権限が無く、`increment_rate_limit_counter` は SECURITY DEFINER なので表の権限に左右されず数えられる（2026-10-26 の移行 `sec_grants_hardening`、ADR-0414）
 - 6つとも anon・authenticated から呼べる状態で、公開の鍵だけで会員の有無・他人のセッションの失効・回数の数えに届く（SEC-AUTH-012 は満たさない）
 - `find_auth_user_id_by_email` は SSO・停止・論理削除の利用者を外して引く（外れた宛先は会員登録で重複として返り、登録済みと同じ 202 にそろえる）
 
@@ -1317,6 +1318,37 @@ stateDiagram-v2
 - 掃除: pg_cron のジョブ `auth-return-intents-cleanup` が毎日 03:20（UTC）に、期限の 1 日後を過ぎた行を消す
 - 移行の末尾の確かめ: 失敗は `AUTH_RETURN_INTENT_ASSERTION_FAILED`（SQLSTATE 55000、DETAIL は項目名だけ）。項目は `auth_return_intents_table`（列の一覧・所有者・RLS・表の権限）、`auth_return_intents_functions`（2 本の存在・DEFINER・STRICT・空の search_path・EXECUTE の付き方・同名の関数が 2 本だけ）、`auth_return_intents_cleanup_job`（ジョブ名・時刻・対象の表）
 - 書く・読む: 作るのは入口（API-AUTH-001・005・007）、使い切るのは出口（API-AUTH-006・008・019）。読むだけの経路は無い
+
+### DATA-AUTH-006 公開スキーマの権限の一覧は DB 結合テストで守り、移行は GRANT を明示する
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-033、ADR-0414 |
+| 根拠 | 公開スキーマの表は作った時に anon・authenticated へ全権限が付き、`ALTER DEFAULT PRIVILEGES` は0件。移行が REVOKE と GRANT を書かない限り広い権限が残る。波 2 が締めた権限を次の移行が黙って戻さないよう、一覧と歯止めを DB の試験にする（SEC-AUTH-033、ADR-0414 の決まり） |
+| 状態 | 推定 |
+| 確かめ方 | DB 結合テスト（`tests/integration/db/auth_grants_inventory.integration.test.ts`。移行の形は DB なしで、権限の効き方は手元の使い捨て DB で確かめる） |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave2-decisions.md`、設計書 I8 |
+
+一覧（anon・authenticated はちょうどこの権限だけ。service_role は SELECT・INSERT・UPDATE・DELETE を明示で持つ）。
+
+| 区分 | 対象 | anon | authenticated |
+| --- | --- | --- | --- |
+| 公開の読み | `looks`・`look_items`・`news_articles`・`stockists` | SELECT のみ | SELECT のみ |
+| 管理の読み | `item_color_presets`・`item_cost_history` | なし | SELECT のみ |
+| 閉じた表 | `sessions`・`password_reset_tokens`・`rate_limit_counters`・`audit_logs`・`audit_logs_backups` | なし | なし |
+| 自分の行 | `profiles` | なし | SELECT・INSERT・UPDATE・DELETE（TRUNCATE・REFERENCES・TRIGGER・MAINTAIN は無し） |
+| 列単位 | `items` | 公開の21列の SELECT のみ（表単位は無し。原価 `pattern_cost`・`mass_production_cost` は無し） | 同左 |
+| 関数 | `search_items`・`search_looks`・`search_news` | EXECUTE 可 | EXECUTE 可 |
+| 関数 | `search_public_items`・`search_public_looks`・`search_public_news`・`admin_update_look` | 不可 | 不可 |
+| 連番 | `stockists_id_seq`・`rate_limit_counters_id_seq` | なし | なし（service_role は USAGE・SELECT） |
+| 置き場 | `look-images`・`news-images` | `storage.buckets.public = false` | - |
+
+- 関数は PUBLIC にも許さない（`aclexplode` の grantee 0 が無い）。`search_public_*` は postgres（所有者）と service_role の EXECUTE を残す。`admin_update_look` は service_role だけが呼べる
+- `items` の公開の列は「全列 − 原価の2列」と一致することを `information_schema.columns` と突き合わせる。新しい列を足すと試験が落ち、足した人に権限の判断を迫る
+- 歯止め: `public` の通常の表（`pg_class.relkind` が `r`・`p`）のうち、anon か authenticated が INSERT・UPDATE・DELETE・TRUNCATE のどれかを（表単位に加え、INSERT・UPDATE は列単位の付与も）持つ表の集合から、既知の例外と、意図して書ける表（authenticated の `profiles`）を引いた残りが空であること。残りがあれば表の名前を出して落ちる
+- 既知の例外（他の領域・波の持ち物。ここでは直さない）: `admin_finance_*`・`admin_kpi_*`・`admin_costing_items`・`admin_expense_cost_allocations`（会計）、`contact_inquiries`・`contact_messages`・`contact_reply_templates`（問い合わせ）、`carts`・`checkout_drafts`・`orders`・`order_items`・`wishlist`（注文・カート）、`permissions`・`roles`・`role_permissions`・`user_roles`（権限）、`postal_code_cache`・`refresh_token_history`・`stripe_webhook_events`。一覧は「持っているかもしれない」上限で、締まっていても落ちない（試験が `console.info` で締まった表を出す）。G の表（注文・発送・在庫・発注）は各移行が明示の GRANT を持つ前提で、例外に載せず歯止めの対象にする。anon の TRUNCATE を例外の表からも外す断言は `test.todo` に残した（直すのは他領域の波）
+- 移行の形（DB なし）: 波 2 の6本のどれにも `ALTER DEFAULT PRIVILEGES` が無い。どの移行も BEGIN の前のヘッダーに ROLLBACK の節を持つ。権限を替える2本（`sec_grants_hardening`・`sec_grants_admin_tables`）は service_role の GRANT（表と連番）を明示する
+- 流していない: DB の試験は手元の使い捨て DB でまだ流していない。最初に流した結果で、落ちた表が本当に例外か・今回直すかを決め、既知の例外の一覧を実態に合わせる
 
 ## 未確認事項
 

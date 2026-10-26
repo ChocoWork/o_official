@@ -369,6 +369,22 @@ describe('POST /api/admin/users/mfa/reset', () => {
       expect(res.status).toBe(400);
     });
 
+    it('DD-ADMIN-005 user_roles の行が欠けた形（行が null・roles が null・code が文字でない）は読み飛ばし、roles が配列の行は先頭の code で決める', async () => {
+      buildService({
+        roleResult: {
+          data: [null, { roles: null }, { roles: { code: 7 } }, { roles: [{ code: 'supporter' }] }],
+          error: null,
+        },
+      });
+
+      const res = await POST(makeRequest(validBody));
+
+      expect(res.status).toBe(200);
+      expect(logAudit).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'success', metadata: expect.objectContaining({ target_role: 'supporter' }) }),
+      );
+    });
+
     it('DD-ADMIN-005 supporter だけの時は通り、監査の target_role は supporter', async () => {
       buildService({ roleResult: { data: roleRows('supporter'), error: null } });
 

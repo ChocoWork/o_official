@@ -41,18 +41,26 @@ const NONE: Result = { data: null, error: null };
 
 function createFakeClient(
   tables: Record<string, TableSpec>,
-  options: { rpcImpl?: (call: RpcCall) => Result; throwTables?: string[] } = {},
+  options: { rpcImpl?: (call: RpcCall) => Result; throwTables?: string[]; updateLookResult?: Result } = {},
 ) {
   const ops: TableOp[] = [];
   const uploads: string[] = [];
   const rpcCalls: RpcCall[] = [];
+  const updateLookCalls: RpcCall[] = [];
   const order: string[] = [];
   const client = {
     ops,
     uploads,
     rpcCalls,
+    updateLookCalls,
     order,
     rpc: jest.fn(async (name: string, args: Record<string, unknown>) => {
+      // LOOK の更新の rpc（admin_update_look）は回数の数え場所の rpc と分けて数える
+      if (name === 'admin_update_look') {
+        updateLookCalls.push({ name, args });
+        order.push('rpc.admin_update_look');
+        return options.updateLookResult ?? { data: ['looks/old/a.jpg'], error: null };
+      }
       const call = { name, args };
       rpcCalls.push(call);
       order.push(`rpc:${args._endpoint}`);
@@ -250,9 +258,13 @@ function setup(
         update: writeResult,
         delete: writeResult,
       },
-      look_items: { insert: NONE, delete: NONE },
     },
-    { rpcImpl: options.rpcImpl, throwTables: options.throwTables },
+    {
+      rpcImpl: options.rpcImpl,
+      throwTables: options.throwTables,
+      // PUT の行・関連の更新は rpc 1 回。書き込みの失敗の指定はその rpc の失敗にも写す
+      updateLookResult: options.lookWriteError ? { data: null, error: options.lookWriteError } : undefined,
+    },
   );
   createServiceRoleClient.mockResolvedValue(serviceClient);
   verifyAccessToken.mockResolvedValue(
@@ -316,7 +328,9 @@ describe('管理の書き換えの道（ARC-LOOK-002）', () => {
       const order = serviceClient.order;
       const isCounter = (s: string) => s.startsWith('rpc:') && !s.includes('upload-bytes');
       const lastCounter = order.map(isCounter).lastIndexOf(true);
-      const firstLookWrite = order.findIndex((s) => s.startsWith('looks.') || s.startsWith('items.'));
+      const firstLookWrite = order.findIndex(
+        (s) => s.startsWith('looks.') || s.startsWith('items.') || s === 'rpc.admin_update_look',
+      );
       expect(order.indexOf('user_roles.select')).toBeLessThan(order.findIndex(isCounter));
       expect(lastCounter).toBeLessThan(firstLookWrite);
     });
@@ -507,6 +521,21 @@ describe('管理の書き換えの道（ARC-LOOK-002）', () => {
     expect(res.status).toBe(200);
     expect(serviceClient.uploads).toHaveLength(1);
     expect(serviceClient.rpcCalls.some((c) => String(c.args._endpoint).startsWith('admin:looks:update:upload-bytes'))).toBe(true);
+  });
+
+  it('ARC-LOOK-002 更新は行・関連を service role の admin_update_look 1 回で書き、looks・look_items を直に書かない', async () => {
+    setup();
+
+    const res = await itemRoute.PUT(makeRequest({ form: formFields }), params());
+
+    expect(res.status).toBe(200);
+    expect(serviceClient.updateLookCalls).toHaveLength(1);
+    expect(serviceClient.updateLookCalls[0].args).toMatchObject({ _look_id: 7, _item_ids: [3, 5], _image_urls: null });
+    const written = serviceClient.ops.filter(
+      (o) => (o.table === 'looks' || o.table === 'look_items') && o.calls.some(([m]) => WRITE_METHODS.includes(m)),
+    );
+    expect(written).toEqual([]);
+    expect(createClient).not.toHaveBeenCalled();
   });
 
   it('ARC-LOOK-002 一覧と1件の GET は admin.looks.read で読み、回数を数えず監査にも残さない', async () => {

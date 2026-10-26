@@ -417,11 +417,11 @@ FR-ADMIN-005、FREQ-17、FREQ-316・327（範囲外、AUTH）、DRV-LOOK-008・0
 1. `admin.looks.manage` で認可し、操作者を控える。更新の回数を数える。`id` を確かめる
 2. multipart を読み、形を確かめる
 3. 画像の枚数と合計、1枚ずつ申告の種類と大きさ、中身の先頭の印を見る（`prepareLookImage`。DD-LOOK-070）。0枚なら通る
-4. 今の LOOK の有無と `image_urls` を `maybeSingle` で取る（無ければ 404。ここまで何も上げない）。紐づける商品の数を照らす
+4. 今の LOOK の有無と状態（`id,status`）を `maybeSingle` で取る（無ければ 404。ここまで何も上げない）。紐づける商品の数を照らす
 5. 操作者の1時間の更新の画像の量を数える（作成と別に数える）
-6. 画像があれば全部を `buildLookImagePath` の道筋で上げ、並びを差し替える。無ければ今の並びのまま
-7. `looks` を更新→ 画像を差し替えたなら古い道筋（`listRemovableLookImagePaths`）を置き場から消す→ `look_items` を全部消す→ 入れ直す
-8. 監査（success、前の状態と次の状態・関連・枚数・シーズン）を残して 200
+6. 画像があれば全部を `buildLookImagePath` の道筋で上げ、新しい並びとする。無ければ新しい並びは無い（NULL）
+7. `admin_update_look` を rpc で1回呼ぶ（`_image_urls` は新しい並び、無ければ NULL。行の更新・関連の全削除・関連の追加を1取引で行い、更新前の `image_urls` を返す。ADR-0163）→ 画像を差し替えたなら、戻りの古い道筋（`listRemovableLookImagePaths`）を置き場から消す
+8. 監査（success、前の状態と次の状態・関連・枚数・シーズン。枚数は新しい画像の数、無ければ戻りの数）を残して 200
 
 状態の切り替え:
 
@@ -459,10 +459,11 @@ FR-ADMIN-005、FREQ-17、FREQ-316・327（範囲外、AUTH）、DRV-LOOK-008・0
 | 更新 | 商品の数が合わない | 400 `Some linked items do not exist` | 同じ文 | `[id]/route.ts` |
 | 更新 | 1時間の量の超過・数え場所の失敗 | 429・503 | なし | `[id]/route.ts` |
 | 更新 | 置き場の失敗 | 500 `Failed to upload image`（置き場の文は入れない）。それまでに上げた画像を置き場から消す | `Failed to upload look image` | `[id]/route.ts` |
-| 更新 | `looks` の更新の失敗 | 500 `Failed to update look`。この要求で上げた新しい画像を置き場から消す（古い画像は消さない） | 同じ文 | `[id]/route.ts` |
-| 更新 | 関連の削除の失敗 | 500 `Failed to update linked items`（古い画像は更新の成功の後に消し済み。新しい画像は消さない） | `Failed to replace look-item links` | `[id]/route.ts` |
-| 更新 | 関連の追加の失敗 | 500 `Failed to update linked items`。LOOK は関連0件のまま残る（SEC-LOOK-015 は波 2） | `Failed to update look-item links` | `[id]/route.ts` |
-| 更新 | 今の `image_urls` が配列でない | 空として扱う | — | `[id]/route.ts` |
+| 更新 | 関数 `admin_update_look` の失敗（その他） | 500 `Failed to update look`（DB の文は出さない）。この要求で上げた新しい画像を置き場から消す（古い画像は消さない。行も関連も1取引で戻っている） | `Failed to update look` | `[id]/route.ts` |
+| 更新 | 関数が行を見つけない（SQLSTATE `P0002`） | 404 `Look not found`。新しい画像を消す | `Look not found` | `[id]/route.ts` |
+| 更新 | 関数の外部キー違反（SQLSTATE `23503`） | 400 `Some linked items do not exist`。新しい画像を消す | 同じ文 | `[id]/route.ts` |
+| 更新 | 関数の関連の段の失敗（メッセージ `LOOK_ITEMS_WRITE_FAILED`） | 500 `Failed to update linked items`。新しい画像を消し、古い画像は消さない。LOOK も関連も更新の前のまま（SEC-LOOK-015） | `Failed to update look-item links` | `[id]/route.ts` |
+| 更新 | 関数の戻り（更新前の `image_urls`）が配列でない | 空として扱う（古い画像は消さず、監査の枚数は 0） | — | `[id]/route.ts` |
 | 更新 | 前の状態が空 | 監査の前の状態を null | — | `[id]/route.ts` |
 | 更新 | ほかの例外 | 500 `Internal server error` | 操作者が分かれば `Unexpected update error` | `[id]/route.ts` |
 | 切り替え | 状態の形の誤り | 400 `Invalid request` | `Invalid status payload` | `[id]/route.ts` |
@@ -480,7 +481,7 @@ FR-ADMIN-005、FREQ-17、FREQ-316・327（範囲外、AUTH）、DRV-LOOK-008・0
 
 #### 状態・永続化
 
-- 更新: `looks` の1行を書き換え、`look_items` を消して入れ直す（3つの書き込みは別々で、途中の失敗を戻さない。SEC-LOOK-015 は波 2）。画像を付けた時は新しい画像を置き場に足し、行を書き換えた後に古い画像を消す
+- 更新: `admin_update_look` が `looks` の1行を書き換え、`look_items` を消して入れ直す（1取引。途中の失敗は全部戻る。SEC-LOOK-015）。行は `FOR UPDATE` で締める。画像を付けた時は新しい画像を置き場に足し、行を書き換えた後に戻りの古い画像を消す。画像を付けない時は NULL を渡し、今の画像を関数が保つ
 - 切り替え: `looks.status` だけ（STATE-LOOK-001）
 - 削除: `looks` の1行を消し、`look_items` は `ON DELETE CASCADE` で消える。行を消した後に画像を置き場から消す
 - 監査は `audit_logs`（DD-LOOK-065）
@@ -513,12 +514,12 @@ DD-LOOK-063 と同じ差し替え。`params` は `Promise.resolve({id:"1"})`。
 | 11 | 更新の今の LOOK が無い・取り出しの失敗 | `maybeSingle` が `data:null`、`error` | 404、監査 `Look not found`・500、監査 `Failed to fetch look`。何も上げない |
 | 12 | 更新の商品の誤り | `items` が `error`、数が合わない | 500、400 |
 | 13 | 更新の量の超過 | 量が 429 | 429、監査なし |
-| 14 | 更新（画像なし） | `images` なし、今の `image_urls` が配列・null | 今の並び・空のまま更新 |
+| 14 | 更新（画像なし） | `images` なし。rpc の戻りが配列・null | `_image_urls` は NULL（先に読んだ値を渡さない）。戻りが null でも成功で、置き場を呼ばず、監査の枚数は 0 |
 | 15 | 更新（画像あり） | 画像2枚（名前 `a/b.html` の PNG・`noext` の WebP） | 置き場に上げ、並びを差し替える。拡張子 `.png`・`.webp`（検出した種類） |
 | 15a | 更新の画像の中身 | 文字のファイルを `image/png`、PNG を `image/webp` と申告 | 400、`upload` も量の枠も呼ばれない |
-| 15b | 更新の後始末 | 画像つきの成功、`looks` の更新の失敗、関連の保存の失敗、2枚目の上げの失敗、`remove` の失敗・例外 | 成功は古い道筋だけ `remove`。更新の失敗は新しい道筋だけ。関連の保存の失敗は古い道筋だけ。2枚目の失敗は1枚目だけ。`remove` の失敗は 200 のまま監査に件数。古い見本の道筋は渡さない |
+| 15b | 更新の後始末 | 画像つきの成功、rpc の失敗、関連の段の失敗（`LOOK_ITEMS_WRITE_FAILED`）、2枚目の上げの失敗、`remove` の失敗・例外 | 成功は rpc の戻りの古い道筋だけ `remove`。rpc の失敗と関連の段の失敗は新しい道筋だけ（古い道筋は消さない）。2枚目の失敗は1枚目だけで rpc を呼ばない。`remove` の失敗は 200 のまま監査に件数。古い見本の道筋は渡さない |
 | 16 | 更新の置き場の失敗 | `upload` が `error` | 500 `Failed to upload image`、監査 `Failed to upload look image` |
-| 17 | 更新の3つの書き込みの失敗 | 更新・関連の削除・関連の追加のそれぞれが `error` | 500 とそれぞれの監査 |
+| 17 | 更新の rpc の失敗 | `P0002`、`23503`、`LOOK_ITEMS_WRITE_FAILED`、その他の `error` | 404 `Look not found`、400 `Some linked items do not exist`、500 `Failed to update linked items`（監査 `Failed to update look-item links`）、500 `Failed to update look`。どれも新しい画像だけ消し、`looks`・`look_items` を直に書かない |
 | 18 | 更新の成功 | 正しい欄、前の状態あり・null | 200、監査 success の前の状態・null |
 | 19 | 更新の例外 | 操作者あり（回数の関数が投げる）・なし（認可が投げる） | 500、監査 `Unexpected update error`・なし |
 | 20 | 切り替えの認可・回数 | `ok:false`、回数 429 | 認可の応答、429 |
@@ -748,7 +749,7 @@ SEC-LOOK-013・014、DRV-LOOK-009・010・011。
 | --- | --- | --- |
 | 申告と検出が違う・印が無い | `prepareLookImage` が `null`（窓口が 400） | `admin-images.ts` |
 | `..`・先頭の `/`・`//`・別の接頭辞・URL・空白・`%` を含む道筋 | 消す対象にしない | `admin-images.ts` |
-| 古い見本の道筋（`e2e/look-1-1.png` など。接頭辞が違う） | 消さない側に倒れる | `admin-images.ts` |
+| 古い見本の道筋（`e2e/look-1-1.png` など。接頭辞が違う。波 2 で見本は `looks/e2e/` に移った。この行は移行前の形の確認） | 消さない側に倒れる | `admin-images.ts` |
 | 置き場の削除が `error`・例外 | 名前と符号だけ記録して `'failed'`。投げない | `admin-images.ts` |
 
 - 署名の共有ライブラリが共有の確かめ（`isOwnLookImagePath` 相当）を持つようになったら、その関数に差し替える（波 3。判断は ADR-0160）

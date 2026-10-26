@@ -1571,7 +1571,7 @@ ALL を選ぶと、公開済みの記事がすべて表示されること。
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1 |
 | 優先度 | MUST |
 
-`news_articles` の RLS のうち `admin.news.read`・`admin.news.manage` で許す方針は、JWT の `aal` が `aal2` で、JWT の `session_id` の session が生きている（ログアウト・失効していない）時だけ許す。今のコードはどちらも満たさない（`supabase/migrations/20261023175712_group_g0_permissions.sql` の `has_permission` は `auth.uid()` と ACL の表だけを見る）。
+`news_articles` の RLS のうち `admin.news.read`・`admin.news.manage` で許す方針は、JWT の `aal` が `aal2` で、JWT の `session_id` の session が生きている（ログアウト・失効していない）時だけ許す。読みの側（AC-01・AC-03）は今のコードはどちらも満たさない（`supabase/migrations/20261023175712_group_g0_permissions.sql` の `has_permission` は `auth.uid()` と ACL の表だけを見る。波 5 で直す）。書き込みの側（AC-02）は、2026-10-26 から anon・authenticated に `news_articles` の INSERT・UPDATE・DELETE の権限が無い（SEC-NEWS-022、ADR-0414）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。管理の窓口の書き込みは認可の後に service role で行う（ADR-0026）。
 
 ### SEC-NEWS-002-AC-01 aal1 の session では非公開の記事を直接読めない
 
@@ -1595,7 +1595,7 @@ ALL を選ぶと、公開済みの記事がすべて表示されること。
 | 確かめ方 | E2E（`admin.news.manage` を持つ試し用の利用者の aal1 の JWT で insert・update・delete を送る） |
 | 出どころ | 実装から推定 |
 
-aal1 の JWT の insert・update・delete が、どれも行を変えずに終わること（権限の誤りか0件）。
+aal1 の JWT の insert・update・delete が、どれも行を変えずに終わること（権限の誤り `42501` で断られる。権限を外した後は0件の成功にならない）。
 
 ### SEC-NEWS-002-AC-03 ログアウトした session の token では news_articles を直接読めない
 
@@ -1620,7 +1620,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/code/2026-04-18-news-id-security-review.md:45-48` |
 | 優先度 | MUST |
 
-置き場 `news-images` は `public=false` とし、大きさの上限（5MB）と種類の上限（JPEG・PNG・WebP・GIF）を付け、`storage.objects` に読み書きの方針を作らない（service role と署名つき URL だけで扱う）。この定義を `supabase/migrations/` の移行に置く。今のコードは満たさない。
+置き場 `news-images` は `public=false` とし、大きさの上限（5MB）と種類の上限（JPEG・PNG・WebP・GIF）を付け、`storage.objects` に読み書きの方針を作らない（service role と署名つき URL だけで扱う）。この定義を `supabase/migrations/` の移行に置く。2026-10-26 に移行 `sec_storage_buckets` で満たした（この移行を当てた DB でだけ満たす。本番の置き場は既にあるので `ON CONFLICT (id) DO UPDATE` で設定を合わせ、既にある 5MB 超のファイルは残り、新しい上げ物だけが断られる。`storage.objects` に置き場を名指しする方針は作らず、本番にあれば移行の自己検査が止める。DATA-NEWS-004、ADR-0164）。
 
 ### SEC-NEWS-003-AC-01 移行だけを当てた DB で置き場が非公開になる
 
@@ -1911,7 +1911,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 出どころ | OWASP ASVS 4.0.3 V11.1.4 |
 | 優先度 | SHOULD |
 
-`search_news` の `limit_count` は上限に丸める（または anon の EXECUTE を外し、サーバーからだけ呼ぶ）。使われていない `search_public_news` の PUBLIC への付与を外す。PostgREST の `max_rows` を本番でも決めた値にする。今のコードは満たさない。
+`search_news` の `limit_count` は上限に丸める（または anon の EXECUTE を外し、サーバーからだけ呼ぶ）。使われていない `search_public_news` の PUBLIC への付与を外す。PostgREST の `max_rows` を本番でも決めた値にする。関数の側は、2026-10-26 に移行 `sec_search_functions` で満たした（`search_news` は上限 8、`search_public_news` は PUBLIC・anon・authenticated から EXECUTE を外した。この移行を当てた DB でだけ満たす。DATA-SEARCH-003、ADR-0315）。`max_rows` の本番の値は運用の確認が残る（コードでは決められない）。
 
 ### SEC-NEWS-010-AC-01 anon の search_news は大きな件数を求めても上限で止まる
 
@@ -2096,13 +2096,13 @@ Origin と Referer の無い `DELETE /api/admin/news/<id>` が 403 で、記事�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-NEWS-014 |
-| 根拠 | 画面を隠すだけでは窓口を直接叩かれるので、窓口ごとに DB の ACL の権限と aal2 を確かめ、DB の操作も利用者の JWT で RLS に通す（service role で素通りしない）。全体の NFR-SEC-005・NFR-SEC-008 と FREQ-316-REQ-02（範囲外）・FREQ-540（範囲外）を NEWS に当てはめた |
+| 根拠 | 画面を隠すだけでは窓口を直接叩かれるので、窓口ごとに DB の ACL の権限と aal2 を確かめる。読みは利用者の JWT で RLS に通し、書き込みは認可の後に service role で行う（ADR-0026）。全体の NFR-SEC-005・NFR-SEC-008 と FREQ-316-REQ-02（範囲外）・FREQ-540（範囲外）を NEWS に当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | E2E・結合テスト |
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3、V4.3.1。`docs/05_Quality/reviews/code/2026-04-18-actions-news-security-review.md:32-35` |
 | 優先度 | MUST |
 
-読む窓口（GET）は `admin.news.read`、変える窓口（POST・PUT・PATCH・DELETE）は `admin.news.manage` を求め、どれも有効な session と `aal2` を求める。DB の操作は利用者の JWT の client で行う。今のコードは満たす（`src/lib/auth/admin-rbac.ts` の `authorizeAdminPermission`、`src/app/api/admin/news/route.ts` の各ハンドラ）。この性質を試すテストは無い。
+読む窓口（GET）は `admin.news.read`、変える窓口（POST・PUT・PATCH・DELETE）は `admin.news.manage` を求め、どれも有効な session と `aal2` を求める。DB の読みは利用者の JWT の client、書き込みは認可の後に service role の client で行う（ADR-0026）。今のコードは満たす（`src/lib/auth/admin-rbac.ts` の `authorizeAdminPermission`、`src/app/api/admin/news/route.ts` の各ハンドラ）。この性質を試すテストは無い。
 
 ### SEC-NEWS-015-AC-01 権限の無い利用者は管理の一覧を読めない
 
@@ -2153,8 +2153,8 @@ Origin と Referer の無い `DELETE /api/admin/news/<id>` が 403 で、記事�
 
 作成・書き換え・公開の切り替え・削除・画像の書き込みの失敗を、成功と失敗の両方で監査に残す（今のコードは満たす）。対象の記事が無い PUT・PATCH・DELETE は 404 を返し、成功として記録しない。2026-10-26 に満たした（以前は 0 件でも 200 と成功の監査だった）。
 
-- PUT・PATCH は `.update(...).eq('id', id).select('id')`、DELETE は `.delete().eq('id', id).select('id')` で変えた行を受け取る。0 行（無い、または RLS が隠した）は 404 `{ error: 'Article not found' }` と、結果 `failure`・`detail='News article not found'` の監査 1 行（`admin.news.update.not_found`・`admin.news.status_update.not_found`・`admin.news.delete.not_found`）にする。成功の監査は書かない
-- 管理の窓口は利用者の session の client で書くので、RLS が隠した行も 0 行になり、403 でなく 404 になる
+- PUT・PATCH は `.update(...).eq('id', id).select('id')`、DELETE は `.delete().eq('id', id).select('id')` で変えた行を受け取る。0 行（無い）は 404 `{ error: 'Article not found' }` と、結果 `failure`・`detail='News article not found'` の監査 1 行（`admin.news.update.not_found`・`admin.news.status_update.not_found`・`admin.news.delete.not_found`）にする。成功の監査は書かない
+- 管理の窓口は認可の後に service role の client で書くので（ADR-0026）、RLS は行を隠さず、0 行は「その id の記事が無い」だけを表す
 - 道の `id` は `isNewsId`（SEC-NEWS-012。先頭が 0 でない 18 桁以下の数字）だけを DB に渡す。外れた id は DB に触らず（PUT では画像の置き場にも触らず）404 にし、失敗の監査には生の id でなく長さ（`articleIdLength`）だけを残す。DB の bigint の桁あふれ（22P02）を 500 にしない
 - PUT は画像を付けた時、上げる前にその記事の古い `image_url` を読み、記事が無ければ 404 で何も上げない。上げた後に更新が失敗・0 行だった時は、その要求で上げた画像を置き場から消す（SEC-NEWS-018）。以前あった「無い id への PUT で上げた画像が置き場に残る」は、この順番で直した
 
@@ -2244,9 +2244,9 @@ Origin と Referer の無い `DELETE /api/admin/news/<id>` が 403 で、記事�
 
 記事を消した時・画像を差し替えた時・作成で DB への保存に失敗した時に、使わなくなった画像を置き場から消す。2026-10-26 に満たした。
 
-- 順は「行を先に変える → 置き場を消す」。消す前に道筋を 1 本ずつ `isOwnNewsImagePath`（`news/` の下の安全な文字だけ。`..`・外の URL・別の置き場・古い見本の道筋は消さない側に倒れる）で確かめる（IMPL-NEWS-173、DD-NEWS-071）
+- 順は「行を先に変える → 置き場を消す」。消す前に道筋を 1 本ずつ `isOwnNewsImagePath`（`news/` の下の安全な文字だけ。`..`・外の URL・別の置き場・古い見本の道筋（`e2e/news-1.png` など。波 2 で見本は `news/e2e/` に移った）は消さない側に倒れる）で確かめる（IMPL-NEWS-173、DD-NEWS-071）
 - 作成: DB への保存が失敗・例外になった時、上げた画像を消す。差し替え（PUT）: 更新が成功した後に古い画像を、更新が失敗・0 行だった時はその要求で上げた新しい画像を消す（古い画像は消さない）。新旧が同じ道筋なら消さない。削除: 行を消した後に、消した行の `image_url` を消す
-- 置き場の削除は service role の client で行う（利用者の session の client では `storage.objects` の方針に断られうるため。この波では移行を作らない）。削除の窓口は、行を消した後にだけその client を作る
+- 置き場の削除は service role の client で行う（`storage.objects` に方針を作らないため。この波では移行を作らない）。削除の窓口は、行の削除と置き場の削除に同じ service role の client を使う（ADR-0026）
 - 置き場の削除の失敗は、名前と符号だけを記録し、応答は成功のまま返す。監査の `metadata.imageCleanup` に `ok`・`failed` を残す
 - 本番に既に残っている孤児の画像の掃除は別の運用作業で、この変更の範囲に入れない
 
@@ -2416,7 +2416,7 @@ AC-01 の失敗の時のサーバーの記録に、Supabase の鍵・利用者�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3 |
 | 優先度 | SHOULD |
 
-`news_articles` の anon の権限は SELECT だけ、authenticated は SELECT・INSERT・UPDATE・DELETE だけにし、TRUNCATE・TRIGGER・REFERENCES・MAINTAIN を外す。今のコードは満たさない。
+`news_articles` の anon・authenticated の権限は SELECT だけにし、INSERT・UPDATE・DELETE・TRUNCATE・TRIGGER・REFERENCES・MAINTAIN を付けない（管理の書き込みは全部 service role の窓口で行う。ADR-0414、ADR-0026）。以前の文は authenticated に INSERT・UPDATE・DELETE を残す案だったが、それでは SEC-NEWS-002-AC-02 の書き込みの穴が塞がらないので残さない。RLS の書き込み方針は消さず二重の守りとして残す。2026-10-26 に移行 `sec_grants_admin_tables` で満たした（この移行を当てた DB でだけ満たす。DATA-NEWS-002）。
 
 ### SEC-NEWS-022-AC-01 anon は news_articles を空にも書き換えもできない
 
@@ -2491,7 +2491,7 @@ AC-01 の失敗の時のサーバーの記録に、Supabase の鍵・利用者�
 | 出どころ | OWASP ASVS 4.0.3 V5.1.4（当てはめは推定） |
 | 優先度 | SHOULD |
 
-`news_articles` に、`title` は200字・`content` は2000字・`detailed_content` は10000字までの CHECK と、`image_url` が置き場の中の `news/` の下の道である CHECK を持たせる。上限の値は窓口の入力の形（`src/app/api/admin/news/route.ts` の入力の形）とそろえる。今のコードは満たさない（表には NOT NULL だけ、`supabase/migrations/20260901102912_remote_schema.sql` の `news_articles` の定義）。
+`news_articles` に、`title` は200字・`content` は2000字・`detailed_content` は10000字までの CHECK と、`image_url` が置き場の中の `news/` の下の道（`news/` に続く、英数字で始まる英数字・`.`・`_`・`-` の階層。`..`・`//`・先頭の `/`・`.` で始まる階層・URL は外れる。窓口の `isOwnNewsImagePath` と同じ式）である CHECK を持たせる。上限の値は窓口の入力の形（`src/app/api/admin/news/route.ts` の入力の形）とそろえる。2026-10-26 に移行 `sec_rls_predicates_and_constraints` で `NOT VALID` の CHECK として満たした（この移行を当てた DB でだけ満たす。既存の行は検査しないので、本番の旧い行の点検と `VALIDATE` は別の移行。DATA-NEWS-001、ADR-0162）。
 
 ### SEC-NEWS-025-AC-01 長すぎる題と置き場の外の道を表が断る
 

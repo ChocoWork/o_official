@@ -48,6 +48,7 @@
 
 - 良くなること: 窓口と DB の2段で権限を確かめる
 - 悪くなること: DB の権限の判定は ACL だけを見て、2要素認証の済み（aal2）と session が有効かを見ない（`20261023175712_group_g0_permissions.sql`）。窓口はどちらも見る（`src/lib/auth/admin-rbac.ts`）。店長の access token で DB の API を直に呼ぶ道は、窓口の回数の制限・CSRF・監査・aal2 を通らない。SEC-STOCKIST-003 の求める形と合わない（推定）
+- 2026-10-26: 書き込み（POST・PUT・PATCH・DELETE）は、認可の後に service role で行う形に ADR-0267 が置き換えた。読み（GET の2つ）はこの判断のまま
 
 ## 未確認事項
 

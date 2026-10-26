@@ -14,11 +14,14 @@ const ITEM_IDS = [1, 3, 4, 5, 6, 7, 8, 9, 10];
 const LOOK_IDS = [1, 2, 3, 4, 5, 6, 7];
 const NEWS_IDS = [1, 2, 3, 4, 5, 6, 7, 8];
 
-/** seed.sql の行が指す画像（bucket ごとの相対パス）。seed.sql を変えたら、ここも変える（テストが食い違いを止める）。 */
+/**
+ * seed.sql の行が指す画像（bucket ごとの相対パス）。seed.sql を変えたら、ここも変える（テストが食い違いを止める）。
+ * 道筋は items/e2e/・looks/e2e/・news/e2e/ の下（DB の CHECK とアプリの判定 isOwnLookImagePath・isOwnNewsImagePath と同じ形）。
+ */
 export const SEED_STORAGE_OBJECTS: ReadonlyArray<{ bucket: string; path: string }> = [
-  ...ITEM_IDS.flatMap((id) => [1, 2].map((n) => ({ bucket: 'item-images', path: `e2e/item-${id}-${n}.png` }))),
-  ...LOOK_IDS.flatMap((id) => [1, 2].map((n) => ({ bucket: 'look-images', path: `e2e/look-${id}-${n}.png` }))),
-  ...NEWS_IDS.map((id) => ({ bucket: 'news-images', path: `e2e/news-${id}.png` })),
+  ...ITEM_IDS.flatMap((id) => [1, 2].map((n) => ({ bucket: 'item-images', path: `items/e2e/item-${id}-${n}.png` }))),
+  ...LOOK_IDS.flatMap((id) => [1, 2].map((n) => ({ bucket: 'look-images', path: `looks/e2e/look-${id}-${n}.png` }))),
+  ...NEWS_IDS.map((id) => ({ bucket: 'news-images', path: `news/e2e/news-${id}.png` })),
 ];
 
 export type StorageClient = {

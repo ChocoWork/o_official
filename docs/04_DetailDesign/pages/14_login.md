@@ -965,13 +965,13 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | API-AUTH-002、ARC-AUTH-001、ARC-AUTH-002、STATE-AUTH-001、DATA-AUTH-001、DATA-AUTH-004、SEC-AUTH-002、SEC-AUTH-003、SEC-AUTH-022、SEC-AUTH-030 |
+| 上位 | API-AUTH-002、ARC-AUTH-001、ARC-AUTH-002、STATE-AUTH-001、DATA-AUTH-001、DATA-AUTH-004、DATA-AUTH-006、SEC-AUTH-002、SEC-AUTH-003、SEC-AUTH-022、SEC-AUTH-030 |
 | 根拠 | パスワードを通った署名した保留が無ければ断り、宛先も保留からだけ取って本文の値を信じない（SEC-AUTH-003、FREQ-336-REQ-03）。総当たりを保留の宛先単位で止め、上限で保留ごと捨てて窓を閉じる（SEC-AUTH-002、STATE-AUTH-001、ADR-0402）。コードは `type: 'email'` の1回だけで確かめ、別の用途の印を2要素目として受けない（FREQ-335-REQ-03）。確定したら認証の Cookie と `sessions` の行を作り、ゲストの注文・カートを会員へ合わせる（API-AUTH-002、DATA-AUTH-001） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/auth/otp/verify/route.ts`）、`docs/04_DetailDesign/sequence/auth-login-mfa.md` の SQ-AUTH-LOGIN-OTP |
 
-**対応要件 ID:** API-AUTH-002、ARC-AUTH-001・002、STATE-AUTH-001、DATA-AUTH-001・004、SEC-AUTH-002・003・022・030（その上は FR-LOGIN-001、FREQ-58-REQ-01、FREQ-335-REQ-01〜03、FREQ-336-REQ-03、ADR-0402、FREQ-265-REQ-01（範囲外）、FREQ-428-REQ-01（範囲外））
+**対応要件 ID:** API-AUTH-002、ARC-AUTH-001・002、STATE-AUTH-001、DATA-AUTH-001・004・006、SEC-AUTH-002・003・022・030（その上は FR-LOGIN-001、FREQ-58-REQ-01、FREQ-335-REQ-01〜03、FREQ-336-REQ-03、ADR-0402、FREQ-265-REQ-01（範囲外）、FREQ-428-REQ-01（範囲外））
 
 **入出力:**
 

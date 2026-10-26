@@ -3866,7 +3866,7 @@ LOOK タブで削除を押して確かめに同意すると、その LOOK が一
 | 出どころ | OWASP ASVS 4.0.3 V4.1.1。`docs/05_Quality/reviews/security/security_review_look.md`、`docs/05_Quality/reviews/security/security_review_look_id.md` |
 | 優先度 | MUST |
 
-anon と一般会員の `look_items` の読み出しの方針は、親の LOOK が公開であることに加えて、紐づく商品が公開であることを条件にする。今のコードは満たさない。
+anon と一般会員の `look_items` の読み出しの方針は、親の LOOK が公開であることに加えて、紐づく商品が公開であることを条件にする。2026-10-26 に移行 `sec_rls_predicates_and_constraints` で満たした（この移行を当てた DB でだけ満たす。管理の読みの枝 `has_permission('admin.looks.read')` は変えず、波 5 の aal2 で直す。DATA-LOOK-003）。
 
 #### SEC-LOOK-002-AC-01 anon の直接の読み出しに非公開の商品の紐づきが出ない
 
@@ -3903,7 +3903,7 @@ AC-01 と同じ状態で、権限の無い一般会員の JWT の select の結�
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1 |
 | 優先度 | MUST |
 
-`looks`・`look_items` の RLS のうち `admin.looks.read`・`admin.looks.manage` で許す方針は、JWT の `aal` が `aal2` で、session が生きている時だけ許す。今のコードは満たさない。
+`looks`・`look_items` の RLS のうち `admin.looks.read`・`admin.looks.manage` で許す方針は、JWT の `aal` が `aal2` で、session が生きている時だけ許す。読みの側（AC-01）は今のコードは満たさない（波 5 の `has_permission` の aal2 で直す）。書き込みの側（AC-02）は、2026-10-26 から anon・authenticated に `looks`・`look_items` の INSERT・UPDATE・DELETE の権限が無い（SEC-LOOK-004、ADR-0414）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。
 
 #### SEC-LOOK-003-AC-01 aal1 の session では非公開の LOOK を直接読めない
 
@@ -3927,7 +3927,7 @@ AC-01 と同じ状態で、権限の無い一般会員の JWT の select の結�
 | 確かめ方 | E2E（`admin.looks.manage` を持つ試し用の利用者の aal1 の JWT で、`looks`・`look_items` に insert・update・delete を送る） |
 | 出どころ | 実装から推定 |
 
-aal1 の JWT の insert・update・delete が、どれも行を変えずに終わること（権限の誤りか0件）。
+aal1 の JWT の insert・update・delete が、どれも行を変えずに終わること（権限の誤り `42501` で断られる。権限を外した後は0件の成功にならない）。
 
 ### SEC-LOOK-004 LOOK の表の権限を、使う操作だけに絞る
 
@@ -3940,7 +3940,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3 |
 | 優先度 | SHOULD |
 
-`looks`・`look_items` の anon の権限は SELECT だけ、authenticated の権限は SELECT と、管理の方針が使う INSERT・UPDATE・DELETE だけにする。TRUNCATE・TRIGGER・REFERENCES・MAINTAIN は anon・authenticated に付けない。今のコードは満たさない。
+`looks`・`look_items` の anon・authenticated の権限は SELECT だけにする（公開の読みの方針と、管理者の読みの方針が使う）。INSERT・UPDATE・DELETE・TRUNCATE・TRIGGER・REFERENCES・MAINTAIN は付けない。管理の書き込みは全部 service role の窓口で行う（ADR-0414）。以前の文は「管理の方針が使う INSERT・UPDATE・DELETE を残す」だったが、それでは SEC-LOOK-003-AC-02 の書き込みの穴が塞がらず、FREQ-540（範囲外。DB の ACL で管理の操作を守る）とも食い違うので、残さない。RLS の書き込み方針（`admin looks / look_items manage by permission ...`）は消さず、将来だれかが権限を戻した時の二重の守りとして残す。2026-10-26 に移行 `sec_grants_admin_tables` で満たした（この移行を当てた DB でだけ満たす。DATA-LOOK-003、ADR-0414）。
 
 #### SEC-LOOK-004-AC-01 anon に LOOK の表の書き込みの権限が無い
 
@@ -3977,7 +3977,7 @@ authenticated について、`looks`・`look_items` の TRUNCATE・TRIGGER・REF
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/code/2026-04-18-look-detail-review.md` |
 | 優先度 | MUST |
 
-置き場 `look-images` は `public=false` とし、大きさの上限（5MB）と種類の上限（JPEG・PNG・WebP・GIF）を付け、`storage.objects` に読み書きの方針を作らない（service role と署名つき URL だけで扱う）。この定義を `supabase/migrations/` の移行に置く。今のコードは満たさない。
+置き場 `look-images` は `public=false` とし、大きさの上限（5MB）と種類の上限（JPEG・PNG・WebP・GIF）を付け、`storage.objects` に読み書きの方針を作らない（service role と署名つき URL だけで扱う）。この定義を `supabase/migrations/` の移行に置く。2026-10-26 に移行 `sec_storage_buckets` で満たした（この移行を当てた DB でだけ満たす。本番の置き場は既にあるので `ON CONFLICT (id) DO UPDATE` で設定を合わせ、既にある 5MB 超のファイルは残り、新しい上げ物だけが断られる。`storage.objects` に置き場を名指しする方針は作らず、本番にあれば移行の自己検査が止める。DATA-LOOK-005、ADR-0164）。
 
 #### SEC-LOOK-005-AC-01 移行だけを当てた DB で置き場が非公開になる
 
@@ -4138,7 +4138,7 @@ LOOK を非公開にした後に `/look` と `/look/<id>` を開くと、頁の 
 | 出どころ | OWASP ASVS 4.0.3 V11.1.4 |
 | 優先度 | MUST |
 
-`search_looks` は `limit_count` を上限（値は未定。`search_public_looks` は 20）に丸め、検索の文字の長さに上限を持つ。未使用（削除の判断待ち）の `search_public_looks` は anon・authenticated・PUBLIC から実行の権限を外すか消す。今のコードは満たさない。
+`search_looks` は `limit_count` を上限（値は未定。`search_public_looks` は 20）に丸め、検索の文字の長さに上限を持つ。未使用（削除の判断待ち）の `search_public_looks` は anon・authenticated・PUBLIC から実行の権限を外すか消す。2026-10-26 に移行 `sec_search_functions` で満たした（`search_looks` は上限 8・検索語の先頭 100 字。`search_public_looks` は消さずに EXECUTE を外した。この移行を当てた DB でだけ満たす。DATA-SEARCH-001、ADR-0315）。
 
 #### SEC-LOOK-010-AC-01 大きな件数を求めても上限までしか返らない
 
@@ -4286,7 +4286,7 @@ anon の呼び出しが権限の誤りか、関数が無い誤りで断られる
 | 出どころ | ASVS 未対応付け。実装から推定 |
 | 優先度 | SHOULD |
 
-削除の時はその LOOK の画像を、画像を差し替えた更新の時は古い画像を、作成・更新の途中の失敗の時は上げ終えた画像を、置き場から消す。直した（2026-10-26。管理の窓口）。順は「行を先に変える → 置き場を消す」で、消す前に道筋を1本ずつ「`looks/` の下の安全な文字だけ」で確かめる（`..`・外の URL・別の置き場・古い見本の道筋 `e2e/look-1-1.png` などは消さない側に倒れる）。更新が失敗した時は、その要求で上げた新しい画像だけを消す。行が新しい道筋を指した後に関連の保存が失敗した時は、新しい画像を残し古い画像を消す。置き場の削除の失敗は記録（名前と符号だけ）と監査の `metadata`（`image_cleanup`・`orphaned_count`）に残すだけで、応答は変えない。
+削除の時はその LOOK の画像を、画像を差し替えた更新の時は古い画像を、作成・更新の途中の失敗の時は上げ終えた画像を、置き場から消す。直した（2026-10-26。管理の窓口）。順は「行を先に変える → 置き場を消す」で、消す前に道筋を1本ずつ「`looks/` の下の安全な文字だけ」で確かめる（`..`・外の URL・別の置き場・古い見本の道筋 `e2e/look-1-1.png` などは消さない側に倒れる。波 2 で見本は `looks/e2e/look-N-M.png` に移ったので、今の見本は消す対象に入る）。更新が失敗した時は、その要求で上げた新しい画像だけを消す（2026-10-26 から、行と関連が `admin_update_look` の1取引なので、関連の保存が失敗した時も行は戻り、新しい画像を消し古い画像は消さない。ADR-0163）。置き場の削除の失敗は記録（名前と符号だけ）と監査の `metadata`（`image_cleanup`・`orphaned_count`）に残すだけで、応答は変えない。
 
 #### SEC-LOOK-014-AC-01 LOOK を消すと画像も置き場から消える
 
@@ -4323,7 +4323,7 @@ anon の呼び出しが権限の誤りか、関数が無い誤りで断られる
 | 出どころ | ASVS 未対応付け。実装から推定 |
 | 優先度 | SHOULD |
 
-更新の「LOOK の行の更新・関連の全削除・関連の追加」は1つのトランザクション（DB の関数など）で行い、どれかが失敗したら全部を戻す。今のコードは満たさない。
+更新の「LOOK の行の更新・関連の全削除・関連の追加」は1つのトランザクション（DB の関数など）で行い、どれかが失敗したら全部を戻す。2026-10-26 に移行 `sec_rls_predicates_and_constraints` の DB の関数 `admin_update_look` で満たした（この移行を当てた DB で、窓口と同じ日に当てた時だけ満たす。関連の段の失敗は `LOOK_ITEMS_WRITE_FAILED` に印を付け直し、窓口は今までと同じ 500 `Failed to update linked items` を返す。API-LOOK-004、DATA-LOOK-002、ADR-0163）。
 
 #### SEC-LOOK-015-AC-01 関連の追加が失敗しても、前の関連商品が残る
 
@@ -4631,7 +4631,7 @@ AC-01 と同じ状態で、aal2 の管理者の session の `/api/admin/looks/<i
 | 出どころ | OWASP ASVS 4.0.3 V5.1.4（当てはめは推定） |
 | 優先度 | SHOULD |
 
-`looks` に、`theme` は200字・`theme_description` は4000字までの CHECK と、`image_urls` の要素が置き場の中の `looks/` の下の道筋である CHECK を持たせる。上限の値は窓口の入力の形（`src/app/api/admin/looks/route.ts` の `createLookSchema`）とそろえる。今のコードは満たさない（表には NOT NULL と season の2列・status の CHECK だけ、`supabase/migrations/20260901102912_remote_schema.sql` の `looks` の定義）。
+`looks` に、`theme` は1〜200字・`theme_description` は4000字までの CHECK と、`image_urls` の要素が置き場の中の `looks/` の下の道筋（`looks/` に続く、英数字で始まる英数字・`.`・`_`・`-` の階層。`..`・`//`・先頭の `/`・`.` で始まる階層・URL は外れる。窓口の `isOwnLookImagePath` と同じ式）である CHECK を持たせる。上限の値は窓口の入力の形（`src/app/api/admin/looks/route.ts` の `createLookSchema`）とそろえる。2026-10-26 に移行 `sec_rls_predicates_and_constraints` で `NOT VALID` の CHECK として満たした（この移行を当てた DB でだけ満たす。既存の行は検査しないので、本番の旧い行の点検と `VALIDATE` は別の移行。DATA-LOOK-001、ADR-0162）。
 
 #### SEC-LOOK-023-AC-01 長すぎるテーマと置き場の外の道筋を表が断る
 

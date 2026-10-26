@@ -46,7 +46,7 @@ async function createArticle(input: {
       title: input.title,
       category: 'EVENT',
       published_date: '2000-01-01',
-      image_url: 'e2e/news-1.png',
+      image_url: 'news/e2e/news-1.png',
       content: 'E2E news009 summary.',
       detailed_content: input.detailedContent,
       status: input.status,

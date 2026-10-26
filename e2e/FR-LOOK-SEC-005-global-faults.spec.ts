@@ -19,7 +19,7 @@ import { createClient } from '@supabase/supabase-js';
 import { expect, test } from '@playwright/test';
 import { bearerHeaders } from './admin-session-test-utils';
 import { ANON_KEY, requireLocalSupabase, restHeaders, restUrl } from './home-grant-test-utils';
-import { createLookAdmin, insertPrivateLook, purgeLooksByThemePrefix, tinyPng } from './look-admin-test-utils';
+import { createLookAdmin, insertPrivateLook, purgeLooksByThemePrefix, tinyPng, uploadFixtureLookImage } from './look-admin-test-utils';
 import { withLocalDb } from './order-email-test-utils';
 
 // 管理者の JWT を通信記録に残さない
@@ -103,14 +103,16 @@ test.describe('FR-LOOK-SEC-005 一覧の件数の上限', () => {
   test.beforeAll(async () => {
     requireLocalSupabase();
     await purgeLooksByThemePrefix(prefix);
+    // 見本の画像を指すと、後始末が見本を消す。101 件が共有する自分用の画像を 1 枚上げて指す
+    const imagePath = await uploadFixtureLookImage(prefix);
     await withLocalDb((db) =>
       db.query(
         `insert into public.looks (season_year, season_type, theme, theme_description, image_urls, status, created_at, updated_at)
-         select 2026, 'SS', $1 || '-' || g, $1 || ' description ' || g, array['e2e/look-1-1.png'], 'published',
+         select 2026, 'SS', $1 || '-' || g, $1 || ' description ' || g, array[$3::text], 'published',
                 '1990-01-01T00:00:00Z'::timestamptz + (g || ' minutes')::interval,
                 '1990-01-01T00:00:00Z'::timestamptz + (g || ' minutes')::interval
            from generate_series(1, $2::int) as g`,
-        [prefix, LIMIT_FIXTURE_COUNT],
+        [prefix, LIMIT_FIXTURE_COUNT, imagePath],
       ),
     );
   });

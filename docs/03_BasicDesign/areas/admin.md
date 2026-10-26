@@ -595,10 +595,11 @@ sequenceDiagram
 | 表 | 方針 | 表の付与 |
 | --- | --- | --- |
 | `contact_inquiries`・`contact_messages`・`contact_reply_templates` | 全部の役に select・insert・update・delete を断る（条件 false）。service role は RLS を通らない | anon・authenticated にも全部の操作を付ける |
-| `audit_logs` | anon・authenticated は全部断る。service_role は全部許す | 同上 |
+| `audit_logs` | anon・authenticated は全部断る。service_role は全部許す | anon・authenticated には付けない。service_role に全部（明示。2026-10-26 の移行 `sec_grants_hardening`、AUTH の ADR-0414） |
 | `sessions` | anon・authenticated は全部断る。service_role は全部許す | 同上 |
 
-- 守りは方針の1段だけで、表の付与は絞っていない（SEC-ADMIN-003 を参照。上位にしない）。`audit_logs`・`sessions` の付与は AUTH の SEC-AUTH-011（範囲外）が決める
+- 問い合わせの3表は、守りが方針の1段だけで、表の付与は絞っていない（SEC-ADMIN-003 を参照。上位にしない）
+- `audit_logs`・`sessions` は、2026-10-26 から表の付与が anon・authenticated に無く、方針の手前（権限）で断る。方針は二重の守りとして残す。付与は AUTH の SEC-AUTH-011（範囲外）が決める
 - 色見本の表は別の方針（DATA-ADMIN-005）
 
 ### DATA-ADMIN-003 監査ログの表 `audit_logs`
@@ -621,6 +622,7 @@ sequenceDiagram
 | 詳しい文・IP・ブラウザ・付帯の情報 | 文字と jsonb。書く前に共有の部品が鍵の名前と形で一部を伏せる（ARC-ADMIN-003） |
 
 - 索引は操作と作った時刻
+- 表の付与は anon・authenticated に無い（2026-10-26 の移行 `sec_grants_hardening`）。書くのも読むのも service role の窓口（`src/lib/audit.ts`・`src/app/api/admin/audit-logs/route.ts`）
 - 行の hash も、書き換えと消去を検知するトリガーも無い（SEC-ADMIN-010 を参照）。service role は行を消せ、掃除の部品もある（ARC-ADMIN-005）
 - ほかの領域の窓口も同じ表に書く（例 NEWS の管理の窓口）
 
@@ -635,7 +637,7 @@ sequenceDiagram
 | 出どころ | 実装から推定（`supabase/migrations/20260901102912_remote_schema.sql`）、`tests/unit/migrations/091_auth_session_revocation.test.ts` |
 
 - 関数: 利用者の id（uuid）を受け、`auth.sessions` のその利用者の行を全部消し、消した数を返す。SECURITY DEFINER、`search_path` は空。PUBLIC から実行を外し、postgres と service_role にだけ付ける
-- 自前の `sessions`: 利用者ごとの refresh の印・失効の時刻・CSRF の印などを持つ。利用者を消すと一緒に消える。失効の時刻を読むのは範囲外の AUTH（`src/app/api/auth/refresh/route.ts`・`logout`・`password-reset/confirm`、`src/features/auth/services/session.ts`）
+- 自前の `sessions`: 利用者ごとの refresh の印・失効の時刻・CSRF の印などを持つ。利用者を消すと一緒に消える。表の付与は anon・authenticated に無い（2026-10-26 の移行 `sec_grants_hardening`）。失効の時刻を読むのは範囲外の AUTH（`src/app/api/auth/refresh/route.ts`・`logout`・`password-reset/confirm`、`src/features/auth/services/session.ts`）
 - 管理の窓口が session の生存を見るのは `auth.sessions` の側（共有の認可、`src/lib/auth/admin-rbac.ts`）。だから Auth 側を消すと、その人の token は次の要求から管理の窓口で断られる
 - 呼び出しは共有の部品 `revokeAllSessionsForUser`（`src/lib/auth/revoke-user-sessions.ts`、範囲外）にまとめた。自前の表の更新と関数のどちらの誤りも固定の文で throw し、強制失効と2要素のリセットの2つの窓口が使う（ADR-0454、ADR-0461）
 
@@ -653,12 +655,13 @@ sequenceDiagram
 | --- | --- |
 | 列 | id（bigint の連番）、名前、色の値、作った時刻 |
 | 決まり | 色の値は `#` と 16 進の 6 桁（CHECK）。名前と色の値の組は一意 |
-| 方針 | service_role は全部。authenticated は `has_permission('admin.items.read')` で読み、`admin.items.manage` で入れる・直す・消す |
-| 付与 | anon・authenticated に全部の操作 |
+| 方針 | service_role は全部。authenticated は `has_permission('admin.items.read')` で読む。`admin.items.manage` で入れる・直す・消す方針も残すが、権限が無いので働かない（二重の守り） |
+| 付与 | authenticated に SELECT だけ。anon には付けない（読む方針が authenticated 向けの1本だけで、anon が読める行は元から0件）。service_role に ALL を明示（2026-10-26 の移行 `sec_grants_admin_tables`。AUTH の ADR-0414）。以前は anon・authenticated に全部の操作 |
 
-- anon にも表の付与がある（SEC-ADMIN-003 を参照）
+- 以前あった anon の表の付与は、2026-10-26 に外した。anon の select は0件でなく権限の誤り（`42501`）になる
 - 名前の長さの上限（40 字）は窓口だけにある
-- 方針は aal と session の生存を見ないので、`admin.items.manage` を持つ人が aal1 の JWT や失効の後の JWT で PostgREST から直接書ける（推定。SEC-ADMIN-002 を参照）。直接の書き込みは監査に残らない
+- 方針は aal と session の生存を見ないので、`admin.items.read` を持つ人が aal1 の JWT や失効の後の JWT で PostgREST から直接読める（推定。SEC-ADMIN-002-AC-02 は満たさない。波 5 で直す）。書き込みは 2026-10-26 から付与が無く、権限の誤り（`42501`）で断られる（SEC-ADMIN-002-AC-01 を満たす）
+- 確かめ: `tests/integration/db/admin-misc/admin_item_color_presets_grants.integration.test.ts`、`admin_item_color_presets_table.integration.test.ts`
 - 窓口は service role で読み書きするので、この方針は窓口の道では効かない（ADR-0451）
 
 ### DATA-ADMIN-006 範囲の窓口の権限の印と初めの割り当て

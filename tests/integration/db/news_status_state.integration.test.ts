@@ -21,7 +21,7 @@ describeLocalDb('integration: 記事の公開の状態', (db) => {
     const result = await db().query(
       `insert into public.news_articles
          (title, category, published_date, image_url, content, detailed_content, status)
-       values ($1, 'COLLECTION', '2026-05-10', 'integration/news-state.png', 'summary', 'body', $2)
+       values ($1, 'COLLECTION', '2026-05-10', 'news/integration/news-state.png', 'summary', 'body', $2)
        returning id::text as id`,
       [`${marker} ${status}`, status],
     );
@@ -87,7 +87,7 @@ describeLocalDb('integration: 記事の公開の状態', (db) => {
     const result = await failure(
       `insert into public.news_articles
          (title, category, published_date, image_url, content, detailed_content, status)
-       values ($1, 'COLLECTION', '2026-05-10', 'integration/news-state.png', 'summary', 'body', $2)`,
+       values ($1, 'COLLECTION', '2026-05-10', 'news/integration/news-state.png', 'summary', 'body', $2)`,
       [`${marker} invalid`, status],
     );
 
@@ -103,7 +103,7 @@ describeLocalDb('integration: 記事の公開の状態', (db) => {
 
     const result = await failure(
       `insert into public.news_articles (title, category, published_date, image_url, content, detailed_content)
-       values ($1, 'COLLECTION', '2026-05-10', 'integration/news-state.png', 'summary', 'body')`,
+       values ($1, 'COLLECTION', '2026-05-10', 'news/integration/news-state.png', 'summary', 'body')`,
       [`${marker} default`],
     );
 
@@ -164,7 +164,7 @@ describeLocalDb('integration: 記事の公開の状態', (db) => {
     const inserted = await db().query(
       `insert into public.news_articles
          (title, category, published_date, image_url, content, detailed_content, status)
-       values ($1, 'EVENT', current_date + 30, 'integration/news-state.png', 'summary', 'body', 'private')
+       values ($1, 'EVENT', current_date + 30, 'news/integration/news-state.png', 'summary', 'body', 'private')
        returning id::text as id`,
       [`${marker} future`],
     );

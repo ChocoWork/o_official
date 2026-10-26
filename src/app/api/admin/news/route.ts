@@ -4,7 +4,7 @@
  * @packageDocumentation
  * @impl IMPL-NEWS-161
  * @design DD-NEWS-064
- * @remarks 表の読み書きは利用者の JWT の client で RLS に通し、窓口の認可が崩れても DB が断るようにする（SEC-NEWS-015、DATA-NEWS-002）。置き場は非公開なので、書き込みと署名だけ service role を使い、表には署名前の道を残して読むたびに署名する（ARC-NEWS-003、DATA-NEWS-004）。作成は表と置き場の両方を変えるので、成功も失敗も監査に残す（SEC-NEWS-016）。
+ * @remarks 表の読みは利用者の JWT の client で RLS に通し（SEC-NEWS-015、DATA-NEWS-002）、書き込み（POST・PUT・PATCH・DELETE）は認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（ADR-0026）。置き場は非公開なので、表の書き込みと同じ service role の client で置き場にも書き、署名にも使い、表には署名前の道を残して読むたびに署名する（ARC-NEWS-003、DATA-NEWS-004）。作成は表と置き場の両方を変えるので、成功も失敗も監査に残す（SEC-NEWS-016）。
  * 画像は申告の種類と中身の印が合う物だけを置き場に書き、保存名は自分で作る（SEC-NEWS-017）。行の保存に失敗したら、上げた画像を置き場から消して孤児を残さず、消せなくても応答は変えない（SEC-NEWS-018）。
  * 一覧の取り出しの失敗は固定の文の 500 にし、誤りの文は応答にも記録にも出さない（SEC-NEWS-020）。
  */
@@ -112,12 +112,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unsupported image type' }, { status: 400 });
     }
 
-    const dbSupabase = await createClient(request);
-    const uploadSupabase = await createServiceRoleClient();
+    const serviceSupabase = await createServiceRoleClient();
 
     const filePath = buildNewsImagePath(prepared.extension);
 
-    const { error: uploadError } = await uploadSupabase.storage
+    const { error: uploadError } = await serviceSupabase.storage
       .from(NEWS_IMAGE_BUCKET)
       .upload(filePath, prepared.buffer, {
         contentType: prepared.contentType,
@@ -137,9 +136,9 @@ export async function POST(request: Request) {
     }
 
     unreferencedPath = filePath;
-    cleanupClient = uploadSupabase;
+    cleanupClient = serviceSupabase;
 
-    const { data, error } = await dbSupabase
+    const { data, error } = await serviceSupabase
       .from('news_articles')
       .insert([
         {
@@ -156,7 +155,7 @@ export async function POST(request: Request) {
       .single();
 
     if (error) {
-      const imageCleanup = await removeNewsImages(uploadSupabase, [filePath]);
+      const imageCleanup = await removeNewsImages(serviceSupabase, [filePath]);
       unreferencedPath = null;
 
       await logNewsAudit(request, authz.userId, 'admin.news.create.db_insert_failed', 'failure', 'News article insert failed', {

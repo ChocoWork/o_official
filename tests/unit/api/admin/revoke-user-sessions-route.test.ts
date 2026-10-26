@@ -322,6 +322,27 @@ describe('POST /api/admin/revoke-user-sessions', () => {
       expect(revokeAllSessionsForUser).not.toHaveBeenCalled();
     });
 
+    it('DD-ADMIN-003 誤りが無く data も空の時も 404', async () => {
+      getUserById.mockResolvedValue({ error: null, data: null });
+
+      const res = await POST(makeRequest({ user_id: TARGET_ID }));
+
+      expect(res.status).toBe(404);
+      expect(revokeAllSessionsForUser).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-003 getUserById の誤りが物でない（文字だけ）時は見つからない扱いにせず 500 で、target_lookup_failed を error で書く', async () => {
+      getUserById.mockResolvedValue({ error: 'auth down', data: { user: null } });
+
+      const res = await POST(makeRequest({ user_id: TARGET_ID }));
+
+      expect(res.status).toBe(500);
+      expect(revokeAllSessionsForUser).not.toHaveBeenCalled();
+      expect(logAudit).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'error', detail: 'target_lookup_failed', resource_id: TARGET_ID }),
+      );
+    });
+
     it('DD-ADMIN-003 getUserById が別の誤り（500）を返した時は 500 で、target_lookup_failed を error で書く', async () => {
       getUserById.mockResolvedValue({ error: { status: 500, message: 'auth down user@example.com' }, data: { user: null } });
 

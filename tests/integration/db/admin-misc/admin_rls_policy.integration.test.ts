@@ -67,7 +67,10 @@ const FIXTURES: Fixture[] = [
 ];
 
 const CONTACT_TABLES = ['contact_inquiries', 'contact_messages', 'contact_reply_templates'];
+/** anon・authenticated に表の権限が無い表（ADR-0414。RLS の全拒否の方針は二重の守りとして残す）。 */
+const NO_CLIENT_GRANT_TABLES = ['audit_logs', 'sessions'];
 const ALL_TABLES = FIXTURES.map((fixture) => fixture.table);
+const hasClientGrant = (table: string): boolean => !NO_CLIENT_GRANT_TABLES.includes(table);
 
 const DENIED_ACTORS: Actor[] = [
   { label: 'anon', role: 'anon' },
@@ -206,7 +209,7 @@ describeLocalDb('integration: 管理の表の RLS と付与', (db) => {
   });
 
   test.each(
-    ALL_TABLES.flatMap((table) => (['anon', 'authenticated', 'service_role'] as DbRole[]).map((role) => [role, table])),
+    CONTACT_TABLES.flatMap((table) => (['anon', 'authenticated', 'service_role'] as DbRole[]).map((role) => [role, table])),
   )('DATA-ADMIN-002 %s には %s の権限が全部付いていて、守りは方針の1段だけ', async (role, table) => {
     const result = await db().query(
       `select privilege from unnest($3::text[]) as privilege
@@ -218,11 +221,40 @@ describeLocalDb('integration: 管理の表の RLS と付与', (db) => {
     expect(result.rows.map((row) => row.privilege)).toEqual(TABLE_PRIVILEGES);
   });
 
+  test.each(
+    NO_CLIENT_GRANT_TABLES.flatMap((table) => (['anon', 'authenticated'] as DbRole[]).map((role) => [role, table])),
+  )('DATA-ADMIN-002 %s には %s の表の権限が1つも付いていない（方針の手前で断る）', async (role, table) => {
+    const result = await db().query(
+      `select privilege from unnest($3::text[]) as privilege
+       where has_table_privilege($1::name, $2::regclass, privilege)
+       order by privilege`,
+      [role, `public.${table}`, TABLE_PRIVILEGES],
+    );
+
+    expect(result.rows).toEqual([]);
+  });
+
+  test.each(NO_CLIENT_GRANT_TABLES)('DATA-ADMIN-002 service_role には %s の権限が全部付いている', async (table) => {
+    const result = await db().query(
+      `select privilege from unnest($3::text[]) as privilege
+       where has_table_privilege($1::name, $2::regclass, privilege)
+       order by privilege`,
+      ['service_role', `public.${table}`, TABLE_PRIVILEGES],
+    );
+
+    expect(result.rows.map((row) => row.privilege)).toEqual(TABLE_PRIVILEGES);
+  });
+
   describe.each(DENIED_ACTORS)('$label', (actor) => {
-    test.each(FIXTURES)('DATA-ADMIN-002 $table の行は読めず、1行もあるのに0行が返る', async (fixture) => {
+    test.each(FIXTURES)('DATA-ADMIN-002 $table の行は読めない（問い合わせの3表は0行、audit_logs・sessions は権限の誤り 42501）', async (fixture) => {
       const id = await seed(fixture);
       expect(await rowCount(fixture.table, id)).toBe(1);
 
+      if (!hasClientGrant(fixture.table)) {
+        expect(await errorCodeAs(actor, `select id::text as id from public.${fixture.table} where id = $1`, [id])).toBe('42501');
+        expect(await errorCodeAs(actor, `select count(*)::int as count from public.${fixture.table}`)).toBe('42501');
+        return;
+      }
       const result = await runAs(actor, `select id::text as id from public.${fixture.table} where id = $1`, [id]);
       const all = await runAs(actor, `select count(*)::int as count from public.${fixture.table}`);
 
@@ -239,23 +271,31 @@ describeLocalDb('integration: 管理の表の RLS と付与', (db) => {
       expect(await tableCount(fixture.table)).toBe(before);
     });
 
-    test.each(FIXTURES)('DATA-ADMIN-002 $table の更新は1行も変えない', async (fixture) => {
+    test.each(FIXTURES)('DATA-ADMIN-002 $table の更新は1行も変えない（audit_logs・sessions は権限の誤り 42501）', async (fixture) => {
       const id = await seed(fixture);
       const before = await columnValue(fixture, id);
 
-      const updated = await runAs(actor, fixture.updateSql, [id]);
+      if (!hasClientGrant(fixture.table)) {
+        expect(await errorCodeAs(actor, fixture.updateSql, [id])).toBe('42501');
+      } else {
+        const updated = await runAs(actor, fixture.updateSql, [id]);
+        expect(updated.rowCount).toBe(0);
+      }
 
-      expect(updated.rowCount).toBe(0);
       expect(await columnValue(fixture, id)).toBe(before);
       expect(before).not.toBe('tampered');
     });
 
-    test.each(FIXTURES)('DATA-ADMIN-002 $table の削除は1行も消さない', async (fixture) => {
+    test.each(FIXTURES)('DATA-ADMIN-002 $table の削除は1行も消さない（audit_logs・sessions は権限の誤り 42501）', async (fixture) => {
       const id = await seed(fixture);
 
-      const deleted = await runAs(actor, `delete from public.${fixture.table} where id = $1`, [id]);
+      if (!hasClientGrant(fixture.table)) {
+        expect(await errorCodeAs(actor, `delete from public.${fixture.table} where id = $1`, [id])).toBe('42501');
+      } else {
+        const deleted = await runAs(actor, `delete from public.${fixture.table} where id = $1`, [id]);
+        expect(deleted.rowCount).toBe(0);
+      }
 
-      expect(deleted.rowCount).toBe(0);
       expect(await rowCount(fixture.table, id)).toBe(1);
     });
   });

@@ -7,9 +7,10 @@
  * アプリの窓口（/api/auth/me・/api/profile・/api/orders・/api/admin/users）は Bearer で叩く。画面は開かない。
  * HTTP の試験なので結果は画面の幅で変わらない。1つの幅（desktop）だけ流す（DB の書き込みと回数の制限の枠を3倍にしない）。
  *
- * 既知の赤: SEC-AUTH-005・010-AC-01・011・012・015 は、2026-10-24 時点で文書に載せた「今のコードは満たさない」点
+ * 既知の赤: SEC-AUTH-005・010-AC-01・012・015 は、2026-10-24 時点で文書に載せた「今のコードは満たさない」点
  * （docs/02_Requirements/areas/auth.md）。SEC-AUTH-028-AC-02 は満たす。AC ごとに describe を分け、赤を互いに混ぜない。
- * （012 は G-2 の移行 20261024153505 が anon・authenticated の EXECUTE を外すので、その移行を当てた DB では緑になる）
+ * （012 は G-2 の移行 20261024153505 が anon・authenticated の EXECUTE を外すので、その移行を当てた DB では緑になる。
+ *  011 は移行 sec_grants_hardening が認証の表の権限を外すので、その移行を当てた DB では緑になる）
  *
  * 前提: 手元の Supabase（npm run db:start）と手元の E2E アプリ。会員・管理者は auth.admin.createUser で既知のパスワードつきで作る。
  * GoTrue のログイン・登録の枠（5 分で 30 回、全部の E2E で共有）を節約するため、読むだけの試験で使う会員・管理者は worker ごとに1回だけ
@@ -315,14 +316,13 @@ for (const viewport of viewports) {
 
 // ---- SEC-AUTH-011 ----
 
-const AUTH_TABLES = ['sessions', 'password_reset_tokens', 'rate_limit_counters', 'audit_logs'] as const;
+const AUTH_TABLES = ['sessions', 'password_reset_tokens', 'rate_limit_counters', 'audit_logs', 'audit_logs_backups'] as const;
 
 for (const viewport of viewports) {
   test.describe(`SEC-AUTH-011-AC-01 anon・会員の JWT で認証の表を読むと権限の誤りになる (${viewport.name})`, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test(`SEC-AUTH-011-AC-01 anon の鍵と会員の JWT で sessions・password_reset_tokens・rate_limit_counters・audit_logs を select すると、0件ではなく権限の誤り（401 か 403）になる (${viewport.name})`, async ({ request }) => {
-      test.fail(true, 'SEC-AUTH-011 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
+    test(`SEC-AUTH-011-AC-01 anon の鍵と会員の JWT で sessions・password_reset_tokens・rate_limit_counters・audit_logs・audit_logs_backups を select すると、0件ではなく権限の誤り（401 か 403）になる (${viewport.name})`, async ({ request }) => {
       const member = await sharedMember();
       const credentials = [
         { name: 'anon の鍵', token: ANON_KEY },

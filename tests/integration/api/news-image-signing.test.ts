@@ -108,8 +108,10 @@ function setup(options: { newsResult?: Result; sign?: (path: string) => Result }
   const newsResult = options.newsResult ?? { data: { id: 7 }, error: null };
   userClient = createFakeClient({ news_articles: newsResult });
   publicClient = createFakeClient({ news_articles: newsResult });
+  // 書き込みは認可の後に service role の client で行う（ADR-0026）。userClient の表は GET の読みだけが触る
   serviceClient = createFakeClient(
     {
+      news_articles: newsResult,
       user_roles: { data: aclRows(['admin.news.read', 'admin.news.manage']), error: null },
       audit_logs: { data: null, error: null },
     },
@@ -124,7 +126,7 @@ function setup(options: { newsResult?: Result; sign?: (path: string) => Result }
 
 function writePayload(method: 'insert' | 'update') {
   // 画像つきの更新は上げる前に古い値を読む op が先にあるので、書き込みの呼びがある op を探す
-  const op = userClient.ops.find((o) => o.table === 'news_articles' && o.calls.some(([m]) => m === method));
+  const op = serviceClient.ops.find((o) => o.table === 'news_articles' && o.calls.some(([m]) => m === method));
   const args = op?.calls.find(([m]) => m === method)?.[1][0];
   return (Array.isArray(args) ? args[0] : args) as Record<string, unknown>;
 }

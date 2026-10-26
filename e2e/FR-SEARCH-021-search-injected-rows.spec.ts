@@ -20,6 +20,8 @@ import { Client } from 'pg';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { SEED_IMAGE_PNG_BASE64 } from '../scripts/e2e/seed-storage';
+import type { PgClient } from '../tests/integration/db/helpers/local-db';
+import { insertLegacyImageRow } from './legacy-image-rows';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
@@ -98,24 +100,33 @@ class InjectedRows {
     return id;
   }
 
-  async insertLook(input: { theme: string; status: 'published' | 'private'; imageUrls?: string[] }): Promise<number> {
-    const result = await this.db.query(
-      `insert into public.looks (season_year, season_type, theme, theme_description, image_urls, status, created_at)
-       values (2026, 'SS', $1, 'zq', $2::text[], $3, '2000-01-01') returning id`,
-      [input.theme, input.imageUrls ?? [], input.status],
-    );
-    const id = Number(result.rows[0].id);
+  /** legacyImageUrls が true なら、imageUrls を DB の CHECK（looks/ の下だけ）に合わない旧い行として入れる（ADR-0162） */
+  async insertLook(input: {
+    theme: string;
+    status: 'published' | 'private';
+    imageUrls?: string[];
+    legacyImageUrls?: boolean;
+  }): Promise<number> {
+    const sql = `insert into public.looks (season_year, season_type, theme, theme_description, image_urls, status, created_at)
+       values (2026, 'SS', $1, 'zq', $2::text[], $3, '2000-01-01') returning id`;
+    const params = [input.theme, input.imageUrls ?? [], input.status];
+    const id = input.legacyImageUrls
+      ? await insertLegacyImageRow(this.db as unknown as PgClient, 'looks', 'looks_image_urls_path_check', sql, params)
+      : Number((await this.db.query(sql, params)).rows[0].id);
     this.lookIds.push(id);
     return id;
   }
 
+  /** image_url が空の記事は DB の CHECK（news/ の下だけ）より前からある旧い形なので、旧い行として入れる（ADR-0162） */
   async insertNews(input: { title: string; status: 'published' | 'private' }): Promise<number> {
-    const result = await this.db.query(
+    const id = await insertLegacyImageRow(
+      this.db as unknown as PgClient,
+      'news_articles',
+      'news_articles_image_url_path_check',
       `insert into public.news_articles (title, category, published_date, image_url, content, detailed_content, status)
        values ($1, 'STORE', '2000-01-01', '', $2, 'zq', $3) returning id`,
       [input.title, input.title, input.status],
     );
-    const id = Number(result.rows[0].id);
     this.newsIds.push(id);
     return id;
   }
@@ -235,7 +246,6 @@ test.describe('FR-SEARCH-021 直接入れた行で確かめる検索の守り', 
   });
 
   test('SEC-SEARCH-003-AC-01: バックスラッシュ 1 字の語は題にそれを含む 1 件だけを返す', async ({ request }) => {
-    test.fail(true, 'SEC-SEARCH-003 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
     const marker = newMarker();
     const rows = await InjectedRows.open();
     try {
@@ -388,7 +398,7 @@ test.describe('FR-SEARCH-021 直接入れた行で確かめる検索の守り', 
           const lookTitle = `${marker} foreign-img-look`;
           // 決まった場所（items/）の下だが、置き場に物が無い道筋
           await rows.insertItem({ name: itemTitle, status: 'published', imageUrl: `items/${marker}-missing.png` });
-          await rows.insertLook({ theme: lookTitle, status: 'published', imageUrls: ['https://example.com/x.jpg'] });
+          await rows.insertLook({ theme: lookTitle, status: 'published', imageUrls: ['https://example.com/x.jpg'], legacyImageUrls: true });
 
           const payload = await getJson<SearchPayload>(request, `/api/search?q=${encodeURIComponent(marker)}`);
           const item = payload.items.find((hit) => hit.title === itemTitle);

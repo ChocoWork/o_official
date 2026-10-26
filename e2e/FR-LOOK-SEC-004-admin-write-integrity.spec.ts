@@ -447,7 +447,6 @@ for (const viewport of viewports) {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
     test(`SEC-LOOK-015-AC-01 ${viewport.name}: 関連の追加が失敗した更新の後に /look/<id> を開くと、前のテーマと前の関連商品が表示される`, async ({ page, request, baseURL }) => {
-      test.fail(true, 'SEC-LOOK-015-AC-01 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
       await withScenario(baseURL, async (s) => {
         const [oldItem, newItem] = s.itemIds;
         const oldTheme = `${s.themePrefix} before-update`;

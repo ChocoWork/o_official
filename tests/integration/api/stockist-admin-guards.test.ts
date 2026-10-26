@@ -48,16 +48,29 @@ const WINDOW_START = '2026-10-24T12:30:00.000Z';
 function createServiceClient(options: { count?: (args: RpcArgs) => Result; storedHash?: string | null; sessionsThrows?: boolean } = {}) {
   const rpcCalls: RpcArgs[] = [];
   const sessionQueries: unknown[][] = [];
+  const stockistsWrites: string[] = [];
   return {
     rpcCalls,
     sessionQueries,
+    stockistsWrites,
     rpc: jest.fn(async (_name: string, args: RpcArgs) => {
       rpcCalls.push(args);
       return options.count ? options.count(args) : { data: 1, error: null };
     }),
     from: jest.fn((table: string) => {
       const builder: Record<string, unknown> = {};
+      // 取扱店の書き込みは認可の後に service role の client で行う（ADR-0267）。更新・削除は .select() で返る 1 行を返す（0 行は 404 になる）
+      let written: string | null = null;
       const result = (): Result => {
+        if (table === 'stockists') {
+          const data =
+            written === 'update'
+              ? [{ id: 7 }]
+              : written === 'delete'
+                ? [{ id: 7, name: 'A Shop', address: 'Tokyo', status: 'published' }]
+                : { id: 1 };
+          return { data, error: null };
+        }
         if (table === 'user_roles') {
           return {
             data: [{ roles: { role_permissions: ['admin.stockists.read', 'admin.stockists.manage'].map((code) => ({ permissions: { code } })) } }],
@@ -69,6 +82,10 @@ function createServiceClient(options: { count?: (args: RpcArgs) => Result; store
       for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'or', 'order']) {
         builder[m] = (...args: unknown[]) => {
           if (table === 'sessions') sessionQueries.push([m, ...args]);
+          if (table === 'stockists' && written === null && (m === 'insert' || m === 'update' || m === 'delete')) {
+            written = m;
+            stockistsWrites.push(m);
+          }
           return builder;
         };
       }
@@ -358,6 +375,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
       expect(await res.json()).toEqual({ error: 'Forbidden', reason: 'CSRF validation failed' });
       expect(request.json).not.toHaveBeenCalled();
       expect(userClient.from).not.toHaveBeenCalled();
+      expect(service.stockistsWrites).toEqual([]);
     });
 
     it('ARC-STOCKIST-003 token が合えば変更の窓口は進み、6つの窓口のうち変更の4つが同じ守りを通る', async () => {
@@ -371,6 +389,8 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
       expect((await itemRoute.DELETE(makeRequest(), params)).status).toBe(200);
       const mutationRpcs = service.rpcCalls.filter((c) => String(c._endpoint).startsWith('admin:stockists:mutation'));
       expect(mutationRpcs).toHaveLength(8);
+      expect(service.stockistsWrites).toEqual(['insert', 'update', 'update', 'delete']);
+      expect(createClient).not.toHaveBeenCalled();
     });
 
     it('ARC-STOCKIST-003 読みの窓口は CSRF の token を求めず、読みの枠で数える', async () => {

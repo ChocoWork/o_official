@@ -142,12 +142,15 @@ async function jsonObject(response: APIResponse): Promise<JsonRow> {
   }
 }
 
-/** 「権限の誤り（401・403）か、0 件で終わった」こと。行が 1 件でも返れば変更が通ったとみなす */
-async function expectDenied(response: APIResponse, label: string): Promise<void> {
-  const status = response.status();
-  if (status === 401 || status === 403) return;
-  const rows = await jsonRows(response);
-  expect(status < 300 && rows.length === 0, `${label}: 権限の誤りでも 0 件でもない（status: ${status}, 返った行: ${rows.length}）`).toBe(true);
+/**
+ * 「表の権限が無い」ことで断られたこと（403・SQLSTATE 42501・文が permission denied for table <表>）。
+ * RLS の違反（new row violates row-level security policy）や 0 件の成功は通さない。JWT は有効なので 401 も通さない
+ */
+async function expectPermissionDenied(response: APIResponse, table: string, label: string): Promise<void> {
+  const body = await jsonObject(response);
+  expect(response.status(), `${label}: 権限の誤りの状態`).toBe(403);
+  expect(body.code, `${label}: SQLSTATE`).toBe('42501');
+  expect(String(body.message), `${label}: 権限の誤りの文（RLS の誤りでも 0 件の成功でもない）`).toBe(`permission denied for table ${table}`);
 }
 
 // 作った利用者は afterAll で消す（消せなくても db reset で消える）
@@ -302,7 +305,6 @@ test.describe(`FR-NEWS-SEC-002 aal1 の JWT で PostgREST を直接叩く`, () =
   });
 
   test(`SEC-NEWS-002-AC-02 admin.news.manage を持つ利用者の aal1 の JWT の insert・update・delete が、どれも行を変えずに終わる`, async ({ page }) => {
-    test.fail(true, 'SEC-NEWS-002 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     const actor = await aal1Admin();
     expect(actor.aal).toBe('aal1');
     const insertTitle = tag('SEC002-INSERT');
@@ -330,20 +332,20 @@ test.describe(`FR-NEWS-SEC-002 aal1 の JWT で PostgREST を直接叩く`, () =
           data: newsBody(insertTitle, 'published'),
           failOnStatusCode: false,
         });
-        await expectDenied(inserted, 'insert');
+        await expectPermissionDenied(inserted, 'news_articles', 'news_articles の insert');
 
         const updated = await page.request.patch(newsUrl(`?id=eq.${updateId}`), {
           headers: postgrestHeaders(actor.accessToken),
           data: { title: updatedTitle },
           failOnStatusCode: false,
         });
-        await expectDenied(updated, 'update');
+        await expectPermissionDenied(updated, 'news_articles', 'news_articles の update');
 
         const deleted = await page.request.delete(newsUrl(`?id=eq.${deleteId}`), {
           headers: postgrestHeaders(actor.accessToken),
           failOnStatusCode: false,
         });
-        await expectDenied(deleted, 'delete');
+        await expectPermissionDenied(deleted, 'news_articles', 'news_articles の delete');
 
         // DB の行が変わっていない
         expect(await readRows('titles', [insertTitle]), 'insert した行が DB に無い').toHaveLength(0);
@@ -407,7 +409,6 @@ const SEARCH_ROWS = 25;
 
 test.describe(`FR-NEWS-SEC-002 anon が検索の RPC を直接叩く`, () => {
   test(`SEC-NEWS-010-AC-01 anon で search_news を limit_count=10000 で呼んだ時、返る行が20以下であるか、呼び出しが断られる`, async ({ page }) => {
-    test.fail(true, 'SEC-NEWS-010 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     requireLocalEnv();
     const marker = tag('SEC010');
     const seeds: Seed[] = Array.from({ length: SEARCH_ROWS }, (_, index) => ({ title: `${marker}-${index}`, status: 'published' }));
@@ -431,7 +432,6 @@ test.describe(`FR-NEWS-SEC-002 anon が検索の RPC を直接叩く`, () => {
   });
 
   test(`SEC-NEWS-010-AC-02 anon で search_public_news を呼ぶと、権限の誤りで断られる`, async ({ page }) => {
-    test.fail(true, 'SEC-NEWS-010 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     requireLocalEnv();
     const response = await page.request.post(`${SUPABASE_URL}/rest/v1/rpc/search_public_news`, {
       headers: postgrestHeaders(ANON_KEY),
@@ -446,7 +446,6 @@ test.describe(`FR-NEWS-SEC-002 anon が検索の RPC を直接叩く`, () => {
 
 test.describe(`FR-NEWS-SEC-002 表の段の CHECK`, () => {
   test(`SEC-NEWS-025-AC-01 service role の201字の題の insert と image_url が other/x.png の insert が、どちらも CHECK の違反（23514）で断られ、行が増えない`, async ({ page }) => {
-    test.fail(true, 'SEC-NEWS-025 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     requireLocalEnv();
     const longTitle = tag('SEC025-LONG').padEnd(201, 'x');
     const outsideTitle = tag('SEC025-OUTSIDE');
@@ -481,7 +480,6 @@ test.describe(`FR-NEWS-SEC-002 表の段の CHECK`, () => {
 
 test.describe(`FR-NEWS-SEC-002 表の権限`, () => {
   test(`SEC-NEWS-022-AC-01 anon は news_articles の TRUNCATE・INSERT・UPDATE・DELETE・TRIGGER の権限を持たない（has_table_privilege がすべて false）`, async () => {
-    test.fail(true, 'SEC-NEWS-022 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     requireLocalEnv();
     const privileges = ['TRUNCATE', 'INSERT', 'UPDATE', 'DELETE', 'TRIGGER'] as const;
 

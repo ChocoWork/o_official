@@ -4,9 +4,10 @@
  *
  * - 管理側の試験は本物の aal2 の店長（または サポーター）でログインする（e2e/stockist-admin-test-utils.ts）。窓口・認可・CSRF は差し替えない。
  * - 試験用の店は名前を E2E-STK- で始め、手元の DB へ pg で入れて、終わりに名前の頭で消す。
- * - 現在のコードでは赤になる想定: FR-ADMIN-006-AC-02・FREQ-18-AC-01（作成が DB の必須の列 type で落ちる）、
- *   SEC-STOCKIST-015-AC-01（編集の頁が id を確かめない）、SEC-STOCKIST-019-AC-01・AC-02（作成の頁が権限を確かめない）。
- *   赤は実装の欠陥の証拠であり、期待を弱めて通さない。
+ * - 現在のコードでは赤になる想定: SEC-STOCKIST-015-AC-01（編集の頁が id を確かめない）、
+ *   SEC-STOCKIST-019-AC-01・AC-02（作成の頁が権限を確かめない）。赤は実装の欠陥の証拠であり、期待を弱めて通さない。
+ * - FR-ADMIN-006-AC-02・FREQ-18-AC-01（作成が DB の必須の列 type で落ちる）は、移行 stockists_type_optional（type の NOT NULL を外す）で直した。
+ *   この移行を当てた DB でだけ通る。
  * - 他のファイルの取扱店・ホームの試験と並行に流れるので、公開の画面の出方を確かめる必要が無い行は非公開で足す
  *   （公開で足すのは FR-ADMIN-006-AC-01 の公開の行と FR-ADMIN-006-AC-04 の切り替える行だけ）。
  * - 編集の頁・作成の頁には、共通の <main id="main-content"> の中にその頁の <main> が入れ子で出るので、本文は #main-content で指す。
@@ -116,7 +117,6 @@ for (const viewport of viewports) {
     });
 
     test(`FR-ADMIN-006-AC-02 ${label}: 作成のフォームの5つの欄を埋めて保存すると STOCKIST タブに戻り、新しい店が一覧に出る`, async ({ page }) => {
-      test.fail(true, 'FR-ADMIN-006-AC-02 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
       const prefix = `E2E-STK-ac02-${viewport.name}-${tag()}`;
       const name = `${prefix}-new`;
 
@@ -234,7 +234,6 @@ for (const viewport of viewports) {
     });
 
     test(`FREQ-18-AC-01 ${label}: 取扱店の管理で登録がエラーなしで完了する`, async ({ page }) => {
-      test.fail(true, 'FREQ-18-AC-01 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
       const prefix = `E2E-STK-f18c-${viewport.name}-${tag()}`;
       const created = `${prefix}-created`;
 

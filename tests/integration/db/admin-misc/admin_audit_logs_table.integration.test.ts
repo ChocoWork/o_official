@@ -180,15 +180,15 @@ describeLocalDb('integration: ADMIN の監査ログの表', (db) => {
     expect(result.rows[0].relrowsecurity).toBe(true);
   });
 
-  test.each(['anon', 'authenticated'])('DATA-ADMIN-003 %s は行を1件も読めない', async (role) => {
+  test.each(['anon', 'authenticated'])('DATA-ADMIN-003 %s には表の権限が無く、行を1件も読めない（権限の誤り 42501）', async (role) => {
     await insertLog('integration_admin_audit_hidden');
 
-    const count = await rowCountAs(role, 'select id from public.audit_logs');
+    const code = await failureAs(role, 'select id from public.audit_logs');
 
-    expect(count).toBe(0);
+    expect(code).toBe('42501');
   });
 
-  test.each(['anon', 'authenticated'])('DATA-ADMIN-003 %s は行を足せず、方針の違反で落ちる', async (role) => {
+  test.each(['anon', 'authenticated'])('DATA-ADMIN-003 %s は行を足せず、権限の誤り（42501）で落ちる', async (role) => {
     const code = await failureAs(
       role,
       `insert into public.audit_logs (action, outcome) values ('integration_admin_audit_denied', 'success')`,
@@ -197,14 +197,14 @@ describeLocalDb('integration: ADMIN の監査ログの表', (db) => {
     expect(code).toBe('42501');
   });
 
-  test.each(['anon', 'authenticated'])('DATA-ADMIN-003 %s は行を書き換えられず消せず、どちらも0件のまま', async (role) => {
+  test.each(['anon', 'authenticated'])('DATA-ADMIN-003 %s は行を書き換えられず消せず、どちらも権限の誤り（42501）で行は変わらない', async (role) => {
     const id = await insertLog('integration_admin_audit_immutable');
 
-    const updated = await rowCountAs(role, `update public.audit_logs set outcome = 'failure' where id = $1`, [id]);
-    const deleted = await rowCountAs(role, 'delete from public.audit_logs where id = $1', [id]);
+    const updated = await failureAs(role, `update public.audit_logs set outcome = 'failure' where id = $1`, [id]);
+    const deleted = await failureAs(role, 'delete from public.audit_logs where id = $1', [id]);
 
-    expect(updated).toBe(0);
-    expect(deleted).toBe(0);
+    expect(updated).toBe('42501');
+    expect(deleted).toBe('42501');
     const row = await db().query('select outcome from public.audit_logs where id = $1', [id]);
     expect(row.rows).toEqual([{ outcome: 'success' }]);
   });

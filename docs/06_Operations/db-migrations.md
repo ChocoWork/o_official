@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> 波 2 確認日: 2026-10-27。権限・検索・制約・置き場の移行 6 本（`20261026130100`〜`130600`）を追記した（「波 2 権限・検索・制約・置き場の移行 6 本」の節）。本番未適用（本番は G-4 と一緒に当てる・オーナーの確認の後）。以後の移行は GRANT を明示する決まりも同じ節に書いた。
+
 > G-4 Task 4 確認日: 2026-10-26。fix round 2後の第3の移行 G4C（割当の入替・書き手76本）はcontrollerのfresh reset（g4t4b）でローカル適用・検証済み。group_g*全53 suiteは1,721成功・0失敗・1 pending、並行12/12を3回連続。全件検証も新規失敗なし（「G4Cの適用と再検証」）。本番未適用。
 
 > G-4 Task 2 確認日: 2026-10-26。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
@@ -170,6 +172,60 @@ COMMIT;
 ```
 
 表の行は戻り先（内部の道筋）と番号のハッシュだけで、個人情報は持たない（`user_id` は使い切った利用者の id）。消しても失うのは未使用の戻り先だけ。
+
+## 波 2 権限・検索・制約・置き場の移行 6 本（本番未適用）
+
+確認日: 2026-10-27。**6 本とも本番未適用（本番は G-4 と一緒に当てる・オーナーの確認の後）。** 手元は `npm run db:reset` で 6 本とも適用され、末尾の自己検査が通った。DB 結合試験は 144 suite 通過・13 skip・0 失敗（4339 件通過・14 skip・1 todo。`DATABASE_URL` を 54322 に向けて `--runInBand`）。要件は `docs/02_Requirements/areas/` の SEC-HOME・SEC-AUTH・SEC-LOOK・SEC-NEWS・SEC-SEARCH・SEC-STOCKIST・SEC-ADMIN、設計判断は ADR-0106・0107・0162〜0164・0315 など。窓口（`src/app/api/admin/stockists`・`news`・`looks/[id]`）の変更と同じ日に配備する。
+
+| 順 | ファイル名 | 役割・状態 |
+| --- | --- | --- |
+| 1 | [20261026130100_stockists_type_optional.sql](../../supabase/migrations/20261026130100_stockists_type_optional.sql) | `stockists.type` の NOT NULL だけを外す（CHECK の `FLAGSHIP STORE`・`STORE`・`SELECT SHOP` は残す）。列が無ければ何もしない。未適用（本番は G-4 と一緒に当てる・オーナーの確認の後） |
+| 2 | [20261026130200_sec_grants_hardening.sql](../../supabase/migrations/20261026130200_sec_grants_hardening.sql) | `items` の anon・authenticated の権限を 21 公開列の SELECT だけに（原価 2 列は service_role だけ）。`item_cost_history` の「Allow all」方針を外し `admin.finance.read` の SELECT 方針だけに。認証の 5 表と連番は anon・authenticated から全権限を外す。`profiles` は anon なし・authenticated は 4 権限。**5 の節（2026-10-27 追加）**: `legal_archive_runs`・`order_revisions`・`stripe_balance_transactions`・`stripe_payouts`・`stripe_refunds` の anon・authenticated から INSERT・UPDATE・DELETE・TRUNCATE・REFERENCES・TRIGGER・MAINTAIN を外し、所有する連番 `order_revisions_id_seq`（`pg_depend` で探す。1 本だけ）は PUBLIC・anon・authenticated から全権限を外す。SELECT は触らない。未適用（本番は G-4 と一緒に当てる・オーナーの確認の後） |
+| 3 | [20261026130300_sec_grants_admin_tables.sql](../../supabase/migrations/20261026130300_sec_grants_admin_tables.sql) | `looks`・`look_items`・`news_articles`・`stockists` は anon・authenticated に SELECT だけ、`item_color_presets` は authenticated の SELECT だけ。`stockists_id_seq` は anon・authenticated・PUBLIC を外し、service_role は USAGE・SELECT だけ（UPDATE を外す）。**2026-10-27 追加**: `looks_id_seq`・`news_articles_id_seq`・`item_color_presets_id_seq`（identity の連番）を PUBLIC・anon・authenticated から全権限を外す。未適用（本番は G-4 と一緒に当てる・オーナーの確認の後。**窓口（Task 3）の配備の後**） |
+| 4 | [20261026130400_sec_search_functions.sql](../../supabase/migrations/20261026130400_sec_search_functions.sql) | `search_items`・`search_looks`・`search_news` の件数を 1〜8 に丸め、検索語を先頭 100 字に、`\` を先に逃がす。`search_public_*` の 3 本は DROP せず PUBLIC・anon・authenticated の EXECUTE を外す。未適用（本番は G-4 と一緒に当てる・オーナーの確認の後） |
+| 5 | [20261026130500_sec_rls_predicates_and_constraints.sql](../../supabase/migrations/20261026130500_sec_rls_predicates_and_constraints.sql) | `look_items` の読みの方針 2 本を作り直し（親の LOOK と商品の両方が公開）。`looks`・`news_articles` に CHECK 7 本を `NOT VALID` で足す。関数 `admin_update_look`（service_role だけ EXECUTE）を足す。未適用（本番は G-4 と一緒に当てる・オーナーの確認の後。**窓口（Task 7）と同じ日**） |
+| 6 | [20261026130600_sec_storage_buckets.sql](../../supabase/migrations/20261026130600_sec_storage_buckets.sql) | 置き場 `look-images`・`news-images` を非公開・5MiB・JPEG/PNG/WebP/GIF に合わせる（`ON CONFLICT (id) DO UPDATE`）。`item-images` は触らない。未適用（本番は G-4 と一緒に当てる・オーナーの確認の後） |
+
+6 本とも `BEGIN`/`COMMIT` が各 1 組、`NOTIFY pgrst, 'reload schema'` が 1 回、失敗は `SEC_WAVE2_MIGRATION_ASSERTION_FAILED`（55000）。時刻は G-4 の最後の移行（`20261026101624`）より後。適用しても `ALTER DEFAULT PRIVILEGES` は使わない。別セッションの `20261026010000_auth_return_intents.sql` は上の「波 1-A 戻り先の控えの移行」の節（本番未適用）のとおりで、この 6 本とは独立。
+
+### 本番の事前の確認（読むだけ。適用の前に Supabase MCP で）
+
+適用の前に `get_advisors`（security）を保存し、適用の後に比べる（`has_permission` の WARN が増えていないこと、`rls_enabled_no_policy`・`security_definer_view` などが増えていないこと。`item_cost_history` は方針が 1 件になるので INFO が 1 つ減る）。ロールバックの値は、この結果から確定する。
+
+| 移行 | 読むだけの確認 |
+| --- | --- |
+| 130100 | `select is_nullable from information_schema.columns where table_schema='public' and table_name='stockists' and column_name='type'`（NO なら適用が必要、YES なら no-op） |
+| 130200 | `has_table_privilege('anon','public.items','select')`、`has_column_privilege('anon','public.items','pattern_cost','select')`、`select count(*) from public.item_cost_history`（行があれば原価が公開されていた期間の記録として扱うか決める）、`pg_policies` の `item_cost_history`・認証の 5 表、5 表・連番・`profiles` の `has_table_privilege`。5 の節の 5 表は 2026-10-27 の読み取りで本番は anon・authenticated とも書き込み側の権限が無い（authenticated は `legal_archive_runs`・`order_revisions` に SELECT だけ、`stripe_*` 3 表は付与なし）ため**本番では変化なし**。**`order_revisions_id_seq` は本番で anon = authenticated = SELECT・UPDATE・USAGE のまま（`remote_schema.sql`）なので、これだけは本番の実変更** |
+| 130300 | 5 表の `has_table_privilege('anon'/'authenticated', 'public.<表>', 'insert'/'update'/'delete'/'truncate')`、`item_color_presets` の anon の `select`、`pg_policies` の 5 表（`admin % manage by permission %` が insert・update・delete で残っているか。無いと自己検査で止まる）、`stockists_id_seq`・`looks_id_seq`・`news_articles_id_seq`・`item_color_presets_id_seq` の ACL（`pg_class.relacl`。`remote_schema.sql` では `stockists_id_seq` の service_role に SELECT・UPDATE・USAGE がある）。**窓口（Task 3）が配備された後に当てる** |
+| 130400 | `has_function_privilege(r, 'public.' \|\| f \|\| '(text,integer)', 'execute') from unnest(array['anon','authenticated']) r, unnest(array['search_public_items','search_public_looks','search_public_news']) f`、`select proname, proacl from pg_proc where proname like 'search\_%' and pronamespace='public'::regnamespace`（前後で比べる）、本番の `search_items/looks/news` の本体が `remote_schema.sql:2139-2238` と同じか（`pg_get_functiondef`。違えば移行ヘッダーの旧い本体でなく本番の本体をロールバックに残す） |
+| 130500 | 画像の道筋の先頭の階層と件数（`split_part(u,'/',1)`）、NULL・空文字・改行・`/object/public/` を含む要素、`char_length` の超過（`theme`>200、`theme_description`>4000、`title`>200、`content`>2000、`detailed_content`>10000）、CHECK の正規表現に合わない行の一覧。適用の前後に `has_function_privilege('anon'/'authenticated'/'service_role', 'public.admin_update_look(bigint,integer,text,text,text,text[],text,bigint[])','execute')` と `pg_policies`（`look_items`）。**窓口（Task 7）と同じ日に当てる**。`NOT VALID` でも UPDATE は検査されるので、旧い行は公開切り替えの PATCH も `23514` になりうる（VALIDATE の前に正規化する。VALIDATE はこの波に含めない） |
+| 130600 | `select id, public, file_size_limit, allowed_mime_types from storage.buckets where id in ('look-images','news-images')`、`select policyname, qual, with_check from pg_policies where schemaname='storage' and tablename='objects'`（置き場を名指しする方針があれば移行が自己検査で止まる。意図した止まり方）、`select bucket_id, count(*), max((metadata->>'size')::bigint) from storage.objects where bucket_id in ('look-images','news-images') group by 1`（5242880 超の既存ファイルは残る）。結果をロールバックの値として保存する |
+
+### 適用の順序
+
+1. 窓口（取扱店・ニュースの service role 化 Task 3、LOOK の PUT を `admin_update_look` の rpc 1 回にする Task 7）を先に（または同じ日に）配備する。130300 を窓口より先に当てると取扱店・ニュースの管理の書き込みが 42501 で止まる。130500 だけ当てて窓口が古いままなら LOOK は変わらず動くが、窓口だけ出して 130500 が無いと LOOK の更新が `PGRST202` で全部 500。
+2. 見本（`supabase/seed.sql`・`scripts/e2e/seed-storage.ts`）の画像の道筋は `items/e2e/`・`looks/e2e/`・`news/e2e/` の形（130500 の CHECK が旧い `e2e/…` を INSERT で断る）。
+3. 6 本は時刻の順に当てる。当て方は `supabase db push --linked`（MCP の `apply_migration` で当てる場合は当てた文を `schema_migrations` の `md5(statements[1])` でファイルと突き合わせる）。
+
+### ロールバック
+
+各移行ファイルのヘッダーの `ROLLBACK` を使う（適用済みのファイルは書き換えず、新しい移行で流す）。
+
+- 130100: `UPDATE public.stockists SET type = 'STORE' WHERE type IS NULL;` のあと `ALTER TABLE public.stockists ALTER COLUMN type SET NOT NULL;`。
+- 130200: 方針と GRANT を戻す行がヘッダーにある。**5 の節の表の行は手元（新しい DB）の旧い状態を戻すもので、本番では流さない**（本番はもともと書き込み側の権限が無い）。連番 `order_revisions_id_seq` の行は本番の旧い状態。
+- 130300: 5 表と 4 本の連番の GRANT を戻す行がヘッダーにある（`stockists_id_seq` の service_role の UPDATE も）。
+- 130400: 旧い本体 3 本の全文がヘッダーにある（`remote_schema.sql` の 2139-2238 行）。`search_public_*` は `GRANT EXECUTE … TO PUBLIC, anon, authenticated`。
+- 130500: 旧い方針 2 本の全文・`DROP CONSTRAINT IF EXISTS` 7 本・`DROP FUNCTION`。関数を消すなら LOOK の PUT の窓口も同じリリースで戻す。
+- 130600: 適用の前に控えた値へ `UPDATE storage.buckets` で戻す（手元の見本の状態へなら `file_size_limit`・`allowed_mime_types` を NULL。`public` は偽のまま）。
+
+### 以後の移行は GRANT を明示する
+
+公開スキーマの表・列・関数・連番の権限は移行が明示する。新しい物を作る移行は、anon・authenticated・service_role への GRANT・REVOKE を必ず書く（`ALTER DEFAULT PRIVILEGES` はプロジェクト全体に効くので使わない。設計書 Q9 の別の判断）。Supabase 公式は既定の権限がプロジェクトごとに違い、自動で付く権限は外される方向だと案内している（Hardening the Data API）。
+
+- 新しい表の雛形: `REVOKE ALL ON TABLE public.<表> FROM PUBLIC, anon, authenticated;` → 要る役に要る物だけ `GRANT … TO …;` → `GRANT ALL ON TABLE public.<表> TO service_role;`
+- 連番: `GRANT USAGE, SELECT ON SEQUENCE … TO service_role;`（identity の連番は INSERT で権限を確かめないので、anon・authenticated の直の `nextval()` を断つ REVOKE も書く）
+- 関数: `REVOKE ALL ON FUNCTION … FROM PUBLIC, anon, authenticated;` のあと呼ぶ役に `GRANT EXECUTE`
+- 権限の一覧は `tests/integration/db/auth_grants_inventory.integration.test.ts`（DATA-AUTH-006）で守る。権限を替える移行を足したら、同じ変更で一覧も直す
 
 ## ベースライン化（初回のみ・要 Docker と DB パスワード）
 

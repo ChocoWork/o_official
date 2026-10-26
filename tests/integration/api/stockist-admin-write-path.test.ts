@@ -191,7 +191,8 @@ function setup(
     {
       user_roles: { select: { data: aclRows(options.codes ?? ['admin.stockists.read', 'admin.stockists.manage']), error: null } },
       audit_logs: { insert: options.auditResult ?? NONE },
-      stockists: { select: { data: [{ id: 999 }], error: null } },
+      // 書き込みは認可の後に service role の client で行う（ADR-0267）
+      stockists: { select: { data: options.readRows ?? ok.data, error: ok.error }, insert: ok, update: updated, delete: deleted },
     },
     order,
   );
@@ -225,6 +226,10 @@ function userCalls() {
   return userClient.ops.filter((o) => o.table === 'stockists').flatMap((o) => o.calls.map(([m]) => m));
 }
 
+function serviceCalls() {
+  return serviceClient.ops.filter((o) => o.table === 'stockists').flatMap((o) => o.calls.map(([m]) => m));
+}
+
 describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -238,15 +243,15 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
   });
 
   describe.each(MUTATIONS)('$name', (handler) => {
-    it('ARC-STOCKIST-002 表の書き換えは要求の JWT の client で行い、service role の client で表を触らない', async () => {
+    it('ARC-STOCKIST-002 表の書き換えは認可の後に service role の client で行い、要求の JWT の client は作らない', async () => {
       setup();
 
       const res = await handler.call();
 
       expect(res.status).toBe(handler.successStatus);
-      expect(createClient).toHaveBeenCalledTimes(1);
-      expect(userCalls()).toContain(handler.writeMethod);
-      expect(serviceClient.ops.some((o) => o.table === 'stockists')).toBe(false);
+      expect(createClient).not.toHaveBeenCalled();
+      expect(userCalls()).toEqual([]);
+      expect(serviceCalls()).toContain(handler.writeMethod);
     });
 
     it('ARC-STOCKIST-002 認可・回数の制限・CSRF の token・表の書き換え・監査の順に進める', async () => {
@@ -260,7 +265,6 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
         'rate',
         'rate',
         'csrf',
-        'client',
         `stockists.${handler.writeMethod}`,
         'audit_logs.insert',
       ]);
@@ -285,7 +289,7 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
       expect(rows[0].resource_id).toBe(handler.resourceId);
     });
 
-    it('ARC-STOCKIST-002 RLS が書き換えを断ったら 500 を返し、error として監査に残す', async () => {
+    it('ARC-STOCKIST-002 表の書き換えが失敗したら 500 を返し、error として監査に残す', async () => {
       setup({ stockistsResult: { data: null, error: { code: '42501', message: 'new row violates row-level security policy' } } });
 
       const res = await handler.call();
@@ -321,6 +325,7 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
       expect(await res.json()).toMatchObject({ error: 'Forbidden', permission: 'admin.stockists.manage' });
       expect(requireCsrfOrDeny).not.toHaveBeenCalled();
       expect(createClient).not.toHaveBeenCalled();
+      expect(serviceCalls()).toEqual([]);
       expect(auditRows()).toHaveLength(0);
     });
 
@@ -434,6 +439,7 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
 
     expect(res.status).toBe(400);
     expect(userCalls()).toEqual([]);
+    expect(serviceCalls()).toEqual([]);
     expect(auditRows()[0]).toMatchObject({
       action: 'admin.stockists.patch',
       outcome: 'failure',
@@ -442,9 +448,13 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
     });
   });
 
-  it('ARC-STOCKIST-002 表の書き換えで例外が出たら 500 Internal server error を返す', async () => {
+  it('ARC-STOCKIST-002 表の書き換えの client を作れず例外が出たら 500 Internal server error を返す', async () => {
     setup();
-    createClient.mockRejectedValueOnce(new Error('boom'));
+    // CSRF の確かめを過ぎた後（書き換えの client の作成）だけ失敗させる
+    createServiceRoleClient.mockImplementation(async () => {
+      if (order.includes('csrf')) throw new Error('boom');
+      return serviceClient;
+    });
 
     const res = await listRoute.POST(makeRequest(VALID));
 

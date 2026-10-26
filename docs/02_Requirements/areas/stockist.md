@@ -66,7 +66,7 @@ STOCKIST の領域の要求・要件・受け入れ条件・派生要件を、�
 | FR-STOCKIST-016 | SEC-STOCKIST-002-AC-01、003-AC-01〜03 | 002 は 3 つの幅、003 は HTTP だけ |
 | FR-STOCKIST-017 | FR-STOCKIST-003-AC-02、SEC-STOCKIST-018-AC-01 | 全部の公開の店を巻き込むので、`playwright.config.ts` の project `isolated-global`（chromium の teardown）で最後に流す。1 つの試験の中で DB を 1 回だけ変え、3 つの幅をその窓で見る。公開の取り出しの上限は 200 件と決めた |
 
-受け入れ条件があって範囲の E2E が無い物: `SEC-STOCKIST-008-AC-01`（PostgREST が出さない権限の問い合わせなので、`tests/integration/db/stockist_rls.integration.test.ts` の結合テストで確かめる）。範囲外の E2E だけがある物: `e2e/FR-HOME-005-stockist-home.spec.ts`（FR-HOME-005、ホームの取扱店の節）。2026-10-25 に、中身の無かった `FR-STOCKIST-003`・`006`・`007` の E2E ファイルを消した（003 は存在しない空の文を探して落ちない、006・007 は `test.skip` で何も見ていなかった。AC は FR-STOCKIST-011・012・017 が見る）。
+受け入れ条件があって範囲の E2E が無い物: `SEC-STOCKIST-008-AC-01`（PostgREST が出さない権限の問い合わせなので、`tests/integration/db/stockist_grants_admin_tables.integration.test.ts` の結合テストで確かめる）。範囲外の E2E だけがある物: `e2e/FR-HOME-005-stockist-home.spec.ts`（FR-HOME-005、ホームの取扱店の節）。2026-10-25 に、中身の無かった `FR-STOCKIST-003`・`006`・`007` の E2E ファイルを消した（003 は存在しない空の文を探して落ちない、006・007 は `test.skip` で何も見ていなかった。AC は FR-STOCKIST-011・012・017 が見る）。
 
 ## 要求
 
@@ -303,7 +303,7 @@ STOCKIST 一覧に「地方（北海道/東北/関東/中部/近畿/中国/四�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-18 |
-| 根拠 | 店長が管理画面の STOCKIST タブで取扱店の出し入れと公開の切り替えをできるようにするため（FREQ-18 を管理画面の形に落とした）。ただし今のコードは作る時に DB の必須の列 `type` を入れず、作成が失敗する恐れがある（食い違い。状態は推定） |
+| 根拠 | 店長が管理画面の STOCKIST タブで取扱店の出し入れと公開の切り替えをできるようにするため（FREQ-18 を管理画面の形に落とした）。作る時に DB の必須の列 `type` を入れず作成が失敗した食い違いは、移行 `stockists_type_optional` で `type` の NOT NULL を外して直した（2026-10-26。状態は推定） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/02_Requirements/requirements.md` |
@@ -312,7 +312,7 @@ STOCKIST 一覧に「地方（北海道/東北/関東/中部/近畿/中国/四�
 
 STOCKIST タブで店舗の一覧・作成・編集・削除・ステータス管理を行う。
 
-今のコード（推定）: 一覧（`src/components/StockistSection.tsx`）はカードごとに「公開中」「非公開」の札と、公開の切り替え・編集・削除のボタンを出す。作成と編集は別の頁（`/admin/stockist/create`・`/admin/stockist/edit/<id>`）の同じフォーム。タブと「新規作成」は店長の役の時だけ出し（共有の `src/app/admin/page.tsx`、範囲外）、窓口は権限（admin.stockists.read・admin.stockists.manage）で許す。DB の `type` の列は NOT NULL で既定値が無い（`supabase/migrations/20260901102912_remote_schema.sql`）のに、作成の窓口（`src/app/api/admin/stockists/route.ts`）とフォームは `type` を送らない。
+今のコード（推定）: 一覧（`src/components/StockistSection.tsx`）はカードごとに「公開中」「非公開」の札と、公開の切り替え・編集・削除のボタンを出す。作成と編集は別の頁（`/admin/stockist/create`・`/admin/stockist/edit/<id>`）の同じフォーム。タブと「新規作成」は店長の役の時だけ出し（共有の `src/app/admin/page.tsx`、範囲外）、窓口は権限（admin.stockists.read・admin.stockists.manage）で許す。作成の窓口（`src/app/api/admin/stockists/route.ts`）とフォームは `type` を送らない。DB の `type` の列は本番から取った写し（`supabase/migrations/20260901102912_remote_schema.sql`）では NOT NULL で既定値が無く、作成がいつも失敗したが、移行 `stockists_type_optional`（2026-10-26。`supabase/migrations/`）で NOT NULL を外した。列と CHECK（`FLAGSHIP STORE`・`STORE`・`SELECT SHOP`）は残し、`type` は NULL のまま作られる。
 
 ## 受け入れ条件
 
@@ -336,7 +336,7 @@ STOCKIST タブで店舗の一覧・作成・編集・削除・ステータス�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-18-REQ-01 |
-| 根拠 | FREQ-18-REQ-01 を、登録・編集・削除が最後まで終わることで確かめる。今のコードは登録で DB の必須の列を入れず失敗する恐れがある（FR-ADMIN-006、食い違い。状態は推定） |
+| 根拠 | FREQ-18-REQ-01 を、登録・編集・削除が最後まで終わることで確かめる。登録で DB の必須の列を入れず失敗した食い違い（FR-ADMIN-006）は、移行 `stockists_type_optional` で `type` の NOT NULL を外して直した（2026-10-26。状態は推定） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
@@ -606,7 +606,7 @@ STOCKIST 一覧で地方（親）チェックを入れるとその地方配下�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-ADMIN-006 |
-| 根拠 | FR-ADMIN-006 の「作成」を、保存後に STOCKIST タブへ戻り新しい店が出ることで確かめる。今のコードでは DB で落ちる恐れがある（食い違い） |
+| 根拠 | FR-ADMIN-006 の「作成」を、保存後に STOCKIST タブへ戻り新しい店が出ることで確かめる。DB の必須の列 `type` で落ちた食い違いは、移行 `stockists_type_optional` で直した（2026-10-26。この移行を当てた DB でだけ満たす） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-ADMIN-006） |
@@ -727,7 +727,7 @@ STOCKIST 一覧で地方（親）チェックを入れるとその地方配下�
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1 |
 | 優先度 | MUST |
 
-`stockists` の RLS のうち `admin.stockists.read`・`admin.stockists.manage` で許す方針は、JWT の `aal` が `aal2` で、JWT の session が有効な時だけ許す（または管理の書き換えを表の直接の権限から外し、窓口だけの道にする）。今のコードは満たさない。
+`stockists` の RLS のうち `admin.stockists.read`・`admin.stockists.manage` で許す方針は、JWT の `aal` が `aal2` で、JWT の session が有効な時だけ許す（または管理の書き換えを表の直接の権限から外し、窓口だけの道にする）。読みの側（AC-01）は今のコードは満たさない（波 5 の `has_permission` の aal2 と session で直す）。書き込みの側（AC-02・AC-03）は、後者の道を取って満たした。2026-10-26 から anon・authenticated に `stockists` の INSERT・UPDATE・DELETE の権限が無い（SEC-STOCKIST-008、ADR-0414）ので、aal1 の JWT でも、失効させた session の token でも PostgREST から書けない（この移行を当てた DB でだけ満たす）。管理の窓口の書き込みは認可の後に service role で行う（ADR-0267）。
 
 ### SEC-STOCKIST-003-AC-01 aal1 の session では非公開の店舗を直接読めない
 
@@ -751,7 +751,7 @@ STOCKIST 一覧で地方（親）チェックを入れるとその地方配下�
 | 確かめ方 | E2E（`admin.stockists.manage` を持つ試し用の利用者の aal1 の JWT で insert・update・delete を送る） |
 | 出どころ | 実装から推定 |
 
-aal1 の JWT の insert・update・delete が、どれも行を変えずに終わること（権限の誤りか0件）。
+aal1 の JWT の insert・update・delete が、どれも行を変えずに終わること（権限の誤り `42501` で断られる。権限を外した後は0件の成功にならない）。
 
 ### SEC-STOCKIST-003-AC-03 失効させた session の token では店舗を直接書き換えられない
 
@@ -763,7 +763,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 確かめ方 | E2E（aal2 の利用者の session を失効させた後、その access token で update を送る） |
 | 出どころ | 実装から推定 |
 
-失効させた session の access token の update が、行を変えずに終わること。
+失効させた session の access token の update が、行を変えずに終わること（失効の前の update も、同じ権限の誤りで終わる。書き込みは窓口の service role だけ）。
 
 ### SEC-STOCKIST-004 変更の窓口は Origin と CSRF の token を確かめ、判定できない時は拒む
 
@@ -838,7 +838,7 @@ POST・PUT・PATCH・DELETE は、許可のオリジンでない要求と、Cook
 | 出どころ | OWASP ASVS 4.0.3 V4.1.1。`docs/05_Quality/reviews/security/security_review_stockist.md` |
 | 優先度 | MUST |
 
-`/api/admin/stockists` と `/api/admin/stockists/<id>` は、読みに `admin.stockists.read`、変更に `admin.stockists.manage` を求め、token が無い・署名が違う・session が失効している時は 401、権限が無い・aal1 の時は 403 を返す。DB の client は利用者の JWT の物を使う。今のコードは満たす（`src/app/api/admin/stockists/route.ts`、`src/app/api/admin/stockists/[id]/route.ts`、`src/lib/auth/admin-rbac.ts`）。試すテストは無い。
+`/api/admin/stockists` と `/api/admin/stockists/<id>` は、読みに `admin.stockists.read`、変更に `admin.stockists.manage` を求め、token が無い・署名が違う・session が失効している時は 401、権限が無い・aal1 の時は 403 を返す。DB の client は、読み（GET）は利用者の JWT の物、書き込み（POST・PUT・PATCH・DELETE）は認可の後に service role の物を使う（ADR-0267）。今のコードは満たす（`src/app/api/admin/stockists/route.ts`、`src/app/api/admin/stockists/[id]/route.ts`、`src/lib/auth/admin-rbac.ts`）。試すテストは無い。
 
 ### SEC-STOCKIST-006-AC-01 未ログインの要求は 401 になる
 
@@ -936,7 +936,7 @@ GET の2つは 200 になり、POST・PUT・PATCH・DELETE は 403 になって�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3 |
 | 優先度 | SHOULD |
 
-`stockists` の表は anon に SELECT だけ、authenticated に SELECT・INSERT・UPDATE・DELETE だけを付ける（DB の直接の道を閉じる時は SEC-STOCKIST-003 に合わせてさらに絞る）。TRUNCATE・TRIGGER・REFERENCES・MAINTAIN は付けない。連番 `stockists_id_seq` に anon・authenticated の UPDATE を付けない。今のコードは満たさない。
+`stockists` の表は anon・authenticated に SELECT だけを付ける（SEC-STOCKIST-003 の書き込みの穴を塞ぐため、authenticated の INSERT・UPDATE・DELETE も付けない。管理の書き込みは全部 service role の窓口で行う。ADR-0414、ADR-0267）。TRUNCATE・TRIGGER・REFERENCES・MAINTAIN も付けない。連番 `stockists_id_seq` は anon・authenticated に USAGE・SELECT・UPDATE のどれも付けず、service role に USAGE・SELECT を明示する。RLS の書き込み方針は消さず二重の守りとして残す。2026-10-26 に移行 `sec_grants_admin_tables` で満たした（この移行を当てた DB でだけ満たす。DATA-STOCKIST-002）。
 
 ### SEC-STOCKIST-008-AC-01 anon・authenticated に表の余分な権限が無い
 
@@ -945,10 +945,10 @@ GET の2つは 200 になり、POST・PUT・PATCH・DELETE は 403 になって�
 | 上位 | SEC-STOCKIST-008、NFR-SEC-005（範囲外） |
 | 根拠 | 移行の権限の付け方が、決めた最小の形になっていることを確かめるため |
 | 状態 | 推定 |
-| 確かめ方 | 結合テスト（手元の DB に `has_table_privilege`・`has_sequence_privilege` で問い合わせる。PostgREST は TRUNCATE・TRIGGER・REFERENCES・MAINTAIN と連番の UPDATE を HTTP で出さないので E2E では確かめられない。`tests/integration/db/stockist_rls.integration.test.ts` の「DATA-STOCKIST-002 … 余分な権限が付いていない」。結合テストは AC を指せない決まりなので、`validate-trace` の missing-child（e2e テスト無し）は知ったうえで残る） |
+| 確かめ方 | 結合テスト（手元の DB に `has_table_privilege`・`has_sequence_privilege` で問い合わせる。PostgREST は TRUNCATE・TRIGGER・REFERENCES・MAINTAIN と連番の UPDATE を HTTP で出さないので E2E では確かめられない。`tests/integration/db/stockist_grants_admin_tables.integration.test.ts` と `stockist_rls.integration.test.ts` の「DATA-STOCKIST-002 … SELECT だけが付いている」「… 連番 … どれも付いていない」。結合テストは AC を指せない決まりなので、`validate-trace` の missing-child（e2e テスト無し）は知ったうえで残る） |
 | 出どころ | 実装から推定 |
 
-anon・authenticated の `stockists` の TRUNCATE・TRIGGER・REFERENCES・MAINTAIN の権限と、anon の INSERT・UPDATE・DELETE の権限と、`stockists_id_seq` の UPDATE の権限が、どれも false であること。
+anon・authenticated の `stockists` の INSERT・UPDATE・DELETE・TRUNCATE・TRIGGER・REFERENCES・MAINTAIN の権限と、`stockists_id_seq` の USAGE・SELECT・UPDATE の権限が、どれも false であること（SELECT だけが true）。
 
 ### SEC-STOCKIST-009 管理の応答は画面で使う列だけを返す
 
@@ -1071,8 +1071,8 @@ anon・authenticated の `stockists` の TRUNCATE・TRIGGER・REFERENCES・MAINT
 
 PUT・PATCH・DELETE は、変わった行が0件の時は 404 を返し、成功の監査を残さない。削除の監査には、消した店舗の名前と住所を残す。2026-10-26 に満たした（以前は 0 件でも 200 と成功の監査だった）。
 
-- PUT・PATCH は `.update(...).eq('id', id).select('id')`、DELETE は `.delete().eq('id', id).select('id, name, address, status')` で行を受け取る。0 行（無い、または RLS が隠した）は 404 `{ error: 'Stockist not found' }` と、結果 `failure`・`detail='Stockist not found'` の監査 1 行にする。成功の監査は書かない
-- 管理の窓口は利用者の session の client で書くので、RLS が隠した行も 0 行になり、403 でなく 404 になる
+- PUT・PATCH は `.update(...).eq('id', id).select('id')`、DELETE は `.delete().eq('id', id).select('id, name, address, status')` で行を受け取る。0 行（無い）は 404 `{ error: 'Stockist not found' }` と、結果 `failure`・`detail='Stockist not found'` の監査 1 行にする。成功の監査は書かない
+- 管理の窓口は認可の後に service role の client で書くので（ADR-0267）、RLS は行を隠さず、0 行は「その id の店が無い」だけを表す
 - 削除が 1 行を返した時の成功の監査は `metadata.deleted = { id, name, address, status }` だけを残す（電話・営業時間は残さない）。`detail` は今までどおり `Deleted stockist id: <id>`
 - 道の `id` は安全に表せる正の整数だけを受け、そうでなければ DB に渡さず 400 を返す（桁あふれを 500 にしない）
 
@@ -1503,7 +1503,7 @@ OGP の題と説明は title・description と同じ。画像はサイトの主�
 
 - 地図のリンク: FR-STOCKIST-007（WONT）を直すか、DRV-STOCKIST-002 を要件として認めるか
 - モバイルのカード: FR-STOCKIST-002（5つの情報）と DRV-STOCKIST-004（640px 未満で3行を隠す）のどちらが今の決まりか
-- 管理の作成: 本番の DB の `stockists.type` が今も NOT NULL で既定値が無いか。そうなら作成はいつも失敗し、FREQ-18-AC-01・FR-ADMIN-006-AC-02 を満たさない
+- 管理の作成: 本番の DB の `stockists.type` が今も NOT NULL か（`select is_nullable from information_schema.columns where table_name = 'stockists' and column_name = 'type'`）。NOT NULL のままなら作成はいつも失敗し、FREQ-18-AC-01・FR-ADMIN-006-AC-02 を満たさない。移行 `stockists_type_optional` を本番に当てるまで本番では満たさない。`type` を列ごと消す案は、見本・E2E の補助・結合試験の全書き換えと本番の種別の消失を伴うので後回し
 - FR-STOCKIST-010 と FREQ-57-REQ-01 の二重の定義をどちらかにまとめるか
 - FREQ-13-AC-01 の「正しい店舗情報」と FREQ-18-AC-01 の「エラーが発生せず」を何で確かめるか（具体の形は FR-STOCKIST-・FR-ADMIN-006 の受け入れ条件に起こした）
 - 頁の要件を FREQ-13 に、FR-ADMIN-006 を FREQ-18 につないだことの確認（`SR-STOCKIST-` を起こす案もある）

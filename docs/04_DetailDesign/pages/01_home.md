@@ -67,7 +67,7 @@ graph LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | ARC-HOME-001、ARC-HOME-002、ARC-HOME-003、ARC-HOME-004、SCR-HOME-001、SCR-HOME-002、SCR-HOME-003、FLOW-HOME-001、SEC-HOME-001、SEC-HOME-008 |
+| 上位 | ARC-HOME-001、ARC-HOME-002、ARC-HOME-003、ARC-HOME-004、SCR-HOME-001、SCR-HOME-002、SCR-HOME-003、FLOW-HOME-001、DATA-HOME-001、SEC-HOME-001、SEC-HOME-008 |
 | 根拠 | 4つの領域の新しい物を1つの頁に並べるため、取り出しと見た目は各領域の関数と部品に任せ、ページは並べ方と件数だけを持つ（ARC-HOME-001、SCR-HOME-001）。呼ぶのは公開済みに絞る取得の関数だけにし、ページの側で絞りを書き忘れる場所を作らない（ARC-HOME-002、SEC-HOME-001）。中身の文は React の文字として描き、生の HTML を描かない（ARC-HOME-003、SEC-HOME-008）。題・説明・OG は引数に左右されないので固定の値で返し、画像の道は相対にして共有の layout の起点で絶対の住所にする（ARC-HOME-004。SEC-HOME-018 の前半だが、上位にはしない）。最初の画面で一番大きな写真は、HTML を返す前に先読みを頼む（ARC-HOME-004、SCR-HOME-002） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |

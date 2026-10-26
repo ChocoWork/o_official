@@ -16,7 +16,7 @@ NEWS の領域の構成・画面・画面遷移・状態遷移・API・データ
 | API | 8 | `API-NEWS-001`〜`008` | `GET /api/news`、管理の6つの窓口、未使用（削除の判断待ち）の Server Action |
 | データ | 5 | `DATA-NEWS-001`〜`005` | 記事の表、RLS と付与、検索の関数、画像の置き場、権限 |
 
-- 結論: 公開の側は Server Component から anon の client で直接 DB を読み、`/api/news` は今の画面から通らない。管理の側は利用者の端末で動く画面から Route Handler を通し、窓口で session・権限・2要素認証を確かめた上で、利用者の JWT の client で RLS に通す
+- 結論: 公開の側は Server Component から anon の client で直接 DB を読み、`/api/news` は今の画面から通らない。管理の側は利用者の端末で動く画面から Route Handler を通し、窓口で session・権限・2要素認証を確かめた上で、読みは利用者の JWT の client で RLS に通し、書き込みは service role で行う（ADR-0026）
 - 状態の値は `private`・`published` の2つだが、DB の初めの値は `'draft'` で CHECK に合わない（STATE-NEWS-001）
 - 今のコードが満たさないセキュリティ要件（例: SEC-NEWS-002・003・008・021）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた
 - 一部だけ満たすセキュリティ要件は、項目が受け持つコードの中に満たさない所がある時は上位にせず、満たさない所がほかのコードにだけある時は上位にした（例: SEC-NEWS-016 の「0件は 404」を満たさないのは `[id]/route.ts` なので、その窓口の項目の上位にはせず、作成の窓口 API-NEWS-003 の上位にはする）。この決まりは ADR と詳細設計の文書にも同じに当てた
@@ -41,7 +41,7 @@ NEWS の領域の構成・画面・画面遷移・状態遷移・API・データ
 | 書き換えの送り方 | `src/lib/client-fetch.ts` の `clientFetch` | 管理の画面から窓口へ送る。書き換えには `x-csrf-token` を付ける |
 | 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit` | `GET /api/news` だけが使う |
 | 監査 | `src/lib/audit.ts` の `logAudit` | 管理の書き換えの成功と失敗を `audit_logs` に残す |
-| Supabase の client | `src/lib/supabase/server.ts` の `createClient`・`createPublicClient`・`createServiceRoleClient` | 管理の DB 操作・公開の読み出し・画像の書き込みと署名 |
+| Supabase の client | `src/lib/supabase/server.ts` の `createClient`・`createPublicClient`・`createServiceRoleClient` | 管理の DB の読み・管理の DB の書き込みと画像の書き込み・署名（service role）・公開の読み出し |
 
 ## 構成
 
@@ -56,12 +56,13 @@ graph LR
   PA --> SV
   SV -->|anon の client| DB[("news_articles<br/>RLS")]
   SV -->|service role| ST[("news-images<br/>非公開")]
-  RH -->|利用者の JWT の client| DB
+  RH -->|GET は利用者の JWT の client| DB
+  RH -->|書き込みは service role| DB
   RH -->|service role| ST
   RH --> AU[("audit_logs")]
 ```
 
-矢印は呼び出しの向き。ラベルは使う Supabase の client。公開の道（上半分）は利用者の session を使わず、管理の道（下半分）は利用者の JWT を DB まで持ち込む。検索（`src/features/search/services/search.service.ts`、範囲外）も同じ置き場の画像に署名するが、図には入れていない。
+矢印は呼び出しの向き。ラベルは使う Supabase の client。公開の道（上半分）は利用者の session を使わず、管理の道（下半分）は、読みだけ利用者の JWT を DB まで持ち込み、書き込みは認可の後に service role で行う。検索（`src/features/search/services/search.service.ts`、範囲外）も同じ置き場の画像に署名するが、図には入れていない。
 
 ### ARC-NEWS-001 公開の読み出しはページのサーバーの中で取り出しの関数を直接呼ぶ
 
@@ -81,12 +82,12 @@ graph LR
 - 入口の確かめ: id は `isNewsId`（bigint の桁）、分類は `resolveNewsCategory`（許可の一覧の物だけ、外れ・無しは ALL）。`src/features/news/lib/news-input.ts` に置く（SEC-NEWS-012）
 - 件数: `/news` は `limit` を渡さず公開済みを全部取る。前後の記事のために公開済みを全部読む（SEC-NEWS-009 の画面の上限は満たさない）
 
-### ARC-NEWS-002 管理の書き換えは画面から Route Handler を通し、利用者の session の client で DB を変える
+### ARC-NEWS-002 管理の書き換えは画面から Route Handler を通し、認可の後に service role の client で DB を変える
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-003、FREQ-316-REQ-02（範囲外）、SEC-NEWS-014、SEC-NEWS-015、ADR-0005、ADR-0006、ADR-0010、ADR-0019 |
-| 根拠 | 管理の画面は利用者の端末で動く client の部品なので、守りを画面に置けないため。窓口ごとに session・権限・aal2 を確かめ（SEC-NEWS-015、ADR-0006）、DB の操作も利用者の JWT で RLS に通せば、窓口の確かめが1か所崩れても DB が権限の無い変更を断る（ADR-0005）。書き換えは成功も失敗も監査に残し、後から追えるようにする（ADR-0010） |
+| 上位 | FR-ADMIN-003、FREQ-316-REQ-02（範囲外）、SEC-NEWS-014、SEC-NEWS-015、ADR-0005、ADR-0006、ADR-0010、ADR-0019、ADR-0026 |
+| 根拠 | 管理の画面は利用者の端末で動く client の部品なので、守りを画面に置けないため。窓口ごとに session・権限・aal2 を確かめ（SEC-NEWS-015、ADR-0006）、その後で書き込みを service role で行う。管理だけが書く表から anon・authenticated の書き込みの権限を外す（SEC-NEWS-022）には、利用者の JWT で書く窓口を無くす必要があり、窓口の認可が書き込みの唯一の守りになる（ADR-0026）。読みは利用者の JWT で RLS に通す（ADR-0005）。書き換えは成功も失敗も監査に残し、後から追えるようにする（ADR-0010） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/news/route.ts`、`src/app/api/admin/news/[id]/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
@@ -104,7 +105,7 @@ sequenceDiagram
   P->>R: 通す
   R->>Z: 権限コード
   Z-->>R: 401・403・503 か userId
-  R->>D: 利用者の JWT の client（RLS）
+  R->>D: 書き込みは service role の client（読みは利用者の JWT の client）
   D-->>R: 結果
   R->>L: 書き換えだけ成功・失敗を記録
   R-->>B: JSON
@@ -112,7 +113,7 @@ sequenceDiagram
 
 - 画面: `NewsSection`（一覧）・`NewsForm`（作成・編集）。どちらも client の部品で、権限での出し分けはしない
 - 窓口: `authorizeAdminPermission`（`src/lib/auth/admin-rbac.ts`）が token を確かめ（401）、session の生存と DB の ACL を並べて照会し（停止は 503、無効は 401）、権限が無ければ 403、`aal` が `aal2` でなければ 403 `MFA required` を返す
-- DB: `createClient(request)`（`src/lib/supabase/server.ts`）で利用者の JWT を付け、RLS（DATA-NEWS-002）を効かせる。画像の書き込みと後始末の削除だけは service role（ARC-NEWS-003）
+- DB: 読み（GET）は `createClient(request)`（`src/lib/supabase/server.ts`）で利用者の JWT を付け、RLS（DATA-NEWS-002）を効かせる。書き込み（POST・PUT・PATCH・DELETE）は、認可と入力の確かめの後に `createServiceRoleClient()` を1回作り、表と置き場（ARC-NEWS-003）の書き込みと後始末の削除に同じ client を使う（ADR-0026）。RLS の書き込み方針は権限を外した後も二重の守りとして残る。窓口の認可が書き込みの唯一の守りなので、`authorizeAdminPermission` の位置（本文の検証より前）を変えない
 - 監査: 窓口の中の `logNewsAudit` が `logAudit`（`src/lib/audit.ts`）を呼ぶ。resource は `news_article`、user agent だけを残し IP は残さない。監査の書き込みの失敗は警告だけで、操作は止めない。GET は監査しない。PUT・PATCH・DELETE は対象の行が0件でも成功と記録する（SEC-NEWS-016 の「0件は 404」を満たさないので上位にしない）
 - CSRF: proxy の Origin の検査だけで守り、窓口は `requireCsrfOrDeny` を呼ばない（ADR-0019。決めた事か抜けかは未定）
 - 画面のページ（`/admin/news/create`・`/admin/news/edit/[id]`）にサーバーの守りは無く、殻は誰でも開け、送った時に窓口が断る（推定）
@@ -135,7 +136,7 @@ sequenceDiagram
 - 公開の一覧・詳細・ホームは画像を出さない（FREQ-32）ので、`getPublishedNews`・`getPublishedNewsDetailById` は `image_url` を選ばず、署名も service role の client も使わない。型 `PublicNewsArticle` に `image_url` は無い（SEC-NEWS-005。2026-10-26 に満たした）
 - 道にできない値と署名の失敗では元の値を返し、記録しない（SEC-NEWS-008 は満たさない。DRV-NEWS-008 が今の動き）。公開の道は署名しなくなったので、残る署名の経路（検索と管理）だけの話（波 1-C）
 - 署名する前に道が `news/` の下か、URL のホストが自分のプロジェクトかを確かめない（SEC-NEWS-007 は満たさない。残る経路は検索と管理。波 1-C）
-- 置き場を非公開にする設定は手元の見本にだけあり、移行に無い（SEC-NEWS-003 は満たさないので上位にしない。DATA-NEWS-004）
+- 置き場を非公開にする設定は、2026-10-26 から移行 `sec_storage_buckets` が持つ（SEC-NEWS-003。DATA-NEWS-004、ADR-0164）
 
 ### ARC-NEWS-004 共有の proxy が Origin の検査と守りの見出しを全部の応答にかける
 
@@ -412,7 +413,7 @@ stateDiagram-v2
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-ADMIN-003、SEC-NEWS-015、SEC-NEWS-020、DRV-NEWS-014、ADR-0005、ADR-0006 |
-| 根拠 | 非公開の記事を含む一覧は管理の権限を持つ人だけに渡すため、`admin.news.read` と aal2 を求め、DB も利用者の JWT で RLS に通す（SEC-NEWS-015、ADR-0005・0006）。並びは公開側と同じ公開日の新しい順にそろえる（DRV-NEWS-014） |
+| 根拠 | 非公開の記事を含む一覧は管理の権限を持つ人だけに渡すため、`admin.news.read` と aal2 を求め、DB の読みも利用者の JWT で RLS に通す（SEC-NEWS-015、ADR-0005・0006）。並びは公開側と同じ公開日の新しい順にそろえる（DRV-NEWS-014） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/news/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
@@ -483,7 +484,7 @@ stateDiagram-v2
 | 成功 | 200 `{success:true}`。監査 `admin.news.update` |
 | 失敗 | 入力・画像の誤り 400、無い記事・形の悪い id 404（監査 `admin.news.update.not_found`）、置き場の失敗 500（監査 `admin.news.update.upload_failed`）、表の失敗 500（監査 `admin.news.update.failed`）、例外 500 |
 
-- 更新は `.update(...).eq('id', id).select('id')` で変えた行を受け取り、0行（無い、または RLS が隠した）は 404 `{error:'Article not found'}` と失敗の監査にして、成功の監査は書かない（SEC-NEWS-016。2026-10-26 に満たした）。管理の窓口は利用者の session の client で書くので、RLS が隠した行も 404 になる
+- 更新は `.update(...).eq('id', id).select('id')` で変えた行を受け取り、0行（無い）は 404 `{error:'Article not found'}` と失敗の監査にして、成功の監査は書かない（SEC-NEWS-016。2026-10-26 に満たした）。管理の窓口は service role の client で書くので（ADR-0026）、0行は「その id の記事が無い」だけを表す
 - 道の `id` は `isNewsId`（先頭が 0 でない 18 桁以下の数字）だけを DB に渡し、外れた id は DB にも置き場にも触らず 404 にする（監査には長さだけを残す。SEC-NEWS-012）
 - 古い値を読んでから上げるので、無い id の PUT で画像は置き場に残らない。拡張子は作成と同じく検出した種類から決める（SEC-NEWS-017・018）
 - 新旧の画像が同じ道筋なら消さない。古い画像が見本・外の URL・`news/` の外の道筋なら消さない。消すのに失敗しても応答は 200 のまま、監査の `metadata.imageCleanup` に `failed` を残す
@@ -525,7 +526,7 @@ stateDiagram-v2
 | 失敗 | 無い記事・形の悪い id 404（監査 `admin.news.delete.not_found`）、表の失敗 500（監査 `admin.news.delete.failed`）、例外 500 |
 
 - 削除は `.delete().eq('id', id).select('id, image_url')` で消した行を受け取り、0行は 404 `{error:'Article not found'}` と失敗の監査にして、成功の監査は書かない（SEC-NEWS-016。2026-10-26 に満たした）。道の `id` の確かめ（`isNewsId`）は API-NEWS-005 と同じ
-- 行を消した後に、消した行の `image_url` を置き場から消す。置き場は service role の client でしか消せないので、その client は行を消した後にだけ作る（行の削除・存在の判定には使わない）。消すのに失敗しても（client を作れない時を含め）応答は 200 のまま、監査の `metadata.imageCleanup` に `ok`・`failed` を残す（SEC-NEWS-018、ADR-0025）
+- 行を消した後に、消した行の `image_url` を置き場から消す。置き場は service role の client でしか消せない。行の削除と同じ service role の client（ADR-0026）で、行を消した後に消す。消すのに失敗しても応答は 200 のまま、監査の `metadata.imageCleanup` に `ok`・`failed` を残す（SEC-NEWS-018、ADR-0025）
 
 ### API-NEWS-008 Server Action `getLatestNews` 最新の公開済みの記事3件（未使用（削除の判断待ち））
 
@@ -547,8 +548,8 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-003、FR-NEWS-ALL-001、DRV-NEWS-009、ADR-0020 |
-| 根拠 | 管理で書いた記事を公開と管理の両方から読むため、1つの表に持つ（FR-ADMIN-003）。公開日の新しい順に並べるので `published_date` に降順の索引を付ける（FR-NEWS-ALL-001）。公開するかは `status` の1列で決める（ADR-0020） |
+| 上位 | FR-ADMIN-003、FR-NEWS-ALL-001、DRV-NEWS-009、SEC-NEWS-025、ADR-0020、ADR-0162 |
+| 根拠 | 管理で書いた記事を公開と管理の両方から読むため、1つの表に持つ（FR-ADMIN-003）。公開日の新しい順に並べるので `published_date` に降順の索引を付ける（FR-NEWS-ALL-001）。公開するかは `status` の1列で決める（ADR-0020）。題・概要・本文の長さと画像の道は、窓口を通らない書き込みを止めるため表の CHECK にも持つ（SEC-NEWS-025、ADR-0162） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`supabase/migrations/20260901102912_remote_schema.sql`） |
@@ -556,19 +557,20 @@ stateDiagram-v2
 | 列 | 型・制約 | 中身 |
 | --- | --- | --- |
 | `id` | bigint、identity、主キー | 記事の番号。公開側の型（`src/features/news/types.ts`）は string |
-| `title` | text、NOT NULL | 題。長さの制約は無い |
+| `title` | text、NOT NULL、CHECK `news_articles_title_length_check`（200字まで、`NOT VALID`） | 題 |
 | `category` | text、NOT NULL、CHECK（COLLECTION・EVENT・COLLABORATION・SUSTAINABILITY・STORE） | 分類。BLOG は無い |
 | `published_date` | date、NOT NULL | 管理者が入れる公開日 |
-| `image_url` | text、NOT NULL | 置き場の中の道（署名前） |
-| `content` | text、NOT NULL | 概要 |
-| `detailed_content` | text、NOT NULL | 本文 |
+| `image_url` | text、NOT NULL、CHECK `news_articles_image_url_path_check`（`NOT VALID`） | 置き場の中の道（署名前）。`news/` の下の安全な道だけ（`..`・`//`・先頭の `/`・URL・空の文字は外れる） |
+| `content` | text、NOT NULL、CHECK `news_articles_content_length_check`（2000字まで、`NOT VALID`） | 概要 |
+| `detailed_content` | text、NOT NULL、CHECK `news_articles_detailed_content_length_check`（10000字まで、`NOT VALID`） | 本文 |
 | `status` | text、NOT NULL、DEFAULT `'draft'`、CHECK（private・published） | 公開の状態（STATE-NEWS-001） |
 | `created_at`・`updated_at` | timestamptz、NOT NULL、DEFAULT now() | 更新の前にトリガー `trg_news_articles_updated_at` が `updated_at` を今にする |
 
 - 索引: `category`、`published_date` の降順、`status`
-- 長さの上限（200・2000・10000 字）と `image_url` の形は窓口の入力の形だけにあり、表には無い。PostgREST で直接書くと窓口の確かめを飛ばせる（推定。SEC-NEWS-025 は満たさないので上位にしない）。公開日は列の型が date なので、形は表でも守られる
+- 長さの上限（200・2000・10000 字）と `image_url` の形は、2026-10-26 の移行 `sec_rls_predicates_and_constraints` で表の CHECK にも持たせた（SEC-NEWS-025 を満たす。ADR-0162）。長さは文字数（コードポイント）で数える。公開日は列の型が date なので、形は表でも守られる
+- 4本とも `NOT VALID` で入れた。既存の行は検査しないが、新しい INSERT と既存の行の UPDATE（関係の無い列だけの更新も）は検査される。本番の旧い行（旧い公開 URL・空の `image_url`）を点検して直してから、別の移行で `VALIDATE` する。この波では `VALIDATE` を書かない。確かめ: `tests/integration/db/news_constraints.integration.test.ts`
 - 初めの値 `'draft'` が CHECK に合わない（STATE-NEWS-001、食い違いは trace-matrix.md の「食い違い」節）
-- 後の移行でこの表を変える物は無い
+- 後の移行でこの表を変える物は、2026-10-26 の `sec_rls_predicates_and_constraints`（上の4本の CHECK）だけ
 
 ### DATA-NEWS-002 `news_articles` の RLS の方針と表の付与
 
@@ -590,9 +592,10 @@ stateDiagram-v2
 | Service role has full access to news articles | service_role | ALL | true |
 
 - `has_permission` は SECURITY DEFINER・`search_path=''` で、`auth.uid()` が無ければ false、DB の ACL の表だけで決める（2026-10-23 の権限の作り直しで、役の近道を外した）。anon の EXECUTE は外してある（`supabase/migrations/20260921011535_harden_security_definer_search_path.sql`）
-- DB は `aal` を見ない。権限を持つ人が aal1 の JWT で PostgREST を直接叩くと、非公開の読みと書き換えができる（推定。SEC-NEWS-002 は満たさない）
-- DB は session が生きているかも見ない。ログアウト・失効の後も期限の残る access token で、同じ読み書きができる（推定。SEC-NEWS-002 は満たさない。窓口は `checkAuthSessionLiveness` で確かめる、`src/lib/auth/admin-rbac.ts`）
-- 付与: anon・authenticated に DELETE・INSERT・MAINTAIN・REFERENCES・SELECT・TRIGGER・TRUNCATE・UPDATE を全部付け、守りは RLS の1段だけ（SEC-NEWS-022 は満たさない）
+- DB は `aal` を見ない。権限を持つ人が aal1 の JWT で PostgREST を直接叩くと、非公開の読みができる（推定。SEC-NEWS-002-AC-01 は満たさない。波 5 で直す）。書き換えは 2026-10-26 から付与が無く、権限の誤り（`42501`）で断られる（SEC-NEWS-002-AC-02 を満たす）。書き込みの方針（`manage by permission insert・update・delete`）は働かないが、消さずに二重の守りとして残す（ADR-0414）
+- DB は session が生きているかも見ない。ログアウト・失効の後も期限の残る access token で、同じ読みができる（推定。SEC-NEWS-002-AC-03 は満たさない。書き込みは付与が無く断られる。窓口は `checkAuthSessionLiveness` で確かめる、`src/lib/auth/admin-rbac.ts`）
+- 付与: anon・authenticated に SELECT だけを付ける。INSERT・UPDATE・DELETE・TRUNCATE・TRIGGER・REFERENCES・MAINTAIN は付けない（2026-10-26 の移行 `sec_grants_admin_tables`。ADR-0414）。service_role には ALL を明示する。管理の窓口の書き込みは認可の後に service role で行う（ADR-0026）。以前は 8 権限を全部付け、守りは RLS の1段だけだった（SEC-NEWS-022 を満たす）
+- 確かめ: `tests/integration/db/news_grants_admin_tables.integration.test.ts`、`news_articles_rls.integration.test.ts`
 - PostgREST を直接通った変更は監査に残らない（推定）
 
 ### DATA-NEWS-003 検索の関数 `search_news`・`search_public_news`
@@ -607,30 +610,30 @@ stateDiagram-v2
 
 | 関数 | 中身 | 付与 | 使う所 |
 | --- | --- | --- | --- |
-| `search_news(search_query, limit_count default 8)` | invoker。`status='published'`。ILIKE の `%`・`_` を逃がす。`limit_count` を上限に丸めない | PUBLIC から外し、anon・authenticated に EXECUTE | 検索（`search.service.ts`、範囲外） |
-| `search_public_news(p_query, p_limit default 6)` | invoker。`status='published'`。`p_limit` を 1〜20 に丸める。`%`・`_` を逃がさない | PUBLIC を含む全部に EXECUTE | 呼ぶ所は見当たらない |
+| `search_news(search_query, limit_count default 8)` | invoker。`status='published'`。ILIKE の `%`・`_` を逃がす。`limit_count` は 1〜8 に丸める（2026-10-26 から。移行 `sec_search_functions`）。検索語は先頭 100 字、`\` を先に逃がす | PUBLIC から外し、anon・authenticated に EXECUTE | 検索（`search.service.ts`、範囲外） |
+| `search_public_news(p_query, p_limit default 6)` | invoker。`status='published'`。`p_limit` を 1〜20 に丸める。`%`・`_` を逃がさない | PUBLIC・anon・authenticated から外し（2026-10-26）、postgres・service_role に EXECUTE | 呼ぶ所は見当たらない。DROP は NEWS の試験を直した後に別の判断 |
 
-- anon が `search_news` を直接呼ぶと件数の上限が無い。使われない `search_public_news` を PUBLIC に出している（SEC-NEWS-010 は満たさない）
+- 2026-10-26 から、anon が `search_news` を直接呼んでも件数は 8 まで。使われない `search_public_news` は PUBLIC・anon・authenticated から EXECUTE を外した（SEC-NEWS-010 の関数の側を満たす。この移行を当てた DB でだけ満たす。`max_rows` の本番の値は運用の確認が残る。DATA-SEARCH-003、ADR-0315）
 
 ### DATA-NEWS-004 画像の置き場 `news-images`
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | DRV-NEWS-008、DRV-NEWS-010、ADR-0001、ADR-0022 |
-| 根拠 | 非公開の記事の画像を公開の URL から開かせないよう、置き場を非公開にして service role と署名つき URL だけで扱うため（ADR-0001、DRV-NEWS-008）。保存の道を日付と uuid で作り、上書きと推測を防ぐ（DRV-NEWS-010、ADR-0022） |
+| 上位 | DRV-NEWS-008、DRV-NEWS-010、ADR-0001、ADR-0022、SEC-NEWS-003、ADR-0164 |
+| 根拠 | 非公開の記事の画像を公開の URL から開かせないよう、置き場を非公開にして service role と署名つき URL だけで扱うため（ADR-0001、DRV-NEWS-008）。置き場の設定を見本でなく移行に持たせ、本番と手元の食い違いを無くす（SEC-NEWS-003、ADR-0164）。保存の道を日付と uuid で作り、上書きと推測を防ぐ（DRV-NEWS-010、ADR-0022） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
-| 出どころ | 実装から推定（`supabase/seed.sql`、`src/lib/storage/news-images.ts`、`src/app/api/admin/news/route.ts`） |
+| 出どころ | 実装から推定（`supabase/migrations/20261026130600_sec_storage_buckets.sql`、`supabase/seed.sql`、`src/lib/storage/news-images.ts`、`src/app/api/admin/news/route.ts`） |
 
 | 項目 | 内容 |
 | --- | --- |
-| 定義 | 手元の見本 `supabase/seed.sql` が `public=false` で作るだけ。移行には無い。大きさ（`file_size_limit`）と種類（`allowed_mime_types`）の上限は付けない。全体の上限は `supabase/config.toml` の 50MiB |
-| 方針 | `storage.objects` に news-images の方針は無い。手元では anon・authenticated は読み書きできず、service role だけ（推定） |
+| 定義 | 2026-10-26 から移行 `sec_storage_buckets`（`supabase/migrations/`）が持つ。`public=false`・`file_size_limit=5242880`（5MiB）・`allowed_mime_types` は `image/jpeg`・`image/png`・`image/webp`・`image/gif` の 4 つ。本番に置き場は既にあるので `ON CONFLICT (id) DO UPDATE` で 3 つの設定を合わせる。手元の見本 `supabase/seed.sql` の置き場の行は `ON CONFLICT DO NOTHING` なので、移行の後に入っても設定を壊さない。窓口の許す種類と大きさと同じ値。全体の上限は `supabase/config.toml` の 50MiB |
+| 方針 | `storage.objects` に news-images の方針は無い（移行も作らない。名指しする方針があれば移行の自己検査が止める）。anon・authenticated は読み書きできず、service role だけ |
 | 道 | 作る時 `news/<YYYY-MM-DD>/<uuid>.<MIME から決めた拡張子>`、直す時は拡張子をファイル名から取る。上書きしない、キャッシュ 3600 秒 |
 | 署名 | service role で期限 3600 秒（ARC-NEWS-003）。署名するのは管理と検索で、公開の一覧・詳細は署名しない（SEC-NEWS-005） |
 | 片付け | 作成の失敗・差し替え・削除の後も画像は残る |
 
-- 本番の置き場の公開の設定と方針は移行で持っておらず、確かめていない（SEC-NEWS-003 の「移行で持つ」は満たさないので上位にしない）
+- 置き場の設定は移行 `sec_storage_buckets` で持つ（SEC-NEWS-003 を満たす。この移行を当てた DB でだけ満たす）。既にある 5MB 超のファイルは残り、新しい上げ物だけが断られる（ADR-0164）。本番の公開の設定と方針は適用の前に読んで確かめる（まだ読んでいない）
 
 ### DATA-NEWS-005 お知らせの権限 `admin.news.read`・`admin.news.manage` と初めの割り当て
 

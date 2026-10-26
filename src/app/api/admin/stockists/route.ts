@@ -5,12 +5,12 @@
  * @impl IMPL-STOCKIST-141
  * @design DD-STOCKIST-034
  * @remarks 一覧の読みと作成の変更で必要な権限を分け、読みの権限だけでは書けないようにする（SEC-STOCKIST-006）。
- * 変更は認可の次に回数の制限、その次に CSRF の token を確かめる。回数の制限を認可の後に呼ぶので、認可で断った要求は数えない。これは SEC-STOCKIST-020 を満たさない（推定）。
+ * 変更は認可の次に回数の制限、その次に CSRF の token を確かめる。書き込みは認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（ADR-0267）。回数の制限を認可の後に呼ぶので、認可で断った要求は数えない。これは SEC-STOCKIST-020 を満たさない（推定）。
  * 一覧は内部の列を除いた 8 列だけ返し（SEC-STOCKIST-009）、壊れた JSON は 500 でなく 400 にする（SEC-STOCKIST-013）。検証の誤りは項目の名前だけの固定の本文にし（SEC-STOCKIST-014）、DB の誤りは符号だけを記録する。
  * 認可の拒否・回数の制限・CSRF の拒否を含む全部の応答を、export で withNoStore に通して `Cache-Control: private, no-store` にし（SEC-STOCKIST-010）、外側の catch の記録は名前と符号だけにする（SEC-STOCKIST-014）。
  */
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { withNoStore } from '@/lib/http/no-store';
@@ -111,7 +111,7 @@ async function createStockist(request: Request) {
       return toInvalidStockistResponse(parsed.error);
     }
 
-    const supabase = await createClient(request);
+    const supabase = await createServiceRoleClient();
 
     const { data, error } = await supabase
       .from('stockists')

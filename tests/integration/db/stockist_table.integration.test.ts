@@ -7,7 +7,7 @@ import { describeLocalDb } from './helpers/local-db';
  * 手元の使い捨て DB でだけ流す。各試験は取引の中で動かし、最後に巻き戻して足した行を残さない。
  */
 const STORE_TYPES = ['FLAGSHIP STORE', 'STORE', 'SELECT SHOP'];
-const REQUIRED_COLUMNS = ['type', 'name', 'address', 'phone', 'time', 'holiday', 'status'];
+const REQUIRED_COLUMNS = ['name', 'address', 'phone', 'time', 'holiday', 'status'];
 
 type Stockist = {
   type: string | null;
@@ -84,7 +84,7 @@ describeLocalDb('integration: 取扱店の表 stockists', (db) => {
     expect(rows.slice(1).map(({ column_name, data_type, is_nullable, column_default }) => ({
       column_name, data_type, is_nullable, column_default,
     }))).toEqual([
-      { column_name: 'type', data_type: 'text', is_nullable: 'NO', column_default: null },
+      { column_name: 'type', data_type: 'text', is_nullable: 'YES', column_default: null },
       { column_name: 'name', data_type: 'text', is_nullable: 'NO', column_default: null },
       { column_name: 'address', data_type: 'text', is_nullable: 'NO', column_default: null },
       { column_name: 'phone', data_type: 'text', is_nullable: 'NO', column_default: null },
@@ -143,13 +143,14 @@ describeLocalDb('integration: 取扱店の表 stockists', (db) => {
     expect(result.code).toBe('23502');
   });
 
-  test('DATA-STOCKIST-001 種別を省いた作成は NOT NULL の違反で落ちる（管理の作成の窓口は種別を送らない）', async () => {
-    const result = await failure(
+  test('DATA-STOCKIST-001 種別を省いた作成は通り、種別は NULL になる（管理の作成の窓口は種別を送らない。移行 stockists_type_optional）', async () => {
+    const inserted = await db().query(
       `insert into public.stockists (name, address, phone, "time", holiday, status)
-       values ('no type', 'a', 'p', 't', 'h', 'private')`,
+       values ('no type', 'a', 'p', 't', 'h', 'private')
+       returning type`,
     );
 
-    expect(result.code).toBe('23502');
+    expect(inserted.rows).toEqual([{ type: null }]);
   });
 
   test('DATA-STOCKIST-001 状態を省くと private が入る', async () => {

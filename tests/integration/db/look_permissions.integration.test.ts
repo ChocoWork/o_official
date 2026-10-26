@@ -257,27 +257,28 @@ describeLocalDb('integration: look permissions', (db) => {
     expect(await permissionsOf(reader)).toEqual({ read: true, manage: false });
     expect(await visibleIds(reader, 'authenticated', ids)).toEqual(ids);
     expect(await visibleLinkedLooks(reader, 'authenticated', ids)).toEqual([hidden]);
-    expect(await writes(reader, hidden)).toEqual({ insert: '42501', update: 0, delete: 0 });
+    expect(await writes(reader, hidden)).toEqual({ insert: '42501', update: '42501', delete: '42501' });
   });
 
-  test('DATA-LOOK-006 admin.looks.manage を持つ店長は LOOK を足し・直し・消せ、持たないサポーターは断られる', async () => {
+  test('DATA-LOOK-006 admin.looks.manage を持つ店長でも、DB へ直に LOOK を足し・直し・消すのは権限の誤り（42501）で断られる（書き込みは service role だけ）', async () => {
     const hidden = await insertLook('private');
+    const denied = { insert: '42501', update: '42501', delete: '42501' };
 
-    expect(await writes(claimsOf(await member('admin')), hidden)).toEqual({ insert: 1, update: 1, delete: 1 });
-    expect(await writes(claimsOf(await member('supporter')), hidden)).toEqual({ insert: '42501', update: 0, delete: 0 });
+    expect(await writes(claimsOf(await member('admin')), hidden)).toEqual(denied);
+    expect(await writes(claimsOf(await member('supporter')), hidden)).toEqual(denied);
 
     const res = await db().query('select theme from public.looks where id = $1', [hidden]);
     expect(res.rows).toHaveLength(1);
   });
 
-  test('DATA-LOOK-006 admin.looks.manage を持つ店長は商品とのつながりを足し・直し・消せ、持たないサポーターは断られる', async () => {
+  test('DATA-LOOK-006 admin.looks.manage を持つ店長でも、DB へ直に商品とのつながりを足し・直し・消すのは権限の誤り（42501）で断られる', async () => {
     const itemId = await seedItemId();
     const linked = await insertLook('private');
     const empty = await insertLook('private');
     await linkItem(linked, itemId);
+    const denied = { insert: '42501', update: '42501', delete: '42501' };
 
-    expect(await linkWrites(claimsOf(await member('admin')), linked, empty, itemId)).toEqual({ insert: 1, update: 1, delete: 1 });
-    expect(await linkWrites(claimsOf(await member('supporter')), linked, empty, itemId))
-      .toEqual({ insert: '42501', update: 0, delete: 0 });
+    expect(await linkWrites(claimsOf(await member('admin')), linked, empty, itemId)).toEqual(denied);
+    expect(await linkWrites(claimsOf(await member('supporter')), linked, empty, itemId)).toEqual(denied);
   });
 });

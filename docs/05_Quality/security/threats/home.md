@@ -100,7 +100,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 商品の原価（`pattern_cost`・`mass_production_cost`）と内部の注記（`product_note`） |
 | 脅威 | 誰でも、ブラウザに出ている anon の鍵で、公開済みの商品の原価を読む |
-| 起こり方 | `items` に anon・authenticated の表の単位の SELECT がある（`remote_schema.sql:4160`）。RLS は行だけを絞り、公開済みの行の全部の列を許す（`:3462-3465`）。PostgREST に `select=pattern_cost,mass_production_cost,product_note` を送れば届く。列の単位の権限を絞る移行は無い（`items` の原価の列は `remote_schema.sql:587-588,594` だけに出る）。ホームのアプリは列を選んで読み（`src/lib/items/public.ts:6-7`）、原価を出さない。原価の履歴の表 `item_cost_history` の道は、もっと重いので THR-HOME-020 に分けた |
+| 起こり方 | `items` に anon・authenticated の表の単位の SELECT がある（`remote_schema.sql:4160`）。RLS は行だけを絞り、公開済みの行の全部の列を許す（`:3462-3465`）。PostgREST に `select=pattern_cost,mass_production_cost,product_note` を送れば届く。列の単位の権限を絞る移行は無い（`items` の原価の列は `remote_schema.sql:587-588,594` だけに出る）。ホームのアプリは列を選んで読み（`src/lib/items/public.ts:6-7`）、原価を出さない。原価の履歴の表 `item_cost_history` の道は、もっと重いので THR-HOME-020 に分けた。**2026-10-26 に直した**: 移行 `sec_grants_hardening` が `items` の表の権限を全部外し、原価の2列を除く21列の SELECT だけを anon・authenticated に付けた。`product_note` はお客さん向けの注意書きなので公開のまま（ユーザーの決定 Q7）。新しい列は自動では見えない |
 | 影響 | 原価と値付けの考えが競合や利用者に知られる。内部の注記が出る |
 | 対策 | SEC-HOME-004 |
 | ASVS | V4.1.3 |
@@ -114,7 +114,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | `items` の中身と形 |
 | 脅威 | RLS の方針の書き違い・足し違いが1つ入った時に、anon が行を書き換える・消す |
-| 起こり方 | `items` に anon・authenticated へ DELETE・INSERT・UPDATE・TRUNCATE・TRIGGER・REFERENCES・MAINTAIN を含む全部の権限を付けている（`remote_schema.sql:4160`）。今は RLS に anon の書きの方針が無いので書けない。在庫の表は権限を剥がしてから付け直した（`supabase/migrations/20260919065336_add_variant_inventory_tables.sql:104-113`）が、`items` は剥がしていない |
+| 起こり方 | `items` に anon・authenticated へ DELETE・INSERT・UPDATE・TRUNCATE・TRIGGER・REFERENCES・MAINTAIN を含む全部の権限を付けている（`remote_schema.sql:4160`）。今は RLS に anon の書きの方針が無いので書けない。在庫の表は権限を剥がしてから付け直した（`supabase/migrations/20260919065336_add_variant_inventory_tables.sql:104-113`）が、`items` は剥がしていない。**2026-10-26 に直した**: 移行 `sec_grants_hardening` が全権限を外し、書き込み系の7権限は付け直していない（管理の書き込みは service role の窓口。ユーザーの決定 Q7）。service_role の権限は明示で付けた |
 | 影響 | 守りが RLS の1段だけになる。誤りが入るとホームの中身の改ざん・消去に届く |
 | 対策 | SEC-HOME-005 |
 | ASVS | V4.1.3 |
@@ -324,7 +324,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 原価の履歴（`item_cost_history` の `pattern_cost`・`mass_production_cost`・`pdf_url`）と、その正しさ |
 | 脅威 | 誰でも（anon の鍵を持つ者も）、下書きを含む全部の商品の原価の履歴を読み、書き換え、消す |
-| 起こり方 | `item_cost_history` に全員（PUBLIC）へ読み・書き・消しを無条件で許す `"Allow all"` の方針があり（`remote_schema.sql:3456-3459`）、anon・authenticated に全部の権限も付いている（`:4158`）。PostgREST でこの表を直接叩けば届く。列は `remote_schema.sql:557-566`。後の移行にこの表を直す物は無い。`src/` にこの表を使うコードは無い（移行の外に参照が無い。推定） |
+| 起こり方 | `item_cost_history` に全員（PUBLIC）へ読み・書き・消しを無条件で許す `"Allow all"` の方針があり（`remote_schema.sql:3456-3459`）、anon・authenticated に全部の権限も付いている（`:4158`）。PostgREST でこの表を直接叩けば届く。列は `remote_schema.sql:557-566`。後の移行にこの表を直す物は無い。`src/` にこの表を使うコードは無い（移行の外に参照が無い。推定）。**2026-10-26 に直した**: 移行 `sec_grants_hardening` が `"Allow all"` を消し、権限を外したうえで authenticated に SELECT だけを付け、RLS の方針 `has_permission('admin.finance.read')` で管理者だけが読めるようにした（ユーザーの決定 Q8。読む画面・窓口・関数は `src/`・`scripts/` に1つも無いことを確かめた）。書くのは service role だけ |
 | 影響 | 行があれば、原価と値付けの考えが誰にでも知られ、`pdf_url` の書き換えや履歴の消去もできる。使っていない表に行が無ければ、害は表が開いている事実に留まる |
 | 対策 | SEC-HOME-020 |
 | ASVS | V4.1.3 |

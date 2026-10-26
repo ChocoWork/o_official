@@ -5,9 +5,11 @@
  * 手元の Supabase の PostgREST（NEXT_PUBLIC_SUPABASE_URL/rest/v1）を request fixture で直接叩く。手元の DB への足し込みと確かめは pg。
  * - SEC-HOME-003-AC-01/02: admin ロール（admin.items.read・admin.items.manage を持つ）の aal1 の JWT。
  *   admin.items.* の付与を確かめる間は withPermissionScenario の advisory lock を持ち、終わりに差分で元へ戻す
- * - SEC-HOME-004-AC-01: anon の鍵と一般会員の JWT で、原価と注記の3つの列を select する
+ * - SEC-HOME-004-AC-01: anon の鍵と一般会員の JWT で、原価の2つの列（pattern_cost・mass_production_cost）を select する。
+ *   product_note はお客さん向けの注意書きなので公開の列で、200 で値が返ることを対照として確かめる
  * - SEC-HOME-005-AC-01: anon の鍵で items の insert・update・delete を送り、ホームの商品の名前の並びが変わらないことを確かめる
- * - SEC-HOME-020-AC-01: anon の鍵と一般会員の JWT で item_cost_history の select・insert・update・delete を送る
+ * - SEC-HOME-020-AC-01: anon の鍵と一般会員の JWT で item_cost_history の select・insert・update・delete を送る。
+ *   anon は全部が権限の誤り。一般会員は select が 200 で 0 件（admin.finance.read の方針で絞られる）、insert・update・delete が権限の誤り
  * 足した行は finally で消す。公開の商品は見本の最新の直後の日時で入れ（ホームの ITEM の節に出る前提を落とさず、いちばん新しい商品は奪わない）、
  * 公開の行を足す試験（003-AC-02・004-AC-01・005-AC-01）は withHomeCatalogLock('exclusive') でほかの HOME の試験と直列にする。
  * 一般会員・管理者の JWT は worker ごとに1回だけ作る（ログインの回数の制限を使い切らない）。
@@ -131,7 +133,6 @@ test.describe('FR-HOME-024 admin ロールの aal1 の JWT で items を直接�
 for (const vp of VIEWPORTS) {
   test.describe(`FR-HOME-024 admin ロールの aal1 の JWT で items を直接書き換える (${vp.name})`, () => {
     test(`SEC-HOME-003-AC-02 ${vp.name}: admin.items.manage を持つ利用者の aal1 の JWT の update・delete が行を変えずに終わり、ホームに元の名前のまま表示される`, async ({ request, page }) => {
-      test.fail(true, 'SEC-HOME-003 今のコードは満たさない（docs/02_Requirements/areas/home.md）');
       test.setTimeout(300_000);
       requireLocalSupabase();
       await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -181,15 +182,14 @@ for (const vp of VIEWPORTS) {
 }
 
 test.describe('FR-HOME-024 anon の鍵と一般会員の JWT で items の原価と注記を直接読む', () => {
-  test('SEC-HOME-004-AC-01: anon の鍵と一般会員の JWT で pattern_cost・mass_production_cost・product_note を select すると、どちらも権限の誤りで終わり、原価の値が返らない', async ({ request }) => {
-    test.fail(true, 'SEC-HOME-004 今のコードは満たさない（docs/02_Requirements/areas/home.md）');
+  test('SEC-HOME-004-AC-01: anon の鍵と一般会員の JWT で pattern_cost・mass_production_cost を select すると、どちらも権限の誤りで終わり、原価の値が返らない（product_note は公開の列として読める）', async ({ request }) => {
     test.setTimeout(120_000);
     requireLocalSupabase();
     const member = await memberActor();
     // 公開の商品を足している間は、ホームの公開の件数・並びを読むほかの試験と重ならないよう排他の lock を持つ
     await withHomeCatalogLock('exclusive', async () => {
       const item = await withLocalDb((db) => seedHomeItem(db, 'cost', 'published'));
-      const secrets = [COST_VALUES.pattern, COST_VALUES.massProduction, item.note];
+      const secrets = [COST_VALUES.pattern, COST_VALUES.massProduction];
       try {
         const callers = [
           { label: 'anon の鍵', token: ANON_KEY },
@@ -203,12 +203,12 @@ test.describe('FR-HOME-024 anon の鍵と一般会員の JWT で items の原価
           expect(control.status(), `${caller.label}: 公開の列は読める`).toBe(200);
           expect((await jsonRows(control)).map((row) => row.name), `${caller.label}: 公開の列は読める（名前）`).toEqual([item.name]);
 
-          const columnSets = [
-            'pattern_cost,mass_production_cost,product_note',
-            'pattern_cost',
-            'mass_production_cost',
-            'product_note',
-          ];
+          // product_note はお客さん向けの注意書きで公開の列（Q7）。対照として 200 で値が返る
+          const note = await request.get(restUrl('items', `?select=id,product_note&id=eq.${item.id}`), { headers, failOnStatusCode: false });
+          expect(note.status(), `${caller.label}: product_note は公開の列として読める`).toBe(200);
+          expect((await jsonRows(note)).map((row) => row.product_note), `${caller.label}: product_note は公開の列として読める（値）`).toEqual([item.note]);
+
+          const columnSets = ['pattern_cost,mass_production_cost', 'pattern_cost', 'mass_production_cost'];
           for (const columns of columnSets) {
             const response = await request.get(restUrl('items', `?select=${columns}&id=eq.${item.id}`), { headers, failOnStatusCode: false });
             expectPermissionError(response, `${caller.label}: select=${columns}`);
@@ -284,8 +284,7 @@ async function expectAnonWritesDenied(
   });
 }
 
-// SEC-HOME-005-AC-01 は insert（今のコードは権限の誤りで終わる）と update・delete（今のコードは anon に権限が付いていて 200 で通る）を
-// 片方の失敗がもう片方を隠さないよう、別の試験にする。
+// SEC-HOME-005-AC-01 は insert と update・delete を、片方の失敗がもう片方を隠さないよう別の試験にする。
 for (const vp of VIEWPORTS) {
   test.describe(`FR-HOME-024 anon の鍵で items を直接書く (${vp.name})`, () => {
     test(`SEC-HOME-005-AC-01 ${vp.name}: anon の鍵の items への insert が権限の誤りで終わり、その後のホームの表示が変わらない`, async ({ request, page }) => {
@@ -294,7 +293,6 @@ for (const vp of VIEWPORTS) {
     });
 
     test(`SEC-HOME-005-AC-01 ${vp.name}: anon の鍵の items への update・delete が、どちらも権限の誤りで終わり、その後のホームの表示が変わらない`, async ({ request, page }) => {
-      test.fail(true, 'SEC-HOME-005 今のコードは満たさない（docs/02_Requirements/areas/home.md）');
       test.setTimeout(120_000);
       await expectAnonWritesDenied(request, page, vp, ['update', 'delete']);
     });
@@ -302,8 +300,7 @@ for (const vp of VIEWPORTS) {
 }
 
 test.describe('FR-HOME-024 anon の鍵と一般会員の JWT で item_cost_history を直接読み書きする', () => {
-  test('SEC-HOME-020-AC-01: anon の鍵と一般会員の JWT の item_cost_history への select・insert・update・delete が、どれも権限の誤りで終わり、原価の値が返らず、行が変わらない', async ({ request }) => {
-    test.fail(true, 'SEC-HOME-020 今のコードは満たさない（docs/02_Requirements/areas/home.md）');
+  test('SEC-HOME-020-AC-01: anon の鍵の item_cost_history への select・insert・update・delete が権限の誤りで終わり、一般会員の JWT の select が 200 で 0 件、insert・update・delete が権限の誤りで終わり、どちらでも原価の値が返らず行が変わらない', async ({ request }) => {
     requireLocalSupabase();
     const member = await memberActor();
     const { item, history } = await withLocalDb(async (db) => {
@@ -324,7 +321,13 @@ test.describe('FR-HOME-024 anon の鍵と一般会員の JWT で item_cost_histo
           restUrl('item_cost_history', `?select=id,season_key,pattern_cost,mass_production_cost,pdf_url&id=eq.${history.id}`),
           { headers, failOnStatusCode: false },
         );
-        expectPermissionError(selected, `${caller.label}: select`);
+        if (caller.token === ANON_KEY) {
+          expectPermissionError(selected, `${caller.label}: select`);
+        } else {
+          // 一般会員は表の SELECT 権限を持つが、admin.finance.read の方針で行が1件も見えない
+          expect(selected.status(), `${caller.label}: select は 200`).toBe(200);
+          expect(await jsonRows(selected), `${caller.label}: select は 0 件`).toHaveLength(0);
+        }
         await expectNoLeak(selected, `${caller.label}: select`, secrets);
 
         const insertKey = uniqueTag(`history-insert-${index}`);

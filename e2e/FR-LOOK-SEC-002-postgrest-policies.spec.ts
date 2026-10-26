@@ -35,8 +35,8 @@ const clientOptions = { auth: { persistSession: false, autoRefreshToken: false }
 // 表の CHECK（置き場の中の looks/ の下）が入った後も通る、足す行の画像の道
 const VALID_IMAGE = 'looks/e2e-look-sec-002.png';
 // 見本の画像（scripts/e2e/seed-storage.ts が look-images に置く）
-const SEEDED_LOOK_IMAGE = 'e2e/look-1-1.png';
-const ITEM_IMAGE = 'e2e/item-3-1.png';
+const SEEDED_LOOK_IMAGE = 'looks/e2e/look-1-1.png';
+const ITEM_IMAGE = 'items/e2e/item-3-1.png';
 
 type JsonRow = Record<string, unknown>;
 type Fixture = {
@@ -92,12 +92,15 @@ async function jsonObject(response: APIResponse): Promise<JsonRow> {
   }
 }
 
-/** 「権限の誤り（401・403）か、0 件で終わった」こと。行が 1 件でも返れば変更が通ったとみなす */
-async function expectDenied(response: APIResponse, label: string): Promise<void> {
-  const status = response.status();
-  if (status === 401 || status === 403) return;
-  const rows = await jsonRows(response);
-  expect(status < 300 && rows.length === 0, `${label}: 権限の誤りでも 0 件でもない（status: ${status}, 返った行: ${rows.length}）`).toBe(true);
+/**
+ * 「表の権限が無い」ことで断られたこと（403・SQLSTATE 42501・文が permission denied for table <表>）。
+ * RLS の違反（new row violates row-level security policy）や 0 件の成功は通さない。JWT は有効なので 401 も通さない
+ */
+async function expectPermissionDenied(response: APIResponse, table: string, label: string): Promise<void> {
+  const body = await jsonObject(response);
+  expect(response.status(), `${label}: 権限の誤りの状態`).toBe(403);
+  expect(body.code, `${label}: SQLSTATE`).toBe('42501');
+  expect(String(body.message), `${label}: 権限の誤りの文（RLS の誤りでも 0 件の成功でもない）`).toBe(`permission denied for table ${table}`);
 }
 
 /**
@@ -221,7 +224,6 @@ async function readLookItems(lookId: number): Promise<Array<{ item_id: number; c
 
 test.describe('FR-LOOK-SEC-002 anon と一般会員の look_items の直接の読み出し', () => {
   test('SEC-LOOK-002-AC-01 公開の LOOK に非公開の商品を1件紐づけた状態で、anon の select の結果にその商品の item_id が含まれない', async ({ request }) => {
-    test.fail(true, 'SEC-LOOK-002-AC-01 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     await withFixture('SEC002A', async (fx) => {
       const headers = postgrestHeaders(ANON_KEY);
       // 公開の LOOK の紐づきを LOOK の id で指す select。公開の商品の紐づきは読め（鍵が通っている）、非公開の商品は含まれない
@@ -243,7 +245,6 @@ test.describe('FR-LOOK-SEC-002 anon と一般会員の look_items の直接の�
   });
 
   test('SEC-LOOK-002-AC-02 権限の無い一般会員の JWT の look_items の select の結果にも、非公開の商品の item_id が含まれない', async ({ request }) => {
-    test.fail(true, 'SEC-LOOK-002-AC-02 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     const member = await memberAccessToken();
     await withFixture('SEC002B', async (fx) => {
       const headers = postgrestHeaders(member);
@@ -292,7 +293,6 @@ test.describe('FR-LOOK-SEC-002 aal1 の JWT で PostgREST を直接叩く', () =
   });
 
   test('SEC-LOOK-003-AC-02 admin.looks.manage を持つ利用者の aal1 の JWT の looks・look_items への insert・update・delete が、どれも行を変えずに終わる', async ({ request }) => {
-    test.fail(true, 'SEC-LOOK-003-AC-02 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     const actor = await aal1Admin();
     expect(actor.aal).toBe('aal1');
     await withFixture('SEC003B', async (fx) => {
@@ -309,11 +309,11 @@ test.describe('FR-LOOK-SEC-002 aal1 の JWT で PostgREST を直接叩く', () =
 
       // looks の insert・update・delete
       const insertedLook = await request.post(lookUrl('looks', ''), { headers, data: lookBody(insertTheme, 'private'), failOnStatusCode: false });
-      await expectDenied(insertedLook, 'looks の insert');
+      await expectPermissionDenied(insertedLook, 'looks', 'looks の insert');
       const updatedLook = await request.patch(lookUrl('looks', `?id=eq.${fx.publishedLookId}`), { headers, data: { theme: updatedTheme }, failOnStatusCode: false });
-      await expectDenied(updatedLook, 'looks の update');
+      await expectPermissionDenied(updatedLook, 'looks', 'looks の update');
       const deletedLook = await request.delete(lookUrl('looks', `?id=eq.${fx.deleteLookId}`), { headers, failOnStatusCode: false });
-      await expectDenied(deletedLook, 'looks の delete');
+      await expectPermissionDenied(deletedLook, 'looks', 'looks の delete');
 
       // look_items の insert・update・delete
       const insertedLink = await request.post(lookUrl('look_items', ''), {
@@ -321,18 +321,18 @@ test.describe('FR-LOOK-SEC-002 aal1 の JWT で PostgREST を直接叩く', () =
         data: { look_id: fx.publishedLookId, item_id: fx.spareItemId },
         failOnStatusCode: false,
       });
-      await expectDenied(insertedLink, 'look_items の insert');
+      await expectPermissionDenied(insertedLink, 'look_items', 'look_items の insert');
       const updatedLink = await request.patch(lookUrl('look_items', `?look_id=eq.${fx.publishedLookId}&item_id=eq.${fx.publishedItemId}`), {
         headers,
         data: { created_at: '2000-01-01T00:00:00Z' },
         failOnStatusCode: false,
       });
-      await expectDenied(updatedLink, 'look_items の update');
+      await expectPermissionDenied(updatedLink, 'look_items', 'look_items の update');
       const deletedLink = await request.delete(lookUrl('look_items', `?look_id=eq.${fx.publishedLookId}&item_id=eq.${fx.privateItemId}`), {
         headers,
         failOnStatusCode: false,
       });
-      await expectDenied(deletedLink, 'look_items の delete');
+      await expectPermissionDenied(deletedLink, 'look_items', 'look_items の delete');
 
       // DB の行が変わっていない
       expect(await readLooks('themes', [insertTheme]), 'insert した LOOK が DB に無い').toHaveLength(0);
@@ -366,7 +366,6 @@ function allFalse(privileges: readonly string[]): Record<string, boolean> {
 
 test.describe('FR-LOOK-SEC-002 LOOK の表の権限の段', () => {
   test('SEC-LOOK-004-AC-01 anon について looks・look_items の INSERT・UPDATE・DELETE・TRUNCATE の権限が全部 false で、anon の書き込みが RLS ではなく権限の誤りで断られる', async ({ request }) => {
-    test.fail(true, 'SEC-LOOK-004-AC-01 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     requireLocalEnv();
     const privileges = ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] as const;
     expect(await tablePrivileges('anon', privileges), 'anon の権限（has_table_privilege）が全部 false').toEqual(allFalse(privileges));
@@ -393,7 +392,6 @@ test.describe('FR-LOOK-SEC-002 LOOK の表の権限の段', () => {
   });
 
   test('SEC-LOOK-004-AC-02 authenticated について looks・look_items の TRUNCATE・TRIGGER・REFERENCES の権限が全部 false', async () => {
-    test.fail(true, 'SEC-LOOK-004-AC-02 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     requireLocalEnv();
     // この 3 つの権限は PostgREST の道が無い（TRUNCATE などは HTTP で届かない）ので、権限の表だけを見る
     const privileges = ['TRUNCATE', 'TRIGGER', 'REFERENCES'] as const;
@@ -402,10 +400,9 @@ test.describe('FR-LOOK-SEC-002 LOOK の表の権限の段', () => {
 });
 
 test.describe('FR-LOOK-SEC-002 LOOK の画像の置き場の設定', () => {
-  // 見本の SQL（supabase/seed.sql）は置き場を (id, name, public) だけで入れ、大きさと種類の上限を入れない。
-  // 手元の DB で上限が 5MB と 4 種類になっているなら、それは移行が置いたもの。移行が置き場を作る前は赤。
+  // 見本の SQL（supabase/seed.sql）は置き場を (id, name, public) だけで入れ、大きさと種類の上限を入れない（ON CONFLICT DO NOTHING）。
+  // 手元の DB で上限が 5MB と 4 種類になっているなら、それは移行 sec_storage_buckets が置いたもの（ADR-0164）。
   test('SEC-LOOK-005-AC-01 置き場 look-images が非公開で、大きさの上限が 5MB、種類の上限が JPEG・PNG・WebP・GIF の4つで、移行がその設定を持つ', async () => {
-    test.fail(true, 'SEC-LOOK-005-AC-01 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     requireLocalEnv();
     const bucket = await withLocalDb(async (db) => {
       const result = await db.query(`select public, file_size_limit::text as file_size_limit, allowed_mime_types from storage.buckets where id = 'look-images'`);
@@ -439,7 +436,6 @@ test.describe('FR-LOOK-SEC-002 LOOK の画像の置き場の公開の URL', () =
 
 test.describe('FR-LOOK-SEC-002 anon が検索の RPC を直接叩く', () => {
   test('SEC-LOOK-010-AC-02 anon の鍵で search_public_looks を呼ぶと、権限の誤りか関数が無い誤りで断られる', async ({ request }) => {
-    test.fail(true, 'SEC-LOOK-010-AC-02 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     requireLocalEnv();
     const response = await request.post(`${SUPABASE_URL}/rest/v1/rpc/search_public_looks`, {
       headers: postgrestHeaders(ANON_KEY),
@@ -457,7 +453,6 @@ test.describe('FR-LOOK-SEC-002 anon が検索の RPC を直接叩く', () => {
 
 test.describe('FR-LOOK-SEC-002 表の段の CHECK', () => {
   test('SEC-LOOK-023-AC-01 service role の201字のテーマの insert と image_urls が other/x.png の insert が、どちらも CHECK の違反（23514）で断られ、行が増えない', async ({ request }) => {
-    test.fail(true, 'SEC-LOOK-023-AC-01 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     requireLocalEnv();
     const id = tag('SEC023');
     const longTheme = `${id}-long`.padEnd(201, 'x');

@@ -128,6 +128,24 @@ async function expectWriteRefusedOrNoRowsAffected(response: APIResponse, label: 
   expect(await parsedRows(response), `${label}: 書き込みで変わった行`).toEqual([]);
 }
 
+/**
+ * 「表の権限が無い」ことで断られたこと（403・SQLSTATE 42501・文が permission denied for table <表>）。
+ * RLS の違反や 0 件の成功は通さない。JWT は有効なので 401 も通さない
+ */
+async function expectPermissionDenied(response: APIResponse, table: string, label: string): Promise<void> {
+  const text = await response.text();
+  let body: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+  expect(response.status(), `${label}: 権限の誤りの状態`).toBe(403);
+  expect(body.code, `${label}: SQLSTATE`).toBe('42501');
+  expect(String(body.message), `${label}: 権限の誤りの文（RLS の誤りでも 0 件の成功でもない）`).toBe(`permission denied for table ${table}`);
+}
+
 async function insertPreset(db: PgClient, label: string): Promise<{ id: string; name: string }> {
   const name = `e2e-misc005-${label}-${Date.now()}${Math.floor(Math.random() * 10_000)}`;
   const inserted = await db.query(
@@ -155,7 +173,6 @@ async function authSessionIds(db: PgClient, userId: string): Promise<string[]> {
 
 test.describe('FR-ADMIN-MISC-005 色見本と管理の表への直接の道', () => {
   test(`SEC-ADMIN-002-AC-01 admin.items.manage を持つ人の aal1 の JWT で色見本に insert・delete を送ると断られ、表の行が変わらない`, async ({ request }) => {
-    test.fail(true, 'SEC-ADMIN-002-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     const admin = await sharedAdminAal1();
     const aal2Admin = await sharedAdminAal2();
     const aal1 = admin.accessToken;
@@ -180,13 +197,13 @@ test.describe('FR-ADMIN-MISC-005 色見本と管理の表への直接の道', ()
           data: { name: attempted, hex: '#112233' },
           failOnStatusCode: false,
         });
-        expectInsertRefused(insert, 'aal1 の JWT');
+        await expectPermissionDenied(insert, PRESETS_TABLE, 'aal1 の JWT の insert');
 
         const remove = await request.delete(`${SUPABASE_URL}/rest/v1/${PRESETS_TABLE}?id=eq.${seeded.id}`, {
           headers: postgrestHeaders(aal1, REPRESENTATION),
           failOnStatusCode: false,
         });
-        await expectWriteRefusedOrNoRowsAffected(remove, 'aal1 の JWT の delete');
+        await expectPermissionDenied(remove, PRESETS_TABLE, 'aal1 の JWT の delete');
 
         // 表の行が変わらない: 送った insert の行は無く、入れておいた行は同じ中身で残る
         const inserted = await db.query('select count(*)::int as n from public.item_color_presets where name = $1', [attempted]);

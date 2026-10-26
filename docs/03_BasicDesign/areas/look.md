@@ -475,8 +475,8 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-005、SEC-LOOK-011、SEC-LOOK-018、SEC-LOOK-019、DRV-LOOK-009、DRV-LOOK-010、FREQ-316-REQ-02（範囲外）、ADR-0154、ADR-0158 |
-| 根拠 | LOOK の誤りを直す窓口で、作成と同じ入力の決まりと権限・回数の確かめを当て、決まりを1つにするため（DRV-LOOK-009、SEC-LOOK-011・019、ADR-0154）。直すたびに画像を上げ直させないよう画像は任意にし、付けた時だけ全部を差し替える（DRV-LOOK-010）。書き換えは監査に残す（ADR-0158） |
+| 上位 | FR-ADMIN-005、SEC-LOOK-011、SEC-LOOK-015、SEC-LOOK-018、SEC-LOOK-019、DRV-LOOK-009、DRV-LOOK-010、FREQ-316-REQ-02（範囲外）、ADR-0154、ADR-0158、ADR-0163 |
+| 根拠 | LOOK の誤りを直す窓口で、作成と同じ入力の決まりと権限・回数の確かめを当て、決まりを1つにするため（DRV-LOOK-009、SEC-LOOK-011・019、ADR-0154）。直すたびに画像を上げ直させないよう画像は任意にし、付けた時だけ全部を差し替える（DRV-LOOK-010）。行・関連の更新は DB の関数 `admin_update_look` の1取引にし、途中の失敗で関連が消えたまま残らないようにする（SEC-LOOK-015、ADR-0163）。書き換えは監査に残す（ADR-0158） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/looks/[id]/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
@@ -486,12 +486,12 @@ stateDiagram-v2
 | 認可 | `admin.looks.manage` |
 | 回数の制限 | 更新15回／10分を送り元と操作者で |
 | 入力 | 道の `id`（認可と回数の後に `parseLookId` で確かめ、合わなければ 400 `Invalid look id`）。multipart は作成と同じ形で、`images` は任意（付ければ枚数・合計・種類・大きさ・中身の印を確かめる） |
-| 処理 | 画像の確かめ（量の枠を使う前）→ 今の LOOK の有無を `maybeSingle` で確かめる（無ければ 404。何も上げない）→ 紐づける商品の数を確かめる → 操作者の1時間の更新の画像の量を数える（作成と別に数える）→ 画像があれば上げて並びを全部差し替える（無ければ元の道筋のまま）→ `looks` を更新 → 画像を差し替えたなら古い道筋を置き場から消す → `look_items` を全部消す → 入れ直す。`looks` の更新が失敗したら、この要求で上げた新しい画像を消す |
+| 処理 | 画像の確かめ（量の枠を使う前）→ 今の LOOK の有無を `maybeSingle` で確かめる（無ければ 404。何も上げない）→ 紐づける商品の数を確かめる → 操作者の1時間の更新の画像の量を数える（作成と別に数える）→ 画像があれば上げて並びを全部差し替える（無ければ `_image_urls` に NULL を渡し、今の画像を関数が保つ）→ `admin_update_look` を rpc で1回呼ぶ（行の更新・関連の全削除・関連の追加を1取引で行い、更新前の `image_urls` を返す）→ 画像を差し替えたなら、戻りの古い道筋を置き場から消す。rpc が失敗したら、この要求で上げた新しい画像を消す（古い画像は消さない） |
 | 成功 | 200 `{success:true}`。監査 `admin.look.update`（success） |
-| 失敗 | 入力・画像の誤り 400、無い LOOK 404、無い商品 400、1時間の量 429・503、取り出しの DB の失敗 500 `Failed to fetch look`、置き場の失敗 500 `Failed to upload image`（置き場の誤りの文は入れない）、更新・関連の削除・関連の追加の失敗 500、例外 500。回数と量の制限で断った時のほかは監査 `admin.look.update`（failure）。置き場の削除が失敗した時は監査の `metadata` に `image_cleanup`・`orphaned_count` を足す |
+| 失敗 | 入力・画像の誤り 400、無い LOOK 404（関数の `P0002` も）、無い商品 400（先の照らしと、関数の外部キー違反 `23503`）、1時間の量 429・503、取り出しの DB の失敗 500 `Failed to fetch look`、置き場の失敗 500 `Failed to upload image`（置き場の誤りの文は入れない）、関数の関連の段の失敗（`LOOK_ITEMS_WRITE_FAILED`）500 `Failed to update linked items`、関数のその他の失敗 500 `Failed to update look`、例外 500。回数と量の制限で断った時のほかは監査 `admin.look.update`（failure）。置き場の削除が失敗した時は監査の `metadata` に `image_cleanup`・`orphaned_count` を足す |
 
-- 3つの書き込みを別々に行い、途中の失敗を戻さない。関連の追加に失敗すると、LOOK が関連商品0件のまま残る（SEC-LOOK-015 は満たさない）
-- 差し替え前の画像は、行を変えた後に消す（SEC-LOOK-014）。種類と拡張子の決め方は作成と同じ（SEC-LOOK-013）
+- 行・関連の更新は `admin_update_look`（service role だけが EXECUTE。SECURITY INVOKER）の1取引で、途中の失敗は行の更新も戻す（SEC-LOOK-015 を満たす。この移行を当てた DB で、窓口と同じ日に当てた時だけ。DATA-LOOK-002、ADR-0163）。関数は行を `FOR UPDATE` で締めるので、同じ LOOK の同時の PUT は順に走り、画像の無い PUT は他の PUT が入れた画像を上書きしない
+- 差し替え前の画像は、関数が返す更新前の `image_urls` から、行を変えた後に消す（SEC-LOOK-014）。種類と拡張子の決め方は作成と同じ（SEC-LOOK-013）
 - 1時間の量を作成と別に数えるので、合わせると1時間に 120MB まで上げられる（SEC-LOOK-012 は満たさない）
 
 ### API-LOOK-005 `PATCH /api/admin/looks/[id]` 公開の状態だけの切り替え
@@ -542,8 +542,8 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-005、FR-LOOK-ALL-001、DRV-LOOK-001、DRV-LOOK-009 |
-| 根拠 | 管理で登録した LOOK を公開と管理の両方から読むため、1つの表に持つ（FR-ADMIN-005）。公開の一覧を作った日時の新しい順に並べるので `created_at` に降順の索引を付ける（FR-LOOK-ALL-001、DRV-LOOK-001）。シーズンと状態は表の CHECK でも窓口と同じ値に限る（DRV-LOOK-009） |
+| 上位 | FR-ADMIN-005、FR-LOOK-ALL-001、DRV-LOOK-001、DRV-LOOK-009、SEC-LOOK-023、ADR-0162 |
+| 根拠 | 管理で登録した LOOK を公開と管理の両方から読むため、1つの表に持つ（FR-ADMIN-005）。公開の一覧を作った日時の新しい順に並べるので `created_at` に降順の索引を付ける（FR-LOOK-ALL-001、DRV-LOOK-001）。シーズンと状態は表の CHECK でも窓口と同じ値に限る（DRV-LOOK-009）。テーマ・説明文の長さと画像の道筋も、窓口を通らない書き込みを止めるため表の CHECK に持つ（SEC-LOOK-023、ADR-0162） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`supabase/migrations/20260901102912_remote_schema.sql`） |
@@ -553,22 +553,23 @@ stateDiagram-v2
 | `id` | bigint、identity、主キー | LOOK の番号 |
 | `season_year` | integer、NOT NULL、CHECK 2000〜2100 | シーズンの年 |
 | `season_type` | text、NOT NULL、CHECK（SS・AW） | シーズン |
-| `theme` | text、NOT NULL | テーマ。長さの制約は無い |
-| `theme_description` | text、NOT NULL、DEFAULT `''` | 説明文。長さの制約は無い |
-| `image_urls` | text の配列、NOT NULL、DEFAULT `'{}'` | 置き場の中の道筋（署名前）の並び |
+| `theme` | text、NOT NULL、CHECK `looks_theme_length_check`（1〜200字、`NOT VALID`） | テーマ |
+| `theme_description` | text、NOT NULL、DEFAULT `''`、CHECK `looks_theme_description_length_check`（4000字まで、`NOT VALID`） | 説明文 |
+| `image_urls` | text の配列、NOT NULL、DEFAULT `'{}'`、CHECK `looks_image_urls_path_check`（`NOT VALID`） | 置き場の中の道筋（署名前）の並び。各要素は `looks/` の下の安全な道筋（空の配列は可。NULL の要素・改行を含む要素・`..`・`//`・先頭の `/`・URL は外れる） |
 | `status` | text、NOT NULL、DEFAULT `'private'`、CHECK（private・published） | 公開の状態（STATE-LOOK-001） |
 | `created_at`・`updated_at` | timestamptz、NOT NULL、DEFAULT now | 更新の前にトリガー `trg_looks_updated_at` が `updated_at` を今にする |
 
 - 索引: `created_at` の降順、`status`
-- テーマ（200字）と説明文（4000字）の長さの上限と `image_urls` の形は窓口の入力の形だけにあり、表には無い。PostgREST で直接書くと窓口の確かめを飛ばせる（SEC-LOOK-023 は満たさない）
+- テーマ（200字）・説明文（4000字）の長さの上限と `image_urls` の形は、2026-10-26 の移行 `sec_rls_predicates_and_constraints` で表の CHECK にも持たせた（SEC-LOOK-023 を満たす。ADR-0162）。長さは文字数（コードポイント）で数える。式は補助関数を作らずに直に書く。`image_urls` は改行でつないだ文字列を1本の正規表現で検査し、要素の数と行の数の一致で「改行を含む要素」を断る
+- 3本とも `NOT VALID` で入れた。既存の行は検査しないが、`NOT VALID` でも新しい INSERT と既存の行の UPDATE（関係の無い列だけの更新も）は検査される。本番の旧い行（旧い公開 URL・長いテーマ）を点検して直してから、別の移行で `VALIDATE` する。この波では `VALIDATE` を書かない
 - 公開日の列は無い
 
 ### DATA-LOOK-002 LOOK と商品の関連の表 `look_items`
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-005、FR-LOOK-DETAIL-002 |
-| 根拠 | 1つの LOOK に使った商品を複数つなぎ、詳細の STYLING ITEMS とカードの関連商品に出すため（FR-LOOK-DETAIL-002）。管理で紐づけを入れ替えられるよう、つなぎだけを別の表に持つ（FR-ADMIN-005） |
+| 上位 | FR-ADMIN-005、FR-LOOK-DETAIL-002、SEC-LOOK-015、ADR-0163 |
+| 根拠 | 1つの LOOK に使った商品を複数つなぎ、詳細の STYLING ITEMS とカードの関連商品に出すため（FR-LOOK-DETAIL-002）。管理で紐づけを入れ替えられるよう、つなぎだけを別の表に持つ（FR-ADMIN-005）。入れ替えは LOOK の行の更新と合わせて DB の関数 `admin_update_look` の1取引で行う（SEC-LOOK-015、ADR-0163） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`supabase/migrations/20260901102912_remote_schema.sql`） |
@@ -582,6 +583,7 @@ stateDiagram-v2
 - 主キーは `(look_id, item_id)` で、同じ商品を2回つなげない。並びの列は無く、取り出しの順は DB 任せ（推定）
 - 商品の公開の状態は見ず、非公開の商品もつなげる。表示の側で公開中の商品に絞る（DRV-LOOK-004、ARC-LOOK-001）
 - LOOK か商品を消すと関連の行も消える
+- 関連の入れ替え（全削除と追加）は `admin_update_look(_look_id bigint, _season_year integer, _season_type text, _theme text, _theme_description text, _image_urls text[], _status text, _item_ids bigint[]) returns text[]` が LOOK の行の更新と1取引で行う（2026-10-26 の移行 `sec_rls_predicates_and_constraints`）。SECURITY INVOKER・`search_path = ''`・service_role だけが EXECUTE（PUBLIC・anon・authenticated は外す）。先頭で `SELECT ... FOR UPDATE` で行を締めて更新前の `image_urls` を読み、無ければ `P0002`（`LOOK_NOT_FOUND`）。`_image_urls` が NULL なら今の画像を保つ。`_item_ids` の重なりは1行にまとめ、NULL は空として扱う。関連の段の失敗は、外部キー違反（`23503`）はそのまま、それ以外は `LOOK_ITEMS_WRITE_FAILED`（`P0001`）に付け直して投げ、行の更新も戻る。戻りは更新前の `image_urls`（窓口が差し替えた古い画像を決める）。確かめ: `tests/integration/db/look_update_function.integration.test.ts`
 
 ### DATA-LOOK-003 `looks`・`look_items` の RLS の方針と表の付与
 
@@ -599,15 +601,16 @@ stateDiagram-v2
 | `looks` | authenticated looks read | authenticated | SELECT | `status='published'` か `has_permission('admin.looks.read')` |
 | `looks` | admin looks manage by permission insert・update・delete | authenticated | INSERT・UPDATE・DELETE | `has_permission('admin.looks.manage')` |
 | `looks` | Service role has full access to looks | service_role | ALL | true |
-| `look_items` | Anyone can view look items for published looks | anon | SELECT | 親の LOOK が `published` |
-| `look_items` | authenticated look items read | authenticated | SELECT | `has_permission('admin.looks.read')` か親の LOOK が `published` |
+| `look_items` | anon reads links of published looks to published items | anon | SELECT | 親の LOOK が `published` かつ紐づく商品が `published` |
+| `look_items` | authenticated reads published links, admins read all | authenticated | SELECT | （親の LOOK が `published` かつ紐づく商品が `published`）か `has_permission('admin.looks.read')` |
 | `look_items` | admin look_items manage by permission insert・update・delete | authenticated | INSERT・UPDATE・DELETE | `has_permission('admin.looks.manage')` |
 | `look_items` | Service role has full access to look items | service_role | ALL | true |
 
-- 使われ方: 公開の取り出し（ARC-LOOK-001）は anon の方針で読む。管理の窓口（ARC-LOOK-002）は service role で、管理の方針を通らない。authenticated 向けの管理の方針は、PostgREST を直接叩く道だけに効く（推定。`trace-matrix.md` の「食い違い」節を参照）
-- `look_items` の読み出しは親の LOOK の公開だけを見て、商品の公開を見ない。非公開の商品の `item_id` を anon が読める（SEC-LOOK-002 は満たさない）
-- `has_permission` は DB の ACL の表だけで決め、aal と session を見ない。権限を持つ人が aal1 の JWT で PostgREST を直接叩くと、非公開の読みと書き換えができ、窓口の回数の制限・画像の確かめ・監査も通らない（推定。SEC-LOOK-003 は満たさない）
-- 付与: anon・authenticated に DELETE・INSERT・MAINTAIN・REFERENCES・SELECT・TRIGGER・TRUNCATE・UPDATE を全部付け、守りは RLS の1段だけ（SEC-LOOK-004 は満たさない）
+- 使われ方: 公開の取り出し（ARC-LOOK-001）は anon の方針で読む。管理の窓口（ARC-LOOK-002）は service role で、管理の方針を通らない。authenticated 向けの管理の読みの方針は、PostgREST を直接叩く道だけに効く（推定。`trace-matrix.md` の「食い違い」節を参照）。書き込みの方針（`manage by permission insert・update・delete`）は、2026-10-26 から authenticated に INSERT・UPDATE・DELETE の権限が無いので働かない。消さずに、権限を戻された時の二重の守りとして残す（ADR-0414）
+- `look_items` の読み出しは、2026-10-26 の移行 `sec_rls_predicates_and_constraints` から、親の LOOK の公開に加えて紐づく商品の公開も見る。非公開の商品の `item_id` は、anon も権限の無い会員も読めない（SEC-LOOK-002 を満たす）。以前の方針名は `Anyone can view look items for published looks`・`authenticated look items read`。管理の読みの枝（`has_permission('admin.looks.read')`）は変えず、波 5 の aal2 で直す。商品の部分問い合わせは `items` の列権限（`id`・`status` は許可内）で動く
+- `has_permission` は DB の ACL の表だけで決め、aal と session を見ない。権限を持つ人が aal1 の JWT で PostgREST を直接叩くと、非公開の読みができる（推定。SEC-LOOK-003-AC-01 は満たさない。波 5 で直す）。書き換えは 2026-10-26 から付与が無く、権限の誤り（`42501`）で断られる（SEC-LOOK-003-AC-02 を満たす）
+- 付与: anon・authenticated に SELECT だけを付ける。INSERT・UPDATE・DELETE・TRUNCATE・TRIGGER・REFERENCES・MAINTAIN は付けない（2026-10-26 の移行 `sec_grants_admin_tables`。ADR-0414）。service_role には ALL を明示する。管理の書き込みは全部 service role の窓口で行う。以前は 8 権限を全部付け、守りは RLS の1段だけだった（SEC-LOOK-004 を満たす）
+- 確かめ: `tests/integration/db/look_grants_admin_tables.integration.test.ts`（移行の形と、役を替えた書き込みが権限の誤りになること。5 表ぶんの移行の形はここに置く）、`look_rls.integration.test.ts`
 
 ### DATA-LOOK-004 検索の関数 `search_looks`・`search_public_looks`
 
@@ -621,30 +624,30 @@ stateDiagram-v2
 
 | 関数 | 中身 | 付与 | 使う所 |
 | --- | --- | --- | --- |
-| `search_looks(search_query, limit_count default 8)` | invoker。`status='published'`。テーマと説明文の ILIKE、`%`・`_` を逃がす。作った日時の新しい順。`limit_count` を上限に丸めない | PUBLIC から外し、anon・authenticated に EXECUTE | 検索（`src/features/search/services/search.service.ts`、範囲外） |
-| `search_public_looks(p_query, p_limit default 6)`（未使用（削除の判断待ち）） | invoker。`status='published'`。`p_limit` を 1〜20 に丸める。`%`・`_` を逃がさない | PUBLIC を含む全部に EXECUTE | 呼ぶ所は見当たらない |
+| `search_looks(search_query, limit_count default 8)` | invoker。`status='published'`。テーマと説明文の ILIKE、`%`・`_` を逃がす。作った日時の新しい順。`limit_count` は 1〜8 に丸める（2026-10-26 から。移行 `sec_search_functions`）。検索語は先頭 100 字、`\` を先に逃がす | PUBLIC から外し、anon・authenticated に EXECUTE | 検索（`src/features/search/services/search.service.ts`、範囲外） |
+| `search_public_looks(p_query, p_limit default 6)`（未使用（削除の判断待ち）） | invoker。`status='published'`。`p_limit` を 1〜20 に丸める。`%`・`_` を逃がさない | PUBLIC・anon・authenticated から外し（2026-10-26）、postgres・service_role に EXECUTE | 呼ぶ所は見当たらない。DROP は別の判断 |
 
-- anon が `search_looks` を直接呼ぶと件数と検索の文字の長さに上限が無い。未使用（削除の判断待ち）の `search_public_looks` を PUBLIC に出している（SEC-LOOK-010 は満たさない）
+- 2026-10-26 から、anon が `search_looks` を直接呼んでも件数は 8 まで、検索語は先頭 100 字だけで比べる。未使用（削除の判断待ち）の `search_public_looks` は PUBLIC・anon・authenticated から EXECUTE を外した（SEC-LOOK-010 を満たす。この移行を当てた DB でだけ満たす。DATA-SEARCH-001、ADR-0315）
 
 ### DATA-LOOK-005 画像の置き場 `look-images`
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | DRV-LOOK-005、ADR-0150 |
-| 根拠 | 非公開の LOOK の画像を公開の URL から開かせないよう、置き場を非公開にして service role と署名つき URL だけで扱うため（DRV-LOOK-005、ADR-0150）。保存の道筋を日付と uuid で作り、上書きと推測を防ぐ |
+| 上位 | DRV-LOOK-005、ADR-0150、SEC-LOOK-005、ADR-0164 |
+| 根拠 | 非公開の LOOK の画像を公開の URL から開かせないよう、置き場を非公開にして service role と署名つき URL だけで扱うため（DRV-LOOK-005、ADR-0150）。置き場の設定を見本でなく移行に持たせ、本番と手元の食い違いを無くす（SEC-LOOK-005、ADR-0164）。保存の道筋を日付と uuid で作り、上書きと推測を防ぐ |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
-| 出どころ | 実装から推定（`supabase/seed.sql`、旧 `migrations/018_create_looks_and_look_images_bucket.sql`、旧 `migrations/030_make_look_images_bucket_private.sql`、`src/lib/storage/look-images.ts`、`src/app/api/admin/looks/route.ts`） |
+| 出どころ | 実装から推定（`supabase/migrations/20261026130600_sec_storage_buckets.sql`、`supabase/seed.sql`、旧 `migrations/018_create_looks_and_look_images_bucket.sql`、旧 `migrations/030_make_look_images_bucket_private.sql`、`src/lib/storage/look-images.ts`、`src/app/api/admin/looks/route.ts`） |
 
 | 項目 | 内容 |
 | --- | --- |
-| 定義 | 今の移行（`supabase/migrations/`）には無い。手元の見本 `supabase/seed.sql` が `public=false` で作るだけで、大きさと種類の上限は付けない。上限（5MB・4つの画像の種類）と非公開化は、今の CI が当てない旧い移行にだけある |
-| 方針 | `storage.objects` に look-images の方針は無い。anon・authenticated は読み書きできず、service role だけ（推定） |
-| 道筋 | `looks/<YYYY-MM-DD>/<uuid>.<ファイル名の拡張子>`、上書きしない、キャッシュ 3600 秒。手元の見本の LOOK は `e2e/look-N-M.png` の道筋を持つ |
+| 定義 | 2026-10-26 から移行 `sec_storage_buckets`（`supabase/migrations/`）が持つ。`public=false`・`file_size_limit=5242880`（5MiB）・`allowed_mime_types` は `image/jpeg`・`image/png`・`image/webp`・`image/gif` の 4 つ。本番に置き場は既にあるので `ON CONFLICT (id) DO UPDATE` で 3 つの設定を合わせる。手元の見本 `supabase/seed.sql` の置き場の行は `ON CONFLICT DO NOTHING` なので、移行の後に入っても設定を壊さない。窓口の許す種類と大きさ（`allowedImageTypes`・`maxImageBytes`）と同じ値 |
+| 方針 | `storage.objects` に look-images の方針は無い（移行も作らない。名指しする方針があれば移行の自己検査が止める）。anon・authenticated は読み書きできず、service role だけ |
+| 道筋 | `looks/<YYYY-MM-DD>/<uuid>.<ファイル名の拡張子>`、上書きしない、キャッシュ 3600 秒。手元の見本の LOOK は `looks/e2e/look-N-M.png` の道筋を持つ（波 2 で `e2e/look-N-M.png` から移した） |
 | 署名 | service role で期限 3600 秒（ARC-LOOK-003） |
 | 片付け | 作成・更新の途中の失敗・差し替え・削除の後も画像は残る |
 
-- 置き場の設定を今の移行で持たない（SEC-LOOK-005 は満たさないので上位にしない）。本番の値は確かめていない
+- 置き場の設定は移行 `sec_storage_buckets` で持つ（SEC-LOOK-005 を満たす。この移行を当てた DB でだけ満たす）。既にある 5MB 超のファイルは残り、新しい上げ物だけが断られる（ADR-0164）。本番の値は適用の前に読んで確かめる（まだ読んでいない）
 - ファイル名に `/` を含むと道筋の階層が増える（推定。multipart の名前の扱いは未確認。SEC-LOOK-013 は満たさない）
 
 ### DATA-LOOK-006 LOOK の権限 `admin.looks.read`・`admin.looks.manage` と初めの割り当て
@@ -676,5 +679,5 @@ stateDiagram-v2
 - 管理の画面のページ（作成・編集）を開けるのは誰か。サーバーの守りが無い殻の扱いをどうするか
 - 詳細へ移る時に一覧のシーズンを引き継ぐか。前後を絞った中で決めるか
 - multipart のファイル名に `/` を含めた時に、置き場の道筋がどうなるか
-- DATA-LOOK-004（`search_looks`・`search_public_looks`）は廃止にした。2つの関数は SQL で、呼ぶのは範囲外の `src/features/search/services/search.service.ts` なので、データの項目も詳細設計も SEARCH の領域が持つ（`search_looks` は DATA-SEARCH-001 が書く。NEWS の DATA-NEWS-003 と同じ扱い）。未使用（削除の判断待ち）の `search_public_looks` は DATA-SEARCH-001 に無く、SEC-LOOK-010 の確かめは受け入れ条件が受け持つ。この持ち方でよいかはユーザーに確かめる
+- DATA-LOOK-004（`search_looks`・`search_public_looks`）は廃止にした。2つの関数は SQL で、呼ぶのは範囲外の `src/features/search/services/search.service.ts` なので、データの項目も詳細設計も SEARCH の領域が持つ（`search_looks` は DATA-SEARCH-001 が書く。NEWS の DATA-NEWS-003 と同じ扱い）。未使用（削除の判断待ち）の `search_public_looks` は DATA-SEARCH-001 の表に載っている（2026-10-26 から EXECUTE を外した）。SEC-LOOK-010 の確かめは受け入れ条件が受け持つ。この持ち方でよいかはユーザーに確かめる
 - この文書の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

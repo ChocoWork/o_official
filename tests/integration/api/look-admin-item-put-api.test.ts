@@ -50,9 +50,11 @@ function createFakeClient(
     uploadResultAt?: number;
     sign?: (path: string) => Result;
     removeResult?: Outcome;
-  } = {}
+  } = {},
+  rpcOutcome?: Outcome
 ) {
   const removals: Removal[] = [];
+  const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
   const ops: TableOp[] = [];
   const seq: string[] = [];
   const uploads: Upload[] = [];
@@ -63,6 +65,15 @@ function createFakeClient(
     uploads,
     signed,
     removals,
+    rpcCalls,
+    // 行・関連の更新は admin_update_look の 1 回の rpc。戻りは更新前の image_urls
+    rpc: jest.fn(async (name: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ name, args });
+      seq.push(`rpc.${name}`);
+      const outcome = rpcOutcome ?? { data: existingImages, error: null };
+      if ('throws' in outcome) throw outcome.throws;
+      return outcome;
+    }),
     from: jest.fn((table: string) => {
       const op: TableOp = { table, op: 'select', calls: [] };
       ops.push(op);
@@ -124,6 +135,8 @@ function setup(
     aal?: string;
     tables?: Tables;
     storage?: Parameters<typeof createFakeClient>[1];
+    /** admin_update_look の結果。既定は成功で、戻りは existingImages */
+    rpc?: Outcome;
   } = {}
 ) {
   client = createFakeClient(
@@ -132,7 +145,8 @@ function setup(
       audit_logs: { insert: { data: null, error: null } },
       ...options.tables,
     },
-    options.storage
+    options.storage,
+    options.rpc
   );
   createServiceRoleClient.mockResolvedValue(client);
   verifyAccessToken.mockResolvedValue({
@@ -246,36 +260,32 @@ function formDataMock(request: Request) {
 type Overrides = {
   existing?: Outcome;
   items?: Outcome;
-  lookUpdate?: Outcome;
-  linksDelete?: Outcome;
-  linksInsert?: Outcome;
 };
 
 function lookTables(overrides: Overrides = {}): Tables {
   return {
     looks: {
       select: overrides.existing ?? { data: { id: 7, status: 'private', image_urls: existingImages }, error: null },
-      update: overrides.lookUpdate ?? { data: null, error: null },
     },
     items: { select: overrides.items ?? { data: [{ id: 3 }, { id: 5 }], error: null } },
-    look_items: {
-      delete: overrides.linksDelete ?? { data: null, error: null },
-      insert: overrides.linksInsert ?? { data: null, error: null },
-    },
   };
 }
 
-function updatePayload() {
-  return tableCalls('looks', 'update')[0]?.find(([m]) => m === 'update')?.[1][0] as Record<string, unknown> | undefined;
+// admin_update_look に渡した引数（無ければ undefined）
+function rpcArgs() {
+  return client.rpcCalls.find((c) => c.name === 'admin_update_look')?.args;
 }
 
-const expectedPayload = {
-  season_year: 2026,
-  season_type: 'AW',
-  theme: 'Dusk',
-  theme_description: 'Quiet evening',
-  image_urls: existingImages,
-  status: 'published',
+// 画像を付けない PUT は _image_urls に NULL を渡し、今の画像を関数が保つ
+const expectedArgs = {
+  _look_id: 7,
+  _season_year: 2026,
+  _season_type: 'AW',
+  _theme: 'Dusk',
+  _theme_description: 'Quiet evening',
+  _image_urls: null,
+  _status: 'published',
+  _item_ids: [3, 5],
 };
 
 const realRandomUUID = globalThis.crypto.randomUUID;
@@ -411,7 +421,7 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     expect(formDataMock(request)).not.toHaveBeenCalled();
   });
 
-  test('API-LOOK-004 画像なしなら元の道筋のまま looks を更新し、関連を消して入れ直し、200 と成功の監査を残す', async () => {
+  test('API-LOOK-004 画像なしなら _image_urls に NULL を渡して admin_update_look の 1 回で更新し、200 と成功の監査を残す', async () => {
     setup({ tables: lookTables() });
 
     const res = await PUT(makeRequest(), ctx('7'));
@@ -420,14 +430,12 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     expect(await res.json()).toEqual({ success: true });
     expect(client.uploads).toHaveLength(0);
     expect(incrementCounterBy).not.toHaveBeenCalled();
-    expect(updatePayload()).toEqual(expectedPayload);
-    expect(tableCalls('looks', 'select')).toEqual([[['select', ['id,status,image_urls']], ['eq', ['id', '7']], ['maybeSingle', []]]]);
+    expect(client.rpcCalls).toEqual([{ name: 'admin_update_look', args: expectedArgs }]);
+    expect(tableCalls('looks', 'select')).toEqual([[['select', ['id,status']], ['eq', ['id', '7']], ['maybeSingle', []]]]);
     expect(tableCalls('items', 'select')).toEqual([[['select', ['id']], ['in', ['id', [3, 5]]]]]);
-    expect(tableCalls('looks', 'update')[0].find(([m]) => m === 'eq')?.[1]).toEqual(['id', '7']);
-    expect(tableCalls('look_items', 'delete')).toEqual([[['delete', []], ['eq', ['look_id', '7']]]]);
-    expect(tableCalls('look_items', 'insert')).toEqual([
-      [['insert', [[{ look_id: 7, item_id: 3 }, { look_id: 7, item_id: 5 }]]]],
-    ]);
+    expect(tableCalls('looks', 'update')).toEqual([]);
+    expect(tableCalls('look_items', 'delete')).toEqual([]);
+    expect(tableCalls('look_items', 'insert')).toEqual([]);
     const rows = auditRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -449,18 +457,12 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     });
   });
 
-  test('API-LOOK-004 有無の確認→商品の確認→looks の更新→関連の削除→関連の追加の順に進める', async () => {
+  test('API-LOOK-004 有無の確認→商品の確認→admin_update_look の 1 回の順に進める', async () => {
     setup({ tables: lookTables() });
 
     await PUT(makeRequest(), ctx());
 
-    expect(dataSeq()).toEqual([
-      'looks.select',
-      'items.select',
-      'looks.update',
-      'look_items.delete',
-      'look_items.insert',
-    ]);
+    expect(dataSeq()).toEqual(['looks.select', 'items.select', 'rpc.admin_update_look']);
   });
 
   test('API-LOOK-004 作成と同じ入力の決まりを当て、上限ちょうどの値と前後の空白は通して空白を除いて保存する', async () => {
@@ -480,18 +482,18 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     );
 
     expect(res.status).toBe(200);
-    expect(updatePayload()).toEqual({
-      ...expectedPayload,
-      season_year: 2100,
-      theme: 't'.repeat(200),
-      theme_description: 'd'.repeat(4000),
-      status: 'private',
+    expect(rpcArgs()).toEqual({
+      ...expectedArgs,
+      _season_year: 2100,
+      _theme: 't'.repeat(200),
+      _theme_description: 'd'.repeat(4000),
+      _status: 'private',
     });
 
     setup({ tables: lookTables() });
     const lowest = await PUT(makeRequest({ fields: { ...validFields, seasonYear: '2000' } }), ctx());
     expect(lowest.status).toBe(200);
-    expect(updatePayload()).toMatchObject({ season_year: 2000 });
+    expect(rpcArgs()).toMatchObject({ _season_year: 2000 });
   });
 
   test('API-LOOK-004 themeDescription が無ければ空の文字として保存する', async () => {
@@ -501,7 +503,7 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     const res = await PUT(makeRequest({ fields }), ctx());
 
     expect(res.status).toBe(200);
-    expect(updatePayload()).toMatchObject({ theme_description: '' });
+    expect(rpcArgs()).toMatchObject({ _theme_description: '' });
   });
 
   test.each([
@@ -698,7 +700,7 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     });
     expect(Buffer.isBuffer(client.uploads[0].body)).toBe(true);
     expect(client.uploads[1].path).toBe(second);
-    expect(updatePayload()).toEqual({ ...expectedPayload, image_urls: [first, second] });
+    expect(rpcArgs()).toEqual({ ...expectedArgs, _image_urls: [first, second] });
     expect(auditRows()[0].metadata).toMatchObject({ image_count: 2 });
   });
 
@@ -707,7 +709,7 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
 
     await PUT(makeRequest({ images: [makeImage('a.jpg', 'image/jpeg')] }), ctx());
 
-    const urls = (updatePayload() as { image_urls: string[] }).image_urls;
+    const urls = rpcArgs()?._image_urls as string[];
     expect(urls).toHaveLength(1);
     expect(urls[0]).toMatch(/^looks\/\d{4}-\d{2}-\d{2}\/uuid-1\.jpg$/);
     expect(urls[0]).not.toMatch(/^https?:/);
@@ -879,13 +881,16 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     expect(await res.json()).toEqual({ error: 'Some linked items do not exist' });
   });
 
-  test('API-LOOK-004 image_urls が配列でなければ空の並びを元に更新する', async () => {
-    setup({ tables: lookTables({ existing: { data: { id: 7, status: null, image_urls: null }, error: null } }) });
+  test('API-LOOK-004 admin_update_look の戻り（更新前の画像）が配列でなければ枚数 0 として更新を成功にする', async () => {
+    setup({
+      tables: lookTables({ existing: { data: { id: 7, status: null, image_urls: null }, error: null } }),
+      rpc: { data: null, error: null },
+    });
 
     const res = await PUT(makeRequest(), ctx());
 
     expect(res.status).toBe(200);
-    expect(updatePayload()).toMatchObject({ image_urls: [] });
+    expect(rpcArgs()).toMatchObject({ _image_urls: null });
     expect(auditRows()[0].metadata).toMatchObject({ previous_status: null, image_count: 0 });
   });
 
@@ -909,14 +914,15 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     });
   });
 
-  test('API-LOOK-004 looks の更新の失敗は 500 Failed to update look と失敗の監査を残し、関連に触らない', async () => {
-    setup({ tables: lookTables({ lookUpdate: { data: null, error: { message: 'rls denied' } } }) });
+  test('API-LOOK-004 admin_update_look の失敗は 500 Failed to update look と失敗の監査を残し、DB の文を出さない', async () => {
+    setup({ tables: lookTables(), rpc: { data: null, error: { code: '42501', message: 'rls denied SECRET' } } });
 
     const res = await PUT(makeRequest(), ctx('7'));
 
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'Failed to update look' });
-    expect(dataSeq()).toEqual(['looks.select', 'items.select', 'looks.update']);
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('SECRET');
+    expect(dataSeq()).toEqual(['looks.select', 'items.select', 'rpc.admin_update_look']);
     expect(auditRows()[0]).toMatchObject({
       detail: 'Failed to update look',
       outcome: 'failure',
@@ -936,7 +942,7 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
       expect(client.storage.from).not.toHaveBeenCalled();
     });
 
-    test('API-LOOK-004 画像つきの更新の成功は、行を変えた後に古い道筋だけを一度に置き場から消す', async () => {
+    test('API-LOOK-004 画像つきの更新の成功は、admin_update_look の戻り（更新前の画像）の古い道筋だけを一度に置き場から消す', async () => {
       setup({ tables: lookTables() });
 
       const res = await PUT(makeRequest({ images: images() }), ctx('7'));
@@ -950,16 +956,11 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
 
     test('API-LOOK-004 古い道筋のうち自分の接頭辞の外（古い見本・外の URL・..）は消さない', async () => {
       setup({
-        tables: lookTables({
-          existing: {
-            data: {
-              id: 7,
-              status: 'private',
-              image_urls: ['looks/2026-10-01/old-a.jpg', 'e2e/look-1-1.png', 'https://evil.example/looks/x.png', 'looks/../y.png'],
-            },
-            error: null,
-          },
-        }),
+        tables: lookTables(),
+        rpc: {
+          data: ['looks/2026-10-01/old-a.jpg', 'e2e/look-1-1.png', 'https://evil.example/looks/x.png', 'looks/../y.png'],
+          error: null,
+        },
       });
 
       const res = await PUT(makeRequest({ images: images() }), ctx('7'));
@@ -968,8 +969,8 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
       expect(client.removals).toEqual([{ bucket: 'look-images', paths: ['looks/2026-10-01/old-a.jpg'] }]);
     });
 
-    test('API-LOOK-004 looks の更新が失敗したら、この要求で上げた新しい画像だけを消し、古い画像は消さない', async () => {
-      setup({ tables: lookTables({ lookUpdate: { data: null, error: { message: 'rls denied' } } }) });
+    test('API-LOOK-004 admin_update_look が失敗したら、この要求で上げた新しい画像だけを消し、古い画像は消さない', async () => {
+      setup({ tables: lookTables(), rpc: { data: null, error: { code: '42501', message: 'rls denied' } } });
 
       const res = await PUT(makeRequest({ images: images() }), ctx('7'));
 
@@ -978,14 +979,40 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
       expect(client.removals[0].paths.some((p) => existingImages.includes(p))).toBe(false);
     });
 
-    test('API-LOOK-004 更新は成功し関連の保存が失敗したら、新しい画像は消さず古い画像を消して 500', async () => {
-      setup({ tables: lookTables({ linksInsert: { data: null, error: { message: 'fk violation' } } }) });
+    test('API-LOOK-004 関連の段の失敗は 1 取引で戻るので、新しい画像を消し、古い画像は消さずに 500', async () => {
+      setup({
+        tables: lookTables(),
+        rpc: { data: null, error: { code: 'P0001', message: 'LOOK_ITEMS_WRITE_FAILED' } },
+      });
 
       const res = await PUT(makeRequest({ images: images() }), ctx('7'));
 
       expect(res.status).toBe(500);
       expect(await res.json()).toEqual({ error: 'Failed to update linked items' });
-      expect(client.removals).toEqual([{ bucket: 'look-images', paths: existingImages }]);
+      expect(client.removals).toEqual([{ bucket: 'look-images', paths: client.uploads.map((u) => u.path) }]);
+      expect(client.removals[0].paths.some((p) => existingImages.includes(p))).toBe(false);
+    });
+
+    test('API-LOOK-004 画像つきで行が無い（P0002）なら 404 Look not found で、上げた画像を消す', async () => {
+      setup({ tables: lookTables(), rpc: { data: null, error: { code: 'P0002', message: 'LOOK_NOT_FOUND' } } });
+
+      const res = await PUT(makeRequest({ images: images() }), ctx('7'));
+
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: 'Look not found' });
+      expect(client.removals).toEqual([{ bucket: 'look-images', paths: client.uploads.map((u) => u.path) }]);
+      expect(auditRows()[0]).toMatchObject({ outcome: 'failure', detail: 'Look not found', resource_id: '7' });
+    });
+
+    test('API-LOOK-004 画像つきで商品の外部キー違反（23503）なら 400 Some linked items do not exist で、上げた画像を消す', async () => {
+      setup({ tables: lookTables(), rpc: { data: null, error: { code: '23503', message: 'fk violation' } } });
+
+      const res = await PUT(makeRequest({ images: images() }), ctx('7'));
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Some linked items do not exist' });
+      expect(client.removals).toEqual([{ bucket: 'look-images', paths: client.uploads.map((u) => u.path) }]);
+      expect(auditRows()[0]).toMatchObject({ outcome: 'failure', detail: 'Some linked items do not exist' });
     });
 
     test('API-LOOK-004 2枚目の上げが失敗したら 1枚目だけを置き場から消し、行も古い画像も触れない', async () => {
@@ -1029,35 +1056,46 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     });
   });
 
-  test('API-LOOK-004 関連の削除の失敗は 500 Failed to update linked items と失敗の監査を残し、入れ直さない', async () => {
-    setup({ tables: lookTables({ linksDelete: { data: null, error: { message: 'locked' } } }) });
-
-    const res = await PUT(makeRequest(), ctx('7'));
-
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: 'Failed to update linked items' });
-    expect(dataSeq()).toEqual(['looks.select', 'items.select', 'looks.update', 'look_items.delete']);
-    expect(auditRows()[0]).toMatchObject({
-      detail: 'Failed to replace look-item links',
-      outcome: 'failure',
-      metadata: { linked_item_ids: [3, 5] },
+  test('API-LOOK-004 関連の段の失敗（LOOK_ITEMS_WRITE_FAILED）は 500 Failed to update linked items と失敗の監査を残し、表を直に更新しない', async () => {
+    setup({
+      tables: lookTables(),
+      rpc: { data: null, error: { code: 'P0001', message: 'LOOK_ITEMS_WRITE_FAILED' } },
     });
-  });
-
-  test('API-LOOK-004 関連の追加の失敗は 500 を返すが、先に行った looks の更新と関連の削除は戻さない', async () => {
-    setup({ tables: lookTables({ linksInsert: { data: null, error: { message: 'fk violation' } } }) });
 
     const res = await PUT(makeRequest(), ctx('7'));
 
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'Failed to update linked items' });
-    expect(dataSeq()).toEqual(['looks.select', 'items.select', 'looks.update', 'look_items.delete', 'look_items.insert']);
-    expect(dataSeq().filter((s) => s.endsWith('.delete') || s.endsWith('.update'))).toEqual(['looks.update', 'look_items.delete']);
+    expect(dataSeq()).toEqual(['looks.select', 'items.select', 'rpc.admin_update_look']);
     expect(auditRows()).toHaveLength(1);
     expect(auditRows()[0]).toMatchObject({
       detail: 'Failed to update look-item links',
       outcome: 'failure',
       metadata: { linked_item_ids: [3, 5] },
+    });
+  });
+
+  test('API-LOOK-004 admin_update_look が行を見つけなければ（P0002）404 Look not found と失敗の監査を残す', async () => {
+    setup({ tables: lookTables(), rpc: { data: null, error: { code: 'P0002', message: 'LOOK_NOT_FOUND' } } });
+
+    const res = await PUT(makeRequest(), ctx('7'));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Look not found' });
+    expect(auditRows()[0]).toMatchObject({ outcome: 'failure', detail: 'Look not found', resource_id: '7' });
+  });
+
+  test('API-LOOK-004 admin_update_look が外部キー違反（23503）なら 400 Some linked items do not exist と失敗の監査を残す', async () => {
+    setup({ tables: lookTables(), rpc: { data: null, error: { code: '23503', message: 'fk violation' } } });
+
+    const res = await PUT(makeRequest(), ctx('7'));
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Some linked items do not exist' });
+    expect(auditRows()[0]).toMatchObject({
+      outcome: 'failure',
+      detail: 'Some linked items do not exist',
+      metadata: { linked_item_ids: [3, 5], status: 'published' },
     });
   });
 
@@ -1074,7 +1112,7 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
   });
 
   test('API-LOOK-004 認可の後の予期しない例外は 500 Internal server error を返し、Unexpected update error を監査に残す', async () => {
-    setup({ tables: lookTables({ lookUpdate: { throws: new Error('boom') } }) });
+    setup({ tables: lookTables(), rpc: { throws: new Error('boom') } });
 
     const res = await PUT(makeRequest(), ctx('7'));
 

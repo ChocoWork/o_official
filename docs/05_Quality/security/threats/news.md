@@ -12,7 +12,7 @@ NEWS（お知らせ）の領域で考える脅威を、1つずつ `THR-NEWS-NNN`
 | --- | --- |
 | 項目の数 | 25（THR-NEWS-001〜025） |
 | 守りがある物 | 下書きを外へ出さない（001）、本文の XSS（012）、管理の権限と aal2（014）、監査の記録（015）、守りの見出し（023）。過去に直った指摘（公開の置き場・回数の制限・service role の素通り・監査の無さ・Cookie の記録）も、守りがある脅威として残した |
-| 穴がありうる物（満たすかどうかは対応する `SEC-NEWS` の本文だけに書く） | DB が aal2 を見ない（002）、置き場の設定が移行に無い（003）、署名の失敗で元の値を返す（007）、回数の制限の IP を偽れる（010）、画像の中身と拡張子（016）、画像の消し残し（017）、編集のページの道筋の書き換え（024）、DB の段に入力の制約が無い（025）など |
+| 穴がありうる物（満たすかどうかは対応する `SEC-NEWS` の本文だけに書く） | DB が aal2 を見ない（002）、署名の失敗で元の値を返す（007）、回数の制限の IP を偽れる（010）、画像の中身と拡張子（016）、画像の消し残し（017）、編集のページの道筋の書き換え（024）、DB の段に入力の制約が無い（025）など |
 | 対策の書き先 | 対策のセキュリティ要件 `SEC-NEWS-NNN` は要件の文書（`docs/02_Requirements/areas/news.md`）に書く。下の「対策」の欄は読み手のための写し |
 | 状態の付け方 | どの項目もコードとレビューから起こし、ユーザーの確認を受けていないので「推定」（`.claude/skills/documentation-guide/SKILL.md` の 7）。どれも実行しての確かめはしていない |
 
@@ -74,7 +74,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 非公開の記事と、記事の中身の正しさ |
 | 脅威 | `admin.news.read`・`admin.news.manage` を持つ人の、2要素認証を済ませていない（`aal1`）session、またはログアウト・失効の後も期限の残る access token を手に入れた者が、下書きを読み、記事を書き換える・消す |
-| 起こり方 | パスワードだけで得た `aal1` の JWT で、アプリの窓口を通らず PostgREST の `news_articles` を直接叩く。RLS の `has_permission` は ACL だけを見て `aal` を見ない（`remote_schema.sql:3578-3597`、`supabase/migrations/20261023175712_group_g0_permissions.sql:186-216`。移行のどこにも `aal` の記述が無い）。同じ `has_permission` は session が生きているかも見ず、`auth.uid()` と ACL の表だけで決める。ログアウトした・管理者が失効させた session の access token でも、期限が切れるまでは PostgREST で同じ読み書きができる（推定） |
+| 起こり方 | パスワードだけで得た `aal1` の JWT で、アプリの窓口を通らず PostgREST の `news_articles` を直接叩く。RLS の `has_permission` は ACL だけを見て `aal` を見ない（`remote_schema.sql:3578-3597`、`supabase/migrations/20261023175712_group_g0_permissions.sql:186-216`。移行のどこにも `aal` の記述が無い）。同じ `has_permission` は session が生きているかも見ず、`auth.uid()` と ACL の表だけで決める。ログアウトした・管理者が失効させた session の access token でも、期限が切れるまでは PostgREST で同じ読み書きができる（推定）。**書き込みの側は 2026-10-26 に直した**: 移行 `sec_grants_admin_tables` が anon・authenticated から `news_articles` の INSERT・UPDATE・DELETE を外したので、`aal1` の JWT でも失効の後の token でも PostgREST から書けない（権限の誤り `42501`。この移行を当てた DB でだけ満たす。ADR-0414）。管理の窓口の書き込みは、移行の前に service role へ移した（ADR-0026）。読みの側は `has_permission` の `aal2` と session の生存の確かめを足すまで残る（波 5） |
 | 影響 | 2要素認証の守りがアプリの窓口だけになる。パスワードが漏れると下書きの漏れ・記事の改ざん・消去に届く。直接の書き換えは監査の記録にも残らない（THR-NEWS-015） |
 | 対策 | SEC-NEWS-002 |
 | ASVS | V4.3.1 |
@@ -88,11 +88,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 非公開の記事の画像 |
 | 脅威 | 閲覧者が、置き場の公開の URL から非公開の記事の画像を開く |
-| 起こり方 | 置き場 `news-images` が `public=true` になっている、または `storage.objects` に誰でも読める方針がある時に、`/storage/v1/object/public/news-images/<道筋>` を開く。置き場の定義は移行に無く、手元の見本 `supabase/seed.sql:10-14` が `public=false` で作るだけ。大きさと種類の上限も置き場に無い |
+| 起こり方 | 置き場 `news-images` が `public=true` になっている、または `storage.objects` に誰でも読める方針がある時に、`/storage/v1/object/public/news-images/<道筋>` を開く。以前は置き場の定義が移行に無く、手元の見本 `supabase/seed.sql:10-14` が `public=false` で作るだけで、大きさと種類の上限も置き場に無かった。**2026-10-26 に直した**: 移行 `sec_storage_buckets` が `news-images` を `public=false`・5MB・JPEG/PNG/WebP/GIF の 4 種類で入れ、本番にある行は `ON CONFLICT (id) DO UPDATE` で合わせる。`storage.objects` に置き場を名指しする方針は作らず、あれば移行の自己検査が止める（ADR-0164。この移行を当てた DB でだけ満たす） |
 | 影響 | 発表前の画像が出る。道筋は uuid なので推測は難しいが、一度出た URL は記事を非公開にしても開ける |
 | 対策 | SEC-NEWS-003 |
 | ASVS | V12.4.1（当てはめは推定） |
-| 根拠 | 2026-04-18 のレビューで置き場が公開だった（Critical）。直した先は旧い `migrations/013_create_news_images_bucket.sql:6-9` で、今の CI が当てる `supabase/migrations/` には無い。本番の置き場の設定は移行の外にあり、確かめていない |
+| 根拠 | 2026-04-18 のレビューで置き場が公開だった（Critical）。直した先は旧い `migrations/013_create_news_images_bucket.sql:6-9` で、今の CI が当てる `supabase/migrations/` には無かった。本番の置き場の今の設定と `storage.objects` の方針は、移行を当てる前に読んで確かめる（`wave2-task-8-report.md` の SQL。読むだけ） |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/code/2026-04-18-news-id-security-review.md:45-48`、`docs/05_Quality/reviews/security/security_review_news.md:53` |
 
@@ -172,7 +172,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | DB の余力 |
 | 脅威 | 閲覧者が anon の鍵で PostgREST・RPC を直接叩き、回数の制限も件数の上限も通らずに読む |
-| 起こり方 | anon は `news_articles` の公開済みの行を直接読める（`remote_schema.sql:3567-3570,4172`）。`search_news` は anon が呼べ、`limit_count` に上限が無い（`remote_schema.sql:2206-2237,4018`）。使われていない `search_public_news` も PUBLIC に開いている（`:4024`）。PostgREST の1回の行数の上限は手元で `max_rows = 1000`（`supabase/config.toml:18`）、本番は未確認 |
+| 起こり方 | anon は `news_articles` の公開済みの行を直接読める（`remote_schema.sql:3567-3570,4172`）。`search_news` は anon が呼べ、`limit_count` に上限が無い（`remote_schema.sql:2206-2237,4018`）。使われていない `search_public_news` も PUBLIC に開いている（`:4024`）。PostgREST の1回の行数の上限は手元で `max_rows = 1000`（`supabase/config.toml:18`）、本番は未確認。**2026-10-26 に直した**: 移行 `sec_search_functions` が `search_news` の件数を 1〜8 に丸め（NULL・0・負の値も）、検索語を先頭 100 字に切り、`search_public_news` を DROP せず PUBLIC・anon・authenticated から EXECUTE を外した。この移行を当てた DB でだけ満たす。`max_rows` の本番の値は運用の確認が残る（ADR-0315） |
 | 影響 | THR-NEWS-008 と同じ負荷を、アプリの守りの外から掛けられる。公開済みの記事だけなので、漏れの害は無い |
 | 対策 | SEC-NEWS-010 |
 | ASVS | V11.1.4 |
@@ -246,7 +246,7 @@ flowchart LR
 | 影響 | 下書きの漏れ・記事の改ざん・消去 |
 | 対策 | SEC-NEWS-015 |
 | ASVS | V4.1.3、V4.3.1 |
-| 根拠 | 守りがある。窓口は `authorizeAdminPermission` で、JWT の確かめ・session の生存・DB の ACL の `admin.news.read`・`admin.news.manage`・`aal2` を全部見る（`src/lib/auth/admin-rbac.ts:178-256`、`src/app/api/admin/news/route.ts:56,173`）。DB の操作は利用者の JWT の client で行い、RLS の `has_permission` も効く（`route.ts:95,179`）。2026-04-18 には service role で RLS を素通りしていた（Critical）が直った。画面のボタンは役で出し分け、窓口は権限で守る（`src/app/admin/page.tsx:197-207,1116-1118`）ので、ボタンが出ても窓口が 403 で断る形になる。全体の NFR-SEC-005・NFR-SEC-008 に当てはめた |
+| 根拠 | 守りがある。窓口は `authorizeAdminPermission` で、JWT の確かめ・session の生存・DB の ACL の `admin.news.read`・`admin.news.manage`・`aal2` を全部見る（`src/lib/auth/admin-rbac.ts:178-256`、`src/app/api/admin/news/route.ts:56,173`）。DB の読みは利用者の JWT の client で行い RLS の `has_permission` も効く。書き込みは認可の後に service role の client で行う（ADR-0026。2026-10-26。権限を外した後も DB に直接書けないようにするため）ので、窓口の認可が書き込みの唯一の守りになる。2026-04-18 には service role で RLS を素通りしていた（Critical）。窓口の認可を通す前提で書き込みだけ service role に戻した。画面のボタンは役で出し分け、窓口は権限で守る（`src/app/admin/page.tsx:197-207,1116-1118`）ので、ボタンが出ても窓口が 403 で断る形になる。全体の NFR-SEC-005・NFR-SEC-008 に当てはめた |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/code/2026-04-18-actions-news-security-review.md:32-35`、`docs/superpowers/specs/2026-10-23-group-g-design.md:550,555,563-564` |
 
@@ -270,7 +270,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 置き場と、画像を開く閲覧者・管理者の端末 |
 | 脅威 | 管理の権限を持つ人（または乗っ取った者）が、画像でないファイルを画像と偽って書き込む |
-| 起こり方 | 画像の種類は送る側が申告する `File.type` だけで確かめ、中身のしるし（ファイルの頭）は見ない（`src/app/api/admin/news/route.ts:87`、`src/app/api/admin/news/[id]/route.ts:113`）。直す時（PUT）は保存の名前の拡張子を送ったファイルの名前から取る（`[id]/route.ts:121`）ので、`.html` などの拡張子のファイルが置き場に入りうる。作る時（POST）は確かめた種類から拡張子を決める（`route.ts:18-23,98-99`）。置き場には大きさと種類の上限が無い（`supabase/seed.sql:10-14`）。2026-10-26 に窓口の側を直した: POST・PUT とも、申告の種類と先頭の印（JPEG・PNG・WebP・GIF）が同じ時だけ受け、置き場に書く前に確かめる。保存名は `news/<日付>/<uuid>.<検出した種類の拡張子>` で、送られたファイル名は使わない（`src/features/news/services/admin-images.ts`。SEC-NEWS-017）。置き場の大きさと種類の上限の設定は別の作業で残る |
+| 起こり方 | 画像の種類は送る側が申告する `File.type` だけで確かめ、中身のしるし（ファイルの頭）は見ない（`src/app/api/admin/news/route.ts:87`、`src/app/api/admin/news/[id]/route.ts:113`）。直す時（PUT）は保存の名前の拡張子を送ったファイルの名前から取る（`[id]/route.ts:121`）ので、`.html` などの拡張子のファイルが置き場に入りうる。作る時（POST）は確かめた種類から拡張子を決める（`route.ts:18-23,98-99`）。置き場には大きさと種類の上限が無い（`supabase/seed.sql:10-14`）。2026-10-26 に窓口の側を直した: POST・PUT とも、申告の種類と先頭の印（JPEG・PNG・WebP・GIF）が同じ時だけ受け、置き場に書く前に確かめる。保存名は `news/<日付>/<uuid>.<検出した種類の拡張子>` で、送られたファイル名は使わない（`src/features/news/services/admin-images.ts`。SEC-NEWS-017）。置き場の大きさと種類の上限は、同じ日に移行 `sec_storage_buckets` が 5MB・JPEG/PNG/WebP/GIF で持たせた（SEC-NEWS-003、ADR-0164） |
 | 影響 | 置き場に想定外のファイルが残る。`contentType` は確かめた種類のままなので、ブラウザが HTML として開く害は小さい（推定） |
 | 対策 | SEC-NEWS-017 |
 | ASVS | V12.2.1、V12.3.1、V12.1.1 |
@@ -340,7 +340,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | `news_articles` の行の全部 |
 | 脅威 | RLS の方針の書き損じや、RLS の効かない操作で、閲覧者が表を変える・空にする |
-| 起こり方 | `news_articles` に anon・authenticated へ DELETE・INSERT・MAINTAIN・REFERENCES・SELECT・TRIGGER・TRUNCATE・UPDATE を全部付けている（`supabase/migrations/20260901102912_remote_schema.sql:4172`）。守りは RLS だけ。TRUNCATE は RLS の対象外。PostgREST からは TRUNCATE を呼べないので、今の道は無い（推定） |
+| 起こり方 | `news_articles` に anon・authenticated へ DELETE・INSERT・MAINTAIN・REFERENCES・SELECT・TRIGGER・TRUNCATE・UPDATE を全部付けている（`supabase/migrations/20260901102912_remote_schema.sql:4172`）。守りは RLS だけ。TRUNCATE は RLS の対象外。PostgREST からは TRUNCATE を呼べないので、今の道は無い（推定）。**2026-10-26 に直した**: 移行 `sec_grants_admin_tables` が anon・authenticated の権限を SELECT だけにした。管理の書き込みは窓口が service role で行い、RLS の書き込み方針は消さずに二重の守りとして残した（この移行を当てた DB でだけ満たす。ADR-0414、ADR-0026） |
 | 影響 | 将来 RLS の方針を書き損じると、閲覧者が記事を書き換え・消去できる |
 | 対策 | SEC-NEWS-022 |
 | ASVS | V4.1.3 |
@@ -396,7 +396,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 記事の中身の正しさと、公開の一覧・詳細・検索の余力 |
 | 脅威 | `admin.news.manage` を持つ人の session（THR-NEWS-002 の aal1・失効の道を含む）で、窓口を通らずに長さや形の外れた値を表に書く |
-| 起こり方 | 題・概要・本文の長さの上限（200・2000・10000 字）と `image_url` の形は、窓口の zod と画像の確かめ（`src/app/api/admin/news/route.ts:8-15,83-108`）にしか無い。表は `title`・`image_url`・`content`・`detailed_content` が text の NOT NULL だけで、長さと形の CHECK が無い（`supabase/migrations/20260901102912_remote_schema.sql:660-665`）。PostgREST で直接 insert・update すれば、上限の無い長さの文字や、置き場の外を指す `image_url` を入れられる。公開日は列の型が date なので、形は DB でも守られる |
+| 起こり方 | 題・概要・本文の長さの上限（200・2000・10000 字）と `image_url` の形は、窓口の zod と画像の確かめ（`src/app/api/admin/news/route.ts:8-15,83-108`）にしか無い。表は `title`・`image_url`・`content`・`detailed_content` が text の NOT NULL だけで、長さと形の CHECK が無い（`supabase/migrations/20260901102912_remote_schema.sql:660-665`）。PostgREST で直接 insert・update すれば、上限の無い長さの文字や、置き場の外を指す `image_url` を入れられる。公開日は列の型が date なので、形は DB でも守られる。**2026-10-26 に直した**: 移行 `sec_rls_predicates_and_constraints` が `news_articles` に `title`（200字）・`content`（2000字）・`detailed_content`（10000字）・`image_url`（`news/` の下の安全な道だけ）の CHECK を `NOT VALID` で足した。既存の行は検査しないので、本番の旧い行は点検してから別の移行で `VALIDATE` する（ADR-0162）。この移行を当てた DB でだけ満たす |
 | 影響 | 公開の一覧・詳細・検索が大きな行を読んで遅くなる。画面の表示が崩れる。置き場の外を指す `image_url` は THR-NEWS-006・007 の道につながる。直接の書き換えは監査にも残らない（THR-NEWS-015） |
 | 対策 | SEC-NEWS-025 |
 | ASVS | V5.1.4（当てはめは推定） |
@@ -408,7 +408,7 @@ flowchart LR
 
 ## 未確認事項
 
-- 本番の Supabase の置き場 `news-images` の公開の設定と `storage.objects` の方針（THR-NEWS-003）。移行に無く、本番の値を見ていない
+- 本番の Supabase の置き場 `news-images` の公開の設定と `storage.objects` の方針（THR-NEWS-003）。移行 `sec_storage_buckets` は書いたが本番にはまだ当てていない。本番の今の値は適用の前に読んで確かめる（読むだけ。値は報告に残す）
 - 本番の PostgREST の `max_rows`（THR-NEWS-009）。手元は 1000
 - 本番の中継（Vercel など）が `x-forwarded-for` を上書きするか（THR-NEWS-010）。本番のアプリはまだデプロイしていない
 - `aal1` の JWT で PostgREST から非公開の記事を読めるか（THR-NEWS-002）、Origin の無い送信が断られるか（THR-NEWS-013）は、実際に叩いて確かめていない

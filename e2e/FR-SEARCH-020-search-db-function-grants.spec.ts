@@ -165,11 +165,11 @@ async function insertFixture(db: Client, tag: string, spec: FixtureSpec): Promis
     }
   };
   const itemSql = `insert into public.items (name, description, price, category, image_url, status, created_at)
-                   values ($1, 'zq', 1000, 'TOPS', 'e2e/item-1-1.png', $2, '2000-01-01') returning id::text as id`;
+                   values ($1, 'zq', 1000, 'TOPS', 'items/e2e/item-1-1.png', $2, '2000-01-01') returning id::text as id`;
   const lookSql = `insert into public.looks (season_year, season_type, theme, theme_description, image_urls, status, created_at)
-                   values (2026, 'SS', $1, 'zq', ARRAY['e2e/look-1-1.png'], $2, '2000-01-01') returning id::text as id`;
+                   values (2026, 'SS', $1, 'zq', ARRAY['looks/e2e/look-1-1.png'], $2, '2000-01-01') returning id::text as id`;
   const newsSql = `insert into public.news_articles (title, category, published_date, image_url, content, detailed_content, status)
-                   values ($1, 'EVENT', '2000-01-01', 'e2e/news-1.png', 'zq', 'zq', $2) returning id::text as id`;
+                   values ($1, 'EVENT', '2000-01-01', 'news/e2e/news-1.png', 'zq', 'zq', $2) returning id::text as id`;
   await add('published', spec.publishedItems, itemSql, fixture.items.published);
   await add('private', spec.privateItems, itemSql, fixture.items.private);
   await add('published', spec.publishedLooks, lookSql, fixture.looks.published);
@@ -294,7 +294,6 @@ test.describe('FR-SEARCH-020 検索の DB の関数への直接の道', () => {
   });
 
   test(`SEC-SEARCH-007-AC-01 search_items/looks を limit_count=100000・null で呼んでも上限以下の行で、-1 でも誤りにならず上限以下の行を返す`, async ({ request }) => {
-    test.fail(true, 'SEC-SEARCH-007 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
     requireLocalEnv();
     await withFixture('007', { publishedItems: MAX_ROWS + 2, privateItems: 0, publishedLooks: MAX_ROWS + 2, privateLooks: 0, publishedNews: 0, privateNews: 0 }, async (fixture) => {
       // 語に一致する公開の行が上限より多い（上限が効いていることの確かめになる）
@@ -317,7 +316,6 @@ test.describe('FR-SEARCH-020 検索の DB の関数への直接の道', () => {
   });
 
   test(`SEC-SEARCH-008-AC-01 anon の鍵で search_public_items/looks/news を呼ぶと、権限か「関数が無い」の誤りが返り、行が返らない`, async ({ request }) => {
-    test.fail(true, 'SEC-SEARCH-008 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
     for (const fn of ['search_public_items', 'search_public_looks', 'search_public_news']) {
       // 語 'e' は見本の公開の行に一致する（開いていれば行が返る語）
       const reply = await callRpc(request, fn, { p_query: 'e', p_limit: 6 }, ANON_KEY);

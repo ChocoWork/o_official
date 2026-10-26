@@ -28,7 +28,7 @@ async function insertPublishedLooks(count: number, tag: string): Promise<void> {
     for (let index = 0; index < count; index += 1) {
       await db.query(
         `insert into public.looks (season_year, season_type, theme, theme_description, image_urls, status, created_at, updated_at)
-         values (2000, 'SS', $1, 'Synthetic extra look.', ARRAY['e2e/look-1-1.png'], 'published', '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z')`,
+         values (2000, 'SS', $1, 'Synthetic extra look.', ARRAY['looks/e2e/look-1-1.png'], 'published', '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z')`,
         [`${tag}-${index}`],
       );
     }
@@ -122,7 +122,7 @@ test.describe('FR-LOOK-ALL-044 LOOK 一覧の振る舞いと格子の残りの�
         const lookId = await withLocalDb(async (db) => {
           const inserted = await db.query(
             `insert into public.looks (season_year, season_type, theme, theme_description, image_urls, status, created_at, updated_at)
-             values (2026, 'SS', $1, 'Synthetic private look.', ARRAY['e2e/look-1-1.png'], 'private', '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z')
+             values (2026, 'SS', $1, 'Synthetic private look.', ARRAY['looks/e2e/look-1-1.png'], 'private', '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z')
              returning id::text as id`,
             [theme],
           );

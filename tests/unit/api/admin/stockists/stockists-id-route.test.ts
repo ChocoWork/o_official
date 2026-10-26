@@ -13,6 +13,7 @@ jest.mock('next/server', () => ({
 
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
+  createServiceRoleClient: jest.fn(),
 }));
 
 jest.mock('@/lib/auth/admin-rbac', () => ({
@@ -31,7 +32,7 @@ jest.mock('@/features/stockist/services/admin-security', () => ({
   toCsrfDenyResponse: jest.fn(),
 }));
 
-const { createClient: mockCreateClient } = require('@/lib/supabase/server');
+const { createClient: mockCreateClient, createServiceRoleClient: mockCreateServiceRoleClient } = require('@/lib/supabase/server');
 const { authorizeAdminPermission: mockAuthorize } = require('@/lib/auth/admin-rbac');
 const { logAudit: mockLogAudit } = require('@/lib/audit');
 const {
@@ -110,7 +111,7 @@ function setupUpdate(error: unknown, data?: unknown) {
   const eq = jest.fn().mockReturnValue({ select });
   const update = jest.fn().mockReturnValue({ eq });
   const from = jest.fn().mockReturnValue({ update });
-  mockCreateClient.mockResolvedValue({ from });
+  mockCreateServiceRoleClient.mockResolvedValue({ from });
   return { from, update, eq, select };
 }
 
@@ -121,7 +122,7 @@ function setupDelete(error: unknown, data?: unknown) {
   const eq = jest.fn().mockReturnValue({ select });
   const del = jest.fn().mockReturnValue({ eq });
   const from = jest.fn().mockReturnValue({ delete: del });
-  mockCreateClient.mockResolvedValue({ from });
+  mockCreateServiceRoleClient.mockResolvedValue({ from });
   return { from, delete: del, eq, select };
 }
 
@@ -163,6 +164,7 @@ describe('道の id の確かめ', () => {
         expect(await response.json()).toEqual({ error: 'Invalid stockist id' });
         expect(mockAuthorize).not.toHaveBeenCalled();
         expect(mockCreateClient).not.toHaveBeenCalled();
+        expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
       },
     );
   }
@@ -198,6 +200,7 @@ describe('認可と回数の制限', () => {
       expect(mockReadLimit).not.toHaveBeenCalled();
       expect(mockMutationLimit).not.toHaveBeenCalled();
       expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     });
   }
 
@@ -212,6 +215,7 @@ describe('認可と回数の制限', () => {
     expect(mockReadLimit).toHaveBeenCalledWith(request, 'admin-user');
     expect(mockMutationLimit).not.toHaveBeenCalled();
     expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
   });
 
   for (const method of MUTATION_METHODS) {
@@ -227,6 +231,7 @@ describe('認可と回数の制限', () => {
       expect(mockReadLimit).not.toHaveBeenCalled();
       expect(mockRequireCsrf).not.toHaveBeenCalled();
       expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     });
 
     it(`DD-STOCKIST-035 ${method} は CSRF の拒否の応答をそのまま返し、表にも監査にも触らない`, async () => {
@@ -238,6 +243,7 @@ describe('認可と回数の制限', () => {
       expect(response).toBe(deny);
       expect(mockToDeny).toHaveBeenCalledWith(csrfResult);
       expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
       expect(mockLogAudit).not.toHaveBeenCalled();
     });
   }
@@ -252,6 +258,7 @@ describe('GET /api/admin/stockists/[id]', () => {
     const response = await GET(request, ctx('5'));
 
     expect(mockCreateClient).toHaveBeenCalledWith(request);
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     expect(from).toHaveBeenCalledWith('stockists');
     expect(select).toHaveBeenCalledWith(ADMIN_STOCKIST_COLUMNS);
     expect(select.mock.calls[0][0]).not.toContain('created_at');
@@ -371,6 +378,7 @@ describe('PUT /api/admin/stockists/[id]', () => {
       expect(body).toEqual({ error: 'Invalid request', fields: [field] });
       expect(JSON.stringify(body)).not.toMatch(/details|fieldErrors|formErrors/);
       expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledTimes(1);
       expect(mockLogAudit).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -416,6 +424,7 @@ describe('PUT /api/admin/stockists/[id]', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'Invalid request' });
     expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'failure', detail: 'Invalid JSON', resource_id: '5' }),
     );
@@ -510,6 +519,7 @@ describe('PATCH /api/admin/stockists/[id]', () => {
       expect(response.status).toBe(400);
       expect(body).toEqual({ error: 'Invalid request', fields: ['status'] });
       expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'admin.stockists.patch',
@@ -554,6 +564,7 @@ describe('PATCH /api/admin/stockists/[id]', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'Invalid request' });
     expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'failure', detail: 'Invalid JSON', resource_id: '5' }),
     );
@@ -700,6 +711,33 @@ describe('DELETE /api/admin/stockists/[id]', () => {
   });
 });
 
+describe('書き込みの client（ADR-0267）', () => {
+  for (const method of MUTATION_METHODS) {
+    it(`DD-STOCKIST-035 ${method} は認可の後に service role の client を 1 回だけ作って書き、利用者の JWT の client は作らない`, async () => {
+      setupDb(method);
+
+      const response = await handlers[method](makeRequest(method, bodyFor(method)), ctx('5'));
+
+      expect(response.status).toBe(200);
+      expect(mockCreateServiceRoleClient).toHaveBeenCalledTimes(1);
+      expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockAuthorize.mock.invocationCallOrder[0]).toBeLessThan(
+        mockCreateServiceRoleClient.mock.invocationCallOrder[0],
+      );
+    });
+  }
+
+  it('DD-STOCKIST-035 GET は利用者の JWT の client で読み、service role の client は作らない', async () => {
+    setupDb('GET');
+
+    const response = await GET(makeRequest('GET'), ctx('5'));
+
+    expect(response.status).toBe(200);
+    expect(mockCreateClient).toHaveBeenCalledTimes(1);
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+  });
+});
+
 describe('本文・送り元・例外', () => {
   for (const method of ['PUT', 'PATCH'] as Method[]) {
     it(`DD-STOCKIST-035 ${method} は本文が JSON でない時に 500 でなく 400 Invalid request を返す`, async () => {
@@ -759,6 +797,7 @@ describe('本文・送り元・例外', () => {
 
     it(`DD-STOCKIST-035 ${method} は認可の後に例外が出た時に 500 Internal server error を返す`, async () => {
       mockCreateClient.mockRejectedValue(new Error('boom'));
+      mockCreateServiceRoleClient.mockRejectedValue(new Error('boom'));
 
       const response = await handlers[method](makeRequest(method, bodyFor(method)), ctx('5'));
 
@@ -805,6 +844,7 @@ describe('DD-STOCKIST-035 Cache-Control は戻りの全分岐で private, no-sto
 
     it(`DD-STOCKIST-035 ${method} 500 外側の catch`, async () => {
       mockCreateClient.mockRejectedValue(new Error('secret boom'));
+      mockCreateServiceRoleClient.mockRejectedValue(new Error('secret boom'));
       const res = await call(method);
       expect(res.status).toBe(500);
       expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
@@ -885,6 +925,7 @@ describe('DD-STOCKIST-035 Cache-Control は戻りの全分岐で private, no-sto
 
   it('DD-STOCKIST-035 外側の catch の console.error の第 2 引数は { name, code } ちょうどで、投げた誤りの message を含まない', async () => {
     mockCreateClient.mockRejectedValue(new Error('secret boom'));
+    mockCreateServiceRoleClient.mockRejectedValue(new Error('secret boom'));
 
     for (const method of ALL_METHODS) {
       await call(method);

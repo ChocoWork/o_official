@@ -186,7 +186,7 @@ describeLocalDb('integration: stockists の RLS と付与', (db) => {
     expect(byName['admin stockists manage by permission delete'].qual).toContain("has_permission('admin.stockists.manage'");
   });
 
-  test.each(['anon', 'authenticated'])('DATA-STOCKIST-002 %s には表の権限が全部付いている', async (role) => {
+  test.each(['anon', 'authenticated'])('DATA-STOCKIST-002 %s には表の SELECT だけが付いていて、書き込み系の権限は付いていない（ADR-0414）', async (role) => {
     const result = await db().query(
       `select privilege from unnest($2::text[]) as privilege
        where has_table_privilege($1::name, 'public.stockists'::regclass, privilege)
@@ -194,10 +194,10 @@ describeLocalDb('integration: stockists の RLS と付与', (db) => {
       [role, TABLE_PRIVILEGES],
     );
 
-    expect(result.rows.map((row) => row.privilege)).toEqual(TABLE_PRIVILEGES);
+    expect(result.rows.map((row) => row.privilege)).toEqual(['SELECT']);
   });
 
-  test.each(['anon', 'authenticated'])('DATA-STOCKIST-002 %s には連番 stockists_id_seq の SELECT・UPDATE・USAGE が付いている', async (role) => {
+  test.each(['anon', 'authenticated'])('DATA-STOCKIST-002 %s には連番 stockists_id_seq の SELECT・UPDATE・USAGE のどれも付いていない（SEC-STOCKIST-008-AC-01）', async (role) => {
     const result = await db().query(
       `select privilege from unnest($2::text[]) as privilege
        where has_sequence_privilege($1::name, 'public.stockists_id_seq'::regclass, privilege)
@@ -205,27 +205,7 @@ describeLocalDb('integration: stockists の RLS と付与', (db) => {
       [role, SEQUENCE_PRIVILEGES],
     );
 
-    expect(result.rows.map((row) => row.privilege)).toEqual(SEQUENCE_PRIVILEGES);
-  });
-
-  // 設計書どおりの最小の権限（SEC-STOCKIST-008）。今の移行は全部付けているので、これは直るまで赤（DATA-STOCKIST-002 の付与の確かめと逆の向き）
-  test.each([
-    ['anon', ['DELETE', 'INSERT', 'MAINTAIN', 'REFERENCES', 'TRIGGER', 'TRUNCATE', 'UPDATE']],
-    ['authenticated', ['MAINTAIN', 'REFERENCES', 'TRIGGER', 'TRUNCATE']],
-  ])('DATA-STOCKIST-002 %s の stockists に余分な権限が付いていない（SEC-STOCKIST-008-AC-01 の確かめ。直るまで赤）', async (role, forbiddenTable) => {
-    const table = await db().query(
-      `select privilege from unnest($2::text[]) as privilege
-       where has_table_privilege($1::name, 'public.stockists'::regclass, privilege)
-       order by privilege`,
-      [role, forbiddenTable],
-    );
-    const sequence = await db().query(
-      `select has_sequence_privilege($1::name, 'public.stockists_id_seq'::regclass, 'UPDATE') as granted`,
-      [role],
-    );
-
-    expect(table.rows.map((row) => row.privilege)).toEqual([]);
-    expect(sequence.rows).toEqual([{ granted: false }]);
+    expect(result.rows.map((row) => row.privilege)).toEqual([]);
   });
 
   test('DATA-STOCKIST-002 anon は has_permission を呼べず、authenticated は呼べる', async () => {
@@ -241,16 +221,16 @@ describeLocalDb('integration: stockists の RLS と付与', (db) => {
     expect(await visibleStores({ role: 'anon' })).toEqual([publishedStore]);
   });
 
-  test('DATA-STOCKIST-002 anon の追加は RLS の違反で落ち、更新・削除は1行も変えない', async () => {
+  test('DATA-STOCKIST-002 anon の追加・更新・削除は権限の誤り（42501）で落ち、1行も変えない', async () => {
     const name = `${marker} anon insert`;
     expect(await errorCodeAs({ role: 'anon' }, insertSql, [name])).toBe('42501');
     expect(await countByName(name)).toBe(0);
 
-    const updated = await runAs({ role: 'anon' }, setStatusSql, [publishedStore, 'private']);
-    const deleted = await runAs({ role: 'anon' }, 'delete from public.stockists where id = any($1::bigint[])', [[publishedStore, privateStore]]);
+    expect(await errorCodeAs({ role: 'anon' }, setStatusSql, [publishedStore, 'private'])).toBe('42501');
+    expect(
+      await errorCodeAs({ role: 'anon' }, 'delete from public.stockists where id = any($1::bigint[])', [[publishedStore, privateStore]]),
+    ).toBe('42501');
 
-    expect(updated.rowCount).toBe(0);
-    expect(deleted.rowCount).toBe(0);
     expect(await statusOf(publishedStore)).toBe('published');
     expect(await statusOf(privateStore)).toBe('private');
   });
@@ -266,10 +246,8 @@ describeLocalDb('integration: stockists の RLS と付与', (db) => {
     expect(await visibleStores(actor)).toEqual([publishedStore]);
     expect(await errorCodeAs(actor, insertSql, [name])).toBe('42501');
     expect(await countByName(name)).toBe(0);
-    const updated = await runAs(actor, setStatusSql, [publishedStore, 'private']);
-    const deleted = await runAs(actor, 'delete from public.stockists where id = $1', [publishedStore]);
-    expect(updated.rowCount).toBe(0);
-    expect(deleted.rowCount).toBe(0);
+    expect(await errorCodeAs(actor, setStatusSql, [publishedStore, 'private'])).toBe('42501');
+    expect(await errorCodeAs(actor, 'delete from public.stockists where id = $1', [publishedStore])).toBe('42501');
     expect(await statusOf(publishedStore)).toBe('published');
   });
 
@@ -280,10 +258,8 @@ describeLocalDb('integration: stockists の RLS と付与', (db) => {
     expect(await visibleStores(actor)).toEqual([publishedStore, privateStore].sort(byNumber));
     expect(await errorCodeAs(actor, insertSql, [name])).toBe('42501');
     expect(await countByName(name)).toBe(0);
-    const updated = await runAs(actor, setStatusSql, [privateStore, 'published']);
-    const deleted = await runAs(actor, 'delete from public.stockists where id = $1', [privateStore]);
-    expect(updated.rowCount).toBe(0);
-    expect(deleted.rowCount).toBe(0);
+    expect(await errorCodeAs(actor, setStatusSql, [privateStore, 'published'])).toBe('42501');
+    expect(await errorCodeAs(actor, 'delete from public.stockists where id = $1', [privateStore])).toBe('42501');
     expect(await statusOf(privateStore)).toBe('private');
   });
 
@@ -296,41 +272,35 @@ describeLocalDb('integration: stockists の RLS と付与', (db) => {
     expect(await visibleStores({ role: 'authenticated', sub: expired })).toEqual([publishedStore]);
   });
 
-  test('DATA-STOCKIST-002 admin.stockists.read と admin.stockists.manage を持つ会員は追加・更新・削除ができる', async () => {
+  test('DATA-STOCKIST-002 admin.stockists.read と admin.stockists.manage を持つ会員でも、追加・更新・削除は権限の誤り（42501）で断られる（書き込みは service role だけ）', async () => {
     const actor: Actor = { role: 'authenticated', sub: manager };
     const name = `${marker} manager insert`;
 
-    const inserted = await runAs(actor, insertSql, [name]);
-    const updated = await runAs(actor, setStatusSql, [privateStore, 'published']);
-    const deleted = await runAs(actor, 'delete from public.stockists where id = $1', [publishedStore]);
+    expect(await errorCodeAs(actor, insertSql, [name])).toBe('42501');
+    expect(await errorCodeAs(actor, setStatusSql, [privateStore, 'published'])).toBe('42501');
+    expect(await errorCodeAs(actor, 'delete from public.stockists where id = $1', [publishedStore])).toBe('42501');
 
-    expect(inserted.rowCount).toBe(1);
-    expect(await countByName(name)).toBe(1);
-    expect(updated.rowCount).toBe(1);
-    expect(await statusOf(privateStore)).toBe('published');
-    expect(deleted.rowCount).toBe(1);
-    expect(await statusOf(publishedStore)).toBeUndefined();
-  });
-
-  // WHERE 付きの UPDATE は SELECT の権利も要り、更新後の行も SELECT の方針で確かめられる。read の無い人には非公開の行が見えない。
-  test('DATA-STOCKIST-002 現状の記録: admin.stockists.manage だけの会員は追加できるが、公開の店を非公開には変えられない', async () => {
-    const actor: Actor = { role: 'authenticated', sub: manageOnly };
-    const name = `${marker} manage-only insert`;
-
-    const inserted = await runAs(actor, insertSql, [name]);
-
-    expect(inserted.rowCount).toBe(1);
-    expect(await countByName(name)).toBe(1);
-    expect(await errorCodeAs(actor, setStatusSql, [publishedStore, 'private'])).toBe('42501');
+    expect(await countByName(name)).toBe(0);
+    expect(await statusOf(privateStore)).toBe('private');
     expect(await statusOf(publishedStore)).toBe('published');
   });
 
-  test('DATA-STOCKIST-002 DB は aal を見ないので、aal1 の JWT でも権限があれば非公開を読み書きできる', async () => {
+  test('DATA-STOCKIST-002 admin.stockists.manage だけの会員も、追加も公開の店の更新も権限の誤り（42501）で断られる', async () => {
+    const actor: Actor = { role: 'authenticated', sub: manageOnly };
+    const name = `${marker} manage-only insert`;
+
+    expect(await errorCodeAs(actor, insertSql, [name])).toBe('42501');
+    expect(await errorCodeAs(actor, setStatusSql, [publishedStore, 'private'])).toBe('42501');
+
+    expect(await countByName(name)).toBe(0);
+    expect(await statusOf(publishedStore)).toBe('published');
+  });
+
+  test('DATA-STOCKIST-002 DB は aal を見ないので、aal1 の JWT でも権限があれば非公開を読めるが、書き込みは権限の誤り（42501）で断られる', async () => {
     const actor: Actor = { role: 'authenticated', sub: manager, aal: 'aal1' };
 
     expect(await visibleStores(actor)).toEqual([publishedStore, privateStore].sort(byNumber));
-    const updated = await runAs(actor, setStatusSql, [privateStore, 'published']);
-    expect(updated.rowCount).toBe(1);
-    expect(await statusOf(privateStore)).toBe('published');
+    expect(await errorCodeAs(actor, setStatusSql, [privateStore, 'published'])).toBe('42501');
+    expect(await statusOf(privateStore)).toBe('private');
   });
 });

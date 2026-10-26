@@ -449,6 +449,18 @@ describe('GET /api/auth/confirm', () => {
       expect(res.status).toBe(303);
       expect(mockLink).toHaveBeenCalledWith({ userId: 'user-2', email: 'x@example.com', emailConfirmedAt: null });
     });
+
+    it('DD-AUTH-019 利用者のメールが無ければ、紐付けには空の文字を渡し、success の監査の宛先は null にする', async () => {
+      verifyOtp.mockResolvedValue({ data: { session: SESSION, user: { id: 'user-2' } }, error: null });
+
+      const res: any = await GET(request('?token_hash=h'));
+
+      expect(res.status).toBe(303);
+      expect(mockLink).toHaveBeenCalledWith({ userId: 'user-2', email: '', emailConfirmedAt: null });
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'auth.confirm', outcome: 'success', actor_email: null, resource_id: 'user-2' }),
+      );
+    });
   });
 
   describe('結び付かない（登録を始めたブラウザではない）', () => {
@@ -501,6 +513,16 @@ describe('GET /api/auth/confirm', () => {
       expect(res.headers.get('Location')).toBe('http://localhost:3000/login?registered=1');
       expect(console.error).toHaveBeenCalledWith('confirm signOut(local) failed', { code: 'sign_out_failed' });
       expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('secret message');
+    });
+
+    it('DD-AUTH-019 signOut が値の無い物（undefined）を投げても 303 /login?registered=1 のままで、符号は空で残す', async () => {
+      signOut.mockRejectedValue(undefined);
+
+      const res: any = await GET(request('?token_hash=h'));
+
+      expect(res.status).toBe(303);
+      expect(res.headers.get('Location')).toBe('http://localhost:3000/login?registered=1');
+      expect(console.error).toHaveBeenCalledWith('confirm signOut(local) failed', { code: undefined });
     });
 
     it('DD-AUTH-019 signOut が { error } を返しても（本来の失敗の形）303 /login?registered=1 のままで、ログには符号だけを残す', async () => {

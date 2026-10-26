@@ -161,24 +161,26 @@ describeLocalDb('integration: LOOK の表 looks', (db) => {
     expect(inserted.rows).toEqual([{ theme_description: '', image_urls: [], status: 'private' }]);
   });
 
-  test('DATA-LOOK-001 テーマ・説明文に長さの上限は無い', async () => {
-    const long = 'x'.repeat(10001);
-    const row = await insertLook(baseLook({ theme: long, theme_description: long }));
+  test('DATA-LOOK-001 テーマ 200 字・説明文 4000 字まで入る。超える値の拒否は look_constraints で確かめる', async () => {
+    const row = await insertLook(baseLook({ theme: 'x'.repeat(200), theme_description: 'x'.repeat(4000) }));
 
     const stored = await db().query(
       `select length(theme) as theme, length(theme_description) as description
        from public.looks where id = $1`,
       [row.id],
     );
-    expect(stored.rows).toEqual([{ theme: 10001, description: 10001 }]);
+    expect(stored.rows).toEqual([{ theme: 200, description: 4000 }]);
   });
 
-  test('DATA-LOOK-001 image_urls の枚数と道筋の形は表では確かめない', async () => {
-    const urls = Array.from({ length: 50 }, (_, index) => `not a storage path ${index}`);
+  test('DATA-LOOK-001 image_urls の枚数に上限は無く、道筋は looks/ の下の安全な形だけが入る（CHECK looks_image_urls_path_check。形の一覧は look_constraints で確かめる）', async () => {
+    const urls = Array.from({ length: 50 }, (_, index) => `looks/2026-01-01/not-a-limit-${index}.png`);
     const row = await insertLook(baseLook({ image_urls: urls }));
 
     const stored = await db().query('select image_urls from public.looks where id = $1', [row.id]);
     expect(stored.rows).toEqual([{ image_urls: urls }]);
+
+    const result = await failure(insertSql, values(baseLook({ image_urls: ['not a storage path'] })));
+    expect(result).toEqual({ code: '23514', constraint: 'looks_image_urls_path_check' });
   });
 
   test('DATA-LOOK-001 公開日の列は無い', async () => {

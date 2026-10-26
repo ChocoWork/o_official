@@ -368,7 +368,7 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 | 出どころ | OWASP ASVS 4.0.3 V4.3.1 |
 | 優先度 | MUST |
 
-`item_color_presets` の RLS が通すのは、ACL の権限に加えて JWT の `aal` が `aal2` で、session が有効な要求だけ。今のコードは満たさない（食い違いは trace-matrix.md の「食い違い」節の TM-ADMIN-43）。
+`item_color_presets` の RLS が通すのは、ACL の権限に加えて JWT の `aal` が `aal2` で、session が有効な要求だけ。読みの側（AC-02）は今のコードは満たさない（食い違いは trace-matrix.md の「食い違い」節の TM-ADMIN-43。波 5 の `has_permission` の aal2 と session で直す）。書き込みの側（AC-01）は、2026-10-26 から anon・authenticated に `item_color_presets` の INSERT・UPDATE・DELETE の権限が無い（ADR-0414）ので、aal1 の JWT でも PostgREST から書けず満たす（この移行を当てた DB でだけ満たす）。同じ移行で anon の SELECT も外した（読む方針が authenticated 向けの1本だけで、anon が読める行は元から0件）。
 
 #### SEC-ADMIN-002-AC-01 aal1 の JWT で色見本を直接書けない
 
@@ -380,7 +380,7 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 | 確かめ方 | E2E（手元の Supabase に、`admin.items.manage` を持つ人の `aal1` の JWT で insert・delete を送る） |
 | 出どころ | 実装から推定 |
 
-`admin.items.manage` を持つ人の `aal1` の JWT で `item_color_presets` に insert・delete を送ると断られ、表の行が変わらないこと。
+`admin.items.manage` を持つ人の `aal1` の JWT で `item_color_presets` に insert・delete を送ると断られ（権限の誤り `42501`）、表の行が変わらないこと。
 
 #### SEC-ADMIN-002-AC-02 強制失効の後の JWT で色見本を直接読めない
 

@@ -271,16 +271,16 @@ describeLocalDb('integration: ADMIN の強制失効の関数と sessions の表'
       expect(result.rows[0].relrowsecurity).toBe(true);
     });
 
-    test.each(['anon', 'authenticated'])('DATA-ADMIN-004 %s は sessions の行を1件も読めない', async (role) => {
+    test.each(['anon', 'authenticated'])('DATA-ADMIN-004 %s には sessions の表の権限が無く、行を1件も読めない（権限の誤り 42501）', async (role) => {
       const userId = await insertUser();
       await insertOwnSession(userId);
 
-      const count = await rowCountAs(role, 'select id from public.sessions where user_id = $1', [userId]);
+      const code = await failureAs(role, 'select id from public.sessions where user_id = $1', [userId]);
 
-      expect(count).toBe(0);
+      expect(code).toBe('42501');
     });
 
-    test.each(['anon', 'authenticated'])('DATA-ADMIN-004 %s は sessions に行を足せず、方針の違反で落ちる', async (role) => {
+    test.each(['anon', 'authenticated'])('DATA-ADMIN-004 %s は sessions に行を足せず、権限の誤り（42501）で落ちる', async (role) => {
       const userId = await insertUser();
 
       const code = await failureAs(role, 'insert into public.sessions (user_id, refresh_token_hash) values ($1, $2)', [
@@ -295,11 +295,11 @@ describeLocalDb('integration: ADMIN の強制失効の関数と sessions の表'
       const userId = await insertUser();
       const sessionId = await insertOwnSession(userId);
 
-      const updated = await rowCountAs(role, 'update public.sessions set revoked_at = now() where id = $1', [sessionId]);
-      const deleted = await rowCountAs(role, 'delete from public.sessions where id = $1', [sessionId]);
+      const updated = await failureAs(role, 'update public.sessions set revoked_at = now() where id = $1', [sessionId]);
+      const deleted = await failureAs(role, 'delete from public.sessions where id = $1', [sessionId]);
 
-      expect(updated).toBe(0);
-      expect(deleted).toBe(0);
+      expect(updated).toBe('42501');
+      expect(deleted).toBe('42501');
       expect(await ownSessionIds(userId)).toEqual([sessionId]);
     });
 

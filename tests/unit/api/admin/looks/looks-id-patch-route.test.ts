@@ -284,6 +284,25 @@ describe('DD-LOOK-064 PATCH /api/admin/looks/[id]', () => {
     });
   });
 
+  it('DD-LOOK-064 切り替えの例外（操作者あり）は 500 Internal server error と監査 Unexpected status update error', async () => {
+    mockEnforce.mockRejectedValue(new Error('counter down'));
+
+    const response = await PATCH(createRequest({ status: 'published' }), { params: params() });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Internal server error' });
+    expect(audits()).toEqual([
+      expect.objectContaining({
+        actorId: 'admin-1',
+        actorEmail: 'a@example.com',
+        action: 'admin.look.status_update',
+        outcome: 'failure',
+        detail: 'Unexpected status update error',
+        metadata: undefined,
+      }),
+    ]);
+  });
+
   it('DD-LOOK-064 切り替えの例外（操作者なし＝認可が投げる）は 500 で監査を残さない', async () => {
     mockAuthorize.mockRejectedValue(new Error('rbac down'));
 

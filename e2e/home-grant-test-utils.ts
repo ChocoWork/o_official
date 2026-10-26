@@ -41,6 +41,7 @@ export function uniqueTag(label: string): string {
 export type HomeGrantItem = {
   id: number;
   name: string;
+  /** product_note の値。お客さん向けの注意書きで公開の列（原価の仲間ではない）。公開の列の対照の読みに使う */
   note: string;
 };
 

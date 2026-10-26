@@ -3,6 +3,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { isLocalUrl } from '../scripts/e2e/environment';
 import { SEED_IMAGE_PNG_BASE64 } from '../scripts/e2e/seed-storage';
+import { insertLegacyImageRow } from './legacy-image-rows';
+import { withLocalDb } from './order-email-test-utils';
 
 /**
  * FR-NEWS-SEC-001 NEWS の公開の読み出しが漏らすもの（公開面 /news・/news/<id>・/api/news・/api/search だけ）
@@ -119,7 +121,7 @@ test.beforeAll(async () => {
   const published = { status: 'published', publishedDate: '2000-01-01' } as const;
   const rows = await insertArticles(admin, [
     { ...published, title: titles.pub, imageUrl: pubPath },
-    { status: 'private', publishedDate: '2099-12-31', title: titles.priv, imageUrl: 'e2e/news-1.png' },
+    { status: 'private', publishedDate: '2099-12-31', title: titles.priv, imageUrl: 'news/e2e/news-1.png' },
   ]);
   const byTitle = (title: string): Row => {
     const row = rows.find((candidate) => candidate.title === title);
@@ -195,16 +197,23 @@ type ProbeResult = { api: { status: number; raw: string; items: ApiNewsItem[] };
 async function readNewsApiWithProbes(request: APIRequestContext, imageUrls: string[]): Promise<ProbeResult> {
   const admin = localAdmin();
   const probeTag = randomUUID().replace(/-/g, '').slice(0, 10);
-  const rows = await insertArticles(
-    admin,
-    imageUrls.map((imageUrl, index) => ({
-      title: `secnews${probeTag}probe${index} signing fixture`,
-      imageUrl,
-      status: 'published' as const,
-      publishedDate: PROBE_DATE,
-      category: PROBE_CATEGORY,
-    })),
-  );
+  // 外の道筋・別ホストの URL は DB の CHECK（news/ の下だけ）に合わない旧い行を表すので、CHECK より前の行として入れる
+  const rows = await withLocalDb(async (db) => {
+    const created: Row[] = [];
+    for (const [index, imageUrl] of imageUrls.entries()) {
+      const title = `secnews${probeTag}probe${index} signing fixture`;
+      const id = await insertLegacyImageRow(
+        db,
+        'news_articles',
+        'news_articles_image_url_path_check',
+        `insert into public.news_articles (title, category, published_date, image_url, content, detailed_content, status)
+         values ($1, $2, $3::date, $4, 'E2E news-sec-001 summary.', 'E2E news-sec-001 body.', 'published')`,
+        [title, PROBE_CATEGORY, PROBE_DATE, imageUrl],
+      );
+      created.push({ id, title });
+    }
+    return created;
+  });
   try {
     const api = await getApiNews(request, `?category=${PROBE_CATEGORY}&limit=20`);
     expect(api.status, '/api/news の状態').toBe(200);
@@ -332,7 +341,7 @@ test.describe('FR-NEWS-SEC-001 NEWS の公開の応答', () => {
     const base = supabaseUrl();
 
     // 置き場には本物の画像がある（署名つき URL なら開ける）ので、4xx になるのは置き場が公開でないから
-    for (const path of [pubPath, 'e2e/news-1.png']) {
+    for (const path of [pubPath, 'news/e2e/news-1.png']) {
       const response = await request.get(`${base}/storage/v1/object/public/${BUCKET}/${path}`);
       expect(response.status(), `公開の URL の状態（${path}）`).toBeGreaterThanOrEqual(400);
       expect(response.status(), `公開の URL の状態（${path}）`).toBeLessThan(500);
@@ -425,7 +434,7 @@ test.describe('FR-NEWS-SEC-001 NEWS の公開の応答', () => {
       admin,
       Array.from({ length: 21 }, (_, index) => ({
         title: `secnews${bulkTag}bulk${index} limit fixture`,
-        imageUrl: 'e2e/news-1.png',
+        imageUrl: 'news/e2e/news-1.png',
         status: 'published' as const,
         publishedDate: '2000-01-02',
       })),

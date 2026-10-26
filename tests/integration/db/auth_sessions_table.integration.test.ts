@@ -258,18 +258,22 @@ describeLocalDb('integration: AUTH の sessions の表', (db) => {
     ]);
   });
 
-  test.each(['anon', 'authenticated'])('DATA-AUTH-001 %s からは行が見えず、作成も RLS で拒まれる', async (role) => {
-    const userId = await insertUser();
-    await insertSession(userId);
+  test.each(['anon', 'authenticated'])(
+    'DATA-AUTH-001 %s には表の権限が無く、読みも作成も権限の誤り（42501）で断られる',
+    async (role) => {
+      const userId = await insertUser();
+      await insertSession(userId);
 
-    expect(await countAs(role)).toBe(0);
-    const result = await failure(
-      `insert into public.sessions (user_id, refresh_token_hash) values ($1, 'rls-denied')`,
-      [userId],
-      role,
-    );
-    expect(result.code).toBe('42501');
-  });
+      const read = await failure('select count(*)::int as count from public.sessions', [], role);
+      expect(read.code).toBe('42501');
+      const result = await failure(
+        `insert into public.sessions (user_id, refresh_token_hash) values ($1, 'rls-denied')`,
+        [userId],
+        role,
+      );
+      expect(result.code).toBe('42501');
+    },
+  );
 
   test('DATA-AUTH-001 service_role からは行が見え、作成・失効の印の更新ができる', async () => {
     const userId = await insertUser();

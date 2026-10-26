@@ -73,7 +73,7 @@ for (const { name, width, height } of VIEWPORTS) {
           category: 'EVENT',
           // 表示されるなら先頭に来る日付にして、見落としにくくする。
           published_date: '2099-01-01',
-          image_url: 'e2e/private.png',
+          image_url: 'news/e2e/private.png',
           content: 'E2E private news content.',
           detailed_content: 'E2E private news detail.',
           status: 'private',

@@ -10,9 +10,9 @@ AUTH（ログインと認証、ヘッダー）の領域で考える脅威を、1
 
 | 項目 | 内容 |
 | --- | --- |
-| 項目の数 | 32（THR-AUTH-001〜032） |
+| 項目の数 | 33（THR-AUTH-001〜033） |
 | 守りがある物 | パスワードと OTP の総当たり（001・002）、OTP だけのログイン（003）、保留の延長（004）、漏洩・短いパスワード（014）、列挙の応答（016）、再設定のリンク（018）、メールの住所の差し替え（019）、パスワード変更・ログアウト後のセッション（020・021）、Cookie の属性（024）、CSRF（025）、ヘッダーの出し分け（028） |
-| 守りが欠ける・弱い物 | Supabase Auth を直接呼んでメール OTP を飛ばす（005）、メールの確認のリンクの入口（006・007）、TOTP の総当たり（009）、DB が aal2 を見ない（010）、表の権限（011）、回数の制限の IP（013）、直接の登録・変更（015）、トークンを JS に渡す（022・023）、ログインの後の送り先の open redirect（026。画面は消し、確かめの部品に置き換える作業中）、本番の設定（029）、監査の抜け（030）、会員登録の宛先単位の制限（016）、認証の関数を anon・authenticated が呼べる（012、本番は未確認）、ログアウト時に refresh の Cookie が無いと Supabase のセッションを切らない（021）、初めての TOTP の登録の乗っ取り（031）、戻り先の控えの番号の盗み・使い回し（032。控えを作る作業中） |
+| 守りが欠ける・弱い物 | Supabase Auth を直接呼んでメール OTP を飛ばす（005）、メールの確認のリンクの入口（006・007）、TOTP の総当たり（009）、DB が aal2 を見ない（010）、表の権限（011）、回数の制限の IP（013）、直接の登録・変更（015）、トークンを JS に渡す（022・023）、ログインの後の送り先の open redirect（026。画面は消し、確かめの部品に置き換える作業中）、本番の設定（029）、監査の抜け（030）、会員登録の宛先単位の制限（016）、認証の関数を anon・authenticated が呼べる（012、本番は未確認）、ログアウト時に refresh の Cookie が無いと Supabase のセッションを切らない（021）、初めての TOTP の登録の乗っ取り（031）、戻り先の控えの番号の盗み・使い回し（032。控えを作る作業中）、新しい表・関数に広い権限が自動で付く（033。決まりと試験を足した。試験は手元の DB でまだ流していない） |
 | 対策の書き先 | 対策のセキュリティ要件 `SEC-AUTH-NNN` は要件の文書（`docs/02_Requirements/areas/auth.md`）に書く。下の「対策」の欄は読み手のための写し |
 | 状態の付け方 | 全部「推定」。実装と過去のレビューから起こし、ユーザーの確認を受けていないため（`.claude/skills/documentation-guide/SKILL.md` の 7）。コードで確かめた物も、本番の設定・ライブラリの既定・推論に頼る物も同じ。どれも実行しての確かめはしていない |
 
@@ -197,7 +197,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | `sessions`（refresh token のハッシュ）、`password_reset_tokens`（再設定の印のハッシュ）、`rate_limit_counters`、`audit_logs`、`profiles` |
 | 脅威 | anon・会員の JWT で PostgREST から表を読み書きし、再設定の印やセッションの記録を盗む・消す、回数の数を消す、監査を消す |
-| 起こり方 | 5つの表とも anon・authenticated に、TRUNCATE・TRIGGER・REFERENCES・MAINTAIN を含む全部の権限を付けたまま（`remote_schema.sql:4142,4184,4190,4192,4200`、数の連番 `:4082`）。今は RLS の「anon・authenticated は全部拒む」方針で塞ぐ（`:3313-3330,3661-3677,3712-3728,3747-3763`）。`profiles` は本人の行だけを許す（`:3691-3710`） |
+| 起こり方 | 5つの表とも anon・authenticated に、TRUNCATE・TRIGGER・REFERENCES・MAINTAIN を含む全部の権限を付けたまま（`remote_schema.sql:4142,4184,4190,4192,4200`、数の連番 `:4082`）。今は RLS の「anon・authenticated は全部拒む」方針で塞ぐ（`:3313-3330,3661-3677,3712-3728,3747-3763`）。`profiles` は本人の行だけを許す（`:3691-3710`）。**2026-10-26 に直した**: 移行 `sec_grants_hardening` が5つの表と連番の権限を anon・authenticated から全部外し（RLS の全拒否の方針は残す）、`profiles` は anon の権限を全部、authenticated の TRUNCATE・REFERENCES・TRIGGER・MAINTAIN を外した。service_role の権限は明示で付けた |
 | 影響 | 方針を1つ消す・書き間違えるだけで全部が開く。TRUNCATE は RLS を受けない（PostgREST からは出せないが、権限としては残る） |
 | 対策 | SEC-AUTH-011 |
 | ASVS | V4.1.3 |
@@ -499,6 +499,20 @@ flowchart LR
 | 状態 | 推定 |
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md` |
 
+### THR-AUTH-033 新しい表・関数に広い権限が自動で付き、権限の一覧が見張られていない
+
+| 属性 | 値 |
+| --- | --- |
+| 守るもの | 公開スキーマ（`public`）の表・列・関数・連番の権限、とくに anon・authenticated が持つ書き込み・TRUNCATE |
+| 脅威 | 次の移行が新しい表や関数を作った時に、権限を明示せず、Supabase の既定で anon・authenticated に全権限が付いたままになる。権限を締めた移行の後で、別の移行が黙って広い権限を足し戻す |
+| 起こり方 | 公開スキーマの表は、作った時に anon・authenticated・postgres・service_role へ8権限が全部付く（`remote_schema.sql` の GRANT）。`ALTER DEFAULT PRIVILEGES` は0件。移行の書き手が REVOKE と GRANT を書き忘れても、移行は通る。権限の一覧を確かめる試験が無いと、表の権限が RLS の1段目の門として働いているかを、だれも見ない。Supabase 公式も、既定の権限は project ごとに違い、自動で付く権限は外される方向だと案内する（Hardening the Data API） |
+| 影響 | 新しい表で RLS の方針を書き違えただけで、anon の鍵から行を読み・書き・消せる。TRUNCATE は RLS を受けない。気づくのが本番に出た後になる |
+| 対策 | SEC-AUTH-033（移行が GRANT・REVOKE を明示する決まり。権限の一覧と歯止めを DB 結合テストで守る。ADR-0414、DATA-AUTH-006） |
+| ASVS | V4.1.3 |
+| 根拠 | 波 2 が表の権限を締めても、決まりと試験が無いと次の移行で戻る。設計書 I8 が「権限の一覧を見張る試験と、GRANT を明示する決まり」を求めた。他領域の表（会計・問い合わせ・注文・カート・権限）の広い権限はこの波で直さず、試験の既知の例外に載せる |
+| 状態 | 推定 |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/design-final.md` の I8、`.superpowers/sdd/2026-10-25-security-gap-fixes/wave2-decisions.md` |
+
 ---
 
 ## 未確認事項
@@ -515,3 +529,4 @@ flowchart LR
 - 本番の Supabase Auth の `double_confirm_changes`（メールの差し替えに新旧両方の確認を求める設定）が ON か。手元は true（`supabase/config.toml:223`）（THR-AUTH-015）
 - 本番に TOTP をまだ登録していない管理者・サポーターがいるか（THR-AUTH-031）。いれば、その間はパスワードだけで管理に届く
 - 本番で `sb-return-intent` に `__Host-` の接頭辞を付けるか（別のサブドメインや平文の通信からの差し込みを防ぐ。今の Cookie の名前の付け方と合わないので、この波では決めていない。THR-AUTH-032）
+- 権限の一覧の結合テストの「既知の例外」（会計・問い合わせ・注文・カート・権限の表）が実態と合うか。手元の DB でまだ流していない。流した最初の結果で、落ちた表が本当に例外か・今回直すかを決める（THR-AUTH-033）

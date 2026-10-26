@@ -482,9 +482,13 @@ describe('PATCH /api/admin/stockists/[id]（公開の状態だけの切り替え
     expect(verifyAccessToken).not.toHaveBeenCalled();
   });
 
-  test('API-STOCKIST-005 client を作れない例外も 500 Internal server error を返し、監査を残さない', async () => {
+  test('API-STOCKIST-005 書き込みの service role の client を作れない例外も 500 Internal server error を返し、監査を残さない', async () => {
     setup({ tables: okTables() });
-    createClient.mockRejectedValue(new Error('no client'));
+    // 認可・回数の制限を過ぎた後（書き込みの client の作成）だけ失敗させる。
+    createServiceRoleClient.mockImplementation(async () => {
+      if (incrementCounter.mock.calls.length > 0) throw new Error('no client');
+      return client;
+    });
 
     const res = await PATCH(patchRequest(), ctx());
 
@@ -503,7 +507,7 @@ describe('PATCH /api/admin/stockists/[id]（公開の状態だけの切り替え
 
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ success: true });
-      expect(createClient).toHaveBeenCalledWith(request);
+      expect(createClient).not.toHaveBeenCalled();
       expect(updatePayload()).toEqual({ status });
       expect(tableCalls('stockists', 'update')[0].find(([m]) => m === 'eq')?.[1]).toEqual(['id', 7]);
       expect(tableCalls('stockists', 'update')[0].find(([m]) => m === 'select')?.[1]).toEqual(['id']);

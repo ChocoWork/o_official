@@ -22,7 +22,7 @@ const baseArticle = (overrides: Partial<Article> = {}): Article => ({
   title: `integration news table ${Date.now()}`,
   category: 'COLLECTION',
   published_date: '2026-05-14',
-  image_url: 'integration/news-table.png',
+  image_url: 'news/integration/news-table.png',
   content: 'integration summary',
   detailed_content: 'integration body',
   status: 'private',
@@ -113,7 +113,7 @@ describeLocalDb('integration: 記事の表 news_articles', (db) => {
     const duplicate = await failure(
       `insert into public.news_articles
          (id, title, category, published_date, image_url, content, detailed_content, status)
-       values ($1, 'dup', 'EVENT', '2026-01-01', 'integration/dup.png', 'c', 'd', 'private')`,
+       values ($1, 'dup', 'EVENT', '2026-01-01', 'news/integration/dup.png', 'c', 'd', 'private')`,
       [first.id],
     );
 
@@ -145,23 +145,23 @@ describeLocalDb('integration: 記事の表 news_articles', (db) => {
     expect((await failure(sql, params)).code).toBe('22008');
   });
 
-  test('DATA-NEWS-001 題・概要・本文に長さの上限は無い', async () => {
-    const long = 'x'.repeat(10001);
-    const row = await insertArticle(baseArticle({ title: long, content: long, detailed_content: long }));
+  test('DATA-NEWS-001 題・概要・本文は上限ちょうど（200・2000・10000 字）まで入る。超える値の拒否は news_constraints で確かめる', async () => {
+    const row = await insertArticle(
+      baseArticle({ title: 'x'.repeat(200), content: 'x'.repeat(2000), detailed_content: 'x'.repeat(10000) }),
+    );
 
     const stored = await db().query(
       `select length(title) as title, length(content) as content, length(detailed_content) as body
        from public.news_articles where id = $1`,
       [row.id],
     );
-    expect(stored.rows).toEqual([{ title: 10001, content: 10001, body: 10001 }]);
+    expect(stored.rows).toEqual([{ title: 200, content: 2000, body: 10000 }]);
   });
 
-  test('DATA-NEWS-001 image_url の形は表では確かめない', async () => {
-    const row = await insertArticle(baseArticle({ image_url: 'not a storage path' }));
+  test('DATA-NEWS-001 image_url は news/ の下の安全な道筋だけが入る（CHECK news_articles_image_url_path_check。形の一覧は news_constraints で確かめる）', async () => {
+    const [sql, params] = insertSql(baseArticle({ image_url: 'not a storage path' }));
 
-    const stored = await db().query('select image_url from public.news_articles where id = $1', [row.id]);
-    expect(stored.rows).toEqual([{ image_url: 'not a storage path' }]);
+    expect(await failure(sql, params)).toEqual({ code: '23514', constraint: 'news_articles_image_url_path_check' });
   });
 
   test('DATA-NEWS-001 created_at・updated_at を省くと今の時刻が入る', async () => {
@@ -176,7 +176,7 @@ describeLocalDb('integration: 記事の表 news_articles', (db) => {
     const inserted = await db().query(
       `insert into public.news_articles
          (title, category, published_date, image_url, content, detailed_content, status, created_at, updated_at)
-       values ('integration trigger', 'STORE', '2026-01-01', 'integration/trigger.png', 'c', 'd', 'private',
+       values ('integration trigger', 'STORE', '2026-01-01', 'news/integration/trigger.png', 'c', 'd', 'private',
                '2020-01-01T00:00:00Z', '2020-01-01T00:00:00Z')
        returning id::text as id`,
     );

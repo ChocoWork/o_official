@@ -98,8 +98,7 @@ function setupPostMocks(options: {
   const select = jest.fn().mockReturnValue({ single });
   const insert = jest.fn().mockReturnValue({ select });
   const from = jest.fn().mockReturnValue({ insert });
-  mockCreateClient.mockResolvedValue({ from });
-  mockCreateServiceRoleClient.mockResolvedValue({ storage: { from: storageFrom } });
+  mockCreateServiceRoleClient.mockResolvedValue({ from, storage: { from: storageFrom } });
   return { upload, remove, storageFrom, insert, select, from };
 }
 
@@ -342,7 +341,8 @@ describe('POST /api/admin/news', () => {
 
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ success: true, id: 42 });
-    expect(mockCreateClient).toHaveBeenCalledWith(request);
+    expect(mockCreateServiceRoleClient).toHaveBeenCalledTimes(1);
+    expect(mockCreateClient).not.toHaveBeenCalled();
     expect(mocks.from).toHaveBeenCalledWith('news_articles');
     expect(mocks.insert).toHaveBeenCalledWith([
       {

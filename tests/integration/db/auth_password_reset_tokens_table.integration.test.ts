@@ -237,10 +237,11 @@ describeLocalDb('integration: AUTH の password_reset_tokens の表', (db) => {
     ]);
   });
 
-  test.each(['anon', 'authenticated'])('DATA-AUTH-002 %s からは印が見えず、作成も RLS で拒まれる', async (role) => {
+  test.each(['anon', 'authenticated'])('DATA-AUTH-002 %s には表の権限が無く、読みも作成も権限の誤り（42501）で断られる', async (role) => {
     await insertToken('hidden');
 
-    expect(await countAs(role)).toBe(0);
+    const read = await failure('select count(*)::int as count from public.password_reset_tokens', [], role);
+    expect(read.code).toBe('42501');
     const result = await failure(
       `insert into public.password_reset_tokens (email, token_hash, expires_at)
        values ('a@example.com', 'rls-denied', now() + interval '10 minutes')`,

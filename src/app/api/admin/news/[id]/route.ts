@@ -4,11 +4,11 @@
  * @packageDocumentation
  * @impl IMPL-NEWS-162
  * @design DD-NEWS-065
- * @remarks 表の読み書きは利用者の JWT の client で RLS に通し、窓口の認可が崩れても DB が断るようにする（SEC-NEWS-015、DATA-NEWS-002）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新の PUT と分ける（API-NEWS-006、STATE-NEWS-001）。直すたびに画像を付け直させないよう、PUT の画像は任意にする（API-NEWS-005）。変える操作は誰が何をしたかを追えるよう、成功も失敗も監査に残す。変更・削除が 0 行の時（無い記事、または RLS が隠した記事）は成功と偽らず 404 にして失敗を残す（SEC-NEWS-016）。
+ * @remarks 表の読みは利用者の JWT の client で RLS に通し（SEC-NEWS-015、DATA-NEWS-002）、書き込み（POST・PUT・PATCH・DELETE）は認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（ADR-0026）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新の PUT と分ける（API-NEWS-006、STATE-NEWS-001）。直すたびに画像を付け直させないよう、PUT の画像は任意にする（API-NEWS-005）。変える操作は誰が何をしたかを追えるよう、成功も失敗も監査に残す。変更・削除が 0 行の時（無い記事）は成功と偽らず 404 にして失敗を残す（SEC-NEWS-016）。
  * id は URL から来るので、形の悪い値は DB に渡さず 404 にし、1件の取り出しは「無い」と「DB の失敗」を分けて、誤りの文は応答にも記録にも出さない（SEC-NEWS-012、SEC-NEWS-020）。
  * 画像は申告の種類と中身の印が合う物だけを受け、保存名は自分で作る（SEC-NEWS-017）。
  * PUT は画像を上げる前に古い image_url を読み（無い記事なら何も上げない）、行を変えた後に古い画像を、行が変わらなかった時は新しく上げた画像を置き場から消す。
- * 削除は行を消した後に画像を消す。置き場は service role でないと消せないので、その client は消す時だけ作り、置き場の失敗は監査に残すだけで応答は成功のまま返す（SEC-NEWS-018）。
+ * 削除は行を消した後に画像を消す。行の削除と置き場の削除に同じ service role の client を使い、置き場の失敗は監査に残すだけで応答は成功のまま返す（SEC-NEWS-018）。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -163,8 +163,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       );
     }
 
-    const dbSupabase = await createClient(request);
-    const uploadSupabase = await createServiceRoleClient();
+    const serviceSupabase = await createServiceRoleClient();
 
     let imagePath: string | undefined = undefined;
     let previousImageUrl: string | null = null;
@@ -185,7 +184,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       }
 
       // 古い画像の道筋は行を変える前でないと分からない。無い記事には何も上げない。
-      const { data: previousRow, error: previousError } = await dbSupabase
+      const { data: previousRow, error: previousError } = await serviceSupabase
         .from('news_articles')
         .select('image_url')
         .eq('id', id)
@@ -210,7 +209,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
       const filePath = buildNewsImagePath(prepared.extension);
 
-      const { error: uploadError } = await uploadSupabase.storage
+      const { error: uploadError } = await serviceSupabase.storage
         .from(NEWS_IMAGE_BUCKET)
         .upload(filePath, prepared.buffer, {
           contentType: prepared.contentType,
@@ -231,7 +230,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
       imagePath = filePath;
       unreferencedPath = filePath;
-      cleanupClient = uploadSupabase;
+      cleanupClient = serviceSupabase;
     }
 
     const updatePayload: Record<string, unknown> = {
@@ -247,14 +246,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       updatePayload.image_url = imagePath;
     }
 
-    const { data: updatedRows, error } = await dbSupabase
+    const { data: updatedRows, error } = await serviceSupabase
       .from('news_articles')
       .update(updatePayload)
       .eq('id', id)
       .select('id');
 
     if (error) {
-      const imageCleanup = imagePath ? await removeNewsImages(uploadSupabase, [imagePath]) : undefined;
+      const imageCleanup = imagePath ? await removeNewsImages(serviceSupabase, [imagePath]) : undefined;
       unreferencedPath = null;
 
       await logNewsAudit(request, authz.userId, 'admin.news.update.failed', 'failure', 'News article update failed', {
@@ -268,10 +267,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Failed to update news article' }, { status: 500 });
     }
 
-    // 0 行は「無い」と「RLS が隠した」の両方。成功と偽らず 404 にする（SEC-NEWS-016）。
+    // 0 行は「無い」。成功と偽らず 404 にする（SEC-NEWS-016）。
     if (!updatedRows || updatedRows.length === 0) {
       if (imagePath) {
-        await removeNewsImages(uploadSupabase, [imagePath]);
+        await removeNewsImages(serviceSupabase, [imagePath]);
         unreferencedPath = null;
       }
       return respondArticleNotFound(request, authz.userId, 'admin.news.update.not_found', id);
@@ -281,7 +280,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     unreferencedPath = null;
     const imageCleanup =
       imagePath && previousImageUrl
-        ? await removeNewsImages(uploadSupabase, [previousImageUrl], [imagePath])
+        ? await removeNewsImages(serviceSupabase, [previousImageUrl], [imagePath])
         : undefined;
 
     await logNewsAudit(request, authz.userId, 'admin.news.update', 'success', 'News article updated', {
@@ -331,7 +330,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       );
     }
 
-    const supabase = await createClient(request);
+    const supabase = await createServiceRoleClient();
 
     const { data: updatedRows, error } = await supabase
       .from('news_articles')
@@ -377,7 +376,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return respondArticleNotFound(request, authz.userId, 'admin.news.delete.not_found', id);
     }
 
-    const supabase = await createClient(request);
+    const supabase = await createServiceRoleClient();
 
     const { data: deletedRows, error } = await supabase
       .from('news_articles')
@@ -398,12 +397,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return respondArticleNotFound(request, authz.userId, 'admin.news.delete.not_found', id);
     }
 
-    // 行を消した後に画像を消す。置き場は service role でないと消せないので、ここで初めてその client を作る。
+    // 行を消した後に画像を消す。行の削除と置き場の削除に同じ service role の client を使う。
     let imageCleanup: 'ok' | 'failed';
     try {
-      const storageSupabase = await createServiceRoleClient();
       imageCleanup = await removeNewsImages(
-        storageSupabase,
+        supabase,
         deletedRows.map((row) => (row as { image_url?: string | null }).image_url),
       );
     } catch (cleanupError) {

@@ -463,8 +463,8 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-SEARCH-003、FREQ-201-REQ-01、SEC-SEARCH-001、SEC-SEARCH-002、ADR-0301、ADR-0302 |
-| 根拠 | 検索は語の部分一致で足り、全文検索や外の検索の仕組みを入れない（FR-SEARCH-003、ADR-0301）。関数は呼び手の権限で動かし、関数の中でも公開済みに絞るので、RLS が下書きを通す呼び手でも下書きを返さない（SEC-SEARCH-001・002、ADR-0302）。語は引数で受けて SQL に組まない（NFR-SEC-007）。商品の行のメタに価格を出すため、`search_items` は価格を返す（FREQ-201-REQ-01）。`search_public_items`・`search_public_looks` は未使用（削除の判断待ち） |
+| 上位 | FR-SEARCH-003、FREQ-201-REQ-01、SEC-SEARCH-001、SEC-SEARCH-002、SEC-SEARCH-003、SEC-SEARCH-007、SEC-SEARCH-008、ADR-0301、ADR-0302、ADR-0315 |
+| 根拠 | 検索は語の部分一致で足り、全文検索や外の検索の仕組みを入れない（FR-SEARCH-003、ADR-0301）。関数は呼び手の権限で動かし、関数の中でも公開済みに絞るので、RLS が下書きを通す呼び手でも下書きを返さない（SEC-SEARCH-001・002、ADR-0302）。語は引数で受けて SQL に組まない（NFR-SEC-007）。商品の行のメタに価格を出すため、`search_items` は価格を返す（FREQ-201-REQ-01）。アプリを通らない PostgREST の直接の呼び出しでも負荷に上限を置くため、件数は 1〜8、語は先頭 100 字、`\` を先に逃がす（SEC-SEARCH-003・007、ADR-0315）。`search_public_items`・`search_public_looks` は未使用（削除の判断待ち）なので、DROP せず anon・authenticated・PUBLIC から EXECUTE を外した（SEC-SEARCH-008、ADR-0315） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`supabase/migrations/20260901102912_remote_schema.sql`） |
@@ -473,16 +473,17 @@ stateDiagram-v2
 
 | 関数 | 中身 | 付与 | 使う所 |
 | --- | --- | --- | --- |
-| `search_items(search_query, limit_count default 8)` | 呼び手の権限（SECURITY DEFINER を付けない）・`STABLE`。`status='published'` の商品を、名前・説明・カテゴリの ILIKE の部分一致で探す。`%`・`_` を逃がす。作った日の新しい順に `limit_count` 件。返す列は id・名前・説明・カテゴリ・画像・価格 | PUBLIC から外し、anon・authenticated・postgres・service_role に EXECUTE | 検索と候補（`search.service.ts`） |
+| `search_items(search_query, limit_count default 8)` | 呼び手の権限（SECURITY DEFINER を付けない）・`STABLE`。`status='published'` の商品を、名前・説明・カテゴリの ILIKE の部分一致で探す。語は先頭 100 字に切り、`\` を先に二重にしてから `%`・`_` を逃がす（模様は LATERAL で 1 回だけ作る）。作った日の新しい順に 1〜8 件（`GREATEST(1, LEAST(COALESCE(limit_count, 8), 8))`）。返す列は id・名前・説明・カテゴリ・画像・価格 | PUBLIC から外し、anon・authenticated・postgres・service_role に EXECUTE | 検索と候補（`search.service.ts`） |
 | `search_looks(search_query, limit_count default 8)` | 同じ作り。`status='published'` のルックを、テーマ・テーマの説明で探す。返す列は id・年・季節・テーマ・テーマの説明・画像の配列 | 同上 | 検索と候補（`search.service.ts`） |
-| `search_public_items`・`search_public_looks`（`p_query`, `p_limit default 6`） | 未使用（削除の判断待ち）。呼び手の権限。`status='published'`。件数を1〜20に丸める。`%`・`_` を逃がさない | PUBLIC を含む全部に EXECUTE | 呼ぶ所は見当たらない |
+| `search_public_items`・`search_public_looks`（`p_query`, `p_limit default 6`） | 未使用（削除の判断待ち）。呼び手の権限。`status='published'`。件数を1〜20に丸める。`%`・`_` を逃がさない。本体は 2026-10-26 の移行で変えていない | PUBLIC・anon・authenticated から外し（2026-10-26、`sec_search_functions`）、postgres・service_role に EXECUTE | 呼ぶ所は見当たらない。呼べない（REVOKE 済み）。DROP は NEWS の試験を直した後に別の判断 |
 
 - `search_news`・`search_public_news` は DATA-SEARCH-003。検索は `search_news` を2つの関数と同じ形で呼ぶ
 - 大文字と小文字は区別しない。語全体の部分一致で、語を分けては探さない（ARC-SEARCH-002）
-- `\` を逃がさない（SEC-SEARCH-003 は満たさない）
-- 空の語は模様が `'%%'` になって全部の公開の行に一致する。`limit_count` に NULL を渡すと `LIMIT NULL` で上限が無くなり、負の値は誤りになる
-- `limit_count` を上限に丸めない（SEC-SEARCH-007 は満たさない）。手元の PostgREST の上限は `supabase/config.toml` の `max_rows = 1000`
-- 未使用（削除の判断待ち）の `search_public_*` が PUBLIC に開いている（SEC-SEARCH-008 は満たさない）
+- `\` を先に逃がす（SEC-SEARCH-003 を満たす。移行 `sec_search_functions`、ADR-0315。この移行を当てた DB でだけ満たす）
+- 空の語は模様が `'%%'` になって全部の公開の行に一致するが、件数は最大 8。`limit_count` が NULL・0・負でも誤りにせず 1〜8 に丸める
+- `limit_count` を 8 に丸める（SEC-SEARCH-007 を満たす。アプリの呼び元の最大は 8: `/api/search` の `limitPerType`、候補の `limit`）。手元の PostgREST の上限は `supabase/config.toml` の `max_rows = 1000`、本番は運用で確認する
+- 未使用（削除の判断待ち）の `search_public_*` は PUBLIC・anon・authenticated から EXECUTE を外した（SEC-SEARCH-008 を満たす）。ロールバックの旧い本体は移行のヘッダーに全文ある
+- 関数の署名・戻りの列・`search_path` と SECURITY INVOKER は移行で変えていない（`CREATE OR REPLACE` が所有者と ACL を保つ）
 - `search_path` に `public` を2回書く（害は無いと推定）
 - 表の RLS（`items`・`looks`）は ITEM・LOOK の物。関数の中の絞りは RLS に頼らない
 
@@ -515,8 +516,8 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-SEARCH-001、FR-SEARCH-003、SEC-SEARCH-001、SEC-SEARCH-002、ADR-0301、ADR-0302 |
-| 根拠 | サイト内の検索がニュースも横断して探せるよう、公開済みの記事を題・本文・分類で探す関数を DB に置く（FR-SEARCH-001、ADR-0301）。呼び手の権限で動かし（SECURITY DEFINER にしない）、関数の中でも `status='published'` で絞って、RLS と合わせて下書きを出さない（SEC-SEARCH-001・002、ADR-0302）。記事の表と RLS は NEWS が持つが、この関数を呼ぶのは検索の部品なので、関数の定義は SEARCH が持つ。語を引数で受ける点は全体の NFR-SEC-007 にも沿う。`search_public_news` は未使用（削除の判断待ち） |
+| 上位 | FR-SEARCH-001、FR-SEARCH-003、SEC-SEARCH-001、SEC-SEARCH-002、SEC-SEARCH-003、SEC-SEARCH-007、SEC-SEARCH-008、ADR-0301、ADR-0302、ADR-0315 |
+| 根拠 | サイト内の検索がニュースも横断して探せるよう、公開済みの記事を題・本文・分類で探す関数を DB に置く（FR-SEARCH-001、ADR-0301）。呼び手の権限で動かし（SECURITY DEFINER にしない）、関数の中でも `status='published'` で絞って、RLS と合わせて下書きを出さない（SEC-SEARCH-001・002、ADR-0302）。記事の表と RLS は NEWS が持つが、この関数を呼ぶのは検索の部品なので、関数の定義は SEARCH が持つ。語を引数で受ける点は全体の NFR-SEC-007 にも沿う。件数は 1〜8、語は先頭 100 字、`\` を先に逃がすのは DATA-SEARCH-001 と同じ理由（SEC-SEARCH-003・007、ADR-0315）。`search_public_news` は未使用（削除の判断待ち）なので、DROP せず anon・authenticated・PUBLIC から EXECUTE を外した（SEC-SEARCH-008、SEC-NEWS-010、ADR-0315） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`supabase/migrations/20260901102912_remote_schema.sql` の `search_news`・`search_public_news`）、`tests/integration/db/search-functions.integration.test.ts` |
@@ -525,11 +526,11 @@ stateDiagram-v2
 
 | 関数 | 中身 | 付与 | 使う所 |
 | --- | --- | --- | --- |
-| `search_news(search_query, limit_count default 8)` | 呼び手の権限（SECURITY DEFINER を付けない）・`STABLE`。`status='published'` の記事を、題・本文・分類の ILIKE の部分一致で探す。`%`・`_` を逃がす。公開日の新しい順に `limit_count` 件。返す列は id・題・分類・画像・本文・公開日 | PUBLIC から外し、anon・authenticated・postgres・service_role に EXECUTE | 検索と候補（`search.service.ts`） |
-| `search_public_news(p_query, p_limit default 6)` | 未使用（削除の判断待ち）。呼び手の権限。`status='published'`。件数を1〜20に丸める。`%`・`_` を逃がさない | PUBLIC を含む全部に EXECUTE | 呼ぶ所は見当たらない |
+| `search_news(search_query, limit_count default 8)` | 呼び手の権限（SECURITY DEFINER を付けない）・`STABLE`。`status='published'` の記事を、題・本文・分類の ILIKE の部分一致で探す。語は先頭 100 字に切り、`\` を先に二重にしてから `%`・`_` を逃がす。公開日の新しい順に 1〜8 件（`GREATEST(1, LEAST(COALESCE(limit_count, 8), 8))`）。返す列は id・題・分類・画像・本文・公開日 | PUBLIC から外し、anon・authenticated・postgres・service_role に EXECUTE | 検索と候補（`search.service.ts`） |
+| `search_public_news(p_query, p_limit default 6)` | 未使用（削除の判断待ち）。呼び手の権限。`status='published'`。件数を1〜20に丸める。`%`・`_` を逃がさない。本体は 2026-10-26 の移行で変えていない | PUBLIC・anon・authenticated から外し（2026-10-26、`sec_search_functions`）、postgres・service_role に EXECUTE | 呼ぶ所は見当たらない。呼べない（REVOKE 済み）。DROP は NEWS の試験を直した後に別の判断 |
 
 - 大文字と小文字は区別しない。語全体の部分一致で、語を分けては探さない（ARC-SEARCH-002）
-- `\` を逃がさない（SEC-SEARCH-003 は満たさない）。`limit_count` を上限に丸めない（SEC-SEARCH-007 は満たさない）。使われない `search_public_news` が PUBLIC に開いている（SEC-SEARCH-008 は満たさない）
+- `\` を先に逃がす（SEC-SEARCH-003）、`limit_count` を 1〜8 に丸める（SEC-SEARCH-007）、使われない `search_public_news` から anon・authenticated・PUBLIC の EXECUTE を外した（SEC-SEARCH-008）。どれも 2026-10-26 の移行 `sec_search_functions`（ADR-0315）で満たした。この移行を当てた DB でだけ満たす
 - `search_path` に `public` を2回書く（害は無いと推定）
 - 表の RLS（`news_articles`）は NEWS の物。関数の中の絞りは RLS に頼らない
 
@@ -539,7 +540,7 @@ stateDiagram-v2
 - 本番のビルドで、検索の窓口の応答の `Cache-Control: private, no-store` が `proxy.ts`・`next.config.ts` や中継に上書きされないか（E2E `FR-SEARCH-019` は値そのものを見るが、流していない）
 - ホームの頁が `SearchHomePreview`（`useSearchParams` を使う）を `Suspense` で包まずに描く時の描き方（推定のまま。HOME の範囲）
 - FREQ-184-REQ-01・02、FREQ-188-REQ-02、FREQ-190-REQ-01、FREQ-191-REQ-01、FREQ-193-REQ-01 は後の要求で一部が置き換わったまま上位にした。要件の側で「廃止」にするか文を直したら、上位を付け直す
-- 今のコードが満たさないセキュリティ要件を直した時に、どの項目の上位に足すか（残りは SEC-SEARCH-006・007・008・014〜016・020 の偽の送り元の側。004・005・010・017〜019・021・020 の外のサイト側は 2026-10-26 に上位をつないだ）
+- 今のコードが満たさないセキュリティ要件を直した時に、どの項目の上位に足すか（残りは SEC-SEARCH-006・014〜016・020 の偽の送り元の側。004・005・010・017〜019・021・020 の外のサイト側は 2026-10-26 に上位をつないだ。SEC-SEARCH-003・007・008 は同日、移行 `sec_search_functions` で満たして DATA-SEARCH-001・003 の上位に載せた）
 - 詳細設計（`DD-SEARCH-001`〜`008`、`docs/04_DetailDesign/pages/19_search.md`）はある。結合テストと単体テストはまだ無いので、`validate-trace` は構造設計の項目と詳細設計の項目に `missing-child` を出し続ける
 - DATA-SEARCH-001 の旧番号 DATA-LOOK-004 と DATA-SEARCH-003 の旧番号 DATA-NEWS-003 は、LOOK・NEWS が廃止にして SEARCH へ移した関数の項目。この持ち方でよいかをユーザーに確かめる
 - この文書の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

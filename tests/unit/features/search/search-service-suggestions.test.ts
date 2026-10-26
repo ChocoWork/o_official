@@ -218,6 +218,20 @@ describe('getSearchSuggestions', () => {
     expect(consoleError).toHaveBeenCalledWith('Search function failed:', { fn: 'search_news', name: 'UnknownError', code: '57014' });
   });
 
+  it('DD-SEARCH-007 search_looks だけ失敗しても他の2種の候補は返り、投げない（SEC-SEARCH-017）', async () => {
+    setup({
+      search_items: { data: [item({ name: 'Coat item' })], error: null },
+      search_looks: { data: null, error: { message: 'looks down', code: '57014' } },
+      search_news: { data: [article({ title: 'Coat Arrives' })], error: null },
+    });
+
+    const result = await getSearchSuggestions('coat');
+
+    expect(result.map((suggestion) => suggestion.type).sort()).toEqual(['item', 'news']);
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith('Search function failed:', { fn: 'search_looks', name: 'UnknownError', code: '57014' });
+  });
+
   it('DD-SEARCH-007 client の作成が投げたら例外がそのまま出る', async () => {
     mockedCreateClient.mockRejectedValue(new Error('no client'));
 

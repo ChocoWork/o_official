@@ -10,6 +10,8 @@
  * 1件の存在確認は「無い」と「DB の失敗」を分け、誤りの文は応答にも記録にも出さない（SEC-LOOK-021）。
  * 更新は画像を付けた時だけ全部を差し替え、文字だけの直しで画像を上げ直させない。
  * 画像は申告の種類と中身の印が合う物だけを、量の枠を使う前に受け、保存名は自分で作る（SEC-LOOK-013）。
+ * 更新は行・関連の入れ替えを admin_update_look の 1 取引にし、途中で失敗しても行も関連も元のまま残す。
+ * 画像が無い要求は NULL を渡し、関数が今の画像を保つので、同時の更新が差し替えた画像を古い値で上書きしない（ADR-0163）。
  * 行を変えた後に古い画像を、行が変わらなかった時は新しく上げた画像を置き場から消し、削除は行を消した後に画像を消す。
  * 置き場の削除の失敗は監査に件数を残すだけで、応答は成功のまま返す（SEC-LOOK-014）。
  * 公開の切り替えで他の欄と画像に触れず、送り直しの手間と上書きの事故を避けるため、状態の列だけを変える。
@@ -85,6 +87,43 @@ function parseJsonField<T>(value: FormDataEntryValue | null, schema: z.ZodType<T
 /** 置き場の削除が失敗した時だけ、監査に残す件数を返す。 */
 function cleanupMetadata(result: 'ok' | 'failed', count: number): Record<string, unknown> {
   return result === 'failed' ? { image_cleanup: 'failed', orphaned_count: count } : {};
+}
+
+interface UpdateLookFailure {
+  status: 400 | 404 | 500;
+  /** 応答の誤りの文 */
+  error: string;
+  /** 監査の detail */
+  detail: string;
+  /** 500 の時にログへ出す題 */
+  log: string;
+}
+
+/**
+ * admin_update_look の失敗を応答の契約（今までと同じ文）に写す。
+ * 関連の段の失敗は関数が LOOK_ITEMS_WRITE_FAILED に付け直す（外部キー違反 23503 だけは付け直さない）。
+ */
+function classifyUpdateLookFailure(error: { code?: string; message?: string }): UpdateLookFailure {
+  if (error.code === 'P0002') {
+    return { status: 404, error: 'Look not found', detail: 'Look not found', log: 'Look not found' };
+  }
+  if (error.code === '23503') {
+    return {
+      status: 400,
+      error: 'Some linked items do not exist',
+      detail: 'Some linked items do not exist',
+      log: 'Some linked items do not exist',
+    };
+  }
+  if (error.message === 'LOOK_ITEMS_WRITE_FAILED') {
+    return {
+      status: 500,
+      error: 'Failed to update linked items',
+      detail: 'Failed to update look-item links',
+      log: 'Failed to update look-item links',
+    };
+  }
+  return { status: 500, error: 'Failed to update look', detail: 'Failed to update look', log: 'Failed to update look' };
 }
 
 function invalidIdResponse() {
@@ -314,7 +353,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     const { data: existingLook, error: existingLookError } = await supabase
       .from('looks')
-      .select('id,status,image_urls')
+      .select('id,status')
       .eq('id', id)
       .maybeSingle();
 
@@ -399,8 +438,6 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return uploadQuotaResponse;
     }
 
-    const previousImageUrls: unknown = existingLook.image_urls;
-    let imageUrls: string[] = Array.isArray(previousImageUrls) ? previousImageUrls : [];
     const newImagePaths: string[] = [];
 
     if (preparedImages.length > 0) {
@@ -440,34 +477,33 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         newImagePaths.push(filePath);
         unreferencedPaths = [...newImagePaths];
       }
-
-      imageUrls = [...newImagePaths];
     }
 
-    const { error: updateLookError } = await supabase
-      .from('looks')
-      .update({
-        season_year: parsedPayload.data.seasonYear,
-        season_type: parsedPayload.data.seasonType,
-        theme: parsedPayload.data.theme,
-        theme_description: parsedPayload.data.themeDescription,
-        image_urls: imageUrls,
-        status: parsedPayload.data.status,
-      })
-      .eq('id', id);
+    // 行・関連の更新は 1 取引の rpc で行う。新しい画像が無い時は NULL を渡し、今の画像を関数が保つ（ADR-0163）。
+    const { data: previousImageUrls, error: updateLookError } = await supabase.rpc('admin_update_look', {
+      _look_id: Number(id),
+      _season_year: parsedPayload.data.seasonYear,
+      _season_type: parsedPayload.data.seasonType,
+      _theme: parsedPayload.data.theme,
+      _theme_description: parsedPayload.data.themeDescription,
+      _image_urls: newImagePaths.length > 0 ? newImagePaths : null,
+      _status: parsedPayload.data.status,
+      _item_ids: parsedPayload.data.linkedItemIds,
+    });
 
     if (updateLookError) {
-      // 行は変わっていないので、この要求で上げた新しい画像だけが残骸になる。
+      // 行・関連は 1 取引で戻っているので、この要求で上げた新しい画像だけが残骸になる。古い画像は消さない。
       const cleanup = await removeLookImages(supabase, newImagePaths);
       unreferencedPaths = [];
 
+      const failure = classifyUpdateLookFailure(updateLookError);
       await logAdminLookAudit({
         request,
         actorId: authz.userId,
         actorEmail: authz.actorEmail,
         action: 'admin.look.update',
         outcome: 'failure',
-        detail: 'Failed to update look',
+        detail: failure.detail,
         resourceId: id,
         metadata: {
           status: parsedPayload.data.status,
@@ -476,63 +512,20 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         },
       });
 
-      console.error('Failed to update look:', describeErrorForLog(updateLookError));
-      return NextResponse.json({ error: 'Failed to update look' }, { status: 500 });
+      if (failure.status === 500) {
+        console.error(`${failure.log}:`, describeErrorForLog(updateLookError));
+      }
+      return NextResponse.json({ error: failure.error }, { status: failure.status });
     }
 
     // 行が新しい画像を指したので、新しい画像はもう消さない。差し替えた古い画像を消す。
     unreferencedPaths = [];
+    const previousPaths: unknown = previousImageUrls;
+    const previousList: string[] = Array.isArray(previousPaths) ? previousPaths : [];
     let oldCleanup: Record<string, unknown> = {};
     if (newImagePaths.length > 0) {
-      const removablePaths = listRemovableLookImagePaths(previousImageUrls, newImagePaths);
+      const removablePaths = listRemovableLookImagePaths(previousList, newImagePaths);
       oldCleanup = cleanupMetadata(await removeLookImages(supabase, removablePaths), removablePaths.length);
-    }
-
-    const { error: deleteLookItemsError } = await supabase.from('look_items').delete().eq('look_id', id);
-
-    if (deleteLookItemsError) {
-      await logAdminLookAudit({
-        request,
-        actorId: authz.userId,
-        actorEmail: authz.actorEmail,
-        action: 'admin.look.update',
-        outcome: 'failure',
-        detail: 'Failed to replace look-item links',
-        resourceId: id,
-        metadata: {
-          linked_item_ids: parsedPayload.data.linkedItemIds,
-          ...oldCleanup,
-        },
-      });
-
-      console.error('Failed to replace look-item links:', describeErrorForLog(deleteLookItemsError));
-      return NextResponse.json({ error: 'Failed to update linked items' }, { status: 500 });
-    }
-
-    const lookItemsPayload = parsedPayload.data.linkedItemIds.map((itemId) => ({
-      look_id: Number(id),
-      item_id: itemId,
-    }));
-
-    const { error: insertLookItemsError } = await supabase.from('look_items').insert(lookItemsPayload);
-
-    if (insertLookItemsError) {
-      await logAdminLookAudit({
-        request,
-        actorId: authz.userId,
-        actorEmail: authz.actorEmail,
-        action: 'admin.look.update',
-        outcome: 'failure',
-        detail: 'Failed to update look-item links',
-        resourceId: id,
-        metadata: {
-          linked_item_ids: parsedPayload.data.linkedItemIds,
-          ...oldCleanup,
-        },
-      });
-
-      console.error('Failed to update look-item links:', describeErrorForLog(insertLookItemsError));
-      return NextResponse.json({ error: 'Failed to update linked items' }, { status: 500 });
     }
 
     await logAdminLookAudit({
@@ -547,7 +540,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         previous_status: existingLook.status ?? null,
         next_status: parsedPayload.data.status,
         linked_item_ids: parsedPayload.data.linkedItemIds,
-        image_count: imageUrls.length,
+        image_count: newImagePaths.length > 0 ? newImagePaths.length : previousList.length,
         season_year: parsedPayload.data.seasonYear,
         season_type: parsedPayload.data.seasonType,
         ...oldCleanup,

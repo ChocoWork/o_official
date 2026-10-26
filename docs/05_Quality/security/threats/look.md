@@ -12,7 +12,7 @@ LOOK（ルック・コーディネート）の領域で考える脅威を、1つ
 | --- | --- |
 | 項目の数 | 23（THR-LOOK-001〜023） |
 | 守りがある物 | 非公開の LOOK を公開の道へ出さない（001）、画面の XSS（017）、管理の窓口の権限と aal2（019。カードの操作ボタンも 2026-10-26 から窓口の `meta.canManage` で出し分け）、管理の窓口の回数・大きさの制限（012）、監査の記録（020）、Origin の確かめ（018）、画像の中身と保存名（013。2026-10-26）、画像の後始末（014。2026-10-26）、管理の入口の id と JSON（016 の管理の分。2026-10-26）、内部の誤りの文言を出さない（021 の管理の分。2026-10-26）、取り出しの失敗の分け方（022 の管理の分。2026-10-26） |
-| 守りが欠ける・弱い物 | 非公開の商品の ID が `look_items` から読める（002）、DB が aal2 を見ない（003）、表の権限が広い（004）、置き場の設定が移行に無い（005）、署名の前に道筋を絞らない（007）、署名の失敗で元の値を返す（008）、全件の取得と署名（009）、検索の関数の件数に上限が無い（010）、更新の途中の失敗（015）、DB の段に入力の制約が無い（023）、「新規作成」のボタンが役で出る（019 の残り。波 4） |
+| 守りが欠ける・弱い物 | 非公開の商品の ID が `look_items` から読める（002）、DB が aal2 を見ない（003）、表の権限が広い（004）、署名の前に道筋を絞らない（007）、署名の失敗で元の値を返す（008）、全件の取得と署名（009）、検索の関数の件数に上限が無い（010）、更新の途中の失敗（015）、DB の段に入力の制約が無い（023）、「新規作成」のボタンが役で出る（019 の残り。波 4） |
 | 対策の書き先 | 対策のセキュリティ要件 `SEC-LOOK-NNN` は要件の文書（`docs/02_Requirements/areas/look.md`）に書く。下の「対策」の欄は読み手のための写し |
 | 状態の付け方 | どれもコードを読んで起こし、ユーザーの確認を受けていないので「推定」。実行しての確かめはしていない |
 
@@ -75,7 +75,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 発売前の商品の存在と ID |
 | 脅威 | 閲覧者が、公開の LOOK に紐づいた非公開の商品の ID を集め、発売前の商品があることを知る |
-| 起こり方 | anon の鍵で PostgREST の `look_items` を直接読む。anon の読み出しの方針は「親の LOOK が公開」だけを条件にし、商品の公開を見ない（`remote_schema.sql:3499-3504`。authenticated も同じ `:3528-3533`）。管理の窓口は紐づける商品が有るかだけを見て、公開かどうかを見ない（`src/app/api/admin/looks/route.ts:186-189,209`、`src/app/api/admin/looks/[id]/route.ts:249-252,273`）ので、非公開の商品を紐づけられる |
+| 起こり方 | anon の鍵で PostgREST の `look_items` を直接読む。anon の読み出しの方針は「親の LOOK が公開」だけを条件にし、商品の公開を見ない（`remote_schema.sql:3499-3504`。authenticated も同じ `:3528-3533`）。管理の窓口は紐づける商品が有るかだけを見て、公開かどうかを見ない（`src/app/api/admin/looks/route.ts:186-189,209`、`src/app/api/admin/looks/[id]/route.ts:249-252,273`）ので、非公開の商品を紐づけられる。**2026-10-26 に直した**: 移行 `sec_rls_predicates_and_constraints` が `look_items` の anon・authenticated の読みの方針を作り直し、「親の LOOK が公開」かつ「紐づく商品が公開」を条件にした（管理の読みの枝は `has_permission('admin.looks.read')` のまま。波 5 で aal2 を足す）。この移行を当てた DB でだけ満たす。管理の窓口は引き続き非公開の商品を紐づけられる（意図は未確認） |
 | 影響 | 発売前の商品の数と ID が分かる。商品の窓口の別の弱さと組み合わさると、中身まで探られる |
 | 対策 | SEC-LOOK-002 |
 | ASVS | V4.1.1 |
@@ -89,7 +89,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 非公開の LOOK と、LOOK・関連商品の中身の正しさ |
 | 脅威 | `admin.looks.read`・`admin.looks.manage` を持つ人の、2要素認証を済ませていない（`aal1`）session を手に入れた者が、非公開の LOOK を読み、LOOK と関連商品を書き換える・消す |
-| 起こり方 | パスワードだけで得た `aal1` の JWT で、管理の窓口を通らず PostgREST の `looks`・`look_items` を直接叩く。RLS の `has_permission` は役割と権限の表だけを見て、`aal` も session の生き死にも見ない（`remote_schema.sql:3512-3526,3546-3565`、`supabase/migrations/20261023175712_group_g0_permissions.sql:186-216`） |
+| 起こり方 | パスワードだけで得た `aal1` の JWT で、管理の窓口を通らず PostgREST の `looks`・`look_items` を直接叩く。RLS の `has_permission` は役割と権限の表だけを見て、`aal` も session の生き死にも見ない（`remote_schema.sql:3512-3526,3546-3565`、`supabase/migrations/20261023175712_group_g0_permissions.sql:186-216`）。**書き込みの側は 2026-10-26 に直した**: 移行 `sec_grants_admin_tables` が anon・authenticated から `looks`・`look_items` の INSERT・UPDATE・DELETE を外したので、`aal1` の JWT でも PostgREST から書けない（権限の誤り `42501`。この移行を当てた DB でだけ満たす。ADR-0414）。読みの側（非公開の LOOK を読める）は `has_permission` の `aal2` の確かめを足すまで残る（波 5） |
 | 影響 | 2要素認証の守りが管理の窓口だけになる。直接の書き込みは、管理の窓口の回数の制限・画像の確かめ・紐づける商品の確かめ・監査の記録（`src/features/look/services/admin-audit.ts:7-30`）を全部通らない。`image_urls` に好きな道筋を入れられるので、THR-LOOK-007 の入口にもなる。入力の形を DB で確かめない点は THR-LOOK-023 |
 | 対策 | SEC-LOOK-003 |
 | ASVS | V4.3.1 |
@@ -103,7 +103,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | `looks`・`look_items` の中身と、表そのもの |
 | 脅威 | RLS の方針の書き損じや、RLS の効かない操作で、anon・一般会員が表を書き換える・空にする |
-| 起こり方 | `looks`・`look_items` に、anon・authenticated へ SELECT のほか INSERT・UPDATE・DELETE・TRUNCATE・TRIGGER・REFERENCES・MAINTAIN を付けている（`remote_schema.sql:4168,4170`）。今は RLS が書き込みを止めるが、TRUNCATE は RLS の外にあり、守りが RLS の1段だけになる |
+| 起こり方 | `looks`・`look_items` に、anon・authenticated へ SELECT のほか INSERT・UPDATE・DELETE・TRUNCATE・TRIGGER・REFERENCES・MAINTAIN を付けている（`remote_schema.sql:4168,4170`）。今は RLS が書き込みを止めるが、TRUNCATE は RLS の外にあり、守りが RLS の1段だけになる。**2026-10-26 に直した**: 移行 `sec_grants_admin_tables` が anon・authenticated の権限を SELECT だけにした。管理の書き込みは全部 service role の窓口で行い（`looks`・`look_items` の窓口は元から service role）、RLS の書き込み方針は消さずに二重の守りとして残した（この移行を当てた DB でだけ満たす。ADR-0414） |
 | 影響 | 方針を1つ書き損じると、誰でも LOOK を書き換えられる |
 | 対策 | SEC-LOOK-004 |
 | ASVS | V4.1.3 |
@@ -117,11 +117,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 非公開の LOOK の画像 |
 | 脅威 | 閲覧者が、置き場の公開の URL から非公開の LOOK の画像を開く |
-| 起こり方 | 置き場 `look-images` が `public=true` になっている、または `storage.objects` に誰でも読める方針がある時に、`/storage/v1/object/public/look-images/<道筋>` を開く。今の CI が当てる `supabase/migrations/` に置き場の定義が無く、手元の見本 `supabase/seed.sql:10-14` が `public=false` で作るだけ。見本には大きさと種類の上限も無い |
+| 起こり方 | 置き場 `look-images` が `public=true` になっている、または `storage.objects` に誰でも読める方針がある時に、`/storage/v1/object/public/look-images/<道筋>` を開く。以前は今の CI が当てる `supabase/migrations/` に置き場の定義が無く、手元の見本 `supabase/seed.sql:10-14` が `public=false` で作るだけで、大きさと種類の上限も無かった。**2026-10-26 に直した**: 移行 `sec_storage_buckets` が `look-images` を `public=false`・5MB・JPEG/PNG/WebP/GIF の 4 種類で入れ、本番にある行は `ON CONFLICT (id) DO UPDATE` で合わせる。`storage.objects` に置き場を名指しする方針は作らず、あれば移行の自己検査が止める（ADR-0164。この移行を当てた DB でだけ満たす） |
 | 影響 | 発表前の画像が出る。道筋は uuid なので推測は難しいが、一度出た URL は LOOK を非公開にしても開ける |
 | 対策 | SEC-LOOK-005 |
 | ASVS | ASVS 未対応付け |
-| 根拠 | 2026-04-18 のレビューで置き場が公開だった（Must Fix）。直した先は旧い `migrations/030_make_look_images_bucket_private.sql:9-11` で、大きさ・種類の上限も旧い `migrations/018_create_looks_and_look_images_bucket.sql:68-77` にしかない。本番の置き場の設定は移行の外にあり、確かめていない |
+| 根拠 | 2026-04-18 のレビューで置き場が公開だった（Must Fix）。直した先は旧い `migrations/030_make_look_images_bucket_private.sql:9-11` で、大きさ・種類の上限も旧い `migrations/018_create_looks_and_look_images_bucket.sql:68-77` にあった。本番の置き場の今の設定と `storage.objects` の方針は、移行を当てる前に読んで確かめる（`wave2-task-8-report.md` の SQL。読むだけ） |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/code/2026-04-18-look-detail-review.md:43-46`、`docs/05_Quality/reviews/security/security_review_look.md:48` |
 
@@ -187,7 +187,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | DB の処理の余力 |
 | 脅威 | 自動の道具が、アプリを通らずに PostgREST の RPC で LOOK の検索を繰り返し、大きな件数を求める |
-| 起こり方 | `search_looks` は anon・authenticated に実行を許し（`remote_schema.sql:4012-4014`）、`LIMIT limit_count` を上限に丸めずに使う（`:2173-2203`）。検索の文字の長さにも上限が無い。未使用（削除の判断待ち）の `search_public_looks` は PUBLIC に実行を開いている（`:2267-2290,4022`）。PostgREST の `max_rows` は手元で 1000、本番は未確認 |
+| 起こり方 | `search_looks` は anon・authenticated に実行を許し（`remote_schema.sql:4012-4014`）、`LIMIT limit_count` を上限に丸めずに使う（`:2173-2203`）。検索の文字の長さにも上限が無い。未使用（削除の判断待ち）の `search_public_looks` は PUBLIC に実行を開いている（`:2267-2290,4022`）。PostgREST の `max_rows` は手元で 1000、本番は未確認。**2026-10-26 に直した**: 移行 `sec_search_functions` が `search_looks` の件数を 1〜8 に丸め（NULL・0・負の値も）、検索語を先頭 100 字に切り、`search_public_looks` を DROP せず PUBLIC・anon・authenticated から EXECUTE を外した。この移行を当てた DB でだけ満たす。`max_rows` の本番の値は運用の確認が残る（ADR-0315） |
 | 影響 | 1回で大量の行を返させ、`ILIKE` の全件の走査を繰り返させて DB を圧迫する |
 | 対策 | SEC-LOOK-010 |
 | ASVS | V11.1.4 |
@@ -243,7 +243,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 消した・差し替えた LOOK の画像と、置き場の容量 |
 | 脅威 | 消したつもりの画像が置き場に残り、署名つき URL を作れる者（service role）や、置き場を読める誤った設定から見える |
-| 起こり方 | 削除は LOOK の行だけを消し、置き場の画像を消さなかった。更新で画像を差し替えた時の古い画像も、作成と更新の途中で失敗した時に上げ終えた画像も消さなかった。**2026-10-26 に直した**: 順は「行を先に変える → 置き場を消す」。削除は存在確認で `image_urls` を行を消す前に読み、行の削除が成功した後に消す。差し替えは行の更新が成功した後に古い画像を消し、更新が失敗したらこの要求で上げた新しい画像を消す（行が新しい道筋を指した後に関連の保存が失敗した時は、新しい画像を残し古い画像を消す）。作成は途中の失敗（2枚目の上げ・行の保存・関連の保存）で上げ終えた画像を消す。消す道筋は `isOwnLookImagePath` で1本ずつ「`looks/` の下の安全な文字だけ」を確かめ、`..`・外の URL・別の置き場・古い見本の道筋（`e2e/look-1-1.png` など）は消さない側に倒れる。置き場の削除は service role で行い、失敗は記録（名前と符号だけ）と監査の `metadata`（`image_cleanup`・`orphaned_count`）に残すだけで応答は変えない |
+| 起こり方 | 削除は LOOK の行だけを消し、置き場の画像を消さなかった。更新で画像を差し替えた時の古い画像も、作成と更新の途中で失敗した時に上げ終えた画像も消さなかった。**2026-10-26 に直した**: 順は「行を先に変える → 置き場を消す」。削除は存在確認で `image_urls` を行を消す前に読み、行の削除が成功した後に消す。差し替えは行の更新が成功した後に古い画像を消し、更新が失敗したらこの要求で上げた新しい画像を消す（2026-10-26 の `admin_update_look` から、行と関連が1取引なので、関連の保存の失敗でも行は戻り、新しい画像を消し古い画像は消さない。古い画像は関数が返す更新前の `image_urls` で決め、同時の PUT で残骸にならない。ADR-0163）。作成は途中の失敗（2枚目の上げ・行の保存・関連の保存）で上げ終えた画像を消す。消す道筋は `isOwnLookImagePath` で1本ずつ「`looks/` の下の安全な文字だけ」を確かめ、`..`・外の URL・別の置き場・古い見本の道筋（`e2e/look-1-1.png` など。波 2 で見本は `looks/e2e/` に移った）は消さない側に倒れる。E2E の用意は見本の画像を行に指さず、試験ごとの画像（`looks/e2e-fixture/`）を指して、後始末とアプリの削除が見本を消さないようにする。置き場の削除は service role で行い、失敗は記録（名前と符号だけ）と監査の `metadata`（`image_cleanup`・`orphaned_count`）に残すだけで応答は変えない |
 | 影響 | 消したはずの画像が残り続ける。置き場の容量がたまる |
 | 対策 | SEC-LOOK-014 |
 | ASVS | ASVS 未対応付け |
@@ -257,7 +257,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 公開中の LOOK と関連商品の組の正しさ |
 | 脅威 | 更新の途中の DB の失敗で、公開中の LOOK が関連商品0件のまま、または新しい中身と古い関連の混ざった形で残る |
-| 起こり方 | 更新は「LOOK の行の更新 → 関連の全削除 → 関連の追加」を別々の要求で行い、まとまり（トランザクション）にしない（`src/app/api/admin/looks/[id]/route.ts:347-421`）。関連の追加（`:403`）が失敗しても、前の2つは戻さない |
+| 起こり方 | 更新は「LOOK の行の更新 → 関連の全削除 → 関連の追加」を別々の要求で行い、まとまり（トランザクション）にしない（`src/app/api/admin/looks/[id]/route.ts:347-421`）。関連の追加（`:403`）が失敗しても、前の2つは戻さない。**2026-10-26 に直した**: 移行 `sec_rls_predicates_and_constraints` の DB の関数 `admin_update_look` が3つを1取引で行い（途中で失敗すれば行の更新も戻る）、窓口の PUT はその rpc を1回呼ぶだけにした。行は `FOR UPDATE` で締めるので、同時の PUT は順に走る。画像の無い PUT は `_image_urls` に NULL を渡して今の画像を関数に保たせる。窓口と関数は同じ日に当てる（ADR-0163） |
 | 影響 | 公開の頁から関連の商品が消える。売り場の導線が壊れる |
 | 対策 | SEC-LOOK-015 |
 | ASVS | ASVS 未対応付け |
@@ -369,7 +369,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | LOOK の中身の正しさと、公開の一覧・詳細・検索の余力 |
 | 脅威 | `admin.looks.manage` を持つ人の session（THR-LOOK-003 の aal1 の道を含む）で、窓口を通らずに長さや形の外れた値を表に書く |
-| 起こり方 | テーマ（200字）・説明文（4000字）の上限は窓口の入力の形（`src/app/api/admin/looks/route.ts` の `createLookSchema`）にしか無く、`image_urls` の道筋の形は窓口が保存の道筋を自分で作ることにしか無い。表は `theme` が text の NOT NULL、`theme_description` が text の NOT NULL、`image_urls` が text の配列の NOT NULL で、season の2列と status の CHECK のほかに制約が無い（`supabase/migrations/20260901102912_remote_schema.sql` の `looks` の定義）。PostgREST で直接 insert・update すれば、上限の無い長さの文字や、置き場の外を指す道筋を入れられる |
+| 起こり方 | テーマ（200字）・説明文（4000字）の上限は窓口の入力の形（`src/app/api/admin/looks/route.ts` の `createLookSchema`）にしか無く、`image_urls` の道筋の形は窓口が保存の道筋を自分で作ることにしか無い。表は `theme` が text の NOT NULL、`theme_description` が text の NOT NULL、`image_urls` が text の配列の NOT NULL で、season の2列と status の CHECK のほかに制約が無い（`supabase/migrations/20260901102912_remote_schema.sql` の `looks` の定義）。PostgREST で直接 insert・update すれば、上限の無い長さの文字や、置き場の外を指す道筋を入れられる。**2026-10-26 に直した**: 移行 `sec_rls_predicates_and_constraints` が `looks` に `theme`（1〜200字）・`theme_description`（4000字）・`image_urls`（`looks/` の下の安全な道筋だけ。NULL の要素と改行を含む要素も断る）の CHECK を `NOT VALID` で足した。既存の行は検査しないので、本番の旧い行は点検してから別の移行で `VALIDATE` する（ADR-0162）。この移行を当てた DB でだけ満たす |
 | 影響 | 公開の一覧・詳細・検索が大きな行を読んで遅くなる。画面の表示が崩れる。置き場の外を指す道筋は THR-LOOK-007 の道につながる。直接の書き換えは窓口の回数の制限（THR-LOOK-012）と監査（THR-LOOK-020）にも残らない |
 | 対策 | SEC-LOOK-023 |
 | ASVS | V5.1.4（当てはめは推定） |
@@ -381,7 +381,7 @@ flowchart LR
 
 ## 未確認事項
 
-- 本番の Supabase の置き場 `look-images` の公開の設定・大きさと種類の上限・`storage.objects` の方針（THR-LOOK-005）。移行に無く、本番の値を見ていない
+- 本番の Supabase の置き場 `look-images` の公開の設定・大きさと種類の上限・`storage.objects` の方針（THR-LOOK-005）。移行 `sec_storage_buckets` は書いたが本番にはまだ当てていない。本番の今の値は適用の前に読んで確かめる（読むだけ。値は報告に残す）
 - 本番の PostgREST の `max_rows`（THR-LOOK-010）。手元は 1000
 - 本番の中継（Vercel など）が `x-forwarded-for` を上書きするか（THR-LOOK-011）。本番のアプリはまだデプロイしていない
 - `aal1` の JWT で PostgREST から非公開の LOOK を読み書きできるか（THR-LOOK-003）、anon で `look_items` から非公開の商品の ID が読めるか（THR-LOOK-002）は、実際に叩いて確かめていない

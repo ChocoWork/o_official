@@ -13,6 +13,7 @@ jest.mock('next/server', () => ({
 
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
+  createServiceRoleClient: jest.fn(),
 }));
 
 jest.mock('@/lib/auth/admin-rbac', () => ({
@@ -31,7 +32,7 @@ jest.mock('@/features/stockist/services/admin-security', () => ({
   toCsrfDenyResponse: jest.fn(),
 }));
 
-const { createClient: mockCreateClient } = require('@/lib/supabase/server');
+const { createClient: mockCreateClient, createServiceRoleClient: mockCreateServiceRoleClient } = require('@/lib/supabase/server');
 const { authorizeAdminPermission: mockAuthorize } = require('@/lib/auth/admin-rbac');
 const { logAudit: mockLogAudit } = require('@/lib/audit');
 const {
@@ -81,7 +82,7 @@ function setupInsert(result: { data?: unknown; error: unknown }) {
   const select = jest.fn().mockReturnValue({ single });
   const insert = jest.fn().mockReturnValue({ select });
   const from = jest.fn().mockReturnValue({ insert });
-  mockCreateClient.mockResolvedValue({ from });
+  mockCreateServiceRoleClient.mockResolvedValue({ from });
   return { from, insert, select, single };
 }
 
@@ -148,6 +149,7 @@ describe('GET /api/admin/stockists', () => {
     const response = await GET(request);
 
     expect(mockCreateClient).toHaveBeenCalledWith(request);
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     expect(from).toHaveBeenCalledWith('stockists');
     expect(select).toHaveBeenCalledWith(ADMIN_STOCKIST_COLUMNS);
     expect(ADMIN_STOCKIST_COLUMNS).toBe(
@@ -190,6 +192,7 @@ describe('POST /api/admin/stockists', () => {
     expect(response).toBe(denied);
     expect(mockMutationLimit).not.toHaveBeenCalled();
     expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
   });
 
   it('DD-STOCKIST-034 POST は変更の権限 admin.stockists.manage で認可する', async () => {
@@ -213,6 +216,7 @@ describe('POST /api/admin/stockists', () => {
     expect(mockReadLimit).not.toHaveBeenCalled();
     expect(mockRequireCsrf).not.toHaveBeenCalled();
     expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
   });
 
   it('DD-STOCKIST-034 POST は CSRF の確かめが拒否の応答を返した時にそれを返し、本文を読まない', async () => {
@@ -227,6 +231,7 @@ describe('POST /api/admin/stockists', () => {
     expect(mockToDeny).toHaveBeenCalledWith(csrfResult);
     expect(jsonSpy).not.toHaveBeenCalled();
     expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     expect(mockLogAudit).not.toHaveBeenCalled();
   });
 
@@ -242,6 +247,7 @@ describe('POST /api/admin/stockists', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'Invalid request' });
     expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     expect(mockLogAudit).toHaveBeenCalledTimes(1);
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -276,6 +282,7 @@ describe('POST /api/admin/stockists', () => {
       expect(body).toEqual({ error: 'Invalid request', fields: [field] });
       expect(JSON.stringify(body)).not.toMatch(/details|fieldErrors|formErrors/);
       expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledTimes(1);
       const audit = mockLogAudit.mock.calls[0][0];
       expect(audit).toEqual(
@@ -371,6 +378,18 @@ describe('POST /api/admin/stockists', () => {
     expect(mockApplyCookie).toHaveBeenCalledWith(response, csrfResult);
   });
 
+  it('DD-STOCKIST-034 POST は認可の後に service role の client を 1 回だけ作って書き、利用者の JWT の client は作らない', async () => {
+    setupInsert({ data: { id: 9 }, error: null });
+
+    await POST(jsonRequest(validBody));
+
+    expect(mockCreateServiceRoleClient).toHaveBeenCalledTimes(1);
+    expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockAuthorize.mock.invocationCallOrder[0]).toBeLessThan(
+      mockCreateServiceRoleClient.mock.invocationCallOrder[0],
+    );
+  });
+
   it('DD-STOCKIST-034 POST は共有の確かめが何も返さない本番の形（undefined）でも成功し、Cookie の付け直しに undefined を渡す', async () => {
     mockRequireCsrf.mockResolvedValue(undefined);
     setupInsert({ data: { id: 77 }, error: null });
@@ -422,7 +441,7 @@ describe('POST /api/admin/stockists', () => {
   });
 
   it('DD-STOCKIST-034 POST は認可の後に例外が出た時に 500 Internal server error を返す', async () => {
-    mockCreateClient.mockRejectedValue(new Error('boom'));
+    mockCreateServiceRoleClient.mockRejectedValue(new Error('boom'));
 
     const response = await POST(jsonRequest(validBody));
 
@@ -515,7 +534,7 @@ describe('DD-STOCKIST-034 Cache-Control は戻りの全分岐で private, no-sto
     ],
     [
       '500 外側の catch',
-      () => mockCreateClient.mockRejectedValue(new Error('secret boom')),
+      () => mockCreateServiceRoleClient.mockRejectedValue(new Error('secret boom')),
       500,
       () => jsonRequest(validBody),
     ],
@@ -532,6 +551,7 @@ describe('DD-STOCKIST-034 Cache-Control は戻りの全分岐で private, no-sto
 
   it('DD-STOCKIST-034 外側の catch の console.error の第 2 引数は { name, code } ちょうどで、投げた誤りの message を含まない', async () => {
     mockCreateClient.mockRejectedValue(new Error('secret boom'));
+    mockCreateServiceRoleClient.mockRejectedValue(new Error('secret boom'));
 
     await GET(getRequest());
     await POST(jsonRequest(validBody));

@@ -212,14 +212,15 @@ describeLocalDb('integration: stockist permissions', (db) => {
 
     expect(await permissionsOf(reader)).toEqual({ read: true, manage: false });
     expect(await visibleIds(reader, 'authenticated', ids)).toEqual(ids);
-    expect(await writes(reader, hidden)).toEqual({ insert: '42501', update: 0, delete: 0 });
+    expect(await writes(reader, hidden)).toEqual({ insert: '42501', update: '42501', delete: '42501' });
   });
 
-  test('DATA-STOCKIST-004 admin.stockists.manage を持つ店長は店を足し・直し・消せ、持たないサポーターは断られる', async () => {
+  test('DATA-STOCKIST-004 admin.stockists.manage を持つ店長でも、DB へ直に店を足し・直し・消すのは権限の誤り（42501）で断られる（書き込みは service role だけ）', async () => {
     const hidden = await insertStockist('private');
+    const denied = { insert: '42501', update: '42501', delete: '42501' };
 
-    expect(await writes(claimsOf(await member('admin')), hidden)).toEqual({ insert: 1, update: 1, delete: 1 });
-    expect(await writes(claimsOf(await member('supporter')), hidden)).toEqual({ insert: '42501', update: 0, delete: 0 });
+    expect(await writes(claimsOf(await member('admin')), hidden)).toEqual(denied);
+    expect(await writes(claimsOf(await member('supporter')), hidden)).toEqual(denied);
 
     const res = await db().query('select name from public.stockists where id = $1', [hidden]);
     expect(res.rows).toHaveLength(1);

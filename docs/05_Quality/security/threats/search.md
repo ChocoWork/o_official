@@ -90,7 +90,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | DB の検索の条件と、DB の中の公開していない列・行 |
 | 脅威 | 閲覧者が、`q` に PostgREST のフィルタの記号（`,().`）や ILIKE の記号（`%`・`_`）、SQL の字を入れて、条件を広げる・別の条件を足す |
-| 起こり方 | 2026-04-18 の時点では、入力を `.or(...)` のフィルタの文字列につないでいた。今は `search_items`・`search_looks`・`search_news` に引数として渡し（`src/features/search/services/search.service.ts:222-226,356-360`）、関数の中で `%`・`_` を逃がして `ESCAPE '\'` を付ける（`remote_schema.sql:2165-2167,2199-2200,2232-2234`）。`\` そのものは逃がさないので、語の `\%`・`\_` は置き換えの後に `\\%`・`\\_`（字の `\` の後に生きたワイルドカード）になり、`\` を含む行に広く当たる。語の末尾の `\` は後ろの `%` を字に変えて模様を変える。SQL の差し込みにはならないが、ワイルドカードの差し込みは限られた形で残る（2026-10-24 に移行を読んで推定） |
+| 起こり方 | 2026-04-18 の時点では、入力を `.or(...)` のフィルタの文字列につないでいた。今は `search_items`・`search_looks`・`search_news` に引数として渡し（`src/features/search/services/search.service.ts:222-226,356-360`）、関数の中で `%`・`_` を逃がして `ESCAPE '\'` を付ける（`remote_schema.sql:2165-2167,2199-2200,2232-2234`）。`\` そのものは逃がさないので、語の `\%`・`\_` は置き換えの後に `\\%`・`\\_`（字の `\` の後に生きたワイルドカード）になり、`\` を含む行に広く当たる。語の末尾の `\` は後ろの `%` を字に変えて模様を変える。SQL の差し込みにはならないが、ワイルドカードの差し込みは限られた形で残る（2026-10-24 に移行を読んで推定）。**2026-10-26 に直した**: 移行 `sec_search_functions` が 3 本の関数で `\` を先に二重にしてから `%`・`_` を逃がし（`replace(replace(replace(left(search_query, 100), '\', '\\'), '%', '\%'), '_', '\_')`）、語の末尾の `\` も後ろの `%` を字に変えない。この移行を当てた DB でだけ満たす（ADR-0315） |
 | 影響 | 条件を書き換えられると、公開していない行や列に届く。ワイルドカードで全件の一致になる。今の `\` の道で広がるのは、公開済みの行の中の一致だけ |
 | 対策 | SEC-SEARCH-003 |
 | ASVS | V5.3.4 |
@@ -146,7 +146,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | DB の余力と、公開済みの商品・ルックのまとめての吸い出しの手間 |
 | 脅威 | 閲覧者が anon の鍵で `/rest/v1/rpc/search_items`・`search_looks` を直接叩き、回数の制限も8件の上限も通らずに読む |
-| 起こり方 | `search_items`・`search_looks` は anon・authenticated に EXECUTE を付け（`remote_schema.sql:4010,4014`）、`limit_count` をそのまま `LIMIT` に使い上限に丸めない（`remote_schema.sql:2170,2203`）。空の語（`search_query` が空の字なら模様は `'%%'`）は公開済みの全部の行に一致し、`limit_count` に NULL を渡すと `LIMIT NULL` で件数の上限が無くなる（負の値は誤りで止まる）。`%`・`_` 1字の語は字として逃がすので、その字を含む行にだけ一致する。PostgREST の1回の行数の上限は手元で `max_rows = 1000`（`supabase/config.toml:18`）、本番は未確認。`search_news` の分は THR-NEWS-009（範囲外）が扱う |
+| 起こり方 | `search_items`・`search_looks` は anon・authenticated に EXECUTE を付け（`remote_schema.sql:4010,4014`）、`limit_count` をそのまま `LIMIT` に使い上限に丸めない（`remote_schema.sql:2170,2203`）。空の語（`search_query` が空の字なら模様は `'%%'`）は公開済みの全部の行に一致し、`limit_count` に NULL を渡すと `LIMIT NULL` で件数の上限が無くなる（負の値は誤りで止まる）。`%`・`_` 1字の語は字として逃がすので、その字を含む行にだけ一致する。PostgREST の1回の行数の上限は手元で `max_rows = 1000`（`supabase/config.toml:18`）、本番は未確認。`search_news` の分は THR-NEWS-009（範囲外）が扱う。**2026-10-26 に直した**: 移行 `sec_search_functions` が 3 本の関数の `LIMIT` を `GREATEST(1, LEAST(COALESCE(limit_count, 8), 8))` にし（NULL・0・負の値も 1〜8 に丸め、誤りにしない）、検索語を先頭 100 字に切った。アプリの呼び元の最大は 8（`/api/search`・候補）なので欠けない。この移行を当てた DB でだけ満たす。PostgREST の `max_rows` の本番の値は運用の確認が残る（ADR-0315） |
 | 影響 | 公開済みの行だけなので漏れの害は無い。DB に重い一致を何度でも掛けられ、公開の商品・ルックを一度にまとめて取れる |
 | 対策 | SEC-SEARCH-007 |
 | ASVS | V11.1.4 |
@@ -160,7 +160,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | DB の余力と、守りの面の狭さ |
 | 脅威 | 閲覧者が anon の鍵で `search_public_items`・`search_public_looks`・`search_public_news` を直接叩き、ワイルドカードを入れて重い一致を掛ける |
-| 起こり方 | 3つの関数は PUBLIC・anon・authenticated に EXECUTE を付ける（`remote_schema.sql:4020,4022,4024`）。件数は20に丸める（`remote_schema.sql:2264,2291,2319`）が、語の `%`・`_` を逃がさず ILIKE につなぐ（`remote_schema.sql:2259-2261,2287-2288,2314-2316`）。src のどこからも呼ばれない |
+| 起こり方 | 3つの関数は PUBLIC・anon・authenticated に EXECUTE を付ける（`remote_schema.sql:4020,4022,4024`）。件数は20に丸める（`remote_schema.sql:2264,2291,2319`）が、語の `%`・`_` を逃がさず ILIKE につなぐ（`remote_schema.sql:2259-2261,2287-2288,2314-2316`）。src のどこからも呼ばれない。**2026-10-26 に直した**: 移行 `sec_search_functions` が 3 本を DROP せず `REVOKE ALL … FROM PUBLIC, anon, authenticated` にした（postgres・service_role の EXECUTE は残す。NEWS の E2E が 42501 だけを許すので DROP は別の判断）。この移行を当てた DB でだけ満たす（ADR-0315） |
 | 影響 | 差し込みではない（引数として渡る）。`%_%_%_` のような模様で重い一致を掛けられる（推定）。使われない入口が残るので、守りを見直す時に見落とす |
 | 対策 | SEC-SEARCH-008 |
 | ASVS | V4.1.3（当てはめは推定） |

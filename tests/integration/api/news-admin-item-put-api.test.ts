@@ -136,12 +136,12 @@ const OLD_IMAGE = 'news/2026-01-01/old.png';
 function setup(options: { uploadResult?: Result; updateResult?: Result; readResult?: Result; codes?: string[] } = {}) {
   // 更新は .select('id') で変えた行を返す。既定は 1 行（0 行は 404 になる: SEC-NEWS-016）
   // 画像つきの更新が上げる前に読む古い image_url は、既定で古い画像の行（SEC-NEWS-018）
-  userClient = createFakeClient({
-    news_articles: options.updateResult ?? { data: [{ id: '7' }], error: null },
-    'news_articles:read': options.readResult ?? { data: { image_url: OLD_IMAGE }, error: null },
-  });
+  // 書き込みと古い画像の読みは認可の後に service role の client 1 つで行う（ADR-0026）。利用者の JWT の client は作られないので、userClient は空のまま。
+  userClient = createFakeClient({});
   serviceClient = createFakeClient(
     {
+      news_articles: options.updateResult ?? { data: [{ id: '7' }], error: null },
+      'news_articles:read': options.readResult ?? { data: { image_url: OLD_IMAGE }, error: null },
       user_roles: { data: aclRows(options.codes ?? ['admin.news.read', 'admin.news.manage']), error: null },
       audit_logs: { data: null, error: null },
     },
@@ -154,7 +154,7 @@ function setup(options: { uploadResult?: Result; updateResult?: Result; readResu
 }
 
 function newsOps() {
-  return userClient.ops.filter((o) => o.table === 'news_articles');
+  return serviceClient.ops.filter((o) => o.table === 'news_articles');
 }
 
 function updatePayload() {
@@ -223,6 +223,7 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
     expect(await res.json()).toMatchObject({ error: 'Forbidden', permission: 'admin.news.manage' });
     expect((request as unknown as { formData: jest.Mock }).formData).not.toHaveBeenCalled();
     expect(createClient).not.toHaveBeenCalled();
+    expect(newsOps()).toHaveLength(0);
     expect(auditRows()).toHaveLength(0);
   });
 
@@ -247,14 +248,14 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
     expect(serviceClient.uploads).toHaveLength(0);
-    expect(createClient).toHaveBeenCalledWith(request);
+    expect(createClient).not.toHaveBeenCalled();
+    expect(userClient.ops).toHaveLength(0);
     expect(newsOps()).toHaveLength(1);
     expect(newsOps()[0].calls).toEqual([
       ['update', [expectedPayload]],
       ['eq', ['id', '7']],
       ['select', ['id']],
     ]);
-    expect(serviceClient.ops.some((o) => o.table === 'news_articles')).toBe(false);
     const rows = auditRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -432,6 +433,7 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
     expect(json.error).toBe('Invalid request');
     expect(json.details).toHaveProperty('fieldErrors');
     expect(createClient).not.toHaveBeenCalled();
+    expect(newsOps()).toHaveLength(0);
     expect(auditRows()).toHaveLength(0);
   });
 
@@ -548,6 +550,8 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
   test('API-NEWS-005 監査の書き込みが失敗しても更新の成功は 200 のまま返す', async () => {
     setup();
     serviceClient = createFakeClient({
+      news_articles: { data: [{ id: '7' }], error: null },
+      'news_articles:read': { data: { image_url: OLD_IMAGE }, error: null },
       user_roles: { data: aclRows(['admin.news.manage']), error: null },
       audit_logs: { data: null, error: { message: 'audit down' } },
     });
@@ -568,6 +572,7 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'Internal server error' });
     expect(createClient).not.toHaveBeenCalled();
+    expect(newsOps()).toHaveLength(0);
     expect(auditRows()).toHaveLength(0);
   });
 });

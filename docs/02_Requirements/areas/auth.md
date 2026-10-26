@@ -13,7 +13,7 @@ AUTH の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | 要件 | 107 | 既存の `FREQ-NN-REQ-NN` 94（うち廃止 1）、`FR-LOGIN-001`〜`008`、新しい `FR-AUTH-001`〜`005`（`001`〜`004` は振り替え） |
 | 受け入れ条件 | 165 | 既存の `FREQ-NN-AC-NN` 138（うち廃止 2）、新しい `<要件ID>-AC-NN` 27（`FR-…-AC-NN` 23（`FR-AUTH-005-AC-01`〜`07` を含む）、`FREQ-330-REQ-02-AC-01`、`FREQ-316-REQ-01`〜`03-AC-01`） |
 | 派生要件 | 9 | `DRV-AUTH-001`〜`009` |
-| セキュリティ要件 | 32 | `SEC-AUTH-001`〜`032`（上位は脅威の文書 `docs/05_Quality/security/threats/auth.md` の同じ番号）。受け入れ条件 `SEC-AUTH-NNN-AC-NN` 54。全部「推定」 |
+| セキュリティ要件 | 33 | `SEC-AUTH-001`〜`033`（上位は脅威の文書 `docs/05_Quality/security/threats/auth.md` の同じ番号）。受け入れ条件 `SEC-AUTH-NNN-AC-NN` 54。全部「推定」 |
 
 - 状態: 写した要求・要件の行は、元の行に理由の記述がある物だけ「現行」。元の行に理由が無く、根拠の「なぜ」を推定で補った行は「推定」。写した受け入れ条件は元の文のままなので「現行」。後の行が置き換えたのに廃止の印が無い行・コードと合わない行・新しく起こした項目・実装から読み取った項目も「推定」。行の中に廃止と書いてある FREQ-62 だけを「廃止」にした。食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せる
 - 結論: ログインの入口・パスワードの再設定・管理者の TOTP を求める元の要求は表に無かった（`SR-AUTH-001`〜`003` を推定で起こした）。`/register` を求める FR-LOGIN-004・FREQ-59・61 と、角丸の見た目の FREQ-64・70 は、後の行が置き換えたのに印が無い。廃止にするかはユーザーに決めてもらう
@@ -4579,7 +4579,7 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3 |
 | 優先度 | SHOULD |
 
-`sessions`・`password_reset_tokens`・`rate_limit_counters`・`audit_logs`・`audit_logs_backups` は anon・authenticated から全部の権限を外す。`profiles` は authenticated に SELECT・INSERT・UPDATE・DELETE だけを残し、anon からは外す。今のコードは満たさない。
+`sessions`・`password_reset_tokens`・`rate_limit_counters`・`audit_logs`・`audit_logs_backups` と連番 `rate_limit_counters_id_seq` は anon・authenticated から全部の権限を外す（RLS の全拒否の方針は二重の守りとして残す。書くのも読むのも service role か SECURITY DEFINER の関数）。`profiles` は authenticated に SELECT・INSERT・UPDATE・DELETE だけを残し（`/api/profile` が利用者の JWT で書くため）、anon からは外す。2026-10-26 に移行 `sec_grants_hardening` で満たした（この移行を当てた DB でだけ満たす。ADR-0414、DATA-AUTH-001〜003）。
 
 #### SEC-AUTH-011-AC-01 anon・会員の JWT で認証の表を読むと権限の誤りになる
 
@@ -4591,7 +4591,7 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 確かめ方 | E2E（anon の鍵と会員の JWT で PostgREST の各表を select する） |
 | 出どころ | 実装から推定 |
 
-`sessions`・`password_reset_tokens`・`rate_limit_counters`・`audit_logs` の select が、0件ではなく権限の誤り（401 か 403）になること。
+`sessions`・`password_reset_tokens`・`rate_limit_counters`・`audit_logs`・`audit_logs_backups` の select が、0件ではなく権限の誤り（401 か 403）になること。
 
 ### SEC-AUTH-012 認証の関数は service role だけが呼べる
 
@@ -5292,6 +5292,19 @@ TOTP をまだ登録していない管理者が、メール OTP を通らずに�
 | 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/wave1a-decisions.md` |
 
 戻り先の Cookie を持った状態でログアウトすると、`sb-return-intent` が消える（Max-Age=0）こと。
+
+### SEC-AUTH-033 公開スキーマの表・列・関数・連番の権限は移行が明示し、一覧を DB 試験で守る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | THR-AUTH-033 |
+| 根拠 | Supabase 公式は、公開スキーマの既定の権限が project ごとに違い、自動で付く権限は外される方向だと案内する（Hardening the Data API）。今の公開スキーマは作った時に anon・authenticated へ全権限が付き、`ALTER DEFAULT PRIVILEGES` は 0 件。だから移行が要る GRANT を（service_role を含めて）明示し、広い権限を新しい表に残さない。権限の一覧を試験で守らないと、次の移行が広い権限を黙って足しても気づけない（ADR-0414） |
+| 状態 | 推定 |
+| 確かめ方 | 結合テスト |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/design-final.md` の I8、`.superpowers/sdd/2026-10-25-security-gap-fixes/wave2-decisions.md`、[Supabase Hardening the Data API](https://supabase.com/docs/guides/database/hardening-data-api)、OWASP ASVS 4.0.3 V4.1.3 |
+| 優先度 | SHOULD |
+
+以後の移行は、新しい表・列・関数・連番ごとに anon・authenticated・service_role の GRANT・REVOKE を明示する（`REVOKE ALL … FROM PUBLIC, anon, authenticated` のあと、要る役に要る物だけ GRANT し、service_role も明示する）。`ALTER DEFAULT PRIVILEGES` は project 全体に効くので使わず、別の判断にする。公開スキーマの権限の一覧（管理だけが書く表・認証の表・`profiles`・`items` の列・検索と管理の関数・連番・置き場）を DB 結合テスト `tests/integration/db/auth_grants_inventory.integration.test.ts` で確かめる。一覧にも既知の例外にも無い表に、anon か authenticated が書き込み・TRUNCATE を持ったら、その試験が表の名前を出して落ちる。受け入れ条件は作らない（確かめは DB の権限の一覧の結合テストで、E2E の子を持たない。子は構造設計 DATA-AUTH-006）。2026-10-26 に試験を書いた（手元の DB ではまだ流していない。流した最初の結果で、既知の例外の一覧を実態に合わせる）。
 
 ## 派生要件
 

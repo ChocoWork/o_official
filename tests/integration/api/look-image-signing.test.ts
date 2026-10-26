@@ -42,8 +42,14 @@ type SignCall = { bucket: string; path: string; expiresIn: number };
 const WRITE_METHODS = ['insert', 'update', 'delete'];
 const NONE: Result = { data: null, error: null };
 
-function createFakeClient(tables: Record<string, TableSpec>, sign?: (path: string) => Result) {
+function createFakeClient(
+  tables: Record<string, TableSpec>,
+  sign?: (path: string) => Result,
+  /** admin_update_look の戻り（更新前の image_urls） */
+  previousImages: unknown = ['looks/2026-01-01/old.jpg'],
+) {
   const ops: TableOp[] = [];
+  const updateLookCalls: Array<Record<string, unknown>> = [];
   const uploads: Array<{ bucket: string; path: string; options: Record<string, unknown> }> = [];
   const signCalls: SignCall[] = [];
   const removals: Array<{ bucket: string; paths: string[] }> = [];
@@ -52,7 +58,14 @@ function createFakeClient(tables: Record<string, TableSpec>, sign?: (path: strin
     uploads,
     removals,
     signCalls,
-    rpc: jest.fn(async () => ({ data: 1, error: null })),
+    updateLookCalls,
+    rpc: jest.fn(async (name?: string, args?: Record<string, unknown>) => {
+      if (name === 'admin_update_look') {
+        updateLookCalls.push(args ?? {});
+        return { data: previousImages, error: null };
+      }
+      return { data: 1, error: null };
+    }),
     from: jest.fn((table: string) => {
       const op: TableOp = { table, calls: [] };
       ops.push(op);
@@ -137,6 +150,8 @@ function setup(
     lookSelect?: Result;
     sign?: (path: string) => Result;
     publicTables?: Record<string, TableSpec>;
+    /** admin_update_look の戻り（更新前の image_urls） */
+    previousImages?: unknown;
   } = {},
 ) {
   const lookSelect = options.lookSelect ?? { data: EXISTING_LOOK, error: null };
@@ -149,6 +164,7 @@ function setup(
       look_items: { select: { data: [{ item_id: 3 }, { item_id: 9 }], error: null }, insert: NONE, delete: NONE },
     },
     options.sign,
+    'previousImages' in options ? options.previousImages : undefined,
   );
   publicClient = createFakeClient(options.publicTables ?? {});
   createServiceRoleClient.mockResolvedValue(serviceClient);
@@ -218,11 +234,11 @@ describe('画像の非公開の置き場と署名つき URL（ARC-LOOK-003）', 
       expect(res.status).toBe(200);
       expect(serviceClient.uploads).toHaveLength(2);
       expect(serviceClient.uploads.every((u) => u.bucket === 'look-images')).toBe(true);
-      expect(writtenImageUrls('looks', 'update')).toEqual(serviceClient.uploads.map((u) => u.path));
+      expect(serviceClient.updateLookCalls[0]._image_urls).toEqual(serviceClient.uploads.map((u) => u.path));
       expect(serviceClient.signCalls).toHaveLength(0);
     });
 
-    it('ARC-LOOK-003 更新で画像を差し替えたら、行を変えた後に古い道を service role で同じ置き場から消し、新しい道は消さない', async () => {
+    it('ARC-LOOK-003 更新で画像を差し替えたら、更新の後に rpc の戻り（更新前）の古い道を service role で同じ置き場から消し、新しい道は消さない', async () => {
       setup();
 
       const res = await itemRoute.PUT(makeRequest(formFields, [makeImage()]), params());
@@ -232,23 +248,24 @@ describe('画像の非公開の置き場と署名つき URL（ARC-LOOK-003）', 
       expect(serviceClient.removals[0].paths).not.toContain(serviceClient.uploads[0].path);
     });
 
-    it('ARC-LOOK-003 更新で画像を付けない時は上げず、image_urls は今ある道のまま書き戻す', async () => {
+    it('ARC-LOOK-003 更新で画像を付けない時は上げず、_image_urls に NULL を渡して今ある道を関数に保たせ、何も消さない', async () => {
       setup();
 
       const res = await itemRoute.PUT(makeRequest(formFields), params());
 
       expect(res.status).toBe(200);
       expect(serviceClient.uploads).toHaveLength(0);
-      expect(writtenImageUrls('looks', 'update')).toEqual(['looks/2026-01-01/old.jpg']);
+      expect(serviceClient.updateLookCalls[0]._image_urls).toBeNull();
+      expect(serviceClient.removals).toEqual([]);
     });
 
-    it('ARC-LOOK-003 更新で今ある image_urls が配列でなくても、画像を付けない時は空の配列で書く', async () => {
-      setup({ lookSelect: { data: { id: 7, status: 'private', image_urls: null }, error: null } });
+    it('ARC-LOOK-003 更新の戻り（更新前の image_urls）が配列でなくても、画像を付けない時は成功で何も消さない', async () => {
+      setup({ previousImages: null });
 
       const res = await itemRoute.PUT(makeRequest(formFields), params());
 
       expect(res.status).toBe(200);
-      expect(writtenImageUrls('looks', 'update')).toEqual([]);
+      expect(serviceClient.removals).toEqual([]);
     });
   });
 

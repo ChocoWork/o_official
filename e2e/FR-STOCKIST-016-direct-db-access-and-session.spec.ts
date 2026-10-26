@@ -6,9 +6,10 @@
  * - SEC-STOCKIST-002-AC-01: 管理者の session の Cookie（sb-<ref>-auth-token）を持たせて公開の画面を開き、
  *   非公開の店の名前が出ないこと・ログインしていない時と店の数が同じことを確かめる
  * - SEC-STOCKIST-003-AC-01/02: aal1 の JWT で PostgREST の /rest/v1/stockists を直接叩き、DB が変わらないことを pg で確かめる
- * - SEC-STOCKIST-003-AC-03: aal2 の session を auth.sessions から消した後、残った access token で update を送る
+ * - SEC-STOCKIST-003-AC-02/03: 書き込みは窓口の service role だけで、利用者の JWT の insert・update・delete は表の権限の段で断られる（sec_grants_admin_tables）
+ * - SEC-STOCKIST-003-AC-03: aal2 の session を auth.sessions から消した後、残った access token で update を送る（失効の前も後も変わらない）
  * 足した行は finally で消す。JWT・パスワードが通信記録に残らないよう trace は切る。
- * - ファイルの中は serial にしない（4 つの AC が今は全部赤の見込みで、serial だと最初の失敗で残りが流れず、赤の中身が隠れる）。
+ * - ファイルの中は serial にしない（003-AC-01 は波 5 まで赤の見込みで、serial だと最初の失敗で残りが流れず、赤の中身が隠れる）。
  * - 003-AC-01〜03 は画面を描かない HTTP だけの試験なので、幅ごとには繰り返さず各 AC に1本（FR-STOCKIST-014・015 と同じ扱い）。
  * - 002-AC-01 は他の試験が足した公開の行に左右されないよう、E2E-STK- で始まらない店（見本）の名前の並びで比べる。
  *   非公開の行はホームの「最初の 6 件」に入る小さい id で足し、公開の絞りが壊れた時にホームにも出るようにする。
@@ -98,12 +99,22 @@ async function jsonRows(response: APIResponse): Promise<Array<Record<string, unk
   }
 }
 
-/** 「権限の誤り（401・403）か、0 件で終わった」こと。行が 1 件でも返れば変更が通ったとみなす */
-async function expectDenied(response: APIResponse, label: string): Promise<void> {
-  const status = response.status();
-  if (status === 401 || status === 403) return;
-  const rows = await jsonRows(response);
-  expect(status < 300 && rows.length === 0, `${label}: 権限の誤りでも 0 件でもない（status: ${status}, 返った行: ${rows.length}）`).toBe(true);
+/**
+ * 「表の権限が無い」ことで断られたこと（403・SQLSTATE 42501・文が permission denied for table <表>）。
+ * RLS の違反（new row violates row-level security policy）や 0 件の成功は通さない。JWT は有効なので 401 も通さない
+ */
+async function expectPermissionDenied(response: APIResponse, table: string, label: string): Promise<void> {
+  const text = await response.text();
+  let body: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+  expect(response.status(), `${label}: 権限の誤りの状態`).toBe(403);
+  expect(body.code, `${label}: SQLSTATE`).toBe('42501');
+  expect(String(body.message), `${label}: 権限の誤りの文（RLS の誤りでも 0 件の成功でもない）`).toBe(`permission denied for table ${table}`);
 }
 
 /** Google OAuth のログインが付ける @supabase/ssr の認証 Cookie と同じ形（base64- + base64url の session、長ければ .N に分ける） */
@@ -250,7 +261,6 @@ test.describe('FR-STOCKIST-016 aal1 の JWT で PostgREST を直接叩く', () =
   });
 
   test('SEC-STOCKIST-003-AC-02 admin.stockists.manage を持つ利用者の aal1 の JWT の insert・update・delete が、どれも行を変えずに終わる', async ({ request }) => {
-    test.fail(true, 'SEC-STOCKIST-003 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
     const actor = await aal1Admin();
     expect(actor.aal).toBe('aal1');
     const insertName = tag();
@@ -277,20 +287,20 @@ test.describe('FR-STOCKIST-016 aal1 の JWT で PostgREST を直接叩く', () =
           data: { type: 'STORE', name: insertName, address: '東京都港区0-0-1', phone: '000-0000-0000', time: '11:00-18:00', holiday: 'Synthetic schedule', status: 'published' },
           failOnStatusCode: false,
         });
-        await expectDenied(inserted, 'insert');
+        await expectPermissionDenied(inserted, 'stockists', 'stockists の insert');
 
         const updated = await request.patch(stockistsUrl(`?id=eq.${updateId}`), {
           headers: postgrestHeaders(actor.accessToken),
           data: { name: updatedName },
           failOnStatusCode: false,
         });
-        await expectDenied(updated, 'update');
+        await expectPermissionDenied(updated, 'stockists', 'stockists の update');
 
         const deleted = await request.delete(stockistsUrl(`?id=eq.${deleteId}`), {
           headers: postgrestHeaders(actor.accessToken),
           failOnStatusCode: false,
         });
-        await expectDenied(deleted, 'delete');
+        await expectPermissionDenied(deleted, 'stockists', 'stockists の delete');
 
         // DB の行が変わっていない
         expect(await readRows('names', [insertName]), 'insert した行が DB に無い').toHaveLength(0);
@@ -307,7 +317,6 @@ test.describe('FR-STOCKIST-016 aal1 の JWT で PostgREST を直接叩く', () =
 
 test.describe('FR-STOCKIST-016 失効させた session の token で PostgREST を直接叩く', () => {
   test('SEC-STOCKIST-003-AC-03 aal2 の利用者の session を失効させた後、その access token の update が行を変えずに終わる', async ({ request }) => {
-    test.fail(true, 'SEC-STOCKIST-003 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
     const actor = await newActor('admin', 'aal2');
     expect(actor.aal).toBe('aal2');
     const originalName = tag();
@@ -315,15 +324,22 @@ test.describe('FR-STOCKIST-016 失効させた session の token で PostgREST �
     const afterRevokeName = tag();
 
     await withStockists([{ name: originalName, status: 'published' }], async ([id]) => {
-      // 失効させる前は、同じ access token の update が通る（token が有効だった確かめ）
+      // token は PostgREST に受け入れられている（失効の前は同じ token で公開の店を読める）
+      const readable = await request.get(stockistsUrl(`?select=id&id=eq.${id}`), {
+        headers: postgrestHeaders(actor.accessToken),
+        failOnStatusCode: false,
+      });
+      expect(readable.status(), '失効させる前の token で公開の店は読める').toBe(200);
+      expect((await jsonRows(readable)).length, '失効させる前の token で公開の店は読める（件数）').toBe(1);
+
+      // 失効させる前でも、利用者の JWT では update が通らない（書き込みは窓口の service role だけ。権限を外してある）
       const before = await request.patch(stockistsUrl(`?id=eq.${id}`), {
         headers: postgrestHeaders(actor.accessToken),
         data: { name: beforeRevokeName },
         failOnStatusCode: false,
       });
-      expect(before.status(), '失効させる前の aal2 の update の状態').toBeLessThan(300);
-      expect((await jsonRows(before)).length, '失効させる前の aal2 の update は 1 件を変える').toBe(1);
-      expect((await readRows('ids', [id])).map((row) => row.name)).toEqual([beforeRevokeName]);
+      await expectPermissionDenied(before, 'stockists', '失効させる前の update');
+      expect((await readRows('ids', [id])).map((row) => row.name), '失効させる前の update で名前が変わっていない').toEqual([originalName]);
 
       // session を失効させる（auth.sessions の行を消す）
       const revoked = await withLocalDb((db) => db.query('delete from auth.sessions where id = $1::uuid', [actor.sessionId]));
@@ -335,9 +351,10 @@ test.describe('FR-STOCKIST-016 失効させた session の token で PostgREST �
         data: { name: afterRevokeName },
         failOnStatusCode: false,
       });
-      await expectDenied(after, '失効後の update');
+      await expectPermissionDenied(after, 'stockists', '失効後の update');
 
-      expect((await readRows('ids', [id])).map((row) => row.name), '失効後の update で名前が変わっていない').toEqual([beforeRevokeName]);
+      expect((await readRows('ids', [id])).map((row) => row.name), '失効後の update で名前が変わっていない').toEqual([originalName]);
+      expect(await readRows('names', [beforeRevokeName]), '失効前に送った名前の行が DB に無い').toHaveLength(0);
       expect(await readRows('names', [afterRevokeName]), '失効後の名前の行が DB に無い').toHaveLength(0);
     }, [beforeRevokeName, afterRevokeName]);
   });

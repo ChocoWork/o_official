@@ -164,11 +164,13 @@ function setup(options: {
   verified?: unknown;
   liveness?: string;
 } = {}) {
-  userClient = createFakeClient({ news_articles: options.newsResult ?? { data: { id: 7 }, error: null } });
+  // 書き込みは認可の後に service role の client で行う（ADR-0026）。userClient の表は GET の読みだけが触る。
+  const newsResult = options.newsResult ?? { data: { id: 7 }, error: null };
+  userClient = createFakeClient({ news_articles: newsResult });
   serviceClient = createFakeClient({
     user_roles: { data: aclRows(options.codes ?? ['admin.news.read', 'admin.news.manage']), error: null },
     audit_logs: options.auditResult ?? { data: null, error: null },
-    news_articles: { data: { id: 999 }, error: null },
+    news_articles: newsResult,
   });
   createClient.mockResolvedValue(userClient);
   createServiceRoleClient.mockResolvedValue(serviceClient);
@@ -184,8 +186,8 @@ function auditRows() {
     .map((o) => (o.calls.find(([m]) => m === 'insert')?.[1][0] as Array<Record<string, unknown>>)[0]);
 }
 
-function userWriteCalls() {
-  return userClient.ops.filter((o) => o.table === 'news_articles').flatMap((o) => o.calls.map(([m]) => m));
+function serviceWriteCalls() {
+  return serviceClient.ops.filter((o) => o.table === 'news_articles').flatMap((o) => o.calls.map(([m]) => m));
 }
 
 describe('管理の書き換えの道（ARC-NEWS-002）', () => {
@@ -201,15 +203,15 @@ describe('管理の書き換えの道（ARC-NEWS-002）', () => {
   });
 
   describe.each(HANDLERS)('$name', (handler) => {
-    it('ARC-NEWS-002 表の書き換えは利用者の JWT の client で行い、service role の client で表を触らない', async () => {
+    it('ARC-NEWS-002 表の書き換えは認可の後に service role の client で行い、利用者の JWT の client は作らない', async () => {
       setup();
 
       const res = await handler.call();
 
       expect(res.status).toBe(handler.name.startsWith('POST') ? 201 : 200);
-      expect(createClient).toHaveBeenCalledTimes(1);
-      expect(userWriteCalls()).toContain(handler.writeMethod);
-      expect(serviceClient.ops.some((o) => o.table === 'news_articles')).toBe(false);
+      expect(createClient).not.toHaveBeenCalled();
+      expect(userClient.ops).toHaveLength(0);
+      expect(serviceWriteCalls()).toContain(handler.writeMethod);
     });
 
     it('ARC-NEWS-002 成功を監査に残し、resource・利用者・user agent を記録して IP は残さない', async () => {
@@ -231,7 +233,7 @@ describe('管理の書き換えの道（ARC-NEWS-002）', () => {
       expect(JSON.stringify(rows[0])).not.toContain('203.0.113.9');
     });
 
-    it('ARC-NEWS-002 RLS が書き換えを断ったら 500 を返し、失敗を監査に残す', async () => {
+    it('ARC-NEWS-002 表の書き換えが失敗したら 500 を返し、失敗を監査に残す', async () => {
       setup({ newsResult: { data: null, error: { code: '42501', message: 'new row violates row-level security policy' } } });
 
       const res = await handler.call();
@@ -260,6 +262,7 @@ describe('管理の書き換えの道（ARC-NEWS-002）', () => {
       expect(res.status).toBe(403);
       expect(await res.json()).toMatchObject({ error: 'Forbidden', permission: 'admin.news.manage' });
       expect(createClient).not.toHaveBeenCalled();
+      expect(serviceWriteCalls()).toHaveLength(0);
       expect(auditRows()).toHaveLength(0);
     });
 
@@ -271,6 +274,7 @@ describe('管理の書き換えの道（ARC-NEWS-002）', () => {
       expect(res.status).toBe(403);
       expect(await res.json()).toMatchObject({ reason: 'MFA required' });
       expect(createClient).not.toHaveBeenCalled();
+      expect(serviceWriteCalls()).toHaveLength(0);
     });
 
     it('ARC-NEWS-002 token が無ければ 401 で断る', async () => {
@@ -328,7 +332,7 @@ describe('管理の書き換えの道（ARC-NEWS-002）', () => {
       expect(res.status).toBe(200);
       expect(auditRows()[0]).toMatchObject({ action: handler.successAction, outcome: 'success' });
       expect(
-        userClient.ops
+        serviceClient.ops
           .filter((o) => o.table === 'news_articles')
           .some((o) => o.calls.some(([m, args]) => m === 'select' && (args[0] === 'id' || args[0] === 'id, image_url'))),
       ).toBe(true);

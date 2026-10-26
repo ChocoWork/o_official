@@ -52,6 +52,8 @@ function createLooksServiceMock(options?: {
   const storageUpload = jest.fn().mockResolvedValue({ error: null });
 
   return {
+    // LOOK の更新は admin_update_look の rpc 1 回。戻りは更新前の image_urls
+    rpc: jest.fn().mockResolvedValue({ data: existingLook?.image_urls ?? [], error: null }),
     storage: {
       from: jest.fn().mockReturnValue({
         upload: storageUpload,

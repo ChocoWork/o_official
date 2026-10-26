@@ -587,7 +587,7 @@ FR-SEARCH-001・003・004、FREQ-185-REQ-01（NEWS が持つ）、FREQ-186-REQ-0
 
 - 検索の関数は `createClient()`（ログインしていなければ anon、していればその人の session）で呼び、公開済みの絞りは関数の中にある（SEC-SEARCH-001、DATA-SEARCH-001）
 - service role の client は人気商品の関数と画像の署名だけに使う。公開の窓口の要求ごとに作る（ARC-SEARCH-004）。購入数は `mapPopularItem` が落とし、応答に写さない（SEC-SEARCH-009）
-- 語はバインド引数で渡す（SEC-SEARCH-003）。ILIKE の記号を逃がすのは DB の関数の側（DATA-SEARCH-001）
+- 語はバインド引数で渡す（SEC-SEARCH-003）。ILIKE の記号を逃がすのは DB の関数の側（DATA-SEARCH-001）。`\` を先に逃がし、語は先頭 100 字だけで比べ、件数は 1〜8 に丸めるのも関数の側（2026-10-26、ADR-0315）。この関数の呼び元の件数は `limitPerType`（既定 6、プレビュー 3、`/api/search` は 8）と候補の 8 で、どれも 8 以下なので欠けない。取り出しの関数（`search_public_*`）は呼ばない（anon・authenticated から EXECUTE を外した）
 
 #### テスト観点
 

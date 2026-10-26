@@ -82,7 +82,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 色見本（`item_color_presets`）の正しさ |
 | 脅威 | `admin.items.read`・`admin.items.manage` を持つ人の、パスワードだけで得た `aal1` の JWT、または強制失効の後も期限の残る JWT を手に入れた者が、色見本を読み・足し・書き換え・消す |
-| 起こり方 | アプリの窓口を通らず PostgREST の `item_color_presets` を直接叩く。RLS の方針は `has_permission` だけを見る（`supabase/migrations/20260901102912_remote_schema.sql:3435-3454`）。`has_permission` は ACL だけを見て、`aal` も session の生存も見ない（`supabase/migrations/20261023175712_group_g0_permissions.sql:186-216`。移行のどこにも `aal` の記述が無い）。表の `name` には長さの上限が無い（`remote_schema.sql:544-552`）ので、API の 40 字の上限（`item-color-presets/route.ts:7`）も迂回できる |
+| 起こり方 | アプリの窓口を通らず PostgREST の `item_color_presets` を直接叩く。RLS の方針は `has_permission` だけを見る（`supabase/migrations/20260901102912_remote_schema.sql:3435-3454`）。`has_permission` は ACL だけを見て、`aal` も session の生存も見ない（`supabase/migrations/20261023175712_group_g0_permissions.sql:186-216`。移行のどこにも `aal` の記述が無い）。表の `name` には長さの上限が無い（`remote_schema.sql:544-552`）ので、API の 40 字の上限（`item-color-presets/route.ts:7`）も迂回できる。**書き込みの側は 2026-10-26 に直した**: 移行 `sec_grants_admin_tables` が anon・authenticated から `item_color_presets` の INSERT・UPDATE・DELETE を外した（anon の SELECT も外した）ので、`aal1` の JWT でも失効の後の JWT でも PostgREST から書けない（権限の誤り `42501`。この移行を当てた DB でだけ満たす。ADR-0414）。色見本の窓口は元から service role。読みの側（authenticated の SELECT が残る）は `has_permission` の `aal2` と session の生存の確かめを足すまで残る（波 5） |
 | 影響 | 2要素認証と強制失効の守りがアプリの窓口だけになる。商品の編集の画面に偽の色見本や長い名前が出る。直接の書き換えは監査の記録にも残らない（THR-ADMIN-022） |
 | 対策 | SEC-ADMIN-002 |
 | ASVS | V4.3.1 |

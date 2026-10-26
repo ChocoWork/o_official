@@ -264,15 +264,19 @@ describeLocalDb('integration: 色見本の表 item_color_presets', (db) => {
     expect(byName['admin item_color_presets manage by permission delete'].qual).toContain("has_permission('admin.items.manage'");
   });
 
-  test.each(['anon', 'authenticated'])('DATA-ADMIN-005 %s には表の権限が全部付いている', async (role) => {
-    const result = await db().query(
-      `select privilege from unnest($2::text[]) as privilege
-       where has_table_privilege($1::name, 'public.item_color_presets'::regclass, privilege)
-       order by privilege`,
-      [role, TABLE_PRIVILEGES],
-    );
+  test('DATA-ADMIN-005 anon には表の権限が1つも付いておらず、authenticated には SELECT だけが付いている（ADR-0414）', async () => {
+    const privilegesOf = async (role: string) => {
+      const result = await db().query(
+        `select privilege from unnest($2::text[]) as privilege
+         where has_table_privilege($1::name, 'public.item_color_presets'::regclass, privilege)
+         order by privilege`,
+        [role, TABLE_PRIVILEGES],
+      );
+      return result.rows.map((row) => row.privilege);
+    };
 
-    expect(result.rows.map((row) => row.privilege)).toEqual(TABLE_PRIVILEGES);
+    expect(await privilegesOf('anon')).toEqual([]);
+    expect(await privilegesOf('authenticated')).toEqual(['SELECT']);
   });
 
   test('DATA-ADMIN-005 service_role は全部の操作ができる', async () => {
@@ -290,79 +294,73 @@ describeLocalDb('integration: 色見本の表 item_color_presets', (db) => {
     expect(await namesOwned()).toEqual([]);
   });
 
-  test('DATA-ADMIN-005 anon は1件も読めず、追加は RLS の違反で落ち、更新・削除は1行も変えない', async () => {
+  test('DATA-ADMIN-005 anon は読むことも書くことも権限の誤り（42501）で断られ、行は1つも変わらない', async () => {
     const id = await seed('anon', '#123456');
 
-    expect(await visibleAs({ role: 'anon' })).toEqual([]);
+    expect(await errorCodeAs({ role: 'anon' }, 'select name from public.item_color_presets where name like $1', [`${marker}%`])).toBe('42501');
     expect(await errorCodeAs({ role: 'anon' }, insertSql, [`${marker} anon insert`, '#123456'])).toBe('42501');
-    expect((await runAs({ role: 'anon' }, updateSql, [id, '#654321'])).rowCount).toBe(0);
-    expect((await runAs({ role: 'anon' }, deleteSql, [id])).rowCount).toBe(0);
+    expect(await errorCodeAs({ role: 'anon' }, updateSql, [id, '#654321'])).toBe('42501');
+    expect(await errorCodeAs({ role: 'anon' }, deleteSql, [id])).toBe('42501');
 
     expect(await namesOwned()).toEqual([`${marker} anon`]);
     expect(await hexOf(id)).toBe('#123456');
   });
 
-  test('DATA-ADMIN-005 商品の権限が無い authenticated は読めず、入れる・直す・消すもできない', async () => {
+  test('DATA-ADMIN-005 商品の権限が無い authenticated は読めず、入れる・直す・消すは権限の誤り（42501）', async () => {
     const actor: Actor = { role: 'authenticated', sub: plainUser };
     const id = await seed('plain', '#123456');
 
     expect(await visibleAs(actor)).toEqual([]);
     expect(await errorCodeAs(actor, insertSql, [`${marker} plain insert`, '#123456'])).toBe('42501');
-    expect((await runAs(actor, updateSql, [id, '#654321'])).rowCount).toBe(0);
-    expect((await runAs(actor, deleteSql, [id])).rowCount).toBe(0);
+    expect(await errorCodeAs(actor, updateSql, [id, '#654321'])).toBe('42501');
+    expect(await errorCodeAs(actor, deleteSql, [id])).toBe('42501');
 
     expect(await namesOwned()).toEqual([`${marker} plain`]);
     expect(await hexOf(id)).toBe('#123456');
   });
 
-  test('DATA-ADMIN-005 admin.items.read だけの人は読めるが、入れる・直す・消すはできない', async () => {
+  test('DATA-ADMIN-005 admin.items.read だけの人は読めるが、入れる・直す・消すは権限の誤り（42501）', async () => {
     const actor: Actor = { role: 'authenticated', sub: reader };
     const id = await seed('reader', '#123456');
 
     expect(await visibleAs(actor)).toEqual([`${marker} reader`]);
     expect(await errorCodeAs(actor, insertSql, [`${marker} reader insert`, '#123456'])).toBe('42501');
-    expect((await runAs(actor, updateSql, [id, '#654321'])).rowCount).toBe(0);
-    expect((await runAs(actor, deleteSql, [id])).rowCount).toBe(0);
+    expect(await errorCodeAs(actor, updateSql, [id, '#654321'])).toBe('42501');
+    expect(await errorCodeAs(actor, deleteSql, [id])).toBe('42501');
 
     expect(await namesOwned()).toEqual([`${marker} reader`]);
     expect(await hexOf(id)).toBe('#123456');
   });
 
-  test('DATA-ADMIN-005 admin.items.manage だけの人は入れられるが、読めないので直す・消すは1行にも届かない', async () => {
+  test('DATA-ADMIN-005 admin.items.manage だけの人は読めず、入れる・直す・消すも権限の誤り（42501）', async () => {
     const actor: Actor = { role: 'authenticated', sub: manager };
     const id = await seed('manager', '#123456');
 
     expect(await visibleAs(actor)).toEqual([]);
+    expect(await errorCodeAs(actor, insertSql, [`${marker} manager insert`, '#abcdef'])).toBe('42501');
+    expect(await errorCodeAs(actor, updateSql, [id, '#654321'])).toBe('42501');
+    expect(await errorCodeAs(actor, deleteSql, [id])).toBe('42501');
 
-    await runAs(actor, insertSql, [`${marker} manager insert`, '#abcdef']);
-    expect(await namesOwned()).toEqual([`${marker} manager`, `${marker} manager insert`]);
-
-    // 更新・削除は対象の行を読んで選ぶので、読む権限が無いと 0 行になる
-    expect((await runAs(actor, updateSql, [id, '#654321'])).rowCount).toBe(0);
+    expect(await namesOwned()).toEqual([`${marker} manager`]);
     expect(await hexOf(id)).toBe('#123456');
-
-    expect((await runAs(actor, deleteSql, [id])).rowCount).toBe(0);
-    expect(await namesOwned()).toEqual([`${marker} manager`, `${marker} manager insert`]);
   });
 
-  test('DATA-ADMIN-005 読みと管理の両方を持つ人は読んで、入れて、直して、消せる', async () => {
+  test('DATA-ADMIN-005 読みと管理の両方を持つ人は読めるが、入れる・直す・消すは権限の誤り（42501）で、書き込みは service role だけ', async () => {
     const both = await createUser([await createRole(['admin.items.read', 'admin.items.manage'])]);
     const actor: Actor = { role: 'authenticated', sub: both };
     const id = await seed('both', '#123456');
 
     expect(await visibleAs(actor)).toEqual([`${marker} both`]);
-    await runAs(actor, insertSql, [`${marker} both insert`, '#abcdef']);
-    expect((await runAs(actor, updateSql, [id, '#654321'])).rowCount).toBe(1);
-    expect(await hexOf(id)).toBe('#654321');
-    expect((await runAs(actor, deleteSql, [id])).rowCount).toBe(1);
+    expect(await errorCodeAs(actor, insertSql, [`${marker} both insert`, '#abcdef'])).toBe('42501');
+    expect(await errorCodeAs(actor, updateSql, [id, '#654321'])).toBe('42501');
+    expect(await errorCodeAs(actor, deleteSql, [id])).toBe('42501');
 
-    expect(await namesOwned()).toEqual([`${marker} both insert`]);
+    expect(await namesOwned()).toEqual([`${marker} both`]);
+    expect(await hexOf(id)).toBe('#123456');
   });
 
-  test('DATA-ADMIN-005 管理の権限があっても壊れた色の値は CHECK で断られる', async () => {
-    const both = await createUser([await createRole(['admin.items.read', 'admin.items.manage'])]);
-
-    expect(await errorCodeAs({ role: 'authenticated', sub: both }, insertSql, [`${marker} bad`, 'blue'])).toBe('23514');
+  test('DATA-ADMIN-005 壊れた色の値は CHECK で断られる（書き込みの役は service role）', async () => {
+    expect(await errorCodeAs({ role: 'service_role' }, insertSql, [`${marker} bad`, 'blue'])).toBe('23514');
 
     expect(await namesOwned()).toEqual([]);
   });

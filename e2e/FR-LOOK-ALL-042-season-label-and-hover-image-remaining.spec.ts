@@ -155,7 +155,7 @@ test.describe('FR-LOOK-ALL-042 シーズン表記と hover 画像の残りの受
         const res = await db.query(
           `insert into public.looks
              (season_year, season_type, theme, theme_description, image_urls, status, created_at, updated_at)
-           values (2026, 'SS', $1, 'zq', ARRAY['e2e/look-1-1.png']::text[], 'published',
+           values (2026, 'SS', $1, 'zq', ARRAY['looks/e2e/look-1-1.png']::text[], 'published',
                    '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z')
            returning id`,
           [theme],

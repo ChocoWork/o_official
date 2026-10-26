@@ -11,8 +11,6 @@ type DbRole = 'anon' | 'authenticated' | 'service_role';
 type Actor = { role: DbRole; sub?: string; aal?: string };
 type Policy = { policyname: string; roles: string[]; cmd: string; qual: string | null; with_check: string | null };
 
-const TABLE_PRIVILEGES = ['DELETE', 'INSERT', 'MAINTAIN', 'REFERENCES', 'SELECT', 'TRIGGER', 'TRUNCATE', 'UPDATE'];
-
 const byCodeUnit = (a: Policy, b: Policy): number => (a.policyname < b.policyname ? -1 : 1);
 const byNumber = (a: string, b: string): number => Number(a) - Number(b);
 
@@ -230,22 +228,25 @@ describeLocalDb('integration: looks・look_items の RLS と付与', (db) => {
     expect(byName['admin looks manage by permission delete'].qual).toContain("has_permission('admin.looks.manage'");
   });
 
-  test('DATA-LOOK-003 look_items の方針は設計の6つで、役と操作と条件が一致する', async () => {
+  test('DATA-LOOK-003 look_items の方針は設計の6つで、役と操作と条件が一致する（読みは親の LOOK と商品の両方が公開、ADR-0162）', async () => {
     const rows = await policies('look_items');
 
     expect(rows.map(({ policyname, roles, cmd }) => ({ policyname, roles, cmd }))).toEqual([
-      { policyname: 'Anyone can view look items for published looks', roles: ['anon'], cmd: 'SELECT' },
       { policyname: 'Service role has full access to look items', roles: ['service_role'], cmd: 'ALL' },
       { policyname: 'admin look_items manage by permission delete', roles: ['authenticated'], cmd: 'DELETE' },
       { policyname: 'admin look_items manage by permission insert', roles: ['authenticated'], cmd: 'INSERT' },
       { policyname: 'admin look_items manage by permission update', roles: ['authenticated'], cmd: 'UPDATE' },
-      { policyname: 'authenticated look items read', roles: ['authenticated'], cmd: 'SELECT' },
+      { policyname: 'anon reads links of published looks to published items', roles: ['anon'], cmd: 'SELECT' },
+      { policyname: 'authenticated reads published links, admins read all', roles: ['authenticated'], cmd: 'SELECT' },
     ]);
     const byName = Object.fromEntries(rows.map((row) => [row.policyname, row]));
-    expect(byName['Anyone can view look items for published looks'].qual).toContain("'published'");
-    expect(byName['Anyone can view look items for published looks'].qual).not.toContain('has_permission');
-    expect(byName['authenticated look items read'].qual).toContain("'published'");
-    expect(byName['authenticated look items read'].qual).toContain("has_permission('admin.looks.read'");
+    const anonRead = byName['anon reads links of published looks to published items'];
+    const authenticatedRead = byName['authenticated reads published links, admins read all'];
+    // 親の LOOK の status と商品の status の 2 か所で 'published' を見る
+    expect(anonRead.qual?.split("'published'").length).toBe(3);
+    expect(anonRead.qual).not.toContain('has_permission');
+    expect(authenticatedRead.qual?.split("'published'").length).toBe(3);
+    expect(authenticatedRead.qual).toContain("has_permission('admin.looks.read'");
     expect(byName['admin look_items manage by permission insert'].with_check).toContain("has_permission('admin.looks.manage'");
     expect(byName['admin look_items manage by permission update'].qual).toContain("has_permission('admin.looks.manage'");
     expect(byName['admin look_items manage by permission update'].with_check).toContain("has_permission('admin.looks.manage'");
@@ -254,15 +255,15 @@ describeLocalDb('integration: looks・look_items の RLS と付与', (db) => {
 
   test.each([
     ['anon', 'looks'], ['anon', 'look_items'], ['authenticated', 'looks'], ['authenticated', 'look_items'],
-  ])('DATA-LOOK-003 %s には %s の権限が全部付いている', async (role, table) => {
+  ])('DATA-LOOK-003 %s には %s の SELECT だけが付いていて、書き込み系の権限は付いていない（ADR-0414）', async (role, table) => {
     const result = await db().query(
       `select privilege from unnest($3::text[]) as privilege
        where has_table_privilege($1::name, $2::regclass, privilege)
        order by privilege`,
-      [role, `public.${table}`, TABLE_PRIVILEGES],
+      [role, `public.${table}`, ['DELETE', 'INSERT', 'MAINTAIN', 'REFERENCES', 'SELECT', 'TRIGGER', 'TRUNCATE', 'UPDATE']],
     );
 
-    expect(result.rows.map((row) => row.privilege)).toEqual(TABLE_PRIVILEGES);
+    expect(result.rows.map((row) => row.privilege)).toEqual(['SELECT']);
   });
 
   test('DATA-LOOK-003 anon は has_permission を呼べず、authenticated は呼べる', async () => {
@@ -274,54 +275,62 @@ describeLocalDb('integration: looks・look_items の RLS と付与', (db) => {
     expect(result.rows).toEqual([{ anon: false, authenticated: true }]);
   });
 
-  test('DATA-LOOK-003 anon は公開済みの LOOK と、その関連だけを読める', async () => {
+  test('DATA-LOOK-003 anon は公開済みの LOOK と、その LOOK から公開済みの商品への関連だけを読める', async () => {
     expect(await visibleLooks({ role: 'anon' })).toEqual([publishedLook]);
+    expect(await visibleLinks({ role: 'anon' })).toEqual([`${publishedLook}:${publicItem}`]);
+  });
+
+  test('DATA-LOOK-003 SEC-LOOK-002 anon は公開済みの LOOK につながる非公開の商品の番号を読めず、公開の商品の番号は読める', async () => {
+    const hidden = await runAs(
+      { role: 'anon' },
+      'select item_id::text as item_id from public.look_items where look_id = $1 and item_id = $2',
+      [publishedLook, privateItem],
+    );
+    const shown = await runAs(
+      { role: 'anon' },
+      'select item_id::text as item_id from public.look_items where look_id = $1 and item_id = $2',
+      [publishedLook, publicItem],
+    );
+
+    expect(hidden.rows).toEqual([]);
+    expect(shown.rows).toEqual([{ item_id: publicItem }]);
+  });
+
+  test('DATA-LOOK-003 SEC-LOOK-002 商品が非公開から公開に変わると、その関連が anon に見えるようになる', async () => {
+    await db().query("update public.items set status = 'published' where id = $1", [privateItem]);
+
     expect(await visibleLinks({ role: 'anon' })).toEqual([
       `${publishedLook}:${publicItem}`, `${publishedLook}:${privateItem}`,
     ]);
   });
 
-  test('DATA-LOOK-003 anon は公開済みの LOOK につながる非公開の商品の番号も読める', async () => {
-    const result = await runAs(
-      { role: 'anon' },
-      'select item_id::text as item_id from public.look_items where look_id = $1 and item_id = $2',
-      [publishedLook, privateItem],
-    );
-
-    expect(result.rows).toEqual([{ item_id: privateItem }]);
-  });
-
-  test('DATA-LOOK-003 anon の LOOK の追加は RLS の違反で落ち、更新・削除は1行も変えない', async () => {
+  test('DATA-LOOK-003 anon の LOOK の追加・更新・削除は権限の誤り（42501）で落ち、1行も変えない', async () => {
     const theme = `${marker} anon insert`;
     expect(await errorCodeAs({ role: 'anon' }, insertLookSql, [theme])).toBe('42501');
     expect(await countByTheme(theme)).toBe(0);
 
-    const updated = await runAs({ role: 'anon' }, setLookStatusSql, [publishedLook, 'private']);
-    const deleted = await runAs({ role: 'anon' }, 'delete from public.looks where id = any($1::bigint[])', [[publishedLook, privateLook]]);
+    expect(await errorCodeAs({ role: 'anon' }, setLookStatusSql, [publishedLook, 'private'])).toBe('42501');
+    expect(
+      await errorCodeAs({ role: 'anon' }, 'delete from public.looks where id = any($1::bigint[])', [[publishedLook, privateLook]]),
+    ).toBe('42501');
 
-    expect(updated.rowCount).toBe(0);
-    expect(deleted.rowCount).toBe(0);
     expect(await statusOf(publishedLook)).toBe('published');
     expect(await statusOf(privateLook)).toBe('private');
   });
 
-  test('DATA-LOOK-003 anon の関連の追加は RLS の違反で落ち、更新・削除は1行も変えない', async () => {
+  test('DATA-LOOK-003 anon の関連の追加・更新・削除は権限の誤り（42501）で落ち、1行も変えない', async () => {
     expect(await errorCodeAs({ role: 'anon' }, insertLinkSql, [publishedLook, spareItem])).toBe('42501');
     expect(await linkCount(publishedLook, spareItem)).toBe(0);
 
-    const updated = await runAs({ role: 'anon' }, touchLinkSql, [publishedLook, publicItem]);
-    const deleted = await runAs({ role: 'anon' }, deleteLinkSql, [publishedLook, publicItem]);
+    expect(await errorCodeAs({ role: 'anon' }, touchLinkSql, [publishedLook, publicItem])).toBe('42501');
+    expect(await errorCodeAs({ role: 'anon' }, deleteLinkSql, [publishedLook, publicItem])).toBe('42501');
 
-    expect(updated.rowCount).toBe(0);
-    expect(deleted.rowCount).toBe(0);
     expect(await linkCount(publishedLook, publicItem)).toBe(1);
   });
 
-  test('DATA-LOOK-003 sub の無い authenticated は公開済みの LOOK と関連だけを読める', async () => {
+  test('DATA-LOOK-003 sub の無い authenticated は公開済みの LOOK と、公開済みの商品への関連だけを読める', async () => {
     expect(await visibleLooks({ role: 'authenticated' })).toEqual([publishedLook]);
-    expect(await visibleLinks({ role: 'authenticated' })).toEqual([
-      `${publishedLook}:${publicItem}`, `${publishedLook}:${privateItem}`,
-    ]);
+    expect(await visibleLinks({ role: 'authenticated' })).toEqual([`${publishedLook}:${publicItem}`]);
   });
 
   test('DATA-LOOK-003 権限の無い会員は公開済みだけを読め、LOOK も関連も書き換えられない', async () => {
@@ -329,39 +338,33 @@ describeLocalDb('integration: looks・look_items の RLS と付与', (db) => {
     const theme = `${marker} plain insert`;
 
     expect(await visibleLooks(actor)).toEqual([publishedLook]);
-    expect(await visibleLinks(actor)).toHaveLength(2);
+    expect(await visibleLinks(actor)).toEqual([`${publishedLook}:${publicItem}`]);
     expect(await errorCodeAs(actor, insertLookSql, [theme])).toBe('42501');
     expect(await countByTheme(theme)).toBe(0);
     expect(await errorCodeAs(actor, insertLinkSql, [publishedLook, spareItem])).toBe('42501');
     expect(await linkCount(publishedLook, spareItem)).toBe(0);
-    const updated = await runAs(actor, setLookStatusSql, [publishedLook, 'private']);
-    const deleted = await runAs(actor, 'delete from public.looks where id = $1', [publishedLook]);
-    const touched = await runAs(actor, touchLinkSql, [publishedLook, publicItem]);
-    const unlinked = await runAs(actor, deleteLinkSql, [publishedLook, publicItem]);
-    expect(updated.rowCount).toBe(0);
-    expect(deleted.rowCount).toBe(0);
-    expect(touched.rowCount).toBe(0);
-    expect(unlinked.rowCount).toBe(0);
+    expect(await errorCodeAs(actor, setLookStatusSql, [publishedLook, 'private'])).toBe('42501');
+    expect(await errorCodeAs(actor, 'delete from public.looks where id = $1', [publishedLook])).toBe('42501');
+    expect(await errorCodeAs(actor, touchLinkSql, [publishedLook, publicItem])).toBe('42501');
+    expect(await errorCodeAs(actor, deleteLinkSql, [publishedLook, publicItem])).toBe('42501');
     expect(await statusOf(publishedLook)).toBe('published');
     expect(await linkCount(publishedLook, publicItem)).toBe(1);
   });
 
-  test('DATA-LOOK-003 admin.looks.read を持つ会員は非公開の LOOK と関連も読めるが、書き換えはできない', async () => {
+  test('DATA-LOOK-003 admin.looks.read を持つ会員は非公開の LOOK と、非公開の商品への関連も読めるが、書き換えはできない', async () => {
     const actor: Actor = { role: 'authenticated', sub: reader };
     const theme = `${marker} reader insert`;
 
     expect(await visibleLooks(actor)).toEqual([publishedLook, privateLook].sort(byNumber));
     expect(await visibleLinks(actor)).toHaveLength(3);
+    expect(await visibleLinks(actor)).toContain(`${publishedLook}:${privateItem}`);
     expect(await errorCodeAs(actor, insertLookSql, [theme])).toBe('42501');
     expect(await countByTheme(theme)).toBe(0);
     expect(await errorCodeAs(actor, insertLinkSql, [privateLook, spareItem])).toBe('42501');
     expect(await linkCount(privateLook, spareItem)).toBe(0);
-    const updated = await runAs(actor, setLookStatusSql, [privateLook, 'published']);
-    const deleted = await runAs(actor, 'delete from public.looks where id = $1', [privateLook]);
-    const unlinked = await runAs(actor, deleteLinkSql, [privateLook, publicItem]);
-    expect(updated.rowCount).toBe(0);
-    expect(deleted.rowCount).toBe(0);
-    expect(unlinked.rowCount).toBe(0);
+    expect(await errorCodeAs(actor, setLookStatusSql, [privateLook, 'published'])).toBe('42501');
+    expect(await errorCodeAs(actor, 'delete from public.looks where id = $1', [privateLook])).toBe('42501');
+    expect(await errorCodeAs(actor, deleteLinkSql, [privateLook, publicItem])).toBe('42501');
     expect(await statusOf(privateLook)).toBe('private');
     expect(await linkCount(privateLook, publicItem)).toBe(1);
   });
@@ -373,56 +376,47 @@ describeLocalDb('integration: looks・look_items の RLS と付与', (db) => {
 
     expect(await visibleLooks({ role: 'authenticated', sub: inactive })).toEqual([publishedLook]);
     expect(await visibleLooks({ role: 'authenticated', sub: expired })).toEqual([publishedLook]);
-    expect(await visibleLinks({ role: 'authenticated', sub: inactive })).toHaveLength(2);
-    expect(await visibleLinks({ role: 'authenticated', sub: expired })).toHaveLength(2);
+    expect(await visibleLinks({ role: 'authenticated', sub: inactive })).toHaveLength(1);
+    expect(await visibleLinks({ role: 'authenticated', sub: expired })).toHaveLength(1);
   });
 
-  test('DATA-LOOK-003 admin.looks.read と admin.looks.manage を持つ会員は LOOK も関連も追加・更新・削除ができる', async () => {
+  test('DATA-LOOK-003 admin.looks.read と admin.looks.manage を持つ会員でも、LOOK も関連も追加・更新・削除は権限の誤り（42501）で断られる（書き込みは service role だけ）', async () => {
     const actor: Actor = { role: 'authenticated', sub: manager };
     const theme = `${marker} manager insert`;
 
-    const inserted = await runAs(actor, insertLookSql, [theme]);
-    const updated = await runAs(actor, setLookStatusSql, [privateLook, 'published']);
-    const linked = await runAs(actor, insertLinkSql, [privateLook, spareItem]);
-    const touched = await runAs(actor, touchLinkSql, [privateLook, spareItem]);
-    const unlinked = await runAs(actor, deleteLinkSql, [privateLook, publicItem]);
-    const deleted = await runAs(actor, 'delete from public.looks where id = $1', [publishedLook]);
+    expect(await errorCodeAs(actor, insertLookSql, [theme])).toBe('42501');
+    expect(await errorCodeAs(actor, setLookStatusSql, [privateLook, 'published'])).toBe('42501');
+    expect(await errorCodeAs(actor, insertLinkSql, [privateLook, spareItem])).toBe('42501');
+    expect(await errorCodeAs(actor, touchLinkSql, [privateLook, publicItem])).toBe('42501');
+    expect(await errorCodeAs(actor, deleteLinkSql, [privateLook, publicItem])).toBe('42501');
+    expect(await errorCodeAs(actor, 'delete from public.looks where id = $1', [publishedLook])).toBe('42501');
 
-    expect(inserted.rowCount).toBe(1);
-    expect(await countByTheme(theme)).toBe(1);
-    expect(updated.rowCount).toBe(1);
-    expect(await statusOf(privateLook)).toBe('published');
-    expect(linked.rowCount).toBe(1);
-    expect(await linkCount(privateLook, spareItem)).toBe(1);
-    expect(touched.rowCount).toBe(1);
-    expect(unlinked.rowCount).toBe(1);
-    expect(await linkCount(privateLook, publicItem)).toBe(0);
-    expect(deleted.rowCount).toBe(1);
-    expect(await statusOf(publishedLook)).toBeUndefined();
+    expect(await countByTheme(theme)).toBe(0);
+    expect(await statusOf(privateLook)).toBe('private');
+    expect(await linkCount(privateLook, spareItem)).toBe(0);
+    expect(await linkCount(privateLook, publicItem)).toBe(1);
+    expect(await statusOf(publishedLook)).toBe('published');
   });
 
-  test('DATA-LOOK-003 admin.looks.manage だけの会員は追加できるが、非公開は読めない', async () => {
+  test('DATA-LOOK-003 admin.looks.manage だけの会員も追加は権限の誤り（42501）で、非公開は読めない', async () => {
     const actor: Actor = { role: 'authenticated', sub: manageOnly };
     const theme = `${marker} manage-only insert`;
 
-    const inserted = await runAs(actor, insertLookSql, [theme]);
-    const linked = await runAs(actor, insertLinkSql, [publishedLook, spareItem]);
+    expect(await errorCodeAs(actor, insertLookSql, [theme])).toBe('42501');
+    expect(await errorCodeAs(actor, insertLinkSql, [publishedLook, spareItem])).toBe('42501');
 
-    expect(inserted.rowCount).toBe(1);
-    expect(await countByTheme(theme)).toBe(1);
-    expect(linked.rowCount).toBe(1);
-    expect(await linkCount(publishedLook, spareItem)).toBe(1);
+    expect(await countByTheme(theme)).toBe(0);
+    expect(await linkCount(publishedLook, spareItem)).toBe(0);
     expect(await visibleLooks(actor)).toEqual([publishedLook]);
-    expect(await visibleLinks(actor)).toHaveLength(3);
+    expect(await visibleLinks(actor)).toHaveLength(1);
   });
 
-  test('DATA-LOOK-003 DB は aal を見ないので、aal1 の JWT でも権限があれば非公開を読み書きできる', async () => {
+  test('DATA-LOOK-003 DB は aal を見ないので、aal1 の JWT でも権限があれば非公開を読めるが、書き込みは権限の誤り（42501）で断られる', async () => {
     const actor: Actor = { role: 'authenticated', sub: manager, aal: 'aal1' };
 
     expect(await visibleLooks(actor)).toEqual([publishedLook, privateLook].sort(byNumber));
-    const updated = await runAs(actor, setLookStatusSql, [privateLook, 'published']);
-    expect(updated.rowCount).toBe(1);
-    expect(await statusOf(privateLook)).toBe('published');
+    expect(await errorCodeAs(actor, setLookStatusSql, [privateLook, 'published'])).toBe('42501');
+    expect(await statusOf(privateLook)).toBe('private');
   });
 
   test('DATA-LOOK-003 service_role は全部を読み、LOOK も関連も追加・更新・削除ができる', async () => {

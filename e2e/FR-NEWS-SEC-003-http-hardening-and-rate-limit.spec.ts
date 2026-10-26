@@ -8,7 +8,7 @@
  *   画面を描く SEC-NEWS-024-AC-01 だけ 3つの幅（mobile 390・tablet 768・desktop 1280）で流す。ほかは応答の見出しだけを見る
  *   HTTP の試験なので幅に依らず、1本だけ流す（/api/news の回数を3倍に増やさない）。
  * - SEC-NEWS-004-AC-02 の署名つき URL は、手元の Supabase の service role で news-images の見本の画像（global-setup が置く
- *   e2e/news-1.png）に対して発行する。管理の一覧が /_next/image に渡す署名つき URL と同じ形（/storage/v1/object/sign/news-images/…）。
+ *   news/e2e/news-1.png）に対して発行する。管理の一覧が /_next/image に渡す署名つき URL と同じ形（/storage/v1/object/sign/news-images/…）。
  *
  * 回数の制限（SEC-NEWS-006-AC-02・009-AC-02・011-AC-01）の注意
  * - /api/news の枠は「送り元 × 10分（時計の10分きざみ）」で数える。送り元は今のコードでは x-forwarded-for の先頭の値なので、
@@ -114,7 +114,7 @@ test.describe('FR-NEWS-SEC-003 NEWS の HTTP の守りと回数の制限', () =>
     const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    const { data, error } = await admin.storage.from('news-images').createSignedUrl('e2e/news-1.png', 3600);
+    const { data, error } = await admin.storage.from('news-images').createSignedUrl('news/e2e/news-1.png', 3600);
     expect(error, '署名つき URL を発行できること').toBeNull();
     const signedUrl = data?.signedUrl ?? '';
     expect(signedUrl).toContain('/storage/v1/object/sign/news-images/');

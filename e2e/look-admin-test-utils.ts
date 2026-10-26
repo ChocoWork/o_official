@@ -20,6 +20,8 @@ import { withLocalDb } from './order-email-test-utils';
 const LOOK_IMAGES_BUCKET = 'look-images';
 /** 並び順の最後に置く日付。他の spec が「最初の LOOK」を選ぶ並びに、この道具の LOOK を入れない */
 const SINK_DATE = '2000-01-01T00:00:00Z';
+/** この道具が試験ごとに上げる画像の置き場所。見本の画像（looks/e2e/）と分け、後始末とアプリの削除が見本を消さないようにする */
+const FIXTURE_IMAGE_FOLDER = 'looks/e2e-fixture';
 
 /** 店長（admin.looks.manage・admin.looks.read・admin.items.manage を持つ）の aal2 の利用者を作る */
 export async function createLookAdmin(): Promise<AdminSessionActor> {
@@ -82,18 +84,39 @@ function assertThemePrefix(prefix: string): void {
   if (!/^[A-Za-z0-9-]{12,}$/.test(prefix)) throw new Error('テーマの前方一致の印は英数字とハイフンの12文字以上にしてください');
 }
 
+function localStorageApi() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key || !isLocalUrl(url)) throw new Error('置き場の画像を扱えるのは手元の Supabase だけ');
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }).storage.from(LOOK_IMAGES_BUCKET);
+}
+
 /**
- * 非公開の LOOK を DB に直に作る（編集・削除の試験の材料）。商品1を紐づけ、画像は見本の画像（e2e/look-1-1.png）を指す。
+ * この試験だけの画像を置き場（looks/e2e-fixture/<name>.png）に上げて、その道筋を返す。
+ * 見本の画像（looks/e2e/look-1-1.png）を行が指すと、purgeLooksByThemePrefix やアプリの削除が見本を消して他の試験が赤になる。
+ * 上げた画像は purgeLooksByThemePrefix が（行が指していれば）消す。
+ */
+export async function uploadFixtureLookImage(name: string): Promise<string> {
+  assertThemePrefix(name);
+  const imagePath = `${FIXTURE_IMAGE_FOLDER}/${name}.png`;
+  const uploaded = await localStorageApi().upload(imagePath, tinyPng(), { contentType: 'image/png', upsert: true });
+  if (uploaded.error) throw new Error('試験用の画像を置き場に上げられなかった');
+  return imagePath;
+}
+
+/**
+ * 非公開の LOOK を DB に直に作る（編集・削除の試験の材料）。商品1を紐づけ、画像はこの LOOK だけの画像（uploadFixtureLookImage）を指す。
  * 並びの最後に置く（created_at = 2000-01-01）。返すのは作った LOOK の id。
  */
 export async function insertPrivateLook(theme: string): Promise<number> {
   assertThemePrefix(theme);
+  const imagePath = await uploadFixtureLookImage(theme);
   return withLocalDb(async (db) => {
     const created = await db.query(
       `insert into public.looks (season_year, season_type, theme, theme_description, image_urls, status, created_at, updated_at)
-       values (2026, 'SS', $1, 'E2E fixture', array['e2e/look-1-1.png'], 'private', $2::timestamptz, $2::timestamptz)
+       values (2026, 'SS', $1, 'E2E fixture', array[$3::text], 'private', $2::timestamptz, $2::timestamptz)
        returning id`,
-      [theme, SINK_DATE],
+      [theme, SINK_DATE, imagePath],
     );
     const id = Number(created.rows[0].id);
     await db.query('insert into public.look_items (look_id, item_id) values ($1, 1)', [id]);
@@ -126,8 +149,8 @@ export async function sinkLook(id: number): Promise<void> {
 }
 
 /**
- * テーマが前方一致する LOOK（と商品のつながり）を DB から消し、画面の操作で上げた置き場の画像（looks/ 配下）も消す。
- * 見本の画像（e2e/ 配下）には触れない。
+ * テーマが前方一致する LOOK（と商品のつながり）を DB から消し、行が指す置き場の画像（looks/ 配下）も消す。
+ * 見本の画像（looks/e2e/ 配下）は、行が指していても消さない（他の試験が読む）。
  */
 export async function purgeLooksByThemePrefix(prefix: string): Promise<void> {
   assertThemePrefix(prefix);
@@ -138,13 +161,12 @@ export async function purgeLooksByThemePrefix(prefix: string): Promise<void> {
       await db.query('delete from public.look_items where look_id = any($1::bigint[])', [ids]);
       await db.query('delete from public.looks where id = any($1::bigint[])', [ids]);
     }
-    return found.rows.flatMap((row) => (row.image_urls as string[]).filter((p) => p.startsWith('looks/')));
+    const own = found.rows.flatMap((row) =>
+      (row.image_urls as string[]).filter((p) => p.startsWith('looks/') && !p.startsWith('looks/e2e/')),
+    );
+    return [...new Set(own)];
   });
   if (paths.length === 0) return;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key || !isLocalUrl(url)) throw new Error('置き場の画像を消せるのは手元の Supabase だけ');
-  const storage = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }).storage;
-  const removed = await storage.from(LOOK_IMAGES_BUCKET).remove(paths);
+  const removed = await localStorageApi().remove(paths);
   if (removed.error) throw new Error('作った LOOK の置き場の画像を消せなかった');
 }

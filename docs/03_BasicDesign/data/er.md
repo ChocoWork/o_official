@@ -1,5 +1,7 @@
 # ER 図（現行リポジトリの実装）
 
+> 波 2 確認日: 2026-10-27。権限・CHECK（`NOT VALID`）・`stockists.type` の NULL 可・関数 `admin_update_look`・検索の関数・連番と台帳系の表の権限・置き場の設定を、末尾の「波 2 の権限・制約・関数・置き場」に追記した。移行 6 本は本番未適用（本番は G-4 と一緒に当てる・オーナーの確認の後）。
+
 > G-4 Task 4 確認日: 2026-10-26。割当の入替（G4C移行。表・列・制約・triggerの追加なし、書き手の許可一覧76本）。fix round 2後のcontroller fresh reset（g4t4b）でローカル適用・検証済み。本番未適用。
 
 > G-4 Task 2 確認日: 2026-10-26。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
@@ -2132,3 +2134,59 @@ public.item_delete_blockers(bigint[]) は戻り値の追加のため DROP → CR
 書き手はG-2の65本＋G-3の10本＝75本。読取5本・内部4本・ロックhelperと守り2本は閉集合の外。service_roleの新しいEXECUTEは書込み本体/入口14本と読取本体/入口10本だけ。内部のconsume/register/restoreは許可された本体だけから呼ぶ。
 
 [4移行の末尾assert](../../../tests/integration/db/group_g3_migration_asserts.integration.test.ts) は表・列・CHECK・trigger・所有者・ACL・関数集合とOIDを検査する。G3Cは72本、G3Dは75本で照合し、試験時の差替は取引内に限る。ACLは意味で比較し、PG17以降のMAINTAINも対象とする。[全入口の並行試験](../../../tests/integration/db/group_g3_concurrency.integration.test.ts) と [実PostgREST](../../../tests/integration/db/group_g3_postgrest_paths.integration.test.ts) の結果は単体/静的検査で代替しない。現行のサイズ・MD5・適用順と担当は [移行運用](../../06_Operations/db-migrations.md) のTask 10節を参照する。
+
+## 波 2 の権限・制約・関数・置き場（SEC-HOME・AUTH・LOOK・NEWS・SEARCH・STOCKIST・ADMIN / 2026-10-27）
+
+確認日: 2026-10-27。**本節の内容は移行 6 本（`20261026130100`〜`130600`）が入れる形で、本番へは未適用（本番は G-4 と一緒に当てる・オーナーの確認の後）。** 手元は `npm run db:reset` で 6 本とも適用され、DB 結合試験は 144 suite 通過・0 失敗（4339 件通過）。適用の手順・本番の事前の確認・ロールバックは [移行運用](../../06_Operations/db-migrations.md) の「波 2 権限・検索・制約・置き場の移行 6 本」に書いた。表・列・FK の増減はない（`stockists.type` の NULL 可と CHECK 7 本の追加だけが列の定義の変更）。上の 2・3・4 章の定義元は基準スキーマ（`20260901102912_remote_schema.sql`）のままで、そこでは anon・authenticated・postgres・service_role に全権限が付いていた（`ALTER DEFAULT PRIVILEGES` はどこにも無い）。本節はその後の差分である。
+
+### 権限（anon・authenticated に残すもの）
+
+| 対象 | 移行 | 変更後の権限 |
+| --- | --- | --- |
+| `public.items` | 130200 | anon・authenticated は表の権限をすべて失い、**公開 21 列の SELECT だけ**（`id`・`name`・`description`・`price`・`category`・`image_url`・`image_urls`・`colors`・`sizes`・`product_details`・`status`・`created_at`・`updated_at`・`material`・`origin`・`sewing_region`・`care`・`season`・`product_note`・`made_to_order_lead_days`・`return_ineligible`）。原価 2 列（`pattern_cost`・`mass_production_cost`）は service_role だけ。`product_note` は顧客向けなので公開のまま。管理の書き込みは service role。新しい列は移行が GRANT するまで見えない（自己検査が、公開列にも原価列にも無い列を見つけると移行を止める） |
+| `public.item_cost_history` | 130200 | 「Allow all」の PUBLIC 方針を外し、authenticated の SELECT と、方針 `admin item_cost_history read by finance permission`（`admin.finance.read`）だけ。書き込みは service_role。一般会員の JWT の select は権限の誤りでなく「200 で 0 件」。読む画面・窓口・関数は `src`・`scripts` に無い |
+| `public.sessions`・`password_reset_tokens`・`rate_limit_counters`・`audit_logs`・`audit_logs_backups` と連番 `rate_limit_counters_id_seq` | 130200 | anon・authenticated は何も持たない（RESTRICTIVE の deny 方針は二つ目の関門として残す）。呼び手は service role か SECURITY DEFINER の関数だけ |
+| `public.profiles` | 130200 | anon は全権限を失う。authenticated は SELECT・INSERT・UPDATE・DELETE のみ（TRUNCATE・REFERENCES・TRIGGER・MAINTAIN を外す。`/api/profile` が利用者の JWT で書くため） |
+| `public.legal_archive_runs`・`order_revisions`・`stripe_balance_transactions`・`stripe_payouts`・`stripe_refunds` | 130200（5 の節。2026-10-27 追加） | anon・authenticated から INSERT・UPDATE・DELETE・TRUNCATE・REFERENCES・TRIGGER・MAINTAIN を外す。**SELECT は触らない**（手元では anon が 5 表を、authenticated が `stripe_*` 3 表を読める権限が残るが、RLS があり `stripe_*` は読む方針が無く、`legal_archive_runs`・`order_revisions` の読む方針は authenticated だけなので行は出ない。余分な SELECT を外すかは別の判断）。本番は書き込み側の権限が元から無いので 5 表は本番では変化なし |
+| 連番 `public.order_revisions_id_seq`（上の 5 表のうち `order_revisions` の所有する連番。`pg_depend` で探して 1 本だけ） | 130200（5 の節） | PUBLIC・anon・authenticated から全権限を外す。**本番は anon = authenticated = SELECT・UPDATE・USAGE のままなので、この連番だけは本番の実変更**。`order_revisions` は SECURITY DEFINER の trigger（`private.record_order_revision`）が書く |
+| `public.looks`・`look_items`・`news_articles`・`stockists` | 130300 | anon・authenticated は **SELECT だけ**（行を見せるかは既存の公開の読む方針と、authenticated の管理者の枝が決める）。書き込み方針 `admin … manage by permission insert / update / delete` は消さずに残す（権限を誰かが戻した時の二つ目の関門） |
+| `public.item_color_presets` | 130300 | authenticated は SELECT だけ。**anon は何も持たない**（読む方針が `admin item_color_presets read by permission` の authenticated だけで、anon は元から 0 件の 200 だった。今は 42501） |
+| 連番 `public.stockists_id_seq` | 130300 | PUBLIC・anon・authenticated から全権限を外す。service_role は **USAGE・SELECT だけ**（基準スキーマの SELECT・UPDATE・USAGE から UPDATE を外した。service role の INSERT は `nextval` に USAGE が要る） |
+| 連番 `public.looks_id_seq`・`news_articles_id_seq`・`item_color_presets_id_seq`（identity の連番。2026-10-27 追加） | 130300 | PUBLIC・anon・authenticated から全権限を外す。identity 列への INSERT は連番の権限を見ないので、service role の INSERT は変わらない。止めるのは Data API からの直の `nextval()`・`setval()`・`currval()`。service_role の付与は触らない |
+
+service_role の権限は移行が明示する（後の REVOKE で消えないように）。権限の一覧は [`auth_grants_inventory.integration.test.ts`](../../../tests/integration/db/auth_grants_inventory.integration.test.ts)（DATA-AUTH-006）が守り、「既知の例外」の一覧は静的な読みからの上限である。
+
+### 列の変更
+
+| 対象 | 移行 | 内容 |
+| --- | --- | --- |
+| `public.stockists.type` | 130100 | NOT NULL を外し **NULL 可**にする（CHECK `FLAGSHIP STORE`・`STORE`・`SELECT SHOP` は残し、NULL は通り、未知の値は断る）。管理の作成の窓口は `type` を送らないので、以前は 23502 で作成がいつも失敗していた |
+
+### CHECK 7 本（`NOT VALID`）
+
+130500 が足す。`NOT VALID` なので既存の行は走査せず、本番の行は書き換わらないが、以後の INSERT と **UPDATE は検査する**（旧い行は公開の切り替えの PATCH も `23514` になりうる。`VALIDATE` は本番の行の点検の後の別の移行で、この波に含めない）。
+
+| 表 | 制約名 | 条件 |
+| --- | --- | --- |
+| `looks` | `looks_theme_length_check` | `char_length(theme) BETWEEN 1 AND 200` |
+| `looks` | `looks_theme_description_length_check` | `char_length(theme_description) <= 4000` |
+| `looks` | `looks_image_urls_path_check` | NULL 要素なし、改行を含む要素なし（改行で割った数 = 要素数）、改行で連結した全体が `looks/` で始まる安全な道筋（英数字で始まる `[A-Za-z0-9._-]` の段をスラッシュでつないだもの）の並びに 1 つの正規表現で一致（空配列は可） |
+| `news_articles` | `news_articles_title_length_check` | `char_length(title) <= 200` |
+| `news_articles` | `news_articles_content_length_check` | `char_length(content) <= 2000` |
+| `news_articles` | `news_articles_detailed_content_length_check` | `char_length(detailed_content) <= 10000` |
+| `news_articles` | `news_articles_image_url_path_check` | `image_url ~ '^news/…'`（`looks/` が `news/` になるだけで道筋の形は同じ） |
+
+道筋の判定はアプリの `isOwnLookImagePath`・`isOwnNewsImagePath` と同じ式を、補助関数を作らずに直接書いた（ADR-0162。CHECK は書く側の役で評価されるので、関数を挟むと EXECUTE の付与が増える）。
+
+### 関数と方針
+
+| 対象 | 移行 | 内容 |
+| --- | --- | --- |
+| `public.admin_update_look(bigint, integer, text, text, text, text[], text, bigint[])` | 130500 | `looks` の行の更新と `look_items` の入れ替え（削除→重複を除いて挿入）を **1 取引**で行う。`SECURITY INVOKER`・`search_path = ''`・戻り値は更新**前**の `image_urls`（窓口が置き換わった画像を置き場から消すのに使う）。行を `SELECT … FOR UPDATE` で先に締め、同時の PUT は順に走る。`_image_urls` が NULL なら今の画像を保つ。関連の段の失敗（外部キー違反 `23503` 以外）は `LOOK_ITEMS_WRITE_FAILED`（`P0001`）に付け直し、行の更新ごと巻き戻る。行が無ければ `LOOK_NOT_FOUND`（`P0002`）。EXECUTE は service_role だけ（ADR-0163） |
+| `public.look_items` の読む方針 | 130500 | 旧い `Anyone can view look items for published looks`（anon）・`authenticated look items read` を、`anon reads links of published looks to published items`・`authenticated reads published links, admins read all` に作り直す。条件は「親の LOOK が `published` **かつ** 紐づく商品が `published`」。authenticated だけ、管理者の枝 `has_permission('admin.looks.read')` が残る（管理の読みへの aal2 は波 5） |
+| `public.search_items`・`search_looks`・`search_news`（`text, integer`） | 130400 | 署名・戻り列・`SET search_path TO 'public', 'public', 'pg_temp'`・SECURITY INVOKER・所有者・ACL は変えない。`limit_count` は NULL・0・負数も含めて **1〜8 に丸める**（以前は 21 で 21 件、10000 で全公開行、NULL で無制限）。検索語は**先頭 100 字**。LIKE の逃がしは `\` を先に二重にしてから `%`・`_` を逃がし、パターンは LATERAL で 1 回だけ組む |
+| `public.search_public_items`・`search_public_looks`・`search_public_news`（`text, integer`） | 130400 | DROP せず、PUBLIC・anon・authenticated の EXECUTE を外す（呼ぶ所が `src` に無く、検索語を逃がしていなかった）。owner の postgres と service_role は EXECUTE を持ち続ける。anon・authenticated が呼ぶと 42501 |
+
+### 置き場の設定（`storage.buckets`）
+
+表ではないが、移行 130600 が設定を持つ。`look-images`・`news-images` は `public = false`・`file_size_limit = 5242880`（5 MiB）・`allowed_mime_types = image/jpeg・image/png・image/webp・image/gif`。本番に既にあるので `ON CONFLICT (id) DO UPDATE` で 3 つの設定を合わせる（既存のファイルは触らず、5 MiB 超の既存ファイルは残る）。`storage.objects` に置き場を名指しする方針は作らない（anon・authenticated は置き場に何もできず、読み書きは service role と署名付き URL だけ）。`item-images` は対象外で触らない。手元の見本 `supabase/seed.sql` の行は `ON CONFLICT DO NOTHING`、見本の画像の道筋は `items/e2e/`・`looks/e2e/`・`news/e2e/` の形。

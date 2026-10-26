@@ -28,7 +28,7 @@ import { withLocalDb } from './order-email-test-utils';
 export { withLocalDb };
 
 /** 手元の Storage に global-setup が置く見本の画像（署名できる本物の置き場の道筋） */
-export const SEEDED_ITEM_IMAGE = 'e2e/item-3-1.png';
+export const SEEDED_ITEM_IMAGE = 'items/e2e/item-3-1.png';
 /** 公開の商品を入れる日付。見本のいちばん新しい商品（2026-06-07 12:00）より古く、2番目（2026-06-06 12:00）より新しい */
 export const PUBLISHED_ITEM_TOP_AT = '2026-06-07T11:00:00Z';
 /** 公開の NEWS を入れる日付。見本のいちばん新しい NEWS（2026-05-14）の次に新しい */
@@ -94,7 +94,7 @@ export async function insertDraftContent(db: PgClient, rows: HomeRows, tag: stri
 
   const news = await db.query(
     `insert into public.news_articles (title, category, published_date, image_url, content, detailed_content, status)
-     values ($1, 'EVENT', '2026-05-15', 'e2e/news-1.png', 'E2E home draft', 'E2E home draft', 'private') returning id`,
+     values ($1, 'EVENT', '2026-05-15', 'news/e2e/news-1.png', 'E2E home draft', 'E2E home draft', 'private') returning id`,
     [names.news],
   );
   rows.newsIds.push(Number(news.rows[0].id));
@@ -130,7 +130,7 @@ export async function insertPublishedNews(db: PgClient, rows: HomeRows, input: {
   assertLocalE2eDb(db);
   const result = await db.query(
     `insert into public.news_articles (title, category, published_date, image_url, content, detailed_content, status)
-     values ($1, 'EVENT', $2::date, 'e2e/news-1.png', 'E2E home published', 'E2E home published', 'published') returning id`,
+     values ($1, 'EVENT', $2::date, 'news/e2e/news-1.png', 'E2E home published', 'E2E home published', 'published') returning id`,
     [input.title, input.publishedDate],
   );
   rows.newsIds.push(Number(result.rows[0].id));

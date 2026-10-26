@@ -19,7 +19,7 @@
 | `DD-STOCKIST-037` | 回した CSRF の token を Cookie に付け直す | `admin-security.ts` の `applyRotatedCsrfCookie` |
 | `DD-STOCKIST-038` | 読みと変更の回数の制限（送り元と操作者の2本） | `admin-security.ts` の `enforceAdminStockistReadRateLimit`・`enforceAdminStockistMutationRateLimit` |
 
-- 結論: 管理の画面は全部が利用者の端末で動く部品で、画面では権限を確かめない。守りは窓口（`DD-STOCKIST-034`・`035`）の `authorizeAdminPermission`（token・session・DB の ACL の権限・aal2）、回数の制限（`038`）、変更の CSRF の token（`036`）、共有の proxy の Origin の確かめと、利用者の JWT で通す DB の RLS に置く
+- 結論: 管理の画面は全部が利用者の端末で動く部品で、画面では権限を確かめない。守りは窓口（`DD-STOCKIST-034`・`035`）の `authorizeAdminPermission`（token・session・DB の ACL の権限・aal2）、回数の制限（`038`）、変更の CSRF の token（`036`）、共有の proxy の Origin の確かめに置く。DB の読みは利用者の JWT で RLS に通し、書き込みは認可の後に service role で行う（ADR-0267）
 - 作成の窓口は DB の必須の列 `type` を入れないので、表が今の写しの形なら作成はいつも 500 になる（推定）。存在しない店への PUT・PATCH・DELETE は 200 の成功として監査に残る
 - 単体テストは窓口の守りの順を試す1本（`tests/unit/api/admin/stockists-security.test.ts`）だけ。分岐を全部通すのに要るテストを各項目の「テスト観点」に挙げた
 - 番号は `DD-STOCKIST-030`〜`059` をこの頁で使う。今は `030`〜`038` を使い、`039` 以降は空けておく
@@ -46,7 +46,7 @@
 | 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit` | 送り元と操作者の数え。超えると 429、数えの DB が使えないと 503 |
 | CSRF の Cookie | `src/lib/cookie.ts` の `csrfCookieName`・`cookieOptionsForCsrf` | 回した token を付け直す時の Cookie の名前と設定 |
 | 監査 | `src/lib/audit.ts` の `logAudit` | 変更の成功・入力の誤り・DB の誤りを `audit_logs` に残す |
-| Supabase の client | `src/lib/supabase/server.ts` の `createClient(request)` | 要求の JWT を付けた client で表を扱う |
+| Supabase の client | `src/lib/supabase/server.ts` の `createClient(request)`・`createServiceRoleClient()` | 読みは要求の JWT を付けた client、書き込みは認可の後に service role の client で表を扱う（ADR-0267） |
 | 書き換えの送り方 | `src/lib/client-fetch.ts` の `clientFetch` | 画面から窓口へ送る。変更に `x-csrf-token` を付ける |
 | 管理画面の親 | `src/app/admin/page.tsx` | STOCKIST タブの「新規作成」のボタンと、一覧の部品の置き場 |
 | 画面の部品 | `src/components/ui/`（`Button`・`Card`・`StatusBadge`・`SingleSelect`・`TextField`） | カード・札・ボタン・フォームの欄 |
@@ -360,7 +360,7 @@ SCR-STOCKIST-006、FLOW-STOCKIST-002（その上は FR-ADMIN-006）
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-STOCKIST-001、API-STOCKIST-002、ARC-STOCKIST-002、ARC-STOCKIST-004、DATA-STOCKIST-001、DATA-STOCKIST-002、DATA-STOCKIST-004、STATE-STOCKIST-001、SEC-STOCKIST-006、SEC-STOCKIST-009、SEC-STOCKIST-010、SEC-STOCKIST-011、SEC-STOCKIST-014 |
-| 根拠 | 非公開を含む一覧と店の作成は、窓口で `admin.stockists.read`・`admin.stockists.manage` と aal2 を確かめ（SEC-STOCKIST-006、DATA-STOCKIST-004）、表の操作も利用者の JWT で RLS に通して、窓口の確かめが崩れても DB が断るようにする（ARC-STOCKIST-002、DATA-STOCKIST-002）。変更の送り元は、窓口に届く前に proxy の Origin の確かめが見る（ARC-STOCKIST-004）。表に長さの制約が無いので入口で6つの値の必須と上限と字の種類を確かめ（API-STOCKIST-002、DATA-STOCKIST-001、SEC-STOCKIST-011）、状態は2つの値に限る（STATE-STOCKIST-001）。誤りの応答は項目の名前だけの固定の本文にして制約の中身を出さず、壊れた JSON は 400 にする（SEC-STOCKIST-014）。一覧は id の順で、画面で使う 8 列だけを返す（API-STOCKIST-001、SEC-STOCKIST-009） |
+| 根拠 | 非公開を含む一覧と店の作成は、窓口で `admin.stockists.read`・`admin.stockists.manage` と aal2 を確かめ（SEC-STOCKIST-006、DATA-STOCKIST-004）、一覧の読みは利用者の JWT で RLS に通し、書き込みは認可・回数の制限・CSRF の後に service role で行う（ARC-STOCKIST-002、DATA-STOCKIST-002、ADR-0267）。変更の送り元は、窓口に届く前に proxy の Origin の確かめが見る（ARC-STOCKIST-004）。表に長さの制約が無いので入口で6つの値の必須と上限と字の種類を確かめ（API-STOCKIST-002、DATA-STOCKIST-001、SEC-STOCKIST-011）、状態は2つの値に限る（STATE-STOCKIST-001）。誤りの応答は項目の名前だけの固定の本文にして制約の中身を出さず、壊れた JSON は 400 にする（SEC-STOCKIST-014）。一覧は id の順で、画面で使う 8 列だけを返す（API-STOCKIST-001、SEC-STOCKIST-009） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/stockists/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
@@ -392,7 +392,7 @@ API-STOCKIST-001、API-STOCKIST-002、ARC-STOCKIST-002、ARC-STOCKIST-004、DATA
 3. CSRF の token を確かめ、拒否の応答があれば返す（DD-STOCKIST-036）
 4. 監査の送り元とブラウザの名を見出しから取る
 5. 本文を `request.json().catch(() => null)` で読み、`stockistWriteSchema` で6つの値を確かめる（前後の空白は除いた値になる）
-6. 要求の JWT の client で6つの値の1行を入れ、新しい `id` を返させる。`type` は入れない
+6. `createServiceRoleClient()` で service role の client を作り（利用者の JWT の client は作らない。ADR-0267）、6つの値の1行を入れ、新しい `id` を返させる。`type` は入れない
 7. 監査 `admin.stockists.create`（success、`resource_id` は新しい id の文字、`detail` は `Created stockist: <店舗名>`）を残す
 8. 201 `{success:true, id}` を作り、回した CSRF の token があれば Cookie に付けて返す（DD-STOCKIST-037）
 
@@ -420,11 +420,11 @@ POST は `stockists` に1行を足す（DATA-STOCKIST-001）。状態は送ら�
 
 #### 認証認可
 
-GET は `admin.stockists.read`、POST は `admin.stockists.manage`、どちらも有効な session と aal2。表は利用者の JWT の client で RLS（DATA-STOCKIST-002）を通し、service role を使わない。CSRF は proxy の Origin の確かめ（ARC-STOCKIST-004）と窓口の token の確かめ。
+GET は `admin.stockists.read`、POST は `admin.stockists.manage`、どちらも有効な session と aal2。GET の表は利用者の JWT の client で RLS（DATA-STOCKIST-002）を通し、POST の表は認可・回数の制限・CSRF・入力の確かめの後に service role の client で書く（ADR-0267）。CSRF は proxy の Origin の確かめ（ARC-STOCKIST-004）と窓口の token の確かめ。
 
 #### テスト観点
 
-（`tests/unit/api/admin/stockists-security.test.ts` に足すか、`tests/unit/api/admin/stockists-route.test.ts` の名前を想定。`authorizeAdminPermission`・`createClient`・`logAudit`・`admin-security` の関数を差し替える）
+（`tests/unit/api/admin/stockists-security.test.ts` に足すか、`tests/unit/api/admin/stockists/stockists-route.test.ts` の名前を想定。`authorizeAdminPermission`・`createClient`・`createServiceRoleClient`・`logAudit`・`admin-security` の関数を差し替える。書き込みは `createServiceRoleClient` を1回呼び `createClient` を呼ばないこと、認可・回数の制限・CSRF・入力の誤りの時はどちらの client も作らないことを確かめる）
 
 - GET・POST とも、認可が `ok:false` の時はその応答をそのまま返し、表に触らない。求める権限が GET は `admin.stockists.read`、POST は `admin.stockists.manage`
 - GET・POST とも、回数の制限が応答を返した時はそれを返し、表に触らない。GET は読みの枠、POST は変更の枠を、`authz.userId` で呼ぶ（今ある GET の試験を引き継ぐ）
@@ -440,14 +440,14 @@ GET は `admin.stockists.read`、POST は `admin.stockists.manage`、どちら�
 - POST で insert の失敗の時に監査 error と 500 `Failed to save stockist`
 - POST の成功で監査 success（`resource_id` が新しい id の文字、`detail` に店舗名）と 201 `{success:true, id}`、`applyRotatedCsrfCookie` に応答と CSRF の結果を渡す（今ある Cookie の試験を引き継ぐ）
 - 監査の `ip` が `x-forwarded-for: " 1.2.3.4 , 5.6.7.8"` の時に `1.2.3.4`、見出しが無い時に `null`。`user_agent` がある時はその値、無い時は `null`
-- POST で認可の後に例外（例: `createClient` が投げる）の時に 500 `Internal server error`
+- POST で認可の後に例外（例: `createServiceRoleClient` が投げる）の時に 500 `Internal server error`
 
 ### DD-STOCKIST-035 管理の取扱店1件の読み・更新・切り替え・削除の窓口
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-STOCKIST-003、API-STOCKIST-004、API-STOCKIST-005、API-STOCKIST-006、ARC-STOCKIST-002、ARC-STOCKIST-004、DATA-STOCKIST-001、DATA-STOCKIST-002、DATA-STOCKIST-004、STATE-STOCKIST-001、SEC-STOCKIST-006、SEC-STOCKIST-009、SEC-STOCKIST-010、SEC-STOCKIST-011、SEC-STOCKIST-013、SEC-STOCKIST-014 |
-| 根拠 | 編集の画面に非公開の店の中身を渡す読みと、店を変える3つの操作は、窓口で権限と aal2 を確かめ（SEC-STOCKIST-006、DATA-STOCKIST-004）、表も利用者の JWT で RLS に通す（ARC-STOCKIST-002、DATA-STOCKIST-002）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新（PUT）と分ける（API-STOCKIST-005、STATE-STOCKIST-001）。PUT は作成と同じ必須と上限を当てて決まりを1つにする（API-STOCKIST-004、DATA-STOCKIST-001）。削除は行を消して戻さない（API-STOCKIST-006）。道の id は安全に表せる正の整数だけを受け、DB へ変な値を渡さない（API-STOCKIST-003）。更新・切り替え・削除は変えた行を受け取り、0 行は成功にせず 404 にして、削除の監査に消した店の中身を残す（SEC-STOCKIST-013）。誤りの応答は項目の名前だけの固定の本文にし、壊れた JSON は 400 にする（SEC-STOCKIST-014）。変更の送り元は、窓口に届く前に proxy の Origin の確かめが見る（ARC-STOCKIST-004） |
+| 根拠 | 編集の画面に非公開の店の中身を渡す読みと、店を変える3つの操作は、窓口で権限と aal2 を確かめ（SEC-STOCKIST-006、DATA-STOCKIST-004）、1件の読みは利用者の JWT で RLS に通し、書き込みは認可・回数の制限・CSRF の後に service role で行う（ARC-STOCKIST-002、DATA-STOCKIST-002、ADR-0267）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新（PUT）と分ける（API-STOCKIST-005、STATE-STOCKIST-001）。PUT は作成と同じ必須と上限を当てて決まりを1つにする（API-STOCKIST-004、DATA-STOCKIST-001）。削除は行を消して戻さない（API-STOCKIST-006）。道の id は安全に表せる正の整数だけを受け、DB へ変な値を渡さない（API-STOCKIST-003）。更新・切り替え・削除は変えた行を受け取り、0 行は成功にせず 404 にして、削除の監査に消した店の中身を残す（SEC-STOCKIST-013）。誤りの応答は項目の名前だけの固定の本文にし、壊れた JSON は 400 にする（SEC-STOCKIST-014）。変更の送り元は、窓口に届く前に proxy の Origin の確かめが見る（ARC-STOCKIST-004） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/stockists/[id]/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
@@ -498,13 +498,13 @@ API-STOCKIST-003〜006、ARC-STOCKIST-002、ARC-STOCKIST-004、DATA-STOCKIST-001
 | PUT・PATCH | 本文が JSON でない（と JSON の `null`） | 監査 failure（`Invalid JSON`）、400 `{error:'Invalid request'}`。表に触れない |
 | PUT | 値の形が合わない | 監査 `admin.stockists.update`（failure、`Validation failed`）、400 `{error:'Invalid request', fields:[項目の名前]}`（`details` は出さない） |
 | PATCH | `status` が2つの外・無い | 監査 `admin.stockists.patch`（failure、`Validation failed`）、400 `{error:'Invalid request', fields:['status']}` |
-| PUT・PATCH・DELETE | 変えた（消した）行が 0 件（無い id、または RLS が隠した行） | 監査（failure、`Stockist not found`）、404 `{error:'Stockist not found'}`。成功の監査は書かない |
+| PUT・PATCH・DELETE | 変えた（消した）行が 0 件（無い id） | 監査（failure、`Stockist not found`）、404 `{error:'Stockist not found'}`。成功の監査は書かない |
 | PUT | 表の更新に失敗 | 監査 error（`DB update failed`）、500 `Failed to update stockist`（記録は `{ code }` だけ） |
 | PATCH | 表の更新に失敗 | 監査 error（`DB update failed`）、500 `Failed to update status`（記録は `{ code }` だけ） |
 | DELETE | 表の削除に失敗 | 監査 error（`DB delete failed`）、500 `Failed to delete stockist`（記録は `{ code }` だけ） |
 | 全部 | 例外 | 500 `Internal server error` |
 
-- 存在しない id への PUT・PATCH・DELETE は 404 になり、成功の監査を書かない（SEC-STOCKIST-013。2026-10-26。以前は 200 と成功の監査だった）。0 行は「無い」と「RLS が隠した」の両方なので、aal2 でない session の書き込みも 404 になる（403 でない）
+- 存在しない id への PUT・PATCH・DELETE は 404 になり、成功の監査を書かない（SEC-STOCKIST-013。2026-10-26。以前は 200 と成功の監査だった）。書き込みは service role の client で行い RLS は行を隠さないので、0 行は「その id の店が無い」だけを表す。aal2 でない session は書き込みの前に 403 で止まる（ADR-0267）
 - PUT・PATCH は前の状態を読まず、同じ状態への変更も成功として監査に残す（STATE-STOCKIST-001）
 - 削除の成功の監査は、消した店の id・名前・住所・状態を `metadata.deleted` に残す。電話・営業時間は残さない。`maskAuditEvent` は `metadata` の最上位の鍵だけを伏せ字にするので、`deleted` は伏せられない
 - SEC-STOCKIST-012 は満たさない。SEC-STOCKIST-009・011・013・014 は 2026-10-26 に満たした（DD-STOCKIST-034 と同じ `schemas.ts` を使う）
@@ -515,7 +515,7 @@ PUT は6つの値を、PATCH は `status` を書き換え、`updated_at` は DB 
 
 #### 認証認可
 
-GET は `admin.stockists.read`、ほかは `admin.stockists.manage`、どれも有効な session と aal2。表は利用者の JWT の client で RLS（DATA-STOCKIST-002）を通す。CSRF は proxy の Origin の確かめ（ARC-STOCKIST-004）と窓口の token の確かめ。id の形の確かめが認可より前なので、ログインしていない要求にも 400 を返す（害は小さい、推定）。
+GET は `admin.stockists.read`、ほかは `admin.stockists.manage`、どれも有効な session と aal2。GET の表は利用者の JWT の client で RLS（DATA-STOCKIST-002）を通し、PUT・PATCH・DELETE の表は認可・回数の制限・CSRF・入力の確かめの後に service role の client で書く（ADR-0267）。CSRF は proxy の Origin の確かめ（ARC-STOCKIST-004）と窓口の token の確かめ。id の形の確かめが認可より前なので、ログインしていない要求にも 400 を返す（害は小さい、推定）。
 
 #### テスト観点
 

@@ -5,14 +5,14 @@
  * @impl IMPL-STOCKIST-142
  * @design DD-STOCKIST-035
  * @remarks 道の id は認可より前に正の整数かを確かめ、形の悪い値を DB へ渡さない。
- * 読みと変更で権限を分け、変更は認可・回数の制限・CSRF の token の順に確かめる。回数の制限を認可の後に呼ぶので、認可で断った要求は数えない。これは SEC-STOCKIST-020 を満たさない（推定）。権限は読みと変更で分ける（SEC-STOCKIST-006）。
+ * 読みと変更で権限を分け、変更は認可・回数の制限・CSRF の token の順に確かめる。書き込みは認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（ADR-0267）。回数の制限を認可の後に呼ぶので、認可で断った要求は数えない。これは SEC-STOCKIST-020 を満たさない（推定）。権限は読みと変更で分ける（SEC-STOCKIST-006）。
  * 1 件の読みは内部の列を除いた 8 列だけ返す（SEC-STOCKIST-009）。壊れた JSON は 500 でなく 400、検証の誤りは項目の名前だけの固定の本文にする（SEC-STOCKIST-013・014）。
  * 更新・切り替え・削除は結果が 0 行なら 404 にして成功の監査を書かない。削除の監査には消した店の id・名前・住所・状態だけを残す（SEC-STOCKIST-013）。DB の誤りは符号だけを記録する。
  * 認可の拒否・回数の制限・CSRF の拒否を含む全部の応答を、export で withNoStore に通して `Cache-Control: private, no-store` にし（SEC-STOCKIST-010）、外側の catch の記録は名前と符号だけにする（SEC-STOCKIST-014）。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { withNoStore } from '@/lib/http/no-store';
@@ -141,7 +141,7 @@ async function putStockist(request: Request, { params }: { params: Promise<{ id:
       return toInvalidStockistResponse(parsed.error);
     }
 
-    const supabase = await createClient(request);
+    const supabase = await createServiceRoleClient();
 
     const { data, error } = await supabase
       .from('stockists')
@@ -268,7 +268,7 @@ async function patchStockist(request: Request, { params }: { params: Promise<{ i
       return toInvalidStockistResponse(parsed.error);
     }
 
-    const supabase = await createClient(request);
+    const supabase = await createServiceRoleClient();
 
     const { data, error } = await supabase
       .from('stockists')
@@ -355,7 +355,7 @@ async function deleteStockist(request: Request, { params }: { params: Promise<{ 
     const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
     const userAgent = request.headers.get('user-agent') ?? null;
 
-    const supabase = await createClient(request);
+    const supabase = await createServiceRoleClient();
 
     const { data, error } = await supabase
       .from('stockists')

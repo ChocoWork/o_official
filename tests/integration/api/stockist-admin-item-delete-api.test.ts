@@ -476,9 +476,13 @@ describe('DELETE /api/admin/stockists/[id]（取扱店の削除）', () => {
     expect(verifyAccessToken).not.toHaveBeenCalled();
   });
 
-  test('API-STOCKIST-006 client を作れない例外も 500 Internal server error を返し、監査を残さない', async () => {
+  test('API-STOCKIST-006 書き込みの service role の client を作れない例外も 500 Internal server error を返し、監査を残さない', async () => {
     setup({ tables: okTables() });
-    createClient.mockRejectedValue(new Error('no client'));
+    // 認可・回数の制限を過ぎた後（書き込みの client の作成）だけ失敗させる。
+    createServiceRoleClient.mockImplementation(async () => {
+      if (incrementCounter.mock.calls.length > 0) throw new Error('no client');
+      return client;
+    });
 
     const res = await DELETE(makeRequest(), ctx());
 
@@ -495,7 +499,7 @@ describe('DELETE /api/admin/stockists/[id]（取扱店の削除）', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
-    expect(createClient).toHaveBeenCalledWith(request);
+    expect(createClient).not.toHaveBeenCalled();
     expect(jsonMock(request)).not.toHaveBeenCalled();
     expect(tableCalls('stockists', 'delete')).toEqual([
       [['delete', []], ['eq', ['id', 7]], ['select', ['id, name, address, status']]],
