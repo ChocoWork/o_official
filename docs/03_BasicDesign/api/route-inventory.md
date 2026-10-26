@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> G-4 Task 7 確認日: 2026-10-26。旧い一覧の `GET /api/admin/orders`（route.ts）を1ファイル/1メソッド削除した。Route Handler は160ファイル・203メソッド、表は159行・202メソッド。
+
 > G-4 Task 5 確認日: 2026-10-26。入替store・POST/候補GET・clientと準備中0件の権限カタログを反映。追加PostgRESTケースはcontrollerのDB実行待ち。
 
 > G-4 Task 3 確認日: 2026-10-26。一覧・CSV・詳細のGETを3ファイル/3メソッド追加し、管理履歴を拡張。旧一覧はTask 7まで維持。
@@ -8,7 +10,7 @@
 
 ## 概要
 
-現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。G-0 の2入口と G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口（`GET /api/admin/purchase-orders`・`GET /api/admin/purchase-orders/[id]`）と Task 6 の発注先・メモの訂正・数量の確定と訂正・残りの打切りの入口（`PATCH /api/admin/purchase-orders/[id]`・`POST /api/admin/purchase-orders/[id]/quantities`・`POST /api/admin/purchase-orders/[id]/short-closures`）と Task 7 の受け取り・受け取りの取消の入口（`POST /api/admin/purchase-orders/[id]/receipts`・`POST /api/admin/purchase-orders/[id]/receipts/[receiptId]/reversals`）と Task 8 の取引書類の原本の6入口（予約・署名つき送り先の出し直し・確定・訂正と無効化の `POST` 4本、閲覧リンクと書類検索の `GET` 2本）と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）と G-3 Task 4 の発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）と G-3 Task 5 の発送確定（`POST /api/admin/shipment-slips/[id]/confirm`）と G-3 Task 6 の発送の取消（`POST /api/admin/shipment-slips/[id]/cancel`）と G-3 Task 7 の伝票番号の入力・訂正（`POST /api/admin/shipment-slips/[id]/tracking`）と手動の配達済み（`POST /api/admin/shipment-slips/[id]/delivered`）と 波1-A の Google ログイン開始の POST（`POST /api/auth/oauth/start`）とログインの後の行き先の POST（`POST /api/auth/post-login`）を含め、Route Handler は161ファイル・204メソッド（自動の HEAD・OPTIONS は数えない。2026-10-26 静的集計）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は160行・203メソッド。
+現行リポジトリの Route Handler に定義されたパスと HTTP メソッドを示す。認証要否、入力スキーマ、レスポンス、外部公開可否はこの一覧だけでは判断できない。[APIの主要契約](api-spec.md)と各 Handler を確認する。G-0 の2入口と G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口（`GET /api/admin/purchase-orders`・`GET /api/admin/purchase-orders/[id]`）と Task 6 の発注先・メモの訂正・数量の確定と訂正・残りの打切りの入口（`PATCH /api/admin/purchase-orders/[id]`・`POST /api/admin/purchase-orders/[id]/quantities`・`POST /api/admin/purchase-orders/[id]/short-closures`）と Task 7 の受け取り・受け取りの取消の入口（`POST /api/admin/purchase-orders/[id]/receipts`・`POST /api/admin/purchase-orders/[id]/receipts/[receiptId]/reversals`）と Task 8 の取引書類の原本の6入口（予約・署名つき送り先の出し直し・確定・訂正と無効化の `POST` 4本、閲覧リンクと書類検索の `GET` 2本）と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）と G-3 Task 4 の発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）と G-3 Task 5 の発送確定（`POST /api/admin/shipment-slips/[id]/confirm`）と G-3 Task 6 の発送の取消（`POST /api/admin/shipment-slips/[id]/cancel`）と G-3 Task 7 の伝票番号の入力・訂正（`POST /api/admin/shipment-slips/[id]/tracking`）と手動の配達済み（`POST /api/admin/shipment-slips/[id]/delivered`）と 波1-A の Google ログイン開始の POST（`POST /api/auth/oauth/start`）とログインの後の行き先の POST（`POST /api/auth/post-login`）を含め、Route Handler は160ファイル・203メソッド（自動の HEAD・OPTIONS は数えない。2026-10-26 静的集計。G-4 Task 7 で旧い一覧の `GET /api/admin/orders` を削除した）。この一覧は E2E 用の `/api/e2e/server-info`（GET）を載せないため、表は159行・202メソッド。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |
@@ -89,7 +91,6 @@
 | `/api/admin/orders/[id]/returns` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/returns/route.ts) |
 | `/api/admin/orders/[id]/review` | `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/review/route.ts) |
 | `/api/admin/orders/[id]/status` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
-| `/api/admin/orders` | `GET` | [route.ts](../../../src/app/api/admin/orders/route.ts) |
 | `/api/admin/packing` | `GET` | [route.ts](../../../src/app/api/admin/packing/route.ts) （G-3 Task 3: `admin.shipping.read` ＋ `admin.orders.read`。荷作り表。発送準備中の品物の行を古い注文から返す。読むだけ。CSRF・回数制限なし） |
 | `/api/admin/payment-exceptions/[id]/resolve` | `POST` | [route.ts](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts) |
 | `/api/admin/returns/[returnId]/cancel` | `POST` | [route.ts](../../../src/app/api/admin/returns/%5BreturnId%5D/cancel/route.ts) |

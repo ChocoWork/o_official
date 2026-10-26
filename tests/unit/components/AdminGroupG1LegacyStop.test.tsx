@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import OrderSection, { type OrderItem } from '@/components/OrderSection';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import AdminPage from '@/app/admin/page';
 import type { OrderHistoryResponse } from '@/lib/orders/email/order-history';
 import {
   LEGACY_FULFILLMENT_DISABLED_TEXT,
@@ -7,17 +7,30 @@ import {
 } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 
 const mockClientFetch = jest.fn();
+let mockUserRole: 'admin' | 'supporter' = 'admin';
+let mockTab = 'ORDER';
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
+jest.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(`tab=${mockTab}`) }));
+jest.mock('@/contexts/LoginContext', () => ({
+  useLogin: () => ({ isLoggedIn: true, isAuthResolved: true, userRole: mockUserRole, isMfaVerified: true }),
+}));
+jest.mock('@/components/KpiSection', () => () => null);
+jest.mock('@/components/AccountingSection', () => () => null);
+jest.mock('@/components/NewsSection', () => () => null);
+jest.mock('@/components/ItemSection', () => () => null);
+jest.mock('@/components/LookSection', () => () => null);
+jest.mock('@/components/StockistSection', () => () => null);
+jest.mock('@/components/UserSection', () => () => null);
 
 import OrderHistoryDialog from '@/components/OrderHistoryDialog';
 
 /**
  * G-1 Task 15: 旧の発送・発送取消・伝票番号の訂正・手動の配達済み・仕上がりの手動記録と取消の画面の入口を撤去し、
- * 既存の注文一覧（OrderSection）と注文の履歴（OrderHistoryDialog）の中に、固定の案内を出す。
+ * 注文の履歴（OrderHistoryDialog）の中に、固定の案内を出す。
  * G-3: 発送・発送取消・伝票番号の訂正・手動の配達済みの案内は、荷作り表（注文一覧）と発送票（履歴）へ移った。仕上がりの手動記録は終了のまま。
+ * G-4 Task 7: 管理画面の ORDER タブは注文一覧表（/admin/orders）への入口だけになった。旧い一覧（OrderSection）と、その上の停止の文・各 dialog・旧CSVは撤去した。
  * 窓口が昔の形で canShip・canRecordCompletion・cancellable を true にしても、旧い入口は出さない。
- * 注文の取消・返金・返品・キャンセルの申し込み・履歴を開く・メールの再送は止めない。
- * FREQ-524-AC-03・FREQ-540（G-1 部分）・FREQ-533-AC-01（履歴からの票）の単体
+ * FREQ-524-AC-03・FREQ-539-AC-05・FREQ-540（G-1 部分）・FREQ-533-AC-01（履歴からの票）の単体
  */
 
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
@@ -32,42 +45,6 @@ const LEGACY_ENTRY_NAMES = [
   'この仕上がりを取り消す',
 ];
 
-/** 窓口が昔の形で発送・仕上がりを「できる」と言ってきた注文（偽の canShip・canRecordCompletion） */
-function legacyOrder(overrides: Partial<OrderItem> = {}): OrderItem {
-  return {
-    id: ORDER_ID,
-    customerName: '山田 花子',
-    customerEmail: 'hanako@example.com',
-    orderDate: '2026-10-24',
-    itemCount: '2点',
-    items: [
-      {
-        id: 'line-blouse', name: 'シルクブラウス', color: '白', size: 'M', quantity: 1, fulfillmentType: 'stock',
-        shipped: 0, inProduction: 0, readyUnshipped: 1,
-      },
-      {
-        id: 'line-coat', name: 'ウールコート', color: '黒', size: 'L', quantity: 1, fulfillmentType: 'backorder',
-        shipped: 0, inProduction: 1, readyUnshipped: 0,
-      },
-    ],
-    totalAmount: '¥38,800',
-    status: '受注生産中',
-    orderStatus: 'paid',
-    progressKey: 'in_production',
-    canRefund: true,
-    canShip: true,
-    canRecordCompletion: true,
-    canCancel: true,
-    cancelKind: 'paid',
-    cancelRequestOpen: true,
-    returnSummary: {
-      orderId: ORDER_ID, displayStatus: null, marks: [], nextAction: 'none',
-      hasReturnable: true, refundWaitingReturns: 0, requestedReturns: 0,
-    },
-    ...overrides,
-  };
-}
-
 function expectWraps(element: HTMLElement) {
   // 390/768/1280 のどの幅でも折り返す。折り返しを止める指定と、固定の幅を持たない
   expect(element.className).not.toMatch(/nowrap|truncate|\bw-\[|\bmin-w-|\bmax-w-/);
@@ -75,82 +52,120 @@ function expectWraps(element: HTMLElement) {
   expect(element.style.width).toBe('');
 }
 
-describe('注文一覧: 旧の発送・仕上がりの入口を出さず、荷作り表への案内と仕上がりの停止の文を1回ずつ出す', () => {
-  it('偽の canShip・canRecordCompletion でも「発送済みにする」「仕上がりを記録する」を出さない', () => {
-    render(
-      <OrderSection
-        orders={[legacyOrder(), legacyOrder({ id: 'other-order', canShip: true, canRecordCompletion: true })]}
-        onCancelOrder={jest.fn()}
-        onRefundOrder={jest.fn()}
-        onShowHistory={jest.fn()}
-        onShowReturns={jest.fn()}
-        onShowCancelRequest={jest.fn()}
-      />,
-    );
+function ok(body: unknown) {
+  return Promise.resolve({ ok: true, status: 200, json: async () => body });
+}
 
-    for (const name of LEGACY_ENTRY_NAMES) {
+function attentionWith(counts: { exceptions: number; reviews: number; deliveries?: number }) {
+  return {
+    data: {
+      exceptions: Array.from({ length: counts.exceptions }, () => ({})),
+      reviews: Array.from({ length: counts.reviews }, () => ({})),
+      ...(counts.deliveries === undefined ? {} : { deliveries: Array.from({ length: counts.deliveries }, () => ({})) }),
+      counts,
+    },
+  };
+}
+
+/** 窓口の差し替え。要対応の欄だけを答え、ほかは空で返す */
+function serve(attention: unknown = attentionWith({ exceptions: 0, reviews: 0 })) {
+  mockClientFetch.mockImplementation((url: string) => (String(url) === '/api/admin/order-attention' ? ok(attention) : ok({ data: {} })));
+}
+
+describe('管理画面の ORDER タブ: 注文一覧表への入口だけを出し、旧い一覧・停止の文・各 dialog・旧CSVを出さない', () => {
+  beforeEach(() => {
+    mockClientFetch.mockReset();
+    mockUserRole = 'admin';
+    mockTab = 'ORDER';
+    serve();
+  });
+
+  it.each(['admin', 'supporter'] as const)('FREQ-539-AC-05: %s の ORDER は「注文一覧表」へのリンクだけを持つ', async (role) => {
+    mockUserRole = role;
+    render(<AdminPage />);
+
+    const menu = await screen.findByRole('navigation', { name: '注文メニュー' });
+    expect(within(menu).getAllByRole('link').map((link) => link.textContent)).toEqual(['注文一覧表']);
+    expect(within(menu).getByRole('link', { name: '注文一覧表' })).toHaveAttribute('href', '/admin/orders');
+    expect(screen.getByRole('button', { name: 'ORDER' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('FREQ-539-AC-05: 旧い一覧の表・停止の文・荷作り表への案内・履歴/返金などのボタン・旧CSV・旧い絞り込みを出さない', async () => {
+    render(<AdminPage />);
+    await screen.findByRole('navigation', { name: '注文メニュー' });
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalledWith('/api/admin/order-attention', { cache: 'no-store' }));
+
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    for (const text of ['発送は荷作り表から行います。', MANUAL_COMPLETION_DISABLED_TEXT, LEGACY_FULFILLMENT_DISABLED_TEXT, '条件に一致する注文はありません', '注文一覧を読み込み中です...']) {
+      expect(screen.queryByText(text)).not.toBeInTheDocument();
+    }
+    expect(screen.queryByRole('link', { name: '荷作り表を開く' })).not.toBeInTheDocument();
+    for (const name of ['履歴', '返金', '返品', 'キャンセルの申し込み', 'キャンセル', '表示中の注文をCSV出力', '期間適用', '期間クリア', '要確認のみ', ...LEGACY_ENTRY_NAMES]) {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
     }
-  });
-
-  it('FREQ-524-AC-03: 荷作り表への案内と仕上がりの停止の文を、注文が何件あっても一覧の表の上に1回ずつ出す。行の中には出さない', () => {
-    render(<OrderSection orders={[legacyOrder(), legacyOrder({ id: 'other-order' })]} onShowHistory={jest.fn()} />);
-
-    const guide = screen.getAllByText('発送は荷作り表から行います。');
-    const manual = screen.getAllByText(MANUAL_COMPLETION_DISABLED_TEXT);
-    expect(guide).toHaveLength(1);
-    expect(manual).toHaveLength(1);
-    const link = screen.getByRole('link', { name: '荷作り表を開く' });
-    expect(link).toHaveAttribute('href', '/admin/packing');
-    const table = screen.getByRole('table');
-    // 案内 → 荷作り表を開く → 仕上がりの停止の文 の順で、どれも表の上
-    expect(guide[0].compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(link.compareDocumentPosition(manual[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    for (const element of [guide[0], link, manual[0]]) {
-      expect(table.contains(element)).toBe(false);
-      expect(element.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const label of ['取引先', '金額（下限）', '金額（上限）', '注文・決済ID', '返品']) {
+      expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
     }
-    for (const text of [guide[0], manual[0]]) expectWraps(text);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // 旧い一覧の窓口は呼ばない（窓口そのものも撤去した）。要対応の件数の読取だけ残る
+    expect(mockClientFetch.mock.calls.map(([url]) => String(url)).filter((url) => url.startsWith('/api/admin/orders'))).toEqual([]);
   });
 
-  it('FREQ-524-AC-03: 旧い発送の停止の文は注文一覧に出さない', () => {
-    render(<OrderSection orders={[legacyOrder()]} onShowHistory={jest.fn()} />);
-    expect(screen.queryByText(LEGACY_FULFILLMENT_DISABLED_TEXT)).not.toBeInTheDocument();
+  it('FREQ-539-AC-05: 要対応の欄・メールの停止の帯は ORDER タブには出さない（一覧の頁へ移した）', async () => {
+    serve({
+      data: {
+        exceptions: [{ id: 'exception-1', reason: 'unexpected_state', reasonLabel: '想定外の支払い状態', orderId: null, orderNumber: null, paymentRef: 'cs_1', firstDetectedAt: null, refundFailure: null }],
+        reviews: [],
+        counts: { exceptions: 1, reviews: 0 },
+        emailSending: { paused: true, reasonLabel: '送信元のドメインの設定' },
+      },
+    });
+    render(<AdminPage />);
+
+    await screen.findByRole('button', { name: 'ORDER 未処理 1件' });
+    expect(screen.queryByText('想定外の支払い状態')).not.toBeInTheDocument();
+    expect(screen.queryByText('お客様への注文のメールの送信を止めています')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '解決済みにする' })).not.toBeInTheDocument();
   });
 
-  it('FREQ-524-AC-03: 注文が0件でも案内と仕上がりの停止の文を1回ずつ出す。読み込み中は出さない', () => {
-    const { rerender } = render(<OrderSection orders={[]} />);
-    expect(screen.getAllByText('発送は荷作り表から行います。')).toHaveLength(1);
-    expect(screen.getAllByRole('link', { name: '荷作り表を開く' })).toHaveLength(1);
-    expect(screen.getAllByText(MANUAL_COMPLETION_DISABLED_TEXT)).toHaveLength(1);
+  it('FREQ-539-AC-05: 配送の要対応だけが2件ある時も、サイドナビの ORDER の印は2になり、KPI の帯に「配送 2件」を出す', async () => {
+    mockTab = 'KPI';
+    serve(attentionWith({ exceptions: 0, reviews: 0, deliveries: 2 }));
+    render(<AdminPage />);
 
-    rerender(<OrderSection orders={[]} isLoading />);
-    expect(screen.queryByText('発送は荷作り表から行います。')).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: '荷作り表を開く' })).not.toBeInTheDocument();
-    expect(screen.queryByText(MANUAL_COMPLETION_DISABLED_TEXT)).not.toBeInTheDocument();
+    expect(await screen.findByText('要対応0件・要確認0件・配送 2件（ORDER で確認）')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'ORDER 未処理 2件' })).toBeInTheDocument();
   });
 
-  it('注文の取消・返金・返品・キャンセルの申し込み・履歴を開くは残り、押すと注文の番号を渡す', () => {
-    const handlers = {
-      onCancelOrder: jest.fn(),
-      onRefundOrder: jest.fn(),
-      onShowHistory: jest.fn(),
-      onShowReturns: jest.fn(),
-      onShowCancelRequest: jest.fn(),
-    };
-    render(<OrderSection orders={[legacyOrder()]} {...handlers} />);
+  it('FREQ-539-AC-05: 要対応・要確認と配送が並ぶ時は、印の数に足し合わせ、帯に3つの数を出す', async () => {
+    mockTab = 'KPI';
+    serve(attentionWith({ exceptions: 1, reviews: 2, deliveries: 1 }));
+    render(<AdminPage />);
 
-    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
-      '履歴', '返金', '返品', 'キャンセルの申し込み', 'キャンセル',
-    ]);
-    fireEvent.click(screen.getByRole('button', { name: 'ORD-A1B2C3D4 の履歴' }));
-    fireEvent.click(screen.getByRole('button', { name: '返金' }));
-    fireEvent.click(screen.getByRole('button', { name: '返品' }));
-    fireEvent.click(screen.getByRole('button', { name: 'キャンセルの申し込み' }));
-    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
-    for (const handler of Object.values(handlers)) {
-      expect(handler).toHaveBeenCalledWith(ORDER_ID);
-    }
+    expect(await screen.findByText('要対応1件・要確認2件・配送 1件（ORDER で確認）')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'ORDER 未処理 4件' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['配送が0件', attentionWith({ exceptions: 1, reviews: 0, deliveries: 0 })],
+    ['配送の項目が無い昔の形', attentionWith({ exceptions: 1, reviews: 0 })],
+  ])('FREQ-539-AC-05: %s の時は、帯の文に配送を付けず、印は今までの数のまま', async (_label, attention) => {
+    mockTab = 'KPI';
+    serve(attention);
+    render(<AdminPage />);
+
+    expect(await screen.findByText('要対応1件・要確認0件（ORDER で確認）')).toBeVisible();
+    expect(screen.queryByText(/配送/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ORDER 未処理 1件' })).toBeInTheDocument();
+  });
+
+  it('FREQ-539-AC-05: 要対応・要確認・配送のどれも無い時は、帯を出さず、印は出ない', async () => {
+    mockTab = 'KPI';
+    render(<AdminPage />);
+
+    await waitFor(() => expect(mockClientFetch).toHaveBeenCalledWith('/api/admin/order-attention', { cache: 'no-store' }));
+    expect(screen.getByRole('button', { name: 'ORDER' })).toBeInTheDocument();
+    expect(screen.queryByText(/ORDER で確認/)).not.toBeInTheDocument();
   });
 });
 

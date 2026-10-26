@@ -12,6 +12,8 @@ export const PAID_CANCEL_NOTICES = {
 } as const;
 export const STRIPE_UNAVAILABLE_MESSAGE = 'Stripe の状態を確認できませんでした。時間をおいて再試行してください。';
 export const ATTENTION_NETWORK_ERROR_MESSAGE = '通信できませんでした。一覧を更新してください。';
+/** 回数の制限（429）の画面の案内。窓口の本文は英語なので使わない（配送の要対応の解決と、CSV出力） */
+export const RATE_LIMITED_MESSAGE = 'しばらくしてから、もう一度お試しください。';
 export const CANCEL_REQUEST_RESOLVED_NOTICE = 'キャンセルの申し込みを解決しました。';
 export const CANCEL_REQUEST_RESOLVE_FAILED_MESSAGE = '返金・キャンセルは記録しましたが、申し込みを解決済みにできませんでした。キャンセルの申し込みの画面で「解決済みにする」を押してください。';
 export type PendingCancelResolve = { cancelRequestId: string; orderId: string; mode: RemoveItemsRequest['mode']; lines: RemoveItemsRequest['lines'] };

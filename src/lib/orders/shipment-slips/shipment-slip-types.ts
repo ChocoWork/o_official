@@ -146,7 +146,7 @@ export const SHIPMENT_SLIP_TEXT = {
   open: '開く',
   expired: '期限切れ',
   noTracking: '伝票番号なし',
-  /** 注文一覧（OrderSection）の表の上の案内。旧い発送の操作の終了を伝え、荷作り表へ案内する */
+  /** 旧い注文一覧の表の上にあった案内（G-4 で一覧は撤去した。E2E の付け替え〔Task 11・12〕までは定義を残す） */
   orderSectionGuide: '発送は荷作り表から行います。',
   openPacking: '荷作り表を開く',
   /** 注文の履歴（OrderHistoryDialog）の上の案内 */

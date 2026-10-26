@@ -7,7 +7,7 @@
  * 支払い済みのキャンセルの画面は、目で見るために3つの画面幅の写しを test-results/group-e2/ に残す。
  */
 import { expect, test, type Page } from '@playwright/test';
-import type { OrderItem } from '@/components/OrderSection';
+import type { OrderItem } from '@/lib/orders/admin-orders/admin-order-types';
 import type { RefundErrorResponse, RefundMaterials, RefundPaymentMethod } from '@/lib/orders/refund/refund-types';
 import {
   UUID_PATTERN,

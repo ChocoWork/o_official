@@ -31,7 +31,6 @@ jest.mock('@/components/ItemSection', () => () => null);
 jest.mock('@/components/LookSection', () => () => null);
 jest.mock('@/components/StockistSection', () => () => null);
 jest.mock('@/components/UserSection', () => () => null);
-jest.mock('@/components/OrderSection', () => () => null);
 
 const SETTINGS_URL = '/api/admin/settings/shop';
 const AUTO_REFUND_NAME = '取り消した注文に届いた入金を、自動で全額返金する';
@@ -63,9 +62,6 @@ beforeEach(() => {
     }
     if (target === '/api/admin/order-attention') {
       return ok({ data: { exceptions: [], reviews: [], counts: { exceptions: 0, reviews: 0 } } });
-    }
-    if (target.startsWith('/api/admin/orders?')) {
-      return ok({ data: [], pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 } });
     }
     return ok({ data: {} });
   });
@@ -119,6 +115,52 @@ describe('管理画面の左のメニューの SETTINGS', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'ORDER' })).toHaveAttribute('aria-current', 'page'));
     expect(screen.queryByRole('heading', { name: 'ショップの設定' })).not.toBeInTheDocument();
     expect(clientFetchMock).not.toHaveBeenCalledWith(SETTINGS_URL, expect.anything());
+  });
+});
+
+/**
+ * 管理画面の左のメニューの ORDER（G-4 / FREQ-539-AC-05。注文一覧表への入口だけ）。
+ * 中身は役割で出し分けず、店長とサポーターの両方に同じ物を出す。一覧・要対応の欄・各操作は /admin/orders と /admin/orders/[id] にある。
+ */
+describe('管理画面の左のメニューの ORDER', () => {
+  const MENU = '注文メニュー';
+
+  it.each(['admin', 'supporter'] as const)('FREQ-539-AC-05: %s の ORDER は注文一覧表へのリンクだけが並び、旧い一覧の窓口は読まない', async (role) => {
+    mockUserRole = role;
+    mockSearchParams = new URLSearchParams('tab=ORDER');
+    render(<AdminPage />);
+
+    const menu = await screen.findByRole('navigation', { name: MENU });
+    expect(within(menu).getAllByRole('link').map((link) => link.textContent)).toEqual(['注文一覧表']);
+    expect(within(menu).getByRole('link', { name: '注文一覧表' })).toHaveAttribute('href', '/admin/orders');
+    expect(screen.getByRole('button', { name: 'ORDER' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(clientFetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.startsWith('/api/admin/orders'))).toEqual([]);
+  });
+
+  it('FREQ-539-AC-05: タブを移るたびに要対応の件数を読み直す（開きっぱなしの間も、バッジと KPI の帯を新しく保つ）', async () => {
+    mockSearchParams = new URLSearchParams('tab=ORDER');
+    render(<AdminPage />);
+    await screen.findByRole('navigation', { name: '注文メニュー' });
+    const attentionReads = () => clientFetchMock.mock.calls.filter(([url]) => String(url) === '/api/admin/order-attention').length;
+    await waitFor(() => expect(attentionReads()).toBeGreaterThanOrEqual(1));
+    const before = attentionReads();
+
+    fireEvent.click(screen.getByRole('button', { name: 'INVENTORY' }));
+    await screen.findByRole('navigation', { name: '在庫・発注メニュー' });
+    await waitFor(() => expect(attentionReads()).toBe(before + 1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'ORDER' }));
+    await screen.findByRole('navigation', { name: '注文メニュー' });
+    await waitFor(() => expect(attentionReads()).toBe(before + 2));
+  });
+
+  it('FREQ-539-AC-05: ORDER の外（INVENTORY）では注文メニューを出さない', async () => {
+    mockSearchParams = new URLSearchParams('tab=INVENTORY');
+    render(<AdminPage />);
+    await screen.findByRole('navigation', { name: '管理メニュー' });
+
+    expect(screen.queryByRole('navigation', { name: MENU })).not.toBeInTheDocument();
   });
 });
 

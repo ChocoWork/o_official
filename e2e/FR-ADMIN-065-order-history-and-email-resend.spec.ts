@@ -7,7 +7,7 @@
  * 履歴のダイアログと送ったメールの中身は、目で見るために3つの画面幅の写しを test-results/group-d/ に残す。
  */
 import { expect, test, type Page } from '@playwright/test';
-import type { OrderItem } from '@/components/OrderSection';
+import type { OrderItem } from '@/lib/orders/admin-orders/admin-order-types';
 import type { OrderEmailContentResponse, OrderHistoryEmailEntry, OrderHistoryResponse } from '@/lib/orders/email/order-history';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 import { createActor, createPaidOrder, mailsTo, runWorkerOnce, uniqueEmail, withLocalDb } from './order-email-test-utils';

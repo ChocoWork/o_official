@@ -13,7 +13,6 @@ const mockAudit = jest.fn();
 const mockMail = jest.fn();
 const mockTracking = jest.fn();
 const mockResolve = jest.fn();
-const mockSummaries = jest.fn();
 const mockCreateStore = jest.fn();
 jest.mock('@/lib/auth/admin-rbac', () => ({ authorizeAdminPermission: (...args: unknown[]) => mockAuthorize(...args) }));
 jest.mock('@/lib/csrfMiddleware', () => ({ requireCsrfOrDeny: () => mockCsrf() }));
@@ -24,39 +23,18 @@ jest.mock('@/lib/orders/tracking/delivery-schedule', () => ({ scheduleDeliveryTr
 jest.mock('@/lib/orders/tracking/delivery-store', () => ({
   ...jest.requireActual('@/lib/orders/tracking/delivery-store'),
   resolveDeliveryAttention: (...args: unknown[]) => mockResolve(...args),
-  listOrderDeliverySummaries: (...args: unknown[]) => mockSummaries(...args),
 }));
-// 一覧は配送の集計以外の依存を固定し、状態の絞り込み・ページ件数を観測する。
-const mockQueryCalls: unknown[][] = [];
 const ORDER = 'a1111111-1111-4111-8111-111111111111';
 const FULFILLMENT = 'b1111111-1111-4111-8111-111111111111';
 const KEY = 'c1111111-1111-4111-8111-111111111111';
-const mockListRows = [{ id: ORDER, status: 'shipped', total_amount: 100, refunded_amount: 0, currency: 'jpy',
-  created_at: '2026-10-21T00:00:00Z', order_items: [], payment_intent_id: null }];
-const mockQuery: Record<string, unknown> = {};
-for (const name of ['select', 'order', 'eq', 'is', 'in', 'not', 'gte', 'lte', 'or', 'range']) {
-  mockQuery[name] = (...args: unknown[]) => { mockQueryCalls.push([name, ...args]); return mockQuery; };
-}
-mockQuery.then = (resolve: (value: unknown) => unknown) => resolve({ data: mockListRows, count: 41, error: null });
-const mockStore = { from: () => mockQuery };
+const mockStore = {};
 jest.mock('@/lib/supabase/server', () => ({
   createServiceRoleClient: () => mockCreateStore(), createClient: async () => mockStore,
-}));
-jest.mock('@/lib/stripe/server', () => ({ getStripeServerClient: jest.fn() }));
-jest.mock('@/lib/orders/fulfillment/fulfillment-store', () => ({ listOrderLineFulfillment: async () => new Map() }));
-jest.mock('@/lib/orders/refund/refund-store', () => ({ listOrderRefundSummaries: async () => new Map() }));
-jest.mock('@/lib/orders/returns/return-store', () => ({
-  countReturnAttention: async () => ({ requested: 2, refundWaiting: 3 }), listOrderReturnSummaries: async () => new Map(),
-}));
-jest.mock('@/lib/orders/returns/cancel-request-reads', () => ({
-  countOrdersWithOpenCancelRequest: async () => 0, listOrderIdsWithOpenCancelRequest: async () => [],
-  findOrderIdsWithOpenCancelRequest: async () => new Set(),
 }));
 
 import { POST as tracking } from '@/app/api/admin/orders/[id]/fulfillments/[fulfillmentId]/tracking/route';
 import { POST as delivered } from '@/app/api/admin/orders/[id]/fulfillments/[fulfillmentId]/delivered/route';
 import { POST as resolveAttention } from '@/app/api/admin/order-attention/deliveries/[attentionId]/resolve/route';
-import { GET as orders } from '@/app/api/admin/orders/route';
 import { DeliveryOperationError, DeliveryStoreError } from '@/lib/orders/tracking/delivery-store';
 import { DELIVERY_ERROR_MESSAGES } from '@/lib/orders/tracking/delivery-messages';
 import { DELIVERY_ERROR_CODES } from '@/lib/orders/tracking/delivery-types';
@@ -65,7 +43,8 @@ import { LEGACY_FULFILLMENT_DISABLED_TEXT } from '@/lib/orders/fulfillment/legac
 
 /**
  * G-1 Task 14: 伝票番号の訂正（tracking）と手動の配達済み（delivered）は止めた。権限 → CSRF → 回数の制限の後、
- * 入力を読まずに 410 と固定の本文（LEGACY_FULFILLMENT_DISABLED）を返す。配送の要対応の解決（resolve）と一覧の読取は今のまま。
+ * 入力を読まずに 410 と固定の本文（LEGACY_FULFILLMENT_DISABLED）を返す。配送の要対応の解決（resolve）は今のまま。
+ * 旧い一覧の窓口は G-4 で撤去した。一覧の配送の印の優先は admin-order-summary.test.ts が確かめる。
  */
 const DISABLED_BODY = { code: 'LEGACY_FULFILLMENT_DISABLED', error: LEGACY_FULFILLMENT_DISABLED_TEXT };
 const bodies = {
@@ -93,11 +72,9 @@ async function expectDisabled(response: Response) {
 }
 beforeEach(() => {
   jest.resetAllMocks();
-  mockQueryCalls.length = 0;
   mockAuthorize.mockResolvedValue({ ok: true, userId: 'actor-from-auth', role: 'supporter' });
   mockCreateStore.mockResolvedValue(mockStore);
   mockResolve.mockResolvedValue({ outcome: 'resolved' });
-  mockSummaries.mockResolvedValue(new Map());
 });
 
 test.each(endpoints)('%sは権限→CSRF→IP→管理者の順（止めた窓口はその後に 410）', async (endpoint) => {
@@ -205,15 +182,3 @@ test('DBの記号や一般Errorのcodeを公開の断りと誤認しない', () 
     expect(deliveryErrorReply(error)).toEqual({ status: 500, body: { error: '配送の記録を保存できませんでした。時間をおいて、もう一度お試しください。' } });
   }
 });
-test.each(['delivery_failure', 'attempted_delivery', 'tracking_not_found', 'tracking_registration_failed', 'tracking_stalled', null] as const)(
-  '複数の要対応は問題ありを先に印にする（集計の優先結果%s）', async (attentionKind) => {
-    mockSummaries.mockResolvedValue(new Map([[ORDER, { activeCount: 2, deliveredCount: 0, attentionKind }]]));
-    const response = await orders(new Request('http://localhost/api/admin/orders?status=shipped&page=2&pageSize=20'));
-    expect(response.status).toBe(200); const body = await response.json();
-    expect(body.data[0].deliveryAttention).toBe(attentionKind === 'delivery_failure' ? 'failure' : attentionKind === 'attempted_delivery' ? 'attempted_delivery' : attentionKind ? 'untrackable' : null);
-    expect(body.pagination).toEqual({ page: 2, pageSize: 20, total: 41, totalPages: 3 });
-    expect(mockQueryCalls).toContainEqual(['eq', 'status', 'shipped']);
-    expect(mockSummaries).toHaveBeenCalledWith(mockStore, [ORDER]);
-    expect(mockCsrf).not.toHaveBeenCalled(); expect(mockLimit).not.toHaveBeenCalled();
-  },
-);

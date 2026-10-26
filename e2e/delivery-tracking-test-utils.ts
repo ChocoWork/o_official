@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { Client } from 'pg';
 import { expect, type APIRequestContext, type Locator, type Page, type Route } from '@playwright/test';
-import type { OrderItem } from '@/components/OrderSection';
+import type { OrderItem } from '@/lib/orders/admin-orders/admin-order-types';
 import {
   buildOrderHistory,
   type OrderEmailHistoryRow,

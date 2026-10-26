@@ -86,6 +86,15 @@ describe('GET /api/admin/orders statutory search', () => {
       const row = await buildAdminOrderSummary(client, order({ shipping_address: ' ', review_reason: 'stock_not_reserved' }));
       expect(row).toMatchObject({ canRefund: true, cancelKind: 'paid', canCancel: true, paymentStatusKey: 'paid', refundPending: true, refundFailed: true, missingShippingFields: ['address'], needsReview: true, cancelRequestOpen: true, shipBlockedReason: '支払額の確認が必要です（要対応）', returnSummary: { displayStatus: null, marks: [], nextAction: 'none', hasReturnable: false } });
     });
+    // 旧い order-delivery-routes.test.ts の一覧の窓口の期待を、窓口の撤去（G-4 Task 7）に合わせて移した
+    test.each(['delivery_failure', 'attempted_delivery', 'tracking_not_found', 'tracking_registration_failed', 'tracking_stalled', null] as const)(
+      'FREQ-539-AC-01: 複数の要対応は問題ありを先に印にする（集計の優先結果%s）', async (attentionKind) => {
+        (listOrderDeliverySummaries as jest.Mock).mockResolvedValue(new Map([['order-1', { activeCount: 2, deliveredCount: 0, attentionKind }]]));
+        const row = await buildAdminOrderSummary(client, order({ status: 'shipped' }));
+        expect(row.deliveryAttention).toBe(attentionKind === 'delivery_failure' ? 'failure' : attentionKind === 'attempted_delivery' ? 'attempted_delivery' : attentionKind ? 'untrackable' : null);
+        expect(listOrderDeliverySummaries).toHaveBeenCalledWith(client, ['order-1']);
+      },
+    );
     test('FREQ-539-AC-01: 交換の行は商品数から外し、名前のない顧客は旧い値', async () => {
       const input = order({ shipping_full_name: ' ', shipping_email: null }); if (input.order_items) input.order_items[0].line_kind = 'exchange';
       expect(await buildAdminOrderSummary(client, input)).toMatchObject({ itemCount: '1点', customerName: 'ゲスト', customerEmail: '-', items: [expect.objectContaining({ lineKind: 'exchange' }), expect.objectContaining({ lineKind: 'order' })] });

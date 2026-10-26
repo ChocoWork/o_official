@@ -167,14 +167,14 @@ test('3管理POSTと1webhookをAPIと入口一覧に記録し総数が実コー�
   });
   const routes = walk('src/app/api').filter((file) => file.endsWith('/route.ts'));
   const methods = routes.flatMap((file) => [...read(file).matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b|export\s+const\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g)]);
-  expect(routes).toHaveLength(161); expect(methods).toHaveLength(204);
-  contains(api, '161ファイル'); contains(api, '204組');
-  contains(api, 'HEAD/OPTIONSは204組に含めない');
+  expect(routes).toHaveLength(160); expect(methods).toHaveLength(203);
+  contains(api, '160ファイル'); contains(api, '203組');
+  contains(api, 'HEAD/OPTIONSは203組に含めない');
   for (const file of files.slice(0, 3)) contains(read(file), '配送の入口・表は E-4 の変更を 2026-10-21 に反映');
-  contains(inventory, '161ファイル・204メソッド');
+  contains(inventory, '160ファイル・203メソッド');
   const entries = inventory.split('\n').filter((line) => /^\| `\/api\//.test(line));
-  expect(entries).toHaveLength(160);
-  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(203);
+  expect(entries).toHaveLength(159);
+  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(202);
   const g4Reads = ['/api/admin/order-items', '/api/admin/order-items/export', '/api/admin/orders/[id]'];
   g4Reads.forEach((route) => {
     contains(api, '`GET ' + route + '`');
@@ -284,7 +284,7 @@ test('G-1の要求8行・G-4土台のAC（540-14）・入替のAC（523-03）と
   const G2_FREQ_540_ADDITIONS = ['FREQ-540-AC-06', 'FREQ-540-AC-07', 'FREQ-540-AC-08', 'FREQ-540-AC-09'];
   const freq540Acs = freq540.split('|')[5].match(/FREQ-540-AC-\d+/g);
   expect(freq540Acs!.slice(0, 5)).toEqual(['FREQ-540-AC-01', 'FREQ-540-AC-02', 'FREQ-540-AC-03', 'FREQ-540-AC-04', 'FREQ-540-AC-05']);
-  expect(freq540Acs!.slice(5)).toEqual([...G2_FREQ_540_ADDITIONS, 'FREQ-540-AC-10', 'FREQ-540-AC-11', 'FREQ-540-AC-12', 'FREQ-540-AC-13', 'FREQ-540-AC-14']);
+  expect(freq540Acs!.slice(5)).toEqual([...G2_FREQ_540_ADDITIONS, 'FREQ-540-AC-10', 'FREQ-540-AC-11', 'FREQ-540-AC-12', 'FREQ-540-AC-13', 'FREQ-540-AC-14', 'FREQ-540-AC-15']);
   contains(freq540, 'tests/integration/db/group_g4_foundation.integration.test.ts');
   contains(freq540, 'tests/integration/db/group_g4_migration_asserts.integration.test.ts');
   const freq523 = lines.find((line) => line.startsWith('| FREQ-523 |'))!;

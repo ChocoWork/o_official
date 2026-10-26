@@ -203,7 +203,7 @@ flowchart LR
 | R-43 | P3 | 注文の履歴の「起因の知らせ」が空 | A | 一部 | 決済の知らせは入る。返金で変わった履歴は空のまま | `supabase/migrations/20261013001143_order_return_receipts.sql:1213` |
 | R-45 | P3 | 在庫の関数3本の search_path が弱い | なし | 残る | 多層防御の一段 | `supabase/migrations/20260921011535_harden_security_definer_search_path.sql:36` |
 | R-46 | P3 | 移行の書き方が決まりとそろわない | なし | 残る | 適用済みの移行は直さない。今後の書き方の話 | `docs/06_Operations/db-migrations.md:190` |
-| R-49 | P3 | 返金の後に管理画面の表が消えてフォーカスを失う | なし | 残る | 読み直しの間に表を外す | `src/components/OrderSection.tsx:262` |
+| R-49 | P3 | 返金の後に管理画面の表が消えてフォーカスを失う | なし | 残る | 表が消える点は G-4 Task 7 で直した（新しい一覧は読み直しの間も前の頁の表・件数・注記・頁送りを出したままにし、押した「次の頁」のフォーカスが落ちない。単体で確認）。結果の案内を常に置いた入れ物へ出す点は残る。旧 `OrderSection.tsx:262` は削除した | `src/components/AdminOrderItemListSection.tsx`（読み直しの間の前の頁の表示） |
 | R-50 | P3 | お問い合わせフォームの必須の示し方がそろわない | なし | 残る | 一部の欄に必須の印と属性が無い | `src/app/contact/page.tsx:323` |
 | R-51 | P3 | 失敗の案内が割り込まない読み上げで出る | なし | 残る | お気に入り・問い合わせの返信・会計の入力 | `src/app/wishlist/page.tsx:359` |
 | R-52 | P3 | カードの見出しの文字の大きさがカードに合わせて変わらない | なし | 残る | 見出しの大きさを定義し直していない | `src/components/ui/Card/Card.css:61` |
@@ -677,7 +677,7 @@ G と H の順番・範囲（G-1〜G-4・H-1）は1章、開店前に直す物�
 
 ### R-49 管理画面で返金後に表が消えてフォーカスを失い、結果の案内も不安定
 
-- **箇所**: [OrderSection.tsx](../../../../src/components/OrderSection.tsx) 62〜80行・154行、[admin page](../../../../src/app/admin/page.tsx) 190〜192行・511〜526行。
+- **箇所**: `OrderSection.tsx`（G-4 Task 7 で削除） 62〜80行・154行、[admin page](../../../../src/app/admin/page.tsx) 190〜192行・511〜526行。
 - **事実**: 返金後の `fetchOrders()` が読み込み中の状態を立て、OrderSection は読み込み中に早期 return するので、表と押した「返金」ボタンが一度消えてフォーカスが body に落ちる。結果の案内は条件付きで差し込む `role=status`・`role=alert` のままで、同じ差分で導入した LiveMessage の方針（入れ物を常に置く）と食い違う。行ごとの「配送先要確認」に付けた `role="status"` はライブリージョンの誤用。単体テストは OrderSection をモックに差し替えているため検出できない。
 - **修正方針**: 再取得中も表を残し、案内は常に置いた LiveMessage に出す。静的なラベルから role を外す。
 

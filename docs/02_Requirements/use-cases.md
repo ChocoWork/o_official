@@ -39,7 +39,7 @@ flowchart LR
 | 管理者 | Stockist を管理する | `FREQ-18` | [Stockist 管理 API](../../src/app/api/admin/stockists/route.ts) |
 | 管理者 | KPI を確認・管理する | `FREQ-19` | [KPI 管理 API](../../src/app/api/admin/kpi/route.ts) |
 | 管理者 | ユーザー権限を管理する | `FREQ-20` | [ユーザー管理 API](../../src/app/api/admin/users/route.ts) |
-| 管理者 | 注文と発送状態を管理する | `FREQ-21` | [注文管理 API](../../src/app/api/admin/orders/route.ts)、[状態更新 API](../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
+| 管理者 | 注文と発送状態を管理する | `FREQ-21` | [注文一覧表 API](../../src/app/api/admin/order-items/route.ts)、[状態更新 API](../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
 
 ## 適用範囲とトレーサビリティ
 

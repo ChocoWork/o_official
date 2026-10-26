@@ -4,7 +4,7 @@
  * 窓口の答えは、共通の約束（実装計画 C-2）の型に合わせて組み立てる。型が変われば tsc が教えてくれる。
  */
 import type { Page, Route } from '@playwright/test';
-import type { OrderItem, OrderLineItem } from '@/components/OrderSection';
+import type { OrderItem, OrderLineItem } from '@/lib/orders/admin-orders/admin-order-types';
 import type { OrderHistoryResponse } from '@/lib/orders/email/order-history';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 

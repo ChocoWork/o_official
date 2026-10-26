@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import type { OrderItem } from '@/components/OrderSection';
+import type { OrderItem } from '@/lib/orders/admin-orders/admin-order-types';
 import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 

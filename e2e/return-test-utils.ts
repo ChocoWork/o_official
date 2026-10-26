@@ -8,7 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { expect, type APIRequestContext, type Locator, type Page, type Route } from '@playwright/test';
-import type { OrderItem, OrderLineItem } from '@/components/OrderSection';
+import type { OrderItem, OrderLineItem } from '@/lib/orders/admin-orders/admin-order-types';
 import type {
   OrderHistoryEmailEntry,
   OrderHistoryReturnEntry,

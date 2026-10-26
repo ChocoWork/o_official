@@ -1,5 +1,7 @@
 # 注文管理のシーケンス
 
+> G-4 Task 7 確認日: 2026-10-26。旧い一覧の窓口 GET /api/admin/orders を削除し、一覧は GET /api/admin/order-items、要対応の欄の操作は一覧の頁（hook useOrderAttention）に移した。ORDER タブは注文一覧表への入口だけ。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザ・E2Eはcontroller担当。
+
 > G-4 Task 6 確認日: 2026-10-26。詳細の頁からの操作と読み直しの流れを末尾の SQ-ADMIN-15 に追加した。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザ・E2Eはcontroller担当。
 
 > G-4 Task 3 確認日: 2026-10-26。共有文書はPhase Bで反映済み。controller受領記録（g4t3a）: fresh reset後、実鍵のgroup_g4_postgrest_pathsを含むgroup_g*全51 suiteで1,616成功・0失敗・1 pending（G1_CLEANUP_SUITE=1で単独実行するG-1清掃の未起動）。 全件の確認は controller が後で実施。
@@ -49,9 +51,9 @@ CSVは画面と共通の12列、UTF-8 BOM、全セルの引用符、引用符の
 
 詳細の発送は既存`listOrderFulfillments`の公開欄と配送読取の配達時刻に、同じ票読取のMapから`slipId`・`slipNumber`を添えた9欄。票に属さない発送、`admin.shipping.read`不足、票の読取失敗では発送ごとの2欄はnullで、票一覧も不足/失敗時はnull。配送だけの読取失敗では各発送の`deliveredAt`をnullにして詳細は返す。補助読取の失敗ログは名前とcodeだけにし、票の権限不足は記録しない。品物履歴は301行目を検出して300行を返し、人のメールは同じ依頼内で1人1回だけ既存の解決関数から引く。理由の34値・商品名・自動判定・票/発注の参照・入替の相手と理由は純粋な共通関数で作る。
 
-旧`GET /api/admin/orders`は残し、組立てを`buildAdminOrderSummaries`へ移す。5分のPaymentIntentキャッシュ、返金/返品/配送の要約、行数量、取消判定、住所不足、旧画面の見た目を維持する。旧一覧の単体は期待値を変更しない。PIIを含みうる生のStripe例外は意図的に記録せず、固定の診断Errorにtype/codeだけを写す。HTTP/summary/キャッシュの値は保つ。客向けの応答とメールは変更せず、履歴の純粋な型への任意欄の追加だけを行う。
+旧`GET /api/admin/orders`は、組立てを`buildAdminOrderSummaries`へ移した上でTask 7で削除した（移設した組立ての期待は旧集計の単体で確かめる）。5分のPaymentIntentキャッシュ、返金/返品/配送の要約、行数量、取消判定、住所不足を維持する。PIIを含みうる生のStripe例外は意図的に記録せず、固定の診断Errorにtype/codeだけを写す。HTTP/summary/キャッシュの値は保つ。客向けの応答とメールは変更せず、履歴の純粋な型への任意欄の追加だけを行う。
 
-実装: [store](../../../src/lib/orders/admin-orders/admin-order-store.ts)、[CSV](../../../src/lib/orders/admin-orders/admin-order-csv.ts)、[旧集計](../../../src/lib/orders/admin-orders/admin-order-summary.ts)。検証: [store単体](../../../tests/unit/lib/orders/admin-orders/admin-order-store.test.ts)、[旧一覧の回帰](../../../tests/unit/api/admin/orders-search-route.test.ts)、[管理履歴](../../../tests/unit/api/admin/order-history-route.test.ts)、[controller用PostgREST](../../../tests/integration/db/group_g4_postgrest_paths.integration.test.ts)。単体・型・lintとDB/PostgRESTの証明は別に扱う。
+実装: [store](../../../src/lib/orders/admin-orders/admin-order-store.ts)、[CSV](../../../src/lib/orders/admin-orders/admin-order-csv.ts)、[旧集計](../../../src/lib/orders/admin-orders/admin-order-summary.ts)。検証: [store単体](../../../tests/unit/lib/orders/admin-orders/admin-order-store.test.ts)、[旧集計](../../../tests/unit/lib/orders/admin-orders/admin-order-summary.test.ts)、[管理履歴](../../../tests/unit/api/admin/order-history-route.test.ts)、[controller用PostgREST](../../../tests/integration/db/group_g4_postgrest_paths.integration.test.ts)。単体・型・lintとDB/PostgRESTの証明は別に扱う。
 
 ### 一覧・CSV材料・詳細・状態履歴の読取（G-4 Task 2）
 
@@ -130,7 +132,6 @@ review APIも同じCSRF helperを呼ぶ。refund API（返金と確かめ直し�
 
 | 入口 | 図・操作との対応と結果 | 根拠 |
 | --- | --- | --- |
-| `GET /api/admin/orders` | `admin.orders.read`とAAL2で注文一覧を読む。返金のボタンの判定は、Stripeではなく受け取った額と返金の記録（`list_order_refund_summaries`）で決める。未入金の注文の取消の判定は、StripeのPIと未解決の金額不一致も参照する。canShip/canRecordCompletion/canCancel/canRefund等の表示用属性と、商品ごとの数から出した注文の言葉（status）・一部発送済みか、支払いの言葉と返金の印（paymentStatusKey・refundPending・refundFailed）と、返品の要約（returnSummary。`list_order_return_summaries`）、一覧の上の一行の件数（returnAttention。`count_order_return_attention`）を返し、問い `return=` で返品の状態に絞り込む（グループE-3。絞り込みは新しい注文から500件まで）。状態変更はしない。操作時は各POSTが再検証する | [注文一覧](../../../src/app/api/admin/orders/route.ts) |
 | `GET /api/admin/order-attention` | 同じread認可で未解決例外・未確認注文を各最大100件返し、件数も返す。canCancelOrderは注文状態に基づく表示用属性で、Stripeの取消ガード成功を示さない。「返金の失敗」の行には、「もう一度返金する」を出せるか（canRetryRefund。注文の返せる額が0より多い）と、細目（refundFailure: 返金の額・失敗の理由の言葉・確保し直せなかった商品と数。要対応の支払いの印で返金の記録を service_role で引く）を付ける | [要対応・要確認一覧](../../../src/app/api/admin/order-attention/route.ts) |
 | `GET /api/admin/orders/[id]/status` | 同じread認可でPOSTの説明とrequiredBodyを返す。対象注文の現在状態を取得・変更するAPIではない | [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
 | `GET /api/admin/orders/[id]/fulfillments` | `admin.orders.manage` で、発送と仕上がりの画面の材料（商品ごとの数・発送の一覧・発送できない理由）を service_role で読む。状態変更はしない。操作時は各POSTが再検証する | [発送API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts) |

@@ -1,4 +1,4 @@
-import { parseOrderItemQuery, parseOrderItemListResult, toFilterPayload } from '@/lib/orders/admin-orders/admin-order-query';
+import { parseOrderItemQuery, parseOrderItemListResult, toFilterPayload, toSearchParams } from '@/lib/orders/admin-orders/admin-order-query';
 import { orderItemCapNote, ORDER_ITEM_COLUMNS } from '@/lib/orders/admin-orders/admin-order-types';
 
 describe('admin order query', () => {
@@ -14,6 +14,21 @@ describe('admin order query', () => {
   });
   test.each(['counterparty=a', 'page=0', 'page=100001', 'page=1.5', 'page=', 'page=1&page=2', 'attention=0', 'status=unknown', 'dateFrom=2026-02-30', 'dateFrom=2026-1-01', 'dateFrom=2026-02-01&dateTo=2026-01-01', 'orderNumber=hello', 'orderNumber=pi_', `orderNumber=pi_${'a'.repeat(198)}`, `product=${'a'.repeat(201)}`, 'customer=%20'])('FREQ-536-AC-02: 不正な条件を断る %s', (query) => {
     expect(parseOrderItemQuery(new URLSearchParams(query))).toEqual({ ok: false });
+  });
+  test('FREQ-536-AC-02: toSearchParams は絞り込みを問合せにし、statusを繰り返し、parseOrderItemQuery で元に戻る', () => {
+    const filters = { dateFrom: '2026-01-01', dateTo: '2026-12-31', orderNumber: 'pi_abc', customer: '山田', email: 'a@example.com', product: 'ブラウス', color: '白', size: 'M', statuses: ['ready', 'shipped'] as ('ready' | 'shipped')[], attention: true };
+    const params = toSearchParams(filters, 3);
+    expect(params.getAll('status')).toEqual(['ready', 'shipped']);
+    expect(params.get('attention')).toBe('1');
+    expect(params.get('page')).toBe('3');
+    expect(params.get('customer')).toBe('山田');
+    expect(parseOrderItemQuery(params)).toEqual({ ok: true, filters, page: 3 });
+  });
+  test('FREQ-536-AC-02: toSearchParams は空の値・偽の旗・頁なしを載せない。空の dateFrom は問合せに載らない', () => {
+    expect(toSearchParams({}).toString()).toBe('');
+    expect(toSearchParams({ dateFrom: '', customer: '', statuses: [], attention: false }).toString()).toBe('');
+    expect(toSearchParams({ dateFrom: '' }, 1).toString()).toBe('page=1');
+    expect(toSearchParams({ dateFrom: '' }, 1).has('dateFrom')).toBe(false);
   });
   test('FREQ-536-AC-03: 空の頁でも上限の旗・件数を保持する', () => {
     expect(parseOrderItemListResult({ rows: [], totalRows: 0, totalOrders: 0, ordersCapped: true, ordersCap: 5000 }, 1)).toEqual({ rows: [], totalRows: 0, totalOrders: 0, ordersCapped: true, ordersCap: 5000, page: 1, pageSize: 20, totalPages: 1 });

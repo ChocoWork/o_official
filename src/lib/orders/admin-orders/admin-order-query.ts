@@ -39,6 +39,19 @@ export function toFilterPayload(filters: AdminOrderItemFilters): Record<string, 
   return Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== undefined));
 }
 
+/** 画面の絞り込みを窓口の問合せにする（parseOrderItemQuery の逆）。空の値・偽の旗は載せず、statusは繰り返す。pageは渡した時だけ載せる。 */
+export function toSearchParams(filters: AdminOrderItemFilters, page?: number): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const key of ['dateFrom', 'dateTo', 'orderNumber', 'customer', 'email', 'product', 'color', 'size'] as const) {
+    const value = filters[key];
+    if (value) params.set(key, value);
+  }
+  for (const status of filters.statuses ?? []) params.append('status', status);
+  if (filters.attention) params.set('attention', '1');
+  if (page !== undefined) params.set('page', String(page));
+  return params;
+}
+
 export const adminOrderIntegerSchema = z.number().int().safe();
 export const adminOrderTimestampSchema = z.string().datetime({ offset: true });
 export const adminOrderExportRowSchema = z.object({

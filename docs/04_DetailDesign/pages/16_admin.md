@@ -1,5 +1,7 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
+> G-4 Task 7 確認日: 2026-10-26。注文一覧表（`/admin/orders`）の頁・表・要対応の欄の移設（hook `useOrderAttention`）・ORDER タブの入口化・旧い一覧と各 dialog の撤去を末尾の「注文一覧表と ORDER タブの入口（G-4 Task 7）」に追加した。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザの3幅・E2Eはcontroller担当。
+
 > G-4 Task 6 確認日: 2026-10-26。注文の詳細（`/admin/orders/[id]`）の頁・品物の表・入替dialog・埋め込みの変更履歴を末尾の「注文の詳細（G-4 Task 6）」に追加した。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザの3幅・E2Eはcontroller担当。
 
 > G-4 Task 5 確認日: 2026-10-26。入替store・POST/候補GET・clientと準備中0件の権限カタログを反映。追加PostgRESTケースはcontrollerのDB実行待ち。
@@ -21,7 +23,7 @@
 | FR-ADMIN-005 | LOOK 管理タブではルック一覧・作成・編集・削除・アイテムタグ付けを提供する | IMPL-ADMIN-005 | `src/components/LookSection.tsx`, `src/app/api/admin/looks/route.ts`, `src/app/api/admin/looks/[id]/route.ts` | 一覧・作成・編集モーダル・削除を実装。`look_items` テーブルでアイテムタグ付け対応 | 済 |
 | FR-ADMIN-006 | STOCKIST 管理タブでは店舗一覧・作成・編集・削除・公開ステータス管理を提供する | IMPL-ADMIN-006 | `src/components/StockistSection.tsx`, `src/app/api/admin/stockists/route.ts`, `src/app/api/admin/stockists/[id]/route.ts` | 一覧・作成・編集モーダル・削除・公開切替を実装 | 済 |
 | FR-ADMIN-007 | USER 管理タブは `admin` ロール専用とし `roles` テーブルの編集・ACL 付与・ユーザー一覧を提供する | IMPL-ADMIN-007 | `src/components/UserSection.tsx`, `src/app/api/admin/users/route.ts`, `src/app/api/admin/users/[id]/role/route.ts` | ユーザー一覧・ロール変更フォームを実装。`admin` ロールのみ表示（`visibleTabs` で制御） | 済 |
-| FR-ADMIN-008 | ORDER 管理タブでは注文一覧・ステータスフィルタ・キーワード検索・ページネーション（20件ずつ）・CSV エクスポートを提供する | IMPL-ADMIN-008 | `src/components/OrderSection.tsx`, `src/app/api/admin/orders/route.ts` | 未決済にキャンセル、支払い済みで1つも発送していない注文にキャンセル（返金とあわせて。店長だけ）、発送準備中か受注生産中の数がある入金済みの注文に発送と仕上がりの記録、返せる額がある注文に返金を表示する。列は「支払い」（未入金・支払い済み・一部返金・返金済み・支払いの失敗・支払いなし）と「進み具合」（商品ごとの数から出す言葉。未決済・受注生産中・発送準備中・配送中・キャンセルの手続き中。一部発送済みの印）。返金・キャンセルの後は一覧と要対応・要確認を再取得する。返品（グループ E-3）の列「返品」（返品の状態と小さな印。返品の無い注文は「—」）・絞り込み「返品」・一覧の上の一行（返品の申し込みと返金待ちの件数）・「返品」のボタン（次にすることで名前が変わる）と、CSV の列「返品」・購入商品の交換の品の印を足す（FREQ-468・472） | 済 |
+| FR-ADMIN-008 | ORDER 管理タブは注文一覧表（/admin/orders）への入口だけを置く（G-4 Task 7。注文一覧表は品物×ステータスの12列・20行ずつの頁・絞り込み・全行CSV。末尾の「注文一覧表と ORDER タブの入口」）。この行の下の説明は G-4 より前の旧い一覧の記録で、旧い一覧・列・ボタン・CSV 11列は撤去した（移行前: 注文一覧・ステータスフィルタ・キーワード検索・ページネーション（20件ずつ）・CSV エクスポート） | IMPL-ADMIN-008 | `src/app/admin/orders/page.tsx`, `src/components/AdminOrderItemListSection.tsx`, `src/app/api/admin/order-items/route.ts` | 未決済にキャンセル、支払い済みで1つも発送していない注文にキャンセル（返金とあわせて。店長だけ）、発送準備中か受注生産中の数がある入金済みの注文に発送と仕上がりの記録、返せる額がある注文に返金を表示する。列は「支払い」（未入金・支払い済み・一部返金・返金済み・支払いの失敗・支払いなし）と「進み具合」（商品ごとの数から出す言葉。未決済・受注生産中・発送準備中・配送中・キャンセルの手続き中。一部発送済みの印）。返金・キャンセルの後は一覧と要対応・要確認を再取得する。返品（グループ E-3）の列「返品」（返品の状態と小さな印。返品の無い注文は「—」）・絞り込み「返品」・一覧の上の一行（返品の申し込みと返金待ちの件数）・「返品」のボタン（次にすることで名前が変わる）と、CSV の列「返品」・購入商品の交換の品の印を足す（FREQ-468・472） | 済 |
 
 ---
 
@@ -41,7 +43,7 @@
 | ADMIN-01-004 | NEWS CRUD | IMPL-ADMIN-NEWS-01 | `src/app/admin/news/`, `src/app/api/admin/news/` | 全 CRUD 実装済み | 済 |
 | ADMIN-01-005 | STOCKIST CRUD | IMPL-ADMIN-STOCKIST-01 | `src/app/admin/stockists/`, `src/app/api/admin/stockists/` | 全 CRUD 実装済み | 済 |
 | ADMIN-01-006 | USER タブ（権限変更含む） | IMPL-ADMIN-USER-01 | `src/app/admin/users/`, `src/app/api/admin/users/` | ユーザー管理 + 権限変更実装済み | 済 |
-| ADMIN-01-007 | ORDER タブ（ページング/期間フィルタ/CSV/ステータス変更/返金） | IMPL-ADMIN-ORDER-01 | `src/app/admin/orders/`, `src/app/api/admin/orders/` | ページング/フィルタ/CSV/ステータス/返金 実装済み | 済 |
+| ADMIN-01-007 | ORDER タブ（G-4 Task 7 から注文一覧表への入口だけ。ページング/期間フィルタ/CSV/ステータス変更/返金は注文一覧表と注文の詳細へ移った） | IMPL-ADMIN-ORDER-01 | `src/app/admin/orders/`, `src/app/api/admin/orders/` | ページング/フィルタ/CSV/ステータス/返金 実装済み | 済 |
 | ADMIN-01-008 | KPI タブ（実データ集計/目標値編集） | IMPL-ADMIN-KPI-01 | `src/app/admin/kpi/`, `src/app/api/admin/kpi/` | 実データ集計 + 目標値編集実装済み | 済 |
 | ADMIN-01-009 | `admin-rbac.ts` ハイブリッド RBAC | IMPL-ADMIN-RBAC-01 | `src/lib/admin-rbac.ts` | ハイブリッド RBAC 実装済み | 済 |
 
@@ -125,7 +127,7 @@
 | エンドポイント | メソッド | 概要 | ロール要件 |
 |---|---|---|---|
 | `/api/admin/items/import` | POST | CSV バルクインポート（必須カラム/型チェック/重複 SKU 検出） | `admin` |
-| `/api/admin/orders` | GET | 注文一覧（ページネーション・ステータスフィルタ。放棄は既定で出さない。`review=only` で要確認だけ）。各行に要確認・発送止めの理由・取消の可否・払込期限を付け、商品ごとの数から出した注文の言葉と一部発送済みの印、商品の行ごとの数を付ける（FREQ-441）。支払いの言葉・返金の印・返金額・取消の種類も付け、返金のボタンの判定は Stripe を読まずに行う（FREQ-458）。返品の要約（returnSummary）・一覧の上の一行の件数（returnAttention）・問い `return=`（返品の状態で絞る）を足し、商品の行に lineKind（order・exchange）を付ける。商品数は交換の品の行を数えない（グループ E-3。FREQ-468・472） | `admin`, `supporter` |
+| `/api/admin/orders` | GET | G-4 Task 7 で削除（一覧は `/api/admin/order-items`、詳細は `/api/admin/orders/[id]`）。以下は削除前の記録: 注文一覧（ページネーション・ステータスフィルタ。放棄は既定で出さない。`review=only` で要確認だけ）。各行に要確認・発送止めの理由・取消の可否・払込期限を付け、商品ごとの数から出した注文の言葉と一部発送済みの印、商品の行ごとの数を付ける（FREQ-441）。支払いの言葉・返金の印・返金額・取消の種類も付け、返金のボタンの判定は Stripe を読まずに行う（FREQ-458）。返品の要約（returnSummary）・一覧の上の一行の件数（returnAttention）・問い `return=`（返品の状態で絞る）を足し、商品の行に lineKind（order・exchange）を付ける。商品数は交換の品の行を数えない（グループ E-3。FREQ-468・472） | `admin`, `supporter` |
 | `/api/admin/orders/:id/status` | POST | 支払い手続き中・未決済・決済失敗の取消（理由は必須、メモ・お客様へのお知らせ）。Stripe が払込票の期限切れを確定するまでの取消は409と払込期限、Stripe・DBの一時的な失敗は503。支払い済みで1つも発送していない注文のキャンセルは、返金とあわせて行い（二重防止の番号 requestKey と「在庫に戻す」を足す。FREQ-449）、権限 admin.orders.manage と admin.orders.refund の両方が要る | `admin`, `supporter`（支払い済みの注文は `admin` のみ） |
 | `/api/admin/orders/:id/refund` | GET | 返金の画面の材料（注文の金額・返せる額・商品ごとの数と割り振った割引・返事待ちの返金）（FREQ-448） | `admin.orders.refund` |
 | `/api/admin/orders/:id/refund` | POST | 返金を1件の記録にして Stripe に頼む（二重防止の番号・商品と数・送料・額・理由・知らせるか）。返せる額・数の超過は409、Stripe の断りは422、答えが分からない時は502（FREQ-447・448） | `admin.orders.refund` |
@@ -378,7 +380,7 @@ G-3移行: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の
 | FREQ-458-AC-03 | 返金の手続き中・返金の失敗の印が出る | FR-ADMIN-076 |
 | FREQ-458-AC-04 | 返金とキャンセルのボタンが決めた条件の注文にだけ出る | FR-ADMIN-076 |
 | FREQ-458-AC-05 | CSV に「支払い」と「返金額」の列が足され、値が入る | FR-ADMIN-076 |
-| FREQ-458-AC-06 | 一覧の窓口が、返金のボタンの判定のために Stripe を呼ばない | [一覧の窓口の単体](../../../tests/unit/api/admin/orders-search-route.test.ts) |
+| FREQ-458-AC-06 | 一覧の窓口が、返金のボタンの判定のために Stripe を呼ばない | [旧集計の単体（旧い一覧の窓口は G-4 Task 7 で削除し、期待を移した）](../../../tests/unit/lib/orders/admin-orders/admin-order-summary.test.ts) |
 | FREQ-459-AC-01 | 返金の行に額・状態の移り変わり・商品・在庫に戻した数・どこから・照会番号が出る | FR-ADMIN-077 |
 | FREQ-459-AC-02 | 支払い済みのキャンセルの行に取消の理由とメモが出る | FR-ADMIN-077 |
 | FREQ-459-AC-03 | 返金が失敗して確保し直した行と、足りなかった数が履歴に出る | [履歴の単体](../../../tests/unit/lib/orders/email/order-history.test.ts)、[履歴の画面の単体](../../../tests/unit/components/OrderHistoryDialog.test.tsx) |
@@ -425,8 +427,8 @@ G-3移行: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の
 | E2E FR-ADMIN-084〜093 | [084 作る](../../../e2e/FR-ADMIN-084-return-create.spec.ts)、[085 受け取りと返金](../../../e2e/FR-ADMIN-085-return-receive-refund.spec.ts)、[086 一部・届かない・取消](../../../e2e/FR-ADMIN-086-return-partial-missing-cancel.spec.ts)、[087 相談と額を決めて返金](../../../e2e/FR-ADMIN-087-return-consult-refund.spec.ts)、[088 交換](../../../e2e/FR-ADMIN-088-return-exchange.spec.ts)、[089 お返し](../../../e2e/FR-ADMIN-089-return-sent-back.spec.ts)、[090 サポートの受け取り](../../../e2e/FR-ADMIN-090-return-support-receive.spec.ts)、[091 一覧](../../../e2e/FR-ADMIN-091-order-list-returns.spec.ts)、[092 ショップの設定](../../../e2e/FR-ADMIN-092-shop-return-settings.spec.ts)、[093 守りと履歴](../../../e2e/FR-ADMIN-093-return-guards-history.spec.ts) |
 | DB 結合 | [order_return_records](../../../tests/integration/db/order_return_records.integration.test.ts)（移行 A）、[order_return_actions](../../../tests/integration/db/order_return_actions.integration.test.ts)（移行 B）、[order_return_receipts](../../../tests/integration/db/order_return_receipts.integration.test.ts)（移行 C）、[return_postgrest](../../../tests/integration/db/return_postgrest.integration.test.ts)（返品の窓口を実際の PostgREST に通す）、[order_email_material_postgrest](../../../tests/integration/db/order_email_material_postgrest.integration.test.ts)・[order_email_outbox](../../../tests/integration/db/order_email_outbox.integration.test.ts)（メールの材料と予定） |
 | 単体（返品の部品と窓口） | [return-calc](../../../tests/unit/lib/orders/returns/return-calc.test.ts)、[return-service](../../../tests/unit/lib/orders/returns/return-service.test.ts)、return-routes＝[order-returns-routes](../../../tests/unit/api/admin/order-returns-routes.test.ts)・[order-return-money-routes](../../../tests/unit/api/admin/order-return-money-routes.test.ts)・[order-return-update-routes](../../../tests/unit/api/admin/order-return-update-routes.test.ts)、[shop-settings-route](../../../tests/unit/api/admin/shop-settings-route.test.ts) |
-| 単体（一覧・履歴・在庫の履歴・返金の材料） | [orders-search-route](../../../tests/unit/api/admin/orders-search-route.test.ts)、[order-attention-route](../../../tests/unit/api/admin/order-attention-route.test.ts)、[item-variants-route](../../../tests/unit/api/admin/item-variants-route.test.ts)、[order-history](../../../tests/unit/lib/orders/email/order-history.test.ts)、[refund-allocation](../../../tests/unit/lib/orders/refund/refund-allocation.test.ts)、[refund-materials](../../../tests/unit/lib/orders/refund/refund-materials.test.ts) |
-| 単体（画面） | [OrderReturnReceiveDialog](../../../tests/unit/components/OrderReturnReceiveDialog.test.tsx)、[AdminOrderReturnWiring](../../../tests/unit/components/AdminOrderReturnWiring.test.tsx)、[AttentionInbox](../../../tests/unit/components/AttentionInbox.test.tsx)、[ShopReturnSettingsSection](../../../tests/unit/components/ShopReturnSettingsSection.test.tsx)、[ShopSettingsSection](../../../tests/unit/components/ShopSettingsSection.test.tsx) |
+| 単体（一覧・履歴・在庫の履歴・返金の材料） | [admin-order-summary](../../../tests/unit/lib/orders/admin-orders/admin-order-summary.test.ts)、[order-attention-route](../../../tests/unit/api/admin/order-attention-route.test.ts)、[item-variants-route](../../../tests/unit/api/admin/item-variants-route.test.ts)、[order-history](../../../tests/unit/lib/orders/email/order-history.test.ts)、[refund-allocation](../../../tests/unit/lib/orders/refund/refund-allocation.test.ts)、[refund-materials](../../../tests/unit/lib/orders/refund/refund-materials.test.ts) |
+| 単体（画面） | [OrderReturnReceiveDialog](../../../tests/unit/components/OrderReturnReceiveDialog.test.tsx)、[AdminOrderDetailSection](../../../tests/unit/components/AdminOrderDetailSection.test.tsx)、[AttentionInbox](../../../tests/unit/components/AttentionInbox.test.tsx)、[ShopReturnSettingsSection](../../../tests/unit/components/ShopReturnSettingsSection.test.tsx)、[ShopSettingsSection](../../../tests/unit/components/ShopSettingsSection.test.tsx) |
 | 単体（メール） | [order-email-compose-returns](../../../tests/unit/lib/orders/email/order-email-compose-returns.test.ts)、[order-email-return-material](../../../tests/unit/lib/orders/email/order-email-return-material.test.ts)、[order-email-worker](../../../tests/unit/lib/orders/email/order-email-worker.test.ts)、[order-email-worker-recipient](../../../tests/unit/lib/orders/email/order-email-worker-recipient.test.ts)、[order-email-types](../../../tests/unit/lib/orders/email/order-email-types.test.ts) |
 | 単体（集計の除外） | [kpi-exchange-lines](../../../tests/unit/api/admin/kpi-exchange-lines.test.ts)、[export-query](../../../tests/unit/lib/legal-archive/export-query.test.ts) |
 
@@ -695,7 +697,7 @@ E2E は e2e/ の同名の spec、DB 結合は tests/integration/db/ の同名、
 | FREQ-481-AC-01 | 受付オン・返品とキャンセルかキャンセルだけ・pending か paid・未発送あり・開いた申し込みなしの時だけキャンセルを申し込めること | E2E FR-ACCOUNT-039、DB 結合 order_return_customer_requests |
 | FREQ-481-AC-02 | 欄内で品・未発送までの数・任意300字のご連絡事項を入れ、受付の文と状態を出すこと | E2E FR-ACCOUNT-039、単体 CancelRequestForm・customer-cancel-request-client |
 | FREQ-481-AC-03 | 申し込み・行・cancel_request_received・cancel_request_shop を同じ取引で作り、開いた申し込みは注文に1つだけにすること | E2E FR-ACCOUNT-039（DB・Mailpit）、DB 結合 order_return_customer_requests・order_return_request_records |
-| FREQ-481-AC-04 | 一覧のボタンと「キャンセルの申し込み {n}件」を出し、0件は隠し、cancelRequest=open で絞り、0件になれば絞り込みを外すこと | E2E FR-ADMIN-097、単体 OrderSection.actions・AdminOrderCancelRequestWiring・cancel-request-reads |
+| FREQ-481-AC-04 | 一覧のボタンと「キャンセルの申し込み {n}件」を出し、0件は隠し、cancelRequest=open で絞り、0件になれば絞り込みを外すこと | E2E FR-ADMIN-097、単体 OrderSection.actions・AdminOrderCancelRequestWiring・cancel-request-reads（G-4 Task 7 で一覧と、この2つの単体を削除。申し込みの一行は注文一覧表へ移した） |
 | FREQ-481-AC-05 | 品・数・未発送・ご連絡事項を出し、pending なら今の取消、paid で発送が無く未発送を全部外すなら支払い済みのキャンセル、ほかは返金の画面（発送前の商品に申し込みの品と数を入れる）を開くこと | E2E FR-ADMIN-097、単体 OrderCancelRequestDialog・OrderRefundDialog.prefill |
 | FREQ-481-AC-06 | 返金・取消の記録後だけ resolve を呼び、返金は同じ注文・申し込み後の時刻・awaiting_response／pending／succeeded、取消は注文が cancelled であることを DB が確認して resolved にすること | E2E FR-ADMIN-097（DB 関数）、DB 結合 order_return_request_reviews、単体 AdminOrderCancelRequestWiring |
 | FREQ-481-AC-07 | 解決失敗で返金・取消を重ねず、『返金・キャンセルは記録しましたが、申し込みを解決済みにできませんでした。…』を出し、開いた申し込みを「解決済みにする」で閉じられること | E2E FR-ADMIN-097、単体 AdminOrderCancelRequestWiring |
@@ -999,7 +1001,7 @@ G-1 で止めた旧い発送の入口の案内を、G-3 の発送票へ向ける
 
 | 場所 | 内容 |
 | --- | --- |
-| 注文一覧（`OrderSection`）の表の上 | 「発送は荷作り表から行います。」、ボタン「荷作り表を開く」（`/admin/packing`）、仕上がりの停止の文（`MANUAL_COMPLETION_DISABLED_TEXT`。再開しない）を1回ずつ。どの画面幅でも折り返す |
+| 注文一覧（`OrderSection`。G-4 Task 7 で撤去した。荷作り表の案内は荷作り表へ移り、仕上がりの停止の文は410の本文だけに残る。以下は撤去前の記録）の表の上 | 「発送は荷作り表から行います。」、ボタン「荷作り表を開く」（`/admin/packing`）、仕上がりの停止の文（`MANUAL_COMPLETION_DISABLED_TEXT`。再開しない）を1回ずつ。どの画面幅でも折り返す |
 | 注文の履歴（`OrderHistoryDialog`）の上 | 「発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票から行います。」を1回。票に属する発送の行には「発送票 ${番号} を開く」（`/admin/shipment-slips/` + 票の ID）を出す（窓口 `GET /api/admin/orders/[id]/history` が `list_admin_order_shipment_slips` で `slipId`・`slipNumber` を付ける。票へのリンクは補助の情報なので、読み込みに失敗した時は（発送の権限 `admin.shipping.read` が無く DB が断った時も、他の失敗も）付けず、履歴は返す。権限の拒否以外はログに例外名と code だけを出す） |
 | ショップの設定（`ShopSettingsSection`）の追跡の説明 | 第三の文を「オフの間も、伝票番号の訂正と手動の配達済みは、発送票から行えます。」に置換 |
 
@@ -1061,7 +1063,7 @@ G-1 で止めた旧い発送の入口の案内を、G-3 の発送票へ向ける
 
 ## 注文の詳細（`/admin/orders/[id]` / FREQ-539・FREQ-523-AC-05。G-4 Task 6）
 
-確認日: 2026-10-26。旧 `/admin?tab=ORDER` の一覧・dialog・handler は Task 7 まで残し、詳細の頁の部品へ**同じ挙動のまま**コピーして移した。注文一覧表（`/admin/orders`）は Task 7 で追加するので、戻るリンクの移動先はまだない。
+確認日: 2026-10-26。旧 `/admin?tab=ORDER` の一覧・dialog・handler は、詳細の頁の部品へ**同じ挙動のまま**コピーして移した（旧い側は Task 7 で撤去した）。戻るリンクの移動先の注文一覧表（`/admin/orders`）は Task 7 で追加した。
 
 | 場所 | 表示と動き |
 | --- | --- |
@@ -1076,7 +1078,29 @@ G-1 で止めた旧い発送の入口の案内を、G-3 の発送票へ向ける
 | 品物（`AdminOrderItemsTable`） | 列 `商品名`・`色`・`サイズ`・`ステータス`・`数量`・`単価`・`合計金額`・`返金額`・`補足`（`ITEM_BLOCKED_REASON_LABELS`）。同じ明細は状態ごとに行が分かれ、交換の行は商品名に「（交換品）」。受注生産中で補足が「在庫の入荷待ちです」だけの行に、`canSwap`（allocate）の時だけ `割り当てを入れ替える`（`aria-label="${商品名} ${色} ${サイズ} の割り当てを入れ替える"`）。表は見出しを保つスクロール領域の中で横に動き、頁全体は横にはみ出さない |
 | 入替 dialog（`AllocationSwapDialog`） | 見出し「割り当てを入れ替える（注文 ORD-…）」。開いた時に `GET …/allocations/swap-candidates` を読む（読込中・空・失敗の文あり）。割当元の注文は `${注文番号}（${注文日}）発送準備中 ${n}`、数量の既定と上限は受け手の受注生産中の数と出し手の数の小さい方、理由は必須（200字まで。両方の注文の履歴に残る）。送信は `useDeliverySubmission` で `POST …/allocations/swap`（二重押下は通信1回、結果不明は入力を止めて「もう一度確かめる」＝同じ本文と要求番号）。DB に断られた時は固定の本文を dialog の中に出して入力を残し、送り直しは新しい要求番号。成功で閉じ、詳細が「割当を入れ替えました。」を出して読み直す。`fullScreenOnMobile` |
 | 要対応 | 開いている物を並べる。`要確認`（理由の文）と `確認済みにする`（manage。`POST /api/admin/orders/${id}/review`、成功で「確認済みにしました。」）、支払いの要対応（言葉と検知の回数）、配送の要対応（`DELIVERY_ATTENTION_LABELS`）、解決は一覧の欄で行うので Link「要対応の一覧で対応する」（`/admin/orders#attention`）。空は「要対応はありません。」 |
-| 変更履歴（`OrderHistoryPanel`） | `OrderHistoryDialog.tsx` から export した `OrderHistoryPanel({ orderId })`。`OrderHistoryDialogBody` に `inline` を足し、真の時は Dialog と「閉じる」を使わず `<section id="order-history" aria-labelledby>` に同じ中身を出す。従来の履歴（状態・メール・発送・返金・返品・申し込み）の上に「品物の状態の変化」の見出しで itemStates を新しい順に出す: 時刻・商品名（色 / サイズ）・数量・変更前→変更後（null の側は「（なし）」）・理由の言葉（`itemStateReasonLabel`）・人のメールまたは「自動」（人の変更でメールを引けない時は「不明な管理者」。「自動」は自動の行だけ）、参照があれば「発送票 ○○」「発注 ○○」の Link、入替は「相手の注文 ORD-…」と理由。最初から空は「品物の状態の変化はまだありません。」、省略は「古い変化は省略しています。」、失敗は「品物の状態の変化を読み込めませんでした。」。メールの中身の表示・再送は変えない。従来の default の dialog は荷作り表と旧 ORDER タブがまだ使うので残る（Task 8 で整理） |
+| 変更履歴（`OrderHistoryPanel`） | `OrderHistoryDialog.tsx` から export した `OrderHistoryPanel({ orderId })`。`OrderHistoryDialogBody` に `inline` を足し、真の時は Dialog と「閉じる」を使わず `<section id="order-history" aria-labelledby>` に同じ中身を出す。従来の履歴（状態・メール・発送・返金・返品・申し込み）の上に「品物の状態の変化」の見出しで itemStates を新しい順に出す: 時刻・商品名（色 / サイズ）・数量・変更前→変更後（null の側は「（なし）」）・理由の言葉（`itemStateReasonLabel`）・人のメールまたは「自動」（人の変更でメールを引けない時は「不明な管理者」。「自動」は自動の行だけ）、参照があれば「発送票 ○○」「発注 ○○」の Link、入替は「相手の注文 ORD-…」と理由。最初から空は「品物の状態の変化はまだありません。」、省略は「古い変化は省略しています。」、失敗は「品物の状態の変化を読み込めませんでした。」。メールの中身の表示・再送は変えない。従来の default の dialog は荷作り表がまだ使うので残る（Task 8 で整理。旧 ORDER タブは Task 7 で撤去した） |
 | 発送 | 注文別の発送（n回目の発送・発送日時・運送会社と伝票番号か「伝票番号なし」・配達済み/取消済み）と、発送が属する発送票への Link（「発送票 ○○」→ `/admin/shipment-slips/[id]`）。`slips` が null の人には「発送票を見る権限がありません。」だけ。確定済みの票があれば同梱の注意文。Button「荷作り表を開く」は shippingRead の旗がある時だけ。発送の操作は置かない |
 
 390/768/1280pxの実ブラウザ確認・E2E・実DBはcontroller担当で、この Task では未実行。単体は [詳細頁の部品](../../../tests/unit/components/AdminOrderDetailSection.test.tsx)・[品物の表](../../../tests/unit/components/AdminOrderItemsTable.test.tsx)・[入替dialog](../../../tests/unit/components/AllocationSwapDialog.test.tsx)・[履歴](../../../tests/unit/components/OrderHistoryDialog.test.tsx)・[client](../../../tests/unit/lib/orders/admin-orders/admin-order-client.test.ts)。
+
+## 注文一覧表と ORDER タブの入口（`/admin/orders` / FREQ-536・538・539-AC-05。G-4 Task 7）
+
+確認日: 2026-10-26。旧 ORDER タブの一覧・各 dialog・旧CSV・ORDER の検索欄を撤去し、ORDER タブは注文一覧表への入口だけにした。要対応の欄・メール停止の帯・要対応の一行は一覧の頁へ移した。旧い一覧の窓口（`GET /api/admin/orders`）も削除した。
+
+| 場所 | 表示と動き |
+| --- | --- |
+| ORDER タブ（`src/app/admin/page.tsx`） | `<nav aria-label="注文メニュー">` に Button（`variant="secondary"`）「注文一覧表」（`href="/admin/orders"`）だけ。店長とサポーターに同じ中身。サイドナビのバッジ（要対応・要確認・配送の合計）と KPI の「（ORDER で確認）」の帯は残り、件数は `useOrderAttention({ enabled })` の `attention` から読む。旧い一覧の state・`fetchOrders`・`ORDER_STATUS_FILTERS`・`RETURN_FILTER_OPTIONS`・各 `handle*`・`OrderSection`・各 dialog・`AttentionInbox` の描画・ORDER の検索欄は削除した。要対応の件数は、頁を開いた時と、タブを移るたび（`activeTab` の変化。最初のタブの値では読まない）に hook の `reload` で読み直す |
+| 頁（`src/app/admin/orders/page.tsx`） | `PackingPage` と同じ形で `<main className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 md:px-8">` に `AdminOrderItemListSection` を置く |
+| 上部 | Button「管理画面に戻る」（`/admin?tab=ORDER`）・h1「注文一覧表」・説明。メール停止の帯（旧頁の文のまま）・`AttentionInbox`（`id="attention"` の中。下に失敗の文 `role="alert"` と知らせ `role="status"`）・要対応の一行（`data-testid="return-attention"`） |
+| hook（`src/hooks/useOrderAttention.ts`） | 旧 `admin/page.tsx` の `fetchAttention`・`runAttentionAction`・`handleReviewOrder`・`handleResolveException`・`handleCancelAndResolve`・`handleResolveDelivery` を窓口・本文・分岐・文言を変えずに移した。戻り値は `attention`・`errorMessage`（操作が断られた理由）・`errorBanner`（欄を読めなかった旨）・`noticeMessage`・`processingIds`・`reload`・`onReview`・`onResolve`・`onCancelAndResolve`・`onResolveDelivery`。2つの失敗は同時に1つしか持たず、画面の見え方は旧頁の1つの欄と同じ。成功したら欄を読み直し、渡された `onChanged`（一覧の読み直し。返事の後は最新の関数を呼ぶ）も呼ぶ。旧頁との違いは `readSafeOrderActionError` が詳細頁と同じ共有版（短い日本語だけを通す）になったこと |
+| 要対応の入口 | `AttentionInbox` の `onRetryRefund`・`onRetryReturnRefund` は `useLogin()` の `userRole === 'admin'` の時だけ渡し、`/admin/orders/{id}?open=refund`・`?open=returns` へ `router.push`。`onOpenDeliveryHistory` は `/admin/orders/{id}#order-history`。`onResolveDelivery` は admin／supporter。見せる・見せないの目安にすぎず、押した先の詳細頁が DB の旗で改めて出し分け、窓口と DB が確認する |
+| 要対応の一行 | 件数は `GET /api/admin/order-items` の応答の `returnAttention`（返品の申し込み N件・返金待ち N件。言葉は `RETURN_DISPLAY_STATUS_LABELS`）と `cancelRequestAttention`（キャンセルの申し込み N件）。0件は出さない。押すと状態を `return_requested`・`refund_waiting`・`cancel_requested` の1つだけにして、ほかの絞り込み（入力・要対応のみを含む）を外し、1頁目から読む。もう一度押すと状態の絞り込みだけを外す（`aria-pressed`） |
+| 絞り込み | `<form aria-label="注文の絞り込み">`。入力 `注文日（から）`・`注文日（まで）`（`DateTimePicker mode="date"`）・`注文ID`（placeholder「ORD-… または pi_…」）・`顧客名`・`メールアドレス`・`商品名`・`色`・`サイズ`（`SearchField`）・ステータスの12のトグル・`要対応のみ`。入力中の `draft` と読んだ条件 `applied` を分け、「絞り込む」の submit で `applied` を更新して1頁目を読む。初めて開いた時は全期間（`注文日（から）` は空）。日付が逆なら「期間指定が不正です。開始日は終了日以前にしてください。」を出して読まない。「条件をクリア」は draft と applied を空にして読み直す |
+| 読み | `GET /api/admin/order-items?${toSearchParams(applied, page)}`（`cache: 'no-store'`）。最後に始めた読みの答えだけを使う（番号つきの ref）。403 は「注文一覧を見る権限がありません。」、422 は窓口の本文、形の違う答えを含むその他は「注文一覧を読み込めませんでした。」。返金・取消などの操作の返事の後は今の条件と頁で読み直す。読み直しの間は前の頁の表・件数・注記・頁送りを出したまま（`aria-busy`、薄く表示。「注文一覧を読み込み中です...」は上に出す）にし、答えが来たら置き換える。押した「次の頁」のフォーカスが落ちない（R-49）。失敗は失敗の文に置き換える |
+| 件数・上限 | 件数の行は「N行（M件の注文）」。`data.ordersCapped` が真の間は「N行（新しいM件の注文の中で）」にし、`orderItemCapNote(data.ordersCap)` の注記（`data-testid="cap-note"`・`role="status"`）を出す（行が0件でも出し、頁を送っても消えない）。上限に達していない時は注記を出さない。頁は「前の頁」「次の頁」と「{頁} / {総頁}ページ」 |
+| 表（`AdminOrderItemTable`） | 見出しを保つスクロール領域（`role="region"`・`overflow-auto`・sticky の見出し行）の12列。注文IDは Link。`<tr tabIndex={0} aria-label="${注文番号} ${商品名} の詳細を開く">`。行にフォーカスがある時の Enter/Space と行の押下で `/admin/orders/${id}` へ移る（`a`・`button`・`input` の上の押下では呼ばず、Link で二重に移らない）。ステータスは `StatusBadge` ＋ 要対応の注文に `TagLabel`「要対応」。React の key は `${orderItemId}-${status}` |
+| 条件と頁の保存 | `applied` と `page` が変わるたびに、このタブの `sessionStorage`（キー `admin-order-list-state`）へ `{ filters, page }` を書く。頁を開いた時に読めれば窓口と同じ検査（`parseOrderItemQuery`）を通して復元し、その条件で読む（`draft` は復元した条件から作る）。読み書きは try/catch で包み、使えない・壊れていても全期間で動く。URL には載せない |
+| CSV | 「CSV出力」（説明「現在の絞り込みに合う全行を出力します。」）は `GET /api/admin/order-items/export?${toSearchParams(applied)}`（頁を含まない）を呼び、`response.blob()` を一時の `<a download>` で保存する。ファイル名は `Content-Disposition` の名前（英数字と `. _ -` の `.csv` だけ）、無ければ `orderItemCsvFilename(new Date())`。ブラウザの取得済みの行から作らず、一覧の5000件の上限を受けない。作成中は「CSVを作成しています...」を出してボタンを無効にし、失敗は窓口の本文（422 は期間を絞る案内）、429 は「しばらくしてから、もう一度お試しください。」（窓口の本文は英語）、それ以外は「CSVを出力できませんでした。」を `role="alert"` で出す |
+| 旧い入口の撤去 | `OrderSection`・`handleExportOrdersCsv`・`ORDER_CSV_HEADERS`・`formatOrderItems`・`/api/admin/orders?` の呼出し・`ORDER_STATUS_FILTERS`・`RETURN_FILTER_OPTIONS` が `src` に0件（単体で走査）。旧い一覧の窓口 `src/app/api/admin/orders/route.ts` も削除した（`OrderItem`・`OrderLineItem`・`OrderStatus` の型は `admin-order-types.ts` から import する） |
+
+390/768/1280pxの実ブラウザ確認・E2E・実DBはcontroller担当で、この Task では未実行。単体は [一覧の頁](../../../tests/unit/components/AdminOrderItemListSection.test.tsx)・[表](../../../tests/unit/components/AdminOrderItemTable.test.tsx)・[hook](../../../tests/unit/hooks/useOrderAttention.test.tsx)・[ORDER タブの入口](../../../tests/unit/components/AdminGroupG1LegacyStop.test.tsx)・[メニュー](../../../tests/unit/components/AdminSettingsMenu.test.tsx)・[絞り込みの付け替え](../../../tests/unit/components/AdminOrderSearch.test.tsx)・[問合せ](../../../tests/unit/lib/orders/admin-orders/admin-order-query.test.ts)・[旧入口の撤去](../../../tests/unit/lib/orders/admin-orders/old-order-entries-removed.test.ts)。
