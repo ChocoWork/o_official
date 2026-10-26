@@ -6,8 +6,9 @@
  * FR-ADMIN-065 と同じ窓口の差し替えで3つの画面幅を確かめ、帯の写しを test-results/group-d/ に残す。
  */
 import { expect, test, type Page } from '@playwright/test';
-import type { OrderAttention } from '@/lib/orders/order-payment-types';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { mockOrderAttention } from './order-admin-test-utils';
+import { emptyOrderItemList, mockOrderItemList } from './order-fulfillment-test-utils';
 
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
@@ -28,21 +29,10 @@ async function mockAdminApis(page: Page, state: { paused: boolean }): Promise<vo
     }));
   await page.route('**/api/admin/kpi', (route) =>
     route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'not mocked' }) }));
-  await page.route('**/api/admin/orders?**', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ data: [], pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 } }),
-    }));
-  await page.route('**/api/admin/order-attention', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ data: {
-        exceptions: [], reviews: [], counts: { exceptions: 0, reviews: 0 },
-        emailSending: { paused: state.paused, reasonLabel: state.paused ? REASON : null },
-      } satisfies OrderAttention & { emailSending: { paused: boolean; reasonLabel: string | null } } }),
-    }));
+  await mockOrderItemList(page, emptyOrderItemList);
+  await mockOrderAttention(page, {
+    get emailSending() { return { paused: state.paused, reasonLabel: state.paused ? REASON : null }; },
+  });
 }
 
 for (const viewport of viewports) {
@@ -54,8 +44,7 @@ for (const viewport of viewports) {
     test('送信を止めている時は ORDER に帯と原因の名前が見える', async ({ page }) => {
       const state = { paused: true };
       await mockAdminApis(page, state);
-      await page.goto('/admin');
-      await page.getByRole('button', { name: 'ORDER' }).click();
+      await page.goto('/admin/orders');
 
       const banner = page.getByRole('alert').filter({ hasText: TITLE });
       await expect(banner).toBeVisible();
@@ -68,14 +57,15 @@ for (const viewport of viewports) {
     test('送信を止めていない応答を読み直すと、ORDER の帯は無い', async ({ page }) => {
       const state = { paused: true };
       await mockAdminApis(page, state);
-      await page.goto('/admin');
-      await page.getByRole('button', { name: 'ORDER' }).click();
+      await page.goto('/admin/orders');
       await expect(page.getByRole('alert').filter({ hasText: TITLE })).toBeVisible();
 
-      // 表示済みの帯が消えるのを待つので、応答が描画される前の「まだ無い」を成功にしない。
+      // 読み直しは状態が空から始まり、帯は最初から無い。要対応の応答と一覧の描画が済む前の「まだ無い」を成功にしない。
       state.paused = false;
-      await page.getByRole('button', { name: 'KPI', exact: true }).click();
-      await page.getByRole('button', { name: 'ORDER' }).click();
+      const attentionLoaded = page.waitForResponse('**/api/admin/order-attention');
+      await page.reload();
+      await attentionLoaded;
+      await expect(page.getByText('条件に一致する品物はありません。', { exact: true })).toBeVisible();
       await expect(page.getByRole('alert').filter({ hasText: TITLE })).toHaveCount(0);
     });
   });

@@ -7,7 +7,8 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import type { AttentionException, AttentionReview } from '@/lib/orders/order-payment-types';
-import { adminOrder, fulfillJson, mockOrderList, openOrderTab, orderNumberOf, viewports } from './order-fulfillment-test-utils';
+import { mockOrderAttention } from './order-admin-test-utils';
+import { adminOrderDetail, emptyOrderItemList, fulfillJson, mockOrderDetail, mockOrderItemList, SUPPORTER_DETAIL_PERMISSIONS, orderNumberOf, viewports } from './order-fulfillment-test-utils';
 import {
   REFUND_TEXT,
   formatYen,
@@ -73,24 +74,18 @@ async function mockApis(page: Page, role: 'admin' | 'supporter', exceptions: Att
     }),
   );
   await mockAdminSessionAs(page, role);
-  await mockOrderList(page, () => [
-    adminOrder({ id: ORDER_ID, canShip: false, canRefund: true, paymentStatusKey: 'paid', refundedAmountLabel: '-', cancelKind: null }),
-  ]);
+  await mockOrderItemList(page, emptyOrderItemList);
+  await mockOrderDetail(page, () => adminOrderDetail({ id: ORDER_ID, canShip: false, canRefund: true, paymentStatusKey: 'paid', refundedAmountLabel: '-', cancelKind: null, ...(role === 'supporter' ? { permissions: SUPPORTER_DETAIL_PERMISSIONS } : {}) }));
   await mockRefundRoutes(page, ORDER_ID, refund);
   // 後から登録した窓口が先に効く。管理画面が裏で読む要対応の空の答えを、この試験の状態で上書きする
+  await mockOrderAttention(page, { exceptions: attention.exceptions, reviews: attention.reviews });
   await page.route('**/api/admin/order-attention', (route) => {
     attention.reads += 1;
-    return fulfillJson(route, {
-      data: {
-        exceptions: attention.exceptions,
-        reviews: attention.reviews,
-        counts: { exceptions: attention.exceptions.length, reviews: attention.reviews.length },
-      },
-    });
+    return route.fallback();
   });
   await page.route(`**/api/admin/payment-exceptions/${EXCEPTION.id}/resolve`, async (route) => {
     attention.resolveBodies.push(route.request().postDataJSON());
-    attention.exceptions = [];
+    attention.exceptions.splice(0);
     await fulfillJson(route, { success: true, orderCancelled: false });
   });
   return { attention, refund };
@@ -105,7 +100,7 @@ for (const viewport of viewports) {
     test('要対応に「返金の失敗」が出て、確保し直せなかった注文には要確認が付く', async ({ page }) => {
       // FREQ-457-AC-01
       await mockApis(page, 'admin');
-      await openOrderTab(page);
+      await page.goto('/admin/orders');
 
       await expect(page.getByRole('heading', { name: '要対応 1件・要確認 1件' })).toBeVisible();
       await expect(page.getByText(`返金の失敗（${ORDER_NUMBER}）`)).toBeVisible();
@@ -123,16 +118,20 @@ for (const viewport of viewports) {
       await page.screenshot({ path: `test-results/group-e2/attention-refund-failed-${viewport.width}.png`, fullPage: true, animations: 'disabled' });
     });
 
-    test('「もう一度返金する」を押すと、その注文の返金の画面が開き、返金を受け付けると要対応を読み直す', async ({ page }) => {
+    test('「もう一度返金する」は詳細頁 ?open=refund へ移り返金の画面が開き、受け付けた後に一覧へ戻ると要対応を読み直す', async ({ page }) => {
       // FREQ-457-AC-02
       const { attention, refund } = await mockApis(page, 'admin');
-      await openOrderTab(page);
+      await page.goto('/admin/orders');
       await expect(page.getByText(`返金の失敗（${ORDER_NUMBER}）`)).toBeVisible();
       const readsBefore = attention.reads;
 
+      // 詳細頁は開いた直後に ?open= を消すので、押す前に ?open=refund への遷移を待ち受けておく
+      const opened = page.waitForURL(new RegExp(`/admin/orders/${ORDER_ID}\\?open=refund$`), { waitUntil: 'commit' });
       await page.getByRole('button', { name: 'もう一度返金する', exact: true }).click();
+      await opened;
       const dialog = page.getByRole('dialog', { name: `返金（注文 ${ORDER_NUMBER}）`, exact: true });
       await expect(dialog.getByRole('region', { name: '発送前の商品', exact: true })).toBeVisible();
+      await expect(page).toHaveURL(new RegExp(`/admin/orders/${ORDER_ID}$`));
       expect(refund.materialsReads).toBe(1);
 
       // 1つも発送していない注文の全部を選ぶと、送料と額が全部に固定される
@@ -142,13 +141,15 @@ for (const viewport of viewports) {
       await expect(page.getByRole('dialog')).toHaveCount(0);
       expect(refund.refundPosts).toHaveLength(1);
       await expect(page.getByRole('status').filter({ hasText: REFUND_TEXT.noticePending })).toBeVisible();
+      await page.getByRole('link', { name: '注文一覧表へ戻る', exact: true }).click();
+      await expect(page.getByText(`返金の失敗（${ORDER_NUMBER}）`)).toBeVisible();
       await expect.poll(() => attention.reads).toBeGreaterThan(readsBefore);
     });
 
     test('サポートの人には「もう一度返金する」が出ない。「解決済みにする」は出る', async ({ page }) => {
       // FREQ-457-AC-02
       await mockApis(page, 'supporter');
-      await openOrderTab(page);
+      await page.goto('/admin/orders');
       await expect(page.getByText(`返金の失敗（${ORDER_NUMBER}）`)).toBeVisible();
       await expect(page.getByRole('button', { name: 'もう一度返金する', exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: '解決済みにする', exact: true })).toBeVisible();
@@ -157,7 +158,7 @@ for (const viewport of viewports) {
     test('返せる額が残っていない注文の「返金の失敗」には「もう一度返金する」が出ない', async ({ page }) => {
       // FREQ-457-AC-02
       await mockApis(page, 'admin', [{ ...EXCEPTION, canRetryRefund: false }]);
-      await openOrderTab(page);
+      await page.goto('/admin/orders');
       await expect(page.getByText(`返金の失敗（${ORDER_NUMBER}）`)).toBeVisible();
       await expect(page.getByRole('button', { name: 'もう一度返金する', exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: '解決済みにする', exact: true })).toBeVisible();
@@ -166,7 +167,7 @@ for (const viewport of viewports) {
     test('「解決済みにする」の画面は、返金とお客様への連絡を済ませる案内を出し、メモを付けて送ると欄から消える', async ({ page }) => {
       // FREQ-457-AC-02
       const { attention } = await mockApis(page, 'admin');
-      await openOrderTab(page);
+      await page.goto('/admin/orders');
 
       await page.getByRole('button', { name: '解決済みにする', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: '解決済みにする', exact: true });
@@ -183,7 +184,7 @@ for (const viewport of viewports) {
 
     test('「返金の失敗」の行が並んだ要対応の欄でも、横方向のページスクロールが発生しない', async ({ page }) => {
       await mockApis(page, 'admin');
-      await openOrderTab(page);
+      await page.goto('/admin/orders');
       await expect(page.getByText(`返金の失敗（${ORDER_NUMBER}）`)).toBeVisible();
 
       const hasHorizontalOverflow = await page.evaluate(() => {

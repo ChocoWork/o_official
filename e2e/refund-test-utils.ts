@@ -18,7 +18,7 @@ import type {
   RefundPaymentMethod,
 } from '@/lib/orders/refund/refund-types';
 import { runWorkerOnce, withLocalDb } from './order-email-test-utils';
-import { fulfillJson, mockAdminSession, orderNumberOf } from './order-fulfillment-test-utils';
+import { detailSection, fulfillJson, mockAdminSession, orderNumberOf } from './order-fulfillment-test-utils';
 
 // ---- 金額と日時（画面・メールと同じ書き方で、期待の文字を作る） ----
 
@@ -312,6 +312,21 @@ export async function openPaidCancelDialog(page: Page, orderId: string): Promise
     .getByRole('row', { name: new RegExp(orderId) })
     .getByRole('button', { name: 'キャンセル', exact: true })
     .click();
+  const dialog = page.getByRole('dialog', { name: paidCancelDialogTitle(orderId), exact: true });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+/** 詳細の「支払いと返金」から開く。旧一覧用の2関数は Task 12 の利用者向けに残す。 */
+export async function openDetailRefundDialog(page: Page, orderId: string): Promise<Locator> {
+  await detailSection(page, '支払いと返金').getByRole('button', { name: '返金', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: refundDialogTitle(orderId), exact: true });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+export async function openDetailPaidCancelDialog(page: Page, orderId: string): Promise<Locator> {
+  await detailSection(page, '支払いと返金').getByRole('button', { name: 'キャンセル', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: paidCancelDialogTitle(orderId), exact: true });
   await expect(dialog).toBeVisible();
   return dialog;

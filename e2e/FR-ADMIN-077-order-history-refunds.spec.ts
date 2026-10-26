@@ -8,6 +8,7 @@
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { PRICE } from '../tests/integration/db/helpers/order-fixtures';
+import { orderDetailHistory } from './delivery-tracking-test-utils';
 import type {
   OrderHistoryEmailEntry,
   OrderHistoryRefundEntry,
@@ -27,13 +28,12 @@ import {
   withLocalDb,
 } from './order-email-test-utils';
 import {
-  adminOrder,
+  adminOrderDetail,
   fulfillJson,
   historyOf,
   mockAdminSession,
-  mockOrderList,
-  openOrderTab,
-  orderNumberOf,
+  mockOrderDetail,
+  openOrderDetail,
   viewports,
 } from './order-fulfillment-test-utils';
 import { formatJst, formatYen } from './refund-test-utils';
@@ -208,12 +208,10 @@ const ENTRIES: OrderHistoryResponse['entries'] = [
 
 async function openHistory(page: Page): Promise<Locator> {
   await mockAdminSession(page);
-  await mockOrderList(page, () => [adminOrder({ id: ORDER_ID, canShip: false })]);
+  await mockOrderDetail(page, () => adminOrderDetail({ id: ORDER_ID, canShip: false }));
   await page.route(`**/api/admin/orders/${ORDER_ID}/history`, (route) => fulfillJson(route, historyOf(ORDER_ID, ENTRIES)));
-  await openOrderTab(page);
-  await page.getByRole('button', { name: `${orderNumberOf(ORDER_ID)} の履歴` }).click();
-  const dialog = page.getByRole('dialog', { name: 'この注文の履歴', exact: true });
-  await expect(dialog).toBeVisible();
+  await openOrderDetail(page, ORDER_ID);
+  const dialog = await orderDetailHistory(page);
   await expect(dialog.getByRole('listitem').filter({ hasText: `返金 ${formatYen(12_800)}` })).toHaveCount(1);
   return dialog;
 }

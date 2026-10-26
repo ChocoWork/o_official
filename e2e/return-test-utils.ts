@@ -43,7 +43,7 @@ import {
   type MailBody,
 } from './order-email-test-utils';
 import { seedE2eRestock, withGroupG1Material } from './group-g1-test-utils';
-import { adminOrder, fulfillJson, orderLine, orderNumberOf } from './order-fulfillment-test-utils';
+import { adminOrder, detailSection, fulfillJson, orderLine, orderNumberOf } from './order-fulfillment-test-utils';
 import { formatYen } from './refund-test-utils';
 
 // ---- 言葉（共通の約束 C-5・C-6）。実装の定数を import せず、試験が自分で持つ。金額は画面と同じ全角の ￥ と桁区切り ----
@@ -1375,6 +1375,15 @@ export const createDialogName = (orderId: string) => `返品を作る（${orderN
 /** 一覧のその注文の行の「返品」系のボタンを押して、返品の画面を開く。ボタンの名前は次にすること（返品・受け取る・額を決めて返金する・申し込みを確かめる） */
 export async function openReturnsDialog(page: Page, orderId: string, buttonName = '返品'): Promise<Locator> {
   await page.getByRole('row', { name: new RegExp(orderId) }).getByRole('button', { name: buttonName, exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: returnsDialogName(orderId), exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('読み込み中です...')).toHaveCount(0);
+  return dialog;
+}
+
+/** 詳細用の入口。旧一覧の openReturnsDialog は Task 12 の各specのために維持する。 */
+export async function openDetailReturnsDialog(page: Page, orderId: string, buttonName = '返品'): Promise<Locator> {
+  await detailSection(page, '返品とキャンセルの申し込み').getByRole('button', { name: buttonName, exact: true }).click();
   const dialog = page.getByRole('dialog', { name: returnsDialogName(orderId), exact: true });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText('読み込み中です...')).toHaveCount(0);

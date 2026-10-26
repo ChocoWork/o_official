@@ -15,7 +15,6 @@
  */
 import { expect, test } from '@playwright/test';
 import { PRICE } from '../tests/integration/db/helpers/order-fixtures';
-import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import {
   beginRefund,
   createActor,
@@ -29,11 +28,11 @@ import {
   withLocalDb,
 } from './order-email-test-utils';
 import {
-  adminOrder,
+  adminOrder, adminOrderDetail, detailSection,
   fulfillJson,
   mockAdminSession,
-  mockOrderList,
-  openOrderTab,
+  mockOrderDetail,
+  openOrderDetail,
   orderLine,
   viewports,
 } from './order-fulfillment-test-utils';
@@ -44,7 +43,7 @@ import {
   materialLineOf,
   mockRefundRoutes,
   newRefundRouteState,
-  openRefundDialog,
+  openDetailRefundDialog,
   quantityInput,
   refundMaterialsOf,
 } from './refund-test-utils';
@@ -109,7 +108,7 @@ for (const viewport of viewports) {
 
     test('残りの商品を全部返金すると一覧を読み直して「配送中」になり、旧発送入口は表示しない', async ({ page }) => {
       // FREQ-454-AC-03
-      // G-1: 窓口が canShip=true と答えても、返金の前後とも「発送済みにする」は出さず、固定の停止文を1回だけ出す
+      // G-4: 返金の前後とも旧発送入口は出さず、発送欄から荷作り表を開ける
       const orderId = 'a2b2c3d4-2222-2222-8333-444455556666';
       const blouse = 'b2b2c3d4-0000-4000-8000-0000000000a1';
       const skirt = 'b2b2c3d4-0000-4000-8000-0000000000a2';
@@ -156,19 +155,18 @@ for (const viewport of viewports) {
         await fulfillJson(route, acceptedRefund({ refundId: 'e2b2c3d4-0000-4000-8000-000000000001', status: 'succeeded', amount: body.amount }));
       };
       await mockAdminSession(page);
-      await mockOrderList(page, () => [phase.refunded ? allShipped : partlyShipped]);
+      await mockOrderDetail(page, () => adminOrderDetail(phase.refunded ? allShipped : partlyShipped));
       await mockRefundRoutes(page, orderId, state);
-      await openOrderTab(page);
-      const row = page.getByRole('row', { name: new RegExp(orderId) });
+      await openOrderDetail(page, orderId);
+      const row = detailSection(page, '注文情報');
       await expect(row.getByText('発送準備中', { exact: true })).toBeVisible();
       await expect(row.getByText('一部発送済み', { exact: true })).toBeVisible();
       await expect(row.getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
       // G-3: 旧い停止文は、発送票へ誘導する案内（荷作り表から行います）に置き換わった
-      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toHaveCount(1);
-      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toBeVisible();
+      await expect(detailSection(page, '発送').getByRole('link', { name: '荷作り表を開く', exact: true })).toBeVisible();
 
       // 発送前のスカート1つ（残りの商品の全部）を返金する
-      const dialog = await openRefundDialog(page, orderId);
+      const dialog = await openDetailRefundDialog(page, orderId);
       await quantityInput(dialog, '発送前の商品', 'プリーツスカート（ホワイト / M）').fill('1');
       await dialog.getByRole('button', { name: `${formatYen(8_000)} を返金する`, exact: true }).click();
 
@@ -177,9 +175,8 @@ for (const viewport of viewports) {
       await expect(row.getByText('配送中', { exact: true })).toBeVisible();
       await expect(row.getByText('一部発送済み', { exact: true })).toHaveCount(0);
       await expect(row.getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
-      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toHaveCount(1);
-      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toBeVisible();
-      await expect(row.getByText('一部返金', { exact: true })).toBeVisible();
+      await expect(detailSection(page, '発送').getByRole('link', { name: '荷作り表を開く', exact: true })).toBeVisible();
+      await expect(detailSection(page, '支払いと返金').getByText('一部返金', { exact: true })).toBeVisible();
     });
 
     test('Aがない受注生産品の発送前返金は在庫台帳を動かさない（手元のDB）', async () => {

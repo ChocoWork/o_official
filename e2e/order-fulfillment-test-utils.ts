@@ -7,12 +7,15 @@ import { expect, type Locator, type Page, type Route } from '@playwright/test';
 import {
   ORDER_ITEM_STATUS_ORDER,
   type AdminOrderDetail,
+  type AdminOrderItemPage,
   type AdminOrderSummary,
   type OrderItem,
   type OrderLineItem,
 } from '@/lib/orders/admin-orders/admin-order-types';
 import type { AdminItemStatus } from '@/lib/orders/item-state/item-state-types';
 import type { OrderHistoryResponse } from '@/lib/orders/email/order-history';
+import type { countOrdersWithOpenCancelRequest } from '@/lib/orders/returns/cancel-request-reads';
+import type { countReturnAttention } from '@/lib/orders/returns/return-store';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 
 export const viewports = [
@@ -56,6 +59,30 @@ export async function mockOrderList(page: Page, current: () => OrderItem[]): Pro
       return fulfillJson(route, { data: orders, pagination: { page: 1, pageSize: 20, total: orders.length, totalPages: 1 } });
     },
   );
+  return { urls };
+}
+
+/** 新しい一覧の窓口。query の有無に関わらず、route と同じ応答全体をその時点の current から返す。 */
+export type OrderItemListResponse = {
+  data: AdminOrderItemPage;
+  returnAttention: Awaited<ReturnType<typeof countReturnAttention>>;
+  cancelRequestAttention: Awaited<ReturnType<typeof countOrdersWithOpenCancelRequest>>;
+};
+
+export function emptyOrderItemList(): OrderItemListResponse {
+  return {
+    data: { rows: [], totalRows: 0, totalOrders: 0, ordersCapped: false, ordersCap: 5000, page: 1, pageSize: 20, totalPages: 1 },
+    returnAttention: { requested: 0, refundWaiting: 0 }, cancelRequestAttention: 0,
+  };
+}
+
+export async function mockOrderItemList(page: Page, current: () => OrderItemListResponse): Promise<{ urls: string[] }> {
+  const urls: string[] = [];
+  await page.route((url) => url.pathname === '/api/admin/order-items', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    urls.push(route.request().url());
+    return fulfillJson(route, current());
+  });
   return { urls };
 }
 

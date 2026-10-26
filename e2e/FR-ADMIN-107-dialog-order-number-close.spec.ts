@@ -8,15 +8,15 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import { dialogHeaderClose } from './admin-test-utils';
-import { adminOrder, fulfillJson, mockAdminSession, mockOrderList, openOrderTab, viewports } from './order-fulfillment-test-utils';
+import { adminOrder, adminOrderDetail, fulfillJson, mockAdminSession, mockOrderDetail, openOrderDetail, viewports } from './order-fulfillment-test-utils';
 import {
   acceptedRefund,
   formatYen,
   materialLineOf,
   mockRefundRoutes,
   newRefundRouteState,
-  openPaidCancelDialog,
-  openRefundDialog,
+  openDetailPaidCancelDialog,
+  openDetailRefundDialog,
   paidCancelDialogTitle,
   quantityInput,
   refundDialogTitle,
@@ -49,7 +49,7 @@ async function mockApis(page: Page) {
     }),
   );
   await mockAdminSession(page);
-  await mockOrderList(page, () => [ROW]);
+  await mockOrderDetail(page, () => adminOrderDetail(ROW));
   await mockRefundRoutes(page, ORDER_ID, state);
   return { state };
 }
@@ -65,8 +65,8 @@ for (const viewport of viewports) {
     test('返金の画面の見出しに注文番号が表示され、お客様の名前は表示されない。何もせずに閉じるボタンは「戻る」', async ({ page }) => {
       // FREQ-510-AC-01, FREQ-510-AC-03
       const { state } = await mockApis(page);
-      await openOrderTab(page);
-      const dialog = await openRefundDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailRefundDialog(page, ORDER_ID);
 
       await expect(dialog.getByRole('heading', { name: refundDialogTitle(ORDER_ID), exact: true })).toBeVisible();
       await expect(dialog.getByRole('heading', { name: new RegExp(CUSTOMER_NAME) })).toHaveCount(0);
@@ -81,8 +81,8 @@ for (const viewport of viewports) {
     test('支払い済みのキャンセルの画面の見出しに注文番号が表示される', async ({ page }) => {
       // FREQ-510-AC-02
       await mockApis(page);
-      await openOrderTab(page);
-      const dialog = await openPaidCancelDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailPaidCancelDialog(page, ORDER_ID);
 
       await expect(dialog.getByRole('heading', { name: paidCancelDialogTitle(ORDER_ID), exact: true })).toBeVisible();
       await expect(dialog.getByRole('button', { name: '戻る', exact: true })).toBeVisible();
@@ -92,8 +92,8 @@ for (const viewport of viewports) {
       test('390px では返金の画面が画面いっぱいに開き、右上の「×」が表示され、押すと何も送らずに閉じる。最初のフォーカスは × ではない', async ({ page }) => {
         // FREQ-510-AC-04
         const { state } = await mockApis(page);
-        await openOrderTab(page);
-        const dialog = await openRefundDialog(page, ORDER_ID);
+        await openOrderDetail(page, ORDER_ID);
+        const dialog = await openDetailRefundDialog(page, ORDER_ID);
         const close = dialog.getByRole('button', { name: '閉じる', exact: true });
 
         await expect(close).toBeVisible();
@@ -117,8 +117,8 @@ for (const viewport of viewports) {
       test('390px の支払い済みのキャンセルの画面も、右上の「×」で閉じる', async ({ page }) => {
         // FREQ-510-AC-04
         const { state } = await mockApis(page);
-        await openOrderTab(page);
-        const dialog = await openPaidCancelDialog(page, ORDER_ID);
+        await openOrderDetail(page, ORDER_ID);
+        const dialog = await openDetailPaidCancelDialog(page, ORDER_ID);
 
         await dialog.getByRole('button', { name: '閉じる', exact: true }).click();
         await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -136,8 +136,8 @@ for (const viewport of viewports) {
           await gate;
           await fulfillJson(route, acceptedRefund({ amount: body.amount }));
         };
-        await openOrderTab(page);
-        const dialog = await openRefundDialog(page, ORDER_ID);
+        await openOrderDetail(page, ORDER_ID);
+        const dialog = await openDetailRefundDialog(page, ORDER_ID);
         await quantityInput(dialog, '発送前の商品', BLOUSE_LABEL).fill('1');
         // 未発送の商品を全部返すので、送料 800 も全部返す（FR-ADMIN-074 の unshipped と同じ）。返金額は ￥12,800
         await dialog.getByRole('button', { name: `${formatYen(12_800)} を返金する`, exact: true }).click();
@@ -153,8 +153,8 @@ for (const viewport of viewports) {
       test(`${viewport.width}px では返金の画面とキャンセルの画面に「×」が表示されない`, async ({ page }) => {
         // FREQ-510-AC-05
         await mockApis(page);
-        await openOrderTab(page);
-        const refund = await openRefundDialog(page, ORDER_ID);
+        await openOrderDetail(page, ORDER_ID);
+        const refund = await openDetailRefundDialog(page, ORDER_ID);
         await expect(refund.getByRole('button', { name: '閉じる', exact: true })).toHaveCount(0);
         await expect(dialogHeaderClose(refund)).toBeHidden();
         const box = await refund.boundingBox();
@@ -163,7 +163,7 @@ for (const viewport of viewports) {
         await refund.getByRole('button', { name: '戻る', exact: true }).click();
         await expect(page.getByRole('dialog')).toHaveCount(0);
 
-        const cancel = await openPaidCancelDialog(page, ORDER_ID);
+        const cancel = await openDetailPaidCancelDialog(page, ORDER_ID);
         await expect(cancel.getByRole('button', { name: '閉じる', exact: true })).toHaveCount(0);
         await expect(dialogHeaderClose(cancel)).toBeHidden();
       });

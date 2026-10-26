@@ -1,5 +1,7 @@
 # テスト仕様
 
+> G-4 Task 11 確認日: 2026-10-27。詳細の操作122（11case）と返金・取消・要対応・履歴15ファイルを詳細/新一覧へ付け替えた。下のTask 11に現行の期待を記載。本番buildのE2Eはcontroller待ち。
+
 > G-4 Task 10 確認日: 2026-10-27。FR-ADMIN-112・123(G-4)と旧410期待の修正、117の詳細へのLinkを追加。controllerの本番build・1 workerでの実測を受領し、fix round 1で状態の完全一致・描画待ち・権限シナリオ・bridge検査を修正。修正後E2Eはcontroller待ち。下のTask 10参照。
 >
 > G-4 Task 9 確認日: 2026-10-27。注文一覧表・品物のステータス・全件CSVのE2E（FR-ADMIN-110・121）と、その道具（e2e/order-admin-test-utils.ts・e2e/order-fulfillment-test-utils.ts の詳細の道具）を下のG-4節のTask 9へ、荷作り表の注文IDの確かめ（FR-ADMIN-116）の付け替えを116の行へ記載。型・lintまで実装者が確かめた。本番ビルドのE2E（390/768/1280px）の実測はcontrollerが流した: r1 は 115 通過・6 失敗（116 ③と121 ③の試験側の直し）、r2 は 103 通過・0 失敗、r3・r4（既定の4 workers）は各 121 通過・0 失敗。Opus レビューの直しの後: r5（1 worker）・r6・r7（4 workers）は各 118 通過・3 失敗（121 ⑥ ×3幅の `history.length` を「戻る」の後に測った試験側の誤り。測りを直した）、r8（121 だけ・1 worker）は 73 通過・0 失敗、r9・r10（110+121+116・4 workers）は各 121 通過・0 失敗（下のTask 9の実測記録）。
@@ -624,7 +626,7 @@ controller の reset 後に流す DB suite: `group_g3_tracking_parent`・`group_
 | [FR-ADMIN-120](../../../e2e/FR-ADMIN-120-combined-shipment-emails.spec.ts) | FREQ-533 AC-03・AC-05・FREQ-534 AC-01・FREQ-541 AC-03。同じ会員の2注文（宛先のメールは注文ごとに別）を1つの票で確定し、手元のMailpitで注文ごとに1通だけ届く。各メールはその注文の品物と数・残りの案内だけで、同じ票の別の注文の注文番号・品物・メールアドレスが無い。同じ要求の再送・画面の再読込・毎分の処理を重ねてもメールが増えず、通知を外した票には届かない。番号なしの票のメールは追跡欄が無く、画面で後から番号を入れると更新メールが注文ごとに1通届き「先にお知らせした伝票番号は使えません」は入らない。本物のお客様のログインで、注文の窓口・画面と注文状況の頁（確認の前後）に別の注文の情報が出ない |
 | [FR-ADMIN-123](../../../e2e/FR-ADMIN-123-group-g-permissions.spec.ts) G-3 の節 | FREQ-540 AC-10・FREQ-534 AC-05・FREQ-531 AC-04。①本物の窓口11メソッドは未ログインで401、②お客様の本物のログインで403。③サポーター（初期値）は荷作り表と票を操作でき、出荷日の訂正は画面が案内の文だけを出し、窓口を直接呼ぶとDBの関数が断る（票の版と履歴は不変）。④店長が `admin.shipping.manage` を外すと票は見られるが確定・破棄・新しい下書き・取消が断られ、戻すと取消も確定も通る。⑤ `admin.shipping.read` を外すと荷作り表と票の頁は権限の文だけ。⑥旧4つの発送の入口は差し替えないHTTPの404（G-4 Task 10）。DB旧関数拒否はgroup_g1_legacy_disabled。⑦サポーターと店長の管理メニューに PACKING があり SETTINGS はサポーターに無い。G-2 の管理メニューの case には PACKING の期待を足した |
 | 再開: [FR-ACCOUNT-041](../../../e2e/FR-ACCOUNT-041-delivery-without-tracking.spec.ts)・[042](../../../e2e/FR-ACCOUNT-042-delivery-tracking.spec.ts)・[043](../../../e2e/FR-ACCOUNT-043-delivery-visibility.spec.ts)・[FR-ADMIN-104](../../../e2e/FR-ADMIN-104-delivery-tracking-settings.spec.ts) | FREQ-534 AC-01・AC-02・FREQ-541 AC-03・FREQ-494。G-1 で止めていた6箇所の `test.skip` を外し、期待は変えずに材料だけ付け替えた。発送の材料（`shipFixture`・`createShippedFixture`）は発送票（下書き→確定の公開関数）を経由し、`markDeliveredInDb`・`editTrackingInDb` は発送が属する票を引いて票単位の公開関数を呼ぶ（票を持たない発送には使えない）。`createAdminActor` は役割 admin を付ける。過去の届いた日が要る材料（`deliveredAt`）だけ従来の合成の発送を残す。FR-ADMIN-104 の「追跡がオフの間も…」は本文の無い skip だけの case だったので、発送票の画面で伝票番号の直しと手の配達済みをし、17TRACK へ呼び出しが無いことを確かめる本文を書いた |
-| 旧い案内の文の期待: [FR-ADMIN-050](../../../e2e/FR-ADMIN-050-order-shipping.spec.ts)・[051](../../../e2e/FR-ADMIN-051-order-refund-safety.spec.ts)・[061](../../../e2e/FR-ADMIN-061-order-list-review-states.spec.ts)・[069](../../../e2e/FR-ADMIN-069-made-to-order-completion.spec.ts)・FR-ADMIN-123 の G-1 の節 | 旧 FREQ-541 AC-04（案内文の置換を指した当時の記録。現在の AC-04「停止31箇所の処置」とは別）。Task 3 で置き換わった注文の一覧の上の案内（「発送は荷作り表から行います。」）と履歴の上の案内の文へ、期待の文だけを直した（「表の外に1回」の期待は同じ）。FR-ADMIN-082 の同じ期待は Task 11 の r1 の直しで直した（停止中の case は Task 12 で削除した） |
+| 旧い案内の文の期待: [FR-ADMIN-050](../../../e2e/FR-ADMIN-050-order-shipping.spec.ts)・[051](../../../e2e/FR-ADMIN-051-order-refund-safety.spec.ts)・[061](../../../e2e/FR-ADMIN-061-order-list-review-states.spec.ts)・[069](../../../e2e/FR-ADMIN-069-made-to-order-completion.spec.ts)・FR-ADMIN-123 の G-1 の節 | 旧 FREQ-541 AC-04（案内文の置換を指した当時の記録。現在の AC-04「停止31箇所の処置」とは別）。Task 3 で置き換わった注文の一覧の上の案内（「発送は荷作り表から行います。」）と履歴の上の案内の文へ、期待の文だけを直した（「表の外に1回」の期待は同じ）。FR-ADMIN-082 の同じ期待は Task 11 の r1 の直しで直した（停止中の case は Task 12 で削除した） G-4 Task 11では051・061・082を詳細へ付け替え、旧一覧の案内1回の期待を発送欄の「荷作り表を開く」Linkと旧発送入口の不在へ変更。詳細の履歴の案内は埋め込み欄で保持。 |
 
 [e2e/shipping-test-utils.ts](../../../e2e/shipping-test-utils.ts) の `mockShippingUiBridge` は `/api/admin/packing`・`/api/admin/shipment-slips**`・注文の履歴を実行者つきで公開関数へ橋渡しし、`createShippingMaterial`（会員/ゲスト・古い注文日・配送先・入金日・割当）、`holdPaymentReview`、`createExchangeFeeMaterial`、`createDraftInDb`・`shipMaterialsInDb`、`readSlip`・`readOutbox`・`fulfillmentsOf`、荷作り表の1回の読み（`readPackingSnapshot`・`packingIndexOf`）と、その位置から自分の行を開く `revealPackingRow`、`withShippingScenario`（終わりに作った下書きを破棄し、発送されずに残った準備中の品を合成の発送で閉じる）を持つ。bridge が返す「操作できるか・出荷日を訂正できるか」の表示用の値は、実行者の有効な役割の権限をDBの表から読んで窓口と同じ組で作る（許否には使わない）。単体は [group-g1-test-utils](../../../tests/unit/e2e/group-g1-test-utils.test.ts) が、`markDeliveredInDb`・`editTrackingInDb` の置き換えを偽のDBで確かめる。
 
@@ -841,3 +843,47 @@ DB 結合は新しく書いていない。
 | `SEC-SEARCH-021-AC-02` | `FR-SEARCH-018-search-page-flows` | 3 | プレビューの固定の文と「検索した語」の枠。写真 6 枚を `test-results/wave1c/` に残す |
 
 書き換えて印を残した行: `SEC-SEARCH-020-AC-01`（偽の送り元の側 (a) だけにした。波 4）。範囲外の `e2e/FR-ADMIN-108-select-fields.spec.ts` は、記事の id `news-1` を `1` に直した（編集頁が `isNewsId` を通らない id で要求を送らなくなったため）。`FR-NEWS-ADMIN-001` の差し替えの記事 id も同じ理由で `1`/`2`/`N` に直した。残した `test.fail` は、波 3 以降（署名・IP・no-store の共有）と DB の移行が要る物。
+
+## G-4 Task 11: 詳細の操作と既存E2Eの入口（2026-10-27）
+
+実装済み・controllerの本番build実行待ち。FR-ADMIN-122は390/768/1280pxの11case（33登録予定）。①〜⑧⑩⑪はmock、⑨は実際のお客様の頁・APIと試験ごとの新しいDB材料を使う。型・lint・既存文書/E2E helper単体の成功を、このE2Eの通過数に数えない。
+
+| FR-ADMIN-122のcase（briefの題） | AC・確かめ |
+| --- | --- |
+| 1. 詳細は注文情報・支払いと返金・品物・発送・返品とキャンセルの申し込み・要対応・変更履歴の7つの欄をこの順に出す | FREQ-539-AC-01。7つのh2と同名regionを順序・1件ずつで確かめる。 |
+| 2. 返金・キャンセル〔未入金の取消／支払い済み〕・返品・キャンセルの申し込みの入口が詳細にあり、サポーターの旗では返金と支払い済みのキャンセルと「額を決めて返金する」が出ず、受け取る/返品・未入金の取消・キャンセルの申し込みは出る（旧 091 ②） | FREQ-539-AC-02。091②の8組の返品summaryを店長/サポーターで確認。返金/支払済み/未入金の取消・返品・キャンセル申請のdialogも開く。 |
+| 3. J-12: 取消の画面の見出しに注文番号、返金・支払い済みのキャンセルの見出しに注文番号〔名前は出ない〕。390pxでは画面いっぱいに開き右上の×で何も送らずに閉じる | FREQ-539-AC-03。全3種の確認画面の見出しに注文番号、氏名なし。返金/支払い済みの取消は390px全画面（1px許容）と右上×、送信0件。 |
+| 4. 操作の後は詳細を読み直し、読み直しに失敗したら「最新の状態を読み込めませんでした。」と「この画面の内容は最新ではありません。」を出して成功の知らせを出さない。「読み込み直す」で直る | FREQ-539-AC-03。review受理後の詳細GETを500にし、2つの固定の失敗文・成功通知なし。読み込み直すで要対応と履歴を復旧。 |
+| 5. 履歴: 品物の状態の変化〔変更前後・理由・人または自動・発送票への参照〕とメールの再送が詳細の中で使える | FREQ-539-AC-04。品物の変更前後/数量/理由/人と自動/発送票Link、メール再送本文と手動行。dialogは使わない。 |
+| 6. 要対応: 要確認の印と「確認済みにする」〔manage の旗がある時だけ〕、支払い・配送の要対応の言葉、「要対応の一覧で対応する」で /admin/orders#attention へ移る（旧 061 ①） | FREQ-539-AC-04。manage=falseでも要確認の印、確認済み入口なし。manage=trueで解消・詳細再読。支払い/配送の文と一覧#attentionへ遷移。 |
+| 7. 発送: 既存の発送票へのリンク〔票の頁が開く〕と注文別の発送、発送の操作〔発送・伝票訂正・手の配達済み〕が詳細に無い。同梱の注意文 | FREQ-539-AC-05（発送の欄）。注文別の発送・伝票番号と既存票、同梱の注意文。旧操作なし。Linkを押して本物の票の頁の見出しを読む（APIは固定）。 |
+| 8. 要対応の欄の「もう一度返金する」は /admin/orders/{id}?open=refund へ移り返金の画面が開く。返品の返金は ?open=returns | FREQ-539-AC-02。新一覧の通常返金は?open=refund、返品返金は?open=returns。遷移・対応する画面・queryの除去。 |
+| 9. E-5 の回帰: お客様の注文画面・注文状況の頁の言葉と公開範囲が変わらない〔110 ⑥ と同じ入り方で、同じ注文が管理の詳細で返品受付中でも客向けの画面に管理の言葉が出ない〕 | FREQ-541-AC-05。新しい固有会員/注文/返品をDBで作る。詳細と履歴の描画後だけ1SQLの数量を読み、同じ注文の実会員頁と実注文状況頁に客語を確認。匿名の確認前はaccess=noneの3キーだけで、返品の状況（返品の受付済み）はリンクだけで見える公開の範囲（FREQ-498-AC-03）として出て、管理の言葉は出ない。電話確認後はverifiedで返品の記録を出す。 |
+| 10. ORDER タブは注文一覧表への入口だけ。旧い一覧・各 dialog の入口・旧CSVは出ない | FREQ-539-AC-05。ORDERの注文メニューは新一覧Link1件だけ。旧表・dialog/CSV/発送入口なし、GET旧一覧の要求0。 |
+| 11. 頁全体が横にはみ出さず、表は見出しを保ったスクロール領域に収まる | FREQ-539-AC-01。30行を入れ、名前つき/キーボード可のスクロール領域、9列の順、sticky見出しと頁全体の横はみ出しなし。 |
+
+### 付け替えた15ファイルの現行の期待
+
+| spec | 現行の入口と維持する期待 |
+| --- | --- |
+| [FR-ADMIN-051](../../../e2e/FR-ADMIN-051-order-refund-safety.spec.ts) | 詳細の支払い欄で未入金/入金済み/発送済みを個別に開く。保留の知らせ・詳細GETの増加・旧発送入口の不在。 |
+| [FR-ADMIN-060](../../../e2e/FR-ADMIN-060-order-attention-inbox.spec.ts) | /admin/ordersの件数・確認済み・解決・0件・断りと読込失敗・横はみ出し。サイドナビ/KPIだけ/adminのまま。 |
+| [FR-ADMIN-061](../../../e2e/FR-ADMIN-061-order-list-review-states.spec.ts) | 旧①を122⑥、旧②を121④、旧③〜⑥を110③へ移設/置換。残る支払額の理由と横はみ出しは詳細。 |
+| [FR-ADMIN-063](../../../e2e/FR-ADMIN-063-order-cancel-dialog.spec.ts) | 理由・お知らせ・メモ・払込票・確認不可・失敗の取消を詳細で保持。送信中に同じ注文の返金を開き直し、先の終了が閉じない。この case が守る契約は「取消の送信が終わっても、今開いている返金の画面を閉じない」だけ（詳細頁は1注文だけなので、別の注文の画面を開く元の形は作れない）。 |
+| [FR-ADMIN-064](../../../e2e/FR-ADMIN-064-recovered-order-review.spec.ts) | 支払いから作った注文の要確認と確認済みを新一覧の要対応で保持。 |
+| [FR-ADMIN-065](../../../e2e/FR-ADMIN-065-order-history-and-email-resend.spec.ts) | 状態変化・メール本文・再送を埋め込み履歴内で保持。Escapeと履歴ボタンへのfocus復帰のみ撤去、題は維持。題の「Escape で閉じる」は旧い文言のまま残り、今の case は埋め込みの履歴で状態の変化・メール本文・再送を確かめ、閉じる動作は確かめない。request/DB/Mailpitのcaseは変更なし。 |
+| [FR-ADMIN-067](../../../e2e/FR-ADMIN-067-order-email-paused-banner.spec.ts) | 新一覧のメール停止の帯と原因・解除後の再読。 |
+| [FR-ADMIN-074](../../../e2e/FR-ADMIN-074-refund-dialog.spec.ts) | 返金UIの全条件・送信本文・再送キー・確かめ中・取消後入金・横幅は保持。詳細GETの増加へ変更。題の「一覧を読み直す」は旧い文言のまま残り、今の case は詳細のGETの回数の増加を確かめる。DBの2caseは変更なし。 |
+| [FR-ADMIN-075](../../../e2e/FR-ADMIN-075-paid-order-cancel.spec.ts) | 各注文の詳細の支払い欄でキャンセル可否。サポーターはpermissions.refund=false。全額/内訳/本文/再送キー/保留後の進み具合/横幅を保持。題は指定の2件だけ変更。 |
+| [FR-ADMIN-077](../../../e2e/FR-ADMIN-077-order-history-refunds.spec.ts) | 同じ返金・取消・外部返金・確保し直しの履歴行と件数を埋め込みへ。DBのcaseは変更なし。 |
+| [FR-ADMIN-078](../../../e2e/FR-ADMIN-078-refund-failure-attention.spec.ts) | 要対応の返金失敗・権限・返せる額・手動解決は新一覧。再試行ボタン（router.push）→?open=refundの詳細→受理後に一覧へ戻って要対応を再読。題1件変更。 |
+| [FR-ADMIN-082](../../../e2e/FR-ADMIN-082-fulfillment-after-refund.spec.ts) | 返金受理後に詳細の進み具合が配送中、一部発送済みの印が消え、旧発送入口なし。DBの2caseは変更なし。 |
+| [FR-ADMIN-105](../../../e2e/FR-ADMIN-105-cancel-reasons.spec.ts) | 未入金/支払済みをそれぞれ詳細で開き、同じ6理由の値と順を保持。6組のDB/worker/Mailpitは変更なし。 |
+| [FR-ADMIN-106](../../../e2e/FR-ADMIN-106-refund-failure-note-required.spec.ts) | 通常/返品返金のメモ必須・空白不可と、その他のメモ任意の本文/再読を新一覧で保持。 |
+| [FR-ADMIN-107](../../../e2e/FR-ADMIN-107-dialog-order-number-close.spec.ts) | 詳細から同じ返金/支払い済みキャンセルを開く。J-12の氏名なし・戻る・390pxの寸法（1px許容）・×/初期focus/送信中/広い幅の不在は保持。 |
+
+共有helperは旧mockOrderList/openOrderTab/adminOrderを保持し、詳細用の返金/支払済み取消/返品/キャンセル申請/埋め込み履歴を別のexportへ追加。mockOrderItemListはGET /api/admin/order-items（任意のquery）へrouteと同じdata/returnAttention/cancelRequestAttentionをcurrentから返す。要対応は既存mockOrderAttentionを使用。
+
+新しいDBの⑨はwithOrderAdminScenario({ returnSettings: true })の中で、14314,2→190520,0の順に鍵を取り、詳細と履歴の描画後にだけ同じ接続を読む。追跡設定を変えないので940488を追加しない。追記専用の行は削除しない。既存DBのみのcaseはbriefどおり変更せず、全件baseline比較はTask 13。
+
+旧061の削除前に、移設先の題（122⑥・121④・110③）を照合し、FREQ-412-AC-01/02/03/05を移した。091②のFREQ-468-AC-02は122②へ参照を移し、元caseはTask 12まで残す。ケースごとの全処置は `.superpowers/sdd/2026-10-26-group-g4-orders/e2e-disposition.md` のTask 11に記録。

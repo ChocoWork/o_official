@@ -4,13 +4,14 @@
  *
  * 画面は、今までの管理画面の E2E と同じく窓口を差し替えて確かめる（本物の管理者のログインには2段階認証が要る）。
  * 再送で2通目が本当に届くことは、手元の DB の関数・worker の定期処理の入口・手元のメール受けで確かめる。
- * 履歴のダイアログと送ったメールの中身は、目で見るために3つの画面幅の写しを test-results/group-d/ に残す。
+ * 詳細の埋め込み履歴と送ったメールの中身は、目で見るために3つの画面幅の写しを test-results/group-d/ に残す。
  */
 import { expect, test, type Page } from '@playwright/test';
 import type { OrderItem } from '@/lib/orders/admin-orders/admin-order-types';
 import type { OrderEmailContentResponse, OrderHistoryEmailEntry, OrderHistoryResponse } from '@/lib/orders/email/order-history';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 import { createActor, createPaidOrder, mailsTo, runWorkerOnce, uniqueEmail, withLocalDb } from './order-email-test-utils';
+import { adminOrderDetail, detailSection, mockOrderDetail, openOrderDetail } from './order-fulfillment-test-utils';
 
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
@@ -88,12 +89,7 @@ async function mockAdminApis(page: Page, state: { resent: boolean; resendBodies:
       contentType: 'application/json',
       body: JSON.stringify({ data: { exceptions: [], reviews: [], counts: { exceptions: 0, reviews: 0 } } }),
     }));
-  await page.route('**/api/admin/orders?**', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ data: [ORDER_ROW], pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 } }),
-    }));
+  await mockOrderDetail(page, () => adminOrderDetail(ORDER_ROW));
   await page.route(`**/api/admin/orders/${ORDER_ID}/history`, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(historyBody(state.resent)) }));
   await page.route(`**/api/admin/orders/${ORDER_ID}/emails/${SENT_EMAIL.emailId}`, (route) =>
@@ -119,42 +115,37 @@ for (const viewport of viewports) {
       // FREQ-436-AC-01
       const state = { resent: false, resendBodies: [] as unknown[] };
       await mockAdminApis(page, state);
-      await page.goto('/admin');
-      await page.getByRole('button', { name: 'ORDER' }).click();
-
-      const historyButton = page.getByRole('button', { name: 'ORD-A1B2C3D4 の履歴' });
-      await historyButton.click();
-      const dialog = page.getByRole('dialog', { name: 'この注文の履歴' });
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = detailSection(page, '変更履歴');
       await expect(dialog).toBeVisible();
       await expect(dialog.getByText('宛先: hanako@example.com')).toBeVisible();
       await expect(dialog.getByRole('listitem').nth(0)).toContainText('注文確認のメール');
       await expect(dialog.getByRole('listitem').nth(0)).toContainText('配達済み');
       await expect(dialog.getByRole('listitem').nth(1)).toContainText('支払い手続き中 → 決済完了');
       await expect(dialog.getByRole('listitem').nth(2)).toContainText('注文を受け付けました');
-      // ダイアログは開く時に160ミリ秒で現れる。途中の写りを避けるため、動きを終わらせてから撮る
+      // 履歴が描画された状態で3幅の写しを残す
       await page.screenshot({ path: `test-results/group-d/order-history-${viewport.width}.png`, animations: 'disabled' });
 
       await dialog.getByRole('button', { name: '中身を見る' }).click();
-      const content = page.getByRole('dialog', { name: '注文確認のメールの中身' });
+      const content = detailSection(page, '変更履歴');
       await expect(content.getByText(SUBJECT)).toBeVisible();
       await expect(content.getByText(/ご注文を承りました。/)).toBeVisible();
       await page.screenshot({ path: `test-results/group-d/order-email-content-${viewport.width}.png`, animations: 'disabled' });
       await content.getByRole('button', { name: '戻る' }).click();
 
-      await page.getByRole('dialog', { name: 'この注文の履歴' }).getByRole('button', { name: 'お客様へ再送' }).click();
-      const confirm = page.getByRole('dialog', { name: 'お客様へ再送' });
+      await detailSection(page, '変更履歴').getByRole('button', { name: 'お客様へ再送' }).click();
+      const confirm = detailSection(page, '変更履歴');
       await expect(confirm.getByText('注文確認のメールを、お客様（注文のメールアドレス）へもう一度送ります')).toBeVisible();
       await confirm.getByRole('button', { name: '再送する' }).click();
 
-      const after = page.getByRole('dialog', { name: 'この注文の履歴' });
+      const after = detailSection(page, '変更履歴');
       await expect(after.getByText('再送を受け付けました。少し待つと届きます。')).toBeVisible();
       await expect(after.getByText('手で再送（admin@example.com）')).toBeVisible();
       await expect(after.getByRole('button', { name: 'お客様へ再送' })).toHaveCount(0);
       expect(state.resendBodies).toEqual([{ kind: 'paid' }]);
 
-      await page.keyboard.press('Escape');
       await expect(page.getByRole('dialog')).toHaveCount(0);
-      await expect(historyButton).toBeFocused();
+      await expect(after).toBeVisible();
     });
 
     test('再送すると、同じ件名のメールが2通目として届き、履歴に手の再送が残る（手元の DB と Mailpit）', async ({ request }) => {

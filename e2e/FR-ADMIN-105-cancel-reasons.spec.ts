@@ -4,8 +4,8 @@
  * controllerが本番ビルドと手元Supabaseで実行する。実Stripeは呼ばない。
  */
 import { expect, test } from '@playwright/test';
-import { adminOrder, mockAdminSession, mockOrderList, openOrderTab, orderNumberOf, viewports } from './order-fulfillment-test-utils';
-import { materialLineOf, mockRefundRoutes, newRefundRouteState, openPaidCancelDialog, refundMaterialsOf } from './refund-test-utils';
+import { adminOrderDetail, detailSection, mockAdminSession, mockOrderDetail, openOrderDetail, orderNumberOf, viewports } from './order-fulfillment-test-utils';
+import { materialLineOf, mockRefundRoutes, newRefundRouteState, openDetailPaidCancelDialog, refundMaterialsOf } from './refund-test-utils';
 import { createActor, createOrderWithLines, mailBodies, runWorkerUntil, sentOutboxCount, uniqueEmail, withLocalDb } from './order-email-test-utils';
 
 test.use({ trace: 'off', video: 'off', screenshot: 'off' });
@@ -33,23 +33,23 @@ for (const viewport of viewports) {
       // FREQ-506-AC-01
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await mockAdminSession(page);
-      await mockOrderList(page, () => [
-        adminOrder({ id: UNPAID_ID, status: '未決済', orderStatus: 'pending', canCancel: true, cancelKind: 'unpaid', canShip: false, canRefund: false }),
-        adminOrder({ id: PAID_ID, canCancel: true, cancelKind: 'paid', canShip: false, canRefund: true }),
-      ]);
+      await mockOrderDetail(page, (id) => adminOrderDetail(id === UNPAID_ID
+        ? { id, status: '未決済', orderStatus: 'pending', canCancel: true, cancelKind: 'unpaid', canShip: false, canRefund: false }
+        : { id, canCancel: true, cancelKind: 'paid', canShip: false, canRefund: true }));
       const materials = refundMaterialsOf({ orderId: PAID_ID, lines: [materialLineOf({ orderItemId: 'b6b2c3d4-0000-4000-8000-000000000001' })] });
       await mockRefundRoutes(page, PAID_ID, newRefundRouteState(materials));
-      await openOrderTab(page);
-      await page.getByRole('row', { name: new RegExp(UNPAID_ID) }).getByRole('button', { name: 'キャンセル', exact: true }).click();
+      await openOrderDetail(page, UNPAID_ID);
+      await detailSection(page, '支払いと返金').getByRole('button', { name: 'キャンセル', exact: true }).click();
       const unpaid = page.getByRole('dialog', { name: `注文を取り消す（注文 ${orderNumberOf(UNPAID_ID)}）`, exact: true });
-      expect(await unpaid.getByLabel('取消の理由').getByRole('option').evaluateAll((options) =>
+      expect(await unpaid.getByRole('combobox', { name: '取消の理由', exact: true }).getByRole('option').evaluateAll((options) =>
         options.map((option) => ({ value: (option as HTMLOptionElement).value, label: option.textContent })),
       )).toEqual(OPTIONS);
       await unpaid.getByRole('button', { name: '戻る', exact: true }).click();
-      const paid = await openPaidCancelDialog(page, PAID_ID);
+      await openOrderDetail(page, PAID_ID);
+      const paid = await openDetailPaidCancelDialog(page, PAID_ID);
       // 支払い済みの画面は見出しを先に出し、返金の材料を読み込んでから理由の選択欄を出す。出るのを待ってから中身を読む
-      await expect(paid.getByLabel('取消の理由')).toBeVisible();
-      expect(await paid.getByLabel('取消の理由').getByRole('option').evaluateAll((options) =>
+      await expect(paid.getByRole('combobox', { name: '取消の理由', exact: true })).toBeVisible();
+      expect(await paid.getByRole('combobox', { name: '取消の理由', exact: true }).getByRole('option').evaluateAll((options) =>
         options.map((option) => ({ value: (option as HTMLOptionElement).value, label: option.textContent })),
       )).toEqual(OPTIONS);
     });

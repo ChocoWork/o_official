@@ -1,5 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { mockOrderAttention } from './order-admin-test-utils';
+import { emptyOrderItemList, mockOrderItemList } from './order-fulfillment-test-utils';
 
 // FREQ-411: 要対応・要確認を ORDER タブの一覧の上に出し、確認済み・解決済みにできる。件数をサイドナビと KPI 画面に出す。
 const viewports = [
@@ -73,30 +75,10 @@ async function mockAdminApis(page: Page, state: AttentionState): Promise<void> {
   await page.route('**/api/admin/kpi', (route) =>
     route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'not mocked' }) }),
   );
-  await page.route('**/api/admin/order-attention', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        data: {
-          exceptions: state.exceptions,
-          reviews: state.reviews,
-          // 窓口は配送の要対応（グループ E-4）も必ず返す。追跡がオフの間は空で、件数は 0（欄の見出しに「配送」を足さない）
-          deliveries: [],
-          counts: { exceptions: state.exceptions.length, reviews: state.reviews.length, deliveries: 0 },
-        },
-      }),
-    }),
-  );
-  await page.route('**/api/admin/orders?**', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ data: [], pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 } }),
-    }),
-  );
+  await mockOrderAttention(page, { exceptions: state.exceptions, reviews: state.reviews });
+  await mockOrderItemList(page, emptyOrderItemList);
   await page.route(`**/api/admin/orders/${REVIEW.orderId}/review`, (route) => {
-    state.reviews = [];
+    state.reviews.splice(0);
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
   });
   await page.route(`**/api/admin/payment-exceptions/${EXCEPTION.id}/resolve`, async (route) => {
@@ -109,7 +91,7 @@ async function mockAdminApis(page: Page, state: AttentionState): Promise<void> {
         body: JSON.stringify(state.resolveRefusal.body),
       });
     }
-    state.exceptions = [];
+    state.exceptions.splice(0);
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -119,15 +101,14 @@ async function mockAdminApis(page: Page, state: AttentionState): Promise<void> {
 }
 
 async function openOrders(page: Page) {
-  await page.goto('/admin');
-  await page.getByRole('button', { name: 'ORDER' }).click();
+  await page.goto('/admin/orders');
 }
 
 /** 「注文を取り消して解決」を、理由とメモを入れて送る */
 async function cancelAndResolve(page: Page) {
   await page.getByRole('button', { name: '注文を取り消して解決' }).click();
   const dialog = page.getByRole('dialog', { name: '注文を取り消して解決' });
-  await dialog.getByLabel('取消の理由').selectOption('customer_request');
+  await dialog.getByRole('combobox', { name: '取消の理由', exact: true }).selectOption('customer_request');
   await dialog.getByRole('textbox', { name: /メモ/ }).fill('お客様から取消の依頼');
   await dialog.getByRole('button', { name: '取り消す' }).click();
 }
@@ -186,7 +167,7 @@ for (const viewport of viewports) {
       const attentionLoaded = page.waitForResponse('**/api/admin/order-attention');
       await openOrders(page);
       await attentionLoaded;
-      await expect(page.getByText('条件に一致する注文はありません')).toBeVisible();
+      await expect(page.getByText('条件に一致する品物はありません。')).toBeVisible();
 
       await expect(page.getByRole('heading', { name: /要対応/ })).toHaveCount(0);
       await expect(page.getByRole('button', { name: /未処理/ })).toHaveCount(0);

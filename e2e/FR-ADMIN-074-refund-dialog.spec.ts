@@ -26,11 +26,11 @@ import {
 } from './order-email-test-utils';
 import {
   UUID_PATTERN,
-  adminOrder,
+  adminOrder, adminOrderDetail,
   fulfillJson,
   mockAdminSession,
-  mockOrderList,
-  openOrderTab,
+  mockOrderDetail,
+  openOrderDetail,
   viewports,
 } from './order-fulfillment-test-utils';
 import {
@@ -42,7 +42,7 @@ import {
   materialLineOf,
   mockRefundRoutes,
   newRefundRouteState,
-  openRefundDialog,
+  openDetailRefundDialog,
   quantityInput,
   readBreakdown,
   refundErrorMessage,
@@ -100,7 +100,7 @@ const ROW = adminOrder({
 async function mockApis(page: Page, materials: RefundMaterials) {
   const state = newRefundRouteState(materials);
   await mockAdminSession(page);
-  const list = await mockOrderList(page, () => [ROW]);
+  const list = await mockOrderDetail(page, () => adminOrderDetail(ROW));
   await mockRefundRoutes(page, ORDER_ID, state);
   return { state, list };
 }
@@ -140,8 +140,8 @@ for (const viewport of viewports) {
     test('発送前の商品と発送済みの商品に分かれて並び、数は返せる数までに収まる。支払い方法に合う案内が出る', async ({ page }) => {
       // FREQ-448-AC-01
       await mockApis(page, partlyShipped());
-      await openOrderTab(page);
-      const dialog = await openRefundDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailRefundDialog(page, ORDER_ID);
 
       const before = dialog.getByRole('region', { name: BEFORE, exact: true });
       const after = dialog.getByRole('region', { name: AFTER, exact: true });
@@ -166,8 +166,8 @@ for (const viewport of viewports) {
     test('「在庫に戻す」は発送前の在庫の品を選んだ時だけ出て、最初から入っている。受注生産の品には戻らない注意が出る', async ({ page }) => {
       // FREQ-448-AC-02
       await mockApis(page, partlyShipped());
-      await openOrderTab(page);
-      const dialog = await openRefundDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailRefundDialog(page, ORDER_ID);
       const restock = dialog.getByRole('checkbox', { name: '在庫に戻す' });
       await expect(quantityInput(dialog, BEFORE, BLOUSE_LABEL)).toBeVisible();
       await expect(restock).toHaveCount(0);
@@ -201,8 +201,8 @@ for (const viewport of viewports) {
         void native.dismiss();
       });
       const { state, list } = await mockApis(page, partlyShipped());
-      await openOrderTab(page);
-      const dialog = await openRefundDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailRefundDialog(page, ORDER_ID);
       const button = (amount: number) =>
         dialog.getByRole('button', { name: `${formatYen(amount)} を返金する`, exact: true });
 
@@ -217,14 +217,14 @@ for (const viewport of viewports) {
       await expect(button(12_000)).toBeEnabled();
 
       // 送料を足す。返せる送料（800）を超えて入れても、800 に収まる
-      const shipping = dialog.getByLabel('送料', { exact: true });
+      const shipping = dialog.getByRole('spinbutton', { name: '送料', exact: true });
       await expect(dialog.getByText(`返せる送料: ${formatYen(800)}`)).toBeVisible();
       await shipping.fill('5000');
       await expect(shipping).toHaveValue('800');
       await expect(button(12_800)).toBeEnabled();
 
       // 返金額は手で直せる。返せる額（￥54,800）を超えて入れても、返せる額に収まる
-      const amount = dialog.getByLabel('返金額', { exact: true });
+      const amount = dialog.getByRole('spinbutton', { name: '返金額', exact: true });
       await expect(dialog.getByText(`返せる額: ${formatYen(54_800)}`)).toBeVisible();
       await amount.fill('99999999');
       await expect(amount).toHaveValue('54800');
@@ -232,12 +232,12 @@ for (const viewport of viewports) {
       await expect(button(12_300)).toBeEnabled();
 
       // 理由・メモ・お知らせ・在庫に戻すの選び。「不正の疑い」には注意が出る
-      const reason = dialog.getByLabel('Stripe に伝える理由');
+      const reason = dialog.getByRole('combobox', { name: 'Stripe に伝える理由', exact: true });
       await reason.selectOption('fraudulent');
       await expect(dialog.getByText(REFUND_TEXT.fraudNotice)).toBeVisible();
       await reason.selectOption('duplicate');
       await expect(dialog.getByText(REFUND_TEXT.fraudNotice)).toHaveCount(0);
-      await dialog.getByLabel('メモ（お客様には見えません）').fill('お客様の都合で一部返品');
+      await dialog.getByRole('textbox', { name: 'メモ（お客様には見えません）', exact: true }).fill('お客様の都合で一部返品');
       const notify = dialog.getByRole('checkbox', { name: 'お客様に返金のメールを送る' });
       await expect(notify).toBeChecked();
       await notify.uncheck();
@@ -266,10 +266,10 @@ for (const viewport of viewports) {
     test('1つも発送していない注文で全部の商品を選ぶと、送料と返金額が全部に固定されて減らせない。商品を減らすと固定が外れる', async ({ page }) => {
       // FREQ-448-AC-03, FREQ-448-AC-04
       const { state } = await mockApis(page, unshipped());
-      await openOrderTab(page);
-      const dialog = await openRefundDialog(page, ORDER_ID);
-      const shipping = dialog.getByLabel('送料', { exact: true });
-      const amount = dialog.getByLabel('返金額', { exact: true });
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailRefundDialog(page, ORDER_ID);
+      const shipping = dialog.getByRole('spinbutton', { name: '送料', exact: true });
+      const amount = dialog.getByRole('spinbutton', { name: '返金額', exact: true });
 
       await dialog.getByRole('button', { name: 'すべて選ぶ', exact: true }).click();
       await expect(quantityInput(dialog, BEFORE, BLOUSE_LABEL)).toHaveValue('1');
@@ -322,8 +322,8 @@ for (const viewport of viewports) {
           lines: [materialLineOf({ orderItemId: BLOUSE, itemPrice: 5_000, lineDiscount: 333 })],
         }),
       );
-      await openOrderTab(page);
-      const dialog = await openRefundDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailRefundDialog(page, ORDER_ID);
 
       await quantityInput(dialog, BEFORE, BLOUSE_LABEL).fill('1');
       await expect.poll(() => readBreakdown(dialog)).toEqual({
@@ -348,13 +348,13 @@ for (const viewport of viewports) {
         }
         await fulfillJson(route, acceptedRefund({ amount: body.amount }));
       };
-      await openOrderTab(page);
-      const dialog = await openRefundDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailRefundDialog(page, ORDER_ID);
 
       // 発送済みのブラウス1つと送料を選び、返金額を返せる額の全部（￥54,800）に直して送る
       await quantityInput(dialog, AFTER, BLOUSE_LABEL).fill('1');
-      await dialog.getByLabel('送料', { exact: true }).fill('800');
-      await dialog.getByLabel('返金額', { exact: true }).fill('54800');
+      await dialog.getByRole('spinbutton', { name: '送料', exact: true }).fill('800');
+      await dialog.getByRole('spinbutton', { name: '返金額', exact: true }).fill('54800');
       await dialog.getByRole('button', { name: `${formatYen(54_800)} を返金する`, exact: true }).click();
 
       await expect(dialog.getByRole('alert')).toHaveText(refundErrorMessage('must_include_unshipped'));
@@ -384,11 +384,11 @@ for (const viewport of viewports) {
     test('お金が戻る時期の案内は、支払い方法に合わせて出る', async ({ page }) => {
       // FREQ-448-AC-01
       const { state } = await mockApis(page, partlyShipped());
-      await openOrderTab(page);
+      await openOrderDetail(page, ORDER_ID);
 
       for (const method of ['card', 'link', 'paypay', 'konbini', 'unknown'] as const) {
         state.materials = partlyShipped(method);
-        const dialog = await openRefundDialog(page, ORDER_ID);
+        const dialog = await openDetailRefundDialog(page, ORDER_ID);
         await expect(dialog.getByText(TIMING_NOTES[method], { exact: true })).toBeVisible();
         await dialog.getByRole('button', { name: '戻る', exact: true }).click();
         await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -403,8 +403,8 @@ for (const viewport of viewports) {
         state.answerRefund = async (route) => {
           await failure.fail(route);
         };
-        await openOrderTab(page);
-        const dialog = await openRefundDialog(page, ORDER_ID);
+        await openOrderDetail(page, ORDER_ID);
+        const dialog = await openDetailRefundDialog(page, ORDER_ID);
         await quantityInput(dialog, BEFORE, BLOUSE_LABEL).fill('1');
         await dialog.getByRole('button', { name: `${formatYen(12_000)} を返金する`, exact: true }).click();
 
@@ -436,8 +436,8 @@ for (const viewport of viewports) {
       state.answerRefund = async (route) => {
         await route.abort('failed');
       };
-      await openOrderTab(page);
-      const dialog = await openRefundDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailRefundDialog(page, ORDER_ID);
       await quantityInput(dialog, BEFORE, BLOUSE_LABEL).fill('1');
       await dialog.getByRole('button', { name: `${formatYen(12_000)} を返金する`, exact: true }).click();
       await expect(dialog.getByRole('alert')).toHaveText(REFUND_TEXT.unknownOutcome);
@@ -462,8 +462,8 @@ for (const viewport of viewports) {
         await gate;
         await fulfillJson(route, acceptedRefund({ amount: body.amount }));
       };
-      await openOrderTab(page);
-      const dialog = await openRefundDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailRefundDialog(page, ORDER_ID);
       await quantityInput(dialog, BEFORE, BLOUSE_LABEL).fill('1');
       const submit = dialog.getByRole('button', { name: `${formatYen(12_000)} を返金する`, exact: true });
       await submit.click();
@@ -491,8 +491,8 @@ for (const viewport of viewports) {
           lines: [materialLineOf({ orderItemId: BLOUSE, itemPrice: 12_000 })],
         }),
       );
-      await openOrderTab(page);
-      const dialog = await openRefundDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailRefundDialog(page, ORDER_ID);
 
       await expect(dialog.getByText(`確かめ中の返金があります（${formatYen(12_800)}）。`)).toBeVisible();
       await expect(dialog.locator('input, select, textarea')).toHaveCount(0);
@@ -572,13 +572,13 @@ for (const viewport of viewports) {
           ],
         }),
       );
-      await openOrderTab(page);
-      const dialog = await openRefundDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailRefundDialog(page, ORDER_ID);
 
       await dialog.getByRole('button', { name: 'すべて選ぶ', exact: true }).click();
-      await expect(dialog.getByLabel('送料', { exact: true })).toHaveValue('800');
-      await expect(dialog.getByLabel('送料', { exact: true })).not.toBeEditable();
-      await expect(dialog.getByLabel('返金額', { exact: true })).toHaveValue('42800');
+      await expect(dialog.getByRole('spinbutton', { name: '送料', exact: true })).toHaveValue('800');
+      await expect(dialog.getByRole('spinbutton', { name: '送料', exact: true })).not.toBeEditable();
+      await expect(dialog.getByRole('spinbutton', { name: '返金額', exact: true })).toHaveValue('42800');
       await expect(dialog.getByRole('checkbox', { name: '在庫に戻す' })).toHaveCount(0);
       await dialog.getByRole('button', { name: `${formatYen(42_800)} を返金する`, exact: true }).click();
 
@@ -653,8 +653,8 @@ for (const viewport of viewports) {
 
     test('小さい画面では画面いっぱいに開き、広い画面では中央に収まる。横方向のページスクロールが発生しない', async ({ page }) => {
       await mockApis(page, partlyShipped());
-      await openOrderTab(page);
-      const dialog = await openRefundDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailRefundDialog(page, ORDER_ID);
       await quantityInput(dialog, BEFORE, BLOUSE_LABEL).fill('1');
       const submit = dialog.getByRole('button', { name: `${formatYen(12_000)} を返金する`, exact: true });
       await expect(submit).toBeEnabled();

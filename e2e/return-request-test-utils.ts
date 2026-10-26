@@ -17,7 +17,7 @@ import {
   runWorkerUntil, runWorkerOnce, recordRefundResult, type E2eOrderLine,
 } from './order-email-test-utils';
 import { seedE2eRestock, seedE2eShipment, withGroupG1Material } from './group-g1-test-utils';
-import { fulfillJson, openOrderTab, orderNumberOf, orderLine, viewports } from './order-fulfillment-test-utils';
+import { detailSection, fulfillJson, openOrderTab, orderNumberOf, orderLine, viewports } from './order-fulfillment-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
 import {
   createShippedOrder, receiveReturnInDb, returnLabelOf, SHOP_ALERT_TO,
@@ -612,6 +612,14 @@ export async function cancelScene(page: Page, rr: RR, fx: Awaited<ReturnType<typ
 export async function openCancel(page: Page, orderId: string) {
   await page.getByRole('row', { name: new RegExp(orderId) })
     .getByRole('button', { name: 'キャンセルの申し込み', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'キャンセルの申し込み（' + orderNumberOf(orderId) + '）', exact: true });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+/** 詳細用。旧一覧を開く bridge/openCancel は Task 12 の利用者のために変えない。 */
+export async function openDetailCancel(page: Page, orderId: string) {
+  await detailSection(page, '返品とキャンセルの申し込み').getByRole('button', { name: 'キャンセルの申し込み', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'キャンセルの申し込み（' + orderNumberOf(orderId) + '）', exact: true });
   await expect(dialog).toBeVisible();
   return dialog;

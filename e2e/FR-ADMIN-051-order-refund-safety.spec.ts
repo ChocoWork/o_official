@@ -1,14 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { OrderItem, OrderLineItem } from '@/lib/orders/admin-orders/admin-order-types';
-import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
-import { mockAdminSession, mockOrderList, openOrderTab, viewports } from './order-fulfillment-test-utils';
+import { adminOrderDetail, detailSection, mockAdminSession, mockOrderDetail, openOrderDetail, viewports } from './order-fulfillment-test-utils';
 import {
   REFUND_TEXT,
   formatYen,
   materialLineOf,
   mockRefundRoutes,
   newRefundRouteState,
-  openRefundDialog,
+  openDetailRefundDialog,
   quantityInput,
   refundMaterialsOf,
 } from './refund-test-utils';
@@ -31,7 +30,7 @@ const LINE = {
 
 const ORDERS = [
   {
-    id: 'order-paid',
+    id: 'a5100001-1111-4222-8333-444455556666',
     customerName: '決済 花子',
     customerEmail: 'paid@example.com',
     orderDate: '2026-09-22',
@@ -46,7 +45,7 @@ const ORDERS = [
     canShip: true,
   },
   {
-    id: 'order-pending',
+    id: 'a5100002-1111-4222-8333-444455556666',
     customerName: '未決済 太郎',
     customerEmail: 'pending@example.com',
     orderDate: '2026-09-22',
@@ -58,9 +57,10 @@ const ORDERS = [
     progressKey: 'unpaid',
     canRefund: false,
     canCancel: true,
+    cancelKind: 'unpaid',
   },
   {
-    id: 'order-shipped',
+    id: 'a5100003-1111-4222-8333-444455556666',
     customerName: '発送 次郎',
     customerEmail: 'shipped@example.com',
     orderDate: '2026-09-22',
@@ -75,8 +75,9 @@ const ORDERS = [
 ] satisfies OrderItem[];
 
 async function openOrders(page: Page) {
-  await openOrderTab(page);
-  await expect(page.getByText('決済 花子')).toBeVisible();
+  await openOrderDetail(page, ORDERS[0].id);
+  // 顧客名と配送先の宛名に同じ名前が出るので、顧客名の欄（dd の文字が名前だけの物）を見る
+  await expect(detailSection(page, '注文情報').getByRole('definition').filter({ hasText: /^決済 花子$/ })).toBeVisible();
 }
 
 for (const viewport of viewports) {
@@ -88,17 +89,17 @@ for (const viewport of viewports) {
     test('未決済にだけキャンセル、入金済みと発送済みに返金を表示する', async ({ page }) => {
       // FREQ-404-AC-01
       await mockAdminSession(page);
-      await mockOrderList(page, () => ORDERS);
+      await mockOrderDetail(page, (id) => adminOrderDetail(ORDERS.find((order) => order.id === id)!));
       await openOrders(page);
 
-      const orderTable = page.getByRole('table');
-      await expect(orderTable.getByRole('button', { name: 'キャンセル', exact: true })).toHaveCount(1);
-      await expect(orderTable.getByRole('button', { name: '返金', exact: true })).toHaveCount(2);
-      // G-1: 窓口が canShip=true と答えても旧の「発送済みにする」は出さず、固定の停止文を表の外に1回だけ出す（発送能力の差は G-3 FR-ADMIN-116 で新票へ書換）
-      await expect(orderTable.getByRole('button', { name: '発送済みにする', exact: true })).toHaveCount(0);
-      // G-3: 旧い停止文は、発送票へ誘導する案内（荷作り表から行います）に置き換わった
-      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toHaveCount(1);
-      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toBeVisible();
+      for (const order of ORDERS) {
+        await openOrderDetail(page, order.id);
+        const payment = detailSection(page, '支払いと返金');
+        await expect(payment.getByRole('button', { name: 'キャンセル', exact: true })).toHaveCount(order.canCancel ? 1 : 0);
+        await expect(payment.getByRole('button', { name: '返金', exact: true })).toHaveCount(order.canRefund ? 1 : 0);
+        await expect(page.getByRole('button', { name: '発送済みにする', exact: true })).toHaveCount(0);
+        await expect(detailSection(page, '発送').getByRole('link', { name: '荷作り表を開く', exact: true })).toBeVisible();
+      }
     });
 
     test('返金は確かめ付きの返金の画面から行い、保留で受け付けても注文は入金済みのまま、一覧を読み直して知らせる', async ({ page }) => {
@@ -110,31 +111,31 @@ for (const viewport of viewports) {
         await dialog.dismiss();
       });
       await mockAdminSession(page);
-      const list = await mockOrderList(page, () => ORDERS);
+      const list = await mockOrderDetail(page, (id) => adminOrderDetail(ORDERS.find((order) => order.id === id)!));
       const state = newRefundRouteState(
         refundMaterialsOf({
-          orderId: 'order-paid',
+          orderId: 'a5100001-1111-4222-8333-444455556666',
           lines: [materialLineOf({ orderItemId: LINE.id, name: 'ブラウス', itemPrice: 10_000 })],
         }),
       );
-      await mockRefundRoutes(page, 'order-paid', state);
+      await mockRefundRoutes(page, 'a5100001-1111-4222-8333-444455556666', state);
       await openOrders(page);
 
-      const dialog = await openRefundDialog(page, 'order-paid');
+      const dialog = await openDetailRefundDialog(page, 'a5100001-1111-4222-8333-444455556666');
       await quantityInput(dialog, '発送前の商品', 'ブラウス（ホワイト / M）').fill('1');
       await dialog.getByRole('button', { name: `${formatYen(10_000)} を返金する`, exact: true }).click();
 
       await expect(page.getByRole('status').filter({ hasText: REFUND_TEXT.noticePending })).toBeVisible();
       expect(state.refundPosts).toHaveLength(1);
-      // 返金を受け付けても注文は入金済みのまま（画面の言葉は「発送準備中」のまま）。一覧の表の中の状態の印だけを数える
-      await expect(page.getByRole('table').getByText('発送準備中', { exact: true })).toHaveCount(1);
+      // 返金を受け付けても注文は入金済みのまま（画面の言葉は「発送準備中」のまま）。詳細の注文情報の進み具合だけを数える
+      await expect(detailSection(page, '注文情報').getByText('発送準備中', { exact: true })).toHaveCount(1);
       await expect.poll(() => list.urls.length).toBe(2);
       expect(nativeDialogs).toEqual([]);
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {
       await mockAdminSession(page);
-      await mockOrderList(page, () => ORDERS);
+      await mockOrderDetail(page, (id) => adminOrderDetail(ORDERS.find((order) => order.id === id)!));
       await openOrders(page);
 
       const hasHorizontalOverflow = await page.evaluate(() => {

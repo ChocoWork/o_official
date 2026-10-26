@@ -1,219 +1,35 @@
-import { test, expect, Page } from '@playwright/test';
-import type { OrderItem } from '@/lib/orders/admin-orders/admin-order-types';
-import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
-import { mockAdminBackgroundApis } from './admin-test-utils';
+import { test, expect, type Page } from '@playwright/test';
+import { adminOrderDetail, detailSection, mockAdminSession, mockOrderDetail, openOrderDetail, viewports } from './order-fulfillment-test-utils';
 
-// FREQ-412: 注文一覧に支払い手続き中・放棄・要確認の印・発送止めの理由を出し、要確認のみ・状態で絞り込める。
-const viewports = [
-  { name: 'mobile', width: 390, height: 844 },
-  { name: 'tablet', width: 768, height: 1024 },
-  { name: 'desktop', width: 1280, height: 900 },
-];
-
-const BASE = {
-  customerEmail: 'buyer@example.com',
-  orderDate: '2026-09-27',
-  itemCount: '1点',
-  items: [
-    {
-      id: 'c1000000-0000-4000-8000-000000000001',
-      name: 'シルクブラウス',
-      color: 'ホワイト',
-      size: 'M',
-      quantity: 1,
-      fulfillmentType: 'stock',
-      shipped: 0,
-      inProduction: 0,
-      readyUnshipped: 1,
-    },
-  ],
-  totalAmount: '¥28,800',
-} satisfies Pick<OrderItem, 'customerEmail' | 'orderDate' | 'itemCount' | 'items' | 'totalAmount'>;
-
-const ORDERS = [
-  {
-    ...BASE,
-    id: 'order-progress',
-    customerName: '手続き 花子',
-    status: '支払い手続き中',
-    orderStatus: 'payment_in_progress',
-    progressKey: 'payment_in_progress',
-    canCancel: true,
-  },
-  {
-    ...BASE,
-    id: 'order-review',
-    customerName: '確認 太郎',
-    status: '発送準備中',
-    orderStatus: 'paid',
-    progressKey: 'ready',
-    canShip: true,
-    needsReview: true,
-  },
-  {
-    ...BASE,
-    id: 'order-blocked',
-    customerName: '金額 次郎',
-    status: '発送準備中',
-    orderStatus: 'paid',
-    progressKey: 'ready',
-    canShip: false,
-    shipBlockedReason: '支払額の確認が必要です（要対応）',
-  },
-  {
-    // G-1: 確認済み（要確認の印なし）で窓口が canShip=true と答える行。旧の発送の入口は、要確認の行と同じく出さない
-    ...BASE,
-    id: 'order-confirmed',
-    customerName: '確認済み 三郎',
-    status: '発送準備中',
-    orderStatus: 'paid',
-    progressKey: 'ready',
-    canShip: true,
-    needsReview: false,
-  },
-] satisfies OrderItem[];
-
-async function mockAdminApis(page: Page, requestedUrls: string[]): Promise<void> {
-  await mockAdminBackgroundApis(page);
-  await page.route('**/api/auth/me', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        authenticated: true,
-        user: { id: 'a', email: 'a@e.com', role: 'admin', mfaVerified: true },
-      }),
-    }),
-  );
-  await page.route('**/api/admin/orders?**', (route) => {
-    requestedUrls.push(route.request().url());
-    return route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ data: ORDERS, pagination: { page: 1, pageSize: 20, total: ORDERS.length, totalPages: 1 } }),
-    });
-  });
+// FREQ-412: ①→122⑥、②→121④、③〜⑥→110③。残る発送止めの理由は詳細で確かめる。
+const ORDER_ID = 'a6100000-1111-4222-8333-444455556666';
+async function mockApis(page: Page): Promise<void> {
+  await mockAdminSession(page);
+  await mockOrderDetail(page, () => adminOrderDetail({
+    id: ORDER_ID, canShip: false, shipBlockedReason: '支払額の確認が必要です（要対応）',
+    attention: { paymentExceptions: [{ id: 'f6100000-1111-4222-8333-444455556666', reason: 'amount_mismatch', detectionCount: 1, firstDetectedAt: '2026-10-12T01:00:00Z' }] },
+  }));
 }
-
-async function openOrders(page: Page) {
-  await page.goto('/admin');
-  await page.getByRole('button', { name: 'ORDER' }).click();
-  await expect(page.getByRole('row', { name: /order-progress/ })).toBeVisible();
-}
-
-function lastRequestedUrl(urls: string[]): string {
-  return urls[urls.length - 1] ?? '';
-}
-
 for (const viewport of viewports) {
   test.describe(`FR-ADMIN-061 order list review states (${viewport.name})`, () => {
     test.beforeEach(async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('要確認の注文に「要確認」の印が表示される', async ({ page }) => {
-      // FREQ-412-AC-01
-      await mockAdminApis(page, []);
-      await openOrders(page);
-
-      await expect(page.getByRole('row', { name: /order-review/ }).getByText('要確認', { exact: true })).toBeVisible();
-      await expect(page.getByRole('row', { name: /order-progress/ }).getByText('要確認', { exact: true })).toHaveCount(0);
-    });
-
-    test('「要確認のみ」を選ぶと review=only で一覧を読み直す', async ({ page }) => {
-      // FREQ-412-AC-02
-      const requestedUrls: string[] = [];
-      await mockAdminApis(page, requestedUrls);
-      await openOrders(page);
-
-      await page.getByRole('button', { name: '要確認のみ' }).click();
-
-      await expect.poll(() => requestedUrls.some((url) => url.includes('review=only'))).toBe(true);
-    });
-
-    test('既定の一覧は状態を送らず（放棄はサーバーが除く）、「放棄」を選ぶと status=abandoned を送る', async ({ page }) => {
-      // FREQ-412-AC-03
-      const requestedUrls: string[] = [];
-      await mockAdminApis(page, requestedUrls);
-      await openOrders(page);
-
-      expect(requestedUrls[0]).not.toContain('status=');
-      await page.getByRole('button', { name: '放棄', exact: true }).click();
-
-      await expect.poll(() => requestedUrls.some((url) => url.includes('status=abandoned'))).toBe(true);
-    });
-
-    test('「放棄」のあとに別の状態を選ぶと、「放棄」の選択が外れ、その状態で絞り込む', async ({ page }) => {
-      // FREQ-412-AC-05
-      const requestedUrls: string[] = [];
-      await mockAdminApis(page, requestedUrls);
-      await openOrders(page);
-      const abandoned = page.getByRole('button', { name: '放棄', exact: true });
-      const pending = page.getByRole('button', { name: '未決済', exact: true });
-
-      await abandoned.click();
-      await expect(abandoned).toHaveAttribute('aria-pressed', 'true');
-      await expect.poll(() => lastRequestedUrl(requestedUrls)).toContain('status=abandoned');
-
-      await pending.click();
-
-      // 放棄は status を送らないと読めない。他の状態と一緒に選んだままだと status を送れず、放棄の行は出ないのに「放棄」だけ選ばれて見える
-      await expect(abandoned).toHaveAttribute('aria-pressed', 'false');
-      await expect(pending).toHaveAttribute('aria-pressed', 'true');
-      await expect.poll(() => lastRequestedUrl(requestedUrls)).toContain('status=pending');
-    });
-
-    test('「放棄」を選ぶと、選んでいた他の状態が外れる（放棄以外の状態は、これまでどおり重ねて選べる）', async ({ page }) => {
-      // FREQ-412-AC-05
-      const requestedUrls: string[] = [];
-      await mockAdminApis(page, requestedUrls);
-      await openOrders(page);
-      const pending = page.getByRole('button', { name: '未決済', exact: true });
-      const waiting = page.getByRole('button', { name: '発送待ち（受注生産中・発送準備中）', exact: true });
-      const abandoned = page.getByRole('button', { name: '放棄', exact: true });
-
-      await pending.click();
-      await waiting.click();
-      // 放棄以外は重ねて選べる（2つ以上なら status は送らず、画面側で絞る）
-      await expect(pending).toHaveAttribute('aria-pressed', 'true');
-      await expect(waiting).toHaveAttribute('aria-pressed', 'true');
-      await expect.poll(() => lastRequestedUrl(requestedUrls)).not.toContain('status=');
-
-      await abandoned.click();
-
-      await expect(abandoned).toHaveAttribute('aria-pressed', 'true');
-      await expect(pending).toHaveAttribute('aria-pressed', 'false');
-      await expect(waiting).toHaveAttribute('aria-pressed', 'false');
-      await expect.poll(() => lastRequestedUrl(requestedUrls)).toContain('status=abandoned');
-    });
-
-    test('支払い手続き中の注文が状態名つきで表示される', async ({ page }) => {
-      await mockAdminApis(page, []);
-      await openOrders(page);
-
-      await expect(page.getByRole('row', { name: /order-progress/ }).getByText('支払い手続き中', { exact: true })).toBeVisible();
-    });
-
     test('支払額の違いの要対応が開いている注文は「発送済みにする」を押せず、理由が表示される', async ({ page }) => {
       // FREQ-412-AC-04
-      await mockAdminApis(page, []);
-      await openOrders(page);
+      await mockApis(page);
+      await openOrderDetail(page, ORDER_ID);
 
-      const blocked = page.getByRole('row', { name: /order-blocked/ });
-      await expect(blocked.getByText('支払額の確認が必要です（要対応）')).toBeVisible();
-      await expect(blocked.getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
-      // G-1: 窓口が canShip=true と答える要確認の行・確認済みの行でも、旧の「発送済みにする」は出さず、固定の配送停止文を表の外に1回だけ出す
-      // （発送できる行とできない行の差は G-3 FR-ADMIN-116 で新票へ書換）
-      await expect(page.getByRole('row', { name: /order-review/ }).getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
-      await expect(page.getByRole('row', { name: /order-confirmed/ }).getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
-      // G-3: 旧い停止文は、発送票へ誘導する案内（荷作り表から行います）に置き換わった
-      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toHaveCount(1);
-      await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toBeVisible();
+      const info = detailSection(page, '注文情報');
+      await expect(info.getByText('支払額の確認が必要です（要対応）', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: '発送済みにする' })).toHaveCount(0);
+      await expect(detailSection(page, '発送').getByRole('link', { name: '荷作り表を開く', exact: true })).toBeVisible();
     });
 
     test('横方向のページスクロールが発生しない', async ({ page }) => {
-      await mockAdminApis(page, []);
-      await openOrders(page);
+      await mockApis(page);
+      await openOrderDetail(page, ORDER_ID);
 
       const hasHorizontalOverflow = await page.evaluate(() => {
         const doc = document.documentElement;

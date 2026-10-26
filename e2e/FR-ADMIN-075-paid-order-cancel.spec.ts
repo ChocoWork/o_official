@@ -11,11 +11,11 @@ import type { OrderItem } from '@/lib/orders/admin-orders/admin-order-types';
 import type { RefundErrorResponse, RefundMaterials, RefundPaymentMethod } from '@/lib/orders/refund/refund-types';
 import {
   UUID_PATTERN,
-  adminOrder,
+  adminOrder, adminOrderDetail, detailSection, SUPPORTER_DETAIL_PERMISSIONS,
   fulfillJson,
   mockAdminSession,
-  mockOrderList,
-  openOrderTab,
+  mockOrderDetail,
+  openOrderDetail,
   orderLine,
   orderNumberOf,
   viewports,
@@ -29,7 +29,7 @@ import {
   mockAdminSessionAs,
   mockRefundRoutes,
   newRefundRouteState,
-  openPaidCancelDialog,
+  openDetailPaidCancelDialog,
   paidCancelDialogTitle,
   refundErrorMessage,
   refundMaterialsOf,
@@ -147,12 +147,12 @@ function paidMaterials(paymentMethod: RefundPaymentMethod = 'card'): RefundMater
 async function mockApis(page: Page, rows: () => OrderItem[], materials: RefundMaterials) {
   const state = newRefundRouteState(materials);
   await mockAdminSession(page);
-  const list = await mockOrderList(page, rows);
+  const list = await mockOrderDetail(page, (id) => adminOrderDetail(rows().find((row) => row.id === id)!));
   await mockRefundRoutes(page, PAID_ID, state);
   return { state, list };
 }
 
-const rowOf = (page: Page, id: string) => page.getByRole('row', { name: new RegExp(id) });
+const rowOf = (page: Page) => detailSection(page, '注文情報');
 
 for (const viewport of viewports) {
   test.describe(`FR-ADMIN-075 paid order cancel (${viewport.name})`, () => {
@@ -163,43 +163,39 @@ for (const viewport of viewports) {
     test('キャンセルは、支払い済みで1つも発送していない注文と未入金の注文に出て、一部発送した後と発送済みの注文には出ない。支払い済みは新しい画面が開く', async ({ page }) => {
       // FREQ-449-AC-01, FREQ-449-AC-02
       await mockApis(page, () => rowsOf('paid'), paidMaterials());
-      await openOrderTab(page);
-      const cancelButton = (id: string) => rowOf(page, id).getByRole('button', { name: 'キャンセル', exact: true });
-
-      await expect(cancelButton(PAID_ID)).toBeVisible();
-      await expect(cancelButton(PARTIAL_ID)).toHaveCount(0);
-      await expect(cancelButton(SHIPPED_ID)).toHaveCount(0);
-      await expect(cancelButton(UNPAID_ID)).toBeVisible();
-
-      // 未入金の注文は、今までの取消の画面
-      await cancelButton(UNPAID_ID).click();
+      await openOrderDetail(page, PAID_ID);
+      const cancelButton = () => detailSection(page, '支払いと返金').getByRole('button', { name: 'キャンセル', exact: true });
+      for (const [id, count] of [[PAID_ID, 1], [PARTIAL_ID, 0], [SHIPPED_ID, 0], [UNPAID_ID, 1]] as const) {
+        await openOrderDetail(page, id);
+        await expect(cancelButton()).toHaveCount(count);
+      }
+      await cancelButton().click();
       await expect(page.getByRole('dialog', { name: `注文を取り消す（注文 ${orderNumberOf(UNPAID_ID)}）`, exact: true })).toBeVisible();
       await page.getByRole('button', { name: '戻る', exact: true }).click();
       await expect(page.getByRole('dialog')).toHaveCount(0);
-
-      // 支払い済みの注文は、返金を伴う新しい画面
-      await cancelButton(PAID_ID).click();
+      await openOrderDetail(page, PAID_ID);
+      await cancelButton().click();
       await expect(page.getByRole('dialog', { name: paidCancelDialogTitle(PAID_ID), exact: true })).toBeVisible();
     });
 
-    test('サポートの人の一覧には、支払い済みの注文の「キャンセル」と「返金」が出ず、未入金の注文の取消は出る', async ({ page }) => {
+    test('サポートの人の詳細には、支払い済みの「キャンセル」と「返金」が出ず、未入金の取消は出る', async ({ page }) => {
       // FREQ-449-AC-01
       await mockAdminSessionAs(page, 'supporter');
-      await mockOrderList(page, () => rowsOf('paid'));
-      await openOrderTab(page);
-
-      await expect(rowOf(page, PAID_ID)).toBeVisible();
-      await expect(rowOf(page, PAID_ID).getByRole('button', { name: 'キャンセル', exact: true })).toHaveCount(0);
-      await expect(rowOf(page, PAID_ID).getByRole('button', { name: '返金', exact: true })).toHaveCount(0);
-      await expect(rowOf(page, SHIPPED_ID).getByRole('button', { name: '返金', exact: true })).toHaveCount(0);
-      await expect(rowOf(page, UNPAID_ID).getByRole('button', { name: 'キャンセル', exact: true })).toBeVisible();
+      await mockOrderDetail(page, (id) => adminOrderDetail({ ...rowsOf('paid').find((row) => row.id === id)!, permissions: SUPPORTER_DETAIL_PERMISSIONS }));
+      for (const id of [PAID_ID, SHIPPED_ID, UNPAID_ID]) {
+        await openOrderDetail(page, id);
+        const payment = detailSection(page, '支払いと返金');
+        await expect(payment).toBeVisible();
+        await expect(payment.getByRole('button', { name: 'キャンセル', exact: true })).toHaveCount(id === UNPAID_ID ? 1 : 0);
+        await expect(payment.getByRole('button', { name: '返金', exact: true })).toHaveCount(0);
+      }
     });
 
     test('全額と内訳とお金が戻る時期が出る。理由を選ぶまでは押せず、「その他」はメモも要る。在庫に戻すとお知らせは最初から入っている', async ({ page }) => {
       // FREQ-449-AC-03
       await mockApis(page, () => rowsOf('paid'), paidMaterials());
-      await openOrderTab(page);
-      const dialog = await openPaidCancelDialog(page, PAID_ID);
+      await openOrderDetail(page, PAID_ID);
+      const dialog = await openDetailPaidCancelDialog(page, PAID_ID);
 
       await expect(dialog.getByText(`返金する額: ${formatYen(FULL)}（全額）`)).toBeVisible();
       await expect(dialog.getByRole('list', { name: '返金の内訳', exact: true }).getByRole('listitem')).toHaveText([
@@ -214,17 +210,17 @@ for (const viewport of viewports) {
       // 理由を選ぶまでは押せない。「その他」はメモを入れるまで押せない
       const submit = dialog.getByRole('button', { name: CANCEL_BUTTON, exact: true });
       await expect(submit).toBeDisabled();
-      const reason = dialog.getByLabel('取消の理由');
+      const reason = dialog.getByRole('combobox', { name: '取消の理由', exact: true });
       await expect(reason.getByRole('option')).toHaveText([
         '選んでください', 'お客様の都合', '支払いの拒否', '不正', '在庫切れ', 'お店の誤り', 'その他',
       ]);
       await reason.selectOption('other');
-      await expect(dialog.getByLabel('メモ（必須・店内のみ）')).toBeVisible();
+      await expect(dialog.getByRole('textbox', { name: 'メモ（必須・店内のみ）', exact: true })).toBeVisible();
       await expect(submit).toBeDisabled();
-      await dialog.getByLabel('メモ（必須・店内のみ）').fill('電話で依頼');
+      await dialog.getByRole('textbox', { name: 'メモ（必須・店内のみ）', exact: true }).fill('電話で依頼');
       await expect(submit).toBeEnabled();
       await reason.selectOption('customer_request');
-      await expect(dialog.getByLabel('メモ（任意・店内のみ）')).toBeVisible();
+      await expect(dialog.getByRole('textbox', { name: 'メモ（任意・店内のみ）', exact: true })).toBeVisible();
       await expect(submit).toBeEnabled();
       // 長い確定のボタンの字は、3つの画面幅とも切れずに全部が見える（Button の既定は折り返さず、はみ出しを隠す）
       expect(await submit.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
@@ -246,15 +242,15 @@ for (const viewport of viewports) {
           ],
         }),
       );
-      await openOrderTab(page);
-      const dialog = await openPaidCancelDialog(page, PAID_ID);
+      await openOrderDetail(page, PAID_ID);
+      const dialog = await openDetailPaidCancelDialog(page, PAID_ID);
 
       await expect(dialog.getByText(`返金する額: ${formatYen(30_000)}（全額）`)).toBeVisible();
       await expect(dialog.getByRole('checkbox', { name: '在庫に戻す' })).toHaveCount(0);
       await expect(dialog.getByRole('checkbox', { name: 'お客様にキャンセルのお知らせを送る' })).toBeChecked();
     });
 
-    test('コンビニ払いのキャンセルは保留で受け付けられ、一覧は「キャンセルの手続き中」になる。選びがそのまま窓口へ届く', async ({ page }) => {
+    test('コンビニ払いのキャンセルは保留で受け付けられ、詳細の進み具合が「キャンセルの手続き中」になる。選びがそのまま窓口へ届く', async ({ page }) => {
       // FREQ-449-AC-03, FREQ-449-AC-04
       const phase = { current: 'paid' as Phase };
       const { state, list } = await mockApis(page, () => rowsOf(phase.current), paidMaterials('konbini'));
@@ -262,12 +258,12 @@ for (const viewport of viewports) {
         phase.current = 'pending';
         await fulfillJson(route, acceptedRefund({ refundId: REFUND_ID, amount: FULL }));
       };
-      await openOrderTab(page);
-      const dialog = await openPaidCancelDialog(page, PAID_ID);
+      await openOrderDetail(page, PAID_ID);
+      const dialog = await openDetailPaidCancelDialog(page, PAID_ID);
       await expect(dialog.getByText(TIMING_NOTES.konbini, { exact: true })).toBeVisible();
 
-      await dialog.getByLabel('取消の理由').selectOption('stock_unavailable');
-      await dialog.getByLabel('メモ（任意・店内のみ）').fill('入荷が遅れるため');
+      await dialog.getByRole('combobox', { name: '取消の理由', exact: true }).selectOption('stock_unavailable');
+      await dialog.getByRole('textbox', { name: 'メモ（任意・店内のみ）', exact: true }).fill('入荷が遅れるため');
       await dialog.getByRole('button', { name: CANCEL_BUTTON, exact: true }).click();
 
       await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -283,11 +279,12 @@ for (const viewport of viewports) {
       // 受け付けた知らせと、一覧の読み直し。返金が済むまで、注文はキャンセルにならず「キャンセルの手続き中」と出る
       await expect(page.getByRole('status').filter({ hasText: REFUND_TEXT.cancelNoticePending })).toBeVisible();
       await expect.poll(() => list.urls.length).toBeGreaterThanOrEqual(2);
-      const row = rowOf(page, PAID_ID);
+      const row = rowOf(page);
       await expect(row.getByText('キャンセルの手続き中', { exact: true })).toBeVisible();
-      await expect(row.getByText('返金の手続き中', { exact: true })).toBeVisible();
-      await expect(row.getByRole('button', { name: 'キャンセル', exact: true })).toHaveCount(0);
-      await expect(row.getByRole('button', { name: '返金', exact: true })).toHaveCount(0);
+      // 金額の一覧の見出し（dt）にも同じ文言があるので、dt 以外の印だけを数える。印が消えれば 0 件になって落ちる
+      await expect(detailSection(page, '支払いと返金').getByText('返金の手続き中', { exact: true }).and(page.locator(':not(dt)'))).toHaveCount(1);
+      await expect(detailSection(page, '支払いと返金').getByRole('button', { name: 'キャンセル', exact: true })).toHaveCount(0);
+      await expect(detailSection(page, '支払いと返金').getByRole('button', { name: '返金', exact: true })).toHaveCount(0);
     });
 
     test('カードのキャンセルは返金が済んで受け付けられ、外した選びがそのまま窓口へ届く。注文は「キャンセル」になる', async ({ page }) => {
@@ -298,10 +295,10 @@ for (const viewport of viewports) {
         phase.current = 'cancelled';
         await fulfillJson(route, acceptedRefund({ refundId: REFUND_ID, amount: FULL, status: 'succeeded' }));
       };
-      await openOrderTab(page);
-      const dialog = await openPaidCancelDialog(page, PAID_ID);
+      await openOrderDetail(page, PAID_ID);
+      const dialog = await openDetailPaidCancelDialog(page, PAID_ID);
 
-      await dialog.getByLabel('取消の理由').selectOption('customer_request');
+      await dialog.getByRole('combobox', { name: '取消の理由', exact: true }).selectOption('customer_request');
       await dialog.getByRole('checkbox', { name: '在庫に戻す' }).uncheck();
       await dialog.getByRole('checkbox', { name: 'お客様にキャンセルのお知らせを送る' }).uncheck();
       await dialog.getByRole('button', { name: CANCEL_BUTTON, exact: true }).click();
@@ -317,9 +314,9 @@ for (const viewport of viewports) {
       // メモが空なら、窓口へは note を送らない
       expect(state.statusPosts[0]).not.toHaveProperty('note');
       await expect(page.getByRole('status').filter({ hasText: REFUND_TEXT.cancelNoticeSucceeded })).toBeVisible();
-      const row = rowOf(page, PAID_ID);
+      const row = rowOf(page);
       await expect(row.getByText('キャンセル', { exact: true })).toBeVisible();
-      await expect(row.getByText('返金済み', { exact: true })).toBeVisible();
+      await expect(detailSection(page, '支払いと返金').getByText('返金済み', { exact: true })).toBeVisible();
     });
 
     test('窓口が断ったら、断りの文を出して画面を開いたままにし、送り直しは新しい二重防止の番号になる', async ({ page }) => {
@@ -335,9 +332,9 @@ for (const viewport of viewports) {
         }
         await fulfillJson(route, acceptedRefund({ amount: FULL }));
       };
-      await openOrderTab(page);
-      const dialog = await openPaidCancelDialog(page, PAID_ID);
-      await dialog.getByLabel('取消の理由').selectOption('customer_request');
+      await openOrderDetail(page, PAID_ID);
+      const dialog = await openDetailPaidCancelDialog(page, PAID_ID);
+      await dialog.getByRole('combobox', { name: '取消の理由', exact: true }).selectOption('customer_request');
       const submit = dialog.getByRole('button', { name: CANCEL_BUTTON, exact: true });
 
       await submit.click();
@@ -362,9 +359,9 @@ for (const viewport of viewports) {
           502,
         );
       };
-      await openOrderTab(page);
-      const dialog = await openPaidCancelDialog(page, PAID_ID);
-      await dialog.getByLabel('取消の理由').selectOption('customer_request');
+      await openOrderDetail(page, PAID_ID);
+      const dialog = await openDetailPaidCancelDialog(page, PAID_ID);
+      await dialog.getByRole('combobox', { name: '取消の理由', exact: true }).selectOption('customer_request');
       await dialog.getByRole('button', { name: CANCEL_BUTTON, exact: true }).click();
 
       await expect(dialog.getByRole('alert')).toHaveText(REFUND_TEXT.unknownOutcome);
@@ -385,8 +382,8 @@ for (const viewport of viewports) {
 
     test('支払い済みのキャンセルの画面を開いても横方向のページスクロールが発生しない。小さい画面では画面いっぱいに開く', async ({ page }) => {
       await mockApis(page, () => rowsOf('paid'), paidMaterials());
-      await openOrderTab(page);
-      const dialog = await openPaidCancelDialog(page, PAID_ID);
+      await openOrderDetail(page, PAID_ID);
+      const dialog = await openDetailPaidCancelDialog(page, PAID_ID);
       await expect(dialog.getByText(`返金する額: ${formatYen(FULL)}（全額）`)).toBeVisible();
 
       const box = await dialog.boundingBox();

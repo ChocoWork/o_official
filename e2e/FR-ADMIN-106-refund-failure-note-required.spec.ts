@@ -5,7 +5,8 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 import type { AttentionException } from '@/lib/orders/order-payment-types';
-import { adminOrder, fulfillJson, mockOrderList, openOrderTab, orderNumberOf, viewports } from './order-fulfillment-test-utils';
+import { mockOrderAttention } from './order-admin-test-utils';
+import { emptyOrderItemList, fulfillJson, mockOrderItemList, orderNumberOf, viewports } from './order-fulfillment-test-utils';
 import {
   materialLineOf,
   mockAdminSessionAs,
@@ -47,26 +48,19 @@ async function mockApis(page: Page, exception: AttentionException) {
     exceptions: [exception], resolveBodies: [], reads: 0,
   };
   await mockAdminSessionAs(page, 'admin');
-  await mockOrderList(page, () => [
-    adminOrder({ id: ORDER_ID, canShip: false, canRefund: true, paymentStatusKey: 'paid', refundedAmountLabel: '-', cancelKind: null }),
-  ]);
+  await mockOrderItemList(page, emptyOrderItemList);
   await mockRefundRoutes(page, ORDER_ID, newRefundRouteState(refundMaterialsOf({
     orderId: ORDER_ID,
     lines: [materialLineOf({ orderItemId: 'c6b2c3d4-0000-4000-8000-000000000001', itemPrice: 5000 })],
   })));
+  await mockOrderAttention(page, { exceptions: state.exceptions, reviews: [] });
   await page.route('**/api/admin/order-attention', (route) => {
     state.reads += 1;
-    return fulfillJson(route, {
-      data: {
-        exceptions: state.exceptions,
-        reviews: [],
-        counts: { exceptions: state.exceptions.length, reviews: 0 },
-      },
-    });
+    return route.fallback();
   });
   await page.route(`**/api/admin/payment-exceptions/${EXCEPTION_ID}/resolve`, async (route) => {
     state.resolveBodies.push(route.request().postDataJSON());
-    state.exceptions = [];
+    state.exceptions.splice(0);
     await fulfillJson(route, { success: true, orderCancelled: false });
   });
   return state;
@@ -82,7 +76,7 @@ for (const viewport of viewports) {
       test(`${isReturn ? '返品返金' : '通常返金'}の失敗は空・空白で解決できず、メモを入れると解決できる`, async ({ page }) => {
         // FREQ-507-AC-01・AC-02
         const state = await mockApis(page, refundFailure(isReturn));
-        await openOrderTab(page);
+        await page.goto('/admin/orders');
         await page.getByRole('button', { name: '解決済みにする', exact: true }).click();
         const dialog = page.getByRole('dialog', { name: '解決済みにする', exact: true });
         const note = dialog.getByRole('textbox', { name: 'メモ（必須・店内のみ）', exact: true });
@@ -114,7 +108,7 @@ for (const viewport of viewports) {
         ...refundFailure(false), reason: 'unexpected_state', reasonLabel: '想定外の支払い状態',
         canRetryRefund: false, refundFailure: null,
       });
-      await openOrderTab(page);
+      await page.goto('/admin/orders');
       await page.getByRole('button', { name: '解決済みにする', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: '解決済みにする', exact: true });
       await expect(dialog.getByRole('textbox', { name: 'メモ（任意・店内のみ）', exact: true })).not.toHaveAttribute('required', '');

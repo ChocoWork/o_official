@@ -1,5 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { mockAdminBackgroundApis } from './admin-test-utils';
+import { mockOrderAttention } from './order-admin-test-utils';
+import { emptyOrderItemList, mockOrderItemList } from './order-fulfillment-test-utils';
 
 // FREQ-415: 毎時の見回りが支払いから作った注文に要確認「支払いから作った注文」を付け、
 // ORDER タブの要対応・要確認の欄に出す。お客様へ確認したら「確認済みにする」で欄から消す。
@@ -37,35 +39,16 @@ async function mockAdminApis(page: Page, state: AttentionState): Promise<void> {
   await page.route('**/api/admin/kpi', (route) =>
     route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'not mocked' }) }),
   );
-  await page.route('**/api/admin/order-attention', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        data: {
-          exceptions: [],
-          reviews: state.reviews,
-          counts: { exceptions: 0, reviews: state.reviews.length },
-        },
-      }),
-    }),
-  );
-  await page.route('**/api/admin/orders?**', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ data: [], pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 } }),
-    }),
-  );
+  await mockOrderAttention(page, { reviews: state.reviews });
+  await mockOrderItemList(page, emptyOrderItemList);
   await page.route(`**/api/admin/orders/${REVIEW.orderId}/review`, (route) => {
-    state.reviews = [];
+    state.reviews.splice(0);
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true }) });
   });
 }
 
 async function openOrders(page: Page) {
-  await page.goto('/admin');
-  await page.getByRole('button', { name: 'ORDER' }).click();
+  await page.goto('/admin/orders');
 }
 
 for (const viewport of viewports) {

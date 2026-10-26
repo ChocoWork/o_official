@@ -61,7 +61,7 @@ import {
 } from './order-email-test-utils';
 import { withGroupG1Material } from './group-g1-test-utils';
 import { createTestMember, loginAsMember, type TestMember } from './member-session-helpers';
-import { adminOrder, fulfillJson, mockAdminSession, orderNumberOf } from './order-fulfillment-test-utils';
+import { adminOrder, detailSection, fulfillJson, mockAdminSession, orderNumberOf } from './order-fulfillment-test-utils';
 
 // ---- 画面の幅 ----
 
@@ -1483,6 +1483,14 @@ export async function openOrderHistory(page: Page, orderId: string): Promise<Loc
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByText(`${orderNumberOf(orderId)}（`)).toBeVisible();
   return dialog;
+}
+
+/** 開いた詳細の埋め込み履歴。旧一覧の履歴dialog用helperは Task 12 まで維持する。 */
+export async function orderDetailHistory(page: Page): Promise<Locator> {
+  const history = detailSection(page, '変更履歴');
+  await expect(history).toBeVisible();
+  await expect(history.getByText('読み込み中です...', { exact: true })).toHaveCount(0);
+  return history;
 }
 
 /** 履歴のダイアログの、n回目の発送の行 */
