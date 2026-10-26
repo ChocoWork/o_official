@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import PackingSection from '@/components/PackingSection';
 import { formatYen } from '@/lib/orders/refund/refund-messages';
 import { takeSlipNotice } from '@/lib/orders/shipment-slips/shipment-slip-notice';
@@ -15,20 +15,13 @@ import {
 
 /**
  * 荷作り表（G-3 / FREQ-531・FREQ-532）の画面。発送準備中の品物の表（選択欄・送る数・「発送」を含む）と、下の発送票の一覧。
- * 窓口（clientFetch）・票の頁への移動（next/navigation）・注文の履歴のダイアログだけを差し替える。
+ * 窓口（clientFetch）・票の頁への移動（next/navigation）だけを差し替える。
+ * 注文IDは注文の詳細（/admin/orders/{id}）への Link（G-4 Task 8。履歴の dialog は撤去した）。
  */
 const mockClientFetch = jest.fn();
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
 const mockPush = jest.fn();
 jest.mock('next/navigation', () => ({ useRouter: () => ({ push: mockPush }) }));
-const mockHistoryDialog = jest.fn();
-jest.mock('@/components/OrderHistoryDialog', () => ({
-  __esModule: true,
-  default: (props: unknown) => {
-    mockHistoryDialog(props);
-    return null;
-  },
-}));
 
 const EMPTY = { rows: [], total: 0, page: 1, limit: 50 };
 
@@ -86,7 +79,6 @@ function sectionTable(heading: string): HTMLElement {
 
 beforeEach(() => {
   mockClientFetch.mockReset();
-  mockHistoryDialog.mockReset();
   mockPush.mockReset();
   window.sessionStorage.clear();
 });
@@ -149,17 +141,33 @@ describe('荷作り表: 発送準備中の品物の表', () => {
     expect(rows.map((row) => within(row).getAllByRole('cell')[5].textContent)).toEqual(['先の品', '後の品']);
   });
 
-  test('FREQ-531-AC-01: 注文IDは注文番号のボタンで、押すと注文の履歴のダイアログを orderId つきで開く。閉じると orderId は null', async () => {
+  test('FREQ-539-AC-05: 荷作り表の注文IDは /admin/orders/{id} への Link で、履歴の dialog を開かない', async () => {
     serve();
     render(<PackingSection />);
 
-    const button = await screen.findByRole('button', { name: 'ORD-11111111 の履歴を開く' });
-    expect(button).toHaveTextContent('ORD-11111111');
-    expect(mockHistoryDialog.mock.lastCall?.[0]).toMatchObject({ orderId: null });
-    fireEvent.click(button);
-    expect(mockHistoryDialog.mock.lastCall?.[0]).toMatchObject({ orderId: ORDER_ID });
-    act(() => (mockHistoryDialog.mock.lastCall?.[0] as { onClose: () => void }).onClose());
-    await waitFor(() => expect(mockHistoryDialog.mock.lastCall?.[0]).toMatchObject({ orderId: null }));
+    const link = await screen.findByRole('link', { name: 'ORD-11111111' });
+    expect(link).toHaveTextContent('ORD-11111111');
+    expect(link).toHaveAttribute('href', `/admin/orders/${ORDER_ID}`);
+    // 旧い履歴を開くボタンは無く、押しても dialog は開かない
+    expect(screen.queryByRole('button', { name: 'ORD-11111111 の履歴を開く' })).not.toBeInTheDocument();
+    link.addEventListener('click', (event) => event.preventDefault());
+    fireEvent.click(link);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  test('FREQ-539-AC-05: 注文IDのリンクは行ごとに、その行の注文の詳細へ向く', async () => {
+    serve({
+      packing: () => respond(200, {
+        rows: [packingRow({ orderId: ORDER_ID }), packingRow({ orderId: ORDER_ID_2, orderItemId: ITEM_ID_2 })],
+        total: 2, page: 1, limit: 50,
+      }),
+    });
+    render(<PackingSection />);
+
+    const rows = await screen.findAllByTestId('packing-row');
+    const hrefs = rows.map((row) => within(row).getAllByRole('link')[0].getAttribute('href'));
+    expect(hrefs).toEqual([`/admin/orders/${ORDER_ID}`, `/admin/orders/${ORDER_ID_2}`]);
   });
 
   test('FREQ-531-AC-01: 交換の品の行は、商品名の横に「交換の品」の印を出す。ほかの行には出さない', async () => {

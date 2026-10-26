@@ -108,6 +108,44 @@ test('FREQ-535-AC-03: 日付履歴は初回と訂正の別・前後日付・理�
   expect(screen.getByText(/訂正.*2026-10-25 → 2026-10-24.*記録の訂正/)).toBeInTheDocument();
 });
 
+// G-4 Task 8: 発送票の注文番号は、注文の詳細（/admin/orders/{id}）への Link。履歴の dialog を荷作り表から開く入口は撤去した
+describe('発送票の頁: 注文番号は注文の詳細への Link', () => {
+  test('FREQ-539-AC-05: 発送票の注文番号が詳細への Link になり、票の操作〔配達済み・取消など〕は変わらない', async () => {
+    serve({ slip: () => confirmedDetail() });
+    render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    await screen.findByRole('heading', { name: '出荷日の履歴' });
+
+    // 同梱する品物の表の注文ID
+    const [row] = screen.getAllByTestId('slip-line');
+    expect(within(row).getByRole('link')).toHaveAttribute('href', `/admin/orders/${ORDER_ID}`);
+    expect(within(row).getByRole('link')).toHaveTextContent(toOrderNumber(ORDER_ID));
+    // 注文ごとの発送の行（文字の並びは今までと同じ）
+    const orderLine = `注文 ${toOrderNumber(ORDER_ID)} 発送（1回目） ${DELIVERY_STATUS_LABELS.in_transit}`;
+    const line = screen.getByText((_content, element) => element?.tagName === 'P' && element.textContent === orderLine);
+    expect(within(line).getByRole('link')).toHaveAttribute('href', `/admin/orders/${ORDER_ID}`);
+    // 票の操作は変わらない
+    for (const name of ['伝票番号を直す', '配達済みにする', '発送を取り消す']) expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '配達済みにする' }));
+    expect(await screen.findByRole('dialog', { name: '配達済みにする' })).toBeInTheDocument();
+    expect(posts()).toHaveLength(0);
+  });
+
+  test('FREQ-539-AC-05: 下書きの票でも、同梱する品物・追加の候補・発送票の確認の注文番号が、その行の注文の詳細へ向く', async () => {
+    serve({ slip: () => draftDetail({ issues: [] }), packing: () => respond(200, { rows: [CANDIDATE], total: 1, page: 1, limit: 100 }) });
+    render(<ShipmentSlipSection slipId={SLIP_ID} />);
+    await screen.findByRole('heading', { level: 1 });
+
+    const [line] = screen.getAllByTestId('slip-line');
+    expect(within(line).getByRole('link')).toHaveAttribute('href', `/admin/orders/${ORDER_ID}`);
+    const [candidate] = await screen.findAllByTestId('slip-candidate-row');
+    expect(within(candidate).getByRole('link')).toHaveAttribute('href', `/admin/orders/${ORDER_ID_2}`);
+
+    fireEvent.click(screen.getByRole('button', { name: '発送票確認' }));
+    const heading = await screen.findByRole('heading', { name: /注文 ORD-/ });
+    expect(within(heading).getByRole('link')).toHaveAttribute('href', `/admin/orders/${ORDER_ID}`);
+  });
+});
+
 describe('発送票の頁: 下書きの表示', () => {
   test('FREQ-531-AC-03: 見出し「発送票 ${番号}」・状態「下書き」・同梱する品物・送り先を出し、票と追加の候補を読む', async () => {
     serve({ slip: () => twoLines(), packing: () => respond(200, { rows: [CANDIDATE], total: 1, page: 1, limit: 100 }) });
@@ -1104,7 +1142,9 @@ describe('伝票番号の入力・訂正と手動の配達済み（G-3 Task 7）
       expectedVersion: 2, deliveredOn: new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date()), notifyCustomer: true, requestKey: expect.stringMatching(UUID),
     });
     await waitFor(() => expect(slipReads()).toHaveLength(2));
-    expect(await screen.findByText(`注文 ${toOrderNumber(ORDER_ID)} 発送（1回目） ${DELIVERY_STATUS_LABELS.delivered}`)).toBeInTheDocument();
+    // 注文番号は詳細への Link になったので、文字は p 全体の textContent で突き合わせる
+    const deliveredLine = `注文 ${toOrderNumber(ORDER_ID)} 発送（1回目） ${DELIVERY_STATUS_LABELS.delivered}`;
+    expect(await screen.findByText((_content, element) => element?.tagName === 'P' && element.textContent === deliveredLine)).toBeInTheDocument();
   });
 
   test('FREQ-534-AC-02: すでに配達済みで断られた時は表の本文をダイアログの中に出して開いたままにし、票を読み直す', async () => {

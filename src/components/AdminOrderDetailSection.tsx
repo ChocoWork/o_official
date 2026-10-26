@@ -7,7 +7,7 @@ import AdminOrderItemsTable from '@/components/AdminOrderItemsTable';
 import AllocationSwapDialog from '@/components/AllocationSwapDialog';
 import OrderCancelDialog, { type OrderCancelValues } from '@/components/OrderCancelDialog';
 import OrderCancelRequestDialog, { type RemoveItemsRequest } from '@/components/OrderCancelRequestDialog';
-import { OrderHistoryPanel } from '@/components/OrderHistoryDialog';
+import OrderHistoryPanel from '@/components/OrderHistoryPanel';
 import OrderPaidCancelDialog from '@/components/OrderPaidCancelDialog';
 import OrderRefundDialog from '@/components/OrderRefundDialog';
 import OrderReturnsDialog from '@/components/OrderReturnsDialog';

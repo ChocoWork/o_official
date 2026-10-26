@@ -31,7 +31,7 @@ import { createDefaultRefundServiceDeps, submitPaidOrderCancel } from '@/lib/ord
 
 const orderIdSchema = z.string().uuid();
 
-// 発送は /api/admin/orders/[id]/fulfillments に移した（グループ E-1）。この窓口は注文の取消だけ
+// 発送は発送票の窓口（/api/admin/shipment-slips）へ移した（グループ G-3）。この窓口は注文の取消だけ
 // （未入金・失敗は今のまま、支払い済みは返金とセットで取り消す。グループ E-2）
 const updateStatusSchema = z.object({
   status: z.literal('cancelled'),

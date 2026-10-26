@@ -9,7 +9,6 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import OrderHistoryDialog from '@/components/OrderHistoryDialog';
 import { Button } from '@/components/ui/Button/Button';
 import { useShipmentSlipWrite } from '@/hooks/useShipmentSlipWrite';
 import { toOrderNumber } from '@/lib/orders/order-number';
@@ -231,7 +230,6 @@ export default function PackingSection(): React.JSX.Element {
   const write = useShipmentSlipWrite();
   const [page, setPage] = useState(1);
   const [state, setState] = useState<PackingState>({ phase: 'loading' });
-  const [historyOrderId, setHistoryOrderId] = useState<string | null>(null);
   // 下の発送票の一覧を出すか。荷作り表の最初の答えを待ち、権限が無い（401・403）時は出さない（同じ権限で断られる読み込みを重ねない）
   const [slipsAllowed, setSlipsAllowed] = useState(false);
   // 選んだ行（選んだ順。頁をまたいでも残る）。操作の権限が無い（答えの canManage が false、または「発送」の返事が権限の不足の 403）時は、
@@ -357,14 +355,9 @@ export default function PackingSection(): React.JSX.Element {
                           </td>
                         ) : null}
                         <td className="whitespace-nowrap p-3">
-                          <button
-                            type="button"
-                            aria-label={`${orderNumber} の履歴を開く`}
-                            className="underline underline-offset-4"
-                            onClick={() => setHistoryOrderId(row.orderId)}
-                          >
+                          <Link href={`/admin/orders/${row.orderId}`} className="underline underline-offset-4">
                             {orderNumber}
-                          </button>
+                          </Link>
                         </td>
                         <td className="whitespace-nowrap p-3">{formatOrderDay(row.orderCreatedAt)}</td>
                         <td className="break-words p-3">{row.customerName ?? '—'}</td>
@@ -433,7 +426,6 @@ export default function PackingSection(): React.JSX.Element {
           <ConfirmedSlipsSection />
         </>
       ) : null}
-      <OrderHistoryDialog orderId={historyOrderId} onClose={() => setHistoryOrderId(null)} />
     </div>
   );
 }

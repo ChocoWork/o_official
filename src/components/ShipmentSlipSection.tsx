@@ -8,6 +8,7 @@
 // 取消（ShipmentSlipCancelDialog）と権限がある人の出荷日訂正（ShipmentSlipDateDialog）を扱う。
 // 権限は窓口と DB が守り、この部品は返事の状態で出し分ける。
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import ShipmentSlipCancelDialog from '@/components/ShipmentSlipCancelDialog';
 import ShipmentSlipDateDialog from '@/components/ShipmentSlipDateDialog';
 import ShipmentSlipDeliveredDialog from '@/components/ShipmentSlipDeliveredDialog';
@@ -54,6 +55,11 @@ type CandidateState =
   | { phase: 'loading' }
   | { phase: 'error'; message: string }
   | { phase: 'ready'; rows: PackingRow[] };
+
+/** 注文番号を、注文の詳細（/admin/orders/{id}）への Link にする */
+function OrderDetailLink({ orderId }: { orderId: string }): React.JSX.Element {
+  return <Link href={`/admin/orders/${orderId}`} className="underline underline-offset-4">{toOrderNumber(orderId)}</Link>;
+}
 
 /** 「商品名 色 サイズ」。色・サイズが無ければ省く */
 function lineLabel(line: { itemName: string; color: string | null; size: string | null }): string {
@@ -280,7 +286,7 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
                 const notes = isDraft ? issueTextsFor(slip, line.orderItemId) : [];
                 return (
                   <SlipLineRow key={line.orderItemId} notes={notes} columnCount={SLIP_LINE_COLUMN_HEADINGS.length + (isDraft ? 1 : 0)}>
-                    <td className="whitespace-nowrap p-3">{toOrderNumber(line.orderId)}</td>
+                    <td className="whitespace-nowrap p-3"><OrderDetailLink orderId={line.orderId} /></td>
                     <td className="break-words p-3">{slip.shipTo.fullName}</td>
                     <td className="break-words p-3">
                       {line.itemName}
@@ -337,7 +343,7 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
                             onChange={() => togglePicked(row.orderItemId)}
                           />
                         </td>
-                        <td className="whitespace-nowrap p-3">{toOrderNumber(row.orderId)}</td>
+                        <td className="whitespace-nowrap p-3"><OrderDetailLink orderId={row.orderId} /></td>
                         <td className="break-words p-3">
                           {row.itemName}
                           {row.isExchange ? <span className="ml-2 text-[#474747]">{SHIPMENT_SLIP_TEXT.exchangeMark}</span> : null}
@@ -361,7 +367,7 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
           <h2 id="shipment-review-heading" className="lk-text-lg">発送票の確認</h2>
           {[...new Set(slip.lines.map((line) => line.orderId))].map((orderId) => (
             <div key={orderId} className="space-y-2">
-              <h3>注文 {toOrderNumber(orderId)}</h3>
+              <h3>注文 <OrderDetailLink orderId={orderId} /></h3>
               <ul>{slip.lines.filter((line) => line.orderId === orderId).map((line) => <li key={line.orderItemId}>{lineLabel(line)} ×{line.quantity}</li>)}</ul>
             </div>
           ))}
@@ -409,7 +415,7 @@ export default function ShipmentSlipSection({ slipId }: { slipId: string }): Rea
         <p>出荷日: {slip.shipmentDate}</p><p>発送した時刻: {slip.confirmedAt ? formatPurchaseOrderDateTime(slip.confirmedAt) : '—'}</p>
         <p>{slip.carrier && slip.trackingNumber ? `${SHIPPING_CARRIERS[slip.carrier].label} ${slip.trackingNumber}` : '伝票番号は未入力です'}</p>
         <h2 className="lk-text-lg">注文ごとの発送</h2>
-        {slip.orders.map((order) => <p key={order.fulfillmentId}>注文 {toOrderNumber(order.orderId)} 発送（{order.fulfillmentNumber}回目） {order.deliveryStatus ? DELIVERY_STATUS_LABELS[order.deliveryStatus] : ''}</p>)}
+        {slip.orders.map((order) => <p key={order.fulfillmentId}>注文 <OrderDetailLink orderId={order.orderId} /> 発送（{order.fulfillmentNumber}回目） {order.deliveryStatus ? DELIVERY_STATUS_LABELS[order.deliveryStatus] : ''}</p>)}
         <h2 className="lk-text-lg">出荷日の履歴</h2>
         {slip.dateHistory.map((entry) => <p key={entry.version}>{formatPurchaseOrderDateTime(entry.createdAt)} {entry.kind === 'initial' ? '初回' : '訂正'} {entry.previousDate} → {entry.newDate} {entry.reason}</p>)}
         <h2 className="lk-text-lg">荷物の履歴</h2>

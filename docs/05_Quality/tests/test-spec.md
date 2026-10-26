@@ -1,5 +1,7 @@
 # テスト仕様
 
+> G-4 Task 8 確認日: 2026-10-27。荷作り表・発送票の注文番号の Link、履歴の dialog の撤去（`OrderHistoryDialog` → `OrderHistoryPanel` の改名）、旧い発送・仕上がりの窓口6ファイル・7メソッドの削除の単体を下のG-4節のTask 8へ記載。単体の実測は実装者のjest・tsc・lintまで。DB・実ブラウザの3幅・E2E・buildはcontroller担当で未実行。
+
 > G-4 Task 7 確認日: 2026-10-26。注文一覧表の頁・表・要対応のhook・ORDER タブの入口・旧い入口の撤去の単体を下のG-4節のTask 7へ記載。旧い一覧の窓口と旧wiring試験は削除した。単体の実測は実装者のjest・tsc・lintまで。DB・実ブラウザの3幅・E2E・buildはcontroller担当で未実行。
 
 > G-4 Task 6 確認日: 2026-10-26。注文の詳細頁・品物の表・入替dialog・履歴の欄・clientの単体を下のG-4節のTask 6へ記載。単体5 suite・186件、広い単体（components・lib/orders・api/admin・docs）280 suite・10,383件が成功。DB・実ブラウザの3幅・E2Eはcontroller担当で未実行。
@@ -155,14 +157,14 @@ fix round 2では未知500のSQLSTATE保持・非直列化・安全なログをR
 | [AdminOrderDetailSection](../../../tests/unit/components/AdminOrderDetailSection.test.tsx)（31件） | 単体。`clientFetch`・`next/navigation`と、返金・支払い済みのキャンセル・返品・申し込みの4つの dialog、入替のclientをモック（取消の dialog は実物）。詳細の返事の旗を1つずつ変える | FREQ-539-AC-01〜05、FREQ-523-AC-05 | 7つのh2が決めた順で、各欄がregion。金額・品物・注文情報が返事のとおり。初期の403・404・失敗の文。サポーター（refund=false）では返金・支払い済みのキャンセル・額を決めて返金するが出ず、受け取る・申し込みは出る。manage=falseでは未入金の取消・確認済み・申し込みが出ない。返金の受付で知らせを出し詳細と履歴を読み直す。取消の見出しは番号だけ（氏名なし）で今の本文のままstatusへ送り「注文を取り消しました。」。品を外した返金・支払い済みのキャンセルは受理後だけ申し込みを解決し、解決だけの失敗は案内、閉じる・結果不明では解決しない。読み直しの失敗で古い詳細を残し「最新の状態を読み込めませんでした。」「この画面の内容は最新ではありません。」を出して成功の知らせを隠し、「読み込み直す」で直る。遅れて返った古い読みが新しい読みを上書きしない。読み直しの先頭で前の誤りの文を消す（解決だけの失敗の案内の後に別の申し込みの結果を読み直すと、案内が消えて成功の知らせだけが残る）。品を外した未入金の取消は、受理後に `{ refundId: null, orderCancelled: true }` で申し込みを解決して `注文を取り消しました。キャンセルの申し込みを解決しました。`。取消の画面は、後続の読み直しが返らなくても送信後に閉じる。確認済みはmanageの時だけPOST reviewして読み直す。支払い・配送の要対応のLinkと空の文。発送票Link・同梱の注意・slips:nullの権限の文・荷作り表はshippingReadの時だけ。`?open=`3種は読込後にdialogを開きqueryを消す。出せない注文・知らない値は何もしない。入替の成功で「割当を入れ替えました。」を出して読み直し、allocate=falseでは入口なし |
 | [AdminOrderItemsTable](../../../tests/unit/components/AdminOrderItemsTable.test.tsx)（3件） | 単体。行の状態・補足・canSwapを変える | FREQ-539-AC-01、FREQ-523-AC-05 | 9列の見出し、交換品の印、状態別の金額、補足の言葉、スクロール領域（名前は「ORD-… 明細の表」で欄名と部分一致しない）。受注生産中で補足が在庫の入荷待ちだけの行にだけ、allocateの旗がある時にボタンが出て onSwap に行を渡す。旗が無ければボタンなし |
 | [AllocationSwapDialog](../../../tests/unit/components/AllocationSwapDialog.test.tsx)（5件） | 単体。候補・送信のclientをモック | FREQ-523-AC-05 | 候補の読込・選択・数量の既定と上限（受け手と出し手の小さい方）、理由が空だと送らない、本文の形（takerOrderItemId・donorOrderItemId・quantity・trim済みの理由・requestKey）、二重押下で通信1回、結果不明で入力を止め「もう一度確かめる」が同じ本文を再送、DBの断りの本文を入力を残して出し新しい要求番号で送り直す、成功で onSwapped、候補の空と失敗の文 |
-| [OrderHistoryDialog](../../../tests/unit/components/OrderHistoryDialog.test.tsx)（135件。うち5件が新規、130件は無変更） | 単体。`OrderHistoryPanel` を描画し、履歴の返事に itemStates を足す | FREQ-539-AC-04 | 品物の状態の変化の行（変更前後・nullは「（なし）」・理由の言葉・人または自動・人の変更でメールが分からない時は「自動」でなく「不明な管理者」・発送票/発注のLink・入替の相手と理由）、省略・空・失敗の文、dialog と「閉じる」を使わないこと、メールの再送の確認と送信が従来どおり。従来のdialogの試験は期待を変えず通る |
+| [OrderHistoryPanel](../../../tests/unit/components/OrderHistoryPanel.test.tsx)（135件。うち5件が新規、130件は無変更） | 単体。`OrderHistoryPanel` を描画し、履歴の返事に itemStates を足す | FREQ-539-AC-04 | 品物の状態の変化の行（変更前後・nullは「（なし）」・理由の言葉・人または自動・人の変更でメールが分からない時は「自動」でなく「不明な管理者」・発送票/発注のLink・入替の相手と理由）、省略・空・失敗の文、dialog と「閉じる」を使わないこと、メールの再送の確認と送信が従来どおり。従来のdialogの試験は期待を変えず通る |
 | [admin-order-client](../../../tests/unit/lib/orders/admin-orders/admin-order-client.test.ts)（12件） | 単体。`clientFetch`をモック | FREQ-539-AC-01・03 | `fetchAdminOrderDetail` が no-store で読み、403・404・その他を分け、通信・JSONの失敗は固定のerror。`readSafeOrderActionError` は400・409の短い日本語だけを通し、それ以外・英語・長すぎる・制御文字つきは既定の文 |
 
 Task 6の実測記録（実装者。2026-10-26）:
 
 | 実行 | 実測・範囲 |
 | --- | --- |
-| 上の5 suite | `npx.cmd jest tests/unit/components/AdminOrderDetailSection.test.tsx tests/unit/components/AdminOrderItemsTable.test.tsx tests/unit/components/AllocationSwapDialog.test.tsx tests/unit/components/OrderHistoryDialog.test.tsx tests/unit/lib/orders/admin-orders/admin-order-client.test.ts --runInBand`: 5 suite・186/186成功（レビュー指摘の修正後） |
+| 上の5 suite | `npx.cmd jest tests/unit/components/AdminOrderDetailSection.test.tsx tests/unit/components/AdminOrderItemsTable.test.tsx tests/unit/components/AllocationSwapDialog.test.tsx tests/unit/components/OrderHistoryPanel.test.tsx tests/unit/lib/orders/admin-orders/admin-order-client.test.ts --runInBand`: 5 suite・186/186成功（レビュー指摘の修正後） |
 | 広い単体 | `npx.cmd jest tests/unit/components tests/unit/lib/orders tests/unit/api/admin tests/unit/docs --runInBand`: 280 suite・10,383/10,383成功（旧wiring試験・要対応の窓口の試験・文書の試験を含み無変更で通る） |
 | 型・lint・文書 | `npx.cmd tsc --noEmit --incremental false` 成功。変更したファイルの `npx.cmd eslint` はエラー・警告0（修正前の全体の `npm.cmd run lint` はエラー0、既存の警告102件、Task 6のファイルの警告なし）。`npm.cmd run validate-docs` は既知の2件（2026-10-07の計画書の壊れたリンク）だけ |
 | レビュー指摘の修正（Opus、2026-10-26） | 読み直しの先頭で頁の誤りの文を消す（試験追加）、取消の送信後は解決・読み直しを待たず閉じる（試験追加）、品を外す未入金の取消の解決の試験、メールが分からない人の変更を「不明な管理者」と出す試験、`REVIEW_REASON_LABELS` を `order-payment-types.ts` へ一本化（要対応の窓口は同じ辞書を使い挙動は同じ）。旧頁との意図した違い（`readSafeOrderActionError` が短い日本語だけ）は `16_admin.md`・SQ-ADMIN-15 に記録 |
@@ -192,6 +194,29 @@ Task 7の実測記録（実装者。2026-10-26）:
 | 広い単体 | `npx.cmd jest tests/unit --runInBand`: 603 suite中600 suiteが成功・3 suiteは既存のskip、16,050件成功・8件skip・失敗0（約317秒）。 |
 | 型・lint・文書 | `npx.cmd tsc --noEmit --incremental false` 成功（削除した窓口の `.next/types` は `next typegen` で作り直した）。`npm.cmd run lint` はエラー0・警告102件（既存。Task 7のファイルの警告なし）。`npm.cmd run validate-docs` は既存のCheckout計画の相対リンク切れ2件だけ |
 | 未実行 | `npm run build`・Playwright・DB・390/768/1280pxの実ブラウザ確認（controller担当） |
+
+### Task 8（入口の整理: 荷作り表・発送票から詳細へ、旧い履歴 dialog と旧い 410 の窓口の撤去）
+
+確認日: 2026-10-27。FREQ-539-AC-05・FREQ-540-AC-15。Task 8はSQL変更なし。下の単体はすべて実装者が実測した結果で、DB（旧い関数の拒否の `group_g1_legacy_disabled`）・実ブラウザの3幅（390/768/1280px）・E2E・`npm run build` はcontroller担当（未実行）。旧い発送・仕上がりの窓口6ファイル・7メソッドと、その単体2本（`order-completion-routes`・`order-fulfillment-routes`）は削除した。`order-delivery-routes` は配送の要対応の解決（resolve）の唯一の単体なので、410 の期待（tracking・delivered）だけを外して残した。
+
+| ファイル | 層・入力 | FREQ/AC | 期待結果 |
+| --- | --- | --- | --- |
+| [PackingSection](../../../tests/unit/components/PackingSection.test.tsx)（48件。履歴 dialog を開く試験1件を Link の試験2件に置き換えた） | 単体。`clientFetch`・`next/navigation` を差し替え（履歴の部品の差し替えは不要になった） | FREQ-539-AC-05 | 注文IDは `/admin/orders/{orderId}` への Link（文字は注文番号）で、押しても dialog は開かず、旧い「ORD-… の履歴を開く」のボタンが無い。行ごとに自分の注文の詳細へ向く |
+| [ShipmentSlipSection](../../../tests/unit/components/ShipmentSlipSection.test.tsx)（68件。うち2件が新規） | 単体。`clientFetch` を差し替え | FREQ-539-AC-05 | 確定済みの票の同梱する品物の表と「注文ごとの発送」、下書きの票の同梱する品物・追加の候補・発送票の確認の見出しの注文番号が、その行の注文の詳細への Link。票の操作（配達済みにする・伝票番号を直す・発送を取り消す）のボタンは変わらず、押すと dialog が開き窓口は呼ばない。`注文 ORD-… 発送（1回目） …` の文字の並びは今までと同じ |
+| [OrderHistoryPanel](../../../tests/unit/components/OrderHistoryPanel.test.tsx)（134件。`OrderHistoryDialog.test.tsx` を改名） | 単体。`OrderHistoryPanel` を描画し、履歴の窓口を差し替え | FREQ-539-AC-04・05 | 従来の履歴の試験（履歴の並び・メールの中身・再送・結果の知らせ・遅れて届いた返事・発送・返金・返品・申し込み・配送の表示）が改名後も、region「変更履歴」を対象にして通る。dialog だけの3件（Escape で閉じる・閉じた後のフォーカス・閉じて開き直す）を外し、注文が変わると前の画面を引き継がず読み直す試験と、改名後も通る試験（旧い部品のファイルが無い）を足した。最初の画面ではフォーカスを動かさず、画面を切り替えるとパネル自身にフォーカスが移る |
+| [legacy-fulfillment-routes-removed](../../../tests/unit/api/admin/legacy-fulfillment-routes-removed.test.ts)（11件） | 単体。`src` を走査 | FREQ-540-AC-15 | 旧い窓口の6ファイル（と `completions`・`fulfillments` の階層）が存在せず、残る窓口は消えていない。`src` に `…/completions`・`…/fulfillments` の URL、旧クライアントの名前6つ（`callFulfillmentApi` など）が0件。旧い停止文と 410 の本文の組立ては定義の1ファイル（`legacy-fulfillment-disabled.ts`）の中だけ。`legacy-fulfillment-disabled` を import するのは `fulfillment-materials.ts` と `fulfillment-store.ts` だけ（明示の許可）。e2e と tests への広げ方は Task 12 |
+| [order-delivery-routes](../../../tests/unit/api/admin/order-delivery-routes.test.ts)（24件。52件から tracking・delivered の 410 の期待を外した） | 単体 | FREQ-541 | 配送の要対応の解決（resolve）の窓口の期待は無変更で、権限→CSRF→IP→管理者の順・守りの拒否・厳しい本文・DBの断りの言葉・想定外500・メールだけの予定を確かめる |
+| [AdminGroupG1LegacyStop](../../../tests/unit/components/AdminGroupG1LegacyStop.test.tsx)（13件） | 単体 | FREQ-524-AC-03・FREQ-533-AC-01 | 履歴の部品の改名に合わせて `OrderHistoryPanel` と region「変更履歴」へ付け替え（期待は無変更） |
+| [order-status-traceability](../../../tests/unit/docs/order-status-traceability.test.ts)・[delivery-status-traceability](../../../tests/unit/docs/delivery-status-traceability.test.ts)（2 suite・56件） | 文書の単体 | FREQ-540-AC-15 | route の総数を154ファイル・196メソッド、所在表を153行・195メソッドに更新。旧い7メソッドは E-4 の撤去の注記（G-4 Task 8）と、表に行が無く route ファイルも無いことを確かめる |
+
+Task 8の実測記録（実装者。2026-10-27）:
+
+| 実行 | 実測・範囲 |
+| --- | --- |
+| 対象の単体 | 上の表の suite を実行。PackingSection 48、ShipmentSlipSection 68、OrderHistoryPanel 134、legacy-fulfillment-routes-removed 11、order-delivery-routes 24、AdminGroupG1LegacyStop 13、docs 2 suite 56。すべて成功 |
+| 広い単体 | `npx.cmd jest tests/unit --runInBand`: 603 suite中600 suiteが成功・3 suiteは既存のskip、16,013件成功・8件skip・失敗0 |
+| 型・lint・文書 | `npx.cmd tsc --noEmit --incremental false` 成功（削除した窓口の `.next/types` は `next typegen` で作り直した）。`npm.cmd run lint` はエラー0・警告102件（既存。Task 8のファイルの警告なし）。`npm.cmd run validate-docs` は既存のCheckout計画の相対リンク切れ2件だけ |
+| 未実行 | `npm run build`・Playwright・DB（`group_g1_legacy_disabled` を含む）・390/768/1280pxの実ブラウザ確認（controller担当）。e2e に残る旧い 410 の mock・期待（`FR-ADMIN-069`・`070`・`117`・`123`・`delivery-tracking-test-utils`）は窓口が無いので 404 になる。Task 10・12 が付け替える |
 
 ## 記録形式と追跡
 
@@ -544,7 +569,7 @@ controller の reset 後に流す DB suite: `group_g3_tracking_parent`・`group_
 | 試験 | 対象と期待 |
 | --- | --- |
 | [FR-ADMIN-116](../../../e2e/FR-ADMIN-116-packing-shipment-slips.spec.ts)①② | FREQ-531 AC-01・AC-02・FREQ-532 AC-04。荷作り表は9列（選択欄の列は見出しを視覚的に隠す）で、発送準備中の行だけを古い注文から出し（並びと「出ない」は荷作り表の全部の行を一時点の1回の読み取り〔繰り返し可能読み取り〕で確かめ、画面は自分の行の中身と同じ頁の中の並びを確かめる。他の試験が行を足したり閉じたりする最中でも崩れない）、受注生産中・未払い・発送済みの行は出ない。支払額の確認・配送先不足の行は選択欄が無効で理由が行の下に出る。②の交換手数料待ちは、割当済みの交換品が `exchange_fee_waiting` を持つ合成状態（「相談」で受け取って割当が付いた後に手数料より少ない返金をした時などに起きる）で、選択できず理由が出る。交換の品には印が付く。窓口を直接呼んでも `GROUP_G_SLIP_EXCHANGE_ON_HOLD` など各理由の状態・本文と完全一致で断られ、下書きは作られない。普通の流れでは手数料待ちの交換品に割当は付かず表に出ないことを118 ④で確かめる |
-| 同③④⑩ | FREQ-531 AC-03・FREQ-532 AC-02・FREQ-533 AC-01・AC-02。一部の数量で下書き→確認→確定すると部分発送（注文は入金済みのまま・準備中は残り）になり、残りを別の票で送ると全部発送済み。同じお客様の別の日の注文を1つの票へ同梱して確定すると注文ごとに発送ができる。選択と送る数がキーボードで操作でき、履歴のダイアログを開閉しても、荷物の情報の確認の段から戻っても、入力が消えない |
+| 同③④⑩ | FREQ-531 AC-03・FREQ-532 AC-02・FREQ-533 AC-01・AC-02。一部の数量で下書き→確認→確定すると部分発送（注文は入金済みのまま・準備中は残り）になり、残りを別の票で送ると全部発送済み。同じお客様の別の日の注文を1つの票へ同梱して確定すると注文ごとに発送ができる。選択と送る数がキーボードで操作でき、荷物の情報の確認の段から戻っても、入力が消えない（「履歴のダイアログを開閉しても入力が消えない」は、G-4 Task 8 で荷作り表の注文IDが注文の詳細への Link になり履歴の dialog が無くなったため、この期待は無効。FR-ADMIN-116 の E2E は後続の E2E の Task が Link と href の確かめへ更新する） |
 | 同⑤ | FREQ-532 AC-01〜AC-04。会員とゲストの混在・別ID（同じメールでも）・別住所の行は選べず案内が出る。同じ会員はメールが違っても同梱できる。窓口を直接呼んでも `GROUP_G_SLIP_CUSTOMER_MISMATCH`・`GROUP_G_SLIP_ADDRESS_MISMATCH` の文で断られる |
 | 同⑥⑦⑧ | FREQ-531 AC-03・FREQ-533 AC-02・AC-03。同じ行を選んだ2つの下書きは、荷作り表に別の票の番号が出て、先に確定した後の確定が `GROUP_G_SLIP_QUANTITY_EXCEEDS_READY` の文で止まり何も増えない。棚卸減で準備中の数が減ると票の行に知らせが出て発送票確認が押せず、窓口を直接呼んでも断られる。確定の二重押下は通信1回・発送1つ・メール予定1つで、応答が届かない時は「もう一度確かめる」が同じ要求番号で送り直し二重にならない |
 | 同⑨ | FREQ-540 AC-10。サポーター（初期値）は荷作りと発送ができ、店長が `admin.shipping.manage` を外すと表だけ見えて選択欄・発送が無く権限の文が1回出る（DBの関数も403の固定の文で断る）。戻すと選べる |

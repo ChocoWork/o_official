@@ -1,5 +1,7 @@
 # 画面遷移図
 
+> G-4 Task 8 確認日: 2026-10-27。画面ルートの数は変えない（47ルート）。荷作り表の注文IDと発送票の頁の注文番号から注文の詳細へ移る導線を、末尾の「荷作り表・発送票からの導線（G-4 Task 8）」に追加した。荷作り表から注文の履歴を dialog で開く導線は撤去した。
+
 > G-4 Task 7 確認日: 2026-10-26。注文一覧表（`/admin/orders`）の1ルートを追加し、画面は47ルートになった。ORDER タブは注文一覧表への入口だけになり、一覧から詳細への導線と要対応の欄の移動先を末尾の「注文一覧表からの導線（G-4 Task 7）」に追加した。本文の「40ルート」は全画面図の数のまま数え直さず、G-4 の2ルート（注文の詳細・注文一覧表）は末尾の追加図に示す。
 
 > G-4 Task 6 確認日: 2026-10-26。注文の詳細（`/admin/orders/[id]`）の1ルートと、詳細の頁の中の操作と読み直しの遷移を末尾の「注文の詳細からの操作と遷移（G-4 Task 6）」に追加した。注文一覧表（`/admin/orders`）と一覧・荷作り表・発送票からの導線は Task 7・8。本文の「45」「40ルート」などの数え直しは Task 7 の後に行う。
@@ -269,7 +271,7 @@ flowchart LR
 | 決済 | `/checkout` の入力画面にStripeの部品を置かず、「確認へ進む」でSessionを作り、最終確認画面の `FinalConfirmationStep` に `CheckoutProvider` / `PaymentElement` を置く。「注文する」で受付・在庫確保の後に支払い、completeで完了表示する。外部認証からの復帰は `?session_id=...` をresumeで照会し、支払い済みならcomplete、開いていれば最終確認画面、ほかは入力画面へ進む。最終確認・完了の後もURLに`session_id`を残す（D9）。空カートでは同画面に案内を表示する |
 | 購入完了・注文詳細 | 完了表示の注文履歴リンクは `/account`。注文詳細の戻るリンクは `/account?tab=orders`。ゲスト登録カードは `/login?tab=register&email=...` でメール初期値を渡す。再度購入はカート追加後も注文詳細に留まる |
 | 注文商品の予約注文分岐 | [OrderItemRow](../../../src/features/account/components/OrderItemRow.tsx)には `itemId` があり `stockStatus=sold_out` の場合に `/contact?subject=予約注文：{商品名}` へ進む分岐がある。現行の注文詳細APIは `stockStatus` を返さないため、注文詳細での通常導線としては確認できない。contactはこのクエリから件名を初期入力しない |
-| 管理タブ・フォーム | admin は11タブ（INVENTORY は ORDER の次、PACKING は INVENTORY の次、SETTINGS は最後）、supporter は ORDER・INVENTORY・PACKING。ORDER タブは役割で出し分けず、「注文一覧表」（`/admin/orders`。G-4 Task 7 で作った）へのリンクだけを置く。PACKING タブは役割で出し分けず、「荷作り表」（`/admin/packing`。G-3 Task 3 で作った）へのリンクを置く。荷作り表の「管理画面に戻る」は `/admin?tab=PACKING`、注文IDの押下は注文の履歴のダイアログを開く（ルートは移らない）、「発送」で下書きを作ると `/admin/shipment-slips/[id]` へ移り（G-3 Task 4。移動先の頁が「下書きを保存しました。」を1回出す）、下の発送票の「開く」も同じ頁へ移る。発送票の頁（下書き）の「この行を外す」「追加」は同じルート内の状態（選択を丸ごと入れ替えて読み直す）、「下書きを破棄」は同じルート内の確かめのダイアログで、成功すると同じ頁が「破棄済み」の表示に変わる。「荷作り表に戻る」は `/admin/packing`。INVENTORY タブは役割で出し分けず、「在庫一覧表」（`/admin/inventory`）と「発注一覧表」（`/admin/purchase-orders`。G-2 Task 5 で作った）へのリンクを置く。在庫一覧表の「管理画面に戻る」は `/admin`。在庫一覧表の「発注」→「発注書確認」→「発注確定」は同じルート内の状態で、確定に成功すると `/admin/purchase-orders/[id]?created=1` へ移り、その頁（G-2 Task 5）が目印を見て作成の通知を出す。発注一覧表は発注書番号から発注書の頁へ、「在庫一覧表」「管理画面に戻る」へ移り、発注書の頁は「発注一覧表に戻る」で一覧へ戻る。発注書の頁の操作（G-2 Task 6）は同じルート内のダイアログで、「数量確定」「数量を訂正」「発注を取り消す」「残りを打ち切る」「発注先・メモを訂正」を開き、成功すると閉じて通知を出し、同じ頁を読み直す（ルートは移らない）。受け取り（G-2 Task 7）も同じ頁のダイアログで、未納のある行がある時の「全部受け取る」「一部を受け取る」と、受け取りの履歴の「この受け取りを取り消す」「数量を訂正」を開く。取消・訂正は、外す割当があると同じダイアログの中で確認の段（「割り当て済みの品を○点外し、受注生産中に戻します。」）に移り、確認の後に送り直す（ルートは移らない）。取引書類（G-2 Task 8）も同じ頁の節で、「書類を追加」「差し替える」「情報を訂正」「無効にする」「続きから保存」はダイアログ、「表示」「印刷」は60秒の署名つきリンクを新しいタブで、「ダウンロード」は保存として開き、保存・訂正・無効化の成功で通知を出して同じ頁を読み直す（ルートは移らない）。置き場のファイルが種類の検査に通らず断られた時は、続きから保存を繰り返させず、同じダイアログでファイルを選び直させて新しい予約で保存する。発注一覧表の「取引書類を検索」は `/admin/purchase-orders/documents` へ移り、結果の発注書番号から発注書の頁へ、結果の各行の「原本を見る」で原本を新しいタブで開き（ルートは移らない）、「発注一覧表に戻る」で一覧へ戻る（条件・頁送り・「印刷」は同じルート内の状態）。`/admin?tab=...` は初期タブを指定するが、サイドナビ操作は表示状態だけを変更する。ITEM・LOOK・NEWS は保存成功・キャンセルで戻り、STOCKIST は保存成功時に戻る |
+| 管理タブ・フォーム | admin は11タブ（INVENTORY は ORDER の次、PACKING は INVENTORY の次、SETTINGS は最後）、supporter は ORDER・INVENTORY・PACKING。ORDER タブは役割で出し分けず、「注文一覧表」（`/admin/orders`。G-4 Task 7 で作った）へのリンクだけを置く。PACKING タブは役割で出し分けず、「荷作り表」（`/admin/packing`。G-3 Task 3 で作った）へのリンクを置く。荷作り表の「管理画面に戻る」は `/admin?tab=PACKING`、注文IDの押下は注文の詳細 `/admin/orders/[id]` へ移る（G-4 Task 8。以前の履歴のダイアログは撤去した）、「発送」で下書きを作ると `/admin/shipment-slips/[id]` へ移り（G-3 Task 4。移動先の頁が「下書きを保存しました。」を1回出す）、下の発送票の「開く」も同じ頁へ移る。発送票の頁（下書き）の「この行を外す」「追加」は同じルート内の状態（選択を丸ごと入れ替えて読み直す）、「下書きを破棄」は同じルート内の確かめのダイアログで、成功すると同じ頁が「破棄済み」の表示に変わる。「荷作り表に戻る」は `/admin/packing`。INVENTORY タブは役割で出し分けず、「在庫一覧表」（`/admin/inventory`）と「発注一覧表」（`/admin/purchase-orders`。G-2 Task 5 で作った）へのリンクを置く。在庫一覧表の「管理画面に戻る」は `/admin`。在庫一覧表の「発注」→「発注書確認」→「発注確定」は同じルート内の状態で、確定に成功すると `/admin/purchase-orders/[id]?created=1` へ移り、その頁（G-2 Task 5）が目印を見て作成の通知を出す。発注一覧表は発注書番号から発注書の頁へ、「在庫一覧表」「管理画面に戻る」へ移り、発注書の頁は「発注一覧表に戻る」で一覧へ戻る。発注書の頁の操作（G-2 Task 6）は同じルート内のダイアログで、「数量確定」「数量を訂正」「発注を取り消す」「残りを打ち切る」「発注先・メモを訂正」を開き、成功すると閉じて通知を出し、同じ頁を読み直す（ルートは移らない）。受け取り（G-2 Task 7）も同じ頁のダイアログで、未納のある行がある時の「全部受け取る」「一部を受け取る」と、受け取りの履歴の「この受け取りを取り消す」「数量を訂正」を開く。取消・訂正は、外す割当があると同じダイアログの中で確認の段（「割り当て済みの品を○点外し、受注生産中に戻します。」）に移り、確認の後に送り直す（ルートは移らない）。取引書類（G-2 Task 8）も同じ頁の節で、「書類を追加」「差し替える」「情報を訂正」「無効にする」「続きから保存」はダイアログ、「表示」「印刷」は60秒の署名つきリンクを新しいタブで、「ダウンロード」は保存として開き、保存・訂正・無効化の成功で通知を出して同じ頁を読み直す（ルートは移らない）。置き場のファイルが種類の検査に通らず断られた時は、続きから保存を繰り返させず、同じダイアログでファイルを選び直させて新しい予約で保存する。発注一覧表の「取引書類を検索」は `/admin/purchase-orders/documents` へ移り、結果の発注書番号から発注書の頁へ、結果の各行の「原本を見る」で原本を新しいタブで開き（ルートは移らない）、「発注一覧表に戻る」で一覧へ戻る（条件・頁送り・「印刷」は同じルート内の状態）。`/admin?tab=...` は初期タブを指定するが、サイドナビ操作は表示状態だけを変更する。ITEM・LOOK・NEWS は保存成功・キャンセルで戻り、STOCKIST は保存成功時に戻る |
 | `/admin/create-user` | 専用の入口リンクは未確認。作成成功後も同画面に留まる。共通ナビゲーションは利用できる |
 | Meta接続 | KPIの接続操作から外部OAuthへ進む。callbackは既定のAPIパスを環境設定で変更できる。通常の戻り先は `/admin?meta=connected` または `?meta=error&meta_reason=...` で、`tab` は付与しない |
 
@@ -389,7 +391,7 @@ flowchart TD
 
 ## 注文の詳細からの操作と遷移（G-4 Task 6 / FREQ-539・FREQ-523-AC-05）
 
-確認日: 2026-10-26。新しいページ `/admin/orders/[id]` を1ルート足した（`src/app/**/page.tsx` は46件）。注文一覧表（`/admin/orders`）は G-4 Task 7 で追加した（下の「注文一覧表からの導線（G-4 Task 7）」）。荷作り表・発送票から詳細へ進む導線は Task 8 で足す。旧 `/admin?tab=ORDER` の一覧・dialog・handler は Task 7 で撤去した。下は詳細の頁の中の遷移で、dialog は同じ画面の上に開く。
+確認日: 2026-10-26。新しいページ `/admin/orders/[id]` を1ルート足した（`src/app/**/page.tsx` は46件）。注文一覧表（`/admin/orders`）は G-4 Task 7 で追加した（下の「注文一覧表からの導線（G-4 Task 7）」）。荷作り表・発送票から詳細へ進む導線は Task 8 で足した（下の「荷作り表・発送票からの導線（G-4 Task 8）」）。旧 `/admin?tab=ORDER` の一覧・dialog・handler は Task 7 で撤去した。下は詳細の頁の中の遷移で、dialog は同じ画面の上に開く。
 
 ```mermaid
 flowchart TD
@@ -416,7 +418,7 @@ flowchart TD
 
 `?open=` は最初の読込が済んだ時に、その操作を出せる注文なら対応する dialog を開き、すぐ `router.replace` で query を消す（出せない注文・知らない値は何もしない）。品を外した返金・取消は、受理された後にだけキャンセルの申し込みを解決する（解決だけの失敗は案内を出す）。入替は成功で「割当を入れ替えました。」を出して詳細を読み直す。結果が分からない時は「もう一度確かめる」で同じ要求番号と本文を送り直す。変更履歴は詳細の欄に埋め込み、先頭に「品物の状態の変化」を出す。
 
-[詳細頁の部品単体](../../../tests/unit/components/AdminOrderDetailSection.test.tsx)・[品物の表単体](../../../tests/unit/components/AdminOrderItemsTable.test.tsx)・[入替dialog単体](../../../tests/unit/components/AllocationSwapDialog.test.tsx)・[履歴単体](../../../tests/unit/components/OrderHistoryDialog.test.tsx)で検証する。390/768/1280pxの実測とE2Eはcontroller担当（未実行）。
+[詳細頁の部品単体](../../../tests/unit/components/AdminOrderDetailSection.test.tsx)・[品物の表単体](../../../tests/unit/components/AdminOrderItemsTable.test.tsx)・[入替dialog単体](../../../tests/unit/components/AllocationSwapDialog.test.tsx)・[履歴単体](../../../tests/unit/components/OrderHistoryPanel.test.tsx)で検証する。390/768/1280pxの実測とE2Eはcontroller担当（未実行）。
 
 ## 注文一覧表からの導線（G-4 Task 7 / FREQ-536・538・539-AC-05）
 
@@ -439,3 +441,16 @@ flowchart TD
 要対応の欄の操作（確認済みにする・解決済みにする・注文を取り消して解決・配送の対応済みにする）は一覧の頁の中で行い、成功すると欄と今の条件・頁の一覧を読み直す。詳細から戻って一覧を開き直すと、適用していた条件と頁を復元して読む。
 
 [一覧の頁単体](../../../tests/unit/components/AdminOrderItemListSection.test.tsx)・[表単体](../../../tests/unit/components/AdminOrderItemTable.test.tsx)・[要対応のhook単体](../../../tests/unit/hooks/useOrderAttention.test.tsx)・[ORDER タブの入口単体](../../../tests/unit/components/AdminGroupG1LegacyStop.test.tsx)で検証する。390/768/1280pxの実測とE2Eはcontroller担当（未実行）。
+
+## 荷作り表・発送票からの導線（G-4 Task 8 / FREQ-539-AC-05）
+
+確認日: 2026-10-27。ルートは増えない。荷作り表の注文ID、発送票の頁の注文番号（同梱する品物の表・追加の候補・発送票の確認の見出し・確定済みの票の「注文ごとの発送」）は、注文の詳細への Link で、押すと同じタブで詳細へ移る。以前の「注文IDの押下で履歴の dialog を開く」導線は無い。詳細の「発送」の欄の発送票 Link で、元の発送票へ戻れる。
+
+```mermaid
+flowchart TD
+  P["/admin/packing（荷作り表）"] -->|注文IDの Link| D["/admin/orders/[id]（注文の詳細）"]
+  S["/admin/shipment-slips/[id]（発送票）"] -->|注文番号の Link| D
+  D -->|発送票 Link| S
+  D -->|荷作り表を開く| P
+  D -->|変更履歴の欄| H["/admin/orders/[id]#order-history"]
+```

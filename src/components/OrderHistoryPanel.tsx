@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button/Button';
-import { Dialog } from '@/components/ui/Dialog/Dialog';
 import { StatusBadge, type StatusBadgeTone } from '@/components/ui/StatusBadge/StatusBadge';
 import { clientFetch } from '@/lib/client-fetch';
 import type {
@@ -36,16 +35,8 @@ type HistoryAction = 'content' | 'resend';
 /** 再送の結果の知らせ。受け付けは status、断り・失敗は alert の入れ物に出す */
 type Notice = { tone: 'success' | 'failure'; text: string };
 
-type OrderHistoryDialogProps = {
-  /** 開いている注文。null なら閉じている */
-  orderId: string | null;
-  onClose: () => void;
-};
-
-type OrderHistoryDialogBodyProps = {
+type OrderHistoryPanelProps = {
   orderId: string;
-  onClose: () => void;
-  inline?: boolean;
 };
 
 const RESEND_ACCEPTED_MESSAGE = '再送を受け付けました。少し待つと届きます。';
@@ -138,26 +129,22 @@ function formatItems(items: Array<{ name: string; quantity: number }>): string {
 }
 
 /**
- * 「この注文の履歴」（グループ D 設計書 5 章。Shopify の注文の Timeline とメールの再送に合わせる）。
- * 状態の変化・メール・発送（とその取消）・返金・返品を新しい順に出し、送ったメールの中身・再送の確かめを
- * 同じダイアログの中で切り替える（ダイアログを重ねると、Escape で外側も閉じるため）。再送できるかは窓口が決めた値に従う。
+ * 注文の詳細（/admin/orders/[id]）の「変更履歴」（グループ D 設計書 5 章。Shopify の注文の Timeline とメールの再送に合わせる）。
+ * 品物の状態の変化・メール・発送（とその取消）・返金・返品を新しい順に出し、送ったメールの中身・再送の確かめを
+ * 同じ欄の中で切り替える。再送できるかは窓口が決めた値に従う。
  * 配送（グループ E-4）: 発送の行に届いた日・現在の状況・登録の状態、出来事と伝票番号の直しの行を出す。
  * G-1 Task 15: 「伝票番号を直す」「配達済みにする」「この発送を取り消す」と仕上がりの行・その取消は撤去した。
  * 履歴の一覧の上に、発送の停止の文を1回出す（窓口が昔の形で cancellable を true にしても、取消の入口は出さない）。
+ * G-4 Task 8: 荷作り表から開いていた履歴の dialog は撤去した。ここは詳細の頁に埋め込む形だけを持つ。
  *
- * 開くたびに中身を作り直す（key に注文を使う）。前の注文の履歴や画面の切り替えを残したまま開くと、
- * ダイアログが先に中の先頭のボタンへ移したフォーカスが、その後の状態の消去でボタンごと外れてしまう。
+ * 注文が変わったら中身を作り直す（key に注文を使う）。前の注文の履歴や画面の切り替えを残したままにすると、
+ * 先に移したフォーカスが、その後の状態の消去でボタンごと外れてしまう。
  */
-export default function OrderHistoryDialog({ orderId, onClose }: OrderHistoryDialogProps) {
-  return orderId ? <OrderHistoryDialogBody key={orderId} orderId={orderId} onClose={onClose} /> : null;
+export default function OrderHistoryPanel({ orderId }: OrderHistoryPanelProps): React.JSX.Element {
+  return <OrderHistoryPanelBody key={orderId} orderId={orderId} />;
 }
 
-const noop = (): void => {};
-export function OrderHistoryPanel({ orderId }: { orderId: string }): React.JSX.Element {
-  return <OrderHistoryDialogBody key={orderId} orderId={orderId} inline onClose={noop} />;
-}
-
-function OrderHistoryDialogBody({ orderId, onClose, inline = false }: OrderHistoryDialogBodyProps) {
+function OrderHistoryPanelBody({ orderId }: OrderHistoryPanelProps) {
   const [history, setHistory] = useState<OrderHistoryResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -190,14 +177,14 @@ function OrderHistoryDialogBody({ orderId, onClose, inline = false }: OrderHisto
     void load(orderId);
   }, [orderId, load]);
 
-  // 画面を切り替えると、押したボタンは画面ごと消えて、フォーカスがダイアログの外（body）へ落ちる（設計書 5-5、WCAG 2.4.3）。
+  // 画面を切り替えると、押したボタンは画面ごと消えて、フォーカスが欄の外（body）へ落ちる（設計書 5-5、WCAG 2.4.3）。
   // 戻る・やめるでは同じ行のボタンへ戻す。ボタンが消えた場合と、それ以外の切り替えはパネルへ移す
   // （再送の返事を待つ間の「やめる」も、返事の後の読み直しで行のボタンが消えるので、パネルへ移す）。
-  // 最初の画面では動かさない（Dialog が開いた時に決めた場所を奪わない）
+  // 最初の画面では動かさない（頁を開いた時のフォーカスの場所を奪わない）
   useEffect(() => {
     if (shownView.current === view.name) return;
     shownView.current = view.name;
-    const panel = viewRef.current?.closest<HTMLElement>(inline ? '[data-order-history-panel]' : '[role="dialog"]');
+    const panel = viewRef.current?.closest<HTMLElement>('[data-order-history-panel]');
     const target = returnFocus.current;
     const opener = view.name === 'list' && target
       ? Array.from(panel?.querySelectorAll<HTMLButtonElement>('button[data-history-action]') ?? [])
@@ -205,7 +192,7 @@ function OrderHistoryDialogBody({ orderId, onClose, inline = false }: OrderHisto
       : null;
     returnFocus.current = null;
     (opener ?? panel)?.focus();
-  }, [view.name, inline]);
+  }, [view.name]);
 
   // 焦点の移動と polite の文の挿入が同じ描画だと読み上げが落ちるため、上の移動の後の描画で文を入れる。
   // 別の行の確かめの画面にいる間は、その行の結果と誤解される知らせを出さずに取っておき、その画面を離れた時に出す。
@@ -281,12 +268,6 @@ function OrderHistoryDialogBody({ orderId, onClose, inline = false }: OrderHisto
     await load(orderId);
   };
 
-  const title =
-    view.name === 'content'
-      ? `${view.entry.kindLabel}のメールの中身`
-      : view.name === 'confirm'
-        ? 'お客様へ再送'
-        : 'この注文の履歴';
   const statusText = notice?.tone === 'success' ? notice.text : null;
   const failureText = notice?.tone === 'failure' ? notice.text : null;
 
@@ -502,8 +483,9 @@ function OrderHistoryDialogBody({ orderId, onClose, inline = false }: OrderHisto
     );
   };
 
-  const content = (
-    <>
+  return (
+    <section id="order-history" aria-label="変更履歴" aria-labelledby="order-history-heading" tabIndex={-1} data-order-history-panel className="min-w-0 space-y-3 break-words">
+      <h2 id="order-history-heading">変更履歴</h2>
       {/*
         再送の結果と履歴の読み込みの誤りの知らせ。画面を切り替えても履歴を読み直しても消えない入れ物を最初から置き、
         中の文字だけを変える（後から差し込んだ入れ物は、読み上げられない環境が多い）。受け付けは status、断り・失敗は alert
@@ -547,9 +529,6 @@ function OrderHistoryDialogBody({ orderId, onClose, inline = false }: OrderHisto
               <ol className="max-h-[60vh] space-y-3 overflow-y-auto">{history.entries.map(renderEntry)}</ol>
             </>
           ) : null}
-          {!inline ? <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={onClose}>
-            閉じる
-          </Button> : null}
         </div>
       ) : null}
 
@@ -614,7 +593,6 @@ function OrderHistoryDialogBody({ orderId, onClose, inline = false }: OrderHisto
           </div>
         </div>
       ) : null}
-    </>
+    </section>
   );
-  return inline ? <section id="order-history" aria-label="変更履歴" aria-labelledby="order-history-heading" tabIndex={-1} data-order-history-panel className="min-w-0 space-y-3 break-words"><h2 id="order-history-heading">変更履歴</h2>{content}</section> : <Dialog open onClose={onClose} title={title}>{content}</Dialog>;
 }

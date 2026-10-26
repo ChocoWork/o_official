@@ -47,9 +47,8 @@ const files = [
   'docs/superpowers/specs/2026-10-09-order-email-outbox-design.md',
   'docs/superpowers/specs/2026-10-12-returns-design.md',
 ];
+// 伝票番号の訂正（tracking）と手動の配達済み（delivered）の窓口は、G-4 Task 8 で撤去した（下の「撤去した7メソッド」の節）
 const newPaths = [
-  '/api/admin/orders/[id]/fulfillments/[fulfillmentId]/tracking',
-  '/api/admin/orders/[id]/fulfillments/[fulfillmentId]/delivered',
   '/api/admin/order-attention/deliveries/[attentionId]/resolve', '/api/webhook/17track',
 ];
 const walk = (dir: string): string[] => readdirSync(path.join(root, dir), { withFileTypes: true }).flatMap((entry) => {
@@ -159,7 +158,7 @@ test('要求と追加節の相対リンクが実在する', () => {
   }
 });
 
-test('3管理POSTと1webhookをAPIと入口一覧に記録し総数が実コードと一致する', () => {
+test('配送の要対応の解決POSTと1webhookをAPIと入口一覧に記録し総数が実コードと一致する', () => {
   const api = read(files[0]); const inventory = read(files[1]);
   newPaths.forEach((route) => {
     contains(api, `\`${route}\``);
@@ -167,14 +166,14 @@ test('3管理POSTと1webhookをAPIと入口一覧に記録し総数が実コー�
   });
   const routes = walk('src/app/api').filter((file) => file.endsWith('/route.ts'));
   const methods = routes.flatMap((file) => [...read(file).matchAll(/export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b|export\s+const\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g)]);
-  expect(routes).toHaveLength(160); expect(methods).toHaveLength(203);
-  contains(api, '160ファイル'); contains(api, '203組');
-  contains(api, 'HEAD/OPTIONSは203組に含めない');
+  expect(routes).toHaveLength(154); expect(methods).toHaveLength(196);
+  contains(api, '154ファイル'); contains(api, '196組');
+  contains(api, 'HEAD/OPTIONSは196組に含めない');
   for (const file of files.slice(0, 3)) contains(read(file), '配送の入口・表は E-4 の変更を 2026-10-21 に反映');
-  contains(inventory, '160ファイル・203メソッド');
+  contains(inventory, '154ファイル・196メソッド');
   const entries = inventory.split('\n').filter((line) => /^\| `\/api\//.test(line));
-  expect(entries).toHaveLength(159);
-  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(202);
+  expect(entries).toHaveLength(153);
+  expect(entries.flatMap((line) => line.split('|')[2].match(/`(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)`/g) ?? [])).toHaveLength(195);
   const g4Reads = ['/api/admin/order-items', '/api/admin/order-items/export', '/api/admin/orders/[id]'];
   g4Reads.forEach((route) => {
     contains(api, '`GET ' + route + '`');
@@ -244,35 +243,34 @@ test('C-2に実装後の3つの追加型を1行ずつ記録する', () => {
   ['OrderHistoryResponse.deliveryTrackingEnabled?: boolean', 'DeliveryDialogProps.onUncertain?: () => void', 'DeliveryRegistration.everRegistered: boolean'].forEach((signature) => contains(c2, signature));
 });
 
-// G-1 Task 14 で止めた旧の発送・発送取消・伝票番号の訂正・手動の配達済み・仕上がりの手動記録と取消の注記と現在の410。
-// G-3 で発送系の5メソッドは発送票へ移行した（旧入口は410のまま）。仕上がりの2メソッドは終了のままで G-1停止 の注記を保つ
-const G3_MOVE = 'G-3移行: 旧発送・発送取消・伝票訂正・手動配達済みはG-3の発送票へ移行しました。旧入口は認可後410を返します。以下のE-4記述は移行前の契約として保持します。';
-const stoppedRoutes = [
-  ['GET', '/api/admin/orders/[id]/fulfillments', 'LEGACY_FULFILLMENT_DISABLED', 'G-3移行'],
-  ['POST', '/api/admin/orders/[id]/fulfillments', 'LEGACY_FULFILLMENT_DISABLED', 'G-3移行'],
-  ['POST', '/api/admin/orders/[id]/fulfillments/[fulfillmentId]/cancel', 'LEGACY_FULFILLMENT_DISABLED', 'G-3移行'],
-  ['POST', '/api/admin/orders/[id]/fulfillments/[fulfillmentId]/tracking', 'LEGACY_FULFILLMENT_DISABLED', 'G-3移行'],
-  ['POST', '/api/admin/orders/[id]/fulfillments/[fulfillmentId]/delivered', 'LEGACY_FULFILLMENT_DISABLED', 'G-3移行'],
-  ['POST', '/api/admin/orders/[id]/completions', 'MANUAL_COMPLETION_DISABLED', 'G-1停止'],
-  ['POST', '/api/admin/orders/[id]/completions/[completionId]/cancel', 'MANUAL_COMPLETION_DISABLED', 'G-1停止'],
+// G-1 Task 14 で止め、G-3 で発送票へ移した旧の発送・発送取消・伝票番号の訂正・手動の配達済み・仕上がりの手動記録と取消の7メソッド（6パス）は、
+// G-4 Task 8 で route ごと撤去した。文書は撤去の注記を E-4 節に置き、7メソッドの表の行は無い（撤去前の契約は注記の下に履歴として残す）。
+const G4_REMOVED = 'G-4撤去: 旧発送・発送取消・伝票訂正・手動配達済み・仕上がりの手動記録と取消の窓口は、G-3の発送票へ移行した後、G-4 Task 8 で route ごと撤去しました。以下のE-4記述は撤去前の契約として保持します。';
+const removedRoutes = [
+  ['GET', '/api/admin/orders/[id]/fulfillments'],
+  ['POST', '/api/admin/orders/[id]/fulfillments'],
+  ['POST', '/api/admin/orders/[id]/fulfillments/[fulfillmentId]/cancel'],
+  ['POST', '/api/admin/orders/[id]/fulfillments/[fulfillmentId]/tracking'],
+  ['POST', '/api/admin/orders/[id]/fulfillments/[fulfillmentId]/delivered'],
+  ['POST', '/api/admin/orders/[id]/completions'],
+  ['POST', '/api/admin/orders/[id]/completions/[completionId]/cancel'],
 ] as const;
 
-test('G-3の移行注記をE-4節と停止した入口の隣に置き、現在の410と固定の文を併記する', () => {
+test('撤去した7メソッド: 撤去の注記をE-4節に置き、窓口の表の行は無く、route ファイルも無い（DBの旧い4関数の拒否は残る）', () => {
   const api = read(files[0]); const inventory = read(files[1]); const admin = read('docs/04_DetailDesign/pages/16_admin.md');
-  for (const text of [e4Section(api), e4Section(inventory), e4Section(admin)]) contains(text, G3_MOVE);
-  const source = read('src/lib/orders/fulfillment/legacy-fulfillment-disabled.ts');
-  const legacyText = /LEGACY_FULFILLMENT_DISABLED_TEXT = '([^']+)'/.exec(source)![1];
-  const manualText = /MANUAL_COMPLETION_DISABLED_TEXT = '([^']+)'/.exec(source)![1];
-  contains(api, legacyText); contains(api, manualText);
-  // 7メソッドの行は行頭の path/method を保ったまま、同じ行に移行（仕上がりは停止）と410と固定の記号を持つ
-  for (const [method, route, code, marker] of stoppedRoutes) {
+  for (const text of [e4Section(api), e4Section(inventory), e4Section(admin)]) contains(text, G4_REMOVED);
+  contains(inventory, '6パス・7メソッドを撤去');
+  contains(api, 'LEGACY_FULFILLMENT_DISABLED');
+  for (const [method, route] of removedRoutes) {
+    // API 仕様の表の行（`| \`METHOD path\` |` と `| METHOD \`path\` |` の両形）と入口一覧の行は、もう無い
     const apiRow = api.split(/\r?\n/).find((line) => line.startsWith(`| \`${method} ${route}\` |`) || line.startsWith(`| ${method} \`${route}\` |`));
-    expect({ route, method, apiRow: apiRow !== undefined }).toEqual({ route, method, apiRow: true });
-    [marker, '410', code].forEach((word) => expect({ route, word, present: apiRow!.includes(word) }).toEqual({ route, word, present: true }));
-    const inventoryRow = inventory.split(/\r?\n/).find((line) => line.startsWith(`| \`${route}\` |`))!;
-    [marker, '410', code].forEach((word) => expect({ route, word, present: inventoryRow.includes(word) }).toEqual({ route, word, present: true }));
+    expect({ route, method, apiRow }).toEqual({ route, method, apiRow: undefined });
+    const inventoryRow = inventory.split(/\r?\n/).find((line) => line.startsWith(`| \`${route}\` |`));
+    expect({ route, inventoryRow }).toEqual({ route, inventoryRow: undefined });
+    expect({ route, exists: existsSync(path.join(root, 'src/app', route, 'route.ts')) }).toEqual({ route, exists: false });
   }
-  contains(inventory, '6パス・7メソッド');
+  // 窓口を持たない側の定義（DB を呼ばずに投げる store と 410 の本文）は残る。importer は fulfillment-materials.ts と fulfillment-store.ts だけ
+  expect(existsSync(path.join(root, 'src/lib/orders/fulfillment/legacy-fulfillment-disabled.ts'))).toBe(true);
 });
 
 test('G-1の要求8行・G-4土台のAC（540-14）・入替のAC（523-03）とFREQ-401の在庫復元の文を持つ', () => {

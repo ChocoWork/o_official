@@ -22,11 +22,11 @@ jest.mock('@/components/LookSection', () => () => null);
 jest.mock('@/components/StockistSection', () => () => null);
 jest.mock('@/components/UserSection', () => () => null);
 
-import OrderHistoryDialog from '@/components/OrderHistoryDialog';
+import OrderHistoryPanel from '@/components/OrderHistoryPanel';
 
 /**
  * G-1 Task 15: 旧の発送・発送取消・伝票番号の訂正・手動の配達済み・仕上がりの手動記録と取消の画面の入口を撤去し、
- * 注文の履歴（OrderHistoryDialog）の中に、固定の案内を出す。
+ * 注文の変更履歴（OrderHistoryPanel。G-4 Task 8 で OrderHistoryDialog から改名）の中に、固定の案内を出す。
  * G-3: 発送・発送取消・伝票番号の訂正・手動の配達済みの案内は、荷作り表（注文一覧）と発送票（履歴）へ移った。仕上がりの手動記録は終了のまま。
  * G-4 Task 7: 管理画面の ORDER タブは注文一覧表（/admin/orders）への入口だけになった。旧い一覧（OrderSection）と、その上の停止の文・各 dialog・旧CSVは撤去した。
  * 窓口が昔の形で canShip・canRecordCompletion・cancellable を true にしても、旧い入口は出さない。
@@ -210,34 +210,34 @@ describe('注文の履歴: 伝票番号の訂正・手動の配達済み・発�
 
   it('偽の cancellable と配達済みでない発送でも、旧の入口を出さず、POST を送らない', async () => {
     mockClientFetch.mockResolvedValueOnce(json(legacyHistory()));
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    render(<OrderHistoryPanel orderId={ORDER_ID} />);
 
-    const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
-    await within(dialog).findByText('宛先: hanako@example.com');
+    const panel = await screen.findByRole('region', { name: '変更履歴' });
+    await within(panel).findByText('宛先: hanako@example.com');
     for (const name of LEGACY_ENTRY_NAMES) {
-      expect(within(dialog).queryByRole('button', { name })).not.toBeInTheDocument();
+      expect(within(panel).queryByRole('button', { name })).not.toBeInTheDocument();
     }
     // 発送の行と配送の状況は読める
-    expect(within(dialog).getByText('発送（1回目）')).toBeInTheDocument();
-    expect(within(dialog).getByText('配送業者: ヤマト運輸 / 伝票番号: 1234-5678')).toBeInTheDocument();
+    expect(within(panel).getByText('発送（1回目）')).toBeInTheDocument();
+    expect(within(panel).getByText('配送業者: ヤマト運輸 / 伝票番号: 1234-5678')).toBeInTheDocument();
     expect(mockClientFetch).toHaveBeenCalledTimes(1);
     expect(mockClientFetch).toHaveBeenCalledWith(`/api/admin/orders/${ORDER_ID}/history`, { cache: 'no-store' });
   });
 
   it('FREQ-524-AC-03: 発送票への案内を、履歴の一覧の上に1回だけ出す。旧い停止の文と仕上がりの停止の文は履歴には出さない', async () => {
     mockClientFetch.mockResolvedValueOnce(json(legacyHistory()));
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    render(<OrderHistoryPanel orderId={ORDER_ID} />);
 
-    const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
-    await within(dialog).findByText('宛先: hanako@example.com');
-    const texts = within(dialog).getAllByText('発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票から行います。');
+    const panel = await screen.findByRole('region', { name: '変更履歴' });
+    await within(panel).findByText('宛先: hanako@example.com');
+    const texts = within(panel).getAllByText('発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票から行います。');
     expect(texts).toHaveLength(1);
-    const list = within(dialog).getByRole('list');
+    const list = within(panel).getByRole('list');
     expect(list.contains(texts[0])).toBe(false);
     expect(texts[0].compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expectWraps(texts[0]);
-    expect(within(dialog).queryByText(LEGACY_FULFILLMENT_DISABLED_TEXT)).not.toBeInTheDocument();
-    expect(within(dialog).queryByText(MANUAL_COMPLETION_DISABLED_TEXT)).not.toBeInTheDocument();
+    expect(within(panel).queryByText(LEGACY_FULFILLMENT_DISABLED_TEXT)).not.toBeInTheDocument();
+    expect(within(panel).queryByText(MANUAL_COMPLETION_DISABLED_TEXT)).not.toBeInTheDocument();
   });
 
   it('FREQ-533-AC-01: 票に属する発送の行には「発送票 番号 を開く」を出し、票の頁へ移れる。票に属さない発送には出さない', async () => {
@@ -249,11 +249,11 @@ describe('注文の履歴: 伝票番号の訂正・手動の配達済み・発�
     fulfillment.slipId = SLIP_ID;
     fulfillment.slipNumber = 'SL-20261025-0001';
     mockClientFetch.mockResolvedValueOnce(json(history));
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    render(<OrderHistoryPanel orderId={ORDER_ID} />);
 
-    const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
-    await within(dialog).findByText('宛先: hanako@example.com');
-    const links = within(dialog).getAllByRole('link', { name: /発送票/ });
+    const panel = await screen.findByRole('region', { name: '変更履歴' });
+    await within(panel).findByText('宛先: hanako@example.com');
+    const links = within(panel).getAllByRole('link', { name: /発送票/ });
     expect(links).toHaveLength(1);
     expect(links[0]).toHaveAccessibleName('発送票 SL-20261025-0001 を開く');
     expect(links[0]).toHaveAttribute('href', `/admin/shipment-slips/${SLIP_ID}`);
@@ -263,11 +263,11 @@ describe('注文の履歴: 伝票番号の訂正・手動の配達済み・発�
 
   it('メールの中身を見る・お客様へ再送は残る（履歴の読み取りと再送は止めない）', async () => {
     mockClientFetch.mockResolvedValueOnce(json(legacyHistory()));
-    render(<OrderHistoryDialog orderId={ORDER_ID} onClose={jest.fn()} />);
+    render(<OrderHistoryPanel orderId={ORDER_ID} />);
 
-    const dialog = await screen.findByRole('dialog', { name: 'この注文の履歴' });
-    await within(dialog).findByText('宛先: hanako@example.com');
-    expect(within(dialog).getByRole('button', { name: '中身を見る' })).toBeEnabled();
-    expect(within(dialog).getByRole('button', { name: 'お客様へ再送' })).toBeEnabled();
+    const panel = await screen.findByRole('region', { name: '変更履歴' });
+    await within(panel).findByText('宛先: hanako@example.com');
+    expect(within(panel).getByRole('button', { name: '中身を見る' })).toBeEnabled();
+    expect(within(panel).getByRole('button', { name: 'お客様へ再送' })).toBeEnabled();
   });
 });

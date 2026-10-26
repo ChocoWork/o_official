@@ -167,7 +167,7 @@ describe('POST /api/admin/orders/[id]/status - CSRF トークン', () => {
 });
 
 describe('POST /api/admin/orders/[id]/status - 発送', () => {
-  // 発送は /api/admin/orders/[id]/fulfillments に移した（グループ E-1）。この窓口は未入金の注文の取消だけ
+  // 発送は発送票の窓口（/api/admin/shipment-slips）へ移した（グループ G-3）。この窓口は未入金の注文の取消だけ
   test.each([
     ['従来の発送の中身', { status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012' }],
     ['「送るか」を付けた発送の中身', { status: 'shipped', carrier: 'yamato', trackingNumber: '1234-5678-9012', notifyCustomer: false }],

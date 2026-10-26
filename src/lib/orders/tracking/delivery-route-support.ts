@@ -8,14 +8,11 @@ import { DELIVERY_ERROR_MESSAGES } from '@/lib/orders/tracking/delivery-messages
 import { DeliveryOperationError, DeliveryStoreError } from '@/lib/orders/tracking/delivery-store';
 import type { DeliveryErrorCode } from '@/lib/orders/tracking/delivery-types';
 
+// 伝票番号の訂正（tracking）と手動の配達済み（delivered）の窓口は G-4 Task 8 で撤去した。残る書き込みの窓口は resolve だけ
 const RULES = {
-  tracking: { endpoint: 'admin:orders:fulfillment-tracking', limit: 60, windowSeconds: 600 },
-  delivered: { endpoint: 'admin:orders:fulfillment-delivered', limit: 30, windowSeconds: 600 },
   resolve: { endpoint: 'admin:orders:delivery-resolve', limit: 60, windowSeconds: 600 },
 } as const;
 const ACTIONS = {
-  tracking: 'admin.orders.fulfillment.tracking_update',
-  delivered: 'admin.orders.fulfillment.delivered',
   resolve: 'admin.orders.delivery_attention.resolve',
 } as const;
 type Endpoint = keyof typeof RULES;
@@ -54,7 +51,7 @@ export const deliveryDate = z.string().refine((value) => {
 export function createDeliveryAudit(request: Request, actorId: string, endpoint: Endpoint, resourceId: string | null) {
   return (outcome: 'success' | 'failure' | 'conflict' | 'error', metadata: Record<string, unknown> | null = null) => logAudit({
     action: ACTIONS[endpoint], actor_id: actorId,
-    resource: endpoint === 'resolve' ? 'order_fulfillment_attention' : 'orders', resource_id: resourceId,
+    resource: 'order_fulfillment_attention', resource_id: resourceId,
     outcome, metadata,
     ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
     user_agent: request.headers.get('user-agent') ?? null,

@@ -146,10 +146,10 @@ export const SHIPMENT_SLIP_TEXT = {
   open: '開く',
   expired: '期限切れ',
   noTracking: '伝票番号なし',
-  /** 旧い注文一覧の表の上にあった案内（G-4 で一覧は撤去した。E2E の付け替え〔Task 11・12〕までは定義を残す） */
+  /** 旧い注文一覧の表の上にあった案内（G-4 で一覧は撤去した。使う画面はもう無い。E2E〔orderSectionGuide・openPacking を参照する試験〕の付け替え〔Task 11・12〕までは定義を残す） */
   orderSectionGuide: '発送は荷作り表から行います。',
   openPacking: '荷作り表を開く',
-  /** 注文の履歴（OrderHistoryDialog）の上の案内 */
+  /** 注文の詳細の変更履歴（OrderHistoryPanel）の上の案内 */
   orderHistoryGuide: '発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票から行います。',
   // ---- 下書き（G-3 Task 4） ----
   /** 荷作り表の選択欄の見出し（視覚的に隠す） */

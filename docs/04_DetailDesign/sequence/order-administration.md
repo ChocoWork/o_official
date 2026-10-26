@@ -1,5 +1,7 @@
 # 注文管理のシーケンス
 
+> G-4 Task 8 確認日: 2026-10-27。荷作り表・発送票の注文番号から注文の詳細へ移る流れ（SQ-ADMIN-15 の入口）を追記し、履歴の dialog（`OrderHistoryDialog`）の撤去と、G-1 から 410 だけを返していた旧い発送・仕上がりの窓口 6 ファイル・7 メソッドの削除を、各節の注記に反映した。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザ・E2Eはcontroller担当。
+
 > G-4 Task 7 確認日: 2026-10-26。旧い一覧の窓口 GET /api/admin/orders を削除し、一覧は GET /api/admin/order-items、要対応の欄の操作は一覧の頁（hook useOrderAttention）に移した。ORDER タブは注文一覧表への入口だけ。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザ・E2Eはcontroller担当。
 
 > G-4 Task 6 確認日: 2026-10-26。詳細の頁からの操作と読み直しの流れを末尾の SQ-ADMIN-15 に追加した。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザ・E2Eはcontroller担当。
@@ -105,8 +107,8 @@ capの試験設定は `app.group_g_list_cap_orders` と `app.group_g_export_cap_
 | 境界・操作 | 実装根拠 |
 | --- | --- |
 | `POST /api/admin/orders/[id]/status`、未入金の取消と支払い済みのキャンセル | [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
-| `GET`・`POST /api/admin/orders/[id]/fulfillments`、発送の取消 `…/fulfillments/[fulfillmentId]/cancel` | [発送API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts)、[発送の取消API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/%5BfulfillmentId%5D/cancel/route.ts) |
-| `POST /api/admin/orders/[id]/completions`、仕上がりの取消 `…/completions/[completionId]/cancel` | [仕上がりAPI](../../../src/app/api/admin/orders/%5Bid%5D/completions/route.ts)、[仕上がりの取消API](../../../src/app/api/admin/orders/%5Bid%5D/completions/%5BcompletionId%5D/cancel/route.ts) |
+| `GET`・`POST /api/admin/orders/[id]/fulfillments`、発送の取消 `…/fulfillments/[fulfillmentId]/cancel` | G-4 Task 8 で route ごと撤去した（発送は発送票の窓口。[発送票の流れ](shipping.md)） |
+| `POST /api/admin/orders/[id]/completions`、仕上がりの取消 `…/completions/[completionId]/cancel` | G-4 Task 8 で route ごと撤去した（手動の仕上がりは G-1 で終了。品物は在庫の入荷から FIFO で自動に割り当てる） |
 | `GET`・`POST /api/admin/orders/[id]/refund`、返事待ちの確かめ直し `…/refund/confirm`、`refunds.create` | [refund API](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts)、[確かめ直しAPI](../../../src/app/api/admin/orders/%5Bid%5D/refund/confirm/route.ts)、[返金の流れ](../../../src/lib/orders/refund/refund-service.ts)、[Stripe への頼み方](../../../src/lib/orders/refund/refund-stripe.ts) |
 | `GET`・`POST /api/admin/orders/[id]/returns`、`GET …/returns/materials`、`POST /api/admin/returns/[returnId]/{receive,refund,cancel,reopen,close-missing,inspect,fee-payment,release-exchange}` | [返品の一覧と作る API](../../../src/app/api/admin/orders/%5Bid%5D/returns/route.ts)、[作る画面の材料 API](../../../src/app/api/admin/orders/%5Bid%5D/returns/materials/route.ts)、[受け取り API](../../../src/app/api/admin/returns/%5BreturnId%5D/receive/route.ts)、[額を決めて返金する API](../../../src/app/api/admin/returns/%5BreturnId%5D/refund/route.ts)、[返品の流れ](../../../src/lib/orders/returns/return-service.ts)、[返品の DB の呼び出し](../../../src/lib/orders/returns/return-store.ts) |
 | `POST /api/admin/payment-exceptions/[id]/resolve` | [resolve API](../../../src/app/api/admin/payment-exceptions/%5Bid%5D/resolve/route.ts) |
@@ -134,7 +136,7 @@ review APIも同じCSRF helperを呼ぶ。refund API（返金と確かめ直し�
 | --- | --- | --- |
 | `GET /api/admin/order-attention` | 同じread認可で未解決例外・未確認注文を各最大100件返し、件数も返す。canCancelOrderは注文状態に基づく表示用属性で、Stripeの取消ガード成功を示さない。「返金の失敗」の行には、「もう一度返金する」を出せるか（canRetryRefund。注文の返せる額が0より多い）と、細目（refundFailure: 返金の額・失敗の理由の言葉・確保し直せなかった商品と数。要対応の支払いの印で返金の記録を service_role で引く）を付ける | [要対応・要確認一覧](../../../src/app/api/admin/order-attention/route.ts) |
 | `GET /api/admin/orders/[id]/status` | 同じread認可でPOSTの説明とrequiredBodyを返す。対象注文の現在状態を取得・変更するAPIではない | [status API](../../../src/app/api/admin/orders/%5Bid%5D/status/route.ts) |
-| `GET /api/admin/orders/[id]/fulfillments` | `admin.orders.manage` で、発送と仕上がりの画面の材料（商品ごとの数・発送の一覧・発送できない理由）を service_role で読む。状態変更はしない。操作時は各POSTが再検証する | [発送API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts) |
+| `GET /api/admin/orders/[id]/fulfillments` | `admin.orders.manage` で、発送と仕上がりの画面の材料（商品ごとの数・発送の一覧・発送できない理由）を service_role で読む。状態変更はしない。操作時は各POSTが再検証する | G-4 Task 8 で route ごと撤去した |
 | `GET /api/admin/orders/[id]/refund` | `admin.orders.refund`で、返金の画面の材料（注文の金額・返せる額・商品ごとの数と割り振った割引・返事待ちの返金）をservice_roleで読む。状態変更はしない。操作時はPOSTが再検証する | [refund API](../../../src/app/api/admin/orders/%5Bid%5D/refund/route.ts) |
 | `GET /api/admin/orders/[id]/returns` | `admin.orders.return` で、返品の画面の材料（返品の一覧と行ごとの進み具合・返金待ちの額の見込み・手数料・返せる額と送料・返品できる数の合計・要検品の設定）を service_role で読む。取消・お断りの返品も返すが、画面は出さない。返金の権限の有無（canRefund）も返す。状態変更はしない。操作時は各POSTが再検証する | [返品の一覧と作る API](../../../src/app/api/admin/orders/%5Bid%5D/returns/route.ts) |
 | `GET /api/admin/orders/[id]/returns/materials` | `admin.orders.return` で、返品を作る画面の材料（発送ごとの品・返品できる数と期限・交換の色とサイズと在庫・理由ごとの設定・返送先の有無・使う手数料の設定）を service_role で読む。状態変更はしない。操作時はPOSTが再検証する | [作る画面の材料 API](../../../src/app/api/admin/orders/%5Bid%5D/returns/materials/route.ts) |
@@ -203,6 +205,8 @@ sequenceDiagram
 ## SQ-ADMIN-02: 入金済み注文の出荷記録（仕上がり・発送ごと・取消）
 
 目的は、入金済みの注文の発送を商品と数ごとに1回ずつ記録し、受注生産の品の仕上がりを記録し、どちらも取り消せるようにすること。事前条件は管理認可（`admin.orders.manage`）・CSRF helper・回数の制限・入力の検証。終了結果は、記録が成立した200、条件不成立の404・409・400、RPC失敗の500。
+
+> G-4 Task 8: この節の窓口（`GET`・`POST …/fulfillments`、`…/fulfillments/[fulfillmentId]/cancel`、`POST …/completions`、`…/completions/[completionId]/cancel`）は route ごと撤去した（G-1 で 410 だけを返す形にし、G-3 で発送を発送票へ移していた）。DB の旧い関数は `LEGACY_FULFILLMENT_DISABLED` / `MANUAL_COMPLETION_DISABLED` で拒否したまま。以下の図は撤去前の流れの記録で、今の発送は[発送票の流れ](shipping.md)。
 
 ### 発送を記録する
 
@@ -278,7 +282,7 @@ sequenceDiagram
 | 保存 | 発送（番号は注文ごとの最大＋1。取り消した番号は使い回さない）・発送の商品。全部を送った時だけ、注文の shipped・出荷日時・配送業者・追跡番号。注文の改訂の理由は `admin_create_fulfillment`・`admin_cancel_fulfillment` |
 | メール | `notifyCustomer` が真の時だけ、その発送の発送メールの行を同じ取引で書く。返事の後に worker が送る。失敗はやり直し、送れなければ店へ知らせる |
 
-仕上がりの記録は決済完了の注文だけ（`ORDER_NOT_IN_PRODUCTION`）、受注生産の品だけ（`LINE_NOT_IN_PRODUCTION`）、受注生産中の数まで（`QUANTITY_EXCEEDS_IN_PRODUCTION`）。根拠は [移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql)、[移行 B](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql)、[発送API](../../../src/app/api/admin/orders/%5Bid%5D/fulfillments/route.ts)、[worker](../../../src/lib/orders/email/order-email-worker.ts)。
+仕上がりの記録は決済完了の注文だけ（`ORDER_NOT_IN_PRODUCTION`）、受注生産の品だけ（`LINE_NOT_IN_PRODUCTION`）、受注生産中の数まで（`QUANTITY_EXCEEDS_IN_PRODUCTION`）。根拠は [移行 A](../../../supabase/migrations/20261010120303_order_fulfillments.sql)、[移行 B](../../../supabase/migrations/20261010122320_fulfillment_order_emails.sql)、旧発送API（G-4 Task 8 で撤去）、[worker](../../../src/lib/orders/email/order-email-worker.ts)。
 
 ## SQ-ADMIN-03: 管理画面の返金（記録を先に作り、Stripe に頼み、結果を書く）
 
@@ -952,6 +956,8 @@ E-3 段2は移行 D・E・F の順で先に DB を用意する。2026-10-21 に�
 
 ### 番号の直しと手の配達済みの流れ
 
+> G-4 Task 8: 伝票番号の訂正・手動の配達済みの旧い窓口（`…/fulfillments/[fulfillmentId]/tracking`・`/delivered`）は route ごと撤去した。履歴の dialog（`OrderHistoryDialog`）から操作する入口は G-1 Task 15 で削除済みで、今の流れは発送票の窓口（[発送票の流れ](shipping.md)）。以下の図は撤去前の記録。
+
 ```mermaid
 sequenceDiagram
   actor Admin as 管理者
@@ -1067,3 +1073,5 @@ sequenceDiagram
 - **旧頁との違い（意図したもの）**: (1) 成功後に一覧と要対応の欄ではなくこの注文の詳細と履歴を読み直す。断られた・失敗した操作の後にも詳細を読み直す（状態が変わっていた時に古い入口を残さない）。読み直しの先頭で前の知らせと頁の誤りの文を消す（旧頁の `fetchOrders` と同じ）ので、解決だけの失敗の案内のような誤りの文は、読み直しを始めた後に入れる。次の読み直し（申し込みの解決・返品・入替・「読み込み直す」）で古い誤りが成功の知らせと並ばない。(2) `readSafeOrderActionError` は 400・409 の短い日本語（制御文字なし、200字以下）だけを通す（旧頁は200字以下なら何でも通した）。(3) 取消の画面は旧頁と同じく、送信の成功後に申し込みの解決と読み直しを待たず（非同期で始めて）画面を閉じる。待つと遅い読込の間「処理中」のまま閉じられないため、閉じるのを止める守りは入れない。取消の通信が切れた時の文は旧頁と同じ（変えない）。
 
 [詳細頁の部品の単体](../../../tests/unit/components/AdminOrderDetailSection.test.tsx)・[入替dialogの単体](../../../tests/unit/components/AllocationSwapDialog.test.tsx)で検証する。DB・実ブラウザ・E2Eはcontroller担当（未実行）。
+
+**入口（G-4 Task 8）**: 詳細の頁へは、注文一覧表の行・要対応の欄に加えて、荷作り表の注文ID（`PackingSection`）と発送票の注文番号（`ShipmentSlipSection`。同梱する品物の表・追加の候補・発送票の確認の見出し・確定済みの票の「注文ごとの発送」の4か所）の Link（`/admin/orders/[id]`）から入る。荷作り表から注文の履歴を dialog で開く入口は撤去した。詳細の「発送」の欄からは、発送が属する発送票へ Link（`/admin/shipment-slips/[id]`）で戻れる。履歴は詳細の頁の「変更履歴」の欄（`OrderHistoryPanel`。`OrderHistoryDialog` から改名し、dialog の形を畳んだ）が `GET /api/admin/orders/[id]/history` を読み、画面の切り替えと再送の流れは変えない。
