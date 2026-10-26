@@ -663,8 +663,6 @@ controller の実測（今回のレビュー修正より前）:
 
 DB結合 [group_g3_cancel](../../../tests/integration/db/group_g3_cancel.integration.test.ts) の「配達済みの票も取り消せ、delivered→ready に戻る」は、直接の `UPDATE` で配達済みにしていたのを、手動の配達済みの書き手 `admin_mark_shipment_slip_delivered` に替えた（配達済みの出来事・状態の差分・票の版の行が本物と同じに残る。票は版3になるので取消は版3を渡す）。ローカルDBで `group_g3_cancel` 41/41 成功（2026-10-26）。
 
-## 開店前のセキュリティの穴 波 1-B のテスト（SEC-AUTH・SEC-ADMIN・SEC-STOCKIST・SEC-NEWS・SEC-HOME）
-
 ## 開店前のセキュリティの穴 波 2 のテスト（権限・検索・制約・置き場。SEC-HOME・AUTH・LOOK・NEWS・SEARCH・STOCKIST・ADMIN）
 
 確認日: 2026-10-27（この節は波 2 の分。並びは時系列でなく、下の波 1-B・1-C の前に置く）。波 2 は移行 6 本（`20261026130100`〜`130600`）と、取扱店・ニュースの管理の書き込みを認可の後に service role へ寄せる窓口の変更、LOOK の PUT を `admin_update_look` の rpc 1 回にする変更を入れた。移行は本番未適用（本番は G-4 と一緒に当てる・オーナーの確認の後）。**実測（2026-10-27）**: 手元の `npm run db:reset` の後、DB 結合は `DATABASE_URL` を 54322 に向けて `--runInBand` で 144 suite 通過・13 skip・0 失敗（4339 件通過・14 skip・1 todo）。DB なしの jest 全体は 19704 件通過・0 失敗。本番ビルドの E2E 全件（1 回）は 414 failed・4602 passed・26 skipped で、G-3 の 175 failed より多いが、増えた赤は G-4 の注文・返品の E2E か、再実行で通る揺れだった。下の E2E の列に挙げた波 2 の対象ファイルは全件が期待どおり（赤なし。詳細は `.superpowers/sdd/2026-10-25-security-gap-fixes/e2e-results-wave2-full.json`）。
@@ -719,6 +717,8 @@ DB結合 [group_g3_cancel](../../../tests/integration/db/group_g3_cancel.integra
 ### 本番へ当てる前の確認
 
 DB 結合の「DB なしの形」の試験は `supabase/migrations/` の 6 本の文面を読む。本番へ当てる前後の読むだけの確認と、本番で何が変わるか（`order_revisions_id_seq` のみ実変更・台帳系の 5 表は本番では変化なし）は [移行運用](../../06_Operations/db-migrations.md) の「波 2 権限・検索・制約・置き場の移行 6 本」に書いた。
+
+## 開店前のセキュリティの穴 波 1-B のテスト（SEC-AUTH・SEC-ADMIN・SEC-STOCKIST・SEC-NEWS・SEC-HOME）
 
 確認日: 2026-10-26。波 1-B（認証の窓口・登録と確認・管理の窓口・取扱店・お知らせ・ホーム）で書き直した試験をまとめる。単体・結合は実装者が流して通した（Task 1〜8 の報告。最後の確認は Task 9 の `--findRelatedTests` で 135 スイート 3121 件通過）。**E2E・DB 結合は書いただけで流していない**ので、下の E2E の列は controller の本番ビルドでの実測の後に確かめる（外した `test.fail` が緑になること）。試験名の先頭の ID は `validate-trace` の層の決まりに合わせた（単体・結合に `SEC-` を付けると `wrong-test-level` になるため、`DD-`・`API-`・`ARC-` にした）。対応表（`docs/05_Quality/reports/`）は `npm run trace:report` で作り直す。
 
