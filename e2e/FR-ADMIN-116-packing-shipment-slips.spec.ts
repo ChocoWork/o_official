@@ -23,7 +23,7 @@ import {
 } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import { SHIPPING_CARRIERS } from '@/lib/orders/shipping-carriers';
 import { beginRefund, recordRefundResult, uniqueEmail } from './order-email-test-utils';
-import { viewports } from './order-fulfillment-test-utils';
+import { adminOrderDetail, mockOrderDetail, viewports } from './order-fulfillment-test-utils';
 import { createPermissionActor, mockPermissionUiBridge } from './permission-settings-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
 import {
@@ -176,7 +176,10 @@ for (const viewport of viewports) {
         expect(days).toEqual([...days].sort());
         const cells = row.getByRole('cell');
         await expect(cells).toHaveCount(PACKING_COLUMN_HEADINGS.length + 1);
-        await expect(cells.nth(1).getByRole('button', { name: `${older.orderNumber} の履歴を開く`, exact: true })).toHaveText(older.orderNumber);
+        // G-4 Task 8 から、注文IDは注文の詳細（/admin/orders/{id}）への Link（文字は注文番号）
+        const orderLink = cells.nth(1).getByRole('link', { name: older.orderNumber, exact: true });
+        await expect(orderLink).toHaveText(older.orderNumber);
+        await expect(orderLink).toHaveAttribute('href', `/admin/orders/${older.orderId}`);
         await expect(cells.nth(2)).toHaveText(jstDay(older.orderedAt));
         await expect(cells.nth(3)).toHaveText(older.shipTo.fullName);
         await expect(cells.nth(4)).toHaveText(older.email);
@@ -303,7 +306,8 @@ for (const viewport of viewports) {
 
         // 全部送ったので、荷作り表のどこにも出ない（一時点の1回の読み取りで確かめる。頁を歩いた「どの頁にも無い」は、行がずれても通ってしまう）
         await page.getByRole('link', { name: SHIPMENT_SLIP_TEXT.slipBack, exact: true }).click();
-        await waitForPackingTable(page);
+        // 他に準備中の行が1つも無い手元の DB（reset 直後で他の試験の行が残っていない時）では、表ではなく「準備中の品物はありません」が出る。どちらでも読み込みは済んでいる
+        await expect(packingTable(page).or(page.getByText(SHIPMENT_SLIP_TEXT.packingEmpty, { exact: true }))).toBeVisible({ timeout: 30_000 });
         expect(packingIndexOf(await readPackingSnapshot(ctx.actorId), material.orderItemId)).toBe(-1);
       });
     });
@@ -660,20 +664,33 @@ for (const viewport of viewports) {
         await quantity.fill('2');
         await expect(quantity).toHaveAttribute('aria-invalid', 'false');
 
-        // 注文IDを押して履歴のダイアログを開いて閉じても、遷移せず、選択と送る数は消えない
-        const history = row.getByRole('button', { name: `${material.orderNumber} の履歴を開く`, exact: true });
-        await history.focus();
-        await page.keyboard.press('Enter');
-        const dialog = page.getByRole('dialog', { name: 'この注文の履歴', exact: true });
-        await expect(dialog).toBeVisible();
-        await expect(dialog.getByText(`${material.orderNumber}（`)).toBeVisible();
-        await page.keyboard.press('Escape');
-        await expect(dialog).toBeHidden();
+        // G-4 Task 8 から、注文IDは注文の詳細への Link（履歴のダイアログは無い）。キーボードでフォーカスしても、遷移せず、選択と送る数は消えない
+        const orderLink = row.getByRole('link', { name: material.orderNumber, exact: true });
+        await expect(orderLink).toHaveAttribute('href', `/admin/orders/${material.orderId}`);
+        await orderLink.focus();
+        await expect(orderLink).toBeFocused();
         await expect(page).toHaveURL(/\/admin\/packing$/);
         await expect(box).toBeChecked();
         await expect(quantity).toHaveValue('2');
         await expect(shipButton(page)).toBeEnabled();
         await expectNoPageOverflow(page);
+
+        // 注文IDの Link はキーボード（Enter）で詳細へ移る。選択と送る数を持つこの頁は動かさず、別の頁で確かめる
+        const detailPage = await page.context().newPage();
+        try {
+          await detailPage.setViewportSize({ width: viewport.width, height: viewport.height });
+          await prepareShippingPage(detailPage, ctx);
+          await mockOrderDetail(detailPage, (orderId) => adminOrderDetail({ id: orderId }));
+          await openPacking(detailPage);
+          const detailRow = await revealPackingRow(detailPage, material);
+          const detailLink = detailRow.getByRole('link', { name: material.orderNumber, exact: true });
+          await detailLink.focus();
+          await detailPage.keyboard.press('Enter');
+          await expect(detailPage).toHaveURL(new RegExp(`/admin/orders/${material.orderId}$`));
+          await expect(detailPage.getByRole('heading', { name: `注文 ${material.orderNumber}`, level: 1, exact: true })).toBeVisible();
+        } finally {
+          await detailPage.close();
+        }
 
         // 発送 → 票の頁。荷物の情報を入れて確認の段へ進み、戻っても入力は消えない
         await shipSelected(page);

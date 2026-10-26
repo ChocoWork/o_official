@@ -3,8 +3,15 @@
  * 管理画面は、今までの管理画面の E2E と同じく窓口を差し替えて確かめる（本物の管理者のログインには2段階認証が要る）。
  * 窓口の答えは、共通の約束（実装計画 C-2）の型に合わせて組み立てる。型が変われば tsc が教えてくれる。
  */
-import type { Page, Route } from '@playwright/test';
-import type { OrderItem, OrderLineItem } from '@/lib/orders/admin-orders/admin-order-types';
+import { expect, type Locator, type Page, type Route } from '@playwright/test';
+import {
+  ORDER_ITEM_STATUS_ORDER,
+  type AdminOrderDetail,
+  type AdminOrderSummary,
+  type OrderItem,
+  type OrderLineItem,
+} from '@/lib/orders/admin-orders/admin-order-types';
+import type { AdminItemStatus } from '@/lib/orders/item-state/item-state-types';
 import type { OrderHistoryResponse } from '@/lib/orders/email/order-history';
 import { mockAdminBackgroundApis } from './admin-test-utils';
 
@@ -110,4 +117,135 @@ export function historyOf(
     entries,
     deliveryTrackingEnabled: options.deliveryTrackingEnabled ?? false,
   };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 注文の詳細（/admin/orders/[id]）。グループ G-4 Task 9 で足した（121 の行から詳細へ移る確かめ、112・122 が使う）
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** 店長の詳細の旗（全部あり）。DB の答えの形（AdminOrderDetail.permissions）と同じ */
+export const ADMIN_DETAIL_PERMISSIONS: AdminOrderDetail['permissions'] = {
+  read: true, manage: true, refund: true, return: true, allocate: true, shippingRead: true,
+};
+
+/** サポーター（初期値）の詳細の旗。返金と割当の入替ができない */
+export const SUPPORTER_DETAIL_PERMISSIONS: AdminOrderDetail['permissions'] = {
+  read: true, manage: true, refund: false, return: true, allocate: false, shippingRead: true,
+};
+
+/** adminOrder の引数に、詳細だけが持つ欄（order・amounts・rows ほか）の上書きを足した物 */
+export type OrderDetailOverrides = Partial<OrderItem> & {
+  id: string;
+  /** 詳細の summary（旧い一覧の1件の形に、支払いの欄を足した物）の上書き */
+  summary?: Partial<AdminOrderSummary>;
+  order?: Partial<AdminOrderDetail['order']>;
+  amounts?: Partial<AdminOrderDetail['amounts']>;
+  rows?: AdminOrderDetail['rows'];
+  attention?: Partial<AdminOrderDetail['attention']>;
+  permissions?: Partial<AdminOrderDetail['permissions']>;
+  fulfillments?: AdminOrderDetail['fulfillments'];
+  slips?: AdminOrderDetail['slips'];
+};
+
+/**
+ * GET /api/admin/orders/[id] の答え（AdminOrderDetail）。旧い `adminOrder(overrides)` の1件を summary にし、
+ * order・amounts・rows（items から1明細1行）・attention（空）・permissions（店長の旗）・fulfillments（空）・slips（空）を既定で足す。
+ */
+export function adminOrderDetail(overrides: OrderDetailOverrides): AdminOrderDetail {
+  const { summary: summaryOverrides, order, amounts, rows, attention, permissions, fulfillments, slips, ...itemOverrides } = overrides;
+  const item = adminOrder(itemOverrides);
+  const summary: AdminOrderSummary = {
+    ...item,
+    paymentMethod: 'クレジットカード',
+    paymentReference: `pi_e2e_${item.id.slice(0, 8)}`,
+    stripePaymentStatus: 'succeeded',
+    paymentStatus: '支払い済み',
+    shippedAt: null,
+    shippingCarrier: null,
+    trackingNumber: null,
+    ...summaryOverrides,
+  };
+  const defaultRows: AdminOrderDetail['rows'] = item.items.map((line) => {
+    const status: AdminItemStatus = line.readyUnshipped > 0 ? 'ready' : line.inProduction > 0 ? 'in_production' : line.shipped > 0 ? 'shipped' : 'in_production';
+    return {
+      orderItemId: line.id,
+      itemName: line.name,
+      color: line.color,
+      size: line.size,
+      isExchange: line.lineKind === 'exchange',
+      status,
+      statusRank: ORDER_ITEM_STATUS_ORDER.indexOf(status) + 1,
+      quantity: line.quantity,
+      unitPrice: 5000,
+      lineAmount: 5000 * line.quantity,
+      refundAmount: 0,
+      blockedReasons: [],
+    };
+  });
+  const detailRows = rows ?? defaultRows;
+  const productNet = detailRows.reduce((sum, row) => sum + row.lineAmount, 0);
+  return {
+    order: {
+      id: item.id,
+      status: item.orderStatus ?? 'paid',
+      createdAt: `${item.orderDate}T03:00:00.000Z`,
+      paidAt: `${item.orderDate}T03:00:00.000Z`,
+      customerKind: 'guest',
+      customerName: item.customerName,
+      customerEmail: item.customerEmail,
+      currency: 'jpy',
+      shipTo: {
+        fullName: item.customerName, postalCode: '1500001', prefecture: '東京都', city: '渋谷区', address: '神宮前1-1-1', building: null, phone: '0311112222',
+      },
+      ...order,
+    },
+    amounts: {
+      productNet, discount: 0, shipping: 0, total: productNet, paidAmount: productNet,
+      refundedAmount: 0, refundAttachedToRows: 0, refundNotAttached: 0, refundProcessingAmount: 0,
+      ...amounts,
+    },
+    rows: detailRows,
+    attention: { paymentExceptions: [], review: null, deliveries: [], ...attention },
+    permissions: { ...ADMIN_DETAIL_PERMISSIONS, ...permissions },
+    summary,
+    fulfillments: fulfillments ?? [],
+    slips: slips === undefined ? [] : slips,
+  };
+}
+
+/**
+ * 詳細の窓口（GET /api/admin/orders/[id]）と履歴の窓口（…/history。空）を固定の答えにする。読まれた URL を記録して返す
+ * （「詳細を読み直した」の確かめは urls の増加で見る）。current は URL の注文の番号を受ける（1件に決まっている試験は無視してよい）。
+ */
+export async function mockOrderDetail(page: Page, current: (orderId: string) => AdminOrderDetail): Promise<{ urls: string[] }> {
+  const urls: string[] = [];
+  await page.route(
+    (url) => /^\/api\/admin\/orders\/[0-9a-f-]{36}$/.test(url.pathname),
+    (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const url = route.request().url();
+      urls.push(url);
+      return fulfillJson(route, { data: current(new URL(url).pathname.split('/')[4] ?? '') });
+    },
+  );
+  await page.route(
+    (url) => /^\/api\/admin\/orders\/[0-9a-f-]{36}\/history$/.test(url.pathname),
+    (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const orderId = new URL(route.request().url()).pathname.split('/')[4] ?? '';
+      return fulfillJson(route, { ...historyOf(orderId, []), itemStates: [], itemStatesTruncated: false });
+    },
+  );
+  return { urls };
+}
+
+/** 注文の詳細の頁を開き、見出し「注文 ORD-…」が出るまで待つ。query は `?open=refund` のように頭の ? から渡す */
+export async function openOrderDetail(page: Page, orderId: string, query = ''): Promise<void> {
+  await page.goto(`/admin/orders/${orderId}${query}`);
+  await expect(page.getByRole('heading', { name: `注文 ${orderNumberOf(orderId)}`, level: 1, exact: true })).toBeVisible();
+}
+
+/** 詳細の欄（見出しの文字が region の名前になる）。名前は 注文情報・支払いと返金・品物・発送・返品とキャンセルの申し込み・要対応・変更履歴 */
+export function detailSection(page: Page, name: string): Locator {
+  return page.getByRole('region', { name, exact: true });
 }
