@@ -1,5 +1,7 @@
 # 注文管理のシーケンス
 
+> G-4 Task 3 確認日: 2026-10-26。共有文書はPhase Bで反映済み。controller受領記録（g4t3a）: fresh reset後、実鍵のgroup_g4_postgrest_pathsを含むgroup_g*全51 suiteで1,616成功・0失敗・1 pending（G1_CLEANUP_SUITE=1で単独実行するG-1清掃の未起動）。 全件の確認は controller が後で実施。
+
 > G-4 Task 2 確認日: 2026-10-26。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
 
 > 状態: 現行ソース確認（発送の節はグループ E-1 の変更を 2026-10-10 に、返金・支払い済みのキャンセル・取り込みと見回り・自動の返金の節はグループ E-2 の変更を 2026-10-11 に、返品を作る・受け取る・額を決めて返金する節はグループ E-3 の変更を 2026-10-13 に反映） | 確認日: 2026-10-04 | 対象: 未入金取消、発送（一部の発送・仕上がり・取消を含む）、管理返金と支払い済みのキャンセル、Stripe の返金の取り込みと見回り、自動の返金、返品（作る・受け取る・額を決めて返金する）、要対応の解決
@@ -11,6 +13,43 @@
 図の粒度は[記載方針](README.md)、注文状態と独立属性は[注文・決済](../states/order-payment.md)、例外の状態は[決済の要対応](../states/payment-exception.md)を参照する。
 
 ## 範囲と根拠
+
+### 一覧・CSV・詳細・管理履歴の窓口（G-4 Task 3）
+
+新しい3つの窓口と既存の管理履歴は `admin.orders.read` を最初に確認する。actorは認可結果の `userId` だけから渡し、応答は `Cache-Control: no-store`。DBのエラーはmessageとSQLSTATEが両方一致する時だけ固定の業務エラーにし、未知の失敗と不正な戻り値は固定の500にする。
+
+| 窓口 | 処理と応答 |
+| --- | --- |
+| `GET /api/admin/order-items` | 認可→問合せ検証→`list_admin_order_item_rows`。20行、頁1〜100000。`data`は行/総行数/注文数/頁/`ordersCapped`/`ordersCap`を持つ。上限で切った空行も200。既存の返品とキャンセル申請の件数を添える |
+| `GET /api/admin/order-items/export` | 認可→IP→actorの回数制限（`admin.orders.export`、20回/600秒）→問合せ検証→`export_admin_order_item_rows`→CSV→監査。GETなのでCSRF検証なし。`page`は受けず400。全行を1つのjsonbで受け取り、件数と配列長を照合する。20,000行超だけ422 |
+| `GET /api/admin/orders/[id]` | 認可→UUID検証→core/旧一覧のsummary/発送/票リンク/配送の記録を並行読取。`data`に`summary`・`order`・`amounts`・状態別`rows`・`attention`・`permissions`・`fulfillments`・`slips`を返す。不在は`GROUP_G_ORDER_NOT_FOUND`の404 |
+| `GET /api/admin/orders/[id]/history` | 既存の状態/メール/発送/返金/返品/申請の履歴に`itemStates`・`itemStatesTruncated`を追加。品物履歴だけ失敗した時は空配列と`itemStatesFailed: true`を添え、既存の履歴を返す |
+
+```mermaid
+sequenceDiagram
+    participant Caller as 管理画面
+    participant Route as 読取の窓口
+    participant Store as 検証するstore
+    participant DB as STABLEのDB関数
+    Caller->>Route: 一覧・CSV・詳細・履歴
+    Route->>Route: orders.readの認可、入力の検証
+    Note over Route: CSVは入力検証より先にIPとactorを制限
+    Route->>Store: 認可したactorと条件
+    Store->>DB: RPCを1回呼ぶ
+    DB-->>Store: 同じ時点の行と件数
+    Store->>Store: 形・型・値域と件数を検査
+    Store-->>Route: 管理用の型
+    Note over Route: CSV成功の監査は件数とfilter_keysだけ
+    Route-->>Caller: no-storeの応答
+```
+
+CSVは画面と共通の12列、UTF-8 BOM、全セルの引用符、引用符の二重化、セル内改行の保持、末尾を含むCRLF。注文番号は`ORD-XXXXXXXX`、日付とファイル名は日本時間。文字セルの先頭`= + - @`・タブ・CR・LFには`'`を1つ足し、数値は整数のまま。監査の`admin.orders.export`は成功時に`row_count`・`order_count`・条件名だけの`filter_keys`を記録し、失敗時は固定の結果コードだけを記録する。検索語を残さない。
+
+詳細の発送は既存`listOrderFulfillments`の公開欄と配送読取の配達時刻に、同じ票読取のMapから`slipId`・`slipNumber`を添えた9欄。票に属さない発送、`admin.shipping.read`不足、票の読取失敗では発送ごとの2欄はnullで、票一覧も不足/失敗時はnull。配送だけの読取失敗では各発送の`deliveredAt`をnullにして詳細は返す。補助読取の失敗ログは名前とcodeだけにし、票の権限不足は記録しない。品物履歴は301行目を検出して300行を返し、人のメールは同じ依頼内で1人1回だけ既存の解決関数から引く。理由の34値・商品名・自動判定・票/発注の参照・入替の相手と理由は純粋な共通関数で作る。
+
+旧`GET /api/admin/orders`は残し、組立てを`buildAdminOrderSummaries`へ移す。5分のPaymentIntentキャッシュ、返金/返品/配送の要約、行数量、取消判定、住所不足、旧画面の見た目を維持する。旧一覧の単体は期待値を変更しない。PIIを含みうる生のStripe例外は意図的に記録せず、固定の診断Errorにtype/codeだけを写す。HTTP/summary/キャッシュの値は保つ。客向けの応答とメールは変更せず、履歴の純粋な型への任意欄の追加だけを行う。
+
+実装: [store](../../../src/lib/orders/admin-orders/admin-order-store.ts)、[CSV](../../../src/lib/orders/admin-orders/admin-order-csv.ts)、[旧集計](../../../src/lib/orders/admin-orders/admin-order-summary.ts)。検証: [store単体](../../../tests/unit/lib/orders/admin-orders/admin-order-store.test.ts)、[旧一覧の回帰](../../../tests/unit/api/admin/orders-search-route.test.ts)、[管理履歴](../../../tests/unit/api/admin/order-history-route.test.ts)、[controller用PostgREST](../../../tests/integration/db/group_g4_postgrest_paths.integration.test.ts)。単体・型・lintとDB/PostgRESTの証明は別に扱う。
 
 ### 一覧・CSV材料・詳細・状態履歴の読取（G-4 Task 2）
 

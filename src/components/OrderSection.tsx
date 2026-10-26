@@ -6,11 +6,10 @@ import { StatusBadge, type StatusBadgeTone } from '@/components/ui/StatusBadge/S
 import { TagLabel } from '@/components/ui/TagLabel/TagLabel';
 import { MANUAL_COMPLETION_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import { toOrderNumber } from '@/lib/orders/order-number';
-import type { OrderStatus as DbOrderStatus } from '@/lib/orders/order-payment-types';
-import { PARTIALLY_SHIPPED_LABEL, type OrderProgressKey } from '@/lib/orders/order-progress';
+import { PARTIALLY_SHIPPED_LABEL } from '@/lib/orders/order-progress';
 import { PAYMENT_STATUS_LABELS, REFUND_FAILED_BADGE, REFUND_PENDING_BADGE, type PaymentStatusKey } from '@/lib/orders/payment-status';
 import { RETURN_DISPLAY_STATUS_LABELS, RETURN_MARK_LABELS } from '@/lib/orders/returns/return-messages';
-import type { OrderReturnSummary, ReturnDisplayStatus, ReturnNextAction } from '@/lib/orders/returns/return-types';
+import type { ReturnDisplayStatus } from '@/lib/orders/returns/return-types';
 import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import { DELIVERY_ATTENTION_LABELS } from '@/lib/orders/tracking/delivery-messages';
 import { cn } from '@/lib/utils';
@@ -18,85 +17,9 @@ import { cn } from '@/lib/utils';
 /** 返品の交換で足された品の行の印（購入商品の欄に付ける。C-5） */
 const EXCHANGE_ITEM_LABEL = '交換の品';
 
-export type OrderStatus =
-	| '支払い手続き中'
-	| '未決済'
-	| '受注生産中'
-	| '発送準備中'
-	| '配送中'
-	| '配達済み'
-	| '決済失敗'
-	| '放棄'
-	| 'キャンセル'
-	| 'キャンセルの手続き中';
-
-export type OrderLineItem = {
-	/** 注文の商品の番号。React の key に使う（同じ商品の色違いが重なるため、名前では区別できない） */
-	id: string;
-	name: string;
-	color: string | null;
-	size: string | null;
-	quantity: number;
-	fulfillmentType: 'stock' | 'backorder';
-	/** 発送した数 */
-	shipped: number;
-	/** 受注生産中の数（まだ仕上がっていない数） */
-	inProduction: number;
-	/** 発送準備中の数（仕上がっていて、まだ送っていない数） */
-	readyUnshipped: number;
-	/** 返品の交換で足された行は exchange。購入商品の欄に「（交換の品）」を付ける。窓口が付けない昔の形は order と同じに扱う */
-	lineKind?: 'order' | 'exchange';
-};
-
-export type OrderItem = {
-	id: string;
-	customerName: string;
-	customerEmail: string;
-	orderDate: string;
-	itemCount: string;
-	items: OrderLineItem[];
-	totalAmount: string;
-	/** 注文の言葉（受注生産中・発送準備中・配送中など）。記録から出した物 */
-	status: OrderStatus;
-	/** DB の注文の状態。件数・絞り込み・CSV の判断はこれを使う（言葉は表示のため） */
-	orderStatus?: DbOrderStatus;
-	progressKey?: OrderProgressKey;
-	/** 発送した数があり、未発送の数も残っている */
-	partiallyShipped?: boolean;
-	canRefund?: boolean;
-	/** G-1 から窓口は常に false。一覧は見ない（「発送済みにする」は G-1 Task 15 で撤去した） */
-	canShip?: boolean;
-	/** G-1 から窓口は常に false。一覧は見ない（「仕上がりを記録する」は G-1 Task 15 で撤去した） */
-	canRecordCompletion?: boolean;
-	missingShippingFields?: string[];
-	/** 在庫を確保できなかった入金済みの注文（要確認）。確認済みにするまで印を出す */
-	needsReview?: boolean;
-	/** 発送できない理由（支払額の違いの要対応）。発送ボタンの代わりに出す */
-	shipBlockedReason?: string | null;
-	/** キャンセルできる注文（未入金の注文と、支払い済みで1つも発送していない注文。種類は cancelKind） */
-	canCancel?: boolean;
-	/** 払込票が有効な間は取り消せない。その払込期限（ISO） */
-	cancelBlockedUntil?: string | null;
-	/** 支払いの言葉の記号（未入金・支払い済み・一部返金など）。言葉と色は「支払い」の列が決める */
-	paymentStatusKey?: PaymentStatusKey;
-	/** 返事待ち・保留の返金がある（「返金の手続き中」の印） */
-	refundPending?: boolean;
-	/** 開いている「返金の失敗」の要対応がある（「返金の失敗」の印） */
-	refundFailed?: boolean;
-	/** 成功した返金の合計（￥12,800）。返金が無ければ - */
-	refundedAmountLabel?: string;
-	/** キャンセルの種類。unpaid は未入金の取消（取消の画面）、paid は支払い済みのキャンセル（返金を伴う画面）。出さない注文は null */
-	cancelKind?: 'unpaid' | 'paid' | null;
-	/** 返品の要約（返品の列・小さな印・「返品」のボタンの名前）。窓口が返品の無い注文にも付ける。無い昔の形は返品の無い注文と同じに扱う */
-	returnSummary?: OrderReturnSummary;
-	/** 開いているキャンセルの申し込みがある（操作の列に「キャンセルの申し込み」のボタンを出す）。窓口が付けない昔の形は、無い注文と同じに扱う */
-	cancelRequestOpen?: boolean;
-	/**
-	 * 開いている配送の要対応の印（進み具合の列に1つだけ出す）。いくつもある時の優先順（問題あり・不在で持ち帰り・追跡できない）は窓口が決めて
-	 * 1つにして返す。追跡オフの間は要対応が閉じるので付かない。窓口が付けない昔の形は、印の無い注文と同じに扱う
-	 */
-	deliveryAttention?: 'failure' | 'attempted_delivery' | 'untrackable' | null;
-};
+export type { OrderStatus, OrderLineItem, OrderItem } from '@/lib/orders/admin-orders/admin-order-types';
+import type { OrderStatus, OrderLineItem, OrderItem } from '@/lib/orders/admin-orders/admin-order-types';
+import { returnButtonLabel, hasReturnsToShow } from '@/lib/orders/admin-orders/admin-order-actions';
 
 interface OrderSectionProps {
 	orders: OrderItem[];
@@ -183,34 +106,6 @@ const RETURN_STATUS_CLASSES: Record<ReturnDisplayStatus, string> = {
 	refund_waiting: 'bg-yellow-100 text-yellow-800',
 	returned: 'bg-gray-100 text-[#474747]',
 };
-
-// 「返品」のボタンの名前（C-5）。次にすることがある時は、その名前に変わる
-const RETURN_BUTTON_LABELS: Record<ReturnNextAction, string> = {
-	review_request: '申し込みを確かめる',
-	refund: '額を決めて返金する',
-	receive: '受け取る',
-	none: '返品',
-};
-
-/**
- * 「返品」のボタンの名前。額を決めて返金するのは店長だけなので、サポートの人には出さず、設計書 8-1 の順の次にする:
- * 受付中の返品にまだ受け取っていない品があれば「受け取る」、無ければ「返品」。窓口の次にすることは役割を知らずに決まるので、
- * 受け取る品があるかは要約の印で見る（受け取り待ち・一部受け取りは、受付中の返品に未処理の品がある時だけ付く）
- */
-function returnButtonLabel(summary: OrderReturnSummary, canRefundReturn: boolean): string {
-	if (summary.nextAction !== 'refund' || canRefundReturn) {
-		return RETURN_BUTTON_LABELS[summary.nextAction];
-	}
-	const hasItemsToReceive =
-		summary.displayStatus === 'in_progress' &&
-		summary.marks.some((mark) => mark === 'awaiting_items' || mark === 'partially_received');
-	return hasItemsToReceive ? RETURN_BUTTON_LABELS.receive : RETURN_BUTTON_LABELS.none;
-}
-
-/** 返品がある注文か、返品できる品がある注文だけに「返品」のボタンを出す（どちらも無ければ、開く物が無い） */
-function hasReturnsToShow(summary: OrderReturnSummary): boolean {
-	return Boolean(summary.displayStatus) || summary.hasReturnable;
-}
 
 function formatDeadline(value: string): string {
 	const date = new Date(value);

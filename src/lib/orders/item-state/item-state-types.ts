@@ -20,6 +20,15 @@ export type AdminItemStatus = 'unpaid' | 'payment_expired' | 'in_production' | '
 export type ItemBlockedReason = 'variant_missing' | 'payment_review' | 'exchange_fee_waiting'
   | 'cancel_requested' | 'refund_processing' | 'stock_shortage';
 
+export const ITEM_BLOCKED_REASON_LABELS: Record<ItemBlockedReason, string> = {
+  variant_missing: '色・サイズが確定していません',
+  payment_review: '支払額の確認待ちです',
+  exchange_fee_waiting: '交換手数料のお支払い待ちです',
+  cancel_requested: 'キャンセルの申し込みを確認中です',
+  refund_processing: '返金を処理中です',
+  stock_shortage: '在庫の入荷待ちです',
+};
+
 export type AdminItemState = {
   orderId: string;
   orderItemId: string;

@@ -29,6 +29,7 @@ import type { OrderReturnDetail } from '@/lib/orders/returns/return-types';
 import { listAdminOrderShipmentSlips, ShipmentSlipError } from '@/lib/orders/shipment-slips/shipment-slip-store';
 import type { ShipmentSlipLink } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import { DeliveryStoreError, getOrderDeliveryDetail } from '@/lib/orders/tracking/delivery-store';
+import { AdminOrderError, listAdminOrderItemStateHistory } from '@/lib/orders/admin-orders/admin-order-store';
 
 type HistoryOrderRow = { id: string; status: OrderStatus; shipping_email: string | null; created_at: string };
 type HistoryItemRow = {
@@ -118,6 +119,7 @@ async function loadReturnReceiptLines(
 async function loadReturnRecords(
   client: SupabaseClient,
   returns: readonly OrderReturnDetail[],
+  emailForActor: (actorId: string) => Promise<string | null>,
 ): Promise<OrderHistoryReturnRecord[]> {
   const returnIds = returns
     .filter(
@@ -148,7 +150,7 @@ async function loadReturnRecords(
   ];
   // 同じ人は1回だけ引く
   const emailById = new Map(
-    await Promise.all(actorIds.map(async (actorId) => [actorId, await actorEmailOf(client, actorId)] as const)),
+    await Promise.all(actorIds.map(async (actorId) => [actorId, await emailForActor(actorId)] as const)),
   );
   const emailOf = (actorId: string | null) => (actorId === null ? null : (emailById.get(actorId) ?? null));
   return rows.map((row) => ({
@@ -223,6 +225,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const store = supabase as unknown as OrderEmailStore;
+    const actorEmails = new Map<string, Promise<string | null>>();
+    const emailForActor = (actorId: string): Promise<string | null> => {
+      const cached = actorEmails.get(actorId);
+      if (cached) return cached;
+      const pending = actorEmailOf(supabase, actorId);
+      actorEmails.set(actorId, pending);
+      return pending;
+    };
+    const itemStatesResult = listAdminOrderItemStateHistory(supabase, authz.userId, order.id, emailForActor)
+      .then(({ entries, truncated }) => ({ itemStates: entries, itemStatesTruncated: truncated }))
+      .catch((error: unknown) => {
+        console.warn('[admin.orders.history] Failed to load item states', error instanceof Error ? error.name : 'UnknownError', error instanceof AdminOrderError ? error.code ?? null : null);
+        return { itemStates: [], itemStatesTruncated: false, itemStatesFailed: true as const };
+      });
     // G-1 Task 14: 手動の仕上がりは終了したので、仕上がりの一覧は読まない
     const [statusRows, emailRows, sendState, fulfillments, refunds, returns, cancelRequests, lines, delivery, slips] = await Promise.all([
       listOrderStatusHistory(store, order.id),
@@ -239,11 +255,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // 受け取りの細目と、返品の記録（取消などをした人と手数料をいただかない印）は、返品の一覧で番号が分かってから読む
     const [returnReceiptLines, returnRecords] = await Promise.all([
       loadReturnReceiptLines(supabase, returns),
-      loadReturnRecords(supabase, returns),
+      loadReturnRecords(supabase, returns, emailForActor),
     ]);
 
     return NextResponse.json(
-      buildOrderHistory({
+      { ...buildOrderHistory({
         order: { id: order.id, status: order.status, shippingEmail: order.shipping_email, createdAt: order.created_at },
         statusRows,
         emailRows,
@@ -257,7 +273,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         lines,
         delivery,
         slips,
-      }),
+      }), ...await itemStatesResult },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {

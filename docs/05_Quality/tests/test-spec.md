@@ -1,5 +1,7 @@
 # テスト仕様
 
+> G-4 Task 3 確認日: 2026-10-26。読取store・CSV・3つのGET・管理履歴と旧集計の試験を下のG-4節へ記載。controller受領記録（g4t3a）: fresh reset後、実鍵のgroup_g4_postgrest_pathsを含むgroup_g*全51 suiteで1,616成功・0失敗・1 pending（G1_CLEANUP_SUITE=1で単独実行するG-1清掃の未起動）。 全件の確認は controller が後で実施。
+
 > G-4 Task 2 確認日: 2026-10-26。初回（g4t2a）はfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・専用G-1清掃の1 pending。初回の全件（g4t2）はunit＋全DB integrationで19,912成功・既知stockist_rlsの2失敗だけ、G-0清掃12/12。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
 
 > 状態: 現行の方針（波 1-B のセキュリティの穴の修正のテストの節は 2026-10-26 に追記〔単体・結合は通過、E2E・DB 結合は未実行〕。G-3 Task 12 の発送票の操作・出荷日のE2Eと止めていた旧の発送のE2Eの移設の節は 2026-10-26 に追記〔E2Eの実測は controller の実行後〕。G-3 Task 11 の荷作り・同梱メール・権限のE2Eと再開した配送のE2Eの節は 2026-10-26 に追記〔E2Eの実測は同節に記録〕。G-3 Task 10 の書き手75本・末尾assert・並行・実PostgRESTの節は 2026-10-26 に追記。G-3 Task 8 のテストの節は 2026-10-26 に追記。グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 7の伝票番号の後入力・訂正と手動の配達済みのDB・単体を追記）（G-3 Task 6の発送の取消のDB・単体を追記）（G-3 Task 4の発送票の下書きのDB・単体を追記）（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
@@ -56,6 +58,32 @@
 | 修正round 1、SQL変更後 | 修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。実装者の非DB検証はTask 2報告に記録 |
 
 修正round 1はreadsに独立wildcard4ケースとattention false1ケースを追加し、返金の既存期待も強化する。定義数はreads58、G4B assertはソース2＋DB24で不変。定義数は実行した成功数ではない。CSV整形・画面・窓口・E2Eと本番は今回のDB証明範囲に含まない。
+
+### Task 3（読取store・CSV・API・管理履歴・旧集計の移設）
+
+単体はDB/Stripe/Auth管理APIをモックし、純粋な変換は実関数を呼ぶ。既存の`orders-search-route.test.ts`と`OrderSection.actions.test.tsx`の期待は変更しない。実PostgRESTは別の層として、使い捨てのlocalhost DBでcontrollerのfresh resetとanon/実authenticatedのsmoke各200の後に流す。型/単体/文書の成功をPostgRESTの実測に代えない。
+
+| ファイル・対象 | 層・事前条件・入力 | FREQ/AC | 期待結果 |
+| --- | --- | --- | --- |
+| [admin-order-query](../../../tests/unit/lib/orders/admin-orders/admin-order-query.test.ts) | 単体。URLSearchParams、繰返すstatus、attention=1、trim、日付、ORD/UUID/pi、200/201字、page境界、未知名、空のcap頁 | FREQ-536-AC-01・02・03 | 条件と頁へ変換し、未知名/状態/日付/逆転期間/重複する単一項目はok:false。pi_を含め200字は通る。不正なcapは拒否、0行でもcapの旗を保持。12見出しと上限の文は共通定義 |
+| [admin-order-csv](../../../tests/unit/lib/orders/admin-orders/admin-order-csv.test.ts) | 単体。引用符/セル内改行、空顧客、交換品、JSTの日境界、式の先頭7種、元からアポストロフィのある文字 | FREQ-536-AC-01、FREQ-538-AC-03・04 | 12列、BOM、全セル引用、引用符二重化、末尾CRLF、ORD番号、JST日時/ファイル名。顧客名/メール/商品名/色/サイズの文字だけを無害化し、数量/金額と既存のアポストロフィは変えない |
+| [admin-order-history](../../../tests/unit/lib/orders/admin-orders/admin-order-history.test.ts) | 単体。DBの18列、自動/人、交換、色サイズ、NULL状態、票/発注、入替、34理由と未知値 | FREQ-539-AC-04 | 商品名・理由の言葉・自動判定・actorEmail・ref・swapを共通変換。未知の理由は「システムによる更新」。自動の行はメール解決を呼ばない |
+| [admin-order-store](../../../tests/unit/lib/orders/admin-orders/admin-order-store.test.ts) | 単体。Supabase RPCをモック。正常jsonb、件数不一致、不正な状態/数量/金額/cap/詳細、message/SQLSTATEの完全一致と片方だけの一致、301行、同じactor | FREQ-536-AC-03、FREQ-537-AC-05、FREQ-538-AC-02、FREQ-539-AC-04、FREQ-540-AC-13 | 4 RPC名/引数と認可したactor、一覧20行のoffset、固定の400/403/404/422/500、Zodの形/値域検査、生のDB情報とcauseなし。負のrefundNotAttachedを保持。exportの単一jsonbの件数一致。300行までとtruncated、同じ人のメールを1回 |
+| [admin-order-summary](../../../tests/unit/lib/orders/admin-orders/admin-order-summary.test.ts) | 単体。旧describe名と期待を引継ぎ、部分発送/配送集計、取消、返金/申請/住所不足、5分キャッシュ、取得失敗の秘密相当sentinel | FREQ-539-AC-01、FREQ-541-AC-05 | 旧summaryの状態/数量/取消/返金の値を直接builderで確認。キャッシュと期限後の再取得。Stripe拒否は新しい固定Errorにtype/codeだけを写して記録し、元の本文/付随データ/causeを出さない |
+| [admin-order-actions](../../../tests/unit/lib/orders/admin-orders/admin-order-actions.test.ts) | 単体。4つのnextAction、返金権限、未受取の印、返品/返品できる品の有無 | FREQ-539-AC-02 | 旧OrderSectionのボタン文と有無を維持。サポーターに返金の名前を出さず、受取か返品を選ぶ |
+| [item-state-types](../../../tests/unit/lib/orders/item-state/item-state-types.test.ts) | 単体。管理用12状態のキー順、6つの阻害理由 | FREQ-536-AC-01 | ORDER_ITEM_STATUS_ORDERと管理用辞書のキー順が一致し、6理由の日本語が共通値と一致 |
+| [order-items-route](../../../tests/unit/api/admin/order-items-route.test.ts) | API単体。認可と既存件数をモック、実query/storeへ正常/不正RPC材料を渡す | FREQ-536-AC-02・03、FREQ-540-AC-13 | 認可→query→store、401/403では読まない。不正queryは400、capの空行も200、要対応の2種件数、認可したactor、no-store、既知DBエラーの固定本文 |
+| [order-items-export-route](../../../tests/unit/api/admin/order-items-export-route.test.ts) | API単体。認可/回数制限/監査をモック、実store/CSV。IPまたはactor制限、page、上限/未知エラー、検索語sentinel | FREQ-538-AC-02・05 | 認可→IP→actor（20回/600秒）→検証→全件RPC→CSV→監査。401/403/400/422/429/500、BOM/Content-Type/Content-Disposition/no-store。成功監査は件数とfilter_keysの名前だけ、failure/errorも検索語を含めない |
+| [order-detail-route](../../../tests/unit/api/admin/order-detail-route.test.ts) | API単体。core/summary/発送/配送/票をモック、UUID/認可/不在、票/配送だけの拒否/失敗、core/必須発送の失敗、DB側403、複数発送の同じ票と票なし | FREQ-539-AC-01・04、FREQ-540-AC-13 | 認可→UUID→読取、401/403/400/404/500/200とno-store。core/summaryを保持しslipId/slipNumberを含む発送の9欄だけを返す。票の権限不足/失敗はslipsと発送ごとの票の2欄がnull、票なしも2欄null。配送だけの失敗はdeliveredAt:nullで200。core/必須発送の未知失敗は固定500、名前/codeだけのログで秘密値を出さない |
+| [order-history-route](../../../tests/unit/api/admin/order-history-route.test.ts) | API単体。既存履歴と新しい品物履歴の成功/失敗 | FREQ-539-AC-04、FREQ-541-AC-05 | itemStatesとtruncatedを追加。品物履歴だけの失敗でも既存欄を返し、空配列/失敗旗/固定の警告だけ。返品の記録と品物履歴が同じactorのcacheを共有し、getUserByIdは1回。客向けの応答/メール処理へ追加しない |
+| [旧一覧](../../../tests/unit/api/admin/orders-search-route.test.ts)・[旧履歴とメールAPI](../../../tests/unit/api/admin/order-email-routes.test.ts)・[旧画面](../../../tests/unit/components/OrderSection.actions.test.tsx) | 既存の単体回帰。期待は無変更 | FREQ-539-AC-01・02・04、FREQ-541-AC-05 | 旧一覧の102件、旧履歴の全欄とエラーログ、旧画面の操作と表示を保つ。旧一覧routeはTask 7まで残す |
+| [group_g4_postgrest_paths](../../../tests/integration/db/group_g4_postgrest_paths.integration.test.ts) | DB/API結合。DATABASE_URLとLOCAL_SUPABASE_URL / LOCAL_SUPABASE_SERVICE_ROLE_KEY / LOCAL_SUPABASE_ANON_KEY、localhostのみ。実Authユーザー/JWT、固有の注文、別接続から読めるcommit済み材料 | FREQ-536-AC-03、FREQ-540-AC-13 | 実store→supabase-js→PostgREST→SQLの4読取がservice_roleで通り、anon/authenticatedは拒否。作れるFORBIDDEN/ORDER_NOT_FOUND/ARGUMENT_INVALIDを固定分類。limit=101を断り、exportは単一jsonbのrowCount=rows.length。1000行超の材料は作らない。3つのLOCAL_SUPABASEキーがなければDBフック登録前にskip |
+
+| Task 3の記録（2026-10-26） | 実測と境界 |
+| --- | --- |
+| Phase Aの対象単体 | 新規11 suiteと既存の旧一覧/旧履歴/G-3 storeを含む14 suite・600/600成功。旧一覧は期待無変更で102/102。新summaryの秘密値診断は1失敗/8成功のRED後に修正して成功 |
+| Phase Aの広い回帰 | `npx.cmd jest tests/unit/components tests/unit/api/admin --runInBand`: 最終184 suite・6,347/6,347成功。上の600件と重なるので合算しない。TypeScriptと変更TSのESLintも成功。これはPhase Aの測定値で、Phase Bで再実行した値ではない |
+| 実PostgREST・DB（g4t3a） | controller受領記録（g4t3a）: fresh reset後、実鍵のgroup_g4_postgrest_pathsを含むgroup_g*全51 suiteで1,616成功・0失敗・1 pending（G1_CLEANUP_SUITE=1で単独実行するG-1清掃の未起動）。 実装者の今回の再実行ではなく、controllerから受領した結果。全件の確認は controller が後で実施 |
 
 ## 記録形式と追跡
 

@@ -1,4 +1,5 @@
 import { toOrderNumber } from '@/lib/orders/order-number';
+import type { OrderHistoryItemStateEntry } from '@/lib/orders/admin-orders/admin-order-types';
 import { CANCEL_REASON_LABELS, CANCEL_REASONS, type CancelReason, type OrderStatus } from '@/lib/orders/order-payment-types';
 import {
   formatYen,
@@ -257,6 +258,9 @@ export type OrderHistoryEntry =
   | OrderHistoryTrackingChangeEntry;
 
 export type OrderHistoryResponse = {
+  itemStates?: OrderHistoryItemStateEntry[];
+  itemStatesTruncated?: boolean;
+  itemStatesFailed?: boolean;
   order: { id: string; orderNumber: string; statusLabel: string; recipient: string | null };
   sendPaused: { reasonLabel: string } | null;
   entries: OrderHistoryEntry[];
