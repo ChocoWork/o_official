@@ -1,5 +1,7 @@
 # テスト仕様
 
+> G-4 Task 2 確認日: 2026-10-26。初回（g4t2a）はfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・専用G-1清掃の1 pending。初回の全件（g4t2）はunit＋全DB integrationで19,912成功・既知stockist_rlsの2失敗だけ、G-0清掃12/12。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
+
 > 状態: 現行の方針（波 1-B のセキュリティの穴の修正のテストの節は 2026-10-26 に追記〔単体・結合は通過、E2E・DB 結合は未実行〕。G-3 Task 12 の発送票の操作・出荷日のE2Eと止めていた旧の発送のE2Eの移設の節は 2026-10-26 に追記〔E2Eの実測は controller の実行後〕。G-3 Task 11 の荷作り・同梱メール・権限のE2Eと再開した配送のE2Eの節は 2026-10-26 に追記〔E2Eの実測は同節に記録〕。G-3 Task 10 の書き手75本・末尾assert・並行・実PostgRESTの節は 2026-10-26 に追記。G-3 Task 8 のテストの節は 2026-10-26 に追記。グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 7の伝票番号の後入力・訂正と手動の配達済みのDB・単体を追記）（G-3 Task 6の発送の取消のDB・単体を追記）（G-3 Task 4の発送票の下書きのDB・単体を追記）（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 > G-4 Task 1 確認日: 2026-10-26。g4t1aでローカル適用・PostgREST両200、修正round 1の対象DB 3 suite・94/94成功。controller全件g4t1は19,665成功・既知stockist_rlsの2失敗だけ、G-0清掃12/12。本番未適用。
@@ -8,7 +10,9 @@
 
 この文書は、要件からテストへの追跡方法、実行するテストの層、判定と記録の方法を定める。下表のテストファイルはリポジトリで確認した例であり、ここに列挙したことは実行・成功を意味しない。グループ G-1（在庫の割当）のテストは、層の説明の後の「グループ G-1（在庫の割当）のテスト」にファイル単位でまとめる。グループ G-2（発注・受け取り）のテストはその後の「グループ G-2（発注・受け取り）のテスト」にまとめる。
 
-## グループ G-4 Task 1（土台）のテスト
+## グループ G-4 のテスト
+
+### Task 1（土台）
 
 対象は FREQ-540-AC-14 と FREQ-523-AC-03 の土台。UI・公開の入替操作・transfer の対と数量保存は後続 Task。既存の G-1〜G-3 と別セッションの移行を編集せず、G4A を追加して確かめる。
 
@@ -30,6 +34,28 @@
 | controller fresh reset後の全件検証（g4t1） | unit＋全DB integrationは19,665成功、既知のstockist_rlsの赤2件だけが失敗し、新規失敗なし。G-0基準の清掃suiteは別に12/12成功 |
 
 修正round 2は既存ケースの置換と試験内の対照追加で、試験件数は変更しない。文書の整合検査は先頭AC IDのない題名とし、FREQ-540-AC-14の動作を証明する試験には数えない。
+
+### Task 2（読取・金額・返金・状態履歴）
+
+対象はG4Bの内部3本・private読取4本・public入口4本。DB結合はlocalhostに限り、controllerのfresh resetと既存のanon/実authenticatedのPostgREST smoke各200の後に流す。各ケースは固有のメール/IDとBEGIN→共通advisory→ROLLBACKで隔離し、期待エラーはsavepointで回収する。型・文書単体の成功をDB実測に代えない。
+
+| ファイル・対象 | 層・事前条件・入力 | FREQ/AC | 期待結果 |
+| --- | --- | --- | --- |
+| [group_g4_reads](../../../tests/integration/db/group_g4_reads.integration.test.ts)：一覧・絞り込み | DB結合。混在する12状態、複数注文/明細、2行の頁、JSTの日境界、注文番号/pi、商品・顧客の語、要対応/解決済み、cap設定 | FREQ-536-AC-01・02・03、FREQ-520-AC-03 | 共通欄と購入時の写し、状態別数量/順位、非表示2状態の除外、NULL variant、安定順と頁によらない総数。customer/emailの%と_は別フィルタなしの4ケースでも文字どおり一致。attention=trueだけ要対応へ絞り、false/未指定は同じ全候補。新しい注文capを0行でも旗で知らせる |
+| 同上：商品額と返金 | DB結合。割引、離れた状態区間、3種類の返金、重複部分返金、対象状態0、別明細の独自返金、交換品の返品、送料と負の調整額 | FREQ-537-AC-01〜05 | 正味100を33/33/34または33/67。既存行別割引を再利用。mainのdelivered250/cancelled400/returned900と別明細175を分離、refundNotAttached=-15。部分返金700+300と別明細125を分離し送料/調整=-30。対象0のmain50/51と別明細75を分離し送料/調整の合計=-25。未成功は商品返金へ含めない。交換の単価/商品額0、返金は自分だけ。⑧は通常1000/交換200を明細ごとのDB集計と突き合わせ、合計商品返金1200+送料調整70=返金済1270 |
+| 同上：CSV材料 | DB結合。全頁の外を含む同じ条件、一覧cap=2とCSVcap=2、候補数超過、投影を呼ぶと失敗する取引内stand-in、不正/上げる設定 | FREQ-538-AC-02・05、FREQ-536-AC-03 | 1つのSTABLEなjsonbで一覧全頁と値/順/件数が一致し、needsAttention/blockedReasonsなし。一覧capに依存せず全行かGROUP_G_EXPORT_TOO_LARGE / 22023。候補注文cap超は投影前に拒否、切った行は返さない |
+| 同上：詳細・認可 | DB結合。有効/無効/期限切れ/役割なし、役割権限の一時変更、未解決/解決済みの3種要対応、注文不在、payment_in_progress | FREQ-539-AC-01、FREQ-540-AC-13、FREQ-536-AC-05 | 全4入口が有効役割の和集合のorders.readを確認し、なければGROUP_G_FORBIDDEN / 42501。店長/サポーターのpermissions、要対応3種、GROUP_G_ORDER_NOT_FOUND / P0002、非表示注文の空rows。anon/authenticatedの入口EXECUTEなし |
+| 同上：状態履歴 | DB結合。実G-3確定・G-2受取、actor NULL、入替operation、同時刻302イベント、別注文 | FREQ-539-AC-04 | 発送票/発注書の番号つき参照、入替の理由と反対側の注文ID、NULL actorの保持、created_at DESC→id、最大301行、別注文が混ざらない |
+| [group_g4_migration_asserts](../../../tests/integration/db/group_g4_migration_asserts.integration.test.ts)：G4B部分 | ソース2ケース＋DB改ざん24ケース。既存G4A19ケースは維持。取引内で権限/属性/署名/所有者/委譲/書込み文を変更してrollback | FREQ-540-AC-13 | ASCII/LF・BEGIN/NOTIFY/COMMIT各1組・11関数・STABLE・private schema USAGE操作なし。正常形とsearch_pathの対照は成功。内部EXECUTE、public/anon/authenticated付与、VOLATILE、入口欠落、overload、別委譲、一時ロールのowner、5種類の書込み文をGROUP_G_MIGRATION_ASSERTION_FAILED / 55000で拒否。DETAILはorders_reads_internal/functions/public/no_write。ACLは意味で比較 |
+| [group-g4-fixtures](../../../tests/integration/db/helpers/group-g4-fixtures.ts) | 上記DB結合の材料。既存のG-3 ready/G-1 allocation・shipment/E-3 return・refund/cancel request helperを使用。単独の試験数には数えない | FREQ-520-AC-03、FREQ-537-AC-01〜05 | 固有のメール/ID、金額等の不変値はINSERT時に決定。重複数量や対象0の防御的な返金は指定明細だけを写す代替表とsavepointを使い、元表OID・triggerモード・名前を復元。非ゼロ交換価格のprobeだけCHECKを取引内で外して復元。正規の発送は防御的な返金をrollbackした後に作る。G-1投影/通常ガードは変更しない |
+
+| 記録（2026-10-26） | 実測と境界 |
+| --- | --- |
+| 初回（g4t2a）、controller fresh reset | G4B適用、PostgREST anon/authenticated各200。group_g* 50 suite・1,606成功・0失敗・1 pending。pendingは上記G-1清掃の専用フラグなしによる未起動 |
+| 初回の全件（g4t2）、controller fresh reset後 | unit＋全DB integrationは19,912成功・既知stockist_rlsの2失敗だけ、新規失敗なし。G-0基準の清掃は別に12/12成功 |
+| 修正round 1、SQL変更後 | 修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。実装者の非DB検証はTask 2報告に記録 |
+
+修正round 1はreadsに独立wildcard4ケースとattention false1ケースを追加し、返金の既存期待も強化する。定義数はreads58、G4B assertはソース2＋DB24で不変。定義数は実行した成功数ではない。CSV整形・画面・窓口・E2Eと本番は今回のDB証明範囲に含まない。
 
 ## 記録形式と追跡
 

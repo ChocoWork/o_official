@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> G-4 Task 2 確認日: 2026-10-26。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
+
 > G-3 本番適用: 2026-10-26 08:33 JST（`20261025053324`・`20261025070821`・`20261025100130`・`20261025134538`。照合は G-3 の節の末尾） | G-3 Task 10 確認: 2026-10-26（4移行assert・75本・並行/PostgREST試験。controllerのfresh resetでgroup_g* 47 suiteを検証、SQLは不変で試験材料3件を直し、group_g3_concurrency 24/24を3回連続・group_g3_migration_asserts 64/64で通過） | 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで。G-3 は Task 1 の基盤・Task 2 の読取・Task 4 の書き手の移行・Task 6 の発送の取消を追記） | 確認日: 2026-10-26 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
@@ -18,7 +20,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 | 順 | ファイル名 | 役割・状態 |
 | --- | --- | --- |
 | 1 / G4A | [20261026045859_group_g4_orders_foundation.sql](../../supabase/migrations/20261026045859_group_g4_orders_foundation.sql) | 土台。発送票の注文別索引・確定の期限境界・割当理由18値。2026-10-26のcontroller fresh reset（g4t1a）でローカル適用済み、本番未適用 |
-| 2 / G4B | `<ts2>_group_g4_orders_reads.sql` | 一覧・CSV・詳細・品物の状態履歴の読取。Task 2 で作成予定、UTC版は未採番 |
+| 2 / G4B | [20261026054705_group_g4_orders_reads.sql](../../supabase/migrations/20261026054705_group_g4_orders_reads.sql) | 内部3本、private本体4本とpublic入口4本。STABLEな一覧・CSV材料・詳細・品物の状態履歴。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用 |
 | 3 / G4C | `<ts3>_group_g4_orders_swap.sql` | 割当入替の書込みと書き手一覧76本。Task 4 で作成予定、UTC版は未採番 |
 
 確認日: 2026-10-26。G-1・G-2・G-3 は本番へ適用済み（Task 1 依頼時の確認）。上の過去の節の未適用表記は当時の記録。G4Aはローカル適用済み・本番未適用で、既存の移行ファイルは編集しない。別セッションの `20261026010000_auth_return_intents.sql` は変更せず、その認証機能をG-4の試験の前提にしない。理由の単体は全SQLからCHECK本文を抽出する。3本の版は G4A < G4B < G4C とする。
@@ -30,6 +32,26 @@ G4A は、`shipment_slip_fulfillments_order_idx` を `public.shipment_slip_fulfi
 再実行する G3A の assert は、取引内で理由 CHECK を G3A の17値へ復元し、**復元→改ざん→許可一覧の再現→assert** の順に流す。G4A の75本の assert は `runWithAllowlist` と `G3D_ALLOWLIST` で当時の集合を再現する。いずれも呼出し元の rollback で戻す。
 
 controllerのfresh reset（g4t1a）でG4Aを適用し、PostgREST anon/実authenticatedは各HTTP 200。実鍵PostgRESTを含むgroup_g*全49 suiteは1,526成功・1失敗・1 pendingだった。失敗は所有者をanonへ変える改ざん材料がassert前に42501となる1件で、SQLを変えず修正round 1で解消。pendingはgroup_g1_cleanupの `G1_CLEANUP_SUITE=1 で単独に流す時だけ動かす（全注文を消して commit するため）`。通常全件ではこの専用清掃を起動しない。修正round 1で実装者がローカルDBの [末尾 assert](../../tests/integration/db/group_g4_migration_asserts.integration.test.ts)・[土台](../../tests/integration/db/group_g4_foundation.integration.test.ts)・G3末尾assertを実行し、3 suite・94/94成功。controllerのfresh reset後の全件検証（g4t1）はunit＋全DB integrationで19,665成功・既知stockist_rlsの赤2件だけが失敗し、新規失敗なし。G-0基準の専用清掃は別に12/12成功（すべて2026-10-26）。本番未適用。以後SQLを変更した場合はcontrollerがresetから再検証する。
+
+### G4Bの適用と再検証（2026-10-26）
+
+G4Bは先頭BEGIN、G4BのBODY/FINAL_ASSERT節印、末尾assert→NOTIFY→COMMITの1取引。ASCII・BOMなし・LF。SQLにはデータ変更、表の追加、private schemaのUSAGE変更、別セッションの認証移行への依存がない。G4Bの今回のサイズ・MD5と初回の値は下表に記録する。非DB検証の実測はTask 2報告へ記録する。既存のG4AとG-1〜G-3の適用済みSQLは編集しない。
+
+| G4Bの版 | bytes | MD5 | 適用・検証 |
+| --- | --- | --- | --- |
+| 初回（g4t2a） | 34,778 | `7DAFF1634E1B026CDA04C76DDA366981` | controller fresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（専用G-1清掃の未起動）。初回の全件g4t2は19,912成功・既知stockist_rlsの2失敗だけ、G-0清掃12/12。本番未適用 |
+| 修正round 1 | 35,038 | `0B931939008EAE84059EE5123633D70D` | reasons CTEで阻害理由を1回集約してLEFT JOIN。attention=false/未指定は絞り込まない。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用 |
+
+| 末尾assertのDETAIL | 確認するもの |
+| --- | --- |
+| `orders_reads_internal` | private内部3本だけ、publicの同名0本、余分なoverloadなし、postgres所有・STABLE・DEFINER・空search_path・署名/戻り列、PUBLIC/anon/authenticated/service_roleのEXECUTEなし |
+| `orders_reads_functions` | private本体4本だけ、署名・引数名・戻り型/列・postgres所有・STABLE・DEFINER・空search_path。service_roleだけにEXECUTE |
+| `orders_reads_public` | public入口4本だけ、同じ署名・戻り列、postgres所有・STABLE・SQL INVOKER・空search_path、private同名への委譲、service_roleだけにEXECUTE |
+| `orders_reads_no_write` | 11本のprosrcを小文字化・空白正規化してINSERT INTO・UPDATE schema.・DELETE FROM・TRUNCATE・MERGE INTOが0件、探索数が11で空でない |
+
+違反はすべて `GROUP_G_MIGRATION_ASSERTION_FAILED / 55000`。ACLはhas_function_privilege・aclexplodeで意味を検査し、proacl::textを比較しない。改ざんは内部へのservice_role付与・public/anon/authenticated付与・VOLATILE・DEFINER変更・入口削除・overload・別委譲・書込み文・一時ロールへの所有者変更を取引内で再現しrollbackする。G4Aの当時の75本は既存のrunWithAllowlistのまま再現する。
+
+実装者はSupabase CLI・Docker・DB・Playwrightを起動しない。controllerがfresh reset→既存のanon/実authenticatedのPostgREST smoke各HTTP 200→[G4読取](../../tests/integration/db/group_g4_reads.integration.test.ts)・[G4末尾assert](../../tests/integration/db/group_g4_migration_asserts.integration.test.ts)・G1 item_states・G3 readsを実行する。SQLを直したら再度resetから通す。単体/型/lintの成功をDB適用・ACL・PostgREST・本番の証拠にしない。
 
 ## なぜ変えたか
 

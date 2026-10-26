@@ -1,5 +1,7 @@
 # ER 図（現行リポジトリの実装）
 
+> G-4 Task 2 確認日: 2026-10-26。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
+
 > G-3 Task 10 確認: 2026-10-26（表・FKの追加なし、4移行assertと75本を確定。controllerのfresh resetでgroup_g* 47 suiteを検証し、直した後はgroup_g3_concurrency 24/24を3回連続・group_g3_migration_asserts 64/64で通過） | 状態: 現行のソース（G-3 Task 8 の追跡の親と配送の結果の票への展開（表の変更なし、関数の置換）を 2026-10-26 に追記。グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ適用済み（Task 1 の依頼で確認）。G-3 Task 1 の新6表・出荷日・守りを同日に追記し、controller reset後のDB全件でTask 1の新規失敗0を2026-10-25に確認した（全体は既知stockist2失敗によりexit 1）。G-2 Task 9 で手元の DB と突き合わせ、発注書の9表・22 FK、FK の合計 142〔public 起点 131・private 起点 11〕が DB と一致することを確かめた） | 確認日: 2026-10-25（G-3 Task 5の確定まで追記。controllerの実鍵PostgRESTを含む12 suiteで665/665成功） | 対象: `supabase/migrations/` の基準スキーマと後続変更 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 > G-4 Task 1 確認日: 2026-10-26。g4t1aでローカル適用・PostgREST両200、修正round 1の対象DB 3 suite・94/94成功。controllerのfresh reset後の全件g4t1は19,665成功・既知stockist_rlsの2失敗だけ、G-0清掃12/12。本番未適用。
@@ -1973,6 +1975,34 @@ public.item_delete_blockers(bigint[]) は戻り値の追加のため DROP → CR
 | G-0基準のG-1清掃suite | G1_CLEANUP_SUITE=1の特別実行はcontroller判断待ち。通常全件のskipやsuiteの成功表示は、G-0基準の清掃の成功を証明しない |
 
 ## 注文一覧表・注文の詳細の土台（G-4 Task 1）
+
+### 注文の読取（G-4 Task 2、2026-10-26）
+
+[G4B移行](../../../supabase/migrations/20261026054705_group_g4_orders_reads.sql) は表・FKを追加せず、G-1の `private.group_g_item_state_ranges(uuid[])` を読む。書き手の75本とG4A・G-1〜G-3は変更しない。SQL・[DB試験](../../../tests/integration/db/group_g4_reads.integration.test.ts)・[改ざん試験](../../../tests/integration/db/group_g4_migration_asserts.integration.test.ts) を作成済み。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
+
+| 関数（引数型） | 戻り値・境界 |
+| --- | --- |
+| `private.group_g_order_candidates(jsonb,integer)` | `TABLE(order_ids uuid[], matched_orders bigint, capped boolean)` 1行。形・キー・語・日付・状態を検証し、注文条件と商品条件に合う新しいcap件を返す。状態条件は投影後 |
+| `private.group_g_order_attention_ids(uuid[])` | `uuid[]`。未解決の支払い例外、未確認のreview、未解決の発送のattentionの和集合 |
+| `private.group_g_order_item_rows(uuid[])` | `TABLE(order_id uuid, order_item_id uuid, status text, status_rank integer, quantity integer, blocked_reasons text[], is_exchange boolean, unit_price integer, line_amount integer, refund_amount integer, first_unit integer)` |
+| `private/public.list_admin_order_item_rows(jsonb,integer,integer,uuid)` | `jsonb` 1値。ordersCapped・ordersCap・totalRows・totalOrders・rows。limit 1〜100、offset 0以上 |
+| `private/public.export_admin_order_item_rows(jsonb,uuid)` | `jsonb` 1値。rowCount・orderCount・rows。頁で切らず、needsAttention・blockedReasonsを含めない |
+| `private/public.get_admin_order_detail(uuid,uuid)` | `jsonb` 1値。order・amounts・rows・attention・permissions |
+| `private/public.list_admin_order_item_state_history(uuid,uuid)` | id・日時・明細と購入時の写し・交換印・数量・前後状態・理由・actor・operation・ref_kind/ref_id/ref_label・note・counterpart_order_idの18列、日時DESC→id、最大301行 |
+
+全11関数はpostgres所有・STABLE・空search_path。privateはDEFINER、publicは同署名のSQL INVOKER委譲。内部3本はPUBLIC/anon/authenticated/service_roleのEXECUTEなし、本体4本と入口4本はservice_roleだけが実行できる。4本とも `admin.orders.read` を有効な役割の和集合で確かめる。private schemaのUSAGEは変更しない。
+
+| 計算・出力 | 契約 |
+| --- | --- |
+| 商品額 | orderの正味額 `net=line_total−private.order_line_discountsのline_discount`。区間 `[a,b)` の額はbigintの `net*b/Q−net*a/Q`。区間で計算後、明細×状態に合算。交換の単価と商品額は0 |
+| 商品返金 | succeededの自分の明細だけを発送前→cancelled、return_idあり→returned、発送後→delivered次にshippedの3種類で分ける。各種類の額R・数量n、対象数量T、分母m=min(n,T)。累積数量をmで切ったfloorの差を区間で計算する。T=0なら同じ明細の全区間を状態順位→開始順で使う。交換も自分を指す成功返金だけを同じ式で配る |
+| 行のまとめ方 | 同じ状態の離れた区間も1行。数量・金額・返金を合算、阻害理由はreasons CTEで明細×状態ごとに一度だけ昇順の和集合へ集約し、LEFT JOINする。理由なしは空配列、first_unitは最小開始位置。重い処理は対象注文をMATERIALIZEDで確定してから投影 |
+| 状態順位 | unpaid(1)、payment_expired(2)、in_production(3)、ready(4)、shipped(5)、delivered(6)、cancel_requested(7)、cancelled(8)、return_requested(9)、return_in_progress(10)、refund_waiting(11)、returned(12) |
+| 詳細の返金 | refundAttachedToRowsは行返金和。refundNotAttachedは成功した送料＋調整額をヘッダから直接合算し、負も保持。refundProcessingAmountはawaiting_response・pendingのamount和。refundedAmountとの差から作らない |
+| 詳細の旗 | read=orders.read、manage=orders.manage、refund=orders.refund、return=orders.return、allocate=orders.allocate+orders.read、shippingRead=shipping.read+orders.read（各コードの先頭はadmin.） |
+| 状態履歴の参照 | shipment_slip→発送票番号、purchase_order→発注番号。それ以外はNULL。allocation_swapはresultのreasonと受け手/出し手の反対側の注文IDを返す |
+
+一覧は新しい5000注文の中で商品/色/サイズ/状態を行単位に絞る。CSVはこのcapを受けず全件か20000行超の断り。詳しい絞り込みとエラーは [読取の流れ](../../04_DetailDesign/sequence/order-administration.md) を参照。
 
 [G4A](../../../supabase/migrations/20261026045859_group_g4_orders_foundation.sql) は表・列・FKを増やさず、発送票を注文IDで引く非一意 btree 索引を追加する。確定本体は `CREATE OR REPLACE` で同じ OID・所有者・ACL を保ち、期限の比較だけを `expires_at <= now()` にそろえる（FREQ-540-AC-14）。
 

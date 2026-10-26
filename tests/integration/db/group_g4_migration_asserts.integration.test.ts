@@ -54,6 +54,123 @@ describe('G-4 Task 1: migration source (no DB)', () => {
   });
 });
 
+const readsFiles = fs.readdirSync(directory).filter((name) => name.endsWith('_group_g4_orders_reads.sql'));
+if (readsFiles.length !== 1) throw new Error('G4B_MIGRATION_MISSING');
+const readsSql = fs.readFileSync(path.join(directory, readsFiles[0]), 'utf8');
+const readsAssertion = readsSql.split('-- G4B_FINAL_ASSERT_BEGIN')[1]?.split('-- G4B_FINAL_ASSERT_END')[0];
+if (!readsAssertion) throw new Error('G4B_FINAL_ASSERT_MISSING');
+
+describe('G-4 Task 2: migration source (no DB)', () => {
+  test('FREQ-540-AC-13: G4B はTask 1より後・ASCII/LF・1組の取引と通知・4つの節印を持つ', () => {
+    expect(readsFiles[0]).toMatch(/^\d{14}_group_g4_orders_reads\.sql$/);
+    expect(readsFiles[0].slice(0,14) > files[0].slice(0,14)).toBe(true);
+    expect(readsSql).not.toMatch(/[^\x00-\x7f]|\r/);
+    expect(readsSql.startsWith('BEGIN;\n')).toBe(true);
+    expect(readsSql.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(readsSql.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(readsSql.match(/NOTIFY pgrst, 'reload schema';/g)).toHaveLength(1);
+    expect(readsSql.trimEnd()).toMatch(/NOTIFY pgrst, 'reload schema';\nCOMMIT;$/);
+    for (const marker of ['BODY_BEGIN','BODY_END','FINAL_ASSERT_BEGIN','FINAL_ASSERT_END'])
+      expect(readsSql.split(`-- G4B_${marker}`)).toHaveLength(2);
+    expect(readsSql).not.toMatch(/(?:proacl|relacl)\s*::\s*text/i);
+    expect(readsSql).not.toMatch(/\b(?:GRANT|REVOKE)\b[^;]*\bUSAGE\s+ON\s+SCHEMA\s+private\b/i);
+    expect(readsSql).not.toMatch(/\bauth_return_intents\b|generate_series|CREATE(?: OR REPLACE)? FUNCTION private\.group_g_item_state_ranges/i);
+    expect(readsSql.match(/CREATE FUNCTION /g)).toHaveLength(11);
+    expect(readsSql.match(/LANGUAGE (?:sql|plpgsql) STABLE SECURITY (?:DEFINER|INVOKER) SET search_path = ''/g)).toHaveLength(11);
+  });
+
+  test('FREQ-540-AC-13: 4つの末尾assert項目、非空の探索、DMLなしを契約に持つ', () => {
+    for (const detail of ['orders_reads_internal','orders_reads_functions','orders_reads_public','orders_reads_no_write'])
+      expect(readsAssertion).toContain(`'${detail}'`);
+    expect(readsAssertion).toContain('v_scanned <> 11');
+    const body = readsSql.split('-- G4B_BODY_BEGIN')[1].split('-- G4B_BODY_END')[0];
+    expect(body.replace(/--[^\n]*/g,' ')).not.toMatch(/\b(?:INSERT\s+INTO|UPDATE\s+\w+\.|DELETE\s+FROM|TRUNCATE|MERGE\s+INTO)\b/i);
+    expect(readsSql).toContain('WITH orders AS MATERIALIZED');
+    expect(readsSql).toContain('LEAST(t.n, CASE WHEN t.t = 0 THEN t.q ELSE t.t END)');
+  });
+});
+
+describeLocalDb('G-4 G4B: semantic final assertions / tampering', (db) => {
+  beforeEach(async () => {
+    await db().query('begin');
+    await db().query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
+  });
+  afterEach(async () => { await db().query('rollback'); });
+  async function attempt(change: string | (() => Promise<unknown>) = ''): Promise<Failure | null> {
+    await db().query('savepoint g4b_assert');
+    try {
+      if (typeof change === 'function') await change(); else if (change) await db().query(change);
+      await db().query(readsAssertion);
+      return null;
+    } catch (error) {
+      const e = error as Failure;
+      return { code: e.code,message: e.message === 'GROUP_G_MIGRATION_ASSERTION_FAILED' ? e.message : 'G4_UNEXPECTED_DB_ERROR',detail: e.detail };
+    } finally {
+      await db().query('rollback to savepoint g4b_assert');
+      await db().query('release savepoint g4b_assert');
+    }
+  }
+  const helper = 'private.group_g_order_attention_ids(uuid[])';
+  const reader = 'private.get_admin_order_detail(uuid,uuid)';
+  const entry = 'public.get_admin_order_detail(uuid,uuid)';
+
+  test('FREQ-540-AC-13: 通常形と呼出し元search_pathの違いで末尾assertが通る', async () => {
+    expect(await attempt()).toBeNull();
+    for (const searchPath of ['pg_catalog','public,private,pg_catalog'])
+      expect(await attempt(`set local search_path to ${searchPath}`)).toBeNull();
+  });
+
+  test.each([
+    [`grant execute on function ${helper} to service_role`,'orders_reads_internal'],
+    [`grant execute on function ${helper} to public`,'orders_reads_internal'],
+    [`alter function ${helper} security invoker`,'orders_reads_internal'],
+    [`alter function ${helper} set search_path=public`,'orders_reads_internal'],
+    [`grant execute on function ${entry} to anon`,'orders_reads_public'],
+    [`grant execute on function ${entry} to authenticated`,'orders_reads_public'],
+    [`revoke execute on function ${entry} from service_role`,'orders_reads_public'],
+    [`alter function ${entry} security definer`,'orders_reads_public'],
+    [`alter function ${reader} volatile`,'orders_reads_functions'],
+    [`alter function ${reader} security invoker`,'orders_reads_functions'],
+    [`grant execute on function ${reader} to public`,'orders_reads_functions'],
+    [`drop function ${entry}`,'orders_reads_public'],
+    [`create function public.get_admin_order_detail(uuid) returns jsonb language sql stable as 'select null::jsonb'`,'orders_reads_public'],
+    [`create function private.get_admin_order_detail(uuid) returns jsonb language sql stable as 'select null::jsonb'`,'orders_reads_functions'],
+    [`create function private.group_g_order_attention_ids(uuid) returns uuid[] language sql stable as 'select array[]::uuid[]'`,'orders_reads_internal'],
+    [`create function public.group_g_order_attention_ids(uuid[]) returns uuid[] language sql stable as 'select array[]::uuid[]'`,'orders_reads_internal'],
+  ])('FREQ-540-AC-13: G4B改ざん %s はDETAIL=%sで拒否、rollbackで復元', async (change,detail) => {
+    expect(await attempt(change)).toEqual(failed(detail));
+    expect(await attempt()).toBeNull();
+  });
+
+  test.each(['INSERT\n INTO public.orders DEFAULT VALUES','UPDATE\n public.orders SET updated_at=updated_at',
+    'DELETE\n FROM public.orders','TRUNCATE public.orders',
+    'MERGE\n INTO public.orders USING public.orders s ON false WHEN MATCHED THEN DO NOTHING'])
+  ('FREQ-540-AC-13: 読取本体に書込み文 %s があれば正規化したprosrcから拒否する', async (statement) => {
+    expect(await attempt(async () => {
+      const definition = (await db().query('select pg_get_functiondef($1::regprocedure) as d',[reader])).rows[0].d as string;
+      const header = definition.slice(0,definition.indexOf('AS $function$'));
+      await db().query(`${header} AS $function$ BEGIN ${statement}; RETURN null; END $function$`);
+    })).toEqual(failed('orders_reads_no_write'));
+    expect(await attempt()).toBeNull();
+  });
+
+  test('FREQ-540-AC-13: 公開入口の委譲先差し替えを拒否する', async () => {
+    expect(await attempt(`create or replace function ${entry.replace('(uuid,uuid)','(_order_id uuid,_actor_id uuid)')}
+      returns jsonb language sql stable security invoker set search_path='' as 'select null::jsonb'`))
+      .toEqual(failed('orders_reads_public'));
+  });
+
+  test('FREQ-540-AC-13: 一時ロールへ所有者を変える改ざんを拒否し、rollbackで所有者が戻る', async () => {
+    const role = `g4b_owner_${randomUUID().replaceAll('-','')}`;
+    expect(await attempt(`set local createrole_self_grant='set';create role ${role} nologin;
+      grant create on schema private to ${role};alter function ${reader} owner to ${role}`))
+      .toEqual(failed('orders_reads_functions'));
+    expect((await db().query('select proowner::regrole::text as owner from pg_proc where oid=$1::regprocedure',[reader])).rows[0].owner).toBe('postgres');
+    expect((await db().query('select exists(select 1 from pg_roles where rolname=$1) as present',[role])).rows[0].present).toBe(false);
+    expect(await attempt()).toBeNull();
+  });
+});
+
 type Failure = { code?: string; message?: string; detail?: string };
 const failed = (detail: string): Failure => ({ code: '55000', message: 'GROUP_G_MIGRATION_ASSERTION_FAILED', detail });
 const rewrite = (from: string, to: string) => `do $rewrite$

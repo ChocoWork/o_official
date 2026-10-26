@@ -1,5 +1,7 @@
 # 注文管理のシーケンス
 
+> G-4 Task 2 確認日: 2026-10-26。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
+
 > 状態: 現行ソース確認（発送の節はグループ E-1 の変更を 2026-10-10 に、返金・支払い済みのキャンセル・取り込みと見回り・自動の返金の節はグループ E-2 の変更を 2026-10-11 に、返品を作る・受け取る・額を決めて返金する節はグループ E-3 の変更を 2026-10-13 に反映） | 確認日: 2026-10-04 | 対象: 未入金取消、発送（一部の発送・仕上がり・取消を含む）、管理返金と支払い済みのキャンセル、Stripe の返金の取り込みと見回り、自動の返金、返品（作る・受け取る・額を決めて返金する）、要対応の解決
 
 ## 概要
@@ -9,6 +11,51 @@
 図の粒度は[記載方針](README.md)、注文状態と独立属性は[注文・決済](../states/order-payment.md)、例外の状態は[決済の要対応](../states/payment-exception.md)を参照する。
 
 ## 範囲と根拠
+
+### 一覧・CSV材料・詳細・状態履歴の読取（G-4 Task 2）
+
+[読取移行](../../../supabase/migrations/20261026054705_group_g4_orders_reads.sql) と [DB試験](../../../tests/integration/db/group_g4_reads.integration.test.ts) は作成済み、初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。ここで追加するのはDB読取だけで、窓口・CSV整形・詳細画面の移設は後続Task。既存の客向け投影・メール・G-1の状態投影は変更しない。
+
+```mermaid
+sequenceDiagram
+    participant Caller as 管理の呼出し元
+    participant RPC as publicのSQL INVOKER
+    participant Core as privateのSTABLE読取
+    participant Candidates as 注文候補
+    participant Projection as G-1の状態区間
+    Caller->>RPC: 条件または注文IDと認可済みactor
+    RPC->>Core: 同署名で委譲
+    Core->>Core: 有効役割のadmin.orders.readを確認
+    alt 一覧またはCSV材料
+        Core->>Candidates: 形・値・暦日を検証して対象注文を確定
+        Candidates-->>Core: order_idsとmatched_ordersとcapped
+        Core->>Projection: 絞った注文だけを投影
+        Projection-->>Core: 数量の半開区間
+        Core->>Core: 区間の金額・成功返金を配分し状態で合算
+    else 詳細
+        Core->>Projection: 指定注文だけを投影
+        Core->>Core: 金額内訳・未解決要対応・権限旗を読む
+    else 状態履歴
+        Core->>Core: 指定注文のイベントを最大301行読む
+    end
+    Core-->>RPC: 1つのjsonbまたは履歴の行
+    RPC-->>Caller: 同じスナップショットの結果
+```
+
+読取はadvisoryを取らず、外部I/Oと書込みを行わない。public/privateの4本ともservice_roleだけにEXECUTE、内部3本は呼出権限なし。actorは呼出し元の認可済みuserIdを渡す契約で、DBは毎回有効・期限内の全役割の権限の和集合を確認する。
+
+| 読取 | 処理・限界 |
+| --- | --- |
+| `list_admin_order_item_rows(jsonb,integer,integer,uuid)` | 新しい5000注文までを候補にし、商品/色/サイズ/状態を行単位で絞る。ordersCapped・ordersCapは0行でも返す。totalRowsとtotalOrdersは頁で切る前。limit 1〜100、offset 0以上 |
+| `export_admin_order_item_rows(jsonb,uuid)` | 一覧capと独立し全行を1つのjsonbで返す。rowCount・orderCount・rows。20000行超、または候補注文がcap超なら全件を断る。注文cap超では投影しない。needsAttention・blockedReasonsは含めない |
+| `get_admin_order_detail(uuid,uuid)` | order（購入者・配送先を含む）・amounts・状態別rows・attention・permissions。payment_in_progress/abandonedはrowsが空。productNetはorder明細の正味額、行返金は成功商品返金だけ、送料と負を含む調整額は成功ヘッダから直接合算 |
+| `list_admin_order_item_state_history(uuid,uuid)` | 注文の明細イベントだけをcreated_at DESC→idで最大301行。callerは300行に切り、301行目でtruncatedを判断する。actor NULLは自動。発送票と発注書には番号、allocation_swapには理由と相手注文IDを付ける |
+
+絞り込みはdateFrom/dateTo（日本時間YYYY-MM-DD、開始≦終了）、orderNumber、customer、email、product、color、size、statuses（12状態から0〜12個）、attention（boolean）だけ。attention=trueは未解決の要対応がある注文だけに絞る。attention=falseと未指定は要対応による絞り込みをしない（一覧・CSV共通）。語はtrim後1〜200字、部分一致はILIKEでバックスラッシュ・%・_をエスケープする。注文IDが `^pi_[A-Za-z0-9_]{1,197}$` に大小を問わず合う時は決済IDの前方一致、それ以外はORD-を除いた16進とハイフンの注文UUID前方一致。商品条件は同じ明細が全条件に合う注文を候補にし、行でも同じ条件を当てる。要対応は未解決のpayment_exceptions、未確認review、発送の未解決attentionのどれか。
+
+並びは注文日DESC→order_id→order_item_id→status_rank→最初の区間。rankはunpaid(1)からreturned(12)まで既存の管理用の定義順。商品額と返金の式・交換品の裁定は [データ設計](../../03_BasicDesign/data/er.md) のG4B節のとおり。処理中と失敗の返金は行に付けない。
+
+capの試験設定は `app.group_g_list_cap_orders` と `app.group_g_export_cap_rows`。取引内SET LOCALで既定より下げる場合だけ効き、空・不正整数・0以下・上げる値は既定5000/20000として扱う。エラーは引数不正 `GROUP_G_ARGUMENT_INVALID / 22023`、権限なし `GROUP_G_FORBIDDEN / 42501`、詳細/履歴の注文不在 `GROUP_G_ORDER_NOT_FOUND / P0002`、CSV上限 `GROUP_G_EXPORT_TOO_LARGE / 22023`。検索語・顧客情報・生のDBエラーはログや報告へ出さない。
 
 対応領域は[ADMINの注文管理・要対応・要確認](../pages/16_admin.md)。管理者という参加者名は操作を行う利用者を示す。実際の許可条件は各APIの認可による。
 
