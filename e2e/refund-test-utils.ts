@@ -246,7 +246,7 @@ export function newRefundRouteState(materials: RefundMaterials): RefundRouteStat
 
 /**
  * その注文の返金の材料（GET）・返金（POST）・確かめ直し（POST …/confirm）・取消（POST …/status）の窓口を差し替える。
- * 後から登録した窓口が先に効くので、管理画面の窓口（mockAdminSession・mockOrderList）を先に呼んでから、これを呼ぶ。
+ * 後から登録した窓口が先に効くので、管理画面の窓口（mockAdminSession・mockOrderDetail）を先に呼んでから、これを呼ぶ。
  */
 export async function mockRefundRoutes(page: Page, orderId: string, state: RefundRouteState): Promise<void> {
   await page.route(`**/api/admin/orders/${orderId}/refund`, async (route) => {
@@ -298,26 +298,7 @@ export function paidCancelDialogTitle(orderId: string): string {
   return `注文をキャンセルする（注文 ${orderNumberOf(orderId)}）`;
 }
 
-/** 一覧のその注文の行の「返金」を押して、返金の画面を開く */
-export async function openRefundDialog(page: Page, orderId: string): Promise<Locator> {
-  await page.getByRole('row', { name: new RegExp(orderId) }).getByRole('button', { name: '返金', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: refundDialogTitle(orderId), exact: true });
-  await expect(dialog).toBeVisible();
-  return dialog;
-}
-
-/** 一覧のその注文の行の「キャンセル」を押して、支払い済みのキャンセルの画面を開く */
-export async function openPaidCancelDialog(page: Page, orderId: string): Promise<Locator> {
-  await page
-    .getByRole('row', { name: new RegExp(orderId) })
-    .getByRole('button', { name: 'キャンセル', exact: true })
-    .click();
-  const dialog = page.getByRole('dialog', { name: paidCancelDialogTitle(orderId), exact: true });
-  await expect(dialog).toBeVisible();
-  return dialog;
-}
-
-/** 詳細の「支払いと返金」から開く。旧一覧用の2関数は Task 12 の利用者向けに残す。 */
+/** 注文の詳細頁の「支払いと返金」の「返金」を押して、返金の画面を開く */
 export async function openDetailRefundDialog(page: Page, orderId: string): Promise<Locator> {
   await detailSection(page, '支払いと返金').getByRole('button', { name: '返金', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: refundDialogTitle(orderId), exact: true });
@@ -325,6 +306,7 @@ export async function openDetailRefundDialog(page: Page, orderId: string): Promi
   return dialog;
 }
 
+/** 注文の詳細頁の「支払いと返金」の「キャンセル」を押して、支払い済みのキャンセルの画面を開く */
 export async function openDetailPaidCancelDialog(page: Page, orderId: string): Promise<Locator> {
   await detailSection(page, '支払いと返金').getByRole('button', { name: 'キャンセル', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: paidCancelDialogTitle(orderId), exact: true });

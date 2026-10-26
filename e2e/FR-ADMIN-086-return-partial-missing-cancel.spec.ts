@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import { expectDbError, recordRefundResult, variantStockState, withLocalDb } from './order-email-test-utils';
-import { UUID_PATTERN, fulfillJson, mockOrderList, openOrderTab, viewports } from './order-fulfillment-test-utils';
+import { UUID_PATTERN, adminOrderDetail, fulfillJson, mockOrderDetail, openOrderDetail, viewports } from './order-fulfillment-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
 import {
   RETURN_TEXT,
@@ -23,9 +23,9 @@ import {
   lineProgressOf,
   mockReturnRoutes,
   newReturnRouteState,
+  openDetailReturnsDialog,
   openOperationDialog,
   openReceiveDialog,
-  openReturnsDialog,
   orderWithReturns,
   receiptRows,
   receiveReturnInDb,
@@ -55,13 +55,13 @@ const SECOND_RETURN_ID = 'b6b2c3d4-0000-4000-8000-000000000002';
 const LABEL = returnLabelOf(ORDER_ID, 1);
 const SECOND_LABEL = returnLabelOf(ORDER_ID, 2);
 
-/** 一覧の窓口と返品の窓口を差し替えて、ORDER タブを開く。返品の欄に出す返品を渡す */
-async function openList(page: Page, returns: OrderReturnDetail[], summary: Parameters<typeof returnSummaryOf>[0]) {
+/** 詳細の窓口と返品の窓口を差し替えて、注文の詳細頁を開く。返品の欄に出す返品を渡す */
+async function openDetail(page: Page, returns: OrderReturnDetail[], summary: Parameters<typeof returnSummaryOf>[0]) {
   const state: ReturnRouteState = newReturnRouteState({ orderId: ORDER_ID, returns, returnableUnits: 0, refundableAmount: 20_000 });
   await mockAdminSessionAs(page, 'admin');
-  await mockOrderList(page, () => [orderWithReturns({ id: ORDER_ID, summary: returnSummaryOf(summary) })]);
+  await mockOrderDetail(page, () => adminOrderDetail(orderWithReturns({ id: ORDER_ID, summary: returnSummaryOf(summary) })));
   await mockReturnRoutes(page, ORDER_ID, state);
-  await openOrderTab(page);
+  await openOrderDetail(page, ORDER_ID);
   return state;
 }
 
@@ -72,14 +72,14 @@ async function openReceive(page: Page) {
     id: RETURN_ID,
     lines: [returnLineOf({ id: LINE, orderItemId: SHIRT, quantity: 2, itemName: 'E2Eシャツ' })],
   });
-  const state = await openList(page, [detail], {
+  const state = await openDetail(page, [detail], {
     orderId: ORDER_ID,
     displayStatus: 'in_progress',
     marks: ['awaiting_items'],
     nextAction: 'receive',
     hasReturnable: false,
   });
-  await openReturnsDialog(page, ORDER_ID, '受け取る');
+  await openDetailReturnsDialog(page, ORDER_ID, '受け取る');
   const dialog = await openReceiveDialog(page, ORDER_ID, LABEL);
   return { state, dialog };
 }
@@ -146,8 +146,8 @@ for (const viewport of viewports) {
         marks: [],
         lines: [returnLineOf({ id: SECOND_LINE, orderItemId: SHIRT, quantity: 1, itemName: 'E2Eシャツ', progress: { restocked: 1 } })],
       });
-      const state = await openList(page, [withMissing, complete], { orderId: ORDER_ID, displayStatus: 'returned', hasReturnable: false });
-      const returns = await openReturnsDialog(page, ORDER_ID);
+      const state = await openDetail(page, [withMissing, complete], { orderId: ORDER_ID, displayStatus: 'returned', hasReturnable: false });
+      const returns = await openDetailReturnsDialog(page, ORDER_ID);
 
       await expect(returnCard(returns, LABEL).getByRole('button', { name: '開き直す', exact: true })).toBeVisible();
       await expect(returnCard(returns, SECOND_LABEL).getByRole('button', { name: '開き直す', exact: true })).toHaveCount(0);
@@ -179,7 +179,7 @@ for (const viewport of viewports) {
         receipts: [{ id: randomUUID(), kind: 'receive', refundChoice: 'consult', createdAt: '2026-10-11T01:00:00.000Z', actorEmail: 'admin@example.com' }],
         lines: [returnLineOf({ id: SECOND_LINE, orderItemId: SHIRT, quantity: 2, itemName: 'E2Eシャツ', progress: { restocked: 1, refundWaiting: 1 } })],
       });
-      const state = await openList(page, [untouched, received], {
+      const state = await openDetail(page, [untouched, received], {
         orderId: ORDER_ID,
         displayStatus: 'in_progress',
         marks: ['awaiting_items'],
@@ -190,7 +190,7 @@ for (const viewport of viewports) {
         state.returns = state.returns.filter((item) => item.id !== post.returnId);
         await fulfillJson(route, { data: { returnStatus: 'cancelled' } });
       };
-      const returns = await openReturnsDialog(page, ORDER_ID, '受け取る');
+      const returns = await openDetailReturnsDialog(page, ORDER_ID, '受け取る');
 
       await expect(returnCard(returns, LABEL).getByRole('button', { name: RETURN_TEXT.cancelTitle, exact: true })).toBeVisible();
       await expect(returnCard(returns, SECOND_LABEL).getByRole('button', { name: RETURN_TEXT.cancelTitle, exact: true })).toHaveCount(0);
@@ -217,13 +217,13 @@ for (const viewport of viewports) {
         receipts: [{ id: randomUUID(), kind: 'receive', refundChoice: 'consult', createdAt: '2026-10-11T01:00:00.000Z', actorEmail: 'admin@example.com' }],
         lines: [returnLineOf({ id: LINE, orderItemId: SHIRT, quantity: 2, itemName: 'E2Eシャツ', progress: { pendingInspection: 2, refundWaiting: 2 } })],
       });
-      const state = await openList(page, [pending], {
+      const state = await openDetail(page, [pending], {
         orderId: ORDER_ID,
         displayStatus: 'in_progress',
         marks: ['pending_inspection'],
         hasReturnable: false,
       });
-      const returns = await openReturnsDialog(page, ORDER_ID);
+      const returns = await openDetailReturnsDialog(page, ORDER_ID);
       await expect(returnCard(returns, LABEL).getByText('検品待ち 2点')).toBeVisible();
 
       const dialog = await openOperationDialog(page, ORDER_ID, LABEL, '検品を終える', RETURN_TEXT.inspectTitle(LABEL));

@@ -44,25 +44,7 @@ export async function mockAdminSession(page: Page): Promise<void> {
   await page.route('**/api/admin/kpi', (route) => fulfillJson(route, { error: 'not mocked' }, 500));
 }
 
-/**
- * 注文の一覧の窓口。読まれた URL を記録し、その時の一覧を返す。
- * 注文の番号つきの窓口（…/orders/{id}/…）と取り違えないよう、パスが一覧だけの時に当てる。
- * 後から登録した窓口が先に効くので、これを先に呼んでから、注文ごとの窓口を登録する。
- */
-export async function mockOrderList(page: Page, current: () => OrderItem[]): Promise<{ urls: string[] }> {
-  const urls: string[] = [];
-  await page.route(
-    (url) => url.pathname === '/api/admin/orders',
-    (route) => {
-      urls.push(route.request().url());
-      const orders = current();
-      return fulfillJson(route, { data: orders, pagination: { page: 1, pageSize: 20, total: orders.length, totalPages: 1 } });
-    },
-  );
-  return { urls };
-}
-
-/** 新しい一覧の窓口。query の有無に関わらず、route と同じ応答全体をその時点の current から返す。 */
+/** 注文一覧表の窓口（GET /api/admin/order-items）。query の有無に関わらず、route と同じ応答全体をその時点の current から返す。 */
 export type OrderItemListResponse = {
   data: AdminOrderItemPage;
   returnAttention: Awaited<ReturnType<typeof countReturnAttention>>;
@@ -86,13 +68,7 @@ export async function mockOrderItemList(page: Page, current: () => OrderItemList
   return { urls };
 }
 
-/** 管理画面を開いて ORDER タブにする */
-export async function openOrderTab(page: Page): Promise<void> {
-  await page.goto('/admin');
-  await page.getByRole('button', { name: 'ORDER' }).click();
-}
-
-/** 一覧の商品の行（既定は、在庫の品1つが発送準備中） */
+/** 注文の商品の行（既定は、在庫の品1つが発送準備中） */
 export function orderLine(overrides: Partial<OrderLineItem> = {}): OrderLineItem {
   return {
     id: 'c1000000-0000-4000-8000-000000000001',
@@ -108,7 +84,10 @@ export function orderLine(overrides: Partial<OrderLineItem> = {}): OrderLineItem
   };
 }
 
-/** 一覧の注文の行（既定は、発送できる状態の入金済みの注文） */
+/**
+ * 注文の1件（OrderItem。既定は、発送できる状態の入金済みの注文）。G-4 で旧い注文の一覧は撤去したので、
+ * これは詳細の summary の元（adminOrderDetail が包む）として使う。
+ */
 export function adminOrder(overrides: Partial<OrderItem> & { id: string }): OrderItem {
   const items = overrides.items ?? [orderLine()];
   const quantity = items.reduce((sum, item) => sum + item.quantity, 0);

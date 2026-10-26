@@ -5,20 +5,20 @@ import {
 import {
   acceptedRefund, materialLineOf, refundMaterialsOf, newRefundRouteState, mockRefundRoutes, quantityInput,
 } from './refund-test-utils';
-import { fulfillJson, orderNumberOf } from './order-fulfillment-test-utils';
+import { detailSection, fulfillJson, openOrderDetail, orderNumberOf } from './order-fulfillment-test-utils';
 import {
-  test, expect, viewports, unshipped, cancelDb, cancelScene, openCancel, expectMails, noOverflow, type RR,
+  test, expect, viewports, unshipped, cancelDb, cancelScene, openDetailCancel, expectMails, noOverflow, type RR,
 } from './return-request-test-utils';
 
 test.use({ trace: 'off' });
-async function refundScene(page: Page, rr: RR, failResolve = false) {
+async function refundScene(page: Page, rr: RR, failResolve = false, landing: 'detail' | 'list' = 'detail') {
   await rr.db.query("update public.shop_return_settings set request_types='returns_and_cancellations' where id=1");
   const fx = await unshipped(rr);
   await createFulfillment(rr.db, fx.orderId, fx.actorId, {
     lines: [{ orderItemId: fx.orderItemIds[0], quantity: 1 }], trackingNumber: 'E2E-PARTIAL', notify: false,
   });
   const requestId = await cancelDb(rr, fx.orderId, fx.orderItemIds[0]);
-  const state = await cancelScene(page, rr, fx);
+  const state = await cancelScene(page, rr, fx, 'admin', landing);
   state.resolveFails = failResolve;
   const refund = newRefundRouteState(refundMaterialsOf({
     orderId: fx.orderId, lines: [materialLineOf({
@@ -39,10 +39,14 @@ for (const viewport of viewports) {
 
     test('一覧の一行で絞り、品を外すと申し込みの数で返金が開き、返金後に解決する', async ({ page, rr }) => {
       // FREQ-481-AC-04, FREQ-481-AC-05, FREQ-481-AC-06
-      const { fx, requestId, state, refund } = await refundScene(page, rr);
+      const { fx, requestId, state, refund } = await refundScene(page, rr, false, 'list');
+      // 注文一覧表の上の一行の数を押すと、状態の絞り込み（cancel_requested）だけで一覧を読み直す
       await page.getByTestId('return-attention').getByRole('button', { name: 'キャンセルの申し込み 1件', exact: true }).click();
-      await expect.poll(() => state.urls.some((url) => new URL(url).searchParams.get('cancelRequest') === 'open')).toBe(true);
-      const request = await openCancel(page, fx.orderId);
+      await expect.poll(() => state.urls.some((url) => new URL(url).searchParams.getAll('status').join(',') === 'cancel_requested')).toBe(true);
+      // 申し込みの画面は、詳細頁の ?open=cancel-request から開く（旧い一覧の行のボタンは無い）
+      await openOrderDetail(page, fx.orderId, '?open=cancel-request');
+      const request = page.getByRole('dialog', { name: 'キャンセルの申し込み（' + orderNumberOf(fx.orderId) + '）', exact: true });
+      await expect(request).toBeVisible();
       await expect(request.getByTestId('cancel-request-item')).toHaveAttribute('data-request-id', requestId);
       await expect(request).toContainText('E2Eシャツ（ホワイト / M） × 1（未発送 2）');
       await request.getByRole('button', { name: '品を外す（返金・キャンセルの画面を開く）', exact: true }).click();
@@ -57,6 +61,10 @@ for (const viewport of viewports) {
       expect(resolved.status).toBe('resolved');
       expect(state.posts.find((post) => post.action === 'resolve')!.body).toEqual({ refundId: resolved.resolved_refund_id, orderCancelled: false });
       await expect(page.getByRole('status').filter({ hasText: 'キャンセルの申し込みを解決しました。' })).toBeVisible();
+      await expect(detailSection(page, '返品とキャンセルの申し込み').getByRole('button', { name: 'キャンセルの申し込み', exact: true })).toHaveCount(0);
+      // 一覧へ戻ると、上の一行の「キャンセルの申し込み 1件」も消えている（件数の行が出てから確かめる）
+      await page.getByRole('link', { name: '注文一覧表へ戻る', exact: true }).click();
+      await expect(page.getByTestId('order-item-count')).toBeVisible();
       await expect(page.getByTestId('return-attention').getByRole('button', { name: 'キャンセルの申し込み 1件', exact: true })).toHaveCount(0);
       await noOverflow(page);
     });
@@ -68,7 +76,7 @@ for (const viewport of viewports) {
       const fx = await unshipped(rr);
       const id = await cancelDb(rr, fx.orderId, fx.orderItemIds[0]);
       const state = await cancelScene(page, rr, fx);
-      await (await openCancel(page, fx.orderId)).getByRole('button', { name: 'お断りする', exact: true }).click();
+      await (await openDetailCancel(page, fx.orderId)).getByRole('button', { name: 'お断りする', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'お断りする（' + orderNumberOf(fx.orderId) + '）', exact: true });
       await dialog.getByRole('combobox', { name: 'お断りの理由（お客様には見えません）', exact: true }).selectOption('other');
       await expect(dialog.getByRole('button', { name: 'お断りする', exact: true })).toBeDisabled();
@@ -88,7 +96,7 @@ for (const viewport of viewports) {
       const id = await cancelDb(rr, fx.orderId, fx.orderItemIds[0]);
       const before = Number((await rr.db.query('select count(*) from private.order_email_outbox where order_id=$1', [fx.orderId])).rows[0].count);
       const state = await cancelScene(page, rr, fx);
-      await (await openCancel(page, fx.orderId)).getByRole('button', { name: '解決済みにする', exact: true }).click();
+      await (await openDetailCancel(page, fx.orderId)).getByRole('button', { name: '解決済みにする', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: '解決済みにする（' + orderNumberOf(fx.orderId) + '）', exact: true });
       await expect(dialog).toContainText('注文を変えず、メールも送らずに閉じます。');
       expect(state.posts.length).toBe(0);
@@ -113,7 +121,7 @@ for (const viewport of viewports) {
           orderId: fx.orderId, lines: [materialLineOf({ orderItemId: fx.orderItemIds[0], name: 'E2Eシャツ', quantity: 3, itemPrice: 5000 })],
         }));
         await mockRefundRoutes(page, fx.orderId, refund);
-        await (await openCancel(page, fx.orderId)).getByRole('button', { name: '品を外す（返金・キャンセルの画面を開く）', exact: true }).click();
+        await (await openDetailCancel(page, fx.orderId)).getByRole('button', { name: '品を外す（返金・キャンセルの画面を開く）', exact: true }).click();
         // 見出しには注文番号が付く（J-12）
         const dialog = page.getByRole('dialog', { name: title + '（注文 ' + orderNumberOf(fx.orderId) + '）', exact: true });
         await expect(dialog).toBeVisible();
@@ -132,7 +140,7 @@ for (const viewport of viewports) {
     test('返金後の解決だけが失敗した時は注文の返金を保ち、案内に従って解決済みにできる', async ({ page, rr }) => {
       // FREQ-481-AC-07
       const { fx, requestId, state } = await refundScene(page, rr, true);
-      await (await openCancel(page, fx.orderId)).getByRole('button', { name: '品を外す（返金・キャンセルの画面を開く）', exact: true }).click();
+      await (await openDetailCancel(page, fx.orderId)).getByRole('button', { name: '品を外す（返金・キャンセルの画面を開く）', exact: true }).click();
       await page.getByRole('dialog', { name: '返金（注文 ' + orderNumberOf(fx.orderId) + '）', exact: true })
         .getByRole('button', { name: '￥5,000 を返金する', exact: true }).click();
       await expect(page.getByRole('alert').filter({
@@ -140,7 +148,7 @@ for (const viewport of viewports) {
       })).toBeVisible();
       expect((await rr.db.query('select status from public.order_cancel_requests where id=$1', [requestId])).rows[0].status).toBe('requested');
       expect(Number((await rr.db.query("select count(*) from public.order_refunds where order_id=$1 and status='succeeded'", [fx.orderId])).rows[0].count)).toBe(1);
-      await (await openCancel(page, fx.orderId)).getByRole('button', { name: '解決済みにする', exact: true }).click();
+      await (await openDetailCancel(page, fx.orderId)).getByRole('button', { name: '解決済みにする', exact: true }).click();
       await page.getByRole('dialog', { name: /^解決済みにする（/ }).getByRole('button', { name: '解決済みにする', exact: true }).click();
       await expect.poll(() => state.current[0].status).toBe('closed');
     });

@@ -220,19 +220,33 @@ for (const viewport of viewports) {
         // 原本は、クリックの中で空のタブを開き（window.open('', '_blank')。opener は切る）、署名つきリンクが取れてからそのタブを移して開く。
         // 表示用の PDF を画面に描けない headless の Chromium では、そのタブの移動が保存（download）になる。その事象は、新しいタブか開いた頁のどちらかに出るので、両方で受ける。
         const popupPromise = page.context().waitForEvent('page');
-        const popupDownload = new Promise<'download'>((resolve) => {
-          page.context().once('page', (tab) => { tab.once('download', () => resolve('download')); });
-        });
+        // 開いたタブの保存（download）。保存も移動も起きない時に、いつまでも待ち続けて試験全体の時間切れまで進まないよう、20秒で失敗にする時計と競わせる
+        let popupDownloadTimer: ReturnType<typeof setTimeout> | undefined;
+        const popupDownload = Promise.race([
+          new Promise<'download'>((resolve) => {
+            page.context().once('page', (tab) => { tab.once('download', () => resolve('download')); });
+          }),
+          new Promise<never>((_resolve, reject) => {
+            popupDownloadTimer = setTimeout(() => reject(new Error('開いたタブで20秒以内に保存（download）が起きなかった')), 20_000);
+          }),
+        ]).finally(() => clearTimeout(popupDownloadTimer));
         const downloadPromise = page.waitForEvent('download', { timeout: 20_000 }).then(() => 'download' as const);
+        // 下の Promise.any に渡る前に試験が落ちても、20秒後の失敗が誰にも受けられず同じ worker の別の試験を赤くしないよう、受け手を付けておく（Promise.any は元の約束の失敗をそのまま受ける）
+        popupDownload.catch(() => undefined);
+        downloadPromise.catch(() => undefined);
         await rows.first().getByRole('button', { name: '原本を見る', exact: true }).click();
         const popup = await popupPromise;
-        // どちらか一方が起きればよい（Promise.any: 先に失敗した方が結果を決めない）。どちらも起きなければ AggregateError
+        // どちらか一方が起きればよい（Promise.any: 先に失敗した方が結果を決めない）。どちらも起きなければ AggregateError で、その理由を失敗の文に載せる
+        let failure = '';
         const opened = await Promise.any([
           downloadPromise,
           popupDownload,
           popup.waitForURL(/\/storage\/v1\/object\/sign\//, { timeout: 20_000 }).then(() => 'loaded' as const),
-        ]).catch(() => 'none' as const);
-        expect(opened === 'download' || opened === 'loaded').toBe(true);
+        ]).catch((error: unknown) => {
+          failure = error instanceof AggregateError ? error.errors.map((reason) => (reason instanceof Error ? reason.message.split('\n')[0] : String(reason))).join(' / ') : String(error);
+          return 'none' as const;
+        });
+        expect(opened === 'download' || opened === 'loaded', `原本を見るで保存も移動も起きなかった: ${failure}`).toBe(true);
         // そのリンクが原本を返す。リンクは Playwright の手順の題・報告・trace に出ないよう、Node の fetch で読む（URL は出力しない）
         expect(signed.length).toBeGreaterThan(0);
         const original = await fetch(signed[0]);

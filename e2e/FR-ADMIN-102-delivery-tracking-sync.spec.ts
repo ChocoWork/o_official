@@ -19,7 +19,7 @@ import {
   jstMonthDay,
   mockAdminDeliveryBridge,
   newDeliveryBridgeLog,
-  openOrderHistory,
+  orderDetailHistory,
   pairFor,
   pollMails,
   pollWithMinuteJob,
@@ -34,7 +34,7 @@ import {
   setTrackingViaFunction,
   withDeliveryScenario,
 } from './delivery-tracking-test-utils';
-import { openOrderTab } from './order-fulfillment-test-utils';
+import { openOrderDetail } from './order-fulfillment-test-utils';
 import { formatJst } from './refund-test-utils';
 
 const OUT_FOR_DELIVERY_SUBJECT = '商品を配達中です';
@@ -120,19 +120,19 @@ for (const viewport of deliveryViewports) {
         expect(methods.slice(0, 2)).toEqual(['register', 'gettrackinfo']);
         expect(methods.slice(2).every((method) => method === 'gettrackinfo')).toBe(true);
 
-        // 管理画面の履歴: 配達の出来事が時間の順に並び、届いた日は出どころ「追跡」、追跡の登録は「止めた」
+        // 管理画面の履歴（注文の詳細の「変更履歴」の欄）: 配達の出来事が時間の順に並び、届いた日は出どころ「追跡」、追跡の登録は「止めた」
         await mockAdminDeliveryBridge(page, { client, orderIds: [fx.orderId], actor, log: newDeliveryBridgeLog() });
-        await openOrderTab(page);
-        const dialog = await openOrderHistory(page, fx.orderId);
-        const row = fulfillmentRow(dialog, 1);
+        await openOrderDetail(page, fx.orderId);
+        const history = await orderDetailHistory(page);
+        const row = fulfillmentRow(history, 1);
         await expect(row.getByText(`お届け日 ${jstMonthDay(delivered.delivered_at as Date)}（追跡）`, { exact: true })).toBeVisible();
         await expect(row.getByText('配送の状況（1回目）', { exact: true })).toBeVisible();
         await expect(row.getByText('止めた', { exact: true })).toBeVisible();
         await expect(row.getByText(`最後の更新 ${formatJst((delivered.delivery_status_at as Date).toISOString())}`, { exact: true })).toBeVisible();
         // 出来事の4行（受付済み・輸送中・配達中・配達済み）＋発送の行の現在の状況
-        await expect(dialog.getByRole('listitem').filter({ hasText: '配送の状況（1回目）' })).toHaveCount(5);
+        await expect(history.getByRole('listitem').filter({ hasText: '配送の状況（1回目）' })).toHaveCount(5);
         await expectNoHorizontalOverflow(page);
-        await expectDialogFits(page, dialog);
+        await expectDialogFits(page, history);
       });
     });
 
@@ -204,14 +204,14 @@ for (const viewport of deliveryViewports) {
         expect(callMethods(settled)).not.toContain('stoptrack');
         expect(callMethods(settled)).not.toContain('retrack');
 
-        // 管理画面の履歴にも、出来事が1回ずつだけ出る（受付済み・配達中・配達済みの3行＋発送の行の現在の状況）。各幅ではみ出し・見切れが無い
+        // 管理画面の履歴（注文の詳細の「変更履歴」の欄）にも、出来事が1回ずつだけ出る（受付済み・配達中・配達済みの3行＋発送の行の現在の状況）。各幅ではみ出し・見切れが無い
         await mockAdminDeliveryBridge(page, { client, orderIds: [fx.orderId], actor, log: newDeliveryBridgeLog() });
-        await openOrderTab(page);
-        const dialog = await openOrderHistory(page, fx.orderId);
-        await expect(fulfillmentRow(dialog, 1).getByText('止めた', { exact: true })).toBeVisible();
-        await expect(dialog.getByRole('listitem').filter({ hasText: '配送の状況（1回目）' })).toHaveCount(4);
+        await openOrderDetail(page, fx.orderId);
+        const history = await orderDetailHistory(page);
+        await expect(fulfillmentRow(history, 1).getByText('止めた', { exact: true })).toBeVisible();
+        await expect(history.getByRole('listitem').filter({ hasText: '配送の状況（1回目）' })).toHaveCount(4);
         await expectNoHorizontalOverflow(page);
-        await expectDialogFits(page, dialog);
+        await expectDialogFits(page, history);
       });
     });
   });

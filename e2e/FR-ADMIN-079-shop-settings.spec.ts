@@ -15,7 +15,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { uniqueSuffix } from '../tests/integration/db/helpers/order-fixtures';
 import type { ShopSettings, UpdateShopSettingsRequest } from '@/lib/orders/refund/refund-types';
 import { createOrderWithLines, uniqueEmail, withLocalDb } from './order-email-test-utils';
-import { fulfillJson, mockOrderList, viewports } from './order-fulfillment-test-utils';
+import { mockOrderAttention } from './order-admin-test-utils';
+import { fulfillJson, viewports } from './order-fulfillment-test-utils';
 import { formatJst, mockAdminSessionAs } from './refund-test-utils';
 
 const AUTO_REFUND_NAME = '取り消した注文に届いた入金を、自動で全額返金する';
@@ -58,7 +59,8 @@ async function mockApis(
     loadFails: options.loadFails ?? false,
   };
   await mockAdminSessionAs(page, options.role ?? 'admin');
-  await mockOrderList(page, () => []);
+  // ORDER タブは注文一覧表への入口だけ（G-4）。サイドナビの ORDER のバッジが読む要対応の窓口だけを空にしておく
+  await mockOrderAttention(page);
   await page.route('**/api/admin/settings/shop', async (route) => {
     if (route.request().method() === 'GET') {
       if (state.loadFails) {
@@ -123,6 +125,8 @@ for (const viewport of viewports) {
       await expect(menu.getByRole('button', { name: 'ORDER' })).toHaveAttribute('aria-current', 'page');
       await expect(menu.getByRole('button', { name: 'SETTINGS' })).toHaveCount(0);
       await expect(page.getByRole('heading', { name: 'ショップの設定' })).toHaveCount(0);
+      // 戻った先の ORDER は、注文一覧表への入口だけの画面
+      await expect(page.getByRole('navigation', { name: '注文メニュー', exact: true }).getByRole('link', { name: '注文一覧表', exact: true })).toHaveAttribute('href', '/admin/orders');
     });
 
     test('題と欄の見出しが出て、最初の値は①がオン・②がオフで、最後に変えた人はまだ無い', async ({ page }) => {

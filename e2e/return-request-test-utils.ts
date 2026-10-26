@@ -17,7 +17,11 @@ import {
   runWorkerUntil, runWorkerOnce, recordRefundResult, type E2eOrderLine,
 } from './order-email-test-utils';
 import { seedE2eRestock, seedE2eShipment, withGroupG1Material } from './group-g1-test-utils';
-import { detailSection, fulfillJson, openOrderTab, orderNumberOf, orderLine, viewports } from './order-fulfillment-test-utils';
+import { mockOrderAttention, openOrderList } from './order-admin-test-utils';
+import {
+  SUPPORTER_DETAIL_PERMISSIONS, adminOrderDetail, detailSection, emptyOrderItemList, fulfillJson, mockOrderDetail,
+  mockOrderItemList, openOrderDetail, orderNumberOf, orderLine, viewports,
+} from './order-fulfillment-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
 import {
   createShippedOrder, receiveReturnInDb, returnLabelOf, SHOP_ALERT_TO,
@@ -486,14 +490,15 @@ export async function adminScene(page: Page, rr: RR, fx: ReturnFixture, role: 'a
   const posts = { approve: [] as JsonBody[], decline: [] as JsonBody[] };
   const refresh = async () => { state.returns = await listOrderReturns(rr.client, fx.orderId); };
   await mockAdminSessionAs(page, role);
-  await page.route((url) => url.pathname === '/api/admin/orders', (route) => fulfillJson(route, {
-    data: [orderWithReturns({ id: fx.orderId, canRefund: role === 'admin',
+  // 注文の詳細頁（/admin/orders/[id]）の窓口。サポートの人の旗は返金なし
+  await mockOrderDetail(page, () => adminOrderDetail({
+    ...orderWithReturns({ id: fx.orderId, canRefund: role === 'admin',
       summary: returnSummaryOf({ orderId: fx.orderId,
         displayStatus: state.returns.some((item) => item.status === 'requested') ? 'requested' : 'in_progress',
         nextAction: state.returns.some((item) => item.status === 'requested') ? 'review_request' : 'receive',
         hasReturnable: false }),
-    })],
-    pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    }),
+    ...(role === 'supporter' ? { permissions: SUPPORTER_DETAIL_PERMISSIONS } : {}),
   }));
   await mockReturnRoutes(page, fx.orderId, state);
   state.answerAction = async (route, action, post) => {
@@ -544,23 +549,29 @@ export async function adminScene(page: Page, rr: RR, fx: ReturnFixture, role: 'a
     await refresh();
     await fulfillJson(route, { data: { returnStatus: action === 'approve' ? 'open' : 'declined' } });
   });
-  await openOrderTab(page);
+  await openOrderDetail(page, fx.orderId);
   return { state, posts };
 }
 export async function openReview(page: Page, fx: ReturnFixture, number: number) {
-  await page.getByRole('row', { name: new RegExp(fx.orderId) })
-    .getByRole('button', { name: '申し込みを確かめる', exact: true }).click();
+  await detailSection(page, '返品とキャンセルの申し込み').getByRole('button', { name: '申し込みを確かめる', exact: true }).click();
   const dialog = page.getByRole('dialog', {
     name: '返品の申し込みを確かめる（' + returnLabelOf(fx.orderId, number) + '）', exact: true,
   });
   await expect(dialog).toBeVisible();
   return dialog;
 }
-export async function cancelScene(page: Page, rr: RR, fx: Awaited<ReturnType<typeof unshipped>>, role: 'admin' | 'supporter' = 'admin') {
+/**
+ * キャンセルの申し込みの場面。窓口（詳細・注文一覧表・申し込み・解決など）を差し替えたあと、landing の頁を開く。
+ * 'detail' は注文の詳細頁、'list' は注文一覧表（上の一行の「キャンセルの申し込み N件」を押す試験用）。state.urls は一覧の窓口の読み出しの URL
+ */
+export async function cancelScene(
+  page: Page, rr: RR, fx: Awaited<ReturnType<typeof unshipped>>, role: 'admin' | 'supporter' = 'admin', landing: 'detail' | 'list' = 'detail',
+) {
   const state = {
     current: await listOrderCancelRequests(rr.client, fx.orderId),
     urls: [] as string[], posts: [] as Array<{ action: string; body: JsonBody }>, resolveFails: false,
   };
+  const isOpen = () => state.current.some((item) => item.status === 'requested');
   const totals = async () => {
     const rows = (await rr.db.query('select * from public.list_order_line_fulfillment(array[$1::uuid])', [fx.orderId])).rows;
     return {
@@ -569,18 +580,19 @@ export async function cancelScene(page: Page, rr: RR, fx: Awaited<ReturnType<typ
     };
   };
   await mockAdminSessionAs(page, role);
-  await page.route((url) => url.pathname === '/api/admin/orders', (route) => {
-    state.urls.push(route.request().url());
-    const open = state.current.some((item) => item.status === 'requested');
-    return fulfillJson(route, {
-      data: [orderWithReturns({
-        id: fx.orderId, orderStatus: 'paid', canRefund: role === 'admin', cancelRequestOpen: open,
-        items: [orderLine({ id: fx.orderItemIds[0], name: 'E2Eシャツ', quantity: 3, readyUnshipped: 2, shipped: 1 })],
-        summary: returnSummaryOf({ orderId: fx.orderId, displayStatus: null, hasReturnable: false }),
-      })],
-      pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 }, cancelRequestAttention: open ? 1 : 0,
-    });
-  });
+  await mockOrderAttention(page);
+  // 注文の詳細頁（/admin/orders/[id]）の窓口。開いている申し込みがあれば「キャンセルの申し込み」の入口が出る
+  await mockOrderDetail(page, () => adminOrderDetail({
+    ...orderWithReturns({
+      id: fx.orderId, orderStatus: 'paid', canRefund: role === 'admin', cancelRequestOpen: isOpen(),
+      items: [orderLine({ id: fx.orderItemIds[0], name: 'E2Eシャツ', quantity: 3, readyUnshipped: 2, shipped: 1 })],
+      summary: returnSummaryOf({ orderId: fx.orderId, displayStatus: null, hasReturnable: false }),
+    }),
+    ...(role === 'supporter' ? { permissions: SUPPORTER_DETAIL_PERMISSIONS } : {}),
+  }));
+  // 注文一覧表の窓口。上の一行の「キャンセルの申し込み N件」は開いている申し込みがある間だけ出る
+  const list = await mockOrderItemList(page, () => ({ ...emptyOrderItemList(), cancelRequestAttention: isOpen() ? 1 : 0 }));
+  state.urls = list.urls;
   await page.route('**/api/admin/orders/' + fx.orderId + '/cancel-requests', async (route) => {
     const status = (await rr.db.query('select status::text from public.orders where id=$1', [fx.orderId])).rows[0].status;
     await fulfillJson(route, { data: { cancelRequests: state.current, orderStatus: status, ...await totals() } });
@@ -606,18 +618,12 @@ export async function cancelScene(page: Page, rr: RR, fx: Awaited<ReturnType<typ
     state.current = await listOrderCancelRequests(rr.client, fx.orderId);
     await fulfillJson(route, { data: { status: action === 'decline' ? 'declined' : action === 'close' ? 'closed' : 'resolved' } });
   });
-  await openOrderTab(page);
+  if (landing === 'list') await openOrderList(page);
+  else await openOrderDetail(page, fx.orderId);
   return state;
 }
-export async function openCancel(page: Page, orderId: string) {
-  await page.getByRole('row', { name: new RegExp(orderId) })
-    .getByRole('button', { name: 'キャンセルの申し込み', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'キャンセルの申し込み（' + orderNumberOf(orderId) + '）', exact: true });
-  await expect(dialog).toBeVisible();
-  return dialog;
-}
 
-/** 詳細用。旧一覧を開く bridge/openCancel は Task 12 の利用者のために変えない。 */
+/** 詳細頁の「返品とキャンセルの申し込み」の「キャンセルの申し込み」を押して、申し込みの画面を開く */
 export async function openDetailCancel(page: Page, orderId: string) {
   await detailSection(page, '返品とキャンセルの申し込み').getByRole('button', { name: 'キャンセルの申し込み', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'キャンセルの申し込み（' + orderNumberOf(orderId) + '）', exact: true });
@@ -658,9 +664,8 @@ export function applyReturnSettingsUpdate(current: ShopReturnSettings, update: S
 export async function settingsScene(page: Page) {
   const state = { settings: buildShopReturnSettings(), puts: [] as ShopReturnSettingsUpdate[] };
   await mockAdminSessionAs(page, 'admin');
-  await page.route((url) => url.pathname === '/api/admin/orders', (route) => fulfillJson(route, {
-    data: [], pagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
-  }));
+  // ORDER タブは注文一覧表への入口だけ（G-4）。サイドナビの ORDER のバッジが読む要対応の窓口だけを空にしておく
+  await mockOrderAttention(page);
   await page.route('**/api/admin/settings/shop', async (route) => {
     if (route.request().method() === 'PUT') {
       const body = route.request().postDataJSON() as { returns?: ShopReturnSettingsUpdate };

@@ -20,7 +20,7 @@ import {
   jstToday,
   mockAdminDeliveryBridge,
   newDeliveryBridgeLog,
-  openOrderHistory,
+  orderDetailHistory,
   pairFor,
   pollWithMinuteJob,
   readAttention,
@@ -33,7 +33,8 @@ import {
   setTrackingViaFunction,
   withDeliveryScenario,
 } from './delivery-tracking-test-utils';
-import { fulfillJson, mockOrderList, openOrderTab } from './order-fulfillment-test-utils';
+import { mockOrderAttention } from './order-admin-test-utils';
+import { fulfillJson, openOrderDetail } from './order-fulfillment-test-utils';
 import { formatJst, mockAdminSessionAs } from './refund-test-utils';
 import { expectSlipHeading, mockShippingUiBridge, noticeOf } from './shipping-test-utils';
 
@@ -153,13 +154,13 @@ for (const viewport of deliveryViewports) {
         expect((await readFulfillment(client, a.shipment.fulfillmentId)).delivery_status).toBe('failure');
         expect((await readEvents(client, a.shipment.fulfillmentId)).map((event) => event.status)).toEqual(['confirmed', 'failure']);
 
-        // 履歴は残る（追跡オフなので現在の状況の行は出さず、出来事の行だけが残る）
-        await openOrderTab(page);
-        const dialog = await openOrderHistory(page, a.orderId);
-        await expect(dialog.getByRole('listitem').filter({ hasText: '配送の状況（1回目）' })).toHaveCount(2);
-        await expect(dialog.getByText('問題あり', { exact: true })).toBeVisible();
+        // 履歴は残る（追跡オフなので現在の状況の行は出さず、出来事の行だけが残る）。注文の詳細の「変更履歴」の欄で確かめる
+        await openOrderDetail(page, a.orderId);
+        const history = await orderDetailHistory(page);
+        await expect(history.getByRole('listitem').filter({ hasText: '配送の状況（1回目）' })).toHaveCount(2);
+        await expect(history.getByText('問題あり', { exact: true })).toBeVisible();
         await expectNoHorizontalOverflow(page);
-        await expectDialogFits(page, dialog);
+        await expectDialogFits(page, history);
       });
     });
 
@@ -183,7 +184,8 @@ for (const viewport of deliveryViewports) {
         // 窓口の答えの見本: 保存済みの値のまま、鍵だけが未設定（keyConfigured=false）
         const puts: unknown[] = [];
         await mockAdminSessionAs(page, 'admin');
-        await mockOrderList(page, () => []);
+        // ORDER タブは注文一覧表への入口だけ（G-4）。サイドナビの ORDER のバッジが読む要対応の窓口だけを空にしておく
+        await mockOrderAttention(page);
         await page.route('**/api/admin/settings/shop', async (route) => {
           if (route.request().method() === 'PUT') puts.push(route.request().postDataJSON());
           await fulfillJson(route, {

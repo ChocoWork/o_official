@@ -61,7 +61,15 @@ import {
 } from './order-email-test-utils';
 import { withGroupG1Material } from './group-g1-test-utils';
 import { createTestMember, loginAsMember, type TestMember } from './member-session-helpers';
-import { adminOrder, detailSection, fulfillJson, mockAdminSession, orderNumberOf } from './order-fulfillment-test-utils';
+import {
+  adminOrder,
+  adminOrderDetail,
+  detailSection,
+  emptyOrderItemList,
+  fulfillJson,
+  mockAdminSession,
+  orderNumberOf,
+} from './order-fulfillment-test-utils';
 
 // ---- 画面の幅 ----
 
@@ -951,7 +959,10 @@ export async function expectDialogFits(page: Page, dialog: Locator): Promise<voi
 // ---- 管理画面の橋渡し（P22） ----
 
 export type DeliveryBridgeLog = {
+  /** 注文一覧表（GET /api/admin/order-items）の読み出しの回数 */
   listReads: number;
+  /** 注文の詳細（GET /api/admin/orders/[id]）の読み出しの回数 */
+  detailReads: number;
   attentionReads: number;
   historyReads: number;
   resolvePosts: Array<{ attentionId: string; status: number }>;
@@ -964,6 +975,7 @@ export type DeliveryBridgeLog = {
 export function newDeliveryBridgeLog(): DeliveryBridgeLog {
   return {
     listReads: 0,
+    detailReads: 0,
     attentionReads: 0,
     historyReads: 0,
     resolvePosts: [],
@@ -1145,7 +1157,7 @@ export async function bridgeHistory(client: PgClient, orderId: string, slips?: R
   });
 }
 
-/** 注文の一覧の行。窓口と同じ進み具合の決め方（deriveOrderProgress）に、DB の商品ごとの数と発送ごとの集計を渡す */
+/** 注文の詳細の summary になる1件（旧い一覧の行と同じ形）。窓口と同じ進み具合の決め方（deriveOrderProgress）に、DB の商品ごとの数と発送ごとの集計を渡す */
 async function bridgeOrderRow(client: PgClient, orderId: string): Promise<OrderItem | null> {
   const order = (
     await client.query(
@@ -1168,7 +1180,7 @@ async function bridgeOrderRow(client: PgClient, orderId: string): Promise<OrderI
     )
   ).rows;
   const summary = (await client.query('select * from public.list_order_delivery_summaries(array[$1::uuid])', [orderId])).rows[0] as
-    | { active_count: number; delivered_count: number; attention_kind: string | null }
+    | { active_count: number; delivered_count: number }
     | undefined;
   const counts: OrderLineProgressCounts[] = lines.map((row) => ({
     fulfillmentType: String(row.fulfillment_type),
@@ -1181,12 +1193,12 @@ async function bridgeOrderRow(client: PgClient, orderId: string): Promise<OrderI
   const progress = deriveOrderProgress(order.status, counts, {
     delivery: { activeCount: Number(summary?.active_count ?? 0), deliveredCount: Number(summary?.delivered_count ?? 0) },
   });
-  const kind = summary?.attention_kind ?? null;
   return adminOrder({
     id: order.id,
     customerName: order.shipping_full_name,
     customerEmail: order.shipping_email,
-    orderDate: jstDateOf(order.created_at).replaceAll('-', '/'),
+    // 詳細の答え（adminOrderDetail）は orderDate から ISO の日時を作るので、旧い一覧の見た目（YYYY/MM/DD）ではなく YYYY-MM-DD で渡す
+    orderDate: jstDateOf(order.created_at),
     itemCount: `${counts.reduce((sum, line) => sum + line.quantity, 0)}点`,
     items: lines.map((row) => ({
       id: String(row.id),
@@ -1205,10 +1217,20 @@ async function bridgeOrderRow(client: PgClient, orderId: string): Promise<OrderI
     progressKey: progress.key,
     partiallyShipped: progress.partiallyShipped,
     canShip: order.status === 'paid' && counts.some((line) => line.readyUnshipped > 0),
-    canRecordCompletion: false,
-    deliveryAttention:
-      kind === 'delivery_failure' ? 'failure' : kind === 'attempted_delivery' ? 'attempted_delivery' : kind ? 'untrackable' : null,
   });
+}
+
+/** 注文の詳細の「要対応」の欄に出す、開いている配送の要対応（get_admin_order_detail と同じ並び・同じ欄。追跡オフの間は要対応が閉じるので空） */
+async function bridgeOrderDeliveries(client: PgClient, orderId: string): Promise<Array<{ fulfillmentId: string; kind: string; openedAt: string }>> {
+  const rows = (
+    await client.query(
+      `select a.fulfillment_id, a.kind, a.opened_at
+       from public.order_fulfillment_attention as a join public.order_fulfillments as f on f.id = a.fulfillment_id
+       where f.order_id = $1::uuid and a.resolved_at is null order by a.opened_at, a.id`,
+      [orderId],
+    )
+  ).rows;
+  return rows.map((row) => ({ fulfillmentId: String(row.fulfillment_id), kind: String(row.kind), openedAt: iso(row.opened_at) }));
 }
 
 async function bridgeAttentionItems(client: PgClient, allowed: (orderId: string) => boolean): Promise<DeliveryAttentionItem[]> {
@@ -1298,8 +1320,8 @@ async function openBridgeConnection(page: Page): Promise<PgClient> {
 }
 
 /**
- * 管理画面の橋渡し。管理者のログイン・CSRF・権限は差し替え（P22）、注文の一覧・要対応・履歴・設定の読み出しは DB の本物の結果を
- * 画面の形へ写し、書く操作（要対応を閉じる）と設定の配送の切り替えは本物の DB の関数を呼ぶ。
+ * 管理画面の橋渡し。管理者のログイン・CSRF・権限は差し替え（P22）、注文の詳細・要対応・履歴・設定の読み出しは DB の本物の結果を
+ * 画面の形へ写し（注文一覧表の品物の一覧は空）、書く操作（要対応を閉じる）と設定の配送の切り替えは本物の DB の関数を呼ぶ。
  * 許した orderIds 以外の注文は扱わない。旧い伝票番号訂正・手動配達済みの窓口は G-4 で撤去され、差し替えず本物の404へ渡す。
  */
 export async function mockAdminDeliveryBridge(page: Page, context: DeliveryBridgeContext): Promise<void> {
@@ -1327,14 +1349,30 @@ export async function mockAdminDeliveryBridge(page: Page, context: DeliveryBridg
     }),
   );
 
-  await page.route((url) => url.pathname === '/api/admin/orders', async (route) => {
-    log.listReads += 1;
-    const rows: OrderItem[] = [];
-    for (const orderId of context.orderIds) {
-      const row = await bridgeOrderRow(client, orderId);
-      if (row !== null) rows.push(row);
+  // 注文一覧表（/admin/orders）の品物の一覧。この橋渡しが確かめるのは要対応の欄と詳細なので、行は空にして読み出しの回数だけ数える
+  await page.route((url) => url.pathname === '/api/admin/order-items', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
     }
-    await fulfillJson(route, { data: rows, pagination: { page: 1, pageSize: 20, total: rows.length, totalPages: 1 } });
+    log.listReads += 1;
+    await fulfillJson(route, emptyOrderItemList());
+  });
+
+  // 注文の詳細（GET /api/admin/orders/[id]）。進み具合は DB の本物の読み出し、「要対応」の欄の配送は DB の開いている要対応の行
+  await page.route((url) => /^\/api\/admin\/orders\/[0-9a-f-]{36}$/.test(url.pathname), async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
+    }
+    const orderId = new URL(route.request().url()).pathname.split('/')[4] ?? '';
+    const row = allowed(orderId) ? await bridgeOrderRow(client, orderId) : null;
+    if (row === null) {
+      await fulfillJson(route, { error: 'Order not found' }, 404);
+      return;
+    }
+    log.detailReads += 1;
+    await fulfillJson(route, { data: adminOrderDetail({ ...row, attention: { deliveries: await bridgeOrderDeliveries(client, orderId) } }) });
   });
 
   await page.route('**/api/admin/order-attention', async (route) => {
@@ -1472,20 +1510,7 @@ export async function customerApi<T = CustomerOrderBody>(page: Page, apiPath: st
 
 // ---- 管理画面の操作 ----
 
-/**
- * ORDER の一覧のその注文の「履歴」を押して、履歴のダイアログを開く。
- * 戻す物は、履歴・直す画面・配達済みの画面のどれを見ていても同じダイアログを指す（画面を切り替えると、ダイアログの名前
- * （aria-label）が「この注文の履歴」から「伝票番号を直す」などに変わるので、名前では探さない。ダイアログは1つしか開かない）
- */
-export async function openOrderHistory(page: Page, orderId: string): Promise<Locator> {
-  await page.getByRole('button', { name: `${orderNumberOf(orderId)} の履歴`, exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'この注文の履歴', exact: true })).toBeVisible();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByText(`${orderNumberOf(orderId)}（`)).toBeVisible();
-  return dialog;
-}
-
-/** 開いた詳細の埋め込み履歴。旧一覧の履歴dialog用helperは Task 12 まで維持する。 */
+/** 開いた注文の詳細の「変更履歴」の欄（埋め込み。読み込みが済むまで待つ）。履歴の画面（dialog）は G-4 で撤去した */
 export async function orderDetailHistory(page: Page): Promise<Locator> {
   const history = detailSection(page, '変更履歴');
   await expect(history).toBeVisible();
@@ -1493,7 +1518,7 @@ export async function orderDetailHistory(page: Page): Promise<Locator> {
   return history;
 }
 
-/** 履歴のダイアログの、n回目の発送の行 */
+/** 変更履歴の欄の、n回目の発送の行 */
 export function fulfillmentRow(dialog: Locator, number: number): Locator {
   return dialog.getByRole('listitem').filter({ hasText: `発送（${number}回目）` }).filter({ hasText: '配送業者:' });
 }

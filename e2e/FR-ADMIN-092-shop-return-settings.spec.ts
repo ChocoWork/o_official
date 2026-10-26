@@ -13,7 +13,8 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { ShopReturnSettings, ShopReturnSettingsUpdate } from '@/lib/orders/returns/return-types';
 import { buildShopReturnSettings } from '../tests/unit/components/shop-return-settings-test-fixtures';
 import { withLocalDb } from './order-email-test-utils';
-import { fulfillJson, mockOrderList, viewports } from './order-fulfillment-test-utils';
+import { mockOrderAttention } from './order-admin-test-utils';
+import { fulfillJson, viewports } from './order-fulfillment-test-utils';
 import { formatJst, mockAdminSessionAs } from './refund-test-utils';
 import { applyReturnSettingsUpdate } from './return-request-test-utils';
 
@@ -88,7 +89,8 @@ async function mockSettingsApis(page: Page, options: { putFails?: boolean; holdP
     },
   });
   await mockAdminSessionAs(page, 'admin');
-  await mockOrderList(page, () => []);
+  // ORDER タブは注文一覧表への入口だけ（G-4）。サイドナビの ORDER のバッジが読む要対応の窓口だけを空にしておく
+  await mockOrderAttention(page);
   await page.route('**/api/admin/settings/shop', async (route) => {
     if (route.request().method() === 'GET') {
       state.calls.push('GET');

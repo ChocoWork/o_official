@@ -1,6 +1,6 @@
 import { beginRefund, expectDbError, runWorkerUntil } from './order-email-test-utils';
 import {
-  createReturnInDb, receiveReturnInDb, returnLabelOf, openReturnsDialog, openReceiveDialog,
+  createReturnInDb, receiveReturnInDb, returnLabelOf, openDetailReturnsDialog, openReceiveDialog,
   setUnitState, UNIT_STATES, RETURN_TEXT, shopAlertsFor,
 } from './return-test-utils';
 import { orderNumberOf } from './order-fulfillment-test-utils';
@@ -19,7 +19,7 @@ for (const viewport of viewports) {
       const ret = await requestDb(rr, fx);
       await approveDb(rr, ret.id, await defaultApproval(rr, fx, ret.id), fx.actorId);
       const scene = await adminScene(page, rr, fx, 'supporter');
-      await openReturnsDialog(page, fx.orderId, '受け取る');
+      await openDetailReturnsDialog(page, fx.orderId, '受け取る');
       const dialog = await openReceiveDialog(page, fx.orderId, returnLabelOf(fx.orderId, ret.number));
       await setUnitState(dialog, 0, UNIT_STATES.restock);
       await expect(dialog.getByText('受け取ると、計算どおり ￥5,000 を自動で返金します（額は変えられません）。', { exact: true })).toBeVisible();
@@ -47,7 +47,7 @@ for (const viewport of viewports) {
         units: [{ lineId: created.lineIds[fx.orderItemIds[0]], disposition: 'restocked', quantity: 1 }], canRefund: false, choice: 'now',
       }), 'RETURN_FORBIDDEN');
       const scene = await adminScene(page, rr, fx, 'supporter');
-      await openReturnsDialog(page, fx.orderId, '受け取る');
+      await openDetailReturnsDialog(page, fx.orderId, '受け取る');
       const dialog = await openReceiveDialog(page, fx.orderId, returnLabelOf(fx.orderId, created.number));
       await setUnitState(dialog, 0, UNIT_STATES.restock);
       await expect(dialog.getByRole('radio', { name: /^計算どおり/ })).toHaveCount(0);
@@ -73,7 +73,7 @@ for (const viewport of viewports) {
       await approveDb(rr, ret.id, await defaultApproval(rr, fx, ret.id), fx.actorId);
       await beginRefund(rr.db, fx.orderId, { amount: 100, actorId: fx.actorId, notifyCustomer: false });
       const scene = await adminScene(page, rr, fx, 'supporter');
-      await openReturnsDialog(page, fx.orderId, '受け取る');
+      await openDetailReturnsDialog(page, fx.orderId, '受け取る');
       const dialog = await openReceiveDialog(page, fx.orderId, returnLabelOf(fx.orderId, ret.number));
       await setUnitState(dialog, 0, UNIT_STATES.restock);
       await dialog.getByRole('button', { name: 'すべて受け取って ￥5,000 を返金する', exact: true }).click();

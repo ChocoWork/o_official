@@ -1,10 +1,10 @@
 import type { Page } from '@playwright/test';
 import { loadReturnCreateMaterials } from '@/lib/orders/returns/return-store';
 import { SEED_IMAGE_PNG_BASE64 } from '../scripts/e2e/seed-storage';
-import { fulfillJson, mockOrderList, openOrderTab } from './order-fulfillment-test-utils';
+import { adminOrderDetail, fulfillJson, mockOrderDetail, openOrderDetail } from './order-fulfillment-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
 import {
-  newReturnRouteState, mockReturnRoutes, orderWithReturns, returnSummaryOf, openReturnsDialog, openCreateDialog,
+  newReturnRouteState, mockReturnRoutes, orderWithReturns, returnSummaryOf, openDetailReturnsDialog, openCreateDialog,
 } from './return-test-utils';
 import { test, expect, viewports, shipped, noOverflow, type RR } from './return-request-test-utils';
 
@@ -97,13 +97,13 @@ for (const viewport of viewports) {
       const fx = await shipped(rr);
       await rr.setItem(fx.itemId, true);
       await mockAdminSessionAs(page, 'admin');
-      await mockOrderList(page, () => [orderWithReturns({ id: fx.orderId, summary: returnSummaryOf({ orderId: fx.orderId }) })]);
+      await mockOrderDetail(page, () => adminOrderDetail(orderWithReturns({ id: fx.orderId, summary: returnSummaryOf({ orderId: fx.orderId }) })));
       const state = newReturnRouteState({
         orderId: fx.orderId, returnableUnits: 1, materials: await loadReturnCreateMaterials(rr.client, fx.orderId),
       });
       await mockReturnRoutes(page, fx.orderId, state);
-      await openOrderTab(page);
-      await openReturnsDialog(page, fx.orderId);
+      await openOrderDetail(page, fx.orderId);
+      await openDetailReturnsDialog(page, fx.orderId);
       const dialog = await openCreateDialog(page, fx.orderId);
       const row = dialog.getByRole('group', { name: 'E2Eシャツ（ホワイト / M）', exact: true });
       await expect(row.getByText('返品不可の品です', { exact: true })).toBeVisible();

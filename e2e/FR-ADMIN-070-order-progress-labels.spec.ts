@@ -1,65 +1,56 @@
 /**
  * FR-ADMIN-070 注文の進み具合の言葉
- * 対応 FREQ: FREQ-441（AC-01〜AC-03）
+ * 対応 FREQ: FREQ-441（AC-01・AC-03）
  *
- * 管理画面の注文の一覧とお客様の購入履歴の一覧に出る言葉を、窓口を差し替えて確かめる。
- * 管理画面の絞り込みは DB の状態で働く（窓口は status=paid・status=shipped、2つ以上選んだ時は画面が orderStatus で絞る）。
+ * 管理画面の注文の詳細（/admin/orders/[id]）の進み具合とお客様の購入履歴の一覧に出る言葉を、窓口を差し替えて確かめる。
+ * G-4 で旧い注文の一覧は撤去した。旧い一覧の確かめのうち、
+ * - 進み具合の言葉と一部発送済みの印 → 詳細の注文情報の「進み具合」へ付け替え（下の1つめ）。商品の欄の数の書き方は品物の欄 → FR-ADMIN-110 ②
+ * - 絞り込みの名前が決めた8つ（FREQ-441-AC-02）→ ステータスの12の絞り込み → FR-ADMIN-110 ① と FR-ADMIN-121 ④（ケースは削除）
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { MANUAL_COMPLETION_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import { mockOtpAuthentication } from './account-test-utils';
-import { adminOrder, mockAdminSession, mockOrderList, openOrderTab, orderLine, viewports } from './order-fulfillment-test-utils';
+import {
+  adminOrder,
+  adminOrderDetail,
+  detailSection,
+  mockAdminSession,
+  mockOrderDetail,
+  openOrderDetail,
+  orderLine,
+  viewports,
+} from './order-fulfillment-test-utils';
 
-const ORDERS = [
-  adminOrder({
-    // 取消のボタンを出さない（出すと、絞り込みの「キャンセル」と同じ名前のボタンが2つになる）
-    id: 'order-unpaid', customerName: '未決済 太郎', status: '未決済', orderStatus: 'pending', progressKey: 'unpaid',
+const ORDERS = {
+  unpaid: adminOrder({
+    // 取消のボタンを出さない
+    id: 'a7000000-0000-4000-8000-000000000001', customerName: '未決済 太郎', status: '未決済', orderStatus: 'pending', progressKey: 'unpaid',
     canShip: false,
   }),
-  adminOrder({
-    id: 'order-production', customerName: '受注 次郎', status: '受注生産中', progressKey: 'in_production',
+  production: adminOrder({
+    id: 'a7000000-0000-4000-8000-000000000002', customerName: '受注 次郎', status: '受注生産中', progressKey: 'in_production',
     items: [orderLine({ id: 'd1000000-0000-4000-8000-000000000001', name: 'ウールコート', fulfillmentType: 'backorder', quantity: 2, inProduction: 2, readyUnshipped: 0 })],
   }),
-  adminOrder({
-    id: 'order-ready', customerName: '準備 三郎',
+  ready: adminOrder({
+    id: 'a7000000-0000-4000-8000-000000000003', customerName: '準備 三郎',
     items: [orderLine({ id: 'd1000000-0000-4000-8000-000000000002', name: 'シルクブラウス', quantity: 1, readyUnshipped: 1 })],
   }),
-  adminOrder({
-    id: 'order-partial', customerName: '一部 四郎', status: '受注生産中', progressKey: 'in_production', partiallyShipped: true,
+  partial: adminOrder({
+    id: 'a7000000-0000-4000-8000-000000000004', customerName: '一部 四郎', status: '受注生産中', progressKey: 'in_production', partiallyShipped: true,
     items: [orderLine({ id: 'd1000000-0000-4000-8000-000000000003', name: 'ウールコート', fulfillmentType: 'backorder', quantity: 2, shipped: 1, inProduction: 1, readyUnshipped: 0 })],
   }),
-  adminOrder({
-    id: 'order-transit', customerName: '配送 五郎', status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false,
+  transit: adminOrder({
+    id: 'a7000000-0000-4000-8000-000000000005', customerName: '配送 五郎', status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false,
     items: [orderLine({ id: 'd1000000-0000-4000-8000-000000000004', name: 'リネンシャツ', quantity: 1, shipped: 1, readyUnshipped: 0 })],
   }),
-  adminOrder({
-    id: 'order-cancelled', customerName: '取消 六郎', status: 'キャンセル', orderStatus: 'cancelled', progressKey: 'cancelled', canShip: false,
+  cancelled: adminOrder({
+    id: 'a7000000-0000-4000-8000-000000000006', customerName: '取消 六郎', status: 'キャンセル', orderStatus: 'cancelled', progressKey: 'cancelled', canShip: false,
   }),
   // グループ E-4: 取り消していない発送の全部が配達済みの注文は「配達済み」（DB の状態は shipped のまま）
-  adminOrder({
-    id: 'order-delivered', customerName: '配達 七郎', status: '配達済み', orderStatus: 'shipped', progressKey: 'delivered', canShip: false,
+  delivered: adminOrder({
+    id: 'a7000000-0000-4000-8000-000000000007', customerName: '配達 七郎', status: '配達済み', orderStatus: 'shipped', progressKey: 'delivered', canShip: false,
     items: [orderLine({ id: 'd1000000-0000-4000-8000-000000000005', name: 'リネンシャツ', quantity: 1, shipped: 1, readyUnshipped: 0 })],
   }),
-];
-
-const CHIPS = [
-  'すべて',
-  '支払い手続き中',
-  '未決済',
-  '発送待ち（受注生産中・発送準備中）',
-  '発送済み（配送中・配達済み）',
-  '決済失敗',
-  '放棄',
-  'キャンセル',
-];
-
-function lastUrl(urls: string[]): string {
-  return urls[urls.length - 1] ?? '';
-}
-
-function orderRow(page: Page, id: string) {
-  return page.getByRole('row', { name: new RegExp(id) });
-}
+};
 
 /** その印の文字が何行に並んでいるか（行ごとの上の位置の種類を数える。狭い画面幅で「発送準備/中」と割れると2になる） */
 async function textLineCount(element: Locator): Promise<number> {
@@ -108,87 +99,37 @@ for (const viewport of viewports) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
     });
 
-    test('管理画面の一覧に、未決済・受注生産中・発送準備中・配送中の言葉と、一部発送済みの印が出る', async ({ page }) => {
-      // FREQ-441-AC-01
+    test('管理画面の注文の詳細の進み具合に、未決済・受注生産中・発送準備中・配送中・配達済み・キャンセルの言葉と、一部発送済みの印が出る', async ({ page }) => {
+      // FREQ-441-AC-01（G-4: 旧い一覧の確かめを、詳細の注文情報の「進み具合」へ付け替えた）
+      const byId = new Map(Object.values(ORDERS).map((order) => [order.id, order]));
       await mockAdminSession(page);
-      await mockOrderList(page, () => ORDERS);
-      await openOrderTab(page);
-      await expect(orderRow(page, 'order-unpaid')).toBeVisible();
+      await mockOrderDetail(page, (orderId) => {
+        const order = byId.get(orderId);
+        if (!order) throw new Error(`試験の注文が無い: ${orderId}`);
+        return adminOrderDetail(order);
+      });
 
-      const words: Array<[string, string]> = [
-        ['order-unpaid', '未決済'],
-        ['order-production', '受注生産中'],
-        ['order-ready', '発送準備中'],
-        ['order-partial', '受注生産中'],
-        ['order-transit', '配送中'],
-        ['order-delivered', '配達済み'],
-        ['order-cancelled', 'キャンセル'],
+      const words: Array<[keyof typeof ORDERS, string]> = [
+        ['unpaid', '未決済'],
+        ['production', '受注生産中'],
+        ['ready', '発送準備中'],
+        ['partial', '受注生産中'],
+        ['transit', '配送中'],
+        ['delivered', '配達済み'],
+        ['cancelled', 'キャンセル'],
       ];
-      for (const [id, word] of words) {
-        await expect(orderRow(page, id).getByText(word, { exact: true })).toBeVisible();
+      for (const [key, word] of words) {
+        await openOrderDetail(page, ORDERS[key].id);
+        const info = detailSection(page, '注文情報');
+        const badge = info.getByText(word, { exact: true });
+        await expect(badge, `${key} の「${word}」`).toBeVisible();
+        // 状態の印は1行で出る（狭い画面幅で、5文字の言葉が「発送準備/中」のように途中で割れない。FR-ACCOUNT-019 の「1行で表示」と同じ考え）
+        expect(await textLineCount(badge), `${key} の「${word}」の印の行数`).toBe(1);
+        // 「一部発送済み」の印は、一部だけ送った注文にだけ付く
+        await expect(info.getByText('一部発送済み', { exact: true }), `${key} の一部発送済みの印`).toHaveCount(key === 'partial' ? 1 : 0);
+        // G-1: 手動の仕上がりの記録は終了した。どの注文の詳細にも「仕上がりを記録する」は出ない（受注生産の品は入荷の自動の割当で発送準備中になる）
+        await expect(page.getByRole('button', { name: '仕上がりを記録する' }), `${key} の仕上がりの入口`).toHaveCount(0);
       }
-      // 状態の印は1行で出る（狭い画面幅で、5文字の言葉が「発送準備/中」のように途中で割れない。FR-ACCOUNT-019 の「1行で表示」と同じ考え）
-      for (const [id, word] of words) {
-        expect(await textLineCount(orderRow(page, id).getByText(word, { exact: true })), `${id} の「${word}」の印の行数`).toBe(1);
-      }
-      // 「一部発送済み」の印は、一部だけ送った注文にだけ付く
-      await expect(orderRow(page, 'order-partial').getByText('一部発送済み', { exact: true })).toBeVisible();
-      for (const id of ['order-unpaid', 'order-production', 'order-ready', 'order-transit', 'order-delivered', 'order-cancelled']) {
-        await expect(orderRow(page, id).getByText('一部発送済み', { exact: true })).toHaveCount(0);
-      }
-      // 配達済みの注文の商品の欄は、発送済みの数だけを括弧の中に出す（グループ E-4 の言葉が増えても、数の書き方は変わらない）
-      await expect(orderRow(page, 'order-delivered')).toContainText(/リネンシャツ.*×\s*1/);
-      await expect(orderRow(page, 'order-delivered')).toContainText('発送済み 1');
-      await expect(orderRow(page, 'order-delivered').getByText('配送中', { exact: true })).toHaveCount(0);
-      // 商品の欄は、0でない数だけを括弧の中に出す
-      await expect(orderRow(page, 'order-partial')).toContainText(/ウールコート（ホワイト \/ M）\s*×\s*2/);
-      await expect(orderRow(page, 'order-partial')).toContainText('受注生産中 1・発送済み 1');
-      // G-1: 手動の仕上がりの記録は終了した。受注生産中の数がある注文にも「仕上がりを記録する」は出ず、固定の停止文を表の外に1回出す。
-      // 受注生産の品は入荷の自動の割当（入金済みの割当 A）で発送準備中になる。管理の12状態の言葉の画面は G-4 FR-ADMIN-110
-      await expect(orderRow(page, 'order-production').getByRole('button', { name: '仕上がりを記録する' })).toHaveCount(0);
-      await expect(orderRow(page, 'order-partial').getByRole('button', { name: '仕上がりを記録する' })).toHaveCount(0);
-      await expect(orderRow(page, 'order-ready').getByRole('button', { name: '仕上がりを記録する' })).toHaveCount(0);
-      await expect(page.getByText(MANUAL_COMPLETION_DISABLED_TEXT, { exact: true })).toHaveCount(1);
-      await expect(page.getByText(MANUAL_COMPLETION_DISABLED_TEXT, { exact: true })).toBeVisible();
-      await page.screenshot({ path: `test-results/group-e1/order-list-labels-${viewport.width}.png`, fullPage: true, animations: 'disabled' });
-    });
-
-    test('絞り込みの名前が決めた8つになり、DB の状態（paid・shipped）で働く', async ({ page }) => {
-      // FREQ-441-AC-02
-      await mockAdminSession(page);
-      const list = await mockOrderList(page, () => ORDERS);
-      await openOrderTab(page);
-      await expect(orderRow(page, 'order-unpaid')).toBeVisible();
-
-      for (const name of CHIPS) {
-        await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
-      }
-      await expect(page.getByRole('button', { name: '決済完了', exact: true })).toHaveCount(0);
-      await expect(page.getByRole('button', { name: '発送済み', exact: true })).toHaveCount(0);
-
-      const waiting = page.getByRole('button', { name: '発送待ち（受注生産中・発送準備中）', exact: true });
-      const sent = page.getByRole('button', { name: '発送済み（配送中・配達済み）', exact: true });
-
-      // 1つだけ選ぶと、DB の状態で窓口を絞る
-      await waiting.click();
-      await expect(waiting).toHaveAttribute('aria-pressed', 'true');
-      await expect.poll(() => lastUrl(list.urls)).toContain('status=paid');
-
-      // 2つ選ぶと窓口は status を送らず、画面が DB の状態で絞る（窓口の答えは全部の行を返しているままでも、絞られる）
-      await sent.click();
-      await expect.poll(() => lastUrl(list.urls)).not.toContain('status=');
-      await expect(orderRow(page, 'order-unpaid')).toHaveCount(0);
-      await expect(orderRow(page, 'order-cancelled')).toHaveCount(0);
-      for (const id of ['order-production', 'order-ready', 'order-partial', 'order-transit', 'order-delivered']) {
-        await expect(orderRow(page, id)).toBeVisible();
-      }
-
-      // 発送済みだけにすると、配送中と配達済みの注文だけが残り（どちらも DB の状態は shipped）、窓口には status=shipped を送る
-      await waiting.click();
-      await expect.poll(() => lastUrl(list.urls)).toContain('status=shipped');
-      await expect(orderRow(page, 'order-transit')).toBeVisible();
-      await expect(orderRow(page, 'order-delivered')).toBeVisible();
-      await expect(orderRow(page, 'order-ready')).toHaveCount(0);
     });
 
     test('お客様の購入履歴の一覧にも、同じ言葉が出る', async ({ page }) => {

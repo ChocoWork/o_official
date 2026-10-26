@@ -8,7 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { expect, type APIRequestContext, type Locator, type Page, type Route } from '@playwright/test';
-import type { OrderItem, OrderLineItem } from '@/lib/orders/admin-orders/admin-order-types';
+import type { OrderItem } from '@/lib/orders/admin-orders/admin-order-types';
 import type {
   OrderHistoryEmailEntry,
   OrderHistoryReturnEntry,
@@ -43,7 +43,7 @@ import {
   type MailBody,
 } from './order-email-test-utils';
 import { seedE2eRestock, withGroupG1Material } from './group-g1-test-utils';
-import { adminOrder, detailSection, fulfillJson, orderLine, orderNumberOf } from './order-fulfillment-test-utils';
+import { adminOrder, detailSection, fulfillJson, orderNumberOf } from './order-fulfillment-test-utils';
 import { formatYen } from './refund-test-utils';
 
 // ---- 言葉（共通の約束 C-5・C-6）。実装の定数を import せず、試験が自分で持つ。金額は画面と同じ全角の ￥ と桁区切り ----
@@ -1096,7 +1096,7 @@ export function returnMaterialsOf(input: {
 }
 
 /**
- * 一覧の注文の行（返品の要約つき）。返品の要約と、商品の行の印（lineKind）は、Task 8・11 が足した欄。
+ * 注文の1件（返品の要約つき。adminOrderDetail に渡して詳細の summary にする）。返品の要約と、商品の行の印（lineKind）は、Task 8・11 が足した欄。
  * 型を足す前でも書けるよう、欄を足した物として渡す（型は足した後の形に合っている）。
  */
 export function orderWithReturns(
@@ -1112,36 +1112,6 @@ export function orderWithReturns(
     ...rest,
     returnSummary: summary,
   } as Partial<OrderItem> & { id: string });
-}
-
-/**
- * 注文の一覧の窓口（答えに returnAttention＝一覧の上の一行の数 つき）。読まれた URL を記録する。数は試験が呼び出しごとに替えられる。
- * 注文の番号つきの窓口（…/orders/{id}/…）と取り違えないよう、パスが一覧だけの時に当てる。
- */
-export async function mockOrderListWithAttention(
-  page: Page,
-  current: () => OrderItem[],
-  attention: () => { requested: number; refundWaiting: number },
-): Promise<{ urls: string[] }> {
-  const urls: string[] = [];
-  await page.route(
-    (url) => url.pathname === '/api/admin/orders',
-    (route) => {
-      urls.push(route.request().url());
-      const orders = current();
-      return fulfillJson(route, {
-        data: orders,
-        pagination: { page: 1, pageSize: 20, total: orders.length, totalPages: 1 },
-        returnAttention: attention(),
-      });
-    },
-  );
-  return { urls };
-}
-
-/** 一覧の購入商品の、交換の品の行（印 lineKind は Task 8・11 が足した欄。型を足す前でも書けるよう、欄を足した物として渡す） */
-export function exchangeOrderLine(overrides: Partial<OrderLineItem> = {}): OrderLineItem {
-  return orderLine({ ...overrides, lineKind: 'exchange' } as Partial<OrderLineItem>);
 }
 
 /**
@@ -1197,14 +1167,6 @@ export function returnEmailHistoryEntry(input: {
     fulfillmentId: null,
     fulfillmentNumber: null,
   };
-}
-
-/** 一覧のその注文の行の「履歴」を押して、注文の履歴の画面を開く */
-export async function openHistoryDialog(page: Page, orderId: string): Promise<Locator> {
-  await page.getByRole('button', { name: `${orderNumberOf(orderId)} の履歴` }).click();
-  const dialog = page.getByRole('dialog', { name: 'この注文の履歴' });
-  await expect(dialog).toBeVisible();
-  return dialog;
 }
 
 export type ReturnAction =
@@ -1320,7 +1282,7 @@ export function newReturnRouteState(input: {
 
 /**
  * その注文の返品の窓口（一覧と中身・材料・作る）と、返品ごとの操作の窓口を差し替える。
- * 後から登録した窓口が先に効くので、管理画面の窓口（mockAdminSession・mockOrderList）を先に呼んでから、これを呼ぶ。
+ * 後から登録した窓口が先に効くので、管理画面の窓口（mockAdminSession・mockOrderDetail）を先に呼んでから、これを呼ぶ。
  */
 export async function mockReturnRoutes(page: Page, orderId: string, state: ReturnRouteState): Promise<void> {
   await page.route(`**/api/admin/orders/${orderId}/returns/materials`, async (route) => {
@@ -1372,16 +1334,7 @@ export function unitTotal(body: Record<string, unknown>, lineId: string, disposi
 export const returnsDialogName = (orderId: string) => `返品（${orderNumberOf(orderId)}）`;
 export const createDialogName = (orderId: string) => `返品を作る（${orderNumberOf(orderId)}）`;
 
-/** 一覧のその注文の行の「返品」系のボタンを押して、返品の画面を開く。ボタンの名前は次にすること（返品・受け取る・額を決めて返金する・申し込みを確かめる） */
-export async function openReturnsDialog(page: Page, orderId: string, buttonName = '返品'): Promise<Locator> {
-  await page.getByRole('row', { name: new RegExp(orderId) }).getByRole('button', { name: buttonName, exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: returnsDialogName(orderId), exact: true });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByText('読み込み中です...')).toHaveCount(0);
-  return dialog;
-}
-
-/** 詳細用の入口。旧一覧の openReturnsDialog は Task 12 の各specのために維持する。 */
+/** 注文の詳細頁の「返品とキャンセルの申し込み」の「返品」系のボタンを押して、返品の画面を開く。ボタンの名前は次にすること（返品・受け取る・額を決めて返金する・申し込みを確かめる） */
 export async function openDetailReturnsDialog(page: Page, orderId: string, buttonName = '返品'): Promise<Locator> {
   await detailSection(page, '返品とキャンセルの申し込み').getByRole('button', { name: buttonName, exact: true }).click();
   const dialog = page.getByRole('dialog', { name: returnsDialogName(orderId), exact: true });

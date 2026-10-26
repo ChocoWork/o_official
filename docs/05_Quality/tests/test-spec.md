@@ -1,5 +1,7 @@
 # テスト仕様
 
+> G-4 Task 12 確認日: 2026-10-27。返品・キャンセル申し込み・一覧の表示・配送・設定の既存E2E（050・069・070・072・076・079・084〜099・102〜104・119・123と共有の道具）を詳細頁/注文一覧表へ付け替え・整理し、旧い一覧の窓口の差し替え（mockOrderList）とORDERタブを開く道具（openOrderTab）を削除した。旧い410の宿題の仕上げ（走査をe2e・testsへ広げた許可リストの試験）を含む。下のTask 12に現行の期待を記載。本番buildのE2Eはcontroller待ち。
+>
 > G-4 Task 11 確認日: 2026-10-27。詳細の操作122（11case）と返金・取消・要対応・履歴15ファイルを詳細/新一覧へ付け替えた。下のTask 11に現行の期待を記載。本番buildのE2Eはcontroller待ち。
 
 > G-4 Task 10 確認日: 2026-10-27。FR-ADMIN-112・123(G-4)と旧410期待の修正、117の詳細へのLinkを追加。controllerの本番build・1 workerでの実測を受領し、fix round 1で状態の完全一致・描画待ち・権限シナリオ・bridge検査を修正。修正後E2Eはcontroller待ち。下のTask 10参照。
@@ -222,7 +224,7 @@ Task 8の実測記録（実装者。2026-10-27）:
 | 対象の単体 | 上の表の suite を実行。PackingSection 48、ShipmentSlipSection 68、OrderHistoryPanel 134、legacy-fulfillment-routes-removed 11、order-delivery-routes 24、AdminGroupG1LegacyStop 13、docs 2 suite 56。すべて成功 |
 | 広い単体 | `npx.cmd jest tests/unit --runInBand`: 603 suite中600 suiteが成功・3 suiteは既存のskip、16,013件成功・8件skip・失敗0 |
 | 型・lint・文書 | `npx.cmd tsc --noEmit --incremental false` 成功（削除した窓口の `.next/types` は `next typegen` で作り直した）。`npm.cmd run lint` はエラー0・警告102件（既存。Task 8のファイルの警告なし）。`npm.cmd run validate-docs` は既存のCheckout計画の相対リンク切れ2件だけ |
-| 未実行 | `npm run build`・Playwright・DB（`group_g1_legacy_disabled` を含む）・390/768/1280pxの実ブラウザ確認（controller担当）。e2e に残る旧い 410 の mock・期待（`FR-ADMIN-069`・`070`・`117`・`123`・`delivery-tracking-test-utils`）は窓口が無いので 404 になる。Task 10・12 が付け替える |
+| 未実行 | `npm run build`・Playwright・DB（`group_g1_legacy_disabled` を含む）・390/768/1280pxの実ブラウザ確認（controller担当）。e2e に残る旧い 410 の mock・期待（`FR-ADMIN-069`・`070`・`117`・`123`・`delivery-tracking-test-utils`）は窓口が無いので 404 になる。Task 10・12 が付け替えた（Task 10: 117・123・delivery-tracking-test-utils、Task 12: 069・070 と旧い一覧の道具） |
 
 ### Task 9（E2E: 注文一覧表・品物のステータス・全件CSVと、その道具）
 
@@ -886,4 +888,48 @@ DB 結合は新しく書いていない。
 
 新しいDBの⑨はwithOrderAdminScenario({ returnSettings: true })の中で、14314,2→190520,0の順に鍵を取り、詳細と履歴の描画後にだけ同じ接続を読む。追跡設定を変えないので940488を追加しない。追記専用の行は削除しない。既存DBのみのcaseはbriefどおり変更せず、全件baseline比較はTask 13。
 
-旧061の削除前に、移設先の題（122⑥・121④・110③）を照合し、FREQ-412-AC-01/02/03/05を移した。091②のFREQ-468-AC-02は122②へ参照を移し、元caseはTask 12まで残す。ケースごとの全処置は `.superpowers/sdd/2026-10-26-group-g4-orders/e2e-disposition.md` のTask 11に記録。
+旧061の削除前に、移設先の題（122⑥・121④・110③）を照合し、FREQ-412-AC-01/02/03/05を移した。091②のFREQ-468-AC-02は122②へ参照を移し、元caseはTask 12で削除した。ケースごとの全処置は `.superpowers/sdd/2026-10-26-group-g4-orders/e2e-disposition.md` のTask 11に記録。
+
+## G-4 Task 12: 返品・申し込み・一覧の表示・配送・設定の既存E2Eの付け替えと整理（2026-10-27）
+
+実装済み・controllerの本番build実行待ち。型・lint・既存文書/E2E helper単体の成功を、このE2Eの通過数に数えない。付け替え99件・移設1件・削除9件・変更なし42件（ケースごとの全処置は `.superpowers/sdd/2026-10-26-group-g4-orders/e2e-disposition.md` のTask 12）。`grep -rn "openOrderTab\|mockOrderList\|components/OrderSection" e2e` は0件。FR-ORDER-001・010、FR-CHECKOUT-050、FR-ORDER-008は変更なし（`test.skip`・`createFulfillment`・`shipE2eOrder`・`openOrderTab`・`mockOrderList` は4ファイルとも0→0）。
+
+### 付け替え・整理した spec の現行の期待
+
+| spec | 現行の入口と維持する期待 |
+| --- | --- |
+| [FR-ADMIN-050](../../../e2e/FR-ADMIN-050-order-shipping.spec.ts) | 詳細の「注文情報」に「配送先の情報が足りません（address）」。発送できる注文（canShip=true）でも旧い入口「発送済みにする」も旧い停止文（発送は荷作り表から行います。）も出ない。横はみ出しなし。題を1件変更（配送先要確認 → 詳細の文）。 |
+| [FR-ADMIN-069](../../../e2e/FR-ADMIN-069-made-to-order-completion.spec.ts) | 残るのはDBの1case（手動の仕上がりの記録・取消の固定の断りと、入荷の自動の割当で発送準備中になること）だけ。画面の2case（「受注生産中」の言葉と数／仕上がりの画面の横はみ出し）は110②・122⑪へ移して削除。`legacy-fulfillment-disabled` のimportは消した。 |
+| [FR-ADMIN-070](../../../e2e/FR-ADMIN-070-order-progress-labels.spec.ts) | 詳細の「注文情報」の進み具合に未決済・受注生産中・発送準備中・配送中・配達済み・キャンセルの言葉（1行で割れない）と、一部だけ送った注文の「一部発送済み」の印。どの詳細にも「仕上がりを記録する」は出ない。絞り込みの8つの名前のcaseは110①・121④へ移して削除。お客様の購入履歴は変更なし。 |
+| [FR-ADMIN-072](../../../e2e/FR-ADMIN-072-fulfillment-cancel.spec.ts) | 詳細の「変更履歴」の欄に発送の行が出ても、頁全体が横にはみ出さない。 |
+| [FR-ADMIN-076](../../../e2e/FR-ADMIN-076-order-list-payment-column.spec.ts) | 詳細の「支払いと返金」に6つの支払いの言葉のどれかが1つだけ（進み具合の言葉とは重ならない）。「返金の手続き中」「返金の失敗」の印はその注文の詳細だけ（金額の見出しdtは数えない）。横はみ出しなし。列の見出し・ボタンの出方・CSVの3caseは削除（121①・051/075/122②・121⑦）。 |
+| [FR-ADMIN-079](../../../e2e/FR-ADMIN-079-shop-settings.spec.ts) | 旧い一覧の窓口をやめ、要対応の窓口だけを空にする。サポーターがSETTINGSを直に開くと戻る先のORDERが「注文一覧表」への入口だけの画面であることを確かめる。ほかの期待は変えない。 |
+| [FR-ADMIN-084](../../../e2e/FR-ADMIN-084-return-create.spec.ts) | 詳細頁の「返品とキャンセルの申し込み」の「返品」から返品の画面・返品を作る画面を開く（8 UI case）。DB・Mailpitの3caseは変更なし。 |
+| [FR-ADMIN-085](../../../e2e/FR-ADMIN-085-return-receive-refund.spec.ts) | 詳細頁の「受け取る」から受け取りの画面を開く（6 UI case）。DB・Mailpitの7caseは変更なし。 |
+| [FR-ADMIN-086](../../../e2e/FR-ADMIN-086-return-partial-missing-cancel.spec.ts) | 詳細頁から返品の画面・受け取り・届かない・開き直し・取消・検品（5 UI case）。DBの3caseは変更なし。 |
+| [FR-ADMIN-087](../../../e2e/FR-ADMIN-087-return-consult-refund.spec.ts) | 詳細頁から返品の画面（5 UI case）。要対応の「もう一度返金する」は /admin/orders から /admin/orders/{id}?open=returns へ移り、返品の画面が開く（普通の返金の画面ではない）。サポーターの旗（返金なし）は詳細のpermissionsで渡す。DB・Mailpitの5caseは変更なし。 |
+| [FR-ADMIN-088](../../../e2e/FR-ADMIN-088-return-exchange.spec.ts) | 詳細頁から受け取りの画面の交換の品・手数料の画面（5 UI case）。DB・Mailpitの7caseは変更なし。 |
+| [FR-ADMIN-089](../../../e2e/FR-ADMIN-089-return-sent-back.spec.ts) | 詳細頁から受け取りの画面のお返しの欄（2 UI case）。DB・Mailpitの4caseは変更なし。 |
+| [FR-ADMIN-090](../../../e2e/FR-ADMIN-090-return-support-receive.spec.ts) | サポーターの旗（返金なし）で詳細頁の返品の画面（3 UI case）。DB・Mailpitの3caseは変更なし。 |
+| [FR-ADMIN-091](../../../e2e/FR-ADMIN-091-order-list-returns.spec.ts) | 残る確かめは2つ。注文一覧表の上の一行（返品の申し込み・返金待ち・キャンセルの申し込み。0件は出さない、全部0件なら行ごと出さない、押すとその状態だけの絞り込みでほかの絞り込みは全部外れる、もう一度で外れる）と、返品の状態・印・次にすることのDBの決まり（変更なし）。「返品」の列・ボタンの名前・絞り込みreturn=・CSVの返品の列の4caseは110⑤・122②・121④・121⑦へ移設/削除。 |
+| [FR-ADMIN-092](../../../e2e/FR-ADMIN-092-shop-return-settings.spec.ts) | 旧い一覧の窓口をやめ、要対応の窓口だけを空にする。期待は変えない。 |
+| [FR-ADMIN-093](../../../e2e/FR-ADMIN-093-return-guards-history.spec.ts) | 履歴の返品の行・メールの種類・横はみ出しなしは詳細の「変更履歴」（埋め込み）。ふつうの返金の数の上限は詳細の返金の画面。商品編集の在庫の履歴とDBのcaseは変更なし。 |
+| [FR-ADMIN-094](../../../e2e/FR-ADMIN-094-return-request-approve.spec.ts)・[095](../../../e2e/FR-ADMIN-095-return-request-decline.spec.ts)・[096](../../../e2e/FR-ADMIN-096-customer-return-support-refund.spec.ts) | 返品の申し込みの確認・お断り・サポーターの受け取りは、adminSceneが詳細の窓口（サポーターは返金なしの旗）を差し替え、詳細頁の「申し込みを確かめる」「受け取る」から開く。期待は変えない。 |
+| [FR-ADMIN-097](../../../e2e/FR-ADMIN-097-cancel-requests.spec.ts) | 一行の「キャンセルの申し込み 1件」は /admin/orders（押すとstatus=cancel_requested）。申し込みの画面は詳細頁の ?open=cancel-request と入口のボタン。品を外す→返金/取消/支払い済みキャンセルの3つの画面・解決・解決だけ失敗は詳細頁。解決後は詳細の入口が消え、一覧へ戻ると上の一行も消える。 |
+| [FR-ADMIN-098](../../../e2e/FR-ADMIN-098-return-request-settings.spec.ts) | settingsSceneが旧い一覧の窓口をやめ、要対応の窓口だけを空にする。期待は変えない。 |
+| [FR-ADMIN-099](../../../e2e/FR-ADMIN-099-item-return-ineligible.spec.ts) | 「お店が返品を作る画面では返品不可を警告する」は詳細頁の返品の画面から開く。商品の編集・新規の2caseは変更なし。 |
+| [FR-ADMIN-102](../../../e2e/FR-ADMIN-102-delivery-tracking-sync.spec.ts) | 履歴の確かめを詳細の「変更履歴」へ。追跡・メールは変更なし。bridgeは詳細の窓口（DBのsummary）を答える。 |
+| [FR-ADMIN-103](../../../e2e/FR-ADMIN-103-delivery-attention.spec.ts) | 要対応の「配送」の組と「対応済みにする」は /admin/orders。「履歴を開く」は詳細の #order-history へ移る。その注文の開いている配送の要対応（問題あり・不在で持ち帰り・伝票番号で荷物が見つからない）は詳細の「要対応」の欄に全部並ぶ（旧い一覧の優先順の1つの印は無くなった）。 |
+| [FR-ADMIN-104](../../../e2e/FR-ADMIN-104-delivery-tracking-settings.spec.ts) | 設定の確かめは変更なし。最後の履歴の確かめだけ詳細の「変更履歴」へ。鍵未設定のcaseは要対応の窓口だけを空にする。発送票のcaseは変更なし。 |
+| [FR-ADMIN-119](../../../e2e/FR-ADMIN-119-purchase-order-attachments.spec.ts) | 「原本を見る」の開いたタブの保存を待つ promise を、20秒で reject する時計と Promise.race させた。保存も移動も起きない時は、試験全体の時間切れまで待たず、理由つきの失敗の文で終わる。期待は変えない（G-2 最終の確かめ直しの N2。N3・N4 は本番コードのため未実施）。 |
+| [FR-ADMIN-123](../../../e2e/FR-ADMIN-123-group-g-permissions.spec.ts) | 旧い一覧の窓口（mockOrderList）6か所を外し（要対応の窓口は管理者のログインの道具が空にする）、ORDERタブを開く道具は123の中のopenOrderMenuにした。旧い仕上がりの停止文の確認は固定の字で持つ。旧い窓口のURLは404の期待だけ。 |
+
+### 共有の道具
+
+- `order-fulfillment-test-utils`: `mockOrderList`・`openOrderTab` を削除（利用者は0件）。`adminOrder` は詳細のsummaryの元として残す（`canShip`・`canRecordCompletion` の既定は、050と123が「窓口が昔の形で true と答えても入口が出ない」を確かめるため残した）。
+- `refund-test-utils`: 旧一覧の `openRefundDialog`・`openPaidCancelDialog` を削除。`return-test-utils`: `openReturnsDialog`・`openHistoryDialog`・`mockOrderListWithAttention`・`exchangeOrderLine` を削除。`return-request-test-utils`: `openCancel` を削除し、`adminScene`・`cancelScene`・`openReview`・`settingsScene` を詳細頁/注文一覧表/入口だけのORDERへ付け替え（`cancelScene` は第5引数 `landing` で詳細か注文一覧表を開く）。
+- `delivery-tracking-test-utils`: `openOrderHistory` を削除。`mockAdminDeliveryBridge` は、旧い一覧の窓口をやめて `/api/admin/order-items`（空）と詳細 `GET /api/admin/orders/{id}`（DBの進み具合のsummaryと、開いている配送の要対応の行）を答える。`DeliveryBridgeLog` に `detailReads` を追加。
+
+### 旧い410の宿題の仕上げ
+
+`tests/unit/api/admin/legacy-fulfillment-routes-removed.test.ts` の走査を e2e と tests へ広げた。旧い窓口のURLを書いてよい行は404を期待する117（4行）と123（11行）だけ。`LEGACY_FULFILLMENT_DISABLED` の記号は、DBの旧い関数の拒否のDB結合（tests/integration/db）と、止めたstoreの関数・固定の文・その記号を投げる道具の許可リストの試験だけ。`legacy-fulfillment-disabled.ts` のimporterは、e2eに無く、testsは許可リストの5ファイルだけ。モジュールは止めたstoreの関数（fulfillment-store.ts・fulfillment-materials.ts）の試験が使うので残し、使われなくなった `legacyFulfillmentDisabledBody` と型だけを消した。

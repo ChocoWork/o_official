@@ -20,13 +20,14 @@ import {
   recordRefundResult,
   withLocalDb,
 } from './order-email-test-utils';
+import { orderDetailHistory } from './delivery-tracking-test-utils';
 import {
-  adminOrder,
+  adminOrderDetail,
   fulfillJson,
   historyOf,
   mockAdminSession,
-  mockOrderList,
-  openOrderTab,
+  mockOrderDetail,
+  openOrderDetail,
   orderNumberOf,
   viewports,
 } from './order-fulfillment-test-utils';
@@ -35,7 +36,7 @@ import {
   mockAdminSessionAs,
   mockRefundRoutes,
   newRefundRouteState,
-  openRefundDialog,
+  openDetailRefundDialog,
   quantityInput,
   refundMaterialsOf,
 } from './refund-test-utils';
@@ -47,7 +48,6 @@ import {
   createShippedOrder,
   formatYen,
   lineProgressOf,
-  openHistoryDialog,
   receiveReturnInDb,
   reopenReturnInDb,
   returnEmailHistoryEntry,
@@ -130,9 +130,8 @@ function returnRefundEntry(): OrderHistoryRefundEntry {
 
 async function mockHistory(page: Page, entries: ReturnType<typeof returnEntries>): Promise<void> {
   await mockAdminSessionAs(page, 'admin');
-  await mockOrderList(page, () => [
-    adminOrder({ id: ORDER_ID, status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false }),
-  ]);
+  // 履歴は注文の詳細頁の「変更履歴」の欄に埋め込まれている。詳細の窓口を先に差し替え、履歴の窓口をこの試験の答えで上書きする
+  await mockOrderDetail(page, () => adminOrderDetail({ id: ORDER_ID, status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false }));
   await page.route(`**/api/admin/orders/${ORDER_ID}/history`, (route) =>
     fulfillJson(route, historyOf(ORDER_ID, [...entries, returnRefundEntry()].reverse())));
 }
@@ -245,12 +244,12 @@ for (const viewport of viewports) {
         }),
       );
       await mockAdminSessionAs(page, 'admin');
-      await mockOrderList(page, () => [
-        adminOrder({ id: ORDER_ID, canShip: false, canRefund: true, paymentStatusKey: 'paid', refundedAmountLabel: '-', cancelKind: null }),
-      ]);
+      await mockOrderDetail(page, () =>
+        adminOrderDetail({ id: ORDER_ID, canShip: false, canRefund: true, paymentStatusKey: 'paid', refundedAmountLabel: '-', cancelKind: null }),
+      );
       await mockRefundRoutes(page, ORDER_ID, state);
-      await openOrderTab(page);
-      const dialog = await openRefundDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const dialog = await openDetailRefundDialog(page, ORDER_ID);
       const shipped = quantityInput(dialog, '発送済みの商品', 'シルクブラウス（ホワイト / M）');
 
       await expect(shipped).toHaveAttribute('max', '1');
@@ -298,18 +297,18 @@ for (const viewport of viewports) {
     test('履歴に返品の行（作った・受け取り（細目つき）・届かない・返金しない・検品・取消・開き直し・交換の品・手数料・支払いを待たずに送る）が出て、返金の行のどこからは「返品（番号）」になる', async ({ page }) => {
       // FREQ-474-AC-01, FREQ-474-AC-02
       await mockHistory(page, returnEntries());
-      await openOrderTab(page);
-      const dialog = await openHistoryDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const history = await orderDetailHistory(page);
 
       for (const { title } of returnEntries()) {
-        await expect(dialog.getByText(title, { exact: true }), title).toBeVisible();
+        await expect(history.getByText(title, { exact: true }), title).toBeVisible();
       }
       // 受け取りの細目は、1行に1つ。0点の物は出ない
       for (const detail of ['在庫に戻す 2点', '戻さない 1点', 'お返し 1点', '検品待ち 1点']) {
-        await expect(dialog.getByText(detail, { exact: true }), detail).toBeVisible();
+        await expect(history.getByText(detail, { exact: true }), detail).toBeVisible();
       }
       // 操作した人は「操作: {メール}」。作った・取消・手数料の受け取り・いただかないことにした・支払いを待たずに送る・交換の品を足した行にも、窓口が引いた人が入る
-      const row = (text: string) => dialog.getByRole('listitem').filter({ hasText: text });
+      const row = (text: string) => history.getByRole('listitem').filter({ hasText: text });
       await expect(row(`返品を作った（${LABEL}）`)).toContainText('操作: admin@example.com');
       await expect(row(`返品を取り消した（${SECOND_LABEL}）`)).toContainText('操作: support@example.com');
       await expect(row('交換の品を足した（E2Eシャツ（ホワイト / L） × 1）')).toContainText('操作: admin@example.com');
@@ -321,7 +320,7 @@ for (const viewport of viewports) {
       await expect(inspected).toHaveCount(1);
       await expect(inspected).not.toContainText('操作:');
       // 返品の返金の行のどこから
-      await expect(dialog.getByText(`返品（${LABEL}）`, { exact: true })).toBeVisible();
+      await expect(history.getByText(`返品（${LABEL}）`, { exact: true })).toBeVisible();
     });
 
     test('履歴のメールの欄に返品のメールの種類の名前が出て、再送のボタンが無い。DB も返品のメールの再送を断る（手元の DB）', async ({ page }) => {
@@ -336,17 +335,15 @@ for (const viewport of viewports) {
         returnEmailHistoryEntry({ kind: 'return_refund_pending_shop', kindLabel: '店への知らせ（返金待ち）', at: '2026-10-11T03:01:00.000Z' }),
       ];
       await mockAdminSessionAs(page, 'admin');
-      await mockOrderList(page, () => [
-        adminOrder({ id: ORDER_ID, status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false }),
-      ]);
+      await mockOrderDetail(page, () => adminOrderDetail({ id: ORDER_ID, status: '配送中', orderStatus: 'shipped', progressKey: 'in_transit', canShip: false }));
       await page.route(`**/api/admin/orders/${ORDER_ID}/history`, (route) => fulfillJson(route, historyOf(ORDER_ID, mails)));
-      await openOrderTab(page);
-      const dialog = await openHistoryDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      const history = await orderDetailHistory(page);
 
       for (const name of ['返品の受付のお知らせ', '返品の受け取りのお知らせ', '品物のお返しのお知らせ', '店への知らせ（返金待ち）']) {
-        await expect(dialog.getByText(`${name}のメール`, { exact: true }), name).toBeVisible();
+        await expect(history.getByText(`${name}のメール`, { exact: true }), name).toBeVisible();
       }
-      await expect(dialog.getByRole('button', { name: 'お客様へ再送' })).toHaveCount(0);
+      await expect(history.getByRole('button', { name: 'お客様へ再送' })).toHaveCount(0);
 
       // DB の再送の関数は、返品のメール4種類をどの注文でも RESEND_NOT_ALLOWED で断る（履歴の再送のボタンが無いことの根）
       await withLocalDb(async (db) => {
@@ -482,8 +479,8 @@ for (const viewport of viewports) {
 
     test('返品の行が並んだ履歴でも、横方向のページスクロールが発生しない', async ({ page }) => {
       await mockHistory(page, returnEntries());
-      await openOrderTab(page);
-      await openHistoryDialog(page, ORDER_ID);
+      await openOrderDetail(page, ORDER_ID);
+      await orderDetailHistory(page);
 
       const hasHorizontalOverflow = await page.evaluate(() => {
         const doc = document.documentElement;

@@ -16,7 +16,19 @@ import {
   sentOutboxCount,
   withLocalDb,
 } from './order-email-test-utils';
-import { UUID_PATTERN, fulfillJson, mockOrderList, openOrderTab, orderNumberOf, viewports } from './order-fulfillment-test-utils';
+import { mockOrderAttention } from './order-admin-test-utils';
+import {
+  SUPPORTER_DETAIL_PERMISSIONS,
+  UUID_PATTERN,
+  adminOrderDetail,
+  emptyOrderItemList,
+  fulfillJson,
+  mockOrderDetail,
+  mockOrderItemList,
+  openOrderDetail,
+  orderNumberOf,
+  viewports,
+} from './order-fulfillment-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
 import {
   RETURN_MAIL,
@@ -29,9 +41,9 @@ import {
   formatYen,
   mockReturnRoutes,
   newReturnRouteState,
+  openDetailReturnsDialog,
   openReceiveDialog,
   openReturnRefundDialog,
-  openReturnsDialog,
   orderWithReturns,
   readReturnBreakdown,
   receiptRows,
@@ -115,42 +127,56 @@ type ListOptions = {
   failures?: AttentionException[];
 };
 
-/** 一覧の窓口と返品の窓口を差し替えて、ORDER タブを開く */
-async function openList(page: Page, returns: OrderReturnDetail[], options: ListOptions = {}): Promise<ReturnRouteState> {
+/** 詳細の窓口・注文一覧表の窓口・要対応の窓口・返品の窓口を差し替える（頁は開かない）。サポートの人は詳細の旗が返金なし */
+async function mockScene(page: Page, returns: OrderReturnDetail[], options: ListOptions = {}): Promise<ReturnRouteState> {
+  const supporter = options.role === 'supporter';
   const state = newReturnRouteState({
     orderId: ORDER_ID,
     returns,
     returnableUnits: 0,
     refundableAmount: 20_000,
     refundableShipping: 800,
-    canRefund: options.role !== 'supporter',
+    canRefund: !supporter,
     ...options.state,
   });
   await mockAdminSessionAs(page, options.role ?? 'admin');
-  await mockOrderList(page, () => [
-    orderWithReturns({
-      id: ORDER_ID,
-      summary: returnSummaryOf(
-        options.summary ?? { orderId: ORDER_ID, displayStatus: 'refund_waiting', nextAction: 'refund', hasReturnable: false, refundWaitingReturns: 1 },
-      ),
-      canRefund: options.role !== 'supporter',
+  await mockOrderItemList(page, emptyOrderItemList);
+  await mockOrderDetail(page, () =>
+    adminOrderDetail({
+      ...orderWithReturns({
+        id: ORDER_ID,
+        summary: returnSummaryOf(
+          options.summary ?? { orderId: ORDER_ID, displayStatus: 'refund_waiting', nextAction: 'refund', hasReturnable: false, refundWaitingReturns: 1 },
+        ),
+        canRefund: !supporter,
+      }),
+      ...(supporter ? { permissions: SUPPORTER_DETAIL_PERMISSIONS } : {}),
     }),
-  ]);
+  );
   await mockReturnRoutes(page, ORDER_ID, state);
-  const failures = options.failures;
-  if (failures) {
-    // 後から登録した窓口が先に効く。管理画面が裏で読む要対応の空の答えを、この試験の答えで上書きする
-    await page.route('**/api/admin/order-attention', (route) =>
-      fulfillJson(route, { data: { exceptions: failures, reviews: [], counts: { exceptions: failures.length, reviews: 0 } } }));
-  }
-  await openOrderTab(page);
+  // 後から登録した窓口が先に効く。管理画面が裏で読む要対応の空の答えを、この試験の答え（省くと空）で上書きする
+  await mockOrderAttention(page, { exceptions: options.failures ?? [] });
+  return state;
+}
+
+/** 注文の詳細頁を開く。返品の窓口・詳細の窓口は差し替える */
+async function openDetail(page: Page, returns: OrderReturnDetail[], options: ListOptions = {}): Promise<ReturnRouteState> {
+  const state = await mockScene(page, returns, options);
+  await openOrderDetail(page, ORDER_ID);
+  return state;
+}
+
+/** 注文一覧表の頁（要対応の欄がある）を開く。「もう一度返金する」から詳細頁へ移る試験が使う */
+async function openAttentionList(page: Page, returns: OrderReturnDetail[], options: ListOptions = {}): Promise<ReturnRouteState> {
+  const state = await mockScene(page, returns, options);
+  await page.goto('/admin/orders');
   return state;
 }
 
 /** 返金待ちの返品1つの「額を決めて返金する」の画面まで開く */
 async function openRefund(page: Page) {
-  const state = await openList(page, [waitingReturn()]);
-  await openReturnsDialog(page, ORDER_ID, '額を決めて返金する');
+  const state = await openDetail(page, [waitingReturn()]);
+  await openDetailReturnsDialog(page, ORDER_ID, '額を決めて返金する');
   const dialog = await openReturnRefundDialog(page, ORDER_ID, LABEL);
   return { state, dialog };
 }
@@ -168,10 +194,10 @@ for (const viewport of viewports) {
         id: RETURN_ID,
         lines: [returnLineOf({ id: LINE, orderItemId: SHIRT, quantity: 1, itemName: 'E2Eシャツ' })],
       });
-      const state = await openList(page, [detail], {
+      const state = await openDetail(page, [detail], {
         summary: { orderId: ORDER_ID, displayStatus: 'in_progress', marks: ['awaiting_items'], nextAction: 'receive', hasReturnable: false },
       });
-      await openReturnsDialog(page, ORDER_ID, '受け取る');
+      await openDetailReturnsDialog(page, ORDER_ID, '受け取る');
       const dialog = await openReceiveDialog(page, ORDER_ID, LABEL);
 
       await setUnitState(dialog, 0, UNIT_STATES.restock);
@@ -205,8 +231,8 @@ for (const viewport of viewports) {
         lines: [returnLineOf({ id: THIRD_LINE, orderItemId: SHIRT, quantity: 1, itemName: 'E2Eシャツ', progress: { restocked: 1, refundCovered: 1 } })],
         refunds: [{ id: randomUUID(), amount: 5_000, status: 'succeeded', createdAt: '2026-10-11T03:00:00.000Z' }],
       });
-      const state = await openList(page, [waiting, failedAfterClose, done]);
-      const returns = await openReturnsDialog(page, ORDER_ID, '額を決めて返金する');
+      const state = await openDetail(page, [waiting, failedAfterClose, done]);
+      const returns = await openDetailReturnsDialog(page, ORDER_ID, '額を決めて返金する');
       const refundButton = (label: string) => returnCard(returns, label).getByRole('button', { name: '額を決めて返金する', exact: true });
 
       await expect(refundButton(LABEL)).toBeVisible();
@@ -219,19 +245,22 @@ for (const viewport of viewports) {
       await expect(page.getByRole('dialog', { name: RETURN_TEXT.refundTitle(SECOND_LABEL), exact: true })).toBeVisible();
       expect(state.posts.refund).toHaveLength(0);
 
-      // サポートの人の画面には、返金に関わるボタンが出ない（一覧のボタンも「返品」になる）
-      await openList(page, [waiting, failedAfterClose, done], { role: 'supporter' });
-      const supporterReturns = await openReturnsDialog(page, ORDER_ID, '返品');
+      // サポートの人の画面には、返金に関わるボタンが出ない（詳細の入口のボタンも「返品」になる）
+      await openDetail(page, [waiting, failedAfterClose, done], { role: 'supporter' });
+      const supporterReturns = await openDetailReturnsDialog(page, ORDER_ID, '返品');
       await expect(supporterReturns.getByRole('group', { name: LABEL, exact: true })).toBeVisible();
       await expect(supporterReturns.getByRole('button', { name: '額を決めて返金する', exact: true })).toHaveCount(0);
     });
 
     test('要対応の「返金の失敗」が返品の返金なら、店長の「もう一度返金する」はふつうの返金の画面ではなく返品の画面を開く。サポートの人には出ない', async ({ page }) => {
-      // FREQ-464-AC-17
-      await openList(page, [waitingReturn()], { failures: [RETURN_REFUND_FAILURE] });
+      // FREQ-464-AC-17。要対応の欄は注文一覧表（/admin/orders）。返品の返金の失敗は、詳細頁の ?open=returns へ移って返品の画面を開く
+      await openAttentionList(page, [waitingReturn()], { failures: [RETURN_REFUND_FAILURE] });
       await expect(page.getByText(`返金の失敗（${orderNumberOf(ORDER_ID)}）`)).toBeVisible();
 
+      // 詳細頁は開いた直後に ?open= を消すので、押す前に ?open=returns への遷移を待ち受けておく
+      const opened = page.waitForURL(new RegExp(`/admin/orders/${ORDER_ID}\\?open=returns$`), { waitUntil: 'commit' });
       await page.getByRole('button', { name: 'もう一度返金する', exact: true }).click();
+      await opened;
 
       const returns = page.getByRole('dialog', { name: returnsDialogName(ORDER_ID), exact: true });
       await expect(returns).toBeVisible();
@@ -239,7 +268,7 @@ for (const viewport of viewports) {
       await expect(page.getByRole('dialog', { name: `返金（注文 ${orderNumberOf(ORDER_ID)}）`, exact: true })).toHaveCount(0);
 
       // サポートの人には返金の権限が無いので、返品の返金の失敗にも「もう一度返金する」を出さない（「解決済みにする」は出る）
-      await openList(page, [waitingReturn()], { role: 'supporter', failures: [RETURN_REFUND_FAILURE] });
+      await openAttentionList(page, [waitingReturn()], { role: 'supporter', failures: [RETURN_REFUND_FAILURE] });
       await expect(page.getByText(`返金の失敗（${orderNumberOf(ORDER_ID)}）`)).toBeVisible();
       await expect(page.getByRole('button', { name: 'もう一度返金する', exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: '解決済みにする', exact: true })).toBeVisible();

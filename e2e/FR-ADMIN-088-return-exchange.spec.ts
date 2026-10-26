@@ -27,8 +27,9 @@ import {
   withLocalDb,
 } from './order-email-test-utils';
 import {
-  mockOrderList,
-  openOrderTab,
+  adminOrderDetail,
+  mockOrderDetail,
+  openOrderDetail,
   orderNumberOf,
   viewports,
 } from './order-fulfillment-test-utils';
@@ -48,9 +49,9 @@ import {
   lineProgressOf,
   mockReturnRoutes,
   newReturnRouteState,
+  openDetailReturnsDialog,
   openOperationDialog,
   openReceiveDialog,
-  openReturnsDialog,
   orderWithReturns,
   receiptUnitRows,
   receiveReturnInDb,
@@ -98,27 +99,27 @@ async function itemState(db: PgClient, orderId: string, orderItemId: string): Pr
   return { status: res.rows[0].status as string, reasons: res.rows[0].blocked_reasons as string[] };
 }
 
-/** 一覧の窓口と返品の窓口を差し替えて、ORDER タブを開く */
-async function openList(page: Page, returns: ReturnType<typeof returnDetailOf>[], summary: Parameters<typeof returnSummaryOf>[0]): Promise<ReturnRouteState> {
+/** 詳細の窓口と返品の窓口を差し替えて、注文の詳細頁を開く */
+async function openDetail(page: Page, returns: ReturnType<typeof returnDetailOf>[], summary: Parameters<typeof returnSummaryOf>[0]): Promise<ReturnRouteState> {
   const state = newReturnRouteState({ orderId: ORDER_ID, returns, returnableUnits: 0, refundableAmount: 20_000 });
   await mockAdminSessionAs(page, 'admin');
-  await mockOrderList(page, () => [orderWithReturns({ id: ORDER_ID, summary: returnSummaryOf(summary) })]);
+  await mockOrderDetail(page, () => adminOrderDetail(orderWithReturns({ id: ORDER_ID, summary: returnSummaryOf(summary) })));
   await mockReturnRoutes(page, ORDER_ID, state);
-  await openOrderTab(page);
+  await openOrderDetail(page, ORDER_ID);
   return state;
 }
 
 /** 受け取り待ちの返品1つ（交換の行を渡す。手数料を使う時は fees）の受け取りの画面まで開く */
 async function openExchangeReceive(page: Page, lines: OrderReturnLineDetail[], fees?: { exchangeFee: number; exchangeShippingFee: number }) {
   const detail = returnDetailOf({ orderId: ORDER_ID, id: RETURN_ID, lines, fees });
-  const state = await openList(page, [detail], {
+  const state = await openDetail(page, [detail], {
     orderId: ORDER_ID,
     displayStatus: 'in_progress',
     marks: ['awaiting_items'],
     nextAction: 'receive',
     hasReturnable: false,
   });
-  await openReturnsDialog(page, ORDER_ID, '受け取る');
+  await openDetailReturnsDialog(page, ORDER_ID, '受け取る');
   const dialog = await openReceiveDialog(page, ORDER_ID, LABEL);
   return { state, dialog };
 }
@@ -273,8 +274,8 @@ for (const viewport of viewports) {
           { orderItemId: EXCHANGE_ITEM, itemName: 'E2Eシャツ', color: 'ホワイト', size: 'L', quantity: 1, fulfillmentType: 'stock', shipped: 0 },
         ],
       });
-      const state = await openList(page, [detail], { orderId: ORDER_ID, displayStatus: 'in_progress', marks: ['awaiting_fee'], hasReturnable: false });
-      const returns = await openReturnsDialog(page, ORDER_ID);
+      const state = await openDetail(page, [detail], { orderId: ORDER_ID, displayStatus: 'in_progress', marks: ['awaiting_fee'], hasReturnable: false });
+      const returns = await openDetailReturnsDialog(page, ORDER_ID);
       await expect(returnCard(returns, LABEL).getByText(`お支払い待ち ${formatYen(800)}`)).toBeVisible();
 
       // 手数料の受け取りを記録する: 確かめの文・メモの欄。「戻る」では何も送らない

@@ -15,7 +15,7 @@ import {
   variantStockState,
   withLocalDb,
 } from './order-email-test-utils';
-import { UUID_PATTERN, mockOrderList, openOrderTab, orderNumberOf, viewports } from './order-fulfillment-test-utils';
+import { UUID_PATTERN, adminOrderDetail, mockOrderDetail, openOrderDetail, orderNumberOf, viewports } from './order-fulfillment-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
 import {
   RETURN_MAIL,
@@ -27,8 +27,8 @@ import {
   lineProgressOf,
   mockReturnRoutes,
   newReturnRouteState,
+  openDetailReturnsDialog,
   openReceiveDialog,
-  openReturnsDialog,
   orderWithReturns,
   receiveReturnInDb,
   returnEmailRows,
@@ -62,15 +62,17 @@ async function openReceive(page: Page) {
   });
   const state = newReturnRouteState({ orderId: ORDER_ID, returns: [detail], returnableUnits: 0, refundableAmount: 20_000 });
   await mockAdminSessionAs(page, 'admin');
-  await mockOrderList(page, () => [
-    orderWithReturns({
-      id: ORDER_ID,
-      summary: returnSummaryOf({ orderId: ORDER_ID, displayStatus: 'in_progress', marks: ['awaiting_items'], nextAction: 'receive', hasReturnable: false }),
-    }),
-  ]);
+  await mockOrderDetail(page, () =>
+    adminOrderDetail(
+      orderWithReturns({
+        id: ORDER_ID,
+        summary: returnSummaryOf({ orderId: ORDER_ID, displayStatus: 'in_progress', marks: ['awaiting_items'], nextAction: 'receive', hasReturnable: false }),
+      }),
+    ),
+  );
   await mockReturnRoutes(page, ORDER_ID, state);
-  await openOrderTab(page);
-  await openReturnsDialog(page, ORDER_ID, '受け取る');
+  await openOrderDetail(page, ORDER_ID);
+  await openDetailReturnsDialog(page, ORDER_ID, '受け取る');
   const dialog = await openReceiveDialog(page, ORDER_ID, LABEL);
   return { state, dialog };
 }

@@ -3,8 +3,10 @@
  * 対応 FREQ: FREQ-493（AC-02・AC-03）
  *
  * 要対応は、作り物の 17TRACK（127.0.0.1:4017）の答えを、起動したアプリの毎分の定期処理が読んで DB に開く物を使う。
- * 管理画面の窓口だけを差し替え（管理者のログイン・CSRF・権限は Task 9 の単体の試験。P22）、一覧の印・要対応の組・履歴は
+ * 管理画面の窓口だけを差し替え（管理者のログイン・CSRF・権限は Task 9 の単体の試験。P22）、要対応の組・詳細の「要対応」の欄・履歴は
  * DB の本物の読み出しの結果、「対応済みにする」は本物の DB の関数を呼ぶ。
+ * G-4: 旧い注文の一覧の行の印（優先順で1つ）は無くなった。要対応の組と「対応済みにする」は注文一覧表（/admin/orders）、
+ * その注文の開いている配送の要対応は注文の詳細の「要対応」の欄（開いている物が全部並ぶ）、履歴は詳細の「変更履歴」の欄で確かめる。
  */
 import { expect, test } from '@playwright/test';
 import {
@@ -17,7 +19,7 @@ import {
   makeRegistrationDue,
   mockAdminDeliveryBridge,
   newDeliveryBridgeLog,
-  openOrderHistory,
+  orderDetailHistory,
   pairFor,
   pollWithMinuteJob,
   readAttention,
@@ -27,7 +29,7 @@ import {
   shipFixture,
   withDeliveryScenario,
 } from './delivery-tracking-test-utils';
-import { openOrderTab } from './order-fulfillment-test-utils';
+import { detailSection, openOrderDetail } from './order-fulfillment-test-utils';
 
 const openKinds = async (read: () => Promise<Awaited<ReturnType<typeof readAttention>>>) =>
   (await read()).filter((row) => row.resolved_at === null).map((row) => row.kind).sort();
@@ -58,12 +60,10 @@ for (const viewport of deliveryViewports) {
         );
         expect((await readFulfillment(client, fulfillmentId)).delivery_status).toBe('failure');
 
-        // 一覧の印と、要対応の「配送」の組
+        // 注文一覧表の要対応の「配送」の組
         const log = newDeliveryBridgeLog();
         await mockAdminDeliveryBridge(page, { client, orderIds: [fx.orderId], actor, log });
-        await openOrderTab(page);
-        const orderRow = page.getByRole('row', { name: new RegExp(fx.orderId) });
-        await expect(orderRow.getByText('問題あり', { exact: true })).toBeVisible();
+        await page.goto('/admin/orders');
         const region = page.getByRole('region', { name: '要対応 0件・要確認 0件・配送 1件', exact: true });
         await expect(region).toBeVisible();
         await expect(region.getByRole('heading', { name: '配送', exact: true })).toBeVisible();
@@ -71,22 +71,27 @@ for (const viewport of deliveryViewports) {
         await expect(region.getByText(`注文番号 ${fx.orderNumber}・1回目の発送`, { exact: true })).toBeVisible();
         await expectNoHorizontalOverflow(page);
 
-        // 「履歴を開く」でその注文の履歴が開く（配送の状況は問題あり）
+        // 「履歴を開く」でその注文の詳細の変更履歴へ移る（配送の状況は問題あり）。詳細の「要対応」の欄にも配送の要対応の印（問題あり）が出る
         await region.getByRole('button', { name: '履歴を開く', exact: true }).click();
-        const dialog = page.getByRole('dialog', { name: 'この注文の履歴', exact: true });
-        await expect(dialog).toBeVisible();
-        await expect(dialog.getByText('配送の状況（1回目）', { exact: true }).first()).toBeVisible();
-        await expect(dialog.getByText('問題あり', { exact: true }).first()).toBeVisible();
-        await expectDialogFits(page, dialog);
-        await page.keyboard.press('Escape');
-        await expect(dialog).toHaveCount(0);
+        await expect(page).toHaveURL(new RegExp(`/admin/orders/${fx.orderId}#order-history$`));
+        const history = await orderDetailHistory(page);
+        await expect(history.getByText('配送の状況（1回目）', { exact: true }).first()).toBeVisible();
+        await expect(history.getByText('問題あり', { exact: true }).first()).toBeVisible();
+        await expectDialogFits(page, history);
+        const attentionSection = detailSection(page, '要対応');
+        await expect(attentionSection.getByText('問題あり', { exact: true })).toBeVisible();
+        await expect(attentionSection.getByRole('link', { name: '要対応の一覧で対応する', exact: true })).toHaveAttribute('href', '/admin/orders#attention');
 
-        // 手で対応済みにする → 組と印が消える。DB は手で閉じた記録（した人つき）
+        // 一覧へ戻って手で対応済みにする → 組が消える。DB は手で閉じた記録（した人つき）。詳細の「要対応」の欄からも消える
+        await page.getByRole('link', { name: '注文一覧表へ戻る', exact: true }).click();
+        await expect(region).toBeVisible();
         await region.getByRole('button', { name: '対応済みにする', exact: true }).click();
         await expect(page.getByText('対応済みにしました。', { exact: true })).toBeVisible();
         await expect(page.getByRole('region', { name: /要対応/ })).toHaveCount(0);
-        await expect(orderRow.getByText('問題あり', { exact: true })).toHaveCount(0);
         expect(log.resolvePosts).toEqual([{ attentionId: expect.any(String), status: 200 }]);
+        await openOrderDetail(page, fx.orderId);
+        await expect(detailSection(page, '要対応').getByText('要対応はありません。', { exact: true })).toBeVisible();
+        await expect(detailSection(page, '要対応').getByText('問題あり', { exact: true })).toHaveCount(0);
         const resolved = await attention();
         expect(resolved).toHaveLength(1);
         expect(resolved[0]).toMatchObject({ kind: 'delivery_failure', resolution: 'manual', resolved_by: actor.id });
@@ -115,15 +120,16 @@ for (const viewport of deliveryViewports) {
         expect(reopened.filter((row) => row.resolved_at === null)).toMatchObject([{ kind: 'delivery_failure', resolution: null }]);
         expect(reopened[0].id).not.toBe(reopened[1].id);
 
-        await openOrderTab(page);
+        await page.goto('/admin/orders');
         await expect(page.getByRole('region', { name: '要対応 0件・要確認 0件・配送 1件', exact: true })).toBeVisible();
-        await expect(page.getByRole('row', { name: new RegExp(fx.orderId) }).getByText('問題あり', { exact: true })).toBeVisible();
+        await openOrderDetail(page, fx.orderId);
+        await expect(detailSection(page, '要対応').getByText('問題あり', { exact: true })).toBeVisible();
         await expectNoHorizontalOverflow(page);
       });
     });
 
     // FREQ-493-AC-02, FREQ-493-AC-03
-    test('不在と追跡できない印の優先を出す', async ({ page }) => {
+    test('配送の要対応〔問題あり・不在で持ち帰り・追跡できない〕が注文一覧表の要対応の欄に全部出て、詳細の「要対応」の欄にその注文の開いている分が出る。対応済みにすると両方から消える', async ({ page }) => {
       test.setTimeout(420_000);
       await withDeliveryScenario(async ({ client, numberPrefix }) => {
         const actor = await createAdminActor(client);
@@ -158,17 +164,22 @@ for (const viewport of deliveryViewports) {
 
         const log = newDeliveryBridgeLog();
         await mockAdminDeliveryBridge(page, { client, orderIds: [orderX.orderId, orderY.orderId, orderZ.orderId], actor, log });
-        await openOrderTab(page);
-        const rowOf = (orderId: string) => page.getByRole('row', { name: new RegExp(orderId) });
 
-        // 一覧の印は1つだけ。優先順位は 問題あり → 不在で持ち帰り → 追跡できない
-        await expect(rowOf(orderX.orderId).getByText('問題あり', { exact: true })).toBeVisible();
-        await expect(rowOf(orderX.orderId).getByText('不在で持ち帰り', { exact: true })).toHaveCount(0);
-        await expect(rowOf(orderY.orderId).getByText('不在で持ち帰り', { exact: true })).toBeVisible();
-        await expect(rowOf(orderY.orderId).getByText('問題あり', { exact: true })).toHaveCount(0);
-        await expect(rowOf(orderZ.orderId).getByText('追跡できない', { exact: true })).toBeVisible();
+        // 詳細の「要対応」の欄には、その注文の開いている配送の要対応が全部並ぶ（旧い一覧の優先順の1つの印は無くなった）。
+        // 注文X は2つの発送の分（問題あり・不在で持ち帰り）、Y は不在で持ち帰り、Z は伝票番号で荷物が見つからない
+        const attentionSection = detailSection(page, '要対応');
+        await openOrderDetail(page, orderX.orderId);
+        await expect(attentionSection.getByText('問題あり', { exact: true })).toHaveCount(1);
+        await expect(attentionSection.getByText('不在で持ち帰り', { exact: true })).toHaveCount(1);
+        await openOrderDetail(page, orderY.orderId);
+        await expect(attentionSection.getByText('不在で持ち帰り', { exact: true })).toHaveCount(1);
+        await expect(attentionSection.getByText('問題あり', { exact: true })).toHaveCount(0);
+        await openOrderDetail(page, orderZ.orderId);
+        await expect(attentionSection.getByText('伝票番号で荷物が見つからない', { exact: true })).toHaveCount(1);
+        await expect(attentionSection.getByText('問題あり', { exact: true })).toHaveCount(0);
 
-        // 要対応の組には、開いている4件が全部出る（種類の言葉は計画 C-5）
+        // 注文一覧表の要対応の組には、開いている4件が全部出る（種類の言葉は計画 C-5）
+        await page.goto('/admin/orders');
         const region = page.getByRole('region', { name: '要対応 0件・要確認 0件・配送 4件', exact: true });
         await expect(region).toBeVisible();
         await expect(region.getByText('問題あり', { exact: true })).toHaveCount(1);
@@ -178,7 +189,7 @@ for (const viewport of deliveryViewports) {
         await expect(region.getByText(`注文番号 ${orderX.orderNumber}・2回目の発送`, { exact: true })).toBeVisible();
         await expectNoHorizontalOverflow(page);
 
-        // 1件ずつ対応済みにする。4件目で「配送」の組（欄ごと）が消え、一覧の印も消える
+        // 1件ずつ対応済みにする。4件目で「配送」の組（欄ごと）が消え、詳細の「要対応」の欄からも消える
         const resolveButtons = page.getByRole('button', { name: '対応済みにする', exact: true });
         for (let remaining = 3; remaining >= 0; remaining -= 1) {
           await resolveButtons.first().click();
@@ -186,9 +197,10 @@ for (const viewport of deliveryViewports) {
         }
         await expect(page.getByRole('region', { name: /要対応/ })).toHaveCount(0);
         await expect(page.getByRole('heading', { name: '配送', exact: true })).toHaveCount(0);
-        await expect(rowOf(orderX.orderId).getByText('問題あり', { exact: true })).toHaveCount(0);
-        await expect(rowOf(orderY.orderId).getByText('不在で持ち帰り', { exact: true })).toHaveCount(0);
-        await expect(rowOf(orderZ.orderId).getByText('追跡できない', { exact: true })).toHaveCount(0);
+        for (const order of [orderX, orderY, orderZ]) {
+          await openOrderDetail(page, order.orderId);
+          await expect(attentionSection.getByText('要対応はありません。', { exact: true })).toBeVisible();
+        }
         expect(log.resolvePosts).toHaveLength(4);
         expect(log.resolvePosts.every((post) => post.status === 200)).toBe(true);
         const all = await readAll();
@@ -198,9 +210,10 @@ for (const viewport of deliveryViewports) {
         }
 
         // 履歴は残る（配送の状況の出来事の行は消えない）
-        const dialog = await openOrderHistory(page, orderX.orderId);
-        await expect(dialog.getByText('配送の状況（2回目）', { exact: true }).first()).toBeVisible();
-        await expectDialogFits(page, dialog);
+        await openOrderDetail(page, orderX.orderId);
+        const history = await orderDetailHistory(page);
+        await expect(history.getByText('配送の状況（2回目）', { exact: true }).first()).toBeVisible();
+        await expectDialogFits(page, history);
       });
     });
   });

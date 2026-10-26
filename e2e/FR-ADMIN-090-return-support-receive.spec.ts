@@ -17,7 +17,14 @@ import {
   variantStockState,
   withLocalDb,
 } from './order-email-test-utils';
-import { mockOrderList, openOrderTab, orderNumberOf, viewports } from './order-fulfillment-test-utils';
+import {
+  SUPPORTER_DETAIL_PERMISSIONS,
+  adminOrderDetail,
+  mockOrderDetail,
+  openOrderDetail,
+  orderNumberOf,
+  viewports,
+} from './order-fulfillment-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
 import {
   RETURN_MAIL,
@@ -31,8 +38,8 @@ import {
   formatYen,
   mockReturnRoutes,
   newReturnRouteState,
+  openDetailReturnsDialog,
   openReceiveDialog,
-  openReturnsDialog,
   orderWithReturns,
   receiptRows,
   receiveReturnInDb,
@@ -68,16 +75,19 @@ async function openSupportReceive(page: Page, lines: OrderReturnLineDetail[]) {
   const detail = returnDetailOf({ orderId: ORDER_ID, id: RETURN_ID, lines });
   const state = newReturnRouteState({ orderId: ORDER_ID, returns: [detail], returnableUnits: 0, refundableAmount: 20_000, canRefund: false });
   await mockAdminSessionAs(page, 'supporter');
-  await mockOrderList(page, () => [
-    orderWithReturns({
-      id: ORDER_ID,
-      canRefund: false,
-      summary: returnSummaryOf({ orderId: ORDER_ID, displayStatus: 'in_progress', marks: ['awaiting_items'], nextAction: 'receive', hasReturnable: false }),
+  await mockOrderDetail(page, () =>
+    adminOrderDetail({
+      ...orderWithReturns({
+        id: ORDER_ID,
+        canRefund: false,
+        summary: returnSummaryOf({ orderId: ORDER_ID, displayStatus: 'in_progress', marks: ['awaiting_items'], nextAction: 'receive', hasReturnable: false }),
+      }),
+      permissions: SUPPORTER_DETAIL_PERMISSIONS,
     }),
-  ]);
+  );
   await mockReturnRoutes(page, ORDER_ID, state);
-  await openOrderTab(page);
-  await openReturnsDialog(page, ORDER_ID, '受け取る');
+  await openOrderDetail(page, ORDER_ID);
+  await openDetailReturnsDialog(page, ORDER_ID, '受け取る');
   const dialog = await openReceiveDialog(page, ORDER_ID, LABEL);
   return { state, dialog };
 }
@@ -191,16 +201,19 @@ for (const viewport of viewports) {
         canRefund: false,
       });
       await mockAdminSessionAs(page, 'supporter');
-      await mockOrderList(page, () => [
-        orderWithReturns({
-          id: ORDER_ID,
-          canRefund: false,
-          summary: returnSummaryOf({ orderId: ORDER_ID, displayStatus: 'in_progress', marks: ['awaiting_items'], nextAction: 'receive', hasReturnable: false }),
+      await mockOrderDetail(page, () =>
+        adminOrderDetail({
+          ...orderWithReturns({
+            id: ORDER_ID,
+            canRefund: false,
+            summary: returnSummaryOf({ orderId: ORDER_ID, displayStatus: 'in_progress', marks: ['awaiting_items'], nextAction: 'receive', hasReturnable: false }),
+          }),
+          permissions: SUPPORTER_DETAIL_PERMISSIONS,
         }),
-      ]);
+      );
       await mockReturnRoutes(page, ORDER_ID, state);
-      await openOrderTab(page);
-      const returns = await openReturnsDialog(page, ORDER_ID, '受け取る');
+      await openOrderDetail(page, ORDER_ID);
+      const returns = await openDetailReturnsDialog(page, ORDER_ID, '受け取る');
 
       for (const label of [LABEL, SECOND_LABEL, THIRD_LABEL]) {
         await expect(returnCard(returns, label)).toBeVisible();

@@ -13,9 +13,10 @@ import { dialogFooterClose } from './admin-test-utils';
 import { expectDbError, runWorkerUntil, withLocalDb } from './order-email-test-utils';
 import {
   UUID_PATTERN,
+  adminOrderDetail,
   fulfillJson,
-  mockOrderList,
-  openOrderTab,
+  mockOrderDetail,
+  openOrderDetail,
   orderNumberOf,
   viewports,
 } from './order-fulfillment-test-utils';
@@ -35,7 +36,7 @@ import {
   mockReturnRoutes,
   newReturnRouteState,
   openCreateDialog,
-  openReturnsDialog,
+  openDetailReturnsDialog,
   orderWithReturns,
   returnCountOf,
   returnDetailOf,
@@ -56,18 +57,20 @@ const SHIRT = 'c4b2c3d4-0000-4000-8000-000000000001';
 const BELT = 'c4b2c3d4-0000-4000-8000-000000000002';
 const SECOND_SHIPMENT = 'f4b2c3d4-0000-4000-8000-0000000000f2';
 
-/** 返品の画面まで開く。一覧の窓口と返品の窓口を差し替えた上で、ORDER タブの「返品」を押す */
+/** 返品の画面まで開く。詳細の窓口と返品の窓口を差し替えた上で、注文の詳細頁の「返品とキャンセルの申し込み」の「返品」を押す */
 async function openReturns(page: Page, state: ReturnRouteState) {
   await mockAdminSessionAs(page, 'admin');
-  await mockOrderList(page, () => [
-    orderWithReturns({
-      id: ORDER_ID,
-      summary: returnSummaryOf({ orderId: ORDER_ID, displayStatus: state.returns.length > 0 ? 'in_progress' : null }),
-    }),
-  ]);
+  await mockOrderDetail(page, () =>
+    adminOrderDetail(
+      orderWithReturns({
+        id: ORDER_ID,
+        summary: returnSummaryOf({ orderId: ORDER_ID, displayStatus: state.returns.length > 0 ? 'in_progress' : null }),
+      }),
+    ),
+  );
   await mockReturnRoutes(page, ORDER_ID, state);
-  await openOrderTab(page);
-  return openReturnsDialog(page, ORDER_ID);
+  await openOrderDetail(page, ORDER_ID);
+  return openDetailReturnsDialog(page, ORDER_ID);
 }
 
 /** 返品を作る画面の材料。シャツ2点（1回目の発送・期限内）とベルト1点（2回目の発送・期限切れ） */

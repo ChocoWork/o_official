@@ -1,5 +1,5 @@
 /**
- * FR-ADMIN-072 発送の取消（履歴の画面）
+ * FR-ADMIN-072 発送の取消（詳細の変更履歴の欄）
  * 対応 FREQ: FREQ-443
  *
  * G-1: 発送の取消（履歴の「この発送を取り消す」と DB の関数）は停止した。G-3: この spec の取消の3つのケースは、発送票の取消へ移した（ケースは削除）。
@@ -7,7 +7,7 @@
  * - 「戻る」では取り消さず、取消を断られた時は理由がダイアログの中に出る → FR-ADMIN-117 の ④⑤
  * - 取り消すと商品が発送準備中に戻り、全部送っていた注文が決済完了に戻り、送る前のメールは取りやめになり、取消のメールは行かず、取り消した分の番号は使い回さない → FR-ADMIN-117 の ④
  *   （DB の戻りと拒否の優先は DB 結合 group_g3_cancel）
- * ここには、履歴の画面が横にはみ出さないことの確かめだけが残る。
+ * ここには、履歴が横にはみ出さないことの確かめだけが残る。G-4 で履歴の画面（dialog）は注文の詳細の「変更履歴」の欄に埋め込まれた。
  */
 import { expect, test, type Page } from '@playwright/test';
 import type {
@@ -15,15 +15,15 @@ import type {
   OrderHistoryFulfillmentEntry,
   OrderHistoryResponse,
 } from '@/lib/orders/email/order-history';
+import { orderDetailHistory } from './delivery-tracking-test-utils';
 import {
-  adminOrder,
+  adminOrderDetail,
   fulfillJson,
   historyOf,
   mockAdminSession,
-  mockOrderList,
-  openOrderTab,
+  mockOrderDetail,
+  openOrderDetail,
   orderLine,
-  orderNumberOf,
   viewports,
 } from './order-fulfillment-test-utils';
 
@@ -80,8 +80,9 @@ function entries(): OrderHistoryResponse['entries'] {
 
 async function mockHistoryApis(page: Page) {
   await mockAdminSession(page);
-  await mockOrderList(page, () => [
-    adminOrder({
+  // 詳細の窓口を先に差し替え、履歴の窓口をこの試験の答えで上書きする
+  await mockOrderDetail(page, () =>
+    adminOrderDetail({
       id: ORDER_ID,
       items: [
         orderLine({ id: BLOUSE, name: 'シルクブラウス', quantity: 2, shipped: 2, readyUnshipped: 0 }),
@@ -89,15 +90,8 @@ async function mockHistoryApis(page: Page) {
       ],
       partiallyShipped: true,
     }),
-  ]);
+  );
   await page.route(`**/api/admin/orders/${ORDER_ID}/history`, (route) => fulfillJson(route, historyOf(ORDER_ID, entries())));
-}
-
-async function openHistory(page: Page) {
-  await page.getByRole('button', { name: `${orderNumberOf(ORDER_ID)} の履歴` }).click();
-  const dialog = page.getByRole('dialog', { name: 'この注文の履歴' });
-  await expect(dialog).toBeVisible();
-  return dialog;
 }
 
 for (const viewport of viewports) {
@@ -108,9 +102,9 @@ for (const viewport of viewports) {
 
     test('履歴の画面を開いても横方向のページスクロールが発生しない', async ({ page }) => {
       await mockHistoryApis(page);
-      await openOrderTab(page);
-      const dialog = await openHistory(page);
-      await expect(dialog.getByRole('listitem').filter({ hasText: 'ヤマト運輸' })).toBeVisible();
+      await openOrderDetail(page, ORDER_ID);
+      const history = await orderDetailHistory(page);
+      await expect(history.getByRole('listitem').filter({ hasText: 'ヤマト運輸' })).toBeVisible();
 
       const hasHorizontalOverflow = await page.evaluate(() => {
         const doc = document.documentElement;

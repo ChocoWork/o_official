@@ -38,7 +38,6 @@ import type { RolePermissionChange } from '@/lib/auth/role-permission-types';
 import type { OrderHistoryResponse } from '@/lib/orders/email/order-history';
 import { ALLOCATION_SWAP_TEXT } from '@/lib/inventory/allocation-swap-types';
 import { ADMIN_ORDER_TEXT } from '@/lib/orders/admin-orders/admin-order-types';
-import { MANUAL_COMPLETION_DISABLED_TEXT } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
 import { loginCustomer } from './delivery-tracking-test-utils';
@@ -57,8 +56,6 @@ import {
   SUPPORTER_DETAIL_PERMISSIONS,
   fulfillJson,
   historyOf,
-  mockOrderList,
-  openOrderTab,
   orderLine,
   viewports,
 } from './order-fulfillment-test-utils';
@@ -102,6 +99,15 @@ import {
   expectSlipHeading,
   withShippingScenario,
 } from './shipping-test-utils';
+
+/** G-1 で出していた旧い仕上がりの停止文（G-4 で画面ごと無くなった）。どの画面にも出ないことの確かめだけに使う */
+const OLD_COMPLETION_STOP_TEXT = '仕上がりの手動記録・取消は終了しました。在庫の入荷から自動で割り当てます。';
+
+/** 管理画面を開いて ORDER タブにする（ORDER は注文一覧表への入口だけ） */
+async function openOrderMenu(page: Page): Promise<void> {
+  await page.goto('/admin');
+  await page.getByRole('button', { name: 'ORDER' }).click();
+}
 
 test.describe.configure({ mode: 'serial', timeout: 90_000 });
 // G-1 の 403 の確かめは、お客様の本物のログイン（確認コードとログインの Cookie）をブラウザの通信に載せるので、通信記録（trace）を残さない
@@ -191,7 +197,6 @@ for (const viewport of viewports) {
       await withPermissionScenario(async (client) => {
         const actorId = await createPermissionActor(client, 'supporter');
         await mockAdminSessionAs(page, 'supporter');
-        await mockOrderList(page, () => []);
         await mockPermissionUiBridge(page, client, actorId);
 
         // 管理メニューは役割名で決まる: サポーターには ORDER があり、SETTINGS が無い
@@ -442,11 +447,11 @@ for (const viewport of viewports) {
           permissions: role === 'supporter' ? SUPPORTER_DETAIL_PERMISSIONS : undefined,
         }));
         await page.route(`**/api/admin/orders/${G1_ORDER_ID}/history`, (route) => fulfillJson(route, legacyHistoryResponse()));
-        await openOrderTab(page);
+        await openOrderMenu(page);
         await expect(page.getByRole('navigation', { name: '注文メニュー', exact: true }).getByRole('link', { name: '注文一覧表', exact: true })).toHaveAttribute('href', '/admin/orders');
         await expect(page.getByRole('table')).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'CSV出力', exact: true })).toHaveCount(0);
-        for (const text of [SHIPMENT_SLIP_TEXT.orderSectionGuide, MANUAL_COMPLETION_DISABLED_TEXT]) {
+        for (const text of [SHIPMENT_SLIP_TEXT.orderSectionGuide, OLD_COMPLETION_STOP_TEXT]) {
           await expect(page.getByText(text, { exact: true })).toHaveCount(0);
         }
         for (const name of G1_LEGACY_ENTRY_NAMES) await expect(page.getByRole('button', { name })).toHaveCount(0);
@@ -580,7 +585,6 @@ for (const viewport of viewports) {
       await withPurchasingScenario(async (ctx) => {
         const supporterId = await createPermissionActor(ctx.client, 'supporter');
         await mockAdminSessionAs(page, 'supporter');
-        await mockOrderList(page, () => []);
         await mockPurchasingUiBridge(page, ctx.client, supporterId);
 
         await expectForbiddenPage(page, '/admin/inventory', '在庫一覧表', G2_FORBIDDEN_TEXT.inventory);
@@ -644,7 +648,6 @@ for (const viewport of viewports) {
       await withPurchasingScenario(async (ctx) => {
         const supporterId = await createPermissionActor(ctx.client, 'supporter');
         await mockAdminSessionAs(page, 'supporter');
-        await mockOrderList(page, () => []);
         await mockPurchasingUiBridge(page, ctx.client, supporterId);
 
         await page.goto('/admin');
@@ -682,7 +685,6 @@ for (const viewport of viewports) {
         const material = await createCatalogMaterial(ctx.client);
         const order = await createPurchaseOrderInDb(ctx, { lines: [{ variantId: material.variantId, quantity: 1 }] });
         await mockAdminSessionAs(page, 'admin');
-        await mockOrderList(page, () => []);
         await mockPermissionUiBridge(page, ctx.client, ctx.actorId);
 
         // 店長の管理メニューにも INVENTORY があり、その中に2つのリンクがある
@@ -696,7 +698,6 @@ for (const viewport of viewports) {
         try {
           await supporterPage.setViewportSize({ width: viewport.width, height: viewport.height });
           await mockAdminSessionAs(supporterPage, 'supporter');
-          await mockOrderList(supporterPage, () => []);
           await mockPurchasingUiBridge(supporterPage, ctx.client, supporterId);
 
           await setSupporterPermission(page, PURCHASE_ORDERS_READ, true);
@@ -981,7 +982,6 @@ for (const viewport of viewports) {
     test('サポーターと店長の管理メニューに PACKING があり、SETTINGS はサポーターに無い', async ({ page }) => {
       // FREQ-540-AC-10, FREQ-531-AC-01
       await mockAdminSessionAs(page, 'supporter');
-      await mockOrderList(page, () => []);
       await page.goto('/admin');
       await expect(adminMenu(page).getByRole('button', { name: 'PACKING', exact: true })).toBeVisible();
       await expect(adminMenu(page).getByRole('button', { name: 'SETTINGS', exact: true })).toHaveCount(0);
@@ -999,7 +999,6 @@ for (const viewport of viewports) {
       try {
         await adminPage.setViewportSize({ width: viewport.width, height: viewport.height });
         await mockAdminSessionAs(adminPage, 'admin');
-        await mockOrderList(adminPage, () => []);
         await adminPage.goto('/admin?tab=PACKING');
         await expect(adminMenu(adminPage).getByRole('button', { name: 'PACKING', exact: true })).toBeVisible();
         await expect(adminMenu(adminPage).getByRole('button', { name: 'SETTINGS', exact: true })).toBeVisible();
@@ -1111,7 +1110,7 @@ for (const viewport of viewports) {
           if (path === '/api/admin/orders' || /\/(fulfillments|completions)(\/|$)/.test(path)) calls.push(path);
         };
         page.on('request', record);
-        await openOrderTab(page);
+        await openOrderMenu(page);
         const menu = page.getByRole('navigation', { name: '注文メニュー', exact: true });
         await expect(menu.getByRole('link')).toHaveCount(1);
         await expect(menu.getByRole('link', { name: '注文一覧表', exact: true })).toHaveAttribute('href', '/admin/orders');
@@ -1123,7 +1122,7 @@ for (const viewport of viewports) {
         }
         await expect(page.getByRole('button', { name: /履歴/ })).toHaveCount(0);
         await expect(page.getByText(SHIPMENT_SLIP_TEXT.orderSectionGuide, { exact: true })).toHaveCount(0);
-        await expect(page.getByText(MANUAL_COMPLETION_DISABLED_TEXT, { exact: true })).toHaveCount(0);
+        await expect(page.getByText(OLD_COMPLETION_STOP_TEXT, { exact: true })).toHaveCount(0);
         await expectNoPageOverflow(page);
         expect(calls).toEqual([]);
         page.off('request', record);
