@@ -1,5 +1,7 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
+> G-4 Task 6 確認日: 2026-10-26。注文の詳細（`/admin/orders/[id]`）の頁・品物の表・入替dialog・埋め込みの変更履歴を末尾の「注文の詳細（G-4 Task 6）」に追加した。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザの3幅・E2Eはcontroller担当。
+
 > G-4 Task 5 確認日: 2026-10-26。入替store・POST/候補GET・clientと準備中0件の権限カタログを反映。追加PostgRESTケースはcontrollerのDB実行待ち。
 
 > 状態: 既存設計 | 実装状況は項目ごとに要再照合 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
@@ -1056,3 +1058,25 @@ G-1 で止めた旧い発送の入口の案内を、G-3 の発送票へ向ける
 | 履歴・通知 | 「出荷日の履歴」に初回／訂正・前後日付・理由・日時。成功は「出荷日を訂正しました。」の後に再読込 |
 
 全注文の最遅入金日JST以上・今日JST以下、配達日JST以下。発送時刻・返品期限・メール・品物状態は不変。390/768/1280pxとブラウザの実測はcontroller担当（未実行）。
+
+## 注文の詳細（`/admin/orders/[id]` / FREQ-539・FREQ-523-AC-05。G-4 Task 6）
+
+確認日: 2026-10-26。旧 `/admin?tab=ORDER` の一覧・dialog・handler は Task 7 まで残し、詳細の頁の部品へ**同じ挙動のまま**コピーして移した。注文一覧表（`/admin/orders`）は Task 7 で追加するので、戻るリンクの移動先はまだない。
+
+| 場所 | 表示と動き |
+| --- | --- |
+| 頁（`src/app/admin/orders/[id]/page.tsx`） | `ShipmentSlipPage` と同じ形。`params: Promise<{ id: string }>` を読み、`<main className="mx-auto w-full min-w-0 max-w-6xl px-4 py-8 md:px-8">` に `AdminOrderDetailSection orderId` を置く |
+| `AdminOrderDetailSection({ orderId })`（client） | `Suspense`（`useSearchParams`）の中で `GET /api/admin/orders/${orderId}`（`cache: 'no-store'`、`fetchAdminOrderDetail`）を読む。状態は loading・ready・forbidden（403）・notFound（404）・error。最後に始めた読みだけを使う（番号つきの ref。古い読みの答えは捨てる）。h1「注文 ORD-…」と戻る Button「注文一覧表へ戻る」 |
+| 欄 | h2 を `注文情報`・`支払いと返金`・`品物`・`発送`・`返品とキャンセルの申し込み`・`要対応`・`変更履歴` の順に並べる。各欄は `<section aria-labelledby>` で region の名前が見出しの文字になる（E2E の `detailSection(page, 名前)` が `getByRole('region', { name })` で引く）。品物の表のスクロール領域の名前は欄名を含まない「ORD-… 明細の表」にして、部分一致で欄と重ならない |
+| 操作の入口 | 返事の `summary` と `permissions` の旗だけで決める。`返金`＝refund かつ canRefund、`キャンセル`＝cancelKind が unpaid なら manage、paid なら refund、返品のボタン＝returnSummary があり hasReturnsToShow の時 `returnButtonLabel(returnSummary, permissions.refund)`、`キャンセルの申し込み`＝manage かつ cancelRequestOpen、`確認済みにする`＝manage、`割り当てを入れ替える`＝allocate。サポーターの旗（refund=false）では返金・支払い済みのキャンセル・「額を決めて返金する」が出ない |
+| 移した handler | 旧 `admin/page.tsx` の `handleRefundOrder`・`handleCancelOrder`・`submitCancelOrder`・`handleRefunded`・`handlePaidCancelled`・`handleRefundUncertain`・`handleReturnsChanged`・`handleReturnsClosed`・`handleCancelRequestChanged`・`handleRemoveItems`・`resolveCancelRequest`・`resolveAfterRefund`・`closeRefundDialog`・`closePaidCancelDialog`・`closeCancelDialog`・`handleReviewOrder`（`runAttentionAction` の分岐込み）を、窓口・本文・分岐・文言を変えずに移した。違いは次の3つだけ。(1) 一覧と要対応の欄ではなく**この注文の詳細と履歴を読み直す**こと（断り・結果不明・dialog を閉じた後にも読み直す）。読み直しの先頭で前の知らせと誤りの文を消す（旧頁の `fetchOrders` と同じ）ので、呼び手は読み直しを始めた後に誤りの文を入れる。(2) `readSafeOrderActionError` は 400・409 の短い日本語（制御文字なし、200字以下）だけを通す（旧頁は200字以下なら何でも通した）。(3) 取消の画面は旧頁と同じく、送信が成功したら解決・読み直しを待たずに閉じる（待つと遅い読込の間「処理中」のまま閉じられないので、閉じるのを止める守りは入れない）。定数と型（`REFUND_NOTICES`・`PAID_CANCEL_NOTICES`・`STRIPE_UNAVAILABLE_MESSAGE`・`CANCEL_REQUEST_RESOLVED_NOTICE`・`CANCEL_REQUEST_RESOLVE_FAILED_MESSAGE`・`ATTENTION_NETWORK_ERROR_MESSAGE`・`PendingCancelResolve`）と `readSafeOrderActionError`（400・409 の短い日本語だけを通す）は `admin-order-client.ts` に置いた |
+| dialog | `OrderRefundDialog`（`prefillBeforeShipment` は申し込みの品を外した返金の時のその行）・`OrderPaidCancelDialog`・`OrderCancelDialog`（見出し「注文を取り消す（注文 ORD-…）」、名前は出さない。`showNotifyOption` は決済失敗以外、`noteRequired={false}`。送信は `POST /api/admin/orders/${id}/status` に `{ status:'cancelled', reason, note?, notifyCustomer }`）・`OrderReturnsDialog`・`OrderCancelRequestDialog` は props も文言も旧頁のまま。J-12 の見出しの注文番号と 390px の画面いっぱい・右上の×は各 dialog が持つ |
+| 読み直し | `reload()` は各操作の成功・結果不明・dialog を閉じた時に呼ぶ。履歴の欄も読み直す。失敗した時は前の詳細を残したまま `stale` にして、`最新の状態を読み込めませんでした。`（`role="alert"`）・`この画面の内容は最新ではありません。`・Button「読み込み直す」を出し、操作の成功の知らせは出さない。成功すれば `stale` を外す。最初の読込が失敗した時は古い詳細がないので、固定の失敗の文と「読み込み直す」を出す |
+| `?open=` | `refund`・`returns`・`cancel-request` は最初の読込が済んだ時に、その操作を出せる注文（refund の旗かつ canRefund／返品を出せる／manage かつ申し込みが開いている）なら対応する dialog を開き、すぐ `router.replace('/admin/orders/${orderId}')` で query を消す。出せない注文・知らない値は何もしない（query も消さない） |
+| 品物（`AdminOrderItemsTable`） | 列 `商品名`・`色`・`サイズ`・`ステータス`・`数量`・`単価`・`合計金額`・`返金額`・`補足`（`ITEM_BLOCKED_REASON_LABELS`）。同じ明細は状態ごとに行が分かれ、交換の行は商品名に「（交換品）」。受注生産中で補足が「在庫の入荷待ちです」だけの行に、`canSwap`（allocate）の時だけ `割り当てを入れ替える`（`aria-label="${商品名} ${色} ${サイズ} の割り当てを入れ替える"`）。表は見出しを保つスクロール領域の中で横に動き、頁全体は横にはみ出さない |
+| 入替 dialog（`AllocationSwapDialog`） | 見出し「割り当てを入れ替える（注文 ORD-…）」。開いた時に `GET …/allocations/swap-candidates` を読む（読込中・空・失敗の文あり）。割当元の注文は `${注文番号}（${注文日}）発送準備中 ${n}`、数量の既定と上限は受け手の受注生産中の数と出し手の数の小さい方、理由は必須（200字まで。両方の注文の履歴に残る）。送信は `useDeliverySubmission` で `POST …/allocations/swap`（二重押下は通信1回、結果不明は入力を止めて「もう一度確かめる」＝同じ本文と要求番号）。DB に断られた時は固定の本文を dialog の中に出して入力を残し、送り直しは新しい要求番号。成功で閉じ、詳細が「割当を入れ替えました。」を出して読み直す。`fullScreenOnMobile` |
+| 要対応 | 開いている物を並べる。`要確認`（理由の文）と `確認済みにする`（manage。`POST /api/admin/orders/${id}/review`、成功で「確認済みにしました。」）、支払いの要対応（言葉と検知の回数）、配送の要対応（`DELIVERY_ATTENTION_LABELS`）、解決は一覧の欄で行うので Link「要対応の一覧で対応する」（`/admin/orders#attention`）。空は「要対応はありません。」 |
+| 変更履歴（`OrderHistoryPanel`） | `OrderHistoryDialog.tsx` から export した `OrderHistoryPanel({ orderId })`。`OrderHistoryDialogBody` に `inline` を足し、真の時は Dialog と「閉じる」を使わず `<section id="order-history" aria-labelledby>` に同じ中身を出す。従来の履歴（状態・メール・発送・返金・返品・申し込み）の上に「品物の状態の変化」の見出しで itemStates を新しい順に出す: 時刻・商品名（色 / サイズ）・数量・変更前→変更後（null の側は「（なし）」）・理由の言葉（`itemStateReasonLabel`）・人のメールまたは「自動」（人の変更でメールを引けない時は「不明な管理者」。「自動」は自動の行だけ）、参照があれば「発送票 ○○」「発注 ○○」の Link、入替は「相手の注文 ORD-…」と理由。最初から空は「品物の状態の変化はまだありません。」、省略は「古い変化は省略しています。」、失敗は「品物の状態の変化を読み込めませんでした。」。メールの中身の表示・再送は変えない。従来の default の dialog は荷作り表と旧 ORDER タブがまだ使うので残る（Task 8 で整理） |
+| 発送 | 注文別の発送（n回目の発送・発送日時・運送会社と伝票番号か「伝票番号なし」・配達済み/取消済み）と、発送が属する発送票への Link（「発送票 ○○」→ `/admin/shipment-slips/[id]`）。`slips` が null の人には「発送票を見る権限がありません。」だけ。確定済みの票があれば同梱の注意文。Button「荷作り表を開く」は shippingRead の旗がある時だけ。発送の操作は置かない |
+
+390/768/1280pxの実ブラウザ確認・E2E・実DBはcontroller担当で、この Task では未実行。単体は [詳細頁の部品](../../../tests/unit/components/AdminOrderDetailSection.test.tsx)・[品物の表](../../../tests/unit/components/AdminOrderItemsTable.test.tsx)・[入替dialog](../../../tests/unit/components/AllocationSwapDialog.test.tsx)・[履歴](../../../tests/unit/components/OrderHistoryDialog.test.tsx)・[client](../../../tests/unit/lib/orders/admin-orders/admin-order-client.test.ts)。

@@ -1,5 +1,7 @@
 # 画面遷移図
 
+> G-4 Task 6 確認日: 2026-10-26。注文の詳細（`/admin/orders/[id]`）の1ルートと、詳細の頁の中の操作と読み直しの遷移を末尾の「注文の詳細からの操作と遷移（G-4 Task 6）」に追加した。注文一覧表（`/admin/orders`）と一覧・荷作り表・発送票からの導線は Task 7・8。本文の「45」「40ルート」などの数え直しは Task 7 の後に行う。
+
 > 状態: 全画面ルートと現行ソースの導線をレビュー | 確認日: 2026-10-26（波1-Aで未使用の `/auth/callback` ページを削除。以下の日付は各項の反映日）、2026-10-03（購入の導線は2026-10-07、E-5は2026-10-22、G-1 の旧配送の入口の撤去は2026-10-24に、G-2 Task 3 の在庫一覧表の導線と Task 4 の発注の確定後の移動と Task 5 の発注一覧表・発注書の頁の導線と Task 6 の発注書の頁の操作と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の節と書類検索と G-3 Task 3 の荷作り表と Task 4 の発送票の頁（下書き）と Task 6 の発送の取消と Task 7 の伝票番号の入力・訂正と手動の配達済みは2026-10-25に反映） | 対象: 45画面ルート（2026-10-25 に数え直し、G-0 の権限画面と G-2 の発注一覧表・発注書の頁・取引書類の検索と G-3 の荷作り表・発送票の頁を足した） | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
@@ -382,3 +384,34 @@ flowchart TD
 ## 発送票からの出荷日訂正（G-3 Task 9）
 
 確認日: 2026-10-26。確定済み票→権限がある人だけ訂正→新しい出荷日と必須理由→送信→成功通知→詳細と履歴の再読込。権限なしは店長だけの説明。版競合は入力を保ち再読込、結果不明は同じ要求で再確認。[管理画面詳細](../../04_DetailDesign/pages/16_admin.md)を参照。DB・ブラウザの実測はcontroller担当。
+
+## 注文の詳細からの操作と遷移（G-4 Task 6 / FREQ-539・FREQ-523-AC-05）
+
+確認日: 2026-10-26。新しいページ `/admin/orders/[id]` を1ルート足した（`src/app/**/page.tsx` は46件）。注文一覧表（`/admin/orders`）は G-4 Task 7 で追加するので、この Task の時点では詳細の「注文一覧表へ戻る」の移動先がなく、一覧・荷作り表・発送票から詳細へ進む導線も Task 7・8 で足す。旧 `/admin?tab=ORDER` の一覧・dialog・handler は Task 7 まで残る。下は詳細の頁の中の遷移で、dialog は同じ画面の上に開く。
+
+```mermaid
+flowchart TD
+  P["/admin/orders/[id]（注文の詳細）"]
+  P -->|返金| R["返金の dialog"]
+  P -->|キャンセル 未入金| C["取消の dialog"]
+  P -->|キャンセル 支払い済み| PC["支払い済みのキャンセルの dialog"]
+  P -->|返品のボタン| RT["返品の dialog"]
+  P -->|キャンセルの申し込み| CR["キャンセルの申し込みの dialog"]
+  CR -->|品を外す| R
+  CR -->|品を外す| C
+  CR -->|品を外す| PC
+  P -->|割り当てを入れ替える| SW["入替の dialog"]
+  P -->|確認済みにする| RV["POST review"]
+  P -->|発送票 番号| S["/admin/shipment-slips/[id]"]
+  P -->|荷作り表を開く| PK["/admin/packing"]
+  P -->|要対応の一覧で対応する| L["/admin/orders#attention"]
+  P -->|注文一覧表へ戻る| LIST["/admin/orders（Task 7）"]
+  R & C & PC & RT & CR & SW & RV -->|成功・結果不明・閉じる| RELOAD["詳細と履歴を読み直す"]
+  RELOAD -->|失敗| STALE["前の詳細を残し、最新ではない旨と「読み込み直す」を出す"]
+  STALE -->|読み込み直す| RELOAD
+  Q["?open=refund / returns / cancel-request"] -->|最初の読込の後、出せる注文だけ| P
+```
+
+`?open=` は最初の読込が済んだ時に、その操作を出せる注文なら対応する dialog を開き、すぐ `router.replace` で query を消す（出せない注文・知らない値は何もしない）。品を外した返金・取消は、受理された後にだけキャンセルの申し込みを解決する（解決だけの失敗は案内を出す）。入替は成功で「割当を入れ替えました。」を出して詳細を読み直す。結果が分からない時は「もう一度確かめる」で同じ要求番号と本文を送り直す。変更履歴は詳細の欄に埋め込み、先頭に「品物の状態の変化」を出す。
+
+[詳細頁の部品単体](../../../tests/unit/components/AdminOrderDetailSection.test.tsx)・[品物の表単体](../../../tests/unit/components/AdminOrderItemsTable.test.tsx)・[入替dialog単体](../../../tests/unit/components/AllocationSwapDialog.test.tsx)・[履歴単体](../../../tests/unit/components/OrderHistoryDialog.test.tsx)で検証する。390/768/1280pxの実測とE2Eはcontroller担当（未実行）。

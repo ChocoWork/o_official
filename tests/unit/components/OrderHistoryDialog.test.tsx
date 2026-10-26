@@ -17,7 +17,7 @@ import type { DeliveryEvent, FulfillmentDeliveryDetail, TrackingChange } from '@
 const mockClientFetch = jest.fn();
 jest.mock('@/lib/client-fetch', () => ({ clientFetch: (...args: unknown[]) => mockClientFetch(...args) }));
 
-import OrderHistoryDialog from '@/components/OrderHistoryDialog';
+import OrderHistoryDialog, { OrderHistoryPanel } from '@/components/OrderHistoryDialog';
 
 const ORDER_ID = 'a1b2c3d4-1111-2222-8333-444455556666';
 
@@ -80,6 +80,45 @@ function deferredResponse() {
 
 beforeEach(() => {
   mockClientFetch.mockReset();
+});
+
+it('FREQ-539-AC-04: inlineの品物履歴に前後・理由・人・参照・入替を出す', async () => {
+  mockClientFetch.mockResolvedValue(json(history({ itemStates: [
+    { id: 'state-1', at: '2026-10-20T01:00:00Z', orderItemId: 'item-1', itemName: 'ブラウス（白 / M）', quantity: 2, from: null, to: 'ready', reason: 'allocation_swap', reasonLabel: '使わない', actorEmail: 'staff@example.test', automatic: false, ref: { kind: 'shipment_slip', id: 'slip-1', label: 'SLIP-1' }, swap: { counterpartOrderId: 'b1b2c3d4-1111-4222-8333-444455556666', note: '急ぎ' } },
+    { id: 'state-2', at: '2026-10-19T01:00:00Z', orderItemId: 'item-1', itemName: 'ブラウス', quantity: 1, from: 'in_production', to: null, reason: 'unknown', reasonLabel: 'PRIVATE', actorEmail: null, automatic: true, ref: { kind: 'purchase_order', id: 'po-1', label: 'PO-1' }, swap: null },
+  ], itemStatesTruncated: true })));
+  render(<OrderHistoryPanel orderId={ORDER_ID} />);
+  const panel = screen.getByRole('region', { name: '変更履歴' });
+  expect(await within(panel).findByRole('heading', { name: '品物の状態の変化' })).toBeInTheDocument();
+  expect(panel).toHaveTextContent('ブラウス（白 / M）2点 （なし） → 発送準備中（割当の入替／staff@example.test）');
+  expect(panel).toHaveTextContent('受注生産中 → （なし）（システムによる更新／自動）');
+  expect(within(panel).getByRole('link', { name: '発送票 SLIP-1' })).toHaveAttribute('href', '/admin/shipment-slips/slip-1');
+  expect(within(panel).getByRole('link', { name: '発注 PO-1' })).toHaveAttribute('href', '/admin/purchase-orders/po-1');
+  expect(panel).toHaveTextContent('相手の注文 ORD-B1B2C3D4'); expect(panel).toHaveTextContent('急ぎ'); expect(panel).toHaveTextContent('古い変化は省略しています。');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: '閉じる' })).not.toBeInTheDocument();
+});
+it('FREQ-539-AC-04: メールが分からない人の変更は「自動」ではなく「不明な管理者」と出す', async () => {
+  mockClientFetch.mockResolvedValue(json(history({ itemStates: [
+    { id: 'state-1', at: '2026-10-20T01:00:00Z', orderItemId: 'item-1', itemName: 'ブラウス', quantity: 1, from: 'in_production', to: 'ready', reason: 'allocation_swap', reasonLabel: '使わない', actorEmail: null, automatic: false, ref: null, swap: null },
+    { id: 'state-2', at: '2026-10-19T01:00:00Z', orderItemId: 'item-1', itemName: 'ブラウス', quantity: 1, from: 'unpaid', to: 'in_production', reason: 'stripe_payment_paid', reasonLabel: '使わない', actorEmail: null, automatic: true, ref: null, swap: null },
+  ] })));
+  render(<OrderHistoryPanel orderId={ORDER_ID} />);
+  const panel = screen.getByRole('region', { name: '変更履歴' });
+  expect(await within(panel).findByText(/受注生産中 → 発送準備中（割当の入替／不明な管理者）/)).toBeInTheDocument();
+  expect(within(panel).getByText(/未払い → 受注生産中（入金の確認／自動）/)).toBeInTheDocument();
+});
+it.each([false, true])('FREQ-539-AC-04: 品物履歴の空と失敗を区別する %s', async (failed) => {
+  mockClientFetch.mockResolvedValue(json(history({ itemStates: [], itemStatesFailed: failed })));
+  render(<OrderHistoryPanel orderId={ORDER_ID} />);
+  expect(await screen.findByText(failed ? '品物の状態の変化を読み込めませんでした。' : '品物の状態の変化はまだありません。')).toBeInTheDocument();
+});
+it('FREQ-539-AC-04: inlineでもメール再送の確認と送信を保つ', async () => {
+  mockClientFetch.mockResolvedValue(json(history()));
+  render(<OrderHistoryPanel orderId={ORDER_ID} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'お客様へ再送' }));
+  fireEvent.click(screen.getByRole('button', { name: '再送する' }));
+  await waitFor(() => expect(mockClientFetch).toHaveBeenCalledWith(`/api/admin/orders/${ORDER_ID}/emails/resend`, expect.objectContaining({ method: 'POST' })));
+  expect(await screen.findByText('再送を受け付けました。少し待つと届きます。')).toBeInTheDocument();
 });
 
 describe('OrderHistoryDialog', () => {

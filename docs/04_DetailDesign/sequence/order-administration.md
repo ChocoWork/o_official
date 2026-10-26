@@ -1,5 +1,7 @@
 # 注文管理のシーケンス
 
+> G-4 Task 6 確認日: 2026-10-26。詳細の頁からの操作と読み直しの流れを末尾の SQ-ADMIN-15 に追加した。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザ・E2Eはcontroller担当。
+
 > G-4 Task 3 確認日: 2026-10-26。共有文書はPhase Bで反映済み。controller受領記録（g4t3a）: fresh reset後、実鍵のgroup_g4_postgrest_pathsを含むgroup_g*全51 suiteで1,616成功・0失敗・1 pending（G1_CLEANUP_SUITE=1で単独実行するG-1清掃の未起動）。 全件の確認は controller が後で実施。
 
 > G-4 Task 2 確認日: 2026-10-26。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
@@ -1017,3 +1019,50 @@ sequenceDiagram
 ```
 
 送信期限の更新はlease一致の成功と同じ取引。保存済み本文ではリンク準備・本文再生成をせず、そのまま送る。個人情報の認可は有効な印が先で、無ければ持ち主の認証。公開ページではCookieを書かず、未認可の普通のゲストは200のnone。
+
+## SQ-ADMIN-15: 注文の詳細からの操作と読み直し（G-4 Task 6 / FREQ-539・FREQ-523-AC-05）
+
+確認日: 2026-10-26。`/admin/orders/[id]` の詳細の頁が、返金・未入金の取消・支払い済みのキャンセル・返品・キャンセルの申し込み・確認済み・割当の入替を呼び、**操作の後に詳細と履歴を読み直す**流れ。各操作の窓口・認可・CSRF・回数制限・DB・メールは今までのまま（SQ-ADMIN-03〜14）で、この節は画面側の順序だけを足す。旧 `/admin?tab=ORDER` の一覧の同じ操作は Task 7 まで残る。
+
+```mermaid
+sequenceDiagram
+  actor Admin as 管理者
+  participant Page as 詳細の頁
+  participant API as 各操作の窓口
+  participant Detail as GET /api/admin/orders/[id]
+  participant Hist as GET /api/admin/orders/[id]/history
+
+  Admin->>Page: 頁を開く（?open= があれば付く）
+  Page->>Detail: 読む（no-store、番号つき）
+  Detail-->>Page: 詳細（summary・permissions・rows・attention・fulfillments・slips）
+  Page->>Hist: 履歴の欄が読む（itemStates を含む）
+  opt ?open= の操作を出せる注文
+    Page->>Page: 対応する dialog を開き、router.replace で query を消す
+  end
+  Admin->>Page: 操作（返金・取消・返品・申し込み・確認済み・入替）
+  Page->>API: 今までの窓口へ今までの本文で送る
+  alt 受理・成功
+    API-->>Page: 結果
+    opt 品を外した返金・取消（申し込みの解決待ち）
+      Page->>API: POST /api/admin/cancel-requests/[id]/resolve（受理後だけ）
+    end
+    Page->>Detail: 読み直す（成功の知らせを添える）
+    Page->>Hist: 履歴の欄も読み直す
+  else 結果不明・dialog を閉じた
+    Page->>Detail: 読み直す（知らせは出さない）
+  else 断り
+    API-->>Page: 固定の文（dialog の中、または頁の上）
+  end
+  alt 読み直しに失敗
+    Detail-->>Page: 失敗
+    Page-->>Admin: 前の詳細を残し、最新の状態を読み込めませんでした。／この画面の内容は最新ではありません。／読み込み直す
+  end
+```
+
+- **最後に始めた読みだけを使う**: 読みごとに番号を付け、遅れて返った古い読みは詳細・古い印・知らせのどれも上書きしない。画面を離れた後に返った読みも捨てる。
+- **古い印**: 読み直しに失敗した時だけ `stale` にして前の詳細を残す。操作の成功の知らせは出さない。読み直しに成功すれば外す。最初の読込の失敗は古い詳細がないので固定の失敗の文を出す。
+- **申し込みの解決**: 品を外した返金・支払い済みのキャンセル・未入金の取消が**受理された後にだけ**解決の窓口を呼ぶ。解決だけが失敗した時は、返金・キャンセルは記録済みで申し込みが開いたままだと案内する（旧頁と同じ文）。dialog を閉じた・結果不明では解決しない。
+- **入替**: dialog が候補を読み、`POST …/allocations/swap` を `useDeliverySubmission` で1回送る。結果不明は同じ要求番号と本文で「もう一度確かめる」。断られた時は dialog の中に固定の本文を出して入力を残し、詳細を読み直す。成功で dialog を閉じ、「割当を入れ替えました。」を出して詳細を読み直す。
+- **旧頁との違い（意図したもの）**: (1) 成功後に一覧と要対応の欄ではなくこの注文の詳細と履歴を読み直す。断られた・失敗した操作の後にも詳細を読み直す（状態が変わっていた時に古い入口を残さない）。読み直しの先頭で前の知らせと頁の誤りの文を消す（旧頁の `fetchOrders` と同じ）ので、解決だけの失敗の案内のような誤りの文は、読み直しを始めた後に入れる。次の読み直し（申し込みの解決・返品・入替・「読み込み直す」）で古い誤りが成功の知らせと並ばない。(2) `readSafeOrderActionError` は 400・409 の短い日本語（制御文字なし、200字以下）だけを通す（旧頁は200字以下なら何でも通した）。(3) 取消の画面は旧頁と同じく、送信の成功後に申し込みの解決と読み直しを待たず（非同期で始めて）画面を閉じる。待つと遅い読込の間「処理中」のまま閉じられないため、閉じるのを止める守りは入れない。取消の通信が切れた時の文は旧頁と同じ（変えない）。
+
+[詳細頁の部品の単体](../../../tests/unit/components/AdminOrderDetailSection.test.tsx)・[入替dialogの単体](../../../tests/unit/components/AllocationSwapDialog.test.tsx)で検証する。DB・実ブラウザ・E2Eはcontroller担当（未実行）。

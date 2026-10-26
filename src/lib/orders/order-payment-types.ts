@@ -56,6 +56,13 @@ export const PAYMENT_EXCEPTION_REASON_LABELS: Record<PaymentExceptionReason, str
   refund_failed: '返金の失敗',
 };
 
+/** 要確認（review_reason）の理由の言葉。要対応の窓口と注文の詳細の頁が同じ辞書を使う。 */
+export const REVIEW_REASON_LABELS: Record<string, string> = {
+  stock_not_reserved: '在庫を確保できなかった注文',
+  // 毎時の見回りが、注文の無い支払いから作った注文（設計書 2026-10-05 グループ B の 3-6。FREQ-415）
+  recovered_from_payment: '支払いから作った注文：お客様へ確認してください',
+};
+
 /**
  * 受付 RPC が返す理由コード（グループ A 設計書 4-3）。
  * cart_changed・price_changed・stock_changed は受け付けの窓口から呼んだときだけ返る（グループ F 設計書 6-2）。

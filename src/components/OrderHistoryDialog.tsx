@@ -21,6 +21,9 @@ import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-ca
 import { DELIVERY_STATUS_LABELS, TRACKING_STATE_LABELS } from '@/lib/orders/tracking/delivery-messages';
 import type { DeliveryStatus, FulfillmentDeliveryDetail, TrackingChange } from '@/lib/orders/tracking/delivery-types';
 import { cn } from '@/lib/utils';
+import { ADMIN_ORDER_TEXT, itemStateReasonLabel } from '@/lib/orders/admin-orders/admin-order-types';
+import { ADMIN_ITEM_STATUS_LABELS } from '@/lib/orders/item-state/item-state-types';
+import { toOrderNumber } from '@/lib/orders/order-number';
 
 type View =
   | { name: 'list' }
@@ -42,6 +45,7 @@ type OrderHistoryDialogProps = {
 type OrderHistoryDialogBodyProps = {
   orderId: string;
   onClose: () => void;
+  inline?: boolean;
 };
 
 const RESEND_ACCEPTED_MESSAGE = '再送を受け付けました。少し待つと届きます。';
@@ -148,7 +152,12 @@ export default function OrderHistoryDialog({ orderId, onClose }: OrderHistoryDia
   return orderId ? <OrderHistoryDialogBody key={orderId} orderId={orderId} onClose={onClose} /> : null;
 }
 
-function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProps) {
+const noop = (): void => {};
+export function OrderHistoryPanel({ orderId }: { orderId: string }): React.JSX.Element {
+  return <OrderHistoryDialogBody key={orderId} orderId={orderId} inline onClose={noop} />;
+}
+
+function OrderHistoryDialogBody({ orderId, onClose, inline = false }: OrderHistoryDialogBodyProps) {
   const [history, setHistory] = useState<OrderHistoryResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -188,7 +197,7 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
   useEffect(() => {
     if (shownView.current === view.name) return;
     shownView.current = view.name;
-    const panel = viewRef.current?.closest<HTMLElement>('[role="dialog"]');
+    const panel = viewRef.current?.closest<HTMLElement>(inline ? '[data-order-history-panel]' : '[role="dialog"]');
     const target = returnFocus.current;
     const opener = view.name === 'list' && target
       ? Array.from(panel?.querySelectorAll<HTMLButtonElement>('button[data-history-action]') ?? [])
@@ -196,7 +205,7 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
       : null;
     returnFocus.current = null;
     (opener ?? panel)?.focus();
-  }, [view.name]);
+  }, [view.name, inline]);
 
   // 焦点の移動と polite の文の挿入が同じ描画だと読み上げが落ちるため、上の移動の後の描画で文を入れる。
   // 別の行の確かめの画面にいる間は、その行の結果と誤解される知らせを出さずに取っておき、その画面を離れた時に出す。
@@ -493,8 +502,8 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
     );
   };
 
-  return (
-    <Dialog open onClose={onClose} title={title}>
+  const content = (
+    <>
       {/*
         再送の結果と履歴の読み込みの誤りの知らせ。画面を切り替えても履歴を読み直しても消えない入れ物を最初から置き、
         中の文字だけを変える（後から差し込んだ入れ物は、読み上げられない環境が多い）。受け付けは status、断り・失敗は alert
@@ -524,12 +533,23 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
                   メールの送信を一時停止しています（{history.sendPaused.reasonLabel}）
                 </p>
               ) : null}
+              <div className="space-y-2">
+                <h3>{ADMIN_ORDER_TEXT.itemStatesTitle}</h3>
+                {history.itemStatesFailed ? <p role="alert">品物の状態の変化を読み込めませんでした。</p> : (history.itemStates ?? []).length === 0 ? <p>{ADMIN_ORDER_TEXT.itemStatesEmpty}</p> : (
+                  <ol className="space-y-2">{history.itemStates?.map((entry) => <li key={entry.id} className="break-words font-acumin lk-text-3xs">
+                    <p>{formatJst(entry.at)} {entry.itemName}{entry.quantity}点 {entry.from === null ? '（なし）' : ADMIN_ITEM_STATUS_LABELS[entry.from]} → {entry.to === null ? '（なし）' : ADMIN_ITEM_STATUS_LABELS[entry.to]}（{itemStateReasonLabel(entry.reason)}／{entry.automatic ? '自動' : entry.actorEmail ?? '不明な管理者'}）</p>
+                    {entry.ref ? <p><Link className="underline" href={entry.ref.kind === 'shipment_slip' ? `/admin/shipment-slips/${entry.ref.id}` : `/admin/purchase-orders/${entry.ref.id}`}>{entry.ref.kind === 'shipment_slip' ? '発送票' : '発注'} {entry.ref.label}</Link></p> : null}
+                    {entry.swap ? <p><Link className="underline" href={`/admin/orders/${entry.swap.counterpartOrderId}`}>相手の注文 {toOrderNumber(entry.swap.counterpartOrderId)}</Link>{entry.swap.note ? ` ${entry.swap.note}` : ''}</p> : null}
+                  </li>)}</ol>
+                )}
+                {history.itemStatesTruncated ? <p>{ADMIN_ORDER_TEXT.itemStatesTruncated}</p> : null}
+              </div>
               <ol className="max-h-[60vh] space-y-3 overflow-y-auto">{history.entries.map(renderEntry)}</ol>
             </>
           ) : null}
-          <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={onClose}>
+          {!inline ? <Button variant="secondary" size="sm" className="w-full font-acumin" onClick={onClose}>
             閉じる
-          </Button>
+          </Button> : null}
         </div>
       ) : null}
 
@@ -594,6 +614,7 @@ function OrderHistoryDialogBody({ orderId, onClose }: OrderHistoryDialogBodyProp
           </div>
         </div>
       ) : null}
-    </Dialog>
+    </>
   );
+  return inline ? <section id="order-history" aria-label="変更履歴" aria-labelledby="order-history-heading" tabIndex={-1} data-order-history-panel className="min-w-0 space-y-3 break-words"><h2 id="order-history-heading">変更履歴</h2>{content}</section> : <Dialog open onClose={onClose} title={title}>{content}</Dialog>;
 }
