@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { PgClient } from './local-db';
-import { createCatalogFixture, insertOrderWithLines, insertRefundRecord, insertReturnRecord,
+import { createCatalogFixture, insertRestockMovement, insertOrderWithLines, insertRefundRecord, insertReturnRecord,
   insertReturnReceipt, insertReturnRefund, insertCancelRequest, type RefundFixtureStatus } from './order-fixtures';
 import { seedGroupG1Allocation, seedGroupG1Shipment, setOrderStatusForFixture, isInTransaction, holdsCommonLock } from './group-g1-fixtures';
 import { seedGroupG3ReadyOrder, setGroupG3PaidAt } from './group-g3-fixtures';
@@ -135,4 +135,70 @@ export async function withGroupG4RefundReadMaterial<T>(client: PgClient, orderIt
     if (after.oid !== before.oid || after.bounds_mode !== before.bounds_mode || after.stand_in_oid !== null)
       throw new Error('GROUP_G_FIXTURE_RESTORE_FAILED');
   }
+}
+
+/** Fresh swap targets. Caller holds the common advisory and owns the transaction (including commit in concurrency tests). */
+export async function seedGroupG4SwapPair(client: PgClient, input: {
+  donorQuantity?: number; takerQuantity?: number; donorParts?: number[]; freeStock?: number;
+  catalog?: Pick<Awaited<ReturnType<typeof createCatalogFixture>>, 'itemId' | 'variantId'>;
+  donorCreatedAt?: string; takerCreatedAt?: string;
+  donorStatus?: string; takerStatus?: string; donorVariantMissing?: boolean; takerVariantMissing?: boolean;
+  differentVariant?: boolean; donorReview?: boolean; takerReview?: boolean;
+  donorCancelRequested?: number; takerCancelRequested?: number; donorRefundProcessing?: number;
+  donorExchange?: boolean; takerExchange?: boolean; takerFeeWaiting?: boolean;
+} = {}) {
+  if (!(await isInTransaction(client)) || !(await holdsCommonLock(client))) throw new Error('GROUP_G_FIXTURE_TRANSACTION_REQUIRED');
+  const donorQuantity = input.donorQuantity ?? 3;
+  const takerQuantity = input.takerQuantity ?? 2;
+  const sourceStock = (input.donorExchange ? donorQuantity : 0) + (input.takerExchange || input.takerFeeWaiting ? takerQuantity : 0);
+  const catalog = input.catalog ?? await createCatalogFixture(client, { stock: donorQuantity + (input.freeStock ?? 0) + sourceStock });
+  if (input.catalog) await insertRestockMovement(client, catalog.variantId, donorQuantity + sourceStock + (input.freeStock ?? 0));
+  const other = input.differentVariant ? await createCatalogFixture(client, { stock: 0 }) : catalog;
+  async function target(quantity: number, donor: boolean) {
+    const exchange = donor ? input.donorExchange : input.takerExchange || input.takerFeeWaiting;
+    const missing = donor ? input.donorVariantMissing : input.takerVariantMissing;
+    const variant = donor ? catalog : other;
+    const order = await insertOrderWithLines(client, { status: 'pending',
+      createdAt: donor ? input.donorCreatedAt ?? '2026-10-18T00:00:00Z' : input.takerCreatedAt ?? '2026-10-19T00:00:00Z',
+      lines: [{ itemId: variant.itemId, variantId: missing ? null : variant.variantId,
+        quantity, fulfillmentType: 'stock', reserved: false }] });
+    const requestedStatus = (donor ? input.donorStatus : input.takerStatus) ?? (exchange ? 'shipped' : 'paid');
+    if (requestedStatus !== 'pending' && requestedStatus !== 'failed' && requestedStatus !== 'cancelled') {
+      await setGroupG3PaidAt(client, order.orderId, '2026-10-20T00:00:00Z');
+      await setOrderStatusForFixture(client, [order.orderId], 'paid', { paidAmount: 5000 * quantity });
+    }
+    let orderItemId = order.orderItemIds[0];
+    if (exchange) {
+      await seedGroupG1Allocation(client, { orderItemId, quantity, kind: 'paid' });
+      const fulfillmentId = await seedGroupG1Shipment(client, { orderId: order.orderId,
+        lines: [{ orderItemId, quantity }], shippedAt: '2026-10-21T00:00:00Z' });
+      const ret = await insertReturnRecord(client, { orderId: order.orderId,
+        feeDueAmount: !donor && input.takerFeeWaiting ? 100 : 0,
+        lines: [{ fulfillmentId, orderItemId, quantity, resolution: 'exchange',
+          exchangeVariantId: variant.variantId, exchangeMethod: 'make' }] });
+      orderItemId = await seedGroupG4Exchange(client, { orderId: order.orderId, sourceItemId: orderItemId,
+        returnLineId: ret.lineIds[0], quantity });
+    }
+    await setOrderStatusForFixture(client, [order.orderId], requestedStatus);
+    const parts = donor && !missing ? input.donorParts ?? [quantity] : [];
+    const allocations: string[] = [];
+    for (let k = 0; k < parts.length; k++) {
+      const id = await seedGroupG1Allocation(client, { orderItemId, quantity: parts[k], kind: 'paid',
+        createdAt: k === 0 ? '2026-10-22T00:00:00Z' : '2026-10-23T00:00:00Z' });
+      if (id) allocations.push(id);
+    }
+    const cancel = donor ? input.donorCancelRequested : input.takerCancelRequested;
+    if (cancel) await insertCancelRequest(client, { orderId: order.orderId, lines: [{ orderItemId, quantity: cancel }] });
+    if (donor && input.donorRefundProcessing) await seedGroupG4Refund(client, {
+      orderItemId, quantity: input.donorRefundProcessing, amount: 5000 * input.donorRefundProcessing,
+      beforeShipment: true, status: 'pending' });
+    if (donor ? input.donorReview : input.takerReview) await client.query(
+      "select private.ensure_group_g_payment_review_hold($1,'g4-swap',null,null,null)", [order.orderId]);
+    return { orderId: order.orderId, orderItemId, allocations, ...variant };
+  }
+  const donor = await target(donorQuantity, true);
+  const taker = await target(takerQuantity, false);
+  // Fresh ordinary material has exactly the requested F, leaving FIFO no unrelated free stock.
+  // Exchange source shipments consume their own units; the test observes the resulting F/A/H.
+  return { ...catalog, donor, taker };
 }

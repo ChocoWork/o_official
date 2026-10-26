@@ -7,6 +7,7 @@ import path from 'node:path';
 import { describeLocalDb, connectLocalDb, type PgClient } from './helpers/local-db';
 import { createPurchaseFlow } from './helpers/purchase-order-flow';
 import { seedGroupG3ReadyOrder } from './helpers/group-g3-fixtures';
+import { G3D_ALLOWLIST, replaceAllowlistSql } from './helpers/group-g-allowlist';
 import { withGroupG1FixtureTransaction } from './helpers/group-g1-fixtures';
 import {
   claimDeliveryFor, deliveryShipment, enableDeliveryTracking, leaseDeliveryRegistration, patchDeliveryRegistration, recordReadResult,
@@ -622,6 +623,8 @@ describeLocalDb('G-3 tracking parent: leader registration and fan-out of read re
 
   test('FREQ-540-AC-11: actions の末尾 assert は読み直しの結果の置換（属性・ACL・押さえの数と位置・対象の展開）を確かめ、改変を検出する', async () => {
     const body = between(ACTIONS, '-- G3D_FINAL_ASSERT_BEGIN', '-- G3D_FINAL_ASSERT_END');
+    // 時点の再実行: G3D の確かめは75本を固定で持つので、取引内の一覧（今は76本）を G3D の75本へ入れ替えてから流す（戻すのは afterEach の rollback）
+    await db().query(replaceAllowlistSql(G3D_ALLOWLIST));
     await db().query(body);
     const replacement = `create or replace function private.record_delivery_read_result(_fulfillment_id uuid, _tracking_version integer, _lease_token uuid, _result jsonb)
       returns table (applied boolean, changed boolean, stopped boolean) language plpgsql security definer set search_path = ''

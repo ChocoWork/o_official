@@ -1,5 +1,7 @@
 # ER 図（現行リポジトリの実装）
 
+> G-4 Task 4 確認日: 2026-10-26。割当の入替（G4C移行。表・列・制約・triggerの追加なし、書き手の許可一覧76本）。fix round 2後のcontroller fresh reset（g4t4b）でローカル適用・検証済み。本番未適用。
+
 > G-4 Task 2 確認日: 2026-10-26。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
 
 > G-3 Task 10 確認: 2026-10-26（表・FKの追加なし、4移行assertと75本を確定。controllerのfresh resetでgroup_g* 47 suiteを検証し、直した後はgroup_g3_concurrency 24/24を3回連続・group_g3_migration_asserts 64/64で通過） | 状態: 現行のソース（G-3 Task 8 の追跡の親と配送の結果の票への展開（表の変更なし、関数の置換）を 2026-10-26 に追記。グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ適用済み（Task 1 の依頼で確認）。G-3 Task 1 の新6表・出荷日・守りを同日に追記し、controller reset後のDB全件でTask 1の新規失敗0を2026-10-25に確認した（全体は既知stockist2失敗によりexit 1）。G-2 Task 9 で手元の DB と突き合わせ、発注書の9表・22 FK、FK の合計 142〔public 起点 131・private 起点 11〕が DB と一致することを確かめた） | 確認日: 2026-10-25（G-3 Task 5の確定まで追記。controllerの実鍵PostgRESTを含む12 suiteで665/665成功） | 対象: `supabase/migrations/` の基準スキーマと後続変更 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
@@ -1776,7 +1778,7 @@ publicのRPCは完全修飾名・`SECURITY DEFINER`・`SET search_path = ''`・�
 | `release` | 残数量を減らして空きへ戻す | `cancel`・`refund`・`allocation_release`、正数 | 未入金の解放・取消・返金・在庫を減らす操作 |
 | `consume` | 発送で使う（A だけ） | なし | なし（G-3 が書く。制約は受け付ける） |
 | `restore` | 発送の消費を戻した新しい A | `purchase`・`exchange`、負数 | なし（G-3） |
-| `transfer` | 同じ variant の割当の入替（両側が対） | なし | なし（G-4） |
+| `transfer` | 同じ variant の割当の入替（両側が対） | なし | 割当の入替 `private.admin_swap_order_allocations`（G-4 Task 4。出し手の割当と受け手の新しい割当に1つずつ、理由 `allocation_swap`） |
 
 履歴の理由 `reason` は、次の15値だけ（`order_item_allocation_events_reason_check`）。`src/lib/inventory/allocation-types.ts` の `ALLOCATION_EVENT_REASON_CODES` と同じ集合で、単体試験が突き合わせる。管理者のメモのような自由な文は台帳の `note` に残し、ここには書かない。
 
@@ -2016,6 +2018,26 @@ public.item_delete_blockers(bigint[]) は戻り値の追加のため DROP → CR
 | `shipment_confirm`・`shipment_cancel`・`allocation_swap` |
 
 索引の利用・置換前後の属性・期限の等号境界・CHECK・末尾 assert と改ざん拒否は [土台の DB 試験](../../../tests/integration/db/group_g4_foundation.integration.test.ts) と [移行 assert の DB 試験](../../../tests/integration/db/group_g4_migration_asserts.integration.test.ts) で検証した。2026-10-26のcontroller fresh reset（g4t1a）でG4Aが適用され、PostgRESTのanon/authenticatedが各200。実鍵PostgRESTを含むgroup_g*全49 suiteは1,526成功・1失敗（所有者をanonへ変更する材料がassert前に42501、SQL変更なしで修正）・1 pending（group_g1_cleanupのG1_CLEANUP_SUITE=1限定試験）。修正round 1のローカルDB 3 suiteは94/94成功。controllerのfresh reset後のunit＋全DB（g4t1）は19,665成功・既知stockist_rlsの2失敗だけで新規失敗なし、G-0清掃は別に12/12成功。pendingの正式名と検証境界は [テスト仕様](../../05_Quality/tests/test-spec.md) に記録。本番未適用。
+
+### 割当の入替（G-4 Task 4、2026-10-26）
+
+確認日: 2026-10-26。[G4C移行](../../../supabase/migrations/20261026101624_group_g4_orders_swap.sql) は表・列・制約・triggerを増やさない。G-1の割当の境界trigger（`group_g_allocation_bounds` の `transfer_pair` など）は緩めず、入替の書込みがその条件を満たすように本体側を作る。fix round 2後のcontroller fresh reset（g4t4b）でローカル適用・検証済み、本番未適用（結果は [DBマイグレーション運用](../../06_Operations/db-migrations.md) の「G4Cの適用と再検証」）。
+
+同じ variant の「出し手」（donor。発送準備中の数を持つ注文）から「受け手」（taker。受注生産中で在庫待ちの注文）へ、発送準備中の割当 `q` 点を移す。移すのは割当の持ち主だけで、在庫の台帳（`stock_movements`）・`item_variants.stock_quantity`（F）・FIFO は触らない。A（paid の割当の残数量の和）・H・F の合計と手元の数は変わらない。
+
+| 対象 | 書く内容 |
+| --- | --- |
+| `order_item_allocations`（出し手の行） | `kind='paid'` で残数量が正の行を `created_at, id` の昇順に、必要な数量に達するまで `take = min(残り, 必要)` ずつ使い、`remaining_quantity` を `take` 減らし `version` を1進め、`updated_at` を更新する |
+| `order_item_allocations`（受け手の新しい行） | 使った出し手の行1本につき1行。受け手の明細・同じ `variant_id`・`kind='paid'`・`quantity = remaining_quantity = take`・同じ `operation_id` |
+| `order_item_allocation_events` | 行ごとに `transfer` の対。出し手: `allocation_id`＝出し手の行・`counterpart_allocation_id`＝受け手の新しい行。受け手: 逆。どちらも `quantity=take`・同じ `operation_id`・`reason='allocation_swap'`・`actor_id`・`stock_movement_id` はNULL。`sequence` は出し手が 2k−1、受け手が 2k（k は使った割当行の通し番号） |
+| `order_item_state_events` | 入替の前後の投影の差を `allocation_swap` として1つの操作に記録する（出し手 `ready→in_production`、受け手 `in_production→ready`） |
+| `private.group_g_operations` | operation `allocation_swap`・cause_type `order_item`・cause_id＝受け手の明細ID。結果は `{id(受け手の注文ID), operationId, takerOrderId, takerOrderItemId, donorOrderId, donorOrderItemId, quantity, reason, replayed}`。同じ鍵・同じ指紋の再送は前の結果に `replayed:true` |
+
+数量の条件（投影 `group_g_item_state_ranges` から）: 受け手の `in_production` のうち阻害理由が `{stock_shortage}` だけの数量の和 `T`、出し手の `ready` のうち阻害理由が空の数量の和 `D`。`q ≤ T` かつ `q ≤ D`。出し手の明細にキャンセルの申し込み（`cancel_requested`）か返金処理中（`refund_processing`）の区間が1つでもあれば入替えない（`GROUP_G_SWAP_DONOR_PENDING_REQUEST`）。この規則で出し手の割当の数は発送準備中の数と一致し、入替で出し手の発送準備中が必ず `q` 減って状態の履歴が残る。両方の注文は `status IN ('paid','shipped')`（出荷済みの注文の交換の行も相手になる）。
+
+`private.list_admin_allocation_swap_candidates(受け手の注文ID, 受け手の明細ID, actor)`（STABLE、public 入口あり）は、権限 `admin.orders.allocate` と `admin.orders.read` の両方を確かめ、受け手の明細が無い・指定の注文に属さない場合は `GROUP_G_SWAP_ITEM_NOT_FOUND / P0002` で断る。その後、受け手の注文が paid/shipped 以外なら書込みと同じ `GROUP_G_SWAP_ORDER_NOT_PAID / 22023` で断り、受け手の `T` が0なら空を返す。出し手は同じ variant の有効な paid 割当（`remaining_quantity > 0`）を持つ明細に MATERIALIZED で先に絞ってから状態を投影する（候補の結果は同じ）。同じ variant の他の paid/shipped の注文で `D>0` かつ申請・返金処理中の区間がない明細を `order_created_at DESC, donor_order_id, donor_order_item_id` の最大50行で返す。列は `donor_order_id`・`donor_order_item_id`・`order_created_at`・`swappable_quantity`（D）・`taker_quantity`（T）。
+
+書き手の許可一覧は G4A の75本に `private.admin_swap_order_allocations(uuid,uuid,uuid,integer,text,uuid,uuid)` を足した76本。押さえの道具 `private.lock_group_g_allocation_swap(uuid,uuid,uuid)` は一覧に載せず、誰にもEXECUTEを与えない。
 
 ## 荷作り表・発送票の読取（G-3 Task 2）
 

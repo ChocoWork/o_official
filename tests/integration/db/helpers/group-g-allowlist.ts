@@ -21,11 +21,34 @@ export const G3A_REASON_CODES: readonly string[] = Object.freeze([
   'shipment_confirm', 'shipment_cancel',
 ]);
 
-/** CHECK の集合だけを再現する。変更は呼出し元の rollback で戻す。 */
+/**
+ * CHECK の集合を再現する。変更は呼出し元の rollback で戻す（取引の外では最初の文が断る）。
+ *
+ * commit 済みの本物の行（別の試験が commit した割当の入替の reason='allocation_swap' など）が、再現する集合の外の理由を持つと、
+ * 検証付きの ADD CONSTRAINT が「行が違反」で落ちる。そこで、この取引の中だけで追記専用の更新ガードを一時に外し、集合の外の
+ * 理由を NULL にしてガードを戻してから CHECK を付け替える。ガードは assert が流れる前に必ず有効に戻り、行は消さず、
+ * 取引全体は呼出し元が rollback するので commit 済みの実データは変わらない。
+ *
+ * 更新が遅延の数の確かめ（group_g_allocation_bounds）の待ちイベントを作ると、その表への ALTER が
+ * 「pending trigger events」で落ちる。そこで確かめを一時に即時にして、待ちを先に流してから更新・付け替えを行い、
+ * 最後に初期の遅延へ戻す。呼出し元はこの制約を IMMEDIATE にしてから呼んではならず、初期の遅延の状態で呼ぶこと。
+ * 更新するのは reason だけで、確かめは割当の整合を見るので通る。
+ */
 export function replaceReasonCheckSql(reasons: readonly string[]): string {
-  return `alter table public.order_item_allocation_events drop constraint order_item_allocation_events_reason_check;
+  const set = reasons.map((reason) => `'${reason.replaceAll("'", "''")}'`).join(', ');
+  return `do $reason_guard$ begin
+      if pg_catalog.statement_timestamp() = pg_catalog.transaction_timestamp() then
+        raise exception 'GROUP_G_REASONS_TRANSACTION_REQUIRED' using errcode = '55000';
+      end if;
+    end $reason_guard$;
+    set constraints public.group_g_allocation_bounds immediate;
+    alter table public.order_item_allocation_events disable trigger order_item_allocation_events_no_update;
+    update public.order_item_allocation_events set reason = null where reason is not null and reason <> all(array[${set}]::text[]);
+    alter table public.order_item_allocation_events enable trigger order_item_allocation_events_no_update;
+    alter table public.order_item_allocation_events drop constraint order_item_allocation_events_reason_check;
     alter table public.order_item_allocation_events add constraint order_item_allocation_events_reason_check CHECK (
-      reason IS NULL OR reason IN (${reasons.map((reason) => `'${reason.replaceAll("'", "''")}'`).join(', ')}))`;
+      reason IS NULL OR reason IN (${set}));
+    set constraints public.group_g_allocation_bounds deferred`;
 }
 
 /** 呼出し元の取引内で当時の理由集合を復元してから assert を流す。 */
@@ -74,7 +97,8 @@ export const G3C_ALLOWLIST: readonly string[] = Object.freeze([
 
 /**
  * G-3 の移行 group_g3_shipping_actions（G3D）が、その時点までに存在する書き手だけで持つ一覧（G3C の72本 + 伝票番号の後入力・訂正と手動の
- * 配達済み・出荷日訂正の3本 = 75本）。今の DB の書き手の一覧はこれと同じ。G3C の末尾の確かめを今の DB で流す試験は、流す前に G3C_ALLOWLIST（72本）へ入れ替える。
+ * 配達済み・出荷日訂正の3本 = 75本）。G-4 Task 4 までの DB の書き手の一覧はこれと同じだった（今の一覧は CURRENT_ALLOWLIST）。
+ * G3C の末尾の確かめを今の DB で流す試験は、流す前に G3C_ALLOWLIST（72本）へ入れ替える。
  */
 export const G3D_ALLOWLIST: readonly string[] = Object.freeze([
   ...G3C_ALLOWLIST,
@@ -82,6 +106,21 @@ export const G3D_ALLOWLIST: readonly string[] = Object.freeze([
   'private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)',
   'private.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid)',
 ]);
+
+/**
+ * G-4 の移行 group_g4_orders_swap（G4C）が持つ書き手の一覧（G3D の75本 + 割当の入替 private.admin_swap_order_allocations の1本 = 76本）。
+ * 今の DB の書き手の一覧はこれと同じ。G3D の末尾の確かめや G4A の確かめを今の DB で流す試験は、流す前に G3D_ALLOWLIST（75本）へ入れ替える。
+ */
+export const G4_ALLOWLIST: readonly string[] = Object.freeze([
+  ...G3D_ALLOWLIST,
+  'private.admin_swap_order_allocations(uuid,uuid,uuid,integer,text,uuid,uuid)',
+]);
+
+/**
+ * 今の DB の書き手の一覧。「今の DB の一覧が固定の集合や本数と等しい」ことを確かめる生きた検査は、すべてこの定数に向ける。
+ * 次の段階が本数を足す時は、この指し先だけを新しい一覧へ付け替える（時点の再実行が使う G3C/G3D/G4_ALLOWLIST は変えない）。
+ */
+export const CURRENT_ALLOWLIST: readonly string[] = G4_ALLOWLIST;
 
 /** 書き手の閉じた一覧を、渡した一覧へ置き換える文（関数の所有者・SECURITY DEFINER・search_path 空は移行と同じ） */
 export function replaceAllowlistSql(entries: readonly string[]): string {

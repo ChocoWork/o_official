@@ -6,7 +6,7 @@ import { describeLocalDb } from './helpers/local-db';
 import { createPurchaseFlow } from './helpers/purchase-order-flow';
 import { attachGroupG3SlipShipment, seedGroupG3ReadyOrder, seedGroupG3Slip, withRolePermissions } from './helpers/group-g3-fixtures';
 import { seedGroupG1Shipment } from './helpers/group-g1-fixtures';
-import { G3D_ALLOWLIST } from './helpers/group-g-allowlist';
+import { G3D_ALLOWLIST, CURRENT_ALLOWLIST } from './helpers/group-g-allowlist';
 
 const signature = 'admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid)';
 const sql = fs.readFileSync(path.join(process.cwd(), 'supabase/migrations/20261025134538_group_g3_shipping_actions.sql'), 'utf8');
@@ -210,7 +210,7 @@ describeLocalDb('G-3 date correction (local DB only)', (db) => {
     await reject(slip.id, 'INJECTED_DATE_FAILURE', {}, 'P0001');
     expect((await db().query("select current_setting('app.fulfillment_change',true) mark")).rows[0].mark).toBe('manual');
   });
-  test('FREQ-540-AC-11: 公開入口は同signatureのSQL INVOKER、実効EXECUTEはservice_roleだけ・一覧75本', async () => {
+  test('FREQ-540-AC-11: 公開入口は同signatureのSQL INVOKER、実効EXECUTEはservice_roleだけ・今の一覧（76本）', async () => {
     for (const schema of ['public', 'private']) {
       const p = (await db().query(`select p.prosecdef,l.lanname,p.proconfig,p.proargnames,p.prorettype::regtype::text ret,
         pg_get_userbyid(p.proowner) owner,has_function_privilege('service_role',p.oid,'execute') service,
@@ -219,7 +219,7 @@ describeLocalDb('G-3 date correction (local DB only)', (db) => {
       expect(p).toEqual({ prosecdef: schema === 'private', lanname: schema === 'private' ? 'plpgsql' : 'sql', proconfig: ['search_path=""'],
         proargnames: ['_slip_id', '_expected_version', '_shipment_date', '_reason', '_actor_id', '_request_key'], ret: 'jsonb', owner: 'postgres', service: true, anon: false, authenticated: false });
     }
-    expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(75);
+    expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(CURRENT_ALLOWLIST.length);
   });
   test('FREQ-535-AC-04: shipment_dateを持つprosrcはG-3の限定した関数だけで、KPI・会計関数に広がらない', async () => {
     const actual = (await db().query(`select n.nspname||'.'||p.proname name from pg_proc p join pg_namespace n on n.oid=p.pronamespace

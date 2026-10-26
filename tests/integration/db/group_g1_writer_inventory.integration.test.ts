@@ -1,7 +1,7 @@
 /** @jest-environment node */
 import { describeLocalDb, type PgClient } from './helpers/local-db';
 import { createCatalogFixture } from './helpers/order-fixtures';
-import { G2_ALLOWLIST, G3D_ALLOWLIST } from './helpers/group-g-allowlist';
+import { G2_ALLOWLIST, CURRENT_ALLOWLIST } from './helpers/group-g-allowlist';
 
 /**
  * G-1 Task 14（FREQ-522-AC-02・FREQ-524・FREQ-540-AC-05）: 書き手の閉じた一覧の構造の確かめ。
@@ -18,7 +18,8 @@ import { G2_ALLOWLIST, G3D_ALLOWLIST } from './helpers/group-g-allowlist';
  * 確定 private.admin_attach_purchase_order_document、訂正・無効化 private.admin_revise_purchase_order_document を足した65本
  * （G-2 の Task 9 で閉じた。書き手は65本のまま）に、G-3 Task 4 で発送票の下書きの保存 private.admin_save_shipment_slip_draft と
  * 破棄 private.admin_discard_shipment_slip_draft の2本、Task 5でconsume・register・confirmの3本、Task 6で restore・cancel の2本、Task 7 で
- * 伝票番号の後入力・訂正 private.admin_update_shipment_slip_tracking、手動の配達済み private.admin_mark_shipment_slip_delivered、出荷日訂正 private.admin_correct_shipment_date の3本を足した75本（G-3 の以降の Task が書き手を足すたびに本数が増える）。
+ * 伝票番号の後入力・訂正 private.admin_update_shipment_slip_tracking、手動の配達済み private.admin_mark_shipment_slip_delivered、出荷日訂正 private.admin_correct_shipment_date の3本を足した75本に、
+ * G-4 Task 4 で割当の入替 private.admin_swap_order_allocations を足した76本（以降の Task が書き手を足すたびに本数が増える）。
  * 走査する表には G-2 の発注書の9表を足した（TABLES）。
  * G-2 Task 9（FREQ-540-AC-08）: 新しい書込み関数9本とその公開入口9本・内部の道具4本・読取4本の構造（private・SECURITY DEFINER・
  * search_path 空・EXECUTE の集合）と、各本体が共通の押さえ lock_group_g_purchase_orders を発注書の表・item_variants・
@@ -102,6 +103,7 @@ const ALLOWLIST = [
   'private.admin_update_shipment_slip_tracking(uuid,integer,text,text,boolean,uuid,uuid)',
   'private.admin_mark_shipment_slip_delivered(uuid,integer,date,boolean,uuid,uuid)',
   'private.admin_correct_shipment_date(uuid,integer,date,text,uuid,uuid)',
+  'private.admin_swap_order_allocations(uuid,uuid,uuid,integer,text,uuid,uuid)',
 ];
 
 const STOPPED = ALLOWLIST.slice(47, 53);
@@ -201,12 +203,12 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
   beforeEach(async () => { await db().query('begin'); });
   afterEach(async () => { await db().query('rollback'); });
 
-  test('一覧は決めた75本と同じ集合で、関数は postgres の SECURITY DEFINER・search_path 空・だれも EXECUTE できない', async () => {
-    expect(ALLOWLIST).toEqual(G3D_ALLOWLIST);
+  test('一覧はCURRENT_ALLOWLISTと同じ集合で、関数は postgres の SECURITY DEFINER・search_path 空・だれも EXECUTE できない', async () => {
+    expect(ALLOWLIST).toEqual(CURRENT_ALLOWLIST);
     expect(ALLOWLIST.slice(0, 65)).toEqual(G2_ALLOWLIST);
     const expected = (await db().query('select to_regprocedure(s)::oid::text as oid, s from unnest($1::text[]) as s', [ALLOWLIST])).rows;
     expect(expected.filter((row) => row.oid === null).map((row) => row.s)).toEqual([]);
-    expect(new Set(expected.map((row) => row.oid)).size).toBe(75);
+    expect(new Set(expected.map((row) => row.oid)).size).toBe(CURRENT_ALLOWLIST.length);
     const actual = (await db().query('select unnest(private.group_g_writer_allowlist())::oid::text as oid')).rows.map((row) => row.oid);
     expect([...actual].sort()).toEqual(expected.map((row) => row.oid).sort());
     const fn = (await db().query(`select p.proowner::regrole::text as owner, p.prosecdef, p.proconfig, p.provolatile,
@@ -377,11 +379,11 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
   const NO_ONE = { anon: false, authenticated: false, service_role: false, public_execute: false };
   const SERVICE_ROLE_ONLY = { anon: false, authenticated: false, service_role: true, public_execute: false };
 
-  test('FREQ-540-AC-10: 発送の読取5本と内部の道具4本・守りのtrigger関数2本は書き手でなく、許可一覧（75本）を増やさない', async () => {
+  test('FREQ-540-AC-10: 発送の読取5本と内部の道具4本・守りのtrigger関数2本は書き手でなく、CURRENT_ALLOWLISTを増やさない', async () => {
     const procs = await loadProcs(db());
     const allow = await allowlistOids(db());
     const { direct, closure } = analyze(procs);
-    expect(ALLOWLIST).toHaveLength(75);
+    expect(ALLOWLIST).toHaveLength(CURRENT_ALLOWLIST.length);
     const readers = ['list_admin_packing', 'list_admin_shipment_slips', 'get_admin_shipment_slip',
       'list_admin_order_shipment_slips', 'list_shipment_accounting_inputs'];
     const internal = ['group_g_shipment_ready', 'group_g_bundle_verdict', 'group_g_bundle_key', 'tracking_registration_owner',
@@ -603,5 +605,78 @@ describeLocalDb('integration: G-1 の書き手の閉じた一覧（pg_proc の�
     const readers = ['list_admin_packing', 'list_admin_shipment_slips', 'get_admin_shipment_slip', 'list_admin_order_shipment_slips', 'list_shipment_accounting_inputs'];
     expect(service.sort()).toEqual([...SLIP_WRITER_NAMES, ...readers].flatMap((name) => [`private.${name}`, `public.${name}`]).sort());
     expect(service).toHaveLength(24);
+  });
+
+  // ---- G-4 Task 4（FREQ-523-AC-02〜04・FREQ-540-AC-13・AC-14）: 割当の入替の書き手 ----
+
+  const SWAP_WRITER = 'admin_swap_order_allocations';
+  const SWAP_READER = 'list_admin_allocation_swap_candidates';
+  const SWAP_LOCK = 'lock_group_g_allocation_swap';
+
+  test('FREQ-523-AC-04: 入替の書込み本体は private の SECURITY DEFINER・search_path 空で一覧の76本目にあり、public の入口は同名 private へ委ねるだけの SQL INVOKER。どちらも service_role だけが EXECUTE できる', async () => {
+    const procs = await loadProcs(db());
+    const allow = await allowlistOids(db());
+    const bodies = procs.filter((proc) => proc.schema === 'private' && proc.name === SWAP_WRITER);
+    const entries = procs.filter((proc) => proc.schema === 'public' && proc.name === SWAP_WRITER);
+    expect({ bodies: bodies.length, entries: entries.length }).toEqual({ bodies: 1, entries: 1 });
+    expect(bodies[0].identity).toBe('_order_id uuid, _taker_order_item_id uuid, _donor_order_item_id uuid, _quantity integer, _reason text, _actor_id uuid, _request_key uuid');
+    // 走査が本体を書き手として見つけ（空振りで通らない）、一覧の末尾（76本目）に載っている。入口は何も書かず、一覧に載らない
+    expect({ definer: bodies[0].secdef, allowed: allow.has(bodies[0].key), writer: isDirectWriter(bodies[0]), last: ALLOWLIST.at(-1) })
+      .toEqual({ definer: true, allowed: true, writer: true, last: 'private.admin_swap_order_allocations(uuid,uuid,uuid,integer,text,uuid,uuid)' });
+    expect({ delegate: isPublicDelegate(entries[0], allow, procs), writer: isDirectWriter(entries[0]), allowed: allow.has(entries[0].key) })
+      .toEqual({ delegate: true, writer: false, allowed: false });
+    expect(await aclOf(bodies[0].oid)).toEqual({ owner: 'postgres', prosecdef: true, proconfig: ['search_path=""'], ...SERVICE_ROLE_ONLY });
+    expect(await aclOf(entries[0].oid)).toEqual({ owner: 'postgres', prosecdef: false, proconfig: ['search_path=""'], ...SERVICE_ROLE_ONLY });
+    expect(entries[0].language).toBe('sql');
+  });
+
+  test('FREQ-523-AC-05: 入替の候補の読取は private の本体と public の入口の両方を service_role だけが EXECUTE でき、何も書かず、一覧に載らない', async () => {
+    const procs = await loadProcs(db());
+    const allow = await allowlistOids(db());
+    const bodies = procs.filter((proc) => proc.schema === 'private' && proc.name === SWAP_READER);
+    const entries = procs.filter((proc) => proc.schema === 'public' && proc.name === SWAP_READER);
+    expect({ bodies: bodies.length, entries: entries.length }).toEqual({ bodies: 1, entries: 1 });
+    expect({ body: await aclOf(bodies[0].oid), writer: isDirectWriter(bodies[0]), allowed: allow.has(bodies[0].key) })
+      .toEqual({ body: { owner: 'postgres', prosecdef: true, proconfig: ['search_path=""'], ...SERVICE_ROLE_ONLY }, writer: false, allowed: false });
+    expect({ entry: await aclOf(entries[0].oid), language: entries[0].language, writer: isDirectWriter(entries[0]),
+      delegate: isPublicDelegate(entries[0], allow, procs) }).toEqual({
+      entry: { owner: 'postgres', prosecdef: false, proconfig: ['search_path=""'], ...SERVICE_ROLE_ONLY }, language: 'sql', writer: false,
+      delegate: false });
+    // 入口は `select * from private.…` の委譲。一覧の本体ではないので isPublicDelegate は false（書き手の閉包にも入らない）
+    expect(normalize(entries[0].src, true).trim()).toMatch(new RegExp(`^select \\* from private\\.${SWAP_READER}\\([^;]*\\);?$`));
+    const { closure } = analyze(procs);
+    expect({ body: closure.has(bodies[0].key), entry: closure.has(entries[0].key) }).toEqual({ body: false, entry: false });
+  });
+
+  test('FREQ-523-AC-04: 入替の書込み本体は、共通の押さえ lock_group_g_allocation_swap を、割当・台帳・在庫・注文・明細の表への最初の参照より前に呼び、押さえの道具は共通の advisory を最初の文にして誰も EXECUTE できない', async () => {
+    const procs = await loadProcs(db());
+    const allow = await allowlistOids(db());
+    const body = procs.find((proc) => proc.schema === 'private' && proc.name === SWAP_WRITER)!;
+    const code = normalize(body.src, true);
+    const firstCall = code.indexOf(`private.${SWAP_LOCK}(`);
+    // 呼び出し名を同じ長さの空白に替えてから表の参照を探す（位置は動かない）
+    const withoutCall = code.split(SWAP_LOCK).join(' '.repeat(SWAP_LOCK.length));
+    const references = [...withoutCall.matchAll(/\b(?:from|join|into|update)\s+(?:public\.)?(order_item_allocations|order_item_allocation_events|stock_movements|item_variants|orders|order_items)\b/g)];
+    // 空振りで通らない: 押さえの呼び出しがあり、表の参照も 1 つ以上ある
+    expect({ called: firstCall >= 0, references: references.length > 0 }).toEqual({ called: true, references: true });
+    expect({ lockFirst: firstCall < (references[0].index ?? -1) }).toEqual({ lockFirst: true });
+    // FIFO も在庫の台帳も在庫数も触らない
+    expect(code).not.toMatch(/allocate_group_g_fifo|stock_movements|stock_quantity/);
+
+    const helpers = procs.filter((proc) => ['private', 'public'].includes(proc.schema) && proc.name === SWAP_LOCK);
+    expect(helpers.map((proc) => `${proc.schema}.${proc.name}(${proc.identity})`))
+      .toEqual(['private.lock_group_g_allocation_swap(_order_id uuid, _taker_order_item_id uuid, _donor_order_item_id uuid)']);
+    expect({ acl: await aclOf(helpers[0].oid), writer: isDirectWriter(helpers[0]), allowed: allow.has(helpers[0].key) })
+      .toEqual({ acl: { owner: 'postgres', prosecdef: true, proconfig: ['search_path=""'], ...NO_ONE }, writer: false, allowed: false });
+    expect(normalize(helpers[0].src, true).split(/\bbegin\s+/, 2)[1])
+      .toMatch(/^perform pg_catalog\.pg_advisory_xact_lock\(190521,1\);/);
+    expect(normalize(helpers[0].src, true)).toContain('private.lock_group_g_inventory(');
+
+    // service_role が EXECUTE できる入替の関数は、書込みの本体と入口・候補の本体と入口の4本だけ
+    const executable = (await db().query(`select p.oid::text as oid from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname in ('public', 'private') and p.proname = any($1::text[]) and has_function_privilege('service_role', p.oid, 'EXECUTE')`,
+    [[SWAP_WRITER, SWAP_READER, SWAP_LOCK]])).rows.map((row) => String(row.oid)).sort();
+    expect(executable).toEqual(procs.filter((proc) => [SWAP_WRITER, SWAP_READER].includes(proc.name)).map((proc) => proc.oid).sort());
+    expect(executable).toHaveLength(4);
   });
 });

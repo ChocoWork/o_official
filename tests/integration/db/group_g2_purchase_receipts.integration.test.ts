@@ -4,7 +4,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import { seedGroupG1Allocation } from './helpers/group-g1-fixtures';
-import { G3D_ALLOWLIST } from './helpers/group-g-allowlist';
+import { CURRENT_ALLOWLIST } from './helpers/group-g-allowlist';
 import {
   createPurchaseFlow, CONFLICT, EXCEEDS_REMAINING, FORBIDDEN, INVALID, NOT_CONFIRMED, NOT_FOUND, RECEIVED_ON_INVALID, VERSION_CONFLICT,
 } from './helpers/purchase-order-flow';
@@ -561,7 +561,7 @@ describeLocalDb('integration: G-2 受け取り', (db) => {
     expect(await read(`public.${RECEIVE_SIGNATURE}`)).toEqual({ ...common, definer: false, language: 'sql', names });
 
     const list = (await db().query('select x::oid::text as oid from unnest(private.group_g_writer_allowlist()) as a(x)')).rows;
-    expect(list).toHaveLength(G3D_ALLOWLIST.length);
+    expect(list).toHaveLength(CURRENT_ALLOWLIST.length);
     const oids = new Set(list.map((row) => row.oid));
     const privateOid = (await db().query('select $1::regprocedure::oid::text as oid', [`private.${RECEIVE_SIGNATURE}`])).rows[0].oid;
     const publicOid = (await db().query('select $1::regprocedure::oid::text as oid', [`public.${RECEIVE_SIGNATURE}`])).rows[0].oid;

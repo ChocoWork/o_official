@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> G-4 Task 4 確認日: 2026-10-26。fix round 2後の第3の移行 G4C（割当の入替・書き手76本）はcontrollerのfresh reset（g4t4b）でローカル適用・検証済み。group_g*全53 suiteは1,721成功・0失敗・1 pending、並行12/12を3回連続。全件検証も新規失敗なし（「G4Cの適用と再検証」）。本番未適用。
+
 > G-4 Task 2 確認日: 2026-10-26。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
 
 > G-3 本番適用: 2026-10-26 08:33 JST（`20261025053324`・`20261025070821`・`20261025100130`・`20261025134538`。照合は G-3 の節の末尾） | G-3 Task 10 確認: 2026-10-26（4移行assert・75本・並行/PostgREST試験。controllerのfresh resetでgroup_g* 47 suiteを検証、SQLは不変で試験材料3件を直し、group_g3_concurrency 24/24を3回連続・group_g3_migration_asserts 64/64で通過） | 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで。G-3 は Task 1 の基盤・Task 2 の読取・Task 4 の書き手の移行・Task 6 の発送の取消を追記） | 確認日: 2026-10-26 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
@@ -21,7 +23,7 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 | --- | --- | --- |
 | 1 / G4A | [20261026045859_group_g4_orders_foundation.sql](../../supabase/migrations/20261026045859_group_g4_orders_foundation.sql) | 土台。発送票の注文別索引・確定の期限境界・割当理由18値。2026-10-26のcontroller fresh reset（g4t1a）でローカル適用済み、本番未適用 |
 | 2 / G4B | [20261026054705_group_g4_orders_reads.sql](../../supabase/migrations/20261026054705_group_g4_orders_reads.sql) | 内部3本、private本体4本とpublic入口4本。STABLEな一覧・CSV材料・詳細・品物の状態履歴。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用 |
-| 3 / G4C | `<ts3>_group_g4_orders_swap.sql` | 割当入替の書込みと書き手一覧76本。Task 4 で作成予定、UTC版は未採番 |
+| 3 / G4C | [20261026101624_group_g4_orders_swap.sql](../../supabase/migrations/20261026101624_group_g4_orders_swap.sql) | 割当入替の書込み1本（private本体＋public入口）・候補の読取1本（private本体＋public入口）・押さえの道具1本、書き手一覧76本。Task 4 で作成。controllerのfresh reset（g4t4a）でローカル適用済み、本番未適用（検証の結果は下の「G4Cの適用と再検証」） |
 
 確認日: 2026-10-26。G-1・G-2・G-3 は本番へ適用済み（Task 1 依頼時の確認）。上の過去の節の未適用表記は当時の記録。G4Aはローカル適用済み・本番未適用で、既存の移行ファイルは編集しない。別セッションの `20261026010000_auth_return_intents.sql` は変更せず、その認証機能をG-4の試験の前提にしない。理由の単体は全SQLからCHECK本文を抽出する。3本の版は G4A < G4B < G4C とする。
 
@@ -52,6 +54,40 @@ G4Bは先頭BEGIN、G4BのBODY/FINAL_ASSERT節印、末尾assert→NOTIFY→COMM
 違反はすべて `GROUP_G_MIGRATION_ASSERTION_FAILED / 55000`。ACLはhas_function_privilege・aclexplodeで意味を検査し、proacl::textを比較しない。改ざんは内部へのservice_role付与・public/anon/authenticated付与・VOLATILE・DEFINER変更・入口削除・overload・別委譲・書込み文・一時ロールへの所有者変更を取引内で再現しrollbackする。G4Aの当時の75本は既存のrunWithAllowlistのまま再現する。
 
 実装者はSupabase CLI・Docker・DB・Playwrightを起動しない。controllerがfresh reset→既存のanon/実authenticatedのPostgREST smoke各HTTP 200→[G4読取](../../tests/integration/db/group_g4_reads.integration.test.ts)・[G4末尾assert](../../tests/integration/db/group_g4_migration_asserts.integration.test.ts)・G1 item_states・G3 readsを実行する。SQLを直したら再度resetから通す。単体/型/lintの成功をDB適用・ACL・PostgREST・本番の証拠にしない。
+
+### G4Cの適用と再検証（2026-10-26、Task 4）
+
+G4Cは先頭BEGIN、G4CのBODY/FINAL_ASSERT節印、末尾assert→NOTIFY→COMMITの1取引。ASCII・BOMなし・LF。表・列・制約・triggerを変えず、G-1の割当の境界trigger（`GROUP_G_ALLOCATION_BOUNDS`）も緩めない。G4A・G4B・G-1〜G-3の適用済みSQLは編集しない。別セッションの認証移行へは依存しない。
+
+| 関数 | 役割 |
+| --- | --- |
+| `private.lock_group_g_allocation_swap(uuid,uuid,uuid)` | 押さえの道具。最初の文が共通advisory `pg_advisory_xact_lock(190521,1)`。その後に2つの明細から注文とvariantを読み、`private.lock_group_g_inventory(variant配列, 注文配列, NULL)` を呼んでロックした注文IDを返す。誰にもEXECUTEなし |
+| `private.admin_swap_order_allocations(uuid,uuid,uuid,integer,text,uuid,uuid)` | 書込み本体（SECURITY DEFINER）。許可一覧の76本目。service_roleだけEXECUTE |
+| `public.admin_swap_order_allocations(…)` | 同名・同引数・同戻り型のSQL INVOKER入口。private本体へ委ねるだけ。service_roleだけEXECUTE |
+| `private.list_admin_allocation_swap_candidates(uuid,uuid,uuid)` / `public.…` | 候補の読取（STABLE）。権限は `admin.orders.allocate` と `admin.orders.read`。明細の存在・所属を確かめた後、受け手の注文がpaid/shipped以外なら書込みと同じ `GROUP_G_SWAP_ORDER_NOT_PAID / 22023`。同じvariantの有効なpaid割当（remaining_quantity > 0）が残る出し手の注文をMATERIALIZEDで先に絞ってから投影する。最大50行 |
+
+書込み本体の処理の順（G-3の書込みと同じ）: ①引数の検証（NULL・数量1〜99999・理由200字以内・同じ明細は `GROUP_G_ARGUMENT_INVALID`、trim後に空の理由は `GROUP_G_SWAP_REASON_REQUIRED`）→ ②押さえの道具 → ③権限（`GROUP_G_FORBIDDEN / 42501`）→ ④指紋（operation・注文・両明細・数量・trim後の理由・actor）と再送（同じ鍵・同じ指紋は前の結果に `replayed:true`、違えば `GROUP_G_REQUEST_KEY_CONFLICT / 23505`）→ ⑤存在と整合を次の順に最初の違反で止める: 明細が無い・注文に属さない `GROUP_G_SWAP_ITEM_NOT_FOUND / P0002`、`GROUP_G_SWAP_SAME_ORDER`、`GROUP_G_SWAP_VARIANT_MISMATCH`、`GROUP_G_SWAP_ORDER_NOT_PAID`（`status IN ('paid','shipped')` 以外）、投影から求めた `GROUP_G_SWAP_TAKER_ON_HOLD`・`GROUP_G_SWAP_DONOR_PENDING_REQUEST`・`GROUP_G_SWAP_DONOR_ON_HOLD`・`GROUP_G_SWAP_QUANTITY_EXCEEDS_TAKER`・`GROUP_G_SWAP_QUANTITY_EXCEEDS_DONOR`（22023）→ ⑥出し手の `kind='paid'` で残りがある割当行を `created_at, id` の昇順に使い、行ごとに出し手の残数量を減らして `version` を1進め、受け手の明細に新しい割当行を作り、`transfer` の対（出し手の `sequence` は2k−1、受け手は2k、`reason='allocation_swap'`、`stock_movement_id` はNULL）を書く → ⑦品物の状態の履歴（`allocation_swap`）→ ⑧操作の受付を最後に1行。FIFOは呼ばず、`stock_movements` も `item_variants.stock_quantity` も触らない。ロック順は共通advisory →（`lock_group_g_inventory` の中で）variant・注文・明細・割当。
+
+末尾の `$g4c_final_objects$` と `$g4c_final_table_acl$` の DETAIL は次の5つ。違反はすべて `GROUP_G_MIGRATION_ASSERTION_FAILED / 55000`。
+
+| 末尾assertのDETAIL | 確認するもの |
+| --- | --- |
+| `orders_swap_functions` | 5本の署名・引数名・戻り型/列・postgres所有・DEFINER/INVOKER・揮発性・言語・空search_path・EXECUTE（押さえの道具は誰にもなし、本体と入口はservice_roleだけ）。入口の委譲先 |
+| `orders_swap_lock_order` | 書込み本体のprosrc（注釈を除き小文字・空白を畳む）で `private.lock_group_g_allocation_swap(` が割当・割当イベント・台帳・variant・注文・明細の表の最初の参照より前。探索が空でない。押さえの道具の最初の文が共通advisoryで `lock_group_g_inventory` を呼ぶ |
+| `orders_swap_allowlist` | 許可一覧が76本の固定集合とOIDまで一致（1本外す・1本足す・別の関数に替える・重複を拒否） |
+| `orders_swap_function_set` | 3つの名前のpublic/private関数が上の5本だけ（同名の別overloadなし） |
+| `orders_swap_table_acl` | 書込み先の4表（割当・割当イベント・品物の状態履歴・操作の受付）にanon/authenticatedの権限・列権限がなく、service_roleは決めた表のSELECTだけ。PG17のMAINTAINも含む。ACLは `has_*_privilege` と `aclexplode` の意味で見て、`proacl::text` は比較しない |
+
+許可一覧の本数は G4A=75、G4C=76。試験の共有の道具 `group-g-allowlist.ts` は `G4_ALLOWLIST`（76本）と、今のDBの一覧を指す `CURRENT_ALLOWLIST` を持つ。「今のDBの一覧が固定の集合や本数と等しい」ことを確かめる生きた検査は `CURRENT_ALLOWLIST` とそのlengthに向け、次の段階が本数を足す時はこの指し先だけを付け替える。G2B（65）・G3C（72）・G3D（75）・G4A（75）・G4C（76）の末尾assertの再実行は、流す前に取引内でその時点の一覧（`G2_ALLOWLIST`・`G3C_ALLOWLIST`・`G3D_ALLOWLIST`・`G4_ALLOWLIST`）へ入れ替え、戻すのは呼出し元のrollbackにする。
+
+並行試験が本物の入替を commit するため、commit 済みの行に `reason='allocation_swap'` が残る。G3A の17値の理由 CHECK を取引内で再現する試験（`group_g3_model`・`group_g3_migration_asserts`・G4A の改ざん）は、共有の `replaceReasonCheckSql` が呼出し元の取引の中だけで、追記専用の更新ガードを一時に外して再現する集合の外の理由を NULL にしてから戻し、検証付きで CHECK を付け替える。取引の外では最初の文が断り、行は消さず、呼出し元の rollback で commit 済みの実データは変わらない。移行の SQL は変わらない。
+
+| G4Cの版 | bytes | MD5 | 適用・検証 |
+| --- | --- | --- | --- |
+| 初回（Task 4、g4t4a） | 34,940 | `859C0442F69DEAE5F2AF1D71995C2866` | controller fresh reset後に適用（SQLは変更なし）。group_g*全53 suite・1,678成功・30失敗・1 pending。30失敗は試験の材料（commit済みの `allocation_swap` の行があると17値の理由 CHECK の再現が落ちる29件と、受け手の入金の競合の待ちの確認1件）。実装者が試験側を直した後のローカル再実行は1,651成功・0失敗・4 pending（実鍵PostgRESTの3 suiteと専用清掃の1）で、並行は3回連続10/10。本番未適用 |
+| Opusレビュー修正（Task 4 fix round 2、現在のSQL） | 35,487 | `E84E1F7A64AB7A544C66A90D30F572FA` | 候補の受け手の入金確認、有効なpaid割当を持つ出し手の事前絞込み、押さえの道具の最初のBEGINに固定したadvisory検査。controller fresh reset（g4t4b）でローカル適用済み、PostgREST anon/authenticated各HTTP 200。group_g*全53 suiteは1,721成功・0失敗・1 pending（G1_CLEANUP_SUITE=1で単独実行するG-1清掃の未起動）。発送確定と入荷も両順序を試す `group_g4_swap_concurrency` は12/12・12/12・12/12の3回連続成功。本番未適用 |
+
+fix round 2後のcontroller全件検証（g4t4b、実鍵あり）: unit＋全DB integrationは20,178成功、失敗は既知の `stockist_rls` 2件だけで新規失敗なし。G-0清掃は別に12/12成功。上のgroup_g*検証と全件検証は範囲を分けた実測で、1 pendingは環境変数の指定がある時だけ単独実行するG-1清掃の未起動を示す。本番には適用していない。
 
 ## なぜ変えたか
 

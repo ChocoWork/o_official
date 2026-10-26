@@ -1,6 +1,6 @@
 # 在庫の割当と共通の鍵の流れ（G-1）
 
-> 状態: 現行のソース（グループ G-1。2026-10-24 に本番へ適用済み。在庫の窓口の権限は G-2 Task 1 の変更を 2026-10-25 に反映） | 確認日: 2026-10-25 | 対象: 注文の受付・入金・入荷・解放・返金・返品・配送の反映で在庫を動かす処理の順序と、全入口に共通の鍵の順
+> 状態: 現行のソース（グループ G-1。2026-10-24 に本番へ適用済み。在庫の窓口の権限は G-2 Task 1 の変更を 2026-10-25 に反映。割当の入替は G-4 Task 4 で 2026-10-26 に追記） | 確認日: 2026-10-26 | 対象: 注文の受付・入金・入荷・解放・返金・返品・配送の反映で在庫を動かす処理の順序と、全入口に共通の鍵の順
 
 ## 概要
 
@@ -12,7 +12,7 @@ G-1 は、在庫を動かす全ての入口が、共通の在庫の鍵（advisor
 | 割当の作り方 | 受付で H（台帳 `purchase` −n）。入金で同じ注文の H が A に変わる（台帳なし）。未確保の分は FIFO が A を作る（台帳 `purchase`、交換の品は `exchange`、−n） |
 | FIFO の順 | `orders.created_at` → `orders.id` → `order_items.id` の昇順。一部だけでも割り当てる。H を持つ行・金額確認や交換手数料待ちで止めた行・variant が空の行は対象外 |
 | 解放 | 未入金の H は期限切れ・取消・要対応の解決で外す（台帳 `cancel` +n）。A は返金で外す（`refund` +n）。在庫を減らす操作で足りない分は A を新しい注文から外す（`allocation_release` +n） |
-| 発送で使う | G-1 では書かない。旧の発送・仕上がりの関数は処理せず拒否し、`consume`・`restore`・`transfer` は制約と履歴の型だけを用意した（書くのは G-3・G-4） |
+| 発送で使う | G-1 では書かない。旧の発送・仕上がりの関数は処理せず拒否し、`consume`・`restore`・`transfer` は制約と履歴の型だけを用意した（書くのは G-3・G-4。`transfer` は G-4 Task 4 の割当の入替、下の節） |
 | 再送 | 操作の受付 `private.group_g_operations` に `(operation, request_key)` と入力の指紋を残す。同じ再送は前の結果、中身が違えば断る |
 
 ## 範囲と根拠
@@ -182,10 +182,45 @@ G-1 の移行は、旧の発送4関数（`admin_create_fulfillment`・`admin_can
 
 配送の追跡の結果の反映（`record_delivery_read_result`）は動かし続ける。再送のキーを発送・追跡の版・出来事で決める（配達済みなら `md5('delivery:' || 発送 || ':' || 版 || ':delivered')`）ので、版の違う再送は別の操作として記録し、同じ版の再送は何も増やさない。
 
+## 割当の入替（G-4 Task 4）
+
+同じ variant の「出し手」の発送準備中の割当を、受注生産中の「受け手」へ `q` 点移す（`private.admin_swap_order_allocations`、public 入口 `admin_swap_order_allocations`）。管理画面の窓口はこの後の Task で作る。FIFO・在庫の台帳・空き在庫 F は動かさず、F/A/H の合計と手元の数は変わらない（FREQ-523-AC-03）。
+
+```mermaid
+sequenceDiagram
+  participant API as 窓口（service_role）
+  participant W as admin_swap_order_allocations
+  participant L as lock_group_g_allocation_swap
+  participant P as 投影 group_g_item_state_ranges
+  participant D as 割当・履歴・操作の受付
+  API->>W: 注文・受け手の明細・出し手の明細・数量・理由・actor・再送キー
+  W->>W: 1. 引数の検証（理由は trim して空なら GROUP_G_SWAP_REASON_REQUIRED）
+  W->>L: 2. 最初の文が共通 advisory (190521, 1)。読み取りだけで2つの明細から注文と variant を閉じる
+  L->>L: 3. lock_group_g_inventory（variant → 注文 → 明細 → 割当）
+  W->>W: 4. 権限（orders.allocate と orders.read）→ 指紋と再送
+  W->>P: 5. 明細の存在 → 同じ注文でない → 同じ variant → 両方の注文が paid か shipped
+  P-->>W: 受け手の T（在庫待ちだけの数量）と出し手の D（阻害理由のない発送準備中の数量）
+  W->>W: 6. 受け手の保留 → 出し手の申請・返金処理中 → 出し手の保留 → q が T 以下 → q が D 以下
+  W->>D: 7. 出し手の割当を created_at, id の昇順に使い、行ごとに受け手の新しい割当と transfer の対を書く
+  W->>D: 8. 品物の状態の履歴（allocation_swap）→ 操作の受付を最後に1行
+```
+
+| 項目 | 内容 |
+| --- | --- |
+| 拒否の順（`22023`、権限は `42501`、再送の食い違いは `23505`、明細が無いのは `P0002`） | 引数 `GROUP_G_ARGUMENT_INVALID` → 理由が空 `GROUP_G_SWAP_REASON_REQUIRED` → 権限 `GROUP_G_FORBIDDEN` → `GROUP_G_REQUEST_KEY_CONFLICT` → `GROUP_G_SWAP_ITEM_NOT_FOUND` → `GROUP_G_SWAP_SAME_ORDER` → `GROUP_G_SWAP_VARIANT_MISMATCH` → `GROUP_G_SWAP_ORDER_NOT_PAID` → `GROUP_G_SWAP_TAKER_ON_HOLD` → `GROUP_G_SWAP_DONOR_PENDING_REQUEST` → `GROUP_G_SWAP_DONOR_ON_HOLD` → `GROUP_G_SWAP_QUANTITY_EXCEEDS_TAKER` → `GROUP_G_SWAP_QUANTITY_EXCEEDS_DONOR`。どの拒否も何も書かない |
+| 出し手に申請の対象がある時 | キャンセルの申し込み（`cancel_requested`）か返金処理中（`refund_processing`）の区間が1つでもある明細は出し手にできない。これで出し手の割当の数が発送準備中の数と一致し、入替で出し手の発送準備中が必ず `q` 減って状態の履歴が残る |
+| 行ごとの書込み | 出し手の割当の `remaining_quantity` を `take` 減らして `version` を1進め、受け手の明細に `quantity = remaining_quantity = take` の新しい割当を作り、`transfer` の対（出し手の `sequence` は 2k−1、受け手は 2k）を同じ操作・`reason='allocation_swap'` で書く。G-1 の境界 trigger（`transfer_pair`）は commit の時に両側を確かめる |
+| 次の入荷 | 入替の後の FIFO は元の注文日の順。割当を失った出し手が受け手より先に新しい入荷を受け取り、受け手の割当は動かない（FREQ-523-AC-04） |
+| 発送票への影響 | 出し手の行を選んだ下書きは、入替の後に `get_admin_shipment_slip` の `issues` に `quantity_exceeds_ready` が出て、確定は `GROUP_G_SLIP_QUANTITY_EXCEEDS_READY` で断られる |
+| 候補の読取 | `list_admin_allocation_swap_candidates` は権限の組を確かめ、受け手の明細が無い・指定の注文に属さない場合は `GROUP_G_SWAP_ITEM_NOT_FOUND / P0002`、続いて受け手の注文が paid/shipped 以外なら書込みと同じ `GROUP_G_SWAP_ORDER_NOT_PAID / 22023` で断る。その後、受け手の在庫待ちだけの数量 T が0なら空。出し手は同じ variant の有効な paid 割当（`remaining_quantity > 0`）を持つ明細に MATERIALIZED で先に絞ってから状態を投影する（候補の結果は同じ）。同じ variant の他の paid/shipped の注文の明細のうち出し手にできる物を `order_created_at DESC, donor_order_id, donor_order_item_id` の最大50行で返す。ロックは取らない（STABLE） |
+
+並行の競合は、同じ出し手を2つの受け手が同時に入れ替える・注文の組が逆の2つの入替・入替と票の発送確定・入替と入荷（FIFO）・入替と出し手の返金開始・入替と受け手の入金・同じ鍵の同時再送を別接続で確かめ、どれも deadlock 0・保存則が保たれる（[group_g4_swap_concurrency](../../../tests/integration/db/group_g4_swap_concurrency.integration.test.ts)。実測は [テスト仕様](../../05_Quality/tests/test-spec.md) の G-4 Task 4 の記録）。
+
 ## 関連テスト
 
 | 観点 | テスト |
 | --- | --- |
+| 割当の入替の書込み・拒否・権限・再送・候補 | [group_g4_swap](../../../tests/integration/db/group_g4_swap.integration.test.ts)、並行は [group_g4_swap_concurrency](../../../tests/integration/db/group_g4_swap_concurrency.integration.test.ts)、末尾 assert の改ざんは [group_g4_migration_asserts](../../../tests/integration/db/group_g4_migration_asserts.integration.test.ts) |
 | 鍵の順・別接続の待ち | [group_g1_concurrency](../../../tests/integration/db/group_g1_concurrency.integration.test.ts)、[group_g1_link_guest_orders](../../../tests/integration/db/group_g1_link_guest_orders.integration.test.ts)、[group_g1_legacy_disabled](../../../tests/integration/db/group_g1_legacy_disabled.integration.test.ts)（止めた関数は鍵も行も待たない） |
 | 書き手の閉じた一覧 | [group_g1_writer_inventory](../../../tests/integration/db/group_g1_writer_inventory.integration.test.ts) |
 | 受付・入金・保留・FIFO | [group_g1_checkout](../../../tests/integration/db/group_g1_checkout.integration.test.ts)、[group_g1_payment](../../../tests/integration/db/group_g1_payment.integration.test.ts)、[group_g1_payment_review](../../../tests/integration/db/group_g1_payment_review.integration.test.ts)、[group_g1_fifo](../../../tests/integration/db/group_g1_fifo.integration.test.ts) |
@@ -199,4 +234,4 @@ G-1 の移行は、旧の発送4関数（`admin_create_fulfillment`・`admin_can
 - 2026-10-24 に本番へ適用した。適用後の定義の指紋・権限・件数の照合は、適用の記録（[DB マイグレーション運用](../../06_Operations/db-migrations.md)）にある。
 - 本番で同時に動く入荷・入金・返金の競合は、手元の別接続の試験だけで確かめた。本番での実測はしていない。
 - 取消済みの注文に後から入金が記録されても、発送しておらず割当も残っていない品物は「取消」のまま投影する（最終レビューの指摘 I1 を G-1 の移行の中で直した。`private.group_g_item_state_ranges`）。FIFO は影響を受けない。
-- 発送による消費（`consume`）・消費の戻し（`restore`）・割当の入替（`transfer`）を書く関数は、まだ無い（G-3・G-4）。
+- 発送による消費（`consume`）・消費の戻し（`restore`）は G-3 の発送票の書込みが書く。割当の入替（`transfer`）は G-4 Task 4 の `admin_swap_order_allocations` が書く（controller の fresh reset（g4t4a）でローカル適用済み、本番未適用）。入替の管理画面と窓口はこの後の Task。

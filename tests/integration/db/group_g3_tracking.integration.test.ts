@@ -6,7 +6,7 @@ import { describeLocalDb, connectLocalDb } from './helpers/local-db';
 import { createPurchaseFlow } from './helpers/purchase-order-flow';
 import { seedGroupG3ReadyOrder, seedGroupG3Slip, withRolePermissions } from './helpers/group-g3-fixtures';
 import { leaseDeliveryRegistration, patchDeliveryRegistration, recordReadResult, setDeliveryTracking } from './helpers/delivery-tracking-fixtures';
-import { G3C_ALLOWLIST, G3D_ALLOWLIST, replaceAllowlistSql } from './helpers/group-g-allowlist';
+import { G3C_ALLOWLIST, G3D_ALLOWLIST, CURRENT_ALLOWLIST, replaceAllowlistSql } from './helpers/group-g-allowlist';
 
 /**
  * G-3 Task 7（FREQ-534-AC-01・AC-02・AC-04・AC-05、FREQ-535-AC-04、FREQ-540-AC-10・AC-11）: 発送票単位の伝票番号の後入力・訂正と手動の配達済み。
@@ -727,6 +727,8 @@ describeLocalDb('G-3 shipment slip tracking / delivered', (db) => {
       const run = async (change: string | null) => {
         await db().query('savepoint g3d_assert');
         try {
+          // 時点の再実行: G3D の確かめは75本を固定で持つので、今の DB の一覧（G-4 で76本）を取引内で G3D の75本へ入れ替えてから流す。
+          await db().query(replaceAllowlistSql(G3D_ALLOWLIST));
           if (change !== null) await db().query(change);
           await db().query(assertSql);
           return null;
@@ -754,7 +756,7 @@ describeLocalDb('G-3 shipment slip tracking / delivered', (db) => {
       expect(await run(replaceAllowlistSql(['private.lock_group_g_shipment_slips(uuid[],uuid[],boolean)', ...G3D_ALLOWLIST.slice(1)]))).toEqual(failed('shipping_action_allowlist'));
     });
 
-    test('FREQ-540-AC-11: 公開入口は INVOKER 委譲、private 本体は DEFINER で service_role だけが EXECUTE でき、許可一覧は75本で2本が入り入口は入らない', async () => {
+    test('FREQ-540-AC-11: 公開入口は INVOKER 委譲、private 本体は DEFINER で service_role だけが EXECUTE でき、今の許可一覧（76本）に2本が入り入口は入らない', async () => {
       const rows = (await db().query(`select n.nspname,p.proname,p.prosecdef,p.prosrc,has_function_privilege('service_role',p.oid,'EXECUTE') service,
         has_function_privilege('anon',p.oid,'EXECUTE') anon,has_function_privilege('authenticated',p.oid,'EXECUTE') authenticated,
         exists(select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0 and a.privilege_type = 'EXECUTE') public_execute,
@@ -771,11 +773,11 @@ describeLocalDb('G-3 shipment slip tracking / delivered', (db) => {
         expect(rows.find((row) => row.nspname === 'private' && row.proname === name)).toMatchObject({ prosecdef: true });
       }
       const allowlist = (await db().query('select x::oid::text as oid from unnest(private.group_g_writer_allowlist()) as a(x)')).rows.map((row) => row.oid);
-      expect(allowlist).toHaveLength(75);
-      const expected = (await db().query('select to_regprocedure(s)::oid::text as oid from unnest($1::text[]) as s', [G3D_ALLOWLIST])).rows.map((row) => row.oid);
+      expect(allowlist).toHaveLength(CURRENT_ALLOWLIST.length);
+      const expected = (await db().query('select to_regprocedure(s)::oid::text as oid from unnest($1::text[]) as s', [CURRENT_ALLOWLIST])).rows.map((row) => row.oid);
       expect([...allowlist].sort()).toEqual([...expected].sort());
       for (const row of rows) expect({ name: `${row.nspname}.${row.proname}`, listed: allowlist.includes(row.oid) }).toEqual({ name: `${row.nspname}.${row.proname}`, listed: row.nspname === 'private' });
-      expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(75);
+      expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(CURRENT_ALLOWLIST.length);
     });
   });
 

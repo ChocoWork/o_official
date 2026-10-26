@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { describeLocalDb } from './helpers/local-db';
 import { createCatalogFixture } from './helpers/order-fixtures';
-import { G2_ALLOWLIST, G3D_ALLOWLIST, runWithAllowlist } from './helpers/group-g-allowlist';
+import { G2_ALLOWLIST, G3D_ALLOWLIST, CURRENT_ALLOWLIST, runWithAllowlist } from './helpers/group-g-allowlist';
 
 /**
  * G-2 Task 8（FREQ-530・FREQ-540-AC-07）: 見積書・請求書の原本の予約・確定・訂正・無効化・検索。
@@ -1206,9 +1206,9 @@ describeLocalDb('integration: G-2 原本の予約・確定・訂正・検索', (
     expect((privateSearch.names as string[]).slice(0, 11)).toEqual(searchNames);
   });
 
-  test('FREQ-540-AC-07: 書き手の一覧は G-3 の現在の本数（G-2 の65本 + 発送票の書き手10本 = 75本）で、3本の private 本体を含み、public 入口と検索は含まない', async () => {
+  test('FREQ-540-AC-07: 書き手の一覧は今の本数（G-2 の65本 + 発送票の書き手10本 + 割当の入替1本 = 76本）で、3本の private 本体を含み、public 入口と検索は含まない', async () => {
     const list = (await db().query('select x::oid::text as oid from unnest(private.group_g_writer_allowlist()) as a(x)')).rows;
-    expect(list).toHaveLength(G3D_ALLOWLIST.length);
+    expect(list).toHaveLength(CURRENT_ALLOWLIST.length);
     const oids = new Set(list.map((row) => row.oid));
     for (const signature of WRITER_SIGNATURES) {
       const privateOid = (await db().query('select $1::regprocedure::oid::text as oid', [`private.${signature}`])).rows[0].oid;

@@ -7,7 +7,7 @@ import { createPurchaseFlow } from './helpers/purchase-order-flow';
 import { seedGroupG3ReadyOrder, seedGroupG3Slip, withRolePermissions } from './helpers/group-g3-fixtures';
 import { seedGroupG1Allocation, seedGroupG1Shipment, setOrderStatusForFixture } from './helpers/group-g1-fixtures';
 import { setDeliveryTracking } from './helpers/delivery-tracking-fixtures';
-import { G3C_ALLOWLIST } from './helpers/group-g-allowlist';
+import { G3C_ALLOWLIST, CURRENT_ALLOWLIST } from './helpers/group-g-allowlist';
 
 jest.setTimeout(90000);
 type Confirmed = { id: string; number: string; version: number; shipmentDate: string; replayed: boolean; fulfillments: { orderId: string; fulfillmentId: string; number: number; completesOrder: boolean }[] };
@@ -385,7 +385,7 @@ describeLocalDb('G-3 shipment slip confirm', (db) => {
       await refused(s.id,'GROUP_G_FORBIDDEN',{by},'42501');
     expect((await confirm(s.id)).version).toBe(2);
   });
-  test('FREQ-540-AC-11: 公開入口はINVOKER委譲、private本体はDEFINER、helperにEXECUTEなし、allowlist75本',async()=>{
+  test('FREQ-540-AC-11: 公開入口はINVOKER委譲、private本体はDEFINER、helperにEXECUTEなし、今のallowlist(76本)',async()=>{
     const rows=(await db().query(`select n.nspname,p.prosecdef,p.prosrc,has_function_privilege('service_role',p.oid,'EXECUTE') service,
       has_function_privilege('anon',p.oid,'EXECUTE') anon,has_function_privilege('authenticated',p.oid,'EXECUTE') authenticated
       from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.oid=any($1::regprocedure[])`,[[`public.${signature}`,`private.${signature}`,
@@ -395,7 +395,7 @@ describeLocalDb('G-3 shipment slip confirm', (db) => {
     expect(rows.find(r=>r.nspname==='public')).toMatchObject({prosecdef:false,service:true});
     expect(rows.find(r=>r.nspname==='public').prosrc).toContain('SELECT private.admin_confirm_shipment_slip(');
     expect(rows.filter(r=>!r.service)).toHaveLength(2);
-    expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(75);
+    expect((await db().query('select cardinality(private.group_g_writer_allowlist()) n')).rows[0].n).toBe(CURRENT_ALLOWLIST.length);
   });
   test('FREQ-540-AC-11: consumeは共通advisoryなしでは拒否する',async()=>{
     const other=await connectLocalDb();try {

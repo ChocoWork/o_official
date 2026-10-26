@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
-import { G2_ALLOWLIST, G3C_ALLOWLIST, G3D_ALLOWLIST, G3A_REASON_CODES, replaceReasonCheckSql, runWithAllowlist } from './helpers/group-g-allowlist';
+import { G2_ALLOWLIST, G3C_ALLOWLIST, G3D_ALLOWLIST, CURRENT_ALLOWLIST, G3A_REASON_CODES, replaceReasonCheckSql, runWithAllowlist } from './helpers/group-g-allowlist';
 
 const directory = path.join(process.cwd(), 'supabase/migrations');
 const files = [
@@ -131,9 +131,9 @@ describeLocalDb('G-3 Task 10: final assertions reject catalog / ACL tampering', 
   afterEach(async () => { await db().query('rollback'); });
 
   /**
-   * Both expected SQL errors and catalog mutations are contained in this savepoint. The final DB holds 75 writers, so a file whose
-   * assertion fixes an earlier set is run after the shared helper swaps the allowlist, inside this transaction, to the set that
-   * existed when the file was applied (G3C: 72; G3D and the earlier files: the real 75). `swap` overrides that default.
+   * Both expected SQL errors and catalog mutations are contained in this savepoint. The final DB holds 76 writers (G-4 Task 4), so a
+   * file whose assertion fixes an earlier set is run after the shared helper swaps the allowlist, inside this transaction, to the set
+   * that existed when the file was applied (G3C: 72; G3D: 75; the earlier files fix no set). `swap` overrides that default.
    * G3A restores its seventeen reasons in `prelude`, before `change`, so the reason tamper remains observable.
    */
   async function attempt(assertion: string, change: string, swap: readonly string[] | undefined, prelude = ''): Promise<Failure | null> {
@@ -153,7 +153,7 @@ describeLocalDb('G-3 Task 10: final assertions reject catalog / ACL tampering', 
     }
   }
   const run = (index: number, change = '', entries?: readonly string[]) =>
-    attempt(migrations[index].assertion, change, entries ?? (index === 2 ? G3C_ALLOWLIST : undefined),
+    attempt(migrations[index].assertion, change, entries ?? (index === 2 ? G3C_ALLOWLIST : index === 3 ? G3D_ALLOWLIST : undefined),
       index === 0 ? replaceReasonCheckSql(G3A_REASON_CODES) : '');
   /** Re-creates a function from its own catalog definition with one textual change (the savepoint undoes it). */
   const rewrite = (signature: string, from: string, to: string) => `do $rewrite$
@@ -165,9 +165,9 @@ end
 $rewrite$`;
   const READ_FIRST = 'PERFORM 1 FROM public.orders LIMIT 1;\n  PERFORM private.lock_group_g_shipment_slips(';
 
-  test.each([0, 1, 2, 3])('FREQ-540-AC-12: unmodified file %s passes; G3C uses its 72-entry transaction snapshot', async (index) => {
+  test.each([0, 1, 2, 3])('FREQ-540-AC-12: unmodified file %s passes; G3C and G3D use their own 72/75-entry transaction snapshots', async (index) => {
     expect(await run(index)).toBeNull();
-    expect((await db().query('select cardinality(private.group_g_writer_allowlist()) as n')).rows[0].n).toBe(75);
+    expect((await db().query('select cardinality(private.group_g_writer_allowlist()) as n')).rows[0].n).toBe(CURRENT_ALLOWLIST.length);
   });
 
   test.each([0, 1, 2, 3])('FREQ-540-AC-12: file %s is independent of the caller search_path', async (index) => {
@@ -253,10 +253,10 @@ $rewrite$`;
     expect(await run(2, '', G3D_ALLOWLIST)).toEqual(failed('shipping_slip_allowlist'));
     expect(await run(3, '', G3C_ALLOWLIST)).toEqual(failed('shipping_action_allowlist'));
     expect(await run(3, '', G2_ALLOWLIST)).toEqual(failed('shipping_action_allowlist'));
-    // the swaps stay inside the savepoints: the DB still holds the 75 writers of G3D
+    // the swaps stay inside the savepoints: the DB still holds the current writers (76 with G-4's allocation swap)
     const ids = (await db().query('select private.group_g_writer_allowlist()::oid[] as ids')).rows[0].ids as number[];
-    const expected = (await db().query('select array_agg(to_regprocedure(s)::oid) as ids from unnest($1::text[]) as s', [G3D_ALLOWLIST])).rows[0].ids as number[];
-    expect(ids).toHaveLength(75);
+    const expected = (await db().query('select array_agg(to_regprocedure(s)::oid) as ids from unnest($1::text[]) as s', [CURRENT_ALLOWLIST])).rows[0].ids as number[];
+    expect(ids).toHaveLength(CURRENT_ALLOWLIST.length);
     expect([...ids].sort()).toEqual([...expected].sort());
   });
 
