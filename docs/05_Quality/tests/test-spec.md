@@ -2,9 +2,34 @@
 
 > 状態: 現行の方針（波 1-B のセキュリティの穴の修正のテストの節は 2026-10-26 に追記〔単体・結合は通過、E2E・DB 結合は未実行〕。G-3 Task 12 の発送票の操作・出荷日のE2Eと止めていた旧の発送のE2Eの移設の節は 2026-10-26 に追記〔E2Eの実測は controller の実行後〕。G-3 Task 11 の荷作り・同梱メール・権限のE2Eと再開した配送のE2Eの節は 2026-10-26 に追記〔E2Eの実測は同節に記録〕。G-3 Task 10 の書き手75本・末尾assert・並行・実PostgRESTの節は 2026-10-26 に追記。G-3 Task 8 のテストの節は 2026-10-26 に追記。グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 7の伝票番号の後入力・訂正と手動の配達済みのDB・単体を追記）（G-3 Task 6の発送の取消のDB・単体を追記）（G-3 Task 4の発送票の下書きのDB・単体を追記）（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
+> G-4 Task 1 確認日: 2026-10-26。g4t1aでローカル適用・PostgREST両200、修正round 1の対象DB 3 suite・94/94成功。controller全件g4t1は19,665成功・既知stockist_rlsの2失敗だけ、G-0清掃12/12。本番未適用。
+
 ## 概要
 
 この文書は、要件からテストへの追跡方法、実行するテストの層、判定と記録の方法を定める。下表のテストファイルはリポジトリで確認した例であり、ここに列挙したことは実行・成功を意味しない。グループ G-1（在庫の割当）のテストは、層の説明の後の「グループ G-1（在庫の割当）のテスト」にファイル単位でまとめる。グループ G-2（発注・受け取り）のテストはその後の「グループ G-2（発注・受け取り）のテスト」にまとめる。
+
+## グループ G-4 Task 1（土台）のテスト
+
+対象は FREQ-540-AC-14 と FREQ-523-AC-03 の土台。UI・公開の入替操作・transfer の対と数量保存は後続 Task。既存の G-1〜G-3 と別セッションの移行を編集せず、G4A を追加して確かめる。
+
+| ファイル | 層・事前条件・入力 | 期待結果 |
+| --- | --- | --- |
+| [group_g4_foundation](../../../tests/integration/db/group_g4_foundation.integration.test.ts) | ソース照合とローカル DB。controller の fresh reset 後、各試験を BEGIN・共通 advisory・ROLLBACK 内で実施 | G-3 の確定文から `CREATE OR REPLACE` と期限比較の2箇所だけがバイト差分。DB の prosrc は G-3 の比較を `<` → `<=` とした本体と空白を畳んで一致。索引は非一意 btree(order_id)、enable_seqscan=off の EXPLAIN で使う。置換前後の OID・所有者・生のACL配列・属性・書き手OID集合は不変（本数は固定しない）。expires_at=now() は expired=true と GROUP_G_SLIP_DRAFT_EXPIRED / 55000、1秒先は expired=false と次の空明細検証 GROUP_G_SLIP_EMPTY / 22023 |
+| 同上（理由） | 実際の割当イベント INSERT を、従来17値・allocation_swap・NULL・未知値・綴り違いで各 savepoint 内から試す。consume の遅延整合検査前に各 probe を rollback | 18値とNULLは理由 CHECK を通り、未知・綴り違いは 23514 / order_item_allocation_events_reason_check。これは CHECK の試験であり、入替業務の実行・COMMITやtransfer保存則の証明ではない |
+| [group_g4_migration_asserts](../../../tests/integration/db/group_g4_migration_asserts.integration.test.ts) | ソースと、取引内の索引・確定関数・理由CHECK・行・許可一覧の改ざん。G4A 分のみ | ASCII/LF・先頭BEGIN・1組の末尾assert/NOTIFY/COMMIT・節印・本体外DMLなし。正常・異なるsearch_path・無関係なgrantee・過去行は許す。索引欠落/一意/別列/部分索引、期限比較の後退/anon EXECUTE/所有者/ロック前参照、理由の欠落/過剰/NULL排除/別条件の追加、この取引の2表の行、74/76本を拒否し、55000 と5つの項目名の DETAIL を返す。一意性は同じ代替表の1列btree(order_id)で、非一意なら通り、一意なら拒否する対照で単独検査 |
+| [allocation-event-reasons](../../../tests/unit/lib/inventory/allocation-event-reasons.test.ts) | 単体。supabase/migrations/*.sqlをすべて読み、理由CHECKの本文を持つ移行を抽出して最新の定義とTSを比較する | 最新 CHECK は G4A の1定義、18値完全一致・重複なし・全値の日本語・allocation_swap の「割当の入替」・未知値の「システム」を検査。Group G以外や後続グループによるCHECK変更も検出する |
+| [group_g3_migration_asserts](../../../tests/integration/db/group_g3_migration_asserts.integration.test.ts)・[group_g3_model](../../../tests/integration/db/group_g3_model.integration.test.ts)・[共有の道具](../../../tests/integration/db/helpers/group-g-allowlist.ts) | G3A 再実行は理由 CHECK を17値に戻してから改ざん。G4A は G3D_ALLOWLIST の75本を取引内で再現 | prelude → change → swap → assertion の順を保ち、理由CHECKの改ざんが復元で消えない。rollback 後は現在の18値と書き手へ戻る。PG17 MAINTAIN を版で守る既存 G3A ACL 検査も維持 |
+
+実装者の単体 RED は7件中3失敗・4成功、実装後は7/7成功（2026-10-26）。DB suiteとその中のソース試験の実測は次のとおり。本番未適用。
+
+| 実行者・記録（2026-10-26） | 実測結果と境界 |
+| --- | --- |
+| controller fresh reset（g4t1a） | 20261026045859_group_g4_orders_foundation.sql適用、PostgREST anon/authenticated各200。実鍵PostgRESTを含むgroup_g*全49 suiteは1,526成功・1失敗・1 pending。失敗はG4Aのowner-to-anon材料がassert前に42501となる1件で、SQLを変えず修正round 1で解消 |
+| 通常実行の1 pending | [group_g1_cleanup.integration.test.ts](../../../tests/integration/db/group_g1_cleanup.integration.test.ts) の `G1_CLEANUP_SUITE=1 で単独に流す時だけ動かす（全注文を消して commit するため）`。全注文を消す専用suiteを通常の全件実行では起動しない印であり、清掃の成功件数には数えない |
+| 実装者の修正round 1、ローカルDB | group_g4_migration_asserts・group_g4_foundation・group_g3_migration_assertsの3 suite、94成功・0失敗・skip/pendingなし |
+| controller fresh reset後の全件検証（g4t1） | unit＋全DB integrationは19,665成功、既知のstockist_rlsの赤2件だけが失敗し、新規失敗なし。G-0基準の清掃suiteは別に12/12成功 |
+
+修正round 2は既存ケースの置換と試験内の対照追加で、試験件数は変更しない。文書の整合検査は先頭AC IDのない題名とし、FREQ-540-AC-14の動作を証明する試験には数えない。
 
 ## 記録形式と追跡
 

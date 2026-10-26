@@ -30,6 +30,7 @@ export const ALLOCATION_EVENT_REASON_CODES = [
   'fixture_shipment',
   'shipment_confirm',
   'shipment_cancel',
+  'allocation_swap',
 ] as const;
 export type AllocationEventReasonCode = (typeof ALLOCATION_EVENT_REASON_CODES)[number];
 
@@ -52,6 +53,7 @@ export const ALLOCATION_EVENT_REASON_LABELS: Readonly<Record<AllocationEventReas
   fixture_shipment: '試験用の材料',
   shipment_confirm: '発送の確定',
   shipment_cancel: '発送の取消',
+  allocation_swap: '割当の入替',
 };
 
 export function allocationEventReasonLabel(reason: string): string {

@@ -13,6 +13,24 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 本番 Supabase（`pjidrgofvaglnuuznnyj`）へのスキーマ適用手順と、
 マイグレーションの書き方の規約。
 
+## グループ G-4: 注文一覧表・注文の詳細（FREQ-523・540、2026-10-26）
+
+| 順 | ファイル名 | 役割・状態 |
+| --- | --- | --- |
+| 1 / G4A | [20261026045859_group_g4_orders_foundation.sql](../../supabase/migrations/20261026045859_group_g4_orders_foundation.sql) | 土台。発送票の注文別索引・確定の期限境界・割当理由18値。2026-10-26のcontroller fresh reset（g4t1a）でローカル適用済み、本番未適用 |
+| 2 / G4B | `<ts2>_group_g4_orders_reads.sql` | 一覧・CSV・詳細・品物の状態履歴の読取。Task 2 で作成予定、UTC版は未採番 |
+| 3 / G4C | `<ts3>_group_g4_orders_swap.sql` | 割当入替の書込みと書き手一覧76本。Task 4 で作成予定、UTC版は未採番 |
+
+確認日: 2026-10-26。G-1・G-2・G-3 は本番へ適用済み（Task 1 依頼時の確認）。上の過去の節の未適用表記は当時の記録。G4Aはローカル適用済み・本番未適用で、既存の移行ファイルは編集しない。別セッションの `20261026010000_auth_return_intents.sql` は変更せず、その認証機能をG-4の試験の前提にしない。理由の単体は全SQLからCHECK本文を抽出する。3本の版は G4A < G4B < G4C とする。
+
+G4A は、`shipment_slip_fulfillments_order_idx` を `public.shipment_slip_fulfillments(order_id)` の通常の非一意 btree として追加する。確定の private 本体は G-3 の文をそのまま写し、`CREATE OR REPLACE` と `expires_at <= now()` の2箇所だけ変える。所有者・ACL を再設定せず、OID・所有者・ACL・属性・書き手の OID 集合を保つ。期限ちょうどの下書きを読取と確定の双方が期限切れと判定し、1秒先は次の検証へ進む。理由 CHECK と TS は従来17値に `allocation_swap`（割当の入替）を足した18値。公開の入替操作は後続 Task の対象。
+
+末尾の `$g4a_final_objects$` は、索引の表・列・種類・有効性・非一意、確定の所有者・DEFINER・空 search_path・EXECUTE の意味と期限比較・表の参照より先のロック、NULL を許す理由 CHECK の18値完全一致、この取引の2表への行作成が無いこと、G4A 時点の書き手75本を確認する。違反は `GROUP_G_MIGRATION_ASSERTION_FAILED / 55000`、DETAIL は `orders_foundation_index`・`orders_foundation_confirm`・`orders_foundation_reasons`・`orders_foundation_rows`・`orders_foundation_allowlist` のいずれか。ACL の文字列表現は比較せず、private schema の USAGE と表の権限は操作しない。
+
+再実行する G3A の assert は、取引内で理由 CHECK を G3A の17値へ復元し、**復元→改ざん→許可一覧の再現→assert** の順に流す。G4A の75本の assert は `runWithAllowlist` と `G3D_ALLOWLIST` で当時の集合を再現する。いずれも呼出し元の rollback で戻す。
+
+controllerのfresh reset（g4t1a）でG4Aを適用し、PostgREST anon/実authenticatedは各HTTP 200。実鍵PostgRESTを含むgroup_g*全49 suiteは1,526成功・1失敗・1 pendingだった。失敗は所有者をanonへ変える改ざん材料がassert前に42501となる1件で、SQLを変えず修正round 1で解消。pendingはgroup_g1_cleanupの `G1_CLEANUP_SUITE=1 で単独に流す時だけ動かす（全注文を消して commit するため）`。通常全件ではこの専用清掃を起動しない。修正round 1で実装者がローカルDBの [末尾 assert](../../tests/integration/db/group_g4_migration_asserts.integration.test.ts)・[土台](../../tests/integration/db/group_g4_foundation.integration.test.ts)・G3末尾assertを実行し、3 suite・94/94成功。controllerのfresh reset後の全件検証（g4t1）はunit＋全DB integrationで19,665成功・既知stockist_rlsの赤2件だけが失敗し、新規失敗なし。G-0基準の専用清掃は別に12/12成功（すべて2026-10-26）。本番未適用。以後SQLを変更した場合はcontrollerがresetから再検証する。
+
 ## なぜ変えたか
 
 旧 `.github/workflows/db-migrations.yml` は毎回こうしていた。

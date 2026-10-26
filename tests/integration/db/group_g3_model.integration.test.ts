@@ -13,6 +13,7 @@ import {
 import { createOrderStatusReturnsFixture } from './helpers/order-status-fixtures';
 import { insertDeliveryFixture } from './helpers/delivery-tracking-fixtures';
 import { createPurchaseFlow } from './helpers/purchase-order-flow';
+import { G3A_REASON_CODES, replaceReasonCheckSql, runWithReasonCodes } from './helpers/group-g-allowlist';
 
 /** Controller only: disposable localhost DB after reset. Expected failures never expose raw DB errors. */
 jest.setTimeout(60000);
@@ -472,8 +473,10 @@ describeLocalDb('integration: G-3 発送票のモデル', (db) => {
   describe('末尾assertの現在DBと改変の検出', () => {
     const objects = () => finalBlock('$g3a_final_objects$');
     const acl = () => finalBlock('$g3a_final_table_acl$');
+    // Restore before any tamper, so the tamper itself is never erased by the restore.
+    beforeEach(async () => { await db().query(replaceReasonCheckSql(G3A_REASON_CODES)); });
     test('FREQ-540-AC-12: 2つのDOは現在DBを通し、無関係なgranteeがあっても意味比較で通す', async () => {
-      await db().query(objects());
+      await runWithReasonCodes(db(), G3A_REASON_CODES, objects());
       await db().query(acl());
       const role = `g3_unrelated_${randomUUID().replaceAll('-', '')}`;
       await db().query(`create role ${role} nologin`);
@@ -488,6 +491,7 @@ describeLocalDb('integration: G-3 発送票のモデル', (db) => {
       await db().query('rollback');
       await db().query('begin');
       await db().query('select pg_catalog.pg_advisory_xact_lock(190521,1)');
+      await db().query(replaceReasonCheckSql(G3A_REASON_CODES));
       await db().query(`insert into public.shipment_slips
         (id,number,stage,customer_kind,customer_email,ship_to_full_name,ship_to_postal_code,ship_to_prefecture,
          ship_to_city,ship_to_address,ship_to_phone,expires_at,created_by,created_at)

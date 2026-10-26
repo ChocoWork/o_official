@@ -13,6 +13,28 @@ import { isInTransaction } from './group-g1-fixtures';
 
 const MIGRATION_DIRECTORY = path.join(process.cwd(), 'supabase/migrations');
 
+/** G3A の理由 CHECK は、その移行時点の17値へ戻してから再実行する。 */
+export const G3A_REASON_CODES: readonly string[] = Object.freeze([
+  'fifo', 'checkout', 'stripe_payment_paid', 'stock_adjustment', 'refund_restock', 'refund_release',
+  'stripe_checkout_expired', 'stripe_voucher_expired', 'admin_cancel', 'admin_cancel_failed_order',
+  'resolve_payment_exception', 'status_change', 'fixture_allocation', 'fixture_release', 'fixture_shipment',
+  'shipment_confirm', 'shipment_cancel',
+]);
+
+/** CHECK の集合だけを再現する。変更は呼出し元の rollback で戻す。 */
+export function replaceReasonCheckSql(reasons: readonly string[]): string {
+  return `alter table public.order_item_allocation_events drop constraint order_item_allocation_events_reason_check;
+    alter table public.order_item_allocation_events add constraint order_item_allocation_events_reason_check CHECK (
+      reason IS NULL OR reason IN (${reasons.map((reason) => `'${reason.replaceAll("'", "''")}'`).join(', ')}))`;
+}
+
+/** 呼出し元の取引内で当時の理由集合を復元してから assert を流す。 */
+export async function runWithReasonCodes(client: PgClient, reasons: readonly string[], assertSql: string): Promise<void> {
+  if (!(await isInTransaction(client))) throw new Error('GROUP_G_REASONS_TRANSACTION_REQUIRED');
+  await client.query(replaceReasonCheckSql(reasons));
+  await client.query(assertSql);
+}
+
 /** 'private.name(args)' の形の行を並びのまま集める */
 function signaturesIn(text: string): string[] {
   return [...text.matchAll(/^\s*'((?:private|public)\.[a-z_0-9]+\([^']*\))',?\s*$/gm)].map((match) => match[1]);

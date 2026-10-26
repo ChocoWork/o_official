@@ -35,15 +35,21 @@ describe('割当の履歴の理由の決まった値', () => {
     expect(allocationEventReasonLabel('shipment_cancel')).toBe('発送の取消');
   });
 
-  test('FREQ-533-AC-04: 最後の理由CHECKはG-3のfoundationで、定義は1か所だけ', () => {
-    expect(REASON_MIGRATIONS.at(-1)!.name).toMatch(/_group_g3_shipping_foundation\.sql$/);
+  test('FREQ-523-AC-03: 最後の理由CHECKはG-4のfoundationで、定義は1か所だけ', () => {
+    expect(REASON_MIGRATIONS.at(-1)!.name).toMatch(/_group_g4_orders_foundation\.sql$/);
     expect(MIGRATION_SQL.split('order_item_allocation_events_reason_check CHECK')).toHaveLength(2);
   });
 
-  test('TS の一覧は DB の CHECK と同じ集合（重複なし）', () => {
+  test('FREQ-523-AC-03: TS の18値は DB の CHECK と同じ集合（重複なし）', () => {
     const codes = checkCodes();
+    expect(ALLOCATION_EVENT_REASON_CODES).toHaveLength(18);
     expect(new Set(codes).size).toBe(codes.length);
     expect([...ALLOCATION_EVENT_REASON_CODES].sort()).toEqual([...codes].sort());
+  });
+
+  test('FREQ-523-AC-03: allocation_swap は末尾の18値目で、日本語は「割当の入替」', () => {
+    expect(ALLOCATION_EVENT_REASON_CODES.at(-1)).toBe('allocation_swap');
+    expect(allocationEventReasonLabel('allocation_swap')).toBe('割当の入替');
   });
 
   test('名前の表は一覧のすべての値に日本語の名前を持ち、ほかの値を持たない', () => {

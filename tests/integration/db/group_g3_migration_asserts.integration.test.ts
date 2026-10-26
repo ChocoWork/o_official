@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describeLocalDb } from './helpers/local-db';
-import { G2_ALLOWLIST, G3C_ALLOWLIST, G3D_ALLOWLIST, runWithAllowlist } from './helpers/group-g-allowlist';
+import { G2_ALLOWLIST, G3C_ALLOWLIST, G3D_ALLOWLIST, G3A_REASON_CODES, replaceReasonCheckSql, runWithAllowlist } from './helpers/group-g-allowlist';
 
 const directory = path.join(process.cwd(), 'supabase/migrations');
 const files = [
@@ -134,10 +134,12 @@ describeLocalDb('G-3 Task 10: final assertions reject catalog / ACL tampering', 
    * Both expected SQL errors and catalog mutations are contained in this savepoint. The final DB holds 75 writers, so a file whose
    * assertion fixes an earlier set is run after the shared helper swaps the allowlist, inside this transaction, to the set that
    * existed when the file was applied (G3C: 72; G3D and the earlier files: the real 75). `swap` overrides that default.
+   * G3A restores its seventeen reasons in `prelude`, before `change`, so the reason tamper remains observable.
    */
-  async function attempt(assertion: string, change: string, swap: readonly string[] | undefined): Promise<Failure | null> {
+  async function attempt(assertion: string, change: string, swap: readonly string[] | undefined, prelude = ''): Promise<Failure | null> {
     await db().query('savepoint g3_assert_tamper');
     try {
+      if (prelude) await db().query(prelude);
       if (change) await db().query(change);
       if (swap) await runWithAllowlist(db(), swap, assertion);
       else await db().query(assertion);
@@ -151,7 +153,8 @@ describeLocalDb('G-3 Task 10: final assertions reject catalog / ACL tampering', 
     }
   }
   const run = (index: number, change = '', entries?: readonly string[]) =>
-    attempt(migrations[index].assertion, change, entries ?? (index === 2 ? G3C_ALLOWLIST : undefined));
+    attempt(migrations[index].assertion, change, entries ?? (index === 2 ? G3C_ALLOWLIST : undefined),
+      index === 0 ? replaceReasonCheckSql(G3A_REASON_CODES) : '');
   /** Re-creates a function from its own catalog definition with one textual change (the savepoint undoes it). */
   const rewrite = (signature: string, from: string, to: string) => `do $rewrite$
 declare v_def text := pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure($sig$${signature}$sig$));

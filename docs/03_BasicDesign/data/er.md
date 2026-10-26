@@ -2,6 +2,8 @@
 
 > G-3 Task 10 確認: 2026-10-26（表・FKの追加なし、4移行assertと75本を確定。controllerのfresh resetでgroup_g* 47 suiteを検証し、直した後はgroup_g3_concurrency 24/24を3回連続・group_g3_migration_asserts 64/64で通過） | 状態: 現行のソース（G-3 Task 8 の追跡の親と配送の結果の票への展開（表の変更なし、関数の置換）を 2026-10-26 に追記。グループ G-1 の4表・2列・12 FK を 2026-10-24 に、グループ G-2 の発注書の9表・22 FK を 2026-10-25 に追記。G-2 は本番へ適用済み（Task 1 の依頼で確認）。G-3 Task 1 の新6表・出荷日・守りを同日に追記し、controller reset後のDB全件でTask 1の新規失敗0を2026-10-25に確認した（全体は既知stockist2失敗によりexit 1）。G-2 Task 9 で手元の DB と突き合わせ、発注書の9表・22 FK、FK の合計 142〔public 起点 131・private 起点 11〕が DB と一致することを確かめた） | 確認日: 2026-10-25（G-3 Task 5の確定まで追記。controllerの実鍵PostgRESTを含む12 suiteで665/665成功） | 対象: `supabase/migrations/` の基準スキーマと後続変更 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
+> G-4 Task 1 確認日: 2026-10-26。g4t1aでローカル適用・PostgREST両200、修正round 1の対象DB 3 suite・94/94成功。controllerのfresh reset後の全件g4t1は19,665成功・既知stockist_rlsの2失敗だけ、G-0清掃12/12。本番未適用。
+
 ## 概要
 
 `supabase/migrations/` の基準スキーマと後続変更を時系列で確認し、テーブルと物理 FK を示す。基準と本書のカート・お気に入り・グループ D・グループ E-1・グループ E-2・グループ E-3 段1・段2・E-4・E-5・G-1・G-2（発注書の9表）・G-3 Task 1（発送票の6表）の追記を反映した掲載対象は **105 テーブル（public 94、private 9、security 2）と 155 FK（public 起点 141、private 起点 14）**。加えて、現行コードが使うもののこの SQL 列に定義がない **3 テーブルと旧 SQL の 2 FK**、グループ E-1 の移行 B で消した **1 ビュー**（消す前の定義）を第 6 節に記録する。`auth.users` は参照先の外部スキーマとして表示し、このテーブル数に含めない。他領域の後続変更を一括再集計した数ではない。
@@ -1926,7 +1928,7 @@ erDiagram
 | --- | --- |
 | `public.shipment_slips` | `id uuid PK`、`number text NOT NULL UNIQUE`（`^SL-[0-9]{8}-[0-9]{4}$`）、`stage text NOT NULL`（draft/confirmed/cancelled/discarded）、`version integer NOT NULL DEFAULT 1`（1以上）、`customer_kind text NOT NULL`（member/guest）、`customer_user_id uuid`、`customer_email text`、`ship_to_full_name/ship_to_postal_code/ship_to_prefecture/ship_to_city/ship_to_address/ship_to_phone text NOT NULL`（各1文字以上）、`ship_to_building text`、`draft_lines jsonb NOT NULL DEFAULT '[]'`（配列）、`shipping_carrier text`（yamato/sagawa/japanpost）、`tracking_number text`（`^[0-9A-Za-z-]{1,64}$`）、`notify_customer boolean`、`shipment_date date`、`tracking_version integer NOT NULL DEFAULT 1`（1以上）、`expires_at timestamptz`、`confirm_request_key uuid UNIQUE`、`confirm_operation_id uuid`（private.group_g_operations へ遅延FK）、`confirmed_at/cancelled_at/discarded_at timestamptz`、`confirmed_by/cancelled_by/discarded_by uuid`、`created_by uuid NOT NULL`、`updated_at timestamptz NOT NULL DEFAULT now()`。索引 `(stage, updated_at DESC)` |
 | `public.shipment_slip_lines` | `slip_id uuid` → shipment_slips、`order_item_id uuid` → order_items、`quantity integer NOT NULL`（1〜99999）、PK `(slip_id, order_item_id)`、索引 `(order_item_id)` |
-| `public.shipment_slip_fulfillments` | `slip_id uuid` → shipment_slips、`order_id uuid` → orders、`fulfillment_id uuid NOT NULL UNIQUE` → order_fulfillments、PK `(slip_id, order_id)` |
+| `public.shipment_slip_fulfillments` | `slip_id uuid` → shipment_slips、`order_id uuid` → orders、`fulfillment_id uuid NOT NULL UNIQUE` → order_fulfillments、PK `(slip_id, order_id)`、索引 `shipment_slip_fulfillments_order_idx (order_id)`（G-4、通常の非一意 btree） |
 | `public.shipment_slip_versions` | `slip_id uuid` → shipment_slips、`version integer NOT NULL`、`kind text NOT NULL`（confirm/tracking_update/delivered/date_correction/cancel）、その版の `shipping_carrier text`・`tracking_number text`・`tracking_version integer`・`shipment_date date`、`reason text`（入れる時は1〜200文字）、`actor_id uuid NOT NULL`、`operation_id uuid NOT NULL` → group_g_operations（遅延）、PK `(slip_id, version)` |
 | `public.shipment_date_history` | `id uuid PK`、`slip_id uuid` → shipment_slips、`version integer NOT NULL`、`kind text NOT NULL`（initial/correction）、`previous_date/new_date date NOT NULL`、`reason text`（correction の時だけ非NULL・1〜200文字）、`actor_id uuid NOT NULL`、`operation_id uuid NOT NULL` → group_g_operations（遅延）、UNIQUE `(slip_id, version)` |
 | `private.shipment_tracking_registrations` | `slip_id uuid` → shipment_slips、`tracking_version integer NOT NULL`（1以上）、`leader_fulfillment_id uuid NOT NULL` → order_fulfillments、`carrier text NOT NULL`（yamato/sagawa/japanpost）、`tracking_number text NOT NULL`（`^[0-9A-Z-]{1,64}$`。大文字）、`operation_id uuid NOT NULL` → group_g_operations（遅延）、PK `(slip_id, tracking_version)`、UNIQUE `(leader_fulfillment_id, tracking_version)` |
@@ -1969,6 +1971,21 @@ public.item_delete_blockers(bigint[]) は戻り値の追加のため DROP → CR
 | DB全件 `npx.cmd jest tests/integration/db --runInBand` | exit 1。suiteは118成功・stockistの1失敗・11 skip・計130、testは3266成功・stockistの2失敗・12 skip・計3280。205.889秒。Task 1の新規失敗0 |
 | レビュー修正後の対象DB6 suite | 234件成功。DB全件の既知stockist2失敗と区別する |
 | G-0基準のG-1清掃suite | G1_CLEANUP_SUITE=1の特別実行はcontroller判断待ち。通常全件のskipやsuiteの成功表示は、G-0基準の清掃の成功を証明しない |
+
+## 注文一覧表・注文の詳細の土台（G-4 Task 1）
+
+[G4A](../../../supabase/migrations/20261026045859_group_g4_orders_foundation.sql) は表・列・FKを増やさず、発送票を注文IDで引く非一意 btree 索引を追加する。確定本体は `CREATE OR REPLACE` で同じ OID・所有者・ACL を保ち、期限の比較だけを `expires_at <= now()` にそろえる（FREQ-540-AC-14）。
+
+`order_item_allocation_events_reason_check` は NULL または次の18値を許す。TS の `ALLOCATION_EVENT_REASON_CODES` と同じ集合で、18値目の `allocation_swap` の表示は「割当の入替」。G-3 時点の17値を検査する assert の再実行では、取引内で当時の CHECK を再現してから改ざんと検査を行う（FREQ-523-AC-03 の土台）。
+
+| 理由の集合（定義順） |
+| --- |
+| `fifo`・`checkout`・`stripe_payment_paid`・`stock_adjustment`・`refund_restock`・`refund_release` |
+| `stripe_checkout_expired`・`stripe_voucher_expired`・`admin_cancel`・`admin_cancel_failed_order` |
+| `resolve_payment_exception`・`status_change`・`fixture_allocation`・`fixture_release`・`fixture_shipment` |
+| `shipment_confirm`・`shipment_cancel`・`allocation_swap` |
+
+索引の利用・置換前後の属性・期限の等号境界・CHECK・末尾 assert と改ざん拒否は [土台の DB 試験](../../../tests/integration/db/group_g4_foundation.integration.test.ts) と [移行 assert の DB 試験](../../../tests/integration/db/group_g4_migration_asserts.integration.test.ts) で検証した。2026-10-26のcontroller fresh reset（g4t1a）でG4Aが適用され、PostgRESTのanon/authenticatedが各200。実鍵PostgRESTを含むgroup_g*全49 suiteは1,526成功・1失敗（所有者をanonへ変更する材料がassert前に42501、SQL変更なしで修正）・1 pending（group_g1_cleanupのG1_CLEANUP_SUITE=1限定試験）。修正round 1のローカルDB 3 suiteは94/94成功。controllerのfresh reset後のunit＋全DB（g4t1）は19,665成功・既知stockist_rlsの2失敗だけで新規失敗なし、G-0清掃は別に12/12成功。pendingの正式名と検証境界は [テスト仕様](../../05_Quality/tests/test-spec.md) に記録。本番未適用。
 
 ## 荷作り表・発送票の読取（G-3 Task 2）
 

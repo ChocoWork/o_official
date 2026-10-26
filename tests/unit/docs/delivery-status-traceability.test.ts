@@ -270,16 +270,22 @@ test('G-3の移行注記をE-4節と停止した入口の隣に置き、現在�
   contains(inventory, '6パス・7メソッド');
 });
 
-test('G-1の要求8行（FREQ-520〜524・535・540・541）とFREQ-401の在庫復元の文を持つ', () => {
+test('G-1の要求8行・G-4土台のAC（540-14・523-03）とFREQ-401の在庫復元の文を持つ', () => {
   const lines = read(requirements).split(/\r?\n/);
   const ids = lines.filter((line) => /^\| FREQ-(52[0-4]|535|54[01]) \|/.test(line)).map((line) => line.split('|')[1].trim());
   expect(ids).toEqual(['FREQ-520', 'FREQ-521', 'FREQ-522', 'FREQ-523', 'FREQ-524', 'FREQ-535', 'FREQ-540', 'FREQ-541']);
   const freq540 = lines.find((line) => line.startsWith('| FREQ-540 |'))!;
-  // G-1/G-2を保ち、G-3 Task 1のAC-12とTask 2の読取部分AC-10、Task 4の書き手の部分AC-11を追跡する。
+  // G-1〜G-3を保ち、G-4 Task 1の期限境界・OID保持・索引のAC-14も追跡する。
   const G2_FREQ_540_ADDITIONS = ['FREQ-540-AC-06', 'FREQ-540-AC-07', 'FREQ-540-AC-08', 'FREQ-540-AC-09'];
   const freq540Acs = freq540.split('|')[5].match(/FREQ-540-AC-\d+/g);
   expect(freq540Acs!.slice(0, 5)).toEqual(['FREQ-540-AC-01', 'FREQ-540-AC-02', 'FREQ-540-AC-03', 'FREQ-540-AC-04', 'FREQ-540-AC-05']);
-  expect(freq540Acs!.slice(5)).toEqual([...G2_FREQ_540_ADDITIONS, 'FREQ-540-AC-10', 'FREQ-540-AC-11', 'FREQ-540-AC-12']);
+  expect(freq540Acs!.slice(5)).toEqual([...G2_FREQ_540_ADDITIONS, 'FREQ-540-AC-10', 'FREQ-540-AC-11', 'FREQ-540-AC-12', 'FREQ-540-AC-14']);
+  contains(freq540, 'tests/integration/db/group_g4_foundation.integration.test.ts');
+  contains(freq540, 'tests/integration/db/group_g4_migration_asserts.integration.test.ts');
+  const freq523 = lines.find((line) => line.startsWith('| FREQ-523 |'))!;
+  expect(freq523.split('|')[5].match(/FREQ-523-AC-\d+/g)).toEqual(['FREQ-523-AC-01', 'FREQ-523-AC-03']);
+  contains(freq523, 'allocation_swap');
+  contains(freq523, '割当の入替');
   const freq533 = lines.find((line) => line.startsWith('| FREQ-533 |'))!;
   expect(freq533.split('|')[5].match(/FREQ-533-AC-\d+/g)).toEqual(['FREQ-533-AC-01', 'FREQ-533-AC-02', 'FREQ-533-AC-03', 'FREQ-533-AC-04', 'FREQ-533-AC-05']);
   contains(freq533, 'consume の裏付けの守りだけ');
