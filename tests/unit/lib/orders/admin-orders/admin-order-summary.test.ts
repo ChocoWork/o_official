@@ -88,10 +88,11 @@ describe('GET /api/admin/orders statutory search', () => {
     });
     // 旧い order-delivery-routes.test.ts の一覧の窓口の期待を、窓口の撤去（G-4 Task 7）に合わせて移した
     test.each(['delivery_failure', 'attempted_delivery', 'tracking_not_found', 'tracking_registration_failed', 'tracking_stalled', null] as const)(
-      'FREQ-539-AC-01: 複数の要対応は問題ありを先に印にする（集計の優先結果%s）', async (attentionKind) => {
+      'FREQ-539-AC-01: 配送の要約は進み具合のために1回読み、要対応の印は要約に載せない（集計の優先結果%s）', async (attentionKind) => {
         (listOrderDeliverySummaries as jest.Mock).mockResolvedValue(new Map([['order-1', { activeCount: 2, deliveredCount: 0, attentionKind }]]));
         const row = await buildAdminOrderSummary(client, order({ status: 'shipped' }));
-        expect(row.deliveryAttention).toBe(attentionKind === 'delivery_failure' ? 'failure' : attentionKind === 'attempted_delivery' ? 'attempted_delivery' : attentionKind ? 'untrackable' : null);
+        // G-4 で一覧の印の列が無くなったので、配送の要対応の印は要約に載せない（詳細の「要対応」の欄が DB の開いている要対応から出す）
+        expect(row).not.toHaveProperty('deliveryAttention');
         expect(listOrderDeliverySummaries).toHaveBeenCalledWith(client, ['order-1']);
       },
     );

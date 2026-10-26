@@ -168,9 +168,4 @@ export type OrderItem = {
 	returnSummary?: OrderReturnSummary;
 	/** 開いているキャンセルの申し込みがある（操作の列に「キャンセルの申し込み」のボタンを出す）。窓口が付けない昔の形は、無い注文と同じに扱う */
 	cancelRequestOpen?: boolean;
-	/**
-	 * 開いている配送の要対応の印（進み具合の列に1つだけ出す）。いくつもある時の優先順（問題あり・不在で持ち帰り・追跡できない）は窓口が決めて
-	 * 1つにして返す。追跡オフの間は要対応が閉じるので付かない。窓口が付けない昔の形は、印の無い注文と同じに扱う
-	 */
-	deliveryAttention?: 'failure' | 'attempted_delivery' | 'untrackable' | null;
 };

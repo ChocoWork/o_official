@@ -25,6 +25,7 @@ import { PARTIALLY_SHIPPED_LABEL } from '@/lib/orders/order-progress';
 import { PAYMENT_STATUS_LABELS } from '@/lib/orders/payment-status';
 import type { RefundAcceptedResponse } from '@/lib/orders/refund/refund-types';
 import { RETURN_DISPLAY_STATUS_LABELS, RETURN_MARK_LABELS } from '@/lib/orders/returns/return-messages';
+import { SHIPMENT_SLIP_TEXT } from '@/lib/orders/shipment-slips/shipment-slip-types';
 import { SHIPPING_CARRIERS, isShippingCarrierId } from '@/lib/orders/shipping-carriers';
 import { DELIVERY_ATTENTION_LABELS } from '@/lib/orders/tracking/delivery-messages';
 
@@ -243,7 +244,7 @@ function OrderDetail({ orderId }: { orderId: string }): React.JSX.Element {
           {detail.slips.filter((slip) => !detail.fulfillments.some((fulfillment) => fulfillment.slipId === slip.slipId)).map((slip) => <p key={slip.slipId}><Link className="underline" href={`/admin/shipment-slips/${slip.slipId}`}>発送票 {slip.number}</Link></p>)}
           {detail.slips.some((slip) => slip.stage === 'confirmed') ? <p>同梱された発送票の配送の要対応は、代表の注文にだけ表示されます。詳しくは発送票を開いてください。</p> : null}
         </>}
-        {permissions.shippingRead ? <Button href="/admin/packing" variant="secondary">荷作り表を開く</Button> : null}
+        {permissions.shippingRead ? <Button href="/admin/packing" variant="secondary">{SHIPMENT_SLIP_TEXT.openPacking}</Button> : null}
       </section>
       <section aria-labelledby="order-returns" className="min-w-0 space-y-3">
         <h2 id="order-returns">返品とキャンセルの申し込み</h2>

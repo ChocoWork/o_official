@@ -1003,7 +1003,7 @@ G-1 で止めた旧い発送の入口の案内を、G-3 の発送票へ向ける
 
 | 場所 | 内容 |
 | --- | --- |
-| 注文一覧（`OrderSection`。G-4 Task 7 で撤去した。荷作り表の案内は荷作り表へ移り、仕上がりの停止の文は410の本文だけに残る。以下は撤去前の記録）の表の上 | 「発送は荷作り表から行います。」、ボタン「荷作り表を開く」（`/admin/packing`）、仕上がりの停止の文（`MANUAL_COMPLETION_DISABLED_TEXT`。再開しない）を1回ずつ。どの画面幅でも折り返す |
+| 注文一覧（`OrderSection`。G-4 Task 7 で撤去した。荷作り表の案内は荷作り表へ移り、仕上がりの停止の文は定数と単体の確かめだけに残る〔410 の窓口は Task 8 で撤去〕。以下は撤去前の記録）の表の上 | 「発送は荷作り表から行います。」、ボタン「荷作り表を開く」（`/admin/packing`）、仕上がりの停止の文（`MANUAL_COMPLETION_DISABLED_TEXT`。再開しない）を1回ずつ。どの画面幅でも折り返す |
 | 注文の変更履歴（`OrderHistoryPanel`。G-4 Task 8 で `OrderHistoryDialog` から改名）の上 | 「発送・発送取消・伝票番号の訂正・手動の配達済みは、発送票から行います。」を1回。票に属する発送の行には「発送票 ${番号} を開く」（`/admin/shipment-slips/` + 票の ID）を出す（窓口 `GET /api/admin/orders/[id]/history` が `list_admin_order_shipment_slips` で `slipId`・`slipNumber` を付ける。票へのリンクは補助の情報なので、読み込みに失敗した時は（発送の権限 `admin.shipping.read` が無く DB が断った時も、他の失敗も）付けず、履歴は返す。権限の拒否以外はログに例外名と code だけを出す） |
 | ショップの設定（`ShopSettingsSection`）の追跡の説明 | 第三の文を「オフの間も、伝票番号の訂正と手動の配達済みは、発送票から行えます。」に置換 |
 
