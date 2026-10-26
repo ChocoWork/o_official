@@ -5,6 +5,10 @@
  * @impl IMPL-NEWS-162
  * @design DD-NEWS-065
  * @remarks 表の読み書きは利用者の JWT の client で RLS に通し、窓口の認可が崩れても DB が断るようにする（SEC-NEWS-015、DATA-NEWS-002）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新の PUT と分ける（API-NEWS-006、STATE-NEWS-001）。直すたびに画像を付け直させないよう、PUT の画像は任意にする（API-NEWS-005）。変える操作は誰が何をしたかを追えるよう、成功も失敗も監査に残す。変更・削除が 0 行の時（無い記事、または RLS が隠した記事）は成功と偽らず 404 にして失敗を残す（SEC-NEWS-016）。
+ * id は URL から来るので、形の悪い値は DB に渡さず 404 にし、1件の取り出しは「無い」と「DB の失敗」を分けて、誤りの文は応答にも記録にも出さない（SEC-NEWS-012、SEC-NEWS-020）。
+ * 画像は申告の種類と中身の印が合う物だけを受け、保存名は自分で作る（SEC-NEWS-017）。
+ * PUT は画像を上げる前に古い image_url を読み（無い記事なら何も上げない）、行を変えた後に古い画像を、行が変わらなかった時は新しく上げた画像を置き場から消す。
+ * 削除は行を消した後に画像を消す。置き場は service role でないと消せないので、その client は消す時だけ作り、置き場の失敗は監査に残すだけで応答は成功のまま返す（SEC-NEWS-018）。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -12,6 +16,14 @@ import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { signNewsImageFields } from '@/lib/storage/news-images';
+import { describeErrorForLog } from '@/lib/logging/safe-error';
+import { isNewsId } from '@/features/news/lib/news-input';
+import {
+  NEWS_IMAGE_BUCKET,
+  buildNewsImagePath,
+  prepareNewsImage,
+  removeNewsImages,
+} from '@/features/news/services/admin-images';
 
 const updateNewsSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -24,9 +36,6 @@ const updateNewsSchema = z.object({
 
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const maxImageBytes = 5 * 1024 * 1024;
-
-// DB の id は bigint。形の悪い id を渡すと 22P02 で 500 になるので、桁（18 桁以下）まで確かめてから渡す（SEC-NEWS-016）。
-const newsIdPattern = /^\d{1,18}$/;
 
 function getRequestUserAgent(request: Request): string | null {
   return request.headers.get('user-agent') || null;
@@ -63,7 +72,7 @@ async function respondArticleNotFound(
   action: string,
   id: string,
 ) {
-  const validId = newsIdPattern.test(id);
+  const validId = isNewsId(id);
   await logNewsAudit(
     request,
     actorId,
@@ -85,6 +94,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return authz.response;
     }
 
+    if (!isNewsId(id)) {
+      return NextResponse.json({ error: 'Article not found' }, { status: 404 });
+    }
+
     const [supabase, serviceSupabase] = await Promise.all([
       createClient(request),
       createServiceRoleClient(),
@@ -94,21 +107,29 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       .from('news_articles')
       .select('*')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
-      console.error('Failed to fetch news article:', error);
+    if (error) {
+      console.error('Failed to fetch news article:', describeErrorForLog(error));
+      return NextResponse.json({ error: 'Failed to fetch news article' }, { status: 500 });
+    }
+
+    if (!data) {
       return NextResponse.json({ error: 'Article not found' }, { status: 404 });
     }
 
     return NextResponse.json({ data: await signNewsImageFields(serviceSupabase, data) }, { status: 200 });
   } catch (error) {
-    console.error('GET /api/admin/news/:id error:', error);
+    console.error('GET /api/admin/news/:id error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  // 置き場に上げたが、まだ行が指していない画像。行が変わらなかった・例外になった時にだけ消す。
+  let unreferencedPath: string | null = null;
+  let cleanupClient: Awaited<ReturnType<typeof createServiceRoleClient>> | null = null;
+
   try {
     const { id } = await params;
     const authz = await authorizeAdminPermission('admin.news.manage', request);
@@ -116,7 +137,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return authz.response;
     }
 
-    if (!newsIdPattern.test(id)) {
+    if (!isNewsId(id)) {
       return respondArticleNotFound(request, authz.userId, 'admin.news.update.not_found', id);
     }
 
@@ -146,6 +167,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const uploadSupabase = await createServiceRoleClient();
 
     let imagePath: string | undefined = undefined;
+    let previousImageUrl: string | null = null;
 
     // 画像が新規アップロードされている場合
     if (image instanceof File) {
@@ -157,14 +179,41 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: 'Image size must be 5MB or less' }, { status: 400 });
       }
 
-      const extension = image.name.includes('.') ? image.name.split('.').pop() : 'jpg';
-      const filePath = `news/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
-      const imageBuffer = Buffer.from(await image.arrayBuffer());
+      const prepared = await prepareNewsImage(image);
+      if (!prepared) {
+        return NextResponse.json({ error: 'Unsupported image type' }, { status: 400 });
+      }
+
+      // 古い画像の道筋は行を変える前でないと分からない。無い記事には何も上げない。
+      const { data: previousRow, error: previousError } = await dbSupabase
+        .from('news_articles')
+        .select('image_url')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (previousError) {
+        await logNewsAudit(request, authz.userId, 'admin.news.update.failed', 'failure', 'News article update failed', {
+          articleId: id,
+          status: parsed.data.status,
+          category: parsed.data.category,
+        }, id);
+
+        console.error('Failed to read news article before update:', describeErrorForLog(previousError));
+        return NextResponse.json({ error: 'Failed to update news article' }, { status: 500 });
+      }
+
+      if (!previousRow) {
+        return respondArticleNotFound(request, authz.userId, 'admin.news.update.not_found', id);
+      }
+
+      previousImageUrl = typeof previousRow.image_url === 'string' ? previousRow.image_url : null;
+
+      const filePath = buildNewsImagePath(prepared.extension);
 
       const { error: uploadError } = await uploadSupabase.storage
-        .from('news-images')
-        .upload(filePath, imageBuffer, {
-          contentType: image.type,
+        .from(NEWS_IMAGE_BUCKET)
+        .upload(filePath, prepared.buffer, {
+          contentType: prepared.contentType,
           cacheControl: '3600',
           upsert: false,
         });
@@ -173,14 +222,16 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         await logNewsAudit(request, authz.userId, 'admin.news.update.upload_failed', 'failure', 'Image upload failed', {
           storagePath: filePath,
           articleId: id,
-          imageType: image.type,
+          imageType: prepared.contentType,
         }, id);
 
-        console.error('Failed to upload image:', uploadError);
+        console.error('Failed to upload image:', describeErrorForLog(uploadError));
         return NextResponse.json({ error: 'Failed to upload image' }, { status: 500 });
       }
 
       imagePath = filePath;
+      unreferencedPath = filePath;
+      cleanupClient = uploadSupabase;
     }
 
     const updatePayload: Record<string, unknown> = {
@@ -203,30 +254,50 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       .select('id');
 
     if (error) {
+      const imageCleanup = imagePath ? await removeNewsImages(uploadSupabase, [imagePath]) : undefined;
+      unreferencedPath = null;
+
       await logNewsAudit(request, authz.userId, 'admin.news.update.failed', 'failure', 'News article update failed', {
         articleId: id,
         status: parsed.data.status,
         category: parsed.data.category,
+        ...(imageCleanup ? { imageCleanup } : {}),
       }, id);
 
-      console.error('Failed to update news article:', error);
+      console.error('Failed to update news article:', describeErrorForLog(error));
       return NextResponse.json({ error: 'Failed to update news article' }, { status: 500 });
     }
 
     // 0 行は「無い」と「RLS が隠した」の両方。成功と偽らず 404 にする（SEC-NEWS-016）。
     if (!updatedRows || updatedRows.length === 0) {
+      if (imagePath) {
+        await removeNewsImages(uploadSupabase, [imagePath]);
+        unreferencedPath = null;
+      }
       return respondArticleNotFound(request, authz.userId, 'admin.news.update.not_found', id);
     }
+
+    // 行が新しい画像を指したので、古い画像だけを消す。新旧が同じ道筋なら消さない。
+    unreferencedPath = null;
+    const imageCleanup =
+      imagePath && previousImageUrl
+        ? await removeNewsImages(uploadSupabase, [previousImageUrl], [imagePath])
+        : undefined;
 
     await logNewsAudit(request, authz.userId, 'admin.news.update', 'success', 'News article updated', {
       articleId: id,
       status: parsed.data.status,
       category: parsed.data.category,
+      ...(imageCleanup ? { imageCleanup } : {}),
     }, id);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    console.error('PUT /api/admin/news/:id error:', error);
+    if (unreferencedPath && cleanupClient) {
+      await removeNewsImages(cleanupClient, [unreferencedPath]);
+    }
+
+    console.error('PUT /api/admin/news/:id error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -243,7 +314,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return authz.response;
     }
 
-    if (!newsIdPattern.test(id)) {
+    if (!isNewsId(id)) {
       return respondArticleNotFound(request, authz.userId, 'admin.news.status_update.not_found', id);
     }
 
@@ -274,7 +345,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         status: parsed.data.status,
       }, id);
 
-      console.error('Failed to update news article status:', error);
+      console.error('Failed to update news article status:', describeErrorForLog(error));
       return NextResponse.json({ error: 'Failed to update status' }, { status: 500 });
     }
 
@@ -289,7 +360,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    console.error('PATCH /api/admin/news/:id error:', error);
+    console.error('PATCH /api/admin/news/:id error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -302,7 +373,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return authz.response;
     }
 
-    if (!newsIdPattern.test(id)) {
+    if (!isNewsId(id)) {
       return respondArticleNotFound(request, authz.userId, 'admin.news.delete.not_found', id);
     }
 
@@ -312,14 +383,14 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       .from('news_articles')
       .delete()
       .eq('id', id)
-      .select('id');
+      .select('id, image_url');
 
     if (error) {
       await logNewsAudit(request, authz.userId, 'admin.news.delete.failed', 'failure', 'News article delete failed', {
         articleId: id,
       }, id);
 
-      console.error('Failed to delete news article:', error);
+      console.error('Failed to delete news article:', describeErrorForLog(error));
       return NextResponse.json({ error: 'Failed to delete article' }, { status: 500 });
     }
 
@@ -327,13 +398,27 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return respondArticleNotFound(request, authz.userId, 'admin.news.delete.not_found', id);
     }
 
+    // 行を消した後に画像を消す。置き場は service role でないと消せないので、ここで初めてその client を作る。
+    let imageCleanup: 'ok' | 'failed';
+    try {
+      const storageSupabase = await createServiceRoleClient();
+      imageCleanup = await removeNewsImages(
+        storageSupabase,
+        deletedRows.map((row) => (row as { image_url?: string | null }).image_url),
+      );
+    } catch (cleanupError) {
+      console.error('Failed to remove news images:', describeErrorForLog(cleanupError));
+      imageCleanup = 'failed';
+    }
+
     await logNewsAudit(request, authz.userId, 'admin.news.delete', 'success', 'News article deleted', {
       articleId: id,
+      imageCleanup,
     }, id);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    console.error('DELETE /api/admin/news/:id error:', error);
+    console.error('DELETE /api/admin/news/:id error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

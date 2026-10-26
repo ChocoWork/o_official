@@ -37,9 +37,9 @@ function respond(ok: boolean, body: unknown = {}) {
   return { ok, json: async () => body } as unknown as Response;
 }
 
-/** 一覧の取得の応答を1回分積む */
-function mockList(data: unknown) {
-  mockClientFetch.mockResolvedValueOnce(respond(true, { data }));
+/** 一覧の取得の応答を1回分積む（既定は管理の権限あり） */
+function mockList(data: unknown, meta: unknown = { canManage: true }) {
+  mockClientFetch.mockResolvedValueOnce(respond(true, { data, meta }));
 }
 
 /** テーマの文字を含むカード（画像・札・ボタンの親）を返す */
@@ -121,6 +121,92 @@ describe('LookSection', () => {
       'href',
       '/admin/look/edit/2',
     );
+  });
+
+  describe('操作ボタンの出し分け', () => {
+    it.each([
+      ['canManage が false', { canManage: false }],
+      ['meta が空', {}],
+      ['meta が無い', undefined],
+      ['canManage が文字の true', { canManage: 'true' }],
+      ['canManage が 1', { canManage: 1 }],
+    ])('DD-LOOK-060 %s の時はカードの公開の切り替え・編集・削除を出さず、LOOK 自体は見せる', async (_label, meta) => {
+      mockClientFetch.mockResolvedValueOnce(respond(true, { data: [PUBLISHED_LOOK, PRIVATE_LOOK], meta }));
+
+      render(<LookSection />);
+
+      await screen.findByText('公開のテーマ');
+      for (const theme of ['公開のテーマ', '非公開のテーマ']) {
+        const card = cardOf(theme);
+        expect(within(card).queryByRole('button')).not.toBeInTheDocument();
+        expect(within(card).queryByRole('link')).not.toBeInTheDocument();
+        expect(within(card).getByRole('img')).toBeInTheDocument();
+      }
+      expect(screen.getByText('公開中')).toBeInTheDocument();
+      expect(screen.getByText('2026 SS')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '削除' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: '編集' })).not.toBeInTheDocument();
+    });
+
+    it('DD-LOOK-060 canManage が true の時は各カードに公開（または非公開）・編集・削除が出る', async () => {
+      mockList([PUBLISHED_LOOK, PRIVATE_LOOK], { canManage: true });
+
+      render(<LookSection />);
+
+      await screen.findByText('公開のテーマ');
+      for (const theme of ['公開のテーマ', '非公開のテーマ']) {
+        const card = cardOf(theme);
+        expect(within(card).getAllByRole('button')).toHaveLength(2);
+        expect(within(card).getByRole('link', { name: '編集' })).toBeInTheDocument();
+        expect(within(card).getByRole('button', { name: '削除' })).toBeInTheDocument();
+      }
+    });
+
+    it('DD-LOOK-060 読み込み中はボタンを出さない（一覧を取る前に権限を決めつけない）', () => {
+      mockClientFetch.mockReturnValueOnce(new Promise<Response>(() => {}));
+
+      render(<LookSection />);
+
+      expect(screen.getByText('読み込み中...')).toBeInTheDocument();
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    });
+
+    it('DD-LOOK-060 一覧の取得に失敗した時もボタンを出さない', async () => {
+      mockClientFetch.mockResolvedValueOnce(respond(false, { error: 'Forbidden' }));
+
+      render(<LookSection />);
+
+      await screen.findByText('LOOKがありません');
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    });
+
+    it('DD-LOOK-060 取り直した一覧で canManage が false になったらボタンを引っ込める', async () => {
+      mockList([PUBLISHED_LOOK], { canManage: true });
+      mockClientFetch.mockResolvedValueOnce(respond(true));
+      mockList([PUBLISHED_LOOK], { canManage: false });
+
+      render(<LookSection />);
+      await screen.findByText('公開のテーマ');
+
+      fireEvent.click(screen.getByRole('button', { name: '非公開' }));
+
+      await waitFor(() => expect(screen.queryByRole('button', { name: '削除' })).not.toBeInTheDocument());
+      expect(screen.getByText('公開のテーマ')).toBeInTheDocument();
+    });
+  });
+
+  it('DD-LOOK-060 一度 canManage が true になった後、取り直しが失敗したらボタンを引っ込める', async () => {
+    mockList([PUBLISHED_LOOK], { canManage: true });
+    mockClientFetch.mockResolvedValueOnce(respond(true));
+    mockClientFetch.mockResolvedValueOnce(respond(false));
+
+    render(<LookSection />);
+    await screen.findByText('公開のテーマ');
+
+    fireEvent.click(screen.getByRole('button', { name: '非公開' }));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: '削除' })).not.toBeInTheDocument());
+    expect(screen.getByText('公開のテーマ')).toBeInTheDocument();
   });
 
   it('DD-LOOK-060 data が無い応答は「LOOKがありません」を出す', async () => {

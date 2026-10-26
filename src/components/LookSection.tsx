@@ -5,6 +5,8 @@
  * @impl IMPL-LOOK-126
  * @design DD-LOOK-060
  * @remarks 画面は利用者の端末で動き、守りは持たない。権限・回数の制限・監査は窓口（/api/admin/looks）が受け持つ。
+ * カードの公開の切り替え・編集・削除は、窓口の応答の meta.canManage が真の時だけ出す。読み込み中・失敗・meta なし・偽は出さず、
+ * 権限の無い人に押せない操作を見せない（SEC-LOOK-019。窓口の判定が本物で、画面の出し分けは案内）。
  * 作った LOOK を直さずに出し入れできるよう、公開の切り替えは状態だけを反転して送る。
  * 消した LOOK は戻せないので押し間違いを防ぐ確かめを挟み、変更の後は一覧を取り直して窓口の結果を画面に映す。
  */
@@ -29,6 +31,7 @@ type AdminLookItem = {
 export default function LookSection() {
   const [lookItems, setLookItems] = useState<AdminLookItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [canManage, setCanManage] = useState(false);
 
   const fetchLooks = async () => {
     try {
@@ -39,8 +42,10 @@ export default function LookSection() {
 
       const json = await res.json();
       setLookItems((json.data || []) as AdminLookItem[]);
+      setCanManage(json.meta?.canManage === true);
     } catch (error) {
       console.error("Failed to load looks:", error);
+      setCanManage(false);
     } finally {
       setLoading(false);
     }
@@ -133,32 +138,34 @@ export default function LookSection() {
                 {item.season_year} {item.season_type}
               </p>
               <p className="lk-text-sm text-black font-acumin">{item.theme}</p>
-              <div className="flex space-x-2 pt-2">
-                <Button
-                  onClick={() => handleToggleStatus(item.id, item.status)}
-                  variant="secondary"
-                  size="sm"
-                  className="flex-1 font-acumin"
-                >
-                  {item.status === "published" ? "非公開" : "公開"}
-                </Button>
-                <Button
-                  href={`/admin/look/edit/${item.id}`}
-                  variant="secondary"
-                  size="sm"
-                  className="flex-1 font-acumin"
-                >
-                  編集
-                </Button>
-                <Button
-                  onClick={() => handleDelete(item.id)}
-                  variant="primary"
-                  size="sm"
-                  className="font-acumin"
-                >
-                  削除
-                </Button>
-              </div>
+              {canManage && (
+                <div className="flex space-x-2 pt-2">
+                  <Button
+                    onClick={() => handleToggleStatus(item.id, item.status)}
+                    variant="secondary"
+                    size="sm"
+                    className="flex-1 font-acumin"
+                  >
+                    {item.status === "published" ? "非公開" : "公開"}
+                  </Button>
+                  <Button
+                    href={`/admin/look/edit/${item.id}`}
+                    variant="secondary"
+                    size="sm"
+                    className="flex-1 font-acumin"
+                  >
+                    編集
+                  </Button>
+                  <Button
+                    onClick={() => handleDelete(item.id)}
+                    variant="primary"
+                    size="sm"
+                    className="font-acumin"
+                  >
+                    削除
+                  </Button>
+                </div>
+              )}
             </div>
           </Card>
         ))}

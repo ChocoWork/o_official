@@ -190,15 +190,17 @@ describe('GET /api/suggest 入力中の候補', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it('API-SEARCH-002 関数の失敗は記録せず空として扱い、ほかの種別の候補を 200 で返す', async () => {
-    setupClient({ search_items: { data: null, error: { message: 'rpc down' } } });
+  it('API-SEARCH-002 関数の失敗は関数名と符号だけ記録して空として扱い、ほかの種別の候補を 200 で返す', async () => {
+    setupClient({ search_items: { data: null, error: { message: 'rpc down for wool', code: '42501' } } });
 
     const res = await GET(makeRequest('?q=wool'));
 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.suggestions.map((s: { type: string }) => s.type).sort()).toEqual(['look', 'news']);
-    expect(errorSpy).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith('Search function failed:', { fn: 'search_items', name: 'UnknownError', code: '42501' });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('rpc down');
   });
 
   it('API-SEARCH-002 語が101字なら 400、100字なら通す', async () => {
@@ -228,6 +230,30 @@ describe('GET /api/suggest 入力中の候補', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
+  it('API-SEARCH-002 応答に Cache-Control: private, no-store が付く（SEC-SEARCH-010）', async () => {
+    setupClient();
+
+    const res = await GET(makeRequest('?q=wool'));
+    const bad = await GET(makeRequest('?q=%00'));
+
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(bad.headers.get('Cache-Control')).toBe('private, no-store');
+  });
+
+  it.each(['cross-site', 'same-site'])(
+    'API-SEARCH-002 sec-fetch-site: %s の要求は 403 で、回数にも数えず取り出しも通さない（SEC-SEARCH-020）',
+    async (value) => {
+      const { rpc } = setupClient();
+
+      const res = await GET(makeRequest('?q=wool', { 'sec-fetch-site': value }));
+
+      expect(res.status).toBe(403);
+      expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+      expect(incrementCounter).not.toHaveBeenCalled();
+      expect(rpc).not.toHaveBeenCalled();
+    },
+  );
+
   it('API-SEARCH-002 印字できる記号は断らず、取り出しへ渡す', async () => {
     const { rpc } = setupClient();
 
@@ -246,6 +272,8 @@ describe('GET /api/suggest 入力中の候補', () => {
     const body = await res.json();
     expect(body).toEqual({ error: 'Failed to load suggestions' });
     expect(JSON.stringify(body)).not.toContain('secret');
-    expect(errorSpy).toHaveBeenCalledWith('GET /api/suggest error:', expect.any(Error));
+    expect(errorSpy).toHaveBeenCalledWith('GET /api/suggest error:', { name: 'Error', code: null });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('secret');
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
   });
 });

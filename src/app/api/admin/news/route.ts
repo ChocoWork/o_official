@@ -5,6 +5,8 @@
  * @impl IMPL-NEWS-161
  * @design DD-NEWS-064
  * @remarks 表の読み書きは利用者の JWT の client で RLS に通し、窓口の認可が崩れても DB が断るようにする（SEC-NEWS-015、DATA-NEWS-002）。置き場は非公開なので、書き込みと署名だけ service role を使い、表には署名前の道を残して読むたびに署名する（ARC-NEWS-003、DATA-NEWS-004）。作成は表と置き場の両方を変えるので、成功も失敗も監査に残す（SEC-NEWS-016）。
+ * 画像は申告の種類と中身の印が合う物だけを置き場に書き、保存名は自分で作る（SEC-NEWS-017）。行の保存に失敗したら、上げた画像を置き場から消して孤児を残さず、消せなくても応答は変えない（SEC-NEWS-018）。
+ * 一覧の取り出しの失敗は固定の文の 500 にし、誤りの文は応答にも記録にも出さない（SEC-NEWS-020）。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -12,6 +14,13 @@ import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { signNewsImageFields } from '@/lib/storage/news-images';
+import { describeErrorForLog } from '@/lib/logging/safe-error';
+import {
+  NEWS_IMAGE_BUCKET,
+  buildNewsImagePath,
+  prepareNewsImage,
+  removeNewsImages,
+} from '@/features/news/services/admin-images';
 
 const createNewsSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -23,12 +32,6 @@ const createNewsSchema = z.object({
 });
 
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
-const imageExtensionMap: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-  'image/gif': 'gif',
-};
 const maxImageBytes = 5 * 1024 * 1024;
 
 // IP headers like x-forwarded-for / x-real-ip may be spoofed by the client
@@ -60,6 +63,10 @@ async function logNewsAudit(
 }
 
 export async function POST(request: Request) {
+  // 置き場に上げたが、まだ行が指していない画像。行の保存に失敗・例外になった時にだけ消す。
+  let unreferencedPath: string | null = null;
+  let cleanupClient: Awaited<ReturnType<typeof createServiceRoleClient>> | null = null;
+
   try {
     const authz = await authorizeAdminPermission('admin.news.manage', request);
     if (!authz.ok) {
@@ -100,17 +107,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Image size must be 5MB or less' }, { status: 400 });
     }
 
+    const prepared = await prepareNewsImage(image);
+    if (!prepared) {
+      return NextResponse.json({ error: 'Unsupported image type' }, { status: 400 });
+    }
+
     const dbSupabase = await createClient(request);
     const uploadSupabase = await createServiceRoleClient();
 
-    const extension = imageExtensionMap[image.type];
-    const filePath = `news/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
-    const imageBuffer = Buffer.from(await image.arrayBuffer());
+    const filePath = buildNewsImagePath(prepared.extension);
 
     const { error: uploadError } = await uploadSupabase.storage
-      .from('news-images')
-      .upload(filePath, imageBuffer, {
-        contentType: image.type,
+      .from(NEWS_IMAGE_BUCKET)
+      .upload(filePath, prepared.buffer, {
+        contentType: prepared.contentType,
         cacheControl: '3600',
         upsert: false,
       });
@@ -122,9 +132,12 @@ export async function POST(request: Request) {
         imageType: image.type,
       });
 
-      console.error('Failed to upload image:', uploadError);
+      console.error('Failed to upload image:', describeErrorForLog(uploadError));
       return NextResponse.json({ error: 'Failed to upload image' }, { status: 500 });
     }
+
+    unreferencedPath = filePath;
+    cleanupClient = uploadSupabase;
 
     const { data, error } = await dbSupabase
       .from('news_articles')
@@ -143,16 +156,21 @@ export async function POST(request: Request) {
       .single();
 
     if (error) {
+      const imageCleanup = await removeNewsImages(uploadSupabase, [filePath]);
+      unreferencedPath = null;
+
       await logNewsAudit(request, authz.userId, 'admin.news.create.db_insert_failed', 'failure', 'News article insert failed', {
         storagePath: filePath,
         status: parsed.data.status,
         category: parsed.data.category,
+        imageCleanup,
       });
 
-      console.error('Failed to create news article:', error);
+      console.error('Failed to create news article:', describeErrorForLog(error));
       return NextResponse.json({ error: 'Failed to save news article' }, { status: 500 });
     }
 
+    unreferencedPath = null;
     const newsArticleId = data?.id != null ? String(data.id) : null;
 
     await logNewsAudit(
@@ -171,7 +189,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, id: data.id }, { status: 201 });
   } catch (error) {
-    console.error('POST /api/admin/news error:', error);
+    if (unreferencedPath && cleanupClient) {
+      await removeNewsImages(cleanupClient, [unreferencedPath]);
+    }
+
+    console.error('POST /api/admin/news error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -194,7 +216,7 @@ export async function GET(request: Request) {
       .order('published_date', { ascending: false });
 
     if (error) {
-      console.error('Failed to fetch news articles:', error);
+      console.error('Failed to fetch news articles:', describeErrorForLog(error));
       return NextResponse.json({ error: 'Failed to fetch news articles' }, { status: 500 });
     }
 
@@ -206,7 +228,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ data: signedArticles }, { status: 200 });
   } catch (error) {
-    console.error('GET /api/admin/news error:', error);
+    console.error('GET /api/admin/news error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

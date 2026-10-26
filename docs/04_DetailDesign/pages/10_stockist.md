@@ -252,8 +252,8 @@ FR-STOCKIST-001・002・004・006・008・010、FREQ-57-REQ-01、FREQ-118-REQ-01
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | ARC-STOCKIST-001、DATA-STOCKIST-001、DATA-STOCKIST-002、SEC-STOCKIST-001、SEC-STOCKIST-002、SEC-STOCKIST-018 |
-| 根拠 | 取り出しの条件で `status='published'` に絞り、DB の RLS と2段にして、片方が崩れても非公開の店を外へ出さない（SEC-STOCKIST-001、DATA-STOCKIST-002）。返す前に6つの列に詰め直し、状態などの内部の列を画面へ渡さない（ARC-STOCKIST-001）。並びの要件が無いので、取るたびに並びが変わらないよう id の順にする（DATA-STOCKIST-001）。DB が一時的に落ちても頁全体を誤りにしないよう、誤りは空の配列にする（ARC-STOCKIST-001）。ログインの Cookie を引き継がない公開用の client で読み、閲覧者の権限で公開の画面の中身が変わらないようにする（SEC-STOCKIST-002）。件数は必ず 200 件で止め、店が増えても 1 回の取り出しの量に天井を持たせる（SEC-STOCKIST-018） |
+| 上位 | ARC-STOCKIST-001、DATA-STOCKIST-001、DATA-STOCKIST-002、SEC-STOCKIST-001、SEC-STOCKIST-002、SEC-STOCKIST-014、SEC-STOCKIST-018 |
+| 根拠 | 取り出しの条件で `status='published'` に絞り、DB の RLS と2段にして、片方が崩れても非公開の店を外へ出さない（SEC-STOCKIST-001、DATA-STOCKIST-002）。返す前に6つの列に詰め直し、状態などの内部の列を画面へ渡さない（ARC-STOCKIST-001）。並びの要件が無いので、取るたびに並びが変わらないよう id の順にする（DATA-STOCKIST-001）。DB が一時的に落ちても頁全体を誤りにしないよう、誤りは空の配列にする（ARC-STOCKIST-001）。ログインの Cookie を引き継がない公開用の client で読み、閲覧者の権限で公開の画面の中身が変わらないようにする（SEC-STOCKIST-002）。件数は必ず 200 件で止め、店が増えても 1 回の取り出しの量に天井を持たせる（SEC-STOCKIST-018）。失敗の記録は名前と符号だけにし、Supabase の誤りの文を残さない（SEC-STOCKIST-014） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/features/stockist/services/public.ts`）、この頁の旧版の機能要件対応表 |
@@ -262,7 +262,7 @@ FR-STOCKIST-001・002・004・006・008・010、FREQ-57-REQ-01、FREQ-118-REQ-01
 
 #### 対応要件
 
-FR-STOCKIST-003、FREQ-13-REQ-01、DRV-STOCKIST-001、SEC-STOCKIST-001・002・018。
+FR-STOCKIST-003、FREQ-13-REQ-01、DRV-STOCKIST-001、SEC-STOCKIST-001・002・014・018。
 
 #### 入出力
 
@@ -287,7 +287,7 @@ FR-STOCKIST-003、FREQ-13-REQ-01、DRV-STOCKIST-001、SEC-STOCKIST-001・002・0
 | `limit` が数でない・`NaN`・`Infinity`・0 以下・1 未満の小数 | 上限の 200 件で限る（外さない） | `public.ts` |
 | `limit` が小数（例: 2.7） | 切り捨てた数（2）で限る | `public.ts` |
 | `limit` が 200 より大きい（例: 500） | 200 件に切り詰める | `public.ts` |
-| DB の誤り | `console.error` に誤りを丸ごと書き、空の配列を返す | `public.ts` |
+| DB の誤り | `console.error` に `describeErrorForLog(error)` の `{ name, code }` だけを書き（`message`・`details`・`hint` は書かない。SEC-STOCKIST-014。2026-10-26）、空の配列を返す | `public.ts` |
 | `data` が `null` | 空の配列を返す | `public.ts` |
 | client を作れない・問い合わせが例外を投げる | 受け止めず、呼んだ側へ出す（推定） | `public.ts` |
 
@@ -313,7 +313,7 @@ FR-STOCKIST-003、FREQ-13-REQ-01、DRV-STOCKIST-001、SEC-STOCKIST-001・002・0
 | 4 | 不正な件数 | `{limit:0}`・`{limit:-1}`・`{limit:NaN}`・`{limit:Infinity}`・`{limit:0.5}`・`{}` | どれも `limit(200)` を呼ぶ（外さない） |
 | 4a | 上限の切り詰め | `{limit:500}` | `limit(200)` |
 | 5 | 詰め直し | 行に `status`・`type` などが付いている | 返す物が6つの列だけ |
-| 6 | DB の誤り | `{data:null, error:{…}}` | 空の配列、`console.error` が1回 |
+| 6 | DB の誤り | `{data:null, error:{ message, details, code }}` | 空の配列、`console.error` が1回で第 2 引数は `{ name:'UnknownError', code }` だけ（`message`・`details` を含まない） |
 | 7 | `data` が `null` | `{data:null, error:null}` | 空の配列 |
 
 ### DD-STOCKIST-004 ホーム用に6件まで取る getHomePublicStockists

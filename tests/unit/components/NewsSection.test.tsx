@@ -156,19 +156,20 @@ describe('NewsSection 一覧・公開の切り替え・削除', () => {
     expect(screen.getByText('2025-01-02')).toBeInTheDocument();
   });
 
-  it('DD-NEWS-060 応答が OK でなく本文が JSON の時は「ニュース記事がありません」が出る', async () => {
+  it('DD-NEWS-060 応答が OK でなく本文が JSON の時は role=alert の「ニュース記事の取得に失敗しました」が出て、「ニュース記事がありません」は出ない', async () => {
     mockClientFetch.mockResolvedValueOnce(failResponse(async () => ({ error: 'boom' })));
 
     render(<NewsSection />);
 
-    expect(await screen.findByText('ニュース記事がありません')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('ニュース記事の取得に失敗しました');
+    expect(screen.queryByText('ニュース記事がありません')).not.toBeInTheDocument();
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       'Failed to fetch news: 500 Internal Server Error',
       { error: 'boom' },
     );
   });
 
-  it('DD-NEWS-060 応答が OK でなく本文が JSON で読めない時も「ニュース記事がありません」が出る', async () => {
+  it('DD-NEWS-060 応答が OK でなく本文が JSON で読めない時も取得の失敗の文が出る', async () => {
     mockClientFetch.mockResolvedValueOnce(
       failResponse(async () => {
         throw new SyntaxError('Unexpected token');
@@ -177,28 +178,55 @@ describe('NewsSection 一覧・公開の切り替え・削除', () => {
 
     render(<NewsSection />);
 
-    expect(await screen.findByText('ニュース記事がありません')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('ニュース記事の取得に失敗しました');
+    expect(screen.queryByText('ニュース記事がありません')).not.toBeInTheDocument();
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       'Failed to fetch news: 500 Internal Server Error',
       {},
     );
   });
 
-  it('DD-NEWS-060 clientFetch が例外を投げた時も「ニュース記事がありません」が出る', async () => {
+  it('DD-NEWS-060 clientFetch が例外を投げた時も取得の失敗の文が出て、「ニュース記事がありません」は出ない', async () => {
     mockClientFetch.mockRejectedValueOnce(new Error('network'));
 
     render(<NewsSection />);
 
-    expect(await screen.findByText('ニュース記事がありません')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('ニュース記事の取得に失敗しました');
+    expect(screen.queryByText('ニュース記事がありません')).not.toBeInTheDocument();
     expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to load news:', expect.any(Error));
   });
 
-  it('DD-NEWS-060 応答に data が無い時は「ニュース記事がありません」が出る', async () => {
+  it('DD-NEWS-060 応答に data が無い時は「ニュース記事がありません」が出て、失敗の文は出ない', async () => {
     mockClientFetch.mockResolvedValueOnce(okResponse({}));
 
     render(<NewsSection />);
 
     expect(await screen.findByText('ニュース記事がありません')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('DD-NEWS-060 成功して 0 件の時は「ニュース記事がありません」が出る', async () => {
+    mockClientFetch.mockResolvedValueOnce(okResponse({ data: [] }));
+
+    render(<NewsSection />);
+
+    expect(await screen.findByText('ニュース記事がありません')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('DD-NEWS-060 失敗の後に「再読み込み」を押すと取り直し、成功すれば一覧が出て失敗の文が消える', async () => {
+    mockClientFetch
+      .mockResolvedValueOnce(failResponse(async () => ({})))
+      .mockResolvedValueOnce(okResponse({ data: mockArticles }));
+
+    render(<NewsSection />);
+    await screen.findByRole('alert');
+
+    fireEvent.click(screen.getByRole('button', { name: '再読み込み' }));
+
+    expect(await screen.findByText('テスト記事')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(mockClientFetch).toHaveBeenCalledTimes(2);
   });
 
   it('DD-NEWS-060 公開中の行の切り替えで status private を PATCH し、成功で一覧を読み直す', async () => {
@@ -318,6 +346,7 @@ describe('NewsSection 一覧・公開の切り替え・削除', () => {
     );
     expect(screen.getByText('テスト記事')).toBeInTheDocument();
     expect(screen.getByText('公開中')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('ニュース記事の取得に失敗しました');
     expect(alertSpy).not.toHaveBeenCalled();
   });
 

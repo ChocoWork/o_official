@@ -26,6 +26,7 @@ jest.mock('@/lib/auth/authenticate', () => ({
 const { createClient, createServiceRoleClient } = require('@/lib/supabase/server');
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
 const { POST } = require('@/app/api/admin/looks/route');
+const { fileOf, minimalGif, minimalJpeg, minimalPng, minimalWebp, textAsImage } = require('../../fixtures/images');
 
 type Result = { data: unknown; error: unknown };
 type Method = 'select' | 'insert' | 'update' | 'delete';
@@ -33,6 +34,7 @@ type TableSpec = Partial<Record<Method, Result>>;
 type Call = [string, unknown[]];
 type TableOp = { table: string; calls: Call[] };
 type Upload = { bucket: string; path: string; body: unknown; options: Record<string, unknown> };
+type Removal = { bucket: string; paths: string[] };
 type RpcCall = { name: string; args: Record<string, unknown> };
 
 const WRITE_METHODS = ['insert', 'update', 'delete'];
@@ -43,16 +45,19 @@ function createFakeClient(
   tables: Record<string, TableSpec>,
   options: {
     uploadImpl?: (path: string, index: number) => Result;
+    removeImpl?: () => Result;
     rpcImpl?: (call: RpcCall) => Result;
   } = {},
 ) {
   const ops: TableOp[] = [];
   const uploads: Upload[] = [];
+  const removals: Removal[] = [];
   const rpcCalls: RpcCall[] = [];
   const order: string[] = [];
   const client = {
     ops,
     uploads,
+    removals,
     rpcCalls,
     order,
     rpc: jest.fn(async (name: string, args: Record<string, unknown>) => {
@@ -87,6 +92,11 @@ function createFakeClient(
           uploads.push({ bucket, path, body, options: uploadOptions });
           return options.uploadImpl ? options.uploadImpl(path, uploads.length - 1) : { data: {}, error: null };
         }),
+        remove: jest.fn(async (paths: string[]) => {
+          order.push('storage.remove');
+          removals.push({ bucket, paths });
+          return options.removeImpl ? options.removeImpl() : { data: [], error: null };
+        }),
       })),
     },
   };
@@ -97,9 +107,18 @@ function aclRows(codes: string[]) {
   return [{ roles: { role_permissions: codes.map((code) => ({ permissions: { code } })) } }];
 }
 
-function makeImage(name: string, type: string, size?: number): File {
-  const file = new File(['img'], name, { type });
-  Object.defineProperty(file, 'arrayBuffer', { configurable: true, value: async () => new Uint8Array([1, 2, 3]).buffer });
+const IMAGE_BYTES: Record<string, () => Buffer> = {
+  'image/jpeg': minimalJpeg,
+  'image/png': minimalPng,
+  'image/webp': minimalWebp,
+  'image/gif': minimalGif,
+};
+
+// 申告の種類に合う本物の先頭の印を持つ画像。bytes を渡すと中身をそれにする（申告とずらす試験用）。
+function makeImage(name: string, type: string, size?: number, bytes?: Buffer): File {
+  const content: Buffer = bytes ?? (IMAGE_BYTES[type]?.() ?? textAsImage());
+  const file = fileOf(content, name, type);
+  Object.defineProperty(file, 'arrayBuffer', { configurable: true, value: async () => new Uint8Array(content).buffer });
   if (size !== undefined) Object.defineProperty(file, 'size', { configurable: true, value: size });
   return file;
 }
@@ -151,6 +170,7 @@ function setup(
     verified?: unknown;
     liveness?: string;
     uploadImpl?: (path: string, index: number) => Result;
+    removeImpl?: () => Result;
     rpcImpl?: (call: RpcCall) => Result;
   } = {},
 ) {
@@ -165,7 +185,7 @@ function setup(
       },
       look_items: { insert: options.lookItemsInsert ?? NONE },
     },
-    { uploadImpl: options.uploadImpl, rpcImpl: options.rpcImpl },
+    { uploadImpl: options.uploadImpl, removeImpl: options.removeImpl, rpcImpl: options.rpcImpl },
   );
   createServiceRoleClient.mockResolvedValue(serviceClient);
   verifyAccessToken.mockResolvedValue(
@@ -308,13 +328,22 @@ describe('POST /api/admin/looks（LOOK の作成）', () => {
       expect(row.image_urls).toEqual(paths);
     });
 
-    it('API-LOOK-002 拡張子はファイル名から取り、名前に拡張子が無ければ jpg にする', async () => {
+    it('API-LOOK-002 拡張子は送られた名前でなく中身から検出した種類で決める（名前が a/b.html でも png）', async () => {
       setup();
 
-      await POST(makeRequest(validFields, [makeImage('photo', 'image/png'), makeImage('a.b.gif', 'image/gif')]));
+      const res = await POST(
+        makeRequest(validFields, [makeImage('a/b.html', 'image/png'), makeImage('a.b.exe', 'image/gif'), makeImage('photo', 'image/jpeg')]),
+      );
 
-      expect(serviceClient.uploads[0].path.endsWith('.jpg')).toBe(true);
-      expect(serviceClient.uploads[1].path.endsWith('.gif')).toBe(true);
+      expect(res.status).toBe(201);
+      expect(serviceClient.uploads.map((u) => u.path)).toEqual([
+        expect.stringMatching(PATH_PATTERN),
+        expect.stringMatching(PATH_PATTERN),
+        expect.stringMatching(PATH_PATTERN),
+      ]);
+      expect(serviceClient.uploads.map((u) => u.path.split('.').pop())).toEqual(['png', 'gif', 'jpg']);
+      expect(serviceClient.uploads.every((u) => !u.path.includes('html') && !u.path.includes('exe'))).toBe(true);
+      expect(serviceClient.removals).toHaveLength(0);
     });
 
     it('API-LOOK-002 成功を admin.look.create として監査に残し、LOOK の id・利用者・user agent を記録して IP は残さない', async () => {
@@ -536,6 +565,34 @@ describe('POST /api/admin/looks（LOOK の作成）', () => {
         detail: 'Unsupported image type',
         metadata: { image_type: 'image/svg+xml', image_count: 2 },
       });
+    });
+
+    it('API-LOOK-002 文字のファイルを image/png と申告したら 400 Unsupported image type を返し、上げず・量も数えず・中身もファイル名も監査に残さない', async () => {
+      setup();
+
+      const res = await POST(
+        makeRequest(validFields, [makeImage('secret-name.png', 'image/png', undefined, textAsImage())]),
+      );
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Unsupported image type' });
+      expect(serviceClient.uploads).toHaveLength(0);
+      expect(opsOf('items')).toHaveLength(0);
+      expect(serviceClient.rpcCalls.some((c) => String(c.args._endpoint).includes('upload-bytes'))).toBe(false);
+      expect(auditRows()[0]).toMatchObject({ outcome: 'failure', detail: 'Unsupported image type' });
+      expect(JSON.stringify(auditRows())).not.toMatch(/secret-name|plain text/);
+    });
+
+    it('API-LOOK-002 PNG の中身を image/jpeg と申告したら 400 で、同じ要求の本物の画像も上げない', async () => {
+      setup();
+
+      const res = await POST(
+        makeRequest(validFields, [makeImage('a.png', 'image/png'), makeImage('b.jpg', 'image/jpeg', undefined, minimalPng())]),
+      );
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Unsupported image type' });
+      expect(serviceClient.uploads).toHaveLength(0);
     });
 
     it('API-LOOK-002 5MB を超える画像は 400 Image size must be 5MB or less を返し、上げない', async () => {
@@ -765,19 +822,20 @@ describe('POST /api/admin/looks（LOOK の作成）', () => {
   });
 
   describe('置き場と表の失敗', () => {
-    it('API-LOOK-002 置き場への上げが失敗したら 500 を返し、失敗を監査に残して looks に入れない', async () => {
-      setup({ uploadImpl: () => ({ data: null, error: { message: 'storage down' } }) });
+    it('API-LOOK-002 置き場への上げが失敗したら 500 Failed to upload image ちょうどを返し、置き場の文を出さず、失敗を監査に残して looks に入れない', async () => {
+      setup({ uploadImpl: () => ({ data: null, error: { message: 'storage down SECRET' } }) });
 
       const res = await POST(makeRequest());
 
       expect(res.status).toBe(500);
-      expect(await res.json()).toEqual({ error: 'Failed to upload image: storage down' });
+      expect(await res.json()).toEqual({ error: 'Failed to upload image' });
+      expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('SECRET');
       expect(opsOf('looks')).toHaveLength(0);
       expect(auditRows()[0]).toMatchObject({
         action: 'admin.look.create',
         outcome: 'failure',
         detail: 'Failed to upload look image',
-        metadata: { storage_path: serviceClient.uploads[0].path, image_type: 'image/jpeg', status: 'private', linked_item_ids: [3, 5] },
+        metadata: { image_type: 'image/jpeg', status: 'private', linked_item_ids: [3, 5] },
       });
     });
 
@@ -790,6 +848,7 @@ describe('POST /api/admin/looks（LOOK の作成）', () => {
       expect(res.status).toBe(500);
       expect(serviceClient.uploads).toHaveLength(2);
       expect(opsOf('looks')).toHaveLength(0);
+      expect(serviceClient.removals).toEqual([{ bucket: 'look-images', paths: [serviceClient.uploads[0].path] }]);
     });
 
     it('API-LOOK-002 looks への挿入が失敗したら 500 Failed to save look を返し、link を作らず失敗を監査に残す', async () => {
@@ -806,6 +865,24 @@ describe('POST /api/admin/looks（LOOK の作成）', () => {
         resource_id: null,
         metadata: { status: 'private', linked_item_ids: [3, 5], image_count: 1 },
       });
+      expect(serviceClient.removals).toEqual([{ bucket: 'look-images', paths: serviceClient.uploads.map((u) => u.path) }]);
+    });
+
+    it('API-LOOK-002 置き場の削除が失敗しても応答は変えず、監査に orphaned_count を残す', async () => {
+      setup({
+        lookInsert: { data: null, error: { code: '23505', message: 'dup' } },
+        removeImpl: () => ({ data: null, error: { message: 'storage SECRET' } }),
+      });
+
+      const res = await POST(makeRequest());
+
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: 'Failed to save look' });
+      expect(auditRows()[0]).toMatchObject({
+        detail: 'Failed to insert look',
+        metadata: { image_cleanup: 'failed', orphaned_count: 1 },
+      });
+      expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('SECRET');
     });
 
     it('API-LOOK-002 looks への挿入が id を返さない時も 500 Failed to save look を返す', async () => {
@@ -830,6 +907,8 @@ describe('POST /api/admin/looks（LOOK の作成）', () => {
         ['delete', []],
         ['eq', ['id', 11]],
       ]);
+      expect(serviceClient.removals).toEqual([{ bucket: 'look-images', paths: serviceClient.uploads.map((u) => u.path) }]);
+      expect(serviceClient.order.indexOf('looks.delete')).toBeLessThan(serviceClient.order.indexOf('storage.remove'));
       expect(auditRows()).toHaveLength(1);
       expect(auditRows()[0]).toMatchObject({
         outcome: 'failure',

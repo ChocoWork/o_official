@@ -103,13 +103,14 @@ describe('GET /api/search 横断検索と人気商品', () => {
     errorSpy.mockRestore();
   });
 
-  it('API-SEARCH-001 語に合う3種の結果と人気商品を署名つきの画像で 200 と処理時間の見出しつきで返す', async () => {
+  it('API-SEARCH-001 語に合う3種の結果と人気商品を署名つきの画像で 200 と Cache-Control: private, no-store つきで返し、処理時間の見出しは付けない', async () => {
     setupClients();
 
     const res = await GET(makeRequest('?q=wool'));
 
     expect(res.status).toBe(200);
-    expect(res.headers.get('x-search-duration-ms')).toMatch(/^\d+$/);
+    expect(res.headers.get('x-search-duration-ms')).toBeNull();
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
     const body = await res.json();
     expect(body.query).toBe('wool');
     expect(body.tab).toBe('all');
@@ -314,34 +315,64 @@ describe('GET /api/search 横断検索と人気商品', () => {
     expect(ok.status).toBe(200);
   });
 
-  it('API-SEARCH-001 種別の関数の失敗は記録して空として扱い、ほかの種別を 200 で返す', async () => {
-    const failure = { message: 'rpc down' };
-    setupClients({ search_looks: { data: null, error: failure } });
+  it('API-SEARCH-001 種別の関数が1つ失敗したら全体を 500 にし、記録は関数名と符号だけ（SEC-SEARCH-017・018）', async () => {
+    setupClients({ search_looks: { data: null, error: { message: 'rpc down for secretword', code: '42501' } } });
+
+    const res = await GET(makeRequest('?q=secretword'));
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'Failed to search content' });
+    expect(errorSpy).toHaveBeenCalledWith('Search function failed:', { fn: 'search_looks', name: 'UnknownError', code: '42501' });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('secretword');
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('rpc down');
+  });
+
+  it('API-SEARCH-001 商品とニュースの関数が失敗しても全体を 500 にし、失敗ごとに記録する', async () => {
+    setupClients({
+      search_items: { data: null, error: { message: 'items down' } },
+      search_news: { data: null, error: { message: 'news down', code: '57014' } },
+    });
 
     const res = await GET(makeRequest('?q=wool'));
 
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.looks).toEqual([]);
-    expect(body.counts).toEqual({ all: 2, item: 1, look: 0, news: 1 });
-    expect(errorSpy).toHaveBeenCalledWith('Failed to search looks:', failure);
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalledWith('Search function failed:', { fn: 'search_items', name: 'UnknownError', code: null });
+    expect(errorSpy).toHaveBeenCalledWith('Search function failed:', { fn: 'search_news', name: 'UnknownError', code: '57014' });
   });
 
-  it('API-SEARCH-001 商品とニュースの関数の失敗も記録して空として扱う', async () => {
-    const itemFailure = { message: 'items down' };
-    const newsFailure = { message: 'news down' };
-    setupClients({
-      search_items: { data: null, error: itemFailure },
-      search_news: { data: null, error: newsFailure },
-    });
+  it('API-SEARCH-001 制御文字を含む語は 400 で、回数も取り出しも通さない（SEC-SEARCH-004）', async () => {
+    const { userRpc } = setupClients();
 
-    const body = await (await GET(makeRequest('?q=wool'))).json();
+    const res = await GET(makeRequest('?q=a%00b'));
 
-    expect(body.items).toEqual([]);
-    expect(body.news).toEqual([]);
-    expect(body.counts).toEqual({ all: 1, item: 0, look: 1, news: 0 });
-    expect(errorSpy).toHaveBeenCalledWith('Failed to search items:', itemFailure);
-    expect(errorSpy).toHaveBeenCalledWith('Failed to search news:', newsFailure);
+    expect(res.status).toBe(400);
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(incrementCounter).not.toHaveBeenCalled();
+    expect(userRpc).not.toHaveBeenCalled();
+  });
+
+  it.each(['cross-site', 'same-site'])(
+    'API-SEARCH-001 sec-fetch-site: %s の要求は 403 で、回数にも数えず取り出しも通さない（SEC-SEARCH-020）',
+    async (value) => {
+      const { userRpc, serviceRpc } = setupClients();
+
+      const res = await GET(makeRequest('?q=wool', { 'sec-fetch-site': value }));
+
+      expect(res.status).toBe(403);
+      expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+      expect(await res.json()).toEqual({ error: 'Forbidden' });
+      expect(incrementCounter).not.toHaveBeenCalled();
+      expect(userRpc).not.toHaveBeenCalled();
+      expect(serviceRpc).not.toHaveBeenCalled();
+    },
+  );
+
+  it('API-SEARCH-001 sec-fetch-site: same-origin の要求は通す', async () => {
+    setupClients();
+
+    const res = await GET(makeRequest('?q=wool', { 'sec-fetch-site': 'same-origin' }));
+
+    expect(res.status).toBe(200);
   });
 
   it('API-SEARCH-001 人気商品の関数の失敗は記録して空の人気商品で 200 を返す', async () => {
@@ -352,7 +383,7 @@ describe('GET /api/search 横断検索と人気商品', () => {
 
     expect(res.status).toBe(200);
     expect((await res.json()).popularItems).toEqual([]);
-    expect(errorSpy).toHaveBeenCalledWith('Failed to fetch popular items:', failure);
+    expect(errorSpy).toHaveBeenCalledWith('Failed to fetch popular items:', { name: 'UnknownError', code: null });
   });
 
   it('API-SEARCH-001 例外は記録して固定の文の 500 を返し、内部の情報を出さない', async () => {
@@ -365,6 +396,8 @@ describe('GET /api/search 横断検索と人気商品', () => {
     const body = await res.json();
     expect(body).toEqual({ error: 'Failed to search content' });
     expect(JSON.stringify(body)).not.toContain('secret');
-    expect(errorSpy).toHaveBeenCalledWith('GET /api/search error:', expect.any(Error));
+    expect(errorSpy).toHaveBeenCalledWith('GET /api/search error:', { name: 'Error', code: null });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('secret');
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
   });
 });

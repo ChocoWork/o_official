@@ -14,19 +14,44 @@ type Row = Record<string, unknown>;
 // 取り出しの関数（lib/look/server）と画像の署名は本物を通し、Supabase の client だけを表の行を絞って返す偽物にする
 let mockTables: Record<string, Row[]> = {};
 
+function compareValues(col: string, a: unknown, b: unknown): number {
+  if (col === 'created_at') return Date.parse(String(a)) - Date.parse(String(b));
+  return Number(a) - Number(b);
+}
+
+// 前後の取り出しの .or() の文字（時刻は二重引用符で囲む）を、行の絞りに直す。形が違えば落とす
+function matchAdjacentExpression(expression: string): (row: Row) => boolean {
+  const matched = expression.match(
+    /^created_at\.(gt|lt)\."([^"]+)",and\(created_at\.eq\."\2",id\.\1\.(\d+)\)$/,
+  );
+  if (!matched) throw new Error(`unexpected or() expression: ${expression}`);
+  const [, op, createdAt, id] = matched;
+  const sign = op === 'gt' ? 1 : -1;
+  return (row) => {
+    const byTime = compareValues('created_at', row.created_at, createdAt) * sign;
+    if (byTime > 0) return true;
+    return byTime === 0 && compareValues('id', row.id, id) * sign > 0;
+  };
+}
+
 function mockCreateLookClient() {
   return {
     from: (table: string) => {
       const filters: Array<(row: Row) => boolean> = [];
       let columns: string[] = [];
-      let descBy: string | null = null;
+      const orders: Array<{ col: string; ascending: boolean }> = [];
       let limit: number | null = null;
       let headOnly = false;
       const run = (): Row[] => {
         let rows = (mockTables[table] ?? []).filter((row) => filters.every((match) => match(row)));
-        if (descBy) {
-          const key = descBy;
-          rows = [...rows].sort((a, b) => String(b[key]).localeCompare(String(a[key])));
+        if (orders.length > 0) {
+          rows = [...rows].sort((a, b) => {
+            for (const { col, ascending } of orders) {
+              const diff = compareValues(col, a[col], b[col]);
+              if (diff !== 0) return ascending ? diff : -diff;
+            }
+            return 0;
+          });
         }
         if (limit !== null) rows = rows.slice(0, limit);
         return rows.map((row) => Object.fromEntries(columns.map((col) => [col, row[col]])));
@@ -50,7 +75,11 @@ function mockCreateLookClient() {
           return query;
         },
         order: (col: string, opts?: { ascending?: boolean }) => {
-          if (opts?.ascending === false) descBy = col;
+          orders.push({ col, ascending: opts?.ascending !== false });
+          return query;
+        },
+        or: (expression: string) => {
+          filters.push(matchAdjacentExpression(expression));
           return query;
         },
         limit: (n: number) => {

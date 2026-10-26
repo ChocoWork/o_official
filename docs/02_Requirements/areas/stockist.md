@@ -989,7 +989,7 @@ anon・authenticated の `stockists` の TRUNCATE・TRIGGER・REFERENCES・MAINT
 | 出どころ | OWASP ASVS 4.0.3 V8.2.1。`docs/05_Quality/reviews/code/2026-04-29-stockist-review-addendum.md` |
 | 優先度 | MUST |
 
-管理の取扱店の窓口の応答は、成功・失敗・回数の制限の 429・503 のどれにも `Cache-Control: private, no-store` を付ける。今のコードは満たさない。
+管理の取扱店の窓口の応答は、成功・失敗・回数の制限の 429・503 のどれにも `Cache-Control: private, no-store` を付ける。各 route の `export` を共有の包み `withNoStore`（`src/lib/http/no-store.ts`）で返す形にして、2026-10-26 に満たした（ADR-0266）。`proxy.ts` が route に届く前に返す Origin の 403 には付かない（波 3）。
 
 ### SEC-STOCKIST-010-AC-01 管理の応答に no-store が付く
 
@@ -1111,11 +1111,11 @@ PUT・PATCH・DELETE は、変わった行が0件の時は 404 を返し、成�
 | 出どころ | OWASP ASVS 4.0.3 V7.4.1（当てはめは推定）。`docs/05_Quality/reviews/code/2026-04-29-stockist-review-addendum.md` |
 | 優先度 | SHOULD |
 
-検証の誤りは決まった誤りの文（と必要なら項目の名前）だけを返す。本文が JSON でない時は 400 を返す。サーバーの記録には誤りの種類と code だけを書き、例外や DB の誤りを丸ごと渡さない。AC-01・AC-02 と、窓口の中の DB の誤りの記録（`{ code }`）は 2026-10-26 に満たした（以前は `details` に zod の内訳を返し、壊れた JSON は 500 だった）。各 route の外側の `catch` の記録（例外を丸ごと渡す）は、波 1-C の `safe-error.ts` で直すまで満たさない。
+検証の誤りは決まった誤りの文（と必要なら項目の名前）だけを返す。本文が JSON でない時は 400 を返す。サーバーの記録には誤りの種類と code だけを書き、例外や DB の誤りを丸ごと渡さない。AC-01・AC-02 と、窓口の中の DB の誤りの記録（`{ code }`）は 2026-10-26 に満たした（以前は `details` に zod の内訳を返し、壊れた JSON は 500 だった）。各 route の外側の `catch` の記録と公開の取り出し（`getPublicStockists`）の記録も、`describeErrorForLog`（`src/lib/logging/safe-error.ts`）で名前と符号だけにして、2026-10-26 に満たした。
 
 - 検証の誤りは 400 `{ error: 'Invalid request', fields: [誤りのあった項目の名前（重複なし）] }`。`details`・`fieldErrors`・`formErrors`・入力の値は含めない（`toInvalidStockistResponse`、IMPL-STOCKIST-149）
 - 壊れた JSON（と JSON の `null`）は 400 `{ error: 'Invalid request' }` と、結果 `failure`・`detail='Invalid JSON'` の監査 1 行にする。表には触らない
-- DB の誤りの記録は `console.error('Failed to ...:', { code })` にし、Supabase の誤りの本文を渡さない。窓口の外側の `catch` の記録は今までどおり（例外のまま。満たさない残り。波 1-C の `safe-error.ts` で直す）
+- DB の誤りの記録は `console.error('Failed to ...:', { code })` にし、Supabase の誤りの本文を渡さない。窓口の外側の `catch` と公開の取り出しの記録は `describeErrorForLog` で `{ name, code }` だけにし、例外や Supabase の誤りの `message`・`details`・`hint`・`stack` を渡さない
 
 ### SEC-STOCKIST-014-AC-01 検証の誤りの応答に制約の中身が出ない
 

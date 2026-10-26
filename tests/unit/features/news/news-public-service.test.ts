@@ -3,6 +3,7 @@ import {
   getPublishedNewsCount,
   getPublishedNewsDetailById,
   getPublishedNewsNavigation,
+  NewsFetchError,
 } from '@/features/news/services/public';
 import { createPublicClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { signNewsImageFields } from '@/lib/storage/news-images';
@@ -34,8 +35,8 @@ function makeClient(result: QueryResult) {
       return builder;
     });
   }
-  builder.single = jest.fn(() => {
-    calls.push(['single']);
+  builder.maybeSingle = jest.fn(() => {
+    calls.push(['maybeSingle']);
     return Promise.resolve(result);
   });
   builder.then = (resolve: (value: QueryResult) => unknown, reject: (reason: unknown) => unknown) =>
@@ -138,12 +139,46 @@ describe('getPublishedNews', () => {
     expect(mockedCreateServiceRoleClient).not.toHaveBeenCalled();
   });
 
-  it('DD-NEWS-003 DB の失敗で data が null なら空の配列を返す', async () => {
+  it('DD-NEWS-003 DB の error は NewsFetchError（code つき）で reject し、記録は { name, code } だけで message を含まない（SEC-NEWS-020）', async () => {
+    const { client } = makeClient({
+      data: null,
+      error: { code: '42501', message: 'permission denied for table news_articles' },
+    });
+    mockedCreatePublicClient.mockResolvedValue(client);
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const failure = await getPublishedNews().catch((e: unknown) => e);
+
+      expect(failure).toBeInstanceOf(NewsFetchError);
+      expect((failure as NewsFetchError).code).toBe('42501');
+      expect((failure as NewsFetchError).message).toBe('Failed to fetch published news');
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      expect(consoleSpy.mock.calls[0][1]).toEqual({ name: 'UnknownError', code: '42501' });
+      expect(JSON.stringify(consoleSpy.mock.calls)).not.toContain('permission denied');
+      expect(mockedSignNewsImageFields).not.toHaveBeenCalled();
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it('DD-NEWS-003 error に code が無ければ NewsFetchError の code は null', async () => {
     const { client } = makeClient({ data: null, error: { message: 'db down' } });
+    mockedCreatePublicClient.mockResolvedValue(client);
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await expect(getPublishedNews()).rejects.toMatchObject({ name: 'NewsFetchError', code: null });
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it('DD-NEWS-003 data が null で error も無ければ空の配列を返す', async () => {
+    const { client } = makeClient({ data: null, error: null });
     mockedCreatePublicClient.mockResolvedValue(client);
 
     await expect(getPublishedNews()).resolves.toEqual([]);
-    expect(mockedSignNewsImageFields).not.toHaveBeenCalled();
   });
 
   it('DD-NEWS-003 記事は公開の client だけで読む（公開の道は service role を持たない）', async () => {
@@ -179,7 +214,7 @@ describe('getPublishedNewsCount', () => {
     expect(mockedCreateServiceRoleClient).not.toHaveBeenCalled();
   });
 
-  it('DD-NEWS-033 error があれば console.error を1回出して 0 を返す', async () => {
+  it('DD-NEWS-033 error があれば { name, code } だけを console.error に1回出して 0 を返す', async () => {
     const error = { message: 'db down' };
     const { client } = makeClient({ count: 3, error });
     mockedCreatePublicClient.mockResolvedValue(client);
@@ -188,7 +223,10 @@ describe('getPublishedNewsCount', () => {
     try {
       await expect(getPublishedNewsCount()).resolves.toBe(0);
       expect(consoleSpy).toHaveBeenCalledTimes(1);
-      expect(consoleSpy).toHaveBeenCalledWith('Failed to count published news:', error);
+      expect(consoleSpy).toHaveBeenCalledWith('Failed to count published news:', {
+        name: 'UnknownError',
+        code: null,
+      });
     } finally {
       consoleSpy.mockRestore();
     }
@@ -216,7 +254,7 @@ describe('getPublishedNewsDetailById', () => {
       ['select', 'id, title, published_date, category, content, detailed_content'],
       ['eq', 'status', 'published'],
       ['eq', 'id', '5'],
-      ['single'],
+      ['maybeSingle'],
     ]);
   });
 
@@ -248,12 +286,44 @@ describe('getPublishedNewsDetailById', () => {
     ]);
   });
 
-  it('DD-NEWS-031 data が null（error あり）なら null を返し、署名を呼ばない', async () => {
-    const { client } = makeClient({ data: null, error: { message: 'not found' } });
+  it.each(['abc', '0', '01', '1.5', '-1', '1234567890123456789', ''])(
+    'DD-NEWS-031 bigint の形でない id "%s" は DB を呼ばず null を返す（SEC-NEWS-012）',
+    async (id) => {
+      const { client, from } = makeClient({ data: row, error: null });
+      mockedCreatePublicClient.mockResolvedValue(client);
+
+      await expect(getPublishedNewsDetailById(id)).resolves.toBeNull();
+      expect(from).not.toHaveBeenCalled();
+    },
+  );
+
+  it('DD-NEWS-031 行が無い（data が null で error も無い）時は null を返す', async () => {
+    const { client } = makeClient({ data: null, error: null });
     mockedCreatePublicClient.mockResolvedValue(client);
 
-    await expect(getPublishedNewsDetailById('abc')).resolves.toBeNull();
+    await expect(getPublishedNewsDetailById('5')).resolves.toBeNull();
     expect(mockedSignNewsImageFields).not.toHaveBeenCalled();
+  });
+
+  it('DD-NEWS-031 error は NewsFetchError で reject し、記録は { name, code } だけにする（SEC-NEWS-020）', async () => {
+    const { client } = makeClient({
+      data: null,
+      error: { code: 'PGRST301', message: 'JWT expired for secret-user' },
+    });
+    mockedCreatePublicClient.mockResolvedValue(client);
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const failure = await getPublishedNewsDetailById('5').catch((e: unknown) => e);
+
+      expect(failure).toBeInstanceOf(NewsFetchError);
+      expect((failure as NewsFetchError).code).toBe('PGRST301');
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      expect(consoleSpy.mock.calls[0][1]).toEqual({ name: 'UnknownError', code: 'PGRST301' });
+      expect(JSON.stringify(consoleSpy.mock.calls)).not.toContain('secret-user');
+    } finally {
+      consoleSpy.mockRestore();
+    }
   });
 
   it('DD-NEWS-031 data が undefined でも null を返す', async () => {
@@ -325,8 +395,29 @@ describe('getPublishedNewsNavigation', () => {
     ]);
   });
 
-  it('DD-NEWS-032 data が null なら前後とも null', async () => {
-    const { client } = makeClient({ data: null, error: { message: 'db down' } });
+  it('DD-NEWS-032 error は前後とも null で返し、{ name, code } だけを1回記録する（前後だけ握る）', async () => {
+    const { client } = makeClient({
+      data: null,
+      error: { code: '57014', message: 'canceling statement due to timeout' },
+    });
+    mockedCreatePublicClient.mockResolvedValue(client);
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await expect(getPublishedNewsNavigation('2')).resolves.toEqual({
+        prevArticle: null,
+        nextArticle: null,
+      });
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      expect(consoleSpy.mock.calls[0][1]).toEqual({ name: 'UnknownError', code: '57014' });
+      expect(JSON.stringify(consoleSpy.mock.calls)).not.toContain('timeout');
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it('DD-NEWS-032 data が null で error も無ければ前後とも null', async () => {
+    const { client } = makeClient({ data: null, error: null });
     mockedCreatePublicClient.mockResolvedValue(client);
 
     await expect(getPublishedNewsNavigation('2')).resolves.toEqual({

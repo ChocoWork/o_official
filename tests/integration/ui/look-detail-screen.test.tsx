@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import LookDetailPage, { generateMetadata } from '@/app/look/[id]/page';
+import { LookFetchError } from '@/lib/look/server';
 
 type Row = Record<string, unknown>;
 type RecordedCall = [string, ...unknown[]];
@@ -10,6 +11,26 @@ let mockTables: Record<string, Row[]> = {};
 let mockFailTables: string[] = [];
 const mockQueries: RecordedCall[][] = [];
 
+function compareValues(col: string, a: unknown, b: unknown): number {
+  if (col === 'created_at') return Date.parse(String(a)) - Date.parse(String(b));
+  return Number(a) - Number(b);
+}
+
+// 前後の取り出しの .or() の文字（時刻は二重引用符で囲む）を、行の絞りに直す。形が違えば落とす
+function matchAdjacentExpression(expression: string): (row: Row) => boolean {
+  const matched = expression.match(
+    /^created_at\.(gt|lt)\."([^"]+)",and\(created_at\.eq\."\2",id\.\1\.(\d+)\)$/,
+  );
+  if (!matched) throw new Error(`unexpected or() expression: ${expression}`);
+  const [, op, createdAt, id] = matched;
+  const sign = op === 'gt' ? 1 : -1;
+  return (row) => {
+    const byTime = compareValues('created_at', row.created_at, createdAt) * sign;
+    if (byTime > 0) return true;
+    return byTime === 0 && compareValues('id', row.id, id) * sign > 0;
+  };
+}
+
 function mockCreateLookClient() {
   return {
     from: (table: string) => {
@@ -17,14 +38,19 @@ function mockCreateLookClient() {
       mockQueries.push(calls);
       const filters: Array<(row: Row) => boolean> = [];
       let columns: string[] = [];
-      let descBy: string | null = null;
+      const orders: Array<{ col: string; ascending: boolean }> = [];
       let limit: number | null = null;
       let headOnly = false;
       const run = (): Row[] => {
         let rows = (mockTables[table] ?? []).filter((row) => filters.every((match) => match(row)));
-        if (descBy) {
-          const key = descBy;
-          rows = [...rows].sort((a, b) => String(b[key]).localeCompare(String(a[key])));
+        if (orders.length > 0) {
+          rows = [...rows].sort((a, b) => {
+            for (const { col, ascending } of orders) {
+              const diff = compareValues(col, a[col], b[col]);
+              if (diff !== 0) return ascending ? diff : -diff;
+            }
+            return 0;
+          });
         }
         if (limit !== null) rows = rows.slice(0, limit);
         return rows.map((row) => Object.fromEntries(columns.map((col) => [col, row[col]])));
@@ -55,7 +81,12 @@ function mockCreateLookClient() {
         },
         order: (col: string, opts?: { ascending?: boolean }) => {
           calls.push(['order', col, opts]);
-          if (opts?.ascending === false) descBy = col;
+          orders.push({ col, ascending: opts?.ascending !== false });
+          return query;
+        },
+        or: (expression: string) => {
+          calls.push(['or', expression]);
+          filters.push(matchAdjacentExpression(expression));
           return query;
         },
         limit: (n: number) => {
@@ -202,18 +233,66 @@ describe('look detail screen', () => {
     expect(screen.getByText('Layered knit and coat')).toBeInTheDocument();
   });
 
-  it('SCR-LOOK-004 公開の LOOK を新しい順に全部取って位置を探し、件数の上限を付けない', async () => {
-    await renderDetail('30');
+  it('SCR-LOOK-004 現在の LOOK は1件で取り、前後は前後の1件ずつだけを取る（公開の全件を取らない）', async () => {
+    await renderDetail('20');
 
     const lookQueries = mockQueries.filter((calls) => calls.some((call) => call[0] === 'from' && call[1] === 'looks'));
-    expect(lookQueries).toHaveLength(1);
-    expect(lookQueries[0]).toEqual(
-      expect.arrayContaining([
-        ['eq', 'status', 'published'],
-        ['order', 'created_at', { ascending: false }],
-      ]),
-    );
-    expect(lookQueries[0].some((call) => call[0] === 'limit')).toBe(false);
+    expect(lookQueries).toHaveLength(3);
+    const detail = lookQueries.filter((calls) => calls.some((call) => call[0] === 'maybeSingle' && calls.some((c) => c[0] === 'eq' && c[1] === 'id')));
+    expect(detail).toHaveLength(1);
+    const adjacent = lookQueries.filter((calls) => calls.some((call) => call[0] === 'or'));
+    expect(adjacent).toHaveLength(2);
+    for (const calls of adjacent) {
+      expect(calls).toEqual(expect.arrayContaining([['select', 'id,theme'], ['eq', 'status', 'published'], ['limit', 1]]));
+    }
+    // 説明文を含む取り出しは現在の LOOK の1回だけ
+    expect(lookQueries.filter((calls) => calls.some((call) => call[0] === 'select' && String(call[1]).includes('theme_description')))).toHaveLength(1);
+  });
+
+  it('SCR-LOOK-004 公開の LOOK が 100 件を超えても、最も古い LOOK の詳細は開き、説明文と前だけのナビが出る', async () => {
+    mockTables.looks = Array.from({ length: 130 }, (_, index) => {
+      const id = index + 1;
+      return {
+        id,
+        season_year: 2026,
+        season_type: 'SS',
+        theme: `Bulk ${id}`,
+        theme_description: `Bulk description ${id}`,
+        image_urls: [],
+        created_at: new Date(Date.UTC(2000, 0, 1, 0, id)).toISOString(),
+        status: 'published',
+      };
+    });
+    mockTables.look_items = [];
+
+    await renderDetail('1');
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Bulk 1' })).toBeInTheDocument();
+    expect(screen.getByText('Bulk description 1')).toBeInTheDocument();
+    const nav = desktopNav();
+    expect(within(nav).getByRole('link', { name: 'Previous look: Bulk 2' })).toHaveAttribute('href', '/look/2');
+    expect(within(nav).queryByRole('link', { name: /Next look/ })).not.toBeInTheDocument();
+  });
+
+  it('SCR-LOOK-004 作成時刻が同じ LOOK は id の大きい側を新しい側として前後に並べる', async () => {
+    const sameTime = '2026-01-01T00:00:00Z';
+    mockTables.looks = [5, 6, 7].map((id) => ({
+      id,
+      season_year: 2026,
+      season_type: 'SS',
+      theme: `Tie ${id}`,
+      theme_description: '',
+      image_urls: [],
+      created_at: sameTime,
+      status: 'published',
+    }));
+    mockTables.look_items = [];
+
+    await renderDetail('6');
+
+    const nav = desktopNav();
+    expect(within(nav).getByRole('link', { name: 'Previous look: Tie 7' })).toHaveAttribute('href', '/look/7');
+    expect(within(nav).getByRole('link', { name: 'Next look: Tie 5' })).toHaveAttribute('href', '/look/5');
   });
 
   it('SCR-LOOK-004 説明文が空の時は空白1文字の段落を残す', async () => {
@@ -361,7 +440,7 @@ describe('look detail screen', () => {
   });
 
   it('SCR-LOOK-004 非公開・無い・数でない id は見出し「Look not found」だけを出し、中身を出さない', async () => {
-    for (const id of ['40', '999', 'abc']) {
+    for (const id of ['40', '999', 'abc', '1e3', '0']) {
       const { container, unmount } = await renderDetail(id);
 
       expect(screen.getByRole('heading', { level: 1, name: 'Look not found' })).toBeInTheDocument();
@@ -372,13 +451,48 @@ describe('look detail screen', () => {
     }
   });
 
-  it('SCR-LOOK-004 LOOK の取り出しに失敗した時も、無い時と同じ「Look not found」の画面にする', async () => {
+  it('SCR-LOOK-004 LOOK の取り出しに失敗した時は「Look not found」にせず、ページが投げて誤りの画面に任せる', async () => {
     mockFailTables = ['looks'];
 
-    await renderDetail('30');
+    await expect(LookDetailPage(paramsOf('30'))).rejects.toBeInstanceOf(LookFetchError);
+  });
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Look not found' })).toBeInTheDocument();
-    expect(screen.queryByText('Winter Layers')).not.toBeInTheDocument();
+  it('SCR-LOOK-004 前後の取り出しだけが失敗しても、LOOK 本体は開き、前後を無効の表示にする', async () => {
+    // 前後の問い合わせ（or を使うもの）だけを失敗にする。LOOK 本体の問い合わせはそのまま通す
+    let failNext = 0;
+    const { createPublicClient } = jest.requireMock('@/lib/supabase/server') as { createPublicClient: jest.Mock };
+    createPublicClient.mockImplementation(async () => {
+      const client = mockCreateLookClient();
+      return {
+        from: (table: string) => {
+          const query = client.from(table) as Record<string, unknown>;
+          const originalOr = query.or as (expression: string) => unknown;
+          query.or = (expression: string) => {
+            originalOr(expression);
+            failNext += 1;
+            const failing: Record<string, unknown> = {
+              ...query,
+              order: () => failing,
+              limit: () => failing,
+              maybeSingle: async () => ({ data: null, error: { code: '57014', message: 'timeout' } }),
+            };
+            return failing;
+          };
+          return query;
+        },
+      };
+    });
+
+    try {
+      await renderDetail('20');
+    } finally {
+      createPublicClient.mockImplementation(async () => mockCreateLookClient());
+    }
+
+    expect(failNext).toBe(2);
+    expect(screen.getByRole('heading', { level: 1, name: 'Spring Light' })).toBeInTheDocument();
+    expect(within(desktopNav()).queryByRole('link', { name: /Previous look|Next look/ })).not.toBeInTheDocument();
+    expect(within(desktopNav()).getByRole('link', { name: 'Look list' })).toHaveAttribute('href', '/look');
   });
 
   it('SCR-LOOK-004 メタの title は「<テーマ> | LOOK | Le Fil des Heures」、description は説明文、OG の画像は1枚目の署名つき URL にする', async () => {

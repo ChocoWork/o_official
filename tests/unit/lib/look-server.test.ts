@@ -1,7 +1,10 @@
 import {
+  getAdjacentPublishedLooks,
   getPublishedLookById,
+  getPublishedLookList,
   getPublishedLooks,
   getPublishedLooksCount,
+  LookFetchError,
 } from "@/lib/look/server";
 import {
   createPublicClient,
@@ -35,6 +38,7 @@ type Builder = {
   order: jest.Mock;
   limit: jest.Mock;
   in: jest.Mock;
+  or: jest.Mock;
   maybeSingle: jest.Mock;
   then: (
     resolve: (value: QueryResult) => unknown,
@@ -65,6 +69,7 @@ function createBuilder(table: string): Builder {
   builder.order = chain("order");
   builder.limit = chain("limit");
   builder.in = chain("in");
+  builder.or = chain("or");
   builder.maybeSingle = jest.fn(() => {
     calls.push(["maybeSingle", []]);
     return Promise.resolve(results[table]);
@@ -93,6 +98,12 @@ function lookRow(id: number, overrides: Record<string, unknown> = {}) {
     created_at: `2026-01-0${id}T00:00:00Z`,
     ...overrides,
   };
+}
+
+function listRow(id: number, overrides: Record<string, unknown> = {}) {
+  const { theme_description: _omitted, ...row } = lookRow(id, overrides);
+  void _omitted;
+  return row;
 }
 
 function itemRow(id: number) {
@@ -151,42 +162,43 @@ describe("getPublishedLooks", () => {
 
     const looks = buildersFor("looks")[0];
     expect(callsOf(looks, "select")).toEqual([
-      [
-        "id,season_year,season_type,theme,theme_description,image_urls,created_at",
-      ],
+      ["id,season_year,season_type,theme,image_urls,created_at"],
     ]);
     expect(callsOf(looks, "eq")).toEqual([["status", "published"]]);
     expect(callsOf(looks, "order")).toEqual([
       ["created_at", { ascending: false }],
+      ["id", { ascending: false }],
     ]);
     expect(callsOf(looks, "limit")).toEqual([[8]]);
   });
 
-  it("DD-LOOK-003 limit が 0 でも数なので limit(0) を付ける", async () => {
+  it.each([
+    [1000, 100],
+    [100, 100],
+    [0, 100],
+    [-1, 100],
+    [Number.NaN, 100],
+    [undefined, 100],
+    [1, 1],
+  ])("DD-LOOK-003 limit %p は %p 件に丸める", async (input, expected) => {
     results.looks = { data: [], error: null };
 
-    await getPublishedLooks(0);
+    await getPublishedLooks(input);
 
-    expect(callsOf(buildersFor("looks")[0], "limit")).toEqual([[0]]);
+    expect(callsOf(buildersFor("looks")[0], "limit")).toEqual([[expected]]);
   });
 
-  it("DD-LOOK-003 limit を渡さなければ limit を呼ばない", async () => {
-    results.looks = { data: [], error: null };
-
-    await getPublishedLooks();
-
-    expect(buildersFor("looks")[0].limit).not.toHaveBeenCalled();
-  });
-
-  it("DD-LOOK-003 looks の取り出しが失敗したら記録して空の配列を返す", async () => {
-    const error = { message: "boom" };
-    results.looks = { data: null, error };
+  it("DD-LOOK-003 looks の取り出しが失敗したら名前と符号だけ記録して空の配列を返す", async () => {
+    results.looks = {
+      data: null,
+      error: { code: "42501", message: "permission denied for table looks" },
+    };
 
     await expect(getPublishedLooks()).resolves.toEqual([]);
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "Failed to fetch published looks:",
-      error,
+      { name: "UnknownError", code: "42501" },
     );
     expect(buildersFor("look_items")).toHaveLength(0);
   });
@@ -198,7 +210,7 @@ describe("getPublishedLooks", () => {
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "Failed to fetch published looks:",
-      null,
+      { name: "UnknownError", code: null },
     );
     expect(buildersFor("look_items")).toHaveLength(0);
   });
@@ -213,68 +225,35 @@ describe("getPublishedLooks", () => {
     expect(mockSignLookImageUrls).not.toHaveBeenCalled();
   });
 
-  it("DD-LOOK-003 look_items の取り出しが失敗したら元の道筋のまま関連0件の LOOK を返す", async () => {
-    const error = { message: "look_items failed" };
-    results.looks = { data: [lookRow(1), lookRow(2)], error: null };
-    results.look_items = { data: null, error };
+  it("DD-LOOK-003 look_items の取り出しが失敗したら getPublishedLooks は空の配列を返し、署名していない道筋を返さない", async () => {
+    results.looks = { data: [listRow(1), listRow(2)], error: null };
+    results.look_items = {
+      data: null,
+      error: { code: "57014", message: "statement timeout" },
+    };
 
-    const looks = await getPublishedLooks();
+    await expect(getPublishedLooks()).resolves.toEqual([]);
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "Failed to fetch look items:",
-      error,
+      { name: "UnknownError", code: "57014" },
     );
-    expect(looks).toEqual([
-      {
-        id: 1,
-        seasonYear: 2026,
-        seasonType: "SS",
-        theme: "theme-1",
-        themeDescription: "desc-1",
-        imageUrls: ["raw-1-a", "raw-1-b"],
-        createdAt: "2026-01-01T00:00:00Z",
-        linkedItems: [],
-      },
-      expect.objectContaining({
-        id: 2,
-        imageUrls: ["raw-2-a", "raw-2-b"],
-        linkedItems: [],
-      }),
-    ]);
     expect(mockSignLookImageUrls).not.toHaveBeenCalled();
     expect(buildersFor("items")).toHaveLength(0);
   });
 
-  it("DD-LOOK-003 look_items の data が空でも元の道筋のまま関連0件で返す", async () => {
-    results.looks = { data: [lookRow(1)], error: null };
+  it("DD-LOOK-003 look_items の data が空で error も無い時も失敗として扱う", async () => {
+    results.looks = { data: [listRow(1)], error: null };
     results.look_items = { data: null, error: null };
 
-    const looks = await getPublishedLooks();
+    await expect(getPublishedLooks()).resolves.toEqual([]);
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      "Failed to fetch look items:",
-      null,
-    );
-    expect(looks).toHaveLength(1);
-    expect(looks[0].imageUrls).toEqual(["raw-1-a", "raw-1-b"]);
-    expect(looks[0].linkedItems).toEqual([]);
     expect(mockSignLookImageUrls).not.toHaveBeenCalled();
   });
 
-  it("DD-LOOK-003 元の道筋のまま返す時、image_urls が配列でなければ空にする", async () => {
-    results.looks = {
-      data: [lookRow(1, { image_urls: null })],
-      error: null,
-    };
-    results.look_items = { data: null, error: { message: "x" } };
-
-    const looks = await getPublishedLooks();
-
-    expect(looks[0].imageUrls).toEqual([]);
-  });
 
   it("DD-LOOK-003 関連が0件なら items を読まず、画像は署名する", async () => {
-    results.looks = { data: [lookRow(1)], error: null };
+    results.looks = { data: [listRow(1)], error: null };
     results.look_items = { data: [], error: null };
 
     const looks = await getPublishedLooks();
@@ -284,25 +263,22 @@ describe("getPublishedLooks", () => {
     expect(looks[0].imageUrls).toEqual(["signed-raw-1-a", "signed-raw-1-b"]);
   });
 
-  it("DD-LOOK-003 items の取り出しが失敗したら記録して関連0件のまま画像は署名する", async () => {
-    const error = { message: "items failed" };
-    results.looks = { data: [lookRow(1)], error: null };
+  it("DD-LOOK-003 items の取り出しが失敗したら getPublishedLooks は空の配列を返す（部分的に空で返さない）", async () => {
+    results.looks = { data: [listRow(1)], error: null };
     results.look_items = { data: [{ look_id: 1, item_id: 10 }], error: null };
-    results.items = { data: null, error };
+    results.items = { data: null, error: { code: "42501", message: "x" } };
 
-    const looks = await getPublishedLooks();
+    await expect(getPublishedLooks()).resolves.toEqual([]);
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "Failed to fetch linked items:",
-      error,
+      { name: "UnknownError", code: "42501" },
     );
-    expect(looks[0].linkedItems).toEqual([]);
-    expect(looks[0].imageUrls).toEqual(["signed-raw-1-a", "signed-raw-1-b"]);
     expect(mockSignItemImageUrl).not.toHaveBeenCalled();
   });
 
   it("DD-LOOK-003 items の data が空なら空として扱い関連0件にする", async () => {
-    results.looks = { data: [lookRow(1)], error: null };
+    results.looks = { data: [listRow(1)], error: null };
     results.look_items = { data: [{ look_id: 1, item_id: 10 }], error: null };
     results.items = { data: null, error: null };
 
@@ -314,7 +290,7 @@ describe("getPublishedLooks", () => {
   });
 
   it("DD-LOOK-003 公開の商品だけを付け、消えた・非公開の関連は飛ばす", async () => {
-    results.looks = { data: [lookRow(1)], error: null };
+    results.looks = { data: [listRow(1)], error: null };
     results.look_items = {
       data: [
         { look_id: 1, item_id: 10 },
@@ -335,7 +311,7 @@ describe("getPublishedLooks", () => {
   });
 
   it("DD-LOOK-003 商品の id を重ねずに集め、公開中だけで items を取る", async () => {
-    results.looks = { data: [lookRow(1), lookRow(2)], error: null };
+    results.looks = { data: [listRow(1), listRow(2)], error: null };
     results.look_items = {
       data: [
         { look_id: 1, item_id: 10 },
@@ -360,7 +336,7 @@ describe("getPublishedLooks", () => {
   });
 
   it("DD-LOOK-003 2つの LOOK に関連を LOOK ごとの並びで分ける", async () => {
-    results.looks = { data: [lookRow(1), lookRow(2)], error: null };
+    results.looks = { data: [listRow(1), listRow(2)], error: null };
     results.look_items = {
       data: [
         { look_id: 2, item_id: 11 },
@@ -379,7 +355,7 @@ describe("getPublishedLooks", () => {
 
   it("DD-LOOK-003 image_urls が配列でなければ空として署名する", async () => {
     results.looks = {
-      data: [lookRow(1, { image_urls: null })],
+      data: [listRow(1, { image_urls: null })],
       error: null,
     };
     results.look_items = { data: [], error: null };
@@ -391,7 +367,7 @@ describe("getPublishedLooks", () => {
   });
 
   it("DD-LOOK-003 署名した画像に置き換え、行を PublicLook の形に写す", async () => {
-    results.looks = { data: [lookRow(1), lookRow(2)], error: null };
+    results.looks = { data: [listRow(1), listRow(2)], error: null };
     results.look_items = { data: [], error: null };
 
     const looks = await getPublishedLooks();
@@ -410,7 +386,6 @@ describe("getPublishedLooks", () => {
         seasonYear: 2026,
         seasonType: "SS",
         theme: "theme-1",
-        themeDescription: "desc-1",
         imageUrls: ["signed-raw-1-a", "signed-raw-1-b"],
         createdAt: "2026-01-01T00:00:00Z",
         linkedItems: [],
@@ -423,7 +398,7 @@ describe("getPublishedLooks", () => {
   });
 
   it("DD-LOOK-003 DB は匿名の client、署名は service role で行う", async () => {
-    results.looks = { data: [lookRow(1)], error: null };
+    results.looks = { data: [listRow(1)], error: null };
     results.look_items = { data: [], error: null };
 
     await getPublishedLooks();
@@ -447,14 +422,14 @@ describe("getPublishedLooksCount", () => {
   });
 
   it("DD-LOOK-004 数えるのに失敗したら記録して 0 を返す", async () => {
-    const error = { message: "count failed" };
+    const error = { code: "57014", message: "count failed" };
     results.looks = { count: null, error };
 
     await expect(getPublishedLooksCount()).resolves.toBe(0);
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "Failed to count published looks:",
-      error,
+      { name: "UnknownError", code: "57014" },
     );
   });
 
@@ -474,15 +449,22 @@ describe("getPublishedLooksCount", () => {
 });
 
 describe("getPublishedLookById", () => {
-  it("DD-LOOK-032 LOOK の取り出しが失敗したら記録して null を返す", async () => {
-    const error = { message: "look failed" };
-    results.looks = { data: null, error };
+  it("DD-LOOK-032 LOOK の取り出しが失敗したら名前と符号だけ記録して LookFetchError で reject する", async () => {
+    results.looks = {
+      data: null,
+      error: { code: "42501", message: "permission denied for table looks" },
+    };
 
-    await expect(getPublishedLookById(1)).resolves.toBeNull();
+    const rejected = await getPublishedLookById(1).catch((e: unknown) => e);
 
+    expect(rejected).toBeInstanceOf(LookFetchError);
+    expect((rejected as LookFetchError).code).toBe("42501");
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "Failed to fetch published look detail:",
-      error,
+      { name: "UnknownError", code: "42501" },
+    );
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain(
+      "permission denied",
     );
     expect(buildersFor("look_items")).toHaveLength(0);
   });
@@ -516,42 +498,28 @@ describe("getPublishedLookById", () => {
     expect(callsOf(lookItems, "eq")).toEqual([["look_id", 5]]);
   });
 
-  it("DD-LOOK-032 look_items の取り出しが失敗したら記録して関連0件の LOOK を返し、画像は署名する", async () => {
-    const error = { message: "look_items failed" };
+  it("DD-LOOK-032 look_items の取り出しが失敗したら LookFetchError で reject する（関連なしで返さない）", async () => {
     results.looks = { data: lookRow(1), error: null };
-    results.look_items = { data: null, error };
+    results.look_items = { data: null, error: { code: "57014", message: "x" } };
 
-    const look = await getPublishedLookById(1);
+    await expect(getPublishedLookById(1)).rejects.toBeInstanceOf(
+      LookFetchError,
+    );
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "Failed to fetch look items for detail view:",
-      error,
+      { name: "UnknownError", code: "57014" },
     );
-    expect(look).toEqual({
-      id: 1,
-      seasonYear: 2026,
-      seasonType: "SS",
-      theme: "theme-1",
-      themeDescription: "desc-1",
-      imageUrls: ["signed-raw-1-a", "signed-raw-1-b"],
-      createdAt: "2026-01-01T00:00:00Z",
-      linkedItems: [],
-    });
     expect(buildersFor("items")).toHaveLength(0);
   });
 
-  it("DD-LOOK-032 look_items の data が空なら記録して関連0件で返す", async () => {
+  it("DD-LOOK-032 look_items の data が空で error も無い時も LookFetchError で reject する", async () => {
     results.looks = { data: lookRow(1), error: null };
     results.look_items = { data: null, error: null };
 
-    const look = await getPublishedLookById(1);
-
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      "Failed to fetch look items for detail view:",
-      null,
+    await expect(getPublishedLookById(1)).rejects.toBeInstanceOf(
+      LookFetchError,
     );
-    expect(look?.linkedItems).toEqual([]);
-    expect(look?.imageUrls).toEqual(["signed-raw-1-a", "signed-raw-1-b"]);
   });
 
   it("DD-LOOK-032 関連が0件なら items を読まない", async () => {
@@ -565,19 +533,19 @@ describe("getPublishedLookById", () => {
     expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
 
-  it("DD-LOOK-032 items の取り出しが失敗したら記録して関連0件にする", async () => {
-    const error = { message: "items failed" };
+  it("DD-LOOK-032 items の取り出しが失敗したら LookFetchError で reject する", async () => {
     results.looks = { data: lookRow(1), error: null };
     results.look_items = { data: [{ look_id: 1, item_id: 10 }], error: null };
-    results.items = { data: null, error };
+    results.items = { data: null, error: { code: "42501", message: "x" } };
 
-    const look = await getPublishedLookById(1);
+    await expect(getPublishedLookById(1)).rejects.toBeInstanceOf(
+      LookFetchError,
+    );
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       "Failed to fetch linked items for detail view:",
-      error,
+      { name: "UnknownError", code: "42501" },
     );
-    expect(look?.linkedItems).toEqual([]);
     expect(mockSignItemImageUrl).not.toHaveBeenCalled();
   });
 
@@ -655,5 +623,175 @@ describe("getPublishedLookById", () => {
       createdAt: "2026-01-03T00:00:00Z",
       linkedItems: [linkedItem(10)],
     });
+  });
+});
+
+describe("getPublishedLookList", () => {
+  it("DD-LOOK-003 select は説明文を含まず、公開済みを created_at・id の降順で 100 件に切る", async () => {
+    results.looks = { data: [], error: null };
+
+    await getPublishedLookList();
+
+    const looks = buildersFor("looks")[0];
+    expect(callsOf(looks, "select")).toEqual([
+      ["id,season_year,season_type,theme,image_urls,created_at"],
+    ]);
+    expect(callsOf(looks, "eq")).toEqual([["status", "published"]]);
+    expect(callsOf(looks, "order")).toEqual([
+      ["created_at", { ascending: false }],
+      ["id", { ascending: false }],
+    ]);
+    expect(callsOf(looks, "limit")).toEqual([[100]]);
+  });
+
+  it("DD-LOOK-003 結果の各要素に themeDescription のキーが無く、価格つきの関連商品は残る", async () => {
+    results.looks = { data: [listRow(1), listRow(2)], error: null };
+    results.look_items = { data: [{ look_id: 1, item_id: 10 }], error: null };
+    results.items = { data: [itemRow(10)], error: null };
+
+    const looks = await getPublishedLookList();
+
+    expect(looks).toHaveLength(2);
+    for (const look of looks) {
+      expect(Object.keys(look)).not.toContain("themeDescription");
+    }
+    expect(looks[0].linkedItems).toEqual([linkedItem(10)]);
+    expect(looks[0].imageUrls).toEqual(["signed-raw-1-a", "signed-raw-1-b"]);
+  });
+
+  it("DD-LOOK-003 looks が error なら LookFetchError（符号つき）で reject し、記録に message を含めない", async () => {
+    results.looks = {
+      data: null,
+      error: { code: "42501", message: "permission denied for table looks" },
+    };
+
+    const rejected = await getPublishedLookList().catch((e: unknown) => e);
+
+    expect(rejected).toBeInstanceOf(LookFetchError);
+    expect((rejected as LookFetchError).code).toBe("42501");
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+    expect(consoleErrorSpy.mock.calls[0][1]).toEqual({
+      name: "UnknownError",
+      code: "42501",
+    });
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain(
+      "permission denied",
+    );
+  });
+
+  it("DD-LOOK-003 look_items が error でも reject する（部分的に空で返さない）", async () => {
+    results.looks = { data: [listRow(1)], error: null };
+    results.look_items = { data: null, error: { code: "57014", message: "x" } };
+
+    await expect(getPublishedLookList()).rejects.toBeInstanceOf(LookFetchError);
+  });
+
+  it("DD-LOOK-003 items が error でも reject する", async () => {
+    results.looks = { data: [listRow(1)], error: null };
+    results.look_items = { data: [{ look_id: 1, item_id: 10 }], error: null };
+    results.items = { data: null, error: { code: "42501", message: "x" } };
+
+    await expect(getPublishedLookList()).rejects.toBeInstanceOf(LookFetchError);
+  });
+});
+
+describe("getAdjacentPublishedLooks", () => {
+  const current = { id: 5, createdAt: "2026-06-05T12:00:00+00:00" };
+
+  it("DD-LOOK-032 前後それぞれ、公開済みだけから id・theme を同じ並びの境目で 1 件ずつ取る", async () => {
+    results.looks = { data: null, error: null };
+
+    await getAdjacentPublishedLooks(current);
+
+    expect(buildersFor("looks")).toHaveLength(2);
+    const [prev, next] = buildersFor("looks");
+    for (const builder of [prev, next]) {
+      expect(callsOf(builder, "select")).toEqual([["id,theme"]]);
+      expect(callsOf(builder, "eq")).toEqual([["status", "published"]]);
+      expect(callsOf(builder, "limit")).toEqual([[1]]);
+      expect(callsOf(builder, "maybeSingle")).toHaveLength(1);
+    }
+    expect(callsOf(prev, "or")).toEqual([
+      [
+        'created_at.gt."2026-06-05T12:00:00+00:00",and(created_at.eq."2026-06-05T12:00:00+00:00",id.gt.5)',
+      ],
+    ]);
+    expect(callsOf(prev, "order")).toEqual([
+      ["created_at", { ascending: true }],
+      ["id", { ascending: true }],
+    ]);
+    expect(callsOf(next, "or")).toEqual([
+      [
+        'created_at.lt."2026-06-05T12:00:00+00:00",and(created_at.eq."2026-06-05T12:00:00+00:00",id.lt.5)',
+      ],
+    ]);
+    expect(callsOf(next, "order")).toEqual([
+      ["created_at", { ascending: false }],
+      ["id", { ascending: false }],
+    ]);
+  });
+
+  it("DD-LOOK-032 匿名の client だけで読み、service role は使わない", async () => {
+    results.looks = { data: null, error: null };
+
+    await getAdjacentPublishedLooks(current);
+
+    expect(mockCreatePublicClient).toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+  });
+
+  it("DD-LOOK-032 取れた行は id・theme だけで返す", async () => {
+    results.looks = {
+      data: { id: 6, theme: "theme-6", theme_description: "secret" },
+      error: null,
+    };
+
+    const adjacent = await getAdjacentPublishedLooks(current);
+
+    expect(adjacent).toEqual({
+      prev: { id: 6, theme: "theme-6" },
+      next: { id: 6, theme: "theme-6" },
+    });
+  });
+
+  it("DD-LOOK-032 両方 null の行なら prev も next も null", async () => {
+    results.looks = { data: null, error: null };
+
+    await expect(getAdjacentPublishedLooks(current)).resolves.toEqual({
+      prev: null,
+      next: null,
+    });
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
+
+  it("DD-LOOK-032 片方の error は名前と符号だけ 1 回記録してその側を null にし、reject しない", async () => {
+    let call = 0;
+    const publicClient = {
+      from: jest.fn((table: string) => {
+        const builder = createBuilder(table);
+        call += 1;
+        const own = call;
+        builder.maybeSingle = jest.fn(() =>
+          Promise.resolve(
+            own === 1
+              ? { data: null, error: { code: "57014", message: "timeout" } }
+              : { data: { id: 4, theme: "theme-4" }, error: null },
+          ),
+        );
+        builders.push(builder);
+        return builder;
+      }),
+    };
+    mockCreatePublicClient.mockResolvedValue(publicClient);
+
+    const adjacent = await getAdjacentPublishedLooks(current);
+
+    expect(adjacent).toEqual({ prev: null, next: { id: 4, theme: "theme-4" } });
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+    expect(consoleErrorSpy.mock.calls[0][1]).toEqual({
+      name: "UnknownError",
+      code: "57014",
+    });
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain("timeout");
   });
 });

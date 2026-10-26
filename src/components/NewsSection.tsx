@@ -7,6 +7,7 @@
  * @remarks 部品では権限を確かめない。描くかどうかは親の管理画面が店長の役で決め、守りは窓口の認可と DB の RLS に置くため。
  * 切り替えと削除の後は表示を先に変えず一覧を読み直し、窓口が保存した状態だけを見せる。
  * 消した記事は戻せないので、削除は送る前に確かめのダイアログを挟む。
+ * 一覧の取得に失敗した時は「記事が無い」と見せず、失敗の文と再読み込みのボタンを出す。切り替えの後の読み直しに失敗した時は、前の一覧の上に同じ文を出す（SEC-NEWS-020）。
  */
 'use client';
 
@@ -32,6 +33,7 @@ type NewsArticle = {
 export default function NewsSection() {
   const [newsItems, setNewsItems] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const fetchNews = async () => {
     try {
@@ -43,8 +45,10 @@ export default function NewsSection() {
       }
       const json = await res.json();
       setNewsItems(json.data || []);
+      setLoadFailed(false);
     } catch (error) {
       console.error('Failed to load news:', error);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -98,12 +102,34 @@ export default function NewsSection() {
     return <div className="text-center py-12 font-acumin">読み込み中...</div>;
   }
 
+  const loadFailureNotice = loadFailed ? (
+    <div role="alert" className="text-center py-12 font-acumin">
+      <p className="text-red-600 mb-4">ニュース記事の取得に失敗しました</p>
+      <Button
+        onClick={() => {
+          setLoading(true);
+          void fetchNews();
+        }}
+        variant="secondary"
+        size="sm"
+        className="font-acumin"
+      >
+        再読み込み
+      </Button>
+    </div>
+  ) : null;
+
+  if (loadFailed && newsItems.length === 0) {
+    return loadFailureNotice;
+  }
+
   if (newsItems.length === 0) {
     return <div className="text-center py-12 text-[#474747] font-acumin">ニュース記事がありません</div>;
   }
 
   return (
     <div>
+      {loadFailureNotice}
       <div className="space-y-4">
         {newsItems.map((item) => (
           <Card key={item.id} className="flex items-center justify-between" size="md">

@@ -8,7 +8,7 @@ jest.mock('next/navigation', () => ({
   usePathname: () => '/',
 }));
 import { PublicLookGrid } from '@/features/look/components/PublicLookGrid';
-import type { PublicLook } from '@/lib/look/public';
+import type { PublicLookListItem } from '@/lib/look/public';
 
 jest.mock('next/image', () => ({
   __esModule: true,
@@ -40,13 +40,12 @@ jest.mock('@/components/ui/MultiSelect/MultiSelect', () => ({
   MultiSelect: () => <div data-testid="multi-select" />,
 }));
 
-function createLooks(count: number): PublicLook[] {
+function createLooks(count: number): PublicLookListItem[] {
   return Array.from({ length: count }, (_, index) => ({
     id: index + 1,
     seasonYear: 2026,
     seasonType: 'SS',
     theme: `Theme ${index + 1}`,
-    themeDescription: `Theme description ${index + 1}`,
     imageUrls: ['/placeholder.png'],
     createdAt: new Date().toISOString(),
     linkedItems: [],

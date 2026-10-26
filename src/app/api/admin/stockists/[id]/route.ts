@@ -8,12 +8,15 @@
  * 読みと変更で権限を分け、変更は認可・回数の制限・CSRF の token の順に確かめる。回数の制限を認可の後に呼ぶので、認可で断った要求は数えない。これは SEC-STOCKIST-020 を満たさない（推定）。権限は読みと変更で分ける（SEC-STOCKIST-006）。
  * 1 件の読みは内部の列を除いた 8 列だけ返す（SEC-STOCKIST-009）。壊れた JSON は 500 でなく 400、検証の誤りは項目の名前だけの固定の本文にする（SEC-STOCKIST-013・014）。
  * 更新・切り替え・削除は結果が 0 行なら 404 にして成功の監査を書かない。削除の監査には消した店の id・名前・住所・状態だけを残す（SEC-STOCKIST-013）。DB の誤りは符号だけを記録する。
+ * 認可の拒否・回数の制限・CSRF の拒否を含む全部の応答を、export で withNoStore に通して `Cache-Control: private, no-store` にし（SEC-STOCKIST-010）、外側の catch の記録は名前と符号だけにする（SEC-STOCKIST-014）。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
+import { withNoStore } from '@/lib/http/no-store';
+import { describeErrorForLog } from '@/lib/logging/safe-error';
 import {
   applyRotatedCsrfCookie,
   enforceAdminStockistMutationRateLimit,
@@ -41,7 +44,7 @@ function parseStockistId(id: string): number | null {
   return parsedId;
 }
 
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function getStockist(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const stockistId = parseStockistId(id);
@@ -73,12 +76,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     return NextResponse.json({ data }, { status: 200 });
   } catch (error) {
-    console.error('GET /api/admin/stockists/:id error:', error);
+    console.error('GET /api/admin/stockists/:id error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function putStockist(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const stockistId = parseStockistId(id);
@@ -200,12 +203,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     applyRotatedCsrfCookie(response, csrfResult);
     return response;
   } catch (error) {
-    console.error('PUT /api/admin/stockists/:id error:', error);
+    console.error('PUT /api/admin/stockists/:id error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function patchStockist(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const stockistId = parseStockistId(id);
@@ -320,12 +323,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     applyRotatedCsrfCookie(response, csrfResult);
     return response;
   } catch (error) {
-    console.error('PATCH /api/admin/stockists/:id error:', error);
+    console.error('PATCH /api/admin/stockists/:id error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+async function deleteStockist(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const stockistId = parseStockistId(id);
@@ -416,7 +419,23 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     applyRotatedCsrfCookie(response, csrfResult);
     return response;
   } catch (error) {
-    console.error('DELETE /api/admin/stockists/:id error:', error);
+    console.error('DELETE /api/admin/stockists/:id error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
+}
+
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  return withNoStore(await getStockist(request, context));
+}
+
+export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
+  return withNoStore(await putStockist(request, context));
+}
+
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  return withNoStore(await patchStockist(request, context));
+}
+
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  return withNoStore(await deleteStockist(request, context));
 }

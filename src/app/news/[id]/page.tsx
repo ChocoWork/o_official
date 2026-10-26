@@ -7,12 +7,14 @@
  * @remarks 一覧で選んだ分類を URL の category で受け取り前後と戻りのリンクに引き継ぐのは、詳細を挟んでも同じ絞り込みへ戻れるようにするため（FLOW-NEWS-001）。
  * 取り出しが非公開の記事を null にするので、無い記事と同じ 404 にして有無を知らせない（SEC-NEWS-001）。
  * 本文は Markdown や HTML として解釈せず文字のまま段落に分け、管理で書いた HTML を閲覧者の端末で動かさない（SEC-NEWS-013）。
+ * id が bigint の形でなければ DB を呼ばず 404 にし、題は固定の文にする（SEC-NEWS-012）。取り出しの失敗は投げ、誤りの画面（error.tsx）に任せて 404 と見分ける（SEC-NEWS-020）。
  */
 import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { categories } from "@/lib/news-data";
+import { isNewsId, resolveNewsCategory } from "@/features/news/lib/news-input";
 import { Button } from "@/components/ui/Button/Button";
 import { TagLabel } from "@/components/ui/TagLabel/TagLabel";
 import {
@@ -49,15 +51,6 @@ function resolveCategoryListParam(category: string | undefined): string | null {
   return [...new Set(parsed)].join(",");
 }
 
-function resolveCategory(
-  category: string | undefined,
-): (typeof categories)[number] {
-  const normalizedCategory = (category ?? "ALL").toUpperCase();
-  return categories.includes(normalizedCategory as (typeof categories)[number])
-    ? (normalizedCategory as (typeof categories)[number])
-    : "ALL";
-}
-
 function buildDescription(content: string): string {
   const normalized = content.replace(/\s+/g, " ").trim();
   if (normalized.length === 0) {
@@ -72,7 +65,9 @@ export async function generateMetadata({
   params,
 }: NewsDetailPageProps): Promise<Metadata> {
   const resolvedParams = await params;
-  const article = await getPublishedNewsDetailById(resolvedParams.id);
+  const article = isNewsId(resolvedParams.id)
+    ? await getPublishedNewsDetailById(resolvedParams.id)
+    : null;
 
   if (!article) {
     return {
@@ -96,7 +91,11 @@ export default async function NewsDetailPage({
   const persistedCategoryList = resolveCategoryListParam(
     resolvedSearchParams?.category,
   );
-  const activeCategory = resolveCategory(resolvedSearchParams?.category);
+  const activeCategory = resolveNewsCategory(resolvedSearchParams?.category);
+
+  if (!isNewsId(resolvedParams.id)) {
+    notFound();
+  }
 
   const article = await getPublishedNewsDetailById(resolvedParams.id, {
     category: activeCategory,

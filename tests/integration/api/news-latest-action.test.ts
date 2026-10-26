@@ -79,10 +79,16 @@ describe('Server Action getLatestNews 最新の公開済みの記事', () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
-  it('API-NEWS-008 DB の失敗では空の配列を返す', async () => {
-    setupClients({ data: null, error: { message: 'db down' } });
+  it('API-NEWS-008 DB の失敗では空の配列にせず NewsFetchError で投げる（SEC-NEWS-020）', async () => {
+    setupClients({ data: null, error: { code: '42501', message: 'db down' } });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    await expect(getLatestNews()).resolves.toEqual([]);
+    try {
+      await expect(getLatestNews()).rejects.toMatchObject({ name: 'NewsFetchError', code: '42501' });
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('db down');
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('API-NEWS-008 client を作れない時は例外をそのまま呼び元に返す', async () => {

@@ -56,6 +56,7 @@ function deferred<T>() {
 }
 
 const EMPTY_MESSAGE = 'プレビュー対象の検索結果は見つかりませんでした。';
+const FIXED_SENTENCE = '入力した語に関連する結果をホーム上で即時プレビューしています。';
 
 describe('SearchHomePreview', () => {
   let consoleErrorSpy: jest.SpyInstance;
@@ -128,8 +129,48 @@ describe('SearchHomePreview', () => {
     expect(screen.getByRole('link', { name: 'VIEW ALL RESULTS' })).toHaveAttribute('href', '/search?q=a%20b');
     expect(screen.getByText('PREVIEW')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'Search Preview' })).toBeInTheDocument();
-    expect(screen.getByText('「a b」に関連する結果をホーム上で即時プレビューしています。')).toBeInTheDocument();
+    expect(screen.getByText(FIXED_SENTENCE)).toBeInTheDocument();
     expect(screen.queryByText(EMPTY_MESSAGE)).not.toBeInTheDocument();
+  });
+
+  it('DD-SEARCH-003 説明の文は固定で、どの p にも検索語を含めず、語は「検索した語」の枠の dd だけに出す', async () => {
+    setQuery('coat 本日休業のお知らせ');
+    fetchMock.mockResolvedValue(okResponse(payload([result('item', '1')])));
+
+    const { container } = render(<SearchHomePreview />);
+
+    await screen.findByText('item-1-title');
+    const fixed = screen.getAllByText(FIXED_SENTENCE);
+    expect(fixed).toHaveLength(1);
+    expect(fixed[0].tagName).toBe('P');
+    for (const paragraph of Array.from(container.querySelectorAll('p'))) {
+      expect(paragraph.textContent).not.toContain('本日休業');
+    }
+    const box = screen.getByTestId('search-preview-term');
+    expect(box.tagName).toBe('DL');
+    expect(box.querySelector('dt')?.textContent).toBe('検索した語');
+    expect(box.querySelector('dd')?.textContent).toBe('coat 本日休業のお知らせ');
+  });
+
+  it('DD-SEARCH-003 検索語の HTML は枠の中でも文字として出し、要素にしない', async () => {
+    setQuery('<b>x</b>');
+    fetchMock.mockResolvedValue(okResponse(payload([result('item', '1')])));
+
+    const { container } = render(<SearchHomePreview />);
+
+    await screen.findByText('item-1-title');
+    expect(screen.getByTestId('search-preview-term').querySelector('dd')?.textContent).toBe('<b>x</b>');
+    expect(container.querySelector('b')).toBeNull();
+  });
+
+  it('DD-SEARCH-003 0件でも固定の文と「検索した語」の枠を出す', async () => {
+    setQuery('none');
+
+    render(<SearchHomePreview />);
+
+    expect(await screen.findByText(EMPTY_MESSAGE)).toBeInTheDocument();
+    expect(screen.getByText(FIXED_SENTENCE)).toBeInTheDocument();
+    expect(screen.getByTestId('search-preview-term').querySelector('dd')?.textContent).toBe('none');
   });
 
   it('DD-SEARCH-003 3種とも0件なら見つかりませんでしたの文を出し、カードは出さない', async () => {
@@ -149,18 +190,19 @@ describe('SearchHomePreview', () => {
     const { container } = render(<SearchHomePreview />);
 
     await waitFor(() => expect(consoleErrorSpy).toHaveBeenCalledTimes(1));
-    expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch home search preview:', expect.any(Error));
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch home search preview');
+    expect(consoleErrorSpy.mock.calls[0]).toHaveLength(1);
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('DD-SEARCH-003 fetch が reject しても何も描かず console.error に書く', async () => {
+  it('DD-SEARCH-003 fetch が reject しても何も描かず、Error を渡さず固定の文字だけ console.error に書く', async () => {
     setQuery('coat');
-    const failure = new Error('network down');
-    fetchMock.mockRejectedValue(failure);
+    fetchMock.mockRejectedValue(new Error('network down'));
 
     const { container } = render(<SearchHomePreview />);
 
-    await waitFor(() => expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch home search preview:', failure));
+    await waitFor(() => expect(consoleErrorSpy).toHaveBeenCalledTimes(1));
+    expect(consoleErrorSpy.mock.calls[0]).toEqual(['Failed to fetch home search preview']);
     expect(container).toBeEmptyDOMElement();
   });
 

@@ -131,8 +131,6 @@ test.describe('FR-NEWS-SEC-003 NEWS の HTTP の守りと回数の制限', () =>
   });
 
   test(`SEC-NEWS-006-AC-01 /api/news の 200 の応答の Cache-Control に no-store か private が含まれる`, async ({ request }) => {
-    test.fail(true, 'SEC-NEWS-006 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
-
     const response = await getNews(request, uniqueForwardedFor());
     expect(response.status()).toBe(200);
 
@@ -191,7 +189,6 @@ test.describe('FR-NEWS-SEC-003 NEWS の HTTP の守りと回数の制限', () =>
   });
 
   test(`SEC-NEWS-006-AC-02 /api/news の 429 の応答の Cache-Control に no-store が含まれる`, async ({ request }) => {
-    test.fail(true, 'SEC-NEWS-006 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     test.setTimeout(180_000);
     await ensureRoomInRateLimitWindow();
 

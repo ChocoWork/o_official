@@ -1,10 +1,10 @@
 /**
  * FR-SEARCH-022 公開の検索の回数の制限（窓口・送り元・締め出し）と、画面の要らない呼び出し
- * 対応: SEC-SEARCH-005-AC-01 / SEC-SEARCH-005-AC-02 / SEC-SEARCH-006-AC-01 / SEC-SEARCH-020-AC-01 / SEC-SEARCH-017-AC-01
+ * 対応: SEC-SEARCH-005-AC-01 / SEC-SEARCH-005-AC-02 / SEC-SEARCH-006-AC-01 / SEC-SEARCH-020-AC-01 / SEC-SEARCH-020-AC-02 / SEC-SEARCH-017-AC-01
  *
  * 道具立て
  * - 窓口の回数の制限（005-AC-01・006-AC-01）は Playwright の request（HTTP）で本番ビルドの応答を読む。
- *   005-AC-02 と 020-AC-01 は頁をブラウザで開く。3つの幅（mobile 390・tablet 768・desktop 1280）は試験の頭で当て、
+ *   005-AC-02・020-AC-01 は頁をブラウザで開く。020-AC-02 は外のオリジンの要求を request fixture で送り、ブラウザで開くのはその閲覧者のプレビューだけ。3つの幅（mobile 390・tablet 768・desktop 1280）は試験の頭で当て、
  *   AC ごとに幅ごとの試験を1本ずつ流す。
  * - 回数の制限の枠は search:public（120 / 600秒）・suggest:public（200 / 600秒）・search:preview（20 / 600秒）。
  *   送り元ごとに数えるので、127.0.0.1 から出る検索系の試験（ほかの FR-SEARCH-* ・ホームの /?q= の試験）と枠を共有する。
@@ -19,7 +19,7 @@
  * - 枠は「送り元 × 10分（時計の10分きざみ）」。途中で枠が切り替わると数えが0に戻るので、切れ目が近いときは切り替わるのを条件で待つ。
  * - 送り元は今のコードでは x-forwarded-for の先頭の値。005-AC-01 は試験ごとに違う x-forwarded-for を付けて枠を分ける
  *   （SEC-SEARCH-006 が直って使わなくなると、全部が接続の送り元の1つの枠になり、消した直後なら同じ結果になる）。
- * - 006-AC-01・020-AC-01 は本番と同じ中継の構成が要る。手元では中継の見出しの付け方をまねる
+ * - 006-AC-01・020-AC-01 は本番と同じ中継の構成が要る（020-AC-01 は偽の送り元の側だけで、波 4 の rateLimit.ts の直しを待つ。020-AC-02 の外のオリジンの側は直った）。手元では中継の見出しの付け方をまねる
  *   （x-forwarded-for は中継が付け足した形、x-real-ip と x-vercel-forwarded-for は中継が付けた送り元）。
  * - ファイル内の試験は1つの worker で順に流す（describe の mode: 'default'）。赤の試験の後ろが「流れなかった」扱いにならないよう serial にはしない。
  * - HTTP だけの試験（005-AC-01・006-AC-01）は幅で結果が変わらないので 1 回だけ流す。画面を開く試験は 3 つの幅で流す。
@@ -213,7 +213,6 @@ test.describe('FR-SEARCH-022 公開の検索の回数の制限', () => {
     test(`SEC-SEARCH-005-AC-02 (${viewport.name}) 5文字を続けて打つと /api/suggest は5回より少なく、ALL から ITEM への切り替えで /api/search を呼び直さない`, async ({
       page,
     }) => {
-      test.fail(true, 'SEC-SEARCH-005 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
       await applyViewport(page, viewport);
 
       // 5文字を続けて打つ（/search を開いて、画面が動き出す = 最初の検索が返るのを待ってから打つ）
@@ -294,12 +293,11 @@ test.describe('FR-SEARCH-022 公開の検索の回数の制限', () => {
   });
 
   for (const viewport of viewports) {
-    test(`SEC-SEARCH-020-AC-01 (${viewport.name}) 他人の送り元を名乗った21回と外のオリジンからの21回の後も、その利用者の /?q= にプレビューが出る`, async ({
+    test(`SEC-SEARCH-020-AC-01 (${viewport.name}) 他人の送り元を名乗った21回の後も、その利用者の /?q= にプレビューが出る`, async ({
       page,
       request,
-      baseURL,
     }) => {
-      test.fail(true, 'SEC-SEARCH-020 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
+      test.fail(true, 'SEC-SEARCH-020 偽の送り元の側は今のコードは満たさない。rateLimit.ts（共有）の直しは波 4（docs/02_Requirements/areas/search.md）');
       test.setTimeout(180_000);
       await applyViewport(page, viewport);
       await ensureRoomInRateLimitWindow();
@@ -315,7 +313,7 @@ test.describe('FR-SEARCH-022 公開の検索の回数の制限', () => {
         return waiter;
       };
 
-      // 1) 攻撃者が、利用者 A の送り元を x-forwarded-for の先頭に書いて /api/search?preview=true を21回送る
+      // 攻撃者が、利用者 A の送り元を x-forwarded-for の先頭に書いて /api/search?preview=true を21回送る
       const victimIp = uniqueForwardedFor();
       const attackerIp = uniqueForwardedFor();
       const forged = await sendBurst(PREVIEW_LIMIT + 1, () =>
@@ -334,48 +332,64 @@ test.describe('FR-SEARCH-022 公開の検索の回数の制限', () => {
         .soft(page.getByRole('heading', { name: 'Search Preview' }), '送り元を名乗られた後も利用者 A の /?q= にプレビューが出る')
         .toBeVisible();
       await page.unroute(victimRoute);
+    });
+  }
 
-      // 2) 外のオリジンの頁から、同じ閲覧者の端末に /api/search?preview=true&q=x を21回読み込ませる
+  for (const viewport of viewports) {
+    test(`SEC-SEARCH-020-AC-02 (${viewport.name}) 外のオリジンの頁から21回読み込ませても 403 で、その閲覧者の /?q= にプレビューが出る`, async ({
+      page,
+      request,
+    }) => {
+      test.setTimeout(180_000);
+      await applyViewport(page, viewport);
+      await ensureRoomInRateLimitWindow();
       await resetSearchCounters();
-      const base = new URL(baseURL ?? 'http://localhost:3000');
-      const outside = new URL(base);
-      outside.hostname = base.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
-      const outsidePage = `${outside.origin}/attacker-page`;
-      await page.route(outsidePage, (route) =>
-        route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>outside</title>' }),
-      );
-      const loaded: Request[] = [];
-      const onLoadedRequest = (req: Request): void => {
-        const url = new URL(req.url());
-        if (url.origin === base.origin && url.pathname === '/api/search') {
-          loaded.push(req);
-        }
-      };
-      page.on('request', onLoadedRequest);
-      await page.goto(outsidePage);
-      const target = `${base.origin}/api/search?preview=true&q=x`;
-      await page.evaluate(
-        async ({ url, count }) => {
-          await Promise.allSettled(
-            Array.from({ length: count }, () => fetch(url, { mode: 'no-cors', cache: 'no-store' })),
-          );
-        },
-        { url: target, count: PREVIEW_LIMIT + 1 },
-      );
-      page.off('request', onLoadedRequest);
-      await page.unroute(outsidePage);
 
-      // 外のオリジンから送られた要求であることを確かめる（そうでなければ、この試験は何も確かめていない）
-      expect(loaded.length, '外のオリジンの頁から読み込ませた /api/search の回数').toBe(PREVIEW_LIMIT + 1);
-      for (const req of loaded) {
-        expect((await req.allHeaders())['sec-fetch-site'], '読み込ませた要求の Sec-Fetch-Site').toBe('cross-site');
+      const isPreviewCall = (url: string): boolean => {
+        const parsed = new URL(url);
+        return parsed.pathname === '/api/search' && parsed.searchParams.get('preview') === 'true';
+      };
+      const openHomePreview = async (): Promise<Response> => {
+        const waiter = page.waitForResponse((res) => isPreviewCall(res.url()));
+        await page.goto(`/?q=${SEARCH_TERM}`);
+        return waiter;
+      };
+
+      // 本番ビルドで外のオリジンの頁を開く手順を試したところ、その頁の要求の応答は 0 件しか捕まらず、req.allHeaders() にも
+      // sec-fetch-site が無かった。そのためブラウザの部分は使わず、ブラウザが付ける Sec-Fetch-Site: cross-site を
+      // request fixture（APIRequestContext）で自分で付けて送り、サーバーの契約（403 と枠を数えないこと）を確かめる
+      const victimIp = uniqueForwardedFor();
+      const crossSiteBodies: unknown[] = [];
+      const crossSiteStatuses = await sendBurst(PREVIEW_LIMIT + 1, async () => {
+        const response = await getApi(request, `/api/search?preview=true&q=${SEARCH_TERM}`, {
+          ...proxyHeaders(victimIp),
+          'sec-fetch-site': 'cross-site',
+        });
+        crossSiteBodies.push(await response.json());
+        return response;
+      });
+      // 全て 403 で断られる（GET の /api/search でその枝以外が返すのは 400・200・500・429）
+      expect(crossSiteStatuses.length, '外のオリジンとして送った回数').toBe(PREVIEW_LIMIT + 1);
+      for (const status of crossSiteStatuses) {
+        expect(status, '外のオリジンとして送った /api/search の応答の状態').toBe(403);
+      }
+      expect(crossSiteBodies.length, '外のオリジンとして送った応答の本文の数').toBe(PREVIEW_LIMIT + 1);
+      for (const body of crossSiteBodies) {
+        expect(body, '外のオリジンとして送った /api/search の応答の本文').toEqual({ error: 'Forbidden' });
       }
 
+      // 同じ閲覧者（送り元が victimIp）の /?q= にプレビューが出る＝403 が枠を数えていない
+      const victimRoute = '**/api/search**';
+      await page.route(victimRoute, async (route) => {
+        await route.continue({ headers: { ...route.request().headers(), ...proxyHeaders(victimIp) } });
+      });
       const viewerResponse = await openHomePreview();
-      expect.soft(viewerResponse.status(), '外のオリジンから読み込まされた後の閲覧者のプレビューの応答の状態').toBe(200);
-      await expect
-        .soft(page.getByRole('heading', { name: 'Search Preview' }), '外のオリジンから読み込まされた後も同じ閲覧者の /?q= にプレビューが出る')
-        .toBeVisible();
+      expect(viewerResponse.status(), '外のオリジンとして送られた後の閲覧者のプレビューの応答の状態').toBe(200);
+      await expect(
+        page.getByRole('heading', { name: 'Search Preview' }),
+        '外のオリジンとして送られた後も同じ閲覧者の /?q= にプレビューが出る',
+      ).toBeVisible();
+      await page.unroute(victimRoute);
     });
   }
 
@@ -383,7 +397,6 @@ test.describe('FR-SEARCH-022 公開の検索の回数の制限', () => {
     test(`SEC-SEARCH-017-AC-01 (${viewport.name}) 検索の関数が失敗した時、「検索結果を読み込めませんでした」が表示され「の検索結果はありません」は表示されない`, async ({
       page,
     }) => {
-      test.fail(true, 'SEC-SEARCH-017 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
       await applyViewport(page, viewport);
 
       await withSearchNewsRevoked(async () => {

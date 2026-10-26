@@ -508,8 +508,9 @@ describe('SearchPageClient', () => {
       setUrl('q=zzz&tab=item');
       rerender(<SearchPageClient />);
 
-      await waitFor(() => expect(calls('/api/search')).toHaveLength(2));
       await waitFor(() => expect(rows()).toHaveLength(8));
+      // タブを替えるだけでは取り直さない（SEC-SEARCH-005）
+      expect(calls('/api/search')).toHaveLength(1);
     });
   });
 
@@ -521,7 +522,7 @@ describe('SearchPageClient', () => {
 
       expect(await screen.findByRole('alert')).toHaveTextContent(LOAD_ERROR);
       expect(screen.getByText('0 RESULTS')).toBeInTheDocument();
-      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search results:', expect.any(Error));
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search results');
     });
 
     it('DD-SEARCH-002 取り出しが reject し q が無いなら、失敗の文と案内文が並ぶ', async () => {
@@ -632,7 +633,10 @@ describe('SearchPageClient', () => {
       await user.type(screen.getByRole('combobox'), 'co');
 
       await waitFor(() =>
-        expect(fetchMock).toHaveBeenCalledWith('/api/suggest?q=co', { cache: 'no-store' }),
+        expect(fetchMock).toHaveBeenCalledWith('/api/suggest?q=co', {
+          cache: 'no-store',
+          signal: expect.any(AbortSignal),
+        }),
       );
     });
 
@@ -641,7 +645,10 @@ describe('SearchPageClient', () => {
       render(<SearchPageClient />);
 
       await waitFor(() =>
-        expect(fetchMock).toHaveBeenCalledWith('/api/suggest?q=%20co', { cache: 'no-store' }),
+        expect(fetchMock).toHaveBeenCalledWith('/api/suggest?q=%20co', {
+          cache: 'no-store',
+          signal: expect.any(AbortSignal),
+        }),
       );
     });
 
@@ -664,7 +671,7 @@ describe('SearchPageClient', () => {
       await user.click(screen.getByRole('combobox'));
 
       await waitFor(() =>
-        expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search suggestions:', expect.any(Error)),
+        expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search suggestions'),
       );
       expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
     });
@@ -1113,6 +1120,172 @@ describe('SearchPageClient', () => {
       } finally {
         setItemSpy.mockRestore();
       }
+    });
+  });
+
+  describe('候補の待ちと打ち切り・検索の取り直し（SEC-SEARCH-005）', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    async function flush() {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+
+    async function advance(ms: number) {
+      await act(async () => {
+        jest.advanceTimersByTime(ms);
+      });
+      await flush();
+    }
+
+    async function typeValue(input: HTMLElement, value: string) {
+      await act(async () => {
+        fireEvent.change(input, { target: { value } });
+      });
+    }
+
+    function suggestSignals(): AbortSignal[] {
+      return fetchMock.mock.calls
+        .filter((call) => call[0].startsWith('/api/suggest'))
+        .map((call) => call[1]?.signal as AbortSignal);
+    }
+
+    it('DD-SEARCH-002 5文字を20ミリ秒間隔で打つと、止まって250ミリ秒たつまで候補を呼ばず、最後の語で1回だけ呼ぶ', async () => {
+      render(<SearchPageClient />);
+      await flush();
+      const input = screen.getByRole('combobox');
+
+      for (const value of ['c', 'co', 'coa', 'coat', 'coats']) {
+        await typeValue(input, value);
+        await advance(20);
+      }
+      await advance(200);
+      expect(calls('/api/suggest')).toHaveLength(0);
+
+      await advance(50);
+      expect(calls('/api/suggest')).toEqual(['/api/suggest?q=coats']);
+    });
+
+    it('DD-SEARCH-002 入力を空にすると待たずに候補が消え、候補を呼ばない', async () => {
+      suggestByQuery = { co: ok({ suggestions: [suggestion('Coat')] }) };
+      render(<SearchPageClient />);
+      await flush();
+      const input = screen.getByRole('combobox');
+      await act(async () => {
+        fireEvent.focus(input);
+      });
+      await typeValue(input, 'co');
+      await advance(250);
+      expect(screen.getByRole('option')).toHaveTextContent(/Coat/);
+
+      await typeValue(input, '');
+
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+      await advance(1000);
+      expect(calls('/api/suggest')).toHaveLength(1);
+    });
+
+    it('DD-SEARCH-002 新しい入力で前の候補の要求を打ち切り、遅れて返った前の応答で候補を上書きしない', async () => {
+      const first = deferred<FakeResponse>();
+      suggestByQuery = {
+        c: () => first.promise,
+        co: ok({ suggestions: [suggestion('Coat')] }),
+      };
+      render(<SearchPageClient />);
+      await flush();
+      const input = screen.getByRole('combobox');
+      await act(async () => {
+        fireEvent.focus(input);
+      });
+
+      await typeValue(input, 'c');
+      await advance(250);
+      const [firstSignal] = suggestSignals();
+      expect(firstSignal.aborted).toBe(false);
+
+      await typeValue(input, 'co');
+      expect(firstSignal.aborted).toBe(true);
+      await advance(250);
+      expect(screen.getByRole('option')).toHaveTextContent(/Coat/);
+
+      await act(async () => {
+        first.resolve({ ok: true, json: async () => ({ suggestions: [suggestion('Stale')] }) });
+        await first.promise;
+      });
+
+      expect(screen.queryByText('Stale')).not.toBeInTheDocument();
+      expect(screen.getByRole('option')).toHaveTextContent(/Coat/);
+    });
+
+    it('DD-SEARCH-002 打ち切られた要求の失敗は console.error に書かない', async () => {
+      fetchMock.mockImplementation((url, init) => {
+        if (url === '/api/suggest?q=c') {
+          return new Promise<FakeResponse>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          });
+        }
+        return url.startsWith('/api/suggest') ? ok({ suggestions: [] })() : ok(payload())();
+      });
+      render(<SearchPageClient />);
+      await flush();
+      const input = screen.getByRole('combobox');
+
+      await typeValue(input, 'c');
+      await advance(250);
+      await typeValue(input, 'co');
+      await advance(250);
+
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it('DD-SEARCH-002 アンマウントで待ち中の候補を呼ばない', async () => {
+      const { unmount } = render(<SearchPageClient />);
+      await flush();
+
+      await typeValue(screen.getByRole('combobox'), 'c');
+      unmount();
+      await advance(1000);
+
+      expect(calls('/api/suggest')).toHaveLength(0);
+    });
+
+    it('DD-SEARCH-002 アンマウントで呼んだ後の候補の要求を打ち切る', async () => {
+      suggestByQuery = { co: never() };
+      const { unmount } = render(<SearchPageClient />);
+      await flush();
+      await typeValue(screen.getByRole('combobox'), 'co');
+      await advance(250);
+      const [signal] = suggestSignals();
+      expect(signal.aborted).toBe(false);
+
+      unmount();
+
+      expect(signal.aborted).toBe(true);
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it('DD-SEARCH-002 タブを ALL から ITEM に替えても /api/search を取り直さず、語を替えると1回増えて URL の tab は最新のタブ', async () => {
+      setUrl('q=zzz&tab=all');
+      const { rerender } = render(<SearchPageClient />);
+      await flush();
+      expect(calls('/api/search')).toEqual(['/api/search?q=zzz&tab=all']);
+
+      setUrl('q=zzz&tab=item');
+      rerender(<SearchPageClient />);
+      await flush();
+      expect(calls('/api/search')).toHaveLength(1);
+
+      setUrl('q=yyy&tab=item');
+      rerender(<SearchPageClient />);
+      await flush();
+      expect(calls('/api/search')).toEqual(['/api/search?q=zzz&tab=all', '/api/search?q=yyy&tab=item']);
     });
   });
 });

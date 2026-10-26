@@ -13,8 +13,8 @@
  * （待つのは expect.poll で、固定の sleep ではない）。Playwright の再試行は使わない。
  *
  * 現行のコードが満たさない AC（文のとおりに書いてあり、緩めない。コードが直るまで test.fail で印を付ける）:
- * 010-AC-01（管理の応答に Cache-Control が付かない）、012-AC-01（x-forwarded-for をそのまま監査の ip に入れる）。
- * 009・011・013・014 は 2026-10-26 に満たしたので test.fail を外してある。007 は元から満たす。
+ * 012-AC-01（x-forwarded-for をそのまま監査の ip に入れる）。
+ * 009・010・011・013・014 は 2026-10-26 に満たしたので test.fail を外してある（010 は route の包み withNoStore）。007 は元から満たす。
  *
  * 作った利用者・session・監査の行は消さない（db reset で消える）。店舗の行だけ、公開の取扱店を数える別の試験に混ざらないよう終わりに消す
  * （行は status='private' で作り、公開の画面には出さない。007 の 21回目の PATCH は 'published' を送るが、429 で断られて private のまま）。
@@ -236,7 +236,6 @@ test.describe('FR-STOCKIST-015 管理の取扱店の窓口の振る舞い', () =
   });
 
   test('SEC-STOCKIST-010-AC-01 一覧・1件・無い id の1件の GET と、21回目の PATCH の 429 の Cache-Control に no-store と private が含まれる', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-STOCKIST-010 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
     await withScenario(request, baseURL, async (s) => {
       const list = await request.get(LIST_PATH, { headers: readHeaders(s) });
       expect(list.status()).toBe(200);

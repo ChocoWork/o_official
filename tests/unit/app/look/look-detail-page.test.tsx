@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 jest.mock('@/lib/look/server', () => ({
   getPublishedLooks: jest.fn(),
   getPublishedLookById: jest.fn(),
+  getAdjacentPublishedLooks: jest.fn(),
 }));
 
 type MockLinkedItem = {
@@ -89,10 +90,15 @@ jest.mock('@/features/look/components/LookImageGallery', () => ({
 }));
 
 import LookDetailPage, { generateMetadata } from '@/app/look/[id]/page';
-import { getPublishedLookById, getPublishedLooks } from '@/lib/look/server';
+import {
+  getAdjacentPublishedLooks,
+  getPublishedLookById,
+  getPublishedLooks,
+} from '@/lib/look/server';
 
 const mockGetPublishedLooks = getPublishedLooks as jest.Mock;
 const mockGetPublishedLookById = getPublishedLookById as jest.Mock;
+const mockGetAdjacentPublishedLooks = getAdjacentPublishedLooks as jest.Mock;
 
 function makeLook(id: number, overrides: Record<string, unknown> = {}) {
   return {
@@ -109,6 +115,24 @@ function makeLook(id: number, overrides: Record<string, unknown> = {}) {
 }
 
 const THREE_LOOKS = [makeLook(30), makeLook(20), makeLook(10)];
+
+/** 新しい順に並べた LOOK の一覧から、1件の取り出しと前後の1件ずつの取り出しの返り値を作る。 */
+function setLooks(looks: Array<{ id: number; theme: string }>) {
+  mockGetPublishedLookById.mockImplementation(async (id: number) =>
+    looks.find((look) => look.id === id) ?? null,
+  );
+  mockGetAdjacentPublishedLooks.mockImplementation(
+    async (current: { id: number }) => {
+      const index = looks.findIndex((look) => look.id === current.id);
+      const pick = (look?: { id: number; theme: string }) =>
+        look ? { id: look.id, theme: look.theme } : null;
+      return {
+        prev: index > 0 ? pick(looks[index - 1]) : null,
+        next: index >= 0 ? pick(looks[index + 1]) : null,
+      };
+    },
+  );
+}
 
 function paramsOf(id: string) {
   return { params: Promise.resolve({ id }) };
@@ -129,6 +153,27 @@ describe('LookDetailPage generateMetadata', () => {
     const metadata = await generateMetadata(paramsOf('abc'));
 
     expect(mockGetPublishedLookById).not.toHaveBeenCalled();
+    expect(metadata).toEqual({
+      title: 'Look not found | Le Fil des Heures',
+      description: '指定されたルックは見つかりませんでした。',
+    });
+  });
+
+  it.each(['1e3', '0', '-1', '1.5', ' 1', '01'])(
+    'DD-LOOK-030 正の整数でない id %p は取り出さずに Look not found のメタを返す',
+    async (id) => {
+      const metadata = await generateMetadata(paramsOf(id));
+
+      expect(mockGetPublishedLookById).not.toHaveBeenCalled();
+      expect(metadata.title).toBe('Look not found | Le Fil des Heures');
+    },
+  );
+
+  it('DD-LOOK-030 1件の取り出しが reject しても投げず、固定の題と説明を返す', async () => {
+    mockGetPublishedLookById.mockRejectedValue(new Error('SECRET_DB_DETAIL'));
+
+    const metadata = await generateMetadata(paramsOf('5'));
+
     expect(metadata).toEqual({
       title: 'Look not found | Le Fil des Heures',
       description: '指定されたルックは見つかりませんでした。',
@@ -185,13 +230,14 @@ describe('LookDetailPage generateMetadata', () => {
 describe('LookDetailPage 本体', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetPublishedLooks.mockResolvedValue(THREE_LOOKS);
+    setLooks(THREE_LOOKS);
   });
 
   describe('見つからない', () => {
-    it('DD-LOOK-030 全件の中に同じ id が無ければ見出し Look not found だけを返す', async () => {
+    it('DD-LOOK-030 同じ id の LOOK が無ければ見出し Look not found だけを返し、前後を取りに行かない', async () => {
       await renderPage('999');
 
+      expect(mockGetAdjacentPublishedLooks).not.toHaveBeenCalled();
       expect(screen.getByRole('heading', { level: 1, name: 'Look not found' })).toBeInTheDocument();
       expect(screen.queryByTestId('gallery')).not.toBeInTheDocument();
       expect(screen.queryByTestId('look-detail-bottom-nav')).not.toBeInTheDocument();
@@ -199,27 +245,54 @@ describe('LookDetailPage 本体', () => {
       expect(screen.queryByRole('link')).not.toBeInTheDocument();
     });
 
-    it('DD-LOOK-030 数でない id は見つからず Look not found を返す', async () => {
-      await renderPage('abc');
+    it.each(['abc', '1e3', '0', '-1', '1.5'])(
+      'DD-LOOK-030 正の整数でない id %p は1件も前後も取り出さず Look not found を返す',
+      async (id) => {
+        await renderPage(id);
 
-      expect(screen.getByRole('heading', { name: 'Look not found' })).toBeInTheDocument();
-      expect(screen.queryByTestId('gallery')).not.toBeInTheDocument();
+        expect(mockGetPublishedLookById).not.toHaveBeenCalled();
+        expect(mockGetAdjacentPublishedLooks).not.toHaveBeenCalled();
+        expect(screen.getByRole('heading', { name: 'Look not found' })).toBeInTheDocument();
+        expect(screen.queryByTestId('gallery')).not.toBeInTheDocument();
+      },
+    );
+
+    it('DD-LOOK-030 1件の取り出しが reject したらページも reject し、誤りの画面に任せる', async () => {
+      mockGetPublishedLookById.mockRejectedValue(new Error('LookFetchError'));
+
+      await expect(LookDetailPage(paramsOf('20'))).rejects.toThrow('LookFetchError');
+      expect(mockGetAdjacentPublishedLooks).not.toHaveBeenCalled();
     });
 
     it('DD-LOOK-030 取り出しが空の配列でも Look not found を返す', async () => {
-      mockGetPublishedLooks.mockResolvedValue([]);
+      setLooks([]);
 
       await renderPage('30');
 
       expect(screen.getByRole('heading', { name: 'Look not found' })).toBeInTheDocument();
     });
 
-    it('DD-LOOK-030 全件の取り出しは getPublishedLooks を引数なしで1回呼ぶ', async () => {
+    it('DD-LOOK-030 現在の LOOK を1件で取り、前後は現在の id と作成時刻で1回取り、一覧は取り直さない', async () => {
       await renderPage('20');
 
-      expect(mockGetPublishedLooks).toHaveBeenCalledTimes(1);
-      expect(mockGetPublishedLooks).toHaveBeenCalledWith();
-      expect(mockGetPublishedLookById).not.toHaveBeenCalled();
+      expect(mockGetPublishedLookById).toHaveBeenCalledTimes(1);
+      expect(mockGetPublishedLookById).toHaveBeenCalledWith(20);
+      expect(mockGetAdjacentPublishedLooks).toHaveBeenCalledTimes(1);
+      expect(mockGetAdjacentPublishedLooks).toHaveBeenCalledWith({
+        id: 20,
+        createdAt: '2026-10-01T00:00:00Z',
+      });
+      expect(mockGetPublishedLooks).not.toHaveBeenCalled();
+    });
+
+    it('DD-LOOK-030 前後の取り出しが両方 null でもページは開き、説明文が出る', async () => {
+      mockGetAdjacentPublishedLooks.mockResolvedValue({ prev: null, next: null });
+
+      await renderPage('20');
+
+      expect(screen.getByText('Description 20')).toBeInTheDocument();
+      expect(screen.getByTestId('bottom-nav-prev')).toHaveAttribute('data-disabled', 'true');
+      expect(screen.getByTestId('bottom-nav-next')).toHaveAttribute('data-disabled', 'true');
     });
   });
 
@@ -279,7 +352,7 @@ describe('LookDetailPage 本体', () => {
     });
 
     it('DD-LOOK-030 1件だけの LOOK は前後とも薄い非リンクで、固定のナビも両方 disabled', async () => {
-      mockGetPublishedLooks.mockResolvedValue([makeLook(1)]);
+      setLooks([makeLook(1)]);
 
       await renderPage('1');
 
@@ -325,7 +398,7 @@ describe('LookDetailPage 本体', () => {
     });
 
     it('DD-LOOK-030 SS のシーズンも年と種別を空白で結んで出す', async () => {
-      mockGetPublishedLooks.mockResolvedValue([
+      setLooks([
         makeLook(3, { seasonYear: 2027, seasonType: 'SS' }),
       ]);
 
@@ -342,7 +415,7 @@ describe('LookDetailPage 本体', () => {
     });
 
     it('DD-LOOK-030 説明文が空なら空白1文字の段落を出す', async () => {
-      mockGetPublishedLooks.mockResolvedValue([makeLook(4, { themeDescription: '' })]);
+      setLooks([makeLook(4, { themeDescription: '' })]);
 
       const { container } = await renderPage('4');
 
@@ -355,7 +428,7 @@ describe('LookDetailPage 本体', () => {
 
     it('DD-LOOK-030 ギャラリーにテーマと画像の URL の並びを渡す', async () => {
       const urls = ['https://example.test/x.jpg', 'https://example.test/y.jpg'];
-      mockGetPublishedLooks.mockResolvedValue([
+      setLooks([
         makeLook(5, { theme: 'Gallery', imageUrls: urls }),
       ]);
 
@@ -367,7 +440,7 @@ describe('LookDetailPage 本体', () => {
     });
 
     it('DD-LOOK-030 テーマと説明文の HTML をタグのまま文字で出す', async () => {
-      mockGetPublishedLooks.mockResolvedValue([
+      setLooks([
         makeLook(6, { theme: '<b>x</b>', themeDescription: '<i>y</i>' }),
       ]);
 
@@ -389,7 +462,7 @@ describe('LookDetailPage 本体', () => {
     });
 
     it('DD-LOOK-030 関連商品があれば List に名前・分類・円の価格・画像・/item/<id> を渡す', async () => {
-      mockGetPublishedLooks.mockResolvedValue([
+      setLooks([
         makeLook(9, {
           linkedItems: [
             {
@@ -417,7 +490,7 @@ describe('LookDetailPage 本体', () => {
     });
 
     it('DD-LOOK-030 関連商品は渡された並びのまま複数出し、価格に小数を付けない', async () => {
-      mockGetPublishedLooks.mockResolvedValue([
+      setLooks([
         makeLook(9, {
           linkedItems: [
             { id: 2, name: 'B', category: 'TOPS', price: 980, imageUrl: 'b.jpg' },

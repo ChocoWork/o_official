@@ -71,7 +71,6 @@ test.describe('FR-SEARCH-019 検索の窓口の契約と見出し', () => {
   });
 
   test(`SEC-SEARCH-004-AC-01 制御文字を含む語は /api/search で 400 になる`, async ({ request }) => {
-    test.fail(true, 'SEC-SEARCH-004 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
     for (const q of ['a%00b', 'a%1Fb']) {
       const response = await request.get(`/api/search?q=${q}`);
       expect(response.status(), `/api/search?q=${q.slice(0, 8)}`).toBe(400);
@@ -96,17 +95,18 @@ test.describe('FR-SEARCH-019 検索の窓口の契約と見出し', () => {
   });
 
   test(`SEC-SEARCH-010-AC-01 200 と 400 の応答の Cache-Control に no-store と private が含まれる`, async ({ request }) => {
-    test.fail(true, 'SEC-SEARCH-010 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
     const tooLong = 'a'.repeat(101);
     const cases = [
       { url: '/api/search?q=a', status: 200 },
       { url: `/api/search?q=${tooLong}`, status: 400 },
+      { url: '/api/search?q=a', status: 403, headers: { 'sec-fetch-site': 'cross-site' } },
       { url: '/api/suggest?q=a', status: 200 },
       { url: `/api/suggest?q=${tooLong}`, status: 400 },
+      { url: '/api/suggest?q=a', status: 403, headers: { 'sec-fetch-site': 'cross-site' } },
     ];
 
-    for (const { url, status } of cases) {
-      const response = await request.get(url);
+    for (const { url, status, headers } of cases) {
+      const response = await request.get(url, { headers });
       expect(response.status(), url.slice(0, 24)).toBe(status);
       const cacheControl = (response.headers()['cache-control'] ?? '').toLowerCase();
       expect(cacheControl, url.slice(0, 24)).toContain('no-store');
@@ -157,7 +157,6 @@ test.describe('FR-SEARCH-019 検索の窓口の契約と見出し', () => {
   });
 
   test(`SEC-SEARCH-019-AC-01 /api/search の応答に x-search-duration-ms の見出しが無い`, async ({ request }) => {
-    test.fail(true, 'SEC-SEARCH-019 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
     const response = await request.get('/api/search?q=a');
     expect(response.status()).toBe(200);
     expect(response.headers()['x-search-duration-ms']).toBeUndefined();

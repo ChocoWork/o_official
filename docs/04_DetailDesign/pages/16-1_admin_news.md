@@ -4,7 +4,7 @@
 
 ## 概要
 
-管理画面でニュースの記事を一覧・作成・編集・公開の切り替え・削除する部品と窓口、記事の画像を署名つき URL にする関数、公開済みの記事を3件返す Server Action を、詳細設計の項目（`DD-NEWS-060`〜`068`）で書く。
+管理画面でニュースの記事を一覧・作成・編集・公開の切り替え・削除する部品と窓口、記事の画像を署名つき URL にする関数、公開済みの記事を3件返す Server Action、画像の中身の確かめ・保存名・後始末の関数を、詳細設計の項目（`DD-NEWS-060`〜`068`・`071`）で書く。
 中身は 2026-10-24 の作業ツリーのコードを読んで起こした今の動きで、ユーザーの確認を受けていないので全部「推定」にした。文書・要件とコードが食い違う所は決めずに今のコードの動きを書き、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せる。
 
 | ID | 題 | 単位 |
@@ -18,9 +18,10 @@
 | `DD-NEWS-066` | 最新の公開済みの記事3件の Server Action — 未使用（削除の判断待ち） | `src/app/actions/news.ts` の `getLatestNews` |
 | `DD-NEWS-067` | 画像の値から置き場の中の道を取り出す | `src/lib/storage/news-images.ts` の `extractNewsImageObjectPath` |
 | `DD-NEWS-068` | 画像の値を署名つき URL に置き換える | `src/lib/storage/news-images.ts` の `signNewsImageUrl`・`signNewsImageFields` |
+| `DD-NEWS-071` | 管理のニュースの画像の確かめ・保存名・後始末 | `src/features/news/services/admin-images.ts` の `prepareNewsImage`・`buildNewsImagePath`・`isOwnNewsImagePath`・`removeNewsImages` |
 
 - 結論: 管理の画面は全部が利用者の端末で動く部品で、画面では権限を確かめない。守りは窓口（`DD-NEWS-064`・`065`）の `authorizeAdminPermission`（session・DB の ACL の権限・aal2）と、利用者の JWT で通す DB の RLS に置く
-- 存在しない記事への PUT・PATCH・DELETE の応答、置き場の画像の後始末、署名に失敗した時の戻り値は、今のコードの動きをそのまま書いた。現状との差は SEC-NEWS-008・016・017・018 の項目に書き、この頁では上位に書かない
+- 署名に失敗した時の戻り値は、今のコードの動きをそのまま書いた。現状との差は SEC-NEWS-008 の項目に書き、この頁では上位に書かない。存在しない記事への PUT・PATCH・DELETE の応答、画像の中身の確かめ、置き場の画像の後始末は 2026-10-26 に直した（SEC-NEWS-016・017・018。DD-NEWS-071）
 - 単体テストは `NewsForm`・`NewsSection`（分類の表示だけ）・`news-images`（3件）にしかない。分岐を全部通すのに要るテストを各項目の「テスト観点」に挙げた
 
 ## 範囲と根拠
@@ -29,7 +30,7 @@
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の NEWS |
 | 上位の文書 | [NEWS の構造設計](../../03_BasicDesign/areas/news.md)（`ARC-`・`SCR-`・`FLOW-`・`STATE-`・`API-`・`DATA-NEWS-`）、[NEWS の要件](../../02_Requirements/areas/news.md)（`SEC-NEWS-`） |
-| 対象のコード | 「実装の単位」の表の10単位 |
+| 対象のコード | 「実装の単位」の表の単位（`src/features/news/services/admin-images.ts` の4つを含む） |
 | 引き継いだ文書 | [1.16 管理画面（ADMIN）詳細設計](16_admin.md) の `IMPL-ADMIN-003`（機能要件対応表の FR-ADMIN-003 の行）と `IMPL-ADMIN-NEWS-01`（実装タスク管理の ADMIN-01-004 の行）。元の文書は変えていない |
 | 調べた時点 | 2026-10-24 の作業ツリー。コードは読んだだけで、動かしての確かめはしていない |
 
@@ -60,6 +61,7 @@
 | `src/lib/storage/news-images.ts` | `extractNewsImageObjectPath` | DD-NEWS-067 |
 | `src/lib/storage/news-images.ts` | `signNewsImageUrl` | DD-NEWS-068 |
 | `src/lib/storage/news-images.ts` | `signNewsImageFields` | DD-NEWS-068 |
+| `src/features/news/services/admin-images.ts` | `prepareNewsImage`・`buildNewsImagePath`・`isOwnNewsImagePath`・`removeNewsImages` | DD-NEWS-071 |
 
 - 窓口のファイルは、中の GET・POST などが別々の契約でも、単位がファイルなので1つの `DD-` にまとめた。項目の本文で方法ごとに分けて書く
 - `news-images.ts` の3つは公開の一覧・詳細（`src/features/news/services/public.ts`）と検索（`src/features/search/services/search.service.ts`、範囲外）も使う。公開側の詳細設計は、この頁の `DD-NEWS-067`・`068` を参照し、同じ単位に別の `DD-` を作らない
@@ -80,7 +82,7 @@
 
 - 権限: 読む方法（GET）は `admin.news.read`、変える方法（POST・PUT・PATCH・DELETE）は `admin.news.manage`
 - 監査: 窓口のファイルの中の `logNewsAudit` が `logAudit` を呼ぶ。`resource` は `news_article`、`user_agent` は見出し `user-agent`（無ければ `null`）、IP は残さない（`src/app/api/admin/news/route.ts`、`src/app/api/admin/news/[id]/route.ts`）。GET は監査しない
-- 失敗の記録: DB・置き場の `error` と例外を `console.error` にそのまま渡す（SEC-NEWS-019）
+- 失敗の記録: DB・置き場の `error` と例外は、`describeErrorForLog`（`src/lib/logging/safe-error.ts`）で誤りの名前と符号だけにして `console.error` に渡す。`message`・詳細・ヒントは残さない（SEC-NEWS-019。2026-10-26）
 - 回数の制限は無い（SEC-NEWS-021）。CSRF は proxy の Origin の検査だけで、窓口は `requireCsrfOrDeny` を呼ばない（ARC-NEWS-004）
 
 ## 詳細設計
@@ -119,19 +121,20 @@ SCR-NEWS-003、FLOW-NEWS-002、STATE-NEWS-001（その上は FR-ADMIN-003、DRV-
 
 | 条件 | 動き |
 | --- | --- |
-| 一覧の応答が OK でない | 本文を JSON で読み（読めなければ `{}`）、記録して例外にし、catch で記録して一覧は空のまま。「ニュース記事がありません」を出す（取得の失敗と0件を分けない。SEC-NEWS-020） |
+| 一覧の応答が OK でない | 本文を JSON で読み（読めなければ `{}`）、記録して例外にし、catch で記録して失敗の印（`loadFailed`）を立てる。一覧が空なら `role="alert"` の「ニュース記事の取得に失敗しました」と「再読み込み」のボタンを出し、「ニュース記事がありません」は出さない（取得の失敗と0件を分ける。SEC-NEWS-020） |
 | 一覧の取り出しで例外 | 同上 |
 | 応答に `data` が無い | 空の配列にする |
 | PATCH が OK でない・例外 | 記録して `alert('ステータスの更新に失敗しました')`。読み直さない |
 | 削除の確かめで取り消す | 何も送らない |
 | DELETE が OK でない・例外 | 記録して `alert('記事の削除に失敗しました')`。読み直さない |
-| 切り替え・削除の後の読み直しに失敗 | 一覧取り出しの catch が握りつぶし、前の一覧のまま残る（変えたのに表示が変わらない、推定） |
+| 切り替え・削除の後の読み直しに失敗 | 前の一覧のまま残し、その上に同じ失敗の知らせ（`role="alert"` と「再読み込み」）を出す（変えたのに表示が変わらないことを知らせる） |
+| 「再読み込み」を押す | 「読み込み中...」にして取り直す。成功すれば失敗の印を消して一覧を出す |
 
 - 画像の出し方: 行の画像は署名つき URL を `next/image` に渡し、最適化の中継を通す。中継は `next.config.ts` の `remotePatterns` で `*.supabase.co` のどのプロジェクトの URL も通し（SEC-NEWS-023）、最適化した画像のキャッシュの長さ（`minimumCacheTTL`）の指定が無い（SEC-NEWS-004 の AC-02）。`next.config.ts` は範囲外の共有の設定
 
 #### 状態・永続化
 
-部品の state（`newsItems`・`loading`）だけを持つ。保存は窓口が行い、部品は先に表示を変えない（成功の後に読み直す）。
+部品の state（`newsItems`・`loading`・`loadFailed`）だけを持つ。保存は窓口が行い、部品は先に表示を変えない（成功の後に読み直す）。
 
 #### 認証認可
 
@@ -143,9 +146,11 @@ SCR-NEWS-003、FLOW-NEWS-002、STATE-NEWS-001（その上は FR-ADMIN-003、DRV-
 
 - 取り出しの間は「読み込み中...」が出る
 - 公開中の行と非公開の行で、バッジの文字・tone とボタンの文字（「非公開」「公開」）が変わる
-- 応答が OK でない時（本文が JSON の時と読めない時の両方）は「ニュース記事がありません」が出る
-- `clientFetch` が例外を投げた時も「ニュース記事がありません」が出る
-- 応答に `data` が無い時は「ニュース記事がありません」が出る
+- 応答が OK でない時（本文が JSON の時と読めない時の両方）は `role="alert"` の「ニュース記事の取得に失敗しました」が出て、「ニュース記事がありません」は出ない
+- `clientFetch` が例外を投げた時も同じ失敗の知らせが出る
+- 応答に `data` が無い時と、成功して 0 件の時は「ニュース記事がありません」が出て、失敗の知らせは出ない
+- 失敗の後に「再読み込み」を押すと取り直し、成功すれば一覧が出て失敗の知らせが消える
+- 切り替えの後の読み直しに失敗しても前の一覧は残り、その上に失敗の知らせが出る
 - 公開中の行の切り替えで `{status:'private'}`、非公開の行で `{status:'published'}` を PATCH し、成功で一覧を読み直す
 - PATCH が OK でない時と例外の時に「ステータスの更新に失敗しました」の `alert` が出る
 - 削除の確かめを取り消すと DELETE を送らない
@@ -308,7 +313,7 @@ SCR-NEWS-005、FLOW-NEWS-002（その上は FR-ADMIN-003、FREQ-252-REQ-02）
 | 条件 | 動き |
 | --- | --- |
 | URL に `id` が無い | 「記事IDの取得に失敗しました」を赤い文で出す |
-| URL の `id` が数でない（`..%2F..%2F<道>` など） | 確かめずに `/api/admin/news/<id>` の道に入れて GET を送り、保存では同じ道へ PUT を送る。道の `..` がたたまれると、同じオリジンの別の `/api` に Cookie と `x-csrf-token` 付きで届く（推定。今は確かめていない欠けで、SEC-NEWS-012。THR-NEWS-024） |
+| URL の `id` が記事の id の形（`isNewsId`。先頭が 0 でない 18 桁以下の数字）でない（`..%2F..%2F<道>`・`abc`・`0` など） | 窓口へ要求を送らず、フォームも出さず、「記事の読み込みに失敗しました」を赤い文で出す。通った `id` も `encodeURIComponent` を通して道に入れる（SEC-NEWS-012。THR-NEWS-024。2026-10-26） |
 | 応答が OK でない | 応答の `error` の文、無ければ（JSON で読めない時を含む）「記事の読み込みに失敗しました」 |
 | 取り出しの例外・応答の `data` が無い | 記録して「記事の読み込みに失敗しました」 |
 | 読み終えて値が無い | 何も描かない（今の流れでは通らない。食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節） |
@@ -332,14 +337,15 @@ client のページで、画面は守らない。読み出しは窓口が `admin
 - 成功すると、取り出した値と `image_url` を `NewsForm` に渡し、`submitUrl` が `/api/admin/news/<id>`、`submitMethod` が `PUT`
 - 応答が OK でない時、`error` があればその文、無い時と JSON で読めない時は「記事の読み込みに失敗しました」が出る
 - `clientFetch` の例外と、OK の応答に `data` が無い時に「記事の読み込みに失敗しました」が出る
-- `useParams` が数でない `id` を返す時も、確かめずに `clientFetch('/api/admin/news/<id>')` を呼ぶ（今の動きの記録。SEC-NEWS-012 に合わせて直す時はこのテストを変える）
+- `useParams` が記事の id の形でない値（`abc`・`..%2F..%2Fadmin%2Fusers`・`../../admin`・`0`・`007`・19 桁・`12/../13`・`12?x=1`）を返す時は、`clientFetch` を呼ばず、フォームも出さず、「記事の読み込みに失敗しました」が出る
+- 18 桁の数字の `id` は取り出しを送る
 
 ### DD-NEWS-064 管理の記事の一覧と作成の窓口
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | API-NEWS-002、API-NEWS-003、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、DATA-NEWS-001、DATA-NEWS-002、DATA-NEWS-004、DATA-NEWS-005、SEC-NEWS-015、SEC-NEWS-016 |
-| 根拠 | 非公開を含む一覧と記事の作成は、窓口で `admin.news.read`・`admin.news.manage` と aal2 を確かめ、表の操作も利用者の JWT で RLS に通して、窓口の確かめが崩れても DB が断るようにする（SEC-NEWS-015、ARC-NEWS-002、DATA-NEWS-002）。求める権限は DB の ACL の `admin.news.read`・`admin.news.manage` で、初めは店長だけが持つ（DATA-NEWS-005）。書き換えの送り元は、窓口に届く前に proxy の Origin の検査が確かめる（ARC-NEWS-004）。作成は表と置き場の両方を変えるので、成功も失敗も監査に残す（SEC-NEWS-016）。表に長さの制約が無いので入口で形を確かめ、画像は申告の種類と 5MB を確かめて拡張子を種類から決める（API-NEWS-003。中身の確かめが無いので SEC-NEWS-017 は上位にしない）。置き場は非公開なので、一覧の画像は署名つき URL に置き換えて返す（ARC-NEWS-003、DATA-NEWS-004） |
+| 上位 | API-NEWS-002、API-NEWS-003、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、DATA-NEWS-001、DATA-NEWS-002、DATA-NEWS-004、DATA-NEWS-005、SEC-NEWS-015、SEC-NEWS-016、SEC-NEWS-017、SEC-NEWS-018、SEC-NEWS-020 |
+| 根拠 | 非公開を含む一覧と記事の作成は、窓口で `admin.news.read`・`admin.news.manage` と aal2 を確かめ、表の操作も利用者の JWT で RLS に通して、窓口の確かめが崩れても DB が断るようにする（SEC-NEWS-015、ARC-NEWS-002、DATA-NEWS-002）。求める権限は DB の ACL の `admin.news.read`・`admin.news.manage` で、初めは店長だけが持つ（DATA-NEWS-005）。書き換えの送り元は、窓口に届く前に proxy の Origin の検査が確かめる（ARC-NEWS-004）。作成は表と置き場の両方を変えるので、成功も失敗も監査に残す（SEC-NEWS-016）。表に長さの制約が無いので入口で形を確かめ、画像は申告の種類と 5MB を確かめた上で中身の先頭の印を見て、拡張子を検出した種類から決める（API-NEWS-003、SEC-NEWS-017）。作成の保存が失敗したら、上げた画像を置き場から消して孤児を残さない（SEC-NEWS-018）。一覧の取り出しの失敗は固定の文の 500 にする（SEC-NEWS-020）。置き場は非公開なので、一覧の画像は署名つき URL に置き換えて返す（ARC-NEWS-003、DATA-NEWS-004） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/news/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
@@ -348,7 +354,7 @@ client のページで、画面は守らない。読み出しは窓口が `admin
 
 #### 対応要件
 
-API-NEWS-002、API-NEWS-003、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、DATA-NEWS-001・002・004・005、SEC-NEWS-015・016
+API-NEWS-002、API-NEWS-003、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、DATA-NEWS-001・002・004・005、SEC-NEWS-015・016・017・018・020
 
 #### 入出力
 
@@ -367,8 +373,8 @@ API-NEWS-002、API-NEWS-003、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、DATA-
 
 1. `admin.news.manage` で認可する
 2. multipart を読み、zod で6つの欄を確かめる
-3. `image` が File で、種類が4つの中、5MB 以下かを確かめる
-4. 置き場 `news-images` へ service role で `news/<UTC の YYYY-MM-DD>/<uuid>.<種類から決めた拡張子>` に、`contentType` は申告の種類、`cacheControl:'3600'`・`upsert:false` で上げる
+3. `image` が File で、種類が4つの中、5MB 以下かを確かめ、`prepareNewsImage`（DD-NEWS-071）で中身の先頭の印が申告と同じかを確かめる（置き場に書く前）
+4. 置き場 `news-images` へ service role で `buildNewsImagePath` の `news/<UTC の YYYY-MM-DD>/<uuid>.<検出した種類の拡張子>` に、`contentType` は検出した種類、`cacheControl:'3600'`・`upsert:false` で上げる
 5. 利用者の JWT の client で、`image_url` に署名前の道を入れて1行を insert し、`id` を取る
 6. 監査 `admin.news.create`（success、`resource_id` は新しい `id` の文字、metadata は道・状態・分類）を残し、201 を返す
 
@@ -379,14 +385,14 @@ API-NEWS-002、API-NEWS-003、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、DATA-
 | 両方 | 認可に失敗 | 「管理の窓口に共通の動き」の 401・403・503・500 |
 | POST | 欄の形が合わない（欄が無い時を含む） | 400 `{error:'Invalid request', details}`（zod の `flatten()`） |
 | POST | `image` が File でない | 400 `Image file is required` |
-| POST | 種類が4つの外（申告の `File.type` だけを見る。SEC-NEWS-017） | 400 `Unsupported image type` |
+| POST | 種類が4つの外、または中身の先頭の印が申告と違う（HTML を `image/png` と付けた物など。SEC-NEWS-017） | 400 `Unsupported image type`。置き場にも表にも触らず、service role の client も作らない |
 | POST | 5MB を超える | 400 `Image size must be 5MB or less` |
 | POST | 置き場への書き込みに失敗 | 監査 `admin.news.create.upload_failed`（failure、`resource_id` なし）、500 `Failed to upload image` |
-| POST | 表への insert に失敗 | 監査 `admin.news.create.db_insert_failed`（failure）、500 `Failed to save news article`。上げた画像は消さない（SEC-NEWS-018） |
+| POST | 表への insert に失敗 | 上げた画像を service role で置き場から消し（`removeNewsImages`）、監査 `admin.news.create.db_insert_failed`（failure、metadata に `imageCleanup`＝`ok`・`failed`）、500 `Failed to save news article`。消すのに失敗しても応答は変わらない（SEC-NEWS-018） |
 | POST | insert の結果に `id` が無い | 監査の `resource_id` を `null` にして続ける |
 | POST | insert が `data=null`・`error=null` を返す（隠れた不具合。`.single()` は0行で error を返すので実際は起きない、推定） | 先に監査 `admin.news.create`（success、`resource_id` なし）を残し、その後の `data.id` の読みで例外になり 500 `Internal server error` を返す。成功の監査と 500 が食い違う。試験が今の動きを固定している |
-| POST | multipart を読めないなどの例外 | 500 `Internal server error`（multipart でない要求も 400 ではなく 500、推定） |
-| GET | 表の読み出しに失敗 | 500 `Failed to fetch news articles` |
+| POST | multipart を読めないなどの例外 | 500 `Internal server error`（multipart でない要求も 400 ではなく 500、推定）。画像を上げた後で行がまだ指していない時は、その画像を消す |
+| GET | 表の読み出しに失敗 | 500 `Failed to fetch news articles`。記録は誤りの名前と符号だけ（SEC-NEWS-020） |
 | GET | 結果が `null` | 空の配列として返す |
 | GET | 例外 | 500 `Internal server error` |
 
@@ -406,24 +412,25 @@ GET は `admin.news.read`、POST は `admin.news.manage`、どちらも有効な
 - POST で欄が1つでも形に合わない時（例: 題が空白だけ・201字、分類が BLOG、日付が `2026/10/24`、状態が draft）は 400 `Invalid request` と `details`
 - POST で `image` が無い時と文字の時に 400 `Image file is required`
 - POST で `image/svg+xml` の時に 400 `Unsupported image type`
+- POST で HTML を `image/png` と申告した時、PNG の中身を `image/jpeg` と申告した時に 400 `Unsupported image type` で、`upload` も `createServiceRoleClient` も呼ばない
 - POST で 5MB を1バイト超える時に 400、ちょうど 5MB は通る
-- POST で4つの種類それぞれの拡張子（jpg・png・webp・gif）の道 `news/<日付>/<uuid>.<拡張子>` で、`upsert:false`・`cacheControl:'3600'` で上げる
+- POST で4つの種類それぞれ（本物の先頭の印の見本）の拡張子（jpg・png・webp・gif）の道 `news/<日付>/<uuid>.<拡張子>` で、`upsert:false`・`cacheControl:'3600'`・`contentType` は検出した種類で上げる
 - POST で置き場の失敗の時に監査 `admin.news.create.upload_failed` と 500、insert を呼ばない
-- POST で insert の失敗の時に監査 `admin.news.create.db_insert_failed` と 500
+- POST で insert の失敗の時に監査 `admin.news.create.db_insert_failed`（`imageCleanup:'ok'`）と 500 で、上げた道筋を `news-images` から 1 回だけ `remove` する。`remove` が失敗しても応答は 500 のままで監査は `imageCleanup:'failed'`、記録に誤りの文が出ない。insert が例外を投げた時も上げた画像を `remove` する。成功では `remove` しない
 - POST の成功で、insert の `image_url` が署名前の道、監査 `admin.news.create` の `resource_id` が新しい `id` の文字、201 `{success:true, id}`
 - POST の insert の結果の `id` が `null` の時、監査の `resource_id` が `null`
 - 監査の `user_agent` が、見出し `user-agent` がある時はその値、無い時は `null`
 - POST で `request.formData()` が例外を投げた時に 500 `Internal server error`
 - GET の成功で行ごとに `signNewsImageFields` を呼び、`published_date` の降順の指定で読む
 - GET で `data` が `null` の時に 200 `{data:[]}`
-- GET で表の失敗の時に 500 `Failed to fetch news articles`、例外の時に 500 `Internal server error`
+- GET で表の失敗の時に 500 `Failed to fetch news articles`（記録は名前と符号だけ）、例外の時に 500 `Internal server error`
 
 ### DD-NEWS-065 管理の記事1件の読み・更新・切り替え・削除の窓口
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | API-NEWS-004、API-NEWS-005、API-NEWS-006、API-NEWS-007、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、STATE-NEWS-001、DATA-NEWS-001、DATA-NEWS-002、DATA-NEWS-004、DATA-NEWS-005、SEC-NEWS-015、SEC-NEWS-016 |
-| 根拠 | 編集の画面に非公開の記事の中身を渡す読みと、記事を変える3つの操作は、窓口で権限と aal2 を確かめ、表も利用者の JWT で RLS に通す（SEC-NEWS-015、ARC-NEWS-002、DATA-NEWS-002）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新（PUT）と分ける（API-NEWS-006、STATE-NEWS-001）。直すたびに画像を付け直させないよう PUT の画像は任意にする（API-NEWS-005）。変える操作は成功も失敗も監査に残し、誰が何をしたかを追えるようにする。変えた行が0件（無い、または RLS が隠した）の時は成功と偽らず、404 と失敗の監査にする（SEC-NEWS-016）。求める権限は DB の ACL の `admin.news.read`・`admin.news.manage`（DATA-NEWS-005）。書き換えの送り元は、窓口に届く前に proxy の Origin の検査が確かめる（ARC-NEWS-004） |
+| 上位 | API-NEWS-004、API-NEWS-005、API-NEWS-006、API-NEWS-007、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、STATE-NEWS-001、DATA-NEWS-001、DATA-NEWS-002、DATA-NEWS-004、DATA-NEWS-005、SEC-NEWS-012、SEC-NEWS-015、SEC-NEWS-016、SEC-NEWS-017、SEC-NEWS-018、SEC-NEWS-020 |
+| 根拠 | 編集の画面に非公開の記事の中身を渡す読みと、記事を変える3つの操作は、窓口で権限と aal2 を確かめ、表も利用者の JWT で RLS に通す（SEC-NEWS-015、ARC-NEWS-002、DATA-NEWS-002）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新（PUT）と分ける（API-NEWS-006、STATE-NEWS-001）。直すたびに画像を付け直させないよう PUT の画像は任意にする（API-NEWS-005）。変える操作は成功も失敗も監査に残し、誰が何をしたかを追えるようにする。変えた行が0件（無い、または RLS が隠した）の時は成功と偽らず、404 と失敗の監査にする（SEC-NEWS-016）。求める権限は DB の ACL の `admin.news.read`・`admin.news.manage`（DATA-NEWS-005）。書き換えの送り元は、窓口に届く前に proxy の Origin の検査が確かめる（ARC-NEWS-004）。道の `id` は `isNewsId` で確かめ、外れた値を DB に渡さない（SEC-NEWS-012）。1件の読みは「無い」（404）と「DB の失敗」（500）を分ける（SEC-NEWS-020）。画像は中身の先頭の印を確かめ、PUT は上げる前に古い `image_url` を読み、使わなくなった画像を行を変えた後に置き場から消す。置き場は service role でないと消せないので、DELETE はその client を行を消した後にだけ作る（SEC-NEWS-017・018、ADR-0025） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/news/[id]/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
@@ -432,77 +439,86 @@ GET は `admin.news.read`、POST は `admin.news.manage`、どちらも有効な
 
 #### 対応要件
 
-API-NEWS-004〜007、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、STATE-NEWS-001、DATA-NEWS-001・002・004・005、SEC-NEWS-015、SEC-NEWS-016
+API-NEWS-004〜007、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、STATE-NEWS-001、DATA-NEWS-001・002・004・005、SEC-NEWS-012・015・016・017・018・020
 
 #### 入出力
 
 | 方法 | 入力 | 出力 |
 | --- | --- | --- |
-| `GET /api/admin/news/<id>` | 道の `id`（形は確かめない） | 200 `{data}`。全部の列、`image_url` は署名つき URL |
-| `PUT /api/admin/news/<id>` | 道の `id`（18桁以下の数字）、multipart（作成と同じ6つの欄、`image` は任意） | 200 `{success:true}`。無い記事・形の悪い id は 404 |
+| `GET /api/admin/news/<id>` | 道の `id`（`isNewsId`） | 200 `{data}`。全部の列、`image_url` は署名つき URL。無い記事・形の悪い id は 404、DB の失敗は 500 |
+| `PUT /api/admin/news/<id>` | 道の `id`（`isNewsId`）、multipart（作成と同じ6つの欄、`image` は任意） | 200 `{success:true}`。無い記事・形の悪い id は 404 |
 | `PATCH /api/admin/news/<id>` | 道の `id`（同上）、JSON `{status}`（private・published） | 200 `{success:true}`。無い記事・形の悪い id は 404 |
 | `DELETE /api/admin/news/<id>` | 道の `id`（同上）、本文なし | 200 `{success:true}`。無い記事・形の悪い id は 404 |
 
 #### 正常フロー
 
-- GET: 道の `id` を読み、`admin.news.read` で認可し、`select('*').eq('id', id).single()` で1行を読み、`signNewsImageFields` で署名して返す（`src/app/api/admin/news/[id]/route.ts`）
-- PUT: `admin.news.manage` で認可し、`id` の形（`/^\d{1,18}$/`）を確かめ、外れていれば DB にも置き場にも触らず 404 にする。zod で欄を確かめる。`image` が File なら種類と 5MB を確かめ、拡張子をファイル名の最後の `.` の後ろから取り（`.` が無ければ `jpg`）、`news/<UTC の日付>/<uuid>.<拡張子>` に上げる。6つの欄と、上げた時だけ `image_url` を `update().eq('id', id).select('id')` で書き、1行以上が返れば監査 `admin.news.update` を残す
+- GET: 道の `id` を読み、`admin.news.read` で認可し、`isNewsId` で確かめ（外れていれば DB を呼ばず 404）、`select('*').eq('id', id).maybeSingle()` で1行を読み、`signNewsImageFields` で署名して返す（`src/app/api/admin/news/[id]/route.ts`）
+- PUT: `admin.news.manage` で認可し、`id` の形（`isNewsId`）を確かめ、外れていれば DB にも置き場にも触らず 404 にする。zod で欄を確かめる。`image` が File なら種類と 5MB を確かめ、`prepareNewsImage` で中身の先頭の印を確かめ（違えば 400）、利用者の session の client で `select('image_url').eq('id', id).maybeSingle()` により古い `image_url` を読み（無ければ 404 で何も上げない）、`buildNewsImagePath` の `news/<UTC の日付>/<uuid>.<検出した種類の拡張子>` に service role で上げる。6つの欄と、上げた時だけ `image_url` を `update().eq('id', id).select('id')` で書き、1行以上が返れば古い画像を `removeNewsImages(…, [古い image_url], [新しい道筋])` で消し、監査 `admin.news.update`（画像を替えた時は metadata に `imageCleanup`）を残す
 - PATCH: `admin.news.manage` で認可し、`id` の形を確かめ（外れていれば 404）、JSON を zod で確かめ、`status` だけを `update().eq('id', id).select('id')` で書き、1行以上が返れば監査 `admin.news.status_update` を残す。前の状態は読まない
-- DELETE: `admin.news.manage` で認可し、`id` の形を確かめ（外れていれば 404）、`delete().eq('id', id).select('id')` で行を消し、1行以上が返れば監査 `admin.news.delete` を残す
+- DELETE: `admin.news.manage` で認可し、`id` の形を確かめ（外れていれば 404）、`delete().eq('id', id).select('id, image_url')` で行を消し、1行以上が返れば service role の client を作って消した行の `image_url` を `removeNewsImages` で消し（client を作れない時も例外にせず `failed`）、監査 `admin.news.delete`（metadata に `imageCleanup`）を残す
 
 #### 異常フロー
 
 | 方法 | 条件 | 応答と監査 |
 | --- | --- | --- |
 | 全部 | 認可に失敗 | 「管理の窓口に共通の動き」の 401・403・503・500 |
-| GET | 読み出しの `error`、または行が無い | 404 `Article not found`（行が無い・DB の失敗・数でない `id` を分けない、推定。SEC-NEWS-020） |
+| GET | 行が無い | 404 `Article not found` |
+| GET | 読み出しの `error` | 500 `Failed to fetch news article`。記録は誤りの名前と符号だけ（SEC-NEWS-020） |
+| GET | `id` が `isNewsId` でない | 404 `Article not found`。DB も service role の client も呼ばない（SEC-NEWS-012） |
 | PUT | 欄の形が合わない | 400 `{error:'Invalid request', details}` |
-| PUT | 画像の種類が4つの外 | 400 `Unsupported image type` |
+| PUT | 画像の種類が4つの外、または中身の先頭の印が申告と違う | 400 `Unsupported image type`。古い値の読みも置き場も更新もしない（SEC-NEWS-017） |
+| PUT | 画像ありで古い値の読みが失敗 | 監査 `admin.news.update.failed`（failure）、500 `Failed to update news article`。何も上げない |
+| PUT | 画像ありで記事が無い（古い値の読みが `null`） | 404 `Article not found`、監査 `admin.news.update.not_found`。何も上げない（SEC-NEWS-018） |
 | PUT | 画像が 5MB を超える | 400 `Image size must be 5MB or less` |
 | PUT | 置き場への書き込みに失敗 | 監査 `admin.news.update.upload_failed`（failure）、500 `Failed to upload image` |
-| PUT | 表の更新に失敗 | 監査 `admin.news.update.failed`（failure）、500 `Failed to update news article`。上げた画像は消さない |
+| PUT | 表の更新に失敗 | その要求で上げた新しい画像を置き場から消す（古い画像は消さない）。監査 `admin.news.update.failed`（failure）、500 `Failed to update news article` |
 | PATCH | 本文を JSON として読めない | catch で 500 `Internal server error`（400 ではない） |
 | PATCH | 値が private・published でない | 400 `{error:'Invalid request', details}` |
 | PATCH | 表の更新に失敗 | 監査 `admin.news.status_update.failed`（failure）、500 `Failed to update status` |
-| DELETE | 表の削除に失敗 | 監査 `admin.news.delete.failed`（failure）、500 `Failed to delete article` |
-| PUT・PATCH・DELETE | 対象の行が0件 | 404 `{error:'Article not found'}`。監査は失敗 `admin.news.update.not_found`・`admin.news.status_update.not_found`・`admin.news.delete.not_found`（`detail='News article not found'`、`metadata.articleId`）で、成功の監査は書かない（SEC-NEWS-016）。PUT は画像を上げた後なので、上げた画像は置き場に残る（SEC-NEWS-018） |
-| PUT・PATCH・DELETE | `id` が18桁以下の数字でない | 404 `Article not found`。DB にも置き場にも触らない。監査は同じ `.not_found` の失敗で、`resource_id` は `null`、`metadata` は生の id でなく長さ `articleIdLength` だけ |
+| DELETE | 表の削除に失敗 | 監査 `admin.news.delete.failed`（failure）、500 `Failed to delete article`。置き場は消さず、service role の client も作らない |
+| DELETE | 行を消した後に置き場の削除が失敗（client を作れない時を含む） | 200 `{success:true}` のまま。監査 `admin.news.delete` の metadata に `imageCleanup:'failed'`。記録は名前と符号だけ |
+| PUT・PATCH・DELETE | 対象の行が0件 | 404 `{error:'Article not found'}`。監査は失敗 `admin.news.update.not_found`・`admin.news.status_update.not_found`・`admin.news.delete.not_found`（`detail='News article not found'`、`metadata.articleId`）で、成功の監査は書かない（SEC-NEWS-016）。画像ありの PUT が更新の 0 行だった時は、その要求で上げた画像を消す（SEC-NEWS-018） |
+| PUT・PATCH・DELETE | `id` が `isNewsId`（先頭が 0 でない 18桁以下の数字）でない | 404 `Article not found`。DB にも置き場にも触らない。監査は同じ `.not_found` の失敗で、`resource_id` は `null`、`metadata` は生の id でなく長さ `articleIdLength` だけ |
 | 全部 | 例外（multipart を読めない時を含む） | 500 `Internal server error` |
 
-- PUT の拡張子はファイル名から取り、作成（種類から決める）と違う。`photo.PNG` は `PNG`、`a.html` を `image/png` と申告すると `.html` の道になる（SEC-NEWS-017）
-- 差し替え前の画像と、削除した記事の画像を置き場から消さない（SEC-NEWS-018）
+- PUT の拡張子は作成と同じく検出した種類の対応表から作り、送られたファイル名は使わない。名前が `x.html` の PNG は `.png` の道になる（SEC-NEWS-017）
+- 新旧の画像が同じ道筋なら消さない。古い画像が見本・外の URL・`news/` の外の道筋なら消さない（`isOwnNewsImagePath`）。置き場の削除の失敗は応答を失敗にしない（SEC-NEWS-018）
 
 #### 状態・永続化
 
-PUT は記事の行の6つの列（画像を上げた時は `image_url` も）、PATCH は `status`、DELETE は行そのものを変える（DATA-NEWS-001、STATE-NEWS-001）。`updated_at` は表のトリガーが変える。削除は物理削除で戻せない。画像は置き場に足すだけ（DATA-NEWS-004）。監査は `audit_logs` に `resource_id` を記事の `id` で残す。
+PUT は記事の行の6つの列（画像を上げた時は `image_url` も）、PATCH は `status`、DELETE は行そのものを変える（DATA-NEWS-001、STATE-NEWS-001）。`updated_at` は表のトリガーが変える。削除は物理削除で戻せない。画像は置き場に足し、使わなくなった画像（差し替え前・削除した行の物・失敗した要求で上げた物）は行を変えた後に消す（DATA-NEWS-004）。監査は `audit_logs` に `resource_id` を記事の `id` で残す。
 
 #### 認証認可
 
-GET は `admin.news.read`、PUT・PATCH・DELETE は `admin.news.manage`、どれも有効な session と aal2。表は利用者の JWT の client（RLS。RLS が隠した行は 0 行になり 404 で返る）、置き場の書き込みと署名だけ service role。CSRF は proxy の Origin の検査（ARC-NEWS-004）。
+GET は `admin.news.read`、PUT・PATCH・DELETE は `admin.news.manage`、どれも有効な session と aal2。表は利用者の JWT の client（RLS。RLS が隠した行は 0 行になり 404 で返る）、置き場の書き込み・後始末の削除・署名だけ service role。CSRF は proxy の Origin の検査（ARC-NEWS-004）。
 
 #### テスト観点
 
 置き場と差し替える物: `tests/unit/api/admin/news/id-route.test.ts`。差し替える物は DD-NEWS-064 と同じ
 
 - 4つの方法とも、認可が `ok:false` の時はその応答を返し、表を触らない。求める権限が GET は `admin.news.read`、ほかは `admin.news.manage`
-- GET で `error` がある時と、`error` も行も無い時に 404 `Article not found`
+- GET で `error` がある時は 500 `Failed to fetch news article`（記録に誤りの文が出ない）、行が無い時は 404 `Article not found`。`abc`・`0`・`007`・19 桁・負・小数の `id` は DB も service role の client も呼ばず 404
 - GET の成功で `eq('id', <道の id>)` で読み、`signNewsImageFields` の結果を返す
 - GET で `params` が例外を投げた時に 500
 - PUT で欄の形が合わない時に 400
 - PUT で `image` が無い時は置き場を呼ばず、更新に `image_url` を入れない
-- PUT で種類が4つの外の時と 5MB 超の時にそれぞれ 400
-- PUT で名前に `.` がある画像は名前の最後の拡張子、`.` が無い画像は `jpg` の道で上げ、更新に `image_url` を入れる
+- PUT で種類が4つの外の時と 5MB 超の時にそれぞれ 400。HTML を `image/png` と申告した画像も 400 で、古い値の読みも上げも更新もしない
+- PUT で名前が `x.html`・`photo.final.PNG`・`noextension`・`a.exe` の画像は、送られた名前でなく検出した種類（png・jpg・webp・gif）の拡張子の道で上げ、更新に `image_url` を入れる
+- PUT で画像あり・記事なし（古い値の読みが `null`）は 404 で `upload` を呼ばない。古い値の読みの失敗は 500 で何も上げない。画像なしの PUT は古い値を読まず `remove` も呼ばない
+- PUT で更新が成功したら古い道筋を service role の `remove` で 1 回消し（新しい道筋は消さない）、監査の metadata に `imageCleanup`。`remove` の失敗は 200 のままで `failed`。古い値が `null`・外の URL・古い見本の道筋なら何も消さない
+- PUT で更新が `error` の時・0 行の時・例外の時は、その要求で上げた新しい道筋を `remove` する（古い画像は消さない）
 - PUT で置き場の失敗の時に監査 `admin.news.update.upload_failed`（`resource_id` が `id`）と 500
 - PUT で表の失敗の時に監査 `admin.news.update.failed` と 500
 - PUT の成功で監査 `admin.news.update` と 200
 - PUT で `request.formData()` が例外を投げた時に 500
 - PATCH で本文が JSON でない時に 500、値が draft の時に 400
 - PATCH で表の失敗の時に監査 `admin.news.status_update.failed` と 500、成功で監査 `admin.news.status_update` と 200
-- DELETE で表の失敗の時に監査 `admin.news.delete.failed` と 500、成功で監査 `admin.news.delete` と 200
+- DELETE で表の失敗の時に監査 `admin.news.delete.failed` と 500（`remove` も `createServiceRoleClient` も呼ばない）、成功で監査 `admin.news.delete`（`imageCleanup:'ok'`）と 200
+- DELETE の成功で消した行の `image_url` を service role の client で `remove` し、利用者の session の client の `storage` は呼ばない。`remove` の失敗・service role の client を作れない失敗でも 200 で `imageCleanup:'failed'`。見本・外の URL・`null` の行は何も消さない
 - DELETE で `createClient` が例外を投げた時に 500
 - 監査の `user_agent` が、見出しがある時はその値、無い時は `null`
 - 対象の行が0件の PUT・PATCH・DELETE が 404 になり、失敗の監査（`.not_found`）が 1 件だけで成功の監査が 0 件であること。1 行が返れば 200 と成功の監査
-- `id` が数字でない・19桁以上・負・小数・空の PUT・PATCH・DELETE が、表も置き場も触らず 404 になり、監査の `metadata` が長さだけであること。18桁ちょうどは DB に渡る
+- `id` が数字でない・19桁以上・負・小数・空・`0`・`007` の PUT・PATCH・DELETE が、表も置き場も触らず 404 になり、監査の `metadata` が長さだけであること。18桁ちょうどは DB に渡る
 
 ### DD-NEWS-066 最新の公開済みの記事3件の Server Action — 未使用（削除の判断待ち）
 
@@ -660,11 +676,76 @@ ARC-NEWS-003、DATA-NEWS-004、SEC-NEWS-004（AC-01 の期限1時間以下）
 - `signNewsImageFields` が `image_url` だけを置き換え、ほかの列を残す
 - `signNewsImageFields` で `image_url` が無い行は `image_url: null` になり、署名を呼ばない
 
+### DD-NEWS-071 管理のニュースの画像の確かめ・保存名・後始末 admin-images
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | API-NEWS-003、API-NEWS-005、API-NEWS-007、ARC-NEWS-003、SEC-NEWS-017、SEC-NEWS-018 |
+| 根拠 | 置き場は service role で書くので、申告の種類を鵜呑みにせず、保存名も送られた名前から作らず、後始末で消す道筋は自分の置き場の自分の接頭辞の下だけにする（SEC-NEWS-017・018）。作成・更新・削除の3つの窓口で同じ決まりにそろえるため、窓口の外の1か所にまとめる（ADR-0025） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト |
+| 出どころ | 実装（`src/features/news/services/admin-images.ts`）。波 1-C の計画（Task 7） |
+
+#### 対応要件
+
+SEC-NEWS-017・018。
+
+#### 入出力
+
+| 関数 | 入力 | 出力 |
+| --- | --- | --- |
+| `prepareNewsImage` | `File` | `{buffer, contentType, extension}`。申告の type と中身の先頭の印が同じ時だけ。違えば `null` |
+| `buildNewsImagePath` | 拡張子、時刻（試験用） | `news/<UTC の日付>/<uuid>.<拡張子>` |
+| `isOwnNewsImagePath` | 道筋の文字 | `news/` の下の安全な文字（先頭は英数字、続きは英数字と `._-`、区切りは1つの `/`）だけなら true |
+| `removeNewsImages` | service role の client、行の `image_url` の配列（古い公開 URL の形も可・`null` も可）、残す道筋 | `'ok'` か `'failed'`。消す物が無ければ置き場を呼ばず `'ok'`。投げない |
+
+- 先頭の印の判定は共有の `src/lib/storage/image-signature.ts`（JPEG・PNG・GIF・WebP）。置き場の名前は `news-images`
+- 値を道筋に直すのは `extractNewsImageObjectPath`（`src/lib/storage/news-images.ts`。DD-NEWS-067。呼ぶだけ）
+
+#### 正常フロー
+
+1. 窓口が `prepareNewsImage` で偽の画像を弾く（置き場に書く前）
+2. 窓口が `buildNewsImagePath(prepared.extension)` で保存名を作って上げる
+3. 行を変えた後に、窓口が `removeNewsImages` で使わなくなった画像を消す。道筋に直し、`isOwnNewsImagePath` を通り、`keep` に無く、重複しない物だけを 1 回の `remove` に渡す
+
+#### 異常フロー
+
+| 場合 | 動き | 道 |
+| --- | --- | --- |
+| 申告と検出が違う・印が無い | `prepareNewsImage` が `null`（窓口が 400） | `admin-images.ts` |
+| `..`・先頭の `/`・`//`・別の接頭辞・URL・空白・`%` を含む道筋 | 消す対象にしない | `admin-images.ts` |
+| 古い見本の道筋（`e2e/news-1.png` など。接頭辞が違う） | 消さない側に倒れる | `admin-images.ts` |
+| 別の置き場の URL | 道筋にできないので消さない | `admin-images.ts` |
+| 置き場の削除が `error`・例外 | 名前と符号だけ記録して `'failed'`。投げない | `admin-images.ts` |
+
+- 署名の共有ライブラリが共有の確かめ（`isOwnNewsImagePath` 相当）を持つようになったら、その関数に差し替える（波 3。判断は ADR-0025）
+
+#### 状態・永続化
+
+なし（置き場の削除は呼び手の窓口が行い、結果を監査に残す）。
+
+#### 認証認可
+
+なし。呼び元の窓口が認可の後に使う。
+
+#### テスト観点
+
+置き場と差し替える物: `tests/unit/features/news/services/admin-images.test.ts`。client の `storage.from().remove` を差し替える
+
+| # | 観点 | 入力 | 期待 |
+| --- | --- | --- | --- |
+| 1 | 本物の PNG | 名前 `x.html`、`image/png` | `png`、名前を使わない |
+| 2 | 偽の画像 | 文字を `image/png`、PNG を `image/jpeg` | `null` |
+| 3 | 保存名 | 固定の時刻 | `news/2026-10-26/<uuid>.png`。呼ぶ度に違う |
+| 4 | 自分の道筋 | `news/…` の形、`../`・`//`・`looks/`・URL・`e2e/…`・`%2e%2e`・空文字 | 真は `news/` の下だけ |
+| 5 | 消す道筋の選び方 | 見本・`null`・`keep`・重複・古い公開 URL・別の置き場の URL・外の URL・`..` | 自分の道筋だけ、重複なし、`keep` なし、古い URL は置き場の中の道筋に直る。消す物が無ければ置き場を呼ばない |
+| 6 | 置き場の削除 | 成功・`error`・例外 | 失敗は `'failed'` で投げず、記録は名前と符号だけ |
+
 ## 未確認事項
 
 - 本番の置き場 `news-images` の公開の設定と `storage.objects` の方針（移行に無い。DATA-NEWS-004）
 - 管理の作成・編集のページ（`/admin/news/create`・`/admin/news/edit/[id]`）にサーバーの守りを置くか
-- 対象0件の PUT・PATCH・DELETE は 2026-10-26 に 404 に直した（SEC-NEWS-016）。置き場の画像を消さないこと（無い id への PUT で上げた画像が残ることを含む）、PUT の拡張子の取り方を、直すか今の動きとして残すか（SEC-NEWS-017・018）
+- 対象0件の PUT・PATCH・DELETE（SEC-NEWS-016）、置き場の画像の後始末と PUT の拡張子の取り方（SEC-NEWS-017・018）は 2026-10-26 に直した。本番に既に残っている孤児の画像の掃除は別の運用作業
 - `getLatestNews` を消すか残すか（SEC-NEWS-009、API-NEWS-008）
 - 各項目の「テスト観点」のテストのファイルの多くはまだ無い。分岐を全部通せるかは、書いて `npm run test:trace-coverage` で確かめていない
 - この頁の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

@@ -1,4 +1,4 @@
-import { executeSearch } from '@/features/search/services/search.service';
+import { executeSearch, SearchBackendError } from '@/features/search/services/search.service';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { signItemImageUrl } from '@/lib/storage/item-images';
 import { signLookImageUrl } from '@/lib/storage/look-images';
@@ -195,13 +195,14 @@ describe('executeSearch', () => {
   });
 
   it('DD-SEARCH-006 人気商品の関数が誤りを返すと空の一覧にして console.error に書く', async () => {
-    const error = { message: 'boom' };
+    const error = { message: 'boom secret detail', code: '42501' };
     setup({ service: { get_popular_items: { data: [{ id: 1 }], error } } });
 
     const result = await executeSearch({ query: '' });
 
     expect(result.popularItems).toEqual([]);
-    expect(consoleError).toHaveBeenCalledWith('Failed to fetch popular items:', error);
+    expect(consoleError).toHaveBeenCalledWith('Failed to fetch popular items:', { name: 'UnknownError', code: '42501' });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain('boom secret detail');
   });
 
   it('DD-SEARCH-006 人気商品の data が null なら空の一覧', async () => {
@@ -238,45 +239,47 @@ describe('executeSearch', () => {
     }
   });
 
-  it('DD-SEARCH-006 検索の関数が3つとも誤りを返すと3種とも空にして、誤りを console.error に書く', async () => {
-    const itemError = { message: 'items down' };
-    const lookError = { message: 'looks down' };
-    const newsError = { message: 'news down' };
+  it('DD-SEARCH-006 検索の関数が3つとも誤りを返すと SearchBackendError で失敗し、関数ごとに名前と符号だけ記録する（SEC-SEARCH-017・018）', async () => {
     setup({
       user: {
-        search_items: { data: null, error: itemError },
-        search_looks: { data: null, error: lookError },
-        search_news: { data: null, error: newsError },
+        search_items: { data: null, error: { message: 'items down for secretword', code: '57014' } },
+        search_looks: { data: null, error: { message: 'looks down', code: '42501' } },
+        search_news: { data: null, error: { message: 'news down' } },
       },
     });
 
-    const result = await executeSearch({ query: 'coat' });
+    await expect(executeSearch({ query: 'secretword' })).rejects.toBeInstanceOf(SearchBackendError);
 
-    expect(consoleError).toHaveBeenCalledWith('Failed to search items:', expect.anything());
-    expect(consoleError).toHaveBeenCalledWith('Failed to search looks:', expect.anything());
-    expect(consoleError).toHaveBeenCalledWith('Failed to search news:', expect.anything());
     expect(consoleError).toHaveBeenCalledTimes(3);
-    expect(result.counts).toEqual({ all: 0, item: 0, look: 0, news: 0 });
-    expect(result.empty).toBe(true);
+    expect(consoleError).toHaveBeenCalledWith('Search function failed:', { fn: 'search_items', name: 'UnknownError', code: '57014' });
+    expect(consoleError).toHaveBeenCalledWith('Search function failed:', { fn: 'search_looks', name: 'UnknownError', code: '42501' });
+    expect(consoleError).toHaveBeenCalledWith('Search function failed:', { fn: 'search_news', name: 'UnknownError', code: null });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain('secretword');
   });
 
-  it('DD-SEARCH-006 検索の関数のどれか1つだけが誤りなら、その種別だけ空で残りは返る', async () => {
+  it('DD-SEARCH-006 検索の関数のどれか1つだけが誤りでも全体を失敗にし、他の種別の結果を返さない（SEC-SEARCH-017）', async () => {
     setup({
       user: {
-        search_items: { data: null, error: { message: 'items down' } },
-        search_looks: { data: [look({ theme: 'Coat look' })], error: null },
+        search_items: { data: [item({ name: 'Coat item' })], error: null },
+        search_looks: { data: null, error: { message: 'looks down for secretword', code: '42501' } },
         search_news: { data: [article({ title: 'Coat news' })], error: null },
       },
     });
 
-    const result = await executeSearch({ query: 'coat' });
+    const failure = await executeSearch({ query: 'secretword' }).catch((error: unknown) => error);
 
-    expect(result.items).toEqual([]);
-    expect(result.looks).toHaveLength(1);
-    expect(result.news).toHaveLength(1);
-    expect(result.counts).toEqual({ item: 0, look: 1, news: 1, all: 2 });
+    expect(failure).toBeInstanceOf(SearchBackendError);
+    expect(failure).toMatchObject({ fn: 'search_looks', code: '42501' });
     expect(consoleError).toHaveBeenCalledTimes(1);
-    expect(consoleError).toHaveBeenCalledWith('Failed to search items:', { message: 'items down' });
+    expect(consoleError).toHaveBeenCalledWith('Search function failed:', { fn: 'search_looks', name: 'UnknownError', code: '42501' });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain('secretword');
+  });
+
+  it('DD-SEARCH-006 語が空なら検索の関数を呼ばないので失敗にならない', async () => {
+    setup({ user: { search_looks: { data: null, error: { message: 'down' } } } });
+
+    await expect(executeSearch({ query: '  ' })).resolves.toMatchObject({ empty: false });
+    expect(userClient.rpc).not.toHaveBeenCalled();
   });
 
   it('DD-SEARCH-006 検索の関数の data が null なら3種とも空で empty が真', async () => {

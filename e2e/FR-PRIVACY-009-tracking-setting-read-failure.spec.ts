@@ -84,7 +84,6 @@ for (const viewport of deliveryViewports) {
     });
 
     test(`SEC-PRIVACY-009-AC-01 ${viewport.name}: 設定を読めない時の画面に、開き直す案内か窓口が表示される`, async ({ page }) => {
-      test.fail(true, 'SEC-PRIVACY-009 今のコードは満たさない（error.tsx が無く既定の誤りの頁。docs/02_Requirements/areas/privacy.md）');
       test.setTimeout(420_000);
       await withDeliveryScenario(async ({ client }) => {
         await withSettingsUnreadable(client, async () => {

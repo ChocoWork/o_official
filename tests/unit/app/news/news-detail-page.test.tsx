@@ -124,6 +124,18 @@ describe("generateMetadata", () => {
     expect(metadata.description).toBe(FALLBACK_DESCRIPTION);
   });
 
+  it.each(["abc", "0", "01", "1.5", "-1", "1234567890123456789"])(
+    "DD-NEWS-030 bigint の形でない id \"%s\" は取り出しを呼ばず固定の題を返す（投げない）",
+    async (id) => {
+      await expect(generateMetadata({ params: params(id) })).resolves.toEqual({
+        title: "NEWS DETAIL | Le Fil des Heures",
+        description: FALLBACK_DESCRIPTION,
+      });
+
+      expect(mockDetail).not.toHaveBeenCalled();
+    },
+  );
+
   it("DD-NEWS-030 メタの取り出しは id だけで呼び分類を渡さない", async () => {
     mockDetail.mockResolvedValue(buildArticle());
 
@@ -215,6 +227,30 @@ describe("NewsDetailPage", () => {
 
     expect(mockDetail).toHaveBeenCalledWith("42", { category: "ALL" });
     expect(breadcrumbNewsHref()).toBe("/news?category=BLOG");
+  });
+
+  it.each(["abc", "0", "01", "1.5", "-1", "1234567890123456789"])(
+    "DD-NEWS-030 bigint の形でない id \"%s\" は notFound を呼び、取り出しも前後も呼ばない（SEC-NEWS-012）",
+    async (id) => {
+      await expect(
+        NewsDetailPage({ params: params(id), searchParams: Promise.resolve({}) }),
+      ).rejects.toThrow("NEXT_NOT_FOUND");
+
+      expect(mockNotFound).toHaveBeenCalledTimes(1);
+      expect(mockDetail).not.toHaveBeenCalled();
+      expect(mockNavigation).not.toHaveBeenCalled();
+    },
+  );
+
+  it("DD-NEWS-030 取り出しの失敗は notFound にせず頁が reject する（SEC-NEWS-020）", async () => {
+    const error = new Error("fetch failed");
+    mockDetail.mockRejectedValue(error);
+
+    await expect(
+      NewsDetailPage({ params: params(), searchParams: Promise.resolve({}) }),
+    ).rejects.toBe(error);
+
+    expect(mockNotFound).not.toHaveBeenCalled();
   });
 
   it("DD-NEWS-030 記事が無い時は notFound を呼び前後を取り出さない", async () => {

@@ -4,7 +4,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 // 見本のデータは supabase/seed.sql（手元の Supabase）の商品 Tsubame Brass Brooch・
 // ルック Paper Moon・ニュース Synthetic Sustainability Note を使う。
 // 対象: FREQ-01-AC-01 / FR-SEARCH-001-AC-02・AC-03 / FR-SEARCH-002-AC-02 / FR-SEARCH-003-AC-02 /
-//       FREQ-189-AC-02 / SEC-SEARCH-011-AC-01 / SEC-SEARCH-021-AC-01
+//       FREQ-189-AC-02 / SEC-SEARCH-011-AC-01 / SEC-SEARCH-021-AC-01 / SEC-SEARCH-021-AC-02
 // SEC-SEARCH-017-AC-01（検索の関数が失敗した時の表示）は DB の関数の権限を外すので、他の試験を壊さないよう
 // 最後に単独で流す FR-SEARCH-022 に置く。
 //
@@ -216,7 +216,6 @@ for (const vp of VIEWPORTS) {
     test(`SEC-SEARCH-021-AC-01 ${vp.name} /?q=<文> で開いても、プレビューの区画の説明の文にその文が含まれない`, async ({
       page,
     }) => {
-      test.fail(true, 'SEC-SEARCH-021 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
       const sentence = '本日休業のお知らせ';
       await page.goto(`/?q=${encodeURIComponent(`Tsubame ${sentence}`)}`);
 
@@ -226,6 +225,40 @@ for (const vp of VIEWPORTS) {
       });
       await expect(previewSection.getByRole('heading', { name: 'Search Preview' })).toBeVisible();
       await expect(previewSection.locator('p').filter({ hasText: sentence })).toHaveCount(0);
+    });
+
+    // 文言と枠の見た目は案。ユーザーが写真で確かめるまで確定しない（ADR-0314）。写真は controller が回収する。
+    test(`SEC-SEARCH-021-AC-02 ${vp.name} /?q=<語> のプレビューの区画に固定の説明の文と「検索した語」の枠があり、語は説明の文に無く枠に出る`, async ({
+      page,
+    }) => {
+      // 結果のカードが出る実在の語を使う（カードの無い写真では見た目が確かめられない）。細工した文での確かめは AC-01。
+      const term = 'Tsubame';
+      const fixedSentence = '入力した語に関連する結果をホーム上で即時プレビューしています。';
+      await page.goto(`/?q=${encodeURIComponent(term)}`);
+
+      const previewSection = page.locator('section').filter({
+        has: page.getByRole('heading', { name: 'Search Preview' }),
+      });
+      await expect(previewSection.getByRole('heading', { name: 'Search Preview' })).toBeVisible();
+      // 説明の文は固定で、語を含まない（カードの題・説明は別の要素）
+      await expect(previewSection.locator('p', { hasText: fixedSentence })).toHaveText(fixedSentence);
+
+      const termBox = previewSection.getByTestId('search-preview-term');
+      await expect(termBox).toBeVisible();
+      await expect(termBox.locator('dt')).toHaveText('検索した語');
+      await expect(termBox.locator('dd')).toHaveText(term);
+      // 結果のカードが出てから写真を撮る（描画前の写真を避ける）
+      await expect(previewSection.getByRole('heading', { name: 'Tsubame Brass Brooch' })).toBeVisible();
+
+      await previewSection.screenshot({
+        path: `test-results/wave1c/search-021-preview-${vp.width}.png`,
+        animations: 'disabled',
+      });
+      await page.screenshot({
+        path: `test-results/wave1c/search-021-page-${vp.width}.png`,
+        fullPage: true,
+        animations: 'disabled',
+      });
     });
   });
 }

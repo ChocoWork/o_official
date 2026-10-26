@@ -259,6 +259,22 @@ describe('ARC-HOME-002 ホームの公開の読み', () => {
   });
 
   describe('LOOK 8件・LOOK の総数', () => {
+    it('ARC-HOME-002 LOOK の行は説明文を除いた列を新しい順に 8 件だけ読み、結果に説明文を載せない', async () => {
+      seedAll();
+
+      const looks = await getPublishedLooks(8);
+
+      const [rowRead] = reads('looks');
+      expect(rowRead.calls).toEqual([
+        ['select', 'id,season_year,season_type,theme,image_urls,created_at'],
+        ['eq', 'status', 'published'],
+        ['order', 'created_at', { ascending: false }],
+        ['order', 'id', { ascending: false }],
+        ['limit', 8],
+      ]);
+      expect(Object.keys(looks[0])).not.toContain('themeDescription');
+    });
+
     it('ARC-HOME-002 行も総数も公開の client で読み、公開済みに絞る', async () => {
       seedAll();
 
@@ -310,6 +326,28 @@ describe('ARC-HOME-002 ホームの公開の読み', () => {
       expect(reads('news_articles', 'service')).toHaveLength(0);
       expect(created).not.toContain('service');
       expect(signedBy).toEqual([]);
+    });
+
+    it('ARC-HOME-002 NEWS の行の取り出しが失敗しても取得の関数は NewsFetchError で投げ、ホームの頁は落ちずに NEWS の区画を空で描く（SEC-NEWS-020）', async () => {
+      seedAll();
+      results.news_articles.rows = { data: null, error: { code: '42501', message: 'permission denied' } };
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      try {
+        await expect(getPublishedNews({ limit: 6 })).rejects.toMatchObject({
+          name: 'NewsFetchError',
+          code: '42501',
+        });
+
+        const tree = await Home();
+
+        const newsGrid = findElement(tree, PublicNewsGrid);
+        expect((newsGrid?.props as { articles: unknown[] }).articles).toEqual([]);
+        expect(newsGrid?.props).toMatchObject({ variant: 'home', totalCount: 7 });
+        expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('permission denied');
+      } finally {
+        errorSpy.mockRestore();
+      }
     });
 
   });

@@ -140,6 +140,7 @@ describe('GET /api/admin/looks', () => {
         },
         { id: 2, theme: 'B', image_urls: [], look_items: [] },
       ],
+      meta: { canManage: true },
     });
     expect(mockMutationRateLimit).not.toHaveBeenCalled();
     expect(mockUploadQuota).not.toHaveBeenCalled();
@@ -152,8 +153,59 @@ describe('GET /api/admin/looks', () => {
     const response = await callGet(buildRequest());
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ data: [] });
+    expect(response.body).toEqual({ data: [], meta: { canManage: true } });
     expect(mockSign).not.toHaveBeenCalled();
+  });
+
+  describe('meta.canManage', () => {
+    const authorizeBy = (manage: unknown) =>
+      mockAuthorize.mockImplementation(async (permission: string) =>
+        permission === 'admin.looks.read'
+          ? { ok: true, userId: 'admin-user', actorEmail: 'admin@example.com' }
+          : manage,
+      );
+
+    test('DD-LOOK-063 管理の権限の確かめが通れば meta.canManage は true で、data は今までどおり', async () => {
+      authorizeBy({ ok: true, userId: 'admin-user', actorEmail: 'admin@example.com' });
+      mockCreateServiceRoleClient.mockResolvedValue(createListService({ data: [], error: null }).client);
+
+      const response = await callGet(buildRequest());
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ data: [], meta: { canManage: true } });
+      expect(mockAuthorize).toHaveBeenCalledWith('admin.looks.read', expect.any(Request));
+      expect(mockAuthorize).toHaveBeenCalledWith('admin.looks.manage', expect.any(Request));
+    });
+
+    test('DD-LOOK-063 権限が無いための断り（403）だけ canManage を false にして一覧は返す', async () => {
+      authorizeBy({ ok: false, response: { status: 403, body: { error: 'Forbidden' } } });
+      mockCreateServiceRoleClient.mockResolvedValue(createListService({ data: [], error: null }).client);
+
+      const response = await callGet(buildRequest());
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ data: [], meta: { canManage: false } });
+    });
+
+    test('DD-LOOK-063 2回目の確かめが 401 ならその 401 をそのまま返し、DB に触れない', async () => {
+      const unauthorized = { status: 401, body: { error: 'Unauthorized' } };
+      authorizeBy({ ok: false, response: unauthorized });
+
+      const response = await callGet(buildRequest());
+
+      expect(response).toBe(unauthorized);
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+    });
+
+    test('DD-LOOK-063 2回目の確かめが 503 ならその 503 をそのまま返し、false にして通さない', async () => {
+      const unavailable = { status: 503, body: { error: 'Service unavailable' } };
+      authorizeBy({ ok: false, response: unavailable });
+
+      const response = await callGet(buildRequest());
+
+      expect(response).toBe(unavailable);
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+    });
   });
 
   test('DD-LOOK-063 一覧の処理が例外を投げたら 500 Internal server error', async () => {

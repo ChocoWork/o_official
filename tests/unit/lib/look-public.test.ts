@@ -3,6 +3,7 @@ import {
   filterLooksBySeason,
   formatLookSeason,
   normalizeLookSeasonSelection,
+  parseLookId,
   resolveLookSeasonFilter,
   toLookSeasonValues,
 } from '@/lib/look/public';
@@ -99,4 +100,18 @@ describe('look public helpers', () => {
   it('DD-LOOK-005 returns an empty array when no look matches the season', () => {
     expect(filterLooksBySeason([looks[0]!], 'AW')).toEqual([]);
   });
+});
+
+describe('parseLookId', () => {
+  it('DD-LOOK-068 正の整数の文字を数にする', () => {
+    expect(parseLookId('1')).toBe(1);
+    expect(parseLookId('1234567890123456')).toBe(1234567890123456);
+  });
+
+  it.each(['0', '01', '1.5', '1e3', '-1', ' 1', '1 ', '', 'abc', '0x10', '12345678901234567'])(
+    'DD-LOOK-068 %p は null にする',
+    (value) => {
+      expect(parseLookId(value)).toBeNull();
+    },
+  );
 });

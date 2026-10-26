@@ -147,14 +147,18 @@ describe('getPublicStockists', () => {
   });
 
   it('DD-STOCKIST-003 DB の誤りは console.error に書いて空の配列を返す', async () => {
-    const error = { message: 'boom', code: '500' };
+    const error = { message: 'boom secret', details: 'detail secret', code: '500' };
     setupChain({ data: null, error });
 
     const result = await getPublicStockists();
 
     expect(result).toEqual([]);
     expect(consoleError).toHaveBeenCalledTimes(1);
-    expect(consoleError).toHaveBeenCalledWith('Failed to fetch public stockists:', error);
+    expect(consoleError).toHaveBeenCalledWith('Failed to fetch public stockists:', {
+      name: 'UnknownError',
+      code: '500',
+    });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain('secret');
   });
 
   it('DD-STOCKIST-003 data が null で誤りも無いなら空の配列を返し、console.error を呼ばない', async () => {

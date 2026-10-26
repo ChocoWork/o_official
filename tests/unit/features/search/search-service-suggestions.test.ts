@@ -188,17 +188,34 @@ describe('getSearchSuggestions', () => {
     }
   });
 
-  it('DD-SEARCH-007 検索の関数が誤りか data なしを返しても空の一覧で、console.error を呼ばない', async () => {
+  it('DD-SEARCH-007 検索の関数が誤りか data なしを返しても空の一覧で、誤りは関数名と符号だけ記録する', async () => {
     setup({
-      search_items: { data: null, error: { message: 'down' } },
+      search_items: { data: null, error: { message: 'down secretword', code: '42501' } },
       search_looks: { data: null, error: null },
       search_news: { data: undefined, error: { message: 'down' } },
     });
 
-    const result = await getSearchSuggestions('coat');
+    const result = await getSearchSuggestions('secretword');
 
     expect(result).toEqual([]);
-    expect(consoleError).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalledTimes(2);
+    expect(consoleError).toHaveBeenCalledWith('Search function failed:', { fn: 'search_items', name: 'UnknownError', code: '42501' });
+    expect(consoleError).toHaveBeenCalledWith('Search function failed:', { fn: 'search_news', name: 'UnknownError', code: null });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain('secretword');
+  });
+
+  it('DD-SEARCH-007 search_news だけ失敗しても他の2種の候補は返り、投げない（SEC-SEARCH-017）', async () => {
+    setup({
+      search_items: { data: [item({ name: 'Coat item' })], error: null },
+      search_looks: { data: [{ id: 3, season_year: 2026, season_type: 'SS', theme: 'Coat look', theme_description: null, image_urls: null }], error: null },
+      search_news: { data: null, error: { message: 'news down', code: '57014' } },
+    });
+
+    const result = await getSearchSuggestions('coat');
+
+    expect(result.map((suggestion) => suggestion.type).sort()).toEqual(['item', 'look']);
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith('Search function failed:', { fn: 'search_news', name: 'UnknownError', code: '57014' });
   });
 
   it('DD-SEARCH-007 client の作成が投げたら例外がそのまま出る', async () => {

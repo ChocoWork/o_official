@@ -5365,7 +5365,7 @@ NEWS（ニュースの分類）・ITEM（ALL・TOPS・BOTTOMS・OUTERWEAR・ACCE
 | 状態 | 推定 |
 | 出どころ | 実装から推定（`src/app/api/auth/me/route.ts`） |
 
-認証を確かめ、ログインしていれば id・email・役割・aal2 かどうかを、していなければ未認証を返す。失効を確かめられない時は 503（FREQ-324、範囲外）。応答は保存させない（no-store）。
+認証を確かめ、ログインしていれば id・役割・aal2 かどうかを、していなければ未認証を返す。メールの住所は返さない（2026-10-26。SEC-HOME-016・SEC-PRIVACY-016）。失効を確かめられない時は 503（FREQ-324、範囲外）。応答は保存させない（no-store）。
 
 ### DRV-AUTH-008 refresh の Cookie でログインのトークンを更新し、使えない Cookie は消す
 

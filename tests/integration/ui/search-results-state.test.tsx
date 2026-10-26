@@ -211,14 +211,14 @@ describe('STATE-SEARCH-001 検索のページの右のカラムの見せ方', ()
       expect(skeletonBlock(container)).toBeNull();
     });
 
-    it('STATE-SEARCH-001 取り出し中（q なし）は前の人気商品があれば出したまま、案内文は出さない', async () => {
+    it('STATE-SEARCH-001 q なしで tab が変わっても取り直さず、人気商品の行を出したまま案内文は出さない', async () => {
       const view = await renderPending('');
       await settle(() => searchCalls[0].resolve(payload({ popularItems: [makeResult('item', 'p1')] })));
       expect(rows()).toHaveLength(1);
 
       await view.changeUrl('tab=item');
 
-      expect(searchCalls).toHaveLength(2);
+      expect(searchCalls).toHaveLength(1);
       expect(screen.getByText('POPULAR ITEMS')).toBeInTheDocument();
       expect(rows()).toHaveLength(1);
       expect(screen.queryByText(GUIDE_TEXT)).not.toBeInTheDocument();
@@ -375,15 +375,27 @@ describe('STATE-SEARCH-001 検索のページの右のカラムの見せ方', ()
       expect(screen.getByText('2 RESULTS')).toBeInTheDocument();
     });
 
-    it('STATE-SEARCH-001 結果なし → tab が変わると取り出し中に戻る', async () => {
+    it('STATE-SEARCH-001 結果なし → tab が変わっても取り直さず、結果なしの表示のまま', async () => {
       const view = await renderPending('q=zzz');
       await settle(() => searchCalls[0].resolve(payload({ empty: true })));
       expect(screen.getByRole('heading', { level: 2 })).toBeInTheDocument();
 
       await view.changeUrl('q=zzz&tab=news');
 
+      expect(searchCalls).toHaveLength(1);
+      expect(skeletonBlock(view.container)).toBeNull();
+      expect(screen.getByRole('heading', { level: 2 })).toBeInTheDocument();
+    });
+
+    it('STATE-SEARCH-001 結果なし → q が変わると取り出し中に戻り、URL の tab は最新のタブ', async () => {
+      const view = await renderPending('q=zzz');
+      await settle(() => searchCalls[0].resolve(payload({ empty: true })));
+      expect(screen.getByRole('heading', { level: 2 })).toBeInTheDocument();
+
+      await view.changeUrl('q=yyy&tab=news');
+
       expect(skeletonBlock(view.container)).not.toBeNull();
-      expect(searchCalls[1].url).toBe('/api/search?q=zzz&tab=news');
+      expect(searchCalls[1].url).toBe('/api/search?q=yyy&tab=news');
       expect(screen.queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
     });
 

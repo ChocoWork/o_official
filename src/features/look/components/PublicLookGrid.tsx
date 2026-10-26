@@ -27,7 +27,7 @@ import {
   resolveLookSeasonFilter,
   toLookSeasonValues,
   type LookSeasonFilter,
-  type PublicLook,
+  type PublicLookListItem,
 } from "@/lib/look/public";
 import { cn } from "@/lib/utils";
 
@@ -55,13 +55,13 @@ const currencyFormatter = new Intl.NumberFormat("ja-JP", {
 });
 
 type LookCardProps = {
-  look: PublicLook;
+  look: PublicLookListItem;
   className?: string;
 };
 
 type PublicLookGridHomeProps = {
   variant: "home";
-  looks: PublicLook[];
+  looks: PublicLookListItem[];
   /** FREQ-148: 公開 LOOK の総数。各ブレークポイントの表示数より多い場合のみ VIEW ALL を表示する */
   totalCount?: number;
   className?: string;
@@ -69,7 +69,7 @@ type PublicLookGridHomeProps = {
 
 type PublicLookGridCatalogProps = {
   variant: "catalog";
-  looks: PublicLook[];
+  looks: PublicLookListItem[];
   className?: string;
   initialSeason?: LookSeasonFilter;
 };
@@ -283,7 +283,7 @@ function LookCard({ look, className }: LookCardProps) {
 }
 
 type LookCardGridProps = {
-  looks: PublicLook[];
+  looks: PublicLookListItem[];
   className?: string;
   /** FREQ-148: ホームでカードをブレークポイント別に出し分けるためのクラス */
   cardClassName?: (index: number) => string | undefined;
@@ -316,7 +316,7 @@ function renderEmptyState(message: string, action?: ReactNode) {
 }
 
 type PublicLookCatalogProps = {
-  looks: PublicLook[];
+  looks: PublicLookListItem[];
   initialSeason?: LookSeasonFilter;
   className?: string;
 };

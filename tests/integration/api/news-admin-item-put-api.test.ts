@@ -1,4 +1,4 @@
-export {};
+import { minimalGif, minimalJpeg, minimalPng, minimalWebp, textAsImage } from '../../fixtures/images';
 
 // 窓口・認可（admin-rbac）・監査（audit）は本物を通し、外との境目（Supabase の client・token の検証・応答の型）だけを差し替える
 jest.mock('next/server', () => ({
@@ -30,12 +30,15 @@ type Call = [string, unknown[]];
 type TableOp = { table: string; calls: Call[] };
 type Upload = { bucket: string; path: string; body: unknown; options: Record<string, unknown> };
 
+// 1件の読み（maybeSingle）は '<表>:read' の結果を返す。無ければ表の結果と同じ物を返す
 function createFakeClient(tables: Record<string, Result>, uploadResult: Result = { data: {}, error: null }) {
   const ops: TableOp[] = [];
   const uploads: Upload[] = [];
+  const removes: unknown[] = [];
   return {
     ops,
     uploads,
+    removes,
     from: jest.fn((table: string) => {
       const op: TableOp = { table, calls: [] };
       ops.push(op);
@@ -47,6 +50,7 @@ function createFakeClient(tables: Record<string, Result>, uploadResult: Result =
           return builder;
         };
       }
+      builder.maybeSingle = () => Promise.resolve(tables[`${table}:read`] ?? result());
       builder.then = (onF: (v: Result) => unknown, onR?: (e: unknown) => unknown) => Promise.resolve(result()).then(onF, onR);
       return builder;
     }),
@@ -55,6 +59,10 @@ function createFakeClient(tables: Record<string, Result>, uploadResult: Result =
         upload: jest.fn(async (path: string, body: unknown, options: Record<string, unknown>) => {
           uploads.push({ bucket, path, body, options });
           return uploadResult;
+        }),
+        remove: jest.fn(async (paths: unknown) => {
+          removes.push(paths);
+          return { data: null, error: null };
         }),
       })),
     },
@@ -76,11 +84,19 @@ const validFields: Record<string, unknown> = {
   status: 'published',
 };
 
-function makeImage(name: string, type: string, size?: number): File {
-  const file = new File(['img'], name, { type });
+const REAL_BYTES: Record<string, () => Buffer> = {
+  'image/jpeg': minimalJpeg,
+  'image/png': minimalPng,
+  'image/webp': minimalWebp,
+  'image/gif': minimalGif,
+};
+
+function makeImage(name: string, type: string, size?: number, bytes?: Buffer): File {
+  const content = bytes ?? REAL_BYTES[type]?.() ?? textAsImage();
+  const file = new File([new Uint8Array(content)], name, { type });
   Object.defineProperty(file, 'arrayBuffer', {
     configurable: true,
-    value: async () => new Uint8Array([1, 2, 3]).buffer,
+    value: async () => new Uint8Array(content).buffer,
   });
   if (size !== undefined) {
     Object.defineProperty(file, 'size', { configurable: true, value: size });
@@ -115,9 +131,15 @@ function ctx(id = '7') {
 let userClient: ReturnType<typeof createFakeClient>;
 let serviceClient: ReturnType<typeof createFakeClient>;
 
-function setup(options: { uploadResult?: Result; updateResult?: Result; codes?: string[] } = {}) {
+const OLD_IMAGE = 'news/2026-01-01/old.png';
+
+function setup(options: { uploadResult?: Result; updateResult?: Result; readResult?: Result; codes?: string[] } = {}) {
   // 更新は .select('id') で変えた行を返す。既定は 1 行（0 行は 404 になる: SEC-NEWS-016）
-  userClient = createFakeClient({ news_articles: options.updateResult ?? { data: [{ id: '7' }], error: null } });
+  // 画像つきの更新が上げる前に読む古い image_url は、既定で古い画像の行（SEC-NEWS-018）
+  userClient = createFakeClient({
+    news_articles: options.updateResult ?? { data: [{ id: '7' }], error: null },
+    'news_articles:read': options.readResult ?? { data: { image_url: OLD_IMAGE }, error: null },
+  });
   serviceClient = createFakeClient(
     {
       user_roles: { data: aclRows(options.codes ?? ['admin.news.read', 'admin.news.manage']), error: null },
@@ -136,7 +158,9 @@ function newsOps() {
 }
 
 function updatePayload() {
-  return newsOps()[0]?.calls.find(([m]) => m === 'update')?.[1][0] as Record<string, unknown> | undefined;
+  return newsOps()
+    .flatMap((op) => op.calls)
+    .find(([m]) => m === 'update')?.[1][0] as Record<string, unknown> | undefined;
 }
 
 function auditRows() {
@@ -256,14 +280,14 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
     expect(updatePayload()).not.toHaveProperty('image_url');
   });
 
-  test('API-NEWS-005 画像があれば置き場へ上げ、拡張子をファイル名の最後の . から取って image_url に入れる', async () => {
+  test('API-NEWS-005 画像があれば置き場へ上げ、拡張子を送られた名前でなく検出した種類から決めて image_url に入れる（SEC-NEWS-017）', async () => {
     setup();
-    const image = makeImage('photo.final.PNG', 'image/png');
+    const image = makeImage('photo.final.html', 'image/png');
 
     const res = await PUT(makeRequest({ fields: { ...validFields, image } }), ctx());
 
     expect(res.status).toBe(200);
-    const expectedPath = `${datePrefix()}uuid-1.PNG`;
+    const expectedPath = `${datePrefix()}uuid-1.png`;
     expect(serviceClient.uploads).toHaveLength(1);
     expect(serviceClient.uploads[0]).toMatchObject({
       bucket: 'news-images',
@@ -274,13 +298,13 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
     expect(updatePayload()).toEqual({ ...expectedPayload, image_url: expectedPath });
   });
 
-  test('API-NEWS-005 ファイル名に . が無ければ拡張子を jpg にする', async () => {
+  test('API-NEWS-005 ファイル名に . が無くても、拡張子は種類 image/webp から webp にする', async () => {
     setup();
     const image = makeImage('photo', 'image/webp');
 
     await PUT(makeRequest({ fields: { ...validFields, image } }), ctx());
 
-    const expectedPath = `${datePrefix()}uuid-1.jpg`;
+    const expectedPath = `${datePrefix()}uuid-1.webp`;
     expect(serviceClient.uploads[0].path).toBe(expectedPath);
     expect(updatePayload()).toEqual({ ...expectedPayload, image_url: expectedPath });
   });
@@ -295,6 +319,78 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
     expect(await res.json()).toEqual({ error: 'Unsupported image type' });
     expect(serviceClient.uploads).toHaveLength(0);
     expect(newsOps()).toHaveLength(0);
+  });
+
+  test('API-NEWS-005 HTML を image/png と申告した画像は 400 Unsupported image type で、古い値の読みも上げも更新もしない（SEC-NEWS-017）', async () => {
+    setup();
+    const image = makeImage('a.png', 'image/png', undefined, Buffer.from('<html><script>1</script></html>'));
+
+    const res = await PUT(makeRequest({ fields: { ...validFields, image } }), ctx());
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Unsupported image type' });
+    expect(serviceClient.uploads).toHaveLength(0);
+    expect(newsOps()).toHaveLength(0);
+    expect(serviceClient.removes).toHaveLength(0);
+  });
+
+  test('API-NEWS-005 画像ありで記事が無い時（古い値の読みが null）は 404 で、何も上げず、置き場も消さない（SEC-NEWS-018）', async () => {
+    setup({ readResult: { data: null, error: null } });
+    const image = makeImage('a.png', 'image/png');
+
+    const res = await PUT(makeRequest({ fields: { ...validFields, image } }), ctx('7'));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Article not found' });
+    expect(serviceClient.uploads).toHaveLength(0);
+    expect(serviceClient.removes).toHaveLength(0);
+    expect(updatePayload()).toBeUndefined();
+    expect(auditRows()[0]).toMatchObject({ action: 'admin.news.update.not_found', outcome: 'failure', resource_id: '7' });
+  });
+
+  test('API-NEWS-005 画像ありの更新が成功したら、読んでおいた古い画像を置き場から消し、新しい画像は消さない（SEC-NEWS-018）', async () => {
+    setup();
+    const image = makeImage('a.png', 'image/png');
+
+    const res = await PUT(makeRequest({ fields: { ...validFields, image } }), ctx('7'));
+
+    expect(res.status).toBe(200);
+    const newPath = serviceClient.uploads[0].path;
+    expect(serviceClient.removes).toEqual([[OLD_IMAGE]]);
+    expect(serviceClient.removes.flat()).not.toContain(newPath);
+    expect(auditRows()[0]).toMatchObject({
+      action: 'admin.news.update',
+      metadata: { articleId: '7', status: 'published', category: 'EVENT', imageCleanup: 'ok' },
+    });
+  });
+
+  test('API-NEWS-005 画像ありの更新が失敗したら、その要求で上げた新しい画像を消し、古い画像は消さない（SEC-NEWS-018）', async () => {
+    setup({ updateResult: { data: null, error: { message: 'rls denied' } } });
+    const image = makeImage('a.png', 'image/png');
+
+    const res = await PUT(makeRequest({ fields: { ...validFields, image } }), ctx('7'));
+
+    expect(res.status).toBe(500);
+    expect(serviceClient.removes).toEqual([[serviceClient.uploads[0].path]]);
+    expect(serviceClient.removes.flat()).not.toContain(OLD_IMAGE);
+  });
+
+  test('API-NEWS-005 画像ありの更新が 0 行なら 404 を返し、新しい画像を消す（SEC-NEWS-018）', async () => {
+    setup({ updateResult: { data: [], error: null } });
+    const image = makeImage('a.png', 'image/png');
+
+    const res = await PUT(makeRequest({ fields: { ...validFields, image } }), ctx('7'));
+
+    expect(res.status).toBe(404);
+    expect(serviceClient.removes).toEqual([[serviceClient.uploads[0].path]]);
+  });
+
+  test('API-NEWS-005 画像なしの更新は、置き場から何も消さない', async () => {
+    setup();
+
+    await PUT(makeRequest(), ctx('7'));
+
+    expect(serviceClient.removes).toHaveLength(0);
   });
 
   test('API-NEWS-005 5MB ちょうどは通り、5MB を超える画像は 400 で上げない', async () => {
@@ -371,7 +467,8 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
 
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'Failed to upload image' });
-    expect(newsOps()).toHaveLength(0);
+    expect(updatePayload()).toBeUndefined();
+    expect(serviceClient.removes).toHaveLength(0);
     const rows = auditRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -425,6 +522,16 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
       detail: 'News article not found',
       metadata: { articleId: '7' },
     });
+  });
+
+  test.each(['0', '007', '1'.repeat(19)])('API-NEWS-005 id が %p なら表も置き場も触らず 404 にする（SEC-NEWS-012）', async (badId) => {
+    setup();
+
+    const res = await PUT(makeRequest({ fields: { ...validFields, image: makeImage('a.png', 'image/png') } }), ctx(badId));
+
+    expect(res.status).toBe(404);
+    expect(newsOps()).toHaveLength(0);
+    expect(serviceClient.uploads).toHaveLength(0);
   });
 
   test('API-NEWS-005 id が数字でなければ表も置き場も触らず 404 にする（22P02 を 500 にしない）', async () => {

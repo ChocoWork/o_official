@@ -48,7 +48,7 @@ describe('GET /api/auth/me', () => {
     consoleErrorSpy.mockRestore();
   });
 
-  test('API-AUTH-013 ログイン中なら id・email・role・mfaVerified を 200 で返す', async () => {
+  test('API-AUTH-013 ログイン中なら id・role・mfaVerified を 200 で返し、email は返さない', async () => {
     authenticateRequest.mockResolvedValue({
       ok: true,
       claims: {
@@ -66,7 +66,6 @@ describe('GET /api/auth/me', () => {
       authenticated: true,
       user: {
         id: 'user-1',
-        email: 'user@example.com',
         role: 'admin',
         mfaVerified: true,
       },
@@ -148,15 +147,19 @@ describe('GET /api/auth/me', () => {
     expect(body.user.role).toBe('user');
   });
 
-  test('API-AUTH-013 email が無い JWT では email を null にする', async () => {
-    authenticateRequest.mockResolvedValue({
-      ok: true,
-      claims: { sub: 'user-1', aal: 'aal1', app_metadata: { role: 'user' } },
-    });
+  test('API-AUTH-013 email が JWT にあっても、無くても、応答の user に email のキーを持たない', async () => {
+    for (const claims of [
+      { sub: 'user-1', email: 'user@example.com', aal: 'aal1', app_metadata: { role: 'user' } },
+      { sub: 'user-1', aal: 'aal1', app_metadata: { role: 'user' } },
+    ]) {
+      authenticateRequest.mockResolvedValue({ ok: true, claims });
 
-    const body = await (await callMe()).json();
+      const body = await (await callMe()).json();
+      const text = JSON.stringify(body);
 
-    expect(body.user.email).toBeNull();
+      expect(Object.keys(body.user).sort()).toEqual(['id', 'mfaVerified', 'role']);
+      expect(text).not.toContain('user@example.com');
+    }
   });
 
   test.each(['missing', 'invalid', 'expired', 'revoked'])(

@@ -52,8 +52,8 @@ function createRecordingQuery(result: QueryResult) {
       return query;
     };
   }
-  query.single = () => {
-    calls.push(['single']);
+  query.maybeSingle = () => {
+    calls.push(['maybeSingle']);
     return Promise.resolve(result);
   };
   query.then = (resolve: (value: QueryResult) => unknown, reject?: (reason: unknown) => unknown) =>
@@ -150,14 +150,22 @@ describe('ARC-NEWS-001 public read path', () => {
     expect(calls).toContainEqual(['eq', 'status', 'published']);
   });
 
-  it('ARC-NEWS-001 DB の失敗は例外にせず、公開の記事が無い一覧として描く', async () => {
-    const { query } = createRecordingQuery({ data: null, error: { message: 'db down' } });
+  it('ARC-NEWS-001 DB の失敗は空の一覧にせず、頁が NewsFetchError で reject する（誤りの画面に任せる）', async () => {
+    const { query } = createRecordingQuery({ data: null, error: { code: '42501', message: 'db down' } });
     publicFrom.mockReturnValue(query);
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    await renderNewsPage();
+    try {
+      await expect(NewsPage({ searchParams: Promise.resolve({}) })).rejects.toMatchObject({
+        name: 'NewsFetchError',
+        code: '42501',
+      });
+      expect(JSON.stringify(consoleSpy.mock.calls)).not.toContain('db down');
+    } finally {
+      consoleSpy.mockRestore();
+    }
 
-    expect(screen.getByText('現在、公開されている記事はありません')).toBeInTheDocument();
-    expect(screen.queryAllByRole('article')).toHaveLength(0);
+    expect(screen.queryByText('現在、公開されている記事はありません')).not.toBeInTheDocument();
     expect(createSignedUrl).not.toHaveBeenCalled();
   });
 
@@ -171,16 +179,16 @@ describe('ARC-NEWS-001 public read path', () => {
     });
     const navigation = createRecordingQuery({
       data: [
-        { id: 'n3', title: 'Newest article' },
-        { id: 'n2', title: 'Newer article' },
-        { id: 'n1', title: 'Older article' },
+        { id: 3, title: 'Newest article' },
+        { id: 2, title: 'Newer article' },
+        { id: 1, title: 'Older article' },
       ],
       error: null,
     });
     publicFrom.mockReturnValueOnce(detail.query).mockReturnValueOnce(navigation.query);
 
     const element = await NewsDetailPage({
-      params: Promise.resolve({ id: 'n2' }),
+      params: Promise.resolve({ id: '2' }),
       searchParams: Promise.resolve({ category: 'EVENT' }),
     });
     render(element);
@@ -188,9 +196,9 @@ describe('ARC-NEWS-001 public read path', () => {
     expect(detail.calls).toEqual([
       ['select', 'id, title, published_date, category, content, detailed_content'],
       ['eq', 'status', 'published'],
-      ['eq', 'id', 'n2'],
+      ['eq', 'id', '2'],
       ['eq', 'category', 'EVENT'],
-      ['single'],
+      ['maybeSingle'],
     ]);
     expect(navigation.calls).toEqual([
       ['select', 'id, title'],
@@ -208,16 +216,63 @@ describe('ARC-NEWS-001 public read path', () => {
   });
 
   it('ARC-NEWS-001 /news/[id] は公開済みの行が返らない時に前後を読まず 404 にする', async () => {
-    const detail = createRecordingQuery({ data: null, error: { code: 'PGRST116' } });
+    const detail = createRecordingQuery({ data: null, error: null });
     publicFrom.mockReturnValueOnce(detail.query);
 
     await expect(
-      NewsDetailPage({ params: Promise.resolve({ id: 'private-1' }) }),
+      NewsDetailPage({ params: Promise.resolve({ id: '99' }) }),
     ).rejects.toThrow('NEXT_NOT_FOUND');
 
     expect(notFoundMock).toHaveBeenCalledTimes(1);
     expect(publicFrom).toHaveBeenCalledTimes(1);
     expect(detail.calls).toContainEqual(['eq', 'status', 'published']);
     expect(createSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('ARC-NEWS-001 /news/[id] は bigint の形でない id なら DB を呼ばず 404 にする', async () => {
+    await expect(
+      NewsDetailPage({ params: Promise.resolve({ id: 'private-1' }) }),
+    ).rejects.toThrow('NEXT_NOT_FOUND');
+
+    expect(notFoundMock).toHaveBeenCalledTimes(1);
+    expect(publicFrom).not.toHaveBeenCalled();
+  });
+
+  it('ARC-NEWS-001 /news/[id] は詳細の取り出しの失敗を 404 にせず reject する', async () => {
+    const detail = createRecordingQuery({ data: null, error: { code: '57014', message: 'timeout' } });
+    publicFrom.mockReturnValueOnce(detail.query);
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await expect(
+        NewsDetailPage({ params: Promise.resolve({ id: '2' }) }),
+      ).rejects.toMatchObject({ name: 'NewsFetchError', code: '57014' });
+    } finally {
+      consoleSpy.mockRestore();
+    }
+
+    expect(notFoundMock).not.toHaveBeenCalled();
+    expect(publicFrom).toHaveBeenCalledTimes(1);
+  });
+
+  it('ARC-NEWS-001 /news/[id] は前後の取り出しが失敗しても記事を描き、前後のリンクを出さない', async () => {
+    const detail = createRecordingQuery({
+      data: { ...ARTICLES[0], detailed_content: 'Detail body' },
+      error: null,
+    });
+    const navigation = createRecordingQuery({ data: null, error: { code: '57014', message: 'timeout' } });
+    publicFrom.mockReturnValueOnce(detail.query).mockReturnValueOnce(navigation.query);
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const element = await NewsDetailPage({ params: Promise.resolve({ id: '2' }) });
+      render(element);
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      consoleSpy.mockRestore();
+    }
+
+    expect(screen.getByText('Detail body')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /前の記事|次の記事/ })).not.toBeInTheDocument();
   });
 });

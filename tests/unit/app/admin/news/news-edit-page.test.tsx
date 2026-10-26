@@ -220,8 +220,22 @@ describe('EditNewsPage', () => {
     expect(mockClientFetch).toHaveBeenCalledTimes(1);
   });
 
-  it('DD-NEWS-063 useParams が数でない id を返す時も確かめずに /api/admin/news/<id> へ取り出しを送る', async () => {
-    const id = '..%2F..%2Fadmin%2Fusers';
+  it.each(['abc', '..%2F..%2Fadmin%2Fusers', '../../admin', '0', '007', '1'.repeat(19), '12/../13', '12?x=1'])(
+    'DD-NEWS-063 useParams が記事の id の形でない %p を返す時は、取り出しを送らず「記事の読み込みに失敗しました」を出す（SEC-NEWS-012）',
+    async (id) => {
+      mockUseParams.mockReturnValue({ id });
+      mockClientFetch.mockResolvedValue(respond(true, async () => ({ data: ARTICLE })));
+
+      render(<EditNewsPage />);
+
+      expect(await screen.findByText('記事の読み込みに失敗しました')).toHaveClass('text-red-600');
+      expect(mockClientFetch).not.toHaveBeenCalled();
+      expect(mockNewsForm).not.toHaveBeenCalled();
+    },
+  );
+
+  it('DD-NEWS-063 記事の id の形（18 桁の数字）なら取り出しを送る', async () => {
+    const id = '9'.repeat(18);
     mockUseParams.mockReturnValue({ id });
     mockClientFetch.mockResolvedValue(respond(true, async () => ({ data: ARTICLE })));
 
@@ -229,6 +243,5 @@ describe('EditNewsPage', () => {
 
     await screen.findByTestId('news-form');
     expect(mockClientFetch).toHaveBeenCalledWith(`/api/admin/news/${id}`);
-    expect(lastFormProps().submitUrl).toBe(`/api/admin/news/${id}`);
   });
 });

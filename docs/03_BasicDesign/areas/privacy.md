@@ -1,6 +1,6 @@
 # PRIVACY の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: PRIVACY（プライバシーポリシー `/privacy`） | 基準コミット: `4e84d5c5`
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: PRIVACY（プライバシーポリシー `/privacy`） | 基準コミット: `4e84d5c5`
 
 ## 概要
 
@@ -17,7 +17,7 @@ PRIVACY の領域の構成・画面・画面遷移・状態遷移・データを
 
 - API の項目は無い。`/privacy` は自分の窓口を持たず、頁のサーバーの中から DB の関数を直接呼ぶ（DATA-PRIVACY-001 に書いた）
 - 結論: 頁は Server Component で、ビルドの時に固めず request のたびに描く。service role の client でショップの配送の追跡の設定を読み、オンの時だけ委託の一覧に 17TRACK の一文を足す。読めない時は頁の描画を失敗にする
-- 今のコードが満たさないセキュリティ要件（SEC-PRIVACY-002・003・004・007・008・009・011・012・014・015・016・017・018・019）は、満たす形の構造を持たないので上位につながない。満たさない所は SEC の本文で1度だけ書き、ここでは SEC の番号で指す
+- 今のコードが満たさないセキュリティ要件（SEC-PRIVACY-002・003・004・007・008・011・014・015・017・018・019）は、満たす形の構造を持たないので上位につながない。満たさない所は SEC の本文で1度だけ書き、ここでは SEC の番号で指す
 
 ## 範囲と根拠
 
@@ -63,13 +63,13 @@ sequenceDiagram
   S-->>V: HTML（委託の一覧はオン・オフで変わる）
 ```
 
-矢印は呼び出しの向き。client を作れない時と関数が失敗した時は、S から先の応答が Next.js の誤りの頁になる（ARC-PRIVACY-001）。頁は窓口を持たず、利用者の端末で動く部品も持たない。
+矢印は呼び出しの向き。client を作れない時と関数が失敗した時は、S から先の応答が `error.tsx` の誤りの画面（窓口の案内だけ）になる（ARC-PRIVACY-001）。頁は窓口を持たず、利用者の端末で動く部品も持たない。
 
 ### ARC-PRIVACY-001 頁は request のたびに描き、service role で設定を読み、読めない時は頁を失敗にする
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-PRIVACY-001、DRV-PRIVACY-002、SEC-PRIVACY-005、ADR-0350、FREQ-495-REQ-01（範囲外） |
+| 上位 | FR-PRIVACY-001、DRV-PRIVACY-002、SEC-PRIVACY-005、SEC-PRIVACY-009、ADR-0350、ADR-0354、FREQ-495-REQ-01（範囲外） |
 | 根拠 | 委託の一覧に 17TRACK の一文を出すかは店長が切り替える設定で決まる（FREQ-495-REQ-01（範囲外））ので、ビルドの時に固めた頁では切り替えが公表に届かない（DRV-PRIVACY-002、ADR-0350）。設定の関数は anon・一般会員から取り上げてあり（SEC-PRIVACY-001）、ログイン無しの閲覧者の session では読めないので service role の client を使う。読めない時に一文を黙って出し分けると誤った方針を公表するので、頁の失敗にする（SEC-PRIVACY-005） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -78,7 +78,7 @@ sequenceDiagram
 - 作り: `src/app/privacy/page.tsx` の1本だけ。既定の書き出しの Server Component と、metadata を返す関数を持つ。利用者の端末で動く部品・Route Handler・Server Action は無い
 - 描く時: 初めに Next.js の connection を待ち、ビルドの時に DB へ行かない。`revalidate` などの指定は無い
 - 読み方: `createServiceRoleClient()`（`src/lib/supabase/server.ts`）で client を作り、`getDeliveryTrackingSettings`（`src/lib/orders/tracking/delivery-store.ts`）で設定を読む。頁が使うのは `enabled` だけ（DATA-PRIVACY-001）
-- 失敗: try/catch は無い。client を作れない時も、関数が失敗した時も、返り値の形が合わない時も、例外がそのまま出て頁の描画が失敗する。`src/app/privacy` にも `src/app` の直下にも `error.tsx`・`global-error.tsx` は無く、Next.js の既定の誤りの頁になる。誤りの頁が中身を伏せるか（SEC-PRIVACY-008）と、方針を知る道を残すか（SEC-PRIVACY-009）は、その SEC の項目を参照
+- 失敗: try/catch は無い。client を作れない時も、関数が失敗した時も、返り値の形が合わない時も、例外がそのまま出て頁の描画が失敗する。例外の受け皿は `src/app/privacy/error.tsx`（DD-PRIVACY-002、ADR-0354）で、方針の本文・委託の一覧・誤りの文を出さず、窓口の案内と開き直すボタンだけを出す（SEC-PRIVACY-009）。`src/app` の直下には `error.tsx`・`global-error.tsx` は無い。誤りの画面が本番で中身を伏せるか（SEC-PRIVACY-008）は参照。`loading.tsx` と頁の中の `<Suspense>` は足さない（足すと流し始めた後の誤りになり、HTTP 状態が 200 になりうる）
 - 重さ・受け取る欄・回数の制限・応答の `Cache-Control` は、SEC-PRIVACY-002・003・004・007 を参照
 - 依存: 配送の追跡の部品（`delivery-store.ts`）の返り値の形が変わると、頁と単体テスト `tests/unit/components/PrivacyPage.test.tsx` の差し替えも直す必要が出る。在庫の作業の計画は頁を「維持」としている（`docs/superpowers/plans/2026-10-24-group-g1-allocation.md`）
 - 試験: 結合テスト `tests/integration/ui/privacy-request-time-render.test.tsx` が、connection を待つ間は DB に触れないこと・request のたびに読み直すこと・service role の鍵で作った client の rpc で読むこと・読めない時（鍵や URL が無い、rpc の誤り、返り値の形が合わない、connection の失敗）に頁の描画が失敗することを確かめる。単体テスト `tests/unit/components/PrivacyPage.test.tsx` も、connection の後に読むことと読めない時に失敗にすることを確かめる
@@ -97,7 +97,7 @@ sequenceDiagram
 - CSP の外のドメイン: `script-src` は全頁で同じに `cdn.jsdelivr.net`・`challenges.cloudflare.com`・`js.stripe.com` を許す。`challenges.cloudflare.com` はヘッダーのログインの窓（Turnstile）が使う。使わないドメインを外す形は SEC-PRIVACY-014（上位につないでいない）を参照
 - Cookie: Cookie の無い閲覧者には `session_id` を発行する（`src/proxy.ts`）。SEC-PRIVACY-015 を参照
 - 殻: root の layout が `Providers` で包み、Header と Footer を出す。`/privacy` の時だけ `CartProvider` を止める（`Providers.tsx`）。どの要件にも無い共有部品の判断で、上位につないでいない
-- ログインの状態: `LoginContext.tsx` が全頁で `/api/auth/me` を呼ぶ。応答にメールを載せない形は SEC-PRIVACY-016 を参照
+- ログインの状態: `LoginContext.tsx` が全頁で `/api/auth/me` を呼ぶ。応答はメールを載せない（`id`・役割・`mfaVerified` だけ。SEC-PRIVACY-016、API-AUTH-013）
 - 試験: 結合テスト `tests/integration/api/privacy-proxy-headers.test.ts` が、`/privacy` を通した proxy の応答に枠の禁止・HSTS・`nosniff`・CSP（nonce）が付くこと、`session_id` の発行、proxy が `/privacy` にキャッシュの指定を足さないこと、proxy の対象が全部の道で `/privacy` も外れないことを確かめる。本番ビルドの応答で見出しを試す E2E は無い
 
 ## 画面
@@ -106,7 +106,7 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-PRIVACY-001、FR-PRIVACY-002、FREQ-100-REQ-01、FREQ-101-REQ-01、DRV-PRIVACY-001、DRV-PRIVACY-003、DRV-PRIVACY-004、ADR-0351、ADR-0352 |
+| 上位 | FR-PRIVACY-001、FR-PRIVACY-002、FREQ-100-REQ-01、FREQ-101-REQ-01、DRV-PRIVACY-001、DRV-PRIVACY-003、DRV-PRIVACY-004、SEC-PRIVACY-012、ADR-0351、ADR-0352、ADR-0353 |
 | 根拠 | 個人情報の扱いを本人が1つの頁で読めるよう、前置きと 1〜12 の節を番号付きの h2 で並べる（FR-PRIVACY-001、FREQ-100-REQ-01）。法務の長文を読み通せるよう、本文の行間を広げ見出しを本文より大きくする（FREQ-101-REQ-01）。検索の結果・タブ・共有で頁が分かるよう title・description・OGP を出す（FR-PRIVACY-002、DRV-PRIVACY-001）。いつの版かを末尾の日付で示し（DRV-PRIVACY-003）、窓口はメールの字とフォームへの入口の両方を置く（ADR-0352、DRV-PRIVACY-004） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -118,8 +118,8 @@ sequenceDiagram
 - 字の大きさ: 頁の見出しは `--lk-size-5xl`、節の見出しは `--lk-size-md`（`font-brand`）、本文と一覧は `--lk-size-xs`・行間 1.9、日付は `--lk-size-2xs`。FREQ-101-REQ-01 の文の `--lk-size-xl`・`space-y-12` とは違う（`docs/05_Quality/reports/trace-matrix.md` の「食い違い」節を参照）
 - 窓口（12節）: 「事業者名：Le Fil des Heures」「お問い合わせ先：privacy@lefildesheures.com」を一覧の字で出す。メールは `mailto:` のリンクにしない。その下に `/contact` への内部のリンク「お問い合わせフォーム」（FLOW-PRIVACY-001）。メール箱が在るか・受け手と応える期間は SEC-PRIVACY-017・018 を参照
 - 10節は「ご本人であることを確認」した上で応えると書く。確かめの手順は SEC-PRIVACY-019 を参照
-- 末尾: 「制定日：2026年6月20日」「最終改定日：2026年7月11日」を固定の字で出す。委託の一覧が切り替わっても変わらない（SEC-PRIVACY-012）
-- 9節の外部サービスは Stripe だけで、委託・外部サービスに Resend・Supabase・Cloudflare Turnstile の名前は無い。2節・3節はメールマガジンを書くが機能は無い（SEC-PRIVACY-011）
+- 末尾: 「制定日：2026年6月20日」は固定の字。「最終改定日」は基準日（2026年10月26日）と追跡の設定の更新時刻（日本時間の日付）の遅いほうを `resolveRevisionDate` で決めて出す（SEC-PRIVACY-012、ADR-0353、DD-PRIVACY-003）
+- 9節の外部サービスは Stripe（1段落）と、Resend, Inc.・Supabase, Inc.・Cloudflare, Inc.（Cloudflare Turnstile）を挙げる段落（2026-10-26 追加。5節の委託の一覧は変えない）。2節に「メールマガジン」は書かない。2節・3節の「キャンペーン」の文は機能が無いまま残す（ユーザーの決定 2026-10-26。SEC-PRIVACY-011）
 - メタ: title「Privacy Policy | Le Fil des Heures」、description は固定の文、og:title・og:description は同じ字、og:image は `/mainphoto.png`
 - 試験: E2E `e2e/FR-PRIVACY-001`〜`004`（見出し・メタ・足した節・字の大きさ）、単体テスト `tests/unit/components/PrivacyPage.test.tsx`（委託の一覧と、ほかの節の文言）、結合テスト `tests/integration/ui/privacy-policy-screen.test.tsx`（h1・13の h2・section の作り・字の大きさ・日付・窓口・metadata）
 
@@ -139,12 +139,12 @@ sequenceDiagram
 flowchart LR
   Footer["全頁のフッター<br/>Privacy Policy"] -->|a 要素| Privacy["/privacy"]
   Privacy -->|12節 お問い合わせフォーム| Contact["/contact"]
-  Privacy -->|設定を読めない| Error["Next.js の既定の誤りの頁"]
+  Privacy -->|設定を読めない| Error["error.tsx の誤りの画面<br/>窓口の案内だけ"]
 ```
 
 - 入口: 全頁のフッターの「Privacy Policy」（`src/components/Footer.tsx`、範囲外の共有部品）。`next/link` でなく `a` 要素なので、頁をまるごと読み直す（推定）。頁の中にほかの入口の記述は無い
 - 出口: 12節の「お問い合わせフォーム」は `next/link` で `/contact`（範囲外の CONTACT）へ移る。外のサイトへのリンクとメールの宛先へのリンクは無い
-- 失敗: 設定を読めない時は頁の代わりに誤りの頁になり、窓口の節にも届かない（ARC-PRIVACY-001、SEC-PRIVACY-009）
+- 失敗: 設定を読めない時は頁の代わりに誤りの画面になる。窓口のメールとお問い合わせフォームへのリンクは、この画面にも出す（ARC-PRIVACY-001、SEC-PRIVACY-009、ADR-0354）
 - 戻る道はブラウザの戻ると、Header・Footer のリンクだけ
 - 試験: 結合テスト `tests/integration/ui/privacy-contact-flow.test.tsx` が、フッターのリンクが `a` 要素の素の `href`、12節のリンクが `next/link` で `/contact`、頁のリンクは `/contact` の1つだけ、設定を読めない時に窓口の節へ届かないことを確かめる
 
@@ -175,13 +175,13 @@ stateDiagram-v2
 | --- | --- | --- |
 | オフ | `shop_settings.delivery_tracking_enabled` が false（初めの値） | 委託の一覧は3項目。「17TRACK」の字は無い |
 | オン | 同じ列が true | 委託の一覧は4項目で、2番目に 17TRACK の一文 |
-| 読めない | その request で client を作れないか、関数が失敗したか、返り値の形が合わない | 頁を描かず、Next.js の既定の誤りの頁 |
+| 読めない | その request で client を作れないか、関数が失敗したか、返り値の形が合わない | 頁を描かず、`error.tsx` の誤りの画面（案内と窓口だけ） |
 
 - オン・オフを変えるのは、範囲外の管理の窓口（`src/app/api/admin/settings/shop/route.ts`）だけ。DB の関数 `admin_set_delivery_tracking` は service role だけが呼べる（DATA-PRIVACY-002）。鍵が無い時は窓口がオンを断るが、オンのまま鍵を外した状態はありうる。頁は鍵の有無を見ない
 - 頁は状態を持たない。request のたびに読み直すので、保存の後に開いた時から一覧が変わる（共有のキャッシュが無いことは確かめていない。SEC-PRIVACY-007）
 - 「読めない」は保存された状態ではなく、その request だけの結果
-- どの状態でも「最終改定日」は変わらない（SEC-PRIVACY-012）
-- 試験: 結合テスト `tests/integration/ui/privacy-tracking-clause-state.test.tsx`（オフ3項目・オン4項目・enabled だけで決まること・切り替えが次の request から届くこと・最終改定日が変わらないこと・読めない状態が保存されないこと）、単体テスト `tests/unit/components/PrivacyPage.test.tsx`。オン・オフを実際の DB で切り替えて見る E2E は、範囲外の `e2e/FR-ACCOUNT-043-delivery-visibility.spec.ts` だけ（FREQ-495-AC-05（範囲外））
+- 「最終改定日」は状態では変わらず、設定の更新時刻（追跡を切り替えた日）で決まる。切り替えていない間（`updatedAt` が null）は、オンでもオフでも基準日の2026年10月26日（SEC-PRIVACY-012）
+- 試験: 結合テスト `tests/integration/ui/privacy-tracking-clause-state.test.tsx`（オフ3項目・オン4項目・enabled だけで決まること・切り替えが次の request から届くこと・最終改定日が基準日と切り替えた日の遅いほうになること・読めない状態が保存されないこと）、単体テスト `tests/unit/components/PrivacyPage.test.tsx`。オン・オフを実際の DB で切り替えて見る E2E は、範囲外の `e2e/FR-ACCOUNT-043-delivery-visibility.spec.ts` だけ（FREQ-495-AC-05（範囲外））
 
 ## データ
 
@@ -198,7 +198,7 @@ stateDiagram-v2
 | 返り値の列 | 元 | 頁へ渡る欄 | 頁で使うか |
 | --- | --- | --- | --- |
 | `enabled` | `shop_settings.delivery_tracking_enabled`（boolean、NOT NULL、初めは false） | `enabled` | 使う（STATE-PRIVACY-001） |
-| `updated_at` | `shop_settings.delivery_tracking_updated_at` | `updatedAt` | 使わない |
+| `updated_at` | `shop_settings.delivery_tracking_updated_at` | `updatedAt` | 使う（最終改定日。SEC-PRIVACY-012、DD-PRIVACY-003） |
 | `updated_by_email` | `auth.users.email`（`delivery_tracking_updated_by` で外部結合） | `updatedByEmail` | 使わない |
 | `backfill_count` | `private.delivery_tracking_backfill_targets()` の件数 | `backfillCount` | 使わない |
 
@@ -229,7 +229,8 @@ stateDiagram-v2
 
 ## 未確認事項
 
-- 本番の誤りの頁の中身（中の事情を伏せるか）と、`/privacy` の応答の `Cache-Control` の実際の値
+- 本番の誤りの画面の中身（中の事情を伏せるか）と、`/privacy` の応答の `Cache-Control` の実際の値
+- 誤りの画面を足した後も HTTP 状態が 500 のままか（未実測。E2E `FR-PRIVACY-009` が確かめる）
 - 本番の中継（CDN）が `/privacy` の応答を保つか
 - 窓口のメール箱 `privacy@lefildesheures.com` が本番に在るか
 - 在庫の作業が `delivery-store.ts` と `get_delivery_tracking_settings` の形を変えるか（今の計画は頁を「維持」とする）

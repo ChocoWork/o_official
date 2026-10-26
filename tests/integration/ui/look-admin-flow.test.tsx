@@ -52,6 +52,11 @@ function json(ok: boolean, body: unknown): Response {
   return { ok, status: ok ? 200 : 400, statusText: '', json: async () => body } as unknown as Response;
 }
 
+// 一覧の応答。管理の権限がある人の形（meta.canManage が true）
+function listOf(data: unknown, canManage = true): Response {
+  return json(true, { data, meta: { canManage } });
+}
+
 function makeFile(name: string, type: string) {
   return new File(['x'], name, { type });
 }
@@ -84,7 +89,7 @@ describe('LOOK の管理の一覧と作成・編集の行き来', () => {
   beforeEach(() => {
     mockPush.mockReset();
     mockFetch.mockReset();
-    listResults = [async () => json(true, { data: [LOOK, OTHER] })];
+    listResults = [async () => listOf([LOOK, OTHER])];
     itemResult = async () => json(true, { data: ITEMS });
     lookResult = async () => json(true, { data: LOOK });
     submitResult = async () => json(true, { data: LOOK });
@@ -216,8 +221,8 @@ describe('LOOK の管理の一覧と作成・編集の行き来', () => {
 
   it('FLOW-LOOK-002 一覧の上で公開を切り替えると読み直した状態を出し、画面を移らない', async () => {
     listResults = [
-      async () => json(true, { data: [LOOK] }),
-      async () => json(true, { data: [{ ...LOOK, status: 'private' }] }),
+      async () => listOf([LOOK]),
+      async () => listOf([{ ...LOOK, status: 'private' }]),
     ];
     mockFetch.mockImplementation((url: string, init?: RequestInit) => {
       const method = init?.method ?? 'GET';
@@ -237,8 +242,8 @@ describe('LOOK の管理の一覧と作成・編集の行き来', () => {
 
   it('FLOW-LOOK-002 一覧の上で削除を確かめて同意すると、読み直した一覧から LOOK が消える', async () => {
     listResults = [
-      async () => json(true, { data: [LOOK, OTHER] }),
-      async () => json(true, { data: [OTHER] }),
+      async () => listOf([LOOK, OTHER]),
+      async () => listOf([OTHER]),
     ];
     render(<LookSection />);
     await screen.findByText('Effortless Elegance');

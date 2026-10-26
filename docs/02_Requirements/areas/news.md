@@ -1735,7 +1735,11 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 出どころ | OWASP ASVS 4.0.3 V8.2.1。`docs/05_Quality/reviews/security/security_review_news.md:47,49` |
 | 優先度 | MUST |
 
-`/api/news` の成功・失敗の応答と、回数の制限の 429・503 に `Cache-Control: no-store`（または `private`）を付ける。今のコードは満たさない。
+`/api/news` の成功・失敗の応答と、回数の制限の 429・503 に `Cache-Control: no-store`（または `private`）を付ける。2026-10-26 に満たした（以前は何も付けなかった）。
+
+- `GET /api/news` を内側の関数 `handleGet` に改め、`export` の `GET` が `withNoStore`（`src/lib/http/no-store.ts`）で全ての戻りを包む。200・429・503（回数の制限の戻りをそのまま包む）・500 の全てが `Cache-Control: private, no-store` になる（IMPL-NEWS-103、DD-NEWS-004）
+- 200 にも付けるので CDN では使い回せなくなる。送り元単位の回数の制限を共有のキャッシュに飛ばされないために意図して付けた
+- `proxy.ts`・`next.config.ts` が後から別の値で上書きしないかは、E2E（`SEC-NEWS-006-AC-01`・`AC-02`）が見出しの値そのものを見て確かめる
 
 ### SEC-NEWS-006-AC-01 /api/news の成功の応答に no-store が付く
 
@@ -1969,7 +1973,11 @@ anon で `search_public_news` を呼ぶと、権限の誤りで断られるこ�
 | 出どころ | OWASP ASVS 4.0.3 V5.1.3、V5.1.4。`docs/05_Quality/reviews/security/security_review_news.md:43`、`docs/05_Quality/reviews/security/security_review_news_id.md:45-47` |
 | 優先度 | SHOULD |
 
-`/api/news` の `category` は分類の許可の一覧で確かめ、外れた値は取り出しに渡さない（ALL として扱うか 400 にするかは未定）。公開と管理の `[id]` は正の整数として確かめ、外れたら DB に問い合わせずに 404（公開）・400 か 404（管理）にする。管理の編集のページ（`src/app/admin/news/edit/[id]/page.tsx`）も、URL の `id` を窓口の道に入れる前に正の整数か確かめ、外れたら要求を送らない。公開の画面の分類は今のコードが満たす（`src/app/news/page.tsx` の分類の確かめ）。API・id・編集のページは満たさない（編集のページは URL の id を確かめずに窓口の道に入れる）。
+`/api/news` の `category` は分類の許可の一覧で確かめ、外れた値は取り出しに渡さず ALL として扱う。公開と管理の `[id]` は正の整数として確かめ、外れたら DB に問い合わせずに 404（公開）・400 か 404（管理）にする。管理の編集のページ（`src/app/admin/news/edit/[id]/page.tsx`）も、URL の `id` を窓口の道に入れる前に正の整数か確かめ、外れたら要求を送らない。公開の画面の分類は今のコードが満たす（`src/app/news/page.tsx`）。公開の窓口の分類と公開の詳細の id、管理の `[id]` と編集のページは 2026-10-26 に満たした。
+
+- 分類と id の確かめは `src/features/news/lib/news-input.ts` に置く（`resolveNewsCategory`＝IMPL-NEWS-169、`isNewsId`＝IMPL-NEWS-168、DD-NEWS-070）。`resolveNewsCategory` は大文字にして許可の一覧にある物だけ返し、外れ・無しは ALL。`/api/news`・`/news`・`/news/[id]` が同じ決まりを使う
+- 管理の `[id]`（GET・PUT・PATCH・DELETE）も同じ `isNewsId` を、権限の確かめの後・DB に触れる前に当てる。外れた id（`abc`・`0`・`007`・19 桁以上など）は DB にも置き場にも触れず 404 にする（GET は固定の `Article not found`。PUT・PATCH・DELETE は生の id でなく長さだけを残す失敗の監査つき）。管理の編集のページは `isNewsId` を通らない id では窓口へ要求を送らず「記事の読み込みに失敗しました」を出し、通った id も `encodeURIComponent` を通して道に入れる（IMPL-NEWS-144、DD-NEWS-063）
+- `isNewsId` は `/^[1-9]\d{0,17}$/`（bigint の桁）。`/news/[id]` の頁と `getPublishedNewsDetailById` が DB に渡す前に確かめ、外れたら DB を呼ばず `notFound()`（頁）・`null`（取り出し）にする。`generateMetadata` は外れた id では固定の題を返す
 
 ### SEC-NEWS-012-AC-01 /api/news は許可の一覧に無い分類を取り出しに渡さない
 
@@ -1981,7 +1989,7 @@ anon で `search_public_news` を呼ぶと、権限の誤りで断られるこ�
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
-`/api/news?category=<許可の一覧に無い長い文字>` の応答が、ALL と同じ記事の一覧か 400 であり、0件の一覧ではないこと。
+`/api/news?category=<許可の一覧に無い長い文字>` の応答が、200 で ALL と同じ記事の一覧であり、0件の一覧ではないこと。
 
 ### SEC-NEWS-012-AC-02 数でない記事の id は 404 になる
 
@@ -2147,8 +2155,8 @@ Origin と Referer の無い `DELETE /api/admin/news/<id>` が 403 で、記事�
 
 - PUT・PATCH は `.update(...).eq('id', id).select('id')`、DELETE は `.delete().eq('id', id).select('id')` で変えた行を受け取る。0 行（無い、または RLS が隠した）は 404 `{ error: 'Article not found' }` と、結果 `failure`・`detail='News article not found'` の監査 1 行（`admin.news.update.not_found`・`admin.news.status_update.not_found`・`admin.news.delete.not_found`）にする。成功の監査は書かない
 - 管理の窓口は利用者の session の client で書くので、RLS が隠した行も 0 行になり、403 でなく 404 になる
-- 道の `id` は 18 桁以下の数字（`/^\d{1,18}$/`）だけを DB に渡す。外れた id は DB に触らず（PUT では画像の置き場にも触らず）404 にし、失敗の監査には生の id でなく長さ（`articleIdLength`）だけを残す。DB の bigint の桁あふれ（22P02）を 500 にしない
-- PUT は画像を上げてから更新するので、無い id への PUT でも上げた画像は置き場に残る（更新が失敗した時の枝と同じ。SEC-NEWS-018 の範囲で、このタスクでは直さない）
+- 道の `id` は `isNewsId`（SEC-NEWS-012。先頭が 0 でない 18 桁以下の数字）だけを DB に渡す。外れた id は DB に触らず（PUT では画像の置き場にも触らず）404 にし、失敗の監査には生の id でなく長さ（`articleIdLength`）だけを残す。DB の bigint の桁あふれ（22P02）を 500 にしない
+- PUT は画像を付けた時、上げる前にその記事の古い `image_url` を読み、記事が無ければ 404 で何も上げない。上げた後に更新が失敗・0 行だった時は、その要求で上げた画像を置き場から消す（SEC-NEWS-018）。以前あった「無い id への PUT で上げた画像が置き場に残る」は、この順番で直した
 
 ### SEC-NEWS-016-AC-01 記事を作ると監査の記録が1件残る
 
@@ -2185,7 +2193,7 @@ Origin と Referer の無い `DELETE /api/admin/news/<id>` が 403 で、記事�
 | 出どころ | OWASP ASVS 4.0.3 V12.1.1、V12.2.1、V12.3.1 |
 | 優先度 | SHOULD |
 
-画像の種類は中身のしるしで確かめ、JPEG・PNG・WebP・GIF の4つだけを受ける。保存の名前の拡張子は確かめた種類から決め、作る時（POST）も直す時（PUT）も同じにする。大きさは5MBまで（今のコードは満たす）。中身の確かめと PUT の拡張子は満たさない。
+画像の種類は中身のしるしで確かめ、JPEG・PNG・WebP・GIF の4つだけを受ける。保存の名前の拡張子は確かめた種類から決め、作る時（POST）も直す時（PUT）も同じにする。大きさは5MBまで。2026-10-26 に満たした。
 
 ### SEC-NEWS-017-AC-01 画像と偽った HTML を断る
 
@@ -2234,7 +2242,13 @@ Origin と Referer の無い `DELETE /api/admin/news/<id>` が 403 で、記事�
 | 出どころ | ASVS 未対応付け |
 | 優先度 | SHOULD |
 
-記事を消した時・画像を差し替えた時・作成で DB への保存に失敗した時に、使わなくなった画像を置き場から消す。今のコードは満たさない。
+記事を消した時・画像を差し替えた時・作成で DB への保存に失敗した時に、使わなくなった画像を置き場から消す。2026-10-26 に満たした。
+
+- 順は「行を先に変える → 置き場を消す」。消す前に道筋を 1 本ずつ `isOwnNewsImagePath`（`news/` の下の安全な文字だけ。`..`・外の URL・別の置き場・古い見本の道筋は消さない側に倒れる）で確かめる（IMPL-NEWS-173、DD-NEWS-071）
+- 作成: DB への保存が失敗・例外になった時、上げた画像を消す。差し替え（PUT）: 更新が成功した後に古い画像を、更新が失敗・0 行だった時はその要求で上げた新しい画像を消す（古い画像は消さない）。新旧が同じ道筋なら消さない。削除: 行を消した後に、消した行の `image_url` を消す
+- 置き場の削除は service role の client で行う（利用者の session の client では `storage.objects` の方針に断られうるため。この波では移行を作らない）。削除の窓口は、行を消した後にだけその client を作る
+- 置き場の削除の失敗は、名前と符号だけを記録し、応答は成功のまま返す。監査の `metadata.imageCleanup` に `ok`・`failed` を残す
+- 本番に既に残っている孤児の画像の掃除は別の運用作業で、この変更の範囲に入れない
 
 ### SEC-NEWS-018-AC-01 記事を消すと画像も置き場から消える
 
@@ -2320,7 +2334,15 @@ AC-01 の失敗の時のサーバーの記録に、Supabase の鍵・利用者�
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/security/security_review_news.md:44,91` |
 | 優先度 | SHOULD |
 
-公開の取り出しは Supabase の `error` を見て、失敗を記録に残す。管理の一覧は取得の失敗を0件と別の表示にする。管理の1件の取得は、無い時だけ 404、DB の失敗は 500 にする。画像の署名の client を作れない時も、公開の一覧の文字は出す。今のコードは満たさない。
+公開の取り出しは Supabase の `error` を見て、失敗を記録に残す。管理の一覧は取得の失敗を0件と別の表示にする。管理の1件の取得は、無い時だけ 404、DB の失敗は 500 にする。画像の署名の client を作れない時も、公開の一覧の文字は出す。公開の分と管理の分（一覧・1件の取得）は 2026-10-26 に満たした。
+
+- 公開の取り出しは `error` を読み、失敗を `NewsFetchError`（IMPL-NEWS-174、DD-NEWS-003）で投げる。記録に残すのは誤りの名前と符号（`code`）だけで、`message` は残さない。`getPublishedNews`・`getPublishedNewsDetailById` が対象で、詳細は `.maybeSingle()` にして「行が無い」（`null`＝404）と「失敗」（投げる）を分けた
+- 投げた失敗は、`/news`・`/news/[id]` では同じ階層の `error.tsx`（IMPL-NEWS-167、DD-NEWS-069）の誤りの画面に出し、「現在、公開されている記事はありません」にしない。`/api/news` は固定の文 `Failed to fetch news` の 500 にする
+- ホームの NEWS の区画は落とさない（`src/app/page.tsx` が `getPublishedNews` の失敗を握って空にする。DD-HOME-001）。前後のリンクの取り出し（`getPublishedNewsNavigation`）だけは、失敗を記録して前後なしで返し、記事の本体は出す。総数（`getPublishedNewsCount`）は今までどおり 0 を返す
+- 画像の署名の client を作れない時も公開の一覧の文字は出す、は 1-B（SEC-NEWS-005）で公開の取り出しが署名も service role も持たなくなったので満たしている
+- 誤りの画面の HTTP 状態（流し始める前の誤りなら 500 のまま）は未確認。`loading.tsx` と頁の中の `<Suspense>` は足さない
+- 管理の一覧（`NewsSection`。IMPL-NEWS-141、DD-NEWS-060）は取得が失敗した時、「ニュース記事がありません」でなく `role="alert"` の「ニュース記事の取得に失敗しました」と「再読み込み」のボタンを出す。切り替えの後の読み直しに失敗した時は、前の一覧の上に同じ知らせを出す。一覧の窓口は失敗を固定の文 `Failed to fetch news articles` の 500 にする
+- 管理の1件の取得（`GET /api/admin/news/[id]`）は `.maybeSingle()` にして、行が無い時だけ 404、DB の失敗は固定の文 `Failed to fetch news article` の 500 にし、記録は誤りの名前と符号だけにする。外れた id は DB を呼ばず 404（SEC-NEWS-012）
 
 ### SEC-NEWS-020-AC-01 管理の一覧の取得の失敗を0件と別に表示する
 
@@ -2356,7 +2378,7 @@ AC-01 の失敗の時のサーバーの記録に、Supabase の鍵・利用者�
 | 確かめ方 | 単体テスト・結合テスト（取り出しの失敗で、記録の出口に失敗が渡る）。DB を止められず、サーバーの記録も読めないので E2E にしない |
 | 出どころ | 実装から推定 |
 
-`/news` の取り出しが失敗した時、サーバーの記録に取り出しの失敗が1件以上出ていること。
+`/news` の取り出しが失敗した時、サーバーの記録に取り出しの失敗（誤りの名前と符号）が1件以上出ていること。また「現在、公開されている記事はありません」は表示されず、誤りの画面になること。
 
 ### SEC-NEWS-021 管理の窓口に回数の制限を付ける
 
@@ -2646,7 +2668,6 @@ NEWS タブの一覧は公開日の新しい順。行ごとに画像・状態の
 - FREQ-149-AC-02 の「6件以下なら VIEW ALL が無い」側を何で確かめるか。E2E は並列の他のテストの件数と干渉するので「6件より多い」側だけにした。6件以下の側を、直列で流す E2E か結合テスト（`NewsSection` が総数で出し分ける所）のどちらにするか
 - SEC-NEWS-004-AC-01・007-AC-01・007-AC-02・008-AC-01 は AC の文のとおり `/api/news` の `image_url` を読む。SEC-NEWS-005 の対策（公開の `/api/news` から `image_url` を外す）を 2026-10-26 に入れたので、この 4 つの E2E は読む物が無くなり、署名つき URL が無いことで自明に通る（007-AC-01・AC-02・008-AC-01 は `test.fail` の印を外した）。確かめ先を、署名を使う `/api/search` と管理の署名に AC の文ごと移すか（波 1-C で決める）
 - SEC-NEWS-012-AC-03: 見出しは「数でない id で窓口へ要求を送らない」だが、本文の条件は「`/api/admin/news/` の下でない `/api` への要求が送られず、記事の読み込みの失敗の文が表示される」。`abc` の場合、要求が `/api/admin/news/abc` のように窓口の下に留まっても本文は満たされる。見出しの「窓口へ要求を送らない」に合わせて本文を直すか、本文に合わせて見出しを直すか
-- 管理のニュースの PUT は画像を上げてから更新するので、無い id（0 行 → 404）でも上げた画像が置き場に残る。更新の失敗の枝と同じ振る舞いで、SEC-NEWS-018（使わなくなった画像を消す）の範囲
 - 公開のニュースを読む要求 `SR-NEWS-001`・`002` と、FR-ADMIN-003 を FREQ-14 につないだことの確認
 - E2E FR-NEWS-ALL-008〜011 の動き（DRV-NEWS-002・003）を要件として認めるか。認めれば受け入れ条件を起こしてテスト名に付けられる
 - FREQ-275-REQ-02 の文字の大きさ（20px／28px）が FREQ-314（範囲外） で撤回されたか

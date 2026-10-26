@@ -186,6 +186,7 @@ describe('admin stockist security guards', () => {
       .mockResolvedValueOnce({
         status: 429,
         _body: { error: 'Too many requests' },
+        headers: new Headers({ 'Cache-Control': 's-maxage=60' }),
         json: async () => ({ error: 'Too many requests' }),
       });
 
@@ -201,6 +202,7 @@ describe('admin stockist security guards', () => {
     const body = await response.json();
 
     expect(response.status).toBe(429);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     expect(body).toEqual({ error: 'Too many requests' });
     expect(mockRequireCsrfOrDeny).not.toHaveBeenCalled();
   });

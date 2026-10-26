@@ -28,6 +28,7 @@ jest.mock('@/features/look/services/admin-audit', () => ({
 }));
 
 jest.mock('@/lib/storage/look-images', () => ({
+  ...jest.requireActual('@/lib/storage/look-images'),
   signLookImageUrls: jest.fn(),
 }));
 
@@ -41,6 +42,7 @@ const {
 const { logAdminLookAudit: mockAudit } = require('@/features/look/services/admin-audit');
 
 const { PUT } = require('@/app/api/admin/looks/[id]/route');
+const { minimalGif, minimalJpeg, minimalPng, minimalWebp, textAsImage } = require('../../../../fixtures/images');
 
 type Result = { data?: unknown; error?: unknown };
 
@@ -48,25 +50,37 @@ interface ClientOptions {
   existingLook?: Result;
   items?: Result;
   uploadError?: { message: string } | null;
+  /** 何回目（0 始まり）の上げで失敗させるか。既定は全部 */
+  failUploadAt?: number;
+  storageRemove?: 'fail' | 'throw';
   updateError?: unknown;
   deleteItemsError?: unknown;
   insertItemsError?: unknown;
 }
 
 function createClient(options: ClientOptions = {}) {
-  const upload = jest.fn().mockResolvedValue({ error: options.uploadError ?? null });
+  const upload = jest.fn().mockImplementation(async () => {
+    const callIndex = upload.mock.calls.length - 1;
+    const failing = options.uploadError && (options.failUploadAt === undefined || options.failUploadAt === callIndex);
+    return { error: failing ? options.uploadError : null };
+  });
+  const storageRemove = jest.fn().mockImplementation(async () => {
+    if (options.storageRemove === 'throw') throw new Error('storage down');
+    return { error: options.storageRemove === 'fail' ? { message: 'storage SECRET' } : null };
+  });
+  const select = jest.fn();
   const lookUpdate = jest.fn();
   const lookItemsDelete = jest.fn();
   const lookItemsInsert = jest.fn().mockResolvedValue({ error: options.insertItemsError ?? null });
   const itemsIn = jest.fn().mockResolvedValue(options.items ?? { data: [{ id: 1 }], error: null });
   const client = {
-    storage: { from: jest.fn().mockReturnValue({ upload }) },
+    storage: { from: jest.fn().mockReturnValue({ upload, remove: storageRemove }) },
     from: jest.fn((table: string) => {
       if (table === 'looks') {
         return {
-          select: jest.fn().mockReturnValue({
+          select: select.mockReturnValue({
             eq: jest.fn().mockReturnValue({
-              single: jest.fn().mockResolvedValue(
+              maybeSingle: jest.fn().mockResolvedValue(
                 options.existingLook ?? {
                   data: { id: 1, status: 'private', image_urls: ['looks/old.jpg'] },
                   error: null,
@@ -90,13 +104,22 @@ function createClient(options: ClientOptions = {}) {
       };
     }),
   };
-  return { client, upload, lookUpdate, lookItemsDelete, lookItemsInsert, itemsIn };
+  return { client, upload, storageRemove, select, lookUpdate, lookItemsDelete, lookItemsInsert, itemsIn };
 }
 
-function createImage(name: string, type: string, size?: number) {
-  const file = new File(['image-bytes'], name, { type });
+const IMAGE_BYTES: Record<string, () => Buffer> = {
+  'image/jpeg': minimalJpeg,
+  'image/png': minimalPng,
+  'image/webp': minimalWebp,
+  'image/gif': minimalGif,
+};
+
+// 申告の種類に合う本物の先頭の印を持つ画像。bytes を渡すと中身をそれにする（申告とずらす試験用）。
+function createImage(name: string, type: string, size?: number, bytes?: Buffer) {
+  const content: Buffer = bytes ?? (IMAGE_BYTES[type]?.() ?? textAsImage());
+  const file = new File([new Uint8Array(content)], name, { type });
   Object.defineProperty(file, 'arrayBuffer', {
-    value: jest.fn().mockResolvedValue(new TextEncoder().encode('image-bytes').buffer),
+    value: jest.fn().mockResolvedValue(new Uint8Array(content).buffer),
   });
   if (size !== undefined) {
     Object.defineProperty(file, 'size', { value: size });
@@ -191,6 +214,37 @@ describe('DD-LOOK-064 PUT /api/admin/looks/[id]', () => {
 
       expect(response.status).toBe(503);
       expect(mockAudit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('id の確かめ', () => {
+    it.each(['abc', '1e3', '0', '-1', '1.5'])(
+      'DD-LOOK-064 id が %s の時は認可と回数の後で 400 Invalid look id と監査（id の生の値は残さず長さだけ）で、DB を呼ばない',
+      async (badId) => {
+        const response = await PUT(createRequest(createForm()), { params: Promise.resolve({ id: badId }) });
+
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: 'Invalid look id' });
+        expect(audits()).toEqual([
+          expect.objectContaining({
+            action: 'admin.look.update',
+            outcome: 'failure',
+            detail: 'Invalid look id',
+            metadata: { id_length: badId.length },
+          }),
+        ]);
+        expect(audits()[0].resourceId).toBeUndefined();
+        expect(mockCreateClient).not.toHaveBeenCalled();
+      },
+    );
+
+    it('DD-LOOK-064 id が不正でも認可が通らなければ今までの 403 を返す（id の検査より先）', async () => {
+      const denied = { status: 403, json: async () => ({ error: 'Forbidden' }) };
+      mockAuthorize.mockResolvedValue({ ok: false, response: denied });
+
+      const response = await PUT(createRequest(createForm()), { params: Promise.resolve({ id: 'abc' }) });
+
+      expect(response).toBe(denied);
     });
   });
 
@@ -289,6 +343,37 @@ describe('DD-LOOK-064 PUT /api/admin/looks/[id]', () => {
       });
     });
 
+    it('DD-LOOK-064 文字のファイルを image/png と申告すると 400 で、置き場にも量の枠にも触れず、中身もファイル名も監査に残さない', async () => {
+      const { client, upload } = createClient();
+      mockCreateClient.mockResolvedValue(client);
+
+      const response = await PUT(
+        createRequest(createForm({}, [createImage('secret-name.png', 'image/png', undefined, textAsImage())])),
+        { params: params() },
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'Unsupported image type' });
+      expect(upload).not.toHaveBeenCalled();
+      expect(mockConsumeQuota).not.toHaveBeenCalled();
+      expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(audits()[0]).toMatchObject({ detail: 'Unsupported image type', resourceId: '1' });
+      const audited = JSON.stringify(audits().map((entry: { request?: unknown }) => ({ ...entry, request: undefined })));
+      expect(audited).not.toContain('secret-name');
+      expect(audited).not.toContain('plain text');
+    });
+
+    it('DD-LOOK-064 PNG の中身を image/webp と申告しても 400 になる', async () => {
+      const response = await PUT(
+        createRequest(createForm({}, [createImage('a.webp', 'image/webp', undefined, minimalPng())])),
+        { params: params() },
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'Unsupported image type' });
+      expect(mockConsumeQuota).not.toHaveBeenCalled();
+    });
+
     it('DD-LOOK-064 更新の画像が 5MB を超える（5MB+1）と 400 Image size must be 5MB or less', async () => {
       const big = createImage('a.png', 'image/png', 5 * 1024 * 1024 + 1);
 
@@ -327,8 +412,29 @@ describe('DD-LOOK-064 PUT /api/admin/looks/[id]', () => {
   });
 
   describe('今の LOOK と商品の照らし', () => {
-    it('DD-LOOK-064 更新の今の LOOK が無い時（single が error）は 404 と監査 Look not found', async () => {
-      const { client, lookUpdate } = createClient({ existingLook: { data: null, error: { message: 'none' } } });
+    it('DD-LOOK-064 更新の今の LOOK の取り出しが DB の失敗なら 500 と監査 Failed to fetch look で、書き込まない', async () => {
+      const { client, lookUpdate, upload } = createClient({
+        existingLook: { data: null, error: Object.assign(new Error('boom SECRET'), { code: '57014' }) },
+      });
+      mockCreateClient.mockResolvedValue(client);
+
+      const response = await PUT(createRequest(createForm({}, [createImage('a.png', 'image/png')])), {
+        params: params(),
+      });
+
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ error: 'Failed to fetch look' });
+      expect(audits()).toEqual([
+        expect.objectContaining({ detail: 'Failed to fetch look', resourceId: '1', outcome: 'failure' }),
+      ]);
+      expect(errorSpy).toHaveBeenCalledWith('Failed to fetch look:', { name: 'Error', code: '57014' });
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('SECRET');
+      expect(lookUpdate).not.toHaveBeenCalled();
+      expect(upload).not.toHaveBeenCalled();
+    });
+
+    it('DD-LOOK-064 更新の今の LOOK が無い時（maybeSingle が null）は 404 と監査 Look not found で、何も上げない', async () => {
+      const { client, lookUpdate, upload } = createClient({ existingLook: { data: null, error: null } });
       mockCreateClient.mockResolvedValue(client);
 
       const response = await PUT(createRequest(createForm()), { params: params() });
@@ -339,6 +445,7 @@ describe('DD-LOOK-064 PUT /api/admin/looks/[id]', () => {
         expect.objectContaining({ detail: 'Look not found', resourceId: '1', outcome: 'failure' }),
       ]);
       expect(lookUpdate).not.toHaveBeenCalled();
+      expect(upload).not.toHaveBeenCalled();
     });
 
     it('DD-LOOK-064 更新の今の LOOK の行が null で error も無い時も 404', async () => {
@@ -454,10 +561,10 @@ describe('DD-LOOK-064 PUT /api/admin/looks/[id]', () => {
       expect(audits()[0].metadata.image_count).toBe(0);
     });
 
-    it('DD-LOOK-064 更新（画像あり）は全部を置き場に上げ、並びを差し替える。拡張子が無ければ jpg', async () => {
+    it('DD-LOOK-064 更新（画像あり）は全部を置き場に上げ、並びを差し替える。保存名は検出した種類から作る', async () => {
       const { client, upload, lookUpdate } = createClient();
       mockCreateClient.mockResolvedValue(client);
-      const images = [createImage('a.png', 'image/png'), createImage('noext', 'image/webp')];
+      const images = [createImage('a/b.html', 'image/png'), createImage('noext', 'image/webp')];
 
       const response = await PUT(createRequest(createForm({}, images)), { params: params() });
 
@@ -466,8 +573,8 @@ describe('DD-LOOK-064 PUT /api/admin/looks/[id]', () => {
       expect(upload).toHaveBeenCalledTimes(2);
       const firstPath: string = upload.mock.calls[0][0];
       const secondPath: string = upload.mock.calls[1][0];
-      expect(firstPath).toMatch(/^looks\/\d{4}-\d{2}-\d{2}\/.+\.png$/);
-      expect(secondPath).toMatch(/^looks\/\d{4}-\d{2}-\d{2}\/.+\.jpg$/);
+      expect(firstPath).toMatch(/^looks\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.png$/);
+      expect(secondPath).toMatch(/^looks\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.webp$/);
       expect(upload.mock.calls[0][2]).toEqual({ contentType: 'image/png', cacheControl: '3600', upsert: false });
       expect(upload.mock.calls[1][2]).toEqual(expect.objectContaining({ contentType: 'image/webp' }));
       const { image_urls: imageUrls } = lookUpdate.mock.calls[0][0];
@@ -476,8 +583,8 @@ describe('DD-LOOK-064 PUT /api/admin/looks/[id]', () => {
       expect(audits()[0].metadata.image_count).toBe(2);
     });
 
-    it('DD-LOOK-064 更新の置き場の失敗は 500 Failed to upload image と監査 Failed to upload look image', async () => {
-      const { client, lookUpdate } = createClient({ uploadError: { message: 'bucket down' } });
+    it('DD-LOOK-064 更新の置き場の失敗は 500 Failed to upload image ちょうどと監査 Failed to upload look image', async () => {
+      const { client, lookUpdate } = createClient({ uploadError: { message: 'bucket down SECRET' } });
       mockCreateClient.mockResolvedValue(client);
 
       const response = await PUT(createRequest(createForm({}, [createImage('a.png', 'image/png')])), {
@@ -485,12 +592,14 @@ describe('DD-LOOK-064 PUT /api/admin/looks/[id]', () => {
       });
 
       expect(response.status).toBe(500);
-      expect(await response.json()).toEqual({ error: 'Failed to upload image: bucket down' });
+      expect(await response.json()).toEqual({ error: 'Failed to upload image' });
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('SECRET');
       expect(audits()[0]).toMatchObject({
         detail: 'Failed to upload look image',
         resourceId: '1',
-        metadata: { image_type: 'image/png', storage_path: expect.stringMatching(/^looks\//) },
+        metadata: { image_type: 'image/png' },
       });
+      expect(JSON.stringify(audits()[0])).not.toContain('looks/');
       expect(lookUpdate).not.toHaveBeenCalled();
     });
 
@@ -575,6 +684,145 @@ describe('DD-LOOK-064 PUT /api/admin/looks/[id]', () => {
       await PUT(createRequest(createForm()), { params: params() });
 
       expect(audits()[0].metadata.previous_status).toBeNull();
+    });
+  });
+
+  describe('画像の後始末', () => {
+    const OLD = ['looks/2026-01-01/old1.jpg', 'looks/2026-01-01/old2.jpg'];
+    const withOld = (extra: Partial<ClientOptions> = {}) =>
+      createClient({ existingLook: { data: { id: 1, status: 'private', image_urls: OLD }, error: null }, ...extra });
+    const newImages = () => [createImage('a.png', 'image/png'), createImage('b.jpg', 'image/jpeg')];
+
+    it('DD-LOOK-064 更新の存在確認は image_urls を読む', async () => {
+      const { client, select } = createClient();
+      mockCreateClient.mockResolvedValue(client);
+
+      await PUT(createRequest(createForm()), { params: params() });
+
+      expect(select).toHaveBeenCalledWith('id,status,image_urls');
+    });
+
+    it('DD-LOOK-064 画像つきの更新の成功は、行を変えた後に古い道筋だけを一度に置き場から消す', async () => {
+      const { client, upload, storageRemove } = withOld();
+      mockCreateClient.mockResolvedValue(client);
+
+      const response = await PUT(createRequest(createForm({}, newImages())), { params: params() });
+
+      expect(response.status).toBe(200);
+      expect(storageRemove).toHaveBeenCalledTimes(1);
+      expect(storageRemove).toHaveBeenCalledWith(OLD);
+      const newPaths = upload.mock.calls.map((call: unknown[]) => call[0]);
+      for (const path of newPaths) {
+        expect(storageRemove.mock.calls[0][0]).not.toContain(path);
+      }
+    });
+
+    it('DD-LOOK-064 古い道筋のうち、自分の接頭辞の外（古い見本・外の URL・..）は渡さない', async () => {
+      const { client, storageRemove } = createClient({
+        existingLook: {
+          data: {
+            id: 1,
+            status: 'private',
+            image_urls: ['looks/a.png', 'e2e/look-1-1.png', 'https://evil.example/looks/x.png', 'looks/../y.png'],
+          },
+          error: null,
+        },
+      });
+      mockCreateClient.mockResolvedValue(client);
+
+      const response = await PUT(createRequest(createForm({}, newImages())), { params: params() });
+
+      expect(response.status).toBe(200);
+      expect(storageRemove).toHaveBeenCalledWith(['looks/a.png']);
+    });
+
+    it('DD-LOOK-064 画像なしの更新は置き場を呼ばない', async () => {
+      const { client, storageRemove } = withOld();
+      mockCreateClient.mockResolvedValue(client);
+
+      const response = await PUT(createRequest(createForm()), { params: params() });
+
+      expect(response.status).toBe(200);
+      expect(storageRemove).not.toHaveBeenCalled();
+    });
+
+    it('DD-LOOK-064 looks の更新が失敗したら、この要求で上げた新しい画像だけを消し、古い画像は消さない', async () => {
+      const { client, upload, storageRemove } = withOld({ updateError: { message: 'x' } });
+      mockCreateClient.mockResolvedValue(client);
+
+      const response = await PUT(createRequest(createForm({}, newImages())), { params: params() });
+
+      expect(response.status).toBe(500);
+      expect(storageRemove).toHaveBeenCalledTimes(1);
+      expect(storageRemove).toHaveBeenCalledWith(upload.mock.calls.map((call: unknown[]) => call[0]));
+      for (const old of OLD) {
+        expect(storageRemove.mock.calls[0][0]).not.toContain(old);
+      }
+    });
+
+    it('DD-LOOK-064 更新は成功し関連の保存が失敗したら、新しい画像は消さず古い画像を消して 500', async () => {
+      const { client, upload, storageRemove } = withOld({ insertItemsError: { message: 'x' } });
+      mockCreateClient.mockResolvedValue(client);
+
+      const response = await PUT(createRequest(createForm({}, newImages())), { params: params() });
+
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ error: 'Failed to update linked items' });
+      expect(storageRemove).toHaveBeenCalledTimes(1);
+      expect(storageRemove).toHaveBeenCalledWith(OLD);
+      for (const path of upload.mock.calls.map((call: unknown[]) => call[0])) {
+        expect(storageRemove.mock.calls[0][0]).not.toContain(path);
+      }
+    });
+
+    it('DD-LOOK-064 2枚目の上げが失敗したら 1枚目だけを消し、行も古い画像も触れない', async () => {
+      const { client, upload, storageRemove, lookUpdate } = withOld({
+        uploadError: { message: 'bucket SECRET' },
+        failUploadAt: 1,
+      });
+      mockCreateClient.mockResolvedValue(client);
+
+      const response = await PUT(createRequest(createForm({}, newImages())), { params: params() });
+
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ error: 'Failed to upload image' });
+      expect(storageRemove).toHaveBeenCalledWith([upload.mock.calls[0][0]]);
+      expect(lookUpdate).not.toHaveBeenCalled();
+    });
+
+    it('DD-LOOK-064 置き場の削除が失敗しても 200 のままで、監査 success の metadata に image_cleanup と件数を残す', async () => {
+      const { client } = withOld({ storageRemove: 'fail' });
+      mockCreateClient.mockResolvedValue(client);
+
+      const response = await PUT(createRequest(createForm({}, newImages())), { params: params() });
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ success: true });
+      expect(audits()[0]).toMatchObject({
+        outcome: 'success',
+        metadata: expect.objectContaining({ image_cleanup: 'failed', orphaned_count: 2 }),
+      });
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('SECRET');
+    });
+
+    it('DD-LOOK-064 置き場の削除が例外を投げても 200 のまま', async () => {
+      const { client } = withOld({ storageRemove: 'throw' });
+      mockCreateClient.mockResolvedValue(client);
+
+      const response = await PUT(createRequest(createForm({}, newImages())), { params: params() });
+
+      expect(response.status).toBe(200);
+    });
+
+    it('DD-LOOK-064 古い道筋の重複は 1 回だけ渡す', async () => {
+      const { client, storageRemove } = createClient({
+        existingLook: { data: { id: 1, status: 'private', image_urls: ['looks/a.png', 'looks/a.png'] }, error: null },
+      });
+      mockCreateClient.mockResolvedValue(client);
+
+      await PUT(createRequest(createForm({}, [createImage('a.png', 'image/png')])), { params: params() });
+
+      expect(storageRemove).toHaveBeenCalledWith(['looks/a.png']);
     });
   });
 

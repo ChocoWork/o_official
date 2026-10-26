@@ -47,8 +47,10 @@ const PRIVATE: Look = {
   status: 'private',
 };
 
-function okList(data: unknown) {
-  return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data }) } as unknown as Response;
+// 管理の権限がある人の形（meta.canManage が true）。権限の無い人の形は canManage に false、meta が無い形は null を渡す
+function okList(data: unknown, canManage: boolean | null = true) {
+  const body = canManage === null ? { data } : { data, meta: { canManage } };
+  return { ok: true, status: 200, statusText: 'OK', json: async () => body } as unknown as Response;
 }
 
 function okEmpty() {
@@ -128,6 +130,29 @@ describe('管理の LOOK タブの一覧', () => {
     expect(within(draft).getByText('2025 AW')).toBeInTheDocument();
     expect(within(draft).getByRole('button', { name: '公開' })).toBeInTheDocument();
     expect(within(draft).getByRole('link', { name: '編集' })).toHaveAttribute('href', '/admin/look/edit/12');
+  });
+
+  it('SCR-LOOK-006 権限の無い人（meta.canManage が false）には行の切り替え・編集・削除を出さず、LOOK は見せる', async () => {
+    mockFetch.mockResolvedValueOnce(okList([PUBLISHED, PRIVATE], false));
+
+    render(<LookSection />);
+
+    await screen.findByText('Effortless Elegance');
+    expect(screen.getByRole('img', { name: 'Effortless Elegance' })).toHaveAttribute('src', PUBLISHED.image_urls[0]);
+    expect(screen.getByText('公開中')).toBeInTheDocument();
+    expect(screen.getByText('2025 AW')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '編集' })).not.toBeInTheDocument();
+  });
+
+  it('SCR-LOOK-006 応答に meta が無い時も操作ボタンを出さない（権限が分からない時は出さない）', async () => {
+    mockFetch.mockResolvedValueOnce(okList([PUBLISHED], null));
+
+    render(<LookSection />);
+
+    await screen.findByText('Effortless Elegance');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '編集' })).not.toBeInTheDocument();
   });
 
   it('SCR-LOOK-006 画像が無い LOOK は placeholder.png を出す', async () => {

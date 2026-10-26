@@ -6,7 +6,7 @@
  * ログインしない公開の道だけを見る。手元の Supabase に足す LOOK は created_at を 2000-01-01、テーマを一意の印つきにし、
  * 各試験の finally で消す（見本の LOOK 1〜7 には触らない）。署名つき URL が出る試験は、置き場（look-images）に本物の画像を置いて消す。
  * - 001-AC-01: 手元の PostgREST を anon の鍵と一般会員の JWT で直接叩く（looks の select と search_looks）
- * - 006・007・008・009: ページの HTML（応答の本文）に、画像の道筋・署名つき URL・外の URL・説明文・価格が出るかを見る
+ * - 006・007・008・009: ページの HTML（応答の本文）に、画像の道筋・署名つき URL・外の URL・説明文が出るかを見る
  * - SEC-LOOK-022-AC-01（looks の読み出しの失敗）は、共有の DB の権限を外すので FR-LOOK-SEC-005（isolated-global の project）にある
  */
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -417,30 +417,19 @@ for (const vp of VIEWPORTS) {
 // SEC-LOOK-009
 // ---------------------------------------------------------------------------
 
-const PRICE_FORMAT = new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 });
-
 for (const vp of VIEWPORTS) {
   test.describe(`FR-LOOK-SEC-001 一覧の頁に表示しない項目が含まれない (${vp.name})`, () => {
-    test(`SEC-LOOK-009-AC-01 ${vp.name}: /look の応答の中身に、見本の LOOK の説明文と関連商品の価格の文字が含まれない`, async ({ page }) => {
-      test.fail(true, 'SEC-LOOK-009-AC-01 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
+    test(`SEC-LOOK-009-AC-01 ${vp.name}: /look の応答の中身に、見本の LOOK の説明文の文字が含まれない`, async ({ page }) => {
       test.setTimeout(120_000);
       await page.setViewportSize({ width: vp.width, height: vp.height });
-      // 見本（seed.sql の LOOK 1〜7）の説明文と、それに紐づく公開の商品の価格
+      // 見本（seed.sql の LOOK 1〜7）の説明文。関連商品の価格は今のカードが出すので確かめない（Q11。2026-10-26）
       const seed = await withLocalDb(async (db) => {
         const descriptions = await db.query(
           `select distinct theme_description from public.looks where id between 1 and 7 and status = 'published' and theme_description <> ''`,
         );
-        const prices = await db.query(
-          `select distinct i.price from public.look_items li join public.items i on i.id = li.item_id
-            where li.look_id between 1 and 7 and i.status = 'published'`,
-        );
-        return {
-          descriptions: descriptions.rows.map((row) => String(row.theme_description)),
-          prices: prices.rows.map((row) => Number(row.price)),
-        };
+        return { descriptions: descriptions.rows.map((row) => String(row.theme_description)) };
       });
       expect(seed.descriptions.length, '見本の LOOK の説明文が手元の DB にある（前提）').toBeGreaterThan(0);
-      expect(seed.prices.length, '見本の LOOK に紐づく公開の商品の価格が手元の DB にある（前提）').toBeGreaterThan(0);
 
       const { status, html } = await openHtml(page, '/look');
       expect(status, '/look が開く').toBe(200);
@@ -448,14 +437,7 @@ for (const vp of VIEWPORTS) {
       await expect(page.locator('[data-testid="look-card"]').first(), '一覧が表示されている（制御の確認）').toBeAttached();
 
       for (const description of seed.descriptions) {
-        expect(text.includes(description), `/look の応答に見本の説明文「${description}」が含まれない`).toBe(false);
-      }
-      for (const price of seed.prices) {
-        expect(text.includes(PRICE_FORMAT.format(price)), `/look の応答に関連商品の価格「${PRICE_FORMAT.format(price)}」の表示が含まれない`).toBe(false);
-        expect(
-          new RegExp(`"price":\\s*${price}(?![0-9.])`).test(text),
-          `/look の応答の受け渡しの中身に関連商品の価格（price: ${price}）が含まれない`,
-        ).toBe(false);
+        expect(text.includes(description), `/look の応答（HTML と受け渡し）に見本の説明文「${description}」が含まれない`).toBe(false);
       }
     });
   });

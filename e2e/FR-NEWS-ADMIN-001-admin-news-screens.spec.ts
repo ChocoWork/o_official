@@ -8,7 +8,7 @@ import { fulfillJson, mockAdminSession, viewports } from './order-fulfillment-te
 //
 // 管理者の本物のログイン（2要素認証 aal2）は E2E に無いので、管理画面の約束（mockAdminSession）と、
 // メモリ上の記事の配列を持つ /api/admin/news の窓口の差し替えで確かめる（FR-ADMIN-108 と同じ手本）。
-// SEC-NEWS-020-AC-01 は、今のコードでは満たさない（赤の予定。SEC-NEWS-020 の「今のコードは満たさない」）。
+// 編集のページが受ける記事の id は、窓口の id の形（isNewsId。1 以上の数字だけ）なので、差し替えの記事の id も数字にする。
 
 type MockArticle = {
   id: string;
@@ -24,7 +24,7 @@ type MockArticle = {
 type NewsCall = { method: string; path: string; body: string };
 
 const PUBLISHED_ARTICLE: MockArticle = {
-  id: 'news-1',
+  id: '1',
   title: '秋冬コレクションのお知らせ',
   category: 'COLLECTION',
   published_date: '2026-10-01',
@@ -35,7 +35,7 @@ const PUBLISHED_ARTICLE: MockArticle = {
 };
 
 const PRIVATE_ARTICLE: MockArticle = {
-  id: 'news-2',
+  id: '2',
   title: '下書きの店舗ニュース',
   category: 'STORE',
   published_date: '2026-10-15',
@@ -82,7 +82,7 @@ async function mockNewsApi(
       if (request.method() === 'POST') {
         sequence += 1;
         const created: MockArticle = {
-          id: `news-${sequence}`,
+          id: `${sequence}`,
           title: formField(body, 'title') ?? '',
           category: formField(body, 'category') ?? '',
           published_date: formField(body, 'date') ?? '',
@@ -252,7 +252,7 @@ for (const viewport of viewports) {
       await page.goto('/admin?tab=NEWS');
 
       await cardOf(page, PUBLISHED_ARTICLE.title).getByRole('link', { name: '編集', exact: true }).click();
-      await expect(page).toHaveURL(/\/admin\/news\/edit\/news-1$/);
+      await expect(page).toHaveURL(/\/admin\/news\/edit\/1$/);
 
       const titleBox = page.getByRole('textbox', { name: 'タイトル' });
       await expect(titleBox).toHaveValue(PUBLISHED_ARTICLE.title);
@@ -264,7 +264,7 @@ for (const viewport of viewports) {
 
       const puts = calls.filter((call) => call.method === 'PUT');
       expect(puts).toHaveLength(1);
-      expect(puts[0].path).toBe('/api/admin/news/news-1');
+      expect(puts[0].path).toBe('/api/admin/news/1');
       expect(formField(puts[0].body, 'title')).toBe('秋冬コレクションの発売日のお知らせ');
 
       await expect(cardOf(page, '秋冬コレクションの発売日のお知らせ')).toBeVisible();
@@ -299,7 +299,7 @@ for (const viewport of viewports) {
 
       await expect(cardOf(page, PUBLISHED_ARTICLE.title)).toHaveCount(0);
       expect(calls.filter((call) => call.method === 'DELETE').map((call) => call.path)).toEqual([
-        '/api/admin/news/news-1',
+        '/api/admin/news/1',
       ]);
       await expect(cardOf(page, PRIVATE_ARTICLE.title)).toBeVisible();
     });
@@ -323,8 +323,8 @@ for (const viewport of viewports) {
 
       const patches = calls.filter((call) => call.method === 'PATCH');
       expect(patches.map((call) => call.path)).toEqual([
-        '/api/admin/news/news-2',
-        '/api/admin/news/news-2',
+        '/api/admin/news/2',
+        '/api/admin/news/2',
       ]);
       expect(patches.map((call) => JSON.parse(call.body))).toEqual([
         { status: 'published' },
@@ -401,7 +401,7 @@ for (const viewport of viewports) {
       await expect(page.locator('input[type="file"]')).toHaveCount(1);
       await expect(page.locator('input[type="file"]')).toHaveAttribute('accept', /image\/jpeg/);
 
-      await page.goto('/admin/news/edit/news-1');
+      await page.goto('/admin/news/edit/1');
       await expect(page.getByRole('textbox', { name: 'タイトル' })).toHaveValue(PUBLISHED_ARTICLE.title);
       await expect(page.getByText('画像', { exact: true })).toBeVisible();
       await expect(page.locator('input[type="file"]')).toHaveCount(1);
@@ -425,7 +425,7 @@ for (const viewport of viewports) {
       await expect(page).toHaveURL(/\/admin\/news\/create$/);
 
       // 編集モード: 画像を選ばなくても更新できる
-      await page.goto('/admin/news/edit/news-1');
+      await page.goto('/admin/news/edit/1');
       const titleBox = page.getByRole('textbox', { name: 'タイトル' });
       await expect(titleBox).toHaveValue(PUBLISHED_ARTICLE.title);
       await titleBox.fill('画像を変えずに直した題');
@@ -469,8 +469,7 @@ for (const viewport of viewports) {
     });
 
     test('SEC-NEWS-020-AC-01 一覧の取得が失敗した時、「ニュース記事がありません」ではなく取得に失敗したことを伝える文が出る', async ({ page }) => {
-      test.fail(true, 'SEC-NEWS-020 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
-      // 今のコードは失敗を 0 件と同じ「ニュース記事がありません」で見せるので、この試験は赤になる予定
+      // 失敗を 0 件と同じ「ニュース記事がありません」で見せず、取得に失敗したことを伝える（SEC-NEWS-020）
       const { calls } = await mockNewsApi(page, [PUBLISHED_ARTICLE], { listStatus: 500 });
       await page.goto('/admin?tab=NEWS');
 

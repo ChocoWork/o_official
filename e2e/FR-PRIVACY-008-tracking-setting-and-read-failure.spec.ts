@@ -76,7 +76,6 @@ for (const viewport of deliveryViewports) {
     });
 
     test(`SEC-PRIVACY-012-AC-01 ${viewport.name}: 追跡をオンにした後、最終改定日がオンにした日かそれより後の日になる`, async ({ page }) => {
-      test.fail(true, 'SEC-PRIVACY-012 今のコードは満たさない（docs/02_Requirements/areas/privacy.md）');
       test.setTimeout(420_000);
       await withDeliveryScenario(async ({ client }) => {
         const actor = await createAdminActor(client);

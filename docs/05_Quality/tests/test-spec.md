@@ -4,7 +4,7 @@
 
 > G-4 Task 2 確認日: 2026-10-26。初回（g4t2a）はfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・専用G-1清掃の1 pending。初回の全件（g4t2）はunit＋全DB integrationで19,912成功・既知stockist_rlsの2失敗だけ、G-0清掃12/12。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
 
-> 状態: 現行の方針（波 1-B のセキュリティの穴の修正のテストの節は 2026-10-26 に追記〔単体・結合は通過、E2E・DB 結合は未実行〕。G-3 Task 12 の発送票の操作・出荷日のE2Eと止めていた旧の発送のE2Eの移設の節は 2026-10-26 に追記〔E2Eの実測は controller の実行後〕。G-3 Task 11 の荷作り・同梱メール・権限のE2Eと再開した配送のE2Eの節は 2026-10-26 に追記〔E2Eの実測は同節に記録〕。G-3 Task 10 の書き手75本・末尾assert・並行・実PostgRESTの節は 2026-10-26 に追記。G-3 Task 8 のテストの節は 2026-10-26 に追記。グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 7の伝票番号の後入力・訂正と手動の配達済みのDB・単体を追記）（G-3 Task 6の発送の取消のDB・単体を追記）（G-3 Task 4の発送票の下書きのDB・単体を追記）（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
+> 状態: 現行の方針（波 1-C のセキュリティの穴の修正のテストの節は 2026-10-26 に追記〔単体・結合は通過、E2E は controller が本番ビルドで実測済み、DB 結合は未実行〕。波 1-B のセキュリティの穴の修正のテストの節は 2026-10-26 に追記〔単体・結合は通過、E2E・DB 結合は未実行〕。G-3 Task 12 の発送票の操作・出荷日のE2Eと止めていた旧の発送のE2Eの移設の節は 2026-10-26 に追記〔E2Eの実測は controller の実行後〕。G-3 Task 11 の荷作り・同梱メール・権限のE2Eと再開した配送のE2Eの節は 2026-10-26 に追記〔E2Eの実測は同節に記録〕。G-3 Task 10 の書き手75本・末尾assert・並行・実PostgRESTの節は 2026-10-26 に追記。G-3 Task 8 のテストの節は 2026-10-26 に追記。グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 7の伝票番号の後入力・訂正と手動の配達済みのDB・単体を追記）（G-3 Task 6の発送の取消のDB・単体を追記）（G-3 Task 4の発送票の下書きのDB・単体を追記）（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 > G-4 Task 1 確認日: 2026-10-26。g4t1aでローカル適用・PostgREST両200、修正round 1の対象DB 3 suite・94/94成功。controller全件g4t1は19,665成功・既知stockist_rlsの2失敗だけ、G-0清掃12/12。本番未適用。
 
@@ -534,3 +534,74 @@ DB 結合は新しく書いていない。控えのハッシュの式は DB の�
 `FR-SIGNUP-003` は `SEC-AUTH-007-AC-02`（Cookie の無いブラウザで開くと `/login` へ 303・session の Cookie 無し・メール確認済み）と `SEC-AUTH-007-AC-03`（別の未確認会員の印を開いても session を作らず、登録中の控えの Cookie が残る）を足した。3 つの幅（390/768/1280px）で流す。残した `test.fail` は、環境の設定が要る物（`enable_confirmations`・`[auth.mfa.totp]`）と、波 2 以降の物（IP は波 4、no-store は波 1-C・波 3、DB の RLS は波 2・5）。
 
 E2E の枠の数え直し（Task 9）: 共有の管理者が 10 分の枠（強制失効 20・MFA リセット 10・ユーザー作成 20・色見本 60・問い合わせの書き込み 60・返信 30）を超える所は無い。揺れるのは `FR-ADMIN-MISC-003` の `SEC-ADMIN-007-AC-01`（50 回送る。全体の認可失敗の監査が 10 分 20 行で、窓の境目をまたぐと最大 40 行になりうる）。揺れたら窓の頭まで待つ。
+
+## 開店前のセキュリティの穴 波 1-C のテスト（SEC-SEARCH・SEC-LOOK・SEC-NEWS・SEC-STOCKIST・SEC-PRIVACY・SEC-HOME）
+
+確認日: 2026-10-26。波 1-C（検索・LOOK・お知らせ・取扱店・プライバシー・ホームの公開側と管理側の窓口、`/api/auth/me`）で書き直した試験をまとめる。単体・結合は実装者が流して通した（Task 10 の最終確認: `npx tsc --noEmit` 誤り 0、波 1-C が触った 91 スイート 2181 件通過、`tests/unit/docs` 2 スイート 56 件通過）。E2E は controller が本番ビルドで実測した（下の「E2E」の実測）。**DB 結合は新しく書いておらず、流してもいない**。試験名の先頭の ID は `validate-trace` の層の決まりに合わせた（単体は `DD-`、結合は `API-`・`ARC-`・`SCR-`・`FLOW-`・`STATE-`）。`docs/05_Quality/reports/` の対応表は `npm run trace:report` で作り直す。
+
+### 新しく作った試験ファイル（単体）
+
+| ファイル | 先頭の ID | 確かめること |
+| --- | --- | --- |
+| [no-store.test.ts](../../../tests/unit/lib/http/no-store.test.ts) | `DD-STOCKIST-034` | `withNoStore` が `Cache-Control` をちょうど `private, no-store` に置き換え、状態・本文・`Retry-After`・`Set-Cookie` を変えず同じ参照を返すこと（`@jest-environment node`） |
+| [image-signature.test.ts](../../../tests/unit/lib/storage/image-signature.test.ts) | `DD-LOOK-063` | `detectImageType`（PNG・JPEG・GIF・WebP の先頭の印）と `resolveUploadImageType`（申告と検出が違う・知らない申告・印の無い中身は null） |
+| [safe-error.test.ts](../../../tests/unit/lib/logging/safe-error.test.ts) | `DD-SEARCH-006` | `describeErrorForLog` が名前と符号だけを残し、message を含めず、getter が投げても投げないこと |
+| [query-schema.test.ts](../../../tests/unit/features/search/query-schema.test.ts) | `DD-SEARCH-009` | 検索語の入口の決まり（前後の空白を取る・100 字まで・制御文字は拒む） |
+| [cross-site.test.ts](../../../tests/unit/features/search/cross-site.test.ts) | `DD-SEARCH-010` | `Sec-Fetch-Site` が無い・空・`same-origin`・`none` は通し、`cross-site`・`same-site`・大文字・知らない値は 403 `{error:"Forbidden"}` と `private, no-store` で断ること |
+| [news-input.test.ts](../../../tests/unit/features/news/news-input.test.ts) | `DD-NEWS-070` | `isNewsId`（`/^[1-9]\d{0,17}$/`。`0`・先頭 0・19 桁以上・小数・空は偽）と `resolveNewsCategory`（許可の一覧の値以外は `ALL`） |
+| [look-error.test.tsx](../../../tests/unit/app/look/look-error.test.tsx)・[news-error.test.tsx](../../../tests/unit/app/news/news-error.test.tsx)・[privacy-error.test.tsx](../../../tests/unit/app/privacy/privacy-error.test.tsx) | `DD-LOOK-069`・`DD-NEWS-069`・`DD-PRIVACY-002` | 誤りの画面（`error.tsx`）の案内と再試行、`console.error` に `{ digest }` だけを渡し `Error` を渡さないこと |
+| [revision-date.test.ts](../../../tests/unit/app/privacy/revision-date.test.ts) | `DD-PRIVACY-003` | `resolveRevisionDate`（基準日 2026-10-26 と追跡の切り替えの更新時刻の遅い方。日本時間の日付） |
+| [admin-images.test.ts（LOOK）](../../../tests/unit/features/look/services/admin-images.test.ts)・[admin-images.test.ts（NEWS）](../../../tests/unit/features/news/services/admin-images.test.ts) | `DD-LOOK-070`・`DD-NEWS-071` | 画像の中身の確かめ（`prepareLookImage`・`prepareNewsImage`）、保存名（`looks/`・`news/` の下の日付と乱数と検出した拡張子）、自分の接頭辞の下の安全な道筋だけを消す対象にすること、置き場の削除の失敗を投げず `failed` で返すこと（`@jest-environment node`。jsdom の `File` に `arrayBuffer` が無いため） |
+| [images.ts](../../../tests/fixtures/images.ts) | （見本。試験ではない） | `minimalPng/Jpeg/Gif/Webp`・`textAsImage`・`fileOf`。本物の先頭の印を持つ画像の見本で、管理の窓口の試験の偽の画像を置き換えた（`minimalWebp` は印の判定専用で、画像として開けるとは限らない） |
+
+### 窓口・取り出し・部品の単体（書き直した物）
+
+| 領域 | ファイル | 先頭の ID | 確かめること |
+| --- | --- | --- | --- |
+| SEARCH | `api/search/search-route`・`suggest-route` | `DD-SEARCH-004`・`005` | 403（外のサイト側、枠に数えない）→ 400（制御文字・101 字以上）→ 回数の制限の順、全応答の `private, no-store`、`x-search-duration-ms` が無いこと、500 は固定の文、記録は名前と符号だけ |
+| SEARCH | `features/search/search-service-execute`・`search-service-suggestions`・`search-page-client`・`search-home-preview` | `DD-SEARCH-006`・`007`・`008`・`002`・`003` | 検索関数が 1 つでも失敗したら `SearchBackendError`（候補は失敗した種別を飛ばして続ける）、候補は入力が止まって 250 ミリ秒後に呼び新しい入力・アンマウントで打ち切ること、タブだけの変更では取り直さないこと、プレビューは固定の説明の文と「検索した語」の枠（語は説明の文の外）で、失敗の記録に `Error` を渡さないこと |
+| LOOK（公開） | `lib/look-server`・`look-public`、`app/look/look-list-page`・`look-detail-page`、`features/look/components/public-look-grid` | `DD-LOOK-003`・`004`・`032`・`005`・`033`・`068`・`002`・`030`・`001` | 一覧は説明文を持たない型で 100 件までに丸める、詳細は 1 件で取り前後を 1 件ずつ取る、`parseLookId`（10 進の正の整数・16 桁まで・`1e3`・`1.5`・先頭 0・空白は null）、取り出しの失敗は投げて誤りの画面に出す（`generateMetadata` は固定の題）、記録は名前と符号だけ |
+| LOOK（管理） | `api/admin/looks/` の 6 本・`looks-audit`、`components/look-section` | `DD-LOOK-063`・`064`・`065`・`060` | 認可 → 入口の id（400 `Invalid look id`）→ 画像の中身の確かめ → 量の枠の順、存在確認（`maybeSingle`）の失敗は 500 `Failed to fetch look`、途中で失敗した時に上げた画像を消す、差し替え・削除の後に自分の `looks/` の下の画像だけを消す、置き場の削除の失敗は 200 のまま監査 `image_cleanup:"failed"`、一覧の `meta.canManage`、`canManage` が真の時だけカードの 3 ボタンを出すこと、応答にも記録にも誤りの文・ファイル名・中身が出ないこと |
+| NEWS（公開） | `features/news/news-public-service`、`api/news/news-route`、`app/news/news-list-page`・`news-detail-page`、`app/actions/news-actions`、`home/home-page` | `DD-NEWS-003`・`031`〜`033`・`004`・`002`・`030`・`066`・`DD-HOME-001` | 取り出しの DB の失敗は `NewsFetchError` で投げ「無い記事」と見分ける、詳細は `isNewsId` が偽なら DB を呼ばず `null`（`maybeSingle`）、前後の失敗は記録して前後なし、`/api/news` は全応答 `private, no-store`・外れた分類は `ALL`・500 は固定の文、ホームだけは取り出しの失敗を握って空にすること |
+| NEWS（管理） | `api/admin/news/news-admin-route`・`news-admin-id-route`、`components/NewsSection`、`app/admin/news/news-edit-page` | `DD-NEWS-064`・`065`・`060`・`063` | 画像の中身の確かめ（400 `Unsupported image type`）、DB の保存が失敗・例外の時に上げた画像を消す、PUT は画像ありの時に上げる前に古い `image_url` を読み（無ければ 404 で何も上げない）、更新の後に古い画像を消す、DELETE は行を消した後にだけ画像を消す、`isNewsId` を通らない id の編集頁は要求を送らず読み込みの失敗を出す、一覧の取得失敗は `role="alert"` と再読み込み（0 件の文とは別） |
+| STOCKIST | `api/admin/stockists/stockists-route`・`stockists-id-route`・`stockists-security`、`features/stockist/stockist-public-service` | `DD-STOCKIST-034`・`035`・`036`〜`038`・`003` | 6 窓口の戻りの全分岐（認可・回数・CSRF の拒否を含む）に `private, no-store`、外側の catch の記録は名前と符号だけ、公開の取り出しの失敗の記録も名前と符号だけ。作り物の `NextResponse.json` と拒否の作り物に `headers` を足した（`withNoStore` が `headers.set` を呼ぶため） |
+| PRIVACY・AUTH | `components/PrivacyPage`、`api/auth/me-route` | `DD-PRIVACY-001`・`DD-AUTH-026` | 最終改定日が基準日 2026年10月26日で、追跡の設定を切り替えた日（日本時間）に追従すること（`PrivacyPage`）、`/api/auth/me` の 200 に `email` が無く `id`・`role`・`mfaVerified` が残ること（2 節に「メールマガジン」の字が無いことと 9 節が Resend・Supabase・Cloudflare Turnstile を挙げることは結合の `SCR-PRIVACY-001`） |
+
+### 結合（`tests/integration/`）
+
+| 領域 | ファイル | 確かめること |
+| --- | --- | --- |
+| SEARCH | `api/search-{public-api,suggest-api,request-path,popular-items,image-signing}`、`ui/search-{suggestion-screen,commit-flow,results-state,home-preview-screen}` | 窓口の 403・400・500・`private, no-store`、候補の 250 ミリ秒の待ちと打ち切り、「タブを押すと取り直す」を「取り直さない」に書き直した（`search-commit-flow`・`search-results-state`）、プレビューの固定の文と「検索した語」の枠 |
+| LOOK | `api/look-admin-{list,create,item-get,item-put,item-patch,item-delete}-api`・`look-admin-write-path`・`look-image-signing`、`ui/look-{list-screen,detail-screen,list-detail-flow,public-read-path,home-section,season-state,card,admin-list-screen,admin-flow}` | 偽の画像を本物の先頭の印つきの見本に替えた、ファイル名・中身が監査・記録に出ないこと、`SECRET` を含む置き場／DB の文が応答にも `console.error` にも出ないこと、101 件超の最古の詳細・同時刻の並び・前後だけ失敗、`meta.canManage` の偽・meta なしでボタンが出ないこと |
+| NEWS | `api/news-{public-api,latest-action,image-signing,admin-create-api,admin-item-get-api,admin-item-put-api,admin-item-delete-api,admin-write-path}`、`ui/news-{detail-screen,list-detail-flow,public-read-path,admin-list-screen,admin-flow}` | モックの `single` を `maybeSingle` に替えた、数でない id の見本、上げた数と消した数が同じこと（`SEC-NEWS-018-AC-03`。`news-admin-create-api`）、画像の道筋の確かめ |
+| HOME・AUTH・PRIVACY | `api/home-page-public-read`、`api/auth/me`、`ui/privacy-policy-screen`・`privacy-tracking-clause-state` | LOOK は select・order・limit 8、`/api/auth/me` の応答に `email` が無いこと、プライバシーの最終改定日と 2 節・9 節の文（`SCR-PRIVACY-001`。9 節が `Resend, Inc.` を挙げ、頁全体に「メールマガジン」が無いこと） |
+
+先頭の ID（LOOK・NEWS の管理の窓口と画面）: `look-admin-list-api` は `API-LOOK-001`、`look-admin-create-api` は `API-LOOK-002`、`look-admin-item-get-api` は `API-LOOK-003`、`look-admin-item-put-api` は `API-LOOK-004`、`look-admin-item-patch-api` は `API-LOOK-005`、`look-admin-item-delete-api` は `API-LOOK-006`、`ui/look-admin-list-screen` は `SCR-LOOK-006`、`news-admin-create-api` は `API-NEWS-003`。
+
+DB 結合は新しく書いていない。
+
+### E2E
+
+実測（2026-10-26、controller、本番ビルド、手元の Supabase）: 範囲内の 1861 件を流し、期待どおりが 1834 件。新しい赤は `SEC-SEARCH-020-AC-02` の書き直し（下の表）で解消し、`FR-SEARCH-022` が 14/14 通過した。`LOGIN-032` は一時的な 503 で、再実行で通過した。プライバシーの基準日を 2026-10-26 に上げた後の `FR-PRIVACY-*` も通過した。`FR-SEARCH-022` はコミット前にもう 1 回流す。
+
+外した `test.fail`（32 行）。Task 10 の突き合わせの 30 行（`git diff` の旧行）に、`SEC-PRIVACY-011` の 2 行を足した。
+
+| ファイル（`e2e/FR-...`） | 外した受け入れ条件 ID |
+| --- | --- |
+| `STOCKIST-015` | SEC-STOCKIST-010-AC-01 |
+| `SEARCH-018`・`SEARCH-019`・`SEARCH-022` | SEC-SEARCH-021-AC-01、SEC-SEARCH-004-AC-01・SEC-SEARCH-010-AC-01・SEC-SEARCH-019-AC-01、SEC-SEARCH-005-AC-02（3 つの幅のループの中）・SEC-SEARCH-017-AC-01 |
+| `LOOK-SEC-001`・`003`・`004`・`005` | SEC-LOOK-009-AC-01、SEC-LOOK-016-AC-02・AC-03、SEC-LOOK-013-AC-01・AC-02・SEC-LOOK-014-AC-01・AC-02、SEC-LOOK-021-AC-01・SEC-LOOK-022-AC-01・AC-02 |
+| `NEWS-SEC-001`・`003`・`005`、`NEWS-ADMIN-001` | SEC-NEWS-012-AC-01、SEC-NEWS-006-AC-01・AC-02、SEC-NEWS-017-AC-01・AC-02・SEC-NEWS-018-AC-01・AC-02、SEC-NEWS-020-AC-01 |
+| `HOME-022` | SEC-HOME-015-AC-01、SEC-HOME-016-AC-01 |
+| `PRIVACY-005`・`006`・`008`・`009` | SEC-PRIVACY-011-AC-01・AC-02（`FR-PRIVACY-005`。2026-10-26 に 9 節へ事業者名を入れ、2 節からメールマガジンを外した）、SEC-PRIVACY-016-AC-01、SEC-PRIVACY-012-AC-01、SEC-PRIVACY-009-AC-01 |
+
+足した E2E（印なし。上の実測で通過）
+
+| 受け入れ条件 | ファイル | 幅 | 注意 |
+| --- | --- | --- | --- |
+| `SEC-LOOK-009-AC-02` | `FR-LOOK-SEC-005-global-faults` | 3 | 1990 年の公開の LOOK 101 件を `beforeAll` で入れ `afterAll` で消す。`isolated-global` なので他と同時に流さない |
+| `SEC-LOOK-019-AC-05` | `FR-LOOK-SEC-003-admin-api-authz` | 3 | カードの 3 ボタン。「新規作成」の `SEC-LOOK-019-AC-04` は波 4 のため印を残した |
+| `SEC-SEARCH-020-AC-02` | `FR-SEARCH-022-search-rate-limit` | 3 | ブラウザで外のオリジンの頁は開かない。request fixture で `Sec-Fetch-Site: cross-site` を付けて `/api/search?preview=true` を 21 回送り、全部 403 `{error:"Forbidden"}` で枠が減らないことを確かめ、ブラウザで開くのはその閲覧者の `/?q=` のプレビュー（200 と見出し「Search Preview」）だけ。外のオリジンの頁を開く手順では要求の応答を捕まえられなかったため、この形に書き直した。テストの題は「外のオリジンの頁から…」のままで、後始末の候補。`isolated-global` |
+| `SEC-SEARCH-021-AC-02` | `FR-SEARCH-018-search-page-flows` | 3 | プレビューの固定の文と「検索した語」の枠。写真 6 枚を `test-results/wave1c/` に残す |
+
+書き換えて印を残した行: `SEC-SEARCH-020-AC-01`（偽の送り元の側 (a) だけにした。波 4）。範囲外の `e2e/FR-ADMIN-108-select-fields.spec.ts` は、記事の id `news-1` を `1` に直した（編集頁が `isNewsId` を通らない id で要求を送らなくなったため）。`FR-NEWS-ADMIN-001` の差し替えの記事 id も同じ理由で `1`/`2`/`N` に直した。残した `test.fail` は、波 3 以降（署名・IP・no-store の共有）と DB の移行が要る物。

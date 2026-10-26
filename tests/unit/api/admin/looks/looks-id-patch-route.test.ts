@@ -48,7 +48,7 @@ function createClient(options: { existingLook?: Result; updateError?: unknown } 
     from: jest.fn(() => ({
       select: select.mockReturnValue({
         eq: jest.fn().mockReturnValue({
-          single: jest.fn().mockResolvedValue(
+          maybeSingle: jest.fn().mockResolvedValue(
             options.existingLook ?? { data: { id: 1, status: 'private' }, error: null },
           ),
         }),
@@ -131,25 +131,79 @@ describe('DD-LOOK-064 PATCH /api/admin/looks/[id]', () => {
     expect(mockCreateClient).not.toHaveBeenCalled();
   });
 
-  it('DD-LOOK-064 切り替えの本文が JSON でない時は 500 Internal server error と監査 Unexpected status update error', async () => {
+  it('DD-LOOK-064 切り替えの本文が JSON でない時は 500 でなく 400 Invalid request と監査 Invalid JSON で、更新しない', async () => {
+    const { client, update } = createClient();
+    mockCreateClient.mockResolvedValue(client);
+
     const response = await PATCH(createRequest(new SyntaxError('Unexpected token x')), { params: params() });
 
-    expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({ error: 'Internal server error' });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Invalid request' });
     expect(audits()).toEqual([
       expect.objectContaining({
         actorId: 'admin-1',
         actorEmail: 'a@example.com',
         action: 'admin.look.status_update',
         outcome: 'failure',
-        detail: 'Unexpected status update error',
-        metadata: undefined,
+        detail: 'Invalid JSON',
+        resourceId: '1',
       }),
     ]);
+    expect(update).not.toHaveBeenCalled();
+    expect(mockCreateClient).not.toHaveBeenCalled();
   });
 
-  it('DD-LOOK-064 切り替えの無い LOOK（single が error）は 404 と監査 Look not found', async () => {
-    const { client, update } = createClient({ existingLook: { data: null, error: { message: 'none' } } });
+  it.each(['abc', '1e3', '0', '-1', '1.5'])(
+    'DD-LOOK-064 id が %s の時は認可と回数の後で 400 Invalid look id と監査（id の生の値は残さず長さだけ）で、DB も本文も読まない',
+    async (badId) => {
+      const request = createRequest({ status: 'published' });
+
+      const response = await PATCH(request, { params: Promise.resolve({ id: badId }) });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'Invalid look id' });
+      expect(audits()).toEqual([
+        expect.objectContaining({
+          action: 'admin.look.status_update',
+          outcome: 'failure',
+          detail: 'Invalid look id',
+          metadata: { id_length: badId.length },
+        }),
+      ]);
+      expect(audits()[0].resourceId).toBeUndefined();
+      expect(request.json).not.toHaveBeenCalled();
+      expect(mockCreateClient).not.toHaveBeenCalled();
+    },
+  );
+
+  it('DD-LOOK-064 id が不正でも認可が通らなければ今までの 403 を返す（id の検査より先）', async () => {
+    const denied = { status: 403, json: async () => ({ error: 'Forbidden' }) };
+    mockAuthorize.mockResolvedValue({ ok: false, response: denied });
+
+    const response = await PATCH(createRequest({ status: 'published' }), { params: Promise.resolve({ id: 'abc' }) });
+
+    expect(response).toBe(denied);
+    expect(mockAudit).not.toHaveBeenCalled();
+  });
+
+  it('DD-LOOK-064 切り替えの存在確認が DB の失敗なら 500 と監査 Failed to fetch look で、更新しない', async () => {
+    const { client, update } = createClient({
+      existingLook: { data: null, error: Object.assign(new Error('boom SECRET'), { code: '57014' }) },
+    });
+    mockCreateClient.mockResolvedValue(client);
+
+    const response = await PATCH(createRequest({ status: 'published' }), { params: params() });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Failed to fetch look' });
+    expect(audits()).toEqual([expect.objectContaining({ outcome: 'failure', detail: 'Failed to fetch look' })]);
+    expect(errorSpy).toHaveBeenCalledWith('Failed to fetch look:', { name: 'Error', code: '57014' });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('SECRET');
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('DD-LOOK-064 切り替えの無い LOOK（maybeSingle が null）は 404 と監査 Look not found', async () => {
+    const { client, update } = createClient({ existingLook: { data: null, error: null } });
     mockCreateClient.mockResolvedValue(client);
 
     const response = await PATCH(createRequest({ status: 'published' }), { params: params() });

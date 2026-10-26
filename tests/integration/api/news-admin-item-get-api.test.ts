@@ -47,8 +47,8 @@ function createFakeClient(tables: Record<string, Result>, signResult: Result | E
           return builder;
         };
       }
-      builder.single = () => {
-        op.calls.push(['single', []]);
+      builder.maybeSingle = () => {
+        op.calls.push(['maybeSingle', []]);
         return Promise.resolve(result());
       };
       builder.then = (onF: (v: Result) => unknown, onR?: (e: unknown) => unknown) => Promise.resolve(result()).then(onF, onR);
@@ -161,7 +161,7 @@ describe('GET /api/admin/news/[id]（管理の記事1件の読み）', () => {
     expect(newsCalls()).toEqual([
       ['select', ['*']],
       ['eq', ['id', '7']],
-      ['single', []],
+      ['maybeSingle', []],
     ]);
     expect(serviceClient.signs).toEqual([{ bucket: 'news-images', path: 'news/2026-10-24/a.jpg', expiresIn: 3600 }]);
     expect(serviceClient.ops.some((o) => o.table === 'news_articles')).toBe(false);
@@ -209,22 +209,37 @@ describe('GET /api/admin/news/[id]（管理の記事1件の読み）', () => {
     expect(serviceClient.signs).toHaveLength(0);
   });
 
-  test('API-NEWS-004 DB の失敗も無い時と同じ 404 Article not found を返す', async () => {
-    setup({ row: { data: null, error: { code: '22P02', message: 'invalid input syntax' } } });
+  test.each(['abc', '0', '007', '1'.repeat(19), '..%2Fadmin'])(
+    'API-NEWS-004 id が %p なら DB を呼ばずに 404 Article not found を返す（22P02 を 500 にしない）（SEC-NEWS-012）',
+    async (badId) => {
+      setup({ row: { data: null, error: { code: '22P02', message: 'invalid input syntax' } } });
 
-    const res = await GET(makeRequest(), ctx('abc'));
+      const res = await GET(makeRequest(), ctx(badId));
 
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: 'Article not found' });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: 'Article not found' });
+      expect(newsCalls()).toHaveLength(0);
+      expect(serviceClient.signs).toHaveLength(0);
+    },
+  );
+
+  test('API-NEWS-004 DB の失敗は「無い」の 404 にせず、固定の文の 500 Failed to fetch news article を返す（SEC-NEWS-020）', async () => {
+    setup({ row: { data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } } });
+
+    const res = await GET(makeRequest(), ctx());
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'Failed to fetch news article' });
     expect(serviceClient.signs).toHaveLength(0);
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('statement timeout');
   });
 
-  test('API-NEWS-004 データがあっても error があれば 404 を返す', async () => {
+  test('API-NEWS-004 データがあっても error があれば 500 を返し、署名しない', async () => {
     setup({ row: { data: { id: 7, image_url: 'news/a.jpg' }, error: { message: 'boom' } } });
 
     const res = await GET(makeRequest(), ctx());
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(500);
     expect(serviceClient.signs).toHaveLength(0);
   });
 

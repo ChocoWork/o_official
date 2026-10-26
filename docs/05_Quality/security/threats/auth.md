@@ -351,7 +351,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | access token、Supabase の利用者の記録、TOTP の秘密 |
 | 脅威 | 画面に差し込まれたスクリプトが応答の本文からトークンを盗む。共有の端末・中継のキャッシュに応答が残る |
-| 起こり方 | トークンの更新の応答の本文に access token と利用者の記録（`src/app/api/auth/refresh/route.ts:101`）、公開の会員登録の 201 に access token（`register/route.ts:191`）、OTP の検証の応答に Supabase の利用者の記録のまるごと（`otp/verify/route.ts:89-95`）を入れる。TOTP の登録は秘密と URI を返す（`mfa/enroll-totp/route.ts:141-152`）。2026-10-26 に、更新の成功の本文は `{ ok: true }`、OTP の検証の成功の本文は `{ user: { id, email, role }, message }` だけにした（登録の 201 の本文も 2026-10-26 に `{ user: { id, email } }` だけにした。no-store は波 3）。これらと、ログイン・TOTP の確認・MFA の状態の応答に `Cache-Control: no-store` が無い（`me` と再設定の link・確認のリンクには付ける。`me/route.ts:12-17`、`password-reset/link/route.ts:21-26`、`confirm/route.ts:19-24`） |
+| 起こり方 | トークンの更新の応答の本文に access token と利用者の記録（`src/app/api/auth/refresh/route.ts:101`）、公開の会員登録の 201 に access token（`register/route.ts:191`）、OTP の検証の応答に Supabase の利用者の記録のまるごと（`otp/verify/route.ts:89-95`）を入れる。TOTP の登録は秘密と URI を返す（`mfa/enroll-totp/route.ts:141-152`）。2026-10-26 に、更新の成功の本文は `{ ok: true }`、OTP の検証の成功の本文は `{ user: { id, email, role }, message }` だけにした（登録の 201 の本文も 2026-10-26 に `{ user: { id, email } }` だけにした。no-store は波 3）。これらと、ログイン・TOTP の確認・MFA の状態の応答に `Cache-Control: no-store` が無い（`me` と再設定の link・確認のリンクには付ける。`me/route.ts:12-17`、`password-reset/link/route.ts:21-26`、`confirm/route.ts:19-24`）。`/api/auth/me` の応答からメールの住所は 2026-10-26 に外した（`id`・役割・`mfaVerified` だけ。SEC-HOME-016・SEC-PRIVACY-016） |
 | 影響 | Cookie を HttpOnly にした守りが、応答の本文で崩れる。秘密がキャッシュに残る |
 | 対策 | SEC-AUTH-022 |
 | ASVS | V8.2.1 |

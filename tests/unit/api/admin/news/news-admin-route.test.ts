@@ -1,4 +1,4 @@
-export {};
+import { minimalGif, minimalJpeg, minimalPng, minimalWebp, textAsImage } from '../../../../fixtures/images';
 
 jest.mock('next/server', () => ({
   NextResponse: {
@@ -23,6 +23,7 @@ jest.mock('@/lib/audit', () => ({
 }));
 
 jest.mock('@/lib/storage/news-images', () => ({
+  ...jest.requireActual('@/lib/storage/news-images'),
   signNewsImageFields: jest.fn(),
 }));
 
@@ -45,11 +46,19 @@ const validFields: Record<string, string> = {
   status: 'private',
 };
 
-function makeImage(name: string, type: string, size?: number): File {
-  const file = new File(['img'], name, { type });
+const REAL_BYTES: Record<string, () => Buffer> = {
+  'image/jpeg': minimalJpeg,
+  'image/png': minimalPng,
+  'image/webp': minimalWebp,
+  'image/gif': minimalGif,
+};
+
+function makeImage(name: string, type: string, size?: number, bytes?: Buffer): File {
+  const content = bytes ?? REAL_BYTES[type]?.() ?? textAsImage();
+  const file = new File([new Uint8Array(content)], name, { type });
   Object.defineProperty(file, 'arrayBuffer', {
     configurable: true,
-    value: async () => new Uint8Array([1, 2, 3]).buffer,
+    value: async () => new Uint8Array(content).buffer,
   });
   if (size !== undefined) {
     Object.defineProperty(file, 'size', { configurable: true, value: size });
@@ -77,10 +86,12 @@ function makeRequest(options: {
 
 function setupPostMocks(options: {
   uploadError?: unknown;
+  removeError?: unknown;
   insertResult?: { data: unknown; error: unknown };
 } = {}) {
   const upload = jest.fn().mockResolvedValue({ error: options.uploadError ?? null });
-  const storageFrom = jest.fn().mockReturnValue({ upload });
+  const remove = jest.fn().mockResolvedValue({ error: options.removeError ?? null });
+  const storageFrom = jest.fn().mockReturnValue({ upload, remove });
   const single = jest
     .fn()
     .mockResolvedValue(options.insertResult ?? { data: { id: 42 }, error: null });
@@ -89,7 +100,7 @@ function setupPostMocks(options: {
   const from = jest.fn().mockReturnValue({ insert });
   mockCreateClient.mockResolvedValue({ from });
   mockCreateServiceRoleClient.mockResolvedValue({ storage: { from: storageFrom } });
-  return { upload, storageFrom, insert, select, from };
+  return { upload, remove, storageFrom, insert, select, from };
 }
 
 function setupGetMocks(result: { data: unknown; error: unknown }) {
@@ -181,6 +192,32 @@ describe('POST /api/admin/news', () => {
     expect(mocks.upload).not.toHaveBeenCalled();
   });
 
+  it('DD-NEWS-064 POST で HTML を image/png と申告した画像は 400 Unsupported image type で、置き場に書かず service role の client も作らない（SEC-NEWS-017）', async () => {
+    const mocks = setupPostMocks();
+    const res = await POST(
+      makeRequest({
+        fields: { ...validFields, image: makeImage('a.png', 'image/png', undefined, Buffer.from('<html><script>alert(1)</script></html>')) },
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Unsupported image type' });
+    expect(mocks.upload).not.toHaveBeenCalled();
+    expect(mocks.insert).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+  });
+
+  it('DD-NEWS-064 POST で PNG の中身を image/jpeg と申告した画像は 400 Unsupported image type（申告と検出が違う）', async () => {
+    const mocks = setupPostMocks();
+    const res = await POST(
+      makeRequest({ fields: { ...validFields, image: makeImage('a.jpg', 'image/jpeg', undefined, minimalPng()) } }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Unsupported image type' });
+    expect(mocks.upload).not.toHaveBeenCalled();
+  });
+
   it('DD-NEWS-064 POST で 5MB を1バイト超える画像は 400 Image size must be 5MB or less', async () => {
     const mocks = setupPostMocks();
     const res = await POST(
@@ -255,9 +292,46 @@ describe('POST /api/admin/news', () => {
         outcome: 'failure',
         resource_id: null,
         detail: 'News article insert failed',
-        metadata: { storagePath: 'news/2026-10-24/uuid-1.jpg', status: 'private', category: 'COLLECTION' },
+        metadata: { storagePath: 'news/2026-10-24/uuid-1.jpg', status: 'private', category: 'COLLECTION', imageCleanup: 'ok' },
       }),
     );
+  });
+
+  it('DD-NEWS-064 POST で insert が失敗したら、上げた道筋を news-images から 1 回だけ remove し、service role の client が受ける（SEC-NEWS-018）', async () => {
+    const mocks = setupPostMocks({ insertResult: { data: null, error: { message: 'rls' } } });
+
+    await POST(makeRequest());
+
+    expect(mocks.remove).toHaveBeenCalledTimes(1);
+    expect(mocks.remove).toHaveBeenCalledWith(['news/2026-10-24/uuid-1.jpg']);
+    expect(mocks.storageFrom).toHaveBeenLastCalledWith('news-images');
+  });
+
+  it('DD-NEWS-064 POST で insert の失敗の後の remove も失敗しても、応答は 500 Failed to save news article のままで、監査に imageCleanup:failed を残す', async () => {
+    setupPostMocks({
+      insertResult: { data: null, error: { message: 'rls' } },
+      removeError: { name: 'StorageApiError', code: '500', message: 'secret bucket detail' },
+    });
+
+    const res = await POST(makeRequest());
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'Failed to save news article' });
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.news.create.db_insert_failed',
+        metadata: expect.objectContaining({ imageCleanup: 'failed' }),
+      }),
+    );
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('secret');
+  });
+
+  it('DD-NEWS-064 POST の成功では置き場から何も remove しない', async () => {
+    const mocks = setupPostMocks();
+
+    await POST(makeRequest());
+
+    expect(mocks.remove).not.toHaveBeenCalled();
   });
 
   it('DD-NEWS-064 POST の成功で insert の image_url が署名前の道、監査の resource_id が新しい id の文字、201 success と id を返す', async () => {
@@ -336,6 +410,18 @@ describe('POST /api/admin/news', () => {
     expect(await res.json()).toEqual({ error: 'Internal server error' });
     expect(mockLogAudit).not.toHaveBeenCalled();
   });
+
+  it('DD-NEWS-064 POST で insert が例外を投げた時も、上げた画像を remove して 500 Internal server error を返す', async () => {
+    const mocks = setupPostMocks();
+    mocks.insert.mockImplementation(() => {
+      throw new Error('boom');
+    });
+
+    const res = await POST(makeRequest());
+
+    expect(res.status).toBe(500);
+    expect(mocks.remove).toHaveBeenCalledWith(['news/2026-10-24/uuid-1.jpg']);
+  });
 });
 
 describe('GET /api/admin/news', () => {
@@ -390,14 +476,16 @@ describe('GET /api/admin/news', () => {
     expect(mockSign).not.toHaveBeenCalled();
   });
 
-  it('DD-NEWS-064 GET で表の失敗の時は 500 Failed to fetch news articles', async () => {
-    setupGetMocks({ data: null, error: { message: 'db down' } });
+  it('DD-NEWS-064 GET で表の失敗の時は 500 Failed to fetch news articles で、誤りの文を記録に出さない（SEC-NEWS-020）', async () => {
+    setupGetMocks({ data: null, error: Object.assign(new Error('db down secret'), { code: 'XX000' }) });
 
     const res = await GET(makeRequest());
 
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'Failed to fetch news articles' });
     expect(mockSign).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith('Failed to fetch news articles:', { name: 'Error', code: 'XX000' });
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('secret');
   });
 
   it('DD-NEWS-064 GET で例外の時は 500 Internal server error', async () => {

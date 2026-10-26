@@ -39,12 +39,14 @@ type TableOp = { table: string; op: Op; calls: Call[] };
 type Tables = Record<string, Partial<Record<Op, Outcome>>>;
 type Upload = { bucket: string; path: string; body: unknown; options: Record<string, unknown> };
 type Signed = { bucket: string; path: string; expiresIn: number };
+type Removal = { bucket: string; paths: string[] };
 
 // 表への呼び出しを、最初の操作（select・insert・update・delete）ごとに用意した結果で返す
 function createFakeClient(
   tables: Tables,
-  storage: { uploadResult?: Result; sign?: (path: string) => Result } = {}
+  storage: { uploadResult?: Result; sign?: (path: string) => Result; removeResult?: Outcome } = {}
 ) {
+  const removals: Removal[] = [];
   const ops: TableOp[] = [];
   const seq: string[] = [];
   const uploads: Upload[] = [];
@@ -54,11 +56,12 @@ function createFakeClient(
     seq,
     uploads,
     signed,
+    removals,
     from: jest.fn((table: string) => {
       const op: TableOp = { table, op: 'select', calls: [] };
       ops.push(op);
       const builder: Record<string, unknown> = {};
-      for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'in', 'or', 'single']) {
+      for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'in', 'or', 'single', 'maybeSingle']) {
         builder[m] = (...args: unknown[]) => {
           if (op.calls.length === 0 && (m === 'select' || m === 'insert' || m === 'update' || m === 'delete')) {
             op.op = m;
@@ -80,6 +83,12 @@ function createFakeClient(
         upload: jest.fn(async (path: string, body: unknown, options: Record<string, unknown>) => {
           uploads.push({ bucket, path, body, options });
           return storage.uploadResult ?? { data: {}, error: null };
+        }),
+        remove: jest.fn(async (paths: string[]) => {
+          removals.push({ bucket, paths });
+          const outcome = storage.removeResult ?? { data: [], error: null };
+          if ('throws' in outcome) throw outcome.throws;
+          return outcome;
         }),
         createSignedUrl: jest.fn(async (path: string, expiresIn: number) => {
           signed.push({ bucket, path, expiresIn });
@@ -172,10 +181,12 @@ function makeRequest(options: { userAgent?: string | null } = {}) {
 
 type Overrides = { existing?: Outcome; remove?: Outcome };
 
+const OWN_IMAGE = 'looks/2026-10-01/a.jpg';
+
 function lookTables(overrides: Overrides = {}): Tables {
   return {
     looks: {
-      select: overrides.existing ?? { data: { id: 7, status: 'published' }, error: null },
+      select: overrides.existing ?? { data: { id: 7, status: 'published', image_urls: [OWN_IMAGE] }, error: null },
       delete: overrides.remove ?? { data: null, error: null },
     },
   };
@@ -301,7 +312,7 @@ describe('DELETE /api/admin/looks/[id]（LOOK の削除）', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
     expect(dataSeq()).toEqual(['looks.select', 'looks.delete']);
-    expect(tableCalls('looks', 'select')).toEqual([[['select', ['id,status']], ['eq', ['id', '7']], ['single', []]]]);
+    expect(tableCalls('looks', 'select')).toEqual([[['select', ['id,status,image_urls']], ['eq', ['id', '7']], ['maybeSingle', []]]]);
     expect(tableCalls('looks', 'delete')).toEqual([[['delete', []], ['eq', ['id', '7']]]]);
     const rows = auditRows();
     expect(rows).toHaveLength(1);
@@ -317,14 +328,71 @@ describe('DELETE /api/admin/looks/[id]（LOOK の削除）', () => {
     });
   });
 
-  test('API-LOOK-006 関連の行は外部キーに任せて消さず、置き場の画像も消さない', async () => {
-    setup({ tables: lookTables() });
+  test('API-LOOK-006 関連の行は外部キーに任せて消さず、行を消した後に自分の画像だけを置き場から消す', async () => {
+    setup({
+      tables: lookTables({
+        existing: {
+          data: {
+            id: 7,
+            status: 'published',
+            image_urls: [OWN_IMAGE, 'e2e/look-1-1.png', 'https://evil.example/looks/x.png', 'looks/../y.png'],
+          },
+          error: null,
+        },
+      }),
+    });
 
-    await DELETE(makeRequest(), ctx());
+    const res = await DELETE(makeRequest(), ctx());
 
+    expect(res.status).toBe(200);
     expect(client.ops.some((o) => o.table === 'look_items')).toBe(false);
-    expect(client.storage.from).not.toHaveBeenCalled();
+    expect(client.removals).toEqual([{ bucket: 'look-images', paths: [OWN_IMAGE] }]);
     expect(incrementCounterBy).not.toHaveBeenCalled();
+    expect(client.seq.indexOf('looks.delete')).toBeGreaterThan(-1);
+  });
+
+  test('API-LOOK-006 消せる画像が無ければ置き場を呼ばない', async () => {
+    setup({ tables: lookTables({ existing: { data: { id: 7, status: 'published', image_urls: ['e2e/look-1-1.png'] }, error: null } }) });
+
+    const res = await DELETE(makeRequest(), ctx());
+
+    expect(res.status).toBe(200);
+    expect(client.storage.from).not.toHaveBeenCalled();
+  });
+
+  test('API-LOOK-006 行の削除が失敗したら画像は消さない', async () => {
+    setup({ tables: lookTables({ remove: { data: null, error: { message: 'fk violation' } } }) });
+
+    const res = await DELETE(makeRequest(), ctx());
+
+    expect(res.status).toBe(500);
+    expect(client.removals).toEqual([]);
+  });
+
+  test('API-LOOK-006 置き場の削除が失敗しても 200 のままで、監査の metadata に件数を残し、置き場の文を記録しない', async () => {
+    setup({
+      tables: lookTables(),
+      storage: { removeResult: { data: null, error: { message: 'storage SECRET' } } },
+    });
+
+    const res = await DELETE(makeRequest(), ctx());
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+    expect(auditRows()[0]).toMatchObject({
+      outcome: 'success',
+      metadata: { deleted_status: 'published', image_cleanup: 'failed', orphaned_count: 1 },
+    });
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('SECRET');
+  });
+
+  test('API-LOOK-006 置き場の削除が例外を投げても 200 のまま返す', async () => {
+    setup({ tables: lookTables(), storage: { removeResult: { throws: new Error('storage down') } } });
+
+    const res = await DELETE(makeRequest(), ctx());
+
+    expect(res.status).toBe(200);
+    expect(auditRows()[0]).toMatchObject({ outcome: 'success', metadata: expect.objectContaining({ image_cleanup: 'failed' }) });
   });
 
   test('API-LOOK-006 LOOK が無ければ 404 Look not found と失敗の監査を残し、消さない', async () => {
@@ -344,15 +412,40 @@ describe('DELETE /api/admin/looks/[id]（LOOK の削除）', () => {
     });
   });
 
-  test('API-LOOK-006 有無の確認が DB の失敗でも 404 Look not found にし、消さない', async () => {
-    setup({ tables: lookTables({ existing: { data: null, error: { message: 'connection reset' } } }) });
+  test('API-LOOK-006 有無の確認が DB の失敗なら「無い」と分けて 500 Failed to fetch look にし、失敗の監査を残して消さない', async () => {
+    setup({ tables: lookTables({ existing: { data: null, error: { code: '08006', message: 'connection reset SECRET' } } }) });
 
     const res = await DELETE(makeRequest(), ctx());
 
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: 'Look not found' });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'Failed to fetch look' });
     expect(dataSeq()).toEqual(['looks.select']);
+    expect(client.removals).toEqual([]);
+    expect(auditRows()[0]).toMatchObject({ outcome: 'failure', detail: 'Failed to fetch look' });
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('SECRET');
   });
+
+  test.each(['abc', '1e3', '0', '-1', '1.5'])(
+    'API-LOOK-006 id が %s の時は認可と回数の後で 400 Invalid look id と監査（id の生の値は残さず長さだけ）を返し、何も消さない',
+    async (badId) => {
+      setup({ tables: lookTables() });
+
+      const res = await DELETE(makeRequest(), ctx(badId));
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Invalid look id' });
+      expect(dataSeq()).toEqual([]);
+      expect(client.removals).toEqual([]);
+      expect(auditRows()).toHaveLength(1);
+      expect(auditRows()[0]).toMatchObject({
+        action: 'admin.look.delete',
+        outcome: 'failure',
+        detail: 'Invalid look id',
+        resource_id: null,
+        metadata: { id_length: badId.length },
+      });
+    },
+  );
 
   test('API-LOOK-006 削除の失敗は 500 Failed to delete look と、消そうとした状態を含む失敗の監査を残す', async () => {
     setup({ tables: lookTables({ remove: { data: null, error: { message: 'fk violation' } } }) });

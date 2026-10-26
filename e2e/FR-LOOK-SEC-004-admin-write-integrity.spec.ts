@@ -22,9 +22,9 @@
  * 作った利用者・session・監査の行は消さない（db reset で消える）。
  *
  * 現行のコードが満たさない AC（文のとおりに書いてあり、緩めない。コードが直るまで赤）:
- * 012-AC-03（作成と更新を別々に数える）、013-AC-02（保存の拡張子を送られた名前から作る）、014-AC-01・AC-02（置き場の画像を消さない）、
- * 015-AC-01（更新が1つのまとまりでない）、020-AC-02（送り元を監査に渡さない）。
- * 012-AC-01・AC-02、013-AC-01、020-AC-01 は満たす見込み（013-AC-01 は type の申告だけで通す実装なら赤）。
+ * 012-AC-03（作成と更新を別々に数える）、015-AC-01（更新が1つのまとまりでない）、020-AC-02（送り元を監査に渡さない）。
+ * 013-AC-01・AC-02（画像の中身で種類を確かめ、保存名を自分で作る）と 014-AC-01・AC-02（消した・差し替えた画像を置き場から消す）は直した。
+ * 012-AC-01・AC-02、013-AC-01・AC-02、014-AC-01・AC-02、020-AC-01 は満たす見込み。
  *
  * 置き場の物の数（012-AC-01・013-AC-01）は、ほかの spec（管理画面の作成など）が同時に上げる物と混ざらないよう、
  * 断られた画像と同じ大きさ（バイト数）の物だけを数える。
@@ -327,7 +327,6 @@ test.describe('FR-LOOK-SEC-004 管理の LOOK の書き込みの保全（窓口�
   });
 
   test('SEC-LOOK-013-AC-01 type を image/png と申告した、中身が文字のファイルの作成は 400 になり、置き場にオブジェクトが増えない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-LOOK-013-AC-01 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     await withScenario(baseURL, async (s) => {
       // 他の spec の画像と大きさが重ならない文字の列（毎回違う長さ）
       const text = Buffer.from(`this is plain text, not an image ${'x'.repeat(1000 + randomBytes(1)[0])}`, 'utf8');
@@ -341,7 +340,6 @@ test.describe('FR-LOOK-SEC-004 管理の LOOK の書き込みの保全（窓口�
   });
 
   test('SEC-LOOK-013-AC-02 名前を a/b.html にした PNG で作った LOOK の image_urls の道筋が looks/<日付>/<uuid>.png の形で、/ が2つで .html を含まない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-LOOK-013-AC-02 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     await withScenario(baseURL, async (s) => {
       const res = await postLook(request, s, 'name-a-b-html', { images: [png('a/b.html')] });
       expect(res.status(), '前提: 作成が 201').toBe(201);
@@ -357,7 +355,6 @@ test.describe('FR-LOOK-SEC-004 管理の LOOK の書き込みの保全（窓口�
   });
 
   test('SEC-LOOK-014-AC-01 LOOK を作って DELETE した後、その LOOK の image_urls の道筋のオブジェクトが置き場に無い', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-LOOK-014-AC-01 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     await withScenario(baseURL, async (s) => {
       const id = await createLook(request, s, 'delete-target');
       const urls = await readImageUrls(s.db, id);
@@ -372,7 +369,6 @@ test.describe('FR-LOOK-SEC-004 管理の LOOK の書き込みの保全（窓口�
   });
 
   test('SEC-LOOK-014-AC-02 画像を差し替えた PUT の後、前の image_urls の道筋のオブジェクトが置き場に無い', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-LOOK-014-AC-02 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     await withScenario(baseURL, async (s) => {
       const id = await createLook(request, s, 'replace-target');
       const previous = await readImageUrls(s.db, id);

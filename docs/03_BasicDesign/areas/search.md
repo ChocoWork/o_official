@@ -1,6 +1,6 @@
 # SEARCH の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: SEARCH（検索のページ `/search`・検索の窓口 `/api/search`・候補の窓口 `/api/suggest`・ホームの `/?q=` のプレビュー） | 基準コミット: `4facf63b`（作業ツリー）
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: SEARCH（検索のページ `/search`・検索の窓口 `/api/search`・候補の窓口 `/api/suggest`・ホームの `/?q=` のプレビュー） | 基準コミット: `4facf63b`（作業ツリー）
 
 ## 概要
 
@@ -18,14 +18,14 @@ SEARCH の領域の構成・画面・画面遷移・状態遷移・API・デー�
 
 - 結論: 検索のページとホームのプレビューは利用者の端末で動く部品で、2つの窓口を呼ぶ。窓口は共有の回数の制限を通した上で取り出しの関数（`search.service.ts`）を呼び、取り出しの関数は利用者の session の client で DB の検索の関数を、service role の client で人気商品の関数と画像の署名を呼ぶ
 - 並びの点数・説明の切り出し・0件の判定はアプリが行い、DB の関数は公開済みの行を語の部分一致で新しい順に返すだけ
-- 今のコードが満たさないセキュリティ要件（SEC-SEARCH-004・006・007・008・010・014〜021）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた。一部だけ満たす物は、満たさない所がその項目の受け持つコードにある時は上位にせず、ほかの項目のコードにだけある時は上位にした（NEWS の構造設計と同じ決め方）
+- 今のコードが満たさないセキュリティ要件（SEC-SEARCH-006・007・008・014〜016・020 の偽の送り元の側。004・005・010・017・018・019・021 と 020 の外のサイト側は 2026-10-26 に直し、満たす形の構造に上位をつないだ）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた。一部だけ満たす物は、満たさない所がその項目の受け持つコードにある時は上位にせず、ほかの項目のコードにだけある時は上位にした（NEWS の構造設計と同じ決め方）
 
 ## 範囲と根拠
 
 | 項目 | 内容 |
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の SEARCH |
-| 上位の文書 | [SEARCH の要件](../../02_Requirements/areas/search.md)（要件・`SEC-SEARCH-`・`DRV-SEARCH-`）、`docs/03_BasicDesign/decisions/ADR-0300`〜`ADR-0310`、NEWS の `ADR-0002`（検索の結果の NEWS の画像） |
+| 上位の文書 | [SEARCH の要件](../../02_Requirements/areas/search.md)（要件・`SEC-SEARCH-`・`DRV-SEARCH-`）、`docs/03_BasicDesign/decisions/ADR-0300`〜`ADR-0314`、NEWS の `ADR-0002`（検索の結果の NEWS の画像） |
 | 対象のコード | `src/app/search/page.tsx`、`src/app/api/search/route.ts`、`src/app/api/suggest/route.ts`、`src/features/search/components/SearchPageClient.tsx`・`SearchHomePreview.tsx`、`src/features/search/services/search.service.ts`、`src/features/search/types/search.types.ts` |
 | 対象の DB | `supabase/migrations/20260901102912_remote_schema.sql`（検索の関数と付与）、`supabase/migrations/20261013001143_order_return_receipts.sql`（人気商品の関数の最後の定義と付与） |
 | 関連文書 | `docs/04_DetailDesign/pages/19_search.md`、`docs/03_BasicDesign/api/api-spec.md`・`route-inventory.md`（別の作業が書き換え中なので触らない）、`docs/03_BasicDesign/ui/design-guide.md`（古い画面の記述） |
@@ -69,18 +69,18 @@ graph LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-SEARCH-001、FR-SEARCH-003、SEC-SEARCH-001、ADR-0300、ADR-0302、ADR-0310 |
+| 上位 | FR-SEARCH-001、FR-SEARCH-003、SEC-SEARCH-001、SEC-SEARCH-004、SEC-SEARCH-017、SEC-SEARCH-018、DRV-SEARCH-003、ADR-0300、ADR-0302、ADR-0310、ADR-0311 |
 | 根拠 | 語とタブを URL に持ち、入力のたびに候補を取り直すので、画面は端末で動く部品にし、窓口から JSON を受ける形にした（ADR-0310）。語は DB の関数の引数で渡し、フィルタの文字列に組まないので、語で条件を書き換えられない（ADR-0300、NFR-SEC-007）。検索の関数は利用者の session の client で呼び、関数の中の公開の絞りと表の RLS の2段で下書きを外へ出さない（SEC-SEARCH-001、ADR-0302） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/features/search/services/search.service.ts`、`src/app/api/search/route.ts`、`src/app/api/suggest/route.ts`） |
 
 - 入口: `/search`（`src/app/search/page.tsx`）は題・説明を返し、`SearchPageClient` を `Suspense` で包むだけ。ホームの `/?q=` は HOME の頁が `SearchHomePreview` を描く
-- 窓口: `GET /api/search`（API-SEARCH-001）と `GET /api/suggest`（API-SEARCH-002）。どちらも zod で `q` を確かめ、回数の制限（ARC-SEARCH-005）を通してから取り出しの関数を呼ぶ
+- 窓口: `GET /api/search`（API-SEARCH-001）と `GET /api/suggest`（API-SEARCH-002）。どちらも外のサイトから読み込まれた要求を先に 403 で断り（SEC-SEARCH-020、ADR-0312）、共通の `searchQuerySchema` で `q` を確かめ（SEC-SEARCH-004）、回数の制限（ARC-SEARCH-005）を通してから取り出しの関数を呼ぶ
 - 取り出しの関数（`search.service.ts`）: `executeSearch` が人気商品（ARC-SEARCH-004）と3種の検索を、`getSearchSuggestions` が候補を作る。3種の関数は同時に呼ぶ
 - client: 検索の関数は `createClient()` で呼ぶ。ログインしていなければ anon、していればその人の session になる。service role は人気商品の関数と画像の署名だけに使う
 - 型: 応答の形は `search.types.ts`（`SearchResult`・`SearchResultsResponse`・`SearchSuggestion`）。画面と窓口が同じ型を使う
-- 失敗: 種別ごとの関数の失敗は記録して空として扱い、止めない（DRV-SEARCH-003）。利用者からは0件と区別できない（SEC-SEARCH-017 は満たさない）
+- 失敗: 検索は 3 つの関数のどれか 1 つでも失敗したら全体を失敗にし（`SearchBackendError`。窓口は 500、画面は失敗の表示）、0件と区別できる（SEC-SEARCH-017、ADR-0311）。候補は失敗した種別を飛ばして続ける（DRV-SEARCH-003）。記録は関数名・誤りの名前・符号だけ（SEC-SEARCH-018）
 - `tab` は窓口で結果を絞らず、受けた値をそのまま返す。出し分けは画面が行う
 - 取り出しの関数の中の `getResultTypeLabel` は未使用（削除の判断待ち）で、どこからも使われず、画面の部品に同じ写しがある（DD-SEARCH-008）
 
@@ -147,7 +147,7 @@ flowchart LR
 
 - 呼び方: `getPopularItems` が `get_popular_items` を件数4で呼ぶ（DATA-SEARCH-002）。語の有無にかかわらず、3種の検索より先に呼ぶ
 - 写し方: `mapPopularItem` が id・名前・説明（無ければカテゴリ）・`/item/<id>`・画像・価格のメタだけを写し、関数が返す購入数を落とす（FREQ-186-REQ-01 の並びは関数が決める）
-- 失敗: 関数の失敗は記録して空の一覧にする（SEC-SEARCH-017 は満たさない）
+- 失敗: 関数の失敗は名前と符号だけ記録して空の一覧にし、検索は続ける（人気商品は検索の結果ではないので、SEC-SEARCH-017 の全体を失敗にする決まりの外）
 - 公開の窓口の要求ごとに service role の client を作る。何を外へ出すかは写し方の関数に任されている
 - FREQ-186-REQ-02 の「SECURITY INVOKER」は DB の関数の側の話で、食い違いは SEC-SEARCH-009 に書いた（この項目の受け持つコードは要件どおり service role から呼び、購入数を出さない）
 
@@ -155,7 +155,7 @@ flowchart LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-187-REQ-01、SEC-SEARCH-005、SEC-SEARCH-012、ADR-0306 |
+| 上位 | FREQ-187-REQ-01、SEC-SEARCH-005、SEC-SEARCH-010、SEC-SEARCH-012、SEC-SEARCH-020、ADR-0306、ADR-0312 |
 | 根拠 | 1回の検索で3つの関数・人気商品・署名を呼ぶので、続けて叩かれると DB と署名が詰まる。窓口ごとに回数の制限を掛け、プレビューは別の枠と少ない件数で数える（FREQ-187-REQ-01、SEC-SEARCH-005、ADR-0306）。`q` を URL に残すので、参照元の見出しで外へ語を送らないよう、共有の proxy の `Referrer-Policy` に任せる（SEC-SEARCH-012）。数え場所が使えない時は断る側に倒す決まりは共有部品が持つ（NEWS の ADR-0009 と同じ部品） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -167,11 +167,11 @@ flowchart LR
 | `/api/search?preview=true` | `search:preview` | 20 回 | 600 秒 |
 | `/api/suggest` | `suggest:public` | 200 回 | 600 秒 |
 
-- 窓口は `enforceRateLimit` を動的に読み込み、入力の確かめの後、取り出しの前に呼ぶ。超えたら 429（`Retry-After: 600`）、数え場所の失敗は 503
+- 窓口は、先に `Sec-Fetch-Site` が同一オリジンでない要求を 403 で断り（枠に数えない）、`enforceRateLimit` を動的に読み込み、入力の確かめの後、取り出しの前に呼ぶ。超えたら 429（`Retry-After: 600`）、数え場所の失敗は 503
 - 2つの枠は別々に数えるので、1つの送り元で合わせて140回使える（害は小さいと推定）
 - 送り元は `x-forwarded-for` の先頭、無ければ `x-real-ip` を無条件に使い、`subject` は渡さない（SEC-SEARCH-006 は満たさない）
-- 画面は候補を1文字ごとに、タブを切り替えるたびに窓口を呼ぶ（SEC-SEARCH-005 の画面の側は満たさない。SCR-SEARCH-003、FLOW-SEARCH-002）
-- proxy は matcher `'/:path*'` で全部の応答に `Referrer-Policy: no-referrer` を付ける。`Cache-Control` は付けない（SEC-SEARCH-010 は満たさない）
+- 画面は候補を入力が止まって250ミリ秒後に呼び、タブを切り替えても検索を呼び直さない（SEC-SEARCH-005。SCR-SEARCH-003、FLOW-SEARCH-002、ADR-0313）
+- proxy は matcher `'/:path*'` で全部の応答に `Referrer-Policy: no-referrer` を付ける。`Cache-Control` は付けない。2つの窓口は自分の全部の応答に `Cache-Control: private, no-store` を共有の `withNoStore` で付ける（SEC-SEARCH-010）
 
 ## 画面
 
@@ -212,7 +212,7 @@ flowchart LR
 - メタ: 商品は価格、ルックはシーズン、ニュースは公開日（ARC-SEARCH-002。FREQ-184-REQ-02 の「ITEM はカテゴリ」は FREQ-201-REQ-01 で価格に置き換わった形）
 - 強調: 題の中で語全体（前後の空白を除く）に大文字と小文字を区別せずに合う所を `mark` で包む。語は正規表現の記号を逃がしてから使う。分けた1語ごとには強調しない
 - ALL: 商品・ルック・ニュースの順に1件ずつ取り出して交互に並べる。ITEM・LOOK・NEWS のタブはその種別の一覧
-- LOAD MORE: 初めは8行。一覧が表示の数より長い時だけ下に「LOAD MORE」を出し、押すごとに8行足す。語かタブが変わったら8行に戻す。窓口が1種別8件までしか返さないので、種別のタブでは出ず、ALL でも最大24件（推定）
+- LOAD MORE: 初めは8行。一覧が表示の数より長い時だけ下に「LOAD MORE」を出し、押すごとに8行足す。語かタブが変わったら8行に戻す（タブだけの変更は取り直さず、取ってある結果から出し分ける）。窓口が1種別8件までしか返さないので、種別のタブでは出ず、ALL でも最大24件（推定）
 - 文字: md 未満は種別の名前・題・メタ・見出しの行・LOAD MORE を1段ずつ小さくし、行の上下の余白を詰める（FREQ-199-REQ-02・03）
 - 出力: 題・メタ・候補は React の文字として出し、HTML として解釈させない
 - 見せ方の切り替え（語なし・読み込み中・失敗・0件・結果あり）は STATE-SEARCH-001
@@ -221,7 +221,7 @@ flowchart LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-190-REQ-01、FREQ-190-REQ-02、FREQ-192-REQ-01、FREQ-195-REQ-01、SEC-SEARCH-013、DRV-SEARCH-006、ADR-0308 |
+| 上位 | FREQ-190-REQ-01、FREQ-190-REQ-02、FREQ-192-REQ-01、FREQ-195-REQ-01、SEC-SEARCH-005、SEC-SEARCH-013、DRV-SEARCH-006、ADR-0308、ADR-0313 |
 | 根拠 | 候補を入力欄の下に重ねて出し、下の種別のタブを押し下げない（FREQ-190-REQ-01）。キーボードと読み上げで同じ操作ができるよう combobox の定石に従い、選択を色以外の縦線でも示す（FREQ-190-REQ-02、NFR-A11Y-002）。行の高さを詰めても押せる大きさは保つ（FREQ-192-REQ-01）。後ろの「ALL」の字が覗かないよう左右に 1px 広げる（FREQ-195-REQ-01）。候補はサーバーの候補だけで、端末の履歴を混ぜない（ADR-0308） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -231,22 +231,22 @@ flowchart LR
 - リスト: `role="listbox"`・`aria-label="検索候補"`。入力欄の下に重ね、左右に 1px ずつ広げる。最大8件
 - 候補: `role="option"`・`aria-selected` のボタン。高さは 40px 以上。ラベルは語に合う所を黒の太字、ほかを #474747 で描き分け、右端に種別の名前。選んだ行は薄い面と黒 2px の縦線
 - 読み上げ: リストが開いている間は「N 件の検索候補があります」を `aria-live="polite"` の見えない文で伝える
-- 取り出し: 入力が変わるたびに、前後の空白を除いて空でなければ `/api/suggest` を呼ぶ。待ち時間も最小の字数も置かない（SEC-SEARCH-005 の画面の側は満たさない）。空なら候補を消す。失敗は記録して候補を消す
+- 取り出し: 入力が止まって250ミリ秒たってから、前後の空白を除いて空でなければ `/api/suggest` を呼ぶ（最小の字数は置かない。ADR-0313）。新しい入力とアンマウントで前の要求を打ち切り、遅れて返った前の応答で候補を上書きしない。空なら待たずに候補を消す。失敗は誤りの中身を渡さず固定の文だけ記録して候補を消す（打ち切りは記録しない）
 - 開閉と選択の動きは STATE-SEARCH-002、確定の後は FLOW-SEARCH-002
 
 ### SCR-SEARCH-004 ホームの `/?q=` の検索のプレビュー
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-SEARCH-002、SEC-SEARCH-013、DRV-SEARCH-010 |
-| 根拠 | ホームを離れずに結果の一部を先に見せ、続きは検索のページへ渡す（FR-SEARCH-002）。ホームの中で場所を取りすぎないよう3件に絞る（DRV-SEARCH-010）。題・説明は文字として出す（SEC-SEARCH-013） |
+| 上位 | FR-SEARCH-002、SEC-SEARCH-013、SEC-SEARCH-021、DRV-SEARCH-010、ADR-0314 |
+| 根拠 | ホームを離れずに結果の一部を先に見せ、続きは検索のページへ渡す（FR-SEARCH-002）。ホームの中で場所を取りすぎないよう3件に絞る（DRV-SEARCH-010）。題・説明は文字として出す（SEC-SEARCH-013）。URL の語は説明の文に埋めず「検索した語」の枠に分ける（SEC-SEARCH-021、ADR-0314。文言と見た目は案） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/features/search/components/SearchHomePreview.tsx`、`src/app/page.tsx`） |
 
 - 置き場: ホームのヒーローの直後（HOME の頁が描く）。URL の `q` の前後の空白を除いて空なら何も描かない
 - 取り出し: `/api/search?q=<語>&preview=true` を `no-store` で呼ぶ（1種別3件、`search:preview` の枠）
-- 中身: 「PREVIEW」「Search Preview」「「<語>」に関連する結果をホーム上で即時プレビューしています。」と「VIEW ALL RESULTS」（`/search?q=<語>`）。結果は商品・ルック・ニュースの順に合わせた先頭3件をカード（メタ・題・説明）で出し、カード全体が詳細へのリンク
+- 中身: 「PREVIEW」「Search Preview」固定の説明の文「入力した語に関連する結果をホーム上で即時プレビューしています。」（語を含めない。SEC-SEARCH-021）、説明の文の外の「検索した語」の枠（`<dl data-testid="search-preview-term">`、`<dt>検索した語</dt><dd><語></dd>`。語は文字として出す。ADR-0314、文言と見た目は案）、「VIEW ALL RESULTS」（`/search?q=<語>`）。結果は商品・ルック・ニュースの順に合わせた先頭3件をカード（メタ・題・説明）で出し、カード全体が詳細へのリンク
 - 画像と強調は出さない。説明は ARC-SEARCH-002 の切り出し
 - 0件は「プレビュー対象の検索結果は見つかりませんでした。」。取り出しの失敗は記録して区画ごと出さない
 - 画面の中に `/?q=` へ移る導線は無く、URL を直接開いた時だけ出る（推定）
@@ -285,7 +285,7 @@ flowchart LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-SEARCH-001、FREQ-190-REQ-02、DRV-SEARCH-004、DRV-SEARCH-006、ADR-0310 |
+| 上位 | FR-SEARCH-001、FREQ-190-REQ-02、SEC-SEARCH-005、DRV-SEARCH-004、DRV-SEARCH-006、ADR-0310、ADR-0313 |
 | 根拠 | 語とタブを URL に持たせ、共有・再読み込み・戻るで同じ結果に戻れるようにする（FR-SEARCH-001）。タブを切り替えるたびに履歴が積まれないよう、URL は置き換えにしてスクロールの位置も保つ（DRV-SEARCH-004、ADR-0310）。候補を選んだらその名前と種別で探す（FREQ-190-REQ-02、DRV-SEARCH-006） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -301,7 +301,7 @@ sequenceDiagram
   C->>C: 語の前後の空白を除き、空なら q を外す。tab は毎回付ける
   C->>R: URL を置き換える（スクロールを保つ）
   R-->>C: URL の q・tab が変わる
-  C->>A: q と tab で取り直す（no-store）
+  C->>A: q が変わった時だけ、その時の tab で取り直す（no-store）。tab だけが変わる時は取り直さず、取ってある結果から出し分ける
   A-->>C: 結果と人気商品
 ```
 
@@ -312,7 +312,7 @@ sequenceDiagram
 | 候補を Enter かクリックで確定 | 候補の名前 | 候補の種別 |
 
 - URL の `tab` が4つの値に無い時は ALL として扱う
-- 窓口は `tab` で絞らないのに、タブを切り替えるたびに取り直し、回数の制限を使う
+- 窓口は `tab` で絞らないので、タブを切り替えるだけでは取り直さない（SEC-SEARCH-005）。取り直しの URL の `tab` は、その時の最新のタブ（`useRef` から読む）
 - 候補を確定すると入力欄を候補の名前にし、リストを閉じる
 - URL の `q` は前後の空白を除かずに読むので、空白だけの `q` を直接開くと語ありの側の見せ方になる（推定、STATE-SEARCH-001）
 
@@ -322,8 +322,8 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-SEARCH-004、FREQ-186-REQ-03、DRV-SEARCH-003、DRV-SEARCH-007 |
-| 根拠 | 取り出しの間に空の画面や古い結果を見せると、壊れているか終わったかが分からないので、語の有無・読み込み中・失敗・0件で見せ方を分ける（DRV-SEARCH-007）。語が無い時も人気商品を出し、取り出し中は案内文を出さない（FREQ-186-REQ-03）。0件は文と人気商品を出す（FR-SEARCH-004）。種別の取り出しの失敗は0件と同じに扱う（DRV-SEARCH-003） |
+| 上位 | FR-SEARCH-004、FREQ-186-REQ-03、SEC-SEARCH-017、DRV-SEARCH-003、DRV-SEARCH-007 |
+| 根拠 | 取り出しの間に空の画面や古い結果を見せると、壊れているか終わったかが分からないので、語の有無・読み込み中・失敗・0件で見せ方を分ける（DRV-SEARCH-007）。語が無い時も人気商品を出し、取り出し中は案内文を出さない（FREQ-186-REQ-03）。0件は文と人気商品を出す（FR-SEARCH-004）。検索の関数が1つでも失敗した時は、0件ではなく失敗の見せ方にする（SEC-SEARCH-017、DRV-SEARCH-003） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/features/search/components/SearchPageClient.tsx`） |
@@ -336,10 +336,10 @@ stateDiagram-v2
   取り出し中 --> 結果あり: 成功・empty が偽
   取り出し中 --> 結果なし: 成功・empty が真
   取り出し中 --> 失敗: 200 以外か通信の失敗
-  語なし --> 取り出し中: q か tab が変わる
-  結果あり --> 取り出し中: q か tab が変わる
-  結果なし --> 取り出し中: q か tab が変わる
-  失敗 --> 取り出し中: q か tab が変わる
+  語なし --> 取り出し中: q が変わる（tab だけの変更は取り直さない）
+  結果あり --> 取り出し中: q が変わる（tab だけの変更は取り直さない）
+  結果なし --> 取り出し中: q が変わる（tab だけの変更は取り直さない）
+  失敗 --> 取り出し中: q が変わる（tab だけの変更は取り直さない）
 ```
 
 | 状態 | 右のカラム |
@@ -354,7 +354,7 @@ stateDiagram-v2
 | 失敗 | 「検索結果を読み込めませんでした」を赤い字で読み上げにも伝える。前の結果は消す |
 
 - 読み込み中の印は取り出しの effect の中で初めて真になる（`SearchPageClient.tsx`）ので、最初の描画は取り出し中の見せ方を通らない。q なしで案内文が一瞬出るのは、FREQ-186-REQ-03 の「取り出し中は案内文を出さない」と一部食い違う（推定。描いてすぐ effect が動くので、目に見えるかは確かめていない）
-- 窓口が 200 で返せば、DB の関数の失敗も「結果なし」になる（SEC-SEARCH-017 は満たさない）
+- 検索の関数が1つでも失敗すると窓口が 500 を返すので、「結果なし」ではなく「失敗」になる（SEC-SEARCH-017、ADR-0311）
 - 失敗の時に q があると、失敗の文の下に「0 RESULTS」の見出しの行も出る（結果を消した後の一覧が空のため。推定）。q が無いと失敗の文と案内文が並ぶ
 - 空白だけの q では、窓口が語なしとして `empty` を偽で返すので「0 RESULTS」になる（推定）
 - 前の取り出しの応答が後から届いても、取り消しの印で捨てる
@@ -363,7 +363,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-190-REQ-01、FREQ-190-REQ-02 |
+| 上位 | FREQ-190-REQ-01、FREQ-190-REQ-02、SEC-SEARCH-005 |
 | 根拠 | combobox の定石どおり、↓↑ で巡回して選び、Enter で確定、Escape で閉じられるようにする（FREQ-190-REQ-02）。入力が変わったら選択を戻し、前の候補を選んだまま確定するのを防ぐ。リストは重ねて出すので、外を押したら閉じる（FREQ-190-REQ-01） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -387,6 +387,7 @@ stateDiagram-v2
 - Enter: 選んだ候補があればその候補で確定し（FLOW-SEARCH-002）、無ければフォームの送信に任せて入力欄の語で探す
 - Escape はリストが閉じていても、触れている印と選択を外す
 - 外を押したかは `mousedown` で見て、リストが開いている間だけ聞く
+- 候補は入力が止まって250ミリ秒たってから届く（SEC-SEARCH-005、ADR-0313）。空にした時は待たずに閉じる
 
 ## API
 
@@ -394,42 +395,42 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-SEARCH-001、FR-SEARCH-003、FR-SEARCH-004、FREQ-186-REQ-02、FREQ-186-REQ-03、FREQ-187-REQ-01、FREQ-201-REQ-02、SEC-SEARCH-001、SEC-SEARCH-003、SEC-SEARCH-005、SEC-SEARCH-009、DRV-SEARCH-003、DRV-SEARCH-005、DRV-SEARCH-008、ADR-0300、ADR-0306 |
-| 根拠 | 1つの窓口で3種の結果と人気商品を返し、画面がタブで出し分けられるようにする（FR-SEARCH-001・004、DRV-SEARCH-005）。`preview` は文字が `'true'` の時だけ真にし、通常とプレビューの件数と回数の枠を取り違えない（FREQ-187-REQ-01）。語は関数の引数で渡し（SEC-SEARCH-003、ADR-0300）、公開済みだけを返し（SEC-SEARCH-001）、購入数を出さない（FREQ-186-REQ-02、FREQ-201-REQ-02、SEC-SEARCH-009）。速さを外から測れるよう処理の時間を見出しで返す（DRV-SEARCH-008）。語を引数で渡す点は全体の NFR-SEC-007 にも沿う |
+| 上位 | FR-SEARCH-001、FR-SEARCH-003、FR-SEARCH-004、FREQ-186-REQ-02、FREQ-186-REQ-03、FREQ-187-REQ-01、FREQ-201-REQ-02、SEC-SEARCH-001、SEC-SEARCH-003、SEC-SEARCH-004、SEC-SEARCH-005、SEC-SEARCH-009、SEC-SEARCH-010、SEC-SEARCH-017、SEC-SEARCH-018、SEC-SEARCH-019、SEC-SEARCH-020、DRV-SEARCH-003、DRV-SEARCH-005、ADR-0300、ADR-0306、ADR-0311、ADR-0312 |
+| 根拠 | 1つの窓口で3種の結果と人気商品を返し、画面がタブで出し分けられるようにする（FR-SEARCH-001・004、DRV-SEARCH-005）。`preview` は文字が `'true'` の時だけ真にし、通常とプレビューの件数と回数の枠を取り違えない（FREQ-187-REQ-01）。語は関数の引数で渡し（SEC-SEARCH-003、ADR-0300）、公開済みだけを返し（SEC-SEARCH-001）、購入数を出さない（FREQ-186-REQ-02、FREQ-201-REQ-02、SEC-SEARCH-009）。処理の時間の見出しは付けない（SEC-SEARCH-019。DRV-SEARCH-008 は廃止）。外のサイトから読み込まれた要求は先に断り（SEC-SEARCH-020）、全部の応答を共有のキャッシュに残させない（SEC-SEARCH-010）。語を引数で渡す点は全体の NFR-SEC-007 にも沿う |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/search/route.ts`、`src/features/search/services/search.service.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
 
 | 入力 | 決まり |
 | --- | --- |
-| `q` | 前後の空白を落とし100字まで。無ければ空 |
+| `Sec-Fetch-Site`（見出し） | 無い・`same-origin`・`none` なら通す。ほかは 403 `{ error: 'Forbidden' }`（枠に数えない） |
+| `q` | 前後の空白を落とし100字まで、制御文字（0x00〜0x1F・0x7F）を含まない。無ければ空。外れたら 400 |
 | `tab` | `all`・`item`・`look`・`news` のどれか。無ければ `all`。ほかの値は 400 |
 | `preview` | 文字が `'true'` の時だけ真。ほかの値は偽（400 にしない） |
 
 | 結果 | 状態の番号 | 本文・見出し |
 | --- | --- | --- |
-| 成功 | 200 | `query`・`tab`・`items`・`looks`・`news`・`counts`（all・item・look・news）・`popularItems`・`empty`。見出し `x-search-duration-ms` |
+| 成功 | 200 | `query`・`tab`・`items`・`looks`・`news`・`counts`（all・item・look・news）・`popularItems`・`empty` |
+| 外のサイトから | 403 | `{ error: 'Forbidden' }` |
 | 入力の誤り | 400 | `{ error: 'Invalid search query' }` |
 | 回数の超過 | 429 | `{ error: 'Too many requests' }`、`Retry-After: 600` |
 | 数え場所の失敗 | 503 | `{ error: 'Rate limiter unavailable' }`、`Retry-After: 600` |
-| 例外 | 500 | `{ error: 'Failed to search content' }` |
+| 例外・検索の関数の失敗 | 500 | `{ error: 'Failed to search content' }` |
 
+- 全部の応答に `Cache-Control: private, no-store`（SEC-SEARCH-010）
 - 件数: 1種別あたり通常8件、プレビュー3件。人気商品は毎回4件（ARC-SEARCH-004）
 - 語が空なら3種の関数を呼ばず、空の3種・0の数・`empty: false` と人気商品を返す
 - 結果の各要素は `id`・`type`・`title`・`description`・`href`・`imageUrl`（署名つき URL か null）・`meta`。購入数は含まない
 - `tab` は結果を絞らず、受けた値を返すだけ
-- 種別の関数の失敗は記録して空として扱い、200 で返す（DRV-SEARCH-003。SEC-SEARCH-017 は満たさない）
-- `q` の制御文字を断らない（SEC-SEARCH-004 は満たさない）
-- 成功も失敗も `Cache-Control` を付けない（SEC-SEARCH-010 は満たさない）
-- 例外と Supabase の誤りを丸ごと `console.error` に渡す（SEC-SEARCH-018 は満たさない）。応答の本文は固定の文
-- `x-search-duration-ms` を成功の応答に付ける（DRV-SEARCH-008 が今の動き。SEC-SEARCH-019 は満たさない）
+- 3つの検索関数のどれか1つでも失敗したら全体を失敗にして 500 を返す（SEC-SEARCH-017、ADR-0311）。人気商品の関数の失敗だけは空の一覧で続ける
+- 記録は誤りの名前と符号だけ（検索関数の失敗は関数名も）で、検索語・Supabase の誤りの文は書かない。応答の本文は固定の文（SEC-SEARCH-018）
 - 認証は求めない。ログインしていればその人の session で検索の関数を呼ぶ
 
 ### API-SEARCH-002 `GET /api/suggest` 入力中の候補
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-190-REQ-01、FREQ-190-REQ-03、SEC-SEARCH-001、SEC-SEARCH-003、SEC-SEARCH-005、DRV-SEARCH-003、DRV-SEARCH-006、ADR-0300、ADR-0306、ADR-0307 |
+| 上位 | FREQ-190-REQ-01、FREQ-190-REQ-03、SEC-SEARCH-001、SEC-SEARCH-003、SEC-SEARCH-004、SEC-SEARCH-005、SEC-SEARCH-010、SEC-SEARCH-017、SEC-SEARCH-018、SEC-SEARCH-020、DRV-SEARCH-003、DRV-SEARCH-006、ADR-0300、ADR-0306、ADR-0307、ADR-0311、ADR-0312 |
 | 根拠 | ラベルに語が現れない候補は、なぜ出たのか利用者に分からず強調も当たらないので、ラベルに語を含む物だけを返す（FREQ-190-REQ-03、ADR-0307）。同じ名前の重なりを除き、最大8件に絞る（FREQ-190-REQ-01、DRV-SEARCH-006）。語は関数の引数で渡し（SEC-SEARCH-003、ADR-0300）、公開済みだけから作る（SEC-SEARCH-001）。入力のたびに呼ばれるので、検索より広い枠で回数を数える（SEC-SEARCH-005、ADR-0306）。語を引数で渡す点は全体の NFR-SEC-007 にも沿う |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -437,11 +438,13 @@ stateDiagram-v2
 
 | 入力 | 決まり |
 | --- | --- |
-| `q` | 前後の空白を落とし100字まで、制御文字（0x00〜0x1F・0x7F）を含まない。無ければ空 |
+| `Sec-Fetch-Site`（見出し） | 無い・`same-origin`・`none` なら通す。ほかは 403 `{ error: 'Forbidden' }`（枠に数えない） |
+| `q` | 前後の空白を落とし100字まで、制御文字（0x00〜0x1F・0x7F）を含まない（`searchQuerySchema`。検索の窓口と同じ）。無ければ空 |
 
 | 結果 | 状態の番号 | 本文・見出し |
 | --- | --- | --- |
 | 成功 | 200 | `{ suggestions: [{ label, type, href }] }` |
+| 外のサイトから | 403 | `{ error: 'Forbidden' }` |
 | 入力の誤り | 400 | `{ error: 'Invalid suggest query' }` |
 | 回数の超過 | 429 | `{ error: 'Too many requests' }`、`Retry-After: 600` |
 | 数え場所の失敗 | 503 | `{ error: 'Rate limiter unavailable' }`、`Retry-After: 600` |
@@ -450,9 +453,9 @@ stateDiagram-v2
 - 作り方: 3種の関数をそれぞれ8件で呼び、ARC-SEARCH-002 の点が 0 より大きく、ラベル（商品は名前・ルックはテーマ・ニュースは題）に語を含む物を候補にする。点の高い順に並べ、同じ種別で同じラベルの物は最初の1つだけを残し、8件で切る
 - `href` は `/search?q=<ラベルを URL 用に符号化>&tab=<種別>`
 - 語が空なら関数を呼ばず空の一覧
-- 関数の失敗は見ず、記録もせず空として扱う（DRV-SEARCH-003。SEC-SEARCH-017 は満たさない）
-- コードの注は `,().` も断ると書くが、実際は制御文字だけを見る（SEC-SEARCH-004 は満たさない）
-- `Cache-Control` を付けない（SEC-SEARCH-010 は満たさない）。例外を丸ごと `console.error` に渡す（SEC-SEARCH-018 は満たさない）
+- 関数の失敗は、失敗した関数名と誤りの名前・符号だけを記録し、その種別を飛ばして成功した種別の候補を返す。投げない（DRV-SEARCH-003、SEC-SEARCH-017）
+- `,().` は断らない（制御文字だけを見る。コードの注も同じ）（SEC-SEARCH-004）
+- 全部の応答に `Cache-Control: private, no-store`（SEC-SEARCH-010）。例外の記録は名前と符号だけ（SEC-SEARCH-018）
 
 ## データ
 
@@ -533,10 +536,10 @@ stateDiagram-v2
 ## 未確認事項
 
 - 本番の PostgREST の返す行数の上限と、本番の検索の関数・人気商品の関数の付与（移行だけを読んだ）
-- 本番のビルドで、検索の窓口の応答が中継で保存されないか（`Cache-Control` が無い）
+- 本番のビルドで、検索の窓口の応答の `Cache-Control: private, no-store` が `proxy.ts`・`next.config.ts` や中継に上書きされないか（E2E `FR-SEARCH-019` は値そのものを見るが、流していない）
 - ホームの頁が `SearchHomePreview`（`useSearchParams` を使う）を `Suspense` で包まずに描く時の描き方（推定のまま。HOME の範囲）
 - FREQ-184-REQ-01・02、FREQ-188-REQ-02、FREQ-190-REQ-01、FREQ-191-REQ-01、FREQ-193-REQ-01 は後の要求で一部が置き換わったまま上位にした。要件の側で「廃止」にするか文を直したら、上位を付け直す
-- 今のコードが満たさないセキュリティ要件を直した時に、どの項目の上位に足すか（SEC-SEARCH-004・006・007・008・010・014〜021）
+- 今のコードが満たさないセキュリティ要件を直した時に、どの項目の上位に足すか（残りは SEC-SEARCH-006・007・008・014〜016・020 の偽の送り元の側。004・005・010・017〜019・021・020 の外のサイト側は 2026-10-26 に上位をつないだ）
 - 詳細設計（`DD-SEARCH-001`〜`008`、`docs/04_DetailDesign/pages/19_search.md`）はある。結合テストと単体テストはまだ無いので、`validate-trace` は構造設計の項目と詳細設計の項目に `missing-child` を出し続ける
 - DATA-SEARCH-001 の旧番号 DATA-LOOK-004 と DATA-SEARCH-003 の旧番号 DATA-NEWS-003 は、LOOK・NEWS が廃止にして SEARCH へ移した関数の項目。この持ち方でよいかをユーザーに確かめる
 - この文書の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

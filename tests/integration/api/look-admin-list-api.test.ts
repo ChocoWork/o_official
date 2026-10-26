@@ -224,7 +224,40 @@ describe('GET /api/admin/looks（管理の LOOK の一覧）', () => {
     const res = await GET(makeRequest());
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ data: [] });
+    expect(await res.json()).toEqual({ data: [], meta: { canManage: false } });
+  });
+
+  it('API-LOOK-001 admin.looks.manage を持つ人には meta.canManage を true で返し、data は変えない', async () => {
+    setup({ codes: ['admin.looks.read', 'admin.looks.manage'] });
+
+    const res = await GET(makeRequest());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.meta).toEqual({ canManage: true });
+    expect(body.data.map((r: { id: number }) => r.id)).toEqual([2, 1]);
+  });
+
+  it('API-LOOK-001 読み出しだけの人にも一覧は返し、meta.canManage は false にする（権限が無いための 403 だけを false にする）', async () => {
+    setup({ codes: ['admin.looks.read'] });
+
+    const res = await GET(makeRequest());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.meta).toEqual({ canManage: false });
+    expect(body.data).toHaveLength(2);
+  });
+
+  it('API-LOOK-001 meta.canManage を決める確かめ（manage）が 503 になる時はその 503 をそのまま返し、表を読まない', async () => {
+    setup({ codes: ['admin.looks.read', 'admin.looks.manage'] });
+    // 1回目（read）は active、2回目（manage）は確認できない
+    checkAuthSessionLiveness.mockResolvedValueOnce('active').mockResolvedValueOnce('unavailable');
+
+    const res = await GET(makeRequest());
+
+    expect(res.status).toBe(503);
+    expect(looksOp()).toBeUndefined();
   });
 
   it('API-LOOK-001 表は service role の client で読み、利用者の JWT の client は使わない', async () => {
@@ -316,7 +349,8 @@ describe('GET /api/admin/looks（管理の LOOK の一覧）', () => {
 
   it('API-LOOK-001 認可の後の client の用意で例外が出たら 500 Internal server error を返す', async () => {
     setup();
-    createServiceRoleClient.mockImplementationOnce(async () => serviceClient); // 認可の ACL の照会
+    createServiceRoleClient.mockImplementationOnce(async () => serviceClient); // 認可（read）の ACL の照会
+    createServiceRoleClient.mockImplementationOnce(async () => serviceClient); // 認可（manage）の ACL の照会
     createServiceRoleClient.mockImplementationOnce(async () => {
       throw new Error('boom');
     });

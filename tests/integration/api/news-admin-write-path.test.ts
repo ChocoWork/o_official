@@ -1,4 +1,4 @@
-export {};
+import { minimalJpeg } from '../../fixtures/images';
 
 // 管理の書き換えの道（認可 → 利用者の JWT の client → 監査）を、窓口・admin-rbac・audit を本物のまま通して確かめる。
 // 差し替えるのは外との境目（Supabase の client・token の検証・応答の型）だけ
@@ -49,6 +49,7 @@ function createFakeClient(tables: Record<string, Result>) {
         };
       }
       builder.single = () => Promise.resolve(result());
+      builder.maybeSingle = () => Promise.resolve(result());
       builder.then = (onF: (v: Result) => unknown, onR?: (e: unknown) => unknown) => Promise.resolve(result()).then(onF, onR);
       return builder;
     }),
@@ -58,6 +59,7 @@ function createFakeClient(tables: Record<string, Result>) {
           uploads.push(path);
           return { data: {}, error: null };
         }),
+        remove: jest.fn(async () => ({ data: null, error: null })),
         createSignedUrl: jest.fn(async (path: string) => ({ data: { signedUrl: `https://signed.example/${path}` }, error: null })),
       })),
     },
@@ -70,8 +72,8 @@ function aclRows(codes: string[]) {
 }
 
 function makeImage(): File {
-  const file = new File(['img'], 'a.jpg', { type: 'image/jpeg' });
-  Object.defineProperty(file, 'arrayBuffer', { configurable: true, value: async () => new Uint8Array([1]).buffer });
+  const file = new File([new Uint8Array(minimalJpeg())], 'a.jpg', { type: 'image/jpeg' });
+  Object.defineProperty(file, 'arrayBuffer', { configurable: true, value: async () => new Uint8Array(minimalJpeg()).buffer });
   return file;
 }
 
@@ -328,7 +330,7 @@ describe('管理の書き換えの道（ARC-NEWS-002）', () => {
       expect(
         userClient.ops
           .filter((o) => o.table === 'news_articles')
-          .some((o) => o.calls.some(([m, args]) => m === 'select' && args[0] === 'id')),
+          .some((o) => o.calls.some(([m, args]) => m === 'select' && (args[0] === 'id' || args[0] === 'id, image_url'))),
       ).toBe(true);
     }
   });
@@ -339,6 +341,16 @@ describe('管理の書き換えの道（ARC-NEWS-002）', () => {
     await listRoute.POST(makeRequest({ form: { ...formFields, image: makeImage() } }));
 
     expect(serviceClient.uploads).toHaveLength(1);
+    expect(serviceClient.storage.from).toHaveBeenCalledWith('news-images');
+    expect(userClient.storage.from).not.toHaveBeenCalled();
+  });
+
+  it('ARC-NEWS-002 記事の削除の後の画像の後始末は service role の置き場で行い、利用者の JWT の client は置き場を触らない（SEC-NEWS-018）', async () => {
+    setup({ newsResult: { data: [{ id: 7, image_url: 'news/2026-10-24/a.jpg' }], error: null } });
+
+    const res = await itemRoute.DELETE(makeRequest(), params());
+
+    expect(res.status).toBe(200);
     expect(serviceClient.storage.from).toHaveBeenCalledWith('news-images');
     expect(userClient.storage.from).not.toHaveBeenCalled();
   });

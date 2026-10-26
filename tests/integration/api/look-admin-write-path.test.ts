@@ -27,6 +27,7 @@ const { createClient, createServiceRoleClient } = require('@/lib/supabase/server
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
 const listRoute = require('@/app/api/admin/looks/route');
 const itemRoute = require('@/app/api/admin/looks/[id]/route');
+const { fileOf, minimalJpeg } = require('../../fixtures/images');
 
 type Result = { data: unknown; error: unknown };
 type Method = 'select' | 'insert' | 'update' | 'delete';
@@ -74,6 +75,7 @@ function createFakeClient(
         };
       }
       builder.single = () => Promise.resolve().then(result);
+      builder.maybeSingle = () => Promise.resolve().then(result);
       builder.then = (onF: (v: Result) => unknown, onR?: (e: unknown) => unknown) =>
         Promise.resolve().then(result).then(onF, onR);
       return builder;
@@ -84,6 +86,7 @@ function createFakeClient(
           uploads.push(path);
           return { data: {}, error: null };
         }),
+        remove: jest.fn(async () => ({ data: [], error: null })),
         createSignedUrl: jest.fn(async (path: string) => ({ data: { signedUrl: `https://signed.example/${path}` }, error: null })),
       })),
     },
@@ -96,8 +99,11 @@ function aclRows(codes: string[]) {
 }
 
 function makeImage(): File {
-  const file = new File(['img'], 'a.jpg', { type: 'image/jpeg' });
-  Object.defineProperty(file, 'arrayBuffer', { configurable: true, value: async () => new Uint8Array([1]).buffer });
+  const file = fileOf(minimalJpeg(), 'a.jpg', 'image/jpeg');
+  Object.defineProperty(file, 'arrayBuffer', {
+    configurable: true,
+    value: async () => new Uint8Array(minimalJpeg()).buffer,
+  });
   return file;
 }
 

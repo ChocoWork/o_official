@@ -5,6 +5,7 @@
  * @impl IMPL-AUTH-185
  * @design DD-AUTH-026
  * @remarks 画面の表示と API の認可が食い違わないよう、認可側と同じ根拠（失効の確認と MFA の判定）で答える。
+ * 読み手が使わないメールの住所は、応答に載せて配る理由が無いので返さない（id・役割・MFA の状態だけ）。
  */
 
 import { NextResponse } from 'next/server';
@@ -56,7 +57,6 @@ export async function GET(request: Request) {
       authenticated: true,
       user: {
         id: claims.sub,
-        email: claims.email ?? null,
         role,
         mfaVerified,
       },

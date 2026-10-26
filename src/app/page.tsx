@@ -6,6 +6,7 @@
  * @design DD-HOME-001
  * @remarks 商品・LOOK・NEWS・取扱店とそれぞれの総数の7つの取得は互いに依存しないので、1回の Promise.all で並べて待ち、表示までの待ちを最も遅い1本に抑える。
  * ヒーロー画像は最初の画面で一番大きな物なので、HTML を返す前に先読みを頼み、画像にも優先の印を付ける。
+ * ニュースの取り出しは失敗すると投げる（SEC-NEWS-020）が、ホームは他の区画を出せるよう握って空にする。失敗の記録は取り出しの側が名前と符号だけ残す。
  */
 import type { Metadata } from "next";
 import Image from "next/image";
@@ -59,7 +60,7 @@ export default async function Home() {
   ] = await Promise.all([
     getPublishedItems(HOME_ITEM_FETCH_COUNT),
     getPublishedLooks(HOME_LOOK_FETCH_COUNT),
-    getPublishedNews({ limit: HOME_NEWS_FETCH_COUNT }),
+    getPublishedNews({ limit: HOME_NEWS_FETCH_COUNT }).catch(() => []),
     getHomePublicStockists(),
     getPublishedItemsCount(),
     getPublishedLooksCount(),

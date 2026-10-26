@@ -58,7 +58,7 @@ function createFakeClient(
       const op: TableOp = { table, op: 'select', calls: [] };
       ops.push(op);
       const builder: Record<string, unknown> = {};
-      for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'in', 'or', 'single']) {
+      for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'in', 'or', 'single', 'maybeSingle']) {
         builder[m] = (...args: unknown[]) => {
           if (op.calls.length === 0 && (m === 'select' || m === 'insert' || m === 'update' || m === 'delete')) {
             op.op = m;
@@ -320,7 +320,7 @@ describe('PATCH /api/admin/looks/[id]（公開の状態だけの切り替え）'
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
-    expect(tableCalls('looks', 'select')).toEqual([[['select', ['id,status']], ['eq', ['id', '7']], ['single', []]]]);
+    expect(tableCalls('looks', 'select')).toEqual([[['select', ['id,status']], ['eq', ['id', '7']], ['maybeSingle', []]]]);
     expect(tableCalls('looks', 'update')).toEqual([[['update', [{ status: next }]], ['eq', ['id', '7']]]]);
     expect(dataSeq()).toEqual(['looks.select', 'looks.update']);
     const rows = auditRows();
@@ -400,14 +400,49 @@ describe('PATCH /api/admin/looks/[id]（公開の状態だけの切り替え）'
     });
   });
 
-  test('API-LOOK-005 有無の確認が DB の失敗でも 404 Look not found にする', async () => {
-    setup({ tables: lookTables({ existing: { data: null, error: { message: 'connection reset' } } }) });
+  test('API-LOOK-005 有無の確認が DB の失敗なら「無い」と分けて 500 Failed to fetch look にし、失敗の監査を残して更新しない', async () => {
+    setup({ tables: lookTables({ existing: { data: null, error: { code: '08006', message: 'connection reset SECRET' } } }) });
 
     const res = await PATCH(makeRequest(), ctx());
 
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: 'Look not found' });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'Failed to fetch look' });
     expect(dataSeq()).toEqual(['looks.select']);
+    expect(auditRows()[0]).toMatchObject({ outcome: 'failure', detail: 'Failed to fetch look' });
+    expect(console.error).toHaveBeenCalledWith('Failed to fetch look:', { name: 'UnknownError', code: '08006' });
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('SECRET');
+  });
+
+  test.each(['abc', '1e3', '0', '-1', '1.5'])(
+    'API-LOOK-005 id が %s の時は認可と回数の後で 400 Invalid look id と監査（id の生の値は残さず長さだけ）を返し、本文も読まず LOOK の表も引かない',
+    async (badId) => {
+      setup({ tables: lookTables() });
+      const request = makeRequest();
+
+      const res = await PATCH(request, ctx(badId));
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Invalid look id' });
+      expect(jsonMock(request)).not.toHaveBeenCalled();
+      expect(dataSeq()).toEqual([]);
+      expect(auditRows()).toHaveLength(1);
+      expect(auditRows()[0]).toMatchObject({
+        action: 'admin.look.status_update',
+        outcome: 'failure',
+        detail: 'Invalid look id',
+        resource_id: null,
+        metadata: { id_length: badId.length },
+      });
+    },
+  );
+
+  test('API-LOOK-005 id が不正でも manage が無ければ今までの 403 を返す（id の検査より先）', async () => {
+    setup({ codes: ['admin.looks.read'], tables: lookTables() });
+
+    const res = await PATCH(makeRequest(), ctx('abc'));
+
+    expect(res.status).toBe(403);
+    expect(auditRows()).toHaveLength(0);
   });
 
   test('API-LOOK-005 更新の失敗は 500 Failed to update status と、前後の状態を含む失敗の監査を残す', async () => {
@@ -427,13 +462,13 @@ describe('PATCH /api/admin/looks/[id]（公開の状態だけの切り替え）'
     });
   });
 
-  test('API-LOOK-005 本文が JSON でないと 500 Internal server error になり、400 にそろわない', async () => {
+  test('API-LOOK-005 本文が JSON でないと 500 でなく 400 Invalid request になり、Invalid JSON の失敗を監査に残して更新しない', async () => {
     setup({ tables: lookTables() });
 
     const res = await PATCH(makeRequest({ jsonError: new SyntaxError('Unexpected token') }), ctx('7'));
 
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: 'Internal server error' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Invalid request' });
     expect(dataSeq()).toEqual([]);
     const rows = auditRows();
     expect(rows).toHaveLength(1);
@@ -441,9 +476,8 @@ describe('PATCH /api/admin/looks/[id]（公開の状態だけの切り替え）'
       action: 'admin.look.status_update',
       actor_id: 'admin-1',
       outcome: 'failure',
-      detail: 'Unexpected status update error',
-      resource_id: null,
-      metadata: null,
+      detail: 'Invalid JSON',
+      resource_id: '7',
     });
   });
 

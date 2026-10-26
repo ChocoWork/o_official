@@ -30,6 +30,7 @@ const listRoute = require('@/app/api/admin/looks/route');
 const itemRoute = require('@/app/api/admin/looks/[id]/route');
 const { getPublishedLooks, getPublishedLookById } = require('@/lib/look/server');
 const { signLookImageUrl, signLookImageUrls } = require('@/lib/storage/look-images');
+const { fileOf, minimalPng } = require('../../fixtures/images');
 
 type Result = { data: unknown; error: unknown };
 type Method = 'select' | 'insert' | 'update' | 'delete';
@@ -45,9 +46,11 @@ function createFakeClient(tables: Record<string, TableSpec>, sign?: (path: strin
   const ops: TableOp[] = [];
   const uploads: Array<{ bucket: string; path: string; options: Record<string, unknown> }> = [];
   const signCalls: SignCall[] = [];
+  const removals: Array<{ bucket: string; paths: string[] }> = [];
   const client = {
     ops,
     uploads,
+    removals,
     signCalls,
     rpc: jest.fn(async () => ({ data: 1, error: null })),
     from: jest.fn((table: string) => {
@@ -76,6 +79,10 @@ function createFakeClient(tables: Record<string, TableSpec>, sign?: (path: strin
           uploads.push({ bucket, path, options });
           return { data: {}, error: null };
         }),
+        remove: jest.fn(async (paths: string[]) => {
+          removals.push({ bucket, paths });
+          return { data: [], error: null };
+        }),
         createSignedUrl: jest.fn(async (path: string, expiresIn: number) => {
           signCalls.push({ bucket, path, expiresIn });
           return sign ? sign(path) : { data: { signedUrl: `https://signed.example/${path}?e=${expiresIn}` }, error: null };
@@ -91,8 +98,11 @@ function aclRows(codes: string[]) {
 }
 
 function makeImage(): File {
-  const file = new File(['img'], 'photo.png', { type: 'image/png' });
-  Object.defineProperty(file, 'arrayBuffer', { configurable: true, value: async () => new Uint8Array([1]).buffer });
+  const file = fileOf(minimalPng(), 'photo.png', 'image/png');
+  Object.defineProperty(file, 'arrayBuffer', {
+    configurable: true,
+    value: async () => new Uint8Array(minimalPng()).buffer,
+  });
   return file;
 }
 
@@ -210,6 +220,16 @@ describe('画像の非公開の置き場と署名つき URL（ARC-LOOK-003）', 
       expect(serviceClient.uploads.every((u) => u.bucket === 'look-images')).toBe(true);
       expect(writtenImageUrls('looks', 'update')).toEqual(serviceClient.uploads.map((u) => u.path));
       expect(serviceClient.signCalls).toHaveLength(0);
+    });
+
+    it('ARC-LOOK-003 更新で画像を差し替えたら、行を変えた後に古い道を service role で同じ置き場から消し、新しい道は消さない', async () => {
+      setup();
+
+      const res = await itemRoute.PUT(makeRequest(formFields, [makeImage()]), params());
+
+      expect(res.status).toBe(200);
+      expect(serviceClient.removals).toEqual([{ bucket: 'look-images', paths: ['looks/2026-01-01/old.jpg'] }]);
+      expect(serviceClient.removals[0].paths).not.toContain(serviceClient.uploads[0].path);
     });
 
     it('ARC-LOOK-003 更新で画像を付けない時は上げず、image_urls は今ある道のまま書き戻す', async () => {
@@ -441,9 +461,21 @@ describe('画像の非公開の置き場と署名つき URL（ARC-LOOK-003）', 
       ]);
       expect(found.linkedItems).toHaveLength(1);
 
-      setup({ publicTables: { looks: { select: { data: null, error: { code: 'PGRST116' } } } } });
+      setup({ publicTables: { looks: { select: { data: null, error: null } } } });
       const missing = await getPublishedLookById(404);
       expect(missing).toBeNull();
+      expect(serviceClient.signCalls).toHaveLength(0);
+    });
+
+    it('ARC-LOOK-003 公開の取り出しが DB の失敗で終わった時は、無い LOOK として返さず投げ、画像も署名しない', async () => {
+      const { LookFetchError } = require('@/lib/look/server');
+      setup({ publicTables: { looks: { select: { data: null, error: { code: '57014', message: 'timeout' } } } } });
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      await expect(getPublishedLookById(2)).rejects.toBeInstanceOf(LookFetchError);
+
+      setup({ publicTables: { looks: { select: { data: LOOK_ROWS, error: null } }, look_items: { select: { data: null, error: { code: '57014', message: 'timeout' } } } } });
+      await expect(getPublishedLooks()).resolves.toEqual([]);
       expect(serviceClient.signCalls).toHaveLength(0);
     });
   });

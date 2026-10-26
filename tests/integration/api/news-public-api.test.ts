@@ -218,13 +218,57 @@ describe('GET /api/news 公開済みの記事の一覧', () => {
     errorSpy.mockRestore();
   });
 
-  it('API-NEWS-001 DB の失敗は取り出しの関数が空にするので 200 と空の配列を返す', async () => {
-    setupClients({ data: null, error: { message: 'db down' } });
+  it('API-NEWS-001 DB の失敗は空の配列にせず、固定の文の 500 を返して { name, code } だけ記録する', async () => {
+    setupClients({ data: null, error: { code: '42501', message: 'permission denied for table news_articles' } });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     const res = await GET(makeRequest());
 
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'Failed to fetch news' });
+    expect(errorSpy).toHaveBeenCalledWith('GET /api/news error:', { name: 'NewsFetchError', code: '42501' });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('permission denied');
+    errorSpy.mockRestore();
+  });
+
+  it('API-NEWS-001 200・429・503・500 の全てで Cache-Control は private, no-store になる（SEC-NEWS-006）', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const seen: Array<[number, string | null]> = [];
+
+    setupClients({ data: [PUBLISHED_ROW], error: null });
+    let res = await GET(makeRequest());
+    seen.push([res.status, res.headers.get('Cache-Control')]);
+
+    incrementCounter.mockResolvedValue(61);
+    res = await GET(makeRequest());
+    seen.push([res.status, res.headers.get('Cache-Control')]);
+
+    incrementCounter.mockRejectedValue(new Error('counter down'));
+    res = await GET(makeRequest());
+    seen.push([res.status, res.headers.get('Cache-Control')]);
+
+    incrementCounter.mockResolvedValue(1);
+    setupClients({ data: null, error: { code: '42501', message: 'x' } });
+    res = await GET(makeRequest());
+    seen.push([res.status, res.headers.get('Cache-Control')]);
+
+    expect(seen).toEqual([
+      [200, 'private, no-store'],
+      [429, 'private, no-store'],
+      [503, 'private, no-store'],
+      [500, 'private, no-store'],
+    ]);
+    errorSpy.mockRestore();
+  });
+
+  it('API-NEWS-001 外れた分類は ALL と同じ記事を 200 で返し、分類で絞らない（SEC-NEWS-012）', async () => {
+    const { query } = setupClients({ data: manyRows(6), error: null });
+
+    const res = await GET(makeRequest(`?category=${'X'.repeat(300)}`));
+
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual([]);
+    expect(await res.json()).toHaveLength(6);
+    expect(query.eq.mock.calls.filter(([col]: [string]) => col === 'category')).toEqual([]);
   });
 
   it('API-NEWS-001 service role の client が作れなくても公開の一覧は 200 で返す（公開の道は service role を持たない）', async () => {
@@ -247,7 +291,8 @@ describe('GET /api/news 公開済みの記事の一覧', () => {
     const body = await res.json();
     expect(body).toEqual({ error: 'Failed to fetch news' });
     expect(JSON.stringify(body)).not.toContain('secret');
-    expect(errorSpy).toHaveBeenCalledWith('GET /api/news error:', expect.any(Error));
+    expect(errorSpy).toHaveBeenCalledWith('GET /api/news error:', { name: 'Error', code: null });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('secret');
     errorSpy.mockRestore();
   });
 });

@@ -413,10 +413,28 @@ describe("src/app/page.tsx", () => {
     });
   });
 
+  it("DD-HOME-001 NEWS の取得が reject してもホームは落ちず、ニュースの区画は空で描く（SEC-NEWS-020）", async () => {
+    stubFetchers();
+    mockNews.mockRejectedValue(new Error("fetch failed"));
+
+    const { container } = await renderHome();
+
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(BRAND);
+    expect(container.querySelector("section#about")).not.toBeNull();
+    expect(mockNewsGrid.mock.calls[0][0]).toEqual({
+      variant: "home",
+      articles: [],
+      totalCount: 7,
+    });
+    expect(mockItemGrid).toHaveBeenCalledTimes(1);
+    expect(mockLookGrid).toHaveBeenCalledTimes(1);
+    expect(mockStockistGrid).toHaveBeenCalledTimes(1);
+    expect(preloadSpy).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ["商品", () => mockItems],
     ["LOOK", () => mockLooks],
-    ["NEWS", () => mockNews],
     ["取扱店", () => mockStockists],
     ["商品の総数", () => mockItemsCount],
     ["LOOK の総数", () => mockLooksCount],

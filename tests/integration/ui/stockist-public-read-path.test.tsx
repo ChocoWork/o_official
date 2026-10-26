@@ -219,10 +219,12 @@ describe('ARC-STOCKIST-001 public read path', () => {
   });
 
   it('ARC-STOCKIST-001 取り出しが失敗しても例外にせず、空の一覧として「該当する取扱店舗がございません。」を描き、記録だけ残す', async () => {
-    mockDb.error = { message: 'db down' };
+    mockDb.error = { message: 'db down: secret detail', code: 'PGRST301' };
 
     await expect(getPublicStockists()).resolves.toEqual([]);
-    expect(errorSpy).toHaveBeenCalledWith('Failed to fetch public stockists:', { message: 'db down' });
+    // 記録に残すのは誤りの名前と符号だけ。message・details・hint・stack は渡さない（SEC-STOCKIST-014）
+    expect(errorSpy).toHaveBeenCalledWith('Failed to fetch public stockists:', { name: 'UnknownError', code: 'PGRST301' });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('secret detail');
 
     const element = await StockistPage({ searchParams: Promise.resolve({}) });
     render(element);

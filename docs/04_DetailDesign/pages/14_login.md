@@ -1702,7 +1702,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 向き | 中身 |
 | --- | --- |
 | 入力 | `GET /api/auth/me`。Bearer か access の Cookie（読み方は共有の `authenticateRequest`） |
-| 出力 200 | ログイン中なら `{ authenticated: true, user: { id, email, role, mfaVerified } }`、未ログイン・失効・例外なら `{ authenticated: false }` |
+| 出力 200 | ログイン中なら `{ authenticated: true, user: { id, role, mfaVerified } }`（メールの住所は返さない。2026-10-26）、未ログイン・失効・例外なら `{ authenticated: false }` |
 | 出力 503 | `{ authenticated: false, reason: 'unavailable' }`、`Retry-After: 30` |
 | 見出し | 全部の応答に `Cache-Control: no-store`・`Referrer-Policy: no-referrer`（`src/app/api/auth/me/route.ts`） |
 
@@ -1711,7 +1711,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 1. 共有の `authenticateRequest` で JWT と失効を確かめる（`src/app/api/auth/me/route.ts`）
 2. 役割を `app_metadata.role` から読み、許可の3つでなければ `user`
 3. `mfaVerified` を `aal === 'aal2'` で決める
-4. 200 で返す。メールが無ければ `null`
+4. 200 で返す。`user` は `id`・`role`・`mfaVerified` だけで、メールのクレームは返さない
 
 **分岐と異常フロー:**
 
@@ -1722,20 +1722,20 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 役割が admin・supporter・user のどれか | その役割 |
 | 役割が無い・ほかの値 | `user` |
 | `aal` が `aal2` | `mfaVerified: true`、ほかは `false` |
-| メールのクレームが無い | `email: null` |
+| メールのクレームがある・無い | どちらも応答の `user` にメールの項目は無い |
 | 例外 | 記録して 200 `{ authenticated: false }` |
 
 **状態・永続化:** 書かない。失効の確かめは共有部品が DB の関数 `is_auth_session_active` を呼ぶ（DATA-AUTH-003）。
 
 **認証認可:** ログインを求めない（答えるのはログインの有無）。回数の制限が無い。期限切れの token にも 200 を返すので、呼び手の画面からは refresh が起きない（`docs/04_DetailDesign/sequence/auth-session.md` の SQ-AUTH-SESSION-ME）。
 
-**テスト観点:**（単体テストは無い。結合 `tests/integration/api/auth/me.test.ts`（3）。503 の道のテストは無い）
+**テスト観点:**（単体 `tests/unit/api/auth/me-route.test.ts`、結合 `tests/integration/api/auth/me.test.ts`）
 
 | # | 観点 |
 | --- | --- |
 | 1 | 確かめが通り、役割 admin・aal2 で `mfaVerified: true` |
 | 2 | 役割が無い・知らない値で `user`、aal1 で `false` |
-| 3 | メールのクレームが無くて `null` |
+| 3 | メールのクレームがあっても無くても、`user` のキーは `id`・`role`・`mfaVerified` ちょうどで、メールの字が応答に無い |
 | 4 | 理由が `unavailable` で 503・`Retry-After`・`no-store`・`no-referrer` |
 | 5 | 理由がほかで 200 `{ authenticated: false }` |
 | 6 | 確かめが投げて 200 `{ authenticated: false }` |

@@ -41,6 +41,7 @@ import {
   validateLookImageBatch,
 } from '@/features/look/services/admin-rate-limit';
 import { logAdminLookAudit } from '@/features/look/services/admin-audit';
+import { minimalGif, minimalJpeg, minimalPng, minimalWebp, textAsImage } from '../../../../fixtures/images';
 
 const mockCreateServiceRoleClient = createServiceRoleClient as jest.Mock;
 const mockAuthorize = authorizeAdminPermission as jest.Mock;
@@ -52,13 +53,25 @@ const mockAudit = logAdminLookAudit as jest.Mock;
 type ServiceOptions = {
   itemsResult?: { data: Array<{ id: number }> | null; error: { message: string } | null };
   uploadError?: { message: string } | null;
+  /** 何回目（0 始まり）の上げで失敗させるか。既定は全部 */
+  failUploadAt?: number;
+  removeResult?: { error: { message: string } | null } | 'throw';
   looksInsertResult?: { data: { id: number } | null; error: { message: string } | null };
   lookItemsInsertError?: { message: string } | null;
+  lookDeleteError?: { message: string } | null;
 };
 
 function createService(options: ServiceOptions = {}) {
-  const upload = jest.fn().mockResolvedValue({ error: options.uploadError ?? null });
-  const lookDeleteEq = jest.fn().mockResolvedValue({ error: null });
+  const upload = jest.fn().mockImplementation(async () => {
+    const callIndex = upload.mock.calls.length - 1;
+    const failing = options.uploadError && (options.failUploadAt === undefined || options.failUploadAt === callIndex);
+    return { error: failing ? options.uploadError : null };
+  });
+  const remove = jest.fn().mockImplementation(async () => {
+    if (options.removeResult === 'throw') throw new Error('storage down');
+    return options.removeResult ?? { error: null };
+  });
+  const lookDeleteEq = jest.fn().mockResolvedValue({ error: options.lookDeleteError ?? null });
   const looksInsert = jest.fn().mockReturnValue({
     select: jest.fn().mockReturnValue({
       single: jest
@@ -74,7 +87,7 @@ function createService(options: ServiceOptions = {}) {
     .mockResolvedValue(options.itemsResult ?? { data: [{ id: 1 }], error: null });
 
   const client = {
-    storage: { from: jest.fn().mockReturnValue({ upload }) },
+    storage: { from: jest.fn().mockReturnValue({ upload, remove }) },
     from: jest.fn((table: string) => {
       if (table === 'items') {
         return { select: jest.fn().mockReturnValue({ in: itemsIn }) };
@@ -89,13 +102,22 @@ function createService(options: ServiceOptions = {}) {
     }),
   };
 
-  return { client, upload, looksInsert, lookItemsInsert, lookDeleteEq, itemsIn };
+  return { client, upload, remove, looksInsert, lookItemsInsert, lookDeleteEq, itemsIn };
 }
 
-function imageFile(name = 'look.jpg', type = 'image/jpeg', size?: number) {
-  const file = new File(['image-bytes'], name, { type });
+const IMAGE_BYTES: Record<string, () => Buffer> = {
+  'image/jpeg': minimalJpeg,
+  'image/png': minimalPng,
+  'image/webp': minimalWebp,
+  'image/gif': minimalGif,
+};
+
+// 申告の種類に合う本物の先頭の印を持つ画像。bytes を渡すと中身をそれにする（申告とずらす試験用）。
+function imageFile(name = 'look.jpg', type = 'image/jpeg', size?: number, bytes?: Buffer) {
+  const content = bytes ?? (IMAGE_BYTES[type]?.() ?? textAsImage());
+  const file = new File([new Uint8Array(content)], name, { type });
   Object.defineProperty(file, 'arrayBuffer', {
-    value: jest.fn().mockResolvedValue(new TextEncoder().encode('image-bytes').buffer),
+    value: jest.fn().mockResolvedValue(new Uint8Array(content).buffer),
   });
   if (size !== undefined) {
     Object.defineProperty(file, 'size', { value: size });
@@ -425,26 +447,28 @@ describe('POST /api/admin/looks', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  test('DD-LOOK-063 置き場への上げに失敗したら 500 に置き場の文を付け、Failed to upload look image を監査する', async () => {
-    const service = createService({ uploadError: { message: 'bucket unavailable' } });
+  test('DD-LOOK-063 置き場への上げに失敗したら 500 Failed to upload image ちょうどで、置き場の文を応答にも記録にも出さない', async () => {
+    const service = createService({ uploadError: { message: 'bucket details SECRET' } });
     mockCreateServiceRoleClient.mockResolvedValue(service.client);
 
     const response = await callPost(buildRequest(buildForm()));
 
     expect(response.status).toBe(500);
-    expect(response.body).toEqual({ error: 'Failed to upload image: bucket unavailable' });
+    expect(response.body).toEqual({ error: 'Failed to upload image' });
+    expect(JSON.stringify(response.body)).not.toContain('SECRET');
     expect(mockAudit).toHaveBeenCalledWith(failureAudit('Failed to upload look image'));
     expect(service.looksInsert).not.toHaveBeenCalled();
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain('SECRET');
   });
 
-  test('DD-LOOK-063 拡張子はファイル名の最後の点の後ろ、点が無ければ jpg になり、設定つきで上げる', async () => {
+  test('DD-LOOK-063 保存名は検出した種類から作り、送られた名前は使わず、設定つきで上げる', async () => {
     const service = createService();
     mockCreateServiceRoleClient.mockResolvedValue(service.client);
 
     const response = await callPost(
       buildRequest(
         buildForm({
-          images: [imageFile('a.b.png', 'image/png'), imageFile('noext', 'image/gif')],
+          images: [imageFile('a/b.html', 'image/png'), imageFile('noext', 'image/gif')],
         }),
       ),
     );
@@ -452,10 +476,11 @@ describe('POST /api/admin/looks', () => {
     expect(response.status).toBe(201);
     expect(service.client.storage.from).toHaveBeenCalledWith('look-images');
     expect(service.upload).toHaveBeenCalledTimes(2);
-    const [firstPath, , firstOptions] = service.upload.mock.calls[0];
+    const [firstPath, firstBuffer, firstOptions] = service.upload.mock.calls[0];
     const [secondPath, , secondOptions] = service.upload.mock.calls[1];
-    expect(firstPath).toMatch(/^looks\/\d{4}-\d{2}-\d{2}\/.+\.png$/);
-    expect(secondPath).toMatch(/^looks\/\d{4}-\d{2}-\d{2}\/.+\.jpg$/);
+    expect(firstPath).toMatch(/^looks\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.png$/);
+    expect(secondPath).toMatch(/^looks\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.gif$/);
+    expect(Buffer.isBuffer(firstBuffer)).toBe(true);
     expect(firstOptions).toEqual({ contentType: 'image/png', cacheControl: '3600', upsert: false });
     expect(secondOptions).toEqual({ contentType: 'image/gif', cacheControl: '3600', upsert: false });
     expect(service.looksInsert).toHaveBeenCalledWith([
@@ -558,6 +583,183 @@ describe('POST /api/admin/looks', () => {
         },
       }),
     );
+  });
+
+  describe('画像の中身と後始末', () => {
+    test('DD-LOOK-063 文字のファイルを image/png と申告すると 400 で、置き場にも量の枠にも触れず、中身もファイル名も監査に残さない', async () => {
+      const service = createService();
+      mockCreateServiceRoleClient.mockResolvedValue(service.client);
+
+      const response = await callPost(
+        buildRequest(buildForm({ images: [imageFile('secret-name.png', 'image/png', undefined, textAsImage())] })),
+      );
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'Unsupported image type' });
+      expect(service.upload).not.toHaveBeenCalled();
+      expect(mockUploadQuota).not.toHaveBeenCalled();
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+      expect(mockAudit).toHaveBeenCalledWith(failureAudit('Unsupported image type'));
+      const audited = JSON.stringify(mockAudit.mock.calls);
+      expect(audited).not.toContain('secret-name');
+      expect(audited).not.toContain('plain text');
+    });
+
+    test('DD-LOOK-063 PNG の中身を image/jpeg と申告しても 400 になる', async () => {
+      const response = await callPost(
+        buildRequest(buildForm({ images: [imageFile('a.jpg', 'image/jpeg', undefined, minimalPng())] })),
+      );
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'Unsupported image type' });
+      expect(mockUploadQuota).not.toHaveBeenCalled();
+    });
+
+    test('DD-LOOK-063 名前が a/b.html の本物の PNG は検出した png の保存名で上げ、行も同じ道筋を持つ', async () => {
+      const service = createService();
+      mockCreateServiceRoleClient.mockResolvedValue(service.client);
+
+      const response = await callPost(buildRequest(buildForm({ images: [imageFile('a/b.html', 'image/png')] })));
+
+      expect(response.status).toBe(201);
+      const [path, , options] = service.upload.mock.calls[0];
+      expect(path).toMatch(/^looks\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\.png$/);
+      expect(options).toEqual(expect.objectContaining({ contentType: 'image/png' }));
+      expect(service.looksInsert).toHaveBeenCalledWith([expect.objectContaining({ image_urls: [path] })]);
+      expect(service.remove).not.toHaveBeenCalled();
+    });
+
+    test('DD-LOOK-063 2枚目の上げが失敗したら 500 Failed to upload image ちょうどで、1枚目だけを置き場から消し、記録は名前と符号だけ', async () => {
+      const service = createService({ uploadError: { message: 'bucket details SECRET' }, failUploadAt: 1 });
+      mockCreateServiceRoleClient.mockResolvedValue(service.client);
+
+      const response = await callPost(
+        buildRequest(buildForm({ images: [imageFile('a.png', 'image/png'), imageFile('b.png', 'image/png')] })),
+      );
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: 'Failed to upload image' });
+      expect(service.remove).toHaveBeenCalledTimes(1);
+      expect(service.remove).toHaveBeenCalledWith([service.upload.mock.calls[0][0]]);
+      expect(service.looksInsert).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to upload look image:', { name: 'UnknownError', code: null });
+    });
+
+    test('DD-LOOK-063 looks の保存が失敗したら、上げた全部の道筋を置き場から消す', async () => {
+      const service = createService({ looksInsertResult: { data: null, error: { message: 'insert failed' } } });
+      mockCreateServiceRoleClient.mockResolvedValue(service.client);
+
+      const response = await callPost(
+        buildRequest(buildForm({ images: [imageFile('a.png', 'image/png'), imageFile('b.jpg', 'image/jpeg')] })),
+      );
+
+      expect(response.status).toBe(500);
+      expect(service.remove).toHaveBeenCalledTimes(1);
+      expect(service.remove).toHaveBeenCalledWith([
+        service.upload.mock.calls[0][0],
+        service.upload.mock.calls[1][0],
+      ]);
+    });
+
+    test('DD-LOOK-063 look_items の保存が失敗したら、作った行を消し、上げた画像も置き場から消す', async () => {
+      const service = createService({ lookItemsInsertError: { message: 'fk violation' } });
+      mockCreateServiceRoleClient.mockResolvedValue(service.client);
+
+      const response = await callPost(buildRequest(buildForm()));
+
+      expect(response.status).toBe(500);
+      expect(service.lookDeleteEq).toHaveBeenCalledWith('id', 77);
+      expect(service.remove).toHaveBeenCalledWith([service.upload.mock.calls[0][0]]);
+    });
+
+    test('DD-LOOK-063 look_items の保存も looks の行の削除も失敗したら、行が残るので画像は消さず、監査に row_cleanup を残す', async () => {
+      const service = createService({
+        lookItemsInsertError: { message: 'fk violation' },
+        lookDeleteError: { message: 'delete SECRET' },
+      });
+      mockCreateServiceRoleClient.mockResolvedValue(service.client);
+
+      const response = await callPost(buildRequest(buildForm()));
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: 'Failed to save linked items' });
+      expect(service.lookDeleteEq).toHaveBeenCalledWith('id', 77);
+      expect(service.remove).not.toHaveBeenCalled();
+      expect(mockAudit).toHaveBeenCalledWith(
+        failureAudit('Failed to create look-item links', {
+          resourceId: 77,
+          metadata: expect.objectContaining({ row_cleanup: 'failed' }),
+        }),
+      );
+      expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain('SECRET');
+    });
+
+    test('DD-LOOK-063 置き場の削除が失敗しても応答の状態は変わらず、監査の metadata に orphaned_count を残す', async () => {
+      const service = createService({
+        looksInsertResult: { data: null, error: { message: 'insert failed' } },
+        removeResult: { error: { message: 'storage SECRET' } },
+      });
+      mockCreateServiceRoleClient.mockResolvedValue(service.client);
+
+      const response = await callPost(buildRequest(buildForm({ images: [imageFile('a.png', 'image/png')] })));
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: 'Failed to save look' });
+      expect(mockAudit).toHaveBeenCalledWith(
+        failureAudit('Failed to insert look', {
+          metadata: expect.objectContaining({ orphaned_count: 1, image_cleanup: 'failed' }),
+        }),
+      );
+      expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain('SECRET');
+    });
+
+    test('DD-LOOK-063 置き場の削除が例外を投げても応答は同じ（投げ直さない）', async () => {
+      const service = createService({
+        looksInsertResult: { data: null, error: { message: 'insert failed' } },
+        removeResult: 'throw',
+      });
+      mockCreateServiceRoleClient.mockResolvedValue(service.client);
+
+      const response = await callPost(buildRequest(buildForm()));
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: 'Failed to save look' });
+    });
+
+    test('DD-LOOK-063 行を作った後の例外（関連の保存が投げる）では、行が指している画像を消さない', async () => {
+      const service = createService();
+      service.lookItemsInsert.mockRejectedValue(new Error('network down'));
+      mockCreateServiceRoleClient.mockResolvedValue(service.client);
+
+      const response = await callPost(buildRequest(buildForm()));
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: 'Internal server error' });
+      expect(service.remove).not.toHaveBeenCalled();
+    });
+
+    test('DD-LOOK-063 行を作る前の例外（行の保存が投げる）では、上げた画像を消す', async () => {
+      const service = createService();
+      service.looksInsert.mockImplementation(() => {
+        throw new Error('client exploded');
+      });
+      mockCreateServiceRoleClient.mockResolvedValue(service.client);
+
+      const response = await callPost(buildRequest(buildForm()));
+
+      expect(response.status).toBe(500);
+      expect(service.remove).toHaveBeenCalledWith([service.upload.mock.calls[0][0]]);
+    });
+
+    test('DD-LOOK-063 成功した作成では置き場から何も消さない', async () => {
+      const service = createService();
+      mockCreateServiceRoleClient.mockResolvedValue(service.client);
+
+      const response = await callPost(buildRequest(buildForm()));
+
+      expect(response.status).toBe(201);
+      expect(service.remove).not.toHaveBeenCalled();
+    });
   });
 
   test('DD-LOOK-063 操作者が分かった後の例外は 500 Internal server error で Unexpected create error を監査する', async () => {

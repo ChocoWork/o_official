@@ -1,4 +1,4 @@
-export {};
+import { minimalGif, minimalJpeg, minimalPng, minimalWebp, textAsImage } from '../../fixtures/images';
 
 // 窓口・認可（admin-rbac）・監査（audit）は本物を通し、外との境目（Supabase の client・token の検証・応答の型）だけを差し替える
 jest.mock('next/server', () => ({
@@ -75,9 +75,17 @@ function aclRows(codes: string[]) {
 
 const FIVE_MB = 5 * 1024 * 1024;
 
-function makeImage(name: string, type: string, size?: number): File {
-  const file = new File(['img'], name, { type });
-  Object.defineProperty(file, 'arrayBuffer', { configurable: true, value: async () => new Uint8Array([1, 2, 3]).buffer });
+const REAL_BYTES: Record<string, () => Buffer> = {
+  'image/jpeg': minimalJpeg,
+  'image/png': minimalPng,
+  'image/webp': minimalWebp,
+  'image/gif': minimalGif,
+};
+
+function makeImage(name: string, type: string, size?: number, bytes?: Buffer): File {
+  const content = bytes ?? REAL_BYTES[type]?.() ?? textAsImage();
+  const file = new File([new Uint8Array(content)], name, { type });
+  Object.defineProperty(file, 'arrayBuffer', { configurable: true, value: async () => new Uint8Array(content).buffer });
   if (size !== undefined) Object.defineProperty(file, 'size', { configurable: true, value: size });
   return file;
 }
@@ -324,6 +332,35 @@ describe('POST /api/admin/news（記事の作成）', () => {
     expect(serviceClient.uploads).toHaveLength(0);
   });
 
+  it('API-NEWS-003 HTML を image/png と申告した画像は 400 Unsupported image type を返し、置き場に書かず、表にも入れず、監査にも残さない（SEC-NEWS-017）', async () => {
+    setup();
+
+    const res = await POST(
+      makeRequest({
+        ...validFields,
+        image: makeImage('a.png', 'image/png', undefined, Buffer.from('<html><script>alert(1)</script></html>')),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Unsupported image type' });
+    expect(serviceClient.uploads).toHaveLength(0);
+    expect(insertedRows()).toBeUndefined();
+    expect(auditRows()).toHaveLength(0);
+  });
+
+  it('API-NEWS-003 JPEG の中身を image/png と申告した画像は 400 Unsupported image type を返す（申告と検出が違う）', async () => {
+    setup();
+
+    const res = await POST(
+      makeRequest({ ...validFields, image: makeImage('a.png', 'image/png', undefined, minimalJpeg()) }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Unsupported image type' });
+    expect(serviceClient.uploads).toHaveLength(0);
+  });
+
   it('API-NEWS-003 5MB を超える画像は 400 Image size must be 5MB or less を返す', async () => {
     setup();
 
@@ -352,7 +389,7 @@ describe('POST /api/admin/news（記事の作成）', () => {
     });
   });
 
-  it('API-NEWS-003 表への挿入が失敗したら 500 を返し、db_insert_failed を監査に残す（上げた画像は消さない）', async () => {
+  it('API-NEWS-003 表への挿入が失敗したら 500 を返し、db_insert_failed を監査に残して、上げた画像を置き場から消す（SEC-NEWS-018）', async () => {
     setup({ insertResult: { data: null, error: { code: '42501', message: 'rls' } } });
 
     const res = await POST(makeRequest());
@@ -364,8 +401,33 @@ describe('POST /api/admin/news（記事の作成）', () => {
     expect(rows[0]).toMatchObject({
       action: 'admin.news.create.db_insert_failed',
       outcome: 'failure',
-      metadata: { storagePath: serviceClient.uploads[0].path, status: 'private', category: 'COLLECTION' },
+      metadata: {
+        storagePath: serviceClient.uploads[0].path,
+        status: 'private',
+        category: 'COLLECTION',
+        imageCleanup: 'ok',
+      },
     });
+    expect(serviceClient.removes).toEqual([[serviceClient.uploads[0].path]]);
+  });
+
+  it('API-NEWS-003 作成が失敗しても、置き場に残るファイルの数は増えない（上げた数と消した数が同じ）（SEC-NEWS-018）', async () => {
+    setup({ insertResult: { data: null, error: { code: '42501', message: 'rls' } } });
+
+    await POST(makeRequest());
+    await POST(makeRequest());
+
+    const uploaded = serviceClient.uploads.map((upload) => upload.path);
+    const removed = (serviceClient.removes as string[][]).flat();
+    expect(uploaded).toHaveLength(2);
+    expect(removed.sort()).toEqual([...uploaded].sort());
+  });
+
+  it('API-NEWS-003 作成が成功した時は、上げた画像を消さない', async () => {
+    setup();
+
+    await POST(makeRequest());
+
     expect(serviceClient.removes).toHaveLength(0);
   });
 

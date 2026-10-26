@@ -1,6 +1,6 @@
 # SEARCH の要件
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: SEARCH（検索のページ `/search`・検索の窓口 `/api/search`・候補の窓口 `/api/suggest`・ホームの `/?q=` のプレビュー） | 基準コミット: `973dc336`（作業ツリー）
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: SEARCH（検索のページ `/search`・検索の窓口 `/api/search`・候補の窓口 `/api/suggest`・ホームの `/?q=` のプレビュー） | 基準コミット: `973dc336`（作業ツリー）
 
 ## 概要
 
@@ -11,7 +11,7 @@ SEARCH の領域の要求・要件・受け入れ条件・派生要件を、追�
 | --- | --- | --- |
 | 要求 | 18 | 既存の `FREQ-` 17、新しい `SR-SEARCH-001` |
 | 要件 | 35 | 既存の `FREQ-NN-REQ-NN` 30、`FR-SEARCH-001`〜`005`（うち廃止1） |
-| 受け入れ条件 | 77 | 既存の `FREQ-NN-AC-NN` 45、新しい `FR-SEARCH-…-AC-NN` 8、セキュリティ要件の `SEC-SEARCH-…-AC-NN` 24 |
+| 受け入れ条件 | 79 | 既存の `FREQ-NN-AC-NN` 45、新しい `FR-SEARCH-…-AC-NN` 8、セキュリティ要件の `SEC-SEARCH-…-AC-NN` 26 |
 | 派生要件 | 10 | `DRV-SEARCH-001`〜`010` |
 | セキュリティ要件 | 21 | `SEC-SEARCH-001`〜`021`（全部推定。どれも下に受け入れ条件を持つ） |
 
@@ -67,11 +67,11 @@ SEARCH の領域の要求・要件・受け入れ条件・派生要件を、追�
 | FR-SEARCH-015-mobile-density | FREQ-199-AC-02・AC-03（AC-01 は成り立たないので試験を置かない。FREQ-200-AC-01 を FR-SEARCH-016 で試す） |
 | FR-SEARCH-016-tab-inset-and-letter-spacing | FREQ-200-AC-01〜03 |
 | FR-SEARCH-017-item-meta-price | FREQ-201-AC-01〜03 |
-| FR-SEARCH-018-search-page-flows | FREQ-01-AC-01、FR-SEARCH-001-AC-02・AC-03、FR-SEARCH-002-AC-02、FR-SEARCH-003-AC-02、FREQ-189-AC-02、SEC-SEARCH-011-AC-01、SEC-SEARCH-021-AC-01 |
+| FR-SEARCH-018-search-page-flows | FREQ-01-AC-01、FR-SEARCH-001-AC-02・AC-03、FR-SEARCH-002-AC-02、FR-SEARCH-003-AC-02、FREQ-189-AC-02、SEC-SEARCH-011-AC-01、SEC-SEARCH-021-AC-01・AC-02（AC-02 は 3 つの幅の画面の写真を `test-results/wave1c/` に保存する） |
 | FR-SEARCH-019-search-api-contract-and-headers | FREQ-187-AC-01、SEC-SEARCH-004-AC-01、SEC-SEARCH-009-AC-02、SEC-SEARCH-010-AC-01、SEC-SEARCH-012-AC-01、SEC-SEARCH-014-AC-01、SEC-SEARCH-019-AC-01（HTTP だけ） |
 | FR-SEARCH-020-search-db-function-grants | FREQ-186-AC-02、SEC-SEARCH-002-AC-01、SEC-SEARCH-007-AC-01、SEC-SEARCH-008-AC-01、SEC-SEARCH-009-AC-01（手元の DB の PostgREST を直接） |
 | FR-SEARCH-021-search-injected-rows | SEC-SEARCH-001-AC-01・AC-02、SEC-SEARCH-003-AC-01（題に `\` を含む公開の商品を試験の中で足す）、SEC-SEARCH-013-AC-01、SEC-SEARCH-015-AC-01、SEC-SEARCH-016-AC-01 |
-| FR-SEARCH-022-search-rate-limit | SEC-SEARCH-005-AC-01・AC-02、SEC-SEARCH-006-AC-01、SEC-SEARCH-017-AC-01（search_news の EXECUTE を外す）、SEC-SEARCH-020-AC-01。他の試験を壊すので、playwright.config.ts の isolated-global の project で最後に流す |
+| FR-SEARCH-022-search-rate-limit | SEC-SEARCH-005-AC-01・AC-02、SEC-SEARCH-006-AC-01、SEC-SEARCH-017-AC-01（search_news の EXECUTE を外す）、SEC-SEARCH-020-AC-01（偽の送り元の側。波 4 まで赤）・AC-02（外のオリジンの側）。他の試験を壊すので、playwright.config.ts の isolated-global の project で最後に流す |
 | FR-SEARCH-023-search-two-column-heading-results-header | FREQ-188-AC-03、FREQ-191-AC-02、FREQ-196-AC-01・02、FREQ-197-AC-01〜03、FREQ-198-AC-01・03 |
 | FR-SEARCH-024-search-tab-rows-viewport-details | FREQ-192-AC-03、FREQ-193-AC-02、FREQ-195-AC-02、FREQ-199-AC-03、FREQ-200-AC-03、FREQ-201-AC-02 |
 
@@ -1561,7 +1561,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で ITEM 検索結果�
 | 出どころ | OWASP ASVS 4.0.3 V5.1.3（当てはめは推定）。`docs/05_Quality/reviews/security/security_review_search.md` |
 | 優先度 | SHOULD |
 
-`/api/search` と `/api/suggest` の `q` は、前後の空白を落として100字まで、制御文字（0x00〜0x1F・0x7F）を含まない値だけを受け、外れたら 400 を返す。決まりを書いたコメントは実際の決まりと一致させる。今のコードは `/api/search` が制御文字を見ず、`/api/suggest` のコメントが `,().` も断ると書く。
+`/api/search` と `/api/suggest` の `q` は、前後の空白を落として100字まで、制御文字（0x00〜0x1F・0x7F）を含まない値だけを受け、外れたら 400 を返す。決まりを書いたコメントは実際の決まりと一致させる。今のコードは満たす（2026-10-26。2つの窓口が共通の `searchQuerySchema`（`src/features/search/lib/query-schema.ts`）を使い、`,().` は断らないとコメントも直した）。
 
 #### SEC-SEARCH-004-AC-01 制御文字を含む語は検索でも 400 になる
 
@@ -1586,7 +1586,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で ITEM 検索結果�
 | 出どころ | OWASP ASVS 4.0.3 V11.1.4。`docs/05_Quality/reviews/code/2026-04-18-search-review.md`、`docs/05_Quality/reviews/security/security_review_search.md` |
 | 優先度 | MUST |
 
-`/api/search`・`/api/suggest` は送り元ごとに回数を数え、上限を超えたら 429 と `Retry-After` を返す。制限の DB が使えない時は 503 で閉じる。画面はサジェストを入力が止まってから呼び、タブを切り替えただけでは検索を呼び直さない。今のコードは窓口の制限を満たす（`src/app/api/search/route.ts`、`src/app/api/suggest/route.ts`、`src/features/auth/middleware/rateLimit.ts`）。画面のデバウンスが無く、タブで呼び直す。`preview` の数えが別にある。
+`/api/search`・`/api/suggest` は送り元ごとに回数を数え、上限を超えたら 429 と `Retry-After` を返す。制限の DB が使えない時は 503 で閉じる。画面はサジェストを入力が止まってから呼び、タブを切り替えただけでは検索を呼び直さない。今のコードは満たす（`src/app/api/search/route.ts`、`src/app/api/suggest/route.ts`、`src/features/auth/middleware/rateLimit.ts`、2026-10-26 に画面を直した）。候補は入力が止まって250ミリ秒たってから呼び、新しい入力で前の要求を打ち切る。検索はタブを切り替えても呼び直さず、語が変わった時だけ呼ぶ（一覧は全種別を返し、タブは表示の切り替えだけ）。`preview` の数えが別にある。
 
 #### SEC-SEARCH-005-AC-01 上限を超えた検索とサジェストは 429 になる
 
@@ -1735,7 +1735,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で ITEM 検索結果�
 | 出どころ | OWASP ASVS 4.0.3 V8.2.1。`docs/05_Quality/reviews/security/security_review_search.md` |
 | 優先度 | MUST |
 
-`/api/search`・`/api/suggest` の成功・失敗・429・503 の応答に `Cache-Control: private, no-store` を付ける。今のコードは満たさない。
+`/api/search`・`/api/suggest` の成功・失敗・429・503 の応答に `Cache-Control: private, no-store` を付ける。今のコードは満たす（2026-10-26。窓口ごとに全ての戻りを共有の `withNoStore`（`src/lib/http/no-store.ts`）で包む。`proxy.ts`・`next.config.ts` が後から別の値を付けて上書きしないかは E2E が見出しの値そのもので確かめる）。
 
 #### SEC-SEARCH-010-AC-01 検索とサジェストの応答に no-store が付く
 
@@ -1910,7 +1910,7 @@ ITEM・LOOK の画像は、URL のホストが自分の Supabase で、道筋が
 | 出どころ | 実装から推定（NEWS の SEC-NEWS-020（範囲外）と同じ形） |
 | 優先度 | SHOULD |
 
-検索の関数のどれかが失敗した時、`/api/search` は 200 の0件ではなく失敗の応答を返し、画面は「検索結果を読み込めませんでした」を出す。サジェストも関数の失敗を記録に残す。今のコードは満たさない。
+検索の関数のどれかが失敗した時、`/api/search` は 200 の0件ではなく失敗の応答を返し、画面は「検索結果を読み込めませんでした」を出す。サジェストも関数の失敗を記録に残す。今のコードは満たす（2026-10-26。3つの関数のうち1つでも失敗したら `/api/search` は 500 を返して全体を失敗にし、画面の既存の失敗の表示を出す。サジェストは成功した種別だけを返し、失敗した関数名と符号を記録する。NUL などの制御文字は SEC-SEARCH-004 で入口で 400 にするので、この道で 500 にならない）。
 
 #### SEC-SEARCH-017-AC-01 関数の失敗で「検索結果はありません」を出さない
 
@@ -1929,13 +1929,13 @@ ITEM・LOOK の画像は、URL のホストが自分の Supabase で、道筋が
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-SEARCH-018 |
-| 根拠 | 記録を読める者に、利用者の検索語や DB の構造・SQL の情報を渡さないため。今のコードは記録の側を満たさないので、満たす形の設計（`DD-`）を上位につなげない。確かめは受け入れ条件（サーバーの記録を集めて見る）で持つ |
+| 根拠 | 記録を読める者に、利用者の検索語や DB の構造・SQL の情報を渡さないため。確かめは受け入れ条件（サーバーの記録を集めて見る）で持つ |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | OWASP ASVS 4.0.3 V7.1.2（当てはめは推定）。`docs/05_Quality/reviews/security/security_review_search.md` |
 | 優先度 | MUST |
 
-検索とサジェストの失敗の記録は、決まった文と誤りの種類（code）だけを書き、例外や Supabase の誤りの全体と検索語を書かない。応答の本文は固定の文にする。今のコードは応答を満たし、記録を満たさない。直した時に、詳細設計の DD-SEARCH-004・005・006 の上位にも足す。
+検索とサジェストの失敗の記録は、決まった文と誤りの種類（code）だけを書き、例外や Supabase の誤りの全体と検索語を書かない。応答の本文は固定の文にする。今のコードは応答も記録も満たす（2026-10-26。窓口の記録は誤りの名前と符号だけ、検索の関数の失敗の記録は関数名・誤りの名前・符号だけにした。検索語と Supabase の誤りの文は書かない）。AC-01 は E2E が無く（サーバーの記録を集める手立てが無い）、単体・結合の試験が確かめる。
 
 #### SEC-SEARCH-018-AC-01 検索とサジェストの失敗の記録に検索語と誤りの全体が無い
 
@@ -1960,7 +1960,7 @@ ITEM・LOOK の画像は、URL のホストが自分の Supabase で、道筋が
 | 出どころ | `docs/05_Quality/reviews/security/security_review_search.md` |
 | 優先度 | SHOULD |
 
-`/api/search` の応答に `x-search-duration-ms` を付けない。今のコードは付ける。
+`/api/search` の応答に `x-search-duration-ms` を付けない。今のコードは満たす（2026-10-26。見出しを外した）。
 
 #### SEC-SEARCH-019-AC-01 検索の応答に処理の時間の見出しが無い
 
@@ -1985,32 +1985,44 @@ ITEM・LOOK の画像は、URL のホストが自分の Supabase で、道筋が
 | 出どころ | OWASP ASVS 4.0.3 V11.1.4（当てはめは推定）。実装から推定（2026-10-24 のセキュリティの点検） |
 | 優先度 | SHOULD |
 
-検索とサジェストの回数の制限は、他人が名乗れない送り元で数え（SEC-SEARCH-006）、外のサイトの頁から送られた呼び出し（`Sec-Fetch-Site` が `cross-site` など）は閲覧者の分の数えに入れない。今のコードは満たさない。
+検索とサジェストの回数の制限は、他人が名乗れない送り元で数え（SEC-SEARCH-006）、外のサイトの頁から送られた呼び出し（`Sec-Fetch-Site` が `cross-site` など）は閲覧者の分の数えに入れない。外のサイト側は満たす（2026-10-26。`/api/search` と `/api/suggest` は、`Sec-Fetch-Site` が付いていて `same-origin`・`none` 以外の要求を、検査と回数の制限より前に 403 で断り、枠に数えない。見出しの無い要求（curl・古いブラウザ）は通す。`same-site` は断る）。偽の送り元の側は満たさない（共有部品 `rateLimit.ts` の直しが要り、波 4）。
 
 #### SEC-SEARCH-020-AC-01 他人の送り元を名乗っても、その利用者の検索が止まらない
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SEC-SEARCH-020 |
-| 根拠 | 締め出しの2つの道（送り元を名乗る・外のサイトから送らせる）が塞がったことを確かめるため |
+| 根拠 | 締め出しの道のうち、送り元を名乗る道が塞がったことを確かめるため。外のサイトから送らせる道は AC-02 |
 | 状態 | 推定 |
 | 確かめ方 | E2E（本番と同じ中継の構成が要る。手元では中継の見出しの付け方をまねる） |
 | 出どころ | 実装から推定 |
 
-`x-forwarded-for` に利用者 A の送り元を書いて `/api/search?preview=true` を21回送った後も、利用者 A の `/?q=<語>` にプレビューが出ること。外のオリジンの頁から `/api/search?preview=true&q=x` を21回読み込ませた後も、同じ閲覧者の `/?q=<語>` にプレビューが出ること。
+`x-forwarded-for` に利用者 A の送り元を書いて `/api/search?preview=true` を21回送った後も、利用者 A の `/?q=<語>` にプレビューが出ること。今のコードは満たさない（偽の送り元の側。波 4）。外のオリジンの側は SEC-SEARCH-020-AC-02 で確かめる。
+
+#### SEC-SEARCH-020-AC-02 外のサイトの頁から呼ばせた要求は 403 で、その閲覧者のプレビューが止まらない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-SEARCH-020 |
+| 根拠 | 外のサイトの頁から閲覧者の端末に呼び出しを送らせて枠を使い切らせる道が塞がったことを確かめるため。AC-01 から分けた（偽の送り元の側は共有部品の直しが要るが、外のサイトの側は先に直ったため、同じ試験に直せない半分が残らないようにする） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（mobile 390・tablet 768・desktop 1280。ブラウザが付ける `Sec-Fetch-Site: cross-site` を Playwright の request fixture で手で付けて送り、応答の状態と本文を集める） |
+| 出どころ | 実装から推定 |
+
+`Sec-Fetch-Site: cross-site` を付けた `/api/search?preview=true&q=x` を21回送った時、応答が全て 403 で本文が `{ error: 'Forbidden' }` であること。その後も、同じ閲覧者の `/?q=<語>` にプレビューが出ること（閲覧者の回数の枠を数えていないこと）。E2E はブラウザの見出しを request fixture で手で付けてサーバーの契約を確かめる。実ブラウザが外のオリジンの `fetch` に `cross-site` を付けることは、Fetch Metadata の仕様とブラウザの対応（Chromium、Firefox 90 以降、Safari 16.4 以降）に基づく前提で、この E2E は観測していない。
 
 ### SEC-SEARCH-021 ホームの文に利用者の語を埋めて出さない
 
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-SEARCH-021 |
-| 根拠 | `/?q=` のリンクで攻撃者の選んだ文をホームの文の一部として出せると、偽の知らせとして読まれるため。検索のページの0件の見出しは FR-SEARCH-004 が語を出すよう求めるので、この要件には入れない。受け入れる危険として残すかはユーザーが決める |
+| 根拠 | `/?q=` のリンクで攻撃者の選んだ文をホームの文の一部として出せると、偽の知らせとして読まれるため。検索のページの0件の見出しは FR-SEARCH-004 が語を出すよう求めるので、この要件には入れない。ユーザーが「直す」と決めた（2026-10-26）。文言と枠の見た目は案で、ユーザーが画面の写真を見て確かめるまで確定しない |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定（2026-10-24 のセキュリティの点検） |
 | 優先度 | SHOULD |
 
-ホームのプレビューは、URL の `q` を説明の文の中に埋めない。語を見せる時は、入力欄か、語だと分かる枠の中だけにする。今のコードは文に埋める（`src/features/search/components/SearchHomePreview.tsx`）。
+ホームのプレビューは、URL の `q` を説明の文の中に埋めない。語を見せる時は、入力欄か、語だと分かる枠の中だけにする。満たす（2026-10-26。`src/features/search/components/SearchHomePreview.tsx` は説明の文を固定の「入力した語に関連する結果をホーム上で即時プレビューしています。」にし、語は説明の文の外の `<dl data-testid="search-preview-term">`（`<dt>検索した語</dt><dd>語</dd>`）に文字として出す。区画は結果が返った時だけ出る今の動きのまま）。文言と枠の見た目は案（ADR-0314）。
 
 #### SEC-SEARCH-021-AC-01 /?q=<文> で、ホームの説明の文にその文が埋まらない
 
@@ -2023,6 +2035,18 @@ ITEM・LOOK の画像は、URL のホストが自分の Supabase で、道筋が
 | 出どころ | 実装から推定 |
 
 公開の物に一致する語を含む文（例: `coat 本日休業のお知らせ`）を `q` に入れて `/` を開いた時、プレビューの区画の説明の文にその文が含まれないこと。
+
+#### SEC-SEARCH-021-AC-02 検索語が固定の説明の文と分かれた「検索した語」の枠に出る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-SEARCH-021 |
+| 根拠 | 語を文から外した後も、語が利用者に見えること（検索の確認になること）と、見た目をユーザーが写真で確かめられることを担保するため。AC-01 は語が文に無いことだけを見る |
+| 状態 | 推定 |
+| 確かめ方 | E2E（mobile 390・tablet 768・desktop 1280。区画と頁全体の画面の写真を `test-results/wave1c/search-021-preview-<幅>.png`・`search-021-page-<幅>.png` に保存する） |
+| 出どころ | 実装から推定（ユーザーの決定 2026-10-26） |
+
+結果のカードが出る実在の語（例: `Tsubame`）で `/` を開いた時、プレビューの区画に固定の説明の文があり、その文に語が含まれず、`data-testid="search-preview-term"` の枠に「検索した語」の見出し（`dt`）と語（`dd`）が出ること。
 
 ## 派生要件
 
@@ -2048,15 +2072,15 @@ DB の関数は、語全体を部分一致で含む公開済みの行を新し�
 
 説明（商品の説明・ルックのテーマの説明・ニュースの本文）の中で語が最初に合った所の前28字・後68字を切り出し、切った側に「…」を付ける。合わない時は、商品はカテゴリ、ルックはシーズン、ニュースは分類を出す。
 
-### DRV-SEARCH-003 種別ごとの取り出しに失敗しても止めず、その種別を0件として返す
+### DRV-SEARCH-003 検索は1種別でも取り出しに失敗したら全体を失敗にし、候補は失敗した種別だけを飛ばす
 
 | 属性 | 値 |
 | --- | --- |
-| 根拠 | 1つの種別の取り出しが失敗しても、残りの種別の結果は見せるため（推定）。失敗と「見つからない」の区別は SEC-SEARCH-017 |
+| 根拠 | 一部の種別だけ失敗したのに残りを検索結果として返すと、見つからないのか失敗なのか利用者に区別がつかないため（2026-10-26 に、1種別でも失敗なら全体を失敗にすると決めた。SEC-SEARCH-017）。候補は添え物なので、失敗した種別を飛ばして続ける（推定） |
 | 状態 | 推定 |
 | 出どころ | 実装から推定（`src/features/search/services/search.service.ts` の `executeSearch`・`getSearchSuggestions`） |
 
-検索は、商品・ルック・ニュースの3つの取り出しを同時に行い、失敗した種別はサーバーの記録に残して空として扱う。全部が空なら0件の画面（FR-SEARCH-004）になる。候補の取り出しは、失敗を記録にも残さず空として扱う。
+検索は、商品・ルック・ニュースの3つの取り出しを同時に行い、どれか1つでも失敗したら、失敗した関数名と誤りの名前・符号をサーバーの記録に残して全体を失敗にする（`/api/search` は 500、画面は「検索結果を読み込めませんでした」）。0件の画面（FR-SEARCH-004）になるのは、全部が成功して全部が空の時だけ。候補の取り出しは、失敗した種別の関数名と符号を記録に残し、成功した種別の候補だけを返す。人気商品の取り出しは失敗しても空の一覧で続ける。
 
 ### DRV-SEARCH-004 語とタブの変更は URL を置き換え、ブラウザの履歴を積まない
 
@@ -2098,15 +2122,15 @@ DB の関数は、語全体を部分一致で含む公開済みの行を新し�
 
 語がある取り出しの間は、結果の行の形の灰色の枠を5行出す。取り出しに失敗した時は「検索結果を読み込めませんでした」を赤い字で、読み上げにも伝わる形で出す。語が無く人気商品も無い時は「気になる商品名やトピックを入力すると、商品・ルック・ニュースを横断した結果を表示します。」を出す。候補の数は「N 件の検索候補があります」として読み上げにだけ伝える。ページの最初の読み込みの間は「読み込み中...」を出す。
 
-### DRV-SEARCH-008 検索の応答に処理にかかった時間の見出しを付ける
+### DRV-SEARCH-008 検索の応答に処理にかかった時間の見出しを付ける（廃止）
 
 | 属性 | 値 |
 | --- | --- |
 | 根拠 | 付けた理由の記録は無い（推定）。旧版の詳細設計（`git show 40acae8a:docs/04_DetailDesign/pages/19_search.md` の実装タスク管理と API 仕様の表）が検索の応答の速さの目標（P95 < 200ms）を置いていたので、速さを外から測るために付けたと推定。今の `19_search.md` はこの目標をコードに無い物として引き継いでいない（「旧版から引き継がなかった節」）。要件に当たる行は無い（全体の性能の要件 NFR-PERF-002 は範囲外） |
-| 状態 | 推定 |
+| 状態 | 廃止 |
 | 出どころ | 旧版の詳細設計（`git show 40acae8a:docs/04_DetailDesign/pages/19_search.md`）、`docs/03_BasicDesign/api/api-spec.md`（見出しがあることだけを書く）、実装から推定（`src/app/api/search/route.ts`） |
 
-成功の応答に、窓口の処理にかかったミリ秒を `x-search-duration-ms` の見出しで付ける。
+成功の応答に、窓口の処理にかかったミリ秒を `x-search-duration-ms` の見出しで付けていた。2026-10-26 に SEC-SEARCH-019（内部の処理の時間を見出しに出さない）を満たすため外したので、この派生要件は廃止にした。
 
 ### DRV-SEARCH-009 検索のページの title・description・OG の画像を決めて出す
 
@@ -2133,7 +2157,7 @@ title は「Search | Le Fil des Heures」、description は「Le Fil des Heures 
 - FREQ-01 の番号: 1つ目の行（`requirements.md` の「要求と要件のトレーサビリティ」節）を見本として誰も定義しないことにし、2つ目を番号のまま検索の要求にした。`SR-SEARCH-` に振り替えるかはユーザーに聞く。FREQ-01-REQ-02 と同じ文の REQ-01、2回書かれた AC-01 の扱いも同じ
 - `SR-SEARCH-001`（ルック・ニュースも探す要求）を起こしたことの確認
 - 後の要求で置き換わった行（FREQ-184-REQ-01・02・AC-01・02、FREQ-186-REQ-01・AC-01（FREQ-472 が数え方を `line_kind='order'` に狭めた）、FREQ-188-REQ-02、FREQ-190-REQ-01・AC-01、FREQ-191 の全部、FREQ-193-REQ-01、FREQ-199-AC-01）を「廃止」にするか、文を直すか
-- SEC-SEARCH-020・021（2026-10-24 の点検で足した、他人の締め出しとホームの文の偽り）を要件として認めるか。SEC-SEARCH-021 は受け入れる危険として残す道もある
+- SEC-SEARCH-020・021（2026-10-24 の点検で足した、他人の締め出しとホームの文の偽り）を要件として認めるか。SEC-SEARCH-021 は「直す」と決まった（2026-10-26）が、説明の文の言葉と「検索した語」の枠の見た目はユーザーが画面の写真を見て確かめるまで案のまま
 - SEC-SEARCH-018-AC-01 を E2E で確かめる手立て（サーバーの記録の集め方と、検索の関数を失敗させる方法）
 - FREQ-186-REQ-02 の SECURITY INVOKER と今の DB の SECURITY DEFINER のどちらが今の決まりか
 - 人気商品が全部を発送した注文（shipped）を数えないことを、このままにするか（返品の移行は「範囲を変えない」と書く）

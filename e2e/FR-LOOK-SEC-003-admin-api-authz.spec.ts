@@ -1,6 +1,6 @@
 /**
  * 管理の LOOK の窓口（GET・POST /api/admin/looks、GET・PUT・PATCH・DELETE /api/admin/looks/[id]）の認可・送り元の確かめ・入口の値・回数の制限（LOOK 領域）。
- * 受け入れ条件: SEC-LOOK-019-AC-01・AC-02・AC-03・AC-04（401・aal1 の 403・読み出しだけの権限・画面の出し分け）、
+ * 受け入れ条件: SEC-LOOK-019-AC-01・AC-02・AC-03・AC-04・AC-05（401・aal1 の 403・読み出しだけの権限・画面の出し分け）、
  * SEC-LOOK-018-AC-01・AC-02（他のオリジン・Origin も Referer も無い変更）、SEC-LOOK-016-AC-02・AC-03（数でない id・JSON でない本文）、
  * SEC-LOOK-011-AC-01（送り元の見出しを変えても操作者の回数は止まる）。
  *
@@ -8,20 +8,20 @@
  * - 窓口の確かめ（019-AC-01〜03、018、016、011）は本番ビルドの窓口へ Playwright の request で直に要求する。画面は開かないので画面幅に関係せず、1回だけ流す。
  *   管理者は手元の Supabase の本物の JWT（店長・aal1 か aal2。e2e/admin-session-test-utils.ts）を Authorization: Bearer で送る。Cookie を送らないので
  *   CSRF の token は要らない。変更の要求には、送り元を確かめる proxy を通すため許可のオリジン（Origin）を付ける（018 は付けない・変える）。
- * - 019-AC-04 だけはブラウザで、mobile 390・tablet 768・desktop 1280 の3つの幅で流す。同じ種類の JWT を Cookie（sb-access-token）に置いて /admin?tab=LOOK を開く
+ * - 019-AC-04 と 019-AC-05 はブラウザで、mobile 390・tablet 768・desktop 1280 の3つの幅で流す。同じ種類の JWT を Cookie（sb-access-token）に置いて /admin?tab=LOOK を開く
  *   （e2e/look-admin-test-utils.ts の signInAsLookAdmin）。
  * - 読み出しの権限だけを持つ利用者は、店長の JWT の利用者の有効な役割を外し、admin.looks.read だけを持つ試験用の役割（e2e-look019-ro-*）を付けて作る。
- *   窓口の認可は 要求のたびに DB の ACL を読むので、JWT は店長（app_metadata.role = admin）のまま、権限だけが読み出しになる。画面の出し分けは役（admin）で決まる今の形を、そのまま露わにする。
+ *   窓口の認可は 要求のたびに DB の ACL を読むので、JWT は店長（app_metadata.role = admin）のまま、権限だけが読み出しになる。
+ *   カードの3ボタンは窓口の meta.canManage で出し分ける（019-AC-05）。「新規作成」は src/app/admin/page.tsx が役（admin）で出していて、そのままになる（019-AC-04）。
  * - 試験ごとに、非公開の LOOK を1つ作り（テーマは一意・created_at 2000-01-01・商品1を紐づけ）、終わりに必ず消す。LOOK の行は to_jsonb の全列で前後を比べ、「変わらない」を確かめる。
  *   試験ごとに新しい利用者・試験ごとの送り元（x-forwarded-for）を使い、変更の枠（status 30回/600秒）を他の試験や前の実行と共有しない。
  * - 権限の表は共有の状態なので、利用者を作る試験は withPermissionScenario（advisory lock 190520）の中で流す。
  *
  * 現行のコードが満たさない AC（文のとおりに書いてあり、緩めない。コードが直るまで赤）:
- * - SEC-LOOK-019-AC-04: 画面が権限でなく役（admin）で出し分けるので、読み出しだけの利用者にも 新規作成・公開の切り替え・編集・削除 が出る。
- * - SEC-LOOK-016-AC-02: 管理の1件の窓口が id の形を確かめず、abc は 400 でなく 404 などになる。
- * - SEC-LOOK-016-AC-03: PATCH の request.json() の失敗が 400 でなく 500 になる。
+ * - SEC-LOOK-019-AC-04: 「新規作成」のボタンを src/app/admin/page.tsx が権限でなく役（admin）で出すので、読み出しだけの利用者にも出る（波 4 で直す）。
+ *   カードの公開の切り替え・編集・削除は直した（019-AC-05 が緑）。
  * - SEC-LOOK-011-AC-01: 回数の制限が x-forwarded-for をそのまま送り元として数えるので、操作者の段も見出しごとに別の枠になる見込み。
- * 019-AC-01〜03・018-AC-01・AC-02 は満たす見込み。
+ * 019-AC-01〜03・AC-05・018-AC-01・AC-02・016-AC-02・AC-03 は満たす見込み。
  *
  * 作った利用者・session・監査の行は消さない（db reset で消える）。LOOK の行と試験用の役割は終わりに消す。
  * JWT が通信記録に残らないよう trace は切る。
@@ -232,7 +232,7 @@ for (const vp of viewports) {
     page,
     baseURL,
   }) => {
-    test.fail(true, 'SEC-LOOK-019-AC-04 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
+    test.fail(true, 'SEC-LOOK-019-AC-04 今のコードは満たさない。カードの3ボタンは AC-05。新規作成のボタンは src/app/admin/page.tsx が役で出している（波 4。docs/02_Requirements/areas/look.md）');
     if (!baseURL) throw new Error('baseURL が無い（playwright.config.ts）');
     await withPermissionScenario(async (db) => {
       await withReadOnlyLookActor(db, async (actor) => {
@@ -251,6 +251,41 @@ for (const vp of viewports) {
           for (const name of operations) {
             for (const role of ['button', 'link'] as const) {
               await expect(page.getByRole(role, { name, exact: true }), `${role}「${name}」は出ない`).toHaveCount(0);
+            }
+          }
+        });
+      });
+    });
+  });
+}
+
+for (const vp of viewports) {
+  test(`SEC-LOOK-019-AC-05 ${vp.name} admin.looks.read だけを持つ役の aal2 の session で LOOK のタブを開くと、一覧は表示され、カードの公開の切り替え・編集・削除のボタンが表示されない`, async ({
+    page,
+    baseURL,
+  }) => {
+    if (!baseURL) throw new Error('baseURL が無い（playwright.config.ts）');
+    await withPermissionScenario(async (db) => {
+      await withReadOnlyLookActor(db, async (actor) => {
+        await withLook(async (look) => {
+          await mockAdminBackgroundApis(page);
+          await signInAsLookAdmin(page.context(), actor, baseURL);
+          await page.setViewportSize({ width: vp.width, height: vp.height });
+          await page.goto('/admin?tab=LOOK');
+
+          // 数える範囲は LOOK の一覧の区画の中だけ（頁のヘッダーなど別の部品の同じ名前のボタンを数えない）
+          const lookSection = page.locator('section').filter({ has: page.getByText(look.theme, { exact: true }) }).last();
+
+          // 一覧は表示される（読み出しの権限で窓口が 200 を返し、非公開の LOOK も見える）。0 件の見かけの成功を避ける
+          await expect(lookSection.getByText(look.theme, { exact: true })).toBeVisible();
+          await expect(lookSection.getByText('Aoi Weekend Layers', { exact: true })).toBeVisible();
+          await expect(lookSection.locator('[data-ui-tag-label-variant]').first(), 'カードの状態の印が出ている').toBeVisible();
+
+          // カードの公開の切り替え（公開 / 非公開）・編集・削除の操作が出ない
+          const operations = ['編集', '公開', '非公開', '削除'];
+          for (const name of operations) {
+            for (const role of ['button', 'link'] as const) {
+              await expect(lookSection.getByRole(role, { name, exact: true }), `${role}「${name}」は出ない`).toHaveCount(0);
             }
           }
         });
@@ -298,7 +333,6 @@ test('SEC-LOOK-016-AC-02 aal2 の管理者の session で /api/admin/looks/abc �
   request,
   baseURL,
 }) => {
-  test.fail(true, 'SEC-LOOK-016-AC-02 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
   const origin = originOf(baseURL);
   await withPermissionScenario(async (db) => {
     const actor = await createAdminSessionActor(db, 'admin', 'aal2');
@@ -316,7 +350,6 @@ test('SEC-LOOK-016-AC-03 /api/admin/looks/<id> に JSON でない本文の PATCH
   request,
   baseURL,
 }) => {
-  test.fail(true, 'SEC-LOOK-016-AC-03 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
   const origin = originOf(baseURL);
   await withPermissionScenario(async (db) => {
     const actor = await createAdminSessionActor(db, 'admin', 'aal2');

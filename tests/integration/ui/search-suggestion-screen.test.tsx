@@ -251,7 +251,7 @@ describe('SCR-SEARCH-003 入力中の候補のドロップダウン', () => {
     expect(screen.getByRole('status')).toHaveTextContent('8 件の検索候補があります');
   });
 
-  it('SCR-SEARCH-003 入力が変わるたびに待たず、最小の字数も置かずに 1 文字目から /api/suggest を呼ぶ（前後の空白を除かずに符号化して no-store で送る）', async () => {
+  it('SCR-SEARCH-003 入力が止まって250ミリ秒たってから、最小の字数も置かずに 1 文字目から /api/suggest を呼ぶ（前後の空白を除かずに符号化して no-store で送る）', async () => {
     mockSearch = '';
     setSuggestions([suggestion('a')]);
     const user = userEvent.setup();
@@ -263,13 +263,12 @@ describe('SCR-SEARCH-003 入力中の候補のドロップダウン', () => {
     await user.type(input, 'a');
     await waitFor(() => expect(suggestCalls()).toEqual(['/api/suggest?q=a']));
 
+    // 続けて打った途中の語（'a '）は待っている間に捨てられ、止まった後の語だけを呼ぶ
     await user.type(input, ' b');
-    await waitFor(() =>
-      expect(suggestCalls()).toEqual(['/api/suggest?q=a', '/api/suggest?q=a%20', '/api/suggest?q=a%20b']),
-    );
+    await waitFor(() => expect(suggestCalls()).toEqual(['/api/suggest?q=a', '/api/suggest?q=a%20b']));
     mockFetch.mock.calls
       .filter((call) => (call[0] as string).startsWith('/api/suggest'))
-      .forEach((call) => expect(call[1]).toEqual({ cache: 'no-store' }));
+      .forEach((call) => expect(call[1]).toEqual({ cache: 'no-store', signal: expect.any(AbortSignal) }));
   });
 
   it('SCR-SEARCH-003 空白だけの入力は取り出さずに候補を消す', async () => {
@@ -317,7 +316,7 @@ describe('SCR-SEARCH-003 入力中の候補のドロップダウン', () => {
     render(<SearchPageClient />);
 
     await waitFor(() =>
-      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search suggestions:', expect.any(Error)),
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search suggestions'),
     );
     await user.click(screen.getByRole('combobox'));
 
@@ -330,7 +329,7 @@ describe('SCR-SEARCH-003 入力中の候補のドロップダウン', () => {
     render(<SearchPageClient />);
 
     await waitFor(() =>
-      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search suggestions:', expect.any(Error)),
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search suggestions'),
     );
     await user.click(screen.getByRole('combobox'));
 

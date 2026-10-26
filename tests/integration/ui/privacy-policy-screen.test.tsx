@@ -26,15 +26,15 @@ jest.mock('@/lib/supabase/server', () => ({
 
 import PrivacyPage, { generateMetadata } from '@/app/privacy/page';
 
-function settingsRow(enabled: boolean) {
+function settingsRow(enabled: boolean, updatedAt: string | null = null) {
   return {
-    data: [{ enabled, updated_at: null, updated_by_email: null, backfill_count: 0 }],
+    data: [{ enabled, updated_at: updatedAt, updated_by_email: null, backfill_count: 0 }],
     error: null,
   };
 }
 
-async function renderPage(enabled = false) {
-  mockRpc.mockResolvedValue(settingsRow(enabled));
+async function renderPage(enabled = false, updatedAt: string | null = null) {
+  mockRpc.mockResolvedValue(settingsRow(enabled, updatedAt));
   const element = await PrivacyPage();
   return render(element);
 }
@@ -115,14 +115,21 @@ describe('PRIVACY の画面（SCR-PRIVACY-001）', () => {
     expect(date).toHaveStyle({ fontSize: 'var(--lk-size-2xs)', lineHeight: '1.9' });
   });
 
-  it('SCR-PRIVACY-001 末尾に制定日 2026年6月20日 と最終改定日 2026年7月11日 を固定の字で出す。追跡がオンでも変わらない', async () => {
+  it('SCR-PRIVACY-001 末尾に制定日 2026年6月20日 と、基準日 2026年10月26日 を下限にした最終改定日を出す。追跡を切り替えていなければ、オンでもオフでも基準日', async () => {
     for (const enabled of [false, true]) {
       const { container, unmount } = await renderPage(enabled);
       const last = Array.from(container.querySelectorAll('section')).pop() as HTMLElement;
       expect(last).toHaveTextContent('制定日：2026年6月20日');
-      expect(last).toHaveTextContent('最終改定日：2026年7月11日');
+      expect(last).toHaveTextContent('最終改定日：2026年10月26日');
       unmount();
     }
+  });
+
+  it('SCR-PRIVACY-001 追跡の設定を切り替えた日（日本時間）が基準日より後なら、最終改定日はその日に追従する', async () => {
+    const { container } = await renderPage(true, '2026-10-26T16:30:00Z');
+    const last = Array.from(container.querySelectorAll('section')).pop() as HTMLElement;
+    expect(last).toHaveTextContent('制定日：2026年6月20日');
+    expect(last).toHaveTextContent('最終改定日：2026年10月27日');
   });
 
   it('SCR-PRIVACY-001 12節の窓口は事業者名とメールの字を一覧で出し、mailto のリンクにはしない', async () => {
@@ -147,6 +154,17 @@ describe('PRIVACY の画面（SCR-PRIVACY-001）', () => {
 
     const section = sectionOf(screen.getByRole('heading', { level: 2, name: /^9\./ }));
     expect(section).toHaveTextContent('Stripe, Inc.');
+  });
+
+  it('SCR-PRIVACY-001 9節は外部サービスとして Resend・Supabase・Cloudflare Turnstile も挙げ、2節にメールマガジンは書かない', async () => {
+    const { container } = await renderPage(false);
+
+    const section = sectionOf(screen.getByRole('heading', { level: 2, name: /^9\./ }));
+    expect(section).toHaveTextContent('Resend, Inc.');
+    expect(section).toHaveTextContent('Supabase, Inc.');
+    expect(section).toHaveTextContent('Cloudflare, Inc.');
+    expect(section).toHaveTextContent('Cloudflare Turnstile');
+    expect(container).not.toHaveTextContent('メールマガジン');
   });
 
   it('SCR-PRIVACY-001 メタデータは title・description・og:title・og:description・og:image を固定の字で返す', async () => {

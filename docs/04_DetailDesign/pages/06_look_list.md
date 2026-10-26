@@ -1,6 +1,6 @@
 # 1.6 ルック一覧ページ（LOOK LIST）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: LOOK 一覧 `/look`、ホームの LOOK の区画の部品、公開の LOOK の取り出し、シーズンの決まり、LOOK の画像の署名 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: LOOK 一覧 `/look`、ホームの LOOK の区画の部品、公開の LOOK の取り出し、シーズンの決まり、LOOK の画像の署名 | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -10,15 +10,16 @@ LOOK 一覧 `/look` を作るコードの単位ごとに、入出力・正常と
 | ID | 単位 | 中身 | 旧番号 |
 | --- | --- | --- | --- |
 | `DD-LOOK-001` | `src/features/look/components/PublicLookGrid.tsx` | 一覧とホームの区画の格子・カード・シーズンの絞り込み・空の表示 | `IMPL-LOOK-LIST-002`・`003`・`004`・`006` |
-| `DD-LOOK-002` | `src/app/look/page.tsx` | 一覧のページ。URL の `season` を直し、公開の LOOK を全部取って格子に渡す。メタを出す | `IMPL-LOOK-LIST-001`・`005` |
-| `DD-LOOK-003` | `getPublishedLooks`（`src/lib/look/server.ts`） | 公開の LOOK を新しい順に取り、関連商品と署名つきの画像を付ける | なし |
+| `DD-LOOK-002` | `src/app/look/page.tsx` | 一覧のページ。URL の `season` を直し、公開の LOOK を 100 件まで取って格子に渡す。取り出しの失敗は投げる。メタを出す | `IMPL-LOOK-LIST-001`・`005` |
+| `DD-LOOK-003` | `getPublishedLookList`・`getPublishedLooks`・`LookFetchError`（`src/lib/look/server.ts`） | 公開の LOOK を新しい順に説明文なしで取り、関連商品と署名つきの画像を付ける。`/look` は 100 件まで・失敗は投げる。ホームは件数を丸めて失敗は空の配列 | なし |
 | `DD-LOOK-004` | `getPublishedLooksCount`（`src/lib/look/server.ts`） | ホームの VIEW ALL の判断に使う公開の LOOK の総数 | なし |
 | `DD-LOOK-005` | `resolveLookSeasonFilter`・`normalizeLookSeasonSelection`・`toLookSeasonValues`・`filterLooksBySeason`（`src/lib/look/public.ts`） | シーズンの選択を ALL・SS・AW の1つに直し、LOOK を絞る | なし |
 | `DD-LOOK-006` | `extractLookImageObjectPath`・`signLookImageUrl`・`signLookImageUrls`（`src/lib/storage/look-images.ts`） | 置き場の道筋を取り出し、期限1時間の署名つき URL にする | なし |
+| `DD-LOOK-069` | `src/app/look/error.tsx` | `/look`・`/look/[id]` の取り出しの失敗を受ける誤りの画面 | なし |
 
-- 結論: 一覧はページのサーバーの中で公開の LOOK を全部取り（件数の上限なし）、部品は渡された LOOK を画面の上でシーズンで絞るだけ。取り出しの失敗は「LOOK が無い」と同じ見た目になる（推定）
+- 結論: 一覧はページのサーバーの中で公開の LOOK を新しい順に 100 件まで、説明文なしで取り（ADR-0159）、部品は渡された LOOK を画面の上でシーズンで絞るだけ。取り出しの失敗は投げて、`error.tsx` の誤りの画面になる（2026-10-26。ホームの区画は空の配列のまま）
 - 画像は表示のたびに service role で署名する。道筋にできない値と署名の失敗では、元の値をそのまま返す（推定）
-- 番号は `DD-LOOK-001`〜`029` をこの頁で使う。今は `001`〜`006` を使い、`007` 以降は空けておく。詳細の頁は `030`〜`059`、管理の頁（[16-3_admin_look.md](16-3_admin_look.md)）は `060`〜`089`
+- 番号は `DD-LOOK-001`〜`029` をこの頁で使う。今は `001`〜`006` を使い、`007` 以降は空けておく。詳細の頁は `030`〜`059`、管理の頁（[16-3_admin_look.md](16-3_admin_look.md)）は `060`〜`089`。`069` だけは管理の頁の範囲の空きを、一覧と詳細の誤りの画面（`error.tsx`）に使った（詳細の頁の `068` も同じ。2026-10-26）
 
 ## 範囲と根拠
 
@@ -26,10 +27,10 @@ LOOK 一覧 `/look` を作るコードの単位ごとに、入出力・正常と
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の LOOK のうち、一覧のページとホームの区画の部品、公開の取り出し、シーズンの決まり、画像の署名 |
 | 上位の文書 | [LOOK の構造設計](../../03_BasicDesign/areas/look.md)（`ARC-`・`SCR-`・`FLOW-`・`STATE-`・`DATA-`）、[LOOK の要件](../../02_Requirements/areas/look.md)（`FR-LOOK-ALL-`・`FREQ-`・`SEC-LOOK-`・`DRV-LOOK-`） |
-| 対象のコード | `src/app/look/page.tsx`、`src/features/look/components/PublicLookGrid.tsx`、`src/lib/look/server.ts` の `getPublishedLooks`・`getPublishedLooksCount`、`src/lib/look/public.ts` の4つの関数、`src/lib/storage/look-images.ts` の3つの関数 |
+| 対象のコード | `src/app/look/page.tsx`、`src/app/look/error.tsx`、`src/features/look/components/PublicLookGrid.tsx`、`src/lib/look/server.ts` の `getPublishedLookList`・`getPublishedLooks`・`LookFetchError`・`getPublishedLooksCount`、`src/lib/look/public.ts` の4つの関数、`src/lib/storage/look-images.ts` の3つの関数 |
 | 関連文書 | [ルック詳細の詳細設計](07_look_detail.md)、[管理のルックの詳細設計](16-3_admin_look.md)、`docs/03_BasicDesign/ui/screen-list.md` |
 | 旧版のこの頁 | 機能要件対応表（`IMPL-LOOK-LIST-001`〜`006`）。対象に挙げた `LookCard.tsx`・`PublicLookCatalogGrid.tsx`・`src/lib/look/look-view.ts` は無い（`LookCard` は `PublicLookGrid.tsx` の中の関数）。「最大6件」「VIEW LOOKBOOK」は今の形と違う |
-| 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない） |
+| 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない）。2026-10-26 に `DD-LOOK-002`・`003`・`069` を直した（単体・結合テストで確かめた） |
 
 範囲外の共有部品は ID を持たないので、項目の本文にファイルの道で書く。
 
@@ -45,9 +46,11 @@ LOOK 一覧 `/look` を作るコードの単位ごとに、入出力・正常と
 graph LR
   U["閲覧者のブラウザ"] --> PG["/look<br/>page.tsx（DD-LOOK-002）"]
   PG --> SF["resolveLookSeasonFilter<br/>（DD-LOOK-005）"]
-  PG --> GP["getPublishedLooks<br/>（DD-LOOK-003）"]
+  PG --> GP["getPublishedLookList<br/>（DD-LOOK-003）"]
+  PG -.->|失敗は投げる| ER["error.tsx<br/>（DD-LOOK-069）"]
   PG --> GR["PublicLookGrid<br/>（DD-LOOK-001）"]
-  HM["ホーム src/app/page.tsx（範囲外）"] --> GP
+  HM["ホーム src/app/page.tsx（範囲外）"] --> GH["getPublishedLooks<br/>（DD-LOOK-003）"]
+  GH --> GP
   HM --> CT["getPublishedLooksCount<br/>（DD-LOOK-004）"]
   HM --> GR
   GR --> SF
@@ -165,7 +168,7 @@ FR-LOOK-ALL-001・002・004・006、FREQ-50〜56・127〜145・150・151・277�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SCR-LOOK-001、STATE-LOOK-002、ARC-LOOK-001、SEC-LOOK-001 |
-| 根拠 | ページを作るサーバーの中で取り出せば、LOOK を入れた HTML をそのまま返せる（ARC-LOOK-001）。URL の `season` をサーバーで直して部品に渡し、初めの描画から絞った形で出す（STATE-LOOK-002）。取り出しは公開済みだけを返す関数に任せ、ページで非公開を扱わない（SEC-LOOK-001）。見出しを置かず、メタだけで一覧の題を伝える（SCR-LOOK-001） |
+| 根拠 | ページを作るサーバーの中で取り出せば、LOOK を入れた HTML をそのまま返せる（ARC-LOOK-001）。URL の `season` をサーバーで直して部品に渡し、初めの描画から絞った形で出す（STATE-LOOK-002）。取り出しは公開済みだけを返す関数に任せ、ページで非公開を扱わない（SEC-LOOK-001）。見出しを置かず、メタだけで一覧の題を伝える（SCR-LOOK-001）。取り出しの失敗は握らず誤りの画面に任せ、障害を「LOOK が無い」に見せない（SEC-LOOK-022） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/look/page.tsx`）、この頁の旧版の機能要件対応表 |
@@ -188,7 +191,7 @@ FR-LOOK-ALL-001・005・006、FREQ-50、NFR-SEO-003（範囲外）。
 
 1. `searchParams` があれば待って値を取り、無ければ `undefined`
 2. `season` を `resolveLookSeasonFilter` で ALL・SS・AW に直す（DD-LOOK-005）
-3. `getPublishedLooks` を件数なしで呼ぶ（DD-LOOK-003）
+3. `getPublishedLookList` を引数なしで呼ぶ（DD-LOOK-003。100 件まで・説明文なし）
 4. 部品に渡す。絞るのは部品の側
 
 #### 異常フロー
@@ -197,7 +200,7 @@ FR-LOOK-ALL-001・005・006、FREQ-50、NFR-SEO-003（範囲外）。
 | --- | --- | --- |
 | `searchParams` が無い | `season` 無しとして ALL | `src/app/look/page.tsx` |
 | `season` が正しくない | ALL | `src/app/look/page.tsx` |
-| 取り出しの失敗 | 関数が空の配列を返し、部品が「公開中のLOOKがありません」を出す（SEC-LOOK-022 は満たさない） | `src/app/look/page.tsx`、`src/lib/look/server.ts` |
+| 取り出しの失敗 | 関数が `LookFetchError` を投げ、ページも投げて `error.tsx` の誤りの画面（DD-LOOK-069）になる。部品は呼ばれない（SEC-LOOK-022） | `src/app/look/page.tsx`、`src/lib/look/server.ts` |
 
 - `revalidate`・`dynamic` の指定は無い（キャッシュの方針は未確認）
 
@@ -215,58 +218,60 @@ FR-LOOK-ALL-001・005・006、FREQ-50、NFR-SEO-003（範囲外）。
 | # | 観点 | 入力 | 期待 |
 | --- | --- | --- | --- |
 | 1 | メタ | `generateMetadata` | title・description・OG の画像 `/mainphoto.png` |
-| 2 | `searchParams` なし | 引数なし | `getPublishedLooks` を引数なしで呼び、部品に `initialSeason:"ALL"` |
+| 2 | `searchParams` なし | 引数なし | `getPublishedLookList` を引数なしで呼び、部品に `initialSeason:"ALL"` |
 | 3 | `season` あり | `searchParams` に `{season:"ss"}` | 部品に `initialSeason:"SS"` |
 | 4 | `season` なしの `searchParams` | `{}` | `initialSeason:"ALL"` |
 | 5 | LOOK を渡す | 取り出しが2件 | 部品に catalog と2件 |
+| 6 | 取り出しの失敗 | `getPublishedLookList` が `LookFetchError` で reject | ページも reject し、部品を呼ばない |
 
-### DD-LOOK-003 公開の LOOK の一覧の取り出し getPublishedLooks
+### DD-LOOK-003 公開の LOOK の一覧の取り出し getPublishedLookList・getPublishedLooks・LookFetchError
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | ARC-LOOK-001、ARC-LOOK-003、DATA-LOOK-001、DATA-LOOK-002、DATA-LOOK-003、SEC-LOOK-001 |
-| 根拠 | DB を匿名の client で読めば、取り出しの条件を書き損じても RLS が公開済みだけに絞る（ARC-LOOK-001、DATA-LOOK-003）。アプリの側でも `status='published'` を付け、片方が崩れても非公開の LOOK を出さない（SEC-LOOK-001）。関連商品は公開中の物だけを付ける（ARC-LOOK-001、DATA-LOOK-002）。並びは作った日時の新しい順（DATA-LOOK-001）。画像は置き場が非公開なので service role で署名する（ARC-LOOK-003） |
+| 上位 | ARC-LOOK-001、ARC-LOOK-003、DATA-LOOK-001、DATA-LOOK-002、DATA-LOOK-003、SEC-LOOK-001、SEC-LOOK-009、SEC-LOOK-022 |
+| 根拠 | DB を匿名の client で読めば、取り出しの条件を書き損じても RLS が公開済みだけに絞る（ARC-LOOK-001、DATA-LOOK-003）。アプリの側でも `status='published'` を付け、片方が崩れても非公開の LOOK を出さない（SEC-LOOK-001）。関連商品は公開中の物だけを付ける（ARC-LOOK-001、DATA-LOOK-002）。並びは作った日時の新しい順で、同じ時刻は `id` の大きい順（DATA-LOOK-001）。画像は置き場が非公開なので service role で署名する（ARC-LOOK-003）。一覧は説明文を取らず 100 件で切り（SEC-LOOK-009、ADR-0159）、取り出しの失敗は「0 件」にせず投げる（SEC-LOOK-022）。ホームは LOOK の失敗でホーム全体を落とさないので握る |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
-| 出どころ | 実装から推定（`src/lib/look/server.ts`） |
+| 出どころ | 実装から推定（`src/lib/look/server.ts`）、ユーザーの決定（2026-10-26。ADR-0159） |
 
 #### 対応要件
 
-FR-LOOK-ALL-001・002、FR-LOOK-DETAIL-002・003、DRV-LOOK-001・004・005。
+FR-LOOK-ALL-001・002、FR-LOOK-DETAIL-002・003、DRV-LOOK-001・004・005、SEC-LOOK-009・022。
 
 #### 入出力
 
 | 項目 | 内容 |
 | --- | --- |
-| 入力 | `limit?`（数。無ければ件数の上限なし） |
-| 出力 | `PublicLook[]`（`id`・`seasonYear`・`seasonType`・`theme`・`themeDescription`・`imageUrls`（署名つき）・`createdAt`・`linkedItems`（`category`・`id`・`name`・`price`・`imageUrl`（署名つき）））。失敗は空の配列 |
-| 読む表 | `looks`（7列、`status='published'`、`created_at` の降順）、`look_items`（`look_id`・`item_id`）、`items`（5列、`status='published'`） |
-| 副作用 | `console.error` の記録 |
+| 入力 | `getPublishedLookList()` は無し。`getPublishedLooks(limit?)` の `limit` は数。1〜100 に丸め、未指定・不正・0・負・NaN は 100 |
+| 出力 | `PublicLookListItem[]`（`id`・`seasonYear`・`seasonType`・`theme`・`imageUrls`（署名つき）・`createdAt`・`linkedItems`（`category`・`id`・`name`・`price`・`imageUrl`（署名つき）））。**説明文のキーは持たない**。`getPublishedLooks` の失敗は空の配列 |
+| 読む表 | `looks`（`id,season_year,season_type,theme,image_urls,created_at`、`status='published'`、`created_at` の降順の次に `id` の降順、`limit`）、`look_items`（`look_id`・`item_id`）、`items`（5列、`status='published'`） |
+| 副作用 | 失敗の時の `console.error`（第 2 引数は `{ name, code }`。`message` は残さない） |
+| 投げる誤り | `LookFetchError`（`code` は DB の符号か `null`。`Error` を継承し、DB の文は持たない） |
 
 #### 正常フロー
 
-1. 匿名の client で `looks` を取る。`limit` が数なら `limit` を付ける
+1. 匿名の client で `looks` を取る。`limit` は `getPublishedLookList` が 100、`getPublishedLooks` が丸めた値
 2. 行を `hydrateLooks` に渡す。0件なら空の配列
 3. 匿名の client と service role の client を作り、LOOK の id の全部で `look_items` を取る
 4. 商品の id を重ねずに集め、1つ以上あれば `items` を公開中だけで取り、商品の画像を `signItemImageUrl` で署名して表に入れる
 5. 関連の行ごとに、表にある商品だけを LOOK ごとの並びに足す。並びは `look_items` の返る順（推定）
 6. LOOK ごとに `image_urls`（配列でなければ空）を `signLookImageUrls` で署名する（DD-LOOK-006）
-7. 行を `PublicLook` に写し、署名した画像と関連商品を入れる
+7. 行を `PublicLookListItem` に写し、署名した画像と関連商品を入れる
 
 #### 異常フロー
 
 | 場合 | 動き | 道 |
 | --- | --- | --- |
-| `looks` の取り出しの失敗・`data` が空 | 記録して空の配列（「無い」と同じに見える。SEC-LOOK-022 は満たさない） | `src/lib/look/server.ts` |
-| `look_items` の取り出しの失敗・`data` が空 | 記録して、署名していない元の道筋と関連0件で LOOK を返す（SEC-LOOK-008 は満たさない） | `src/lib/look/server.ts` |
+| `looks` の取り出しの失敗・`data` が空 | `{ name, code }` を記録して `LookFetchError` を投げる。関連は読まない。`getPublishedLooks` はこれを握って空の配列 | `src/lib/look/server.ts` |
+| `look_items` の取り出しの失敗・`data` が空 | 同じく記録して `LookFetchError`。署名していない元の道筋を返さない（部分的に返さない） | `src/lib/look/server.ts` |
 | 関連の商品が0件 | `items` を読まず、全部の LOOK が関連0件 | `src/lib/look/server.ts` |
-| `items` の取り出しの失敗 | 記録して関連0件のまま続け、画像は署名する | `src/lib/look/server.ts` |
+| `items` の取り出しの失敗 | 同じく記録して `LookFetchError` | `src/lib/look/server.ts` |
 | `items` の `data` が空 | 空として扱う | `src/lib/look/server.ts` |
 | 関連の商品が非公開・消えた | その関連を飛ばす | `src/lib/look/server.ts` |
 | `image_urls` が配列でない | 空として署名する | `src/lib/look/server.ts` |
 
 - `signedImageUrlsMap.get(row.id) ?? []`の右側は、全部の行を先に入れるので届かない（推定）
-- 件数を渡さない呼び元（一覧・詳細）では、公開の LOOK の全部と全部の画像に署名する（SEC-LOOK-009 は満たさない）
+- 取り出しは 100 件まで、署名も 100 件分までに収まる（SEC-LOOK-009）。`LookFetchError` 以外の例外（client の作成の失敗など）は握らず、そのまま投げる
 
 #### 状態・永続化
 
@@ -284,20 +289,21 @@ FR-LOOK-ALL-001・002、FR-LOOK-DETAIL-002・003、DRV-LOOK-001・004・005。
 
 | # | 観点 | 入力 | 期待 |
 | --- | --- | --- | --- |
-| 1 | 件数あり | `limit:8` | 問い合わせに `limit(8)` |
-| 2 | 件数なし | 引数なし | `limit` を呼ばない |
-| 3 | LOOK の取り出しの失敗 | `error` あり | 空の配列、記録あり |
-| 4 | LOOK の `data` が空 | `data:null`・`error:null` | 空の配列 |
-| 5 | LOOK が0件 | `data:[]` | 空の配列。関連を読まない |
-| 6 | 関連の取り出しの失敗 | `look_items` が `error` | 元の道筋のまま・関連0件の LOOK |
-| 7 | 関連の `data` が空 | `look_items` が `data:null` | 6 と同じ |
-| 8 | 関連の商品が0件 | `look_items` が `[]` | `items` を読まない。関連0件 |
-| 9 | 商品の取り出しの失敗 | `items` が `error` | 関連0件、画像は署名する |
-| 10 | 商品の `data` が空 | `items` が `data:null` | 関連0件 |
-| 11 | 公開の商品だけ付ける | 関連2件、商品は1件だけ返る | 返った1件だけが付く |
-| 12 | 2つの LOOK に関連を分ける | 2つの LOOK にそれぞれ関連 | LOOK ごとの並び |
-| 13 | `image_urls` が配列でない | `image_urls:null` | `imageUrls` が空 |
-| 14 | 署名した画像に置き換える | 道筋2つ | `signLookImageUrls` の結果が入る |
+| 1 | 件数の丸め | `getPublishedLooks` に 8・1000・0・-1・NaN・未指定 | 問い合わせの `limit` が 8・100・100・100・100・100 |
+| 2 | 一覧の問い合わせ | `getPublishedLookList()` | `select` が説明文なしの 6 列ちょうど、`eq('status','published')`、`order` が `created_at` 降順の次に `id` 降順、`limit(100)` |
+| 3 | 説明文を持たない | 結果の各要素 | `themeDescription` のキーが無い。関連商品の価格・名前・画像は残る |
+| 4 | LOOK の取り出しの失敗 | `looks` が `{ code:'42501', message:'permission denied…' }` | `getPublishedLookList` は `LookFetchError`（`code:'42501'`）で reject。`console.error` の第 2 引数は `{ name, code }` で `message` を含まない。`getPublishedLooks` は空の配列 |
+| 5 | LOOK の `data` が空 | `data:null`・`error:null` | 失敗として扱う |
+| 6 | LOOK が0件 | `data:[]` | 空の配列。関連を読まない |
+| 7 | 関連の取り出しの失敗 | `look_items` が `error` | `getPublishedLookList` は reject。`getPublishedLooks` は空の配列。署名しない |
+| 8 | 関連の `data` が空 | `look_items` が `data:null` | 7 と同じ |
+| 9 | 関連の商品が0件 | `look_items` が `[]` | `items` を読まない。関連0件 |
+| 10 | 商品の取り出しの失敗 | `items` が `error` | reject（部分的に空で返さない） |
+| 11 | 商品の `data` が空 | `items` が `data:null` | 関連0件 |
+| 12 | 公開の商品だけ付ける | 関連2件、商品は1件だけ返る | 返った1件だけが付く |
+| 13 | 2つの LOOK に関連を分ける | 2つの LOOK にそれぞれ関連 | LOOK ごとの並び |
+| 14 | `image_urls` が配列でない | `image_urls:null` | `imageUrls` が空 |
+| 15 | 署名した画像に置き換える | 道筋2つ | `signLookImageUrls` の結果が入る |
 
 ### DD-LOOK-004 公開の LOOK の総数 getPublishedLooksCount
 
@@ -489,6 +495,60 @@ DRV-LOOK-005、FREQ-185（範囲外、SEARCH）。
 | 14 | 配列 | `["looks/a.png", null, ""]` | 署名つき URL 1つだけの配列 |
 | 15 | 配列の期限 | `expiresIn` あり・なし | 渡した期限・3600 で署名 |
 
+### DD-LOOK-069 LOOK の誤りの画面 error.tsx
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SCR-LOOK-001、SCR-LOOK-004、ARC-LOOK-001、SEC-LOOK-022 |
+| 根拠 | 公開の取り出しの失敗を「0 件」「見つからない」と同じ見た目にせず、利用者に失敗を知らせて再試行の手段を渡すため（SEC-LOOK-022）。`error.message`・`stack` は DB の文を含みうるので画面にも記録にも出さず、突き合わせ用の `digest` だけを記録に残す |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト |
+| 出どころ | ユーザーの決定（2026-10-26。波 1-C）、実装（`src/app/look/error.tsx`）。同じ形の既存の誤りの画面は `src/app/checkout/error.tsx` |
+
+#### 対応要件
+
+SEC-LOOK-022。
+
+#### 入出力
+
+| 項目 | 内容 |
+| --- | --- |
+| 入力 | `error`（`digest?` を持つ）、`retry`（再描画の関数） |
+| 出力 | 見出し「LOOK を読み込めませんでした」、「一時的なエラーのため表示できません。しばらくしてからもう一度お試しください。」、`retry` を呼ぶボタン。`/look` に留まる（一覧へ移らない） |
+| 副作用 | `console.error("[look] render error", { digest })` |
+
+#### 正常フロー
+
+1. `/look` または `/look/[id]` の描画で例外が投げられると、この画面が代わりに出る
+2. 表示と同時に `digest` だけを記録する
+3. ボタンを押すと `retry` を呼び、同じ頁をもう一度描く
+
+#### 異常フロー
+
+| 場合 | 動き | 道 |
+| --- | --- | --- |
+| `error.message` に DB の文が入っている | 画面にも記録にも出さない | `src/app/look/error.tsx` |
+| `digest` が無い | `{ digest: undefined }` を記録する | `src/app/look/error.tsx` |
+
+- HTTP の状態は、この画面を足しても 500 のままの見込みだが未実測（`loading.tsx` と `<Suspense>` を足していないため）。controller が本番ビルドで確かめる
+
+#### 状態・永続化
+
+なし。
+
+#### 認証認可
+
+- 認可なし（公開）。session を読まない
+
+#### テスト観点
+
+| # | 観点 | 入力 | 期待 |
+| --- | --- | --- | --- |
+| 1 | 文言 | 通常の `error` | 見出しと「エラー」を含む文 |
+| 2 | 本文を出さない | `error.message='SECRET_DB_DETAIL'` | DOM にその文字が無い |
+| 3 | 再試行 | ボタンを押す | `retry` が 1 回 |
+| 4 | 記録 | `error.digest='digest-1'` | `console.error` の引数は `{ digest }` だけで `message`・`stack` を含まない |
+
 ## 実装の単位
 
 コードの TSDoc に `@design` を書く時はこの表に従う（`@impl` の番号はその時に振る）。単位の数え方は `scripts/trace/parse-code.ts` の `parseCodeUnits`（2026-10-24 に実行）。
@@ -498,6 +558,9 @@ DRV-LOOK-005、FREQ-185（範囲外、SEARCH）。
 | `src/features/look/components/PublicLookGrid.tsx` | `<file>` | DD-LOOK-001 |
 | `src/app/look/page.tsx` | `<file>` | DD-LOOK-002 |
 | `src/lib/look/server.ts` | `getPublishedLooks` | DD-LOOK-003 |
+| `src/lib/look/server.ts` | `getPublishedLookList` | DD-LOOK-003 |
+| `src/lib/look/server.ts` | `LookFetchError` | DD-LOOK-003 |
+| `src/app/look/error.tsx` | `<file>` | DD-LOOK-069 |
 | `src/lib/look/server.ts` | `getPublishedLooksCount` | DD-LOOK-004 |
 | `src/lib/look/public.ts` | `resolveLookSeasonFilter` | DD-LOOK-005 |
 | `src/lib/look/public.ts` | `normalizeLookSeasonSelection` | DD-LOOK-005 |
@@ -507,13 +570,13 @@ DRV-LOOK-005、FREQ-185（範囲外、SEARCH）。
 | `src/lib/storage/look-images.ts` | `signLookImageUrl` | DD-LOOK-006 |
 | `src/lib/storage/look-images.ts` | `signLookImageUrls` | DD-LOOK-006 |
 
-- 同じファイルの `getPublishedLookById`（`server.ts`）と `formatLookSeason`（`public.ts`）は詳細の頁（[07_look_detail.md](07_look_detail.md)）が扱う
+- 同じファイルの `getPublishedLookById`・`getAdjacentPublishedLooks`（`server.ts`）と `formatLookSeason`・`parseLookId`（`public.ts`）は詳細の頁（[07_look_detail.md](07_look_detail.md)）が扱う
 - `src/lib/look/server.ts` の `hydrateLooks`・`mapLookRowToPublicLook`、`src/lib/storage/look-images.ts` の `createSignedUrlByPath`、`src/lib/look/public.ts` の `isLookSeasonFilter` は export されず、単位にならない（呼ぶ単位の項目に含めた）
 
 ## 未確認事項
 
 - 一覧のページが要求ごとに描かれるか、キャッシュされるかを本番のビルドで確かめていない
-- 公開の LOOK が増えた時の一覧の重さ（件数を渡さず全部を取り、全部の画像に署名する）
+- 公開の LOOK が 100 件を超えた時の一覧（100 件で切るのでそれより古い LOOK は並ばない。頁分けか季節ごとの取り出しに替える時期。ADR-0159）
 - 関連商品の並びの順（`look_items` に並びの列が無く、DB の返す順に任せる）
 - 届かない分岐（`PublicLookGrid.tsx`、`server.ts`、`public.ts`）を `test-gaps.md` の「届かない分岐」に書くか、コードから除くか
 - この頁の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

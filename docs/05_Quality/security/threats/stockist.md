@@ -186,11 +186,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 非公開の店舗を含む管理の応答 |
 | 脅威 | 中継の CDN・共有のキャッシュ・ブラウザのキャッシュが管理の応答を保ち、別の利用者や後から端末を使う人に渡す |
-| 起こり方 | 管理の窓口の成功・失敗の応答（`route.ts:46,49,52`、`[id]/route.ts:65,68,71`）と、回数の制限の 429・503（`src/features/auth/middleware/rateLimit.ts:30-31,50-54`）に `Cache-Control` が無い |
+| 起こり方 | 管理の窓口の成功・失敗の応答（`route.ts:46,49,52`、`[id]/route.ts:65,68,71`）と、回数の制限の 429・503（`src/features/auth/middleware/rateLimit.ts:30-31,50-54`）に `Cache-Control` が無かった。2026-10-26 に、各 route の `export` を `withNoStore`（`private, no-store`）で包んで直した（SEC-STOCKIST-010）。`proxy.ts` が route の前に返す Origin の 403 には付かない（波 3） |
 | 影響 | 非公開の店舗の一覧が残る。429 が残ると別の利用者まで断られる |
 | 対策 | SEC-STOCKIST-010 |
 | ASVS | V8.2.1 |
-| 根拠 | 2026-04-29 の追加のレビューの Medium の指摘で、今も直っていない。`X-Content-Type-Options` だけは `src/proxy.ts:237` が全部の応答に付ける |
+| 根拠 | 2026-04-29 の追加のレビューの Medium の指摘で、2026-10-26 に直した（route の範囲）。`X-Content-Type-Options` だけは `src/proxy.ts:237` が全部の応答に付ける |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/code/2026-04-29-stockist-review-addendum.md:18`、`docs/05_Quality/reviews/security/security_review_stockist.md:89` |
 
@@ -242,11 +242,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 入力の制約の中身と、DB の内部の様子 |
 | 脅威 | 管理の窓口を呼ぶ者が、誤りの応答から項目ごとの制約を知る。サーバーの記録から DB の誤りの中身が漏れる |
-| 起こり方 | 検証の誤りで `parsed.error.flatten()` をそのまま返す（`route.ts:91-97`、`[id]/route.ts:117-123,219-225`）。本文が JSON でない時は 400 でなく例外の 500 になる（`route.ts:77,147-150`、`[id]/route.ts:102,171-173,204,266-268`）。Supabase の誤りや例外を丸ごと `console.error` に渡す（`route.ts:45,51,118,148`、`[id]/route.ts:70,141,172,236,267,307,338`）。2026-10-26 に、検証の誤りは `{ error: 'Invalid request', fields: [項目の名前] }` の固定の本文にし（`toInvalidStockistResponse`）、壊れた JSON は 400 `{ error: 'Invalid request' }` と結果 `failure` の監査にした。DB の誤りの記録は `{ code }` だけにした。窓口の外側の `catch` の記録は例外のまま残る（SEC-STOCKIST-014） |
+| 起こり方 | 検証の誤りで `parsed.error.flatten()` をそのまま返す（`route.ts:91-97`、`[id]/route.ts:117-123,219-225`）。本文が JSON でない時は 400 でなく例外の 500 になる（`route.ts:77,147-150`、`[id]/route.ts:102,171-173,204,266-268`）。Supabase の誤りや例外を丸ごと `console.error` に渡す（`route.ts:45,51,118,148`、`[id]/route.ts:70,141,172,236,267,307,338`）。2026-10-26 に、検証の誤りは `{ error: 'Invalid request', fields: [項目の名前] }` の固定の本文にし（`toInvalidStockistResponse`）、壊れた JSON は 400 `{ error: 'Invalid request' }` と結果 `failure` の監査にした。DB の誤りの記録は `{ code }` だけにした。窓口の外側の `catch` と公開の取り出しの記録も `describeErrorForLog` で名前と符号だけにした（SEC-STOCKIST-014） |
 | 影響 | 窓口を探る手がかりが増える。記録を見られる人に DB の内部の名前や値が出る |
 | 対策 | SEC-STOCKIST-014 |
 | ASVS | V7.4.1（当てはめは推定） |
-| 根拠 | 2026-04-29 の追加のレビューの Low の指摘で、今も直っていない。応答は権限を持つ人にしか届かないので害は小さい。JSON の壊れと記録の中身は 2026-10-24 の読み直しで見つけた |
+| 根拠 | 2026-04-29 の追加のレビューの Low の指摘で、2026-10-26 に直した。応答は権限を持つ人にしか届かないので害は小さい。JSON の壊れと記録の中身は 2026-10-24 の読み直しで見つけた |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/code/2026-04-29-stockist-review-addendum.md:23`、`docs/05_Quality/reviews/security/security_review_stockist.md:91` |
 

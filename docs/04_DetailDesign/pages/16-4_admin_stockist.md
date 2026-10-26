@@ -113,8 +113,8 @@ graph LR
 - 順番: 認可 → 回数の制限（読みは読みの枠、変更は変更の枠。DD-STOCKIST-038）→ 変更だけ CSRF の token（DD-STOCKIST-036）→ 入力の確かめ → DB → 監査
 - 監査: 変更の方法は `logAudit` を呼ぶ。`resource` は `stockists`、`ip` は見出し `x-forwarded-for` のカンマの前の部分（無ければ `null`）、`user_agent` は見出し `user-agent`（無ければ `null`）。GET は監査しない。送り元を信頼できる値から取ること・値を整えること（SEC-STOCKIST-012）は満たさない
 - 送り元の見出しの読み: `x-forwarded-for` があれば分けた最初の切れを前後の空白を除いて使う。分けた結果は必ず1つ以上の切れを持つので、最初の切れが無い時の道は届かない（推定）
-- 失敗の記録: 窓口の中の DB の `error` は `{ code }` だけを渡す（SEC-STOCKIST-014）。各方法の外側の `catch` は例外をそのまま渡す（満たさない残り。波 1-C の `safe-error.ts`）
-- 応答に `Cache-Control` を付けない（SEC-STOCKIST-010 は満たさない）。応答の列は `ADMIN_STOCKIST_COLUMNS` の 8 列（SEC-STOCKIST-009。2026-10-26）
+- 失敗の記録: 窓口の中の DB の `error` は `{ code }` だけを渡す。各方法の外側の `catch` は `describeErrorForLog(error)`（`src/lib/logging/safe-error.ts`）で `{ name, code }` だけを渡す（SEC-STOCKIST-014。2026-10-26）
+- 応答の `Cache-Control` は全部の戻りで `private, no-store`。各方法を内側の関数（`listStockists`・`createStockist`・`getStockist`・`putStockist`・`patchStockist`・`deleteStockist`）にし、`export` が共有の `withNoStore(await …)` で返す。認可の 401・403・503、CSRF の拒否、回数の 429・503、400、404、外側の `catch` の 500 も同じ。`proxy.ts` が窓口の前に返す Origin の 403 には付かない（SEC-STOCKIST-010、ADR-0266。2026-10-26）。応答の列は `ADMIN_STOCKIST_COLUMNS` の 8 列（SEC-STOCKIST-009。2026-10-26）
 
 ## 詳細設計
 
@@ -359,7 +359,7 @@ SCR-STOCKIST-006、FLOW-STOCKIST-002（その上は FR-ADMIN-006）
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | API-STOCKIST-001、API-STOCKIST-002、ARC-STOCKIST-002、ARC-STOCKIST-004、DATA-STOCKIST-001、DATA-STOCKIST-002、DATA-STOCKIST-004、STATE-STOCKIST-001、SEC-STOCKIST-006、SEC-STOCKIST-009、SEC-STOCKIST-011、SEC-STOCKIST-014 |
+| 上位 | API-STOCKIST-001、API-STOCKIST-002、ARC-STOCKIST-002、ARC-STOCKIST-004、DATA-STOCKIST-001、DATA-STOCKIST-002、DATA-STOCKIST-004、STATE-STOCKIST-001、SEC-STOCKIST-006、SEC-STOCKIST-009、SEC-STOCKIST-010、SEC-STOCKIST-011、SEC-STOCKIST-014 |
 | 根拠 | 非公開を含む一覧と店の作成は、窓口で `admin.stockists.read`・`admin.stockists.manage` と aal2 を確かめ（SEC-STOCKIST-006、DATA-STOCKIST-004）、表の操作も利用者の JWT で RLS に通して、窓口の確かめが崩れても DB が断るようにする（ARC-STOCKIST-002、DATA-STOCKIST-002）。変更の送り元は、窓口に届く前に proxy の Origin の確かめが見る（ARC-STOCKIST-004）。表に長さの制約が無いので入口で6つの値の必須と上限と字の種類を確かめ（API-STOCKIST-002、DATA-STOCKIST-001、SEC-STOCKIST-011）、状態は2つの値に限る（STATE-STOCKIST-001）。誤りの応答は項目の名前だけの固定の本文にして制約の中身を出さず、壊れた JSON は 400 にする（SEC-STOCKIST-014）。一覧は id の順で、画面で使う 8 列だけを返す（API-STOCKIST-001、SEC-STOCKIST-009） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
@@ -369,7 +369,7 @@ SCR-STOCKIST-006、FLOW-STOCKIST-002（その上は FR-ADMIN-006）
 
 #### 対応要件
 
-API-STOCKIST-001、API-STOCKIST-002、ARC-STOCKIST-002、ARC-STOCKIST-004、DATA-STOCKIST-001・002・004、STATE-STOCKIST-001、SEC-STOCKIST-006・009・011・014
+API-STOCKIST-001、API-STOCKIST-002、ARC-STOCKIST-002、ARC-STOCKIST-004、DATA-STOCKIST-001・002・004、STATE-STOCKIST-001、SEC-STOCKIST-006・009・010・011・014
 
 #### 入出力
 
@@ -434,7 +434,8 @@ GET は `admin.stockists.read`、POST は `admin.stockists.manage`、どちら�
 - POST で本文が JSON でない時に 400 `Invalid request`、表に触らず監査 failure（`Invalid JSON`）
 - POST で値が1つでも形に合わない時（例: 店舗名が空白だけ・256字・改行入り、電話が51字・漢字入り、状態が `draft`）に 400 `{error:'Invalid request', fields:[項目の名前]}`（`details`・`fieldErrors`・`formErrors` を含まない）、監査 failure
 - `schemas.ts` の単体試験（`tests/unit/features/stockist/stockist-schemas.test.ts`）で、店名の改行・書式文字（ゼロ幅空白）・行区切りを拒み、全角空白入りを通す。電話の `03-1234-5678`・`+81 3 1234 5678`・`（03）1234-5678` を通し、英字・漢字・途中の改行を拒む。`toInvalidStockistResponse` が項目の名前を重複なしで返す
-- 失敗時の `console.error` の第 2 引数が `{ code }` だけ（`Error` オブジェクトを渡さない）
+- 失敗時の `console.error` の第 2 引数が `{ code }` だけ（`Error` オブジェクトを渡さない）。外側の `catch` の第 2 引数は `{ name, code }` ちょうどで、投げた `Error` の `message` を含まない
+- 戻りの全分岐（GET: 200・401・403・429・503・DB の 500・`catch` の 500。POST: 201・400 の2種・401・403・CSRF の 403・429・503・500 の2種）で `Cache-Control` が正確に `private, no-store`。元の応答が `s-maxage=60` を持っていても置き換わる
 - POST の insert の本文が前後の空白を除いた6つの値で、`type` を含まない
 - POST で insert の失敗の時に監査 error と 500 `Failed to save stockist`
 - POST の成功で監査 success（`resource_id` が新しい id の文字、`detail` に店舗名）と 201 `{success:true, id}`、`applyRotatedCsrfCookie` に応答と CSRF の結果を渡す（今ある Cookie の試験を引き継ぐ）
@@ -445,7 +446,7 @@ GET は `admin.stockists.read`、POST は `admin.stockists.manage`、どちら�
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | API-STOCKIST-003、API-STOCKIST-004、API-STOCKIST-005、API-STOCKIST-006、ARC-STOCKIST-002、ARC-STOCKIST-004、DATA-STOCKIST-001、DATA-STOCKIST-002、DATA-STOCKIST-004、STATE-STOCKIST-001、SEC-STOCKIST-006、SEC-STOCKIST-009、SEC-STOCKIST-011、SEC-STOCKIST-013、SEC-STOCKIST-014 |
+| 上位 | API-STOCKIST-003、API-STOCKIST-004、API-STOCKIST-005、API-STOCKIST-006、ARC-STOCKIST-002、ARC-STOCKIST-004、DATA-STOCKIST-001、DATA-STOCKIST-002、DATA-STOCKIST-004、STATE-STOCKIST-001、SEC-STOCKIST-006、SEC-STOCKIST-009、SEC-STOCKIST-010、SEC-STOCKIST-011、SEC-STOCKIST-013、SEC-STOCKIST-014 |
 | 根拠 | 編集の画面に非公開の店の中身を渡す読みと、店を変える3つの操作は、窓口で権限と aal2 を確かめ（SEC-STOCKIST-006、DATA-STOCKIST-004）、表も利用者の JWT で RLS に通す（ARC-STOCKIST-002、DATA-STOCKIST-002）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新（PUT）と分ける（API-STOCKIST-005、STATE-STOCKIST-001）。PUT は作成と同じ必須と上限を当てて決まりを1つにする（API-STOCKIST-004、DATA-STOCKIST-001）。削除は行を消して戻さない（API-STOCKIST-006）。道の id は安全に表せる正の整数だけを受け、DB へ変な値を渡さない（API-STOCKIST-003）。更新・切り替え・削除は変えた行を受け取り、0 行は成功にせず 404 にして、削除の監査に消した店の中身を残す（SEC-STOCKIST-013）。誤りの応答は項目の名前だけの固定の本文にし、壊れた JSON は 400 にする（SEC-STOCKIST-014）。変更の送り元は、窓口に届く前に proxy の Origin の確かめが見る（ARC-STOCKIST-004） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
@@ -455,7 +456,7 @@ GET は `admin.stockists.read`、POST は `admin.stockists.manage`、どちら�
 
 #### 対応要件
 
-API-STOCKIST-003〜006、ARC-STOCKIST-002、ARC-STOCKIST-004、DATA-STOCKIST-001・002・004、STATE-STOCKIST-001、SEC-STOCKIST-006・009・011・013・014
+API-STOCKIST-003〜006、ARC-STOCKIST-002、ARC-STOCKIST-004、DATA-STOCKIST-001・002・004、STATE-STOCKIST-001、SEC-STOCKIST-006・009・010・011・013・014
 
 #### 入出力
 
@@ -533,6 +534,7 @@ GET は `admin.stockists.read`、ほかは `admin.stockists.manage`、どれも�
 - PUT・PATCH・DELETE で表の失敗の時に監査 error と、それぞれの 500 の文。`console.error` の第 2 引数が `{ code }` だけ
 - PUT・PATCH・DELETE の成功で監査 success（`resource_id` が id の文字、`detail` がそれぞれの形）と 200 `{success:true}`、`applyRotatedCsrfCookie` を呼ぶ
 - 4つの方法で、`params` が例外を投げた時などに 500 `Internal server error`
+- 4つの方法の戻りの全分岐（200・400・401・403・503・429・404・500・外側の `catch` の 500・CSRF の 403）で `Cache-Control` が正確に `private, no-store`。外側の `catch` の `console.error` の第 2 引数が `{ name, code }` ちょうど
 
 ### DD-STOCKIST-036 CSRF の token の確かめと拒否の応答への変換
 

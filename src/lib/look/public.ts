@@ -19,6 +19,13 @@ export type PublicLook = {
   linkedItems: PublicLookLinkedItem[];
 };
 
+/**
+ * 一覧とホームが受け取る LOOK。説明文を持たない。
+ *
+ * @remarks 一覧の応答から説明文を外す決まり（SEC-LOOK-009）を型でも守る。説明文が要る詳細だけが PublicLook を使う。
+ */
+export type PublicLookListItem = Omit<PublicLook, 'themeDescription'>;
+
 export const LOOK_SEASON_OPTIONS = ['ALL', 'SS', 'AW'] as const;
 
 export type LookSeasonFilter = (typeof LOOK_SEASON_OPTIONS)[number];
@@ -29,6 +36,22 @@ type LookSeasonLike = {
 
 function isLookSeasonFilter(value: string): value is LookSeasonFilter {
   return (LOOK_SEASON_OPTIONS as readonly string[]).includes(value);
+}
+
+/**
+ * 詳細の URL の id を正の整数にする。合わなければ null。
+ *
+ * @impl IMPL-LOOK-147
+ * @design DD-LOOK-068
+ * @remarks id は URL から来る。Number() に任せると '1e3'・'1.5'・' 1'・'0x10' が通るので、10 進の数字だけを受ける。桁を 16 に切り、安全な整数でなければ弾く。
+ */
+export function parseLookId(value: string): number | null {
+  if (!/^[1-9]\d{0,15}$/.test(value)) {
+    return null;
+  }
+
+  const id = Number(value);
+  return Number.isSafeInteger(id) ? id : null;
 }
 
 /**

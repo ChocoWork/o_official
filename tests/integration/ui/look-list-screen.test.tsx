@@ -1,16 +1,16 @@
 import React from 'react';
 import userEvent from '@testing-library/user-event';
 import { render, screen, waitFor, within } from '@testing-library/react';
-import type { PublicLook } from '@/lib/look/public';
+import type { PublicLookListItem } from '@/lib/look/public';
 
 const pushMock = jest.fn();
 let currentQuery = '';
-const mockLooks: { current: PublicLook[] } = { current: [] };
-const mockGetPublishedLooks = jest.fn(async (_limit?: number) => mockLooks.current);
+const mockLooks: { current: PublicLookListItem[] } = { current: [] };
+const mockGetPublishedLookList = jest.fn(async () => mockLooks.current);
 
 // ページ・部品・共通 UI（絞り込み・引き出し・ボタン）は本物を通し、公開の LOOK の取り出しだけを固定の並びで返す偽物にする
 jest.mock('@/lib/look/server', () => ({
-  getPublishedLooks: (limit?: number) => mockGetPublishedLooks(limit),
+  getPublishedLookList: () => mockGetPublishedLookList(),
 }));
 
 jest.mock('next/link', () => {
@@ -45,13 +45,12 @@ jest.mock('next/navigation', () => ({
 const lookPageModule = require('@/app/look/page');
 const LookPage = lookPageModule.default;
 
-function makeLook(id: number, seasonType: 'SS' | 'AW', overrides: Partial<PublicLook> = {}): PublicLook {
+function makeLook(id: number, seasonType: 'SS' | 'AW', overrides: Partial<PublicLookListItem> = {}): PublicLookListItem {
   return {
     id,
     seasonYear: 2026,
     seasonType,
     theme: `Theme ${id}`,
-    themeDescription: `Description ${id}`,
     imageUrls: [`https://signed.test/look-${id}.jpg`],
     createdAt: `2026-0${id}-01T00:00:00Z`,
     linkedItems: [],
@@ -102,20 +101,20 @@ describe('SCR-LOOK-001 look list screen', () => {
       description: metadata.description,
       images: ['/mainphoto.png'],
     });
-    expect(mockGetPublishedLooks).not.toHaveBeenCalled();
+    expect(mockGetPublishedLookList).not.toHaveBeenCalled();
   });
 
-  it('SCR-LOOK-001 公開の LOOK を件数を絞らず全部取り、見出し h1 を置かずに取り出した並びのまま格子にする', async () => {
+  it('SCR-LOOK-001 公開の LOOK を一覧用の取り出しで1回取り、見出し h1 を置かずに取り出した並びのまま格子にする', async () => {
     await renderLookPage();
 
-    expect(mockGetPublishedLooks).toHaveBeenCalledTimes(1);
-    expect(mockGetPublishedLooks).toHaveBeenCalledWith(undefined);
+    expect(mockGetPublishedLookList).toHaveBeenCalledTimes(1);
+    expect(mockGetPublishedLookList).toHaveBeenCalledWith();
     expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
     expect(cardThemes()).toEqual(['Theme 4', 'Theme 3', 'Theme 2', 'Theme 1']);
   });
 
-  it('SCR-LOOK-001 件数が多くてもページングせず全件を一度に出す', async () => {
+  it('SCR-LOOK-001 件数が多くてもページングせず取り出した分を一度に出す', async () => {
     mockLooks.current = Array.from({ length: 30 }, (_, index) => makeLook(index + 1, index % 2 === 0 ? 'SS' : 'AW'));
 
     await renderLookPage();

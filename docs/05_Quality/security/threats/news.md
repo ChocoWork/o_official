@@ -116,7 +116,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 署名つき URL と、公開の取り出しの結果の新しさ |
 | 脅威 | 中継の CDN・共有のキャッシュが応答を保ち、別の利用者に古い応答や署名つき URL を渡す |
-| 起こり方 | `/api/news` の成功の応答（`src/app/api/news/route.ts:39`）、失敗の応答（`:42`）、回数の制限の 429・503（`src/features/auth/middleware/rateLimit.ts:30-31,50-54`）に `Cache-Control` が無い。`Vary` も無い |
+| 起こり方 | `/api/news` の成功の応答（`src/app/api/news/route.ts:39`）、失敗の応答（`:42`）、回数の制限の 429・503（`src/features/auth/middleware/rateLimit.ts:30-31,50-54`）に `Cache-Control` が無い。`Vary` も無い（2026-10-26 に、`/api/news` の全ての応答を `withNoStore` で包み、`Cache-Control: private, no-store` を付けた。SEC-NEWS-006。`proxy.ts`・`next.config.ts` が後から上書きしないかは E2E が見出しの値で確かめる） |
 | 影響 | 非公開にした記事の応答が残る。429 が残ると、別の利用者まで断られる |
 | 対策 | SEC-NEWS-006 |
 | ASVS | V8.2.1 |
@@ -200,7 +200,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 取り出しの正しさと DB の余力 |
 | 脅威 | 閲覧者・管理者が、想定外の `category`・`id`・`limit` を送る |
-| 起こり方 | `/api/news` の `category` は許可の一覧も長さの上限も確かめずに取り出しへ渡す（`src/app/api/news/route.ts:22,34-37`、`src/features/news/services/public.ts:22-24`）。詳細の `[id]` も数として確かめずに渡す（`src/app/news/[id]/page.tsx:65,91`、`public.ts:54-67`）。管理の `[id]` も同じ（`src/app/api/admin/news/[id]/route.ts:47`） |
+| 起こり方 | `/api/news` の `category` は許可の一覧も長さの上限も確かめずに取り出しへ渡す（`src/app/api/news/route.ts:22,34-37`、`src/features/news/services/public.ts:22-24`）。詳細の `[id]` も数として確かめずに渡す（`src/app/news/[id]/page.tsx:65,91`、`public.ts:54-67`）。管理の `[id]` も同じ（`src/app/api/admin/news/[id]/route.ts:47`）。2026-10-26 に公開の側を直した: `/api/news` の `category` は `resolveNewsCategory` を通して許可の一覧の値だけを渡し、外れは ALL とする。公開の詳細の `[id]` は `isNewsId`（bigint の形）で確かめ、外れたら DB を呼ばず 404（`src/features/news/lib/news-input.ts`。SEC-NEWS-012）。管理の `[id]`（GET・PUT・PATCH・DELETE）と編集のページも直した: 管理の `[id]` は権限の確かめの後に `isNewsId` を当て、外れたら DB にも置き場にも触れず 404 にする（`0`・`007` も断る）。編集のページは `isNewsId` を通らない id では要求を送らない |
 | 影響 | SQL の差し込みにはならない（PostgREST が引数として渡す）。長い値・壊れた値が DB まで届き、失敗の形がそろわない |
 | 対策 | SEC-NEWS-012 |
 | ASVS | V5.1.3、V5.1.4 |
@@ -270,7 +270,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 置き場と、画像を開く閲覧者・管理者の端末 |
 | 脅威 | 管理の権限を持つ人（または乗っ取った者）が、画像でないファイルを画像と偽って書き込む |
-| 起こり方 | 画像の種類は送る側が申告する `File.type` だけで確かめ、中身のしるし（ファイルの頭）は見ない（`src/app/api/admin/news/route.ts:87`、`src/app/api/admin/news/[id]/route.ts:113`）。直す時（PUT）は保存の名前の拡張子を送ったファイルの名前から取る（`[id]/route.ts:121`）ので、`.html` などの拡張子のファイルが置き場に入りうる。作る時（POST）は確かめた種類から拡張子を決める（`route.ts:18-23,98-99`）。置き場には大きさと種類の上限が無い（`supabase/seed.sql:10-14`） |
+| 起こり方 | 画像の種類は送る側が申告する `File.type` だけで確かめ、中身のしるし（ファイルの頭）は見ない（`src/app/api/admin/news/route.ts:87`、`src/app/api/admin/news/[id]/route.ts:113`）。直す時（PUT）は保存の名前の拡張子を送ったファイルの名前から取る（`[id]/route.ts:121`）ので、`.html` などの拡張子のファイルが置き場に入りうる。作る時（POST）は確かめた種類から拡張子を決める（`route.ts:18-23,98-99`）。置き場には大きさと種類の上限が無い（`supabase/seed.sql:10-14`）。2026-10-26 に窓口の側を直した: POST・PUT とも、申告の種類と先頭の印（JPEG・PNG・WebP・GIF）が同じ時だけ受け、置き場に書く前に確かめる。保存名は `news/<日付>/<uuid>.<検出した種類の拡張子>` で、送られたファイル名は使わない（`src/features/news/services/admin-images.ts`。SEC-NEWS-017）。置き場の大きさと種類の上限の設定は別の作業で残る |
 | 影響 | 置き場に想定外のファイルが残る。`contentType` は確かめた種類のままなので、ブラウザが HTML として開く害は小さい（推定） |
 | 対策 | SEC-NEWS-017 |
 | ASVS | V12.2.1、V12.3.1、V12.1.1 |
@@ -284,7 +284,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 消した・非公開にした記事の画像と、置き場の容量 |
 | 脅威 | 記事を消しても画像が置き場に残り、道筋か古い署名つき URL を知る者が開く。置き場が無駄に埋まる |
-| 起こり方 | 削除（DELETE）は DB の行だけを消す（`src/app/api/admin/news/[id]/route.ts:253-256`）。画像の差し替え（PUT）は古い画像を消さない（`[id]/route.ts:147-163`）。作成で DB への保存に失敗した時も、上げた画像を消さない（`src/app/api/admin/news/route.ts:137-146`） |
+| 起こり方 | 削除（DELETE）は DB の行だけを消す（`src/app/api/admin/news/[id]/route.ts:253-256`）。画像の差し替え（PUT）は古い画像を消さない（`[id]/route.ts:147-163`）。作成で DB への保存に失敗した時も、上げた画像を消さない（`src/app/api/admin/news/route.ts:137-146`）。2026-10-26 に直した: 行を先に変え、その後で置き場から消す。削除は消した行の `image_url`、差し替えは古い画像（更新が失敗・0 行の時はその要求で上げた新しい画像）、作成の失敗は上げた画像を、service role の client で消す。消す道筋は 1 本ずつ `news/` の下の安全な文字だけに確かめ、置き場の失敗は記録するだけで応答は成功のまま返す。PUT は上げる前に古い値を読むので、無い id の PUT で上げた画像が残らない（SEC-NEWS-018）。本番に既にある孤児の画像の掃除は別の運用作業で残る |
 | 影響 | 消したつもりの画像が残る。THR-NEWS-003 の設定が崩れた時に開ける物が増える |
 | 対策 | SEC-NEWS-018 |
 | ASVS | ASVS 未対応付け |
@@ -298,7 +298,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | DB の構造・接続の情報・Cookie と token |
 | 脅威 | 記録を読める者（ホスティングの記録の閲覧者など）や、応答を受けた者が、内部の情報を得る |
-| 起こり方 | `/api/news` と管理の窓口は、例外を丸ごと `console.error` に渡す（`src/app/api/news/route.ts:41`、`src/app/api/admin/news/route.ts:117,144,166,189,201`）。応答の本文は固定の文なので、応答からは漏れない（`route.ts:42`）。2026-04-18 には `src/lib/supabase/server.ts` が Cookie の頭や token の一部を記録に書いていた（Critical） |
+| 起こり方 | `/api/news` と管理の窓口は、例外を丸ごと `console.error` に渡す（`src/app/api/news/route.ts:41`、`src/app/api/admin/news/route.ts:117,144,166,189,201`）。応答の本文は固定の文なので、応答からは漏れない（`route.ts:42`）。2026-04-18 には `src/lib/supabase/server.ts` が Cookie の頭や token の一部を記録に書いていた（Critical）。2026-10-26 に、管理のニュースの窓口（一覧・作成・1件の読み書き・画像の後始末）の記録は `describeErrorForLog` で誤りの名前と符号だけにした（`message`・詳細・ヒントは残さない） |
 | 影響 | 記録から DB の構造や失敗の中身が分かる |
 | 対策 | SEC-NEWS-019 |
 | ASVS | V7.1.1 |
@@ -312,7 +312,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 障害・RLS の崩れに気づく力と、公開の画面の使える状態 |
 | 脅威 | DB・RLS・service role の障害が起きても、画面は「記事が無い」と見せ、誰も気づかない |
-| 起こり方 | 公開の取り出しは Supabase の `error` を見ず `data` だけを使う（`src/features/news/services/public.ts:30,73,95`）。管理の一覧は取得の失敗と0件を同じ「ニュース記事がありません」で出す（`src/components/NewsSection.tsx:29-37,91-93`）。管理の1件の取得は DB のどんな失敗も 404 にする（`src/app/api/admin/news/[id]/route.ts:64-66`）。公開の一覧は毎回 service role の client を作って署名するので、その失敗が一覧全体を止める（`public.ts:11-14,32-34`） |
+| 起こり方 | 公開の取り出しは Supabase の `error` を見ず `data` だけを使う（2026-10-26 に直した。一覧・詳細は `error` を読んで `NewsFetchError` を投げ、記録は誤りの名前と符号だけにする。`/news`・`/news/[id]` は `error.tsx` の誤りの画面、`/api/news` は固定の 500。詳細は `.maybeSingle()` で「無い」と「失敗」を分け、前後のリンクだけは失敗を記録して前後なしで返す。ホームは握って空にする。SEC-NEWS-020）。管理の一覧は取得の失敗と0件を同じ「ニュース記事がありません」で出す（`src/components/NewsSection.tsx:29-37,91-93`）。管理の1件の取得は DB のどんな失敗も 404 にする（`src/app/api/admin/news/[id]/route.ts:64-66`）。管理の2つも 2026-10-26 に直した: 一覧は取得の失敗に「ニュース記事の取得に失敗しました」の知らせと再読み込みのボタンを出して 0 件の文と分け、1件の取得は `.maybeSingle()` で行が無い時だけ 404、DB の失敗は固定の文の 500 にする。公開の一覧は毎回 service role の client を作って署名するので、その失敗が一覧全体を止める（2026-10-26 に、公開の取り出しが署名も service role も持たなくなって解消。SEC-NEWS-005） |
 | 影響 | 障害や RLS の設定の崩れ（THR-NEWS-001 の守りの片方が崩れた時を含む）が長く見過ごされる。署名の障害で一覧の文字まで出なくなる |
 | 対策 | SEC-NEWS-020 |
 | ASVS | ASVS 未対応付け |
@@ -386,7 +386,7 @@ flowchart LR
 | 影響 | 管理者の権限で、記事と関係の無い窓口の GET と PUT を起こされる。GET の応答の `error` は画面の文に出る。どの窓口に届くか、`useParams` が `%2F` をどう戻すかで害の大きさが変わる（推定） |
 | 対策 | SEC-NEWS-012 |
 | ASVS | V5.1.3（当てはめは推定） |
-| 根拠 | どのレビューにも無く、2026-10-24 のセキュリティの見直しで気づいた。記事の id は数なので、道に入れる前に数だけかを確かめれば道が閉じる。実際に開いての確かめはしていない |
+| 根拠 | どのレビューにも無く、2026-10-24 のセキュリティの見直しで気づいた。記事の id は数なので、道に入れる前に数だけかを確かめれば道が閉じる。実際に開いての確かめはしていない。2026-10-26 に直した: 編集のページは `isNewsId` を通らない id では要求を送らず（GET も PUT の `submitUrl` も作らない）、通った id も `encodeURIComponent` を通して道に入れる |
 | 状態 | 推定 |
 | 出どころ | 実装から推定（2026-10-24 の見直し） |
 

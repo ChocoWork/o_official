@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { PublicLookGrid } from '@/features/look/components/PublicLookGrid';
-import type { PublicLook } from '@/lib/look/public';
+import type { PublicLookListItem } from '@/lib/look/public';
 
 const pushMock = jest.fn();
 
@@ -31,13 +31,12 @@ jest.mock('next/navigation', () => ({
 const COAT = { category: 'COAT', id: 10, name: 'Wool coat', price: 48000, imageUrl: 'https://signed.test/coat.jpg' };
 const BAG = { category: 'BAG', id: 11, name: 'Leather bag', price: 12000, imageUrl: 'https://signed.test/bag.jpg' };
 
-function makeLook(overrides: Partial<PublicLook> = {}): PublicLook {
+function makeLook(overrides: Partial<PublicLookListItem> = {}): PublicLookListItem {
   return {
     id: 7,
     seasonYear: 2026,
     seasonType: 'AW',
     theme: 'Quiet hours',
-    themeDescription: 'Quiet hours description',
     imageUrls: ['https://signed.test/first.jpg', 'https://signed.test/second.jpg'],
     createdAt: '2026-09-01T00:00:00Z',
     linkedItems: [COAT, BAG],
@@ -45,7 +44,7 @@ function makeLook(overrides: Partial<PublicLook> = {}): PublicLook {
   };
 }
 
-function renderCard(look: PublicLook = makeLook()) {
+function renderCard(look: PublicLookListItem = makeLook()) {
   render(<PublicLookGrid variant="catalog" looks={[look]} />);
   return screen.getByTestId('look-card');
 }

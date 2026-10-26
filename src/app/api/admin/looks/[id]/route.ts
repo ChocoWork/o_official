@@ -6,7 +6,12 @@
  * @design DD-LOOK-064
  * @remarks 取り出しは読む権限、表を変える3つの操作は管理の権限と、操作ごとに権限を分けて窓口で確かめる（SEC-LOOK-019）。
  * 変更は種類ごとに送り元と操作者の2段の回数を数える（SEC-LOOK-011）。
+ * id は URL から来るので、権限の確かめの後・DB に触れる前に正の整数だけを受け、JSON が壊れた要求は 500 にせず 400 で断る（SEC-LOOK-016）。
+ * 1件の存在確認は「無い」と「DB の失敗」を分け、誤りの文は応答にも記録にも出さない（SEC-LOOK-021）。
  * 更新は画像を付けた時だけ全部を差し替え、文字だけの直しで画像を上げ直させない。
+ * 画像は申告の種類と中身の印が合う物だけを、量の枠を使う前に受け、保存名は自分で作る（SEC-LOOK-013）。
+ * 行を変えた後に古い画像を、行が変わらなかった時は新しく上げた画像を置き場から消し、削除は行を消した後に画像を消す。
+ * 置き場の削除の失敗は監査に件数を残すだけで、応答は成功のまま返す（SEC-LOOK-014）。
  * 公開の切り替えで他の欄と画像に触れず、送り直しの手間と上書きの事故を避けるため、状態の列だけを変える。
  * 失敗の監査は認可が通って操作者が分かった後だけ残す。
  */
@@ -20,6 +25,16 @@ import {
   validateLookImageBatch,
 } from '@/features/look/services/admin-rate-limit';
 import { logAdminLookAudit } from '@/features/look/services/admin-audit';
+import {
+  LOOK_IMAGE_BUCKET,
+  buildLookImagePath,
+  listRemovableLookImagePaths,
+  prepareLookImage,
+  removeLookImages,
+  type PreparedLookImage,
+} from '@/features/look/services/admin-images';
+import { parseLookId } from '@/lib/look/public';
+import { describeErrorForLog } from '@/lib/logging/safe-error';
 import { signLookImageUrls } from '@/lib/storage/look-images';
 
 const lookStatusSchema = z.enum(['private', 'published']);
@@ -67,6 +82,15 @@ function parseJsonField<T>(value: FormDataEntryValue | null, schema: z.ZodType<T
   return schema.parse(parsedJson);
 }
 
+/** 置き場の削除が失敗した時だけ、監査に残す件数を返す。 */
+function cleanupMetadata(result: 'ok' | 'failed', count: number): Record<string, unknown> {
+  return result === 'failed' ? { image_cleanup: 'failed', orphaned_count: count } : {};
+}
+
+function invalidIdResponse() {
+  return NextResponse.json({ error: 'Invalid look id' }, { status: 400 });
+}
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
@@ -75,15 +99,24 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return authz.response;
     }
 
+    if (parseLookId(id) === null) {
+      return invalidIdResponse();
+    }
+
     const supabase = await createServiceRoleClient();
 
     const { data: lookData, error: lookError } = await supabase
       .from('looks')
       .select('*')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
-    if (lookError || !lookData) {
+    if (lookError) {
+      console.error('Failed to fetch look:', describeErrorForLog(lookError));
+      return NextResponse.json({ error: 'Failed to fetch look' }, { status: 500 });
+    }
+
+    if (!lookData) {
       return NextResponse.json({ error: 'Look not found' }, { status: 404 });
     }
 
@@ -93,7 +126,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       .eq('look_id', id);
 
     if (lookItemsError) {
-      console.error('Failed to fetch look items:', lookItemsError);
+      console.error('Failed to fetch look items:', describeErrorForLog(lookItemsError));
       return NextResponse.json({ error: 'Failed to fetch look items' }, { status: 500 });
     }
 
@@ -116,7 +149,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       { status: 200 }
     );
   } catch (error) {
-    console.error('GET /api/admin/looks/:id error:', error);
+    console.error('GET /api/admin/looks/:id error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -124,6 +157,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   let actorId: string | null = null;
   let actorEmail: string | null = null;
+  // 新しく上げた画像のうち、まだ行が指していない物。例外の時にここから消す。
+  let unreferencedPaths: string[] = [];
+  let supabaseForCleanup: Awaited<ReturnType<typeof createServiceRoleClient>> | null = null;
 
   try {
     const { id } = await params;
@@ -143,6 +179,20 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     if (rateLimited) {
       return rateLimited;
+    }
+
+    if (parseLookId(id) === null) {
+      await logAdminLookAudit({
+        request,
+        actorId: authz.userId,
+        actorEmail: authz.actorEmail,
+        action: 'admin.look.update',
+        outcome: 'failure',
+        detail: 'Invalid look id',
+        metadata: { id_length: id.length },
+      });
+
+      return invalidIdResponse();
     }
 
     const formData = await request.formData();
@@ -199,6 +249,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: imageBatchError }, { status: 400 });
     }
 
+    const preparedImages: PreparedLookImage[] = [];
+
     for (const image of imageFiles) {
       if (!allowedImageTypes.has(image.type)) {
         await logAdminLookAudit({
@@ -234,17 +286,54 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
         return NextResponse.json({ error: 'Image size must be 5MB or less' }, { status: 400 });
       }
+
+      // 申告の種類と中身の印が合う物だけを受ける。置き場に書く前・量の枠を使う前に済ませる。
+      const prepared = await prepareLookImage(image);
+      if (!prepared) {
+        await logAdminLookAudit({
+          request,
+          actorId: authz.userId,
+          actorEmail: authz.actorEmail,
+          action: 'admin.look.update',
+          outcome: 'failure',
+          detail: 'Unsupported image type',
+          resourceId: id,
+          metadata: {
+            image_type: image.type,
+          },
+        });
+
+        return NextResponse.json({ error: 'Unsupported image type' }, { status: 400 });
+      }
+
+      preparedImages.push(prepared);
     }
 
     const supabase = await createServiceRoleClient();
+    supabaseForCleanup = supabase;
 
     const { data: existingLook, error: existingLookError } = await supabase
       .from('looks')
       .select('id,status,image_urls')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
-    if (existingLookError || !existingLook) {
+    if (existingLookError) {
+      await logAdminLookAudit({
+        request,
+        actorId: authz.userId,
+        actorEmail: authz.actorEmail,
+        action: 'admin.look.update',
+        outcome: 'failure',
+        detail: 'Failed to fetch look',
+        resourceId: id,
+      });
+
+      console.error('Failed to fetch look:', describeErrorForLog(existingLookError));
+      return NextResponse.json({ error: 'Failed to fetch look' }, { status: 500 });
+    }
+
+    if (!existingLook) {
       await logAdminLookAudit({
         request,
         actorId: authz.userId,
@@ -278,7 +367,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         },
       });
 
-      console.error('Failed to validate linked items:', fetchItemsError);
+      console.error('Failed to validate linked items:', describeErrorForLog(fetchItemsError));
       return NextResponse.json({ error: 'Failed to validate linked items' }, { status: 500 });
     }
 
@@ -310,23 +399,24 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return uploadQuotaResponse;
     }
 
-    let imageUrls = Array.isArray(existingLook.image_urls) ? existingLook.image_urls : [];
+    const previousImageUrls: unknown = existingLook.image_urls;
+    let imageUrls: string[] = Array.isArray(previousImageUrls) ? previousImageUrls : [];
+    const newImagePaths: string[] = [];
 
-    if (imageFiles.length > 0) {
-      imageUrls = [];
+    if (preparedImages.length > 0) {
+      for (const prepared of preparedImages) {
+        const filePath = buildLookImagePath(prepared.extension);
 
-      for (const image of imageFiles) {
-        const extension = image.name.includes('.') ? image.name.split('.').pop() : 'jpg';
-        const filePath = `looks/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
-        const imageBuffer = Buffer.from(await image.arrayBuffer());
-
-        const { error: uploadError } = await supabase.storage.from('look-images').upload(filePath, imageBuffer, {
-          contentType: image.type,
+        const { error: uploadError } = await supabase.storage.from(LOOK_IMAGE_BUCKET).upload(filePath, prepared.buffer, {
+          contentType: prepared.contentType,
           cacheControl: '3600',
           upsert: false,
         });
 
         if (uploadError) {
+          const cleanup = await removeLookImages(supabase, newImagePaths);
+          unreferencedPaths = [];
+
           await logAdminLookAudit({
             request,
             actorId: authz.userId,
@@ -336,24 +426,22 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
             detail: 'Failed to upload look image',
             resourceId: id,
             metadata: {
-              storage_path: filePath,
-              image_type: image.type,
+              image_type: prepared.contentType,
+              ...cleanupMetadata(cleanup, newImagePaths.length),
             },
           });
 
-          console.error('Failed to upload look image:', uploadError);
-          return NextResponse.json(
-            {
-              error: `Failed to upload image: ${uploadError.message}`,
-            },
-            { status: 500 }
-          );
+          console.error('Failed to upload look image:', describeErrorForLog(uploadError));
+          return NextResponse.json({ error: 'Failed to upload image' }, { status: 500 });
         }
 
         // Store the file path (not a public URL) so signed URLs can be
         // generated at serve time after the bucket was made private.
-        imageUrls.push(filePath);
+        newImagePaths.push(filePath);
+        unreferencedPaths = [...newImagePaths];
       }
+
+      imageUrls = [...newImagePaths];
     }
 
     const { error: updateLookError } = await supabase
@@ -369,6 +457,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       .eq('id', id);
 
     if (updateLookError) {
+      // 行は変わっていないので、この要求で上げた新しい画像だけが残骸になる。
+      const cleanup = await removeLookImages(supabase, newImagePaths);
+      unreferencedPaths = [];
+
       await logAdminLookAudit({
         request,
         actorId: authz.userId,
@@ -380,11 +472,20 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         metadata: {
           status: parsedPayload.data.status,
           linked_item_ids: parsedPayload.data.linkedItemIds,
+          ...cleanupMetadata(cleanup, newImagePaths.length),
         },
       });
 
-      console.error('Failed to update look:', updateLookError);
+      console.error('Failed to update look:', describeErrorForLog(updateLookError));
       return NextResponse.json({ error: 'Failed to update look' }, { status: 500 });
+    }
+
+    // 行が新しい画像を指したので、新しい画像はもう消さない。差し替えた古い画像を消す。
+    unreferencedPaths = [];
+    let oldCleanup: Record<string, unknown> = {};
+    if (newImagePaths.length > 0) {
+      const removablePaths = listRemovableLookImagePaths(previousImageUrls, newImagePaths);
+      oldCleanup = cleanupMetadata(await removeLookImages(supabase, removablePaths), removablePaths.length);
     }
 
     const { error: deleteLookItemsError } = await supabase.from('look_items').delete().eq('look_id', id);
@@ -400,10 +501,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         resourceId: id,
         metadata: {
           linked_item_ids: parsedPayload.data.linkedItemIds,
+          ...oldCleanup,
         },
       });
 
-      console.error('Failed to replace look-item links:', deleteLookItemsError);
+      console.error('Failed to replace look-item links:', describeErrorForLog(deleteLookItemsError));
       return NextResponse.json({ error: 'Failed to update linked items' }, { status: 500 });
     }
 
@@ -425,10 +527,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         resourceId: id,
         metadata: {
           linked_item_ids: parsedPayload.data.linkedItemIds,
+          ...oldCleanup,
         },
       });
 
-      console.error('Failed to update look-item links:', insertLookItemsError);
+      console.error('Failed to update look-item links:', describeErrorForLog(insertLookItemsError));
       return NextResponse.json({ error: 'Failed to update linked items' }, { status: 500 });
     }
 
@@ -447,11 +550,16 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         image_count: imageUrls.length,
         season_year: parsedPayload.data.seasonYear,
         season_type: parsedPayload.data.seasonType,
+        ...oldCleanup,
       },
     });
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
+    if (supabaseForCleanup && unreferencedPaths.length > 0) {
+      await removeLookImages(supabaseForCleanup, unreferencedPaths);
+    }
+
     if (actorId) {
       await logAdminLookAudit({
         request,
@@ -476,7 +584,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       );
     }
 
-    console.error('PUT /api/admin/looks/:id error:', error);
+    console.error('PUT /api/admin/looks/:id error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -505,7 +613,36 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return rateLimited;
     }
 
-    const body = await request.json();
+    if (parseLookId(id) === null) {
+      await logAdminLookAudit({
+        request,
+        actorId: authz.userId,
+        actorEmail: authz.actorEmail,
+        action: 'admin.look.status_update',
+        outcome: 'failure',
+        detail: 'Invalid look id',
+        metadata: { id_length: id.length },
+      });
+
+      return invalidIdResponse();
+    }
+
+    const body = await request.json().catch(() => null);
+
+    if (body === null) {
+      await logAdminLookAudit({
+        request,
+        actorId: authz.userId,
+        actorEmail: authz.actorEmail,
+        action: 'admin.look.status_update',
+        outcome: 'failure',
+        detail: 'Invalid JSON',
+        resourceId: id,
+      });
+
+      return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+    }
+
     const parsed = patchStatusSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -537,9 +674,24 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       .from('looks')
       .select('id,status')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
-    if (existingLookError || !existingLook) {
+    if (existingLookError) {
+      await logAdminLookAudit({
+        request,
+        actorId: authz.userId,
+        actorEmail: authz.actorEmail,
+        action: 'admin.look.status_update',
+        outcome: 'failure',
+        detail: 'Failed to fetch look',
+        resourceId: id,
+      });
+
+      console.error('Failed to fetch look:', describeErrorForLog(existingLookError));
+      return NextResponse.json({ error: 'Failed to fetch look' }, { status: 500 });
+    }
+
+    if (!existingLook) {
       await logAdminLookAudit({
         request,
         actorId: authz.userId,
@@ -573,7 +725,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         },
       });
 
-      console.error('Failed to update look status:', error);
+      console.error('Failed to update look status:', describeErrorForLog(error));
       return NextResponse.json({ error: 'Failed to update status' }, { status: 500 });
     }
 
@@ -607,7 +759,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       });
     }
 
-    console.error('PATCH /api/admin/looks/:id error:', error);
+    console.error('PATCH /api/admin/looks/:id error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -636,15 +788,45 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return rateLimited;
     }
 
+    if (parseLookId(id) === null) {
+      await logAdminLookAudit({
+        request,
+        actorId: authz.userId,
+        actorEmail: authz.actorEmail,
+        action: 'admin.look.delete',
+        outcome: 'failure',
+        detail: 'Invalid look id',
+        metadata: { id_length: id.length },
+      });
+
+      return invalidIdResponse();
+    }
+
     const supabase = await createServiceRoleClient();
 
+    // 消す画像の道筋は、行を消す前に読んでおく。
     const { data: existingLook, error: existingLookError } = await supabase
       .from('looks')
-      .select('id,status')
+      .select('id,status,image_urls')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
-    if (existingLookError || !existingLook) {
+    if (existingLookError) {
+      await logAdminLookAudit({
+        request,
+        actorId: authz.userId,
+        actorEmail: authz.actorEmail,
+        action: 'admin.look.delete',
+        outcome: 'failure',
+        detail: 'Failed to fetch look',
+        resourceId: id,
+      });
+
+      console.error('Failed to fetch look:', describeErrorForLog(existingLookError));
+      return NextResponse.json({ error: 'Failed to fetch look' }, { status: 500 });
+    }
+
+    if (!existingLook) {
       await logAdminLookAudit({
         request,
         actorId: authz.userId,
@@ -674,9 +856,12 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         },
       });
 
-      console.error('Failed to delete look:', error);
+      console.error('Failed to delete look:', describeErrorForLog(error));
       return NextResponse.json({ error: 'Failed to delete look' }, { status: 500 });
     }
+
+    const removablePaths = listRemovableLookImagePaths(existingLook.image_urls);
+    const cleanup = await removeLookImages(supabase, removablePaths);
 
     await logAdminLookAudit({
       request,
@@ -688,6 +873,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       resourceId: id,
       metadata: {
         deleted_status: existingLook.status,
+        ...cleanupMetadata(cleanup, removablePaths.length),
       },
     });
 
@@ -704,7 +890,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       });
     }
 
-    console.error('DELETE /api/admin/looks/:id error:', error);
+    console.error('DELETE /api/admin/looks/:id error:', describeErrorForLog(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

@@ -1,8 +1,16 @@
 import { render, screen } from '@testing-library/react';
 
-jest.mock('@/lib/look/server', () => ({
-  getPublishedLooks: jest.fn(),
-}));
+jest.mock('@/lib/look/server', () => {
+  class LookFetchError extends Error {
+    readonly code: string | null;
+    constructor(code: string | null) {
+      super('Failed to fetch published looks');
+      this.name = 'LookFetchError';
+      this.code = code;
+    }
+  }
+  return { getPublishedLookList: jest.fn(), LookFetchError };
+});
 
 jest.mock('@/features/look/components/PublicLookGrid', () => ({
   PublicLookGrid: jest.fn(
@@ -18,10 +26,10 @@ jest.mock('@/features/look/components/PublicLookGrid', () => ({
 }));
 
 import LookPage, { generateMetadata } from '@/app/look/page';
-import { getPublishedLooks } from '@/lib/look/server';
+import { getPublishedLookList, LookFetchError } from '@/lib/look/server';
 import { PublicLookGrid } from '@/features/look/components/PublicLookGrid';
 
-const mockGetPublishedLooks = getPublishedLooks as jest.Mock;
+const mockGetPublishedLookList = getPublishedLookList as jest.Mock;
 const mockGrid = PublicLookGrid as unknown as jest.Mock;
 
 const LOOKS = [
@@ -40,7 +48,7 @@ async function renderPage(searchParams?: Promise<{ season?: string }>) {
 describe('LookPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetPublishedLooks.mockResolvedValue([]);
+    mockGetPublishedLookList.mockResolvedValue([]);
   });
 
   it('DD-LOOK-002 メタは固定の title・description と OG の画像 /mainphoto.png を返す', async () => {
@@ -55,11 +63,11 @@ describe('LookPage', () => {
     });
   });
 
-  it('DD-LOOK-002 searchParams が無ければ getPublishedLooks を引数なしで呼び、部品に ALL を渡す', async () => {
+  it('DD-LOOK-002 searchParams が無ければ getPublishedLookList を引数なしで呼び、部品に ALL を渡す', async () => {
     await renderPage();
 
-    expect(mockGetPublishedLooks).toHaveBeenCalledTimes(1);
-    expect(mockGetPublishedLooks).toHaveBeenCalledWith();
+    expect(mockGetPublishedLookList).toHaveBeenCalledTimes(1);
+    expect(mockGetPublishedLookList).toHaveBeenCalledWith();
     expect(screen.getByTestId('grid')).toHaveAttribute('data-season', 'ALL');
   });
 
@@ -91,7 +99,7 @@ describe('LookPage', () => {
   );
 
   it('DD-LOOK-002 取り出した LOOK を catalog の部品にそのまま渡す', async () => {
-    mockGetPublishedLooks.mockResolvedValue(LOOKS);
+    mockGetPublishedLookList.mockResolvedValue(LOOKS);
 
     await renderPage(Promise.resolve({ season: 'ss' }));
 
@@ -115,10 +123,17 @@ describe('LookPage', () => {
   });
 
   it('DD-LOOK-002 取り出しが空の配列でも部品に空の配列を渡して描く', async () => {
-    mockGetPublishedLooks.mockResolvedValue([]);
+    mockGetPublishedLookList.mockResolvedValue([]);
 
     await renderPage();
 
     expect(screen.getByTestId('grid')).toHaveAttribute('data-count', '0');
+  });
+
+  it('DD-LOOK-002 取り出しが LookFetchError で失敗したらページも reject し、誤りの画面に任せる', async () => {
+    mockGetPublishedLookList.mockRejectedValue(new LookFetchError('42501'));
+
+    await expect(LookPage({})).rejects.toBeInstanceOf(LookFetchError);
+    expect(mockGrid).not.toHaveBeenCalled();
   });
 });

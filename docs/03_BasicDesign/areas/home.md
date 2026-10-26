@@ -123,7 +123,7 @@ sequenceDiagram
 - 取る件数: 頁の中の定数で、商品8件・LOOK 8件・NEWS 6件（`page.tsx`）。取扱店は取得の関数の中で6件（`src/features/stockist/services/public.ts`）。総数は商品・LOOK・NEWS の3つ（`page.tsx`）
 - 渡し方: 商品・LOOK・NEWS の格子には `variant="home"` と行と総数を、取扱店の格子には `variant="home"` と行を渡す（`page.tsx`）。格子の部品は自分で取りに行かない
 - 描き方: 共有の layout が毎回サーバーで描く設定を持つ（`src/app/layout.tsx`）ので、ホームも要求ごとに7つを取り直す。頁の結果のキャッシュは無い
-- 失敗の時: 取得の関数の多くは、DB の誤りを記録して空の配列か 0 を返す（`getPublishedItems`・`getPublishedItemsCount`・`getPublishedLooks`・`getPublishedLooksCount`・`getPublishedNewsCount`・`getHomePublicStockists` の誤りの枝）。関数が例外を投げた時の扱いは SEC-HOME-014
+- 失敗の時: 取得の関数の多くは、DB の誤りを記録して空の配列か 0 を返す（`getPublishedItems`・`getPublishedItemsCount`・`getPublishedLooks`・`getPublishedLooksCount`・`getPublishedNewsCount`・`getHomePublicStockists` の誤りの枝）。関数が例外を投げた時の扱いは SEC-HOME-014。NEWS の記事の取得（`getPublishedNews`）だけは、DB の失敗を `NewsFetchError` で投げる（SEC-NEWS-020、ADR-0024）が、頁が `.catch(() => [])` で握って NEWS の区画を空にし、ほかの区画を出す（2026-10-26。SEC-HOME-014 の NEWS の分）
 - 分岐: ページの中に条件の分岐は無い。区画の出し分けは格子の部品の中にある
 - 依存: 商品の取得は在庫の読み（`src/lib/items/availability.ts`）を通り、在庫の仕組みの改修の影響を受けうる（ホームのファイルは触られない。推定）
 

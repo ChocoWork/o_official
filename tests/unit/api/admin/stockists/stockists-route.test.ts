@@ -2,9 +2,10 @@ export {};
 
 jest.mock('next/server', () => ({
   NextResponse: {
-    json: (body: unknown, init?: { status?: number }) => ({
+    json: (body: unknown, init?: { status?: number; headers?: Record<string, string> }) => ({
       status: init?.status ?? 200,
       body,
+      headers: new Headers(init?.headers),
       json: async () => body,
     }),
   },
@@ -105,7 +106,7 @@ afterEach(() => {
 
 describe('GET /api/admin/stockists', () => {
   it('DD-STOCKIST-034 GET は認可が失敗した時にその応答をそのまま返し、表に触らない', async () => {
-    const denied = { status: 403, body: { error: 'Forbidden' } };
+    const denied = { status: 403, headers: new Headers({ 'Cache-Control': 's-maxage=60' }), body: { error: 'Forbidden' } };
     mockAuthorize.mockResolvedValue({ ok: false, response: denied });
 
     const response = await GET(getRequest());
@@ -125,7 +126,7 @@ describe('GET /api/admin/stockists', () => {
   });
 
   it('DD-STOCKIST-034 GET は回数の制限が応答を返した時にそれを返し、表に触らない', async () => {
-    const limited = { status: 429, body: { error: 'Too many requests' } };
+    const limited = { status: 429, headers: new Headers({ 'Cache-Control': 's-maxage=60' }), body: { error: 'Too many requests' } };
     mockReadLimit.mockResolvedValue(limited);
     const request = getRequest();
 
@@ -181,7 +182,7 @@ describe('GET /api/admin/stockists', () => {
 
 describe('POST /api/admin/stockists', () => {
   it('DD-STOCKIST-034 POST は認可が失敗した時にその応答をそのまま返し、表に触らない', async () => {
-    const denied = { status: 401, body: { error: 'Unauthorized' } };
+    const denied = { status: 401, headers: new Headers({ 'Cache-Control': 's-maxage=60' }), body: { error: 'Unauthorized' } };
     mockAuthorize.mockResolvedValue({ ok: false, response: denied });
 
     const response = await POST(jsonRequest(validBody));
@@ -201,7 +202,7 @@ describe('POST /api/admin/stockists', () => {
   });
 
   it('DD-STOCKIST-034 POST は回数の制限が応答を返した時にそれを返し、CSRF も表も見ない', async () => {
-    const limited = { status: 429, body: { error: 'Too many requests' } };
+    const limited = { status: 429, headers: new Headers({ 'Cache-Control': 's-maxage=60' }), body: { error: 'Too many requests' } };
     mockMutationLimit.mockResolvedValue(limited);
     const request = jsonRequest(validBody);
 
@@ -215,7 +216,7 @@ describe('POST /api/admin/stockists', () => {
   });
 
   it('DD-STOCKIST-034 POST は CSRF の確かめが拒否の応答を返した時にそれを返し、本文を読まない', async () => {
-    const deny = { status: 403, body: { error: 'Forbidden', reason: 'CSRF validation failed' } };
+    const deny = { status: 403, headers: new Headers({ 'Cache-Control': 's-maxage=60' }), body: { error: 'Forbidden', reason: 'CSRF validation failed' } };
     mockToDeny.mockReturnValue(deny);
     const request = jsonRequest(validBody);
     const jsonSpy = jest.spyOn(request, 'json');
@@ -427,5 +428,122 @@ describe('POST /api/admin/stockists', () => {
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'Internal server error' });
+  });
+});
+
+describe('DD-STOCKIST-034 Cache-Control は戻りの全分岐で private, no-store', () => {
+  const NO_STORE = 'private, no-store';
+  // 下の応答の元は s-maxage=60 を持つ。包みが置き換えることも同時に確かめる。
+  const response = (status: number) => ({
+    status,
+    body: {},
+    headers: new Headers({ 'Cache-Control': 's-maxage=60' }),
+  });
+
+  const getCases: Array<[string, () => void, number]> = [
+    ['200 一覧', () => setupSelect({ data: [], error: null }), 200],
+    [
+      '401 認可の拒否',
+      () => mockAuthorize.mockResolvedValue({ ok: false, response: response(401) }),
+      401,
+    ],
+    [
+      '403 認可の拒否',
+      () => mockAuthorize.mockResolvedValue({ ok: false, response: response(403) }),
+      403,
+    ],
+    ['429 読みの回数制限', () => mockReadLimit.mockResolvedValue(response(429)), 429],
+    ['503 読みの回数制限', () => mockReadLimit.mockResolvedValue(response(503)), 503],
+    [
+      '500 DB の誤り',
+      () => setupSelect({ data: null, error: { code: '57P01', message: 'secret' } }),
+      500,
+    ],
+    ['500 外側の catch', () => mockCreateClient.mockRejectedValue(new Error('secret boom')), 500],
+  ];
+
+  it.each(getCases)('DD-STOCKIST-034 GET %s', async (_label, arrange, status) => {
+    arrange();
+
+    const res = await GET(getRequest());
+
+    expect(res.status).toBe(status);
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+  });
+
+  const brokenJsonRequest = () =>
+    new Request('http://localhost/api/admin/stockists', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'not json',
+    });
+
+  const postCases: Array<[string, () => void, number, () => Request]> = [
+    ['201 作成', () => setupInsert({ data: { id: 1 }, error: null }), 201, () => jsonRequest(validBody)],
+    ['400 壊れた JSON', () => undefined, 400, brokenJsonRequest],
+    ['400 検証の誤り', () => undefined, 400, () => jsonRequest({ ...validBody, name: '' })],
+    [
+      '401 認可の拒否',
+      () => mockAuthorize.mockResolvedValue({ ok: false, response: response(401) }),
+      401,
+      () => jsonRequest(validBody),
+    ],
+    [
+      '403 認可の拒否',
+      () => mockAuthorize.mockResolvedValue({ ok: false, response: response(403) }),
+      403,
+      () => jsonRequest(validBody),
+    ],
+    ['403 CSRF の拒否', () => mockToDeny.mockReturnValue(response(403)), 403, () => jsonRequest(validBody)],
+    [
+      '429 書きの回数制限',
+      () => mockMutationLimit.mockResolvedValue(response(429)),
+      429,
+      () => jsonRequest(validBody),
+    ],
+    [
+      '503 書きの回数制限',
+      () => mockMutationLimit.mockResolvedValue(response(503)),
+      503,
+      () => jsonRequest(validBody),
+    ],
+    [
+      '500 DB の誤り',
+      () => setupInsert({ data: null, error: { code: '23502', message: 'secret' } }),
+      500,
+      () => jsonRequest(validBody),
+    ],
+    [
+      '500 外側の catch',
+      () => mockCreateClient.mockRejectedValue(new Error('secret boom')),
+      500,
+      () => jsonRequest(validBody),
+    ],
+  ];
+
+  it.each(postCases)('DD-STOCKIST-034 POST %s', async (_label, arrange, status, makeRequest) => {
+    arrange();
+
+    const res = await POST(makeRequest());
+
+    expect(res.status).toBe(status);
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+  });
+
+  it('DD-STOCKIST-034 外側の catch の console.error の第 2 引数は { name, code } ちょうどで、投げた誤りの message を含まない', async () => {
+    mockCreateClient.mockRejectedValue(new Error('secret boom'));
+
+    await GET(getRequest());
+    await POST(jsonRequest(validBody));
+
+    expect(console.error).toHaveBeenCalledWith('GET /api/admin/stockists error:', {
+      name: 'Error',
+      code: null,
+    });
+    expect(console.error).toHaveBeenCalledWith('POST /api/admin/stockists error:', {
+      name: 'Error',
+      code: null,
+    });
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('secret boom');
   });
 });

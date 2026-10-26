@@ -96,13 +96,24 @@ describe('PRIVACY の委託の一覧の出し分け', () => {
     expect(mockRpc).toHaveBeenCalledTimes(3);
   });
 
-  it('STATE-PRIVACY-001 どの状態でも最終改定日は変わらない', async () => {
+  it('STATE-PRIVACY-001 追跡を切り替えていない（updated_at が null）間は、どの状態でも最終改定日は基準日の 2026年10月26日', async () => {
     for (const enabled of [false, true]) {
       mockRpc.mockResolvedValue(settingsRow({ enabled }));
       const { container, unmount } = render(await PrivacyPage());
-      expect(container).toHaveTextContent('最終改定日：2026年7月11日');
+      expect(container).toHaveTextContent('最終改定日：2026年10月26日');
       unmount();
     }
+  });
+
+  it('STATE-PRIVACY-001 追跡を切り替えた日（日本時間）が基準日より後なら、最終改定日はその日になり、基準日以前なら基準日のまま', async () => {
+    mockRpc.mockResolvedValue(settingsRow({ enabled: true, updated_at: '2026-10-26T16:30:00Z' }));
+    const later = render(await PrivacyPage());
+    expect(later.container).toHaveTextContent('最終改定日：2026年10月27日');
+    later.unmount();
+
+    mockRpc.mockResolvedValue(settingsRow({ enabled: true, updated_at: '2026-06-01T00:00:00Z' }));
+    const earlier = render(await PrivacyPage());
+    expect(earlier.container).toHaveTextContent('最終改定日：2026年10月26日');
   });
 
   it('STATE-PRIVACY-001 読めない時（関数が error を返した）は、オフの一覧を黙って出さずに頁の失敗になる', async () => {

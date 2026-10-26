@@ -52,11 +52,11 @@ function mockCreateNewsClient() {
           calls.push(['limit', n]);
           return query;
         },
-        single: () => {
-          calls.push(['single']);
+        maybeSingle: () => {
+          calls.push(['maybeSingle']);
           const rows = run();
           return Promise.resolve(
-            rows.length === 1 ? { data: rows[0], error: null } : { data: null, error: { code: 'PGRST116' } },
+            rows.length === 1 ? { data: rows[0], error: null } : { data: null, error: null },
           );
         },
         then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
@@ -123,7 +123,7 @@ function queriesSelecting(columns: string): RecordedCall[][] {
 }
 
 function detailQuery(): RecordedCall[] | undefined {
-  return mockQueries.find((calls) => calls.some((call) => call[0] === 'single'));
+  return mockQueries.find((calls) => calls.some((call) => call[0] === 'maybeSingle'));
 }
 
 function categoryFilters(calls: RecordedCall[] | undefined): unknown[] {

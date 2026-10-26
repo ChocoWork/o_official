@@ -32,8 +32,8 @@ import PrivacyPage, { generateMetadata } from '@/app/privacy/page';
 const OUTSOURCING_SENTENCE =
   '配送状況の確認業務（配送追跡サービス 17TRACK。配送事業者名と伝票番号のみを提供し、お名前・ご住所・ご連絡先は提供しません）';
 
-function settings(enabled: boolean) {
-  return { enabled, updatedAt: null, updatedByEmail: null, backfillCount: 0 };
+function settings(enabled: boolean, updatedAt: string | null = null) {
+  return { enabled, updatedAt, updatedByEmail: null, backfillCount: 0 };
 }
 
 /** async の Server Component を呼んで、出てきた要素を描いた HTML にする */
@@ -132,7 +132,7 @@ describe('プライバシーポリシーの委託先の一覧（グループ E-4
 
     expect(html).toContain('7. 個人情報の国外移転');
     expect(html).toContain('privacy@lefildesheures.com');
-    expect(html).toContain('最終改定日：2026年7月11日');
+    expect(html).toContain('最終改定日：2026年10月26日');
   });
 
   test('DD-PRIVACY-001 connection() が投げた時は、ページの失敗として扱い、client も作らず設定も読まない', async () => {
@@ -182,5 +182,20 @@ describe('プライバシーポリシーの委託先の一覧（グループ E-4
     expect(container.querySelector('a[href^="mailto:"]')).toBeNull();
     expect(getByRole('link', { name: 'お問い合わせフォーム' }).getAttribute('href')).toBe('/contact');
     expect(container.textContent).toContain('制定日：2026年6月20日');
+  });
+
+  test('DD-PRIVACY-001 最終改定日は、追跡の設定を切り替えていない（updatedAt が null）間は基準日の 2026年10月26日', async () => {
+    mockGetDeliveryTrackingSettings.mockImplementation(async () => settings(false, null));
+
+    expect(await renderPage()).toContain('最終改定日：2026年10月26日');
+  });
+
+  test('DD-PRIVACY-001 最終改定日は、追跡の設定を切り替えた日（日本時間）に追従する', async () => {
+    mockGetDeliveryTrackingSettings.mockImplementation(async () => settings(true, '2026-10-26T16:30:00Z'));
+
+    const html = await renderPage();
+
+    expect(html).toContain('最終改定日：2026年10月27日');
+    expect(html).not.toContain('最終改定日：2026年10月26日');
   });
 });

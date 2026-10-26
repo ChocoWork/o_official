@@ -48,7 +48,7 @@ function createClient(options: { look: Result; items?: Result }) {
       if (table === 'looks') {
         return {
           select: jest.fn().mockReturnValue({
-            eq: lookEq.mockReturnValue({ single: jest.fn().mockResolvedValue(options.look) }),
+            eq: lookEq.mockReturnValue({ maybeSingle: jest.fn().mockResolvedValue(options.look) }),
           }),
         };
       }
@@ -91,8 +91,44 @@ describe('DD-LOOK-064 GET /api/admin/looks/[id]', () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  it('DD-LOOK-064 1件が無い時（single が error）は 404 Look not found', async () => {
-    const { client } = createClient({ look: { data: null, error: { message: 'no rows' } } });
+  it.each(['abc', '1e3', '0', '-1', '1.5', ' 1', '0x10'])(
+    'DD-LOOK-064 id が %s の時は認可の後で 400 Invalid look id で、DB を呼ばない',
+    async (badId) => {
+      const response = await GET(request, { params: Promise.resolve({ id: badId }) });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'Invalid look id' });
+      expect(mockAuthorize).toHaveBeenCalledWith('admin.looks.read', request);
+      expect(mockCreateClient).not.toHaveBeenCalled();
+    },
+  );
+
+  it('DD-LOOK-064 id が不正でも認可が通らなければ今までの認可の応答を返す（id の検査より先）', async () => {
+    const denied = { status: 401, json: async () => ({ error: 'Unauthorized' }) };
+    mockAuthorize.mockResolvedValue({ ok: false, response: denied });
+
+    const response = await GET(request, { params: Promise.resolve({ id: 'abc' }) });
+
+    expect(response).toBe(denied);
+  });
+
+  it('DD-LOOK-064 1件の取り出しが DB の失敗なら 500 で、名前と符号だけを記録し、DB の文を出さない', async () => {
+    const { client } = createClient({
+      look: { data: null, error: Object.assign(new Error('relation secret_table missing'), { code: 'PGRST301' }) },
+    });
+    mockCreateClient.mockResolvedValue(client);
+
+    const response = await GET(request, { params: params() });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Failed to fetch look' });
+    expect(client.from).not.toHaveBeenCalledWith('look_items');
+    expect(errorSpy).toHaveBeenCalledWith('Failed to fetch look:', { name: 'Error', code: 'PGRST301' });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('secret_table');
+  });
+
+  it('DD-LOOK-064 1件が無い時（maybeSingle が null）は 404 Look not found', async () => {
+    const { client } = createClient({ look: { data: null, error: null } });
     mockCreateClient.mockResolvedValue(client);
 
     const response = await GET(request, { params: params() });

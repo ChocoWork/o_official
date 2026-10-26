@@ -32,6 +32,8 @@ const { createServiceRoleClient: mockCreateServiceRoleClient } = require('@/lib/
 const { authorizeAdminPermission: mockAuthorizeAdminPermission } = require('@/lib/auth/admin-rbac');
 const { logAudit: mockLogAudit } = require('@/lib/audit');
 
+const { minimalJpeg } = require('../../../fixtures/images');
+
 const looksRoute = require('@/app/api/admin/looks/route');
 const lookByIdRoute = require('@/app/api/admin/looks/[id]/route');
 
@@ -53,6 +55,7 @@ function createLooksServiceMock(options?: {
     storage: {
       from: jest.fn().mockReturnValue({
         upload: storageUpload,
+        remove: jest.fn().mockResolvedValue({ error: null }),
       }),
     },
     from: jest.fn((table: string) => {
@@ -73,10 +76,10 @@ function createLooksServiceMock(options?: {
           }),
           select: jest.fn().mockReturnValue({
             eq: jest.fn().mockReturnValue({
-              single: jest.fn().mockResolvedValue(
+              maybeSingle: jest.fn().mockResolvedValue(
                 existingLook
                   ? { data: existingLook, error: null }
-                  : { data: null, error: { message: 'not found' } },
+                  : { data: null, error: null },
               ),
             }),
           }),
@@ -124,9 +127,9 @@ describe('admin look audit logging', () => {
     formData.set('themeDescription', 'Desc');
     formData.set('status', 'published');
     formData.set('linkedItemIds', JSON.stringify([1]));
-    const imageFile = new File(['image-bytes'], 'look.jpg', { type: 'image/jpeg' });
+    const imageFile = new File([new Uint8Array(minimalJpeg())], 'look.jpg', { type: 'image/jpeg' });
     Object.defineProperty(imageFile, 'arrayBuffer', {
-      value: jest.fn().mockResolvedValue(new TextEncoder().encode('image-bytes').buffer),
+      value: jest.fn().mockResolvedValue(new Uint8Array(minimalJpeg()).buffer),
     });
     formData.append('images', imageFile);
 

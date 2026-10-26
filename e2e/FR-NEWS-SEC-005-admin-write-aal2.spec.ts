@@ -11,9 +11,7 @@
  * 場面は withPermissionScenario の lock の中で流す。置き場のファイル数（017-AC-01）を数える間、同じ lock を使う別の試験の
  * 書き込みと混ざらないようにするため。記事は status='private' で作り、公開の画面には出さない。
  *
- * 現行のコードが満たさない AC（文のとおりに書いてあり、緩めない。コードが直るまで赤）:
- * 017-AC-01（type の申告だけで通す）、017-AC-02（PUT の拡張子を送られた名前から作る）、
- * 018-AC-01・AC-02（記事を消しても・画像を替えても前の画像を置き場に残す）。016-AC-01・017-AC-03 は満たす見込み。016-AC-02（無い id・0 行は 404 と失敗の監査）は満たすので印を外した。
+ * 017・018 の AC は直したので、印（test.fail）は無い（SEC-NEWS-017・018）。
  *
  * 店長（aal2）は worker ごとに 1 人だけ作り（Auth のログインの回数の制限を使い切らない）、worker の終わりに消す。監査の行は消さない（db reset で消える）。記事の行と、置き場に入った物は終わりに消す。
  */
@@ -282,7 +280,6 @@ test.describe('FR-NEWS-SEC-005 管理の記事の書き込みの窓口', () => {
   });
 
   test('SEC-NEWS-017-AC-01 中身が HTML で type を image/png と付けたファイルの POST は 400 になり、置き場にファイルが増えない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-NEWS-017 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     await withScenario(request, baseURL, async (s) => {
       const before = await bucketObjectCount(s.db);
 
@@ -301,7 +298,6 @@ test.describe('FR-NEWS-SEC-005 管理の記事の書き込みの窓口', () => {
   });
 
   test('SEC-NEWS-017-AC-02 名前が x.html の PNG の画像で PUT した後、記事の image_url の道筋が .png で終わる', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-NEWS-017 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     await withScenario(request, baseURL, async (s) => {
       const id = await seedArticle(s, 'put-ext', `${s.folder}/before.png`);
 
@@ -335,7 +331,6 @@ test.describe('FR-NEWS-SEC-005 管理の記事の書き込みの窓口', () => {
   });
 
   test('SEC-NEWS-018-AC-01 記事の DELETE が 200 になった後、その記事の画像の道筋が置き場の一覧に無い', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-NEWS-018 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     await withScenario(request, baseURL, async (s) => {
       const imagePath = await seedObject(s, 'delete-target.png');
       const id = await seedArticle(s, 'delete', imagePath);
@@ -350,7 +345,6 @@ test.describe('FR-NEWS-SEC-005 管理の記事の書き込みの窓口', () => {
   });
 
   test('SEC-NEWS-018-AC-02 新しい画像を付けた PUT が 200 になった後、前の画像の道筋が置き場の一覧に無い', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-NEWS-018 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     await withScenario(request, baseURL, async (s) => {
       const previousPath = await seedObject(s, 'previous.png');
       const id = await seedArticle(s, 'replace', previousPath);

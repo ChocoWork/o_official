@@ -1,4 +1,5 @@
 import { createPublicClient } from '@/lib/supabase/server';
+import { describeErrorForLog } from '@/lib/logging/safe-error';
 import { PublicStockist, StockistRecord } from '@/features/stockist/types';
 
 export const STOCKIST_MAP_EMBED_URL =
@@ -23,7 +24,7 @@ function toPublicStockists(rows: StockistRecord[]): PublicStockist[] {
  *
  * @impl IMPL-STOCKIST-103
  * @design DD-STOCKIST-003
- * @remarks 公開の印は DB の RLS と取り出しの条件の 2 段で絞り、片方が崩れても非公開の店を外へ出さない。状態などの内部の列を画面へ渡さないため、返す前に詰め直す。並びの要件が無いので、取るたびに並びが変わらないよう id の順にする。DB が一時的に落ちても頁全体を誤りにしないよう、誤りは空の配列にする。
+ * @remarks 公開の印は DB の RLS と取り出しの条件の 2 段で絞り、片方が崩れても非公開の店を外へ出さない。状態などの内部の列を画面へ渡さないため、返す前に詰め直す。並びの要件が無いので、取るたびに並びが変わらないよう id の順にする。DB が一時的に落ちても頁全体を誤りにしないよう、誤りは空の配列にし、記録は名前と符号だけにする（SEC-STOCKIST-014）。
  * 公開の頁は利用者の Cookie を引き継がない client で取り、件数は指定が無い・不正な時も上限の 200 で止める（SEC-STOCKIST-002・018）。
  */
 export async function getPublicStockists(options?: {
@@ -47,7 +48,7 @@ export async function getPublicStockists(options?: {
   const { data, error } = await query;
 
   if (error) {
-    console.error('Failed to fetch public stockists:', error);
+    console.error('Failed to fetch public stockists:', describeErrorForLog(error));
     return [];
   }
 

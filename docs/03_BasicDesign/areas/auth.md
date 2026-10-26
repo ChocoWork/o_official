@@ -1063,7 +1063,7 @@ stateDiagram-v2
 | 項目 | 中身 |
 | --- | --- |
 | 入力 | access の Cookie か Bearer |
-| 200 | ログイン中なら `{ authenticated: true, user: { id, email, role, mfaVerified } }`、未ログイン・失効・例外なら `{ authenticated: false }` |
+| 200 | ログイン中なら `{ authenticated: true, user: { id, role, mfaVerified } }`（メールの住所は返さない。2026-10-26）、未ログイン・失効・例外なら `{ authenticated: false }` |
 | 503 | 失効を確かめられない時 `{ authenticated: false, reason: 'unavailable' }`、`Retry-After: 30` |
 | 見出し | 全部の応答に `no-store`・`no-referrer` |
 

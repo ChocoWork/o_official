@@ -1,6 +1,6 @@
 # LOOK の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: LOOK（一覧 `/look`・詳細 `/look/[id]`・ホームの LOOK の区画の部品・管理の LOOK） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -72,19 +72,19 @@ graph LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-LOOK-ALL-001、FR-LOOK-DETAIL-001、FR-LOOK-DETAIL-002、SEC-LOOK-001、DRV-LOOK-001、DRV-LOOK-004、ADR-0151、ADR-0152 |
+| 上位 | FR-LOOK-ALL-001、FR-LOOK-DETAIL-001、FR-LOOK-DETAIL-002、SEC-LOOK-001、SEC-LOOK-009、SEC-LOOK-022、DRV-LOOK-001、DRV-LOOK-004、ADR-0151、ADR-0152、ADR-0159 |
 | 根拠 | ページを作るサーバーの中で取り出せば、LOOK を入れた HTML をそのまま返せる。DB を匿名の client で読めば、取り出しの条件を書き損じても RLS が公開済みだけに絞り、片方が崩れても非公開の LOOK が出ない（SEC-LOOK-001、ADR-0151）。関連商品も公開中の物だけを付け、非公開の商品の名前と価格を出さない（DRV-LOOK-004）。並びは作った日時の新しい順で、一覧と詳細の前後を同じ並びで決める（DRV-LOOK-001、ADR-0152） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/lib/look/server.ts`、`src/app/look/page.tsx`、`src/app/look/[id]/page.tsx`） |
 
 - 呼ぶ側: `/look`（`src/app/look/page.tsx`）、`/look/[id]`（`src/app/look/[id]/page.tsx`）、ホーム（`src/app/page.tsx`、範囲外）。どれも Server Component で、LOOK を client の部品 `PublicLookGrid`・`LookImageGallery` に渡す
-- 取り出しの関数（`src/lib/look/server.ts`）: `getPublishedLooks`（一覧・ホーム・詳細の本体。件数の引数は任意）、`getPublishedLooksCount`（ホームの総数）、`getPublishedLookById`（詳細のメタ情報だけ）。どれも `status='published'` を付け、一覧は `created_at` の降順
+- 取り出しの関数（`src/lib/look/server.ts`）: `getPublishedLookList`（`/look`。説明文なし・100 件まで・失敗は投げる）、`getPublishedLooks`（ホーム。同じ select・並びで件数は 1〜100 に丸め、失敗は空の配列）、`getPublishedLooksCount`（ホームの総数）、`getPublishedLookById`（詳細の頁とメタ情報の 1 件。説明文あり・失敗は投げる）、`getAdjacentPublishedLooks`（詳細の前後の 1 件ずつ。id と題だけ）。どれも `status='published'` を付け、一覧は `created_at` の降順で同じ時刻は `id` の降順（ADR-0159）
 - 関連: `look_items` から商品の ID を集め、`items` を `status='published'` で絞って取り、取れた商品だけを LOOK に付ける。商品の画像は `signItemImageUrl`（範囲外）で署名する
 - client: DB は `createPublicClient`（匿名の鍵・session なし）。service role は LOOK と商品の画像の署名だけに使う（ARC-LOOK-003）
 - キャッシュ: `revalidate`・`dynamic`・`generateStaticParams` の指定は無い。`searchParams`・`params` を読むので要求ごとに描く（推定。SEC-LOOK-006 の方針の明示は満たさない）
-- 失敗: LOOK の取り出しの失敗は記録して空の配列を返し、一覧は「公開中のLOOKがありません」、詳細は「Look not found」になる（SEC-LOOK-022 は満たさない）。関連の取り出しの失敗では、一覧の関数は署名していない元の道筋のまま LOOK を返す（`server.ts`。SEC-LOOK-008 は満たさない）
-- 件数: 一覧は件数を渡さず公開済みを全部取り、全部の画像に署名する。詳細も前後を決めるために全件を取り、メタ情報のためにもう1回1件を取って署名する（SEC-LOOK-009 は満たさない）。一覧で表示しない説明文と関連商品の価格・画像も渡す
+- 失敗: LOOK・関連・商品のどれかの取り出しが失敗したら、名前と符号だけ記録して `LookFetchError` を投げる（部分的に返さない。2026-10-26。SEC-LOOK-022）。`/look` と詳細の頁は投げたまま `src/app/look/error.tsx`（SCR-LOOK-001）の誤りの画面に任せる。ホーム用の `getPublishedLooks` だけは握って空の配列にし、ホーム全体を落とさない。前後の取り出しの失敗は添え物なので記録だけにしてその側を無しにする。関連の取り出しの失敗で署名していない元の道筋を返す道は、投げる側ではなくなった（署名の共有の直しは SEC-LOOK-008 で別）
+- 件数: 一覧は公開済みを新しい順に 100 件で切る（`PUBLIC_LOOK_LIST_LIMIT`。シーズンの絞り込みは今のまま画面の側で行う。ADR-0159）ので、署名も 100 件分までに収まる。詳細は現在の LOOK を 1 件で取り（頁とメタ情報は別の呼び出しのまま）、前後は並びの境目で 1 件ずつ取る。一覧は説明文を返さない。関連商品の価格・名前・画像はカードが出すので返す（SEC-LOOK-009）
 
 ### ARC-LOOK-002 管理の書き換えは画面から Route Handler を通し、窓口で利用者を確かめてから service role で DB と置き場を変える
 
@@ -131,13 +131,14 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | DRV-LOOK-005、FREQ-185-REQ-01（範囲外）、ADR-0150 |
+| 上位 | DRV-LOOK-005、FREQ-185-REQ-01（範囲外）、ADR-0150、ADR-0160 |
 | 根拠 | 置き場を公開にすると非公開の LOOK の画像も URL を知る人に開かれ、LOOK の状態で決めた線引きが画像だけ崩れる。そこで置き場を非公開にし、DB には置き場の中の道筋だけを持ち、出すたびに期限1時間の署名つき URL に置き換える（DRV-LOOK-005、ADR-0150）。検索の結果のサムネイルも同じ関数で署名し、出すために置き場を公開に戻さない（FREQ-185-REQ-01） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/lib/storage/look-images.ts`、`src/app/api/admin/looks/route.ts`、`src/app/api/admin/looks/[id]/route.ts`） |
 
-- 書く: 管理の作成・更新が service role の client で置き場 `look-images` に上げ、`looks.image_urls` に署名前の道筋 `looks/<YYYY-MM-DD>/<uuid>.<拡張子>` を入れる（DATA-LOOK-005）
+- 書く: 管理の作成・更新が service role の client で置き場 `look-images` に上げ、`looks.image_urls` に署名前の道筋 `looks/<YYYY-MM-DD>/<uuid>.<検出した種類の拡張子>` を入れる（DATA-LOOK-005）。上げる前に `prepareLookImage` が申告の種類と中身の先頭の印を照らし（SEC-LOOK-013）、保存名は `buildLookImagePath` が日付と乱数だけで作る
+- 後始末: 順は「行を先に変える → 置き場を消す」（ADR-0160）。消す道筋は `listRemovableLookImagePaths` が1本ずつ `isOwnLookImagePath`（`looks/` の下の安全な文字だけ）で確かめ、`removeLookImages` が同じ service role の client で消す。失敗は記録（名前と符号だけ）と監査の `metadata` に残すだけ（SEC-LOOK-014）
 - 配る: `signLookImageUrls` が配列の全部を `signLookImageUrl` で署名し、null を落とす。`extractLookImageObjectPath` は素の道筋（先頭の `/` を外すだけ）と、旧い public・sign・authenticated の URL の両方から置き場の中の道筋を取り出す。期限は 3600 秒
 - 使う所: 公開の一覧・ホーム・詳細・詳細の `og:image`、管理の一覧と1件の GET、検索（`src/features/search/services/search.service.ts`、範囲外）
 - 画像が無い LOOK は、カードとギャラリーが `/placeholder.png` を出す
@@ -151,19 +152,19 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-LOOK-ALL-001、FR-LOOK-ALL-005、FR-LOOK-ALL-006、FREQ-50-REQ-01、FREQ-51-REQ-01、FREQ-52-REQ-01、FREQ-55-REQ-01、FREQ-137-REQ-01、FREQ-140-REQ-01、FREQ-277-REQ-01、FREQ-277-REQ-02、FREQ-119-REQ-01（範囲外）、FREQ-274-REQ-01（範囲外）、FREQ-274-REQ-02（範囲外）、NFR-SEO-003（範囲外）、SEC-LOOK-001、SEC-LOOK-017、DRV-LOOK-003、DRV-LOOK-007、ADR-0152、ADR-0153 |
+| 上位 | FR-LOOK-ALL-001、FR-LOOK-ALL-005、FR-LOOK-ALL-006、FREQ-50-REQ-01、FREQ-51-REQ-01、FREQ-52-REQ-01、FREQ-55-REQ-01、FREQ-137-REQ-01、FREQ-140-REQ-01、FREQ-277-REQ-01、FREQ-277-REQ-02、FREQ-119-REQ-01（範囲外）、FREQ-274-REQ-01（範囲外）、FREQ-274-REQ-02（範囲外）、NFR-SEO-003（範囲外）、SEC-LOOK-001、SEC-LOOK-009、SEC-LOOK-017、SEC-LOOK-022、DRV-LOOK-003、DRV-LOOK-007、ADR-0152、ADR-0153、ADR-0159 |
 | 根拠 | 公開した LOOK を新しい順に格子で並べ、春夏と秋冬で絞って見比べられるようにするため（FR-LOOK-ALL-001・006）。絞り込みの置き場・幅・余白を NEWS・ITEM の一覧にそろえ、一覧ごとに操作を覚え直させない（FREQ-51・52・119・274）。見出しを置かず、フィルターと LOOK の写真だけの静かな並びで見せる（FREQ-50）。スクロールしても絞り込みにすぐ届くよう、フィルターをヘッダーの真下に留める（DRV-LOOK-003）。何も出ない時に理由と戻る手段を出す（DRV-LOOK-007） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/look/page.tsx`、`src/features/look/components/PublicLookGrid.tsx`）、`docs/03_BasicDesign/ui/screen-list.md` |
 
-- 作り: Server Component の `src/app/look/page.tsx` が URL の `season` を `resolveLookSeasonFilter` で ALL・SS・AW に直し、公開の LOOK を全部取って `PublicLookGrid`（`variant="catalog"`）に渡す。絞るのは部品の側（STATE-LOOK-002、ADR-0153）
+- 作り: Server Component の `src/app/look/page.tsx` が URL の `season` を `resolveLookSeasonFilter` で ALL・SS・AW に直し、公開の LOOK を新しい順に 100 件まで（`getPublishedLookList`。説明文なし）取って `PublicLookGrid`（`variant="catalog"`）に渡す。絞るのは部品の側（STATE-LOOK-002、ADR-0153）
 - 絞り込み: lg 以上は左のサイドバー（幅 233px、xl で 288px、ヘッダーの真下に sticky）の `MultiSelect`、lg 未満は FILTER のボタンと左の引き出し（`Drawer`）。lg 未満の FILTER のバーはヘッダーの真下に付いて動き、同じ高さの見えない置き物で先頭のカードとの重なりを防ぐ（DRV-LOOK-003）
 - 格子: md 未満2列・md〜2xl 未満3列・2xl 以上4列（FREQ-277）。行の間隔は lg 未満で広く、lg 以上は縦横を同じにする（FREQ-137・140）。カードは SCR-LOOK-002
 - 本文の列の左右の余白は sm 未満で 0（FREQ-141-REQ-01 の 13px と合わないので上位にしない。E2E FR-LOOK-ALL-028 が赤）
 - 見出しの `h1` は置かない（FREQ-50）。title は「LOOK BOOK | Le Fil des Heures」、description は固定の文、OG の画像はサイトのメインの写真 `/mainphoto.png`（FR-LOOK-ALL-005）
-- 空と0件: 公開の LOOK が無い時「公開中のLOOKがありません」、絞った結果が0件の時「該当シーズンのLOOKがありません」と ALL に戻す「すべて見る」のボタン（DRV-LOOK-007）。取り出しの失敗も「公開中のLOOKがありません」になる（SEC-LOOK-022 は満たさない）
-- 件数: ページングも無限スクロールも無く、全件を一度に出す（FR-LOOK-ALL-003 は満たさないので上位にしない。ADR-0152）
+- 空と0件: 公開の LOOK が無い時「公開中のLOOKがありません」、絞った結果が0件の時「該当シーズンのLOOKがありません」と ALL に戻す「すべて見る」のボタン（DRV-LOOK-007）。取り出しの失敗は「0件」にせず、誤りの画面（`src/app/look/error.tsx`。見出し「LOOK を読み込めませんでした」、案内の文、`retry` のボタン。`error.message`・`stack` は出さない）になる（SEC-LOOK-022。2026-10-26）
+- 件数: ページングも無限スクロールも無く、取り出した 100 件までを一度に出す（FR-LOOK-ALL-003 は満たさないので上位にしない。ADR-0152、ADR-0159）
 - 文字: テーマと関連商品の名前は React の自動のエスケープで出し、生の HTML を差し込まない（SEC-LOOK-017）
 
 ### SCR-LOOK-002 LOOK のカード
@@ -206,21 +207,21 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-LOOK-DETAIL-001、FR-LOOK-DETAIL-002、FR-LOOK-DETAIL-003、FR-LOOK-DETAIL-006、FREQ-176-REQ-01、FREQ-177-REQ-01、FREQ-181-REQ-01、FREQ-182-REQ-01、FREQ-183-REQ-01、FREQ-183-REQ-02、FREQ-183-REQ-03、FREQ-288-REQ-03、FREQ-343-REQ-01、FREQ-343-REQ-02、FREQ-343-REQ-03、FREQ-344-REQ-01、NFR-SEO-003（範囲外）、SEC-LOOK-001、SEC-LOOK-017、DRV-LOOK-004、DRV-LOOK-006、ADR-0152、ADR-0156 |
+| 上位 | FR-LOOK-DETAIL-001、FR-LOOK-DETAIL-002、FR-LOOK-DETAIL-003、FR-LOOK-DETAIL-006、FREQ-176-REQ-01、FREQ-177-REQ-01、FREQ-181-REQ-01、FREQ-182-REQ-01、FREQ-183-REQ-01、FREQ-183-REQ-02、FREQ-183-REQ-03、FREQ-288-REQ-03、FREQ-343-REQ-01、FREQ-343-REQ-02、FREQ-343-REQ-03、FREQ-344-REQ-01、NFR-SEO-003（範囲外）、SEC-LOOK-001、SEC-LOOK-016、SEC-LOOK-017、SEC-LOOK-022、DRV-LOOK-004、DRV-LOOK-006、ADR-0152、ADR-0156、ADR-0159 |
 | 根拠 | 1つの着こなしの狙いを写真と言葉で伝え、使った商品と前後の LOOK へその場で移れるようにするため（FR-LOOK-DETAIL-001〜003）。画像と情報の列を ITEM 詳細と同じ組み方にし、詳細の頁ごとに見方を覚え直させない（FREQ-288）。モバイルは前後と一覧への移動を画面の下に固定し、親指で届くようにする（FREQ-343）。非公開・無い LOOK は同じ URL で知らせを出し、有無も中身も出さない（SEC-LOOK-001、DRV-LOOK-006、ADR-0156） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/look/[id]/page.tsx`、`src/app/look/[id]/look-detail.css`）、`docs/03_BasicDesign/ui/screen-list.md` |
 
-- 作り: Server Component。本体は `getPublishedLooks` で公開の LOOK を全部取り、道の `id` を `Number` にして位置を探す（ADR-0152）。メタ情報は `getPublishedLookById` で1件を別に取る。1回の表示で同じ LOOK の画像を2回署名する（推定）
+- 作り: Server Component。道の `id` を `parseLookId` で正の整数に確かめ、現在の LOOK を `getPublishedLookById` で 1 件取り、前後は `getAdjacentPublishedLooks` で 1 件ずつ取る（ADR-0159。一覧の 100 件に頼らない）。メタ情報も `getPublishedLookById` で 1 件を別に取る。1回の表示で同じ LOOK の画像を2回署名する（推定）
 - 列: md 未満は1列、md 以上は ITEM 詳細と同じ2列（左に画像のギャラリー SCR-LOOK-005、右に情報）。PC の画像は高さ基準で右の列にかぶらない（FREQ-288-REQ-03。幅基準にする FREQ-180-REQ-01 は FREQ-288 で高さ基準に戻ったので上位にしない）
 - 情報: シーズン（「2026 AW」）、テーマ（h1）、説明文（空の時も空白1文字の段落を出す）、STYLING ITEMS の `List`（showcase。名前・分類・価格・画像、`/item/<id>` へのリンク、見本は √φ 倍、外枠の線は区切り線と同じ。FREQ-176・177）。公開中の商品だけを出し、0件は「紐づけ商品はありません」（DRV-LOOK-004）
 - 前後: md 以上は「PREV LOOK / LOOK LIST / NEXT LOOK」の3等分の格子（`aria-label="Look navigation"`）。アイコンは線幅1のインラインの SVG。前後が無い側は薄い非リンク（`aria-hidden`）。リンクの読み上げの名前は「Previous look: <テーマ>」「Look list」「Next look: <テーマ>」（FREQ-181〜183、FR-LOOK-DETAIL-006）
 - モバイル: md 未満は3列を隠し、同じ3項目を `BottomNavigation`（範囲外）で画面の下に固定する。前後が無い側は `disabled`。固定のナビがフッターを覆わないよう、`look-detail.css` がフッターに下の余白を足す（FREQ-343）。横のスクロールは起こさない（FREQ-344）
 - 「Back to Lookbook」のリンクは通常の表示に無い（FREQ-178 の前半）
-- 無い時: 全件の中に無い・非公開・数でない id は、見出し「Look not found」だけを状態 200 で返す（DRV-LOOK-006、ADR-0156）。`/look` への戻りのリンクは無い（FR-LOOK-DETAIL-004・FREQ-178-REQ-01 は満たさないので上位にしない。E2E FR-LOOK-DETAIL-004・010 が赤）。DB の取り出しの失敗も同じ画面になる（SEC-LOOK-022 は満たさない）
+- 無い時: 公開の LOOK に無い・非公開・形の合わない id は、見出し「Look not found」だけを状態 200 で返す（DRV-LOOK-006、ADR-0156）。形の合わない id は DB を呼ばない。`/look` への戻りのリンクは無い（FR-LOOK-DETAIL-004・FREQ-178-REQ-01 は満たさないので上位にしない。E2E FR-LOOK-DETAIL-004・010 が赤）。DB の取り出しの失敗は「Look not found」にせず、頁が投げて `src/app/look/error.tsx` の誤りの画面になる（SEC-LOOK-022。2026-10-26）。前後の取り出しだけが失敗した時は頁を開き、前後を無効の表示にする
 - メタ: title は「<テーマ> | LOOK | Le Fil des Heures」、description は説明文（空ならテーマから作った文）、OG の画像は1枚目の署名つき URL（SEC-LOOK-006 は満たさない）。無い時は「Look not found | Le Fil des Heures」と固定の説明
-- 道の `id` の形は確かめない（`1.0` なども数として探す。SEC-LOOK-016 は満たさない）
+- 道の `id` は `parseLookId`（`/^[1-9]\d{0,15}$/` かつ安全な整数）で確かめる。`1e3`・`1.5`・`0`・`01`・前後の空白・17 桁以上は null（SEC-LOOK-016。2026-10-26）
 
 ### SCR-LOOK-005 詳細の画像のギャラリー
 
@@ -243,7 +244,7 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-005、FREQ-17-REQ-01、DRV-LOOK-008、DRV-LOOK-011、DRV-LOOK-012 |
+| 上位 | FR-ADMIN-005、FREQ-17-REQ-01、SEC-LOOK-019、DRV-LOOK-008、DRV-LOOK-011、DRV-LOOK-012、ADR-0161 |
 | 根拠 | 店長が LOOK の一覧から公開の切り替え・編集・削除へ1か所で届くようにするため（FR-ADMIN-005）。作った LOOK を直さずに出し入れできるよう、状態だけを切り替えるボタンを置く（DRV-LOOK-008）。消した LOOK は戻せないので、押し間違いで消さないよう確かめを挟む（DRV-LOOK-011）。新しい LOOK を上に出す（DRV-LOOK-012） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -251,11 +252,11 @@ sequenceDiagram
 
 - 置き場: `/admin?tab=LOOK` の中で `LookSection` を描く（`src/app/admin/page.tsx` の `case 'LOOK'`、範囲外）。タブと「新規作成」は役が `admin` の時だけ出す。窓口は権限で守るので、画面は役・窓口は権限と軸が違う
 - 取り出し: `GET /api/admin/looks`（API-LOOK-001）。読み込み中は「読み込み中...」
-- 行: 1枚目の画像（無ければ `/placeholder.png`）、状態の `TagLabel`（公開中・非公開）、シーズン、テーマ、公開・非公開の切り替え、編集（`/admin/look/edit/<id>`）、削除のボタン。作った日時の新しい順（DRV-LOOK-012）
+- 行: 1枚目の画像（無ければ `/placeholder.png`）、状態の `TagLabel`（公開中・非公開）、シーズン、テーマ、公開・非公開の切り替え、編集（`/admin/look/edit/<id>`）、削除のボタン。作った日時の新しい順（DRV-LOOK-012）。切り替え・編集・削除のボタンは、窓口の応答の `meta.canManage` が真の時だけ出す（読み込み中・失敗・`meta` なし・偽は出さない。SEC-LOOK-019-AC-05）
 - 切り替え: 今の状態を反転して `PATCH`（API-LOOK-005）。失敗は `alert`「ステータスの更新に失敗しました」、成功で取り直す（DRV-LOOK-008）
 - 削除: 「このLOOKを削除してもよろしいですか？」に同意した時だけ `DELETE`（API-LOOK-006）。失敗は `alert`「LOOKの削除に失敗しました」、成功で取り直す（DRV-LOOK-011）
 - 0件も取り出しの失敗も「LOOKがありません」になる（SEC-LOOK-022 は満たさない）
-- 権限での出し分けはせず、`admin.looks.read` だけの人にも切り替え・編集・削除のボタンが出る（窓口が 403。SEC-LOOK-019 の画面の部分は満たさないので上位にしない）
+- `admin.looks.read` だけの人にはカードの3つのボタンを出さない（2026-10-26。窓口は変更のたびに権限を確かめるので、画面の出し分けは案内）。「新規作成」は `src/app/admin/page.tsx` が役で出していて、権限の無い人にも出る（波 4。SEC-LOOK-019-AC-04）
 
 ### SCR-LOOK-007 LOOK の作成 `/admin/look/create`
 
@@ -292,7 +293,7 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-LOOK-ALL-002、FR-LOOK-DETAIL-002、FR-LOOK-DETAIL-003、FREQ-150-REQ-01、FREQ-151-REQ-01、FREQ-181-REQ-01、FREQ-343-REQ-01、DRV-LOOK-001、ADR-0155 |
+| 上位 | FR-LOOK-ALL-002、FR-LOOK-DETAIL-002、FR-LOOK-DETAIL-003、FREQ-150-REQ-01、FREQ-151-REQ-01、FREQ-181-REQ-01、FREQ-343-REQ-01、DRV-LOOK-001、ADR-0155、ADR-0159 |
 | 根拠 | カードから詳細へ、詳細から前後の LOOK と使った商品へ、一覧へ戻らずに続けて移れるようにするため（FR-LOOK-ALL-002、FR-LOOK-DETAIL-002・003）。前後は一覧と同じ作った日時の新しい順で決め、一覧で見た順に辿れるようにする（DRV-LOOK-001）。カードの中の商品へも直接移れるようにする（FREQ-150・151、ADR-0155） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -314,7 +315,7 @@ flowchart LR
 
 - シーズンを変えると `router.push(url, {scroll:false})` で履歴を1つ足して同じルートを描き直す（STATE-LOOK-002）
 - カードのリンクは `/look/<id>` だけで、選んだシーズンを詳細へ引き継がない。詳細の LOOK LIST は `/look`（ALL）へ戻る。選んだシーズンへ戻れるのはブラウザの戻るだけ（推定。`trace-matrix.md` の「食い違い」節を参照）
-- 前後は公開の LOOK の全件の並びで決め、一覧で絞ったシーズンの中の前後ではない
+- 前後は公開の LOOK 全体の並び（作った日時の新しい順・同じ時刻は `id` の大きい順）で決め、一覧で絞ったシーズンの中の前後ではない。一覧の 100 件の外の LOOK でも前後を持つ（`getAdjacentPublishedLooks`。ADR-0159）
 - 端の LOOK では無い側を押せない（md 以上は薄い非リンク、md 未満は `disabled`）
 - 例外: 無い LOOK の詳細（SCR-LOOK-004）には戻りのリンクが無く、ヘッダーなど共通の部品で移るしかない
 
@@ -409,7 +410,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-005、SEC-LOOK-019、DRV-LOOK-012、FREQ-316-REQ-02（範囲外） |
+| 上位 | FR-ADMIN-005、SEC-LOOK-019、DRV-LOOK-012、FREQ-316-REQ-02（範囲外）、ADR-0161 |
 | 根拠 | 非公開の LOOK を含む一覧は管理の権限を持つ人だけに渡すため、`admin.looks.read` と aal2 を求める（SEC-LOOK-019、FREQ-316-REQ-02）。並びは公開側と同じ作った日時の新しい順にそろえる（DRV-LOOK-012） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -417,11 +418,11 @@ stateDiagram-v2
 
 | 項目 | 内容 |
 | --- | --- |
-| 認可 | `admin.looks.read`。失敗は 401・403・503 |
+| 認可 | `admin.looks.read`。失敗は 401・403・503。画面の出し分けのために `admin.looks.manage` も確かめ、403 だけは `canManage:false` として一覧を返す（暫定。ADR-0161） |
 | 入力 | なし |
 | 処理 | service role の client で `looks` と関連の `look_items(item_id)` を取る。非公開を含む全部、作った日時の新しい順。件数の上限とページ分けは無い |
-| 成功 | 200 `{data}`。`image_urls` は署名つき URL |
-| 失敗 | DB の失敗は 500 `Failed to fetch looks`、例外は 500 |
+| 成功 | 200 `{data, meta:{canManage}}`。`image_urls` は署名つき URL。`canManage` は `admin.looks.manage` の認可をもう一度行った結果（権限が無いための 403 だけ false） |
+| 失敗 | DB の失敗は 500 `Failed to fetch looks`、`canManage` を決める確かめが 401・503 ならその応答、例外は 500 |
 | 回数の制限・監査 | どちらも無い（SEC-LOOK-012 の読み出しの部分は満たさない） |
 
 ### API-LOOK-002 `POST /api/admin/looks` LOOK の作成
@@ -438,14 +439,14 @@ stateDiagram-v2
 | --- | --- |
 | 認可 | `admin.looks.manage`。CSRF は proxy の Origin の検査 |
 | 回数の制限 | 作成10回／10分を送り元と操作者で。超えると 429、数え場所が使えないと 503 |
-| 入力 | multipart。`seasonYear`（2000〜2100 の整数）・`seasonType`（SS・AW）・`theme`（前後の空白を除いて1〜200字）・`themeDescription`（4000字まで、無ければ空）・`status`（private・published）・`linkedItemIds`（JSON の正の整数の配列、1つ以上）・`images`（1枚以上、JPEG・PNG・WebP・GIF を申告の種類で見る、1枚 5MB、1回6枚・合計 20MB） |
-| 処理 | 紐づける商品が `items` に全部あるかを数で確かめる（公開かは見ない）→ 操作者の1時間の作成の画像の量を数える（60MB）→ 置き場へ `looks/<YYYY-MM-DD>/<uuid>.<ファイル名の拡張子>`（無ければ `jpg`）、送られた種類、`upsert:false`、`cacheControl:'3600'` で上げる → `looks` に入れる → `look_items` に入れる。関連の保存に失敗したら作った LOOK の行を消して戻す |
+| 入力 | multipart。`seasonYear`（2000〜2100 の整数）・`seasonType`（SS・AW）・`theme`（前後の空白を除いて1〜200字）・`themeDescription`（4000字まで、無ければ空）・`status`（private・published）・`linkedItemIds`（JSON の正の整数の配列、1つ以上）・`images`（1枚以上、JPEG・PNG・WebP・GIF。申告の種類と中身の先頭の印の両方が合うこと、1枚 5MB、1回6枚・合計 20MB） |
+| 処理 | 画像の種類・大きさ・中身を確かめる（量の枠を使う前）→ 紐づける商品が `items` に全部あるかを数で確かめる（公開かは見ない）→ 操作者の1時間の作成の画像の量を数える（60MB）→ 置き場へ `looks/<YYYY-MM-DD>/<uuid>.<検出した種類の拡張子>`、検出した種類、`upsert:false`、`cacheControl:'3600'` で上げる → `looks` に入れる → `look_items` に入れる。途中の失敗では上げ終えた画像を置き場から消し、関連の保存に失敗したら作った LOOK の行も消して戻す |
 | 成功 | 201 `{success:true, id}`。監査 `admin.look.create`（success） |
-| 失敗 | 入力の誤り 400 `Invalid request`、画像なし 400、枚数・合計 400、種類 400 `Unsupported image type`、大きさ 400、商品の確かめの失敗 500、無い商品 400 `Some linked items do not exist`、1時間の量 429・503、置き場の失敗 500（置き場の誤りの文を `error` に入れる）、表の失敗 500、例外 500。回数と量の制限で断った時のほかは、どれも監査 `admin.look.create`（failure） |
+| 失敗 | 入力の誤り 400 `Invalid request`、画像なし 400、枚数・合計 400、種類 400 `Unsupported image type`、大きさ 400、商品の確かめの失敗 500、無い商品 400 `Some linked items do not exist`、1時間の量 429・503、置き場の失敗 500 `Failed to upload image`（置き場の誤りの文は入れない）、表の失敗 500、例外 500。回数と量の制限で断った時のほかは、どれも監査 `admin.look.create`（failure）。置き場の削除が失敗した時は監査の `metadata` に `image_cleanup`・`orphaned_count` を足す |
 
-- 画像の種類は申告の `File.type` だけで確かめ、拡張子はファイル名から取る（SEC-LOOK-013 は満たさない）
-- 置き場の誤りの文を応答に入れ、Supabase の error を丸ごと記録に渡す（SEC-LOOK-021 は満たさない）
-- 途中で失敗しても上げ終えた画像を消さない（SEC-LOOK-014 は満たさない）
+- 画像の種類は申告と中身の先頭の印の両方で確かめ、拡張子は検出した種類から作る（SEC-LOOK-013）
+- 応答に置き場の誤りの文を入れず、記録は名前と符号だけ（SEC-LOOK-021）
+- 途中で失敗した時は上げ終えた画像を消す（SEC-LOOK-014）
 - 同じ商品 ID を2回送ると数が合わず `Some linked items do not exist` になる（SEC-LOOK-016 は満たさない）
 - multipart でない要求は例外になり 500（推定）
 
@@ -462,13 +463,13 @@ stateDiagram-v2
 | 項目 | 内容 |
 | --- | --- |
 | 認可 | `admin.looks.read` |
-| 入力 | 道の `id`（形は確かめない） |
-| 処理 | service role の client で `looks` の全部の列と `look_items` の商品の ID を取る |
+| 入力 | 道の `id`（認可の後に `parseLookId` で確かめ、合わなければ 400 `Invalid look id`。DB は呼ばない） |
+| 処理 | service role の client で `looks` の全部の列を `maybeSingle` で取り、`look_items` の商品の ID を取る |
 | 成功 | 200 `{data}`。全部の列、`image_urls` は署名つき URL、`linkedItemIds` |
-| 失敗 | 行が無い・DB の失敗・数でない id は、どれも 404 `Look not found`（推定）。関連の失敗は 500 `Failed to fetch look items`、例外は 500 |
+| 失敗 | 数でない id は 400 `Invalid look id`。行が無い時だけ 404 `Look not found`。DB の失敗は 500 `Failed to fetch look`。関連の失敗は 500 `Failed to fetch look items`、例外は 500 |
 | 回数の制限・監査 | どちらも無い |
 
-- 「無い」と DB の失敗を同じ 404 にする（SEC-LOOK-022 は満たさない）。id を確かめない（SEC-LOOK-016 は満たさない）
+- 「無い」（404）と DB の失敗（500）を分け（SEC-LOOK-022）、id の形を確かめる（SEC-LOOK-016）
 
 ### API-LOOK-004 `PUT /api/admin/looks/[id]` LOOK の全体の更新
 
@@ -484,13 +485,13 @@ stateDiagram-v2
 | --- | --- |
 | 認可 | `admin.looks.manage` |
 | 回数の制限 | 更新15回／10分を送り元と操作者で |
-| 入力 | 道の `id`。multipart は作成と同じ形で、`images` は任意（付ければ枚数・合計・種類・大きさを確かめる） |
-| 処理 | 今の LOOK の有無を確かめる（無ければ 404）→ 紐づける商品の数を確かめる → 操作者の1時間の更新の画像の量を数える（作成と別に数える）→ 画像があれば上げて並びを全部差し替える（無ければ元の道筋のまま）→ `looks` を更新 → `look_items` を全部消す → 入れ直す |
+| 入力 | 道の `id`（認可と回数の後に `parseLookId` で確かめ、合わなければ 400 `Invalid look id`）。multipart は作成と同じ形で、`images` は任意（付ければ枚数・合計・種類・大きさ・中身の印を確かめる） |
+| 処理 | 画像の確かめ（量の枠を使う前）→ 今の LOOK の有無を `maybeSingle` で確かめる（無ければ 404。何も上げない）→ 紐づける商品の数を確かめる → 操作者の1時間の更新の画像の量を数える（作成と別に数える）→ 画像があれば上げて並びを全部差し替える（無ければ元の道筋のまま）→ `looks` を更新 → 画像を差し替えたなら古い道筋を置き場から消す → `look_items` を全部消す → 入れ直す。`looks` の更新が失敗したら、この要求で上げた新しい画像を消す |
 | 成功 | 200 `{success:true}`。監査 `admin.look.update`（success） |
-| 失敗 | 入力・画像の誤り 400、無い LOOK 404、無い商品 400、1時間の量 429・503、置き場の失敗 500（置き場の誤りの文を入れる）、更新・関連の削除・関連の追加の失敗 500、例外 500。回数と量の制限で断った時のほかは監査 `admin.look.update`（failure） |
+| 失敗 | 入力・画像の誤り 400、無い LOOK 404、無い商品 400、1時間の量 429・503、取り出しの DB の失敗 500 `Failed to fetch look`、置き場の失敗 500 `Failed to upload image`（置き場の誤りの文は入れない）、更新・関連の削除・関連の追加の失敗 500、例外 500。回数と量の制限で断った時のほかは監査 `admin.look.update`（failure）。置き場の削除が失敗した時は監査の `metadata` に `image_cleanup`・`orphaned_count` を足す |
 
 - 3つの書き込みを別々に行い、途中の失敗を戻さない。関連の追加に失敗すると、LOOK が関連商品0件のまま残る（SEC-LOOK-015 は満たさない）
-- 差し替え前の画像を消さない（SEC-LOOK-014 は満たさない）。種類と拡張子の決め方は作成と同じ（SEC-LOOK-013 は満たさない）
+- 差し替え前の画像は、行を変えた後に消す（SEC-LOOK-014）。種類と拡張子の決め方は作成と同じ（SEC-LOOK-013）
 - 1時間の量を作成と別に数えるので、合わせると1時間に 120MB まで上げられる（SEC-LOOK-012 は満たさない）
 
 ### API-LOOK-005 `PATCH /api/admin/looks/[id]` 公開の状態だけの切り替え
@@ -507,12 +508,12 @@ stateDiagram-v2
 | --- | --- |
 | 認可 | `admin.looks.manage` |
 | 回数の制限 | 状態の変更30回／10分を送り元と操作者で |
-| 入力 | 道の `id`、JSON `{status}`（`private` か `published`） |
-| 処理 | 有無を確かめる（無ければ 404）→ `status` だけを更新 |
+| 入力 | 道の `id`（認可と回数の後に `parseLookId` で確かめ、合わなければ 400 `Invalid look id`）、JSON `{status}`（`private` か `published`） |
+| 処理 | 有無を `maybeSingle` で確かめる（無ければ 404）→ `status` だけを更新 |
 | 成功 | 200 `{success:true}`。監査 `admin.look.status_update`（success） |
-| 失敗 | 値の誤り 400、無い LOOK 404、更新の失敗 500、JSON の解析の失敗を含む例外 500。監査 `admin.look.status_update`（failure） |
+| 失敗 | 値の誤り 400、JSON でない本文 400 `Invalid request`（監査 `Invalid JSON`）、無い LOOK 404、取り出しの DB の失敗 500 `Failed to fetch look`、更新の失敗 500、例外 500。監査 `admin.look.status_update`（failure） |
 
-- 本文が JSON でないと 500 になり、作成・更新の 400 とそろわない（SEC-LOOK-016 は満たさない）
+- 本文が JSON でない時は 400 にし、作成・更新の 400 とそろえた（SEC-LOOK-016）
 
 ### API-LOOK-006 `DELETE /api/admin/looks/[id]` LOOK の削除
 
@@ -528,12 +529,12 @@ stateDiagram-v2
 | --- | --- |
 | 認可 | `admin.looks.manage` |
 | 回数の制限 | 削除30回／10分を送り元と操作者で |
-| 入力 | 道の `id`、本文なし |
-| 処理 | 有無を確かめる（無ければ 404）→ `looks` の行を消す。関連の行は外部キーで消える |
+| 入力 | 道の `id`（認可と回数の後に `parseLookId` で確かめ、合わなければ 400 `Invalid look id`）、本文なし |
+| 処理 | 有無と `image_urls` を `maybeSingle` で読む（無ければ 404）→ `looks` の行を消す。関連の行は外部キーで消える → 行の削除が成功した後に、`image_urls` のうち自分の道筋だけを置き場から消す |
 | 成功 | 200 `{success:true}`。監査 `admin.look.delete`（success） |
-| 失敗 | 無い LOOK 404、削除の失敗 500、例外 500。監査 `admin.look.delete`（failure） |
+| 失敗 | 無い LOOK 404、取り出しの DB の失敗 500 `Failed to fetch look`、削除の失敗 500（画像は消さない）、例外 500。監査 `admin.look.delete`（failure）。置き場の削除の失敗は 200 のままで、成功の監査の `metadata` に `image_cleanup`・`orphaned_count` を足す |
 
-- 置き場の画像は消さない（SEC-LOOK-014 は満たさない。`api-spec.md` は画像も消すと書く）
+- 置き場の画像も消す（SEC-LOOK-014。`api-spec.md` の「画像を削除」と合った）
 
 ## データ
 

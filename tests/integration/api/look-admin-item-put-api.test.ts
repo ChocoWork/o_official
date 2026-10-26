@@ -39,12 +39,20 @@ type TableOp = { table: string; op: Op; calls: Call[] };
 type Tables = Record<string, Partial<Record<Op, Outcome>>>;
 type Upload = { bucket: string; path: string; body: unknown; options: Record<string, unknown> };
 type Signed = { bucket: string; path: string; expiresIn: number };
+type Removal = { bucket: string; paths: string[] };
 
 // 表への呼び出しを、最初の操作（select・insert・update・delete）ごとに用意した結果で返す
 function createFakeClient(
   tables: Tables,
-  storage: { uploadResult?: Result; sign?: (path: string) => Result } = {}
+  storage: {
+    uploadResult?: Result;
+    /** 何回目（0 始まり）の上げで uploadResult を返すか。既定は全部 */
+    uploadResultAt?: number;
+    sign?: (path: string) => Result;
+    removeResult?: Outcome;
+  } = {}
 ) {
+  const removals: Removal[] = [];
   const ops: TableOp[] = [];
   const seq: string[] = [];
   const uploads: Upload[] = [];
@@ -54,11 +62,12 @@ function createFakeClient(
     seq,
     uploads,
     signed,
+    removals,
     from: jest.fn((table: string) => {
       const op: TableOp = { table, op: 'select', calls: [] };
       ops.push(op);
       const builder: Record<string, unknown> = {};
-      for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'in', 'or', 'single']) {
+      for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'in', 'or', 'single', 'maybeSingle']) {
         builder[m] = (...args: unknown[]) => {
           if (op.calls.length === 0 && (m === 'select' || m === 'insert' || m === 'update' || m === 'delete')) {
             op.op = m;
@@ -79,7 +88,14 @@ function createFakeClient(
       from: jest.fn((bucket: string) => ({
         upload: jest.fn(async (path: string, body: unknown, options: Record<string, unknown>) => {
           uploads.push({ bucket, path, body, options });
-          return storage.uploadResult ?? { data: {}, error: null };
+          const failing = storage.uploadResultAt === undefined || storage.uploadResultAt === uploads.length - 1;
+          return (failing ? storage.uploadResult : undefined) ?? { data: {}, error: null };
+        }),
+        remove: jest.fn(async (paths: string[]) => {
+          removals.push({ bucket, paths });
+          const outcome = storage.removeResult ?? { data: [], error: null };
+          if ('throws' in outcome) throw outcome.throws;
+          return outcome;
         }),
         createSignedUrl: jest.fn(async (path: string, expiresIn: number) => {
           signed.push({ bucket, path, expiresIn });
@@ -164,6 +180,7 @@ function baseHeaders(name: string, userAgent: string | null | undefined) {
 }
 
 const { PUT } = require('@/app/api/admin/looks/[id]/route');
+const { fileOf, minimalGif, minimalJpeg, minimalPng, minimalWebp, textAsImage } = require('../../fixtures/images');
 
 const MEBIBYTE = 1024 * 1024;
 const FIVE_MB = 5 * MEBIBYTE;
@@ -179,11 +196,20 @@ const validFields: Record<string, unknown> = {
 
 const existingImages = ['looks/2026-10-01/old-a.jpg', 'looks/2026-10-01/old-b.jpg'];
 
-function makeImage(name: string, type: string, size?: number): File {
-  const file = new File(['img'], name, { type });
+const IMAGE_BYTES: Record<string, () => Buffer> = {
+  'image/jpeg': minimalJpeg,
+  'image/png': minimalPng,
+  'image/webp': minimalWebp,
+  'image/gif': minimalGif,
+};
+
+// 申告の種類に合う本物の先頭の印を持つ画像。bytes を渡すと中身をそれにする（申告とずらす試験用）。
+function makeImage(name: string, type: string, size?: number, bytes?: Buffer): File {
+  const content: Buffer = bytes ?? (IMAGE_BYTES[type]?.() ?? textAsImage());
+  const file = fileOf(content, name, type);
   Object.defineProperty(file, 'arrayBuffer', {
     configurable: true,
-    value: async () => new Uint8Array([1, 2, 3]).buffer,
+    value: async () => new Uint8Array(content).buffer,
   });
   if (size !== undefined) {
     Object.defineProperty(file, 'size', { configurable: true, value: size });
@@ -395,7 +421,7 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     expect(client.uploads).toHaveLength(0);
     expect(incrementCounterBy).not.toHaveBeenCalled();
     expect(updatePayload()).toEqual(expectedPayload);
-    expect(tableCalls('looks', 'select')).toEqual([[['select', ['id,status,image_urls']], ['eq', ['id', '7']], ['single', []]]]);
+    expect(tableCalls('looks', 'select')).toEqual([[['select', ['id,status,image_urls']], ['eq', ['id', '7']], ['maybeSingle', []]]]);
     expect(tableCalls('items', 'select')).toEqual([[['select', ['id']], ['in', ['id', [3, 5]]]]]);
     expect(tableCalls('looks', 'update')[0].find(([m]) => m === 'eq')?.[1]).toEqual(['id', '7']);
     expect(tableCalls('look_items', 'delete')).toEqual([[['delete', []], ['eq', ['look_id', '7']]]]);
@@ -594,6 +620,33 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     });
   });
 
+  test('API-LOOK-004 文字のファイルを image/png と申告したら 400 Unsupported image type で、上げず・量も数えず・表にも触れず、中身もファイル名も監査に残さない', async () => {
+    setup({ tables: lookTables() });
+    const images = [makeImage('secret-name.png', 'image/png', undefined, textAsImage())];
+
+    const res = await PUT(makeRequest({ images }), ctx('7'));
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Unsupported image type' });
+    expect(client.uploads).toHaveLength(0);
+    expect(client.removals).toHaveLength(0);
+    expect(incrementCounterBy).not.toHaveBeenCalled();
+    expect(dataSeq()).toEqual([]);
+    expect(auditRows()[0]).toMatchObject({ outcome: 'failure', detail: 'Unsupported image type', resource_id: '7' });
+    expect(JSON.stringify(auditRows())).not.toMatch(/secret-name|plain text/);
+  });
+
+  test('API-LOOK-004 PNG の中身を image/webp と申告したら 400 で、同じ要求の本物の画像も上げない', async () => {
+    setup({ tables: lookTables() });
+    const images = [makeImage('ok.png', 'image/png'), makeImage('x.webp', 'image/webp', undefined, minimalPng())];
+
+    const res = await PUT(makeRequest({ images }), ctx('7'));
+
+    expect(res.status).toBe(400);
+    expect(client.uploads).toHaveLength(0);
+    expect(incrementCounterBy).not.toHaveBeenCalled();
+  });
+
   test('API-LOOK-004 5MB ちょうどの画像は通し、5MB を超える画像は 400 で断る', async () => {
     setup({ tables: lookTables() });
     const atLimit = await PUT(makeRequest({ images: [makeImage('a.gif', 'image/gif', FIVE_MB)] }), ctx());
@@ -634,8 +687,9 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     const res = await PUT(makeRequest({ images }), ctx('7'));
 
     expect(res.status).toBe(200);
-    const first = `${datePrefix()}uuid-1.PNG`;
-    const second = `${datePrefix()}uuid-2.jpg`;
+    // 拡張子は送られた名前でなく、中身から検出した種類で決める
+    const first = `${datePrefix()}uuid-1.png`;
+    const second = `${datePrefix()}uuid-2.webp`;
     expect(client.uploads).toHaveLength(2);
     expect(client.uploads[0]).toMatchObject({
       bucket: 'look-images',
@@ -720,13 +774,59 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     });
   });
 
-  test('API-LOOK-004 今の LOOK の取り出しが DB の失敗でも 404 Look not found にする', async () => {
-    setup({ tables: lookTables({ existing: { data: null, error: { message: 'connection reset' } } }) });
+  test('API-LOOK-004 今の LOOK の取り出しが DB の失敗なら「無い」と分けて 500 Failed to fetch look にし、何も上げない', async () => {
+    setup({ tables: lookTables({ existing: { data: null, error: { code: '08006', message: 'connection reset SECRET' } } }) });
 
-    const res = await PUT(makeRequest(), ctx());
+    const res = await PUT(makeRequest({ images: [makeImage('a.png', 'image/png')] }), ctx());
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'Failed to fetch look' });
+    expect(client.uploads).toHaveLength(0);
+    expect(dataSeq()).toEqual(['looks.select']);
+    expect(auditRows()[0]).toMatchObject({ outcome: 'failure', detail: 'Failed to fetch look', resource_id: '7' });
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('SECRET');
+  });
+
+  test('API-LOOK-004 今の LOOK が無い id に画像つきで PUT しても、何も置き場に上げない', async () => {
+    setup({ tables: lookTables({ existing: { data: null, error: null } }) });
+
+    const res = await PUT(makeRequest({ images: [makeImage('a.png', 'image/png')] }), ctx('999'));
 
     expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: 'Look not found' });
+    expect(client.uploads).toHaveLength(0);
+    expect(client.removals).toHaveLength(0);
+  });
+
+  test.each(['abc', '1e3', '0', '-1', '1.5'])(
+    'API-LOOK-004 id が %s の時は認可と回数の後で 400 Invalid look id と監査（id の生の値は残さず長さだけ）を返し、本文も読まず LOOK の表も引かない',
+    async (badId) => {
+      setup({ tables: lookTables() });
+      const request = makeRequest();
+
+      const res = await PUT(request, ctx(badId));
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Invalid look id' });
+      expect(formDataMock(request)).not.toHaveBeenCalled();
+      expect(dataSeq()).toEqual([]);
+      expect(auditRows()).toHaveLength(1);
+      expect(auditRows()[0]).toMatchObject({
+        action: 'admin.look.update',
+        outcome: 'failure',
+        detail: 'Invalid look id',
+        resource_id: null,
+        metadata: { id_length: badId.length },
+      });
+    },
+  );
+
+  test('API-LOOK-004 id が不正でも manage が無ければ今までの 403 を返す（id の検査より先）', async () => {
+    setup({ codes: ['admin.looks.read'], tables: lookTables() });
+
+    const res = await PUT(makeRequest(), ctx('abc'));
+
+    expect(res.status).toBe(403);
+    expect(auditRows()).toHaveLength(0);
   });
 
   test('API-LOOK-004 商品の確認に失敗したら 500 Failed to validate linked items と失敗の監査を残し、表を更新しない', async () => {
@@ -789,22 +889,23 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
     expect(auditRows()[0].metadata).toMatchObject({ previous_status: null, image_count: 0 });
   });
 
-  test('API-LOOK-004 置き場の失敗は 500 に置き場の誤りの文を入れて返し、上げた先の道筋を監査に残して表を更新しない', async () => {
+  test('API-LOOK-004 置き場の失敗は 500 Failed to upload image ちょうどを返し、上げた先の道筋を監査に残して表を更新しない', async () => {
     setup({
       tables: lookTables(),
-      storage: { uploadResult: { data: null, error: { message: 'bucket full' } } },
+      storage: { uploadResult: { data: null, error: { message: 'bucket full SECRET' } } },
     });
 
     const res = await PUT(makeRequest({ images: [makeImage('a.png', 'image/png')] }), ctx('7'));
 
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: 'Failed to upload image: bucket full' });
+    expect(await res.json()).toEqual({ error: 'Failed to upload image' });
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('SECRET');
     expect(dataSeq()).toEqual(['looks.select', 'items.select']);
     expect(auditRows()[0]).toMatchObject({
       action: 'admin.look.update',
       outcome: 'failure',
       detail: 'Failed to upload look image',
-      metadata: { storage_path: `${datePrefix()}uuid-1.png`, image_type: 'image/png' },
+      metadata: { image_type: 'image/png' },
     });
   });
 
@@ -820,6 +921,111 @@ describe('PUT /api/admin/looks/[id]（管理の LOOK の全体の更新）', () 
       detail: 'Failed to update look',
       outcome: 'failure',
       metadata: { status: 'published', linked_item_ids: [3, 5] },
+    });
+  });
+
+  describe('画像の後始末', () => {
+    const images = () => [makeImage('a.png', 'image/png'), makeImage('b.jpg', 'image/jpeg')];
+
+    test('API-LOOK-004 画像なしの更新は置き場を呼ばない', async () => {
+      setup({ tables: lookTables() });
+
+      const res = await PUT(makeRequest(), ctx('7'));
+
+      expect(res.status).toBe(200);
+      expect(client.storage.from).not.toHaveBeenCalled();
+    });
+
+    test('API-LOOK-004 画像つきの更新の成功は、行を変えた後に古い道筋だけを一度に置き場から消す', async () => {
+      setup({ tables: lookTables() });
+
+      const res = await PUT(makeRequest({ images: images() }), ctx('7'));
+
+      expect(res.status).toBe(200);
+      expect(client.removals).toEqual([{ bucket: 'look-images', paths: existingImages }]);
+      const newPaths = client.uploads.map((u) => u.path);
+      expect(client.removals[0].paths.some((p) => newPaths.includes(p))).toBe(false);
+      expect(auditRows()[0].metadata).not.toHaveProperty('image_cleanup');
+    });
+
+    test('API-LOOK-004 古い道筋のうち自分の接頭辞の外（古い見本・外の URL・..）は消さない', async () => {
+      setup({
+        tables: lookTables({
+          existing: {
+            data: {
+              id: 7,
+              status: 'private',
+              image_urls: ['looks/2026-10-01/old-a.jpg', 'e2e/look-1-1.png', 'https://evil.example/looks/x.png', 'looks/../y.png'],
+            },
+            error: null,
+          },
+        }),
+      });
+
+      const res = await PUT(makeRequest({ images: images() }), ctx('7'));
+
+      expect(res.status).toBe(200);
+      expect(client.removals).toEqual([{ bucket: 'look-images', paths: ['looks/2026-10-01/old-a.jpg'] }]);
+    });
+
+    test('API-LOOK-004 looks の更新が失敗したら、この要求で上げた新しい画像だけを消し、古い画像は消さない', async () => {
+      setup({ tables: lookTables({ lookUpdate: { data: null, error: { message: 'rls denied' } } }) });
+
+      const res = await PUT(makeRequest({ images: images() }), ctx('7'));
+
+      expect(res.status).toBe(500);
+      expect(client.removals).toEqual([{ bucket: 'look-images', paths: client.uploads.map((u) => u.path) }]);
+      expect(client.removals[0].paths.some((p) => existingImages.includes(p))).toBe(false);
+    });
+
+    test('API-LOOK-004 更新は成功し関連の保存が失敗したら、新しい画像は消さず古い画像を消して 500', async () => {
+      setup({ tables: lookTables({ linksInsert: { data: null, error: { message: 'fk violation' } } }) });
+
+      const res = await PUT(makeRequest({ images: images() }), ctx('7'));
+
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: 'Failed to update linked items' });
+      expect(client.removals).toEqual([{ bucket: 'look-images', paths: existingImages }]);
+    });
+
+    test('API-LOOK-004 2枚目の上げが失敗したら 1枚目だけを置き場から消し、行も古い画像も触れない', async () => {
+      setup({
+        tables: lookTables(),
+        storage: { uploadResult: { data: null, error: { message: 'bucket full SECRET' } }, uploadResultAt: 1 },
+      });
+
+      const res = await PUT(makeRequest({ images: images() }), ctx('7'));
+
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: 'Failed to upload image' });
+      expect(client.removals).toEqual([{ bucket: 'look-images', paths: [client.uploads[0].path] }]);
+      expect(dataSeq()).toEqual(['looks.select', 'items.select']);
+    });
+
+    test('API-LOOK-004 置き場の削除が失敗しても 200 のままで、監査 success の metadata に image_cleanup と件数を残し、置き場の文を記録しない', async () => {
+      setup({
+        tables: lookTables(),
+        storage: { removeResult: { data: null, error: { message: 'storage SECRET' } } },
+      });
+
+      const res = await PUT(makeRequest({ images: images() }), ctx('7'));
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ success: true });
+      expect(auditRows()[0]).toMatchObject({
+        outcome: 'success',
+        metadata: expect.objectContaining({ image_cleanup: 'failed', orphaned_count: 2 }),
+      });
+      expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('SECRET');
+    });
+
+    test('API-LOOK-004 置き場の削除が例外を投げても 200 のまま返す', async () => {
+      setup({ tables: lookTables(), storage: { removeResult: { throws: new Error('storage down') } } });
+
+      const res = await PUT(makeRequest({ images: images() }), ctx('7'));
+
+      expect(res.status).toBe(200);
+      expect(auditRows()[0]).toMatchObject({ outcome: 'success' });
     });
   });
 

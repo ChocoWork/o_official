@@ -19,7 +19,7 @@ const USERS = [
 ];
 
 const ARTICLE = {
-  id: 'news-1',
+  id: '1',
   title: '秋冬コレクションのお知らせ',
   category: 'COLLECTION',
   published_date: '2026-10-01',
@@ -48,7 +48,7 @@ async function mockUsers(page: Page): Promise<Array<Record<string, unknown>>> {
 async function mockNewsArticle(page: Page): Promise<string[]> {
   const puts: string[] = [];
   await page.route('**/api/admin/news', (route) => fulfillJson(route, { data: [] }));
-  await page.route('**/api/admin/news/news-1', async (route) => {
+  await page.route('**/api/admin/news/1', async (route) => {
     const request = route.request();
     if (request.method() === 'PUT') {
       puts.push(request.postData() ?? '');
@@ -93,7 +93,7 @@ for (const viewport of viewports) {
     test('お知らせの編集でカテゴリーを選んで更新すると、選んだカテゴリーで保存される', async ({ page }) => {
       // FREQ-515-AC-03
       const puts = await mockNewsArticle(page);
-      await page.goto('/admin/news/edit/news-1');
+      await page.goto('/admin/news/edit/1');
 
       const category = page.getByRole('combobox', { name: 'カテゴリー' });
       await expect(category).toHaveText('COLLECTION');

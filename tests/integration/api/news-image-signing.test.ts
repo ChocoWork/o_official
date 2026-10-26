@@ -1,4 +1,4 @@
-export {};
+import { minimalPng } from '../../fixtures/images';
 
 // 画像の書き込み（管理の POST・PUT）と配り（管理の GET・公開の取り出し）を、窓口・admin-rbac・news-images を本物のまま通して確かめる。
 // 差し替えるのは外との境目（Supabase の client・token の検証・応答の型）だけ
@@ -52,6 +52,7 @@ function createFakeClient(tables: Record<string, Result>, sign?: (path: string) 
         };
       }
       builder.single = () => Promise.resolve(result());
+      builder.maybeSingle = () => Promise.resolve(result());
       builder.then = (onF: (v: Result) => unknown, onR?: (e: unknown) => unknown) => Promise.resolve(result()).then(onF, onR);
       return builder;
     }),
@@ -76,8 +77,8 @@ function aclRows(codes: string[]) {
 }
 
 function makeImage(): File {
-  const file = new File(['img'], 'photo.png', { type: 'image/png' });
-  Object.defineProperty(file, 'arrayBuffer', { configurable: true, value: async () => new Uint8Array([1]).buffer });
+  const file = new File([new Uint8Array(minimalPng())], 'photo.png', { type: 'image/png' });
+  Object.defineProperty(file, 'arrayBuffer', { configurable: true, value: async () => new Uint8Array(minimalPng()).buffer });
   return file;
 }
 
@@ -122,7 +123,8 @@ function setup(options: { newsResult?: Result; sign?: (path: string) => Result }
 }
 
 function writePayload(method: 'insert' | 'update') {
-  const op = userClient.ops.find((o) => o.table === 'news_articles');
+  // 画像つきの更新は上げる前に古い値を読む op が先にあるので、書き込みの呼びがある op を探す
+  const op = userClient.ops.find((o) => o.table === 'news_articles' && o.calls.some(([m]) => m === method));
   const args = op?.calls.find(([m]) => m === method)?.[1][0];
   return (Array.isArray(args) ? args[0] : args) as Record<string, unknown>;
 }
@@ -273,7 +275,7 @@ describe('画像の非公開の置き場と署名つき URL（ARC-NEWS-003）', 
     expect(serviceClient.ops).toHaveLength(0);
     expect(serviceClient.signCalls).toHaveLength(0);
 
-    setup({ newsResult: { data: null, error: { code: 'PGRST116' } } });
+    setup({ newsResult: { data: null, error: null } });
     const missing = await getPublishedNewsDetailById('404');
     expect(missing).toBeNull();
     expect(serviceClient.signCalls).toHaveLength(0);

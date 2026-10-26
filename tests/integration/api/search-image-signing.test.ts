@@ -214,7 +214,7 @@ describe('結果と人気商品の画像の署名（ARC-SEARCH-003）', () => {
     expect(result.counts.all).toBe(3);
   });
 
-  it('ARC-SEARCH-003 窓口の応答に署名つき URL が入り、Cache-Control は付かない', async () => {
+  it('ARC-SEARCH-003 窓口の応答に署名つき URL が入り、署名つき URL を共有のキャッシュに残させないよう Cache-Control: private, no-store が付く', async () => {
     setup({ search: { search_items: [itemRow(1, 'items/sign-route-1.jpg')] } });
 
     const res = await GET(new NextRequest('https://shop.example.com/api/search?q=coat'));
@@ -222,6 +222,6 @@ describe('結果と人気商品の画像の署名（ARC-SEARCH-003）', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.items[0].imageUrl).toContain('https://signed.example/item-images/items/sign-route-1.jpg');
-    expect(res.headers.get('Cache-Control')).toBeNull();
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
   });
 });

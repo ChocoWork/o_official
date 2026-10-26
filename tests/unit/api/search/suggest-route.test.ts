@@ -2,8 +2,9 @@ export {};
 
 jest.mock('next/server', () => ({
   NextResponse: {
-    json: (body: unknown, init?: { status?: number }) => ({
+    json: (body: unknown, init?: { status?: number; headers?: Record<string, string> }) => ({
       status: init?.status ?? 200,
+      headers: new Headers(init?.headers ?? {}),
       json: async () => body,
     }),
   },
@@ -21,8 +22,12 @@ const route = require('@/app/api/suggest/route');
 const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 const { getSearchSuggestions } = require('@/features/search/services/search.service');
 
-function suggestRequest(query = '') {
-  return { nextUrl: new URL(`http://localhost/api/suggest${query}`) };
+function suggestRequest(query = '', headers: Record<string, string> = {}) {
+  return { nextUrl: new URL(`http://localhost/api/suggest${query}`), headers: new Headers(headers) };
+}
+
+function limitedResponse(status: number, body: unknown) {
+  return { status, headers: new Headers({ 'Retry-After': '60' }), json: async () => body };
 }
 
 const SUGGESTIONS = [{ label: 'coat', type: 'item', href: '/item/1' }];
@@ -99,12 +104,13 @@ describe('GET /api/suggest', () => {
   });
 
   it('DD-SEARCH-005 回数の超過は制限の応答をそのまま返し、取り出しの関数を呼ばない', async () => {
-    const limited = { status: 429, json: async () => ({ error: 'Too many requests' }) };
+    const limited = limitedResponse(429, { error: 'Too many requests' });
     enforceRateLimit.mockResolvedValue(limited);
 
     const response = await route.GET(suggestRequest('?q=co'));
 
     expect(response).toBe(limited);
+    expect(response.headers.get('Retry-After')).toBe('60');
     expect(getSearchSuggestions).not.toHaveBeenCalled();
   });
 
@@ -116,7 +122,8 @@ describe('GET /api/suggest', () => {
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'Failed to load suggestions' });
-    expect(consoleErrorSpy).toHaveBeenCalledWith('GET /api/suggest error:', expect.anything());
+    expect(consoleErrorSpy).toHaveBeenCalledWith('GET /api/suggest error:', { name: 'Error', code: null });
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain('db secret detail');
   });
 
   it('DD-SEARCH-005 回数の制限の例外も 500 の固定の文にする', async () => {
@@ -127,5 +134,59 @@ describe('GET /api/suggest', () => {
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'Failed to load suggestions' });
     expect(getSearchSuggestions).not.toHaveBeenCalled();
+  });
+
+  it.each(['cross-site', 'same-site', 'Cross-Site', 'foo'])(
+    'DD-SEARCH-005 sec-fetch-site: %s の要求は 403 で断り、回数の制限も取り出しも呼ばない（SEC-SEARCH-020）',
+    async (value) => {
+      const response = await route.GET(suggestRequest('?q=co', { 'sec-fetch-site': value }));
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: 'Forbidden' });
+      expect(enforceRateLimit).not.toHaveBeenCalled();
+      expect(getSearchSuggestions).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['same-origin', 'none'])('DD-SEARCH-005 sec-fetch-site: %s の要求と、見出しの無い要求は通す', async (value) => {
+    const withHeader = await route.GET(suggestRequest('?q=co', { 'sec-fetch-site': value }));
+    const withoutHeader = await route.GET(suggestRequest('?q=co'));
+
+    expect(withHeader.status).toBe(200);
+    expect(withoutHeader.status).toBe(200);
+  });
+
+  describe('DD-SEARCH-005 戻りの全分岐に Cache-Control: private, no-store が付く（SEC-SEARCH-010）', () => {
+    it('DD-SEARCH-005 200', async () => {
+      const response = await route.GET(suggestRequest('?q=co'));
+      expect(response.status).toBe(200);
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    });
+
+    it('DD-SEARCH-005 400', async () => {
+      const response = await route.GET(suggestRequest('?q=a%00b'));
+      expect(response.status).toBe(400);
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    });
+
+    it('DD-SEARCH-005 403', async () => {
+      const response = await route.GET(suggestRequest('?q=co', { 'sec-fetch-site': 'cross-site' }));
+      expect(response.status).toBe(403);
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    });
+
+    it.each([429, 503])('DD-SEARCH-005 %s（回数の制限の応答）', async (status) => {
+      enforceRateLimit.mockResolvedValue(limitedResponse(status, { error: 'limited' }));
+      const response = await route.GET(suggestRequest('?q=co'));
+      expect(response.status).toBe(status);
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    });
+
+    it('DD-SEARCH-005 500', async () => {
+      getSearchSuggestions.mockRejectedValue(new Error('boom'));
+      const response = await route.GET(suggestRequest('?q=co'));
+      expect(response.status).toBe(500);
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    });
   });
 });

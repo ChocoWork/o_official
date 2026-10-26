@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { PublicLookGrid } from '@/features/look/components/PublicLookGrid';
-import type { PublicLook } from '@/lib/look/public';
+import type { PublicLookListItem } from '@/lib/look/public';
 
 jest.mock('next/link', () => {
   return ({ href, children, ...props }: { href: string; children: React.ReactNode }) => (
@@ -27,13 +27,12 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams('season=SS'),
 }));
 
-function makeLooks(count: number): PublicLook[] {
+function makeLooks(count: number): PublicLookListItem[] {
   return Array.from({ length: count }, (_, index) => ({
     id: index + 1,
     seasonYear: 2026,
     seasonType: index % 2 === 0 ? 'SS' : 'AW',
     theme: `Theme ${index + 1}`,
-    themeDescription: `Description ${index + 1}`,
     imageUrls: [`https://signed.test/look-${index + 1}.jpg`],
     createdAt: `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
     linkedItems: [],

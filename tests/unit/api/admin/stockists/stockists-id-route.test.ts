@@ -2,9 +2,10 @@ export {};
 
 jest.mock('next/server', () => ({
   NextResponse: {
-    json: (body: unknown, init?: { status?: number }) => ({
+    json: (body: unknown, init?: { status?: number; headers?: Record<string, string> }) => ({
       status: init?.status ?? 200,
       body,
+      headers: new Headers(init?.headers),
       json: async () => body,
     }),
   },
@@ -186,7 +187,7 @@ describe('認可と回数の制限', () => {
 
   for (const method of ALL_METHODS) {
     it(`DD-STOCKIST-035 ${method} は認可が失敗した時にその応答を返し、${expectedPermission[method]} を求め、回数も表も見ない`, async () => {
-      const denied = { status: 403, body: { error: 'Forbidden' } };
+      const denied = { status: 403, headers: new Headers({ 'Cache-Control': 's-maxage=60' }), body: { error: 'Forbidden' } };
       mockAuthorize.mockResolvedValue({ ok: false, response: denied });
       const request = makeRequest(method, bodyFor(method));
 
@@ -201,7 +202,7 @@ describe('認可と回数の制限', () => {
   }
 
   it('DD-STOCKIST-035 GET は回数の制限が応答を返した時にそれを返し、読みの枠を authz.userId で呼ぶ', async () => {
-    const limited = { status: 429, body: { error: 'Too many requests' } };
+    const limited = { status: 429, headers: new Headers({ 'Cache-Control': 's-maxage=60' }), body: { error: 'Too many requests' } };
     mockReadLimit.mockResolvedValue(limited);
     const request = makeRequest('GET');
 
@@ -215,7 +216,7 @@ describe('認可と回数の制限', () => {
 
   for (const method of MUTATION_METHODS) {
     it(`DD-STOCKIST-035 ${method} は回数の制限が応答を返した時にそれを返し、変更の枠を呼んで CSRF も表も見ない`, async () => {
-      const limited = { status: 429, body: { error: 'Too many requests' } };
+      const limited = { status: 429, headers: new Headers({ 'Cache-Control': 's-maxage=60' }), body: { error: 'Too many requests' } };
       mockMutationLimit.mockResolvedValue(limited);
       const request = makeRequest(method, bodyFor(method));
 
@@ -229,7 +230,7 @@ describe('認可と回数の制限', () => {
     });
 
     it(`DD-STOCKIST-035 ${method} は CSRF の拒否の応答をそのまま返し、表にも監査にも触らない`, async () => {
-      const deny = { status: 403, body: { error: 'Forbidden', reason: 'CSRF validation failed' } };
+      const deny = { status: 403, headers: new Headers({ 'Cache-Control': 's-maxage=60' }), body: { error: 'Forbidden', reason: 'CSRF validation failed' } };
       mockToDeny.mockReturnValue(deny);
 
       const response = await handlers[method](makeRequest(method, bodyFor(method)), ctx('5'));
@@ -765,4 +766,133 @@ describe('本文・送り元・例外', () => {
       expect(await response.json()).toEqual({ error: 'Internal server error' });
     });
   }
+});
+
+describe('DD-STOCKIST-035 Cache-Control は戻りの全分岐で private, no-store', () => {
+  const NO_STORE = 'private, no-store';
+  const staleResponse = (status: number) => ({
+    status,
+    body: {},
+    headers: new Headers({ 'Cache-Control': 's-maxage=60' }),
+  });
+
+  async function call(method: Method, id = '5') {
+    return handlers[method](makeRequest(method, bodyFor(method)), ctx(id));
+  }
+
+  for (const method of ALL_METHODS) {
+    it(`DD-STOCKIST-035 ${method} 200 成功`, async () => {
+      setupDb(method);
+      const res = await call(method);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+    });
+
+    it(`DD-STOCKIST-035 ${method} 400 id が不正`, async () => {
+      const res = await call(method, 'abc');
+      expect(res.status).toBe(400);
+      expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+    });
+
+    for (const status of [401, 403, 503]) {
+      it(`DD-STOCKIST-035 ${method} ${status} 認可の拒否`, async () => {
+        mockAuthorize.mockResolvedValue({ ok: false, response: staleResponse(status) });
+        const res = await call(method);
+        expect(res.status).toBe(status);
+        expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+      });
+    }
+
+    it(`DD-STOCKIST-035 ${method} 500 外側の catch`, async () => {
+      mockCreateClient.mockRejectedValue(new Error('secret boom'));
+      const res = await call(method);
+      expect(res.status).toBe(500);
+      expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+    });
+  }
+
+  it('DD-STOCKIST-035 GET 404 無い id', async () => {
+    setupSelectSingle({ data: null, error: { code: 'PGRST116' } });
+    const res = await call('GET');
+    expect(res.status).toBe(404);
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+  });
+
+  it('DD-STOCKIST-035 GET 429 読みの回数制限', async () => {
+    mockReadLimit.mockResolvedValue(staleResponse(429));
+    const res = await call('GET');
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+  });
+
+  for (const method of MUTATION_METHODS) {
+    for (const status of [429, 503]) {
+      it(`DD-STOCKIST-035 ${method} ${status} 書きの回数制限`, async () => {
+        mockMutationLimit.mockResolvedValue(staleResponse(status));
+        const res = await call(method);
+        expect(res.status).toBe(status);
+        expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+      });
+    }
+
+    it(`DD-STOCKIST-035 ${method} 403 CSRF の拒否`, async () => {
+      mockToDeny.mockReturnValue(staleResponse(403));
+      const res = await call(method);
+      expect(res.status).toBe(403);
+      expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+    });
+
+    it(`DD-STOCKIST-035 ${method} 404 更新または削除が 0 行`, async () => {
+      if (method === 'DELETE') setupDelete(null, []);
+      else setupUpdate(null, []);
+      const res = await call(method);
+      expect(res.status).toBe(404);
+      expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+    });
+
+    it(`DD-STOCKIST-035 ${method} 500 DB の誤り`, async () => {
+      setupDb(method, { code: '23505', message: 'secret' });
+      const res = await call(method);
+      expect(res.status).toBe(500);
+      expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+    });
+  }
+
+  for (const method of ['PUT', 'PATCH'] as Method[]) {
+    it(`DD-STOCKIST-035 ${method} 400 壊れた JSON`, async () => {
+      const request = new Request('http://localhost/api/admin/stockists/5', {
+        method,
+        headers: { 'content-type': 'application/json' },
+        body: 'not json',
+      });
+      const res = await handlers[method](request, ctx('5'));
+      expect(res.status).toBe(400);
+      expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+    });
+  }
+
+  it('DD-STOCKIST-035 PUT 400 検証の誤り', async () => {
+    const res = await handlers.PUT(makeRequest('PUT', { ...validBody, name: '' }), ctx('5'));
+    expect(res.status).toBe(400);
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+  });
+
+  it('DD-STOCKIST-035 PATCH 400 status が不正', async () => {
+    const res = await handlers.PATCH(makeRequest('PATCH', { status: 'draft' }), ctx('5'));
+    expect(res.status).toBe(400);
+    expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+  });
+
+  it('DD-STOCKIST-035 外側の catch の console.error の第 2 引数は { name, code } ちょうどで、投げた誤りの message を含まない', async () => {
+    mockCreateClient.mockRejectedValue(new Error('secret boom'));
+
+    for (const method of ALL_METHODS) {
+      await call(method);
+      expect(console.error).toHaveBeenCalledWith(`${method} /api/admin/stockists/:id error:`, {
+        name: 'Error',
+        code: null,
+      });
+    }
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('secret boom');
+  });
 });

@@ -6,6 +6,7 @@
  * @design DD-NEWS-063
  * @remarks URL の記事の今の値を窓口から読んでフォームに詰め、送り方を PUT にするだけにして欄の決まりをフォームと共有する。
  * 読めない時はフォームを出さずに文を出し、空のフォームで記事を上書きさせない。
+ * URL の id は入力なので、記事の id の形でなければ窓口へ要求を送らず読めない時の文を出し、道に入れる時は符号化する（SEC-NEWS-012）。
  */
 'use client';
 
@@ -13,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import type { NewsFormData } from '@/types/news';
 import { clientFetch } from '@/lib/client-fetch';
+import { isNewsId } from '@/features/news/lib/news-input';
 import { NewsForm } from '../../NewsForm';
 
 type NewsArticle = {
@@ -42,9 +44,15 @@ export default function EditNewsPage() {
       return;
     }
 
+    if (!isNewsId(articleId)) {
+      setFetchError('記事の読み込みに失敗しました');
+      setIsLoading(false);
+      return;
+    }
+
     const fetchArticle = async () => {
       try {
-        const res = await clientFetch(`/api/admin/news/${articleId}`);
+        const res = await clientFetch(`/api/admin/news/${encodeURIComponent(articleId)}`);
         const json = await res.json().catch(() => null);
         if (!res.ok) {
           setFetchError(json?.error ?? '記事の読み込みに失敗しました');

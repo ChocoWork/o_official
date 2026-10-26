@@ -83,7 +83,7 @@ FR-HOME-001・002・003・005・006・007・008・009、NFR-HOME-001・002、FRE
 | 項目 | 内容 |
 | --- | --- |
 | 入力 | 無い。`params`・`searchParams` を受けない（`page.tsx`）。検索の窓の `?q=` は `SearchHomePreview` が端末で読む |
-| 呼ぶ物 | `getPublishedItems(8)`・`getPublishedLooks(8)`・`getPublishedNews({limit: 6})`・`getHomePublicStockists()`・`getPublishedItemsCount()`・`getPublishedLooksCount()`・`getPublishedNewsCount()` を1つの `Promise.all` で（`page.tsx`）。件数は頁の中の定数 |
+| 呼ぶ物 | `getPublishedItems(8)`・`getPublishedLooks(8)`・`getPublishedNews({limit: 6}).catch(() => [])`（失敗を握って NEWS の区画だけ空にする。SEC-NEWS-020、ADR-0024）・`getHomePublicStockists()`・`getPublishedItemsCount()`・`getPublishedLooksCount()`・`getPublishedNewsCount()` を1つの `Promise.all` で（`page.tsx`）。件数は頁の中の定数 |
 | 副作用 | `ReactDOM.preload("/mainphoto.png", {as: "image"})`。DB への書き込みは無い |
 | 出力（本体） | JSX。ヒーローの `section`、検索の窓、ITEM・LOOK・NEWS の格子（`variant="home"`・行・総数）、`section#about`、取扱店の格子（`variant="home"`・行） |
 | 出力（メタ） | metadata の関数が `{title, description, openGraph: {title, description, images: ["/mainphoto.png"]}}` を返す。title は「Le Fil des Heures」 |
@@ -106,9 +106,9 @@ FR-HOME-001・002・003・005・006・007・008・009、NFR-HOME-001・002、FRE
 | 商品の読みで `data` が空 | 空の配列 | `getPublishedItems` の空の枝 |
 | 商品・LOOK・NEWS の総数の読みが DB の誤り | 記録して 0。VIEW ALL は出ない | `getPublishedItemsCount`・`getPublishedLooksCount`・`getPublishedNewsCount` の誤りの枝 |
 | LOOK の読みが DB の誤り・空 | 記録して空の配列 | `getPublishedLooks` の誤りの枝 |
-| NEWS の読みが DB の誤り | 誤りを見ずに `data ?? []` で空の配列（記録しない。TM-HOME-26） | `getPublishedNews` |
+| NEWS の読みが DB の誤り | `getPublishedNews` が名前と符号だけ記録して `NewsFetchError` を投げ、頁の `.catch(() => [])` が握って空の配列にする。NEWS の区画は空の文を出し、ほかの区画は出る（2026-10-26。TM-HOME-26 は直した） | `page.tsx` の `Home` の `getPublishedNews(...).catch` |
 | 取扱店の読みが DB の誤り | 記録して空の配列 | `getHomePublicStockists`（中の `getPublicStockists`）の誤りの枝 |
-| 取得の関数のどれかが例外を投げる（client を作れない・署名の失敗など） | 1つの `Promise.all` ごと落ち、ページ全体が失敗する。`src/app/` に失敗の画面（`error.tsx`）は無いので、Next.js の既定の失敗の画面になる（推定）。この扱いは SEC-HOME-014 | `page.tsx` の `Home` の `Promise.all` |
+| NEWS の記事以外の取得の関数のどれかが例外を投げる（client を作れない・署名の失敗など） | 1つの `Promise.all` ごと落ち、ページ全体が失敗する。`src/app/` に失敗の画面（`error.tsx`）は無いので、Next.js の既定の失敗の画面になる（推定）。この扱いは SEC-HOME-014 | `page.tsx` の `Home` の `Promise.all` |
 | `private.set_request_context` の権限が欠けた DB | DB の読みが全部空になり、どの区画も空の文を出す（旧版の運用メモの BUG-PUBLIC-001）。復旧は `migrations/050_restore_public_read_access_after_pre_request_hook.sql` の適用 | `migrations/049_set_wishlist_session_context_pre_request.sql` |
 
 - ページの中に条件の分岐は無い（`if`・三項・`&&`・`??`・既定の引数が無い）。3本柱の `map` は分岐でない
@@ -139,7 +139,8 @@ FR-HOME-001・002・003・005・006・007・008・009、NFR-HOME-001・002、FRE
 | 6 | ヒーロー | 描く | h1 の名前が「Le Fil des Heures」、写真の代替テキストがブランドを表す文で優先の印あり、重ねと SCROLL の印が `aria-hidden` |
 | 7 | ABOUT | 描く | `section#about` に h2 `ABOUT`、3本柱の h3 が3つ、READ OUR STORY のリンクが `/about`、画像の住所が `/about.png` |
 | 8 | 空の時 | 取得の関数が全部空の配列と 0 を返す | 例外を投げず、ヒーローと ABOUT が描かれる |
-| 9 | 取得の例外 | 取得の関数の1つが reject | `Home()` が reject する（今の動き。SEC-HOME-014） |
+| 9 | 取得の例外 | NEWS の記事以外の取得の関数の1つが reject | `Home()` が reject する（今の動き。SEC-HOME-014） |
+| 9a | NEWS の記事の取得の例外 | `getPublishedNews` が reject | `Home()` は reject せず、NEWS の格子に空の配列と総数が渡り、ほかの格子と先読みも出る |
 
 - `tests/unit/home/home-page.test.tsx` が試す。E2E は `FR-HOME-001`〜`009`・`012`・`013`・`017`〜`020`・`NFR-HOME-001`・`002` がホームを試す
 

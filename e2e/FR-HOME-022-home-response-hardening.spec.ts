@@ -205,14 +205,12 @@ test.describe('FR-HOME-022 home response hardening', () => {
       });
 
       test(`SEC-HOME-015-AC-01 ${viewport.name}: a failed /api/search leaves no stack in the console`, async ({ page }) => {
-        test.fail(true, 'SEC-HOME-015 今のコードは満たさない（docs/02_Requirements/areas/home.md）');
         const { joined } = await openHomeWithFailedSearch(page);
         expect(joined, '誤りの積み重ね（stack）').not.toMatch(/\n\s+at\s+\S+/);
         expect(joined, '誤りの積み重ね（stack）').not.toMatch(/\bat\s+.+:\d+:\d+/);
       });
 
       test(`SEC-HOME-016-AC-01 ${viewport.name}: the /api/auth/me response while opening / does not contain the member email`, async ({ page }) => {
-        test.fail(true, 'SEC-HOME-016 今のコードは満たさない（docs/02_Requirements/areas/home.md）');
         const label = `home-016-${viewport.name}`;
         const member = await createTestMember(label);
         createdMemberIds.push(member.userId);

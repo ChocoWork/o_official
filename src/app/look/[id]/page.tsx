@@ -4,16 +4,20 @@
  * @packageDocumentation
  * @impl IMPL-LOOK-124
  * @design DD-LOOK-030
- * @remarks 前後の LOOK は一覧と同じ並びで決めるので、公開の LOOK の全部を取ってその中の位置で選ぶ。
- * 取り出しは公開済みだけを返す関数に任せ、非公開と無い LOOK は同じ知らせにして有無を外へ出さない。
+ * @remarks 現在の LOOK は 1 件で取り、前後の LOOK は同じ並びの前後の 1 件ずつだけを取る。一覧の 100 件に頼ると、101 番目より古い LOOK の詳細が開かない・説明文が出ない。
+ * id は URL から来るので入口で正の整数に確かめ、合わなければ DB を呼ばずに見つからない扱いにする。
+ * 取り出しは公開済みだけを返す関数に任せ、非公開と無い LOOK は同じ知らせにして有無を外へ出さない。DB の失敗は握らずに投げ、誤りの画面に任せる。
  * テーマと説明文は React の文字として出し、HTML としては解釈させない。
  */
 import "./look-detail.css";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { formatLookSeason } from "@/lib/look/public";
-import { getPublishedLookById, getPublishedLooks } from "@/lib/look/server";
+import { formatLookSeason, parseLookId } from "@/lib/look/public";
+import {
+  getAdjacentPublishedLooks,
+  getPublishedLookById,
+} from "@/lib/look/server";
 import { List } from "@/components/ui/List/List";
 import { BottomNavigation } from "@/components/ui/BottomNavigation/BottomNavigation";
 import { LookImageGallery } from "@/features/look/components/LookImageGallery";
@@ -68,8 +72,17 @@ function NavIcon({
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const lookId = Number(id);
-  const look = Number.isNaN(lookId) ? null : await getPublishedLookById(lookId);
+  const lookId = parseLookId(id);
+  let look: Awaited<ReturnType<typeof getPublishedLookById>> = null;
+
+  if (lookId !== null) {
+    try {
+      look = await getPublishedLookById(lookId);
+    } catch {
+      // 題の取り出しの失敗では投げない。本体の描画が同じ失敗を誤りの画面に出す。
+      look = null;
+    }
+  }
 
   if (!look) {
     return {
@@ -95,11 +108,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function LookDetailPage({ params }: Props) {
   const { id } = await params;
-  const lookId = Number(id);
-  const looks = await getPublishedLooks();
-  const currentIndex = looks.findIndex((look) => look.id === lookId);
+  const lookId = parseLookId(id);
+  const currentLook =
+    lookId === null ? null : await getPublishedLookById(lookId);
 
-  if (currentIndex < 0) {
+  if (!currentLook) {
     return (
       <div>
         <div className="element-width text-center">
@@ -109,10 +122,11 @@ export default async function LookDetailPage({ params }: Props) {
     );
   }
 
-  const currentLook = looks[currentIndex];
-  const prevLook = currentIndex > 0 ? looks[currentIndex - 1] : null;
-  const nextLook =
-    currentIndex < looks.length - 1 ? looks[currentIndex + 1] : null;
+  const { prev: prevLook, next: nextLook } =
+    await getAdjacentPublishedLooks({
+      id: currentLook.id,
+      createdAt: currentLook.createdAt,
+    });
   const seasonLabel = formatLookSeason(
     currentLook.seasonYear,
     currentLook.seasonType,

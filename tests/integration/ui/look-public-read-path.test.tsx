@@ -14,6 +14,26 @@ const mockDb: {
   serviceFromCalls: string[];
 } = { tables: {}, errors: {}, queries: [], signedBuckets: [], serviceFromCalls: [] };
 
+function compareValues(col: string, a: unknown, b: unknown): number {
+  if (col === 'created_at') return Date.parse(String(a)) - Date.parse(String(b));
+  return Number(a) - Number(b);
+}
+
+// 前後の取り出しの .or() の文字（時刻は二重引用符で囲む）を、行の絞りに直す。形が違えば落とす
+function matchAdjacentExpression(expression: string): (row: Row) => boolean {
+  const matched = expression.match(
+    /^created_at\.(gt|lt)\."([^"]+)",and\(created_at\.eq\."\2",id\.\1\.(\d+)\)$/,
+  );
+  if (!matched) throw new Error(`unexpected or() expression: ${expression}`);
+  const [, op, createdAt, id] = matched;
+  const sign = op === 'gt' ? 1 : -1;
+  return (row) => {
+    const byTime = compareValues('created_at', row.created_at, createdAt) * sign;
+    if (byTime > 0) return true;
+    return byTime === 0 && compareValues('id', row.id, id) * sign > 0;
+  };
+}
+
 function mockCreateDbClient() {
   return {
     from: (table: string) => {
@@ -22,13 +42,18 @@ function mockCreateDbClient() {
       const filters: Array<(row: Row) => boolean> = [];
       let columns: string[] = [];
       let head = false;
-      let descBy: string | null = null;
+      const orders: Array<{ col: string; ascending: boolean }> = [];
       let limit: number | null = null;
       const rows = (): Row[] => {
         let found = (mockDb.tables[table] ?? []).filter((row) => filters.every((test) => test(row)));
-        if (descBy) {
-          const key = descBy;
-          found = [...found].sort((a, b) => String(b[key]).localeCompare(String(a[key])));
+        if (orders.length > 0) {
+          found = [...found].sort((a, b) => {
+            for (const { col, ascending } of orders) {
+              const diff = compareValues(col, a[col], b[col]);
+              if (diff !== 0) return ascending ? diff : -diff;
+            }
+            return 0;
+          });
         }
         if (limit !== null) found = found.slice(0, limit);
         return found;
@@ -61,7 +86,12 @@ function mockCreateDbClient() {
         },
         order: (col: string, opts?: { ascending?: boolean }) => {
           calls.push(['order', col, opts]);
-          if (opts?.ascending === false) descBy = col;
+          orders.push({ col, ascending: opts?.ascending !== false });
+          return query;
+        },
+        or: (expression: string) => {
+          calls.push(['or', expression]);
+          filters.push(matchAdjacentExpression(expression));
           return query;
         },
         limit: (n: number) => {
@@ -128,9 +158,15 @@ const { createPublicClient, createServiceRoleClient } = require('@/lib/supabase/
 const LookPage = require('@/app/look/page').default;
 const LookDetailPageModule = require('@/app/look/[id]/page');
 const LookDetailPage = LookDetailPageModule.default;
-const { getPublishedLooks, getPublishedLooksCount, getPublishedLookById } = require('@/lib/look/server');
+const {
+  getPublishedLooks,
+  getPublishedLooksCount,
+  getPublishedLookById,
+  LookFetchError,
+} = require('@/lib/look/server');
 
-const COLUMNS = 'id,season_year,season_type,theme,theme_description,image_urls,created_at';
+const LIST_COLUMNS = 'id,season_year,season_type,theme,image_urls,created_at';
+const DETAIL_COLUMNS = 'id,season_year,season_type,theme,theme_description,image_urls,created_at';
 
 const LOOK_ROWS: Row[] = [
   {
@@ -208,20 +244,23 @@ describe('ARC-LOOK-001 public read path', () => {
     errorSpy.mockRestore();
   });
 
-  it('ARC-LOOK-001 /look は匿名の client で公開済みの LOOK だけを作った日時の新しい順に取り出し、件数を絞らずに描く', async () => {
-    await renderLookPage();
+  it('ARC-LOOK-001 /look は匿名の client で公開済みの LOOK だけを説明文なしで新しい順に 100 件まで取り出して描く', async () => {
+    const { container } = await renderLookPage();
 
     expect(createPublicClient).toHaveBeenCalled();
     const [looksQuery] = queriesOn('looks');
     expect(looksQuery.calls).toEqual([
-      ['select', COLUMNS],
+      ['select', LIST_COLUMNS],
       ['eq', 'status', 'published'],
       ['order', 'created_at', { ascending: false }],
+      ['order', 'id', { ascending: false }],
+      ['limit', 100],
     ]);
-    expect(looksQuery.calls.some(([method]) => method === 'limit')).toBe(false);
 
     expect(captionThemes()).toEqual(['Newer theme', 'Older theme']);
     expect(screen.queryByText('Hidden theme')).not.toBeInTheDocument();
+    expect(container.innerHTML).not.toContain('newer description');
+    expect(container.innerHTML).not.toContain('older description');
   });
 
   it('ARC-LOOK-001 service role の client は DB を読まず、LOOK と商品の画像の署名だけに使う', async () => {
@@ -258,42 +297,36 @@ describe('ARC-LOOK-001 public read path', () => {
     expect(screen.queryByText(/12,000/)).not.toBeInTheDocument();
   });
 
-  it('ARC-LOOK-001 LOOK の取り出しが失敗しても例外にせず、公開中の LOOK が無い一覧として描き、関連も署名も読まない', async () => {
-    mockDb.errors.looks = { message: 'db down' };
+  it('ARC-LOOK-001 LOOK の取り出しが失敗した時は「0 件」の一覧にせず、ページが LookFetchError で投げ、関連も署名も読まない', async () => {
+    mockDb.errors.looks = { code: '57014', message: 'db down' };
 
-    await renderLookPage();
+    await expect(LookPage({ searchParams: undefined })).rejects.toBeInstanceOf(LookFetchError);
 
-    expect(screen.getByText('公開中のLOOKがありません')).toBeInTheDocument();
-    expect(screen.queryAllByTestId('look-card')).toHaveLength(0);
     expect(queriesOn('look_items')).toHaveLength(0);
     expect(mockDb.signedBuckets).toEqual([]);
-    expect(errorSpy).toHaveBeenCalledWith('Failed to fetch published looks:', { message: 'db down' });
+    expect(errorSpy).toHaveBeenCalledWith('Failed to fetch published looks:', { name: 'UnknownError', code: '57014' });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('db down');
   });
 
-  it('ARC-LOOK-001 関連の取り出しが失敗した時は LOOK を署名していない元の道筋のまま返し、商品は付けない', async () => {
+  it('ARC-LOOK-001 関連の取り出しが失敗した時は署名していない元の道筋を返さず、ページが投げる', async () => {
     mockDb.errors.look_items = { message: 'relation down' };
 
-    await renderLookPage();
+    await expect(LookPage({ searchParams: undefined })).rejects.toBeInstanceOf(LookFetchError);
 
-    expect(captionThemes()).toEqual(['Newer theme', 'Older theme']);
     expect(mockDb.signedBuckets).toEqual([]);
-    const sources = screen.getAllByRole('img').map((image) => image.getAttribute('src'));
-    expect(sources).toContain('looks/2026/newer-a.jpg');
-    expect(sources).toContain('looks/2025/older.jpg');
-    expect(screen.queryByText('Wool coat')).not.toBeInTheDocument();
     expect(queriesOn('items')).toHaveLength(0);
   });
 
-  it('ARC-LOOK-001 商品の取り出しが失敗した時は LOOK を署名して返し、商品だけを付けない', async () => {
+  it('ARC-LOOK-001 商品の取り出しが失敗した時は LOOK を一部だけ返さず、ページが投げる', async () => {
     mockDb.errors.items = { message: 'items down' };
 
-    await renderLookPage();
+    await expect(LookPage({ searchParams: undefined })).rejects.toBeInstanceOf(LookFetchError);
+  });
 
-    expect(captionThemes()).toEqual(['Newer theme', 'Older theme']);
-    expect(screen.getAllByRole('img').map((image) => image.getAttribute('src'))).toContain(
-      'https://signed.test/look-images/looks/2026/newer-a.jpg?exp=3600',
-    );
-    expect(screen.queryByText('Wool coat')).not.toBeInTheDocument();
+  it('ARC-LOOK-001 ホーム用の取り出しは失敗しても投げず空の配列を返す（ホーム全体を落とさない）', async () => {
+    mockDb.errors.looks = { message: 'db down' };
+
+    await expect(getPublishedLooks(8)).resolves.toEqual([]);
   });
 
   it('ARC-LOOK-001 ホーム用に件数を渡すと取り出しを limit で絞り、総数は行を取らずに公開済みだけを数える', async () => {
@@ -319,7 +352,7 @@ describe('ARC-LOOK-001 public read path', () => {
     await expect(getPublishedLooksCount()).resolves.toBe(0);
   });
 
-  it('ARC-LOOK-001 /look/[id] は公開済みの全件の並びの中の位置で前後を決め、関連は公開中の商品だけを出す', async () => {
+  it('ARC-LOOK-001 /look/[id] は現在の LOOK を1件で取り、前後は並びの境目で1件ずつ取り、関連は公開中の商品だけを出す', async () => {
     const element = await LookDetailPage({ params: Promise.resolve({ id: '2' }) });
     render(element);
 
@@ -331,7 +364,22 @@ describe('ARC-LOOK-001 public read path', () => {
     const nav = screen.getByRole('navigation', { name: 'Look navigation' });
     expect(within(nav).getByRole('link', { name: 'Next look: Older theme' })).toHaveAttribute('href', '/look/1');
     expect(within(nav).queryByRole('link', { name: /Previous look/ })).not.toBeInTheDocument();
-    expect(queriesOn('looks')[0].calls).toContainEqual(['eq', 'status', 'published']);
+    const lookQueries = queriesOn('looks');
+    expect(lookQueries).toHaveLength(3);
+    expect(lookQueries[0].calls).toContainEqual(['eq', 'status', 'published']);
+    expect(lookQueries[0].calls).toContainEqual(['select', DETAIL_COLUMNS]);
+    for (const query of lookQueries.slice(1)) {
+      expect(query.calls).toEqual(
+        expect.arrayContaining([['select', 'id,theme'], ['eq', 'status', 'published'], ['limit', 1], ['maybeSingle']]),
+      );
+      expect(query.calls.some(([method]) => method === 'or')).toBe(true);
+    }
+  });
+
+  it('ARC-LOOK-001 /look/[id] の取り出しが失敗した時は「Look not found」にせず、ページが投げる', async () => {
+    mockDb.errors.looks = { message: 'db down' };
+
+    await expect(LookDetailPage({ params: Promise.resolve({ id: '2' }) })).rejects.toBeInstanceOf(LookFetchError);
   });
 
   it('ARC-LOOK-001 /look/[id] は非公開の LOOK と無い LOOK を同じ「Look not found」にし、中身を出さない', async () => {
@@ -353,42 +401,31 @@ describe('ARC-LOOK-001 public read path', () => {
 
     const [byIdQuery] = queriesOn('looks');
     expect(byIdQuery.calls).toEqual([
-      ['select', COLUMNS],
+      ['select', DETAIL_COLUMNS],
       ['eq', 'status', 'published'],
       ['eq', 'id', 2],
       ['maybeSingle'],
     ]);
 
-    for (const id of ['3', '999', 'abc']) {
+    for (const id of ['3', '999', 'abc', '1e3']) {
       const metadata = await LookDetailPageModule.generateMetadata({ params: Promise.resolve({ id }) });
       expect(metadata.title).toBe('Look not found | Le Fil des Heures');
     }
     await expect(getPublishedLookById(3)).resolves.toBeNull();
   });
 
-  it('ARC-LOOK-001 詳細の関連の取り出しが失敗しても LOOK 本体は返し、関連なしで署名つきの画像を付ける', async () => {
+  it('ARC-LOOK-001 詳細の関連の取り出しが失敗した時は関連なしで返さず、LookFetchError で投げる', async () => {
     mockDb.errors.look_items = { message: 'relation down' };
 
-    const look = await getPublishedLookById(2);
+    await expect(getPublishedLookById(2)).rejects.toBeInstanceOf(LookFetchError);
 
-    expect(look).toMatchObject({
-      id: 2,
-      theme: 'Newer theme',
-      linkedItems: [],
-      imageUrls: [
-        'https://signed.test/look-images/looks/2026/newer-a.jpg?exp=3600',
-        'https://signed.test/look-images/looks/2026/newer-b.jpg?exp=3600',
-      ],
-    });
     expect(queriesOn('items')).toHaveLength(0);
   });
 
-  it('ARC-LOOK-001 詳細の商品の取り出しが失敗しても LOOK 本体は返し、商品だけを付けない', async () => {
+  it('ARC-LOOK-001 詳細の商品の取り出しが失敗した時も、LookFetchError で投げる', async () => {
     mockDb.errors.items = { message: 'items down' };
 
-    const look = await getPublishedLookById(2);
-
-    expect(look).toMatchObject({ id: 2, linkedItems: [] });
+    await expect(getPublishedLookById(2)).rejects.toBeInstanceOf(LookFetchError);
   });
 
   it('ARC-LOOK-001 詳細の関連商品は公開中の物だけを関連の並びで付け、署名つきの画像にする', async () => {

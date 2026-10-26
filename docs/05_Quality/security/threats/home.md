@@ -240,7 +240,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | ホームの使える状態 |
 | 脅威 | 設定の誤り・DB の権限の欠け・Supabase の障害で、ホームが開けなくなる。空の節が出ても気づけない |
-| 起こり方 | 7つは `Promise.all` で並べて待つ（`src/app/page.tsx:41-57`）。各取得は DB の失敗を空・0 にするが、service role の client を作る所は try の外にあり、鍵が無いと例外を投げる（`src/lib/supabase/server.ts:137-143`、`src/lib/items/public.ts:69`、`src/features/news/services/public.ts:11-14`、LOOK は公開済みの LOOK が1件以上ある時の `src/lib/look/server.ts` の `hydrateLooks`。画像の署名のためで、LOOK の取得そのものが投げる）。1つが投げると頁ごと失敗し、`src/app/error.tsx` も無い。逆に、PostgREST の前に動く `private.set_request_context` の権限が欠けると、全部の読みが空になる（BUG-PUBLIC-001。`docs/04_DetailDesign/pages/01_home.md` の DD-HOME-001 の異常フロー） |
+| 起こり方 | 7つは `Promise.all` で並べて待つ（`src/app/page.tsx:41-57`）。各取得は DB の失敗を空・0 にするが、service role の client を作る所は try の外にあり、鍵が無いと例外を投げる（`src/lib/supabase/server.ts:137-143`、`src/lib/items/public.ts:69`、LOOK は公開済みの LOOK が1件以上ある時の `src/lib/look/server.ts` の `hydrateLooks`。画像の署名のためで、LOOK の取得そのものが投げる）。1つが投げると頁ごと失敗し、`src/app/error.tsx` も無い。NEWS の記事の取得は 2026-10-26 に直した: 公開の取り出しは service role の client を作らなくなり（SEC-NEWS-005）、DB の失敗は `NewsFetchError` で投げるが、頁が `.catch(() => [])` で握って NEWS の区画だけを空にする（SEC-NEWS-020）。ほかの取得は今のまま。逆に、PostgREST の前に動く `private.set_request_context` の権限が欠けると、全部の読みが空になる（BUG-PUBLIC-001。`docs/04_DetailDesign/pages/01_home.md` の DD-HOME-001 の異常フロー） |
 | 影響 | ホームが既定の失敗の画面になる。または全部の節が空のまま出て、障害に気づくのが遅れる |
 | 対策 | SEC-HOME-014 |
 | ASVS | ASVS 未対応付け |
@@ -254,11 +254,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | DB の形・問い合わせの中身と、閲覧者の端末の記録 |
 | 脅威 | サーバーの記録を読める人や、閲覧者の端末の開発者の道具から、内部の情報を得る |
-| 起こり方 | ホームが呼ぶ取得は、Supabase の error を丸ごと `console.error` に渡す（`src/lib/items/public.ts:61,87`、`src/lib/items/availability.ts:69,96`、`src/features/stockist/services/public.ts:36`、`src/lib/look/server.ts:54,71`）。検索の窓は端末で失敗を詳しく記録する（`SearchHomePreview.tsx:33`） |
+| 起こり方 | ホームが呼ぶ取得は、Supabase の error を丸ごと `console.error` に渡す（`src/lib/items/public.ts:61,87`、`src/lib/items/availability.ts:69,96`、`src/features/stockist/services/public.ts:36`、`src/lib/look/server.ts:54,71`）。検索の窓は端末で失敗を詳しく記録していた（直す前の `SearchHomePreview.tsx:33` は `Error`（stack つき）を渡していた）。端末の側は 2026-10-26 に直した（固定の文字 `Failed to fetch home search preview` だけを記録する。画面の分）。サーバー側の取得のうち NEWS（`src/features/news/services/public.ts`）も同日に直した（誤りの名前と符号だけを記録する。SEC-NEWS-020）。ほかのサーバー側の取得の記録は今のまま |
 | 影響 | 表の名前・列・問い合わせの形が記録に残る。記録の外への持ち出しで内部の形が知られる |
 | 対策 | SEC-HOME-015 |
 | ASVS | ASVS 未対応付け |
-| 根拠 | 端末の記録は 2026-04-29 の追記の Low の指摘で、今も Open のまま。サーバーの記録は NEWS の脅威（THR-NEWS-018）と同じ形。どの部品も範囲外 |
+| 根拠 | 端末の記録は 2026-04-29 の追記の Low の指摘。検索の窓の端末の側は 2026-10-26 に直した（サーバー側は Open のまま）。サーバーの記録は NEWS の脅威（THR-NEWS-018）と同じ形。どの部品も範囲外 |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_home.md:66` |
 
@@ -268,7 +268,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 利用者の id・メールの住所と、認証の窓口の余力 |
 | 脅威 | 共有の端末・拡張機能・記録の道具が、ホームを開いただけで流れる応答から利用者の id とメールの住所を得る |
-| 起こり方 | 全部の頁にかかる `LoginProvider` が、開いた時に必ず `/api/auth/me` を呼ぶ（`src/contexts/LoginContext.tsx:248-250`）。応答は `id` と `email` を返す（`src/app/api/auth/me/route.ts:49-50`）が、画面は役割と2要素認証の済みしか使わない。`CartProvider` はプライバシーの頁のほかで、開いた時にカートとお気に入りを読む（`src/contexts/Providers.tsx:29`、`src/contexts/CartContext.tsx:157-164`） |
+| 起こり方 | 全部の頁にかかる `LoginProvider` が、開いた時に必ず `/api/auth/me` を呼ぶ（`src/contexts/LoginContext.tsx:248-250`）。応答は `id` と `email` を返していた（`src/app/api/auth/me/route.ts`）が、画面は役割と2要素認証の済みしか使わない。2026-10-26 にメールの住所を外した（`id` は残す。SEC-HOME-016）。`CartProvider` はプライバシーの頁のほかで、開いた時にカートとお気に入りを読む（`src/contexts/Providers.tsx:29`、`src/contexts/CartContext.tsx:157-164`） |
 | 影響 | 要らない個人の情報が端末に流れる。未ログインの訪問でも認証の窓口が毎回動く |
 | 対策 | SEC-HOME-016 |
 | ASVS | ASVS 未対応付け |

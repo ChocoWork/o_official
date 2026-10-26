@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { PublicLookGrid } from '@/features/look/components/PublicLookGrid';
-import type { PublicLook } from '@/lib/look/public';
+import type { PublicLookListItem } from '@/lib/look/public';
 
 const mockPush = jest.fn();
 let mockSearchParams = new URLSearchParams();
@@ -147,12 +147,11 @@ jest.mock('@/components/ui/MultiSelect/MultiSelect', () => ({
   },
 }));
 
-function createLook(overrides: Partial<PublicLook> & { id: number }): PublicLook {
+function createLook(overrides: Partial<PublicLookListItem> & { id: number }): PublicLookListItem {
   return {
     seasonYear: 2026,
     seasonType: 'SS',
     theme: `Theme ${overrides.id}`,
-    themeDescription: `Theme description ${overrides.id}`,
     imageUrls: ['/look-1.png'],
     createdAt: '2026-01-01T00:00:00.000Z',
     linkedItems: [],
@@ -160,7 +159,7 @@ function createLook(overrides: Partial<PublicLook> & { id: number }): PublicLook
   };
 }
 
-function createLooks(count: number): PublicLook[] {
+function createLooks(count: number): PublicLookListItem[] {
   return Array.from({ length: count }, (_, index) => createLook({ id: index + 1 }));
 }
 

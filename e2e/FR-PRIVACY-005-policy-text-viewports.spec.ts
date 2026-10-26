@@ -68,7 +68,6 @@ for (const vp of viewports) {
     });
 
     test(`SEC-PRIVACY-011-AC-01 ${vp.name}: Resend・Supabase・Cloudflare Turnstile の名前が表示される`, async ({ page }) => {
-      test.fail(true, 'SEC-PRIVACY-011 今のコードは満たさない（docs/02_Requirements/areas/privacy.md）');
       const body = policyBody(page);
       for (const service of ['Resend', 'Supabase', 'Cloudflare Turnstile']) {
         await expect(body, `${service} の名前`).toContainText(service, { useInnerText: true });
@@ -76,7 +75,6 @@ for (const vp of viewports) {
     });
 
     test(`SEC-PRIVACY-011-AC-02 ${vp.name}: 「メールマガジン」の字が表示されない`, async ({ page }) => {
-      test.fail(true, 'SEC-PRIVACY-011 今のコードは満たさない（docs/02_Requirements/areas/privacy.md）');
       await expect(policyBody(page)).toBeVisible();
       await expect(policyBody(page)).not.toContainText('メールマガジン', { useInnerText: true });
     });

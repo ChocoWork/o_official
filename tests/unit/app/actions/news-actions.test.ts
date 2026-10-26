@@ -33,6 +33,16 @@ describe('getLatestNews', () => {
     await expect(getLatestNews()).resolves.toEqual([]);
   });
 
+  it('DD-NEWS-066 呼ぶ先の NewsFetchError もそのまま投げ、空の配列に直さない（SEC-NEWS-020）', async () => {
+    const error = Object.assign(new Error('Failed to fetch published news'), {
+      name: 'NewsFetchError',
+      code: null,
+    });
+    mockGetPublishedNews.mockRejectedValue(error);
+
+    await expect(getLatestNews()).rejects.toBe(error);
+  });
+
   it('DD-NEWS-066 呼ぶ先の例外をそのまま投げる', async () => {
     const error = new Error('db down');
     mockGetPublishedNews.mockRejectedValue(error);

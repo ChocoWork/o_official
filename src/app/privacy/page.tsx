@@ -5,8 +5,9 @@
  * @impl IMPL-PRIVACY-101
  * @design DD-PRIVACY-001
  * @remarks 店長が切り替える配送の追跡の設定を、委託の一覧へすぐ届けるため、ビルド時でなく request のたびに描いて設定を読む。
- * 設定の関数は未ログインの閲覧者・一般会員から取り上げてあるので、サービスロールの client で読む。更新者のメールや遡りの件数を公開の頁へ出さないよう、使うのは有効かどうかだけにする。
- * 設定が読めない時に一文を黙って出し分けると誤った方針を公表し続けるので、例外をそのまま出して頁を失敗にする。
+ * 設定の関数は未ログインの閲覧者・一般会員から取り上げてあるので、サービスロールの client で読む。更新者のメールや遡りの件数を公開の頁へ出さないよう、使うのは有効かどうか（enabled）と更新時刻（updatedAt）だけにする。
+ * 設定が読めない時に一文を黙って出し分けると誤った方針を公表し続けるので、例外をそのまま出して頁を失敗にする（受け皿は error.tsx）。
+ * 最終改定日は追跡の切り替え日に追従させるため、設定の更新時刻（updatedAt）も使う。
  * 守りの見出しは頁ごとに書くと書き忘れが出るので、頁では重ねず共有の proxy に任せる。
  */
 import type { Metadata } from "next";
@@ -15,6 +16,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { getDeliveryTrackingSettings } from "@/lib/orders/tracking/delivery-store";
+import { resolveRevisionDate } from "./revision-date";
 
 const pageTitleStyle: React.CSSProperties = { fontSize: "var(--lk-size-5xl)" };
 const sectionTitleStyle: React.CSSProperties = {
@@ -95,7 +97,6 @@ export default async function PrivacyPage() {
             <li>オンラインストアでの商品購入時</li>
             <li>会員登録時</li>
             <li>お問い合わせフォームからのご連絡時</li>
-            <li>メールマガジンの購読登録時</li>
             <li>キャンペーンやイベントへの参加時</li>
           </ul>
         </section>
@@ -193,9 +194,12 @@ export default async function PrivacyPage() {
             当サイトは、ログイン状態の保持やショッピングカートの管理など、サービス提供に必要な範囲で
             Cookie を使用します。
           </p>
-          <p className="text-[#474747]" style={bodyTextStyle}>
+          <p className="text-[#474747] mb-2" style={bodyTextStyle}>
             また、決済処理のために Stripe, Inc.
             を利用しており、決済に必要な情報は同社へ送信され、同社のプライバシーポリシーに基づいて取り扱われます。
+          </p>
+          <p className="text-[#474747]" style={bodyTextStyle}>
+            このほか、ご注文・お問い合わせ・会員登録などのご連絡メールの送信に Resend, Inc. の Resend を、会員情報・ご注文内容・お問い合わせ内容の保管と会員認証に Supabase, Inc. の Supabase を、ログインや会員登録などでの不正なアクセスや自動操作の防止に Cloudflare, Inc. が提供する Cloudflare Turnstile を利用しており、それぞれの目的に必要な情報（メールの宛先と本文、お客様の登録情報、閲覧時の IP アドレスとブラウザの情報など）が各社へ送信され、各社のプライバシーポリシーに基づいて取り扱われます。
           </p>
         </section>
 
@@ -242,7 +246,7 @@ export default async function PrivacyPage() {
           <p className="text-[#474747]" style={dateTextStyle}>
             制定日：2026年6月20日
             <br />
-            最終改定日：2026年7月11日
+            最終改定日：{resolveRevisionDate(deliveryTracking.updatedAt)}
           </p>
         </section>
       </div>

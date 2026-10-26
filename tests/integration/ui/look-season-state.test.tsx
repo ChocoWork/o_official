@@ -8,7 +8,7 @@ import {
   resolveLookSeasonFilter,
   toLookSeasonValues,
   type LookSeasonFilter,
-  type PublicLook,
+  type PublicLookListItem,
 } from '@/lib/look/public';
 
 const pushMock = jest.fn();
@@ -43,11 +43,11 @@ jest.mock('next/navigation', () => ({
   },
 }));
 
-const LOOKS: PublicLook[] = [
-  { id: 4, seasonYear: 2026, seasonType: 'AW', theme: 'Aw four', themeDescription: '', imageUrls: [], createdAt: '2026-04-01', linkedItems: [] },
-  { id: 3, seasonYear: 2026, seasonType: 'SS', theme: 'Ss three', themeDescription: '', imageUrls: [], createdAt: '2026-03-01', linkedItems: [] },
-  { id: 2, seasonYear: 2025, seasonType: 'AW', theme: 'Aw two', themeDescription: '', imageUrls: [], createdAt: '2026-02-01', linkedItems: [] },
-  { id: 1, seasonYear: 2025, seasonType: 'SS', theme: 'Ss one', themeDescription: '', imageUrls: [], createdAt: '2026-01-01', linkedItems: [] },
+const LOOKS: PublicLookListItem[] = [
+  { id: 4, seasonYear: 2026, seasonType: 'AW', theme: 'Aw four', imageUrls: [], createdAt: '2026-04-01', linkedItems: [] },
+  { id: 3, seasonYear: 2026, seasonType: 'SS', theme: 'Ss three', imageUrls: [], createdAt: '2026-03-01', linkedItems: [] },
+  { id: 2, seasonYear: 2025, seasonType: 'AW', theme: 'Aw two', imageUrls: [], createdAt: '2026-02-01', linkedItems: [] },
+  { id: 1, seasonYear: 2025, seasonType: 'SS', theme: 'Ss one', imageUrls: [], createdAt: '2026-01-01', linkedItems: [] },
 ];
 
 const SEASON_NAMES: LookSeasonFilter[] = ['ALL', 'SS', 'AW'];

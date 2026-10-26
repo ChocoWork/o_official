@@ -7,7 +7,7 @@ jest.mock('next/server', () => ({
   NextResponse: {
     json: (body: unknown, init?: { status?: number; headers?: Record<string, string> }) => ({
       status: init?.status ?? 200,
-      headers: new Map(Object.entries(init?.headers ?? {})),
+      headers: new Headers(init?.headers ?? {}),
       json: async () => body,
     }),
   },
@@ -42,10 +42,11 @@ function createFakeClient(results: Record<string, RpcResult>) {
   };
 }
 
-function makeRequest(path: string) {
+function makeRequest(path: string, headers: Record<string, string> = {}) {
+  const all: Record<string, string> = { 'x-forwarded-for': '203.0.113.5', ...headers };
   return {
     nextUrl: new URL(`http://localhost${path}`),
-    headers: { get: (name: string) => (name === 'x-forwarded-for' ? '203.0.113.5' : null) },
+    headers: { get: (name: string) => all[name.toLowerCase()] ?? null },
   };
 }
 
@@ -96,7 +97,8 @@ describe('/api/search の道', () => {
     expect(body.news.map((r: { id: string }) => r.id)).toEqual(['3']);
     expect(body.counts).toEqual({ all: 3, item: 1, look: 1, news: 1 });
     expect(body.empty).toBe(false);
-    expect(response.headers.get('x-search-duration-ms')).toMatch(/^\d+$/);
+    expect(response.headers.get('x-search-duration-ms')).toBeNull();
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
   });
 
   it('ARC-SEARCH-001 フィルタの文字を含む語も加工せず検索の関数の引数のまま渡す', async () => {
@@ -151,30 +153,34 @@ describe('/api/search の道', () => {
     expect(userClient.calls[0].args.search_query).toBe('coat');
   });
 
-  it('ARC-SEARCH-001 種別ごとの関数が1つ失敗しても記録して空とし、残りの結果を返す', async () => {
-    setupClients({ search_looks: { data: null, error: { message: 'boom' } } });
+  it('ARC-SEARCH-001 種別ごとの関数が1つ失敗したら窓口は全体を 500 にし、関数名と符号だけ記録する（SEC-SEARCH-017・018）', async () => {
+    setupClients({ search_looks: { data: null, error: { message: 'boom for coat', code: '42501' } } });
 
     const response = await searchRoute.GET(makeRequest('/api/search?q=coat'));
-    const body = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(body.looks).toEqual([]);
-    expect(body.items).toHaveLength(1);
-    expect(body.news).toHaveLength(1);
-    expect(body.counts.all).toBe(2);
-    expect(errorSpy).toHaveBeenCalledWith('Failed to search looks:', { message: 'boom' });
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'Failed to search content' });
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(errorSpy).toHaveBeenCalledWith('Search function failed:', { fn: 'search_looks', name: 'UnknownError', code: '42501' });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('boom');
   });
 
-  it('ARC-SEARCH-001 3種とも失敗しても 200 で0件を返し、失敗を3回記録する（SEC-SEARCH-017 は満たさない、今の動き）', async () => {
+  it('ARC-SEARCH-001 3種とも失敗したら窓口は 500 にし、失敗を3回記録する（SEC-SEARCH-017）', async () => {
     const failure = { data: null, error: { message: 'down' } };
     setupClients({ search_items: failure, search_looks: failure, search_news: failure });
 
     const response = await searchRoute.GET(makeRequest('/api/search?q=coat'));
-    const body = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(body.counts.all).toBe(0);
-    expect(errorSpy).toHaveBeenCalledTimes(3);
+    expect(response.status).toBe(500);
+    const searchFailures = errorSpy.mock.calls.filter((call) => call[0] === 'Search function failed:');
+    expect(searchFailures).toHaveLength(3);
+  });
+
+  it('ARC-SEARCH-001 外のサイトから読み込まれた要求は 403 で、検索の関数を呼ばない（SEC-SEARCH-020）', async () => {
+    const response = await searchRoute.GET(makeRequest('/api/search?q=coat', { 'sec-fetch-site': 'cross-site' }));
+
+    expect(response.status).toBe(403);
+    expect(userClient.calls).toHaveLength(0);
   });
 });
 
@@ -219,5 +225,6 @@ describe('/api/suggest の道', () => {
 
     expect(response.status).toBe(200);
     expect(body.suggestions.map((s: { type: string }) => s.type).sort()).toEqual(['look', 'news']);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
   });
 });

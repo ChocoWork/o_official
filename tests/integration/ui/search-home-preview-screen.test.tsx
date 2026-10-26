@@ -48,6 +48,7 @@ function payload(parts: Partial<Pick<SearchResultsResponse, 'items' | 'looks' | 
 }
 
 const fetchMock = jest.fn();
+const FIXED_SENTENCE = '入力した語に関連する結果をホーム上で即時プレビューしています。';
 
 function respondWith(body: SearchResultsResponse, ok = true) {
   fetchMock.mockResolvedValue({ ok, json: async () => body });
@@ -109,8 +110,24 @@ describe('SCR-SEARCH-004 ホームの検索のプレビュー', () => {
 
     expect(await screen.findByText('PREVIEW')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'Search Preview' })).toBeInTheDocument();
-    expect(screen.getByText('「coat」に関連する結果をホーム上で即時プレビューしています。')).toBeInTheDocument();
+    expect(screen.getByText(FIXED_SENTENCE)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'VIEW ALL RESULTS' })).toHaveAttribute('href', '/search?q=coat');
+  });
+
+  it('SCR-SEARCH-004 検索語は固定の説明の文と分かれた「検索した語」の枠に出る', async () => {
+    currentSearch = 'q=' + encodeURIComponent('coat 本日休業のお知らせ');
+    respondWith(payload({ items: [result('item', 1, 'Wool Coat')] }, 'coat 本日休業のお知らせ'));
+    const { container } = render(<SearchHomePreview />);
+
+    await screen.findByText('Search Preview');
+
+    const box = screen.getByTestId('search-preview-term');
+    expect(within(box).getByText('検索した語')).toBeInTheDocument();
+    expect(within(box).getByText('coat 本日休業のお知らせ')).toBeInTheDocument();
+    expect(screen.getByText(FIXED_SENTENCE).textContent).not.toContain('本日休業');
+    for (const paragraph of Array.from(container.querySelectorAll('p'))) {
+      expect(paragraph.textContent).not.toContain('本日休業');
+    }
   });
 
   it('SCR-SEARCH-004 VIEW ALL RESULTS の行き先は語を URL 用に符号化した検索のページ', async () => {
@@ -196,7 +213,7 @@ describe('SCR-SEARCH-004 ホームの検索のプレビュー', () => {
 
     expect(screen.getByText('<script>alert(1)</script>')).toBeInTheDocument();
     expect(screen.getByText('<i>meta</i>')).toBeInTheDocument();
-    expect(screen.getByText('「<img src=x onerror=alert(1)>」に関連する結果をホーム上で即時プレビューしています。')).toBeInTheDocument();
+    expect(within(screen.getByTestId('search-preview-term')).getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument();
     expect(container.querySelector('b, script, i, img')).toBeNull();
   });
 
@@ -226,7 +243,7 @@ describe('SCR-SEARCH-004 ホームの検索のプレビュー', () => {
     respondWith(payload({ items: [result('item', 1, 'Wool Coat')] }), false);
     const { container } = render(<SearchHomePreview />);
 
-    await waitFor(() => expect(console.error).toHaveBeenCalledWith('Failed to fetch home search preview:', expect.any(Error)));
+    await waitFor(() => expect(console.error).toHaveBeenCalledWith('Failed to fetch home search preview'));
 
     expect(container).toBeEmptyDOMElement();
   });
@@ -236,9 +253,7 @@ describe('SCR-SEARCH-004 ホームの検索のプレビュー', () => {
     fetchMock.mockRejectedValue(new Error('network down'));
     const { container } = render(<SearchHomePreview />);
 
-    await waitFor(() =>
-      expect(console.error).toHaveBeenCalledWith('Failed to fetch home search preview:', expect.objectContaining({ message: 'network down' })),
-    );
+    await waitFor(() => expect(console.error).toHaveBeenCalledWith('Failed to fetch home search preview'));
 
     expect(container).toBeEmptyDOMElement();
   });

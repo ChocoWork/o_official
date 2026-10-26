@@ -7,6 +7,8 @@
  * @remarks ホームの場所を取りすぎないよう、プレビュー用の枠（1種別3件・別の回数の枠）で窓口を呼んで先頭3件だけを出す（DRV-SEARCH-010）。
  * プレビューはホームの付け足しなので、取り出しに失敗したら区画ごと出さず、ホームの本体を邪魔しない（SCR-SEARCH-004）。
  * 題・説明・検索語の記号をタグとして解釈すると画面に差し込まれてしまうので、すべて文字のまま出す（SEC-SEARCH-013）。
+ * 説明の文は固定にし、URL から来る検索語は別の「検索した語」の枠（dl）にだけ出す。文に埋めると、細工したリンクで公式の画面の文面を書き換えられるため（SEC-SEARCH-021、ADR-0314）。
+ * 取り出しの失敗は固定の文字だけ記録する。Error を渡すと stack に内部の道筋が残る（SEC-HOME-015）。
  */
 'use client';
 
@@ -39,8 +41,8 @@ export function SearchHomePreview() {
         if (!cancelled) {
           setResults(payload);
         }
-      } catch (error) {
-        console.error('Failed to fetch home search preview:', error);
+      } catch {
+        console.error('Failed to fetch home search preview');
         if (!cancelled) {
           setResults(null);
         }
@@ -68,7 +70,15 @@ export function SearchHomePreview() {
           <div>
             <p className="tracking-[0.3em] text-black/50" style={previewTextStyle}>PREVIEW</p>
             <h2 style={previewTextStyle}>Search Preview</h2>
-            <p className="mt-2 leading-relaxed text-[#474747]" style={previewTextStyle}>「{query}」に関連する結果をホーム上で即時プレビューしています。</p>
+            <p className="mt-2 leading-relaxed text-[#474747]" style={previewTextStyle}>入力した語に関連する結果をホーム上で即時プレビューしています。</p>
+            <dl
+              data-testid="search-preview-term"
+              className="mt-3 inline-flex max-w-full items-baseline gap-3 border border-black/10 bg-white px-4 py-2"
+              style={previewTextStyle}
+            >
+              <dt className="shrink-0 tracking-widest text-black/50">検索した語</dt>
+              <dd className="min-w-0 break-words text-black">{query}</dd>
+            </dl>
           </div>
           <Link href={`/search?q=${encodeURIComponent(query)}`} className="tracking-widest text-black transition-colors hover:text-[#474747]" style={previewTextStyle}>
             VIEW ALL RESULTS

@@ -100,6 +100,19 @@ describe('NewsPage', () => {
     await expect(NewsPage({ searchParams: Promise.resolve({}) })).rejects.toBe(error);
   });
 
+  it('DD-NEWS-002 取り出しが NewsFetchError で失敗してもページは空の一覧を描かず reject する（SEC-NEWS-020）', async () => {
+    const error = Object.assign(new Error('Failed to fetch published news'), {
+      name: 'NewsFetchError',
+      code: '42501',
+    });
+    mockGetPublishedNews.mockRejectedValue(error);
+
+    await expect(NewsPage({ searchParams: Promise.resolve({ category: 'event' }) })).rejects.toBe(
+      error,
+    );
+    expect(mockGrid).not.toHaveBeenCalled();
+  });
+
   it('DD-NEWS-002 メタは固定の title と description を返す', async () => {
     await expect(generateMetadata()).resolves.toEqual({
       title: 'NEWS | Le Fil des Heures',

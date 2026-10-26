@@ -3,7 +3,36 @@ import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { signItemImageUrl } from '@/lib/storage/item-images';
 import { signLookImageUrl } from '@/lib/storage/look-images';
 import { signNewsImageUrl } from '@/lib/storage/news-images';
+import { describeErrorForLog } from '@/lib/logging/safe-error';
 import type { SearchResult, SearchResultsResponse, SearchResultType, SearchSuggestion, SearchTab } from '@/features/search/types/search.types';
+
+type SearchFunctionName = 'search_items' | 'search_looks' | 'search_news';
+
+/**
+ * 3つの検索関数のどれかが失敗したことを呼び手に伝える誤り。
+ *
+ * @impl IMPL-SEARCH-128
+ * @design DD-SEARCH-006
+ * @remarks 一部の種別だけ失敗したのに残りを「検索結果」として返すと、見つからないのか失敗なのか利用者に区別がつかないので、
+ * 1つでも失敗したら全体を失敗にする（SEC-SEARCH-017）。DB の誤りの文には語が入りうるので、関数名と符号だけを持つ（SEC-SEARCH-018）。
+ */
+export class SearchBackendError extends Error {
+  readonly fn: SearchFunctionName;
+  readonly code: string | null;
+
+  constructor(fn: SearchFunctionName, code: string | null) {
+    super('Search backend function failed');
+    this.name = 'SearchBackendError';
+    this.fn = fn;
+    this.code = code;
+  }
+}
+
+function logSearchFunctionFailure(fn: SearchFunctionName, error: unknown): { name: string; code: string | null } {
+  const described = describeErrorForLog(error);
+  console.error('Search function failed:', { fn, ...described });
+  return described;
+}
 
 type SearchExecutionOptions = {
   query: string;
@@ -175,7 +204,7 @@ async function getPopularItems(supabase: SupabaseClient, limit: number): Promise
   const { data, error } = await supabase.rpc('get_popular_items', { limit_count: limit });
 
   if (error) {
-    console.error('Failed to fetch popular items:', error);
+    console.error('Failed to fetch popular items:', describeErrorForLog(error));
     return [];
   }
 
@@ -193,6 +222,8 @@ async function getPopularItems(supabase: SupabaseClient, limit: number): Promise
  * 注文の表を数える人気商品の関数は service role の client から呼ぶ。商品ごとの売れ行きは外へ出さない情報なので、
  * 並びだけを人気の目安にして購入数は応答に写さない（SEC-SEARCH-009）。
  * 画像の置き場は非公開なので、応答を作るたびに種別ごとの関数で署名つき URL に置き換える。
+ * 3つの検索関数のどれかが失敗したら SearchBackendError を投げて全体を失敗にし、「見つからない」と区別する（SEC-SEARCH-017）。
+ * 記録に残すのは失敗した関数名と誤りの名前・符号だけで、検索語と DB の誤りの文は残さない（SEC-SEARCH-018）。
  */
 export async function executeSearch(options: SearchExecutionOptions): Promise<SearchResultsResponse> {
   const query = options.query.trim();
@@ -225,14 +256,21 @@ export async function executeSearch(options: SearchExecutionOptions): Promise<Se
     supabase.rpc('search_news',  { search_query: query, limit_count: limitPerType }),
   ]);
 
-  if (itemResult.error) {
-    console.error('Failed to search items:', itemResult.error);
+  // 1つでも失敗したら全体を失敗にする（SEC-SEARCH-017）。最初に見つけた1つを投げ、記録は失敗した関数ごとに1回。
+  let firstFailure: SearchBackendError | null = null;
+  const failures: Array<[SearchFunctionName, { error: unknown }]> = [
+    ['search_items', itemResult],
+    ['search_looks', lookResult],
+    ['search_news', newsResult],
+  ];
+  for (const [fn, result] of failures) {
+    if (result.error) {
+      const described = logSearchFunctionFailure(fn, result.error);
+      firstFailure ??= new SearchBackendError(fn, described.code);
+    }
   }
-  if (lookResult.error) {
-    console.error('Failed to search looks:', lookResult.error);
-  }
-  if (newsResult.error) {
-    console.error('Failed to search news:', newsResult.error);
+  if (firstFailure) {
+    throw firstFailure;
   }
 
   const items = (itemResult.data ?? []) as SearchItemRow[];
@@ -343,6 +381,7 @@ function labelContainsQuery(label: string, query: string): boolean {
  * @design DD-SEARCH-007
  * @remarks ラベルに語が現れない候補は、なぜ出たのか利用者に分からず強調も当たらないので、ラベルに語を含む物だけを出す（ADR-0307）。
  * 語は DB の関数の引数で渡し、公開済みの絞りは関数に任せる（SEC-SEARCH-003・SEC-SEARCH-001）。
+ * 候補は添え物なので、関数が失敗した種別は関数名と符号だけ記録して飛ばし、成功した種別で返す。投げない（SEC-SEARCH-017・018）。
  */
 export async function getSearchSuggestions(query: string, limit = 8): Promise<SearchSuggestion[]> {
   const normalizedQuery = query.trim();
@@ -358,6 +397,17 @@ export async function getSearchSuggestions(query: string, limit = 8): Promise<Se
     supabase.rpc('search_looks', { search_query: normalizedQuery, limit_count: limit }),
     supabase.rpc('search_news',  { search_query: normalizedQuery, limit_count: limit }),
   ]);
+
+  // 候補は添え物なので、失敗した種別は符号だけ記録して成功した種別で返す。投げない。
+  if (itemResult.error) {
+    logSearchFunctionFailure('search_items', itemResult.error);
+  }
+  if (lookResult.error) {
+    logSearchFunctionFailure('search_looks', lookResult.error);
+  }
+  if (newsResult.error) {
+    logSearchFunctionFailure('search_news', newsResult.error);
+  }
 
   const items = (itemResult.data ?? []) as SearchItemRow[];
   const looks = (lookResult.data ?? []) as SearchLookRow[];

@@ -58,7 +58,7 @@ function createFakeClient(
       const op: TableOp = { table, op: 'select', calls: [] };
       ops.push(op);
       const builder: Record<string, unknown> = {};
-      for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'in', 'or', 'single']) {
+      for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'in', 'or', 'single', 'maybeSingle']) {
         builder[m] = (...args: unknown[]) => {
           if (op.calls.length === 0 && (m === 'select' || m === 'insert' || m === 'update' || m === 'delete')) {
             op.op = m;
@@ -247,7 +247,7 @@ describe('GET /api/admin/looks/[id]（管理の LOOK の1件の取り出し）',
         linkedItemIds: [3, 5],
       },
     });
-    expect(tableCalls('looks', 'select')).toEqual([[['select', ['*']], ['eq', ['id', '7']], ['single', []]]]);
+    expect(tableCalls('looks', 'select')).toEqual([[['select', ['*']], ['eq', ['id', '7']], ['maybeSingle', []]]]);
     expect(tableCalls('look_items', 'select')).toEqual([[['select', ['item_id']], ['eq', ['look_id', '7']]]]);
     expect(client.signed).toEqual([
       { bucket: 'look-images', path: 'looks/2026-10-01/a.jpg', expiresIn: 3600 },
@@ -316,23 +316,30 @@ describe('GET /api/admin/looks/[id]（管理の LOOK の1件の取り出し）',
     expect(dataSeq()).toEqual(['looks.select']);
   });
 
-  test('API-LOOK-003 DB の失敗も無い行と同じ 404 Look not found にする（推定）', async () => {
-    setup({ tables: lookTables({ look: { data: null, error: { message: 'connection reset' } } }) });
+  test('API-LOOK-003 DB の失敗は「無い」と分けて 500 Failed to fetch look にし、DB の文を応答にも記録にも出さない', async () => {
+    setup({ tables: lookTables({ look: { data: null, error: { code: '08006', message: 'connection reset SECRET' } } }) });
 
     const res = await GET(makeRequest(), ctx());
 
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: 'Look not found' });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'Failed to fetch look' });
+    expect(dataSeq()).toEqual(['looks.select']);
+    expect(console.error).toHaveBeenCalledWith('Failed to fetch look:', { name: 'UnknownError', code: '08006' });
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('SECRET');
   });
 
-  test('API-LOOK-003 数でない id も形を確かめずそのまま引き、行が無いので 404 を返す', async () => {
-    setup({ tables: lookTables({ look: { data: null, error: { message: 'invalid input syntax for type bigint' } } }) });
+  test.each(['abc', '1e3', '0', '-1', '1.5'])(
+    'API-LOOK-003 id が %s の時は認可の後で 400 Invalid look id を返し、LOOK の表を引かない',
+    async (badId) => {
+      setup({ tables: lookTables() });
 
-    const res = await GET(makeRequest(), ctx('abc'));
+      const res = await GET(makeRequest(), ctx(badId));
 
-    expect(res.status).toBe(404);
-    expect(tableCalls('looks', 'select')).toEqual([[['select', ['*']], ['eq', ['id', 'abc']], ['single', []]]]);
-  });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Invalid look id' });
+      expect(dataSeq()).toEqual([]);
+    },
+  );
 
   test('API-LOOK-003 紐づけの取り出しに失敗したら 500 Failed to fetch look items を返し、画像を署名しない', async () => {
     setup({ tables: lookTables({ items: { data: null, error: { message: 'timeout' } } }) });

@@ -204,7 +204,7 @@ describe('人気商品の失敗と空', () => {
 
     expect(response.popularItems).toEqual([]);
     expect(response.items).toHaveLength(1);
-    expect(errorSpy).toHaveBeenCalledWith('Failed to fetch popular items:', failure);
+    expect(errorSpy).toHaveBeenCalledWith('Failed to fetch popular items:', { name: 'UnknownError', code: null });
   });
 
   it('ARC-SEARCH-004 語が空で関数が失敗しても、窓口は 200 で空の一覧を返す', async () => {

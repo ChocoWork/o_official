@@ -278,9 +278,10 @@ describe('ログインの状態の流れ（me・refresh・logout を続けて呼
 
     const loggedIn = await callMe();
     expect(loggedIn.status).toBe(200);
+    // メールの住所は読み手が使わないので返さない（id・役割・MFA の状態だけ）
     expect(await loggedIn.json()).toEqual({
       authenticated: true,
-      user: { id: 'user-1', email: 'user-1@example.com', role: 'user', mfaVerified: false },
+      user: { id: 'user-1', role: 'user', mfaVerified: false },
     });
 
     world.jar.clear();

@@ -14,10 +14,12 @@
 | `DD-NEWS-003` | `getPublishedNews`（`src/features/news/services/public.ts`） | 公開済みの記事を新しい順に取り出す（画像の列は選ばず署名しない） | `IMPL-NEWS-LIST-001` |
 | `DD-NEWS-004` | `src/app/api/news/route.ts` | `GET /api/news`。回数の制限・件数の上限・固定の失敗の文 | なし |
 | `DD-NEWS-005` | `src/app/news/NewsCategoryTabs.tsx` | 1つだけ選ぶ分類のタブ。未使用（削除の判断待ち） | なし |
+| `DD-NEWS-069` | `src/app/news/error.tsx` | 一覧・詳細の誤りの画面。取り出しの失敗の受け皿 | なし |
 
 - 結論: 一覧の取り出しはページのサーバーの中で `getPublishedNews` を直接呼び、部品は渡された記事を画面の上で絞るだけ。`/api/news` と部品の自分で取り出す枝は、今の画面からは通らない（推定）
 - 分類が1つの時だけ DB で絞り、複数の時は全部を取って画面で絞る。BLOG は選べるが DB に行が無いので必ず0件になる（推定）
-- 番号は `DD-NEWS-001`〜`029` をこの頁で使う。今は `001`〜`005` を使い、`006` 以降は空けておく
+- 取り出しの失敗は空の一覧にせず投げ（`NewsFetchError`）、`error.tsx`（DD-NEWS-069）の誤りの画面に出す（2026-10-26。ADR-0024）。`/api/news` は固定の 500 にし、全ての応答に `Cache-Control: private, no-store` を付ける
+- 番号は `DD-NEWS-001`〜`029` をこの頁で使う。今は `001`〜`005` を使い、`006` 以降は空けておく。後から足した誤りの画面 `DD-NEWS-069` もこの頁に置く
 
 ## 範囲と根拠
 
@@ -25,7 +27,7 @@
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の NEWS のうち、一覧のページにかかわる単位 |
 | 上位の文書 | [NEWS の構造設計](../../03_BasicDesign/areas/news.md)（`ARC-`・`SCR-`・`FLOW-`・`STATE-`・`API-`・`DATA-`）、[NEWS の要件](../../02_Requirements/areas/news.md)（`FR-NEWS-ALL-`・`SEC-NEWS-`・`DRV-NEWS-`） |
-| 対象のコード | `src/app/news/page.tsx`、`src/app/news/NewsCategoryTabs.tsx`、`src/features/news/components/PublicNewsGrid.tsx`、`src/features/news/services/public.ts` の `getPublishedNews`、`src/app/api/news/route.ts` |
+| 対象のコード | `src/app/news/page.tsx`、`src/app/news/error.tsx`、`src/app/news/NewsCategoryTabs.tsx`、`src/features/news/components/PublicNewsGrid.tsx`、`src/features/news/services/public.ts` の `getPublishedNews` と `NewsFetchError`、`src/app/api/news/route.ts` |
 | 単位の無いファイル | `src/features/news/types.ts`（型だけ）、`src/types/news.ts`（型だけ）、`src/lib/news-data.ts`（関数でない const だけ。`categories` は分類の一覧で BLOG を含み、`newsData` はどこからも使われない） |
 | 関連文書 | [ニュース詳細の詳細設計](03_news_detail.md)、`docs/03_BasicDesign/api/api-spec.md` |
 | 調べた時点 | 2026-10-24 の作業ツリー（コードは読んだだけで、動かしての確かめはしていない） |
@@ -37,6 +39,7 @@
 | Supabase の client | `src/lib/supabase/server.ts` の `createPublicClient`・`createServiceRoleClient` | 記事は anon の鍵・session なしで読む。公開の取り出しは service role を使わない（SEC-NEWS-005）。管理と検索は署名に使う |
 | 画像の署名 | `src/lib/storage/news-images.ts` の `signNewsImageUrl`・`signNewsImageFields` | 行ごとに `image_url` を期限 3600 秒の署名つき URL に置き換える。公開の一覧・詳細は呼ばない（管理と検索が使う） |
 | 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit` | `GET /api/news` だけが使う。超えると 429、数え場所が落ちると 503 |
+| 応答の見出し・記録 | `src/lib/http/no-store.ts` の `withNoStore`、`src/lib/logging/safe-error.ts` の `describeErrorForLog` | `/api/news` の全ての応答に `private, no-store` を付ける。取り出しと窓口の記録を誤りの名前と符号だけにする |
 | 画面の部品 | `src/components/ui/`（`MultiSelect`・`Drawer`・`Button`・`TagLabel`・`SectionTitle`・`TabSegmentControl`）、`src/features/home/components/HomeSectionViewAll.tsx` | 絞り込み・引き出し・分類の札・ホームの VIEW ALL |
 
 ```mermaid
@@ -175,8 +178,8 @@ FR-NEWS-ALL-002・003・004・007、FREQ-31・32・47・48・49・119・149・27
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SCR-NEWS-001、ARC-NEWS-001 |
-| 根拠 | ページを作るサーバーの中で取り出せば、自分の API への往復が無く、記事を入れた HTML をそのまま返せるため（ARC-NEWS-001）。URL の `category` は外から来る値なので、分類の一覧にある1つの値だけを DB の絞りに渡し、それ以外は ALL にして取り出しの条件に変な値を入れない（SCR-NEWS-001）。一覧の title と description は記事に左右されないので固定の文にする（SCR-NEWS-001） |
+| 上位 | SCR-NEWS-001、ARC-NEWS-001、SEC-NEWS-012、SEC-NEWS-020 |
+| 根拠 | ページを作るサーバーの中で取り出せば、自分の API への往復が無く、記事を入れた HTML をそのまま返せるため（ARC-NEWS-001）。URL の `category` は外から来る値なので、分類の一覧にある1つの値だけを DB の絞りに渡し、それ以外は ALL にして取り出しの条件に変な値を入れない（SCR-NEWS-001、SEC-NEWS-012。決まりは `resolveNewsCategory` に置く）。取り出しの失敗は受けずに投げ、誤りの画面に任せて「記事が無い」に見せない（SEC-NEWS-020、ADR-0024）。一覧の title と description は記事に左右されないので固定の文にする（SCR-NEWS-001） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/news/page.tsx`）、この頁の旧版の機能要件対応表 |
@@ -184,7 +187,7 @@ FR-NEWS-ALL-002・003・004・007、FREQ-31・32・47・48・49・119・149・27
 
 #### 対応要件
 
-FR-NEWS-ALL-001・005・006、FREQ-31（ページの h1 を置かない）。
+FR-NEWS-ALL-001・005・006、FREQ-31（ページの h1 を置かない）、SEC-NEWS-012・020（2026-10-26）。
 
 #### 入出力
 
@@ -198,7 +201,7 @@ FR-NEWS-ALL-001・005・006、FREQ-31（ページの h1 を置かない）。
 #### 正常フロー
 
 1. `searchParams` があれば待って受け、無ければ `undefined`
-2. `resolveCategory`（export しない）: `category ?? 'ALL'` を大文字にし、`categories`（`src/lib/news-data.ts`）にあればその値、無ければ ALL
+2. `resolveNewsCategory`（`src/features/news/lib/news-input.ts`、DD-NEWS-070）: `category ?? 'ALL'` を大文字にし、`categories`（`src/lib/news-data.ts`）にあればその値、無ければ ALL
 3. `getPublishedNews({category})` を1回呼ぶ。`limit` は渡さないので公開済みを全部取る
 4. 記事と、直した分類を `initialCategory` として部品に渡す。ページの `h1` は置かない
 
@@ -210,8 +213,8 @@ FR-NEWS-ALL-001・005・006、FREQ-31（ページの h1 を置かない）。
 | 分類の一覧に無い値（例 `FOO`） | ALL で全部を取る |
 | カンマ区切りの複数（例 `EVENT,STORE`） | 一覧に無い1つの文字なので ALL で全部を取り、部品が画面で絞る |
 | `BLOG` | 一覧にあるので DB を BLOG で絞り、DB の CHECK に BLOG が無いので必ず0件（推定） |
-| 取り出しが例外（例: service role の環境変数が無い） | 受けずに上へ投げ、Next.js の既定のエラーの画面（`src/app` に `error.tsx` は無い、推定） |
-| DB の失敗 | 取り出しが空の配列にするので、0件の表示になる（DD-NEWS-003） |
+| 取り出しが例外（`NewsFetchError`・client の作成の失敗など） | 受けずに上へ投げ、同じ階層の `src/app/news/error.tsx` の誤りの画面（DD-NEWS-069）。空の一覧にしない |
+| DB の失敗 | 取り出しが `NewsFetchError` を投げる（DD-NEWS-003）ので、上の行と同じく誤りの画面 |
 
 #### 状態・永続化
 
@@ -237,14 +240,15 @@ FR-NEWS-ALL-001・005・006、FREQ-31（ページの h1 を置かない）。
 | 6 | BLOG | `category='BLOG'` | `getPublishedNews({category:'BLOG'})` |
 | 7 | 記事を部品へ渡す | 取り出しが2件 | `PublicNewsGrid` に `variant='catalog'`・2件・直した分類 |
 | 8 | 取り出しの例外 | 取り出しが reject | ページの関数が reject する |
+| 8a | 取り出しの `NewsFetchError` | `getPublishedNews` が `NewsFetchError`（`code:'42501'`）で reject | ページの関数が同じ誤りで reject し、格子を描かない |
 | 9 | メタ | `generateMetadata()` | 固定の title と description |
 
 ### DD-NEWS-003 公開済みニュースの一覧の取得 getPublishedNews
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | ARC-NEWS-001、ARC-NEWS-003、DATA-NEWS-001、SEC-NEWS-001 |
-| 根拠 | 下書きを外へ出さないため、取り出しの条件に毎回 `status='published'` を付け、読み出しは anon の鍵の client に限って RLS でも絞る2段にする（SEC-NEWS-001、ARC-NEWS-001）。新しい知らせを先に見せるため、索引のある `published_date` の降順で並べる（DATA-NEWS-001）。公開の画面は画像を出さないので、画像の列は選ばず、署名もしない（SEC-NEWS-005、ARC-NEWS-003） |
+| 上位 | ARC-NEWS-001、ARC-NEWS-003、DATA-NEWS-001、SEC-NEWS-001、SEC-NEWS-020 |
+| 根拠 | 下書きを外へ出さないため、取り出しの条件に毎回 `status='published'` を付け、読み出しは anon の鍵の client に限って RLS でも絞る2段にする（SEC-NEWS-001、ARC-NEWS-001）。新しい知らせを先に見せるため、索引のある `published_date` の降順で並べる（DATA-NEWS-001）。公開の画面は画像を出さないので、画像の列は選ばず、署名もしない（SEC-NEWS-005、ARC-NEWS-003）。取り出しの失敗は空の一覧に見せず `NewsFetchError` で投げる（SEC-NEWS-020、ADR-0024） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/features/news/services/public.ts`）、この頁の旧版の機能要件対応表 |
@@ -252,15 +256,15 @@ FR-NEWS-ALL-001・005・006、FREQ-31（ページの h1 を置かない）。
 
 #### 対応要件
 
-FR-NEWS-ALL-001・005、FREQ-149-REQ-01（ホームの6件）、DRV-NEWS-007・008。
+FR-NEWS-ALL-001・005、FREQ-149-REQ-01（ホームの6件）、DRV-NEWS-007・008、SEC-NEWS-020（2026-10-26）。
 
 #### 入出力
 
 | 項目 | 内容 |
 | --- | --- |
 | 入力 | `options?: {category?: string; limit?: number}` |
-| 出力 | `Promise<PublicNewsArticle[]>`。列は `id・title・published_date・category・content`。`image_url` と本文 `detailed_content` は含まない |
-| 呼び元 | `src/app/news/page.tsx`（分類だけ）、`src/app/api/news/route.ts`（分類と 1〜20 の件数）、`src/app/page.tsx`（件数 6、範囲外）、`src/app/actions/news.ts`（件数 3、呼ぶ所なし） |
+| 出力 | `Promise<PublicNewsArticle[]>`。列は `id・title・published_date・category・content`。`image_url` と本文 `detailed_content` は含まない。DB の失敗は `NewsFetchError`（`readonly code: string \| null`、`message` は固定の `Failed to fetch published news`）で reject する |
+| 呼び元 | `src/app/news/page.tsx`（分類だけ）、`src/app/api/news/route.ts`（分類と 1〜20 の件数）、`src/app/page.tsx`（件数 6、範囲外。`.catch(() => [])` で握る）、`src/app/actions/news.ts`（件数 3、呼ぶ所なし。失敗はそのまま伝わる） |
 | 使う client | `createPublicClient()` だけ（service role は作らない） |
 
 #### 正常フロー
@@ -268,13 +272,15 @@ FR-NEWS-ALL-001・005、FREQ-149-REQ-01（ホームの6件）、DRV-NEWS-007・0
 1. `news_articles` から5つの列（`image_url` を除く）を選び、`status='published'`、`published_date` の降順
 2. `category` が空でなく `ALL` でなければ `eq('category', category)`。値は確かめない
 3. `limit` が数で、有限で、0 より大きければ小数を切り捨てて `limit`。それ以外は件数を絞らない
-4. 結果の行をそのまま返す（署名しない）
+4. `error` があれば誤りの名前と符号だけ記録して `NewsFetchError` を投げる
+5. 結果の行をそのまま返す（署名しない）
 
 #### 異常フロー
 
 | 場合 | 動き |
 | --- | --- |
-| DB の失敗（`error` が返る） | `error` を見ず、`data` が `null` なので空の配列を返す。記録しない（SEC-NEWS-020） |
+| DB の失敗（`error` が返る） | `console.error('Failed to fetch published news:', { name, code })` を出し、`NewsFetchError`（`code` は `error.code`、無ければ null）を投げる。`message`・詳細は記録しない（SEC-NEWS-020） |
+| `data` が `null` で `error` も無い | 空の配列 |
 | `limit` が 0・負・`NaN`・`Infinity`・数でない | 件数を絞らず全部を取る |
 | `category` が分類の一覧に無い値・小文字 | そのまま DB で絞り、0件（推定） |
 | service role の環境変数が無い | 影響しない（service role を使わない） |
@@ -305,7 +311,9 @@ FR-NEWS-ALL-001・005、FREQ-149-REQ-01（ホームの6件）、DRV-NEWS-007・0
 | 7 | 件数（0・負） | `{limit:0}`、`{limit:-1}` | `limit` が無い |
 | 8 | 件数（有限でない） | `{limit:Infinity}`、`{limit:NaN}` | `limit` が無い |
 | 9 | 署名しない | 行が2件 | 行をそのまま返し、`image_url` のキーが無い。`signNewsImageFields`・`createServiceRoleClient` を呼ばない |
-| 10 | DB の失敗 | `{data:null, error:{…}}` | 空の配列 |
+| 10 | DB の失敗 | `{data:null, error:{code:'42501', message:'permission denied…'}}` | `NewsFetchError`（`code='42501'`）で reject。`console.error` の第 2 引数が `{ name, code }` で `message` を含まない |
+| 10a | `error` に `code` が無い | `{data:null, error:{message:'db down'}}` | `NewsFetchError` の `code` は null |
+| 10b | `data` が null で `error` も無い | `{data:null, error:null}` | 空の配列 |
 | 11 | 公開の client を使う | 呼ぶ | 記事の問い合わせは `createPublicClient` の client で、service role の client は作らない |
 | 12 | 環境変数が無くても動く | `createServiceRoleClient` が投げる設定 | 一覧は返る（呼ばないので） |
 
@@ -313,15 +321,15 @@ FR-NEWS-ALL-001・005、FREQ-149-REQ-01（ホームの6件）、DRV-NEWS-007・0
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | API-NEWS-001、SEC-NEWS-001、SEC-NEWS-009 |
-| 根拠 | 認証の無い窓口なので、続けて叩かれても DB と署名の負荷が増えないよう、回数の制限（10分に60回）と件数の上限（20件）を窓口で掛ける（SEC-NEWS-009、API-NEWS-001）。数え場所が落ちた時は通さない側に倒し、制限が外れた状態で開けない（API-NEWS-001）。失敗の応答は固定の文にして内部の情報を出さない（SEC-NEWS-019 の応答の部分。例外を丸ごと記録するので SEC-NEWS-019 は上位にしない）。返す記事は取り出しの関数に任せ、公開済みだけにする（SEC-NEWS-001） |
+| 上位 | API-NEWS-001、SEC-NEWS-001、SEC-NEWS-006、SEC-NEWS-009、SEC-NEWS-012、SEC-NEWS-020 |
+| 根拠 | 認証の無い窓口なので、続けて叩かれても DB と署名の負荷が増えないよう、回数の制限（10分に60回）と件数の上限（20件）を窓口で掛ける（SEC-NEWS-009、API-NEWS-001）。数え場所が落ちた時は通さない側に倒し、制限が外れた状態で開けない（API-NEWS-001）。失敗の応答は固定の文にして内部の情報を出さず、記録は誤りの名前と符号だけにする（SEC-NEWS-019 の応答の部分。SEC-NEWS-019 は管理の窓口の記録も含むので上位にしない）。全ての応答に `Cache-Control: private, no-store` を付け、送り元単位の回数の制限を共有のキャッシュに飛ばされないようにする（SEC-NEWS-006）。分類は許可の一覧の値だけを取り出しへ渡す（SEC-NEWS-012）。返す記事は取り出しの関数に任せ、公開済みだけにする（SEC-NEWS-001） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/news/route.ts`）、`docs/03_BasicDesign/api/api-spec.md`、`docs/05_Quality/reviews/code/2026-04-18-news-review.md` |
 
 #### 対応要件
 
-DRV-NEWS-007、SEC-NEWS-009-AC-01・02、SEC-NEWS-019-AC-01（応答の部分）。SEC-NEWS-019 は、この窓口が例外を丸ごと記録するので上位にしていない（SEC-NEWS-019 の項目を参照）。
+DRV-NEWS-007、SEC-NEWS-006-AC-01・02、SEC-NEWS-009-AC-01・02、SEC-NEWS-012-AC-01、SEC-NEWS-019-AC-01（応答の部分）。SEC-NEWS-006・012 は 2026-10-26 に満たした。SEC-NEWS-019 は管理の窓口の記録も含むので上位にしていない（SEC-NEWS-019 の項目を参照）。
 
 #### 入出力
 
@@ -330,15 +338,17 @@ DRV-NEWS-007、SEC-NEWS-009-AC-01・02、SEC-NEWS-019-AC-01（応答の部分）
 | 入力 | `GET` の `NextRequest`。クエリ `category`（任意の文字）、`limit`（任意の文字） |
 | 出力（成功） | 200、DD-NEWS-003 の配列をそのまま JSON に |
 | 出力（失敗） | 429 `{error:'Too many requests'}`・503 `{error:'Rate limiter unavailable'}`（どちらも `Retry-After: 600`、`enforceRateLimit` が作る）、500 `{error:'Failed to fetch news'}` |
+| 見出し | 200・429・503・500 の全てに `Cache-Control: private, no-store`（`withNoStore`。回数の制限の応答が別の値を付けていても置き換える） |
 | 定数 | `DEFAULT_LIMIT = 12`、`MAX_LIMIT = 20` |
 
 #### 正常フロー
 
 1. `enforceRateLimit` を動的に読み込み、`{endpoint:'news:list', limit:60, windowSeconds:600}` で数える。応答が返らなければ続ける
-2. `category` はクエリの値、無ければ `undefined`。大文字にも確かめもしない
+2. `category` はクエリの値を `resolveNewsCategory`（DD-NEWS-070）に通す。許可の一覧の値なら大文字、外れ・無しは `ALL`
 3. `limit` は数字だけの文字なら整数に読み、ほかは `undefined`
 4. 読んだ値が真で、有限で、0 より大きければ `min(値, 20)`、それ以外は 12
 5. `getPublishedNews({category, limit})` の結果を 200 で返す
+6. 内側の関数 `handleGet` の戻りを、`export` した `GET` が `withNoStore` で包んで返す
 
 #### 異常フロー
 
@@ -350,14 +360,15 @@ DRV-NEWS-007、SEC-NEWS-009-AC-01・02、SEC-NEWS-019-AC-01（応答の部分）
 | `limit=0` | 読んだ値が偽なので 12 |
 | `limit` が大きすぎて `Infinity` に読める | 有限でないので 12 |
 | `limit` が 20 を超える | 20 |
-| `category` が分類の一覧に無い・小文字 | 確かめずに渡し、0件の 200（推定。SEC-NEWS-012） |
-| DB の失敗 | 取り出しが空にするので 200 `[]`（推定。SEC-NEWS-020） |
-| 取り出し・回数の制限の読み込みが例外 | 例外を丸ごと `console.error` に残し（SEC-NEWS-019）、500 の固定の文 |
+| `category` が分類の一覧に無い | `ALL` にして取り出す。200 で ALL と同じ記事（SEC-NEWS-012） |
+| `category` が小文字の正しい値 | 大文字にして取り出す |
+| DB の失敗 | 取り出しが `NewsFetchError` を投げるので 500 の固定の文（空の配列の 200 にしない。SEC-NEWS-020） |
+| 取り出し・回数の制限の読み込みが例外 | `{ name, code }` だけを `console.error` に残し、500 の固定の文。message は残さない |
 
 #### 状態・永続化
 
 - この窓口は状態を持たない。回数の制限が呼ばれるたびに数え場所の行を足す（`src/features/auth/middleware/rateLimit.ts`）
-- `Cache-Control` を付けない（SEC-NEWS-006）。Next.js 16 の Route Handler の GET は既定でキャッシュしない（推定）
+- `Cache-Control: private, no-store` を全ての応答に付ける（SEC-NEWS-006）。200 にも付けるので CDN では使い回せない。`proxy.ts`・`next.config.ts` が後から上書きしないかは E2E が見出しの値を読んで確かめる
 
 #### 認証認可
 
@@ -381,9 +392,13 @@ DRV-NEWS-007、SEC-NEWS-009-AC-01・02、SEC-NEWS-019-AC-01（応答の部分）
 | 7 | 0 | `limit=0` | `limit:12` |
 | 8 | 数字でない | `limit=abc`、`limit=-1`、`limit=1.5` | `limit:12` |
 | 9 | 有限でない | `limit` に 400 桁の数字 | `limit:12` |
-| 10 | 分類をそのまま渡す | `category=event` | `category:'event'` |
+| 10 | 分類を許可の一覧の値に直す | `category=collection` | `category:'COLLECTION'` |
+| 10a | 外れた分類 | `category=` に 300 字・`EVENT;drop`・`FOO` | `category:'ALL'`、200 |
+| 10b | 分類が無い | クエリなし | `category:'ALL'` |
 | 11 | 成功の本文 | 取り出しが2件 | 200 で同じ2件の配列 |
-| 12 | 取り出しの例外 | 取り出しが reject | 500 `{error:'Failed to fetch news'}`、console に記録 |
+| 12 | 取り出しの例外 | 取り出しが reject | 500 `{error:'Failed to fetch news'}`、console の第 2 引数は `{ name, code }` で message を含まない |
+| 12a | `NewsFetchError` | `code:'42501'` で reject | 500 の固定の文、記録は `{ name:'NewsFetchError', code:'42501' }` |
+| 12b | 全ての応答に no-store | 200・429・503・500・制限の例外の 500 | どれも `Cache-Control` が `private, no-store`（別の値を付けた 429 も置き換える） |
 | 13 | 制限の例外 | `enforceRateLimit` が reject | 500 の固定の文 |
 
 ### DD-NEWS-005 1つだけ選ぶ分類のタブ NewsCategoryTabs — 未使用（削除の判断待ち）
@@ -438,6 +453,56 @@ ARC-NEWS-005（その上は DRV-NEWS-015）。今の一覧の画面 SCR-NEWS-001
 | 3 | 個別を選ぶ | URL なしで EVENT | `router.push('/news?category=EVENT')` |
 | 4 | ほかのクエリを残す | URL `?foo=1` で ALL | `router.push('/news?foo=1')` |
 
+### DD-NEWS-069 NEWS の誤りの画面 error.tsx
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SCR-NEWS-001、SCR-NEWS-002、SEC-NEWS-020 |
+| 根拠 | 公開のニュースの取り出しが失敗した時に「現在、公開されている記事はありません」に見せず、失敗を失敗として知らせるため（SEC-NEWS-020、ADR-0024）。`error.message`・`stack` は DB の文を含みうるので、画面にも記録にも出さず、突き合わせ用の `digest` だけを残す。`props` の名前（`error`・`retry`）は既存の `src/app/checkout/error.tsx` と同じ |
+| 状態 | 現行 |
+| 確かめ方 | 単体テスト |
+| 出どころ | ユーザーの承認（2026-10-26、波 1 を全部）。設計は `.superpowers/sdd/2026-10-25-security-gap-fixes/design-final.md` の R14 |
+
+#### 対応要件
+
+SEC-NEWS-020（公開の取り出しの失敗を誤りの画面に出す）。
+
+#### 入出力
+
+| 向き | 中身 |
+| --- | --- |
+| 入力 | `{ error: Error & { digest?: string }; retry: () => void }` |
+| 出力 | `<div role="alert">` の中に見出し `h1`「NEWS を読み込めませんでした」、案内の文「一時的なエラーのため表示できません。しばらくしてからもう一度お試しください。」、ボタン「もう一度表示する」 |
+
+#### 正常フロー
+
+1. 表示のたびの effect で `console.error("[news] render error", { digest })` を1回出す
+2. ボタンを押すと `retry()` を1回呼ぶ
+
+#### 異常フロー
+
+| 場合 | 動き |
+| --- | --- |
+| `error.message` に DB の文が入っている | 画面にも `console.error` にも出さない |
+| `digest` が無い | `{ digest: undefined }` を渡す |
+
+#### 状態・永続化
+
+状態を持たない Client Component。
+
+#### 認証認可
+
+なし（公開）。
+
+#### テスト観点
+
+| # | 観点 | 入力 | 期待 |
+| --- | --- | --- | --- |
+| 1 | 見出しと案内 | 描く | `h1` の題、`role="alert"` に「エラー」を含む文 |
+| 2 | message を出さない | `message='SECRET_DB_DETAIL'` | 画面に含まれない |
+| 3 | 再表示 | ボタンを押す | `retry` が1回 |
+| 4 | 記録は digest だけ | `digest='digest-1'` | `console.error` の第 2 引数が `{ digest }` で、`message`・`stack` を渡さない |
+
 ## 実装の単位
 
 コードの TSDoc の `@design` は、この表に従って書く。単位の数え方は `scripts/trace/parse-code.ts` の `parseCodeUnits`（2026-10-24 に実行）。
@@ -449,14 +514,17 @@ ARC-NEWS-005（その上は DRV-NEWS-015）。今の一覧の画面 SCR-NEWS-001
 | `src/features/news/services/public.ts` | `getPublishedNews` | DD-NEWS-003 |
 | `src/app/api/news/route.ts` | `<file>` | DD-NEWS-004 |
 | `src/app/news/NewsCategoryTabs.tsx` | `<file>` | DD-NEWS-005 |
+| `src/features/news/services/public.ts` | `NewsFetchError` | DD-NEWS-003 |
+| `src/app/news/error.tsx` | `<file>` | DD-NEWS-069 |
 
 - `src/features/news/types.ts`・`src/types/news.ts`・`src/lib/news-data.ts` は `parseCodeUnits` の結果が空で、単位が無い
-- 同じファイルの `getPublishedNewsCount`・`getPublishedNewsDetailById`・`getPublishedNewsNavigation` はこの頁で扱わない（ホームと詳細の頁が扱う）
+- 同じファイルの `getPublishedNewsCount`・`getPublishedNewsDetailById`・`getPublishedNewsNavigation` はこの頁で扱わない（ホームと詳細の頁が扱う）。分類の確かめ `resolveNewsCategory` は詳細の頁の詳細設計（DD-NEWS-070）に置く
 
 ## 未確認事項
 
 - 一覧のページが要求ごとに描かれるか、キャッシュされるかを本番のビルドで確かめていない
 - 公開の記事が増えた時の一覧の重さ（`limit` を渡さず全部を取る。署名は 2026-10-26 にやめた）
+- 誤りの画面（`error.tsx`）の HTTP 状態が 500 のままか（流し始める前の誤りなら 500 の見込み。本番のビルドで確かめていない。`loading.tsx` と頁の中の `<Suspense>` は足さない）
 - `/api/news` と部品の自分で取り出す枝を残すか（今の画面からは通らない、推定）
 - `NewsCategoryTabs` を消すか（`docs/05_Quality/reports/unused-code.md` で判断する）
 - BLOG を分類に残すか、分類は1つか複数か（要件の文書の未確認事項と同じ）

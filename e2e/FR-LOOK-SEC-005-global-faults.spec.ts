@@ -1,6 +1,6 @@
 /**
  * FR-LOOK-SEC-005 LOOK の読み出し・画像の置き場を全体で一時的に壊して、失敗の扱いを確かめる（LOOK 領域）
- * 対応: SEC-LOOK-021-AC-01 / SEC-LOOK-022-AC-01 / SEC-LOOK-022-AC-02
+ * 対応: SEC-LOOK-009-AC-02 / SEC-LOOK-021-AC-01 / SEC-LOOK-022-AC-01 / SEC-LOOK-022-AC-02
  *
  * この3つは共有の手元の DB の設定（置き場 look-images の大きさの上限・looks の select 権限）を一時的に変えるので、
  * 同時に流れる他の spec の LOOK の表示・画像の書き込みを壊す。そのため playwright.config.ts の isolated-global の project
@@ -8,9 +8,11 @@
  * 他の worker が動いていない前提なので、test.skip は使わない。権限と上限は finally で必ず元へ戻す。
  *
  * - SEC-LOOK-021-AC-01: 置き場への書き込みが失敗した作成は 500 で、error が決まった文言になり、置き場の誤りの文言を含まない
+ * - SEC-LOOK-009-AC-02: 公開の LOOK を 101 件入れた状態で、/look のカードは 100 以下で最も古い LOOK は並ばず、その詳細は開く（3つの幅）
  * - SEC-LOOK-022-AC-01: looks の読み出しが失敗している時の /look は、誤りの画面になり、LOOK が0件の時の表示にならない（3つの幅）
  * - SEC-LOOK-022-AC-02: looks の読みが DB の失敗になる時、管理の1件の取得は 404 ではなく 500 を返す
- * 現行のコードが満たさない（赤になる）AC: 021-AC-01（置き場の文言を応答に出す）、022-AC-01（0件の表示を出す）、022-AC-02（404 にする）。
+ * 021-AC-01（置き場の文言を応答に出さない）と 022-AC-02（DB の失敗を 404 にせず 500）は管理の窓口で直した。
+ * 009-AC-02 は 101 件を 1 回だけ入れて 3 つの幅で読む（全体の並びを変えるので、この isolated-global の project に置く）。
  */
 import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
@@ -47,7 +49,6 @@ function storageClient() {
 
 test.describe('FR-LOOK-SEC-005 置き場の書き込みの失敗', () => {
   test('SEC-LOOK-021-AC-01 置き場への書き込みが失敗した作成は 500 になり、error が決まった文言で置き場の返した誤りの文言を含まない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-LOOK-021-AC-01 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     test.setTimeout(120_000);
     requireLocalSupabase();
     if (!baseURL) throw new Error('baseURL が無い（playwright.config.ts）');
@@ -94,10 +95,67 @@ test.describe('FR-LOOK-SEC-005 置き場の書き込みの失敗', () => {
   });
 });
 
+test.describe('FR-LOOK-SEC-005 一覧の件数の上限', () => {
+  // 見本の LOOK より古い 1990 年に、1 分ずつずらした公開の LOOK を 101 件入れる。-101 が最も新しく、-1 が最も古い
+  const prefix = `E2E-LOOK-SEC005-LIMIT-${randomBytes(4).toString('hex')}`;
+  const LIMIT_FIXTURE_COUNT = 101;
+
+  test.beforeAll(async () => {
+    requireLocalSupabase();
+    await purgeLooksByThemePrefix(prefix);
+    await withLocalDb((db) =>
+      db.query(
+        `insert into public.looks (season_year, season_type, theme, theme_description, image_urls, status, created_at, updated_at)
+         select 2026, 'SS', $1 || '-' || g, $1 || ' description ' || g, array['e2e/look-1-1.png'], 'published',
+                '1990-01-01T00:00:00Z'::timestamptz + (g || ' minutes')::interval,
+                '1990-01-01T00:00:00Z'::timestamptz + (g || ' minutes')::interval
+           from generate_series(1, $2::int) as g`,
+        [prefix, LIMIT_FIXTURE_COUNT],
+      ),
+    );
+  });
+
+  test.afterAll(async () => {
+    await purgeLooksByThemePrefix(prefix);
+  });
+
+  async function idOfTheme(theme: string): Promise<number> {
+    return withLocalDb(async (db) => Number((await db.query('select id from public.looks where theme = $1', [theme])).rows[0].id));
+  }
+
+  for (const vp of VIEWPORTS) {
+    test(`SEC-LOOK-009-AC-02 ${vp.name}: 上限より多い公開の LOOK があっても /look のカードは 100 以下で、最も古い LOOK は並ばず、その詳細は開く`, async ({ page }) => {
+      test.setTimeout(120_000);
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+
+      await page.goto('/look');
+      const cards = page.locator('[data-testid="look-card"]');
+      await expect(cards.first(), '一覧が表示されている（制御の確認）').toBeVisible();
+      const hrefs = await cards.evaluateAll((nodes) => nodes.map((node) => node.querySelector('a')?.getAttribute('href') ?? ''));
+      expect(new Set(hrefs).size, `カードの詳細へのリンクは重ならない（カード ${hrefs.length} 枚）`).toBe(hrefs.length);
+      expect(hrefs.length, 'カードは 100 枚以下').toBeLessThanOrEqual(100);
+
+      const themes = await page.locator('[data-testid="look-card-caption"] h3').allTextContents();
+      expect(themes, '最も新しい側（-101）は並ぶ').toContain(`${prefix}-101`);
+      expect(themes, '最も古い LOOK（-1）は並ばない').not.toContain(`${prefix}-1`);
+
+      const oldestId = await idOfTheme(`${prefix}-1`);
+      const newerId = await idOfTheme(`${prefix}-2`);
+      await page.goto(`/look/${oldestId}`);
+      await expect(page.getByRole('heading', { level: 1, name: `${prefix}-1` }), '最も古い LOOK の詳細が開く').toBeVisible();
+      await expect(page.getByText(`${prefix} description 1`, { exact: true }), '詳細に説明文が出る').toBeVisible();
+
+      const nav = page.getByTestId(vp.width >= 768 ? 'look-detail-bottom-nav' : 'look-detail-fixed-nav');
+      const adjacentLinks = nav.locator('a[href^="/look/"]');
+      await expect(adjacentLinks, '前後のリンクは PREV（1 つ新しい LOOK）だけで、NEXT は無効').toHaveCount(1);
+      await expect(adjacentLinks.first()).toHaveAttribute('href', `/look/${newerId}`);
+    });
+  }
+});
+
 test.describe('FR-LOOK-SEC-005 looks の読み出しの失敗', () => {
   for (const vp of VIEWPORTS) {
     test(`SEC-LOOK-022-AC-01 ${vp.name}: looks の読み出しが失敗している時に /look を開くと、誤りの画面が表示され、LOOK が0件の時の表示にならない`, async ({ page, request }) => {
-      test.fail(true, 'SEC-LOOK-022-AC-01 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
       test.setTimeout(120_000);
       requireLocalSupabase();
       await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -131,7 +189,6 @@ test.describe('FR-LOOK-SEC-005 looks の読み出しの失敗', () => {
   }
 
   test('SEC-LOOK-022-AC-02 looks の読みが DB の失敗になる時、管理の1件の取得 GET /api/admin/looks/<id> は 404 ではなく 500 を返す', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-LOOK-022-AC-02 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
     test.setTimeout(120_000);
     requireLocalSupabase();
     if (!baseURL) throw new Error('baseURL が無い（playwright.config.ts）');

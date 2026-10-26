@@ -8,7 +8,7 @@ const mockPush = jest.fn();
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
-  useParams: () => ({ id: 'a1' }),
+  useParams: () => ({ id: '101' }),
 }));
 
 jest.mock('next/image', () => ({
@@ -32,17 +32,17 @@ afterAll(() => {
 const LIST_URL = '/admin?tab=NEWS';
 
 const ARTICLE = {
-  id: 'a1',
+  id: '101',
   title: '春の新作',
   published_date: '2026-04-01',
   category: 'COLLECTION',
   status: 'published' as const,
-  image_url: 'https://example.test/signed/a1.jpg',
+  image_url: 'https://example.test/signed/101.jpg',
   content: '要約',
   detailed_content: '詳細',
 };
 
-const OTHER = { ...ARTICLE, id: 'a2', title: '店舗のお知らせ', category: 'STORE', status: 'private' as const };
+const OTHER = { ...ARTICLE, id: '102', title: '店舗のお知らせ', category: 'STORE', status: 'private' as const };
 
 function json(ok: boolean, body: unknown): Response {
   return { ok, status: ok ? 200 : 400, statusText: '', json: async () => body } as unknown as Response;
@@ -92,8 +92,8 @@ describe('管理の一覧と作成・編集の行き来', () => {
     render(<NewsSection />);
     await screen.findByRole('heading', { name: '春の新作' });
 
-    expect(within(rowOf('春の新作')).getByRole('link', { name: '編集' })).toHaveAttribute('href', '/admin/news/edit/a1');
-    expect(within(rowOf('店舗のお知らせ')).getByRole('link', { name: '編集' })).toHaveAttribute('href', '/admin/news/edit/a2');
+    expect(within(rowOf('春の新作')).getByRole('link', { name: '編集' })).toHaveAttribute('href', '/admin/news/edit/101');
+    expect(within(rowOf('店舗のお知らせ')).getByRole('link', { name: '編集' })).toHaveAttribute('href', '/admin/news/edit/102');
   });
 
   it('FLOW-NEWS-002 作成の保存に成功すると保存しました を見せ、500ms 後に一覧へ戻る', async () => {

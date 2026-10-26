@@ -52,7 +52,7 @@ describe('GET /api/auth/me', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       authenticated: true,
-      user: { id: 'user-1', email: 'user@example.com', role: 'admin', mfaVerified: true },
+      user: { id: 'user-1', role: 'admin', mfaVerified: true },
     });
     expectCommonHeaders(res);
   });
@@ -96,12 +96,21 @@ describe('GET /api/auth/me', () => {
     expect(body.user.mfaVerified).toBe(expected);
   });
 
-  test('DD-AUTH-026 メールのクレームが無ければ email は null', async () => {
+  test('DD-AUTH-026 認証済みの応答の user のキーは id・role・mfaVerified ちょうどで、メールの住所は載らない', async () => {
+    mockedAuthenticateRequest.mockResolvedValue(verifiedWith({ email: 'user@example.com' }));
+
+    const body = await ((await GET(request())) as MeResponse).json();
+
+    expect(Object.keys(body.user).sort()).toEqual(['id', 'mfaVerified', 'role']);
+    expect(JSON.stringify(body)).not.toMatch(/@/);
+  });
+
+  test('DD-AUTH-026 メールのクレームが無くても user のキーは同じ', async () => {
     mockedAuthenticateRequest.mockResolvedValue(verifiedWith({ email: undefined }));
 
     const body = await ((await GET(request())) as MeResponse).json();
 
-    expect(body.user.email).toBeNull();
+    expect(Object.keys(body.user).sort()).toEqual(['id', 'mfaVerified', 'role']);
   });
 
   test('DD-AUTH-026 理由が unavailable なら 503・Retry-After・no-store・no-referrer で答える', async () => {

@@ -9,6 +9,9 @@
  * 共有の端末に検索語を残さないよう端末の保存の場所は使わず（SEC-SEARCH-011）、
  * 題・候補の記号をタグとして解釈させないよう React の文字として出す。
  * 強調の正規表現は、語の中の記号で式が壊れたり重くなったりしないよう、語の記号を逃がしてから作る（SEC-SEARCH-013）。
+ * 候補は入力が止まって250ミリ秒たってから取り、新しい入力で前の要求を打ち切る。検索はタブを替えても取り直さず、語が変わった時だけ取る
+ * （一覧は全種別を返し、タブは表示の切り替えだけなので。SEC-SEARCH-005）。
+ * 失敗の記録には誤りの中身を渡さない（SEC-SEARCH-018）。
  */
 "use client";
 
@@ -36,6 +39,9 @@ const RESULTS_PAGE_SIZE = 8;
 
 /* FREQ-190: サジェストの最大表示件数（多すぎる選択肢は判断を遅らせるため）。 */
 const SUGGESTION_LIMIT = 8;
+
+/* SEC-SEARCH-005: 候補の取得は入力が止まってからこの時間待つ（打つたびに窓口と DB を呼ばない）。 */
+const SUGGEST_DEBOUNCE_MS = 250;
 
 /* FREQ-182 と同じ細線ストロークのインライン SVG 描画（アイコンフォント不使用）。 */
 function StrokeIcon({
@@ -268,6 +274,12 @@ export function SearchPageClient() {
   const [activeSuggestionIndex, setActiveSuggestionIndex] = React.useState(-1);
   const [visibleCount, setVisibleCount] = React.useState(RESULTS_PAGE_SIZE);
   const searchBoxRef = React.useRef<HTMLDivElement>(null);
+  // 検索の取得の effect は語が変わった時だけ走らせたいので、URL に載せるタブは ref から最新を読む。
+  const activeTabRef = React.useRef<SearchTab>(activeTab);
+
+  React.useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
 
   React.useEffect(() => {
     setInputValue(query);
@@ -285,7 +297,7 @@ export function SearchPageClient() {
       try {
         setIsLoading(true);
         const response = await fetch(
-          `/api/search?q=${encodeURIComponent(query)}&tab=${encodeURIComponent(activeTab)}`,
+          `/api/search?q=${encodeURIComponent(query)}&tab=${encodeURIComponent(activeTabRef.current)}`,
           {
             cache: "no-store",
           },
@@ -299,8 +311,8 @@ export function SearchPageClient() {
           setResults(payload);
           setErrorMessage(null);
         }
-      } catch (error) {
-        console.error("Failed to fetch search results:", error);
+      } catch {
+        console.error("Failed to fetch search results");
         if (!cancelled) {
           setResults(null);
           setErrorMessage("検索結果を読み込めませんでした");
@@ -317,21 +329,22 @@ export function SearchPageClient() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, query]);
+  }, [query]);
 
   React.useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+
+    if (inputValue.trim().length === 0) {
+      setSuggestions([]);
+      return undefined;
+    }
 
     const fetchSuggestions = async () => {
-      if (inputValue.trim().length === 0) {
-        setSuggestions([]);
-        return;
-      }
-
       try {
         const response = await fetch(
           `/api/suggest?q=${encodeURIComponent(inputValue)}`,
-          { cache: "no-store" },
+          { cache: "no-store", signal: controller.signal },
         );
         if (!response.ok) {
           throw new Error("Failed to fetch suggestions");
@@ -343,18 +356,23 @@ export function SearchPageClient() {
         if (!cancelled) {
           setSuggestions(payload.suggestions ?? []);
         }
-      } catch (error) {
-        console.error("Failed to fetch search suggestions:", error);
+      } catch {
+        // 打ち切られた要求は失敗として数えない。
         if (!cancelled) {
+          console.error("Failed to fetch search suggestions");
           setSuggestions([]);
         }
       }
     };
 
-    void fetchSuggestions();
+    const timer = setTimeout(() => {
+      void fetchSuggestions();
+    }, SUGGEST_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
+      controller.abort();
     };
   }, [inputValue]);
 

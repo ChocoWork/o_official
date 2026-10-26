@@ -18,7 +18,7 @@ NEWS の領域の構成・画面・画面遷移・状態遷移・API・データ
 
 - 結論: 公開の側は Server Component から anon の client で直接 DB を読み、`/api/news` は今の画面から通らない。管理の側は利用者の端末で動く画面から Route Handler を通し、窓口で session・権限・2要素認証を確かめた上で、利用者の JWT の client で RLS に通す
 - 状態の値は `private`・`published` の2つだが、DB の初めの値は `'draft'` で CHECK に合わない（STATE-NEWS-001）
-- 今のコードが満たさないセキュリティ要件（例: SEC-NEWS-002・003・005・006・008・018・021）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた
+- 今のコードが満たさないセキュリティ要件（例: SEC-NEWS-002・003・008・021）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた
 - 一部だけ満たすセキュリティ要件は、項目が受け持つコードの中に満たさない所がある時は上位にせず、満たさない所がほかのコードにだけある時は上位にした（例: SEC-NEWS-016 の「0件は 404」を満たさないのは `[id]/route.ts` なので、その窓口の項目の上位にはせず、作成の窓口 API-NEWS-003 の上位にはする）。この決まりは ADR と詳細設計の文書にも同じに当てた
 
 ## 範囲と根拠
@@ -67,7 +67,7 @@ graph LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-NEWS-ALL-001、FR-NEWS-DETAIL-001、SEC-NEWS-001、ADR-0003、ADR-0004、ADR-0021 |
+| 上位 | FR-NEWS-ALL-001、FR-NEWS-DETAIL-001、SEC-NEWS-001、SEC-NEWS-012、SEC-NEWS-020、ADR-0003、ADR-0004、ADR-0021、ADR-0024 |
 | 根拠 | 公開の読み出しの構造は、ページから直接読む（ADR-0021）・RLS と取り出しの条件の2段で守る（ADR-0003）・anon の client に限る（ADR-0004）の3つの判断が決めた。理由はその ADR に書き、ここでは繰り返さず、結果の構成だけを示す（SEC-NEWS-001） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -77,7 +77,8 @@ graph LR
 - 取り出しの関数（`src/features/news/services/public.ts`）: `getPublishedNews`（一覧）・`getPublishedNewsCount`（ホームの総数）・`getPublishedNewsDetailById`（1件）・`getPublishedNewsNavigation`（前後）。どれも `status='published'` を付ける。公開日の新しい順に並べるのは `getPublishedNews`と `getPublishedNewsNavigation` の2つで、`getPublishedNewsCount` と `getPublishedNewsDetailById` は並べない
 - client: ADR-0004 のとおり、DB は `createPublicClient()` だけで読む。公開の取り出しは `image_url` を選ばず署名もしないので、service role を持たない（SEC-NEWS-005、ARC-NEWS-003）。2026-10-26 までは画像の署名のために service role の client も作っていた
 - キャッシュ: `revalidate`・`use cache` などの指定は無く、`searchParams`・`params` を読むので要求ごとに描く（推定）
-- 失敗: ページに try/catch は無い。取り出しの関数は Supabase の `error` を見ず、DB の失敗を空の一覧・記事なしとして返す（SEC-NEWS-020 は満たさない）。`getPublishedNewsCount` だけが失敗を記録して 0 を返す
+- 失敗: 取り出しの失敗は空の一覧にせず投げる（2026-10-26。ADR-0024、SEC-NEWS-020）。`getPublishedNews`・`getPublishedNewsDetailById` は `error` を読んで `NewsFetchError`（`code` つき）を投げ、記録は誤りの名前と符号だけ。`/news`・`/news/[id]` は投げたまま、同じ階層の `src/app/news/error.tsx` の誤りの画面に任せる。前後の取り出し（`getPublishedNewsNavigation`）だけは失敗を記録して前後なしで返し、記事の本体は出す。ホーム（`src/app/page.tsx`）は `getPublishedNews` を `.catch(() => [])` で握り、NEWS の区画を空にして他の区画を出す。`getPublishedNewsCount` は今までどおり記録して 0 を返す
+- 入口の確かめ: id は `isNewsId`（bigint の桁）、分類は `resolveNewsCategory`（許可の一覧の物だけ、外れ・無しは ALL）。`src/features/news/lib/news-input.ts` に置く（SEC-NEWS-012）
 - 件数: `/news` は `limit` を渡さず公開済みを全部取る。前後の記事のために公開済みを全部読む（SEC-NEWS-009 の画面の上限は満たさない）
 
 ### ARC-NEWS-002 管理の書き換えは画面から Route Handler を通し、利用者の session の client で DB を変える
@@ -111,7 +112,7 @@ sequenceDiagram
 
 - 画面: `NewsSection`（一覧）・`NewsForm`（作成・編集）。どちらも client の部品で、権限での出し分けはしない
 - 窓口: `authorizeAdminPermission`（`src/lib/auth/admin-rbac.ts`）が token を確かめ（401）、session の生存と DB の ACL を並べて照会し（停止は 503、無効は 401）、権限が無ければ 403、`aal` が `aal2` でなければ 403 `MFA required` を返す
-- DB: `createClient(request)`（`src/lib/supabase/server.ts`）で利用者の JWT を付け、RLS（DATA-NEWS-002）を効かせる。画像の書き込みだけは service role（ARC-NEWS-003）
+- DB: `createClient(request)`（`src/lib/supabase/server.ts`）で利用者の JWT を付け、RLS（DATA-NEWS-002）を効かせる。画像の書き込みと後始末の削除だけは service role（ARC-NEWS-003）
 - 監査: 窓口の中の `logNewsAudit` が `logAudit`（`src/lib/audit.ts`）を呼ぶ。resource は `news_article`、user agent だけを残し IP は残さない。監査の書き込みの失敗は警告だけで、操作は止めない。GET は監査しない。PUT・PATCH・DELETE は対象の行が0件でも成功と記録する（SEC-NEWS-016 の「0件は 404」を満たさないので上位にしない）
 - CSRF: proxy の Origin の検査だけで守り、窓口は `requireCsrfOrDeny` を呼ばない（ADR-0019。決めた事か抜けかは未定）
 - 画面のページ（`/admin/news/create`・`/admin/news/edit/[id]`）にサーバーの守りは無く、殻は誰でも開け、送った時に窓口が断る（推定）
@@ -127,7 +128,8 @@ sequenceDiagram
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/lib/storage/news-images.ts`、`src/app/api/admin/news/route.ts`、`src/app/api/admin/news/[id]/route.ts`） |
 
-- 書く: 管理の POST・PUT が service role の client で置き場 `news-images` に上げ、表の `image_url` には署名前の道を入れる（DATA-NEWS-004）
+- 書く: 管理の POST・PUT が service role の client で置き場 `news-images` に上げ、表の `image_url` には署名前の道を入れる（DATA-NEWS-004）。上げる前に中身の先頭の印で種類を確かめ、保存名は日付と乱数と検出した種類の拡張子で作る（`src/features/news/services/admin-images.ts`、SEC-NEWS-017）
+- 後始末: 行を先に変え、その後で使わなくなった画像を service role で消す。削除は消した行の `image_url`、差し替えは古い画像、作成・差し替えの失敗はその要求で上げた新しい画像。消す道筋は `news/` の下の安全な文字だけに確かめ、置き場の失敗は記録するだけで応答は成功のまま返す（ADR-0025、SEC-NEWS-018）
 - 配る: `signNewsImageFields` が行の `image_url` を `signNewsImageUrl` の結果に置き換える。保存の道・旧 public・sign・authenticated の URL から置き場の中の道を取り出し（`extractNewsImageObjectPath`）、期限 3600 秒で署名する
 - 使う所: 管理の一覧と1件の GET、検索（`src/features/search/services/search.service.ts`、範囲外）。公開の取り出し（一覧・1件）は署名しない
 - 公開の一覧・詳細・ホームは画像を出さない（FREQ-32）ので、`getPublishedNews`・`getPublishedNewsDetailById` は `image_url` を選ばず、署名も service role の client も使わない。型 `PublicNewsArticle` に `image_url` は無い（SEC-NEWS-005。2026-10-26 に満たした）
@@ -171,7 +173,7 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-NEWS-ALL-001、FR-NEWS-ALL-002、FR-NEWS-ALL-003、FR-NEWS-ALL-004、FR-NEWS-ALL-005、FR-NEWS-ALL-006、FREQ-31-REQ-01、FREQ-32-REQ-01、FREQ-47-REQ-01、FREQ-48-REQ-01、FREQ-49-REQ-01、FREQ-119-REQ-01、FREQ-274-REQ-01、FREQ-274-REQ-02、DRV-NEWS-001、DRV-NEWS-002、DRV-NEWS-003、DRV-NEWS-004、DRV-NEWS-005、DRV-NEWS-006、ADR-0012、ADR-0013、ADR-0015、ADR-0017 |
+| 上位 | FR-NEWS-ALL-001、FR-NEWS-ALL-002、FR-NEWS-ALL-003、FR-NEWS-ALL-004、FR-NEWS-ALL-005、FR-NEWS-ALL-006、FREQ-31-REQ-01、FREQ-32-REQ-01、FREQ-47-REQ-01、FREQ-48-REQ-01、FREQ-49-REQ-01、FREQ-119-REQ-01、FREQ-274-REQ-01、FREQ-274-REQ-02、DRV-NEWS-001、DRV-NEWS-002、DRV-NEWS-003、DRV-NEWS-004、DRV-NEWS-005、DRV-NEWS-006、SEC-NEWS-020、ADR-0012、ADR-0013、ADR-0015、ADR-0017、ADR-0024 |
 | 根拠 | 公開済みの記事を新しい順に並べ、分類で絞って読めるようにするため（FR-NEWS-ALL-001・002）。絞り込みの部品・幅・余白を ITEM・LOOK の一覧にそろえ、一覧ごとに操作を覚え直させない（FREQ-47・48・49・119・274、ADR-0012）。見出しと画像を置かず、フィルターと文字の記事だけの静かな並びで見せる（FREQ-31・32、ADR-0015） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -182,21 +184,21 @@ sequenceDiagram
 - 絞り込み: lg 以上は左のサイドバーの `MultiSelect`（ヘッダーの真下に sticky、DRV-NEWS-003）、それ未満は FILTER のボタンと左の引き出し（バーはヘッダーの真下に付いて動く、DRV-NEWS-002）。選び方の決まりは STATE-NEWS-002
 - カード: 公開日（`YYYY.MM.DD`）・分類の `TagLabel`・題（h2）・概要（Markdown の印を外した文字、DRV-NEWS-004）。画像は出さない。触れると上下の線が伸びる（DRV-NEWS-005）。押すと詳細へ（FLOW-NEWS-001）
 - ページの見出し `h1` は置かない。title と description は固定（`src/app/news/page.tsx`）
-- 空と失敗: 公開の記事が無い時「現在、公開されている記事はありません」、絞った結果が0件の時「該当カテゴリの記事はありません」、部品が自分で取り出して失敗した時は赤い文「ニュースデータの取得に失敗しました」（DRV-NEWS-006、ADR-0017）。今の呼び元は記事を渡すので、部品が自分で取り出す枝は通らない（推定）
+- 空と失敗: 公開の記事が無い時「現在、公開されている記事はありません」、絞った結果が0件の時「該当カテゴリの記事はありません」、部品が自分で取り出して失敗した時は赤い文「ニュースデータの取得に失敗しました」（DRV-NEWS-006、ADR-0017）。今の呼び元は記事を渡すので、部品が自分で取り出す枝は通らない（推定）。頁の取り出しが失敗した時は「記事が無い」にせず、`error.tsx` の誤りの画面（見出し「NEWS を読み込めませんでした」、「エラー」を含む案内、もう一度表示するボタン。`error.message` は出さない。DD-NEWS-069）を出す。誤りの画面の HTTP 状態は未確認（流し始める前の誤りなら 500 のまま。`loading.tsx` と `<Suspense>` は足さない）
 - BLOG は選択肢に出るが、DB の CHECK に無いので選ぶと必ず0件（推定）
 
 ### SCR-NEWS-002 ニュース詳細 `/news/[id]`
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-NEWS-DETAIL-001、FR-NEWS-DETAIL-002、FR-NEWS-DETAIL-003、FR-NEWS-DETAIL-004、FR-NEWS-DETAIL-005、FR-NEWS-DETAIL-006、FR-NEWS-DETAIL-007、FR-NEWS-DETAIL-008、SEC-NEWS-001、SEC-NEWS-013、ADR-0011、ADR-0013 |
+| 上位 | FR-NEWS-DETAIL-001、FR-NEWS-DETAIL-002、FR-NEWS-DETAIL-003、FR-NEWS-DETAIL-004、FR-NEWS-DETAIL-005、FR-NEWS-DETAIL-006、FR-NEWS-DETAIL-007、FR-NEWS-DETAIL-008、SEC-NEWS-001、SEC-NEWS-012、SEC-NEWS-013、SEC-NEWS-020、ADR-0011、ADR-0013、ADR-0024 |
 | 根拠 | 記事を1件ずつ読み、前後の記事と一覧へ移れるようにするため（FR-NEWS-DETAIL-001〜003）。管理で書いた本文を HTML として出すと保存された XSS の入口になるので、文字のまま段落に分けて出す（SEC-NEWS-013、ADR-0011）。非公開の記事は無い記事と同じ 404 にし、有無も知らせない（SEC-NEWS-001） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/news/[id]/page.tsx`）、`docs/03_BasicDesign/ui/screen-list.md` |
 
 - 作り: Server Component。`getPublishedNewsDetailById` で記事を、`getPublishedNewsNavigation` で前後を取る。メタの作成と本体で同じ記事を2回読む（推定）
-- 404: 記事が無い・非公開・数でない id の時は `notFound()`（Next.js の既定の画面。`src/app` に `not-found.tsx` は無い）
+- 404: 記事が無い・非公開・数でない id の時は `notFound()`（Next.js の既定の画面。`src/app` に `not-found.tsx` は無い）。数でない id（`isNewsId` が偽）は DB を呼ばずに `notFound()` にし、`generateMetadata` も固定の題を返す。取り出しの失敗は 404 にせず、`error.tsx` の誤りの画面に任せる（ADR-0024）
 - 分類: URL の `category` が1つの正しい値なら、記事の取り出しと前後をその分類で絞る。記事の分類と違う値を付けると 404 になる（推定。食い違いは trace-matrix.md の「食い違い」節）。複数の時は前後を ALL で出し、リンクには複数のまま引き継ぐ。正しくない値は ALL
 - 中身: パンくず（NEWS → 記事の分類 → 題、`aria-current="page"`）、公開日、分類の `TagLabel`、題（h1）、本文（`\n\n` で段落の `p`、`whitespace-pre-line`）。画像は出さない
 - 前後: 「前の記事: 題」「次の記事: 題」の `aria-label` 付きのリンクと VIEW ALL（一覧へ、分類を引き継ぐ）。スマホと sm 以上で2回描く
@@ -206,7 +208,7 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-003、DRV-NEWS-013、DRV-NEWS-014、ADR-0006、ADR-0007 |
+| 上位 | FR-ADMIN-003、SEC-NEWS-020、DRV-NEWS-013、DRV-NEWS-014、ADR-0006、ADR-0007 |
 | 根拠 | 店長が記事の一覧から公開の切り替え・編集・削除へ1か所で届くようにするため（FR-ADMIN-003）。消した記事は戻せないので、押し間違いで消さないよう確かめを挟む（DRV-NEWS-013）。並びを公開側と同じ公開日の新しい順にそろえ、決まりを1つにする（DRV-NEWS-014） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -217,7 +219,7 @@ sequenceDiagram
 - 行: 画像（署名つき URL を `next/image` に渡す）、状態のバッジ（公開中・非公開）、分類の `TagLabel`（outline）、題、公開日、公開・非公開の切り替え、編集（`/admin/news/edit/<id>`）、削除のボタン
 - 切り替え: 今の状態を反転して `PATCH`（API-NEWS-006）。失敗は `alert`、成功で読み直す
 - 削除: 「この記事を削除してもよろしいですか？」に同意した時だけ `DELETE`（API-NEWS-007）。失敗は `alert`、成功で読み直す
-- 取り出しの失敗も0件と同じ「ニュース記事がありません」になる（SEC-NEWS-020 は満たさない）
+- 取り出しの失敗は「ニュース記事がありません」にせず、`role="alert"` の「ニュース記事の取得に失敗しました」と「再読み込み」のボタンを出す。切り替えの後の読み直しの失敗は、前の一覧の上に同じ知らせを出す（SEC-NEWS-020）
 - 権限での出し分けはせず、`admin.news.read` だけの人にも切り替えと削除のボタンが出る（窓口が 403、推定）
 
 ### SCR-NEWS-004 記事の作成 `/admin/news/create`
@@ -241,14 +243,14 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-003、FREQ-252-REQ-01、FREQ-252-REQ-02、FREQ-252-REQ-03、FREQ-515-REQ-01（範囲外）、DRV-NEWS-012、ADR-0014、ADR-0018 |
+| 上位 | FR-ADMIN-003、FREQ-252-REQ-01、FREQ-252-REQ-02、FREQ-252-REQ-03、FREQ-515-REQ-01（範囲外）、SEC-NEWS-012、DRV-NEWS-012、ADR-0014、ADR-0018 |
 | 根拠 | 公開した記事の誤りを直せるようにするため（FR-ADMIN-003）。直すたびに画像を付け直させないよう、付け直さなければ元の画像を使う（FREQ-252-REQ-02、ADR-0014）。作成と同じフォームを使い、欄の決まりを1つにする |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/admin/news/edit/[id]/page.tsx`、`src/app/admin/news/NewsForm.tsx`）、`docs/03_BasicDesign/ui/screen-list.md` |
 
 - 作り: client のページが URL の id で `GET /api/admin/news/<id>`（API-NEWS-004）を呼び、値を `NewsForm` に詰めて `PUT`（API-NEWS-005）で包む
-- 表示: 読み込み中、エラー（id が無い時「記事IDの取得に失敗しました」、取り出しの失敗はサーバーの文か「記事の読み込みに失敗しました」）、フォーム
+- 表示: 読み込み中、エラー（id が無い時「記事IDの取得に失敗しました」、id が記事の id の形（`isNewsId`）でない時は要求を送らず「記事の読み込みに失敗しました」、取り出しの失敗はサーバーの文か「記事の読み込みに失敗しました」）、フォーム。道には `encodeURIComponent` を通した id を入れる（SEC-NEWS-012）
 - 画像: 既にある画像（署名つき URL）を見本に出し、選び直せば見本を差し替える。画像なしでも送れる
 - 分類は取り出した値を型の断言だけで入れ、確かめない
 - 送った後: 成功は「更新しました」の後 500ms で `/admin?tab=NEWS`（DRV-NEWS-012）。失敗は「更新に失敗しました」か、サーバーの文
@@ -257,13 +259,13 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-149-REQ-01、FREQ-149-REQ-02、FREQ-146-REQ-01、FREQ-275-REQ-01、FREQ-275-REQ-03、DRV-NEWS-005、ADR-0017 |
+| 上位 | FREQ-149-REQ-01、FREQ-149-REQ-02、FREQ-146-REQ-01、FREQ-275-REQ-01、FREQ-275-REQ-03、DRV-NEWS-005、ADR-0017、ADR-0024 |
 | 根拠 | 画面の幅で件数が変わるとモバイルで見えない記事が出るため、どの幅でも6件を出す（FREQ-149-REQ-01）。全部を出し切れる時に一覧への入口を出しても行き先に新しい記事が無いので、公開の総数が6件より多い時だけ VIEW ALL を出す（FREQ-149-REQ-02）。区画の見出しとボタンをほかの区画と同じ部品にそろえる（FREQ-146・275） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/features/news/components/PublicNewsGrid.tsx`、`src/app/page.tsx`） |
 
-- 作り: ホーム（`src/app/page.tsx`、範囲外）が `getPublishedNews({limit:6})` と `getPublishedNewsCount()` を取り、`PublicNewsGrid`（`variant="home"`）に記事と総数を渡す
+- 作り: ホーム（`src/app/page.tsx`、範囲外）が `getPublishedNews({limit:6})` と `getPublishedNewsCount()` を取り、`PublicNewsGrid`（`variant="home"`）に記事と総数を渡す。記事の取り出しが失敗してもホームは落とさず、`.catch(() => [])` で空にする（ARC-NEWS-001、ADR-0024）
 - 見出し: `SectionTitle`（下線付き）。記事の題は h3（DRV-NEWS-005）
 - カード: 一覧と同じ中身。押すと `/news/<id>`（分類なし）
 - VIEW ALL: 下の中央の `HomeSectionViewAll`（共通の Button、`aria-label="VIEW ALL NEWS"`）。総数が6件より多い時だけ出し、行き先は `/news`。総数の取り出しに失敗すると 0 になり VIEW ALL が消える
@@ -384,8 +386,8 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | DRV-NEWS-007、SEC-NEWS-001、SEC-NEWS-009、ADR-0008、ADR-0009 |
-| 根拠 | 一覧の部品が記事を渡されなかった時の取り出し先として作った窓口（DRV-NEWS-007）。認証の無い窓口なので、まとめて吸い出されて DB の負荷が増えないよう件数の上限と回数の制限を付け（SEC-NEWS-009、ADR-0008）、数え場所が落ちた時は通さない（ADR-0009）。失敗の応答は固定の文にして内部の情報を出さない（SEC-NEWS-019 の応答の部分。例外を丸ごと記録するので SEC-NEWS-019 は上位にしない） |
+| 上位 | DRV-NEWS-007、SEC-NEWS-001、SEC-NEWS-006、SEC-NEWS-009、SEC-NEWS-012、SEC-NEWS-020、ADR-0008、ADR-0009、ADR-0024 |
+| 根拠 | 一覧の部品が記事を渡されなかった時の取り出し先として作った窓口（DRV-NEWS-007）。認証の無い窓口なので、まとめて吸い出されて DB の負荷が増えないよう件数の上限と回数の制限を付け（SEC-NEWS-009、ADR-0008）、数え場所が落ちた時は通さない（ADR-0009）。失敗の応答は固定の文にして内部の情報を出さず、記録は誤りの名前と符号だけにする（SEC-NEWS-019 の応答の部分。SEC-NEWS-019 は管理の窓口の記録も含むので上位にしない）。全ての応答に `private, no-store` を付け、送り元単位の回数の制限を共有のキャッシュに飛ばされない（SEC-NEWS-006）。分類は許可の一覧の値だけを取り出しへ渡す（SEC-NEWS-012） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/news/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
@@ -393,21 +395,23 @@ stateDiagram-v2
 | 項目 | 内容 |
 | --- | --- |
 | 認可 | なし（公開） |
-| 入力 | クエリ `category`（確かめずに取り出しへ渡す）、`limit`（数字だけの文字なら整数。正なら20を上限に丸め、それ以外は12） |
+| 入力 | クエリ `category`（`resolveNewsCategory` で許可の一覧の値に直し、外れ・無しは ALL。小文字は大文字にする）、`limit`（数字だけの文字なら整数。正なら20を上限に丸め、それ以外は12） |
 | 回数の制限 | `enforceRateLimit({endpoint:'news:list', limit:60, windowSeconds:600})`。超えると 429、数え場所が使えないと 503 |
 | 成功 | 200。公開済みの記事の配列 `id・title・published_date・category・content`、公開日の新しい順。`image_url`（署名つき URL）と本文 `detailed_content` は返さない |
-| 失敗 | 例外は記録して 500 `{error:'Failed to fetch news'}`。DB の失敗は取り出しの関数が空にするので 200 `[]`（推定） |
+| 失敗 | 例外・DB の失敗（`NewsFetchError`）は、誤りの名前と符号だけ記録して 500 `{error:'Failed to fetch news'}`。空の配列の 200 にはしない |
+| 応答の見出し | 全ての応答（200・429・503・500）に `Cache-Control: private, no-store`（`withNoStore`。SEC-NEWS-006） |
 | 使う所 | 今の画面からは通らない（推定）。検索の E2E の補助 `e2e/search-test-utils.ts` が呼ぶ |
 
 - `image_url` は返さず、署名もしない（SEC-NEWS-005。2026-10-26 に満たした）。取り出しの関数が画像の列を選ばず、service role の client も作らないので、署名の失敗で 500 になる道も無い
-- 満たさない要件: `Cache-Control` が無い（SEC-NEWS-006）、送り元を `x-forwarded-for` から取る（SEC-NEWS-011）、`category` を確かめない（SEC-NEWS-012）、例外を丸ごと `console.error` に渡す（SEC-NEWS-019、`src/app/api/news/route.ts`）
+- `Cache-Control` は 2026-10-26 に満たした（SEC-NEWS-006。route 単位の包み。`proxy.ts` は触らない）。`category` の確かめも同日に満たした（SEC-NEWS-012）。記録は名前と符号だけにした（`describeErrorForLog`）
+- 満たさない要件: 送り元を `x-forwarded-for` から取る（SEC-NEWS-011）
 - `api-spec.md` は失敗を 429・500 とだけ書き、503 を書いていない
 
 ### API-NEWS-002 `GET /api/admin/news` 管理の記事の一覧
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-003、SEC-NEWS-015、DRV-NEWS-014、ADR-0005、ADR-0006 |
+| 上位 | FR-ADMIN-003、SEC-NEWS-015、SEC-NEWS-020、DRV-NEWS-014、ADR-0005、ADR-0006 |
 | 根拠 | 非公開の記事を含む一覧は管理の権限を持つ人だけに渡すため、`admin.news.read` と aal2 を求め、DB も利用者の JWT で RLS に通す（SEC-NEWS-015、ADR-0005・0006）。並びは公開側と同じ公開日の新しい順にそろえる（DRV-NEWS-014） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -418,14 +422,14 @@ stateDiagram-v2
 | 認可 | `admin.news.read`。失敗は 401・403・503 |
 | 入力 | なし |
 | 成功 | 200 `{data}`。全部の列、非公開を含む、公開日の新しい順。`image_url` は署名つき URL。件数の上限とページ分けは無い |
-| 失敗 | DB の失敗は 500 `Failed to fetch news articles`、例外は 500 |
+| 失敗 | DB の失敗は 500 `Failed to fetch news articles`（記録は誤りの名前と符号だけ。SEC-NEWS-020）、例外は 500 |
 | 監査 | しない |
 
 ### API-NEWS-003 `POST /api/admin/news` 記事の作成
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-003、FREQ-252-REQ-02、FREQ-252-REQ-03、SEC-NEWS-014、SEC-NEWS-015、SEC-NEWS-016、DRV-NEWS-009、DRV-NEWS-010、ADR-0010、ADR-0014、ADR-0019、ADR-0022 |
+| 上位 | FR-ADMIN-003、FREQ-252-REQ-02、FREQ-252-REQ-03、SEC-NEWS-014、SEC-NEWS-015、SEC-NEWS-016、SEC-NEWS-017、SEC-NEWS-018、DRV-NEWS-009、DRV-NEWS-010、ADR-0010、ADR-0014、ADR-0019、ADR-0022、ADR-0025 |
 | 根拠 | 記事を作る窓口は表と置き場の両方を変えるので、`admin.news.manage` と aal2 を求め（SEC-NEWS-015）、成功も失敗も監査に残す（SEC-NEWS-016、ADR-0010）。表に長さの制約が無いので入口で上限を決め、画面の崩れと過大な保存を防ぐ（DRV-NEWS-009）。保存の名前は送られた名前を使わず日付と uuid で作り、上書きと推測を防ぐ（DRV-NEWS-010、ADR-0022） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -435,18 +439,18 @@ stateDiagram-v2
 | --- | --- |
 | 認可 | `admin.news.manage`。CSRF は proxy の Origin の検査（ARC-NEWS-004） |
 | 入力 | multipart。`title`（1〜200 字）・`category`（COLLECTION・EVENT・COLLABORATION・SUSTAINABILITY・STORE）・`date`（`YYYY-MM-DD`、実在の日付は確かめない）・`content`（1〜2000 字）・`detailedContent`（1〜10000 字）・`status`（private・published）・`image`（必須、JPEG・PNG・WebP・GIF、5MB 以下） |
-| 処理 | 置き場へ `news/<YYYY-MM-DD>/<uuid>.<MIME から決めた拡張子>`、`upsert:false`、`cacheControl:'3600'` で上げ、表へ署名前の道と一緒に入れる |
+| 処理 | 画像の先頭の印が申告の種類と同じか確かめ（違えば 400 で置き場に書かない）、置き場へ `news/<YYYY-MM-DD>/<uuid>.<検出した種類の拡張子>`、`upsert:false`、`cacheControl:'3600'` で上げ、表へ署名前の道と一緒に入れる。表の保存が失敗・例外になったら上げた画像を service role で消す |
 | 成功 | 201 `{success:true, id}`。監査 `admin.news.create` |
 | 失敗 | 入力の誤り 400 `Invalid request`、画像なし 400 `Image file is required`、種類 400 `Unsupported image type`、大きさ 400 `Image size must be 5MB or less`、置き場の失敗 500（監査 `admin.news.create.upload_failed`）、表の失敗 500（監査 `admin.news.create.db_insert_failed`）、例外 500。multipart でない要求も 500（推定） |
 
-- 画像の種類は送る側の申告 `File.type` だけで確かめる（SEC-NEWS-017 の中身の確かめは満たさないので上位にしない）
-- 表の失敗の時に上げた画像を消さない（SEC-NEWS-018 は満たさない）
+- 画像の種類は、申告 `File.type` と先頭の印（JPEG・PNG・WebP・GIF）が同じ時だけ受ける。種類と大きさの確かめの直後・置き場に書く前に行う（SEC-NEWS-017）
+- 表の失敗の時は上げた画像を置き場から消し、結果を監査の `metadata.imageCleanup`（`ok`・`failed`）に残す。消すのに失敗しても応答は 500 `Failed to save news article` のまま（SEC-NEWS-018）
 
 ### API-NEWS-004 `GET /api/admin/news/[id]` 管理の記事の1件
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-003、SEC-NEWS-015、ADR-0005、ADR-0006 |
+| 上位 | FR-ADMIN-003、SEC-NEWS-012、SEC-NEWS-015、SEC-NEWS-020、ADR-0005、ADR-0006 |
 | 根拠 | 編集の画面に非公開の記事の中身を渡すので、一覧と同じく `admin.news.read` と aal2 を求め、DB も RLS に通す（SEC-NEWS-015、ADR-0005・0006） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -455,17 +459,17 @@ stateDiagram-v2
 | 項目 | 内容 |
 | --- | --- |
 | 認可 | `admin.news.read` |
-| 入力 | 道の `id`（形は確かめない） |
+| 入力 | 道の `id`（`isNewsId` で確かめ、外れたら DB を呼ばない） |
 | 成功 | 200 `{data}`。全部の列、`image_url` は署名つき URL |
-| 失敗 | 行が無い・DB の失敗・数でない id は、どれも 404 `Article not found`（推定）。例外は 500 |
+| 失敗 | 行が無い・数でない id は 404 `Article not found`、DB の失敗は 500 `Failed to fetch news article`。例外は 500 |
 
-- 「無い」と DB の失敗を同じ 404 にする（SEC-NEWS-020 は満たさない）
+- 取り出しは `.maybeSingle()` で、「無い」（404）と DB の失敗（500）を分ける。記録は誤りの名前と符号だけ（SEC-NEWS-020）
 
 ### API-NEWS-005 `PUT /api/admin/news/[id]` 記事の全体の更新
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-003、FREQ-252-REQ-02、FREQ-252-REQ-03、SEC-NEWS-014、SEC-NEWS-015、DRV-NEWS-009、ADR-0010、ADR-0014 |
+| 上位 | FR-ADMIN-003、FREQ-252-REQ-02、FREQ-252-REQ-03、SEC-NEWS-012、SEC-NEWS-014、SEC-NEWS-015、SEC-NEWS-017、SEC-NEWS-018、DRV-NEWS-009、ADR-0010、ADR-0014、ADR-0025 |
 | 根拠 | 記事の誤りを直す窓口で、作成と同じ入力の上限と権限の確かめを当て、決まりを1つにするため（DRV-NEWS-009、SEC-NEWS-015）。直すたびに画像を付け直させないよう画像は任意にする（FREQ-252-REQ-02、ADR-0014）。書き換えは監査に残す（ADR-0010） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -475,15 +479,14 @@ stateDiagram-v2
 | --- | --- |
 | 認可 | `admin.news.manage` |
 | 入力 | 道の `id`。multipart は作成と同じ形で、`image` は任意（付ければ種類と 5MB を確かめる） |
-| 処理 | 画像があれば置き場へ上げ、拡張子はファイル名の最後の `.` の後ろから取る（無ければ `jpg`）。表の行を更新する |
+| 処理 | 画像があれば、先頭の印を確かめ（違えば 400）、その記事の古い `image_url` を読み（無ければ 404 で何も上げない）、置き場へ `news/<YYYY-MM-DD>/<uuid>.<検出した種類の拡張子>` で上げる。表の行を更新し、成功したら古い画像を、失敗・0行ならその要求で上げた画像を service role で消す |
 | 成功 | 200 `{success:true}`。監査 `admin.news.update` |
 | 失敗 | 入力・画像の誤り 400、無い記事・形の悪い id 404（監査 `admin.news.update.not_found`）、置き場の失敗 500（監査 `admin.news.update.upload_failed`）、表の失敗 500（監査 `admin.news.update.failed`）、例外 500 |
 
 - 更新は `.update(...).eq('id', id).select('id')` で変えた行を受け取り、0行（無い、または RLS が隠した）は 404 `{error:'Article not found'}` と失敗の監査にして、成功の監査は書かない（SEC-NEWS-016。2026-10-26 に満たした）。管理の窓口は利用者の session の client で書くので、RLS が隠した行も 404 になる
-- 道の `id` は18桁以下の数字だけを DB に渡し、外れた id は DB にも置き場にも触らず 404 にする（監査には長さだけを残す）
-- 画像は更新より先に上げるので、404 の時も上げた画像は置き場に残る（SEC-NEWS-018 は満たさない）
-- 拡張子の取り方が作成（MIME から決める）と違う（SEC-NEWS-017 は満たさない）
-- 差し替え前の画像を消さない（SEC-NEWS-018 は満たさない）
+- 道の `id` は `isNewsId`（先頭が 0 でない 18 桁以下の数字）だけを DB に渡し、外れた id は DB にも置き場にも触らず 404 にする（監査には長さだけを残す。SEC-NEWS-012）
+- 古い値を読んでから上げるので、無い id の PUT で画像は置き場に残らない。拡張子は作成と同じく検出した種類から決める（SEC-NEWS-017・018）
+- 新旧の画像が同じ道筋なら消さない。古い画像が見本・外の URL・`news/` の外の道筋なら消さない。消すのに失敗しても応答は 200 のまま、監査の `metadata.imageCleanup` に `failed` を残す
 
 ### API-NEWS-006 `PATCH /api/admin/news/[id]` 公開の状態だけの切り替え
 
@@ -502,13 +505,13 @@ stateDiagram-v2
 | 成功 | 200 `{success:true}`。監査 `admin.news.status_update` |
 | 失敗 | 値の誤り 400、無い記事・形の悪い id 404（監査 `admin.news.status_update.not_found`）、表の失敗 500（監査 `admin.news.status_update.failed`）、JSON の解析の失敗を含む例外 500 |
 
-- 更新は `.update({status}).eq('id', id).select('id')` で変えた行を受け取り、0行は 404 `{error:'Article not found'}` と失敗の監査にして、成功の監査は書かない（SEC-NEWS-016。2026-10-26 に満たした）。道の `id` の確かめは API-NEWS-005 と同じ。前の状態を読まない
+- 更新は `.update({status}).eq('id', id).select('id')` で変えた行を受け取り、0行は 404 `{error:'Article not found'}` と失敗の監査にして、成功の監査は書かない（SEC-NEWS-016。2026-10-26 に満たした）。道の `id` の確かめ（`isNewsId`）は API-NEWS-005 と同じ。前の状態を読まない
 
 ### API-NEWS-007 `DELETE /api/admin/news/[id]` 記事の削除
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-003、DRV-NEWS-013、SEC-NEWS-014、SEC-NEWS-015、ADR-0023 |
+| 上位 | FR-ADMIN-003、DRV-NEWS-013、SEC-NEWS-012、SEC-NEWS-014、SEC-NEWS-015、SEC-NEWS-018、ADR-0023、ADR-0025 |
 | 根拠 | 要らなくなった記事を表から除くため、行を消す（DRV-NEWS-013、ADR-0023）。戻せない操作なので `admin.news.manage` と aal2 を求め（SEC-NEWS-015）、成功も失敗も監査に残して誰が消したかを追えるようにする |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -521,8 +524,8 @@ stateDiagram-v2
 | 成功 | 200 `{success:true}`。監査 `admin.news.delete` |
 | 失敗 | 無い記事・形の悪い id 404（監査 `admin.news.delete.not_found`）、表の失敗 500（監査 `admin.news.delete.failed`）、例外 500 |
 
-- 削除は `.delete().eq('id', id).select('id')` で消した行を受け取り、0行は 404 `{error:'Article not found'}` と失敗の監査にして、成功の監査は書かない（SEC-NEWS-016。2026-10-26 に満たした）。道の `id` の確かめは API-NEWS-005 と同じ
-- 置き場の画像は消さない（SEC-NEWS-018 は満たさない。`api-spec.md` は画像も消すと書く）
+- 削除は `.delete().eq('id', id).select('id, image_url')` で消した行を受け取り、0行は 404 `{error:'Article not found'}` と失敗の監査にして、成功の監査は書かない（SEC-NEWS-016。2026-10-26 に満たした）。道の `id` の確かめ（`isNewsId`）は API-NEWS-005 と同じ
+- 行を消した後に、消した行の `image_url` を置き場から消す。置き場は service role の client でしか消せないので、その client は行を消した後にだけ作る（行の削除・存在の判定には使わない）。消すのに失敗しても（client を作れない時を含め）応答は 200 のまま、監査の `metadata.imageCleanup` に `ok`・`failed` を残す（SEC-NEWS-018、ADR-0025）
 
 ### API-NEWS-008 Server Action `getLatestNews` 最新の公開済みの記事3件（未使用（削除の判断待ち））
 

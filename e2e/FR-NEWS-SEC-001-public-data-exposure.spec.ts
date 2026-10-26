@@ -442,20 +442,15 @@ test.describe('FR-NEWS-SEC-001 NEWS の公開の応答', () => {
   });
 
   test(`SEC-NEWS-012-AC-01 /api/news は許可の一覧に無い分類（長文）を取り出しに渡さない`, async ({ request }) => {
-    test.fail(true, 'SEC-NEWS-012 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     const all = await getApiNews(request, '?category=ALL&limit=5');
     expect(all.status, 'ALL の状態').toBe(200);
     expect(all.items.length, 'ALL の件数').toBeGreaterThan(0);
 
     const invalid = await getApiNews(request, `?category=${'X'.repeat(300)}&limit=5`);
-    // 外れた値は ALL として扱うか 400 にする（どちらかは未定）。分類として取り出しに渡されると、空の一覧になる
-    expect([200, 400], '外れた分類の状態').toContain(invalid.status);
-    if (invalid.status === 200) {
-      expect(invalid.items.length, '外れた分類の件数（空でない）').toBeGreaterThan(0);
-      expect(invalid.items.map((item) => item.id), 'ALL と同じ記事').toEqual(all.items.map((item) => item.id));
-    } else {
-      expect(invalid.items, '400 の応答は記事の一覧でない').toHaveLength(0);
-    }
+    // 外れた値は ALL として扱う（200 の側）。分類として取り出しに渡されると、空の一覧になる
+    expect(invalid.status, '外れた分類の状態').toBe(200);
+    expect(invalid.items.length, '外れた分類の件数（空でない）').toBeGreaterThan(0);
+    expect(invalid.items.map((item) => item.id), 'ALL と同じ記事').toEqual(all.items.map((item) => item.id));
   });
 
   test(`FREQ-185-AC-01 /api/search の news の画像の URL が署名つきの形（/object/sign/）で、公開の形（/object/public/）でない`, async ({ request }) => {

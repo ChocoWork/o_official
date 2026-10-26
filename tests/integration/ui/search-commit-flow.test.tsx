@@ -396,10 +396,14 @@ describe('FLOW-SEARCH-002 検索のページの中で語・タブ・候補を確
       expect(searchCalls()).toEqual(['/api/search?q=coat&tab=all', '/api/search?q=wool&tab=all']);
     });
 
-    it('FLOW-SEARCH-002 タブを押して URL が変わると、新しい tab で取り直し、押したタブが選ばれた状態になる', async () => {
-      searchReplies['/api/search?q=coat&tab=look'] = {
+    it('FLOW-SEARCH-002 タブを押して URL が変わっても取り直さず、取ってあった結果から押したタブの行を出す（SEC-SEARCH-005）', async () => {
+      searchReplies['/api/search?q=coat&tab=all'] = {
         ok: true,
-        body: payload({ tab: 'look', looks: [row('look', 'l1', 'Gamma Piece')], counts: { all: 1, item: 0, look: 1, news: 0 } }),
+        body: payload({
+          items: [row('item', 'a', 'Alpha Piece')],
+          looks: [row('look', 'l1', 'Gamma Piece')],
+          counts: { all: 2, item: 1, look: 1, news: 0 },
+        }),
       };
       const user = userEvent.setup();
       const { rerender } = render(<SearchPageClient />);
@@ -414,7 +418,8 @@ describe('FLOW-SEARCH-002 検索のページの中で語・タブ・候補を確
       expect(tab('LOOK')).toHaveAttribute('aria-selected', 'true');
       expect(tab('ALL')).toHaveAttribute('aria-selected', 'false');
       expect(await screen.findByText('Gamma Piece')).toBeInTheDocument();
-      expect(searchCalls()).toEqual(['/api/search?q=coat&tab=all', '/api/search?q=coat&tab=look']);
+      expect(screen.queryByText('Alpha Piece')).not.toBeInTheDocument();
+      expect(searchCalls()).toEqual(['/api/search?q=coat&tab=all']);
     });
 
     it('FLOW-SEARCH-002 候補の確定で URL が変わると、その名前と種別で取り直す', async () => {
@@ -514,7 +519,7 @@ describe('FLOW-SEARCH-002 検索のページの中で語・タブ・候補を確
 
       await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('検索結果を読み込めませんでした'));
       expect(screen.queryByText('Alpha Piece')).not.toBeInTheDocument();
-      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search results:', expect.any(Error));
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search results');
     });
 
     it('FLOW-SEARCH-002 取り出しが例外になっても同じく失敗の文を出し、画面は壊れない', async () => {
@@ -598,7 +603,7 @@ describe('FLOW-SEARCH-002 検索のページの中で語・タブ・候補を確
 
       expect(screen.getByRole('alert')).toBeEmptyDOMElement();
       expect(screen.getByText('Beta Piece')).toBeInTheDocument();
-      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search results:', expect.any(Error));
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search results');
     });
 
     it('FLOW-SEARCH-002 取り出し中は結果の行の形の灰色の枠を5行出し、届くと結果に替わる', async () => {

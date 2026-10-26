@@ -90,7 +90,6 @@ for (const viewport of viewports) {
     });
 
     test('SEC-PRIVACY-016-AC-01: 会員が /privacy を開いた時の /api/auth/me の応答本文に会員のメールが含まれない', async ({ page }) => {
-      test.fail(true, 'SEC-PRIVACY-016 今のコードは満たさない（docs/02_Requirements/areas/privacy.md）');
       const member = await createTestMember(`privacy-me-${viewport.name}`);
       // 試験ごとに別の送り元にし、全部の E2E が共有する回数の制限の枠を使い切らない。
       const octet = viewports.indexOf(viewport) + 1;

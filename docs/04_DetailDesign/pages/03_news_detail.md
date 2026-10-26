@@ -14,16 +14,17 @@
 | DD-NEWS-032 | 前後の記事の取り出し | `getPublishedNewsNavigation` | IMPL-NEWS-DETAIL-003 |
 | DD-NEWS-033 | 公開済みの記事の総数 | `getPublishedNewsCount` | — |
 | DD-NEWS-034 | 本文の軽い Markdown の部品 — 未使用（削除の判断待ち） | `src/features/news/components/ArticleBody.tsx` | — |
+| DD-NEWS-070 | 公開の入口の確かめ（記事の id・分類） | `src/features/news/lib/news-input.ts` の `isNewsId`・`resolveNewsCategory` | — |
 
-- 結論: 頁は Server Component で、URL の `category` を確かめてから1件と前後を取り出す。記事が無い・非公開・数でない id・DB の失敗はどれも 404 になり、区別しない
+- 結論: 頁は Server Component で、URL の `category` を確かめてから1件と前後を取り出す。記事が無い・非公開・数でない id は 404 になる。DB の失敗は 404 にせず、`src/app/news/error.tsx` の誤りの画面に出す（2026-10-26。ADR-0024）
 - 本文は `\n\n` で段落の `p` に分け、文字のまま出す。Markdown を解釈する `ArticleBody` はどこからもつながっていない
-- 取り出しの関数は Supabase の `error` を見ない（総数だけが記録して 0 を返す）。どの関数にも単体テストは無く、各項目の「テスト観点」に分岐を全部通すための試しを挙げた
+- 取り出しの関数は Supabase の `error` を読む（2026-10-26）。1件の取り出しは失敗を `NewsFetchError` で投げ、前後の取り出しは失敗を記録して前後なしで返し、総数は記録して 0 を返す。記録は誤りの名前と符号だけ
 
 ## 範囲と根拠
 
 | 項目 | 内容 |
 | --- | --- |
-| 範囲 | `scripts/trace/scope.json` の NEWS。この頁は `DD-NEWS-030`〜`DD-NEWS-059` を使う（今は 030〜034） |
+| 範囲 | `scripts/trace/scope.json` の NEWS。この頁は `DD-NEWS-030`〜`DD-NEWS-059` を使う（今は 030〜034）。公開の入口の確かめ `DD-NEWS-070` もこの頁に置く |
 | 上位の文書 | [NEWS の構造設計](../../03_BasicDesign/areas/news.md)（`ARC-`・`SCR-`・`FLOW-`）、[NEWS の要件](../../02_Requirements/areas/news.md)（`FR-NEWS-DETAIL-`・`SEC-NEWS-`・`DRV-NEWS-`） |
 | 対象のコード | `src/app/news/[id]/page.tsx`、`src/features/news/services/public.ts`（`getPublishedNewsDetailById`・`getPublishedNewsNavigation`・`getPublishedNewsCount`）、`src/features/news/components/ArticleBody.tsx` |
 | 頼る範囲外の部品 | `src/lib/supabase/server.ts` の `createPublicClient`（anon の鍵・session なし。service role は使わない）、`src/lib/news-data.ts` の `categories`（BLOG を含む7つ）、`src/components/ui/Button/Button`、`src/components/ui/TagLabel/TagLabel` |
@@ -55,8 +56,10 @@
 | `src/features/news/services/public.ts` | `getPublishedNewsNavigation` | 関数 | DD-NEWS-032 |
 | `src/features/news/services/public.ts` | `getPublishedNewsCount` | 関数 | DD-NEWS-033 |
 | `src/features/news/components/ArticleBody.tsx` | `<file>` | ファイル（部品） | DD-NEWS-034 |
+| `src/features/news/lib/news-input.ts` | `isNewsId` | 関数 | DD-NEWS-070 |
+| `src/features/news/lib/news-input.ts` | `resolveNewsCategory` | 関数 | DD-NEWS-070 |
 
-- 同じファイルの `getPublishedNews` は一覧の頁の詳細設計で扱い、この表には入れない
+- 同じファイルの `getPublishedNews` と `NewsFetchError` は一覧の頁の詳細設計（DD-NEWS-003）で扱い、この表には入れない
 - 頁の中の `resolveCategoryListParam`・`resolveCategory`・`buildDescription`・`generateMetadata`・`NewsDetailPage` は、`.tsx` の中の関数なのでファイルの単位に含める
 
 ```mermaid
@@ -68,13 +71,15 @@ sequenceDiagram
   participant DB as news_articles（RLS）
   B->>P: GET /news/[id]?category=...
   P->>D: generateMetadata から id だけ
-  D->>DB: anon の client で1件
-  DB-->>D: 行か null
-  D-->>P: 記事（画像なし）か null
+  D->>DB: anon の client で1件（id が数の形の時だけ）
+  DB-->>D: 行か null か error
+  D-->>P: 記事（画像なし）か null。error は NewsFetchError を投げる
   P->>D: 本体から id と分類
   D-->>P: 記事か null
   alt 記事が null
     P-->>B: notFound()（404）
+  else 取り出しが NewsFetchError
+    P-->>B: error.tsx の誤りの画面
   else 記事あり
     P->>N: id と分類
     N->>DB: id・題を公開日の新しい順に全部
@@ -91,8 +96,8 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SCR-NEWS-002、FLOW-NEWS-001、ARC-NEWS-001、SEC-NEWS-001、SEC-NEWS-013 |
-| 根拠 | 記事を1件ずつ読み、前後の記事と一覧へ移れるようにするため（SCR-NEWS-002）。一覧で選んだ分類を URL の `category` で受け取り、前後と戻りのリンクに引き継げば、詳細を挟んでも同じ絞り込みへ戻れる（FLOW-NEWS-001）。取り出しの関数が非公開の記事を null にするので、頁はそれを無い記事と同じ 404 にして有無を知らせない（SEC-NEWS-001）。本文を文字のまま段落に分けて出し、管理で書いた HTML を閲覧者の端末で動かさない（SEC-NEWS-013） |
+| 上位 | SCR-NEWS-002、FLOW-NEWS-001、ARC-NEWS-001、SEC-NEWS-001、SEC-NEWS-012、SEC-NEWS-013、SEC-NEWS-020 |
+| 根拠 | 記事を1件ずつ読み、前後の記事と一覧へ移れるようにするため（SCR-NEWS-002）。一覧で選んだ分類を URL の `category` で受け取り、前後と戻りのリンクに引き継げば、詳細を挟んでも同じ絞り込みへ戻れる（FLOW-NEWS-001）。取り出しの関数が非公開の記事を null にするので、頁はそれを無い記事と同じ 404 にして有無を知らせない（SEC-NEWS-001）。本文を文字のまま段落に分けて出し、管理で書いた HTML を閲覧者の端末で動かさない（SEC-NEWS-013）。id が数の形でなければ DB を呼ばず 404 にし（SEC-NEWS-012）、取り出しの失敗は 404 にせず誤りの画面に任せて「無い」と見分ける（SEC-NEWS-020、ADR-0024） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/news/[id]/page.tsx`）、旧 `docs/04_DetailDesign/pages/03_news_detail.md` の表 |
@@ -100,7 +105,7 @@ sequenceDiagram
 
 #### 対応要件
 
-FR-NEWS-DETAIL-001〜008、SEC-NEWS-001、SEC-NEWS-013。SEC-NEWS-012 は、id を確かめずに取り出しへ渡すので上位にしていない（SEC-NEWS-012 の項目を参照）。
+FR-NEWS-DETAIL-001〜008、SEC-NEWS-001、SEC-NEWS-012（公開の詳細の id と分類。2026-10-26 に満たした）、SEC-NEWS-013、SEC-NEWS-020（公開の取り出しの失敗。同日に満たした）。
 
 #### 入出力
 
@@ -115,14 +120,14 @@ FR-NEWS-DETAIL-001〜008、SEC-NEWS-001、SEC-NEWS-013。SEC-NEWS-012 は、id �
 | 関数 | 入力 → 出力 | 決まり |
 | --- | --- | --- |
 | `resolveCategoryListParam` | `category` → リンクに引き継ぐ値か `null` | カンマで分け、trim・大文字にし、`categories` にあり `ALL` でない物だけを残し、重複を除いてカンマで結ぶ |
-| `resolveCategory` | `category` → 取り出しに渡す1つの分類 | 大文字にした値がそのまま `categories` にあればそれ、無ければ `ALL`。カンマ区切りの複数は `ALL` になる |
+| `resolveNewsCategory`（`news-input.ts`、DD-NEWS-070） | `category` → 取り出しに渡す1つの分類 | 大文字にした値がそのまま `categories` にあればそれ、無ければ `ALL`。カンマ区切りの複数は `ALL` になる |
 | `buildDescription` | 本文 → description | 空白を1つに詰めて trim。120字を超えたら先頭120字に `...` |
 
 #### 正常フロー
 
-1. `generateMetadata` が `getPublishedNewsDetailById(id)` を分類なしで呼び、title を `「題 | NEWS | Le Fil des Heures」`、description を `buildDescription(detailed_content)` にする
-2. 本体が `params` と `searchParams` を待ち、`persistedCategoryList` と `activeCategory` を作る
-3. `getPublishedNewsDetailById(id, { category: activeCategory })` で記事を取る
+1. `generateMetadata` が、`isNewsId(id)` が真の時だけ `getPublishedNewsDetailById(id)` を分類なしで呼び、title を `「題 | NEWS | Le Fil des Heures」`、description を `buildDescription(detailed_content)` にする
+2. 本体が `params` と `searchParams` を待ち、`persistedCategoryList` と `activeCategory`（`resolveNewsCategory`）を作る
+3. `isNewsId(id)` が偽なら `notFound()`。真なら `getPublishedNewsDetailById(id, { category: activeCategory })` で記事を取る
 4. `getPublishedNewsNavigation(id, { category: activeCategory })` で前後を取る
 5. `navCategoryParam` を `?category=<encodeURIComponent(persistedCategoryList)>` か空にする
 6. 描く物
@@ -143,12 +148,15 @@ FR-NEWS-DETAIL-001〜008、SEC-NEWS-001、SEC-NEWS-013。SEC-NEWS-012 は、id �
 | `category` が小文字（例 `event`） | 大文字にして受ける |
 | `category` が複数（例 `EVENT,STORE`） | 取り出しと前後は ALL、リンクには `EVENT,STORE` を引き継ぐ |
 | `category` が1つの正しい値で、記事の分類と違う | 記事の取り出しが null → 404 |
-| 記事が無い・非公開・数でない id・DB の失敗 | DD-NEWS-031 が null → `notFound()`。Next.js の既定の 404（`src/app` に `not-found.tsx` は無い） |
+| 記事が無い・非公開 | DD-NEWS-031 が null → `notFound()`。Next.js の既定の 404（`src/app` に `not-found.tsx` は無い） |
+| 数でない id（`abc`・`1.5`・19 桁など） | `isNewsId` が偽 → DB を呼ばず `notFound()`。メタは取り出しを呼ばず固定の title・description（投げない） |
+| DB の失敗 | DD-NEWS-031 が `NewsFetchError` を投げ、頁も reject して `src/app/news/error.tsx` の誤りの画面（DD-NEWS-069）。404 にしない |
 | メタの作成で記事が null | title `NEWS DETAIL \| Le Fil des Heures`、description は固定文 |
 | 本文が空・空白だけ | description は `Le Fil des Heuresのニュース詳細ページです。` |
 | 本文が120字を超える | description は先頭120字＋`...` |
 | 前の記事が無い・次の記事が無い | リンクの代わりに空の `div` |
-| 取り出しの関数が throw（client の作成の失敗など） | try/catch は無く、Next.js の既定のエラー |
+| 取り出しの関数が throw（client の作成の失敗など） | try/catch は無く、同じ階層の `error.tsx` の誤りの画面 |
+| 前後の取り出しが失敗 | DD-NEWS-032 が記録して前後なしで返すので、記事の本体は出す |
 
 - `?category=` が記事と違う時、メタは分類なしで取り出すので題の入った title を作り、本体は 404 になる（メタの取り出しは分類を渡さず、本体は渡すため）
 - 前後のリンクは `navCategoryParam` を付けるので、複数の分類を引き継いだまま ALL の前後へ移る
@@ -180,6 +188,9 @@ FR-NEWS-DETAIL-001〜008、SEC-NEWS-001、SEC-NEWS-013。SEC-NEWS-012 は、id �
 | 11 | 本体: `category='ALL'` → 引き継ぎなし、取り出しは ALL | ALL だけの値の枝（残りが0件） |
 | 12 | 本体: `category='INVALID'` → 引き継ぎなし、取り出しは ALL | 許可の一覧に無い値だけの枝 |
 | 13 | 本体: 記事が null → `notFound` を呼び、前後を取り出さない | 記事が無い時に `notFound` を呼ぶ枝 |
+| 13a | 本体: `abc`・`0`・`01`・`1.5`・`-1`・19 桁の id → `notFound` を呼び、取り出しも前後も呼ばない | `isNewsId` が偽の枝（SEC-NEWS-012） |
+| 13b | 本体: 取り出しが reject → 頁が reject し、`notFound` を呼ばない | 取り出しの失敗を 404 にしない枝（SEC-NEWS-020） |
+| 5a | メタ: 数でない id → 取り出しを呼ばず固定の title・description（投げない） | メタの作成で `isNewsId` が偽の枝 |
 | 14 | 本体: 前と次がある → `前の記事: 題`・`次の記事: 題` のリンクが2つずつ、href が `/news/<id>` ＋引き継ぎ | 前の記事あり・次の記事ありの枝（スマホと sm 以上の4か所） |
 | 15 | 本体: 前も次も無い → 前後のリンクが無く、VIEW ALL は2つ | 前の記事なし・次の記事なしの枝 |
 | 16 | 本体: 本文 `a\n\nb\nc` → `p` が2つ、2つ目の文字が `b\nc` | 本文の段落分けの描画 |
@@ -190,15 +201,15 @@ FR-NEWS-DETAIL-001〜008、SEC-NEWS-001、SEC-NEWS-013。SEC-NEWS-012 は、id �
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | ARC-NEWS-001、ARC-NEWS-003、SCR-NEWS-002、SEC-NEWS-001 |
-| 根拠 | 詳細の頁がサーバーの中で1件を直接取り出し、記事を入れた HTML をそのまま返せるようにするため（ARC-NEWS-001）。anon の client で `status='published'` を付けて読み、取り出しの条件と RLS の2段で非公開の記事を返さない（SEC-NEWS-001）。分類を受けて絞れば、詳細でも一覧と同じ分類の中だけを辿れる（SCR-NEWS-002）。公開の頁は画像を出さないので、画像の列は選ばず署名もしない（SEC-NEWS-005、ARC-NEWS-003） |
+| 上位 | ARC-NEWS-001、ARC-NEWS-003、SCR-NEWS-002、SEC-NEWS-001、SEC-NEWS-012、SEC-NEWS-020 |
+| 根拠 | 詳細の頁がサーバーの中で1件を直接取り出し、記事を入れた HTML をそのまま返せるようにするため（ARC-NEWS-001）。anon の client で `status='published'` を付けて読み、取り出しの条件と RLS の2段で非公開の記事を返さない（SEC-NEWS-001）。分類を受けて絞れば、詳細でも一覧と同じ分類の中だけを辿れる（SCR-NEWS-002）。公開の頁は画像を出さないので、画像の列は選ばず署名もしない（SEC-NEWS-005、ARC-NEWS-003）。id が数の形でなければ DB を呼ばず null にし（SEC-NEWS-012）、行が無い時（null）と失敗（`NewsFetchError`）を `.maybeSingle()` で分ける（SEC-NEWS-020） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/features/news/services/public.ts`） |
 
 #### 対応要件
 
-FR-NEWS-DETAIL-001、FR-NEWS-DETAIL-004、SEC-NEWS-001、SEC-NEWS-005（画面で使わない画像の道を載せない）。SEC-NEWS-012（数でない id を問い合わせない）・SEC-NEWS-020（失敗を「無い」と区別する）は、この関数が扱わないので上位にしていない（各 SEC の項目を参照）。
+FR-NEWS-DETAIL-001、FR-NEWS-DETAIL-004、SEC-NEWS-001、SEC-NEWS-005（画面で使わない画像の道を載せない）、SEC-NEWS-012（数でない id を問い合わせない。2026-10-26）、SEC-NEWS-020（失敗を「無い」と区別する。同日）。
 
 #### 入出力
 
@@ -209,23 +220,25 @@ FR-NEWS-DETAIL-001、FR-NEWS-DETAIL-004、SEC-NEWS-001、SEC-NEWS-005（画面�
 
 #### 正常フロー
 
-1. `createPublicClient()` を作る（service role の client は作らない）
-2. `news_articles` から上の列を選び、`status='published'`・`id=<id>` で絞る
-3. `options.category` があり `ALL` でなければ `category=<値>` でも絞る
-4. `.single()` で1行を取る
-5. 行があればそのまま返す（署名しない）
+1. `isNewsId(id)` が偽なら DB を呼ばず null を返す
+2. `createPublicClient()` を作る（service role の client は作らない）
+3. `news_articles` から上の列を選び、`status='published'`・`id=<id>` で絞る
+4. `options.category` があり `ALL` でなければ `category=<値>` でも絞る
+5. `.maybeSingle()` で1行を取る
+6. `error` があれば誤りの名前と符号だけ記録して `NewsFetchError` を投げる
+7. 行があればそのまま返す（署名しない）。無ければ null
 
 #### 異常フロー
 
 | 条件 | 動き |
 | --- | --- |
 | `options` が無い・`category` が無い・`ALL` | 分類で絞らない |
-| 行が無い・非公開・分類が違う | `.single()` が `data=null` を返し、null |
-| id が数でない（例 `abc`） | bigint への変換の失敗で `data=null`（推定）、null |
-| DB・RLS の失敗 | `error` を見ないので `data=null`、null。記録も残さない |
+| 行が無い・非公開・分類が違う | `.maybeSingle()` が `data=null`・`error=null` を返し、null |
+| id が数の形でない（例 `abc`・`0`・`01`・19 桁・空） | DB を呼ばず null（`isNewsId` が偽。DD-NEWS-070） |
+| DB・RLS の失敗（`error` あり） | `{ name, code }` だけ `console.error` に出し、`NewsFetchError`（`code` つき）を投げる。404 にしない |
 | service role の環境変数が無い | 影響しない（service role を使わない） |
 
-- 分類の値は確かめない。呼び元（DD-NEWS-030）が `categories` で確かめた値か `ALL` を渡す
+- 分類の値は確かめない。呼び元（DD-NEWS-030）が `resolveNewsCategory`（DD-NEWS-070）で確かめた値か `ALL` を渡す
 
 #### 状態・永続化
 
@@ -245,15 +258,18 @@ anon の鍵・session なしの client で読む（`src/lib/supabase/server.ts`�
 | 2 | `{ category: 'ALL' }` → 分類で絞らない | `category` が `ALL` の枝 |
 | 3 | `{}` → 分類で絞らない | `category` が undefined の枝 |
 | 4 | `{ category: 'EVENT' }` → `eq('category','EVENT')` | `category` が `ALL` 以外の枝 |
-| 5 | `data=null`（error あり） → null、署名を呼ばない | 行が無い時に null を返す枝（署名を呼ばない） |
+| 4a | `abc`・`0`・`01`・`1.5`・`-1`・19 桁・空の id → `from` を呼ばず null | `isNewsId` が偽の枝 |
+| 4b | `.maybeSingle()` で取る | 1行の取り方 |
+| 5 | `data=null`・`error=null` → null、署名を呼ばない | 行が無い時に null を返す枝（署名を呼ばない） |
+| 5a | `error`（`code:'PGRST301'` など） → `NewsFetchError`（`code` が一致）で reject。`console.error` の第 2 引数は `{ name, code }` で `message` を含まない | 失敗を投げる枝 |
 | 6 | 行あり → 行をそのまま返し、`image_url` が無く、`signNewsImageFields`・`createServiceRoleClient` を呼ばない | 行がある時にそのまま返す枝 |
 
 ### DD-NEWS-032 前後の記事の取り出し
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | ARC-NEWS-001、SCR-NEWS-002、FLOW-NEWS-001、SEC-NEWS-001 |
-| 根拠 | 詳細から一覧へ戻らずに隣の記事へ移れるようにするため（SCR-NEWS-002）。一覧と同じ公開日の新しい順で前後を決め、分類を受けて絞れば一覧で選んだ分類の中だけを辿れる（FLOW-NEWS-001）。題と id だけを anon の client で公開済みから選び、非公開の記事の題を前後のリンクに出さない（SEC-NEWS-001） |
+| 上位 | ARC-NEWS-001、SCR-NEWS-002、FLOW-NEWS-001、SEC-NEWS-001、SEC-NEWS-020 |
+| 根拠 | 詳細から一覧へ戻らずに隣の記事へ移れるようにするため（SCR-NEWS-002）。一覧と同じ公開日の新しい順で前後を決め、分類を受けて絞れば一覧で選んだ分類の中だけを辿れる（FLOW-NEWS-001）。題と id だけを anon の client で公開済みから選び、非公開の記事の題を前後のリンクに出さない（SEC-NEWS-001）。前後は添え物なので、取り出しの失敗は記録して前後なしで返し、記事の本体を隠さない（SEC-NEWS-020、ADR-0024） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/features/news/services/public.ts`）、旧 `docs/04_DetailDesign/pages/03_news_detail.md` |
@@ -261,7 +277,7 @@ anon の鍵・session なしの client で読む（`src/lib/supabase/server.ts`�
 
 #### 対応要件
 
-FR-NEWS-DETAIL-003、FR-NEWS-DETAIL-004、FR-NEWS-DETAIL-007（題を返して `aria-label` に使わせる）、SEC-NEWS-001。SEC-NEWS-009（公開の取り出しに件数の上限）・SEC-NEWS-020 は、この関数が扱わないので上位にしていない（各 SEC の項目を参照）。
+FR-NEWS-DETAIL-003、FR-NEWS-DETAIL-004、FR-NEWS-DETAIL-007（題を返して `aria-label` に使わせる）、SEC-NEWS-001。SEC-NEWS-020（失敗を前後なしで返し記録する。2026-10-26）。SEC-NEWS-009（公開の取り出しに件数の上限）は、この関数が扱わないので上位にしていない（SEC の項目を参照）。
 
 #### 入出力
 
@@ -283,7 +299,7 @@ FR-NEWS-DETAIL-003、FR-NEWS-DETAIL-004、FR-NEWS-DETAIL-007（題を返して `
 | 条件 | 動き |
 | --- | --- |
 | `options` が無い・`category` が無い・`ALL` | 分類で絞らない |
-| DB・RLS の失敗 | `error` を見ず `data ?? []` で空、前後とも null。記録も残さない |
+| DB・RLS の失敗（`error` あり） | `{ name, code }` だけ `console.error` に出し、前後とも null で返す（投げない） |
 | 今の記事が結果に無い（分類が違う・非公開・数でない id） | 位置が -1、前後とも null |
 | 今の記事が先頭（一番新しい） | `prevArticle` は null |
 | 今の記事が最後（一番古い） | `nextArticle` は null |
@@ -306,7 +322,8 @@ anon の client だけを使う（service role は使わない）。RLS とコ�
 | 1 | `options` なし → `eq('category',…)` を呼ばない、`order('published_date',{ascending:false})` | `options` が undefined の枝 |
 | 2 | `{ category: 'ALL' }`・`{}` → 分類で絞らない | `category` が `ALL`・undefined の枝 |
 | 3 | `{ category: 'STORE' }` → `eq('category','STORE')` | `category` が `ALL` 以外の枝 |
-| 4 | `data=null` → 前後とも null | `data` が null で空の配列にする枝 |
+| 4 | `error`（`code:'57014'` など） → 前後とも null、`console.error` を1回（第 2 引数は `{ name, code }` で `message` を含まない） | `error` ありの枝 |
+| 4a | `data=null`・`error=null` → 前後とも null | `data` が null で空の配列にする枝 |
 | 5 | 3件の先頭の id → 前は null、次は2件目 | 今の記事が先頭（前なし・次あり）の枝 |
 | 6 | 3件の真ん中 → 前は1件目、次は3件目 | 今の記事が真ん中（前あり・次あり）の枝 |
 | 7 | 3件の最後 → 前は2件目、次は null | 今の記事が最後（前あり・次なし）の枝 |
@@ -344,7 +361,7 @@ FREQ-149-REQ-02（ホームの VIEW ALL の出し分け）、SEC-NEWS-001。失�
 
 | 条件 | 動き |
 | --- | --- |
-| Supabase の `error` がある | `console.error('Failed to count published news:', error)` を出して 0 |
+| Supabase の `error` がある | `console.error('Failed to count published news:', { name, code })`（誤りの名前と符号だけ）を出して 0 |
 | `error` が無く `count` が null | 0 |
 
 - 呼び元はホーム（`src/app/page.tsx`、範囲外）だけ。詳細の頁は呼ばない
@@ -362,7 +379,7 @@ anon の client だけを使う。RLS とコードの `status='published'` で�
 | # | 試し | 通す分岐 |
 | --- | --- | --- |
 | 1 | `count=7` → 7。`select('id',{count:'exact',head:true})`・`eq('status','published')` を呼ぶ | `error` なし・`count` が数の枝 |
-| 2 | `error` あり → 0、`console.error` を1回呼ぶ | `error` ありの枝 |
+| 2 | `error` あり → 0、`console.error` を1回（第 2 引数は `{ name, code }`）呼ぶ | `error` ありの枝 |
 | 3 | `error` なし・`count=null` → 0 | `error` なし・`count` が null の枝 |
 
 ### DD-NEWS-034 本文の軽い Markdown の部品 — 未使用（削除の判断待ち）
@@ -447,12 +464,69 @@ React Testing Library で `<ArticleBody content=… />` を描く。
 
 - 正規表現の作りから、画像の記法とリンクの記法の判定で「1つ目の組が取れて2つ目が取れない」形と、斜体の判定で「どの組も取れない」一致は起きない。分岐の網羅が 100% に届かない所として、テストを書く時に `docs/05_Quality/reports/test-gaps.md` の「届かない分岐」に1件ずつ書く
 
+### DD-NEWS-070 公開の入口の確かめ isNewsId・resolveNewsCategory
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SCR-NEWS-002、API-NEWS-001、ARC-NEWS-001、SEC-NEWS-012 |
+| 根拠 | 外から来る記事の id と分類を、DB や取り出しに渡す前に許可の形だけに絞るため（SEC-NEWS-012）。id は bigint の桁を超える数や数字以外を DB に渡すと型の誤りになるので、入口で偽にして DB を呼ばない。分類は窓口（`/api/news`）と頁（`/news`・`/news/[id]`）が同じ決まりを使うよう、1か所に置く |
+| 状態 | 現行 |
+| 確かめ方 | 単体テスト |
+| 出どころ | ユーザーの承認（2026-10-26、波 1 を全部）。設計は `.superpowers/sdd/2026-10-25-security-gap-fixes/design-final.md` の R12 |
+
+#### 対応要件
+
+SEC-NEWS-012（公開の窓口の分類・公開の詳細の id）。管理の `[id]` と編集のページは別の作業で、この単位が扱わない。
+
+#### 入出力
+
+| 向き | 中身 |
+| --- | --- |
+| 入力（`isNewsId`） | `value: string` |
+| 出力（`isNewsId`） | `boolean`。`/^[1-9]\d{0,17}$/`（先頭が 0 でない 1〜18 桁の数字）に合えば真 |
+| 入力（`resolveNewsCategory`） | `raw: string \| null \| undefined` |
+| 出力（`resolveNewsCategory`） | `categories`（`src/lib/news-data.ts`）の1つの値。外れ・無しは `'ALL'` |
+
+#### 正常フロー
+
+1. `isNewsId`: 正規表現に合うかを返す
+2. `resolveNewsCategory`: `raw ?? 'ALL'` を大文字にし、`categories` にあればその値、無ければ `'ALL'`
+
+#### 異常フロー
+
+| 場合 | 動き |
+| --- | --- |
+| id が `0`・`01`・`abc`・`1.5`・`-1`・19 桁・空・前後の空白・改行を含む | `isNewsId` は偽 |
+| 分類が `undefined`・`null`・空の文字 | `ALL` |
+| 分類が 300 字・記号つき（`EVENT;drop`）・複数（`EVENT,STORE`）・前に空白 | `ALL` |
+| 分類が小文字の正しい値（`collection`） | 大文字（`COLLECTION`） |
+
+#### 状態・永続化
+
+状態を持たない純粋な関数。
+
+#### 認証認可
+
+なし（文字の形だけを見る）。
+
+#### テスト観点
+
+| # | 観点 | 入力 | 期待 |
+| --- | --- | --- | --- |
+| 1 | 正しい id | `'1'`・`'9'`・`'10'`・18 桁 | 真 |
+| 2 | 外れた id | `'0'`・`'01'`・`'abc'`・`'1.5'`・`'-1'`・19 桁・`''`・`'1 '`・`' 1'`・`'1\n'`・`'1;drop'` | 偽 |
+| 3 | 小文字の正しい分類 | `'collection'`・`'Event'`・`'blog'` | 大文字 |
+| 4 | `ALL` | `'ALL'` | `'ALL'` |
+| 5 | 無し | `undefined`・`null`・`''` | `'ALL'` |
+| 6 | 外れた分類 | 300 字・`'EVENT;drop'`・`'EVENT,STORE'`・`' EVENT'`・`'FOO'` | `'ALL'` |
+
 ## 未確認事項
 
-- この頁の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする
+- この頁の項目は全部「推定」（DD-NEWS-070 だけは 2026-10-26 の承認つきで「現行」）。ユーザーの確認を受けたら「現行」にする
 - 記事と違う1つの分類を付けた詳細を 404 にするか（FR-NEWS-DETAIL-004 の文は求めていない。食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節）
 - `ArticleBody` を詳細の本文につなぐか、消すか（使われていないコードとして `unused-code.md` で判断を待つ。つなぐなら SEC-NEWS-013 の URL の確かめが先に要る）
 - `getPublishedNewsCount` はホームだけが使い、詳細の頁は使わない。一覧の頁の詳細設計と重ならないよう、この頁に置いた。置き場を変えるなら DD-NEWS-033 を「廃止」にして移す
-- 数でない id（`/news/abc`）が本番の DB で `data=null` になるか（bigint への変換の失敗の扱い）を動かして確かめていない
+- 数でない id（`/news/abc`）は 2026-10-26 から DB に渡さず 404 にする（`isNewsId`）。`/news/<19 桁の数>` などが E2E で 404 になることは controller が本番ビルドで確かめる
+- 取り出しの失敗の誤りの画面（`error.tsx`）の HTTP 状態が 500 のままかを本番のビルドで確かめていない（流し始める前の誤りなら 500 の見込み。`loading.tsx` と頁の中の `<Suspense>` は足さない）
 - 本番のビルドで頁が要求ごとに描かれるか、キャッシュされるかを確かめていない
 - 公開日が同じ記事の前後の並びが揺れるか（第2の並びのキーが無い）を確かめていない

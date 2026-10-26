@@ -170,16 +170,31 @@ describe('管理の NEWS タブの一覧', () => {
     expect(await screen.findByText('ニュース記事がありません')).toBeInTheDocument();
   });
 
-  it('SCR-NEWS-003 取り出しが断られた時は0件と同じ文になる', async () => {
+  it('SCR-NEWS-003 取り出しが断られた時は「取得に失敗しました」の知らせを出し、0件の文は出さない（SEC-NEWS-020）', async () => {
     mockFetch.mockResolvedValueOnce(failed(403));
 
     render(<NewsSection />);
 
-    expect(await screen.findByText('ニュース記事がありません')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('ニュース記事の取得に失敗しました');
+    expect(screen.queryByText('ニュース記事がありません')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '削除' })).not.toBeInTheDocument();
   });
 
-  it('SCR-NEWS-003 断られた応答の本文が JSON でなくても0件と同じ文になる', async () => {
+  it('SCR-NEWS-003 失敗の後に「再読み込み」を押すと取り直して一覧を出し、知らせを消す', async () => {
+    const user = userEvent.setup();
+    mockFetch.mockResolvedValueOnce(failed(500)).mockResolvedValueOnce(okList([PUBLISHED]));
+
+    render(<NewsSection />);
+    await screen.findByRole('alert');
+
+    await user.click(screen.getByRole('button', { name: '再読み込み' }));
+
+    expect(await screen.findByRole('heading', { name: '春の新作' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('SCR-NEWS-003 断られた応答の本文が JSON でなくても取得の失敗の知らせを出す', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 500,
@@ -191,15 +206,17 @@ describe('管理の NEWS タブの一覧', () => {
 
     render(<NewsSection />);
 
-    expect(await screen.findByText('ニュース記事がありません')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('ニュース記事の取得に失敗しました');
+    expect(screen.queryByText('ニュース記事がありません')).not.toBeInTheDocument();
   });
 
-  it('SCR-NEWS-003 通信の例外でも0件と同じ文になる', async () => {
+  it('SCR-NEWS-003 通信の例外でも取得の失敗の知らせを出し、0件の文は出さない', async () => {
     mockFetch.mockRejectedValueOnce(new Error('network'));
 
     render(<NewsSection />);
 
-    expect(await screen.findByText('ニュース記事がありません')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('ニュース記事の取得に失敗しました');
+    expect(screen.queryByText('ニュース記事がありません')).not.toBeInTheDocument();
   });
 
   it('SCR-NEWS-003 公開中の記事の切り替えは非公開を PATCH で送り、一覧を読み直す', async () => {
