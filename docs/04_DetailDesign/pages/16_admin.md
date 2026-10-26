@@ -1,5 +1,7 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
+> G-4 Task 5 確認日: 2026-10-26。入替store・POST/候補GET・clientと準備中0件の権限カタログを反映。追加PostgRESTケースはcontrollerのDB実行待ち。
+
 > 状態: 既存設計 | 実装状況は項目ごとに要再照合 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
@@ -781,7 +783,7 @@ SETTINGS のショップ設定の前に `nav aria-label="設定メニュー"` �
 | --- | --- |
 | 固定2行 | `admin.users.manage`・`admin.permissions.manage` は両役割欄をまたぐ「店長のみ・変更不可」。switch は置かない。DB関数と行トリガーでも解除・他役割への付与を拒否する |
 | その他28行 | 役割ごとに switch。名前は `${roleLabel}：${operationLabel}`。操作ラベルは行見出しにだけ出し、共通 SwitchToggle の `ariaLabel` を使う |
-| 準備中の行 | 「この権限は、対応する画面の公開後に使われます。」。G-0 では新業務9行、G-2 Task 1 から4行に付けたが、G-3 の発送画面の公開後は `ROLE_PERMISSION_CATALOG` の `upcoming`（G-4 の未使用の1コード `admin.orders.allocate`）だけに付く。在庫・発注・受け取りの権限と発送の3権限〔`admin.shipping.read`・`admin.shipping.manage`・`admin.shipping.correct_date`〕には「準備中」の印は付けない（FREQ-540-AC-06） |
+| 準備中の行 | G-4 Task 5（確認日: 2026-10-26）で割り当ての入れ替え（`admin.orders.allocate`）を公開したため、`ROLE_PERMISSION_CATALOG` の `upcoming` は全30行でfalse。準備中の権限は無く、「この権限は、対応する画面の公開後に使われます。」の印は0件（FREQ-540-AC-06）。権限の依存・固定・初期値は維持する |
 | 依存不足 | 役割別に「操作に必要な権限が不足しています：{不足コードの操作ラベルを「、」で結合}。」。共有関数で重複除去・コード辞書順。権限を自動追加せず、保存も禁止しない |
 
 切替では値を変えず「権限を変更する」を開き、「{役割}の「{操作}」を許可/解除します。変更しますか？」を表示する。「戻る」は送信しない。「変更する」で UUID を1回生成し、その役割の取得済み一覧に1コードだけ差分を加えた `RolePermissionChange`（`roleCode`・`permissionCodes`・文字列の `expectedVersion`・`requestKey`）を `POST /api/admin/role-permissions` へ送る。30コード外は扱わない。CSRF は既存 `clientFetch` に任せる。

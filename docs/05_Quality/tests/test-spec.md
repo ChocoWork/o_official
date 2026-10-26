@@ -1,5 +1,7 @@
 # テスト仕様
 
+> G-4 Task 5 確認日: 2026-10-26。入替store・POST/候補GET・clientと準備中0件の権限カタログを反映。controllerのcleanup修正後の実PostgRESTはG-3/G-4合計62/62、G-4再実行21/21。全件g4t5は20,300成功・既知stockist_rlsの2失敗のみ、G-0清掃12/12。fix round 2で500診断・試験参照・候補GETの単体を補強した。
+
 > G-4 Task 4 確認日: 2026-10-26。割当の入替（G4C）のDB試験・並行試験・末尾assertの改ざん・書き手76本の構造を下のG-4節のTask 4へ記載。fix round 2後のcontroller fresh reset（g4t4b）でgroup_g*全53 suite・1,721成功・0失敗・1 pending、並行12/12を3回連続。実鍵ありのunit＋全DB integrationは20,178成功・既知stockist_rlsの2失敗だけ。G-0清掃12/12。詳細は下の「Task 4の記録」。本番未適用。
 
 > G-4 Task 3 確認日: 2026-10-26。読取store・CSV・3つのGET・管理履歴と旧集計の試験を下のG-4節へ記載。controller受領記録（g4t3a）: fresh reset後、実鍵のgroup_g4_postgrest_pathsを含むgroup_g*全51 suiteで1,616成功・0失敗・1 pending（G1_CLEANUP_SUITE=1で単独実行するG-1清掃の未起動）。 全件の確認は controller が後で実施。
@@ -113,6 +115,32 @@
 | 実装者の修正後、ローカルDB（同じDB、実鍵のLOCAL_SUPABASEなし） | group_g*全53 suite・1,655件のうち1,651成功・0失敗・4 pending（実鍵がなくskipした3つのPostgREST suiteと専用清掃の1）。`group_g4_swap_concurrency` を3回連続で流し10/10・10/10・10/10。`group_g4_swap` ・`group_g4_migration_asserts`・`group_g1_writer_inventory`・`group_g3_model`・`group_g3_migration_asserts` の5 suiteは265/265成功。tsc・`tests/integration/db` と `tests/unit/docs` のESLint・`jest tests/unit/docs`（56/56）成功。本番未適用 |
 | fix round 2後、controller fresh reset（g4t4b） | `20261026101624_group_g4_orders_swap.sql`（35,487 bytes、MD5 `E84E1F7A64AB7A544C66A90D30F572FA`）をローカル適用。PostgREST anon/authenticated各HTTP 200。group_g*全53 suiteは1,721成功・0失敗・1 pending（G1_CLEANUP_SUITE=1で単独実行するG-1清掃の未起動）。`group_g4_swap_concurrency` は12/12・12/12・12/12の3回連続成功。本番未適用 |
 | fix round 2後、controller全件検証（g4t4b、実鍵あり） | unit＋全DB integrationは20,178成功、失敗は既知の `stockist_rls` 2件だけで新規失敗なし。G-0清掃は別に12/12成功。上のgroup_g*検証と全件検証は範囲を分けた実測。実装者による再実行の件数には数えず、本番適用の証明にも使わない |
+
+### Task 5（入替store・API・client・権限カタログ）
+
+確認日: 2026-10-26。FREQ-523-AC-02/04/05・FREQ-540-AC-06/13。Task 5はSQL変更なし。単体の成功は実DB・PostgREST・E2Eの成功を意味しない。下表のDB実測はcontrollerから受領したfix round 1までの結果で、fix round 2ではDBを再実行していない。
+
+| ファイル | 層・入力 | 期待結果 |
+| --- | --- | --- |
+| [types](../../../tests/unit/lib/inventory/allocation-swap-types.test.ts) | 単体、独立した13行の表とG4CのRAISEを照合 | SQLSTATE・HTTP・日本語本文、dialogの共通文が固定値と一致。内部エラーは表外 |
+| [store](../../../tests/unit/lib/inventory/allocation-swap-store.test.ts) | 単体、RPC境界の戻り値と拒否 | writer7引数・candidates3引数、候補のcamelCase変換、完全一致の分類。部分一致・継承キー・未知・通信切れ・不正な結果は生文なしの500。未知のSQLSTATEは5文字の英大文字/数字だけを非列挙プロパティへ保持し、JSONに出さない |
+| [POST](../../../tests/unit/api/admin/allocation-swap-route.test.ts) | 単体、実storeまで呼ぶ | 認可→CSRF→IP→actor→検証→RPC→監査、actorは認可結果だけ。strict本文、理由必須、401/403/400/404/409/429/500、no-store。成功監査はquantity/replayed、失敗は固定codeだけ。未知500の診断は固定error名とSQLSTATEまたはnullだけ、message・理由・detailsを出さない |
+| [候補GET](../../../tests/unit/api/admin/allocation-swap-candidates-route.test.ts) | 単体、権限とid/query | 同じ2権限、UUID、余分/重複queryを拒否。200 `{data}`、未払いの受け手は409、品物不在は404。CSRFとIP/actor回数制限を呼ばないことも明示的に検査 |
+| [client](../../../tests/unit/lib/inventory/allocation-swap-client.test.ts) | 単体、通信切れ・5xx・不正な成功・業務拒否 | `unknown`を区別し、同じ本文とrequestKeyで再確認できる。権限不足とMFA/CSRFを分ける。候補はno-storeで公開型を検査し、生文を出さない |
+| [権限カタログ](../../../tests/unit/lib/auth/role-permission-catalog.test.ts)・[権限画面](../../../tests/unit/components/RolePermissionsSection.test.tsx) | 単体 | upcomingが空、全30行で準備中の印0件。依存・固定・初期値の既存検査を維持 |
+| [FR-ADMIN-109](../../../e2e/FR-ADMIN-109-permission-settings.spec.ts) | E2Eの期待値だけ1→0に更新、実行はcontroller Task 10 | upcomingの文の出現0件 |
+| [実PostgREST](../../../tests/integration/db/group_g4_postgrest_paths.integration.test.ts) | controller専用。LOCAL_SUPABASE_URL / LOCAL_SUPABASE_SERVICE_ROLE_KEY / LOCAL_SUPABASE_ANON_KEYが必要、未設定はフックを登録せずskip、localhost限定 | 実store→supabase-js→PostgREST→SQL。候補→入替→再送のoperation一致とtransfer2件、全13種類の作れる拒否を固定表へ分類。候補の未払い/所属違い/権限不足、anon/authenticatedは入替と候補を含む6本とも実行不可。controller実測: 初回g4t5aはcleanupのみ失敗。fix round 1後にG-3/G-4両PostgREST suiteで62/62成功、G-4単独再実行も21/21成功。確定した履歴のactorは残し、役割とAuth/アプリのセッションを除去する |
+
+Task 5の実測記録（controller受領。実装者の単体実測と区別する）:
+
+| 実行 | 実測・範囲 |
+| --- | --- |
+| fresh reset後のg4t5a、実キーあり | `group_g*` 全53 suiteの実行で1,737成功・0失敗・1 pending。ただし52 suite成功で、G-4 PostgRESTは `afterAll` のactor削除によるcleanup失敗でsuiteとして失敗。全suite成功とは扱わない |
+| fix round 1後、実キーあり | `group_g4_postgrest_paths` + `group_g3_postgrest_paths` の2 suiteが62/62成功。その後 `group_g4_postgrest_paths` 単独を再実行して21/21成功 |
+| controller全件検証g4t5 | 20,300成功、失敗は既知 `stockist_rls` の2件だけ。G-0清掃12/12成功。Playwright・provider・本番動作を検証した数ではない |
+| fix round 2、実装者の単体再検証 | Task 5の5 suiteは121/121成功。指定の `tests/unit/lib/inventory tests/unit/api/admin tests/unit/lib/auth tests/unit/components tests/unit/docs --runInBand` は200 suite・6,719/6,719成功、0失敗。tsc・変更5ファイルのESLint成功。DBは再実行していない |
+
+fix round 2では未知500のSQLSTATE保持・非直列化・安全なログをREDからGREENへ直し、候補GETのCSRF/回数制限なしを単体で固定した。既存アサーションは維持する。AC-02に対するTask 5の証拠は固定エラー表と窓口入力・実storeの拒否分類、AC-04は再送と結果不明への対処であり、FIFO・並行・ロック順のDB証拠はTask 4のまま。
 
 ## 記録形式と追跡
 

@@ -1,12 +1,14 @@
 # API仕様（現行実装）
 
+> G-4 Task 5 確認日: 2026-10-26。入替store・POST/候補GET・clientと準備中0件の権限カタログを反映。追加PostgRESTケースはcontrollerのDB実行待ち。
+
 > G-4 Task 3 確認日: 2026-10-26。一覧・CSV・詳細のGETを3ファイル/3メソッド追加し、管理履歴を拡張。旧一覧はTask 7まで維持。 controller受領記録（g4t3a）: fresh reset後、実鍵のgroup_g4_postgrest_pathsを含むgroup_g*全51 suiteで1,616成功・0失敗・1 pending（G1_CLEANUP_SUITE=1で単独実行するG-1清掃の未起動）。 全件の確認は controller が後で実施。
 
 > 確認日: 2026-10-03（Checkout・カートの行はグループ F の変更を 2026-10-07、グループ C の変更を 2026-10-08、注文の発送・仕上がり・お客様の注文・在庫の行はグループ E-1 の変更を 2026-10-10 に、注文の返金・キャンセル・ショップの設定・Cron・Webhook・お客様の注文の行はグループ E-2 の変更を 2026-10-11 に、返品の窓口・注文の一覧と履歴・発送・在庫の履歴・要対応・KPI・ショップの設定・お客様の注文の行はグループ E-3 の変更を 2026-10-13 に反映、配送の入口・表は E-4 の変更を 2026-10-21 に反映、注文の状況の窓口は E-5 の変更を 2026-10-22 に、在庫の窓口の権限は G-2 Task 1 の変更を、在庫一覧表の窓口は G-2 Task 3 の変更を、発注の作成の窓口は G-2 Task 4 の変更を、発注一覧表・発注書の詳細の窓口は G-2 Task 5 の変更を、発注書の数量の確定・訂正・打切り・発注先の訂正の窓口は G-2 Task 6 の変更を、発注書の受け取りと受け取りの取消の窓口は G-2 Task 7 の変更を、取引書類の原本の窓口は G-2 Task 8 の変更を、荷作り表・発送票の読取の窓口は G-3 Task 3 の変更を、発送票の下書きの窓口は G-3 Task 4 の変更を、発送確定の窓口は G-3 Task 5 の変更を、発送の取消の窓口は G-3 Task 6 の変更を、伝票番号の入力・訂正と手動の配達済みの窓口は G-3 Task 7 の変更を、Google ログイン開始の POST とログインの後の行き先の POST は波1-A の変更を 2026-10-25 に反映、波1-B の認証・管理・取扱店・ニュースの窓口の応答（応答の本文・400/404/429・監査）は 2026-10-26 に反映、波1-C の検索・ニュース・LOOK・取扱店・管理ニュース・`/api/auth/me` の窓口の応答（`Cache-Control`・400/403/404/500・画像の確かめと後始末・`email` の削除）は 2026-10-26 に反映。窓口の増減はなし） | ソース基準: `697836a1eb2b62e1a3257ce079ecf8f536e1cb06` の作業ツリー | 対象: `src/app/api/**/route.ts` | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
 
-現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。159ファイル、明示exportされた202組（E2E 用の `/api/e2e/server-info` を除く158ファイル・201組を本書で記す。G-0 の2入口を 2026-10-24 に、G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口と Task 6 の発注先・メモの訂正（`PATCH /api/admin/purchase-orders/[id]`）・数量の確定と訂正・残りの打切りの入口と Task 7 の受け取り・受け取りの取消の入口と Task 8 の取引書類の原本の6入口と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）と G-3 Task 4 の発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）と G-3 Task 5 の発送確定の入口（`POST /api/admin/shipment-slips/[id]/confirm`）と G-3 Task 6 の発送の取消の入口（`POST /api/admin/shipment-slips/[id]/cancel`）と G-3 Task 7 の伝票番号の入力・訂正の入口（`POST /api/admin/shipment-slips/[id]/tracking`）と手動の配達済みの入口（`POST /api/admin/shipment-slips/[id]/delivered`）と 波1-A の Google ログイン開始の POST（`POST /api/auth/oauth/start`）とログインの後の行き先の POST（`POST /api/auth/post-login`）を 2026-10-25 に反映）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
+現行Route Handlerの入力、認証・認可、応答、主要な失敗分岐と副作用を記録する。161ファイル、明示exportされた204組（E2E 用の `/api/e2e/server-info` を除く160ファイル・203組を本書で記す。G-0 の2入口を 2026-10-24 に、G-2 Task 3 の在庫一覧表の入口と Task 4 の発注の作成の入口と Task 5 の発注一覧表・発注書の詳細の入口と Task 6 の発注先・メモの訂正（`PATCH /api/admin/purchase-orders/[id]`）・数量の確定と訂正・残りの打切りの入口と Task 7 の受け取り・受け取りの取消の入口と Task 8 の取引書類の原本の6入口と G-3 Task 3 の荷作り表・発送票の読取の3入口（`GET /api/admin/packing`・`GET /api/admin/shipment-slips`・`GET /api/admin/shipment-slips/[id]`）と G-3 Task 4 の発送票の下書きの3入口（`POST /api/admin/shipment-slips`・`POST /api/admin/shipment-slips/[id]/draft`・`POST /api/admin/shipment-slips/[id]/discard`）と G-3 Task 5 の発送確定の入口（`POST /api/admin/shipment-slips/[id]/confirm`）と G-3 Task 6 の発送の取消の入口（`POST /api/admin/shipment-slips/[id]/cancel`）と G-3 Task 7 の伝票番号の入力・訂正の入口（`POST /api/admin/shipment-slips/[id]/tracking`）と手動の配達済みの入口（`POST /api/admin/shipment-slips/[id]/delivered`）と 波1-A の Google ログイン開始の POST（`POST /api/auth/oauth/start`）とログインの後の行き先の POST（`POST /api/auth/post-login`）を 2026-10-25 に反映）のHTTPメソッド・パスを対象とする。実装と実装が呼ぶschema/helperを根拠とし、未実装の契約は追加しない。DB・Stripe・Supabase Auth・メール等の実環境での成功や設定状態を保証する文書ではない。
 
 | 読み方 | 内容 |
 | --- | --- |
@@ -15,7 +17,7 @@
 | 入出力定義 | I/N/L/S/T/O/F/Pなどの再利用schema、応答の詳細と根拠へのリンク |
 | 入口の所在 | [APIルート一覧](route-inventory.md)（所在表） |
 
-表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは202組に含めない。
+表中の`?`は任意項目、`|`は選択肢。JSONに単一の共通envelopeはない。`{data:...}`、配列、直接object、`{success:true}`、`{ok:true}`を各実装どおりに区別する。表のエラー欄に加え、その行の共通認証・Origin・CSRFの応答が適用される。Next.jsが自動提供するHEAD/OPTIONSは204組に含めない。
 
 ## 共通境界
 
@@ -273,6 +275,35 @@ Stripe Webhookはraw bytesとstripe-signatureを`constructEvent`で検証する�
 | `PATCH /api/admin/contact/[id]` | RBAC `admin.contact.manage` | Path: inquiry id。JSON: `{status:"open"&#124;"pending"&#124;"answered"&#124;"closed"}` | 200 `{success:true}` | 400 body; 404 `Inquiry not found`（UUIDでない、又は更新が0行。0行は失敗の監査 `inquiry_not_found`、successは書かない）; 429（管理者単位 `admin:contact:write` 60回/10分。テンプレートの書き込みと共有）; 500 DB/例外 | thread statusを更新（`update().eq().select('id')`）（波1-B・2026-10-26。SEC-ADMIN-021） [実装](../../../src/app/api/admin/contact/%5Bid%5D/route.ts) |
 
 ## 管理:注文・要対応
+
+G-4 Task 5（確認日: 2026-10-26）: 割当の入替と候補の2入口を追加。actor は認可結果の `userId` だけ。両入口の全応答は `Cache-Control: no-store`。SQLの追加・変更はない。実store→PostgREST→SQLの追加ケースはcontrollerのfresh reset後に検証する。
+
+| メソッド・パス | 認証・認可 | 入力 | 成功 | 主な失敗 | 処理・副作用 |
+| --- | --- | --- | --- | --- | --- |
+| `POST /api/admin/orders/[id]/allocations/swap` | RBAC `admin.orders.allocate` + `admin.orders.read`、DBでも両方確認 | idはUUID。strict本文 `{takerOrderItemId:uuid,donorOrderItemId:uuid,quantity:int 1..99999,reason:string trim 1..200,requestKey:uuid}` | 200 `AllocationSwapResult`（下記） | 401認証; 403権限/MFA/CSRF; 429 IP/actor; 400入力/理由必須; 404品物不在; 409業務拒否; 未知/不正戻り値500 | 認可→CSRF→IP→actor（`admin.orders.allocation.swap` 30回/600秒）→id/本文検証→`swapOrderAllocations`→監査。RPC `admin_swap_order_allocations(_order_id,_taker_order_item_id,_donor_order_item_id,_quantity,_reason,_actor_id,_request_key)`。監査actionは同名、resource `orders`、resource_idは受け手の注文id（不正UUIDはnull）。成功metadataはquantity/replayedだけ、failure/errorは固定codeだけ。理由は監査・ログに含めない。[実装](../../../src/app/api/admin/orders/%5Bid%5D/allocations/swap/route.ts)・[単体](../../../tests/unit/api/admin/allocation-swap-route.test.ts) |
+| `GET /api/admin/orders/[id]/allocations/swap-candidates` | 同じ2権限、DBでも確認 | idと `orderItemId` はUUID。queryは `?orderItemId=<uuid>` の1つだけ | 200 `{data:AllocationSwapCandidate[]}` | 401認証; 403権限/MFA; 400入力; 404品物不在/所属違い; 409未払いの受け手; 未知/不正戻り値500 | 認可→id/query検証→`listAllocationSwapCandidates`。RPC `list_admin_allocation_swap_candidates(_order_id,_taker_order_item_id,_actor_id)`。CSRF・回数制限・監査なし。候補は新しい注文から最大50行、T=0は空、paid/shipped以外の受け手は `GROUP_G_SWAP_ORDER_NOT_PAID`。[実装](../../../src/app/api/admin/orders/%5Bid%5D/allocations/swap-candidates/route.ts)・[単体](../../../tests/unit/api/admin/allocation-swap-candidates-route.test.ts) |
+
+`AllocationSwapResult` は `{id,operationId,takerOrderId,takerOrderItemId,donorOrderId,donorOrderItemId,quantity,reason,replayed}`。idはtakerOrderId。`AllocationSwapCandidate` は `{donorOrderId,donorOrderItemId,orderCreatedAt,swappableQuantity,takerQuantity}`。storeは候補のsnake_caseをこの型へ変換する。権限不足の403は `{error:'割り当てを入れ替える権限がありません。',permission,role}`（最初に不足した権限）。認証・MFA・CSRFの本文は既存のまま返す。
+
+DB拒否は下の `ALLOCATION_SWAP_ERRORS` のmessageとSQLSTATEが完全一致する時だけ `{code,error}` に分類する。未知・内部エラー・不正な戻り値は500 `{error:'割当の入替に失敗しました。'}`、生のDB文は保持しない。[純粋定義](../../../src/lib/inventory/allocation-swap-types.ts)・[store](../../../src/lib/inventory/allocation-swap-store.ts)。
+
+| message | SQLSTATE | HTTP | 本文 |
+| --- | --- | --- | --- |
+| GROUP_G_ARGUMENT_INVALID | 22023 | 400 | 入力を確かめてください。 |
+| GROUP_G_FORBIDDEN | 42501 | 403 | 割り当てを入れ替える権限がありません。 |
+| GROUP_G_REQUEST_KEY_CONFLICT | 23505 | 409 | 同じ要求番号で異なる操作は実行できません。 |
+| GROUP_G_SWAP_REASON_REQUIRED | 22023 | 400 | 理由を入力してください。 |
+| GROUP_G_SWAP_ITEM_NOT_FOUND | P0002 | 404 | 品物が見つかりません。 |
+| GROUP_G_SWAP_SAME_ORDER | 22023 | 409 | 同じ注文の品物どうしでは入れ替えられません。 |
+| GROUP_G_SWAP_VARIANT_MISMATCH | 22023 | 409 | 色・サイズが同じ品物どうしだけ入れ替えられます。 |
+| GROUP_G_SWAP_ORDER_NOT_PAID | 22023 | 409 | 入金が確認できていない注文は入れ替えられません。 |
+| GROUP_G_SWAP_TAKER_ON_HOLD | 22023 | 409 | 支払額の確認または交換手数料のお支払いを待っている品物には割り当てられません。 |
+| GROUP_G_SWAP_DONOR_PENDING_REQUEST | 22023 | 409 | キャンセルの申し込みか返金の処理中の数がある品物の割当は入れ替えられません。 |
+| GROUP_G_SWAP_DONOR_ON_HOLD | 22023 | 409 | 支払額の確認などで止まっている割当は入れ替えられません。 |
+| GROUP_G_SWAP_QUANTITY_EXCEEDS_TAKER | 22023 | 409 | 割り当てを受ける品物の、受注生産中の数を超えています。 |
+| GROUP_G_SWAP_QUANTITY_EXCEEDS_DONOR | 22023 | 409 | 割当元の、発送準備中の数を超えています。 |
+
+ブラウザの [client](../../../src/lib/inventory/allocation-swap-client.ts) は `clientFetch` で送り、POSTの通信切れ・5xx・読めない/対象が違う成功を `unknown`、401/403/429を `blocked`、業務拒否を `refused` とする。`useDeliverySubmission` が結果不明の本文とrequestKeyを保ち、「もう一度確かめる」で同じ操作を再送する。候補GETの失敗は結果不明にせず固定文で表示する。
 
 G-4 Task 3（2026-10-26）: 一覧・CSV・詳細の3つのGETを追加。旧`GET /api/admin/orders`はTask 7まで残し、組立てを`buildAdminOrderSummaries`へ移した（旧単体の期待値は無変更）。新3入口のactorは認可結果の`userId`だけから渡し、全応答に`Cache-Control: no-store`を付ける。GETなのでCSRF検証は行わない。
 
