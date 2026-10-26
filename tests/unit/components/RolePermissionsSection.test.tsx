@@ -111,8 +111,8 @@ describe('DB由来の読み込みと権限表', () => {
       }
     }
     expect(screen.getAllByRole('switch')).toHaveLength(56);
-    // 準備中は G-4 の admin.orders.allocate だけ（G-3 の発送画面は公開済み）
-    expect(screen.getAllByText('この権限は、対応する画面の公開後に使われます。')).toHaveLength(1);
+    // G-4 の割り当て入替も公開済み。準備中の印は無い。
+    expect(screen.queryAllByText('この権限は、対応する画面の公開後に使われます。')).toHaveLength(0);
     const region = screen.getByRole('region', { name: '権限の表' });
     expect(region).toHaveAttribute('tabindex', '0');
     expect(region).toHaveClass('overflow-x-auto', 'max-w-full');

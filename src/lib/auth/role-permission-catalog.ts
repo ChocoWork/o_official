@@ -37,10 +37,8 @@ const rows: readonly (readonly [PermissionCode, string, string])[] = [
   ['admin.permissions.manage', '権限管理', '権限設定の閲覧・保存'],
 ];
 
-// 画面に「対応する画面の公開後に使われます。」と出す権限（割り当て入れ替えの1つ。G-4）。在庫・発注・受け取りの権限は G-2、発送の3つは G-3 の窓口がすでに使っているので、印は付けない
-const UPCOMING_PERMISSION_CODES: ReadonlySet<PermissionCode> = new Set<PermissionCode>([
-  'admin.orders.allocate',
-]);
+// 準備中の権限は無い。割り当ての入れ替え〔admin.orders.allocate〕は G-4 で公開した
+const UPCOMING_PERMISSION_CODES: ReadonlySet<PermissionCode> = new Set<PermissionCode>();
 
 const dependencies: Partial<Record<PermissionCode, PermissionCode[]>> = {
   'admin.stock.manage': ['admin.stock.read'],

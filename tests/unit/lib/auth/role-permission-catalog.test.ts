@@ -34,19 +34,17 @@ const ROWS = [
   ['権限管理', '権限設定の閲覧・保存', 'admin.permissions.manage'],
 ] as const;
 
-test('全30行の表示順・分野・ラベルと固定2件・準備中1件を返す', () => {
+test('全30行の表示順・分野・ラベルと固定2件・準備中0件を返す', () => {
   expect(ROLE_PERMISSION_CATALOG).toHaveLength(30);
   expect(ROLE_PERMISSION_CATALOG.map(({ area, label, code }) => [area, label, code])).toEqual(ROWS);
   expect(FIXED_PERMISSION_CODES).toEqual(['admin.users.manage', 'admin.permissions.manage']);
   expect(ROLE_PERMISSION_CATALOG.filter((p) => p.fixed).map((p) => p.code)).toEqual(['admin.users.manage', 'admin.permissions.manage']);
 });
 
-// G-2 の在庫・発注・受け取りと G-3 の発送は公開済み。「準備中」は G-4 の割り当て入替の1コードだけ
-test('FREQ-540-AC-06: upcoming（準備中）はG-4の未使用の1コードだけで、並びは表の順', () => {
-  expect(ROLE_PERMISSION_CATALOG.filter((p) => p.upcoming).map((p) => p.code)).toEqual([
-    'admin.orders.allocate',
-  ]);
-  expect(ROLE_PERMISSION_CATALOG.filter((p) => !p.upcoming)).toHaveLength(29);
+// G-4 の割り当て入替も公開済み。準備中は無い。
+test('FREQ-540-AC-06: upcoming（準備中）は0件で全30コードが公開済み', () => {
+  expect(ROLE_PERMISSION_CATALOG.filter((p) => p.upcoming).map((p) => p.code)).toEqual([]);
+  expect(ROLE_PERMISSION_CATALOG.filter((p) => !p.upcoming)).toHaveLength(30);
   for (const code of ['admin.stock.read', 'admin.stock.manage', 'admin.purchase_orders.read', 'admin.purchase_orders.manage',
     'admin.receiving.manage', 'admin.shipping.read', 'admin.shipping.manage', 'admin.shipping.correct_date', 'admin.permissions.manage']) {
     expect(ROLE_PERMISSION_CATALOG.find((p) => p.code === code)?.upcoming).toBe(false);
