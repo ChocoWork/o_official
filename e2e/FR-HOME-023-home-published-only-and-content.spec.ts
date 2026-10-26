@@ -11,8 +11,8 @@
  *   @supabase/ssr の同じ読み方で先に確かめる（ホームの画面は管理者かどうかを出さないので、サーバー側の読みは直接は見えない）。
  * - 公開の行を足す試験（006-AC-02・008-AC-01・013-AC-01）は withHomeCatalogLock('exclusive')、公開の並びを比べる試験
  *   （002-AC-01）は 'shared' で、ファイルをまたいで直列にする（ホームは新しい順の先頭 8 件しか描かないため）。
- * - SEC-HOME-006-AC-02（外の画像の住所）・SEC-HOME-007-AC-01（署名の期限）・SEC-HOME-013-AC-01（取る件数）は、
- *   今のコードが満たさない（TM-HOME-34・35・41）ので、test.fail で印を付けてある（直ると「想定外の成功」で知らせる）。skip しない。
+ * - SEC-HOME-006-AC-02（外の画像の住所）・SEC-HOME-007-AC-01（署名の期限）は、今のコードが満たさない（TM-HOME-34・35）ので、
+ *   test.fail で印を付けてある（直ると「想定外の成功」で知らせる）。skip しない。SEC-HOME-013-AC-01（取る件数）は商品を8件だけ取るようにしたので印を外した。
  * JWT が通信記録に残らないよう trace は切る。
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
@@ -330,7 +330,6 @@ test('SEC-HOME-013-AC-01 公開の商品を10件以上にしてホームの HTML
 });
 
 test('SEC-HOME-013-AC-01 公開の商品を10件以上にしてホームの HTML を読むと、HTML に渡る商品の記録の数が ITEM の節で描く上限（8件）以下', async ({ request }) => {
-  test.fail(true, 'SEC-HOME-013 今のコードは満たさない（docs/02_Requirements/areas/home.md）');
   test.setTimeout(120_000);
   const html = await readHomeHtmlWithTenPublishedItems(request);
   const records = countItemRecords(html);

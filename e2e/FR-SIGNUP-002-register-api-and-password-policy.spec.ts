@@ -11,18 +11,21 @@
  *   届かないと窓口は fail-open で通すので、この 2 件は届かない環境では 400 にならず失敗する（網の前提）。
  * - FREQ-323-AC-01 の「外へ出る URL にパスワード本体と SHA-1 の 6 文字目以降が無い」半分は、サーバーから外への
  *   通信なので試験からは見えない。ここでは見えるところ（400・応答に本体が無い・利用者が作られない）だけを確かめる。
- * - SEC-AUTH-016-AC-03 は宛先単位の制限が無い間は失敗する。SEC-AUTH-017-AC-01 は管理の鍵を付けた経路が
- *   公開の登録と別に動く間は失敗する（どちらも文書に書いた今のコードの差）。
+ * - SEC-AUTH-016-AC-03 は宛先単位の枠（5 回／時。Turnstile と漏洩の確かめの後に数える）で 429 になることを確かめる。
+ *   SEC-AUTH-017-AC-01 は管理の鍵（x-admin-token）を付けても公開の登録と同じに扱われる（管理の枝は無い）ことを確かめる。
  * 手元の Supabase にだけ書く。作った利用者は終わりに GoTrue の管理の窓口で消す。
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test';
-import { E2E_FIXED_ENV, isLocalUrl } from '../scripts/e2e/environment';
+import { isLocalUrl } from '../scripts/e2e/environment';
 import { mailsTo, withLocalDb } from './order-email-test-utils';
 
 const REGISTER_PATH = '/api/auth/register';
 const APP_ORIGIN = 'http://localhost:3000';
 const TURNSTILE_TOKEN = 'e2e-dummy-turnstile-token';
+
+/** 昔の管理の鍵の代わりに付ける適当な値。窓口は管理の鍵を読まないので、値が何でも公開の登録と同じに扱われる */
+const FORMER_ADMIN_TOKEN = 'e2e-former-admin-token-0123456789';
 
 /** HaveIBeenPwned に載っている 16 文字以上の固定の文字列（出現回数は 2026-10-25 に確かめた） */
 const LEAKED_PASSWORD_A = '1234567890123456';
@@ -198,7 +201,6 @@ test.describe('FR-SIGNUP-002 register API and password policy', () => {
 
   // SEC-AUTH-016-AC-03
   test('SEC-AUTH-016-AC-03 repeated registration for one registered address hits a per-address limit with 429 and no notice mail', async ({ request }) => {
-    test.fail(true, 'SEC-AUTH-016 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
     const email = uniqueEmail('per-address');
     await createConfirmedUser(email, lettersOnlyPassword(24));
     const password = lettersOnlyPassword(24);
@@ -223,11 +225,10 @@ test.describe('FR-SIGNUP-002 register API and password policy', () => {
 
   // SEC-AUTH-017-AC-01
   test('SEC-AUTH-017-AC-01 an admin token with a registered email does not give 409', async ({ request }) => {
-    test.fail(true, 'SEC-AUTH-017 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
     const email = uniqueEmail('admin-token');
     await createConfirmedUser(email, lettersOnlyPassword(24));
-    // 管理の鍵は E2E_FIXED_ENV が手元のアプリに固定する。鍵が未設定だと窓口は 500 で止まり、AC の差を踏まない
-    const adminToken = E2E_FIXED_ENV.ADMIN_API_KEY;
+    // 窓口は管理の鍵を読まない（枝を削除した）ので、値は何でもよい
+    const adminToken = FORMER_ADMIN_TOKEN;
 
     const response = await postRegister(request, email, {
       password: lettersOnlyPassword(24),

@@ -258,3 +258,71 @@ describe('STATE-AUTH-006 戻り先の控えは、作られ、1 回使い切ら�
     expect(table.consumedCount).toBe(1);
   });
 });
+
+describe('ARC-AUTH-010 登録の確認リンクは、登録を始めたブラウザ（番号と登録したメールが合う控え）でだけ使い切れる', () => {
+  let table: FakeIntentTable;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    table = new FakeIntentTable();
+    table.install();
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  async function register(email: string, rawNext?: unknown) {
+    return issueReturnIntent({ rawNext, purpose: 'signup', bindTo: email, alwaysCreate: true });
+  }
+
+  test('ARC-AUTH-010 戻り先が無い登録でも控えが作られ、同じブラウザ・同じメールの確認で既定の / を受け取って使い切られる', async () => {
+    const entry = await register('new@example.com');
+    expect(entry.outcome).toBe('created');
+    expect(table.rows.size).toBe(1);
+
+    const { consumeSignupBinding } = await import('@/features/auth/return-intent/return-intent-service');
+    const result = await consumeSignupBinding({ cookieHeader: cookieHeaderOf(entry.action), email: 'New@Example.com', userId: 'user-1' });
+
+    expect(result).toEqual({ bound: true, storedPath: '/' });
+    expect(table.consumedCount).toBe(1);
+  });
+
+  test('ARC-AUTH-010 別のメールの印（番号は合う）では使い切れず、控えは残る。そのあと本人のメールで使い切れる', async () => {
+    const entry = await register('victim@example.com', '/stockist');
+    const { consumeSignupBinding } = await import('@/features/auth/return-intent/return-intent-service');
+    const cookieHeader = cookieHeaderOf(entry.action);
+
+    const attacker = await consumeSignupBinding({ cookieHeader, email: 'attacker@example.com', userId: 'attacker-1' });
+    expect(attacker).toEqual({ bound: false });
+    expect(table.consumedCount).toBe(0);
+
+    const victim = await consumeSignupBinding({ cookieHeader, email: 'victim@example.com', userId: 'victim-1' });
+    expect(victim).toEqual({ bound: true, storedPath: '/stockist' });
+  });
+
+  test('ARC-AUTH-010 Cookie が無いブラウザでは使い切れず、同じ印を 2 回目に開いても使えない', async () => {
+    const entry = await register('new@example.com', '/stockist');
+    const { consumeSignupBinding } = await import('@/features/auth/return-intent/return-intent-service');
+
+    await expect(consumeSignupBinding({ cookieHeader: null, email: 'new@example.com', userId: 'user-1' })).resolves.toEqual({ bound: false });
+
+    const cookieHeader = cookieHeaderOf(entry.action);
+    await expect(consumeSignupBinding({ cookieHeader, email: 'new@example.com', userId: 'user-1' })).resolves.toEqual({
+      bound: true,
+      storedPath: '/stockist',
+    });
+    await expect(consumeSignupBinding({ cookieHeader, email: 'new@example.com', userId: 'user-1' })).resolves.toEqual({ bound: false });
+  });
+
+  test('ARC-AUTH-010 期限（1 時間）を過ぎた控えは使えない', async () => {
+    const entry = await register('new@example.com');
+    const { consumeSignupBinding } = await import('@/features/auth/return-intent/return-intent-service');
+    table.advanceSeconds(SIGNUP_TTL_SECONDS + 1);
+
+    await expect(
+      consumeSignupBinding({ cookieHeader: cookieHeaderOf(entry.action), email: 'new@example.com', userId: 'user-1' }),
+    ).resolves.toEqual({ bound: false });
+  });
+});

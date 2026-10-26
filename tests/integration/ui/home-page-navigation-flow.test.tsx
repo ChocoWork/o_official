@@ -129,7 +129,6 @@ function setPublished(total: number): void {
       title: `Article ${index + 1}`,
       published_date: `2026-09-0${index + 1}`,
       category: 'EVENT',
-      image_url: `news/${index + 1}.jpg`,
       content: `summary ${index + 1}`,
     })),
   );

@@ -1,6 +1,6 @@
 ﻿# 1.10 商品扱い店舗ページ（STOCKIST）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: 取扱店の一覧 `/stockist`、取扱店の部品（一覧の形とホームの形）、公開の取り出し、住所からの都道府県の判定 | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: 取扱店の一覧 `/stockist`、取扱店の部品（一覧の形とホームの形）、公開の取り出し、住所からの都道府県の判定 | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -36,7 +36,7 @@
 
 | 共有部品 | 道 | 公開の側での使われ方 |
 | --- | --- | --- |
-| Supabase の client | `src/lib/supabase/server.ts` の `createClient`（引数なしで閲覧者の Cookie に結びつく） | 公開の店の読み出し |
+| Supabase の client | `src/lib/supabase/server.ts` の `createPublicClient`（ログインの Cookie を引き継がない anon の client） | 公開の店の読み出し |
 | 画面の部品 | `src/components/ui/`（`Card`・`Button`・`Checkbox`・`Drawer`・`SectionTitle`） | カード・空の時のボタン・絞り込み・引き出し・ホームの見出し |
 | class の結合 | `src/lib/utils.ts` の `cn` | FILTER のバーの見えない置き台 |
 | 全体の CSS | `src/styles/globals.css` | カードの余白・区切り線・行の間 |
@@ -51,7 +51,7 @@ graph LR
   GH --> GP
   HM --> GR
   GR --> RG["getPrefectureFromAddress・getPrefectureShortLabel<br/>（DD-STOCKIST-005・006）"]
-  GP -->|Cookie の session の client| DB[("stockists<br/>RLS")]
+  GP -->|公開用の anon の client| DB[("stockists<br/>RLS")]
 ```
 
 矢印は呼び出しの向き。ページとホームはサーバーで店を取って部品に渡し、部品は渡された店を画面の上で絞るだけで、自分では取り出さない。
@@ -100,7 +100,7 @@ FR-STOCKIST-001・005・006、FREQ-13-REQ-01、DRV-STOCKIST-013。
 #### 正常フロー
 
 1. `searchParams` を待つ（`page.tsx`）。値は使わず、要求ごとに描く（動的に描く）ための印にする
-2. `getPublicStockists()` を引数なしで呼び、公開の店を全部取る（`page.tsx`、DD-STOCKIST-003）
+2. `getPublicStockists()` を引数なしで呼び、公開の店を上限の 200 件まで取る（`page.tsx`、DD-STOCKIST-003）
 3. 取れた配列をそのまま部品の一覧の形に渡す（`page.tsx`、DD-STOCKIST-002）
 
 #### 異常フロー
@@ -252,8 +252,8 @@ FR-STOCKIST-001・002・004・006・008・010、FREQ-57-REQ-01、FREQ-118-REQ-01
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | ARC-STOCKIST-001、DATA-STOCKIST-001、DATA-STOCKIST-002、SEC-STOCKIST-001 |
-| 根拠 | 取り出しの条件で `status='published'` に絞り、DB の RLS と2段にして、片方が崩れても非公開の店を外へ出さない（SEC-STOCKIST-001、DATA-STOCKIST-002）。返す前に6つの列に詰め直し、状態などの内部の列を画面へ渡さない（ARC-STOCKIST-001）。並びの要件が無いので、取るたびに並びが変わらないよう id の順にする（DATA-STOCKIST-001）。DB が一時的に落ちても頁全体を誤りにしないよう、誤りは空の配列にする（ARC-STOCKIST-001） |
+| 上位 | ARC-STOCKIST-001、DATA-STOCKIST-001、DATA-STOCKIST-002、SEC-STOCKIST-001、SEC-STOCKIST-002、SEC-STOCKIST-018 |
+| 根拠 | 取り出しの条件で `status='published'` に絞り、DB の RLS と2段にして、片方が崩れても非公開の店を外へ出さない（SEC-STOCKIST-001、DATA-STOCKIST-002）。返す前に6つの列に詰め直し、状態などの内部の列を画面へ渡さない（ARC-STOCKIST-001）。並びの要件が無いので、取るたびに並びが変わらないよう id の順にする（DATA-STOCKIST-001）。DB が一時的に落ちても頁全体を誤りにしないよう、誤りは空の配列にする（ARC-STOCKIST-001）。ログインの Cookie を引き継がない公開用の client で読み、閲覧者の権限で公開の画面の中身が変わらないようにする（SEC-STOCKIST-002）。件数は必ず 200 件で止め、店が増えても 1 回の取り出しの量に天井を持たせる（SEC-STOCKIST-018） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/features/stockist/services/public.ts`）、この頁の旧版の機能要件対応表 |
@@ -262,7 +262,7 @@ FR-STOCKIST-001・002・004・006・008・010、FREQ-57-REQ-01、FREQ-118-REQ-01
 
 #### 対応要件
 
-FR-STOCKIST-003、FREQ-13-REQ-01、DRV-STOCKIST-001、SEC-STOCKIST-001。
+FR-STOCKIST-003、FREQ-13-REQ-01、DRV-STOCKIST-001、SEC-STOCKIST-001・002・018。
 
 #### 入出力
 
@@ -274,18 +274,19 @@ FR-STOCKIST-003、FREQ-13-REQ-01、DRV-STOCKIST-001、SEC-STOCKIST-001。
 
 #### 正常フロー
 
-1. `createClient()` を引数なしで呼ぶ。閲覧者のログインの Cookie に結びついた client になる
-2. `stockists` から7つの列を選び、`status='published'` で絞り、id の昇順に並べる
-3. `limit` が数で、有限で、0より大きい時だけ、小数を切り捨てて件数を限る
+1. `createPublicClient()` を引数なしで呼ぶ。ログインの Cookie を引き継がない anon の client になる
+2. `limit` を決める。数で、有限で、切り捨てて 1 以上の時はその数と 200 の小さい方、それ以外（無い・`NaN`・無限・0 以下）は 200（定数 `PUBLIC_STOCKIST_FETCH_LIMIT`）
+3. `stockists` から7つの列を選び、`status='published'` で絞り、id の昇順に並べ、`limit` で件数を限る
 4. 結果の行を6つの列に詰め直して返す
 
 #### 異常フロー
 
 | 場合 | 動き | 道 |
 | --- | --- | --- |
-| `options` が無い・`limit` が無い | 件数を限らない | `public.ts` |
-| `limit` が数でない・`NaN`・`Infinity`・0 以下 | 件数を限らない | `public.ts` |
+| `options` が無い・`limit` が無い | 上限の 200 件で限る | `public.ts` |
+| `limit` が数でない・`NaN`・`Infinity`・0 以下・1 未満の小数 | 上限の 200 件で限る（外さない） | `public.ts` |
 | `limit` が小数（例: 2.7） | 切り捨てた数（2）で限る | `public.ts` |
+| `limit` が 200 より大きい（例: 500） | 200 件に切り詰める | `public.ts` |
 | DB の誤り | `console.error` に誤りを丸ごと書き、空の配列を返す | `public.ts` |
 | `data` が `null` | 空の配列を返す | `public.ts` |
 | client を作れない・問い合わせが例外を投げる | 受け止めず、呼んだ側へ出す（推定） | `public.ts` |
@@ -297,19 +298,20 @@ FR-STOCKIST-003、FREQ-13-REQ-01、DRV-STOCKIST-001、SEC-STOCKIST-001。
 #### 認証認可
 
 - 認可なし（公開）。`status='published'` の条件と、anon・authenticated に公開の行だけを見せる RLS（DATA-STOCKIST-002）の2段で非公開の店を出さない（SEC-STOCKIST-001）
-- client は閲覧者の Cookie の session を引き継ぐ。管理の権限を持つ人がログインしたまま開くと RLS は非公開の店も許すが、取り出しの条件で出ない。Cookie を引き継がない client（SEC-STOCKIST-002）は満たさないので上位にしない
-- 一覧の頁は件数を限らない（SEC-STOCKIST-018 は満たさないので上位にしない）
+- client は閲覧者の Cookie の session を引き継がない（`createPublicClient`。SEC-STOCKIST-002。2026-10-26）。管理の権限を持つ人がログインしたまま開いても、DB は anon として働き、取り出しの条件と RLS の 2 段で非公開の店は出ない
+- 一覧の頁も上限の 200 件で止める（SEC-STOCKIST-018。2026-10-26）。PostgREST の `max_rows` の本番の設定は確かめていない
 
 #### テスト観点
 
-分岐の網羅 100% に要る単体テスト（`@/lib/supabase/server` の `createClient` を差し替え、問い合わせの鎖を記録する）。
+分岐の網羅 100% に要る単体テスト（`@/lib/supabase/server` の `createPublicClient` を差し替え、問い合わせの鎖を記録する。`createClient` は呼ばれないことも確かめる）。
 
 | # | 観点 | 入力 | 期待 |
 | --- | --- | --- | --- |
-| 1 | 絞りと並び | 引数なし | `from('stockists')`、`select('id, name, address, phone, time, holiday, status')`、`eq('status','published')`、`order('id',{ascending:true})` を呼び、`limit` を呼ばない |
+| 1 | 絞りと並び | 引数なし | `from('stockists')`、`select('id, name, address, phone, time, holiday, status')`、`eq('status','published')`、`order('id',{ascending:true})`、`limit(200)` を呼び、`createClient` は呼ばない |
 | 2 | 件数の限り | `{limit:6}` | `limit(6)` |
 | 3 | 小数の切り捨て | `{limit:2.7}` | `limit(2)` |
-| 4 | 限らない値 | `{limit:0}`・`{limit:-1}`・`{limit:NaN}`・`{limit:Infinity}`・`{}` | どれも `limit` を呼ばない |
+| 4 | 不正な件数 | `{limit:0}`・`{limit:-1}`・`{limit:NaN}`・`{limit:Infinity}`・`{limit:0.5}`・`{}` | どれも `limit(200)` を呼ぶ（外さない） |
+| 4a | 上限の切り詰め | `{limit:500}` | `limit(200)` |
 | 5 | 詰め直し | 行に `status`・`type` などが付いている | 返す物が6つの列だけ |
 | 6 | DB の誤り | `{data:null, error:{…}}` | 空の配列、`console.error` が1回 |
 | 7 | `data` が `null` | `{data:null, error:null}` | 空の配列 |
@@ -342,7 +344,7 @@ DD-STOCKIST-003 と同じ（読むだけ、公開、公開の店だけ）。
 
 #### テスト観点
 
-同じファイルの中の呼び出しは差し替えにくいので、`createClient` を差し替えて確かめる。
+同じファイルの中の呼び出しは差し替えにくいので、`createPublicClient` を差し替えて確かめる。
 
 | # | 観点 | 入力 | 期待 |
 | --- | --- | --- | --- |

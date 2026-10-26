@@ -67,7 +67,6 @@ const news = [
     title: 'AUTUMN NOTICE',
     published_date: '2026-10-01',
     category: 'NEWS',
-    image_url: '/news.png',
     content: 'body',
   },
 ];

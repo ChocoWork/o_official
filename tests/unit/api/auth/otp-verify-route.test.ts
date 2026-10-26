@@ -126,7 +126,10 @@ describe('POST /api/auth/otp/verify (DD-AUTH-015)', () => {
     const res: any = await POST(buildRequest());
 
     expect(res.status).toBe(200);
-    expect(res._body).toEqual({ user: fakeUser, message: '認証に成功しました。' });
+    expect(res._body).toEqual({
+      user: { id: 'user-123', email: 'verified@example.com', role: 'user' },
+      message: '認証に成功しました。',
+    });
     expect(res.cookies.get('sb-login-2fa-session')).toEqual({
       name: 'sb-login-2fa-session',
       value: '',
@@ -356,6 +359,59 @@ describe('POST /api/auth/otp/verify (DD-AUTH-015)', () => {
 
     expect(res.status).toBe(500);
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'session_persist_failed: unknown' }));
+  });
+
+  test('DD-AUTH-015 成功の本文の user は id・email・role の 3 つだけで、Supabase の記録を載せない', async () => {
+    __mockVerifyOtp.mockResolvedValue({
+      data: {
+        session: fakeSession,
+        user: {
+          ...fakeUser,
+          aud: 'authenticated',
+          phone: '+81900000000',
+          app_metadata: { provider: 'email', role: 'admin' },
+          user_metadata: { name: 'Taro' },
+          identities: [{ identity_id: 'i-1' }],
+        },
+      },
+      error: null,
+    });
+
+    const res: any = await POST(buildRequest());
+
+    expect(res.status).toBe(200);
+    expect(Object.keys(res._body.user).sort()).toEqual(['email', 'id', 'role']);
+    expect(res._body.user.role).toBe('admin');
+    expect(Object.keys(res._body).sort()).toEqual(['message', 'user']);
+    expect(JSON.stringify(res._body)).not.toMatch(/app_metadata|user_metadata|identities|phone|aud|access|refresh/);
+  });
+
+  test.each([
+    ['supporter', 'supporter'],
+    [undefined, 'user'],
+    ['user', 'user'],
+    ['owner', 'user'],
+    [1, 'user'],
+  ])('DD-AUTH-015 app_metadata.role が %p なら role は %s', async (rawRole, expected) => {
+    __mockVerifyOtp.mockResolvedValue({
+      data: {
+        session: fakeSession,
+        user: { ...fakeUser, app_metadata: rawRole === undefined ? {} : { role: rawRole } },
+      },
+      error: null,
+    });
+
+    const res: any = await POST(buildRequest());
+
+    expect(res._body.user.role).toBe(expected);
+  });
+
+  test('DD-AUTH-015 app_metadata が無い利用者の role は user', async () => {
+    __mockVerifyOtp.mockResolvedValue({ data: { session: fakeSession, user: { id: 'user-123', email: 'a@example.com' } }, error: null });
+
+    const res: any = await POST(buildRequest());
+
+    expect(res._body.user).toEqual({ id: 'user-123', email: 'a@example.com', role: 'user' });
   });
 
   test('DD-AUTH-015 保存の結果が無い時も 500 と unknown を監査に残す', async () => {

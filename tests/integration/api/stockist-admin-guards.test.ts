@@ -120,9 +120,24 @@ function setupRoute(serviceOptions: Parameters<typeof createServiceClient>[0] = 
   const userClient = {
     from: jest.fn(() => {
       const builder: Record<string, unknown> = {};
-      for (const m of ['insert', 'update', 'delete', 'select', 'eq', 'order']) builder[m] = () => builder;
+      let written: string | null = null;
+      for (const m of ['insert', 'update', 'delete', 'select', 'eq', 'order']) {
+        builder[m] = () => {
+          if (written === null && (m === 'insert' || m === 'update' || m === 'delete')) written = m;
+          return builder;
+        };
+      }
       builder.single = () => Promise.resolve({ data: { id: 1 }, error: null });
-      builder.then = (onF: (v: Result) => unknown) => Promise.resolve({ data: null, error: null }).then(onF);
+      // 更新・削除は .select() で返る 1 行を返す（0 行は 404 になる）
+      builder.then = (onF: (v: Result) => unknown) => {
+        const data =
+          written === 'update'
+            ? [{ id: 7 }]
+            : written === 'delete'
+              ? [{ id: 7, name: 'A Shop', address: 'Tokyo', status: 'published' }]
+              : null;
+        return Promise.resolve({ data, error: null }).then(onF);
+      };
       return builder;
     }),
   };

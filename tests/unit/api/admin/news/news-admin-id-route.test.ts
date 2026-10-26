@@ -85,17 +85,24 @@ function paramsFor(id: string) {
   return { params: Promise.resolve({ id }) };
 }
 
-function setupDb(result: { data?: unknown; error: unknown }) {
+/**
+ * 変更・削除は .eq().select('id') で変えた行を返す形（SEC-NEWS-016）。rows が空なら 0 行（無い、または RLS が隠した）。
+ */
+function setupDb(result: { data?: unknown; error: unknown; rows?: Array<{ id: string }> }) {
+  const rows = result.rows ?? [{ id: '7' }];
+  const rowsResult = { data: result.error ? null : rows, error: result.error };
   const single = jest.fn().mockResolvedValue({ data: result.data ?? null, error: result.error });
   const selectEq = jest.fn().mockReturnValue({ single });
   const select = jest.fn().mockReturnValue({ eq: selectEq });
-  const updateEq = jest.fn().mockResolvedValue({ error: result.error });
+  const updateSelect = jest.fn().mockResolvedValue(rowsResult);
+  const updateEq = jest.fn().mockReturnValue({ select: updateSelect });
   const update = jest.fn().mockReturnValue({ eq: updateEq });
-  const deleteEq = jest.fn().mockResolvedValue({ error: result.error });
+  const deleteSelect = jest.fn().mockResolvedValue(rowsResult);
+  const deleteEq = jest.fn().mockReturnValue({ select: deleteSelect });
   const del = jest.fn().mockReturnValue({ eq: deleteEq });
   const from = jest.fn().mockReturnValue({ select, update, delete: del });
   mockCreateClient.mockResolvedValue({ from });
-  return { from, select, selectEq, single, update, updateEq, del, deleteEq };
+  return { from, select, selectEq, single, update, updateEq, updateSelect, del, deleteEq, deleteSelect };
 }
 
 function setupStorage(uploadError: unknown = null) {
@@ -233,6 +240,7 @@ describe('PUT /api/admin/news/:id', () => {
     });
     expect(db.update.mock.calls[0][0]).not.toHaveProperty('image_url');
     expect(db.updateEq).toHaveBeenCalledWith('id', '7');
+    expect(db.updateSelect).toHaveBeenCalledWith('id');
   });
 
   it('DD-NEWS-065 PUT で種類が4つの外の画像は 400 Unsupported image type', async () => {
@@ -406,6 +414,7 @@ describe('PATCH /api/admin/news/:id', () => {
     expect(await res.json()).toEqual({ success: true });
     expect(db.update).toHaveBeenCalledWith({ status: 'published' });
     expect(db.updateEq).toHaveBeenCalledWith('id', '7');
+    expect(db.updateSelect).toHaveBeenCalledWith('id');
     expect(db.select).not.toHaveBeenCalled();
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -447,6 +456,7 @@ describe('DELETE /api/admin/news/:id', () => {
     expect(await res.json()).toEqual({ success: true });
     expect(db.del).toHaveBeenCalled();
     expect(db.deleteEq).toHaveBeenCalledWith('id', '7');
+    expect(db.deleteSelect).toHaveBeenCalledWith('id');
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'admin.news.delete',
@@ -480,26 +490,84 @@ describe('shared audit and zero-row behaviour', () => {
     expect(mockLogAudit).toHaveBeenLastCalledWith(expect.objectContaining({ user_agent: null }));
   });
 
-  it('DD-NEWS-065 対象の行が0件でも PUT・PATCH・DELETE が 200 を返し成功として監査に残す（今の動きの記録）', async () => {
-    // 表の模型は行数を返さない。窓口が行数を見ないことを、error なしの結果だけで 200 になることで示す
-    setupDb({ error: null });
+  it.each([
+    ['PUT', 'admin.news.update.not_found'],
+    ['PATCH', 'admin.news.status_update.not_found'],
+    ['DELETE', 'admin.news.delete.not_found'],
+  ])('DD-NEWS-065 %s で変えた行が0件（無い、または RLS が隠した）なら 404 Article not found と失敗の監査 %s だけを残す（SEC-NEWS-016）', async (method, action) => {
+    setupDb({ error: null, rows: [] });
     setupStorage();
-    const putRes = await PUT(
-      makeRequest({ fields: { ...validFields, image: makeImage('a.jpg', 'image/jpeg') } }),
-      paramsFor('missing'),
-    );
-    const patchRes = await PATCH(makeRequest({ body: { status: 'private' } }), paramsFor('missing'));
-    const deleteRes = await DELETE(makeRequest(), paramsFor('missing'));
+    const handlers: Record<string, (req: Request, ctx: unknown) => Promise<{ status: number; json: () => Promise<unknown> }>> = {
+      PUT,
+      PATCH,
+      DELETE,
+    };
+    const request =
+      method === 'PATCH' ? makeRequest({ body: { status: 'private' } }) : makeRequest({ userAgent: 'UA/2' });
 
-    expect([putRes.status, patchRes.status, deleteRes.status]).toEqual([200, 200, 200]);
-    expect(mockLogAudit.mock.calls.map(([entry]: [{ action: string; outcome: string; resource_id: string }]) => [
-      entry.action,
-      entry.outcome,
-      entry.resource_id,
-    ])).toEqual([
-      ['admin.news.update', 'success', 'missing'],
-      ['admin.news.status_update', 'success', 'missing'],
-      ['admin.news.delete', 'success', 'missing'],
-    ]);
+    const res = await handlers[method](request, paramsFor('7'));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Article not found' });
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action,
+      actor_id: 'admin-1',
+      resource: 'news_article',
+      resource_id: '7',
+      outcome: 'failure',
+      detail: 'News article not found',
+      user_agent: method === 'PATCH' ? null : 'UA/2',
+      metadata: { articleId: '7' },
+    });
+    expect(
+      mockLogAudit.mock.calls.some(([entry]: [{ outcome: string }]) => entry.outcome === 'success'),
+    ).toBe(false);
+  });
+
+  it.each([
+    ['PUT', 'admin.news.update.not_found'],
+    ['PATCH', 'admin.news.status_update.not_found'],
+    ['DELETE', 'admin.news.delete.not_found'],
+  ])('DD-NEWS-065 %s で id が数字でない・19桁以上なら DB を呼ばず 404 にし、生の id を監査に残さない（SEC-NEWS-016）', async (method, action) => {
+    const db = setupDb({ error: null });
+    const storage = setupStorage();
+    const handlers: Record<string, (req: Request, ctx: unknown) => Promise<{ status: number; json: () => Promise<unknown> }>> = {
+      PUT,
+      PATCH,
+      DELETE,
+    };
+
+    for (const badId of ['abc', '7; drop table', '1'.repeat(19), '-1', '1.5', '']) {
+      mockLogAudit.mockClear();
+      const res = await handlers[method](makeRequest({ body: { status: 'private' } }), paramsFor(badId));
+
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: 'Article not found' });
+      expect(mockLogAudit).toHaveBeenCalledTimes(1);
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action,
+          outcome: 'failure',
+          resource_id: null,
+          metadata: { articleIdLength: badId.length },
+        }),
+      );
+    }
+
+    expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+    expect(db.del).not.toHaveBeenCalled();
+    expect(storage.upload).not.toHaveBeenCalled();
+  });
+
+  it('DD-NEWS-065 id が18桁ちょうどの数字なら DB に渡す', async () => {
+    const id = '9'.repeat(18);
+    const db = setupDb({ error: null, rows: [{ id }] });
+
+    const res = await DELETE(makeRequest(), paramsFor(id));
+
+    expect(res.status).toBe(200);
+    expect(db.deleteEq).toHaveBeenCalledWith('id', id);
   });
 });

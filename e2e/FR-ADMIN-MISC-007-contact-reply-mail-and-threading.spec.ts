@@ -19,10 +19,10 @@
  * （RESEND_WEBHOOK_SECRET）は scripts/e2e/environment.ts の E2E_FIXED_ENV が固定する。
  *
  * 今のコードの状態（受け入れ条件の下の根拠より）:
- * - SEC-ADMIN-006（TM-ADMIN-47）・SEC-ADMIN-018（TM-ADMIN-59）・SEC-ADMIN-022-AC-02（TM-ADMIN-63）は満たさない。この spec では失敗する。
- * - SEC-ADMIN-017-AC-01 と FREQ-25-AC-01 は今のコードで通る。
- * - SEC-ADMIN-006 は回数がまだ決まっていない。決めた回数が分からないので、429 が初めて出るまで送り（上限は RATE_LIMIT_PROBE_CAP）、
- *   その時点までの 201 の数を「決めた回数」として数え合わせる。回数の制限が無い間は上限まで返信とメールが溜まる。
+ * - SEC-ADMIN-022-AC-02（TM-ADMIN-63。行為者のメールと IP は波 4）は満たさない。この spec では失敗する（test.fail の印つき）。
+ * - SEC-ADMIN-006（返信は管理者の id ごとに 10 分に 30 回）・SEC-ADMIN-018（件名の CR・LF を空白にする）・SEC-ADMIN-017-AC-01・FREQ-25-AC-01 は今のコードで通る。
+ * - SEC-ADMIN-006 は 429 が初めて出るまで送り（上限は RATE_LIMIT_PROBE_CAP = 200。決めた回数 30 より十分大きい）、
+ *   その時点までの 201 の数と返信の行・メールの数を数え合わせる。回数を決めた値に固定せず、窓口の枠の数を変えても試験を直さずに済ませる。
  */
 import { createHmac, randomUUID } from 'node:crypto';
 import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test';
@@ -287,7 +287,6 @@ function expectRetryAfter(response: APIResponse): void {
   });
 
   test(`SEC-ADMIN-006-AC-01 決めた回数を超えた返信を 429 と Retry-After で断り、返信の行もメールも増えない`, async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-006-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     test.setTimeout(180_000);
     const origin = originOf(baseURL);
     await withAdminActor(async (actor, db) => {
@@ -312,7 +311,6 @@ function expectRetryAfter(response: APIResponse): void {
   });
 
   test(`SEC-ADMIN-006-AC-02 x-forwarded-for の左端を毎回変えても数え直されず、決めた回数を超えた要求に 429 が返る`, async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-006-AC-02 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     test.setTimeout(180_000);
     const origin = originOf(baseURL);
     await withAdminActor(async (actor, db) => {
@@ -383,7 +381,6 @@ function expectRetryAfter(response: APIResponse): void {
   });
 
   test(`SEC-ADMIN-018-AC-01 CR・LF と Bcc の行を含む件名の問い合わせに返信しても、送るメールの件名に CR・LF が無く、Bcc の宛先も無い`, async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-018-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     const origin = originOf(baseURL);
     await withAdminActor(async (actor, db) => {
       const customerEmail = uniqueEmail('contact-crlf');

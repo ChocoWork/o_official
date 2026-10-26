@@ -24,10 +24,12 @@ jest.mock('@/components/AuthTabs', () => ({
     initialTab,
     initialEmail,
     returnTo,
+    notice,
   }: {
     initialTab: string;
     initialEmail: string;
     returnTo?: string;
+    notice?: string;
   }) => (
     <div
       data-testid="auth-tabs"
@@ -35,6 +37,8 @@ jest.mock('@/components/AuthTabs', () => ({
       data-email={initialEmail}
       data-has-return-to={String(returnTo !== undefined)}
       data-return-to={returnTo ?? ''}
+      data-has-notice={String(notice !== undefined)}
+      data-notice={notice ?? ''}
     />
   ),
 }));
@@ -149,6 +153,29 @@ describe('/login page', () => {
     expect(await renderPage({ next: ['/item/3', '/item/4'] })).toHaveAttribute('data-has-return-to', 'false');
     cleanup();
     expect(await renderPage({})).toHaveAttribute('data-has-return-to', 'false');
+  });
+
+  test('DD-AUTH-001 ?registered=1 なら固定の案内の文を notice として AuthTabs に渡す', async () => {
+    const tabs = await renderPage({ registered: '1' });
+
+    expect(tabs).toHaveAttribute('data-notice', '会員登録が完了しました。ログインしてください。');
+  });
+
+  test.each([
+    ['0', { registered: '0' }],
+    ['空', { registered: '' }],
+    ['配列', { registered: ['1', '1'] }],
+    ['未指定', {}],
+  ])('DD-AUTH-001 registered が %s なら notice を渡さない', async (_label, params) => {
+    const tabs = await renderPage(params);
+
+    expect(tabs).toHaveAttribute('data-has-notice', 'false');
+  });
+
+  test('DD-AUTH-001 registered の値そのものは画面に出さず、案内の文は固定', async () => {
+    const tabs = await renderPage({ registered: '1', email: 'x@example.com' });
+
+    expect(tabs.getAttribute('data-notice')).not.toContain('x@example.com');
   });
 
   test('DD-AUTH-001 metadata が title・description・OG を返す', async () => {

@@ -10,6 +10,7 @@ const {
   createReturnIntent,
   generateReturnIntentToken,
   hashReturnIntentToken,
+  normalizeBindEmail,
 } = require('@/features/auth/return-intent/return-intent-store');
 
 function mockRpc(result: unknown) {
@@ -142,5 +143,45 @@ describe('DD-AUTH-033 戻り先の控えの保存', () => {
     expect(logged).toContain('42501');
     expect(logged).not.toContain('secret-token');
     expect(logged).not.toContain(hashReturnIntentToken('secret-token'));
+  });
+
+  it('DD-AUTH-033 bindTo 無しのハッシュは番号だけの sha256 のまま（ログインは変わらない）', () => {
+    expect(hashReturnIntentToken('abc')).toBe(require('crypto').createHash('sha256').update('abc').digest('hex'));
+    expect(hashReturnIntentToken('abc', undefined)).toBe(hashReturnIntentToken('abc'));
+  });
+
+  it('DD-AUTH-033 bindTo を渡すと sha256(番号 + 改行 + 小文字のメール) になり、番号だけのハッシュとは違う', () => {
+    const expected = require('crypto').createHash('sha256').update('abc\na@example.com').digest('hex');
+    expect(hashReturnIntentToken('abc', 'a@example.com')).toBe(expected);
+    expect(hashReturnIntentToken('abc', 'a@example.com')).not.toBe(hashReturnIntentToken('abc'));
+  });
+
+  it('DD-AUTH-033 メールの大文字小文字と前後の空白では結び付けが外れない', () => {
+    expect(normalizeBindEmail(' A@Example.com ')).toBe('a@example.com');
+    expect(hashReturnIntentToken('t', 'A@Example.com ')).toBe(hashReturnIntentToken('t', 'a@example.com'));
+  });
+
+  it('DD-AUTH-033 同じ番号で別のメール、同じメールで別の番号は、別のハッシュになる', () => {
+    expect(hashReturnIntentToken('t', 'a@example.com')).not.toBe(hashReturnIntentToken('t', 'b@example.com'));
+    expect(hashReturnIntentToken('t1', 'a@example.com')).not.toBe(hashReturnIntentToken('t2', 'a@example.com'));
+  });
+
+  it('DD-AUTH-033 createReturnIntent に bindTo を渡すと rpc にメール込みのハッシュを渡し、無ければ番号だけのハッシュ', async () => {
+    const rpc = mockRpc({ data: 3600, error: null });
+    const bound = await createReturnIntent({ returnPath: '/', purpose: 'signup', bindTo: 'A@Example.com' });
+    expect(rpc.mock.calls[0][1]._token_hash).toBe(hashReturnIntentToken(bound!.token, 'a@example.com'));
+    expect(rpc.mock.calls[0][1]._token_hash).not.toBe(hashReturnIntentToken(bound!.token));
+
+    const plain = await createReturnIntent({ returnPath: '/', purpose: 'login' });
+    expect(rpc.mock.calls[1][1]._token_hash).toBe(hashReturnIntentToken(plain!.token));
+  });
+
+  it('DD-AUTH-033 consumeReturnIntent に bindTo を渡すと rpc にメール込みのハッシュを渡し、無ければ番号だけのハッシュ', async () => {
+    const rpc = mockRpc({ data: '/stockist', error: null });
+    await consumeReturnIntent({ token: 't'.repeat(43), purpose: 'signup', userId: 'u', bindTo: 'a@example.com' });
+    expect(rpc.mock.calls[0][1]._token_hash).toBe(hashReturnIntentToken('t'.repeat(43), 'a@example.com'));
+
+    await consumeReturnIntent({ token: 't'.repeat(43), purpose: 'login', userId: 'u' });
+    expect(rpc.mock.calls[1][1]._token_hash).toBe(hashReturnIntentToken('t'.repeat(43)));
   });
 });

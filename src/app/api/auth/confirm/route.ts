@@ -4,9 +4,15 @@
  * @packageDocumentation
  * @impl IMPL-AUTH-164
  * @design DD-AUTH-019
- * @remarks メールのリンクは未ログインの端末で開かれるので、認証は求めず token_hash の検証だけを根拠にセッションを発行する。
- * 行き先は URL の値を読まない。失敗は固定のログイン画面へ、成功はセッションの保存の後に登録の控えを使い切って決める
- * （保存の失敗で戻り先だけが焼けるのを防ぐ）。登録の確認以外の印では、登録の控えを使わない。
+ * @remarks メールのリンクは未ログインの端末で開かれるが、token_hash の検証だけでは session を作らない。
+ * 登録を始めたブラウザ（控えの Cookie の番号と、確認した利用者のメールを一緒にハッシュした印が signup の未使用の行に当たる）
+ * で開いた時だけ session を作る（SEC-AUTH-007、ADR-0413）。控えは session を作る前に使い切る（結び付けの成否は
+ * session より先に決めるしかない。保存に失敗した時は、行き先は固定の '/'・控えの Cookie は clear・verifyOtp の session は失効）。
+ * 外れた時は、メールの確認だけ済ませ、verifyOtp が GoTrue 側に作った session を signOut(local) で消し、
+ * 控えの Cookie は消さずに /login?registered=1 へ送る（攻撃者のリンクで被害者の進行中の登録の控えを壊させない）。
+ * 行き先は URL の値を読まない。受けるのは登録の確認（type=signup）の印だけで、それ以外の型では
+ * verifyOtp を呼ばない（magiclink・recovery・email の印でログインの通行証を作らせない。SEC-AUTH-006）。
+ * 監査には Supabase や例外の文を残さず、固定の符号だけを残す。
  */
 import { NextResponse } from 'next/server';
 import { createPublicClient } from '@/lib/supabase/server';
@@ -14,14 +20,16 @@ import { logAudit } from '@/lib/audit';
 import { getRequestOrigin } from '@/lib/redirect';
 import {
   applyReturnIntentCookie,
-  resolveReturnDestination,
+  consumeSignupBinding,
+  resolveStoredDestination,
 } from '@/features/auth/return-intent/return-intent-service';
 import { linkGuestOrdersByEmail } from '@/lib/orders/link-guest-orders';
 
 const SUCCESS_REDIRECT_PATH = '/';
 const FAILURE_REDIRECT_PATH = '/login';
-type OtpType = 'signup' | 'email' | 'magiclink' | 'recovery';
-const ALLOWED_OTP_TYPES = new Set<OtpType>(['signup', 'email', 'magiclink', 'recovery']);
+/** 登録を始めたブラウザで開かなかった時の行き先。session は作らず、ログインを案内する。 */
+const UNBOUND_REDIRECT_PATH = '/login?registered=1';
+const MFA_REDIRECT_PATH = '/auth/verified';
 
 function classifyConfirmError(message: string | undefined) {
   const normalized = (message || '').toLowerCase();
@@ -36,6 +44,22 @@ function buildRedirectResponse(origin: string, redirectPath: string) {
   res.headers.set('Cache-Control', 'no-store');
   res.headers.set('Referrer-Policy', 'no-referrer');
   return res;
+}
+
+/**
+ * verifyOtp が GoTrue 側に作った session を、その session だけ失効させる。
+ * supabase-js の signOut は失敗を投げずに { error } で返す（throwOnError が既定 false）ので、両方を拾う。
+ * 失敗は握り、ログには符号だけを残す（応答は変えない）。
+ */
+async function revokeLocalSession(supabase: Awaited<ReturnType<typeof createPublicClient>>) {
+  try {
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) {
+      console.error('confirm signOut(local) failed', { code: error.code ?? error.status });
+    }
+  } catch (signOutErr) {
+    console.error('confirm signOut(local) failed', { code: (signOutErr as { code?: string } | null)?.code });
+  }
 }
 
 export async function GET(request: Request) {
@@ -59,10 +83,15 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const tokenHash = url.searchParams.get('token_hash') || url.searchParams.get('token');
   const rawType = url.searchParams.get('type') || 'signup';
-  const otpType: OtpType = ALLOWED_OTP_TYPES.has(rawType as OtpType) ? (rawType as OtpType) : 'signup';
 
   if (!tokenHash) {
     await logAudit({ action: 'auth.confirm', outcome: 'failure', detail: 'missing_token_hash', metadata: { reason: 'missing_token' } });
+    return buildRedirectResponse(origin, FAILURE_REDIRECT_PATH);
+  }
+
+  // 登録の確認の印だけを受ける。type の値そのものは監査に残さない。
+  if (rawType !== 'signup') {
+    await logAudit({ action: 'auth.confirm', outcome: 'failure', detail: 'invalid_type', metadata: { reason: 'invalid_type' } });
     return buildRedirectResponse(origin, FAILURE_REDIRECT_PATH);
   }
 
@@ -70,7 +99,7 @@ export async function GET(request: Request) {
     const supabase = await createPublicClient();
     const { data, error } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
-      type: otpType,
+      type: 'signup',
     });
 
     if (error || !data?.session || !data?.user) {
@@ -79,14 +108,34 @@ export async function GET(request: Request) {
         action: 'auth.confirm',
         actor_email: data?.user?.email ?? null,
         outcome: 'failure',
-        detail: error?.message || 'missing_session_or_user',
+        detail: error ? 'verify_failed' : 'missing_session_or_user',
         metadata: { reason },
       });
 
       return buildRedirectResponse(origin, FAILURE_REDIRECT_PATH);
     }
 
-    // 保存が成功するまで戻り先は使い切らないので、応答は既定の行き先で先に作る。
+    // 結び付けの成否は session を作る前に決める。控えをここで使い切る（Cookie は触らない）。
+    const binding = await consumeSignupBinding({
+      cookieHeader: request.headers.get('cookie'),
+      email: data.user.email ?? '',
+      userId: data.user.id,
+    });
+
+    if (!binding.bound) {
+      // メールの確認は済んでいる。verifyOtp が GoTrue 側に作った session は誰にも渡さず、その session だけを失効させる。
+      await revokeLocalSession(supabase);
+      await logAudit({
+        action: 'auth.confirm',
+        actor_email: data.user.email ?? null,
+        outcome: 'success',
+        detail: 'confirmed_without_session',
+        resource_id: data.user.id,
+        metadata: { reason: 'no_binding' },
+      });
+      return buildRedirectResponse(origin, UNBOUND_REDIRECT_PATH);
+    }
+
     const res = buildRedirectResponse(origin, SUCCESS_REDIRECT_PATH);
 
     const { persistSessionAndCookies } = await import('@/features/auth/services/register');
@@ -99,9 +148,12 @@ export async function GET(request: Request) {
         action: 'auth.confirm',
         actor_email: data.user?.email ?? null,
         outcome: 'error',
-        detail: `session_persist_failed: ${persistResult?.error || 'unknown'}`,
+        detail: 'session_persist_failed',
         resource_id: data.user?.id,
       });
+      // 控えは使い切り済みで、session は誰にも渡さない。控えの Cookie を消し、verifyOtp の session も失効させる。
+      applyReturnIntentCookie(res, { kind: 'clear' });
+      await revokeLocalSession(supabase);
       return res;
     }
 
@@ -112,20 +164,15 @@ export async function GET(request: Request) {
       emailConfirmedAt: data.user.email_confirmed_at ?? null,
     });
 
-    if (otpType === 'signup') {
-      const role = data.user.app_metadata?.role;
-      const resolved = await resolveReturnDestination({
-        cookieHeader: request.headers.get('cookie'),
-        purpose: 'signup',
-        viewer: {
-          id: data.user.id,
-          role: role === 'admin' || role === 'supporter' ? role : 'user',
-          aal: 'aal1',
-        },
-      });
-      res.headers.set('location', new URL(resolved.path, origin).toString());
-      applyReturnIntentCookie(res, resolved.action);
-    }
+    const role = data.user.app_metadata?.role;
+    const viewerRole = role === 'admin' || role === 'supporter' ? role : 'user';
+    // 管理者・サポーターは aal2 になるまで戻り先へ送らない。使い切った戻り先は捨てて 2 段目へ送る。
+    const destination =
+      viewerRole === 'user'
+        ? await resolveStoredDestination({ stored: binding.storedPath, viewer: { role: viewerRole, aal: 'aal1' }, origin })
+        : { path: MFA_REDIRECT_PATH, action: { kind: 'clear' } as const };
+    res.headers.set('location', new URL(destination.path, origin).toString());
+    applyReturnIntentCookie(res, destination.action);
 
     await logAudit({
       action: 'auth.confirm',
@@ -135,8 +182,8 @@ export async function GET(request: Request) {
     });
 
     return res;
-  } catch (err) {
-    await logAudit({ action: 'auth.confirm', outcome: 'error', detail: String(err), metadata: { reason: 'unexpected' } });
+  } catch {
+    await logAudit({ action: 'auth.confirm', outcome: 'error', detail: 'unexpected', metadata: { reason: 'unexpected' } });
     return buildRedirectResponse(origin, FAILURE_REDIRECT_PATH);
   }
 }

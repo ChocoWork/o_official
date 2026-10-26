@@ -16,14 +16,22 @@ jest.mock('@/lib/auth/authenticate', () => ({
   verifyAccessToken: jest.fn(),
   checkAuthSessionLiveness: jest.fn(),
 }));
+// 回数の制限は DB に触り、漏洩の照合は外部の API を呼ぶので差し替える（呼ばれ方は窓口の単体試験で確かめる）
+jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+jest.mock('@/lib/pwned-password', () => ({
+  checkPwnedPassword: jest.fn(),
+  PWNED_PASSWORD_MESSAGE: 'pwned-message',
+}));
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
+const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
+const { checkPwnedPassword } = require('@/lib/pwned-password');
 const { POST } = require('@/app/api/admin/create-user/route');
 
 const ACTOR_ID = '11111111-1111-4111-8111-111111111111';
 const NEW_USER_ID = '33333333-3333-4333-8333-333333333333';
-const validBody = { email: 'new@example.com', password: 'password-1234', display_name: '新人' };
+const validBody = { email: 'new@example.com', password: 'password-1234-ok', display_name: '新人' };
 
 let auditRows: any[];
 let createUser: jest.Mock;
@@ -86,6 +94,8 @@ beforeEach(() => {
   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   installServiceClient();
   checkAuthSessionLiveness.mockResolvedValue('active');
+  enforceRateLimit.mockResolvedValue(undefined);
+  checkPwnedPassword.mockResolvedValue({ status: 'ok' });
   signIn();
 });
 
@@ -173,8 +183,10 @@ describe('POST /api/admin/create-user', () => {
   describe('入力の検証', () => {
     test.each([
       ['メールの形でない', { ...validBody, email: 'not-an-email' }],
-      ['メールが欠けている', { password: 'password-1234' }],
-      ['パスワードが 7 文字しか無い', { ...validBody, password: '1234567' }],
+      ['メールが欠けている', { password: 'password-1234-ok' }],
+      ['パスワードが 15 文字しか無い', { ...validBody, password: 'a'.repeat(15) }],
+      ['パスワードが 129 文字ある', { ...validBody, password: 'a'.repeat(129) }],
+      ['display_name が 101 文字ある', { ...validBody, display_name: 'あ'.repeat(101) }],
       ['パスワードが欠けている', { email: 'new@example.com' }],
       ['display_name が文字列でない', { ...validBody, display_name: 123 }],
       ['本文が配列である', []],
@@ -197,18 +209,58 @@ describe('POST /api/admin/create-user', () => {
       );
     });
 
-    test('API-ADMIN-001 パスワードがちょうど 8 文字なら受け付ける', async () => {
-      const res = await POST(makeRequest({ ...validBody, password: '12345678' }));
+    test('API-ADMIN-001 パスワードがちょうど 16 文字なら受け付ける', async () => {
+      const password = 'a'.repeat(16);
+      const res = await POST(makeRequest({ ...validBody, password }));
 
       expect(res.status).toBe(201);
-      expect(createUser).toHaveBeenCalledWith(expect.objectContaining({ password: '12345678' }));
+      expect(createUser).toHaveBeenCalledWith(expect.objectContaining({ password }));
     });
 
-    test('API-ADMIN-001 本文の JSON が壊れていれば 500 を返し、作らず監査も書かない', async () => {
+    test('API-ADMIN-001 本文の JSON が壊れていれば 400 を返し、作らず failure を監査へ残す', async () => {
       const res = await POST(makeRequest('{not json'));
 
-      expect(res.status).toBe(500);
-      expect(res._body).toEqual({ error: 'Internal server error' });
+      expect(res.status).toBe(400);
+      expect(res._body).toEqual({ error: 'Invalid request' });
+      expect(createUser).not.toHaveBeenCalled();
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'failure', detail: 'Invalid request body' }));
+    });
+
+    test('API-ADMIN-001 漏洩済みのパスワードは 400 で作らず、pwned_password を監査へ残してパスワードは残さない', async () => {
+      checkPwnedPassword.mockResolvedValue({ status: 'pwned', count: 5 });
+
+      const res = await POST(makeRequest(validBody));
+
+      expect(res.status).toBe(400);
+      expect(res._body).toEqual({ error: 'pwned-message' });
+      expect(createUser).not.toHaveBeenCalled();
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'failure', detail: 'pwned_password' }));
+      expect(JSON.stringify(auditRows)).not.toContain(validBody.password);
+    });
+
+    test('API-ADMIN-001 漏洩の照合が使えなくても作成は通り、pwned_check_unavailable を監査へ残す', async () => {
+      checkPwnedPassword.mockResolvedValue({ status: 'unavailable', reason: 'timeout' });
+
+      const res = await POST(makeRequest(validBody));
+
+      expect(res.status).toBe(201);
+      expect(auditRows.map((row) => [row.outcome, row.detail ?? null])).toEqual([
+        ['error', 'pwned_check_unavailable:timeout'],
+        ['success', null],
+      ]);
+    });
+
+    test('API-ADMIN-001 回数の枠を超えたら 429 を返し、作らず監査も書かない', async () => {
+      enforceRateLimit.mockResolvedValue({ status: 429, _body: { error: 'Too many requests' } });
+
+      const res = await POST(makeRequest(validBody));
+
+      expect(res.status).toBe(429);
+      expect(enforceRateLimit).toHaveBeenCalledWith(
+        expect.objectContaining({ endpoint: 'admin:users:create', limit: 20, windowSeconds: 600, subject: ACTOR_ID }),
+      );
       expect(createUser).not.toHaveBeenCalled();
       expect(auditRows).toEqual([]);
     });
@@ -263,7 +315,7 @@ describe('POST /api/admin/create-user', () => {
     test.each([
       ['already を含む', 'User already registered'],
       ['duplicate を含む（大文字小文字を問わない）', 'Duplicate key value violates unique constraint'],
-    ])('API-ADMIN-001 Auth の誤りの文が %s時は 409 を返し、conflict を誤りの文のまま監査へ残す', async (_label, message) => {
+    ])('API-ADMIN-001 Auth の誤りの文が %s時は 409 を返し、conflict を固定の符号で監査へ残す', async (_label, message) => {
       createUser.mockResolvedValue({ data: { user: null }, error: { message } });
 
       const res = await POST(makeRequest(validBody));
@@ -271,11 +323,14 @@ describe('POST /api/admin/create-user', () => {
       expect(res.status).toBe(409);
       expect(res._body).toEqual({ error: 'Email already registered' });
       expect(auditRows).toHaveLength(1);
-      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'conflict', detail: message, resource: 'users' }));
+      expect(auditRows[0]).toEqual(
+        expect.objectContaining({ outcome: 'conflict', detail: 'email_already_registered', resource: 'users' }),
+      );
+      expect(JSON.stringify(auditRows)).not.toContain(message);
       expect(auditRows[0].resource_id ?? null).toBeNull();
     });
 
-    test('API-ADMIN-001 ほかの Auth の誤りは 500 で、内部の文を返さず error を誤りの文のまま監査へ残す', async () => {
+    test('API-ADMIN-001 ほかの Auth の誤りは 500 で、内部の文を返さず error を固定の符号で監査へ残す', async () => {
       createUser.mockResolvedValue({ data: { user: null }, error: { message: 'Database error saving new user' } });
 
       const res = await POST(makeRequest(validBody));
@@ -283,7 +338,8 @@ describe('POST /api/admin/create-user', () => {
       expect(res.status).toBe(500);
       expect(res._body).toEqual({ error: 'Failed to create user' });
       expect(auditRows).toHaveLength(1);
-      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'error', detail: 'Database error saving new user' }));
+      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'error', detail: 'create_user_failed' }));
+      expect(JSON.stringify(auditRows)).not.toContain('Database error saving new user');
     });
 
     test('API-ADMIN-001 誤りに文が無くても 500 を返す', async () => {

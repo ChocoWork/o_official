@@ -30,10 +30,24 @@ export function generateReturnIntentToken(): string {
  *
  * @impl IMPL-AUTH-215
  * @design DD-AUTH-033
- * @remarks 表が漏れても番号そのものは分からないようにする。
+ * @remarks 表が漏れても番号そのものは分からないようにする。bindTo（登録したメール）を渡すと番号とメールを
+ * 一緒にハッシュし、別のメールの印では行に当たらないようにする（登録の確認リンクの結び付け。SEC-AUTH-007、ADR-0413）。
+ * 渡さない時（ログイン）は番号だけのハッシュで、今までと同じ。
  */
-export function hashReturnIntentToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
+export function hashReturnIntentToken(token: string, bindTo?: string): string {
+  const material = bindTo === undefined ? token : `${token}\n${normalizeBindEmail(bindTo)}`;
+  return createHash('sha256').update(material).digest('hex');
+}
+
+/**
+ * 結び付けのメールを正規化する（前後の空白を除いて小文字にする）。
+ *
+ * @impl IMPL-AUTH-222
+ * @design DD-AUTH-033
+ * @remarks 大文字小文字や空白の違いで、同じ人の結び付けが外れないようにする。
+ */
+export function normalizeBindEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 /**
@@ -46,12 +60,13 @@ export function hashReturnIntentToken(token: string): string {
 export async function createReturnIntent(input: {
   returnPath: string;
   purpose: ReturnIntentPurpose;
+  bindTo?: string;
 }): Promise<{ token: string; maxAgeSeconds: number } | null> {
   try {
     const token = generateReturnIntentToken();
     const client = await createServiceRoleClient();
     const { data, error } = await client.rpc('create_auth_return_intent', {
-      _token_hash: hashReturnIntentToken(token),
+      _token_hash: hashReturnIntentToken(token, input.bindTo),
       _return_path: input.returnPath,
       _purpose: input.purpose,
     });
@@ -82,11 +97,12 @@ export async function consumeReturnIntent(input: {
   token: string;
   purpose: ReturnIntentPurpose;
   userId: string;
+  bindTo?: string;
 }): Promise<string | null> {
   try {
     const client = await createServiceRoleClient();
     const { data, error } = await client.rpc('consume_auth_return_intent', {
-      _token_hash: hashReturnIntentToken(input.token),
+      _token_hash: hashReturnIntentToken(input.token, input.bindTo),
       _purpose: input.purpose,
       _user_id: input.userId,
     });

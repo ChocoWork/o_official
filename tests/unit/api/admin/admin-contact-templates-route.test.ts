@@ -21,9 +21,14 @@ jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('@/features/auth/middleware/rateLimit', () => ({
+  enforceRateLimit: jest.fn(),
+}));
+
 const { createServiceRoleClient: mockCreateServiceRoleClient } = require('@/lib/supabase/server');
 const { authorizeAdminPermission: mockAuthorize } = require('@/lib/auth/admin-rbac');
 const { logAudit: mockLogAudit } = require('@/lib/audit');
+const { enforceRateLimit: mockEnforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 
 const { GET, POST } = require('@/app/api/admin/contact/templates/route');
 
@@ -61,6 +66,7 @@ describe('admin contact templates route (list and create)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1' });
+    mockEnforceRateLimit.mockReset().mockResolvedValue(null);
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -141,6 +147,33 @@ describe('admin contact templates route (list and create)', () => {
       expect(res).toBe(DENIED);
       expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
       expect(mockLogAudit).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-009 POST は回数の枠を認可の直後に管理者の ID だけで数え（admin:contact:write・60・600秒）、超えたら 429 で DB を呼ばず何も書かない', async () => {
+      const limited = { status: 429, json: async () => ({ error: 'Too many requests' }) };
+      mockEnforceRateLimit.mockResolvedValue(limited);
+      const request = makeRequest(validBody);
+
+      const res = await POST(request);
+
+      expect(res).toBe(limited);
+      expect(mockEnforceRateLimit).toHaveBeenCalledWith({
+        request,
+        endpoint: 'admin:contact:write',
+        limit: 60,
+        windowSeconds: 600,
+        subject: 'admin-1',
+      });
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+      expect(mockLogAudit).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-009 POST は認可で断った要求を回数に数えない', async () => {
+      mockAuthorize.mockResolvedValue({ ok: false, response: DENIED });
+
+      await POST(makeRequest(validBody));
+
+      expect(mockEnforceRateLimit).not.toHaveBeenCalled();
     });
 
     it.each([

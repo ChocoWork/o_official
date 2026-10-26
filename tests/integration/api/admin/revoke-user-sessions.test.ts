@@ -16,9 +16,13 @@ jest.mock('@/lib/auth/authenticate', () => ({
   verifyAccessToken: jest.fn(),
   checkAuthSessionLiveness: jest.fn(),
 }));
+jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+jest.mock('@/features/auth/ratelimit', () => ({ incrementCounter: jest.fn() }));
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
+const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
+const { incrementCounter } = require('@/features/auth/ratelimit');
 const { POST } = require('@/app/api/admin/revoke-user-sessions/route');
 
 const ACTOR_ID = '11111111-1111-4111-8111-111111111111';
@@ -29,6 +33,7 @@ let aclCodes: string[];
 let sessionsUpdate: jest.Mock;
 let sessionsEq: jest.Mock;
 let rpc: jest.Mock;
+let getUserById: jest.Mock;
 let calls: string[];
 let errorSpy: jest.SpyInstance;
 let warnSpy: jest.SpyInstance;
@@ -36,6 +41,7 @@ let warnSpy: jest.SpyInstance;
 function installServiceClient() {
   createServiceRoleClient.mockResolvedValue({
     rpc,
+    auth: { admin: { getUserById } },
     from: (table: string) => {
       if (table === 'audit_logs') {
         return {
@@ -95,6 +101,9 @@ beforeEach(() => {
     calls.push('rpc');
     return { data: 2, error: null };
   });
+  getUserById = jest.fn().mockImplementation(async (id: string) => ({ data: { user: { id } }, error: null }));
+  enforceRateLimit.mockResolvedValue(undefined);
+  incrementCounter.mockResolvedValue(1);
   errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   installServiceClient();
@@ -182,6 +191,7 @@ describe('POST /api/admin/revoke-user-sessions', () => {
       ['user_id が欠けている', {}],
       ['user_id が空文字である', { user_id: '' }],
       ['user_id が文字列でない', { user_id: 42 }],
+      ['user_id が UUID でない', { user_id: 'x' }],
       ['本文が null である', null],
     ])('API-ADMIN-002 %s時は 400 を返し、失効させずに failure を監査へ残す', async (_label, body) => {
       const res = await POST(makeRequest(body, clientHeaders));
@@ -204,21 +214,88 @@ describe('POST /api/admin/revoke-user-sessions', () => {
       );
     });
 
-    test('API-ADMIN-002 user_id は UUID の形を見ず、1 字以上の文字列なら受け付ける', async () => {
-      const res = await POST(makeRequest({ user_id: 'x' }));
-
-      expect(res.status).toBe(200);
-      expect(sessionsEq).toHaveBeenCalledWith('user_id', 'x');
-      expect(rpc).toHaveBeenCalledWith('revoke_auth_sessions_for_user', { p_user_id: 'x' });
-    });
-
-    test('API-ADMIN-002 本文の JSON が壊れていれば 500 を返し、失効させない', async () => {
+    test('API-ADMIN-002 本文の JSON が壊れていれば 400 を返し、失効させない', async () => {
       const res = await POST(makeRequest('{broken'));
 
-      expect(res.status).toBe(500);
-      expect(res._body).toEqual({ error: 'Internal server error' });
+      expect(res.status).toBe(400);
+      expect(res._body).toEqual({ error: 'Invalid request' });
       expect(sessionsUpdate).not.toHaveBeenCalled();
       expect(rpc).not.toHaveBeenCalled();
+    });
+
+    test('API-ADMIN-002 自分自身の user_id は 400 で断り、失効させず failure を監査へ残す', async () => {
+      const res = await POST(makeRequest({ user_id: ACTOR_ID }));
+
+      expect(res.status).toBe(400);
+      expect(res._body).toEqual({ error: 'Cannot revoke your own sessions' });
+      expect(sessionsUpdate).not.toHaveBeenCalled();
+      expect(rpc).not.toHaveBeenCalled();
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'failure', detail: 'self_revocation_rejected' }));
+    });
+
+    test('API-ADMIN-002 存在しない利用者は 404 で断り、失効させず success を監査へ残さない', async () => {
+      getUserById.mockResolvedValue({ data: { user: null }, error: { status: 404, code: 'user_not_found' } });
+
+      const res = await POST(makeRequest({ user_id: TARGET_ID }));
+
+      expect(res.status).toBe(404);
+      expect(sessionsUpdate).not.toHaveBeenCalled();
+      expect(rpc).not.toHaveBeenCalled();
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'failure', detail: 'target_not_found' }));
+    });
+  });
+
+  describe('回数の制限', () => {
+    test('API-ADMIN-002 認可に通った後に、管理者の ID を枠にして数え、429 なら失効させない', async () => {
+      enforceRateLimit.mockResolvedValue({ status: 429, _body: { error: 'Too many requests' } });
+
+      const res = await POST(makeRequest({ user_id: TARGET_ID }));
+
+      expect(res.status).toBe(429);
+      expect(enforceRateLimit).toHaveBeenCalledWith(
+        expect.objectContaining({ endpoint: 'admin:users:revoke-sessions', limit: 20, windowSeconds: 600, subject: ACTOR_ID }),
+      );
+      expect(getUserById).not.toHaveBeenCalled();
+      expect(sessionsUpdate).not.toHaveBeenCalled();
+      expect(auditRows).toHaveLength(0);
+    });
+
+    test('API-ADMIN-002 認可に失敗した要求は管理者の枠で数えない', async () => {
+      verifyAccessToken.mockResolvedValue({ ok: false, reason: 'invalid' });
+
+      await POST(makeRequest({ user_id: TARGET_ID }));
+
+      expect(enforceRateLimit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('認可に失敗した要求の監査の上限', () => {
+    test('API-ADMIN-002 21 回目はまとめの 1 行（unauthorized_burst）になり、22 回目からは書かない', async () => {
+      verifyAccessToken.mockResolvedValue({ ok: false, reason: 'invalid' });
+
+      incrementCounter.mockResolvedValue(21);
+      const burst = await POST(makeRequest({ user_id: TARGET_ID }));
+      incrementCounter.mockResolvedValue(22);
+      const suppressed = await POST(makeRequest({ user_id: TARGET_ID }));
+
+      expect(burst.status).toBe(401);
+      expect(suppressed.status).toBe(401);
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0]).toEqual(
+        expect.objectContaining({ outcome: 'unauthorized_burst', detail: 'further attempts suppressed for this window' }),
+      );
+    });
+
+    test('API-ADMIN-002 数える部品が壊れていても監査を書かず、応答は同じ 401', async () => {
+      verifyAccessToken.mockResolvedValue({ ok: false, reason: 'invalid' });
+      incrementCounter.mockRejectedValue(new Error('counter down'));
+
+      const res = await POST(makeRequest({ user_id: TARGET_ID }));
+
+      expect(res.status).toBe(401);
+      expect(auditRows).toHaveLength(0);
     });
   });
 
@@ -260,24 +337,19 @@ describe('POST /api/admin/revoke-user-sessions', () => {
       expect(auditRows[0].metadata).toEqual({ auth_sessions_deleted: 0 });
     });
 
-    test('API-ADMIN-002 自分自身の session も断らず失効させる', async () => {
-      const res = await POST(makeRequest({ user_id: ACTOR_ID }));
-
-      expect(res.status).toBe(200);
-      expect(rpc).toHaveBeenCalledWith('revoke_auth_sessions_for_user', { p_user_id: ACTOR_ID });
-    });
-
-    test('API-ADMIN-002 自前の表の更新が誤りを返しても見ず、Auth 側の失効が通れば 200 を返す', async () => {
+    test('API-ADMIN-002 自前の表の更新が誤りを返せば 500 を返し、Auth 側の失効に進まず、revoke_failed を監査へ残す', async () => {
       sessionsEq.mockResolvedValue({ error: { message: 'update failed' } });
 
       const res = await POST(makeRequest({ user_id: TARGET_ID }));
 
-      expect(res.status).toBe(200);
-      expect(rpc).toHaveBeenCalledTimes(1);
-      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'success' }));
+      expect(res.status).toBe(500);
+      expect(rpc).not.toHaveBeenCalled();
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'error', detail: 'revoke_failed' }));
+      expect(JSON.stringify(auditRows)).not.toContain('update failed');
     });
 
-    test('API-ADMIN-002 Auth 側の失効が誤りを返せば 500 を返し、error を auth_session_revocation_failed で監査へ残す', async () => {
+    test('API-ADMIN-002 Auth 側の失効が誤りを返せば 500 を返し、error を revoke_failed で監査へ残す', async () => {
       rpc.mockResolvedValue({ data: null, error: { message: 'rpc failed' } });
 
       const res = await POST(makeRequest({ user_id: TARGET_ID }));
@@ -288,14 +360,14 @@ describe('POST /api/admin/revoke-user-sessions', () => {
       expect(auditRows[0]).toEqual(
         expect.objectContaining({
           outcome: 'error',
-          detail: 'auth_session_revocation_failed',
+          detail: 'revoke_failed',
           resource_id: TARGET_ID,
           actor_id: ACTOR_ID,
         }),
       );
     });
 
-    test('API-ADMIN-002 DB が例外を投げれば 500 を返し、例外の文を error として監査へ残す', async () => {
+    test('API-ADMIN-002 DB が例外を投げれば 500 を返し、固定の文を error として監査へ残し、例外の文は残さない', async () => {
       sessionsUpdate.mockImplementation(() => {
         throw new Error('db fail');
       });
@@ -306,10 +378,11 @@ describe('POST /api/admin/revoke-user-sessions', () => {
       expect(res._body).toEqual({ error: 'Failed to revoke sessions' });
       expect(rpc).not.toHaveBeenCalled();
       expect(auditRows).toHaveLength(1);
-      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'error', detail: 'Error: db fail', resource_id: TARGET_ID }));
+      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'error', detail: 'revoke_failed', resource_id: TARGET_ID }));
+      expect(JSON.stringify(auditRows)).not.toContain('db fail');
     });
 
-    test('API-ADMIN-002 認可の後で service role を作れなければ 500 を返し、例外の文を error として監査へ残す', async () => {
+    test('API-ADMIN-002 認可の後で service role を作れなければ 500 を返し、固定の文を error として監査へ残す', async () => {
       installServiceClient();
       const base = await createServiceRoleClient();
       let n = 0;
@@ -326,7 +399,8 @@ describe('POST /api/admin/revoke-user-sessions', () => {
       expect(res._body).toEqual({ error: 'Failed to revoke sessions' });
       expect(rpc).not.toHaveBeenCalled();
       expect(auditRows).toHaveLength(1);
-      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'error', detail: 'Error: no client' }));
+      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'error', detail: 'revoke_failed' }));
+      expect(JSON.stringify(auditRows)).not.toContain('no client');
     });
   });
 });

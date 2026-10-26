@@ -1,6 +1,6 @@
 /**
  * FR-SIGNUP-003 会員登録の確認メールのリンク（/api/auth/confirm）
- * 対応: FR-LOGIN-004-AC-01・SEC-AUTH-006-AC-01・SEC-AUTH-006-AC-02・SEC-AUTH-007-AC-01・FR-AUTH-005-AC-03
+ * 対応: FR-LOGIN-004-AC-01・SEC-AUTH-006-AC-01・SEC-AUTH-006-AC-02・SEC-AUTH-007-AC-01・SEC-AUTH-007-AC-02・SEC-AUTH-007-AC-03
  *
  * 手元の Supabase とメール受け（Mailpit）だけを使う。印（token_hash）は管理 API の generateLink で作る（メールは送られない）。
  *
@@ -8,14 +8,15 @@
  * 登録を始めていない別のブラウザで開いた時は、メールの確認（登録の完了）だけを済ませ、session は作らずに /login へ 303 で送り、
  * 登録が終わったのでログインするよう画面で知らせる。「このアカウントでログインしますか」と確かめる画面は無い。
  *
- * 現在の結果:
- * - SEC-AUTH-007-AC-01 だけが、上の動きをコードに入れる（/api/auth/confirm を登録を始めたブラウザに結ぶ）まで赤になる。
- *   今のコードは結び付けが無く、どのブラウザで開いても session を作る。直す時期はユーザーが決める（trace-matrix の TM-AUTH-64）。
- * - SEC-AUTH-006-AC-02 は今のコードで通る（同じブラウザで開けば session を作り 303 で送る）。結び付けを入れた後も緑のままでなければならない守り。
+ * 現在の結果（2026-10-26、波 1-B。ADR-0413）:
+ * - SEC-AUTH-007-AC-01・AC-02・AC-03 は、確認の窓口が登録を始めたブラウザ（控えの Cookie の番号と、確認した利用者のメールを
+ *   一緒にハッシュした印が登録の控えに当たる）でだけ session を作ることを確かめる。通る。
+ * - SEC-AUTH-006-AC-02 は同じブラウザで開けば session を作り 303 で送る守り。通る。
  * - FR-LOGIN-004-AC-01 は Confirm email が有効な前提。手元の supabase/config.toml は無効（enable_confirmations = false）で、
  *   登録するとその場でログインし確認メールも出ない。有効にし、確認メールの文面を
  *   `{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=signup` へのリンクにするまで赤。
- * - SEC-AUTH-006-AC-01 は今のコードが満たさない（要件に「今のコードは満たさない」と明記）ので赤。
+ * - SEC-AUTH-006-AC-01 は、確認の窓口が type=signup の印だけを受け、magiclink・recovery・email の印では
+ *   verifyOtp を呼ばず session の Cookie も書かないこと（窓口で開いた印そのものが GoTrue でまだ使える）を確かめる。通る。
  *
  * 「登録を始めたブラウザ」の作り方（手元で Confirm email が無効でも動く）:
  * 手元で本当に登録を送ると、その場で確認済みになり session が付くので、確認のリンクの印が残らない。
@@ -24,9 +25,10 @@
  * 登録の応答で、アプリが「登録を始めた」目印の Cookie をそのブラウザに置くなら、ブラウザ A の context に入る。
  * 確認のリンクは、同じ context（SEC-AUTH-006-AC-02）か、Cookie の無い別の context（SEC-AUTH-007-AC-01）で開く。
  *
- * 行き先（波 1-A、SEC-AUTH-026・ADR-0412）: 確認のリンクの URL の値（redirect_to など）は読まない。
- * 登録の時に /login?next=… から送った戻り先をサーバーに控え、同じ端末の Cookie（sb-return-intent）で使い切る。
- * 控えが無い端末（別のブラウザ）は戻り先を使わず / へ送る（/login へ切り替えるのは SEC-AUTH-007 の作業）。
+ * 行き先（SEC-AUTH-026・ADR-0412・ADR-0413）: 確認のリンクの URL の値（redirect_to など）は読まない。
+ * 登録の時に /login?next=… から送った戻り先（無ければ /）を、登録したメールに結んでサーバーに控え、同じ端末の Cookie
+ * （sb-return-intent）で session を作る前に使い切る。控えが無い端末（別のブラウザ）や、別のメールの印は、
+ * 戻り先を使わず session も作らずに /login?registered=1 へ送る（控えの Cookie は消さない）。
  *
  * 結び付けの規則（コードを直す人への前提。SEC-AUTH-007・SEC-AUTH-016）:
  * /api/auth/register の 202 は 2 通りある（新規の登録＝signUp を呼ぶ枝と、登録済みのメール＝見つかった枝）。
@@ -144,25 +146,22 @@ function writtenCookieValue(headers: ReadonlyArray<{ name: string; value: string
   return null;
 }
 
-/** 印が本物であることの確かめ。GoTrue へ直接渡して session が返れば、窓口が session を作らなかった理由は印の不備ではない。 */
-async function expectTokenVerifiable(
-  admin: SupabaseClient,
+/**
+ * 窓口で開いた印そのものが、まだ使える（消費されていない）ことの確かめ。GoTrue へ直接渡して session が返れば、
+ * 窓口は verifyOtp を呼ばず、印の不備でもなかった。呼ばれていれば印は使用済みで 4xx になる。
+ */
+async function expectTokenNotConsumed(
   gotrue: { url: string; anonKey: string },
   type: LinkType,
-  label: string,
+  tokenHash: string,
 ): Promise<void> {
-  const issued = await issueTokenHash(admin, type, `${label}-ctl`);
-  try {
-    const response = await fetch(`${gotrue.url}/auth/v1/verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: gotrue.anonKey },
-      body: JSON.stringify({ type, token_hash: issued.tokenHash }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    expect(response.status, `${type} の印を作る手順が、GoTrue で確かめられる印を作れていない`).toBe(200);
-  } finally {
-    await removeUsers(admin, [issued.userId]);
-  }
+  const response = await fetch(`${gotrue.url}/auth/v1/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: gotrue.anonKey },
+    body: JSON.stringify({ type, token_hash: tokenHash }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  expect(response.status, `type=${type} の印が、窓口で開いた後に GoTrue で確かめられない（消費された、または印が不正）`).toBe(200);
 }
 
 // ---- Mailpit ----
@@ -295,7 +294,6 @@ for (const viewport of viewports) {
     });
 
     test('SEC-AUTH-006-AC-01 magiclink, recovery and email tokens do not write a session cookie', async ({ request }) => {
-      test.fail(true, 'SEC-AUTH-006 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
       test.setTimeout(120_000);
       const { admin, url, anonKey } = localSupabase();
       const userIds: string[] = [];
@@ -313,8 +311,8 @@ for (const viewport of viewports) {
             `type=${type} の印で ${ACCESS_COOKIE} が保存された`,
           ).toBeUndefined();
 
-          // 印が本物だったこと（偽の印でたまたま書かれなかったのではないこと）。
-          await expectTokenVerifiable(admin, { url, anonKey }, type, `006a-${type}`);
+          // 窓口で開いた印そのものが消費されていないこと（verifyOtp が呼ばれていないこと。偽の印でたまたま書かれなかったのでもないこと）。
+          await expectTokenNotConsumed({ url, anonKey }, type, issued.tokenHash);
         }
       } finally {
         await removeUsers(admin, userIds);
@@ -348,7 +346,6 @@ for (const viewport of viewports) {
     });
 
     test('SEC-AUTH-007-AC-01 signup token opened on a browser that did not start the signup confirms the email but logs nobody in', async ({ page, browser, baseURL }) => {
-      test.fail(true, 'SEC-AUTH-007 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
       test.setTimeout(120_000);
       const { admin } = localSupabase();
       const issued = await issueTokenHash(admin, 'signup', `007a-${viewport.name}`);
@@ -370,6 +367,7 @@ for (const viewport of viewports) {
         const location = hop.headers()['location'];
         expect(location, 'Location が無い').toBeTruthy();
         expect(new URL(location, 'http://localhost').pathname).toBe('/login');
+        expect(new URL(location, 'http://localhost').searchParams.get('registered'), '確認だけ済んだ案内（registered=1）が付かない').toBe('1');
 
         // session の Cookie が書かれず、ブラウザ B に保存されない。
         const hopHeaders = await hop.headersArray();
@@ -395,10 +393,10 @@ for (const viewport of viewports) {
       }
     });
 
-    test('FR-AUTH-005-AC-03 signup token opened on a browser without the return-intent cookie ignores the saved return path and goes to /', async ({ page, browser, baseURL }) => {
+    test('SEC-AUTH-007-AC-02 signup token with a return path opened on a browser without the return-intent cookie ignores the saved return path and goes to /login', async ({ page, browser, baseURL }) => {
       test.setTimeout(120_000);
       const { admin } = localSupabase();
-      const issued = await issueTokenHash(admin, 'signup', `005c-${viewport.name}`);
+      const issued = await issueTokenHash(admin, 'signup', `007b-${viewport.name}`);
       // ブラウザ B は、Cookie も保存も共有しない別の context。
       const otherBrowser = await browser.newContext({ baseURL, viewport: { width: viewport.width, height: viewport.height } });
       try {
@@ -406,16 +404,64 @@ for (const viewport of viewports) {
         await submitSignupFromBrowser(page, issued.email, RETURN_PATH);
         expect(await otherBrowser.cookies(), 'ブラウザ B に Cookie が残っている').toEqual([]);
 
-        // 控えの Cookie を持たないブラウザ B で開く。戻り先は使わず、既定の / へ送る（URL の redirect_to も読まない）。
+        // 控えの Cookie を持たないブラウザ B で開く。戻り先は使わず /login へ送る（URL の redirect_to も読まない）。
         const pageB = await otherBrowser.newPage();
         const hop = await openConfirmLinkInBrowser(pageB, { tokenHash: issued.tokenHash, type: 'signup', redirectTo: RETURN_PATH });
         expect(hop.status()).toBe(303);
         const location = hop.headers()['location'];
         expect(location, 'Location が無い').toBeTruthy();
-        expect(new URL(location, 'http://localhost').pathname).toBe('/');
+        expect(new URL(location, 'http://localhost').pathname).toBe('/login');
+        expect(new URL(location, 'http://localhost').searchParams.get('registered'), '確認だけ済んだ案内（registered=1）が付かない').toBe('1');
+
+        // session の Cookie が書かれず、ブラウザ B に保存されない。
+        const hopHeaders = await hop.headersArray();
+        expect(writtenCookieValue(hopHeaders, ACCESS_COOKIE), `ブラウザ B で ${ACCESS_COOKIE} の Cookie が書かれた`).toBeNull();
+        expect(writtenCookieValue(hopHeaders, REFRESH_COOKIE), `ブラウザ B で ${REFRESH_COOKIE} の Cookie が書かれた`).toBeNull();
+        const cookiesB = await otherBrowser.cookies();
+        expect(cookiesB.find((cookie) => cookie.name === ACCESS_COOKIE && cookie.value !== ''), `ブラウザ B に ${ACCESS_COOKIE} が保存された`).toBeUndefined();
+        expect(cookiesB.find((cookie) => cookie.name === REFRESH_COOKIE && cookie.value !== ''), `ブラウザ B に ${REFRESH_COOKIE} が保存された`).toBeUndefined();
+
+        // メールは確認済みになっている（登録は終わっている）。
+        const confirmed = await admin.auth.admin.getUserById(issued.userId);
+        expect(confirmed.data.user?.email_confirmed_at, '確認のリンクを開いてもメールが確認済みにならない').toBeTruthy();
       } finally {
         await otherBrowser.close();
         await removeUsers(admin, [issued.userId]);
+      }
+    });
+
+    test('SEC-AUTH-007-AC-03 signup token of another email opened on the browser that started a signup does not log in and keeps the return-intent cookie', async ({ page }) => {
+      test.setTimeout(120_000);
+      const { admin } = localSupabase();
+      // X: ブラウザ A が登録を送るメール。Y: 攻撃者のメールの確認の印（別の利用者）。どちらも未確認の会員。
+      const x = await issueTokenHash(admin, 'signup', `007c-x-${viewport.name}`);
+      const y = await issueTokenHash(admin, 'signup', `007c-y-${viewport.name}`);
+      try {
+        await submitSignupFromBrowser(page, x.email, RETURN_PATH);
+        const intentBefore = (await page.context().cookies()).find((cookie) => cookie.name === 'sb-return-intent' && cookie.value !== '');
+        expect(intentBefore, '前提: 登録を始めたブラウザに控えの Cookie がある').toBeTruthy();
+
+        // 同じブラウザ A で、別の利用者 Y の確認のリンクを開く。
+        const hop = await openConfirmLinkInBrowser(page, { tokenHash: y.tokenHash, type: 'signup' });
+
+        // 番号は合っても別のメールの印なので、session を作らず /login へ 303。
+        expect(hop.status()).toBe(303);
+        const location = hop.headers()['location'];
+        expect(location, 'Location が無い').toBeTruthy();
+        expect(new URL(location, 'http://localhost').pathname).toBe('/login');
+        expect(new URL(location, 'http://localhost').searchParams.get('registered'), '確認だけ済んだ案内（registered=1）が付かない').toBe('1');
+        const hopHeaders = await hop.headersArray();
+        expect(writtenCookieValue(hopHeaders, ACCESS_COOKIE), `別のメールの印で ${ACCESS_COOKIE} の Cookie が書かれた`).toBeNull();
+        expect(writtenCookieValue(hopHeaders, REFRESH_COOKIE), `別のメールの印で ${REFRESH_COOKIE} の Cookie が書かれた`).toBeNull();
+        const after = await page.context().cookies();
+        expect(after.find((cookie) => cookie.name === ACCESS_COOKIE && cookie.value !== ''), `${ACCESS_COOKIE} が保存された`).toBeUndefined();
+
+        // Y のメールは確認済み（登録は終わっている）。X の登録の控えの Cookie は残る（攻撃者のリンクで壊されない）。
+        const confirmed = await admin.auth.admin.getUserById(y.userId);
+        expect(confirmed.data.user?.email_confirmed_at, 'Y の確認のリンクを開いてもメールが確認済みにならない').toBeTruthy();
+        expect(after.find((cookie) => cookie.name === 'sb-return-intent' && cookie.value === intentBefore?.value), '控えの Cookie が消えた').toBeTruthy();
+      } finally {
+        await removeUsers(admin, [x.userId, y.userId]);
       }
     });
   });

@@ -66,7 +66,9 @@ function mockCreateDbClient() {
 }
 
 jest.mock('@/lib/supabase/server', () => ({
-  createClient: jest.fn(async (...args: unknown[]) => {
+  // 公開の取り出しは Cookie を引き継がない公開用の client で行う（SEC-STOCKIST-002）。Cookie の session の client は使わない
+  createClient: jest.fn(async () => mockCreateDbClient()),
+  createPublicClient: jest.fn(async (...args: unknown[]) => {
     mockDb.createClientArgs.push(args);
     return mockCreateDbClient();
   }),
@@ -86,7 +88,7 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(''),
 }));
 
-const { createClient } = require('@/lib/supabase/server');
+const { createClient, createPublicClient } = require('@/lib/supabase/server');
 const StockistPage = require('@/app/stockist/page').default;
 const { PublicStockistGrid } = require('@/features/stockist/components/PublicStockistGrid');
 const { getPublicStockists, getHomePublicStockists } = require('@/features/stockist/services/public');
@@ -138,7 +140,7 @@ describe('ARC-STOCKIST-001 public read path', () => {
     (globalThis as { fetch?: unknown }).fetch = originalFetch;
   });
 
-  it('ARC-STOCKIST-001 /stockist はページのサーバーの中で stockists を直接読み、公開の店だけを id の昇順に件数を絞らず描く', async () => {
+  it('ARC-STOCKIST-001 /stockist はページのサーバーの中で stockists を直接読み、公開の店だけを id の昇順に上限 200 件で描く', async () => {
     const element = await StockistPage({ searchParams: Promise.resolve({}) });
     render(element);
 
@@ -147,18 +149,19 @@ describe('ARC-STOCKIST-001 public read path', () => {
       ['select', SELECT_COLUMNS],
       ['eq', 'status', 'published'],
       ['order', 'id', { ascending: true }],
+      ['limit', 200],
     ]);
-    expect(mockDb.calls.some(([method]) => method === 'limit')).toBe(false);
     expect(cardTitles()).toEqual(['Shop 1', 'Shop 2', 'Shop 3']);
     expect(screen.queryByText('Shop 4')).not.toBeInTheDocument();
   });
 
-  it('ARC-STOCKIST-001 公開の読み出しは API を呼ばず、引数なしの Cookie の session の client で読む', async () => {
+  it('ARC-STOCKIST-001 公開の読み出しは API を呼ばず、引数なしの公開用の client（Cookie を引き継がない）で読む', async () => {
     const element = await StockistPage({ searchParams: undefined });
     render(element);
 
-    expect(createClient).toHaveBeenCalledTimes(1);
+    expect(createPublicClient).toHaveBeenCalledTimes(1);
     expect(mockDb.createClientArgs).toEqual([[]]);
+    expect(createClient).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -199,14 +202,18 @@ describe('ARC-STOCKIST-001 public read path', () => {
     expect(cardTitles()).toEqual(['Shop 1', 'Shop 2', 'Shop 3', 'Shop 4', 'Shop 5', 'Shop 6']);
   });
 
-  it('ARC-STOCKIST-001 件数の指定は正の有限の数のときだけ limit にし、小数は切り捨て、0・負・NaN・無限・未指定は絞らない', async () => {
+  it('ARC-STOCKIST-001 件数の指定は正の有限の数のときだけ limit にし、小数は切り捨て、200 を超える値は 200 に切り詰め、0・負・NaN・無限・未指定でも上限の 200 を掛ける', async () => {
     await getPublicStockists({ limit: 2.9 });
     expect(mockDb.calls).toContainEqual(['limit', 2]);
+
+    mockDb.calls = [];
+    await getPublicStockists({ limit: 500 });
+    expect(mockDb.calls).toContainEqual(['limit', 200]);
 
     for (const limit of [0, -3, Number.NaN, Number.POSITIVE_INFINITY, undefined]) {
       mockDb.calls = [];
       const stockists = await getPublicStockists({ limit });
-      expect(mockDb.calls.some(([method]) => method === 'limit')).toBe(false);
+      expect(mockDb.calls).toContainEqual(['limit', 200]);
       expect(stockists).toHaveLength(3);
     }
   });

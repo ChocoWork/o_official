@@ -22,7 +22,11 @@ jest.mock('@/lib/auth/authenticate', () => ({
   checkAuthSessionLiveness: jest.fn(),
 }));
 
+// 回数の限度器は DB に触るので差し替える（呼ばれ方は窓口の単体試験で確かめる）
+jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+
 const { createClient, createServiceRoleClient } = require('@/lib/supabase/server');
+const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
 const { POST } = require('@/app/api/admin/contact/templates/route');
 
@@ -112,6 +116,7 @@ function auditRows() {
 describe('POST /api/admin/contact/templates（管理の返信テンプレートの作成）', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    enforceRateLimit.mockResolvedValue(null);
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });

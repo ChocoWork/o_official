@@ -12,7 +12,7 @@ let currentSearch = '';
 type Row = Record<string, unknown>;
 type RecordedCall = [string, ...unknown[]];
 
-// 取り出しの関数（services/public）と画像の署名は本物を通し、Supabase の client だけを表の行を絞って返す偽物にする
+// 取り出しの関数（services/public）は本物を通し、Supabase の client だけを表の行を絞って返す偽物にする
 let mockRows: Row[] = [];
 const mockQueries: RecordedCall[][] = [];
 
@@ -69,13 +69,10 @@ function mockCreateNewsClient() {
 
 jest.mock('@/lib/supabase/server', () => ({
   createPublicClient: jest.fn(async () => mockCreateNewsClient()),
-  createServiceRoleClient: jest.fn(async () => ({
-    storage: {
-      from: () => ({
-        createSignedUrl: async (path: string) => ({ data: { signedUrl: `https://signed.test/${path}` }, error: null }),
-      }),
-    },
-  })),
+  // 公開の道は画像を署名しないので service role を使わない（SEC-NEWS-005）。使えば試験が落ちる
+  createServiceRoleClient: jest.fn(async () => {
+    throw new Error('public news path must not create a service role client');
+  }),
 }));
 
 jest.mock('next/link', () => {
@@ -96,9 +93,9 @@ jest.mock('next/navigation', () => ({
 }));
 
 const articles: PublicNewsArticle[] = [
-  { id: '3', title: 'Store Opening', published_date: '2026-09-03', category: 'STORE', image_url: 'a', content: 'c3' },
-  { id: '2', title: 'Event Night', published_date: '2026-09-02', category: 'EVENT', image_url: 'b', content: 'c2' },
-  { id: '1', title: 'Collection Drop', published_date: '2026-09-01', category: 'COLLECTION', image_url: 'c', content: 'c1' },
+  { id: '3', title: 'Store Opening', published_date: '2026-09-03', category: 'STORE', content: 'c3' },
+  { id: '2', title: 'Event Night', published_date: '2026-09-02', category: 'EVENT', content: 'c2' },
+  { id: '1', title: 'Collection Drop', published_date: '2026-09-01', category: 'COLLECTION', content: 'c1' },
 ];
 
 // 表の行。DB の id は bigint なので数で置き、非公開の行を1つ混ぜる
@@ -134,7 +131,7 @@ function categoryFilters(calls: RecordedCall[] | undefined): unknown[] {
 }
 
 function listQuery(): RecordedCall[] | undefined {
-  const lists = queriesSelecting('id, title, published_date, category, image_url, content');
+  const lists = queriesSelecting('id, title, published_date, category, content');
   return lists[lists.length - 1];
 }
 

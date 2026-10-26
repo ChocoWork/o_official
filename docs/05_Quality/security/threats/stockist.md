@@ -1,6 +1,6 @@
 # STOCKIST の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-24 | 対象: 公開の取扱店（`/stockist`・ホームの取扱店の節）・管理の取扱店（`/admin/stockist/**`・`/api/admin/stockists/**`）・`stockists` の DB | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり。取扱店のファイルは含まない。本文の `ファイル:行` の行番号は、この基準コミットの時点のコードを指す）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-26 | 対象: 公開の取扱店（`/stockist`・ホームの取扱店の節）・管理の取扱店（`/admin/stockist/**`・`/api/admin/stockists/**`）・`stockists` の DB | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり。取扱店のファイルは含まない。本文の `ファイル:行` の行番号は、この基準コミットの時点のコードを指す）
 
 ---
 
@@ -12,7 +12,7 @@ STOCKIST（取扱店）の領域で考える脅威を、1つずつ `THR-STOCKIST
 | --- | --- |
 | 項目の数 | 21（THR-STOCKIST-001〜021） |
 | 守りがある物 | 非公開の店舗を外へ出さない（001）、なりすましの送信（004）、管理の窓口の権限と aal2（006）、回数の制限（007）、公開の画面への差し込み（016・017）。過去に直った指摘（CSRF の無さ・回数の制限の無さ・監査の無さ・service role の素通り）も、守りがある脅威として残した |
-| 守りが欠ける・弱い物 | DB が aal2 と有効な session を見ない（003）、表の権限が広い（008）、管理の応答の過剰返却とキャッシュ（009・010）、入力の形（011）、監査の記録の正しさと網羅（012・013）、誤りの中身を返す（014）、公開の取り出しが閲覧者の session を使う（002）、認可で断った要求を回数に数えない（020）、断った要求を監査しない（021）など |
+| 守りが欠ける・弱い物 | DB が aal2 と有効な session を見ない（003）、表の権限が広い（008）、管理の応答の過剰返却とキャッシュ（009・010）、入力の形（011）、監査の記録の正しさと網羅（012・013）、誤りの中身を返す（014）、公開の取り出しが閲覧者の session を使う（002）、認可で断った要求を回数に数えない（020）、断った要求を監査しない（021）など。2026-10-26 に、002・009・011・013・014・018 の窓口の分を直した（各項目の「起こり方」の末尾に書いた。DB の道・共有の部品の分は残る） |
 | 対策の書き先 | 対策のセキュリティ要件 `SEC-STOCKIST-NNN` は要件の文書（`docs/02_Requirements/areas/stockist.md`）に書く。下の「対策」の欄は読み手のための写し。番号は脅威と同じ番号にそろえた |
 | 状態の付け方 | 全部「推定」。どれもコードと移行を読んで起こし、ユーザーの確認を受けていない（スキルの 7 の決まり）。ユーザーが確かめた物から「現行」にする。どれも実行しての確かめはしていない |
 
@@ -74,7 +74,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 非公開の店舗と、公開の画面の権限の線引き |
 | 脅威 | `admin.stockists.read` を持つ人がログインしたまま公開の画面を開いた時に、公開の取り出しが管理の権限で DB を読む |
-| 起こり方 | 公開の取り出しが、要求を渡さない共有の client（`createClient()`）を使う（`src/features/stockist/services/public.ts:1,21`）。この形ではアプリのログインの Cookie（`sb-access-token`）は読まない（`src/lib/auth/request-token.ts:49-58,107-118`）。session を引き継ぐのは、Google OAuth のログインが付ける `@supabase/ssr` の Cookie（`sb-<ref>-auth-token`）がある時だけで、その時は Cookie を読む client がその session で動く（`src/lib/supabase/server.ts:54-110`、`src/app/api/auth/logout/route.ts:156-160`）。メールとパスワードでログインした管理者では anon で動く（推定）。authenticated の RLS は管理の権限を持つ人に非公開の行も返す（`remote_schema.sql:3781-3784`）ので、Google OAuth でログインした管理者の時は、守りがアプリの絞り（`public.ts:26`）の1段だけになる。閲覧者の session に頼らない client（`src/lib/supabase/server.ts:116-130` の `createPublicClient`）は既にある |
+| 起こり方 | 公開の取り出しが、要求を渡さない共有の client（`createClient()`）を使う（`src/features/stockist/services/public.ts:1,21`）。この形ではアプリのログインの Cookie（`sb-access-token`）は読まない（`src/lib/auth/request-token.ts:49-58,107-118`）。session を引き継ぐのは、Google OAuth のログインが付ける `@supabase/ssr` の Cookie（`sb-<ref>-auth-token`）がある時だけで、その時は Cookie を読む client がその session で動く（`src/lib/supabase/server.ts:54-110`、`src/app/api/auth/logout/route.ts:156-160`）。メールとパスワードでログインした管理者では anon で動く（推定）。authenticated の RLS は管理の権限を持つ人に非公開の行も返す（`remote_schema.sql:3781-3784`）ので、Google OAuth でログインした管理者の時は、守りがアプリの絞り（`public.ts:26`）の1段だけになる。閲覧者の session に頼らない client（`src/lib/supabase/server.ts:116-130` の `createPublicClient`）は既にある。2026-10-26 に、公開の取り出し（`getPublicStockists`）を `createPublicClient()`（Cookie を引き継がない anon の client）に替えた。管理者がログインしたままでも、公開の画面は anon の権限で動く（SEC-STOCKIST-002） |
 | 影響 | 今は絞りで出ない。絞りを外す・書き換える変更が入ると、ログイン中の管理者の画面にだけ非公開の店舗が出て、気づきにくい。公開の頁が閲覧者ごとに違う結果になりうる |
 | 対策 | SEC-STOCKIST-002 |
 | ASVS | V4.1.3（当てはめは推定） |
@@ -172,7 +172,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 管理だけで使う列（今は `type`・作成日時・更新日時。将来足す内部の列） |
 | 脅威 | 管理の応答を見た者・応答を写した先が、画面で使わない列まで手に入れる |
-| 起こり方 | 管理の一覧と1件の取得が `select('*')` で全列を返す（`src/app/api/admin/stockists/route.ts:41`、`src/app/api/admin/stockists/[id]/route.ts:60`） |
+| 起こり方 | 管理の一覧と1件の取得が `select('*')` で全列を返す（`src/app/api/admin/stockists/route.ts:41`、`src/app/api/admin/stockists/[id]/route.ts:60`）。2026-10-26 に、一覧と1件の `select` を `ADMIN_STOCKIST_COLUMNS`（`id, name, address, phone, time, holiday, status, updated_at` の 8 列）に絞った。`type`・`created_at` は返さない（SEC-STOCKIST-009） |
 | 影響 | 今は即座の漏れは無い。内部のメモや運用の印の列を足すと、黙って外へ出る |
 | 対策 | SEC-STOCKIST-009 |
 | ASVS | ASVS 未対応付け |
@@ -200,7 +200,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 取扱店のデータの正しさと、公開の画面の見え方 |
 | 脅威 | 権限を持つ人（または THR-STOCKIST-003 の道）が、制御文字・見えない文字・電話でない字を店舗の値に入れる |
-| 起こり方 | 作成と書き換えの確かめは、必須・長さ・公開状態の2値だけ（`route.ts:16-23`、`[id]/route.ts:16-23`）。電話・営業時間・定休日に許可の文字の決まりが無い。DB にも長さや形の制約が無い（`remote_schema.sql:888-902`） |
+| 起こり方 | 作成と書き換えの確かめは、必須・長さ・公開状態の2値だけ（`route.ts:16-23`、`[id]/route.ts:16-23`）。電話・営業時間・定休日に許可の文字の決まりが無い。DB にも長さや形の制約が無い（`remote_schema.sql:888-902`）。2026-10-26 に、`src/features/stockist/schemas.ts` の `stockistWriteSchema` で形を許可制にした。店名・住所・営業時間・定休日は制御文字・書式文字・行区切り・段落区切りを含まない 1 行、電話は数字・`+`・`-`・括弧・空白（半角と全角）だけを許す（SEC-STOCKIST-011）。DB の制約は無いままなので、DB を直接書く道は閉じていない（SEC-STOCKIST-003 の範囲） |
 | 影響 | 公開の画面の表示が崩れる。電話のリンクは数字と `+` 以外を消して作る（`PublicStockistGrid.tsx:84`）ので、表示の番号とかける番号が食い違う。監査の記録が汚れる（THR-STOCKIST-012） |
 | 対策 | SEC-STOCKIST-011 |
 | ASVS | V5.1.3 |
@@ -228,7 +228,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 管理の操作の監査の網羅と、取扱店のデータを戻せる状態 |
 | 脅威 | 誤操作・不正な操作の後に、何が変わったかを追えない・戻せない |
-| 起こり方 | 書き換え・公開の切り替え・削除は、対象の行が0件でも DB は誤りを返さず、200 と「成功」の監査になる（`[id]/route.ts:128-138,156-168,230-233,251-263,301-304,322-334`、推定）。削除は物理削除で、監査には id だけを残す（`:329`）。削除の確かめは画面の `confirm` だけ（`src/components/StockistSection.tsx:68`）。認可が確かめる token と DB へ送る token が同じとは限らない。認可は期限の猶予を見ずに token を確かめる（`src/lib/auth/authenticate.ts:60-63,87-110`、`src/lib/auth/admin-rbac.ts:185`）が、DB の client は期限まで5秒以下の token を送らず、Cookie を読む client に落ちる（`src/lib/auth/request-token.ts:69-70,107-118`、`src/lib/supabase/server.ts:22,34,54`）。その client は Google OAuth の Cookie（`sb-<ref>-auth-token`）があればその別の session で、無ければ anon で動く。anon なら PUT・PATCH・DELETE は RLS で0件になり、200 と成功の監査になる（推定）。監査の書き込みの失敗は警告だけで握りつぶす（`src/lib/audit.ts:67-70,87-89`、共有部品）。DB の直接の道（THR-STOCKIST-003）は監査に何も残さない |
+| 起こり方 | 書き換え・公開の切り替え・削除は、対象の行が0件でも DB は誤りを返さず、200 と「成功」の監査になる（`[id]/route.ts:128-138,156-168,230-233,251-263,301-304,322-334`、推定）。削除は物理削除で、監査には id だけを残す（`:329`）。削除の確かめは画面の `confirm` だけ（`src/components/StockistSection.tsx:68`）。認可が確かめる token と DB へ送る token が同じとは限らない。認可は期限の猶予を見ずに token を確かめる（`src/lib/auth/authenticate.ts:60-63,87-110`、`src/lib/auth/admin-rbac.ts:185`）が、DB の client は期限まで5秒以下の token を送らず、Cookie を読む client に落ちる（`src/lib/auth/request-token.ts:69-70,107-118`、`src/lib/supabase/server.ts:22,34,54`）。その client は Google OAuth の Cookie（`sb-<ref>-auth-token`）があればその別の session で、無ければ anon で動く。anon なら PUT・PATCH・DELETE は RLS で0件になり、200 と成功の監査になる（推定）。監査の書き込みの失敗は警告だけで握りつぶす（`src/lib/audit.ts:67-70,87-89`、共有部品）。DB の直接の道（THR-STOCKIST-003）は監査に何も残さない。2026-10-26 に、PUT・PATCH・DELETE が変えた行を `.select()` で受け取り、0 行は 404 と結果 `failure` の監査にした。削除の成功の監査には `metadata.deleted = { id, name, address, status }` を残す。0 行は「無い」と「RLS が隠した」の両方なので、aal2 でない session の書き込みも 404 になる。token の期限の落ち込み（DB の client が anon か別の session に落ちる件）は未確認のまま（SEC-STOCKIST-013） |
 | 影響 | 消した店舗の名前・住所を監査から戻せない。無い店舗への操作が成功に見える。監査の抜けに気づけない |
 | 対策 | SEC-STOCKIST-013 |
 | ASVS | ASVS 未対応付け |
@@ -242,7 +242,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 入力の制約の中身と、DB の内部の様子 |
 | 脅威 | 管理の窓口を呼ぶ者が、誤りの応答から項目ごとの制約を知る。サーバーの記録から DB の誤りの中身が漏れる |
-| 起こり方 | 検証の誤りで `parsed.error.flatten()` をそのまま返す（`route.ts:91-97`、`[id]/route.ts:117-123,219-225`）。本文が JSON でない時は 400 でなく例外の 500 になる（`route.ts:77,147-150`、`[id]/route.ts:102,171-173,204,266-268`）。Supabase の誤りや例外を丸ごと `console.error` に渡す（`route.ts:45,51,118,148`、`[id]/route.ts:70,141,172,236,267,307,338`） |
+| 起こり方 | 検証の誤りで `parsed.error.flatten()` をそのまま返す（`route.ts:91-97`、`[id]/route.ts:117-123,219-225`）。本文が JSON でない時は 400 でなく例外の 500 になる（`route.ts:77,147-150`、`[id]/route.ts:102,171-173,204,266-268`）。Supabase の誤りや例外を丸ごと `console.error` に渡す（`route.ts:45,51,118,148`、`[id]/route.ts:70,141,172,236,267,307,338`）。2026-10-26 に、検証の誤りは `{ error: 'Invalid request', fields: [項目の名前] }` の固定の本文にし（`toInvalidStockistResponse`）、壊れた JSON は 400 `{ error: 'Invalid request' }` と結果 `failure` の監査にした。DB の誤りの記録は `{ code }` だけにした。窓口の外側の `catch` の記録は例外のまま残る（SEC-STOCKIST-014） |
 | 影響 | 窓口を探る手がかりが増える。記録を見られる人に DB の内部の名前や値が出る |
 | 対策 | SEC-STOCKIST-014 |
 | ASVS | V7.4.1（当てはめは推定） |
@@ -298,7 +298,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 公開の取扱店の画面と DB の使える状態 |
 | 脅威 | 誰でも、`/stockist` の画面と anon の PostgREST の直接の読み出しを大量に繰り返す |
-| 起こり方 | `/stockist` は要求ごとに動的に描き（`src/app/stockist/page.tsx:27`）、公開の取扱店を上限なしで全部取る（`src/features/stockist/services/public.ts:29-31`、呼び手は上限を渡さない `page.tsx:29`）。画面にも PostgREST の直接の道にも回数の制限が無い。PostgREST の行の上限は手元で 1000（`supabase/config.toml:18`）、本番は確かめていない |
+| 起こり方 | `/stockist` は要求ごとに動的に描き（`src/app/stockist/page.tsx:27`）、公開の取扱店を上限なしで全部取る（`src/features/stockist/services/public.ts:29-31`、呼び手は上限を渡さない `page.tsx:29`）。画面にも PostgREST の直接の道にも回数の制限が無い。PostgREST の行の上限は手元で 1000（`supabase/config.toml:18`）、本番は確かめていない。2026-10-26 に、`getPublicStockists` が件数の上限 200（`PUBLIC_STOCKIST_FETCH_LIMIT`）を必ず掛けるようにした。`max_rows` を本番で設定するか・画面の回数の制限は、本番の構成で決める事柄のまま（SEC-STOCKIST-018） |
 | 影響 | DB の負荷が上がり、ほかの画面が遅くなる。店舗は公開の情報なので、写されることは害に数えない |
 | 対策 | SEC-STOCKIST-018 |
 | ASVS | V11.1.4（当てはめは推定） |

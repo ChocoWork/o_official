@@ -95,9 +95,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '認証コードが無効、または期限切れです。' }, { status: 401 });
     }
 
+    // Supabase の利用者の記録（app_metadata・identities・phone など）をそのまま返さない。
+    // 画面が使うのは id・email・role だけ。role はサーバーが app_metadata から読み、知らない値は user にする。
+    const rawRole = data.user.app_metadata?.role;
+    const role = rawRole === 'admin' || rawRole === 'supporter' ? rawRole : 'user';
     const res = NextResponse.json(
       {
-        user: data.user,
+        user: { id: data.user.id, email: data.user.email ?? pending.email, role },
         message: '認証に成功しました。',
       },
       { status: 200 },

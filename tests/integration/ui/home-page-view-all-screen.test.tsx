@@ -100,7 +100,6 @@ function makeNews(count: number) {
     title: `Article ${index + 1}`,
     published_date: `2026-09-${String(index + 1).padStart(2, '0')}`,
     category: 'EVENT',
-    image_url: `news/${index + 1}.jpg`,
     content: `summary ${index + 1}`,
   }));
 }
@@ -141,10 +140,10 @@ describe('ホームの ITEM・LOOK・NEWS の件数と VIEW ALL', () => {
     setPublished({ items: 10, looks: 8, news: 6, itemTotal: 30, lookTotal: 30, newsTotal: 30 });
   });
 
-  it('SCR-HOME-004 ITEM は10件、LOOK は8件、NEWS は6件を取り、総数は別の数え方で取る', async () => {
+  it('SCR-HOME-004 ITEM は8件、LOOK は8件、NEWS は6件を取り、総数は別の数え方で取る', async () => {
     await renderHome();
 
-    expect(mockedGetItems).toHaveBeenCalledWith(10);
+    expect(mockedGetItems).toHaveBeenCalledWith(8);
     expect(mockedGetLooks).toHaveBeenCalledWith(8);
     expect(mockedGetNews).toHaveBeenCalledWith({ limit: 6 });
     expect(mockedGetItemsCount).toHaveBeenCalledTimes(1);

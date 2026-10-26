@@ -41,6 +41,7 @@ const {
   toCsrfDenyResponse: mockToDeny,
 } = require('@/features/stockist/services/admin-security');
 
+const { ADMIN_STOCKIST_COLUMNS } = require('@/features/stockist/schemas');
 const { GET, POST } = require('@/app/api/admin/stockists/route');
 
 const validBody = {
@@ -135,7 +136,7 @@ describe('GET /api/admin/stockists', () => {
     expect(mockCreateClient).not.toHaveBeenCalled();
   });
 
-  it('DD-STOCKIST-034 GET は全部の列を id の昇順で読み 200 で data を返す', async () => {
+  it('DD-STOCKIST-034 GET は管理用の 8 列を id の昇順で読み 200 で data を返す', async () => {
     const rows = [
       { id: 1, name: 'A' },
       { id: 2, name: 'B' },
@@ -147,19 +148,25 @@ describe('GET /api/admin/stockists', () => {
 
     expect(mockCreateClient).toHaveBeenCalledWith(request);
     expect(from).toHaveBeenCalledWith('stockists');
-    expect(select).toHaveBeenCalledWith('*');
+    expect(select).toHaveBeenCalledWith(ADMIN_STOCKIST_COLUMNS);
+    expect(ADMIN_STOCKIST_COLUMNS).toBe(
+      'id, name, address, phone, time, holiday, status, updated_at',
+    );
+    expect(select.mock.calls[0][0]).not.toContain('created_at');
+    expect(select.mock.calls[0][0]).not.toContain('*');
     expect(order).toHaveBeenCalledWith('id', { ascending: true });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ data: rows });
   });
 
-  it('DD-STOCKIST-034 GET は表の読み出しに失敗した時に 500 Failed to fetch stockists を返す', async () => {
-    setupSelect({ data: null, error: { message: 'db down' } });
+  it('DD-STOCKIST-034 GET は表の読み出しに失敗した時に 500 Failed to fetch stockists を返し、記録には符号だけを残す', async () => {
+    setupSelect({ data: null, error: { message: 'db down secret', code: '57P01' } });
 
     const response = await GET(getRequest());
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'Failed to fetch stockists' });
+    expect(console.error).toHaveBeenCalledWith('Failed to fetch stockists:', { code: '57P01' });
   });
 
   it('DD-STOCKIST-034 GET は例外の時に 500 Internal server error を返す', async () => {
@@ -222,7 +229,7 @@ describe('POST /api/admin/stockists', () => {
     expect(mockLogAudit).not.toHaveBeenCalled();
   });
 
-  it('DD-STOCKIST-034 POST は本文が JSON でない時に 500 Internal server error を返し、監査を残さない', async () => {
+  it('DD-STOCKIST-034 POST は本文が JSON でない時に 400 Invalid request を返し、表に触れず監査 failure を残す', async () => {
     const request = new Request('http://localhost/api/admin/stockists', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -231,9 +238,17 @@ describe('POST /api/admin/stockists', () => {
 
     const response = await POST(request);
 
-    expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({ error: 'Internal server error' });
-    expect(mockLogAudit).not.toHaveBeenCalled();
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Invalid request' });
+    expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.stockists.create',
+        outcome: 'failure',
+        detail: 'Invalid JSON',
+      }),
+    );
   });
 
   it.each([
@@ -244,15 +259,21 @@ describe('POST /api/admin/stockists', () => {
     ['時間が121字', { time: 't'.repeat(121) }, 'time'],
     ['定休日が121字', { holiday: 'h'.repeat(121) }, 'holiday'],
     ['状態が draft', { status: 'draft' }, 'status'],
+    ['店舗名に改行', { name: '本店\nInjected' }, 'name'],
+    ['住所に制御文字', { address: 'Tokyo\u0007' }, 'address'],
+    ['時間に書式文字（ゼロ幅空白）', { time: '11:00\u200b-20:00' }, 'time'],
+    ['定休日に行区切り', { holiday: 'Wed\u2028Thu' }, 'holiday'],
+    ['電話に漢字', { phone: '03-1234-5678（代表）' }, 'phone'],
+    ['電話に改行', { phone: '03-1234-5678\n03-0000-0000' }, 'phone'],
   ])(
-    'DD-STOCKIST-034 POST は値の形が合わない（%s）時に 400 と details を返し、監査 failure を残す',
+    'DD-STOCKIST-034 POST は値の形が合わない（%s）時に 400 と項目の名前だけの固定の本文を返し、監査 failure を残す',
     async (_label, patch, field) => {
       const response = await POST(jsonRequest({ ...validBody, ...patch }));
       const body = await response.json();
 
       expect(response.status).toBe(400);
-      expect(body.error).toBe('Invalid request');
-      expect(Object.keys(body.details.fieldErrors)).toEqual([field]);
+      expect(body).toEqual({ error: 'Invalid request', fields: [field] });
+      expect(JSON.stringify(body)).not.toMatch(/details|fieldErrors|formErrors/);
       expect(mockCreateClient).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledTimes(1);
       const audit = mockLogAudit.mock.calls[0][0];
@@ -276,7 +297,7 @@ describe('POST /api/admin/stockists', () => {
     const response = await POST(jsonRequest(rest));
 
     expect(response.status).toBe(400);
-    expect((await response.json()).details.fieldErrors).toHaveProperty('holiday');
+    expect(await response.json()).toEqual({ error: 'Invalid request', fields: ['holiday'] });
   });
 
   it('DD-STOCKIST-034 POST の insert の本文は前後の空白を除いた6つの値で type を含まない', async () => {
@@ -308,8 +329,8 @@ describe('POST /api/admin/stockists', () => {
     expect(select).toHaveBeenCalledWith('id');
   });
 
-  it('DD-STOCKIST-034 POST は insert に失敗した時に監査 error と 500 Failed to save stockist を返す', async () => {
-    setupInsert({ data: null, error: { message: 'null value in column type' } });
+  it('DD-STOCKIST-034 POST は insert に失敗した時に監査 error と 500 Failed to save stockist を返し、記録には符号だけを残す', async () => {
+    setupInsert({ data: null, error: { message: 'null value in column type', code: '23502' } });
 
     const response = await POST(jsonRequest(validBody));
 
@@ -323,6 +344,7 @@ describe('POST /api/admin/stockists', () => {
         detail: 'DB insert failed',
       }),
     );
+    expect(console.error).toHaveBeenCalledWith('Failed to create stockist:', { code: '23502' });
     expect(mockApplyCookie).not.toHaveBeenCalled();
   });
 

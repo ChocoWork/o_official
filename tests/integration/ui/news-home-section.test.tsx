@@ -23,7 +23,6 @@ function makeArticles(count: number): PublicNewsArticle[] {
     title: `Article ${index + 1}`,
     published_date: `2026-09-${String(index + 1).padStart(2, '0')}`,
     category: index % 2 === 0 ? 'EVENT' : 'STORE',
-    image_url: `news/${index + 1}.jpg`,
     content: `**Bold** summary [link](https://example.com) ${index + 1}`,
   }));
 }

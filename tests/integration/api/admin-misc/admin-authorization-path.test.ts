@@ -20,15 +20,27 @@ jest.mock('@/lib/auth/admin-rbac', () => {
   const actual = jest.requireActual('@/lib/auth/admin-rbac');
   return { ...actual, authorizeAdminPermission: jest.fn() };
 });
+// 回数の制限と、認可失敗の監査の上限の数え方は DB に触るので差し替える（呼ばれ方は窓口ごとの単体・結合試験で確かめる）。
+jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+jest.mock('@/features/auth/ratelimit', () => ({ incrementCounter: jest.fn() }));
+// 漏洩したパスワードの照合は外部の API を呼ぶので差し替える（利用者の作成だけが使う）
+jest.mock('@/lib/pwned-password', () => ({
+  checkPwnedPassword: jest.fn(),
+  PWNED_PASSWORD_MESSAGE: 'pwned-message',
+}));
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
+const { checkPwnedPassword } = require('@/lib/pwned-password');
 const rbac = require('@/lib/auth/admin-rbac');
 const authorize: jest.Mock = rbac.authorizeAdminPermission;
 const actualRbac = jest.requireActual('@/lib/auth/admin-rbac');
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const TARGET_ID = '22222222-2222-4222-8222-222222222222';
+// 問い合わせとテンプレートの id は UUID の形でないと 404 で止まり、service role まで進まないので UUID にする
+const CONTACT_ID = '33333333-3333-4333-8333-333333333333';
+const TEMPLATE_ID = '44444444-4444-4444-8444-444444444444';
 const JSON_HEADERS = { 'content-type': 'application/json' };
 
 type RouteCase = {
@@ -48,7 +60,7 @@ const ROUTES: RouteCase[] = [
     method: 'POST',
     url: 'http://localhost/api/admin/create-user',
     permission: 'admin.users.manage',
-    body: { email: 'new@example.com', password: 'password123' },
+    body: { email: 'new@example.com', password: 'password-1234-ok' },
   },
   {
     label: '強制失効',
@@ -84,27 +96,27 @@ const ROUTES: RouteCase[] = [
     label: '問い合わせ1件の取得',
     load: () => require('@/app/api/admin/contact/[id]/route'),
     method: 'GET',
-    url: 'http://localhost/api/admin/contact/c1',
+    url: `http://localhost/api/admin/contact/${CONTACT_ID}`,
     permission: 'admin.contact.read',
-    params: { id: 'c1' },
+    params: { id: CONTACT_ID },
   },
   {
     label: '問い合わせの状態の変更',
     load: () => require('@/app/api/admin/contact/[id]/route'),
     method: 'PATCH',
-    url: 'http://localhost/api/admin/contact/c1',
+    url: `http://localhost/api/admin/contact/${CONTACT_ID}`,
     permission: 'admin.contact.manage',
     body: { status: 'closed' },
-    params: { id: 'c1' },
+    params: { id: CONTACT_ID },
   },
   {
     label: '問い合わせへの返信',
     load: () => require('@/app/api/admin/contact/[id]/reply/route'),
     method: 'POST',
-    url: 'http://localhost/api/admin/contact/c1/reply',
+    url: `http://localhost/api/admin/contact/${CONTACT_ID}/reply`,
     permission: 'admin.contact.manage',
     body: { body: 'ご連絡ありがとうございます' },
-    params: { id: 'c1' },
+    params: { id: CONTACT_ID },
   },
   {
     label: 'テンプレートの一覧',
@@ -125,18 +137,18 @@ const ROUTES: RouteCase[] = [
     label: 'テンプレートの更新',
     load: () => require('@/app/api/admin/contact/templates/[id]/route'),
     method: 'PUT',
-    url: 'http://localhost/api/admin/contact/templates/t1',
+    url: `http://localhost/api/admin/contact/templates/${TEMPLATE_ID}`,
     permission: 'admin.contact.manage',
     body: { title: '配送の遅れ', body: 'お待たせしています' },
-    params: { id: 't1' },
+    params: { id: TEMPLATE_ID },
   },
   {
     label: 'テンプレートの削除',
     load: () => require('@/app/api/admin/contact/templates/[id]/route'),
     method: 'DELETE',
-    url: 'http://localhost/api/admin/contact/templates/t1',
+    url: `http://localhost/api/admin/contact/templates/${TEMPLATE_ID}`,
     permission: 'admin.contact.manage',
-    params: { id: 't1' },
+    params: { id: TEMPLATE_ID },
   },
   {
     label: '色見本の一覧',
@@ -157,9 +169,9 @@ const ROUTES: RouteCase[] = [
     label: '色見本の削除',
     load: () => require('@/app/api/admin/item-color-presets/[id]/route'),
     method: 'DELETE',
-    url: 'http://localhost/api/admin/item-color-presets/p1',
+    url: 'http://localhost/api/admin/item-color-presets/1',
     permission: 'admin.items.manage',
-    params: { id: 'p1' },
+    params: { id: '1' },
   },
 ];
 
@@ -239,6 +251,7 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    checkPwnedPassword.mockResolvedValue({ status: 'ok' });
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
@@ -309,12 +322,28 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
       expect(createServiceRoleClient).not.toHaveBeenCalled();
     });
 
+    it('ARC-ADMIN-001 強制失効は本文の JSON が壊れていると 400 Invalid request になる', async () => {
+      authorize.mockResolvedValue({
+        ok: true,
+        userId: USER_ID,
+        role: 'admin',
+        actorEmail: 'owner@example.com',
+      });
+      createServiceRoleClient.mockResolvedValue(stubServiceClient());
+      const route = ROUTES[1];
+      const request = new Request(route.url, { method: route.method, headers: JSON_HEADERS, body: '{broken' });
+
+      const res = await route.load()[route.method](request);
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Invalid request' });
+    });
+
     it.each([
       ['利用者の作成', ROUTES[0]],
-      ['強制失効', ROUTES[1]],
       ['色見本の保存', ROUTES[13]],
     ] as const)(
-      'ARC-ADMIN-001 %s は本文の JSON が壊れていると 500 Internal server error になる',
+      'ARC-ADMIN-001 %s は本文の JSON が壊れていると 500 でなく 400 Invalid request になる',
       async (_label, route) => {
         authorize.mockResolvedValue({
           ok: true,
@@ -326,8 +355,8 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
 
         const res = await route.load()[route.method](request);
 
-        expect(res.status).toBe(500);
-        expect(await res.json()).toEqual({ error: 'Internal server error' });
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual(expect.objectContaining({ error: 'Invalid request' }));
       },
     );
   });

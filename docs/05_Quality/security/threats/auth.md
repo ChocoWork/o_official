@@ -1,6 +1,6 @@
 # AUTH の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-25 | 対象: ログイン・メール OTP・会員登録・パスワード再設定・Google のログイン・TOTP・ログアウト・トークンの更新・ヘッダー、その裏の Supabase Auth と `sessions`・`password_reset_tokens`・`profiles` の DB | 基準コミット: `973dc336`（読んだのは作業ツリー。本文の `ファイル:行` の行番号は、この基準コミットのコードを指す）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-26 | 対象: ログイン・メール OTP・会員登録・パスワード再設定・Google のログイン・TOTP・ログアウト・トークンの更新・ヘッダー、その裏の Supabase Auth と `sessions`・`password_reset_tokens`・`profiles` の DB | 基準コミット: `973dc336`（読んだのは作業ツリー。本文の `ファイル:行` の行番号は、この基準コミットのコードを指す）
 
 ---
 
@@ -127,7 +127,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 2段階のログイン |
 | 脅威 | 被害者のメールを読める攻撃者が、マジックリンク・メール変更・再設定の型のリンクを `/api/auth/confirm` に通し、パスワードも OTP も無しにアプリの session の Cookie を得る |
-| 起こり方 | `/api/auth/confirm` は type に `signup`・`email`・`magiclink`・`recovery` の4つを受け、Supabase で印を確かめたら session を保存する（`src/app/api/auth/confirm/route.ts:8-9,47-48,58-81`）。印は THR-AUTH-005 の直接の呼び出し（`/auth/v1/otp`・`/auth/v1/recover`）でも作れる |
+| 起こり方 | `/api/auth/confirm` は type に `signup`・`email`・`magiclink`・`recovery` の4つを受け、Supabase で印を確かめたら session を保存する（`src/app/api/auth/confirm/route.ts:8-9,47-48,58-81`）。印は THR-AUTH-005 の直接の呼び出し（`/auth/v1/otp`・`/auth/v1/recover`）でも作れる。2026-10-26 に、`signup` 以外（`email`・`magiclink`・`recovery`・不明な値）の type では `verifyOtp` を呼ばず（印を消費せず）`/login` へ 303 で送るようにした。この行の `confirm/route.ts` の行番号は基準コミット時点の記述 |
 | 影響 | メールが読めるだけでログインできる。メール OTP を2段目にした意味が薄れる。ログインのメールの型（`supabase/templates/magic_link.html`）は `{{ .Token }}` だけを使うが、Supabase は型の文を変えても token_hash の道を閉じない（推定） |
 | 対策 | SEC-AUTH-006 |
 | ASVS | ASVS 未対応付け |
@@ -141,8 +141,8 @@ flowchart LR
 | --- | --- |
 | 守るもの | 利用者がどのアカウントで操作しているか。入力した住所・カード以外の個人情報・お気に入り |
 | 脅威 | 攻撃者が自分のアカウントの確認のリンクを被害者に開かせ、被害者の端末を攻撃者のアカウントでログインさせる。被害者は気づかずに住所を保存し、注文する |
-| 起こり方 | `/api/auth/confirm` は `GET` で、印が正しければ開いた端末に session の Cookie を書く（`confirm/route.ts:27,56-81`）。開いた人と印を作った人を結ぶ物が無い。`GET` なので proxy の Origin の確かめの外（`src/proxy.ts:147-158`）。Google の戻りは PKCE の検証の Cookie が端末に結ぶので同じ攻撃は通らない（`src/app/api/auth/oauth/start/route.ts:85-98`、`oauth/callback/route.ts:91-106`） |
-| 影響 | 被害者の住所・電話・注文が攻撃者のアカウントに入り、攻撃者が後で読む。ゲストのカートとお気に入りも攻撃者のアカウントへ合わさる（`confirm/route.ts:78-81`） |
+| 起こり方 | `/api/auth/confirm` は `GET` で、印が正しければ開いた端末に session の Cookie を書く（`confirm/route.ts:27,56-81`）。開いた人と印を作った人を結ぶ物が無い。`GET` なので proxy の Origin の確かめの外（`src/proxy.ts:147-158`）。Google の戻りは PKCE の検証の Cookie が端末に結ぶので同じ攻撃は通らない（`src/app/api/auth/oauth/start/route.ts:85-98`、`oauth/callback/route.ts:91-106`）。この行の行番号は基準コミット時点の記述。2026-10-26 に、登録の送信で必ず作る控えを「番号 + 登録したメール」のハッシュで結び、`/api/auth/confirm` が session を作る前に、確認した利用者のメールで同じ式を作って控えを使い切るようにした（ADR-0413）。当たらない時は session を作らず、GoTrue 側の session を `signOut({ scope: 'local' })` で失効させ、`/login?registered=1` へ送る。番号だけを結ぶ形では、被害者が自分の登録の途中に攻撃者のメールの確認リンクを同じブラウザで開くと、被害者の有効な Cookie が通ってしまう。メールを式に混ぜたので、別のメールの印では必ず外れる |
+| 影響 | 被害者の住所・電話・注文が攻撃者のアカウントに入り、攻撃者が後で読む。ゲストのカートとお気に入りも攻撃者のアカウントへ合わさる（`confirm/route.ts:78-81`）。残る穴: 控えの Cookie の名前に `__Host-` の頭が無いので、同じ親ドメインの別のサブドメインを攻撃者が持つと、攻撃者のメールに結んだ控えを被害者のブラウザへ投げ込めて、攻撃者のメールの印で session を作らせられる（cookie tossing。波 1-A の設計のまま変えていない）。被害者のブラウザに攻撃者のメールで登録を送らせる道は、`proxy.ts` の Origin の確かめと Turnstile に頼っている |
 | 対策 | SEC-AUTH-007 |
 | ASVS | V4.2.2（当てはめは推定） |
 | 根拠 | どのレビューにも無く、2026-10-24 の読み直しで気づいた。実際に開いての確かめはしていない |
@@ -169,7 +169,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 管理者・サポーターの3段目（TOTP、aal2） |
 | 脅威 | パスワードとメールを手に入れた攻撃者が、6 桁の TOTP を当てるまで試す |
-| 起こり方 | `/api/auth/mfa/verify` へコードを送り続ける。制限は IP 単位の 20 回／600 秒だけで、アカウント単位の制限が無い（`src/app/api/auth/mfa/verify/route.ts:21-29`）。失敗は `console.error` だけで監査に残さない（`:73-76`）。IP は偽れる（THR-AUTH-013） |
+| 起こり方 | `/api/auth/mfa/verify` へコードを送り続ける。制限は IP 単位の 20 回／600 秒だけで、アカウント単位の制限が無い（`src/app/api/auth/mfa/verify/route.ts:21-29`）。失敗は `console.error` だけで監査に残さない（`:73-76`）。IP は偽れる（THR-AUTH-013）。2026-10-26 に、利用者単位の枠（5 回／600 秒。鍵は検証済みの `claims.sub` だけ）を役割の確認の前に足し、成功と失敗を監査に残すようにした。この行の行番号と「監査に残さない」は基準コミット時点の記述 |
 | 影響 | 管理の操作に届く（注文・会計・権限の画面） |
 | 対策 | SEC-AUTH-009 |
 | ASVS | V2.2.1（当てはめは推定） |
@@ -267,11 +267,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 誰が会員かという情報、店のメールの評判 |
 | 脅威 | 攻撃者が任意のメールを会員登録・再設定に送り、応答の違いで会員かどうかを調べる。他人の宛先へ店のドメインからメールを送らせる |
-| 起こり方 | 会員登録は登録済みでも同じ 202 を返し、本人にだけメールで知らせ、送信を応答の外（`after`）に出す（`register/route.ts:12-39,147-152`）。この「すでに登録されています」の通知はアプリが自分で送り、回数の制限は偽れる IP 単位の 20 回／時（`register/route.ts:47`）と Turnstile だけで、宛先単位の制限が無い。ログインと再設定には宛先単位の制限がある。そのため既存の会員へ店のドメインからメールを送り続けられる。再設定は有無によらず 200 で、アカウントが無ければ送らない（`password-reset/request/route.ts:71-79,141-145`）。ただし再設定は、アカウントがある時だけ DB に2回書いてから返す（`:79-113`）ので、応答の時間に差が出うる（推定） |
+| 起こり方 | 会員登録は登録済みでも同じ 202 を返し、本人にだけメールで知らせ、送信を応答の外（`after`）に出す（`register/route.ts:12-39,147-152`）。この「すでに登録されています」の通知はアプリが自分で送り、回数の制限は偽れる IP 単位の 20 回／時（`register/route.ts:47`）と Turnstile だけで、宛先単位の制限が無かった。ログインと再設定には宛先単位の制限がある。そのため既存の会員へ店のドメインからメールを送り続けられた。2026-10-26 に、Turnstile と漏洩の確かめの後（控えの作成と既存会員の照会の前）に、検証済みの小文字のメールを subject にした 5 回／時の枠を足した。再設定は有無によらず 200 で、アカウントが無ければ送らない（`password-reset/request/route.ts:71-79,141-145`）。ただし再設定は、アカウントがある時だけ DB に2回書いてから返す（`:79-113`）ので、応答の時間に差が出うる（推定） |
 | 影響 | 会員を狙った標的型の詐欺メール、漏れた組の絞り込み、既存の会員への通知のメールの連打 |
 | 対策 | SEC-AUTH-016 |
 | ASVS | ASVS 未対応付け |
-| 根拠 | 公開の道の応答の中身には守りがある（FREQ-320）。会員登録の宛先単位の制限は無い（`register/route.ts:47,147-151`）。登録の 201 の分岐は Confirm email が OFF の時だけ通り、その時は新規と既存で応答が変わる（`register/route.ts:181-191`、THR-AUTH-029）。管理の経路の 409 は THR-AUTH-017 |
+| 根拠 | 公開の道の応答の中身には守りがある（FREQ-320）。会員登録の宛先単位の制限は、2026-10-26 までは無かった（`register/route.ts:47,147-151`。基準コミット時点）。登録の 201 の分岐は Confirm email が OFF の時だけ通り、その時は新規と既存で応答が変わる（`register/route.ts:181-191`、THR-AUTH-029）。管理の経路の 409 は THR-AUTH-017（2026-10-26 に枝ごと削除） |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_signup.md:57`、`docs/02_Requirements/requirements.md` の FREQ-320 の行 |
 
@@ -281,7 +281,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 会員の作成の権限、会員の有無 |
 | 脅威 | 管理の鍵 `ADMIN_API_KEY` を推測・漏洩で得た攻撃者が、公開の窓口から会員を作り、409 で有無を調べる |
-| 起こり方 | `/api/auth/register` は `x-admin-token`（または Bearer）があれば管理の作成に切り替える（`register/route.ts:53-102`）。鍵は `!==` で比べ定数時間でない（`:64`）。Turnstile・漏洩の照合を通らず、登録済みなら 409（`:91-94`）。src から呼ぶ所は無く、テストだけが使う |
+| 起こり方 | `/api/auth/register` は `x-admin-token`（または Bearer）があれば管理の作成に切り替える（`register/route.ts:53-102`）。鍵は `!==` で比べ定数時間でない（`:64`）。Turnstile・漏洩の照合を通らず、登録済みなら 409（`:91-94`）。src から呼ぶ所は無く、テストだけが使う。2026-10-26 に、この枝（管理の鍵の確認・`createUser`・401・500・409）を削除し、`x-admin-token`・Bearer を付けても公開の登録として扱うようにした。本番の環境変数 `ADMIN_API_KEY` の削除は運用で行う（`src` から読む所は無くなった）。上の行番号は基準コミット時点の記述 |
 | 影響 | 鍵が漏れると、ボット対策も列挙対策も無い登録の窓が開く |
 | 対策 | SEC-AUTH-017 |
 | ASVS | ASVS 未対応付け |
@@ -351,7 +351,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | access token、Supabase の利用者の記録、TOTP の秘密 |
 | 脅威 | 画面に差し込まれたスクリプトが応答の本文からトークンを盗む。共有の端末・中継のキャッシュに応答が残る |
-| 起こり方 | トークンの更新の応答の本文に access token と利用者の記録（`src/app/api/auth/refresh/route.ts:101`）、公開の会員登録の 201 に access token（`register/route.ts:191`）、OTP の検証の応答に Supabase の利用者の記録のまるごと（`otp/verify/route.ts:89-95`）を入れる。TOTP の登録は秘密と URI を返す（`mfa/enroll-totp/route.ts:141-152`）。これらと、ログイン・TOTP の確認・MFA の状態の応答に `Cache-Control: no-store` が無い（`me` と再設定の link・確認のリンクには付ける。`me/route.ts:12-17`、`password-reset/link/route.ts:21-26`、`confirm/route.ts:19-24`） |
+| 起こり方 | トークンの更新の応答の本文に access token と利用者の記録（`src/app/api/auth/refresh/route.ts:101`）、公開の会員登録の 201 に access token（`register/route.ts:191`）、OTP の検証の応答に Supabase の利用者の記録のまるごと（`otp/verify/route.ts:89-95`）を入れる。TOTP の登録は秘密と URI を返す（`mfa/enroll-totp/route.ts:141-152`）。2026-10-26 に、更新の成功の本文は `{ ok: true }`、OTP の検証の成功の本文は `{ user: { id, email, role }, message }` だけにした（登録の 201 の本文も 2026-10-26 に `{ user: { id, email } }` だけにした。no-store は波 3）。これらと、ログイン・TOTP の確認・MFA の状態の応答に `Cache-Control: no-store` が無い（`me` と再設定の link・確認のリンクには付ける。`me/route.ts:12-17`、`password-reset/link/route.ts:21-26`、`confirm/route.ts:19-24`） |
 | 影響 | Cookie を HttpOnly にした守りが、応答の本文で崩れる。秘密がキャッシュに残る |
 | 対策 | SEC-AUTH-022 |
 | ASVS | V8.2.1 |
@@ -463,7 +463,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 不正の気づきと、後からの追跡 |
 | 脅威 | 攻撃者の試行や成功が監査に残らず、気づけない |
-| 起こり方 | ログイン・OTP・登録・再設定・ログアウト・トークンの更新は `logAudit` に残す。TOTP の確認は成功も失敗も監査に残さず（`mfa/verify/route.ts:73-76,83-123`。残すのは保存の失敗だけ `:115-120`）、TOTP の登録も残さない（`mfa/enroll-totp/route.ts:31-157`）。再設定の後の失効の失敗も `console.error` だけ（`password-reset/confirm/route.ts:39-49`）。監査の書き込みの失敗は警告だけで握りつぶす（`src/lib/audit.ts:67-70,87-89`） |
+| 起こり方 | ログイン・OTP・登録・再設定・ログアウト・トークンの更新は `logAudit` に残す。TOTP の確認は成功も失敗も監査に残さず（`mfa/verify/route.ts:73-76,83-123`。残すのは保存の失敗だけ `:115-120`）、TOTP の登録も残さない（`mfa/enroll-totp/route.ts:31-157`）。2026-10-26 に、確認と登録の成功・失敗を `mfa_verify`・`mfa_enroll`（取り外しは `mfa_factor_remove`）で残すようにした。再設定の後の失効の失敗も `console.error` だけ（`password-reset/confirm/route.ts:39-49`）。監査の書き込みの失敗は警告だけで握りつぶす（`src/lib/audit.ts:67-70,87-89`） |
 | 影響 | TOTP の総当たり（THR-AUTH-009）や管理の要素の差し替えに気づけない |
 | 対策 | SEC-AUTH-030 |
 | ASVS | V7.1.3 |
@@ -477,7 +477,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 管理者・サポーターの3段目（TOTP、aal2）と、その先の管理の操作 |
 | 脅威 | 管理者・サポーターのパスワードを手に入れた攻撃者が、持ち主より先に自分の認証アプリを TOTP として登録し、aal2 になる |
-| 起こり方 | `/api/auth/mfa/enroll-totp` は認証と役割（admin・supporter）だけを見て、aal を見ない（`src/app/api/auth/mfa/enroll-totp/route.ts:51-66`）。確かめ済みの TOTP が無ければ aal1 のトークンだけで登録でき（`:74-115`）、`/auth/verified` も TOTP の無い管理者に自動で登録させる。aal1 のトークンは Supabase Auth を直接呼ぶ password grant で得られ、メール OTP も要らない（THR-AUTH-005）。持ち主が登録の途中で残した未確認の要素も、同じ aal1 で外せる（`:99-104`） |
+| 起こり方 | `/api/auth/mfa/enroll-totp` は認証と役割（admin・supporter）だけを見て、aal を見ない（`src/app/api/auth/mfa/enroll-totp/route.ts:51-66`）。確かめ済みの TOTP が無ければ aal1 のトークンだけで登録でき（`:74-115`）、`/auth/verified` も TOTP の無い管理者に自動で登録させる。aal1 のトークンは Supabase Auth を直接呼ぶ password grant で得られ、メール OTP も要らない（THR-AUTH-005）。持ち主が登録の途中で残した未確認の要素も、同じ aal1 で外せる（`:99-104`）。2026-10-26 に局所の守りを足した: 通行証の `amr` に 2 段目を通った方法が無ければ 403 で断り、監査に残す。残る穴は、Supabase Auth へ OTP だけを直接送って得た通行証（`amr` に `otp` が付く）が通ること（波 5） |
 | 影響 | 攻撃者の認証アプリで aal2 になり、管理の操作（注文・会計・権限の画面）に届く（`src/lib/auth/admin-rbac.ts:240-249` は aal2 だけを見る）。持ち主は後から自分の TOTP を登録できない |
 | 対策 | SEC-AUTH-031 |
 | ASVS | ASVS 未対応付け（初めての登録の経路を直接扱う項目が無い） |
@@ -507,7 +507,7 @@ flowchart LR
 - 公開の anon キーで `/auth/v1/token`・`/auth/v1/otp`・`/auth/v1/signup`・`/auth/v1/user` を直接呼んで、アプリの守りを飛ばせるかは、実際に叩いて確かめていない（THR-AUTH-005・006・015）
 - 本番の DB で、認証の6つの関数の `proacl` に anon・authenticated が残っているか（THR-AUTH-012）。手元の DB は移行から作ったので残っている
 - `aal1` の JWT で PostgREST から管理の表を読めるかは、実際に叩いて確かめていない（THR-AUTH-010）
-- `/api/auth/confirm` を他人の端末で開かせた時に、その端末が攻撃者のアカウントでログインするかは確かめていない（THR-AUTH-007）
+- `/api/auth/confirm` を他人の端末で開かせた時に、その端末が攻撃者のアカウントでログインしないかは、結合テストの写しと E2E（書いただけで未実行）でしか見ていない。本物の DB の関数との通し・本番の Cookie の動き（`__Host-` の頭が無いことによる cookie tossing を含む）は確かめていない（THR-AUTH-007）
 - Google のログインの後に、`@supabase/ssr` が書く Cookie の名前と属性（THR-AUTH-023）。ブラウザで見ていない
 - 本番の中継（Vercel など）が `x-forwarded-for` を上書きするか、Supabase Auth がアプリのサーバーの IP で数えるか（THR-AUTH-013）。本番のアプリはまだデプロイしていない
 - 本番の環境変数に `LOGIN_2FA_SESSION_SECRET`・`PASSWORD_RESET_SESSION_SECRET`・`ORDER_STATUS_SESSION_SECRET` があるか（THR-AUTH-027）

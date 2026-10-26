@@ -1,6 +1,6 @@
 ﻿# 1.1 ホームページ（HOME）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: ホーム `/` のページ・VIEW ALL のボタン・ブランド名を1文字ずつ出す部品 | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: ホーム `/` のページ・VIEW ALL のボタン・ブランド名を1文字ずつ出す部品 | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -41,9 +41,9 @@
 
 | 部品 | 道 | ホームでの使われ方 |
 | --- | --- | --- |
-| ITEM の取得 | `src/lib/items/public.ts` の `getPublishedItems`（商品）・`getPublishedItemsCount`（総数） | 公開済みの商品10件と総数。署名と在庫の読みは service role |
+| ITEM の取得 | `src/lib/items/public.ts` の `getPublishedItems`（商品）・`getPublishedItemsCount`（総数） | 公開済みの商品8件と総数。署名と在庫の読みは service role |
 | LOOK の取得 | `src/lib/look/server.ts` の `getPublishedLooks`（LOOK）・`getPublishedLooksCount`（総数） | 公開済みの LOOK 8件と総数。画像の署名は service role（`hydrateLooks`） |
-| NEWS の取得 | `src/features/news/services/public.ts` の `getPublishedNews`（記事）・`getPublishedNewsCount`（総数） | 公開済みの記事6件と総数（DD-NEWS-003） |
+| NEWS の取得 | `src/features/news/services/public.ts` の `getPublishedNews`（記事）・`getPublishedNewsCount`（総数） | 公開済みの記事6件と総数（DD-NEWS-003）。画像の列は選ばず署名しないので service role は使わない（SEC-NEWS-005） |
 | 取扱店の取得 | `src/features/stockist/services/public.ts` の `getHomePublicStockists` | 公開済みの取扱店6件 |
 | 各領域の格子 | `PublicItemGrid`・`PublicLookGrid`・`PublicNewsGrid`・`PublicStockistGrid`・`SearchHomePreview` | ホームの区画を描き、VIEW ALL の出し分けのクラスを作る |
 | 共有の部品 | `src/components/ui/SectionTitle/SectionTitle.tsx`、`src/components/ui/Button/Button.tsx`（`href` があれば `next/link` を返す）、`src/lib/utils.ts` の `cn` | ABOUT の見出し、VIEW ALL と READ OUR STORY、クラスの結合 |
@@ -83,14 +83,14 @@ FR-HOME-001・002・003・005・006・007・008・009、NFR-HOME-001・002、FRE
 | 項目 | 内容 |
 | --- | --- |
 | 入力 | 無い。`params`・`searchParams` を受けない（`page.tsx`）。検索の窓の `?q=` は `SearchHomePreview` が端末で読む |
-| 呼ぶ物 | `getPublishedItems(10)`・`getPublishedLooks(8)`・`getPublishedNews({limit: 6})`・`getHomePublicStockists()`・`getPublishedItemsCount()`・`getPublishedLooksCount()`・`getPublishedNewsCount()` を1つの `Promise.all` で（`page.tsx`）。件数は頁の中の定数 |
+| 呼ぶ物 | `getPublishedItems(8)`・`getPublishedLooks(8)`・`getPublishedNews({limit: 6})`・`getHomePublicStockists()`・`getPublishedItemsCount()`・`getPublishedLooksCount()`・`getPublishedNewsCount()` を1つの `Promise.all` で（`page.tsx`）。件数は頁の中の定数 |
 | 副作用 | `ReactDOM.preload("/mainphoto.png", {as: "image"})`。DB への書き込みは無い |
 | 出力（本体） | JSX。ヒーローの `section`、検索の窓、ITEM・LOOK・NEWS の格子（`variant="home"`・行・総数）、`section#about`、取扱店の格子（`variant="home"`・行） |
 | 出力（メタ） | metadata の関数が `{title, description, openGraph: {title, description, images: ["/mainphoto.png"]}}` を返す。title は「Le Fil des Heures」 |
 
 #### 正常フロー
 
-1. 7つの取得を一度に呼んで全部を待つ（`page.tsx`、ARC-HOME-001）。商品は10件・LOOK は8件・NEWS は6件を求め、取扱店は取得の関数の中で6件（`src/features/stockist/services/public.ts`）。総数は商品・LOOK・NEWS の3つ
+1. 7つの取得を一度に呼んで全部を待つ（`page.tsx`、ARC-HOME-001）。商品は8件・LOOK は8件・NEWS は6件を求め（商品は描く最大の8件だけを取る。続きの有無は総数で決める。SEC-HOME-013）、取扱店は取得の関数の中で6件（`src/features/stockist/services/public.ts`）。総数は商品・LOOK・NEWS の3つ
 2. ヒーロー画像の先読みを頼む
 3. ヒーロー（SCR-HOME-002）: 画面の見える高さいっぱいの区画に、`/mainphoto.png` を優先の印つきで敷く（代替テキストはブランドを表す文、`sizes="(max-width: 1023px) 300vw, 100vw"`）。暗くする重ねは読み上げから隠す。ブランド名は `TextReveal` の h1 で、出始めは 100ms 後（DD-HOME-003）。SCROLL の字と縦線は白 90% で、まとめて読み上げから隠す
 4. 検索の窓を置く。描くかは `SearchHomePreview` が決める
@@ -132,7 +132,7 @@ FR-HOME-001・002・003・005・006・007・008・009、NFR-HOME-001・002、FRE
 | # | 観点 | 入力 | 期待 |
 | --- | --- | --- | --- |
 | 1 | 題・説明・OG | metadata の関数を呼ぶ | title「Le Fil des Heures」、description とOG の title・description が同じ文、OG の画像が `["/mainphoto.png"]` |
-| 2 | 取得の引数 | 取得の関数を差し替えて描く | 商品は 10、LOOK は 8、NEWS は `{limit: 6}` で1回ずつ呼ばれ、取扱店と3つの総数も1回ずつ呼ばれる |
+| 2 | 取得の引数 | 取得の関数を差し替えて描く | 商品は 8、LOOK は 8、NEWS は `{limit: 6}` で1回ずつ呼ばれ、取扱店と3つの総数も1回ずつ呼ばれる |
 | 3 | 先読み | 描く | `ReactDOM.preload` が `"/mainphoto.png"` と `{as: "image"}` で1回呼ばれる |
 | 4 | 格子への渡し | 取得の関数が決まった配列と総数を返す | ITEM・LOOK・NEWS の格子に `variant="home"` と同じ配列と総数、取扱店の格子に `variant="home"` と同じ配列が渡る |
 | 5 | 区画の並び | 描く | ヒーロー・検索の窓・ITEM・LOOK・NEWS・ABOUT・取扱店の順（DRV-HOME-006） |

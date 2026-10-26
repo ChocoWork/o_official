@@ -1,6 +1,6 @@
 # ADMIN の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-24 | 対象: 管理のそのほか（ユーザー作成・強制失効・監査ログ・MFA のリセット・問い合わせの管理・返信の宛先・色見本・監査ログの削除）の API・画面・DB | 基準コミット: `4facf63b`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-26 | 対象: 管理のそのほか（ユーザー作成・強制失効・監査ログ・MFA のリセット・問い合わせの管理・返信の宛先・色見本・監査ログの削除）の API・画面・DB | 基準コミット: `4facf63b`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
 
 ---
 
@@ -56,7 +56,7 @@ flowchart LR
 
 - 実線の矢印はアプリが用意した道、点線はアプリを通らない道か、ブラウザ以外からの道
 - PostgREST からは、色見本の表だけが権限で読み書きを許す（THR-ADMIN-002）。問い合わせ・監査・session の表は全部断る（THR-ADMIN-003）。特権の RPC は service role だけ（THR-ADMIN-004）
-- 範囲の API は回数の制限を通らない（THR-ADMIN-006）
+- 範囲の書き込みの API は全部（強制失効・2要素のリセット・ユーザー作成・色見本の保存と削除・問い合わせの状態の変更と返信・テンプレートの作成と更新と削除）、2026-10-26 から管理者単位の回数の制限を通る。読み出しは数えない（THR-ADMIN-006、THR-ADMIN-020）
 
 ---
 
@@ -138,7 +138,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 利用者のアカウント、客のメールの受け取り、送り手のメールの評判、DB の容量 |
 | 脅威 | 管理者の JWT を手に入れた者、または誤って作った自動の処理が、範囲の書き込み API を大量に呼ぶ |
-| 起こり方 | ユーザー作成・強制失効・MFA のリセット・問い合わせの返信（客へメールを送る）・テンプレート・色見本の API は、どれも回数の制限を呼ばない（範囲の route.ts に `enforceRateLimit` などの呼び出しが無い）。範囲外の管理 API（LOOK・取扱店・注文・返品など）は持つ（例 `src/app/api/admin/looks/route.ts:7,67`）。共有の回数の制限は IP を `x-forwarded-for` の左端から取る（`src/features/auth/middleware/rateLimit.ts:4-16`）ので、IP だけで数えると送る側が値を変えて迂回できる |
+| 起こり方 | ユーザー作成・強制失効・MFA のリセット・問い合わせの返信（客へメールを送る）・テンプレート・色見本の API は、どれも回数の制限を呼ばない（範囲の route.ts に `enforceRateLimit` などの呼び出しが無い）。範囲外の管理 API（LOOK・取扱店・注文・返品など）は持つ（例 `src/app/api/admin/looks/route.ts:7,67`）。共有の回数の制限は IP を `x-forwarded-for` の左端から取る（`src/features/auth/middleware/rateLimit.ts:4-16`）ので、IP だけで数えると送る側が値を変えて迂回できる。2026-10-26 に、強制失効（20 回 / 10 分）と2要素のリセット（10 回 / 10 分）へ、認可を通った管理者の id だけを鍵にした回数の制限を、認可の直後・本文を読む前に足した（残りの窓口は未対応）。同日、ユーザー作成（20 回 / 10 分）と色見本の保存・削除（60 回 / 10 分。同じ枠を分け合う）、問い合わせの返信（30 回 / 10 分）、問い合わせの状態の変更とテンプレートの作成・更新・削除（60 回 / 10 分。4 つの窓口で同じ枠を分け合う）にも同じ形で足した。これで範囲の書き込みの窓口は全部、回数の制限を通る。読み出しの窓口は数えない（THR-ADMIN-020）。上の「呼び出しが無い」は基準コミット時点の記述 |
 | 影響 | アカウントの大量作成・全員の締め出し・客への大量のメール・送り手の停止。乗っ取られた管理者の被害の速さを抑えられない |
 | 対策 | SEC-ADMIN-006 |
 | ASVS | V11.1.4 |
@@ -152,7 +152,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 監査ログの読みやすさと DB の容量 |
 | 脅威 | 誰でも（ログイン無しで）、強制失効の API に要求を繰り返し、監査ログを埋める |
-| 起こり方 | 強制失効の API は認可に失敗するたびに `unauthorized` の行を書く（`src/app/api/admin/revoke-user-sessions/route.ts:14-26`）。ブラウザ以外（curl など）は Origin を許可の値に偽って `src/proxy.ts` の照合を通れる。回数の制限も無い（THR-ADMIN-006） |
+| 起こり方 | 強制失効の API は認可に失敗するたびに `unauthorized` の行を書く（`src/app/api/admin/revoke-user-sessions/route.ts:14-26`）。ブラウザ以外（curl など）は Origin を許可の値に偽って `src/proxy.ts` の照合を通れる。回数の制限も無い（THR-ADMIN-006）。2026-10-26 に、認可に失敗した要求の監査を全体で 10 分に 20 行までにし、21 回目はまとめの 1 行（結果 `unauthorized_burst`）、それ以降は書かないようにした（数える部品が壊れた時は書かない。ADR-0460）。上の行番号は基準コミット時点の記述 |
 | 影響 | 本当の不正の記録が埋もれる。監査ログの表が膨らむ |
 | 対策 | SEC-ADMIN-007 |
 | ASVS | ASVS 未対応付け |
@@ -166,7 +166,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 対象の利用者のメールの住所、リセットの理由の文、内部の誤りの中身 |
 | 脅威 | 監査ログを読める人（店長・DB の運用者）や、監査ログが漏れた時の第三者が、記録の中の個人情報を読む |
-| 起こり方 | MFA のリセットは `metadata` に理由の文（`reason`）と対象のメール（`target_email`）、Auth の誤りの文を書く（`src/app/api/admin/users/mfa/reset/route.ts:104-106,126-129,148-151,199-204`）。ユーザー作成は Supabase の誤りの文を `detail` に書く（`src/app/api/admin/create-user/route.ts:60,71`）。強制失効は例外の文を `detail` に書く（`revoke-user-sessions/route.ts:94`）。伏せ字は鍵の名前が `password`・`token`・`secret`・`card`・`number` などの物と、`detail` の JWT・長い文字列・`password=` だけ（`src/lib/audit.ts:22-39`）。`reason`・`email`・`target_email` は伏せない。さらに `logAudit` は、環境変数 `ALERT_AUDIT_URL` が設定されていると、伏せ字にした後の記録を丸ごと外の Webhook に送る（`src/lib/audit.ts:72-82`）。送る中身は操作した人のメール・IP・ブラウザの情報と、MFA のリセットの理由の文と対象のメールを含む |
+| 起こり方 | MFA のリセットは `metadata` に理由の文（`reason`）と対象のメール（`target_email`）、Auth の誤りの文を書く（`src/app/api/admin/users/mfa/reset/route.ts:104-106,126-129,148-151,199-204`）。ユーザー作成は Supabase の誤りの文を `detail` に書く（`src/app/api/admin/create-user/route.ts:60,71`）。強制失効は例外の文を `detail` に書く（`revoke-user-sessions/route.ts:94`）。伏せ字は鍵の名前が `password`・`token`・`secret`・`card`・`number` などの物と、`detail` の JWT・長い文字列・`password=` だけ（`src/lib/audit.ts:22-39`）。`reason`・`email`・`target_email` は伏せない。さらに `logAudit` は、環境変数 `ALERT_AUDIT_URL` が設定されていると、伏せ字にした後の記録を丸ごと外の Webhook に送る（`src/lib/audit.ts:72-82`）。送る中身は操作した人のメール・IP・ブラウザの情報と、MFA のリセットの理由の文と対象のメールを含む。2026-10-26 に、MFA のリセットの全部の分岐から `reason`・`target_email`・`error_message`・`delete_errors[].message` を外し、理由は長さ（`reason_length`）と SHA-256（`reason_sha256`）だけを残すようにした（ADR-0461）。強制失効の例外の `detail` も固定の `revoke_failed` にした。これで外の Webhook に送る中身からも MFA のリセットの理由とメールは消える。同日、ユーザー作成の `detail` も固定の `email_already_registered`・`create_user_failed` にし、Supabase の誤りの文（メールの住所を含みうる）は監査と Webhook に送らず `console.error` に回した。上の行番号は基準コミット時点の記述 |
 | 影響 | 理由の文に書いた個人の事情やメールの住所が、保存の期限なしに残る。`ALERT_AUDIT_URL` を設定すると、同じ個人情報が DB の外の送り先にも写り、その送り先の守りと保存の期間に頼ることになる |
 | 対策 | SEC-ADMIN-008 |
 | ASVS | V7.1.2 |
@@ -222,11 +222,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 管理者が作ったアカウント |
 | 脅威 | 第三者が、管理者が作ったアカウントのパスワードを推測する・漏れた一覧から当てる |
-| 起こり方 | API は 8 文字から通し、漏洩の照合もしない（`src/app/api/admin/create-user/route.ts:9`）。画面の 16 文字の確かめは利用者の端末だけ（`src/app/admin/create-user/page.tsx:21`）なので、API を直接呼べば短いパスワードで作れる |
+| 起こり方 | API は 8 文字から通し、漏洩の照合もしない（`src/app/api/admin/create-user/route.ts:9`）。画面の 16 文字の確かめは利用者の端末だけ（`src/app/admin/create-user/page.tsx:21`）なので、API を直接呼べば短いパスワードで作れる。2026-10-26 に、窓口へ会員登録と同じ 16〜128 字（`passwordSchema`）と漏洩の照合（`checkPwnedPassword`）を足した。照合の外の API が使えない時は作成を通し、監査に `pwned_check_unavailable:<符号>` を残す（fail-open。会員登録と同じ）。上の行番号は基準コミット時点の記述 |
 | 影響 | 作ったアカウントの乗っ取り |
 | 対策 | SEC-ADMIN-012 |
 | ASVS | V2.1.1、V2.1.7 |
-| 根拠 | 会員登録とパスワードの再設定は 16 文字と漏洩の照合を持つ（FREQ-323（範囲外）、`docs/02_Requirements/requirements.md:1507`）。FREQ-323 の対象に管理者の作成が入るかは書いていない（TM-ADMIN-05）。全体の NFR-SEC-008（強力なパスワードポリシー）に当てはめた |
+| 根拠 | 会員登録とパスワードの再設定は 16 文字と漏洩の照合を持つ（FREQ-323（範囲外）、`docs/02_Requirements/requirements.md:1507`）。FREQ-323 の対象に管理者の作成が入るかは書いていなかったが、ユーザーが 2026-10-26 に「入れる」と承認し、16 文字 + 漏洩の照合を当てた（TM-ADMIN-05）。全体の NFR-SEC-008（強力なパスワードポリシー）に当てはめた |
 | 状態 | 推定 |
 | 出どころ | 実装から推定 |
 
@@ -236,7 +236,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | Auth の利用者の情報と、それを出す画面 |
 | 脅威 | 作成の API を呼べる人が、表示名にとても長い文字列を入れる、壊れた本文で誤りを起こす |
-| 起こり方 | `display_name` に長さの上限が無い（`src/app/api/admin/create-user/route.ts:10`）。本文の JSON が壊れていると、400 でなく外の catch で 500 を返す（`create-user/route.ts:26,85-88`）。強制失効と色見本も同じ（`revoke-user-sessions/route.ts:32`、`item-color-presets/route.ts:44`）。強制失効の `user_id` は UUID の形を確かめない（`revoke-user-sessions/route.ts:7`） |
+| 起こり方 | `display_name` に長さの上限が無い（`src/app/api/admin/create-user/route.ts:10`）。本文の JSON が壊れていると、400 でなく外の catch で 500 を返す（`create-user/route.ts:26,85-88`）。強制失効と色見本も同じ（`revoke-user-sessions/route.ts:32`、`item-color-presets/route.ts:44`）。強制失効の `user_id` は UUID の形を確かめない（`revoke-user-sessions/route.ts:7`）。2026-10-26 に、強制失効は `user_id` に UUID の形を求め、壊れた JSON を 400 にした。同日、ユーザー作成は表示名を前後の空白を除いて 100 字までにし、壊れた JSON を 400 にした。色見本の保存も壊れた JSON を 400 にし、色見本の削除は数字の 1〜18 桁でない `id` を DB に渡さず 404 にした。上の行番号は基準コミット時点の記述 |
 | 影響 | 表示名を出す画面の崩れ・保存の容量。誤りの数え方が乱れ、本当の故障と見分けにくい |
 | 対策 | SEC-ADMIN-013 |
 | ASVS | V5.1.4 |
@@ -250,7 +250,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 店長・サポーターの2要素認証 |
 | 脅威 | 乗っ取られた店長、または悪意のある店長が、別の店長やサポーターの2要素を全部消し、パスワードだけで入れる状態にする |
-| 起こり方 | `/api/admin/users/mfa/reset` を確認の語 `RESET_MFA` と 10 字以上の理由で呼ぶ（`src/app/api/admin/users/mfa/reset/route.ts:7-11`）。断るのは自分自身（`:74`）と一般利用者（`:115`）だけで、店長どうしは止めない。対象の役割は DB の ACL でなく `app_metadata.role` で決める（`:113`）。消した後も対象の session を失効しない（`:135-214`）。二人目の承認も無い。消した後に対象の本人へ知らせる処理（メールなど）も無く、監査の行を書いて応答を返すだけ（`:189-214`） |
+| 起こり方 | `/api/admin/users/mfa/reset` を確認の語 `RESET_MFA` と 10 字以上の理由で呼ぶ（`src/app/api/admin/users/mfa/reset/route.ts:7-11`）。断るのは自分自身（`:74`）と一般利用者（`:115`）だけで、店長どうしは止めない。対象の役割は DB の ACL でなく `app_metadata.role` で決める（`:113`）。消した後も対象の session を失効しない（`:135-214`）。二人目の承認も無い。消した後に対象の本人へ知らせる処理（メールなど）も無く、監査の行を書いて応答を返すだけ（`:189-214`）。2026-10-26 に、対象の役割を `user_roles`（`active` かつ期限内）で決めるようにし、全部消せた後に対象の自前と Auth の session を全部失効させるようにした（失効の失敗は 500、消した要素は戻さない。ADR-0461）。二人目の承認と本人への知らせは未対応（ユーザーの決め待ち）。上の行番号と「失効しない」は基準コミット時点の記述 |
 | 影響 | 2要素の守りが1人の店長の判断で外れる。ACL で権限を外した人の `app_metadata` が古いと、断るべき相手・断らない相手を取り違える。消した後も対象の古い session が使える。対象の本人は2要素を外されたことに気づけない |
 | 対策 | SEC-ADMIN-014（本人への知らせは求めていない。未確認事項） |
 | ASVS | V2.5.7、V2.2.3（どちらも当てはめは推定） |
@@ -264,7 +264,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 店長の session と、店を管理し続けられること |
 | 脅威 | 乗っ取られた店長が、ほかの店長全員の session を失効させ、取り戻しの操作を遅らせる。自分自身を失効させて操作できなくなる |
-| 起こり方 | `/api/admin/revoke-user-sessions` は対象の役割も、自分自身かも確かめない（`src/app/api/admin/revoke-user-sessions/route.ts:7,48-59`）。対象が存在するかも確かめない |
+| 起こり方 | `/api/admin/revoke-user-sessions` は対象の役割も、自分自身かも確かめない（`src/app/api/admin/revoke-user-sessions/route.ts:7,48-59`）。対象が存在するかも確かめない。2026-10-26 に、自分自身は 400、存在しない利用者は 404 で断り、強制失効に管理者単位の回数の制限（20 回 / 10 分）を足した。店長どうしの失効を止める守りは未対応（ユーザーの決め待ち）。上の行番号は基準コミット時点の記述 |
 | 影響 | 正しい店長が繰り返し締め出される。回数の制限が無い（THR-ADMIN-006）ので、何度でも繰り返せる |
 | 対策 | SEC-ADMIN-015 |
 | ASVS | ASVS 未対応付け |
@@ -306,11 +306,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 管理の返信で送るメール |
 | 脅威 | 公開の問い合わせを送る人が、件名に改行と見出しを入れ、管理者が返信した時のメールに宛先や見出しを足させる |
-| 起こり方 | 管理の返信は DB の件名に `Re:` を付けてそのまま件名にする（`src/app/api/admin/contact/[id]/reply/route.ts:63`）。公開の問い合わせは件名を `trim` と 150 字で切るだけで、改行は残る（`src/app/api/contact/route.ts:15`）。メールの送り手には件名を API の項目で渡し、生の MIME を組まない（`src/lib/mail/adapters/resend.ts:24`、`ses.ts:27`） |
+| 起こり方 | 管理の返信は DB の件名に `Re:` を付けてそのまま件名にしていた（基準コミット時点。`src/app/api/admin/contact/[id]/reply/route.ts:63`）。公開の問い合わせは件名を `trim` と 150 字で切るだけで、改行は残る（`src/app/api/contact/route.ts:15`）。メールの送り手には件名を API の項目で渡し、生の MIME を組まない（`src/lib/mail/adapters/resend.ts:24`、`ses.ts:27`）。2026-10-26 に、返信の窓口が件名の制御文字（CR・LF を含む U+0000〜U+001F・U+007F）を空白にして前後を削ってから `Re:` を付けるようにした（空なら `Re: (件名なし)`）。メール送信部品（`mail.ts`）の側の CR・LF 除去は今回やらない |
 | 影響 | 第三者への迷惑メール・偽の見出し |
 | 対策 | SEC-ADMIN-018 |
 | ASVS | V5.2.3 |
-| 根拠 | 送り手の API が見出しの差し込みを防ぐと見込む（推定。確かめていない）。アプリの側では改行を消していない。全体の NFR-SEC-003（入力検証）に当てはめた |
+| 根拠 | 送り手の API が見出しの差し込みを防ぐと見込む（推定。確かめていない）。アプリの側（返信の窓口）でも改行を消すようにした。全体の NFR-SEC-003（入力検証）に当てはめた |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_contact.md:31` |
 
@@ -334,7 +334,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 問い合わせた人の名前・メール・送った IP・ブラウザの情報・本文 |
 | 脅威 | サポーターや、乗っ取られた `admin.contact.read` の持ち主が、対応に要らない個人情報まで読む |
-| 起こり方 | 詳細の API は `submitted_ip`・`user_agent` まで返す（`src/app/api/admin/contact/[id]/route.ts:24-26`）。`admin.contact.read` は店長とサポーターに付く。一覧は 1 回に 100 件まで、名前とメールを返す（`contact/route.ts:23-26,35-37`）。読み出しの API（問い合わせの一覧・詳細、監査ログ）には回数の制限も、読んだ総量の上限も無い（範囲の route.ts に回数の制限の呼び出しが無い。THR-ADMIN-006 の対策 SEC-ADMIN-006 も書き込みだけが対象） |
+| 起こり方 | 詳細の API は `submitted_ip`・`user_agent` まで返していた（基準コミット時点。`src/app/api/admin/contact/[id]/route.ts:24-26`）。2026-10-26 に、詳細の列からこの 2 つを外し、店長にもサポーターにも返さないようにした（IP とブラウザの情報は DB に残るが API からは読めない）。`admin.contact.read` は店長とサポーターに付く。一覧は 1 回に 100 件まで、名前とメールを返す（`contact/route.ts:23-26,35-37`）。読み出しの API（問い合わせの一覧・詳細、監査ログ）には回数の制限も、読んだ総量の上限も無い（範囲の route.ts に回数の制限の呼び出しが無い。THR-ADMIN-006 の対策 SEC-ADMIN-006 も書き込みだけが対象） |
 | 影響 | 個人情報の漏れの範囲が広がる。乗っ取られた `admin.contact.read` があれば、一覧を 100 件ずつ送りながら問い合わせの個人情報を全部持ち出せる。対策の SEC-ADMIN-020 は IP とブラウザの情報の列だけを扱い、この持ち出しの速さは抑えない |
 | 対策 | SEC-ADMIN-020 |
 | ASVS | ASVS 未対応付け |
@@ -348,7 +348,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 管理の操作の結果と監査ログの正しさ |
 | 脅威 | 管理者が成功と思った操作が、実際には効いていない。監査ログにも成功と残る |
-| 起こり方 | 存在しない id でも 200 と成功の監査を返す（問い合わせの状態の変更 `src/app/api/admin/contact/[id]/route.ts:72-92`、テンプレートの更新と削除 `templates/[id]/route.ts:29-55,72-89`、色見本の削除 `item-color-presets/[id]/route.ts:15-25`）。返信の後の状態の更新の誤りを見ない（`reply/route.ts:55-58`）。`MAIL_FROM_ADDRESS` が無い時はメールを送らずに `mailSent: true` と `reply_sent` を返す（`reply/route.ts:61-62,78-88`）。色見本の既存の確かめの誤りを見ない（`item-color-presets/route.ts:59-64`） |
+| 起こり方 | 存在しない id でも 200 と成功の監査を返していた（問い合わせの状態の変更 `src/app/api/admin/contact/[id]/route.ts:72-92`、テンプレートの更新と削除 `templates/[id]/route.ts:29-55,72-89`、色見本の削除 `item-color-presets/[id]/route.ts:15-25`）。返信の後の状態の更新の誤りを見なかった（`reply/route.ts:55-58`）。`MAIL_FROM_ADDRESS` が無い時はメールを送らずに `mailSent: true` と `reply_sent` を返していた（`reply/route.ts:61-62,78-88`）。色見本の既存の確かめの誤りを見なかった（`item-color-presets/route.ts:59-64`）。2026-10-26 に全部直した。色見本の削除は消した行が 0 行なら 404、色見本の保存は既存の確かめの誤りで作りに進まず 500。問い合わせの状態の変更・テンプレートの更新と削除は、`id` が UUID でない時は 404、変えた行が 0 行でも 404 にして失敗（`failure`）を監査に残し、成功は残さない。返信は状態の更新の誤りで 500（保存した返信は残る）、送り手の設定が無い時は `mailSent: false` と `reply_saved_mail_not_configured`。上の行番号は基準コミット時点の記述 |
 | 影響 | 客に返信が届いていないのに、届いたと思う。監査ログから本当の操作を追えない |
 | 対策 | SEC-ADMIN-021 |
 | ASVS | ASVS 未対応付け |
@@ -404,7 +404,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 問い合わせた人の名前・メール・送った IP・本文と、監査ログの中身。誰がそれを読んだかの跡 |
 | 脅威 | サポーター・店長、または乗っ取られた `admin.contact.read`・`admin.audit.read` の持ち主が、個人情報や監査ログを読み、後で読んだことを否定する |
-| 起こり方 | 問い合わせの一覧（`src/app/api/admin/contact/route.ts:14-76`）・詳細（`contact/[id]/route.ts:12-55`）・監査ログの読み出し（`audit-logs/route.ts:16-39`）は、どれも `logAudit` を呼ばない。監査に残るのは書き込みだけ |
+| 起こり方 | 問い合わせの一覧（`src/app/api/admin/contact/route.ts:14-76`）・詳細（`contact/[id]/route.ts:12-55`）・監査ログの読み出し（`audit-logs/route.ts:16-39`）は、どれも `logAudit` を呼ばず、監査に残るのは書き込みだけだった（基準コミット時点）。2026-10-26 に、読めた時（200 を返す時）に 1 行ずつ、一覧は `admin.contact.list`（絞り込みの条件と検索語の長さだけ）、詳細は `admin.contact.read`（問い合わせの id）、監査ログは `admin.audit_logs.read` を、読んだ人の id とメール付きで残すようにした。名前・メール・本文・件名・検索語は入れない。記録に失敗しても読み出しは止めない。読んだ人の IP は残らない（IP の取り出し `request-ip.ts` が要る。波 4）。上の行番号は基準コミット時点の記述 |
 | 影響 | 個人情報が漏れた時に、誰がいつ読んだかを追えない。内部の人の持ち出しに気づけない |
 | 対策 | SEC-ADMIN-023 |
 | ASVS | V8.3.5（当てはめは推定） |
@@ -434,6 +434,6 @@ flowchart LR
 - 本番の `APP_ALLOWED_ORIGINS` などの許可の一覧の値（THR-ADMIN-005）
 - 本番の `CONTACT_REPLY_SECRET`・`CONTACT_INBOUND_DOMAIN`・`MAIL_FROM_ADDRESS` の値（THR-ADMIN-017・021）
 - 本番の `ALERT_AUDIT_URL` を設定するか、設定するなら送り先はどこで、届いた記録をどれだけ残すか（THR-ADMIN-008）。本番のアプリはまだデプロイしていない
-- 管理者の作成に FREQ-323 のパスワードの決まりを当てるか（THR-ADMIN-012）、MFA のリセットと強制失効に最後の店長の守りを足すか（THR-ADMIN-014・015）、問い合わせの IP を誰に見せるか（THR-ADMIN-020）は、ユーザーに決めてもらう（TM-ADMIN-05・34・37）
+- MFA のリセットと強制失効に最後の店長の守りを足すか（THR-ADMIN-014・015）は、ユーザーに決めてもらう（TM-ADMIN-37）。問い合わせの IP を誰に見せるかは、2026-10-26 に「誰にも返さない」と決めた（THR-ADMIN-020、TM-ADMIN-34）
 - 読み出しの API（問い合わせの一覧・詳細、監査ログ）に回数か件数の制限を求める SEC を起こすか、受け入れた残りの危険とするか（THR-ADMIN-020）。今はどの SEC も対象にしていない。ユーザーの決め待ち（TM-ADMIN-38）
 - MFA のリセットの後に、対象の本人へ知らせる（メールなど）か（THR-ADMIN-014、ASVS V2.2.3 の当てはめは推定）。今の SEC-ADMIN-014 は求めていない。ユーザーの決め待ち（TM-ADMIN-40）

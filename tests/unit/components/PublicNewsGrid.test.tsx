@@ -59,7 +59,6 @@ function makeArticle(id: string, overrides: Partial<PublicNewsArticle> = {}): Pu
     title: `記事${id}`,
     published_date: '2025-01-01',
     category: 'EVENT',
-    image_url: `/news-${id}.jpg`,
     content: `本文${id}`,
     ...overrides,
   };
@@ -135,7 +134,6 @@ describe('PublicNewsGrid catalog filter drawer', () => {
             title: 'First article',
             published_date: '2025-01-01',
             category: 'SUSTAINABILITY',
-            image_url: '/news-1.jpg',
             content: 'First content',
           },
           {
@@ -143,7 +141,6 @@ describe('PublicNewsGrid catalog filter drawer', () => {
             title: 'Second article',
             published_date: '2025-01-02',
             category: 'COLLABORATION',
-            image_url: '/news-2.jpg',
             content: 'Second content',
           },
         ]}

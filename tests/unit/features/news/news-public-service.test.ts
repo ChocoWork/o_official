@@ -51,19 +51,12 @@ function callsOf(calls: Call[], method: string) {
   return calls.filter(([name]) => name === method);
 }
 
-const serviceClient = { from: jest.fn(), storage: {} };
-
 beforeEach(() => {
   jest.clearAllMocks();
-  mockedCreateServiceRoleClient.mockResolvedValue(serviceClient);
-  mockedSignNewsImageFields.mockImplementation(async (_client, row) => ({
-    ...row,
-    image_url: `signed:${row.image_url}`,
-  }));
 });
 
 describe('getPublishedNews', () => {
-  it('DD-NEWS-003 options なしは6つの列・公開済み・公開日の降順で取り、分類と件数を付けない', async () => {
+  it('DD-NEWS-003 options なしは image_url を除く5つの列・公開済み・公開日の降順で取り、分類と件数を付けない', async () => {
     const { client, calls } = makeClient({ data: [] });
     mockedCreatePublicClient.mockResolvedValue(client);
 
@@ -71,7 +64,7 @@ describe('getPublishedNews', () => {
 
     expect(calls).toEqual([
       ['from', 'news_articles'],
-      ['select', 'id, title, published_date, category, image_url, content'],
+      ['select', 'id, title, published_date, category, content'],
       ['eq', 'status', 'published'],
       ['order', 'published_date', { ascending: false }],
     ]);
@@ -129,26 +122,23 @@ describe('getPublishedNews', () => {
     expect(callsOf(calls, 'limit')).toEqual([]);
   });
 
-  it('DD-NEWS-003 行ごとに service role の client で画像を署名し、置き換えた行を返す', async () => {
+  it('DD-NEWS-003 取った行をそのまま返し、画像の署名も service role の client の作成もしない（SEC-NEWS-005）', async () => {
     const rows = [
-      { id: 1, title: 'A', image_url: 'news/a.jpg' },
-      { id: 2, title: 'B', image_url: 'news/b.jpg' },
+      { id: 1, title: 'A', content: 'a' },
+      { id: 2, title: 'B', content: 'b' },
     ];
     const { client } = makeClient({ data: rows });
     mockedCreatePublicClient.mockResolvedValue(client);
 
     const result = await getPublishedNews();
 
-    expect(mockedSignNewsImageFields).toHaveBeenCalledTimes(2);
-    expect(mockedSignNewsImageFields).toHaveBeenNthCalledWith(1, serviceClient, rows[0]);
-    expect(mockedSignNewsImageFields).toHaveBeenNthCalledWith(2, serviceClient, rows[1]);
-    expect(result).toEqual([
-      { id: 1, title: 'A', image_url: 'signed:news/a.jpg' },
-      { id: 2, title: 'B', image_url: 'signed:news/b.jpg' },
-    ]);
+    expect(result).toEqual(rows);
+    expect(result.every((article) => !('image_url' in article))).toBe(true);
+    expect(mockedSignNewsImageFields).not.toHaveBeenCalled();
+    expect(mockedCreateServiceRoleClient).not.toHaveBeenCalled();
   });
 
-  it('DD-NEWS-003 DB の失敗で data が null なら空の配列を返し、署名を呼ばない', async () => {
+  it('DD-NEWS-003 DB の失敗で data が null なら空の配列を返す', async () => {
     const { client } = makeClient({ data: null, error: { message: 'db down' } });
     mockedCreatePublicClient.mockResolvedValue(client);
 
@@ -156,30 +146,22 @@ describe('getPublishedNews', () => {
     expect(mockedSignNewsImageFields).not.toHaveBeenCalled();
   });
 
-  it('DD-NEWS-003 記事は公開の client で読み、service role の client では読まない', async () => {
+  it('DD-NEWS-003 記事は公開の client だけで読む（公開の道は service role を持たない）', async () => {
     const { client, from } = makeClient({ data: [] });
     mockedCreatePublicClient.mockResolvedValue(client);
 
     await getPublishedNews();
 
     expect(from).toHaveBeenCalledWith('news_articles');
-    expect(serviceClient.from).not.toHaveBeenCalled();
+    expect(mockedCreateServiceRoleClient).not.toHaveBeenCalled();
   });
 
-  it('DD-NEWS-003 service role の環境変数が無く client の作成が投げると reject する', async () => {
+  it('DD-NEWS-003 service role の環境変数が無くても（client の作成が投げても）一覧は返る', async () => {
     const { client } = makeClient({ data: [] });
     mockedCreatePublicClient.mockResolvedValue(client);
     mockedCreateServiceRoleClient.mockRejectedValue(new Error('missing service role key'));
 
-    await expect(getPublishedNews()).rejects.toThrow('missing service role key');
-  });
-
-  it('DD-NEWS-003 署名の呼び出しが例外なら reject する', async () => {
-    const { client } = makeClient({ data: [{ id: 1, image_url: 'news/a.jpg' }] });
-    mockedCreatePublicClient.mockResolvedValue(client);
-    mockedSignNewsImageFields.mockRejectedValue(new Error('sign failed'));
-
-    await expect(getPublishedNews()).rejects.toThrow('sign failed');
+    await expect(getPublishedNews()).resolves.toEqual([]);
   });
 });
 
@@ -221,9 +203,9 @@ describe('getPublishedNewsCount', () => {
 });
 
 describe('getPublishedNewsDetailById', () => {
-  const row = { id: 5, title: 'A', image_url: 'news/a.jpg', detailed_content: 'body' };
+  const row = { id: 5, title: 'A', detailed_content: 'body' };
 
-  it('DD-NEWS-031 options なしは本文を含む列・公開済み・id で絞り、分類で絞らず single で取る', async () => {
+  it('DD-NEWS-031 options なしは本文を含み image_url を除く列・公開済み・id で絞り、分類で絞らず single で取る', async () => {
     const { client, calls } = makeClient({ data: row, error: null });
     mockedCreatePublicClient.mockResolvedValue(client);
 
@@ -231,7 +213,7 @@ describe('getPublishedNewsDetailById', () => {
 
     expect(calls).toEqual([
       ['from', 'news_articles'],
-      ['select', 'id, title, published_date, category, image_url, content, detailed_content'],
+      ['select', 'id, title, published_date, category, content, detailed_content'],
       ['eq', 'status', 'published'],
       ['eq', 'id', '5'],
       ['single'],
@@ -282,25 +264,17 @@ describe('getPublishedNewsDetailById', () => {
     expect(mockedSignNewsImageFields).not.toHaveBeenCalled();
   });
 
-  it('DD-NEWS-031 行があれば service role の client で署名した結果を返し、DB は公開の client で読む', async () => {
+  it('DD-NEWS-031 行があればそのまま返し、署名も service role の client の作成もしない（SEC-NEWS-005）', async () => {
     const { client, from } = makeClient({ data: row, error: null });
     mockedCreatePublicClient.mockResolvedValue(client);
 
-    await expect(getPublishedNewsDetailById('5')).resolves.toEqual({
-      ...row,
-      image_url: 'signed:news/a.jpg',
-    });
-    expect(mockedSignNewsImageFields).toHaveBeenCalledWith(serviceClient, row);
+    const result = await getPublishedNewsDetailById('5');
+
+    expect(result).toEqual(row);
+    expect(result).not.toHaveProperty('image_url');
+    expect(mockedSignNewsImageFields).not.toHaveBeenCalled();
+    expect(mockedCreateServiceRoleClient).not.toHaveBeenCalled();
     expect(from).toHaveBeenCalledTimes(1);
-    expect(serviceClient.from).not.toHaveBeenCalled();
-  });
-
-  it('DD-NEWS-031 service role の client の作成が投げると reject する', async () => {
-    const { client } = makeClient({ data: row, error: null });
-    mockedCreatePublicClient.mockResolvedValue(client);
-    mockedCreateServiceRoleClient.mockRejectedValue(new Error('missing service role key'));
-
-    await expect(getPublishedNewsDetailById('5')).rejects.toThrow('missing service role key');
   });
 });
 

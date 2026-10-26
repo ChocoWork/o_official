@@ -8,7 +8,7 @@
  *
  * - 変更の窓を短く保つため、1 つの試験の中で DB を 1 回だけ変え、その窓の中で 3 つの幅を続けて開く（幅ごとに変え直さない）。
  * - 窓の途中で試験が落ちても戻るよう、元に戻す処理を試験の本体の finally と afterEach の両方に置く（繰り返しても害は無い）。
- * - SEC-STOCKIST-018-AC-01 は、公開の取り出しに件数の上限が無い間は赤（AC の書いた通りの赤）。
+ * - SEC-STOCKIST-018-AC-01 は、公開の取り出しに上限 200 を入れた（2026-10-26）ので、上限を超える店を入れても `/stockist` のカードが 200 以下であることを確かめる（AC の書いた通り）。
  * - ファイルの中は順に 1 本の worker で流す（2 つの試験の窓が重ならないように）。落ちても後ろの試験は流す。
  * JWT が通信記録に残らないよう trace は切る。
  */
@@ -124,7 +124,6 @@ test.describe('FR-STOCKIST-017 公開の店が0件・上限超え', () => {
   });
 
   test('SEC-STOCKIST-018-AC-01 公開の店を上限より多く入れても、3つの幅のどれでも /stockist のカードの数が公開の取り出しの上限以下', async ({ page }) => {
-    test.fail(true, 'SEC-STOCKIST-018 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
     await insertPublishedOverMaxRows(configuredMaxRows());
     try {
       for (const vp of VIEWPORTS) {

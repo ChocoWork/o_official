@@ -5,6 +5,7 @@
  * @impl IMPL-AUTH-205
  * @design DD-AUTH-031
  * @remarks 確認が通ると Supabase が aal2 のトークン対を返す。Cookie と sessions 行へ書き戻さないとブラウザは aal1 のままで、認可側の判定を通れない。書き戻しの保存に失敗しても、aal2 はトークン自体が持つので配る。
+ * 6 桁のコードは総当たりされうるので、IP の枠に加えて利用者単位の枠（5 回 / 600 秒）を置く。枠の鍵は検証済みの claims.sub だけを使う（本文の値だと他人の枠を潰せる）。確かめの結果は成功も失敗も監査に残し、コードと Supabase の誤りの文は残さない。
  */
 
 import { NextResponse } from 'next/server';
@@ -58,6 +59,30 @@ export async function POST(request: Request) {
     // MFA を設定できてしまっても権限は増えないため、ACL を引く必要はない。
     const user = { id: auth.claims.sub, app_metadata: auth.claims.app_metadata };
 
+    // 利用者単位の総当たり対策。subject は検証済みの sub だけにする。
+    // 本文の factorId などを使うと、他人の枠を故意に潰せる。役割の確認より前に置くのは、一般の会員にも数えさせるため。
+    try {
+      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+      const rlAccount = await enforceRateLimit({
+        request,
+        endpoint: 'auth:mfa:verify',
+        limit: 5,
+        windowSeconds: 600,
+        subject: user.id,
+      });
+      if (rlAccount) {
+        await logAudit({
+          action: 'mfa_verify',
+          actor_id: user.id,
+          outcome: 'failure',
+          detail: 'account_rate_limited',
+        });
+        return rlAccount;
+      }
+    } catch (error) {
+      console.error('[auth.mfa.verify] account rate limit middleware error:', error);
+    }
+
     const role = isUserRole(user.app_metadata?.role) ? user.app_metadata.role : 'user';
     if (role !== 'admin' && role !== 'supporter') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -68,8 +93,10 @@ export async function POST(request: Request) {
       console.error('[auth.mfa.verify] failed to create challenge:', challengeResult.error);
       const message = challengeResult.error?.message?.toLowerCase() ?? '';
       if (message.includes('not found')) {
+        await logAudit({ action: 'mfa_verify', actor_id: user.id, outcome: 'failure', detail: 'factor_not_found' });
         return NextResponse.json({ error: '対象のMFA要素が見つかりません。' }, { status: 404 });
       }
+      await logAudit({ action: 'mfa_verify', actor_id: user.id, outcome: 'failure', detail: 'challenge_failed' });
       return NextResponse.json({ error: 'MFAチャレンジの作成に失敗しました。' }, { status: 400 });
     }
 
@@ -81,6 +108,7 @@ export async function POST(request: Request) {
 
     if (verifyResult.error) {
       console.error('[auth.mfa.verify] challenge verification failed:', verifyResult.error);
+      await logAudit({ action: 'mfa_verify', actor_id: user.id, outcome: 'failure', detail: 'invalid_code' });
       return NextResponse.json({ error: '認証コードが正しくありません。' }, { status: 400 });
     }
 
@@ -119,13 +147,14 @@ export async function POST(request: Request) {
         previousSessionId: previousSession?.id ?? null,
         previousRefreshToken,
       });
+      await logAudit({ action: 'mfa_verify', actor_id: user.id, outcome: 'success', detail: 'verified' });
     } catch (persistError) {
       console.error('[auth.mfa.verify] failed to persist elevated session:', persistError);
       await logAudit({
         action: 'mfa_verify',
         actor_id: user.id,
         outcome: 'error',
-        detail: String(persistError),
+        detail: 'session_persist_failed',
       });
     }
 

@@ -342,7 +342,7 @@ describe('GET /api/admin/stockists/[id]（管理の取扱店の1件）', () => {
     expect(dataSeq()).toEqual([]);
   });
 
-  test('API-STOCKIST-003 全部の列を 200 の data に返し、id は数に直して利用者の client で引く', async () => {
+  test('API-STOCKIST-003 管理用の 8 列を 200 の data に返し、id は数に直して利用者の client で引く', async () => {
     setup({ tables: stockistTables() });
     const request = makeRequest();
 
@@ -351,7 +351,13 @@ describe('GET /api/admin/stockists/[id]（管理の取扱店の1件）', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ data: stockistRow });
     expect(createClient).toHaveBeenCalledWith(request);
-    expect(tableCalls('stockists', 'select')).toEqual([[['select', ['*']], ['eq', ['id', 7]], ['single', []]]]);
+    expect(tableCalls('stockists', 'select')).toEqual([
+      [
+        ['select', ['id, name, address, phone, time, holiday, status, updated_at']],
+        ['eq', ['id', 7]],
+        ['single', []],
+      ],
+    ]);
   });
 
   test('API-STOCKIST-003 先頭の 0 や指数の書き方の id も、数に直した値で引く（推定）', async () => {

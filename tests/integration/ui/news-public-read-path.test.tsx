@@ -67,7 +67,6 @@ const ARTICLES = [
     title: 'Newer article',
     published_date: '2026-10-02',
     category: 'EVENT',
-    image_url: 'news-images/n2.jpg',
     content: 'Newer content',
   },
   {
@@ -75,7 +74,6 @@ const ARTICLES = [
     title: 'Older article',
     published_date: '2026-09-01',
     category: 'STORE',
-    image_url: null,
     content: 'Older content',
   },
 ];
@@ -106,7 +104,7 @@ describe('ARC-NEWS-001 public read path', () => {
     expect(createPublicClient).toHaveBeenCalled();
     expect(publicFrom).toHaveBeenCalledWith('news_articles');
     expect(calls).toEqual([
-      ['select', 'id, title, published_date, category, image_url, content'],
+      ['select', 'id, title, published_date, category, content'],
       ['eq', 'status', 'published'],
       ['order', 'published_date', { ascending: false }],
     ]);
@@ -116,17 +114,16 @@ describe('ARC-NEWS-001 public read path', () => {
     expect(headings).toEqual(['Newer article', 'Older article']);
   });
 
-  it('ARC-NEWS-001 service role の client は DB を読まず、画像の署名だけに使う', async () => {
+  it('ARC-NEWS-001 公開の道は service role の client を作らず、画像の署名もしない（SEC-NEWS-005）', async () => {
     const { query } = createRecordingQuery({ data: ARTICLES, error: null });
     publicFrom.mockReturnValue(query);
 
     await renderNewsPage();
 
-    expect(createServiceRoleClient).toHaveBeenCalled();
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
     expect(serviceFrom).not.toHaveBeenCalled();
-    expect(storageFrom).toHaveBeenCalledWith('news-images');
-    expect(createSignedUrl).toHaveBeenCalledTimes(1);
-    expect(createSignedUrl).toHaveBeenCalledWith('n2.jpg', 3600);
+    expect(storageFrom).not.toHaveBeenCalled();
+    expect(createSignedUrl).not.toHaveBeenCalled();
   });
 
   it('ARC-NEWS-001 URL の分類が1つの正しい値なら DB の取り出しをその分類で絞る', async () => {
@@ -189,7 +186,7 @@ describe('ARC-NEWS-001 public read path', () => {
     render(element);
 
     expect(detail.calls).toEqual([
-      ['select', 'id, title, published_date, category, image_url, content, detailed_content'],
+      ['select', 'id, title, published_date, category, content, detailed_content'],
       ['eq', 'status', 'published'],
       ['eq', 'id', 'n2'],
       ['eq', 'category', 'EVENT'],
@@ -202,7 +199,8 @@ describe('ARC-NEWS-001 public read path', () => {
       ['eq', 'category', 'EVENT'],
     ]);
     expect(serviceFrom).not.toHaveBeenCalled();
-    expect(createSignedUrl).toHaveBeenCalledWith('n2.jpg', 3600);
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+    expect(createSignedUrl).not.toHaveBeenCalled();
 
     const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' });
     expect(within(breadcrumb).getByText('Newer article')).toHaveAttribute('aria-current', 'page');

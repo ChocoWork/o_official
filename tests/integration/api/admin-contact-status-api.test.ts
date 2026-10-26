@@ -22,7 +22,11 @@ jest.mock('@/lib/auth/authenticate', () => ({
   checkAuthSessionLiveness: jest.fn(),
 }));
 
+// 回数の限度器は DB に触るので差し替える（呼ばれ方は窓口の単体試験で確かめる）
+jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+
 const { createClient, createServiceRoleClient } = require('@/lib/supabase/server');
+const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
 
 type Result = { data: unknown; error: unknown };
@@ -129,19 +133,37 @@ const patch = (body: unknown, raw = false) =>
     body: raw ? (body as string) : JSON.stringify(body),
   });
 
-function setupDb(options: { updateError?: unknown; codes?: string[]; aal?: string; verified?: unknown; liveness?: string } = {}) {
+function setupDb(
+  options: {
+    updateError?: unknown;
+    updateRows?: unknown;
+    codes?: string[];
+    aal?: string;
+    verified?: unknown;
+    liveness?: string;
+  } = {},
+) {
   setup({
     codes: options.codes,
     aal: options.aal,
     verified: options.verified,
     liveness: options.liveness,
-    tables: { contact_inquiries: { default: { data: null, error: options.updateError ?? null } } },
+    // update().eq().select('id') が返す行。既定は1行を変えた形
+    tables: {
+      contact_inquiries: {
+        default: {
+          data: options.updateError ? null : (options.updateRows ?? [{ id: INQUIRY_ID }]),
+          error: options.updateError ?? null,
+        },
+      },
+    },
   });
 }
 
 describe('API-ADMIN-007 PATCH /api/admin/contact/[id]', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    enforceRateLimit.mockResolvedValue(null);
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -220,6 +242,7 @@ describe('API-ADMIN-007 PATCH /api/admin/contact/[id]', () => {
       expect(new Date(payload.updated_at).toISOString()).toBe(payload.updated_at);
       expect(payload).not.toHaveProperty('last_message_at');
       expect(callsOf('contact_inquiries', 'eq')).toEqual([['eq', ['id', INQUIRY_ID]]]);
+      expect(callsOf('contact_inquiries', 'select')).toEqual([['select', ['id']]]);
     },
   );
 
@@ -283,6 +306,48 @@ describe('API-ADMIN-007 PATCH /api/admin/contact/[id]', () => {
 
     expect(readBody).not.toHaveBeenCalled();
     expect(callsOf('contact_inquiries', 'update')).toHaveLength(0);
+  });
+
+  it('API-ADMIN-007 変えた行が 0 行なら 404 Inquiry not found で、失敗を監査に残し、成功は残さない', async () => {
+    setupDb({ updateRows: [] });
+
+    const res = await PATCH(patch({ status: 'closed' }), params());
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Inquiry not found' });
+    const rows = auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'admin.contact.status_update',
+      resource_id: INQUIRY_ID,
+      outcome: 'failure',
+      detail: 'inquiry_not_found',
+    });
+  });
+
+  it('API-ADMIN-007 id が UUID でない時は表に渡さず 404 を返し、何も書かない', async () => {
+    setupDb();
+
+    const res = await PATCH(patch({ status: 'closed' }), params('not-a-uuid'));
+
+    expect(res.status).toBe(404);
+    expect(touchedContactTables()).toHaveLength(0);
+    expect(auditRows()).toHaveLength(0);
+  });
+
+  it('API-ADMIN-007 回数の枠を超えた要求は 429 で、表にも監査にも書かない（枠は管理者の ID で数える）', async () => {
+    setupDb();
+    const limited = { status: 429, json: async () => ({ error: 'Too many requests' }) };
+    enforceRateLimit.mockResolvedValue(limited);
+
+    const res = await PATCH(patch({ status: 'closed' }), params());
+
+    expect(res).toBe(limited);
+    expect(enforceRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: 'admin:contact:write', limit: 60, windowSeconds: 600, subject: 'admin-1' }),
+    );
+    expect(touchedContactTables()).toHaveLength(0);
+    expect(auditRows()).toHaveLength(0);
   });
 
   it('API-ADMIN-007 DB の誤りは 500 Failed to update status で、監査に成功を残さない', async () => {

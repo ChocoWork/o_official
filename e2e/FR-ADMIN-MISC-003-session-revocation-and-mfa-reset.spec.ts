@@ -32,10 +32,11 @@ const ADMIN_PROBE_ROUTE = '/api/admin/permissions';
 const SUPPORTER_PROBE_ROUTE = '/api/admin/users';
 
 /**
- * SEC-ADMIN-007 の「決めた上限」。上限はまだ決まっていない（docs/02_Requirements/areas/admin.md の SEC-ADMIN-007）ので、仮の値。
- * 実装で上限が決まったら、この値を決めた値に合わせる（記録を書かない・まとめて1行にする、のどちらでも「増えた数が上限以下」で確かめる）。
+ * SEC-ADMIN-007 の「決めた上限」（ADR-0460）。認可に失敗した要求の監査は、全体で10分に20行まで。
+ * 21回目はまとめの1行（outcome が unauthorized_burst）なので、outcome が unauthorized の行は20以下で数える。
+ * 10分の窓の境目をまたぐと数え直すので、要求の途中で窓が変わると最大で倍になりうる（揺れたら窓の頭まで待つ）。
  */
-const UNAUTHORIZED_AUDIT_ROW_LIMIT = 50;
+const UNAUTHORIZED_AUDIT_ROW_LIMIT = 20;
 const UNAUTHORIZED_REQUEST_COUNT = UNAUTHORIZED_AUDIT_ROW_LIMIT + 30;
 
 const SPOOFED_IP = '203.0.113.7';
@@ -191,7 +192,6 @@ test.describe('FR-ADMIN-MISC-003 強制失効と MFA のリセットの守り', 
   // SEC-ADMIN-007-AC-01: 画面を描かない HTTP の試験なので viewport の繰り返しは無い。
   // 数える行は、この試験だけの user-agent の印で絞る（他の試験が足す unauthorized の行を数えない）。
   test('SEC-ADMIN-007-AC-01 JWT の無い強制失効の要求を繰り返しても監査ログが際限なく増えない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-007-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     const origin = originOf(baseURL);
     const userAgent = `e2e-sec-admin-007-${randomUUID()}`;
     const unauthorizedRows = () =>
@@ -223,7 +223,6 @@ test.describe('FR-ADMIN-MISC-003 強制失効と MFA のリセットの守り', 
   });
 
   test(`SEC-ADMIN-008-AC-01 MFA のリセットの記録に対象のメールと理由の文が平文で出ない`, async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-008-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     const origin = originOf(baseURL);
     const admin = await sharedAdmin();
     const target = await createTestMember('misc003-008');
@@ -276,7 +275,6 @@ test.describe('FR-ADMIN-MISC-003 強制失効と MFA のリセットの守り', 
   });
 
   test(`SEC-ADMIN-014-AC-01 ACL で特権を外した人の MFA はリセットしない`, async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-014-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     const origin = originOf(baseURL);
     const admin = await sharedAdmin();
     const target = await createTestMember('misc003-014a');
@@ -299,7 +297,6 @@ test.describe('FR-ADMIN-MISC-003 強制失効と MFA のリセットの守り', 
   });
 
   test(`SEC-ADMIN-014-AC-02 リセットの後、対象の session が全部失効する`, async ({ page, request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-014-AC-02 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     const origin = originOf(baseURL);
     const admin = await sharedAdmin();
     await withPermissionScenario(async (db) => {
@@ -312,12 +309,19 @@ test.describe('FR-ADMIN-MISC-003 強制失効と MFA のリセットの守り', 
       const response = await resetMfa(request, origin, admin.accessToken, target.userId, `e2e-reason-${randomUUID()}`);
       expect(response.status()).toBe(200);
 
+      // 要素の削除だけでも GoTrue がログアウトさせうるので、新しい失効を通ったことは session の行でも確かめる
+      const sessions = await db.query(
+        `select (select count(*)::int from public.sessions where user_id = $1::uuid and revoked_at is null) as live,
+                (select count(*)::int from auth.sessions where user_id = $1::uuid) as auth`,
+        [target.userId],
+      );
+      expect(sessions.rows[0].live).toBe(0);
+      expect(sessions.rows[0].auth).toBe(0);
       expect((await probe(request, SUPPORTER_PROBE_ROUTE, supporterJwt)).status()).toBe(401);
     });
   });
 
   test(`SEC-ADMIN-015-AC-01 自分自身の失効を断る`, async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-015-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     const origin = originOf(baseURL);
     // 断られなかった時に自分の session が消えるので、共有ではなくこの試験だけの管理者を使う
     const admin = await createAal2Admin();
@@ -336,7 +340,6 @@ test.describe('FR-ADMIN-MISC-003 強制失効と MFA のリセットの守り', 
   });
 
   test(`SEC-ADMIN-015-AC-02 存在しない利用者の失効を 404 で断る`, async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-015-AC-02 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     const origin = originOf(baseURL);
     const admin = await sharedAdmin();
     const missingUserId = randomUUID();

@@ -106,28 +106,35 @@ describe('Auth API integration (mocked supabase)', () => {
     expect(res.status).toBe(401);
   });
 
-  test('ARC-AUTH-001 register success (admin) returns 201', async () => {
+  test('ARC-AUTH-001 register は管理の見出し（x-admin-token）を付けても公開の登録で、createUser を呼ばず 202 を返す', async () => {
     process.env.ADMIN_API_KEY = 'adm';
-    const { createServiceRoleClient } = require('@/lib/supabase/server');
-    const fakeService = {
-      auth: { admin: { createUser: jest.fn().mockResolvedValue({ data: { user: { id: 'u1', email: 'new@example.com' } }, error: null }) } },
-    };
-    createServiceRoleClient.mockReturnValue(fakeService);
+    const { createServiceRoleClient, createClient } = require('@/lib/supabase/server');
+    const createUser = jest.fn();
+    createServiceRoleClient.mockReturnValue({
+      rpc: jest.fn().mockResolvedValue({ data: null, error: null }),
+      auth: { admin: { createUser } },
+    });
+    const signUp = jest.fn().mockResolvedValue({ data: { session: null, user: { id: 'u1' } }, error: null });
+    createClient.mockResolvedValue({ auth: { signUp } });
 
     const req = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': 'adm' }, body: JSON.stringify({ email: 'new@example.com', password: 'password123456789' }) });
 
     const res: any = await registerHandler(req);
-    const body = await res.json();
-    expect(res.status).toBe(201);
-    expect(body.email).toBe('new@example.com');
+    expect(res.status).toBe(202);
+    expect(createUser).not.toHaveBeenCalled();
+    expect(signUp).toHaveBeenCalledTimes(1);
+    delete process.env.ADMIN_API_KEY;
   });
 
-  test('ARC-AUTH-001 register unauthorized without admin token returns 401', async () => {
+  test('ARC-AUTH-001 register は ADMIN_API_KEY が未設定でも管理の見出しで 500 にならず、公開の登録として 202 を返す', async () => {
     delete process.env.ADMIN_API_KEY;
-    const req = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'new@example.com', password: 'password123456789' }) });
+    const { createServiceRoleClient, createClient } = require('@/lib/supabase/server');
+    createServiceRoleClient.mockReturnValue({ rpc: jest.fn().mockResolvedValue({ data: null, error: null }) });
+    createClient.mockResolvedValue({ auth: { signUp: jest.fn().mockResolvedValue({ data: { session: null, user: { id: 'u1' } }, error: null }) } });
+    const req = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': 'anything' }, body: JSON.stringify({ email: 'new@example.com', password: 'password123456789' }) });
 
     const res: any = await registerHandler(req);
-    expect(res.status).toBe(500); // because server misconfiguration when ADMIN_API_KEY not configured
+    expect(res.status).toBe(202);
   });
 
   test('ARC-AUTH-001 password reset request inserts token and returns 200', async () => {

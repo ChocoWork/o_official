@@ -22,24 +22,30 @@ jest.mock('@/lib/auth/admin-rbac', () => ({
   authorizeAdminPermission: jest.fn(),
 }));
 
+jest.mock('@/features/auth/middleware/rateLimit', () => ({
+  enforceRateLimit: jest.fn(),
+}));
+
 import { GET, PATCH } from '@/app/api/admin/contact/[id]/route';
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
 const { logAudit } = require('@/lib/audit');
 const { authorizeAdminPermission } = require('@/lib/auth/admin-rbac');
+const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 
 // モックの NextResponse.json が持たせる _body を型を通して読む
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const bodyOf = (res: unknown): any => (res as { _body: unknown })._body;
 
 const INQUIRY_COLUMNS =
-  'id, created_at, updated_at, last_message_at, name, email, inquiry_type, subject, message, status, order_id, user_id, submitted_ip, user_agent';
+  'id, created_at, updated_at, last_message_at, name, email, inquiry_type, subject, message, status, order_id, user_id';
 const MESSAGE_COLUMNS = 'id, sender_role, author_id, body, channel, created_at';
 
-const ctx = { params: Promise.resolve({ id: 'inq-1' }) };
+const INQUIRY_ID = '3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f';
+const ctx = { params: Promise.resolve({ id: INQUIRY_ID }) };
 
 const inquiryRow = {
-  id: 'inq-1',
+  id: INQUIRY_ID,
   name: '山田',
   email: 'y@example.com',
   subject: '質問',
@@ -56,12 +62,13 @@ const messagesOrder = jest.fn();
 const messagesEq = jest.fn();
 const messagesSelect = jest.fn();
 // 状態の更新
+const updateSelect = jest.fn();
 const updateEq = jest.fn();
 const update = jest.fn();
 const from = jest.fn();
 
 function makeJsonRequest(body: unknown, headers: Record<string, string> = {}) {
-  return new Request('http://localhost/api/admin/contact/inq-1', {
+  return new Request('http://localhost/api/admin/contact/3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f', {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', ...headers },
     body: typeof body === 'string' ? body : JSON.stringify(body),
@@ -69,7 +76,7 @@ function makeJsonRequest(body: unknown, headers: Record<string, string> = {}) {
 }
 
 function makeGetRequest() {
-  return new Request('http://localhost/api/admin/contact/inq-1');
+  return new Request('http://localhost/api/admin/contact/3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f');
 }
 
 describe('/api/admin/contact/[id]', () => {
@@ -83,7 +90,9 @@ describe('/api/admin/contact/[id]', () => {
     messagesOrder.mockReset().mockResolvedValue({ data: [], error: null });
     messagesEq.mockReset().mockReturnValue({ order: messagesOrder });
     messagesSelect.mockReset().mockReturnValue({ eq: messagesEq });
-    updateEq.mockReset().mockResolvedValue({ error: null });
+    updateSelect.mockReset().mockResolvedValue({ data: [{ id: INQUIRY_ID }], error: null });
+    updateEq.mockReset().mockReturnValue({ select: updateSelect });
+    enforceRateLimit.mockReset().mockResolvedValue(null);
     update.mockReset().mockReturnValue({ eq: updateEq });
     from.mockReset().mockImplementation((table: string) =>
       table === 'contact_messages'
@@ -92,7 +101,9 @@ describe('/api/admin/contact/[id]', () => {
     );
     createServiceRoleClient.mockReset().mockResolvedValue({ from });
     logAudit.mockReset();
-    authorizeAdminPermission.mockReset().mockResolvedValue({ ok: true, userId: 'admin-1' });
+    authorizeAdminPermission
+      .mockReset()
+      .mockResolvedValue({ ok: true, userId: 'admin-1', actorEmail: 'owner@example.com' });
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -175,7 +186,7 @@ describe('/api/admin/contact/[id]', () => {
       expect(bodyOf(res)).toEqual({ data: { ...inquiryRow, orderNumber: null, messages } });
       expect(from).toHaveBeenCalledWith('contact_inquiries');
       expect(inquirySelect).toHaveBeenCalledWith(INQUIRY_COLUMNS);
-      expect(inquiryEq).toHaveBeenCalledWith('id', 'inq-1');
+      expect(inquiryEq).toHaveBeenCalledWith('id', '3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f');
     });
 
     it('DD-ADMIN-007 GET はやり取りを created_at の昇順で読む', async () => {
@@ -183,8 +194,62 @@ describe('/api/admin/contact/[id]', () => {
 
       expect(from).toHaveBeenCalledWith('contact_messages');
       expect(messagesSelect).toHaveBeenCalledWith(MESSAGE_COLUMNS);
-      expect(messagesEq).toHaveBeenCalledWith('inquiry_id', 'inq-1');
+      expect(messagesEq).toHaveBeenCalledWith('inquiry_id', '3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f');
       expect(messagesOrder).toHaveBeenCalledWith('created_at', { ascending: true });
+    });
+
+    it('DD-ADMIN-007 GET は select の文字列にも応答の data にも submitted_ip・user_agent を含めない', async () => {
+      // DB の行が万一余分な列を持っていても、選ぶ列を名指ししているので送り元の情報は取り出さない
+      const res = await GET(makeGetRequest(), ctx);
+
+      const selected = inquirySelect.mock.calls[0][0] as string;
+      expect(selected).not.toContain('submitted_ip');
+      expect(selected).not.toContain('user_agent');
+      expect(Object.keys(bodyOf(res).data)).not.toContain('submitted_ip');
+      expect(Object.keys(bodyOf(res).data)).not.toContain('user_agent');
+    });
+
+    it('DD-ADMIN-007 GET は 200 の後に読んだ記録を1行残し、名前・メール・本文・件名を入れない', async () => {
+      inquirySingle.mockResolvedValue({
+        data: { ...inquiryRow, message: '本文のひみつ', subject: '件名のひみつ' },
+        error: null,
+      });
+
+      const res = await GET(makeGetRequest(), ctx);
+
+      expect(res.status).toBe(200);
+      expect(logAudit).toHaveBeenCalledTimes(1);
+      expect(logAudit).toHaveBeenCalledWith({
+        action: 'admin.contact.read',
+        actor_id: 'admin-1',
+        actor_email: 'owner@example.com',
+        resource: 'contact',
+        resource_id: INQUIRY_ID,
+        outcome: 'success',
+      });
+      const logged = JSON.stringify(logAudit.mock.calls);
+      for (const secret of ['山田', 'y@example.com', '質問', '本文のひみつ', '件名のひみつ']) {
+        expect(logged).not.toContain(secret);
+      }
+    });
+
+    it('DD-ADMIN-007 GET は 404・やり取りの読みの誤りの時は読んだ記録を書かない', async () => {
+      inquirySingle.mockResolvedValueOnce({ data: null, error: null });
+      await GET(makeGetRequest(), ctx);
+      messagesOrder.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+      await GET(makeGetRequest(), ctx);
+
+      expect(logAudit).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-007 GET は監査の記録が例外を投げても 200 で返す（読み出しを止めない）', async () => {
+      logAudit.mockRejectedValue(new Error('audit down'));
+
+      const res = await GET(makeGetRequest(), ctx);
+
+      expect(res.status).toBe(200);
+      expect(bodyOf(res).data.id).toBe(INQUIRY_ID);
+      expect(errorSpy).toHaveBeenCalledWith('Failed to write contact read audit');
     });
 
     it('DD-ADMIN-007 GET は createServiceRoleClient が例外を投げた時は 500 Internal server error', async () => {
@@ -244,12 +309,12 @@ describe('/api/admin/contact/[id]', () => {
         updated_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       });
       expect(update.mock.calls[0][0]).not.toHaveProperty('last_message_at');
-      expect(updateEq).toHaveBeenCalledWith('id', 'inq-1');
+      expect(updateEq).toHaveBeenCalledWith('id', '3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f');
       expect(logAudit).toHaveBeenCalledWith({
         action: 'admin.contact.status_update',
         actor_id: 'admin-1',
         resource: 'contact',
-        resource_id: 'inq-1',
+        resource_id: '3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f',
         outcome: 'success',
         detail: 'status=closed',
         user_agent: 'jest-agent',
@@ -258,7 +323,7 @@ describe('/api/admin/contact/[id]', () => {
 
     it('DD-ADMIN-007 PATCH は更新が誤りを返した時は記録して 500 Failed to update status で、監査を書かない', async () => {
       const dbError = { message: 'boom' };
-      updateEq.mockResolvedValue({ error: dbError });
+      updateSelect.mockResolvedValue({ data: null, error: dbError });
 
       const res = await PATCH(makeJsonRequest({ status: 'pending' }), ctx);
 
@@ -266,6 +331,72 @@ describe('/api/admin/contact/[id]', () => {
       expect(bodyOf(res)).toEqual({ error: 'Failed to update status' });
       expect(errorSpy).toHaveBeenCalledWith('Failed to update inquiry status:', dbError);
       expect(logAudit).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-007 PATCH は回数の枠を認可の直後に管理者の ID だけで数え（admin:contact:write・60・600秒）、超えたら 429 で DB に触らない', async () => {
+      const limited = { status: 429, _body: { error: 'Too many requests' } };
+      enforceRateLimit.mockResolvedValue(limited);
+      const request = makeJsonRequest({ status: 'closed' });
+
+      const res = await PATCH(request, ctx);
+
+      expect(res).toBe(limited);
+      expect(enforceRateLimit).toHaveBeenCalledWith({
+        request,
+        endpoint: 'admin:contact:write',
+        limit: 60,
+        windowSeconds: 600,
+        subject: 'admin-1',
+      });
+      expect(createServiceRoleClient).not.toHaveBeenCalled();
+      expect(logAudit).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-007 PATCH は認可で断った要求を回数に数えない', async () => {
+      authorizeAdminPermission.mockResolvedValue({ ok: false, response: { status: 403 } });
+
+      await PATCH(makeJsonRequest({ status: 'closed' }), ctx);
+
+      expect(enforceRateLimit).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-007 PATCH は id が UUID でない時は DB に渡さず 404 を返し、何も書かない', async () => {
+      const res = await PATCH(makeJsonRequest({ status: 'closed' }), { params: Promise.resolve({ id: 'inq-1' }) });
+
+      expect(res.status).toBe(404);
+      expect(bodyOf(res)).toEqual({ error: 'Inquiry not found' });
+      expect(createServiceRoleClient).not.toHaveBeenCalled();
+      expect(logAudit).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['0 行', []],
+      ['行が空', null],
+    ])('DD-ADMIN-007 PATCH は更新が %s の時は 404 で、失敗を監査に残し、成功は書かない', async (_label, data) => {
+      updateSelect.mockResolvedValue({ data, error: null });
+
+      const res = await PATCH(makeJsonRequest({ status: 'closed' }, { 'user-agent': 'jest-agent' }), ctx);
+
+      expect(updateSelect).toHaveBeenCalledWith('id');
+      expect(res.status).toBe(404);
+      expect(bodyOf(res)).toEqual({ error: 'Inquiry not found' });
+      expect(logAudit).toHaveBeenCalledTimes(1);
+      expect(logAudit).toHaveBeenCalledWith({
+        action: 'admin.contact.status_update',
+        actor_id: 'admin-1',
+        resource: 'contact',
+        resource_id: INQUIRY_ID,
+        outcome: 'failure',
+        detail: 'inquiry_not_found',
+        user_agent: 'jest-agent',
+      });
+    });
+
+    it('DD-ADMIN-007 PATCH は更新が1行なら 200 で success を書く', async () => {
+      const res = await PATCH(makeJsonRequest({ status: 'answered' }), ctx);
+
+      expect(res.status).toBe(200);
+      expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success', detail: 'status=answered' }));
     });
 
     it('DD-ADMIN-007 PATCH は createServiceRoleClient が例外を投げた時は 500 Internal server error', async () => {

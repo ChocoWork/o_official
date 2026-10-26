@@ -131,6 +131,32 @@ describe('POST /api/auth/otp/verify - Integration Tests', () => {
     });
   });
 
+  test('API-AUTH-002 成功の本文は user { id, email, role } と message だけで、Supabase の記録とトークンを載せない', async () => {
+    __mockVerifyOtp.mockResolvedValue({
+      data: {
+        session: fakeSession,
+        user: {
+          ...fakeUser,
+          phone: '',
+          app_metadata: { provider: 'email', role: 'admin' },
+          user_metadata: { name: 'Admin' },
+          identities: [{ identity_id: 'i-1' }],
+        },
+      },
+      error: null,
+    });
+
+    const res: any = await otpVerifyHandler(buildOtpRequest());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toEqual({
+      user: { id: 'user-123', email: PENDING_EMAIL, role: 'admin' },
+      message: '認証に成功しました。',
+    });
+    expect(JSON.stringify(body)).not.toMatch(/app_metadata|user_metadata|identities|access|refresh/);
+  });
+
   test('API-AUTH-002 cart の Cookie の印をセッション保存へ渡し、ログイン後の引き継ぎに使う', async () => {
     const cartToken = 'c'.repeat(43);
     const request = buildOtpRequest();

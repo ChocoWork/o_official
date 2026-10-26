@@ -27,11 +27,11 @@ jest.mock('next/navigation', () => ({
   },
 }));
 
-// 表の image_url は null になりうるが部品の型は string なので、DB の形のまま型だけ合わせる
+// 公開の取り出しは image_url を持たない（SEC-NEWS-005）。DB の形のまま型だけ合わせる
 const ARTICLES = [
-  { id: 'e1', title: 'Event one', published_date: '2026-10-03', category: 'EVENT', image_url: null, content: 'e' },
-  { id: 's1', title: 'Store one', published_date: '2026-10-02', category: 'STORE', image_url: null, content: 's' },
-  { id: 'c1', title: 'Collection one', published_date: '2026-10-01', category: 'COLLECTION', image_url: null, content: 'c' },
+  { id: 'e1', title: 'Event one', published_date: '2026-10-03', category: 'EVENT', content: 'e' },
+  { id: 's1', title: 'Store one', published_date: '2026-10-02', category: 'STORE', content: 's' },
+  { id: 'c1', title: 'Collection one', published_date: '2026-10-01', category: 'COLLECTION', content: 'c' },
 ] as unknown as PublicNewsArticle[];
 
 const CATEGORY_NAMES = ['ALL', 'COLLECTION', 'EVENT', 'COLLABORATION', 'SUSTAINABILITY', 'STORE', 'BLOG'];

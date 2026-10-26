@@ -1,6 +1,6 @@
 # STOCKIST の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: STOCKIST（取扱店の一覧 `/stockist`・ホームの取扱店の節の部品・管理の取扱店） | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: STOCKIST（取扱店の一覧 `/stockist`・ホームの取扱店の節の部品・管理の取扱店） | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -19,7 +19,7 @@ STOCKIST の領域の構成・画面・画面遷移・状態遷移・API・デ�
 - 結論: 公開の側は Server Component が取り出しの関数を直接呼び、公開の店だけを6つの列で返す。公開の API の窓口は無い。管理の側は利用者の端末で動く画面から Route Handler を通し、窓口で権限・2要素認証・回数の制限・CSRF の token を確かめた上で、利用者の JWT の client で RLS に通す
 - 地方・都道府県の絞り込みは、全部の公開の店をサーバーで1回取り、画面の側で URL の `pref` と住所の先頭の県名を突き合わせて行う
 - DB の表は必須の列 `type` を持つが、管理の作成の窓口は `type` を送らない。作成が DB で失敗する恐れがある（DATA-STOCKIST-001、API-STOCKIST-002）
-- 今のコードが満たさないセキュリティ要件（SEC-STOCKIST-002・003・008〜015・018〜021）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた。一部だけ満たす要件は NEWS と同じ決まりで、満たさない所がその項目の受け持つコードにある時は上位にせず、ほかのコードにだけある時は上位にした
+- 今のコードが満たさないセキュリティ要件（SEC-STOCKIST-003・008・010・012・015・019〜021。002・009・011・013・014・018 は 2026-10-26 に直した）は、満たす形の構造を持たないので上位につながず、本文に「満たさない」と書いた。一部だけ満たす要件は NEWS と同じ決まりで、満たさない所がその項目の受け持つコードにある時は上位にせず、ほかのコードにだけある時は上位にした。ただし SEC-STOCKIST-014 だけは例外で、満たさない残り（各 route の外側の `catch` の記録）が API-STOCKIST-001〜005 の route にあるが、AC-01・AC-02 と窓口の中の DB の誤りの記録は同じ route で満たすので、その実装の根拠として上位につなぐ（残りは波 1-C の `safe-error.ts` で直す）
 
 ## 範囲と根拠
 
@@ -69,7 +69,7 @@ graph LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FREQ-13-REQ-01、FR-STOCKIST-003、SEC-STOCKIST-001、DRV-STOCKIST-001、ADR-0250、ADR-0253、ADR-0254、ADR-0257 |
+| 上位 | FREQ-13-REQ-01、FR-STOCKIST-003、SEC-STOCKIST-001、SEC-STOCKIST-002、SEC-STOCKIST-018、DRV-STOCKIST-001、ADR-0250、ADR-0253、ADR-0254、ADR-0257 |
 | 根拠 | 店の数が少ない前提で、ページを作るサーバーの中で全部の公開の店を1回取り、店を入れた HTML をそのまま返すため（ADR-0250）。取り出しの条件と DB の RLS の2段で公開の店だけに絞り、返す列も6つに限れば、片方が崩れても非公開の店と内部の列を外へ出さない（SEC-STOCKIST-001、ADR-0254）。DB が一時的に落ちても頁全体を誤りにせず空の表示で済ませる（FR-STOCKIST-003、ADR-0253）。並びの要件が無いので、取るたびに並びが変わらないよう id の順にする（DRV-STOCKIST-001、ADR-0257） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -77,8 +77,8 @@ graph LR
 
 - 呼ぶ側: `/stockist`（`src/app/stockist/page.tsx`、`getPublicStockists`）とホーム（`src/app/page.tsx`、範囲外。`getHomePublicStockists`）。どちらも Server Component で、店を client の部品 `PublicStockistGrid` に渡す
 - 取り出し: `status='published'` で絞り、id の昇順に並べる（`public.ts`）。選ぶ列は7つ（状態を含む）で、返す前に id・店舗名・住所・電話・営業時間・定休日の6つに詰め直す（`public.ts`）
-- 件数: `/stockist` は上限を付けずに全部を取る。ホームは6件まで（`public.ts`）。公開の読み出しの件数の上限（SEC-STOCKIST-018）は満たさないので上位にしない
-- client: `createClient()`（引数なし）で、閲覧者のログインの Cookie に結びついた client を使う（`public.ts`）。管理の権限を持つ人がログインしたまま開くと、DB の RLS は非公開の店も許すが、取り出しの条件で出ない。Cookie を引き継がない client（SEC-STOCKIST-002）は満たさないので上位にしない
+- 件数: 上限は必ず 200 件（`PUBLIC_STOCKIST_FETCH_LIMIT`）。`/stockist` は件数を渡さず、上限の 200 件で取る。ホームは 6 件まで。呼び出しの件数が 200 を超える・無い・0 以下・NaN・無限の時も 200 を掛ける（`public.ts`、SEC-STOCKIST-018。2026-10-26）。PostgREST の `max_rows` を本番で設定するかは確かめていない
+- client: `createPublicClient()`（引数なし）で、ログインの Cookie を引き継がない anon の client を使う（`public.ts`、SEC-STOCKIST-002。2026-10-26）。管理の権限を持つ人がログインしたまま開いても、DB の RLS は anon として働き、取り出しの条件と合わせて非公開の店は出ない（以前は `createClient()` で閲覧者の session を引き継いだ）
 - 失敗: Supabase の `error` を見て、サーバーの記録に書き、空の一覧を返す（`public.ts`）。画面の側では0件と同じ表示になる（SCR-STOCKIST-001・003）
 - 描き方: `/stockist` は `searchParams` を待って毎回サーバーで描く（`page.tsx`。絞り込みの部品が URL を読むため）。`revalidate`・`use cache` の指定は無い
 - 未使用（削除の判断待ち）: 地図の埋め込みの URL の定数 `STOCKIST_MAP_EMBED_URL`（`public.ts`）はどこからも読まれない。消すかは `docs/05_Quality/reports/unused-code.md` の判断の列でユーザーが決める
@@ -121,7 +121,7 @@ sequenceDiagram
 - 窓口の順: `[id]` の窓口は先に id の形を確かめて 400 を返す。次に認可、回数の制限、変更だけ CSRF の token、入力の確かめ、DB、監査の順（`route.ts`、`[id]/route.ts`）
 - 認可: `authorizeAdminPermission`（`src/lib/auth/admin-rbac.ts`）が token を確かめ（401）、session の生存と DB の ACL を照会し（停止は 503、無効は 401）、権限が無ければ 403、`aal` が `aal2` でなければ 403 `MFA required` を返す
 - DB: `createClient(request)` で要求の JWT を付け、RLS（DATA-STOCKIST-002）を効かせる。service role は使わない。例外（推定）: 認可は期限の猶予を見ずに token を確かめるが、DB の client は期限まで5秒以下の token を送らず、Cookie を読む client に落ちる（`src/lib/auth/request-token.ts`、`src/lib/supabase/server.ts`）。その時は Google OAuth の Cookie（`sb-<ref>-auth-token`）の別の session か、無ければ anon で動き、anon なら PUT・PATCH・DELETE は0件で 200 と成功の監査になる（THR-STOCKIST-013）
-- 監査: 変更の4つは `logAudit`（`src/lib/audit.ts`）を呼ぶ。resource は `stockists`、送り元（`x-forwarded-for` の先頭）とブラウザの名を残す。GET は監査しない。送り元を信頼できる値から取ること・店名から制御文字を除くこと（SEC-STOCKIST-012）と、0件の変更を成功にしないこと・消した中身を残すこと（SEC-STOCKIST-013）は満たさないので上位にしない。認可で断った要求（401・403・`MFA required`・503）は共有の `admin-rbac.ts` が `console.warn` を出すだけで、監査しない（推定。SEC-STOCKIST-021 は満たさない）
+- 監査: 変更の4つは `logAudit`（`src/lib/audit.ts`）を呼ぶ。resource は `stockists`、送り元（`x-forwarded-for` の先頭）とブラウザの名を残す。GET は監査しない。送り元を信頼できる値から取ること・店名から制御文字を除くこと（SEC-STOCKIST-012）は満たさないので上位にしない。0件の変更を成功にしないこと・消した中身を残すこと（SEC-STOCKIST-013）は 2026-10-26 に満たした（PUT・PATCH・DELETE は変えた行を `.select()` で受け取り、0 行は 404 と結果 failure の監査。削除の成功の監査は `metadata.deleted` に id・name・address・status を残す。API-STOCKIST-004〜006）。認可で断った要求（401・403・`MFA required`・503）は共有の `admin-rbac.ts` が `console.warn` を出すだけで、監査しない（推定。SEC-STOCKIST-021 は満たさない）
 - 画面のページ（`/admin/stockist/create`・`/admin/stockist/edit/[id]`）にサーバーの守りは無く、殻は誰でも開け、送った時に窓口が断る（SEC-STOCKIST-019 は満たさない）
 - DB を直接叩く道: RLS は `has_permission` だけを見て aal2 と session の生存を見ないので、権限を持つ人の aal1 の JWT で PostgREST から直接書ける。この道は回数の制限・CSRF・監査を通らない（推定。SEC-STOCKIST-003 は満たさない）
 
@@ -431,7 +431,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-006、SEC-STOCKIST-006、SEC-STOCKIST-007、DRV-STOCKIST-001、ADR-0258、ADR-0259、ADR-0262 |
+| 上位 | FR-ADMIN-006、SEC-STOCKIST-006、SEC-STOCKIST-007、SEC-STOCKIST-009、DRV-STOCKIST-001、ADR-0258、ADR-0259、ADR-0262 |
 | 根拠 | 管理の一覧は非公開の店も含めて返すので、閲覧の権限 `admin.stockists.read` と aal2 を求め、DB も RLS に通す（SEC-STOCKIST-006、ADR-0258・0262）。読みの枠で回数を制限し、漏れた session での列挙を抑える（SEC-STOCKIST-007、ADR-0259）。並びは公開の側と同じ id の順（DRV-STOCKIST-001） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -441,17 +441,18 @@ stateDiagram-v2
 | --- | --- |
 | 認可 | `admin.stockists.read`。回数の制限は読みの枠 |
 | 入力 | 無し |
-| 成功 | 200 `{data}`。全部の店を id の昇順、全部の列（`type`・`created_at`・`updated_at` を含む） |
+| 成功 | 200 `{data}`。全部の店を id の昇順、8 列（`id`・`name`・`address`・`phone`・`time`・`holiday`・`status`・`updated_at`。`type`・`created_at` は返さない） |
 | 失敗 | 認可の 401・403・503、回数の 429・503、DB の誤り 500 `Failed to fetch stockists`、例外 500 |
 
-- 全部の列を返す（`route.ts`）。画面で使う列だけに絞ること（SEC-STOCKIST-009）は満たさないので上位にしない
+- 列は `ADMIN_STOCKIST_COLUMNS`（`src/features/stockist/schemas.ts`）で絞る（`route.ts`、SEC-STOCKIST-009。2026-10-26）。一覧と1件（API-STOCKIST-003）で同じ定数を使う
+- DB の誤りの記録は `console.error('Failed to fetch stockists:', { code })` で、誤りの本文を渡さない（SEC-STOCKIST-014）
 - `Cache-Control` を付けない（SEC-STOCKIST-010 は満たさない）
 
 ### API-STOCKIST-002 `POST /api/admin/stockists` 取扱店の作成
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-006、FREQ-18-REQ-01、SEC-STOCKIST-006、SEC-STOCKIST-007、DRV-STOCKIST-015、ADR-0256、ADR-0258、ADR-0259、ADR-0260、ADR-0261、ADR-0263 |
+| 上位 | FR-ADMIN-006、FREQ-18-REQ-01、SEC-STOCKIST-006、SEC-STOCKIST-007、SEC-STOCKIST-011、SEC-STOCKIST-014、DRV-STOCKIST-015、ADR-0256、ADR-0258、ADR-0259、ADR-0260、ADR-0261、ADR-0263 |
 | 根拠 | 店を増やす窓口なので、管理の権限 `admin.stockists.manage` と aal2 を求め（SEC-STOCKIST-006、ADR-0262 の分け方）、変更の枠で回数を制限し（SEC-STOCKIST-007、ADR-0259）、CSRF の token を確かめ（ADR-0260）、成功も失敗も監査に残す（ADR-0261）。カードの5つの情報と状態を必須にし、長さの上限で画面の崩れと過大な保存を防ぐ（DRV-STOCKIST-015、ADR-0263）。種別は持たない決定で入力に無い（ADR-0256） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -460,20 +461,20 @@ stateDiagram-v2
 | 項目 | 内容 |
 | --- | --- |
 | 認可 | `admin.stockists.manage`。回数の制限は変更の枠、CSRF の token（ARC-STOCKIST-003）、Origin（ARC-STOCKIST-004） |
-| 入力 | JSON。`name`（前後の空白を除いて 1〜255 字）・`address`（1〜500 字）・`phone`（1〜50 字）・`time`（1〜120 字）・`holiday`（1〜120 字）・`status`（private・published）。字の種類は確かめない |
+| 入力 | JSON。`name`（前後の空白を除いて 1〜255 字）・`address`（1〜500 字）・`phone`（1〜50 字）・`time`（1〜120 字）・`holiday`（1〜120 字）・`status`（private・published）。`phone` 以外は制御文字・書式文字・行区切り・段落区切りを含む字を拒み、`phone` は数字・`+`・`-`・括弧・空白（半角と全角）だけを許す（`stockistWriteSchema`、SEC-STOCKIST-011） |
 | 処理 | 6つの値で1行を入れ、新しい id を返させる。`type` は入れない |
 | 成功 | 201 `{success:true, id}`。監査 `admin.stockists.create`（success、要約に店名） |
-| 失敗 | 入力の誤り 400 `Invalid request` と項目ごとの制約の中身（監査 failure）、DB の誤り 500 `Failed to save stockist`（監査 error）、例外 500。JSON でない本文も例外の 500 |
+| 失敗 | 入力の誤り 400 `{ error: 'Invalid request', fields: [項目の名前] }`（監査 failure `Validation failed`。`details`・入力の値は返さない）、JSON でない本文 400 `{ error: 'Invalid request' }`（監査 failure `Invalid JSON`）、DB の誤り 500 `Failed to save stockist`（監査 error）、例外 500 |
 
 - 種別: DB の表は `type` を必須・既定値なしで持つ（DATA-STOCKIST-001）。表がこの形のままなら、入れる時に必ず DB の誤りになり 500 を返す（推定。FR-ADMIN-006-AC-02 を満たさない恐れ）
-- 字の種類の許可（SEC-STOCKIST-011）、誤りの応答で制約の中身を出さないこと・JSON でない本文を 400 にすること（SEC-STOCKIST-014）は満たさないので上位にしない
+- 字の種類の許可（SEC-STOCKIST-011）、誤りの応答で制約の中身を出さないこと・JSON でない本文を 400 にすること・DB の誤りの記録を符号だけにすること（SEC-STOCKIST-014）は 2026-10-26 に満たした（`src/features/stockist/schemas.ts`、IMPL-STOCKIST-149、DD-STOCKIST-034）
 - 監査の送り元は `x-forwarded-for` の先頭をそのまま、要約の店名も整えずに入れる（SEC-STOCKIST-012 は満たさない）
 
 ### API-STOCKIST-003 `GET /api/admin/stockists/[id]` 管理の取扱店の1件
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-006、SEC-STOCKIST-006、SEC-STOCKIST-007、ADR-0258、ADR-0259、ADR-0262 |
+| 上位 | FR-ADMIN-006、SEC-STOCKIST-006、SEC-STOCKIST-007、SEC-STOCKIST-009、ADR-0258、ADR-0259、ADR-0262 |
 | 根拠 | 編集の画面に非公開の店の中身を渡すので、一覧と同じく閲覧の権限と aal2 を求め、DB も RLS に通し、読みの枠で回数を制限する（SEC-STOCKIST-006・007、ADR-0258・0259・0262） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -483,17 +484,18 @@ stateDiagram-v2
 | --- | --- |
 | 認可 | `admin.stockists.read`。回数の制限は読みの枠 |
 | 入力 | 道の `id`。正の整数でなければ認可の前に 400 `Invalid stockist id` |
-| 成功 | 200 `{data}`。全部の列 |
+| 成功 | 200 `{data}`。8 列（API-STOCKIST-001 と同じ `ADMIN_STOCKIST_COLUMNS`） |
 | 失敗 | 行が無い時と DB の誤りは、どちらも 404 `Stockist not found`。認可の 401・403・503、回数の 429・503、例外 500 |
 
 - id の形の確かめが認可より前なので、ログインしていない要求にも 400 を返す（害は小さい、推定）
-- 全部の列を返し、`Cache-Control` を付けない（SEC-STOCKIST-009・010 は満たさない）
+- 列を絞った（SEC-STOCKIST-009。2026-10-26）。`Cache-Control` を付けない（SEC-STOCKIST-010 は満たさない）
+- 道の `id` は `Number.isSafeInteger` で正の整数だけを受ける。桁あふれの値（`1e30` など）は DB に渡さず 400
 
 ### API-STOCKIST-004 `PUT /api/admin/stockists/[id]` 取扱店の全体の更新
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-006、SEC-STOCKIST-006、SEC-STOCKIST-007、DRV-STOCKIST-015、ADR-0258、ADR-0259、ADR-0260、ADR-0261 |
+| 上位 | FR-ADMIN-006、SEC-STOCKIST-006、SEC-STOCKIST-007、SEC-STOCKIST-011、SEC-STOCKIST-013、SEC-STOCKIST-014、DRV-STOCKIST-015、ADR-0258、ADR-0259、ADR-0260、ADR-0261 |
 | 根拠 | 店の情報を直す窓口で、作成と同じ入力の必須と上限・権限の確かめを当て、決まりを1つにするため（DRV-STOCKIST-015、SEC-STOCKIST-006）。変更の枠と CSRF の token で守り、成功も失敗も監査に残す（SEC-STOCKIST-007、ADR-0259・0260・0261） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -503,18 +505,18 @@ stateDiagram-v2
 | --- | --- |
 | 認可 | `admin.stockists.manage`。変更の枠、CSRF の token、Origin |
 | 入力 | 道の `id`（正の整数でなければ 400）。JSON は作成と同じ6つの値で、全部必須 |
-| 処理 | id の行の6つの値を書き換える。`updated_at` は DB の引き金が今の時刻にする |
+| 処理 | id の行の6つの値を書き換え、`.select('id')` で変えた行を受け取る。`updated_at` は DB の引き金が今の時刻にする |
 | 成功 | 200 `{success:true}`。監査 `admin.stockists.update`（success、要約に店名） |
-| 失敗 | 入力の誤り 400 と制約の中身（監査 failure）、DB の誤り 500 `Failed to update stockist`（監査 error）、例外 500。JSON でない本文も 500 |
+| 失敗 | 入力の誤り 400 `{ error: 'Invalid request', fields }`（監査 failure）、JSON でない本文 400（監査 failure `Invalid JSON`）、変えた行が 0 件 404 `Stockist not found`（監査 failure `Stockist not found`）、DB の誤り 500 `Failed to update stockist`（監査 error）、例外 500 |
 
-- 無い id でも DB は誤りを返さず、200 と成功の監査になる（推定。SEC-STOCKIST-013 は満たさない）
-- SEC-STOCKIST-011・012・014 は API-STOCKIST-002 と同じく満たさない
+- 変えた行が 0 件（無い id、または RLS が隠した行）は 404 にし、成功の監査を書かない（SEC-STOCKIST-013。2026-10-26）。窓口は利用者の session の client で書くので、aal2 でない session の書き込みも 404 になる（403 でない）
+- SEC-STOCKIST-011・014 は API-STOCKIST-002 と同じ（`stockistWriteSchema`）。SEC-STOCKIST-012 は満たさない
 
 ### API-STOCKIST-005 `PATCH /api/admin/stockists/[id]` 公開の状態だけの切り替え
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-006、SEC-STOCKIST-006、SEC-STOCKIST-007、ADR-0258、ADR-0259、ADR-0260、ADR-0261、ADR-0263 |
+| 上位 | FR-ADMIN-006、SEC-STOCKIST-006、SEC-STOCKIST-007、SEC-STOCKIST-013、SEC-STOCKIST-014、ADR-0258、ADR-0259、ADR-0260、ADR-0261、ADR-0263 |
 | 根拠 | 一覧のボタン1つで公開を切り替えられるよう、状態だけを受ける窓口を分けるため（FR-ADMIN-006、ADR-0263）。守りと監査は全体の更新と同じ（SEC-STOCKIST-006・007、ADR-0258・0259・0260・0261） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -524,17 +526,17 @@ stateDiagram-v2
 | --- | --- |
 | 認可 | `admin.stockists.manage`。変更の枠、CSRF の token、Origin |
 | 入力 | 道の `id`（正の整数でなければ 400）。JSON `{status}`（private・published） |
-| 処理 | id の行の `status` だけを書き換える |
+| 処理 | id の行の `status` だけを書き換え、`.select('id')` で変えた行を受け取る |
 | 成功 | 200 `{success:true}`。監査 `admin.stockists.patch`（success、要約に切り替えた先の状態） |
-| 失敗 | 入力の誤り 400 と制約の中身（監査 failure）、DB の誤り 500 `Failed to update status`（監査 error）、例外 500 |
+| 失敗 | 入力の誤り 400 `{ error: 'Invalid request', fields }`（監査 failure）、JSON でない本文 400（監査 failure `Invalid JSON`）、変えた行が 0 件 404 `Stockist not found`（監査 failure）、DB の誤り 500 `Failed to update status`（監査 error）、例外 500 |
 
-- 無い id でも 200 と成功の監査になる（推定。SEC-STOCKIST-013 は満たさない）
+- 変えた行が 0 件は 404 にし、成功の監査を書かない（SEC-STOCKIST-013。2026-10-26）
 
 ### API-STOCKIST-006 `DELETE /api/admin/stockists/[id]` 取扱店の削除
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-006、SEC-STOCKIST-006、SEC-STOCKIST-007、ADR-0258、ADR-0259、ADR-0260、ADR-0261、ADR-0264 |
+| 上位 | FR-ADMIN-006、SEC-STOCKIST-006、SEC-STOCKIST-007、SEC-STOCKIST-013、SEC-STOCKIST-014、ADR-0258、ADR-0259、ADR-0260、ADR-0261、ADR-0264 |
 | 根拠 | 要らなくなった店の行を消す窓口で、管理の権限・変更の枠・CSRF の token で守り、結果を監査に残すため（SEC-STOCKIST-006・007、ADR-0258・0259・0260・0261）。非公開で隠せるので、削除は行を消して戻さない（ADR-0264） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -544,11 +546,11 @@ stateDiagram-v2
 | --- | --- |
 | 認可 | `admin.stockists.manage`。変更の枠、CSRF の token、Origin |
 | 入力 | 道の `id`（正の整数でなければ 400）。本文なし |
-| 処理 | id の行を DB から消す |
-| 成功 | 200 `{success:true}`。監査 `admin.stockists.delete`（success、要約に消した id だけ） |
-| 失敗 | DB の誤り 500 `Failed to delete stockist`（監査 error）、例外 500 |
+| 処理 | id の行を DB から消し、`.select('id, name, address, status')` で消した行を受け取る |
+| 成功 | 200 `{success:true}`。監査 `admin.stockists.delete`（success、`detail` は消した id だけ、`metadata.deleted` に `{ id, name, address, status }`） |
+| 失敗 | 消した行が 0 件 404 `Stockist not found`（監査 failure）、DB の誤り 500 `Failed to delete stockist`（監査 error）、例外 500 |
 
-- 無い id でも 200 と成功の監査になる。監査に消した店の名前と住所は残らない（推定。SEC-STOCKIST-013 は満たさない）
+- 消した行が 0 件は 404 にし、成功の監査を書かない。成功の監査には消した店の id・名前・住所・状態を残す。電話・営業時間は残さない（SEC-STOCKIST-013。2026-10-26）。`metadata` の鍵 `deleted` は `maskAuditEvent` の伏せ字の対象に当たらない（`maskAuditEvent` は `metadata` の最上位の鍵だけを見る）
 
 ## データ
 
@@ -602,7 +604,7 @@ stateDiagram-v2
 - `has_permission` は SECURITY DEFINER・`search_path=''` で、`auth.uid()` が無ければ false、DB の ACL の表（有効で期限内の役割）だけで決める（権限の移行で役の近道を外した）
 - DB は `aal` も session の生存も見ない。権限を持つ人が aal1 の JWT や失効した session の残りの token で PostgREST を直接叩くと、非公開の読みと書き換えができる（推定。SEC-STOCKIST-003 は満たさないので上位にしない）
 - 付与: anon・authenticated に表の DELETE・INSERT・MAINTAIN・REFERENCES・SELECT・TRIGGER・TRUNCATE・UPDATE を全部付け（`remote_schema.sql`）、連番にも SELECT・UPDATE・USAGE を付ける。守りは RLS の1段だけ（SEC-STOCKIST-008 は満たさないので上位にしない）
-- PostgREST の行の上限（`max_rows`）は本番の設定を確かめていない（SEC-STOCKIST-018 は満たさない）
+- PostgREST の行の上限（`max_rows`）は本番の設定を確かめていない（SEC-STOCKIST-018 の件数の上限の分は 2026-10-26 に公開の取り出しで満たした。`max_rows` の設定は残る）
 - PostgREST を直接通った変更は監査に残らない（推定）
 
 ### DATA-STOCKIST-003 地方と都道府県の対応 `STOCKIST_REGIONS`

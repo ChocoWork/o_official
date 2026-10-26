@@ -4,13 +4,14 @@
  * @packageDocumentation
  * @impl IMPL-ADMIN-124
  * @design DD-ADMIN-009
- * @remarks テンプレートの表は直接の読み書きを断っているので、権限を確かめた後に service role で扱う。題・本文の長さと分類は表の CHECK とそろえて入口で決める。作った事は監査に残す。
+ * @remarks テンプレートの表は直接の読み書きを断っているので、権限を確かめた後に service role で扱う。題・本文の長さと分類は表の CHECK とそろえて入口で決める。作った事は監査に残す。作成は問い合わせの状態の変更・テンプレートの更新と削除と合わせて、管理者単位で10分に60回までに絞る。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
 const createTemplateSchema = z.object({
   title: z.string().trim().min(1).max(120),
@@ -18,6 +19,8 @@ const createTemplateSchema = z.object({
   body: z.string().trim().min(1).max(5000),
   sortOrder: z.number().int().min(0).max(9999).optional(),
 });
+
+const CONTACT_WRITE_RATE_LIMIT = { endpoint: 'admin:contact:write', limit: 60, windowSeconds: 600 } as const;
 
 export async function GET(request: Request) {
   try {
@@ -51,6 +54,11 @@ export async function POST(request: Request) {
     const authz = await authorizeAdminPermission('admin.contact.manage', request);
     if (!authz.ok) {
       return authz.response;
+    }
+
+    const limited = await enforceRateLimit({ request, ...CONTACT_WRITE_RATE_LIMIT, subject: authz.userId });
+    if (limited) {
+      return limited;
     }
 
     const parsed = createTemplateSchema.safeParse(await request.json().catch(() => ({})));

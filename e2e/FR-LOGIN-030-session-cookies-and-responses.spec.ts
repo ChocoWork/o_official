@@ -207,7 +207,6 @@ for (const viewport of [viewports[2]]) {
       page,
       baseURL,
     }) => {
-      test.fail(true, 'SEC-AUTH-022 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
       const origin = originOf(baseURL);
       const { otpVerify } = await loginCapturingOtpVerify(page, 'body-no-token');
       const refresh = await page.request.post(new URL('/api/auth/refresh', origin).toString(), {
@@ -233,7 +232,7 @@ for (const viewport of [viewports[2]]) {
       request,
       baseURL,
     }) => {
-      test.fail(true, 'SEC-AUTH-022 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
+      test.fail(true, 'SEC-AUTH-022 今のコードは満たさない（no-store は波 3 の proxy.ts で足す。docs/02_Requirements/areas/auth.md）');
       const origin = originOf(baseURL);
       const url = (path: string) => new URL(path, origin).toString();
       const anonymousHeaders = () => ({ origin, 'x-forwarded-for': uniqueSourceIp() });

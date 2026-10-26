@@ -127,12 +127,14 @@ describe('POST /api/auth/refresh', () => {
     consoleWarn.mockRestore();
   });
 
-  test('DD-AUTH-027 行があり交換が成功なら 200 で access_token と利用者を返し、行を差し替えて success を残す', async () => {
+  test('DD-AUTH-027 行があり交換が成功なら 200 で { ok: true } だけを返し（トークンも利用者も載せない）、行を差し替えて success を残す', async () => {
     const req = request();
     const res = (await POST(req)) as unknown as Res;
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ access_token: 'new-access', user: { id: 'user-from-supabase' } });
+    const body = await res.json();
+    expect(body).toEqual({ ok: true });
+    expect(JSON.stringify(body)).not.toMatch(/access_token|refresh_token|app_metadata|new-access|new-refresh/);
     expect(mockedEnforceRateLimit).toHaveBeenCalledWith({
       request: req,
       endpoint: 'auth:refresh',
@@ -191,7 +193,7 @@ describe('POST /api/auth/refresh', () => {
     const res = await call();
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ access_token: 'new-access', user: undefined });
+    expect(await res.json()).toEqual({ ok: true });
     expect(mockedPersistNewSession).toHaveBeenCalledWith(
       res,
       expect.objectContaining({ userId: undefined, previousSessionId: null }),
@@ -352,7 +354,7 @@ describe('POST /api/auth/refresh', () => {
     const res = await call();
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ access_token: 'new-access', user: { id: 'user-from-supabase' } });
+    expect(await res.json()).toEqual({ ok: true });
     expect(consoleError).toHaveBeenCalledWith('Session DB update error during refresh:', dbError);
     expect(mockedLogAudit).toHaveBeenCalledTimes(1);
     expect(mockedLogAudit).toHaveBeenCalledWith({

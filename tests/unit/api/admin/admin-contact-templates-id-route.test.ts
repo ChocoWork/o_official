@@ -21,14 +21,22 @@ jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('@/features/auth/middleware/rateLimit', () => ({
+  enforceRateLimit: jest.fn(),
+}));
+
 const { createServiceRoleClient: mockCreateServiceRoleClient } = require('@/lib/supabase/server');
 const { authorizeAdminPermission: mockAuthorize } = require('@/lib/auth/admin-rbac');
 const { logAudit: mockLogAudit } = require('@/lib/audit');
+const { enforceRateLimit: mockEnforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 
 const { PUT, DELETE } = require('@/app/api/admin/contact/templates/[id]/route');
 
+const TPL_ID = '5b0f4c1e-7a2d-4e6f-8b3c-9d1e2f3a4b5c';
+const TPL_ID_9 = '5b0f4c1e-7a2d-4e6f-8b3c-9d1e2f3a4b09';
 const DENIED = { status: 403, json: async () => ({ error: 'Forbidden' }) };
-const ctx = (id = 'tpl-1') => ({ params: Promise.resolve({ id }) });
+const LIMITED = { status: 429, json: async () => ({ error: 'Too many requests' }) };
+const ctx = (id = TPL_ID) => ({ params: Promise.resolve({ id }) });
 
 function makeRequest(body?: unknown, opts: { brokenJson?: boolean } = {}) {
   return {
@@ -37,18 +45,21 @@ function makeRequest(body?: unknown, opts: { brokenJson?: boolean } = {}) {
   } as unknown as Request;
 }
 
-function makeUpdateClient(result: { error: unknown }) {
-  const eq = jest.fn().mockResolvedValue(result);
+// 更新・削除は .eq('id').select('id') で変えた行を受け取る。既定は1行を変えた形
+function makeUpdateClient(result: { error: unknown; data?: unknown }) {
+  const select = jest.fn().mockResolvedValue({ data: [{ id: TPL_ID }], ...result });
+  const eq = jest.fn().mockReturnValue({ select });
   const update = jest.fn().mockReturnValue({ eq });
   const from = jest.fn().mockReturnValue({ update });
-  return { client: { from }, from, update, eq };
+  return { client: { from }, from, update, eq, select };
 }
 
-function makeDeleteClient(result: { error: unknown }) {
-  const eq = jest.fn().mockResolvedValue(result);
+function makeDeleteClient(result: { error: unknown; data?: unknown }) {
+  const select = jest.fn().mockResolvedValue({ data: [{ id: TPL_ID }], ...result });
+  const eq = jest.fn().mockReturnValue({ select });
   const del = jest.fn().mockReturnValue({ eq });
   const from = jest.fn().mockReturnValue({ delete: del });
-  return { client: { from }, from, del, eq };
+  return { client: { from }, from, del, eq, select };
 }
 
 const validBody = { title: '発送のご案内', body: '本日発送しました。' };
@@ -59,6 +70,7 @@ describe('admin contact templates [id] route (update and delete)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1' });
+    mockEnforceRateLimit.mockReset().mockResolvedValue(null);
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -101,7 +113,7 @@ describe('admin contact templates [id] route (update and delete)', () => {
       const { client, from, update, eq } = makeUpdateClient({ error: null });
       mockCreateServiceRoleClient.mockResolvedValue(client);
 
-      const res = await PUT(makeRequest({ ...validBody, category: 'product', sortOrder: 5 }), ctx('tpl-9'));
+      const res = await PUT(makeRequest({ ...validBody, category: 'product', sortOrder: 5 }), ctx(TPL_ID_9));
 
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ success: true });
@@ -113,12 +125,12 @@ describe('admin contact templates [id] route (update and delete)', () => {
         sort_order: 5,
         updated_at: expect.any(String),
       });
-      expect(eq).toHaveBeenCalledWith('id', 'tpl-9');
+      expect(eq).toHaveBeenCalledWith('id', TPL_ID_9);
       expect(mockLogAudit).toHaveBeenCalledWith({
         action: 'admin.contact.template.update',
         actor_id: 'admin-1',
         resource: 'contact_reply_template',
-        resource_id: 'tpl-9',
+        resource_id: TPL_ID_9,
         outcome: 'success',
         detail: 'updated',
         user_agent: 'jest-agent',
@@ -166,16 +178,63 @@ describe('admin contact templates [id] route (update and delete)', () => {
       expect(mockLogAudit).not.toHaveBeenCalled();
     });
 
-    it('DD-ADMIN-010 PUT は対象の行が無くても行の数を見ず 200 で成功を監査に残す', async () => {
-      const { client } = makeUpdateClient({ error: null });
+    it.each([
+      ['行が 0 件', []],
+      ['行が空', null],
+    ])('DD-ADMIN-010 PUT は対象の %s の時 404 Template not found で、失敗を監査に残し、成功は書かない', async (_label, data) => {
+      const { client, select } = makeUpdateClient({ error: null, data });
       mockCreateServiceRoleClient.mockResolvedValue(client);
 
-      const res = await PUT(makeRequest(validBody), ctx('missing-id'));
+      const res = await PUT(makeRequest(validBody), ctx());
 
-      expect(res.status).toBe(200);
-      expect(mockLogAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ resource_id: 'missing-id', outcome: 'success' }),
-      );
+      expect(select).toHaveBeenCalledWith('id');
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: 'Template not found' });
+      expect(mockLogAudit).toHaveBeenCalledTimes(1);
+      expect(mockLogAudit).toHaveBeenCalledWith({
+        action: 'admin.contact.template.update',
+        actor_id: 'admin-1',
+        resource: 'contact_reply_template',
+        resource_id: TPL_ID,
+        outcome: 'failure',
+        detail: 'template_not_found',
+        user_agent: 'jest-agent',
+      });
+    });
+
+    it('DD-ADMIN-010 PUT は id が UUID でない時 DB に渡さず 404 Template not found を返し、何も書かない', async () => {
+      const res = await PUT(makeRequest(validBody), ctx('tpl-1'));
+
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: 'Template not found' });
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+      expect(mockLogAudit).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-010 PUT は回数の枠を認可の直後に管理者の ID だけで数え（admin:contact:write・60・600秒）、超えたら 429 で DB を呼ばない', async () => {
+      mockEnforceRateLimit.mockResolvedValue(LIMITED);
+      const request = makeRequest(validBody);
+
+      const res = await PUT(request, ctx());
+
+      expect(res).toBe(LIMITED);
+      expect(mockEnforceRateLimit).toHaveBeenCalledWith({
+        request,
+        endpoint: 'admin:contact:write',
+        limit: 60,
+        windowSeconds: 600,
+        subject: 'admin-1',
+      });
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+      expect(mockLogAudit).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-010 PUT は認可で断った要求を回数に数えない', async () => {
+      mockAuthorize.mockResolvedValue({ ok: false, response: DENIED });
+
+      await PUT(makeRequest(validBody), ctx());
+
+      expect(mockEnforceRateLimit).not.toHaveBeenCalled();
     });
 
     it('DD-ADMIN-010 PUT は createServiceRoleClient が例外を投げた時 500 Internal server error', async () => {
@@ -214,18 +273,18 @@ describe('admin contact templates [id] route (update and delete)', () => {
       const { client, from, del, eq } = makeDeleteClient({ error: null });
       mockCreateServiceRoleClient.mockResolvedValue(client);
 
-      const res = await DELETE(makeRequest(), ctx('tpl-3'));
+      const res = await DELETE(makeRequest(), ctx(TPL_ID_9));
 
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ success: true });
       expect(from).toHaveBeenCalledWith('contact_reply_templates');
       expect(del).toHaveBeenCalled();
-      expect(eq).toHaveBeenCalledWith('id', 'tpl-3');
+      expect(eq).toHaveBeenCalledWith('id', TPL_ID_9);
       expect(mockLogAudit).toHaveBeenCalledWith({
         action: 'admin.contact.template.delete',
         actor_id: 'admin-1',
         resource: 'contact_reply_template',
-        resource_id: 'tpl-3',
+        resource_id: TPL_ID_9,
         outcome: 'success',
         detail: 'deleted',
         user_agent: 'jest-agent',
@@ -243,6 +302,65 @@ describe('admin contact templates [id] route (update and delete)', () => {
       expect(await res.json()).toEqual({ error: 'Failed to delete template' });
       expect(errorSpy).toHaveBeenCalledWith('Failed to delete reply template:', dbError);
       expect(mockLogAudit).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['行が 0 件', []],
+      ['行が空', null],
+    ])('DD-ADMIN-010 DELETE は対象の %s の時 404 Template not found で、失敗を監査に残し、成功は書かない', async (_label, data) => {
+      const { client, select } = makeDeleteClient({ error: null, data });
+      mockCreateServiceRoleClient.mockResolvedValue(client);
+
+      const res = await DELETE(makeRequest(), ctx());
+
+      expect(select).toHaveBeenCalledWith('id');
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: 'Template not found' });
+      expect(mockLogAudit).toHaveBeenCalledTimes(1);
+      expect(mockLogAudit).toHaveBeenCalledWith({
+        action: 'admin.contact.template.delete',
+        actor_id: 'admin-1',
+        resource: 'contact_reply_template',
+        resource_id: TPL_ID,
+        outcome: 'failure',
+        detail: 'template_not_found',
+        user_agent: 'jest-agent',
+      });
+    });
+
+    it('DD-ADMIN-010 DELETE は id が UUID でない時 DB に渡さず 404 Template not found を返し、何も書かない', async () => {
+      const res = await DELETE(makeRequest(), ctx('tpl-1'));
+
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: 'Template not found' });
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+      expect(mockLogAudit).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-010 DELETE は回数の枠を認可の直後に管理者の ID だけで数え（admin:contact:write・60・600秒）、超えたら 429 で DB を呼ばない', async () => {
+      mockEnforceRateLimit.mockResolvedValue(LIMITED);
+      const request = makeRequest();
+
+      const res = await DELETE(request, ctx());
+
+      expect(res).toBe(LIMITED);
+      expect(mockEnforceRateLimit).toHaveBeenCalledWith({
+        request,
+        endpoint: 'admin:contact:write',
+        limit: 60,
+        windowSeconds: 600,
+        subject: 'admin-1',
+      });
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+      expect(mockLogAudit).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-010 DELETE は認可で断った要求を回数に数えない', async () => {
+      mockAuthorize.mockResolvedValue({ ok: false, response: DENIED });
+
+      await DELETE(makeRequest(), ctx());
+
+      expect(mockEnforceRateLimit).not.toHaveBeenCalled();
     });
 
     it('DD-ADMIN-010 DELETE は createServiceRoleClient が例外を投げた時 500 Internal server error', async () => {

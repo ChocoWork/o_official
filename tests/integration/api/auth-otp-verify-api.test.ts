@@ -113,7 +113,10 @@ describe('API-AUTH-002 POST /api/auth/otp/verify', () => {
     const res = await verifyHandler(buildRequest({ code: CODE }));
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ user: USER, message: '認証に成功しました。' });
+    expect(await res.json()).toEqual({
+      user: { id: USER.id, email: PENDING_EMAIL, role: 'user' },
+      message: '認証に成功しました。',
+    });
     expect(res.cookies.get('sb-login-2fa-session')).toMatchObject({ value: '', maxAge: 0, path: '/' });
   });
 

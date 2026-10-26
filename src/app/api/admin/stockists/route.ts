@@ -6,9 +6,9 @@
  * @design DD-STOCKIST-034
  * @remarks 一覧の読みと作成の変更で必要な権限を分け、読みの権限だけでは書けないようにする（SEC-STOCKIST-006）。
  * 変更は認可の次に回数の制限、その次に CSRF の token を確かめる。回数の制限を認可の後に呼ぶので、認可で断った要求は数えない。これは SEC-STOCKIST-020 を満たさない（推定）。
+ * 一覧は内部の列を除いた 8 列だけ返し（SEC-STOCKIST-009）、壊れた JSON は 500 でなく 400 にする（SEC-STOCKIST-013）。検証の誤りは項目の名前だけの固定の本文にし（SEC-STOCKIST-014）、DB の誤りは符号だけを記録する。
  */
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
@@ -19,17 +19,11 @@ import {
   requireAdminStockistCsrf,
   toCsrfDenyResponse,
 } from '@/features/stockist/services/admin-security';
-
-const stockistStatusSchema = z.enum(['private', 'published']);
-
-const createStockistSchema = z.object({
-  name: z.string().trim().min(1).max(255),
-  address: z.string().trim().min(1).max(500),
-  phone: z.string().trim().min(1).max(50),
-  time: z.string().trim().min(1).max(120),
-  holiday: z.string().trim().min(1).max(120),
-  status: stockistStatusSchema,
-});
+import {
+  ADMIN_STOCKIST_COLUMNS,
+  stockistWriteSchema,
+  toInvalidStockistResponse,
+} from '@/features/stockist/schemas';
 
 export async function GET(request: Request) {
   try {
@@ -47,11 +41,11 @@ export async function GET(request: Request) {
 
     const { data, error } = await supabase
       .from('stockists')
-      .select('*')
+      .select(ADMIN_STOCKIST_COLUMNS)
       .order('id', { ascending: true });
 
     if (error) {
-      console.error('Failed to fetch stockists:', error);
+      console.error('Failed to fetch stockists:', { code: error.code });
       return NextResponse.json({ error: 'Failed to fetch stockists' }, { status: 500 });
     }
 
@@ -83,8 +77,22 @@ export async function POST(request: Request) {
     const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
     const userAgent = request.headers.get('user-agent') ?? null;
 
-    const body = await request.json();
-    const parsed = createStockistSchema.safeParse(body);
+    const body = await request.json().catch(() => null);
+    if (body === null) {
+      await logAudit({
+        action: 'admin.stockists.create',
+        actor_id: authz.userId,
+        actor_email: authz.actorEmail,
+        resource: 'stockists',
+        outcome: 'failure',
+        detail: 'Invalid JSON',
+        ip: clientIp,
+        user_agent: userAgent,
+      });
+      return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+    }
+
+    const parsed = stockistWriteSchema.safeParse(body);
 
     if (!parsed.success) {
       await logAudit({
@@ -97,13 +105,7 @@ export async function POST(request: Request) {
         ip: clientIp,
         user_agent: userAgent,
       });
-      return NextResponse.json(
-        {
-          error: 'Invalid request',
-          details: parsed.error.flatten(),
-        },
-        { status: 400 }
-      );
+      return toInvalidStockistResponse(parsed.error);
     }
 
     const supabase = await createClient(request);
@@ -124,7 +126,7 @@ export async function POST(request: Request) {
       .single();
 
     if (error) {
-      console.error('Failed to create stockist:', error);
+      console.error('Failed to create stockist:', { code: error.code });
       await logAudit({
         action: 'admin.stockists.create',
         actor_id: authz.userId,

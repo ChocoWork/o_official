@@ -12,10 +12,9 @@
  * 枠は時刻を 600 秒で割った固定の窓で数えるので、21回を同じ窓に収めるよう、窓の終わりが近い時は次の窓まで待ってから送る
  * （待つのは expect.poll で、固定の sleep ではない）。Playwright の再試行は使わない。
  *
- * 現行のコードが満たさない AC（文のとおりに書いてあり、緩めない。コードが直るまで赤）:
- * 009-AC-01（select('*') で type・created_at が出る）、010-AC-01（Cache-Control が付かない）、011-AC-01（制御文字・電話の字の検証が無い）、
- * 012-AC-01（x-forwarded-for をそのまま監査の ip に入れる）、013-AC-01・AC-02（0件でも 200 と成功の監査・削除の監査に中身が無い）、
- * 014-AC-01（details に flatten の結果が出る）、014-AC-02（request.json() の例外が 500 になる）。007 は満たす見込み。
+ * 現行のコードが満たさない AC（文のとおりに書いてあり、緩めない。コードが直るまで test.fail で印を付ける）:
+ * 010-AC-01（管理の応答に Cache-Control が付かない）、012-AC-01（x-forwarded-for をそのまま監査の ip に入れる）。
+ * 009・011・013・014 は 2026-10-26 に満たしたので test.fail を外してある。007 は元から満たす。
  *
  * 作った利用者・session・監査の行は消さない（db reset で消える）。店舗の行だけ、公開の取扱店を数える別の試験に混ざらないよう終わりに消す
  * （行は status='private' で作り、公開の画面には出さない。007 の 21回目の PATCH は 'published' を送るが、429 で断られて private のまま）。
@@ -216,7 +215,6 @@ test.describe('FR-STOCKIST-015 管理の取扱店の窓口の振る舞い', () =
   });
 
   test('SEC-STOCKIST-009-AC-01 管理の一覧と1件の取得は、決めた列のほかを返さず、type・created_at を含まない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-STOCKIST-009 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
     await withScenario(request, baseURL, async (s) => {
       const list = await request.get(LIST_PATH, { headers: readHeaders(s) });
       expect(list.status()).toBe(200);
@@ -259,7 +257,6 @@ test.describe('FR-STOCKIST-015 管理の取扱店の窓口の振る舞い', () =
   });
 
   test('SEC-STOCKIST-011-AC-01 店名に改行を入れた POST と電話に英字を入れた PUT は 400 になり、店舗の行は増えず変わらない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-STOCKIST-011 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
     await withScenario(request, baseURL, async (s) => {
       const before = await readStockist(s.db, s.stockist.id);
       expect(await countByNamePrefix(s.db, s.namePrefix)).toBe(1);
@@ -297,7 +294,6 @@ test.describe('FR-STOCKIST-015 管理の取扱店の窓口の振る舞い', () =
   });
 
   test('SEC-STOCKIST-013-AC-01 無い id への PUT・PATCH・DELETE は 404 になり、outcome=success の監査の行が増えない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-STOCKIST-013 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
     await withScenario(request, baseURL, async (s) => {
       expect(await countSuccessAudits(s.db, s.actor.userId)).toBe(0);
 
@@ -311,7 +307,6 @@ test.describe('FR-STOCKIST-015 管理の取扱店の窓口の振る舞い', () =
   });
 
   test('SEC-STOCKIST-013-AC-02 店舗を1件消すと、削除の成功の監査の行に消した店舗の名前と住所が含まれる', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-STOCKIST-013 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
     await withScenario(request, baseURL, async (s) => {
       const deleted = await request.delete(one(s.stockist.id), { headers: writeHeaders(s) });
       expect(deleted.status()).toBe(200);
@@ -327,7 +322,6 @@ test.describe('FR-STOCKIST-015 管理の取扱店の窓口の振る舞い', () =
   });
 
   test('SEC-STOCKIST-014-AC-01 店名を空にした POST は 400 になり、本文に fieldErrors・formErrors が含まれない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-STOCKIST-014 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
     await withScenario(request, baseURL, async (s) => {
       const created = await request.post(LIST_PATH, { headers: writeHeaders(s), data: validBody(s, { name: '' }) });
       expect(created.status()).toBe(400);
@@ -339,7 +333,6 @@ test.describe('FR-STOCKIST-015 管理の取扱店の窓口の振る舞い', () =
   });
 
   test('SEC-STOCKIST-014-AC-02 JSON でない本文の POST・PUT・PATCH は 400 になり、店舗の行は増えず変わらない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-STOCKIST-014 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
     await withScenario(request, baseURL, async (s) => {
       const before = await readStockist(s.db, s.stockist.id);
       const { headers, data } = brokenJson(s);

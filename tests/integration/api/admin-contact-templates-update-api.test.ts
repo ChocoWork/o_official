@@ -22,7 +22,11 @@ jest.mock('@/lib/auth/authenticate', () => ({
   checkAuthSessionLiveness: jest.fn(),
 }));
 
+// 回数の限度器は DB に触るので差し替える（呼ばれ方は窓口の単体試験で確かめる）
+jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+
 const { createClient, createServiceRoleClient } = require('@/lib/supabase/server');
+const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
 const { PUT } = require('@/app/api/admin/contact/templates/[id]/route');
 
@@ -65,7 +69,11 @@ function makeRequest(body: unknown, opts: { brokenJson?: boolean } = {}) {
   } as unknown as Request;
 }
 
-function ctx(id = 'tpl-1') {
+const TPL_ID = '5b0f4c1e-7a2d-4e6f-8b3c-9d1e2f3a4b5c';
+const TPL_ID_9 = '5b0f4c1e-7a2d-4e6f-8b3c-9d1e2f3a4b09';
+const MISSING_ID = '00000000-0000-4000-8000-000000000000';
+
+function ctx(id = TPL_ID) {
   return { params: Promise.resolve({ id }) };
 }
 
@@ -84,7 +92,7 @@ function setup(
   } = {},
 ) {
   serviceClient = createFakeClient({
-    contact_reply_templates: options.updateResult ?? { data: null, error: null },
+    contact_reply_templates: options.updateResult ?? { data: [{ id: TPL_ID }], error: null },
     user_roles: { data: aclRows(options.codes ?? ['admin.contact.manage']), error: null },
     audit_logs: options.auditResult ?? { data: null, error: null },
   });
@@ -115,6 +123,7 @@ function auditRows() {
 describe('PUT /api/admin/contact/templates/[id]（管理の返信テンプレートの更新）', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    enforceRateLimit.mockResolvedValue(null);
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -126,13 +135,14 @@ describe('PUT /api/admin/contact/templates/[id]（管理の返信テンプレー
   it('API-ADMIN-011 道の id の行を直し、200 で success を返す', async () => {
     setup();
 
-    const res = await PUT(makeRequest(VALID), ctx('tpl-9'));
+    const res = await PUT(makeRequest(VALID), ctx(TPL_ID_9));
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
     const calls = templatesOp()?.calls ?? [];
-    expect(calls.map(([m]) => m)).toEqual(['update', 'eq']);
-    expect(calls[1]).toEqual(['eq', ['id', 'tpl-9']]);
+    expect(calls.map(([m]) => m)).toEqual(['update', 'eq', 'select']);
+    expect(calls[2]).toEqual(['select', ['id']]);
+    expect(calls[1]).toEqual(['eq', ['id', TPL_ID_9]]);
   });
 
   it('API-ADMIN-011 題と本文の前後の空白を除き、直した時刻を ISO の形で入れる', async () => {
@@ -219,7 +229,7 @@ describe('PUT /api/admin/contact/templates/[id]（管理の返信テンプレー
   it('API-ADMIN-011 直した事を admin.contact.template.update で監査に残し、メールと IP は入れない', async () => {
     setup();
 
-    await PUT(makeRequest(VALID), ctx('tpl-9'));
+    await PUT(makeRequest(VALID), ctx(TPL_ID_9));
 
     const rows = auditRows();
     expect(rows).toHaveLength(1);
@@ -227,7 +237,7 @@ describe('PUT /api/admin/contact/templates/[id]（管理の返信テンプレー
       action: 'admin.contact.template.update',
       actor_id: 'admin-1',
       resource: 'contact_reply_template',
-      resource_id: 'tpl-9',
+      resource_id: TPL_ID_9,
       outcome: 'success',
       detail: 'updated',
       user_agent: 'jest-agent',
@@ -236,14 +246,47 @@ describe('PUT /api/admin/contact/templates/[id]（管理の返信テンプレー
     expect(rows[0].ip).toBeUndefined();
   });
 
-  it('API-ADMIN-011 存在しない id でも表が誤りを返さなければ 200 を返し、成功を監査に残す', async () => {
+  it('API-ADMIN-011 存在しない id（0 行）は 404 Template not found を返し、失敗を監査に残して成功は残さない', async () => {
     setup({ updateResult: { data: [], error: null } });
 
-    const res = await PUT(makeRequest(VALID), ctx('no-such-id'));
+    const res = await PUT(makeRequest(VALID), ctx(MISSING_ID));
 
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ success: true });
-    expect(auditRows()[0]).toMatchObject({ resource_id: 'no-such-id', outcome: 'success' });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Template not found' });
+    const rows = auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'admin.contact.template.update',
+      resource_id: MISSING_ID,
+      outcome: 'failure',
+      detail: 'template_not_found',
+    });
+  });
+
+  it('API-ADMIN-011 id が UUID でない時は表に渡さず 404 を返し、何も書かない', async () => {
+    setup();
+
+    const res = await PUT(makeRequest(VALID), ctx('tpl-1'));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Template not found' });
+    expect(templatesOp()).toBeUndefined();
+    expect(auditRows()).toHaveLength(0);
+  });
+
+  it('API-ADMIN-011 回数の枠を超えた要求は 429 で、表にも監査にも書かない（枠は管理者の ID で数える）', async () => {
+    setup();
+    const limited = { status: 429, json: async () => ({ error: 'Too many requests' }) };
+    enforceRateLimit.mockResolvedValue(limited);
+
+    const res = await PUT(makeRequest(VALID), ctx());
+
+    expect(res).toBe(limited);
+    expect(enforceRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: 'admin:contact:write', limit: 60, windowSeconds: 600, subject: 'admin-1' }),
+    );
+    expect(templatesOp()).toBeUndefined();
+    expect(auditRows()).toHaveLength(0);
   });
 
   it('API-ADMIN-011 表は service role の client で書き、利用者の JWT の client は使わない', async () => {

@@ -18,10 +18,15 @@ jest.mock('@/lib/auth/admin-rbac', () => ({
   authorizeAdminPermission: jest.fn(),
 }));
 
+jest.mock('@/lib/audit', () => ({
+  logAudit: jest.fn(),
+}));
+
 import { GET } from '@/app/api/admin/contact/route';
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
 const { authorizeAdminPermission } = require('@/lib/auth/admin-rbac');
+const { logAudit } = require('@/lib/audit');
 
 // モックの NextResponse.json が持たせる _body を型を通して読む
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -60,7 +65,10 @@ describe('GET /api/admin/contact', () => {
     range.mockReset();
     from.mockReset().mockReturnValue(builder);
     createServiceRoleClient.mockReset().mockResolvedValue({ from });
-    authorizeAdminPermission.mockReset().mockResolvedValue({ ok: true, userId: 'admin-1' });
+    authorizeAdminPermission
+      .mockReset()
+      .mockResolvedValue({ ok: true, userId: 'admin-1', actorEmail: 'owner@example.com' });
+    logAudit.mockReset().mockResolvedValue(undefined);
     setResult({ data: [], error: null, count: 0 });
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   });
@@ -220,6 +228,51 @@ describe('GET /api/admin/contact', () => {
     expect(res.status).toBe(500);
     expect(bodyOf(res)).toEqual({ error: 'Failed to fetch inquiries' });
     expect(errorSpy).toHaveBeenCalledWith('Failed to fetch contact inquiries:', dbError);
+  });
+
+  it('DD-ADMIN-006 200 の後に一覧を開いた記録を1行残し、metadata は状態・種別・ページ・検索語の長さだけ（検索語は入れない）', async () => {
+    const res = await GET(makeRequest('?status=open&q=taro@'));
+
+    expect(res.status).toBe(200);
+    expect(logAudit).toHaveBeenCalledTimes(1);
+    expect(logAudit).toHaveBeenCalledWith({
+      action: 'admin.contact.list',
+      actor_id: 'admin-1',
+      actor_email: 'owner@example.com',
+      resource: 'contact',
+      outcome: 'success',
+      metadata: { status: 'open', type: null, page: 1, q_length: 5 },
+    });
+    expect(JSON.stringify(logAudit.mock.calls)).not.toContain('taro');
+  });
+
+  it('DD-ADMIN-006 許可の値でない状態・種別は記録に null で残し、入力の字を入れない', async () => {
+    await GET(makeRequest('?status=%3Cscript%3E&type=bogus&page=2'));
+
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { status: null, type: null, page: 2, q_length: 0 } })
+    );
+    expect(JSON.stringify(logAudit.mock.calls)).not.toContain('script');
+  });
+
+  it('DD-ADMIN-006 読みが誤りの時と認可で断った時は、一覧を開いた記録を書かない', async () => {
+    setResult({ data: null, error: { message: 'boom' }, count: null });
+    await GET(makeRequest());
+    authorizeAdminPermission.mockResolvedValue({ ok: false, response: { status: 403 } });
+    await GET(makeRequest());
+
+    expect(logAudit).not.toHaveBeenCalled();
+  });
+
+  it('DD-ADMIN-006 監査の記録が例外を投げても 200 で一覧を返す（読み出しを止めない）', async () => {
+    logAudit.mockRejectedValue(new Error('audit down'));
+    setResult({ data: [{ id: 'c1' }], error: null, count: 1 });
+
+    const res = await GET(makeRequest());
+
+    expect(res.status).toBe(200);
+    expect(bodyOf(res).data).toEqual([{ id: 'c1' }]);
+    expect(errorSpy).toHaveBeenCalledWith('Failed to write contact list read audit');
   });
 
   it('DD-ADMIN-006 createServiceRoleClient が例外を投げた時は 500 Internal server error', async () => {

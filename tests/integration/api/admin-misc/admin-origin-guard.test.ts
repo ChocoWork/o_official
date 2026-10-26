@@ -15,12 +15,18 @@ jest.mock('@/lib/mail', () => ({ __esModule: true, default: jest.fn() }));
 jest.mock('@/lib/auth/admin-rbac', () => ({ authorizeAdminPermission: jest.fn() }));
 jest.mock('@/lib/csrfMiddleware', () => ({ requireCsrfOrDeny: jest.fn() }));
 jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+// 漏洩したパスワードの照合は外部の API を呼ぶので差し替える（利用者の作成だけが使う）
+jest.mock('@/lib/pwned-password', () => ({
+  checkPwnedPassword: jest.fn(),
+  PWNED_PASSWORD_MESSAGE: 'pwned-message',
+}));
 
 // 前の describe が jest.resetModules() を呼ぶので、モックは使う直前に取り直す（let に入れる）
 let createServiceRoleClient: jest.Mock;
 let authorizeAdminPermission: jest.Mock;
 let requireCsrfOrDeny: jest.Mock;
 let enforceRateLimit: jest.Mock;
+let checkPwnedPassword: jest.Mock;
 
 const ALLOWED = 'https://shop.example.com';
 const EVIL = 'https://evil.example';
@@ -33,6 +39,8 @@ const ORIGIN_ENV_KEYS = [
 ] as const;
 
 const TARGET_ID = '22222222-2222-4222-8222-222222222222';
+const CONTACT_ID = '33333333-3333-4333-8333-333333333333';
+const TEMPLATE_ID = '44444444-4444-4444-8444-444444444444';
 
 /** 範囲の書き込みの窓口。proxy の照合の対象になる全部。 */
 const WRITE_ROUTES: Array<{
@@ -48,7 +56,7 @@ const WRITE_ROUTES: Array<{
     method: 'POST',
     path: '/api/admin/create-user',
     load: () => require('@/app/api/admin/create-user/route'),
-    body: { email: 'new@example.com', password: 'password123' },
+    body: { email: 'new@example.com', password: 'password-1234-ok' },
   },
   {
     label: '強制失効',
@@ -67,18 +75,18 @@ const WRITE_ROUTES: Array<{
   {
     label: '問い合わせの状態の変更',
     method: 'PATCH',
-    path: '/api/admin/contact/c1',
+    path: `/api/admin/contact/${CONTACT_ID}`,
     load: () => require('@/app/api/admin/contact/[id]/route'),
     body: { status: 'closed' },
-    params: { id: 'c1' },
+    params: { id: CONTACT_ID },
   },
   {
     label: '問い合わせへの返信',
     method: 'POST',
-    path: '/api/admin/contact/c1/reply',
+    path: `/api/admin/contact/${CONTACT_ID}/reply`,
     load: () => require('@/app/api/admin/contact/[id]/reply/route'),
     body: { body: 'ご連絡ありがとうございます' },
-    params: { id: 'c1' },
+    params: { id: CONTACT_ID },
   },
   {
     label: 'テンプレートの作成',
@@ -90,17 +98,17 @@ const WRITE_ROUTES: Array<{
   {
     label: 'テンプレートの更新',
     method: 'PUT',
-    path: '/api/admin/contact/templates/t1',
+    path: `/api/admin/contact/templates/${TEMPLATE_ID}`,
     load: () => require('@/app/api/admin/contact/templates/[id]/route'),
     body: { title: '配送の遅れ', body: 'お待たせしています' },
-    params: { id: 't1' },
+    params: { id: TEMPLATE_ID },
   },
   {
     label: 'テンプレートの削除',
     method: 'DELETE',
-    path: '/api/admin/contact/templates/t1',
+    path: `/api/admin/contact/templates/${TEMPLATE_ID}`,
     load: () => require('@/app/api/admin/contact/templates/[id]/route'),
-    params: { id: 't1' },
+    params: { id: TEMPLATE_ID },
   },
   {
     label: '色見本の保存',
@@ -112,11 +120,28 @@ const WRITE_ROUTES: Array<{
   {
     label: '色見本の削除',
     method: 'DELETE',
-    path: '/api/admin/item-color-presets/p1',
+    path: '/api/admin/item-color-presets/1',
     load: () => require('@/app/api/admin/item-color-presets/[id]/route'),
-    params: { id: 'p1' },
+    params: { id: '1' },
   },
 ];
+
+/**
+ * 管理者単位の回数の制限（SEC-ADMIN-006）を足した窓口の道。IP ではなく認可を通った管理者の ID で数える。
+ * 残りの窓口は後のタスクで足すので、ここに道を足す。
+ */
+const ADMIN_RATE_LIMITED_PATHS = new Set([
+  '/api/admin/create-user',
+  '/api/admin/revoke-user-sessions',
+  '/api/admin/users/mfa/reset',
+  '/api/admin/item-color-presets',
+  '/api/admin/item-color-presets/1',
+  `/api/admin/contact/${CONTACT_ID}`,
+  `/api/admin/contact/${CONTACT_ID}/reply`,
+  '/api/admin/contact/templates',
+  `/api/admin/contact/templates/${TEMPLATE_ID}`,
+]);
+const ADMIN_ID = '11111111-1111-4111-8111-111111111111';
 
 const CASES = WRITE_ROUTES.map((route) => [route.label, route.method, route.path, route] as const);
 
@@ -377,7 +402,9 @@ describe('ARC-ADMIN-002 窓口は CSRF の印と回数を見ない', () => {
     authorizeAdminPermission = require('@/lib/auth/admin-rbac').authorizeAdminPermission;
     requireCsrfOrDeny = require('@/lib/csrfMiddleware').requireCsrfOrDeny;
     enforceRateLimit = require('@/features/auth/middleware/rateLimit').enforceRateLimit;
+    checkPwnedPassword = require('@/lib/pwned-password').checkPwnedPassword;
     jest.resetAllMocks();
+    checkPwnedPassword.mockResolvedValue({ status: 'ok' });
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     authorizeAdminPermission.mockResolvedValue({
@@ -395,7 +422,7 @@ describe('ARC-ADMIN-002 窓口は CSRF の印と回数を見ない', () => {
   });
 
   it.each(CASES)(
-    'ARC-ADMIN-002 %s（%s %s）は x-csrf-token が無くても拒まず、CSRF の確かめと回数の制限を呼ばない',
+    'ARC-ADMIN-002 %s（%s %s）は x-csrf-token が無くても拒まず、CSRF の確かめを呼ばず、回数の制限は管理者単位でだけ数える',
     async (_label, method, path, route) => {
       const request = new Request(`${ALLOWED}${path}`, {
         method,
@@ -410,7 +437,12 @@ describe('ARC-ADMIN-002 窓口は CSRF の印と回数を見ない', () => {
       expect(res.status).not.toBe(429);
       expect(authorizeAdminPermission).toHaveBeenCalledTimes(1);
       expect(requireCsrfOrDeny).not.toHaveBeenCalled();
-      expect(enforceRateLimit).not.toHaveBeenCalled();
+      if (ADMIN_RATE_LIMITED_PATHS.has(path)) {
+        expect(enforceRateLimit).toHaveBeenCalledTimes(1);
+        expect(enforceRateLimit).toHaveBeenCalledWith(expect.objectContaining({ subject: ADMIN_ID }));
+      } else {
+        expect(enforceRateLimit).not.toHaveBeenCalled();
+      }
     },
   );
 

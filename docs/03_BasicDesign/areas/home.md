@@ -1,6 +1,6 @@
 # HOME の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: HOME（ホーム `/` のヒーロー・区画の並び・ABOUT の区画・VIEW ALL のボタン・ヒーローの動き） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: HOME（ホーム `/` のヒーロー・区画の並び・ABOUT の区画・VIEW ALL のボタン・ヒーローの動き） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -47,7 +47,7 @@ HOME の領域の構成・画面・画面遷移・状態遷移を、追跡でき
 | SEC-HOME-009・017 | 今のコードが満たさない。CSP と画像の最適化の許可は、共有の `src/proxy.ts`・`next.config.ts` が全部の頁に1つで持つ（ARC-HOME-003） |
 | SEC-HOME-011・012・019 | 廃止。検索の窓の話で、SEARCH の SEC-SEARCH-006・010・021 が持つ |
 | SEC-HOME-015 | 取得の失敗の記録と、端末の側の検索の窓の記録の話。記録の作りは各領域の取得の関数と SEARCH の `SearchHomePreview` にあり、HOME の構造に無い |
-| SEC-HOME-013 | 今のコードが満たさない。取る件数は SCR-HOME-004 に今の動きを書いた |
+| SEC-HOME-013 | 商品の取る件数の部分は 2026-10-26 に満たした（8件。SCR-HOME-004）。署名つき URL を残す表（`signedUrlCache`）の件数の上限と、大量の表示への守り（中継の回数の制限）は満たさないまま残す |
 | SEC-HOME-014 | 今のコードが満たさない。取得の流れは ARC-HOME-001 に今の動きを書いた |
 | SEC-HOME-016 | `/api/auth/me` の応答の中身は AUTH の窓口の話。HOME の構造に無い |
 | SEC-HOME-018 | 一部だけ満たす。住所を設定から作る前半は ARC-HOME-004 が持ち、設定が無い時の扱いの後半は SEC-HOME-018 に書いた |
@@ -65,7 +65,7 @@ HOME の領域の構成・画面・画面遷移・状態遷移を、追跡でき
 | ボタンの部品 | `src/components/ui/Button/Button.tsx` | VIEW ALL と READ OUR STORY。`href` を渡すとリンクを返す |
 | クラスの結合 | `src/lib/utils.ts` の `cn` | VIEW ALL の外側のクラスに、呼ぶ側の出し分けのクラスを足す |
 | Supabase の client | `src/lib/supabase/server.ts` の `createClient`・`createPublicClient`・`createServiceRoleClient` | 取得の関数の中で使う。ページは直には使わない |
-| ITEM の取得と格子 | `src/lib/items/public.ts`、`src/lib/items/availability.ts`、`src/features/items/components/PublicItemGrid.tsx` | 公開済みの商品10件と総数。描くのは8件まで |
+| ITEM の取得と格子 | `src/lib/items/public.ts`、`src/lib/items/availability.ts`、`src/features/items/components/PublicItemGrid.tsx` | 公開済みの商品8件と総数。描くのも8件まで |
 | LOOK の取得と格子 | `src/lib/look/server.ts`、`src/features/look/components/PublicLookGrid.tsx` | 公開済みの LOOK 8件と総数 |
 | NEWS の取得と格子 | `src/features/news/services/public.ts`、`src/features/news/components/PublicNewsGrid.tsx` | 公開済みの記事6件と総数（SCR-NEWS-006） |
 | 取扱店の取得と格子 | `src/features/stockist/services/public.ts`、`src/features/stockist/components/PublicStockistGrid.tsx` | 公開済みの取扱店6件 |
@@ -112,7 +112,7 @@ sequenceDiagram
   participant F as 各領域の取得の関数
   participant G as 各領域の格子の部品
   B->>H: GET /
-  H->>F: 7つを一度に呼ぶ（商品10件・LOOK 8件・NEWS 6件・取扱店・3つの総数）
+  H->>F: 7つを一度に呼ぶ（商品8件・LOOK 8件・NEWS 6件・取扱店・3つの総数）
   F-->>H: 公開済みの行と総数（失敗した時は多くが空か 0）
   H->>H: ヒーロー画像の先読みを頼む
   H->>G: 行と総数を渡す
@@ -120,7 +120,7 @@ sequenceDiagram
   H-->>B: HTML（毎回サーバーで描く）
 ```
 
-- 取る件数: 頁の中の定数で、商品10件・LOOK 8件・NEWS 6件（`page.tsx`）。取扱店は取得の関数の中で6件（`src/features/stockist/services/public.ts`）。総数は商品・LOOK・NEWS の3つ（`page.tsx`）
+- 取る件数: 頁の中の定数で、商品8件・LOOK 8件・NEWS 6件（`page.tsx`）。取扱店は取得の関数の中で6件（`src/features/stockist/services/public.ts`）。総数は商品・LOOK・NEWS の3つ（`page.tsx`）
 - 渡し方: 商品・LOOK・NEWS の格子には `variant="home"` と行と総数を、取扱店の格子には `variant="home"` と行を渡す（`page.tsx`）。格子の部品は自分で取りに行かない
 - 描き方: 共有の layout が毎回サーバーで描く設定を持つ（`src/app/layout.tsx`）ので、ホームも要求ごとに7つを取り直す。頁の結果のキャッシュは無い
 - 失敗の時: 取得の関数の多くは、DB の誤りを記録して空の配列か 0 を返す（`getPublishedItems`・`getPublishedItemsCount`・`getPublishedLooks`・`getPublishedLooksCount`・`getPublishedNewsCount`・`getHomePublicStockists` の誤りの枝）。関数が例外を投げた時の扱いは SEC-HOME-014
@@ -139,9 +139,9 @@ sequenceDiagram
 
 | 取得 | 行を読む client | 公開済みの絞り | service role の使い道 |
 | --- | --- | --- | --- |
-| 商品10件・商品の総数 | 閲覧者の session の client | `status='published'`（`src/lib/items/public.ts`） | 画像の署名と在庫の読み（`src/lib/items/availability.ts`、`items.status='published'` で再度絞る） |
+| 商品8件・商品の総数 | 閲覧者の session の client | `status='published'`（`src/lib/items/public.ts`） | 画像の署名と在庫の読み（`src/lib/items/availability.ts`、`items.status='published'` で再度絞る） |
 | LOOK 8件・LOOK の総数 | 公開の client | `status='published'`（`src/lib/look/server.ts`） | LOOK の画像と、関連商品の画像の署名（`src/lib/look/server.ts` の `hydrateLooks`。LOOK が1件以上ある時だけ client を作る） |
-| NEWS 6件・NEWS の総数 | 公開の client | `status='published'`（`src/features/news/services/public.ts`） | 画像の署名 |
+| NEWS 6件・NEWS の総数 | 公開の client | `status='published'`（`src/features/news/services/public.ts`） | 無し（画像の列を選ばず署名しない。SEC-NEWS-005） |
 | 取扱店6件 | 閲覧者の session の client | `status='published'`（`src/features/stockist/services/public.ts`） | 無し |
 
 - 管理者の session でホームを開くと、商品と取扱店は管理者の権限の RLS で読まれ、アプリの `status='published'` の絞りだけが下書きを外す（推定。管理者の RLS の中身は確かめていない。SEC-HOME-002）
@@ -286,13 +286,13 @@ sequenceDiagram
 
 | 区画 | 取る | 描く | 見せる（2xl 未満・2xl 以上） | VIEW ALL を出す時（2xl 未満・2xl 以上） | 行き先・読み上げの名前 |
 | --- | --- | --- | --- | --- | --- |
-| ITEM | 10件 | 8件まで | 6件・8件 | 総数が6件より多い・8件より多い | `/item`・`VIEW ALL ITEMS` |
+| ITEM | 8件 | 8件まで | 6件・8件 | 総数が6件より多い・8件より多い | `/item`・`VIEW ALL ITEMS` |
 | LOOK | 8件 | 8件まで | 6件・8件 | 総数が6件より多い・8件より多い | `/look`・`VIEW ALL LOOKS` |
 | NEWS | 6件 | 6件 | 全部の幅で6件 | 総数が6件より多い | SCR-NEWS-006 |
 
 - VIEW ALL のボタン: 区画の下の中央に置く共通のボタン（secondary・四角・最小の高さ 52px・最大の幅 420px）。文字は3つとも `VIEW ALL`。行き先と読み上げの名前は呼ぶ側が必ず渡し、E2E が見つけるための目印（`home-section-view-all`）を付ける（`HomeSectionViewAll.tsx`）
 - 出し分け: 呼ぶ側（格子の部品）が総数と幅ごとの表示数を比べて `flex`・`hidden` のクラスを作り、ボタンの外側に足す（`PublicItemGrid.tsx`、`PublicLookGrid.tsx`）。隠れた時も DOM には残る。総数を渡されない時は、出し分けのクラスを付けず常に出す
-- 件数の食い違い: FREQ-147-REQ-01・02 は ITEM を10件描いて lg・xl で切り替えると書くが、今は8件まで描いて 2xl で切り替える（FREQ-276 の数。TM-HOME-01）。FREQ-148-REQ-02 も xl でなく 2xl で切り替える（TM-HOME-02）。取った ITEM の9・10件目は描かない（TM-HOME-01・03。SEC-HOME-013）
+- 件数の食い違い: FREQ-147-REQ-02 は ITEM を lg・xl で切り替えて10件まで描くと書くが、今は8件まで描いて 2xl で切り替える（FREQ-276 の数。TM-HOME-01）。FREQ-148-REQ-02 も xl でなく 2xl で切り替える（TM-HOME-02）。取る ITEM は描く8件だけにした（2026-10-26。`HOME_ITEM_FETCH_COUNT` が8。SEC-HOME-013）ので、以前あった「取った9・10件目は描かない」（TM-HOME-03）は無くなった。続きの有無は総数の問い合わせで決める
 - 置かない物: 見出しの右の VIEW ALL（FREQ-126（範囲外）の形）は今の構造に無い
 - 試験: `FR-HOME-004`・`012`・`013` がボタンの有無・見た目・件数と出し分けを試す。ボタンの部品の単体テストは無い
 
@@ -367,6 +367,6 @@ stateDiagram-v2
 - 本番のサイトの URL の環境変数の設定と、本番の `/` の応答の見出しの実際の値（本番は未デプロイ）
 - 先読みと画像の優先の印が、本番ビルドで先読みを1つにまとめるか（ARC-HOME-004）
 - JS が動かない時にブランド名が見えないままになるか（STATE-HOME-001）
-- ITEM・LOOK の件数を FREQ-276・277 の数に置き換えるか、ITEM を10件取って8件描く形をそのままにするか（要件の文書の未確認事項と同じ）
+- ITEM・LOOK の件数を FREQ-276・277 の数に置き換えるか（要件の文書の未確認事項と同じ）。ITEM を取る件数は 2026-10-26 に8件にそろえた
 - FREQ-278-REQ-02・06 を FREQ-282 で置き換えた物として「廃止」にするか（要件の文書の未確認事項と同じ）
 - この文書の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

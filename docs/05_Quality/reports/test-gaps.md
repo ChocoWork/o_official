@@ -14,18 +14,18 @@
 | --- | --- | --- |
 | FREQ-275-AC-02 390・768px で 20px、1280px で 28px | E2E | `docs/02_Requirements/areas/news.md:1158` |
 | SEC-NEWS-003-AC-01 移行だけを当てた DB で置き場が非公開になる | E2E | `docs/02_Requirements/areas/news.md:1625` |
-| SEC-NEWS-008-AC-02 署名の失敗が記録に1件残る | E2E | `docs/02_Requirements/areas/news.md:1822` |
-| SEC-NEWS-009-AC-03 公開の一覧の取り出しは上限を渡さなくても上限で止まる | E2E | `docs/02_Requirements/areas/news.md:1871` |
-| SEC-NEWS-009-AC-04 詳細の前後の取り出しは公開済みの全部を読まない | E2E | `docs/02_Requirements/areas/news.md:1883` |
-| SEC-NEWS-018-AC-03 作成の失敗で上げた画像が残らない | E2E | `docs/02_Requirements/areas/news.md:2254` |
-| SEC-NEWS-019-AC-01 /api/news の失敗の応答は固定の文だけ | E2E | `docs/02_Requirements/areas/news.md:2279` |
-| SEC-NEWS-019-AC-02 失敗の記録に鍵と token が含まれない | E2E | `docs/02_Requirements/areas/news.md:2291` |
-| SEC-NEWS-020-AC-02 管理の1件の取得は DB の失敗を 404 にしない | E2E | `docs/02_Requirements/areas/news.md:2328` |
-| SEC-NEWS-020-AC-03 公開の一覧の取り出しの失敗が記録に残る | E2E | `docs/02_Requirements/areas/news.md:2340` |
-| SEC-NEWS-021-AC-01 決めた回数を超えた作成を断る | E2E | `docs/02_Requirements/areas/news.md:2365` |
+| SEC-NEWS-008-AC-02 署名の失敗が記録に1件残る | E2E | `docs/02_Requirements/areas/news.md:1826` |
+| SEC-NEWS-009-AC-03 公開の一覧の取り出しは上限を渡さなくても上限で止まる | E2E | `docs/02_Requirements/areas/news.md:1875` |
+| SEC-NEWS-009-AC-04 詳細の前後の取り出しは公開済みの全部を読まない | E2E | `docs/02_Requirements/areas/news.md:1887` |
+| SEC-NEWS-018-AC-03 作成の失敗で上げた画像が残らない | E2E | `docs/02_Requirements/areas/news.md:2263` |
+| SEC-NEWS-019-AC-01 /api/news の失敗の応答は固定の文だけ | E2E | `docs/02_Requirements/areas/news.md:2288` |
+| SEC-NEWS-019-AC-02 失敗の記録に鍵と token が含まれない | E2E | `docs/02_Requirements/areas/news.md:2300` |
+| SEC-NEWS-020-AC-02 管理の1件の取得は DB の失敗を 404 にしない | E2E | `docs/02_Requirements/areas/news.md:2337` |
+| SEC-NEWS-020-AC-03 公開の一覧の取り出しの失敗が記録に残る | E2E | `docs/02_Requirements/areas/news.md:2349` |
+| SEC-NEWS-021-AC-01 決めた回数を超えた作成を断る | E2E | `docs/02_Requirements/areas/news.md:2374` |
 | FREQ-278-AC-02 3つの幅で縦線の動きの名前が threadDraw | E2E | `docs/02_Requirements/areas/home.md:709` |
 | FREQ-278-AC-06 3つの幅で縦線は1回だけ再生し、終わりの形を保つ | E2E | `docs/02_Requirements/areas/home.md:761` |
-| SEC-HOME-014-AC-01 1つの領域の取得が失敗してもホームのほかの節が出る | E2E | `docs/02_Requirements/areas/home.md:1395` |
+| SEC-HOME-014-AC-01 1つの領域の取得が失敗してもホームのほかの節が出る | E2E | `docs/02_Requirements/areas/home.md:1398` |
 | FREQ-12-AC-01 ほかの利用者のコーディネートを見る時にエラーが出ず関連コーディネートが出る | E2E | `docs/02_Requirements/areas/look.md:1825` |
 | FREQ-137-AC-01 各幅で HOME と一覧の格子の row-gap と column-gap が等しい | E2E | `docs/02_Requirements/areas/look.md:2319` |
 | FR-LOOK-DETAIL-007-AC-01 詳細に同じシーズンか関連のコーディネートを薦める節が出る | E2E | `docs/02_Requirements/areas/look.md:3745` |
@@ -33,7 +33,7 @@
 | SEC-LOOK-010-AC-01 大きな件数を求めても上限までしか返らない | E2E | `docs/02_Requirements/areas/look.md:4143` |
 | SEC-ABOUT-006-AC-01 Supabase に届かない状態でも /about が表示される | E2E | `docs/02_Requirements/areas/about.md:530` |
 | SEC-ABOUT-007-AC-01 設定が無い時に OG の URL が手元の URL にならない | E2E | `docs/02_Requirements/areas/about.md:557` |
-| SEC-STOCKIST-008-AC-01 anon・authenticated に表の余分な権限が無い | E2E | `docs/02_Requirements/areas/stockist.md:938` |
+| SEC-STOCKIST-008-AC-01 anon・authenticated に表の余分な権限が無い | E2E | `docs/02_Requirements/areas/stockist.md:941` |
 | FREQ-184-AC-01 1280px で左右の2カラム、390・768px で縦積みになり横にはみ出さない | E2E | `docs/02_Requirements/areas/search.md:790` |
 | FREQ-184-AC-02 「N RESULTS」「SORT BY」「RELEVANCE」と、行の種別・題・サムネイル・矢印が出る | E2E | `docs/02_Requirements/areas/search.md:803` |
 | FREQ-190-AC-01 入力すると種別付きの候補が最大8件、行の高さ 44px 以上で出る | E2E | `docs/02_Requirements/areas/search.md:972` |
@@ -59,18 +59,18 @@
 | FREQ-335-AC-03 1回送ると verifyOtp が type email で1回だけ呼ばれる | E2E | `docs/02_Requirements/areas/auth.md:3767` |
 | FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:3858` |
 | FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | E2E | `docs/02_Requirements/areas/auth.md:3884` |
-| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:4453` |
-| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:4614` |
-| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:4700` |
-| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:4837` |
-| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:4949` |
+| SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:4483` |
+| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:4646` |
+| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:4732` |
+| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:4869` |
+| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:4983` |
 | FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:206` |
 | SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:422` |
-| SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:633` |
-| SEC-ADMIN-010-AC-02 保持の期間を過ぎた行は写しを残してから消える | E2E | `docs/02_Requirements/areas/admin.md:645` |
-| SEC-ADMIN-012-AC-02 漏れたパスワードでの作成を断る | E2E | `docs/02_Requirements/areas/admin.md:707` |
-| SEC-ADMIN-017-AC-02 秘密が未設定なら Reply-To の無いメールを送る | E2E | `docs/02_Requirements/areas/admin.md:880` |
-| SEC-ADMIN-021-AC-02 メールを送らなかった返信は mailSent を false で返す | E2E | `docs/02_Requirements/areas/admin.md:992` |
+| SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:642` |
+| SEC-ADMIN-010-AC-02 保持の期間を過ぎた行は写しを残してから消える | E2E | `docs/02_Requirements/areas/admin.md:654` |
+| SEC-ADMIN-012-AC-02 漏れたパスワードでの作成を断る | E2E | `docs/02_Requirements/areas/admin.md:720` |
+| SEC-ADMIN-017-AC-02 秘密が未設定なら Reply-To の無いメールを送る | E2E | `docs/02_Requirements/areas/admin.md:900` |
+| SEC-ADMIN-021-AC-02 メールを送らなかった返信は mailSent を false で返す | E2E | `docs/02_Requirements/areas/admin.md:1017` |
 
 ## 名前に ID の無い試験
 

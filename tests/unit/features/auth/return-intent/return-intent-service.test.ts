@@ -11,9 +11,11 @@ const store = require('@/features/auth/return-intent/return-intent-store');
 const audit = require('@/lib/audit');
 const {
   applyReturnIntentCookie,
+  consumeSignupBinding,
   issueReturnIntent,
   readReturnIntentToken,
   resolveReturnDestination,
+  resolveStoredDestination,
 } = require('@/features/auth/return-intent/return-intent-service');
 
 const ORIGIN = 'http://localhost:3000';
@@ -209,6 +211,139 @@ describe('DD-AUTH-034 resolveReturnDestination', () => {
     audit.default.mockRejectedValue(new Error('audit down'));
 
     await expect(resolve(user)).resolves.toEqual({ path: '/', needsMfa: false, action: { kind: 'clear' } });
+  });
+});
+
+describe('DD-AUTH-034 issueReturnIntent の alwaysCreate と bindTo（登録の結び付け）', () => {
+  beforeEach(() => {
+    store.createReturnIntent.mockResolvedValue({ token: TOKEN, maxAgeSeconds: 3600 });
+  });
+
+  it.each([[undefined], [null], ['']])('DD-AUTH-034 戻り先が %p でも alwaysCreate なら / で控えを作り、bindTo を保存へ渡す', async (rawNext) => {
+    const result = await issueReturnIntent({ rawNext, purpose: 'signup', bindTo: 'a@x.com', alwaysCreate: true, origin: ORIGIN });
+
+    expect(store.createReturnIntent).toHaveBeenCalledWith({ returnPath: '/', purpose: 'signup', bindTo: 'a@x.com' });
+    expect(result).toEqual({ action: { kind: 'set', token: TOKEN, maxAgeSeconds: 3600 }, outcome: 'created' });
+    expect(audit.default).not.toHaveBeenCalled();
+  });
+
+  it('DD-AUTH-034 戻り先が不正でも alwaysCreate なら / で控えを作り、不正の理由の監査を 1 回残す', async () => {
+    const result = await issueReturnIntent({ rawNext: '//evil.example', purpose: 'signup', bindTo: 'a@x.com', alwaysCreate: true, origin: ORIGIN });
+
+    expect(store.createReturnIntent).toHaveBeenCalledWith({ returnPath: '/', purpose: 'signup', bindTo: 'a@x.com' });
+    expect(result.action.kind).toBe('set');
+    expect(audit.default).toHaveBeenCalledTimes(1);
+    expect(audit.default).toHaveBeenCalledWith({ action: 'auth.return_intent', outcome: 'rejected', detail: 'not_relative' });
+    expect(JSON.stringify(audit.default.mock.calls)).not.toContain('evil');
+  });
+
+  it('DD-AUTH-034 戻り先が有効なら alwaysCreate でもその道筋で作る', async () => {
+    await issueReturnIntent({ rawNext: '/stockist', purpose: 'signup', bindTo: 'a@x.com', alwaysCreate: true, origin: ORIGIN });
+
+    expect(store.createReturnIntent).toHaveBeenCalledWith({ returnPath: '/stockist', purpose: 'signup', bindTo: 'a@x.com' });
+  });
+
+  it('DD-AUTH-034 alwaysCreate が無い（ログイン）なら戻り先が無い・不正で作らず clear のまま', async () => {
+    await expect(issueReturnIntent({ rawNext: undefined, purpose: 'login', origin: ORIGIN })).resolves.toEqual({
+      action: { kind: 'clear' },
+      outcome: 'cleared',
+    });
+    await expect(issueReturnIntent({ rawNext: '//evil.example', purpose: 'login', origin: ORIGIN })).resolves.toEqual({
+      action: { kind: 'clear' },
+      outcome: 'rejected',
+    });
+    expect(store.createReturnIntent).not.toHaveBeenCalled();
+  });
+
+  it('DD-AUTH-034 alwaysCreate でも作成が null なら clear・failed', async () => {
+    store.createReturnIntent.mockResolvedValue(null);
+
+    await expect(
+      issueReturnIntent({ rawNext: undefined, purpose: 'signup', bindTo: 'a@x.com', alwaysCreate: true, origin: ORIGIN }),
+    ).resolves.toEqual({ action: { kind: 'clear' }, outcome: 'failed' });
+  });
+});
+
+describe('DD-AUTH-034 consumeSignupBinding', () => {
+  it('DD-AUTH-034 Cookie が無ければ bound:false で、使い切りを呼ばない', async () => {
+    await expect(consumeSignupBinding({ cookieHeader: null, email: 'a@x.com', userId: 'u1' })).resolves.toEqual({ bound: false });
+    await expect(consumeSignupBinding({ cookieHeader: 'other=1', email: 'a@x.com', userId: 'u1' })).resolves.toEqual({ bound: false });
+    expect(store.consumeReturnIntent).not.toHaveBeenCalled();
+  });
+
+  it('DD-AUTH-034 番号が 2 つ・形が違うなら bound:false で、使い切りを呼ばない', async () => {
+    await expect(consumeSignupBinding({ cookieHeader: `${COOKIE}; ${COOKIE}`, email: 'a@x.com', userId: 'u1' })).resolves.toEqual({ bound: false });
+    await expect(consumeSignupBinding({ cookieHeader: 'sb-return-intent=short', email: 'a@x.com', userId: 'u1' })).resolves.toEqual({ bound: false });
+    expect(store.consumeReturnIntent).not.toHaveBeenCalled();
+  });
+
+  it('DD-AUTH-034 メールが空なら bound:false で、使い切りを呼ばない', async () => {
+    await expect(consumeSignupBinding({ cookieHeader: COOKIE, email: '', userId: 'u1' })).resolves.toEqual({ bound: false });
+    expect(store.consumeReturnIntent).not.toHaveBeenCalled();
+  });
+
+  it('DD-AUTH-034 使い切りが null（別のメールの印・使用済み・期限切れ）なら bound:false', async () => {
+    store.consumeReturnIntent.mockResolvedValue(null);
+
+    await expect(consumeSignupBinding({ cookieHeader: COOKIE, email: 'victim@x.com', userId: 'u1' })).resolves.toEqual({ bound: false });
+  });
+
+  it('DD-AUTH-034 戻り先が返れば bound:true と storedPath を返し、purpose signup・bindTo にメールを渡す', async () => {
+    store.consumeReturnIntent.mockResolvedValue('/stockist');
+
+    await expect(consumeSignupBinding({ cookieHeader: COOKIE, email: 'a@x.com', userId: 'u1' })).resolves.toEqual({
+      bound: true,
+      storedPath: '/stockist',
+    });
+    expect(store.consumeReturnIntent).toHaveBeenCalledWith({ token: TOKEN, purpose: 'signup', userId: 'u1', bindTo: 'a@x.com' });
+  });
+
+  it('DD-AUTH-034 使い切りが投げても例外にならず bound:false', async () => {
+    store.consumeReturnIntent.mockRejectedValue(new Error('boom'));
+
+    await expect(consumeSignupBinding({ cookieHeader: COOKIE, email: 'a@x.com', userId: 'u1' })).resolves.toEqual({ bound: false });
+  });
+});
+
+describe('DD-AUTH-034 resolveStoredDestination', () => {
+  const resolveStored = (stored: string, viewer: { role: 'admin' | 'supporter' | 'user'; aal: string | null }) =>
+    resolveStoredDestination({ stored, viewer, origin: ORIGIN });
+
+  it('DD-AUTH-034 一般の /account はそのまま、Cookie を消す', async () => {
+    await expect(resolveStored('/account', { role: 'user', aal: 'aal1' })).resolves.toEqual({
+      path: '/account',
+      needsMfa: false,
+      action: { kind: 'clear' },
+    });
+  });
+
+  it('DD-AUTH-034 一般の /admin・//evil.example は外れて / へ倒し、理由の符号だけを監査に残す', async () => {
+    await expect(resolveStored('/admin', { role: 'user', aal: 'aal1' })).resolves.toEqual({
+      path: '/',
+      needsMfa: false,
+      action: { kind: 'clear' },
+    });
+    await expect(resolveStored('//evil.example', { role: 'user', aal: 'aal1' })).resolves.toEqual({
+      path: '/',
+      needsMfa: false,
+      action: { kind: 'clear' },
+    });
+    expect(audit.default).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(audit.default.mock.calls)).not.toContain('evil');
+  });
+
+  it('DD-AUTH-034 管理者 aal2 の /admin は /admin のまま', async () => {
+    await expect(resolveStored('/admin', { role: 'admin', aal: 'aal2' })).resolves.toEqual({
+      path: '/admin',
+      needsMfa: false,
+      action: { kind: 'clear' },
+    });
+  });
+
+  it('DD-AUTH-034 resolveReturnDestination は使い切った値を resolveStoredDestination と同じ結果で返す（動きは変えない）', async () => {
+    store.consumeReturnIntent.mockResolvedValue('/admin');
+
+    await expect(resolve(user)).resolves.toEqual(await resolveStored('/admin', user));
   });
 });
 

@@ -6,8 +6,6 @@ jest.mock('server-only', () => ({}), { virtual: true });
 // 本番ビルドの E2E では Turnstile が fail-closed で 403 を返すため、
 // 応答の同一性はここで検証する（FR-PWRESET-002 と同じ切り分け）。
 
-process.env.ADMIN_API_KEY = 'test-admin-key';
-
 const afterCallbacks: Array<() => unknown> = [];
 
 // 漏洩パスワード検査は外部 API（HaveIBeenPwned）を叩く。テストからネットワークへ出さない。
@@ -265,16 +263,28 @@ describe('ARC-AUTH-006 会員登録は登録済みかどうかで応答を変え
       }
     });
 
-    test('ARC-AUTH-006 next が無い・外の住所でも 3 枝が同じ形（控えの Cookie は消す側）で、控えは作らない', async () => {
+    test('ARC-AUTH-006 next が無い・外の住所でも 3 枝とも控えを既定の / で作り、同じ形の控えの Cookie を付ける（SEC-AUTH-007）', async () => {
       for (const extra of [{}, { next: '//evil.example' }]) {
         createReturnIntent.mockClear();
         const responses = await runThreeBranches(extra);
 
-        for (const res of responses) {
+        expect(createReturnIntent).toHaveBeenCalledTimes(3);
+        expect(createReturnIntent.mock.calls.map(([arg]) => arg)).toEqual([
+          { returnPath: '/', purpose: 'signup', bindTo: 'new@example.com' },
+          { returnPath: '/', purpose: 'signup', bindTo: 'taken@example.com' },
+          { returnPath: '/', purpose: 'signup', bindTo: 'banned@example.com' },
+        ]);
+        const shapes = responses.map((res: any) => {
           expect(res.status).toBe(202);
-          expect(intentCookieCalls(res)).toEqual([expect.objectContaining({ value: '', maxAge: 0 })]);
-        }
-        expect(createReturnIntent).not.toHaveBeenCalled();
+          const calls = intentCookieCalls(res);
+          expect(calls).toHaveLength(1);
+          const { value, ...attributes } = calls[0];
+          expect(value).toBe('E'.repeat(43));
+          return attributes;
+        });
+        expect(shapes[1]).toEqual(shapes[0]);
+        expect(shapes[2]).toEqual(shapes[0]);
+        expect(shapes[0]).toEqual(expect.objectContaining({ httpOnly: true, sameSite: 'lax', path: '/', maxAge: 3600 }));
       }
     });
 

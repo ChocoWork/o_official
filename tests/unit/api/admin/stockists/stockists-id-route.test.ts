@@ -41,6 +41,7 @@ const {
   toCsrfDenyResponse: mockToDeny,
 } = require('@/features/stockist/services/admin-security');
 
+const { ADMIN_STOCKIST_COLUMNS } = require('@/features/stockist/schemas');
 const { GET, PUT, PATCH, DELETE } = require('@/app/api/admin/stockists/[id]/route');
 
 type Method = 'GET' | 'PUT' | 'PATCH' | 'DELETE';
@@ -94,20 +95,33 @@ function setupSelectSingle(result: { data?: unknown; error: unknown }) {
   return { from, select, eq, single };
 }
 
-function setupUpdate(error: unknown) {
-  const eq = jest.fn().mockResolvedValue({ error });
+const DELETED_ROW = {
+  id: 5,
+  name: 'Flagship',
+  address: 'Tokyo Shibuya 1-1',
+  status: 'private',
+};
+
+// update().eq().select('id') の形。data を渡さなければ誤り無し = 1 行、誤り有り = null
+function setupUpdate(error: unknown, data?: unknown) {
+  const resolved = data !== undefined ? data : error ? null : [{ id: 5 }];
+  const select = jest.fn().mockResolvedValue({ data: resolved, error });
+  const eq = jest.fn().mockReturnValue({ select });
   const update = jest.fn().mockReturnValue({ eq });
   const from = jest.fn().mockReturnValue({ update });
   mockCreateClient.mockResolvedValue({ from });
-  return { from, update, eq };
+  return { from, update, eq, select };
 }
 
-function setupDelete(error: unknown) {
-  const eq = jest.fn().mockResolvedValue({ error });
+// delete().eq().select('id, name, address, status') の形
+function setupDelete(error: unknown, data?: unknown) {
+  const resolved = data !== undefined ? data : error ? null : [DELETED_ROW];
+  const select = jest.fn().mockResolvedValue({ data: resolved, error });
+  const eq = jest.fn().mockReturnValue({ select });
   const del = jest.fn().mockReturnValue({ eq });
   const from = jest.fn().mockReturnValue({ delete: del });
   mockCreateClient.mockResolvedValue({ from });
-  return { from, delete: del, eq };
+  return { from, delete: del, eq, select };
 }
 
 function setupDb(method: Method, error: unknown = null) {
@@ -136,7 +150,7 @@ afterEach(() => {
 });
 
 describe('道の id の確かめ', () => {
-  const invalidIds = ['abc', '0', '-1', '1.5', ''];
+  const invalidIds = ['abc', '0', '-1', '1.5', '', '1e30', '9007199254740993'];
 
   for (const method of ALL_METHODS) {
     it.each(invalidIds)(
@@ -229,7 +243,7 @@ describe('認可と回数の制限', () => {
 });
 
 describe('GET /api/admin/stockists/[id]', () => {
-  it('DD-STOCKIST-035 GET は id に合う1行を全部の列で読み 200 で data を返す', async () => {
+  it('DD-STOCKIST-035 GET は id に合う1行を管理用の 8 列で読み 200 で data を返す', async () => {
     const row = { id: 5, name: 'Flagship', status: 'private' };
     const { from, select, eq, single } = setupSelectSingle({ data: row, error: null });
     const request = makeRequest('GET');
@@ -238,7 +252,9 @@ describe('GET /api/admin/stockists/[id]', () => {
 
     expect(mockCreateClient).toHaveBeenCalledWith(request);
     expect(from).toHaveBeenCalledWith('stockists');
-    expect(select).toHaveBeenCalledWith('*');
+    expect(select).toHaveBeenCalledWith(ADMIN_STOCKIST_COLUMNS);
+    expect(select.mock.calls[0][0]).not.toContain('created_at');
+    expect(select.mock.calls[0][0]).not.toContain('*');
     expect(eq).toHaveBeenCalledWith('id', 5);
     expect(single).toHaveBeenCalledTimes(1);
     expect(response.status).toBe(200);
@@ -342,15 +358,17 @@ describe('PUT /api/admin/stockists/[id]', () => {
     ['店舗名が空白だけ', { name: '   ' }, 'name'],
     ['住所が501字', { address: 'a'.repeat(501) }, 'address'],
     ['状態が draft', { status: 'draft' }, 'status'],
+    ['店舗名に改行', { name: '本店\nInjected' }, 'name'],
+    ['電話に漢字', { phone: '03-1234-5678（代表）' }, 'phone'],
   ])(
-    'DD-STOCKIST-035 PUT は値の形が合わない（%s）時に監査 failure と 400 を返す',
+    'DD-STOCKIST-035 PUT は値の形が合わない（%s）時に監査 failure と、項目の名前だけの固定の本文の 400 を返す',
     async (_label, patch, field) => {
       const response = await PUT(makeRequest('PUT', { ...validBody, ...patch }), ctx('5'));
       const body = await response.json();
 
       expect(response.status).toBe(400);
-      expect(body.error).toBe('Invalid request');
-      expect(Object.keys(body.details.fieldErrors)).toEqual([field]);
+      expect(body).toEqual({ error: 'Invalid request', fields: [field] });
+      expect(JSON.stringify(body)).not.toMatch(/details|fieldErrors|formErrors/);
       expect(mockCreateClient).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledTimes(1);
       expect(mockLogAudit).toHaveBeenCalledWith(
@@ -364,13 +382,52 @@ describe('PUT /api/admin/stockists/[id]', () => {
     },
   );
 
-  it('DD-STOCKIST-035 PUT は表の更新に失敗した時に監査 error と 500 Failed to update stockist を返す', async () => {
-    setupUpdate({ message: 'db' });
+  it('DD-STOCKIST-035 PUT は更新の結果が 0 行の時に 404 Stockist not found を返し、成功の監査を書かず failure を残す', async () => {
+    const { select } = setupUpdate(null, []);
+
+    const response = await PUT(makeRequest('PUT', validBody), ctx('5'));
+
+    expect(select).toHaveBeenCalledWith('id');
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Stockist not found' });
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.stockists.update',
+        resource_id: '5',
+        outcome: 'failure',
+        detail: 'Stockist not found',
+      }),
+    );
+    expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }));
+    expect(mockApplyCookie).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-035 PUT は本文が JSON でない時に 400 Invalid request を返し、表に触れず監査 failure を残す', async () => {
+    const request = new Request('http://localhost/api/admin/stockists/5', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: 'not json',
+    });
+
+    const response = await PUT(request, ctx('5'));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Invalid request' });
+    expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'failure', detail: 'Invalid JSON', resource_id: '5' }),
+    );
+  });
+
+  it('DD-STOCKIST-035 PUT は表の更新に失敗した時に監査 error と 500 Failed to update stockist を返し、記録には符号だけを残す', async () => {
+    setupUpdate({ message: 'db secret', code: '23505' });
 
     const response = await PUT(makeRequest('PUT', validBody), ctx('5'));
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'Failed to update stockist' });
+    expect(console.error).toHaveBeenCalledWith('Failed to update stockist:', { code: '23505' });
     expect(mockLogAudit).toHaveBeenCalledTimes(1);
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -450,8 +507,7 @@ describe('PATCH /api/admin/stockists/[id]', () => {
       const body = await response.json();
 
       expect(response.status).toBe(400);
-      expect(body.error).toBe('Invalid request');
-      expect(body.details.fieldErrors).toHaveProperty('status');
+      expect(body).toEqual({ error: 'Invalid request', fields: ['status'] });
       expect(mockCreateClient).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -464,13 +520,54 @@ describe('PATCH /api/admin/stockists/[id]', () => {
     },
   );
 
-  it('DD-STOCKIST-035 PATCH は表の更新に失敗した時に監査 error と 500 Failed to update status を返す', async () => {
-    setupUpdate({ message: 'db' });
+  it('DD-STOCKIST-035 PATCH は更新の結果が 0 行の時に 404 Stockist not found を返し、成功の監査を書かず failure を残す', async () => {
+    const { select } = setupUpdate(null, []);
+
+    const response = await PATCH(makeRequest('PATCH', { status: 'published' }), ctx('5'));
+
+    expect(select).toHaveBeenCalledWith('id');
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Stockist not found' });
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.stockists.patch',
+        resource_id: '5',
+        outcome: 'failure',
+        detail: 'Stockist not found',
+      }),
+    );
+    expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }));
+    expect(mockApplyCookie).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-035 PATCH は本文が JSON でない時に 400 Invalid request を返し、表に触れず監査 failure を残す', async () => {
+    const request = new Request('http://localhost/api/admin/stockists/5', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: 'not json',
+    });
+
+    const response = await PATCH(request, ctx('5'));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Invalid request' });
+    expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'failure', detail: 'Invalid JSON', resource_id: '5' }),
+    );
+  });
+
+  it('DD-STOCKIST-035 PATCH は表の更新に失敗した時に監査 error と 500 Failed to update status を返し、記録には符号だけを残す', async () => {
+    setupUpdate({ message: 'db secret', code: '23505' });
 
     const response = await PATCH(makeRequest('PATCH', { status: 'published' }), ctx('5'));
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'Failed to update status' });
+    expect(console.error).toHaveBeenCalledWith('Failed to update stockist status:', {
+      code: '23505',
+    });
     expect(mockLogAudit).toHaveBeenCalledTimes(1);
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -536,13 +633,59 @@ describe('DELETE /api/admin/stockists/[id]', () => {
     expect(mockApplyCookie).toHaveBeenCalledWith(response, undefined);
   });
 
-  it('DD-STOCKIST-035 DELETE は表の削除に失敗した時に監査 error と 500 Failed to delete stockist を返す', async () => {
-    setupDelete({ message: 'db' });
+  it('DD-STOCKIST-035 DELETE は消した行の id・name・address・status だけを監査の metadata.deleted に残す', async () => {
+    const { select } = setupDelete(null, [
+      {
+        id: 5,
+        name: 'Flagship',
+        address: 'Tokyo Shibuya 1-1',
+        status: 'published',
+        phone: '03-0000-0000',
+        time: '11:00-20:00',
+      },
+    ]);
+
+    const response = await DELETE(makeRequest('DELETE'), ctx('5'));
+
+    expect(select).toHaveBeenCalledWith('id, name, address, status');
+    expect(response.status).toBe(200);
+    const audit = mockLogAudit.mock.calls[0][0];
+    expect(audit.outcome).toBe('success');
+    expect(audit.metadata).toEqual({
+      deleted: { id: 5, name: 'Flagship', address: 'Tokyo Shibuya 1-1', status: 'published' },
+    });
+    expect(JSON.stringify(audit)).not.toContain('03-0000-0000');
+    expect(JSON.stringify(audit)).not.toContain('11:00-20:00');
+  });
+
+  it('DD-STOCKIST-035 DELETE は削除の結果が 0 行の時に 404 Stockist not found を返し、成功の監査を書かず failure を残す', async () => {
+    setupDelete(null, []);
+
+    const response = await DELETE(makeRequest('DELETE'), ctx('5'));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Stockist not found' });
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.stockists.delete',
+        resource_id: '5',
+        outcome: 'failure',
+        detail: 'Stockist not found',
+      }),
+    );
+    expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }));
+    expect(mockApplyCookie).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-035 DELETE は表の削除に失敗した時に監査 error と 500 Failed to delete stockist を返し、記録には符号だけを残す', async () => {
+    setupDelete({ message: 'db secret', code: '23503' });
 
     const response = await DELETE(makeRequest('DELETE'), ctx('5'));
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'Failed to delete stockist' });
+    expect(console.error).toHaveBeenCalledWith('Failed to delete stockist:', { code: '23503' });
     expect(mockLogAudit).toHaveBeenCalledTimes(1);
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -558,7 +701,7 @@ describe('DELETE /api/admin/stockists/[id]', () => {
 
 describe('本文・送り元・例外', () => {
   for (const method of ['PUT', 'PATCH'] as Method[]) {
-    it(`DD-STOCKIST-035 ${method} は本文が JSON でない時に 500 Internal server error を返し、監査を残さない`, async () => {
+    it(`DD-STOCKIST-035 ${method} は本文が JSON でない時に 500 でなく 400 Invalid request を返す`, async () => {
       const request = new Request('http://localhost/api/admin/stockists/5', {
         method,
         headers: { 'content-type': 'application/json' },
@@ -567,9 +710,8 @@ describe('本文・送り元・例外', () => {
 
       const response = await handlers[method](request, ctx('5'));
 
-      expect(response.status).toBe(500);
-      expect(await response.json()).toEqual({ error: 'Internal server error' });
-      expect(mockLogAudit).not.toHaveBeenCalled();
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'Invalid request' });
     });
   }
 

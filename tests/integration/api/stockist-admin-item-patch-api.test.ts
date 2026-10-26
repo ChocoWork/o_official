@@ -194,7 +194,8 @@ function patchRequest(body: unknown = { status: 'published' }, extra: Parameters
   return makeRequest({ body, ...extra });
 }
 
-function okTables(update: Outcome = { data: null, error: null }): Tables {
+// 更新の結果は .select('id') で返る行。1 行なら成功、0 行は「無い」か RLS が隠した場合で 404
+function okTables(update: Outcome = { data: [{ id: 7 }], error: null }): Tables {
   return { stockists: { update } };
 }
 
@@ -206,7 +207,7 @@ describe('PATCH /api/admin/stockists/[id]（公開の状態だけの切り替え
   beforeEach(beforeEachCommon);
   afterEach(afterEachCommon);
 
-  test.each(['abc', '0', '-1', '1.5', '', ' ', 'NaN', 'Infinity'])(
+  test.each(['abc', '0', '-1', '1.5', '', ' ', 'NaN', 'Infinity', '1e30', '9007199254740993'])(
     'API-STOCKIST-005 id が正の整数でない %j は認可より前に 400 Invalid stockist id で断り、本文も表も触らない',
     async (id) => {
       setup({ tables: okTables() });
@@ -505,6 +506,7 @@ describe('PATCH /api/admin/stockists/[id]（公開の状態だけの切り替え
       expect(createClient).toHaveBeenCalledWith(request);
       expect(updatePayload()).toEqual({ status });
       expect(tableCalls('stockists', 'update')[0].find(([m]) => m === 'eq')?.[1]).toEqual(['id', 7]);
+      expect(tableCalls('stockists', 'update')[0].find(([m]) => m === 'select')?.[1]).toEqual(['id']);
       expect(dataSeq()).toEqual(['stockists.update']);
       expect(auditRows()).toEqual([
         expect.objectContaining({
@@ -540,18 +542,26 @@ describe('PATCH /api/admin/stockists/[id]（公開の状態だけの切り替え
       expect(res.status).toBe(400);
       expect((await res.json()).error).toBe('Invalid request');
       expect(dataSeq()).toEqual([]);
+      // JSON の null は読めなかった本文と同じ扱い（Invalid JSON）、それ以外は検証の失敗
       expect(auditRows()).toEqual([
-        expect.objectContaining({ action: 'admin.stockists.patch', outcome: 'failure', detail: 'Validation failed', resource_id: '7' }),
+        expect.objectContaining({
+          action: 'admin.stockists.patch',
+          outcome: 'failure',
+          detail: body === null ? 'Invalid JSON' : 'Validation failed',
+          resource_id: '7',
+        }),
       ]);
     }
   );
 
-  test('API-STOCKIST-005 状態の誤りは項目ごとの制約の中身を details に返す', async () => {
+  test('API-STOCKIST-005 状態の誤りは項目の名前だけの固定の本文で返し、details を含めない', async () => {
     setup({ tables: okTables() });
 
     const res = await PATCH(patchRequest({ status: 'draft' }), ctx());
 
-    expect(Object.keys((await res.json()).details.fieldErrors)).toEqual(['status']);
+    const json = await res.json();
+    expect(json).toEqual({ error: 'Invalid request', fields: ['status'] });
+    expect(JSON.stringify(json)).not.toMatch(/details|fieldErrors|formErrors/);
   });
 
   test('API-STOCKIST-005 失敗の監査の送り元と user-agent が無ければ null で残す', async () => {
@@ -582,23 +592,45 @@ describe('PATCH /api/admin/stockists/[id]（公開の状態だけの切り替え
     ]);
   });
 
-  test('API-STOCKIST-005 無い id でも DB は誤りを返さないので 200 と成功の監査になる（推定）', async () => {
-    setup({ tables: okTables({ data: null, error: null }) });
+  test.each([
+    ['空の配列', []],
+    ['null', null],
+  ])('API-STOCKIST-005 更新の結果が %s（0 行）なら 404 Stockist not found で断り、成功の監査を書かず failure を残す', async (_label, data) => {
+    setup({ tables: okTables({ data, error: null }) });
 
     const res = await PATCH(patchRequest(), ctx('99999'));
 
-    expect(res.status).toBe(200);
-    expect(auditRows()[0]).toMatchObject({ outcome: 'success', resource_id: '99999' });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Stockist not found' });
+    expect(auditRows()).toEqual([
+      expect.objectContaining({
+        action: 'admin.stockists.patch',
+        outcome: 'failure',
+        detail: 'Stockist not found',
+        resource_id: '99999',
+      }),
+    ]);
   });
 
-  test('API-STOCKIST-005 JSON でない本文は例外の 500 Internal server error で、監査を残さない（推定）', async () => {
+  test('API-STOCKIST-005 DB の誤りの記録には符号だけを残し、誤りの本文を残さない', async () => {
+    setup({ tables: okTables({ data: null, error: { code: '42501', message: 'permission denied for table stockists' } }) });
+
+    await PATCH(patchRequest(), ctx());
+
+    expect(console.error).toHaveBeenCalledWith('Failed to update stockist status:', { code: '42501' });
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('permission denied');
+  });
+
+  test('API-STOCKIST-005 JSON でない本文は 500 でなく 400 Invalid request で断り、表に触らず failure を監査に残す', async () => {
     setup({ tables: okTables() });
 
     const res = await PATCH(makeRequest({ jsonError: new SyntaxError('Unexpected token') }), ctx());
 
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: 'Internal server error' });
-    expect(auditRows()).toHaveLength(0);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Invalid request' });
+    expect(auditRows()).toEqual([
+      expect.objectContaining({ action: 'admin.stockists.patch', outcome: 'failure', detail: 'Invalid JSON', resource_id: '7' }),
+    ]);
     expect(dataSeq()).toEqual([]);
   });
 

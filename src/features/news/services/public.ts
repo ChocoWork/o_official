@@ -1,5 +1,4 @@
-import { createPublicClient, createServiceRoleClient } from '@/lib/supabase/server';
-import { signNewsImageFields } from '@/lib/storage/news-images';
+import { createPublicClient } from '@/lib/supabase/server';
 import { PublicNewsArticle, PublicNewsDetailArticle, PublicNewsTitle } from '@/features/news/types';
 
 type GetPublishedNewsOptions = {
@@ -13,17 +12,14 @@ type GetPublishedNewsOptions = {
  * @impl IMPL-NEWS-121
  * @design DD-NEWS-003
  * @remarks 下書きを外へ出さないため、anon の client の RLS に加えて取り出しの条件でも公開済みに絞る2段にする（SEC-NEWS-001）。
- * 画像の置き場は非公開なので、service role は DB の読み出しに使わず、返す前の画像の署名だけに使う（ARC-NEWS-003）。
+ * 公開の画面は記事の画像を使わないので、画像の列は選ばず、署名のための service role も持たない（SEC-NEWS-005、ARC-NEWS-003）。
  */
 export async function getPublishedNews(options?: GetPublishedNewsOptions): Promise<PublicNewsArticle[]> {
-  const [supabase, serviceSupabase] = await Promise.all([
-    createPublicClient(),
-    createServiceRoleClient(),
-  ]);
+  const supabase = await createPublicClient();
 
   let query = supabase
     .from('news_articles')
-    .select('id, title, published_date, category, image_url, content')
+    .select('id, title, published_date, category, content')
     .eq('status', 'published')
     .order('published_date', { ascending: false });
 
@@ -37,9 +33,7 @@ export async function getPublishedNews(options?: GetPublishedNewsOptions): Promi
 
   const { data } = await query;
 
-  return Promise.all(
-    ((data ?? []) as PublicNewsArticle[]).map((article) => signNewsImageFields(serviceSupabase, article)),
-  );
+  return (data ?? []) as PublicNewsArticle[];
 }
 
 /**
@@ -68,26 +62,24 @@ export async function getPublishedNewsCount(): Promise<number> {
 }
 
 /**
- * 公開済みの記事を1件、本文と署名済みの画像の道つきで返す。無い時は null。
+ * 公開済みの記事を1件、本文つきで返す。無い時は null。
  *
  * @impl IMPL-NEWS-123
  * @design DD-NEWS-031
  * @remarks 非公開の記事を無い記事と同じ null にして、呼び元が 404 で有無を知らせないようにする（SEC-NEWS-001）。
  * 分類を受けて絞るのは、一覧で選んだ分類の外の記事を詳細でも出さないため（SCR-NEWS-002）。
  * 分類の値はここで確かめず、呼び元が許可の一覧で確かめた値を渡す前提にする。
+ * 一覧と同じく画像の列は選ばず署名もしない（SEC-NEWS-005）。
  */
 export async function getPublishedNewsDetailById(
   id: string,
   options?: { category?: string },
 ): Promise<PublicNewsDetailArticle | null> {
-  const [supabase, serviceSupabase] = await Promise.all([
-    createPublicClient(),
-    createServiceRoleClient(),
-  ]);
+  const supabase = await createPublicClient();
 
   let query = supabase
     .from('news_articles')
-    .select('id, title, published_date, category, image_url, content, detailed_content')
+    .select('id, title, published_date, category, content, detailed_content')
     .eq('status', 'published')
     .eq('id', id);
 
@@ -96,9 +88,7 @@ export async function getPublishedNewsDetailById(
   }
 
   const { data } = await query.single();
-  const article = (data as PublicNewsDetailArticle | null) ?? null;
-
-  return article ? signNewsImageFields(serviceSupabase, article) : null;
+  return (data as PublicNewsDetailArticle | null) ?? null;
 }
 
 /**

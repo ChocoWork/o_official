@@ -1,6 +1,6 @@
 # 1.16-1 管理画面のニュース（ADMIN NEWS）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: 管理画面の NEWS タブ・記事の作成と編集の画面・管理のニュースの窓口・画像の署名・使われていない Server Action | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: 管理画面の NEWS タブ・記事の作成と編集の画面・管理のニュースの窓口・画像の署名・使われていない Server Action | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -422,8 +422,8 @@ GET は `admin.news.read`、POST は `admin.news.manage`、どちらも有効な
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | API-NEWS-004、API-NEWS-005、API-NEWS-006、API-NEWS-007、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、STATE-NEWS-001、DATA-NEWS-001、DATA-NEWS-002、DATA-NEWS-004、DATA-NEWS-005、SEC-NEWS-015 |
-| 根拠 | 編集の画面に非公開の記事の中身を渡す読みと、記事を変える3つの操作は、窓口で権限と aal2 を確かめ、表も利用者の JWT で RLS に通す（SEC-NEWS-015、ARC-NEWS-002、DATA-NEWS-002）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新（PUT）と分ける（API-NEWS-006、STATE-NEWS-001）。直すたびに画像を付け直させないよう PUT の画像は任意にする（API-NEWS-005）。変える操作は成功も失敗も監査に残し、誰が何をしたかを追えるようにする（対象0件も成功と記録するので SEC-NEWS-016 は上位にしない）。求める権限は DB の ACL の `admin.news.read`・`admin.news.manage`（DATA-NEWS-005）。書き換えの送り元は、窓口に届く前に proxy の Origin の検査が確かめる（ARC-NEWS-004） |
+| 上位 | API-NEWS-004、API-NEWS-005、API-NEWS-006、API-NEWS-007、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、STATE-NEWS-001、DATA-NEWS-001、DATA-NEWS-002、DATA-NEWS-004、DATA-NEWS-005、SEC-NEWS-015、SEC-NEWS-016 |
+| 根拠 | 編集の画面に非公開の記事の中身を渡す読みと、記事を変える3つの操作は、窓口で権限と aal2 を確かめ、表も利用者の JWT で RLS に通す（SEC-NEWS-015、ARC-NEWS-002、DATA-NEWS-002）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新（PUT）と分ける（API-NEWS-006、STATE-NEWS-001）。直すたびに画像を付け直させないよう PUT の画像は任意にする（API-NEWS-005）。変える操作は成功も失敗も監査に残し、誰が何をしたかを追えるようにする。変えた行が0件（無い、または RLS が隠した）の時は成功と偽らず、404 と失敗の監査にする（SEC-NEWS-016）。求める権限は DB の ACL の `admin.news.read`・`admin.news.manage`（DATA-NEWS-005）。書き換えの送り元は、窓口に届く前に proxy の Origin の検査が確かめる（ARC-NEWS-004） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/news/[id]/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
@@ -432,23 +432,23 @@ GET は `admin.news.read`、POST は `admin.news.manage`、どちらも有効な
 
 #### 対応要件
 
-API-NEWS-004〜007、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、STATE-NEWS-001、DATA-NEWS-001・002・004・005、SEC-NEWS-015
+API-NEWS-004〜007、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、STATE-NEWS-001、DATA-NEWS-001・002・004・005、SEC-NEWS-015、SEC-NEWS-016
 
 #### 入出力
 
 | 方法 | 入力 | 出力 |
 | --- | --- | --- |
 | `GET /api/admin/news/<id>` | 道の `id`（形は確かめない） | 200 `{data}`。全部の列、`image_url` は署名つき URL |
-| `PUT /api/admin/news/<id>` | 道の `id`、multipart（作成と同じ6つの欄、`image` は任意） | 200 `{success:true}` |
-| `PATCH /api/admin/news/<id>` | 道の `id`、JSON `{status}`（private・published） | 200 `{success:true}` |
-| `DELETE /api/admin/news/<id>` | 道の `id`、本文なし | 200 `{success:true}` |
+| `PUT /api/admin/news/<id>` | 道の `id`（18桁以下の数字）、multipart（作成と同じ6つの欄、`image` は任意） | 200 `{success:true}`。無い記事・形の悪い id は 404 |
+| `PATCH /api/admin/news/<id>` | 道の `id`（同上）、JSON `{status}`（private・published） | 200 `{success:true}`。無い記事・形の悪い id は 404 |
+| `DELETE /api/admin/news/<id>` | 道の `id`（同上）、本文なし | 200 `{success:true}`。無い記事・形の悪い id は 404 |
 
 #### 正常フロー
 
 - GET: 道の `id` を読み、`admin.news.read` で認可し、`select('*').eq('id', id).single()` で1行を読み、`signNewsImageFields` で署名して返す（`src/app/api/admin/news/[id]/route.ts`）
-- PUT: `admin.news.manage` で認可し、zod で欄を確かめる。`image` が File なら種類と 5MB を確かめ、拡張子をファイル名の最後の `.` の後ろから取り（`.` が無ければ `jpg`）、`news/<UTC の日付>/<uuid>.<拡張子>` に上げる。6つの欄と、上げた時だけ `image_url` を `update().eq('id', id)` で書き、監査 `admin.news.update` を残す
-- PATCH: `admin.news.manage` で認可し、JSON を zod で確かめ、`status` だけを `update().eq('id', id)` で書き、監査 `admin.news.status_update` を残す。前の状態は読まない
-- DELETE: `admin.news.manage` で認可し、`delete().eq('id', id)` で行を消し、監査 `admin.news.delete` を残す
+- PUT: `admin.news.manage` で認可し、`id` の形（`/^\d{1,18}$/`）を確かめ、外れていれば DB にも置き場にも触らず 404 にする。zod で欄を確かめる。`image` が File なら種類と 5MB を確かめ、拡張子をファイル名の最後の `.` の後ろから取り（`.` が無ければ `jpg`）、`news/<UTC の日付>/<uuid>.<拡張子>` に上げる。6つの欄と、上げた時だけ `image_url` を `update().eq('id', id).select('id')` で書き、1行以上が返れば監査 `admin.news.update` を残す
+- PATCH: `admin.news.manage` で認可し、`id` の形を確かめ（外れていれば 404）、JSON を zod で確かめ、`status` だけを `update().eq('id', id).select('id')` で書き、1行以上が返れば監査 `admin.news.status_update` を残す。前の状態は読まない
+- DELETE: `admin.news.manage` で認可し、`id` の形を確かめ（外れていれば 404）、`delete().eq('id', id).select('id')` で行を消し、1行以上が返れば監査 `admin.news.delete` を残す
 
 #### 異常フロー
 
@@ -465,7 +465,8 @@ API-NEWS-004〜007、ARC-NEWS-002、ARC-NEWS-003、ARC-NEWS-004、STATE-NEWS-001
 | PATCH | 値が private・published でない | 400 `{error:'Invalid request', details}` |
 | PATCH | 表の更新に失敗 | 監査 `admin.news.status_update.failed`（failure）、500 `Failed to update status` |
 | DELETE | 表の削除に失敗 | 監査 `admin.news.delete.failed`（failure）、500 `Failed to delete article` |
-| PUT・PATCH・DELETE | 対象の行が0件 | 結果の行数を見ないので 200 `{success:true}`、成功として監査に残す（SEC-NEWS-016）。PUT は画像を上げた後 |
+| PUT・PATCH・DELETE | 対象の行が0件 | 404 `{error:'Article not found'}`。監査は失敗 `admin.news.update.not_found`・`admin.news.status_update.not_found`・`admin.news.delete.not_found`（`detail='News article not found'`、`metadata.articleId`）で、成功の監査は書かない（SEC-NEWS-016）。PUT は画像を上げた後なので、上げた画像は置き場に残る（SEC-NEWS-018） |
+| PUT・PATCH・DELETE | `id` が18桁以下の数字でない | 404 `Article not found`。DB にも置き場にも触らない。監査は同じ `.not_found` の失敗で、`resource_id` は `null`、`metadata` は生の id でなく長さ `articleIdLength` だけ |
 | 全部 | 例外（multipart を読めない時を含む） | 500 `Internal server error` |
 
 - PUT の拡張子はファイル名から取り、作成（種類から決める）と違う。`photo.PNG` は `PNG`、`a.html` を `image/png` と申告すると `.html` の道になる（SEC-NEWS-017）
@@ -477,7 +478,7 @@ PUT は記事の行の6つの列（画像を上げた時は `image_url` も）�
 
 #### 認証認可
 
-GET は `admin.news.read`、PUT・PATCH・DELETE は `admin.news.manage`、どれも有効な session と aal2。表は利用者の JWT の client（RLS）、置き場の書き込みと署名だけ service role。CSRF は proxy の Origin の検査（ARC-NEWS-004）。
+GET は `admin.news.read`、PUT・PATCH・DELETE は `admin.news.manage`、どれも有効な session と aal2。表は利用者の JWT の client（RLS。RLS が隠した行は 0 行になり 404 で返る）、置き場の書き込みと署名だけ service role。CSRF は proxy の Origin の検査（ARC-NEWS-004）。
 
 #### テスト観点
 
@@ -500,7 +501,8 @@ GET は `admin.news.read`、PUT・PATCH・DELETE は `admin.news.manage`、ど�
 - DELETE で表の失敗の時に監査 `admin.news.delete.failed` と 500、成功で監査 `admin.news.delete` と 200
 - DELETE で `createClient` が例外を投げた時に 500
 - 監査の `user_agent` が、見出しがある時はその値、無い時は `null`
-- 対象の行が0件でも PUT・PATCH・DELETE が 200 を返すこと（今の動きの記録。SEC-NEWS-016 に合わせて直す時はこのテストを変える）
+- 対象の行が0件の PUT・PATCH・DELETE が 404 になり、失敗の監査（`.not_found`）が 1 件だけで成功の監査が 0 件であること。1 行が返れば 200 と成功の監査
+- `id` が数字でない・19桁以上・負・小数・空の PUT・PATCH・DELETE が、表も置き場も触らず 404 になり、監査の `metadata` が長さだけであること。18桁ちょうどは DB に渡る
 
 ### DD-NEWS-066 最新の公開済みの記事3件の Server Action — 未使用（削除の判断待ち）
 
@@ -662,7 +664,7 @@ ARC-NEWS-003、DATA-NEWS-004、SEC-NEWS-004（AC-01 の期限1時間以下）
 
 - 本番の置き場 `news-images` の公開の設定と `storage.objects` の方針（移行に無い。DATA-NEWS-004）
 - 管理の作成・編集のページ（`/admin/news/create`・`/admin/news/edit/[id]`）にサーバーの守りを置くか
-- PUT・PATCH・DELETE が対象0件でも成功とすること、置き場の画像を消さないこと、PUT の拡張子の取り方を、直すか今の動きとして残すか（SEC-NEWS-016・017・018）
+- 対象0件の PUT・PATCH・DELETE は 2026-10-26 に 404 に直した（SEC-NEWS-016）。置き場の画像を消さないこと（無い id への PUT で上げた画像が残ることを含む）、PUT の拡張子の取り方を、直すか今の動きとして残すか（SEC-NEWS-017・018）
 - `getLatestNews` を消すか残すか（SEC-NEWS-009、API-NEWS-008）
 - 各項目の「テスト観点」のテストのファイルの多くはまだ無い。分岐を全部通せるかは、書いて `npm run test:trace-coverage` で確かめていない
 - この頁の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

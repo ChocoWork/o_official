@@ -107,7 +107,9 @@ export async function POST(request: Request) {
     const newRefreshToken = tokenData.refresh_token;
     const user = tokenData.user;
 
-    const res = NextResponse.json({ access_token: newAccessToken, user }, { status: 200 });
+    // 本文にトークンと利用者の記録を載せない。トークンは HttpOnly の Cookie だけで渡し、
+    // 端末側の script が読める形で返すと XSS で持ち出される。
+    const res = NextResponse.json({ ok: true }, { status: 200 });
 
     // Cookie / CSRF / sessions 行の更新は refresh と MFA 昇格で共通。手順がずれないよう一本化する。
     // DB 記録に失敗しても、発行済みトークンは必ず配る（旧 refresh token は既に無効化されており、

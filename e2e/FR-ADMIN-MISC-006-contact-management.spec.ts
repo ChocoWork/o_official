@@ -15,8 +15,10 @@
  * 今のコードで落ちる（RED）ことを承知で書く確かめ:
  * - FR-ADMIN-009-AC-01・AC-05 の画面の側: 管理画面に CONTACT のタブが無い（TM-ADMIN-01。ContactSection.tsx は使われていない）。
  *   画面の文言と部品は ContactSection.tsx の作りに合わせた（一覧の項目＝件名の文字、「テンプレートを選択」の combobox、「返信内容」の欄）。
- * - SEC-ADMIN-020-AC-01: サポーターにも submitted_ip・user_agent を返す（TM-ADMIN-61）。
- * - SEC-ADMIN-021-AC-01: 存在しない id でも 200 を返し、監査に success を残す（TM-ADMIN-62）。
+ *
+ * 直した確かめ（印を外して通る）:
+ * - SEC-ADMIN-020-AC-01: 詳細は submitted_ip・user_agent を返さない（TM-ADMIN-61）。
+ * - SEC-ADMIN-021-AC-01: 存在しない id は 404 を返し、監査に success を残さない（TM-ADMIN-62）。
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
@@ -627,7 +629,6 @@ test('SEC-ADMIN-019-AC-01 区切りの字を含む検索語で一覧を要求す
 // ---- SEC-ADMIN-020-AC-01 ----
 
 test('SEC-ADMIN-020-AC-01 サポーターの aal2 の JWT で問い合わせの詳細を要求すると 200 が返り、応答に submitted_ip・user_agent の項目が無い', async ({ request }) => {
-  test.fail(true, 'SEC-ADMIN-020-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
   await scenario(async (ctx) => {
     const { tag, actors } = ctx;
     const ip = '203.0.113.7';
@@ -649,12 +650,11 @@ test('SEC-ADMIN-020-AC-01 サポーターの aal2 の JWT で問い合わせの�
 // ---- SEC-ADMIN-021-AC-01 ----
 
 test('SEC-ADMIN-021-AC-01 存在しない id で問い合わせの PATCH・テンプレートの PUT と DELETE・色見本の DELETE を送ると 404 が返り、success の監査の行が増えない', async ({ request }) => {
-  test.fail(true, 'SEC-ADMIN-021-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
   await scenario(async ({ db, actors }) => {
     const token = actors.admin.accessToken;
     const missingUuid = randomUUID();
-    // identity の連番が届かない大きさの bigint（色見本の id）
-    const missingPresetId = `8${Array.from({ length: 18 }, () => Math.floor(Math.random() * 10)).join('')}`;
+    // identity の連番が届かない大きさで、窓口の形の検査（18 桁以下の数字）は通り、DB が 0 行を返して 404 になる bigint（色見本の id）
+    const missingPresetId = `8${Array.from({ length: 17 }, () => Math.floor(Math.random() * 10)).join('')}`;
 
     const patch = await call(request, token, 'PATCH', `/api/admin/contact/${missingUuid}`, { status: 'closed' });
     const put = await call(request, token, 'PUT', `/api/admin/contact/templates/${missingUuid}`, { title: '題', body: '本文' });

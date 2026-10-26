@@ -299,14 +299,37 @@ describe('管理の書き換えの道（ARC-NEWS-002）', () => {
     });
   });
 
-  it('ARC-NEWS-002 PUT・PATCH・DELETE は対象の行が0件でも成功として監査に残す', async () => {
+  it('ARC-NEWS-002 PUT・PATCH・DELETE は対象の行が0件なら 404 にし、成功でなく not_found の失敗を監査に残す（SEC-NEWS-016）', async () => {
     for (const handler of HANDLERS.slice(1)) {
-      setup({ newsResult: { data: null, error: null } });
+      setup({ newsResult: { data: [], error: null } });
+
+      const res = await handler.call();
+
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: 'Article not found' });
+      const rows = auditRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        action: handler.successAction + '.not_found',
+        outcome: 'failure',
+        resource_id: '7',
+      });
+    }
+  });
+
+  it('ARC-NEWS-002 PUT・PATCH・DELETE は変えた行が1行あれば 200 と成功の監査を残す（変更の結果は .select(id) で見る）', async () => {
+    for (const handler of HANDLERS.slice(1)) {
+      setup({ newsResult: { data: [{ id: 7 }], error: null } });
 
       const res = await handler.call();
 
       expect(res.status).toBe(200);
       expect(auditRows()[0]).toMatchObject({ action: handler.successAction, outcome: 'success' });
+      expect(
+        userClient.ops
+          .filter((o) => o.table === 'news_articles')
+          .some((o) => o.calls.some(([m, args]) => m === 'select' && args[0] === 'id')),
+      ).toBe(true);
     }
   });
 

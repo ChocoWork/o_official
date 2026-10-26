@@ -166,7 +166,6 @@ describe('ARC-AUTH-007 新しいパスワードは 16 文字以上で漏洩し�
     process.env.NEXT_PUBLIC_BASE_URL = 'http://localhost:3000';
     delete process.env.PASSWORD_RESET_SESSION_SECRET;
     delete process.env.VERCEL_ENV;
-    delete process.env.ADMIN_API_KEY;
   });
 
   afterEach(() => {

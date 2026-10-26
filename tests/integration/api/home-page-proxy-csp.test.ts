@@ -42,7 +42,6 @@ jest.mock('@/features/news/services/public', () => ({
       title: mockHostileNewsTitle,
       published_date: '2026-10-01',
       category: 'NEWS',
-      image_url: '/news.png',
       content: 'body',
     },
   ]),

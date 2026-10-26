@@ -250,22 +250,28 @@ describe('画像の非公開の置き場と署名つき URL（ARC-NEWS-003）', 
     expect(body.data).toEqual({ id: 7, title: 'T', image_url: 'https://signed.example/news/2026-10-24/b.webp?e=3600' });
   });
 
-  it('ARC-NEWS-003 公開の一覧は anon の client で読み、service role は画像の署名だけに使う', async () => {
-    setup({ newsResult: { data: [{ id: 1, title: 'A', image_url: `${BASE}/public/news-images/news/p/a.jpg` }], error: null } });
+  it('ARC-NEWS-003 公開の一覧は anon の client だけで読み、画像を署名せず service role も使わない（SEC-NEWS-005）', async () => {
+    setup({ newsResult: { data: [{ id: 1, title: 'A', content: 'c' }], error: null } });
+    createServiceRoleClient.mockClear();
 
     const rows = await getPublishedNews();
 
-    expect(rows[0].image_url).toBe('https://signed.example/news/p/a.jpg?e=3600');
+    expect(rows).toEqual([{ id: 1, title: 'A', content: 'c' }]);
+    expect(rows[0]).not.toHaveProperty('image_url');
     expect(publicClient.ops.some((o) => o.table === 'news_articles')).toBe(true);
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
     expect(serviceClient.ops).toHaveLength(0);
-    expect(serviceClient.signCalls).toEqual([{ bucket: 'news-images', path: 'news/p/a.jpg', expiresIn: 3600 }]);
+    expect(serviceClient.signCalls).toHaveLength(0);
   });
 
-  it('ARC-NEWS-003 公開の詳細も画像を署名し、記事が無ければ署名しない', async () => {
-    setup({ newsResult: { data: { id: 3, title: 'D', image_url: 'news/p/d.gif' }, error: null } });
+  it('ARC-NEWS-003 公開の詳細も署名せず service role も使わず、記事が無ければ null', async () => {
+    setup({ newsResult: { data: { id: 3, title: 'D', detailed_content: 'body' }, error: null } });
+    createServiceRoleClient.mockClear();
     const found = await getPublishedNewsDetailById('3');
-    expect(found.image_url).toBe('https://signed.example/news/p/d.gif?e=3600');
+    expect(found).toEqual({ id: 3, title: 'D', detailed_content: 'body' });
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
     expect(serviceClient.ops).toHaveLength(0);
+    expect(serviceClient.signCalls).toHaveLength(0);
 
     setup({ newsResult: { data: null, error: { code: 'PGRST116' } } });
     const missing = await getPublishedNewsDetailById('404');

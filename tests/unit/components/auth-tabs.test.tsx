@@ -192,6 +192,28 @@ describe('AuthTabs', () => {
     expect(screen.getByTestId('login-modal')).toBeInTheDocument();
   });
 
+  it('DD-AUTH-010 notice があれば role="status" で出す', () => {
+    render(<AuthTabs initialTab="login" notice="会員登録が完了しました。ログインしてください。" />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('会員登録が完了しました。ログインしてください。');
+  });
+
+  it('DD-AUTH-010 notice が無ければ role="status" を出さない', () => {
+    render(<AuthTabs initialTab="login" />);
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('DD-AUTH-010 タブを会員登録に替えても notice は残り、URL が消えても（props が変わっても）初回の値を保つ', () => {
+    const { rerender } = render(<AuthTabs initialTab="login" notice="会員登録が完了しました。ログインしてください。" />);
+
+    fireEvent.click(screen.getByRole('tab', { name: '会員登録' }));
+    expect(screen.getByRole('status')).toHaveTextContent('会員登録が完了しました。ログインしてください。');
+
+    rerender(<AuthTabs initialTab="login" />);
+    expect(screen.getByRole('status')).toHaveTextContent('会員登録が完了しました。ログインしてください。');
+  });
+
   it('DD-AUTH-010 矢印は既定の動き（スクロール）を止める', () => {
     render(<AuthTabs initialTab="login" />);
     const login = screen.getByRole('tab', { name: 'ログイン' });

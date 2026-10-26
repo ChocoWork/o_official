@@ -63,7 +63,6 @@ export const E2E_FIXED_ENV: Readonly<Record<string, string>> = {
   RESEND_WEBHOOK_SECRET: 'whsec_ZTJlLWxvY2FsLXJlc2VuZC13ZWJob29rLW9ubHk=',
   STRIPE_WEBHOOK_SECRET: 'whsec_e2e_local_only',
   CRON_SECRET: 'e2e-local-cron-secret-0123456789abcdef',
-  ADMIN_API_KEY: 'e2e-local-admin-api-key-0123456789abcdef',
   ORDER_STATUS_SESSION_SECRET: 'e2e-order-status-session-secret-only',
   NEXT_PUBLIC_SITE_URL: 'http://localhost:3000',
   TRACKING_17TRACK_BASE_URL: E2E_FAKE_17TRACK_URL,

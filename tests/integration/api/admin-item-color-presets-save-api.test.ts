@@ -22,8 +22,12 @@ jest.mock('@/lib/auth/authenticate', () => ({
   checkAuthSessionLiveness: jest.fn(),
 }));
 
+// 回数の制限は DB に触るので差し替える（呼ばれ方は窓口の単体試験で確かめる）
+jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+
 const { createClient, createServiceRoleClient } = require('@/lib/supabase/server');
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
+const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 
 type Result = { data: unknown; error: unknown };
 type Call = [string, unknown[]];
@@ -111,6 +115,7 @@ const VALID = { name: 'ネイビー', hex: '#000080' };
 describe('API-ADMIN-014 POST /api/admin/item-color-presets', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    enforceRateLimit.mockResolvedValue(undefined);
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -240,20 +245,22 @@ describe('API-ADMIN-014 POST /api/admin/item-color-presets', () => {
     expect(callsOf('insert')).toEqual([['insert', [[{ name: 'ネイビー', hex: '#000080' }]]]]);
   });
 
-  it('API-ADMIN-014 既にあるかを引く時の誤りは見ず、作りに進む', async () => {
+  it('API-ADMIN-014 既にあるかを引く時の誤りは 500 Failed to save color preset にし、作らず、内部の誤りを出さない', async () => {
     const created = { id: 'p3', name: 'ネイビー', hex: '#000080', created_at: '2026-10-24T00:00:00Z' };
     setup({
       presets: {
-        maybeSingle: { data: null, error: { message: 'lookup failed' } },
+        maybeSingle: { data: null, error: { code: 'XX000', message: 'lookup failed' } },
         single: { data: created, error: null },
       },
     });
 
     const res = await POST(makeRequest(VALID));
+    const body = await res.json();
 
-    expect(callsOf('insert')).toHaveLength(1);
-    expect(res.status).toBe(201);
-    expect(await res.json()).toEqual({ data: created });
+    expect(res.status).toBe(500);
+    expect(body).toEqual({ error: 'Failed to save color preset' });
+    expect(JSON.stringify(body)).not.toContain('lookup failed');
+    expect(callsOf('insert')).toHaveLength(0);
   });
 
   it('API-ADMIN-014 作る時の DB の誤り（一意の制約を含む）は 500 Failed to save color preset にし、内部の誤りを出さない', async () => {
@@ -267,14 +274,37 @@ describe('API-ADMIN-014 POST /api/admin/item-color-presets', () => {
     expect(JSON.stringify(body)).not.toContain('duplicate');
   });
 
-  it('API-ADMIN-014 本文の JSON が壊れていれば 400 でなく 500 Internal server error にし、表に触れない', async () => {
+  it('API-ADMIN-014 本文の JSON が壊れていれば 500 でなく 400 Invalid request にし、表に触れない', async () => {
     setup();
 
     const res = await POST(makeRequest(undefined, true));
 
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: 'Internal server error' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual(expect.objectContaining({ error: 'Invalid request' }));
     expect(presetsOp()).toBeUndefined();
+  });
+
+  it('API-ADMIN-014 回数の枠は認可を通った管理者の ID で数え、超えたら 429 を返して本文も表も触らない', async () => {
+    setup();
+    enforceRateLimit.mockResolvedValue({ status: 429, json: async () => ({ error: 'Too many requests' }) });
+    const req = makeRequest(VALID);
+
+    const res = await POST(req);
+
+    expect(res.status).toBe(429);
+    expect(enforceRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: 'admin:color-presets:write', limit: 60, windowSeconds: 600, subject: 'admin-1' }),
+    );
+    expect(req.json).not.toHaveBeenCalled();
+    expect(presetsOp()).toBeUndefined();
+  });
+
+  it('API-ADMIN-014 拒否された要求は回数に数えない', async () => {
+    setup({ codes: ['admin.items.read'] });
+
+    await POST(makeRequest(VALID));
+
+    expect(enforceRateLimit).not.toHaveBeenCalled();
   });
 
   it('API-ADMIN-014 表は service role の client で読み書きし、利用者の JWT の client は使わない', async () => {

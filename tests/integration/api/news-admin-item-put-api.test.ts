@@ -116,7 +116,8 @@ let userClient: ReturnType<typeof createFakeClient>;
 let serviceClient: ReturnType<typeof createFakeClient>;
 
 function setup(options: { uploadResult?: Result; updateResult?: Result; codes?: string[] } = {}) {
-  userClient = createFakeClient({ news_articles: options.updateResult ?? { data: null, error: null } });
+  // 更新は .select('id') で変えた行を返す。既定は 1 行（0 行は 404 になる: SEC-NEWS-016）
+  userClient = createFakeClient({ news_articles: options.updateResult ?? { data: [{ id: '7' }], error: null } });
   serviceClient = createFakeClient(
     {
       user_roles: { data: aclRows(options.codes ?? ['admin.news.read', 'admin.news.manage']), error: null },
@@ -227,6 +228,7 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
     expect(newsOps()[0].calls).toEqual([
       ['update', [expectedPayload]],
       ['eq', ['id', '7']],
+      ['select', ['id']],
     ]);
     expect(serviceClient.ops.some((o) => o.table === 'news_articles')).toBe(false);
     const rows = auditRows();
@@ -403,6 +405,37 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
       user_agent: 'jest-agent',
       metadata: { articleId: '7', status: 'published', category: 'EVENT' },
     });
+  });
+
+  test('API-NEWS-005 変えた行が0件なら 404 と update.not_found の失敗の監査を残し、成功の監査は残さない（SEC-NEWS-016）', async () => {
+    setup({ updateResult: { data: [], error: null } });
+
+    const res = await PUT(makeRequest(), ctx('7'));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Article not found' });
+    const rows = auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'admin.news.update.not_found',
+      actor_id: 'admin-1',
+      resource: 'news_article',
+      resource_id: '7',
+      outcome: 'failure',
+      detail: 'News article not found',
+      metadata: { articleId: '7' },
+    });
+  });
+
+  test('API-NEWS-005 id が数字でなければ表も置き場も触らず 404 にする（22P02 を 500 にしない）', async () => {
+    setup();
+
+    const res = await PUT(makeRequest({ fields: { ...validFields, image: makeImage('a.png', 'image/png') } }), ctx('abc'));
+
+    expect(res.status).toBe(404);
+    expect(newsOps()).toHaveLength(0);
+    expect(serviceClient.uploads).toHaveLength(0);
+    expect(auditRows()[0]).toMatchObject({ action: 'admin.news.update.not_found', outcome: 'failure', resource_id: null });
   });
 
   test('API-NEWS-005 監査の書き込みが失敗しても更新の成功は 200 のまま返す', async () => {

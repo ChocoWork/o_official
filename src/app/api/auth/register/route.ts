@@ -1,10 +1,10 @@
 /**
- * 会員登録の窓口（src/app/api/auth/register/route.ts）。公開の登録と管理の経路の両方を受ける。
+ * 会員登録の窓口（src/app/api/auth/register/route.ts）。公開の登録だけを受ける。
  *
  * @packageDocumentation
  * @impl IMPL-AUTH-163
  * @design DD-AUTH-018
- * @remarks 登録済みかどうかに関わらず同じ応答（Set-Cookie の形まで）を返す。409 を返すと任意のアドレスを投げるだけで会員かどうかを判別でき、会員だけを狙った標的型フィッシングや漏洩した組の絞り込みに使われる（OWASP WSTG-IDNT-04、ASVS 2.1）。登録済みなら本人にメールで伝える。各段の順番と運用上の前提の理由は、その行のコメントに書いた。
+ * @remarks 登録済みかどうかに関わらず同じ応答（Set-Cookie の形まで）を返す。控えは戻り先が無くても必ず作り、登録したメールに結ぶ（確認のリンクをこのブラウザで開いた時だけ session を作る。SEC-AUTH-007）。409 を返すと任意のアドレスを投げるだけで会員かどうかを判別でき、会員だけを狙った標的型フィッシングや漏洩した組の絞り込みに使われる（OWASP WSTG-IDNT-04、ASVS 2.1）。登録済みなら本人にメールで伝える。各段の順番と運用上の前提の理由は、その行のコメントに書いた。管理の鍵（x-admin-token・Bearer）で利用者を作る枝は持たない（見出しを付けられても公開の登録として扱う。SEC-AUTH-017）。宛先（メール）単位の枠を Turnstile と漏洩の確かめの後に数え、特定の宛先へ確認のメールを撃ち続けるのを止める（SEC-AUTH-016）。
  */
 import { NextResponse, after } from 'next/server';
 import sendMail from '@/lib/mail';
@@ -53,30 +53,13 @@ function notifyAlreadyRegistered(email: string, loginUrl: string) {
 
 export async function POST(request: Request) {
   try {
-    // Enforce rate limit for admin register calls
+    // 送り元 IP の枠。宛先単位の枠は、Turnstile と漏洩の確かめの後に数える（下）。
     try {
       const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
       const rl = await enforceRateLimit({ request, endpoint: 'auth:register', limit: 20, windowSeconds: 3600 });
       if (rl) return rl;
     } catch (e) {
       console.error('Rate limit middleware error (register):', e);
-    }
-
-    // 管理者用ヘッダが渡されている場合のみ管理者チェックを行う。
-    // ADMIN_API_KEY が未設定でも、ヘッダ無しのリクエストはパブリックサインアップとして処理する。
-    const adminApiKey = process.env.ADMIN_API_KEY;
-    const provided = request.headers.get('x-admin-token') || request.headers.get('authorization')?.replace(/^Bearer\s+/, '');
-
-    // If the client provided an admin token, validate it against server config.
-    if (provided) {
-      if (!adminApiKey) {
-        console.error('ADMIN_API_KEY is not configured but admin token provided');
-        return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
-      }
-      if (provided !== adminApiKey) {
-        await logAudit({ action: 'register', actor_email: null, outcome: 'unauthorized', detail: 'Missing or invalid admin token' });
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
     }
 
     const body = await request.json();
@@ -87,32 +70,6 @@ export async function POST(request: Request) {
 
     const { email, password, display_name } = parsed.data;
 
-    // If admin token provided, use existing admin-create path (already implemented)
-    if (provided && provided === adminApiKey) {
-      const supabase = await createServiceRoleClient();
-      const { data, error } = await supabase.auth.admin.createUser({
-        email,
-        password,
-        user_metadata: { display_name },
-      });
-
-      if (error) {
-        console.error('Supabase createUser error:', error);
-        const msg = String(error.message || '').toLowerCase();
-        if (msg.includes('already') || msg.includes('duplicate')) {
-          await logAudit({ action: 'register', actor_email: email, outcome: 'conflict', detail: error.message });
-          return NextResponse.json({ error: 'Email already registered' }, { status: 409 });
-        }
-
-        await logAudit({ action: 'register', actor_email: email, outcome: 'error', detail: error.message });
-        return NextResponse.json({ error: 'Failed to create user' }, { status: 500 });
-      }
-
-      await logAudit({ action: 'register', actor_email: email, outcome: 'success', resource_id: data.user?.id });
-      return NextResponse.json({ id: data.user?.id, email: data.user?.email }, { status: 201 });
-    }
-
-    // Public signup flow
     try {
       // Bot 検証を先に通す。この後ろは重複確認と signUp（＝メール送信）なので、
       // Turnstile が後ろにあるとボットに無償でメール送信を叩かせることになる。
@@ -142,10 +99,27 @@ export async function POST(request: Request) {
         await logAudit({ action: "register", actor_email: email, outcome: "error", detail: `pwned_check_unavailable:${pwned.reason}` });
       }
 
-      // 戻り先の控えは、Turnstile・漏洩の確かめの後で、既存会員の照会の前に作る。
+      // 宛先（メール）単位の枠。Turnstile と漏洩の確かめを通った要求だけを数える（先に数えると、
+      // 他人のメールを送るだけでその人の枠を使い切らせられる）。控えの作成と既存会員の照会より前に置く
+      // （後ろに置くと、429 の有無で登録済みかどうかが分かる）。
+      try {
+        const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
+        const rlEmail = await enforceRateLimit({ request, endpoint: 'auth:register', limit: 5, windowSeconds: 3600, subject: email });
+        if (rlEmail) return rlEmail;
+      } catch (e) {
+        console.error('Rate limit middleware error (register-email):', e);
+      }
+
+      // 戻り先の控えは、Turnstile・漏洩の確かめの後で、既存会員の照会の前に作る。戻り先が無くても必ず作り、
+      // 登録したメールに結ぶ（確認のリンクを登録を始めたブラウザで開いた時だけ session を作る。SEC-AUTH-007）。
       // 照会の後に置くと、枝ごとに Cookie の有無が変わり、登録済みかどうかが応答から分かってしまう。
       // 作成に失敗しても応答の形は変えない（issueReturnIntent は失敗を clear に倒す）。
-      const { action: returnIntentAction } = await issueReturnIntent({ rawNext: parsed.data.next, purpose: 'signup' });
+      const { action: returnIntentAction } = await issueReturnIntent({
+        rawNext: parsed.data.next,
+        purpose: 'signup',
+        bindTo: email,
+        alwaysCreate: true,
+      });
 
       // 既存ユーザーの確認。以前は listUsers({ perPage: 100 }) で先頭 100 件だけを
       // 走査していたため、101 人目以降の重複メールを検出できなかった。
@@ -204,7 +178,7 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
         }
 
-        const res = NextResponse.json({ access_token: data.session.access_token, user: data.user }, { status: 201 });
+        const res = NextResponse.json({ user: { id: data.user.id, email: data.user.email } }, { status: 201 });
         try {
           const { persistSessionAndCookies } = await import('@/features/auth/services/register');
           // ゲストのカートとお気に入りの印を、ログインの保存の後で会員の分へ合わせるために渡す。

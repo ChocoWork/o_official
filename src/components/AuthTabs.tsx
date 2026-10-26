@@ -7,6 +7,7 @@
  * @remarks ログインと会員登録を別ページにすると導線が分かれるため、タブで切り替える（ADR-0410）。
  * 切り替えても URL は `/login` のままにする（FREQ-63-REQ-01）ので、履歴を積まず置き換える。
  * 左右の矢印で隣のタブへ移れる tablist にして、キーボードだけでも操作できるようにする。
+ * notice があれば role="status" で頁の上に出す。URL の query が replaceState で消えても、タブを替えても残す。
  */
 "use client";
 
@@ -26,10 +27,14 @@ interface AuthTabsProps {
   initialEmail?: string;
   /** ログインの後の戻り先（サーバーが確かめた道筋）。タブを替えても保つ */
   returnTo?: string;
+  /** 頁の上に出す案内の文（確認のリンクを別のブラウザで開いた時）。初回の描画で固定し、タブを替えても消さない */
+  notice?: string;
 }
 
-const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab, initialEmail, returnTo }) => {
+const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab, initialEmail, returnTo, notice: noticeProp }) => {
   const [activeTab, setActiveTab] = useState<AuthTab>(initialTab);
+  // URL の query は replaceState で消えるので、案内は初回の描画の値を持ち続ける。
+  const [notice] = useState<string | undefined>(noticeProp);
   const tabRefs = useRef<Partial<Record<AuthTab, HTMLButtonElement | null>>>(
     {},
   );
@@ -53,6 +58,11 @@ const AuthTabs: React.FC<AuthTabsProps> = ({ initialTab, initialEmail, returnTo 
 
   return (
     <div className="w-full max-w-md mx-auto">
+      {notice ? (
+        <p role="status" className="px-6 pb-[13px] lk-text-md text-[#474747]">
+          {notice}
+        </p>
+      ) : null}
       <div
         role="tablist"
         aria-label="ログイン / 会員登録"

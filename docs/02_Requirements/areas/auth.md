@@ -1,6 +1,6 @@
 # AUTH の要件
 
-> 状態: 推定 | 確認日: 2026-10-25 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: AUTH（ログイン `/login`・`/login/verify`、認証の画面 `/auth/*`、認証の API `/api/auth/*`、サイト共通のヘッダーとドロワー） | 基準コミット: `973dc336`（作業ツリーに別の作業の未コミットの差分あり）
 
 ## 概要
 
@@ -4380,7 +4380,9 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | 出どころ | 実装から推定。signup の条件はユーザーの決定（2026-10-25） |
 | 優先度 | MUST |
 
-`/api/auth/confirm` は type が `signup` の印だけで session を作り、`email`・`magiclink`・`recovery` の印では session を作らない。`signup` の印でも、session を作るのは登録を始めたブラウザで開いた時だけ（SEC-AUTH-007）。今のコードは満たさない。
+`/api/auth/confirm` は type が `signup` の印だけを受け、`email`・`magiclink`・`recovery`・不明な値（大文字違いを含む）の印では `verifyOtp` を呼ばず（印を消費せず）、session も作らずに `/login` へ 303 で送る。type の指定が無い・空の時は `signup` として扱う。`signup` の印でも、session を作るのは登録を始めたブラウザで開いた時だけ（SEC-AUTH-007）。
+
+この部分は今のコードが満たす（2026-10-26 に直した）。検査の順は 回数制限 → `token_hash` の有無 → type → `verifyOtp`（`{ token_hash, type: 'signup' }` 固定）。type が外れた時の監査は action `auth.confirm`・`failure`・detail `invalid_type` で、type の値そのものは残さない。確かめの失敗と想定外の例外の監査の detail も、Supabase や例外の文は残さず固定の符号（`verify_failed`・`missing_session_or_user`・`unexpected`）にした。
 
 #### SEC-AUTH-006-AC-01 マジックリンクの印で確認のリンクを開いても session ができない
 
@@ -4389,10 +4391,10 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | 上位 | SEC-AUTH-006 |
 | 根拠 | パスワード無しのログインを断るかを見るため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（手元の Supabase の `/auth/v1/otp` でマジックリンクを出し、その token_hash と `type=magiclink` で `/api/auth/confirm` を開く） |
+| 確かめ方 | 単体テスト・結合テスト・E2E（手元の Supabase の `/auth/v1/otp` でマジックリンクを出し、その token_hash と `type=magiclink` で `/api/auth/confirm` を開く） |
 | 出どころ | 実装から推定 |
 
-`type=magiclink`・`type=recovery`・`type=email` の印で開くと、`sb-access-token` の Cookie が書かれないこと。
+`type=magiclink`・`type=recovery`・`type=email` の印で開くと、`sb-access-token` の Cookie が書かれず、`verifyOtp` が呼ばれない（印が消費されない）こと。
 
 #### SEC-AUTH-006-AC-02 会員登録の確認の印は、登録を始めたブラウザで開くと今どおり session ができる
 
@@ -4404,7 +4406,7 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | 確かめ方 | E2E（ブラウザ A で登録を送信し、同じブラウザ A で確認のリンクを開く） |
 | 出どころ | ユーザーの決定（2026-10-25）。`tests/integration/api/auth/confirm.test.ts` |
 
-登録を始めたブラウザ（登録の送信をしたブラウザ）で `type=signup` の印を開くと、session の Cookie（`sb-access-token`・`sb-refresh-token`）が書かれ、戻り先（登録の時に控えた物。無ければ `/`）へ 303 で送られること（`redirect_to` は読まない。SEC-AUTH-026-AC-02）。
+登録を始めたブラウザ（登録の送信をしたブラウザ。控えの Cookie の番号と、確認した利用者のメールを一緒にハッシュした印が、登録の時に作った控えに当たる。SEC-AUTH-007）で `type=signup` の印を開くと、session の Cookie（`sb-access-token`・`sb-refresh-token`）が書かれ、戻り先（登録の時に控えた物。無ければ `/`）へ 303 で送られること（`redirect_to` は読まない。SEC-AUTH-026-AC-02）。
 
 ### SEC-AUTH-007 確認のリンクで、開いた端末を印を作った人以外のアカウントでログインさせない
 
@@ -4417,7 +4419,11 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | 出どころ | ユーザーの決定（2026-10-25）。守りの考え方は OWASP ASVS 4.0.3 V4.2.2（当てはめは推定） |
 | 優先度 | SHOULD |
 
-`/api/auth/confirm` は、登録を始めたブラウザで開いた時だけ session を作る。登録を始めていないブラウザで開いた時は、メールの確認（登録の完了）だけを済ませ、session は作らずに `/login` へ送り、登録が終わったのでログインするよう画面で知らせる。登録を始めたブラウザでの動きは SEC-AUTH-006-AC-02。結び付けの作り方は決めていない（登録の送信でそのブラウザに目印の Cookie を置き、開いた時に照らす形が候補）。ただし `/api/auth/register` の 202 は新規の登録と登録済みのメールの 2 通りあり、目印の Cookie は両方の 202 で同じように置く（応答を同じに保つため。SEC-AUTH-016）。今のコードは満たさない（結び付けが無く、どのブラウザで開いても session を作る）。
+`/api/auth/confirm` は、登録を始めたブラウザで開いた時だけ session を作る。登録を始めていないブラウザで開いた時は、メールの確認（登録の完了）だけを済ませ、session は作らずに `/login` へ送り、登録が終わったのでログインするよう画面で知らせる。登録を始めたブラウザでの動きは SEC-AUTH-006-AC-02。
+
+この要求は今のコードが満たす（2026-10-26 に直した。ADR-0413）。結び付けは、波 1-A の戻り先の控え（`private.auth_return_intents`・`sb-return-intent` Cookie、用途 `signup`、有効 1 時間）に乗せ、DB の変更なしで「番号 + 登録したメール」を一緒にハッシュして結ぶ。登録の送信（`/api/auth/register`）は、戻り先の有無に関わらず必ず控えを作り（戻り先が無い・不正なら `/`）、番号を Cookie に置く。控えの `token_hash` は `sha256(番号 + "\n" + 小文字のメール)` で、ログインの控え（`sha256(番号)`）とは別の式にした。`/api/auth/register` の 202 は新規の登録・登録済みのメール・重複の例外の 3 通りあり、目印の Cookie は 3 つとも名前・属性・Max-Age を同じにする（応答を同じに保つため。SEC-AUTH-016）。
+
+`/api/auth/confirm` は、`verifyOtp` で確認した利用者のメールから同じ式を作り、session を作る前に控えを使い切る。当たった時だけ session を作り、控えの戻り先へ送る（管理者・サポーターは使い切った戻り先を捨てて `/auth/verified`）。当たらない時（Cookie が無い・番号が合わない・使用済み・期限切れ・別のメールの印）は、`verifyOtp` が GoTrue 側に作った session を `signOut({ scope: 'local' })` で失効させ、Cookie は書かず消さずに `/login?registered=1` へ 303 で送る（攻撃者のリンクを開かせるだけで被害者の進行中の登録の控えを壊させないため）。被害者が登録の途中（控えの Cookie が有効）に、攻撃者のメールの確認リンクを同じブラウザで開いても、番号は合ってもメールが違うのでハッシュが外れ、session は作らない。
 
 #### SEC-AUTH-007-AC-01 登録を始めていないブラウザで確認のリンクを開くと、メールは確認されるがログインしない
 
@@ -4426,16 +4432,40 @@ Turnstile に落ちる送信を5回した後でも、正しい Turnstile の送�
 | 上位 | SEC-AUTH-007 |
 | 根拠 | ログインの CSRF を断りつつ、別のブラウザで開いても登録が終わるようにするため |
 | 状態 | 現行 |
-| 確かめ方 | E2E（ブラウザ A で登録を送信して得たリンクを、Cookie の無い別のブラウザ B で開く） |
-| 出どころ | ユーザーの決定（2026-10-25） |
+| 確かめ方 | E2E（ブラウザ A で登録を送信して得たリンクを、Cookie の無い別のブラウザ B で開く）・結合テスト（`tests/integration/api/auth/confirm.test.ts`） |
+| 出どころ | ユーザーの決定（2026-10-25）。`e2e/FR-SIGNUP-003-signup-confirm-link.spec.ts` |
 
 ブラウザ B で `type=signup` の印を開くと、次が全部成り立つこと。
 
 - メールが確認済みになる（`email_confirmed_at` が入る）
 - 303 で `/login` へ送られる
 - `sb-access-token`・`sb-refresh-token` の Cookie が書かれず、ブラウザ B に保存されない
-- `/login` に「会員登録が完了しました。ログインしてください」の旨が表示される
+- `/login?registered=1` で、`/login` に「会員登録が完了しました。ログインしてください。」の旨が `role="status"` で表示される（文は案。ユーザーに画面を見せて確かめる）。タブを替えても消えない
 - 「このアカウントでログインしますか」と確かめる画面を経ない
+
+#### SEC-AUTH-007-AC-02 戻り先つきの登録でも、登録を始めていないブラウザで開くと戻り先を使わず `/login` へ送る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-007 |
+| 根拠 | 波 1-A の暫定（別のブラウザでも session を作って `/` へ送る）を置き換えた後も、戻り先が別のブラウザで使われないことを見るため |
+| 状態 | 現行 |
+| 確かめ方 | E2E（ブラウザ A で戻り先つきの登録を送信し、Cookie の無いブラウザ B で開く）・結合テスト |
+| 出どころ | ユーザーの決定（2026-10-25・10-26）。`e2e/FR-SIGNUP-003-signup-confirm-link.spec.ts` |
+
+ブラウザ A で戻り先（例 `/stockist`）つきの登録を送り、Cookie の無いブラウザ B で `type=signup` の印を開くと、戻り先も URL の `redirect_to` も使わず、303 で `/login` へ送られ、`sb-access-token`・`sb-refresh-token` の Cookie が書かれず、メールが確認済みになること。
+
+#### SEC-AUTH-007-AC-03 登録を始めたブラウザでも、別のメールの印では session を作らない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-AUTH-007 |
+| 根拠 | 番号だけを控えに結ぶと、被害者が自分の登録の途中（控えの Cookie が有効）に、攻撃者のメールの確認リンクを同じブラウザで開いた時に、攻撃者のアカウントでログインさせられる（login CSRF が残る）ため。ADR-0413 |
+| 状態 | 現行 |
+| 確かめ方 | 結合テスト（`confirm.test.ts` の「控えの番号は合うが別のメールの印」）・E2E（ブラウザ A で利用者 X の登録を送り、同じブラウザ A で別の利用者 Y の印を開く） |
+| 出どころ | 波 1-B の計画の読み P1（2026-10-26）。controller が確かめる |
+
+ブラウザ A で利用者 X の登録を送った後、同じブラウザ A で別の利用者 Y（別のメール）の `type=signup` の印を開くと、303 で `/login`（`registered=1`）へ送られ、session の Cookie が書かれず、Y のメールは確認済みになり、X の登録の控えの Cookie（`sb-return-intent`）は消えずに残ること。
 
 ### SEC-AUTH-008 Google でのログインは、管理者・サポーターに TOTP を求め、会員の2段目の扱いを明示する
 
@@ -4473,7 +4503,9 @@ Google の戻りの直後（aal1）に管理の窓口を叩くと 403 になり�
 | 出どころ | OWASP ASVS 4.0.3 V2.2.1（当てはめは推定）。`docs/05_Quality/reviews/security/security_review_auth_verified.md` |
 | 優先度 | MUST |
 
-`/api/auth/mfa/verify` は、IP 単位に加えて利用者単位で 5 回／600 秒（案）を超えたら 429 で断り、成功と失敗を監査に残す。今のコードは満たさない。
+`/api/auth/mfa/verify` は、IP 単位に加えて利用者単位で 5 回／600 秒（案）を超えたら 429 で断り、成功と失敗を監査に残す。今のコードは満たす（2026-10-26 に直した）。
+
+利用者単位の枠の鍵は検証済みの `claims.sub` だけを使い（本文の値を使うと他人の枠を潰せる）、認証に失敗した要求は数えない。枠は役割の確認より前に数える。監査（action `mfa_verify`）は、成功を `success`（detail `verified`）、枠の超過を `failure`（`account_rate_limited`）、要素が無い・チャレンジの失敗・コードの誤りを `failure`（`factor_not_found`・`challenge_failed`・`invalid_code`）、書き戻しの失敗を `error`（`session_persist_failed`）で残す。コードと Supabase の誤りの文は残さない。
 
 #### SEC-AUTH-009-AC-01 同じ利用者の6回目の TOTP の確認が 429
 
@@ -4482,7 +4514,7 @@ Google の戻りの直後（aal1）に管理の窓口を叩くと 403 になり�
 | 上位 | SEC-AUTH-009 |
 | 根拠 | IP を変えても止まるかを見るため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（手元の Supabase で TOTP を有効にし、送り元を変えながら誤ったコードを送る） |
+| 確かめ方 | 結合テスト・E2E（手元の Supabase で TOTP を有効にし、送り元を変えながら誤ったコードを送る。枠は challenge より前に数えるので、TOTP が無効な手元でも反転する） |
 | 出どころ | 実装から推定 |
 
 同じ利用者で誤ったコードを6回送ると、6回目が 429 になること。
@@ -4494,7 +4526,7 @@ Google の戻りの直後（aal1）に管理の窓口を叩くと 403 になり�
 | 上位 | SEC-AUTH-009 |
 | 根拠 | 総当たりに気づけるかを見るため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（送った後に `audit_logs` を service role で読む） |
+| 確かめ方 | 結合テスト・E2E（送った後に `audit_logs` を service role で読む。チャレンジの失敗の分岐も失敗の行を書くので、TOTP が無効な手元でも反転する） |
 | 出どころ | 実装から推定 |
 
 誤ったコードを送った後に、`audit_logs` に利用者の ID と失敗の行が1つ増えること。
@@ -4721,7 +4753,7 @@ Supabase Auth の設定で、最小の長さを 16、パスワード変更に再
 | 出どころ | `docs/05_Quality/reviews/security/security_review_signup.md`、`docs/02_Requirements/requirements.md` の FREQ-320 の行 |
 | 優先度 | MUST |
 
-公開の会員登録は登録済みでも同じ 202、再設定の申請は有無によらず同じ 200 を返し、アカウントが無ければメールを送らない。DB の書き込みとメールの送信は、応答の時間に差が出ないように応答の外で行う。会員登録は IP 単位に加えて宛先単位でも回数を制限する。中身は今のコードが満たす（`register/route.ts`、`password-reset/request/route.ts`）。時間は満たさない（推定）。会員登録の宛先単位の制限は満たさない。IP 単位の 20 回／時と Turnstile だけで数える（`register/route.ts`）。
+公開の会員登録は登録済みでも同じ 202、再設定の申請は有無によらず同じ 200 を返し、アカウントが無ければメールを送らない。DB の書き込みとメールの送信は、応答の時間に差が出ないように応答の外で行う。会員登録は IP 単位に加えて宛先単位でも回数を制限する。中身は今のコードが満たす（`register/route.ts`、`password-reset/request/route.ts`）。時間は満たさない（推定）。会員登録の宛先単位の制限は今のコードが満たす（2026-10-26 に直した）。IP 単位の 20 回／時に加えて、検証済みの小文字・trim 済みのメールを subject に 5 回／時（3600 秒）を数える。位置は Turnstile と漏洩パスワードの確かめの後、戻り先の控えの作成と既存会員の照会の前（先に数えると他人のメールを送るだけでその人の枠を使い切らせられる。照会の後に数えると 429 の有無で登録済みかどうかが分かる）。枠の呼び出しが投げた時は記録して先へ進む（ログインのメール単位の枠と同じ）。
 
 #### SEC-AUTH-016-AC-01 登録済みと未登録のメールで会員登録の応答が同じ
 
@@ -4754,7 +4786,7 @@ Supabase Auth の設定で、最小の長さを 16、パスワード変更に再
 | 上位 | SEC-AUTH-016 |
 | 根拠 | 登録済みの宛先へ通知のメールを送り続けさせないかを見るため |
 | 状態 | 推定 |
-| 確かめ方 | 結合テスト（送り元の IP を変えながら同じ登録済みのメールで送る） |
+| 確かめ方 | 単体テスト・結合テスト・E2E（送り元の IP を変えながら同じ登録済みのメールで送る。6 回目から 429） |
 | 出どころ | `src/app/api/auth/register/route.ts` |
 
 送り元の IP を変えながら同じ登録済みのメールで会員登録を続けると、宛先単位の上限を超えた分が 429 になり、通知のメールが送られないこと。
@@ -4770,7 +4802,7 @@ Supabase Auth の設定で、最小の長さを 16、パスワード変更に再
 | 出どころ | `docs/05_Quality/reviews/security/security_review_signup.md` |
 | 優先度 | SHOULD |
 
-`/api/auth/register` は `x-admin-token`・Bearer の有無で動きを変えず、いつも公開の会員登録として扱う。今のコードは満たさない。
+`/api/auth/register` は `x-admin-token`・Bearer の有無で動きを変えず、いつも公開の会員登録として扱う。今のコードは満たす（2026-10-26 に直した）。管理の鍵で `createUser` する枝・`ADMIN_API_KEY` の確認・401 `Unauthorized`・500 `Server misconfiguration` を削除した。`ADMIN_API_KEY` を読む所は `src` に無くなった（本番の環境変数の削除は運用）。
 
 #### SEC-AUTH-017-AC-01 管理の鍵を付けて登録済みのメールを送っても 409 にならない
 
@@ -4779,7 +4811,7 @@ Supabase Auth の設定で、最小の長さを 16、パスワード変更に再
 | 上位 | SEC-AUTH-017 |
 | 根拠 | 管理の経路での列挙ができないかを見るため |
 | 状態 | 推定 |
-| 確かめ方 | E2E |
+| 確かめ方 | 単体テスト・結合テスト・E2E |
 | 出どころ | 実装から推定 |
 
 `x-admin-token` を付けて登録済みのメールを送ると、公開の登録と同じ 202 か Turnstile の 403 になり、409 にならないこと。
@@ -4907,7 +4939,9 @@ Supabase Auth の設定で、最小の長さを 16、パスワード変更に再
 | 出どころ | OWASP ASVS 4.0.3 V8.2.1。`docs/05_Quality/reviews/security/security_review_signup.md`、`docs/05_Quality/reviews/security/security_review_login.md` |
 | 優先度 | MUST |
 
-`/api/auth/*` の応答の本文に access token・refresh token と、Supabase の利用者の記録のまるごとを入れない（画面に要る ID・メール・役割だけ）。TOTP の秘密は登録の応答にだけ入れる。`/api/auth/*` の全部の応答に `Cache-Control: no-store` を付ける。今のコードは満たさない。
+`/api/auth/*` の応答の本文に access token・refresh token と、Supabase の利用者の記録のまるごとを入れない（画面に要る ID・メール・役割だけ）。TOTP の秘密は登録の応答にだけ入れる。`/api/auth/*` の全部の応答に `Cache-Control: no-store` を付ける。
+
+本文の部分は今のコードが満たす（2026-10-26 に直した）。`/api/auth/refresh` の成功の本文は `{ ok: true }` だけ（トークンは HttpOnly の Cookie で渡す）、`/api/auth/otp/verify` の成功の本文は `{ user: { id, email, role }, message }` だけで、`role` はサーバーが `app_metadata.role` から読み `admin`・`supporter` 以外は `user` にする。登録（`register`）の 201（Confirm email が OFF の時だけ通る枝）の本文も `{ user: { id, email } }` だけで、`access_token` と Supabase の利用者の記録（`app_metadata` など）は載せない（2026-10-26 に直した）。`no-store` は満たさない（`src/proxy.ts` に足す。波 3）。
 
 #### SEC-AUTH-022-AC-01 トークンの更新と OTP の検証の応答の本文にトークンが無い
 
@@ -4916,7 +4950,7 @@ Supabase Auth の設定で、最小の長さを 16、パスワード変更に再
 | 上位 | SEC-AUTH-022 |
 | 根拠 | 本文からの窃取の面が無いかを見るため |
 | 状態 | 推定 |
-| 確かめ方 | E2E |
+| 確かめ方 | 単体テスト・結合テスト・E2E |
 | 出どころ | `src/app/api/auth/refresh/route.ts` |
 
 `/api/auth/refresh`・`/api/auth/otp/verify` の応答の本文に `access_token`・`refresh_token`・`app_metadata` の字が無いこと。
@@ -5167,7 +5201,7 @@ access token・refresh token は HttpOnly・本番で Secure・SameSite=Lax、�
 | 出どころ | OWASP ASVS 4.0.3 V7.1.3 |
 | 優先度 | SHOULD |
 
-ログイン・OTP・TOTP の確認と登録・会員登録・再設定・ログアウト・トークンの更新は、成功と失敗を `audit_logs` に残す。個人情報は伏せてから書く。ログインから再設定・ログアウト・更新までは今のコードが満たす。TOTP の確認と登録、再設定の後の失効の失敗は満たさない。
+ログイン・OTP・TOTP の確認と登録・会員登録・再設定・ログアウト・トークンの更新は、成功と失敗を `audit_logs` に残す。個人情報は伏せてから書く。ログインから再設定・ログアウト・更新までは今のコードが満たす。TOTP の確認（`mfa_verify`）と登録（`mfa_enroll`）の成功の監査は、2026-10-26 に入った。AC-01 はこのコードで行が増えるが、手元の Supabase で TOTP が無効（ENV）なので E2E は通らない。再設定の後の失効の失敗は満たさない。
 
 #### SEC-AUTH-030-AC-01 TOTP の登録と確認の成功が監査に残る
 
@@ -5204,7 +5238,11 @@ TOTP の登録と確認の後に、`audit_logs` に利用者の ID と成功の�
 | 出どころ | 実装から推定（`src/app/api/auth/mfa/enroll-totp/route.ts`） |
 | 優先度 | MUST |
 
-`/api/auth/mfa/enroll-totp` の初めての登録は、メール OTP を通ったログインの session（または管理側で発行・確認した登録の経路）からだけ受ける。登録と未確認の要素の取り外しは監査に残し、本人へメールで知らせる。今のコードは満たさない。aal を見ずに認証と役割だけで登録させ、監査にも残さない。
+`/api/auth/mfa/enroll-totp` の初めての登録は、メール OTP を通ったログインの session（または管理側で発行・確認した登録の経路）からだけ受ける。登録と未確認の要素の取り外しは監査に残し、本人へメールで知らせる。
+
+局所の守りは今のコードが満たす（2026-10-26 に直した）。通行証の `amr` に 2 段目を通った方法（`otp`・`magiclink`・`totp`・`oauth`・`sso/saml`・`email/signup` のどれか）が 1 つもなければ 403 で断り、`mfa_enroll`（`denied`、detail `second_factor_required`）を監査に残す。`password` だけで得た通行証は数えない。登録の成功は `mfa_enroll`（`success`、detail `totp_factor_enrolled`、resource_id は要素の ID）、未確認の要素の取り外しは `mfa_factor_remove` で残す（`enroll` の字を含めない）。
+
+残る穴は満たさない。Supabase Auth へ OTP だけを直接送って得た通行証は `amr` に `otp` が付くので通る（自前の session への結び付けは波 5。Q30(a)）。本人へのメールの通知も満たさない（波 5。Q30）。
 
 #### SEC-AUTH-031-AC-01 メール OTP を通っていない aal1 の session では初めての TOTP を登録できない
 
@@ -5213,7 +5251,7 @@ TOTP の登録と確認の後に、`audit_logs` に利用者の ID と成功の�
 | 上位 | SEC-AUTH-031 |
 | 根拠 | パスワードだけで得た session で登録を先取りできないかを見るため |
 | 状態 | 推定 |
-| 確かめ方 | 結合テスト（TOTP の無い管理者で、Supabase Auth の password grant で得た access token を付けて送る） |
+| 確かめ方 | 単体テスト・結合テスト・E2E（TOTP の無い管理者で、Supabase Auth の password grant で得た access token を付けて送る。2 段目の確かめは要素の一覧より前なので、TOTP が無効な手元でも反転する） |
 | 出どころ | 実装から推定 |
 
 TOTP をまだ登録していない管理者が、メール OTP を通らずに得た access token で `/api/auth/mfa/enroll-totp` を呼ぶと断られ、要素が作られないこと。登録の成功と断りが監査に残ること。
@@ -5367,4 +5405,5 @@ refresh の Cookie が無い時と、自前の表の行に明示の失効の印�
 - ログアウトの CSRF の印（SEC-AUTH-025）を ADR-0019（範囲外）の方針と揃えるか
 - FREQ-382（advisor の `auth_rls_initplan` の直し）が AUTH の表（`sessions`・`password_reset_tokens`）の RLS にかかわるか。かかわるなら写す
 - FREQ-316・327・515 を AUTH が持つこと（全領域の持ち主の割り当ての 2026-10-24 の裁定）。行の中の管理画面・お問い合わせ・お知らせの分（FREQ-327-REQ-04、FREQ-515-AC-01・03）も丸ごと写した。受け入れ条件の無かった FREQ-316-REQ-01〜03 には AC を推定で起こした
-- 初めての TOTP の登録（SEC-AUTH-031）・会員登録の宛先単位の制限（SEC-AUTH-016）・メールの差し替えの二重の確認（SEC-AUTH-015）の守りを、どの形で入れるか（2026-10-24 の見直しで足した）
+- 初めての TOTP の登録（SEC-AUTH-031）・メールの差し替えの二重の確認（SEC-AUTH-015）の守りを、どの形で入れるか（2026-10-24 の見直しで足した。会員登録の宛先単位の制限（SEC-AUTH-016）は 2026-10-26 に 5 回／時で入れた）
+- 本物の通行証の `amr` の値（2026-10-26 に足した。SEC-AUTH-031）。ログイン後（メール OTP の `verifyOtp({ type: 'email' })`）に GoTrue が `otp` と `magiclink` のどちらで記録するか、`mfa/verify` と更新の後も 2 段目の記録が残るかが未実測。局所の守りは `otp`・`magiclink` などのどれかがあれば通す形にした。実測は E2E で行い、管理者が最初の TOTP を登録できなければ `src/app/api/auth/mfa/enroll-totp/route.ts` の `hasSecondFactorAmr` の確かめだけを戻す

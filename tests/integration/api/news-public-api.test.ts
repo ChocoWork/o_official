@@ -63,18 +63,15 @@ function manyRows(count: number) {
     title: `Article ${i + 1}`,
     published_date: '2026-04-01',
     category: CATEGORIES[i % CATEGORIES.length],
-    image_url: null,
     content: 'summary',
   }));
 }
 
-function setupClients(result: QueryResult, signed: { data: unknown; error: unknown } = {
-  data: { signedUrl: 'https://project.supabase.co/storage/v1/object/sign/news-images/news/a.jpg?token=t' },
-  error: null,
-}) {
+// 公開の道は画像を署名しないので、service role の client は作られないことを確かめるために差し替えだけ置く（SEC-NEWS-005）
+function setupClients(result: QueryResult) {
   const query = createNewsQuery(result);
   const from = jest.fn().mockReturnValue(query);
-  const createSignedUrl = jest.fn().mockResolvedValue(signed);
+  const createSignedUrl = jest.fn();
   const storageFrom = jest.fn().mockReturnValue({ createSignedUrl });
 
   createPublicClient.mockResolvedValue({ from });
@@ -92,7 +89,6 @@ const PUBLISHED_ROW = {
   title: 'Spring collection',
   published_date: '2026-04-01',
   category: 'COLLECTION',
-  image_url: 'news/a.jpg',
   content: 'summary',
 };
 
@@ -102,24 +98,22 @@ describe('GET /api/news 公開済みの記事の一覧', () => {
     incrementCounter.mockResolvedValue(1);
   });
 
-  it('API-NEWS-001 公開済みの記事を公開日の新しい順で取り出し、本文を含めず署名つきの画像で 200 を返す', async () => {
+  it('API-NEWS-001 公開済みの記事を公開日の新しい順で取り出し、本文を含めず image_url も署名もなしで 200 を返す', async () => {
     const { from, query, createSignedUrl, storageFrom } = setupClients({ data: [PUBLISHED_ROW], error: null });
 
     const res = await GET(makeRequest());
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual([
-      {
-        ...PUBLISHED_ROW,
-        image_url: 'https://project.supabase.co/storage/v1/object/sign/news-images/news/a.jpg?token=t',
-      },
-    ]);
+    const body = await res.json();
+    expect(body).toEqual([PUBLISHED_ROW]);
+    expect(body[0]).not.toHaveProperty('image_url');
     expect(from).toHaveBeenCalledWith('news_articles');
-    expect(query.select).toHaveBeenCalledWith('id, title, published_date, category, image_url, content');
+    expect(query.select).toHaveBeenCalledWith('id, title, published_date, category, content');
     expect(query.eq).toHaveBeenCalledWith('status', 'published');
     expect(query.order).toHaveBeenCalledWith('published_date', { ascending: false });
-    expect(storageFrom).toHaveBeenCalledWith('news-images');
-    expect(createSignedUrl).toHaveBeenCalledWith('news/a.jpg', 3600);
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+    expect(storageFrom).not.toHaveBeenCalled();
+    expect(createSignedUrl).not.toHaveBeenCalled();
   });
 
   it('API-NEWS-001 limit が無い時は12件で取り出し、12件の本文を 200 で返す', async () => {
@@ -233,18 +227,18 @@ describe('GET /api/news 公開済みの記事の一覧', () => {
     expect(await res.json()).toEqual([]);
   });
 
-  it('API-NEWS-001 署名に失敗した画像は元の値のまま返す', async () => {
-    setupClients({ data: [PUBLISHED_ROW], error: null }, { data: null, error: { message: 'sign failed' } });
+  it('API-NEWS-001 service role の client が作れなくても公開の一覧は 200 で返す（公開の道は service role を持たない）', async () => {
+    setupClients({ data: [PUBLISHED_ROW], error: null });
+    createServiceRoleClient.mockRejectedValue(new Error('missing service role key'));
 
     const res = await GET(makeRequest());
 
     expect(res.status).toBe(200);
-    expect((await res.json())[0].image_url).toBe('news/a.jpg');
+    expect(await res.json()).toEqual([PUBLISHED_ROW]);
   });
 
   it('API-NEWS-001 例外は記録して固定の文の 500 を返し、内部の情報を出さない', async () => {
     createPublicClient.mockRejectedValue(new Error('secret connection string'));
-    createServiceRoleClient.mockResolvedValue({ storage: { from: jest.fn() } });
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     const res = await GET(makeRequest());

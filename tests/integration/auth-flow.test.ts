@@ -90,18 +90,20 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
   });
 
   test('ARC-AUTH-001 register -> login -> refresh -> logout sequence', async () => {
-    // REGISTER (admin create user)
+    // REGISTER (public signup。管理の鍵の枝は無いので、見出しを付けても公開の登録として扱う)
     process.env.ADMIN_API_KEY = 'adm';
-    const fakeServiceAdmin = { auth: { admin: { createUser: jest.fn().mockResolvedValue({ data: { user: { id: 'u-seq', email: 'seq@example.com' } }, error: null }) } }, from: jest.fn() };
-    const { createServiceRoleClient } = require('@/lib/supabase/server');
+    const createUser = jest.fn();
+    const fakeServiceAdmin = { auth: { admin: { createUser } }, rpc: jest.fn().mockResolvedValue({ data: null, error: null }), from: jest.fn() };
+    const { createServiceRoleClient, createClient } = require('@/lib/supabase/server');
     createServiceRoleClient.mockReturnValue(fakeServiceAdmin);
+    createClient.mockResolvedValue({ auth: { signUp: jest.fn().mockResolvedValue({ data: { session: null, user: { id: 'u-seq' } }, error: null }) } });
 
     const regReq = new Request('http://localhost/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-token': 'adm' }, body: JSON.stringify({ email: 'seq@example.com', password: 'password123456789' }) });
     const regRes: any = await registerHandler(regReq);
-    const regBody = await regRes.json();
-    expect(regRes.status).toBe(201);
-    expect(regBody.email).toBe('seq@example.com');
-    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'register', outcome: 'success' }));
+    expect(regRes.status).toBe(202);
+    expect(createUser).not.toHaveBeenCalled();
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'register', outcome: 'created_needs_confirmation' }));
+    delete process.env.ADMIN_API_KEY;
 
     // LOGIN step 1: verify password + send email OTP (no session issued yet)
     process.env.JWT_SECRET = 'test-jwt-secret';
@@ -180,7 +182,8 @@ describe('Auth full flow integration (register -> login -> refresh -> logout)', 
     const refreshRes: any = await refreshHandler();
     const refreshBody = await refreshRes.json();
     expect(refreshRes.status).toBe(200);
-    expect(refreshBody.access_token).toBeDefined();
+    // 本文にトークンを載せない（トークンは HttpOnly の Cookie だけで渡す）
+    expect(refreshBody).toEqual({ ok: true });
     // new cookie should be set
     const newCookie = refreshRes.cookies.get('sb-refresh-token');
     expect(newCookie.value).toBe('r2');

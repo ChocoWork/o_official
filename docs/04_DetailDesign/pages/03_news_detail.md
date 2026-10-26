@@ -1,6 +1,6 @@
 ﻿# 1.3 ニュース詳細ページ（NEWS DETAIL）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: `/news/[id]` の頁、公開の1件・前後・総数の取り出し、使われていない本文の部品 | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: `/news/[id]` の頁、公開の1件・前後・総数の取り出し、使われていない本文の部品 | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -26,7 +26,7 @@
 | 範囲 | `scripts/trace/scope.json` の NEWS。この頁は `DD-NEWS-030`〜`DD-NEWS-059` を使う（今は 030〜034） |
 | 上位の文書 | [NEWS の構造設計](../../03_BasicDesign/areas/news.md)（`ARC-`・`SCR-`・`FLOW-`）、[NEWS の要件](../../02_Requirements/areas/news.md)（`FR-NEWS-DETAIL-`・`SEC-NEWS-`・`DRV-NEWS-`） |
 | 対象のコード | `src/app/news/[id]/page.tsx`、`src/features/news/services/public.ts`（`getPublishedNewsDetailById`・`getPublishedNewsNavigation`・`getPublishedNewsCount`）、`src/features/news/components/ArticleBody.tsx` |
-| 頼る範囲外の部品 | `src/lib/supabase/server.ts` の `createPublicClient`（anon の鍵・session なし）と `createServiceRoleClient`（環境変数が無いと throw）、`src/lib/news-data.ts` の `categories`（BLOG を含む7つ）、`src/components/ui/Button/Button`、`src/components/ui/TagLabel/TagLabel` |
+| 頼る範囲外の部品 | `src/lib/supabase/server.ts` の `createPublicClient`（anon の鍵・session なし。service role は使わない）、`src/lib/news-data.ts` の `categories`（BLOG を含む7つ）、`src/components/ui/Button/Button`、`src/components/ui/TagLabel/TagLabel` |
 | DB | `news_articles`（`supabase/migrations/20260901102912_remote_schema.sql`、`id` は bigint）、anon の RLS は `status='published'` だけ（同じ移行ファイルの RLS の方針） |
 | E2E | `e2e/FR-NEWS-DETAIL-001`〜`008-*.spec.ts`（補助 `e2e/news-detail-test-utils.ts`） |
 | 調べた時点 | 2026-10-24 の作業ツリー。コードは読んだだけで動かしていない。単体テストは対象のどの単位にも無い |
@@ -35,7 +35,7 @@
 
 | 旧番号 | 旧い要件 | 旧い実装の概要 | 新しい項目 |
 | --- | --- | --- | --- |
-| IMPL-NEWS-DETAIL-001 | FR-NEWS-DETAIL-001 | RSC で `getPublishedNewsDetailById` を呼び、画像を署名 URL にする。無ければ `notFound()` | DD-NEWS-030（署名は DD-NEWS-031） |
+| IMPL-NEWS-DETAIL-001 | FR-NEWS-DETAIL-001 | RSC で `getPublishedNewsDetailById` を呼ぶ（画像は取らず署名しない）。無ければ `notFound()` | DD-NEWS-030 |
 | IMPL-NEWS-DETAIL-002 | FR-NEWS-DETAIL-002 | `h1` に題、`TagLabel` に分類、公開日、`detailed_content` を段落で | DD-NEWS-030 |
 | IMPL-NEWS-DETAIL-003 | FR-NEWS-DETAIL-003 | `getPublishedNewsNavigation` で前後のリンク、VIEW ALL で一覧へ | DD-NEWS-032（リンクの描き方は DD-NEWS-030） |
 | IMPL-NEWS-DETAIL-004 | FR-NEWS-DETAIL-004 | `category` を確かめて前後へ渡す。無効な値は ALL | DD-NEWS-030 |
@@ -70,7 +70,7 @@ sequenceDiagram
   P->>D: generateMetadata から id だけ
   D->>DB: anon の client で1件
   DB-->>D: 行か null
-  D-->>P: 署名済みの記事か null
+  D-->>P: 記事（画像なし）か null
   P->>D: 本体から id と分類
   D-->>P: 記事か null
   alt 記事が null
@@ -131,7 +131,7 @@ FR-NEWS-DETAIL-001〜008、SEC-NEWS-001、SEC-NEWS-013。SEC-NEWS-012 は、id �
    - 本文は `detailed_content.split("\n\n")` の1つずつを `p` の中に文字として入れ、`whitespace-pre-line` で1つの改行も見せる
    - 前後: スマホと sm 以上で2回描く。リンクは `/news/<id>` ＋ `navCategoryParam`、`aria-label` は `前の記事: <題>`・`次の記事: <題>`
    - VIEW ALL: `Button` で `/news` ＋ `navCategoryParam`
-7. 画像は描かない（頁に `img` が無い）。DD-NEWS-031 が返す署名済みの `image_url` は使わない
+7. 画像は描かない（頁に `img` が無い）。DD-NEWS-031 は `image_url` を返さない（2026-10-26 から。SEC-NEWS-005）
 
 #### 異常フロー
 
@@ -148,7 +148,7 @@ FR-NEWS-DETAIL-001〜008、SEC-NEWS-001、SEC-NEWS-013。SEC-NEWS-012 は、id �
 | 本文が空・空白だけ | description は `Le Fil des Heuresのニュース詳細ページです。` |
 | 本文が120字を超える | description は先頭120字＋`...` |
 | 前の記事が無い・次の記事が無い | リンクの代わりに空の `div` |
-| 取り出しの関数が throw（service role の環境変数が無いなど） | try/catch は無く、Next.js の既定のエラー |
+| 取り出しの関数が throw（client の作成の失敗など） | try/catch は無く、Next.js の既定のエラー |
 
 - `?category=` が記事と違う時、メタは分類なしで取り出すので題の入った title を作り、本体は 404 になる（メタの取り出しは分類を渡さず、本体は渡すため）
 - 前後のリンクは `navCategoryParam` を付けるので、複数の分類を引き継いだまま ALL の前後へ移る
@@ -191,29 +191,29 @@ FR-NEWS-DETAIL-001〜008、SEC-NEWS-001、SEC-NEWS-013。SEC-NEWS-012 は、id �
 | 属性 | 値 |
 | --- | --- |
 | 上位 | ARC-NEWS-001、ARC-NEWS-003、SCR-NEWS-002、SEC-NEWS-001 |
-| 根拠 | 詳細の頁がサーバーの中で1件を直接取り出し、記事を入れた HTML をそのまま返せるようにするため（ARC-NEWS-001）。anon の client で `status='published'` を付けて読み、取り出しの条件と RLS の2段で非公開の記事を返さない（SEC-NEWS-001）。分類を受けて絞れば、詳細でも一覧と同じ分類の中だけを辿れる（SCR-NEWS-002）。置き場が非公開なので、返す前に画像の道を署名つき URL に置き換える（ARC-NEWS-003） |
+| 根拠 | 詳細の頁がサーバーの中で1件を直接取り出し、記事を入れた HTML をそのまま返せるようにするため（ARC-NEWS-001）。anon の client で `status='published'` を付けて読み、取り出しの条件と RLS の2段で非公開の記事を返さない（SEC-NEWS-001）。分類を受けて絞れば、詳細でも一覧と同じ分類の中だけを辿れる（SCR-NEWS-002）。公開の頁は画像を出さないので、画像の列は選ばず署名もしない（SEC-NEWS-005、ARC-NEWS-003） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/features/news/services/public.ts`） |
 
 #### 対応要件
 
-FR-NEWS-DETAIL-001、FR-NEWS-DETAIL-004、SEC-NEWS-001、DRV-NEWS-008。SEC-NEWS-005（画面で使わない画像の道を載せない）・SEC-NEWS-012（数でない id を問い合わせない）・SEC-NEWS-020（失敗を「無い」と区別する）は、この関数が扱わないので上位にしていない（各 SEC の項目を参照）。
+FR-NEWS-DETAIL-001、FR-NEWS-DETAIL-004、SEC-NEWS-001、SEC-NEWS-005（画面で使わない画像の道を載せない）。SEC-NEWS-012（数でない id を問い合わせない）・SEC-NEWS-020（失敗を「無い」と区別する）は、この関数が扱わないので上位にしていない（各 SEC の項目を参照）。
 
 #### 入出力
 
 | 向き | 中身 |
 | --- | --- |
 | 入力 | `id: string`、`options?: { category?: string }` |
-| 出力 | `Promise<PublicNewsDetailArticle \| null>`。記事は `id, title, published_date, category, image_url, content, detailed_content`で、`image_url` は署名済み |
+| 出力 | `Promise<PublicNewsDetailArticle \| null>`。記事は `id, title, published_date, category, content, detailed_content`。`image_url` は含まない |
 
 #### 正常フロー
 
-1. `createPublicClient()` と `createServiceRoleClient()` を並べて作る
+1. `createPublicClient()` を作る（service role の client は作らない）
 2. `news_articles` から上の列を選び、`status='published'`・`id=<id>` で絞る
 3. `options.category` があり `ALL` でなければ `category=<値>` でも絞る
 4. `.single()` で1行を取る
-5. 行があれば `signNewsImageFields(serviceSupabase, article)` の結果を返す。service role は署名だけに使い、DB の読みには使わない
+5. 行があればそのまま返す（署名しない）
 
 #### 異常フロー
 
@@ -223,14 +223,13 @@ FR-NEWS-DETAIL-001、FR-NEWS-DETAIL-004、SEC-NEWS-001、DRV-NEWS-008。SEC-NEWS
 | 行が無い・非公開・分類が違う | `.single()` が `data=null` を返し、null |
 | id が数でない（例 `abc`） | bigint への変換の失敗で `data=null`（推定）、null |
 | DB・RLS の失敗 | `error` を見ないので `data=null`、null。記録も残さない |
-| service role の環境変数が無い | `createServiceRoleClient` が throw し、呼び元へ上がる |
-| 画像の道にできない値・署名の失敗 | `signNewsImageFields` が元の値を返す（DRV-NEWS-008） |
+| service role の環境変数が無い | 影響しない（service role を使わない） |
 
 - 分類の値は確かめない。呼び元（DD-NEWS-030）が `categories` で確かめた値か `ALL` を渡す
 
 #### 状態・永続化
 
-読むだけ。キャッシュは無い。署名つき URL の期限は 3600 秒（`src/lib/storage/news-images.ts`）。
+読むだけ。キャッシュは無い。署名はしない。
 
 #### 認証認可
 
@@ -238,7 +237,7 @@ anon の鍵・session なしの client で読む（`src/lib/supabase/server.ts`�
 
 #### テスト観点
 
-`@/lib/supabase/server` の2つの client と `@/lib/storage/news-images` の `signNewsImageFields` を差し替え、問い合わせの組み立ての呼び出しを記録する。
+`@/lib/supabase/server` の2つの client と `@/lib/storage/news-images` の `signNewsImageFields` を差し替え、問い合わせの組み立ての呼び出しを記録する。署名と service role の client が呼ばれないことも確かめる。
 
 | # | 試し | 通す分岐 |
 | --- | --- | --- |
@@ -247,7 +246,7 @@ anon の鍵・session なしの client で読む（`src/lib/supabase/server.ts`�
 | 3 | `{}` → 分類で絞らない | `category` が undefined の枝 |
 | 4 | `{ category: 'EVENT' }` → `eq('category','EVENT')` | `category` が `ALL` 以外の枝 |
 | 5 | `data=null`（error あり） → null、署名を呼ばない | 行が無い時に null を返す枝（署名を呼ばない） |
-| 6 | 行あり → `signNewsImageFields(service, 行)` の結果を返す | 行がある時に署名して返す枝 |
+| 6 | 行あり → 行をそのまま返し、`image_url` が無く、`signNewsImageFields`・`createServiceRoleClient` を呼ばない | 行がある時にそのまま返す枝 |
 
 ### DD-NEWS-032 前後の記事の取り出し
 

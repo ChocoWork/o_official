@@ -1,10 +1,8 @@
 export {};
 jest.mock('server-only', () => ({}), { virtual: true });
 
-// 会員登録の窓口（API-AUTH-005）。公開の登録の順番・失敗の分岐と、管理の見出しの経路を確かめる。
+// 会員登録の窓口（API-AUTH-005）。公開の登録の順番・失敗の分岐・宛先単位の枠と、管理の見出しが効かないことを確かめる。
 // 登録済みかどうかで応答を変えないこと（ARC-AUTH-006）は register-enumeration.test.ts が担当する。
-
-process.env.ADMIN_API_KEY = 'test-admin-key';
 
 const afterCallbacks: Array<() => unknown> = [];
 
@@ -104,7 +102,6 @@ describe('API-AUTH-005 POST /api/auth/register 公開の登録', () => {
     mockSignUp.mockResolvedValue({ data: { session: null, user: { id: 'new-1' } }, error: null });
     mockPersistSessionAndCookies.mockResolvedValue({ ok: true });
     mockCreateReturnIntent.mockResolvedValue({ token: 'R'.repeat(43), maxAgeSeconds: 3600 });
-    process.env.ADMIN_API_KEY = 'test-admin-key';
   });
 
   afterAll(() => errorSpy.mockRestore());
@@ -235,7 +232,11 @@ describe('API-AUTH-005 POST /api/auth/register 公開の登録', () => {
   test('API-AUTH-005 next が通ると signup の用途で控え、控えの Cookie（HttpOnly・Lax・Max-Age 3600）を付ける。番号は本文に出ない', async () => {
     const res = await handler(publicRequest({ next: '/account/orders' }));
 
-    expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/account/orders', purpose: 'signup' });
+    expect(mockCreateReturnIntent).toHaveBeenCalledWith({
+      returnPath: '/account/orders',
+      purpose: 'signup',
+      bindTo: 'new@example.com',
+    });
     expect(res.cookies.set).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'sb-return-intent',
@@ -257,23 +258,25 @@ describe('API-AUTH-005 POST /api/auth/register 公開の登録', () => {
     ['解釈で外へ向く', { next: '/.//evil.example.net' }],
     ['数値', { next: 123 }],
     ['指定なし', {}],
-  ])('API-AUTH-005 戻り先が内部の道でなければ、登録は 202 のまま控えを作らず、控えの Cookie を消す（%s）', async (_label, override) => {
+  ])('API-AUTH-005 戻り先が内部の道でなければ、登録は 202 のまま戻り先を既定の / にして控えを作り、控えの Cookie を付ける（%s）', async (_label, override) => {
     const res = await handler(publicRequest(override));
 
     expect(res.status).toBe(202);
-    expect(mockCreateReturnIntent).not.toHaveBeenCalled();
-    expect(res.cookies.set).toHaveBeenCalledWith(expect.objectContaining({ name: 'sb-return-intent', value: '', maxAge: 0 }));
+    expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/', purpose: 'signup', bindTo: 'new@example.com' });
+    expect(res.cookies.set).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'sb-return-intent', value: 'R'.repeat(43), maxAge: 3600 }),
+    );
     expect(new URL(mockSignUp.mock.calls[0][0].options.emailRedirectTo).search).toBe('');
   });
 
   test.each([
     ['redirect_to', { redirect_to: '/account' }],
     ['emailRedirectTo', { emailRedirectTo: '/account' }],
-  ])('API-AUTH-005 古いクライアントが送る %s は戻り先として読まれず、確認のリンクにも載らない', async (_label, override) => {
+  ])('API-AUTH-005 古いクライアントが送る %s は戻り先として読まれず（既定の / のまま）、確認のリンクにも載らない', async (_label, override) => {
     const res = await handler(publicRequest(override));
 
     expect(res.status).toBe(202);
-    expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+    expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/', purpose: 'signup', bindTo: 'new@example.com' });
     expect(mockSignUp.mock.calls[0][0].options.emailRedirectTo).toBe('http://localhost:3000/api/auth/confirm');
   });
 
@@ -298,11 +301,11 @@ describe('API-AUTH-005 POST /api/auth/register 公開の登録', () => {
       mockSignUp.mockResolvedValue({ data: { session, user }, error: null });
     });
 
-    test('API-AUTH-005 201 で access token と会員を返し、Cookie とゲストの印を引き継いで保存する', async () => {
+    test('API-AUTH-005 201 で { user: { id, email } } だけを返し（access_token・利用者の記録は載せない）、Cookie とゲストの印を引き継いで保存する', async () => {
       const res = await handler(publicRequest({}, { cookie: 'unrelated=1' }));
 
       expect(res.status).toBe(201);
-      expect(await res.json()).toEqual({ access_token: 'access-1', user });
+      expect(await res.json()).toEqual({ user: { id: 'u1', email: 'new@example.com' } });
       expect(mockPersistSessionAndCookies).toHaveBeenCalledWith(
         res,
         session,
@@ -358,7 +361,7 @@ describe('API-AUTH-005 POST /api/auth/register 公開の登録', () => {
   });
 });
 
-describe('API-AUTH-005 POST /api/auth/register 管理の見出し', () => {
+describe('API-AUTH-005 POST /api/auth/register 管理の見出しと宛先単位の枠', () => {
   let handler: (request: Request) => Promise<any>;
   const errorSpy = jest.spyOn(console, 'error');
 
@@ -369,80 +372,92 @@ describe('API-AUTH-005 POST /api/auth/register 管理の見出し', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     errorSpy.mockImplementation(() => undefined);
+    afterCallbacks.length = 0;
     mockEnforceRateLimit.mockResolvedValue(undefined);
-    mockCreateUser.mockResolvedValue({ data: { user: { id: 'admin-user-1', email: 'new@example.com' } }, error: null });
-    process.env.ADMIN_API_KEY = 'test-admin-key';
+    mockVerifyTurnstile.mockResolvedValue({ ok: true });
+    mockCheckPwnedPassword.mockResolvedValue({ status: 'ok' });
+    mockRpc.mockResolvedValue({ data: null, error: null });
+    mockSignUp.mockResolvedValue({ data: { session: null, user: { id: 'new-1' } }, error: null });
+    mockCreateReturnIntent.mockResolvedValue({ token: 'R'.repeat(43), maxAgeSeconds: 3600 });
   });
 
   afterAll(() => errorSpy.mockRestore());
 
-  test('API-AUTH-005 x-admin-token が合えば Turnstile・漏洩の照合・照会を通らず service role で作り 201 を返す', async () => {
-    const res = await handler(publicRequest({ display_name: '管理' }, { 'x-admin-token': 'test-admin-key' }));
+  test.each([
+    ['x-admin-token', { 'x-admin-token': 'test-admin-key' }],
+    ['Authorization: Bearer', { authorization: 'Bearer test-admin-key' }],
+    ['違う x-admin-token', { 'x-admin-token': 'wrong' }],
+  ])('API-AUTH-005 管理の見出し（%s）を付けても公開の登録として扱い、createUser を呼ばず Turnstile を通す', async (_label, headers) => {
+    process.env.ADMIN_API_KEY = 'test-admin-key';
+    try {
+      const res = await handler(publicRequest({}, headers));
 
-    expect(res.status).toBe(201);
-    expect(await res.json()).toEqual({ id: 'admin-user-1', email: 'new@example.com' });
-    expect(mockCreateUser).toHaveBeenCalledWith({
-      email: 'new@example.com',
-      password: PASSWORD,
-      user_metadata: { display_name: '管理' },
-    });
-    expect(mockVerifyTurnstile).not.toHaveBeenCalled();
-    expect(mockCheckPwnedPassword).not.toHaveBeenCalled();
-    expect(mockRpc).not.toHaveBeenCalled();
-    expect(mockLogAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'register', outcome: 'success', resource_id: 'admin-user-1' }),
-    );
+      expect(res.status).toBe(202);
+      expect(mockCreateUser).not.toHaveBeenCalled();
+      expect(mockVerifyTurnstile).toHaveBeenCalledTimes(1);
+      expect(mockCheckPwnedPassword).toHaveBeenCalledTimes(1);
+      expect(mockSignUp).toHaveBeenCalledTimes(1);
+      expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'unauthorized' }));
+    } finally {
+      delete process.env.ADMIN_API_KEY;
+    }
   });
 
-  test('API-AUTH-005 Authorization の Bearer でも同じ管理の経路に入る', async () => {
-    const res = await handler(publicRequest({}, { authorization: 'Bearer test-admin-key' }));
+  test('API-AUTH-005 管理の見出しを付けて Turnstile が通らなければ 403 で、アカウントを作らない', async () => {
+    mockVerifyTurnstile.mockResolvedValue({ ok: false });
 
-    expect(res.status).toBe(201);
-    expect(mockCreateUser).toHaveBeenCalledTimes(1);
-  });
+    const res = await handler(publicRequest({}, { 'x-admin-token': 'anything' }));
 
-  test('API-AUTH-005 鍵が違えば 401 で、アカウントを作らず監査に残す', async () => {
-    const res = await handler(publicRequest({}, { 'x-admin-token': 'wrong' }));
-
-    expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ error: 'Unauthorized' });
+    expect(res.status).toBe(403);
     expect(mockCreateUser).not.toHaveBeenCalled();
-    expect(mockLogAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'register', outcome: 'unauthorized' }),
-    );
+    expect(mockSignUp).not.toHaveBeenCalled();
   });
 
-  test('API-AUTH-005 鍵が未設定なのに見出しが付いたら 500 で、アカウントを作らない', async () => {
+  test('API-AUTH-005 鍵が未設定でも管理の見出しで 500 にならず、公開の登録として 202 を返す', async () => {
     delete process.env.ADMIN_API_KEY;
 
     const res = await handler(publicRequest({}, { 'x-admin-token': 'anything' }));
 
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: 'Server misconfiguration' });
+    expect(res.status).toBe(202);
     expect(mockCreateUser).not.toHaveBeenCalled();
   });
 
-  test('API-AUTH-005 登録済みの作成の失敗は 409 で、監査に conflict を残す', async () => {
-    mockCreateUser.mockResolvedValue({ data: { user: null }, error: { message: 'User already registered' } });
+  test('API-AUTH-005 宛先単位の枠は、小文字にしたメールを subject に 5 回／3600 秒で数える（IP の枠とは別に 2 回）', async () => {
+    await handler(publicRequest());
 
-    const res = await handler(publicRequest({}, { 'x-admin-token': 'test-admin-key' }));
-
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: 'Email already registered' });
-    expect(mockLogAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'register', outcome: 'conflict' }),
+    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(2);
+    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ endpoint: 'auth:register', limit: 20, windowSeconds: 3600 }),
+    );
+    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ endpoint: 'auth:register', limit: 5, windowSeconds: 3600, subject: 'new@example.com' }),
     );
   });
 
-  test('API-AUTH-005 登録済み以外の作成の失敗は 500 で、本文に理由を出さない', async () => {
-    mockCreateUser.mockResolvedValue({ data: { user: null }, error: { message: 'db down' } });
+  test('API-AUTH-005 宛先の枠が 429 を返したら、控えも照会も signUp も呼ばずその応答を返す', async () => {
+    const limited = { status: 429, json: async () => ({ error: 'Too many requests' }) };
+    mockEnforceRateLimit.mockImplementation(async (arg: { subject?: string }) => (arg.subject ? limited : undefined));
 
-    const res = await handler(publicRequest({}, { 'x-admin-token': 'test-admin-key' }));
+    const res = await handler(publicRequest({ next: '/look' }));
 
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: 'Failed to create user' });
-    expect(mockLogAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'register', outcome: 'error', detail: 'db down' }),
-    );
+    expect(res).toBe(limited);
+    expect(mockVerifyTurnstile).toHaveBeenCalledTimes(1);
+    expect(mockCheckPwnedPassword).toHaveBeenCalledTimes(1);
+    expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
+    expect(mockSignUp).not.toHaveBeenCalled();
+    expect(afterCallbacks).toHaveLength(0);
+  });
+
+  test('API-AUTH-005 Turnstile・漏洩の確かめを通らなかった要求は宛先の枠を数えない（他人の枠を潰させない）', async () => {
+    mockVerifyTurnstile.mockResolvedValueOnce({ ok: false });
+    await handler(publicRequest());
+    mockCheckPwnedPassword.mockResolvedValueOnce({ status: 'pwned' });
+    await handler(publicRequest());
+
+    const subjects = mockEnforceRateLimit.mock.calls.map(([arg]) => arg.subject).filter(Boolean);
+    expect(subjects).toEqual([]);
   });
 });

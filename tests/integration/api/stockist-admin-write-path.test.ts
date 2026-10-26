@@ -179,8 +179,14 @@ function setup(
   } = {},
 ) {
   order = [];
+  // 作成は .select('id').single() の 1 行、更新は .select('id') の行の配列、削除は .select('id, name, address, status') の消した行の配列
   const ok: Result = options.stockistsResult ?? { data: { id: 11 }, error: null };
-  userClient = createFakeClient({ stockists: { select: { data: options.readRows ?? ok.data, error: ok.error }, insert: ok, update: ok, delete: ok } }, order);
+  const updated: Result = options.stockistsResult ?? { data: [{ id: 7 }], error: null };
+  const deleted: Result = options.stockistsResult ?? {
+    data: [{ id: 7, name: 'A Shop', address: 'Tokyo', status: 'published' }],
+    error: null,
+  };
+  userClient = createFakeClient({ stockists: { select: { data: options.readRows ?? ok.data, error: ok.error }, insert: ok, update: updated, delete: deleted } }, order);
   serviceClient = createFakeClient(
     {
       user_roles: { select: { data: aclRows(options.codes ?? ['admin.stockists.read', 'admin.stockists.manage']), error: null } },
@@ -353,7 +359,7 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
   });
 
   describe.each(MUTATIONS.slice(1))('$name の id の確かめ', (handler) => {
-    it.each(['abc', '0', '-3', '1.5', ''])('ARC-STOCKIST-002 id が正の整数でない（%p）時は認可より前に 400 で断る', async (id) => {
+    it.each(['abc', '0', '-3', '1.5', '', '1e30', '9007199254740993'])('ARC-STOCKIST-002 id が正の整数でない（%p）時は認可より前に 400 で断る', async (id) => {
       setup();
 
       const res = await handler.call(id);
@@ -398,15 +404,26 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
     expect(await res.json()).toEqual({ error: 'Stockist not found' });
   });
 
-  // 現状の動きの記録。SEC-STOCKIST-013 は 0 件を失敗として扱う想定で、これは満たしていない欠け。直したらこの件を直す。
-  it('ARC-STOCKIST-002 現状の記録 対象の行が0件の PUT・PATCH・DELETE は 200 を返し監査に success を残す', async () => {
+  // SEC-STOCKIST-013。0 件（無い、または RLS が隠した）は成功にせず、404 と failure の監査にする
+  it.each([
+    ['空の配列', []],
+    ['null', null],
+  ])('ARC-STOCKIST-002 対象の行が0件（%s）の PUT・PATCH・DELETE は 404 を返し、監査に success を残さず failure を残す', async (_label, data) => {
     for (const handler of MUTATIONS.slice(1)) {
-      setup({ stockistsResult: { data: null, error: null } });
+      setup({ stockistsResult: { data, error: null } });
 
       const res = await handler.call();
 
-      expect(res.status).toBe(200);
-      expect(auditRows()[0]).toMatchObject({ action: handler.successAction, outcome: 'success' });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: 'Stockist not found' });
+      const rows = auditRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        action: handler.successAction,
+        outcome: 'failure',
+        detail: 'Stockist not found',
+        resource_id: '7',
+      });
     }
   });
 

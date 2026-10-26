@@ -1,6 +1,6 @@
 # NEWS の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: NEWS（ニュース一覧 `/news`・詳細 `/news/[id]`・ホームの NEWS の区画・管理のニュース） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: NEWS（ニュース一覧 `/news`・詳細 `/news/[id]`・ホームの NEWS の区画・管理のニュース） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -75,7 +75,7 @@ graph LR
 
 - 呼ぶ側: `/news`（`src/app/news/page.tsx`）、`/news/[id]`（`src/app/news/[id]/page.tsx`）、ホーム（`src/app/page.tsx`、範囲外）。どれも Server Component で、記事を client の部品 `PublicNewsGrid` に渡す
 - 取り出しの関数（`src/features/news/services/public.ts`）: `getPublishedNews`（一覧）・`getPublishedNewsCount`（ホームの総数）・`getPublishedNewsDetailById`（1件）・`getPublishedNewsNavigation`（前後）。どれも `status='published'` を付ける。公開日の新しい順に並べるのは `getPublishedNews`と `getPublishedNewsNavigation` の2つで、`getPublishedNewsCount` と `getPublishedNewsDetailById` は並べない
-- client: ADR-0004 のとおり、DB は `createPublicClient()` で読み、service role は画像の署名だけに使う（ARC-NEWS-003）
+- client: ADR-0004 のとおり、DB は `createPublicClient()` だけで読む。公開の取り出しは `image_url` を選ばず署名もしないので、service role を持たない（SEC-NEWS-005、ARC-NEWS-003）。2026-10-26 までは画像の署名のために service role の client も作っていた
 - キャッシュ: `revalidate`・`use cache` などの指定は無く、`searchParams`・`params` を読むので要求ごとに描く（推定）
 - 失敗: ページに try/catch は無い。取り出しの関数は Supabase の `error` を見ず、DB の失敗を空の一覧・記事なしとして返す（SEC-NEWS-020 は満たさない）。`getPublishedNewsCount` だけが失敗を記録して 0 を返す
 - 件数: `/news` は `limit` を渡さず公開済みを全部取る。前後の記事のために公開済みを全部読む（SEC-NEWS-009 の画面の上限は満たさない）
@@ -129,10 +129,10 @@ sequenceDiagram
 
 - 書く: 管理の POST・PUT が service role の client で置き場 `news-images` に上げ、表の `image_url` には署名前の道を入れる（DATA-NEWS-004）
 - 配る: `signNewsImageFields` が行の `image_url` を `signNewsImageUrl` の結果に置き換える。保存の道・旧 public・sign・authenticated の URL から置き場の中の道を取り出し（`extractNewsImageObjectPath`）、期限 3600 秒で署名する
-- 使う所: 管理の一覧と1件の GET、公開の取り出し（一覧・1件）、検索（`src/features/search/services/search.service.ts`、範囲外）
-- 公開の一覧・詳細・ホームは画像を出さない（FREQ-32）のに、行ごとに署名して `image_url` を返す（SEC-NEWS-005 は満たさない）
-- 道にできない値と署名の失敗では元の値を返し、記録しない（SEC-NEWS-008 は満たさない。DRV-NEWS-008 が今の動き）
-- 署名する前に道が `news/` の下か、URL のホストが自分のプロジェクトかを確かめない（SEC-NEWS-007 は満たさない）
+- 使う所: 管理の一覧と1件の GET、検索（`src/features/search/services/search.service.ts`、範囲外）。公開の取り出し（一覧・1件）は署名しない
+- 公開の一覧・詳細・ホームは画像を出さない（FREQ-32）ので、`getPublishedNews`・`getPublishedNewsDetailById` は `image_url` を選ばず、署名も service role の client も使わない。型 `PublicNewsArticle` に `image_url` は無い（SEC-NEWS-005。2026-10-26 に満たした）
+- 道にできない値と署名の失敗では元の値を返し、記録しない（SEC-NEWS-008 は満たさない。DRV-NEWS-008 が今の動き）。公開の道は署名しなくなったので、残る署名の経路（検索と管理）だけの話（波 1-C）
+- 署名する前に道が `news/` の下か、URL のホストが自分のプロジェクトかを確かめない（SEC-NEWS-007 は満たさない。残る経路は検索と管理。波 1-C）
 - 置き場を非公開にする設定は手元の見本にだけあり、移行に無い（SEC-NEWS-003 は満たさないので上位にしない。DATA-NEWS-004）
 
 ### ARC-NEWS-004 共有の proxy が Origin の検査と守りの見出しを全部の応答にかける
@@ -395,11 +395,12 @@ stateDiagram-v2
 | 認可 | なし（公開） |
 | 入力 | クエリ `category`（確かめずに取り出しへ渡す）、`limit`（数字だけの文字なら整数。正なら20を上限に丸め、それ以外は12） |
 | 回数の制限 | `enforceRateLimit({endpoint:'news:list', limit:60, windowSeconds:600})`。超えると 429、数え場所が使えないと 503 |
-| 成功 | 200。公開済みの記事の配列 `id・title・published_date・category・image_url（署名つき）・content`、公開日の新しい順。本文 `detailed_content` は返さない |
+| 成功 | 200。公開済みの記事の配列 `id・title・published_date・category・content`、公開日の新しい順。`image_url`（署名つき URL）と本文 `detailed_content` は返さない |
 | 失敗 | 例外は記録して 500 `{error:'Failed to fetch news'}`。DB の失敗は取り出しの関数が空にするので 200 `[]`（推定） |
 | 使う所 | 今の画面からは通らない（推定）。検索の E2E の補助 `e2e/search-test-utils.ts` が呼ぶ |
 
-- 満たさない要件: `image_url` を返す（SEC-NEWS-005）、`Cache-Control` が無い（SEC-NEWS-006）、送り元を `x-forwarded-for` から取る（SEC-NEWS-011）、`category` を確かめない（SEC-NEWS-012）、例外を丸ごと `console.error` に渡す（SEC-NEWS-019、`src/app/api/news/route.ts`）
+- `image_url` は返さず、署名もしない（SEC-NEWS-005。2026-10-26 に満たした）。取り出しの関数が画像の列を選ばず、service role の client も作らないので、署名の失敗で 500 になる道も無い
+- 満たさない要件: `Cache-Control` が無い（SEC-NEWS-006）、送り元を `x-forwarded-for` から取る（SEC-NEWS-011）、`category` を確かめない（SEC-NEWS-012）、例外を丸ごと `console.error` に渡す（SEC-NEWS-019、`src/app/api/news/route.ts`）
 - `api-spec.md` は失敗を 429・500 とだけ書き、503 を書いていない
 
 ### API-NEWS-002 `GET /api/admin/news` 管理の記事の一覧
@@ -476,9 +477,11 @@ stateDiagram-v2
 | 入力 | 道の `id`。multipart は作成と同じ形で、`image` は任意（付ければ種類と 5MB を確かめる） |
 | 処理 | 画像があれば置き場へ上げ、拡張子はファイル名の最後の `.` の後ろから取る（無ければ `jpg`）。表の行を更新する |
 | 成功 | 200 `{success:true}`。監査 `admin.news.update` |
-| 失敗 | 入力・画像の誤り 400、置き場の失敗 500（監査 `admin.news.update.upload_failed`）、表の失敗 500（監査 `admin.news.update.failed`）、例外 500 |
+| 失敗 | 入力・画像の誤り 400、無い記事・形の悪い id 404（監査 `admin.news.update.not_found`）、置き場の失敗 500（監査 `admin.news.update.upload_failed`）、表の失敗 500（監査 `admin.news.update.failed`）、例外 500 |
 
-- 対象の行が0件でも 200 を返し、成功として監査に残す（SEC-NEWS-016 の 404 は満たさないので上位にしない）
+- 更新は `.update(...).eq('id', id).select('id')` で変えた行を受け取り、0行（無い、または RLS が隠した）は 404 `{error:'Article not found'}` と失敗の監査にして、成功の監査は書かない（SEC-NEWS-016。2026-10-26 に満たした）。管理の窓口は利用者の session の client で書くので、RLS が隠した行も 404 になる
+- 道の `id` は18桁以下の数字だけを DB に渡し、外れた id は DB にも置き場にも触らず 404 にする（監査には長さだけを残す）
+- 画像は更新より先に上げるので、404 の時も上げた画像は置き場に残る（SEC-NEWS-018 は満たさない）
 - 拡張子の取り方が作成（MIME から決める）と違う（SEC-NEWS-017 は満たさない）
 - 差し替え前の画像を消さない（SEC-NEWS-018 は満たさない）
 
@@ -497,9 +500,9 @@ stateDiagram-v2
 | 認可 | `admin.news.manage` |
 | 入力 | 道の `id`、JSON `{status}`（`private` か `published`） |
 | 成功 | 200 `{success:true}`。監査 `admin.news.status_update` |
-| 失敗 | 値の誤り 400、表の失敗 500（監査 `admin.news.status_update.failed`）、JSON の解析の失敗を含む例外 500 |
+| 失敗 | 値の誤り 400、無い記事・形の悪い id 404（監査 `admin.news.status_update.not_found`）、表の失敗 500（監査 `admin.news.status_update.failed`）、JSON の解析の失敗を含む例外 500 |
 
-- 対象の行が0件でも 200 で成功として監査に残す（SEC-NEWS-016 の 404 は満たさないので上位にしない）。前の状態を読まない
+- 更新は `.update({status}).eq('id', id).select('id')` で変えた行を受け取り、0行は 404 `{error:'Article not found'}` と失敗の監査にして、成功の監査は書かない（SEC-NEWS-016。2026-10-26 に満たした）。道の `id` の確かめは API-NEWS-005 と同じ。前の状態を読まない
 
 ### API-NEWS-007 `DELETE /api/admin/news/[id]` 記事の削除
 
@@ -516,9 +519,9 @@ stateDiagram-v2
 | 認可 | `admin.news.manage` |
 | 入力 | 道の `id`、本文なし |
 | 成功 | 200 `{success:true}`。監査 `admin.news.delete` |
-| 失敗 | 表の失敗 500（監査 `admin.news.delete.failed`）、例外 500 |
+| 失敗 | 無い記事・形の悪い id 404（監査 `admin.news.delete.not_found`）、表の失敗 500（監査 `admin.news.delete.failed`）、例外 500 |
 
-- 対象の行が0件でも 200 で成功として監査に残す（SEC-NEWS-016 の 404 は満たさないので上位にしない）
+- 削除は `.delete().eq('id', id).select('id')` で消した行を受け取り、0行は 404 `{error:'Article not found'}` と失敗の監査にして、成功の監査は書かない（SEC-NEWS-016。2026-10-26 に満たした）。道の `id` の確かめは API-NEWS-005 と同じ
 - 置き場の画像は消さない（SEC-NEWS-018 は満たさない。`api-spec.md` は画像も消すと書く）
 
 ### API-NEWS-008 Server Action `getLatestNews` 最新の公開済みの記事3件（未使用（削除の判断待ち））
@@ -621,7 +624,7 @@ stateDiagram-v2
 | 定義 | 手元の見本 `supabase/seed.sql` が `public=false` で作るだけ。移行には無い。大きさ（`file_size_limit`）と種類（`allowed_mime_types`）の上限は付けない。全体の上限は `supabase/config.toml` の 50MiB |
 | 方針 | `storage.objects` に news-images の方針は無い。手元では anon・authenticated は読み書きできず、service role だけ（推定） |
 | 道 | 作る時 `news/<YYYY-MM-DD>/<uuid>.<MIME から決めた拡張子>`、直す時は拡張子をファイル名から取る。上書きしない、キャッシュ 3600 秒 |
-| 署名 | service role で期限 3600 秒（ARC-NEWS-003） |
+| 署名 | service role で期限 3600 秒（ARC-NEWS-003）。署名するのは管理と検索で、公開の一覧・詳細は署名しない（SEC-NEWS-005） |
 | 片付け | 作成の失敗・差し替え・削除の後も画像は残る |
 
 - 本番の置き場の公開の設定と方針は移行で持っておらず、確かめていない（SEC-NEWS-003 の「移行で持つ」は満たさないので上位にしない）

@@ -4,7 +4,7 @@
  * @packageDocumentation
  * @impl IMPL-NEWS-162
  * @design DD-NEWS-065
- * @remarks 表の読み書きは利用者の JWT の client で RLS に通し、窓口の認可が崩れても DB が断るようにする（SEC-NEWS-015、DATA-NEWS-002）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新の PUT と分ける（API-NEWS-006、STATE-NEWS-001）。直すたびに画像を付け直させないよう、PUT の画像は任意にする（API-NEWS-005）。変える操作は誰が何をしたかを追えるよう、成功も失敗も監査に残す。
+ * @remarks 表の読み書きは利用者の JWT の client で RLS に通し、窓口の認可が崩れても DB が断るようにする（SEC-NEWS-015、DATA-NEWS-002）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新の PUT と分ける（API-NEWS-006、STATE-NEWS-001）。直すたびに画像を付け直させないよう、PUT の画像は任意にする（API-NEWS-005）。変える操作は誰が何をしたかを追えるよう、成功も失敗も監査に残す。変更・削除が 0 行の時（無い記事、または RLS が隠した記事）は成功と偽らず 404 にして失敗を残す（SEC-NEWS-016）。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -24,6 +24,9 @@ const updateNewsSchema = z.object({
 
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const maxImageBytes = 5 * 1024 * 1024;
+
+// DB の id は bigint。形の悪い id を渡すと 22P02 で 500 になるので、桁（18 桁以下）まで確かめてから渡す（SEC-NEWS-016）。
+const newsIdPattern = /^\d{1,18}$/;
 
 function getRequestUserAgent(request: Request): string | null {
   return request.headers.get('user-agent') || null;
@@ -48,6 +51,30 @@ async function logNewsAudit(
     user_agent: getRequestUserAgent(request),
     metadata,
   });
+}
+
+/**
+ * 無い記事（形の悪い id・変更が 0 行）への変更を 404 で断り、失敗を監査に残す。
+ * 形の悪い id は入力の生の値なので、監査には文字を残さず長さだけを残す。
+ */
+async function respondArticleNotFound(
+  request: Request,
+  actorId: string,
+  action: string,
+  id: string,
+) {
+  const validId = newsIdPattern.test(id);
+  await logNewsAudit(
+    request,
+    actorId,
+    action,
+    'failure',
+    'News article not found',
+    validId ? { articleId: id } : { articleIdLength: id.length },
+    validId ? id : null,
+  );
+
+  return NextResponse.json({ error: 'Article not found' }, { status: 404 });
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -87,6 +114,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const authz = await authorizeAdminPermission('admin.news.manage', request);
     if (!authz.ok) {
       return authz.response;
+    }
+
+    if (!newsIdPattern.test(id)) {
+      return respondArticleNotFound(request, authz.userId, 'admin.news.update.not_found', id);
     }
 
     const formData = await request.formData();
@@ -165,10 +196,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       updatePayload.image_url = imagePath;
     }
 
-    const { error } = await dbSupabase
+    const { data: updatedRows, error } = await dbSupabase
       .from('news_articles')
       .update(updatePayload)
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) {
       await logNewsAudit(request, authz.userId, 'admin.news.update.failed', 'failure', 'News article update failed', {
@@ -179,6 +211,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
       console.error('Failed to update news article:', error);
       return NextResponse.json({ error: 'Failed to update news article' }, { status: 500 });
+    }
+
+    // 0 行は「無い」と「RLS が隠した」の両方。成功と偽らず 404 にする（SEC-NEWS-016）。
+    if (!updatedRows || updatedRows.length === 0) {
+      return respondArticleNotFound(request, authz.userId, 'admin.news.update.not_found', id);
     }
 
     await logNewsAudit(request, authz.userId, 'admin.news.update', 'success', 'News article updated', {
@@ -206,6 +243,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return authz.response;
     }
 
+    if (!newsIdPattern.test(id)) {
+      return respondArticleNotFound(request, authz.userId, 'admin.news.status_update.not_found', id);
+    }
+
     const body = await request.json();
     const parsed = patchStatusSchema.safeParse(body);
 
@@ -221,10 +262,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const supabase = await createClient(request);
 
-    const { error } = await supabase
+    const { data: updatedRows, error } = await supabase
       .from('news_articles')
       .update({ status: parsed.data.status })
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) {
       await logNewsAudit(request, authz.userId, 'admin.news.status_update.failed', 'failure', 'News article status update failed', {
@@ -234,6 +276,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
       console.error('Failed to update news article status:', error);
       return NextResponse.json({ error: 'Failed to update status' }, { status: 500 });
+    }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      return respondArticleNotFound(request, authz.userId, 'admin.news.status_update.not_found', id);
     }
 
     await logNewsAudit(request, authz.userId, 'admin.news.status_update', 'success', 'News article status updated', {
@@ -256,12 +302,17 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return authz.response;
     }
 
+    if (!newsIdPattern.test(id)) {
+      return respondArticleNotFound(request, authz.userId, 'admin.news.delete.not_found', id);
+    }
+
     const supabase = await createClient(request);
 
-    const { error } = await supabase
+    const { data: deletedRows, error } = await supabase
       .from('news_articles')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) {
       await logNewsAudit(request, authz.userId, 'admin.news.delete.failed', 'failure', 'News article delete failed', {
@@ -270,6 +321,10 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
       console.error('Failed to delete news article:', error);
       return NextResponse.json({ error: 'Failed to delete article' }, { status: 500 });
+    }
+
+    if (!deletedRows || deletedRows.length === 0) {
+      return respondArticleNotFound(request, authz.userId, 'admin.news.delete.not_found', id);
     }
 
     await logNewsAudit(request, authz.userId, 'admin.news.delete', 'success', 'News article deleted', {

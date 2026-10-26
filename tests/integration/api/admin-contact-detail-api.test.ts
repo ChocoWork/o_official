@@ -132,8 +132,6 @@ const inquiryRow = {
   status: 'open',
   order_id: null,
   user_id: 'user-9',
-  submitted_ip: '203.0.113.5',
-  user_agent: 'jest-agent',
 };
 
 function setupDb(
@@ -241,14 +239,18 @@ describe('API-ADMIN-006 GET /api/admin/contact/[id]', () => {
     expect(callsOf('contact_messages', 'order')).toEqual([['order', ['created_at', { ascending: true }]]]);
   });
 
-  it('API-ADMIN-006 管理者向けの詳細には IP と端末の情報の列まで引く', async () => {
-    setupDb();
+  it('API-ADMIN-006 管理者向けの詳細にも、送った人の IP と端末の情報の列は引かず、応答にも載せない', async () => {
+    // 表には submitted_ip・user_agent の列があっても、選ぶ列を名指しして取り出さない
+    setupDb({ inquiry: { data: inquiryRow, error: null } });
 
-    await GET(get(), params());
+    const res = await GET(get(), params());
 
     const [[, [columns]]] = callsOf('contact_inquiries', 'select') as Array<[string, [string]]>;
-    expect(columns).toContain('submitted_ip');
-    expect(columns).toContain('user_agent');
+    expect(columns).not.toContain('submitted_ip');
+    expect(columns).not.toContain('user_agent');
+    const { data } = await res.json();
+    expect(Object.keys(data)).not.toContain('submitted_ip');
+    expect(Object.keys(data)).not.toContain('user_agent');
   });
 
   it('API-ADMIN-006 注文に結んだ問い合わせは注文番号を付ける', async () => {
@@ -308,12 +310,54 @@ describe('API-ADMIN-006 GET /api/admin/contact/[id]', () => {
     expect(await res.json()).toEqual({ error: 'Internal server error' });
   });
 
-  it('API-ADMIN-006 閲覧は監査に残さず、利用者の JWT の client も使わない', async () => {
+  it('API-ADMIN-006 閲覧を読んだ人の id・メール・問い合わせの id だけで監査に残し、名前・メール・本文・件名・IP は入れず、利用者の JWT の client も使わない', async () => {
     setupDb();
 
     await GET(get(), params());
 
-    expect(auditRows()).toHaveLength(0);
+    const rows = auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'admin.contact.read',
+      actor_id: 'admin-1',
+      actor_email: 'admin@example.com',
+      resource: 'contact',
+      resource_id: INQUIRY_ID,
+      outcome: 'success',
+    });
+    expect(rows[0].ip).toBeUndefined();
+    const logged = JSON.stringify(rows[0]);
+    for (const secret of ['Taro', 'taro@example.com', 'Hello', 'Question']) {
+      expect(logged).not.toContain(secret);
+    }
     expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it('API-ADMIN-006 問い合わせが引けない時と、やり取りの読みの誤りの時は、閲覧の監査を書かない', async () => {
+    setupDb({ inquiry: { data: null, error: null } });
+    await GET(get(), params());
+    setupDb({ messages: { data: null, error: { message: 'db down' } } });
+    await GET(get(), params());
+
+    expect(auditRows()).toHaveLength(0);
+  });
+
+  it('API-ADMIN-006 監査の書き込みが失敗しても詳細は 200 のまま返す', async () => {
+    setup({
+      tables: {
+        contact_inquiries: { single: { data: inquiryRow, error: null } },
+        contact_messages: { default: { data: [], error: null } },
+      },
+    });
+    // 監査の表だけ書き込みを失敗させる
+    const base = serviceClient.from.getMockImplementation() as (table: string) => unknown;
+    serviceClient.from.mockImplementation((table: string) =>
+      table === 'audit_logs' ? { insert: () => Promise.reject(new Error('audit down')) } : base(table),
+    );
+
+    const res = await GET(get(), params());
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.id).toBe(INQUIRY_ID);
   });
 });

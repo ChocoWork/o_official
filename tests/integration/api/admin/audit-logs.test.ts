@@ -26,6 +26,7 @@ const ACTOR_ID = '11111111-1111-4111-8111-111111111111';
 let aclCodes: string[];
 let tables: string[];
 let select: jest.Mock;
+let insert: jest.Mock;
 let order: jest.Mock;
 let limit: jest.Mock;
 let errorSpy: jest.SpyInstance;
@@ -47,7 +48,7 @@ function installServiceClient() {
         return chain;
       }
       if (table === 'audit_logs') {
-        return { select };
+        return { select, insert };
       }
       throw new Error(`unexpected table ${table}`);
     },
@@ -72,6 +73,7 @@ beforeEach(() => {
   limit = jest.fn().mockResolvedValue({ data: [], error: null });
   order = jest.fn().mockReturnValue({ limit });
   select = jest.fn().mockReturnValue({ order });
+  insert = jest.fn().mockResolvedValue({ error: null });
   errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   installServiceClient();
@@ -186,11 +188,42 @@ describe('GET /api/admin/audit-logs', () => {
       expect(order).toHaveBeenCalledWith('created_at', { ascending: false });
     });
 
-    test('API-ADMIN-003 触る表は audit_logs と認可の ACL の表だけで、読んだこと自体は監査へ書かない', async () => {
+    test('API-ADMIN-003 触る表は audit_logs と認可の ACL の表だけで、読めた時に読んだ人の記録を1行だけ書く（ログの中身・IP は入れない）', async () => {
+      limit.mockResolvedValue({ data: [{ id: '1', action: 'secret-action' }], error: null });
+
       await GET(makeRequest());
 
-      expect([...tables].sort()).toEqual(['audit_logs', 'user_roles']);
+      expect([...new Set(tables)].sort()).toEqual(['audit_logs', 'user_roles']);
       expect(select).toHaveBeenCalledTimes(1);
+      expect(insert).toHaveBeenCalledTimes(1);
+      const [row] = insert.mock.calls[0][0] as Array<Record<string, unknown>>;
+      expect(row).toMatchObject({
+        action: 'admin.audit_logs.read',
+        actor_id: ACTOR_ID,
+        actor_email: 'admin@example.com',
+        resource: 'audit_logs',
+        outcome: 'success',
+      });
+      expect(row.ip).toBeUndefined();
+      expect(JSON.stringify(row)).not.toContain('secret-action');
+    });
+
+    test('API-ADMIN-003 監査の書き込みが失敗しても読み出しは 200 のまま返す', async () => {
+      insert.mockRejectedValue(new Error('audit down'));
+
+      const res = await GET(makeRequest());
+
+      expect(res.status).toBe(200);
+      expect(res._body).toEqual({ data: [] });
+    });
+
+    test('API-ADMIN-003 読みが誤りの時と認可で断った時は、読んだ記録を書かない', async () => {
+      limit.mockResolvedValue({ data: null, error: { message: 'db down' } });
+      await GET(makeRequest());
+      aclCodes = [];
+      await GET(makeRequest());
+
+      expect(insert).not.toHaveBeenCalled();
     });
 
     test('API-ADMIN-003 行が 0 件なら空の配列を返す', async () => {

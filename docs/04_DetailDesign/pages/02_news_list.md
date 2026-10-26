@@ -1,6 +1,6 @@
 ﻿# 1.2 ニュース一覧ページ（NEWS LIST）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: ニュース一覧 `/news` と、その取り出し・部品・`GET /api/news` | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: ニュース一覧 `/news` と、その取り出し・部品・`GET /api/news` | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | `DD-NEWS-001` | `src/features/news/components/PublicNewsGrid.tsx` | 一覧とホームの区画の格子。分類の選択・URL との同期・空と失敗の表示 | `IMPL-NEWS-LIST-002`・`003`・`004`・`007` |
 | `DD-NEWS-002` | `src/app/news/page.tsx` | 一覧のページ。URL の `category` を1つの分類に直して取り出し、メタを出す | `IMPL-NEWS-LIST-005`・`006` |
-| `DD-NEWS-003` | `getPublishedNews`（`src/features/news/services/public.ts`） | 公開済みの記事を新しい順に取り出し、画像に署名する | `IMPL-NEWS-LIST-001` |
+| `DD-NEWS-003` | `getPublishedNews`（`src/features/news/services/public.ts`） | 公開済みの記事を新しい順に取り出す（画像の列は選ばず署名しない） | `IMPL-NEWS-LIST-001` |
 | `DD-NEWS-004` | `src/app/api/news/route.ts` | `GET /api/news`。回数の制限・件数の上限・固定の失敗の文 | なし |
 | `DD-NEWS-005` | `src/app/news/NewsCategoryTabs.tsx` | 1つだけ選ぶ分類のタブ。未使用（削除の判断待ち） | なし |
 
@@ -34,8 +34,8 @@
 
 | 共有部品 | 道 | 一覧での使われ方 |
 | --- | --- | --- |
-| Supabase の client | `src/lib/supabase/server.ts` の `createPublicClient`・`createServiceRoleClient` | 記事は anon の鍵・session なしで読み、service role は画像の署名だけに使う |
-| 画像の署名 | `src/lib/storage/news-images.ts` の `signNewsImageUrl`・`signNewsImageFields` | 行ごとに `image_url` を期限 3600 秒の署名つき URL に置き換える |
+| Supabase の client | `src/lib/supabase/server.ts` の `createPublicClient`・`createServiceRoleClient` | 記事は anon の鍵・session なしで読む。公開の取り出しは service role を使わない（SEC-NEWS-005）。管理と検索は署名に使う |
+| 画像の署名 | `src/lib/storage/news-images.ts` の `signNewsImageUrl`・`signNewsImageFields` | 行ごとに `image_url` を期限 3600 秒の署名つき URL に置き換える。公開の一覧・詳細は呼ばない（管理と検索が使う） |
 | 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit` | `GET /api/news` だけが使う。超えると 429、数え場所が落ちると 503 |
 | 画面の部品 | `src/components/ui/`（`MultiSelect`・`Drawer`・`Button`・`TagLabel`・`SectionTitle`・`TabSegmentControl`）、`src/features/home/components/HomeSectionViewAll.tsx` | 絞り込み・引き出し・分類の札・ホームの VIEW ALL |
 
@@ -244,7 +244,7 @@ FR-NEWS-ALL-001・005・006、FREQ-31（ページの h1 を置かない）。
 | 属性 | 値 |
 | --- | --- |
 | 上位 | ARC-NEWS-001、ARC-NEWS-003、DATA-NEWS-001、SEC-NEWS-001 |
-| 根拠 | 下書きを外へ出さないため、取り出しの条件に毎回 `status='published'` を付け、読み出しは anon の鍵の client に限って RLS でも絞る2段にする（SEC-NEWS-001、ARC-NEWS-001）。新しい知らせを先に見せるため、索引のある `published_date` の降順で並べる（DATA-NEWS-001）。画像の置き場は非公開なので、返す前に行ごとに署名つき URL に置き換える（ARC-NEWS-003） |
+| 根拠 | 下書きを外へ出さないため、取り出しの条件に毎回 `status='published'` を付け、読み出しは anon の鍵の client に限って RLS でも絞る2段にする（SEC-NEWS-001、ARC-NEWS-001）。新しい知らせを先に見せるため、索引のある `published_date` の降順で並べる（DATA-NEWS-001）。公開の画面は画像を出さないので、画像の列は選ばず、署名もしない（SEC-NEWS-005、ARC-NEWS-003） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/features/news/services/public.ts`）、この頁の旧版の機能要件対応表 |
@@ -259,16 +259,16 @@ FR-NEWS-ALL-001・005、FREQ-149-REQ-01（ホームの6件）、DRV-NEWS-007・0
 | 項目 | 内容 |
 | --- | --- |
 | 入力 | `options?: {category?: string; limit?: number}` |
-| 出力 | `Promise<PublicNewsArticle[]>`。列は `id・title・published_date・category・image_url（署名つき）・content`。本文 `detailed_content` は含まない |
+| 出力 | `Promise<PublicNewsArticle[]>`。列は `id・title・published_date・category・content`。`image_url` と本文 `detailed_content` は含まない |
 | 呼び元 | `src/app/news/page.tsx`（分類だけ）、`src/app/api/news/route.ts`（分類と 1〜20 の件数）、`src/app/page.tsx`（件数 6、範囲外）、`src/app/actions/news.ts`（件数 3、呼ぶ所なし） |
-| 使う client | `createPublicClient()`（記事を読む）と `createServiceRoleClient()`（署名だけ）を並べて作る |
+| 使う client | `createPublicClient()` だけ（service role は作らない） |
 
 #### 正常フロー
 
-1. `news_articles` から6つの列を選び、`status='published'`、`published_date` の降順
+1. `news_articles` から5つの列（`image_url` を除く）を選び、`status='published'`、`published_date` の降順
 2. `category` が空でなく `ALL` でなければ `eq('category', category)`。値は確かめない
 3. `limit` が数で、有限で、0 より大きければ小数を切り捨てて `limit`。それ以外は件数を絞らない
-4. 結果の行ごとに `signNewsImageFields(serviceSupabase, row)` で `image_url` を署名つき URL にして返す
+4. 結果の行をそのまま返す（署名しない）
 
 #### 異常フロー
 
@@ -277,29 +277,26 @@ FR-NEWS-ALL-001・005、FREQ-149-REQ-01（ホームの6件）、DRV-NEWS-007・0
 | DB の失敗（`error` が返る） | `error` を見ず、`data` が `null` なので空の配列を返す。記録しない（SEC-NEWS-020） |
 | `limit` が 0・負・`NaN`・`Infinity`・数でない | 件数を絞らず全部を取る |
 | `category` が分類の一覧に無い値・小文字 | そのまま DB で絞り、0件（推定） |
-| service role の環境変数が無い | `createServiceRoleClient`（`src/lib/supabase/server.ts`）が投げ、呼び元へ上がる |
-| 道にできない画像の値・署名の失敗 | 元の `image_url` をそのまま返す（`signNewsImageUrl`、`src/lib/storage/news-images.ts`。SEC-NEWS-008） |
-| 署名の呼び出しが例外 | `Promise.all` が reject し、呼び元へ上がる（推定） |
+| service role の環境変数が無い | 影響しない（service role を使わない） |
 | 同じ公開日の記事 | 2つ目の並びの鍵が無く、順が決まらない（推定） |
 
 #### 状態・永続化
 
 - 読むだけで書かない。キャッシュは無い（推定）
-- 読む表は `news_articles`（DATA-NEWS-001）、署名は置き場 `news-images`（DATA-NEWS-004）、期限 3600 秒
+- 読む表は `news_articles`（DATA-NEWS-001）。置き場 `news-images` には触らない
 
 #### 認証認可
 
 - 利用者の session を使わず、常に anon の役で読む。RLS の「Anyone can view published news articles」（DATA-NEWS-002）とコードの `status='published'` の2段で下書きを出さない（SEC-NEWS-001）
-- service role は DB の読み出しに使わず、画像の署名だけに使う
-- 画面は画像を出さないのに署名つき URL を返す（SEC-NEWS-005）。件数の上限は呼び手任せ（SEC-NEWS-009-AC-03）
+- service role は使わない。画像の列も選ばないので署名つき URL は返らない（SEC-NEWS-005。2026-10-26 に満たした）。件数の上限は呼び手任せ（SEC-NEWS-009-AC-03）
 
 #### テスト観点
 
-分岐の網羅 100% に要る単体テスト（`@/lib/supabase/server` と `@/lib/storage/news-images` は差し替え、問い合わせの組み立てを記録する）。
+分岐の網羅 100% に要る単体テスト（`@/lib/supabase/server` と `@/lib/storage/news-images` は差し替え、問い合わせの組み立てを記録する。署名と service role の client が呼ばれないことも確かめる）。
 
 | # | 観点 | 入力 | 期待 |
 | --- | --- | --- | --- |
-| 1 | 既定の問い合わせ | `options` なし | `select('id, title, published_date, category, image_url, content')`・`eq('status','published')`・`order('published_date',{ascending:false})`、`category` と `limit` を付けない |
+| 1 | 既定の問い合わせ | `options` なし | `select('id, title, published_date, category, content')`・`eq('status','published')`・`order('published_date',{ascending:false})`、`category` と `limit` を付けない |
 | 2 | 分類で絞る | `{category:'EVENT'}` | `eq('category','EVENT')` |
 | 3 | ALL は絞らない | `{category:'ALL'}` | `eq('category', …)` が無い |
 | 4 | 空の分類は絞らない | `{category:''}` | `eq('category', …)` が無い |
@@ -307,10 +304,10 @@ FR-NEWS-ALL-001・005、FREQ-149-REQ-01（ホームの6件）、DRV-NEWS-007・0
 | 6 | 件数（小数） | `{limit:2.7}` | `limit(2)` |
 | 7 | 件数（0・負） | `{limit:0}`、`{limit:-1}` | `limit` が無い |
 | 8 | 件数（有限でない） | `{limit:Infinity}`、`{limit:NaN}` | `limit` が無い |
-| 9 | 署名 | 行が2件 | 2件とも `signNewsImageFields` を service role の client で呼び、置き換えた行を返す |
+| 9 | 署名しない | 行が2件 | 行をそのまま返し、`image_url` のキーが無い。`signNewsImageFields`・`createServiceRoleClient` を呼ばない |
 | 10 | DB の失敗 | `{data:null, error:{…}}` | 空の配列 |
-| 11 | 公開の client を使う | 呼ぶ | 記事の問い合わせは `createPublicClient` の client で、service role の client では読まない |
-| 12 | 環境変数が無い | `createServiceRoleClient` が投げる | reject |
+| 11 | 公開の client を使う | 呼ぶ | 記事の問い合わせは `createPublicClient` の client で、service role の client は作らない |
+| 12 | 環境変数が無くても動く | `createServiceRoleClient` が投げる設定 | 一覧は返る（呼ばないので） |
 
 ### DD-NEWS-004 公開済みニュースの JSON の窓口 GET /api/news
 
@@ -364,7 +361,7 @@ DRV-NEWS-007、SEC-NEWS-009-AC-01・02、SEC-NEWS-019-AC-01（応答の部分）
 
 #### 認証認可
 
-- 認可なし（公開）。返す項目に本文 `detailed_content` は入らず、`image_url` は署名つき URL が入る（SEC-NEWS-005）
+- 認可なし（公開）。返す項目に本文 `detailed_content` も `image_url` も入らない（SEC-NEWS-005。2026-10-26 に `image_url` を外した）
 - 回数の送り元は `x-forwarded-for` の先頭を先に見る（`src/features/auth/middleware/rateLimit.ts`。SEC-NEWS-011）
 - 書き換えの窓口ではないので proxy の Origin の検査は掛からない（ARC-NEWS-004）
 - 今の画面からは呼ばれず、E2E の補助 `e2e/search-test-utils.ts` だけが呼ぶ（推定）
@@ -459,7 +456,7 @@ ARC-NEWS-005（その上は DRV-NEWS-015）。今の一覧の画面 SCR-NEWS-001
 ## 未確認事項
 
 - 一覧のページが要求ごとに描かれるか、キャッシュされるかを本番のビルドで確かめていない
-- 公開の記事が増えた時の一覧の重さ（`limit` を渡さず全部を取り、行ごとに署名する）
+- 公開の記事が増えた時の一覧の重さ（`limit` を渡さず全部を取る。署名は 2026-10-26 にやめた）
 - `/api/news` と部品の自分で取り出す枝を残すか（今の画面からは通らない、推定）
 - `NewsCategoryTabs` を消すか（`docs/05_Quality/reports/unused-code.md` で判断する）
 - BLOG を分類に残すか、分類は1つか複数か（要件の文書の未確認事項と同じ）

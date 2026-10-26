@@ -1,6 +1,6 @@
 # テスト仕様
 
-> 状態: 現行の方針（G-3 Task 12 の発送票の操作・出荷日のE2Eと止めていた旧の発送のE2Eの移設の節は 2026-10-26 に追記〔E2Eの実測は controller の実行後〕。G-3 Task 11 の荷作り・同梱メール・権限のE2Eと再開した配送のE2Eの節は 2026-10-26 に追記〔E2Eの実測は同節に記録〕。G-3 Task 10 の書き手75本・末尾assert・並行・実PostgRESTの節は 2026-10-26 に追記。G-3 Task 8 のテストの節は 2026-10-26 に追記。グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 7の伝票番号の後入力・訂正と手動の配達済みのDB・単体を追記）（G-3 Task 6の発送の取消のDB・単体を追記）（G-3 Task 4の発送票の下書きのDB・単体を追記）（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
+> 状態: 現行の方針（波 1-B のセキュリティの穴の修正のテストの節は 2026-10-26 に追記〔単体・結合は通過、E2E・DB 結合は未実行〕。G-3 Task 12 の発送票の操作・出荷日のE2Eと止めていた旧の発送のE2Eの移設の節は 2026-10-26 に追記〔E2Eの実測は controller の実行後〕。G-3 Task 11 の荷作り・同梱メール・権限のE2Eと再開した配送のE2Eの節は 2026-10-26 に追記〔E2Eの実測は同節に記録〕。G-3 Task 10 の書き手75本・末尾assert・並行・実PostgRESTの節は 2026-10-26 に追記。G-3 Task 8 のテストの節は 2026-10-26 に追記。グループ G-1 のテストの節は 2026-10-24 に、グループ G-2 のテストの節は 2026-10-25 に追記し、Task 3 の在庫一覧表と Task 4 の発注の作成と Task 5 の発注一覧表・発注書の詳細と Task 6 の数量の確定・訂正・打切り・発注先の訂正と Task 7 の受け取りとその取消・数量訂正と Task 8 の取引書類の原本の分と Task 9 の書き手の閉じた一覧・全入口の並行・移行の末尾の確かめの分と Task 10 の E2E（FR-ADMIN-111・113・114・115・119 と FR-ADMIN-123 の G-2 の節）の分も同日に足した） | 確認日: 2026-10-25（G-3 Task 7の伝票番号の後入力・訂正と手動の配達済みのDB・単体を追記）（G-3 Task 6の発送の取消のDB・単体を追記）（G-3 Task 4の発送票の下書きのDB・単体を追記）（G-3 Task 3の読取の窓口・画面・管理メニュー・旧い案内の置換の単体を追記）（G-3 Task 2の読取DB部分を追記）（G-3 Task 1 を追記） | 対象: 要件からテストへの追跡、テストの層、開始・終了条件 | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
 
@@ -400,3 +400,58 @@ controller の実測（今回のレビュー修正より前）:
 止めていた旧の発送のE2E（`G-1: 旧配送操作停止` の skip 25箇所）の処置は、元のケースを削除して上のケースと拡張した [FR-ADMIN-116](../../../e2e/FR-ADMIN-116-packing-shipment-slips.spec.ts)・[120](../../../e2e/FR-ADMIN-120-combined-shipment-emails.spec.ts) へ移した。移設先が元の期待を含むことは、足した期待で確かめた: 116 ①（発送前に返金した行は出ず、一部返金は残りの数だけ。窓口を直に呼んでも送らせない）、②（開いた後に止めが付いた行を選んで発送すると断りの文が画面の中に出る）、③（「お客様に発送のメールを送る」は最初から入り、外した発送のメールの予定は作られない）、④（運送会社と伝票番号を入れて確定すると全注文の発送と注文に入る）、⑧（応答が届かない時と500番台の時に二重にならない）、⑩（送る数が0や準備中を超えると発送が押せない）、120 ①（発送のメールの予定は自動の1行ずつ）、②（値段は書かない・同じ注文の残りを別の票で送った2通目に残りの案内は入らない）。ファイルのケースが全部移ったもの（FR-ADMIN-066・068・071・100・101）は、docs のリンク先を保つためケース0のファイルで残した（FR-ADMIN-050・072・082・088・093 には元から止めていなかったケースだけが残る）。整合の確かめ（`delivery-status-traceability`・`order-status-traceability`）は、移設先の FR-ADMIN-117 を指すように直した。また、`order-fulfillment-test-utils` の旧の発送の画面の材料（`shipMaterials`・`materialLine`・`READY_PROGRESS`）と、`return-test-utils` の `exchangeMaterialLine`・`RETURN_TEXT.shipHold`・`shipHoldRefusal`・`hasReturnRefusal` は、削除したケースだけが使っていたので消した。
 
 DB結合 [group_g3_cancel](../../../tests/integration/db/group_g3_cancel.integration.test.ts) の「配達済みの票も取り消せ、delivered→ready に戻る」は、直接の `UPDATE` で配達済みにしていたのを、手動の配達済みの書き手 `admin_mark_shipment_slip_delivered` に替えた（配達済みの出来事・状態の差分・票の版の行が本物と同じに残る。票は版3になるので取消は版3を渡す）。ローカルDBで `group_g3_cancel` 41/41 成功（2026-10-26）。
+
+## 開店前のセキュリティの穴 波 1-B のテスト（SEC-AUTH・SEC-ADMIN・SEC-STOCKIST・SEC-NEWS・SEC-HOME）
+
+確認日: 2026-10-26。波 1-B（認証の窓口・登録と確認・管理の窓口・取扱店・お知らせ・ホーム）で書き直した試験をまとめる。単体・結合は実装者が流して通した（Task 1〜8 の報告。最後の確認は Task 9 の `--findRelatedTests` で 135 スイート 3121 件通過）。**E2E・DB 結合は書いただけで流していない**ので、下の E2E の列は controller の本番ビルドでの実測の後に確かめる（外した `test.fail` が緑になること）。試験名の先頭の ID は `validate-trace` の層の決まりに合わせた（単体・結合に `SEC-` を付けると `wrong-test-level` になるため、`DD-`・`API-`・`ARC-` にした）。対応表（`docs/05_Quality/reports/`）は `npm run trace:report` で作り直す。
+
+### 新しく作った試験ファイル
+
+| ファイル | 先頭の ID | 確かめること |
+| --- | --- | --- |
+| [amr.test.ts](../../../tests/unit/lib/auth/amr.test.ts) | `DD-AUTH-030` | `hasSecondFactorAmr`（通行証の `amr` に 2 段目の方法があるか）。password だけでは偽（SEC-AUTH-031 の局所版） |
+| [revoke-user-sessions.test.ts](../../../tests/unit/lib/auth/revoke-user-sessions.test.ts) | `DD-ADMIN-003` | `revokeAllSessionsForUser`。アプリの `sessions` の失効の誤りと RPC `revoke_auth_sessions_for_user` の誤りをそれぞれ投げる（SEC-ADMIN-007・014） |
+| [stockist-schemas.test.ts](../../../tests/unit/features/stockist/stockist-schemas.test.ts) | `DD-STOCKIST-034` | `stockistWriteSchema` の許可の字・拒否の字、`toInvalidStockistResponse` が `fields` だけを返し `details`・入力の値を含まないこと（SEC-STOCKIST-011・014）。電話の末尾の改行は `trim()` が先に取り除くので通り、途中の改行は拒む |
+
+### 窓口の単体（`tests/unit/api/`）
+
+| ファイル | 先頭の ID | 確かめること |
+| --- | --- | --- |
+| auth: `mfa-verify-route`・`mfa-enroll-totp-route`・`refresh-route`・`otp-verify-route`・`confirm-route`・`register-route` | `DD-AUTH-015`（otp）・`018`（register）・`019`（confirm）・`027`（refresh）・`030`（enroll-totp）・`031`（mfa-verify） | MFA 検証の利用者単位の枠と監査（429・404・challenge の誤り・コードの誤り・成功・保存の失敗。本文 400・401/503・403 は書かない）、初回 TOTP の `amr` の確かめ、refresh の `{ ok: true }`、OTP の `{ user:{id,email,role}, message }`、`confirm` の `type` が `signup` 以外で `verifyOtp` を呼ばないこと・別のブラウザで session を作らず `signOut(local)` すること、`register` の管理の鍵の枝が無いこと・宛先単位の枠（5 回/3600 秒）・201 の本文 |
+| admin: `revoke-user-sessions-route`・`mfa-reset-route` | `DD-ADMIN-003`・`DD-ADMIN-005` | 認可失敗の監査の上限（10 分 20 行）、管理者単位の枠、UUID・自分自身・存在しない利用者、MFA リセットの `user_roles` 判定・理由のハッシュだけを監査に残すこと・全 session の失効 |
+| admin: `create-user-route`・`item-color-presets-route`・`item-color-presets-id-route` | `DD-ADMIN-002`・`DD-ADMIN-011`・`DD-ADMIN-012` | 認可の後の枠（認可で断った要求は数えない）、壊れた JSON は 400、パスワードの長さと漏洩の確かめ、色見本の id の形と 0 行の 404 |
+| admin: `admin-contact-route`・`admin-contact-id-route`・`admin-contact-reply-route`・`admin-contact-templates-route`・`admin-contact-templates-id-route`・`audit-logs-route` | `DD-ADMIN-006`（一覧）・`007`（詳細・状態）・`008`（返信）・`009`（テンプレート）・`010`（テンプレート `[id]`）・`004`（監査ログ） | 読み出しの記録（`admin.contact.list`・`admin.contact.read`・`admin.audit_logs.read`。記録が拒まれても 200）、`submitted_ip`・`user_agent` を返さないこと、UUID でない id と 0 行の 404、返信の件名の制御文字・状態の更新の誤り・送り手の設定なし |
+| stockists・news: `stockists-route`・`stockists-id-route`・`news-admin-id-route`・`news-public-service`・`news-route` | `DD-STOCKIST-034`・`035`（stockists の route 2 本）、`DD-NEWS-065`（管理 `[id]`）・`003`（公開の取り出し）・`004`（`/api/news`） | 管理の列の絞り・0 行の 404 と failure の監査・`fields` だけの 400・壊れた JSON。お知らせの公開の取り出しが service role と署名を使わず、応答に `image_url` が無いこと。管理のお知らせの変更の 0 行・形の悪い id（18 桁の境界）の 404 |
+| ほか: `stockist-public-service`（取扱店の公開の取り出し。`createPublicClient` と上限 200）、`home-page.test.tsx`（ITEM を 8 件取る）、`login-page.test.tsx`・`auth-tabs.test.tsx`（`/login?registered=1` の案内）、`PublicNewsGrid.test.tsx` | `DD-STOCKIST-003`・`DD-HOME-001`・`DD-AUTH-001`（login-page）・`DD-AUTH-010`（auth-tabs）・`DD-NEWS-001` | 公開の取り出しの件数の天井、ホームの取得件数、確認リンクを別のブラウザで開いた後の案内（`role="status"`。タブを替えても残る） |
+
+控えの結び付け（SEC-AUTH-007）は `tests/unit/features/auth/return-intent/return-intent-store.test.ts`（`DD-AUTH-033`。bindTo 付きのハッシュの式）と `return-intent-service.test.ts`（`DD-AUTH-034`。`alwaysCreate`・`consumeSignupBinding`・`resolveStoredDestination`）で確かめる。
+
+### 結合（`tests/integration/`）
+
+| 領域 | ファイル | 確かめること |
+| --- | --- | --- |
+| AUTH | `api/auth/{mfa-verify,refresh,otp-verify,confirm,register,register-enumeration,return-intent-flow}`、`api/auth-{mfa-verify-api,mfa-enroll-totp-api,admin-totp-flow,otp-verify-api,bot-rate-limit,password-rule}`、`api/auth.test.ts`、`auth-flow.test.ts`、`ui/auth-register-flow.test.tsx` | MFA 検証の 6 回目が 429、`amr: otp` の通行証だけが初回 TOTP を登録できる、応答の本文、`confirm` の登録を始めたブラウザだけが session を作る往復（別のメール・Cookie 無し・使用済み・期限）、`register` の管理の鍵が効かない・宛先の枠の数え方と順番 |
+| ADMIN | `api/admin/{revoke-user-sessions,audit-logs}`、`api/admin-misc/{admin-mfa-reset-api,admin-audit-write,admin-authorization-path,admin-origin-guard}`、`api/admin-create-user-api`、`api/admin-item-color-presets-{save,delete}-api`、`api/admin-contact-{detail,list,reply,status,templates-create,templates-update,templates-delete}-api` | 窓口ごとの枠（`@/features/auth/middleware/rateLimit` を差し替え）、UUID・0 行の 404、読み出しの記録、MFA リセットの失効。`admin-origin-guard` の回数を数える窓口の一覧に 10 窓口を足した |
+| STOCKIST | `api/stockist-admin-{create,item-get,item-put,item-patch,item-delete,list}-api`・`api/stockist-admin-write-path`・`api/stockist-admin-guards`（後ろの2本は末尾に `-api` が付かない）、`ui/stockist-public-read-path.test.tsx` | 8 列、404 + failure の監査（success を書かない）、`fields` の 400、公開の取り出しが `createPublicClient` |
+| NEWS・HOME | `api/news-{public-api,image-signing,admin-item-put-api,admin-item-patch-api,admin-item-delete-api,admin-write-path,latest-action}`、`api/home-page-{public-read,proxy-csp}`、`ui/news-*`・`ui/home-page-*` | 公開は署名も service role も使わない、管理の 0 行・不正 id の 404、ホームの取得が 8 件（お知らせは service role を作らない） |
+
+DB 結合は新しく書いていない。控えのハッシュの式は DB の関数が中身を知らないので `tests/integration/db/auth_return_intents.integration.test.ts` に足していない。
+
+### E2E で外した `test.fail`（38 行。実測は controller の実行後）
+
+`git diff -U0 HEAD -- e2e` で数えた（`test.fail(` の削除 39 行のうち 1 行は文面だけを直して残した）。
+
+| ファイル（`e2e/FR-...`） | 外した要件 ID |
+| --- | --- |
+| `ADMIN-MISC-002` | SEC-ADMIN-008-AC-02、SEC-ADMIN-012-AC-01、SEC-ADMIN-013-AC-01、SEC-ADMIN-013-AC-02 |
+| `ADMIN-MISC-003` | SEC-ADMIN-007-AC-01、SEC-ADMIN-008-AC-01、SEC-ADMIN-014-AC-01・AC-02、SEC-ADMIN-015-AC-01・AC-02 |
+| `ADMIN-MISC-004`・`006`・`007` | SEC-ADMIN-023-AC-01、SEC-ADMIN-020-AC-01・SEC-ADMIN-021-AC-01、SEC-ADMIN-006-AC-01・AC-02・SEC-ADMIN-018-AC-01 |
+| `HOME-023` | SEC-HOME-013 |
+| `LOGIN-030`・`LOGIN-032` | SEC-AUTH-022（本文）、SEC-AUTH-009-AC-01・AC-02、SEC-AUTH-031-AC-01 |
+| `SIGNUP-002`・`SIGNUP-003` | SEC-AUTH-016-AC-03、SEC-AUTH-017-AC-01、SEC-AUTH-006-AC-01、SEC-AUTH-007-AC-01 |
+| `NEWS-SEC-001`・`NEWS-SEC-005` | SEC-NEWS-005（2 本）、SEC-NEWS-007（2 本）、SEC-NEWS-008、SEC-NEWS-016 |
+| `STOCKIST-015`・`STOCKIST-017` | SEC-STOCKIST-009・011・013（2 本）・014（2 本）、SEC-STOCKIST-018 |
+
+`FR-SIGNUP-003` は `SEC-AUTH-007-AC-02`（Cookie の無いブラウザで開くと `/login` へ 303・session の Cookie 無し・メール確認済み）と `SEC-AUTH-007-AC-03`（別の未確認会員の印を開いても session を作らず、登録中の控えの Cookie が残る）を足した。3 つの幅（390/768/1280px）で流す。残した `test.fail` は、環境の設定が要る物（`enable_confirmations`・`[auth.mfa.totp]`）と、波 2 以降の物（IP は波 4、no-store は波 1-C・波 3、DB の RLS は波 2・5）。
+
+E2E の枠の数え直し（Task 9）: 共有の管理者が 10 分の枠（強制失効 20・MFA リセット 10・ユーザー作成 20・色見本 60・問い合わせの書き込み 60・返信 30）を超える所は無い。揺れるのは `FR-ADMIN-MISC-003` の `SEC-ADMIN-007-AC-01`（50 回送る。全体の認可失敗の監査が 10 分 20 行で、窓の境目をまたぐと最大 40 行になりうる）。揺れたら窓の頭まで待つ。

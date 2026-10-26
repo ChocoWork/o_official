@@ -4,13 +4,14 @@
  * @packageDocumentation
  * @impl IMPL-ADMIN-125
  * @design DD-ADMIN-010
- * @remarks テンプレートの表は直接の読み書きを断っているので、権限を確かめた後に service role で書く。並び順を渡されなければ変えないよう、渡された時だけ書き換える。誰が変えたかを監査に残す。
+ * @remarks テンプレートの表は直接の読み書きを断っているので、権限を確かめた後に service role で書く。並び順を渡されなければ変えないよう、渡された時だけ書き換える。誰が変えたかを監査に残す。id が UUID でない・変えた行が0行の時は成功と返さず404にし、失敗を監査に残す。更新と削除は問い合わせの状態の変更・テンプレートの作成と合わせて、管理者単位で10分に60回までに絞る。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
 const updateTemplateSchema = z.object({
   title: z.string().trim().min(1).max(120),
@@ -18,6 +19,10 @@ const updateTemplateSchema = z.object({
   body: z.string().trim().min(1).max(5000),
   sortOrder: z.number().int().min(0).max(9999).optional(),
 });
+
+const CONTACT_WRITE_RATE_LIMIT = { endpoint: 'admin:contact:write', limit: 60, windowSeconds: 600 } as const;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -27,6 +32,15 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       return authz.response;
     }
 
+    const limited = await enforceRateLimit({ request, ...CONTACT_WRITE_RATE_LIMIT, subject: authz.userId });
+    if (limited) {
+      return limited;
+    }
+
+    if (!UUID_PATTERN.test(id)) {
+      return NextResponse.json({ error: 'Template not found' }, { status: 404 });
+    }
+
     const parsed = updateTemplateSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
       return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 });
@@ -34,7 +48,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     const service = await createServiceRoleClient();
 
-    const { error } = await service
+    const { data: updated, error } = await service
       .from('contact_reply_templates')
       .update({
         title: parsed.data.title,
@@ -43,11 +57,25 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         ...(parsed.data.sortOrder !== undefined ? { sort_order: parsed.data.sortOrder } : {}),
         updated_at: new Date().toISOString(),
       })
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) {
       console.error('Failed to update reply template:', error);
       return NextResponse.json({ error: 'Failed to update template' }, { status: 500 });
+    }
+
+    if (!updated || updated.length === 0) {
+      await logAudit({
+        action: 'admin.contact.template.update',
+        actor_id: authz.userId,
+        resource: 'contact_reply_template',
+        resource_id: id,
+        outcome: 'failure',
+        detail: 'template_not_found',
+        user_agent: request.headers.get('user-agent'),
+      });
+      return NextResponse.json({ error: 'Template not found' }, { status: 404 });
     }
 
     await logAudit({
@@ -75,13 +103,39 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return authz.response;
     }
 
+    const limited = await enforceRateLimit({ request, ...CONTACT_WRITE_RATE_LIMIT, subject: authz.userId });
+    if (limited) {
+      return limited;
+    }
+
+    if (!UUID_PATTERN.test(id)) {
+      return NextResponse.json({ error: 'Template not found' }, { status: 404 });
+    }
+
     const service = await createServiceRoleClient();
 
-    const { error } = await service.from('contact_reply_templates').delete().eq('id', id);
+    const { data: deleted, error } = await service
+      .from('contact_reply_templates')
+      .delete()
+      .eq('id', id)
+      .select('id');
 
     if (error) {
       console.error('Failed to delete reply template:', error);
       return NextResponse.json({ error: 'Failed to delete template' }, { status: 500 });
+    }
+
+    if (!deleted || deleted.length === 0) {
+      await logAudit({
+        action: 'admin.contact.template.delete',
+        actor_id: authz.userId,
+        resource: 'contact_reply_template',
+        resource_id: id,
+        outcome: 'failure',
+        detail: 'template_not_found',
+        user_agent: request.headers.get('user-agent'),
+      });
+      return NextResponse.json({ error: 'Template not found' }, { status: 404 });
     }
 
     await logAudit({

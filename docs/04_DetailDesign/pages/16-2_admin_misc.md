@@ -1,6 +1,6 @@
 # 1.16-2 管理のそのほか（ADMIN）詳細設計
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: 利用者の作成の画面と窓口・セッションの強制失効・監査ログの読み出しと掃除・2要素のリセット・問い合わせの管理の窓口・返信の宛先の部品・商品の色見本の窓口 | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: 利用者の作成の画面と窓口・セッションの強制失効・監査ログの読み出しと掃除・2要素のリセット・問い合わせの管理の窓口・返信の宛先の部品・商品の色見本の窓口 | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -26,7 +26,7 @@
 | `DD-ADMIN-015` | 古い監査ログを消す（未使用（削除の判断待ち）） | `src/lib/auditCleanup.ts` の `cleanupAuditLogs` |
 
 - 結論: 窓口は全部、頭で共有の認可（`authorizeAdminPermission`）を通し、通った後にだけ service role の client で表と Auth の管理の機能を使う。画面は利用者の作成の1つだけで、画面には守りが無い
-- 今のコードは、存在しない id への変更を 200 の成功として返す、本文の JSON が壊れていると 500 を返す（作成・強制失効・色見本の保存）、一部の DB の書き込みの誤りを見ない、などの動きを持つ。届かないセキュリティ要件は上位に書かず、本文では `SEC-ADMIN-NNN を参照` と指す（構造設計と同じ決め方）
+- 今のコードは、存在しない id への変更を 200 の成功として返す（問い合わせ・テンプレート）、一部の DB の書き込みの誤りを見ない、などの動きを持つ（強制失効・2要素のリセット・作成・色見本は 2026-10-26 に直した）。届かないセキュリティ要件は上位に書かず、本文では `SEC-ADMIN-NNN を参照` と指す（構造設計と同じ決め方）
 - 15 単位の全部に単体テスト（`tests/unit/`）がある。強制失効と監査ログの既存の結合試験（`tests/integration/api/admin/`）は、分岐の網羅には数えない。各項目の「テスト観点」は、分岐を全部通すのに要る確かめ
 
 ## 範囲と根拠
@@ -49,6 +49,8 @@
 | メールの送り手 | `src/lib/mail.ts` | 管理の返信のメールを送る |
 | 注文番号の形 | `src/lib/orders/order-number.ts` の `toOrderNumber` | 問い合わせの詳細で注文の id を注文番号にする |
 | Supabase の client | `src/lib/supabase/server.ts` の `createServiceRoleClient` | 全部の窓口と掃除の部品の DB・Auth の管理の機能 |
+| 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit`、`src/features/auth/ratelimit/index.ts` の `incrementCounter` | 書き込みの窓口が全部（強制失効・2要素のリセット・ユーザー作成・色見本・問い合わせの状態の変更と返信・テンプレートの作成と更新と削除）、認可を通った管理者の id を鍵に回数を数える（SEC-ADMIN-006）。強制失効の認可失敗の監査の上限（全体で 10 分に 20 行）も `incrementCounter` で数える（ADR-0460） |
+| 全 session の失効 | `src/lib/auth/revoke-user-sessions.ts` の `revokeAllSessionsForUser`（範囲外の共有部品） | 自前の `sessions` の失効の時刻と Auth 側の session の削除を1つにまとめる。強制失効（DD-ADMIN-003）と2要素のリセット（DD-ADMIN-005）が使う |
 | 画面の部品 | `src/components/ui/Button/Button.tsx`、`src/components/ui/TextField/TextField.tsx` | 利用者の作成の画面 |
 
 ## 実装の単位
@@ -74,13 +76,13 @@
 | `src/lib/auditCleanup.ts` | `cleanupAuditLogs` | DD-ADMIN-015 |
 
 - 窓口のファイルは、中の GET・POST などが別々の契約でも、単位がファイルなので1つの `DD-` にまとめた。項目の本文で方法ごとに分けて書く
-- 単位にならない物: 2要素のリセットの窓口の中の `resolveRoleFromAppMetadata`・`isMfaFactorList`、問い合わせの一覧の窓口の中の `sanitizeSearchTerm`、`reply-address.ts` の `computeToken`・`safeEqual`（export しない関数。それぞれの項目に含める）、`auditCleanup.ts` の最後の既定の書き出し（後から出す形）
+- 単位にならない物: 強制失効の窓口の中の `auditUnauthorized`・`isTargetNotFound`、2要素のリセットの窓口の中の `isMfaFactorList`・`readRoleCode`・`resolvePrivilegedRole`、問い合わせの一覧の窓口の中の `sanitizeSearchTerm`、`reply-address.ts` の `computeToken`・`safeEqual`（export しない関数。それぞれの項目に含める）、`auditCleanup.ts` の最後の既定の書き出し（後から出す形）
 - `reply-address.ts` の2つは、範囲外の公開の問い合わせ（`src/app/api/contact/route.ts`）と受信（`src/app/api/contact/inbound/route.ts`）も使う。CONTACT の領域が範囲に入る時は、この頁の `DD-ADMIN-013`・`014` を `（範囲外）` で指し、同じ単位に別の `DD-` を作らない
 - 窓口の TSDoc に、メソッドの宣言の形（書き出しの語と関数の名前を並べた文）を書かない。`tests/unit/docs/delivery-status-traceability.test.ts` と `tests/unit/docs/order-status-traceability.test.ts` が `src/app/api` の全部の route.ts をコメントごと読み、その形の数を固定している
 
 ## 管理の窓口に共通の動き
 
-`DD-ADMIN-002`〜`012` の全部の方法が、最初に `authorizeAdminPermission(<権限>, request)` を呼び、`ok` でなければその応答をそのまま返す（強制失効だけは返す前に監査を書く。DD-ADMIN-003）。認可の部品は `src/lib/auth/admin-rbac.ts` の `authorizeAdminPermission` で、応答は次のとおり。
+`DD-ADMIN-002`〜`012` の全部の方法が、最初に `authorizeAdminPermission(<権限>, request)` を呼び、`ok` でなければその応答をそのまま返す（強制失効だけは返す前に、上限つきで監査を書く。DD-ADMIN-003）。認可の部品は `src/lib/auth/admin-rbac.ts` の `authorizeAdminPermission` で、応答は次のとおり。
 
 | 条件 | 応答 |
 | --- | --- |
@@ -95,7 +97,7 @@
 - 権限: 作成・強制失効・2要素のリセットは `admin.users.manage`、監査ログは `admin.audit.read`、問い合わせの読みは `admin.contact.read`・書きは `admin.contact.manage`、色見本の読みは `admin.items.read`・書きは `admin.items.manage`（DATA-ADMIN-006）
 - DB: 認可の後に `createServiceRoleClient()` を作る。RLS を通らないので、守りは窓口の認可1つになる（ARC-ADMIN-001、DATA-ADMIN-002）
 - 例外: どの方法も外側の try/catch で 500 `{error:'Internal server error'}` を返し、例外を `console.error` にそのまま渡す
-- 回数の制限は無い（SEC-ADMIN-006 を参照。TM-ADMIN-36）。CSRF は proxy の Origin の検査だけで、窓口は `requireCsrfOrDeny` を呼ばない（ARC-ADMIN-002）
+- 回数の制限: 強制失効（20 回 / 10 分）、2要素のリセット（10 回 / 10 分）、ユーザー作成（20 回 / 10 分）、色見本の保存と削除（60 回 / 10 分。同じ枠を分け合う）、問い合わせの返信（30 回 / 10 分）、問い合わせの状態の変更とテンプレートの作成・更新・削除（60 回 / 10 分。4 つの窓口で同じ枠を分け合う）は、認可の直後・本文を読む前に、認可を通った管理者の id を鍵にして数える（SEC-ADMIN-006）。これで範囲の書き込みの窓口は全部、回数の制限を持つ（TM-ADMIN-36 を解消）。読み出しは数えない。CSRF は proxy の Origin の検査だけで、窓口は `requireCsrfOrDeny` を呼ばない（ARC-ADMIN-002）
 - テストの共通の形: `@/lib/auth/admin-rbac`・`@/lib/supabase/server`・`@/lib/audit` を差し替え、認可が `ok:false` を返す時は認可の応答をそのまま返して DB を作らないこと、外側の catch に落ちる例外（`createServiceRoleClient` が投げる等）で 500 になることを、方法ごとに1件ずつ確かめる
 
 ## 詳細設計
@@ -105,7 +107,7 @@
 | 属性 | 値 |
 | --- | --- |
 | 上位 | SCR-ADMIN-001、ARC-ADMIN-002 |
-| 根拠 | 店長がその場でアカウントを用意する画面（SCR-ADMIN-001）。会員登録と同じ 16 文字の決まりを送る前に見せて、短い入力を早く直せるようにする（窓口の下限は 8 文字で、画面の方が厳しい）。画面は守りを持たず、作れるかは窓口の認可で決まる。送る時は CSRF の印を付けず、proxy の Origin の照合に任せる（ARC-ADMIN-002） |
+| 根拠 | 店長がその場でアカウントを用意する画面（SCR-ADMIN-001）。会員登録と同じ 16 文字の決まりを送る前に見せて、短い入力を早く直せるようにする（窓口も同じ 16〜128 字と漏洩の照合を当てる）。画面は守りを持たず、作れるかは窓口の認可で決まる。送る時は CSRF の印を付けず、proxy の Origin の照合に任せる（ARC-ADMIN-002） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/admin/create-user/page.tsx`）、`docs/03_BasicDesign/ui/screen-list.md` |
@@ -132,7 +134,7 @@
 | 条件 | 動き |
 | --- | --- |
 | メールが空、またはパスワードが空 | 「メールとパスワードを入力してください」を出し、送らない |
-| パスワードが 16 文字未満 | 「パスワードは16文字以上にしてください」を出し、送らない。窓口は 8 文字から通すので、窓口を直に呼べば 8〜15 文字でも作れる（SEC-ADMIN-012 を参照） |
+| パスワードが 16 文字未満 | 「パスワードは16文字以上にしてください」を出し、送らない。窓口も同じ 16〜128 字と漏洩の照合を当てるので、窓口を直に呼んでも短いパスワードでは作れない（SEC-ADMIN-012） |
 | 201 でない | 応答の `error`（英語の固定の文。例 `Email already registered`・`Forbidden`）を出す。本文が読めない・`error` が無ければ「作成に失敗しました」（TM-ADMIN-28） |
 | 通信の例外 | 記録して「ネットワークエラーが発生しました」 |
 
@@ -155,7 +157,7 @@
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-ADMIN-001、ARC-ADMIN-001、ARC-ADMIN-003、DATA-ADMIN-006、SEC-ADMIN-001 |
-| 根拠 | Auth の利用者を作る機能は service role でしか呼べないので、店長に固定した `admin.users.manage` と aal2 を確かめてから呼ぶ（API-ADMIN-001、ARC-ADMIN-001、DATA-ADMIN-006、SEC-ADMIN-001）。作れた・重なった・失敗したを監査に分けて残し、誰がいつ誰を作ったかをたどれるようにする（ARC-ADMIN-003） |
+| 根拠 | Auth の利用者を作る機能は service role でしか呼べないので、店長に固定した `admin.users.manage` と aal2 を確かめてから呼ぶ（API-ADMIN-001、ARC-ADMIN-001、DATA-ADMIN-006、SEC-ADMIN-001）。作れた・重なった・失敗したを監査に分けて残し、誰がいつ誰を作ったかをたどれるようにする（ARC-ADMIN-003）。管理者が作る利用者にも会員と同じ 16〜128 字と漏洩の照合を当て、弱いパスワードの口を残さない。大量作成を抑えるため管理者単位で数える。監査には外のサービスの誤りの文（メールを含みうる）を入れず、固定の符号だけを残す |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/create-user/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
@@ -166,40 +168,47 @@
 
 | 向き | 中身 |
 | --- | --- |
-| 入力 | POST。JSON `{email, password, display_name?}`。`email` はメールの形、`password` は 8 文字以上、`display_name` は任意の文字（長さの上限なし） |
-| 出力 | 201 `{id, email}`、400 `{error:'Invalid request'}`、409 `{error:'Email already registered'}`、500 `{error:'Failed to create user'}` か `{error:'Internal server error'}` |
+| 入力 | POST。JSON `{email, password, display_name?}`。`email` はメールの形、`password` は 16〜128 字（`passwordSchema`）、`display_name` は任意で前後の空白を除いて 100 字まで |
+| 出力 | 201 `{id, email}`、400 `{error:'Invalid request'}` か `{error:<漏洩したパスワードの固定の文>}`、409 `{error:'Email already registered'}`、429、500 `{error:'Failed to create user'}` か `{error:'Internal server error'}` |
 
 **正常フロー:**（`src/app/api/admin/create-user/route.ts`）
 
 1. `admin.users.manage` で認可し、操作した人の id とメールを控える
-2. 本文を JSON で読み、形を確かめる
-3. service role の client で Auth の管理の機能に利用者を作らせる。表示名は利用者の付帯の情報（`user_metadata.display_name`）に入れる。確認済みの印は渡さず、役割も付けない
-4. 監査に結果 `success` と作った利用者の id を書き、201 で id とメールを返す。作った結果に利用者が無ければ id とメールは空になる（結果の利用者への省略可能な参照）
+2. 認可を通った管理者の id を鍵にして 20 回 / 10 分で数える。超えたら 429（本文は読まない）
+3. 本文を JSON で読み（壊れていれば `null` として扱う）、形を確かめる
+4. パスワードを漏洩の照合（`checkPwnedPassword`）にかける。漏れていれば作らない（異常フロー）。照合が使えなければ監査に残して先へ進む
+5. service role の client で Auth の管理の機能に利用者を作らせる。表示名は利用者の付帯の情報（`user_metadata.display_name`）に入れる。確認済みの印は渡さず、役割も付けない
+6. 監査に結果 `success` と作った利用者の id を書き、201 で id とメールを返す。作った結果に利用者が無ければ id とメールは空になる（結果の利用者への省略可能な参照）
 
 **異常フロー:**
 
 | 条件 | 動き |
 | --- | --- |
 | 認可の失敗 | 認可の応答をそのまま返す。監査は書かない |
-| 本文の JSON が壊れている | 外側の catch で 500 `Internal server error`。監査は書かない（SEC-ADMIN-013 を参照） |
-| 形が合わない | 監査に結果 `failure`・`Invalid request body` を書き、400 |
-| 作成の誤りで、誤りの文に `already` か `duplicate` を含む（大文字小文字を問わない） | 監査に結果 `conflict` と誤りの文のまま、409 |
-| 作成のほかの誤り（誤りの文が空の時も） | 監査に結果 `error` と誤りの文のまま、500 `Failed to create user`（SEC-ADMIN-008 を参照） |
+| 回数の超過 | 限度器の応答（429。限度器が壊れていれば 503）をそのまま返す。作らず、監査も書かない |
+| 本文の JSON が壊れている・形が合わない（パスワードが 16 字未満か 128 字超、表示名が 100 字超を含む） | 監査に結果 `failure`・`Invalid request body` を書き、400。漏洩の照合も作成も呼ばない |
+| 漏洩したパスワード | 監査に結果 `failure`・`pwned_password` を書き、400（本文は会員登録と同じ固定の文）。作らない |
+| 漏洩の照合が使えない（外の API の時間切れなど） | 監査に結果 `error`・`pwned_check_unavailable:<符号>` を書き、作成へ進む（fail-open） |
+| 作成の誤りで、誤りの文に `already` か `duplicate` を含む（大文字小文字を問わない） | 監査に結果 `conflict`・`email_already_registered`、409。誤りの文は監査に入れず `console.error` へ |
+| 作成のほかの誤り（誤りの文が空の時も） | 監査に結果 `error`・`create_user_failed`、500 `Failed to create user`。誤りの文は監査に入れず `console.error` へ（SEC-ADMIN-008） |
 | 例外 | 500 `Internal server error` |
 
 **状態・永続化:** 書くのは Supabase Auth の利用者（`auth.users`）と `audit_logs` の1行。監査には操作した人のメールを入れ、IP とブラウザの情報は入れない（ARC-ADMIN-003。SEC-ADMIN-022 を参照）。
 
-**認証認可:** `admin.users.manage`（店長に固定。DATA-ADMIN-006）と aal2。CSRF は proxy の Origin の照合だけ。パスワードは 8 文字から通し、漏洩の照合もしない（SEC-ADMIN-012 を参照）。
+**認証認可:** `admin.users.manage`（店長に固定。DATA-ADMIN-006）と aal2。CSRF は proxy の Origin の照合だけ。パスワードは 16〜128 字と漏洩の照合を求める（SEC-ADMIN-012）。回数は認可を通った管理者の id だけを鍵にして数える（SEC-ADMIN-006）。
 
 **テスト観点:**（`tests/unit/api/admin/create-user-route.test.ts`）
 
 - 認可が `ok:false` の時は認可の応答を返し、Auth の機能も監査も呼ばない
-- 本文が JSON でない時は 500 `Internal server error`
-- メールの形でない・パスワードが 7 文字の時は 400 で、監査に `failure`
+- 本文が JSON でない時は 400 で、監査に `failure`（500 にしない）
+- 回数の枠が認可の直後に `{endpoint:'admin:users:create', limit:20, windowSeconds:600, subject:<管理者の id>}` で呼ばれる。超えたら 429 を返して作らない。認可で断った要求は数えない
+- メールの形でない・パスワードが 15 字の時は 400 で、監査に `failure`、漏洩の照合も作成も呼ばない。16 字と 128 字は通り、129 字は 400
+- 漏洩したパスワードは 400（固定の文）で、作らず、監査に `pwned_password`（パスワードを含まない）。照合が使えない時は作成へ進み、監査に `pwned_check_unavailable:timeout`
+- 表示名が 101 字の時は 400、前後に空白のある 100 字は切り詰めて通す
 - 作成が成功した時は 201 `{id, email}` で、監査に `success` と id。作成の結果に利用者が無い時も 201 で id とメールが空
 - 表示名を渡すと `user_metadata.display_name` に入る
-- 誤りの文が `User already registered` の時と `duplicate key` の時は 409 で、監査に `conflict`
-- 誤りの文がほかの時と空の時は 500 `Failed to create user` で、監査に `error`
+- 誤りの文が `User already registered` の時と `duplicate key` の時は 409 で、監査に `conflict`・`email_already_registered`。誤りの文もメールも監査に入らない
+- 誤りの文がほかの時と空の時は 500 `Failed to create user` で、監査に `error`・`create_user_failed`。誤りの文もメールも監査に入らない
 - `createServiceRoleClient` が例外を投げた時は 500 `Internal server error`
 
 ### DD-ADMIN-003 セッションの強制失効の窓口
@@ -207,55 +216,62 @@
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-ADMIN-002、ARC-ADMIN-001、ARC-ADMIN-003、DATA-ADMIN-004、SEC-ADMIN-001 |
-| 根拠 | 自前の表だけを直しても Auth の session と出した token が生き残るので、自前の `sessions` の行には失効の時刻を入れ（行は消さない）、service role だけが呼べる関数で Auth の session も消す（API-ADMIN-002、DATA-ADMIN-004）。人の session を切る操作は悪用もできるので、権限の無い試みも IP とブラウザの情報付きで監査に残す（ARC-ADMIN-003）。認可は共有の部品に任せる（ARC-ADMIN-001、SEC-ADMIN-001） |
+| 根拠 | 自前の表だけを直しても Auth の session と出した token が生き残るので、共有の部品 `revokeAllSessionsForUser` で、自前の `sessions` の行には失効の時刻を入れ（行は消さない）、service role だけが呼べる関数で Auth の session も消す（API-ADMIN-002、DATA-ADMIN-004）。人の session を切る操作は悪用もできるので、権限の無い試みも IP とブラウザの情報付きで監査に残すが、無限に増えないよう全体で 10 分に 20 行までにする（ARC-ADMIN-003、ADR-0460）。自分自身を失効して操作できなくなる誤りと、存在しない相手への成功の記録を防ぐ。認可は共有の部品に任せる（ARC-ADMIN-001、SEC-ADMIN-001） |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
-| 出どころ | 実装から推定（`src/app/api/admin/revoke-user-sessions/route.ts`）、`tests/integration/api/admin/revoke-user-sessions.test.ts` |
+| 出どころ | `src/app/api/admin/revoke-user-sessions/route.ts`、`src/lib/auth/revoke-user-sessions.ts`、`docs/superpowers/plans/2026-10-26-wave1b-local-fixes.md`（Task 4）、`tests/integration/api/admin/revoke-user-sessions.test.ts` |
 
-**対応要件 ID:** API-ADMIN-002、ARC-ADMIN-001、ARC-ADMIN-003、DATA-ADMIN-004、SEC-ADMIN-001（その上は FREQ-316-REQ-03（範囲外）、DRV-ADMIN-007、ADR-0454、SEC-ADMIN-004）
+**対応要件 ID:** API-ADMIN-002、ARC-ADMIN-001、ARC-ADMIN-003、DATA-ADMIN-004、SEC-ADMIN-001（その上は FREQ-316-REQ-03（範囲外）、DRV-ADMIN-007、ADR-0454、ADR-0460、SEC-ADMIN-004、SEC-ADMIN-006、SEC-ADMIN-007、SEC-ADMIN-013、SEC-ADMIN-015）
 
 **入出力:**
 
 | 向き | 中身 |
 | --- | --- |
-| 入力 | POST。JSON `{user_id}`（1 字以上の文字。UUID かは見ない）。見出し `x-forwarded-for`・`user-agent` |
-| 出力 | 200 `{ok:true}`、400 `{error:'Invalid request'}`、500 `{error:'Failed to revoke sessions'}` か `{error:'Internal server error'}`、認可の応答 |
+| 入力 | POST。JSON `{user_id}`（UUID）。見出し `x-forwarded-for`・`user-agent` |
+| 出力 | 200 `{ok:true}`、400 `{error:'Invalid request'}`・`{error:'Cannot revoke your own sessions'}`、404 `{error:'User not found'}`、429（回数の制限）、500 `{error:'Failed to revoke sessions'}` か `{error:'Internal server error'}`、認可の応答 |
 
 **正常フロー:**（`src/app/api/admin/revoke-user-sessions/route.ts`）
 
 1. 監査のために、`x-forwarded-for` の左端（前後の空白を除く）と `user-agent` を控える。どちらも無ければ空
 2. `admin.users.manage` で認可する
-3. 本文を JSON で読み、形を確かめる
-4. service role の client で、自前の `sessions` のその利用者の行に今の時刻の失効を入れる。この更新の誤りは見ない
-5. 関数 `revoke_auth_sessions_for_user` に利用者の id を渡し、Auth の session を消させる
-6. 監査に結果 `success` と消した Auth の session の数（返りが空なら 0）を書き、200 `{ok:true}`
+3. 管理者の id（認可が返した値）を鍵にして、`admin:users:revoke-sessions` を 20 回 / 600 秒で数える。超えた時と、限度器が壊れた時の応答は共有の部品のもの（429・503）をそのまま返し、本文は読まない
+4. 本文を JSON で読む（壊れていれば空の物として形の誤りに進む）。`user_id` が UUID でなければ形の誤り。UUID は大文字・小文字を区別しないので、小文字にそろえてから以降の比べ・問い合わせ・失効・監査の `resource_id` に使う
+5. `user_id`（小文字にそろえた物）が管理者自身なら断る
+6. service role の client で `auth.admin.getUserById` を呼び、対象の存在を確かめる
+7. `revokeAllSessionsForUser(user_id)` を呼ぶ。自前の `sessions` の行に今の時刻の失効を入れ、続けて関数 `revoke_auth_sessions_for_user` で Auth の session を消す。消した数（返りが空なら 0）を返す
+8. 監査に結果 `success` と消した Auth の session の数を書き、200 `{ok:true}`
 
 **異常フロー:**
 
 | 条件 | 動き |
 | --- | --- |
-| 認可の失敗 | 監査に操作した人を空にして結果 `unauthorized` を IP とブラウザの情報付きで書き、認可の応答を返す。認可の部品の 503・500 も同じ記録になる（SEC-ADMIN-007 を参照。TM-ADMIN-27） |
-| 本文の JSON が壊れている | 外側の catch で 500 `Internal server error`。監査は書かない（SEC-ADMIN-013 を参照） |
-| 形が合わない | 監査に結果 `failure` を IP とブラウザの情報付きで書き、400 |
-| 自前の表の更新が誤りを返す | 見ずに進む。Auth の側が消せれば 200（SEC-ADMIN-016 を参照） |
-| 関数が誤りを返す | 監査に結果 `error`・`auth_session_revocation_failed` を書き、500 `Failed to revoke sessions` |
-| DB の client の作成・更新・関数の呼び出しで例外 | 内側の catch で監査に結果 `error` と例外の文のまま書き、500 `Failed to revoke sessions` |
+| 認可の失敗 | 全体のカウンター（`admin_revoke_unauthorized_audit`、鍵は `all`、10 分の窓）を数え、20 以下なら操作した人を空にして結果 `unauthorized` を IP とブラウザの情報付きで書く。21 なら結果 `unauthorized_burst`・`further attempts suppressed for this window` の 1 行だけを書く。22 以上は書かない。カウンターが壊れたら書かない。どの場合も認可の応答をそのまま返す（認可の部品の 503・500 も同じ。TM-ADMIN-27） |
+| 回数の制限 | 429 か 503。本文を読まず、監査も書かない |
+| 本文の JSON が壊れている・形が合わない | 監査に結果 `failure`・`Invalid request body` を IP とブラウザの情報付きで書き、400 |
+| 自分自身 | 監査に結果 `failure`・`self_revocation_rejected` を書き、400 `Cannot revoke your own sessions`。対象を引かず、失効しない |
+| 対象が無い（`getUserById` の誤りの `status` が 404 か `code` が `user_not_found`、または誤りが無いのに利用者が空） | 監査に結果 `failure`・`target_not_found` を書き（`success` は書かない）、404 `User not found` |
+| 対象を引く別の誤り | 誤りの `code` だけをアプリの記録に残し、監査に結果 `error`・`target_lookup_failed` を書き、500 |
+| 失効の部品が throw（自前の更新の誤り・関数の誤り）・DB の client の作成の例外 | 例外をアプリの記録に残し、監査に結果 `error`・`revoke_failed` を書き（例外の文は残さない）、500 `Failed to revoke sessions` |
 | そのほかの例外 | 500 `Internal server error` |
 
-- 自分自身・存在しない利用者を断らない（SEC-ADMIN-015 を参照）。存在しない利用者でも関数は 0 を返し 200 になる（推定）
+- 認可に失敗した要求は回数の枠で数えない（枠は認可を通った管理者の id だけを鍵にする。入力の `user_id` は使わない）
+- 10 分の窓の境目をまたぐとカウンターが数え直されるので、監査の行は窓ごとに 20 行まで（要求の途中で窓が変わると最大 40 行）
+- 店長どうしの失効を止める守りは無い（ユーザーの決め待ち。TM-ADMIN-37）
 
-**状態・永続化:** `sessions.revoked_at` を書き、`auth.sessions` の行を消し（DATA-ADMIN-004）、`audit_logs` に1行書く。成功・関数の誤り・例外の監査には IP とブラウザの情報を入れない（ARC-ADMIN-003。SEC-ADMIN-022 を参照）。
+**状態・永続化:** `sessions.revoked_at` を書き、`auth.sessions` の行を消し（DATA-ADMIN-004）、`audit_logs` に1行書く。回数と認可失敗の監査の数は `rate_limit_counters` の表の行（DB の関数 `increment_rate_limit_counter`）で数える。認可の失敗と形の誤りの監査には IP とブラウザの情報を入れ、自分自身・対象なし・誤り・成功には入れない（ARC-ADMIN-003。SEC-ADMIN-022 を参照）。
 
 **認証認可:** `admin.users.manage` と aal2。関数は postgres と service_role にだけ実行を付けてある（DATA-ADMIN-004）ので、この窓口の service role の道だけが呼べる。画面から呼ぶ所は無い。
 
-**テスト観点:**（`tests/unit/api/admin/revoke-user-sessions-route.test.ts`。既存の `tests/integration/api/admin/revoke-user-sessions.test.ts` の4件は網羅に数えない）
+**テスト観点:**（`tests/unit/api/admin/revoke-user-sessions-route.test.ts`、`tests/unit/lib/auth/revoke-user-sessions.test.ts`。結合は `tests/integration/api/admin/revoke-user-sessions.test.ts`。失効の部品・回数・カウンターを差し替える）
 
-- 認可が `ok:false` の時は、操作した人が空の `unauthorized` の監査を書いてから認可の応答を返す。`x-forwarded-for` が `"1.1.1.1, 2.2.2.2"` なら IP は `1.1.1.1`、見出しが無ければ IP とブラウザの情報は空
-- 本文が JSON でない時は 500 `Internal server error`
-- `user_id` が無い・空の時は 400 で、監査に `failure`
-- 成功の時は `sessions` を `user_id` で更新し、関数に `{p_user_id}` を渡し、200 `{ok:true}` で、監査の付帯の情報に消した数。関数の返りが空の時は数が 0
-- 関数が誤りを返した時は 500 `Failed to revoke sessions` で、監査に `auth_session_revocation_failed`
-- 更新か関数の呼び出しが例外を投げた時は 500 `Failed to revoke sessions` で、監査に例外の文
+- 認可の失敗: カウンターが `subject: 'all'`・`admin_revoke_unauthorized_audit` で呼ばれ、20 なら `unauthorized` を IP とブラウザの情報付きで 1 行、21 なら `unauthorized_burst` を 1 行（`unauthorized` は 0 行）、22 なら 0 行、カウンターが throw なら 0 行で応答は同じ。`x-forwarded-for` が `" 1.1.1.1 , 2.2.2.2"` なら IP は `1.1.1.1`、見出しが無ければ空
+- 回数: 認可の後に `{endpoint:'admin:users:revoke-sessions', limit:20, windowSeconds:600, subject: 管理者の id}` で呼ばれ、入力の `user_id` を鍵にしない。429・503 なら本文を読まず対象を引かない
+- 入力: `user_id` が空・UUID でない・数・無い、本文の JSON が壊れている時は 400 で 500 にならず、失効に進まない
+- 自分自身は 400 で、失効せず `failure` を書く
+- 対象: 404 の誤り・`user_not_found` の `code`・誤りが無いのに空の利用者は 404 で `success` を書かない。別の誤りは 500 で `target_lookup_failed`
+- 成功の時は失効の部品を `user_id` で呼び、200 `{ok:true}` で、監査の付帯の情報に消した数
+- 失効の部品が throw した時は 500 `Failed to revoke sessions` で、`revoke_failed` を書き、throw の文は監査にも本文にも出ない
+- 部品の単体: 自前の更新の誤りは `app_session_revocation_failed`、関数の誤りは `auth_session_revocation_failed` で throw し（誤りの文を含まない）、両方成功で消した数を返す（空なら 0）
 - 認可の部品が例外を投げた時は 500 `Internal server error`
 
 ### DD-ADMIN-004 監査ログの読み出しの窓口
@@ -281,17 +297,19 @@
 
 1. `admin.audit.read` で認可する
 2. service role の client で、`id`・`created_at`・`action`・`actor_id`・`resource`・`resource_id`・`outcome`・`detail` の8列だけを、作った時刻の新しい順に 100 件まで読む
-3. 200 `{data}` で返す。ページ送りは無い
+3. 読めた時に、読んだ記録を監査に 1 行書く（`admin.audit_logs.read`・結果 `success`・読んだ人の id とメール。ログの中身・IP は入れない。窓口の中の小さな関数 `auditReadSafely` が包み、失敗しても応答を変えない。SEC-ADMIN-023）
+4. 200 `{data}` で返す。ページ送りは無い
 
 **異常フロー:**
 
 | 条件 | 動き |
 | --- | --- |
 | 認可の失敗 | 認可の応答をそのまま返し、DB を作らない |
-| 読みの誤り | 記録して 500 `Failed to fetch audit logs` |
+| 読みの誤り | 記録して 500 `Failed to fetch audit logs`。読んだ記録は書かない |
+| 読んだ記録の書き込みの失敗・例外 | 固定の文を `console.error` に出し、200 のまま返す |
 | 例外 | 500 `Internal server error` |
 
-**状態・永続化:** 読むだけ。監査は書かない（SEC-ADMIN-023 を参照）。
+**状態・永続化:** 読めた時に `audit_logs` へ読んだ記録を 1 行書く。読んだ人の IP は入れない（IP の取り出しは波 4。SEC-ADMIN-023 を参照）。
 
 **認証認可:** `admin.audit.read`（初めは店長だけ。DATA-ADMIN-006）と aal2。画面から呼ぶ所は無い（FREQ-508-AC-01 の画面は無い）。
 
@@ -299,7 +317,8 @@
 
 - 認可が `ok:false` の時は認可の応答を返し、`createServiceRoleClient` を呼ばない
 - 成功の時は8列の文字で `select` し、`created_at` の降順・100 件で読み、200 `{data}`
-- 読みが誤りを返した時は 500 `Failed to fetch audit logs`
+- 読みが誤りを返した時は 500 `Failed to fetch audit logs` で、読んだ記録を書かない
+- 200 の後に `admin.audit_logs.read` を読んだ人の id とメールで 1 回書き、ログの中身を入れない。`logAudit` が拒否されても 200 のまま
 - `createServiceRoleClient` が例外を投げた時は 500 `Internal server error`
 
 ### DD-ADMIN-005 特権の利用者の2要素のリセットの窓口
@@ -307,62 +326,72 @@
 | 属性 | 値 |
 | --- | --- |
 | 上位 | API-ADMIN-004、ARC-ADMIN-001、ARC-ADMIN-003、SEC-ADMIN-001 |
-| 根拠 | 2要素の登録を消す機能は Auth の管理の機能で service role でしか呼べないので、`admin.users.manage` と aal2 を確かめてから呼ぶ（API-ADMIN-004、ARC-ADMIN-001、SEC-ADMIN-001）。取り返しがつかないので、確認の語と理由の文を求め、自分自身と一般の利用者を断り、判定の結果は IP とブラウザの情報付きで監査に残す（認可の失敗と外側の例外は監査を書かない）。理由の文を書くのは、対象を引いた後の結果（対象なし・特権でない・一覧の誤り・消せない・成功）だけで、形の誤りと自分自身の行には無い。対象の役割は特権でない時と成功、対象のメールは成功だけに入る（ARC-ADMIN-003） |
+| 根拠 | 2要素の登録を消す機能は Auth の管理の機能で service role でしか呼べないので、`admin.users.manage` と aal2 を確かめてから呼ぶ（API-ADMIN-004、ARC-ADMIN-001、SEC-ADMIN-001）。取り返しがつかないので、確認の語と理由の文を求め、自分自身と特権でない利用者を断る。対象の役割は古くなりうる `app_metadata` でなく DB の ACL（`user_roles`）で決め、2要素を消した後は奪われた session を生かさないよう対象の全 session を失効させる（SEC-ADMIN-014、ADR-0461）。判定の結果は IP とブラウザの情報付きで監査に残すが、理由の文・対象のメール・誤りの文は残さず、理由は長さとハッシュだけにする（SEC-ADMIN-008、ARC-ADMIN-003）。認可の失敗と外側の例外は監査を書かない |
 | 状態 | 推定 |
 | 確かめ方 | 単体テスト |
-| 出どころ | 実装から推定（`src/app/api/admin/users/mfa/reset/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
+| 出どころ | `src/app/api/admin/users/mfa/reset/route.ts`、`docs/03_BasicDesign/api/api-spec.md`、`docs/superpowers/plans/2026-10-26-wave1b-local-fixes.md`（Task 4） |
 
-**対応要件 ID:** API-ADMIN-004、ARC-ADMIN-001、ARC-ADMIN-003、SEC-ADMIN-001（その上は DRV-ADMIN-002、ADR-0457）
+**対応要件 ID:** API-ADMIN-004、ARC-ADMIN-001、ARC-ADMIN-003、SEC-ADMIN-001（その上は DRV-ADMIN-002、ADR-0457、ADR-0461、SEC-ADMIN-006、SEC-ADMIN-008、SEC-ADMIN-014）
 
 **入出力:**
 
 | 向き | 中身 |
 | --- | --- |
 | 入力 | POST。JSON `{userId, reason, confirm}`。`userId` は UUID、`reason` は前後の空白を除き 10〜500 字、`confirm` は `RESET_MFA` だけ。見出し `x-forwarded-for`・`user-agent` |
-| 出力 | 200 `{success:true, deletedFactorCount, message}`、400 `{error:'Invalid request', details}`・`{error:'Self-reset is not allowed'}`・`{error:'MFA reset is available only for privileged users'}`、404 `{error:'User not found'}`、500 `{error:'Failed to list target MFA factors'}`・`{error:'Failed to delete one or more MFA factors'}`・`{error:'Internal server error'}`、認可の応答 |
+| 出力 | 200 `{success:true, deletedFactorCount, message}`、400 `{error:'Invalid request', details}`・`{error:'Self-reset is not allowed'}`・`{error:'MFA reset is available only for privileged users'}`、404 `{error:'User not found'}`、429（回数の制限）、500 `{error:'Failed to resolve target role'}`・`{error:'Failed to list target MFA factors'}`・`{error:'Failed to delete one or more MFA factors'}`・`{error:'Failed to revoke target sessions'}`・`{error:'Internal server error'}`、認可の応答 |
 
 **正常フロー:**（`src/app/api/admin/users/mfa/reset/route.ts`）
 
 1. `admin.users.manage` で認可する
-2. 監査のために `x-forwarded-for` の左端と `user-agent` を控える
-3. 本文を JSON で読み（壊れていれば空の物）、形を確かめる。監査のため、本文の `userId` が文字ならそれを控える
-4. service role の client で対象を Auth の管理の機能で引く
-5. 対象の役割を Auth の付帯の情報（`app_metadata.role`）で決める。付帯の情報が物でない時と、役割が `admin`・`supporter`・`user` の外の時は `user` とみなす
-6. 店長かサポーターなら、2要素の登録を全部引く。返りの一覧が配列で、全部の要素が物で空でない文字の `id` を持つ時だけその一覧を使い、ほかは空の一覧にする
-7. 1つずつ消し、誤りがあれば要素の id と誤りの文（無ければ `failed_to_delete_factor`）を控える
-8. 誤りが無ければ、監査に結果 `success`・理由・対象の役割・対象のメール（無ければ空）・消した数を書き、200 で消した数と「もう一度サインインして登録し直す」旨の英語の文を返す
+2. 管理者の id（認可が返した値）を鍵にして、`admin:users:mfa-reset` を 10 回 / 600 秒で数える。超えた時と、限度器が壊れた時の応答は共有の部品のもの（429・503）をそのまま返す
+3. 監査のために `x-forwarded-for` の左端と `user-agent` を控える
+4. 本文を JSON で読み（壊れていれば空の物）、形を確かめる。形が正しければ `userId` を小文字にそろえ、以降の比べ・問い合わせ・失効・監査の `resource_id` に使う（UUID は大文字・小文字を区別しないので、大文字で自分自身の拒否をすり抜けさせない）。形の誤りの時、本文の `userId` が UUID の形の文字ならそれを控え、それ以外は空にする
+5. 理由（前後の空白を除いた物）の長さと SHA-256 の 16 進を作る
+6. service role の client で対象を Auth の管理の機能で引く
+7. `user_roles` を `roles!inner(code)` で、対象の id・`active`・期限内（`expires_at` が空か未来）で引き、`admin` があれば `admin`、なければ `supporter` があれば `supporter` を対象の役割とする。どちらも無ければ特権でない
+8. 対象の役割があれば、2要素の登録を全部引く。返りの一覧が配列で、全部の要素が物で空でない文字の `id` を持つ時だけその一覧を使い、ほかは空の一覧にする
+9. 1つずつ消し、誤りがあれば要素の id を控える（誤りの文はアプリの記録に回す）
+10. 全部消せたら `revokeAllSessionsForUser(userId)` で対象の自前と Auth の session を全部失効させる（要素が 0 件でも呼ぶ）
+11. 監査に結果 `success`・理由の長さとハッシュ・対象の役割・消した数を書き、200 で消した数と「もう一度サインインして登録し直す」旨の英語の文を返す
 
 **異常フロー:**
 
 | 条件 | 動き |
 | --- | --- |
-| 認可の失敗 | 認可の応答をそのまま返す。監査は書かない |
+| 認可の失敗 | 認可の応答をそのまま返す。回数も数えず、監査は書かない |
+| 回数の制限 | 429 か 503。本文を読まず、監査も書かない |
 | 本文の JSON が壊れている | 空の物として形の誤りに進む |
-| 形が合わない | 監査に結果 `failure`・控えた `userId`（文字でなければ空）を書き、400 で zod の誤りの内訳を返す |
-| 対象が自分自身 | 監査に結果 `failure`・`Self-reset is not allowed` を書き、400 |
-| 対象を引けない・対象が無い | 監査に結果 `failure`・理由を書き、404 |
-| 対象が店長でもサポーターでもない | 監査に結果 `failure`・理由・対象の役割を書き、400 |
-| 一覧の誤り | 監査に結果 `error`・理由・誤りの文を書き、500 |
-| 一覧の形が合わない（配列でない・要素が物でない・`id` が無いか空） | 空の一覧として消さずに成功へ進み、消した数 0 で 200 を返す（推定。TM-ADMIN-26） |
-| 1つでも消せない | 監査に結果 `error`・理由・全部の数・誤りの一覧を書き、500。消せた分は戻さない |
+| 形が合わない | 監査に結果 `failure`・`Invalid request body`・UUID の形の `userId`（それ以外は空）を書き、400 で zod の誤りの内訳を返す |
+| 対象が自分自身 | 監査に結果 `failure`・`Self-reset is not allowed`・理由の長さとハッシュを書き、400 |
+| 対象を引けない・対象が無い | 監査に結果 `failure`・`Target user not found`・理由の長さとハッシュを書き、404 |
+| `user_roles` の問い合わせの誤り | 誤りの `code` だけをアプリの記録に残し、監査に結果 `error`・`role_lookup_failed` を書き、500 |
+| 対象が店長でもサポーターでもない（`user_roles` に有効な `admin`・`supporter` が無い） | 監査に結果 `failure`・`target_not_privileged`・理由の長さとハッシュを書き、400。`app_metadata` は使わない |
+| 一覧の誤り | 誤りをアプリの記録に残し、監査に結果 `error`・`Failed to list target MFA factors`・理由の長さとハッシュ・対象の役割を書き（誤りの文は残さない）、500 |
+| 一覧の形が合わない（配列でない・要素が物でない・`id` が無いか空） | 空の一覧として消さずに成功へ進み、消した数 0 で 200 を返す（失効はする。推定。TM-ADMIN-26） |
+| 1つでも消せない | 監査に結果 `error`・`Failed to delete one or more factors`・理由の長さとハッシュ・対象の役割・全部の数・消せなかった要素の id の一覧を書き、500。消せた分は戻さず、失効に進まない |
+| 失効の部品が throw | 監査に結果 `error`・`session_revocation_failed`・理由の長さとハッシュ・対象の役割・消した数を書き、500 `Failed to revoke target sessions`。消した要素は戻さない。再実行すると要素 0 件で失効だけをやり直せる |
 | 例外 | 500 `Internal server error` |
 
-**状態・永続化:** 消すのは Auth の2要素の登録（`auth.mfa_factors`）だけ。対象の session は失効させない（SEC-ADMIN-014 を参照）。`audit_logs` に1行書き、付帯の情報の理由と対象のメールは伏せずに残る（SEC-ADMIN-008 を参照）。
+**状態・永続化:** 消すのは Auth の2要素の登録（`auth.mfa_factors`）と、対象の自前の `sessions` の失効の時刻・`auth.sessions` の行（DATA-ADMIN-004）。`audit_logs` に1行書き、付帯の情報は `requested_user_id`・`target_role`・`deleted_factor_count`・`total_factors`・`delete_error_factor_ids`・`reason_length`・`reason_sha256` だけ。`reason`・`target_email`・`error_message`・`delete_errors[].message` は残さない（SEC-ADMIN-008、ADR-0461）。
 
-**認証認可:** `admin.users.manage` と aal2。対象の役割を DB の ACL でなく `app_metadata` で決める（SEC-ADMIN-014 を参照）。画面から呼ぶ所は無い。
+**認証認可:** `admin.users.manage` と aal2。対象の役割を DB の ACL（`user_roles`）で決める（SEC-ADMIN-014）。店長どうしのリセットを止める守りと、本人への知らせは無い（ユーザーの決め待ち。TM-ADMIN-37・40）。画面から呼ぶ所は無い。
 
-**テスト観点:**（`tests/unit/api/admin/mfa-reset-route.test.ts`。Auth の管理の機能 `getUserById`・`mfa.listFactors`・`mfa.deleteFactor` を差し替える）
+**テスト観点:**（`tests/unit/api/admin/mfa-reset-route.test.ts`。Auth の管理の機能 `getUserById`・`mfa.listFactors`・`mfa.deleteFactor`、`user_roles` の問い合わせ、失効の部品、回数を差し替える。結合は `tests/integration/api/admin-misc/admin-mfa-reset-api.test.ts`）
 
-- 認可が `ok:false` の時は認可の応答を返し、監査を書かない
-- 本文が JSON でない時、`confirm` が違う時、理由が 9 字の時、`userId` が UUID でない時は 400 で `details` を返し、監査に `failure`。`userId` が文字の時はそれを、数の時は空を控える
+- 認可が `ok:false` の時は認可の応答を返し、回数も数えず、監査を書かない
+- 回数: 認可の後に `{endpoint:'admin:users:mfa-reset', limit:10, windowSeconds:600, subject: 管理者の id}` で呼ばれ、429 なら本文を読まず DB を触らない
+- 本文が JSON でない時、`confirm` が違う時、理由が 9 字の時、`userId` が UUID でない時は 400 で `details` を返し、監査に `failure`。UUID の形の `userId` だけを控え、UUID でない文字・数は空
 - `x-forwarded-for` と `user-agent` が無い時は監査の IP とブラウザの情報が空
 - `userId` が認可の利用者と同じ時は 400 `Self-reset is not allowed`
 - `getUserById` が誤りを返した時と、利用者が空の時は 404
-- `app_metadata` が空の時・役割が `user` の時・役割が知らない値の時は 400（特権でない）
-- 役割が `admin` の時と `supporter` の時に一覧を引く。一覧が誤りを返した時は 500 `Failed to list target MFA factors`
-- 一覧が2件で両方消せた時は 200 で消した数 2、監査に対象のメール。対象のメールが無い時は空
-- 一覧が配列でない時・要素が空の時・要素の `id` が空の文字の時は消さずに 200 で消した数 0
-- 1件の削除が誤りの文付きで失敗した時と、誤りの文が無い時（`failed_to_delete_factor`）は 500 `Failed to delete one or more MFA factors`
+- `app_metadata` が `supporter` でも `user_roles` が空なら 400（`target_not_privileged`）で、消さず失効もしない。`app_metadata` が無くても `user_roles` に `admin` があれば通る。`user_roles` が `customer` だけ・知らない役割だけ・空・`null` の時は 400。問い合わせは対象の id・`active`・期限内で行う。問い合わせの誤りは 500（`role_lookup_failed`）
+- 役割が `admin` の時と `supporter` の時に一覧を引く。一覧が誤りを返した時は 500 `Failed to list target MFA factors` で、失効しない
+- 一覧が2件で両方消せた時は 200 で消した数 2、失効の部品を呼び、監査は理由の長さとハッシュ・対象の役割・消した数だけ
+- 理由の長さは前後の空白を除いた字数、ハッシュは `createHash('sha256').update(trim 済みの理由).digest('hex')` と等しい 64 桁の 16 進
+- 一覧が空の配列の時は消さずに 200 で消した数 0 で、それでも失効の部品を呼ぶ。一覧が配列でない時・要素が空の時・要素の `id` が空の文字の時も同じ
+- 1件の削除が失敗した時は 500 `Failed to delete one or more MFA factors` で、失敗した要素の id だけを監査に書き、失効の部品を呼ばない
+- 失効の部品が throw した時は 500 で、`session_revocation_failed`・消した数を書き、throw の文は監査にも本文にも出ない
+- 検証の失敗・自分自身・対象なし・特権でない・一覧の失敗・削除の失敗・成功の 7 分岐の全部で、監査に入力の理由の文・対象のメール・誤りの文が含まれず、`metadata` に `reason`・`target_email`・`error_message`・`delete_errors` の鍵が無い
 - `createServiceRoleClient` が例外を投げた時は 500 `Internal server error`
 
 ### DD-ADMIN-006 問い合わせの一覧の窓口
@@ -394,19 +423,22 @@
 6. `type` が product・order・other のどれかなら種別で絞る。ほかの値と無い時は絞らない
 7. `q`（無ければ空）の `,`・`(`・`)`・`%`・`\` を空白にし、前後を除き、100 字で切る。残りがあれば名前・メール・件名の部分一致の or の条件にする
 8. 最後のやり取りの時刻の新しい順に、ページの幅だけ取る
-9. 総数（無ければ 0）から総ページ（最低 1）を出し、行（無ければ空の配列）と一緒に 200 で返す
+9. 総数（無ければ 0）から総ページ（最低 1）を出す
+10. 読めた時に、読んだ記録を監査に 1 行書く（`admin.contact.list`・読んだ人の id とメール・`metadata` は `status`・`type`（許可の値だけ。無ければ null）・`page`・`q_length`。検索語・名前・メールは入れない。`auditReadSafely` が包み、失敗しても応答を変えない。SEC-ADMIN-023）
+11. 行（無ければ空の配列）と一緒に 200 で返す
 
 **異常フロー:**
 
 | 条件 | 動き |
 | --- | --- |
 | 認可の失敗 | 認可の応答をそのまま返す |
-| 読みの誤り | 記録して 500 `Failed to fetch inquiries` |
+| 読みの誤り | 記録して 500 `Failed to fetch inquiries`。読んだ記録は書かない |
+| 読んだ記録の書き込みの失敗・例外 | 固定の文を `console.error` に出し、200 のまま返す |
 | 例外 | 500 `Internal server error` |
 
 - `_`・`*` は残り、部分一致の字として効く（推定）
 
-**状態・永続化:** 読むだけ。監査は書かない（SEC-ADMIN-023 を参照）。
+**状態・永続化:** 読めた時に `audit_logs` へ読んだ記録を 1 行書く。読んだ人の IP は入れない（IP の取り出しは波 4。SEC-ADMIN-023 を参照）。
 
 **認証認可:** `admin.contact.read`（初めは店長とサポーター。DATA-ADMIN-006）と aal2。呼ぶのは使われない `src/components/ContactSection.tsx` だけ。
 
@@ -418,7 +450,8 @@
 - `status=open` で状態の絞りが付き、`status=bogus` では付かない。`type=order` で種別の絞りが付き、`type=bogus` では付かない
 - `q=a,b(c)%d\e` で区切りの字が空白になった語で or が付く。`q=` と区切りの字だけの `q` では or が付かない。101 字の `q` は 100 字に切られる
 - 総数 45・幅 20 で総ページ 3。総数が空の時は総数 0・総ページ 1。行が空の時は空の配列
-- 読みが誤りを返した時は 500 `Failed to fetch inquiries`
+- 読みが誤りを返した時は 500 `Failed to fetch inquiries` で、読んだ記録を書かない
+- 200 の後に `admin.contact.list` を 1 回書き、`metadata` は `{status, type, page, q_length}` だけで、検索語の字が入らない。許可の値でない `status`・`type` は null。`logAudit` が拒否されても 200 のまま
 - `createServiceRoleClient` が例外を投げた時は 500 `Internal server error`
 
 ### DD-ADMIN-007 問い合わせの詳細と状態の変更の窓口
@@ -437,41 +470,47 @@
 
 | 方法 | 入力 | 出力 |
 | --- | --- | --- |
-| GET | 道の `id`（形を確かめない） | 200 `{data:{…問い合わせの14列, orderNumber, messages}}`、404 `{error:'Inquiry not found'}`、500 `{error:'Failed to fetch messages'}` か `{error:'Internal server error'}` |
-| PATCH | 道の `id`、JSON `{status}`（open・pending・answered・closed） | 200 `{success:true}`、400 `{error:'Invalid request', details}`、500 `{error:'Failed to update status'}` か `{error:'Internal server error'}` |
+| GET | 道の `id`（形を確かめない） | 200 `{data:{…問い合わせの12列, orderNumber, messages}}`、404 `{error:'Inquiry not found'}`、500 `{error:'Failed to fetch messages'}` か `{error:'Internal server error'}` |
+| PATCH | 道の `id`（UUID の形）、JSON `{status}`（open・pending・answered・closed） | 200 `{success:true}`、400 `{error:'Invalid request', details}`、404 `{error:'Inquiry not found'}`、429、500 `{error:'Failed to update status'}` か `{error:'Internal server error'}` |
 
 **正常フロー:**（`src/app/api/admin/contact/[id]/route.ts`）
 
 GET:
 
 1. 道の `id` を読み、`admin.contact.read` で認可する
-2. 問い合わせを `id` で1件読む。列は本文・会員の id・送った時の IP（`submitted_ip`）・ブラウザの情報を含む14列
+2. 問い合わせを `id` で1件読む。列は本文・会員の id を含む12列。送った時の IP（`submitted_ip`）とブラウザの情報（`user_agent`）は選ばない（SEC-ADMIN-020）
 3. やり取り（`id`・送り手の役・書いた人・本文・経路・時刻）を作った時刻の古い順に読む
 4. 注文の id があれば注文番号の形にし、無ければ空にする
-5. 問い合わせの列に注文番号とやり取り（無ければ空の配列）を足して 200 で返す
+5. 読めた時に、読んだ記録を監査に 1 行書く（`admin.contact.read`・読んだ人の id とメール・問い合わせの id。名前・メール・本文・件名・IP は入れない。`auditReadSafely` が包み、失敗しても応答を変えない。SEC-ADMIN-023）
+6. 問い合わせの列に注文番号とやり取り（無ければ空の配列）を足して 200 で返す
 
 PATCH:
 
 1. 道の `id` を読み、`admin.contact.manage` で認可する
-2. 本文を JSON で読み（壊れていれば空の物）、形を確かめる
-3. 状態と直した時刻を書き換える。最後のやり取りの時刻は変えない
-4. 監査に `admin.contact.status_update`・結果 `success`・`status=<新しい状態>`・ブラウザの情報を書き、200
+2. 認可の直後に、管理者の id ごと 60 回 / 10 分の枠を数える（SEC-ADMIN-006。超えたら 429）
+3. `id` が UUID の形でなければ DB に渡さず 404 `Inquiry not found`
+4. 本文を JSON で読み（壊れていれば空の物）、形を確かめる
+5. 状態と直した時刻を書き換え、変えた行の `id` を受ける（`.select('id')`）。最後のやり取りの時刻は変えない
+6. 監査に `admin.contact.status_update`・結果 `success`・`status=<新しい状態>`・ブラウザの情報を書き、200
 
 **異常フロー:**
 
 | 方法 | 条件 | 動き |
 | --- | --- | --- |
-| GET・PATCH | 認可の失敗 | 認可の応答をそのまま返す |
-| GET | 問い合わせの読みが誤り（id の形が違う時も）・行が無い | 404 `Inquiry not found` |
-| GET | やり取りの読みの誤り | 記録して 500 `Failed to fetch messages` |
+| GET・PATCH | 認可の失敗 | 認可の応答をそのまま返す（PATCH は回数に数えない） |
+| PATCH | 回数の枠の超過 | 429（限度器が壊れた時は 503）。DB・監査に触らない |
+| GET | 問い合わせの読みが誤り（id の形が違う時も）・行が無い | 404 `Inquiry not found`。読んだ記録は書かない |
+| GET | やり取りの読みの誤り | 記録して 500 `Failed to fetch messages`。読んだ記録は書かない |
+| GET | 読んだ記録の書き込みの失敗・例外 | 固定の文を `console.error` に出し、200 のまま返す |
+| PATCH | `id` が UUID の形でない | DB に渡さず 404 `Inquiry not found`。監査は書かない |
 | PATCH | 本文の JSON が壊れている・状態が4つの外 | 400 で zod の誤りの内訳を返す |
 | PATCH | 更新の誤り | 記録して 500 `Failed to update status` |
-| PATCH | 対象の行が無い | 行の数を見ないので 200 `{success:true}` で、成功を監査に残す（SEC-ADMIN-021 を参照） |
+| PATCH | 変えた行が 0 行 | 404 `Inquiry not found`。監査に結果 `failure`・`inquiry_not_found` を書き、`success` は書かない（SEC-ADMIN-021） |
 | GET・PATCH | 例外 | 500 `Internal server error` |
 
-**状態・永続化:** GET は読むだけで、監査は書かない（SEC-ADMIN-023 を参照）。PATCH は `contact_inquiries.status`・`updated_at` を書き（STATE-ADMIN-001）、`audit_logs` に1行書く。監査には操作した人のメールと IP を入れない（SEC-ADMIN-022 を参照）。割当の作業の移行が注文との結び付きを外した問い合わせは、注文番号が空になる（TM-ADMIN-19）。
+**状態・永続化:** GET は読めた時に `audit_logs` へ読んだ記録を 1 行書く（IP は入れない。波 4。SEC-ADMIN-023 を参照）。PATCH は `contact_inquiries.status`・`updated_at` を書き（STATE-ADMIN-001）、`audit_logs` に1行書く。監査には操作した人のメールと IP を入れない（SEC-ADMIN-022 を参照）。割当の作業の移行が注文との結び付きを外した問い合わせは、注文番号が空になる（TM-ADMIN-19）。
 
-**認証認可:** GET は `admin.contact.read`、PATCH は `admin.contact.manage`（どちらも初めは店長とサポーター）と aal2。サポーターにも IP とブラウザの情報を返す（SEC-ADMIN-020 を参照）。呼ぶのは使われない `src/components/ContactSection.tsx` だけ。
+**認証認可:** GET は `admin.contact.read`、PATCH は `admin.contact.manage`（どちらも初めは店長とサポーター）と aal2。店長にもサポーターにも IP とブラウザの情報を返さない（SEC-ADMIN-020）。呼ぶのは使われない `src/components/ContactSection.tsx` だけ。
 
 **テスト観点:**（`tests/unit/api/admin/admin-contact-id-route.test.ts`。`toOrderNumber` は本物か差し替え）
 
@@ -480,9 +519,14 @@ PATCH:
 - GET: やり取りの読みが誤りの時は 500 `Failed to fetch messages`
 - GET: 注文の id がある時は注文番号が入り、無い時は空。やり取りが空の時は空の配列
 - GET: やり取りを `created_at` の昇順で読む
-- PATCH: 認可が `ok:false` の時は認可の応答を返す
+- GET: `select` の文字列にも応答の `data` のキーにも `submitted_ip`・`user_agent` が無い
+- GET: 200 の後に `admin.contact.read` を読んだ人の id・メールと問い合わせの id で 1 回書き、名前・メール・本文・件名が入らない。404・やり取りの誤りでは書かない。`logAudit` が拒否されても 200
+- PATCH: 認可が `ok:false` の時は認可の応答を返し、回数に数えない
+- PATCH: 回数の枠 `admin:contact:write`・60・600 秒を管理者の id で数え、超えたら 429 で DB に触らない
+- PATCH: `id` が UUID でない時は 404 で DB に触らない
 - PATCH: 本文が JSON でない時と、`status=done` の時は 400 で `details`
 - PATCH: `status=closed` で状態と直した時刻を更新し、200 で、監査の詳しい文が `status=closed`
+- PATCH: 更新が 0 行（空の配列と null）の時は 404 で、監査が `failure`・`inquiry_not_found`（`success` は書かない）
 - PATCH: 更新が誤りを返した時は 500 `Failed to update status` で、監査を書かない
 - GET・PATCH: `createServiceRoleClient` が例外を投げた時は 500 `Internal server error`
 
@@ -503,33 +547,38 @@ PATCH:
 | 向き | 中身 |
 | --- | --- |
 | 入力 | POST。道の `id`、JSON `{body}`（前後の空白を除き 1〜5000 字）。環境変数 `MAIL_FROM_ADDRESS` |
-| 出力 | 201 `{success:true, mailSent}`、400 `{error:'Invalid request', details}`、404 `{error:'Inquiry not found'}`、500 `{error:'Failed to save reply'}` か `{error:'Internal server error'}`、認可の応答。お客様へのメール1通 |
+| 出力 | 201 `{success:true, mailSent}`、400 `{error:'Invalid request', details}`、404 `{error:'Inquiry not found'}`、429、500 `{error:'Failed to save reply'}`・`{error:'Failed to update inquiry status'}` か `{error:'Internal server error'}`、認可の応答。お客様へのメール1通 |
 
 **正常フロー:**（`src/app/api/admin/contact/[id]/reply/route.ts`）
 
 1. 道の `id` を読み、`admin.contact.manage` で認可する
-2. 本文を JSON で読み（壊れていれば空の物）、形を確かめる
-3. 問い合わせの `id`・メール・件名を読む
-4. やり取りに、送り手の役 `admin`・書いた人に操作した人・本文・経路 `web` で1行足す
-5. 問い合わせの状態を answered にし、最後のやり取りの時刻と直した時刻を今にする。この更新の誤りは見ない
-6. `MAIL_FROM_ADDRESS` があれば、件名が `Re:` で始まればそのまま、ほかは頭に `Re:` と空白を付け、本文の後に空行・`---`・店の名前を足して送る。Reply-To は返信の宛先（DD-ADMIN-013）で、作れなければ付けない
-7. 監査に `admin.contact.reply`、メールが通れば結果 `success`・`reply_sent`、失敗なら結果 `error`・`reply_saved_mail_failed` を、ブラウザの情報付きで書く
-8. 201 `{success:true, mailSent}` を返す。`mailSent` はメールが失敗した時だけ偽
+2. 認可の直後に、管理者の id ごと 30 回 / 10 分の枠を数える（SEC-ADMIN-006。超えたら 429）
+3. `id` が UUID の形でなければ DB に渡さず 404 `Inquiry not found`
+4. 本文を JSON で読み（壊れていれば空の物）、形を確かめる
+5. 問い合わせの `id`・メール・件名を読む
+6. やり取りに、送り手の役 `admin`・書いた人に操作した人・本文・経路 `web` で1行足す
+7. 問い合わせの状態を answered にし、最後のやり取りの時刻と直した時刻を今にする。誤りなら記録（`code` だけ）して、監査に結果 `error`・`status_update_failed` を書き、500 `Failed to update inquiry status` を返して止める（保存した返信は残し、メールは送らない。SEC-ADMIN-021）
+8. `MAIL_FROM_ADDRESS` があれば、件名の制御文字（CR・LF を含む U+0000〜U+001F・U+007F）を空白にして前後を削り（空なら `Re: (件名なし)`）、`Re:` で始まればそのまま、ほかは頭に `Re:` と空白を付け（SEC-ADMIN-018）、本文の後に空行・`---`・店の名前を足して送る。Reply-To は返信の宛先（DD-ADMIN-013）で、作れなければ付けない
+9. 監査に `admin.contact.reply` を書く。メールが通れば結果 `success`・`reply_sent`、失敗なら結果 `error`・`reply_saved_mail_failed`、`MAIL_FROM_ADDRESS` が無ければ結果 `error`・`reply_saved_mail_not_configured`。ブラウザの情報付き
+10. 201 `{success:true, mailSent}` を返す。`mailSent` はメールが通った時だけ真
 
 **異常フロー:**
 
 | 条件 | 動き |
 | --- | --- |
-| 認可の失敗 | 認可の応答をそのまま返す |
+| 認可の失敗 | 認可の応答をそのまま返す（回数に数えない） |
+| 回数の枠の超過 | 429（限度器が壊れた時は 503）。保存・メール・監査に触らない |
+| `id` が UUID の形でない | DB に渡さず 404 `Inquiry not found` |
 | 本文の JSON が壊れている・本文が空か 5000 字を超える | 400 で zod の誤りの内訳を返す |
 | 問い合わせの読みが誤り・行が無い | 404 `Inquiry not found` |
 | やり取りの保存の誤り | 記録して 500 `Failed to save reply`。状態もメールも監査も触らない |
-| 状態の更新の誤り | 見ずに進む |
-| `MAIL_FROM_ADDRESS` が無い | メールを送らずに `mailSent` を真で返し、監査も `reply_sent`（SEC-ADMIN-021 を参照） |
+| 状態の更新の誤り | 記録して 500 `Failed to update inquiry status`。保存した返信は残し、メールは送らず、監査は `error`・`status_update_failed`（SEC-ADMIN-021、ADR-0456） |
+| `MAIL_FROM_ADDRESS` が無い | メールを送らずに 201 で `mailSent` を偽にし、監査は `error`・`reply_saved_mail_not_configured`（`reply_sent` にしない。SEC-ADMIN-021） |
 | メールの送り手が例外を投げる（送り手の名前が不正な設定の時も） | 警告を出し、保存は残し、`mailSent` を偽にする |
 | 例外 | 500 `Internal server error` |
 
-- 件名の改行を消さずに送り手に渡す（SEC-ADMIN-018 を参照）
+- 件名は制御文字を空白にして渡すので、見出しの差し込みができない（SEC-ADMIN-018）。メール送信部品（`mail.ts`）の側の CR・LF 除去は今回やらない
+- 状態の更新の誤りで 500 を返した後に管理者が送り直すと、返信の行が 2 つになりうる（ADR-0456）
 
 **状態・永続化:** `contact_messages` に1行足し、`contact_inquiries` の状態と時刻を書き、`audit_logs` に1行書く。保存の後にメールが失敗しても保存は戻さない。監査には操作した人のメールと IP を入れない（SEC-ADMIN-022 を参照）。
 
@@ -541,10 +590,14 @@ PATCH:
 - 本文が JSON でない時、`body` が空白だけの時、5001 字の時は 400 で `details`
 - 問い合わせの読みが誤りの時と、行が空の時は 404
 - 保存が誤りを返した時は 500 `Failed to save reply` で、メールを送らず監査を書かない
+- 回数の枠 `admin:contact:reply`・30・600 秒を管理者の id で数え、超えたら 429 で DB・メールに触らない。認可で断った要求は数えない
+- `id` が UUID でない時は 404 で DB・メールに触らない
 - `MAIL_FROM_ADDRESS` がある時、件名が `質問` なら `Re: 質問`、`Re: 質問` ならそのままで送り、本文の後に店の名前が付く。201 で `mailSent` が真、監査が `reply_sent`
+- 件名に CR・LF（`注文\r\nBcc: attacker@example.com` など）・制御文字があれば空白にして送り、送った件名に制御文字が無い。制御文字だけ・空の件名は `Re: (件名なし)`
+- 状態の更新が誤りを返した時は 500 `Failed to update inquiry status` で、返信の保存は残り、メールを送らず、監査が `error`・`status_update_failed`（誤りの文を残さない）
 - 返信の宛先が作れる時は Reply-To にその宛先、作れない時は Reply-To が無い
 - メールが例外を投げた時は 201 で `mailSent` が偽、監査が `error`・`reply_saved_mail_failed`
-- `MAIL_FROM_ADDRESS` が無い時はメールを送らずに 201 で `mailSent` が真
+- `MAIL_FROM_ADDRESS` が無い時はメールを送らずに 201 で `mailSent` が偽、監査が `error`・`reply_saved_mail_not_configured`
 - 状態の更新に answered と時刻を渡す
 - `createServiceRoleClient` が例外を投げた時は 500 `Internal server error`
 
@@ -565,7 +618,7 @@ PATCH:
 | 方法 | 入力 | 出力 |
 | --- | --- | --- |
 | GET | なし | 200 `{data}`（`id`・`title`・`category`・`body`・`sort_order`・`created_at`・`updated_at`）、500 `{error:'Failed to fetch templates'}` か `{error:'Internal server error'}` |
-| POST | JSON `{title, category?, body, sortOrder?}`。題は前後を除き 1〜120 字、分類は product・order・other・general か空、本文は前後を除き 1〜5000 字、並び順は 0〜9999 の整数 | 201 `{success:true, id}`、400 `{error:'Invalid request', details}`、500 `{error:'Failed to create template'}` か `{error:'Internal server error'}` |
+| POST | JSON `{title, category?, body, sortOrder?}`。題は前後を除き 1〜120 字、分類は product・order・other・general か空、本文は前後を除き 1〜5000 字、並び順は 0〜9999 の整数 | 201 `{success:true, id}`、400 `{error:'Invalid request', details}`、429、500 `{error:'Failed to create template'}` か `{error:'Internal server error'}` |
 
 **正常フロー:**（`src/app/api/admin/contact/templates/route.ts`）
 
@@ -577,15 +630,17 @@ GET:
 POST:
 
 1. `admin.contact.manage` で認可する
-2. 本文を JSON で読み（壊れていれば空の物）、形を確かめる
-3. 題・分類（無ければ空）・本文・並び順（無ければ 0）で1行作り、作った `id` を読む
-4. 監査に `admin.contact.template.create`・結果 `success`・`created`・ブラウザの情報を書き、201 で `id` を返す
+2. 認可の直後に、管理者の id ごと 60 回 / 10 分の枠を数える（状態の変更・テンプレートの更新と削除と共有。SEC-ADMIN-006。超えたら 429）
+3. 本文を JSON で読み（壊れていれば空の物）、形を確かめる
+4. 題・分類（無ければ空）・本文・並び順（無ければ 0）で1行作り、作った `id` を読む
+5. 監査に `admin.contact.template.create`・結果 `success`・`created`・ブラウザの情報を書き、201 で `id` を返す
 
 **異常フロー:**
 
 | 方法 | 条件 | 動き |
 | --- | --- | --- |
-| GET・POST | 認可の失敗 | 認可の応答をそのまま返す |
+| GET・POST | 認可の失敗 | 認可の応答をそのまま返す（POST は回数に数えない） |
+| POST | 回数の枠の超過 | 429（限度器が壊れた時は 503）。DB・監査に触らない |
 | GET | 読みの誤り | 記録して 500 `Failed to fetch templates` |
 | POST | 本文の JSON が壊れている・形が合わない | 400 で zod の誤りの内訳を返す |
 | POST | 作成の誤り・作った行が返らない | 記録して 500 `Failed to create template`。監査は書かない |
@@ -600,7 +655,8 @@ POST:
 - GET: 認可が `ok:false` の時は認可の応答を返す
 - GET: `sort_order` と `created_at` の昇順で読み、200 `{data}`。行が空の時は空の配列
 - GET: 読みが誤りを返した時は 500 `Failed to fetch templates`
-- POST: 認可が `ok:false` の時は認可の応答を返す
+- POST: 認可が `ok:false` の時は認可の応答を返し、回数に数えない
+- POST: 回数の枠 `admin:contact:write`・60・600 秒を管理者の id で数え、超えたら 429 で DB・監査に触らない
 - POST: 本文が JSON でない時、題が空白だけの時、分類が `bogus` の時、並び順が 10000 の時は 400
 - POST: 分類と並び順が無い時は分類が空・並び順 0 で作り、ある時はその値で作る。201 `{success:true, id}` で、監査が `admin.contact.template.create`
 - POST: 作成が誤りを返した時と、作った行が空の時は 500 `Failed to create template`
@@ -622,33 +678,38 @@ POST:
 
 | 方法 | 入力 | 出力 |
 | --- | --- | --- |
-| PUT | 道の `id`、JSON は作成と同じ形 | 200 `{success:true}`、400 `{error:'Invalid request', details}`、500 `{error:'Failed to update template'}` か `{error:'Internal server error'}` |
-| DELETE | 道の `id` | 200 `{success:true}`、500 `{error:'Failed to delete template'}` か `{error:'Internal server error'}` |
+| PUT | 道の `id`（UUID の形）、JSON は作成と同じ形 | 200 `{success:true}`、400 `{error:'Invalid request', details}`、404 `{error:'Template not found'}`、429、500 `{error:'Failed to update template'}` か `{error:'Internal server error'}` |
+| DELETE | 道の `id`（UUID の形） | 200 `{success:true}`、404 `{error:'Template not found'}`、429、500 `{error:'Failed to delete template'}` か `{error:'Internal server error'}` |
 
 **正常フロー:**（`src/app/api/admin/contact/templates/[id]/route.ts`）
 
 PUT:
 
 1. 道の `id` を読み、`admin.contact.manage` で認可する
-2. 本文を JSON で読み（壊れていれば空の物）、形を確かめる
-3. 題・分類（無ければ空にする）・本文・直した時刻を書き、並び順は渡された時だけ書く
-4. 監査に `admin.contact.template.update`・結果 `success`・`updated`・ブラウザの情報を書き、200
+2. 認可の直後に、管理者の id ごと 60 回 / 10 分の枠を数える（SEC-ADMIN-006。超えたら 429）
+3. `id` が UUID の形でなければ DB に渡さず 404 `Template not found`
+4. 本文を JSON で読み（壊れていれば空の物）、形を確かめる
+5. 題・分類（無ければ空にする）・本文・直した時刻を書き、並び順は渡された時だけ書く。変えた行の `id` を受ける（`.select('id')`）
+6. 監査に `admin.contact.template.update`・結果 `success`・`updated`・ブラウザの情報を書き、200
 
 DELETE:
 
 1. 道の `id` を読み、`admin.contact.manage` で認可する
-2. 行を消す
-3. 監査に `admin.contact.template.delete`・結果 `success`・`deleted`・ブラウザの情報を書き、200
+2. 認可の直後に、同じ枠（60 回 / 10 分）を数える。`id` が UUID の形でなければ DB に渡さず 404 `Template not found`
+3. 行を消し、消した行の `id` を受ける（`.select('id')`）
+4. 監査に `admin.contact.template.delete`・結果 `success`・`deleted`・ブラウザの情報を書き、200
 
 **異常フロー:**
 
 | 方法 | 条件 | 動き |
 | --- | --- | --- |
-| PUT・DELETE | 認可の失敗 | 認可の応答をそのまま返す |
+| PUT・DELETE | 認可の失敗 | 認可の応答をそのまま返す（回数に数えない） |
+| PUT・DELETE | 回数の枠の超過 | 429（限度器が壊れた時は 503）。DB・監査に触らない |
+| PUT・DELETE | `id` が UUID の形でない | DB に渡さず 404 `Template not found`。監査は書かない |
 | PUT | 本文の JSON が壊れている・形が合わない | 400 で zod の誤りの内訳を返す |
 | PUT | 更新の誤り | 記録して 500 `Failed to update template` |
 | DELETE | 削除の誤り | 記録して 500 `Failed to delete template` |
-| PUT・DELETE | 対象の行が無い | 行の数を見ないので 200 で、成功を監査に残す（SEC-ADMIN-021 を参照） |
+| PUT・DELETE | 変えた・消した行が 0 行 | 404 `Template not found`。監査に結果 `failure`・`template_not_found` を書き、`success` は書かない（SEC-ADMIN-021） |
 | PUT・DELETE | 例外 | 500 `Internal server error` |
 
 **状態・永続化:** PUT は `contact_reply_templates` の1行を書き換え、DELETE は1行を消す（戻せない）。どちらも `audit_logs` に1行書き、操作した人のメールと IP を入れない（SEC-ADMIN-022 を参照）。
@@ -657,7 +718,10 @@ DELETE:
 
 **テスト観点:**（`tests/unit/api/admin/admin-contact-templates-id-route.test.ts`）
 
-- PUT・DELETE: 認可が `ok:false` の時は認可の応答を返す
+- PUT・DELETE: 認可が `ok:false` の時は認可の応答を返し、回数に数えない
+- PUT・DELETE: 回数の枠 `admin:contact:write`・60・600 秒を管理者の id で数え、超えたら 429 で DB・監査に触らない
+- PUT・DELETE: `id` が UUID でない時は 404 で DB に触らず、監査も書かない
+- PUT・DELETE: 変えた・消した行が 0 行（空の配列と null）の時は 404 で、監査が `failure`・`template_not_found`（`success` は書かない）
 - PUT: 本文が JSON でない時と、本文が 5001 字の時は 400
 - PUT: 並び順がある時は `sort_order` を含めて書き、無い時は含めない。分類が無い時は空で書く。200 で、監査が `admin.contact.template.update`
 - PUT: 更新が誤りを返した時は 500 `Failed to update template` で、監査を書かない
@@ -690,16 +754,17 @@ DELETE:
 
 GET:
 
-1. `admin.items.read` で認可する
+1. `admin.items.read` で認可する（回数は数えない）
 2. 全部の列を作った時刻の新しい順に全部読み、200 で返す
 
 POST:
 
 1. `admin.items.manage` で認可する
-2. 本文を JSON で読み、形を確かめる
-3. 同じ名前と色の値の行を0か1件で引く。引く時の誤りは見ない
-4. あれば 200 でその行を返す
-5. 無ければ1行作り、全部の列を読んで 201 で返す
+2. 認可を通った管理者の id を鍵にして 60 回 / 10 分で数える（削除と枠を分け合う）。超えたら 429
+3. 本文を JSON で読み（壊れていれば `null` として扱う）、形を確かめる
+4. 同じ名前と色の値の行を0か1件で引く。引く時の誤りなら作らない（異常フロー）
+5. あれば 200 でその行を返す
+6. 無ければ1行作り、全部の列を読んで 201 で返す
 
 **異常フロー:**
 
@@ -707,25 +772,26 @@ POST:
 | --- | --- | --- |
 | GET・POST | 認可の失敗 | 認可の応答をそのまま返す |
 | GET | 読みの誤り | 記録して 500 `Failed to fetch color presets` |
-| POST | 本文の JSON が壊れている | 外側の catch で 500 `Internal server error`（SEC-ADMIN-013 を参照） |
-| POST | 形が合わない | 400 で zod の誤りの内訳を返す |
-| POST | 既にあるかを引く時の誤り | 見ずに作りへ進む。一意の制約に当たれば作成の誤りで 500（SEC-ADMIN-021 を参照） |
+| POST | 回数の超過 | 限度器の応答（429。限度器が壊れていれば 503）をそのまま返す |
+| POST | 本文の JSON が壊れている・形が合わない | 400 で zod の誤りの内訳を返す（壊れた JSON も同じ） |
+| POST | 既にあるかを引く時の誤り | 作らずに記録して（`code` だけ）500 `Failed to save color preset`（SEC-ADMIN-021） |
 | POST | 作成の誤り | 記録して 500 `Failed to save color preset` |
 | GET・POST | 例外 | 500 `Internal server error` |
 
 **状態・永続化:** POST は `item_color_presets` に1行足すか、何も書かない。監査は書かない（SEC-ADMIN-022 を参照）。
 
-**認証認可:** GET は `admin.items.read`、POST は `admin.items.manage`（どちらも初めは店長だけ）と aal2。呼ぶのは範囲外の商品の編集 `src/app/admin/item/ItemForm.tsx`。
+**認証認可:** GET は `admin.items.read`、POST は `admin.items.manage`（どちらも初めは店長だけ）と aal2。POST は認可を通った管理者の id だけを鍵にして数える（SEC-ADMIN-006）。呼ぶのは範囲外の商品の編集 `src/app/admin/item/ItemForm.tsx`。
 
 **テスト観点:**（`tests/unit/api/admin/item-color-presets-route.test.ts`）
 
 - GET: 認可が `ok:false` の時は認可の応答を返す
 - GET: `created_at` の降順で読み、200 `{data}`。読みが誤りを返した時は 500 `Failed to fetch color presets`
-- POST: 認可が `ok:false` の時は認可の応答を返す
-- POST: 本文が JSON でない時は 500 `Internal server error`
+- POST: 認可が `ok:false` の時は認可の応答を返し、回数を数えない
+- POST: 回数の枠が認可の直後に `{endpoint:'admin:color-presets:write', limit:60, windowSeconds:600, subject:<管理者の id>}` で呼ばれ、超えたら 429 を返して DB を呼ばない。GET は枠を使わない
+- POST: 本文が JSON でない時は 400
 - POST: 名前が空白だけの時、41 字の時、色の値が `#12345` の時は 400 で `details`
 - POST: 同じ組の行がある時は 200 でその行を返し、作らない
-- POST: 行が無い時は作って 201。引く時に誤りが返っても作りに進む
+- POST: 行が無い時は作って 201。引く時に誤りが返ったら 500 `Failed to save color preset` で作らず、記録は `code` だけ
 - POST: 作成が誤りを返した時は 500 `Failed to save color preset`
 - GET・POST: `createServiceRoleClient` が例外を投げた時は 500 `Internal server error`
 
@@ -745,31 +811,37 @@ POST:
 
 | 向き | 中身 |
 | --- | --- |
-| 入力 | DELETE。道の `id`（数の形を確かめない） |
-| 出力 | 200 `{success:true}`、500 `{error:'Failed to delete color preset'}` か `{error:'Internal server error'}`、認可の応答 |
+| 入力 | DELETE。道の `id`（数字の 1〜18 桁） |
+| 出力 | 200 `{success:true}`、404 `{error:'Color preset not found'}`、429、500 `{error:'Failed to delete color preset'}` か `{error:'Internal server error'}`、認可の応答 |
 
 **正常フロー:**（`src/app/api/admin/item-color-presets/[id]/route.ts`）
 
 1. 道の `id` を読み、`admin.items.manage` で認可する
-2. `id` の行を消し、200 を返す
+2. 認可を通った管理者の id を鍵にして 60 回 / 10 分で数える（保存と枠を分け合う）。超えたら 429
+3. `id` が数字の 1〜18 桁でなければ DB に渡さず 404
+4. `id` の行を消し、消した行の `id` を取り直す。1 行以上なら 200 を返す
 
 **異常フロー:**
 
 | 条件 | 動き |
 | --- | --- |
-| 認可の失敗 | 認可の応答をそのまま返す |
-| 削除の誤り（数でない `id` で型の誤りになる時も、推定） | 記録して 500 `Failed to delete color preset` |
-| 対象の行が無い | 行の数を見ないので 200（SEC-ADMIN-021 を参照） |
+| 認可の失敗 | 認可の応答をそのまま返す。回数は数えない |
+| 回数の超過 | 限度器の応答（429。限度器が壊れていれば 503）をそのまま返す |
+| 形の悪い `id`（数字でない・19 桁以上） | DB に渡さず 404 `Color preset not found` |
+| 削除の誤り | 記録して 500 `Failed to delete color preset` |
+| 対象の行が無い（消した行が 0 行） | 404 `Color preset not found`（SEC-ADMIN-021）。監査は書かない |
 | 例外 | 500 `Internal server error` |
 
 **状態・永続化:** `item_color_presets` の1行を消す（戻せない）。監査は書かない（SEC-ADMIN-022 を参照）。
 
-**認証認可:** `admin.items.manage`（初めは店長だけ）と aal2。呼ぶのは範囲外の `src/app/admin/item/ItemForm.tsx`。
+**認証認可:** `admin.items.manage`（初めは店長だけ）と aal2。認可を通った管理者の id だけを鍵にして数える（SEC-ADMIN-006）。呼ぶのは範囲外の `src/app/admin/item/ItemForm.tsx`。
 
 **テスト観点:**（`tests/unit/api/admin/item-color-presets-id-route.test.ts`）
 
-- 認可が `ok:false` の時は認可の応答を返す
-- `id` で消して 200 `{success:true}`
+- 認可が `ok:false` の時は認可の応答を返し、回数を数えない
+- `id` で消して 200 `{success:true}`（消した行の `id` を取り直す）
+- 消した行が 0 行・結果が `null` の時は 404。`abc`・`1; drop`・`-1`・`1.5`・空・19 桁・20 桁は DB を呼ばず 404、18 桁は DB に渡す
+- 回数の枠が認可の直後に `{endpoint:'admin:color-presets:write', limit:60, windowSeconds:600, subject:<管理者の id>}` で呼ばれ、超えたら 429 を返して DB を呼ばない
 - 削除が誤りを返した時は 500 `Failed to delete color preset`
 - `createServiceRoleClient` が例外を投げた時は 500 `Internal server error`
 
@@ -915,6 +987,6 @@ POST:
 - `MAIL_FROM_ADDRESS`・`CONTACT_INBOUND_DOMAIN`・`CONTACT_REPLY_SECRET` と許可のオリジンの本番の設定（本番アプリは未デプロイ）
 - 作った利用者が確認済みになるか（Supabase の既定の設定次第）
 - 2要素のリセットの一覧が、Supabase の返りで形の合わない要素を含むことがあるか（含むと消さずに成功を返す）
-- 存在しない利用者の強制失効で関数が 0 を返すか（動かして確かめていない）
-- 色見本の削除で、数でない `id` が DB の型の誤りになるか
+- 強制失効で、存在しない利用者を GoTrue の `getUserById` が 404（`status` 404 か `code` が `user_not_found`）で返すか。結合試験の写しでは確かめた（本物の GoTrue との通しは E2E `SEC-ADMIN-015-AC-02` に任せ、書いただけで未実行）
+- 色見本の削除で、19 桁の数字の `id`（bigint に収まるものがある）も 404 にしてよいか（identity の連番は届かない大きさ。窓口は 18 桁以下だけを DB に渡す）
 - この文書の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

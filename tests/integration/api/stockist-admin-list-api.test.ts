@@ -157,20 +157,31 @@ describe('GET /api/admin/stockists（管理の取扱店の一覧）', () => {
     expect(body.data.map((r: { id: number }) => r.id)).toEqual([1, 2]);
     expect(body.data.map((r: { status: string }) => r.status)).toEqual(['published', 'private']);
     expect(stockistsOp()?.calls).toEqual([
-      ['select', ['*']],
+      ['select', ['id, name, address, phone, time, holiday, status, updated_at']],
       ['order', ['id', { ascending: true }]],
     ]);
     // status で絞らない・件数の上限も付けない
     expect(stockistsOp()?.calls.some(([m]) => ['eq', 'in', 'limit'].includes(m))).toBe(false);
   });
 
-  it('API-STOCKIST-001 type・created_at・updated_at を含む全部の列を、行の中身を変えずに返す', async () => {
+  it('API-STOCKIST-001 取り出す列を 8 列に絞り（type・created_at を求めない）、DB が返した行の中身を変えずに返す', async () => {
     setup();
 
     const body = await (await GET(makeRequest())).json();
 
+    const selected = String(stockistsOp()?.calls.find(([m]) => m === 'select')?.[1][0]);
+    expect(selected.split(',').map((c) => c.trim())).toEqual([
+      'id',
+      'name',
+      'address',
+      'phone',
+      'time',
+      'holiday',
+      'status',
+      'updated_at',
+    ]);
+    expect(selected).not.toMatch(/\*|type|created_at/);
     expect(body.data).toEqual(ROWS);
-    expect(Object.keys(body.data[0])).toEqual(expect.arrayContaining(['type', 'created_at', 'updated_at']));
   });
 
   it('API-STOCKIST-001 表が 0 件なら空の配列を 200 で返す', async () => {

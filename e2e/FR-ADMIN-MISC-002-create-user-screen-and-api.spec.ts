@@ -29,7 +29,7 @@ const COLOR_PRESETS_PATH = '/api/admin/item-color-presets';
 const SUCCESS_TEXT = 'ユーザ作成しました';
 
 /**
- * 表示名の長さの上限。上限は未決定（TM-ADMIN-54）。実装が上限の定数を export したら、それを import する形に直す。
+ * 表示名の長さの上限（100字。SEC-ADMIN-013）。窓口の定数は export していないので、ここに同じ値を置く。
  * 013-AC-01 は「決めた上限より1字長い」表示名を送る。
  */
 const DISPLAY_NAME_MAX = 100;
@@ -161,7 +161,6 @@ test.describe('FR-ADMIN-MISC-002 create-user api', () => {
   });
 
   test('SEC-ADMIN-008-AC-02 登録済みのメールで 409 が返った後、admin_create_user の行の detail が決まった短い文で Supabase の誤りの文を含まない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-008-AC-02 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     const origin = originOf(baseURL);
     const details: string[] = [];
     for (const label of ['dup-a', 'dup-b']) {
@@ -196,7 +195,6 @@ test.describe('FR-ADMIN-MISC-002 create-user api', () => {
   });
 
   test('SEC-ADMIN-012-AC-01 店長の aal2 で15文字のパスワードを送ると 400 が返り、その利用者が作られない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-012-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     const email = uniqueEmail('short-password');
     const password = `a${randomUUID().replace(/-/g, '').slice(0, 14)}`;
     expect(password).toHaveLength(15);
@@ -208,7 +206,6 @@ test.describe('FR-ADMIN-MISC-002 create-user api', () => {
   });
 
   test('SEC-ADMIN-013-AC-01 上限より1字長い表示名で送ると 400 が返り、利用者が作られない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-013-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     const email = uniqueEmail('long-name');
 
     const response = await request.post(CREATE_USER_PATH, {
@@ -230,7 +227,6 @@ test.describe('FR-ADMIN-MISC-002 create-user api', () => {
   });
 
   test('SEC-ADMIN-013-AC-02 UUID でない user_id の強制失効は 400 で session が変わらない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-013-AC-02 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     const headers = adminHeaders(admin, originOf(baseURL));
 
     const victimEmail = uniqueEmail('victim');

@@ -182,7 +182,7 @@ describe('ARC-HOME-002 ホームの公開の読み', () => {
   });
 
   describe('頁が呼ぶ取得の関数', () => {
-    it('ARC-HOME-002 頁は商品10件・LOOK 8件・NEWS 6件・取扱店6件と3つの総数を取り、格子に渡す', async () => {
+    it('ARC-HOME-002 頁は商品8件・LOOK 8件・NEWS 6件・取扱店6件と3つの総数を取り、格子に渡す', async () => {
       seedAll();
 
       const tree = await Home();
@@ -204,10 +204,10 @@ describe('ARC-HOME-002 ホームの公開の読み', () => {
         reads(table, kind)
           .flatMap((r) => r.calls)
           .find((call) => call[0] === 'limit')?.[1];
-      expect(limitOf('items', 'session')).toBe(10);
+      expect(limitOf('items', 'session')).toBe(8);
       expect(limitOf('looks', 'public')).toBe(8);
       expect(limitOf('news_articles', 'public')).toBe(6);
-      expect(limitOf('stockists', 'session')).toBe(6);
+      expect(limitOf('stockists', 'public')).toBe(6);
     });
 
     it('ARC-HOME-002 頁が読む行の表は、行を読む問い合わせの全部が公開済みに絞られている', async () => {
@@ -227,11 +227,11 @@ describe('ARC-HOME-002 ホームの公開の読み', () => {
     });
   });
 
-  describe('商品10件・商品の総数', () => {
+  describe('商品8件・商品の総数', () => {
     it('ARC-HOME-002 行も総数も閲覧者の session の client で読み、公開済みに絞る', async () => {
       seedAll();
 
-      await getPublishedItems(10);
+      await getPublishedItems(8);
       await getPublishedItemsCount();
 
       const itemReads = reads('items');
@@ -244,7 +244,7 @@ describe('ARC-HOME-002 ホームの公開の読み', () => {
     it('ARC-HOME-002 画像の署名と在庫の読みだけ service role で行い、在庫も公開中の商品に絞り直す', async () => {
       seedAll();
 
-      const items = await getPublishedItems(10);
+      const items = await getPublishedItems(8);
 
       expect(signedBy).toEqual(['service']);
       const variantRead = reads('item_variants');
@@ -302,29 +302,29 @@ describe('ARC-HOME-002 ホームの公開の読み', () => {
       expect(newsReads.every(isPublishedOnly)).toBe(true);
     });
 
-    it('ARC-HOME-002 service role は DB を読まず、画像の署名だけに使う', async () => {
+    it('ARC-HOME-002 NEWS の道は service role を作らず、画像の署名もしない（SEC-HOME-013、SEC-NEWS-005）', async () => {
       seedAll();
 
       await getPublishedNews({ limit: 6 });
 
       expect(reads('news_articles', 'service')).toHaveLength(0);
-      expect(created).toContain('service');
-      expect(signedBy).toEqual(['service']);
+      expect(created).not.toContain('service');
+      expect(signedBy).toEqual([]);
     });
 
   });
 
   describe('取扱店6件', () => {
-    it('ARC-HOME-002 閲覧者の session の client で公開済みに絞って読み、service role を作らない', async () => {
+    it('ARC-HOME-002 公開用の client（Cookie を引き継がない）で公開済みに絞って読み、service role を作らない', async () => {
       seedAll();
 
       const stockists = await getHomePublicStockists();
 
       const stockistReads = reads('stockists');
       expect(stockistReads).toHaveLength(1);
-      expect(stockistReads[0].kind).toBe('session');
+      expect(stockistReads[0].kind).toBe('public');
       expect(isPublishedOnly(stockistReads[0])).toBe(true);
-      expect(created).toEqual(['session']);
+      expect(created).toEqual(['public']);
       expect(stockists).toEqual([
         { id: 41, name: 'Shop', address: 'Tokyo', phone: '', time: '', holiday: '' },
       ]);

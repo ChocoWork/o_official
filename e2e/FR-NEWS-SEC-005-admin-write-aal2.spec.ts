@@ -12,8 +12,8 @@
  * 書き込みと混ざらないようにするため。記事は status='private' で作り、公開の画面には出さない。
  *
  * 現行のコードが満たさない AC（文のとおりに書いてあり、緩めない。コードが直るまで赤）:
- * 016-AC-02（無い id でも 200 と成功の監査）、017-AC-01（type の申告だけで通す）、017-AC-02（PUT の拡張子を送られた名前から作る）、
- * 018-AC-01・AC-02（記事を消しても・画像を替えても前の画像を置き場に残す）。016-AC-01・017-AC-03 は満たす見込み。
+ * 017-AC-01（type の申告だけで通す）、017-AC-02（PUT の拡張子を送られた名前から作る）、
+ * 018-AC-01・AC-02（記事を消しても・画像を替えても前の画像を置き場に残す）。016-AC-01・017-AC-03 は満たす見込み。016-AC-02（無い id・0 行は 404 と失敗の監査）は満たすので印を外した。
  *
  * 店長（aal2）は worker ごとに 1 人だけ作り（Auth のログインの回数の制限を使い切らない）、worker の終わりに消す。監査の行は消さない（db reset で消える）。記事の行と、置き場に入った物は終わりに消す。
  */
@@ -268,7 +268,6 @@ test.describe('FR-NEWS-SEC-005 管理の記事の書き込みの窓口', () => {
   });
 
   test('SEC-NEWS-016-AC-02 存在しない id への PUT・PATCH・DELETE はどれも 404 で、update・status_update・delete の成功の監査の行が増えない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-NEWS-016 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     await withScenario(request, baseURL, async (s) => {
       const actions = ['admin.news.update', 'admin.news.status_update', 'admin.news.delete'] as const;
       const before = await countSuccessAudits(s.db, s.actor.userId, actions);

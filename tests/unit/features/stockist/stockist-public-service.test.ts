@@ -1,10 +1,13 @@
 const mockCreateClient = jest.fn();
+const mockCreatePublicClient = jest.fn();
 
 jest.mock('@/lib/supabase/server', () => ({
   createClient: (...args: unknown[]) => mockCreateClient(...args),
+  createPublicClient: (...args: unknown[]) => mockCreatePublicClient(...args),
 }));
 
 import {
+  PUBLIC_STOCKIST_FETCH_LIMIT,
   getHomePublicStockists,
   getPublicStockists,
 } from '@/features/stockist/services/public';
@@ -23,7 +26,7 @@ function setupChain(result: Result) {
     reject?: (reason: unknown) => unknown,
   ) => Promise.resolve(result).then(resolve, reject);
   const from = jest.fn(() => chain);
-  mockCreateClient.mockResolvedValue({ from });
+  mockCreatePublicClient.mockResolvedValue({ from });
   return {
     from,
     chain: chain as Record<'select' | 'eq' | 'order' | 'limit', jest.Mock>,
@@ -64,17 +67,29 @@ describe('getPublicStockists', () => {
     consoleError.mockRestore();
   });
 
-  it('DD-STOCKIST-003 引数なしなら stockists を published で絞り id 昇順に取り、limit を呼ばない', async () => {
+  it('DD-STOCKIST-003 引数なしなら Cookie を引き継がない公開用の client で stockists を published で絞り id 昇順に取り、上限の limit(200) を掛ける', async () => {
     const { from, chain } = setupChain({ data: [], error: null });
 
     await getPublicStockists();
 
-    expect(mockCreateClient).toHaveBeenCalledWith();
+    expect(mockCreatePublicClient).toHaveBeenCalledWith();
+    expect(mockCreateClient).not.toHaveBeenCalled();
     expect(from).toHaveBeenCalledWith('stockists');
     expect(chain.select).toHaveBeenCalledWith('id, name, address, phone, time, holiday, status');
     expect(chain.eq).toHaveBeenCalledWith('status', 'published');
     expect(chain.order).toHaveBeenCalledWith('id', { ascending: true });
-    expect(chain.limit).not.toHaveBeenCalled();
+    expect(chain.limit).toHaveBeenCalledTimes(1);
+    expect(chain.limit).toHaveBeenCalledWith(200);
+    expect(PUBLIC_STOCKIST_FETCH_LIMIT).toBe(200);
+  });
+
+  it('DD-STOCKIST-003 limit が 500 でも上限の limit(200) に切り詰める', async () => {
+    const { chain } = setupChain({ data: [], error: null });
+
+    await getPublicStockists({ limit: 500 });
+
+    expect(chain.limit).toHaveBeenCalledTimes(1);
+    expect(chain.limit).toHaveBeenCalledWith(200);
   });
 
   it('DD-STOCKIST-003 limit が 6 なら limit(6) を呼ぶ', async () => {
@@ -103,12 +118,14 @@ describe('getPublicStockists', () => {
     ['limit 無しの空オブジェクト', {}],
     ['数でない文字列', { limit: '6' as unknown as number }],
     ['undefined', { limit: undefined }],
-  ])('DD-STOCKIST-003 件数を限らない値（%s）は limit を呼ばない', async (_label, options) => {
+    ['1 未満の小数', { limit: 0.5 }],
+  ])('DD-STOCKIST-003 不正な件数（%s）でも limit を外さず上限の limit(200) を掛ける', async (_label, options) => {
     const { chain } = setupChain({ data: [], error: null });
 
     await getPublicStockists(options);
 
-    expect(chain.limit).not.toHaveBeenCalled();
+    expect(chain.limit).toHaveBeenCalledTimes(1);
+    expect(chain.limit).toHaveBeenCalledWith(200);
   });
 
   it('DD-STOCKIST-003 行を6つの列に詰め直し、status・created_at・updated_at を返さない', async () => {
@@ -150,7 +167,7 @@ describe('getPublicStockists', () => {
   });
 
   it('DD-STOCKIST-003 client を作れない時の例外は受け止めず呼んだ側へ出す', async () => {
-    mockCreateClient.mockRejectedValue(new Error('no client'));
+    mockCreatePublicClient.mockRejectedValue(new Error('no client'));
 
     await expect(getPublicStockists()).rejects.toThrow('no client');
   });

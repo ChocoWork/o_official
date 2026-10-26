@@ -190,7 +190,10 @@ function afterEachCommon() {
 
 const { DELETE } = require('@/app/api/admin/stockists/[id]/route');
 
-function okTables(del: Outcome = { data: null, error: null }): Tables {
+// 削除の結果は .select('id, name, address, status') で返る、消した行。1 行なら成功、0 行は「無い」か RLS が隠した場合で 404
+const DELETED_ROW = { id: 7, name: 'ATELIER SHIBUYA', address: '東京都渋谷区神南1-2-3', status: 'published' };
+
+function okTables(del: Outcome = { data: [DELETED_ROW], error: null }): Tables {
   return { stockists: { delete: del } };
 }
 
@@ -198,7 +201,7 @@ describe('DELETE /api/admin/stockists/[id]（取扱店の削除）', () => {
   beforeEach(beforeEachCommon);
   afterEach(afterEachCommon);
 
-  test.each(['abc', '0', '-1', '1.5', '', ' ', 'NaN', 'Infinity'])(
+  test.each(['abc', '0', '-1', '1.5', '', ' ', 'NaN', 'Infinity', '1e30', '9007199254740993'])(
     'API-STOCKIST-006 id が正の整数でない %j は認可より前に 400 Invalid stockist id で断り、本文も表も触らない',
     async (id) => {
       setup({ tables: okTables() });
@@ -484,7 +487,7 @@ describe('DELETE /api/admin/stockists/[id]（取扱店の削除）', () => {
     expect(auditRows()).toHaveLength(0);
   });
 
-  test('API-STOCKIST-006 id の行だけを消し、本文を読まず、200 と消した id だけを要約にした成功の監査を残す', async () => {
+  test('API-STOCKIST-006 id の行だけを消し、本文を読まず、200 と消した行の中身を残した成功の監査を残す', async () => {
     setup({ tables: okTables() });
     const request = makeRequest();
 
@@ -494,7 +497,9 @@ describe('DELETE /api/admin/stockists/[id]（取扱店の削除）', () => {
     expect(await res.json()).toEqual({ success: true });
     expect(createClient).toHaveBeenCalledWith(request);
     expect(jsonMock(request)).not.toHaveBeenCalled();
-    expect(tableCalls('stockists', 'delete')).toEqual([[['delete', []], ['eq', ['id', 7]]]]);
+    expect(tableCalls('stockists', 'delete')).toEqual([
+      [['delete', []], ['eq', ['id', 7]], ['select', ['id, name, address, status']]],
+    ]);
     expect(dataSeq()).toEqual(['stockists.delete']);
     expect(auditRows()).toEqual([
       expect.objectContaining({
@@ -510,14 +515,23 @@ describe('DELETE /api/admin/stockists/[id]（取扱店の削除）', () => {
     ]);
   });
 
-  test('API-STOCKIST-006 監査の要約に消した店の名前も住所も入れない', async () => {
-    setup({ tables: okTables() });
+  test('API-STOCKIST-006 監査の detail に店の名前も住所も入れず、消した店の id・name・address・status だけを metadata.deleted に残す', async () => {
+    setup({
+      tables: okTables({
+        data: [{ ...DELETED_ROW, id: 12, phone: '03-1234-5678', time: '11:00-19:00', holiday: '水曜' }],
+        error: null,
+      }),
+    });
 
     await DELETE(makeRequest(), ctx('12'));
 
     const [row] = auditRows();
     expect(row.detail).toBe('Deleted stockist id: 12');
-    expect(row.metadata ?? null).toBeNull();
+    expect(row.metadata).toEqual({
+      deleted: { id: 12, name: 'ATELIER SHIBUYA', address: '東京都渋谷区神南1-2-3', status: 'published' },
+    });
+    expect(JSON.stringify(row)).not.toContain('03-1234-5678');
+    expect(JSON.stringify(row)).not.toContain('11:00-19:00');
   });
 
   test('API-STOCKIST-006 監査の送り元と user-agent が無ければ null で残す', async () => {
@@ -548,13 +562,34 @@ describe('DELETE /api/admin/stockists/[id]（取扱店の削除）', () => {
     ]);
   });
 
-  test('API-STOCKIST-006 無い id でも DB は誤りを返さないので 200 と成功の監査になる（推定）', async () => {
-    setup({ tables: okTables({ data: null, error: null }) });
+  test.each([
+    ['空の配列', []],
+    ['null', null],
+  ])('API-STOCKIST-006 削除の結果が %s（0 行）なら 404 Stockist not found で断り、成功の監査を書かず failure を残す', async (_label, data) => {
+    setup({ tables: okTables({ data, error: null }) });
 
     const res = await DELETE(makeRequest(), ctx('99999'));
 
-    expect(res.status).toBe(200);
-    expect(auditRows()[0]).toMatchObject({ outcome: 'success', resource_id: '99999', detail: 'Deleted stockist id: 99999' });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Stockist not found' });
+    expect(auditRows()).toEqual([
+      expect.objectContaining({
+        action: 'admin.stockists.delete',
+        outcome: 'failure',
+        detail: 'Stockist not found',
+        resource_id: '99999',
+      }),
+    ]);
+    expect(auditRows()[0].metadata ?? null).toBeNull();
+  });
+
+  test('API-STOCKIST-006 DB の誤りの記録には符号だけを残し、誤りの本文を残さない', async () => {
+    setup({ tables: okTables({ data: null, error: { code: '23503', message: 'foreign key violation' } }) });
+
+    await DELETE(makeRequest(), ctx());
+
+    expect(console.error).toHaveBeenCalledWith('Failed to delete stockist:', { code: '23503' });
+    expect(JSON.stringify((console.error as jest.Mock).mock.calls)).not.toContain('foreign key violation');
   });
 
   test('API-STOCKIST-006 表の削除で例外が出たら 500 Internal server error を返す', async () => {

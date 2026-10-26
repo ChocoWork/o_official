@@ -1,4 +1,4 @@
-// Server Action と公開の取り出し・画像の署名は本物を通し、DB だけを差し替える
+// Server Action と公開の取り出しは本物を通し、DB だけを差し替える
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
   createPublicClient: jest.fn(),
@@ -37,8 +37,8 @@ function setupClients(result: QueryResult, signed: { data: unknown; error: unkno
 }
 
 const ROWS = [
-  { id: 3, title: 'c', published_date: '2026-03-01', category: 'EVENT', image_url: 'news/a.jpg', content: 'x' },
-  { id: 2, title: 'b', published_date: '2026-02-01', category: 'STORE', image_url: 'news/a.jpg', content: 'y' },
+  { id: 3, title: 'c', published_date: '2026-03-01', category: 'EVENT', content: 'x' },
+  { id: 2, title: 'b', published_date: '2026-02-01', category: 'STORE', content: 'y' },
 ];
 
 describe('Server Action getLatestNews 最新の公開済みの記事', () => {
@@ -46,23 +46,19 @@ describe('Server Action getLatestNews 最新の公開済みの記事', () => {
     jest.clearAllMocks();
   });
 
-  it('API-NEWS-008 公開済みだけを公開日の新しい順に3件まで取り出し、署名つきの画像で返す', async () => {
+  it('API-NEWS-008 公開済みだけを公開日の新しい順に3件まで取り出し、画像の列を選ばず署名もせずに返す（SEC-NEWS-005）', async () => {
     const { from, query, createSignedUrl } = setupClients({ data: ROWS, error: null });
 
     const result = await getLatestNews();
 
     expect(from).toHaveBeenCalledWith('news_articles');
-    expect(query.select).toHaveBeenCalledWith('id, title, published_date, category, image_url, content');
+    expect(query.select).toHaveBeenCalledWith('id, title, published_date, category, content');
     expect(query.eq).toHaveBeenCalledWith('status', 'published');
     expect(query.order).toHaveBeenCalledWith('published_date', { ascending: false });
     expect(query.limit).toHaveBeenCalledWith(3);
-    expect(createSignedUrl).toHaveBeenCalledWith('news/a.jpg', 3600);
-    expect(result).toEqual(
-      ROWS.map((row) => ({
-        ...row,
-        image_url: 'https://project.supabase.co/storage/v1/object/sign/news-images/news/a.jpg?token=t',
-      })),
-    );
+    expect(createSignedUrl).not.toHaveBeenCalled();
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+    expect(result).toEqual(ROWS);
   });
 
   it('API-NEWS-008 分類で絞らない', async () => {

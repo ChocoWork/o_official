@@ -1,6 +1,6 @@
 # ADR-0412 戻り先はサーバーに控え、番号だけを HttpOnly の Cookie で渡す
 
-> 状態: 推定 | 確認日: 2026-10-25 | 対象: `src/features/auth/return-intent/`、`src/app/api/auth/{login,register,oauth/start,oauth/callback,confirm,post-login}/route.ts`、`supabase/migrations/20261026010000_auth_return_intents.sql` | 基準コミット: `6074cfad`
+> 状態: 推定（2026-10-26 に確認のリンクの結び付けを ADR-0413 で更新） | 確認日: 2026-10-26 | 対象: `src/features/auth/return-intent/`、`src/app/api/auth/{login,register,oauth/start,oauth/callback,confirm,post-login}/route.ts`、`supabase/migrations/20261026010000_auth_return_intents.sql` | 基準コミット: `6074cfad`
 
 ## 概要
 
@@ -43,10 +43,10 @@
 
 #### 決定
 
-- 戻り先は、ログインを始める POST（`/api/auth/login`・`/api/auth/oauth/start`・`/api/auth/register`）の成功した所で、戻り先の確かめに通った時だけ作る。GET では作らない
+- 戻り先は、ログインを始める POST（`/api/auth/login`・`/api/auth/oauth/start`・`/api/auth/register`）の成功した所で、戻り先の確かめに通った時だけ作る（`/api/auth/register` だけは、戻り先が無い・不正でも `/` で必ず作る。[ADR-0413](ADR-0413-signup-binding-email-bound-return-intent.md)）。GET では作らない
 - 表 `private.auth_return_intents` には番号の sha256 だけを持つ。番号は 128 ビット以上の乱数（base64url）。Cookie `sb-return-intent` は HttpOnly・本番は Secure・SameSite=Lax・Path=/・`Max-Age` は期限と同じ
 - 作る・使い切るの 2 本の関数を `public` に置く。`SECURITY DEFINER`・`search_path` は空・EXECUTE は service role だけ。使い切りは `UPDATE … WHERE consumed_at IS NULL AND expires_at > now() RETURNING` の 1 回
-- 出口は 2 種類。サーバーが 303 で移す所（Google の戻り・確認のメールのリンク）はその場で使い切る。端末が移す所（確認コードの確定・TOTP の確定）は `POST /api/auth/post-login` が使い切って行き先を返す。管理者・サポーターは aal2 になるまで使い切らない
+- 出口は 2 種類。サーバーが 303 で移す所（Google の戻り・確認のメールのリンク）はその場で使い切る。確認のメールのリンクだけは、登録したメールに結んだ控えを session を作る前に使い切り、当たった時だけ session を作る（[ADR-0413](ADR-0413-signup-binding-email-bound-return-intent.md)。Google の戻りは波 1-A のまま、session の保存の後に使い切る）。端末が移す所（確認コードの確定・TOTP の確定）は `POST /api/auth/post-login` が使い切って行き先を返す。管理者・サポーターは aal2 になるまで使い切らない
 - 出口でも役割と aal2 を含めて確かめ直す。`/admin` は 2 段目を済ませた管理者・サポーターだけ
 - Google の開始は `fetch` の POST で控えを作り、返った authorize の URL へ端末が移る。CSP の `form-action 'self'` がフォームの送信に続くリダイレクトの行き先にも当たるので、フォームの POST から外への 303 は使えない
 - 戻りの URL（`/api/auth/oauth/callback`）と確認のメールのリンク（`/api/auth/confirm`）に `next`・番号を載せない
@@ -64,7 +64,7 @@
 #### 結果
 
 - 良くなること: URL の値で出口が決まらないので、確かめの抜けがあっても外の住所へ出る道が減る。番号は盗みにくく、2 回は使えない。ログインを始めた頁と会員だけの頁へ戻れる
-- 悪くなること: 表・関数 2 本・Cookie・毎日の掃除が増える。ログインを始める POST ごとに DB へ 1 回書く（今の回数の制限に乗る）。別のブラウザで確認のリンクを開いた人には戻り先が無く、`/` へ着く
+- 悪くなること: 表・関数 2 本・Cookie・毎日の掃除が増える。ログインを始める POST ごとに DB へ 1 回書く（今の回数の制限に乗る）。別のブラウザで確認のリンクを開いた人には戻り先が無く、session も作らずに `/login?registered=1` へ送る（[ADR-0413](ADR-0413-signup-binding-email-bound-return-intent.md)。波 1-A では `/` へ着いていた）
 - 見直す条件: 管理者・サポーターの戻り先を保持する時間が足りない時。Supabase の公開の schema の関数の扱いが変わる時
 
 ## 未確認事項

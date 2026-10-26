@@ -4,7 +4,7 @@ title: シークレット管理方針
 
 # シークレット管理方針（暫定: 手動運用）
 
-> 状態: 既存の運用方針 | 本番設定・手順の適用状況は未確認 | 確認日: 2026-10-02
+> 状態: 既存の運用方針 | 本番設定・手順の適用状況は未確認 | 確認日: 2026-10-02（`ADMIN_API_KEY` の廃止の節は 2026-10-26 に追記）
 
 この文書中の `docs/seq/supabase-service-role-key-rotation-diagrams.md` は現行リポジトリに存在しない旧計画への参照である。自動ローテーションを実施済みとは扱わず、実施前に現在の秘密値の保管場所、権限、手順を確認する。
 ## 概要
@@ -106,3 +106,9 @@ APP_ALLOWED_ORIGINS=https://www.example.com,https://example.com
 
 同じ一覧を `getRequestOrigin`（リダイレクト先の検証）も使う。片方だけ設定する、
 という状態は作らないこと。
+
+## ADMIN_API_KEY（廃止。もう読まない）
+
+以前は `POST /api/auth/register` が `x-admin-token`（又は `Authorization: Bearer`）を `ADMIN_API_KEY` と照合し、一致すると管理の作成の枝（確認なしで会員を作る）に切り替えていた。波 1-B（2026-10-26）でこの枝を削除した（SEC-AUTH-017）。今は `src` のどこにも `ADMIN_API_KEY` を読む所が無く、`/api/auth/register` はいつも公開の会員登録として扱う。E2E の固定の環境（`scripts/e2e/environment.ts` の `E2E_FIXED_ENV`）からも外した。
+
+運用の作業: 本番（Vercel）の環境変数に `ADMIN_API_KEY` があれば削除する。残っていても動きは変わらないが、読まれない鍵を置き続けない。管理者が会員を作るときは、管理画面の `POST /api/admin/create-user`（権限 `admin.users.manage`）を使う。

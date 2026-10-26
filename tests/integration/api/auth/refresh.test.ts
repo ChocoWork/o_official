@@ -194,8 +194,8 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     expect(tokenRequest?.body === JSON.stringify({ refresh_token: 'old-refresh' })).toBe(true);
 
     expect(res.status).toBe(200);
-    expect(body.access_token).toBe('new-a');
-    expect(body.user.email).toBe('user@example.com');
+    expect(body).toEqual({ ok: true });
+    expect(JSON.stringify(body)).not.toMatch(/access_token|refresh_token|app_metadata|new-a|new-r/);
 
     expect(res.cookies.get('sb-refresh-token')?.value).toBe('new-r');
     expect(res.cookies.get('sb-access-token')?.value).toBe('new-a');
@@ -313,7 +313,7 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.access_token).toBe('new-a');
+    expect(body).toEqual({ ok: true });
     expect(res.cookies.get('sb-refresh-token')?.value).toBe('new-r');
     expect(logAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'refresh', actor_id: 'u1', outcome: 'error' }),

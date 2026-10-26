@@ -1,7 +1,10 @@
 export {};
 
-// 本物の認可（admin-rbac）と本物の監査（audit）を通し、外側の境界（トークンの検証・セッションの生存確認・
-// service role の DB・Auth の管理の機能）だけを差し替える。窓口 → 認可 → 対象の確認 → 2要素の削除 → 監査の鎖を一緒に確かめる。
+import { createHash } from 'node:crypto';
+
+// 本物の認可（admin-rbac）と本物の監査（audit）と本物の失効の部品（revoke-user-sessions）を通し、外側の境界
+// （トークンの検証・セッションの生存確認・service role の DB・Auth の管理の機能・回数の制限）だけを差し替える。
+// 窓口 → 認可 → 回数 → 対象の確認 → 役割（user_roles）→ 2要素の削除 → session の失効 → 監査の鎖を一緒に確かめる。
 jest.mock('next/server', () => ({
   NextResponse: {
     json: (body: unknown, init?: { status?: number }) => ({
@@ -16,31 +19,44 @@ jest.mock('@/lib/auth/authenticate', () => ({
   verifyAccessToken: jest.fn(),
   checkAuthSessionLiveness: jest.fn(),
 }));
+jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+jest.mock('@/features/auth/ratelimit', () => ({ incrementCounter: jest.fn() }));
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
+const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 const { POST } = require('@/app/api/admin/users/mfa/reset/route');
 
 const ACTOR_ID = '11111111-1111-4111-8111-111111111111';
 const TARGET_ID = '22222222-2222-4222-8222-222222222222';
 const REASON = 'Lost the authenticator device';
+const TARGET_EMAIL = 'target@example.com';
 const validBody = { userId: TARGET_ID, reason: REASON, confirm: 'RESET_MFA' };
 const clientHeaders = { 'x-forwarded-for': '203.0.113.5, 10.0.0.1', 'user-agent': 'jest-agent' };
+const reasonHash = (reason: string) => createHash('sha256').update(reason).digest('hex');
 
 let auditRows: any[];
 let aclCodes: string[];
+let targetRoleCodes: string[];
+let targetRoleError: unknown;
+let targetRoleQueries: Array<{ column: string; value: unknown }>;
 let getUserById: jest.Mock;
 let listFactors: jest.Mock;
 let deleteFactor: jest.Mock;
+let sessionsUpdate: jest.Mock;
+let sessionsEq: jest.Mock;
+let rpc: jest.Mock;
+let calls: string[];
 let errorSpy: jest.SpyInstance;
 let warnSpy: jest.SpyInstance;
 
-function targetUser(appMetadata: unknown, extra: Record<string, unknown> = { email: 'target@example.com' }) {
+function targetUser(appMetadata: unknown, extra: Record<string, unknown> = { email: TARGET_EMAIL }) {
   return { data: { user: { id: TARGET_ID, ...extra, app_metadata: appMetadata } }, error: null };
 }
 
 function installServiceClient() {
   const client = {
+    rpc,
     auth: { admin: { getUserById, mfa: { listFactors, deleteFactor } } },
     from: (table: string) => {
       if (table === 'audit_logs') {
@@ -51,14 +67,31 @@ function installServiceClient() {
           },
         };
       }
+      if (table === 'sessions') {
+        return { update: sessionsUpdate };
+      }
       if (table === 'user_roles') {
+        let isTargetRoleLookup = false;
         const chain: any = {
-          select: () => chain,
-          eq: () => chain,
-          or: async () => ({
-            data: [{ roles: { role_permissions: aclCodes.map((code) => ({ permissions: { code } })) } }],
-            error: null,
-          }),
+          select: (columns: string) => {
+            isTargetRoleLookup = columns === 'roles!inner(code)';
+            return chain;
+          },
+          eq: (column: string, value: unknown) => {
+            if (isTargetRoleLookup) targetRoleQueries.push({ column, value });
+            return chain;
+          },
+          or: async () => {
+            if (isTargetRoleLookup) {
+              return targetRoleError
+                ? { data: null, error: targetRoleError }
+                : { data: targetRoleCodes.map((code) => ({ roles: { code } })), error: null };
+            }
+            return {
+              data: [{ roles: { role_permissions: aclCodes.map((code) => ({ permissions: { code } })) } }],
+              error: null,
+            };
+          },
         };
         return chain;
       }
@@ -87,10 +120,27 @@ function makeRequest(body: unknown, headers: Record<string, string> = clientHead
 beforeEach(() => {
   jest.resetAllMocks();
   auditRows = [];
+  calls = [];
   aclCodes = ['admin.users.manage'];
-  getUserById = jest.fn().mockResolvedValue(targetUser({ role: 'admin' }));
+  targetRoleCodes = ['admin'];
+  targetRoleError = null;
+  targetRoleQueries = [];
+  getUserById = jest.fn().mockResolvedValue(targetUser({}));
   listFactors = jest.fn().mockResolvedValue({ data: { factors: [{ id: 'f1' }, { id: 'f2' }] }, error: null });
-  deleteFactor = jest.fn().mockResolvedValue({ error: null });
+  deleteFactor = jest.fn().mockImplementation(async () => {
+    calls.push('deleteFactor');
+    return { error: null };
+  });
+  sessionsEq = jest.fn().mockImplementation(async () => {
+    calls.push('sessions.update');
+    return {};
+  });
+  sessionsUpdate = jest.fn().mockReturnValue({ eq: sessionsEq });
+  rpc = jest.fn().mockImplementation(async () => {
+    calls.push('rpc');
+    return { data: 2, error: null };
+  });
+  enforceRateLimit.mockResolvedValue(undefined);
   errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   installServiceClient();
@@ -104,13 +154,14 @@ afterEach(() => {
 });
 
 describe('POST /api/admin/users/mfa/reset', () => {
-  describe('認可', () => {
-    test('API-ADMIN-004 トークンが通らなければ 401 を返し、対象を引かず監査も書かない', async () => {
+  describe('認可と回数の制限', () => {
+    test('API-ADMIN-004 トークンが通らなければ 401 を返し、回数も数えず、対象を引かず監査も書かない', async () => {
       verifyAccessToken.mockResolvedValue({ ok: false, reason: 'invalid' });
 
       const res = await POST(makeRequest(validBody));
 
       expect(res.status).toBe(401);
+      expect(enforceRateLimit).not.toHaveBeenCalled();
       expect(getUserById).not.toHaveBeenCalled();
       expect(deleteFactor).not.toHaveBeenCalled();
       expect(auditRows).toEqual([]);
@@ -150,11 +201,26 @@ describe('POST /api/admin/users/mfa/reset', () => {
       expect(deleteFactor).not.toHaveBeenCalled();
       expect(auditRows).toEqual([]);
     });
+
+    test('API-ADMIN-004 認可の後に管理者の ID を枠にして 10 回 / 600 秒で数え、429 なら本文を読まず消さない', async () => {
+      enforceRateLimit.mockResolvedValue({ status: 429, _body: { error: 'Too many requests' } });
+
+      const res = await POST(makeRequest(validBody));
+
+      expect(res.status).toBe(429);
+      expect(enforceRateLimit).toHaveBeenCalledWith(
+        expect.objectContaining({ endpoint: 'admin:users:mfa-reset', limit: 10, windowSeconds: 600, subject: ACTOR_ID }),
+      );
+      expect(getUserById).not.toHaveBeenCalled();
+      expect(deleteFactor).not.toHaveBeenCalled();
+      expect(rpc).not.toHaveBeenCalled();
+      expect(auditRows).toEqual([]);
+    });
   });
 
   describe('入力の検証', () => {
     test.each([
-      ['userId が UUID でない', { ...validBody, userId: 'not-a-uuid' }, 'not-a-uuid'],
+      ['userId が UUID でない', { ...validBody, userId: 'not-a-uuid' }, null],
       ['userId が欠けている', { reason: REASON, confirm: 'RESET_MFA' }, null],
       ['理由が 9 文字', { ...validBody, reason: '123456789' }, TARGET_ID],
       ['理由が前後の空白を除くと 9 文字', { ...validBody, reason: '   123456789   ' }, TARGET_ID],
@@ -185,6 +251,7 @@ describe('POST /api/admin/users/mfa/reset', () => {
           metadata: { requested_user_id: requested },
         }),
       );
+      expect(JSON.stringify(auditRows)).not.toContain('not-a-uuid');
     });
 
     test.each([
@@ -203,14 +270,19 @@ describe('POST /api/admin/users/mfa/reset', () => {
       expect(deleteFactor).not.toHaveBeenCalled();
     });
 
-    test('API-ADMIN-004 理由は前後の空白を除いた 10 文字ちょうどと 500 文字ちょうどを受け付ける', async () => {
+    test('API-ADMIN-004 理由は前後の空白を除いた 10 文字ちょうどと 500 文字ちょうどを受け付け、長さとハッシュだけを監査へ残す', async () => {
       const ten = await POST(makeRequest({ ...validBody, reason: '  1234567890  ' }));
       const max = await POST(makeRequest({ ...validBody, reason: 'a'.repeat(500) }));
 
       expect(ten.status).toBe(200);
       expect(max.status).toBe(200);
-      expect(auditRows[0].metadata.reason).toBe('1234567890');
-      expect(auditRows[1].metadata.reason).toHaveLength(500);
+      expect(auditRows[0].metadata).toEqual(
+        expect.objectContaining({ reason_length: 10, reason_sha256: reasonHash('1234567890') }),
+      );
+      expect(auditRows[1].metadata).toEqual(
+        expect.objectContaining({ reason_length: 500, reason_sha256: reasonHash('a'.repeat(500)) }),
+      );
+      expect(auditRows[0].metadata).not.toHaveProperty('reason');
     });
 
     test('API-ADMIN-004 IP は x-forwarded-for の先頭だけを残し、ヘッダが無ければ空で監査へ残す', async () => {
@@ -247,7 +319,7 @@ describe('POST /api/admin/users/mfa/reset', () => {
     test.each([
       ['Auth が誤りを返す', { data: { user: null }, error: { message: 'User not found' } }],
       ['対象の利用者が空', { data: { user: null }, error: null }],
-    ])('API-ADMIN-004 %s時は 404 を返し、消さずに failure を理由付きで監査へ残す', async (_label, result) => {
+    ])('API-ADMIN-004 %s時は 404 を返し、消さずに failure を理由の文なしで監査へ残す', async (_label, result) => {
       getUserById.mockResolvedValue(result);
 
       const res = await POST(makeRequest(validBody));
@@ -259,23 +331,17 @@ describe('POST /api/admin/users/mfa/reset', () => {
       expect(deleteFactor).not.toHaveBeenCalled();
       expect(auditRows).toHaveLength(1);
       expect(auditRows[0]).toEqual(
-        expect.objectContaining({
-          outcome: 'failure',
-          detail: 'Target user not found',
-          resource_id: TARGET_ID,
-          metadata: { reason: REASON },
-        }),
+        expect.objectContaining({ outcome: 'failure', detail: 'Target user not found', resource_id: TARGET_ID }),
       );
+      expect(JSON.stringify(auditRows)).not.toContain(REASON);
     });
 
     test.each([
-      ['役割が user', { role: 'user' }, 'user'],
-      ['役割が知らない値', { role: 'owner' }, 'user'],
-      ['付帯の情報が空', null, 'user'],
-      ['付帯の情報が文字列', 'admin', 'user'],
-      ['役割が文字列でない', { role: 7 }, 'user'],
-    ])('API-ADMIN-004 対象の%sなら 400 で断り、消さずに対象の役割付きで failure を監査へ残す', async (_label, appMetadata, role) => {
-      getUserById.mockResolvedValue(targetUser(appMetadata));
+      ['user_roles が空', []],
+      ['user_roles が customer だけ', ['customer']],
+      ['user_roles が知らない役割だけ', ['owner']],
+    ])('API-ADMIN-004 対象の%sなら 400 で断り、消さず失効もせず target_not_privileged で failure を監査へ残す', async (_label, codes) => {
+      targetRoleCodes = codes;
 
       const res = await POST(makeRequest(validBody));
 
@@ -283,17 +349,39 @@ describe('POST /api/admin/users/mfa/reset', () => {
       expect(res._body).toEqual({ error: 'MFA reset is available only for privileged users' });
       expect(listFactors).not.toHaveBeenCalled();
       expect(deleteFactor).not.toHaveBeenCalled();
+      expect(rpc).not.toHaveBeenCalled();
       expect(auditRows).toHaveLength(1);
       expect(auditRows[0]).toEqual(
-        expect.objectContaining({
-          outcome: 'failure',
-          detail: 'Target user is not privileged',
-          metadata: { reason: REASON, target_role: role },
-        }),
+        expect.objectContaining({ outcome: 'failure', detail: 'target_not_privileged', resource_id: TARGET_ID }),
       );
     });
 
-    test('API-ADMIN-004 対象の役割は Auth の付帯の情報で決め、実行した人のトークンの役割では決めない', async () => {
+    test('API-ADMIN-004 対象の役割は user_roles で決め、古い app_metadata が supporter でも user_roles が空なら断る', async () => {
+      getUserById.mockResolvedValue(targetUser({ role: 'supporter' }));
+      targetRoleCodes = [];
+
+      const res = await POST(makeRequest(validBody));
+
+      expect(res.status).toBe(400);
+      expect(deleteFactor).not.toHaveBeenCalled();
+    });
+
+    test('API-ADMIN-004 app_metadata が空でも user_roles に admin があれば通り、対象の利用者の ID で問い合わせる', async () => {
+      getUserById.mockResolvedValue(targetUser(null));
+      targetRoleCodes = ['admin'];
+
+      const res = await POST(makeRequest(validBody));
+
+      expect(res.status).toBe(200);
+      expect(targetRoleQueries).toEqual(
+        expect.arrayContaining([
+          { column: 'user_id', value: TARGET_ID },
+          { column: 'active', value: true },
+        ]),
+      );
+    });
+
+    test('API-ADMIN-004 実行した人のトークンの役割ではなく、対象の user_roles で決める', async () => {
       signIn({ app_metadata: { role: 'user' } });
 
       const res = await POST(makeRequest(validBody));
@@ -301,10 +389,23 @@ describe('POST /api/admin/users/mfa/reset', () => {
       expect(res.status).toBe(200);
       expect(deleteFactor).toHaveBeenCalledTimes(2);
     });
+
+    test('API-ADMIN-004 user_roles の問い合わせが誤りなら 500 を返し、消さず失効もせず role_lookup_failed を監査へ残す', async () => {
+      targetRoleError = { message: 'db down', code: '08006' };
+
+      const res = await POST(makeRequest(validBody));
+
+      expect(res.status).toBe(500);
+      expect(deleteFactor).not.toHaveBeenCalled();
+      expect(rpc).not.toHaveBeenCalled();
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'error', detail: 'role_lookup_failed' }));
+      expect(JSON.stringify(auditRows)).not.toContain('db down');
+    });
   });
 
-  describe('2要素の削除', () => {
-    test('API-ADMIN-004 店長の 2要素を 1 つずつ消して 200 を返す', async () => {
+  describe('2要素の削除と session の失効', () => {
+    test('API-ADMIN-004 店長の 2要素を 1 つずつ消し、その後に自前と Auth の session を失効して 200 を返す', async () => {
       const res = await POST(makeRequest(validBody));
 
       expect(res.status).toBe(200);
@@ -314,12 +415,14 @@ describe('POST /api/admin/users/mfa/reset', () => {
         message: 'MFA factors were reset. The user must sign in again and enroll MFA.',
       });
       expect(listFactors).toHaveBeenCalledWith({ userId: TARGET_ID });
-      expect(deleteFactor).toHaveBeenCalledTimes(2);
       expect(deleteFactor).toHaveBeenNthCalledWith(1, { userId: TARGET_ID, id: 'f1' });
       expect(deleteFactor).toHaveBeenNthCalledWith(2, { userId: TARGET_ID, id: 'f2' });
+      expect(sessionsEq).toHaveBeenCalledWith('user_id', TARGET_ID);
+      expect(rpc).toHaveBeenCalledWith('revoke_auth_sessions_for_user', { p_user_id: TARGET_ID });
+      expect(calls).toEqual(['deleteFactor', 'deleteFactor', 'sessions.update', 'rpc']);
     });
 
-    test('API-ADMIN-004 success を理由・対象の役割・対象のメール・消した数と IP・ブラウザの情報付きで監査へ残す', async () => {
+    test('API-ADMIN-004 success を理由の長さとハッシュ・対象の役割・消した数と IP・ブラウザの情報付きで監査へ残し、理由の文と対象のメールは残さない', async () => {
       await POST(makeRequest(validBody));
 
       expect(auditRows).toHaveLength(1);
@@ -335,30 +438,27 @@ describe('POST /api/admin/users/mfa/reset', () => {
           ip: '203.0.113.5',
           user_agent: 'jest-agent',
           metadata: {
-            reason: REASON,
+            reason_length: REASON.length,
+            reason_sha256: reasonHash(REASON),
             target_role: 'admin',
-            target_email: 'target@example.com',
             deleted_factor_count: 2,
           },
         }),
       );
+      expect(JSON.stringify(auditRows)).not.toContain(REASON);
+      expect(JSON.stringify(auditRows)).not.toContain(TARGET_EMAIL);
     });
 
-    test('API-ADMIN-004 サポート担当の 2要素も消せ、対象にメールが無ければ監査のメールは空になる', async () => {
-      getUserById.mockResolvedValue(targetUser({ role: 'supporter' }, {}));
+    test('API-ADMIN-004 サポート担当の 2要素も消せ、監査の対象の役割は supporter', async () => {
+      targetRoleCodes = ['supporter'];
 
       const res = await POST(makeRequest(validBody));
 
       expect(res.status).toBe(200);
-      expect(auditRows[0].metadata).toEqual({
-        reason: REASON,
-        target_role: 'supporter',
-        target_email: null,
-        deleted_factor_count: 2,
-      });
+      expect(auditRows[0].metadata).toEqual(expect.objectContaining({ target_role: 'supporter', deleted_factor_count: 2 }));
     });
 
-    test('API-ADMIN-004 登録が 0 件なら何も消さずに 200 deletedFactorCount 0 を返し、success を監査へ残す', async () => {
+    test('API-ADMIN-004 登録が 0 件でも何も消さずに session を失効し、200 deletedFactorCount 0 を返して success を監査へ残す', async () => {
       listFactors.mockResolvedValue({ data: { factors: [] }, error: null });
 
       const res = await POST(makeRequest(validBody));
@@ -366,6 +466,7 @@ describe('POST /api/admin/users/mfa/reset', () => {
       expect(res.status).toBe(200);
       expect(res._body).toEqual(expect.objectContaining({ success: true, deletedFactorCount: 0 }));
       expect(deleteFactor).not.toHaveBeenCalled();
+      expect(rpc).toHaveBeenCalledWith('revoke_auth_sessions_for_user', { p_user_id: TARGET_ID });
       expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'success' }));
       expect(auditRows[0].metadata.deleted_factor_count).toBe(0);
     });
@@ -386,7 +487,7 @@ describe('POST /api/admin/users/mfa/reset', () => {
       expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'success' }));
     });
 
-    test('API-ADMIN-004 一覧の取得が誤りなら 500 を返し、消さずに誤りの文付きで error を監査へ残す', async () => {
+    test('API-ADMIN-004 一覧の取得が誤りなら 500 を返し、消さず失効もせず、誤りの文なしで error を監査へ残す', async () => {
       listFactors.mockResolvedValue({ data: null, error: { message: 'list failed' } });
 
       const res = await POST(makeRequest(validBody));
@@ -394,17 +495,15 @@ describe('POST /api/admin/users/mfa/reset', () => {
       expect(res.status).toBe(500);
       expect(res._body).toEqual({ error: 'Failed to list target MFA factors' });
       expect(deleteFactor).not.toHaveBeenCalled();
+      expect(rpc).not.toHaveBeenCalled();
       expect(auditRows).toHaveLength(1);
       expect(auditRows[0]).toEqual(
-        expect.objectContaining({
-          outcome: 'error',
-          detail: 'Failed to list target MFA factors',
-          metadata: { reason: REASON, error_message: 'list failed' },
-        }),
+        expect.objectContaining({ outcome: 'error', detail: 'Failed to list target MFA factors' }),
       );
+      expect(JSON.stringify(auditRows)).not.toContain('list failed');
     });
 
-    test('API-ADMIN-004 1 つ消せなくても残りは消そうとし、500 を返して失敗した登録を監査へ残す', async () => {
+    test('API-ADMIN-004 1 つ消せなくても残りは消そうとし、500 を返して失敗した登録の ID だけを監査へ残し、失効はしない', async () => {
       listFactors.mockResolvedValue({ data: { factors: [{ id: 'f1' }, { id: 'f2' }, { id: 'f3' }] }, error: null });
       deleteFactor.mockImplementation(async ({ id }: { id: string }) => (id === 'f2' ? { error: { message: 'boom' } } : { error: null }));
 
@@ -413,37 +512,60 @@ describe('POST /api/admin/users/mfa/reset', () => {
       expect(res.status).toBe(500);
       expect(res._body).toEqual({ error: 'Failed to delete one or more MFA factors' });
       expect(deleteFactor).toHaveBeenCalledTimes(3);
+      expect(rpc).not.toHaveBeenCalled();
+      expect(sessionsUpdate).not.toHaveBeenCalled();
       expect(auditRows).toHaveLength(1);
       expect(auditRows[0]).toEqual(
         expect.objectContaining({
           outcome: 'error',
           detail: 'Failed to delete one or more factors',
-          metadata: { reason: REASON, total_factors: 3, delete_errors: [{ factorId: 'f2', message: 'boom' }] },
+          metadata: expect.objectContaining({ total_factors: 3, delete_error_factor_ids: ['f2'] }),
         }),
       );
+      expect(JSON.stringify(auditRows)).not.toContain('boom');
       expect(auditRows.some((row) => row.outcome === 'success')).toBe(false);
     });
 
-    test('API-ADMIN-004 消す誤りに文が無ければ failed_to_delete_factor を監査へ残す', async () => {
-      listFactors.mockResolvedValue({ data: { factors: [{ id: 'f1' }] }, error: null });
-      deleteFactor.mockResolvedValue({ error: {} });
-
-      const res = await POST(makeRequest(validBody));
-
-      expect(res.status).toBe(500);
-      expect(auditRows[0].metadata.delete_errors).toEqual([{ factorId: 'f1', message: 'failed_to_delete_factor' }]);
-    });
-
-    test('API-ADMIN-004 全部の登録が消せなかった時も 500 を返し、失敗を 1 件ずつ監査へ残す', async () => {
+    test('API-ADMIN-004 全部の登録が消せなかった時も 500 を返し、失敗した ID を 1 件ずつ監査へ残す', async () => {
       deleteFactor.mockResolvedValue({ error: { message: 'nope' } });
 
       const res = await POST(makeRequest(validBody));
 
       expect(res.status).toBe(500);
-      expect(auditRows[0].metadata.delete_errors).toEqual([
-        { factorId: 'f1', message: 'nope' },
-        { factorId: 'f2', message: 'nope' },
-      ]);
+      expect(auditRows[0].metadata.delete_error_factor_ids).toEqual(['f1', 'f2']);
+    });
+
+    test('API-ADMIN-004 自前の sessions の失効が誤りなら 500 を返し、消した数を残して session_revocation_failed を監査へ残す', async () => {
+      sessionsEq.mockResolvedValue({ error: { message: 'update failed', code: '42501' } });
+
+      const res = await POST(makeRequest(validBody));
+
+      expect(res.status).toBe(500);
+      expect(rpc).not.toHaveBeenCalled();
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0]).toEqual(
+        expect.objectContaining({
+          outcome: 'error',
+          detail: 'session_revocation_failed',
+          metadata: expect.objectContaining({ deleted_factor_count: 2 }),
+        }),
+      );
+      expect(JSON.stringify(auditRows)).not.toContain('update failed');
+    });
+
+    test('API-ADMIN-004 Auth 側の失効が誤りなら 500 を返し、消した 2要素は戻さず、再実行すると要素 0 件で失効だけをやり直せる', async () => {
+      rpc.mockResolvedValueOnce({ data: null, error: { message: 'rpc failed' } });
+
+      const failed = await POST(makeRequest(validBody));
+
+      expect(failed.status).toBe(500);
+      expect(auditRows[0]).toEqual(expect.objectContaining({ outcome: 'error', detail: 'session_revocation_failed' }));
+
+      listFactors.mockResolvedValue({ data: { factors: [] }, error: null });
+      const retried = await POST(makeRequest(validBody));
+
+      expect(retried.status).toBe(200);
+      expect(retried._body).toEqual(expect.objectContaining({ deletedFactorCount: 0 }));
     });
   });
 
@@ -458,13 +580,14 @@ describe('POST /api/admin/users/mfa/reset', () => {
       expect(deleteFactor).not.toHaveBeenCalled();
     });
 
-    test('API-ADMIN-004 消す呼び出しが例外を投げたら 500 を返し、success を監査へ残さない', async () => {
+    test('API-ADMIN-004 消す呼び出しが例外を投げたら 500 を返し、success を監査へ残さず失効もしない', async () => {
       deleteFactor.mockRejectedValue(new Error('network'));
 
       const res = await POST(makeRequest(validBody));
 
       expect(res.status).toBe(500);
       expect(res._body).toEqual({ error: 'Internal server error' });
+      expect(rpc).not.toHaveBeenCalled();
       expect(auditRows.some((row) => row.outcome === 'success')).toBe(false);
     });
 

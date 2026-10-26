@@ -198,7 +198,7 @@ describe("src/app/page.tsx", () => {
     await renderHome();
 
     expect(mockItems).toHaveBeenCalledTimes(1);
-    expect(mockItems).toHaveBeenCalledWith(10);
+    expect(mockItems).toHaveBeenCalledWith(8);
     expect(mockLooks).toHaveBeenCalledTimes(1);
     expect(mockLooks).toHaveBeenCalledWith(8);
     expect(mockNews).toHaveBeenCalledTimes(1);

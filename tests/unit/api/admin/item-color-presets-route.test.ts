@@ -18,10 +18,15 @@ jest.mock('@/lib/auth/admin-rbac', () => ({
   authorizeAdminPermission: jest.fn(),
 }));
 
+jest.mock('@/features/auth/middleware/rateLimit', () => ({
+  enforceRateLimit: jest.fn(),
+}));
+
 import { GET, POST } from '@/app/api/admin/item-color-presets/route';
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
 const { authorizeAdminPermission } = require('@/lib/auth/admin-rbac');
+const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 
 const order = jest.fn();
 const selectList = jest.fn();
@@ -56,6 +61,7 @@ describe('item-color-presets route', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     authorizeAdminPermission.mockReset().mockResolvedValue({ ok: true, userId: 'admin-1' });
+    enforceRateLimit.mockReset().mockResolvedValue(null);
     order.mockReset().mockResolvedValue({ data: [], error: null });
     selectList.mockReset().mockReturnValue({ order });
     maybeSingle.mockReset().mockResolvedValue({ data: null, error: null });
@@ -138,16 +144,45 @@ describe('item-color-presets route', () => {
       expect(createServiceRoleClient).not.toHaveBeenCalled();
     });
 
-    it('DD-ADMIN-011 POST は本文が JSON でない時に 500 Internal server error を返す', async () => {
+    it('DD-ADMIN-011 POST は本文が JSON でない時に 400 を返し、500 にしない', async () => {
       const res = (await POST(makePost('not json'))) as unknown as MockRes;
 
-      expect(res.status).toBe(500);
-      expect(res._body).toEqual({ error: 'Internal server error' });
-      expect(errorSpy).toHaveBeenCalledWith(
-        'POST /api/admin/item-color-presets error:',
-        expect.anything()
+      expect(res.status).toBe(400);
+      expect(res._body).toEqual(
+        expect.objectContaining({ error: 'Invalid request', details: expect.any(Object) })
       );
       expect(createServiceRoleClient).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-011 POST の回数の枠は認可の直後に管理者の ID だけで数え、超えたら 429 を返して本文も DB も触らない', async () => {
+      const limited = { status: 429, _body: { error: 'Too many requests' } };
+      enforceRateLimit.mockResolvedValue(limited);
+
+      const res = (await POST(makePost({ name: '赤', hex: '#ff0000' }))) as unknown as MockRes;
+
+      expect(res).toBe(limited);
+      expect(enforceRateLimit).toHaveBeenCalledWith({
+        request: expect.any(Request),
+        endpoint: 'admin:color-presets:write',
+        limit: 60,
+        windowSeconds: 600,
+        subject: 'admin-1',
+      });
+      expect(createServiceRoleClient).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-011 POST は認可で断った要求を回数に数えない', async () => {
+      authorizeAdminPermission.mockResolvedValue({ ok: false, response: denied });
+
+      await POST(makePost({ name: '赤', hex: '#ff0000' }));
+
+      expect(enforceRateLimit).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-011 GET は回数の枠を使わない', async () => {
+      await GET(makeGet());
+
+      expect(enforceRateLimit).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -202,13 +237,16 @@ describe('item-color-presets route', () => {
       expect(selectInserted).toHaveBeenCalledWith('*');
     });
 
-    it('DD-ADMIN-011 POST は引く時に誤りが返っても見ずに作りへ進んで 201 を返す', async () => {
-      maybeSingle.mockResolvedValue({ data: null, error: { message: 'lookup failed' } });
+    it('DD-ADMIN-011 POST は引く時に誤りが返ったら 500 Failed to save color preset を返し、作らない', async () => {
+      maybeSingle.mockResolvedValue({ data: null, error: { code: 'XX000', message: 'lookup failed for 赤' } });
 
       const res = (await POST(makePost({ name: '赤', hex: '#ff0000' }))) as unknown as MockRes;
 
-      expect(res.status).toBe(201);
-      expect(insert).toHaveBeenCalledTimes(1);
+      expect(res.status).toBe(500);
+      expect(res._body).toEqual({ error: 'Failed to save color preset' });
+      expect(insert).not.toHaveBeenCalled();
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('lookup failed');
+      expect(errorSpy).toHaveBeenCalledWith('Failed to look up item color preset:', { code: 'XX000' });
     });
 
     it('DD-ADMIN-011 POST は作成が誤りを返した時に 500 Failed to save color preset を返す', async () => {

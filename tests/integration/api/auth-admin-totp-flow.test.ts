@@ -109,12 +109,13 @@ function createFakeMfa(initialFactors: FakeFactor[] = []) {
   return { state, mfa };
 }
 
-function setup(role: string, initialFactors: FakeFactor[] = []) {
+/** amr は既定でメール OTP を通った通行証（初めての TOTP の登録は 2 段目を通った通行証だけが許される） */
+function setup(role: string, initialFactors: FakeFactor[] = [], amr: unknown = [{ method: 'otp', timestamp: 0 }]) {
   const fake = createFakeMfa(initialFactors);
   createClient.mockResolvedValue({ auth: { mfa: fake.mfa } });
   authenticateRequest.mockResolvedValue({
     ok: true,
-    claims: { sub: 'user-1', app_metadata: { role } },
+    claims: { sub: 'user-1', app_metadata: { role }, amr },
   });
   return fake;
 }
@@ -241,6 +242,15 @@ describe('管理者とサポーターの TOTP の流れ', () => {
 
     expect(res.status).toBe(200);
     expect(state.factors.map((f) => f.id)).toEqual([FACTOR_ID]);
+  });
+
+  test('ARC-AUTH-003 password だけの通行証の管理者は登録を 403 で断られ、未確認の要素も作られない', async () => {
+    const { state } = setup('admin', [], [{ method: 'password', timestamp: 0 }]);
+
+    const enroll = await enrollPOST(post('/api/auth/mfa/enroll-totp', {}));
+
+    expect(enroll.status).toBe(403);
+    expect(state.factors).toEqual([]);
   });
 
   test('ARC-AUTH-003 一般の会員は登録も確認も 403 で、要素も Cookie も作られない', async () => {

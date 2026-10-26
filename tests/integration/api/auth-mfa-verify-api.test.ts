@@ -194,14 +194,47 @@ describe('POST /api/auth/mfa/verify', () => {
     );
   });
 
-  test('API-AUTH-018 コードの成否は監査に残さない', async () => {
+  test('API-AUTH-018 コードの成否を監査に残し、コードと Supabase の誤りの文は残さない', async () => {
     setup();
     await POST(makeRequest(validBody));
 
     setup({ verify: { data: null, error: { message: 'invalid' } } });
     await POST(makeRequest(validBody));
 
-    expect(logAudit).not.toHaveBeenCalled();
+    expect(logAudit).toHaveBeenCalledTimes(2);
+    expect(logAudit).toHaveBeenNthCalledWith(1, {
+      action: 'mfa_verify',
+      actor_id: 'user-1',
+      outcome: 'success',
+      detail: 'verified',
+    });
+    expect(logAudit).toHaveBeenNthCalledWith(2, {
+      action: 'mfa_verify',
+      actor_id: 'user-1',
+      outcome: 'failure',
+      detail: 'invalid_code',
+    });
+    expect(JSON.stringify(logAudit.mock.calls)).not.toMatch(/123456|invalid'/);
+  });
+
+  test('API-AUTH-018 利用者単位の枠は検証済みの sub を鍵にし、尽きたら challenge を呼ばず 429', async () => {
+    setup();
+    enforceRateLimit.mockResolvedValueOnce(undefined).mockResolvedValueOnce({
+      status: 429,
+      json: async () => ({ error: 'Too many requests' }),
+    });
+
+    const res = await POST(makeRequest({ factorId: FACTOR_ID, code: '123456' }));
+
+    expect(res.status).toBe(429);
+    expect(enforceRateLimit).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ endpoint: 'auth:mfa:verify', limit: 5, windowSeconds: 600, subject: 'user-1' }),
+    );
+    expect(mfa.challenge).not.toHaveBeenCalled();
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'mfa_verify', outcome: 'failure', detail: 'account_rate_limited' }),
+    );
   });
 
   test('API-AUTH-018 回数の制限に掛かったらその応答（429）を返し、何も確かめない', async () => {

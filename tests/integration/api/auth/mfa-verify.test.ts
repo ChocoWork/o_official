@@ -145,4 +145,68 @@ const { authenticateRequest } = require('@/lib/auth/authenticate');
     );
   });
 
+  test('API-AUTH-018 成功は mfa_verify の success（detail verified）を actor 付きで 1 行残す', async () => {
+    const res: any = await verifyHandler(makeRequest());
+
+    expect(res.status).toBe(200);
+    const { logAudit } = require('@/lib/audit');
+    expect(logAudit).toHaveBeenCalledTimes(1);
+    expect(logAudit).toHaveBeenCalledWith({
+      action: 'mfa_verify',
+      actor_id: 'user-1',
+      outcome: 'success',
+      detail: 'verified',
+    });
+  });
+
+  test('API-AUTH-018 同じ利用者の 6 回目は challenge より前に 429 になり、account_rate_limited を残す', async () => {
+    const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
+    const { createClient } = require('@/lib/supabase/server');
+    const { logAudit } = require('@/lib/audit');
+    const challenge = jest.fn().mockResolvedValue({ data: { id: 'challenge-1' }, error: null });
+    createClient.mockResolvedValue({
+      auth: {
+        mfa: {
+          challenge,
+          verify: jest.fn().mockResolvedValue({ data: null, error: { message: 'invalid code' } }),
+          getAuthenticatorAssuranceLevel: jest.fn(),
+        },
+      },
+    });
+    const counts = new Map<string, number>();
+    enforceRateLimit.mockImplementation(
+      async ({ endpoint, limit, subject }: { endpoint: string; limit: number; subject?: string | null }) => {
+        const key = `${endpoint}:${subject ?? 'ip'}`;
+        const count = (counts.get(key) ?? 0) + 1;
+        counts.set(key, count);
+        return count > limit ? { status: 429, json: async () => ({ error: 'Too many requests' }) } : undefined;
+      },
+    );
+
+    try {
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        const res: any = await verifyHandler(makeRequest());
+        expect(res.status).toBe(400);
+      }
+      logAudit.mockClear();
+
+      const sixth: any = await verifyHandler(makeRequest());
+
+      expect(sixth.status).toBe(429);
+      expect(challenge).toHaveBeenCalledTimes(5);
+      expect(logAudit).toHaveBeenCalledTimes(1);
+      expect(logAudit).toHaveBeenCalledWith({
+        action: 'mfa_verify',
+        actor_id: 'user-1',
+        outcome: 'failure',
+        detail: 'account_rate_limited',
+      });
+      // IP の枠（20 回）は別に数え、利用者の枠だけが先に尽きる
+      expect(counts.get('auth:mfa:verify:ip')).toBe(6);
+      expect(counts.get('auth:mfa:verify:user-1')).toBe(6);
+    } finally {
+      enforceRateLimit.mockReset();
+      enforceRateLimit.mockResolvedValue(undefined);
+    }
+  });
 });

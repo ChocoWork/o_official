@@ -22,7 +22,11 @@ jest.mock('@/lib/auth/authenticate', () => ({
   checkAuthSessionLiveness: jest.fn(),
 }));
 
+// 回数の限度器は DB に触るので差し替える（呼ばれ方は窓口の単体試験で確かめる）
+jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+
 const { createClient, createServiceRoleClient } = require('@/lib/supabase/server');
+const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
 const { DELETE } = require('@/app/api/admin/contact/templates/[id]/route');
 
@@ -64,7 +68,11 @@ function makeRequest() {
   } as unknown as Request;
 }
 
-function ctx(id = 'tpl-1') {
+const TPL_ID = '5b0f4c1e-7a2d-4e6f-8b3c-9d1e2f3a4b5c';
+const TPL_ID_9 = '5b0f4c1e-7a2d-4e6f-8b3c-9d1e2f3a4b09';
+const MISSING_ID = '00000000-0000-4000-8000-000000000000';
+
+function ctx(id = TPL_ID) {
   return { params: Promise.resolve({ id }) };
 }
 
@@ -81,7 +89,7 @@ function setup(
   } = {},
 ) {
   serviceClient = createFakeClient({
-    contact_reply_templates: options.deleteResult ?? { data: null, error: null },
+    contact_reply_templates: options.deleteResult ?? { data: [{ id: TPL_ID }], error: null },
     user_roles: { data: aclRows(options.codes ?? ['admin.contact.manage']), error: null },
     audit_logs: options.auditResult ?? { data: null, error: null },
   });
@@ -108,6 +116,7 @@ function auditRows() {
 describe('DELETE /api/admin/contact/templates/[id]（管理の返信テンプレートの削除）', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    enforceRateLimit.mockResolvedValue(null);
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -119,21 +128,22 @@ describe('DELETE /api/admin/contact/templates/[id]（管理の返信テンプレ
   it('API-ADMIN-012 道の id の行だけを消し、200 で success を返す', async () => {
     setup();
 
-    const res = await DELETE(makeRequest(), ctx('tpl-9'));
+    const res = await DELETE(makeRequest(), ctx(TPL_ID_9));
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
     const calls = templatesOp()?.calls ?? [];
     expect(calls).toEqual([
       ['delete', []],
-      ['eq', ['id', 'tpl-9']],
+      ['eq', ['id', TPL_ID_9]],
+      ['select', ['id']],
     ]);
   });
 
   it('API-ADMIN-012 消した事を admin.contact.template.delete で監査に残し、メールと IP は入れない', async () => {
     setup();
 
-    await DELETE(makeRequest(), ctx('tpl-9'));
+    await DELETE(makeRequest(), ctx(TPL_ID_9));
 
     const rows = auditRows();
     expect(rows).toHaveLength(1);
@@ -141,7 +151,7 @@ describe('DELETE /api/admin/contact/templates/[id]（管理の返信テンプレ
       action: 'admin.contact.template.delete',
       actor_id: 'admin-1',
       resource: 'contact_reply_template',
-      resource_id: 'tpl-9',
+      resource_id: TPL_ID_9,
       outcome: 'success',
       detail: 'deleted',
       user_agent: 'jest-agent',
@@ -150,14 +160,47 @@ describe('DELETE /api/admin/contact/templates/[id]（管理の返信テンプレ
     expect(rows[0].ip).toBeUndefined();
   });
 
-  it('API-ADMIN-012 存在しない id でも表が誤りを返さなければ 200 を返し、成功を監査に残す', async () => {
+  it('API-ADMIN-012 存在しない id（0 行）は 404 Template not found を返し、失敗を監査に残して成功は残さない', async () => {
     setup({ deleteResult: { data: [], error: null } });
 
-    const res = await DELETE(makeRequest(), ctx('no-such-id'));
+    const res = await DELETE(makeRequest(), ctx(MISSING_ID));
 
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ success: true });
-    expect(auditRows()[0]).toMatchObject({ resource_id: 'no-such-id', outcome: 'success' });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Template not found' });
+    const rows = auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'admin.contact.template.delete',
+      resource_id: MISSING_ID,
+      outcome: 'failure',
+      detail: 'template_not_found',
+    });
+  });
+
+  it('API-ADMIN-012 id が UUID でない時は表に渡さず 404 を返し、何も書かない', async () => {
+    setup();
+
+    const res = await DELETE(makeRequest(), ctx('tpl-1'));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Template not found' });
+    expect(templatesOp()).toBeUndefined();
+    expect(auditRows()).toHaveLength(0);
+  });
+
+  it('API-ADMIN-012 回数の枠を超えた要求は 429 で、表にも監査にも触れない（枠は管理者の ID で数える）', async () => {
+    setup();
+    const limited = { status: 429, json: async () => ({ error: 'Too many requests' }) };
+    enforceRateLimit.mockResolvedValue(limited);
+
+    const res = await DELETE(makeRequest(), ctx());
+
+    expect(res).toBe(limited);
+    expect(enforceRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: 'admin:contact:write', limit: 60, windowSeconds: 600, subject: 'admin-1' }),
+    );
+    expect(templatesOp()).toBeUndefined();
+    expect(auditRows()).toHaveLength(0);
   });
 
   it('API-ADMIN-012 表は service role の client で消し、利用者の JWT の client は使わない', async () => {

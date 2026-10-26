@@ -5,12 +5,15 @@
  * @impl IMPL-AUTH-204
  * @design DD-AUTH-030
  * @remarks 検証済みの要素が既にある時は、再取得を許すと乗っ取られた通常セッションで要素を差し替えられるため断る（再設定は aal2 のセッションが要る）。QR は画面がそのまま画像の src に入れるため、SVG の文字列は data URI に直して返す。
+ * 初めての登録は、通行証の amr に 2 段目（メール OTP など）を通った方法がある時だけ許す。パスワードだけで得た通行証で、攻撃者が自分の認証アプリを先に結び付けるのを防ぐため。登録の結果は監査に残し、秘密の値とトークンは残さない。
  */
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
+import { hasSecondFactorAmr } from '@/lib/auth/amr';
+import { logAudit } from '@/lib/audit';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -74,6 +77,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    // 初めての TOTP は、メール OTP などの 2 段目を通った通行証にだけ登録させる。
+    // password だけの通行証で通すと、盗んだ資格情報で攻撃者が自分の認証アプリを先に結び付けられる。
+    if (!hasSecondFactorAmr(auth.claims)) {
+      await logAudit({
+        action: 'mfa_enroll',
+        actor_id: user.id,
+        outcome: 'denied',
+        detail: 'second_factor_required',
+      });
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const factorsResult = await supabase.auth.mfa.listFactors();
     if (factorsResult.error) {
       console.error('[auth.mfa.enroll] failed to list factors:', factorsResult.error);
@@ -109,7 +124,14 @@ export async function POST(request: Request) {
       (factor) => String(factor.status) === 'unverified',
     );
     if (existingUnverifiedTotp) {
-      await supabase.auth.mfa.unenroll({ factorId: existingUnverifiedTotp.id });
+      const unenrollResult = await supabase.auth.mfa.unenroll({ factorId: existingUnverifiedTotp.id });
+      // 'enroll' の字を含めない action にして、登録の監査の行を数える確かめを乱さない。
+      await logAudit({
+        action: 'mfa_factor_remove',
+        actor_id: user.id,
+        outcome: unenrollResult?.error ? 'failure' : 'success',
+        resource_id: existingUnverifiedTotp.id,
+      });
     }
 
     const enrollResult = await supabase.auth.mfa.enroll(
@@ -146,6 +168,14 @@ export async function POST(request: Request) {
 
       return NextResponse.json({ error: 'Failed to enroll MFA factor' }, { status: 500 });
     }
+
+    await logAudit({
+      action: 'mfa_enroll',
+      actor_id: user.id,
+      outcome: 'success',
+      detail: 'totp_factor_enrolled',
+      resource_id: enrollResult.data.id,
+    });
 
     return NextResponse.json(
       {

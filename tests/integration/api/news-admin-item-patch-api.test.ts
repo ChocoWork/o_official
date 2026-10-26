@@ -68,7 +68,8 @@ let userClient: ReturnType<typeof createFakeClient>;
 let serviceClient: ReturnType<typeof createFakeClient>;
 
 function setup(options: { updateResult?: Result; codes?: string[] } = {}) {
-  userClient = createFakeClient({ news_articles: options.updateResult ?? { data: null, error: null } });
+  // 更新は .select('id') で変えた行を返す。既定は 1 行（0 行は 404 になる: SEC-NEWS-016）
+  userClient = createFakeClient({ news_articles: options.updateResult ?? { data: [{ id: '7' }], error: null } });
   serviceClient = createFakeClient({
     user_roles: { data: aclRows(options.codes ?? ['admin.news.read', 'admin.news.manage']), error: null },
     audit_logs: { data: null, error: null },
@@ -138,6 +139,7 @@ describe('PATCH /api/admin/news/[id]（公開の切り替え）', () => {
       expect(newsOps()[0].calls).toEqual([
         ['update', [{ status }]],
         ['eq', ['id', '7']],
+        ['select', ['id']],
       ]);
       expect(serviceClient.ops.some((o) => o.table === 'news_articles')).toBe(false);
       const rows = auditRows();
@@ -191,6 +193,38 @@ describe('PATCH /api/admin/news/[id]（公開の切り替え）', () => {
       user_agent: null,
       metadata: { articleId: '7', status: 'published' },
     });
+  });
+
+  test('API-NEWS-006 変えた行が0件なら 404 と status_update.not_found の失敗の監査を残し、成功の監査は残さない（SEC-NEWS-016）', async () => {
+    setup({ updateResult: { data: [], error: null } });
+
+    const res = await PATCH(makeRequest(JSON.stringify({ status: 'published' })), ctx('7'));
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Article not found' });
+    const rows = auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'admin.news.status_update.not_found',
+      actor_id: 'admin-1',
+      resource: 'news_article',
+      resource_id: '7',
+      outcome: 'failure',
+      detail: 'News article not found',
+      metadata: { articleId: '7' },
+    });
+  });
+
+  test('API-NEWS-006 id が数字でなければ表に触らず 404 にする（22P02 を 500 にしない）', async () => {
+    setup();
+
+    const res = await PATCH(makeRequest(JSON.stringify({ status: 'published' })), ctx('abc'));
+
+    expect(res.status).toBe(404);
+    expect(newsOps()).toHaveLength(0);
+    const rows = auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ action: 'admin.news.status_update.not_found', outcome: 'failure', resource_id: null });
   });
 
   test('API-NEWS-006 JSON の解析の失敗は 500 Internal server error を返し表を変えない', async () => {

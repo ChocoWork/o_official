@@ -268,7 +268,6 @@ for (const { name, width, height } of VIEWPORTS) {
     });
 
     test(`SEC-NEWS-005-AC-02 ${name}: 公開の一覧と詳細の頁の HTML と埋めたデータに署名つき URL が無い`, async ({ page, request }) => {
-      test.fail(true, 'SEC-NEWS-005 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
       const { pub } = fixture();
       const signed = new RegExp(`${SIGNED_URL_PATH}|[?&]token=eyJ`);
 
@@ -366,7 +365,6 @@ test.describe('FR-NEWS-SEC-001 NEWS の公開の応答', () => {
   });
 
   test(`SEC-NEWS-005-AC-01 /api/news の応答に image_url が無い（画像の要る検索の結果は署名つき URL を返す）`, async ({ request }) => {
-    test.fail(true, 'SEC-NEWS-005 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     const { pub, prefix } = fixture();
 
     const api = await getApiNews(request, '?limit=20');
@@ -385,7 +383,6 @@ test.describe('FR-NEWS-SEC-001 NEWS の公開の応答', () => {
   });
 
   test(`SEC-NEWS-007-AC-01 画像の道筋が news/ の外（other/…）の記事には /api/news で署名しない`, async ({ request }) => {
-    test.fail(true, 'SEC-NEWS-007 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     const { otherPath } = fixture();
 
     // 置き場に other/ の下の本物の画像があるので、署名されれば開ける URL が出てしまう
@@ -397,7 +394,6 @@ test.describe('FR-NEWS-SEC-001 NEWS の公開の応答', () => {
   });
 
   test(`SEC-NEWS-007-AC-02 別のホストの URL の画像には /api/news で署名しない`, async ({ request }) => {
-    test.fail(true, 'SEC-NEWS-007 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     const { pubPath } = fixture();
     const foreignUrl = `https://attacker.sec-news.invalid/storage/v1/object/public/${BUCKET}/${pubPath}`;
 
@@ -410,7 +406,6 @@ test.describe('FR-NEWS-SEC-001 NEWS の公開の応答', () => {
   });
 
   test(`SEC-NEWS-008-AC-01 署名できない画像の値（置き場に無い道筋・置き場の URL でない値）は /api/news で元の値でなく null になる`, async ({ request }) => {
-    test.fail(true, 'SEC-NEWS-008 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     const missingPath = `news/e2e-sec001-${fixture().tag}/${randomUUID()}.png`;
     const unparsableUrl = `https://cdn.sec-news.invalid/images/${randomUUID()}.png`;
 

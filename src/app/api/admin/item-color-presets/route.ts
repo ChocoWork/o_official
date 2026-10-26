@@ -4,17 +4,20 @@
  * @packageDocumentation
  * @impl IMPL-ADMIN-141
  * @design DD-ADMIN-011
- * @remarks item_color_presets は認可の後に service role で読み書きするため、先に商品の権限（一覧は閲覧、保存は管理）で確かめる。同じ名前と色の値の組は何度保存しても1行にし、既にあればその行を 200 で返して、画面が重なりの誤りを扱わずに済むようにする。
+ * @remarks item_color_presets は認可の後に service role で読み書きするため、先に商品の権限（一覧は閲覧、保存は管理）で確かめる。同じ名前と色の値の組は何度保存しても1行にし、既にあればその行を 200 で返して、画面が重なりの誤りを扱わずに済むようにする。既にあるかの確認が失敗した時は、重なりを作らないよう保存へ進まず 500 にする。保存は削除と合わせて管理者単位で10分に60回までに絞る。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
 const colorPresetSchema = z.object({
   name: z.string().trim().min(1).max(40),
   hex: z.string().regex(/^#[0-9a-fA-F]{6}$/),
 });
+
+const COLOR_PRESET_WRITE_RATE_LIMIT = { endpoint: 'admin:color-presets:write', limit: 60, windowSeconds: 600 } as const;
 
 export async function GET(request: Request) {
   try {
@@ -49,7 +52,12 @@ export async function POST(request: Request) {
       return authz.response;
     }
 
-    const body = await request.json();
+    const limited = await enforceRateLimit({ request, ...COLOR_PRESET_WRITE_RATE_LIMIT, subject: authz.userId });
+    if (limited) {
+      return limited;
+    }
+
+    const body = await request.json().catch(() => null);
     const parsed = colorPresetSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -64,12 +72,17 @@ export async function POST(request: Request) {
 
     const supabase = await createServiceRoleClient();
 
-    const { data: existing } = await supabase
+    const { data: existing, error: lookupError } = await supabase
       .from('item_color_presets')
       .select('id, name, hex, created_at')
       .eq('name', parsed.data.name)
       .eq('hex', parsed.data.hex)
       .maybeSingle();
+
+    if (lookupError) {
+      console.error('Failed to look up item color preset:', { code: lookupError.code });
+      return NextResponse.json({ error: 'Failed to save color preset' }, { status: 500 });
+    }
 
     if (existing) {
       return NextResponse.json({ data: existing }, { status: 200 });

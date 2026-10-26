@@ -349,7 +349,7 @@ for (const viewport of viewports) {
     });
 
     test(`SEC-AUTH-009-AC-01 同じ利用者の6回目の TOTP の確認が 429 (${viewport.name})`, async ({ page }) => {
-      test.fail(true, 'SEC-AUTH-009 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
+      // 利用者単位の枠（5 回 / 600 秒）は challenge より前に数えるので、TOTP を有効にする ENV に関係なく 6 回目は 429 になる。
       const { member } = await loginPrivilegedAsAal1(page, 'login032-009a', 'admin');
       const factorId = await withLocalDb((db) => addVerifiedTotpFactor(db, member.userId));
 
@@ -365,7 +365,7 @@ for (const viewport of viewports) {
     });
 
     test(`SEC-AUTH-009-AC-02 TOTP の失敗が監査に残る (${viewport.name})`, async ({ page }) => {
-      test.fail(true, 'SEC-AUTH-009 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
+      // 手元で TOTP が無効（challenge が 400）でも、challenge の失敗の分岐が failure の行を 1 つ書く。
       const { member } = await loginPrivilegedAsAal1(page, 'login032-009b', 'admin');
       const factorId = await withLocalDb((db) => addVerifiedTotpFactor(db, member.userId));
       const failuresBefore = (await auditRowsOf(member.userId, 'mfa')).filter((row) => row.outcome === 'failure');
@@ -416,7 +416,7 @@ for (const viewport of viewports) {
     });
 
     test(`SEC-AUTH-031-AC-01 メール OTP を通っていない aal1 の session では初めての TOTP を登録できない (${viewport.name})`, async ({ request, baseURL }) => {
-      test.fail(true, 'ENV [auth.mfa.totp] の enroll_enabled・verify_enabled=false（TOTP の登録が 500） — 手元の supabase/config.toml が本番と違う');
+      // 2 段目の確かめは listFactors より前（amr が password だけなら 403）なので、TOTP を有効にする ENV に関係なく断られる。
       requireLocalEnv();
       const origin = originOf(baseURL);
       // TOTP をまだ登録していない管理者を、メールの確認コードを通さずにパスワードのログインだけで aal1 にする

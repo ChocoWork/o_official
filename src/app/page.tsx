@@ -27,8 +27,9 @@ import {
 import { getHomePublicStockists } from "@/features/stockist/services/public";
 
 // FREQ-147〜149: 各セクションの取得件数（表示数の最大値。ビューポートに
-// よらず固定件数を取得し、表示側でブレークポイント別に出し分ける）
-const HOME_ITEM_FETCH_COUNT = 10;
+// よらず固定件数を取得し、表示側でブレークポイント別に出し分ける）。
+// 商品は描く最大の 8 件（FREQ-276）だけを取る。続きの有無は総数の問い合わせで決める（SEC-HOME-013）
+const HOME_ITEM_FETCH_COUNT = 8;
 const HOME_LOOK_FETCH_COUNT = 8;
 const HOME_NEWS_FETCH_COUNT = 6;
 

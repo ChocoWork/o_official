@@ -20,18 +20,36 @@ jest.mock('@/lib/auth/authenticate', () => ({
   verifyAccessToken: jest.fn(),
   checkAuthSessionLiveness: jest.fn(),
 }));
+// 回数の制限と、認可失敗の監査の上限の数え方は DB に触るので差し替える（呼ばれ方は窓口ごとの単体・結合試験で確かめる）
+jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+jest.mock('@/features/auth/ratelimit', () => ({ incrementCounter: jest.fn() }));
+// 漏洩したパスワードの照合は外部の API を呼ぶので差し替える（利用者の作成だけが使う）
+jest.mock('@/lib/pwned-password', () => ({
+  checkPwnedPassword: jest.fn(),
+  PWNED_PASSWORD_MESSAGE: 'pwned-message',
+}));
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
 const { logAudit } = require('@/lib/audit');
 const actualAudit = jest.requireActual('@/lib/audit');
 const sendMail: jest.Mock = require('@/lib/mail').default;
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
+const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
+const { incrementCounter } = require('@/features/auth/ratelimit');
+const { checkPwnedPassword } = require('@/lib/pwned-password');
+const { createHash } = require('node:crypto');
 
 const ACTOR_ID = '11111111-1111-4111-8111-111111111111';
 const ACTOR_EMAIL = 'owner@example.com';
 const TARGET_ID = '22222222-2222-4222-8222-222222222222';
 const IP_HEADER = '203.0.113.7, 10.0.0.1';
 const UA = 'Mozilla/5.0 (audit-test)';
+const STRONG_PASSWORD = 'password-1234-ok';
+const MFA_REASON = 'lost the device twice';
+const reasonAudit = {
+  reason_length: MFA_REASON.length,
+  reason_sha256: createHash('sha256').update(MFA_REASON).digest('hex'),
+};
 
 const createUserRoute = () => require('@/app/api/admin/create-user/route');
 const revokeRoute = () => require('@/app/api/admin/revoke-user-sessions/route');
@@ -67,10 +85,38 @@ const ALL_ADMIN_CODES = [
 
 // 認可が引く権限の組。allowAdmin は全部、denyAdmin は空（どの権限も無い）にする
 let aclCodes: string[] = ALL_ADMIN_CODES;
+// 2要素のリセットの対象の役割（user_roles を roles!inner(code) で引いた結果）
+let targetRoleCodes: string[] = ['admin'];
 
+/** user_roles の問い合わせ。認可の権限の照会と、2要素のリセットの対象の役割の照会を select の引数で見分ける。 */
 function aclChain() {
-  const rows = [{ roles: { role_permissions: aclCodes.map((code) => ({ permissions: { code } })) } }];
-  return chainResult({ data: rows, error: null });
+  let isTargetRoleLookup = false;
+  const chain: any = new Proxy(
+    {},
+    {
+      get(_target, prop) {
+        if (prop === 'then') {
+          return (resolve: (value: unknown) => unknown) =>
+            resolve(
+              isTargetRoleLookup
+                ? { data: targetRoleCodes.map((code) => ({ roles: { code } })), error: null }
+                : {
+                    data: [{ roles: { role_permissions: aclCodes.map((code) => ({ permissions: { code } })) } }],
+                    error: null,
+                  },
+            );
+        }
+        if (prop === 'select') {
+          return (columns: string) => {
+            isTargetRoleLookup = columns === 'roles!inner(code)';
+            return chain;
+          };
+        }
+        return () => chain;
+      },
+    },
+  );
+  return chain;
 }
 
 /** 認可の権限の照会（user_roles）だけを差し替え、ほかの表と rpc・Auth は渡された client のまま。 */
@@ -141,6 +187,10 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
     delete process.env.ALERT_AUDIT_SECRET;
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    targetRoleCodes = ['admin'];
+    enforceRateLimit.mockResolvedValue(undefined);
+    incrementCounter.mockResolvedValue(1);
+    checkPwnedPassword.mockResolvedValue({ status: 'ok' });
     allowAdmin();
     setService(serviceWith({}));
   });
@@ -171,33 +221,39 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
     });
 
     it.each(['User already registered', 'duplicate key value'])(
-      'ARC-ADMIN-003 重なり（%s）は conflict で、Supabase の誤りの文を detail にそのまま残す',
+      'ARC-ADMIN-003 重なり（%s）は conflict で、detail は固定の符号にし、誤りの文を残さない',
       async (message) => {
         setService(
           serviceWith({}, { createUser: jest.fn().mockResolvedValue({ data: null, error: { message } }) }),
         );
 
         const res = await createUserRoute().POST(
-          req('POST', 'http://localhost/api/admin/create-user', { email: 'a@example.com', password: 'password123' }),
+          req('POST', 'http://localhost/api/admin/create-user', { email: 'a@example.com', password: STRONG_PASSWORD }),
         );
 
         expect(res.status).toBe(409);
-        expect(auditArg()).toMatchObject({ outcome: 'conflict', detail: message, actor_email: ACTOR_EMAIL });
+        expect(auditArg()).toMatchObject({
+          outcome: 'conflict',
+          detail: 'email_already_registered',
+          actor_email: ACTOR_EMAIL,
+        });
+        expect(JSON.stringify(logAudit.mock.calls)).not.toContain(message);
         expect(auditArg()).not.toHaveProperty('ip');
       },
     );
 
-    it('ARC-ADMIN-003 重なり以外の誤りは error で、誤りの文を detail に残す', async () => {
+    it('ARC-ADMIN-003 重なり以外の誤りは error で、detail は固定の符号にし、誤りの文を残さない', async () => {
       setService(
         serviceWith({}, { createUser: jest.fn().mockResolvedValue({ data: null, error: { message: 'smtp down' } }) }),
       );
 
       const res = await createUserRoute().POST(
-        req('POST', 'http://localhost/api/admin/create-user', { email: 'a@example.com', password: 'password123' }),
+        req('POST', 'http://localhost/api/admin/create-user', { email: 'a@example.com', password: STRONG_PASSWORD }),
       );
 
       expect(res.status).toBe(500);
-      expect(auditArg()).toMatchObject({ outcome: 'error', detail: 'smtp down' });
+      expect(auditArg()).toMatchObject({ outcome: 'error', detail: 'create_user_failed' });
+      expect(JSON.stringify(logAudit.mock.calls)).not.toContain('smtp down');
       expect(logAudit).toHaveBeenCalledTimes(1);
     });
 
@@ -210,7 +266,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       );
 
       const res = await createUserRoute().POST(
-        req('POST', 'http://localhost/api/admin/create-user', { email: 'a@example.com', password: 'password123' }),
+        req('POST', 'http://localhost/api/admin/create-user', { email: 'a@example.com', password: STRONG_PASSWORD }),
       );
 
       expect(res.status).toBe(201);
@@ -224,6 +280,22 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       });
     });
 
+    it('ARC-ADMIN-003 漏洩済みのパスワードは failure で、detail に pwned_password を残し、パスワードを残さない', async () => {
+      checkPwnedPassword.mockResolvedValue({ status: 'pwned', count: 3 });
+      const createUser = jest.fn();
+      setService(serviceWith({}, { createUser }));
+
+      const res = await createUserRoute().POST(
+        req('POST', 'http://localhost/api/admin/create-user', { email: 'a@example.com', password: STRONG_PASSWORD }),
+      );
+
+      expect(res.status).toBe(400);
+      expect(createUser).not.toHaveBeenCalled();
+      expect(logAudit).toHaveBeenCalledTimes(1);
+      expect(auditArg()).toMatchObject({ outcome: 'failure', detail: 'pwned_password', actor_email: ACTOR_EMAIL });
+      expect(JSON.stringify(logAudit.mock.calls)).not.toContain(STRONG_PASSWORD);
+    });
+
     it('ARC-ADMIN-003 認可に失敗したときは何も書かない', async () => {
       denyAdmin();
 
@@ -235,6 +307,11 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
 
   describe('強制失効', () => {
     const url = 'http://localhost/api/admin/revoke-user-sessions';
+
+    /** 対象の利用者が実在する Auth の管理の機能。 */
+    function existingTarget() {
+      return { getUserById: jest.fn().mockResolvedValue({ data: { user: { id: TARGET_ID } }, error: null }) };
+    }
 
     it('ARC-ADMIN-003 認可の失敗は unauthorized で、操作した人は空・IP は x-forwarded-for の左端・ブラウザを入れる', async () => {
       denyAdmin();
@@ -264,6 +341,23 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(auditArg()).toMatchObject({ outcome: 'unauthorized', ip: null, user_agent: null });
     });
 
+    it('ARC-ADMIN-003 認可の失敗の監査は全体で 21 回目からまとめの 1 行（unauthorized_burst）になり、22 回目からは書かない', async () => {
+      denyAdmin();
+
+      incrementCounter.mockResolvedValue(21);
+      const burst = await revokeRoute().POST(req('POST', url, { user_id: TARGET_ID }));
+      incrementCounter.mockResolvedValue(22);
+      const suppressed = await revokeRoute().POST(req('POST', url, { user_id: TARGET_ID }));
+
+      expect([burst.status, suppressed.status]).toEqual([403, 403]);
+      expect(logAudit).toHaveBeenCalledTimes(1);
+      expect(auditArg()).toMatchObject({
+        outcome: 'unauthorized_burst',
+        detail: 'further attempts suppressed for this window',
+        actor_id: null,
+      });
+    });
+
     it('ARC-ADMIN-003 形の誤りは failure で、メール・IP・ブラウザを入れる', async () => {
       const res = await revokeRoute().POST(req('POST', url, { user_id: '' }));
 
@@ -280,8 +374,38 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       });
     });
 
-    it('ARC-ADMIN-003 Auth の session を消す関数が誤りなら error で、IP とブラウザは入れない', async () => {
-      const service = serviceWith({ error: null });
+    it('ARC-ADMIN-003 自分自身は failure で、IP とブラウザは入れない', async () => {
+      const res = await revokeRoute().POST(req('POST', url, { user_id: ACTOR_ID }));
+
+      expect(res.status).toBe(400);
+      expect(auditArg()).toEqual({
+        action: 'admin_revoke_user_sessions',
+        actor_id: ACTOR_ID,
+        actor_email: ACTOR_EMAIL,
+        resource: 'sessions',
+        resource_id: ACTOR_ID,
+        outcome: 'failure',
+        detail: 'self_revocation_rejected',
+      });
+    });
+
+    it('ARC-ADMIN-003 存在しない利用者は failure（target_not_found）で、success を書かない', async () => {
+      setService(
+        serviceWith(
+          { error: null },
+          { getUserById: jest.fn().mockResolvedValue({ data: { user: null }, error: { status: 404, code: 'user_not_found' } }) },
+        ),
+      );
+
+      const res = await revokeRoute().POST(req('POST', url, { user_id: TARGET_ID }));
+
+      expect(res.status).toBe(404);
+      expect(logAudit).toHaveBeenCalledTimes(1);
+      expect(auditArg()).toMatchObject({ outcome: 'failure', detail: 'target_not_found', resource_id: TARGET_ID });
+    });
+
+    it('ARC-ADMIN-003 Auth の session を消す関数が誤りなら error で、固定の文を残し、IP とブラウザは入れない', async () => {
+      const service = serviceWith({ error: null }, existingTarget());
       service.rpc = jest.fn(() => chainResult({ data: null, error: { message: 'rpc failed' } }));
       setService(service);
 
@@ -295,11 +419,12 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         resource: 'sessions',
         resource_id: TARGET_ID,
         outcome: 'error',
-        detail: 'auth_session_revocation_failed',
+        detail: 'revoke_failed',
       });
+      expect(JSON.stringify(auditArg())).not.toContain('rpc failed');
     });
 
-    it('ARC-ADMIN-003 DB が例外を投げたら error で例外の文を detail に残し、IP とブラウザは入れない', async () => {
+    it('ARC-ADMIN-003 DB が例外を投げたら error で固定の文を detail に残し（例外の文は残さない）、IP とブラウザは入れない', async () => {
       failServiceAfterAuthorization(new Error('connection lost'));
 
       const res = await revokeRoute().POST(req('POST', url, { user_id: TARGET_ID }));
@@ -308,8 +433,9 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(auditArg()).toMatchObject({
         outcome: 'error',
         resource_id: TARGET_ID,
-        detail: 'Error: connection lost',
+        detail: 'revoke_failed',
       });
+      expect(JSON.stringify(auditArg())).not.toContain('connection lost');
       expect(auditArg()).not.toHaveProperty('ip');
       expect(auditArg()).not.toHaveProperty('user_agent');
     });
@@ -318,7 +444,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       [3, 3],
       [null, 0],
     ])('ARC-ADMIN-003 成功は success で消した Auth の session の数（%s）を metadata に入れる（%s）', async (deleted, expected) => {
-      const service = serviceWith({ error: null });
+      const service = serviceWith({ error: null }, existingTarget());
       service.rpc = jest.fn(() => chainResult({ data: deleted, error: null }));
       setService(service);
 
@@ -380,7 +506,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(logAudit).not.toHaveBeenCalled();
     });
 
-    it('ARC-ADMIN-003 形の誤りは failure で、求められた id を残し、理由の文は入れない', async () => {
+    it('ARC-ADMIN-003 形の誤りは failure で、UUID の形でない id は残さず、理由の文は入れない', async () => {
       const res = await mfaResetRoute().POST(
         req('POST', url, { userId: 'not-a-uuid', reason: 'short', confirm: 'RESET_MFA' }),
       );
@@ -389,10 +515,10 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(auditArg()).toEqual({
         ...base,
         ...net,
-        resource_id: 'not-a-uuid',
+        resource_id: null,
         outcome: 'failure',
         detail: 'Invalid request body',
-        metadata: { requested_user_id: 'not-a-uuid' },
+        metadata: { requested_user_id: null },
       });
     });
 
@@ -414,7 +540,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       });
     });
 
-    it('ARC-ADMIN-003 自分自身は failure で、理由の文も metadata も入れない', async () => {
+    it('ARC-ADMIN-003 自分自身は failure で、理由の文は入れず長さとハッシュだけを入れる', async () => {
       const res = await mfaResetRoute().POST(req('POST', url, { ...validBody, userId: ACTOR_ID }));
 
       expect(res.status).toBe(400);
@@ -424,6 +550,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         resource_id: ACTOR_ID,
         outcome: 'failure',
         detail: 'Self-reset is not allowed',
+        metadata: reasonAudit,
       });
       expect(createServiceRoleClient).toHaveBeenCalledTimes(1); // 認可の権限の照会だけ
     });
@@ -431,7 +558,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
     it.each([
       ['引いた時の誤り', { getError: { message: 'x' }, target: null }],
       ['利用者が居ない', { target: null }],
-    ])('ARC-ADMIN-003 対象なし（%s）は failure で、理由の文だけを metadata に入れる', async (_label, options) => {
+    ])('ARC-ADMIN-003 対象なし（%s）は failure で、理由の長さとハッシュだけを metadata に入れる', async (_label, options) => {
       mfaService(options);
 
       const res = await mfaResetRoute().POST(req('POST', url, validBody));
@@ -443,16 +570,17 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         resource_id: TARGET_ID,
         outcome: 'failure',
         detail: 'Target user not found',
-        metadata: { reason: 'lost the device twice' },
+        metadata: reasonAudit,
       });
     });
 
     it.each([
-      ['一般の利用者', { role: 'user' }, 'user'],
-      ['役割の印が無い', undefined, 'user'],
-      ['壊れた役割', { role: 'owner' }, 'user'],
-    ])('ARC-ADMIN-003 特権でない（%s）は failure で、理由の文と対象の役割を入れる', async (_label, appMetadata, role) => {
-      mfaService({ target: { id: TARGET_ID, email: 'user@example.com', app_metadata: appMetadata } });
+      ['一般の利用者', ['customer']],
+      ['役割の割当が無い', []],
+      ['知らない役割', ['owner']],
+    ])('ARC-ADMIN-003 特権でない（%s）は failure（target_not_privileged）で、理由の長さとハッシュだけを入れる', async (_label, codes) => {
+      targetRoleCodes = codes;
+      mfaService({ target: { id: TARGET_ID, email: 'user@example.com', app_metadata: { role: 'admin' } } });
 
       const res = await mfaResetRoute().POST(req('POST', url, validBody));
 
@@ -462,13 +590,14 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         ...net,
         resource_id: TARGET_ID,
         outcome: 'failure',
-        detail: 'Target user is not privileged',
-        metadata: { reason: 'lost the device twice', target_role: role },
+        detail: 'target_not_privileged',
+        metadata: reasonAudit,
       });
       expect(auditArg().metadata).not.toHaveProperty('target_email');
+      expect(auditArg().metadata).not.toHaveProperty('reason');
     });
 
-    it('ARC-ADMIN-003 対象の 2要素の一覧が誤りなら error で、誤りの文を metadata に入れる', async () => {
+    it('ARC-ADMIN-003 対象の 2要素の一覧が誤りなら error で、誤りの文は metadata に入れない', async () => {
       mfaService({
         target: { id: TARGET_ID, email: 'staff@example.com', app_metadata: { role: 'admin' } },
         listError: { message: 'auth backend down' },
@@ -483,11 +612,13 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         resource_id: TARGET_ID,
         outcome: 'error',
         detail: 'Failed to list target MFA factors',
-        metadata: { reason: 'lost the device twice', error_message: 'auth backend down' },
+        metadata: { ...reasonAudit, target_role: 'admin' },
       });
+      expect(JSON.stringify(auditArg())).not.toContain('auth backend down');
     });
 
     it('ARC-ADMIN-003 消せなかった登録があれば error で、全部の数と消せなかった印を入れる', async () => {
+      targetRoleCodes = ['supporter'];
       mfaService({
         target: { id: TARGET_ID, email: 'staff@example.com', app_metadata: { role: 'supporter' } },
         factors: [{ id: 'f1' }, { id: 'f2' }],
@@ -504,14 +635,16 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         outcome: 'error',
         detail: 'Failed to delete one or more factors',
         metadata: {
-          reason: 'lost the device twice',
+          ...reasonAudit,
+          target_role: 'supporter',
           total_factors: 2,
-          delete_errors: [{ factorId: 'f2', message: 'locked' }],
+          delete_error_factor_ids: ['f2'],
         },
       });
+      expect(JSON.stringify(auditArg())).not.toContain('locked');
     });
 
-    it('ARC-ADMIN-003 成功は success で、対象の役割とメール・消した数を入れる', async () => {
+    it('ARC-ADMIN-003 成功は success で、対象の役割と消した数・理由の長さとハッシュを入れ、メールと理由の文は入れない', async () => {
       const service = mfaService({
         target: { id: TARGET_ID, email: 'staff@example.com', app_metadata: { role: 'admin' } },
         factors: [{ id: 'f1' }, { id: 'f2' }],
@@ -529,28 +662,44 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         outcome: 'success',
         detail: 'Admin reset user MFA factors',
         metadata: {
-          reason: 'lost the device twice',
+          ...reasonAudit,
           target_role: 'admin',
-          target_email: 'staff@example.com',
           deleted_factor_count: 2,
         },
       });
+      expect(JSON.stringify(auditArg())).not.toContain('staff@example.com');
+      expect(JSON.stringify(auditArg())).not.toContain(MFA_REASON);
     });
 
-    it('ARC-ADMIN-003 成功で対象にメールが無ければ target_email は null になる', async () => {
-      mfaService({ target: { id: TARGET_ID, email: undefined, app_metadata: { role: 'admin' } }, factors: [] });
-
-      await mfaResetRoute().POST(req('POST', url, validBody));
-
-      expect(auditArg()).toMatchObject({
-        outcome: 'success',
-        metadata: { target_email: null, deleted_factor_count: 0 },
+    it('ARC-ADMIN-003 session の失効が誤りなら error（session_revocation_failed）で、消した数だけを入れる', async () => {
+      const service = mfaService({
+        target: { id: TARGET_ID, email: 'staff@example.com', app_metadata: { role: 'admin' } },
+        factors: [{ id: 'f1' }],
       });
+      service.rpc = jest.fn(() => chainResult({ data: null, error: { message: 'rpc failed' } }));
+      setService(service);
+
+      const res = await mfaResetRoute().POST(req('POST', url, validBody));
+
+      expect(res.status).toBe(500);
+      expect(logAudit).toHaveBeenCalledTimes(1);
+      expect(auditArg()).toEqual({
+        ...base,
+        ...net,
+        resource_id: TARGET_ID,
+        outcome: 'error',
+        detail: 'session_revocation_failed',
+        metadata: { ...reasonAudit, target_role: 'admin', deleted_factor_count: 1 },
+      });
+      expect(JSON.stringify(auditArg())).not.toContain('rpc failed');
     });
   });
 
   describe('問い合わせの状態の変更・返信・テンプレート', () => {
     const baseUrl = 'http://localhost/api/admin/contact';
+    const CONTACT_ID = '33333333-3333-4333-8333-333333333333';
+    const TEMPLATE_ID = '44444444-4444-4444-8444-444444444444';
+    const NEW_TEMPLATE_ID = '55555555-5555-4555-8555-555555555555';
 
     function expectBrowserOnly(call: Record<string, unknown>) {
       expect(call.user_agent).toBe(UA);
@@ -559,16 +708,16 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
     }
 
     it('ARC-ADMIN-003 状態の変更の成功は、変えた状態を detail に入れ、ブラウザだけを入れる', async () => {
-      setService(serviceWith({ error: null }));
+      setService(serviceWith({ data: [{ id: CONTACT_ID }], error: null }));
 
-      const res = await contactItemRoute().PATCH(req('PATCH', `${baseUrl}/c1`, { status: 'closed' }), ctx('c1'));
+      const res = await contactItemRoute().PATCH(req('PATCH', `${baseUrl}/${CONTACT_ID}`, { status: 'closed' }), ctx(CONTACT_ID));
 
       expect(res.status).toBe(200);
       expect(auditArg()).toEqual({
         action: 'admin.contact.status_update',
         actor_id: ACTOR_ID,
         resource: 'contact',
-        resource_id: 'c1',
+        resource_id: CONTACT_ID,
         outcome: 'success',
         detail: 'status=closed',
         user_agent: UA,
@@ -576,13 +725,35 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expectBrowserOnly(auditArg());
     });
 
+    it('ARC-ADMIN-003 状態の変更が 0 行なら failure と inquiry_not_found で書き、UUID でない id は何も書かず、成功は書かない', async () => {
+      setService(serviceWith({ data: [], error: null }));
+
+      const missing = await contactItemRoute().PATCH(
+        req('PATCH', `${baseUrl}/${CONTACT_ID}`, { status: 'closed' }),
+        ctx(CONTACT_ID),
+      );
+      const badId = await contactItemRoute().PATCH(req('PATCH', `${baseUrl}/c1`, { status: 'closed' }), ctx('c1'));
+
+      expect([missing.status, badId.status]).toEqual([404, 404]);
+      expect(logAudit).toHaveBeenCalledTimes(1);
+      expect(auditArg()).toEqual({
+        action: 'admin.contact.status_update',
+        actor_id: ACTOR_ID,
+        resource: 'contact',
+        resource_id: CONTACT_ID,
+        outcome: 'failure',
+        detail: 'inquiry_not_found',
+        user_agent: UA,
+      });
+    });
+
     it('ARC-ADMIN-003 状態の変更が形の誤り・DB の誤り・認可の失敗なら何も書かない', async () => {
       setService(serviceWith({ error: { message: 'db' } }));
 
-      const invalid = await contactItemRoute().PATCH(req('PATCH', `${baseUrl}/c1`, { status: 'weird' }), ctx('c1'));
-      const dbError = await contactItemRoute().PATCH(req('PATCH', `${baseUrl}/c1`, { status: 'closed' }), ctx('c1'));
+      const invalid = await contactItemRoute().PATCH(req('PATCH', `${baseUrl}/${CONTACT_ID}`, { status: 'weird' }), ctx(CONTACT_ID));
+      const dbError = await contactItemRoute().PATCH(req('PATCH', `${baseUrl}/${CONTACT_ID}`, { status: 'closed' }), ctx(CONTACT_ID));
       denyAdmin();
-      const denied = await contactItemRoute().PATCH(req('PATCH', `${baseUrl}/c1`, { status: 'closed' }), ctx('c1'));
+      const denied = await contactItemRoute().PATCH(req('PATCH', `${baseUrl}/${CONTACT_ID}`, { status: 'closed' }), ctx(CONTACT_ID));
 
       expect([invalid.status, dbError.status, denied.status]).toEqual([400, 500, 403]);
       expect(logAudit).not.toHaveBeenCalled();
@@ -592,12 +763,12 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       process.env.MAIL_FROM_ADDRESS = 'shop@example.com';
       sendMail.mockResolvedValue(undefined);
       setService(
-        serviceWith({ data: { id: 'c1', email: 'buyer@example.com', subject: 'Size' }, error: null }),
+        serviceWith({ data: { id: CONTACT_ID, email: 'buyer@example.com', subject: 'Size' }, error: null }),
       );
 
       const res = await contactReplyRoute().POST(
-        req('POST', `${baseUrl}/c1/reply`, { body: 'お返事です' }),
-        ctx('c1'),
+        req('POST', `${baseUrl}/${CONTACT_ID}/reply`, { body: 'お返事です' }),
+        ctx(CONTACT_ID),
       );
 
       expect(res.status).toBe(201);
@@ -607,7 +778,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         action: 'admin.contact.reply',
         actor_id: ACTOR_ID,
         resource: 'contact',
-        resource_id: 'c1',
+        resource_id: CONTACT_ID,
         outcome: 'success',
         detail: 'reply_sent',
         user_agent: UA,
@@ -619,12 +790,12 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       process.env.MAIL_FROM_ADDRESS = 'shop@example.com';
       sendMail.mockRejectedValue(new Error('smtp down'));
       setService(
-        serviceWith({ data: { id: 'c1', email: 'buyer@example.com', subject: 'Re: Size' }, error: null }),
+        serviceWith({ data: { id: CONTACT_ID, email: 'buyer@example.com', subject: 'Re: Size' }, error: null }),
       );
 
       const res = await contactReplyRoute().POST(
-        req('POST', `${baseUrl}/c1/reply`, { body: 'お返事です' }),
-        ctx('c1'),
+        req('POST', `${baseUrl}/${CONTACT_ID}/reply`, { body: 'お返事です' }),
+        ctx(CONTACT_ID),
       );
 
       expect(res.status).toBe(201);
@@ -639,33 +810,34 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(auditArg()).not.toHaveProperty('actor_email');
     });
 
-    it('ARC-ADMIN-003 送り手の設定が無ければメールを送らず、成功として書く', async () => {
+    it('ARC-ADMIN-003 送り手の設定が無ければメールを送らず、mailSent を偽にして error と reply_saved_mail_not_configured で書く', async () => {
       setService(
-        serviceWith({ data: { id: 'c1', email: 'buyer@example.com', subject: 'Size' }, error: null }),
+        serviceWith({ data: { id: CONTACT_ID, email: 'buyer@example.com', subject: 'Size' }, error: null }),
       );
 
       const res = await contactReplyRoute().POST(
-        req('POST', `${baseUrl}/c1/reply`, { body: 'お返事です' }),
-        ctx('c1'),
+        req('POST', `${baseUrl}/${CONTACT_ID}/reply`, { body: 'お返事です' }),
+        ctx(CONTACT_ID),
       );
 
       expect(res.status).toBe(201);
+      expect(await res.json()).toEqual({ success: true, mailSent: false });
       expect(sendMail).not.toHaveBeenCalled();
-      expect(auditArg()).toMatchObject({ outcome: 'success', detail: 'reply_sent' });
+      expect(auditArg()).toMatchObject({ outcome: 'error', detail: 'reply_saved_mail_not_configured' });
     });
 
     it('ARC-ADMIN-003 返信が形の誤り・問い合わせなし・保存の誤りなら何も書かない', async () => {
       setService(serviceWith({ data: null, error: { message: 'none' } }));
 
-      const invalid = await contactReplyRoute().POST(req('POST', `${baseUrl}/c1/reply`, { body: '   ' }), ctx('c1'));
-      const missing = await contactReplyRoute().POST(req('POST', `${baseUrl}/c1/reply`, { body: 'ok' }), ctx('c1'));
+      const invalid = await contactReplyRoute().POST(req('POST', `${baseUrl}/${CONTACT_ID}/reply`, { body: '   ' }), ctx(CONTACT_ID));
+      const missing = await contactReplyRoute().POST(req('POST', `${baseUrl}/${CONTACT_ID}/reply`, { body: 'ok' }), ctx(CONTACT_ID));
 
       expect([invalid.status, missing.status]).toEqual([400, 404]);
       expect(logAudit).not.toHaveBeenCalled();
     });
 
     it('ARC-ADMIN-003 テンプレートの作成は作った id を resource_id に入れ、ブラウザだけを入れる', async () => {
-      setService(serviceWith({ data: { id: 't9' }, error: null }));
+      setService(serviceWith({ data: { id: NEW_TEMPLATE_ID }, error: null }));
 
       const res = await templatesRoute().POST(
         req('POST', `${baseUrl}/templates`, { title: '配送の遅れ', body: 'お待たせしています' }),
@@ -676,7 +848,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         action: 'admin.contact.template.create',
         actor_id: ACTOR_ID,
         resource: 'contact_reply_template',
-        resource_id: 't9',
+        resource_id: NEW_TEMPLATE_ID,
         outcome: 'success',
         detail: 'created',
         user_agent: UA,
@@ -685,13 +857,13 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
     });
 
     it('ARC-ADMIN-003 テンプレートの更新と削除は、それぞれ updated と deleted で書く', async () => {
-      setService(serviceWith({ error: null }));
+      setService(serviceWith({ data: [{ id: TEMPLATE_ID }], error: null }));
 
       const updated = await templateItemRoute().PUT(
-        req('PUT', `${baseUrl}/templates/t1`, { title: '配送の遅れ', body: 'お待たせしています' }),
-        ctx('t1'),
+        req('PUT', `${baseUrl}/templates/${TEMPLATE_ID}`, { title: '配送の遅れ', body: 'お待たせしています' }),
+        ctx(TEMPLATE_ID),
       );
-      const deleted = await templateItemRoute().DELETE(req('DELETE', `${baseUrl}/templates/t1`), ctx('t1'));
+      const deleted = await templateItemRoute().DELETE(req('DELETE', `${baseUrl}/templates/${TEMPLATE_ID}`), ctx(TEMPLATE_ID));
 
       expect([updated.status, deleted.status]).toEqual([200, 200]);
       expect(logAudit).toHaveBeenCalledTimes(2);
@@ -699,7 +871,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         action: 'admin.contact.template.update',
         actor_id: ACTOR_ID,
         resource: 'contact_reply_template',
-        resource_id: 't1',
+        resource_id: TEMPLATE_ID,
         outcome: 'success',
         detail: 'updated',
         user_agent: UA,
@@ -708,10 +880,38 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         action: 'admin.contact.template.delete',
         actor_id: ACTOR_ID,
         resource: 'contact_reply_template',
-        resource_id: 't1',
+        resource_id: TEMPLATE_ID,
         outcome: 'success',
         detail: 'deleted',
         user_agent: UA,
+      });
+    });
+
+    it('ARC-ADMIN-003 テンプレートの更新と削除が 0 行なら failure と template_not_found で書き、成功は書かない', async () => {
+      setService(serviceWith({ data: [], error: null }));
+
+      const updated = await templateItemRoute().PUT(
+        req('PUT', `${baseUrl}/templates/${TEMPLATE_ID}`, { title: '配送の遅れ', body: 'お待たせしています' }),
+        ctx(TEMPLATE_ID),
+      );
+      const deleted = await templateItemRoute().DELETE(
+        req('DELETE', `${baseUrl}/templates/${TEMPLATE_ID}`),
+        ctx(TEMPLATE_ID),
+      );
+
+      expect([updated.status, deleted.status]).toEqual([404, 404]);
+      expect(logAudit).toHaveBeenCalledTimes(2);
+      expect(auditArg(0)).toMatchObject({
+        action: 'admin.contact.template.update',
+        outcome: 'failure',
+        detail: 'template_not_found',
+        resource_id: TEMPLATE_ID,
+      });
+      expect(auditArg(1)).toMatchObject({
+        action: 'admin.contact.template.delete',
+        outcome: 'failure',
+        detail: 'template_not_found',
+        resource_id: TEMPLATE_ID,
       });
     });
 
@@ -721,9 +921,9 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       const results = [
         await templatesRoute().POST(req('POST', `${baseUrl}/templates`, { title: '' })),
         await templatesRoute().POST(req('POST', `${baseUrl}/templates`, { title: 't', body: 'b' })),
-        await templateItemRoute().PUT(req('PUT', `${baseUrl}/templates/t1`, { title: '' }), ctx('t1')),
-        await templateItemRoute().PUT(req('PUT', `${baseUrl}/templates/t1`, { title: 't', body: 'b' }), ctx('t1')),
-        await templateItemRoute().DELETE(req('DELETE', `${baseUrl}/templates/t1`), ctx('t1')),
+        await templateItemRoute().PUT(req('PUT', `${baseUrl}/templates/${TEMPLATE_ID}`, { title: '' }), ctx(TEMPLATE_ID)),
+        await templateItemRoute().PUT(req('PUT', `${baseUrl}/templates/${TEMPLATE_ID}`, { title: 't', body: 'b' }), ctx(TEMPLATE_ID)),
+        await templateItemRoute().DELETE(req('DELETE', `${baseUrl}/templates/${TEMPLATE_ID}`), ctx(TEMPLATE_ID)),
       ];
 
       expect(results.map((r) => r.status)).toEqual([400, 500, 400, 500, 500]);
@@ -731,22 +931,74 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
     });
   });
 
-  describe('書かない窓口', () => {
-    it('ARC-ADMIN-003 問い合わせの読み・テンプレートの一覧・色見本・監査ログの読み出しは監査に書かない', async () => {
+  describe('読み出しの記録と書かない窓口', () => {
+    const READ_ID = '33333333-3333-4333-8333-333333333333';
+
+    it('ARC-ADMIN-003 問い合わせの一覧・詳細・監査ログの読み出しは、読めた時に読んだ人の id とメールだけで1行ずつ書き、IP と中身は入れない', async () => {
+      setService(serviceWith({ data: [], error: null, count: 0 }));
+
+      const results = [
+        await contactRoute().GET(req('GET', 'http://localhost/api/admin/contact?status=open&q=taro')),
+        await contactItemRoute().GET(req('GET', `http://localhost/api/admin/contact/${READ_ID}`), ctx(READ_ID)),
+        await auditLogsRoute().GET(req('GET', 'http://localhost/api/admin/audit-logs')),
+      ];
+
+      expect(results.map((r) => r.status)).toEqual([200, 200, 200]);
+      expect(logAudit).toHaveBeenCalledTimes(3);
+      expect(auditArg(0)).toEqual({
+        action: 'admin.contact.list',
+        actor_id: ACTOR_ID,
+        actor_email: ACTOR_EMAIL,
+        resource: 'contact',
+        outcome: 'success',
+        metadata: { status: 'open', type: null, page: 1, q_length: 4 },
+      });
+      expect(auditArg(1)).toEqual({
+        action: 'admin.contact.read',
+        actor_id: ACTOR_ID,
+        actor_email: ACTOR_EMAIL,
+        resource: 'contact',
+        resource_id: READ_ID,
+        outcome: 'success',
+      });
+      expect(auditArg(2)).toEqual({
+        action: 'admin.audit_logs.read',
+        actor_id: ACTOR_ID,
+        actor_email: ACTOR_EMAIL,
+        resource: 'audit_logs',
+        outcome: 'success',
+      });
+      for (let i = 0; i < 3; i += 1) {
+        expect(auditArg(i)).not.toHaveProperty('ip');
+        expect(JSON.stringify(auditArg(i))).not.toContain('taro');
+      }
+    });
+
+    it('ARC-ADMIN-003 読み出しの記録が例外を投げても、一覧・詳細・監査ログの読み出しは 200 のまま返す', async () => {
+      setService(serviceWith({ data: [], error: null, count: 0 }));
+      logAudit.mockRejectedValue(new Error('audit down'));
+
+      const results = [
+        await contactRoute().GET(req('GET', 'http://localhost/api/admin/contact')),
+        await contactItemRoute().GET(req('GET', `http://localhost/api/admin/contact/${READ_ID}`), ctx(READ_ID)),
+        await auditLogsRoute().GET(req('GET', 'http://localhost/api/admin/audit-logs')),
+      ];
+
+      expect(results.map((r) => r.status)).toEqual([200, 200, 200]);
+    });
+
+    it('ARC-ADMIN-003 テンプレートの一覧・色見本は監査に書かない', async () => {
       setService(serviceWith({ data: [], error: null, count: 0 }));
       const color = { name: 'Ecru', hex: '#f0ead6' };
 
       const results = [
-        await contactRoute().GET(req('GET', 'http://localhost/api/admin/contact')),
-        await contactItemRoute().GET(req('GET', 'http://localhost/api/admin/contact/c1'), ctx('c1')),
         await templatesRoute().GET(req('GET', 'http://localhost/api/admin/contact/templates')),
         await presetsRoute().GET(req('GET', 'http://localhost/api/admin/item-color-presets')),
         await presetsRoute().POST(req('POST', 'http://localhost/api/admin/item-color-presets', color)),
-        await presetItemRoute().DELETE(req('DELETE', 'http://localhost/api/admin/item-color-presets/p1'), ctx('p1')),
-        await auditLogsRoute().GET(req('GET', 'http://localhost/api/admin/audit-logs')),
+        await presetItemRoute().DELETE(req('DELETE', 'http://localhost/api/admin/item-color-presets/1'), ctx('1')),
       ];
 
-      expect(results.length).toBe(7);
+      expect(results.length).toBe(4);
       expect(logAudit).not.toHaveBeenCalled();
     });
   });
@@ -951,7 +1203,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       });
     });
 
-    it('ARC-ADMIN-003 2要素のリセットの成功は、メール・IP・ブラウザ・理由の文付きで audit_logs に入る', async () => {
+    it('ARC-ADMIN-003 2要素のリセットの成功は、IP・ブラウザ・理由の長さとハッシュ付きで audit_logs に入り、メールと理由の文は入らない', async () => {
       logAudit.mockImplementation(actualAudit.logAudit);
       const { insert } = auditInsertClient({
         getUserById: jest.fn().mockResolvedValue({
@@ -983,11 +1235,13 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         ip: '203.0.113.7',
         user_agent: UA,
         metadata: {
-          reason: 'lost the device twice',
-          target_email: 'staff@example.com',
+          ...reasonAudit,
+          target_role: 'admin',
           deleted_factor_count: 1,
         },
       });
+      expect(JSON.stringify(rows[0])).not.toContain('staff@example.com');
+      expect(JSON.stringify(rows[0])).not.toContain('lost the device twice');
     });
   });
 });

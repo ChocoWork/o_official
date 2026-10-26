@@ -164,7 +164,7 @@ describe('news unused units', () => {
 
   it('ARC-NEWS-005 getLatestNews は公開済みの記事を3件だけ取り出して返す', async () => {
     const latest = [
-      { id: '1', title: 't', published_date: '2026-09-01', category: 'EVENT', image_url: 'x', content: 'c' },
+      { id: '1', title: 't', published_date: '2026-09-01', category: 'EVENT', content: 'c' },
     ];
     mockedGetPublishedNews.mockResolvedValue(latest);
 

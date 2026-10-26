@@ -1,6 +1,6 @@
 # NEWS の要件
 
-> 状態: 推定 | 確認日: 2026-10-25 | 対象: NEWS（ニュース一覧 `/news`・詳細 `/news/[id]`・ホームの NEWS の区画・管理のニュース） | 基準コミット: `a03beaff`
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: NEWS（ニュース一覧 `/news`・詳細 `/news/[id]`・ホームの NEWS の区画・管理のニュース） | 基準コミット: `a03beaff`
 
 ## 概要
 
@@ -1694,7 +1694,11 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/security/security_review_news.md:48,73` |
 | 優先度 | SHOULD |
 
-公開の一覧・詳細の取り出しと `/api/news` は `image_url` を返さない。画像の要る検索の結果は対象外。今のコードは満たさない。
+公開の一覧・詳細の取り出しと `/api/news` は `image_url` を返さない。画像の要る検索の結果は対象外。2026-10-26 に満たした（以前は一覧・詳細の取り出しが `image_url` を選び、service role の client で署名して返した）。
+
+- `getPublishedNews` は `select('id, title, published_date, category, content')`、`getPublishedNewsDetailById` は `select('id, title, published_date, category, content, detailed_content')` で読み、`image_url` を選ばない。`createServiceRoleClient`・`signNewsImageFields` を呼ばない。型 `PublicNewsArticle` から `image_url` を外した（IMPL-NEWS-121・123、DD-NEWS-003・031）
+- 公開の道（`/news`・`/news/[id]`・`/api/news`・ホームの NEWS の節）は service role を持たない。画像の署名が残るのは検索（`signResultImages`）と管理（`/api/admin/news`）だけ
+- 公開の画面は記事の画像を出さない（FREQ-32）ので、見た目は変わらない
 
 ### SEC-NEWS-005-AC-01 /api/news の応答に image_url が無い
 
@@ -1768,7 +1772,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/security/security_review_news.md:90` |
 | 優先度 | MUST |
 
-署名するのは、道筋が `news/` の下にあり（`..` を含まない）、URL の時はホストが自分の Supabase のプロジェクトである物だけ。外れた物は署名しない。公開・管理・検索の全部の署名に当てる。今のコードは満たさない。
+署名するのは、道筋が `news/` の下にあり（`..` を含まない）、URL の時はホストが自分の Supabase のプロジェクトである物だけ。外れた物は署名しない。公開・管理・検索の全部の署名に当てる。公開の道は署名しなくなった（SEC-NEWS-005）ので、残る署名の経路（検索と管理）の道筋の絞りは今のコードは満たさない（波 1-C）。
 
 ### SEC-NEWS-007-AC-01 news/ の外の道筋には署名しない
 
@@ -1780,7 +1784,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 確かめ方 | E2E（手元の Supabase で記事の `image_url` を `other/x.png` に書き換え、`/api/news` を読む） |
 | 出どころ | 実装から推定 |
 
-`image_url` が `news/` の外の記事について、`/api/news` の応答に署名つき URL が含まれないこと。
+`image_url` が `news/` の外の記事について、`/api/news` の応答に署名つき URL が含まれないこと。公開の道は署名しない（SEC-NEWS-005）ので、この確かめは `/api/news` から `image_url` を外した後は署名の無いことを読むだけになる。署名の関数が道筋を絞る確かめは、検索と管理の署名を直す波 1-C で単体テストに移す。
 
 ### SEC-NEWS-007-AC-02 別のホストの URL には署名しない
 
@@ -1792,7 +1796,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 確かめ方 | E2E（記事の `image_url` を別のホストの `/storage/v1/object/public/news-images/news/x.png` に書き換え、`/api/news` を読む） |
 | 出どころ | 実装から推定 |
 
-別のホストの URL の記事について、`/api/news` の応答に自分の置き場の署名つき URL が含まれないこと。
+別のホストの URL の記事について、`/api/news` の応答に自分の置き場の署名つき URL が含まれないこと。公開の道は署名しない（SEC-NEWS-005）ので、`/api/news` では署名の無いことを読むだけになる。署名の関数が別のホストを断る確かめは、検索と管理の署名を直す波 1-C で単体テストに移す。
 
 ### SEC-NEWS-008 署名に失敗した時は閉じる側へ倒れ、失敗を記録に残す
 
@@ -1805,7 +1809,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.5。`docs/05_Quality/reviews/security/security_review_news_id.md:44,96-97` |
 | 優先度 | MUST |
 
-道筋にできない値と署名の失敗は、元の値ではなく `null` を返す。失敗を、道筋の全部や鍵を含まない形で記録に残す。今のコードは満たさない。
+道筋にできない値と署名の失敗は、元の値ではなく `null` を返す。失敗を、道筋の全部や鍵を含まない形で記録に残す。公開の道は署名しなくなった（SEC-NEWS-005）ので、残る署名の経路（検索と管理）の閉じる側への倒れは今のコードは満たさない（波 1-C）。
 
 ### SEC-NEWS-008-AC-01 署名の失敗で元の値を返さない
 
@@ -1817,7 +1821,7 @@ aal1 の JWT の insert・update・delete が、どれも行を変えずに終�
 | 確かめ方 | E2E（手元の置き場に無い道筋を持つ記事を入れ、`/api/news` を読む） |
 | 出どころ | 実装から推定 |
 
-署名できない記事について、`/api/news` の応答の `image_url` が null であり、DB の値と同じ文字が含まれないこと。
+署名できない記事について、`/api/news` の応答の `image_url` が null であり、DB の値と同じ文字が含まれないこと。公開の道は `image_url` を返さなくなった（SEC-NEWS-005）ので、`/api/news` では DB の値と同じ文字が含まれないことを読む。署名の失敗で null を返す確かめは、検索と管理の署名を直す波 1-C で行う。
 
 ### SEC-NEWS-008-AC-02 署名の失敗が記録に1件残る
 
@@ -2139,7 +2143,12 @@ Origin と Referer の無い `DELETE /api/admin/news/<id>` が 403 で、記事�
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/code/2026-04-18-actions-news-security-review.md:37-40` |
 | 優先度 | MUST |
 
-作成・書き換え・公開の切り替え・削除・画像の書き込みの失敗を、成功と失敗の両方で監査に残す（今のコードは満たす）。対象の記事が無い PUT・PATCH・DELETE は 404 を返し、成功として記録しない（今のコードは満たさない）。
+作成・書き換え・公開の切り替え・削除・画像の書き込みの失敗を、成功と失敗の両方で監査に残す（今のコードは満たす）。対象の記事が無い PUT・PATCH・DELETE は 404 を返し、成功として記録しない。2026-10-26 に満たした（以前は 0 件でも 200 と成功の監査だった）。
+
+- PUT・PATCH は `.update(...).eq('id', id).select('id')`、DELETE は `.delete().eq('id', id).select('id')` で変えた行を受け取る。0 行（無い、または RLS が隠した）は 404 `{ error: 'Article not found' }` と、結果 `failure`・`detail='News article not found'` の監査 1 行（`admin.news.update.not_found`・`admin.news.status_update.not_found`・`admin.news.delete.not_found`）にする。成功の監査は書かない
+- 管理の窓口は利用者の session の client で書くので、RLS が隠した行も 0 行になり、403 でなく 404 になる
+- 道の `id` は 18 桁以下の数字（`/^\d{1,18}$/`）だけを DB に渡す。外れた id は DB に触らず（PUT では画像の置き場にも触らず）404 にし、失敗の監査には生の id でなく長さ（`articleIdLength`）だけを残す。DB の bigint の桁あふれ（22P02）を 500 にしない
+- PUT は画像を上げてから更新するので、無い id への PUT でも上げた画像は置き場に残る（更新が失敗した時の枝と同じ。SEC-NEWS-018 の範囲で、このタスクでは直さない）
 
 ### SEC-NEWS-016-AC-01 記事を作ると監査の記録が1件残る
 
@@ -2163,7 +2172,7 @@ Origin と Referer の無い `DELETE /api/admin/news/<id>` が 403 で、記事�
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
-存在しない id への `PUT`・`PATCH`・`DELETE /api/admin/news/<id>` がどれも 404 であり、`audit_logs` に `admin.news.update`・`admin.news.status_update`・`admin.news.delete` の成功の行が増えないこと。
+存在しない id への `PUT`・`PATCH`・`DELETE /api/admin/news/<id>` がどれも 404 であり、`audit_logs` に `admin.news.update`・`admin.news.status_update`・`admin.news.delete` の成功の行が増えないこと（代わりに `.not_found` の失敗の行が 1 件残る）。
 
 ### SEC-NEWS-017 書き込む画像は中身で種類を確かめ、保存の名前を送られた名前から作らない
 
@@ -2635,8 +2644,9 @@ NEWS タブの一覧は公開日の新しい順。行ごとに画像・状態の
 - BLOG の分類を残すか: 画面と FR-NEWS-ALL-002 にあり、DB・管理のフォーム・型に無い
 - FREQ-14-AC-01 の「エラーが発生せず」を何で確かめるか
 - FREQ-149-AC-02 の「6件以下なら VIEW ALL が無い」側を何で確かめるか。E2E は並列の他のテストの件数と干渉するので「6件より多い」側だけにした。6件以下の側を、直列で流す E2E か結合テスト（`NewsSection` が総数で出し分ける所）のどちらにするか
-- SEC-NEWS-004-AC-01・007-AC-01・007-AC-02・008-AC-01 は AC の文のとおり `/api/news` の `image_url` を読む。SEC-NEWS-005 の対策（公開の `/api/news` から `image_url` を外す）を入れると、この 4 つの E2E は読む物が無くなり、署名つき URL が無いことで自明に通る。対策を入れた後の確かめ先を、署名を使う `/api/search` に AC の文ごと移すか
+- SEC-NEWS-004-AC-01・007-AC-01・007-AC-02・008-AC-01 は AC の文のとおり `/api/news` の `image_url` を読む。SEC-NEWS-005 の対策（公開の `/api/news` から `image_url` を外す）を 2026-10-26 に入れたので、この 4 つの E2E は読む物が無くなり、署名つき URL が無いことで自明に通る（007-AC-01・AC-02・008-AC-01 は `test.fail` の印を外した）。確かめ先を、署名を使う `/api/search` と管理の署名に AC の文ごと移すか（波 1-C で決める）
 - SEC-NEWS-012-AC-03: 見出しは「数でない id で窓口へ要求を送らない」だが、本文の条件は「`/api/admin/news/` の下でない `/api` への要求が送られず、記事の読み込みの失敗の文が表示される」。`abc` の場合、要求が `/api/admin/news/abc` のように窓口の下に留まっても本文は満たされる。見出しの「窓口へ要求を送らない」に合わせて本文を直すか、本文に合わせて見出しを直すか
+- 管理のニュースの PUT は画像を上げてから更新するので、無い id（0 行 → 404）でも上げた画像が置き場に残る。更新の失敗の枝と同じ振る舞いで、SEC-NEWS-018（使わなくなった画像を消す）の範囲
 - 公開のニュースを読む要求 `SR-NEWS-001`・`002` と、FR-ADMIN-003 を FREQ-14 につないだことの確認
 - E2E FR-NEWS-ALL-008〜011 の動き（DRV-NEWS-002・003）を要件として認めるか。認めれば受け入れ条件を起こしてテスト名に付けられる
 - FREQ-275-REQ-02 の文字の大きさ（20px／28px）が FREQ-314（範囲外） で撤回されたか

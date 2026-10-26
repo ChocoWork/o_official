@@ -2,6 +2,7 @@ export {};
 
 jest.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: jest.fn() }));
 jest.mock('@/lib/auth/admin-rbac', () => ({ authorizeAdminPermission: jest.fn() }));
+jest.mock('@/lib/audit', () => ({ logAudit: jest.fn() }));
 jest.mock('next/server', () => ({
   NextResponse: {
     json: (body: unknown, init?: { status?: number }) => ({ status: init?.status ?? 200, _body: body }),
@@ -10,6 +11,7 @@ jest.mock('next/server', () => ({
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
 const { authorizeAdminPermission } = require('@/lib/auth/admin-rbac');
+const { logAudit } = require('@/lib/audit');
 const { GET } = require('@/app/api/admin/audit-logs/route');
 
 const SAFE_COLUMNS = 'id,created_at,action,actor_id,resource,resource_id,outcome,detail';
@@ -85,5 +87,47 @@ describe('GET /api/admin/audit-logs', () => {
     expect(res.status).toBe(500);
     expect(res._body).toEqual({ error: 'Internal server error' });
     expect(errorSpy).toHaveBeenCalledWith('Audit logs GET error:', expect.any(Error));
+  });
+
+  it('DD-ADMIN-004 200 の後に監査ログを読んだ記録を1行残し、ログの中身・IP を入れない', async () => {
+    authorizeAdminPermission.mockResolvedValue({ ok: true, userId: 'u1', role: 'admin', actorEmail: 'owner@example.com' });
+    const { client } = buildClient({ data: [{ id: '1', action: 'secret-action' }], error: null });
+    createServiceRoleClient.mockResolvedValue(client);
+
+    const res = await GET(new Request('http://localhost/api/admin/audit-logs'));
+
+    expect(res.status).toBe(200);
+    expect(logAudit).toHaveBeenCalledTimes(1);
+    expect(logAudit).toHaveBeenCalledWith({
+      action: 'admin.audit_logs.read',
+      actor_id: 'u1',
+      actor_email: 'owner@example.com',
+      resource: 'audit_logs',
+      outcome: 'success',
+    });
+    expect(JSON.stringify(logAudit.mock.calls)).not.toContain('secret-action');
+  });
+
+  it('DD-ADMIN-004 認可で断った時と読みが誤りの時は、読んだ記録を書かない', async () => {
+    authorizeAdminPermission.mockResolvedValueOnce({ ok: false, response: { status: 403, _body: {} } });
+    await GET(new Request('http://localhost/api/admin/audit-logs'));
+    authorizeAdminPermission.mockResolvedValue({ ok: true, userId: 'u1', role: 'admin', actorEmail: null });
+    createServiceRoleClient.mockResolvedValue(buildClient({ data: null, error: { message: 'db down' } }).client);
+    await GET(new Request('http://localhost/api/admin/audit-logs'));
+
+    expect(logAudit).not.toHaveBeenCalled();
+  });
+
+  it('DD-ADMIN-004 監査の記録が例外を投げても 200 で返す（読み出しを止めない）', async () => {
+    authorizeAdminPermission.mockResolvedValue({ ok: true, userId: 'u1', role: 'admin', actorEmail: null });
+    const rows = [{ id: '1', action: 'login' }];
+    createServiceRoleClient.mockResolvedValue(buildClient({ data: rows, error: null }).client);
+    logAudit.mockRejectedValue(new Error('audit down'));
+
+    const res = await GET(new Request('http://localhost/api/admin/audit-logs'));
+
+    expect(res.status).toBe(200);
+    expect(res._body).toEqual({ data: rows });
+    expect(errorSpy).toHaveBeenCalledWith('Failed to write audit log read audit');
   });
 });

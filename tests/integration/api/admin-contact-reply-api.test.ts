@@ -24,7 +24,11 @@ jest.mock('@/lib/auth/authenticate', () => ({
 
 jest.mock('@/lib/mail', () => ({ __esModule: true, default: jest.fn() }));
 
+// 回数の限度器は DB に触るので差し替える（呼ばれ方は窓口の単体試験で確かめる）
+jest.mock('@/features/auth/middleware/rateLimit', () => ({ enforceRateLimit: jest.fn() }));
+
 const { createClient, createServiceRoleClient } = require('@/lib/supabase/server');
+const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 const { verifyAccessToken, checkAuthSessionLiveness } = require('@/lib/auth/authenticate');
 
 type Result = { data: unknown; error: unknown };
@@ -139,6 +143,7 @@ function setupDb(
   options: {
     inquiry?: Result;
     insertError?: unknown;
+    statusUpdateError?: unknown;
     codes?: string[];
     aal?: string;
     verified?: unknown;
@@ -151,7 +156,7 @@ function setupDb(
     verified: options.verified,
     liveness: options.liveness,
     tables: {
-      contact_inquiries: { single: options.inquiry ?? { data: INQUIRY, error: null }, default: { data: null, error: null } },
+      contact_inquiries: { single: options.inquiry ?? { data: INQUIRY, error: null }, default: { data: null, error: options.statusUpdateError ?? null } },
       contact_messages: { default: { data: null, error: options.insertError ?? null } },
     },
   });
@@ -164,6 +169,7 @@ describe('API-ADMIN-008 POST /api/admin/contact/[id]/reply', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    enforceRateLimit.mockResolvedValue(null);
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     for (const key of ENV_KEYS) saved[key] = process.env[key];
@@ -381,7 +387,7 @@ describe('API-ADMIN-008 POST /api/admin/contact/[id]/reply', () => {
     expect(auditRows()[0]).toMatchObject({ outcome: 'error', detail: 'reply_saved_mail_failed' });
   });
 
-  it('API-ADMIN-008 送り手の住所の設定が無い時はメールを送らず、mailSent は真で監査は reply_sent', async () => {
+  it('API-ADMIN-008 送り手の住所の設定が無い時はメールを送らず、mailSent は偽で保存は残り、監査は error・reply_saved_mail_not_configured', async () => {
     delete process.env.MAIL_FROM_ADDRESS;
     setupDb();
 
@@ -389,8 +395,61 @@ describe('API-ADMIN-008 POST /api/admin/contact/[id]/reply', () => {
 
     expect(sendMail).not.toHaveBeenCalled();
     expect(res.status).toBe(201);
-    expect(await res.json()).toEqual({ success: true, mailSent: true });
-    expect(auditRows()[0]).toMatchObject({ outcome: 'success', detail: 'reply_sent' });
+    expect(await res.json()).toEqual({ success: true, mailSent: false });
+    expect(callsOf('contact_messages', 'insert')).toHaveLength(1);
+    expect(auditRows()[0]).toMatchObject({ outcome: 'error', detail: 'reply_saved_mail_not_configured' });
+  });
+
+  it('API-ADMIN-008 状態の更新が誤りなら 500 Failed to update inquiry status で、返信の保存は残し、メールは送らず、監査に error・status_update_failed を残す', async () => {
+    setupDb({ statusUpdateError: { code: '42501', message: 'permission denied for taro@example.com' } });
+
+    const res = await POST(post({ body: 'hi' }), params());
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'Failed to update inquiry status' });
+    expect(callsOf('contact_messages', 'insert')).toHaveLength(1);
+    expect(sendMail).not.toHaveBeenCalled();
+    const rows = auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ outcome: 'error', detail: 'status_update_failed', resource_id: INQUIRY_ID });
+    expect(JSON.stringify(rows[0])).not.toContain('taro@example.com');
+  });
+
+  it('API-ADMIN-008 件名の改行・制御文字は空白にして送り、ヘッダーに別の行を足せない', async () => {
+    setupDb({ inquiry: { data: { ...INQUIRY, subject: 'Question\r\nBcc: attacker@example.com' }, error: null } });
+
+    const res = await POST(post({ body: 'hi' }), params());
+
+    expect(res.status).toBe(201);
+    const { subject } = sendMail.mock.calls[0][0];
+    expect(subject).toBe('Re: Question Bcc: attacker@example.com');
+    expect(subject).not.toMatch(/[\r\n]/);
+  });
+
+  it('API-ADMIN-008 回数の枠を超えた要求は 429 で、保存もメールも監査もしない（枠は管理者の ID で数える）', async () => {
+    setupDb();
+    const limited = { status: 429, json: async () => ({ error: 'Too many requests' }) };
+    enforceRateLimit.mockResolvedValue(limited);
+
+    const res = await POST(post({ body: 'hi' }), params());
+
+    expect(res).toBe(limited);
+    expect(enforceRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: 'admin:contact:reply', limit: 30, windowSeconds: 600, subject: 'admin-1' }),
+    );
+    expect(callsOf('contact_messages', 'insert')).toHaveLength(0);
+    expect(sendMail).not.toHaveBeenCalled();
+    expect(auditRows()).toHaveLength(0);
+  });
+
+  it('API-ADMIN-008 id が UUID でない時は表に渡さず 404 を返し、保存もメールもしない', async () => {
+    setupDb();
+
+    const res = await POST(post({ body: 'hi' }), params('not-a-uuid'));
+
+    expect(res.status).toBe(404);
+    expect(callsOf('contact_messages', 'insert')).toHaveLength(0);
+    expect(sendMail).not.toHaveBeenCalled();
   });
 
   it('API-ADMIN-008 監査の行にメールと IP を入れない', async () => {

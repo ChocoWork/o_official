@@ -28,15 +28,21 @@ jest.mock('@/lib/auth/authenticate', () => ({
   })),
 }));
 
+jest.mock('@/lib/audit', () => ({
+  logAudit: jest.fn(),
+}));
+
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { createClient } from '@/lib/supabase/server';
 import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
+import { logAudit } from '@/lib/audit';
 import { POST } from '@/app/api/auth/mfa/enroll-totp/route';
 
 const mockRateLimit = enforceRateLimit as jest.Mock;
 const mockCreateClient = createClient as jest.Mock;
 const mockAuthenticate = authenticateRequest as jest.Mock;
 const mockFailure = authFailureResponse as jest.Mock;
+const mockLogAudit = logAudit as jest.Mock;
 
 const listFactors = jest.fn();
 const unenroll = jest.fn();
@@ -55,10 +61,10 @@ function jsonRequest(payload: unknown) {
   return buildRequest(JSON.stringify(payload));
 }
 
-function authAs(role?: unknown) {
+function authAs(role?: unknown, amr: unknown = [{ method: 'otp', timestamp: 0 }]) {
   mockAuthenticate.mockResolvedValue({
     ok: true,
-    claims: { sub: 'user-1', app_metadata: role === undefined ? undefined : { role } },
+    claims: { sub: 'user-1', app_metadata: role === undefined ? undefined : { role }, amr },
   });
 }
 
@@ -94,6 +100,7 @@ describe('POST /api/auth/mfa/enroll-totp', () => {
     listFactors.mockResolvedValue({ data: { totp: [] }, error: null });
     unenroll.mockResolvedValue({ data: {}, error: null });
     enrollOk();
+    mockLogAudit.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -185,6 +192,73 @@ describe('POST /api/auth/mfa/enroll-totp', () => {
       expect(enroll).not.toHaveBeenCalled();
     },
   );
+
+  it('DD-AUTH-030 password だけの通行証の管理者は 403 で、登録せず second_factor_required を監査に残す', async () => {
+    authAs('admin', [{ method: 'password', timestamp: 0 }]);
+
+    const { status, body } = await call(jsonRequest({}));
+
+    expect(status).toBe(403);
+    expect(body).toEqual({ error: 'Forbidden' });
+    expect(listFactors).not.toHaveBeenCalled();
+    expect(enroll).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action: 'mfa_enroll',
+      actor_id: 'user-1',
+      outcome: 'denied',
+      detail: 'second_factor_required',
+    });
+  });
+
+  it.each([[null], [[]], ['otp']])('DD-AUTH-030 amr が %p の通行証は 403', async (amr) => {
+    authAs('admin', amr);
+
+    const { status } = await call(jsonRequest({}));
+
+    expect(status).toBe(403);
+    expect(enroll).not.toHaveBeenCalled();
+  });
+
+  it.each(['otp', 'magiclink', 'totp', 'oauth', 'sso/saml', 'email/signup'])(
+    'DD-AUTH-030 password と %s を持つ通行証なら登録でき、成功を監査に残す（秘密の値は残さない）',
+    async (method) => {
+      authAs('admin', [{ method: 'password' }, { method }]);
+
+      const { status } = await call(jsonRequest({}));
+
+      expect(status).toBe(200);
+      expect(mockLogAudit).toHaveBeenCalledTimes(1);
+      expect(mockLogAudit).toHaveBeenCalledWith({
+        action: 'mfa_enroll',
+        actor_id: 'user-1',
+        outcome: 'success',
+        detail: 'totp_factor_enrolled',
+        resource_id: 'new-factor',
+      });
+      expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('SECRET');
+    },
+  );
+
+  it('DD-AUTH-030 一般の会員の 403 は mfa_enroll の監査を書かない', async () => {
+    authAs('user', [{ method: 'password' }]);
+
+    await call(jsonRequest({}));
+
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  it('DD-AUTH-030 確かめ済みの TOTP がある時の 409 と 403 は mfa_enroll の成功を書かない', async () => {
+    listFactors.mockResolvedValue({
+      data: { totp: [{ id: 'f-1', status: 'verified', factor_type: 'totp' }] },
+      error: null,
+    });
+
+    await call(jsonRequest({}));
+    await call(jsonRequest({ forceReEnroll: true }));
+
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
 
   it('DD-AUTH-030 サポーターは登録できる', async () => {
     authAs('supporter');
@@ -285,6 +359,15 @@ describe('POST /api/auth/mfa/enroll-totp', () => {
     expect(status).toBe(200);
     expect(unenroll).toHaveBeenCalledWith({ factorId: 'f-9' });
     expect(order).toEqual(['unenroll', 'enroll']);
+    // 取り外しは 'enroll' の字を含まない action で 1 行（登録の行を数える確かめを乱さない）
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action: 'mfa_factor_remove',
+      actor_id: 'user-1',
+      outcome: 'success',
+      resource_id: 'f-9',
+    });
+    const actions = mockLogAudit.mock.calls.map(([event]) => event.action);
+    expect(actions.filter((action) => action.includes('enroll'))).toEqual(['mfa_enroll']);
   });
 
   it('DD-AUTH-030 外すのが誤りを返しても見ずに登録へ進む', async () => {

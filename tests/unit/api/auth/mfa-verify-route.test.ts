@@ -138,6 +138,57 @@ describe('POST /api/auth/mfa/verify', () => {
     expect(mockRateLimit).toHaveBeenCalledWith(
       expect.objectContaining({ endpoint: 'auth:mfa:verify', limit: 20, windowSeconds: 600 }),
     );
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action: 'mfa_verify',
+      actor_id: 'user-1',
+      outcome: 'success',
+      detail: 'verified',
+    });
+  });
+
+  it('DD-AUTH-031 利用者単位の枠（5 回 / 600 秒）を、検証済みの sub を鍵にして 2 回目に数える', async () => {
+    await call(validRequest({ factorId: '22222222-2222-4222-8222-222222222222' }));
+
+    expect(mockRateLimit).toHaveBeenCalledTimes(2);
+    expect(mockRateLimit.mock.calls[1][0]).toEqual(
+      expect.objectContaining({ endpoint: 'auth:mfa:verify', limit: 5, windowSeconds: 600, subject: 'user-1' }),
+    );
+    expect(mockRateLimit.mock.calls[0][0].subject).toBeUndefined();
+  });
+
+  it('DD-AUTH-031 利用者単位の枠が応答を返したら challenge を呼ばず、account_rate_limited を 1 行残す', async () => {
+    const limited = { status: 429, json: async () => ({ error: 'Too Many Requests' }) };
+    mockRateLimit.mockResolvedValueOnce(undefined).mockResolvedValueOnce(limited);
+
+    const res = await POST(validRequest());
+
+    expect(res).toBe(limited);
+    expect(challenge).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action: 'mfa_verify',
+      actor_id: 'user-1',
+      outcome: 'failure',
+      detail: 'account_rate_limited',
+    });
+  });
+
+  it('DD-AUTH-031 利用者単位の枠は、役割が一般の会員でも確かめの前に数える', async () => {
+    authAs('user');
+
+    const { status } = await call(validRequest());
+
+    expect(status).toBe(403);
+    expect(mockRateLimit).toHaveBeenCalledTimes(2);
+  });
+
+  it('DD-AUTH-031 認証に失敗した要求は利用者単位の枠を数えない（sub が無い）', async () => {
+    mockAuthenticate.mockResolvedValue({ ok: false, reason: 'missing' });
+
+    await call(validRequest());
+
+    expect(mockRateLimit).toHaveBeenCalledTimes(1);
     expect(mockLogAudit).not.toHaveBeenCalled();
   });
 
@@ -233,6 +284,12 @@ describe('POST /api/auth/mfa/verify', () => {
     expect(status).toBe(404);
     expect(body).toEqual({ error: '対象のMFA要素が見つかりません。' });
     expect(verify).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action: 'mfa_verify',
+      actor_id: 'user-1',
+      outcome: 'failure',
+      detail: 'factor_not_found',
+    });
   });
 
   it('DD-AUTH-031 チャレンジのほかの誤りは 400', async () => {
@@ -242,6 +299,13 @@ describe('POST /api/auth/mfa/verify', () => {
 
     expect(status).toBe(400);
     expect(body).toEqual({ error: 'MFAチャレンジの作成に失敗しました。' });
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action: 'mfa_verify',
+      actor_id: 'user-1',
+      outcome: 'failure',
+      detail: 'challenge_failed',
+    });
+    expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('rate limited');
   });
 
   it('DD-AUTH-031 チャレンジの誤りに文が無ければ 400', async () => {
@@ -262,7 +326,7 @@ describe('POST /api/auth/mfa/verify', () => {
     expect(body).toEqual({ error: 'MFAチャレンジの作成に失敗しました。' });
   });
 
-  it('DD-AUTH-031 コードの誤りは 400 で、書き戻しも監査もしない', async () => {
+  it('DD-AUTH-031 コードの誤りは 400 で、書き戻しをせず invalid_code を監査に残す（コードと誤りの文は残さない）', async () => {
     verify.mockResolvedValue({ data: null, error: { message: 'invalid code' } });
 
     const { status, body } = await call(validRequest());
@@ -271,7 +335,16 @@ describe('POST /api/auth/mfa/verify', () => {
     expect(body).toEqual({ error: '認証コードが正しくありません。' });
     expect(getAal).not.toHaveBeenCalled();
     expect(mockPersist).not.toHaveBeenCalled();
-    expect(mockLogAudit).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+    expect(mockLogAudit).toHaveBeenCalledWith({
+      action: 'mfa_verify',
+      actor_id: 'user-1',
+      outcome: 'failure',
+      detail: 'invalid_code',
+    });
+    const audited = JSON.stringify(mockLogAudit.mock.calls);
+    expect(audited).not.toContain('123456');
+    expect(audited).not.toContain('invalid code');
   });
 
   it('DD-AUTH-031 AAL の読み直しが誤りなら記録して続け、今・次は null', async () => {
@@ -322,7 +395,7 @@ describe('POST /api/auth/mfa/verify', () => {
     );
   });
 
-  it('DD-AUTH-031 書き戻しが投げても mfa_verify の error を残して 200 を返す', async () => {
+  it('DD-AUTH-031 書き戻しが投げても固定の符号で mfa_verify の error を残して 200 を返す（誤りの文は残さない）', async () => {
     mockPersist.mockRejectedValue(new Error('db down'));
 
     const { status, body } = await call(validRequest());
@@ -333,8 +406,10 @@ describe('POST /api/auth/mfa/verify', () => {
       action: 'mfa_verify',
       actor_id: 'user-1',
       outcome: 'error',
-      detail: 'Error: db down',
+      detail: 'session_persist_failed',
     });
+    expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('db down');
+    expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success' }));
   });
 
   it('DD-AUTH-031 client の作成が投げたら 500', async () => {

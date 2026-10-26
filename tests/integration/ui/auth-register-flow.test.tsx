@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import LoginPage from '@/app/login/page';
 import { LoginProvider } from '@/contexts/LoginContext';
 import { POST as registerPost } from '@/app/api/auth/register/route';
@@ -39,6 +39,7 @@ const mockState = {
 const mockReplace = jest.fn();
 const mockSignUp = jest.fn();
 const mockVerifyOtp = jest.fn();
+const mockSignOut = jest.fn();
 const mockPersist = jest.fn();
 const mockLinkGuestOrders = jest.fn();
 const mockLogAudit = jest.fn().mockResolvedValue(undefined);
@@ -139,7 +140,12 @@ jest.mock('@/lib/supabase/server', () => ({
   }),
   createPublicClient: async () => {
     if (mockState.createPublicClientThrows) throw new Error('client unavailable');
-    return { auth: { verifyOtp: (...args: unknown[]) => mockVerifyOtp(...args) } };
+    return {
+      auth: {
+        verifyOtp: (...args: unknown[]) => mockVerifyOtp(...args),
+        signOut: (...args: unknown[]) => mockSignOut(...args),
+      },
+    };
   },
 }));
 jest.mock('@/features/auth/services/register', () => ({
@@ -258,25 +264,30 @@ describe('会員登録の画面遷移', () => {
     );
     mockPersist.mockImplementation(async () => mockState.persistResult);
     mockLinkGuestOrders.mockResolvedValue(0);
-    // 1 回で使い切る控えの表の写し（番号は固定。作った道筋を、用途が合う最初の 1 回だけ返す）
-    const intents = new Map<string, { returnPath: string; purpose: string; used: boolean }>();
-    mockCreateReturnIntent.mockImplementation(async ({ returnPath, purpose }: { returnPath: string; purpose: string }) => {
-      intents.set(INTENT_TOKEN, { returnPath, purpose, used: false });
-      return { token: INTENT_TOKEN, maxAgeSeconds: 3600 };
-    });
-    mockConsumeReturnIntent.mockImplementation(async ({ token, purpose }: { token: string; purpose: string }) => {
-      const intent = intents.get(token);
-      if (!intent || intent.used || intent.purpose !== purpose) return null;
-      intent.used = true;
-      return intent.returnPath;
-    });
-    delete env.ADMIN_API_KEY;
+    mockSignOut.mockResolvedValue({ error: null });
+    // 1 回で使い切る控えの表の写し（番号は固定）。作った道筋を、用途と結び付けたメール（大文字小文字・前後の空白は無視）が
+    // 合う最初の 1 回だけ返す。
+    const normalize = (email?: string) => (email === undefined ? undefined : email.trim().toLowerCase());
+    const intents = new Map<string, { returnPath: string; purpose: string; bindTo?: string; used: boolean }>();
+    mockCreateReturnIntent.mockImplementation(
+      async ({ returnPath, purpose, bindTo }: { returnPath: string; purpose: string; bindTo?: string }) => {
+        intents.set(INTENT_TOKEN, { returnPath, purpose, bindTo: normalize(bindTo), used: false });
+        return { token: INTENT_TOKEN, maxAgeSeconds: 3600 };
+      },
+    );
+    mockConsumeReturnIntent.mockImplementation(
+      async ({ token, purpose, bindTo }: { token: string; purpose: string; bindTo?: string }) => {
+        const intent = intents.get(token);
+        if (!intent || intent.used || intent.purpose !== purpose || intent.bindTo !== normalize(bindTo)) return null;
+        intent.used = true;
+        return intent.returnPath;
+      },
+    );
     env.TRUST_PROXY_HEADERS = 'false';
     installFetch();
   });
 
   afterEach(() => {
-    env.ADMIN_API_KEY = saved.ADMIN_API_KEY;
     env.TRUST_PROXY_HEADERS = saved.TRUST_PROXY_HEADERS;
   });
 
@@ -451,7 +462,46 @@ describe('会員登録の画面遷移', () => {
   });
 
   describe('確認のメールのリンク', () => {
-    test('FLOW-AUTH-003 戻り先を控えていないリンクを開くとログインさせ、/ へ 303 で送る', async () => {
+    // 登録の窓口を直に呼び、返った控えの Cookie を確認のリンクの要求に付けられる形にする（登録を始めたブラウザの写し）。
+    async function registerWithNext(next?: unknown, email = EMAIL) {
+      const res = (await registerPost(
+        new Request(`${ORIGIN}/api/auth/register`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email, password: PASSWORD, ...(next === undefined ? {} : { next }) }),
+        }),
+      )) as unknown as FakeResponse;
+      expect(res.status).toBe(202);
+      const intent = res.cookies.jar.get('sb-return-intent') as { value: string } | undefined;
+      return { res, cookie: intent && intent.value !== '' ? `sb-return-intent=${intent.value}` : undefined };
+    }
+
+    test('FLOW-AUTH-003 登録を始めたブラウザ（控えの Cookie あり）で確認のリンクを開くとログインさせ、/ へ 303 で送る', async () => {
+      await openRegisterTab();
+      fillRegisterForm();
+      submitRegister();
+      await screen.findByText('メールが届かない場合は、迷惑メールフォルダをご確認ください。');
+      // 戻り先が無い登録でも、控えの Cookie は必ず付く
+      const intent = lastRegisterReply?.cookies.jar.get('sb-return-intent') as { value: string };
+      expect(intent.value).toBe(INTENT_TOKEN);
+
+      const res = await confirm(confirmUrl({ token_hash: 'hash-1', type: 'signup' }), {
+        cookie: `guest-cart=abc; sb-return-intent=${intent.value}`,
+      });
+
+      expect(res.status).toBe(303);
+      expect(locationOf(res)).toBe('/');
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+      expect(mockVerifyOtp).toHaveBeenCalledWith({ token_hash: 'hash-1', type: 'signup' });
+      expect(mockPersist).toHaveBeenCalledWith(res, SESSION, USER, expect.anything());
+      expect(mockSignOut).not.toHaveBeenCalled();
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'auth.confirm', outcome: 'success', resource_id: 'user-1' }),
+      );
+    });
+
+    test('FLOW-AUTH-003 別のブラウザ（控えの Cookie が無い）で開くと、メールの確認だけ済ませ、session を作らず /login?registered=1 へ送り、その画面に案内が出る', async () => {
       await openRegisterTab();
       fillRegisterForm();
       submitRegister();
@@ -460,14 +510,23 @@ describe('会員登録の画面遷移', () => {
       const res = await confirm(confirmUrl({ token_hash: 'hash-1', type: 'signup' }), { cookie: 'guest-cart=abc' });
 
       expect(res.status).toBe(303);
-      expect(locationOf(res)).toBe('/');
+      expect(locationOf(res)).toBe('/login?registered=1');
       expect(res.headers.get('cache-control')).toBe('no-store');
-      expect(res.headers.get('referrer-policy')).toBe('no-referrer');
-      expect(mockVerifyOtp).toHaveBeenCalledWith({ token_hash: 'hash-1', type: 'signup' });
-      expect(mockPersist).toHaveBeenCalledWith(res, SESSION, USER, expect.anything());
+      expect(mockVerifyOtp).toHaveBeenCalledTimes(1);
+      expect(mockPersist).not.toHaveBeenCalled();
+      expect(mockLinkGuestOrders).not.toHaveBeenCalled();
+      expect(mockSignOut).toHaveBeenCalledWith({ scope: 'local' });
+      expect(res.cookies.jar.size).toBe(0);
       expect(mockLogAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'auth.confirm', outcome: 'success', resource_id: 'user-1' }),
+        expect.objectContaining({ action: 'auth.confirm', outcome: 'success', detail: 'confirmed_without_session' }),
       );
+
+      // 行き先の画面は、案内を role="status" で出す（タブを替えても残る）
+      cleanup();
+      await openLoginPage({ registered: '1' });
+      expect(screen.getByRole('status')).toHaveTextContent('会員登録が完了しました。ログインしてください。');
+      fireEvent.click(screen.getByRole('tab', { name: '会員登録' }));
+      expect(screen.getByRole('status')).toHaveTextContent('会員登録が完了しました。ログインしてください。');
     });
 
     test('FLOW-AUTH-003 ログインした時にゲストで買った注文を会員へ引き継ぐ', async () => {
@@ -475,8 +534,9 @@ describe('会員登録の画面遷移', () => {
       fillRegisterForm();
       submitRegister();
       await screen.findByText('メールが届かない場合は、迷惑メールフォルダをご確認ください。');
+      const intent = lastRegisterReply?.cookies.jar.get('sb-return-intent') as { value: string };
 
-      await confirm(confirmUrl({ token_hash: 'hash-1' }));
+      await confirm(confirmUrl({ token_hash: 'hash-1' }), { cookie: `sb-return-intent=${intent.value}` });
 
       expect(mockLinkGuestOrders).toHaveBeenCalledWith({
         userId: 'user-1',
@@ -536,17 +596,13 @@ describe('会員登録の画面遷移', () => {
       expect(mockVerifyOtp).toHaveBeenCalledWith({ token_hash: 'legacy', type: 'signup' });
     });
 
-    test.each(['email', 'magiclink', 'recovery'])('FLOW-AUTH-003 印の種類 %s も登録の確認と同じにログインさせる', async (type) => {
-      await confirm(`${ORIGIN}/api/auth/confirm?token_hash=h&type=${type}`);
+    test.each(['email', 'magiclink', 'recovery', 'admin'])('FLOW-AUTH-003 印の種類 %s は登録の確認ではないので、確かめず（印を消費せず）ログインさせずに固定の /login へ送る', async (type) => {
+      const res = await confirm(`${ORIGIN}/api/auth/confirm?token_hash=h&type=${type}`);
 
-      expect(mockVerifyOtp).toHaveBeenCalledWith({ token_hash: 'h', type });
-      expect(mockPersist).toHaveBeenCalledTimes(1);
-    });
-
-    test('FLOW-AUTH-003 知らない種類は signup として扱う', async () => {
-      await confirm(`${ORIGIN}/api/auth/confirm?token_hash=h&type=admin`);
-
-      expect(mockVerifyOtp).toHaveBeenCalledWith({ token_hash: 'h', type: 'signup' });
+      expect(res.status).toBe(303);
+      expect(locationOf(res)).toBe('/login');
+      expect(mockVerifyOtp).not.toHaveBeenCalled();
+      expect(mockPersist).not.toHaveBeenCalled();
     });
 
     test.each([
@@ -554,48 +610,40 @@ describe('会員登録の画面遷移', () => {
       ['2本のスラッシュ', '//evil.example'],
       ['内部の道', '/account'],
       ['指定なし', ''],
-    ])('FLOW-AUTH-003 URL の redirect_to（%s）は読まず、控えが無ければ / へ送る', async (_label, redirectTo) => {
+    ])('FLOW-AUTH-003 URL の redirect_to（%s）は読まず、登録を始めたブラウザでも / へ送る', async (_label, redirectTo) => {
+      const { cookie } = await registerWithNext();
       const query = redirectTo ? `&redirect_to=${encodeURIComponent(redirectTo)}` : '';
 
-      const res = await confirm(`${ORIGIN}/api/auth/confirm?token_hash=h${query}`);
+      const res = await confirm(`${confirmUrl({ token_hash: 'h' })}${query}`, { cookie: cookie as string });
 
       expect(new URL(res.headers.get('location') as string).origin).toBe(ORIGIN);
       expect(locationOf(res)).toBe('/');
     });
 
     describe('登録で控えた戻り先', () => {
-      // 登録の窓口を直に呼び（next 付き）、返った控えの Cookie を確認のリンクの要求に付ける。
-      async function registerWithNext(next: unknown) {
-        const res = (await registerPost(
-          new Request(`${ORIGIN}/api/auth/register`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ email: EMAIL, password: PASSWORD, next }),
-          }),
-        )) as unknown as FakeResponse;
-        expect(res.status).toBe(202);
-        const intent = res.cookies.jar.get('sb-return-intent') as { value: string } | undefined;
-        return { res, cookie: intent && intent.value !== '' ? `sb-return-intent=${intent.value}` : undefined };
-      }
-
-      test('FLOW-AUTH-003 登録で控えた道へ、保存の後に signup の用途で使い切って 303 で送り、控えの Cookie を消す', async () => {
+      test('FLOW-AUTH-003 登録で控えた道へ、session を作る前に signup の用途とメールで使い切って 303 で送り、控えの Cookie を消す', async () => {
         const { cookie } = await registerWithNext('/item/3?color=red');
         expect(cookie).toBe(`sb-return-intent=${INTENT_TOKEN}`);
-        expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/item/3?color=red', purpose: 'signup' });
+        expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/item/3?color=red', purpose: 'signup', bindTo: EMAIL });
 
         const res = await confirm(confirmUrl({ token_hash: 'hash-1', type: 'signup' }), { cookie: cookie as string });
 
         expect(res.status).toBe(303);
         expect(locationOf(res)).toBe('/item/3?color=red');
-        expect(mockConsumeReturnIntent).toHaveBeenCalledWith({ token: INTENT_TOKEN, purpose: 'signup', userId: 'user-1' });
-        expect(mockPersist.mock.invocationCallOrder[0]).toBeLessThan(mockConsumeReturnIntent.mock.invocationCallOrder[0]);
+        expect(mockConsumeReturnIntent).toHaveBeenCalledWith({
+          token: INTENT_TOKEN,
+          purpose: 'signup',
+          userId: 'user-1',
+          bindTo: EMAIL,
+        });
+        expect(mockConsumeReturnIntent.mock.invocationCallOrder[0]).toBeLessThan(mockPersist.mock.invocationCallOrder[0]);
         expect(res.cookies.jar.get('sb-return-intent')).toMatchObject({
           value: '',
           options: expect.objectContaining({ maxAge: 0 }),
         });
       });
 
-      test('FLOW-AUTH-003 同じリンクをもう一度開くと控えは使えず / になる', async () => {
+      test('FLOW-AUTH-003 同じリンクをもう一度開くと控えは使えず、session を作らず /login?registered=1 になる', async () => {
         const { cookie } = await registerWithNext('/item/3');
         const url = confirmUrl({ token_hash: 'hash-1', type: 'signup' });
 
@@ -603,72 +651,105 @@ describe('会員登録の画面遷移', () => {
         const second = await confirm(url, { cookie: cookie as string });
 
         expect(locationOf(first)).toBe('/item/3');
-        expect(locationOf(second)).toBe('/');
+        expect(locationOf(second)).toBe('/login?registered=1');
+        expect(mockPersist).toHaveBeenCalledTimes(1);
       });
 
-      test('FLOW-AUTH-003 別のブラウザ（控えの Cookie が無い）で開いたら戻り先を使わず / へ送る', async () => {
+      test('FLOW-AUTH-003 戻り先つきの登録でも、登録を始めていないブラウザ（控えの Cookie が無い）で開いたら戻り先を使わず /login?registered=1 へ送る', async () => {
         await registerWithNext('/item/3');
 
         const res = await confirm(confirmUrl({ token_hash: 'hash-1', type: 'signup' }));
 
-        expect(locationOf(res)).toBe('/');
+        expect(locationOf(res)).toBe('/login?registered=1');
         expect(mockConsumeReturnIntent).not.toHaveBeenCalled();
+        expect(mockPersist).not.toHaveBeenCalled();
+        expect(mockSignOut).toHaveBeenCalledWith({ scope: 'local' });
       });
 
-      test('FLOW-AUTH-003 印の種類が signup 以外なら登録の控えを使い切らず / へ送る', async () => {
+      test('FLOW-AUTH-003 登録を始めたブラウザでも、別のメールの印（攻撃者のリンク）では session を作らず、控えの Cookie も消さない', async () => {
+        // 被害者のブラウザ: 被害者の登録の控えの Cookie が有効
+        const { cookie } = await registerWithNext('/item/3');
+        // 攻撃者のメールの確認リンクを、同じブラウザで開く
+        mockVerifyOtp.mockResolvedValueOnce({
+          data: { session: SESSION, user: { ...USER, id: 'attacker-1', email: 'attacker@example.com' } },
+          error: null,
+        });
+
+        const res = await confirm(confirmUrl({ token_hash: 'attacker-hash', type: 'signup' }), { cookie: cookie as string });
+
+        expect(locationOf(res)).toBe('/login?registered=1');
+        expect(mockPersist).not.toHaveBeenCalled();
+        expect(mockLinkGuestOrders).not.toHaveBeenCalled();
+        expect(mockSignOut).toHaveBeenCalledWith({ scope: 'local' });
+        expect(res.cookies.jar.size).toBe(0);
+
+        // 被害者自身のリンクは、そのあと同じ Cookie で通る（控えは壊されていない）
+        const victim = await confirm(confirmUrl({ token_hash: 'victim-hash', type: 'signup' }), { cookie: cookie as string });
+        expect(locationOf(victim)).toBe('/item/3');
+      });
+
+      test('FLOW-AUTH-003 印の種類が signup 以外なら確かめず、登録の控えを使い切らず /login へ送る', async () => {
         const { cookie } = await registerWithNext('/item/3');
 
         const res = await confirm(confirmUrl({ token_hash: 'hash-1', type: 'magiclink' }), { cookie: cookie as string });
 
-        expect(locationOf(res)).toBe('/');
+        expect(locationOf(res)).toBe('/login');
+        expect(mockVerifyOtp).not.toHaveBeenCalled();
         expect(mockConsumeReturnIntent).not.toHaveBeenCalled();
       });
 
-      test('FLOW-AUTH-003 保存に失敗したら控えを使い切らず、既定の / のまま返す', async () => {
+      test('FLOW-AUTH-003 保存に失敗しても控えは既に使い切り済み。既定の / のまま返し、控えの Cookie は消す', async () => {
         const { cookie } = await registerWithNext('/item/3');
         mockState.persistResult = { ok: false, error: 'db down' };
 
         const res = await confirm(confirmUrl({ token_hash: 'hash-1', type: 'signup' }), { cookie: cookie as string });
 
         expect(locationOf(res)).toBe('/');
-        expect(mockConsumeReturnIntent).not.toHaveBeenCalled();
-        expect(res.cookies.jar.get('sb-return-intent')).toBeUndefined();
+        expect(mockConsumeReturnIntent).toHaveBeenCalledTimes(1);
+        expect(res.cookies.jar.get('sb-return-intent')).toMatchObject({
+          value: '',
+          options: expect.objectContaining({ maxAge: 0 }),
+        });
       });
 
       test.each([
         ['外の住所', 'https://evil.example/steal'],
         ['ログイン画面', '/login'],
-      ])('FLOW-AUTH-003 入口で外れる戻り先（%s）は控えず、リンクの後は / へ送る', async (_label, next) => {
+      ])('FLOW-AUTH-003 入口で外れる戻り先（%s）は既定の / で控え、登録を始めたブラウザではリンクの後は / へ送る', async (_label, next) => {
         const { cookie } = await registerWithNext(next);
 
-        expect(mockCreateReturnIntent).not.toHaveBeenCalled();
-        expect(cookie).toBeUndefined();
-        const res = await confirm(confirmUrl({ token_hash: 'hash-1', type: 'signup' }));
+        expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/', purpose: 'signup', bindTo: EMAIL });
+        expect(cookie).toBe(`sb-return-intent=${INTENT_TOKEN}`);
+        const res = await confirm(confirmUrl({ token_hash: 'hash-1', type: 'signup' }), { cookie: cookie as string });
         expect(locationOf(res)).toBe('/');
+        expect(mockPersist).toHaveBeenCalledTimes(1);
       });
     });
 
     test('FLOW-AUTH-003 保存に失敗しても 303 のまま返し、注文の引き継ぎはしない', async () => {
+      const { cookie } = await registerWithNext();
       mockState.persistResult = { ok: false, error: 'db down' };
 
-      const res = await confirm(`${ORIGIN}/api/auth/confirm?token_hash=h`);
+      const res = await confirm(`${ORIGIN}/api/auth/confirm?token_hash=h`, { cookie: cookie as string });
 
       expect(res.status).toBe(303);
       expect(locationOf(res)).toBe('/');
       expect(mockLinkGuestOrders).not.toHaveBeenCalled();
       expect(mockLogAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ outcome: 'error', detail: 'session_persist_failed: db down' }),
+        expect.objectContaining({ outcome: 'error', detail: 'session_persist_failed' }),
       );
+      expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain('db down');
     });
 
-    test('FLOW-AUTH-003 保存が理由を返さない失敗は unknown として残す', async () => {
+    test('FLOW-AUTH-003 保存が理由を返さない失敗も固定の session_persist_failed を残す', async () => {
+      const { cookie } = await registerWithNext();
       mockState.persistResult = undefined;
 
-      const res = await confirm(`${ORIGIN}/api/auth/confirm?token_hash=h`);
+      const res = await confirm(`${ORIGIN}/api/auth/confirm?token_hash=h`, { cookie: cookie as string });
 
       expect(res.status).toBe(303);
       expect(mockLogAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ detail: 'session_persist_failed: unknown' }),
+        expect.objectContaining({ detail: 'session_persist_failed' }),
       );
     });
 

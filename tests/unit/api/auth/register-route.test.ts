@@ -92,7 +92,7 @@ const PASSWORD = 'Passw0rd!23456789';
 const ADMIN_KEY = 'admin-secret';
 const TOKENS = { cartToken: 'cart-t', wishlistToken: 'wish-t' };
 const SESSION = { access_token: 'access-1', refresh_token: 'refresh-1' };
-const NEW_USER = { id: 'user-1', email: 'new@example.com' };
+const NEW_USER = { id: 'user-1', email: 'new@example.com', app_metadata: { role: 'user' }, user_metadata: { display_name: 'x' } };
 
 let signUp: jest.Mock;
 let createUser: jest.Mock;
@@ -173,118 +173,110 @@ describe('POST /api/auth/register', () => {
     });
   });
 
-  describe('管理の経路の鍵', () => {
-    it('DD-AUTH-018 管理の見出しがあり鍵の設定が無ければ 500 Server misconfiguration', async () => {
+  describe('管理の鍵の枝は無い（SEC-AUTH-017）', () => {
+    it.each([
+      ['x-admin-token', { 'x-admin-token': ADMIN_KEY }],
+      ['Authorization: Bearer', { authorization: `Bearer ${ADMIN_KEY}` }],
+      ['違う x-admin-token', { 'x-admin-token': 'wrong' }],
+    ])('DD-AUTH-018 %s を付けても createUser を呼ばず、公開の登録として Turnstile から通す', async (_label, headers) => {
+      const res: any = await POST(registerRequest(undefined, headers));
+
+      expect(res.status).toBe(202);
+      expect(createUser).not.toHaveBeenCalled();
+      expect(mockCreateServiceRoleClient).toHaveBeenCalled(); // 照会のためだけ。作成には使わない
+      expect(mockTurnstile).toHaveBeenCalledTimes(1);
+      expect(mockPwned).toHaveBeenCalledTimes(1);
+      expect(signUp).toHaveBeenCalledTimes(1);
+      expect(mockLogAudit).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'unauthorized' }));
+    });
+
+    it('DD-AUTH-018 ADMIN_API_KEY が未設定でも、管理の見出しを付けた要求は 500 にならず公開の登録になる', async () => {
       delete process.env.ADMIN_API_KEY;
 
       const res: any = await POST(registerRequest(undefined, { 'x-admin-token': 'anything' }));
 
-      expect(res.status).toBe(500);
-      expect(await res.json()).toEqual({ error: 'Server misconfiguration' });
+      expect(res.status).toBe(202);
       expect(createUser).not.toHaveBeenCalled();
     });
 
-    it('DD-AUTH-018 x-admin-token が鍵と違えば unauthorized を残して 401', async () => {
-      const res: any = await POST(registerRequest(undefined, { 'x-admin-token': 'wrong' }));
+    it('DD-AUTH-018 管理の見出しを付けても Turnstile が失敗すれば 403 で、作成には進まない', async () => {
+      mockTurnstile.mockResolvedValue({ ok: false });
 
-      expect(res.status).toBe(401);
-      expect(await res.json()).toEqual({ error: 'Unauthorized' });
-      expect(mockLogAudit).toHaveBeenCalledWith({
-        action: 'register',
-        actor_email: null,
-        outcome: 'unauthorized',
-        detail: 'Missing or invalid admin token',
-      });
+      const res: any = await POST(registerRequest(undefined, { 'x-admin-token': ADMIN_KEY }));
+
+      expect(res.status).toBe(403);
       expect(createUser).not.toHaveBeenCalled();
     });
+  });
 
-    it('DD-AUTH-018 Bearer の値が鍵と違っても 401', async () => {
-      const res: any = await POST(registerRequest(undefined, { authorization: 'Bearer wrong' }));
+  describe('宛先単位の回数の制限（SEC-AUTH-016-AC-03）', () => {
+    it('DD-AUTH-018 小文字・trim 済みのメールを subject に 5 回／3600 秒の枠を数える', async () => {
+      await POST(registerRequest({ email: 'User@Example.com', password: PASSWORD, turnstileToken: 't' }));
 
-      expect(res.status).toBe(401);
-    });
-
-    it('DD-AUTH-018 x-admin-token が鍵と合えば service role の createUser で作って 201 { id, email }', async () => {
-      const res: any = await POST(
-        registerRequest(
-          { email: 'New@Example.com', password: PASSWORD, display_name: 'Hanako' },
-          { 'x-admin-token': ADMIN_KEY },
-        ),
+      expect(mockRateLimit).toHaveBeenCalledTimes(2);
+      expect(mockRateLimit).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ endpoint: 'auth:register', limit: 5, windowSeconds: 3600, subject: 'user@example.com' }),
       );
+    });
 
-      expect(res.status).toBe(201);
-      expect(await res.json()).toEqual({ id: 'admin-1', email: 'new@example.com' });
-      expect(createUser).toHaveBeenCalledWith({
-        email: 'new@example.com',
-        password: PASSWORD,
-        user_metadata: { display_name: 'Hanako' },
+    it('DD-AUTH-018 枠は Turnstile → 漏洩の確かめ → 宛先の枠 → 控えの作成 → 既存会員の照会 の順', async () => {
+      const order: string[] = [];
+      mockTurnstile.mockImplementation(async () => (order.push('turnstile'), { ok: true }));
+      mockPwned.mockImplementation(async () => (order.push('pwned'), { status: 'ok' }));
+      mockRateLimit.mockImplementation(async (arg: { subject?: string }) => {
+        if (arg.subject) order.push('email-limit');
+        return undefined;
       });
-      expect(mockLogAudit).toHaveBeenCalledWith({
-        action: 'register',
-        actor_email: 'new@example.com',
-        outcome: 'success',
-        resource_id: 'admin-1',
-      });
-      // 管理の経路は Turnstile・漏洩・列挙の対策を通らない
-      expect(mockTurnstile).not.toHaveBeenCalled();
-      expect(mockPwned).not.toHaveBeenCalled();
+      mockCreateReturnIntent.mockImplementation(async () => (order.push('intent'), { token: 'S'.repeat(43), maxAgeSeconds: 3600 }));
+      mockFindUser.mockImplementation(async () => (order.push('lookup'), { status: 'not_found' }));
+
+      await POST(registerRequest({ email: 'new@example.com', password: PASSWORD, turnstileToken: 't', next: '/look' }));
+
+      expect(order).toEqual(['turnstile', 'pwned', 'email-limit', 'intent', 'lookup']);
+    });
+
+    it('DD-AUTH-018 枠が 429 を返したら照会・signUp・メール送信に進まず、Retry-After を保つ', async () => {
+      const limited = new Response(null, { status: 429, headers: { 'Retry-After': '3600' } });
+      mockRateLimit.mockImplementation(async (arg: { subject?: string }) => (arg.subject ? limited : undefined));
+
+      const res = await POST(registerRequest());
+
+      expect(res).toBe(limited);
+      expect((res as Response).headers.get('Retry-After')).toBe('3600');
       expect(mockFindUser).not.toHaveBeenCalled();
+      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+      expect(signUp).not.toHaveBeenCalled();
+      expect(mockSendMail).not.toHaveBeenCalled();
     });
 
-    it('DD-AUTH-018 Bearer の値が鍵と合っても同じく管理の経路で作る', async () => {
-      const res: any = await POST(registerRequest(undefined, { authorization: `Bearer ${ADMIN_KEY}` }));
+    it('DD-AUTH-018 Turnstile が失敗した時は宛先の枠を数えない（他人の枠を潰させない）', async () => {
+      mockTurnstile.mockResolvedValue({ ok: false });
 
-      expect(res.status).toBe(201);
-      expect(createUser).toHaveBeenCalledTimes(1);
+      await POST(registerRequest());
+
+      expect(mockRateLimit).toHaveBeenCalledTimes(1);
+      expect(mockRateLimit.mock.calls[0][0].subject).toBeUndefined();
     });
 
-    it('DD-AUTH-018 管理の作成で user が返らなければ id と email は未定義の 201', async () => {
-      createUser.mockResolvedValue({ data: { user: null }, error: null });
+    it('DD-AUTH-018 漏洩したパスワードの時も宛先の枠を数えない', async () => {
+      mockPwned.mockResolvedValue({ status: 'pwned' });
 
-      const res: any = await POST(registerRequest(undefined, { 'x-admin-token': ADMIN_KEY }));
+      await POST(registerRequest());
 
-      expect(res.status).toBe(201);
-      expect(mockLogAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ outcome: 'success', resource_id: undefined }),
-      );
+      expect(mockRateLimit).toHaveBeenCalledTimes(1);
     });
 
-    it.each(['User already registered', 'Duplicate key value'])(
-      'DD-AUTH-018 管理の作成の誤りの文 "%s" は conflict を残して 409',
-      async (message) => {
-        createUser.mockResolvedValue({ data: null, error: { message } });
+    it('DD-AUTH-018 宛先の枠の呼び出しが投げたら記録して先へ進む', async () => {
+      mockRateLimit.mockImplementation(async (arg: { subject?: string }) => {
+        if (arg.subject) throw new Error('rate down');
+        return undefined;
+      });
 
-        const res: any = await POST(registerRequest(undefined, { 'x-admin-token': ADMIN_KEY }));
+      const res: any = await POST(registerRequest());
 
-        expect(res.status).toBe(409);
-        expect(await res.json()).toEqual({ error: 'Email already registered' });
-        expect(mockLogAudit).toHaveBeenCalledWith({
-          action: 'register',
-          actor_email: 'new@example.com',
-          outcome: 'conflict',
-          detail: message,
-        });
-      },
-    );
-
-    it('DD-AUTH-018 管理の作成がほかの誤りなら error を残して 500', async () => {
-      createUser.mockResolvedValue({ data: null, error: { message: 'db exploded' } });
-
-      const res: any = await POST(registerRequest(undefined, { 'x-admin-token': ADMIN_KEY }));
-
-      expect(res.status).toBe(500);
-      expect(await res.json()).toEqual({ error: 'Failed to create user' });
-      expect(mockLogAudit).toHaveBeenCalledWith(
-        expect.objectContaining({ outcome: 'error', detail: 'db exploded' }),
-      );
-    });
-
-    it('DD-AUTH-018 管理の作成の誤りに文が無ければ error として 500', async () => {
-      createUser.mockResolvedValue({ data: null, error: {} });
-
-      const res: any = await POST(registerRequest(undefined, { 'x-admin-token': ADMIN_KEY }));
-
-      expect(res.status).toBe(500);
+      expect(console.error).toHaveBeenCalledWith('Rate limit middleware error (register-email):', expect.any(Error));
+      expect(res.status).toBe(202);
     });
   });
 
@@ -319,20 +311,24 @@ describe('POST /api/auth/register', () => {
     it.each([
       ['redirect_to', '/look'],
       ['emailRedirectTo', '/news'],
-    ])('DD-AUTH-018 古いクライアントが送る %s は捨てられ、控えも確認のリンクのクエリも作らない', async (key, value) => {
+    ])('DD-AUTH-018 古いクライアントが送る %s は捨てられ、戻り先は既定の / のまま、確認のリンクにクエリも作らない', async (key, value) => {
       const res: any = await POST(registerRequest({ email: 'new@example.com', password: PASSWORD, [key]: value }));
 
       expect(res.status).toBe(202);
-      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
+      expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/', purpose: 'signup', bindTo: 'new@example.com' });
       expect(new URL(signUp.mock.calls[0][0].options.emailRedirectTo).search).toBe('');
-      expect(res.cookies.set).toHaveBeenCalledWith(expect.objectContaining({ name: 'sb-return-intent', value: '', maxAge: 0 }));
+      expect(res.cookies.set).toHaveBeenCalledWith(expect.objectContaining({ name: 'sb-return-intent', value: 'S'.repeat(43), maxAge: 3600 }));
     });
 
     it('DD-AUTH-018 next が通ると signup の用途で控え、控えの Cookie を HttpOnly・Lax・Path /・Max-Age 3600 で付ける', async () => {
       const res: any = await POST(registerRequest({ email: 'new@example.com', password: PASSWORD, next: '/account?tab=orders#x' }));
 
       expect(res.status).toBe(202);
-      expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/account?tab=orders', purpose: 'signup' });
+      expect(mockCreateReturnIntent).toHaveBeenCalledWith({
+        returnPath: '/account?tab=orders',
+        purpose: 'signup',
+        bindTo: 'new@example.com',
+      });
       expect(res.cookies.set).toHaveBeenCalledWith(
         expect.objectContaining({
           name: 'sb-return-intent',
@@ -353,12 +349,12 @@ describe('POST /api/auth/register', () => {
       ['途中の画面 /auth/verified', '/auth/verified'],
       ['数値', 123],
       ['長すぎる値', '/item/' + 'a'.repeat(3000)],
-    ])('DD-AUTH-018 確かめに通らない next（%s）でも登録は 400 にならず、控えを作らず控えの Cookie を消す', async (_label, next) => {
+    ])('DD-AUTH-018 確かめに通らない next（%s）でも登録は 400 にならず、戻り先は既定の / で控えを作り、控えの Cookie を付ける', async (_label, next) => {
       const res: any = await POST(registerRequest({ email: 'new@example.com', password: PASSWORD, next }));
 
       expect(res.status).toBe(202);
-      expect(mockCreateReturnIntent).not.toHaveBeenCalled();
-      expect(res.cookies.set).toHaveBeenCalledWith(expect.objectContaining({ name: 'sb-return-intent', value: '', maxAge: 0 }));
+      expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/', purpose: 'signup', bindTo: 'new@example.com' });
+      expect(res.cookies.set).toHaveBeenCalledWith(expect.objectContaining({ name: 'sb-return-intent', value: 'S'.repeat(43), maxAge: 3600 }));
     });
   });
 
@@ -479,6 +475,41 @@ describe('POST /api/auth/register', () => {
       expect(cookieShapes[1]).toEqual(cookieShapes[0]);
       expect(cookieShapes[2]).toEqual(cookieShapes[0]);
       expect(cookieShapes[0]).toEqual(expect.objectContaining({ httpOnly: true, sameSite: 'lax', path: '/', maxAge: 3600 }));
+    });
+
+    it('DD-AUTH-018 控えは登録したメール（小文字に直した値）に結んで作り、戻り先が有効ならその道筋で保存する', async () => {
+      await POST(registerRequest({ ...body, email: 'New@Example.com' }));
+
+      expect(mockCreateReturnIntent).toHaveBeenCalledTimes(1);
+      expect(mockCreateReturnIntent).toHaveBeenCalledWith({ returnPath: '/item/3', purpose: 'signup', bindTo: 'new@example.com' });
+    });
+
+    it.each([
+      ['戻り先が無い', undefined],
+      ['戻り先が不正', '//evil.example'],
+    ])('DD-AUTH-018 %s でも必ず控えを作り（既定の /）、新規・登録済み・重複の例外の 3 つの 202 で控えの Cookie が同じ形で付く', async (_label, next) => {
+      const noNext = { email: 'new@example.com', password: PASSWORD, turnstileToken: 't', ...(next === undefined ? {} : { next }) };
+      const fresh: any = await POST(registerRequest(noNext));
+      mockFindUser.mockResolvedValueOnce({ status: 'found', userId: 'u-1' });
+      const registered: any = await POST(registerRequest(noNext));
+      signUp.mockResolvedValueOnce({ data: { session: null, user: null }, error: { message: 'User already registered' } });
+      const duplicate: any = await POST(registerRequest(noNext));
+
+      expect(mockCreateReturnIntent).toHaveBeenCalledTimes(3);
+      for (const call of mockCreateReturnIntent.mock.calls) {
+        expect(call[0]).toEqual({ returnPath: '/', purpose: 'signup', bindTo: 'new@example.com' });
+      }
+      const shapes = [fresh, registered, duplicate].map((res) => {
+        expect(res.status).toBe(202);
+        const calls = returnIntentCookies(res);
+        expect(calls).toHaveLength(1);
+        const { value, ...attributes } = calls[0];
+        expect(value).toBe('S'.repeat(43));
+        return attributes;
+      });
+      expect(shapes[1]).toEqual(shapes[0]);
+      expect(shapes[2]).toEqual(shapes[0]);
+      expect(shapes[0]).toEqual(expect.objectContaining({ httpOnly: true, sameSite: 'lax', path: '/', maxAge: 3600 }));
     });
 
     it('DD-AUTH-018 控えの作成が失敗しても 3 つの枝とも 202 で、控えの Cookie は消す側（Max-Age 0）で揃う', async () => {
@@ -715,13 +746,16 @@ describe('POST /api/auth/register', () => {
       expect(mockPersist).not.toHaveBeenCalled();
     });
 
-    it('DD-AUTH-018 保存が成功したら success を残し、access token と user を 201 で返す', async () => {
+    it('DD-AUTH-018 保存が成功したら success を残し、{ user: { id, email } } だけを 201 で返す（access_token・利用者の記録は載せない）', async () => {
       const res: any = await POST(
         registerRequest(undefined, { cookie: 'guest=1' }),
       );
 
       expect(res.status).toBe(201);
-      expect(await res.json()).toEqual({ access_token: 'access-1', user: NEW_USER });
+      const body = await res.json();
+      expect(body).toEqual({ user: { id: 'user-1', email: 'new@example.com' } });
+      expect(Object.keys(body)).toEqual(['user']);
+      expect(Object.keys(body.user).sort()).toEqual(['email', 'id']);
       expect(mockReadTokens).toHaveBeenCalledWith('guest=1');
       expect(mockPersist).toHaveBeenCalledWith(res, SESSION, NEW_USER, TOKENS);
       expect(mockLogAudit).toHaveBeenCalledWith({

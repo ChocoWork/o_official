@@ -1,6 +1,6 @@
 # STOCKIST の要件
 
-> 状態: 推定 | 確認日: 2026-10-25 | 対象: STOCKIST（取扱店の一覧 `/stockist`・ホームの取扱店の節の部品・管理の取扱店） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり。取扱店のファイルは含まない）
+> 状態: 推定 | 確認日: 2026-10-26 | 対象: STOCKIST（取扱店の一覧 `/stockist`・ホームの取扱店の節の部品・管理の取扱店） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり。取扱店のファイルは含まない）
 
 ## 概要
 
@@ -699,7 +699,10 @@ STOCKIST 一覧で地方（親）チェックを入れるとその地方配下�
 | 出どころ | OWASP ASVS 4.0.3 V4.1.3（当てはめは推定）。`docs/05_Quality/reviews/security/security_review_home.md` |
 | 優先度 | SHOULD |
 
-公開の取扱店の取り出しは、ログインの Cookie を引き継がない client（`createPublicClient`）で読む。今のコードは満たさない。
+公開の取扱店の取り出しは、ログインの Cookie を引き継がない client（`createPublicClient`）で読む。2026-10-26 に満たした（以前は `createClient` で読み、閲覧者の session を引き継いだ）。
+
+- `getPublicStockists`（`/stockist` とホームの取扱店の節が使う）は `createPublicClient()` で読み、Cookie の session の client は使わない（IMPL-STOCKIST-103・104、DD-STOCKIST-003・004）
+- 公開の取り出しの誤りは今までどおり空の配列にする（ADR-0253）
 
 ### SEC-STOCKIST-002-AC-01 管理の権限でログインしたまま公開の画面を開いても非公開の店舗が出ない
 
@@ -958,7 +961,10 @@ anon・authenticated の `stockists` の TRUNCATE・TRIGGER・REFERENCES・MAINT
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/security/security_review_stockist.md` |
 | 優先度 | SHOULD |
 
-管理の一覧と1件の取得は、`id`・`name`・`address`・`phone`・`time`・`holiday`・`status`・`updated_at` だけを返す（列は案）。今のコードは満たさない。
+管理の一覧と1件の取得は、`id`・`name`・`address`・`phone`・`time`・`holiday`・`status`・`updated_at` だけを返す（列は案）。2026-10-26 に満たした（以前は `select('*')` で `type`・`created_at` も返した）。
+
+- 一覧と1件の `select` は同じ定数 `ADMIN_STOCKIST_COLUMNS`（`src/features/stockist/schemas.ts`）を使う。後から表に列を足しても、この定数を直すまで外へ出ない
+- 管理の画面（`StockistSection`・編集の頁）は `type`・`created_at` を読まない
 
 ### SEC-STOCKIST-009-AC-01 管理の応答に決めた列のほかが出ない
 
@@ -1008,7 +1014,12 @@ anon・authenticated の `stockists` の TRUNCATE・TRIGGER・REFERENCES・MAINT
 | 出どころ | OWASP ASVS 4.0.3 V5.1.3。`docs/05_Quality/reviews/security/security_review_stockist.md` |
 | 優先度 | SHOULD |
 
-作成と書き換えは、全部の文字の値で制御文字（改行を含む）を拒み、電話は数字・`+`・`-`・空白・括弧だけを許す（許す字は案）。今のコードは満たさない。
+作成と書き換えは、全部の文字の値で制御文字（改行を含む）を拒み、電話は数字・`+`・`-`・空白・括弧だけを許す。2026-10-26 に満たした（以前は長さだけを見た）。
+
+- 店名（255 字）・住所（500 字）・営業時間（120 字）・定休日（120 字）は、前後の空白を除いた後に、制御文字（`\p{Cc}`。改行・タブを含む）・書式文字（`\p{Cf}`。ゼロ幅空白・双方向制御を含む）・行区切り（`\p{Zl}`）・段落区切り（`\p{Zp}`）を 1 字も含まない 1 行の文字だけを許す。全角の空白は通す
+- 電話（50 字）は、前後の空白を除いた後に、半角の数字・`+`・`-`・半角の括弧・半角の空白・全角の括弧（`（）`）・全角の空白だけを許す。改行を含む `\s` は使わない。英字と「（代表）」のような漢字は拒む
+- 前後の空白と改行は先に取り除くので、末尾だけの改行は取り除かれて保存される。途中の改行は拒む
+- 既に保存されている店舗の値が許可の外の字を含むと、その店舗は編集で保存できなくなる。本番の確認は報告に書いた
 
 ### SEC-STOCKIST-011-AC-01 制御文字を含む値は保存されない
 
@@ -1058,7 +1069,12 @@ anon・authenticated の `stockists` の TRUNCATE・TRIGGER・REFERENCES・MAINT
 | 出どころ | ASVS 未対応付け。実装から推定（取扱店のコードと移行を読み直した） |
 | 優先度 | SHOULD |
 
-PUT・PATCH・DELETE は、変わった行が0件の時は 404 を返し、成功の監査を残さない。削除の監査には、消した店舗の名前と住所を残す。今のコードは満たさない。
+PUT・PATCH・DELETE は、変わった行が0件の時は 404 を返し、成功の監査を残さない。削除の監査には、消した店舗の名前と住所を残す。2026-10-26 に満たした（以前は 0 件でも 200 と成功の監査だった）。
+
+- PUT・PATCH は `.update(...).eq('id', id).select('id')`、DELETE は `.delete().eq('id', id).select('id, name, address, status')` で行を受け取る。0 行（無い、または RLS が隠した）は 404 `{ error: 'Stockist not found' }` と、結果 `failure`・`detail='Stockist not found'` の監査 1 行にする。成功の監査は書かない
+- 管理の窓口は利用者の session の client で書くので、RLS が隠した行も 0 行になり、403 でなく 404 になる
+- 削除が 1 行を返した時の成功の監査は `metadata.deleted = { id, name, address, status }` だけを残す（電話・営業時間は残さない）。`detail` は今までどおり `Deleted stockist id: <id>`
+- 道の `id` は安全に表せる正の整数だけを受け、そうでなければ DB に渡さず 400 を返す（桁あふれを 500 にしない）
 
 ### SEC-STOCKIST-013-AC-01 無い店舗への変更は 404 になり成功の監査が残らない
 
@@ -1095,7 +1111,11 @@ PUT・PATCH・DELETE は、変わった行が0件の時は 404 を返し、成�
 | 出どころ | OWASP ASVS 4.0.3 V7.4.1（当てはめは推定）。`docs/05_Quality/reviews/code/2026-04-29-stockist-review-addendum.md` |
 | 優先度 | SHOULD |
 
-検証の誤りは決まった誤りの文（と必要なら項目の名前）だけを返す。本文が JSON でない時は 400 を返す。サーバーの記録には誤りの種類と code だけを書き、例外や DB の誤りを丸ごと渡さない。今のコードは満たさない。
+検証の誤りは決まった誤りの文（と必要なら項目の名前）だけを返す。本文が JSON でない時は 400 を返す。サーバーの記録には誤りの種類と code だけを書き、例外や DB の誤りを丸ごと渡さない。AC-01・AC-02 と、窓口の中の DB の誤りの記録（`{ code }`）は 2026-10-26 に満たした（以前は `details` に zod の内訳を返し、壊れた JSON は 500 だった）。各 route の外側の `catch` の記録（例外を丸ごと渡す）は、波 1-C の `safe-error.ts` で直すまで満たさない。
+
+- 検証の誤りは 400 `{ error: 'Invalid request', fields: [誤りのあった項目の名前（重複なし）] }`。`details`・`fieldErrors`・`formErrors`・入力の値は含めない（`toInvalidStockistResponse`、IMPL-STOCKIST-149）
+- 壊れた JSON（と JSON の `null`）は 400 `{ error: 'Invalid request' }` と、結果 `failure`・`detail='Invalid JSON'` の監査 1 行にする。表には触らない
+- DB の誤りの記録は `console.error('Failed to ...:', { code })` にし、Supabase の誤りの本文を渡さない。窓口の外側の `catch` の記録は今までどおり（例外のまま。満たさない残り。波 1-C の `safe-error.ts` で直す）
 
 ### SEC-STOCKIST-014-AC-01 検証の誤りの応答に制約の中身が出ない
 
@@ -1219,7 +1239,10 @@ PUT・PATCH・DELETE は、変わった行が0件の時は 404 を返し、成�
 | 出どころ | OWASP ASVS 4.0.3 V11.1.4（当てはめは推定） |
 | 優先度 | SHOULD |
 
-公開の取り出しは件数の上限（例: 200 件）を必ず付ける。PostgREST の行の上限（`max_rows`）を本番でも設定する。画面の前の中継で回数の制限をかけるかは、本番の構成で決める。今のコードは件数の上限を付けない。
+公開の取り出しは件数の上限（例: 200 件）を必ず付ける。PostgREST の行の上限（`max_rows`）を本番でも設定する。画面の前の中継で回数の制限をかけるかは、本番の構成で決める。
+
+- 件数の上限は 2026-10-26 に満たした。`getPublicStockists` は呼び出しの `limit` を `min(floor(limit), 200)` にし、`limit` が無い・0・負・NaN・無限でも 200 を掛ける（定数 `PUBLIC_STOCKIST_FETCH_LIMIT`）。ホームは今までどおり 6 件
+- `max_rows` を本番で設定するか、中継の回数の制限は、本番の構成で決める事柄のままで、この直しの範囲外
 
 ### SEC-STOCKIST-018-AC-01 anon の直接の読み出しが行の上限を超えない
 

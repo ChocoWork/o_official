@@ -268,16 +268,45 @@ describe('API-ADMIN-005 GET /api/admin/contact', () => {
     expect(body.data.map((r: InquiryRow) => r.id)).toEqual(expected);
   });
 
-  it('API-ADMIN-005 一覧に IP や端末の情報は載せず、監査にも残さない', async () => {
-    const { body } = await listIds('', seedRows(3));
+  it('API-ADMIN-005 一覧に IP や端末の情報は載せず、開いた記録は状態・種別・ページ・検索語の長さだけで残す', async () => {
+    const { body } = await listIds('?status=open&q=guest1', seedRows(3));
 
-    expect(body.data).toHaveLength(3);
+    expect(body.data.length).toBeGreaterThan(0);
     for (const row of body.data) {
       expect(row).not.toHaveProperty('submitted_ip');
       expect(row).not.toHaveProperty('user_agent');
       expect(row).toHaveProperty('last_message_at');
     }
+    const rows = auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'admin.contact.list',
+      actor_id: 'admin-1',
+      actor_email: 'admin@example.com',
+      resource: 'contact',
+      outcome: 'success',
+      metadata: { status: 'open', type: null, page: 1, q_length: 6 },
+    });
+    expect(rows[0].ip).toBeUndefined();
+    const logged = JSON.stringify(rows[0]);
+    expect(logged).not.toContain('guest1');
+    expect(logged).not.toContain('客1');
+  });
+
+  it('API-ADMIN-005 読みが誤りの時は一覧を開いた記録を書かず、監査の書き込みが失敗しても一覧は 200 のまま', async () => {
+    setup({ custom: { contact_inquiries: inquiriesTable([], { data: null, count: null, error: { message: 'db down' } }) } });
+    const failed = await GET(get());
+    expect(failed.status).toBe(500);
     expect(auditRows()).toHaveLength(0);
+
+    setup({ custom: { contact_inquiries: inquiriesTable(seedRows(2)) } });
+    const base = serviceClient.from.getMockImplementation() as (table: string) => unknown;
+    serviceClient.from.mockImplementation((table: string) =>
+      table === 'audit_logs' ? { insert: () => Promise.reject(new Error('audit down')) } : base(table),
+    );
+    const res = await GET(get());
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toHaveLength(2);
   });
 
   it('API-ADMIN-005 page と pageSize に応じた範囲の行と総ページを返す', async () => {

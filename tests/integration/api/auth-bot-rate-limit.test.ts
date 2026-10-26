@@ -262,8 +262,8 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
     });
   });
 
-  describe('会員登録は IP 単位の枠だけで、メール送信の手前に Turnstile を置く', () => {
-    test('ARC-AUTH-005 register は Turnstile に落ちたら 403 で止め、Supabase を呼ばず、メール単位の枠も持たない', async () => {
+  describe('会員登録は IP 単位の枠と、Turnstile の後の宛先単位の枠を持つ', () => {
+    test('ARC-AUTH-005 register は Turnstile に落ちたら 403 で止め、Supabase を呼ばず、メール単位の枠を数えない（他人の枠を潰させない）', async () => {
       verifyTurnstile.mockResolvedValue({ ok: false, error: 'invalid-input-response' });
       const { POST } = require('@/app/api/auth/register/route') as { POST: Handler };
 
@@ -275,8 +275,27 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       expect(verifyTurnstile).toHaveBeenCalledWith('ts-token', '203.0.113.9');
       expect(enforceRateLimit).toHaveBeenCalledTimes(1);
       expect(enforceRateLimit.mock.calls[0][0]).toEqual(expect.objectContaining({ endpoint: 'auth:register', limit: 20, windowSeconds: 3600 }));
+      expect(enforceRateLimit.mock.calls[0][0].subject).toBeUndefined();
       expect(createClient).not.toHaveBeenCalled();
       expect(createServiceRoleClient).not.toHaveBeenCalled();
+    });
+
+    test('ARC-AUTH-005 register は Turnstile・漏洩の確かめを通ってから、小文字にそろえたメールを subject にして 5 回／3600 秒の枠を数え、超えたら照会より前に 429 で止める', async () => {
+      enforceRateLimit.mockResolvedValueOnce(undefined).mockResolvedValueOnce(tooMany());
+      const { POST } = require('@/app/api/auth/register/route') as { POST: Handler };
+
+      const res = await POST(
+        request('POST', '/api/auth/register', { email: 'New@Example.com', password: 'password123456789', turnstileToken: 'ts-token' }, { 'x-forwarded-for': '203.0.113.9' }),
+      );
+
+      expect(res.status).toBe(429);
+      expect(enforceRateLimit).toHaveBeenCalledTimes(2);
+      expect(enforceRateLimit.mock.calls[1][0]).toEqual(
+        expect.objectContaining({ endpoint: 'auth:register', limit: 5, windowSeconds: 3600, subject: 'new@example.com' }),
+      );
+      expect(verifyTurnstile.mock.invocationCallOrder[0]).toBeLessThan(enforceRateLimit.mock.invocationCallOrder[1]);
+      expect(createServiceRoleClient).not.toHaveBeenCalled();
+      expect(createClient).not.toHaveBeenCalled();
     });
   });
 

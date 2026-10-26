@@ -200,7 +200,7 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
         ...VALID,
         name: 'n'.repeat(255),
         address: 'a'.repeat(500),
-        phone: 'p'.repeat(50),
+        phone: '1'.repeat(50),
         time: 't'.repeat(120),
         holiday: 'h'.repeat(120),
       }),
@@ -212,7 +212,7 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
   it.each([
     ['name', 'n'.repeat(256)],
     ['address', 'a'.repeat(501)],
-    ['phone', 'p'.repeat(51)],
+    ['phone', '1'.repeat(51)],
     ['time', 't'.repeat(121)],
     ['holiday', 'h'.repeat(121)],
   ])('API-STOCKIST-002 %s が上限を 1 字超えると 400 で断り、表に入れない', async (field, value) => {
@@ -222,13 +222,12 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toBe('Invalid request');
-    expect(Object.keys(body.details.fieldErrors)).toEqual([field]);
+    expect(body).toEqual({ error: 'Invalid request', fields: [field] });
     expect(stockistsOp()).toBeUndefined();
   });
 
   it.each(['name', 'address', 'phone', 'time', 'holiday', 'status'])(
-    'API-STOCKIST-002 %s が無ければ 400 で断り、項目ごとの制約の中身を返す',
+    'API-STOCKIST-002 %s が無ければ 400 で断り、項目の名前だけの固定の本文を返す',
     async (field) => {
       setup();
       const body: Record<string, unknown> = { ...VALID };
@@ -238,8 +237,8 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
 
       expect(res.status).toBe(400);
       const json = await res.json();
-      expect(json.error).toBe('Invalid request');
-      expect(json.details.fieldErrors[field]).toBeDefined();
+      expect(json).toEqual({ error: 'Invalid request', fields: [field] });
+      expect(JSON.stringify(json)).not.toMatch(/details|fieldErrors|formErrors/);
       expect(stockistsOp()).toBeUndefined();
     },
   );
@@ -250,7 +249,7 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
     const res = await POST(makeRequest({ ...VALID, name: '   ', phone: '\t' }));
 
     expect(res.status).toBe(400);
-    expect(Object.keys((await res.json()).details.fieldErrors).sort()).toEqual(['name', 'phone']);
+    expect(await res.json()).toEqual({ error: 'Invalid request', fields: ['name', 'phone'] });
   });
 
   it.each(['draft', 'PUBLISHED', '', null, 1])(
@@ -261,7 +260,7 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
       const res = await POST(makeRequest({ ...VALID, status }));
 
       expect(res.status).toBe(400);
-      expect(Object.keys((await res.json()).details.fieldErrors)).toEqual(['status']);
+      expect(await res.json()).toEqual({ error: 'Invalid request', fields: ['status'] });
       expect(stockistsOp()).toBeUndefined();
     },
   );
@@ -334,15 +333,45 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
     expect(auditRows()[0].ip ?? null).toBeNull();
   });
 
-  it('API-STOCKIST-002 JSON でない本文は例外の 500 Internal server error になり、表にも監査にも触らない', async () => {
+  it('API-STOCKIST-002 JSON でない本文は 500 でなく 400 Invalid request で断り、表に触らず failure を監査に残す', async () => {
     setup();
 
     const res = await POST(makeRequest(undefined, { jsonThrows: true }));
 
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: 'Internal server error' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Invalid request' });
     expect(stockistsOp()).toBeUndefined();
-    expect(auditRows()).toHaveLength(0);
+    const rows = auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'admin.stockists.create',
+      outcome: 'failure',
+      detail: 'Invalid JSON',
+    });
+  });
+
+  it.each([
+    ['name', '本店\nInjected'],
+    ['address', '東京\u200b都'],
+    ['time', '11:00\u2028-19:00'],
+    ['holiday', '水曜\r\n木曜'],
+    ['phone', '03-1234-5678（代表）'],
+  ])('API-STOCKIST-002 %s に許可外の字（改行・書式文字・行区切り・電話の漢字）があると 400 で断り、表に入れない', async (field, value) => {
+    setup();
+
+    const res = await POST(makeRequest({ ...VALID, [field]: value }));
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'Invalid request', fields: [field] });
+    expect(stockistsOp()).toBeUndefined();
+  });
+
+  it('API-STOCKIST-002 電話の括弧・プラス・全角の括弧と空白は通す', async () => {
+    setup();
+
+    const res = await POST(makeRequest({ ...VALID, phone: '+81 （03）1234-5678　' }));
+
+    expect(res.status).toBe(201);
   });
 
   // 現状の記録。認可で断った要求を監査に残さないのは SEC-STOCKIST-021 を満たさない欠け。直したらこの件を直す。

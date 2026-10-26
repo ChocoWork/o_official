@@ -9,7 +9,7 @@
   * FREQ-508-AC-01 は「監査ログの一覧が表示される」と書くが、監査ログを出す画面が無い（TM-ADMIN-02）。
  * そのため窓口（API）が一覧の行を返すところまでを確かめる。画面の表示は確かめていない（画面ができたら画面の確かめを足す）。
  *
- * SEC-ADMIN-023-AC-01 は今のコードが読み出しを記録しないため赤になる（TM-ADMIN-64）。AC の文のとおりに書いてあり、緩めない。
+ * SEC-ADMIN-023-AC-01 は、問い合わせの詳細と監査ログの読み出しを窓口が記録するようになったので通る（TM-ADMIN-64。読んだ人の IP は波 4 で、この確かめは id とメールだけを見る）。AC の文のとおりに書いてあり、緩めない。
  *
  * 権限の表（role_permissions）は手元の DB の共有の状態で、権限の設定の試験（FR-ADMIN-109・123）が admin.audit.read を一時的に
  * 動かしうる。そのため全部の試験を withPermissionScenario（同じ advisory lock）の中で流し、並行の差し替えを避ける。
@@ -248,7 +248,6 @@ test.describe('FR-ADMIN-MISC-004 監査ログの閲覧', () => {
   });
 
   test(`SEC-ADMIN-023-AC-01 問い合わせの詳細と監査ログを読むと、読んだ店長の id とメールが入り、問い合わせの名前・メール・本文が入らない記録が2つ増える`, async ({ request }) => {
-    test.fail(true, 'SEC-ADMIN-023-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     await withPermissionScenario(async (client) => {
       const { admin } = await getActors(client);
 

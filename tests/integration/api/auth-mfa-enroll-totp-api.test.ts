@@ -21,6 +21,10 @@ jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
 }));
 
+jest.mock('@/lib/audit', () => ({
+  logAudit: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('@/lib/auth/authenticate', () => ({
   authenticateRequest: jest.fn(),
   authFailureResponse: (reason: string) =>
@@ -33,6 +37,7 @@ jest.mock('@/lib/auth/authenticate', () => ({
 const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 const { createClient } = require('@/lib/supabase/server');
 const { authenticateRequest } = require('@/lib/auth/authenticate');
+const { logAudit } = require('@/lib/audit');
 
 function makeRequest(body?: unknown) {
   return new Request('http://localhost/api/auth/mfa/enroll-totp', {
@@ -53,10 +58,14 @@ const enrolled = (qr: string) => ({
 
 let mfa: { listFactors: jest.Mock; unenroll: jest.Mock; enroll: jest.Mock };
 
-function setup(opts: { role?: string; totp?: unknown[]; listError?: unknown; enroll?: unknown }) {
+function setup(opts: { role?: string; totp?: unknown[]; listError?: unknown; enroll?: unknown; amr?: unknown }) {
   authenticateRequest.mockResolvedValue({
     ok: true,
-    claims: { sub: 'user-1', app_metadata: { role: opts.role ?? 'admin' } },
+    claims: {
+      sub: 'user-1',
+      app_metadata: { role: opts.role ?? 'admin' },
+      amr: 'amr' in opts ? opts.amr : [{ method: 'otp', timestamp: 0 }],
+    },
   });
   mfa = {
     listFactors: jest
@@ -106,6 +115,49 @@ describe('POST /api/auth/mfa/enroll-totp', () => {
     expect(enforceRateLimit).toHaveBeenCalledWith(
       expect.objectContaining({ endpoint: 'auth:mfa:enroll-totp', limit: 10, windowSeconds: 600 }),
     );
+  });
+
+  test('API-AUTH-017 password だけの通行証は 403 で、要素の一覧も登録もせず、second_factor_required を監査に残す', async () => {
+    setup({ amr: [{ method: 'password', timestamp: 0 }] });
+
+    const res = await POST(makeRequest({}));
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Forbidden' });
+    expect(mfa.listFactors).not.toHaveBeenCalled();
+    expect(mfa.enroll).not.toHaveBeenCalled();
+    expect(logAudit).toHaveBeenCalledWith({
+      action: 'mfa_enroll',
+      actor_id: 'user-1',
+      outcome: 'denied',
+      detail: 'second_factor_required',
+    });
+  });
+
+  test('API-AUTH-017 amr が無い通行証も 403', async () => {
+    setup({ amr: undefined });
+
+    const res = await POST(makeRequest({}));
+
+    expect(res.status).toBe(403);
+    expect(mfa.enroll).not.toHaveBeenCalled();
+  });
+
+  test('API-AUTH-017 登録に成功したら mfa_enroll の success を 1 行残し、秘密の値は含めない', async () => {
+    setup({});
+
+    const res = await POST(makeRequest({}));
+
+    expect(res.status).toBe(200);
+    expect(logAudit).toHaveBeenCalledTimes(1);
+    expect(logAudit).toHaveBeenCalledWith({
+      action: 'mfa_enroll',
+      actor_id: 'user-1',
+      outcome: 'success',
+      detail: 'totp_factor_enrolled',
+      resource_id: 'factor-new',
+    });
+    expect(JSON.stringify(logAudit.mock.calls)).not.toContain('SECRET');
   });
 
   test('API-AUTH-017 サポーターも登録でき、本文が空でも通る', async () => {

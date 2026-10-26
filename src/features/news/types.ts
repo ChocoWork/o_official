@@ -3,7 +3,6 @@ export type PublicNewsArticle = {
   title: string;
   published_date: string;
   category: string;
-  image_url: string;
   content: string;
 };
 

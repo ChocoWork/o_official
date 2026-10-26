@@ -4,11 +4,12 @@
  * @packageDocumentation
  * @impl IMPL-ADMIN-121
  * @design DD-ADMIN-006
- * @remarks 問い合わせの表は直接の読みを断っているので、問い合わせの閲覧権限を確かめた後に service role で読む。検索語は PostgREST の or の条件に字のまま埋め込まれるため、区切りの字を空白にして長さを切ってから入れる。状態と種別は表の CHECK と同じ決まった値だけを絞りに使う。
+ * @remarks 問い合わせの表は直接の読みを断っているので、問い合わせの閲覧権限を確かめた後に service role で読む。検索語は PostgREST の or の条件に字のまま埋め込まれるため、区切りの字を空白にして長さを切ってから入れる。状態と種別は表の CHECK と同じ決まった値だけを絞りに使う。一覧を開いたことを、読めた時に1行監査へ残す。検索語・名前・メールは入れず、検索語の長さだけを残す。記録に失敗しても読み出しは止めない。
  */
 import { NextResponse } from 'next/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { logAudit, type AuditEvent } from '@/lib/audit';
 
 const DEFAULT_PAGE_SIZE = 20;
 const CONTACT_STATUSES = new Set(['open', 'pending', 'answered', 'closed']);
@@ -17,6 +18,15 @@ const CONTACT_TYPES = new Set(['product', 'order', 'other']);
 // PostgREST の or() フィルタを壊す文字を除去する（ユーザー入力を安全にする）
 function sanitizeSearchTerm(value: string): string {
   return value.replace(/[,()%\\]/g, ' ').trim().slice(0, 100);
+}
+
+/** 読み出しの記録に失敗しても読み出しは止めない。誤りの文は残さず固定の文だけを出す。 */
+async function auditReadSafely(event: AuditEvent): Promise<void> {
+  try {
+    await logAudit(event);
+  } catch {
+    console.error('Failed to write contact list read audit');
+  }
 }
 
 export async function GET(request: Request) {
@@ -72,6 +82,20 @@ export async function GET(request: Request) {
 
     const totalCount = count ?? 0;
     const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+    await auditReadSafely({
+      action: 'admin.contact.list',
+      actor_id: authz.userId,
+      actor_email: authz.actorEmail,
+      resource: 'contact',
+      outcome: 'success',
+      metadata: {
+        status: statusFilter && CONTACT_STATUSES.has(statusFilter) ? statusFilter : null,
+        type: typeFilter && CONTACT_TYPES.has(typeFilter) ? typeFilter : null,
+        page,
+        q_length: search.length,
+      },
+    });
 
     return NextResponse.json(
       { data: data ?? [], page, pageSize, totalPages, totalCount },
