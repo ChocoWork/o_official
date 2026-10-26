@@ -18,7 +18,6 @@
  */
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { LEGACY_FULFILLMENT_DISABLED, legacyFulfillmentDisabledBody } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import {
   SHIPMENT_SLIP_ERRORS,
   SHIPMENT_SLIP_TEXT,
@@ -49,7 +48,7 @@ import {
   withDeliveryScenario,
 } from './delivery-tracking-test-utils';
 import { beginRefund, expectDbError, mailsTo, uniqueEmail } from './order-email-test-utils';
-import { viewports } from './order-fulfillment-test-utils';
+import { adminOrderDetail, detailSection, mockOrderDetail, viewports } from './order-fulfillment-test-utils';
 import { createPermissionActor, mockPermissionUiBridge } from './permission-settings-test-utils';
 import { mockAdminSessionAs } from './refund-test-utils';
 import { cancelReturnInDb, createReturnInDb, ensureReturnSettings, receiveReturnInDb } from './return-test-utils';
@@ -883,7 +882,7 @@ for (const viewport of viewports) {
       });
     });
 
-    test('操作の権限（manage）が無いと票を操作できず、旧4つの発送の入口は410のまま', async ({ page }) => {
+    test('操作の権限（manage）が無いと票を操作できず、旧4つの発送の入口は存在しない〔404〕', async ({ page }) => {
       // FREQ-540-AC-10, FREQ-534-AC-05
       await withShippingScenario(async (ctx) => {
         const { client } = ctx;
@@ -981,33 +980,14 @@ for (const viewport of viewports) {
           expect(await readFulfillment(client, fulfillmentId)).toMatchObject({ shipping_carrier: 'yamato', tracking_version: 2, delivery_status: 'delivered' });
           expect(legacyCalls).toEqual([]);
 
-          // 旧4つの発送の入口は停止のまま: DB の旧の関数は固定の記号で断る（手元の DB の関数を直に呼ぶ）
-          const id = () => randomUUID();
-          await expectDbError(client.query('select * from public.admin_create_fulfillment($1,$2,$3,$4,$5,$6,$7::jsonb)', [
-            id(), id(), id(), 'yamato', 'LEGACY-1', false, JSON.stringify([{ order_item_id: id(), quantity: 1 }]),
-          ]), LEGACY_FULFILLMENT_DISABLED);
-          await expectDbError(client.query('select * from public.admin_cancel_fulfillment($1,$2,$3)', [id(), id(), id()]), LEGACY_FULFILLMENT_DISABLED);
-          await expectDbError(client.query('select * from public.admin_update_fulfillment_tracking($1,$2,$3,$4,$5,$6,$7)', [
-            id(), id(), id(), id(), 'sagawa', 'Valid-123', true,
-          ]), LEGACY_FULFILLMENT_DISABLED);
-          await expectDbError(client.query('select * from public.admin_mark_fulfillment_delivered($1,$2,$3,$4,$5::date,$6)', [
-            id(), id(), id(), id(), jstToday(), false,
-          ]), LEGACY_FULFILLMENT_DISABLED);
-          // この明示した route bridge は legacyFulfillmentDisabledBody の本文の形だけを固定し、窓口の guard・DB には届かない。
-          // 本物の窓口の 410 は tests/unit/api/admin/order-fulfillment-routes.test.ts（発送・取消）と
-          // tests/unit/api/admin/order-delivery-routes.test.ts（伝票番号の訂正・手動の配達済み）が確かめる（FR-ADMIN-123 の G-3 の節⑥と同じ分担）。
-          await supporterPage.route(/\/api\/admin\/orders\/[^/]+\/fulfillments(\/.*)?$/, (route) => route.fulfill({
-            status: 410, contentType: 'application/json', body: JSON.stringify(legacyFulfillmentDisabledBody(LEGACY_FULFILLMENT_DISABLED)),
-          }));
+          // 旧4窓口は差し替えず本物の404。旧DB関数の固定拒否は group_g1_legacy_disabled のDB結合が担当する。
           for (const path of [
             `/api/admin/orders/${material.orderId}/fulfillments`,
             `/api/admin/orders/${material.orderId}/fulfillments/${fulfillmentId}/cancel`,
             `/api/admin/orders/${material.orderId}/fulfillments/${fulfillmentId}/tracking`,
             `/api/admin/orders/${material.orderId}/fulfillments/${fulfillmentId}/delivered`,
           ]) {
-            expect(await callFromPage(supporterPage, 'POST', path, {}), path).toEqual({
-              status: 410, body: legacyFulfillmentDisabledBody(LEGACY_FULFILLMENT_DISABLED),
-            });
+            expect((await callFromPage(supporterPage, 'POST', path, {})).status, path).toBe(404);
           }
           await expectNoPageOverflow(supporterPage);
         } finally {
@@ -1026,6 +1006,8 @@ for (const viewport of viewports) {
         const confirmed = await shipMaterialsInDb(ctx, [material], {
           quantities: [2], carrier: 'yamato', trackingNumber: oldNumber, notifyCustomer: false,
         });
+        // 詳細だけを固定し、履歴は後から登録する shipping bridge のDB読み取りを使う。
+        await mockOrderDetail(page, () => adminOrderDetail({ id: material.orderId }));
         await prepareShippingPage(page, ctx);
         // 票の頁で番号を直し、手で配達済みにする（履歴に直した記録と届いた日が残る）
         await openSlip(page, confirmed.id);
@@ -1033,11 +1015,14 @@ for (const viewport of viewports) {
         await markDeliveredOnScreen(page, { notify: false });
         const deliveredAt = (await readFulfillment(client, fulfillmentIdOf(confirmed, material))).delivered_at as Date;
 
-        // 荷作り表の行（2点が準備中のまま残る）の注文IDから履歴を開く
+        // 荷作り表の注文IDのLinkから詳細へ進み、変更履歴を読む（G-4 Task 8 の導線）。
         await openPacking(page);
         const row = await revealPackingRow(page, material);
-        await row.getByRole('button', { name: `${material.orderNumber} の履歴を開く`, exact: true }).click();
-        const dialog = page.getByRole('dialog', { name: 'この注文の履歴', exact: true });
+        const orderLink = row.getByRole('link', { name: material.orderNumber, exact: true });
+        await expect(orderLink).toHaveAttribute('href', `/admin/orders/${material.orderId}`);
+        await orderLink.click();
+        await expect(page).toHaveURL(new RegExp(`/admin/orders/${material.orderId}$`));
+        const dialog = detailSection(page, '変更履歴');
         await expect(dialog).toBeVisible();
         await expect(dialog.getByText(SHIPMENT_SLIP_TEXT.orderHistoryGuide, { exact: true })).toBeVisible();
         const shipment = dialog.getByRole('listitem').filter({ hasText: '発送（1回目）' }).filter({ hasText: '配送業者:' });

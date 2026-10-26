@@ -24,7 +24,6 @@ import {
   type OrderStatusHistoryRow,
 } from '@/lib/orders/email/order-history';
 import type { OrderFulfillmentHistoryRow } from '@/lib/orders/fulfillment/fulfillment-store';
-import { LEGACY_FULFILLMENT_DISABLED, legacyFulfillmentDisabledBody } from '@/lib/orders/fulfillment/legacy-fulfillment-disabled';
 import type { OrderStatus } from '@/lib/orders/order-payment-types';
 import { ORDER_PROGRESS_LABELS, deriveOrderProgress, type OrderLineProgressCounts } from '@/lib/orders/order-progress';
 import type { ShippingCarrierId } from '@/lib/orders/shipping-carriers';
@@ -955,8 +954,6 @@ export type DeliveryBridgeLog = {
   listReads: number;
   attentionReads: number;
   historyReads: number;
-  trackingPosts: Array<{ orderId: string; fulfillmentId: string; body: Record<string, unknown>; status: number }>;
-  deliveredPosts: Array<{ orderId: string; fulfillmentId: string; body: Record<string, unknown>; status: number }>;
   resolvePosts: Array<{ attentionId: string; status: number }>;
   settingsGets: number;
   /** 設定の GET が返した「取り込む件数」を読んだ順に */
@@ -969,8 +966,6 @@ export function newDeliveryBridgeLog(): DeliveryBridgeLog {
     listReads: 0,
     attentionReads: 0,
     historyReads: 0,
-    trackingPosts: [],
-    deliveredPosts: [],
     resolvePosts: [],
     settingsGets: 0,
     backfillCounts: [],
@@ -1305,8 +1300,7 @@ async function openBridgeConnection(page: Page): Promise<PgClient> {
 /**
  * 管理画面の橋渡し。管理者のログイン・CSRF・権限は差し替え（P22）、注文の一覧・要対応・履歴・設定の読み出しは DB の本物の結果を
  * 画面の形へ写し、書く操作（要対応を閉じる）と設定の配送の切り替えは本物の DB の関数を呼ぶ。
- * G-1: 伝票番号を直す・配達済みにするの窓口は停止したので、DB を呼ばずに固定の 410（実際の窓口と同じ本文）を返す。
- * 許した orderIds 以外の注文は扱わない（その2つの停止した窓口を除く）。
+ * 許した orderIds 以外の注文は扱わない。旧い伝票番号訂正・手動配達済みの窓口は G-4 で撤去され、差し替えず本物の404へ渡す。
  */
 export async function mockAdminDeliveryBridge(page: Page, context: DeliveryBridgeContext): Promise<void> {
   // 画面は窓口を同時に何本も呼ぶので、場面の接続（context.client）は使わず、橋渡しの専用の接続を1本開いて、問い合わせを1本ずつに並べる。
@@ -1382,21 +1376,6 @@ export async function mockAdminDeliveryBridge(page: Page, context: DeliveryBridg
     }
     log.historyReads += 1;
     await fulfillJson(route, await bridgeHistory(client, orderId));
-  });
-
-  // G-1: 伝票番号の訂正と手動の配達済みは停止した。実際の窓口と同じく、DB の旧の関数は呼ばず、入力を見ずに固定の 410 を返す
-  // （窓口の guard・DB には届かない差し替えで、窓口から DB までの完全な経路ではない。本物の拒否は Task 14 の単体・DB 結合が確かめる）
-  await page.route(/\/api\/admin\/orders\/([^/]+)\/fulfillments\/([^/]+)\/(tracking|delivered)$/, async (route) => {
-    const match = /\/orders\/([^/]+)\/fulfillments\/([^/]+)\/(tracking|delivered)$/.exec(new URL(route.request().url()).pathname);
-    const [, orderId = '', fulfillmentId = '', operation = ''] = match ?? [];
-    const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
-    (operation === 'tracking' ? log.trackingPosts : log.deliveredPosts).push({ orderId, fulfillmentId, body, status: 410 });
-    await route.fulfill({
-      status: 410,
-      contentType: 'application/json',
-      headers: { 'cache-control': 'no-store' },
-      body: JSON.stringify(legacyFulfillmentDisabledBody(LEGACY_FULFILLMENT_DISABLED)),
-    });
   });
 
   await page.route('**/api/admin/settings/shop', async (route) => {

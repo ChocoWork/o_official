@@ -1,5 +1,7 @@
 # テスト仕様
 
+> G-4 Task 10 確認日: 2026-10-27。FR-ADMIN-112・123(G-4)と旧410期待の修正、117の詳細へのLinkを追加。controllerの本番build・1 workerでの実測を受領し、fix round 1で状態の完全一致・描画待ち・権限シナリオ・bridge検査を修正。修正後E2Eはcontroller待ち。下のTask 10参照。
+>
 > G-4 Task 9 確認日: 2026-10-27。注文一覧表・品物のステータス・全件CSVのE2E（FR-ADMIN-110・121）と、その道具（e2e/order-admin-test-utils.ts・e2e/order-fulfillment-test-utils.ts の詳細の道具）を下のG-4節のTask 9へ、荷作り表の注文IDの確かめ（FR-ADMIN-116）の付け替えを116の行へ記載。型・lintまで実装者が確かめた。本番ビルドのE2E（390/768/1280px）の実測はcontrollerが流した: r1 は 115 通過・6 失敗（116 ③と121 ③の試験側の直し）、r2 は 103 通過・0 失敗、r3・r4（既定の4 workers）は各 121 通過・0 失敗。Opus レビューの直しの後: r5（1 worker）・r6・r7（4 workers）は各 118 通過・3 失敗（121 ⑥ ×3幅の `history.length` を「戻る」の後に測った試験側の誤り。測りを直した）、r8（121 だけ・1 worker）は 73 通過・0 失敗、r9・r10（110+121+116・4 workers）は各 121 通過・0 失敗（下のTask 9の実測記録）。
 >
 > G-4 Task 8 確認日: 2026-10-27。荷作り表・発送票の注文番号の Link、履歴の dialog の撤去（`OrderHistoryDialog` → `OrderHistoryPanel` の改名）、旧い発送・仕上がりの窓口6ファイル・7メソッドの削除の単体を下のG-4節のTask 8へ記載。単体の実測は実装者のjest・tsc・lintまで。DB・実ブラウザの3幅・E2E・buildはcontroller担当で未実行。
@@ -241,6 +243,29 @@ Task 9の実測記録（実装者。2026-10-27）:
 | Opus レビューの直しの後 | 110 ⑤の返品の材料を return-test-utils の道具と本物の入口へ付け替え（鍵 14314,2 → 190520,0）、110 ⑥にお客様の言葉の確かめを追加、121 ⑥（詳細の読みの数・history.length）・⑦（ファイル名の日付）・⑪（sessionStorage の鍵）の確かめを強化、116 ⑩に Enter で詳細へ移る確かめを追加。controller の再実行: r5（1 worker）・r6・r7（4 workers）は各 118 通過・3 失敗で、失敗は 121 ⑥ ×3幅の `history.length` の増え方だけ（「戻る」の後に押した移動は進む側の履歴の項目を捨てるので、増えずに 0 になる。試験の測り方の誤りで、製品の誤りではない）。110 ⑤⑥（返品の本物の入口）・116 ⑩・121 ⑦⑪ は通過。121 ⑥ は、リンクを押す測りを「戻る」の前へ移して `history.length` を厳密にし（pushState・履歴の項目・詳細の窓口の読みがちょうど1つ増え、一覧の窓口は読み直されない）、Tab → Enter の確かめを戻った後に回した。直した後の controller の再実行: r8（121 だけ・1 worker）は 73 通過・0 失敗、r9・r10（110+121+116・既定の4 workers）は各 121 通過・0 失敗。型・lint・文書は上のとおり再確認 |
 | 未実行 | 390/768/1280pxの実ブラウザの目視確認（controller 担当） |
 
+### Task 10（E2E: 割当の入替・注文の権限と旧経路の撤去）
+
+確認日: 2026-10-27。FREQ-523-AC-01〜05・FREQ-540-AC-05・AC-13・AC-15。新caseの題はTask 10 briefの指定どおり。112は8case×390/768/1280px、123のG-4は①②⑤が幅によらないHTTP（⑤はcontroller了承済み）、③④⑥は3幅。controllerの本番build・local Supabase・1 workerでの実測を受領: 初回112はlabelの完全一致locatorで失敗。controllerがdonorSelect/quantityBox/reasonBox（役割＋名前の完全一致）へ修正後、112は通過、123/109はG-2の在庫読取の遅延（4,336 variants・5.6秒、expectの上限5秒）を除き通過との連絡。総件数は未提示で推定しない。G-2のcaseは変更せずcontrollerがDBをresetする。**fix round 1の修正後のPlaywright・DB実測はcontroller待ち**。実装者は実行していない。既存Task 9の通過数を今回の証拠にしない。
+
+| 試験 | 期待と確認する境界 |
+| --- | --- |
+| [FR-ADMIN-112](../../../e2e/FR-ADMIN-112-allocation-swap.spec.ts)① | 候補の注文・数量・理由で入替。双方の状態と数量を全区間の順序付き完全一致で確認し、画面の受け手に受注生産中の行が残らない。DBのA/F/H/手元/台帳の不変、transfer2件・操作1件。 |
+| 同② | 空白の理由は送信されず固定の断り。200字のmaxlengthと201文字入力時の200文字への制限、DB不変。 |
+| 同③ | 同注文・別variant・未入金・取消申請・返金処理中が候補に無い（候補1回の集合）、手数料待ち/支払額確認はボタン無し、出荷済み注文の在庫待ち交換品は入替可。競合で候補が減った後は固定409の文で拒否され、DB写し不変。 |
+| 同④ | 両注文の変更履歴の「品物の状態の変化」に割当の入替・状態の前後・2点・相手注文番号のLink・理由。 |
+| 同⑤ | 入替後の発送準備中2点の描画を待ってから同variantを入荷（bridgeの詳細読取を入荷取引へ混ぜない）。元の日付で最古の出し手へFIFOし、中間日付の待ちは残る。3注文の全区間を順序付き完全一致で確認。受け手の割当ID/残数/版と元の注文日は不変。 |
+| 同⑥ | 初回をDB保存後に通信切断。二重押下は1POST。入力が止まり、明示の再確認は同じ本文/要求番号・replayed、操作/transfer/履歴/在庫のDB写しが増えない。 |
+| 同⑦ | 初期サポーターに入口なし、直接POSTもDBが403。店長の権限画面でallocateを付けると候補dialogが開き、外すと入口が消えて直接POSTも拒否。withShippingScenarioのchangesPermissions:trueからwithPermissionScenarioで差分復元し、既存closeTrackedで後始末。 |
+| 同⑧ | 390pxではdialogが画面いっぱい・右上×。3幅で閉じた後のフォーカス復帰と頁全体の横はみ出し無し。 |
+| [FR-ADMIN-123](../../../e2e/FR-ADMIN-123-group-g-permissions.spec.ts) G-4①② | 差し替えの無い新5メソッドが未ログイン401、実際のお客様ログイン403（権限の本文でCSRF/Originと区別）。認可/MFAはbridgeの下では検証しない。 |
+| 同G-4③④ | 両caseの時間制限は240秒（共有/排他の権限ロック待ちを含む）。初期サポーターは一覧/詳細/CSV可・入替ボタン無し・POST/候補GETはDBが403で不変。readを権限画面で外すと一覧は権限の文で表なし、CSVは403でダウンロード無し、詳細GETも拒否。戻すと一覧/CSVが復帰。④はwithShippingScenarioのchangesPermissions:trueからwithPermissionScenarioで差分復元し、既存closeTrackedで後始末。 |
+| 同G-4⑤⑥ | GET旧一覧＋旧6ファイル7メソッドは本物のHTTP404。DB旧4関数の拒否は [group_g1_legacy_disabled](../../../tests/integration/db/group_g1_legacy_disabled.integration.test.ts)。店長/サポーターのORDERは一覧へのLinkだけで旧一覧/dialog/CSV/停止文なし、旧HTTPを呼ばない。 |
+| [order-admin-test-utils](../../../e2e/order-admin-test-utils.ts) | mockOrderDetailBridgeは詳細/履歴/候補/入替を公開DB関数へ、権限はDBが判定。summary/発送/票は固定の写し。詳細coreは非公開detailSchemaと同じ検査を公開済みの純粋な部品から構成し、不正な状態/順位/阻害理由などは固定500。候補のqueryはUUIDのorderItemIdが1つだけで、欠落/不正/重複/余計なkeyはDBを呼ばず400 GROUP_G_ARGUMENT_INVALID。履歴はmapItemStateHistoryRows（読取失敗は実routeの200/itemStatesFailed:trueと異なりbridgeは500、依存caseなし）。拒否はimportしたADMIN_ORDER_ERRORS/ALLOCATION_SWAP_ERRORSとSQLSTATEの完全一致。createSwapMaterial(client,input)は固有メールの2注文（通常場面のcontextは接続から取得、権限変更時は既存shippingのcontextを明示）、交換/手数料待ち等を作る。swapInDbは実writer、readSwapSnapshotは1SQLの同一時点・対象ID/variantだけ。独自のcloseOrderRowsInDbは削除し既存の後始末へ統一。 |
+| 旧caseの処置 | 123の旧401/403/410を404へ統合、G-1の両役割の一覧/履歴をORDER入口と詳細の履歴へ、G-3の旧4POSTと117⑦をmock無し404へ。delivery-tracking-test-utilsの旧tracking/delivered固定410と不要importを削除。fix round 1で読取/書込先の無いtrackingPosts/deliveredPostsも型/初期値から削除。ケースごとの保護契約は `.superpowers/sdd/2026-10-26-group-g4-orders/e2e-disposition.md`。 |
+| 117⑧の持越し | 題とその他の期待を維持。荷作り表の注文IDのLink/href→詳細の変更履歴→発送票のLinkへ。詳細は固定、履歴は既存shipping bridgeの実DB読取。 |
+
+実装者の確認: tsc・対象5ファイルのeslint・`jest tests/unit/e2e tests/unit/docs --runInBand`・validate-docs（既知のCheckout計画の相対リンク2件は別記）。最終実測値はTask 10 report。Playwright・DB・Supabase CLI・Docker・サーバー起動は実行しない。鍵は通常withOrderAdminScenarioの共有190520,0、権限変更はwithPermissionScenarioの排他190520,0。設定ロック940488→14314,2→190520,0の順を変えず、このTaskの材料は追跡/返品の設定を変更しない。
+
 ## 記録形式と追跡
 
 要件の原本は `docs/02_Requirements/requirements.md` とし、関連する詳細設計は `docs/04_DetailDesign/` で確認する。テスト記録には要件 ID、受け入れ条件 ID、対象ファイルとテスト名、対象リビジョン、環境、実行コマンド、日時、結果、失敗時の証拠を残す。`FR-*` のような画面要件と `FREQ-*-AC-*` の受け入れ条件を混同しない。対応テストが見つからない要件は「未対応」、テストが検出されただけなら「未実行」と記録する。
@@ -310,7 +335,7 @@ Playwright は `http://localhost:3000` を使い、手元の Supabase に対し�
 | `tests/unit/lib/inventory/allocation-event-reasons.test.ts` | 単体 | FREQ-521-AC-02 | 割当の履歴の理由の TS の一覧（`ALLOCATION_EVENT_REASON_CODES`）が DB の CHECK と同じ集合で、すべてに日本語の名前があり、知らない値は「システム」と表示する。移行が書く文字の理由は決まった値だけ |
 | `tests/unit/e2e/group-g1-test-utils.test.ts` | 単体 | FREQ-524-AC-04、FREQ-541-AC-01 | E2E の材料の道具が、注文と割当（H／A）を同じ G-1 の取引で作り、発送を割当の消費として合成し、旧の発送の関数を呼ばず、失敗時に取引ごと戻し、localhost 以外の DB では何も問い合わせずに止める |
 | `tests/unit/components/AdminGroupG1LegacyStop.test.tsx` | 単体 | FREQ-524-AC-03、FREQ-540-AC-05 | 注文の一覧と履歴で、旧の発送・発送の取消・伝票番号の訂正・手動の配達済み・仕上がりの入口を出さず、固定の停止文を1回ずつ出す。取消・返金・返品・申し込み・履歴・メールの再送は残る。G-4 Task 7 の後: 旧い一覧（OrderSection）は撤去したので注文一覧の部分は ORDER タブの入口の確かめ（停止文・旧い一覧が出ない）に書き換えた。荷作り表の案内は荷作り表へ、仕上がりの停止の文は410の本文だけに残る |
-| `e2e/FR-ADMIN-123-group-g-permissions.spec.ts`（G-1 の部分） | E2E | FREQ-524-AC-03、FREQ-540-AC-05 | 旧配送・手動仕上がりの窓口7メソッドが、ログインなしで 401、お客様で 403（410 には届かない）。店長とサポーターの注文の一覧と履歴に旧の入口が無く、固定の停止文が出て、取消・返金・返品・履歴の読み取りは残る（3幅）。認可済みの 410 の本文は差し替えの形の確認で、HTTP の証拠は窓口の単体と DB 結合 |
+| `e2e/FR-ADMIN-123-group-g-permissions.spec.ts`（G-1の部分、G-4 Task 10で更新） | E2E | FREQ-524-AC-03、FREQ-540-AC-05 | 旧401/403/固定410の3caseを旧8メソッドの実HTTP404の1case（G-4⑤）へ統合。旧DB関数拒否はgroup_g1_legacy_disabled。店長/サポーターのORDERは一覧への入口だけで停止文なし、詳細には旧操作が無く取消/返金（店長）・返品・申請・履歴/メールの読み取りと再送が残る。3幅、変更後E2E未実行 |
 
 同じファイルの G-0 の部分（権限の画面と保存）は FREQ-540-AC-01〜04 の対応で、この節では扱わない。全件の E2E は最新の基準と比較し、停止・削除・追加と未確認の範囲を分けて記録する（FREQ-541-AC-02）。
 
@@ -597,7 +622,7 @@ controller の reset 後に流す DB suite: `group_g3_tracking_parent`・`group_
 | 同⑥⑦⑧ | FREQ-531 AC-03・FREQ-533 AC-02・AC-03。同じ行を選んだ2つの下書きは、荷作り表に別の票の番号が出て、先に確定した後の確定が `GROUP_G_SLIP_QUANTITY_EXCEEDS_READY` の文で止まり何も増えない。棚卸減で準備中の数が減ると票の行に知らせが出て発送票確認が押せず、窓口を直接呼んでも断られる。確定の二重押下は通信1回・発送1つ・メール予定1つで、応答が届かない時は「もう一度確かめる」が同じ要求番号で送り直し二重にならない |
 | 同⑨ | FREQ-540 AC-10。サポーター（初期値）は荷作りと発送ができ、店長が `admin.shipping.manage` を外すと表だけ見えて選択欄・発送が無く権限の文が1回出る（DBの関数も403の固定の文で断る）。戻すと選べる |
 | [FR-ADMIN-120](../../../e2e/FR-ADMIN-120-combined-shipment-emails.spec.ts) | FREQ-533 AC-03・AC-05・FREQ-534 AC-01・FREQ-541 AC-03。同じ会員の2注文（宛先のメールは注文ごとに別）を1つの票で確定し、手元のMailpitで注文ごとに1通だけ届く。各メールはその注文の品物と数・残りの案内だけで、同じ票の別の注文の注文番号・品物・メールアドレスが無い。同じ要求の再送・画面の再読込・毎分の処理を重ねてもメールが増えず、通知を外した票には届かない。番号なしの票のメールは追跡欄が無く、画面で後から番号を入れると更新メールが注文ごとに1通届き「先にお知らせした伝票番号は使えません」は入らない。本物のお客様のログインで、注文の窓口・画面と注文状況の頁（確認の前後）に別の注文の情報が出ない |
-| [FR-ADMIN-123](../../../e2e/FR-ADMIN-123-group-g-permissions.spec.ts) G-3 の節 | FREQ-540 AC-10・FREQ-534 AC-05・FREQ-531 AC-04。①本物の窓口11メソッドは未ログインで401、②お客様の本物のログインで403。③サポーター（初期値）は荷作り表と票を操作でき、出荷日の訂正は画面が案内の文だけを出し、窓口を直接呼ぶとDBの関数が断る（票の版と履歴は不変）。④店長が `admin.shipping.manage` を外すと票は見られるが確定・破棄・新しい下書き・取消が断られ、戻すと取消も確定も通る。⑤ `admin.shipping.read` を外すと荷作り表と票の頁は権限の文だけ。⑥旧4つの発送の入口は410のままで（DBの旧の関数は `LEGACY_FULFILLMENT_DISABLED` で断り、窓口の410は明示したroute bridgeで確かめる）、案内の文は発送票へ誘導する新しい文。⑦サポーターと店長の管理メニューに PACKING があり SETTINGS はサポーターに無い。G-2 の管理メニューの case には PACKING の期待を足した |
+| [FR-ADMIN-123](../../../e2e/FR-ADMIN-123-group-g-permissions.spec.ts) G-3 の節 | FREQ-540 AC-10・FREQ-534 AC-05・FREQ-531 AC-04。①本物の窓口11メソッドは未ログインで401、②お客様の本物のログインで403。③サポーター（初期値）は荷作り表と票を操作でき、出荷日の訂正は画面が案内の文だけを出し、窓口を直接呼ぶとDBの関数が断る（票の版と履歴は不変）。④店長が `admin.shipping.manage` を外すと票は見られるが確定・破棄・新しい下書き・取消が断られ、戻すと取消も確定も通る。⑤ `admin.shipping.read` を外すと荷作り表と票の頁は権限の文だけ。⑥旧4つの発送の入口は差し替えないHTTPの404（G-4 Task 10）。DB旧関数拒否はgroup_g1_legacy_disabled。⑦サポーターと店長の管理メニューに PACKING があり SETTINGS はサポーターに無い。G-2 の管理メニューの case には PACKING の期待を足した |
 | 再開: [FR-ACCOUNT-041](../../../e2e/FR-ACCOUNT-041-delivery-without-tracking.spec.ts)・[042](../../../e2e/FR-ACCOUNT-042-delivery-tracking.spec.ts)・[043](../../../e2e/FR-ACCOUNT-043-delivery-visibility.spec.ts)・[FR-ADMIN-104](../../../e2e/FR-ADMIN-104-delivery-tracking-settings.spec.ts) | FREQ-534 AC-01・AC-02・FREQ-541 AC-03・FREQ-494。G-1 で止めていた6箇所の `test.skip` を外し、期待は変えずに材料だけ付け替えた。発送の材料（`shipFixture`・`createShippedFixture`）は発送票（下書き→確定の公開関数）を経由し、`markDeliveredInDb`・`editTrackingInDb` は発送が属する票を引いて票単位の公開関数を呼ぶ（票を持たない発送には使えない）。`createAdminActor` は役割 admin を付ける。過去の届いた日が要る材料（`deliveredAt`）だけ従来の合成の発送を残す。FR-ADMIN-104 の「追跡がオフの間も…」は本文の無い skip だけの case だったので、発送票の画面で伝票番号の直しと手の配達済みをし、17TRACK へ呼び出しが無いことを確かめる本文を書いた |
 | 旧い案内の文の期待: [FR-ADMIN-050](../../../e2e/FR-ADMIN-050-order-shipping.spec.ts)・[051](../../../e2e/FR-ADMIN-051-order-refund-safety.spec.ts)・[061](../../../e2e/FR-ADMIN-061-order-list-review-states.spec.ts)・[069](../../../e2e/FR-ADMIN-069-made-to-order-completion.spec.ts)・FR-ADMIN-123 の G-1 の節 | 旧 FREQ-541 AC-04（案内文の置換を指した当時の記録。現在の AC-04「停止31箇所の処置」とは別）。Task 3 で置き換わった注文の一覧の上の案内（「発送は荷作り表から行います。」）と履歴の上の案内の文へ、期待の文だけを直した（「表の外に1回」の期待は同じ）。FR-ADMIN-082 の同じ期待は Task 11 の r1 の直しで直した（停止中の case は Task 12 で削除した） |
 
@@ -626,8 +651,8 @@ controller の実測（今回のレビュー修正より前）:
 | 同④ | FREQ-534 AC-03・FREQ-533 AC-04・FREQ-443 AC-01〜AC-04・FREQ-489 AC-03。メールの予定を取り置いた同梱の票を取り消す。「戻る」では取り消さない。取消で全注文の品物が発送準備中に戻り、全部送っていた注文は決済完了に戻って出荷日時が空になり、手元の在庫が発送前と同じに戻る（空きは動かない）。まだ送っていない発送のメールは取りやめ、取消のメールは1通も届かない。履歴に取消の行が残り、取り消した票にはどの操作も出ず、再操作は断られる。同じ品物を新しい票で送り直せ、発送番号は使い回さない。送った後に取り消してもお客様にメールは行かない |
 | 同⑤ | FREQ-534 AC-03・FREQ-471 AC-01・AC-02・FREQ-454 AC-02。受付中の返品がある注文を含む同梱の票は、理由の一覧と断りの文が取消のダイアログの中に出て票は変わらない。その返品を取り消すと取り消せる。完了した返品（お返しで終えた）がある票は窓口を直に呼んでも断られる。2回に分けた発送のうち、発送後の返金（2点）を下回る最初の票は `GROUP_G_SLIP_REFUNDED` で断られ、下回らない次の票は取り消せる |
 | 同⑥ | FREQ-534 AC-04・FREQ-541 AC-03・FREQ-488 AC-01・FREQ-489 AC-02・FREQ-493 AC-01。追跡オン（偽の 17TRACK）の2注文の票は、登録の行が代表の発送だけに1つで、外への呼び出しは登録と読み直しだけ。読み直しの輸送中・配達済みが両方の注文に反映され、参加の注文の履歴にも同じ票の発送の行と届いた日の出どころ「追跡」が出る。追跡オフでは登録も外への呼び出しも無いまま、伝票番号の訂正と手動の配達済みが票の全注文にでき、履歴の届いた日の出どころは「手で」 |
-| 同⑦ | FREQ-540 AC-10・FREQ-534 AC-05。店長が `admin.shipping.manage` を外すと、サポーターは票を見られるが伝票番号・配達済み・取消が403の固定の文で断られ（画面もダイアログの中に出す。窓口を直に呼んでも同じ。票の版は動かない）、旧の発送の窓口は呼ばれない。戻すと同じ画面からできる。旧4つの DB の関数は `LEGACY_FULFILLMENT_DISABLED` で断り、窓口の410の形は明示した route bridge で確かめる（本物の窓口の410は FR-ADMIN-123 の G-3 の節⑥と route の単体） |
-| 同⑧ | FREQ-533 AC-01・FREQ-534 AC-05・FREQ-493 AC-01・FREQ-471 AC-02。荷作り表の注文IDから開く履歴に、発送の行（配送業者・伝票番号・届いた日と出どころ「手で」）と直した記録（前→後・通知の選択）が出る。取消・番号の訂正・配達済みの入口は履歴に無く、案内の文だけ。発送の行の「発送票 … を開く」から票の頁へ移る |
+| 同⑦ | FREQ-540 AC-10・FREQ-534 AC-05。店長が `admin.shipping.manage` を外すと、サポーターは票を見られるが伝票番号・配達済み・取消が403の固定の文で断られ（画面もダイアログの中に出す。窓口を直に呼んでも同じ。票の版は動かない）、旧の発送の窓口は呼ばれない。戻すと同じ画面からできる。旧4つのHTTPはmockなし404に変更（G-4 Task 10）。旧DB関数の固定拒否はgroup_g1_legacy_disabledへ分担。変更後E2E未実行 |
+| 同⑧ | FREQ-533 AC-01・FREQ-534 AC-05・FREQ-493 AC-01・FREQ-471 AC-02。G-4 Task 10で荷作り表の注文IDを `/admin/orders/{id}` のLinkとして確認し、詳細の「変更履歴」へ進む導線に付け替えた。題と他の期待は維持: 発送の行（配送業者・伝票番号・届いた日と出どころ「手で」）、直した記録（前→後・通知の選択）、取消・番号の訂正・配達済みの旧入口が無く案内の文だけ、発送の行の「発送票 … を開く」から票の頁へ移る。変更後E2E未実行 |
 | [FR-ADMIN-118](../../../e2e/FR-ADMIN-118-shipment-dates.spec.ts)①〜④ | FREQ-535 AC-02。出荷日の初期値は日本時間の今日で、確定すると初回の履歴（今日→出荷日。初期値から変えた時も）が残り、発送した時刻は確定した時刻のまま。入金日（日本時間）より前と今日より後は確定できず（画面と窓口）、日本時間 23:59:59 の入金はその日から、0:00:00（UTC では同じ日）の入金は翌日から確定できる。複数注文の票は最も遅い入金日が下限。④は本物の交換返品の受取で、手数料待ちの交換品が未割当・受注生産中のため荷作り表のスナップショットに無い（位置 -1）ことと、直接の下書きが409・`GROUP_G_SLIP_QUANTITY_EXCEEDS_READY`・対応する文の完全一致で断られることを確かめる。後から手数料を入金すると、最大30秒のスナップショットのポーリングで準備数・発送可能数が各1点の行を確認し、`orders.paid_at` と出荷日の下限は元の入金日のままであることを確かめる |
 | 同⑤⑥ | FREQ-535 AC-03・AC-04・FREQ-540 AC-10。店長は確定後に理由つきで出荷日を訂正でき（理由が空は送らずに止める）、票と全注文の発送の出荷日が変わり、履歴に前後の日付と理由が残る。同じ日・入金日より前・今日より後・空白だけの理由は窓口を直に呼んでも断られ、何も変わらない。サポーター（初期値）は案内の文だけでボタンが無く、DBの関数も断る。配達済みの日より後への訂正は `GROUP_G_SHIPMENT_DATE_AFTER_DELIVERY` で断られ、同じ日は通る（届いた日が今日より前の票は合成の過去の発送を票に付けて作る） |
 | 同⑦ | FREQ-535 AC-04。出荷日を過去にして確定しても、返品の期限は発送した時刻（今日）から数え、出荷日の訂正を重ねても変わらない。手で配達済みにすると届いた日から数え、その後に出荷日を訂正しても変わらず、発送した時刻・届いた時刻も動かない |

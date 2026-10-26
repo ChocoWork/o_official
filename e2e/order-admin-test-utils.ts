@@ -33,7 +33,10 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import { z } from 'zod';
 import { buildOrderItemCsv, orderItemCsvFilename } from '@/lib/orders/admin-orders/admin-order-csv';
 import {
+  adminOrderBlockedReasonsSchema,
   adminOrderExportRowSchema,
+  adminOrderIntegerSchema as integer,
+  adminOrderTimestampSchema as timestamp,
   parseOrderItemListResult,
   parseOrderItemQuery,
   toFilterPayload,
@@ -42,12 +45,21 @@ import {
   ADMIN_ORDER_ERRORS,
   ADMIN_ORDER_TEXT,
   ORDER_ITEM_PAGE_SIZE,
+  ORDER_ITEM_STATUS_ORDER,
   type AdminOrderExportRow,
   type AdminOrderItemFilters,
 } from '@/lib/orders/admin-orders/admin-order-types';
 import { ADMIN_ITEM_STATUS_LABELS } from '@/lib/orders/item-state/item-state-types';
+import {
+  ALLOCATION_SWAP_ERRORS, ALLOCATION_SWAP_TEXT, allocationSwapInputSchema,
+  parseAllocationSwapCandidates, parseAllocationSwapResult,
+  type AllocationSwapInput, type AllocationSwapResult,
+} from '@/lib/inventory/allocation-swap-types';
+import { itemStateHistoryDbRowSchema, mapItemStateHistoryRows } from '@/lib/orders/admin-orders/admin-order-history';
+import { ORDER_STATUSES } from '@/lib/orders/order-payment-types';
 import type { PgClient } from '../tests/integration/db/helpers/local-db';
-import { insertCancelRequest } from '../tests/integration/db/helpers/order-fixtures';
+import { insertCancelRequest, insertReturnRecord } from '../tests/integration/db/helpers/order-fixtures';
+import { seedGroupG4Exchange } from '../tests/integration/db/helpers/group-g4-fixtures';
 import {
   allocationKindOf,
   assertLocalE2eDb,
@@ -56,16 +68,18 @@ import {
   seedE2eRestock,
   seedE2eShipment,
   releaseE2eUnpaidOrder,
+  setE2eOrderStatus,
   withGroupG1Material,
 } from './group-g1-test-utils';
 import { beginRefund, recordRefundResult, uniqueEmail, withLocalDb } from './order-email-test-utils';
-import { fulfillJson, orderNumberOf } from './order-fulfillment-test-utils';
+import { adminOrderDetail, fulfillJson, historyOf, orderNumberOf } from './order-fulfillment-test-utils';
 import { createReturnInDb, createShippedOrder, receiveReturnInDb } from './return-test-utils';
 import {
   DEFAULT_SHIP_TO,
   UNIT_PRICE,
   createCatalogMaterial,
   createMemberUser,
+  holdPaymentReview,
   withShippingScenario,
   type CatalogMaterial,
   type ShippingContext,
@@ -95,10 +109,12 @@ export async function withOrderAdminScenario(
 ): Promise<void> {
   const scenario = (returnLockPid?: number): Promise<void> =>
     withShippingScenario(async (ctx) => {
+      orderAdminContexts.set(ctx.client, ctx);
       if (returnLockPid !== undefined) returnLockPids.set(ctx.client, returnLockPid);
       try {
         await run(ctx);
       } finally {
+        orderAdminContexts.delete(ctx.client);
         resetExportCapInDb(ctx.client);
         await resetListCapInDb(ctx.client);
       }
@@ -120,6 +136,7 @@ export async function withOrderAdminScenario(
 
 /** 返品の設定の鍵 14314,2 を持つ接続の pid（この試験の場面が取った物）。場面の接続（ctx.client）ごとに控える。鍵を持つ自分の接続かの確かめに使う */
 const returnLockPids = new WeakMap<PgClient, number>();
+const orderAdminContexts = new WeakMap<PgClient, OrderAdminContext>();
 
 // ---------------------------------------------------------------------------------------------------------------------
 // 材料: 注文（明細つき）
@@ -721,6 +738,202 @@ export async function mockOrderAttention(
 // ---------------------------------------------------------------------------------------------------------------------
 // 画面の読み方・操作: 注文一覧表
 // ---------------------------------------------------------------------------------------------------------------------
+
+/** 入替の材料。権限変更の場面だけ context を渡す（通常は withOrderAdminScenario の context を接続から得る）。 */
+export type SwapMaterialInput = {
+  donorReady?: number; takerWaiting?: number; catalog?: CatalogMaterial;
+  donorDaysAgo?: number; takerDaysAgo?: number; donorStatus?: 'paid' | 'pending';
+  differentVariant?: boolean; takerExchange?: boolean; takerFeeWaiting?: boolean;
+  takerReview?: boolean; donorCancelRequested?: boolean; donorRefundProcessing?: boolean;
+  sameOrderReady?: boolean; context?: OrderAdminContext;
+};
+
+/**
+ * 新しいメールの2注文。同じ variant の出し手を先に作り、在庫待ちの受け手は最後に作る（材料の入荷で先の待ちに FIFO しない）。
+ * 交換品・未払い手数料・返金処理中は既存DB fixtureによる合成の状態。入荷・割当・発送は既存 G-1 の入口を使う。
+ */
+export async function createSwapMaterial(client: PgClient, input: SwapMaterialInput = {}) {
+  assertLocalE2eDb(client);
+  const ctx = input.context ?? orderAdminContexts.get(client);
+  if (!ctx || ctx.client !== client) throw new Error('E2E_ORDER_ADMIN_CONTEXT_REQUIRED');
+  const catalog = input.catalog ?? await createCatalogMaterial(client);
+  const donor = await createOrderRowsMaterial(ctx, {
+    catalog, orderedDaysAgo: input.donorDaysAgo ?? 10, status: input.donorStatus,
+    lines: [{ quantity: input.donorReady ?? 3 }],
+  });
+  if (input.donorCancelRequested) await withGroupG1Material(client, async () => {
+    await lockE2eInventory(client, { orderIds: [donor.orderId] });
+    await insertCancelRequest(client, { orderId: donor.orderId, lines: [{ orderItemId: donor.lines[0].orderItemId, quantity: 1 }] });
+  });
+  if (input.donorRefundProcessing) await beginRefund(client, donor.orderId, {
+    actorId: ctx.actorId, amount: UNIT_PRICE,
+    lines: [{ orderItemId: donor.lines[0].orderItemId, quantity: 1, beforeShipment: true }],
+  });
+  const exchange = input.takerExchange || input.takerFeeWaiting;
+  const quantity = input.takerWaiting ?? 2;
+  const taker = await createOrderRowsMaterial(ctx, {
+    catalog: input.differentVariant ? await createCatalogMaterial(client) : catalog,
+    orderedDaysAgo: input.takerDaysAgo ?? 5,
+    lines: [
+      { quantity, allocated: exchange ? quantity : 0, shipped: exchange ? quantity : 0 },
+      ...(input.sameOrderReady ? [{ quantity: 1 }] : []),
+    ],
+  });
+  let takerOrderItemId = taker.lines[0].orderItemId;
+  if (exchange) takerOrderItemId = await withGroupG1Material(client, async () => {
+    await lockE2eInventory(client, { orderIds: [taker.orderId] });
+    const returned = await insertReturnRecord(client, {
+      orderId: taker.orderId, feeDueAmount: input.takerFeeWaiting ? 100 : 0,
+      lines: [{ fulfillmentId: taker.fulfillmentIds[0], orderItemId: takerOrderItemId, quantity,
+        resolution: 'exchange', exchangeVariantId: taker.variantId, exchangeMethod: 'make' }],
+    });
+    const id = await seedGroupG4Exchange(client, { orderId: taker.orderId, sourceItemId: takerOrderItemId, returnLineId: returned.lineIds[0], quantity });
+    await setE2eOrderStatus(client, [taker.orderId], 'shipped');
+    return id;
+  });
+  if (input.takerReview) await holdPaymentReview(client, taker.orderId);
+  return { catalog, donor, taker, donorOrderItemId: donor.lines[0].orderItemId, takerOrderItemId };
+}
+
+/** 画面を通さない実際の入替（競合の再現にも使う）。引数の actor は常に DB へ渡す。 */
+export async function swapInDb(client: PgClient, actorId: string, input: AllocationSwapInput & { orderId: string }): Promise<AllocationSwapResult> {
+  assertLocalE2eDb(client);
+  const raw = (await client.query(
+    `select public.admin_swap_order_allocations(_order_id => $1::uuid, _taker_order_item_id => $2::uuid,
+      _donor_order_item_id => $3::uuid, _quantity => $4::integer, _reason => $5::text, _actor_id => $6::uuid, _request_key => $7::uuid) as result`,
+    [input.orderId, input.takerOrderItemId, input.donorOrderItemId, input.quantity, input.reason, actorId, input.requestKey],
+  )).rows[0].result;
+  return parseAllocationSwapResult(raw, input.orderId, input);
+}
+
+function swapErrorReply(error: unknown): OrderAdminReply {
+  const { message, code } = (error ?? {}) as { message?: unknown; code?: unknown };
+  if (typeof message === 'string' && Object.hasOwn(ALLOCATION_SWAP_ERRORS, message)) {
+    const [sqlstate, status, text] = ALLOCATION_SWAP_ERRORS[message];
+    if (code === sqlstate) return { status, json: { code: message, error: text } };
+  }
+  return { status: 500, json: { error: ALLOCATION_SWAP_TEXT.failed } };
+}
+
+// storeのdetailSchemaはserver-onlyの非公開定義なので、公開済みの純粋な部品から同じ検査を組み立てる。
+const nullableDetailText = z.string().nullable();
+const detailMoney = integer.nonnegative();
+const orderDetailCoreSchema = z.object({
+  order: z.object({
+    id: z.string().uuid(), status: z.enum(ORDER_STATUSES), createdAt: timestamp, paidAt: timestamp.nullable(),
+    customerKind: z.enum(['guest', 'member']), customerName: nullableDetailText, customerEmail: nullableDetailText, currency: z.string().min(1),
+    shipTo: z.object({ fullName: nullableDetailText, postalCode: nullableDetailText, prefecture: nullableDetailText, city: nullableDetailText,
+      address: nullableDetailText, building: nullableDetailText, phone: nullableDetailText }),
+  }),
+  amounts: z.object({ productNet: detailMoney, discount: detailMoney, shipping: detailMoney, total: detailMoney,
+    paidAmount: detailMoney.nullable(), refundedAmount: detailMoney, refundAttachedToRows: detailMoney,
+    refundNotAttached: integer, refundProcessingAmount: detailMoney }),
+  rows: z.array(adminOrderExportRowSchema.omit({ orderId: true, orderCreatedAt: true, customerName: true, customerEmail: true })
+    .extend({ statusRank: integer.min(1).max(12), blockedReasons: adminOrderBlockedReasonsSchema })
+    .refine((row) => ORDER_ITEM_STATUS_ORDER[row.statusRank - 1] === row.status)),
+  attention: z.object({
+    paymentExceptions: z.array(z.object({ id: z.string().uuid(), reason: z.string(), detectionCount: integer.positive(), firstDetectedAt: timestamp })),
+    review: z.object({ reason: z.string(), markedAt: timestamp.nullable() }).nullable(),
+    deliveries: z.array(z.object({ fulfillmentId: z.string().uuid(), kind: z.string(), openedAt: timestamp })),
+  }),
+  permissions: z.object({ read: z.boolean(), manage: z.boolean(), refund: z.boolean(), return: z.boolean(), allocate: z.boolean(), shippingRead: z.boolean() }),
+});
+
+/**
+ * 詳細・品物履歴・入替候補・入替を公開DB関数へ渡す。summary/発送/票は固定の写し、権限・状態・金額は get_admin_order_detail の答え。
+ * 認可/MFA/CSRF/監査は通らない。DBエラーは実装の表と SQLSTATE の組だけで分類する。接続の問い合わせは要求単位で直列にする。
+ */
+export async function mockOrderDetailBridge(page: Page, client: PgClient, actorId: string, summary: Parameters<typeof adminOrderDetail>[0]): Promise<void> {
+  assertLocalE2eDb(client);
+  let tail: Promise<unknown> = Promise.resolve();
+  await page.route((url) => /^\/api\/admin\/orders\/[0-9a-f-]{36}(\/history|\/allocations\/(swap|swap-candidates))?$/.test(url.pathname), async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const orderId = url.pathname.split('/')[4];
+    const isSwap = url.pathname.includes('/allocations/');
+    if (request.method() !== (url.pathname.endsWith('/swap') ? 'POST' : 'GET')) return route.fallback();
+    const run = tail.then(async () => {
+      try {
+        let body: unknown;
+        if (url.pathname.endsWith('/swap')) {
+          const parsed = allocationSwapInputSchema.safeParse(request.postDataJSON());
+          if (!parsed.success) {
+            const reasonOnly = parsed.error.issues.every((issue) => issue.path.length === 1 && issue.path[0] === 'reason'
+              && issue.code === 'too_small' && issue.minimum === 1);
+            const code = reasonOnly ? 'GROUP_G_SWAP_REASON_REQUIRED' : 'GROUP_G_ARGUMENT_INVALID';
+            return fulfillJson(route, { code, error: ALLOCATION_SWAP_ERRORS[code][2] }, ALLOCATION_SWAP_ERRORS[code][1]);
+          }
+          body = await swapInDb(client, actorId, { orderId, ...parsed.data });
+        } else if (url.pathname.endsWith('/swap-candidates')) {
+          // routeはquery parserをexportしていないので、同じUUID/単一キーの検査をここで行う。
+          const parsedOrderId = z.string().uuid().safeParse(orderId);
+          const item = z.string().uuid().safeParse(url.searchParams.get('orderItemId'));
+          if (!parsedOrderId.success || !item.success || [...url.searchParams.keys()].some((key) => key !== 'orderItemId')
+            || url.searchParams.getAll('orderItemId').length !== 1) {
+            return fulfillJson(route, { code: 'GROUP_G_ARGUMENT_INVALID', error: ALLOCATION_SWAP_ERRORS.GROUP_G_ARGUMENT_INVALID[2] },
+              ALLOCATION_SWAP_ERRORS.GROUP_G_ARGUMENT_INVALID[1]);
+          }
+          const rows = (await client.query(
+            'select * from public.list_admin_allocation_swap_candidates(_order_id => $1::uuid, _taker_order_item_id => $2::uuid, _actor_id => $3::uuid)',
+            [parsedOrderId.data, item.data, actorId],
+          )).rows;
+          body = { data: parseAllocationSwapCandidates(rows.map((row) => ({ donorOrderId: row.donor_order_id,
+            donorOrderItemId: row.donor_order_item_id, orderCreatedAt: new Date(row.order_created_at).toISOString(),
+            swappableQuantity: Number(row.swappable_quantity), takerQuantity: Number(row.taker_quantity) })), orderId) };
+        } else if (url.pathname.endsWith('/history')) {
+          // 品物履歴の読取失敗時、実routeは200でitemStatesFailed:trueを返すが、このbridgeは500（依存するcaseなし）。
+          const rows = (await client.query('select * from public.list_admin_order_item_state_history(_order_id => $1::uuid, _actor_id => $2::uuid)', [orderId, actorId])).rows;
+          const visible = rows.slice(0, 300).map((row) => itemStateHistoryDbRowSchema.parse({ ...row,
+            created_at: new Date(row.created_at).toISOString(), quantity: Number(row.quantity) }));
+          body = { ...historyOf(orderId, []), itemStates: mapItemStateHistoryRows(visible, () => null), itemStatesTruncated: rows.length > 300 };
+        } else {
+          const core = orderDetailCoreSchema.parse((await client.query(
+            'select public.get_admin_order_detail(_order_id => $1::uuid, _actor_id => $2::uuid) as result', [orderId, actorId],
+          )).rows[0].result);
+          body = { data: { ...adminOrderDetail({ ...summary, id: orderId }), ...core } };
+        }
+        await fulfillJson(route, body);
+      } catch (error) {
+        const reply = isSwap ? swapErrorReply(error) : errorReply(error);
+        if ('json' in reply) await fulfillJson(route, reply.json, reply.status);
+      }
+    });
+    tail = run.catch(() => undefined);
+    await run;
+  });
+}
+
+export type SwapSnapshot = {
+  states: Array<{ orderItemId: string; status: string; quantity: number }>;
+  free: number; allocated: number; held: number; onHand: number; ledger: number; transfers: number; operations: number; digest: string;
+};
+
+/** 1 SQL の同一時点の写し。数量と保存則、拒否/再送時に対象の割当・出来事・操作・在庫台帳が増減しないことを確かめる（個人情報は返さない）。 */
+export async function readSwapSnapshot(client: PgClient, variantId: number, orderIds: readonly string[]): Promise<SwapSnapshot> {
+  const raw = (await client.query(`with items as (select id from public.order_items where order_id = any($2::uuid[])),
+    allocations as (select * from public.order_item_allocations where variant_id = $1),
+    totals as (select coalesce(sum(remaining_quantity) filter(where kind='paid'),0)::int a,
+      coalesce(sum(remaining_quantity) filter(where kind='payment_hold'),0)::int h from allocations),
+    operations as (select * from private.group_g_operations where operation='allocation_swap' and cause_id in(select id::text from items)),
+    allocation_events as (select e.* from public.order_item_allocation_events e join allocations a on a.id=e.allocation_id),
+    state_events as (select e.* from public.order_item_state_events e join items i on i.id=e.order_item_id),
+    movements as (select * from public.stock_movements where variant_id=$1)
+    select jsonb_build_object(
+      'states', coalesce((select jsonb_agg(s order by s."orderItemId",s.status) from
+        (select order_item_id as "orderItemId",status,sum(unit_to-unit_from)::int quantity
+          from private.group_g_item_state_ranges($2::uuid[]) group by order_item_id,status) s),'[]'::jsonb),
+      'free',v.stock_quantity,'allocated',t.a,'held',t.h,'onHand',v.stock_quantity+t.a+t.h,
+      'ledger',(select count(*)::int from movements),'transfers',(select count(*)::int from allocation_events where event_type='transfer'),
+      'operations',(select count(*)::int from operations),
+      'digest',md5(concat(
+        (select string_agg(to_jsonb(a)::text,',' order by id) from allocations a),
+        (select string_agg(to_jsonb(e)::text,',' order by id) from allocation_events e),
+        (select string_agg(to_jsonb(e)::text,',' order by id) from state_events e),
+        (select string_agg(to_jsonb(o)::text,',' order by id) from operations o),
+        (select string_agg(to_jsonb(m)::text,',' order by id) from movements m)))) as result
+    from public.item_variants v cross join totals t where v.id=$1`, [variantId, orderIds])).rows[0].result;
+  return raw as SwapSnapshot;
+}
 
 const LOADING_TEXT = '注文一覧を読み込み中です...';
 
