@@ -6,6 +6,8 @@
 
 > G-4 Task 2 確認日: 2026-10-26。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。
 
+> G-4 本番適用: 2026-10-27 09:06 JST（`20261026045859`・`20261026054705`・`20261026101624`。別セッションの7本と同じ push。照合は G-4 の節の「G-4 本番適用の記録」）
+
 > G-3 本番適用: 2026-10-26 08:33 JST（`20261025053324`・`20261025070821`・`20261025100130`・`20261025134538`。照合は G-3 の節の末尾） | G-3 Task 10 確認: 2026-10-26（4移行assert・75本・並行/PostgREST試験。controllerのfresh resetでgroup_g* 47 suiteを検証、SQLは不変で試験材料3件を直し、group_g3_concurrency 24/24を3回連続・group_g3_migration_asserts 64/64で通過） | 状態: 運用方針（グループ G-1 の移行の節は 2026-10-24 に、グループ G-2 の移行の節は 2026-10-25 に追記。G-2 は Task 1 の基盤と Task 2 の発注書の9表と Task 3 の在庫一覧表の読取と、Task 4 の2本目の移行〔発注の作成とロック helper〕と、Task 5 の発注一覧表・発注書の詳細の読取〔基盤の移行の節15〕と、Task 6 の数量の確定・訂正・打切り・発注先の訂正〔2本目の移行の節3〜5〕と、Task 7 の受け取りとその取消〔2本目の移行の節6・7〕と、Task 8 の取引書類の原本〔基盤の移行の節16の検索、2本目の移行の節8の予約・確定・訂正〕と、Task 9 の書き手の閉じた一覧・全入口の並行・末尾の確かめの完成〔「適用の手順と確認」〕と、Task 11 の本番適用の記録まで。G-3 は Task 1 の基盤・Task 2 の読取・Task 4 の書き手の移行・Task 6 の発送の取消を追記） | 確認日: 2026-10-26 | 本番適用状況: G-1 の移行は 2026-10-24 に、G-2 の移行2本は 2026-10-25 12:39 JST に適用済み | G-3 Task 9 確認: 2026-10-26（修正前はfresh reset・12 suite・639/639成功、Fix round 1は再検証対象）
 
 ## 概要
@@ -23,9 +25,9 @@ G-3 Task 2 の荷作り表・票・会計入力の読取移行を同日に作成
 
 | 順 | ファイル名 | 役割・状態 |
 | --- | --- | --- |
-| 1 / G4A | [20261026045859_group_g4_orders_foundation.sql](../../supabase/migrations/20261026045859_group_g4_orders_foundation.sql) | 土台。発送票の注文別索引・確定の期限境界・割当理由18値。2026-10-26のcontroller fresh reset（g4t1a）でローカル適用済み、本番未適用 |
-| 2 / G4B | [20261026054705_group_g4_orders_reads.sql](../../supabase/migrations/20261026054705_group_g4_orders_reads.sql) | 内部3本、private本体4本とpublic入口4本。STABLEな一覧・CSV材料・詳細・品物の状態履歴。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用 |
-| 3 / G4C | [20261026101624_group_g4_orders_swap.sql](../../supabase/migrations/20261026101624_group_g4_orders_swap.sql) | 割当入替の書込み1本（private本体＋public入口）・候補の読取1本（private本体＋public入口）・押さえの道具1本、書き手一覧76本。Task 4 で作成。controllerのfresh reset（g4t4a）でローカル適用済み、本番未適用（検証の結果は下の「G4Cの適用と再検証」） |
+| 1 / G4A | [20261026045859_group_g4_orders_foundation.sql](../../supabase/migrations/20261026045859_group_g4_orders_foundation.sql) | 土台。発送票の注文別索引・確定の期限境界・割当理由18値。2026-10-26のcontroller fresh reset（g4t1a）でローカル適用済み、本番未適用。2026-10-27 に本番適用済み（「G-4 本番適用の記録」） |
+| 2 / G4B | [20261026054705_group_g4_orders_reads.sql](../../supabase/migrations/20261026054705_group_g4_orders_reads.sql) | 内部3本、private本体4本とpublic入口4本。STABLEな一覧・CSV材料・詳細・品物の状態履歴。初回（g4t2a）: controllerのfresh reset後、PostgREST anon/authenticated各200、group_g* 50 suite・1,606成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。修正round 1後（g4t2b）: controllerのfresh reset・PostgREST anon/authenticated各200、group_g* 50 suite・1,611成功・0失敗・1 pending（G1_CLEANUP_SUITE=1専用清掃の未起動）。unit＋全DB integrationは19,935成功・既知stockist_rlsの2失敗のみ（新規失敗なし）、G-0清掃12/12。本番未適用。2026-10-27 に本番適用済み（「G-4 本番適用の記録」） |
+| 3 / G4C | [20261026101624_group_g4_orders_swap.sql](../../supabase/migrations/20261026101624_group_g4_orders_swap.sql) | 割当入替の書込み1本（private本体＋public入口）・候補の読取1本（private本体＋public入口）・押さえの道具1本、書き手一覧76本。Task 4 で作成。controllerのfresh reset（g4t4a）でローカル適用済み、本番未適用（検証の結果は下の「G4Cの適用と再検証」）。2026-10-27 に本番適用済み（「G-4 本番適用の記録」） |
 
 確認日: 2026-10-26。G-1・G-2・G-3 は本番へ適用済み（Task 1 依頼時の確認）。上の過去の節の未適用表記は当時の記録。G4Aはローカル適用済み・本番未適用で、既存の移行ファイルは編集しない。別セッションの `20261026010000_auth_return_intents.sql` は変更せず、その認証機能をG-4の試験の前提にしない。理由の単体は全SQLからCHECK本文を抽出する。3本の版は G4A < G4B < G4C とする。
 
@@ -90,6 +92,34 @@ G4Cは先頭BEGIN、G4CのBODY/FINAL_ASSERT節印、末尾assert→NOTIFY→COMM
 | Opusレビュー修正（Task 4 fix round 2、現在のSQL） | 35,487 | `E84E1F7A64AB7A544C66A90D30F572FA` | 候補の受け手の入金確認、有効なpaid割当を持つ出し手の事前絞込み、押さえの道具の最初のBEGINに固定したadvisory検査。controller fresh reset（g4t4b）でローカル適用済み、PostgREST anon/authenticated各HTTP 200。group_g*全53 suiteは1,721成功・0失敗・1 pending（G1_CLEANUP_SUITE=1で単独実行するG-1清掃の未起動）。発送確定と入荷も両順序を試す `group_g4_swap_concurrency` は12/12・12/12・12/12の3回連続成功。本番未適用 |
 
 fix round 2後のcontroller全件検証（g4t4b、実鍵あり）: unit＋全DB integrationは20,178成功、失敗は既知の `stockist_rls` 2件だけで新規失敗なし。G-0清掃は別に12/12成功。上のgroup_g*検証と全件検証は範囲を分けた実測で、1 pendingは環境変数の指定がある時だけ単独実行するG-1清掃の未起動を示す。本番には適用していない。
+
+### G-4 本番適用の記録（2026-10-27）
+
+2026-10-27 09:06 JST に `npx.cmd supabase db push --linked --yes` で本番へ当てた（exit 0）。オーナーの決定（2026-10-27）で、別セッションの `20261026010000_auth_return_intents.sql` と波 2 の6本（`20261026130100`〜`20261026130600`）も同じ push で当てた（その7本の事後の確かめは別セッションの節）。dry-run は10本をこの順で示した。本番で試験の入替・一覧の読取は行っていない。
+
+| 版 | 名前 | 文の数 | 文の MD5（`md5(array_to_string(statements, E'\n'))`） | ファイル（bytes / MD5） |
+| --- | --- | --- | --- | --- |
+| `20261026045859` | group_g4_orders_foundation | 8 | `cc6497251c3b2633b3a360485f53560c` | 18,813 / `bedbe829bc85fab6646ed189871fc5f3` |
+| `20261026054705` | group_g4_orders_reads | 45 | `53521b0da55354c1ec6cc51fbb0035f8` | 35,038 / `0b931939008eae84059ee5123633d70d` |
+| `20261026101624` | group_g4_orders_swap | 25 | `666b3da2e606a40bc8c2fe07868463c2` | 35,487 / `e84e1f7a64ab7a544c66a90d30f572fa` |
+
+文の数と文の MD5 は、本番と手元の `db reset` 後で一致した。3ファイルとも BOM・CR・U+3000・NBSP・ゼロ幅文字は0、先頭行は `BEGIN;`、`BEGIN;`/`COMMIT;` は1組。
+
+| 確かめ（MCP `execute_sql`、読取のみ・件数のみ） | 適用前 | 適用後 |
+| --- | --- | --- |
+| 履歴の最新 | `20261025134538`（G-4・別セッションの7本は無し） | `20261026130600`（`20261026010000` 以降の10版） |
+| 索引 `shipment_slip_fulfillments_order_idx` | 無し（票の発送の行0） | `(order_id)` の有効な通常の btree |
+| `order_item_allocation_events_reason_check` | G-3 の17値（`14e0795…`） | 18値・`allocation_swap` を含む（`20b215a…`。手元の最新と同じ） |
+| 書き手の許可一覧 | 75本 | 76本・入替の関数を含む |
+| `private.admin_confirm_shipment_slip(...)` の定義 MD5 | `69f5da7…`（手元を `20261025134538` まで作り直した値と同じ） | `f2b58ca…`（手元の最新と同じ） |
+| `private.group_g_writer_allowlist()` の定義 MD5 | `4491ee8…`（同上） | `5508246…`（手元の最新と同じ） |
+| `role_permissions`（admin / supporter） | 30 / 8 | 30 / 8（不変） |
+| 注文・明細・在庫の動き・variant・在庫合計 | 0・0・0・21・0 | 変わらない（データは変えない） |
+| `private.group_g_operations` | 0 | 0（新しい書込みの行は無い） |
+
+非機密の catalog の指紋（手元の最新と本番で一致）: G-4 の18関数（定義・DEFINER・search_path・所有者・EXECUTE・ACL）`3f255a0e85dfabc63adc41e15e834f07`、public・private の全関数414本 `d3404fe69953da10e2ed6ed9ba6a5060`、policy 186 `cf0aa111d5bfb337789841e240ce8229`、trigger 158 `1b986e62cb68d7179f2ba0ef098b57ce`、索引336 `33f3896372f0ee37328a75ba2b6cf41b`。
+
+適用前の検証（2026-10-27、手元の Supabase）: tsc・lint 0、単体＋DB 結合 20,531 通過・0 失敗、G-0 版からの清掃 12/12。E2E 全件（本番ビルド）5,012件で 4,805 通過・181 失敗・26 skip。G-3 の基準（4,922件・175 失敗・26 skip）と比べ、前に通って後で落ちた18件は1並列の単独実行で101/101通過（並列の時だけの揺れ）、G-4 の spec（110・112・121・122・123）は全部通過、消えた G-4 の題34はすべて処置表で説明がつく。記録は `.superpowers/sdd/2026-10-26-group-g4-orders/`（`prod-read-1.md`・`migration-shape.txt`・`e2e-compare.log`・`e2e-missing-map.md`）。
 
 ## なぜ変えたか
 

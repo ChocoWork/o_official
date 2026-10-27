@@ -871,7 +871,7 @@ C-2〜C-5を実装済み。3管理POSTと1webhookを追加し（うち伝票番�
 | 既存窓口 | E-4の追加契約 |
 | --- | --- |
 | GET `/api/admin/orders/[id]/history` | `admin.orders.read`。発送行に `delivery`、`delivery_event`・`tracking_change`、`deliveryTrackingEnabled?: boolean` を返す。`Cache-Control: no-store` |
-| GET `/api/admin/orders`（G-4 Task 7 で削除。優先は詳細の summary が受け継ぐ） | `deliveryAttention` は `failure` → `attempted_delivery` → `untrackable` の優先順。DB状態の絞り込みは維持 |
+| GET `/api/admin/orders`（G-4 Task 7 で削除） | 一覧の列の印（`deliveryAttention`。`failure` → `attempted_delivery` → `untrackable` の優先順で1つ）は一覧とともに無くなった（G-4 の最終レビューで要約からも外した）。開いている配送の要対応は、注文一覧表の要対応の欄と詳細の「要対応」の欄（`attention.deliveries`）に全部出る |
 | GET `/api/admin/order-attention` | `admin.orders.read`。`deliveries:DeliveryAttentionItem[]` と `counts.deliveries:number`。横の印と上の帯の合計にも配送を加える |
 | GET・PUT `/api/admin/settings/shop` | `admin.settings.manage`（店長のみ）。PUTはCSRF・IP・actor、既存 `admin:settings:shop-update` 30回/600秒。既存2boolean `autoRefundCancelledOrderPayment`・`autoCancelAmountMismatch` は必須、`returns` と `deliveryTracking?:{enabled:boolean}` は任意。最上位も未知のキーを拒否 |
 | 設定の応答 | `deliveryTracking:{enabled,updatedAt,updatedByEmail,keyConfigured,backfillCount}`。鍵の値は返さず有無のみ。`backfillCount` はGET時点の正確な対象数。PUTで配送を渡した時だけ `data.backfilledCount:number`（実際の件数）。GET/PUTはno-store |

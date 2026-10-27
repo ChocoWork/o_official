@@ -93,6 +93,7 @@ describe('GET /api/admin/orders statutory search', () => {
         const row = await buildAdminOrderSummary(client, order({ status: 'shipped' }));
         // G-4 で一覧の印の列が無くなったので、配送の要対応の印は要約に載せない（詳細の「要対応」の欄が DB の開いている要対応から出す）
         expect(row).not.toHaveProperty('deliveryAttention');
+        expect(listOrderDeliverySummaries).toHaveBeenCalledTimes(1);
         expect(listOrderDeliverySummaries).toHaveBeenCalledWith(client, ['order-1']);
       },
     );
