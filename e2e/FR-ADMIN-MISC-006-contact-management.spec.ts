@@ -12,11 +12,9 @@
  *
  * 画面（CONTACT のタブ）が要る確かめは、mobile 390・tablet 768・desktop 1280 の3つの幅で流す。窓口の確かめは幅に依らないので1回だけ流す。
  *
- * 今のコードで落ちる（RED）ことを承知で書く確かめ:
- * - FR-ADMIN-009-AC-01・AC-05 の画面の側: 管理画面に CONTACT のタブが無い（TM-ADMIN-01。ContactSection.tsx は使われていない）。
- *   画面の文言と部品は ContactSection.tsx の作りに合わせた（一覧の項目＝件名の文字、「テンプレートを選択」の combobox、「返信内容」の欄）。
- *
  * 直した確かめ（印を外して通る）:
+ * - FR-ADMIN-009-AC-01・AC-05 の画面の側: 管理画面に CONTACT のタブを足した（波 4。src/app/admin/page.tsx が ContactSection を開く）。
+ *   画面の文言と部品は ContactSection.tsx の作りに合わせた（一覧の項目＝件名の文字、「テンプレートを選択」の combobox、「返信内容」の欄）。
  * - SEC-ADMIN-020-AC-01: 詳細は submitted_ip・user_agent を返さない（TM-ADMIN-61）。
  * - SEC-ADMIN-021-AC-01: 存在しない id は 404 を返し、監査に success を残さない（TM-ADMIN-62）。
  */
@@ -241,7 +239,6 @@ const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 for (const viewport of viewports) {
   test(`FR-ADMIN-009-AC-01 ${viewport.name}: 店長とサポーターで /admin を開くと CONTACT のタブが表示され、押すと問い合わせの一覧が表示される`, async ({ page, baseURL }) => {
-    test.fail(true, 'FR-ADMIN-009-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await scenario(async (ctx) => {
       const tag = ctx.tag;
@@ -261,7 +258,6 @@ for (const viewport of viewports) {
   });
 
   test(`FR-ADMIN-009-AC-05 ${viewport.name}: 返信のテンプレートを選ぶと、その本文が返信の欄に入る（画面）`, async ({ page, baseURL }) => {
-    test.fail(true, 'FR-ADMIN-009-AC-05 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await scenario(async (ctx) => {
       const tag = ctx.tag;

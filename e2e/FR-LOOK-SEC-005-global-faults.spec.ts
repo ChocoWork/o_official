@@ -71,7 +71,7 @@ test.describe('FR-LOOK-SEC-005 置き場の書き込みの失敗', () => {
       expect(storageMessage, '前提: 置き場が誤りの文言を返す').not.toBe('');
 
       const res = await request.post('/api/admin/looks', {
-        headers: { ...bearerHeaders(actor), 'x-forwarded-for': uniqueIp(), origin: new URL(baseURL).origin },
+        headers: { ...bearerHeaders(actor), 'x-real-ip': uniqueIp(), origin: new URL(baseURL).origin },
         multipart: {
           seasonYear: '2099',
           seasonType: 'SS',
@@ -205,7 +205,7 @@ test.describe('FR-LOOK-SEC-005 looks の読み出しの失敗', () => {
         await db.query('revoke select on public.looks from service_role');
         try {
           const res = await request.get(`/api/admin/looks/${id}`, {
-            headers: { ...bearerHeaders(actor), 'x-forwarded-for': uniqueIp(), origin: new URL(baseURL).origin },
+            headers: { ...bearerHeaders(actor), 'x-real-ip': uniqueIp(), origin: new URL(baseURL).origin },
           });
           expect(res.status()).toBe(500);
         } finally {

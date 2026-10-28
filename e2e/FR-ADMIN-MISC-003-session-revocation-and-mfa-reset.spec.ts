@@ -159,7 +159,7 @@ async function loginSupporterAsAal2(page: Page, db: PgClient, member: TestMember
   await addTotpAmrClaim(db, sessionId);
   const origin = new URL(page.url()).origin;
   const refreshed = await page.request.post(new URL('/api/auth/refresh', origin).toString(), {
-    headers: { origin, 'x-forwarded-for': forwardedFor },
+    headers: { origin, 'x-real-ip': forwardedFor },
     maxRedirects: 0,
     failOnStatusCode: false,
   });
@@ -175,9 +175,19 @@ async function auditRows(
   db: PgClient,
   sql: string,
   params: unknown[],
-): Promise<Array<{ action: string; outcome: string; ip: string | null; user_agent: string | null; detail: string | null; metadata: unknown }>> {
+): Promise<
+  Array<{
+    action: string;
+    outcome: string;
+    actor_email: string | null;
+    ip: string | null;
+    user_agent: string | null;
+    detail: string | null;
+    metadata: unknown;
+  }>
+> {
   const result = await db.query(
-    `select action, outcome, ip, user_agent, detail, metadata from public.audit_logs ${sql}`,
+    `select action, outcome, actor_email, ip, user_agent, detail, metadata from public.audit_logs ${sql}`,
     params,
   );
   return result.rows;
@@ -244,16 +254,17 @@ test.describe('FR-ADMIN-MISC-003 強制失効と MFA のリセットの守り', 
     expect(metadataText).not.toContain(reason);
   });
 
-  test(`SEC-ADMIN-009-AC-01 送る側が足した IP が監査ログに残らない`, async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-009-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
+  test(`SEC-ADMIN-009-AC-01 送る側が足した IP が監査ログに残らず、信頼する見出し（x-real-ip）の値が残る`, async ({ request, baseURL }) => {
     const origin = originOf(baseURL);
     const admin = await sharedAdmin();
     const target = await createTestMember('misc003-009');
     await withLocalDb((db) => assignRole(db, target.userId, 'supporter', true));
     const userAgent = `e2e-sec-admin-009-${randomUUID()}`;
-    const spoofed = { 'x-forwarded-for': `${SPOOFED_IP}, 10.0.0.1`, 'user-agent': userAgent };
+    // 偽の x-forwarded-for は付けたまま、信頼する x-real-ip を別に付ける（手元の E2E の固定の環境が x-real-ip を信頼する）
+    const realIp = uniqueSourceIp();
+    const spoofed = { 'x-forwarded-for': `${SPOOFED_IP}, 10.0.0.1`, 'x-real-ip': realIp, 'user-agent': userAgent };
 
-    // 強制失効の要求を、x-forwarded-for の左端に足した値を付けて送る。IP を書く行（JWT 無し・本文の誤り・成功）を全部通す
+    // 強制失効の要求を、x-forwarded-for の左端に足した値と x-real-ip を付けて送る。IP を書く行（JWT 無し・本文の誤り・成功）を全部通す
     const unauthorized = await revoke(request, origin, null, { user_id: target.userId }, spoofed);
     expect(unauthorized.status()).toBe(401);
     const invalid = await revoke(request, origin, admin.accessToken, { user_id: '' }, spoofed);
@@ -269,9 +280,17 @@ test.describe('FR-ADMIN-MISC-003 強制失効と MFA のリセットの守り', 
       ),
     );
     // 行が無ければ「ip が足した値でない」が空振りになるので、行があることを先に確かめる
-    expect(rows.length).toBeGreaterThanOrEqual(1);
+    // 認可に失敗した行は全体の上限（10分に20行）で書かれないことがあるので、行為者が分かる 2 行（本文の誤り・成功）を最低にする
+    expect(rows.length).toBeGreaterThanOrEqual(2);
     expect(rows.map((row) => row.ip)).not.toContain(SPOOFED_IP);
     expect(rows.map((row) => row.ip)).not.toContainEqual(expect.stringContaining(SPOOFED_IP));
+    // 行（JWT 無し・本文の誤り・成功）の IP が全部 x-real-ip の値。成功の行は閉包で書く（IP が欠けやすい行）
+    expect(rows.every((row) => row.ip === realIp)).toBe(true);
+    expect(rows.some((row) => row.outcome === 'success')).toBe(true);
+    // 行為者のメールは、行為者が分かる行（本文の誤り・成功）に入る
+    const actorRows = rows.filter((row) => row.outcome !== 'unauthorized');
+    expect(actorRows.length).toBeGreaterThanOrEqual(2);
+    expect(actorRows.every((row) => row.actor_email === admin.email)).toBe(true);
   });
 
   test(`SEC-ADMIN-014-AC-01 ACL で特権を外した人の MFA はリセットしない`, async ({ request, baseURL }) => {

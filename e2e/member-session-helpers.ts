@@ -104,8 +104,9 @@ export async function readLatestCode(email: string, previousMessageIds: Readonly
 
 /**
  * 同じブラウザで注文する際の認証と CSRF を、アプリの実際の発行処理で揃える。
- * forwardedFor を渡すと、回数の制限を数える送り元として確認コードの送信・検証の要求に付ける。
- * 試験ごとに別の値を渡せば、全部の E2E が共有する 127.0.0.1 の枠を使い切らない。手元の E2E サーバーだけで効く。
+ * forwardedFor を渡すと、回数の制限を数える送り元（x-real-ip）として確認コードの送信・検証の要求に付ける。
+ * 試験ごとに別の値を渡せば、見出しの無い要求が集まる「送り元なし」の枠を全部の E2E で使い切らない。
+ * 手元の E2E サーバーだけで効く（固定の環境の CLIENT_IP_HEADER=x-real-ip で x-real-ip を信頼する。x-forwarded-for は読まれない）。
  */
 export async function loginAsMember(page: Page, member: TestMember, forwardedFor?: string): Promise<void> {
   if (!isLocalUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) || process.env.MAIL_PROVIDER !== 'local') {
@@ -123,7 +124,7 @@ export async function loginAsMember(page: Page, member: TestMember, forwardedFor
   // アプリと Mailpit の時計がずれても、再送前からあるメールを選ばないため。
   const previousMessageIds = new Set((await readMailpitMessages(member.email)).map((message) => message.ID));
   // 渡された時だけ付ける。渡さない既存の呼び出しは、これまでと同じ要求になる。
-  const sourceHeaders: Record<string, string> = forwardedFor === undefined ? {} : { 'x-forwarded-for': forwardedFor };
+  const sourceHeaders: Record<string, string> = forwardedFor === undefined ? {} : { 'x-real-ip': forwardedFor };
   // page.request の baseURL と表示中のページが違っても、確認済みの手元へだけ送るため。
   const resend = await page.request.post(new URL('/api/auth/login/resend', origin).toString(), {
     headers: { origin, ...sourceHeaders },

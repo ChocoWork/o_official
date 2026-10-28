@@ -3,7 +3,7 @@
  * 対応: FREQ-323-AC-01・FREQ-323-AC-03・SEC-AUTH-014-AC-01・SEC-AUTH-016-AC-01・SEC-AUTH-016-AC-03・SEC-AUTH-017-AC-01・SEC-AUTH-029-AC-01
  *
  * 画面は使わず、本番ビルドの窓口へ request で直に送る（HTTP だけなので画面の幅は結果を変えない）。
- * 送り元は試験ごとに違う x-forwarded-for にして、IP 単位の回数の制限（20 回／時）を他の試験と分ける。
+ * 送り元は試験ごとに違う x-real-ip（E2E のアプリが CLIENT_IP_HEADER で信頼する見出し）にして、IP 単位の回数の制限（20 回／時）を他の試験と分ける。
  * Turnstile は手元の公式の常に通る鍵（.env.local）なので、トークンは適当な文字列でよい。
  *
  * 前提:
@@ -40,7 +40,7 @@ const MAX_REGISTER_ATTEMPTS_PER_ADDRESS = 40;
 const usedForwardedFor = new Set<string>();
 const trackedEmails = new Set<string>();
 
-/** 走らせるたび・試験ごとに違う x-forwarded-for（ベンチマーク用の 198.18.0.0/15 から乱数で選ぶ） */
+/** 走らせるたび・試験ごとに違う x-real-ip の値（ベンチマーク用の 198.18.0.0/15 から乱数で選ぶ） */
 function uniqueForwardedFor(): string {
   for (;;) {
     const ip = `198.18.${randomInt(0, 256)}.${randomInt(1, 255)}`;
@@ -70,7 +70,7 @@ function postRegister(request: APIRequestContext, email: string, options: Regist
   return request.post(REGISTER_PATH, {
     headers: {
       origin: APP_ORIGIN,
-      'x-forwarded-for': options.forwardedFor ?? uniqueForwardedFor(),
+      'x-real-ip': options.forwardedFor ?? uniqueForwardedFor(),
       ...(options.extraHeaders ?? {}),
     },
     data: { email, password: options.password, turnstileToken: TURNSTILE_TOKEN },

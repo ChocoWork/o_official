@@ -387,7 +387,6 @@ test.describe('FR-ADMIN-MISC-005 色見本と管理の表への直接の道', ()
   });
 
   test(`SEC-ADMIN-022-AC-01 店長が色見本を1件作って消した後、監査ログに作成と削除の2行があり、どちらにもその店長の id とメールが入る`, async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-022-AC-01 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     if (!baseURL || !isLocalUrl(baseURL)) throw new Error('手元のアプリの baseURL が無い');
     const origin = new URL(baseURL).origin;
     await withDb(async (db) => {

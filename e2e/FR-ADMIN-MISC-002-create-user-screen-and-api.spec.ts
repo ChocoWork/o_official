@@ -194,6 +194,37 @@ test.describe('FR-ADMIN-MISC-002 create-user api', () => {
     expect(details[1], '別のメールでも同じ決まった文').toBe(details[0]);
   });
 
+  test('SEC-ADMIN-022-AC-03 ユーザーを作った後の監査の行（成功・形の誤り）に、行為者のメールと x-real-ip の値の IP とブラウザの名乗りが入り、偽の x-forwarded-for は入らない', async ({ request, baseURL }) => {
+    const origin = originOf(baseURL);
+    const email = uniqueEmail('audit-context');
+    const userAgent = `e2e-sec-admin-022-${randomUUID()}`;
+    // 試験ごとの送り元（手元の E2E の固定の環境の CLIENT_IP_HEADER=x-real-ip が x-real-ip を信頼する）。偽の x-forwarded-for は付けたままにする
+    const bytes = randomUUID().replace(/-/g, '');
+    const realIp = `198.18.${parseInt(bytes.slice(0, 2), 16)}.${(parseInt(bytes.slice(2, 4), 16) % 253) + 1}`;
+    const spoofedIp = '203.0.113.88';
+    const headers = { ...adminHeaders(admin, origin), 'x-real-ip': realIp, 'x-forwarded-for': spoofedIp, 'user-agent': userAgent };
+
+    const invalid = await request.post(CREATE_USER_PATH, { headers, data: { email: 'not-an-email', password: strongPassword() } });
+    expect(invalid.status(), await invalid.text()).toBe(400);
+    const created = await request.post(CREATE_USER_PATH, { headers, data: { email, password: strongPassword() } });
+    expect(created.status(), await created.text()).toBe(201);
+
+    const rows = await withLocalDb(async (db) =>
+      (await db.query(
+        `select outcome, actor_email, ip, user_agent from public.audit_logs
+          where action = 'admin_create_user' and actor_id = $1::uuid and user_agent = $2 order by created_at, id`,
+        [admin.userId, userAgent],
+      )).rows as Array<{ outcome: string; actor_email: string | null; ip: string | null; user_agent: string | null }>,
+    );
+    // 行が無ければ「欠けていない」が空振りになるので、2 行（形の誤り・成功）あることを先に確かめる
+    expect(rows.map((row) => row.outcome)).toEqual(['failure', 'success']);
+    for (const row of rows) {
+      expect(row.actor_email, `${row.outcome} の actor_email`).toBe(admin.email);
+      expect(row.ip, `${row.outcome} の ip が x-real-ip の値でない`).toBe(realIp);
+      expect(row.ip).not.toContain(spoofedIp);
+    }
+  });
+
   test('SEC-ADMIN-012-AC-01 店長の aal2 で15文字のパスワードを送ると 400 が返り、その利用者が作られない', async ({ request, baseURL }) => {
     const email = uniqueEmail('short-password');
     const password = `a${randomUUID().replace(/-/g, '').slice(0, 14)}`;

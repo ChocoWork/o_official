@@ -8,7 +8,7 @@
  * 前提（実行時に確かめる）:
  *  - 手元の Supabase と手元のメール受け（Mailpit。MAIL_PROVIDER=local, MAIL_LOCAL_URL）が動いている
  *  - 保留の Cookie の偽造は createLoginTwoFactorSessionToken（JWT_SECRET を .env.local から読む）。手元のアプリにだけ効く
- *  - 回数の制限（IP 単位 30 回/600 秒・宛先単位 5 回/600 秒など）は、試験ごとに別の x-forwarded-for と別の宛先で避ける
+ *  - 回数の制限（IP 単位 30 回/600 秒・宛先単位 5 回/600 秒など）は、試験ごとに別の x-real-ip（E2E のアプリが CLIENT_IP_HEADER で信頼する送り元）と別の宛先で避ける
  *  - 手元の Supabase の token_verifications（5 分に IP ごと 30 回。supabase/config.toml）は全 E2E で共有される。
  *    このファイルが GoTrue へ届かせる検証は 20 回ほどなので、他の spec と同時に流して 401 が増えたら、この上限を疑う
  *
@@ -64,7 +64,7 @@ const test = base.extend<{ makeClient: (options: ClientOptions) => Promise<Clien
     await provide(async ({ ip, cookie }) => {
       const context = await playwright.request.newContext({
         baseURL: base,
-        extraHTTPHeaders: { origin, 'x-forwarded-for': ip },
+        extraHTTPHeaders: { origin, 'x-real-ip': ip },
         storageState: {
           cookies: cookie
             ? [

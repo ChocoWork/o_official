@@ -5,8 +5,8 @@
  * 試験ごとに、他と重ならない目印の語（marker）を題に含む行を手元の DB へ入れ、finally で消す（公開の行は他の試験の件数に響くので短く置く）。
  * 入れる公開の行は、他の試験の `q=a`（候補・件数）や /item の先頭に混ざらないよう、題・説明に母音の a を含めず、作成日を 2000-01-01 にする。
  * 画面と API は本物の窓口（/search・/api/search・/api/suggest）を叩く。画面を開く試験は 3 つの幅で流し、HTTP だけの試験（幅で結果が変わらない）は 1 回だけ流す。
- * 共有の送り元 127.0.0.1 の枠（search:public 120 回/600 秒）を他の検索の試験と取り合わないよう、このファイルだけの
- * x-forwarded-for を付ける（SEC-SEARCH-006 が直って x-forwarded-for を信用しなくなると、この分離は効かなくなる）。
+ * 見出しの無い要求が集まる送り元 null の枠（search:public 120 回/600 秒）を他の検索の試験と取り合わないよう、このファイルだけの
+ * x-real-ip を付ける（E2E の固定の環境 CLIENT_IP_HEADER=x-real-ip が信頼する見出し。x-forwarded-for は読まれない）。
  *
  * 人気商品（001-AC-02）: 非公開の商品に「購入数が一番多い入金済みの注文」を付ける。注文は削除禁止の仕掛けがあり通常は消せないので、
  * 注文の行だけは session_replication_role = replica の接続で入れて消す（仕掛けが動かず、会計や在庫に何も書かれない）。
@@ -33,7 +33,7 @@ const viewports = [
   { name: 'desktop', width: 1280, height: 800 },
 ] as const;
 
-test.use({ extraHTTPHeaders: { 'x-forwarded-for': '198.18.21.21' } });
+test.use({ extraHTTPHeaders: { 'x-real-ip': '198.18.21.21' } });
 
 const ITEM_IMAGES_BUCKET = 'item-images';
 const XSS_TITLE_TAIL = '<img src=x onerror=window.__xss=1>';

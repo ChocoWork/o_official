@@ -1475,7 +1475,7 @@ export async function isolateCustomerApiIp(page: Page): Promise<string> {
       await route.fallback();
       return;
     }
-    await route.continue({ headers: { ...route.request().headers(), 'x-forwarded-for': ip } });
+    await route.continue({ headers: { ...route.request().headers(), 'x-real-ip': ip } });
   });
   return ip;
 }

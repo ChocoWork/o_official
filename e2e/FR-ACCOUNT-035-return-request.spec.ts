@@ -102,7 +102,7 @@ for (const viewport of viewports) {
       await page.route('**/api/orders/' + fx.orderId + '/return-request', async (route) => {
         if (route.request().method() !== 'POST') { await route.fallback(); return; }
         bodies.push(route.request().postDataJSON() as JsonBody);
-        const response = await route.fetch({ headers: { ...route.request().headers(), 'x-forwarded-for': rr.ip } });
+        const response = await route.fetch({ headers: { ...route.request().headers(), 'x-real-ip': rr.ip } });
         const result = await response.json() as { data: { returnId: string; replayed: boolean } };
         expect(response.status()).toBe(200);
         returnId = result.data.returnId;

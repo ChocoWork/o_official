@@ -8,11 +8,10 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 // SEC-SEARCH-017-AC-01（検索の関数が失敗した時の表示）は DB の関数の権限を外すので、他の試験を壊さないよう
 // 最後に単独で流す FR-SEARCH-022 に置く。
 //
-// 回数の制限: 共有の送り元 127.0.0.1 の枠（search:public 120 回/600 秒）を他の検索の試験と取り合わないよう、
-// このファイルだけの x-forwarded-for を付ける。ただし SEC-SEARCH-006 が直って x-forwarded-for を信用しなくなると
-// この分離は効かなくなる（全部が接続の送り元の 1 つの枠になる）。その時は枠を数え直す仕組みか
-// 手元だけ緩い上限が要る（パケットに記録）。
-test.use({ extraHTTPHeaders: { 'x-forwarded-for': '198.18.18.18' } });
+// 回数の制限: 見出しの無い要求が集まる 1 つの枠（送り元 null。search:public 120 回/600 秒）を他の検索の試験と取り合わないよう、
+// このファイルだけの x-real-ip を付ける（E2E の固定の環境 CLIENT_IP_HEADER=x-real-ip が信頼する見出し。x-forwarded-for は読まれない）。
+// 付け忘れると送り元 null の 1 つの枠を全部の試験で取り合う。
+test.use({ extraHTTPHeaders: { 'x-real-ip': '198.18.18.18' } });
 
 const VIEWPORTS = [
   { name: 'mobile', width: 390, height: 844 },

@@ -351,7 +351,7 @@ export async function postOrderStatusVerify(request: APIRequestContext, token: s
 ): Promise<StatusReply> {
   try {
     const response = await request.post(`/api/order-status/${encodeURIComponent(token)}/verify`, {
-      headers: { 'x-forwarded-for': input.ip, ...(input.origin === null ? { referer: '' } : { origin: input.origin ?? ORIGIN }) },
+      headers: { 'x-real-ip': input.ip,...(input.origin === null ? { referer: '' } : { origin: input.origin ?? ORIGIN }) },
       data: { lastFour }, maxRedirects: 0,
     });
     return { status: response.status(), body: await response.json(), cacheControl: response.headers()['cache-control'] ?? null,
@@ -364,7 +364,7 @@ export async function isolateOrderStatusApiIp(page: Page): Promise<string> {
   isolatedIps.add(ip);
   await page.route('**/api/order-status/**', async (route) => {
     if (new URL(route.request().url()).origin !== ORIGIN) { await route.fallback(); return; }
-    await route.continue({ headers: { ...route.request().headers(), 'x-forwarded-for': ip } });
+    await route.continue({ headers: { ...route.request().headers(), 'x-real-ip': ip } });
   });
   return ip;
 }

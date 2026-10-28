@@ -12,16 +12,14 @@
  *   （e2e/look-admin-test-utils.ts の signInAsLookAdmin）。
  * - 読み出しの権限だけを持つ利用者は、店長の JWT の利用者の有効な役割を外し、admin.looks.read だけを持つ試験用の役割（e2e-look019-ro-*）を付けて作る。
  *   窓口の認可は 要求のたびに DB の ACL を読むので、JWT は店長（app_metadata.role = admin）のまま、権限だけが読み出しになる。
- *   カードの3ボタンは窓口の meta.canManage で出し分ける（019-AC-05）。「新規作成」は src/app/admin/page.tsx が役（admin）で出していて、そのままになる（019-AC-04）。
+ *   「新規作成」（019-AC-04）とカードの3ボタン（019-AC-05）は、窓口の meta.canManage（認可が返す権限の集合から作る）で出し分ける。
  * - 試験ごとに、非公開の LOOK を1つ作り（テーマは一意・created_at 2000-01-01・商品1を紐づけ）、終わりに必ず消す。LOOK の行は to_jsonb の全列で前後を比べ、「変わらない」を確かめる。
- *   試験ごとに新しい利用者・試験ごとの送り元（x-forwarded-for）を使い、変更の枠（status 30回/600秒）を他の試験や前の実行と共有しない。
+ *   試験ごとに新しい利用者・試験ごとの送り元（x-real-ip。E2E の固定の環境の CLIENT_IP_HEADER が信じる見出し）を使い、変更の枠（status 30回/600秒）を他の試験や前の実行と共有しない。
  * - 権限の表は共有の状態なので、利用者を作る試験は withPermissionScenario（advisory lock 190520）の中で流す。
  *
- * 現行のコードが満たさない AC（文のとおりに書いてあり、緩めない。コードが直るまで赤）:
- * - SEC-LOOK-019-AC-04: 「新規作成」のボタンを src/app/admin/page.tsx が権限でなく役（admin）で出すので、読み出しだけの利用者にも出る（波 4 で直す）。
- *   カードの公開の切り替え・編集・削除は直した（019-AC-05 が緑）。
- * - SEC-LOOK-011-AC-01: 回数の制限が x-forwarded-for をそのまま送り元として数えるので、操作者の段も見出しごとに別の枠になる見込み。
- * 019-AC-01〜03・AC-05・018-AC-01・AC-02・016-AC-02・AC-03 は満たす見込み。
+ * SEC-LOOK-011-AC-01 は、送り元の見出し（x-real-ip）を毎回変えても、操作者の段が 31 回目を止める確かめ。回数の制限は x-forwarded-for を読まなくなった（ADR-0416）ので、
+ * 見出しを毎回変えると送り元の枠は毎回別になり、止めるのは操作者の枠だけになる（固定の IP だと送り元の枠が先に止めて意味が変わる）。
+ * 019-AC-01〜05・018-AC-01・AC-02・016-AC-02・AC-03・011-AC-01 は満たす見込み。
  *
  * 作った利用者・session・監査の行は消さない（db reset で消える）。LOOK の行と試験用の役割は終わりに消す。
  * JWT が通信記録に残らないよう trace は切る。
@@ -58,7 +56,7 @@ function originOf(baseURL: string | undefined): string {
   return new URL(baseURL).origin;
 }
 
-/** 試験ごとの送り元（x-forwarded-for）。回数の枠を試験どうしで共有しない */
+/** 試験ごとの送り元（x-real-ip）。回数の枠を試験どうしで共有しない */
 function uniqueIp(): string {
   const groups = randomBytes(12).toString('hex').match(/.{4}/g) ?? [];
   return `2001:db8:${groups.join(':')}`;
@@ -89,7 +87,7 @@ type SendOptions = {
 
 /** 1回呼ぶ。Referer は付けない */
 async function send(request: APIRequestContext, method: Method, path: string, options: SendOptions): Promise<Reply> {
-  const headers: Record<string, string> = { 'x-forwarded-for': options.ip };
+  const headers: Record<string, string> = { 'x-real-ip': options.ip };
   if (options.actor) Object.assign(headers, bearerHeaders(options.actor));
   if (method !== 'GET' && options.origin !== null) headers.origin = options.origin;
   if (options.contentType) headers['content-type'] = options.contentType;
@@ -232,7 +230,6 @@ for (const vp of viewports) {
     page,
     baseURL,
   }) => {
-    test.fail(true, 'SEC-LOOK-019-AC-04 今のコードは満たさない。カードの3ボタンは AC-05。新規作成のボタンは src/app/admin/page.tsx が役で出している（波 4。docs/02_Requirements/areas/look.md）');
     if (!baseURL) throw new Error('baseURL が無い（playwright.config.ts）');
     await withPermissionScenario(async (db) => {
       await withReadOnlyLookActor(db, async (actor) => {
@@ -368,7 +365,7 @@ test('SEC-LOOK-016-AC-03 /api/admin/looks/<id> に JSON でない本文の PATCH
   });
 });
 
-test('SEC-LOOK-011-AC-01 同じ操作者が x-forwarded-for を毎回変えて状態の変更を送っても、10分の中の31回目は 429 で断られ、LOOK の状態が変わらない', async ({
+test('SEC-LOOK-011-AC-01 同じ操作者が x-real-ip を毎回変えて状態の変更を送っても、10分の中の31回目は 429 で断られ、LOOK の状態が変わらない', async ({
   request,
   baseURL,
 }) => {

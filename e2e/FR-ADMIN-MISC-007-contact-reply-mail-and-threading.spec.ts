@@ -19,7 +19,7 @@
  * （RESEND_WEBHOOK_SECRET）は scripts/e2e/environment.ts の E2E_FIXED_ENV が固定する。
  *
  * 今のコードの状態（受け入れ条件の下の根拠より）:
- * - SEC-ADMIN-022-AC-02（TM-ADMIN-63。行為者のメールと IP は波 4）は満たさない。この spec では失敗する（test.fail の印つき）。
+ * - SEC-ADMIN-022-AC-02（TM-ADMIN-63。行為者のメールと IP は波 4）は波 4 で満たした。送り元は x-real-ip を信頼する。
  * - SEC-ADMIN-006（返信は管理者の id ごとに 10 分に 30 回）・SEC-ADMIN-018（件名の CR・LF を空白にする）・SEC-ADMIN-017-AC-01・FREQ-25-AC-01 は今のコードで通る。
  * - SEC-ADMIN-006 は 429 が初めて出るまで送り（上限は RATE_LIMIT_PROBE_CAP = 200。決めた回数 30 より十分大きい）、
  *   その時点までの 201 の数と返信の行・メールの数を数え合わせる。回数を決めた値に固定せず、窓口の枠の数を変えても試験を直さずに済ませる。
@@ -106,11 +106,12 @@ function originOf(baseURL: string | undefined): string {
   return new URL(baseURL).origin;
 }
 
-function adminHeaders(actor: AdminActor, origin: string, forwardedFor: string): Record<string, string> {
-  return { authorization: `Bearer ${actor.token}`, origin, 'x-forwarded-for': forwardedFor };
+/** sourceIp は信頼する送り元の見出し（x-real-ip。手元の E2E の固定の環境の CLIENT_IP_HEADER=x-real-ip で有効。SEC-AUTH-013） */
+function adminHeaders(actor: AdminActor, origin: string, sourceIp: string): Record<string, string> {
+  return { authorization: `Bearer ${actor.token}`, origin, 'x-real-ip': sourceIp };
 }
 
-/** 試験ごとの送り元（x-forwarded-for の左端。192.0.2.0/24 は文書用の範囲） */
+/** 試験ごとの送り元（x-real-ip の値。192.0.2.0/24 は文書用の範囲） */
 function testIp(): string {
   return `192.0.2.${1 + Math.floor(Math.random() * 250)}`;
 }
@@ -319,7 +320,14 @@ function expectRetryAfter(response: APIResponse): void {
       // 毎回ちがう左端（198.51.100.0/24 と 203.0.113.0/24 は文書用の範囲）。2番目以降は固定で、左端だけが変わる
       const spoofedFor = (attempt: number): string => `198.51.100.${(attempt % 250) + 1}, 203.0.113.${Math.floor(attempt / 250) + 1}`;
 
-      const probe = await replyUntilLimited(request, inquiryId, (attempt) => adminHeaders(actor, origin, spoofedFor(attempt)));
+      // 信頼する x-real-ip は固定で、偽の x-forwarded-for だけを毎回変える（x-forwarded-for は読まれず、数え直されない）
+      const realIp = testIp();
+      const headersWith = (xff: string): Record<string, string> => ({
+        ...adminHeaders(actor, origin, realIp),
+        'x-forwarded-for': xff,
+      });
+
+      const probe = await replyUntilLimited(request, inquiryId, (attempt) => headersWith(spoofedFor(attempt)));
 
       expect(
         probe.limited,
@@ -330,12 +338,7 @@ function expectRetryAfter(response: APIResponse): void {
       expectRetryAfter(limited);
 
       // まだ見ていない左端でもう1回送っても、決めた回数を超えているので 429 のまま
-      const next = await postReply(
-        request,
-        inquiryId,
-        adminHeaders(actor, origin, '192.0.2.250, 203.0.113.250'),
-        '回数を超えた後の確認',
-      );
+      const next = await postReply(request, inquiryId, headersWith('192.0.2.250, 203.0.113.250'), '回数を超えた後の確認');
       expect(next.status()).toBe(429);
       expect(await adminMessageCount(db, inquiryId)).toBe(probe.accepted);
     });
@@ -408,7 +411,6 @@ function expectRetryAfter(response: APIResponse): void {
   });
 
   test(`SEC-ADMIN-022-AC-02 問い合わせの状態の変更・返信・テンプレートの作成の監査ログに、行為者のメールと IP が入る`, async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-ADMIN-022-AC-02 今のコードは満たさない（docs/02_Requirements/areas/admin.md）');
     const origin = originOf(baseURL);
     await withAdminActor(async (actor, db) => {
       const customerEmail = uniqueEmail('contact-audit');
@@ -436,7 +438,7 @@ function expectRetryAfter(response: APIResponse): void {
         expect(rows.map((row) => row.action).sort()).toEqual([...actions].sort());
         for (const row of rows) {
           expect(row.actor_email, `${row.action} の actor_email が空`).toBe(actor.email);
-          expect(row.ip, `${row.action} の ip が空`).toBeTruthy();
+          expect(row.ip, `${row.action} の ip が x-real-ip の値でない`).toBe(ip);
         }
       } finally {
         if (templateId) await db.query('delete from public.contact_reply_templates where id = $1::uuid', [templateId]);

@@ -66,7 +66,7 @@ for (const viewport of viewports) {
         await stubTurnstileScript(page);
         const sourceIp = uniqueForwardedFor();
         await page.route('**/api/auth/register', (route) =>
-          route.continue({ headers: { ...route.request().headers(), 'x-forwarded-for': sourceIp } }),
+          route.continue({ headers: { ...route.request().headers(), 'x-real-ip': sourceIp } }),
         );
 
         await page.goto('/login');
@@ -107,7 +107,7 @@ test.describe('FR-LOGIN-024 register account enumeration (API contract)', () => 
     const origin = new URL(baseURL ?? 'http://localhost:3000').origin;
     const post = (email: string) =>
       request.post('/api/auth/register', {
-        headers: { origin, 'x-forwarded-for': uniqueForwardedFor() },
+        headers: { origin, 'x-real-ip': uniqueForwardedFor() },
         data: { email, password: VALID_PASSWORD, turnstileToken: 'e2e-probe' },
         failOnStatusCode: false,
       });

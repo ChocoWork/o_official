@@ -11,9 +11,11 @@
  *   news/e2e/news-1.png）に対して発行する。管理の一覧が /_next/image に渡す署名つき URL と同じ形（/storage/v1/object/sign/news-images/…）。
  *
  * 回数の制限（SEC-NEWS-006-AC-02・009-AC-02・011-AC-01）の注意
- * - /api/news の枠は「送り元 × 10分（時計の10分きざみ）」で数える。送り元は今のコードでは x-forwarded-for の先頭の値なので、
- *   試験ごとに違う（走らせるたびに乱数で決める）x-forwarded-for を付けて枠を分け、ほかの試験・ほかの spec と枠を共有しない。
- *   SEC-NEWS-011 が直って x-forwarded-for を使わなくなると、この spec の全部が接続の送り元（127.0.0.1 など）の1つの枠を共有する。
+ * - /api/news の枠は「送り元 × 10分（時計の10分きざみ）」で数える。送り元は x-vercel-forwarded-for → x-real-ip の順に読む
+ *   （E2E の固定の環境 CLIENT_IP_HEADER=x-real-ip の時。x-forwarded-for は読まない）。
+ *   試験ごとに違う（走らせるたびに乱数で決める）x-real-ip を付けて枠を分け、ほかの試験・ほかの spec と枠を共有しない。
+ *   SEC-NEWS-011-AC-01 だけは、固定の x-real-ip を 1 つ付け、x-forwarded-for を毎回変えて送る（読まれない見出しを変えても枠を逃れられないことを見る）。
+ *   見出しを付け忘れると、この spec の全部が送り元 null の1つの枠を共有する。
  *   そのため 61回目が 429 であること（61回目より前の結果は問わない）を確かめる形にして、枠を使い切った後でも意味が保てるようにしている。
  *   ただしその場合、同じ時間帯に /api/news を叩くほかの spec は 429 になるので、この spec は最後か単独の worker で流す。
  * - 61回送る途中で10分の枠が切り替わると数えが0に戻るので、枠の切れ目の手前45秒以内に始まるときは、切り替わるのを条件で待つ。
@@ -46,11 +48,11 @@ async function applyViewport(page: Page, viewport: Viewport): Promise<void> {
   await page.setViewportSize({ width: viewport.width, height: viewport.height });
 }
 
-// ---- 回数の制限の送り元（x-forwarded-for）----
+// ---- 回数の制限の送り元（x-real-ip）----
 
 const usedForwardedFor = new Set<string>();
 
-/** 走らせるたび・試験ごとに違う x-forwarded-for（ベンチマーク用の 198.18.0.0/15 から乱数で選ぶ） */
+/** 走らせるたび・試験ごとに違う送り元（ベンチマーク用の 198.18.0.0/15 から乱数で選ぶ）。x-real-ip に付ける */
 function uniqueForwardedFor(): string {
   for (;;) {
     const ip = `198.18.${randomInt(0, 256)}.${randomInt(1, 255)}`;
@@ -62,7 +64,12 @@ function uniqueForwardedFor(): string {
 }
 
 function getNews(request: APIRequestContext, forwardedFor: string): Promise<APIResponse> {
-  return request.get(NEWS_API, { headers: { 'x-forwarded-for': forwardedFor } });
+  return request.get(NEWS_API, { headers: { 'x-real-ip': forwardedFor } });
+}
+
+/** 固定の x-real-ip（信頼される送り元）に、毎回違う x-forwarded-for（読まれない見出し）を付けて送る。SEC-NEWS-011-AC-01 専用 */
+function getNewsFromFixedSource(request: APIRequestContext, fixedRealIp: string, forwardedFor: string): Promise<APIResponse> {
+  return request.get(NEWS_API, { headers: { 'x-real-ip': fixedRealIp, 'x-forwarded-for': forwardedFor } });
 }
 
 /** 時計の10分の枠の切れ目が近いときだけ、次の枠に入るまで条件で待つ（固定の sleep はしない） */
@@ -210,13 +217,14 @@ test.describe('FR-NEWS-SEC-003 NEWS の HTTP の守りと回数の制限', () =>
   });
 
   test(`SEC-NEWS-011-AC-01 毎回違う x-forwarded-for を付けても61回目が 429`, async ({ request }) => {
-    test.fail(true, 'SEC-NEWS-011 今のコードは満たさない（docs/02_Requirements/areas/news.md）');
     test.setTimeout(180_000);
     await ensureRoomInRateLimitWindow();
 
+    // 送り元（x-real-ip）はこの試験で 1 つに固定する。x-forwarded-for だけを毎回変える
+    const fixedRealIp = uniqueForwardedFor();
     const statuses: number[] = [];
     for (let i = 0; i < REQUESTS_TO_REACH_61ST; i += 1) {
-      const response = await getNews(request, uniqueForwardedFor());
+      const response = await getNewsFromFixedSource(request, fixedRealIp, uniqueForwardedFor());
       statuses.push(response.status());
     }
 

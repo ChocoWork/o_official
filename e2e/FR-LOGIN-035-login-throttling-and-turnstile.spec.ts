@@ -5,7 +5,7 @@
  * 道具立て
  * - Playwright の request（HTTP）で /api/auth/login と /api/auth/refresh を直に叩く。画面は見ない。
  *   HTTP の試験なので結果は画面の幅で変わらない。1つの幅（desktop）だけ流す（DB の書き込みと回数の制限の枠を3倍にしない）。
- * - 回数の制限の枠は「送り元（x-forwarded-for の先頭）× 10分（時計の10分きざみ）」、メールの枠は「メール × 10分」で数える。
+ * - 回数の制限の枠は「送り元（x-real-ip。E2E のアプリは固定の環境 CLIENT_IP_HEADER で信頼し、x-forwarded-for は読まない）× 10分（時計の10分きざみ）」、メールの枠は「メール × 10分」で数える。
  *   試験ごと・要求ごとに新しい送り元とメールを使い、ほかの試験・ほかの spec と枠を共有しない。
  *   10分の枠が切り替わる間際に始めると途中で数えが0に戻るので、切れ目の手前に近いときだけ、次の枠に入るのを条件で待つ。
  * - Turnstile は .env.local の公式のテスト鍵（常に通る）で Cloudflare の siteverify に問い合わせる。
@@ -13,8 +13,8 @@
  * - FREQ-335-AC-04 は本物のパスワードで通す必要があるので、手元の Supabase に既知のパスワードの会員を作り、試験の後に消す。
  *   通すと手元のメール受け（Mailpit）に確認コードが届く。
  * - SEC-AUTH-030-AC-02 は監査ログ（public.audit_logs）を手元の DB の接続で直に読む。
- * - SEC-AUTH-013-AC-01 は今のコードが満たさない（送り元の先頭の値をそのまま信じる）ので、赤になるのが正しい。
- *   隠すために skip や fail の印は付けない。
+ * - SEC-AUTH-013-AC-01 は、1 試験で固定の x-real-ip を付け、偽れる x-forwarded-for だけを毎回変えて 31 回送り、31 回目が 429 になることを見る
+ *   （2026-10-28、波 4 で getClientIp が x-forwarded-for を読まなくなり満たす）。x-real-ip まで毎回変えると枠を逃れるので変えない。
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
@@ -83,7 +83,7 @@ function postLogin(
   origin: string,
 ): Promise<APIResponse> {
   return request.post(LOGIN_PATH, {
-    headers: { 'x-forwarded-for': forwardedFor, origin },
+    headers: { 'x-real-ip': forwardedFor, origin },
     data: body,
     maxRedirects: 0,
   });
@@ -224,16 +224,18 @@ for (const viewport of viewports) {
       expect(rowText.includes(password), '監査の行にパスワードが入っていないこと').toBe(false);
     });
 
-    test(`SEC-AUTH-013-AC-01 ${viewport.name}: x-forwarded-for を毎回変えて /api/auth/refresh に31回送ると、31回目が 429 になる`, async ({ request, baseURL }) => {
-      test.fail(true, 'SEC-AUTH-013 今のコードは満たさない（docs/02_Requirements/areas/auth.md）');
+    test(`SEC-AUTH-013-AC-01 ${viewport.name}: x-forwarded-for を毎回変えても、固定の x-real-ip で /api/auth/refresh に31回送ると、31回目が 429 になる`, async ({ request, baseURL }) => {
       const origin = originOf(baseURL);
+      // 信頼する見出し（x-real-ip。E2E のアプリは CLIENT_IP_HEADER で信頼する）は 1 試験で 1 つに固定し、偽れる x-forwarded-for だけを毎回変える。
+      // x-real-ip まで毎回変えると枠を逃れて 429 にならず、付けないと全試験が共有する「送り元なし」の枠を使い切って他の試験を 10 分間 429 にする。
+      const fixedRealIp = uniqueForwardedFor();
       // 31回の途中で10分の枠が切り替わると数えが0に戻るので、切れ目が近いときは次の枠に入るのを待つ
       await ensureRoomInRateLimitWindow();
 
       let last: APIResponse | null = null;
       for (let attempt = 1; attempt <= 31; attempt += 1) {
         last = await request.post(REFRESH_PATH, {
-          headers: { 'x-forwarded-for': uniqueForwardedFor(), origin },
+          headers: { 'x-real-ip': fixedRealIp, 'x-forwarded-for': uniqueForwardedFor(), origin },
           maxRedirects: 0,
         });
       }

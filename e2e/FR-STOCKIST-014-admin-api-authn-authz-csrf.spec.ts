@@ -1,6 +1,6 @@
 /**
  * FR-STOCKIST-014 管理の取扱店の窓口（/api/admin/stockists と /api/admin/stockists/<id>）の認証・認可・CSRF・回数の制限・監査
- * 対応: SEC-STOCKIST-006-AC-01〜04 / SEC-STOCKIST-004-AC-01・02 / SEC-STOCKIST-005-AC-01 / SEC-STOCKIST-020-AC-01 / SEC-STOCKIST-021-AC-01
+ * 対応: SEC-STOCKIST-006-AC-01〜04 / SEC-STOCKIST-004-AC-01・02 / SEC-STOCKIST-005-AC-01 / SEC-STOCKIST-019-AC-03 / SEC-STOCKIST-020-AC-01 / SEC-STOCKIST-021-AC-01〜03
  *
  * 画面を描かない HTTP だけの試験なので、画面幅（390/768/1280）ごとには繰り返さない（FR-ADMIN-123 の本物の HTTP の試験と同じ扱い）。
  * 各 AC に1本。名前の先頭が AC の ID。
@@ -17,12 +17,11 @@
  *
  * 店舗の行は E2E-STK-<uuid> の名前で pg から作り、終わりに必ず消す。管理者・サポーターの権限の試験は、権限の設定を変える
  * 他の試験（FR-ADMIN-109・123）と同時に流れないよう withPermissionScenario（advisory lock 190520）の中で流す。
- * 回数の制限（送り元 x-forwarded-for・操作者）は試験ごとに別の送り元・別の利用者で数える。窓は floor(now/600s) の固定なので、
+ * 回数の制限（送り元 x-real-ip・操作者）は試験ごとに別の送り元・別の利用者で数える。送り元は E2E の固定の環境の CLIENT_IP_HEADER=x-real-ip
+ * で信頼される見出し（x-forwarded-for は読まれない。SEC-AUTH-013）。窓は floor(now/600s) の固定なので、
  * 数え始めと数え終わりで窓が変わったら、その結果は捨てて別の送り元でやり直す（Playwright の retry ではなく、窓の境の見張り）。
  *
- * 期待が今のコードで赤になる試験（設計書どおりの AC。隠さない）:
- * - SEC-STOCKIST-020-AC-01: 認可の前に送り元の枠で数えないので、121回目も 403 のまま
- * - SEC-STOCKIST-021-AC-01: 認可の失敗を監査に残さないので、audit_logs の行が増えない
+ * 送り元の枠は認可の前（SEC-STOCKIST-020）、認可で断った要求のうち操作者が分かる物は監査に残し、token の無い 401 は残さない（SEC-STOCKIST-021）。
  * JWT・Cookie が通信記録に残らないよう trace は切る。
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -70,7 +69,7 @@ function requireBaseUrl(baseURL: string | undefined): string {
   return baseURL;
 }
 
-/** 試験ごとに別の送り元（x-forwarded-for）。回数の枠を試験どうしで共有しない */
+/** 試験ごとに別の送り元（x-real-ip）。回数の枠を試験どうしで共有しない */
 function uniqueForwardedFor(): string {
   const bytes = randomBytes(3);
   return `10.${bytes[0]}.${bytes[1]}.${bytes[2]}`;
@@ -286,7 +285,7 @@ async function openApi(
   });
   return playwright.request.newContext({
     baseURL: requireBaseUrl(baseURL),
-    extraHTTPHeaders: { 'x-forwarded-for': forwardedFor },
+    extraHTTPHeaders: { 'x-real-ip': forwardedFor },
     storageState: {
       cookies: actor ? [cookie('sb-access-token', actor.accessToken), cookie('sb-refresh-token', actor.refreshToken)] : [],
       origins: [],
@@ -517,7 +516,6 @@ test('SEC-STOCKIST-005-AC-01 別のオリジンの PATCH を21回続けて送っ
 });
 
 test('SEC-STOCKIST-020-AC-01 取扱店の権限を持たない一般会員の token で、同じ600秒の窓の中で GET を121回送ると、121回目が 403 でなく 429 になり Retry-After が付く', async ({ playwright, baseURL }) => {
-  test.fail(true, 'SEC-STOCKIST-020 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
   test.setTimeout(TEST_TIMEOUT_MS);
   await withScenario({ permissionLock: false }, async (scenario) => {
     const member = await createActor(scenario, 'member', 'aal1');
@@ -547,7 +545,6 @@ test('SEC-STOCKIST-020-AC-01 取扱店の権限を持たない一般会員の to
 });
 
 test('SEC-STOCKIST-021-AC-01 サポーターの aal2 の利用者の PATCH /api/admin/stockists/<id> は 403 になり、audit_logs にその利用者の id・権限 admin.stockists.manage・失敗の結果を持つ行が1つ増える', async ({ playwright, baseURL }) => {
-  test.fail(true, 'SEC-STOCKIST-021 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
   test.setTimeout(TEST_TIMEOUT_MS);
   await withScenario({ permissionLock: true }, async (scenario) => {
     const row = await insertStockist(scenario, 'target', 'private');
@@ -583,5 +580,105 @@ test('SEC-STOCKIST-021-AC-01 サポーターの aal2 の利用者の PATCH /api/
     expect(entry.outcome, '失敗の結果').toBe('failure');
     const recorded = [entry.action, entry.resource, entry.resource_id, entry.detail, JSON.stringify(entry.metadata ?? null)].join('\n');
     expect(recorded, '要求した権限').toContain(MANAGE_PERMISSION);
+  });
+});
+
+test('SEC-STOCKIST-021-AC-02 token を付けない PATCH /api/admin/stockists/<id> は 401 になり、その送り元の audit_logs（resource が stockists）の行が増えない', async ({ playwright, baseURL }) => {
+  test.setTimeout(TEST_TIMEOUT_MS);
+  await withScenario({ permissionLock: true }, async (scenario) => {
+    const row = await insertStockist(scenario, 'target', 'private');
+    const sourceIp = uniqueForwardedFor();
+    const countRows = async (): Promise<number> => {
+      // 並列の実行では audit_logs 全体の件数が揺れるので全体は数えず、この試験の固定の送り元で絞る
+      const counted = await scenario.db.query(
+        "select count(*)::int as n from public.audit_logs where ip = $1 and resource = 'stockists'",
+        [sourceIp],
+      );
+      return counted.rows[0].n as number;
+    };
+
+    const anonymous = await openApi(playwright, baseURL, sourceIp, null);
+    try {
+      const reply = await send(anonymous, { label: 'PATCH 公開状態', method: 'PATCH', path: `${LIST_PATH}/${row.id}`, data: { status: 'published' } });
+      expect(reply.status, 'token の無い PATCH は 401').toBe(401);
+    } finally {
+      await anonymous.dispose();
+    }
+    expect(await countRows(), 'token の無い 401 では監査の行が増えない').toBe(0);
+
+    // 数える検索が空振りでないことの対照: 同じ送り元で操作者が分かる 403 を 1 回送ると、行が 1 つに増える
+    const supporter = await createActor(scenario, 'supporter', 'aal2');
+    const known = await openApi(playwright, baseURL, sourceIp, supporter);
+    try {
+      const reply = await send(
+        known,
+        { label: 'PATCH 公開状態', method: 'PATCH', path: `${LIST_PATH}/${row.id}`, data: { status: 'published' } },
+        { csrf: supporter.csrfToken },
+      );
+      expect(reply.status, '権限の無い PATCH は 403').toBe(403);
+    } finally {
+      await known.dispose();
+    }
+    await expect.poll(countRows, { message: '操作者が分かる 403 では行が 1 つ増える', timeout: 10_000 }).toBe(1);
+  });
+});
+
+test('SEC-STOCKIST-021-AC-03 取扱店の権限を持たない同じ利用者の GET を25回送ると、拒否の監査は20行（失敗）とまとめの1行（denied_burst）で止まる', async ({ playwright, baseURL }) => {
+  test.setTimeout(TEST_TIMEOUT_MS);
+  await withScenario({ permissionLock: false }, async (scenario) => {
+    // 数えの窓（600 秒）の境をまたぐと数えが 0 に戻るので、同じ窓に収まった結果だけを使い、境をまたいだら新しい利用者でやり直す
+    const outcome = await inOneWindow(async (forwardedFor) => {
+      const member = await createActor(scenario, 'member', 'aal1');
+      const api = await openApi(playwright, baseURL, forwardedFor, member);
+      try {
+        const statuses: number[] = [];
+        for (let count = 0; count < 25; count += 1) {
+          statuses.push((await send(api, { label: 'GET 一覧', method: 'GET', path: LIST_PATH })).status);
+        }
+        return { userId: member.userId, statuses };
+      } finally {
+        await api.dispose();
+      }
+    });
+
+    expect(outcome.statuses, '権限の無い GET は全部 403').toEqual(Array.from({ length: 25 }, () => 403));
+    const grouped = await scenario.db.query(
+      'select outcome, count(*)::int as n from public.audit_logs where actor_id = $1::uuid group by outcome',
+      [outcome.userId],
+    );
+    const byOutcome = Object.fromEntries(grouped.rows.map((entry: { outcome: string; n: number }) => [entry.outcome, entry.n]));
+    expect(byOutcome, '失敗 20 行 + まとめ 1 行だけ').toEqual({ failure: 20, denied_burst: 1 });
+  });
+});
+
+test('SEC-STOCKIST-019-AC-03 GET /api/admin/stockists/access は、店長の aal2 に 204、サポーターの aal2 に 403、未ログインに 401 を返し、どれも Cache-Control に no-store が含まれる', async ({ playwright, baseURL }) => {
+  test.setTimeout(TEST_TIMEOUT_MS);
+  await withScenario({ permissionLock: true }, async (scenario) => {
+    const manager = await createActor(scenario, 'admin', 'aal2');
+    const supporter = await createActor(scenario, 'supporter', 'aal2');
+    const access = { label: 'GET 作成の頁の入口', method: 'GET' as const, path: `${LIST_PATH}/access` };
+
+    const anonymousApi = await openApi(playwright, baseURL, uniqueForwardedFor(), null);
+    const managerApi = await openApi(playwright, baseURL, uniqueForwardedFor(), manager);
+    const supporterApi = await openApi(playwright, baseURL, uniqueForwardedFor(), supporter);
+    try {
+      const allowed = await send(managerApi, access);
+      expect(allowed.status, '店長は 204').toBe(204);
+      expect(allowed.text, '204 に本文は無い').toBe('');
+      expect(allowed.headers['cache-control'] ?? '', '204 の Cache-Control').toContain('no-store');
+
+      const denied = await send(supporterApi, access);
+      expect(denied.status, 'サポーターは 403').toBe(403);
+      expect(denied.json, '権限の足りない 403').toMatchObject({ error: 'Forbidden', permission: MANAGE_PERMISSION });
+      expect(denied.headers['cache-control'] ?? '', '403 の Cache-Control').toContain('no-store');
+
+      const anonymous = await send(anonymousApi, access);
+      expect(anonymous.status, '未ログインは 401').toBe(401);
+      expect(anonymous.headers['cache-control'] ?? '', '401 の Cache-Control').toContain('no-store');
+    } finally {
+      await anonymousApi.dispose();
+      await managerApi.dispose();
+      await supporterApi.dispose();
+    }
   });
 });

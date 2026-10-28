@@ -7,14 +7,14 @@
  * 管理者は手元の Supabase の本物の JWT（店長・aal2。e2e/admin-session-test-utils.ts）を Authorization: Bearer で送る。Cookie を送らないので
  * CSRF の token は要らない。変更の要求には許可のオリジン（Origin）を付ける。店舗の行と監査の行は手元の DB（postgres の接続）で作る・読む。
  *
- * 試験ごとに、新しい店長・新しい店舗の行・試験ごとの送り元（x-forwarded-for）を使う。変更の枠（20回/600秒）を送り元と操作者の
- * 両方で数えるので、他の試験や前の実行と枠を共有しない。ただし 012 は AC が決めた送り元（203.0.113.9）を使う（変更は1回だけ）。
+ * 試験ごとに、新しい店長・新しい店舗の行・試験ごとの送り元（x-real-ip。E2E の固定の環境の CLIENT_IP_HEADER=x-real-ip で信頼される見出し。
+ * x-forwarded-for は読まれない）を使う。変更の枠（20回/600秒）を送り元と操作者の両方で数えるので、他の試験や前の実行と枠を共有しない。
+ * ただし 012 は偽の x-forwarded-for（203.0.113.9）に、信頼する x-real-ip の別の値を付けて、行の ip が x-real-ip の値になることを見る（変更は1回だけ）。
  * 枠は時刻を 600 秒で割った固定の窓で数えるので、21回を同じ窓に収めるよう、窓の終わりが近い時は次の窓まで待ってから送る
  * （待つのは expect.poll で、固定の sleep ではない）。Playwright の再試行は使わない。
  *
- * 現行のコードが満たさない AC（文のとおりに書いてあり、緩めない。コードが直るまで test.fail で印を付ける）:
- * 012-AC-01（x-forwarded-for をそのまま監査の ip に入れる）。
- * 009・010・011・013・014 は 2026-10-26 に満たしたので test.fail を外してある（010 は route の包み withNoStore）。007 は元から満たす。
+ * 009・010・011・013・014 は 2026-10-26、012 は波 4（2026-10-28。送り元は x-real-ip だけを読む）に満たしたので test.fail を外してある
+ * （010 は route の包み withNoStore）。007 は元から満たす。
  *
  * 作った利用者・session・監査の行は消さない（db reset で消える）。店舗の行だけ、公開の取扱店を数える別の試験に混ざらないよう終わりに消す
  * （行は status='private' で作り、公開の画面には出さない。007 の 21回目の PATCH は 'published' を送るが、429 で断られて private のまま）。
@@ -53,7 +53,7 @@ type Scenario = {
   request: APIRequestContext;
   actor: AdminSessionActor;
   origin: string;
-  /** この試験だけの送り元（x-forwarded-for） */
+  /** この試験だけの送り元（x-real-ip） */
   ip: string;
   stockist: StockistRow;
   /** 作った行の名前の頭。この頭で始まる行を数えて、増えた・消えたを見る */
@@ -141,7 +141,7 @@ async function withScenario(
 }
 
 function readHeaders(s: Scenario, ip: string = s.ip): Record<string, string> {
-  return { ...bearerHeaders(s.actor), 'x-forwarded-for': ip };
+  return { ...bearerHeaders(s.actor), 'x-real-ip': ip };
 }
 
 function writeHeaders(s: Scenario, ip: string = s.ip): Record<string, string> {
@@ -205,7 +205,7 @@ test.describe('FR-STOCKIST-015 管理の取扱店の窓口の振る舞い', () =
     }, { freshWindow: true });
   });
 
-  test('SEC-STOCKIST-007-AC-02 毎回違う x-forwarded-for を付けても、変更の21回目の PATCH は操作者の枠で 429 になる', async ({ request, baseURL }) => {
+  test('SEC-STOCKIST-007-AC-02 毎回違う x-real-ip を付けても、変更の21回目の PATCH は操作者の枠で 429 になる', async ({ request, baseURL }) => {
     await withScenario(request, baseURL, async (s) => {
       const responses = await sendPatches(s, MUTATION_LIMIT + 1, true);
 
@@ -276,11 +276,10 @@ test.describe('FR-STOCKIST-015 管理の取扱店の窓口の振る舞い', () =
     });
   });
 
-  test('SEC-STOCKIST-012-AC-01 x-forwarded-for: 203.0.113.9 を付けた PATCH の監査の行の ip は 203.0.113.9 でない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-STOCKIST-012 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
+  test('SEC-STOCKIST-012-AC-01 x-forwarded-for: 203.0.113.9 に別の x-real-ip を付けた PATCH の監査の行の ip は 203.0.113.9 でなく x-real-ip の値になる', async ({ request, baseURL }) => {
     await withScenario(request, baseURL, async (s) => {
       const patched = await request.patch(one(s.stockist.id), {
-        headers: writeHeaders(s, FORGED_IP),
+        headers: { ...writeHeaders(s), 'x-forwarded-for': FORGED_IP },
         data: { status: 'private' },
       });
       expect(patched.status()).toBe(200);
@@ -289,6 +288,7 @@ test.describe('FR-STOCKIST-015 管理の取扱店の窓口の振る舞い', () =
       expect(rows).toHaveLength(1);
       expect(rows[0].outcome).toBe('success');
       expect(rows[0].ip ?? '').not.toContain(FORGED_IP);
+      expect(rows[0].ip, '行の ip は信頼する x-real-ip の値').toBe(s.ip);
     });
   });
 

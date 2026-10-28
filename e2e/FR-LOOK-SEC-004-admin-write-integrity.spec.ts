@@ -11,7 +11,7 @@
  * Cookie を送らないので CSRF の token は要らない。変更の要求には許可のオリジン（Origin）を付ける。
  * LOOK の行・監査の行・置き場の物は、手元の DB と service role の Storage で作る・読む（手元の Supabase の物だけを触る）。
  *
- * 場面ごとに新しい店長（aal2）と送り元（x-forwarded-for）を作る。回数の制限と1時間の量は操作者・送り元ごとに数えるので、
+ * 場面ごとに新しい店長（aal2）と送り元（x-real-ip。E2E の固定の環境の CLIENT_IP_HEADER が信じる見出し）を作る。回数の制限と1時間の量は操作者・送り元ごとに数えるので、
  * 試験どうしで数えが混ざらない。場面は withPermissionScenario の lock の中で流し、置き場の物の数（012-AC-01・013-AC-01）を
  * 数える間、同じ lock を使う別の試験の書き込みと混ざらないようにする。
  * describe を serial にしないのは、赤になる試験の後ろの試験を飛ばさないため（直列にするのは lock の役目）。
@@ -57,7 +57,7 @@ type Scenario = {
   /** service role の Storage（手元の Supabase だけ） */
   storage: SupabaseClient;
   origin: string;
-  /** この場面だけの送り元（x-forwarded-for） */
+  /** この場面だけの送り元（x-real-ip） */
   ip: string;
   /** LOOK の theme の頭。この頭で始まる行が、この場面が作った行 */
   themePrefix: string;
@@ -122,6 +122,9 @@ function pngOfSize(bytes: number): Buffer {
 function png(name: string, buffer: Buffer = makePng()): Img {
   return { name, type: 'image/png', buffer };
 }
+
+/** 読まれない見出し x-forwarded-for に付ける偽の送り元（監査の ip に入らないことを確かめる） */
+const FORGED_FORWARDED_FOR = '198.51.100.77';
 
 function uniqueIp(): string {
   const groups = randomBytes(12).toString('hex').match(/.{4}/g) ?? [];
@@ -210,7 +213,8 @@ async function withScenario(baseURL: string | undefined, run: (scenario: Scenari
 }
 
 function writeHeaders(s: Scenario): Record<string, string> {
-  return { ...bearerHeaders(s.actor), 'x-forwarded-for': s.ip, origin: s.origin };
+  // x-forwarded-for は読まれない（ADR-0416）ことを SEC-LOOK-020-AC-02 が見るため、偽の値を毎回付ける
+  return { ...bearerHeaders(s.actor), 'x-real-ip': s.ip, 'x-forwarded-for': FORGED_FORWARDED_FOR, origin: s.origin };
 }
 
 /** 作成・更新の本文（multipart）。images が空なら画像の部分を付けない */
@@ -425,8 +429,7 @@ test.describe('FR-LOOK-SEC-004 管理の LOOK の書き込みの保全（窓口�
     });
   });
 
-  test('SEC-LOOK-020-AC-02 作成・更新・状態の変更・削除の監査の行の ip の列が、4つとも空でない', async ({ request, baseURL }) => {
-    test.fail(true, 'SEC-LOOK-020-AC-02 今のコードは満たさない（docs/02_Requirements/areas/look.md）');
+  test('SEC-LOOK-020-AC-02 作成・更新・状態の変更・削除の監査の行の ip の列が、4つとも空でなく、x-real-ip の値で、偽の x-forwarded-for の値でない', async ({ request, baseURL }) => {
     await withScenario(baseURL, async (s) => {
       const before = await readLookAudits(s);
 
@@ -436,6 +439,8 @@ test.describe('FR-LOOK-SEC-004 管理の LOOK の書き込みの保全（窓口�
       expect(rows, '前提: 監査の行が4つ').toHaveLength(4);
       for (const row of rows) {
         expect((row.ip ?? '').trim(), `${row.action} の ip`).not.toBe('');
+        expect(row.ip, `${row.action} の ip は信頼する見出し x-real-ip の値`).toBe(s.ip);
+        expect(row.ip ?? '', `${row.action} の ip に偽の x-forwarded-for の値は入らない`).not.toContain(FORGED_FORWARDED_FOR);
       }
     });
   });

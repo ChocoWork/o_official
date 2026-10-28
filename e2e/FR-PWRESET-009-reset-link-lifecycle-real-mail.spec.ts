@@ -10,7 +10,7 @@ import { stubTurnstileScript } from './turnstile-test-utils';
 // 前提（実行時に確かめる）:
 //  - 手元の Supabase と Mailpit（MAIL_PROVIDER=local, MAIL_LOCAL_URL）が動いている
 //  - request の Turnstile は Cloudflare の「常に通る」試験用の鍵（.env.local）で、検証に外部ネットワークを使う
-//  - 回数の制限（IP 単位・宛先単位）は、試験ごとに別の x-forwarded-for と別の宛先で避ける
+//  - 回数の制限（IP 単位・宛先単位）は、試験ごとに別の x-real-ip（E2E のアプリが CLIENT_IP_HEADER で信頼する送り元）と別の宛先で避ける
 //
 // SEC-AUTH-019-AC-01（偽の x-forwarded-host で申請するとメールが届かない）はこのファイルで確かめない。
 // 許可の一覧で止まるのは VERCEL_ENV=production かつ https の本番の設定だけで、手元の E2E の設定では
@@ -45,7 +45,7 @@ async function requestReset(
 ) {
   return request.post('/api/auth/password-reset/request', {
     data: { email, turnstileToken: 'e2e-probe' },
-    headers: { 'Content-Type': 'application/json', Origin: ORIGIN, 'x-forwarded-for': uniqueIp(), ...headers },
+    headers: { 'Content-Type': 'application/json', Origin: ORIGIN, 'x-real-ip': uniqueIp(), ...headers },
   });
 }
 
@@ -86,7 +86,7 @@ async function waitForResetMails(request: APIRequestContext, email: string, coun
 
 /** ブラウザの文脈の通信（リンクの確かめ・パスワードの更新）も、試験ごとの送り元で数えさせる。 */
 async function useUniqueSource(page: Page): Promise<void> {
-  await page.context().setExtraHTTPHeaders({ 'x-forwarded-for': uniqueIp() });
+  await page.context().setExtraHTTPHeaders({ 'x-real-ip': uniqueIp() });
 }
 
 for (const viewport of viewports) {
@@ -212,7 +212,7 @@ test.describe('FR-PWRESET-009 reset link lifecycle (API contract)', () => {
     expect((await requestReset(request, member.email)).status()).toBe(200);
     const [mail] = await waitForResetMails(request, member.email, 1);
     expect(mail.token).not.toBeNull();
-    const headers = { 'Content-Type': 'application/json', Origin: ORIGIN, 'x-forwarded-for': uniqueIp() };
+    const headers = { 'Content-Type': 'application/json', Origin: ORIGIN, 'x-real-ip': uniqueIp() };
 
     // 1度 GET しただけでは消費されない: 確認ページへ 303 で送るだけ
     const opened = await request.get(`/api/auth/password-reset/link?token=${mail.token}`, { maxRedirects: 0 });
@@ -257,7 +257,7 @@ test.describe('FR-PWRESET-009 reset link lifecycle (API contract)', () => {
     // 再設定 Cookie の Max-Age が 600
     const link = await request.post('/api/auth/password-reset/link', {
       data: { token: mail.token },
-      headers: { 'Content-Type': 'application/json', Origin: ORIGIN, 'x-forwarded-for': uniqueIp() },
+      headers: { 'Content-Type': 'application/json', Origin: ORIGIN, 'x-real-ip': uniqueIp() },
     });
     expect(link.status()).toBe(200);
     const resetCookie = link

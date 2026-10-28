@@ -145,7 +145,7 @@ async function addVerifiedTotpFactor(db: PgClient, userId: string): Promise<void
 async function routeSourceIp(page: Page, ip: string): Promise<void> {
   for (const pattern of ['**/api/auth/login', '**/api/auth/otp/verify', '**/api/auth/post-login']) {
     await page.route(pattern, async (route) => {
-      await route.continue({ headers: { ...route.request().headers(), 'x-forwarded-for': ip } });
+      await route.continue({ headers: { ...route.request().headers(), 'x-real-ip': ip } });
     });
   }
 }
@@ -208,7 +208,7 @@ type ApiLoginBody = { next?: unknown };
 
 function postJson(page: Page, origin: string, path: string, ip: string, data?: unknown): Promise<APIResponse> {
   return page.request.post(new URL(path, origin).toString(), {
-    headers: { origin, 'x-forwarded-for': ip },
+    headers: { origin, 'x-real-ip': ip },
     data,
     failOnStatusCode: false,
     maxRedirects: 0,
@@ -434,7 +434,7 @@ for (const viewport of viewports) {
           const response = await request.get(`/api/auth/confirm?redirect_to=${redirectTo}${tokenQuery}`, {
             maxRedirects: 0,
             failOnStatusCode: false,
-            headers: { 'x-forwarded-for': uniqueSourceIp() },
+            headers: { 'x-real-ip': uniqueSourceIp() },
           });
           expect(response.status(), '303 で送る').toBe(303);
           const location = response.headers()['location'];
@@ -560,7 +560,7 @@ for (const viewport of viewports) {
       const csrf = (await page.context().cookies(origin)).find((cookie) => cookie.name === CSRF_COOKIE)?.value;
       if (!csrf) throw new Error('CSRF の Cookie が無い');
       const logout = await page.request.post(new URL('/api/auth/logout', origin).toString(), {
-        headers: { origin, 'x-csrf-token': csrf, 'x-forwarded-for': uniqueSourceIp() },
+        headers: { origin, 'x-csrf-token': csrf, 'x-real-ip': uniqueSourceIp() },
         failOnStatusCode: false,
         maxRedirects: 0,
       });

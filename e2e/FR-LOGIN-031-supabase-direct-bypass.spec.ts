@@ -471,7 +471,7 @@ for (const viewport of viewports) {
 
       // 書いた値が入った JWT を、アプリの窓口で作り直す（Cookie が更新される）
       const refreshed = await page.request.post('/api/auth/refresh', {
-        headers: { origin, 'x-forwarded-for': source },
+        headers: { origin, 'x-real-ip': source },
         maxRedirects: 0,
       });
       expect(refreshed.status(), '/api/auth/refresh（準備）').toBe(200);

@@ -32,10 +32,9 @@ function localAuthAdmin() {
 }
 
 /**
- * 試験ごとに別の送り元として数えさせる値（全部の E2E が共有する 127.0.0.1 の枠を使い切らない）。
- * 回数の制限は x-forwarded-for の先頭を送り元に数える（src/features/auth/middleware/rateLimit.ts の getIpFromRequest）。
- * これは SEC-*-006 の x-forwarded-for を信用する食い違い（FR-SEARCH-018 と同じ）に頼る分離で、その食い違いが直ると
- * 効かなくなる（全部が接続の送り元の 1 つの枠になる）。直ったら、枠を数え直す仕組みか手元だけ緩い上限に替える。
+ * 試験ごとに別の送り元として数えさせる値（見出しの無い要求が集まる ip null の 1 つの枠を使い切らない）。
+ * 回数の制限と監査の IP は x-real-ip を送り元に数える（src/lib/request-ip.ts の getClientIp。E2E の固定の環境の
+ * CLIENT_IP_HEADER=x-real-ip で有効になる。x-forwarded-for は読まない。SEC-AUTH-013）。
  */
 function randomSourceIp(): string {
   const [a, b, c] = randomBytes(3);
@@ -68,8 +67,8 @@ export async function loginAsStaffAal2(page: Page, role: StaffRole, label: strin
   await loginAsMember(page, member, sourceIp);
   // 以後のブラウザの要求（画面が撃つ /api/auth/refresh と、管理 API の変更の枠 20 回/600 秒）もこの送り元で数える。
   // 付けないと、FR-STOCKIST-013 の 3 つの幅の変更（1 つの幅で作成 2・更新 2・切り替え 2・削除 2 の 8 回、計 24 回）が
-  // 127.0.0.1 の 1 つの枠（20 回）を使い切り、最後の幅（desktop）の更新・削除が 429 で落ちる。
-  await page.setExtraHTTPHeaders({ 'x-forwarded-for': sourceIp });
+  // ip null の 1 つの枠（20 回）を使い切り、最後の幅（desktop）の更新・削除が 429 で落ちる。
+  await page.setExtraHTTPHeaders({ 'x-real-ip': sourceIp });
 
   // aal2 の根拠を足す（先頭のコメントを参照）。ログインで出来た session だけが対象
   await withLocalDb(async (db) => {
@@ -84,14 +83,14 @@ export async function loginAsStaffAal2(page: Page, role: StaffRole, label: strin
 
   const origin = new URL(page.url()).origin;
   const refreshed = await page.request.post(new URL('/api/auth/refresh', origin).toString(), {
-    headers: { origin, 'x-forwarded-for': sourceIp },
+    headers: { origin, 'x-real-ip': sourceIp },
     maxRedirects: 0,
   });
   if (!refreshed.ok()) {
     throw new Error(`aal2 のトークンを受けられない: ${refreshed.status()}`);
   }
   const me = await page.request.get(new URL('/api/auth/me', origin).toString(), {
-    headers: { 'x-forwarded-for': sourceIp },
+    headers: { 'x-real-ip': sourceIp },
     maxRedirects: 0,
   });
   const body = (await me.json().catch(() => ({}))) as {

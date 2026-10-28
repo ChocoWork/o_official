@@ -7,9 +7,9 @@
  *   005-AC-02・020-AC-01 は頁をブラウザで開く。020-AC-02 は外のオリジンの要求を request fixture で送り、ブラウザで開くのはその閲覧者のプレビューだけ。3つの幅（mobile 390・tablet 768・desktop 1280）は試験の頭で当て、
  *   AC ごとに幅ごとの試験を1本ずつ流す。
  * - 回数の制限の枠は search:public（120 / 600秒）・suggest:public（200 / 600秒）・search:preview（20 / 600秒）。
- *   送り元ごとに数えるので、127.0.0.1 から出る検索系の試験（ほかの FR-SEARCH-* ・ホームの /?q= の試験）と枠を共有する。
+ *   送り元ごとに数えるので、見出しの無い要求が集まる送り元 null の枠は、検索系のほかの試験（ほかの FR-SEARCH-* ・ホームの /?q= の試験）と共有する。
  *   そのため試験の前後に、手元の DB の public.rate_limit_counters からこの3つの枠の行を消す。
- *   消す行にはほかの試験の行も入り、この spec は枠を使い切る（006-AC-01 は x-forwarded-for を変えても 127.0.0.1 の枠を使う）ので、
+ *   消す行にはほかの試験の行も入り、この spec は枠を使い切る（006-AC-01 は x-forwarded-for を変えても送り元 null の枠を使う）ので、
  *   ほかの検索の試験と同時に流さない。playwright.config.ts で、この spec は isolated-global の project に置く
  *   （chromium の project が全部終わった後に、その teardown として流れる。chromium の試験が赤でも流れる）。
  *   単独で流す時は `npx playwright test e2e/FR-SEARCH-022` でも同じ project になる。
@@ -17,9 +17,10 @@
  *   外している間は、ほかの検索の試験が壊れるので、この spec（最後に単独で流れる）に置く。外した権限は finally で元に戻す。
  *   中断して戻らなかった時は `npm run db:reset` で戻る。
  * - 枠は「送り元 × 10分（時計の10分きざみ）」。途中で枠が切り替わると数えが0に戻るので、切れ目が近いときは切り替わるのを条件で待つ。
- * - 送り元は今のコードでは x-forwarded-for の先頭の値。005-AC-01 は試験ごとに違う x-forwarded-for を付けて枠を分ける
- *   （SEC-SEARCH-006 が直って使わなくなると、全部が接続の送り元の1つの枠になり、消した直後なら同じ結果になる）。
- * - 006-AC-01・020-AC-01 は本番と同じ中継の構成が要る（020-AC-01 は偽の送り元の側だけで、波 4 の rateLimit.ts の直しを待つ。020-AC-02 の外のオリジンの側は直った）。手元では中継の見出しの付け方をまねる
+ * - 送り元は x-vercel-forwarded-for → x-real-ip の順に読む（E2E の固定の環境 CLIENT_IP_HEADER=x-real-ip の時。x-forwarded-for は読まない）。
+ *   005-AC-01 は試験ごとに違う x-real-ip を付けて枠を分ける。006-AC-01 は x-forwarded-for だけを毎回変え（x-real-ip は付けない）、
+ *   読まれない見出しを変えても、見出しの無い要求が集まる送り元 null の1つの枠を逃れられないことを見る。
+ * - 006-AC-01・020-AC-01 は本番と同じ中継の構成が要る。手元では中継の見出しの付け方をまねる
  *   （x-forwarded-for は中継が付け足した形、x-real-ip と x-vercel-forwarded-for は中継が付けた送り元）。
  * - ファイル内の試験は1つの worker で順に流す（describe の mode: 'default'）。赤の試験の後ろが「流れなかった」扱いにならないよう serial にはしない。
  * - HTTP だけの試験（005-AC-01・006-AC-01）は幅で結果が変わらないので 1 回だけ流す。画面を開く試験は 3 つの幅で流す。
@@ -96,7 +97,7 @@ async function ensureRoomInRateLimitWindow(): Promise<void> {
     .toBe(true);
 }
 
-// ---- 送り元（x-forwarded-for）----
+// ---- 送り元（x-real-ip・x-vercel-forwarded-for）----
 
 const usedForwardedFor = new Set<string>();
 
@@ -191,7 +192,7 @@ test.describe('FR-SEARCH-022 公開の検索の回数の制限', () => {
     await ensureRoomInRateLimitWindow();
 
     // /api/search: 600秒の中で121回目
-    const searchHeaders = { 'x-forwarded-for': uniqueForwardedFor() };
+    const searchHeaders = { 'x-real-ip': uniqueForwardedFor() };
     const searchPath = `/api/search?q=${SEARCH_TERM}`;
     const searchBefore = await sendBurst(SEARCH_LIMIT, () => getApi(request, searchPath, searchHeaders));
     expectNoneLimited(searchBefore, `/api/search の${SEARCH_LIMIT}回目までは 429 にならないこと`);
@@ -200,7 +201,7 @@ test.describe('FR-SEARCH-022 公開の検索の回数の制限', () => {
     expect(search121.headers()['retry-after'], '/api/search の121回目の Retry-After').toBeTruthy();
 
     // /api/suggest: 600秒の中で201回目
-    const suggestHeaders = { 'x-forwarded-for': uniqueForwardedFor() };
+    const suggestHeaders = { 'x-real-ip': uniqueForwardedFor() };
     const suggestPath = '/api/suggest?q=Ts';
     const suggestBefore = await sendBurst(SUGGEST_LIMIT, () => getApi(request, suggestPath, suggestHeaders));
     expectNoneLimited(suggestBefore, `/api/suggest の${SUGGEST_LIMIT}回目までは 429 にならないこと`);
@@ -278,7 +279,6 @@ test.describe('FR-SEARCH-022 公開の検索の回数の制限', () => {
   test(`SEC-SEARCH-006-AC-01 x-forwarded-for を毎回変えて /api/search を121回送っても121回目が 429`, async ({
     request,
   }) => {
-    test.fail(true, 'SEC-SEARCH-006 今のコードは満たさない（docs/02_Requirements/areas/search.md）');
     test.setTimeout(180_000);
     await ensureRoomInRateLimitWindow();
 
@@ -297,7 +297,6 @@ test.describe('FR-SEARCH-022 公開の検索の回数の制限', () => {
       page,
       request,
     }) => {
-      test.fail(true, 'SEC-SEARCH-020 偽の送り元の側は今のコードは満たさない。rateLimit.ts（共有）の直しは波 4（docs/02_Requirements/areas/search.md）');
       test.setTimeout(180_000);
       await applyViewport(page, viewport);
       await ensureRoomInRateLimitWindow();

@@ -14,8 +14,8 @@
  *
  * 足した行は finally で消す（語は試験ごとの一意の印を含み、ほかの試験の行に一致しない）。足した公開の行は、ほかの試験の `q=a` や
  * `q=Synthetic` に混ざらないよう、印に母音の a を含めず、説明は `zq`、作成日は 2000-01-01（/item の先頭に来ない）にする。
- * /api/search を呼ぶ道は、共有の送り元 127.0.0.1 の枠を使い切らないよう、このファイルだけの x-forwarded-for を付ける
- * （SEC-SEARCH-006 が直って x-forwarded-for を信用しなくなると、この分離は効かなくなる）。JWT が通信記録に残らないよう trace は切る。
+ * /api/search を呼ぶ道は、見出しの無い要求が集まる送り元 null の枠を使い切らないよう、このファイルだけの x-real-ip を付ける
+ * （E2E の固定の環境 CLIENT_IP_HEADER=x-real-ip が信頼する見出し。x-forwarded-for は読まれない）。JWT が通信記録に残らないよう trace は切る。
  * 007 と 008 は今の移行では赤になる（search_* は limit_count を丸めず、search_public_* は PUBLIC に開いている）。
  */
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -34,7 +34,7 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 const LOCAL_DB_URL = process.env.E2E_LOCAL_DB_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 
 const MAX_ROWS = 8;
-const API_FORWARDED_FOR = { 'x-forwarded-for': '198.18.20.20' };
+const API_FORWARDED_FOR = { 'x-real-ip': '198.18.20.20' };
 const clientOptions = { auth: { persistSession: false, autoRefreshToken: false } };
 
 // ---- 手元の環境と DB ----

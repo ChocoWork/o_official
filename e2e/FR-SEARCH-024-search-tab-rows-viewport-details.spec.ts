@@ -2,9 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 
 // SEARCH の種別フィルタ（ALL / ITEM / LOOK / NEWS）の下線・候補ドロップダウン・結果行について、
 // FREQ-192 / 193 / 195 / 199 / 200 / 201 の受け入れ基準を 3 つの幅で確かめる（匿名）。
-// 共有の送り元 127.0.0.1 の枠（search:public 120 回/600 秒）を他の検索の試験と取り合わないよう、このファイルだけの
-// x-forwarded-for を付ける（SEC-SEARCH-006 が直って x-forwarded-for を信用しなくなると、この分離は効かなくなる）。
-test.use({ extraHTTPHeaders: { 'x-forwarded-for': '198.18.24.24' } });
+// 見出しの無い要求が集まる送り元 null の枠（search:public 120 回/600 秒）を他の検索の試験と取り合わないよう、このファイルだけの
+// x-real-ip を付ける（E2E の固定の環境 CLIENT_IP_HEADER=x-real-ip が信頼する見出し。x-forwarded-for は読まれない）。
+test.use({ extraHTTPHeaders: { 'x-real-ip': '198.18.24.24' } });
 
 const VIEWPORTS = [
   { name: 'mobile', width: 390, height: 844 },

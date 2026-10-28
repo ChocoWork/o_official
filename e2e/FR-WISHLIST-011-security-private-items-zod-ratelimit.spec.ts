@@ -180,9 +180,9 @@ test.describe('FR-WISHLIST-011 Security - Private Items, Zod Validation, Rate Li
     }) => {
       test.setTimeout(90_000);
 
-      // IP 単位の上限（60 回/分）は、並列実行中の他のテストと 127.0.0.1 を共有している。
+      // IP 単位の上限（60 回/分）は、見出しの無い要求が集まる送り元 null の枠を並列実行中の他のテストと共有している。
       // 持ち主単位の上限だけを見るため、この試験では文書用 IPv6（2001:db8::/32）を名乗る。
-      // x-forwarded-for をそのまま使うのは Vercel を通らないローカルの E2E サーバーだけ。
+      // x-real-ip を送り元として読むのは、E2E の固定の環境 CLIENT_IP_HEADER=x-real-ip を入れた E2E サーバーだけ（x-forwarded-for は読まない）。
       const forwardedFor = `2001:db8::${Date.now().toString(16).slice(-4)}:${Math.floor(Math.random() * 0xffff).toString(16)}`;
 
       // 回数は1分ごとの固定枠で数える。36 回を送る途中で枠が切り替わると数え直しになり、
@@ -196,7 +196,7 @@ test.describe('FR-WISHLIST-011 Security - Private Items, Zod Validation, Rate Li
       // まだ無く、IP だけで数えられるので、先に1回入れて印を受け取る（この1回は持ち主の回数に入らない）。
       const first = await request.post('/api/wishlist', {
         data: { item_id: 1 },
-        headers: { ...buildWishlistHeaders(sessionCookie), 'x-forwarded-for': forwardedFor },
+        headers: { ...buildWishlistHeaders(sessionCookie), 'x-real-ip': forwardedFor },
       });
       expect([201, 409]).toContain(first.status());
       const wishlistCookie = readWishlistCookie(first);
@@ -208,7 +208,7 @@ test.describe('FR-WISHLIST-011 Security - Private Items, Zod Validation, Rate Li
       for (let i = 0; i < 35; i++) {
         const res = await request.post('/api/wishlist', {
           data: { item_id: validItemIds[i % validItemIds.length] },
-          headers: { ...buildWishlistHeaders(sessionCookie, wishlistCookie), 'x-forwarded-for': forwardedFor },
+          headers: { ...buildWishlistHeaders(sessionCookie, wishlistCookie), 'x-real-ip': forwardedFor },
         });
         responses.push(res);
       }

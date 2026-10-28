@@ -4,8 +4,10 @@
  *
  * - 管理側の試験は本物の aal2 の店長（または サポーター）でログインする（e2e/stockist-admin-test-utils.ts）。窓口・認可・CSRF は差し替えない。
  * - 試験用の店は名前を E2E-STK- で始め、手元の DB へ pg で入れて、終わりに名前の頭で消す。
- * - 現在のコードでは赤になる想定: SEC-STOCKIST-015-AC-01（編集の頁が id を確かめない）、
- *   SEC-STOCKIST-019-AC-01・AC-02（作成の頁が権限を確かめない）。赤は実装の欠陥の証拠であり、期待を弱めて通さない。
+ * - 現在のコードでは赤になる想定: SEC-STOCKIST-015-AC-01（編集の頁が id を確かめない）。赤は実装の欠陥の証拠であり、期待を弱めて通さない。
+ * - SEC-STOCKIST-019-AC-01（作成）・AC-02 は波 4 で満たした。作成の頁は入口で GET /api/admin/stockists/access を呼び、通るまで「読み込み中...」、
+ *   通れば入力欄、401／403 は固定の誤りの文（main .text-red-600）だけを出す。入力欄が無いことの確かめは、頁が「読み込み中...」の間に
+ *   即座に通って空振りしないよう、読み込みの終わりと誤りの文が見えることを先に確かめる。
  * - FR-ADMIN-006-AC-02・FREQ-18-AC-01（作成が DB の必須の列 type で落ちる）は、移行 stockists_type_optional（type の NOT NULL を外す）で直した。
  *   この移行を当てた DB でだけ通る。
  * - 他のファイルの取扱店・ホームの試験と並行に流れるので、公開の画面の出方を確かめる必要が無い行は非公開で足す
@@ -316,8 +318,12 @@ for (const viewport of viewports) {
     });
 
     test(`SEC-STOCKIST-019-AC-01 ${label}: ログインしていない状態で作成の頁を開くと店舗名の入力欄が表示されない`, async ({ page }) => {
-      test.fail(true, 'SEC-STOCKIST-019 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
       await page.goto('/admin/stockist/create');
+      // 「読み込み中...」の間は入力欄が無いのが当たり前なので、読み込みが終わり、誤りの文が出てから入力欄の無さを確かめる
+      await expect(page.getByText('読み込み中')).toHaveCount(0);
+      const message = page.locator('main .text-red-600');
+      await expect(message, '未ログインの誤りの文').toBeVisible();
+      await expect(message, '未ログインの誤りの文').toHaveText(/\S/);
       await expect(page.getByRole('textbox', { name: '店舗名' })).toHaveCount(0);
     });
 
@@ -328,7 +334,6 @@ for (const viewport of viewports) {
     });
 
     test(`SEC-STOCKIST-019-AC-02 ${label}: サポーターの役割の aal2 の利用者が作成の頁を開いても店舗名の入力欄が表示されない`, async ({ page }) => {
-      test.fail(true, 'SEC-STOCKIST-019 今のコードは満たさない（docs/02_Requirements/areas/stockist.md）');
       const prefix = `E2E-STK-s019-${viewport.name}-${tag()}`;
 
       await asStaff(page, 'supporter', prefix, async () => {
@@ -336,6 +341,11 @@ for (const viewport of viewports) {
         await withPermissionScenario(async () => {
           await page.goto('/admin/stockist/create');
           await expect(page.locator('#main-content')).toBeVisible();
+          // 「読み込み中...」の間は入力欄が無いのが当たり前なので、読み込みが終わり、権限の無い誤りの文が出てから入力欄の無さを確かめる
+          await expect(page.getByText('読み込み中')).toHaveCount(0);
+          const message = page.locator('main .text-red-600');
+          await expect(message, 'サポーターの誤りの文').toBeVisible();
+          await expect(message, 'サポーターの誤りの文').toHaveText(/\S/);
           await expect(page.getByRole('textbox', { name: '店舗名' })).toHaveCount(0);
         });
       });

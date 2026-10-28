@@ -50,8 +50,16 @@ export function computeFake17TrackBuild(): string {
   return hash.digest('hex').slice(0, 16);
 }
 
-/** E2E だけで使う固定の値。本番の値ではない。 */
+/**
+ * E2E だけで使う固定の値。本番の値ではない。
+ *
+ * `CLIENT_IP_HEADER` は、アプリが送り元の IP を `x-real-ip` から読んでよいことを示す旗（ADR-0416）。
+ * この定数は `buildE2EOverrides` の中だけで混ぜる。`buildE2EOverrides` は手元の Supabase の状態を読んだ後にだけ呼ばれ、
+ * 混ぜた後の環境は `assertSafeE2EEnv`（`findUnsafeE2ESettings`）が通す。Supabase の住所が手元でなければ、その見張りが
+ * `CLIENT_IP_HEADER` の有無に関わらず止める。だから旗が効くのは手元の Supabase の時だけで、専用の見張りは足さない。
+ */
 export const E2E_FIXED_ENV: Readonly<Record<string, string>> = {
+  CLIENT_IP_HEADER: 'x-real-ip',
   MAIL_PROVIDER: 'local',
   MAIL_FROM_ADDRESS: 'no-reply@e2e.test',
   CONTACT_TO_EMAIL: 'shop@e2e.test',

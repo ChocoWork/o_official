@@ -1,6 +1,6 @@
 /**
  * FR-ADMIN-MISC-004 監査ログの閲覧（ADMIN。窓口 GET /api/admin/audit-logs）
- * 対応: FREQ-508-AC-01・AC-02、SEC-ADMIN-011-AC-01、SEC-ADMIN-023-AC-01
+ * 対応: FREQ-508-AC-01・AC-02、SEC-ADMIN-011-AC-01、SEC-ADMIN-023-AC-01・AC-02
  *
  * 道: 手元の Supabase の GoTrue が署名した本物の aal2 の access token（共有の道具 e2e/admin-session-test-utils.ts）を
  * Authorization: Bearer で本物の窓口へ送る（Playwright の request）。窓口の認可（署名・セッションの生存・DB の ACL）と
@@ -9,7 +9,7 @@
   * FREQ-508-AC-01 は「監査ログの一覧が表示される」と書くが、監査ログを出す画面が無い（TM-ADMIN-02）。
  * そのため窓口（API）が一覧の行を返すところまでを確かめる。画面の表示は確かめていない（画面ができたら画面の確かめを足す）。
  *
- * SEC-ADMIN-023-AC-01 は、問い合わせの詳細と監査ログの読み出しを窓口が記録するようになったので通る（TM-ADMIN-64。読んだ人の IP は波 4 で、この確かめは id とメールだけを見る）。AC の文のとおりに書いてあり、緩めない。
+ * SEC-ADMIN-023-AC-01 は、問い合わせの詳細と監査ログの読み出しを窓口が記録するようになったので通る（TM-ADMIN-64。この確かめは id とメールだけを見る。読んだ人の IP は SEC-ADMIN-023-AC-02 が見る）。AC の文のとおりに書いてあり、緩めない。
  *
  * 権限の表（role_permissions）は手元の DB の共有の状態で、権限の設定の試験（FR-ADMIN-109・123）が admin.audit.read を一時的に
  * 動かしうる。そのため全部の試験を withPermissionScenario（同じ advisory lock）の中で流し、並行の差し替えを避ける。
@@ -307,6 +307,57 @@ test.describe('FR-ADMIN-MISC-004 監査ログの閲覧', () => {
           expect(serialized).not.toContain(inquiryName);
           expect(serialized).not.toContain(inquiryEmail);
           expect(serialized).not.toContain(inquiryBody);
+        }
+      } finally {
+        await client.query('delete from public.contact_inquiries where id = $1::uuid', [inquiryId]).catch(() => undefined);
+      }
+    });
+  });
+
+  test(`SEC-ADMIN-023-AC-02 問い合わせの詳細と監査ログを読むと、読んだ人の IP（x-real-ip の値）とブラウザの名乗りが記録に入り、偽の x-forwarded-for は入らない`, async ({ request }) => {
+    await withPermissionScenario(async (client) => {
+      const { admin } = await getActors(client);
+
+      const marker = randomUUID();
+      const inquiryEmail = `e2e-admin-misc-reader-${marker}@example.com`;
+      const inserted = await client.query(
+        `insert into public.contact_inquiries (name, email, inquiry_type, subject, message, status)
+         values ($1, $2, 'other', $3, $4, 'open') returning id::text as id`,
+        [`E2E氏名${marker.slice(0, 8)}`, inquiryEmail, `E2E件名${marker.slice(0, 8)}`, `E2E本文-${marker}`],
+      );
+      const inquiryId = inserted.rows[0].id as string;
+      // 試験ごとに別の送り元（手元の E2E の固定の環境が x-real-ip を信頼する）と、この試験だけのブラウザの名乗り
+      const octets = marker.replace(/-/g, '');
+      const realIp = `198.18.${parseInt(octets.slice(0, 2), 16)}.${(parseInt(octets.slice(2, 4), 16) % 253) + 1}`;
+      const spoofedIp = '203.0.113.99';
+      const userAgent = `e2e-sec-admin-023-${marker}`;
+
+      try {
+        const knownRows = await client.query('select id::text as id from public.audit_logs where actor_id = $1::uuid', [admin.id]);
+        const knownIds = new Set(knownRows.rows.map((row) => row.id as string));
+        const headers = { ...bearer(admin), 'x-real-ip': realIp, 'x-forwarded-for': `${spoofedIp}, 10.0.0.1`, 'user-agent': userAgent };
+
+        const detail = await request.get(`/api/admin/contact/${inquiryId}`, { headers, maxRedirects: 0 });
+        expect(detail.status()).toBe(200);
+        const audit = await request.get(AUDIT_LOGS_PATH, { headers, maxRedirects: 0 });
+        expect(audit.status()).toBe(200);
+
+        const readRows = async (): Promise<Array<Record<string, string | null>>> => {
+          const result = await client.query(
+            `select id::text as id, action, ip, user_agent from public.audit_logs
+              where actor_id = $1::uuid and action = any($2::text[]) order by created_at, id`,
+            [admin.id, ['admin.contact.read', 'admin.audit_logs.read']],
+          );
+          return (result.rows as Array<Record<string, string | null>>).filter((row) => !knownIds.has(row.id as string));
+        };
+        await expect.poll(async () => (await readRows()).length, { timeout: 5_000 }).toBe(2);
+
+        const rows = await readRows();
+        expect(rows.map((row) => row.action).sort()).toEqual(['admin.audit_logs.read', 'admin.contact.read']);
+        for (const row of rows) {
+          expect(row.ip, `${row.action} の ip が x-real-ip の値でない`).toBe(realIp);
+          expect(row.user_agent, `${row.action} の user_agent`).toBe(userAgent);
+          expect(JSON.stringify(row)).not.toContain(spoofedIp);
         }
       } finally {
         await client.query('delete from public.contact_inquiries where id = $1::uuid', [inquiryId]).catch(() => undefined);

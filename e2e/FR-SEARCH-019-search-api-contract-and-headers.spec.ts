@@ -2,8 +2,8 @@ import { expect, test, type APIResponse } from '@playwright/test';
 
 // 検索・サジェストの窓口の契約（件数の上限・入力の確かめ・応答の見出し・署名の期限）を、
 // 匿名の HTTP で確かめる。HTTP の応答は画面の幅で変わらないので、幅のくり返しはせず 1 回だけ流す。
-// 共有の送り元 127.0.0.1 の枠（search:public 120 回/600 秒）を使い切らないよう、このファイルだけの
-// x-forwarded-for を付ける（SEC-SEARCH-006 が直って x-forwarded-for を信用しなくなると、この分離は効かなくなる）。
+// 見出しの無い要求が集まる送り元 null の枠（search:public 120 回/600 秒）を使い切らないよう、このファイルだけの
+// x-real-ip を付ける（E2E の固定の環境 CLIENT_IP_HEADER=x-real-ip が信頼する見出し。x-forwarded-for は読まれない）。
 // SEC-SEARCH-003-AC-01 は題に \ を含む公開の商品を足す必要があるので FR-SEARCH-021 に置く。
 
 type SearchResult = {
@@ -45,7 +45,7 @@ function expectSignedUrlWithinOneHour(imageUrl: string): void {
 }
 
 test.describe('FR-SEARCH-019 検索の窓口の契約と見出し', () => {
-  test.use({ extraHTTPHeaders: { 'x-forwarded-for': FORWARDED_FOR } });
+  test.use({ extraHTTPHeaders: { 'x-real-ip': FORWARDED_FOR } });
 
   test(`FREQ-187-AC-01 preview を付けない /api/search は、いずれかの種別が 3 件を超えて返る`, async ({ request }) => {
     const body = await searchJson(await request.get('/api/search?q=a'));

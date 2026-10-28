@@ -27,7 +27,7 @@ const INVALID_OTP_MESSAGE = '認証コードが無効、または期限切れで
 // session_id は proxy が誰にでも配る匿名の閲覧の印（ログインの Cookie ではない）なので含めない。
 const SESSION_COOKIES = ['sb-access-token', 'sb-refresh-token'];
 
-/** 回数の制限は送り元ごとに数える。全試験が共有する 127.0.0.1 の枠を使い切らないよう、試験ごとに別の値を付ける。 */
+/** 回数の制限は送り元ごとに数える。見出しの無い要求が集まる「送り元なし」の枠を全試験で使い切らないよう、試験ごとに別の値を付ける。 */
 function uniqueSourceIp(): string {
   const [a, b, c] = randomBytes(3);
   return `10.${a}.${b}.${Math.max(1, c)}`;
@@ -105,7 +105,7 @@ async function sendRealLoginCode(page: Page, member: TestMemberWithPassword, sou
   await setLoginTwoFactorCookie(page, member.email, member.userId);
   const previousIds = new Set(await listMailIds(member.email));
   const resend = await page.request.post(new URL('/api/auth/login/resend', origin).toString(), {
-    headers: { origin, 'x-forwarded-for': sourceIp },
+    headers: { origin, 'x-real-ip': sourceIp },
     maxRedirects: 0,
   });
   expect(resend.status()).toBe(200);
@@ -209,7 +209,7 @@ for (const viewport of viewports) {
       // 回数の制限を試験ごとの送り元で数えさせる（本物のログインと確認コードの検証の窓口に付ける）
       for (const pattern of ['**/api/auth/login', '**/api/auth/otp/verify']) {
         await page.route(pattern, async (route) => {
-          await route.continue({ headers: { ...route.request().headers(), 'x-forwarded-for': sourceIp } });
+          await route.continue({ headers: { ...route.request().headers(), 'x-real-ip': sourceIp } });
         });
       }
       const previousIds = new Set<string>();
@@ -261,7 +261,7 @@ for (const viewport of viewports) {
 
       // 正しいコードを送ってもログインできない
       const verify = await page.request.post(new URL('/api/auth/otp/verify', origin).toString(), {
-        headers: { origin, 'x-forwarded-for': sourceIp },
+        headers: { origin, 'x-real-ip': sourceIp },
         data: { code },
         maxRedirects: 0,
       });
@@ -301,7 +301,7 @@ for (const viewport of viewports) {
       });
 
       const verify = await page.request.post(new URL('/api/auth/otp/verify', origin).toString(), {
-        headers: { origin, 'x-forwarded-for': sourceIp },
+        headers: { origin, 'x-real-ip': sourceIp },
         data: { code },
         maxRedirects: 0,
       });

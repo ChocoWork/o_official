@@ -96,7 +96,7 @@ test.describe('FR-PWRESET-002 password reset hardening (API contract)', () => {
         headers: {
           'Content-Type': 'application/json',
           Origin: 'http://localhost:3000',
-          'x-forwarded-for': `10.${randomBytes(1)[0]}.${randomBytes(1)[0]}.${randomBytes(1)[0]}`,
+          'x-real-ip': `10.${randomBytes(1)[0]}.${randomBytes(1)[0]}.${randomBytes(1)[0]}`,
         },
       });
 

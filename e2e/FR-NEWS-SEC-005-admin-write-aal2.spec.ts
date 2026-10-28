@@ -1,6 +1,6 @@
 /**
  * 管理の記事の書き込みの窓口（POST /api/admin/news、PUT・PATCH・DELETE /api/admin/news/[id]）の振る舞い（NEWS 領域）。
- * 受け入れ条件: SEC-NEWS-016-AC-01・AC-02（監査の記録）、017-AC-01・AC-02・AC-03（画像の中身・保存の名前・大きさ）、
+ * 受け入れ条件: SEC-NEWS-016-AC-01・AC-02・AC-03（監査の記録。AC-03 は送り元の IP が入る。旧 AC-01 の「IP の値が入っていない」を改めた）、017-AC-01・AC-02・AC-03（画像の中身・保存の名前・大きさ）、
  * 018-AC-01・AC-02（使わなくなった画像を置き場から消す）。
  *
  * 道: 本番ビルドの窓口へ Playwright の request で直に要求する（画面は開かない。画面幅は応答に関係しないので、3つの幅には繰り返さない）。
@@ -42,7 +42,7 @@ type Scenario = {
   /** service role の Storage（手元の Supabase だけ） */
   storage: SupabaseClient;
   origin: string;
-  /** この試験だけの送り元（x-forwarded-for） */
+  /** この試験だけの送り元（x-real-ip） */
   ip: string;
   /** 記事の題の頭。この頭で始まる行が、この試験が作った行 */
   titlePrefix: string;
@@ -93,8 +93,12 @@ function makePng(padBytes = 0): Buffer {
   ]);
 }
 
+/** 読まれない見出し x-forwarded-for に付ける偽の送り元（監査の ip に入らないことを確かめる） */
+const FORGED_FORWARDED_FOR = '198.51.100.77';
+
 function uniqueIp(): string {
-  const groups = randomBytes(8).toString('hex').match(/.{4}/g) ?? [];
+  // 8 つの区切りがそろった IPv6（isIP を通る形。短いと getClientIp が null にして監査の ip が空になる）
+  const groups = randomBytes(12).toString('hex').match(/.{4}/g) ?? [];
   return `2001:db8:${groups.join(':')}`;
 }
 
@@ -218,7 +222,8 @@ async function withScenario(
 }
 
 function writeHeaders(s: Scenario): Record<string, string> {
-  return { ...bearerHeaders(s.actor), 'x-forwarded-for': s.ip, origin: s.origin };
+  // x-forwarded-for は読まれない（ADR-0416）ことを SEC-NEWS-016-AC-03 が見るため、偽の値を毎回付ける
+  return { ...bearerHeaders(s.actor), 'x-real-ip': s.ip, 'x-forwarded-for': FORGED_FORWARDED_FOR, origin: s.origin };
 }
 
 type ImagePart = { name: string; mimeType: string; buffer: Buffer };
@@ -246,7 +251,7 @@ async function countSuccessAudits(db: PgClient, actorId: string, actions: readon
 }
 
 test.describe('FR-NEWS-SEC-005 管理の記事の書き込みの窓口', () => {
-  test('SEC-NEWS-016-AC-01 記事を作ると、audit_logs に action が admin.news.create・resource_id が新しい記事の id の行が1件でき、IP の値が入っていない', async ({ request, baseURL }) => {
+  test('SEC-NEWS-016-AC-01 記事を作ると、audit_logs に action が admin.news.create・resource_id が新しい記事の id の行が1件できる', async ({ request, baseURL }) => {
     await withScenario(request, baseURL, async (s) => {
       const created = await request.post(LIST_PATH, {
         headers: writeHeaders(s),
@@ -256,12 +261,30 @@ test.describe('FR-NEWS-SEC-005 管理の記事の書き込みの窓口', () => {
       const id = String(((await created.json()) as { id: number | string }).id);
 
       const audits = await s.db.query(
+        `select resource_id from public.audit_logs where action = 'admin.news.create' and resource_id = $1`,
+        [id],
+      );
+      expect(audits.rows).toHaveLength(1);
+    });
+  });
+
+  test('SEC-NEWS-016-AC-03 記事を作ると、その監査の行の ip に信頼する見出し x-real-ip の値が入り、偽の x-forwarded-for の値は入らない', async ({ request, baseURL }) => {
+    await withScenario(request, baseURL, async (s) => {
+      const created = await request.post(LIST_PATH, {
+        headers: writeHeaders(s),
+        multipart: articleForm(s, 'create-ip', { name: 'e2e.png', mimeType: 'image/png', buffer: makePng() }),
+      });
+      expect(created.status()).toBe(201);
+      const id = String(((await created.json()) as { id: number | string }).id);
+
+      const audits = await s.db.query(
         `select resource_id, ip from public.audit_logs where action = 'admin.news.create' and resource_id = $1`,
         [id],
       );
       expect(audits.rows).toHaveLength(1);
-      // 送り元（x-forwarded-for）を付けて送っても、IP は記録しない（null か空）
-      expect((audits.rows[0].ip as string | null) ?? '').toBe('');
+      // 信頼する見出し（x-real-ip）の値が入り、偽の x-forwarded-for の値は入らない（ADR-0010 を ADR-0462 が改めた）
+      expect(audits.rows[0].ip as string | null).toBe(s.ip);
+      expect((audits.rows[0].ip as string | null) ?? '').not.toContain(FORGED_FORWARDED_FOR);
     });
   });
 

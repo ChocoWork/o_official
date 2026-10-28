@@ -77,7 +77,7 @@ async function readResetToken(email: string): Promise<string | null> {
  * 発行された再設定 Cookie の値を返す。Cookie は ctx の Cookie 入れにも残る。
  */
 async function issueResetCookie(ctx: BrowserContext, member: TestMember, source: string): Promise<string> {
-  const headers = { origin: APP_ORIGIN, 'x-forwarded-for': source };
+  const headers = { origin: APP_ORIGIN, 'x-real-ip': source };
 
   const requested = await ctx.request.post('/api/auth/password-reset/request', {
     headers,
@@ -111,7 +111,7 @@ async function issueResetCookie(ctx: BrowserContext, member: TestMember, source:
 
 function confirmReset(ctx: BrowserContext, source: string, password: string) {
   return ctx.request.post('/api/auth/password-reset/confirm', {
-    headers: { origin: APP_ORIGIN, 'x-forwarded-for': source },
+    headers: { origin: APP_ORIGIN, 'x-real-ip': source },
     data: { new_password: password },
     maxRedirects: 0,
   });
@@ -133,7 +133,7 @@ for (const viewport of viewports) {
           await loginAsMember(page, member, source);
           const accessToken = (await before.cookies(APP_ORIGIN)).find((entry) => entry.name === 'sb-access-token')?.value;
           expect(accessToken, '更新前のアクセストークンが無い').toBeTruthy();
-          const bearer = { authorization: `Bearer ${accessToken}`, 'x-forwarded-for': source };
+          const bearer = { authorization: `Bearer ${accessToken}`, 'x-real-ip': source };
 
           // 再設定の前は、トークンもセッションも生きている（権限が無いので 401 ではなく 403）。
           // これで、後の 401 が再設定による失効だと言える。
@@ -195,7 +195,7 @@ for (const viewport of viewports) {
 
           // 再設定の前は、端末 A の Cookie で更新できる。これで、後の 401 が再設定による失効だと言える。
           const beforeReset = await deviceA.request.post('/api/auth/refresh', {
-            headers: { origin: APP_ORIGIN, 'x-forwarded-for': sourceA },
+            headers: { origin: APP_ORIGIN, 'x-real-ip': sourceA },
             maxRedirects: 0,
           });
           expect(beforeReset.status()).toBe(200);
@@ -207,7 +207,7 @@ for (const viewport of viewports) {
 
           // 再設定の完了の後に、端末 A の Cookie で /api/auth/refresh を叩くと 401
           const afterReset = await deviceA.request.post('/api/auth/refresh', {
-            headers: { origin: APP_ORIGIN, 'x-forwarded-for': sourceA },
+            headers: { origin: APP_ORIGIN, 'x-real-ip': sourceA },
             maxRedirects: 0,
           });
           expect(afterReset.status()).toBe(401);
@@ -241,7 +241,7 @@ for (const viewport of viewports) {
             },
           ]);
           const verified = await attacker.request.post('/api/auth/otp/verify', {
-            headers: { origin: APP_ORIGIN, 'x-forwarded-for': source },
+            headers: { origin: APP_ORIGIN, 'x-real-ip': source },
             data: { code: '00000000' },
             maxRedirects: 0,
           });

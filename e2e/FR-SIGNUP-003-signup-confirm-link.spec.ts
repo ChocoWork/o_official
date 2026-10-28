@@ -74,7 +74,7 @@ function strongPassword(): string {
   return `E2e-${randomBytes(12).toString('hex')}!`;
 }
 
-/** 回数の制限は送り元ごとに数える。全部の E2E が共有する 127.0.0.1 の枠を使い切らないよう、試験ごとに別の送り元にする。 */
+/** 回数の制限は送り元ごとに数える。見出しの無い要求が集まる「送り元なし」の枠を全部の E2E で使い切らないよう、試験ごとに別の送り元にする。 */
 function uniqueForwardedFor(): string {
   const octet = () => 1 + (randomBytes(1)[0] % 250);
   return `10.${octet()}.${octet()}.${octet()}`;
@@ -129,7 +129,7 @@ async function openConfirmLink(
   return request.get(`/api/auth/confirm?${query.toString()}`, {
     maxRedirects: 0,
     failOnStatusCode: false,
-    headers: { 'x-forwarded-for': uniqueForwardedFor() },
+    headers: { 'x-real-ip': uniqueForwardedFor() },
   });
 }
 
@@ -217,7 +217,7 @@ async function submitSignupFromBrowser(page: Page, email: string, next?: string)
   await stubTurnstileScript(page);
   const sourceIp = uniqueForwardedFor();
   await page.route('**/api/auth/register', (route) =>
-    route.continue({ headers: { ...route.request().headers(), 'x-forwarded-for': sourceIp } }),
+    route.continue({ headers: { ...route.request().headers(), 'x-real-ip': sourceIp } }),
   );
   await page.goto(next === undefined ? '/login' : `/login?next=${encodeURIComponent(next)}`);
   await page.getByRole('tab', { name: '会員登録' }).click();
@@ -240,7 +240,7 @@ async function openConfirmLinkInBrowser(
   if (params.redirectTo) query.set('redirect_to', params.redirectTo);
   const sourceIp = uniqueForwardedFor();
   await page.route(/\/api\/auth\/confirm/, (route) =>
-    route.continue({ headers: { ...route.request().headers(), 'x-forwarded-for': sourceIp } }),
+    route.continue({ headers: { ...route.request().headers(), 'x-real-ip': sourceIp } }),
   );
   const [hop] = await Promise.all([
     page.waitForResponse((response) => new URL(response.url()).pathname === '/api/auth/confirm'),

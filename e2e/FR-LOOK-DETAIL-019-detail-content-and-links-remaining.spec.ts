@@ -10,11 +10,10 @@ import { withLocalDb } from './order-email-test-utils';
 //   - LOOK 2 の前（新しい側）は LOOK 1、次（古い側）は LOOK 3
 
 // 回数の制限: どの頁も開くたびに CartContext が GET /api/wishlist（wishlist:get 120 回/60 秒、送り元ごと）を呼ぶ。
-// 並列の他の spec と共有の送り元 127.0.0.1 の枠を取り合うと 429 が返り、端末の記録に
+// 並列の他の spec と共有の送り元の枠（見出しが無い要求は ip null の 1 つの枠になる）を取り合うと 429 が返り、端末の記録に
 // 「Failed to load resource: … 429」が出て、下の「端末にエラーが無い」の確認が落ちる。
-// このファイルだけの x-forwarded-for を付けて枠を分ける。ただし SEC-SEARCH-006 が直って x-forwarded-for を信用しなくなると
-// この分離は効かなくなる（全部が接続の送り元の 1 つの枠になる）。
-test.use({ extraHTTPHeaders: { 'x-forwarded-for': '198.18.26.26' } });
+// このファイルだけの x-real-ip を付けて枠を分ける（回数の制限は x-forwarded-for を読まず、E2E の固定の環境の CLIENT_IP_HEADER が信じる x-real-ip を読む。ADR-0416）。
+test.use({ extraHTTPHeaders: { 'x-real-ip': '198.18.26.26' } });
 
 const VIEWPORTS = [
   { name: 'mobile', width: 390, height: 844 },

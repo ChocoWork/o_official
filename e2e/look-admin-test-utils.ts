@@ -36,14 +36,14 @@ export async function signInAsLookAdmin(context: BrowserContext, actor: AdminSes
 }
 
 /**
- * この試験のページの要求を、この試験だけの送り元の住所（x-forwarded-for）で送る。
+ * この試験のページの要求を、この試験だけの送り元の住所（x-real-ip）で送る。
  * 管理の LOOK の窓口の回数の制限は送り元ごとにも数えるので、他の spec と同じ住所で数えて巻き込まれないようにする。
- * これは SEC-*-006 の x-forwarded-for を信用する食い違い（FR-SEARCH-018 と同じ）に頼る分離で、その食い違いが直ると効かなくなる
- * （全部が接続の送り元の 1 つの枠になる）。直ったら、枠を数え直す仕組みか手元だけ緩い上限に替える。
+ * 回数の制限の鍵は getClientIp（ADR-0416）が信じる見出しだけから取る。E2E の固定の環境が CLIENT_IP_HEADER を立てるので x-real-ip を読む
+ * （x-forwarded-for は読まない。FR-SEARCH-018 と同じ分け方）。
  */
 export async function useOwnClientAddress(page: Page): Promise<void> {
   const [a, b, c] = randomBytes(3);
-  await page.setExtraHTTPHeaders({ 'x-forwarded-for': `10.${a}.${b}.${c}` });
+  await page.setExtraHTTPHeaders({ 'x-real-ip': `10.${a}.${b}.${c}` });
 }
 
 /** 画像の作り方: 試験の中で 1×1 の PNG を組み立てる（リポジトリに画像ファイルを置かない） */

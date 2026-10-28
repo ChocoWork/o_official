@@ -3,9 +3,9 @@ import { expect, test, type Page } from '@playwright/test';
 // FREQ-188-AC-03 / FREQ-191-AC-02 / FREQ-196-AC-01・02 / FREQ-197-AC-01〜03 / FREQ-198-AC-01・03:
 // searchページの2カラム化（md 以上）、モバイルの見出し、結果ヘッダーの表示を、
 // 匿名の訪問者が /search?q=a を開いた状態で確かめる。
-// 共有の送り元 127.0.0.1 の枠（search:public 120 回/600 秒）を他の検索の試験と取り合わないよう、このファイルだけの
-// x-forwarded-for を付ける（SEC-SEARCH-006 が直って x-forwarded-for を信用しなくなると、この分離は効かなくなる）。
-test.use({ extraHTTPHeaders: { 'x-forwarded-for': '198.18.23.23' } });
+// 見出しの無い要求が集まる送り元 null の枠（search:public 120 回/600 秒）を他の検索の試験と取り合わないよう、このファイルだけの
+// x-real-ip を付ける（E2E の固定の環境 CLIENT_IP_HEADER=x-real-ip が信頼する見出し。x-forwarded-for は読まれない）。
+test.use({ extraHTTPHeaders: { 'x-real-ip': '198.18.23.23' } });
 
 const MOBILE = { name: 'mobile', width: 390, height: 844 } as const;
 const TABLET = { name: 'tablet', width: 768, height: 1024 } as const;

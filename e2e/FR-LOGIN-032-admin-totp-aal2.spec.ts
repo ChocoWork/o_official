@@ -162,7 +162,7 @@ async function elevateCookieToAal2(page: Page, ip: string): Promise<string> {
   await withLocalDb((db) => addTotpAmrClaim(db, sessionId));
   const origin = new URL(page.url()).origin;
   const refreshed = await page.request.post(new URL('/api/auth/refresh', origin).toString(), {
-    headers: { origin, 'x-forwarded-for': ip },
+    headers: { origin, 'x-real-ip': ip },
     maxRedirects: 0,
     failOnStatusCode: false,
   });
@@ -217,7 +217,7 @@ function totpCode(secretBase32: string, nowMs = Date.now()): string {
 function postJson(page: Page, route: string, ip: string, data: unknown): Promise<APIResponse> {
   const origin = new URL(page.url()).origin;
   return page.request.post(new URL(route, origin).toString(), {
-    headers: { origin, 'x-forwarded-for': ip },
+    headers: { origin, 'x-real-ip': ip },
     data,
     failOnStatusCode: false,
     maxRedirects: 0,
@@ -310,14 +310,14 @@ for (const viewport of viewports) {
           // 登録済みの人が「確認」を求められる状態。TOTP が無効の手元の GoTrue でも、要素の一覧は読める
           await addVerifiedTotpFactor(db, member.userId);
         });
-        await page.context().setExtraHTTPHeaders({ 'x-forwarded-for': ip });
+        await page.context().setExtraHTTPHeaders({ 'x-real-ip': ip });
 
         // 認証コード（メール）を、画面の入力欄に入れて通す
         await page.goto('/login');
         await setLoginTwoFactorCookie(page, member.email, member.userId);
         const previousIds = new Set(await mailIdsTo(member.email));
         const resend = await page.request.post(new URL('/api/auth/login/resend', page.url()).toString(), {
-          headers: { origin: new URL(page.url()).origin, 'x-forwarded-for': ip },
+          headers: { origin: new URL(page.url()).origin, 'x-real-ip': ip },
           maxRedirects: 0,
           failOnStatusCode: false,
         });
@@ -443,7 +443,7 @@ for (const viewport of viewports) {
       expect(await factorCountOf(userId), '登録の前は要素が無い').toBe(0);
 
       const response = await request.post(new URL(ENROLL_ROUTE, origin).toString(), {
-        headers: { Authorization: `Bearer ${accessToken}`, origin, 'x-forwarded-for': uniqueSourceIp() },
+        headers: { Authorization: `Bearer ${accessToken}`, origin, 'x-real-ip': uniqueSourceIp() },
         data: {},
         failOnStatusCode: false,
         maxRedirects: 0,
@@ -523,7 +523,7 @@ for (const viewport of viewports) {
       const csrf = (await page.context().cookies(origin)).find((cookie) => cookie.name === 'sb-csrf-token')?.value;
       if (!csrf) throw new Error('sb-csrf-token の Cookie が無い');
       const logout = await page.request.post(new URL(LOGOUT_ROUTE, origin).toString(), {
-        headers: { origin, 'x-csrf-token': csrf, 'x-forwarded-for': ip },
+        headers: { origin, 'x-csrf-token': csrf, 'x-real-ip': ip },
         failOnStatusCode: false,
         maxRedirects: 0,
       });

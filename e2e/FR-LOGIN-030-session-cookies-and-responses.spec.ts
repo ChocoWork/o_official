@@ -104,7 +104,7 @@ async function logout(page: Page, origin: string): Promise<APIResponse> {
   const csrf = (await cookieMap(page, origin)).get(CSRF_COOKIE)?.value;
   if (!csrf) throw new Error('CSRF の Cookie が無い');
   return page.request.post(new URL('/api/auth/logout', origin).toString(), {
-    headers: { origin, 'x-csrf-token': csrf, 'x-forwarded-for': uniqueSourceIp() },
+    headers: { origin, 'x-csrf-token': csrf, 'x-real-ip': uniqueSourceIp() },
     maxRedirects: 0,
   });
 }
@@ -162,7 +162,7 @@ for (const viewport of [viewports[2]]) {
         expect(meBody.user?.id === member.userId, '他の端末は同じ会員のまま').toBe(true);
 
         const refreshed = await otherPage.request.post(new URL('/api/auth/refresh', origin).toString(), {
-          headers: { origin, 'x-forwarded-for': uniqueSourceIp() },
+          headers: { origin, 'x-real-ip': uniqueSourceIp() },
           maxRedirects: 0,
         });
         expect(refreshed.status(), '他の端末の refresh は 200（セッションが失効していない）').toBe(200);
@@ -210,7 +210,7 @@ for (const viewport of [viewports[2]]) {
       const origin = originOf(baseURL);
       const { otpVerify } = await loginCapturingOtpVerify(page, 'body-no-token');
       const refresh = await page.request.post(new URL('/api/auth/refresh', origin).toString(), {
-        headers: { origin, 'x-forwarded-for': uniqueSourceIp() },
+        headers: { origin, 'x-real-ip': uniqueSourceIp() },
         maxRedirects: 0,
       });
 
@@ -234,7 +234,7 @@ for (const viewport of [viewports[2]]) {
     }) => {
       const origin = originOf(baseURL);
       const url = (path: string) => new URL(path, origin).toString();
-      const anonymousHeaders = () => ({ origin, 'x-forwarded-for': uniqueSourceIp() });
+      const anonymousHeaders = () => ({ origin, 'x-real-ip': uniqueSourceIp() });
       const anonymousPost = (path: string, data: unknown) =>
         request.post(url(path), { headers: anonymousHeaders(), data, maxRedirects: 0 });
       const factorId = '00000000-0000-4000-8000-000000000000';
@@ -308,7 +308,7 @@ for (const viewport of [viewports[2]]) {
       if (created.error || !created.data.user) throw new Error(`手元の会員を作れない（status: ${created.error?.status ?? '不明'}）`);
       try {
         const login = await page.request.post(new URL('/api/auth/login', origin).toString(), {
-          headers: { origin, 'x-forwarded-for': uniqueSourceIp() },
+          headers: { origin, 'x-real-ip': uniqueSourceIp() },
           data: { email, password, turnstileToken: 'e2e-probe' },
           maxRedirects: 0,
         });
