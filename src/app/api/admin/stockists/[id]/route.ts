@@ -4,8 +4,8 @@
  * @packageDocumentation
  * @impl IMPL-STOCKIST-142
  * @design DD-STOCKIST-035
- * @remarks 道の id は認可より前に正の整数かを確かめ、形の悪い値を DB へ渡さない。
- * 読みと変更で権限を分け、変更は認可・回数の制限・CSRF の token の順に確かめる。書き込みは認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（ADR-0267）。回数の制限を認可の後に呼ぶので、認可で断った要求は数えない。これは SEC-STOCKIST-020 を満たさない（推定）。権限は読みと変更で分ける（SEC-STOCKIST-006）。
+ * @remarks 4 つの窓口は「送り元の枠 → 道の id の形 → 認可 → 操作者の枠 → （変更だけ）CSRF の token」の順に確かめる。送り元の枠を最初に置くので、未ログインの 401・権限の無い 403・形の悪い id の連打も送り元ごとに止まる（SEC-STOCKIST-020）。道の id は認可より前に正の整数かを確かめ、形の悪い値を DB へ渡さない。
+ * 読みと変更で権限を分ける（SEC-STOCKIST-006）。書き込みは認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（ADR-0267）。認可で断った要求のうち操作者が分かる物（403・失効した session の 401）は auditAuthzDenial で監査に残し、token 無しの 401 は残さない（SEC-STOCKIST-021、ADR-0268）。
  * 1 件の読みは内部の列を除いた 8 列だけ返す（SEC-STOCKIST-009）。壊れた JSON は 500 でなく 400、検証の誤りは項目の名前だけの固定の本文にする（SEC-STOCKIST-013・014）。
  * 更新・切り替え・削除は結果が 0 行なら 404 にして成功の監査を書かない。削除の監査には消した店の id・名前・住所・状態だけを残す（SEC-STOCKIST-013）。DB の誤りは符号だけを記録する。
  * 認可の拒否・回数の制限・CSRF の拒否を含む全部の応答を、export で withNoStore に通して `Cache-Control: private, no-store` にし（SEC-STOCKIST-010）、外側の catch の記録は名前と符号だけにする（SEC-STOCKIST-014）。
@@ -14,13 +14,15 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
+import { auditAuthzDenial } from '@/lib/auth/audit-authz-denial';
 import { logAudit } from '@/lib/audit';
 import { withNoStore } from '@/lib/http/no-store';
 import { describeErrorForLog } from '@/lib/logging/safe-error';
+import { getClientIp } from '@/lib/request-ip';
 import {
   applyRotatedCsrfCookie,
-  enforceAdminStockistMutationRateLimit,
-  enforceAdminStockistReadRateLimit,
+  enforceAdminStockistActorRateLimit,
+  enforceAdminStockistIpRateLimit,
   requireAdminStockistCsrf,
   toCsrfDenyResponse,
 } from '@/features/stockist/services/admin-security';
@@ -46,6 +48,11 @@ function parseStockistId(id: string): number | null {
 
 async function getStockist(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const ipRateLimitResponse = await enforceAdminStockistIpRateLimit(request, 'read');
+    if (ipRateLimitResponse) {
+      return ipRateLimitResponse;
+    }
+
     const { id } = await params;
     const stockistId = parseStockistId(id);
     if (!stockistId) {
@@ -54,10 +61,11 @@ async function getStockist(request: Request, { params }: { params: Promise<{ id:
 
     const authz = await authorizeAdminPermission('admin.stockists.read', request);
     if (!authz.ok) {
+      await auditAuthzDenial(authz, { request, action: 'admin.stockists.get', resource: 'stockists' });
       return authz.response;
     }
 
-    const rateLimitResponse = await enforceAdminStockistReadRateLimit(request, authz.userId);
+    const rateLimitResponse = await enforceAdminStockistActorRateLimit(request, authz.userId, 'read');
     if (rateLimitResponse) {
       return rateLimitResponse;
     }
@@ -83,6 +91,11 @@ async function getStockist(request: Request, { params }: { params: Promise<{ id:
 
 async function putStockist(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const ipRateLimitResponse = await enforceAdminStockistIpRateLimit(request, 'mutation');
+    if (ipRateLimitResponse) {
+      return ipRateLimitResponse;
+    }
+
     const { id } = await params;
     const stockistId = parseStockistId(id);
     if (!stockistId) {
@@ -91,10 +104,11 @@ async function putStockist(request: Request, { params }: { params: Promise<{ id:
 
     const authz = await authorizeAdminPermission('admin.stockists.manage', request);
     if (!authz.ok) {
+      await auditAuthzDenial(authz, { request, action: 'admin.stockists.update', resource: 'stockists' });
       return authz.response;
     }
 
-    const rateLimitResponse = await enforceAdminStockistMutationRateLimit(request, authz.userId);
+    const rateLimitResponse = await enforceAdminStockistActorRateLimit(request, authz.userId, 'mutation');
     if (rateLimitResponse) {
       return rateLimitResponse;
     }
@@ -105,7 +119,7 @@ async function putStockist(request: Request, { params }: { params: Promise<{ id:
       return csrfDenyResponse;
     }
 
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    const clientIp = getClientIp(request);
     const userAgent = request.headers.get('user-agent') ?? null;
 
     const body = await request.json().catch(() => null);
@@ -210,6 +224,11 @@ async function putStockist(request: Request, { params }: { params: Promise<{ id:
 
 async function patchStockist(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const ipRateLimitResponse = await enforceAdminStockistIpRateLimit(request, 'mutation');
+    if (ipRateLimitResponse) {
+      return ipRateLimitResponse;
+    }
+
     const { id } = await params;
     const stockistId = parseStockistId(id);
     if (!stockistId) {
@@ -218,10 +237,11 @@ async function patchStockist(request: Request, { params }: { params: Promise<{ i
 
     const authz = await authorizeAdminPermission('admin.stockists.manage', request);
     if (!authz.ok) {
+      await auditAuthzDenial(authz, { request, action: 'admin.stockists.patch', resource: 'stockists' });
       return authz.response;
     }
 
-    const rateLimitResponse = await enforceAdminStockistMutationRateLimit(request, authz.userId);
+    const rateLimitResponse = await enforceAdminStockistActorRateLimit(request, authz.userId, 'mutation');
     if (rateLimitResponse) {
       return rateLimitResponse;
     }
@@ -232,7 +252,7 @@ async function patchStockist(request: Request, { params }: { params: Promise<{ i
       return csrfDenyResponse;
     }
 
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    const clientIp = getClientIp(request);
     const userAgent = request.headers.get('user-agent') ?? null;
 
     const body = await request.json().catch(() => null);
@@ -330,6 +350,11 @@ async function patchStockist(request: Request, { params }: { params: Promise<{ i
 
 async function deleteStockist(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const ipRateLimitResponse = await enforceAdminStockistIpRateLimit(request, 'mutation');
+    if (ipRateLimitResponse) {
+      return ipRateLimitResponse;
+    }
+
     const { id } = await params;
     const stockistId = parseStockistId(id);
     if (!stockistId) {
@@ -338,10 +363,11 @@ async function deleteStockist(request: Request, { params }: { params: Promise<{ 
 
     const authz = await authorizeAdminPermission('admin.stockists.manage', request);
     if (!authz.ok) {
+      await auditAuthzDenial(authz, { request, action: 'admin.stockists.delete', resource: 'stockists' });
       return authz.response;
     }
 
-    const rateLimitResponse = await enforceAdminStockistMutationRateLimit(request, authz.userId);
+    const rateLimitResponse = await enforceAdminStockistActorRateLimit(request, authz.userId, 'mutation');
     if (rateLimitResponse) {
       return rateLimitResponse;
     }
@@ -352,7 +378,7 @@ async function deleteStockist(request: Request, { params }: { params: Promise<{ 
       return csrfDenyResponse;
     }
 
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    const clientIp = getClientIp(request);
     const userAgent = request.headers.get('user-agent') ?? null;
 
     const supabase = await createServiceRoleClient();

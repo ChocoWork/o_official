@@ -4,12 +4,14 @@
  * @packageDocumentation
  * @impl IMPL-ADMIN-142
  * @design DD-ADMIN-012
- * @remarks 誤って保存した色や使わなくなった色を一覧から外して選び間違いを減らすため。消せるのは商品を管理できる人だけにし、認可の後に service role で消す。無い id を消そうとした時に成功と返すと、画面が消えたと誤解するので、消した行が0行なら404を返す。id の形が数字でない・桁が大きすぎる時は DB に渡さず404にする（型の誤りが500になるのを避ける）。保存と合わせて管理者単位で10分に60回までに絞る。
+ * @remarks 誤って保存した色や使わなくなった色を一覧から外して選び間違いを減らすため。消せるのは商品を管理できる人だけにし、認可の後に service role で消す。無い id を消そうとした時に成功と返すと、画面が消えたと誤解するので、消した行が0行なら404を返す。id の形が数字でない・桁が大きすぎる時は DB に渡さず404にする（型の誤りが500になるのを避ける）。保存と合わせて管理者単位で10分に60回までに絞る。消せた時だけ、誰がどこから消したかを監査に残す（色の名前と値は入れず id だけ。0行・誤りは消していないので残さない）。
  */
 import { NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
+import { logAudit } from '@/lib/audit';
+import { getAuditRequestContext } from '@/lib/request-ip';
 
 const COLOR_PRESET_WRITE_RATE_LIMIT = { endpoint: 'admin:color-presets:write', limit: 60, windowSeconds: 600 } as const;
 
@@ -49,6 +51,16 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     if (!data || data.length === 0) {
       return NextResponse.json({ error: 'Color preset not found' }, { status: 404 });
     }
+
+    await logAudit({
+      action: 'admin.item_color_preset.delete',
+      actor_id: authz.userId,
+      actor_email: authz.actorEmail,
+      resource: 'item_color_preset',
+      resource_id: id,
+      outcome: 'success',
+      ...getAuditRequestContext(request),
+    });
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

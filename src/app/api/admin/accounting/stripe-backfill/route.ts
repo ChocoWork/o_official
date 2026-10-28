@@ -6,6 +6,7 @@ import { syncPaymentIntentAccounting } from '@/lib/stripe/accounting-sync';
 import { createStripeAccountingDatabase } from '@/lib/stripe/supabase-accounting-database';
 import { getStripeServerClient } from '@/lib/stripe/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getClientIp } from '@/lib/request-ip';
 
 type AccountingStripeClient = Parameters<typeof syncPaymentIntentAccounting>[0]['stripe'];
 
@@ -87,7 +88,7 @@ export async function POST(request: Request) {
       resource: 'stripe-accounting',
       outcome: errors.length > 0 ? 'failure' : 'success',
       detail: `Backfilled ${synced} of ${orders.length} orders`,
-      ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      ip: getClientIp(request),
       user_agent: request.headers.get('user-agent') ?? null,
       metadata: { processed: orders.length, synced, failed: errors.length },
     });

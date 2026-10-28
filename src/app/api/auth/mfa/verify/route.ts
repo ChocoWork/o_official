@@ -16,6 +16,7 @@ import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticat
 import { findSessionByRefreshHash, persistNewSession } from '@/features/auth/services/session';
 import { refreshCookieName } from '@/lib/cookie';
 import { logAudit } from '@/lib/audit';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -28,14 +29,9 @@ const isUserRole = (role: unknown): role is UserRole => role === 'admin' || role
 
 export async function POST(request: Request) {
   try {
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rl = await enforceRateLimit({ request, endpoint: 'auth:mfa:verify', limit: 20, windowSeconds: 600 });
-      if (rl) {
-        return rl;
-      }
-    } catch (error) {
-      console.error('[auth.mfa.verify] rate limit middleware error:', error);
+    const rl = await enforceRateLimit({ request, endpoint: 'auth:mfa:verify', limit: 20, windowSeconds: 600 });
+    if (rl) {
+      return rl;
     }
 
     const body = await request.json().catch(() => null);
@@ -61,26 +57,21 @@ export async function POST(request: Request) {
 
     // 利用者単位の総当たり対策。subject は検証済みの sub だけにする。
     // 本文の factorId などを使うと、他人の枠を故意に潰せる。役割の確認より前に置くのは、一般の会員にも数えさせるため。
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rlAccount = await enforceRateLimit({
-        request,
-        endpoint: 'auth:mfa:verify',
-        limit: 5,
-        windowSeconds: 600,
-        subject: user.id,
+    const rlAccount = await enforceRateLimit({
+      request,
+      endpoint: 'auth:mfa:verify',
+      limit: 5,
+      windowSeconds: 600,
+      subject: user.id,
+    });
+    if (rlAccount) {
+      await logAudit({
+        action: 'mfa_verify',
+        actor_id: user.id,
+        outcome: 'failure',
+        detail: 'account_rate_limited',
       });
-      if (rlAccount) {
-        await logAudit({
-          action: 'mfa_verify',
-          actor_id: user.id,
-          outcome: 'failure',
-          detail: 'account_rate_limited',
-        });
-        return rlAccount;
-      }
-    } catch (error) {
-      console.error('[auth.mfa.verify] account rate limit middleware error:', error);
+      return rlAccount;
     }
 
     const role = isUserRole(user.app_metadata?.role) ? user.app_metadata.role : 'user';

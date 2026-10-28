@@ -207,6 +207,8 @@ export default function Page() {
     try {
       const response = await sendShoppingRequest("/api/wishlist");
       if (!response.ok) {
+        // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+        void response.arrayBuffer?.().catch(() => {});
         throw new Error("ウィッシュリストの取得に失敗しました");
       }
       const payload = await response.json();
@@ -229,6 +231,8 @@ export default function Page() {
       });
 
       if (!response.ok) {
+        // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+        void response.arrayBuffer?.().catch(() => {});
         throw new Error("削除に失敗しました");
       }
 

@@ -3,20 +3,12 @@ import { z } from "zod";
 import { logAudit } from "@/lib/audit";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { denyIfCsrfInvalid, openShoppingContext } from "@/features/cart/services/shopping-context";
+import { getClientIp } from "@/lib/request-ip";
 
 // PUBLIC: ゲストのお気に入りを扱うので利用者認証は無い。持ち主の明細だけを消せる（他人の明細は 404）。
 // 会員には CSRF の合言葉を求め、ゲストの送信元（Origin）の確かめは src/proxy.ts が掛ける。
 
 const wishlistIdSchema = z.string().uuid();
-
-function getClientIp(request: NextRequest): string | null {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0]?.trim() ?? null;
-  }
-
-  return request.headers.get("x-real-ip");
-}
 
 /**
  * DELETE /api/wishlist/[id]

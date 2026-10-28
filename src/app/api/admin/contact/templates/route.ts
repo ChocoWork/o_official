@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { getAuditRequestContext } from '@/lib/request-ip';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
 const createTemplateSchema = z.object({
@@ -89,11 +90,12 @@ export async function POST(request: Request) {
     await logAudit({
       action: 'admin.contact.template.create',
       actor_id: authz.userId,
+      actor_email: authz.actorEmail,
       resource: 'contact_reply_template',
       resource_id: data.id,
       outcome: 'success',
       detail: 'created',
-      user_agent: request.headers.get('user-agent'),
+      ...getAuditRequestContext(request),
     });
 
     return NextResponse.json({ success: true, id: data.id }, { status: 201 });

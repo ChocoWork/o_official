@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { getRequestOrigin } from '@/lib/redirect';
 import { applyReturnIntentCookie, issueReturnIntent } from '@/features/auth/return-intent/return-intent-service';
 import { logAudit } from '@/lib/audit';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
 const PROVIDERS = new Set(['google']);
 
@@ -56,13 +57,8 @@ function parseRequestCookies(cookieHeader: string | null): Array<{ name: string;
 }
 
 async function enforceStartRateLimit(request: Request): Promise<Response | undefined> {
-  try {
-    const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-    const rl = await enforceRateLimit({ request, endpoint: 'auth:oauth:start', limit: 50, windowSeconds: 600 });
-    if (rl) return rl;
-  } catch (e) {
-    console.error('Rate limit middleware error (oauth start):', e);
-  }
+  const rl = await enforceRateLimit({ request, endpoint: 'auth:oauth:start', limit: 50, windowSeconds: 600 });
+  if (rl) return rl;
   return undefined;
 }
 

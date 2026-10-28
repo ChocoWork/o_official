@@ -6,6 +6,7 @@
  * @design DD-LOOK-063
  * @remarks 非公開を含む一覧は読む権限、作成は管理の権限と、操作ごとに権限を分けて窓口で確かめる（SEC-LOOK-019）。
  * 一覧の応答には、呼んだ人が操作ボタンを使えるかを meta.canManage で添え、画面が権限の無い人にボタンを出さないようにする。
+ * canManage は読む権限の認可が返す権限の集合から作り、管理の権限を別にもう一度認可しない（往復と session の確かめを増やさない。ADR-0166）。
  * 作成は表と非公開の置き場の両方を変えるので、送り元と操作者の2段の回数と画像の量に上限をかけ（SEC-LOOK-011）、
  * 形の悪い要求は DB と置き場に触れる前に入口で断る。
  * 画像は申告の種類と中身の印が合う物だけを、量の枠を使う前に受け、保存名は検出した種類から自分で作る（SEC-LOOK-013）。
@@ -465,12 +466,8 @@ export async function GET(request: Request) {
     }
 
     // 画面が権限の無い人に操作ボタンを出さないよう、管理の権限があるかを添える。
-    // 権限が無いための断り（403）だけ false にし、認証の失敗・一時的な障害はそのまま返す。
-    const manage = await authorizeAdminPermission('admin.looks.manage', request);
-    if (!manage.ok && manage.response.status !== 403) {
-      return manage.response;
-    }
-    const canManage = manage.ok;
+    // 認可の成功の結果が返す権限の集合から作る（もう一度認可しない）。集合が無ければ（権限が分からない）出さない側に倒す。
+    const canManage = authz.permissions?.has('admin.looks.manage') === true;
 
     const supabase = await createServiceRoleClient();
 

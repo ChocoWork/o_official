@@ -260,6 +260,8 @@ async function readSettings(send: () => Promise<Response>): Promise<SettingsResu
   try {
     const response = await send();
     if (!response.ok) {
+      // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+      void response.arrayBuffer?.().catch(() => {});
       return { ok: false };
     }
     const body = (await response.json()) as { data?: unknown };

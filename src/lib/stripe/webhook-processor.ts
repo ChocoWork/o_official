@@ -17,20 +17,12 @@ import { createStripeAccountingDatabase } from '@/lib/stripe/supabase-accounting
 import { reconcileCheckoutPayment, type ReconcileInput } from '@/lib/stripe/checkout-payment-reconciler';
 import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
 import { raiseRefundFailureWithoutOrder, type FailedRefundStatus } from '@/lib/stripe/refund-failure-exception';
+import { getClientIp } from '@/lib/request-ip';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-function getClientIp(request: NextRequest): string | null {
-  const forwardedFor = request.headers.get('x-forwarded-for');
-  if (forwardedFor) {
-    return forwardedFor.split(',')[0]?.trim() ?? null;
-  }
-
-  return request.headers.get('x-real-ip');
-}
 
 async function logWebhookAudit(
   request: NextRequest,

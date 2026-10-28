@@ -13,6 +13,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import sendMail from '@/lib/mail';
 import { checkPwnedPassword, PWNED_PASSWORD_MESSAGE } from '@/lib/pwned-password';
 import { logAudit } from '@/lib/audit';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { ResetSessionConfirmSchema } from '@/features/auth/schemas/password-reset';
 import { formatZodError } from '@/features/auth/schemas/common';
 import {
@@ -58,13 +59,8 @@ async function revokeAllSessions(
 
 export async function POST(request: Request) {
   try {
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rl = await enforceRateLimit({ request, endpoint: 'auth:password_reset_confirm', limit: 10, windowSeconds: 3600 });
-      if (rl) return rl;
-    } catch (e) {
-      console.error('Rate limit middleware error (password-reset-confirm):', e);
-    }
+    const rl = await enforceRateLimit({ request, endpoint: 'auth:password_reset_confirm', limit: 10, windowSeconds: 3600 });
+    if (rl) return rl;
 
     const session = readPasswordResetSessionFromCookieHeader(request.headers.get('cookie'));
     if (!session) {

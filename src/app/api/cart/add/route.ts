@@ -5,17 +5,14 @@ import { addCartLinesSchema } from '@/features/cart/services/cart-stock';
 import { denyIfCsrfInvalid, openShoppingContext, type ShoppingContext } from '@/features/cart/services/shopping-context';
 import { buildCartJson } from '@/features/cart/services/cart-view';
 import { CART_ERROR_DESCRIPTIONS, cartErrorResponse, cartRpcErrorResponse } from '@/features/cart/services/cart-errors';
+import { getClientIp } from '@/lib/request-ip';
 
 // PUBLIC: ゲストのカートを扱うので利用者認証は無い。会員には CSRF の合言葉を求め、
 // 送信元（Origin）の確かめは src/proxy.ts が掛ける。
 
-function clientIpOf(req: NextRequest): string | null {
-  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('x-real-ip');
-}
-
 /** POST /api/cart/add（Shopify の /cart/add.js。設計書 6-1） */
 export async function POST(req: NextRequest) {
-  const clientIp = clientIpOf(req);
+  const clientIp = getClientIp(req);
   const userAgent = req.headers.get('user-agent');
   let context: ShoppingContext | undefined;
   try {

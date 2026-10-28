@@ -17,6 +17,7 @@
 import { NextResponse } from 'next/server';
 import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { getRequestOrigin } from '@/lib/redirect';
 import {
   applyReturnIntentCookie,
@@ -63,20 +64,15 @@ async function revokeLocalSession(supabase: Awaited<ReturnType<typeof createPubl
 }
 
 export async function GET(request: Request) {
-  try {
-    const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-    const rl = await enforceRateLimit({ request, endpoint: 'auth:confirm', limit: 50, windowSeconds: 600 });
-    if (rl) {
-      if (rl instanceof Response) {
-        return rl;
-      }
-
-      const fallback = NextResponse.json({ error: 'Too many requests' }, { status: 429 });
-      fallback.headers.set('Retry-After', '600');
-      return fallback;
+  const rl = await enforceRateLimit({ request, endpoint: 'auth:confirm', limit: 50, windowSeconds: 600 });
+  if (rl) {
+    if (rl instanceof Response) {
+      return rl;
     }
-  } catch (e) {
-    console.error('Rate limit middleware error (confirm):', e);
+
+    const fallback = NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+    fallback.headers.set('Retry-After', '600');
+    return fallback;
   }
 
   const origin = getRequestOrigin(request);

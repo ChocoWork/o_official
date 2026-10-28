@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server';
 import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import {
   cookieOptionsForLoginTwoFactor,
   loginTwoFactorSessionCookieName,
@@ -37,30 +38,22 @@ export async function POST(request: Request) {
   // /api/auth/login と同じ二段（IP と宛先）にする。IP 段が無いと、複数アカウントのパスワードを持つ相手が
   // 1 つの IP から並行に送信を回せる。枠（endpoint 名）もログインと共有する。抑えたいのは 1 アカウントへ
   // 送るメールの総量なので、分けるとログイン 5 通と再送 5 通で 10 通送れてしまう。
-  try {
-    const { enforceRateLimit } = await import(
-      '@/features/auth/middleware/rateLimit'
-    );
+  const rlIp = await enforceRateLimit({
+    request,
+    endpoint: 'auth:login',
+    limit: 50,
+    windowSeconds: 600,
+  });
+  if (rlIp) return rlIp;
 
-    const rlIp = await enforceRateLimit({
-      request,
-      endpoint: 'auth:login',
-      limit: 50,
-      windowSeconds: 600,
-    });
-    if (rlIp) return rlIp;
-
-    const rlAccount = await enforceRateLimit({
-      request,
-      endpoint: 'auth:login',
-      limit: 5,
-      windowSeconds: 600,
-      subject: pending.email,
-    });
-    if (rlAccount) return rlAccount;
-  } catch (e) {
-    console.error('Rate limit middleware error (login resend):', e);
-  }
+  const rlAccount = await enforceRateLimit({
+    request,
+    endpoint: 'auth:login',
+    limit: 5,
+    windowSeconds: 600,
+    subject: pending.email,
+  });
+  if (rlAccount) return rlAccount;
 
   const supabase = await createPublicClient();
   const { error } = await supabase.auth.signInWithOtp({

@@ -5,16 +5,13 @@ import { changeCartLineSchema } from '@/features/cart/services/cart-stock';
 import { denyIfCsrfInvalid, openShoppingContext } from '@/features/cart/services/shopping-context';
 import { buildCartJson } from '@/features/cart/services/cart-view';
 import { CART_ERROR_DESCRIPTIONS, cartErrorResponse, cartRpcErrorResponse } from '@/features/cart/services/cart-errors';
+import { getClientIp } from '@/lib/request-ip';
 
 // PUBLIC: ゲストのカートを扱うので利用者認証は無い。明細は持ち主のカートの物だけを変えられる（DB の関数が照合する）。
 
-function clientIpOf(req: NextRequest): string | null {
-  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? req.headers.get('x-real-ip');
-}
-
 /** POST /api/cart/change（Shopify の /cart/change.js。数量0で削除。設計書 6-1） */
 export async function POST(req: NextRequest) {
-  const clientIp = clientIpOf(req);
+  const clientIp = getClientIp(req);
   const userAgent = req.headers.get('user-agent');
   try {
     const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');

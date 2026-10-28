@@ -94,9 +94,13 @@ export function useOrderAttention({ enabled, onChanged }: UseOrderAttentionOptio
           throw new Error('この操作の権限がありません。');
         }
         if (response.status === 503) {
+          // 回数の制限の 503 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+          void response.arrayBuffer?.().catch(() => {});
           throw new Error(STRIPE_UNAVAILABLE_MESSAGE);
         }
         if (response.status === 429 && failure.rateLimitedMessage) {
+          // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+          void response.arrayBuffer?.().catch(() => {});
           throw new Error(failure.rateLimitedMessage);
         }
         throw new Error(

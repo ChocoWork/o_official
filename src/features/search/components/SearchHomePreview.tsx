@@ -9,6 +9,7 @@
  * 題・説明・検索語の記号をタグとして解釈すると画面に差し込まれてしまうので、すべて文字のまま出す（SEC-SEARCH-013）。
  * 説明の文は固定にし、URL から来る検索語は別の「検索した語」の枠（dl）にだけ出す。文に埋めると、細工したリンクで公式の画面の文面を書き換えられるため（SEC-SEARCH-021、ADR-0314）。
  * 取り出しの失敗は固定の文字だけ記録する。Error を渡すと stack に内部の道筋が残る（SEC-HOME-015）。
+ * 応答が ok でない時は本文を使わなくても読み始めておく。回数の制限の 429 は no-store で、読まずに捨てるとブラウザが要求を開いたまま残すため。
  */
 'use client';
 
@@ -34,6 +35,8 @@ export function SearchHomePreview() {
       try {
         const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&preview=true`, { cache: 'no-store' });
         if (!response.ok) {
+          // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+          void response.arrayBuffer?.().catch(() => {});
           throw new Error('Failed to fetch preview');
         }
 

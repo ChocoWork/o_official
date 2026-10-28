@@ -11,6 +11,7 @@
 import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { logAudit } from '@/lib/audit';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { cookieOptionsForPasswordReset, passwordResetSessionCookieName } from '@/lib/cookie';
 import { createPasswordResetSessionToken, passwordResetSessionMaxAgeSeconds } from '@/features/auth/services/password-reset-session';
 import { getRequestOrigin } from '@/lib/redirect';
@@ -66,14 +67,9 @@ export async function GET(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rl = await enforceRateLimit({ request, endpoint: 'auth:password_reset_link', limit: 20, windowSeconds: 600 });
-      if (rl) {
-        return rl;
-      }
-    } catch (error) {
-      console.error('Rate limit middleware error (password-reset-link):', error);
+    const rl = await enforceRateLimit({ request, endpoint: 'auth:password_reset_link', limit: 20, windowSeconds: 600 });
+    if (rl) {
+      return rl;
     }
 
     const body = await request.json().catch(() => null);

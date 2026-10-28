@@ -20,6 +20,7 @@ import { isDeliveryTrackingKeyConfigured } from '@/lib/orders/tracking/delivery-
 import { deliveryErrorReply } from '@/lib/orders/tracking/delivery-route-support';
 import { DeliveryOperationError, DeliveryStoreError, getDeliveryTrackingSettings, setDeliveryTracking } from '@/lib/orders/tracking/delivery-store';
 import type { DeliveryTrackingSettings } from '@/lib/orders/tracking/delivery-types';
+import { getClientIp } from '@/lib/request-ip';
 
 /**
  * 返品の欄の本文（Task 4 の return-types.ts の ShopReturnSettingsUpdate と同じ形。段1の欄は必須、段2の欄は任意）。
@@ -247,7 +248,7 @@ export async function PUT(request: Request) {
       resource_id: null,
       outcome,
       detail,
-      ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      ip: getClientIp(request),
       user_agent: request.headers.get('user-agent') ?? null,
       metadata,
     });

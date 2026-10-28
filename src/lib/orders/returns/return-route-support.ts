@@ -11,6 +11,7 @@ import { RETURN_ERROR_MESSAGES } from '@/lib/orders/returns/return-messages';
 import type { ReceiveReturnResult, RefundReturnResult } from '@/lib/orders/returns/return-service';
 import { ReturnStoreError } from '@/lib/orders/returns/return-store';
 import { RETURN_CARRIERS, RETURN_ERROR_CODES, type ReturnErrorCode } from '@/lib/orders/returns/return-types';
+import { getClientIp } from '@/lib/request-ip';
 
 /**
  * 返品の窓口が共有する部品（グループ E-3 Task 7、決め事 T7-1）。E-2 の refund-route-support.ts と同じ考えで、
@@ -231,7 +232,7 @@ export function createReturnAudit(
       resource_id: target.resourceId,
       outcome,
       detail,
-      ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      ip: getClientIp(request),
       user_agent: request.headers.get('user-agent') ?? null,
       metadata,
     });

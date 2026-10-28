@@ -33,6 +33,8 @@ export function usePublicItems(options?: UsePublicItemsOptions) {
 
         const response = await fetch(`/api/items${query}`, { cache: 'no-store' });
         if (!response.ok) {
+          // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+          void response.arrayBuffer?.().catch(() => {});
           throw new Error('Failed to fetch items');
         }
 

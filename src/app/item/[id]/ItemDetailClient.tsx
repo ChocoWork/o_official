@@ -264,6 +264,8 @@ export default function ItemDetailClient({ id }: Props) {
       try {
         const response = await fetch(`/api/items/${id}`);
         if (!response.ok) {
+          // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+          void response.arrayBuffer?.().catch(() => {});
           throw new Error(
             response.status === 404
               ? "商品が見つかりません"

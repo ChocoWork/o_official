@@ -8,6 +8,7 @@
  * 選んだ分類を URL の category に書き戻すのは、共有した URL・ブラウザの戻る・詳細からの戻りで同じ絞り込みを開けるようにするため。
  * 一覧とホームでカードの中身をそろえるため、1つの部品を2つの形で使う。
  * 題と概要は React の文字として出し、管理で書いた文字を HTML として解釈させない（SEC-NEWS-013）。
+ * 応答が ok でない時は本文を使わなくても読み始めておく。回数の制限の 429 は no-store で、読まずに捨てるとブラウザが要求を開いたまま残すため。
  */
 "use client";
 
@@ -183,6 +184,8 @@ export function PublicNewsGrid(props: PublicNewsGridProps) {
         setLoading(true);
         const response = await fetch(url, { cache: "no-store" });
         if (!response.ok) {
+          // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+          void response.arrayBuffer?.().catch(() => {});
           throw new Error("Failed to fetch news");
         }
         const data = (await response.json()) as PublicNewsArticle[];

@@ -222,7 +222,9 @@ export default function ContactPage() {
 
       // 送信回数の上限（429）は本文を見ずに案内する。API の本文は英語で、
       // 手前の層（WAF など）が返す 429 は JSON ですらないため。
+      // 回数の制限の 429 は no-store で返る。本文を使わなくても読み始めないと、ブラウザが要求を開いたまま残す。
       if (response.status === 429) {
+        void response.arrayBuffer?.().catch(() => {});
         throw new Error(
           "送信回数が上限に達したため、一時的にお問い合わせを受け付けられません。しばらく時間をおいてから、あらためてお問い合わせください。",
         );

@@ -4,7 +4,7 @@
  * @packageDocumentation
  * @impl IMPL-NEWS-162
  * @design DD-NEWS-065
- * @remarks 表の読みは利用者の JWT の client で RLS に通し（SEC-NEWS-015、DATA-NEWS-002）、書き込み（POST・PUT・PATCH・DELETE）は認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（ADR-0026）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新の PUT と分ける（API-NEWS-006、STATE-NEWS-001）。直すたびに画像を付け直させないよう、PUT の画像は任意にする（API-NEWS-005）。変える操作は誰が何をしたかを追えるよう、成功も失敗も監査に残す。変更・削除が 0 行の時（無い記事）は成功と偽らず 404 にして失敗を残す（SEC-NEWS-016）。
+ * @remarks 表の読みは利用者の JWT の client で RLS に通し（SEC-NEWS-015、DATA-NEWS-002）、書き込み（POST・PUT・PATCH・DELETE）は認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（ADR-0026）。一覧のボタン1つで公開を切り替えられるよう、状態だけを変える PATCH を全体の更新の PUT と分ける（API-NEWS-006、STATE-NEWS-001）。直すたびに画像を付け直させないよう、PUT の画像は任意にする（API-NEWS-005）。変える操作は誰が何をしたかを追えるよう、成功も失敗も IP とブラウザの名乗りとともに監査に残す（ADR-0462）。変更・削除が 0 行の時（無い記事）は成功と偽らず 404 にして失敗を残す（SEC-NEWS-016）。
  * id は URL から来るので、形の悪い値は DB に渡さず 404 にし、1件の取り出しは「無い」と「DB の失敗」を分けて、誤りの文は応答にも記録にも出さない（SEC-NEWS-012、SEC-NEWS-020）。
  * 画像は申告の種類と中身の印が合う物だけを受け、保存名は自分で作る（SEC-NEWS-017）。
  * PUT は画像を上げる前に古い image_url を読み（無い記事なら何も上げない）、行を変えた後に古い画像を、行が変わらなかった時は新しく上げた画像を置き場から消す。
@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
+import { getAuditRequestContext } from '@/lib/request-ip';
 import { signNewsImageFields } from '@/lib/storage/news-images';
 import { describeErrorForLog } from '@/lib/logging/safe-error';
 import { isNewsId } from '@/features/news/lib/news-input';
@@ -37,10 +38,6 @@ const updateNewsSchema = z.object({
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const maxImageBytes = 5 * 1024 * 1024;
 
-function getRequestUserAgent(request: Request): string | null {
-  return request.headers.get('user-agent') || null;
-}
-
 async function logNewsAudit(
   request: Request,
   actorId: string,
@@ -57,7 +54,7 @@ async function logNewsAudit(
     resource_id: resourceId,
     outcome,
     detail,
-    user_agent: getRequestUserAgent(request),
+    ...getAuditRequestContext(request),
     metadata,
   });
 }

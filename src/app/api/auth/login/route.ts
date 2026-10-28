@@ -15,18 +15,15 @@ import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { LoginRequestSchema } from '@/features/auth/schemas/login';
 import { formatZodError } from '@/features/auth/schemas/common';
+import { getClientIp } from '@/lib/request-ip';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { applyReturnIntentCookie, issueReturnIntent } from '@/features/auth/return-intent/return-intent-service';
 
 export async function POST(request: Request) {
   try {
     // Enforce IP-level rate limit for login attempts
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rl = await enforceRateLimit({ request, endpoint: 'auth:login', limit: 50, windowSeconds: 600 });
-      if (rl) return rl;
-    } catch (e) {
-      console.error('Rate limit middleware error (login):', e);
-    }
+    const rl = await enforceRateLimit({ request, endpoint: 'auth:login', limit: 50, windowSeconds: 600 });
+    if (rl) return rl;
     const body = await request.json();
     const parsed = LoginRequestSchema.safeParse(body);
     if (!parsed.success) {
@@ -36,7 +33,7 @@ export async function POST(request: Request) {
     const { email, password, turnstileToken } = parsed.data;
 
     const { verifyTurnstile } = await import('@/lib/turnstile');
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+    const ip = getClientIp(request);
     const turnstile = await verifyTurnstile(turnstileToken, ip);
     if (!turnstile.ok) {
       await logAudit({ action: 'login', actor_email: email, outcome: 'failure', detail: turnstile.error || 'turnstile_failed' });
@@ -46,13 +43,8 @@ export async function POST(request: Request) {
     // Account-based rate limit (by email)
     // Turnstile の検証より後に数える。先に数えると、ボット判定を通さずに他人のメールアドレスを
     // 送るだけでその人の枠を使い切らせ、締め出せてしまう（パスワード再設定と同じ順番）。
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rlAccount = await enforceRateLimit({ request, endpoint: 'auth:login', limit: 5, windowSeconds: 600, subject: email });
-      if (rlAccount) return rlAccount;
-    } catch (e) {
-      console.error('Rate limit middleware error (login-account):', e);
-    }
+    const rlAccount = await enforceRateLimit({ request, endpoint: 'auth:login', limit: 5, windowSeconds: 600, subject: email });
+    if (rlAccount) return rlAccount;
 
     // 匿名クライアントでパスワード検証のみ行う（セッション Cookie の副作用を持たない）。
     const supabase = await createPublicClient();

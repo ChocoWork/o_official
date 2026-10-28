@@ -4,12 +4,13 @@
  * @packageDocumentation
  * @impl IMPL-ADMIN-104
  * @design DD-ADMIN-004
- * @remarks audit_logs は認証済みの利用者の直接の読みを方針で断っているので、監査の閲覧権限を確かめた後に service role で読む。操作した人のメール・IP・ブラウザの情報・付帯の情報は読める人にも返さないため、列を名指しした8列だけを選ぶ。監査ログを誰がいつ読んだかを、読めた時に1行残す（ログの中身は入れない）。記録に失敗しても読み出しは止めない。
+ * @remarks audit_logs は認証済みの利用者の直接の読みを方針で断っているので、監査の閲覧権限を確かめた後に service role で読む。操作した人のメール・IP・ブラウザの情報・付帯の情報は読める人にも返さないため、列を名指しした8列だけを選ぶ。監査ログを誰がいつ読んだかを、読めた時に1行残す（ログの中身は入れず、読んだ人の送り元 IP とブラウザの名乗りは付ける。ADR-0462）。記録に失敗しても読み出しは止めない。
  */
 import { NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit, type AuditEvent } from '@/lib/audit';
+import { getAuditRequestContext } from '@/lib/request-ip';
 
 const AUDIT_LOGS_SAFE_COLUMNS = [
   'id',
@@ -55,6 +56,7 @@ export async function GET(request: Request) {
       actor_email: authResult.actorEmail,
       resource: 'audit_logs',
       outcome: 'success',
+      ...getAuditRequestContext(request),
     });
 
     return NextResponse.json({ data }, { status: 200 });

@@ -12,6 +12,7 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { revokeAllSessionsForUser } from '@/lib/auth/revoke-user-sessions';
+import { getClientIp } from '@/lib/request-ip';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { incrementCounter } from '@/features/auth/ratelimit';
 
@@ -73,7 +74,7 @@ function isTargetNotFound(error: unknown): boolean {
 
 export async function POST(request: Request) {
   try {
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    const clientIp = getClientIp(request);
     const userAgent = request.headers.get('user-agent') ?? null;
 
     const authResult = await authorizeAdminPermission('admin.users.manage', request);
@@ -98,6 +99,8 @@ export async function POST(request: Request) {
         resource: 'sessions',
         outcome,
         ...(detail ? { detail } : {}),
+        ip: clientIp,
+        user_agent: userAgent,
         ...extra,
       });
 

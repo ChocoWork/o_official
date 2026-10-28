@@ -12,6 +12,7 @@ import {
 } from '@/lib/orders/returns/customer-return-messages';
 import { CustomerOrderNotFoundError } from '@/lib/orders/returns/customer-return-store';
 import { ReturnStoreError } from '@/lib/orders/returns/return-store';
+import { getClientIp } from '@/lib/request-ip';
 
 /**
  * お客様の返品・交換とキャンセルの申し込みの窓口が共有する部品（グループ E-3 段2 Task 7、決め事 T7-1）。
@@ -137,7 +138,7 @@ export function createCustomerAudit(
       resource_id: target.orderId,
       outcome,
       detail,
-      ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      ip: getClientIp(request),
       user_agent: request.headers.get('user-agent') ?? null,
       metadata,
     });

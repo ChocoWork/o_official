@@ -40,11 +40,26 @@ type AuthzSuccess = {
   userId: string;
   role: AppRole;
   actorEmail: string | null;
+  /** 有効な全ての役割の和集合（要ったコード以外も含む）。窓口が画面の出し分けの印を作るために使う */
+  permissions: ReadonlySet<PermissionCode>;
 };
 
-type AuthzFailure = {
+/**
+ * 認可で断った要求のうち、操作者が分かる物の記録用の情報。窓口が監査に残すために使う（auditAuthzDenial）。
+ * token の無い 401・失効を確認できない 503・内部の誤りの 500 には付かない（操作者が無い・拒否ではないため）。
+ */
+export type AuthzDenial = {
+  userId: string;
+  email: string | null;
+  role: AppRole;
+  permission: PermissionCode;
+  reason: 'permission' | 'mfa' | 'session';
+};
+
+export type AuthzFailure = {
   ok: false;
   response: NextResponse;
+  denial?: AuthzDenial;
 };
 
 export type AuthzResult = AuthzSuccess | AuthzFailure;
@@ -235,6 +250,7 @@ export async function authorizeAdminPermissions(required: readonly PermissionCod
       return {
         ok: false,
         response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+        denial: { userId, email: claims.email ?? null, role: tokenRole, permission: firstRequired, reason: 'session' },
       };
     }
 
@@ -247,6 +263,7 @@ export async function authorizeAdminPermissions(required: readonly PermissionCod
           { error: 'Forbidden', permission: missingPermission, role: tokenRole },
           { status: 403 }
         ),
+        denial: { userId, email: claims.email ?? null, role: tokenRole, permission: missingPermission, reason: 'permission' },
       };
     }
 
@@ -260,6 +277,7 @@ export async function authorizeAdminPermissions(required: readonly PermissionCod
           { error: 'Forbidden', reason: 'MFA required', permission: firstRequired, role: tokenRole },
           { status: 403 }
         ),
+        denial: { userId, email: claims.email ?? null, role: tokenRole, permission: firstRequired, reason: 'mfa' },
       };
     }
 
@@ -268,6 +286,7 @@ export async function authorizeAdminPermissions(required: readonly PermissionCod
       userId,
       role: tokenRole,
       actorEmail: claims.email ?? null,
+      permissions: aclPermissions,
     };
   } catch (err) {
     console.error('[RBAC] Authorization error:', err);

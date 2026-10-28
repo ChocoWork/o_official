@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getClientIp } from '@/lib/request-ip';
 
 // 証憑（電子取引データ）のアップロードと閲覧。
 // バケットは非公開なので、閲覧は短命の署名付きURLで行う。
@@ -148,7 +149,7 @@ export async function POST(request: Request) {
 			resource_id: String(inserted.id),
 			outcome: 'success',
 			detail: `Attached receipt to entry ${entry.id}`,
-			ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+			ip: getClientIp(request),
 			user_agent: request.headers.get('user-agent') ?? null,
 			metadata: { entry_id: entry.id, storage_path: storagePath, file_size: file.size },
 		});

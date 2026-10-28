@@ -14,6 +14,7 @@ import { createClient } from '@/lib/supabase/server';
 import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
 import { hasSecondFactorAmr } from '@/lib/auth/amr';
 import { logAudit } from '@/lib/audit';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -42,14 +43,9 @@ function toQrImageSrc(qrCode: string): string {
 
 export async function POST(request: Request) {
   try {
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rl = await enforceRateLimit({ request, endpoint: 'auth:mfa:enroll-totp', limit: 10, windowSeconds: 600 });
-      if (rl) {
-        return rl;
-      }
-    } catch (error) {
-      console.error('[auth.mfa.enroll] rate limit middleware error:', error);
+    const rl = await enforceRateLimit({ request, endpoint: 'auth:mfa:enroll-totp', limit: 10, windowSeconds: 600 });
+    if (rl) {
+      return rl;
     }
 
     const supabase = await createClient(request);

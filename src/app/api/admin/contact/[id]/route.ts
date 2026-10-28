@@ -4,13 +4,14 @@
  * @packageDocumentation
  * @impl IMPL-ADMIN-122
  * @design DD-ADMIN-007
- * @remarks 問い合わせの表は直接の読み書きを断っているので、権限を確かめた後に service role で扱う。読む権限と変える権限を分け、状態の変更と、1件を開いたことを監査に残す。読んだ記録には名前・メール・本文・件名を入れず、記録に失敗しても読み出しは止めない。詳細に返さない送信元の IP とブラウザ（submitted_ip・user_agent）は列ごと選ばない。状態は表の CHECK と同じ4つの値だけを入口で受ける。変更は管理者単位で、テンプレートの書き込みと合わせて10分に60回までに絞る。id が UUID でない・変えた行が0行の時は、成功と返さず404にして、失敗を監査に残す。
+ * @remarks 問い合わせの表は直接の読み書きを断っているので、権限を確かめた後に service role で扱う。読む権限と変える権限を分け、状態の変更と、1件を開いたことを監査に残す。読んだ記録と状態の変更の記録には、行為者のメール・送り元 IP・ブラウザの名乗りを付ける（ADR-0462）。読んだ記録には名前・メール・本文・件名を入れず、記録に失敗しても読み出しは止めない。詳細に返さない送信元の IP とブラウザ（submitted_ip・user_agent）は列ごと選ばない。状態は表の CHECK と同じ4つの値だけを入口で受ける。変更は管理者単位で、テンプレートの書き込みと合わせて10分に60回までに絞る。id が UUID でない・変えた行が0行の時は、成功と返さず404にして、失敗を監査に残す。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit, type AuditEvent } from '@/lib/audit';
+import { getAuditRequestContext } from '@/lib/request-ip';
 import { toOrderNumber } from '@/lib/orders/order-number';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
@@ -73,6 +74,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       resource: 'contact',
       resource_id: id,
       outcome: 'success',
+      ...getAuditRequestContext(request),
     });
 
     return NextResponse.json(
@@ -124,11 +126,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       await logAudit({
         action: 'admin.contact.status_update',
         actor_id: authz.userId,
+        actor_email: authz.actorEmail,
         resource: 'contact',
         resource_id: id,
         outcome: 'failure',
         detail: 'inquiry_not_found',
-        user_agent: request.headers.get('user-agent'),
+        ...getAuditRequestContext(request),
       });
       return NextResponse.json({ error: 'Inquiry not found' }, { status: 404 });
     }
@@ -136,11 +139,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     await logAudit({
       action: 'admin.contact.status_update',
       actor_id: authz.userId,
+      actor_email: authz.actorEmail,
       resource: 'contact',
       resource_id: id,
       outcome: 'success',
       detail: `status=${parsed.data.status}`,
-      user_agent: request.headers.get('user-agent'),
+      ...getAuditRequestContext(request),
     });
 
     return NextResponse.json({ success: true }, { status: 200 });

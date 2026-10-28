@@ -5,8 +5,9 @@
  * @impl IMPL-LOOK-126
  * @design DD-LOOK-060
  * @remarks 画面は利用者の端末で動き、守りは持たない。権限・回数の制限・監査は窓口（/api/admin/looks）が受け持つ。
- * カードの公開の切り替え・編集・削除は、窓口の応答の meta.canManage が真の時だけ出す。読み込み中・失敗・meta なし・偽は出さず、
+ * 「新規作成」とカードの公開の切り替え・編集・削除は、窓口の応答の meta.canManage が真の時だけ出す。読み込み中・失敗・meta なし・偽は出さず、
  * 権限の無い人に押せない操作を見せない（SEC-LOOK-019。窓口の判定が本物で、画面の出し分けは案内）。
+ * 「新規作成」は頁の役（admin）でなく権限で出し、0 件の一覧にも出す（最初の 1 件を作れるように。ADR-0166）。
  * 作った LOOK を直さずに出し入れできるよう、公開の切り替えは状態だけを反転して送る。
  * 消した LOOK は戻せないので押し間違いを防ぐ確かめを挟み、変更の後は一覧を取り直して窓口の結果を画面に映す。
  */
@@ -37,6 +38,8 @@ export default function LookSection() {
     try {
       const res = await clientFetch("/api/admin/looks");
       if (!res.ok) {
+        // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+        void res.arrayBuffer?.().catch(() => {});
         throw new Error("Failed to fetch looks");
       }
 
@@ -69,6 +72,7 @@ export default function LookSection() {
       });
 
       if (!res.ok) {
+        void res.arrayBuffer?.().catch(() => {});
         throw new Error("Failed to update status");
       }
 
@@ -90,6 +94,7 @@ export default function LookSection() {
       });
 
       if (!res.ok) {
+        void res.arrayBuffer?.().catch(() => {});
         throw new Error("Failed to delete look");
       }
 
@@ -104,16 +109,29 @@ export default function LookSection() {
     return <div className="text-center py-12 font-acumin">読み込み中...</div>;
   }
 
+  // 「新規作成」は管理の権限（canManage）がある時だけ。0 件でも出す（出さないと最初の 1 件を作れない）
+  const createButton = canManage ? (
+    <div className="mb-6 flex justify-end">
+      <Button href="/admin/look/create" variant="primary" size="sm" className="font-acumin">
+        新規作成
+      </Button>
+    </div>
+  ) : null;
+
   if (lookItems.length === 0) {
     return (
-      <div className="text-center py-12 text-[#474747] font-acumin">
-        LOOKがありません
-      </div>
+      <section>
+        {createButton}
+        <div className="text-center py-12 text-[#474747] font-acumin">
+          LOOKがありません
+        </div>
+      </section>
     );
   }
 
   return (
     <section>
+      {createButton}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {lookItems.map((item) => (
           <Card key={item.id} className="overflow-hidden p-0" size="md">

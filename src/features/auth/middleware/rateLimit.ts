@@ -1,22 +1,32 @@
 import { NextResponse } from 'next/server';
 import { incrementCounter } from '@/features/auth/ratelimit';
+import { withNoStore } from '@/lib/http/no-store';
+import { getClientIp } from '@/lib/request-ip';
 
-function getIpFromRequest(request?: Request): string {
+// 429・503 は利用者ごとの回数の状態を表すので、共有のキャッシュに残さない（SEC-AUTH-013、DD-AUTH-038）。
+function limitResponse(error: string, status: number, retryAfter: number): Response {
   try {
-    if (!request) return '127.0.0.1';
-    // Prefer forwarded header, else use connection remote addr if available
-    const fwd = request.headers.get('x-forwarded-for');
-    if (fwd) return fwd.split(',')[0].trim();
-    const real = request.headers.get('x-real-ip');
-    if (real) return real;
+    const res = NextResponse.json({ error }, { status });
+    res.headers.set('Retry-After', String(retryAfter));
+    return withNoStore(res);
   } catch {
-    // ignore
+    // In test environments NextResponse may not be available; return Web Response.
+    return withNoStore(
+      new Response(JSON.stringify({ error }), {
+        status,
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': String(retryAfter),
+        },
+      }),
+    );
   }
-  return '127.0.0.1';
 }
 
 export async function enforceRateLimit({ request, endpoint, limit = 50, windowSeconds = 600, subject }: { request?: Request; endpoint: string; limit?: number; windowSeconds?: number; subject?: string | null }) {
-  const ip = getIpFromRequest(request);
+  // 送り元が取れない時は null のまま渡す。rate_limit_counters.ip は inet で 'unknown' は入らず、
+  // null は一意制約（NULLS NOT DISTINCT）で「送り元が分からない全員が 1 つの枠」になる。
+  const ip = getClientIp(request);
 
   // Compute bucket timestamp truncated to windowSeconds
   const windowMs = windowSeconds * 1000;
@@ -26,41 +36,12 @@ export async function enforceRateLimit({ request, endpoint, limit = 50, windowSe
     const count = await incrementCounter({ ip, endpoint, bucket: bucketTs, subject: subject ?? null });
     if (count > limit) {
       const retryAfter = windowSeconds; // simple retry-after = window
-      try {
-        const res = NextResponse.json({ error: 'Too many requests' }, { status: 429 });
-        res.headers.set('Retry-After', String(retryAfter));
-        return res;
-      } catch {
-        // In test environments NextResponse may not be available; return Web Response.
-        return new Response(JSON.stringify({ error: 'Too many requests' }), {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': String(retryAfter),
-          },
-        });
-      }
+      return limitResponse('Too many requests', 429, retryAfter);
     }
     return undefined;
   } catch (err) {
     // On DB errors, fail-closed to preserve authentication abuse protection.
     console.error('enforceRateLimit error:', err);
-    const retryAfter = windowSeconds;
-    try {
-      const res = NextResponse.json(
-        { error: 'Rate limiter unavailable' },
-        { status: 503 }
-      );
-      res.headers.set('Retry-After', String(retryAfter));
-      return res;
-    } catch {
-      return new Response(JSON.stringify({ error: 'Rate limiter unavailable' }), {
-        status: 503,
-        headers: {
-          'Content-Type': 'application/json',
-          'Retry-After': String(retryAfter),
-        },
-      });
-    }
+    return limitResponse('Rate limiter unavailable', 503, windowSeconds);
   }
 }

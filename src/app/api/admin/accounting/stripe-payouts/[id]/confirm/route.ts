@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getClientIp } from '@/lib/request-ip';
 
 const requestSchema = z.object({
   bankArrivalDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -113,7 +114,7 @@ export async function POST(
       resource_id: payoutId,
       outcome: 'success',
       detail: `Confirmed bank arrival on ${bankArrivalDate}`,
-      ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      ip: getClientIp(request),
       user_agent: request.headers.get('user-agent') ?? null,
       metadata: { payoutId, bankArrivalDate, amount: current.amount },
     });

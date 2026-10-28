@@ -221,7 +221,11 @@ export default function ContactSection() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: replyBody.trim() }),
       });
-      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      if (!res.ok) {
+        // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+        void res.arrayBuffer?.().catch(() => {});
+        throw new Error(`Failed: ${res.status}`);
+      }
       const json = await res.json().catch(() => ({}));
       setReplyBody("");
       setReplyNotice(
@@ -247,7 +251,10 @@ export default function ContactSection() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
-      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      if (!res.ok) {
+        void res.arrayBuffer?.().catch(() => {});
+        throw new Error(`Failed: ${res.status}`);
+      }
       await fetchDetail(selectedId);
       await fetchThreads();
     } catch (error) {
@@ -611,7 +618,10 @@ function TemplateManager({ templates, onChanged }: TemplateManagerProps) {
             headers: { "Content-Type": "application/json" },
             body: payload,
           });
-      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      if (!res.ok) {
+        void res.arrayBuffer?.().catch(() => {});
+        throw new Error(`Failed: ${res.status}`);
+      }
       resetForm();
       await onChanged();
     } catch (error) {
@@ -627,7 +637,10 @@ function TemplateManager({ templates, onChanged }: TemplateManagerProps) {
       const res = await clientFetch(`/api/admin/contact/templates/${id}`, {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      if (!res.ok) {
+        void res.arrayBuffer?.().catch(() => {});
+        throw new Error(`Failed: ${res.status}`);
+      }
       if (editingId === id) resetForm();
       await onChanged();
     } catch (error) {

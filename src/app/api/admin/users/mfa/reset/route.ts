@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { revokeAllSessionsForUser } from '@/lib/auth/revoke-user-sessions';
 import { logAudit } from '@/lib/audit';
+import { getClientIp } from '@/lib/request-ip';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
       return limited;
     }
 
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    const clientIp = getClientIp(request);
     const userAgent = request.headers.get('user-agent') ?? null;
 
     const audit = (

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookieOptionsForCsrf, csrfCookieName } from '@/lib/cookie';
+import { getClientIp } from '@/lib/request-ip';
 
 /** Stripe の Checkout Session の ID（受け付け・入り直しの要求で受け取る） */
 export const CHECKOUT_SESSION_ID_PATTERN = /^cs_(test|live)_[A-Za-z0-9]+$/;
@@ -72,15 +73,6 @@ export function resolveCheckoutIpLimitMultiplier(): number {
   }
 
   return Math.min(Math.max(Number(raw), 1), IP_LIMIT_MULTIPLIER_MAX);
-}
-
-export function getClientIp(request: NextRequest): string | null {
-  const forwardedFor = request.headers.get('x-forwarded-for');
-  if (forwardedFor) {
-    return forwardedFor.split(',')[0]?.trim() ?? null;
-  }
-
-  return request.headers.get('x-real-ip');
 }
 
 type CsrfDenyResponse = {

@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { logAudit } from '@/lib/audit';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
 async function clearAuthCookies(response: NextResponse) {
   const {
@@ -27,13 +28,8 @@ async function clearAuthCookies(response: NextResponse) {
 export async function POST(request: Request) {
   try {
     // Enforce IP-level rate limit for refresh attempts
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rl = await enforceRateLimit({ request, endpoint: 'auth:refresh', limit: 30, windowSeconds: 600 });
-      if (rl) return rl;
-    } catch (e) {
-      console.error('Rate limit middleware error (refresh):', e);
-    }
+    const rl = await enforceRateLimit({ request, endpoint: 'auth:refresh', limit: 30, windowSeconds: 600 });
+    if (rl) return rl;
     const cookieStore = await cookies();
     const refreshToken = cookieStore.get('sb-refresh-token')?.value;
 

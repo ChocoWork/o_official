@@ -14,9 +14,33 @@ export type AuditEvent = {
   created_at?: string | null;
 };
 
+// 制御文字（Cc: 改行・タブ・NUL など）と書式文字（Cf: ゼロ幅・向きの制御など）。
+// 行を偽造したり、見た目を偽って読む人を惑わしたりできるので、空白に替える。
+const CONTROL_CHARS = /[\p{Cc}\p{Cf}]/gu;
+
+function replaceControlChars<T>(value: T): T {
+  if (typeof value === 'string') {
+    return value.replace(CONTROL_CHARS, ' ') as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map(replaceControlChars) as T;
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, replaceControlChars(v)])) as T;
+  }
+  return value;
+}
+
 export function maskAuditEvent(event: AuditEvent) {
   // 深いコピーして元のオブジェクトを壊さない
   const masked: AuditEvent = JSON.parse(JSON.stringify(event));
+
+  if (typeof masked.detail === 'string') {
+    masked.detail = replaceControlChars(masked.detail);
+  }
+  if (masked.metadata && typeof masked.metadata === 'object') {
+    masked.metadata = replaceControlChars(masked.metadata);
+  }
 
   // マスク対象キー（小文字比較）
   const sensitiveKeyPatterns = [/password/, /^pass$/, /^pwd$/, /token/, /secret/, /ssn/, /card/, /cvv/, /credit_card/, /pan/, /number/];

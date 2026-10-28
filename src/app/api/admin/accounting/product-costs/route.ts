@@ -5,6 +5,7 @@ import { logAudit } from '@/lib/audit';
 import { calculateProductCosting, PRODUCT_CATEGORIES, PRODUCT_COST_TYPES } from '@/lib/finance/product-costing';
 import type { CostAllocation, CostingExpense, CostingItem, ProductCategory, ProductCostType } from '@/lib/finance/product-costing';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getClientIp } from '@/lib/request-ip';
 
 const seasonSchema = z.string().regex(/^\d{4}(SS|AW)$/);
 const moneySchema = z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
@@ -179,7 +180,7 @@ export async function POST(request: Request) {
       action: `admin.finance.productCost.${operation}`, actor_id: authz.userId,
       actor_email: authz.actorEmail, resource: 'product-cost', resource_id: resourceId,
       outcome: 'success', detail: `Completed ${operation}`,
-      ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      ip: getClientIp(request),
       user_agent: request.headers.get('user-agent') ?? null, metadata: { operation },
     });
     return attachRotatedCsrf(NextResponse.json({ success: true, resourceId }), csrfResult);

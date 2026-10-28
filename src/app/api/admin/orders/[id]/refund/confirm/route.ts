@@ -6,6 +6,7 @@ import { logAudit } from '@/lib/audit';
 import { INVALID_REQUEST_BODY, refundFailureBody } from '@/lib/orders/refund/refund-messages';
 import { refundErrorLogFields, toRefundReply } from '@/lib/orders/refund/refund-route-support';
 import { confirmAwaitingRefund, createDefaultRefundServiceDeps } from '@/lib/orders/refund/refund-service';
+import { getClientIp } from '@/lib/request-ip';
 
 const bodySchema = z.object({ refundId: z.string().uuid() });
 
@@ -50,7 +51,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       resource_id: id,
       outcome,
       detail,
-      ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      ip: getClientIp(request),
       user_agent: request.headers.get('user-agent') ?? null,
       metadata,
     });

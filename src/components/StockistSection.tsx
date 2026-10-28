@@ -4,7 +4,7 @@
  * @packageDocumentation
  * @impl IMPL-STOCKIST-121
  * @design DD-STOCKIST-030
- * @remarks 店長が非公開の店も含めて一覧し、切り替えと削除まで終えられるよう1つの部品に置く（SCR-STOCKIST-004）。消した店は戻せないので、削除の前に確かめの窓を挟む（STATE-STOCKIST-001）。編集は作成と同じフォームを使うため、一覧の中では行わず別の頁へ移す（FLOW-STOCKIST-002）。利用者の端末で動くため権限の守りは持たず、変更は窓口へ送って窓口に任せる（ARC-STOCKIST-002）。
+ * @remarks 窓口の応答が ok でない時は、本文を使わなくても読み始めておく（回数の制限の 429 は no-store で、読まずに捨てるとブラウザが要求を開いたまま残すため）。店長が非公開の店も含めて一覧し、切り替えと削除まで終えられるよう1つの部品に置く（SCR-STOCKIST-004）。消した店は戻せないので、削除の前に確かめの窓を挟む（STATE-STOCKIST-001）。編集は作成と同じフォームを使うため、一覧の中では行わず別の頁へ移す（FLOW-STOCKIST-002）。利用者の端末で動くため権限の守りは持たず、変更は窓口へ送って窓口に任せる（ARC-STOCKIST-002）。
  */
 "use client";
 
@@ -32,6 +32,8 @@ export default function StockistSection() {
     try {
       const res = await clientFetch("/api/admin/stockists");
       if (!res.ok) {
+        // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+        void res.arrayBuffer?.().catch(() => {});
         throw new Error("Failed to fetch stockists");
       }
 
@@ -62,6 +64,7 @@ export default function StockistSection() {
       });
 
       if (!res.ok) {
+        void res.arrayBuffer?.().catch(() => {});
         throw new Error("Failed to update status");
       }
 
@@ -83,6 +86,7 @@ export default function StockistSection() {
       });
 
       if (!res.ok) {
+        void res.arrayBuffer?.().catch(() => {});
         throw new Error("Failed to delete stockist");
       }
 

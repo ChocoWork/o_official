@@ -9,6 +9,7 @@
  */
 import { NextResponse } from 'next/server';
 import { authenticateRequest, authFailureResponse } from '@/lib/auth/authenticate';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import {
   applyReturnIntentCookie,
   resolveReturnDestination,
@@ -19,13 +20,8 @@ type UserRole = 'admin' | 'supporter' | 'user';
 const toRole = (role: unknown): UserRole => (role === 'admin' || role === 'supporter' ? role : 'user');
 
 export async function POST(request: Request) {
-  try {
-    const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-    const rl = await enforceRateLimit({ request, endpoint: 'auth:post-login', limit: 60, windowSeconds: 600 });
-    if (rl) return rl;
-  } catch (e) {
-    console.error('Rate limit middleware error (post-login):', e);
-  }
+  const rl = await enforceRateLimit({ request, endpoint: 'auth:post-login', limit: 60, windowSeconds: 600 });
+  if (rl) return rl;
 
   try {
     const auth = await authenticateRequest(request);

@@ -7,6 +7,7 @@ import { authenticateRequest } from '@/lib/auth/authenticate';
 import { logAudit } from '@/lib/audit';
 import { buildReplyAddress } from '@/lib/contact/reply-address';
 import { toOrderNumber } from '@/lib/orders/order-number';
+import { getClientIp } from '@/lib/request-ip';
 
 const contactSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -76,20 +77,6 @@ const inquiryTypeLabelMap: Record<string, string> = {
   order: 'ご注文について',
   other: 'その他',
 };
-
-function getClientIp(request: Request): string | null {
-  const forwarded = request.headers.get('x-forwarded-for');
-  if (forwarded) {
-    return forwarded.split(',')[0]?.trim() ?? null;
-  }
-
-  const realIp = request.headers.get('x-real-ip');
-  if (realIp) {
-    return realIp.trim();
-  }
-
-  return null;
-}
 
 function hashText(value: string): string {
   return createHash('sha256').update(value).digest('hex');

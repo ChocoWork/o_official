@@ -12,6 +12,7 @@ import {
   type OrderEmailStore,
 } from '@/lib/orders/email/order-email-store';
 import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
+import { getClientIp } from '@/lib/request-ip';
 
 // 再送できる種類のうち、発送のメールだけが発送の番号を持つ。配送メール3種類は下で再送を断る。
 // null は「持たない」として受ける（画面が、発送の番号の無いメールも同じ形で送れるように）
@@ -65,7 +66,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       resource_id: id,
       outcome,
       detail,
-      ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      ip: getClientIp(request),
       user_agent: request.headers.get('user-agent') ?? null,
       metadata,
     });

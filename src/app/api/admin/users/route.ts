@@ -5,6 +5,7 @@ import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
 import { requireCsrfOrDeny } from '@/lib/csrfMiddleware';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
+import { getClientIp } from '@/lib/request-ip';
 import { RolePermissionStoreError, setUserRole } from '@/lib/auth/role-permission-store';
 
 const roleSchema = z.enum(['admin', 'supporter', 'user']);
@@ -193,7 +194,7 @@ export async function PATCH(request: Request): Promise<Response> {
         await logAudit({
           action: 'admin.users.role.update', actor_id: authz.userId,
           resource: 'users', resource_id: targetUserId, outcome, detail,
-          ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+          ip: getClientIp(request),
           user_agent: request.headers.get('user-agent') ?? null,
           metadata,
         });

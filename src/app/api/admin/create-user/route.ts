@@ -4,7 +4,7 @@
  * @packageDocumentation
  * @impl IMPL-ADMIN-102
  * @design DD-ADMIN-002
- * @remarks Auth の利用者を作る機能は service role でしか呼べないので、権限と aal2 の確認を通した後にだけ使う。作れた・重なった・失敗したを監査に分けて残し、誰がいつ誰を作ったかをたどれるようにする。管理者が作る利用者にも自分で登録する利用者と同じ16〜128字と漏洩の照合を当て、弱いパスワードの口を管理者の窓口に残さない。作成は管理者単位で10分に20件までに絞る。監査には Auth の誤りの文（メールを含みうる）を入れず、固定の符号だけを残す。
+ * @remarks Auth の利用者を作る機能は service role でしか呼べないので、権限と aal2 の確認を通した後にだけ使う。作れた・重なった・失敗したを監査に分けて残し、誰がいつ誰を作ったかをたどれるようにする。管理者が作る利用者にも自分で登録する利用者と同じ16〜128字と漏洩の照合を当て、弱いパスワードの口を管理者の窓口に残さない。作成は管理者単位で10分に20件までに絞る。監査には Auth の誤りの文（メールを含みうる）を入れず、固定の符号だけを残す。全部の行に行為者のメール・送り元の IP（取れなければ null）・ブラウザの名乗りを付け、乗っ取られた管理者の操作を後から追えるようにする（ADR-0462）。
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -14,6 +14,7 @@ import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { checkPwnedPassword, PWNED_PASSWORD_MESSAGE } from '@/lib/pwned-password';
 import { passwordSchema } from '@/features/auth/schemas/common';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
+import { getAuditRequestContext } from '@/lib/request-ip';
 
 const bodySchema = z.object({
   email: z.string().email(),
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
 
     actorId = authz.userId;
     actorEmail = authz.actorEmail;
+    const auditContext = getAuditRequestContext(request);
 
     const limited = await enforceRateLimit({ request, ...CREATE_USER_RATE_LIMIT, subject: actorId });
     if (limited) {
@@ -51,6 +53,7 @@ export async function POST(request: Request) {
         resource: 'users',
         outcome: 'failure',
         detail: 'Invalid request body',
+        ...auditContext,
       });
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
     }
@@ -67,6 +70,7 @@ export async function POST(request: Request) {
         resource: 'users',
         outcome: 'failure',
         detail: 'pwned_password',
+        ...auditContext,
       });
       return NextResponse.json({ error: PWNED_PASSWORD_MESSAGE }, { status: 400 });
     }
@@ -79,6 +83,7 @@ export async function POST(request: Request) {
         resource: 'users',
         outcome: 'error',
         detail: `pwned_check_unavailable:${pwned.reason}`,
+        ...auditContext,
       });
     }
 
@@ -101,6 +106,7 @@ export async function POST(request: Request) {
           resource: 'users',
           outcome: 'conflict',
           detail: 'email_already_registered',
+          ...auditContext,
         });
         return NextResponse.json({ error: 'Email already registered' }, { status: 409 });
       }
@@ -112,6 +118,7 @@ export async function POST(request: Request) {
         resource: 'users',
         outcome: 'error',
         detail: 'create_user_failed',
+        ...auditContext,
       });
       return NextResponse.json({ error: 'Failed to create user' }, { status: 500 });
     }
@@ -123,6 +130,7 @@ export async function POST(request: Request) {
       resource: 'users',
       resource_id: data.user?.id,
       outcome: 'success',
+      ...auditContext,
     });
     return NextResponse.json({ id: data.user?.id, email: data.user?.email }, { status: 201 });
   } catch (err) {

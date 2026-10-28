@@ -19,6 +19,7 @@ import {
   resolveReturnDestination,
 } from '@/features/auth/return-intent/return-intent-service';
 import { logAudit } from '@/lib/audit';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
 type UserRole = 'admin' | 'supporter' | 'user';
 
@@ -71,13 +72,8 @@ export async function GET(request: Request) {
   const origin = getRequestOrigin(request);
 
   try {
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rl = await enforceRateLimit({ request, endpoint: 'auth:oauth:callback', limit: 50, windowSeconds: 600 });
-      if (rl) return rl;
-    } catch (e) {
-      console.error('Rate limit middleware error (oauth callback):', e);
-    }
+    const rl = await enforceRateLimit({ request, endpoint: 'auth:oauth:callback', limit: 50, windowSeconds: 600 });
+    if (rl) return rl;
 
     const url = new URL(request.url);
     const parsed = CallbackQuerySchema.safeParse({

@@ -72,6 +72,8 @@ export function CartProvider({ children, enabled = true }: { children: React.Rea
   const lookupWishlistRowId = async (itemId: number): Promise<string | undefined> => {
     const response = await sendShoppingRequest('/api/wishlist');
     if (!response.ok) {
+      // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+      void response.arrayBuffer?.().catch(() => {});
       throw new Error('ウィッシュリストから削除できません');
     }
 
@@ -89,6 +91,8 @@ export function CartProvider({ children, enabled = true }: { children: React.Rea
 
       // 404 も「既に無い」なので同じ。冪等にしておかないと、行 ID が古いだけで失敗になる。
       if (!response.ok && response.status !== 404) {
+        // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+        void response.arrayBuffer?.().catch(() => {});
         throw new Error('ウィッシュリストから削除できません');
       }
     }
@@ -114,6 +118,8 @@ export function CartProvider({ children, enabled = true }: { children: React.Rea
     }
 
     if (!response.ok) {
+      // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+      void response.arrayBuffer?.().catch(() => {});
       throw new Error('ウィッシュリストに追加できません');
     }
 

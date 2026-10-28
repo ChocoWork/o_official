@@ -11,19 +11,15 @@
 import { NextResponse } from 'next/server';
 import { createPublicClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { OtpVerifyRequestSchema } from '@/features/auth/schemas/otp';
 import { formatZodError } from '@/features/auth/schemas/common';
 import { linkGuestOrdersByEmail } from '@/lib/orders/link-guest-orders';
 
 export async function POST(request: Request) {
   try {
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rl = await enforceRateLimit({ request, endpoint: 'auth:otp:verify', limit: 30, windowSeconds: 600 });
-      if (rl) return rl;
-    } catch (e) {
-      console.error('Rate limit middleware error (otp verify):', e);
-    }
+    const rl = await enforceRateLimit({ request, endpoint: 'auth:otp:verify', limit: 30, windowSeconds: 600 });
+    if (rl) return rl;
 
     const body = await request.json();
     const parsed = OtpVerifyRequestSchema.safeParse(body);
@@ -45,37 +41,32 @@ export async function POST(request: Request) {
     // アカウント単位の総当たり対策。subject は必ず Cookie 由来にする。
     // クライアント入力の email を使うと、Cookie を持たない相手が他人の
     // アカウントの枠を故意に潰せる（DoS）。Cookie 検証の後に置くのもそのため。
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rlAccount = await enforceRateLimit({
-        request,
-        endpoint: 'auth:otp:verify',
-        limit: 5,
-        windowSeconds: 600,
-        subject: pending.email,
-      });
+    const rlAccount = await enforceRateLimit({
+      request,
+      endpoint: 'auth:otp:verify',
+      limit: 5,
+      windowSeconds: 600,
+      subject: pending.email,
+    });
 
-      if (rlAccount) {
-        // 上限に達したら試行の窓ごと閉じる。Cookie を残すと、窓が明けてから
-        // 同じログイン試行の続きとして再開できてしまう。
-        // enforceRateLimit はテスト環境で素の Response を返しうるので、
-        // 返り値を書き換えず新しい NextResponse を組み立てる。
-        const { loginTwoFactorSessionCookieName, clearCookieOptions } = await import('@/lib/cookie');
-        const limited = NextResponse.json({ error: 'Too many requests' }, { status: 429 });
-        const retryAfter = rlAccount.headers.get('Retry-After');
-        if (retryAfter) {
-          limited.headers.set('Retry-After', retryAfter);
-        }
-        limited.cookies.set({
-          name: loginTwoFactorSessionCookieName,
-          value: '',
-          ...clearCookieOptions(),
-        });
-        await logAudit({ action: 'auth.otp.verify', actor_email: pending.email, outcome: 'failure', detail: 'account_rate_limited' });
-        return limited;
+    if (rlAccount) {
+      // 上限に達したら試行の窓ごと閉じる。Cookie を残すと、窓が明けてから
+      // 同じログイン試行の続きとして再開できてしまう。
+      // enforceRateLimit はテスト環境で素の Response を返しうるので、
+      // 返り値を書き換えず新しい NextResponse を組み立てる。
+      const { loginTwoFactorSessionCookieName, clearCookieOptions } = await import('@/lib/cookie');
+      const limited = NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+      const retryAfter = rlAccount.headers.get('Retry-After');
+      if (retryAfter) {
+        limited.headers.set('Retry-After', retryAfter);
       }
-    } catch (e) {
-      console.error('Rate limit middleware error (otp verify account):', e);
+      limited.cookies.set({
+        name: loginTwoFactorSessionCookieName,
+        value: '',
+        ...clearCookieOptions(),
+      });
+      await logAudit({ action: 'auth.otp.verify', actor_email: pending.email, outcome: 'failure', detail: 'account_rate_limited' });
+      return limited;
     }
 
     const supabase = await createPublicClient();

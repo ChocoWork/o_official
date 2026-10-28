@@ -37,7 +37,11 @@ export function RelatedItems({ currentItemId, category }: Props) {
         }
 
         const res = await fetch(`/api/items?${query.toString()}`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+          void res.arrayBuffer?.().catch(() => {});
+          return;
+        }
         const payload = (await res.json()) as { items?: Item[] } | Item[];
         const allItems: Item[] = Array.isArray(payload)
           ? payload

@@ -7,6 +7,7 @@ import { logAudit } from '@/lib/audit';
 import { DELIVERY_ERROR_MESSAGES } from '@/lib/orders/tracking/delivery-messages';
 import { DeliveryOperationError, DeliveryStoreError } from '@/lib/orders/tracking/delivery-store';
 import type { DeliveryErrorCode } from '@/lib/orders/tracking/delivery-types';
+import { getClientIp } from '@/lib/request-ip';
 
 // 伝票番号の訂正（tracking）と手動の配達済み（delivered）の窓口は G-4 Task 8 で撤去した。残る書き込みの窓口は resolve だけ
 const RULES = {
@@ -53,7 +54,7 @@ export function createDeliveryAudit(request: Request, actorId: string, endpoint:
     action: ACTIONS[endpoint], actor_id: actorId,
     resource: 'order_fulfillment_attention', resource_id: resourceId,
     outcome, metadata,
-    ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+    ip: getClientIp(request),
     user_agent: request.headers.get('user-agent') ?? null,
   });
 }

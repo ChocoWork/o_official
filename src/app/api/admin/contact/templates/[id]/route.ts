@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { getAuditRequestContext } from '@/lib/request-ip';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
 const updateTemplateSchema = z.object({
@@ -69,11 +70,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       await logAudit({
         action: 'admin.contact.template.update',
         actor_id: authz.userId,
+        actor_email: authz.actorEmail,
         resource: 'contact_reply_template',
         resource_id: id,
         outcome: 'failure',
         detail: 'template_not_found',
-        user_agent: request.headers.get('user-agent'),
+        ...getAuditRequestContext(request),
       });
       return NextResponse.json({ error: 'Template not found' }, { status: 404 });
     }
@@ -81,11 +83,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     await logAudit({
       action: 'admin.contact.template.update',
       actor_id: authz.userId,
+      actor_email: authz.actorEmail,
       resource: 'contact_reply_template',
       resource_id: id,
       outcome: 'success',
       detail: 'updated',
-      user_agent: request.headers.get('user-agent'),
+      ...getAuditRequestContext(request),
     });
 
     return NextResponse.json({ success: true }, { status: 200 });
@@ -129,11 +132,12 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       await logAudit({
         action: 'admin.contact.template.delete',
         actor_id: authz.userId,
+        actor_email: authz.actorEmail,
         resource: 'contact_reply_template',
         resource_id: id,
         outcome: 'failure',
         detail: 'template_not_found',
-        user_agent: request.headers.get('user-agent'),
+        ...getAuditRequestContext(request),
       });
       return NextResponse.json({ error: 'Template not found' }, { status: 404 });
     }
@@ -141,11 +145,12 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     await logAudit({
       action: 'admin.contact.template.delete',
       actor_id: authz.userId,
+      actor_email: authz.actorEmail,
       resource: 'contact_reply_template',
       resource_id: id,
       outcome: 'success',
       detail: 'deleted',
-      user_agent: request.headers.get('user-agent'),
+      ...getAuditRequestContext(request),
     });
 
     return NextResponse.json({ success: true }, { status: 200 });

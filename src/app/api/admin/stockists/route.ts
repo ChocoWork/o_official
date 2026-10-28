@@ -5,20 +5,23 @@
  * @impl IMPL-STOCKIST-141
  * @design DD-STOCKIST-034
  * @remarks 一覧の読みと作成の変更で必要な権限を分け、読みの権限だけでは書けないようにする（SEC-STOCKIST-006）。
- * 変更は認可の次に回数の制限、その次に CSRF の token を確かめる。書き込みは認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（ADR-0267）。回数の制限を認可の後に呼ぶので、認可で断った要求は数えない。これは SEC-STOCKIST-020 を満たさない（推定）。
+ * 全部の窓口は「送り元の枠 → 認可 → 操作者の枠 → （変更だけ）CSRF の token」の順に確かめる。送り元の枠を認可の前に置くので、未ログインの 401・権限の無い 403 の連打も送り元ごとに止まる（SEC-STOCKIST-020）。操作者の枠は認可の後に操作者の id で数える。書き込みは認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（ADR-0267）。
+ * 認可で断った要求のうち操作者が分かる物（403・失効した session の 401）は auditAuthzDenial で監査に残す。token 無しの 401 は残さない（SEC-STOCKIST-021、ADR-0268）。
  * 一覧は内部の列を除いた 8 列だけ返し（SEC-STOCKIST-009）、壊れた JSON は 500 でなく 400 にする（SEC-STOCKIST-013）。検証の誤りは項目の名前だけの固定の本文にし（SEC-STOCKIST-014）、DB の誤りは符号だけを記録する。
  * 認可の拒否・回数の制限・CSRF の拒否を含む全部の応答を、export で withNoStore に通して `Cache-Control: private, no-store` にし（SEC-STOCKIST-010）、外側の catch の記録は名前と符号だけにする（SEC-STOCKIST-014）。
  */
 import { NextResponse } from 'next/server';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
+import { auditAuthzDenial } from '@/lib/auth/audit-authz-denial';
 import { logAudit } from '@/lib/audit';
 import { withNoStore } from '@/lib/http/no-store';
 import { describeErrorForLog } from '@/lib/logging/safe-error';
+import { getClientIp } from '@/lib/request-ip';
 import {
   applyRotatedCsrfCookie,
-  enforceAdminStockistMutationRateLimit,
-  enforceAdminStockistReadRateLimit,
+  enforceAdminStockistActorRateLimit,
+  enforceAdminStockistIpRateLimit,
   requireAdminStockistCsrf,
   toCsrfDenyResponse,
 } from '@/features/stockist/services/admin-security';
@@ -30,12 +33,18 @@ import {
 
 async function listStockists(request: Request) {
   try {
+    const ipRateLimitResponse = await enforceAdminStockistIpRateLimit(request, 'read');
+    if (ipRateLimitResponse) {
+      return ipRateLimitResponse;
+    }
+
     const authz = await authorizeAdminPermission('admin.stockists.read', request);
     if (!authz.ok) {
+      await auditAuthzDenial(authz, { request, action: 'admin.stockists.list', resource: 'stockists' });
       return authz.response;
     }
 
-    const rateLimitResponse = await enforceAdminStockistReadRateLimit(request, authz.userId);
+    const rateLimitResponse = await enforceAdminStockistActorRateLimit(request, authz.userId, 'read');
     if (rateLimitResponse) {
       return rateLimitResponse;
     }
@@ -61,12 +70,18 @@ async function listStockists(request: Request) {
 
 async function createStockist(request: Request) {
   try {
+    const ipRateLimitResponse = await enforceAdminStockistIpRateLimit(request, 'mutation');
+    if (ipRateLimitResponse) {
+      return ipRateLimitResponse;
+    }
+
     const authz = await authorizeAdminPermission('admin.stockists.manage', request);
     if (!authz.ok) {
+      await auditAuthzDenial(authz, { request, action: 'admin.stockists.create', resource: 'stockists' });
       return authz.response;
     }
 
-    const rateLimitResponse = await enforceAdminStockistMutationRateLimit(request, authz.userId);
+    const rateLimitResponse = await enforceAdminStockistActorRateLimit(request, authz.userId, 'mutation');
     if (rateLimitResponse) {
       return rateLimitResponse;
     }
@@ -77,7 +92,7 @@ async function createStockist(request: Request) {
       return csrfDenyResponse;
     }
 
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    const clientIp = getClientIp(request);
     const userAgent = request.headers.get('user-agent') ?? null;
 
     const body = await request.json().catch(() => null);

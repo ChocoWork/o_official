@@ -17,6 +17,7 @@ import { reconcileCheckoutPayment, ReconcileTransientError } from '@/lib/stripe/
 import { createDefaultReconcilerDeps } from '@/lib/stripe/checkout-payment-reconciler-deps';
 import { scheduleOrderEmailDelivery } from '@/lib/orders/email/order-email-schedule';
 import { describeUnexpectedError } from '@/features/checkout/services/checkout-error.service';
+import { getClientIp } from '@/lib/request-ip';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,15 +33,6 @@ const completeCheckoutSchema = z.object({
 
 /** 注文完了として画面へ返してよい状態。失敗・放棄・取消の注文は完了として返さない */
 const COMPLETED_ORDER_STATUSES = new Set(['paid', 'pending', 'shipped']);
-
-function getClientIp(request: NextRequest): string | null {
-  const forwardedFor = request.headers.get('x-forwarded-for');
-  if (forwardedFor) {
-    return forwardedFor.split(',')[0]?.trim() ?? null;
-  }
-
-  return request.headers.get('x-real-ip');
-}
 
 // PUBLIC: ゲスト購入を許可する公開 Route。守りはカートの Cookie・回数の制限・決済の画面とカートの一致・下書きとカートの一致。
 // ログインは確かめない。持ち主は「注文する」の受け付けで書き、完了は照合だけを行う（グループ C 設計書 4-5）。

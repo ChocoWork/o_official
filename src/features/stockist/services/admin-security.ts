@@ -96,22 +96,43 @@ export function applyRotatedCsrfCookie(response: NextResponse, csrfResult: unkno
   });
 }
 
-async function enforceStockistAdminRateLimit(
-  request: Request,
-  actorId: string,
-  endpoint: string,
-  limit: number,
-) {
-  const ipRateLimitResponse = await enforceRateLimit({
+export type StockistAdminRateLimitKind = 'read' | 'mutation';
+
+const STOCKIST_ADMIN_RATE_LIMITS: Record<StockistAdminRateLimitKind, { endpoint: string; limit: number }> = {
+  read: { endpoint: 'admin:stockists:read', limit: STOCKIST_ADMIN_READ_LIMIT },
+  mutation: { endpoint: 'admin:stockists:mutation', limit: STOCKIST_ADMIN_MUTATION_LIMIT },
+};
+
+/**
+ * 取扱店の管理窓口の送り元の枠を数える（認可の前に呼ぶ。subject なし）。
+ *
+ * @impl IMPL-STOCKIST-147
+ * @design DD-STOCKIST-038
+ * @remarks 認可の前に置くので、未ログインの 401・一般会員の 403・CSRF の拒否も数える。漏れた session や token 無しの連打で、認可と DB を引く量を送り元ごとに抑えるため（SEC-STOCKIST-020）。限度は読み 120・変更 20 を 600 秒で、操作者の枠と同じ値。
+ */
+export async function enforceAdminStockistIpRateLimit(request: Request, kind: StockistAdminRateLimitKind) {
+  const { endpoint, limit } = STOCKIST_ADMIN_RATE_LIMITS[kind];
+  return enforceRateLimit({
     request,
     endpoint,
     limit,
     windowSeconds: STOCKIST_ADMIN_RATE_LIMIT_WINDOW_SECONDS,
   });
-  if (ipRateLimitResponse) {
-    return ipRateLimitResponse;
-  }
+}
 
+/**
+ * 取扱店の管理窓口の操作者の枠を数える（認可の後に呼ぶ。subject は操作者の id）。
+ *
+ * @impl IMPL-STOCKIST-148
+ * @design DD-STOCKIST-038
+ * @remarks 送り元の見出しを変えても、同じ操作者なら同じ枠で止めるため、送り元の枠とは別に数える（SEC-STOCKIST-007）。認可の後に数えるので、操作者が分からない要求は数えない。
+ */
+export async function enforceAdminStockistActorRateLimit(
+  request: Request,
+  actorId: string,
+  kind: StockistAdminRateLimitKind,
+) {
+  const { endpoint, limit } = STOCKIST_ADMIN_RATE_LIMITS[kind];
   return enforceRateLimit({
     request,
     endpoint,
@@ -119,26 +140,4 @@ async function enforceStockistAdminRateLimit(
     windowSeconds: STOCKIST_ADMIN_RATE_LIMIT_WINDOW_SECONDS,
     subject: actorId,
   });
-}
-
-/**
- * 一覧・1件の読みの回数を制限する（送り元と操作者の2本）。
- *
- * @impl IMPL-STOCKIST-147
- * @design DD-STOCKIST-038
- * @remarks 漏れた session で短い時間に大量の列挙をさせないため、読みと変更を別の枠で数える（SEC-STOCKIST-007）。
- */
-export async function enforceAdminStockistReadRateLimit(request: Request, actorId: string) {
-  return enforceStockistAdminRateLimit(request, actorId, 'admin:stockists:read', STOCKIST_ADMIN_READ_LIMIT);
-}
-
-/**
- * 作成・更新・切り替え・削除の回数を制限する（送り元と操作者の2本）。
- *
- * @impl IMPL-STOCKIST-148
- * @design DD-STOCKIST-038
- * @remarks 送り元の見出しを変えても操作者の枠で止まるように、2本を別々に数える（SEC-STOCKIST-007）。
- */
-export async function enforceAdminStockistMutationRateLimit(request: Request, actorId: string) {
-  return enforceStockistAdminRateLimit(request, actorId, 'admin:stockists:mutation', STOCKIST_ADMIN_MUTATION_LIMIT);
 }

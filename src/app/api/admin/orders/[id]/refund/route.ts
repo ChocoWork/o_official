@@ -15,6 +15,7 @@ import {
 import { refundErrorLogFields, toRefundReply } from '@/lib/orders/refund/refund-route-support';
 import { createDefaultRefundServiceDeps, submitAdminRefund } from '@/lib/orders/refund/refund-service';
 import { STRIPE_REFUND_REASONS } from '@/lib/orders/refund/refund-types';
+import { getClientIp } from '@/lib/request-ip';
 
 // Postgres の integer の上限。これを超える額は DB が型の誤りで断って 500 になり、画面が同じ番号で確かめ直しを繰り返してしまうので、窓口で 400 にする
 const MAX_AMOUNT = 2147483647;
@@ -110,7 +111,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       resource_id: id,
       outcome,
       detail,
-      ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      ip: getClientIp(request),
       user_agent: request.headers.get('user-agent') ?? null,
       metadata,
     });

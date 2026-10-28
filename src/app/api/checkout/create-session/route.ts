@@ -43,6 +43,7 @@ import {
   reconcileCheckoutSession,
 } from "@/features/checkout/services/checkout-session-lifecycle.service";
 import { resolveCheckoutIpLimitMultiplier } from "@/features/checkout/services/checkout-route-guard";
+import { getClientIp } from "@/lib/request-ip";
 import {
   buyerUserIdOf,
   checkoutBuyerFailureResponse,
@@ -86,15 +87,6 @@ const createSessionSchema = z.object({
   // 入力画面で「適用」したコード。ここでもう一度確かめてから決済の画面に付ける（設計書第3章）
   promotionCode: z.string().trim().regex(PROMOTION_CODE_PATTERN).optional(),
 });
-
-function getClientIp(request: NextRequest): string | null {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0]?.trim() ?? null;
-  }
-
-  return request.headers.get("x-real-ip");
-}
 
 type ReusableCheckoutDraftRow = {
   id: string;

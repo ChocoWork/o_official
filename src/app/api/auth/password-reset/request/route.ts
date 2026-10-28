@@ -17,6 +17,8 @@ import { ResetRequestSchema } from '@/features/auth/schemas/password-reset';
 import { formatZodError } from '@/features/auth/schemas/common';
 import { getRequestOrigin } from '@/lib/redirect';
 import { isEmailOriginAllowed } from '@/lib/site-url-guard';
+import { getClientIp } from '@/lib/request-ip';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { notifySiteUrlInvalid } from '@/lib/ops/site-url-alert';
 
 // OWASP ASVS v4.0.3 V2.7.2「out of band ... tokens after 10 minutes」に合わせる。
@@ -26,13 +28,8 @@ const TOKEN_TTL_MS = 10 * 60 * 1000; // 10 minutes
 export async function POST(request: Request) {
   try {
     // Enforce IP-level rate limit for password reset requests
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rl = await enforceRateLimit({ request, endpoint: 'auth:password_reset_request', limit: 10, windowSeconds: 3600 });
-      if (rl) return rl;
-    } catch (e) {
-      console.error('Rate limit middleware error (password-reset):', e);
-    }
+    const rl = await enforceRateLimit({ request, endpoint: 'auth:password_reset_request', limit: 10, windowSeconds: 3600 });
+    if (rl) return rl;
     const body = await request.json();
     const parsed = ResetRequestSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json(formatZodError(parsed.error), { status: 400 });
@@ -41,7 +38,7 @@ export async function POST(request: Request) {
     const { email, turnstileToken } = parsed.data;
 
     const { verifyTurnstile } = await import('@/lib/turnstile');
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+    const ip = getClientIp(request);
     const turnstile = await verifyTurnstile(turnstileToken, ip);
     if (!turnstile.ok) {
       await logAudit({ action: 'password_reset_request', actor_email: email, outcome: 'failure', detail: turnstile.error || 'turnstile_failed' });
@@ -49,13 +46,8 @@ export async function POST(request: Request) {
     }
 
     // Account-based rate limit (by email) to prevent email enumeration/abuse
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rlAccount = await enforceRateLimit({ request, endpoint: 'auth:password_reset_request', limit: 5, windowSeconds: 3600, subject: email });
-      if (rlAccount) return rlAccount;
-    } catch (e) {
-      console.error('Rate limit middleware error (password-reset-account):', e);
-    }
+    const rlAccount = await enforceRateLimit({ request, endpoint: 'auth:password_reset_request', limit: 5, windowSeconds: 3600, subject: email });
+    if (rlAccount) return rlAccount;
     const origin = getRequestOrigin(request);
     if (!isEmailOriginAllowed(origin)) {
       after(() => notifySiteUrlInvalid());

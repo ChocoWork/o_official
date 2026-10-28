@@ -16,6 +16,8 @@ import { logAudit } from '@/lib/audit';
 import { RegisterRequestSchema } from '@/features/auth/schemas/register';
 import { formatZodError } from '@/features/auth/schemas/common';
 import { isEmailOriginAllowed } from '@/lib/site-url-guard';
+import { getClientIp } from '@/lib/request-ip';
+import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { notifySiteUrlInvalid } from '@/lib/ops/site-url-alert';
 
 /**
@@ -54,13 +56,8 @@ function notifyAlreadyRegistered(email: string, loginUrl: string) {
 export async function POST(request: Request) {
   try {
     // 送り元 IP の枠。宛先単位の枠は、Turnstile と漏洩の確かめの後に数える（下）。
-    try {
-      const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-      const rl = await enforceRateLimit({ request, endpoint: 'auth:register', limit: 20, windowSeconds: 3600 });
-      if (rl) return rl;
-    } catch (e) {
-      console.error('Rate limit middleware error (register):', e);
-    }
+    const rl = await enforceRateLimit({ request, endpoint: 'auth:register', limit: 20, windowSeconds: 3600 });
+    if (rl) return rl;
 
     const body = await request.json();
     const parsed = RegisterRequestSchema.safeParse(body);
@@ -74,7 +71,7 @@ export async function POST(request: Request) {
       // Bot 検証を先に通す。この後ろは重複確認と signUp（＝メール送信）なので、
       // Turnstile が後ろにあるとボットに無償でメール送信を叩かせることになる。
       const { verifyTurnstile } = await import("@/lib/turnstile");
-      const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+      const ip = getClientIp(request);
       const turnstile = await verifyTurnstile(parsed.data.turnstileToken, ip);
       if (!turnstile.ok) {
         await logAudit({ action: "register", actor_email: email, outcome: "failure", detail: turnstile.error || "turnstile_failed" });
@@ -102,13 +99,8 @@ export async function POST(request: Request) {
       // 宛先（メール）単位の枠。Turnstile と漏洩の確かめを通った要求だけを数える（先に数えると、
       // 他人のメールを送るだけでその人の枠を使い切らせられる）。控えの作成と既存会員の照会より前に置く
       // （後ろに置くと、429 の有無で登録済みかどうかが分かる）。
-      try {
-        const { enforceRateLimit } = await import('@/features/auth/middleware/rateLimit');
-        const rlEmail = await enforceRateLimit({ request, endpoint: 'auth:register', limit: 5, windowSeconds: 3600, subject: email });
-        if (rlEmail) return rlEmail;
-      } catch (e) {
-        console.error('Rate limit middleware error (register-email):', e);
-      }
+      const rlEmail = await enforceRateLimit({ request, endpoint: 'auth:register', limit: 5, windowSeconds: 3600, subject: email });
+      if (rlEmail) return rlEmail;
 
       // 戻り先の控えは、Turnstile・漏洩の確かめの後で、既存会員の照会の前に作る。戻り先が無くても必ず作り、
       // 登録したメールに結ぶ（確認のリンクを登録を始めたブラウザで開いた時だけ session を作る。SEC-AUTH-007）。

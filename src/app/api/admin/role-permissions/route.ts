@@ -11,6 +11,7 @@ import { RolePermissionStoreError, setRolePermissions } from '@/lib/auth/role-pe
 import type { RolePermissionChange } from '@/lib/auth/role-permission-types';
 import { requireCsrfOrDeny } from '@/lib/csrfMiddleware';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { getClientIp } from '@/lib/request-ip';
 
 const RATE_LIMIT = { endpoint: 'admin:role-permissions:update', limit: 30, windowSeconds: 600 };
 const codes = new Set<string>(ROLE_PERMISSION_CATALOG.map((permission) => permission.code));
@@ -68,7 +69,7 @@ async function savePermissions(request: Request): Promise<Response> {
       await logAudit({
         action: 'admin.permissions.update', actor_id: authz.userId,
         resource: 'role_permissions', resource_id: change?.roleCode ?? null, outcome, detail,
-        ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+        ip: getClientIp(request),
         user_agent: request.headers.get('user-agent') ?? null,
         metadata: {
           ...(change ? { role_code: change.roleCode, request_key: change.requestKey } : {}),

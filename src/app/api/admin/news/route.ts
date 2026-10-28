@@ -4,7 +4,7 @@
  * @packageDocumentation
  * @impl IMPL-NEWS-161
  * @design DD-NEWS-064
- * @remarks 表の読みは利用者の JWT の client で RLS に通し（SEC-NEWS-015、DATA-NEWS-002）、書き込み（POST・PUT・PATCH・DELETE）は認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（ADR-0026）。置き場は非公開なので、表の書き込みと同じ service role の client で置き場にも書き、署名にも使い、表には署名前の道を残して読むたびに署名する（ARC-NEWS-003、DATA-NEWS-004）。作成は表と置き場の両方を変えるので、成功も失敗も監査に残す（SEC-NEWS-016）。
+ * @remarks 表の読みは利用者の JWT の client で RLS に通し（SEC-NEWS-015、DATA-NEWS-002）、書き込み（POST・PUT・PATCH・DELETE）は認可の後に service role で行う。RLS の書き込み方針は権限を外した後も二重の守りとして残る（ADR-0026）。置き場は非公開なので、表の書き込みと同じ service role の client で置き場にも書き、署名にも使い、表には署名前の道を残して読むたびに署名する（ARC-NEWS-003、DATA-NEWS-004）。作成は表と置き場の両方を変えるので、成功も失敗も、乗っ取られた session を送り元から追えるよう IP とブラウザの名乗りとともに監査に残す（SEC-NEWS-016、ADR-0462）。
  * 画像は申告の種類と中身の印が合う物だけを置き場に書き、保存名は自分で作る（SEC-NEWS-017）。行の保存に失敗したら、上げた画像を置き場から消して孤児を残さず、消せなくても応答は変えない（SEC-NEWS-018）。
  * 一覧の取り出しの失敗は固定の文の 500 にし、誤りの文は応答にも記録にも出さない（SEC-NEWS-020）。
  */
@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { logAudit } from '@/lib/audit';
+import { getAuditRequestContext } from '@/lib/request-ip';
 import { signNewsImageFields } from '@/lib/storage/news-images';
 import { describeErrorForLog } from '@/lib/logging/safe-error';
 import {
@@ -34,13 +35,8 @@ const createNewsSchema = z.object({
 const allowedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const maxImageBytes = 5 * 1024 * 1024;
 
-// IP headers like x-forwarded-for / x-real-ip may be spoofed by the client
-// unless the environment validates them through a trusted proxy configuration.
-// We avoid logging those values in audit records unless we have a safe validation path.
-function getRequestUserAgent(request: Request): string | null {
-  return request.headers.get('user-agent') || null;
-}
-
+// 監査の IP は getClientIp が信頼する見出しだけから取る（x-forwarded-for は読まない。ADR-0416・ADR-0462）。
+// 取れない配置では null のまま保存する。
 async function logNewsAudit(
   request: Request,
   actorId: string,
@@ -57,7 +53,7 @@ async function logNewsAudit(
     resource_id: resourceId,
     outcome,
     detail,
-    user_agent: getRequestUserAgent(request),
+    ...getAuditRequestContext(request),
     metadata,
   });
 }

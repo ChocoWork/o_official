@@ -12,6 +12,7 @@
  * 候補は入力が止まって250ミリ秒たってから取り、新しい入力で前の要求を打ち切る。検索はタブを替えても取り直さず、語が変わった時だけ取る
  * （一覧は全種別を返し、タブは表示の切り替えだけなので。SEC-SEARCH-005）。
  * 失敗の記録には誤りの中身を渡さない（SEC-SEARCH-018）。
+ * 結果・候補の応答が ok でない時は本文を使わなくても読み始めておく。回数の制限の 429 は no-store で、読まずに捨てるとブラウザが要求を開いたまま残すため。
  */
 "use client";
 
@@ -303,6 +304,8 @@ export function SearchPageClient() {
           },
         );
         if (!response.ok) {
+          // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+          void response.arrayBuffer?.().catch(() => {});
           throw new Error("検索結果の取得に失敗しました");
         }
 
@@ -347,6 +350,8 @@ export function SearchPageClient() {
           { cache: "no-store", signal: controller.signal },
         );
         if (!response.ok) {
+          // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+          void response.arrayBuffer?.().catch(() => {});
           throw new Error("Failed to fetch suggestions");
         }
 

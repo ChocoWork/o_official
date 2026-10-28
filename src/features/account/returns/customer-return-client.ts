@@ -82,7 +82,11 @@ export async function callCustomerReturnApi(url: string, body: unknown): Promise
   } catch {
     return { kind: 'unknown' };
   }
-  if (response.status >= 500) return { kind: 'unknown' };
+  if (response.status >= 500) {
+    // 回数の制限の 503 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+    void response.arrayBuffer?.().catch(() => {});
+    return { kind: 'unknown' };
+  }
   if (response.ok) {
     try {
       return { kind: 'ok', body: (await response.json()) as unknown };
@@ -90,7 +94,11 @@ export async function callCustomerReturnApi(url: string, body: unknown): Promise
       return { kind: 'unknown' };
     }
   }
-  if (response.status === 429) return { kind: 'blocked', message: CUSTOMER_RETURN_RATE_LIMITED_MESSAGE };
+  if (response.status === 429) {
+    // 回数の制限の 429 は no-store。本文を読まずに捨てるとブラウザが要求を開いたまま残す
+    void response.arrayBuffer?.().catch(() => {});
+    return { kind: 'blocked', message: CUSTOMER_RETURN_RATE_LIMITED_MESSAGE };
+  }
   if (response.status === 401 || response.status === 403) return { kind: 'blocked', message: CUSTOMER_RETURN_FAILURE_MESSAGE };
 
   const errorBody: unknown = await response.json().catch(() => null);

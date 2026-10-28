@@ -4,6 +4,7 @@ import { logAudit } from "@/lib/audit";
 import { createPublicClient, createServiceRoleClient } from "@/lib/supabase/server";
 import { denyIfCsrfInvalid, openShoppingContext } from "@/features/cart/services/shopping-context";
 import { signItemImageUrl } from '@/lib/storage/item-images';
+import { getClientIp } from '@/lib/request-ip';
 
 // PUBLIC: ゲストのお気に入りを扱うので利用者認証は無い。持ち主は wishlist Cookie の印（ゲスト）か
 // 確かめた会員の ID で決める（設計書第4章）。会員の書き換えには CSRF の合言葉を求め、
@@ -13,15 +14,6 @@ import { signItemImageUrl } from '@/lib/storage/item-images';
 const addWishlistItemSchema = z.object({
   item_id: z.coerce.number().int().positive(),
 });
-
-function getClientIp(request: NextRequest): string | null {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0]?.trim() ?? null;
-  }
-
-  return request.headers.get("x-real-ip");
-}
 
 /**
  * GET の成功の応答。中身が持ち主ごとで、持ち主を決めた後は Set-Cookie（合わせ込みで印を消す）も

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getPublishedItemsPage, ItemSort } from '@/lib/items/public';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 import { logAudit } from '@/lib/audit';
+import { getClientIp } from '@/lib/request-ip';
 
 const sortSchema = z.enum(['newest', 'price_asc', 'price_desc', 'popular']);
 
@@ -68,10 +69,7 @@ export async function GET(request: Request) {
         action: 'items.list',
         outcome: 'rate_limited',
         detail: 'Rate limit exceeded for items list endpoint',
-        ip:
-          (request.headers as Headers).get('x-forwarded-for')?.split(',')[0]?.trim() ??
-          (request.headers as Headers).get('x-real-ip') ??
-          null,
+        ip: getClientIp(request),
         user_agent: (request.headers as Headers).get('user-agent'),
       });
       return rateLimited;

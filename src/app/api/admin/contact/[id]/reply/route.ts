@@ -12,6 +12,7 @@ import sendMail from '@/lib/mail';
 import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { logAudit } from '@/lib/audit';
+import { getAuditRequestContext } from '@/lib/request-ip';
 import { buildReplyAddress } from '@/lib/contact/reply-address';
 import { enforceRateLimit } from '@/features/auth/middleware/rateLimit';
 
@@ -94,11 +95,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       await logAudit({
         action: 'admin.contact.reply',
         actor_id: authz.userId,
+        actor_email: authz.actorEmail,
         resource: 'contact',
         resource_id: id,
         outcome: 'error',
         detail: 'status_update_failed',
-        user_agent: request.headers.get('user-agent'),
+        ...getAuditRequestContext(request),
       });
       return NextResponse.json({ error: 'Failed to update inquiry status' }, { status: 500 });
     }
@@ -125,6 +127,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     await logAudit({
       action: 'admin.contact.reply',
       actor_id: authz.userId,
+      actor_email: authz.actorEmail,
       resource: 'contact',
       resource_id: id,
       outcome: mailOutcome === 'success' ? 'success' : 'error',
@@ -134,7 +137,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           : mailOutcome === 'error'
             ? 'reply_saved_mail_failed'
             : 'reply_saved_mail_not_configured',
-      user_agent: request.headers.get('user-agent'),
+      ...getAuditRequestContext(request),
     });
 
     return NextResponse.json({ success: true, mailSent: mailOutcome === 'success' }, { status: 201 });
