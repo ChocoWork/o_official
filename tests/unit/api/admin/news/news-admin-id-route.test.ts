@@ -72,12 +72,20 @@ function makeRequest(options: {
   jsonError?: Error;
   formDataError?: Error;
   userAgent?: string | null;
+  realIp?: string;
+  forwardedFor?: string;
 } = {}) {
   const fields = options.fields ?? { ...validFields };
   const form = { get: (key: string) => (key in fields ? fields[key] : null) };
   return {
     headers: {
-      get: (name: string) => (name.toLowerCase() === 'user-agent' ? options.userAgent ?? null : null),
+      get: (name: string) => {
+        const key = name.toLowerCase();
+        if (key === 'user-agent') return options.userAgent ?? null;
+        if (key === 'x-real-ip') return options.realIp ?? null;
+        if (key === 'x-forwarded-for') return options.forwardedFor ?? null;
+        return null;
+      },
     },
     formData: jest.fn(async () => {
       if (options.formDataError) throw options.formDataError;
@@ -533,6 +541,7 @@ describe('PUT /api/admin/news/:id', () => {
       resource_id: '7',
       outcome: 'failure',
       detail: 'Image upload failed',
+      ip: null,
       user_agent: 'UA/1',
       metadata: { storagePath: 'news/2026-10-24/uuid-1.gif', articleId: '7', imageType: 'image/gif' },
     });
@@ -778,6 +787,22 @@ describe('shared audit and zero-row behaviour', () => {
     expect(mockLogAudit).toHaveBeenLastCalledWith(expect.objectContaining({ user_agent: null }));
   });
 
+  it('DD-NEWS-065 監査の ip は信頼する見出し x-real-ip の値で、偽の x-forwarded-for は入れず、見出しが無ければ null（SEC-NEWS-016-AC-03）', async () => {
+    setupDb({ error: null });
+    setupStorage();
+    await DELETE(
+      makeRequest({ userAgent: 'Mozilla/5.0', realIp: '203.0.113.9', forwardedFor: '198.51.100.7' }),
+      paramsFor('7'),
+    );
+    expect(mockLogAudit).toHaveBeenLastCalledWith(expect.objectContaining({ ip: '203.0.113.9' }));
+    expect(JSON.stringify(mockLogAudit.mock.calls.at(-1))).not.toContain('198.51.100.7');
+
+    setupDb({ error: null });
+    setupStorage();
+    await DELETE(makeRequest({ forwardedFor: '198.51.100.7' }), paramsFor('7'));
+    expect(mockLogAudit).toHaveBeenLastCalledWith(expect.objectContaining({ ip: null }));
+  });
+
   it.each([
     ['PUT', 'admin.news.update.not_found'],
     ['PATCH', 'admin.news.status_update.not_found'],
@@ -805,6 +830,7 @@ describe('shared audit and zero-row behaviour', () => {
       resource_id: '7',
       outcome: 'failure',
       detail: 'News article not found',
+      ip: null,
       user_agent: method === 'PATCH' ? null : 'UA/2',
       metadata: { articleId: '7' },
     });

@@ -180,13 +180,18 @@ describe('POST /api/auth/login (DD-AUTH-014)', () => {
     expect(__mockSignInWithPassword).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-014 IP の制限の呼び出しが投げても記録して先へ進む', async () => {
+  test('DD-AUTH-014 IP の制限の呼び出しが投げたら 500 で、先へ進まない（SEC-AUTH-013-AC-02）', async () => {
     enforceRateLimit.mockRejectedValueOnce(new Error('store down'));
 
     const res: any = await POST(buildRequest());
 
-    expect(res.status).toBe(200);
-    expect(consoleErrorSpy).toHaveBeenCalledWith('Rate limit middleware error (login):', expect.any(Error));
+    expect(res.status).toBe(500);
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('Rate limit middleware error'),
+      expect.anything(),
+    );
+    expect(verifyTurnstile).not.toHaveBeenCalled();
+    expect(__mockSignInWithPassword).not.toHaveBeenCalled();
   });
 
   test('DD-AUTH-014 形が合わない入力は 400 で、Turnstile もメールの制限も呼ばない', async () => {
@@ -226,22 +231,30 @@ describe('POST /api/auth/login (DD-AUTH-014)', () => {
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failure', detail: 'turnstile_failed' }));
   });
 
-  test('DD-AUTH-014 x-forwarded-for の先頭を空白を除いて Turnstile の IP に渡す', async () => {
-    await POST(buildRequest(undefined, { 'x-forwarded-for': ' 203.0.113.7 , 10.0.0.1' }));
+  test('DD-AUTH-014 x-real-ip を空白を除いて Turnstile の IP に渡す', async () => {
+    await POST(buildRequest(undefined, { 'x-real-ip': ' 203.0.113.7 ' }));
 
     expect(verifyTurnstile).toHaveBeenCalledWith('ts-token', '203.0.113.7');
   });
 
-  test('DD-AUTH-014 x-forwarded-for が無いと Turnstile に IP を渡さない（null）', async () => {
+  test('DD-AUTH-014 x-real-ip が無いと Turnstile に IP を渡さない（null）', async () => {
     await POST(buildRequest());
 
     expect(verifyTurnstile).toHaveBeenCalledWith('ts-token', null);
   });
 
-  test('DD-AUTH-014 x-forwarded-for が空でも Turnstile に IP を渡さない（null）', async () => {
-    await POST(buildRequest(undefined, { 'x-forwarded-for': '' }));
+  test('DD-AUTH-014 x-real-ip が空でも Turnstile に IP を渡さない（null）', async () => {
+    await POST(buildRequest(undefined, { 'x-real-ip': '' }));
 
     expect(verifyTurnstile).toHaveBeenCalledWith('ts-token', null);
+  });
+
+  test('DD-AUTH-014 x-forwarded-for は読まず、x-real-ip が在ればそちらを Turnstile に渡す', async () => {
+    await POST(buildRequest(undefined, { 'x-forwarded-for': '198.51.100.99' }));
+    expect(verifyTurnstile).toHaveBeenLastCalledWith('ts-token', null);
+
+    await POST(buildRequest(undefined, { 'x-forwarded-for': '198.51.100.99', 'x-real-ip': '203.0.113.7' }));
+    expect(verifyTurnstile).toHaveBeenLastCalledWith('ts-token', '203.0.113.7');
   });
 
   test('DD-AUTH-014 メールの制限が応答を返したらその応答をそのまま返す', async () => {
@@ -255,13 +268,13 @@ describe('POST /api/auth/login (DD-AUTH-014)', () => {
     expect(__mockSignInWithPassword).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-014 メールの制限の呼び出しが投げても記録して先へ進む', async () => {
+  test('DD-AUTH-014 メールの制限の呼び出しが投げたら 500 で、パスワードの確かめへ進まない（SEC-AUTH-013-AC-02）', async () => {
     enforceRateLimit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('store down'));
 
     const res: any = await POST(buildRequest());
 
-    expect(res.status).toBe(200);
-    expect(consoleErrorSpy).toHaveBeenCalledWith('Rate limit middleware error (login-account):', expect.any(Error));
+    expect(res.status).toBe(500);
+    expect(__mockSignInWithPassword).not.toHaveBeenCalled();
   });
 
   test('DD-AUTH-014 パスワードの誤りは 401 と failure の監査（誤りの文あり）。確認コードは送らない', async () => {

@@ -525,6 +525,16 @@ describe('SearchPageClient', () => {
       expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search results');
     });
 
+    it('DD-SEARCH-002 結果が 429（本文は使わない）でも、no-store の応答を開いたまま残さないよう本文を読み切る', async () => {
+      setUrl('q=coat');
+      const drain = jest.fn().mockResolvedValue(new ArrayBuffer(0));
+      fallbackSearch = async () => ({ ok: false, json: async () => ({}), status: 429, arrayBuffer: drain }) as FakeResponse;
+      render(<SearchPageClient />);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(LOAD_ERROR);
+      expect(drain).toHaveBeenCalledTimes(1);
+    });
+
     it('DD-SEARCH-002 取り出しが reject し q が無いなら、失敗の文と案内文が並ぶ', async () => {
       fallbackSearch = async () => {
         throw new Error('network');
@@ -674,6 +684,18 @@ describe('SearchPageClient', () => {
         expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch search suggestions'),
       );
       expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    });
+
+    it('DD-SEARCH-002 候補が 429（本文は使わない）でも、no-store の応答を開いたまま残さないよう本文を読み切る', async () => {
+      setUrl('q=co');
+      const drain = jest.fn().mockResolvedValue(new ArrayBuffer(0));
+      fallbackSuggest = async () => ({ ok: false, json: async () => ({}), status: 429, arrayBuffer: drain }) as FakeResponse;
+      const user = userEvent.setup();
+      render(<SearchPageClient />);
+
+      await user.click(screen.getByRole('combobox'));
+
+      await waitFor(() => expect(drain).toHaveBeenCalledTimes(1));
     });
 
     it('DD-SEARCH-002 候補の取り出しが reject しても候補を出さず console.error に書く', async () => {

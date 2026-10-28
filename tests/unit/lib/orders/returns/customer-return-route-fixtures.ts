@@ -17,7 +17,7 @@ export const CANCEL_REQUEST_ID = 'c2b2c3d4-1111-4222-8333-444455556666';
 export const UPLOAD_ID = '9a9a9a9a-1111-4222-8333-444455556661';
 export const UPLOAD_ID_2 = '9a9a9a9a-1111-4222-8333-444455556662';
 
-export const HEADERS = { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.5', 'user-agent': 'jest' };
+export const HEADERS = { 'content-type': 'application/json', 'x-real-ip': '203.0.113.5', 'user-agent': 'jest' };
 
 /** 想定外の失敗（500）のお客様の言葉（C-4 の下の欄） */
 export const FAILURE_MESSAGE = 'お申し込みを受け付けられませんでした。時間をおいて、もう一度お試しください。';

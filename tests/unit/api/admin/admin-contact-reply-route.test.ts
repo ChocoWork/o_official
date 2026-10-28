@@ -62,7 +62,7 @@ const from = jest.fn();
 function makeRequest(body: unknown, headers: Record<string, string> = {}) {
   return new Request('http://localhost/api/admin/contact/3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f/reply', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...headers },
+    headers: { 'content-type': 'application/json', 'x-real-ip': '198.51.100.7', ...headers },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   });
 }
@@ -90,7 +90,7 @@ describe('POST /api/admin/contact/[id]/reply', () => {
     logAudit.mockReset();
     sendMail.mockReset().mockResolvedValue(undefined);
     buildReplyAddress.mockReset().mockReturnValue('reply+3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f@mail.example.com');
-    authorizeAdminPermission.mockReset().mockResolvedValue({ ok: true, userId: 'admin-1' });
+    authorizeAdminPermission.mockReset().mockResolvedValue({ ok: true, userId: 'admin-1', actorEmail: 'owner@example.com' });
     enforceRateLimit.mockReset().mockResolvedValue(null);
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
@@ -217,10 +217,12 @@ describe('POST /api/admin/contact/[id]/reply', () => {
     expect(logAudit).toHaveBeenCalledWith({
       action: 'admin.contact.reply',
       actor_id: 'admin-1',
+      actor_email: 'owner@example.com',
       resource: 'contact',
       resource_id: INQUIRY_ID,
       outcome: 'error',
       detail: 'status_update_failed',
+      ip: '198.51.100.7',
       user_agent: 'jest-agent',
     });
     expect(JSON.stringify(logAudit.mock.calls)).not.toContain('secret@example.com');
@@ -305,10 +307,12 @@ describe('POST /api/admin/contact/[id]/reply', () => {
     expect(logAudit).toHaveBeenCalledWith({
       action: 'admin.contact.reply',
       actor_id: 'admin-1',
+      actor_email: 'owner@example.com',
       resource: 'contact',
       resource_id: '3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f',
       outcome: 'success',
       detail: 'reply_sent',
+      ip: '198.51.100.7',
       user_agent: 'jest-agent',
     });
   });
@@ -356,10 +360,12 @@ describe('POST /api/admin/contact/[id]/reply', () => {
     expect(logAudit).toHaveBeenCalledWith({
       action: 'admin.contact.reply',
       actor_id: 'admin-1',
+      actor_email: 'owner@example.com',
       resource: 'contact',
       resource_id: '3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f',
       outcome: 'error',
       detail: 'reply_saved_mail_failed',
+      ip: '198.51.100.7',
       user_agent: 'jest-agent',
     });
   });

@@ -89,12 +89,16 @@ describe('GET /api/admin/audit-logs', () => {
     expect(errorSpy).toHaveBeenCalledWith('Audit logs GET error:', expect.any(Error));
   });
 
-  it('DD-ADMIN-004 200 の後に監査ログを読んだ記録を1行残し、ログの中身・IP を入れない', async () => {
+  it('DD-ADMIN-004 200 の後に監査ログを読んだ記録を1行残し、ログの中身を入れず、読んだ人の IP とブラウザの名乗りを入れる（SEC-ADMIN-023-AC-02）', async () => {
     authorizeAdminPermission.mockResolvedValue({ ok: true, userId: 'u1', role: 'admin', actorEmail: 'owner@example.com' });
     const { client } = buildClient({ data: [{ id: '1', action: 'secret-action' }], error: null });
     createServiceRoleClient.mockResolvedValue(client);
 
-    const res = await GET(new Request('http://localhost/api/admin/audit-logs'));
+    const res = await GET(
+      new Request('http://localhost/api/admin/audit-logs', {
+        headers: { 'x-real-ip': '198.51.100.7', 'user-agent': 'jest-agent' },
+      }),
+    );
 
     expect(res.status).toBe(200);
     expect(logAudit).toHaveBeenCalledTimes(1);
@@ -104,6 +108,8 @@ describe('GET /api/admin/audit-logs', () => {
       actor_email: 'owner@example.com',
       resource: 'audit_logs',
       outcome: 'success',
+      ip: '198.51.100.7',
+      user_agent: 'jest-agent',
     });
     expect(JSON.stringify(logAudit.mock.calls)).not.toContain('secret-action');
   });

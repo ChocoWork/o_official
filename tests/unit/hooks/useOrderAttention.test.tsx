@@ -219,6 +219,17 @@ describe('useOrderAttention: 操作', () => {
     expect(result.current.processingIds).toEqual([]);
   });
 
+  it.each([503, 429])('FREQ-539-AC-05: %i の断りは本文を使わなくても読み切る（no-store の応答を開いたまま残さない）', async (status) => {
+    const { result } = await ready();
+    const arrayBuffer = jest.fn().mockResolvedValue(new ArrayBuffer(0));
+    postAnswer = () => Promise.resolve({ ok: false, status, json: async () => ({}), arrayBuffer });
+
+    // 429 の専用の文を持つのは配送の「対応済みにする」。503 は要確認の操作でも同じ枝を通る
+    await trigger(result, () => (status === 429 ? result.current.onResolveDelivery('delivery-1') : result.current.onReview(ORDER_ID)));
+
+    expect(arrayBuffer).toHaveBeenCalledTimes(1);
+  });
+
   it('FREQ-539-AC-05: 次の操作を始めると、前の断りの文と知らせを消す', async () => {
     const { result } = await ready();
     postAnswer = () => refused(403);

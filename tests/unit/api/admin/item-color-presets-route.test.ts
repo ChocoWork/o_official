@@ -22,9 +22,14 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn(),
 }));
 
+jest.mock('@/lib/audit', () => ({
+  logAudit: jest.fn(),
+}));
+
 import { GET, POST } from '@/app/api/admin/item-color-presets/route';
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
+const { logAudit } = require('@/lib/audit');
 const { authorizeAdminPermission } = require('@/lib/auth/admin-rbac');
 const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 
@@ -50,7 +55,7 @@ function makeGet() {
 function makePost(body: unknown) {
   return new Request('http://localhost/api/admin/item-color-presets', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-real-ip': '198.51.100.7', 'user-agent': 'jest-agent' },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   });
 }
@@ -60,7 +65,8 @@ describe('item-color-presets route', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    authorizeAdminPermission.mockReset().mockResolvedValue({ ok: true, userId: 'admin-1' });
+    authorizeAdminPermission.mockReset().mockResolvedValue({ ok: true, userId: 'admin-1', actorEmail: 'admin@example.com' });
+    logAudit.mockReset().mockResolvedValue(undefined);
     enforceRateLimit.mockReset().mockResolvedValue(null);
     order.mockReset().mockResolvedValue({ data: [], error: null });
     selectList.mockReset().mockReturnValue({ order });
@@ -235,6 +241,44 @@ describe('item-color-presets route', () => {
       expect(eqName).toHaveBeenCalledWith('name', '赤');
       expect(insert).toHaveBeenCalledWith([{ name: '赤', hex: '#ff0000' }]);
       expect(selectInserted).toHaveBeenCalledWith('*');
+    });
+
+    it('DD-ADMIN-011 SEC-ADMIN-022-AC-01 POST は 201 で作った時に admin.item_color_preset.create を1行残し、色の名前・値を入れない', async () => {
+      single.mockResolvedValue({ data: { id: 42, name: '赤', hex: '#ff0000' }, error: null });
+
+      const res = (await POST(makePost({ name: '赤', hex: '#ff0000' }))) as unknown as MockRes;
+
+      expect(res.status).toBe(201);
+      expect(logAudit).toHaveBeenCalledTimes(1);
+      expect(logAudit).toHaveBeenCalledWith({
+        action: 'admin.item_color_preset.create',
+        actor_id: 'admin-1',
+        actor_email: 'admin@example.com',
+        resource: 'item_color_preset',
+        resource_id: '42',
+        outcome: 'success',
+        ip: '198.51.100.7',
+        user_agent: 'jest-agent',
+      });
+      expect(JSON.stringify(logAudit.mock.calls)).not.toContain('赤');
+      expect(JSON.stringify(logAudit.mock.calls)).not.toContain('#ff0000');
+    });
+
+    it('DD-ADMIN-011 POST は既にある行を 200 で返す時、作っていないので監査を書かない', async () => {
+      maybeSingle.mockResolvedValue({ data: { id: 'p-9', name: '赤', hex: '#ff0000' }, error: null });
+
+      await POST(makePost({ name: '赤', hex: '#ff0000' }));
+
+      expect(logAudit).not.toHaveBeenCalled();
+    });
+
+    it('DD-ADMIN-011 POST は断った・誤りの時に監査を書かない', async () => {
+      single.mockResolvedValue({ data: null, error: { message: 'duplicate key' } });
+      await POST(makePost({ name: '赤', hex: '#ff0000' }));
+      authorizeAdminPermission.mockResolvedValue({ ok: false, response: denied });
+      await POST(makePost({ name: '赤', hex: '#ff0000' }));
+
+      expect(logAudit).not.toHaveBeenCalled();
     });
 
     it('DD-ADMIN-011 POST は引く時に誤りが返ったら 500 Failed to save color preset を返し、作らない', async () => {

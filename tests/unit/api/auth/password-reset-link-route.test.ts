@@ -242,16 +242,18 @@ describe('DD-AUTH-023 パスワード再設定リンクの確かめの窓口', (
       expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     });
 
-    it('DD-AUTH-023 回数の制限の呼び出しが投げたら記録して先へ進む', async () => {
+    it('DD-AUTH-023 回数の制限の呼び出しが投げたら握りつぶさず、トークンの確かめへ進まない（SEC-AUTH-013-AC-02）', async () => {
       mockEnforceRateLimit.mockRejectedValueOnce(new Error('redis down'));
 
       const res = (await POST(postRequest({ token: 'raw-token' }))) as unknown as FakeResponse;
 
-      expect(res.status).toBe(200);
-      expect(consoleError).toHaveBeenCalledWith(
+      // 外側の catch が link_expired の 400 にする（この窓口の既存の流儀）。確かめには進まない。
+      expect(res.status).toBe(400);
+      expect(consoleError).not.toHaveBeenCalledWith(
         'Rate limit middleware error (password-reset-link):',
-        expect.any(Error),
+        expect.anything(),
       );
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     });
 
     it.each([

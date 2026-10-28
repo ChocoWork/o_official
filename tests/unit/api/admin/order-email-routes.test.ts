@@ -841,7 +841,7 @@ describe('POST /api/admin/orders/[id]/emails/resend', () => {
   const context = { params: Promise.resolve({ id: ORDER_ID }) };
   const request = (body: unknown) => new Request(`http://localhost/api/admin/orders/${ORDER_ID}/emails/resend`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.5', 'user-agent': 'jest' },
+    headers: { 'content-type': 'application/json', 'x-real-ip': '203.0.113.5', 'user-agent': 'jest' },
     body: JSON.stringify(body),
   });
 
@@ -1004,7 +1004,7 @@ describe('POST /api/admin/orders/[id]/emails/resend', () => {
 
   it.each(['null', '{', JSON.stringify({ kind: '宛先・件名・本文' })])('本文の形が誤り（%s）なら固定の文だけで failure の監査を残す', async (body) => {
     const req = new Request(`http://localhost/api/admin/orders/${ORDER_ID}/emails/resend`, {
-      method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.5', 'user-agent': 'jest' }, body,
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-real-ip': '203.0.113.5', 'user-agent': 'jest' }, body,
     });
     expect((await postResend(req, context)).status).toBe(400);
     expect(mockLogAudit.mock.calls).toEqual([[{

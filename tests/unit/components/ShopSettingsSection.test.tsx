@@ -444,6 +444,22 @@ describe('ShopSettingsSection の保存の失敗', () => {
     expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 
+  it('保存の直前の読み直しが 429（no-store。本文は使わない）の時は、本文を読み始めて失敗の文を出す', async () => {
+    await renderLoaded();
+    const drain = jest.fn(async () => new ArrayBuffer(0));
+    mockedFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      json: async () => ({ error: 'Too many requests' }),
+      arrayBuffer: drain,
+    } as unknown as Response);
+
+    fireEvent.click(autoRefundSwitch());
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(SAVE_FAILED);
+    expect(drain).toHaveBeenCalledTimes(1);
+  });
+
   it('確かめの画面から保存できなかった時も、画面を閉じて失敗の文を出し、②はオフのまま', async () => {
     await renderLoaded();
     serveReread();

@@ -101,7 +101,12 @@ function viewAllWrapper(): HTMLElement {
   return wrapper;
 }
 
-function mockFetchResolved(response: { ok: boolean; json?: () => Promise<unknown> }): jest.Mock {
+function mockFetchResolved(response: {
+  ok: boolean;
+  status?: number;
+  json?: () => Promise<unknown>;
+  arrayBuffer?: () => Promise<ArrayBuffer>;
+}): jest.Mock {
   const fetchMock = jest.fn().mockResolvedValue(response);
   global.fetch = fetchMock as unknown as typeof fetch;
   return fetchMock;
@@ -555,6 +560,19 @@ describe('PublicNewsGrid 記事の取り出し', () => {
       expect(message).toHaveClass('text-red-500');
       expect(document.querySelector('article')).toBeNull();
       expect(consoleError).toHaveBeenCalledWith('Failed to fetch public news:', expect.any(Error));
+    },
+  );
+
+  test.each(['catalog', 'home'] as const)(
+    'DD-NEWS-001 429（本文は使わない）でも、no-store の応答を開いたまま残さないよう本文を読み切る（%s）',
+    async (variant) => {
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const drain = jest.fn().mockResolvedValue(new ArrayBuffer(0));
+      mockFetchResolved({ ok: false, status: 429, arrayBuffer: drain });
+      render(<PublicNewsGrid variant={variant} />);
+
+      expect(await screen.findByText('ニュースデータの取得に失敗しました')).toBeInTheDocument();
+      expect(drain).toHaveBeenCalledTimes(1);
     },
   );
 

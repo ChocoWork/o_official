@@ -293,13 +293,17 @@ describe('Google のログインの戻りの窓口', () => {
       expect(logAuditMock).not.toHaveBeenCalled();
     });
 
-    it('DD-AUTH-021 回数の制限の呼び出しが投げても記録して先へ進む', async () => {
+    it('DD-AUTH-021 回数の制限の呼び出しが投げたら 500 で、交換へ進まない（SEC-AUTH-013-AC-02）', async () => {
       enforceRateLimitMock.mockRejectedValueOnce(new Error('redis down'));
 
       const res = await callGet(callbackRequest('?code=good'));
 
-      expect(res.status).toBe(303);
-      expect(console.error).toHaveBeenCalledWith('Rate limit middleware error (oauth callback):', expect.any(Error));
+      expect(res.status).toBe(500);
+      expect(console.error).not.toHaveBeenCalledWith(
+        expect.stringContaining('Rate limit middleware error'),
+        expect.anything(),
+      );
+      expect(createServerClientMock).not.toHaveBeenCalled();
     });
   });
 

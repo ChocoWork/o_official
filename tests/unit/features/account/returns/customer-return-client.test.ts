@@ -169,6 +169,15 @@ describe('submitCustomerReturnRequest', () => {
     await expect(submitCustomerReturnRequest(ORDER_ID, BODY)).resolves.toEqual({ kind: 'unknown' });
   });
 
+  it.each([429, 500, 502, 503])('%i の断りは本文を使わなくても読み切る（no-store の応答を開いたまま残さない）', async (status) => {
+    const arrayBuffer = jest.fn().mockResolvedValue(new ArrayBuffer(0));
+    mockClientFetch.mockResolvedValueOnce({ ok: false, status, json: async () => ({}), arrayBuffer } as unknown as Response);
+
+    await submitCustomerReturnRequest(ORDER_ID, BODY);
+
+    expect(arrayBuffer).toHaveBeenCalledTimes(1);
+  });
+
   it('通信が切れた時と、成功なのに答えが読めない時も unknown', async () => {
     mockClientFetch.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce(unreadable(200));
 

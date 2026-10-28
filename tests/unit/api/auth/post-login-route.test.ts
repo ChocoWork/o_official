@@ -85,13 +85,17 @@ describe('POST /api/auth/post-login', () => {
     expect(mockResolveReturnDestination).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-035 制限の部品が投げても記録して先へ進む', async () => {
+  test('DD-AUTH-035 制限の部品が投げたら握りつぶさず、戻り先に触れない（SEC-AUTH-013-AC-02）', async () => {
     mockEnforceRateLimit.mockRejectedValue(new Error('rate down'));
 
-    const res: any = await POST(request());
+    await expect(POST(request())).rejects.toThrow('rate down');
 
-    expect(console.error).toHaveBeenCalledWith('Rate limit middleware error (post-login):', expect.any(Error));
-    expect(res.status).toBe(200);
+    expect(console.error).not.toHaveBeenCalledWith(
+      expect.stringContaining('Rate limit middleware error'),
+      expect.anything(),
+    );
+    expect(mockAuthenticateRequest).not.toHaveBeenCalled();
+    expect(mockResolveReturnDestination).not.toHaveBeenCalled();
   });
 
   test('DD-AUTH-035 未ログイン（unauthorized）なら 401 を返し、戻り先に触らない', async () => {

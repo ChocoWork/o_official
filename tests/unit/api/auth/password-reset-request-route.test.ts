@@ -138,7 +138,7 @@ describe('DD-AUTH-022 パスワード再設定の申請の窓口', () => {
   it('DD-AUTH-022 アカウントがあれば 200 で前の印を無効化し、新しい印を保存して応答の外でメールを送る', async () => {
     const before = Date.now();
     const res = (await POST(
-      makeRequest({ email: 'User@Example.com', turnstileToken: 'ok' }, { 'x-forwarded-for': '203.0.113.5, 10.0.0.1' }),
+      makeRequest({ email: 'User@Example.com', turnstileToken: 'ok' }, { 'x-real-ip': '203.0.113.5' }),
     )) as unknown as { status: number; _body: unknown };
 
     expect(res.status).toBe(200);
@@ -224,14 +224,15 @@ describe('DD-AUTH-022 パスワード再設定の申請の窓口', () => {
     expect(mockVerifyTurnstile).not.toHaveBeenCalled();
   });
 
-  it('DD-AUTH-022 IP 単位の制限の呼び出しが投げたら記録して先へ進む', async () => {
+  it('DD-AUTH-022 IP 単位の制限の呼び出しが投げたら 500 で、先へ進まない（SEC-AUTH-013-AC-02）', async () => {
     mockEnforceRateLimit.mockRejectedValueOnce(new Error('redis down'));
 
     const res = (await POST(makeRequest({ email: 'user@example.com' }))) as unknown as { status: number };
 
-    expect(res.status).toBe(200);
-    expect(consoleError).toHaveBeenCalledWith('Rate limit middleware error (password-reset):', expect.any(Error));
-    expect(mockInsert).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(500);
+    expect(consoleError).not.toHaveBeenCalledWith('Rate limit middleware error (password-reset):', expect.anything());
+    expect(mockVerifyTurnstile).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
   });
 
   it('DD-AUTH-022 メール単位の制限が応答を返したらそれを返し、DB に触れない', async () => {
@@ -254,14 +255,19 @@ describe('DD-AUTH-022 パスワード再設定の申請の窓口', () => {
     expect(mockSendMail).not.toHaveBeenCalled();
   });
 
-  it('DD-AUTH-022 メール単位の制限の呼び出しが投げたら記録して先へ進む', async () => {
+  it('DD-AUTH-022 メール単位の制限の呼び出しが投げたら 500 で、DB に触れずメールも送らない（SEC-AUTH-013-AC-02）', async () => {
     mockEnforceRateLimit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('redis down'));
 
     const res = (await POST(makeRequest({ email: 'user@example.com' }))) as unknown as { status: number };
 
-    expect(res.status).toBe(200);
-    expect(consoleError).toHaveBeenCalledWith('Rate limit middleware error (password-reset-account):', expect.any(Error));
-    expect(mockInsert).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(500);
+    expect(consoleError).not.toHaveBeenCalledWith(
+      'Rate limit middleware error (password-reset-account):',
+      expect.anything(),
+    );
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockSendMail).not.toHaveBeenCalled();
   });
 
   it('DD-AUTH-022 形が合わないと 400 を返し、Turnstile も DB も呼ばない', async () => {
@@ -302,12 +308,25 @@ describe('DD-AUTH-022 パスワード再設定の申請の窓口', () => {
     );
   });
 
-  it('DD-AUTH-022 x-forwarded-for が無いか空なら Turnstile へ null を渡す', async () => {
+  it('DD-AUTH-022 x-real-ip が無いか空なら Turnstile へ null を渡す', async () => {
     await POST(makeRequest({ email: 'user@example.com', turnstileToken: 't' }));
     expect(mockVerifyTurnstile).toHaveBeenLastCalledWith('t', null);
 
-    await POST(makeRequest({ email: 'user@example.com', turnstileToken: 't' }, { 'x-forwarded-for': '' }));
+    await POST(makeRequest({ email: 'user@example.com', turnstileToken: 't' }, { 'x-real-ip': '' }));
     expect(mockVerifyTurnstile).toHaveBeenLastCalledWith('t', null);
+  });
+
+  it('DD-AUTH-022 x-forwarded-for は読まず、x-real-ip が在ればそちらを Turnstile に渡す', async () => {
+    await POST(makeRequest({ email: 'user@example.com', turnstileToken: 't' }, { 'x-forwarded-for': '198.51.100.99' }));
+    expect(mockVerifyTurnstile).toHaveBeenLastCalledWith('t', null);
+
+    await POST(
+      makeRequest(
+        { email: 'user@example.com', turnstileToken: 't' },
+        { 'x-forwarded-for': '198.51.100.99', 'x-real-ip': '203.0.113.7' },
+      ),
+    );
+    expect(mockVerifyTurnstile).toHaveBeenLastCalledWith('t', '203.0.113.7');
   });
 
   it('DD-AUTH-022 住所の見張りに落ちたら運用へ知らせ、印もメールも作らずに同じ 200', async () => {

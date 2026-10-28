@@ -281,11 +281,19 @@ describe('authorizeAdminPermission', () => {
     it('FREQ-540-AC-06: 要るコードを全部持てば通り、1つの役割にそろっていなくても有効な役割の和集合で数える', async () => {
       grantRoles(['admin.stock.manage', 'admin.stock.read']);
       const together = await authorizeAdminPermissions(REQUIRED, mockRequest);
-      expect(together).toEqual({ ok: true, userId: 'user-1', role: 'admin', actorEmail: 'user@example.com' });
+      expect(together).toEqual({
+        ok: true,
+        userId: 'user-1',
+        role: 'admin',
+        actorEmail: 'user@example.com',
+        permissions: new Set(['admin.stock.manage', 'admin.stock.read']),
+      });
 
       grantRoles(['admin.stock.manage'], ['admin.stock.read', 'admin.orders.read']);
       const split = await authorizeAdminPermissions(REQUIRED, mockRequest);
       expect(split.ok).toBe(true);
+      // 成功の結果の permissions は、有効な全ての役割の和集合（要るコード以外も含む。窓口が画面の出し分けに使う）
+      expect(split.ok && split.permissions).toEqual(new Set(['admin.stock.manage', 'admin.stock.read', 'admin.orders.read']));
     });
 
     it.each([
@@ -366,6 +374,138 @@ describe('authorizeAdminPermission', () => {
         .toEqual(await authorizeAdminPermissions(['admin.orders.read'], mockRequest));
       expect(bodyOf(await authorizeAdminPermission('admin.orders.manage', mockRequest)))
         .toEqual(bodyOf(await authorizeAdminPermissions(['admin.orders.manage'], mockRequest)));
+    });
+  });
+
+  // 認可で断った要求を窓口が監査に残すための denial（波 4 Task 7）。actor が分かる拒否にだけ付ける
+  describe('DD-STOCKIST-039: 断った要求に付く denial', () => {
+    const grantCodes = (...codes: string[]) => {
+      mockQuery.or.mockResolvedValue({
+        data: [{ roles: { role_permissions: codes.map((code) => ({ permissions: { code } })) } }],
+        error: null,
+      });
+    };
+    const bodyOf = (result: Awaited<ReturnType<typeof authorizeAdminPermissions>>) =>
+      (result as unknown as { response: { body: unknown } }).response.body;
+    const denialOf = (result: Awaited<ReturnType<typeof authorizeAdminPermissions>>) =>
+      result.ok ? undefined : result.denial;
+
+    it('失効した session の 401 は、reason=session と最初に要ったコードを持つ', async () => {
+      (checkAuthSessionLiveness as jest.Mock).mockResolvedValue('revoked');
+      grantCodes('admin.stockists.manage');
+
+      const result = await authorizeAdminPermissions(['admin.stockists.manage', 'admin.stockists.read'], mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(401);
+      expect(denialOf(result)).toEqual({
+        userId: 'user-1',
+        email: 'user@example.com',
+        role: 'admin',
+        permission: 'admin.stockists.manage',
+        reason: 'session',
+      });
+    });
+
+    it('足りない権限の 403 は、reason=permission と足りない最初のコードを持つ', async () => {
+      grantCodes('admin.stockists.read');
+
+      const result = await authorizeAdminPermissions(['admin.stockists.read', 'admin.stockists.manage'], mockRequest);
+
+      if (!result.ok) expect(result.response.status).toBe(403);
+      expect(denialOf(result)).toEqual({
+        userId: 'user-1',
+        email: 'user@example.com',
+        role: 'admin',
+        permission: 'admin.stockists.manage',
+        reason: 'permission',
+      });
+    });
+
+    it('aal1 の 403 は、reason=mfa と先頭の要るコードを持つ', async () => {
+      (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: true, claims: { ...adminClaims, aal: 'aal1' } });
+      grantCodes('admin.stockists.manage');
+
+      const result = await authorizeAdminPermissions(['admin.stockists.manage'], mockRequest);
+
+      if (!result.ok) expect(result.response.status).toBe(403);
+      expect(denialOf(result)).toEqual({
+        userId: 'user-1',
+        email: 'user@example.com',
+        role: 'admin',
+        permission: 'admin.stockists.manage',
+        reason: 'mfa',
+      });
+    });
+
+    it('メールの無い token は email=null、app_metadata の役割が無ければ role=user', async () => {
+      (verifyAccessToken as jest.Mock).mockResolvedValue({
+        ok: true,
+        claims: { sub: 'user-2', session_id: 's-2', aal: 'aal2' },
+      });
+      mockQuery.or.mockResolvedValue({ data: [], error: null });
+
+      const result = await authorizeAdminPermissions(['admin.stockists.manage'], mockRequest);
+
+      expect(denialOf(result)).toEqual({
+        userId: 'user-2',
+        email: null,
+        role: 'user',
+        permission: 'admin.stockists.manage',
+        reason: 'permission',
+      });
+    });
+
+    it.each(['missing', 'invalid'] as const)('token の無い・通らない 401（%s）には denial が無い', async (reason) => {
+      (verifyAccessToken as jest.Mock).mockResolvedValue({ ok: false, reason });
+
+      const result = await authorizeAdminPermissions(['admin.stockists.manage'], mockRequest);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(401);
+      expect('denial' in result).toBe(false);
+    });
+
+    it('失効を確認できない 503 には denial が無い', async () => {
+      (checkAuthSessionLiveness as jest.Mock).mockResolvedValue('unavailable');
+      grantCodes('admin.stockists.manage');
+
+      const result = await authorizeAdminPermissions(['admin.stockists.manage'], mockRequest);
+
+      if (!result.ok) expect(result.response.status).toBe(503);
+      expect('denial' in result).toBe(false);
+    });
+
+    it('内部の誤りの 500 には denial が無い', async () => {
+      (verifyAccessToken as jest.Mock).mockRejectedValue(new Error('boom'));
+
+      const result = await authorizeAdminPermissions(['admin.stockists.manage'], mockRequest);
+
+      if (!result.ok) expect(result.response.status).toBe(500);
+      expect('denial' in result).toBe(false);
+    });
+
+    it('denial を足しても、断った応答の本文は変わらない', async () => {
+      grantCodes('admin.stockists.read');
+
+      const result = await authorizeAdminPermissions(['admin.stockists.manage'], mockRequest);
+
+      expect(bodyOf(result)).toEqual({ error: 'Forbidden', permission: 'admin.stockists.manage', role: 'admin' });
+    });
+
+    it('成功の結果の形は変わらず、denial を持たない', async () => {
+      grantCodes('admin.stockists.manage');
+
+      const result = await authorizeAdminPermissions(['admin.stockists.manage'], mockRequest);
+
+      expect(result).toEqual({
+        ok: true,
+        userId: 'user-1',
+        role: 'admin',
+        actorEmail: 'user@example.com',
+        permissions: new Set(['admin.stockists.manage']),
+      });
+      expect('denial' in result).toBe(false);
     });
   });
 });

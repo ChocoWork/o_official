@@ -19,7 +19,7 @@ const CHANGE = { roleCode: 'supporter', permissionCodes: ['admin.shipping.manage
 const SAVED = { role: { code: 'supporter', version: '1', permissionCodes: ['admin.shipping.manage'] }, changedCount: 1 };
 const request = (body: unknown = CHANGE, raw = false) => new Request('https://example.test/api/admin/role-permissions', {
   method: 'POST', body: raw ? String(body) : JSON.stringify(body),
-  headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.5, 203.0.113.6', 'user-agent': 'jest' },
+  headers: { 'content-type': 'application/json', 'x-real-ip': '203.0.113.5', 'user-agent': 'jest' },
 });
 beforeEach(() => {
   jest.resetAllMocks();
@@ -47,6 +47,17 @@ test.each([undefined, { rotatedCsrfToken: 'legacy' }])('CSRF成功%jは通過し
   expect(rpc.mock.invocationCallOrder[0]).toBeLessThan((logAudit as jest.Mock).mock.invocationCallOrder[0]);
   expect(logAudit).toHaveBeenCalledTimes(1);
   expect(logAudit).toHaveBeenCalledWith({ action: 'admin.permissions.update', resource: 'role_permissions', resource_id: 'supporter', actor_id: 'authorized-actor', outcome: 'success', detail: 'Role permissions saved', ip: '203.0.113.5', user_agent: 'jest', metadata: { role_code: 'supporter', request_key: CHANGE.requestKey, changed_count: 1, result_code: 'OK' } });
+});
+
+test('偽の x-forwarded-for は監査の ip に入らない（x-real-ip が無ければ null）', async () => {
+  (requireCsrfOrDeny as jest.Mock).mockResolvedValue(undefined);
+  const req = new Request('https://example.test/api/admin/role-permissions', {
+    method: 'POST', body: JSON.stringify(CHANGE),
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.7', 'user-agent': 'jest' },
+  });
+  const response = await POST(req);
+  expect(response.status).toBe(200);
+  expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'admin.permissions.update', ip: null }));
 });
 
 test.each([401, 403, 503])('認可%sで本文を読まずCSRF・RPC・監査0回', async (status) => {

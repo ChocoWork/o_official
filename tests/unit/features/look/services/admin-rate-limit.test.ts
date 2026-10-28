@@ -40,7 +40,7 @@ describe('admin look rate limit', () => {
 
   test('DD-LOOK-066 runs IP and actor based mutation rate limits', async () => {
     const request = new Request('http://localhost/api/admin/looks', {
-      headers: { 'x-forwarded-for': '1.2.3.4' },
+      headers: { 'x-real-ip': '1.2.3.4' },
     });
 
     await enforceAdminLookMutationRateLimit({

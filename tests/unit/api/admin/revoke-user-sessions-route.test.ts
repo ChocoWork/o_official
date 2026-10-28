@@ -101,7 +101,7 @@ describe('POST /api/admin/revoke-user-sessions', () => {
       incrementCounter.mockResolvedValue(20);
 
       const res = await POST(
-        makeRequest({ user_id: TARGET_ID }, { 'x-forwarded-for': ' 203.0.113.7 , 10.0.0.1', 'user-agent': 'jest-agent' }),
+        makeRequest({ user_id: TARGET_ID }, { 'x-real-ip': ' 203.0.113.7 ', 'user-agent': 'jest-agent' }),
       );
 
       expect(res).toBe(response);
@@ -171,7 +171,15 @@ describe('POST /api/admin/revoke-user-sessions', () => {
       expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'unauthorized', actor_id: null }));
     });
 
-    it('DD-ADMIN-003 x-forwarded-for と user-agent が無い時は IP とブラウザの情報を空で書く', async () => {
+    it('DD-ADMIN-003 x-forwarded-for は読まず、x-real-ip の値だけを IP に書く', async () => {
+      await POST(makeRequest({ user_id: TARGET_ID }, { 'x-forwarded-for': '203.0.113.9' }));
+      expect(logAudit).toHaveBeenLastCalledWith(expect.objectContaining({ ip: null }));
+
+      await POST(makeRequest({ user_id: TARGET_ID }, { 'x-forwarded-for': '203.0.113.9', 'x-real-ip': '198.51.100.7' }));
+      expect(logAudit).toHaveBeenLastCalledWith(expect.objectContaining({ ip: '198.51.100.7' }));
+    });
+
+    it('DD-ADMIN-003 x-real-ip と user-agent が無い時は IP とブラウザの情報を空で書く', async () => {
       await POST(makeRequest({ user_id: TARGET_ID }));
 
       expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ ip: null, user_agent: null }));
@@ -240,7 +248,7 @@ describe('POST /api/admin/revoke-user-sessions', () => {
       ['数', { user_id: 12345 }],
       ['無い', {}],
     ])('DD-ADMIN-003 user_id が %s の時は 400 で、失効に進まない', async (_label, body) => {
-      const res = await POST(makeRequest(body, { 'x-forwarded-for': '198.51.100.2', 'user-agent': 'jest-agent' }));
+      const res = await POST(makeRequest(body, { 'x-real-ip': '198.51.100.2', 'user-agent': 'jest-agent' }));
 
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({ error: 'Invalid request' });
@@ -370,8 +378,32 @@ describe('POST /api/admin/revoke-user-sessions', () => {
         ...actor,
         resource_id: TARGET_ID,
         outcome: 'success',
+        ip: null,
+        user_agent: null,
         metadata: { auth_sessions_deleted: 2 },
       });
+    });
+
+    it('DD-ADMIN-003 SEC-ADMIN-022-AC-03 失効の途中の全部の結果（自分自身・対象なし・引きの失敗・成功・失効の失敗）の監査の行に IP とブラウザの名乗りが入る', async () => {
+      const headers = { 'x-real-ip': '198.51.100.2', 'user-agent': 'jest-agent', 'x-forwarded-for': '203.0.113.9' };
+      const expected = expect.objectContaining({ ...actor, ip: '198.51.100.2', user_agent: 'jest-agent' });
+      const arranges: Array<[string, () => void]> = [
+        [ACTOR_ID, () => undefined],
+        [TARGET_ID, () => getUserById.mockResolvedValue({ data: { user: null }, error: { status: 404 } })],
+        [TARGET_ID, () => getUserById.mockResolvedValue({ data: { user: null }, error: { status: 500 } })],
+        [TARGET_ID, () => undefined],
+        [TARGET_ID, () => revokeAllSessionsForUser.mockRejectedValue(new Error('x'))],
+      ];
+      for (const [userId, arrange] of arranges) {
+        logAudit.mockClear();
+        getUserById.mockResolvedValue({ data: { user: { id: TARGET_ID } }, error: null });
+        revokeAllSessionsForUser.mockResolvedValue({ authSessionsDeleted: 2 });
+        arrange();
+        await POST(makeRequest({ user_id: userId }, headers));
+        expect(logAudit).toHaveBeenCalledTimes(1);
+        expect(logAudit).toHaveBeenCalledWith(expected);
+      }
+      expect(JSON.stringify(logAudit.mock.calls)).not.toContain('203.0.113.9');
     });
 
     it('DD-ADMIN-003 対象の user_id が大文字でも、小文字にそろえて引き・失効し、監査の resource_id も小文字', async () => {
@@ -399,6 +431,8 @@ describe('POST /api/admin/revoke-user-sessions', () => {
         resource_id: TARGET_ID,
         outcome: 'error',
         detail: 'revoke_failed',
+        ip: null,
+        user_agent: null,
       });
       expect(JSON.stringify(logAudit.mock.calls)).not.toContain('secret-detail');
       expect(JSON.stringify(await res.json())).not.toContain('secret-detail');

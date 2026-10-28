@@ -118,14 +118,16 @@ describe('GET /api/auth/confirm', () => {
       expect(verifyOtp).not.toHaveBeenCalled();
     });
 
-    it('DD-AUTH-019 制限の呼び出しが投げたら記録して確かめへ進む', async () => {
+    it('DD-AUTH-019 制限の呼び出しが投げたら握りつぶさず、確かめへ進まない（SEC-AUTH-013-AC-02）', async () => {
       mockRateLimit.mockRejectedValue(new Error('rate down'));
 
-      const res: any = await GET(request('?token_hash=h'));
+      await expect(GET(request('?token_hash=h'))).rejects.toThrow('rate down');
 
-      expect(console.error).toHaveBeenCalledWith('Rate limit middleware error (confirm):', expect.any(Error));
-      expect(res.status).toBe(303);
-      expect(verifyOtp).toHaveBeenCalled();
+      expect(console.error).not.toHaveBeenCalledWith(
+        expect.stringContaining('Rate limit middleware error'),
+        expect.anything(),
+      );
+      expect(verifyOtp).not.toHaveBeenCalled();
     });
   });
 

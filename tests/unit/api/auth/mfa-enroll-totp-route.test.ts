@@ -138,16 +138,18 @@ describe('POST /api/auth/mfa/enroll-totp', () => {
     expect(enroll).not.toHaveBeenCalled();
   });
 
-  it('DD-AUTH-030 回数の制限の呼び出しが投げたら記録して先へ進む', async () => {
+  it('DD-AUTH-030 回数の制限の呼び出しが投げたら 500 で、先へ進まない（SEC-AUTH-013-AC-02）', async () => {
     mockRateLimit.mockRejectedValue(new Error('limiter down'));
 
     const { status } = await call(jsonRequest({}));
 
-    expect(status).toBe(200);
-    expect(errorSpy).toHaveBeenCalledWith(
+    expect(status).toBe(500);
+    expect(errorSpy).not.toHaveBeenCalledWith(
       '[auth.mfa.enroll] rate limit middleware error:',
-      expect.any(Error),
+      expect.anything(),
     );
+    expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(enroll).not.toHaveBeenCalled();
   });
 
   it('DD-AUTH-030 本文が JSON でなければ空の本文として扱い登録する', async () => {

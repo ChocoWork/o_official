@@ -31,6 +31,9 @@ jest.mock('@/components/ItemSection', () => () => null);
 jest.mock('@/components/LookSection', () => () => null);
 jest.mock('@/components/StockistSection', () => () => null);
 jest.mock('@/components/UserSection', () => () => null);
+jest.mock('@/components/ContactSection', () => () => {
+  return require('react').createElement('div', { 'data-testid': 'contact-section' });
+});
 
 const SETTINGS_URL = '/api/admin/settings/shop';
 const AUTO_REFUND_NAME = '取り消した注文に届いた入金を、自動で全額返金する';
@@ -68,11 +71,11 @@ beforeEach(() => {
 });
 
 describe('管理画面の左のメニューの SETTINGS', () => {
-  it('FREQ-525-AC-01: 店長のメニューには、ORDER・INVENTORY・PACKING の次（最後）に SETTINGS が出る。印は細線の歯車', async () => {
+  it('FREQ-525-AC-01: 店長のメニューには、ORDER・INVENTORY・PACKING・CONTACT の次（最後）に SETTINGS が出る。印は細線の歯車', async () => {
     render(<AdminPage />);
     const nav = await screen.findByRole('navigation', { name: '管理メニュー' });
 
-    expect(menuLabels(nav)).toEqual(['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'PACKING', 'SETTINGS']);
+    expect(menuLabels(nav)).toEqual(['KPI', 'ACCOUNTING', 'NEWS', 'ITEM', 'LOOK', 'STOCKIST', 'USER', 'ORDER', 'INVENTORY', 'PACKING', 'CONTACT', 'SETTINGS']);
     expect(within(nav).getByRole('button', { name: 'SETTINGS' }).querySelector('i')).toHaveClass('ri-settings-3-line');
   });
 
@@ -97,12 +100,12 @@ describe('管理画面の左のメニューの SETTINGS', () => {
     expect(screen.getByRole('heading', { name: 'ショップの設定' })).toBeInTheDocument();
   });
 
-  it('FREQ-525-AC-01: サポートの人のメニューは ORDER・INVENTORY・PACKING で、SETTINGS は出ない', async () => {
+  it('FREQ-525-AC-01: サポートの人のメニューは ORDER・INVENTORY・PACKING・CONTACT で、SETTINGS は出ない', async () => {
     mockUserRole = 'supporter';
     render(<AdminPage />);
     const nav = await screen.findByRole('navigation', { name: '管理メニュー' });
 
-    expect(menuLabels(nav)).toEqual(['ORDER', 'INVENTORY', 'PACKING']);
+    expect(menuLabels(nav)).toEqual(['ORDER', 'INVENTORY', 'PACKING', 'CONTACT']);
     expect(screen.queryByRole('button', { name: 'SETTINGS' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '権限' })).not.toBeInTheDocument();
   });
@@ -236,7 +239,7 @@ describe('管理画面の左のメニューの PACKING', () => {
     render(<AdminPage />);
     const nav = await screen.findByRole('navigation', { name: '管理メニュー' });
     expect(within(nav).getByRole('button', { name: 'PACKING' }).querySelector('i')).toHaveClass('ri-box-3-line');
-    expect(menuLabels(nav).slice(8, 11)).toEqual(['INVENTORY', 'PACKING', 'SETTINGS']);
+    expect(menuLabels(nav).slice(8, 12)).toEqual(['INVENTORY', 'PACKING', 'CONTACT', 'SETTINGS']);
   });
 
   it.each(['admin', 'supporter'] as const)('FREQ-531-AC-01: %s は URL の tab=PACKING で直接開ける（サポーターは先頭の ORDER に戻されない）', async (role) => {
@@ -254,5 +257,39 @@ describe('管理画面の左のメニューの PACKING', () => {
     await screen.findByRole('navigation', { name: '管理メニュー' });
 
     expect(screen.queryByRole('navigation', { name: MENU })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * 管理画面の左のメニューの CONTACT（FR-ADMIN-009-AC-01）。店長とサポーターの両方に出し、押すと問い合わせの一覧（ContactSection）を開く。
+ * 権限の無い人には窓口が 403 を返す（権限は窓口が守る。タブの出し分けは案内）。
+ */
+describe('管理画面の左のメニューの CONTACT', () => {
+  it.each(['admin', 'supporter'] as const)('FR-ADMIN-009-AC-01: %s のメニューに CONTACT があり、押すと問い合わせの区画が開く', async (role) => {
+    mockUserRole = role;
+    render(<AdminPage />);
+    expect(screen.queryByTestId('contact-section')).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'CONTACT' }));
+
+    expect(await screen.findByTestId('contact-section')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'CONTACT' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it.each(['admin', 'supporter'] as const)('FR-ADMIN-009-AC-01: %s は URL の tab=CONTACT で直接開ける（サポーターは先頭の ORDER に戻されない）', async (role) => {
+    mockUserRole = role;
+    mockSearchParams = new URLSearchParams('tab=CONTACT');
+    render(<AdminPage />);
+
+    expect(await screen.findByTestId('contact-section')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'CONTACT' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('FR-ADMIN-009-AC-01: CONTACT の外（ORDER）では問い合わせの区画を出さない', async () => {
+    mockUserRole = 'supporter';
+    render(<AdminPage />);
+    await screen.findByRole('navigation', { name: '管理メニュー' });
+
+    expect(screen.queryByTestId('contact-section')).not.toBeInTheDocument();
   });
 });

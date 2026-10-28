@@ -221,24 +221,24 @@ describe('POST /api/auth/login/resend (DD-AUTH-016)', () => {
     expect(logAudit).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-016 制限の呼び出しが投げても記録して送信へ進む', async () => {
+  test('DD-AUTH-016 制限の呼び出しが投げたら握りつぶさず、送信へ進まない（SEC-AUTH-013-AC-02）', async () => {
     enforceRateLimit.mockRejectedValueOnce(new Error('store down'));
 
-    const res: any = await POST(buildRequest());
+    await expect(POST(buildRequest())).rejects.toThrow('store down');
 
-    expect(res.status).toBe(200);
-    expect(consoleErrorSpy).toHaveBeenCalledWith('Rate limit middleware error (login resend):', expect.any(Error));
-    expect(__mockSignInWithOtp).toHaveBeenCalledTimes(1);
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('Rate limit middleware error'),
+      expect.anything(),
+    );
+    expect(__mockSignInWithOtp).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-016 宛先の制限が投げても記録して送信へ進む', async () => {
+  test('DD-AUTH-016 宛先の制限が投げたら握りつぶさず、送信へ進まない（SEC-AUTH-013-AC-02）', async () => {
     enforceRateLimit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('store down'));
 
-    const res: any = await POST(buildRequest());
+    await expect(POST(buildRequest())).rejects.toThrow('store down');
 
-    expect(res.status).toBe(200);
-    expect(consoleErrorSpy).toHaveBeenCalledWith('Rate limit middleware error (login resend):', expect.any(Error));
-    expect(__mockSignInWithOtp).toHaveBeenCalledTimes(1);
+    expect(__mockSignInWithOtp).not.toHaveBeenCalled();
   });
 
   test('DD-AUTH-016 送信が誤りなら 500 と otp_resend_failed の監査。保留の Cookie は作り直さない', async () => {

@@ -301,6 +301,48 @@ describe('StockistSection', () => {
     expect(mockClientFetch).toHaveBeenCalledTimes(2);
   });
 
+  describe('回数の制限の 429（no-store。本文は使わない）でも本文を読み始める', () => {
+    function limitedResponse(): { response: Response; drain: jest.Mock } {
+      const drain = jest.fn(async () => new ArrayBuffer(0));
+      return {
+        response: { ok: false, status: 429, json: async () => ({}), arrayBuffer: drain } as unknown as Response,
+        drain,
+      };
+    }
+
+    it('DD-STOCKIST-030 一覧の取得が 429 の時', async () => {
+      const { response, drain } = limitedResponse();
+      mockClientFetch.mockResolvedValueOnce(response);
+
+      render(<StockistSection />);
+
+      expect(await screen.findByText('STOCKISTがありません')).toBeInTheDocument();
+      expect(drain).toHaveBeenCalledTimes(1);
+    });
+
+    it('DD-STOCKIST-030 公開の切り替え（PATCH）が 429 の時', async () => {
+      await renderList();
+      const { response, drain } = limitedResponse();
+      mockClientFetch.mockResolvedValueOnce(response);
+
+      fireEvent.click(within(cardOf('公開の店')).getByRole('button', { name: '非公開' }));
+
+      await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('ステータスの更新に失敗しました'));
+      expect(drain).toHaveBeenCalledTimes(1);
+    });
+
+    it('DD-STOCKIST-030 削除（DELETE）が 429 の時', async () => {
+      await renderList();
+      const { response, drain } = limitedResponse();
+      mockClientFetch.mockResolvedValueOnce(response);
+
+      fireEvent.click(within(cardOf('公開の店')).getByRole('button', { name: '削除' }));
+
+      await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('STOCKISTの削除に失敗しました'));
+      expect(drain).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('DD-STOCKIST-030 「編集」の行き先が /admin/stockist/edit/<id> になる', async () => {
     await renderList();
 

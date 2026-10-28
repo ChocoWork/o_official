@@ -12,7 +12,7 @@ jest.mock('next/server', () => ({
 }));
 
 import { GET, POST } from '@/app/api/admin/kpi/cost-profit/route';
-import { authorizeAdminPermission } from '@/lib/auth/admin-rbac';
+import { authorizeAdminPermission, type PermissionCode } from '@/lib/auth/admin-rbac';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
 const authorizeMock = authorizeAdminPermission as jest.MockedFunction<typeof authorizeAdminPermission>;
@@ -23,6 +23,7 @@ const ADMIN = {
 	userId: 'admin-id',
 	role: 'admin' as const,
 	actorEmail: 'admin@example.com',
+	permissions: new Set<PermissionCode>(),
 };
 
 // 会計は暦年（1/1〜12/31）で切る。シーズンは商品原価の絞り込みにのみ使う任意パラメータ。

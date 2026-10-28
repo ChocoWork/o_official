@@ -58,7 +58,7 @@ import { ReturnStoreError } from '@/lib/orders/returns/return-store';
 import { RETURN_REASONS, type ShopReturnSettings } from '@/lib/orders/returns/return-types';
 
 const DENIED = new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
-const HEADERS = { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.5', 'user-agent': 'jest' };
+const HEADERS = { 'content-type': 'application/json', 'x-real-ip': '203.0.113.5', 'user-agent': 'jest' };
 
 // 保存の前: 自動の返金①はオン（変えた人はまだ無い）、②はオフ（前に別の店長が変えた）
 const BEFORE: ShopSettingsRow = {
@@ -505,6 +505,16 @@ describe('PUT /api/admin/settings/shop（自動の返金のトグル）', () => 
     expect(audited).not.toContain('@example.com');
     expect(audited).not.toContain('2026-10-11T0');
     expectNoKeyIsRedacted(mockLogAudit.mock.calls[0][0]);
+  });
+
+  it('偽の x-forwarded-for は監査の ip に入らない（x-real-ip が無ければ null）', async () => {
+    await PUT(new Request('http://localhost/api/admin/settings/shop', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.7', 'user-agent': 'jest' },
+      body: JSON.stringify(NEXT),
+    }));
+
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ action: 'admin.settings.shop.update', ip: null }));
   });
 
   it('片方だけ変えた時は、変えたトグルだけを監査に残す', async () => {

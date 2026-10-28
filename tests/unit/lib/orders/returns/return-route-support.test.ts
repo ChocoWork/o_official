@@ -496,7 +496,7 @@ describe('returnErrorLogFields（窓口の失敗のログに出す物）', () =>
 });
 
 describe('createReturnAudit（監査の書き込み）', () => {
-  it('実行した人・対象・送信元を付けて logAudit に渡す。ip は x-forwarded-for の最初の値', async () => {
+  it('実行した人・対象・送信元を付けて logAudit に渡す。ip は x-real-ip の値（getClientIp。ADR-0416）', async () => {
     const audit = createReturnAudit(postRequest(), 'admin-1', {
       action: 'admin.orders.return.cancel', resource: 'order_returns', resourceId: RETURN_ID,
     });
@@ -514,6 +514,15 @@ describe('createReturnAudit（監査の書き込み）', () => {
       user_agent: 'jest',
       metadata: { return_status: 'cancelled' },
     });
+  });
+
+  it('偽の x-forwarded-for は無視し、x-real-ip が無ければ ip は null（getClientIp。ADR-0416）', async () => {
+    const forged = new Request('http://localhost/api/admin/returns/x/cancel', {
+      method: 'POST', headers: { 'x-forwarded-for': '198.51.100.7' },
+    });
+    await createReturnAudit(forged, 'admin-1', { action: 'admin.orders.return.cancel', resource: 'orders', resourceId: 'x' })('success', 'x');
+
+    expect(mockLogAudit.mock.calls[0][0].ip).toBeNull();
   });
 
   it('送信元の情報が無い要求でも書ける。鍵を渡さなければ metadata は null', async () => {

@@ -100,7 +100,7 @@ describe('admin stockist security guards', () => {
   test('DD-STOCKIST-038 GET applies both ip and actor rate limits before reading stockists', async () => {
     const request = new Request('http://localhost/api/admin/stockists', {
       method: 'GET',
-      headers: { 'x-forwarded-for': '198.51.100.10' },
+      headers: { 'x-real-ip': '198.51.100.10' },
     });
 
     const response = await stockistsRoute.GET(request);

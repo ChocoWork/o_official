@@ -22,9 +22,14 @@ jest.mock('@/features/auth/middleware/rateLimit', () => ({
   enforceRateLimit: jest.fn(),
 }));
 
+jest.mock('@/lib/audit', () => ({
+  logAudit: jest.fn(),
+}));
+
 import { DELETE } from '@/app/api/admin/item-color-presets/[id]/route';
 
 const { createServiceRoleClient } = require('@/lib/supabase/server');
+const { logAudit } = require('@/lib/audit');
 const { authorizeAdminPermission } = require('@/lib/auth/admin-rbac');
 const { enforceRateLimit } = require('@/features/auth/middleware/rateLimit');
 
@@ -38,7 +43,10 @@ type MockRes = { status: number; _body: unknown };
 const denied = { status: 403, _body: { error: 'Forbidden' } };
 
 function makeRequest() {
-  return new Request('http://localhost/api/admin/item-color-presets/p-1', { method: 'DELETE' });
+  return new Request('http://localhost/api/admin/item-color-presets/p-1', {
+    method: 'DELETE',
+    headers: { 'x-real-ip': '198.51.100.7', 'user-agent': 'jest-agent' },
+  });
 }
 
 function ctx(id: string) {
@@ -50,7 +58,8 @@ describe('DELETE /api/admin/item-color-presets/[id]', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    authorizeAdminPermission.mockReset().mockResolvedValue({ ok: true, userId: 'admin-1' });
+    authorizeAdminPermission.mockReset().mockResolvedValue({ ok: true, userId: 'admin-1', actorEmail: 'admin@example.com' });
+    logAudit.mockReset().mockResolvedValue(undefined);
     enforceRateLimit.mockReset().mockResolvedValue(null);
     selectDeleted.mockReset().mockResolvedValue({ data: [{ id: 1 }], error: null });
     eq.mockReset().mockReturnValue({ select: selectDeleted });
@@ -83,6 +92,35 @@ describe('DELETE /api/admin/item-color-presets/[id]', () => {
     expect(del).toHaveBeenCalledTimes(1);
     expect(eq).toHaveBeenCalledWith('id', '12');
     expect(selectDeleted).toHaveBeenCalledWith('id');
+  });
+
+  it('DD-ADMIN-012 SEC-ADMIN-022-AC-01 消せた時に admin.item_color_preset.delete を1行残す', async () => {
+    const res = (await DELETE(makeRequest(), ctx('12'))) as unknown as MockRes;
+
+    expect(res.status).toBe(200);
+    expect(logAudit).toHaveBeenCalledTimes(1);
+    expect(logAudit).toHaveBeenCalledWith({
+      action: 'admin.item_color_preset.delete',
+      actor_id: 'admin-1',
+      actor_email: 'admin@example.com',
+      resource: 'item_color_preset',
+      resource_id: '12',
+      outcome: 'success',
+      ip: '198.51.100.7',
+      user_agent: 'jest-agent',
+    });
+  });
+
+  it('DD-ADMIN-012 消した行が0行・誤り・形の悪い id・認可の拒否の時は監査を書かない', async () => {
+    selectDeleted.mockResolvedValueOnce({ data: [], error: null });
+    await DELETE(makeRequest(), ctx('999'));
+    selectDeleted.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    await DELETE(makeRequest(), ctx('12'));
+    await DELETE(makeRequest(), ctx('abc'));
+    authorizeAdminPermission.mockResolvedValue({ ok: false, response: denied });
+    await DELETE(makeRequest(), ctx('12'));
+
+    expect(logAudit).not.toHaveBeenCalled();
   });
 
   it('DD-ADMIN-012 消した行が0行なら 404 Color preset not found を返す（成功と偽らない）', async () => {

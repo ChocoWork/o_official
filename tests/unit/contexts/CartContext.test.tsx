@@ -172,6 +172,52 @@ describe('toggleWishlist', () => {
     consoleError.mockRestore();
   });
 
+  test('解除が 429（本文は使わない）でも、no-store の応答を開いたまま残さないよう本文を読み切る', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    await renderLoaded();
+    wishlistDelete = { status: 429, body: { error: 'Too many requests' } };
+    const drain = jest.spyOn(Response.prototype, 'arrayBuffer');
+
+    fireEvent.click(screen.getByRole('button', { name: 'toggle-existing' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('error')).toHaveTextContent('ウィッシュリストから削除できません'),
+    );
+    expect(drain).toHaveBeenCalledTimes(1);
+  });
+
+  test('追加が 429（本文は使わない）でも、no-store の応答を開いたまま残さないよう本文を読み切る', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    await renderLoaded();
+    wishlistPost = { status: 429, body: { error: 'Too many requests' } };
+    const drain = jest.spyOn(Response.prototype, 'arrayBuffer');
+
+    fireEvent.click(screen.getByRole('button', { name: 'toggle-new' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('error')).toHaveTextContent('ウィッシュリストに追加できません'),
+    );
+    expect(drain).toHaveBeenCalledTimes(1);
+  });
+
+  test('行の番号の引き直しが 429（本文は使わない）でも、本文を読み切る', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    await renderLoaded();
+    // 409 で登録済みと分かると行の番号が手元に無いので、解除で一覧を引き直す
+    wishlistPost = { status: 409, body: { error: 'Item already in wishlist' } };
+    fireEvent.click(screen.getByRole('button', { name: 'toggle-new' }));
+    await waitFor(() => expect(screen.getByTestId('new-wishlisted')).toHaveTextContent('yes'));
+    wishlistGet = { status: 429, body: { error: 'Too many requests' } };
+    const drain = jest.spyOn(Response.prototype, 'arrayBuffer');
+
+    fireEvent.click(screen.getByRole('button', { name: 'toggle-new' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('error')).toHaveTextContent('ウィッシュリストから削除できません'),
+    );
+    expect(drain).toHaveBeenCalledTimes(1);
+  });
+
   test('DELETE が 404 なら既に解除済みとして扱う', async () => {
     await renderLoaded();
     wishlistDelete = { status: 404, body: { error: 'Wishlist item not found' } };

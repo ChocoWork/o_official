@@ -121,3 +121,37 @@ test('画像の署名が null の 1 件があっても、一覧全体を捨て�
   expect(consoleWarn).not.toHaveBeenCalledWith('Invalid wishlist entries were filtered out', expect.anything());
   consoleWarn.mockRestore();
 });
+
+// Response.prototype.arrayBuffer の見張りを次の試験へ残さない
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
+test('一覧の取得が 429（本文は使わない）でも、no-store の応答を開いたまま残さないよう本文を読み切る', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+  (global as any).fetch = jest.fn(async () => new Response('{"error":"Too many requests"}', { status: 429 }));
+  const drain = jest.spyOn(Response.prototype, 'arrayBuffer');
+  render(<WishlistPage />);
+
+  await waitFor(() => expect(consoleError).toHaveBeenCalled());
+  expect(drain).toHaveBeenCalledTimes(1);
+  consoleError.mockRestore();
+});
+
+test('削除が 429（本文は使わない）でも、no-store の応答を開いたまま残さないよう本文を読み切る', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+  const base = (global as any).fetch as jest.Mock;
+  (global as any).fetch = jest.fn(async (input: string, init?: RequestInit) =>
+    input.startsWith('/api/wishlist/') && (init?.method ?? 'GET').toUpperCase() === 'DELETE'
+      ? new Response('{"error":"Too many requests"}', { status: 429 })
+      : base(input, init),
+  );
+  render(<WishlistPage />);
+  const button = await screen.findByRole('button', { name: 'ウィッシュリストから削除' });
+  const drain = jest.spyOn(Response.prototype, 'arrayBuffer');
+  fireEvent.click(button);
+
+  await waitFor(() => expect(consoleError).toHaveBeenCalled());
+  expect(drain).toHaveBeenCalledTimes(1);
+  consoleError.mockRestore();
+});

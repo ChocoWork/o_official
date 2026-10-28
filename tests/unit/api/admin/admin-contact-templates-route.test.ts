@@ -37,7 +37,12 @@ const DENIED = { status: 403, json: async () => ({ error: 'Forbidden' }) };
 function makeRequest(body: unknown, opts: { brokenJson?: boolean } = {}) {
   return {
     json: opts.brokenJson ? () => Promise.reject(new SyntaxError('bad json')) : async () => body,
-    headers: { get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'jest-agent' : null) },
+    headers: {
+      get: (name: string) => {
+        const key = name.toLowerCase();
+        return key === 'user-agent' ? 'jest-agent' : key === 'x-real-ip' ? '198.51.100.7' : null;
+      },
+    },
   } as unknown as Request;
 }
 
@@ -65,7 +70,7 @@ describe('admin contact templates route (list and create)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1' });
+    mockAuthorize.mockResolvedValue({ ok: true, userId: 'admin-1', actorEmail: 'owner@example.com' });
     mockEnforceRateLimit.mockReset().mockResolvedValue(null);
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   });
@@ -213,10 +218,12 @@ describe('admin contact templates route (list and create)', () => {
       expect(mockLogAudit).toHaveBeenCalledWith({
         action: 'admin.contact.template.create',
         actor_id: 'admin-1',
+        actor_email: 'owner@example.com',
         resource: 'contact_reply_template',
         resource_id: 'new-1',
         outcome: 'success',
         detail: 'created',
+        ip: '198.51.100.7',
         user_agent: 'jest-agent',
       });
     });

@@ -195,6 +195,18 @@ describe('SearchHomePreview', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('DD-SEARCH-003 応答が 429（本文は使わない）でも、no-store の応答を開いたまま残さないよう本文を読み切る', async () => {
+    setQuery('coat');
+    const drain = jest.fn().mockResolvedValue(new ArrayBuffer(0));
+    fetchMock.mockResolvedValue({ ok: false, status: 429, json: async () => ({}), arrayBuffer: drain });
+
+    const { container } = render(<SearchHomePreview />);
+
+    await waitFor(() => expect(drain).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch home search preview'));
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it('DD-SEARCH-003 fetch が reject しても何も描かず、Error を渡さず固定の文字だけ console.error に書く', async () => {
     setQuery('coat');
     fetchMock.mockRejectedValue(new Error('network down'));

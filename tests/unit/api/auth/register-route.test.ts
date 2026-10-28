@@ -163,13 +163,14 @@ describe('POST /api/auth/register', () => {
       expect(mockTurnstile).not.toHaveBeenCalled();
     });
 
-    it('DD-AUTH-018 制限の呼び出しが投げたら記録して先へ進む', async () => {
+    it('DD-AUTH-018 制限の呼び出しが投げたら 500 で、先へ進まない（SEC-AUTH-013-AC-02）', async () => {
       mockRateLimit.mockRejectedValue(new Error('rate down'));
 
       const res: any = await POST(registerRequest());
 
-      expect(console.error).toHaveBeenCalledWith('Rate limit middleware error (register):', expect.any(Error));
-      expect(res.status).toBe(202);
+      expect(res.status).toBe(500);
+      expect(console.error).not.toHaveBeenCalledWith('Rate limit middleware error (register):', expect.anything());
+      expect(mockTurnstile).not.toHaveBeenCalled();
     });
   });
 
@@ -267,7 +268,7 @@ describe('POST /api/auth/register', () => {
       expect(mockRateLimit).toHaveBeenCalledTimes(1);
     });
 
-    it('DD-AUTH-018 宛先の枠の呼び出しが投げたら記録して先へ進む', async () => {
+    it('DD-AUTH-018 宛先の枠の呼び出しが投げたら 500 で、控えも登録も作らない（SEC-AUTH-013-AC-02）', async () => {
       mockRateLimit.mockImplementation(async (arg: { subject?: string }) => {
         if (arg.subject) throw new Error('rate down');
         return undefined;
@@ -275,8 +276,12 @@ describe('POST /api/auth/register', () => {
 
       const res: any = await POST(registerRequest());
 
-      expect(console.error).toHaveBeenCalledWith('Rate limit middleware error (register-email):', expect.any(Error));
-      expect(res.status).toBe(202);
+      expect(res.status).toBe(500);
+      expect(console.error).not.toHaveBeenCalledWith(
+        'Rate limit middleware error (register-email):',
+        expect.anything(),
+      );
+      expect(createUser).not.toHaveBeenCalled();
     });
   });
 
@@ -385,21 +390,30 @@ describe('POST /api/auth/register', () => {
       expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'turnstile_failed' }));
     });
 
-    it('DD-AUTH-018 x-forwarded-for の先頭を前後の空白を除いて Turnstile へ渡す', async () => {
+    it('DD-AUTH-018 x-real-ip を前後の空白を除いて Turnstile へ渡す', async () => {
       await POST(
         registerRequest(
           { email: 'new@example.com', password: PASSWORD, turnstileToken: 'tok' },
-          { 'x-forwarded-for': ' 203.0.113.7 , 10.0.0.1' },
+          { 'x-real-ip': ' 203.0.113.7 ' },
         ),
       );
 
       expect(mockTurnstile).toHaveBeenCalledWith('tok', '203.0.113.7');
     });
 
-    it('DD-AUTH-018 x-forwarded-for が無ければ Turnstile へ null を渡す', async () => {
+    it('DD-AUTH-018 x-real-ip が無ければ Turnstile へ null を渡す', async () => {
       await POST(registerRequest());
 
       expect(mockTurnstile).toHaveBeenCalledWith('t', null);
+    });
+
+    it('DD-AUTH-018 x-forwarded-for は読まず、x-real-ip が在ればそちらを Turnstile に渡す', async () => {
+      const body = { email: 'new@example.com', password: PASSWORD, turnstileToken: 'tok' };
+      await POST(registerRequest(body, { 'x-forwarded-for': '198.51.100.99' }));
+      expect(mockTurnstile).toHaveBeenLastCalledWith('tok', null);
+
+      await POST(registerRequest(body, { 'x-forwarded-for': '198.51.100.99', 'x-real-ip': '203.0.113.7' }));
+      expect(mockTurnstile).toHaveBeenLastCalledWith('tok', '203.0.113.7');
     });
 
     it('DD-AUTH-018 Turnstile は重複の確認と登録より前に呼ぶ', async () => {

@@ -45,7 +45,9 @@ const range = jest.fn();
 const from = jest.fn();
 
 function makeRequest(search = '') {
-  return new Request(`http://localhost/api/admin/contact${search}`);
+  return new Request(`http://localhost/api/admin/contact${search}`, {
+    headers: { 'x-real-ip': '198.51.100.7', 'user-agent': 'jest-agent' },
+  });
 }
 
 function setResult(result: QueryResult) {
@@ -241,6 +243,8 @@ describe('GET /api/admin/contact', () => {
       actor_email: 'owner@example.com',
       resource: 'contact',
       outcome: 'success',
+      ip: '198.51.100.7',
+      user_agent: 'jest-agent',
       metadata: { status: 'open', type: null, page: 1, q_length: 5 },
     });
     expect(JSON.stringify(logAudit.mock.calls)).not.toContain('taro');

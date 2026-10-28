@@ -64,7 +64,7 @@ function buildService(options: ServiceOptions = {}) {
 
 function makeRequest(
   body: unknown,
-  headers: Record<string, string> = { 'x-forwarded-for': '203.0.113.5, 10.0.0.1', 'user-agent': 'jest-agent' },
+  headers: Record<string, string> = { 'x-real-ip': '203.0.113.5', 'user-agent': 'jest-agent' },
 ) {
   return new Request('http://localhost/api/admin/users/mfa/reset', {
     method: 'POST',
@@ -220,13 +220,21 @@ describe('POST /api/admin/users/mfa/reset', () => {
     );
   });
 
-  it('DD-ADMIN-005 x-forwarded-for は左端を前後の空白を除いて、user-agent はそのまま監査に書く', async () => {
-    await POST(makeRequest('not-json', { 'x-forwarded-for': '  198.51.100.7 , 10.0.0.1', 'user-agent': 'UA/1.0' }));
+  it('DD-ADMIN-005 x-real-ip は前後の空白を除いて、user-agent はそのまま監査に書く', async () => {
+    await POST(makeRequest('not-json', { 'x-real-ip': '  198.51.100.7 ', 'user-agent': 'UA/1.0' }));
 
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ ip: '198.51.100.7', user_agent: 'UA/1.0' }));
   });
 
-  it('DD-ADMIN-005 x-forwarded-for と user-agent が無い時は監査の IP とブラウザの情報が空', async () => {
+  it('DD-ADMIN-005 x-forwarded-for は読まず、x-real-ip の値だけを監査の IP に書く', async () => {
+    await POST(makeRequest('not-json', { 'x-forwarded-for': '203.0.113.9', 'x-real-ip': '198.51.100.7' }));
+    expect(logAudit).toHaveBeenLastCalledWith(expect.objectContaining({ ip: '198.51.100.7' }));
+
+    await POST(makeRequest('not-json', { 'x-forwarded-for': '203.0.113.9' }));
+    expect(logAudit).toHaveBeenLastCalledWith(expect.objectContaining({ ip: null }));
+  });
+
+  it('DD-ADMIN-005 x-real-ip と user-agent が無い時は監査の IP とブラウザの情報が空', async () => {
     await POST(makeRequest('not-json', {}));
 
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ ip: null, user_agent: null }));

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import {
   applyRotatedCsrfCookie,
-  enforceAdminStockistMutationRateLimit,
-  enforceAdminStockistReadRateLimit,
+  enforceAdminStockistActorRateLimit,
+  enforceAdminStockistIpRateLimit,
   hasRotatedCsrfToken,
   requireAdminStockistCsrf,
   toCsrfDenyResponse,
@@ -153,17 +153,35 @@ describe('回数の制限', () => {
   const tooMany = new Response(null, { status: 429 });
   const unavailable = new Response(null, { status: 503 });
 
-  it('DD-STOCKIST-038 読みの関数は read の枠で2回数え、2回目だけに操作者の id を渡す', async () => {
+  it('DD-STOCKIST-038 送り元の枠（読み）は read の枠を subject なしで1回だけ数える', async () => {
     mockEnforceRateLimit.mockResolvedValue(undefined);
-    await expect(enforceAdminStockistReadRateLimit(request, 'admin-1')).resolves.toBeUndefined();
-    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(2);
-    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(1, {
+    await expect(enforceAdminStockistIpRateLimit(request, 'read')).resolves.toBeUndefined();
+    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(1);
+    expect(mockEnforceRateLimit).toHaveBeenCalledWith({
       request,
       endpoint: 'admin:stockists:read',
       limit: 120,
       windowSeconds: 600,
     });
-    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(2, {
+  });
+
+  it('DD-STOCKIST-038 送り元の枠（変更）は mutation の枠を subject なしで1回だけ数える', async () => {
+    mockEnforceRateLimit.mockResolvedValue(undefined);
+    await expect(enforceAdminStockistIpRateLimit(request, 'mutation')).resolves.toBeUndefined();
+    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(1);
+    expect(mockEnforceRateLimit).toHaveBeenCalledWith({
+      request,
+      endpoint: 'admin:stockists:mutation',
+      limit: 20,
+      windowSeconds: 600,
+    });
+  });
+
+  it('DD-STOCKIST-038 操作者の枠（読み）は read の枠を操作者の id を subject にして1回だけ数える', async () => {
+    mockEnforceRateLimit.mockResolvedValue(undefined);
+    await expect(enforceAdminStockistActorRateLimit(request, 'admin-1', 'read')).resolves.toBeUndefined();
+    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(1);
+    expect(mockEnforceRateLimit).toHaveBeenCalledWith({
       request,
       endpoint: 'admin:stockists:read',
       limit: 120,
@@ -172,17 +190,11 @@ describe('回数の制限', () => {
     });
   });
 
-  it('DD-STOCKIST-038 変更の関数は mutation の枠で2回数え、2回目だけに操作者の id を渡す', async () => {
+  it('DD-STOCKIST-038 操作者の枠（変更）は mutation の枠を操作者の id を subject にして1回だけ数える', async () => {
     mockEnforceRateLimit.mockResolvedValue(undefined);
-    await expect(enforceAdminStockistMutationRateLimit(request, 'admin-2')).resolves.toBeUndefined();
-    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(2);
-    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(1, {
-      request,
-      endpoint: 'admin:stockists:mutation',
-      limit: 20,
-      windowSeconds: 600,
-    });
-    expect(mockEnforceRateLimit).toHaveBeenNthCalledWith(2, {
+    await expect(enforceAdminStockistActorRateLimit(request, 'admin-2', 'mutation')).resolves.toBeUndefined();
+    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(1);
+    expect(mockEnforceRateLimit).toHaveBeenCalledWith({
       request,
       endpoint: 'admin:stockists:mutation',
       limit: 20,
@@ -191,33 +203,23 @@ describe('回数の制限', () => {
     });
   });
 
-  it('DD-STOCKIST-038 送り元の枠が止めたらその応答を返し、操作者の枠を数えない', async () => {
+  it('DD-STOCKIST-038 送り元の枠が止めたらその応答をそのまま返す', async () => {
     mockEnforceRateLimit.mockResolvedValueOnce(tooMany);
-    await expect(enforceAdminStockistReadRateLimit(request, 'admin-1')).resolves.toBe(tooMany);
-    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(1);
+    await expect(enforceAdminStockistIpRateLimit(request, 'read')).resolves.toBe(tooMany);
   });
 
-  it('DD-STOCKIST-038 変更の関数も送り元の枠が止めたら操作者の枠を数えない', async () => {
+  it('DD-STOCKIST-038 送り元の枠が使えない時は 503 の応答をそのまま返す', async () => {
     mockEnforceRateLimit.mockResolvedValueOnce(unavailable);
-    await expect(enforceAdminStockistMutationRateLimit(request, 'admin-1')).resolves.toBe(unavailable);
-    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(1);
+    await expect(enforceAdminStockistIpRateLimit(request, 'mutation')).resolves.toBe(unavailable);
   });
 
-  it('DD-STOCKIST-038 読みの関数も送り元を通り操作者の枠が止めたらその応答を返す', async () => {
-    mockEnforceRateLimit.mockResolvedValueOnce(undefined).mockResolvedValueOnce(unavailable);
-    await expect(enforceAdminStockistReadRateLimit(request, 'admin-1')).resolves.toBe(unavailable);
-    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(2);
+  it('DD-STOCKIST-038 操作者の枠が止めたらその応答をそのまま返す', async () => {
+    mockEnforceRateLimit.mockResolvedValueOnce(tooMany);
+    await expect(enforceAdminStockistActorRateLimit(request, 'admin-1', 'mutation')).resolves.toBe(tooMany);
   });
 
-  it('DD-STOCKIST-038 変更の関数も送り元を通り操作者の枠が使えない時はその応答を返す', async () => {
-    mockEnforceRateLimit.mockResolvedValueOnce(undefined).mockResolvedValueOnce(unavailable);
-    await expect(enforceAdminStockistMutationRateLimit(request, 'admin-1')).resolves.toBe(unavailable);
-    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(2);
-  });
-
-  it('DD-STOCKIST-038 送り元を通り操作者の枠が止めたらその応答を返す', async () => {
-    mockEnforceRateLimit.mockResolvedValueOnce(undefined).mockResolvedValueOnce(tooMany);
-    await expect(enforceAdminStockistMutationRateLimit(request, 'admin-1')).resolves.toBe(tooMany);
-    expect(mockEnforceRateLimit).toHaveBeenCalledTimes(2);
+  it('DD-STOCKIST-038 操作者の枠が使えない時は 503 の応答をそのまま返す', async () => {
+    mockEnforceRateLimit.mockResolvedValueOnce(unavailable);
+    await expect(enforceAdminStockistActorRateLimit(request, 'admin-1', 'read')).resolves.toBe(unavailable);
   });
 });

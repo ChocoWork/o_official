@@ -17,7 +17,7 @@ export const FULFILLMENT_ID = 'a2b2c3d4-1111-4222-8333-444455556666';
 export const LINE_ID = 'a3b2c3d4-1111-4222-8333-444455556661';
 export const LINE_ID_2 = 'a3b2c3d4-1111-4222-8333-444455556662';
 
-export const HEADERS = { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.5', 'user-agent': 'jest' };
+export const HEADERS = { 'content-type': 'application/json', 'x-real-ip': '203.0.113.5', 'user-agent': 'jest' };
 
 export const UNKNOWN_MESSAGE = '返金の結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。';
 

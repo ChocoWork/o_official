@@ -162,6 +162,54 @@ describe('LookSection', () => {
       }
     });
 
+    it('DD-LOOK-060 canManage が true の時だけ「新規作成」を出し、作成の頁へのリンクにする', async () => {
+      mockList([PUBLISHED_LOOK], { canManage: true });
+
+      render(<LookSection />);
+
+      await screen.findByText('公開のテーマ');
+      expect(screen.getByRole('link', { name: '新規作成' })).toHaveAttribute('href', '/admin/look/create');
+    });
+
+    it('DD-LOOK-060 canManage が true なら LOOK が 0 件でも「新規作成」を出す（最初の 1 件を作れる）', async () => {
+      mockList([], { canManage: true });
+
+      render(<LookSection />);
+
+      expect(await screen.findByText('LOOKがありません')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: '新規作成' })).toHaveAttribute('href', '/admin/look/create');
+    });
+
+    it.each([
+      ['canManage が false', { canManage: false }],
+      ['meta が空', {}],
+      ['meta が無い', undefined],
+      ['canManage が文字の true', { canManage: 'true' }],
+    ])('DD-LOOK-060 %s の時は LOOK があっても 0 件でも「新規作成」を出さない', async (_label, meta) => {
+      mockClientFetch.mockResolvedValueOnce(respond(true, { data: [PUBLISHED_LOOK], meta }));
+      const { unmount } = render(<LookSection />);
+      await screen.findByText('公開のテーマ');
+      expect(screen.queryByRole('link', { name: '新規作成' })).not.toBeInTheDocument();
+      unmount();
+
+      mockClientFetch.mockResolvedValueOnce(respond(true, { data: [], meta }));
+      render(<LookSection />);
+      await screen.findByText('LOOKがありません');
+      expect(screen.queryByRole('link', { name: '新規作成' })).not.toBeInTheDocument();
+    });
+
+    it('DD-LOOK-060 読み込み中と取得の失敗では「新規作成」を出さない', async () => {
+      mockClientFetch.mockReturnValueOnce(new Promise<Response>(() => {}));
+      const { unmount } = render(<LookSection />);
+      expect(screen.queryByRole('link', { name: '新規作成' })).not.toBeInTheDocument();
+      unmount();
+
+      mockClientFetch.mockResolvedValueOnce(respond(false, { error: 'Forbidden' }));
+      render(<LookSection />);
+      await screen.findByText('LOOKがありません');
+      expect(screen.queryByRole('link', { name: '新規作成' })).not.toBeInTheDocument();
+    });
+
     it('DD-LOOK-060 読み込み中はボタンを出さない（一覧を取る前に権限を決めつけない）', () => {
       mockClientFetch.mockReturnValueOnce(new Promise<Response>(() => {}));
 
@@ -422,5 +470,54 @@ describe('LookSection', () => {
       'Failed to delete look:',
       expect.objectContaining({ message: 'boom' }),
     );
+  });
+
+  describe('429（本文は使わない）でも本文を読み始める（波 4 Task 1b）', () => {
+    /** 回数の制限の 429 は no-store。arrayBuffer が呼ばれたかを見る */
+    function limited(): { response: Response; drain: jest.Mock } {
+      const drain = jest.fn(async () => new ArrayBuffer(0));
+      return {
+        response: { ok: false, status: 429, json: async () => ({ error: 'Too many requests' }), arrayBuffer: drain } as unknown as Response,
+        drain,
+      };
+    }
+
+    it('DD-LOOK-060 一覧の取得（GET）が 429 の時', async () => {
+      const { response, drain } = limited();
+      mockClientFetch.mockResolvedValueOnce(response);
+
+      render(<LookSection />);
+
+      expect(await screen.findByText('LOOKがありません')).toBeInTheDocument();
+      expect(drain).toHaveBeenCalledTimes(1);
+    });
+
+    it('DD-LOOK-060 公開の切り替え（PATCH）が 429 の時', async () => {
+      const { response, drain } = limited();
+      mockList([PUBLISHED_LOOK]);
+      mockClientFetch.mockResolvedValueOnce(response);
+
+      render(<LookSection />);
+      await screen.findByText('公開のテーマ');
+
+      fireEvent.click(screen.getByRole('button', { name: '非公開' }));
+
+      await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('ステータスの更新に失敗しました'));
+      expect(drain).toHaveBeenCalledTimes(1);
+    });
+
+    it('DD-LOOK-060 削除（DELETE）が 429 の時', async () => {
+      const { response, drain } = limited();
+      mockList([PUBLISHED_LOOK]);
+      mockClientFetch.mockResolvedValueOnce(response);
+
+      render(<LookSection />);
+      await screen.findByText('公開のテーマ');
+
+      fireEvent.click(screen.getByRole('button', { name: '削除' }));
+
+      await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('LOOKの削除に失敗しました'));
+      expect(drain).toHaveBeenCalledTimes(1);
+    });
   });
 });

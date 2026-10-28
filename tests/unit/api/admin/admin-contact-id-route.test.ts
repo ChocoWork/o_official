@@ -76,7 +76,9 @@ function makeJsonRequest(body: unknown, headers: Record<string, string> = {}) {
 }
 
 function makeGetRequest() {
-  return new Request('http://localhost/api/admin/contact/3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f');
+  return new Request('http://localhost/api/admin/contact/3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f', {
+    headers: { 'x-real-ip': '198.51.100.7', 'user-agent': 'jest-agent' },
+  });
 }
 
 describe('/api/admin/contact/[id]', () => {
@@ -226,6 +228,8 @@ describe('/api/admin/contact/[id]', () => {
         resource: 'contact',
         resource_id: INQUIRY_ID,
         outcome: 'success',
+        ip: '198.51.100.7',
+        user_agent: 'jest-agent',
       });
       const logged = JSON.stringify(logAudit.mock.calls);
       for (const secret of ['山田', 'y@example.com', '質問', '本文のひみつ', '件名のひみつ']) {
@@ -297,7 +301,7 @@ describe('/api/admin/contact/[id]', () => {
 
     it('DD-ADMIN-007 PATCH は status=closed で状態と直した時刻を更新し、200 で監査に status=closed を書く', async () => {
       const res = await PATCH(
-        makeJsonRequest({ status: 'closed' }, { 'user-agent': 'jest-agent' }),
+        makeJsonRequest({ status: 'closed' }, { 'user-agent': 'jest-agent', 'x-real-ip': '198.51.100.7' }),
         ctx
       );
 
@@ -313,10 +317,12 @@ describe('/api/admin/contact/[id]', () => {
       expect(logAudit).toHaveBeenCalledWith({
         action: 'admin.contact.status_update',
         actor_id: 'admin-1',
+        actor_email: 'owner@example.com',
         resource: 'contact',
         resource_id: '3f2b8c1e-5d4a-4b7e-9c2d-1a2b3c4d5e6f',
         outcome: 'success',
         detail: 'status=closed',
+        ip: '198.51.100.7',
         user_agent: 'jest-agent',
       });
     });
@@ -375,7 +381,10 @@ describe('/api/admin/contact/[id]', () => {
     ])('DD-ADMIN-007 PATCH は更新が %s の時は 404 で、失敗を監査に残し、成功は書かない', async (_label, data) => {
       updateSelect.mockResolvedValue({ data, error: null });
 
-      const res = await PATCH(makeJsonRequest({ status: 'closed' }, { 'user-agent': 'jest-agent' }), ctx);
+      const res = await PATCH(
+        makeJsonRequest({ status: 'closed' }, { 'user-agent': 'jest-agent', 'x-real-ip': '198.51.100.7' }),
+        ctx
+      );
 
       expect(updateSelect).toHaveBeenCalledWith('id');
       expect(res.status).toBe(404);
@@ -384,10 +393,12 @@ describe('/api/admin/contact/[id]', () => {
       expect(logAudit).toHaveBeenCalledWith({
         action: 'admin.contact.status_update',
         actor_id: 'admin-1',
+        actor_email: 'owner@example.com',
         resource: 'contact',
         resource_id: INQUIRY_ID,
         outcome: 'failure',
         detail: 'inquiry_not_found',
+        ip: '198.51.100.7',
         user_agent: 'jest-agent',
       });
     });

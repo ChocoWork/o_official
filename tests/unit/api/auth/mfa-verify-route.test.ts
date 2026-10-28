@@ -174,6 +174,19 @@ describe('POST /api/auth/mfa/verify', () => {
     });
   });
 
+  it('DD-AUTH-031 利用者単位の枠の呼び出しが投げたら 500 で、challenge へ進まない（SEC-AUTH-013-AC-02）', async () => {
+    mockRateLimit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('limiter down'));
+
+    const { status } = await call(validRequest());
+
+    expect(status).toBe(500);
+    expect(errorSpy).not.toHaveBeenCalledWith(
+      '[auth.mfa.verify] account rate limit middleware error:',
+      expect.anything(),
+    );
+    expect(challenge).not.toHaveBeenCalled();
+  });
+
   it('DD-AUTH-031 利用者単位の枠は、役割が一般の会員でも確かめの前に数える', async () => {
     authAs('user');
 
@@ -212,16 +225,18 @@ describe('POST /api/auth/mfa/verify', () => {
     expect(challenge).not.toHaveBeenCalled();
   });
 
-  it('DD-AUTH-031 回数の制限の呼び出しが投げたら記録して先へ進む', async () => {
+  it('DD-AUTH-031 回数の制限の呼び出しが投げたら 500 で、先へ進まない（SEC-AUTH-013-AC-02）', async () => {
     mockRateLimit.mockRejectedValue(new Error('limiter down'));
 
     const { status } = await call(validRequest());
 
-    expect(status).toBe(200);
-    expect(errorSpy).toHaveBeenCalledWith(
+    expect(status).toBe(500);
+    expect(errorSpy).not.toHaveBeenCalledWith(
       '[auth.mfa.verify] rate limit middleware error:',
-      expect.any(Error),
+      expect.anything(),
     );
+    expect(mockCreateClient).not.toHaveBeenCalled();
+    expect(challenge).not.toHaveBeenCalled();
   });
 
   it('DD-AUTH-031 本文が JSON でなければ形の文をつないで 400', async () => {

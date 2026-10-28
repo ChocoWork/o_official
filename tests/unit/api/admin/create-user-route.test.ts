@@ -44,10 +44,19 @@ const createUser = jest.fn();
 function makeRequest(body: unknown) {
   return new Request('http://localhost/api/admin/create-user', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      'x-real-ip': '198.51.100.7',
+      'user-agent': 'jest-agent',
+      // 偽れる見出しは読まれない（SEC-ADMIN-009）
+      'x-forwarded-for': '203.0.113.9',
+    },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   });
 }
+
+/** 全部の監査の行に付く行為者の文脈（SEC-ADMIN-022・009） */
+const actorContext = { actor_id: 'admin-1', actor_email: 'admin@example.com', ip: '198.51.100.7', user_agent: 'jest-agent' };
 
 const validBody = { email: 'new@example.com', password: 'password-1234-ok', display_name: '新人' };
 
@@ -137,8 +146,7 @@ describe('POST /api/admin/create-user', () => {
     expect(await res.json()).toEqual({ error: 'Invalid request' });
     expect(logAudit).toHaveBeenCalledWith({
       action: 'admin_create_user',
-      actor_id: 'admin-1',
-      actor_email: 'admin@example.com',
+      ...actorContext,
       resource: 'users',
       outcome: 'failure',
       detail: 'Invalid request body',
@@ -228,12 +236,49 @@ describe('POST /api/admin/create-user', () => {
     expect(logAudit).toHaveBeenCalledTimes(1);
     expect(logAudit).toHaveBeenCalledWith({
       action: 'admin_create_user',
-      actor_id: 'admin-1',
-      actor_email: 'admin@example.com',
+      ...actorContext,
       resource: 'users',
       resource_id: 'u-1',
       outcome: 'success',
     });
+  });
+
+  it('DD-ADMIN-002 SEC-ADMIN-022-AC-03 全部の結果（失敗・漏洩・確認不能・重なり・誤り・成功）の監査の行に行為者のメール・IP・ブラウザの名乗りが入る', async () => {
+    const cases: Array<() => void> = [
+      () => undefined,
+      () => checkPwnedPassword.mockResolvedValue({ status: 'pwned', count: 9 }),
+      () => {
+        checkPwnedPassword.mockResolvedValue({ status: 'unavailable', reason: 'timeout' });
+        createUser.mockResolvedValue({ data: { user: { id: 'u-1', email: 'x@example.com' } }, error: null });
+      },
+      () => createUser.mockResolvedValue({ data: { user: null }, error: { message: 'already registered' } }),
+      () => createUser.mockResolvedValue({ data: { user: null }, error: { message: 'boom' } }),
+      () => createUser.mockResolvedValue({ data: { user: { id: 'u-1', email: 'x@example.com' } }, error: null }),
+    ];
+    for (const [index, arrange] of cases.entries()) {
+      logAudit.mockClear();
+      checkPwnedPassword.mockResolvedValue({ status: 'ok' });
+      arrange();
+      await POST(makeRequest(index === 0 ? '{not json' : validBody));
+      expect(logAudit).toHaveBeenCalled();
+      for (const [event] of logAudit.mock.calls) {
+        expect(event).toEqual(expect.objectContaining(actorContext));
+      }
+    }
+  });
+
+  it('DD-ADMIN-002 SEC-ADMIN-009-AC-01 IP は x-real-ip から取り、x-forwarded-for の偽の値は残さない。取れなければ null', async () => {
+    createUser.mockResolvedValue({ data: { user: { id: 'u-1', email: 'new@example.com' } }, error: null });
+    const withoutIp = new Request('http://localhost/api/admin/create-user', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.9' },
+      body: JSON.stringify(validBody),
+    });
+
+    await POST(withoutIp);
+
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success', ip: null, user_agent: null }));
+    expect(JSON.stringify(logAudit.mock.calls)).not.toContain('203.0.113.9');
   });
 
   it('DD-ADMIN-002 作成の結果に利用者が無い時も 201 で、id とメールが空になる', async () => {
@@ -282,8 +327,7 @@ describe('POST /api/admin/create-user', () => {
     expect(await res.json()).toEqual({ error: 'Email already registered' });
     expect(logAudit).toHaveBeenCalledWith({
       action: 'admin_create_user',
-      actor_id: 'admin-1',
-      actor_email: 'admin@example.com',
+      ...actorContext,
       resource: 'users',
       outcome: 'conflict',
       detail: 'email_already_registered',
@@ -315,8 +359,7 @@ describe('POST /api/admin/create-user', () => {
     expect(await res.json()).toEqual({ error: 'Failed to create user' });
     expect(logAudit).toHaveBeenCalledWith({
       action: 'admin_create_user',
-      actor_id: 'admin-1',
-      actor_email: 'admin@example.com',
+      ...actorContext,
       resource: 'users',
       outcome: 'error',
       detail: 'create_user_failed',

@@ -149,6 +149,33 @@ describe('buildE2EOverrides', () => {
     expect(overrides).toMatchObject(E2E_FIXED_ENV);
   });
 
+  it('送り元の見出しを信じる旗 CLIENT_IP_HEADER=x-real-ip を、手元の Supabase の状態を読んだ後の上書きにだけ含める', () => {
+    expect(E2E_FIXED_ENV.CLIENT_IP_HEADER).toBe('x-real-ip');
+    expect(buildE2EOverrides(status).CLIENT_IP_HEADER).toBe('x-real-ip');
+    const prepared = prepareE2EEnvironment({
+      baseEnv: { ...dotEnvLocal, CLIENT_IP_HEADER: 'x-forwarded-for' },
+      mode: 'start', strict: false, isWorker: false, baseUrl: 'http://localhost:3000',
+      readStatus: () => status, probe: () => ({ kind: 'down' }),
+    }).env;
+    // 親環境の値は上書きされ、手元の Supabase の検査（assertSafeE2EEnv）を通った後の環境にだけ入る
+    expect(prepared.CLIENT_IP_HEADER).toBe('x-real-ip');
+  });
+
+  it('CLIENT_IP_HEADER が在っても、Supabase が手元でなければ既存の見張りが止める', () => {
+    expect(
+      findUnsafeE2ESettings({ ...safeEnv, CLIENT_IP_HEADER: 'x-real-ip', NEXT_PUBLIC_SUPABASE_URL: 'https://prodproject.supabase.co' }).join('\n'),
+    ).toContain('NEXT_PUBLIC_SUPABASE_URL');
+    expect(
+      findUnsafeE2ESettings({ ...safeEnv, CLIENT_IP_HEADER: 'x-real-ip', SUPABASE_URL: 'https://prodproject.supabase.co' }).join('\n'),
+    ).toContain('SUPABASE_URL');
+  });
+
+  it('CLIENT_IP_HEADER の値の違い・有無はサーバーの印を変える（古い設定のアプリを使い回さない）', () => {
+    const base = computeServerFingerprint(safeEnv, 'start');
+    expect(computeServerFingerprint({ ...safeEnv, CLIENT_IP_HEADER: 'other' }, 'start')).not.toBe(base);
+    expect(computeServerFingerprint({ ...safeEnv, CLIENT_IP_HEADER: undefined }, 'start')).not.toBe(base);
+  });
+
   it('E2E の定期処理の合言葉は32文字以上', () => {
     expect(E2E_FIXED_ENV.CRON_SECRET.length).toBeGreaterThanOrEqual(32);
   });

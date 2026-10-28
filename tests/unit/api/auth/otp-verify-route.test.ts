@@ -188,13 +188,17 @@ describe('POST /api/auth/otp/verify (DD-AUTH-015)', () => {
     expect(__mockVerifyOtp).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-015 IP の制限の呼び出しが投げても記録して先へ進む', async () => {
+  test('DD-AUTH-015 IP の制限の呼び出しが投げたら 500 で、先へ進まない（SEC-AUTH-013-AC-02）', async () => {
     enforceRateLimit.mockRejectedValueOnce(new Error('store down'));
 
     const res: any = await POST(buildRequest());
 
-    expect(res.status).toBe(200);
-    expect(consoleErrorSpy).toHaveBeenCalledWith('Rate limit middleware error (otp verify):', expect.any(Error));
+    expect(res.status).toBe(500);
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('Rate limit middleware error'),
+      expect.anything(),
+    );
+    expect(__mockVerifyOtp).not.toHaveBeenCalled();
   });
 
   test('DD-AUTH-015 形が合わないコードは 400 で、保留も確かめも読まない', async () => {
@@ -271,13 +275,13 @@ describe('POST /api/auth/otp/verify (DD-AUTH-015)', () => {
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'account_rate_limited' }));
   });
 
-  test('DD-AUTH-015 宛先単位の制限の呼び出しが投げても記録して先へ進む', async () => {
+  test('DD-AUTH-015 宛先単位の制限の呼び出しが投げたら 500 で、確かめへ進まない（SEC-AUTH-013-AC-02）', async () => {
     enforceRateLimit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('store down'));
 
     const res: any = await POST(buildRequest());
 
-    expect(res.status).toBe(200);
-    expect(consoleErrorSpy).toHaveBeenCalledWith('Rate limit middleware error (otp verify account):', expect.any(Error));
+    expect(res.status).toBe(500);
+    expect(__mockVerifyOtp).not.toHaveBeenCalled();
   });
 
   test('DD-AUTH-015 本文に別の email を書いても、確かめと数えは保留のメールで行い type email の 1 回だけ', async () => {

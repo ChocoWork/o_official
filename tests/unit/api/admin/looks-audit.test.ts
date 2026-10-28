@@ -274,9 +274,9 @@ describe('logAdminLookAudit', () => {
     mockLogAudit.mockResolvedValue(undefined);
   });
 
-  test('DD-LOOK-065 全部の値を resource look に固定して logAudit へ渡す', async () => {
+  test('DD-LOOK-065 全部の値を resource look に固定して logAudit へ渡す（IP は信頼する見出しの値）', async () => {
     const request = new Request('http://localhost/api/admin/looks', {
-      headers: { 'user-agent': 'jest-agent' },
+      headers: { 'user-agent': 'jest-agent', 'x-real-ip': '203.0.113.9' },
     });
 
     await logAdminLookAudit({
@@ -299,9 +299,29 @@ describe('logAdminLookAudit', () => {
       resource_id: '5',
       outcome: 'success',
       detail: 'Look created',
+      ip: '203.0.113.9',
       user_agent: 'jest-agent',
       metadata: { status: 'published' },
     });
+  });
+
+  test('DD-LOOK-065 偽の x-forwarded-for は IP に入れず、信頼する見出しが無ければ ip は null', async () => {
+    const request = new Request('http://localhost/api/admin/looks', {
+      headers: { 'user-agent': 'jest-agent', 'x-forwarded-for': '198.51.100.7' },
+    });
+
+    await logAdminLookAudit({
+      request,
+      actorId: 'admin-user',
+      actorEmail: 'admin@example.com',
+      action: 'admin.look.create',
+      outcome: 'success',
+      detail: 'Look created',
+    });
+
+    const arg = mockLogAudit.mock.calls[0][0];
+    expect(arg.ip).toBeNull();
+    expect(JSON.stringify(arg)).not.toContain('198.51.100.7');
   });
 
   test('DD-LOOK-065 resourceId・metadata・user-agent が無い時は null にそろえる', async () => {
@@ -324,6 +344,7 @@ describe('logAdminLookAudit', () => {
       resource_id: null,
       outcome: 'failure',
       detail: 'Look not found',
+      ip: null,
       user_agent: null,
       metadata: null,
     });

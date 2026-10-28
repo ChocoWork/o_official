@@ -101,3 +101,16 @@ test('窓口の断り（422）は description をそのまま出す', async () =
   expect(consoleError).toHaveBeenCalled();
   consoleError.mockRestore();
 });
+
+test('商品の取得が 429（本文は使わない）でも、no-store の応答を開いたまま残さないよう本文を読み切る', async () => {
+  const drain = jest.fn().mockResolvedValue(new ArrayBuffer(0));
+  (global as any).fetch = jest.fn(async (input: string) =>
+    input === '/api/items/101'
+      ? { ok: false, status: 429, json: async () => ({}), arrayBuffer: drain }
+      : new Response('{}', { status: 404 }),
+  );
+  render(<ItemDetailClient id="101" />);
+
+  expect((await screen.findAllByText('商品データの取得に失敗しました')).length).toBeGreaterThan(0);
+  expect(drain).toHaveBeenCalledTimes(1);
+});

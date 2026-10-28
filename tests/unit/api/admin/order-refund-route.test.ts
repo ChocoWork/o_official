@@ -50,7 +50,7 @@ const ITEM_1 = 'd1b2c3d4-1111-4222-8333-444455556661';
 const ITEM_2 = 'd1b2c3d4-1111-4222-8333-444455556662';
 const DENIED = new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
 const ORDER_CONTEXT = { params: Promise.resolve({ id: ORDER_ID }) };
-const HEADERS = { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.5', 'user-agent': 'jest' };
+const HEADERS = { 'content-type': 'application/json', 'x-real-ip': '203.0.113.5', 'user-agent': 'jest' };
 const UNKNOWN_MESSAGE = '返金の結果を確かめられませんでした。「もう一度確かめる」を押すと、二重にならずに確かめ直します。';
 
 const LINE = { orderItemId: ITEM_1, quantity: 1, beforeShipment: true };

@@ -309,16 +309,17 @@ describe('DD-AUTH-025 パスワード再設定の確定の窓口', () => {
     expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
   });
 
-  it('DD-AUTH-025 回数の制限の呼び出しが投げたら記録して先へ進む', async () => {
+  it('DD-AUTH-025 回数の制限の呼び出しが投げたら 500 で、先へ進まない（SEC-AUTH-013-AC-02）', async () => {
     mockEnforceRateLimit.mockRejectedValueOnce(new Error('redis down'));
 
     const res = (await POST(makeRequest({ new_password: VALID_PASSWORD }))) as unknown as FakeResponse;
 
-    expect(res.status).toBe(200);
-    expect(consoleError).toHaveBeenCalledWith(
+    expect(res.status).toBe(500);
+    expect(consoleError).not.toHaveBeenCalledWith(
       'Rate limit middleware error (password-reset-confirm):',
-      expect.any(Error),
+      expect.anything(),
     );
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
   });
 
   it.each([

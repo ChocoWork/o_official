@@ -24,10 +24,14 @@ jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn(),
 }));
 
+jest.mock('@/lib/auth/audit-authz-denial', () => ({
+  auditAuthzDenial: jest.fn(),
+}));
+
 jest.mock('@/features/stockist/services/admin-security', () => ({
   applyRotatedCsrfCookie: jest.fn(),
-  enforceAdminStockistMutationRateLimit: jest.fn(),
-  enforceAdminStockistReadRateLimit: jest.fn(),
+  enforceAdminStockistActorRateLimit: jest.fn(),
+  enforceAdminStockistIpRateLimit: jest.fn(),
   requireAdminStockistCsrf: jest.fn(),
   toCsrfDenyResponse: jest.fn(),
 }));
@@ -35,10 +39,11 @@ jest.mock('@/features/stockist/services/admin-security', () => ({
 const { createClient: mockCreateClient, createServiceRoleClient: mockCreateServiceRoleClient } = require('@/lib/supabase/server');
 const { authorizeAdminPermission: mockAuthorize } = require('@/lib/auth/admin-rbac');
 const { logAudit: mockLogAudit } = require('@/lib/audit');
+const { auditAuthzDenial: mockAuditDenial } = require('@/lib/auth/audit-authz-denial');
 const {
   applyRotatedCsrfCookie: mockApplyCookie,
-  enforceAdminStockistMutationRateLimit: mockMutationLimit,
-  enforceAdminStockistReadRateLimit: mockReadLimit,
+  enforceAdminStockistActorRateLimit: mockActorLimit,
+  enforceAdminStockistIpRateLimit: mockIpLimit,
   requireAdminStockistCsrf: mockRequireCsrf,
   toCsrfDenyResponse: mockToDeny,
 } = require('@/features/stockist/services/admin-security');
@@ -94,8 +99,9 @@ beforeEach(() => {
     userId: 'admin-user',
     actorEmail: 'admin@example.com',
   });
-  mockReadLimit.mockResolvedValue(null);
-  mockMutationLimit.mockResolvedValue(null);
+  mockIpLimit.mockResolvedValue(null);
+  mockActorLimit.mockResolvedValue(null);
+  mockAuditDenial.mockResolvedValue(undefined);
   mockRequireCsrf.mockResolvedValue(csrfResult);
   mockToDeny.mockReturnValue(null);
   mockLogAudit.mockResolvedValue(undefined);
@@ -113,8 +119,57 @@ describe('GET /api/admin/stockists', () => {
     const response = await GET(getRequest());
 
     expect(response).toBe(denied);
-    expect(mockReadLimit).not.toHaveBeenCalled();
+    expect(mockActorLimit).not.toHaveBeenCalled();
     expect(mockCreateClient).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-039 GET は送り元の枠 → 認可 → 操作者の枠の順に呼ぶ', async () => {
+    setupSelect({ data: [], error: null });
+    const order: string[] = [];
+    mockIpLimit.mockImplementation(async () => {
+      order.push('ip');
+      return null;
+    });
+    mockAuthorize.mockImplementation(async () => {
+      order.push('authz');
+      return { ok: true, userId: 'admin-user', actorEmail: 'admin@example.com' };
+    });
+    mockActorLimit.mockImplementation(async () => {
+      order.push('actor');
+      return null;
+    });
+    const request = getRequest();
+
+    await GET(request);
+
+    expect(order).toEqual(['ip', 'authz', 'actor']);
+    expect(mockIpLimit).toHaveBeenCalledWith(request, 'read');
+    expect(mockActorLimit).toHaveBeenCalledWith(request, 'admin-user', 'read');
+  });
+
+  it('DD-STOCKIST-039 GET は送り元の枠が止めたら認可も操作者の枠も呼ばずその応答を返す', async () => {
+    const limited = { status: 429, headers: new Headers(), body: { error: 'Too many requests' } };
+    mockIpLimit.mockResolvedValue(limited);
+
+    const response = await GET(getRequest());
+
+    expect(response).toBe(limited);
+    expect(mockAuthorize).not.toHaveBeenCalled();
+    expect(mockActorLimit).not.toHaveBeenCalled();
+    expect(mockCreateClient).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-039 GET は認可が断った時に auditAuthzDenial をその認可の結果と action admin.stockists.list で呼んでから応答を返す', async () => {
+    const denied = { status: 403, headers: new Headers(), body: { error: 'Forbidden' } };
+    const authz = { ok: false, response: denied, denial: { userId: 'u1', email: 'a@example.com', role: 'user', permission: 'admin.stockists.read', reason: 'permission' } };
+    mockAuthorize.mockResolvedValue(authz);
+    const request = getRequest();
+
+    const response = await GET(request);
+
+    expect(response).toBe(denied);
+    expect(mockAuditDenial).toHaveBeenCalledTimes(1);
+    expect(mockAuditDenial).toHaveBeenCalledWith(authz, { request, action: 'admin.stockists.list', resource: 'stockists' });
   });
 
   it('DD-STOCKIST-034 GET は読みの権限 admin.stockists.read で認可する', async () => {
@@ -128,13 +183,13 @@ describe('GET /api/admin/stockists', () => {
 
   it('DD-STOCKIST-034 GET は回数の制限が応答を返した時にそれを返し、表に触らない', async () => {
     const limited = { status: 429, headers: new Headers({ 'Cache-Control': 's-maxage=60' }), body: { error: 'Too many requests' } };
-    mockReadLimit.mockResolvedValue(limited);
+    mockActorLimit.mockResolvedValue(limited);
     const request = getRequest();
 
     const response = await GET(request);
 
     expect(response).toBe(limited);
-    expect(mockReadLimit).toHaveBeenCalledWith(request, 'admin-user');
+    expect(mockActorLimit).toHaveBeenCalledWith(request, 'admin-user', 'read');
     expect(mockCreateClient).not.toHaveBeenCalled();
   });
 
@@ -190,9 +245,71 @@ describe('POST /api/admin/stockists', () => {
     const response = await POST(jsonRequest(validBody));
 
     expect(response).toBe(denied);
-    expect(mockMutationLimit).not.toHaveBeenCalled();
+    expect(mockActorLimit).not.toHaveBeenCalled();
     expect(mockCreateClient).not.toHaveBeenCalled();
     expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-039 POST は送り元の枠 → 認可 → 操作者の枠 → CSRF の順に呼ぶ', async () => {
+    setupInsert({ data: { id: 1 }, error: null });
+    const order: string[] = [];
+    mockIpLimit.mockImplementation(async () => {
+      order.push('ip');
+      return null;
+    });
+    mockAuthorize.mockImplementation(async () => {
+      order.push('authz');
+      return { ok: true, userId: 'admin-user', actorEmail: 'admin@example.com' };
+    });
+    mockActorLimit.mockImplementation(async () => {
+      order.push('actor');
+      return null;
+    });
+    mockRequireCsrf.mockImplementation(async () => {
+      order.push('csrf');
+      return csrfResult;
+    });
+    const request = jsonRequest(validBody);
+
+    await POST(request);
+
+    expect(order).toEqual(['ip', 'authz', 'actor', 'csrf']);
+    expect(mockIpLimit).toHaveBeenCalledWith(request, 'mutation');
+  });
+
+  it('DD-STOCKIST-039 POST は送り元の枠が止めたら認可も CSRF も呼ばずその応答を返す', async () => {
+    const limited = { status: 429, headers: new Headers(), body: { error: 'Too many requests' } };
+    mockIpLimit.mockResolvedValue(limited);
+
+    const response = await POST(jsonRequest(validBody));
+
+    expect(response).toBe(limited);
+    expect(mockAuthorize).not.toHaveBeenCalled();
+    expect(mockActorLimit).not.toHaveBeenCalled();
+    expect(mockRequireCsrf).not.toHaveBeenCalled();
+    expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-039 POST は認可が断った時に auditAuthzDenial をその認可の結果と action admin.stockists.create で呼んでから応答を返す', async () => {
+    const denied = { status: 403, headers: new Headers(), body: { error: 'Forbidden' } };
+    const authz = { ok: false, response: denied, denial: { userId: 'u1', email: null, role: 'supporter', permission: 'admin.stockists.manage', reason: 'permission' } };
+    mockAuthorize.mockResolvedValue(authz);
+    const request = jsonRequest(validBody);
+
+    const response = await POST(request);
+
+    expect(response).toBe(denied);
+    expect(mockAuditDenial).toHaveBeenCalledTimes(1);
+    expect(mockAuditDenial).toHaveBeenCalledWith(authz, { request, action: 'admin.stockists.create', resource: 'stockists' });
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  it('DD-STOCKIST-039 POST は認可が通った時は auditAuthzDenial を呼ばない', async () => {
+    setupInsert({ data: { id: 1 }, error: null });
+
+    await POST(jsonRequest(validBody));
+
+    expect(mockAuditDenial).not.toHaveBeenCalled();
   });
 
   it('DD-STOCKIST-034 POST は変更の権限 admin.stockists.manage で認可する', async () => {
@@ -206,14 +323,14 @@ describe('POST /api/admin/stockists', () => {
 
   it('DD-STOCKIST-034 POST は回数の制限が応答を返した時にそれを返し、CSRF も表も見ない', async () => {
     const limited = { status: 429, headers: new Headers({ 'Cache-Control': 's-maxage=60' }), body: { error: 'Too many requests' } };
-    mockMutationLimit.mockResolvedValue(limited);
+    mockActorLimit.mockResolvedValue(limited);
     const request = jsonRequest(validBody);
 
     const response = await POST(request);
 
     expect(response).toBe(limited);
-    expect(mockMutationLimit).toHaveBeenCalledWith(request, 'admin-user');
-    expect(mockReadLimit).not.toHaveBeenCalled();
+    expect(mockActorLimit).toHaveBeenCalledWith(request, 'admin-user', 'mutation');
+    expect(mockIpLimit).not.toHaveBeenCalledWith(request, 'read');
     expect(mockRequireCsrf).not.toHaveBeenCalled();
     expect(mockCreateClient).not.toHaveBeenCalled();
     expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
@@ -413,12 +530,12 @@ describe('POST /api/admin/stockists', () => {
     expect(mockApplyCookie).toHaveBeenCalledWith(response, undefined);
   });
 
-  it('DD-STOCKIST-034 POST は監査の ip に x-forwarded-for の先頭を空白を除いて入れ、user_agent はその値を入れる', async () => {
+  it('DD-STOCKIST-034 POST は監査の ip に x-real-ip を空白を除いて入れ、user_agent はその値を入れる', async () => {
     setupInsert({ data: { id: 1 }, error: null });
 
     await POST(
       jsonRequest(validBody, {
-        'x-forwarded-for': ' 1.2.3.4 , 5.6.7.8',
+        'x-real-ip': ' 1.2.3.4 ',
         'user-agent': 'jest-agent',
       }),
     );
@@ -428,7 +545,7 @@ describe('POST /api/admin/stockists', () => {
     );
   });
 
-  it('DD-STOCKIST-034 POST は x-forwarded-for と user-agent が無い時に監査の ip と user_agent を null にする', async () => {
+  it('DD-STOCKIST-034 POST は x-real-ip と user-agent が無い時に監査の ip と user_agent を null にする', async () => {
     setupInsert({ data: { id: 1 }, error: null });
     const request = jsonRequest(validBody);
     request.headers.delete('user-agent');
@@ -438,6 +555,16 @@ describe('POST /api/admin/stockists', () => {
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.objectContaining({ ip: null, user_agent: null }),
     );
+  });
+
+  it('DD-STOCKIST-034 POST は x-forwarded-for を読まず、x-real-ip の値だけを監査の ip に入れる', async () => {
+    setupInsert({ data: { id: 1 }, error: null });
+
+    await POST(jsonRequest(validBody, { 'x-forwarded-for': '203.0.113.9', 'x-real-ip': '198.51.100.4' }));
+    expect(mockLogAudit).toHaveBeenLastCalledWith(expect.objectContaining({ ip: '198.51.100.4' }));
+
+    await POST(jsonRequest(validBody, { 'x-forwarded-for': '203.0.113.9' }));
+    expect(mockLogAudit).toHaveBeenLastCalledWith(expect.objectContaining({ ip: null }));
   });
 
   it('DD-STOCKIST-034 POST は認可の後に例外が出た時に 500 Internal server error を返す', async () => {
@@ -471,8 +598,10 @@ describe('DD-STOCKIST-034 Cache-Control は戻りの全分岐で private, no-sto
       () => mockAuthorize.mockResolvedValue({ ok: false, response: response(403) }),
       403,
     ],
-    ['429 読みの回数制限', () => mockReadLimit.mockResolvedValue(response(429)), 429],
-    ['503 読みの回数制限', () => mockReadLimit.mockResolvedValue(response(503)), 503],
+    ['429 読みの送り元の回数制限', () => mockIpLimit.mockResolvedValue(response(429)), 429],
+    ['503 読みの送り元の回数制限', () => mockIpLimit.mockResolvedValue(response(503)), 503],
+    ['429 読みの操作者の回数制限', () => mockActorLimit.mockResolvedValue(response(429)), 429],
+    ['503 読みの回数制限', () => mockActorLimit.mockResolvedValue(response(503)), 503],
     [
       '500 DB の誤り',
       () => setupSelect({ data: null, error: { code: '57P01', message: 'secret' } }),
@@ -515,14 +644,20 @@ describe('DD-STOCKIST-034 Cache-Control は戻りの全分岐で private, no-sto
     ],
     ['403 CSRF の拒否', () => mockToDeny.mockReturnValue(response(403)), 403, () => jsonRequest(validBody)],
     [
+      '429 書きの送り元の回数制限',
+      () => mockIpLimit.mockResolvedValue(response(429)),
+      429,
+      () => jsonRequest(validBody),
+    ],
+    [
       '429 書きの回数制限',
-      () => mockMutationLimit.mockResolvedValue(response(429)),
+      () => mockActorLimit.mockResolvedValue(response(429)),
       429,
       () => jsonRequest(validBody),
     ],
     [
       '503 書きの回数制限',
-      () => mockMutationLimit.mockResolvedValue(response(503)),
+      () => mockActorLimit.mockResolvedValue(response(503)),
       503,
       () => jsonRequest(validBody),
     ],

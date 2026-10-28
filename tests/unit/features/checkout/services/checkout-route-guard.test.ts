@@ -36,7 +36,7 @@ const CONFIG: CheckoutGuardConfig = {
 };
 
 function makeRequest(sessionId: string | null = 'sess-abc'): NextRequest {
-  const headers: Record<string, string> = { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.5, 10.0.0.1' };
+  const headers: Record<string, string> = { 'content-type': 'application/json', 'x-real-ip': '203.0.113.5' };
   if (sessionId) headers.cookie = `session_id=${sessionId}`;
   return new NextRequest('http://localhost/api/checkout/test', { method: 'POST', headers, body: '{}' });
 }
@@ -80,6 +80,21 @@ describe('guardCheckoutPost', () => {
     if (!result.ok) return;
     expect(result.sessionId).toBe('sess-abc');
     expect(result.clientIp).toBe('203.0.113.5');
+  });
+
+  test('偽の x-forwarded-for は読まず、x-real-ip が無ければ clientIp は null。回数の制限は request をそのまま渡す（鍵が null でも通る）', async () => {
+    const req = new NextRequest('http://localhost/api/checkout/test', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.7', cookie: 'session_id=sess-abc' },
+      body: '{}',
+    });
+
+    const result = await guardCheckoutPost(req, CONFIG);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.clientIp).toBeNull();
+    expect(mockEnforceRateLimit.mock.calls[0][0].request).toBe(req);
   });
 
   test('上限に達したら 429 で、時間をおいて試すよう案内する（Retry-After を引き継ぐ）', async () => {

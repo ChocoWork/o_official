@@ -74,6 +74,7 @@ describe('GET /api/admin/looks', () => {
       ok: true,
       userId: 'admin-user',
       actorEmail: 'admin@example.com',
+      permissions: new Set(['admin.looks.read', 'admin.looks.manage']),
     });
     mockSign.mockImplementation(async (_client: unknown, urls: string[]) =>
       urls.map((url) => `signed:${url}`),
@@ -158,27 +159,39 @@ describe('GET /api/admin/looks', () => {
   });
 
   describe('meta.canManage', () => {
-    const authorizeBy = (manage: unknown) =>
-      mockAuthorize.mockImplementation(async (permission: string) =>
-        permission === 'admin.looks.read'
-          ? { ok: true, userId: 'admin-user', actorEmail: 'admin@example.com' }
-          : manage,
-      );
+    const authorizeWith = (permissions: unknown) =>
+      mockAuthorize.mockResolvedValue({
+        ok: true,
+        userId: 'admin-user',
+        actorEmail: 'admin@example.com',
+        ...(permissions === undefined ? {} : { permissions }),
+      });
 
-    test('DD-LOOK-063 管理の権限の確かめが通れば meta.canManage は true で、data は今までどおり', async () => {
-      authorizeBy({ ok: true, userId: 'admin-user', actorEmail: 'admin@example.com' });
+    test('DD-LOOK-063 認可の成功の結果の permissions に管理の権限があれば meta.canManage は true。認可は 1 回だけ呼ぶ', async () => {
+      authorizeWith(new Set(['admin.looks.read', 'admin.looks.manage']));
       mockCreateServiceRoleClient.mockResolvedValue(createListService({ data: [], error: null }).client);
 
       const response = await callGet(buildRequest());
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ data: [], meta: { canManage: true } });
+      expect(mockAuthorize).toHaveBeenCalledTimes(1);
       expect(mockAuthorize).toHaveBeenCalledWith('admin.looks.read', expect.any(Request));
-      expect(mockAuthorize).toHaveBeenCalledWith('admin.looks.manage', expect.any(Request));
     });
 
-    test('DD-LOOK-063 権限が無いための断り（403）だけ canManage を false にして一覧は返す', async () => {
-      authorizeBy({ ok: false, response: { status: 403, body: { error: 'Forbidden' } } });
+    test('DD-LOOK-063 読み出しの権限だけなら canManage は false で、一覧は返す', async () => {
+      authorizeWith(new Set(['admin.looks.read']));
+      mockCreateServiceRoleClient.mockResolvedValue(createListService({ data: [], error: null }).client);
+
+      const response = await callGet(buildRequest());
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ data: [], meta: { canManage: false } });
+      expect(mockAuthorize).toHaveBeenCalledTimes(1);
+    });
+
+    test('DD-LOOK-063 成功の結果に permissions が無い（モックなど）なら canManage は false（権限が分からない時は出さない）', async () => {
+      authorizeWith(undefined);
       mockCreateServiceRoleClient.mockResolvedValue(createListService({ data: [], error: null }).client);
 
       const response = await callGet(buildRequest());
@@ -187,19 +200,19 @@ describe('GET /api/admin/looks', () => {
       expect(response.body).toEqual({ data: [], meta: { canManage: false } });
     });
 
-    test('DD-LOOK-063 2回目の確かめが 401 ならその 401 をそのまま返し、DB に触れない', async () => {
-      const unauthorized = { status: 401, body: { error: 'Unauthorized' } };
-      authorizeBy({ ok: false, response: unauthorized });
+    test('DD-LOOK-063 認可が 403 なら 403 をそのまま返し、DB に触れない', async () => {
+      const forbidden = { status: 403, body: { error: 'Forbidden' } };
+      mockAuthorize.mockResolvedValue({ ok: false, response: forbidden });
 
       const response = await callGet(buildRequest());
 
-      expect(response).toBe(unauthorized);
+      expect(response).toBe(forbidden);
       expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     });
 
-    test('DD-LOOK-063 2回目の確かめが 503 ならその 503 をそのまま返し、false にして通さない', async () => {
+    test('DD-LOOK-063 認可が 503 ならその 503 をそのまま返し、DB に触れない', async () => {
       const unavailable = { status: 503, body: { error: 'Service unavailable' } };
-      authorizeBy({ ok: false, response: unavailable });
+      mockAuthorize.mockResolvedValue({ ok: false, response: unavailable });
 
       const response = await callGet(buildRequest());
 

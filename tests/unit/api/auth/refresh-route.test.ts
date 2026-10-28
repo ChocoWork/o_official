@@ -219,15 +219,16 @@ describe('POST /api/auth/refresh', () => {
     expect(mockedFetch).not.toHaveBeenCalled();
   });
 
-  test('DD-AUTH-027 回数の制限の呼び出しが投げたら記録して進み、200 を返す', async () => {
+  test('DD-AUTH-027 回数の制限の呼び出しが投げたら 500 で、交換へ進まない（SEC-AUTH-013-AC-02）', async () => {
     const error = new Error('rate limit down');
     mockedEnforceRateLimit.mockRejectedValue(error);
 
     const res = await call();
 
-    expect(res.status).toBe(200);
-    expect(consoleError).toHaveBeenCalledWith('Rate limit middleware error (refresh):', error);
-    expect(mockedFetch).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(500);
+    expect(consoleError).not.toHaveBeenCalledWith('Rate limit middleware error (refresh):', error);
+    expect(mockedCookies).not.toHaveBeenCalled();
+    expect(mockedFetch).not.toHaveBeenCalled();
   });
 
   test.each([

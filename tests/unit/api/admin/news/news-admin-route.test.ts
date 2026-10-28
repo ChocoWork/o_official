@@ -69,13 +69,21 @@ function makeImage(name: string, type: string, size?: number, bytes?: Buffer): F
 function makeRequest(options: {
   fields?: Record<string, unknown>;
   userAgent?: string | null;
+  realIp?: string;
+  forwardedFor?: string;
   formDataError?: Error;
 } = {}) {
   const fields = options.fields ?? { ...validFields, image: makeImage('a.jpg', 'image/jpeg') };
   const form = { get: (key: string) => (key in fields ? fields[key] : null) };
   return {
     headers: {
-      get: (name: string) => (name.toLowerCase() === 'user-agent' ? options.userAgent ?? null : null),
+      get: (name: string) => {
+        const key = name.toLowerCase();
+        if (key === 'user-agent') return options.userAgent ?? null;
+        if (key === 'x-real-ip') return options.realIp ?? null;
+        if (key === 'x-forwarded-for') return options.forwardedFor ?? null;
+        return null;
+      },
     },
     formData: jest.fn(async () => {
       if (options.formDataError) throw options.formDataError;
@@ -273,6 +281,7 @@ describe('POST /api/admin/news', () => {
       resource_id: null,
       outcome: 'failure',
       detail: 'Image upload failed',
+      ip: null,
       user_agent: 'UA/1',
       metadata: { storagePath: 'news/2026-10-24/uuid-1.jpg', status: 'private', imageType: 'image/jpeg' },
     });
@@ -399,6 +408,17 @@ describe('POST /api/admin/news', () => {
     setupPostMocks();
     await POST(makeRequest({ userAgent: null }));
     expect(mockLogAudit).toHaveBeenLastCalledWith(expect.objectContaining({ user_agent: null }));
+  });
+
+  it('DD-NEWS-064 監査の ip は信頼する見出し x-real-ip の値で、偽の x-forwarded-for は入れず、見出しが無ければ null（SEC-NEWS-016-AC-03）', async () => {
+    setupPostMocks();
+    await POST(makeRequest({ realIp: '203.0.113.9', forwardedFor: '198.51.100.7' }));
+    expect(mockLogAudit).toHaveBeenLastCalledWith(expect.objectContaining({ ip: '203.0.113.9' }));
+    expect(JSON.stringify(mockLogAudit.mock.calls.at(-1))).not.toContain('198.51.100.7');
+
+    setupPostMocks();
+    await POST(makeRequest({ forwardedFor: '198.51.100.7' }));
+    expect(mockLogAudit).toHaveBeenLastCalledWith(expect.objectContaining({ ip: null }));
   });
 
   it('DD-NEWS-064 POST で request.formData() が例外を投げた時は 500 Internal server error', async () => {

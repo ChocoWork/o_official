@@ -24,10 +24,14 @@ jest.mock('@/lib/audit', () => ({
   logAudit: jest.fn(),
 }));
 
+jest.mock('@/lib/auth/audit-authz-denial', () => ({
+  auditAuthzDenial: jest.fn(),
+}));
+
 jest.mock('@/features/stockist/services/admin-security', () => ({
   applyRotatedCsrfCookie: jest.fn(),
-  enforceAdminStockistMutationRateLimit: jest.fn(),
-  enforceAdminStockistReadRateLimit: jest.fn(),
+  enforceAdminStockistActorRateLimit: jest.fn(),
+  enforceAdminStockistIpRateLimit: jest.fn(),
   requireAdminStockistCsrf: jest.fn(),
   toCsrfDenyResponse: jest.fn(),
 }));
@@ -35,10 +39,11 @@ jest.mock('@/features/stockist/services/admin-security', () => ({
 const { createClient: mockCreateClient, createServiceRoleClient: mockCreateServiceRoleClient } = require('@/lib/supabase/server');
 const { authorizeAdminPermission: mockAuthorize } = require('@/lib/auth/admin-rbac');
 const { logAudit: mockLogAudit } = require('@/lib/audit');
+const { auditAuthzDenial: mockAuditDenial } = require('@/lib/auth/audit-authz-denial');
 const {
   applyRotatedCsrfCookie: mockApplyCookie,
-  enforceAdminStockistMutationRateLimit: mockMutationLimit,
-  enforceAdminStockistReadRateLimit: mockReadLimit,
+  enforceAdminStockistActorRateLimit: mockActorLimit,
+  enforceAdminStockistIpRateLimit: mockIpLimit,
   requireAdminStockistCsrf: mockRequireCsrf,
   toCsrfDenyResponse: mockToDeny,
 } = require('@/features/stockist/services/admin-security');
@@ -140,8 +145,9 @@ beforeEach(() => {
     userId: 'admin-user',
     actorEmail: 'admin@example.com',
   });
-  mockReadLimit.mockResolvedValue(null);
-  mockMutationLimit.mockResolvedValue(null);
+  mockIpLimit.mockResolvedValue(null);
+  mockActorLimit.mockResolvedValue(null);
+  mockAuditDenial.mockResolvedValue(undefined);
   mockRequireCsrf.mockResolvedValue(csrfResult);
   mockToDeny.mockReturnValue(null);
   mockLogAudit.mockResolvedValue(undefined);
@@ -149,6 +155,99 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.restoreAllMocks();
+});
+
+describe('DD-STOCKIST-039 呼ぶ順番', () => {
+  const kindOf: Record<Method, string> = { GET: 'read', PUT: 'mutation', PATCH: 'mutation', DELETE: 'mutation' };
+
+  for (const method of ALL_METHODS) {
+    it(`DD-STOCKIST-039 ${method} は送り元の枠 → 認可 → 操作者の枠${method === 'GET' ? '' : ' → CSRF'}の順に呼ぶ`, async () => {
+      setupDb(method);
+      const order: string[] = [];
+      mockIpLimit.mockImplementation(async () => {
+        order.push('ip');
+        return null;
+      });
+      mockAuthorize.mockImplementation(async () => {
+        order.push('authz');
+        return { ok: true, userId: 'admin-user', actorEmail: 'admin@example.com' };
+      });
+      mockActorLimit.mockImplementation(async () => {
+        order.push('actor');
+        return null;
+      });
+      mockRequireCsrf.mockImplementation(async () => {
+        order.push('csrf');
+        return csrfResult;
+      });
+      const request = makeRequest(method, bodyFor(method));
+
+      await handlers[method](request, ctx('5'));
+
+      expect(order).toEqual(method === 'GET' ? ['ip', 'authz', 'actor'] : ['ip', 'authz', 'actor', 'csrf']);
+      expect(mockIpLimit).toHaveBeenCalledWith(request, kindOf[method]);
+      expect(mockActorLimit).toHaveBeenCalledWith(request, 'admin-user', kindOf[method]);
+    });
+
+    it(`DD-STOCKIST-039 ${method} は送り元の枠が止めたら id の形も認可も見ずその応答を返す`, async () => {
+      const limited = { status: 429, headers: new Headers(), body: { error: 'Too many requests' } };
+      mockIpLimit.mockResolvedValue(limited);
+
+      const response = await handlers[method](makeRequest(method, bodyFor(method)), ctx('abc'));
+
+      expect(response).toBe(limited);
+      expect(mockAuthorize).not.toHaveBeenCalled();
+      expect(mockActorLimit).not.toHaveBeenCalled();
+      expect(mockRequireCsrf).not.toHaveBeenCalled();
+      expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
+    });
+
+    it(`DD-STOCKIST-039 ${method} は形の悪い id でも送り元の枠を 1 回数えてから 400 を返す`, async () => {
+      const request = makeRequest(method, bodyFor(method));
+
+      const response = await handlers[method](request, ctx('abc'));
+
+      expect(response.status).toBe(400);
+      expect(mockIpLimit).toHaveBeenCalledTimes(1);
+      expect(mockIpLimit).toHaveBeenCalledWith(request, kindOf[method]);
+    });
+  }
+
+  const actionOf: Record<Method, string> = {
+    GET: 'admin.stockists.get',
+    PUT: 'admin.stockists.update',
+    PATCH: 'admin.stockists.patch',
+    DELETE: 'admin.stockists.delete',
+  };
+
+  for (const method of ALL_METHODS) {
+    it(`DD-STOCKIST-039 ${method} は認可が断った時に auditAuthzDenial をその認可の結果と action ${actionOf[method]} で呼んでから応答を返す`, async () => {
+      const denied = { status: 403, headers: new Headers(), body: { error: 'Forbidden' } };
+      const authz = {
+        ok: false,
+        response: denied,
+        denial: { userId: 'u1', email: null, role: 'supporter', permission: 'admin.stockists.manage', reason: 'permission' },
+      };
+      mockAuthorize.mockResolvedValue(authz);
+      const request = makeRequest(method, bodyFor(method));
+
+      const response = await handlers[method](request, ctx('5'));
+
+      expect(response).toBe(denied);
+      expect(mockAuditDenial).toHaveBeenCalledTimes(1);
+      expect(mockAuditDenial).toHaveBeenCalledWith(authz, { request, action: actionOf[method], resource: 'stockists' });
+      expect(mockLogAudit).not.toHaveBeenCalled();
+    });
+
+    it(`DD-STOCKIST-039 ${method} は認可が通った時は auditAuthzDenial を呼ばない`, async () => {
+      setupDb(method);
+
+      await handlers[method](makeRequest(method, bodyFor(method)), ctx('5'));
+
+      expect(mockAuditDenial).not.toHaveBeenCalled();
+    });
+  }
 });
 
 describe('道の id の確かめ', () => {
@@ -197,8 +296,7 @@ describe('認可と回数の制限', () => {
 
       expect(response).toBe(denied);
       expect(mockAuthorize).toHaveBeenCalledWith(expectedPermission[method], request);
-      expect(mockReadLimit).not.toHaveBeenCalled();
-      expect(mockMutationLimit).not.toHaveBeenCalled();
+      expect(mockActorLimit).not.toHaveBeenCalled();
       expect(mockCreateClient).not.toHaveBeenCalled();
       expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
     });
@@ -206,14 +304,13 @@ describe('認可と回数の制限', () => {
 
   it('DD-STOCKIST-035 GET は回数の制限が応答を返した時にそれを返し、読みの枠を authz.userId で呼ぶ', async () => {
     const limited = { status: 429, headers: new Headers({ 'Cache-Control': 's-maxage=60' }), body: { error: 'Too many requests' } };
-    mockReadLimit.mockResolvedValue(limited);
+    mockActorLimit.mockResolvedValue(limited);
     const request = makeRequest('GET');
 
     const response = await GET(request, ctx('5'));
 
     expect(response).toBe(limited);
-    expect(mockReadLimit).toHaveBeenCalledWith(request, 'admin-user');
-    expect(mockMutationLimit).not.toHaveBeenCalled();
+    expect(mockActorLimit).toHaveBeenCalledWith(request, 'admin-user', 'read');
     expect(mockCreateClient).not.toHaveBeenCalled();
     expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
   });
@@ -221,14 +318,13 @@ describe('認可と回数の制限', () => {
   for (const method of MUTATION_METHODS) {
     it(`DD-STOCKIST-035 ${method} は回数の制限が応答を返した時にそれを返し、変更の枠を呼んで CSRF も表も見ない`, async () => {
       const limited = { status: 429, headers: new Headers({ 'Cache-Control': 's-maxage=60' }), body: { error: 'Too many requests' } };
-      mockMutationLimit.mockResolvedValue(limited);
+      mockActorLimit.mockResolvedValue(limited);
       const request = makeRequest(method, bodyFor(method));
 
       const response = await handlers[method](request, ctx('5'));
 
       expect(response).toBe(limited);
-      expect(mockMutationLimit).toHaveBeenCalledWith(request, 'admin-user');
-      expect(mockReadLimit).not.toHaveBeenCalled();
+      expect(mockActorLimit).toHaveBeenCalledWith(request, 'admin-user', 'mutation');
       expect(mockRequireCsrf).not.toHaveBeenCalled();
       expect(mockCreateClient).not.toHaveBeenCalled();
       expect(mockCreateServiceRoleClient).not.toHaveBeenCalled();
@@ -755,12 +851,12 @@ describe('本文・送り元・例外', () => {
   }
 
   for (const method of MUTATION_METHODS) {
-    it(`DD-STOCKIST-035 ${method} は監査の ip に x-forwarded-for の先頭を空白を除いて入れ、user_agent はその値を入れる`, async () => {
+    it(`DD-STOCKIST-035 ${method} は監査の ip に x-real-ip を空白を除いて入れ、user_agent はその値を入れる`, async () => {
       setupDb(method);
 
       await handlers[method](
         makeRequest(method, bodyFor(method), {
-          'x-forwarded-for': ' 1.2.3.4 , 5.6.7.8',
+          'x-real-ip': ' 1.2.3.4 ',
           'user-agent': 'jest-agent',
         }),
         ctx('5'),
@@ -771,7 +867,21 @@ describe('本文・送り元・例外', () => {
       );
     });
 
-    it(`DD-STOCKIST-035 ${method} は x-forwarded-for と user-agent が無い時に監査の ip と user_agent を null にする`, async () => {
+    it(`DD-STOCKIST-035 ${method} は x-forwarded-for を読まず、x-real-ip の値だけを監査の ip に入れる`, async () => {
+      setupDb(method);
+
+      await handlers[method](
+        makeRequest(method, bodyFor(method), { 'x-forwarded-for': '203.0.113.9', 'x-real-ip': '198.51.100.4' }),
+        ctx('5'),
+      );
+      expect(mockLogAudit).toHaveBeenLastCalledWith(expect.objectContaining({ ip: '198.51.100.4' }));
+
+      setupDb(method);
+      await handlers[method](makeRequest(method, bodyFor(method), { 'x-forwarded-for': '203.0.113.9' }), ctx('5'));
+      expect(mockLogAudit).toHaveBeenLastCalledWith(expect.objectContaining({ ip: null }));
+    });
+
+    it(`DD-STOCKIST-035 ${method} は x-real-ip と user-agent が無い時に監査の ip と user_agent を null にする`, async () => {
       setupDb(method);
       const request = makeRequest(method, bodyFor(method));
       request.headers.delete('user-agent');
@@ -859,16 +969,27 @@ describe('DD-STOCKIST-035 Cache-Control は戻りの全分岐で private, no-sto
   });
 
   it('DD-STOCKIST-035 GET 429 読みの回数制限', async () => {
-    mockReadLimit.mockResolvedValue(staleResponse(429));
+    mockActorLimit.mockResolvedValue(staleResponse(429));
     const res = await call('GET');
     expect(res.status).toBe(429);
     expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
   });
 
+  for (const method of ALL_METHODS) {
+    for (const status of [429, 503]) {
+      it(`DD-STOCKIST-039 ${method} ${status} 送り元の回数制限`, async () => {
+        mockIpLimit.mockResolvedValue(staleResponse(status));
+        const res = await call(method);
+        expect(res.status).toBe(status);
+        expect(res.headers.get('Cache-Control')).toBe(NO_STORE);
+      });
+    }
+  }
+
   for (const method of MUTATION_METHODS) {
     for (const status of [429, 503]) {
       it(`DD-STOCKIST-035 ${method} ${status} 書きの回数制限`, async () => {
-        mockMutationLimit.mockResolvedValue(staleResponse(status));
+        mockActorLimit.mockResolvedValue(staleResponse(status));
         const res = await call(method);
         expect(res.status).toBe(status);
         expect(res.headers.get('Cache-Control')).toBe(NO_STORE);

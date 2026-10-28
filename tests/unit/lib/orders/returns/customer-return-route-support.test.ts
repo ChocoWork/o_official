@@ -246,7 +246,7 @@ describe('customerRefusalCodeOf（お客様の言葉がある断りだけを見�
 
 describe('createCustomerAudit', () => {
   it('実行したお客様・注文・送信元を付ける。メールアドレスは付けない', async () => {
-    const request = postRequest({ 'x-forwarded-for': '203.0.113.5, 10.0.0.1' });
+    const request = postRequest({ 'x-real-ip': '203.0.113.5' });
     const audit = createCustomerAudit(request, CUSTOMER_ID, { action: 'account.orders.return.request', orderId: ORDER_ID });
 
     await audit('success', 'Return requested', { return_id: RETURN_ID, sequence: 2 });
@@ -263,6 +263,18 @@ describe('createCustomerAudit', () => {
       metadata: { return_id: RETURN_ID, sequence: 2 },
     });
     expect(mockLogAudit.mock.calls[0][0]).not.toHaveProperty('actor_email');
+  });
+
+  it('偽の x-forwarded-for は無視し、x-real-ip が無ければ ip は null（getClientIp。ADR-0416）', async () => {
+    const audit = createCustomerAudit(
+      new Request('http://localhost/api/account/orders/x/return', { method: 'POST', headers: { 'x-forwarded-for': '198.51.100.7' } }),
+      CUSTOMER_ID,
+      { action: 'account.orders.return.request', orderId: ORDER_ID },
+    );
+
+    await audit('failure', 'x');
+
+    expect(mockLogAudit.mock.calls[0][0].ip).toBeNull();
   });
 
   it('metadata を省くと null', async () => {

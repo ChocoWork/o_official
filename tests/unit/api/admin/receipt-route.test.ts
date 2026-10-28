@@ -68,6 +68,7 @@ describe('POST /api/admin/kpi/cost-profit/receipt', () => {
 			userId: 'admin-id',
 			role: 'admin',
 			actorEmail: 'admin@example.com',
+			permissions: new Set(),
 		});
 		createServiceMock.mockResolvedValue(createSupabaseMock() as never);
 		logAuditMock.mockResolvedValue(undefined);

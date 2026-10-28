@@ -48,4 +48,29 @@ describe('AccountInquiries の返信の案内（FREQ-377）', () => {
     // 案内ごと差し込み直さず、同じ入れ物の中身が変わる
     expect(screen.getByRole('status')).toBe(region);
   });
+
+  it('返信が 429（no-store。本文は使わない）で断られても、本文を読み始めて失敗の案内を出す', async () => {
+    const user = userEvent.setup();
+    const drain = jest.fn(async () => new ArrayBuffer(0));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockedFetch.mockImplementation(async (url, options) => {
+      if (url === '/api/contact/threads') return json({ data: [THREAD] });
+      if (url === '/api/contact/threads/t1') {
+        return json({ data: { ...THREAD, updated_at: THREAD.last_message_at, messages: [] } });
+      }
+      if (url === '/api/contact/threads/t1/reply' && options?.method === 'POST') {
+        return { ok: false, status: 429, json: async () => ({}), arrayBuffer: drain } as unknown as Response;
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    render(<AccountInquiries />);
+
+    await user.click(await screen.findByRole('button', { name: /配送について/ }));
+    await user.type(await screen.findByRole('textbox', { name: '返信する' }), 'ありがとうございます');
+    await user.click(screen.getByRole('button', { name: '返信を送信' }));
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('返信の送信に失敗しました。'));
+    expect(drain).toHaveBeenCalledTimes(1);
+    errorSpy.mockRestore();
+  });
 });

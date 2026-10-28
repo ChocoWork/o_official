@@ -167,3 +167,21 @@ test('初期値の反映前の注文番号の編集を守り種別だけを埋�
   expect(screen.getByLabelText(orderNumberLabel)).toHaveValue('ORD-11112222');
   expect(screen.getByRole('combobox', { name: 'お問い合わせ内容' })).toHaveTextContent('ご注文について');
 });
+
+test('送信が 429 で断られても本文を読み始め、上限の案内を出す（波 4 Task 1b）', async () => {
+  const drain = jest.fn(async () => new ArrayBuffer(0));
+  mockFetch.mockResolvedValue({
+    ok: false,
+    status: 429,
+    json: async () => ({ error: 'Too many requests' }),
+    arrayBuffer: drain,
+  } as unknown as Response);
+  render(<ContactPage />);
+
+  fillRequiredFields();
+  selectInquiry('ご注文について');
+  fireEvent.click(screen.getByRole('button', { name: 'SEND MESSAGE' }));
+
+  await screen.findByText(/送信回数が上限に達したため/);
+  expect(drain).toHaveBeenCalledTimes(1);
+});
