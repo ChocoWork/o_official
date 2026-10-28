@@ -78,6 +78,7 @@ const FUNCTION_EXPECTATIONS: FunctionExpectation[] = [
   { name: 'search_public_looks', anon: false, authenticated: false, postgres: true },
   { name: 'search_public_news', anon: false, authenticated: false, postgres: true },
   { name: 'admin_update_look', anon: false, authenticated: false },
+  { name: 'is_app_session_active', anon: false, authenticated: false, postgres: true },
 ];
 
 const SEQUENCES = ['stockists_id_seq', 'rate_limit_counters_id_seq'];

@@ -70,7 +70,7 @@ describeLocalDb('integration: AUTH の sessions の表', (db) => {
     }
   }
 
-  test('DATA-AUTH-001 列は控えの15本で、型と NOT NULL が設計どおり', async () => {
+  test('DATA-AUTH-001 列は控えの16本（波 5 の auth_session_id を含む）で、型と NOT NULL が設計どおり', async () => {
     const result = await db().query(
       `select column_name, data_type, is_nullable from information_schema.columns
        where table_schema = 'public' and table_name = 'sessions' order by column_name`,
@@ -98,6 +98,7 @@ describeLocalDb('integration: AUTH の sessions の表', (db) => {
       created_at: 'timestamp with time zone not null',
       expires_at: 'timestamp with time zone null',
       last_seen_at: 'timestamp with time zone null',
+      auth_session_id: 'uuid null',
     });
   });
 

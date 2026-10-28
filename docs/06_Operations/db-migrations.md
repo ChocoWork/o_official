@@ -1,5 +1,7 @@
 # DB マイグレーション運用
 
+> 波 5 確認日: 2026-10-29。アプリの session への結び付けの移行 M1（`20261029120000`）を追記した（「波 5 アプリの session への結び付けの移行 M1」の節）。2026-10-29 に本番へ適用済み。M2 は未適用。
+
 > 波 2 確認日: 2026-10-27。権限・検索・制約・置き場の移行 6 本（`20261026130100`〜`130600`）を追記した（「波 2 権限・検索・制約・置き場の移行 6 本」の節）。2026-10-27 に本番へ適用済み（G-4 と一緒に）。以後の移行は GRANT を明示する決まりも同じ節に書いた。
 
 > G-4 Task 4 確認日: 2026-10-26。fix round 2後の第3の移行 G4C（割当の入替・書き手76本）はcontrollerのfresh reset（g4t4b）でローカル適用・検証済み。group_g*全53 suiteは1,721成功・0失敗・1 pending、並行12/12を3回連続。全件検証も新規失敗なし（「G4Cの適用と再検証」）。本番未適用。
@@ -256,6 +258,35 @@ COMMIT;
 - 連番: `GRANT USAGE, SELECT ON SEQUENCE … TO service_role;`（identity の連番は INSERT で権限を確かめないので、anon・authenticated の直の `nextval()` を断つ REVOKE も書く）
 - 関数: `REVOKE ALL ON FUNCTION … FROM PUBLIC, anon, authenticated;` のあと呼ぶ役に `GRANT EXECUTE`
 - 権限の一覧は `tests/integration/db/auth_grants_inventory.integration.test.ts`（DATA-AUTH-006）で守る。権限を替える移行を足したら、同じ変更で一覧も直す
+
+## 波 5 アプリの session への結び付けの移行 M1（本番適用済み）
+
+確認日: 2026-10-29。**本番適用済み（2026-10-29。controller が `npx supabase db push --linked`、先の dry-run は本ファイルだけを示した）。** オーナーの決定: 手元の開発が本番の DB を使うので、新しいコードより先に当てる。ファイルは [20261029120000_sec_app_session_binding.sql](../../supabase/migrations/20261029120000_sec_app_session_binding.sql)（計画 `docs/superpowers/plans/2026-10-29-wave5-session-binding-aal2-db.md` の Task 1/1B、ADR-0417、DATA-AUTH-007）。
+
+足すもの（挙動は変えない。`has_permission` と既存の方針は触らない）:
+
+| 物 | 内容 |
+| --- | --- |
+| 列 `public.sessions.auth_session_id` | `uuid` NULL 可。既存の行は NULL のまま（アプリが結んでいない行の意味） |
+| 索引 `sessions_auth_session_id_live_idx` | 部分（`revoked_at IS NULL AND auth_session_id IS NOT NULL`）・一意でない（新しい行を先に入れて古い行を後で失効させるので、一瞬 2 行が同じ id を持つ） |
+| `private.app_session_is_live(uuid)` | EXECUTE は postgres だけ |
+| `public.is_app_session_active(uuid)` | EXECUTE は postgres と service_role |
+| `private.is_app_bound_live_session()` | EXECUTE は postgres・authenticated・service_role（RLS 用。JWT の `session_id` が不正でも false で落ちない） |
+
+関数 3 本とも SECURITY DEFINER・`search_path ''`・所有者 postgres。末尾の自己検査（失敗は `SEC_WAVE5_MIGRATION_ASSERTION_FAILED`、55000）が列・索引・関数の属性と ACL・PUBLIC 非公開・`sessions` の anon/authenticated 権限なしを確かめ、失敗すれば全体が戻る。ロールバックは移行ファイルのヘッダーの `ROLLBACK`（関数 3 本・索引・列を DROP。M2 を当てていれば先に M2 を戻す）。
+
+M2（`has_permission` と `profiles`・`orders`・`order_items` の RESTRICTIVE 方針）は後。アプリの書き手（Task 2）はログインのたびに `auth_session_id` を入れるので、M1 は新しいコードより先に当てる。M2 はアプリのコード（Task 2・3）が出た後。
+
+事後の確かめ（読むだけ・Supabase MCP）:
+
+- 最新の版が `20261029120000`。
+- `schema_migrations` の文を空白と `;` を除いて繋いだ md5 がファイルと一致（`d321d34f408b1e8fcc1c4a8b3917cdad`）。
+- `sessions` は 16 列。行は 48 件で、結んだ行は 0 件。
+- 関数 3 本の ACL は上の表のとおり。索引あり。
+- `has_permission` の定義は変わらず。
+- `get_advisors`（security）に新しい項目なし。
+
+手元は `npm run db:reset` のあと `tests/integration/db` 全体で 145 suite 通過・13 skip・4355 件通過・0 失敗。Task 0 の実測（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave5-task0-report.md`）で、GoTrue の `session_id` は refresh しても変わらない。
 
 ## ベースライン化（初回のみ・要 Docker と DB パスワード）
 
