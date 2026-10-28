@@ -154,7 +154,7 @@ function freezeDateOnly() {
 function baseHeaders(name: string, userAgent: string | null | undefined, forwarded: string | null | undefined) {
   const lower = name.toLowerCase();
   if (lower === 'user-agent') return userAgent === undefined ? 'jest-agent' : userAgent;
-  if (lower === 'x-forwarded-for') return forwarded === undefined ? '203.0.113.9, 10.0.0.1' : forwarded;
+  if (lower === 'x-real-ip') return forwarded === undefined ? '203.0.113.9' : forwarded;
   return null;
 }
 
@@ -221,7 +221,9 @@ describe('GET /api/admin/stockists/[id]（管理の取扱店の1件）', () => {
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({ error: 'Invalid stockist id' });
       expect(verifyAccessToken).not.toHaveBeenCalled();
-      expect(incrementCounter).not.toHaveBeenCalled();
+      // 送り元の枠は最初に数える（SEC-STOCKIST-020）。操作者の枠は認可の後なので数えない
+      expect(incrementCounter).toHaveBeenCalledTimes(1);
+      expect(incrementCounter).toHaveBeenCalledWith(expect.objectContaining({ endpoint: 'admin:stockists:read', subject: null }));
       expect(createClient).not.toHaveBeenCalled();
       expect(client.seq).toEqual([]);
     }
@@ -244,6 +246,10 @@ describe('GET /api/admin/stockists/[id]（管理の取扱店の1件）', () => {
 
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: 'Unauthorized' });
+    // 送り元の枠だけ数え、操作者が分からない 401 は監査にも操作者の枠にも数えない（SEC-STOCKIST-021）
+    expect(incrementCounter).toHaveBeenCalledTimes(1);
+    expect(incrementCounter).toHaveBeenCalledWith(expect.objectContaining({ subject: null }));
+    expect(auditRows()).toHaveLength(0);
     expect(dataSeq()).toEqual([]);
   });
 
@@ -268,6 +274,19 @@ describe('GET /api/admin/stockists/[id]（管理の取扱店の1件）', () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: 'Forbidden', permission: 'admin.stockists.read' });
     expect(dataSeq()).toEqual([]);
+    expect(auditRows()).toEqual([
+      expect.objectContaining({
+        action: 'admin.stockists.get',
+        actor_id: 'admin-1',
+        resource: 'stockists',
+        outcome: 'failure',
+        // detail は共有の監査が JWT 風の文字列（a.b.c）を伏せるので、権限の符号は metadata で確かめる
+        detail: expect.stringMatching(/^Forbidden: .+ \(permission\)$/),
+        metadata: expect.objectContaining({ permission: 'admin.stockists.read', reason: 'permission' }),
+        ip: '203.0.113.9',
+        user_agent: 'jest-agent',
+      }),
+    ]);
   });
 
   test('API-STOCKIST-003 aal2 でない session は 403 MFA required で断る', async () => {
@@ -278,6 +297,16 @@ describe('GET /api/admin/stockists/[id]（管理の取扱店の1件）', () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: 'Forbidden', reason: 'MFA required', permission: 'admin.stockists.read' });
     expect(dataSeq()).toEqual([]);
+    expect(auditRows()).toEqual([
+      expect.objectContaining({
+        action: 'admin.stockists.get',
+        actor_id: 'admin-1',
+        outcome: 'failure',
+        // detail は共有の監査が JWT 風の文字列（a.b.c）を伏せるので、権限の符号は metadata で確かめる
+        detail: expect.stringMatching(/^Forbidden: .+ \(mfa\)$/),
+        metadata: expect.objectContaining({ permission: 'admin.stockists.read', reason: 'mfa' }),
+      }),
+    ]);
   });
 
   test('API-STOCKIST-003 閲覧の権限だけで読め、読みの枠 120回／10分を送り元と操作者の2段で数える', async () => {

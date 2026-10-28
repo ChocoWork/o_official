@@ -94,7 +94,7 @@ function makeRequest(json?: unknown) {
       get: (name: string) => {
         const key = name.toLowerCase();
         if (key === 'user-agent') return 'jest-agent';
-        if (key === 'x-forwarded-for') return '203.0.113.9';
+        if (key === 'x-real-ip') return '203.0.113.9';
         return null;
       },
     },
@@ -254,15 +254,15 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
       expect(serviceCalls()).toContain(handler.writeMethod);
     });
 
-    it('ARC-STOCKIST-002 認可・回数の制限・CSRF の token・表の書き換え・監査の順に進める', async () => {
+    it('ARC-STOCKIST-002 送り元の枠・認可・操作者の枠・CSRF の token・表の書き換え・監査の順に進める', async () => {
       setup();
 
       await handler.call();
 
       expect(order).toEqual([
+        'rate',
         'authz',
         'user_roles.select',
-        'rate',
         'rate',
         'csrf',
         `stockists.${handler.writeMethod}`,
@@ -315,8 +315,7 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
       expect(console.warn).toHaveBeenCalledWith('Failed to write audit log');
     });
 
-    // 現状の記録。認可で断った要求を監査に残さないのは SEC-STOCKIST-021 を満たさない欠け。直したらこの件を直す。
-    it('ARC-STOCKIST-002 現状の記録 admin.stockists.manage を求め、read だけの利用者は 403 で断って表も監査も触らない', async () => {
+    it('ARC-STOCKIST-002 admin.stockists.manage を求め、read だけの利用者は 403 で断って表を触らず、失敗の監査を 1 行残す', async () => {
       setup({ codes: ['admin.stockists.read'] });
 
       const res = await handler.call();
@@ -326,10 +325,22 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
       expect(requireCsrfOrDeny).not.toHaveBeenCalled();
       expect(createClient).not.toHaveBeenCalled();
       expect(serviceCalls()).toEqual([]);
-      expect(auditRows()).toHaveLength(0);
+      // detail は共有の監査が JWT 風の文字列（a.b.c）を伏せるので、権限の符号は metadata で確かめる
+      expect(auditRows()).toEqual([
+        expect.objectContaining({
+          action: handler.successAction,
+          actor_id: 'admin-1',
+          resource: 'stockists',
+          outcome: 'failure',
+          detail: expect.stringMatching(/^Forbidden: .+ \(permission\)$/),
+          metadata: expect.objectContaining({ permission: 'admin.stockists.manage', reason: 'permission' }),
+          ip: '203.0.113.9',
+          user_agent: 'jest-agent',
+        }),
+      ]);
     });
 
-    it('ARC-STOCKIST-002 aal2 でない session は 403 MFA required で断る', async () => {
+    it('ARC-STOCKIST-002 aal2 でない session は 403 MFA required で断り、理由 mfa の失敗の監査を 1 行残す', async () => {
       setup({ aal: 'aal1' });
 
       const res = await handler.call();
@@ -337,29 +348,39 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
       expect(res.status).toBe(403);
       expect(await res.json()).toMatchObject({ reason: 'MFA required' });
       expect(createClient).not.toHaveBeenCalled();
+      expect(auditRows()).toEqual([
+        expect.objectContaining({ actor_id: 'admin-1', outcome: 'failure', metadata: expect.objectContaining({ reason: 'mfa' }) }),
+      ]);
     });
 
     it('ARC-STOCKIST-002 token が無ければ 401、session が失効していても 401、確認できなければ 503 で断る', async () => {
       setup({ verified: { ok: false, reason: 'missing' } });
       expect((await handler.call()).status).toBe(401);
+      // token の無い 401 は操作者が分からないので監査に残さず、操作者の枠にも数えない（送り元の枠 1 回だけ）
+      expect(auditRows()).toHaveLength(0);
+      expect(serviceClient.rpcCalls).toHaveLength(1);
 
       setup({ liveness: 'revoked' });
       expect((await handler.call()).status).toBe(401);
+      // 失効した session の 401 は操作者（token の sub）が分かるので 1 行残す
+      expect(auditRows()).toEqual([
+        expect.objectContaining({ actor_id: 'admin-1', outcome: 'failure', metadata: expect.objectContaining({ reason: 'session' }) }),
+      ]);
 
+      // 失効の確認ができない 503 は拒否ではないので残さない
       setup({ liveness: 'unavailable' });
       expect((await handler.call()).status).toBe(503);
+      expect(auditRows()).toHaveLength(0);
 
       expect(createClient).not.toHaveBeenCalled();
-      expect(auditRows()).toHaveLength(0);
     });
 
-    // 現状の動きの記録。認可で断った要求を監査に残さないのは SEC-STOCKIST-021 を満たさない欠け。直したらこの件を直す。
-    it('ARC-STOCKIST-002 現状の記録 認可で断った要求は監査に残さない', async () => {
+    it('ARC-STOCKIST-002 権限を 1 つも持たない利用者の 403 も、操作者が分かるので失敗の監査を 1 行残す', async () => {
       setup({ codes: [] });
 
       await handler.call();
 
-      expect(auditRows()).toHaveLength(0);
+      expect(auditRows()).toEqual([expect.objectContaining({ actor_id: 'admin-1', outcome: 'failure' })]);
     });
   });
 
@@ -374,6 +395,8 @@ describe('管理の書き換えの道（ARC-STOCKIST-002）', () => {
       expect(verifyAccessToken).not.toHaveBeenCalled();
       expect(createClient).not.toHaveBeenCalled();
       expect(auditRows()).toHaveLength(0);
+      // 送り元の枠は最初に数える。操作者の枠は認可の後なので数えない
+      expect(serviceClient.rpcCalls).toHaveLength(1);
     });
   });
 

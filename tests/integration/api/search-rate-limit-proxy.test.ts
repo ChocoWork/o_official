@@ -139,20 +139,24 @@ describe('公開の窓口にかかる回数の制限と共有の proxy（ARC-SEA
       expect(executeSearch).not.toHaveBeenCalled();
     });
 
-    it('ARC-SEARCH-005 送り元は x-forwarded-for の先頭を使い、subject は渡さない', async () => {
-      await searchRoute.GET(makeRequest('/api/search?q=coat', { 'x-forwarded-for': '203.0.113.9, 10.0.0.1' }));
+    it('ARC-SEARCH-005 送り元は x-real-ip を使い、subject は渡さない', async () => {
+      await searchRoute.GET(makeRequest('/api/search?q=coat', { 'x-real-ip': '203.0.113.9' }));
 
       expect(incrementCounter).toHaveBeenCalledWith(
         expect.objectContaining({ ip: '203.0.113.9', subject: null }),
       );
     });
 
-    it('ARC-SEARCH-005 x-forwarded-for が無ければ x-real-ip を使い、どちらも無ければ 127.0.0.1 で数える', async () => {
-      await searchRoute.GET(makeRequest('/api/search?q=coat', { 'x-real-ip': '198.51.100.7' }));
+    it('ARC-SEARCH-005 x-forwarded-for は読まず、x-real-ip が無ければ ip null の枠に数える', async () => {
+      await searchRoute.GET(makeRequest('/api/search?q=coat', { 'x-forwarded-for': '198.51.100.7' }));
       await searchRoute.GET(makeRequest('/api/search?q=coat'));
+      await searchRoute.GET(
+        makeRequest('/api/search?q=coat', { 'x-forwarded-for': '198.51.100.7', 'x-real-ip': '203.0.113.9' }),
+      );
 
-      expect(incrementCounter.mock.calls[0][0].ip).toBe('198.51.100.7');
-      expect(incrementCounter.mock.calls[1][0].ip).toBe('127.0.0.1');
+      expect(incrementCounter.mock.calls[0][0].ip).toBeNull();
+      expect(incrementCounter.mock.calls[1][0].ip).toBeNull();
+      expect(incrementCounter.mock.calls[2][0].ip).toBe('203.0.113.9');
     });
   });
 

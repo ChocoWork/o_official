@@ -120,13 +120,14 @@ describe('API-AUTH-005 POST /api/auth/register 公開の登録', () => {
     expect(mockSignUp).not.toHaveBeenCalled();
   });
 
-  test('API-AUTH-005 制限の部品が落ちても登録の処理は止めない', async () => {
+  test('API-AUTH-005 制限の部品が落ちたら 500 で止まり、登録の処理へ進まない（SEC-AUTH-013-AC-02）', async () => {
     mockEnforceRateLimit.mockRejectedValue(new Error('rate limit down'));
 
     const res = await handler(publicRequest());
 
-    expect(res.status).toBe(202);
-    expect(mockSignUp).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(500);
+    expect(mockVerifyTurnstile).not.toHaveBeenCalled();
+    expect(mockSignUp).not.toHaveBeenCalled();
   });
 
   test.each([
@@ -171,8 +172,8 @@ describe('API-AUTH-005 POST /api/auth/register 公開の登録', () => {
     );
   });
 
-  test('API-AUTH-005 Turnstile へ x-forwarded-for の先頭の IP と token を渡す', async () => {
-    await handler(publicRequest({ turnstileToken: 'tok-1' }, { 'x-forwarded-for': '203.0.113.9, 10.0.0.1' }));
+  test('API-AUTH-005 Turnstile へ x-real-ip の IP と token を渡す', async () => {
+    await handler(publicRequest({ turnstileToken: 'tok-1' }, { 'x-real-ip': '203.0.113.9' }));
 
     expect(mockVerifyTurnstile).toHaveBeenCalledWith('tok-1', '203.0.113.9');
   });

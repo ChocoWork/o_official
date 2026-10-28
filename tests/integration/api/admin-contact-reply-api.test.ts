@@ -133,7 +133,7 @@ const params = (id = INQUIRY_ID) => ({ params: Promise.resolve({ id }) });
 const post = (body: unknown, raw = false) =>
   new Request(`http://localhost/api/admin/contact/${INQUIRY_ID}/reply`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'user-agent': 'jest-agent' },
+    headers: { 'content-type': 'application/json', 'user-agent': 'jest-agent', 'x-real-ip': '198.51.100.7' },
     body: raw ? (body as string) : JSON.stringify(body),
   });
 
@@ -348,10 +348,12 @@ describe('API-ADMIN-008 POST /api/admin/contact/[id]/reply', () => {
     expect(auditRows()[0]).toMatchObject({
       action: 'admin.contact.reply',
       actor_id: 'admin-1',
+      actor_email: 'admin@example.com',
       resource: 'contact',
       resource_id: INQUIRY_ID,
       outcome: 'success',
       detail: 'reply_sent',
+      ip: '198.51.100.7',
       user_agent: 'jest-agent',
     });
   });
@@ -452,14 +454,14 @@ describe('API-ADMIN-008 POST /api/admin/contact/[id]/reply', () => {
     expect(sendMail).not.toHaveBeenCalled();
   });
 
-  it('API-ADMIN-008 監査の行にメールと IP を入れない', async () => {
+  it('API-ADMIN-008 監査の行に問い合わせ者のメールを入れず、操作した人のメール・IP を入れる', async () => {
     setupDb();
 
     await POST(post({ body: 'hi' }), params());
 
     const [entry] = auditRows();
     expect(JSON.stringify(entry)).not.toContain('taro@example.com');
-    expect(entry.ip).toBeUndefined();
+    expect(entry).toMatchObject({ actor_email: 'admin@example.com', ip: '198.51.100.7' });
   });
 
   it('API-ADMIN-008 認可の後に表のための client を作れず例外が出たら 500 Internal server error を返す', async () => {

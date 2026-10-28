@@ -170,7 +170,7 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       enforceRateLimit.mockResolvedValueOnce(undefined).mockResolvedValueOnce(tooMany());
       const { POST } = require('@/app/api/auth/login/route') as { POST: Handler };
 
-      const res = await POST(request('POST', '/api/auth/login', loginBody, { 'x-forwarded-for': '203.0.113.5, 10.0.0.1' }));
+      const res = await POST(request('POST', '/api/auth/login', loginBody, { 'x-real-ip': '203.0.113.5' }));
 
       expect(res.status).toBe(429);
       expect(verifyTurnstile).toHaveBeenCalledWith('ts-token', '203.0.113.5');
@@ -268,7 +268,7 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       const { POST } = require('@/app/api/auth/register/route') as { POST: Handler };
 
       const res = await POST(
-        request('POST', '/api/auth/register', { email: 'new@example.com', password: 'password123456789', turnstileToken: 'ts-token' }, { 'x-forwarded-for': '203.0.113.9' }),
+        request('POST', '/api/auth/register', { email: 'new@example.com', password: 'password123456789', turnstileToken: 'ts-token' }, { 'x-real-ip': '203.0.113.9' }),
       );
 
       expect(res.status).toBe(403);
@@ -285,7 +285,7 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
       const { POST } = require('@/app/api/auth/register/route') as { POST: Handler };
 
       const res = await POST(
-        request('POST', '/api/auth/register', { email: 'New@Example.com', password: 'password123456789', turnstileToken: 'ts-token' }, { 'x-forwarded-for': '203.0.113.9' }),
+        request('POST', '/api/auth/register', { email: 'New@Example.com', password: 'password123456789', turnstileToken: 'ts-token' }, { 'x-real-ip': '203.0.113.9' }),
       );
 
       expect(res.status).toBe(429);
@@ -372,30 +372,29 @@ describe('ボットの確かめと回数の制限（ARC-AUTH-005）', () => {
     });
   });
 
-  describe('回数の制限の呼び出しが例外を投げたら、記録だけして通す', () => {
-    test('ARC-AUTH-005 login は枠の数え場所が落ちても処理を続け、console.error に残す', async () => {
+  describe('回数の制限の呼び出しが例外を投げたら、握りつぶさず先へ進まない（SEC-AUTH-013-AC-02）', () => {
+    test('ARC-AUTH-005 login は枠の数え場所が落ちたら 500 で止まり、パスワードの確かめへ進まない', async () => {
       enforceRateLimit.mockRejectedValue(new Error('counter down'));
-      createPublicClient.mockResolvedValue({
-        auth: { signInWithPassword: jest.fn().mockResolvedValue({ data: null, error: { message: 'invalid' } }) },
-      });
+      const signInWithPassword = jest.fn().mockResolvedValue({ data: null, error: { message: 'invalid' } });
+      createPublicClient.mockResolvedValue({ auth: { signInWithPassword } });
       const { POST } = require('@/app/api/auth/login/route') as { POST: Handler };
 
       const res = await POST(request('POST', '/api/auth/login', loginBody));
 
-      expect(res.status).toBe(401);
-      expect(enforceRateLimit).toHaveBeenCalledTimes(2);
-      expect(consoleErrorSpy).toHaveBeenCalledWith('Rate limit middleware error (login):', expect.any(Error));
-      expect(consoleErrorSpy).toHaveBeenCalledWith('Rate limit middleware error (login-account):', expect.any(Error));
+      expect(res.status).toBe(500);
+      expect(enforceRateLimit).toHaveBeenCalledTimes(1);
+      expect(signInWithPassword).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).not.toHaveBeenCalledWith('Rate limit middleware error (login):', expect.anything());
     });
 
-    test('ARC-AUTH-005 refresh は枠の数え場所が落ちても処理を続け、Cookie が無ければ 401 を返す', async () => {
+    test('ARC-AUTH-005 refresh は枠の数え場所が落ちたら 500 で止まる（Cookie の有無を見る前）', async () => {
       enforceRateLimit.mockRejectedValue(new Error('counter down'));
       const { POST } = require('@/app/api/auth/refresh/route') as { POST: Handler };
 
       const res = await POST(request('POST', '/api/auth/refresh'));
 
-      expect(res.status).toBe(401);
-      expect(consoleErrorSpy).toHaveBeenCalledWith('Rate limit middleware error (refresh):', expect.any(Error));
+      expect(res.status).toBe(500);
+      expect(consoleErrorSpy).not.toHaveBeenCalledWith('Rate limit middleware error (refresh):', expect.anything());
     });
   });
 

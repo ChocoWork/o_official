@@ -114,8 +114,13 @@ function makeRequest(options: {
   const form = { get: (key: string) => (key in fields ? fields[key] : null) };
   return {
     headers: {
-      get: (name: string) =>
-        name.toLowerCase() === 'user-agent' ? (options.userAgent === undefined ? 'jest-agent' : options.userAgent) : null,
+      get: (name: string) => {
+        const key = name.toLowerCase();
+        if (key === 'user-agent') return options.userAgent === undefined ? 'jest-agent' : options.userAgent;
+        if (key === 'x-real-ip') return '203.0.113.9';
+        if (key === 'x-forwarded-for') return '198.51.100.7';
+        return null;
+      },
     },
     formData: jest.fn(async () => {
       if (options.formDataError) throw options.formDataError;
@@ -268,7 +273,8 @@ describe('PUT /api/admin/news/[id]（管理の記事1件の更新）', () => {
       user_agent: 'jest-agent',
       metadata: { articleId: '7', status: 'published', category: 'EVENT' },
     });
-    expect(rows[0].ip).toBeUndefined();
+    expect(rows[0].ip).toBe('203.0.113.9');
+    expect(JSON.stringify(rows[0])).not.toContain('198.51.100.7');
   });
 
   test('API-NEWS-005 文字の image は画像として扱わず、上げずに更新する', async () => {

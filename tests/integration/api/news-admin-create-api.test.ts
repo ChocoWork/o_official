@@ -101,7 +101,15 @@ const validFields = {
 
 function makeRequest(fields: Record<string, unknown> = { ...validFields, image: makeImage('a.jpg', 'image/jpeg') }, options: { formDataError?: Error } = {}) {
   return {
-    headers: { get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'jest-agent' : null) },
+    headers: {
+      get: (name: string) => {
+        const key = name.toLowerCase();
+        if (key === 'user-agent') return 'jest-agent';
+        if (key === 'x-real-ip') return '203.0.113.9';
+        if (key === 'x-forwarded-for') return '198.51.100.7';
+        return null;
+      },
+    },
     formData: jest.fn(async () => {
       if (options.formDataError) throw options.formDataError;
       return { get: (key: string) => (key in fields ? fields[key] : null) };
@@ -198,7 +206,7 @@ describe('POST /api/admin/news（記事の作成）', () => {
     ]);
   });
 
-  it('API-NEWS-003 成功を admin.news.create として監査に残し、記事の id と user agent を記録して IP は残さない', async () => {
+  it('API-NEWS-003 成功を admin.news.create として監査に残し、記事の id・user agent・信頼する見出しの IP を記録し、偽の x-forwarded-for は入れない（SEC-NEWS-016-AC-03）', async () => {
     setup();
 
     await POST(makeRequest());
@@ -214,7 +222,8 @@ describe('POST /api/admin/news（記事の作成）', () => {
       user_agent: 'jest-agent',
       metadata: { storagePath: serviceClient.uploads[0].path, status: 'private', category: 'COLLECTION' },
     });
-    expect(rows[0].ip).toBeUndefined();
+    expect(rows[0].ip).toBe('203.0.113.9');
+    expect(JSON.stringify(rows[0])).not.toContain('198.51.100.7');
   });
 
   it('API-NEWS-003 表が id を返さない時は監査の resource_id を null にする', async () => {

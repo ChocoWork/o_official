@@ -68,7 +68,7 @@ function setupClients(popular: RpcResult = { data: POPULAR_ROWS, error: null }) 
 function makeRequest(path: string) {
   return {
     nextUrl: new URL(`http://localhost${path}`),
-    headers: { get: (name: string) => (name === 'x-forwarded-for' ? '203.0.113.5' : null) },
+    headers: { get: (name: string) => (name === 'x-real-ip' ? '203.0.113.5' : null) },
   };
 }
 

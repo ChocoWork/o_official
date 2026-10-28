@@ -11,11 +11,15 @@ jest.mock('next/navigation', () => ({
 
 // clientFetch は本物を通し、網の境目の fetch だけを差し替える（CSRF の見出しと送り方まで確かめる）
 const CSRF_TOKEN = 'csrf-test-token';
+const ACCESS_URL = '/api/admin/stockists/access';
 const mockFetch = jest.fn();
+const mockAccess = jest.fn();
 const realFetch = global.fetch;
 
+// 開いた時の権限の確かめ（SCR-STOCKIST-005）は mockAccess へ、書き込みは mockFetch へ振り分ける
 beforeAll(() => {
-  global.fetch = mockFetch as unknown as typeof fetch;
+  global.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+    String(input) === ACCESS_URL ? mockAccess(input, init) : mockFetch(input, init)) as unknown as typeof fetch;
 });
 
 afterAll(() => {
@@ -36,6 +40,21 @@ function response(ok: boolean, body: unknown): Response {
   } as unknown as Response;
 }
 
+function accessResponse(status: number): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    arrayBuffer: async () => new ArrayBuffer(0),
+  } as unknown as Response;
+}
+
+// 権限の確かめが通ってフォームが出るまで待つ
+async function renderForm() {
+  const view = render(<AdminStockistCreatePage />);
+  await screen.findByRole('combobox', { name: '公開状態' });
+  return view;
+}
+
 async function fillAll(user: ReturnType<typeof userEvent.setup>) {
   await user.type(field('店舗名'), 'セレクトショップ青山');
   await user.type(field('住所'), '東京都港区南青山1-2-3');
@@ -51,6 +70,8 @@ describe('取扱店の作成の画面', () => {
   beforeEach(() => {
     mockPush.mockReset();
     mockFetch.mockReset();
+    mockAccess.mockReset();
+    mockAccess.mockResolvedValue(accessResponse(204));
     document.cookie = `sb-csrf-token=${CSRF_TOKEN}; path=/`;
     // jsdom は canvas の getContext を実装せず、SingleSelect の文字幅の計測で雑音が出るため null を返す
     getContextSpy = jest.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
@@ -62,8 +83,8 @@ describe('取扱店の作成の画面', () => {
     errorSpy.mockRestore();
   });
 
-  it('SCR-STOCKIST-005 公開状態と5つの必須欄と保存のボタンを出す', () => {
-    render(<AdminStockistCreatePage />);
+  it('SCR-STOCKIST-005 公開状態と5つの必須欄と保存のボタンを出す', async () => {
+    await renderForm();
 
     expect(screen.getByRole('combobox', { name: '公開状態' })).toBeInTheDocument();
     for (const label of FIELDS) {
@@ -72,8 +93,8 @@ describe('取扱店の作成の画面', () => {
     expect(screen.getByRole('button', { name: '保存' })).toBeEnabled();
   });
 
-  it('SCR-STOCKIST-005 初めの値は非公開で、5つの欄は空', () => {
-    render(<AdminStockistCreatePage />);
+  it('SCR-STOCKIST-005 初めの値は非公開で、5つの欄は空', async () => {
+    await renderForm();
 
     expect(screen.getByRole('combobox', { name: '公開状態' })).toHaveTextContent('非公開');
     for (const label of FIELDS) {
@@ -84,7 +105,7 @@ describe('取扱店の作成の画面', () => {
 
   it('SCR-STOCKIST-005 公開状態は非公開と公開の2つから選べる', async () => {
     const user = userEvent.setup();
-    render(<AdminStockistCreatePage />);
+    await renderForm();
 
     await user.click(screen.getByRole('combobox', { name: '公開状態' }));
 
@@ -92,25 +113,90 @@ describe('取扱店の作成の画面', () => {
     expect(within(listbox).getAllByRole('option').map((o) => o.textContent)).toEqual(['非公開', '公開']);
   });
 
-  it('SCR-STOCKIST-005 種別の欄は無く、キャンセル・戻るのボタンも無い', () => {
-    render(<AdminStockistCreatePage />);
+  it('SCR-STOCKIST-005 種別の欄は無く、キャンセル・戻るのボタンも無い', async () => {
+    await renderForm();
 
     expect(screen.queryByLabelText(/種別/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /キャンセル|戻る/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /キャンセル|戻る/ })).not.toBeInTheDocument();
   });
 
-  it('SCR-STOCKIST-005 頁を開いただけでは何も送らず、権限も確かめに行かない', () => {
-    render(<AdminStockistCreatePage />);
+  it('SCR-STOCKIST-005 頁を開くと権限の確かめの GET を1回だけ送り、書き込みは何も送らない', async () => {
+    await renderForm();
 
+    expect(mockAccess).toHaveBeenCalledTimes(1);
+    const [url, init] = mockAccess.mock.calls[0] as [string, RequestInit | undefined];
+    expect(url).toBe(ACCESS_URL);
+    expect(init?.method ?? 'GET').toBe('GET');
     expect(mockFetch).not.toHaveBeenCalled();
     expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('SCR-STOCKIST-005 権限の確かめが返るまでは読み込み中を出し、フォームを出さない', async () => {
+    let resolveAccess: (value: Response) => void = () => {};
+    mockAccess.mockReturnValueOnce(new Promise<Response>((resolve) => { resolveAccess = resolve; }));
+    render(<AdminStockistCreatePage />);
+
+    expect(screen.getByText('読み込み中...')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: '公開状態' })).not.toBeInTheDocument();
+    resolveAccess(accessResponse(204));
+    expect(await screen.findByRole('combobox', { name: '公開状態' })).toBeInTheDocument();
+    expect(screen.queryByText('読み込み中...')).not.toBeInTheDocument();
+  });
+
+  // clientFetch は GET の 401 を受けると /api/auth/refresh を1回試す（印の更新）。更新の通信は mockFetch に届く
+  it('SCR-STOCKIST-005 権限の確かめが 401 で印の更新が通れば、確かめを送り直してフォームを出す', async () => {
+    mockAccess.mockResolvedValueOnce(accessResponse(401)).mockResolvedValueOnce(accessResponse(204));
+    mockFetch.mockResolvedValueOnce(accessResponse(200));
+    await renderForm();
+
+    expect(mockAccess).toHaveBeenCalledTimes(2);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/auth/refresh');
+  });
+
+  it('SCR-STOCKIST-005 権限の確かめが 401 で印の更新も 401 なら、フォームを出さず「ログインが必要です」を出す', async () => {
+    mockAccess.mockResolvedValue(accessResponse(401));
+    mockFetch.mockResolvedValueOnce(accessResponse(401));
+    render(<AdminStockistCreatePage />);
+
+    expect(await screen.findByText('ログインが必要です')).toHaveClass('text-red-600');
+    expect(screen.queryByRole('combobox', { name: '公開状態' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument();
+    expect(mockAccess).toHaveBeenCalledTimes(1);
+    expect(mockFetch.mock.calls.map((c) => c[0])).toEqual(['/api/auth/refresh']);
+  });
+
+  it.each([
+    [403, 'STOCKISTを作成する権限がありません'],
+    [429, '権限の確認に失敗しました'],
+    [500, '権限の確認に失敗しました'],
+    [503, '権限の確認に失敗しました'],
+  ])('SCR-STOCKIST-005 権限の確かめが %i ならフォームを出さず「%s」を出す', async (status, message) => {
+    mockAccess.mockResolvedValue(accessResponse(status));
+    render(<AdminStockistCreatePage />);
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByText(message)).toHaveClass('text-red-600');
+    expect(screen.queryByRole('combobox', { name: '公開状態' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument();
+    expect(mockAccess).toHaveBeenCalledTimes(1);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('SCR-STOCKIST-005 権限の確かめが通信の例外ならフォームを出さず確認の失敗の文を出す', async () => {
+    mockAccess.mockRejectedValue(new TypeError('Failed to fetch'));
+    render(<AdminStockistCreatePage />);
+
+    expect(await screen.findByText('権限の確認に失敗しました')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument();
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('SCR-STOCKIST-005 5つの欄を入れて保存すると、作成の窓口へ前後の空白を除いて非公開のまま POST する', async () => {
     const user = userEvent.setup();
     mockFetch.mockResolvedValueOnce(response(true, { data: { id: 1 } }));
-    render(<AdminStockistCreatePage />);
+    await renderForm();
     await user.type(field('店舗名'), '  セレクトショップ青山  ');
     await user.type(field('住所'), ' 東京都港区南青山1-2-3');
     await user.type(field('電話番号'), '03-1234-5678 ');
@@ -139,7 +225,7 @@ describe('取扱店の作成の画面', () => {
   it('SCR-STOCKIST-005 公開を選んで保存すると status に published を送る', async () => {
     const user = userEvent.setup();
     mockFetch.mockResolvedValueOnce(response(true, { data: { id: 1 } }));
-    render(<AdminStockistCreatePage />);
+    await renderForm();
     await fillAll(user);
     await user.click(screen.getByRole('combobox', { name: '公開状態' }));
     await user.click(within(await screen.findByRole('listbox')).getByRole('option', { name: '公開' }));
@@ -153,7 +239,7 @@ describe('取扱店の作成の画面', () => {
 
   it.each(FIELDS)('SCR-STOCKIST-005 %s が空白だけなら必須の文を出して送らない', async (empty) => {
     const user = userEvent.setup();
-    render(<AdminStockistCreatePage />);
+    await renderForm();
     await fillAll(user);
     await user.clear(field(empty));
     await user.type(field(empty), '   ');
@@ -170,7 +256,7 @@ describe('取扱店の作成の画面', () => {
     const user = userEvent.setup();
     let resolveFetch: (value: Response) => void = () => {};
     mockFetch.mockReturnValueOnce(new Promise<Response>((resolve) => { resolveFetch = resolve; }));
-    render(<AdminStockistCreatePage />);
+    await renderForm();
     await fillAll(user);
 
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -185,7 +271,7 @@ describe('取扱店の作成の画面', () => {
   it('SCR-STOCKIST-005 保存に成功すると保存しました を出して STOCKIST タブの一覧へ移る', async () => {
     const user = userEvent.setup();
     mockFetch.mockResolvedValueOnce(response(true, { data: { id: 1 } }));
-    render(<AdminStockistCreatePage />);
+    await renderForm();
     await fillAll(user);
 
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -199,7 +285,7 @@ describe('取扱店の作成の画面', () => {
   it('SCR-STOCKIST-005 保存に成功したが応答が JSON でなくても一覧へ移る', async () => {
     const user = userEvent.setup();
     mockFetch.mockResolvedValueOnce(response(true, undefined));
-    render(<AdminStockistCreatePage />);
+    await renderForm();
     await fillAll(user);
 
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -210,7 +296,7 @@ describe('取扱店の作成の画面', () => {
   it('SCR-STOCKIST-005 窓口が error の文を返した時はその文を出して移らない', async () => {
     const user = userEvent.setup();
     mockFetch.mockResolvedValueOnce(response(false, { error: '住所が長すぎます' }));
-    render(<AdminStockistCreatePage />);
+    await renderForm();
     await fillAll(user);
 
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -224,7 +310,7 @@ describe('取扱店の作成の画面', () => {
   it('SCR-STOCKIST-005 error の文が無い失敗は保存に失敗しました を出す', async () => {
     const user = userEvent.setup();
     mockFetch.mockResolvedValueOnce(response(false, {}));
-    render(<AdminStockistCreatePage />);
+    await renderForm();
     await fillAll(user);
 
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -236,7 +322,7 @@ describe('取扱店の作成の画面', () => {
   it('SCR-STOCKIST-005 失敗の応答が JSON でなくても保存に失敗しました を出す', async () => {
     const user = userEvent.setup();
     mockFetch.mockResolvedValueOnce(response(false, undefined));
-    render(<AdminStockistCreatePage />);
+    await renderForm();
     await fillAll(user);
 
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -247,7 +333,7 @@ describe('取扱店の作成の画面', () => {
   it('SCR-STOCKIST-005 通信の例外は通信エラーの文を出し、移らず、書き込みを送り直さない', async () => {
     const user = userEvent.setup();
     mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
-    render(<AdminStockistCreatePage />);
+    await renderForm();
     await fillAll(user);
 
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -263,7 +349,7 @@ describe('取扱店の作成の画面', () => {
     mockFetch
       .mockResolvedValueOnce(response(false, { error: '住所が長すぎます' }))
       .mockResolvedValueOnce(response(true, { data: { id: 1 } }));
-    render(<AdminStockistCreatePage />);
+    await renderForm();
     await fillAll(user);
     await user.click(screen.getByRole('button', { name: '保存' }));
     await screen.findByText('住所が長すぎます');

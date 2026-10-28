@@ -529,14 +529,15 @@ describe('API-AUTH-012 POST /api/auth/password-reset/confirm - Integration Tests
     expect(createServiceRoleClient).not.toHaveBeenCalled();
   });
 
-  test('API-AUTH-012 回数の制限の部品が落ちても記録して処理を続ける', async () => {
+  test('API-AUTH-012 回数の制限の部品が落ちたら 500 で止まり、パスワードを変えない（SEC-AUTH-013-AC-02）', async () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     enforceRateLimit.mockRejectedValueOnce(new Error('limiter down'));
 
     const res = await handler(build({ new_password: GOOD_PASSWORD }));
 
-    expect(res.status).toBe(200);
-    expect(errorSpy).toHaveBeenCalledWith('Rate limit middleware error (password-reset-confirm):', expect.any(Error));
+    expect(res.status).toBe(500);
+    expect(errorSpy).not.toHaveBeenCalledWith('Rate limit middleware error (password-reset-confirm):', expect.anything());
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
   });
 
   test('API-AUTH-012 本文が JSON でなければ 500 にして中身を出さない', async () => {

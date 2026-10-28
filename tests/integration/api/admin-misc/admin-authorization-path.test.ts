@@ -469,7 +469,13 @@ describe('ARC-ADMIN-001 管理のそのほかの窓口の認可の道', () => {
 
       const result = await actualRbac.authorizeAdminPermission('admin.users.manage');
 
-      expect(result).toEqual({ ok: true, userId: USER_ID, role: 'admin', actorEmail: 'owner@example.com' });
+      expect(result).toEqual({
+        ok: true,
+        userId: USER_ID,
+        role: 'admin',
+        actorEmail: 'owner@example.com',
+        permissions: new Set(['admin.users.manage']),
+      });
     });
 
     it('ARC-ADMIN-001 token にメールが無ければ操作した人のメールは null になる', async () => {

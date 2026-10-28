@@ -174,10 +174,10 @@ describe('GET /api/news 公開済みの記事の一覧', () => {
     expect(none.query.eq).not.toHaveBeenCalledWith('category', expect.anything());
   });
 
-  it('API-NEWS-001 回数の制限を news:list の窓口として数え、送り元は x-forwarded-for の先頭にする', async () => {
+  it('API-NEWS-001 回数の制限を news:list の窓口として数え、送り元は x-real-ip にする', async () => {
     setupClients({ data: [], error: null });
 
-    await GET(makeRequest('', { 'x-forwarded-for': '203.0.113.9, 10.0.0.1' }));
+    await GET(makeRequest('', { 'x-real-ip': '203.0.113.9' }));
 
     expect(incrementCounter).toHaveBeenCalledWith(
       expect.objectContaining({ ip: '203.0.113.9', endpoint: 'news:list', subject: null }),

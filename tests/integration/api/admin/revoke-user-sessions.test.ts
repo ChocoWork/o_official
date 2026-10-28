@@ -85,7 +85,7 @@ function makeRequest(body: unknown, headers: Record<string, string> = {}) {
   });
 }
 
-const clientHeaders = { 'x-forwarded-for': '203.0.113.9, 10.0.0.1', 'user-agent': 'jest-agent' };
+const clientHeaders = { 'x-real-ip': '203.0.113.9', 'user-agent': 'jest-agent' };
 
 beforeEach(() => {
   jest.resetAllMocks();

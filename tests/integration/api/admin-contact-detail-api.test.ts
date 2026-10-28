@@ -121,7 +121,11 @@ const { GET } = require('@/app/api/admin/contact/[id]/route');
 
 const INQUIRY_ID = '0a1b2c3d-1111-2222-3333-444455556666';
 const params = (id = INQUIRY_ID) => ({ params: Promise.resolve({ id }) });
-const get = () => new Request(`http://localhost/api/admin/contact/${INQUIRY_ID}`, { method: 'GET' });
+const get = () =>
+  new Request(`http://localhost/api/admin/contact/${INQUIRY_ID}`, {
+    method: 'GET',
+    headers: { 'x-real-ip': '198.51.100.7', 'x-forwarded-for': '203.0.113.9', 'user-agent': 'jest-agent' },
+  });
 
 const inquiryRow = {
   id: INQUIRY_ID,
@@ -310,7 +314,7 @@ describe('API-ADMIN-006 GET /api/admin/contact/[id]', () => {
     expect(await res.json()).toEqual({ error: 'Internal server error' });
   });
 
-  it('API-ADMIN-006 閲覧を読んだ人の id・メール・問い合わせの id だけで監査に残し、名前・メール・本文・件名・IP は入れず、利用者の JWT の client も使わない', async () => {
+  it('API-ADMIN-006 閲覧を読んだ人の id・メール・問い合わせの id と、読んだ人の IP（x-real-ip）・ブラウザの名乗りで監査に残し、名前・メール・本文・件名・偽の x-forwarded-for は入れず、利用者の JWT の client も使わない', async () => {
     setupDb();
 
     await GET(get(), params());
@@ -324,9 +328,11 @@ describe('API-ADMIN-006 GET /api/admin/contact/[id]', () => {
       resource: 'contact',
       resource_id: INQUIRY_ID,
       outcome: 'success',
+      ip: '198.51.100.7',
+      user_agent: 'jest-agent',
     });
-    expect(rows[0].ip).toBeUndefined();
     const logged = JSON.stringify(rows[0]);
+    expect(logged).not.toContain('203.0.113.9');
     for (const secret of ['Taro', 'taro@example.com', 'Hello', 'Question']) {
       expect(logged).not.toContain(secret);
     }

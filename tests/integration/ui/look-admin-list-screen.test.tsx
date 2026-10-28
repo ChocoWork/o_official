@@ -143,6 +143,20 @@ describe('管理の LOOK タブの一覧', () => {
     expect(screen.getByText('2025 AW')).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '編集' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '新規作成' })).not.toBeInTheDocument();
+  });
+
+  it('SCR-LOOK-006 管理の権限がある人（meta.canManage が true）には「新規作成」を出し、権限の無い人には出さない（SEC-LOOK-019-AC-04）', async () => {
+    mockFetch.mockResolvedValueOnce(okList([PUBLISHED]));
+    const managed = render(<LookSection />);
+    await screen.findByText('Effortless Elegance');
+    expect(screen.getByRole('link', { name: '新規作成' })).toHaveAttribute('href', '/admin/look/create');
+    managed.unmount();
+
+    mockFetch.mockResolvedValueOnce(okList([PUBLISHED], false));
+    render(<LookSection />);
+    await screen.findByText('Effortless Elegance');
+    expect(screen.queryByRole('link', { name: '新規作成' })).not.toBeInTheDocument();
   });
 
   it('SCR-LOOK-006 応答に meta が無い時も操作ボタンを出さない（権限が分からない時は出さない）', async () => {

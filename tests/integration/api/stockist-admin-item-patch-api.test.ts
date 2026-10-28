@@ -154,7 +154,7 @@ function freezeDateOnly() {
 function baseHeaders(name: string, userAgent: string | null | undefined, forwarded: string | null | undefined) {
   const lower = name.toLowerCase();
   if (lower === 'user-agent') return userAgent === undefined ? 'jest-agent' : userAgent;
-  if (lower === 'x-forwarded-for') return forwarded === undefined ? '203.0.113.9, 10.0.0.1' : forwarded;
+  if (lower === 'x-real-ip') return forwarded === undefined ? '203.0.113.9' : forwarded;
   return null;
 }
 
@@ -218,7 +218,9 @@ describe('PATCH /api/admin/stockists/[id]（公開の状態だけの切り替え
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({ error: 'Invalid stockist id' });
       expect(verifyAccessToken).not.toHaveBeenCalled();
-      expect(incrementCounter).not.toHaveBeenCalled();
+      // 送り元の枠は最初に数える（SEC-STOCKIST-020）。操作者の枠は認可の後なので数えない
+      expect(incrementCounter).toHaveBeenCalledTimes(1);
+      expect(incrementCounter).toHaveBeenCalledWith(expect.objectContaining({ endpoint: 'admin:stockists:mutation', subject: null }));
       expect(jsonMock(request)).not.toHaveBeenCalled();
       expect(createClient).not.toHaveBeenCalled();
       expect(client.seq).toEqual([]);
@@ -234,6 +236,10 @@ describe('PATCH /api/admin/stockists/[id]（公開の状態だけの切り替え
 
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: 'Unauthorized' });
+    // 送り元の枠だけ数え、操作者が分からない 401 は監査にも操作者の枠にも数えない（SEC-STOCKIST-021）
+    expect(incrementCounter).toHaveBeenCalledTimes(1);
+    expect(incrementCounter).toHaveBeenCalledWith(expect.objectContaining({ subject: null }));
+    expect(auditRows()).toHaveLength(0);
     expect(jsonMock(request)).not.toHaveBeenCalled();
     expect(dataSeq()).toEqual([]);
     expect(auditRows()).toHaveLength(0);
@@ -252,8 +258,7 @@ describe('PATCH /api/admin/stockists/[id]（公開の状態だけの切り替え
     expect(dataSeq()).toEqual([]);
   });
 
-  // 現状の記録。認可で断った要求を監査に残さないのは SEC-STOCKIST-021 を満たさない欠け。直したらこの件を直す。
-  test('API-STOCKIST-005 現状の記録 admin.stockists.manage が無ければ（read だけでは）403 で断り、本文も読まず表も触らず監査にも残さない', async () => {
+  test('API-STOCKIST-005 admin.stockists.manage が無ければ（read だけでは）403 で断り、本文も読まず表も触らず、断った要求を失敗の監査に 1 行残す', async () => {
     setup({ codes: ['admin.stockists.read'], tables: okTables() });
     const request = patchRequest();
 
@@ -263,7 +268,19 @@ describe('PATCH /api/admin/stockists/[id]（公開の状態だけの切り替え
     expect(await res.json()).toMatchObject({ error: 'Forbidden', permission: 'admin.stockists.manage' });
     expect(jsonMock(request)).not.toHaveBeenCalled();
     expect(dataSeq()).toEqual([]);
-    expect(auditRows()).toHaveLength(0);
+    expect(auditRows()).toEqual([
+      expect.objectContaining({
+        action: 'admin.stockists.patch',
+        actor_id: 'admin-1',
+        resource: 'stockists',
+        outcome: 'failure',
+        // detail は共有の監査が JWT 風の文字列（a.b.c）を伏せるので、権限の符号は metadata で確かめる
+        detail: expect.stringMatching(/^Forbidden: .+ \(permission\)$/),
+        metadata: expect.objectContaining({ permission: 'admin.stockists.manage', reason: 'permission' }),
+        ip: '203.0.113.9',
+        user_agent: 'jest-agent',
+      }),
+    ]);
   });
 
   test('API-STOCKIST-005 aal2 でない session は 403 MFA required で断る', async () => {
@@ -274,6 +291,16 @@ describe('PATCH /api/admin/stockists/[id]（公開の状態だけの切り替え
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ reason: 'MFA required', permission: 'admin.stockists.manage' });
     expect(dataSeq()).toEqual([]);
+    expect(auditRows()).toEqual([
+      expect.objectContaining({
+        action: 'admin.stockists.patch',
+        actor_id: 'admin-1',
+        outcome: 'failure',
+        // detail は共有の監査が JWT 風の文字列（a.b.c）を伏せるので、権限の符号は metadata で確かめる
+        detail: expect.stringMatching(/^Forbidden: .+ \(mfa\)$/),
+        metadata: expect.objectContaining({ permission: 'admin.stockists.manage', reason: 'mfa' }),
+      }),
+    ]);
   });
 
   test('API-STOCKIST-005 変更の枠 20回／10分を送り元と操作者の2段で数え、送り元の段の印は IP、操作者の段の印は操作者にする', async () => {
@@ -486,7 +513,7 @@ describe('PATCH /api/admin/stockists/[id]（公開の状態だけの切り替え
     setup({ tables: okTables() });
     // 認可・回数の制限を過ぎた後（書き込みの client の作成）だけ失敗させる。
     createServiceRoleClient.mockImplementation(async () => {
-      if (incrementCounter.mock.calls.length > 0) throw new Error('no client');
+      if (incrementCounter.mock.calls.length >= 2) throw new Error('no client');
       return client;
     });
 
@@ -576,10 +603,10 @@ describe('PATCH /api/admin/stockists/[id]（公開の状態だけの切り替え
     expect(auditRows()[0]).toMatchObject({ outcome: 'failure', ip: null, user_agent: null });
   });
 
-  test('API-STOCKIST-005 x-forwarded-for の先頭の値の前後の空白を除いて監査に残す', async () => {
+  test('API-STOCKIST-005 x-real-ip の値の前後の空白を除いて監査に残す', async () => {
     setup({ tables: okTables() });
 
-    await PATCH(patchRequest({ status: 'private' }, { forwarded: '  198.51.100.4 , 10.0.0.1' }), ctx());
+    await PATCH(patchRequest({ status: 'private' }, { forwarded: '  198.51.100.4 ' }), ctx());
 
     expect(auditRows()[0]).toMatchObject({ outcome: 'success', ip: '198.51.100.4' });
   });

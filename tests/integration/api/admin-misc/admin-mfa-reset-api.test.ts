@@ -32,7 +32,7 @@ const TARGET_ID = '22222222-2222-4222-8222-222222222222';
 const REASON = 'Lost the authenticator device';
 const TARGET_EMAIL = 'target@example.com';
 const validBody = { userId: TARGET_ID, reason: REASON, confirm: 'RESET_MFA' };
-const clientHeaders = { 'x-forwarded-for': '203.0.113.5, 10.0.0.1', 'user-agent': 'jest-agent' };
+const clientHeaders = { 'x-real-ip': '203.0.113.5', 'user-agent': 'jest-agent' };
 const reasonHash = (reason: string) => createHash('sha256').update(reason).digest('hex');
 
 let auditRows: any[];
@@ -285,8 +285,8 @@ describe('POST /api/admin/users/mfa/reset', () => {
       expect(auditRows[0].metadata).not.toHaveProperty('reason');
     });
 
-    test('API-ADMIN-004 IP は x-forwarded-for の先頭だけを残し、ヘッダが無ければ空で監査へ残す', async () => {
-      await POST(makeRequest({ ...validBody, confirm: 'x' }, { 'x-forwarded-for': '  198.51.100.7 , 10.0.0.9 ' }));
+    test('API-ADMIN-004 IP は x-real-ip の値だけを残し、ヘッダが無ければ空で監査へ残す', async () => {
+      await POST(makeRequest({ ...validBody, confirm: 'x' }, { 'x-real-ip': '  198.51.100.7  ' }));
       await POST(makeRequest({ ...validBody, confirm: 'x' }, {}));
 
       expect(auditRows[0].ip).toBe('198.51.100.7');

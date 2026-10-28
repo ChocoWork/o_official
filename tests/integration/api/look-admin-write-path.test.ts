@@ -132,7 +132,7 @@ function makeRequest(options: { form?: Record<string, unknown>; images?: unknown
       get: (name: string) => {
         const key = name.toLowerCase();
         if (key === 'user-agent') return 'jest-agent';
-        if (key === 'x-forwarded-for') return '203.0.113.9';
+        if (key === 'x-real-ip') return '203.0.113.9';
         if (key === 'origin') return options.origin ?? null;
         return null;
       },
@@ -372,7 +372,7 @@ describe('管理の書き換えの道（ARC-LOOK-002）', () => {
       expect(tablesTouched()).toEqual([]);
     });
 
-    it('ARC-LOOK-002 成功を監査に残し、resource・利用者・user agent を記録して IP は残さない', async () => {
+    it('ARC-LOOK-002 成功を監査に残し、resource・利用者・user agent・信頼する見出しの IP を記録する（SEC-LOOK-020）', async () => {
       setup();
 
       await handler.call(handler.request());
@@ -388,8 +388,7 @@ describe('管理の書き換えの道（ARC-LOOK-002）', () => {
         outcome: 'success',
         user_agent: 'jest-agent',
       });
-      expect(rows[0].ip).toBeUndefined();
-      expect(JSON.stringify(rows[0])).not.toContain('203.0.113.9');
+      expect(rows[0].ip).toBe('203.0.113.9');
     });
 
     it('ARC-LOOK-002 DB の書き換えが失敗したら 500 を返し、失敗を監査に残す', async () => {

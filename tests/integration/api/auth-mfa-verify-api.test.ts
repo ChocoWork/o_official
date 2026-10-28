@@ -248,13 +248,15 @@ describe('POST /api/auth/mfa/verify', () => {
     expect(mfa.challenge).not.toHaveBeenCalled();
   });
 
-  test('API-AUTH-018 回数の制限の部品が落ちても処理を続ける', async () => {
+  test('API-AUTH-018 回数の制限の部品が落ちたら 500 で止まり、確かめへ進まない（SEC-AUTH-013-AC-02）', async () => {
     setup();
     enforceRateLimit.mockRejectedValue(new Error('limiter down'));
 
     const res = await POST(makeRequest(validBody));
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(500);
+    expect(authenticateRequest).not.toHaveBeenCalled();
+    expect(mfa.challenge).not.toHaveBeenCalled();
   });
 
   test.each([

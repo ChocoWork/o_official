@@ -351,8 +351,8 @@ describe('API-AUTH-009 POST /api/auth/password-reset/request - Integration Tests
     expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({ detail: 'turnstile_failed' }));
   });
 
-  test('API-AUTH-009 Turnstile には token と x-forwarded-for の先頭の IP を渡す', async () => {
-    await handler(build(VALID, { headers: { 'x-forwarded-for': '203.0.113.9, 10.0.0.1' } }));
+  test('API-AUTH-009 Turnstile には token と x-real-ip の IP を渡す', async () => {
+    await handler(build(VALID, { headers: { 'x-real-ip': '203.0.113.9' } }));
     expect(verifyTurnstile).toHaveBeenLastCalledWith('valid-token', '203.0.113.9');
 
     await handler(build(VALID));
@@ -394,17 +394,30 @@ describe('API-AUTH-009 POST /api/auth/password-reset/request - Integration Tests
     expect(rpcCalls).toEqual([]);
   });
 
-  test('API-AUTH-009 回数の制限の部品が例外を投げても、記録して処理を続ける', async () => {
+  test('API-AUTH-009 回数の制限の部品が例外を投げたら、500 で止まりメールを送らない（SEC-AUTH-013-AC-02）', async () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    enforceRateLimit.mockRejectedValueOnce(new Error('ip limiter down')).mockRejectedValueOnce(new Error('acct limiter down'));
+    enforceRateLimit.mockRejectedValueOnce(new Error('ip limiter down'));
 
     const res = await handler(build(VALID));
     await flushAfter();
 
-    expect(res.status).toBe(200);
-    expect(errorSpy).toHaveBeenCalledWith('Rate limit middleware error (password-reset):', expect.any(Error));
-    expect(errorSpy).toHaveBeenCalledWith('Rate limit middleware error (password-reset-account):', expect.any(Error));
-    expect(sendMail).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(500);
+    expect(errorSpy).not.toHaveBeenCalledWith('Rate limit middleware error (password-reset):', expect.anything());
+    expect(verifyTurnstile).not.toHaveBeenCalled();
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  test('API-AUTH-009 メール単位の回数の制限の部品が例外を投げたら、500 で止まりメールを送らない（SEC-AUTH-013-AC-02）', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    enforceRateLimit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('acct limiter down'));
+
+    const res = await handler(build(VALID));
+    await flushAfter();
+
+    expect(res.status).toBe(500);
+    expect(errorSpy).not.toHaveBeenCalledWith('Rate limit middleware error (password-reset-account):', expect.anything());
+    expect(sendMail).not.toHaveBeenCalled();
+    expect(rpcCalls).toEqual([]);
   });
 
   test('API-AUTH-009 許可していない住所では同じ 200 を返し、印もメールも作らず運用へ知らせる', async () => {

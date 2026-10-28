@@ -149,7 +149,7 @@ function makeRequest(
       get: (name: string) => {
         const key = name.toLowerCase();
         if (key === 'user-agent') return 'jest-agent';
-        if (key === 'x-forwarded-for') return '203.0.113.9';
+        if (key === 'x-real-ip') return '203.0.113.9';
         return null;
       },
     },
@@ -346,7 +346,7 @@ describe('POST /api/admin/looks（LOOK の作成）', () => {
       expect(serviceClient.removals).toHaveLength(0);
     });
 
-    it('API-LOOK-002 成功を admin.look.create として監査に残し、LOOK の id・利用者・user agent を記録して IP は残さない', async () => {
+    it('API-LOOK-002 成功を admin.look.create として監査に残し、LOOK の id・利用者・user agent・信頼する見出しの IP を記録する（SEC-LOOK-020）', async () => {
       setup();
 
       await POST(makeRequest());
@@ -370,8 +370,7 @@ describe('POST /api/admin/looks（LOOK の作成）', () => {
           season_type: 'AW',
         },
       });
-      expect(rows[0].ip).toBeUndefined();
-      expect(JSON.stringify(rows[0])).not.toContain('203.0.113.9');
+      expect(rows[0].ip).toBe('203.0.113.9');
     });
 
     it('API-LOOK-002 監査の書き込みが失敗しても作成は止めず、警告だけ出す', async () => {

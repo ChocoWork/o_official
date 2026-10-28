@@ -84,7 +84,13 @@ function setup(
   verifyAccessToken.mockResolvedValue(
     options.verified ?? {
       ok: true,
-      claims: { sub: 'admin-1', session_id: 'sess-1', aal: options.aal ?? 'aal2', app_metadata: { role: 'admin' } },
+      claims: {
+        sub: 'admin-1',
+        email: 'admin@example.com',
+        session_id: 'sess-1',
+        aal: options.aal ?? 'aal2',
+        app_metadata: { role: 'admin' },
+      },
     },
   );
   checkAuthSessionLiveness.mockResolvedValue(options.liveness ?? 'active');
@@ -103,7 +109,23 @@ function callsOf(method: string) {
 const { DELETE } = require('@/app/api/admin/item-color-presets/[id]/route');
 
 function makeRequest() {
-  return { url: 'http://localhost/api/admin/item-color-presets/12', headers: { get: () => null } } as unknown as Request;
+  return {
+    url: 'http://localhost/api/admin/item-color-presets/12',
+    headers: {
+      get: (name: string) => {
+        const key = name.toLowerCase();
+        return key === 'user-agent' ? 'jest-agent' : key === 'x-real-ip' ? '198.51.100.7' : null;
+      },
+    },
+  } as unknown as Request;
+}
+
+function auditRows(): Array<Record<string, unknown>> {
+  return serviceClient.ops
+    .filter((o) => o.table === 'audit_logs')
+    .flatMap((o) => o.calls)
+    .filter(([m]) => m === 'insert')
+    .flatMap(([, args]) => args[0] as Array<Record<string, unknown>>);
 }
 
 function context(id: string) {
@@ -185,6 +207,43 @@ describe('API-ADMIN-015 DELETE /api/admin/item-color-presets/[id]', () => {
     expect(callsOf('delete')).toHaveLength(1);
     expect(callsOf('eq')).toEqual([['eq', ['id', '12']]]);
     expect(callsOf('select')).toEqual([['select', ['id']]]);
+  });
+
+  it('API-ADMIN-015 SEC-ADMIN-022-AC-01 消せた時だけ、操作した人・IP・端末つきで admin.item_color_preset.delete を監査に1行残す', async () => {
+    setup({ presets: { default: { data: [{ id: 12 }], error: null } } });
+
+    await DELETE(makeRequest(), context('12'));
+
+    const rows = auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'admin.item_color_preset.delete',
+      actor_id: 'admin-1',
+      actor_email: 'admin@example.com',
+      resource: 'item_color_preset',
+      resource_id: '12',
+      outcome: 'success',
+      ip: '198.51.100.7',
+      user_agent: 'jest-agent',
+    });
+  });
+
+  it('API-ADMIN-015 消した行が0行・DB の誤り・形の悪い id・断った時は監査を書かない', async () => {
+    setup({ presets: { default: { data: [], error: null } } });
+    await DELETE(makeRequest(), context('999'));
+    expect(auditRows()).toHaveLength(0);
+
+    setup({ presets: { default: { data: null, error: { message: 'fk violation' } } } });
+    await DELETE(makeRequest(), context('12'));
+    expect(auditRows()).toHaveLength(0);
+
+    setup();
+    await DELETE(makeRequest(), context('abc'));
+    expect(auditRows()).toHaveLength(0);
+
+    setup({ codes: ['admin.items.read'] });
+    await DELETE(makeRequest(), context('12'));
+    expect(auditRows()).toHaveLength(0);
   });
 
   it.each([['not-a-uuid'], ['p1'], ['-1'], ['1 or 1=1'], ['9'.repeat(19)]])(

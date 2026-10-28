@@ -65,7 +65,12 @@ function aclRows(codes: string[]) {
 function makeRequest(body: unknown, opts: { brokenJson?: boolean } = {}) {
   return {
     json: opts.brokenJson ? () => Promise.reject(new SyntaxError('bad json')) : async () => body,
-    headers: { get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'jest-agent' : null) },
+    headers: {
+      get: (name: string) => {
+        const key = name.toLowerCase();
+        return key === 'user-agent' ? 'jest-agent' : key === 'x-real-ip' ? '198.51.100.7' : null;
+      },
+    },
   } as unknown as Request;
 }
 
@@ -100,7 +105,13 @@ function setup(
   verifyAccessToken.mockResolvedValue(
     options.verified ?? {
       ok: true,
-      claims: { sub: 'admin-1', session_id: 'sess-1', aal: options.aal ?? 'aal2', app_metadata: { role: 'admin' } },
+      claims: {
+        sub: 'admin-1',
+        email: 'admin@example.com',
+        session_id: 'sess-1',
+        aal: options.aal ?? 'aal2',
+        app_metadata: { role: 'admin' },
+      },
     },
   );
   checkAuthSessionLiveness.mockResolvedValue(options.liveness ?? 'active');
@@ -236,14 +247,14 @@ describe('PUT /api/admin/contact/templates/[id]（管理の返信テンプレー
     expect(rows[0]).toMatchObject({
       action: 'admin.contact.template.update',
       actor_id: 'admin-1',
+      actor_email: 'admin@example.com',
       resource: 'contact_reply_template',
       resource_id: TPL_ID_9,
       outcome: 'success',
       detail: 'updated',
+      ip: '198.51.100.7',
       user_agent: 'jest-agent',
     });
-    expect(rows[0].actor_email).toBeUndefined();
-    expect(rows[0].ip).toBeUndefined();
   });
 
   it('API-ADMIN-011 存在しない id（0 行）は 404 Template not found を返し、失敗を監査に残して成功は残さない', async () => {

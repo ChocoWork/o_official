@@ -84,7 +84,13 @@ function setup(
   verifyAccessToken.mockResolvedValue(
     options.verified ?? {
       ok: true,
-      claims: { sub: 'admin-1', session_id: 'sess-1', aal: options.aal ?? 'aal2', app_metadata: { role: 'admin' } },
+      claims: {
+        sub: 'admin-1',
+        email: 'admin@example.com',
+        session_id: 'sess-1',
+        aal: options.aal ?? 'aal2',
+        app_metadata: { role: 'admin' },
+      },
     },
   );
   checkAuthSessionLiveness.mockResolvedValue(options.liveness ?? 'active');
@@ -100,12 +106,24 @@ function callsOf(method: string) {
     .flatMap((o) => o.calls)
     .filter(([m]) => m === method);
 }
+function auditRows(): Array<Record<string, unknown>> {
+  return serviceClient.ops
+    .filter((o) => o.table === 'audit_logs')
+    .flatMap((o) => o.calls)
+    .filter(([m]) => m === 'insert')
+    .flatMap(([, args]) => args[0] as Array<Record<string, unknown>>);
+}
 const { POST } = require('@/app/api/admin/item-color-presets/route');
 
 function makeRequest(body: unknown, rejectJson = false) {
   return {
     url: 'http://localhost/api/admin/item-color-presets',
-    headers: { get: () => null },
+    headers: {
+      get: (name: string) => {
+        const key = name.toLowerCase();
+        return key === 'user-agent' ? 'jest-agent' : key === 'x-real-ip' ? '198.51.100.7' : null;
+      },
+    },
     json: rejectJson ? jest.fn().mockRejectedValue(new SyntaxError('Unexpected token')) : jest.fn().mockResolvedValue(body),
   } as unknown as Request;
 }
@@ -243,6 +261,42 @@ describe('API-ADMIN-014 POST /api/admin/item-color-presets', () => {
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ data: created });
     expect(callsOf('insert')).toEqual([['insert', [[{ name: 'ネイビー', hex: '#000080' }]]]]);
+  });
+
+  it('API-ADMIN-014 SEC-ADMIN-022-AC-01 作れた（201）時だけ、操作した人・IP・端末つきで admin.item_color_preset.create を監査に1行残し、色の名前と値は入れない', async () => {
+    const created = { id: 42, name: 'ネイビー', hex: '#000080', created_at: '2026-10-24T00:00:00Z' };
+    setup({ presets: { single: { data: created, error: null } } });
+
+    await POST(makeRequest(VALID));
+
+    const rows = auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'admin.item_color_preset.create',
+      actor_id: 'admin-1',
+      actor_email: 'admin@example.com',
+      resource: 'item_color_preset',
+      resource_id: '42',
+      outcome: 'success',
+      ip: '198.51.100.7',
+      user_agent: 'jest-agent',
+    });
+    expect(JSON.stringify(rows[0])).not.toContain('ネイビー');
+    expect(JSON.stringify(rows[0])).not.toContain('#000080');
+  });
+
+  it('API-ADMIN-014 既にある行を返す（200）時と、断った・誤りの時は監査を書かない', async () => {
+    setup({ presets: { maybeSingle: { data: { id: 'p1', name: 'ネイビー', hex: '#000080' }, error: null } } });
+    await POST(makeRequest(VALID));
+    expect(auditRows()).toHaveLength(0);
+
+    setup({ presets: { single: { data: null, error: { code: '23505', message: 'duplicate key value' } } } });
+    await POST(makeRequest(VALID));
+    expect(auditRows()).toHaveLength(0);
+
+    setup({ codes: ['admin.items.read'] });
+    await POST(makeRequest(VALID));
+    expect(auditRows()).toHaveLength(0);
   });
 
   it('API-ADMIN-014 既にあるかを引く時の誤りは 500 Failed to save color preset にし、作らず、内部の誤りを出さない', async () => {

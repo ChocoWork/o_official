@@ -249,10 +249,19 @@ describe('GET /api/admin/looks（管理の LOOK の一覧）', () => {
     expect(body.data).toHaveLength(2);
   });
 
-  it('API-LOOK-001 meta.canManage を決める確かめ（manage）が 503 になる時はその 503 をそのまま返し、表を読まない', async () => {
+  it('API-LOOK-001 meta.canManage は読み出しの認可と同じ 1 回の確かめの結果から作り、session の確かめを 2 回目に撃たない', async () => {
     setup({ codes: ['admin.looks.read', 'admin.looks.manage'] });
-    // 1回目（read）は active、2回目（manage）は確認できない
-    checkAuthSessionLiveness.mockResolvedValueOnce('active').mockResolvedValueOnce('unavailable');
+    checkAuthSessionLiveness.mockClear();
+
+    const res = await GET(makeRequest());
+
+    expect(res.status).toBe(200);
+    expect(checkAuthSessionLiveness).toHaveBeenCalledTimes(1);
+  });
+
+  it('API-LOOK-001 session の確認ができない時は 503 をそのまま返し、表を読まない', async () => {
+    setup({ codes: ['admin.looks.read', 'admin.looks.manage'] });
+    checkAuthSessionLiveness.mockResolvedValue('unavailable');
 
     const res = await GET(makeRequest());
 
@@ -349,8 +358,7 @@ describe('GET /api/admin/looks（管理の LOOK の一覧）', () => {
 
   it('API-LOOK-001 認可の後の client の用意で例外が出たら 500 Internal server error を返す', async () => {
     setup();
-    createServiceRoleClient.mockImplementationOnce(async () => serviceClient); // 認可（read）の ACL の照会
-    createServiceRoleClient.mockImplementationOnce(async () => serviceClient); // 認可（manage）の ACL の照会
+    createServiceRoleClient.mockImplementationOnce(async () => serviceClient); // 認可（read）の ACL の照会（権限の集合もここから取る。認可は 1 回だけ）
     createServiceRoleClient.mockImplementationOnce(async () => {
       throw new Error('boom');
     });

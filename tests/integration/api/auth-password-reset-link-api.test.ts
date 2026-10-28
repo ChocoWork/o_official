@@ -335,14 +335,16 @@ describe('API-AUTH-010 GET・POST /api/auth/password-reset/link - Integration Te
       expect(dbLog).toEqual([]);
     });
 
-    test('API-AUTH-010 POST は回数の制限の部品が落ちても記録して処理を続ける', async () => {
+    test('API-AUTH-010 POST は回数の制限の部品が落ちたら握りつぶさず、トークンの確かめへ進まない（SEC-AUTH-013-AC-02）', async () => {
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       enforceRateLimit.mockRejectedValueOnce(new Error('limiter down'));
 
       const res = await postHandler(post({ token: 'raw-token' }));
 
-      expect(res.status).toBe(200);
-      expect(errorSpy).toHaveBeenCalledWith('Rate limit middleware error (password-reset-link):', expect.any(Error));
+      // 外側の catch が link_expired の 400 にする（この窓口の既存の流儀）。確かめには進まない。
+      expect(res.status).toBe(400);
+      expect(errorSpy).not.toHaveBeenCalledWith('Rate limit middleware error (password-reset-link):', expect.anything());
+      expect(createServiceRoleClient).not.toHaveBeenCalled();
     });
 
     test('API-AUTH-010 POST は想定外の例外でも 400 link_expired にして内容を出さない', async () => {

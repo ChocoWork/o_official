@@ -93,7 +93,7 @@ function makeRequest(options: { form?: Record<string, unknown>; json?: unknown }
       get: (name: string) => {
         const key = name.toLowerCase();
         if (key === 'user-agent') return 'jest-agent';
-        if (key === 'x-forwarded-for') return '203.0.113.9';
+        if (key === 'x-real-ip') return '203.0.113.9';
         return null;
       },
     },
@@ -214,7 +214,7 @@ describe('管理の書き換えの道（ARC-NEWS-002）', () => {
       expect(serviceWriteCalls()).toContain(handler.writeMethod);
     });
 
-    it('ARC-NEWS-002 成功を監査に残し、resource・利用者・user agent を記録して IP は残さない', async () => {
+    it('ARC-NEWS-002 成功を監査に残し、resource・利用者・user agent・信頼する見出しの IP を記録する（SEC-NEWS-016-AC-03）', async () => {
       setup();
 
       await handler.call();
@@ -229,8 +229,7 @@ describe('管理の書き換えの道（ARC-NEWS-002）', () => {
         outcome: 'success',
         user_agent: 'jest-agent',
       });
-      expect(rows[0].ip).toBeUndefined();
-      expect(JSON.stringify(rows[0])).not.toContain('203.0.113.9');
+      expect(rows[0].ip).toBe('203.0.113.9');
     });
 
     it('ARC-NEWS-002 表の書き換えが失敗したら 500 を返し、失敗を監査に残す', async () => {

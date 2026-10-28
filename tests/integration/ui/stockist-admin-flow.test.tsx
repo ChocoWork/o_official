@@ -15,11 +15,15 @@ jest.mock('next/navigation', () => ({
 
 // clientFetch は本物を通し、網の境目の fetch だけを差し替える（CSRF の見出しと送り方まで確かめる）
 const CSRF_TOKEN = 'csrf-test-token';
+const ACCESS_URL = '/api/admin/stockists/access';
 const mockFetch = jest.fn();
+const mockAccess = jest.fn();
 const realFetch = global.fetch;
 
+// 作成の頁を開いた時の権限の確かめ（SEC-STOCKIST-019）は mockAccess へ、それ以外は mockFetch へ振り分ける
 beforeAll(() => {
-  global.fetch = mockFetch as unknown as typeof fetch;
+  global.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+    String(input) === ACCESS_URL ? mockAccess(input, init) : mockFetch(input, init)) as unknown as typeof fetch;
 });
 
 afterAll(() => {
@@ -61,6 +65,13 @@ function rowOf(name: string): HTMLElement {
   return node;
 }
 
+// 権限の確かめが通って作成のフォームが出るまで待つ
+async function renderCreate() {
+  const view = render(<AdminStockistCreatePage />);
+  await screen.findByLabelText(/^店舗名/);
+  return view;
+}
+
 async function fillCreateForm(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/^店舗名/), PRIVATE.name);
   await user.type(screen.getByLabelText(/^住所/), PRIVATE.address);
@@ -79,6 +90,8 @@ describe('管理の取扱店の一覧と作成・編集の行き来', () => {
     mockParams = { id: '21' };
     mockPush.mockReset();
     mockFetch.mockReset();
+    mockAccess.mockReset();
+    mockAccess.mockResolvedValue({ ok: true, status: 204, arrayBuffer: async () => new ArrayBuffer(0) } as unknown as Response);
     document.cookie = `sb-csrf-token=${CSRF_TOKEN}; path=/`;
     // jsdom は canvas の getContext を実装せず、SingleSelect の文字幅の計測で雑音が出るため null を返す
     getContextSpy = jest.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
@@ -117,7 +130,7 @@ describe('管理の取扱店の一覧と作成・編集の行き来', () => {
   it('FLOW-STOCKIST-002 作成の保存に成功すると STOCKIST タブを開いた一覧へ戻り、そこに作った店が並ぶ', async () => {
     const user = userEvent.setup();
     mockFetch.mockResolvedValueOnce(json(true, { data: { id: 22 } }));
-    const create = render(<AdminStockistCreatePage />);
+    const create = await renderCreate();
     await fillCreateForm(user);
 
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -150,7 +163,7 @@ describe('管理の取扱店の一覧と作成・編集の行き来', () => {
   it('FLOW-STOCKIST-002 作成の保存に失敗すると同じ頁に文を出して留まる', async () => {
     const user = userEvent.setup();
     mockFetch.mockResolvedValueOnce(json(false, { error: '保存できません' }));
-    const { container } = render(<AdminStockistCreatePage />);
+    const { container } = await renderCreate();
     await fillCreateForm(user);
 
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -161,7 +174,7 @@ describe('管理の取扱店の一覧と作成・編集の行き来', () => {
   });
 
   it('FLOW-STOCKIST-002 作成の入力が足りない時は送らずに同じ頁に留まる', async () => {
-    const { container } = render(<AdminStockistCreatePage />);
+    const { container } = await renderCreate();
 
     fireEvent.submit(container.querySelector('form')!);
 
@@ -260,7 +273,7 @@ describe('管理の取扱店の一覧と作成・編集の行き来', () => {
 
   it('FLOW-STOCKIST-002 作成の頁にも編集の頁にもキャンセルや戻るの操作は無い', async () => {
     mockFetch.mockResolvedValueOnce(json(true, { data: PUBLISHED }));
-    const create = render(<AdminStockistCreatePage />);
+    const create = await renderCreate();
     expect(screen.queryByRole('button', { name: /キャンセル|戻る/ })).not.toBeInTheDocument();
     create.unmount();
 

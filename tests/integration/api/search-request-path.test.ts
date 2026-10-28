@@ -43,7 +43,7 @@ function createFakeClient(results: Record<string, RpcResult>) {
 }
 
 function makeRequest(path: string, headers: Record<string, string> = {}) {
-  const all: Record<string, string> = { 'x-forwarded-for': '203.0.113.5', ...headers };
+  const all: Record<string, string> = { 'x-real-ip': '203.0.113.5', ...headers };
   return {
     nextUrl: new URL(`http://localhost${path}`),
     headers: { get: (name: string) => all[name.toLowerCase()] ?? null },

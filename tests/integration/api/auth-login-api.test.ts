@@ -231,13 +231,14 @@ describe('API-AUTH-001 POST /api/auth/login', () => {
     expect(__mockSignInWithOtp).not.toHaveBeenCalled();
   });
 
-  test('API-AUTH-001 回数の制限の部品が落ちても止めずにログインを続ける', async () => {
+  test('API-AUTH-001 回数の制限の部品が落ちたら 500 で止まり、ログインを続けない（SEC-AUTH-013-AC-02）', async () => {
     enforceRateLimit.mockRejectedValue(new Error('limiter down'));
 
     const res = await loginHandler(buildRequest(validBody()));
 
-    expect(res.status).toBe(200);
-    expect(console.error).toHaveBeenCalled();
+    expect(res.status).toBe(500);
+    expect(__mockSignInWithPassword).not.toHaveBeenCalled();
+    expect(__mockSignInWithOtp).not.toHaveBeenCalled();
   });
 
   test.each([
@@ -261,8 +262,8 @@ describe('API-AUTH-001 POST /api/auth/login', () => {
     expect(createPublicClient).not.toHaveBeenCalled();
   });
 
-  test('API-AUTH-001 Turnstile には本文の印と x-forwarded-for の先頭の IP を渡す', async () => {
-    await loginHandler(buildRequest(validBody(), { 'x-forwarded-for': '203.0.113.9, 10.0.0.1' }));
+  test('API-AUTH-001 Turnstile には本文の印と x-real-ip の IP を渡す', async () => {
+    await loginHandler(buildRequest(validBody(), { 'x-real-ip': '203.0.113.9' }));
 
     expect(verifyTurnstile).toHaveBeenCalledWith('ts-token', '203.0.113.9');
   });

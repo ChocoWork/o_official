@@ -157,7 +157,7 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  test('API-AUTH-014 回数制限の部品が壊れても更新は止めない', async () => {
+  test('API-AUTH-014 回数制限の部品が壊れたら更新は止める。500 で、交換へ進まない（SEC-AUTH-013-AC-02）', async () => {
     enforceRateLimit.mockRejectedValue(new Error('rate limit store down'));
     setRefreshCookie('old-refresh');
     setSupabaseEnv();
@@ -165,8 +165,9 @@ describe('Refresh API integration (mocked supabase & headers & fetch)', () => {
 
     const res: any = await callRefresh();
 
-    expect(res.status).toBe(200);
-    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(res.status).toBe(500);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(sessionService.findSessionByRefreshHash).not.toHaveBeenCalled();
   });
 
   test('API-AUTH-014 更新の印を URL の grant_type と JSON 本文・apikey で交換し、Cookie と sessions を更新する', async () => {

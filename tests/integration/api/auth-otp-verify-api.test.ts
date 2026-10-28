@@ -259,13 +259,14 @@ describe('API-AUTH-002 POST /api/auth/otp/verify', () => {
     expect(res.cookies.get('sb-login-2fa-session')).toMatchObject({ maxAge: 0 });
   });
 
-  test('API-AUTH-002 回数の制限の部品が落ちても止めずに確かめを続ける', async () => {
+  test('API-AUTH-002 回数の制限の部品が落ちたら 500 で止まり、確かめを続けない（SEC-AUTH-013-AC-02）', async () => {
     enforceRateLimit.mockRejectedValue(new Error('limiter down'));
 
     const res = await verifyHandler(buildRequest({ code: CODE }));
 
-    expect(res.status).toBe(200);
-    expect(console.error).toHaveBeenCalled();
+    expect(res.status).toBe(500);
+    expect(__mockVerifyOtp).not.toHaveBeenCalled();
+    expect(persistSessionAndCookies).not.toHaveBeenCalled();
   });
 
   test('API-AUTH-002 コードが誤りなら 401 で、保存も紐付けもせず、保留の Cookie は消さない', async () => {

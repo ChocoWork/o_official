@@ -68,7 +68,7 @@ function aclRows(codes: string[]) {
 function makeRequest() {
   return {
     headers: {
-      get: (name: string) => (name.toLowerCase() === 'x-forwarded-for' ? '203.0.113.9, 10.0.0.1' : null),
+      get: (name: string) => (name.toLowerCase() === 'x-real-ip' ? '203.0.113.9' : null),
     },
   } as unknown as Request;
 }
@@ -269,6 +269,13 @@ describe('GET /api/admin/stockists（管理の取扱店の一覧）', () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: 'Forbidden', permission: 'admin.stockists.read' });
     expect(createClient).not.toHaveBeenCalled();
+    // 操作者が分かる 403 は失敗の監査に 1 行残す（SEC-STOCKIST-021）。権限の符号は metadata で確かめる
+    const audits = serviceClient.ops.filter((o) => o.table === 'audit_logs');
+    expect(audits).toHaveLength(1);
+    expect(serviceClient.rpcCalls.map((c) => String(c.args._endpoint).split('|')[0])).toEqual([
+      'admin:stockists:read',
+      'admin_authz_denial_audit',
+    ]);
   });
 
   it('API-STOCKIST-001 ほかの領域の権限（looks）だけでは 403 で断る', async () => {
@@ -298,6 +305,20 @@ describe('GET /api/admin/stockists（管理の取扱店の一覧）', () => {
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: 'Unauthorized' });
     expect(createClient).not.toHaveBeenCalled();
+    // token が無効な 401 は操作者が分からないので、監査にも操作者の枠にも数えない。数えるのは送り元の枠 1 回だけ
+    expect(serviceClient.ops.some((o) => o.table === 'audit_logs')).toBe(false);
+    expect(serviceClient.rpcCalls).toHaveLength(1);
+    expect(serviceClient.rpcCalls[0].args._endpoint).toBe('admin:stockists:read');
+  });
+
+  it('API-STOCKIST-001 送り元の枠は認可より前に数える。token が無くても 121 回目は 401 でなく 429 で断る', async () => {
+    setup({ verified: { ok: false, reason: 'missing' }, rpcImpl: () => ({ data: 121, error: null }) });
+
+    const res = await GET(makeRequest());
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('600');
+    expect(serviceClient.rpcCalls).toHaveLength(1);
   });
 
   it('API-STOCKIST-001 session が失効していれば 401 で断る', async () => {

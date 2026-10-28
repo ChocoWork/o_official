@@ -105,7 +105,7 @@ function makeRequest(forwarded: string | null = '203.0.113.9') {
     headers: {
       get: (name: string) => {
         const key = name.toLowerCase();
-        if (key === 'x-forwarded-for') return forwarded;
+        if (key === 'x-real-ip') return forwarded;
         if (key === 'user-agent') return 'jest-agent';
         return null;
       },
@@ -182,27 +182,36 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
   });
 
   describe('回数の制限', () => {
-    it('ARC-STOCKIST-003 読みの枠は名前 admin:stockists:read で、600 秒ごとの窓に送り元と操作者の2本を数える', async () => {
+    it('ARC-STOCKIST-003 送り元の枠（読み）は名前 admin:stockists:read で、600 秒ごとの窓に subject なしの 1 本だけを数える', async () => {
       service = createServiceClient();
       createServiceRoleClient.mockResolvedValue(service);
 
-      const res = await security.enforceAdminStockistReadRateLimit(makeRequest('203.0.113.9, 10.0.0.1'), 'admin-1');
+      const res = await security.enforceAdminStockistIpRateLimit(makeRequest('203.0.113.9'), 'read');
 
       expect(res).toBeUndefined();
-      expect(service.rpcCalls).toHaveLength(2);
-      expect(service.rpcCalls[0]).toEqual({ _ip: '203.0.113.9', _endpoint: 'admin:stockists:read', _bucket: WINDOW_START });
-      expect(service.rpcCalls[1]._ip).toBeNull();
-      expect(service.rpcCalls[1]._bucket).toBe(WINDOW_START);
-      expect(String(service.rpcCalls[1]._endpoint)).toMatch(/^admin:stockists:read\|acct:[0-9a-f]{128}$/);
+      expect(service.rpcCalls).toEqual([{ _ip: '203.0.113.9', _endpoint: 'admin:stockists:read', _bucket: WINDOW_START }]);
+    });
+
+    it('ARC-STOCKIST-003 操作者の枠（読み）は名前 admin:stockists:read に操作者の印を付け、送り元を捨てた 1 本だけを数える', async () => {
+      service = createServiceClient();
+      createServiceRoleClient.mockResolvedValue(service);
+
+      const res = await security.enforceAdminStockistActorRateLimit(makeRequest('203.0.113.9'), 'admin-1', 'read');
+
+      expect(res).toBeUndefined();
+      expect(service.rpcCalls).toHaveLength(1);
+      expect(service.rpcCalls[0]._ip).toBeNull();
+      expect(service.rpcCalls[0]._bucket).toBe(WINDOW_START);
+      expect(String(service.rpcCalls[0]._endpoint)).toMatch(/^admin:stockists:read\|acct:[0-9a-f]{128}$/);
     });
 
     it('ARC-STOCKIST-003 変更の枠は名前 admin:stockists:mutation で、読みの枠とは別に数える', async () => {
       service = createServiceClient();
       createServiceRoleClient.mockResolvedValue(service);
 
-      const res = await security.enforceAdminStockistMutationRateLimit(makeRequest(), 'admin-1');
+      await security.enforceAdminStockistIpRateLimit(makeRequest(), 'mutation');
+      await security.enforceAdminStockistActorRateLimit(makeRequest(), 'admin-1', 'mutation');
 
-      expect(res).toBeUndefined();
       expect(service.rpcCalls.map((c) => String(c._endpoint).split('|')[0])).toEqual([
         'admin:stockists:mutation',
         'admin:stockists:mutation',
@@ -213,9 +222,9 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
       service = createServiceClient();
       createServiceRoleClient.mockResolvedValue(service);
 
-      await security.enforceAdminStockistReadRateLimit(makeRequest(), 'admin-1');
-      await security.enforceAdminStockistReadRateLimit(makeRequest(), 'admin-1');
-      await security.enforceAdminStockistReadRateLimit(makeRequest(), 'admin-2');
+      await security.enforceAdminStockistActorRateLimit(makeRequest(), 'admin-1', 'read');
+      await security.enforceAdminStockistActorRateLimit(makeRequest(), 'admin-1', 'read');
+      await security.enforceAdminStockistActorRateLimit(makeRequest(), 'admin-2', 'read');
 
       const actorEndpoints = service.rpcCalls.filter((c) => c._ip === null).map((c) => c._endpoint);
       expect(actorEndpoints[0]).toBe(actorEndpoints[1]);
@@ -227,47 +236,43 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
       service = createServiceClient();
       createServiceRoleClient.mockResolvedValue(service);
 
-      await security.enforceAdminStockistReadRateLimit(makeRequest(), 'admin-1');
+      await security.enforceAdminStockistIpRateLimit(makeRequest(), 'read');
       (Date.now as jest.Mock).mockReturnValue(NOW + 600_000);
-      await security.enforceAdminStockistReadRateLimit(makeRequest(), 'admin-1');
+      await security.enforceAdminStockistIpRateLimit(makeRequest(), 'read');
 
       expect(service.rpcCalls[0]._bucket).toBe(WINDOW_START);
-      expect(service.rpcCalls[2]._bucket).toBe('2026-10-24T12:40:00.000Z');
+      expect(service.rpcCalls[1]._bucket).toBe('2026-10-24T12:40:00.000Z');
     });
 
     it.each([
-      { label: '読み', fn: 'enforceAdminStockistReadRateLimit', limit: 120 },
-      { label: '変更', fn: 'enforceAdminStockistMutationRateLimit', limit: 20 },
-    ])('ARC-STOCKIST-003 $labelの回数が $limit 回ちょうどなら通し、1 回超えたら 429 と Retry-After 600 で断る', async ({ fn, limit }) => {
-      service = createServiceClient({ count: () => ({ data: limit, error: null }) });
-      createServiceRoleClient.mockResolvedValue(service);
-      expect(await security[fn](makeRequest(), 'admin-1')).toBeUndefined();
+      { label: '読み', kind: 'read', limit: 120 },
+      { label: '変更', kind: 'mutation', limit: 20 },
+    ])('ARC-STOCKIST-003 $labelの回数が $limit 回ちょうどなら通し、1 回超えたら 429 と Retry-After 600 で断る（送り元の枠も操作者の枠も）', async ({ kind, limit }) => {
+      const calls = [
+        (req: Request) => security.enforceAdminStockistIpRateLimit(req, kind),
+        (req: Request) => security.enforceAdminStockistActorRateLimit(req, 'admin-1', kind),
+      ];
+      for (const call of calls) {
+        service = createServiceClient({ count: () => ({ data: limit, error: null }) });
+        createServiceRoleClient.mockResolvedValue(service);
+        expect(await call(makeRequest())).toBeUndefined();
 
-      service = createServiceClient({ count: () => ({ data: limit + 1, error: null }) });
-      createServiceRoleClient.mockResolvedValue(service);
-      const res = await security[fn](makeRequest(), 'admin-1');
+        service = createServiceClient({ count: () => ({ data: limit + 1, error: null }) });
+        createServiceRoleClient.mockResolvedValue(service);
+        const res = await call(makeRequest());
 
-      expect(res.status).toBe(429);
-      expect(res.headers.get('Retry-After')).toBe('600');
-      expect(await res.json()).toEqual({ error: 'Too many requests' });
-    });
-
-    it('ARC-STOCKIST-003 送り元の枠を先に見て、超えていれば操作者の枠は数えない', async () => {
-      service = createServiceClient({ count: () => ({ data: 1000, error: null }) });
-      createServiceRoleClient.mockResolvedValue(service);
-
-      const res = await security.enforceAdminStockistMutationRateLimit(makeRequest(), 'admin-1');
-
-      expect(res.status).toBe(429);
-      expect(service.rpcCalls).toHaveLength(1);
-      expect(service.rpcCalls[0]._ip).toBe('203.0.113.9');
+        expect(res.status).toBe(429);
+        expect(res.headers.get('Retry-After')).toBe('600');
+        expect(await res.json()).toEqual({ error: 'Too many requests' });
+      }
     });
 
     it('ARC-STOCKIST-003 送り元の見出しを偽って変えても、操作者の枠を超えていれば 429 で断る', async () => {
       service = createServiceClient({ count: (args) => ({ data: args._ip === null ? 21 : 1, error: null }) });
       createServiceRoleClient.mockResolvedValue(service);
 
-      const res = await security.enforceAdminStockistMutationRateLimit(makeRequest('198.51.100.77'), 'admin-1');
+      expect(await security.enforceAdminStockistIpRateLimit(makeRequest('198.51.100.77'), 'mutation')).toBeUndefined();
+      const res = await security.enforceAdminStockistActorRateLimit(makeRequest('198.51.100.77'), 'admin-1', 'mutation');
 
       expect(res.status).toBe(429);
       expect(service.rpcCalls).toHaveLength(2);
@@ -277,20 +282,20 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
       service = createServiceClient({ count: () => ({ data: null, error: { message: 'rpc down' } }) });
       createServiceRoleClient.mockResolvedValue(service);
 
-      const res = await security.enforceAdminStockistReadRateLimit(makeRequest(), 'admin-1');
+      const res = await security.enforceAdminStockistIpRateLimit(makeRequest(), 'read');
 
       expect(res.status).toBe(503);
       expect(res.headers.get('Retry-After')).toBe('600');
       expect(await res.json()).toEqual({ error: 'Rate limiter unavailable' });
     });
 
-    it('ARC-STOCKIST-003 送り元の見出しが無ければ 127.0.0.1 の枠に数える', async () => {
+    it('ARC-STOCKIST-003 送り元の見出しが無ければ ip null の枠に数える', async () => {
       service = createServiceClient();
       createServiceRoleClient.mockResolvedValue(service);
 
-      await security.enforceAdminStockistReadRateLimit(makeRequest(null), 'admin-1');
+      await security.enforceAdminStockistIpRateLimit(makeRequest(null), 'read');
 
-      expect(service.rpcCalls[0]._ip).toBe('127.0.0.1');
+      expect(service.rpcCalls[0]._ip).toBeNull();
     });
   });
 
@@ -414,8 +419,7 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
       expect(service.sessionQueries).toEqual([]);
     });
 
-    // 現状の動きの記録。認可で断った要求を回数の枠に数えないのは SEC-STOCKIST-020 を満たさない欠け。直したらこの件を直す。
-    it('ARC-STOCKIST-003 現状の記録 認可で断られた要求は回数の枠にも CSRF の照合にも数えない', async () => {
+    it('ARC-STOCKIST-003 認可で断られた要求も送り元の枠には数え、操作者の枠と CSRF の照合は数えない（SEC-STOCKIST-020）', async () => {
       setupRoute({ storedHash: 'hash(csrf-ok)' });
       setBrowser({ refreshToken: 'refresh-1', csrfHeader: 'csrf-ok' });
       verifyAccessToken.mockResolvedValue({ ok: false, reason: 'invalid' });
@@ -423,8 +427,44 @@ describe('取扱店の守りの部品（ARC-STOCKIST-003）', () => {
       const res = await listRoute.POST(makeRequest());
 
       expect(res.status).toBe(401);
-      expect(service.rpcCalls).toEqual([]);
+      expect(service.rpcCalls).toHaveLength(1);
+      expect(service.rpcCalls[0]._ip).toBe('203.0.113.9');
+      expect(String(service.rpcCalls[0]._endpoint)).toBe('admin:stockists:mutation');
       expect(service.sessionQueries).toEqual([]);
+    });
+
+    it('ARC-STOCKIST-003 取扱店の権限を持たない token でも、読みの 121 回目は 403 でなく 429 で断る（送り元の枠が認可の前）', async () => {
+      setupRoute();
+      const counts = new Map<string, number>();
+      service = createServiceClient({
+        count: (args) => {
+          const key = String(args._endpoint);
+          counts.set(key, (counts.get(key) ?? 0) + 1);
+          return { data: counts.get(key), error: null };
+        },
+      });
+      createServiceRoleClient.mockResolvedValue(service);
+      verifyAccessToken.mockResolvedValue({
+        ok: true,
+        claims: { sub: 'member-1', session_id: 'sess-1', aal: 'aal1', app_metadata: { role: 'user' } },
+      });
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 121; i += 1) {
+        statuses.push((await listRoute.GET(makeRequest())).status);
+      }
+
+      expect(statuses.slice(0, 120).every((status) => status === 403)).toBe(true);
+      expect(statuses[120]).toBe(429);
+    });
+
+    it('ARC-STOCKIST-003 送り元の枠が認可の前なので、枠を超えた要求は token の検証を引かない', async () => {
+      setupRoute({ count: () => ({ data: 1000, error: null }) });
+
+      const res = await listRoute.GET(makeRequest());
+
+      expect(res.status).toBe(429);
+      expect(verifyAccessToken).not.toHaveBeenCalled();
     });
   });
 });

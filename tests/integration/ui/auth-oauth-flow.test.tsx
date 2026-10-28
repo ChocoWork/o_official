@@ -475,13 +475,14 @@ describe('Google のログインの画面遷移', () => {
       expect(mockCreateServerClient).not.toHaveBeenCalled();
     });
 
-    test('FLOW-AUTH-002 回数制限の部品が落ちても入口を止めない', async () => {
+    test('FLOW-AUTH-002 回数制限の部品が落ちたら 500 で入口を止める（SEC-AUTH-013-AC-02）', async () => {
       mockState.rateLimited = 'throw';
       const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
       const res = await start();
 
-      expect(res.status).toBe(302);
+      expect(res.status).toBe(500);
+      expect(mockCreateServerClient).not.toHaveBeenCalled();
       errorSpy.mockRestore();
     });
 

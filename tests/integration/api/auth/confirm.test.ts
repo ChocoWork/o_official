@@ -173,13 +173,12 @@ describe('API-AUTH-006 GET /api/auth/confirm', () => {
       expect(verifyOtp).not.toHaveBeenCalled();
     });
 
-    test('API-AUTH-006 制限の部品が落ちても確認の処理は止めない', async () => {
+    test('API-AUTH-006 制限の部品が落ちたら確認の処理を止める（握りつぶさない。SEC-AUTH-013-AC-02）', async () => {
       mockEnforceRateLimit.mockRejectedValue(new Error('rate limit down'));
 
-      const res = await callGet(confirmRequest('?token_hash=t&type=signup'));
+      await expect(callGet(confirmRequest('?token_hash=t&type=signup'))).rejects.toThrow('rate limit down');
 
-      expect(res.status).toBe(303);
-      expect(verifyOtp).toHaveBeenCalledTimes(1);
+      expect(verifyOtp).not.toHaveBeenCalled();
     });
 
     test('API-AUTH-006 印が無ければ確かめず、固定の /login へ 303 で移して監査に残す', async () => {

@@ -146,12 +146,13 @@ describe('API-AUTH-008 GET /api/auth/oauth/callback', () => {
       expect(exchangeCodeForSessionMock).not.toHaveBeenCalled();
     });
 
-    test('API-AUTH-008 制限の部品が落ちても戻りの処理は止めない', async () => {
+    test('API-AUTH-008 制限の部品が落ちたら 500 で止まり、交換へ進まない（SEC-AUTH-013-AC-02）', async () => {
       mockEnforceRateLimit.mockRejectedValue(new Error('rate limit down'));
 
       const res = await callGet(callbackRequest('?code=good-code'));
 
-      expect(res.status).toBe(303);
+      expect(res.status).toBe(500);
+      expect(exchangeCodeForSessionMock).not.toHaveBeenCalled();
     });
 
     test.each([

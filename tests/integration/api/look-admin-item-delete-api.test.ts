@@ -168,7 +168,7 @@ function freezeDateOnly() {
 function baseHeaders(name: string, userAgent: string | null | undefined) {
   const lower = name.toLowerCase();
   if (lower === 'user-agent') return userAgent === undefined ? 'jest-agent' : userAgent;
-  if (lower === 'x-forwarded-for') return '203.0.113.9, 10.0.0.1';
+  if (lower === 'x-real-ip') return '203.0.113.9';
   return null;
 }
 

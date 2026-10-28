@@ -63,7 +63,10 @@ function signIn(claims: Record<string, unknown> = {}) {
 }
 
 function makeRequest() {
-  return new Request('http://localhost/api/admin/audit-logs', { method: 'GET' });
+  return new Request('http://localhost/api/admin/audit-logs', {
+    method: 'GET',
+    headers: { 'x-real-ip': '198.51.100.7', 'user-agent': 'jest-agent' },
+  });
 }
 
 beforeEach(() => {
@@ -188,7 +191,7 @@ describe('GET /api/admin/audit-logs', () => {
       expect(order).toHaveBeenCalledWith('created_at', { ascending: false });
     });
 
-    test('API-ADMIN-003 触る表は audit_logs と認可の ACL の表だけで、読めた時に読んだ人の記録を1行だけ書く（ログの中身・IP は入れない）', async () => {
+    test('API-ADMIN-003 触る表は audit_logs と認可の ACL の表だけで、読めた時に読んだ人の記録を1行だけ書く（ログの中身は入れず、読んだ人の IP・ブラウザの名乗りは入れる）', async () => {
       limit.mockResolvedValue({ data: [{ id: '1', action: 'secret-action' }], error: null });
 
       await GET(makeRequest());
@@ -203,8 +206,9 @@ describe('GET /api/admin/audit-logs', () => {
         actor_email: 'admin@example.com',
         resource: 'audit_logs',
         outcome: 'success',
+        ip: '198.51.100.7',
+        user_agent: 'jest-agent',
       });
-      expect(row.ip).toBeUndefined();
       expect(JSON.stringify(row)).not.toContain('secret-action');
     });
 

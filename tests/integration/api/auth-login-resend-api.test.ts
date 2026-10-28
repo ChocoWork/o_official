@@ -179,14 +179,12 @@ describe('API-AUTH-003 POST /api/auth/login/resend', () => {
     expect(__mockSignInWithOtp).not.toHaveBeenCalled();
   });
 
-  test('API-AUTH-003 回数の制限の部品が落ちても止めずに送り直す', async () => {
+  test('API-AUTH-003 回数の制限の部品が落ちたら握りつぶさず、送り直さない（SEC-AUTH-013-AC-02）', async () => {
     enforceRateLimit.mockRejectedValue(new Error('limiter down'));
 
-    const res = await resendHandler(buildRequest(`sb-login-2fa-session=${tokenAt(T0)}`));
+    await expect(resendHandler(buildRequest(`sb-login-2fa-session=${tokenAt(T0)}`))).rejects.toThrow('limiter down');
 
-    expect(res.status).toBe(200);
-    expect(__mockSignInWithOtp).toHaveBeenCalledTimes(1);
-    expect(console.error).toHaveBeenCalled();
+    expect(__mockSignInWithOtp).not.toHaveBeenCalled();
   });
 
   test('API-AUTH-003 保留の Cookie を、元の iat のまま寿命だけ5分に戻して作り直す', async () => {

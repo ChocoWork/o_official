@@ -42,7 +42,7 @@ const { createHash } = require('node:crypto');
 const ACTOR_ID = '11111111-1111-4111-8111-111111111111';
 const ACTOR_EMAIL = 'owner@example.com';
 const TARGET_ID = '22222222-2222-4222-8222-222222222222';
-const IP_HEADER = '203.0.113.7, 10.0.0.1';
+const IP_HEADER = '203.0.113.7';
 const UA = 'Mozilla/5.0 (audit-test)';
 const STRONG_PASSWORD = 'password-1234-ok';
 const MFA_REASON = 'lost the device twice';
@@ -66,7 +66,7 @@ const auditLogsRoute = () => require('@/app/api/admin/audit-logs/route');
 function req(method: string, url: string, body?: unknown, headers: Record<string, string> = {}) {
   return new Request(url, {
     method,
-    headers: { 'content-type': 'application/json', 'x-forwarded-for': IP_HEADER, 'user-agent': UA, ...headers },
+    headers: { 'content-type': 'application/json', 'x-real-ip': IP_HEADER, 'user-agent': UA, ...headers },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 }
@@ -201,7 +201,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
   });
 
   describe('利用者の作成', () => {
-    it('ARC-ADMIN-003 形の誤りは failure で、操作した人の id とメールを入れ、IP とブラウザは入れない', async () => {
+    it('ARC-ADMIN-003 SEC-ADMIN-022-AC-03 形の誤りは failure で、操作した人の id とメール・IP（x-real-ip）・ブラウザを入れる', async () => {
       setService(serviceWith({}));
 
       const res = await createUserRoute().POST(req('POST', 'http://localhost/api/admin/create-user', { email: 'bad' }));
@@ -215,9 +215,9 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         resource: 'users',
         outcome: 'failure',
         detail: 'Invalid request body',
+        ip: IP_HEADER,
+        user_agent: UA,
       });
-      expect(auditArg()).not.toHaveProperty('ip');
-      expect(auditArg()).not.toHaveProperty('user_agent');
     });
 
     it.each(['User already registered', 'duplicate key value'])(
@@ -236,9 +236,10 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
           outcome: 'conflict',
           detail: 'email_already_registered',
           actor_email: ACTOR_EMAIL,
+          ip: IP_HEADER,
+          user_agent: UA,
         });
         expect(JSON.stringify(logAudit.mock.calls)).not.toContain(message);
-        expect(auditArg()).not.toHaveProperty('ip');
       },
     );
 
@@ -277,6 +278,8 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         resource: 'users',
         resource_id: TARGET_ID,
         outcome: 'success',
+        ip: IP_HEADER,
+        user_agent: UA,
       });
     });
 
@@ -313,7 +316,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       return { getUserById: jest.fn().mockResolvedValue({ data: { user: { id: TARGET_ID } }, error: null }) };
     }
 
-    it('ARC-ADMIN-003 認可の失敗は unauthorized で、操作した人は空・IP は x-forwarded-for の左端・ブラウザを入れる', async () => {
+    it('ARC-ADMIN-003 認可の失敗は unauthorized で、操作した人は空・IP は x-real-ip・ブラウザを入れる', async () => {
       denyAdmin();
 
       const res = await revokeRoute().POST(req('POST', url, { user_id: TARGET_ID }));
@@ -374,7 +377,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       });
     });
 
-    it('ARC-ADMIN-003 自分自身は failure で、IP とブラウザは入れない', async () => {
+    it('ARC-ADMIN-003 SEC-ADMIN-022-AC-03 自分自身は failure で、IP とブラウザも入れる', async () => {
       const res = await revokeRoute().POST(req('POST', url, { user_id: ACTOR_ID }));
 
       expect(res.status).toBe(400);
@@ -386,6 +389,8 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         resource_id: ACTOR_ID,
         outcome: 'failure',
         detail: 'self_revocation_rejected',
+        ip: IP_HEADER,
+        user_agent: UA,
       });
     });
 
@@ -404,7 +409,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(auditArg()).toMatchObject({ outcome: 'failure', detail: 'target_not_found', resource_id: TARGET_ID });
     });
 
-    it('ARC-ADMIN-003 Auth の session を消す関数が誤りなら error で、固定の文を残し、IP とブラウザは入れない', async () => {
+    it('ARC-ADMIN-003 Auth の session を消す関数が誤りなら error で、固定の文を残し、IP とブラウザも入れる', async () => {
       const service = serviceWith({ error: null }, existingTarget());
       service.rpc = jest.fn(() => chainResult({ data: null, error: { message: 'rpc failed' } }));
       setService(service);
@@ -420,11 +425,13 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         resource_id: TARGET_ID,
         outcome: 'error',
         detail: 'revoke_failed',
+        ip: IP_HEADER,
+        user_agent: UA,
       });
       expect(JSON.stringify(auditArg())).not.toContain('rpc failed');
     });
 
-    it('ARC-ADMIN-003 DB が例外を投げたら error で固定の文を detail に残し（例外の文は残さない）、IP とブラウザは入れない', async () => {
+    it('ARC-ADMIN-003 DB が例外を投げたら error で固定の文を detail に残し（例外の文は残さない）、IP とブラウザも入れる', async () => {
       failServiceAfterAuthorization(new Error('connection lost'));
 
       const res = await revokeRoute().POST(req('POST', url, { user_id: TARGET_ID }));
@@ -434,10 +441,10 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         outcome: 'error',
         resource_id: TARGET_ID,
         detail: 'revoke_failed',
+        ip: IP_HEADER,
+        user_agent: UA,
       });
       expect(JSON.stringify(auditArg())).not.toContain('connection lost');
-      expect(auditArg()).not.toHaveProperty('ip');
-      expect(auditArg()).not.toHaveProperty('user_agent');
     });
 
     it.each([
@@ -458,6 +465,8 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         resource: 'sessions',
         resource_id: TARGET_ID,
         outcome: 'success',
+        ip: IP_HEADER,
+        user_agent: UA,
         metadata: { auth_sessions_deleted: expected },
       });
     });
@@ -525,7 +534,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
     it('ARC-ADMIN-003 本文が JSON でなければ failure で、resource_id と requested_user_id は null になる', async () => {
       const broken = new Request(url, {
         method: 'POST',
-        headers: { 'x-forwarded-for': IP_HEADER, 'user-agent': UA },
+        headers: { 'x-real-ip': IP_HEADER, 'user-agent': UA },
         body: '{broken',
       });
 
@@ -701,13 +710,14 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
     const TEMPLATE_ID = '44444444-4444-4444-8444-444444444444';
     const NEW_TEMPLATE_ID = '55555555-5555-4555-8555-555555555555';
 
-    function expectBrowserOnly(call: Record<string, unknown>) {
+    /** 行為者のメール・送り元の IP（x-real-ip）・ブラウザの名乗りが入る（SEC-ADMIN-022-AC-03） */
+    function expectActorContext(call: Record<string, unknown>) {
+      expect(call.actor_email).toBe(ACTOR_EMAIL);
+      expect(call.ip).toBe(IP_HEADER);
       expect(call.user_agent).toBe(UA);
-      expect(call).not.toHaveProperty('actor_email');
-      expect(call).not.toHaveProperty('ip');
     }
 
-    it('ARC-ADMIN-003 状態の変更の成功は、変えた状態を detail に入れ、ブラウザだけを入れる', async () => {
+    it('ARC-ADMIN-003 状態の変更の成功は、変えた状態を detail に入れ、行為者のメール・IP・ブラウザを入れる', async () => {
       setService(serviceWith({ data: [{ id: CONTACT_ID }], error: null }));
 
       const res = await contactItemRoute().PATCH(req('PATCH', `${baseUrl}/${CONTACT_ID}`, { status: 'closed' }), ctx(CONTACT_ID));
@@ -716,13 +726,15 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(auditArg()).toEqual({
         action: 'admin.contact.status_update',
         actor_id: ACTOR_ID,
+        actor_email: ACTOR_EMAIL,
         resource: 'contact',
         resource_id: CONTACT_ID,
         outcome: 'success',
         detail: 'status=closed',
+        ip: IP_HEADER,
         user_agent: UA,
       });
-      expectBrowserOnly(auditArg());
+      expectActorContext(auditArg());
     });
 
     it('ARC-ADMIN-003 状態の変更が 0 行なら failure と inquiry_not_found で書き、UUID でない id は何も書かず、成功は書かない', async () => {
@@ -739,10 +751,12 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(auditArg()).toEqual({
         action: 'admin.contact.status_update',
         actor_id: ACTOR_ID,
+        actor_email: ACTOR_EMAIL,
         resource: 'contact',
         resource_id: CONTACT_ID,
         outcome: 'failure',
         detail: 'inquiry_not_found',
+        ip: IP_HEADER,
         user_agent: UA,
       });
     });
@@ -759,7 +773,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(logAudit).not.toHaveBeenCalled();
     });
 
-    it('ARC-ADMIN-003 返信の成功は reply_sent で、ブラウザだけを入れる', async () => {
+    it('ARC-ADMIN-003 返信の成功は reply_sent で、行為者のメール・IP・ブラウザを入れる', async () => {
       process.env.MAIL_FROM_ADDRESS = 'shop@example.com';
       sendMail.mockResolvedValue(undefined);
       setService(
@@ -777,13 +791,15 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(auditArg()).toEqual({
         action: 'admin.contact.reply',
         actor_id: ACTOR_ID,
+        actor_email: ACTOR_EMAIL,
         resource: 'contact',
         resource_id: CONTACT_ID,
         outcome: 'success',
         detail: 'reply_sent',
+        ip: IP_HEADER,
         user_agent: UA,
       });
-      expectBrowserOnly(auditArg());
+      expectActorContext(auditArg());
     });
 
     it('ARC-ADMIN-003 メールが送れなくても保存は残り、監査は error と reply_saved_mail_failed で書く', async () => {
@@ -807,7 +823,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         detail: 'reply_saved_mail_failed',
         user_agent: UA,
       });
-      expect(auditArg()).not.toHaveProperty('actor_email');
+      expectActorContext(auditArg());
     });
 
     it('ARC-ADMIN-003 送り手の設定が無ければメールを送らず、mailSent を偽にして error と reply_saved_mail_not_configured で書く', async () => {
@@ -836,7 +852,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(logAudit).not.toHaveBeenCalled();
     });
 
-    it('ARC-ADMIN-003 テンプレートの作成は作った id を resource_id に入れ、ブラウザだけを入れる', async () => {
+    it('ARC-ADMIN-003 テンプレートの作成は作った id を resource_id に入れ、行為者のメール・IP・ブラウザを入れる', async () => {
       setService(serviceWith({ data: { id: NEW_TEMPLATE_ID }, error: null }));
 
       const res = await templatesRoute().POST(
@@ -847,13 +863,15 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(auditArg()).toEqual({
         action: 'admin.contact.template.create',
         actor_id: ACTOR_ID,
+        actor_email: ACTOR_EMAIL,
         resource: 'contact_reply_template',
         resource_id: NEW_TEMPLATE_ID,
         outcome: 'success',
         detail: 'created',
+        ip: IP_HEADER,
         user_agent: UA,
       });
-      expectBrowserOnly(auditArg());
+      expectActorContext(auditArg());
     });
 
     it('ARC-ADMIN-003 テンプレートの更新と削除は、それぞれ updated と deleted で書く', async () => {
@@ -870,19 +888,23 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(auditArg(0)).toEqual({
         action: 'admin.contact.template.update',
         actor_id: ACTOR_ID,
+        actor_email: ACTOR_EMAIL,
         resource: 'contact_reply_template',
         resource_id: TEMPLATE_ID,
         outcome: 'success',
         detail: 'updated',
+        ip: IP_HEADER,
         user_agent: UA,
       });
       expect(auditArg(1)).toEqual({
         action: 'admin.contact.template.delete',
         actor_id: ACTOR_ID,
+        actor_email: ACTOR_EMAIL,
         resource: 'contact_reply_template',
         resource_id: TEMPLATE_ID,
         outcome: 'success',
         detail: 'deleted',
+        ip: IP_HEADER,
         user_agent: UA,
       });
     });
@@ -934,7 +956,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
   describe('読み出しの記録と書かない窓口', () => {
     const READ_ID = '33333333-3333-4333-8333-333333333333';
 
-    it('ARC-ADMIN-003 問い合わせの一覧・詳細・監査ログの読み出しは、読めた時に読んだ人の id とメールだけで1行ずつ書き、IP と中身は入れない', async () => {
+    it('ARC-ADMIN-003 SEC-ADMIN-023-AC-02 問い合わせの一覧・詳細・監査ログの読み出しは、読めた時に読んだ人の id・メール・IP・ブラウザで1行ずつ書き、中身は入れない', async () => {
       setService(serviceWith({ data: [], error: null, count: 0 }));
 
       const results = [
@@ -951,6 +973,8 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         actor_email: ACTOR_EMAIL,
         resource: 'contact',
         outcome: 'success',
+        ip: IP_HEADER,
+        user_agent: UA,
         metadata: { status: 'open', type: null, page: 1, q_length: 4 },
       });
       expect(auditArg(1)).toEqual({
@@ -960,6 +984,8 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         resource: 'contact',
         resource_id: READ_ID,
         outcome: 'success',
+        ip: IP_HEADER,
+        user_agent: UA,
       });
       expect(auditArg(2)).toEqual({
         action: 'admin.audit_logs.read',
@@ -967,9 +993,10 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         actor_email: ACTOR_EMAIL,
         resource: 'audit_logs',
         outcome: 'success',
+        ip: IP_HEADER,
+        user_agent: UA,
       });
       for (let i = 0; i < 3; i += 1) {
-        expect(auditArg(i)).not.toHaveProperty('ip');
         expect(JSON.stringify(auditArg(i))).not.toContain('taro');
       }
     });
@@ -987,7 +1014,7 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
       expect(results.map((r) => r.status)).toEqual([200, 200, 200]);
     });
 
-    it('ARC-ADMIN-003 テンプレートの一覧・色見本は監査に書かない', async () => {
+    it('ARC-ADMIN-003 テンプレートの一覧・色見本の一覧は監査に書かない。既にある色の保存（200）・無い色の削除（404）も書かない', async () => {
       setService(serviceWith({ data: [], error: null, count: 0 }));
       const color = { name: 'Ecru', hex: '#f0ead6' };
 
@@ -998,8 +1025,51 @@ describe('ARC-ADMIN-003 監査ログの書き込み', () => {
         await presetItemRoute().DELETE(req('DELETE', 'http://localhost/api/admin/item-color-presets/1'), ctx('1')),
       ];
 
-      expect(results.length).toBe(4);
+      expect(results.map((r) => r.status)).toEqual([200, 200, 200, 404]);
       expect(logAudit).not.toHaveBeenCalled();
+    });
+
+    it('ARC-ADMIN-003 SEC-ADMIN-022-AC-01 色見本の作成（201）と削除は、それぞれ監査に1行ずつ（合わせて2行）書き、色の名前と値は入れない', async () => {
+      const chain: any = new Proxy(
+        {},
+        {
+          get(_target, prop) {
+            if (prop === 'then') {
+              return (resolve: (value: unknown) => unknown) => resolve({ data: [{ id: 7 }], error: null });
+            }
+            if (prop === 'maybeSingle') return () => Promise.resolve({ data: null, error: null });
+            if (prop === 'single') {
+              return () => Promise.resolve({ data: { id: 7, name: 'Ecru', hex: '#f0ead6' }, error: null });
+            }
+            return () => chain;
+          },
+        },
+      );
+      setService({ from: jest.fn(() => chain), rpc: jest.fn(() => chain), auth: { admin: {} } });
+
+      const created = await presetsRoute().POST(
+        req('POST', 'http://localhost/api/admin/item-color-presets', { name: 'Ecru', hex: '#f0ead6' }),
+      );
+      const deleted = await presetItemRoute().DELETE(
+        req('DELETE', 'http://localhost/api/admin/item-color-presets/7'),
+        ctx('7'),
+      );
+
+      expect([created.status, deleted.status]).toEqual([201, 200]);
+      expect(logAudit).toHaveBeenCalledTimes(2);
+      const base = {
+        actor_id: ACTOR_ID,
+        actor_email: ACTOR_EMAIL,
+        resource: 'item_color_preset',
+        resource_id: '7',
+        outcome: 'success',
+        ip: IP_HEADER,
+        user_agent: UA,
+      };
+      expect(auditArg(0)).toEqual({ action: 'admin.item_color_preset.create', ...base });
+      expect(auditArg(1)).toEqual({ action: 'admin.item_color_preset.delete', ...base });
+      expect(JSON.stringify(logAudit.mock.calls)).not.toContain('Ecru');
+      expect(JSON.stringify(logAudit.mock.calls)).not.toContain('#f0ead6');
     });
   });
 

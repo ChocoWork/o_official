@@ -198,13 +198,15 @@ describe('POST /api/auth/mfa/enroll-totp', () => {
     expect(mfa.enroll).not.toHaveBeenCalled();
   });
 
-  test('API-AUTH-017 回数の制限の部品が落ちても処理を続ける', async () => {
+  test('API-AUTH-017 回数の制限の部品が落ちたら 500 で止まり、登録へ進まない（SEC-AUTH-013-AC-02）', async () => {
     setup({});
     enforceRateLimit.mockRejectedValue(new Error('limiter down'));
 
     const res = await POST(makeRequest({}));
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(500);
+    expect(authenticateRequest).not.toHaveBeenCalled();
+    expect(mfa.enroll).not.toHaveBeenCalled();
   });
 
   test('API-AUTH-017 forceReEnroll が真偽値でなければ 400 を返し、認証もしない', async () => {

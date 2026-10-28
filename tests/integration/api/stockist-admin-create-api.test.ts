@@ -85,7 +85,7 @@ function makeRequest(body: unknown = VALID, options: { jsonThrows?: boolean } = 
       get: (name: string) => {
         const key = name.toLowerCase();
         if (key === 'user-agent') return 'jest-agent';
-        if (key === 'x-forwarded-for') return ' 203.0.113.9 , 10.0.0.1';
+        if (key === 'x-real-ip') return ' 203.0.113.9 ';
         return null;
       },
     },
@@ -326,7 +326,7 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
     expect(JSON.stringify(rows[0])).not.toContain('23502');
   });
 
-  it('API-STOCKIST-002 x-forwarded-for が無ければ送り元を null で監査に残す', async () => {
+  it('API-STOCKIST-002 x-real-ip が無ければ送り元を null で監査に残す', async () => {
     setup();
     const request = makeRequest();
     (request.headers as unknown as { get: (n: string) => string | null }).get = (name: string) =>
@@ -378,8 +378,7 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
     expect(res.status).toBe(201);
   });
 
-  // 現状の記録。認可で断った要求を監査に残さないのは SEC-STOCKIST-021 を満たさない欠け。直したらこの件を直す。
-  it('API-STOCKIST-002 現状の記録 admin.stockists.manage を求め、read だけでは 403 で断って表も触らず監査にも残さない', async () => {
+  it('API-STOCKIST-002 admin.stockists.manage を求め、read だけでは 403 で断って表も触らず、断った要求を失敗の監査に 1 行残す', async () => {
     setup({ codes: ['admin.stockists.read'] });
 
     const res = await POST(makeRequest());
@@ -389,10 +388,20 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
     expect(requireCsrfOrDeny).not.toHaveBeenCalled();
     expect(createClient).not.toHaveBeenCalled();
     expect(stockistsOp()).toBeUndefined();
-    expect(auditRows()).toHaveLength(0);
+    // detail は共有の監査が JWT 風の文字列（a.b.c）を伏せるので、権限の符号は metadata で確かめる
+    expect(auditRows()).toEqual([
+      expect.objectContaining({
+        action: 'admin.stockists.create',
+        actor_id: 'admin-1',
+        resource: 'stockists',
+        outcome: 'failure',
+        detail: expect.stringMatching(/^Forbidden: .+ \(permission\)$/),
+        metadata: expect.objectContaining({ permission: 'admin.stockists.manage', reason: 'permission' }),
+      }),
+    ]);
   });
 
-  it('API-STOCKIST-002 aal2 でない session は 403 MFA required で断る', async () => {
+  it('API-STOCKIST-002 aal2 でない session は 403 MFA required で断り、理由 mfa の失敗の監査を 1 行残す', async () => {
     setup({ aal: 'aal1' });
 
     const res = await POST(makeRequest());
@@ -400,14 +409,34 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ reason: 'MFA required', permission: 'admin.stockists.manage' });
     expect(createClient).not.toHaveBeenCalled();
+    expect(auditRows()).toEqual([
+      expect.objectContaining({
+        action: 'admin.stockists.create',
+        actor_id: 'admin-1',
+        outcome: 'failure',
+        metadata: expect.objectContaining({ permission: 'admin.stockists.manage', reason: 'mfa' }),
+      }),
+    ]);
   });
 
   it('API-STOCKIST-002 token が無効なら 401、session が失効していても 401、確認できなければ 503 で断る', async () => {
     setup({ verified: { ok: false, reason: 'missing' } });
     expect((await POST(makeRequest())).status).toBe(401);
+    // token の無い 401 は操作者が分からないので、監査にも操作者の枠にも数えない。数えるのは送り元の枠 1 回だけ（SEC-STOCKIST-021）
+    expect(auditRows()).toHaveLength(0);
+    expect(serviceClient.rpcCalls.map((c) => String(c.args._endpoint).split('|')[0])).toEqual(['admin:stockists:mutation']);
 
+    // 失効した session の 401 は操作者（token の sub）が分かるので 1 行残す
     setup({ liveness: 'revoked' });
     expect((await POST(makeRequest())).status).toBe(401);
+    expect(auditRows()).toEqual([
+      expect.objectContaining({
+        action: 'admin.stockists.create',
+        actor_id: 'admin-1',
+        outcome: 'failure',
+        metadata: expect.objectContaining({ reason: 'session' }),
+      }),
+    ]);
 
     setup({ liveness: 'unavailable' });
     const res = await POST(makeRequest());
@@ -471,7 +500,7 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
     expect(auditRows()).toHaveLength(0);
   });
 
-  it('API-STOCKIST-002 認可・回数の制限・CSRF・入力の確かめ・表・監査の順に進める', async () => {
+  it('API-STOCKIST-002 送り元の枠・認可・操作者の枠・CSRF・入力の確かめ・表・監査の順に進める', async () => {
     setup();
     const order: string[] = [];
     verifyAccessToken.mockImplementation(async () => {
@@ -499,8 +528,8 @@ describe('POST /api/admin/stockists（取扱店の作成）', () => {
     await POST(request);
 
     expect(order).toEqual([
-      'authz',
       'rate:admin:stockists:mutation',
+      'authz',
       'rate:admin:stockists:mutation',
       'csrf',
       'body',

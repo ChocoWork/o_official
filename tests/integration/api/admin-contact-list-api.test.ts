@@ -175,7 +175,10 @@ function seedRows(count: number): InquiryRow[] {
 }
 
 function get(qs = '') {
-  return new Request(`http://localhost/api/admin/contact${qs}`, { method: 'GET' });
+  return new Request(`http://localhost/api/admin/contact${qs}`, {
+    method: 'GET',
+    headers: { 'x-real-ip': '198.51.100.7', 'user-agent': 'jest-agent' },
+  });
 }
 
 async function listIds(qs: string, seed: InquiryRow[]) {
@@ -268,7 +271,7 @@ describe('API-ADMIN-005 GET /api/admin/contact', () => {
     expect(body.data.map((r: InquiryRow) => r.id)).toEqual(expected);
   });
 
-  it('API-ADMIN-005 一覧に IP や端末の情報は載せず、開いた記録は状態・種別・ページ・検索語の長さだけで残す', async () => {
+  it('API-ADMIN-005 一覧に問い合わせ者の IP や端末の情報は載せず、開いた記録は状態・種別・ページ・検索語の長さと、読んだ人の IP・ブラウザの名乗りで残す', async () => {
     const { body } = await listIds('?status=open&q=guest1', seedRows(3));
 
     expect(body.data.length).toBeGreaterThan(0);
@@ -285,10 +288,12 @@ describe('API-ADMIN-005 GET /api/admin/contact', () => {
       actor_email: 'admin@example.com',
       resource: 'contact',
       outcome: 'success',
+      ip: '198.51.100.7',
+      user_agent: 'jest-agent',
       metadata: { status: 'open', type: null, page: 1, q_length: 6 },
     });
-    expect(rows[0].ip).toBeUndefined();
     const logged = JSON.stringify(rows[0]);
+    expect(logged).not.toContain('203.0.113.5');
     expect(logged).not.toContain('guest1');
     expect(logged).not.toContain('客1');
   });

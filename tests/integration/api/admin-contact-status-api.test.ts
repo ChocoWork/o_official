@@ -129,7 +129,7 @@ const params = (id = INQUIRY_ID) => ({ params: Promise.resolve({ id }) });
 const patch = (body: unknown, raw = false) =>
   new Request(`http://localhost/api/admin/contact/${INQUIRY_ID}`, {
     method: 'PATCH',
-    headers: { 'content-type': 'application/json', 'user-agent': 'jest-agent' },
+    headers: { 'content-type': 'application/json', 'user-agent': 'jest-agent', 'x-real-ip': '198.51.100.7' },
     body: raw ? (body as string) : JSON.stringify(body),
   });
 
@@ -246,7 +246,7 @@ describe('API-ADMIN-007 PATCH /api/admin/contact/[id]', () => {
     },
   );
 
-  it('API-ADMIN-007 成功を操作した人・新しい状態・端末つきで監査の表に残し、メールと IP は入れない', async () => {
+  it('API-ADMIN-007 成功を操作した人（id・メール）・新しい状態・IP・端末つきで監査の表に残し、問い合わせ者のメールは入れない', async () => {
     setupDb();
 
     await PATCH(patch({ status: 'pending' }), params());
@@ -256,13 +256,14 @@ describe('API-ADMIN-007 PATCH /api/admin/contact/[id]', () => {
     expect(rows[0]).toMatchObject({
       action: 'admin.contact.status_update',
       actor_id: 'admin-1',
+      actor_email: 'admin@example.com',
       resource: 'contact',
       resource_id: INQUIRY_ID,
       outcome: 'success',
       detail: 'status=pending',
+      ip: '198.51.100.7',
       user_agent: 'jest-agent',
     });
-    expect(rows[0].ip).toBeUndefined();
     expect(JSON.stringify(rows[0])).not.toContain('taro@example.com');
   });
 

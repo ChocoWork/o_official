@@ -234,13 +234,14 @@ describe('API-AUTH-007 /api/auth/oauth/start', () => {
     expect(signInWithOAuthMock).not.toHaveBeenCalled();
   });
 
-  test('API-AUTH-007 制限の部品が落ちても開始の処理は止めない', async () => {
+  test('API-AUTH-007 制限の部品が落ちたら 500 で止まり、開始の処理へ進まない（SEC-AUTH-013-AC-02）', async () => {
     mockEnforceRateLimit.mockRejectedValue(new Error('rate limit down'));
     const { GET } = await handlerImport();
 
     const res: any = await GET(startRequest('?provider=google'));
 
-    expect(res.status).toBe(302);
+    expect(res.status).toBe(500);
+    expect(signInWithOAuthMock).not.toHaveBeenCalled();
   });
 
   test.each([

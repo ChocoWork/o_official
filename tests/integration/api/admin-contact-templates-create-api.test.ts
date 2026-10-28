@@ -65,7 +65,12 @@ function aclRows(codes: string[]) {
 function makeRequest(body: unknown, opts: { brokenJson?: boolean } = {}) {
   return {
     json: opts.brokenJson ? () => Promise.reject(new SyntaxError('bad json')) : async () => body,
-    headers: { get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'jest-agent' : null) },
+    headers: {
+      get: (name: string) => {
+        const key = name.toLowerCase();
+        return key === 'user-agent' ? 'jest-agent' : key === 'x-real-ip' ? '198.51.100.7' : null;
+      },
+    },
   } as unknown as Request;
 }
 
@@ -92,7 +97,13 @@ function setup(
   verifyAccessToken.mockResolvedValue(
     options.verified ?? {
       ok: true,
-      claims: { sub: 'admin-1', session_id: 'sess-1', aal: options.aal ?? 'aal2', app_metadata: { role: 'admin' } },
+      claims: {
+        sub: 'admin-1',
+        email: 'admin@example.com',
+        session_id: 'sess-1',
+        aal: options.aal ?? 'aal2',
+        app_metadata: { role: 'admin' },
+      },
     },
   );
   checkAuthSessionLiveness.mockResolvedValue(options.liveness ?? 'active');
@@ -228,14 +239,14 @@ describe('POST /api/admin/contact/templates（管理の返信テンプレート�
     expect(rows[0]).toMatchObject({
       action: 'admin.contact.template.create',
       actor_id: 'admin-1',
+      actor_email: 'admin@example.com',
       resource: 'contact_reply_template',
       resource_id: 'new-1',
       outcome: 'success',
       detail: 'created',
+      ip: '198.51.100.7',
       user_agent: 'jest-agent',
     });
-    expect(rows[0].actor_email).toBeUndefined();
-    expect(rows[0].ip).toBeUndefined();
   });
 
   it('API-ADMIN-010 表は service role の client で書き、利用者の JWT の client は使わない', async () => {
