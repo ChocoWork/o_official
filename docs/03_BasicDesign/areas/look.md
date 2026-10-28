@@ -90,8 +90,8 @@ graph LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-005、FREQ-17-REQ-01、SEC-LOOK-011、SEC-LOOK-018、FREQ-316-REQ-02（範囲外）、FREQ-327-REQ-01（範囲外）、FREQ-327-REQ-03（範囲外）、ADR-0154、ADR-0158 |
-| 根拠 | 管理の画面は利用者の端末で動く client の部品なので、守りを画面に置けない。窓口ごとに session・権限・aal2 を確かめ（FREQ-316-REQ-02。窓口の分は API-LOOK-001〜006 が SEC-LOOK-019 につなぐ）、変更には送り元と操作者の2段の回数の制限をかけて乱用を止める（SEC-LOOK-011、ADR-0154）。Origin の検査は共有の proxy の1か所に任せ、窓口ごとに重ねない（SEC-LOOK-018、FREQ-327-REQ-01・03）。変更は成功も失敗も LOOK 用の記録の関数で監査に残す（ADR-0158） |
+| 上位 | FR-ADMIN-005、FREQ-17-REQ-01、SEC-LOOK-011、SEC-LOOK-018、SEC-LOOK-020、FREQ-316-REQ-02（範囲外）、FREQ-327-REQ-01（範囲外）、FREQ-327-REQ-03（範囲外）、ADR-0154、ADR-0158 |
+| 根拠 | 管理の画面は利用者の端末で動く client の部品なので、守りを画面に置けない。窓口ごとに session・権限・aal2 を確かめ（FREQ-316-REQ-02。窓口の分は API-LOOK-001〜006 が SEC-LOOK-019 につなぐ）、変更には送り元と操作者の2段の回数の制限をかけて乱用を止める（SEC-LOOK-011、ADR-0154）。Origin の検査は共有の proxy の1か所に任せ、窓口ごとに重ねない（SEC-LOOK-018、FREQ-327-REQ-01・03）。変更は成功も失敗も LOOK 用の記録の関数で、送り元の IP とブラウザの名乗りとともに監査に残す（SEC-LOOK-020、ADR-0158、IP は ADR-0462 で置き換え） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/looks/route.ts`、`src/app/api/admin/looks/[id]/route.ts`、`src/features/look/services/admin-rate-limit.ts`、`src/features/look/services/admin-audit.ts`）、`docs/03_BasicDesign/api/api-spec.md` |
@@ -119,11 +119,11 @@ sequenceDiagram
   R-->>B: JSON
 ```
 
-- 画面: `LookSection`（一覧）・作成と編集の頁（`LookForm` を描く。`LookForm` は範囲外）。どれも client の部品で、権限での出し分けはしない（SEC-LOOK-019 の画面の部分は満たさない）
+- 画面: `LookSection`（一覧）・作成と編集の頁（`LookForm` を描く。`LookForm` は範囲外）。どれも client の部品で、一覧の「新規作成」とカードのボタンは窓口の `meta.canManage`（権限）で出し分ける（SEC-LOOK-019 の画面の部分。ADR-0166）。作成・編集の頁の入口には権限の確かめが無い（窓口が 403 にする）
 - 窓口: `authorizeAdminPermission`（範囲外）が token・session・DB の ACL・aal2 を確かめる。読み出しは `admin.looks.read`、変更は `admin.looks.manage`
 - 回数: 変更（作成・更新・状態の変更・削除）は権限の後に `enforceAdminLookMutationRateLimit` を通す。10分の窓で作成10回・更新15回・状態の変更30回・削除30回を、送り元の段と操作者の段で別々に数える。超えると 429、数え場所が使えないと 503（共有の `enforceRateLimit`）。読み出しには回数の制限が無い（SEC-LOOK-012 の読み出しの部分は満たさない）
 - DB: `createServiceRoleClient` で読み書きする。RLS の管理の方針（DATA-LOOK-003）はこの道では効かず、窓口の確かめだけが線引きになる（NEWS の ADR-0005 と違う。`trace-matrix.md` の「食い違い」節を参照）
-- 監査: `logAdminLookAudit` が `logAudit`（範囲外）を呼ぶ。resource は `look`、操作は `admin.look.create`・`admin.look.update`・`admin.look.status_update`・`admin.look.delete`、端末の名乗り（user agent）だけを残し IP は残さない（SEC-LOOK-020 は満たさないので上位にしない）。読み出しは監査しない
+- 監査: `logAdminLookAudit` が `logAudit`（範囲外）を呼ぶ。resource は `look`、操作は `admin.look.create`・`admin.look.update`・`admin.look.status_update`・`admin.look.delete`、送り元の IP と端末の名乗り（user agent）を共有の `getAuditRequestContext`（`src/lib/request-ip.ts`）から取って残す（SEC-LOOK-020、2026-10-28 の波 4。IP は Vercel の見出しだけから取り、取れない配置では `null` のまま。ADR-0158 の「IP は残さない」は `ADR-0462` が置き換えた）。読み出しは監査しない
 - CSRF: proxy の Origin の検査（許可のオリジンが無い時は要求の見出しから比べる元を作る。共有部品の弱さ）と、`clientFetch` の見出しに任せる。窓口は自分では確かめない
 - 画面のページ（`/admin/look/create`・`/admin/look/edit/[id]`）にサーバーの守りは無く、殻は誰でも開け、取り出しと送信の時に窓口が断る（推定）
 
@@ -244,19 +244,19 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-005、FREQ-17-REQ-01、SEC-LOOK-019、DRV-LOOK-008、DRV-LOOK-011、DRV-LOOK-012、ADR-0161 |
+| 上位 | FR-ADMIN-005、FREQ-17-REQ-01、SEC-LOOK-019、DRV-LOOK-008、DRV-LOOK-011、DRV-LOOK-012、ADR-0161、ADR-0166 |
 | 根拠 | 店長が LOOK の一覧から公開の切り替え・編集・削除へ1か所で届くようにするため（FR-ADMIN-005）。作った LOOK を直さずに出し入れできるよう、状態だけを切り替えるボタンを置く（DRV-LOOK-008）。消した LOOK は戻せないので、押し間違いで消さないよう確かめを挟む（DRV-LOOK-011）。新しい LOOK を上に出す（DRV-LOOK-012） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/components/LookSection.tsx`）、`docs/03_BasicDesign/ui/screen-list.md` |
 
-- 置き場: `/admin?tab=LOOK` の中で `LookSection` を描く（`src/app/admin/page.tsx` の `case 'LOOK'`、範囲外）。タブと「新規作成」は役が `admin` の時だけ出す。窓口は権限で守るので、画面は役・窓口は権限と軸が違う
+- 置き場: `/admin?tab=LOOK` の中で `LookSection` を描く（`src/app/admin/page.tsx` の `case 'LOOK'`、範囲外）。タブは役が `admin` の時だけ出す。「新規作成」は `LookSection` が窓口の `meta.canManage`（権限）で出す（2026-10-28、波 4。0 件でも出す）
 - 取り出し: `GET /api/admin/looks`（API-LOOK-001）。読み込み中は「読み込み中...」
-- 行: 1枚目の画像（無ければ `/placeholder.png`）、状態の `TagLabel`（公開中・非公開）、シーズン、テーマ、公開・非公開の切り替え、編集（`/admin/look/edit/<id>`）、削除のボタン。作った日時の新しい順（DRV-LOOK-012）。切り替え・編集・削除のボタンは、窓口の応答の `meta.canManage` が真の時だけ出す（読み込み中・失敗・`meta` なし・偽は出さない。SEC-LOOK-019-AC-05）
+- 行: 1枚目の画像（無ければ `/placeholder.png`）、状態の `TagLabel`（公開中・非公開）、シーズン、テーマ、公開・非公開の切り替え、編集（`/admin/look/edit/<id>`）、削除のボタン。作った日時の新しい順（DRV-LOOK-012）。切り替え・編集・削除のボタンと一覧の上の「新規作成」（`/admin/look/create`）は、窓口の応答の `meta.canManage` が真の時だけ出す（読み込み中・失敗・`meta` なし・偽は出さない。SEC-LOOK-019-AC-04・AC-05）
 - 切り替え: 今の状態を反転して `PATCH`（API-LOOK-005）。失敗は `alert`「ステータスの更新に失敗しました」、成功で取り直す（DRV-LOOK-008）
 - 削除: 「このLOOKを削除してもよろしいですか？」に同意した時だけ `DELETE`（API-LOOK-006）。失敗は `alert`「LOOKの削除に失敗しました」、成功で取り直す（DRV-LOOK-011）
-- 0件も取り出しの失敗も「LOOKがありません」になる（SEC-LOOK-022 は満たさない）
-- `admin.looks.read` だけの人にはカードの3つのボタンを出さない（2026-10-26。窓口は変更のたびに権限を確かめるので、画面の出し分けは案内）。「新規作成」は `src/app/admin/page.tsx` が役で出していて、権限の無い人にも出る（波 4。SEC-LOOK-019-AC-04）
+- 0件も取り出しの失敗も「LOOKがありません」になる（SEC-LOOK-022 は満たさない）。0件でも `canManage` が真なら「新規作成」は出る（最初の 1 件を作れるように）
+- `admin.looks.read` だけの人には「新規作成」とカードの3つのボタンを出さない（カードは 2026-10-26、「新規作成」は 2026-10-28 の波 4。窓口は変更のたびに権限を確かめるので、画面の出し分けは案内。SEC-LOOK-019-AC-04）
 
 ### SCR-LOOK-007 LOOK の作成 `/admin/look/create`
 
@@ -343,7 +343,7 @@ flowchart LR
 
 - 保存・更新に失敗した時は同じ画面に文を出し、移らない。編集の頁で取り出しに失敗した時もその頁に文を出す
 - 切り替えと削除は成功すると一覧を取り直し、失敗すると `alert` を出す
-- 「新規作成」とタブは役が `admin` の時だけ出る（`src/app/admin/page.tsx`、範囲外）
+- タブは役が `admin` の時だけ出る（`src/app/admin/page.tsx`、範囲外）。「新規作成」は窓口の `meta.canManage` が真の時だけ出る（`LookSection`）
 
 ## 状態遷移
 
@@ -410,7 +410,7 @@ stateDiagram-v2
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | FR-ADMIN-005、SEC-LOOK-019、DRV-LOOK-012、FREQ-316-REQ-02（範囲外）、ADR-0161 |
+| 上位 | FR-ADMIN-005、SEC-LOOK-019、DRV-LOOK-012、FREQ-316-REQ-02（範囲外）、ADR-0161、ADR-0166 |
 | 根拠 | 非公開の LOOK を含む一覧は管理の権限を持つ人だけに渡すため、`admin.looks.read` と aal2 を求める（SEC-LOOK-019、FREQ-316-REQ-02）。並びは公開側と同じ作った日時の新しい順にそろえる（DRV-LOOK-012） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -418,10 +418,10 @@ stateDiagram-v2
 
 | 項目 | 内容 |
 | --- | --- |
-| 認可 | `admin.looks.read`。失敗は 401・403・503。画面の出し分けのために `admin.looks.manage` も確かめ、403 だけは `canManage:false` として一覧を返す（暫定。ADR-0161） |
+| 認可 | `admin.looks.read`。失敗は 401・403・503。画面の出し分けの `canManage` は、認可の成功の結果が返す権限の集合（`AuthzSuccess.permissions`）に `admin.looks.manage` があるかで決める。認可は 1 回で、集合が無ければ false（ADR-0166。ADR-0161 の暫定を解いた） |
 | 入力 | なし |
 | 処理 | service role の client で `looks` と関連の `look_items(item_id)` を取る。非公開を含む全部、作った日時の新しい順。件数の上限とページ分けは無い |
-| 成功 | 200 `{data, meta:{canManage}}`。`image_urls` は署名つき URL。`canManage` は `admin.looks.manage` の認可をもう一度行った結果（権限が無いための 403 だけ false） |
+| 成功 | 200 `{data, meta:{canManage}}`。`image_urls` は署名つき URL。`canManage` は認可の成功の結果の権限の集合に `admin.looks.manage` があるか（無ければ false） |
 | 失敗 | DB の失敗は 500 `Failed to fetch looks`、`canManage` を決める確かめが 401・503 ならその応答、例外は 500 |
 | 回数の制限・監査 | どちらも無い（SEC-LOOK-012 の読み出しの部分は満たさない） |
 
@@ -430,7 +430,7 @@ stateDiagram-v2
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-ADMIN-005、SEC-LOOK-011、SEC-LOOK-018、SEC-LOOK-019、DRV-LOOK-009、FREQ-316-REQ-02（範囲外）、ADR-0150、ADR-0154、ADR-0158 |
-| 根拠 | LOOK を作る窓口は表と置き場の両方を変えるので、`admin.looks.manage` と aal2 を求め（SEC-LOOK-019）、送り元と操作者の2段の回数と画像の量に上限をかけ（SEC-LOOK-011、ADR-0154）、成功も失敗も監査に残す（ADR-0158）。表と置き場を壊れた値や大きすぎる画像で汚さないよう、入口で形を決めて断る（DRV-LOOK-009）。画像は置き場の中の道筋だけを表に入れる（ADR-0150） |
+| 根拠 | LOOK を作る窓口は表と置き場の両方を変えるので、`admin.looks.manage` と aal2 を求め（SEC-LOOK-019）、送り元と操作者の2段の回数と画像の量に上限をかけ（SEC-LOOK-011、ADR-0154）、成功も失敗も監査に残す（ADR-0158。送り元の IP も残す: ADR-0462）。表と置き場を壊れた値や大きすぎる画像で汚さないよう、入口で形を決めて断る（DRV-LOOK-009）。画像は置き場の中の道筋だけを表に入れる（ADR-0150） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
 | 出どころ | 実装から推定（`src/app/api/admin/looks/route.ts`）、`docs/03_BasicDesign/api/api-spec.md` |

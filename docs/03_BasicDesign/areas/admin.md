@@ -1,6 +1,6 @@
 # ADMIN の構造設計
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: ADMIN（管理のそのほか。利用者の作成・セッションの強制失効・2要素のリセット・監査ログの読み出しと掃除・問い合わせの管理の窓口・商品の色見本） | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: ADMIN（管理のそのほか。利用者の作成・セッションの強制失効・2要素のリセット・監査ログの読み出しと掃除・問い合わせの管理の窓口・商品の色見本） | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -16,7 +16,7 @@ ADMIN の領域の構成・画面・状態遷移・API・データを、追跡�
 | データ | 6 | `DATA-ADMIN-001`〜`006` | 問い合わせの表、管理の表の RLS と付与、監査ログの表、session を消す関数、色見本の表、権限の印 |
 
 - 結論: 範囲の窓口は全部、頭で共有の認可（JWT・session の生存・DB の ACL の権限・aal2）を通し、通った後にだけ service role の client で表と Auth の管理の機能を使う。表の側は、色見本のほかは anon・authenticated の直接の読み書きを方針で断る
-- 画面は利用者の作成の1つだけ。問い合わせの管理画面（CONTACT のタブ）と監査ログを読む画面は無く、窓口だけがある（FREQ-25-REQ-01・FR-ADMIN-009・FREQ-508-AC-01 と食い違う。TM-ADMIN-01・02）。だから `SCR-` は作成の画面だけにし、画面遷移（`FLOW-`）は置かなかった
+- 画面は利用者の作成の1つだけ。問い合わせの管理画面は 2026-10-28（波 4）に `/admin` の CONTACT のタブとして足した（共有の頁 `src/app/admin/page.tsx` が範囲外の `ContactSection` を開く。店長とサポーターの両方に出す）。監査ログを読む画面は無く、窓口だけがある（FREQ-508-AC-01 と食い違う。TM-ADMIN-02）。だから `SCR-` は作成の画面だけにし、画面遷移（`FLOW-`）は置かなかった（CONTACT のタブの画面は共有の頁の一部で、`SCR-` は共有文書の画面一覧 `screen-list.md` が持つ）
 - 今のコードが満たさないセキュリティ要件（SEC-ADMIN-002・007〜010・014〜016・022・023）は、満たす形の構造を持たないので上位につながない。本文では `SEC-ADMIN-NNN を参照` と指すだけにした。どれも受け入れ条件を持つので、下の段が欠けることはない
 - 一部だけ満たす SEC-ADMIN-003 は、満たさない所が項目の中にあるので、どの項目の上位にもしていない
 
@@ -52,7 +52,7 @@ ADMIN の領域の構成・画面・状態遷移・API・データを、追跡�
 | --- | --- |
 | 利用者の作成の窓口 | 作成の画面（SCR-ADMIN-001）だけ。画面には入口のリンクが無い（TM-ADMIN-20） |
 | 強制失効・2要素のリセット・監査ログの窓口 | 画面からは無い（HTTP では呼べる。TM-ADMIN-21） |
-| 問い合わせの5つの窓口 | 範囲外の `src/components/ContactSection.tsx` だけで、この部品はどこからも読み込まれない（TM-ADMIN-01） |
+| 問い合わせの5つの窓口 | 範囲外の `src/components/ContactSection.tsx` だけ。この部品は 2026-10-28（波 4）から管理の頁 `src/app/admin/page.tsx` の CONTACT のタブが開く（TM-ADMIN-01 は解消） |
 | 色見本の窓口 | 範囲外の商品の編集 `src/app/admin/item/ItemForm.tsx` |
 | 返信の宛先の部品 | 管理の返信（API-ADMIN-008）、範囲外の公開の問い合わせ `src/app/api/contact/route.ts` と受信 `src/app/api/contact/inbound/route.ts` |
 | 監査ログの掃除の部品 | どこからも無い（ARC-ADMIN-005） |
@@ -128,7 +128,7 @@ sequenceDiagram
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | NFR-SEC-005（範囲外）、FREQ-508-REQ-01、DRV-ADMIN-005、DRV-ADMIN-007、ADR-0452、ADR-0453 |
+| 上位 | NFR-SEC-005（範囲外）、FREQ-508-REQ-01、DRV-ADMIN-005、DRV-ADMIN-007、ADR-0452、ADR-0453、ADR-0462 |
 | 根拠 | 誰がいつ何をしたかを後でたどれるよう、管理の操作の結果を `audit_logs` に残す（NFR-SEC-005）。監査ログには操作した人のメール・IP・ブラウザの情報が入るので、読むのは `admin.audit.read` を持つ店長だけにし（FREQ-508-REQ-01、ADR-0453）、読める人にも要らない列は返さない（DRV-ADMIN-005、ADR-0452）。人の session を切る操作は乗っ取りの準備にも使えるので、権限の無い試みも残す（DRV-ADMIN-007） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -136,18 +136,19 @@ sequenceDiagram
 
 | 窓口 | 書く結果 | 操作した人のメール | IP | ブラウザ |
 | --- | --- | --- | --- | --- |
-| 利用者の作成 | 形の誤り（壊れた JSON を含む）・漏洩したパスワード・照合が使えなかった事実・重なり・誤り・成功 | 入れる | 入れない | 入れない |
-| 強制失効 | 認可の失敗（操作した人は空。全体で 10 分に 20 行まで）・形の誤り・自分自身・対象なし・誤り・成功 | 入れる | 認可の失敗と形の誤りだけ | 認可の失敗と形の誤りだけ |
+| 利用者の作成 | 形の誤り（壊れた JSON を含む）・漏洩したパスワード・照合が使えなかった事実・重なり・誤り・成功 | 入れる | 入れる | 入れる |
+| 強制失効 | 認可の失敗（操作した人は空。全体で 10 分に 20 行まで）・形の誤り・自分自身・対象なし・誤り・成功 | 入れる（認可の失敗は空） | 入れる | 入れる |
 | 2要素のリセット | 形の誤り・自分自身・対象なし・特権でない・誤り（役割の問い合わせ・一覧・削除・失効）・成功 | 入れる | 入れる | 入れる |
-| 問い合わせの状態の変更・返信・テンプレートの作成と更新と削除 | 成功（返信はメールの失敗・送り手の設定なし・状態の更新の誤りも）。変更と削除の対象なし（0 行）は失敗（`inquiry_not_found`・`template_not_found`） | 入れない | 入れない | 入れる |
-| 問い合わせの一覧・詳細・監査ログの読み出し | 読めた時だけ成功の 1 行（一覧は絞り込みの条件と検索語の長さ、詳細は問い合わせの id） | 入れる | 入れない | 入れない |
+| 問い合わせの状態の変更・返信・テンプレートの作成と更新と削除 | 成功（返信はメールの失敗・送り手の設定なし・状態の更新の誤りも）。変更と削除の対象なし（0 行）は失敗（`inquiry_not_found`・`template_not_found`） | 入れる | 入れる | 入れる |
+| 色見本の作成・削除 | 新しく作れた時（201）と消せた時だけ成功の 1 行（`admin.item_color_preset.create`・`admin.item_color_preset.delete`。`resource` は `item_color_preset`、`resource_id` は行の id。色の名前と値は入れない） | 入れる | 入れる | 入れる |
+| 問い合わせの一覧・詳細・監査ログの読み出し | 読めた時だけ成功の 1 行（一覧は絞り込みの条件と検索語の長さ、詳細は問い合わせの id） | 入れる | 入れる | 入れる |
 | 色見本・テンプレートの一覧 | 書かない | — | — | — |
 
-- IP は `x-forwarded-for` の左端から取る（SEC-ADMIN-009 を参照）
+- IP は共有の `getAuditRequestContext`（`src/lib/request-ip.ts`）が `getClientIp` から取る。Vercel の `x-vercel-forwarded-for` → `x-real-ip` の順（手元の E2E は `CLIENT_IP_HEADER` が立つ時だけ `x-real-ip`）で、`x-forwarded-for` は読まない。形が IP でなければ・取れなければ `null` のまま保存する（SEC-ADMIN-009・SEC-ADMIN-022、ADR-0416・ADR-0462）。ブラウザの名乗りは `user-agent` の見出し。2026-10-28 の波 4 までは窓口ごとに入れる列がまちまちだった（利用者の作成は IP とブラウザを入れず、問い合わせの記録はメールと IP を入れず、色見本は書かず、強制失効は一部の結果にだけ IP を入れ、読み出しの記録は IP を入れなかった）
 - 伏せ字: 共有の部品が `metadata` の鍵の名前（password・token・secret・card・number など）と、`detail` の JWT・長い文字列・`password=` の形を伏せる。ユーザー作成と2要素のリセットは、外のサービスの誤りの文・理由の文・対象のメールを残さない。ユーザー作成は固定の符号（`email_already_registered`・`create_user_failed`・`pwned_password`・`pwned_check_unavailable:<符号>`）だけを `detail` に残し、2要素のリセットは理由を長さとハッシュだけにする（SEC-ADMIN-008、ADR-0461）
 - 強制失効は認可に失敗した要求を、全体で 10 分に 20 行まで書き、21 回目はまとめの 1 行（結果 `unauthorized_burst`）、それ以降は書かない。数える部品が壊れた時は書かない（ADR-0460）
-- 色見本の作成・削除は書かず（404 の時も書かない）、問い合わせの記録にメールと IP を入れない。利用者の作成は IP を入れず、強制失効は自分自身・対象なし・誤り・成功に IP を入れない（SEC-ADMIN-022 を参照）
-- 問い合わせの一覧・詳細と監査ログの読み出しは、読めた時に、読んだ人の id とメールだけで 1 行ずつ書く（`admin.contact.list`・`admin.contact.read`・`admin.audit_logs.read`。SEC-ADMIN-023）。名前・メール・本文・件名・検索語は入れない。各窓口の中の小さな関数 `auditReadSafely` が `logAudit` を包み、記録の失敗で読み出しを止めない。読んだ人の IP は入れない（IP の取り出しは波 4。SEC-ADMIN-023 を参照）
+- 色見本は作れた時（201）と消せた時だけ書く。既にある行を返す 200・0 行の 404・誤り・断りは書かない。行為者のメールと IP は管理の変更の全部の結果に入れる（SEC-ADMIN-022）。IP を残す理由と退けた案は ADR-0462
+- 問い合わせの一覧・詳細と監査ログの読み出しは、読めた時に、読んだ人の id・メール・IP・ブラウザの名乗りで 1 行ずつ書く（`admin.contact.list`・`admin.contact.read`・`admin.audit_logs.read`。SEC-ADMIN-023）。名前・メール・本文・件名・検索語は入れない。各窓口の中の小さな関数 `auditReadSafely` が `logAudit` を包み、記録の失敗で読み出しを止めない
 - 読み出しは API-ADMIN-003。表の守りは DATA-ADMIN-002・003
 
 ### ARC-ADMIN-004 問い合わせの返信の宛先はスレッドごとの印で作り、受信の側で確かめる
@@ -251,9 +252,9 @@ stateDiagram-v2
 | 処理 | 形を確かめた後、パスワードを漏洩の照合（`checkPwnedPassword`）にかけ、漏れていれば作らず 400。照合の外の API が使えない時は作成を通す（fail-open）。Auth の管理の機能で利用者を作り、表示名を利用者の付帯の情報に入れる。確認済みの印は渡さず、役割も付けない |
 | 成功 | 201 `{id, email}`。監査は成功と作った id |
 | 失敗 | 形の誤り・壊れた JSON 400 `Invalid request`、漏洩したパスワード 400（会員登録と同じ固定の文）、誤りの文に already か duplicate を含めば 409 `Email already registered`、ほかの誤り 500 `Failed to create user`、429、例外 500 |
-| 監査 | 形の誤り（`Invalid request body`）・漏洩（`pwned_password`）・照合が使えなかった事実（`pwned_check_unavailable:<符号>`）・重なり（`email_already_registered`）・誤り（`create_user_failed`）・成功（ARC-ADMIN-003）。Supabase の誤りの文・パスワード・メールは残さない |
+| 監査 | 形の誤り（`Invalid request body`）・漏洩（`pwned_password`）・照合が使えなかった事実（`pwned_check_unavailable:<符号>`）・重なり（`email_already_registered`）・誤り（`create_user_failed`）・成功（ARC-ADMIN-003）。全部の結果の行に行為者のメール・IP・ブラウザの名乗りを入れる（ADR-0462）。Supabase の誤りの文・パスワード・メールは残さない |
 
-- 今のコードが届かない SEC: SEC-ADMIN-022（成功の監査に IP を入れない）。SEC-ADMIN-006・008・012・013 は 2026-10-26 に満たした。パスワードの扱いの決めは TM-ADMIN-05（ユーザーが 16 文字 + 漏洩の照合を当てると承認）
+- 今のコードが届かない SEC: なし（SEC-ADMIN-022 は 2026-10-28 の波 4 に満たし、全部の結果の監査に行為者のメール・IP・ブラウザの名乗りを入れる）。SEC-ADMIN-006・008・012・013 は 2026-10-26 に満たした。パスワードの扱いの決めは TM-ADMIN-05（ユーザーが 16 文字 + 漏洩の照合を当てると承認）
 - `api-spec.md` は「確認済みの Auth の利用者を作る」と書くが、確認済みの印を渡さない（TM-ADMIN-09）
 
 ### API-ADMIN-002 `POST /api/admin/revoke-user-sessions` セッションの強制失効
@@ -268,14 +269,14 @@ stateDiagram-v2
 
 | 項目 | 内容 |
 | --- | --- |
-| 認可 | `admin.users.manage`。認可に失敗すると、操作した人を空にして結果 unauthorized を IP とブラウザの情報付きで書いてから（全体で 10 分に 20 行まで。21 回目はまとめの 1 行 `unauthorized_burst`、それ以降は書かない。ADR-0460）、認可の応答を返す |
+| 認可 | `admin.users.manage`。認可に失敗すると、操作した人を空にして結果 unauthorized を IP とブラウザの情報付きで書いてから（全体で 10 分に 20 行まで。21 回目はまとめの 1 行 `unauthorized_burst`、それ以降は書かない。ADR-0460）、認可の応答を返す。そのほかの結果の行にも、行為者のメール・IP・ブラウザの情報を入れる（IP は `getClientIp` の値。取れなければ `null`） |
 | 回数 | 認可の後、本文を読む前に、認可を通った管理者の id を鍵にして 20 回 / 10 分。超えたら 429 |
 | 入力 | JSON `{user_id}`（UUID）。壊れた JSON も形の誤りとして 400 |
 | 処理 | 自分自身は 400。`getUserById` で対象の存在を確かめ（見つからなければ 404）、共有の部品 `revokeAllSessionsForUser` で自前の `sessions` の行に失効の時刻を入れ、続けて DB の関数 `revoke_auth_sessions_for_user` で Auth 側の session を消す（DATA-ADMIN-004）。どちらの誤りも見る |
 | 成功 | 200 `{ok: true}`。監査は成功と消した Auth の session の数 |
 | 失敗 | 形の誤り 400（監査 `Invalid request body`）、自分自身 400（監査 `self_revocation_rejected`）、存在しない利用者 404（監査 `target_not_found`。success は書かない）、対象を引く誤り 500（監査 `target_lookup_failed`）、失効の誤り・DB の例外 500（監査 `revoke_failed`。誤りの文は残さない）、429、例外 500 |
 
-- 店長どうしの失効を止める守り（最後の店長など）は無い（ユーザーの決め待ち。TM-ADMIN-37）。成功の監査に IP とブラウザの情報を入れない（SEC-ADMIN-022 を参照）
+- 店長どうしの失効を止める守り（最後の店長など）は無い（ユーザーの決め待ち。TM-ADMIN-37）。成功を含む全部の結果の監査に IP とブラウザの情報を入れる（2026-10-28、SEC-ADMIN-022）
 - 画面から呼ぶ所は無い
 - `api-spec.md` の関数の名前 `revoke_sessions_for_user` は、コードの `revoke_auth_sessions_for_user` と違う（TM-ADMIN-13）
 
@@ -295,7 +296,7 @@ stateDiagram-v2
 | 入力 | なし |
 | 成功 | 200 `{data}`。id・作った時刻・操作・操作した人の id・対象・対象の id・結果・詳しい文の8列だけを、作った時刻の新しい順に 100 件まで。ページ送りは無い |
 | 失敗 | DB の誤り 500 `Failed to fetch audit logs`、例外 500 |
-| 監査 | 読めた時に `admin.audit_logs.read` を読んだ人の id とメールで 1 行（ログの中身・IP は入れない。記録に失敗しても読み出しは止めない。SEC-ADMIN-023） |
+| 監査 | 読めた時に `admin.audit_logs.read` を読んだ人の id・メール・IP・ブラウザの名乗りで 1 行（ログの中身は入れない。記録に失敗しても読み出しは止めない。SEC-ADMIN-023） |
 
 - 操作した人のメール・IP・ブラウザの情報・付帯の情報は返さない。`api-spec.md` は操作した人のメールも返すと書く（TM-ADMIN-12）
 - 画面から呼ぶ所は無い（FREQ-508-AC-01 の「一覧が表示される」画面は無い）
@@ -343,7 +344,7 @@ stateDiagram-v2
 | 監査 | 読めた時に `admin.contact.list` を読んだ人の id とメールで 1 行。`metadata` は `status`・`type`（許可の値だけ。無ければ null）・`page`・`q_length`（検索語の長さ）だけで、検索語・名前・メールは入れない。記録に失敗しても読み出しは止めない（SEC-ADMIN-023） |
 
 - `_`・`*` は残る（推定。部分一致の字として効く）
-- 呼ぶのは使われない `ContactSection.tsx` だけ（TM-ADMIN-01）
+- 呼ぶのは `ContactSection.tsx` だけ。2026-10-28（波 4）から管理の頁の CONTACT のタブが開く（TM-ADMIN-01 は解消）
 
 ### API-ADMIN-006 `GET /api/admin/contact/[id]` 問い合わせの詳細とやり取り
 
@@ -361,7 +362,7 @@ stateDiagram-v2
 | 入力 | 道の `id`（形を確かめない。UUID でない値は DB が誤りを返し 404 になる） |
 | 成功 | 200 `{data}`。問い合わせの項目（本文・会員の id を含み、送った時の IP とブラウザの情報は含まない）と、注文に結んである時だけ注文番号、やり取り（送り手の役・書いた人・本文・経路・時刻）を古い順に |
 | 失敗 | 問い合わせが無い・引けない 404 `Inquiry not found`（id の形が違う時も 404 と推定）、やり取りの誤り 500 `Failed to fetch messages`、例外 500 |
-| 監査 | 読めた時（200）に `admin.contact.read` を読んだ人の id とメール・問い合わせの id で 1 行。名前・メール・本文・件名・IP は入れない。記録に失敗しても読み出しは止めない（SEC-ADMIN-023） |
+| 監査 | 読めた時（200）に `admin.contact.read` を読んだ人の id・メール・IP・ブラウザの名乗りと、問い合わせの id で 1 行。名前・メール・本文・件名は入れない。記録に失敗しても読み出しは止めない（SEC-ADMIN-023） |
 
 - 列は名指しで選ぶので、表に `submitted_ip`・`user_agent` の列があっても店長にもサポーターにも返さない（SEC-ADMIN-020）
 - 割当の作業の移行が注文との結び付きを外す場合があり、その時は注文番号が出ない
@@ -385,7 +386,7 @@ stateDiagram-v2
 | 成功 | 200 `{success: true}`。監査 `admin.contact.status_update` に新しい状態 |
 | 失敗 | 回数の超過 429、`id` が UUID でない・変えた行が 0 行 404 `Inquiry not found`（0 行の時は監査に失敗 `inquiry_not_found` を残し、成功は残さない）、形の誤り 400（`details` 付き）、DB の誤り 500 `Failed to update status`、例外 500 |
 
-- 監査にメールと IP を入れない（SEC-ADMIN-022 を参照）
+- 監査に行為者のメール・IP・ブラウザの名乗りを入れる（2026-10-28、SEC-ADMIN-022）
 
 ### API-ADMIN-008 `POST /api/admin/contact/[id]/reply` 管理の返信
 
@@ -424,7 +425,7 @@ sequenceDiagram
 | 失敗 | 回数の超過 429、形の誤り 400、`id` が UUID でない・問い合わせが無い 404、保存の誤り 500 `Failed to save reply`、保存の後の状態の更新の誤り 500 `Failed to update inquiry status`（保存した返信は残し、メールは送らず、監査は error と `status_update_failed`）、例外 500 |
 
 - 状態の更新の誤りで 500 を返した後に管理者が送り直すと、返信の行が 2 つになりうる（ADR-0456）
-- 監査にメールと IP を入れない（SEC-ADMIN-022 を参照）
+- 監査に行為者のメール・IP・ブラウザの名乗りを入れる（2026-10-28、SEC-ADMIN-022）
 
 ### API-ADMIN-009 `GET /api/admin/contact/templates` 返信のテンプレートの一覧
 
@@ -461,7 +462,7 @@ sequenceDiagram
 | 成功 | 201 `{success: true, id}`。監査 `admin.contact.template.create` |
 | 失敗 | 回数の超過 429、形の誤り 400（`details` 付き）、DB の誤り 500 `Failed to create template`、例外 500 |
 
-- 監査にメールと IP を入れない（SEC-ADMIN-022 を参照）
+- 監査に行為者のメール・IP・ブラウザの名乗りを入れる（2026-10-28、SEC-ADMIN-022）
 
 ### API-ADMIN-011 `PUT /api/admin/contact/templates/[id]` 返信のテンプレートの更新
 
@@ -536,9 +537,9 @@ sequenceDiagram
 | 処理 | 同じ名前と色の値の行を引き、あればそれを返す。引く時の誤りなら作らない。無ければ作る |
 | 成功 | 既にあれば 200 `{data}`（id・名前・色の値・作った時刻）、作れば 201 `{data}`（全部の列） |
 | 失敗 | 形の誤り・壊れた JSON 400（`details` 付き）、既存の確かめの誤り・作る時の DB の誤り 500 `Failed to save color preset`、429、例外 500 |
-| 監査 | しない |
+| 監査 | 作れた時（201）だけ `admin.item_color_preset.create` を行為者の id・メール・IP・ブラウザの名乗りと行の id（`resource_id`）で 1 行。色の名前と値は入れない。既にある行を返す 200・誤り・断りは書かない（2026-10-28、SEC-ADMIN-022、ADR-0462） |
 
-- 既にあるかを引く時の誤りは作りに進まず 500 にする（記録には `code` だけ残す。SEC-ADMIN-021）。監査が無い（SEC-ADMIN-022 を参照）
+- 既にあるかを引く時の誤りは作りに進まず 500 にする（記録には `code` だけ残す。SEC-ADMIN-021）
 
 ### API-ADMIN-015 `DELETE /api/admin/item-color-presets/[id]` 色見本の削除
 
@@ -557,9 +558,9 @@ sequenceDiagram
 | 入力 | 道の `id`（数字の 1〜18 桁。それ以外は DB に渡さず 404） |
 | 成功 | 200 `{success: true}`（消した行が 1 行以上） |
 | 失敗 | 形の悪い `id`・消した行が 0 行 404 `Color preset not found`、DB の誤り 500 `Failed to delete color preset`、429、例外 500 |
-| 監査 | しない |
+| 監査 | 消せた時だけ `admin.item_color_preset.delete` を行為者の id・メール・IP・ブラウザの名乗りと行の id（`resource_id`）で 1 行。0 行の 404・誤り・形の悪い `id`・断りは書かない（2026-10-28、SEC-ADMIN-022、ADR-0462） |
 
-- 存在しない id は 404（SEC-ADMIN-021）。監査が無い（SEC-ADMIN-022 を参照）
+- 存在しない id は 404（SEC-ADMIN-021）
 
 ## データ
 
@@ -690,11 +691,11 @@ sequenceDiagram
 
 ## 未確認事項
 
-- 問い合わせの管理画面（CONTACT のタブ）と監査ログを読む画面を作るか。作るなら `SCR-`・`FLOW-` を足す。`src/components/ContactSection.tsx`（範囲外・どこからも読み込まれない）を使うか（ユーザーの判断。TM-ADMIN-01・02）
+- 監査ログを読む画面を作るか。作るなら `SCR-`・`FLOW-` を足す（ユーザーの判断。TM-ADMIN-02）。問い合わせの管理画面（CONTACT のタブ）は 2026-10-28（波 4）に作った
 - 利用者の作成の画面に入口を付けるか、画面とページの守りをどうするか（TM-ADMIN-20）
 - 本番の `MAIL_FROM_ADDRESS`・`CONTACT_INBOUND_DOMAIN`・`CONTACT_REPLY_SECRET` と、許可のオリジン（`APP_ALLOWED_ORIGINS` ほか）の設定（本番アプリは未デプロイ）
 - 作った利用者が確認済みになるか（Supabase の既定の設定次第。本番の設定は確かめていない）
-- 本番の中継（Vercel など）が `x-forwarded-for` をどう付けるか（監査ログの IP の確かさ）
+- 本番の中継（Vercel）が偽の `x-real-ip`・`x-vercel-forwarded-for` を上書きするか（監査ログの IP の確かさ）。最初の preview で実測する。監査ログの IP の保存期間と開示は法令対応の後回しに従い、今は決めない（ADR-0462）
 - 受信の取り込み（範囲外）がお客様の返信で問い合わせの状態を変えるか（STATE-ADMIN-001）
 - 範囲の窓口の結合テスト（`tests/integration/`）は強制失効と監査ログの2本だけで、ほかの構造設計の項目には結合テストが無い。詳細設計（`docs/04_DetailDesign/pages/16-2_admin_misc.md` の DD-ADMIN-001〜015）はあるが、単体テストの名前の ID と、コードの `@impl`・`@design` がまだ無い（`validate-trace` は `missing-child`・`missing-impl` を出し続ける）
 - この文書の項目は全部「推定」。ユーザーの確認を受けたら「現行」にする

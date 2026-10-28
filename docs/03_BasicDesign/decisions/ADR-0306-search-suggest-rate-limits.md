@@ -53,11 +53,11 @@
 - 良くなること: 上限を超えると 429 と `Retry-After` が返る
 - 悪くなること: preview は呼び手が決めるので、1つの送り元で2つの枠を合わせて140回使える（SEC-SEARCH-005）
 - 悪くなること: 画面はサジェストを1文字ごとに、検索をタブの切り替えごとに呼ぶ（`src/features/search/components/SearchPageClient.tsx`）。普通の利用者が上限に届くことがある（推定）
-- 残ること: 送り元は `x-forwarded-for` の先頭をそのまま信じる（`rateLimit.ts`、SEC-SEARCH-006）。レビューが一緒に求めた異常の記録（`logAudit`）は入れていない
+- 残ること: 送り元は以前 `x-forwarded-for` の先頭をそのまま信じていた（`rateLimit.ts`、SEC-SEARCH-006）が、2026-10-28（波 4 の Task 2）に共有の `getClientIp` が Vercel の見出しだけから取る形に直した（ADR-0416）。レビューが一緒に求めた異常の記録（`logAudit`）は入れていない
 - 残ること: PostgREST から検索の関数を直接呼ぶ道はこの制限を通らない（ADR-0302）
 - サジェストの200回の値は、文書に記録が無い
 
 ## 未確認事項
 
 - プレビューの枠を別にしたままにするか（SEC-SEARCH-005 は推定の案）
-- 本番の前段（Vercel など）が `x-forwarded-for` をどう渡すか
+- 本番の前段（Vercel）が `x-vercel-forwarded-for`・`x-real-ip` をどう渡すか（ADR-0416）

@@ -65,7 +65,7 @@
 
 - 窓口のファイルは、中の GET・POST などが別々の契約でも、単位がファイルなので1つの `DD-` にまとめた。項目の本文で方法ごとに分けて書く
 - `news-images.ts` の3つは検索（`src/features/search/services/search.service.ts`、範囲外）も使う。公開の一覧・詳細（`src/features/news/services/public.ts`）は 2026-10-26 から署名しない。公開側の詳細設計は、この頁の `DD-NEWS-067`・`068` を参照し、同じ単位に別の `DD-` を作らない
-- 単位にならない物: `src/types/news.ts`（型だけ）、`src/app/actions/news.ts` の `export type NewsArticle`（型だけ）、窓口の中の `getRequestUserAgent`・`logNewsAudit` と `news-images.ts` の `normalizeObjectPath`・`createSignedUrlByPath`（export しない関数。それぞれの項目に含める）
+- 単位にならない物: `src/types/news.ts`（型だけ）、`src/app/actions/news.ts` の `export type NewsArticle`（型だけ）、窓口の中の `logNewsAudit`（`getRequestUserAgent` は 2026-10-28 に共有の `getAuditRequestContext` へ替えて消した）と `news-images.ts` の `normalizeObjectPath`・`createSignedUrlByPath`（export しない関数。それぞれの項目に含める）
 
 ## 管理の窓口に共通の動き
 
@@ -81,7 +81,7 @@
 | 認可の中の例外 | 500 `{error:'Internal server error'}` |
 
 - 権限: 読む方法（GET）は `admin.news.read`、変える方法（POST・PUT・PATCH・DELETE）は `admin.news.manage`
-- 監査: 窓口のファイルの中の `logNewsAudit` が `logAudit` を呼ぶ。`resource` は `news_article`、`user_agent` は見出し `user-agent`（無ければ `null`）、IP は残さない（`src/app/api/admin/news/route.ts`、`src/app/api/admin/news/[id]/route.ts`）。GET は監査しない
+- 監査: 窓口のファイルの中の `logNewsAudit` が `logAudit` を呼ぶ。`resource` は `news_article`、`ip` と `user_agent` は共有の `getAuditRequestContext(request)` から取る（`user_agent` は見出し `user-agent`、無い・空なら `null`。`ip` は `getClientIp` の値で、Vercel の見出し、または `CLIENT_IP_HEADER` を立てた配置の `x-real-ip` だけ。`x-forwarded-for` は読まず、取れなければ `null`。SEC-NEWS-016-AC-03、ADR-0462。以前の「IP は残さない」は置き換えた）（`src/app/api/admin/news/route.ts`、`src/app/api/admin/news/[id]/route.ts`）。GET は監査しない
 - 失敗の記録: DB・置き場の `error` と例外は、`describeErrorForLog`（`src/lib/logging/safe-error.ts`）で誤りの名前と符号だけにして `console.error` に渡す。`message`・詳細・ヒントは残さない（SEC-NEWS-019。2026-10-26）
 - 回数の制限は無い（SEC-NEWS-021）。CSRF は proxy の Origin の検査だけで、窓口は `requireCsrfOrDeny` を呼ばない（ARC-NEWS-004）
 
@@ -422,6 +422,7 @@ GET は `admin.news.read`、POST は `admin.news.manage`、どちらも有効な
 - POST の成功で、insert の `image_url` が署名前の道、監査 `admin.news.create` の `resource_id` が新しい `id` の文字、201 `{success:true, id}`
 - POST の insert の結果の `id` が `null` の時、監査の `resource_id` が `null`
 - 監査の `user_agent` が、見出し `user-agent` がある時はその値、無い時は `null`
+- 監査の `ip` が、信頼する見出し `x-real-ip` の値（試験は `CLIENT_IP_HEADER` を立てる）で、偽の `x-forwarded-for` の値は入らず、見出しが無ければ `null`（SEC-NEWS-016-AC-03）
 - POST で `request.formData()` が例外を投げた時に 500 `Internal server error`
 - GET の成功で行ごとに `signNewsImageFields` を呼び、`published_date` の降順の指定で読む
 - GET で `data` が `null` の時に 200 `{data:[]}`
@@ -520,6 +521,7 @@ GET は `admin.news.read`、PUT・PATCH・DELETE は `admin.news.manage`、ど�
 - DELETE の成功で消した行の `image_url` を service role の client で `remove` し、利用者の session の client は作らず `storage` も呼ばない。`remove` の失敗でも 200 で `imageCleanup:'failed'`。見本・外の URL・`null` の行は何も消さない
 - DELETE で `createServiceRoleClient` が例外を投げた時に 500（行も置き場も触らず、監査も書かない）
 - 監査の `user_agent` が、見出しがある時はその値、無い時は `null`
+- 監査の `ip` が、信頼する見出し `x-real-ip` の値で、偽の `x-forwarded-for` の値は入らず、見出しが無ければ `null`（SEC-NEWS-016-AC-03）
 - 対象の行が0件の PUT・PATCH・DELETE が 404 になり、失敗の監査（`.not_found`）が 1 件だけで成功の監査が 0 件であること。1 行が返れば 200 と成功の監査
 - `id` が数字でない・19桁以上・負・小数・空・`0`・`007` の PUT・PATCH・DELETE が、表も置き場も触らず 404 になり、監査の `metadata` が長さだけであること。18桁ちょうどは DB に渡る
 

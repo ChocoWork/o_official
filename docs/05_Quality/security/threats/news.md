@@ -186,7 +186,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 回数の制限の効き目と、数えの表の大きさ |
 | 脅威 | 自動の道具が、送るたびに `x-forwarded-for` を変えて、別の送り元のふりをする |
-| 起こり方 | 回数の制限は送り元を `x-forwarded-for` の先頭、無ければ `x-real-ip` から無条件に取る（`src/features/auth/middleware/rateLimit.ts:4-16`）。`/api/news` は `subject` を渡さない（`src/app/api/news/route.ts:10-15`）。呼ばれるたびに数えの行を DB に足す（`rateLimit.ts:25-26`） |
+| 起こり方 | 以前は回数の制限が送り元を `x-forwarded-for` の先頭、無ければ `x-real-ip` から無条件に取っていた。2026-10-28（波 4）に、共有の `getClientIp`（`src/lib/request-ip.ts`）が Vercel の見出し `x-vercel-forwarded-for`→`x-real-ip` だけから取る形に直した。`x-forwarded-for` は読まず、取れない時は `null` の 1 つの枠（ADR-0416）。`/api/news` は `subject` を渡さない（`src/app/api/news/route.ts:10-15`）。呼ばれるたびに数えの行を DB に足すが、`null` の枠は 1 行に集まるので偽った送り元の数だけ増えない |
 | 影響 | `/api/news` の制限が効かない。偽った送り元の数だけ数えの行が増え、DB を圧迫する |
 | 対策 | SEC-NEWS-011 |
 | ASVS | V11.1.4 |
@@ -256,11 +256,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 誰がいつ何を変えたかの記録 |
 | 脅威 | 記事を変えた人を後から特定できない。存在しない記事への操作を成功と記録する |
-| 起こり方 | 管理の窓口は作成・書き換え・公開の切り替え・削除・画像の書き込みの失敗を、成功と失敗の両方で監査に残す（`src/app/api/admin/news/route.ts:26-52,111-115,138-142,150-162`、`src/app/api/admin/news/[id]/route.ts:134-138,166-180,222-234,259-269`）。ただし PUT・PATCH・DELETE は対象の行が0件でも 200 を返し、成功として記録する（`[id]/route.ts:160-182,216-236,253-271`）。2026-10-26 に、変えた行を `.select('id')` で受け取り、0行は 404 と失敗の監査（`.not_found`）にした。形の悪い id（18桁以下の数字でない値）は DB に渡さず 404 にする（SEC-NEWS-016）。監査の書き込みの失敗は警告だけで握りつぶす（`src/lib/audit.ts:67-70,87-89`）。PostgREST を直接叩いた変更は記録に残らない（THR-NEWS-002） |
-| 影響 | 不正・誤操作の調べができない。存在しない id への操作が成功に見える |
+| 起こり方 | 管理の窓口は作成・書き換え・公開の切り替え・削除・画像の書き込みの失敗を、成功と失敗の両方で監査に残す（`src/app/api/admin/news/route.ts:26-52,111-115,138-142,150-162`、`src/app/api/admin/news/[id]/route.ts:134-138,166-180,222-234,259-269`）。ただし PUT・PATCH・DELETE は対象の行が0件でも 200 を返し、成功として記録する（`[id]/route.ts:160-182,216-236,253-271`）。2026-10-26 に、変えた行を `.select('id')` で受け取り、0行は 404 と失敗の監査（`.not_found`）にした。形の悪い id（18桁以下の数字でない値）は DB に渡さず 404 にする（SEC-NEWS-016）。以前は送り元の IP を渡さなかったが、2026-10-28（波 4）に `logNewsAudit` が共有の `getAuditRequestContext`（`getClientIp` の値。取れなければ `null`、`x-forwarded-for` は読まない）で IP とブラウザの名乗りを渡す形に直した（SEC-NEWS-016-AC-03、ADR-0462）。監査の書き込みの失敗は警告だけで握りつぶす（`src/lib/audit.ts:67-70,87-89`）。PostgREST を直接叩いた変更は記録に残らない（THR-NEWS-002） |
+| 影響 | 不正・誤操作の調べができない。存在しない id への操作が成功に見える（2026-10-26 に直した）。IP は個人情報にあたりうる。取れない配置（Vercel の外・旗の無い手元）では `null` になる。保存期間は法令対応の後回しに従う（未確認事項） |
 | 対策 | SEC-NEWS-016 |
 | ASVS | ASVS 未対応付け |
-| 根拠 | 2026-04-18 に監査の記録が無い（Critical）と指摘され、git `6896bb16` で足した。IP は見出しを偽れるので残さない（`route.ts:26-28`）。0件の成功と、直接の変更が残らない点は 2026-10-24 にコードを読んで気づいた。全体の NFR-SEC-005（監査ログ）・NFR-SEC-011（監査ログの保持）に当てはめた |
+| 根拠 | 2026-04-18 に監査の記録が無い（Critical）と指摘され、git `6896bb16` で足した。IP は、以前は見出しを偽れるので残さなかった（旧 `route.ts` のコメント、ADR-0010）が、偽れない `getClientIp`（ADR-0416）で解けたので残す（ADR-0462）。0件の成功と、直接の変更が残らない点は 2026-10-24 にコードを読んで気づいた。全体の NFR-SEC-005（監査ログ）・NFR-SEC-011（監査ログの保持）に当てはめた |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/code/2026-04-18-actions-news-security-review.md:37-40`、`docs/05_Quality/reviews/code/2026-04-18-news-review.md:37,44` |
 
@@ -410,7 +410,8 @@ flowchart LR
 
 - 本番の Supabase の置き場 `news-images` の公開の設定と `storage.objects` の方針（THR-NEWS-003）。移行 `sec_storage_buckets` は書いたが本番にはまだ当てていない。本番の今の値は適用の前に読んで確かめる（読むだけ。値は報告に残す）
 - 本番の PostgREST の `max_rows`（THR-NEWS-009）。手元は 1000
-- 本番の中継（Vercel など）が `x-forwarded-for` を上書きするか（THR-NEWS-010）。本番のアプリはまだデプロイしていない
+- 本番の中継（Vercel）が `x-vercel-forwarded-for`・`x-real-ip` を偽の値の上から上書きするか（THR-NEWS-010。波 4 で `x-forwarded-for` は読まない形に直した。最初の preview で偽の `x-real-ip` と偽の XFF を送って実測する。ADR-0416）。本番のアプリはまだデプロイしていない
+- 監査の IP の保存期間と開示（THR-NEWS-015）。法令対応の後回しの決めに従い、ここでは決めない（ADR-0462）
 - `aal1` の JWT で PostgREST から非公開の記事を読めるか（THR-NEWS-002）、Origin の無い送信が断られるか（THR-NEWS-013）は、実際に叩いて確かめていない
 - `next/image` の最適化のキャッシュの長さの既定と、Supabase の署名つき URL の応答の `Cache-Control` がどう組み合わさるか（THR-NEWS-004・022）
 - 例外を丸ごと記録した時に、どの情報が記録に入るか（THR-NEWS-018）

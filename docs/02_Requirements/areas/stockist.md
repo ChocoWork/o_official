@@ -1,6 +1,6 @@
 # STOCKIST の要件
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: STOCKIST（取扱店の一覧 `/stockist`・ホームの取扱店の節の部品・管理の取扱店） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり。取扱店のファイルは含まない）
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: STOCKIST（取扱店の一覧 `/stockist`・ホームの取扱店の節の部品・管理の取扱店） | 基準コミット: `4facf63b`（作業ツリーに別の作業の未コミットの差分あり。取扱店のファイルは含まない）
 
 ## 概要
 
@@ -13,7 +13,7 @@ STOCKIST の領域の要求・要件・受け入れ条件・派生要件を、�
 | 要件 | 13 | 既存の `FREQ-13-REQ-01`・`FREQ-18-REQ-01`・`FREQ-57-REQ-01`、`FR-STOCKIST-001`〜`008`・`010`、`FR-ADMIN-006` |
 | 受け入れ条件 | 27 | 既存の `FREQ-NN-AC-NN` 5、新しい `FR-…-AC-NN` 22 |
 | 派生要件 | 15 | `DRV-STOCKIST-001`〜`015` |
-| セキュリティ要件 | 21 | `SEC-STOCKIST-001`〜`021`（受け入れ条件 `SEC-STOCKIST-NNN-AC-NN` 33。全部推定） |
+| セキュリティ要件 | 21 | `SEC-STOCKIST-001`〜`021`（受け入れ条件 `SEC-STOCKIST-NNN-AC-NN` 36。全部推定） |
 
 - 状態: 全部「推定」。写した要求の行も、根拠が元の文書に書かれていない物はユーザーの確認を受けるまで「推定」にした。どちらが正しいかは決めず、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節（TM-STOCKIST-NN）に載せた
 - 結論: 上位の無い要件は無かった。頁の要件（FR-STOCKIST-）は全部 FREQ-13（取扱店を確かめる）か FREQ-57（地方・都道府県の絞り込み）に、FR-ADMIN-006 は FREQ-18（管理）につないだ（つなぎは推定）。Google Maps のリンク（FR-STOCKIST-007 は WONT、コードはある）、モバイルのカードで隠す3行（FR-STOCKIST-002）、管理で作ると DB で落ちる恐れ（FREQ-18）は、ユーザーに決めてもらう
@@ -61,7 +61,7 @@ STOCKIST の領域の要求・要件・受け入れ条件・派生要件を、�
 | FR-STOCKIST-011 | FR-STOCKIST-001-AC-01・AC-02、002-AC-02、004-AC-02、006-AC-01、007-AC-01、010-AC-03・AC-04、FREQ-57-AC-03、SEC-STOCKIST-017-AC-01 | 見本の店の名前で絞って数える（同時に流れる他の試験の行に左右されない）。読むだけ |
 | FR-STOCKIST-012 | FR-STOCKIST-003-AC-01、008-AC-01、010-AC-02、SEC-STOCKIST-001-AC-01・AC-02、016-AC-01・AC-02 | 手元の DB に `E2E-STK-` の行を足す。非公開の行はホームの最初の 6 件に入る小さい id で足す |
 | FR-STOCKIST-013 | FR-ADMIN-006-AC-01〜05、FREQ-18-AC-01、SEC-STOCKIST-015-AC-01、019-AC-01・AC-02 | 本物の aal2 の店長・サポーターでログインする（`e2e/stockist-admin-test-utils.ts`） |
-| FR-STOCKIST-014 | SEC-STOCKIST-004-AC-01・AC-02、005-AC-01、006-AC-01〜04、020-AC-01、021-AC-01 | HTTP だけ。幅ごとには繰り返さない |
+| FR-STOCKIST-014 | SEC-STOCKIST-004-AC-01・AC-02、005-AC-01、006-AC-01〜04、019-AC-03、020-AC-01、021-AC-01〜03 | HTTP だけ。幅ごとには繰り返さない。送り元は `x-real-ip`（波 4 で `x-forwarded-for` から替えた）。020-AC-01・021-AC-01 は波 4 で満たし、`test.fail` を外した |
 | FR-STOCKIST-015 | SEC-STOCKIST-007-AC-01・AC-02、009-AC-01、010-AC-01、011-AC-01、012-AC-01、013-AC-01・AC-02、014-AC-01・AC-02 | HTTP だけ。管理 API の JWT は `e2e/admin-session-test-utils.ts`（FR-STOCKIST-016 と共有） |
 | FR-STOCKIST-016 | SEC-STOCKIST-002-AC-01、003-AC-01〜03 | 002 は 3 つの幅、003 は HTTP だけ |
 | FR-STOCKIST-017 | FR-STOCKIST-003-AC-02、SEC-STOCKIST-018-AC-01 | 全部の公開の店を巻き込むので、`playwright.config.ts` の project `isolated-global`（chromium の teardown）で最後に流す。1 つの試験の中で DB を 1 回だけ変え、3 つの幅をその窓で見る。公開の取り出しの上限は 200 件と決めた |
@@ -1044,7 +1044,7 @@ anon・authenticated の `stockists` の INSERT・UPDATE・DELETE・TRUNCATE・T
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/code/2026-04-29-stockist-review-addendum.md` |
 | 優先度 | SHOULD |
 
-監査の `ip` は信頼できる中継の値だけから取り、要求の見出しの値をそのまま入れない。監査の `detail` に入れる店名は、改行と制御文字を除く。今のコードは満たさない。
+監査の `ip` は信頼できる中継の値だけから取り、要求の見出しの値をそのまま入れない。監査の `detail` に入れる店名は、改行と制御文字を除く。2026-10-28（波 4）に満たした。変更の 4 つの窓口は監査の `ip` を `getClientIp`（`src/lib/request-ip.ts`。Vercel の `x-vercel-forwarded-for`・`x-real-ip` だけを読み、`x-forwarded-for` は読まない。ADR-0416）から取り、形が IP でない・信頼する見出しが無い時は null のまま残す。店名の制御文字は、共有の `maskAuditEvent`（`src/lib/audit.ts`）が `detail` と `metadata` の文字列から除く（`[\p{Cc}\p{Cf}]` を空白にする）。
 
 ### SEC-STOCKIST-012-AC-01 偽の送り元の見出しが監査の ip にそのまま入らない
 
@@ -1053,10 +1053,10 @@ anon・authenticated の `stockists` の INSERT・UPDATE・DELETE・TRUNCATE・T
 | 上位 | SEC-STOCKIST-012、NFR-SEC-011（範囲外） |
 | 根拠 | 監査の送り元を要求の側から偽れないことを確かめるため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（aal2 の店長で、`x-forwarded-for: 203.0.113.9` を付けて PATCH を送り、手元の Supabase の `audit_logs` を読む） |
+| 確かめ方 | E2E（aal2 の店長で、`x-forwarded-for: 203.0.113.9` と、別の信頼する `x-real-ip` を付けて PATCH を送り、手元の Supabase の `audit_logs` を読む） |
 | 出どころ | 実装から推定 |
 
-その PATCH の監査の行の `ip` が `203.0.113.9` でないこと。
+その PATCH の監査の行の `ip` が `x-real-ip` の値で、`203.0.113.9` でないこと。
 
 ### SEC-STOCKIST-013 変更の監査は実際に変わった行だけを成功とし、消した中身を残す
 
@@ -1269,7 +1269,7 @@ select の結果の行の数が `max_rows` 以下で、`/stockist` に表示さ�
 | 出どころ | ASVS 未対応付け。実装から推定（取扱店のコードと移行を読み直した） |
 | 優先度 | SHOULD |
 
-`/admin/stockist/create`・`/admin/stockist/edit/<id>` は、未ログインの人と `admin.stockists.manage` を持たない人にフォームを出さない。今のコードは満たさない。
+`/admin/stockist/create`・`/admin/stockist/edit/<id>` は、未ログインの人と `admin.stockists.manage` を持たない人にフォームを出さない。作成の頁は 2026-10-28（波 4）に満たした。フォームを出す前に `GET /api/admin/stockists/access`（API-STOCKIST-007）を呼び、通るまで「読み込み中...」、通ればフォーム、401・403 は固定の誤りの文だけを出す（ADR-0269）。編集の頁は、今までどおり 1 件の取得（読みの権限）が通るとフォームを出す。`admin.stockists.read` だけの人には編集のフォームが出るが、書き込みは窓口が 403 で断る（作成の頁だけを直す決定。波 4 の決定 Q20）。
 
 ### SEC-STOCKIST-019-AC-01 未ログインで管理の作成の頁を開くとフォームが出ない
 
@@ -1295,6 +1295,18 @@ select の結果の行の数が `max_rows` 以下で、`/stockist` に表示さ�
 
 サポーターの役割の利用者が `/admin/stockist/create` を開くと、店舗の名前の入力欄が表示されないこと。
 
+### SEC-STOCKIST-019-AC-03 作成の頁の入口の窓口は店長に 204、サポーターに 403、未ログインに 401 を返す
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-STOCKIST-019、NFR-SEC-008（範囲外） |
+| 根拠 | 作成の頁が入口で呼ぶ確かめが、権限の有無を応答の状態で区別し、結果をキャッシュさせないことを確かめるため |
+| 状態 | 推定 |
+| 確かめ方 | E2E（店長・サポーターの aal2 の利用者と未ログインで `GET /api/admin/stockists/access` を送る。HTTP だけ） |
+| 出どころ | 波 4 の決定（Q20） |
+
+店長の aal2 は本文の無い 204、サポーターの aal2 は 403、未ログインは 401 になり、3 つとも `Cache-Control` に `no-store` が含まれること。
+
 ### SEC-STOCKIST-020 管理の窓口は認可の前に送り元の枠で回数を数える
 
 | 属性 | 値 |
@@ -1306,7 +1318,7 @@ select の結果の行の数が `max_rows` 以下で、`/stockist` に表示さ�
 | 出どころ | OWASP ASVS 4.0.3 V11.1.4（当てはめは推定）。2026-10-24 の脅威の見直し |
 | 優先度 | SHOULD |
 
-6つの窓口は、認可より前に送り元の枠で数え、超えたら 429 と `Retry-After` を返す。操作者の枠は今までどおり認可の後に数える。今のコードは満たさない。
+6つの窓口は、認可より前に送り元の枠で数え、超えたら 429 と `Retry-After` を返す。操作者の枠は今までどおり認可の後に数える。2026-10-28（波 4）に満たした。窓口の順序は「送り元の枠 → （道の id の形）→ 認可 → 操作者の枠 → （変更だけ）CSRF」で、送り元の枠は窓口の最初に置くので、形の悪い id の連打も数える。作成の頁の入口の窓口（`GET /api/admin/stockists/access`、API-STOCKIST-007）も同じ順序。限度は読み 120・変更 20 を 600 秒で、送り元の枠も操作者の枠も同じ値（ADR-0259）。送り元の枠は未ログインの 401・権限の無い 403・CSRF の拒否も数えるので、同じ送り元の店長が巻き添えで 429 になりうる（Vercel では送り元は単一の接続元）。
 
 ### SEC-STOCKIST-020-AC-01 権限の無い token の要求を続けて送ると 429 になる
 
@@ -1331,7 +1343,7 @@ select の結果の行の数が `max_rows` 以下で、`/stockist` に表示さ�
 | 出どころ | OWASP ASVS 4.0.3 V7.2.2（当てはめは推定）、V7.1.3。2026-10-24 の脅威の見直し |
 | 優先度 | SHOULD |
 
-管理の窓口が 401・403（権限・`MFA required`）を返した時は、要求した権限・結果・分かれば利用者の id を監査に残す。今のコードは満たさない（認可は共有の部品）。
+管理の窓口が 401・403（権限・`MFA required`）を返した時は、要求した権限・結果・分かれば利用者の id を監査に残す。残すのは操作者が分かる拒否（失効した session の 401・権限不足と aal1 の 403）だけで、token の無い 401・失効を確認できない 503・内部の誤りの 500 は残さない。2026-10-28（波 4）に満たした。部品（`admin-rbac.ts` の `denial` と `audit-authz-denial.ts` の `auditAuthzDenial`）を Task 7 で足し、取扱店の 6 つの窓口と `access` が、認可の拒否の枝で `auditAuthzDenial` を呼ぶ（Task 8。ADR-0268）。action は `admin.stockists.list`・`create`・`get`・`update`・`patch`・`delete`・`access`、resource は `stockists`。`detail` は `Forbidden: <権限> (<理由>)` だが、共有の `maskAuditEvent` が `a.b.c` の形の文字列を伏せるので権限の符号は `[REDACTED_JWT]` になる。権限の符号は `metadata.permission` で確かめる。
 
 ### SEC-STOCKIST-021-AC-01 権限の無い管理の要求の監査が残る
 
@@ -1344,6 +1356,30 @@ select の結果の行の数が `max_rows` 以下で、`/stockist` に表示さ�
 | 出どころ | 実装から推定 |
 
 その要求が 403 になり、`audit_logs` に、その利用者の id と権限 `admin.stockists.manage` と失敗の結果を持つ行が1つ増えること。
+
+### SEC-STOCKIST-021-AC-02 token の無い 401 は監査に行を増やさない
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-STOCKIST-021、NFR-SEC-011（範囲外） |
+| 根拠 | 操作者の分からない要求を全部書くと、未ログインの連打で監査の表が洪水になるため。残す対象は操作者が分かる拒否だけに絞る（波 4 の決定 Q22） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（token を付けない `PATCH /api/admin/stockists/<id>` を、この試験の固定の `x-real-ip` で送り、`select count(*) from audit_logs where ip = $1 and resource = 'stockists'` が 0 のままであることを見る。並列の実行では `audit_logs` 全体の件数が揺れるので全体は数えない。対照として、同じ送り元でサポーターの 403 を 1 回送ると 1 になる） |
+| 出どころ | 波 4 の決定（Q22） |
+
+その要求が 401 になり、その送り元の `audit_logs`（resource が `stockists`）の行が増えないこと。
+
+### SEC-STOCKIST-021-AC-03 同じ操作者の拒否の監査は 10 分に 20 行まで、21 回目にまとめの 1 行
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-STOCKIST-021、NFR-SEC-011（範囲外） |
+| 根拠 | 断られる要求を数えずに全部書くと監査の表が洪水になるため、上限を置く。上限を全体でなく操作者ごとに数えるのは、ある操作者が自分で断られ続けるだけで他の人の拒否の記録が消えるのを防ぐため（DD-STOCKIST-039） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（取扱店の権限を持たない同じ利用者の GET を 25 回送り、その利用者の `audit_logs` を結果ごとに数える。HTTP だけ）。部品の単体テストは `tests/unit/lib/auth/audit-authz-denial.test.ts` |
+| 出どころ | 波 4 の決定（Q22）、設計 R11-4 の洪水の防止 |
+
+同じ操作者の断った要求は、同じ 600 秒の区切りの中で、失敗の行が20行まで増え、21回目に `denied_burst` のまとめの行が1つ増え、22回目以降は増えないこと。別の操作者の断った要求は、その影響を受けず自分の20行まで増えること。数えに失敗した時は行を増やさず、窓口の応答は変わらないこと。
 
 ## 派生要件
 

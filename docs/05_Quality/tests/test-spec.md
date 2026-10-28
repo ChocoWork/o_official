@@ -1,5 +1,7 @@
 # テスト仕様
 
+> 波 4 確認日: 2026-10-28。開店前のセキュリティの穴 波 4（送り元の IP の取り出し・回数の鍵・管理の監査の IP・取扱店の認可の拒否の監査・管理画面の CONTACT タブ）の新しい試験と外した `test.fail` 16 行を、下の「開店前のセキュリティの穴 波 4 のテスト」に記載した。本番ビルドの E2E 全件は 185 failed・4832 passed・26 skipped（波 3 の 183 failed と比べて新しく赤になった 10 ファイルは 1 並列の再実行で 200 件とも通った。並列の揺れ）。
+
 > 波 3 確認日: 2026-10-28。開店前のセキュリティの穴 波 3（画像の署名・CSP・`session_id` の発行範囲・`/api/auth` の `no-store`・LOOK の og:image・ビルドの必須の環境変数）の新しい試験と外した `test.fail` 18 行を、下の「開店前のセキュリティの穴 波 3 のテスト」に記載した。本番ビルドの E2E 全件は 183 failed・4828 passed・26 skipped（G-4 の 181 failed から増えたのは商品詳細の揺れ 2 件だけ）。
 
 > G-4 Task 12 確認日: 2026-10-27。返品・キャンセル申し込み・一覧の表示・配送・設定の既存E2E（050・069・070・072・076・079・084〜099・102〜104・119・123と共有の道具）を詳細頁/注文一覧表へ付け替え・整理し、旧い一覧の窓口の差し替え（mockOrderList）とORDERタブを開く道具（openOrderTab）を削除した。旧い410の宿題の仕上げ（走査をe2e・testsへ広げた許可リストの試験）を含む。下のTask 12に現行の期待を記載。本番buildのE2Eはcontroller待ち。
@@ -1001,3 +1003,106 @@ SEC-NEWS-007・008 の E2E（`FR-NEWS-SEC-001`）は `/api/news` が `image_url`
 - 本番ビルドの E2E（上の外した行・足した行。`next.config.ts` はビルドに焼かれるので、3000 番に残ったアプリを止めてビルドし直す）。`FR-HOME-023:225` は手元の Storage の見本の商品画像、`FR-SEARCH-021` は `NEXT_PUBLIC_SUPABASE_URL` と `SUPABASE_URL` が同じ origin であることが前提。`FR-UI-*`・`slider-*`・`FR-CART-*`（画像 null が `/placeholder.png` になる）が壊れていないこと。
 - `npm run test:trace-coverage`（`safe-object-path.ts`・`session-cookie-policy.ts`・`auth-no-store-policy.ts`・`build-env-guard.ts`・`instrumentation-client.ts` が範囲に入った）、`npm run trace:report`（`TM-HOME-37`・`TM-HOME-54`・`TM-LOOK-51`・`TM-LOOK-66`・`TM-NEWS-54`・`TM-NEWS-55` ほか「満たさない」の記述が古くなる）。
 - 全体の jest（Task 3 の ITEM の fail-closed で、ほかの結合試験の商品画像の値が `items/…` の形でないと赤くなる取りこぼしがないか）。
+
+## 開店前のセキュリティの穴 波 4 のテスト（送り元の IP・回数の鍵・監査の IP・取扱店の認可の拒否の監査・管理画面の CONTACT タブ。SEC-AUTH・ADMIN・STOCKIST・LOOK・NEWS・SEARCH）
+
+確認日: 2026-10-28（この節は波 4 の分。並びは時系列でなく、波 3 の節の後に置く）。波 4 は移行を含まない（本番の DB の変更なし）。単体・結合は各 Task の実装者が対象の範囲で通した。本番ビルドの E2E 全件を 1 回流し、実測した（下の「実測（2026-10-28）」）。DB 結合（`tests/integration/db`）は流していない。足した・書き換えた E2E と外した `test.fail` 16 行は緑。
+
+- 窓口の数が 1 本増えた（`GET /api/admin/stockists/access`）。Route Handler は155ファイル・197メソッド、表は154行・196メソッド。数を固定する [order-status-traceability.test.ts](../../../tests/unit/docs/order-status-traceability.test.ts)・[delivery-status-traceability.test.ts](../../../tests/unit/docs/delivery-status-traceability.test.ts) の期待を 154 → 155、196 → 197、153 → 154、195 → 196 に直した（`tests/unit/docs` 56 件通過）。
+- 送り元の IP の読みが変わった（`x-forwarded-for` を読まない）ので、`jest.config.cjs` の `setupFiles` に [setupClientIp.js](../../../tests/setupClientIp.js)（`CLIENT_IP_HEADER=x-real-ip`）を足した。各試験は `x-real-ip` を送るだけで足りる。
+
+### 新しく作った試験ファイル
+
+| ファイル | 先頭の ID | 確かめること |
+| --- | --- | --- |
+| [request-ip.test.ts](../../../tests/unit/lib/request-ip.test.ts)（24 本） | `DD-AUTH-038` | `getClientIp`・`getAuditRequestContext`。`VERCEL=1` か `CLIENT_IP_HEADER` の時だけ `x-vercel-forwarded-for` → `x-real-ip` の順に読み、`x-forwarded-for` は読まない。`isIP` を通らない値・見出し無しは `null`。空の `user-agent` は `null` |
+| [audit-authz-denial.test.ts](../../../tests/unit/lib/auth/audit-authz-denial.test.ts)（19 本） | `DD-STOCKIST-039` | `auditAuthzDenial`。失敗の 1 行の全項目、操作者ごとの数え（10 分 20 行）、21 回目に `denied_burst` の 1 行、22 回目以降は書かない、`denial` 無し・成功は何もしない、数え・書き込みの失敗で投げない、偽の XFF は `ip` に入らない |
+| [stockist-admin-access-api.test.ts](../../../tests/integration/api/stockist-admin-access-api.test.ts)（11 本） | `API-STOCKIST-007` | `GET /api/admin/stockists/access`。204・`no-store`・表と監査に触れない、403（監査 1 行）、トークン無しの 401（監査も操作者の枠も 0）、失効した 401、503、aal1、順序（送り元の枠が認可より前）、操作者の枠、500 |
+| [setupClientIp.js](../../../tests/setupClientIp.js) | （補助。ID なし） | jest の全体の環境に `CLIENT_IP_HEADER=x-real-ip` を入れる |
+| [rate-limited-response-body.test.tsx](../../../tests/unit/features/items/rate-limited-response-body.test.tsx)（3 本） | （ITEM は範囲外。ID なし） | `RelatedItems`・`usePublicItems`・`PublicItemGrid`（続きの頁）が、`/api/items` の 429（`no-store`）でも本文を読み始める |
+| [contact-section-rate-limited-body.test.tsx](../../../tests/unit/components/contact-section-rate-limited-body.test.tsx)（4 本） | （CONTACT は範囲外。ID なし） | 管理のお問い合わせの返信・ステータス変更・テンプレートの保存・削除が 429 でも本文を読み始める |
+| [item-form-rate-limited-body.test.tsx](../../../tests/unit/components/item-form-rate-limited-body.test.tsx)（1 本） | （ITEM は範囲外。ID なし） | `ItemForm` の保存済みカラーの削除が 429 で本文を読み始め、失敗の文を出す |
+| [stockists-access-route.test.ts](../../../tests/unit/api/admin/stockists/stockists-access-route.test.ts)（6 本） | `SEC-STOCKIST-019` | `GET /api/admin/stockists/access` の単体。全件の後に足した |
+
+### 足した・書き換えた試験（範囲外の領域を手で記載）
+
+| ファイル | 対象 | 変えたこと |
+| --- | --- | --- |
+| `tests/unit/components/ItemDetailAddToCart.test.tsx`（末尾 1 本） | `ItemDetailClient` | `/api/items/[id]` の 429 で本文を読み始める（Task 1b） |
+| `tests/unit/components/WishlistPage.test.tsx`（末尾 2 本。`afterEach(jest.restoreAllMocks)` も） | `src/app/wishlist/page.tsx` | 一覧の取得・削除の 429 で本文を読み始める |
+| `tests/unit/contexts/CartContext.test.tsx`（3 本） | `CartContext`（お気に入りの追加・解除・行の番号の引き直し） | 429 で本文を読み始める |
+| `tests/unit/components/ContactPage.test.tsx`（末尾 1 本） | 公開のお問い合わせフォーム | 送信が 429 でも本文を読み始め、上限の案内を出す |
+| `tests/unit/components/AccountInquiries.test.tsx`（末尾 1 本） | 会員のお問い合わせの返信 | 429 で本文を読み始め、失敗の案内を出す |
+| `tests/unit/components/ShopSettingsSection.test.tsx`（1 本） | `ShopSettingsSection` | 保存の直前の読み直しが 429 でも本文を読み始め、保存の失敗の文を出す |
+| `tests/unit/hooks/useOrderAttention.test.tsx`（503・429 の各枝） | G の要対応の hook | 503（要確認）・429（配送の対応済み）で `arrayBuffer` が 1 回（G-1 了承のうえ波 4 で直した 2 か所の 1） |
+| `tests/unit/features/account/returns/customer-return-client.test.ts`（429・500・502・503） | G の返品の client | 同上（2 か所の 2）。修正前 6 件失敗 → 関連 10 suites 291 件通過 |
+| 取扱店の作成ページの結合試験 2 ファイル（`tests/integration/ui` 配下） | `src/app/admin/stockist/new/page.tsx` | SEC-STOCKIST-019 で頁が先に `GET /api/admin/stockists/access` を呼ぶ形に合わせて書き換えた（全件の後。40 件通過） |
+
+### 書き換えた試験（領域の範囲内は各領域の頁にも記載）
+
+| 領域 | ファイル | 変えたこと |
+| --- | --- | --- |
+| AUTH 送り元（Task 2） | `tests/unit/middleware/rateLimit.test.ts`（13 本に書き直し） | 鍵は `x-real-ip`、XFF だけなら `null`、両方在れば `x-real-ip`、`request` 無しは `null`、不正な値は `null`。429・503 に `private, no-store` と `Retry-After`（`NextResponse` が投げる環境の `Response` の枝も `jest.isolateModules` で）。先頭は `DD-AUTH-038` |
+| AUTH 送り元（Task 2・2b・2c） | 単体・結合 約 36 ファイル（`tests/unit/api/auth/*`・`admin/stockists/*`・`mfa-reset`・`revoke-user-sessions`・`tests/integration/api/` の `auth-*`・`look-admin-*`・`news-admin-*`・`stockist-admin-*`・`search-*` ほか）、G の `order-email-routes`・`order-refund-route`・`checkout-route-guard`・`lib/orders/{returns,tracking}` | 見出しを `x-forwarded-for` から `x-real-ip` へ。値の `, 10.0.0.1` は単一の IP に。「XFF の先頭を使う」の現状固定を「`x-real-ip` を使う／XFF は読まない」に反転（`search-rate-limit-proxy`、`stockist-admin-guards`、`admin-audit-write`、`news-public-api`）。偽の XFF は無視され `ip null` になる試験を `role-permissions-route`・`shop-settings-route`・`customer-return-route-support`・`return-route-support`・`checkout-route-guard` などに追加 |
+| AUTH 守り（Task 4） | 単体 14・結合 14 ファイル（`confirm`・`login`・`login/resend`・`mfa/enroll-totp`・`mfa/verify`・`oauth/callback`・`oauth/start`・`otp/verify`・`password-reset/*`・`post-login`・`refresh`・`register`） | 「制限の呼び出しが投げても先へ進む」を「先へ進まない」に反転（`SEC-AUTH-013-AC-02`、26 試験）。`password-reset/link` は 400 `link_expired`、`confirm`・`login/resend`・`post-login` は例外がそのまま届く。`register` の宛先の枠が投げた時は 202 でなく 500。`mfa/verify` に利用者単位の枠の新規 1 本。64 suites・1392 件通過 |
+| E2E の環境（Task 3） | `tests/unit/scripts/e2e/environment.test.ts`（3 本追加） | `CLIENT_IP_HEADER` の旗の値と親環境の上書き、旗が在っても手元でない Supabase は既存の見張りが止める、旗の値・有無が印を変える |
+| ADMIN 権限（Task 0・7） | `tests/unit/lib/auth/admin-rbac.test.ts`（`permissions` の和集合 ＋ `denial` 9 本）、`tests/integration/api/admin-misc/admin-authorization-path.test.ts`、`tests/unit/api/admin/{cost-profit-route,receipt-route}.test.ts`（型付きモックに `permissions`） | 成功結果が `permissions`（権限の集合）を返す。`denial` は失効した session の 401（`session`）・足りない権限の 403（`permission`）・aal1 の 403（`mfa`）だけに付き、トークン無しの 401・503・500 には付かない |
+| 監査 | `tests/unit/lib/audit.masking.test.ts`（5 本追加。`DD-STOCKIST-039`） | `detail`・`metadata` の文字列の制御文字（Cc・Cf）を空白に替える。入れ子・配列の中も。日本語・絵文字は不変、元の event を壊さない、秘匿キーは `[REDACTED]` のまま |
+| LOOK 一覧（Task 0） | `tests/unit/components/look-section.test.tsx`、`tests/integration/ui/look-admin-list-screen.test.tsx`、`tests/unit/api/admin/looks/looks-get-route.test.ts`、`tests/integration/api/look-admin-list-api.test.ts` | 「新規作成」は `canManage` の時だけ（0 件でも出す）。窓口の認可は 1 回、`canManage` は成功結果の `permissions` から。旧「manage の 503」の試験は「session の確かめが 1 回・確認できない時 503」に置き換え。`look-section.test.tsx` にはさらに Task 1b の 429 の読み切り 3 本 |
+| ADMIN メニュー（Task 0） | `tests/unit/components/AdminSettingsMenu.test.tsx` | 店長12個・サポーター4個（CONTACT）、CONTACT を押す・`tab=CONTACT`・他タブでは出さない（FR-ADMIN-009-AC-01）。26 本通過 |
+| STOCKIST（Task 8） | `tests/unit/features/stockist/stockist-admin-security.test.ts`、`tests/unit/api/admin/stockists/{stockists-route,stockists-id-route}.test.ts`、`tests/integration/api/stockist-admin-{guards,create-api,list-api,item-get-api,item-patch-api,item-put-api,item-delete-api,write-path}.test.ts`、`tests/unit/app/admin/stockist/stockist-create-page.test.tsx`（11 本に書き直し） | 回数の制限を送り元の枠（`enforceAdminStockistIpRateLimit`）と操作者の枠（`enforceAdminStockistActorRateLimit`）に分け、順序は送り元の枠 → 認可 → 操作者の枠 → CSRF。旧「認可で断られた要求は数えない・監査にも残さない」の現状固定を反転（403・aal1 の 403・失効した 401 は失敗の監査 1 行、トークン無しの 401 は 0 行）。作成の頁は入口の確かめ（読み込み中 → フォーム／401・403・429・500・503・通信失敗の固定文、2xx 以外の本文の読み切り）。21 suites・766 件通過 |
+| ADMIN 監査（Task 9） | 単体 11 ファイル（`create-user-route`・`admin-contact-*`・`audit-logs-route`・`item-color-presets-*`・`revoke-user-sessions-route`）、結合 `admin-contact-*`・`admin-item-color-presets-{save,delete}`・`admin-misc/admin-audit-write`・`admin/audit-logs` | 監査の行に `actor_email`・`ip`・`user_agent` が入る期待へ（旧: `ip` は undefined）。偽の XFF は入らない。色見本は作成（201）と削除成功だけ `admin.item_color_preset.create`・`.delete` を 1 行（色の名前・値は入れない。200・404 は書かない）。93 suites・4287 件通過 |
+| LOOK・NEWS 監査（Task 10） | `tests/unit/api/admin/looks-audit.test.ts`、`tests/unit/api/admin/news/news-admin-{route,id-route}.test.ts`、`tests/integration/api/look-admin-{create-api,write-path}.test.ts`、`news-admin-{create-api,item-put-api,write-path}.test.ts` | 旧「IP は残さない」を改め、`ip` が `x-real-ip` の値で偽の XFF を含まない。`request-ip.test.ts` に空の UA が null の 1 本。29 suites・761 件通過 |
+| SEARCH・NEWS 公開（Task 6） | 領域の頁（19_search・02_news_list）と `search-rate-limit-proxy.test.ts` | 回数の鍵は `x-real-ip`。XFF だけなら null |
+
+### E2E で足した・書き換えた期待（本番ビルドの E2E 全件で緑）
+
+| ファイル（`e2e/FR-...`） | 要件 ID | 内容 |
+| --- | --- | --- |
+| `STOCKIST-014` | `SEC-STOCKIST-019-AC-03`・`SEC-STOCKIST-021-AC-02`・`-AC-03`（新規） | `access` は店長 204・サポーター 403・未ログイン 401・全部 `no-store`。トークン無しの PATCH は 401 で固定の `x-real-ip` の `audit_logs` が 0 行（対照にサポーターの 403 を送ると 1 行）。権限の無い会員の GET を 25 回送ると `{failure: 20, denied_burst: 1}`（窓の境をまたぐ試行は捨ててやり直す） |
+| `STOCKIST-013` | `SEC-STOCKIST-019-AC-01`・`-AC-02`（`test.fail` を外し、空振り防止に「読み込み中」が消え `main .text-red-600` が見える確認を追加。3 幅） | 作成の頁を未ログイン・サポーターで開くとフォームが出ず、固定の誤りの 1 行が出る |
+| `STOCKIST-015` | `SEC-STOCKIST-012-AC-01`（`test.fail` を外した）、`SEC-STOCKIST-007-AC-02`（見出しを `x-real-ip` に） | 偽の `x-forwarded-for: 203.0.113.9` を付けても行の `ip` が `x-real-ip` の値で、偽の値を含まない |
+| `ADMIN-MISC-002` | `SEC-ADMIN-022-AC-03`（新規） | 利用者の作成の失敗と成功の行に `actor_email`・`ip`・`user_agent` が入る |
+| `ADMIN-MISC-003` | `SEC-ADMIN-009-AC-01`（強化・`test.fail` を外した） | 全行の `ip` が `x-real-ip` の値で偽の値を含まない、行為者の行の `actor_email` が管理者のメール（トークン無しの 401 の行は全体の上限で書かれないことがあるので最低は行為者の 2 行） |
+| `ADMIN-MISC-004` | `SEC-ADMIN-023-AC-02`（新規） | 問い合わせの詳細と監査ログを読むと、2 行の `ip`・`user_agent` が付けた値で偽の値を含まない |
+| `ADMIN-MISC-005` | `SEC-ADMIN-022-AC-01`（`test.fail` を外した。`:219` の `SEC-ADMIN-002-AC-02` は残す） | 色見本の作成・削除の監査 |
+| `ADMIN-MISC-007` | `SEC-ADMIN-022-AC-02`（強化・`test.fail` を外した） | 問い合わせの返信の `ip` が `x-real-ip` の値と一致 |
+| `ADMIN-MISC-006` | `FR-ADMIN-009-AC-01`・`-AC-05`（`test.fail` を外した。3 幅） | AC-01 は CONTACT のタブが出て押すと問い合わせの一覧が出る、AC-05 は返信のテンプレートを作り・直し・消せて選ぶと返信の本文に入る（`ContactSection` を管理画面で初めて開く） |
+| `ADMIN-029` | （店長のメニュー） | 店長のメニューに `CONTACT`（PACKING の次）。12 個 |
+| `LOOK-SEC-003` | `SEC-LOOK-019-AC-04`（`test.fail` を外した。3 幅）、`SEC-LOOK-011-AC-01`（毎回違う `x-real-ip`） | 権限の無い人の一覧で「新規作成」が button・link とも 0 件 |
+| `LOOK-SEC-004` | `SEC-LOOK-020-AC-02`（強化・`test.fail` を外した） | 行の `ip` が `x-real-ip` の値で偽の XFF を含まない |
+| `NEWS-SEC-005` | `SEC-NEWS-016-AC-01`（行が 1 件）と `-AC-03`（新規。`ip` が `x-real-ip` の値で偽の XFF を含まない） | 作成を 2 回流す。`uniqueIp` を 8 区切りの IPv6 にした（6 区切りは `isIP` が 0 で ip が null になる） |
+| `LOGIN-035` | `SEC-AUTH-013-AC-01`（`test.fail` を外した） | 固定の `x-real-ip` に毎回違う XFF を付けて `/api/auth/refresh` に 31 回送ると 31 回目が 429（desktop の 1 幅） |
+| `SEARCH-022` | `SEC-SEARCH-006-AC-01`・`SEC-SEARCH-020-AC-01`（`test.fail` を外した。AC-01 の 3 幅） | `:288,291` は XFF のまま（見出しの無い要求は `ip null` の 1 つの枠に集まり 121 回目が 429） |
+| `NEWS-SEC-003` | `SEC-NEWS-011-AC-01`（専用の送り方 `getNewsFromFixedSource` に替え、`test.fail` を外した） | 固定の `x-real-ip` に毎回違う XFF |
+| 送り元の見出しの書き換え | `LOGIN-024・030・031・032・034・036・038`、`PWRESET-002・009・010`、`SIGNUP-002・003`、`member-session-helpers`、`SEARCH-018〜024`、`WISHLIST-011`、`LOOK-DETAIL-019`、`LOOK-SEC-005`、`look-admin-test-utils`、`stockist-admin-test-utils`、G/H の `ACCOUNT-035`・`return-request-test-utils`・`order-status-test-utils`・`delivery-tracking-test-utils`（5 行） | `'x-forwarded-for'` を `'x-real-ip'` に（値の作り方は不変）。残る `'x-forwarded-for'` は、GoTrue 直（`admin-session-test-utils`・`home-grant-test-utils`・`news-test-utils`）、置き場への送信に付かないことの表明（`ACCOUNT-036:50`）、偽の XFF を送る意図の試験 |
+
+### E2E で外した `test.fail`（16 行）
+
+外した行は 12 ファイルの 16 行。反転して通ることは本番ビルドの E2E 全件で確かめた。`grep -rnE "test\.fail" e2e | grep -E "SEC-(AUTH-013|SEARCH-(006|020)|NEWS-011|LOOK-(011|019|020)|ADMIN-(009|022)|STOCKIST-(012|019|020|021))|FR-ADMIN-009"` は 0 件。
+
+| ファイル（`e2e/FR-...`） | 外した要件 ID | Task |
+| --- | --- | --- |
+| `LOGIN-035` | SEC-AUTH-013-AC-01 | 5 |
+| `SEARCH-022` | SEC-SEARCH-006-AC-01、SEC-SEARCH-020-AC-01 | 6 |
+| `NEWS-SEC-003` | SEC-NEWS-011-AC-01 | 6 |
+| `ADMIN-MISC-006` | FR-ADMIN-009-AC-01、-AC-05 | 0 |
+| `LOOK-SEC-003` | SEC-LOOK-019-AC-04 | 0 |
+| `STOCKIST-013` | SEC-STOCKIST-019-AC-01、-AC-02 | 8 |
+| `STOCKIST-014` | SEC-STOCKIST-020-AC-01、SEC-STOCKIST-021-AC-01 | 8 |
+| `STOCKIST-015` | SEC-STOCKIST-012-AC-01 | 8 |
+| `ADMIN-MISC-003` | SEC-ADMIN-009-AC-01 | 9 |
+| `ADMIN-MISC-005` | SEC-ADMIN-022-AC-01 | 9 |
+| `ADMIN-MISC-007` | SEC-ADMIN-022-AC-02 | 9 |
+| `LOOK-SEC-004` | SEC-LOOK-020-AC-02 | 10 |
+
+残す `test.fail`: `FR-ADMIN-MISC-005:219`（SEC-ADMIN-002-AC-02。DB の aal2）、`FR-LOOK-SEC-004:303`（SEC-LOOK-012-AC-03）、`FR-LOGIN-032:402,488`。
+
+### 実測（2026-10-28）
+
+- 手元の `npm run db:reset` の後、DB なしの jest 全体は 803 suites・20226 件通過・0 失敗。`npm run test:trace-coverage` は届かない分岐の節に無い 0 件・ずれた 0 件。`npm run validate-trace` は基準より増えた 0 件。
+- 本番ビルドの E2E 全件（1 回）は 185 failed・4832 passed・26 skipped。波 3 の 183 failed（`.superpowers/sdd/2026-10-25-security-gap-fixes/e2e-results-wave3-full.json`）と比べて新しく赤になった 10 ファイル（FR-ITEM-031・FR-PRIVACY-006・FR-ADMIN-057・FR-HOME-022・NFR-HOME-002・FR-CART-024・FR-CHECKOUT-039・FR-LOGIN-038・FR-NEWS-ALL-001・002）は、1 並列の再実行で 200 件とも通った（並列の揺れ）。外した `test.fail` 16 行と足した E2E は緑。
+- 全件の後に見つけて直した物: 取扱店の作成ページの結合試験 2 ファイル（SEC-STOCKIST-019 で頁が先に `GET /api/admin/stockists/access` を呼ぶ形に合わせた。40 件通過）、`test-gaps.md` の行のずれ 22 件、新しい単体 `tests/unit/api/admin/stockists/stockists-access-route.test.ts`（6 件）。
+- LOOK の管理の一覧（`LookSection.tsx` の 3 か所）と G の画面 2 か所（`useOrderAttention.ts`・`customer-return-client.ts`）に、no-store の 429・503 の本文を読み切る 1 行を足した。ほかの G/H の 11 か所は G-1 への引き継ぎ（台帳の「波 4 の注」）。
+- 流していない物: DB 結合（`tests/integration/db`）。波 4 は DB を変えないが、`rate_limit_counters.ip` に `null` が入る経路は fake client の結合でしか確かめていない。
+- 参考（流す前の見立て）。部分実行は `npx playwright test e2e/FR-LOGIN e2e/FR-PWRESET e2e/FR-SIGNUP e2e/FR-SEARCH e2e/FR-NEWS-SEC-003 e2e/FR-NEWS-SEC-005 e2e/FR-WISHLIST-011 e2e/FR-STOCKIST e2e/FR-ADMIN-MISC e2e/FR-ADMIN-029 e2e/FR-ADMIN-123 e2e/FR-LOOK-SEC-001 e2e/FR-LOOK-SEC-002 e2e/FR-LOOK-SEC-003 e2e/FR-LOOK-SEC-004 e2e/FR-LOOK-SEC-005 e2e/FR-LOOK-DETAIL-019 e2e/FR-LOOK-ADMIN-001 e2e/FR-ACCOUNT-035 e2e/FR-ACCOUNT-036 e2e/FR-CHECKOUT-005 e2e/FR-CHECKOUT-025 e2e/FR-CHECKOUT-046 e2e/FR-HOME-022`、そのあと全件を波 3 の全件（183 failed）と比べる。新しい赤の見立て: ①429（`x-real-ip` の書き換え忘れ。見出しの無い要求の枠が `ip null` の 1 つにまとまった）、②503（`ip` に文字列が入った）、③`networkidle` が止まる（`no-store` の 429・503 の本文を読まない呼び手）、④CONTACT タブでメニューの並びを見る試験、⑤監査の `ip` が空。

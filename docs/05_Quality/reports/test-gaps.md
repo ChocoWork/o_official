@@ -17,12 +17,12 @@
 | SEC-NEWS-008-AC-02 署名の失敗が記録に1件残る | E2E | `docs/02_Requirements/areas/news.md:1832` |
 | SEC-NEWS-009-AC-03 公開の一覧の取り出しは上限を渡さなくても上限で止まる | E2E | `docs/02_Requirements/areas/news.md:1881` |
 | SEC-NEWS-009-AC-04 詳細の前後の取り出しは公開済みの全部を読まない | E2E | `docs/02_Requirements/areas/news.md:1893` |
-| SEC-NEWS-018-AC-03 作成の失敗で上げた画像が残らない | E2E | `docs/02_Requirements/areas/news.md:2279` |
-| SEC-NEWS-019-AC-01 /api/news の失敗の応答は固定の文だけ | E2E | `docs/02_Requirements/areas/news.md:2304` |
-| SEC-NEWS-019-AC-02 失敗の記録に鍵と token が含まれない | E2E | `docs/02_Requirements/areas/news.md:2316` |
-| SEC-NEWS-020-AC-02 管理の1件の取得は DB の失敗を 404 にしない | E2E | `docs/02_Requirements/areas/news.md:2361` |
-| SEC-NEWS-020-AC-03 公開の一覧の取り出しの失敗が記録に残る | E2E | `docs/02_Requirements/areas/news.md:2373` |
-| SEC-NEWS-021-AC-01 決めた回数を超えた作成を断る | E2E | `docs/02_Requirements/areas/news.md:2398` |
+| SEC-NEWS-018-AC-03 作成の失敗で上げた画像が残らない | E2E | `docs/02_Requirements/areas/news.md:2293` |
+| SEC-NEWS-019-AC-01 /api/news の失敗の応答は固定の文だけ | E2E | `docs/02_Requirements/areas/news.md:2318` |
+| SEC-NEWS-019-AC-02 失敗の記録に鍵と token が含まれない | E2E | `docs/02_Requirements/areas/news.md:2330` |
+| SEC-NEWS-020-AC-02 管理の1件の取得は DB の失敗を 404 にしない | E2E | `docs/02_Requirements/areas/news.md:2375` |
+| SEC-NEWS-020-AC-03 公開の一覧の取り出しの失敗が記録に残る | E2E | `docs/02_Requirements/areas/news.md:2387` |
+| SEC-NEWS-021-AC-01 決めた回数を超えた作成を断る | E2E | `docs/02_Requirements/areas/news.md:2412` |
 | FREQ-278-AC-02 3つの幅で縦線の動きの名前が threadDraw | E2E | `docs/02_Requirements/areas/home.md:709` |
 | FREQ-278-AC-06 3つの幅で縦線は1回だけ再生し、終わりの形を保つ | E2E | `docs/02_Requirements/areas/home.md:761` |
 | SEC-HOME-014-AC-01 1つの領域の取得が失敗してもホームのほかの節が出る | E2E | `docs/02_Requirements/areas/home.md:1412` |
@@ -59,10 +59,10 @@
 | FREQ-515-AC-01 管理画面のユーザー一覧で選んだ役割で送られ、失敗したら元の役割に戻る | E2E | `docs/02_Requirements/areas/auth.md:3858` |
 | FREQ-515-AC-03 お知らせの作成・編集で選んだカテゴリーで保存される | E2E | `docs/02_Requirements/areas/auth.md:3884` |
 | SEC-AUTH-008-AC-01 Google でログインした管理者は、TOTP の前に管理の窓口が 403 | E2E | `docs/02_Requirements/areas/auth.md:4483` |
-| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:4646` |
-| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:4732` |
-| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:4869` |
-| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:4985` |
+| SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない | E2E | `docs/02_Requirements/areas/auth.md:4652` |
+| SEC-AUTH-015-AC-03 本番でメールの差し替えに新旧両方の確認が要る | E2E | `docs/02_Requirements/areas/auth.md:4738` |
+| SEC-AUTH-019-AC-01 偽の `x-forwarded-host` での再設定の申請ではメールが届かない | E2E | `docs/02_Requirements/areas/auth.md:4875` |
+| SEC-AUTH-023-AC-01 Google のログインの後に、JS から読める Cookie にトークンが無い | E2E | `docs/02_Requirements/areas/auth.md:4991` |
 | FREQ-508-AC-03 流し直しても付与が重ならず、ほかの結び付きが残り、「監査ログの閲覧」の名前で登録される | E2E | `docs/02_Requirements/areas/admin.md:206` |
 | SEC-ADMIN-003-AC-02 管理の表の権限が anon・authenticated に無い | E2E | `docs/02_Requirements/areas/admin.md:422` |
 | SEC-ADMIN-010-AC-01 監査ログの行を書き換えると検知の確かめで分かる | E2E | `docs/02_Requirements/areas/admin.md:642` |
@@ -134,30 +134,30 @@
 
 - `src/app/admin/news/NewsForm.tsx:253` の `NewsForm` の画像の欄の onClick の `fileInputRef.current?.click()` の `current` が `null` の側は通らない。file の入力は押される枠そのものの子で、枠が描かれている間は ref が必ず入っているため。確認: 未
 - `src/app/admin/news/NewsForm.tsx:257` の `NewsForm` の画像の欄の onKeyDown（Enter・Space）の `fileInputRef.current?.click()` の `current` が `null` の側は通らない。理由は onClick と同じ。確認: 未
-- `src/app/api/admin/news/[id]/route.ts:51` の `logNewsAudit` の引数 `resourceId` の既定値 `= null` は通らない。ファイルの中の呼び出し7か所が全部 `id` を渡すため。確認: 未
-- `src/features/news/components/PublicNewsGrid.tsx:55` の `parseCategorySelection` の引数 `fallback` の既定値 `= "ALL"` は通らない。呼び出し2か所（初めの状態と URL の読み直しの effect）が全部 `catalogProps.initialCategory ?? "ALL"` を渡すため。確認: 未
-- `src/features/news/components/PublicNewsGrid.tsx:127` の `syncCategoryQuery` の `variant !== "catalog"` の早期の戻りは通らない。呼ぶのは `applyCategorySelection` だけで、それを受ける `MultiSelect` は catalog の描画にしか出ず、home で呼ばれないため。確認: 未
-- `src/features/news/components/PublicNewsGrid.tsx:275` の `renderCategoryFilter` の引数 `size` の既定値 `= "3xs"` は通らない。呼び出し2か所が `"xs"` と `"3xs"` を必ず渡すため。確認: 未
-- `src/features/news/components/PublicNewsGrid.tsx:452` の `PublicNewsGrid` の home の VIEW ALL の判断の `fetchLimit ?? 6` の右側は通らない。home では `fetchLimit` が `props.fetchLimit ?? 6` で必ず数になるため。確認: 未
-- `src/features/search/components/SearchPageClient.tsx:159` `renderSuggestionLabel` の「語が空なら label をそのまま返す」側。候補のリストは入力欄の値が前後の空白を除いて空でない時だけ開く（`isSuggestionListOpen`）ので、空の語で呼ばれない。確認: 未
-- `src/features/search/components/SearchPageClient.tsx:380` `commitSearch` の `nextTab` の既定値（`activeTab`）の側。呼ぶ所（送信・タブ・候補）が全部 `nextTab` を渡す。確認: 未
-- `src/features/search/components/SearchPageClient.tsx:394` `nextUrl` の三項で `params.toString()` が空の側（`pathname` だけを返す側）。直前に `params.set("tab", ...)` で必ず `tab` を入れるので空にならない。確認: 未
-- `src/features/search/components/SearchPageClient.tsx:684` 人気商品の `map` の中の `results?.popularItems ?? []` の `results` が null の側。同じ条件の直前の判定で人気商品が1件以上と確かめた後の分岐で、同じ描画の中の値なので null にならない。確認: 未
-- `src/features/search/components/SearchPageClient.tsx:684` 同じ式の `?? []` の右側（空配列）。上と同じ理由で、1件以上と確かめた直後の分岐なので配列がある。確認: 未
+- `src/app/api/admin/news/[id]/route.ts:48` の `logNewsAudit` の引数 `resourceId` の既定値 `= null` は通らない。ファイルの中の呼び出し7か所が全部 `id` を渡すため。確認: 未
+- `src/features/news/components/PublicNewsGrid.tsx:56` の `parseCategorySelection` の引数 `fallback` の既定値 `= "ALL"` は通らない。呼び出し2か所（初めの状態と URL の読み直しの effect）が全部 `catalogProps.initialCategory ?? "ALL"` を渡すため。確認: 未
+- `src/features/news/components/PublicNewsGrid.tsx:128` の `syncCategoryQuery` の `variant !== "catalog"` の早期の戻りは通らない。呼ぶのは `applyCategorySelection` だけで、それを受ける `MultiSelect` は catalog の描画にしか出ず、home で呼ばれないため。確認: 未
+- `src/features/news/components/PublicNewsGrid.tsx:278` の `renderCategoryFilter` の引数 `size` の既定値 `= "3xs"` は通らない。呼び出し2か所が `"xs"` と `"3xs"` を必ず渡すため。確認: 未
+- `src/features/news/components/PublicNewsGrid.tsx:455` の `PublicNewsGrid` の home の VIEW ALL の判断の `fetchLimit ?? 6` の右側は通らない。home では `fetchLimit` が `props.fetchLimit ?? 6` で必ず数になるため。確認: 未
+- `src/features/search/components/SearchPageClient.tsx:160` `renderSuggestionLabel` の「語が空なら label をそのまま返す」側。候補のリストは入力欄の値が前後の空白を除いて空でない時だけ開く（`isSuggestionListOpen`）ので、空の語で呼ばれない。確認: 未
+- `src/features/search/components/SearchPageClient.tsx:385` `commitSearch` の `nextTab` の既定値（`activeTab`）の側。呼ぶ所（送信・タブ・候補）が全部 `nextTab` を渡す。確認: 未
+- `src/features/search/components/SearchPageClient.tsx:399` `nextUrl` の三項で `params.toString()` が空の側（`pathname` だけを返す側）。直前に `params.set("tab", ...)` で必ず `tab` を入れるので空にならない。確認: 未
+- `src/features/search/components/SearchPageClient.tsx:689` 人気商品の `map` の中の `results?.popularItems ?? []` の `results` が null の側。同じ条件の直前の判定で人気商品が1件以上と確かめた後の分岐で、同じ描画の中の値なので null にならない。確認: 未
+- `src/features/search/components/SearchPageClient.tsx:689` 同じ式の `?? []` の右側（空配列）。上と同じ理由で、1件以上と確かめた直後の分岐なので配列がある。確認: 未
 - `src/features/stockist/components/PublicStockistGrid.tsx:328` の `renderAreaTree` の引数 `size` の既定値 `"xs"` は通らない。呼び出し2か所（デスクトップの `"3xs"`、モバイルの `"xs"`）が必ず値を渡し、この関数は export されないため。確認: 未
 - `src/features/search/services/search.service.ts:84` `tokenizeQuery` の「正規化した語が空なら空配列を返す」側。呼ぶ `rankText` は書き出しの関数 `executeSearch`・`getSearchSuggestions` だけから来て、どちらも前後の空白を除いた空でない語しか渡さない（空は手前で戻る）。確認: 未
 - `src/features/search/services/search.service.ts:117` `rankText` の「語が空、または分けた語が空なら 0 を返す」側。語は空でなく、記号だけの語も `tokenizeQuery` が語全体を1語に戻すので分けた語は空にならない。確認: 未
 - `src/features/search/services/search.service.ts:131` `rankText` の `normalizedTexts[0] ?? ''` の右側。呼ぶ所が必ず題を先頭に1つ以上の欄を渡す。確認: 未
 - `src/features/search/components/SearchPageClient.tsx:434` 外を押す聞き手の `searchBoxRef.current` が `null` の側は通らない（分岐の網羅の数には入らない）。聞き手は候補のリストが開いている間、つまり検索の箱を描いた後にだけ付くため。確認: 未
-- `src/app/api/auth/confirm/route.ts:105` `GET` の入口の判断 `error || !data?.session || !data?.user` の `!data?.user` の `data` が `null` の側は通らない。直前の `!data?.session` が `data` が `null` の時に真になって先に抜けるため。確認: 済み
-- `src/app/api/auth/confirm/route.ts:149` `GET` のセッションの保存に失敗した時の監査の `data.user?.email` の `user` が無い側は通らない。105 行の確かめを通った後なので `user` がある。確認: 済み
-- `src/app/api/auth/confirm/route.ts:152` `GET` のセッションの保存に失敗した時の監査の `data.user?.id` の `user` が無い側は通らない。理由は 149 行と同じ。確認: 済み
-- `src/app/api/auth/confirm/route.ts:179` `GET` の成功の監査の `data.user?.email` の `user` が無い側は通らない。理由は 149 行と同じ。確認: 済み
-- `src/app/api/auth/confirm/route.ts:181` `GET` の成功の監査の `data.user?.id` の `user` が無い側は通らない。理由は 149 行と同じ。確認: 済み
-- `src/app/api/auth/otp/verify/route.ts:93` `POST` の入口の判断 `verifyError || !data?.session || !data?.user` の `!data?.user` の `data` が `null` の側は通らない。直前の `!data?.session` が `data` が `null` の時に真になって先に抜けるため。確認: 済み
-- `src/app/api/auth/register/route.ts:205` `POST` の `data.user?.id` の `user` が無い側（セッションの保存が結果を返さなかった時の監査）は通らない。手前の `if (!data.user)` で先に返るため。確認: 済み
-- `src/app/api/auth/register/route.ts:225` `POST` の `data.user?.id` の `user` が無い側（セッションの保存が例外を投げた時の監査）は通らない。理由は 205 行と同じ。確認: 済み
-- `src/app/api/auth/register/route.ts:231` `POST` の `data.user?.id` の `user` が無い側（成功の監査）は通らない。理由は 205 行と同じ。確認: 済み
+- `src/app/api/auth/confirm/route.ts:101` `GET` の入口の判断 `error || !data?.session || !data?.user` の `!data?.user` の `data` が `null` の側は通らない。直前の `!data?.session` が `data` が `null` の時に真になって先に抜けるため。確認: 済み
+- `src/app/api/auth/confirm/route.ts:145` `GET` のセッションの保存に失敗した時の監査の `data.user?.email` の `user` が無い側は通らない。101 行の確かめを通った後なので `user` がある。確認: 済み
+- `src/app/api/auth/confirm/route.ts:148` `GET` のセッションの保存に失敗した時の監査の `data.user?.id` の `user` が無い側は通らない。理由は 145 行と同じ。確認: 済み
+- `src/app/api/auth/confirm/route.ts:175` `GET` の成功の監査の `data.user?.email` の `user` が無い側は通らない。理由は 145 行と同じ。確認: 済み
+- `src/app/api/auth/confirm/route.ts:177` `GET` の成功の監査の `data.user?.id` の `user` が無い側は通らない。理由は 145 行と同じ。確認: 済み
+- `src/app/api/auth/otp/verify/route.ts:84` `POST` の入口の判断 `verifyError || !data?.session || !data?.user` の `!data?.user` の `data` が `null` の側は通らない。直前の `!data?.session` が `data` が `null` の時に真になって先に抜けるため。確認: 済み
+- `src/app/api/auth/register/route.ts:197` `POST` の `data.user?.id` の `user` が無い側（セッションの保存が結果を返さなかった時の監査）は通らない。手前の `if (!data.user)` で先に返るため。確認: 済み
+- `src/app/api/auth/register/route.ts:217` `POST` の `data.user?.id` の `user` が無い側（セッションの保存が例外を投げた時の監査）は通らない。理由は 197 行と同じ。確認: 済み
+- `src/app/api/auth/register/route.ts:223` `POST` の `data.user?.id` の `user` が無い側（成功の監査）は通らない。理由は 197 行と同じ。確認: 済み
 - `src/app/auth/password-reset/page.tsx:234` `PasswordResetPage` の `handleResend` の先頭の `siteKey && !turnstileToken` が真の側は通らない。再送のボタンが同じ描画の値（`disabled={loading || (!!siteKey && !turnstileToken)}`）で押せなくなっており、この関数に入る時点で常に偽のため。確認: 済み
 - `src/app/auth/verified/page.tsx:187` `VerifiedPage` の effect の `authBody?.user?.role` の `authBody?.` が `null` の側、三項の真側の `authBody?.` が `null` の側と `user?.` が `undefined` の側（3分岐）は通らない。直前の `authBody?.authenticated === true` を通った後なので `authBody` は `null` でなく、真側に入るには `role` を持つ `user` が要るため。確認: 済み
 - `src/app/auth/verified/page.tsx:188` `VerifiedPage` の effect の `authBody?.user?.mfaVerified` の `authBody?.` が `null` の側は通らない。理由は 187 行と同じ。確認: 済み
@@ -178,6 +178,6 @@
 - `src/features/look/components/PublicLookGrid.tsx:387` `renderSeasonFilter` の引数 `size` の既定値 `"3xs"` は通らない。呼び元2か所が `"xs"` と `"3xs"` を必ず渡すため。確認: 未
 - `src/lib/look/public.ts:105` `normalizeLookSeasonSelection` の `lastValue ?? 'ALL'` の右側は通らない。0 件を直前で `ALL` として返すので、配列の最後の要素は必ずある。添え字の読みが `undefined` を含む型を満たすためだけの分岐。確認: 未
 - `src/lib/look/server.ts:423` `hydrateLooks` の `signedImageUrlsMap.get(row.id) ?? []` の右側は通らない。全ての LOOK の行を `signedImageUrlsMap` に先に入れてから `map` するため。確認: 未
-- `src/app/api/admin/revoke-user-sessions/route.ts:93` `POST` の `audit` の引数 `extra` の既定値 `= {}` は通らない。呼び出し5か所が全部 `{ resource_id: ... }` を渡し、この関数はファイルの中だけで使うため。確認: 未
-- `src/app/api/admin/users/mfa/reset/route.ts:91` `POST` の `audit` の `metadata ? { metadata } : {}` の偽の側は通らない。呼び出し9か所が全部 `metadata` を渡し、この関数はファイルの中だけで使うため。確認: 未
-- `src/app/api/auth/mfa/enroll-totp/route.ts:132` `POST` の未確認の要素を外した後の監査の `unenrollResult?.error` の `unenrollResult` が `null` の側は通らない。supabase-js の `mfa.unenroll` は `{ data, error }` の形を必ず返し、`null` を返さないため（型を満たすための `?.`）。確認: 未
+- `src/app/api/admin/revoke-user-sessions/route.ts:94` `POST` の `audit` の引数 `extra` の既定値 `= {}` は通らない。呼び出し5か所が全部 `{ resource_id: ... }` を渡し、この関数はファイルの中だけで使うため。確認: 未
+- `src/app/api/admin/users/mfa/reset/route.ts:92` `POST` の `audit` の `metadata ? { metadata } : {}` の偽の側は通らない。呼び出し9か所が全部 `metadata` を渡し、この関数はファイルの中だけで使うため。確認: 未
+- `src/app/api/auth/mfa/enroll-totp/route.ts:128` `POST` の未確認の要素を外した後の監査の `unenrollResult?.error` の `unenrollResult` が `null` の側は通らない。supabase-js の `mfa.unenroll` は `{ data, error }` の形を必ず返し、`null` を返さないため（型を満たすための `?.`）。確認: 未

@@ -4629,7 +4629,13 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 出どころ | OWASP ASVS 4.0.3 V2.2.1（当てはめは推定）。`docs/05_Quality/reviews/security/security_review_overview.md` |
 | 優先度 | MUST |
 
-送り元は、信頼する中継が付けた値だけから取る（中継の数を決めて、右から数える）。窓口は制限の呼び出しの例外を握りつぶさず 503 で断る。Supabase Auth への呼び出しには利用者の送り元を渡すか、Supabase 側の IP の枠を窓口の数に合わせて決める。送り元と Supabase 側の枠は今のコードが満たさない。数えの DB の失敗は、制限の部品が自分で捕まえて 503 で断るので満たす（`src/features/auth/middleware/rateLimit.ts`）。各窓口の外側の catch が握りつぶして先へ進むのは制限の部品の読み込みの失敗だけで、そこは満たさない（一部、推定）。
+送り元は、信頼する中継が付けた値だけから取る（Vercel が付ける `x-vercel-forwarded-for`・`x-real-ip` だけを読み、`x-forwarded-for` は読まない。ADR-0416）。制限が使えない時は握りつぶさずに断る。数えの DB の失敗は制限の部品が 503 で断り、制限の呼び出しそのものが例外を投げたら、窓口は先へ進まず 5xx で断る（外側の catch の 500。ADR-0009（範囲外）と食い違わない）。Supabase Auth への呼び出しには利用者の送り元を渡すか、Supabase 側の IP の枠を窓口の数に合わせて決める。
+
+- 送り元: 満たす（2026-10-28、波 4 の Task 2）。共有の `getClientIp`（`src/lib/request-ip.ts`）が回数の制限の鍵（`rateLimit.ts`）、取扱店・強制失効・2 要素のリセットの監査の IP、Turnstile の `remoteip` を決める。取れない時の鍵は `null` で、送り元が分からない全員が 1 つの枠になる。E2E の送り元の分け方は `x-real-ip` に書き換え（AUTH 系 13 ファイルと共通の補助 `member-session-helpers.ts`。2026-10-28、波 4 の Task 5）、E2E のアプリは固定の環境 `CLIENT_IP_HEADER=x-real-ip` でその見出しを信頼する（Task 3）。SEC-AUTH-013-AC-01 の E2E は `test.fail` の印を外した（Task 5）が、E2E の実行は波 4 の最後の確認で行う
+- 429・503 の `no-store`: 満たす（回数の制限の 429 と 503 が `Cache-Control: private, no-store` と `Retry-After` を持つ。単体テストで確かめる。`SEC-AUTH-013-AC-` は E2E 必須の規則に合わせ、単体だけで確かめる物は DD-AUTH-038 の単体テストに寄せた）
+- Supabase 側の IP の枠: 満たさない。アプリのサーバーから呼ぶ時に利用者の送り元を渡しておらず、店の全員で分け合う見込み（開店前の確認）
+- 数えの DB の失敗: 制限の部品が自分で捕まえて 503 で断るので満たす（`src/features/auth/middleware/rateLimit.ts`）
+- 制限の呼び出しの例外: 満たす（2026-10-28、波 4 の Task 4）。`src/app/api/auth/` の 14 窓口・19 か所の `await import(...)` と `try/catch`（`Rate limit middleware error` を記録して先へ進んでいた）を、先頭の静的な `import` に替えて外した。呼び出しが投げたら、窓口は先へ進まず 5xx で断る（外側の `catch` を持つ窓口は 500。持たない `confirm`・`login/resend`・`post-login` は例外がそのまま届いて Next.js が 500 にする。`password-reset/link` は既存の流儀で 400 `link_expired`）。窓口の外の動的 import（`cart`・`checkout`・`contact`・`news`・`search`・`suggest`）は握りつぶさないので替えていない
 
 #### SEC-AUTH-013-AC-01 `x-forwarded-for` を毎回変えても IP 単位の制限が効く
 
@@ -4638,10 +4644,10 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 上位 | SEC-AUTH-013 |
 | 根拠 | 見出しの偽りで制限を越えられないかを見るため |
 | 状態 | 推定 |
-| 確かめ方 | E2E（本番と同じ中継の設定で、`/api/auth/refresh` に `x-forwarded-for` を変えながら送る） |
+| 確かめ方 | E2E（`CLIENT_IP_HEADER` を立てた E2E のアプリで、`x-real-ip` を固定し `x-forwarded-for` を毎回変えて `/api/auth/refresh` に送る。`FR-LOGIN-035`） |
 | 出どころ | 実装から推定 |
 
-`x-forwarded-for` を毎回変えて 31 回送ると、31 回目が 429 になること。
+固定の `x-real-ip` を付け、`x-forwarded-for` を毎回変えて 31 回送ると、31 回目が 429 になること（偽れる `x-forwarded-for` では枠を逃れられない。信頼する見出しまで毎回変えると別の送り元として数えるので、変えない）。
 
 #### SEC-AUTH-013-AC-02 回数の制限の例外で窓口が先へ進まない
 
@@ -4650,10 +4656,10 @@ aal1 の JWT の select の結果に、その管理者以外の注文の行が�
 | 上位 | SEC-AUTH-013 |
 | 根拠 | 制限の失敗で守りが外れないかを見るため |
 | 状態 | 推定 |
-| 確かめ方 | 単体テスト（制限の呼び出しが例外を投げる作り物で各窓口を呼ぶ） |
-| 出どころ | `src/app/api/auth/login/route.ts`、`src/features/auth/middleware/rateLimit.ts`（数えの DB の失敗は部品の中で 503 になる。窓口へ例外が届くのは部品の読み込みの失敗だけ） |
+| 確かめ方 | 単体テスト・結合テスト（①数えの DB の失敗は制限の部品が 503 で断る。②制限の呼び出しが例外を投げる作り物で各窓口を呼ぶ） |
+| 出どころ | `src/app/api/auth/login/route.ts`、`src/features/auth/middleware/rateLimit.ts`（数えの DB の失敗は部品の中で 503 になる。窓口へ届く例外は呼び出しそのものが投げた時だけ） |
 
-制限の呼び出しが例外を投げた時、ログイン・OTP・TOTP・再設定の窓口が 503 を返し、パスワードやコードの確認に進まないこと。
+二段で満たすこと。①数えの DB の失敗は、制限の部品（`enforceRateLimit`）が自分で 503 と `Retry-After`（`no-store` つき）を返す（`tests/unit/middleware/rateLimit.test.ts`）。②制限の呼び出しそのものが例外を投げた時（作り物が投げた時）は、ログイン・OTP・TOTP・再設定・確認・トークンの更新などの窓口が先へ進まず 5xx（外側の `catch` の 500）で断り、`signInWithPassword`・`verifyOtp`・`mfa.verify`・パスワードの変更などを呼ばないこと。記録だけして先へ進まない。
 
 ### SEC-AUTH-014 会員登録と再設定は 16 文字以上・漏洩していないパスワードだけを受ける
 
@@ -4753,7 +4759,7 @@ Supabase Auth の設定で、最小の長さを 16、パスワード変更に再
 | 出どころ | `docs/05_Quality/reviews/security/security_review_signup.md`、`docs/02_Requirements/requirements.md` の FREQ-320 の行 |
 | 優先度 | MUST |
 
-公開の会員登録は登録済みでも同じ 202、再設定の申請は有無によらず同じ 200 を返し、アカウントが無ければメールを送らない。DB の書き込みとメールの送信は、応答の時間に差が出ないように応答の外で行う。会員登録は IP 単位に加えて宛先単位でも回数を制限する。中身は今のコードが満たす（`register/route.ts`、`password-reset/request/route.ts`）。時間は満たさない（推定）。会員登録の宛先単位の制限は今のコードが満たす（2026-10-26 に直した）。IP 単位の 20 回／時に加えて、検証済みの小文字・trim 済みのメールを subject に 5 回／時（3600 秒）を数える。位置は Turnstile と漏洩パスワードの確かめの後、戻り先の控えの作成と既存会員の照会の前（先に数えると他人のメールを送るだけでその人の枠を使い切らせられる。照会の後に数えると 429 の有無で登録済みかどうかが分かる）。枠の呼び出しが投げた時は記録して先へ進む（ログインのメール単位の枠と同じ）。
+公開の会員登録は登録済みでも同じ 202、再設定の申請は有無によらず同じ 200 を返し、アカウントが無ければメールを送らない。DB の書き込みとメールの送信は、応答の時間に差が出ないように応答の外で行う。会員登録は IP 単位に加えて宛先単位でも回数を制限する。中身は今のコードが満たす（`register/route.ts`、`password-reset/request/route.ts`）。時間は満たさない（推定）。会員登録の宛先単位の制限は今のコードが満たす（2026-10-26 に直した）。IP 単位の 20 回／時に加えて、検証済みの小文字・trim 済みのメールを subject に 5 回／時（3600 秒）を数える。位置は Turnstile と漏洩パスワードの確かめの後、戻り先の控えの作成と既存会員の照会の前（先に数えると他人のメールを送るだけでその人の枠を使い切らせられる。照会の後に数えると 429 の有無で登録済みかどうかが分かる）。枠の呼び出しが投げた時は握りつぶさず 500 で止まる（ログインのメール単位の枠と同じ。SEC-AUTH-013-AC-02、2026-10-28 に直した）。
 
 #### SEC-AUTH-016-AC-01 登録済みと未登録のメールで会員登録の応答が同じ
 

@@ -114,7 +114,7 @@ sequenceDiagram
 - 画面: `NewsSection`（一覧）・`NewsForm`（作成・編集）。どちらも client の部品で、権限での出し分けはしない
 - 窓口: `authorizeAdminPermission`（`src/lib/auth/admin-rbac.ts`）が token を確かめ（401）、session の生存と DB の ACL を並べて照会し（停止は 503、無効は 401）、権限が無ければ 403、`aal` が `aal2` でなければ 403 `MFA required` を返す
 - DB: 読み（GET）は `createClient(request)`（`src/lib/supabase/server.ts`）で利用者の JWT を付け、RLS（DATA-NEWS-002）を効かせる。書き込み（POST・PUT・PATCH・DELETE）は、認可と入力の確かめの後に `createServiceRoleClient()` を1回作り、表と置き場（ARC-NEWS-003）の書き込みと後始末の削除に同じ client を使う（ADR-0026）。RLS の書き込み方針は権限を外した後も二重の守りとして残る。窓口の認可が書き込みの唯一の守りなので、`authorizeAdminPermission` の位置（本文の検証より前）を変えない
-- 監査: 窓口の中の `logNewsAudit` が `logAudit`（`src/lib/audit.ts`）を呼ぶ。resource は `news_article`、user agent だけを残し IP は残さない。監査の書き込みの失敗は警告だけで、操作は止めない。GET は監査しない。PUT・PATCH・DELETE は対象の行が0件でも成功と記録する（SEC-NEWS-016 の「0件は 404」を満たさないので上位にしない）
+- 監査: 窓口の中の `logNewsAudit` が `logAudit`（`src/lib/audit.ts`）を呼ぶ。resource は `news_article`、送り元の IP と user agent を共有の `getAuditRequestContext`（`src/lib/request-ip.ts`）から取って残す（SEC-NEWS-016-AC-03。2026-10-28、波 4。IP は `getClientIp` の値で、`x-forwarded-for` は読まず、取れない配置では `null` のまま。ADR-0010 の「IP は残さない」は ADR-0462 が置き換えた）。監査の書き込みの失敗は警告だけで、操作は止めない。GET は監査しない。PUT・PATCH・DELETE は対象の行が0件なら 404 と失敗の監査にして成功とは記録しない（SEC-NEWS-016。2026-10-26 に満たした）
 - CSRF: proxy の Origin の検査だけで守り、窓口は `requireCsrfOrDeny` を呼ばない（ADR-0019。決めた事か抜けかは未定）
 - 画面のページ（`/admin/news/create`・`/admin/news/edit/[id]`）にサーバーの守りは無く、殻は誰でも開け、送った時に窓口が断る（推定）
 - 回数の制限は無い（SEC-NEWS-021 は満たさない）
@@ -405,7 +405,7 @@ stateDiagram-v2
 
 - `image_url` は返さず、署名もしない（SEC-NEWS-005。2026-10-26 に満たした）。取り出しの関数が画像の列を選ばず、service role の client も作らないので、署名の失敗で 500 になる道も無い
 - `Cache-Control` は 2026-10-26 に満たした（SEC-NEWS-006。route 単位の包み。`proxy.ts` は触らない）。`category` の確かめも同日に満たした（SEC-NEWS-012）。記録は名前と符号だけにした（`describeErrorForLog`）
-- 満たさない要件: 送り元を `x-forwarded-for` から取る（SEC-NEWS-011）
+- 送り元は共有の `getClientIp`（Vercel の見出し `x-vercel-forwarded-for`→`x-real-ip` だけ。`x-forwarded-for` は読まない）で取り、取れなければ `null` の 1 つの枠にする（SEC-NEWS-011。ADR-0416。2026-10-28、波 4 に満たした）
 - `api-spec.md` は失敗を 429・500 とだけ書き、503 を書いていない
 
 ### API-NEWS-002 `GET /api/admin/news` 管理の記事の一覧

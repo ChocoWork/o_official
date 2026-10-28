@@ -1,6 +1,6 @@
 # ADR-0312 検索の窓口は `Sec-Fetch-Site` が同一オリジンでない要求を 403 にする
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: `src/features/search/lib/cross-site.ts`、`src/app/api/search/route.ts`、`src/app/api/suggest/route.ts` | 基準コミット: `413d8b36`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: `src/features/search/lib/cross-site.ts`、`src/app/api/search/route.ts`、`src/app/api/suggest/route.ts` | 基準コミット: `413d8b36`
 
 ## 概要
 
@@ -30,7 +30,7 @@
 #### 背景
 
 - 回数の制限は送り元の IP だけで数える（共有部品 `rateLimit.ts`）。外のサイトから呼ばせた要求も閲覧者の分に数えられる
-- 偽の送り元（`x-forwarded-for`）の側は `rateLimit.ts` の直しが要るので波 4
+- 偽の送り元（`x-forwarded-for`）の側は `rateLimit.ts` が `getClientIp` を使う形に直した（2026-10-28、波 4 の Task 2。ADR-0416）。E2E も書き換えた（波 4 の Task 6。`FR-SEARCH-022` の `SEC-SEARCH-006-AC-01`・`SEC-SEARCH-020-AC-01` の `test.fail` を外した。流して確かめるのは controller の最後の実行）
 
 #### 決定
 
@@ -49,7 +49,7 @@
 #### 結果
 
 - 良くなること: 外のサイトから閲覧者の分の枠を使い切らせる道が塞がる
-- 悪くなること: 見出しを偽れる非ブラウザの攻撃者（直接 HTTP を送る者）には効かない。それは偽の送り元の側（波 4）の話
+- 悪くなること: 見出しを偽れる非ブラウザの攻撃者（直接 HTTP を送る者）には効かない。それは偽の送り元の側の話で、波 4 に `getClientIp` で直した（ADR-0416）
 
 ## 未確認事項
 

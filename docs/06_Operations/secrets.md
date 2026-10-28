@@ -4,7 +4,7 @@ title: シークレット管理方針
 
 # シークレット管理方針（暫定: 手動運用）
 
-> 状態: 既存の運用方針 | 本番設定・手順の適用状況は未確認 | 確認日: 2026-10-02（`ADMIN_API_KEY` の廃止の節は 2026-10-26、ビルドの前に要る環境変数の節は 2026-10-28 に追記）
+> 状態: 既存の運用方針 | 本番設定・手順の適用状況は未確認 | 確認日: 2026-10-02（`ADMIN_API_KEY` の廃止の節は 2026-10-26、ビルドの前に要る環境変数の節と `CLIENT_IP_HEADER` の節は 2026-10-28 に追記）
 
 この文書中の `docs/seq/supabase-service-role-key-rotation-diagrams.md` は現行リポジトリに存在しない旧計画への参照である。自動ローテーションを実施済みとは扱わず、実施前に現在の秘密値の保管場所、権限、手順を確認する。
 ## 概要
@@ -103,6 +103,23 @@ Resend の配達の状態の知らせ（`POST /api/webhook/resend-delivery`）�
 - 環境変数をビルドの後に足しても、できたビルドには入りません。設定してから再ビルド・再デプロイします（[注文のメールの手順書](order-email-operations.md)の 5 と同じ）
 - 落ちる条件は `VERCEL_ENV` が `production` のときだけです。手元・Vercel の Preview・E2E の本番ビルド（`NODE_ENV=production` だけ）は、2 つが無くても落ちません
 - 本番のアプリは未デプロイで、Vercel に 2 変数が入っているかは未確認です。初回の配備の前に入れます
+
+## CLIENT_IP_HEADER（送り元の IP を読む旗。秘密ではない）
+
+> 確認日: 2026-10-28 | 対象: `src/lib/request-ip.ts` の `getClientIp` | 設計判断: [ADR-0416](../03_BasicDesign/decisions/ADR-0416-auth-client-ip-vercel-headers-only.md)
+
+回数の制限の鍵と監査の IP に使う「送り元の IP」を、アプリは `x-vercel-forwarded-for`、`x-real-ip` の順に読む。ただし読むのは `VERCEL=1` か `CLIENT_IP_HEADER` が空でない時だけで、`x-forwarded-for` は読まない。`CLIENT_IP_HEADER` は「この環境では見出しを信じてよい」という旗で、値は見ない。
+
+| 環境 | 扱い |
+| --- | --- |
+| 本番（Vercel） | 置かない。Vercel が `VERCEL=1` を自動で入れ、見出しを上書きして付けるので足りる |
+| E2E（手元の Supabase） | `scripts/e2e/environment.ts` の `E2E_FIXED_ENV` が `CLIENT_IP_HEADER=x-real-ip` を入れる。E2E の送り元の分け方は `x-real-ip` で行う。`.env.local` や `.env` には書かない |
+| 手元の開発・単体の試験 | 置かない。見出しの無い要求は送り元が null になり、回数の制限は 1 つの枠を共有し、監査の IP は null で残る。単体の試験は `tests/setupClientIp.js` が立てる |
+| Vercel 以外の置き場 | 前段の中継（リバースプロキシ）が利用者の付けた `x-real-ip` を捨てて自分の見る接続元の IP で上書きすると確かめてから、`CLIENT_IP_HEADER` に空でない値（例 `x-real-ip`）を置く。確かめずに置くと、利用者が送り元を偽って回数の制限を越え、監査の IP を偽れる |
+
+- E2E では、旗は `buildE2EOverrides` の中だけで混ざる。その環境は手元の Supabase の状態を読んだ後に作り、`findUnsafeE2ESettings` が Supabase の住所を条件なしで検査する（手元でなければ止める）。旗の専用の見張りは足していない
+- `TRUST_PROXY_HEADERS` は別の意味（`x-forwarded-host`・`x-forwarded-proto` からオリジンを作ってよいか。`src/lib/redirect.ts`）で、この旗に使い回さない
+- 前段に Cloudflare などの中継を置く時は、段数を決める `TRUSTED_PROXY_HOPS` の設計を足す（今回は作らない）。詳しくは[配置構成](deployment-topology.md)
 
 ## APP_ALLOWED_ORIGINS
 

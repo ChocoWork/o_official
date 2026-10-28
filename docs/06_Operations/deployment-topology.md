@@ -39,4 +39,14 @@ flowchart LR
 | 注文証憑の保存・復元確認 | `docs/06_Operations/legal-archive.md` |
 | KPI 旧セットアップ手順 | `docs/06_Operations/kpi-migration-setup.md`。対象環境と現行 DB 手順との整合を確認してから使用する |
 
+## 送り元の IP と前段の中継（2026-10-28、ADR-0416）
+
+| 項目 | 内容 |
+| --- | --- |
+| 前提 | 本番は Vercel に直接置き、前段に Cloudflare などの中継を置かない。送り元の IP は `x-vercel-forwarded-for`、`x-real-ip` の順に読む（`VERCEL=1` の時だけ。`x-forwarded-for` は読まない）。設計判断は [ADR-0416](../03_BasicDesign/decisions/ADR-0416-auth-client-ip-vercel-headers-only.md) |
+| 中継を置く時 | 見出しが中継の IP に変わるので、そのまま置くと全員が同じ送り元になる。置く前に、段数を決める `TRUSTED_PROXY_HOPS` の設計を足す（今回は作らない） |
+| E2E | E2E の固定の環境（`E2E_FIXED_ENV`）が `CLIENT_IP_HEADER=x-real-ip` を入れる。`E2E_FIXED_ENV` は `buildE2EOverrides` の中だけで混ぜ、その環境は既存の見張り（`findUnsafeE2ESettings`）が手元の Supabase であることを保証する。旗の専用の見張りは足さない。詳しくは[シークレット管理方針](secrets.md)の `CLIENT_IP_HEADER` |
+| 最初の preview での実測（配備の前に必ず） | preview の URL に、偽の `x-real-ip: 203.0.113.7` と偽の `x-forwarded-for: 203.0.113.8` と偽の `x-vercel-forwarded-for: 203.0.113.9` を付けて `GET` を送り、アプリが受け取る送り元（監査の行の `ip`、または回数の制限の枠）が偽の値ではなく、リクエスト元の実際の IP になることを確かめる。偽の値が通るなら配備を止める。結果は日付つきでこの節に書く |
+| 状態 | 本番は未デプロイで、Vercel が見出しを上書きすることは未実測 |
+
 本番構成を確定する際は、ホスティング管理画面、GitHub Actions 実行履歴、Supabase の migration・cron・Storage の状態、Stripe の Webhook 設定、メール提供元の設定を別途照合する。

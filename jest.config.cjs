@@ -11,7 +11,7 @@ module.exports = {
     '^.+\\.(ts|tsx)$': 'ts-jest',
   },
   testMatch: ['**/tests/**/*.test.(ts|tsx|js)'],
-  setupFiles: ['<rootDir>/tests/setupRequestPolyfill.js'],
+  setupFiles: ['<rootDir>/tests/setupRequestPolyfill.js', '<rootDir>/tests/setupClientIp.js'],
   setupFilesAfterEnv: ['<rootDir>/tests/setupTests.ts'],
   globals: {
     'ts-jest': {

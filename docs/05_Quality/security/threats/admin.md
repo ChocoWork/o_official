@@ -1,6 +1,6 @@
 # ADMIN の脅威
 
-> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-26 | 対象: 管理のそのほか（ユーザー作成・強制失効・監査ログ・MFA のリセット・問い合わせの管理・返信の宛先・色見本・監査ログの削除）の API・画面・DB | 基準コミット: `4facf63b`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
+> 状態: 推定（コードを読んで起こした。ユーザーの確認は未） | 確認日: 2026-10-28 | 対象: 管理のそのほか（ユーザー作成・強制失効・監査ログ・MFA のリセット・問い合わせの管理・返信の宛先・色見本・監査ログの削除）の API・画面・DB | 基準コミット: `4facf63b`（本文の `ファイル:行` は、この脅威の文書が日付つきの証拠として残す行番号で、このコミットの内容を指す。コードを読み直す時は関数・部品の名前でたどる）
 
 ---
 
@@ -35,7 +35,7 @@ NEWS などで考えた脅威のうち、ADMIN の範囲に入口が無い物。
 | 脅威の型 | ADMIN に当てはまらない理由 |
 | --- | --- |
 | 署名つき URL の期限・道筋の書き換え | 範囲の API・画面は置き場（Storage）を使わない。色見本は名前と色の値だけで画像を持たない（`supabase/migrations/20260901102912_remote_schema.sql:544-552`） |
-| 本文の XSS（管理の画面） | 問い合わせを出す管理の画面の部品 `src/components/ContactSection.tsx` はどこからも読み込まれず、範囲にも無い。返信のメールは文の形で送る（`src/app/api/admin/contact/[id]/reply/route.ts:64-69`）。会員の頁で管理者の返信を出す所（FR-ACCOUNT-008）は ACCOUNT の範囲 |
+| 本文の XSS（管理の画面） | 問い合わせを出す管理の画面の部品 `src/components/ContactSection.tsx` は範囲に無い（2026-10-28 の波 4 から管理の頁の CONTACT のタブが開く。部品の本文の出し方の見直しは範囲外のまま）。返信のメールは文の形で送る（`src/app/api/admin/contact/[id]/reply/route.ts:64-69`）。会員の頁で管理者の返信を出す所（FR-ACCOUNT-008）は ACCOUNT の範囲 |
 | 開いたリダイレクト | 範囲の API と画面は要求の値から行き先を作らない |
 
 ### 入口と守りの位置
@@ -180,8 +180,8 @@ flowchart LR
 | --- | --- |
 | 守るもの | 監査ログの IP の正しさ |
 | 脅威 | 要求を送る人が、監査ログに残る IP を別の値にする |
-| 起こり方 | 強制失効と MFA のリセットは、監査の IP を `x-forwarded-for` の左端から取る（`src/app/api/admin/revoke-user-sessions/route.ts:11`、`users/mfa/reset/route.ts:46`）。左端は送る側が決められる。Vercel などの中継は本当の IP を右側に足す（推定） |
-| 影響 | 不正の調べで、本当の発信元を追えない |
+| 起こり方 | 基準コミット時点は、強制失効と MFA のリセットが監査の IP を `x-forwarded-for` の左端から取っていた（`src/app/api/admin/revoke-user-sessions/route.ts:11`、`users/mfa/reset/route.ts:46`）。左端は送る側が決められる。2026-10-28（波 4）に、管理の窓口の監査の IP は共有の `getClientIp`（Vercel の `x-vercel-forwarded-for` → `x-real-ip`。手元の E2E は `CLIENT_IP_HEADER` が立つ時だけ。`x-forwarded-for` は読まない。ADR-0416）に替えた。取れなければ `null` で、偽りの値は残らない。送る側が足す `x-real-ip` は Vercel が上書きする前提で、本番では preview で実測する（未確認） |
+| 影響 | 不正の調べで、本当の発信元を追えない（基準コミット時点）。今は Vercel が付けた値だけが残り、Vercel の外（中継を挟む配置）では `null` になる |
 | 対策 | SEC-ADMIN-009 |
 | ASVS | ASVS 未対応付け |
 | 根拠 | 回数の制限で同じ形がある（THR-NEWS-010（範囲外））。本番のアプリはまだデプロイしておらず、中継の振る舞いを確かめていない |
@@ -362,11 +362,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 監査ログで後から操作をたどれること |
 | 脅威 | 管理者が色見本を足す・消す、問い合わせを変える、利用者を作る・session を失効させた後で、誰がどこからしたかを否定する |
-| 起こり方 | 色見本の作成と削除は監査ログを書かない（`src/app/api/admin/item-color-presets/route.ts:37-91`、`[id]/route.ts:5-30`）。問い合わせの状態・返信・テンプレートの記録は行為者のメールと IP を書かない（`contact/[id]/route.ts:82-90`、`reply/route.ts:78-86`、`templates/route.ts:73-81`、`templates/[id]/route.ts:45-53,79-87`）。ユーザー作成の記録は、どの結果にも IP とブラウザの情報を書かない（`create-user/route.ts:29-36,54-61,65-72,76-83`）。強制失効の記録は、認可の失敗と形の誤りのほか（誤り・例外・成功）に IP とブラウザの情報を書かない（`revoke-user-sessions/route.ts:63-71,75-83,87-95`）。PostgREST からの直接の書き換え（THR-ADMIN-002）も残らない |
-| 影響 | 不正や誤りの調べで、操作した人と場所を追えない |
+| 起こり方 | 基準コミット時点は、色見本の作成と削除が監査ログを書かず（`src/app/api/admin/item-color-presets/route.ts:37-91`、`[id]/route.ts:5-30`）、問い合わせの状態・返信・テンプレートの記録が行為者のメールと IP を書かず（`contact/[id]/route.ts:82-90`、`reply/route.ts:78-86`、`templates/route.ts:73-81`、`templates/[id]/route.ts:45-53,79-87`）、ユーザー作成の記録がどの結果にも IP とブラウザの情報を書かず（`create-user/route.ts:29-36,54-61,65-72,76-83`）、強制失効の記録が認可の失敗と形の誤りのほか（誤り・例外・成功）に IP とブラウザの情報を書かなかった（`revoke-user-sessions/route.ts:63-71,75-83,87-95`）。2026-10-28（波 4）に全部直した: 上の窓口の全部の結果の行に行為者のメール・IP（`getClientIp`）・ブラウザの名乗りを付け、色見本は作れた時（201）と消せた時に `admin.item_color_preset.create`・`admin.item_color_preset.delete` を 1 行ずつ書く（色の名前・値は入れない。ADR-0462）。PostgREST からの直接の書き換え（THR-ADMIN-002）は今も残らない |
+| 影響 | 不正や誤りの調べで、操作した人と場所を追えない（基準コミット時点）。今は IP が取れない配置（Vercel の外・中継を挟む）では IP が `null` になる。IP は個人情報にあたりうる。保存期間は法令対応の後回しの決めに従う（未確認事項） |
 | 対策 | SEC-ADMIN-022 |
 | ASVS | V7.1.3（当てはめは推定） |
-| 根拠 | 範囲で行為者の id・メール・IP を全部の結果に書くのは MFA のリセットだけ（`users/mfa/reset/route.ts:54-205`）。ユーザー作成と強制失効は行為者の id とメールを書くが、IP は一部か全部の結果で欠ける。過去のレビューも商品系の監査の不足を Open で残す（`docs/05_Quality/reviews/security/security_review_admin.md:42`）。全体の NFR-SEC-005（監査ログ）に当てはめた |
+| 根拠 | 基準コミット時点で範囲に行為者の id・メール・IP を全部の結果に書くのは MFA のリセットだけだった（`users/mfa/reset/route.ts:54-205`）。過去のレビューも商品系の監査の不足を Open で残す（`docs/05_Quality/reviews/security/security_review_admin.md:42`）。全体の NFR-SEC-005（監査ログ）に当てはめた |
 | 状態 | 推定 |
 | 出どころ | 実装から推定 |
 
@@ -390,7 +390,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 範囲の管理の機能全部 |
 | 脅威 | 画面から呼ばれず試験も薄い窓口が、守りの見直しから漏れたまま HTTP で呼べる |
-| 起こり方 | 問い合わせの管理の API 5本は、どこからも読み込まれない `ContactSection.tsx` からだけ呼ばれる。MFA のリセット・強制失効・監査ログの API は画面から呼ばれない。`cleanupAuditLogs` は src から呼ばれない（未使用（削除の判断待ち）） |
+| 起こり方 | 問い合わせの管理の API 5本は `ContactSection.tsx` からだけ呼ばれる（この部品は 2026-10-28 の波 4 から管理の頁の CONTACT のタブが開くので、画面から使われる）。MFA のリセット・強制失効・監査ログの API は画面から呼ばれない。`cleanupAuditLogs` は src から呼ばれない（未使用（削除の判断待ち）） |
 | 影響 | 見直しの時に忘れられ、THR-ADMIN-005・006 などの守りの穴が気づかれずに残る |
 | 対策 | SEC-ADMIN-001、SEC-ADMIN-006 |
 | ASVS | ASVS 未対応付け |
@@ -404,7 +404,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 問い合わせた人の名前・メール・送った IP・本文と、監査ログの中身。誰がそれを読んだかの跡 |
 | 脅威 | サポーター・店長、または乗っ取られた `admin.contact.read`・`admin.audit.read` の持ち主が、個人情報や監査ログを読み、後で読んだことを否定する |
-| 起こり方 | 問い合わせの一覧（`src/app/api/admin/contact/route.ts:14-76`）・詳細（`contact/[id]/route.ts:12-55`）・監査ログの読み出し（`audit-logs/route.ts:16-39`）は、どれも `logAudit` を呼ばず、監査に残るのは書き込みだけだった（基準コミット時点）。2026-10-26 に、読めた時（200 を返す時）に 1 行ずつ、一覧は `admin.contact.list`（絞り込みの条件と検索語の長さだけ）、詳細は `admin.contact.read`（問い合わせの id）、監査ログは `admin.audit_logs.read` を、読んだ人の id とメール付きで残すようにした。名前・メール・本文・件名・検索語は入れない。記録に失敗しても読み出しは止めない。読んだ人の IP は残らない（IP の取り出し `request-ip.ts` が要る。波 4）。上の行番号は基準コミット時点の記述 |
+| 起こり方 | 問い合わせの一覧（`src/app/api/admin/contact/route.ts:14-76`）・詳細（`contact/[id]/route.ts:12-55`）・監査ログの読み出し（`audit-logs/route.ts:16-39`）は、どれも `logAudit` を呼ばず、監査に残るのは書き込みだけだった（基準コミット時点）。2026-10-26 に、読めた時（200 を返す時）に 1 行ずつ、一覧は `admin.contact.list`（絞り込みの条件と検索語の長さだけ）、詳細は `admin.contact.read`（問い合わせの id）、監査ログは `admin.audit_logs.read` を、読んだ人の id とメール付きで残すようにした。名前・メール・本文・件名・検索語は入れない。記録に失敗しても読み出しは止めない。読んだ人の IP とブラウザの名乗りは、2026-10-28（波 4）に `getAuditRequestContext`（`getClientIp` の IP。取れなければ `null`。ADR-0462）で付けた。上の行番号は基準コミット時点の記述 |
 | 影響 | 個人情報が漏れた時に、誰がいつ読んだかを追えない。内部の人の持ち出しに気づけない |
 | 対策 | SEC-ADMIN-023 |
 | ASVS | V8.3.5（当てはめは推定） |
@@ -429,7 +429,8 @@ flowchart LR
 ## 未確認事項
 
 - `aal1` の JWT と、強制失効の後の期限内の JWT で、PostgREST から色見本を読み書きできるか（THR-ADMIN-002・016）は実際に叩いて確かめていない
-- 本番の中継（Vercel など）が `x-forwarded-for` をどう付けるか（THR-ADMIN-009）。本番のアプリはまだデプロイしていない
+- 本番の中継（Vercel）が偽の `x-real-ip`・`x-vercel-forwarded-for` を上書きするか（THR-ADMIN-009）。本番のアプリはまだデプロイしておらず、最初の preview で実測する
+- 監査ログの IP の保存期間と開示の扱い（THR-ADMIN-022。IP は個人情報にあたりうる）。法令対応の後回しの決めに従い、今は決めない（ADR-0462）
 - メールの送り手（Resend・SES）が件名の改行をどう扱うか（THR-ADMIN-018）
 - 本番の `APP_ALLOWED_ORIGINS` などの許可の一覧の値（THR-ADMIN-005）
 - 本番の `CONTACT_REPLY_SECRET`・`CONTACT_INBOUND_DOMAIN`・`MAIL_FROM_ADDRESS` の値（THR-ADMIN-017・021）

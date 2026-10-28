@@ -1,5 +1,7 @@
 # 1.16 管理画面（ADMIN）詳細設計
 
+> 波 4 確認日: 2026-10-28。`/admin` に CONTACT タブを足し（店長12・サポーター4）、LOOK の「新規作成」を権限（`meta.canManage`）で一覧が出す形にし、取扱店の作成の頁に入口の権限の確かめを足した。末尾の「CONTACT タブと LOOK の「新規作成」の出し分け（波 4）」に記載。
+
 > G-4 Task 8 確認日: 2026-10-27。荷作り表・発送票の注文番号を注文の詳細への Link にし、履歴の dialog（`OrderHistoryDialog`）を `OrderHistoryPanel` へ改名して dialog の形を畳み、G-1 から 410 だけを返していた旧い発送・仕上がりの窓口 6 ファイル・7 メソッドを削除した。末尾の「入口の整理（G-4 Task 8）」に追加した。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザの3幅・E2Eはcontroller担当。
 
 > G-4 Task 7 確認日: 2026-10-26。注文一覧表（`/admin/orders`）の頁・表・要対応の欄の移設（hook `useOrderAttention`）・ORDER タブの入口化・旧い一覧と各 dialog の撤去を末尾の「注文一覧表と ORDER タブの入口（G-4 Task 7）」に追加した。単体のみ実測済み（jest・tsc・lint）。DB・ブラウザの3幅・E2Eはcontroller担当。
@@ -955,7 +957,7 @@ G-3 の画面は、管理メニューの PACKING から入る。この節は荷�
 
 ### PACKING タブ
 
-店長（`admin`）とサポーター（`supporter`）の両方のメニューに `PACKING` を出す（店長は `INVENTORY` の次、`SETTINGS` の前。サポーターは `INVENTORY` の次、最後）。印は細線の箱（`ri-box-3-line`）。中身は役割で出し分けず、`nav aria-label="荷作りメニュー"` に「荷作り表」（`/admin/packing`）のリンクを置く。権限の有無は各頁・窓口・DB が決める。`/admin?tab=PACKING` で直接開ける（サポーターも）。
+店長（`admin`）とサポーター（`supporter`）の両方のメニューに `PACKING` を出す（店長は `INVENTORY` の次、`CONTACT` の前。サポーターは `INVENTORY` の次、`CONTACT` の前。波 4 から `CONTACT` が次に付く）。印は細線の箱（`ri-box-3-line`）。中身は役割で出し分けず、`nav aria-label="荷作りメニュー"` に「荷作り表」（`/admin/packing`）のリンクを置く。権限の有無は各頁・窓口・DB が決める。`/admin?tab=PACKING` で直接開ける（サポーターも）。
 
 ### 荷作り表（`/admin/packing` / FREQ-531）
 
@@ -1119,3 +1121,15 @@ G-1 で止めた旧い発送の入口の案内を、G-3 の発送票へ向ける
 | 撤去した窓口 | `GET`・`POST /api/admin/orders/[id]/fulfillments`、`POST …/fulfillments/[fulfillmentId]/cancel`・`/tracking`・`/delivered`、`POST …/completions`・`…/completions/[completionId]/cancel` の6ファイル・7メソッド。Next は 404 を返す。DB の旧い関数は `LEGACY_FULFILLMENT_DISABLED` / `MANUAL_COMPLETION_DISABLED` で拒否したまま。DB を呼ばずに投げる store と 410 の本文の定義（`legacy-fulfillment-disabled.ts`）は src に残り、消せるかは Task 12 の最後に決める |
 | 配送の書き込みの共通部品 | `delivery-route-support.ts` の `tracking`・`delivered` の規則と操作名を削除した。残る窓口は配送の要対応の解決（`resolve`）だけ |
 | 単体 | [荷作り表](../../../tests/unit/components/PackingSection.test.tsx)・[発送票](../../../tests/unit/components/ShipmentSlipSection.test.tsx)・[履歴](../../../tests/unit/components/OrderHistoryPanel.test.tsx)・[撤去した窓口が無いこと](../../../tests/unit/api/admin/legacy-fulfillment-routes-removed.test.ts)・[配送の要対応の解決](../../../tests/unit/api/admin/order-delivery-routes.test.ts) |
+
+## CONTACT タブと LOOK の「新規作成」の出し分け（波 4 / 2026-10-28）
+
+確認日: 2026-10-28。`src/app/admin/page.tsx` の表示するタブの並びと、LOOK の「新規作成」の置き場の変更。詳細は領域の頁（[16-2_admin_misc.md](16-2_admin_misc.md)・[16-3_admin_look.md](16-3_admin_look.md)）の DD-LOOK-060・DD-LOOK-063 と、要件 FR-ADMIN-009（[admin.md](../../02_Requirements/areas/admin.md)）・SEC-LOOK-019（[look.md](../../02_Requirements/areas/look.md)）。
+
+| 項目 | 内容 |
+| --- | --- |
+| タブの並び | 店長（`admin`）は KPI・ACCOUNTING・NEWS・ITEM・LOOK・STOCKIST・USER・ORDER・INVENTORY・PACKING・CONTACT・SETTINGS の12個。サポーター（`supporter`）は ORDER・INVENTORY・PACKING・CONTACT の4個。`allAdminTabs`・`supporterTabs` に `CONTACT` を PACKING の次、SETTINGS の前に足した |
+| CONTACT の中身 | `renderContent` の `case 'CONTACT'` が管理のお問い合わせ（`ContactSection`）を開く。役割で出し分けず、店長とサポーターに同じ中身。窓口側の権限（`admin.contact.read` など）は変わらない。メニューの出し分けは見た目の入口で、守りは窓口の RBAC |
+| LOOK の「新規作成」 | `tabRightContent` の `case 'LOOK'`（役で出していた右上の「新規作成」）を削除した。`LookSection` が `GET /api/admin/looks` の `meta.canManage`（成功した認可の権限の集合に `admin.looks.manage` が入るか）が true の時だけ、一覧の上（0件の表示の上も）に「新規作成」（`/admin/look/create`）を出す。窓口は認可を1回に減らした（`AuthzSuccess.permissions` を使う） |
+| 取扱店の作成の頁 | `/admin/stockist/create` は開いた時に `GET /api/admin/stockists/access`（権限 `admin.stockists.manage`）を呼び、通るまで「読み込み中...」、204でフォームを出す。401・403・それ以外は固定の1行を出してフォームは出さない（DD-STOCKIST-040、[16-4_admin_stockist.md](16-4_admin_stockist.md)）。取扱店の編集の頁は同じ確かめを持たない（残り。ruling 10） |
+| 試験 | 単体 [AdminSettingsMenu](../../../tests/unit/components/AdminSettingsMenu.test.tsx)（CONTACT のタブ）・[look-section](../../../tests/unit/components/look-section.test.tsx)・[looks-get-route](../../../tests/unit/api/admin/looks/looks-get-route.test.ts)、結合 [look-admin-list-screen](../../../tests/integration/ui/look-admin-list-screen.test.tsx)、E2E `FR-ADMIN-029`（店長のメニューに CONTACT）・`FR-ADMIN-MISC-006`（FR-ADMIN-009-AC-01・AC-05）・`FR-LOOK-SEC-003`（SEC-LOOK-019-AC-04）。本番ビルドの E2E は controller の実行待ち |

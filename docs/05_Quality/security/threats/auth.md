@@ -225,11 +225,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 総当たり（001・002・009）と踏み台（004・016）の守り、ログインの使える状態 |
 | 脅威 | 攻撃者が送り元の IP を偽って IP 単位の制限を越える。または Supabase Auth 側の IP の枠を使い切り、全員のログインを止める |
-| 起こり方 | 送り元を `x-forwarded-for` の先頭、無ければ `x-real-ip` から無条件に取る（`src/features/auth/middleware/rateLimit.ts:4-16`）。Turnstile に渡す IP も同じ（`login/route.ts:28`、`password-reset/request/route.ts:37`、`register/route.ts:109`）。窓は時刻で切った固定の枠で、境目で最大2倍通る（`rateLimit.ts:21-23`）。数えの DB の失敗は制限の部品が自分で捕まえて 503 で断る（`rateLimit.ts:45-64`）。各窓口の外側の catch（例 `login/route.ts:16-18`）が握りつぶして先へ進むのは、制限の部品の読み込みの失敗だけ。Supabase Auth は全部の呼び出しをアプリのサーバーの IP から受けるので、Supabase 側の IP の枠（手元は `supabase/config.toml:196-208`）は全員で共有になる（推定） |
+| 起こり方 | 直した点（2026-10-28、波 4 の Task 2）: 送り元は共有の `getClientIp`（`src/lib/request-ip.ts`）が Vercel の見出し（`x-vercel-forwarded-for`→`x-real-ip`）だけから取る。以前は `x-forwarded-for` の先頭、無ければ `x-real-ip` から無条件に取っていた（`rateLimit.ts`）。Turnstile に渡す IP も同じ関数（`login/route.ts`、`password-reset/request/route.ts`、`register/route.ts`）。取れない時の鍵は `null` で、全員が 1 つの枠になる（厳しい側）。429・503 には `Cache-Control: no-store` を付ける。残る点: 窓は時刻で切った固定の枠で、境目で最大2倍通る（`rateLimit.ts`）。数えの DB の失敗は制限の部品が自分で捕まえて 503 で断る（`rateLimit.ts`）。直した点（2026-10-28、波 4 の Task 4）: 以前は各窓口が `await import()` した制限の部品の呼び出しを `try/catch` で囲み、例外を記録だけして先へ進んでいた（`Rate limit middleware error ...`。`src/app/api/auth/` の 14 窓口・19 か所）ので、読み込みや呼び出しが落ちるとログイン・OTP・TOTP・再設定の守りが無いのと同じになっていた。先頭の静的な `import` に替えて `try/catch` を外し、呼び出しが投げたら窓口は先へ進まず 5xx で断る。Supabase Auth は全部の呼び出しをアプリのサーバーの IP から受けるので、Supabase 側の IP の枠（手元は `supabase/config.toml:196-208`）は全員で共有になる（推定）。確かめ（2026-10-28、波 4 の Task 5）: E2E の送り元の分け方を `x-real-ip` に書き換え（AUTH 系 13 ファイルと共通の補助）、`FR-LOGIN-035` の SEC-AUTH-013-AC-01 は固定の `x-real-ip` に毎回変える `x-forwarded-for` を付けて 31 回目が 429 になることを見る（`test.fail` の印を外した。E2E の実行は波 4 の最後の確認） |
 | 影響 | IP 単位だけの窓口（TOTP・確認のリンク・トークンの更新）の総当たりの守りが消える。Supabase 側の枠を使い切られると、正しい利用者もログイン・登録できない |
 | 対策 | SEC-AUTH-013 |
 | ASVS | V2.2.1（当てはめは推定） |
-| 根拠 | 制限が DB に届かない時は 503 で断る（`rateLimit.ts:45-64`、ADR-0009（範囲外））。中継（Vercel など）が `x-forwarded-for` を上書きするかは未確認で、本番はまだデプロイしていない。過去のレビューの X-05。NEWS の THR-NEWS-010 と同じ根 |
+| 根拠 | 制限が DB に届かない時は 503 で断る（`rateLimit.ts`、ADR-0009（範囲外））。送り元は Vercel の見出しだけを信じ、`x-forwarded-for` は読まない（ADR-0416）。Vercel が `x-vercel-forwarded-for`・`x-real-ip` を上書きすることは未確認で（本番はまだデプロイしていない。最初の preview で実測する）、前段に別の中継を置く時は段数の設計が要る。過去のレビューの X-05。NEWS の THR-NEWS-010 と同じ根 |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_overview.md:40` |
 

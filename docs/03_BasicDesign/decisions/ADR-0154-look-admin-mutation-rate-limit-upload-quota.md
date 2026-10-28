@@ -1,6 +1,6 @@
 # ADR-0154 管理の LOOK の変更の窓口に、送り元と操作者の2段の回数の制限と、画像の枚数・大きさ・1時間あたりの量の上限をかける
 
-> 状態: 推定 | 確認日: 2026-10-24 | 対象: `src/features/look/services/admin-rate-limit.ts`、`src/app/api/admin/looks/route.ts`、`src/app/api/admin/looks/[id]/route.ts` | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: `src/features/look/services/admin-rate-limit.ts`、`src/app/api/admin/looks/route.ts`、`src/app/api/admin/looks/[id]/route.ts` | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -31,7 +31,7 @@
 #### 背景
 
 - 管理の LOOK の窓口は1回に複数の画像を受け、置き場に書く
-- 共有の回数の制限は送り元を `x-forwarded-for` から取り、偽れる（`security_review_look.md`、Open・High。範囲外）
+- 共有の回数の制限は送り元を `x-forwarded-for` から取り、偽れた（`security_review_look.md`、Open・High。範囲外）。2026-10-28（波 4）に、共有の `getClientIp` が Vercel の見出し（手元の E2E は `CLIENT_IP_HEADER` が信じる `x-real-ip`）だけから取る形に直した（ADR-0416）。`x-forwarded-for` は読まない
 
 #### 決定
 
@@ -49,8 +49,8 @@
 #### 結果
 
 - 良くなること: 1人の操作者が短い間に上げられる画像の量に上限がある
-- 悪くなること: 作成と更新を別々に数えるので、合わせると1時間に120MB まで上げられる。SEC-LOOK-012 の根拠（上限が実際の2倍になる）と合わない。一覧と1件の取得にも回数の制限が無いので、SEC-LOOK-012 は満たさず、上位にしない。送り元の段は共有の部品の直しまで偽れる（SEC-LOOK-011）
-- 見直す条件: 共有の回数の制限が信頼できる送り元を取るようになった時、作成と更新の量を合わせて数える時
+- 悪くなること: 作成と更新を別々に数えるので、合わせると1時間に120MB まで上げられる。SEC-LOOK-012 の根拠（上限が実際の2倍になる）と合わない。一覧と1件の取得にも回数の制限が無いので、SEC-LOOK-012 は満たさず、上位にしない。送り元の段は共有の部品の直しまで偽れた（SEC-LOOK-011。2026-10-28 に直った）
+- 見直す条件: 共有の回数の制限が信頼できる送り元を取るようになった時（2026-10-28 に満たした）、作成と更新の量を合わせて数える時
 
 ## 未確認事項
 

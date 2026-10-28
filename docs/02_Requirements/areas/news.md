@@ -11,9 +11,9 @@ NEWS の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | --- | --- | --- |
 | 要求 | 17 | 既存の `FREQ-` 15（うち廃止1）、新しい `SR-NEWS-001`〜`002` |
 | 要件 | 37 | 既存の `FREQ-NN-REQ-NN` 21（うち廃止1）、`FR-NEWS-ALL-001`〜`007`、`FR-NEWS-DETAIL-001`〜`008`、`FR-ADMIN-003` |
-| 受け入れ条件 | 56 | 既存の `FREQ-NN-AC-NN` 28（うち廃止1）、新しい `FR-…-AC-NN` 28 |
+| 受け入れ条件 | 57 | 既存の `FREQ-NN-AC-NN` 28（うち廃止1）、新しい `FR-…-AC-NN` 29 |
 | 派生要件 | 15 | `DRV-NEWS-001`〜`015` |
-| セキュリティ要件 | 25（受け入れ条件 52） | `SEC-NEWS-001`〜`025`、`SEC-NEWS-NNN-AC-NN` |
+| セキュリティ要件 | 25（受け入れ条件 53） | `SEC-NEWS-001`〜`025`、`SEC-NEWS-NNN-AC-NN` |
 
 - 状態: 写した要求の行は「現行」。ただし元の行に理由の記述が無く、根拠の「なぜ」を推定で補った行や上位のつなぎは「推定」。コードと合わない行・新しく起こした項目・実装から読み取った項目も「推定」。どちらが正しいかは決めず、食い違いは各項目の本文と「未確認事項」に書き、`docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せる
 - 結論: 公開のニュースを読む要求は元の文書に無かった（`SR-NEWS-001`・`002` を推定で起こした）。VIEW ALL の出し方（FREQ-126 と FREQ-149）、分類が1つか複数か、BLOG の分類は、ユーザーに決めてもらう
@@ -83,7 +83,7 @@ NEWS の領域の要求・要件・受け入れ条件・派生要件を、追跡
 | FR-NEWS-SEC-002 | SEC-NEWS-001-AC-01、002-AC-01〜03、010-AC-01・AC-02、022-AC-01、025-AC-01 |
 | FR-NEWS-SEC-003 | SEC-NEWS-004-AC-02、006-AC-01・AC-02、009-AC-02、011-AC-01、023-AC-01、024-AC-01 |
 | FR-NEWS-SEC-004 | SEC-NEWS-014-AC-01・AC-02、015-AC-01〜03 |
-| FR-NEWS-SEC-005 | SEC-NEWS-016-AC-01・AC-02、017-AC-01〜03、018-AC-01・AC-02 |
+| FR-NEWS-SEC-005 | SEC-NEWS-016-AC-01〜03、017-AC-01〜03、018-AC-01・AC-02 |
 
 - 窓口の成功の道まで進む E2E（SEC-NEWS-016〜018。`e2e/FR-NEWS-SEC-005-admin-write-aal2.spec.ts`）は、aal2 の本物の token を、共有の道具 `e2e/admin-session-test-utils.ts` と同じ作り方で用意する。GoTrue の password grant で session を作り、`auth.mfa_amr_claims` に `totp` の行を入れて refresh し、aal2 の claim を持つ token を得る（TOTP の登録は通さない）。店長は worker ごとに 1 人を使い回し、終わりに消す
 - FREQ-149-AC-02 の「6件以下なら VIEW ALL が無い」側は E2E にしない。公開の NEWS を 6 件以下へ減らすには見本の記事を非公開にする必要があり、並列で動く他の E2E（FR-HOME-013 など）の件数と干渉する。E2E が試すのは「6件より多い（見本の公開 8 件）なら VIEW ALL がある」側だけで、テスト名に「【6件より多い側のみ】」と付けた。6件以下の側をどう確かめるかは「未確認事項」に書いた
@@ -1950,7 +1950,7 @@ anon で `search_public_news` を呼ぶと、権限の誤りで断られるこ�
 | 出どころ | OWASP ASVS 4.0.3 V11.1.4。`docs/05_Quality/reviews/security/security_review_news.md:42` |
 | 優先度 | MUST |
 
-回数の制限の送り元は、信頼できる中継が付けた値（または接続の送り元）だけから取る。利用者が付けた `x-forwarded-for`・`x-real-ip` で数えを分けない。今のコードは満たさない。
+回数の制限の送り元は、信頼できる中継が付けた値（または接続の送り元）だけから取る。利用者が付けた `x-forwarded-for`・`x-real-ip` で数えを分けない。満たす（2026-10-28、波 4。`rateLimit.ts` の鍵は共有の `getClientIp` が Vercel の見出し `x-vercel-forwarded-for`→`x-real-ip` だけから取り、`x-forwarded-for` は読まない。Vercel は `x-real-ip` を上書きするので、利用者が付けた値で数えは分かれない。取れない時は `null` の 1 つの枠。ADR-0416）。E2E は書き換え済みで、流して確かめるのは controller の最後の実行。
 
 ### SEC-NEWS-011-AC-01 x-forwarded-for を変えても61回目を断る
 
@@ -1962,7 +1962,7 @@ anon で `search_public_news` を呼ぶと、権限の誤りで断られるこ�
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
-同じ接続から、毎回違う `x-forwarded-for` を付けて `/api/news` を10分に61回送った時、61回目が 429 であること。
+同じ接続から、固定の `x-real-ip`（E2E の固定の環境 `CLIENT_IP_HEADER=x-real-ip` が信頼する送り元）に、毎回違う `x-forwarded-for` を付けて `/api/news` を10分に61回送った時、61回目が 429 であること（`x-forwarded-for` は読まれないので枠を逃れられない）。
 
 ### SEC-NEWS-012 入口の値を許可の一覧と型で確かめる
 
@@ -2147,13 +2147,15 @@ Origin と Referer の無い `DELETE /api/admin/news/<id>` が 403 で、記事�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-NEWS-015 |
-| 根拠 | 不正や誤操作を後から追えるようにするため。存在しない記事への操作を成功と記録すると、記録を信じられなくなる。IP は見出しを偽れるので残さない。全体の NFR-SEC-005（監査ログ）・NFR-SEC-011（監査ログの保持）を NEWS に当てはめた |
+| 根拠 | 不正や誤操作を後から追えるようにするため。存在しない記事への操作を成功と記録すると、記録を信じられなくなる。IP は、以前は見出しを偽れるので残さなかったが、偽れない `getClientIp`（ADR-0416）で解けたので、2026-10-28（波 4）から残す（ADR-0462、決定 Q13）。全体の NFR-SEC-005（監査ログ）・NFR-SEC-011（監査ログの保持）を NEWS に当てはめた |
 | 状態 | 推定 |
 | 確かめ方 | E2E・結合テスト |
 | 出どころ | ASVS 未対応付け。`docs/05_Quality/reviews/code/2026-04-18-actions-news-security-review.md:37-40` |
 | 優先度 | MUST |
 
 作成・書き換え・公開の切り替え・削除・画像の書き込みの失敗を、成功と失敗の両方で監査に残す（今のコードは満たす）。対象の記事が無い PUT・PATCH・DELETE は 404 を返し、成功として記録しない。2026-10-26 に満たした（以前は 0 件でも 200 と成功の監査だった）。
+
+- 監査の行には、送り元の IP とブラウザの名乗りも入れる（2026-10-28、波 4）。`logNewsAudit`（`route.ts`・`[id]/route.ts`）が共有の `getAuditRequestContext(request)` を渡し、IP は `getClientIp` の値（Vercel の見出し、または `CLIENT_IP_HEADER` を立てた配置の `x-real-ip` だけ。`x-forwarded-for` は読まない）。取れない配置では `null` のまま保存し、偽の値は入れない。IP は個人情報にあたりうる。保存期間は法令対応の後回しに従う（ADR-0462）
 
 - PUT・PATCH は `.update(...).eq('id', id).select('id')`、DELETE は `.delete().eq('id', id).select('id')` で変えた行を受け取る。0 行（無い）は 404 `{ error: 'Article not found' }` と、結果 `failure`・`detail='News article not found'` の監査 1 行（`admin.news.update.not_found`・`admin.news.status_update.not_found`・`admin.news.delete.not_found`）にする。成功の監査は書かない
 - 管理の窓口は認可の後に service role の client で書くので（ADR-0026）、RLS は行を隠さず、0 行は「その id の記事が無い」だけを表す
@@ -2170,7 +2172,19 @@ Origin と Referer の無い `DELETE /api/admin/news/<id>` が 403 で、記事�
 | 確かめ方 | E2E（手元の Supabase の `audit_logs` を読む） |
 | 出どころ | 実装から推定 |
 
-記事を作った後、`audit_logs` に action が `admin.news.create`、resource_id が新しい記事の id の行が1件あり、IP の値が入っていないこと。
+記事を作った後、`audit_logs` に action が `admin.news.create`、resource_id が新しい記事の id の行が1件あること（以前はここに「IP の値が入っていないこと」もあったが、2026-10-28 に AC-03 の「入ること」へ改めた）。
+
+### SEC-NEWS-016-AC-03 記事を作ると監査の行に送り元の IP が入る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-NEWS-016 |
+| 根拠 | 管理の操作を送り元から追えるようにし、偽れない見出しだけを信じることを確かめるため（ADR-0462、旧 ADR-0010 の「IP は残さない」を改めた） |
+| 状態 | 推定 |
+| 確かめ方 | E2E（手元の Supabase の `audit_logs` を読む。単体・結合は `getAuditRequestContext` の値が `ip` に渡ることを見る） |
+| 出どころ | 決定 Q13（`.superpowers/sdd/2026-10-25-security-gap-fixes/wave4-decisions.md`） |
+
+記事を作った後、`audit_logs` の `admin.news.create` の行（resource_id が新しい記事の id）の `ip` が、要求に付けた信頼する見出し `x-real-ip` の値であり、同じ要求に付けた偽の `x-forwarded-for` の値を含まないこと。IP が取れない配置では `ip` が `null`（偽の値を入れない）。
 
 ### SEC-NEWS-016-AC-02 存在しない記事への書き換えは 404 で成功と記録しない
 

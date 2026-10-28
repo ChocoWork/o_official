@@ -132,7 +132,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | 検索とサジェストの回数の制限の効き目と、数えの表の大きさ |
 | 脅威 | 自動の道具が、送るたびに `x-forwarded-for` を変えて別の送り元のふりをする |
-| 起こり方 | 回数の制限は送り元を `x-forwarded-for` の先頭、無ければ `x-real-ip` から無条件に取る（`src/features/auth/middleware/rateLimit.ts:4-16`）。検索とサジェストは `subject` を渡さない（`src/app/api/search/route.ts:41-46`、`src/app/api/suggest/route.ts:43-48`）。呼ばれるたびに数えの行を DB に足す（`rateLimit.ts:26`） |
+| 起こり方 | 以前は回数の制限が送り元を `x-forwarded-for` の先頭、無ければ `x-real-ip` から無条件に取っていた。2026-10-28（波 4）に、共有の `getClientIp`（`src/lib/request-ip.ts`）が Vercel の見出し `x-vercel-forwarded-for`→`x-real-ip` だけから取る形に直した。`x-forwarded-for` は読まず、取れない時は `null` の 1 つの枠（ADR-0416）。検索とサジェストは `subject` を渡さない（`src/app/api/search/route.ts:41-46`、`src/app/api/suggest/route.ts:43-48`）。呼ばれるたびに数えの行を DB に足すが、`null` の枠は 1 行に集まるので偽った送り元の数だけ増えない |
 | 影響 | THR-SEARCH-005 の制限が効かない。偽った送り元の数だけ数えの行が増え、DB を圧迫する |
 | 対策 | SEC-SEARCH-006 |
 | ASVS | V11.1.4 |
@@ -328,7 +328,7 @@ flowchart LR
 | --- | --- |
 | 守るもの | ほかの利用者の検索・サジェスト・ホームのプレビューが使える状態 |
 | 脅威 | 攻撃者が、狙った利用者と同じ送り元として数えられる呼び出しを続けて送り、その利用者の分の回数を使い切らせる |
-| 起こり方 | 回数の制限は送り元の IP だけで数え、`subject` を持たない（`src/features/auth/middleware/rateLimit.ts:4-16`、`src/app/api/search/route.ts:41-46`、`src/app/api/suggest/route.ts:43-48`）。攻撃者は `x-forwarded-for` に相手の IP を書いて `search:preview` を21回（上限20）、`search:public` を121回（上限120）送れる。同じ IP の後ろの利用者（携帯の CGNAT・会社）は1つの数えを分け合う。GET は送り元の確かめ（Origin）の対象外なので（`src/proxy.ts:11-12`）、外のサイトの頁が `<img src="/api/search?preview=true&q=x">` のような呼び出しを閲覧者の端末から送らせ、閲覧者の分を使える。2026-10-26 に、外のサイト側を直した。`/api/search`・`/api/suggest` は、`Sec-Fetch-Site` が付いていて `same-origin`・`none` 以外の要求（`cross-site`・`same-site`・知らない値）を、検査と回数の制限より前に 403 で断り、枠に数えない。見出しの無い要求は通す。偽の送り元の側（`x-forwarded-for`）は共有部品 `rateLimit.ts` の直しが要るので波 4（SEC-SEARCH-020） |
+| 起こり方 | 回数の制限は送り元の IP だけで数え、`subject` を持たない（`src/features/auth/middleware/rateLimit.ts`、`src/app/api/search/route.ts:41-46`、`src/app/api/suggest/route.ts:43-48`）。以前は、攻撃者が `x-forwarded-for` に相手の IP を書いて `search:preview` を21回（上限20）、`search:public` を121回（上限120）送れた。同じ IP の後ろの利用者（携帯の CGNAT・会社）は1つの数えを分け合う。GET は送り元の確かめ（Origin）の対象外なので（`src/proxy.ts:11-12`）、外のサイトの頁が `<img src="/api/search?preview=true&q=x">` のような呼び出しを閲覧者の端末から送らせ、閲覧者の分を使える。2026-10-26 に、外のサイト側を直した。`/api/search`・`/api/suggest` は、`Sec-Fetch-Site` が付いていて `same-origin`・`none` 以外の要求（`cross-site`・`same-site`・知らない値）を、検査と回数の制限より前に 403 で断り、枠に数えない。見出しの無い要求は通す。偽の送り元の側（`x-forwarded-for`）は、2026-10-28（波 4）に共有部品 `rateLimit.ts` が `getClientIp` で中継の見出しだけから取る形に直った（SEC-SEARCH-020、ADR-0416）。攻撃者が `x-forwarded-for` や、Vercel が上書きする `x-real-ip` を偽っても、相手の枠は使えない |
 | 影響 | 狙われた利用者は600秒、ホームのプレビューと検索が 429 で出なくなる（画面は失敗の文か、プレビューの区画が消えるだけ） |
 | 対策 | SEC-SEARCH-020 |
 | ASVS | V11.1.4（当てはめは推定） |
@@ -355,10 +355,10 @@ flowchart LR
 ## 未確認事項
 
 - 本番の PostgREST の `max_rows`（THR-SEARCH-007）。手元は 1000
-- 本番の中継（Vercel など）が `x-forwarded-for` を上書きするか（THR-SEARCH-006）。本番のアプリはまだデプロイしていない
+- 本番の中継（Vercel）が `x-vercel-forwarded-for`・`x-real-ip` を偽の値の上から上書きするか（THR-SEARCH-006。波 4 で `x-forwarded-for` は読まない形に直した。最初の preview で偽の `x-real-ip` と偽の XFF を送って実測する。ADR-0416）。本番のアプリはまだデプロイしていない
 - 管理の読み取りの権限を持つ `aal1` の session で、検索の関数や表から下書きを読めるか（THR-SEARCH-002）は、実際に叩いて確かめていない
 - `search_public_*` にワイルドカードを並べた語で、どれだけ重くなるか（THR-SEARCH-008）
 - `next/image` の最適化のキャッシュの長さと、ITEM の7日の署名つき URL がどう組み合わさるか（THR-SEARCH-014）
 - 例外を丸ごと記録した時に、検索語が記録に入るか（THR-SEARCH-018）
-- 本番の中継が `x-forwarded-for` を上書きする時に、同じ IP の後ろの利用者（携帯の CGNAT・会社）がどれだけ1つの数えを分け合うか（THR-SEARCH-020）
+- 本番の中継が送り元の見出しを付ける時に、同じ IP の後ろの利用者（携帯の CGNAT・会社）がどれだけ1つの数えを分け合うか（THR-SEARCH-020）
 - ホームの文に語を出すことは「直す」と決まった（THR-SEARCH-021、2026-10-26）。説明の文の言葉と「検索した語」の枠の見た目は案で、ユーザーが画面の写真（SEC-SEARCH-021-AC-02 の E2E が保存する）を見て確かめるまで確定しない

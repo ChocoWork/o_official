@@ -1,5 +1,7 @@
 # APIルート一覧
 
+> 波 4 確認日: 2026-10-28。取扱店の作成の頁が入口で権限を確かめる窓口 `GET /api/admin/stockists/access`（`src/app/api/admin/stockists/access/route.ts`）を 1 ファイル・1 メソッド追加した。Route Handler は155ファイル・197メソッド、表は154行・196メソッド（`/api/e2e/server-info` を除く）。波 4 のほかの入口の追加・削除はなし（送り元の IP の取り出し、回数の制限の 429・503 への `no-store`、監査への IP の追加は応答の形と表の列を変えない）。
+
 > 波 3 確認日: 2026-10-28。`src/app/api` の外の入口として `GET /look/[id]/og`（`src/app/look/[id]/og/route.ts`）を、表の下の新しい節に足した。`/api/` の外なので Route Handler の数（154ファイル・196メソッド、表は153行・195メソッド）は変えていない。波 3 のほかの入口の追加・削除はなし（`/api/auth` 配下の応答に proxy が `no-store` を付ける変更だけ）。
 
 > G-4 Task 8 確認日: 2026-10-27。G-1 から 410 を返すだけだった旧い発送・仕上がりの 6 パス・7 メソッド（発送の材料の GET・発送・発送の取消・伝票番号の訂正・手動の配達済み・仕上がりの記録と取消）を route ごと削除した。Route Handler は154ファイル・196メソッド、表は153行・195メソッド。窓口が無いので Next は 404 を返し、権限の迂回は増えない。
@@ -110,6 +112,7 @@
 | `/api/admin/shipment-slips/[id]/tracking` | `POST` | [route.ts](../../../src/app/api/admin/shipment-slips/%5Bid%5D/tracking/route.ts) （G-3 Task 7: 上と同じ4権限。確定済みの票の伝票番号の入力・訂正。運送会社と番号は両方必須。`expectedVersion` が必須。CSRF・回数制限 `admin.shipment_slips.tracking` の60回/600秒・監査 `admin.shipment_slips.tracking.update`。成功は200） |
 | `/api/admin/shipment-slips/[id]/delivered` | `POST` | [route.ts](../../../src/app/api/admin/shipment-slips/%5Bid%5D/delivered/route.ts) （G-3 Task 7: 上と同じ4権限。確定済みの票の手動の配達済み。`expectedVersion` と `deliveredOn` が必須。CSRF・回数制限 `admin.shipment_slips.delivered` の60回/600秒・監査 `admin.shipment_slips.delivered`。成功は200） |
 | `/api/admin/settings/shop` | `GET`, `PUT` | [route.ts](../../../src/app/api/admin/settings/shop/route.ts) |
+| `/api/admin/stockists/access` | `GET` | [route.ts](../../../src/app/api/admin/stockists/access/route.ts) （波 4 / 2026-10-28: 取扱店の作成の頁が入口で権限を確かめる。RBAC `admin.stockists.manage`・aal2。送り元の枠 → 認可 → 操作者の枠（読み）の順。成功は本文なしの 204。全応答 `no-store`。拒否は `auditAuthzDenial`。API-STOCKIST-007、[ADR-0269](../decisions/ADR-0269-stockist-create-page-access-gate.md)） |
 | `/api/admin/stockists/[id]` | `DELETE`, `GET`, `PATCH`, `PUT` | [route.ts](../../../src/app/api/admin/stockists/%5Bid%5D/route.ts) |
 | `/api/admin/stockists` | `GET`, `POST` | [route.ts](../../../src/app/api/admin/stockists/route.ts) |
 | `/api/admin/users/mfa/reset` | `POST` | [route.ts](../../../src/app/api/admin/users/mfa/reset/route.ts) |
@@ -205,7 +208,7 @@ API単体 [GET](../../../tests/unit/api/admin/permissions-route.test.ts)・[POST
 
 ## `src/app/api` の外の入口（波 3 / 2026-10-28）
 
-頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（154ファイル・196メソッド、表は153行・195メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
+頁ではなく画像のバイトを返す Route Handler。パスが `/api/` で始まらず、`src/app/api` の外にあるので、上の表と概要の数（155ファイル・197メソッド、表は154行・196メソッド）には入れない。数を固定する単体試験（`tests/unit/docs/delivery-status-traceability.test.ts`・`order-status-traceability.test.ts`）は `src/app/api` だけを数える。
 
 | パス | メソッド | 根拠 |
 | --- | --- | --- |
@@ -234,3 +237,5 @@ G-3 Task 9（2026-10-26）: 出荷日訂正のPOSTを1本追加。155→156フ�
 波1-B（2026-10-26）: 入口の追加・削除はなし。156ファイル・199メソッド（表は155行・198メソッド）のまま。応答と失敗の変更だけで、この表の列（パス・メソッド・根拠）は変わらない。変えた入口は、認証が `/api/auth/register`・`/api/auth/confirm`・`/api/auth/refresh`・`/api/auth/otp/verify`・`/api/auth/mfa/enroll-totp`・`/api/auth/mfa/verify`、管理が `/api/admin/create-user`・`/api/admin/revoke-user-sessions`・`/api/admin/users/mfa/reset`・`/api/admin/item-color-presets`（と `[id]`）・`/api/admin/contact`（`[id]`・`[id]/reply`・`templates`・`templates/[id]`）・`/api/admin/audit-logs`・`/api/admin/stockists`（と `[id]`）・`/api/admin/news/[id]`、公開が `/api/news`。`/api/auth/register` は管理の鍵で作る分岐を削除し、いつも公開の登録になった（入口は残る）。入力・応答・失敗の詳細は[API仕様](api-spec.md)の各行を参照。
 
 波1-C（2026-10-26）: 入口の追加・削除はなし。`src/app/api/**/route.ts` は 159 ファイル・202 メソッド（G-4 Task 3 の 3 入口を含む数）のまま、この表の行は変えていない。`error.tsx`（`/look`・`/news`・`/privacy` の誤りの画面）と `revision-date.ts` は頁の部品で、入口ではない。変えた入口は、公開が `/api/search`・`/api/suggest`（外のサイトからの読み込みの 403、全応答 `Cache-Control: private, no-store`、語の決まり、500）・`/api/news`（全応答 no-store、分類の許可の一覧）・`/api/auth/me`（応答から `email` を外した）、管理が `/api/admin/looks`（と `[id]`）・`/api/admin/news`（と `[id]`）・`/api/admin/stockists`（と `[id]`、全応答 no-store）。詳細は[API仕様](api-spec.md)の各行を参照。
+
+波4（2026-10-28）: 取扱店の作成の頁の入口の窓口 `GET /api/admin/stockists/access` を1本追加。154→155ファイル、196→197メソッド。表は153→154行、195→196メソッド。ほかの入口の追加・削除はなし。回数の制限の 429・503 に `Cache-Control: private, no-store` と `Retry-After` が付き（`src/features/auth/middleware/rateLimit.ts`）、取扱店の変更系の窓口の順序が「送り元の枠 → 認可 → 操作者の枠 → CSRF」に入れ替わったが、パス・メソッドの列は変わらない。詳しくは[API仕様](api-spec.md)の `GET /api/admin/stockists/access` を参照。

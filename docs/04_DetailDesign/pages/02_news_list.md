@@ -104,7 +104,7 @@ FR-NEWS-ALL-002・003・004・007、FREQ-31・32・47・48・49・119・149・27
 | --- | --- |
 | URL の `category` が空・空白だけ | 初めの値（`initialCategory`、無ければ ALL） |
 | URL の `category` に正しい値が1つも無い | ALL |
-| `articles` が渡されず、取り出しの応答が `ok` でない | 空の一覧と「ニュースデータの取得に失敗しました」（赤い文）。console に記録 |
+| `articles` が渡されず、取り出しの応答が `ok` でない | 本文を読み始め（読み終わりは待たない。回数の制限の 429 は `no-store` で、読まずに捨てるとブラウザが要求を開いたまま残すため。波 4 Task 1b）、空の一覧と「ニュースデータの取得に失敗しました」（赤い文）。console に記録 |
 | `articles` が渡されず、取り出しが例外（通信の失敗・JSON の解析の失敗） | 同上 |
 | 取り出しの最中 | 骨組みを5行出す |
 | 公開の記事が0件 | 「現在、公開されている記事はありません」 |
@@ -159,7 +159,7 @@ FR-NEWS-ALL-002・003・004・007、FREQ-31・32・47・48・49・119・149・27
 | 25 | 題に HTML の印 | 題 `<script>x</script>` | 文字として出て、要素にならない |
 | 26 | 取り出しの成功（catalog） | `articles` なし、fetch が `ok` | `/api/news` を `cache:'no-store'` で呼び、記事が出る |
 | 27 | 取り出しの成功（home） | home、`articles` なし、`fetchLimit` なし | `/api/news?limit=7` を呼び、6件まで出る |
-| 28 | 取り出しの応答が ok でない | fetch が `ok:false` | 赤い文「ニュースデータの取得に失敗しました」（catalog・home の両方） |
+| 28 | 取り出しの応答が ok でない | fetch が `ok:false`。もう1件は `status:429` で `arrayBuffer` を差し替え | 赤い文「ニュースデータの取得に失敗しました」（catalog・home の両方）。429 の件は `arrayBuffer` が1回呼ばれる |
 | 29 | 取り出しの例外 | fetch が reject | 同上 |
 | 30 | 取り出しの最中 | fetch を待たせる | 骨組みが出る（catalog・home の両方） |
 | 31 | 0件 | `articles=[]` | 「現在、公開されている記事はありません」（catalog・home の両方） |
@@ -373,7 +373,7 @@ DRV-NEWS-007、SEC-NEWS-006-AC-01・02、SEC-NEWS-009-AC-01・02、SEC-NEWS-012-
 #### 認証認可
 
 - 認可なし（公開）。返す項目に本文 `detailed_content` も `image_url` も入らない（SEC-NEWS-005。2026-10-26 に `image_url` を外した）
-- 回数の送り元は `x-forwarded-for` の先頭を先に見る（`src/features/auth/middleware/rateLimit.ts`。SEC-NEWS-011）
+- 回数の送り元は共有の `getClientIp` が Vercel の見出し（`x-vercel-forwarded-for`→`x-real-ip`）だけから取り、`x-forwarded-for` は読まない。取れない時は `null` の 1 つの枠（`src/features/auth/middleware/rateLimit.ts`。SEC-NEWS-011、ADR-0416。2026-10-28、波 4 の Task 2）
 - 書き換えの窓口ではないので proxy の Origin の検査は掛からない（ARC-NEWS-004）
 - 今の画面からは呼ばれず、E2E の補助 `e2e/search-test-utils.ts` だけが呼ぶ（推定）
 

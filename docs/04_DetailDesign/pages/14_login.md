@@ -4,7 +4,7 @@
 
 ## 概要
 
-AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`〜`037`）で書く。`DD-AUTH-032`〜`036` はログインの戻り先（2026-10-25、波 1-A）の設計で、コードは同日に書いた。`DD-AUTH-037`（`/api/auth` の no-store）は 2026-10-28（波 3）に足した。
+AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`〜`038`）で書く。`DD-AUTH-032`〜`036` はログインの戻り先（2026-10-25、波 1-A）の設計で、コードは同日に書いた。`DD-AUTH-037`（`/api/auth` の no-store）は 2026-10-28（波 3）に、`DD-AUTH-038`（送り元の IP の取り出し）は 2026-10-28（波 4）に足した。
 中身は 2026-10-24 の作業ツリーのコードを読んで起こした今の動きで、ユーザーの確認を受けていないので全部「推定」にした。要件・構造設計とコードが食い違う所は決めずに今のコードの動きを書き、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節に載せる。
 
 | 範囲 | ID | 単位 |
@@ -19,6 +19,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | TOTP の窓口 | `DD-AUTH-029`〜`031` | `mfa/status`・`mfa/enroll-totp`・`mfa/verify` |
 | 戻り先の部品と窓口 | `DD-AUTH-032`〜`036` | 戻り先の確かめ、控えの保存、控えの開始と解決、`post-login`、入口のリンクの URL（ARC-AUTH-010） |
 | 応答の見出し | `DD-AUTH-037` | 共有の `src/proxy.ts` が `/api/auth` 配下の応答に付ける `Cache-Control: no-store`（判定だけを `src/lib/auth-no-store-policy.ts` の `shouldSetNoStore` に出して範囲に入れた） |
+| 送り元の IP | `DD-AUTH-038` | 共有の `src/lib/request-ip.ts` の `getClientIp`・`getAuditRequestContext`。回数の制限の鍵（共有の `rateLimit.ts`。鍵が取れない時は `null`、429・503 は `no-store`）と監査の IP・Turnstile の `remoteip` が使う |
 
 - 結論: 範囲の 33 の単位を 31 の項目へつないだ（`/login/verify` と `/auth/password-reset/verify` は頁と端末の部品の2単位を1項目にした）。各項目に入出力・正常と異常の流れ（分岐ごとに条件と動き）・状態と永続化・認証認可・単体テストの観点を書いた
 - 単体テストは 5 本（`LoginModal`・`AuthResultScreen`・`VerifyOtpClient`・`verified-page`・`logout-guest-shopping`）しか無く、窓口の分岐は結合テスト（`tests/integration/api/auth/**`）だけが通す。分岐の網羅 100% にするには、テスト観点の表の「今のテスト」が無い行を単体テストで足す必要がある
@@ -31,7 +32,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 範囲 | `scripts/trace/scope.json` の AUTH |
 | 上位の文書 | [AUTH の構造設計](../../03_BasicDesign/areas/auth.md)（`ARC-`・`SCR-`・`FLOW-`・`STATE-`・`API-`・`DATA-AUTH-`）、[AUTH の要件](../../02_Requirements/areas/auth.md)（`SEC-AUTH-`） |
 | 関連文書 | [AUTH の脅威](../../05_Quality/security/threats/auth.md)、`docs/03_BasicDesign/decisions/ADR-0400`〜`ADR-0412`、シーケンス [ログイン・追加認証](../sequence/auth-login-mfa.md)・[Google OAuth](../sequence/auth-oauth.md)・[パスワード再設定](../sequence/auth-password-reset.md)・[会員登録・確認](../sequence/auth-registration.md)・[セッション・API認可](../sequence/auth-session.md) |
-| 対象のコード | 「実装の単位」の表の 33 単位に、2026-10-28 に足した `shouldSetNoStore`（`DD-AUTH-037`）を加えた 34 単位 |
+| 対象のコード | 「実装の単位」の表の 33 単位に、2026-10-28 に足した `shouldSetNoStore`（`DD-AUTH-037`）と、2026-10-28（波 4）に足した `getClientIp`・`getAuditRequestContext`（`DD-AUTH-038`）を加えた 36 単位 |
 | 調べた時点 | 2026-10-24 の作業ツリー。コードは読んだだけで、動かしての確かめはしていない |
 | 上位の決め方 | 項目の上位は、その単位が受け持つ構造設計と、その単位のコードが満たす `SEC-AUTH-` だけにした。満たさない `SEC-AUTH-` は上位にせず、本文の「認証認可」に「満たさない」と書いた（構造設計と同じ決め方）。要件・ADR・範囲外の ID は上位に書けないので、本文の「対応要件 ID」の括弧と根拠に書いた |
 
@@ -88,8 +89,11 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | `src/app/api/auth/mfa/verify/route.ts` | `<file>` | DD-AUTH-031 |
 | `src/app/api/auth/post-login/route.ts` | `<file>` | DD-AUTH-035 |
 | `src/lib/auth-no-store-policy.ts` | `shouldSetNoStore` | DD-AUTH-037 |
+| `src/lib/request-ip.ts` | `getClientIp` | DD-AUTH-038 |
+| `src/lib/request-ip.ts` | `getAuditRequestContext` | DD-AUTH-038 |
 
 - `src/lib/auth-no-store-policy.ts` の `shouldSetNoStore` は `IMPL-AUTH-223`（2026-10-28）。共有の `src/proxy.ts` が呼ぶ。`proxy` 全体は CSP・Origin の検査も持つ共有部品で、範囲の単位にしないので、`/api/auth` かどうかの判定だけを小さな関数に出して範囲に入れた（`scripts/trace/scope.json` の AUTH の `src` と、試験 `tests/unit/middleware/proxy-no-store.test.ts` を `tests` に足した）。ADR-0415 の置き場所
+- `src/lib/request-ip.ts` の `getClientIp`・`getAuditRequestContext` は `IMPL-AUTH-224`・`IMPL-AUTH-225`（2026-10-28、波 4。1 つの `@impl` は 1 つの単位にだけ付けるので 2 つに分けた）。回数の制限の鍵（共有の `rateLimit.ts`）と、取扱店・管理・LOOK・NEWS の監査の IP が呼ぶ共有の関数で、範囲に入れた（`scripts/trace/scope.json` の AUTH の `src` と、試験 `tests/unit/lib/request-ip.test.ts` を `tests` に足した）。ADR-0416 の置き場所
 - 戻り先の部品（`src/features/auth/return-intent/` の `return-path.ts`・`return-intent-store.ts`・`return-intent-service.ts`・`use-login-href.ts`）は、DD-AUTH-032・033・034・036 につなぐ。単位（symbol）はコードを書く時に確定する（コードはまだ無いので、この表には書かない）
 - `src/app/` の `page`・`route` と `.tsx` はファイル全体で1つの単位なので、中の metadata の関数・Route Handler の関数・小さな関数・定数はその単位に含める。`.ts` の `useTurnstileWidget` と `formatResendCountdown` だけが関数の単位
 - 新しい `@impl` は `IMPL-AUTH-101` から振る（前の版の `IMPL-AUTH-SEC-009` などと字の上で混ざらないようにするため）。33 の単位すべてに `@impl`（`IMPL-AUTH-101`〜`205`）と `@design` を付けた
@@ -890,7 +894,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 ## 窓口の詳細設計
 
-窓口（`src/app/api/auth/**/route.ts`）の項目。全部の窓口は Route Handler で、状態を変える `POST` は共有の proxy の Origin の確かめ（`src/proxy.ts`）を先に通る。回数の制限の呼び出し（共有の `enforceRateLimit`）は、返り値があればそのまま返し、例外は記録だけして先へ進む（数え場所の失敗の 503 は共有部品が返す、ADR-0009（範囲外））。例外は2つ。OTP の確かめの宛先単位の制限は、返り値を返さず新しい 429 を作り直し、数え場所の障害の 503 も 429 に変えて保留の Cookie を消す（`src/app/api/auth/otp/verify/route.ts`、DD-AUTH-015）。確認のリンクは、返り値が `Response` でなければ新しい 429 を作る（`src/app/api/auth/confirm/route.ts`）。単体テストでは、共有部品（Supabase の client・回数の制限・監査・Cookie・署名の印・メール）を全部差し替えて、窓口の分岐だけを通す。
+窓口（`src/app/api/auth/**/route.ts`）の項目。全部の窓口は Route Handler で、状態を変える `POST` は共有の proxy の Origin の確かめ（`src/proxy.ts`）を先に通る。回数の制限の呼び出し（共有の `enforceRateLimit`。各窓口の先頭で静的に import する）は、返り値があればそのまま返す。呼び出しが投げた例外は握りつぶさず、窓口は先へ進まない（外側の `catch` が 500 にする。外側の `catch` が無い `confirm`・`login/resend`・`post-login` は例外がそのまま届き、Next.js が 500 にする。`password-reset/link` だけは外側の `catch` が既存の流儀の 400 `link_expired` にする。SEC-AUTH-013-AC-02、波 4 の Task 4）。数え場所の DB の失敗の 503 は共有部品が自分で返す（ADR-0009（範囲外））。例外は2つ。OTP の確かめの宛先単位の制限は、返り値を返さず新しい 429 を作り直し、数え場所の障害の 503 も 429 に変えて保留の Cookie を消す（`src/app/api/auth/otp/verify/route.ts`、DD-AUTH-015）。確認のリンクは、返り値が `Response` でなければ新しい 429 を作る（`src/app/api/auth/confirm/route.ts`）。単体テストでは、共有部品（Supabase の client・回数の制限・監査・Cookie・署名の印・メール）を全部差し替えて、窓口の分岐だけを通す。
 
 ### DD-AUTH-014 ログインの1段目の窓口（パスワードを確かめて確認コードを送る）
 
@@ -910,7 +914,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 向き | 中身 |
 | --- | --- |
-| 入力 | `POST /api/auth/login`。JSON の `email`・`password`・`turnstileToken`・`next`（任意。型は縛らず、戻り先の確かめが断る）（形は共有の `LoginRequestSchema`）。見出しの `x-forwarded-for` の先頭を Turnstile の IP に使う |
+| 入力 | `POST /api/auth/login`。JSON の `email`・`password`・`turnstileToken`・`next`（任意。型は縛らず、戻り先の確かめが断る）（形は共有の `LoginRequestSchema`）。送り元の IP（共有の `getClientIp`。DD-AUTH-038）を Turnstile の IP に使う |
 | 出力 200 | `{ step: 'otp', message }` と保留の Cookie `sb-login-2fa-session`（共有の `cookieOptionsForLoginTwoFactor`、5分）、戻り先の Cookie `sb-return-intent`（15 分。`next` が無い・外れた時・控えの作成の失敗は消す側） |
 | 出力の失敗 | 400（形の誤りを `formatZodError` で）、401（「メールアドレスまたはパスワードが正しくありません。」）、403（`Bot detection failed`）、429（回数の制限の応答）、500（確認コードの送信の失敗・例外） |
 
@@ -931,14 +935,14 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 条件 | 動き |
 | --- | --- |
 | IP の制限が応答を返す | その応答を返す。本文を読まない（`src/app/api/auth/login/route.ts`） |
-| IP の制限の呼び出しが投げる | 記録して先へ進む |
+| IP の制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。本文もパスワードも読まない |
 | 形が合わない | 400 |
 | Turnstile が通らない | `login` の failure（`turnstile.error`、無ければ `turnstile_failed`）を残して 403 |
 | メールの制限が応答を返す | その応答を返す |
-| メールの制限の呼び出しが投げる | 記録して先へ進む |
+| メールの制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。パスワードの確かめへ進まない |
 | パスワードの確かめが誤り、または session か user が無い | `login` の failure（誤りの文、無ければ `invalid credentials`）を残して 401。どちらが誤りかは言わない |
 | 確認コードの送信が誤り | `login` の error（`otp_send_failed`）を残して 500 |
-| `x-forwarded-for` が無い・空 | Turnstile に IP を渡さない（`null`） |
+| 送り元の見出し（`x-real-ip`）が無い・空・IP の形でない、または `x-forwarded-for` だけ | Turnstile に IP を渡さない（`null`。`x-forwarded-for` は読まない） |
 | `next` が無い・確かめに外れる・控えの作成が失敗 | ログインは止めず 200。戻り先の Cookie を消す側（外れた時は理由の符号だけ監査） |
 | パスワードの誤り・Turnstile・制限・確認コードの送信の失敗 | 戻り先を作らず、Cookie も付けない |
 | 本文が JSON でない・そのほかの例外 | 500 `Internal server error` |
@@ -953,14 +957,14 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 1 | 正しい資格で 200・`step: 'otp'`・保留の Cookie・`password_verified` の監査 |
 | 2 | IP の制限の応答をそのまま返し、本文を読まない |
-| 3 | IP の制限が投げても先へ進む |
+| 3 | IP の制限が投げたら 500 で止まり、Turnstile もパスワードの確かめも呼ばない |
 | 4 | 形の誤りで 400 |
 | 5 | Turnstile の失敗で 403。誤りの文の有り・無しの両方 |
 | 6 | メールの制限の応答をそのまま返す。Turnstile の失敗では数えない |
-| 7 | メールの制限が投げても先へ進む |
+| 7 | メールの制限が投げたら 500 で止まり、パスワードの確かめへ進まない |
 | 8 | 誤りの文の有る失敗・誤りの無い session 無しの両方で 401 |
 | 9 | 確認コードの送信の失敗で 500 |
-| 10 | `x-forwarded-for` の有り・無し |
+| 10 | `x-real-ip` の有り・無し、`x-forwarded-for` だけの時は `null`（DD-AUTH-038） |
 | 11 | 本文が壊れていて 500 |
 | 12 | `next` が有効で戻り先の Cookie（`Max-Age=900`・HttpOnly・SameSite=Lax）が付く。無い・外れる（`//evil.example`・数値・3000 字）・DB の失敗でも 200 で Cookie は消す側。401・403・500 の応答に Cookie が付かない。本文に番号・道筋が出ない |
 
@@ -1001,11 +1005,11 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 条件 | 動き |
 | --- | --- |
 | IP の制限が応答を返す | その応答を返す（`src/app/api/auth/otp/verify/route.ts`） |
-| IP の制限の呼び出しが投げる | 記録して先へ進む |
+| IP の制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。本文を読まない |
 | 形が合わない | 400 |
 | 保留が無い・署名の誤り・期限切れ | `auth.otp.verify` の failure（`missing_or_invalid_password_session`）を残して 401 |
 | 宛先単位の上限、または数え場所の障害（503） | どちらも新しい 429 を作り、元の応答に `Retry-After` があれば写し、保留の Cookie を消し、failure（`account_rate_limited`）を残す |
-| 宛先単位の制限の呼び出しが投げる | 記録して先へ進む |
+| 宛先単位の制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。コードの確かめへ進まず、保留の Cookie は消さない |
 | コードの確かめが誤り、または session か user が無い | failure（`invalid_or_expired_otp`）を残して 401。保留は消さない |
 | セッションの保存が失敗（`ok` が偽か結果が無い） | error（`session_persist_failed`、理由が無ければ `unknown`）を残して 500 |
 | 利用者のメールが無い | 監査と紐付けに保留のメールを使う |
@@ -1021,11 +1025,11 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | # | 観点 |
 | --- | --- |
 | 1 | 正しいコードで 200・保留の Cookie の消去・保存・紐付け・success の監査 |
-| 2 | IP の制限の応答と、呼び出しの例外 |
+| 2 | IP の制限の応答と、呼び出しの例外（500 で止まり、確かめへ進まない） |
 | 3 | 形の誤りで 400 |
 | 4 | 保留が無くて 401 |
 | 5 | 宛先単位の上限で 429・保留の消去。`Retry-After` の有り・無しの両方 |
-| 6 | 宛先単位の制限の呼び出しが投げても先へ進む |
+| 6 | 宛先単位の制限の呼び出しが投げたら 500 で止まり、確かめへ進まない |
 | 7 | 本文に別の `email` を書いても、確かめと数えは保留のメール |
 | 8 | 確かめの誤り・session 無し・user 無しで 401 |
 | 9 | 保存の失敗で 500。理由の有り・無し、結果が無い時 |
@@ -1068,7 +1072,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 保留が無い・無効 | 401。回数を数えない（`src/app/api/auth/login/resend/route.ts`） |
 | IP の制限が応答を返す | その応答を返す。宛先の枠は数えない |
 | 宛先の制限が応答を返す | その応答を返す |
-| 制限の呼び出しが投げる | 記録して送信へ進む |
+| 制限の呼び出しが投げる | 握りつぶさず、例外がそのまま届いて送信へ進まない（この窓口は外側の `catch` を持たず、Next.js が 500 にする）。保留の Cookie は作り直さない |
 | 送信が誤り | `login` の error（`otp_resend_failed`）を残して 500。保留の Cookie は作り直さない |
 
 **状態・永続化:** 保留の Cookie を作り直すだけ（寿命は5分に戻るが、`iat` から30分の上限は動かない、STATE-AUTH-001）。60秒の再送の待ちは画面だけが持ち、この窓口は数えない。
@@ -1083,7 +1087,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 2 | 保留なしで 401、回数を数えない |
 | 3 | IP の制限で返す |
 | 4 | 宛先の制限で返す。数える `subject` が保留のメール |
-| 5 | 制限が投げても送る |
+| 5 | 制限が投げたら送らない（IP の段・宛先の段のどちらでも） |
 | 6 | 送信の失敗で 500 |
 | 7 | 作り直した印の `iat` が元の印と同じ |
 
@@ -1149,7 +1153,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 向き | 中身 |
 | --- | --- |
-| 入力 | `POST /api/auth/register`。JSON の `email`・`password`・`display_name`（任意）・`turnstileToken`・`next`（任意。型は縛らない。古い `redirect_to`・`emailRedirectTo` は読まない）。形は共有の `RegisterRequestSchema`（16 文字はここ）。`x-forwarded-for`。`x-admin-token`・Bearer は読まない |
+| 入力 | `POST /api/auth/register`。JSON の `email`・`password`・`display_name`（任意）・`turnstileToken`・`next`（任意。型は縛らない。古い `redirect_to`・`emailRedirectTo` は読まない）。形は共有の `RegisterRequestSchema`（16 文字はここ）。送り元の IP（`getClientIp`。DD-AUTH-038）。`x-admin-token`・Bearer は読まない |
 | 出力 202 | `{ message: 'Confirmation email sent' }`（新規で確認が要る時・登録済み・除外の宛先）。戻り先の Cookie `sb-return-intent`（1 時間。`next` が無い・外れた時も既定の `/` で必ず付ける）は 3 つの枝で属性の並びが同じ |
 | 出力 201 | Supabase が session を返した時（Confirm email が OFF）だけ。`{ user: { id, email } }` と認証の Cookie（`access_token`・利用者の記録は載せない） |
 | 出力の失敗 | 400（形・漏洩）、403（Turnstile）、429（回数の制限。IP 単位と宛先単位）、500（作成・保存の失敗・例外）、503（住所の見張り・照会の失敗） |
@@ -1171,15 +1175,16 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 条件 | 動き |
 | --- | --- |
-| IP の制限が応答を返す・呼び出しが投げる | 返す・記録して進む（`src/app/api/auth/register/route.ts`） |
+| IP の制限が応答を返す | 返す（`src/app/api/auth/register/route.ts`） |
+| IP の制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。Turnstile へ進まない |
 | `x-admin-token`・Bearer が付いている | 読まない。いつも公開の経路（鍵の設定の有無で動きを変えない。SEC-AUTH-017） |
 | 宛先単位の制限が応答を返す | そのまま返す（429）。控え・照会・登録・メール送信へ進まない |
-| 宛先単位の制限の呼び出しが投げる | 記録して進む |
+| 宛先単位の制限の呼び出しが投げる | 握りつぶさず、内側の `catch` の 500 で止まる。控え・照会・登録・メール送信へ進まない（200 や 202 に丸めない） |
 | 形が合わない | 400 |
 | `next` が無い・確かめに外れる | 戻り先を既定の `/` にして控えを作る（外れた理由の符号は監査に残す）。応答の形は変えない |
 | 控えの作成が失敗 | 戻り先の Cookie を消す側にする。応答の形は変えない |
 | Turnstile が通らない | failure（誤りの文、無ければ `turnstile_failed`）を残して 403 |
-| `x-forwarded-for` が無い | Turnstile に `null` |
+| 送り元の見出し（`x-real-ip`）が無い・IP の形でない、または `x-forwarded-for` だけ | Turnstile に `null` |
 | 住所が許可の一覧に無い | 応答の外で運用へ知らせ、503 |
 | 漏洩に当たる | failure（`pwned_password`）を残して 400 |
 | 照合先が使えない | error（`pwned_check_unavailable`）を残して続ける |
@@ -1206,10 +1211,10 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 1 | 新規で確認が要る時に 202・`created_needs_confirmation`・確認のリンクの送り先 |
 | 2 | IP の制限の応答と例外 |
 | 3 | 管理の見出し（`x-admin-token` と Bearer、鍵の設定が無い・違う・合う）を付けても `createUser` を呼ばず公開の登録として通る |
-| 4 | 宛先単位の制限（小文字のメールを subject に 5 回／3600 秒。順番は Turnstile → 漏洩 → 枠 → 控え → 照会。超過で 429・照会以降へ進まない。Turnstile・漏洩で止まった要求は数えない。呼び出しが投げたら進む） |
+| 4 | 宛先単位の制限（小文字のメールを subject に 5 回／3600 秒。順番は Turnstile → 漏洩 → 枠 → 控え → 照会。超過で 429・照会以降へ進まない。Turnstile・漏洩で止まった要求は数えない。呼び出しが投げたら 500 で止まる） |
 | 5 | 形の誤りで 400 |
 | 6 | `next` の有り・無し・外れ・型が文字列でない（無い・外れでも `/` で控えを作り、`bindTo` は小文字のメール）。古い `redirect_to`・`emailRedirectTo` を送っても読まない。確認のリンク（`emailRedirectTo`）にクエリが無い |
-| 7 | Turnstile の失敗（誤りの文の有り・無し）、`x-forwarded-for` の有り・無し |
+| 7 | Turnstile の失敗（誤りの文の有り・無し）、`x-real-ip` の有り・無し、`x-forwarded-for` だけの時は `null` |
 | 8 | 住所の見張りで 503 |
 | 9 | 漏洩で 400、照合先が使えない時に続ける |
 | 10 | 照会の失敗で 503 |
@@ -1261,7 +1266,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | 回数の制限が `Response` を返す | そのまま返す（`src/app/api/auth/confirm/route.ts`） |
 | 回数の制限が `Response` でない値を返す | 429 と `Retry-After: 600` を作って返す |
-| 回数の制限の呼び出しが投げる | 記録して進む |
+| 回数の制限の呼び出しが投げる | 握りつぶさず、例外がそのまま届いて確かめへ進まない（この窓口は外側の `catch` を持たず、Next.js が 500 にする） |
 | `token_hash` が無く `token` がある | `token` を使う |
 | `type` が無い・空 | `signup` |
 | `type` が `signup` 以外（`email`・`magiclink`・`recovery`・不明・大文字違い） | `verifyOtp` を呼ばず（印を消費せず）、セッションも戻り先の控えも触らず、failure（`invalid_type`。値そのものは残さない）を残して `/login` へ 303 |
@@ -1283,7 +1288,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | # | 観点 |
 | --- | --- |
 | 1 | 結び付いた正しい印で 303・Cookie・紐付け・success |
-| 2 | 回数の制限が `Response` を返す・`Response` でない値を返す・投げる |
+| 2 | 回数の制限が `Response` を返す・`Response` でない値を返す・投げる（投げたら握りつぶさず、`verifyOtp` を呼ばない） |
 | 3 | `token_hash` が無く `token` で確かめる、`type` が無い・空・`signup`。`type` が `signup` 以外（`email`・`magiclink`・`recovery`・不明・`SIGNUP`）で `verifyOtp` が呼ばれず `/login`・Set-Cookie 無し・`invalid_type` |
 | 4 | 印が無くて 303 と failure |
 | 5 | 確かめの誤りの文が expired・invalid・used・どれでもない（detail は固定の `verify_failed` で、文が監査に無い）、誤りが無く session が無い |
@@ -1332,7 +1337,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 条件 | 動き |
 | --- | --- |
-| 回数の制限が応答を返す・呼び出しが投げる | 返す・記録して進む（`src/app/api/auth/oauth/start/route.ts`） |
+| 回数の制限が応答を返す | 返す（`src/app/api/auth/oauth/start/route.ts`） |
+| 回数の制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。Google の URL を作らない |
 | `provider` が無い・空 | failure（`invalid_query`）を残して 400 |
 | POST の `next` が無い・確かめに外れる・控えの作成が失敗 | URL は返し、戻り先の Cookie を消す側（外れた時は理由の符号だけ監査） |
 | POST の本文が JSON でない | 400 |
@@ -1402,7 +1408,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 条件 | 動き |
 | --- | --- |
-| 回数の制限が応答を返す・呼び出しが投げる | 返す・記録して進む（`src/app/api/auth/oauth/callback/route.ts`） |
+| 回数の制限が応答を返す | 返す（`src/app/api/auth/oauth/callback/route.ts`） |
+| 回数の制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。コードの交換へ進まない |
 | `code` が無い・空 | failure（`missing_code`）を残して 400 |
 | `next`・`redirect_to` が付いている | 読まない |
 | URL か anon の鍵が無い（`SUPABASE_URL` が無ければ公開の名前を使う） | error を残して 500 |
@@ -1477,11 +1484,13 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 条件 | 動き |
 | --- | --- |
-| IP の制限が応答を返す・呼び出しが投げる | 返す・記録して進む（`src/app/api/auth/password-reset/request/route.ts`） |
+| IP の制限が応答を返す | 返す（`src/app/api/auth/password-reset/request/route.ts`） |
+| IP の制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。Turnstile・DB・メールへ進まない |
 | 形が合わない | 400 |
-| `x-forwarded-for` が無い | Turnstile に `null` |
+| 送り元の見出し（`x-real-ip`）が無い・IP の形でない、または `x-forwarded-for` だけ | Turnstile に `null` |
 | Turnstile が通らない | failure（誤りの文、無ければ `turnstile_failed`）を残して 403 |
-| メールの制限が応答を返す・呼び出しが投げる | 返す・記録して進む |
+| メールの制限が応答を返す | 返す |
+| メールの制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。DB・メールへ進まない（登録の有無で応答を変えない原則は、制限が正しく答えた時の話） |
 | 住所が許可の一覧に無い | 応答の外で運用へ知らせ、印もメールも作らずに同じ 200 |
 | 照会が失敗 | error（`user_lookup_failed`）を残して 500 |
 | アカウントが無い | 印もメールも作らず、`no_account` で 200 |
@@ -1502,7 +1511,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 2 | アカウントなしで同じ 200・保存も送信もしない・`no_account` |
 | 3 | IP とメールの制限の応答と例外 |
 | 4 | 形の誤りで 400 |
-| 5 | Turnstile の失敗（文の有り・無し）、`x-forwarded-for` の有り・無し |
+| 5 | Turnstile の失敗（文の有り・無し）、`x-real-ip` の有り・無し、`x-forwarded-for` だけの時は `null` |
 | 6 | 住所の見張りで同じ 200・保存しない |
 | 7 | 照会の失敗で 500 |
 | 8 | 前の印の無効化の失敗で続ける |
@@ -1546,7 +1555,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | --- | --- |
 | GET で `token` が無い | failure（`missing_token`）を残して `?error=link_invalid` へ 303（`src/app/api/auth/password-reset/link/route.ts`） |
 | GET で `token` がある | 確認の画面へ 303。印は確かめも消費もしない |
-| POST で回数の制限が応答を返す・呼び出しが投げる | 返す・記録して進む |
+| POST で回数の制限が応答を返す | 返す |
+| POST で回数の制限の呼び出しが投げる | 握りつぶさず、外側の `catch` に届いて 400 `link_expired`（この窓口の既存の流儀）。トークンの確かめへ進まない |
 | 本文が JSON でない、`token` が文字列でない・空 | failure（`missing_token`）を残して 400 `link_invalid` |
 | 行の照会が誤り | error を残して 400 `link_expired` |
 | 行が無い（使用済み・期限切れ・違う印） | failure（`invalid_or_expired_token`）を残して 400 `link_expired` |
@@ -1652,7 +1662,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 条件 | 動き |
 | --- | --- |
-| 回数の制限が応答を返す・呼び出しが投げる | 返す・記録して進む（`src/app/api/auth/password-reset/confirm/route.ts`） |
+| 回数の制限が応答を返す | 返す（`src/app/api/auth/password-reset/confirm/route.ts`） |
+| 回数の制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。パスワードを変えない |
 | 再設定の Cookie が無い・無効 | failure（`missing_reset_session`）を残して 400。本文を読まない |
 | 形が合わない | 400 |
 | 行の照会が誤り | error（`token_lookup_failed`）を残して 500 |
@@ -1780,7 +1791,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 条件 | 動き |
 | --- | --- |
-| 回数の制限が応答を返す・呼び出しが投げる | 返す・記録して進む（`src/app/api/auth/refresh/route.ts`） |
+| 回数の制限が応答を返す | 返す（`src/app/api/auth/refresh/route.ts`） |
+| 回数の制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。Cookie も交換も見ない |
 | refresh の Cookie が無い | 401。Cookie を消さない |
 | 自前の行が無い | 警告を記録して続ける |
 | 行に `revoked_at` がある | failure（`session_revoked`）を残し、3つの Cookie を消して 401 |
@@ -1973,7 +1985,8 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 条件 | 動き |
 | --- | --- |
-| 回数の制限が応答を返す・呼び出しが投げる | 返す・記録して進む（`src/app/api/auth/mfa/enroll-totp/route.ts`） |
+| 回数の制限が応答を返す | 返す（`src/app/api/auth/mfa/enroll-totp/route.ts`） |
+| 回数の制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。登録へ進まない |
 | 本文が JSON でない | 空の本文として確かめる |
 | `forceReEnroll` が真偽でない | 400 |
 | 確かめが通らない | 共有部品の失敗の応答 |
@@ -2053,11 +2066,12 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 
 | 条件 | 動き |
 | --- | --- |
-| 回数の制限が応答を返す・呼び出しが投げる | 返す・記録して進む（`src/app/api/auth/mfa/verify/route.ts`） |
+| 回数の制限が応答を返す | 返す（`src/app/api/auth/mfa/verify/route.ts`） |
+| 回数の制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。認証にも確かめにも進まない |
 | 本文が JSON でない・形が合わない | 形の文をつないで 400 |
 | 確かめが通らない | 共有部品の失敗の応答。利用者単位の制限は数えない（`sub` が無い） |
 | 利用者単位の制限が応答を返す | `mfa_verify` の failure（`account_rate_limited`）を残してその応答（429）を返す。チャレンジを作らない |
-| 利用者単位の制限の呼び出しが投げる | 記録して進む |
+| 利用者単位の制限の呼び出しが投げる | 握りつぶさず、外側の `catch` の 500 で止まる。challenge へ進まない |
 | 役割が admin・supporter でない | 403 |
 | チャレンジの誤り・データが無く、文に `not found` | `mfa_verify` の failure（`factor_not_found`）を残して 404 |
 | チャレンジのほかの誤り（文が無い時を含む） | failure（`challenge_failed`）を残して 400 |
@@ -2302,6 +2316,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 条件 | 動き |
 | --- | --- |
 | 制限が応答を返す | そのまま返す |
+| 制限の呼び出しが投げる | 握りつぶさず、例外がそのまま届いて認証にも戻り先にも進まない（この窓口は制限の呼び出しを外側の `catch` の外に置いており、Next.js が 500 にする） |
 | 未ログイン | 401。戻り先を解決しない。Cookie に触れない |
 | 認証を確かめられない | 503 と `Retry-After` |
 | 管理者・サポーターで aal2 でない | `redirectTo: '/auth/verified'`・`needsMfa: true`。Cookie は触らない |
@@ -2318,7 +2333,7 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 1 | 未ログインで 401、確かめを呼ばない。確かめられなくて 503 と `Retry-After` |
 | 2 | 一般の会員で `redirectTo` と `needsMfa: false`。役割と aal が claims 由来で、`x-role` などの見出しを無視する |
 | 3 | 管理者・サポーターで aal1 は `needsMfa: true`・`/auth/verified`・Cookie に触れない |
-| 4 | 使い切った応答で戻り先の Cookie を消す。`no-store`。制限で 429 |
+| 4 | 使い切った応答で戻り先の Cookie を消す。`no-store`。制限で 429。制限の呼び出しが投げたら握りつぶさず、認証も戻り先も呼ばない |
 
 ### DD-AUTH-036 ログインの入口のリンクの URL を作る（use-login-href.ts）
 
@@ -2415,6 +2430,74 @@ AUTH の領域のコードの単位を、詳細設計の項目（`DD-AUTH-001`�
 | 3 | `/api/authx`・`/api/authentication/x`・`/api/search`・`/api/news`・`/news`・`/`・`/about` には付かない |
 | 4 | 注文の状況の Origin 拒否は `no-store` と `Referrer-Policy: no-referrer` のまま |
 | 5 | `/api/auth` でも CSP・`X-Frame-Options`・`X-Content-Type-Options`・`Referrer-Policy` が付く |
+
+### DD-AUTH-038 送り元の IP を Vercel の見出しだけから取り出す（request-ip.ts）
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | ARC-AUTH-005、SEC-AUTH-013 |
+| 根拠 | `x-forwarded-for` の左端は利用者が自由に付けられ、回数の制限の鍵と監査の IP を偽れる。Vercel が上書きして付ける見出しだけを信じる共有の関数 1 つにまとめる（ADR-0416） |
+| 状態 | 推定 |
+| 確かめ方 | 単体テスト |
+| 出どころ | `.superpowers/sdd/2026-10-25-security-gap-fixes/design-final.md`（R6）、`docs/superpowers/plans/2026-10-28-wave4-client-ip-audit-admin-ui.md` の Task 1 |
+
+**対応要件 ID:** SEC-AUTH-013（送り元の取り出しと、回数の制限の鍵・429/503 の `no-store`・取扱店と管理の監査の IP・Turnstile の `remoteip` の切り替えを満たす。制限部品の読み込みの `try/catch` の撤去は波 4 の Task 4 で済み（`src/app/api/auth/` の 14 窓口・19 か所を静的 import にし、例外は握りつぶさない。SEC-AUTH-013-AC-02）、Supabase Auth の IP の枠は開店前の確認として残る。その上は ADR-0416）。429・503 の `no-store` は DD-AUTH-038 の単体テストで確かめる。ARC-AUTH-005 は回数の制限を窓口の頭に置く構成
+
+**入出力:**
+
+| 向き | 中身 |
+| --- | --- |
+| 入力 | 要求（`Request`。無くてもよい）、環境変数 `VERCEL`・`CLIENT_IP_HEADER` |
+| 出力 | `getClientIp`: IP の文字列か null。`getAuditRequestContext`: `{ ip: string \| null; user_agent: string \| null }` |
+
+**正常フロー:**
+
+1. `VERCEL === '1'` か `CLIENT_IP_HEADER` が空でない時だけ先へ進む
+2. `x-vercel-forwarded-for`、`x-real-ip` の順に、最初に在った見出しの値を `trim` する
+3. `node:net` の `isIP` が 0 でなければその文字列を返す
+4. `getAuditRequestContext` は上の `ip` に `user-agent` の見出し（無ければ null）を添えて返す
+
+**分岐と異常フロー:**
+
+| 条件 | 動き |
+| --- | --- |
+| 要求が無い、または `VERCEL`・`CLIENT_IP_HEADER` がどちらも無い（`VERCEL=true` や `TRUST_PROXY_HEADERS` だけも含む） | null（見出しが在っても読まない） |
+| `x-forwarded-for` だけ、または見出しが無い | null（`x-forwarded-for` は読まない） |
+| 最初に在った見出しの値が空・`foo`・複数・ポート付き・範囲外の数 | null（次の見出しへ進まない） |
+| `x-vercel-forwarded-for` と `x-real-ip` が両方在って正しい | `x-vercel-forwarded-for` を返す |
+
+**状態・永続化:** 持たない。
+
+**認証認可:** 無い。
+
+**呼び手の扱い（2026-10-28、波 4 の Task 2）:**
+
+| 呼び手 | 扱い |
+| --- | --- |
+| 回数の制限（`rateLimit.ts` の `enforceRateLimit`） | `getClientIp` の値を `incrementCounter` の `ip` にそのまま渡す。取れない時は `null` を渡す。`rate_limit_counters.ip` は `inet` で `'unknown'` や固定の `127.0.0.1` は使えず（前者は入らない、後者は全員が 1 つの枠になる）、`null` は一意制約（NULLS NOT DISTINCT）で「送り元が分からない全員が 1 つの枠」になり、厳しい側に倒れる。`subject` を渡した時は従来どおり `incrementCounter` が IP を捨てる |
+| 回数の制限の 429・503 | `Retry-After` に加えて `Cache-Control: private, no-store` を付ける（`withNoStore`）。`NextResponse` が使えない環境の `Response` の枝にも付ける。利用者ごとの回数の状態を共有のキャッシュに残さないため（SEC-AUTH-013）。本文を読まずに捨てる `fetch` が要求を開いたまま残す件は呼び手側で直した（波 4 の Task 1b） |
+| E2E の送り元（2026-10-28、波 4 の Task 5） | AUTH 系の E2E（`FR-LOGIN-*`・`FR-PWRESET-*`・`FR-SIGNUP-*` 13 ファイルと共通の補助 `member-session-helpers.ts`）は送り元の見出しを `x-real-ip` で付ける（E2E のアプリは固定の環境 `CLIENT_IP_HEADER` で信頼する）。`x-forwarded-for` は読まれないので、SEC-AUTH-013-AC-01（`FR-LOGIN-035`）は固定の `x-real-ip` を付けて `x-forwarded-for` だけを毎回変えて 31 回目が 429 になることを見る |
+| 取扱店の監査（`stockists/route.ts`・`[id]/route.ts` の 4 か所）・強制失効・2 要素のリセット | `clientIp` を `getClientIp(request)` から取る。取れなければ `null` のまま監査へ |
+| Turnstile の `remoteip`（`login`・`password-reset/request`・`register`） | `getClientIp(request)`。取れなければ `null` を渡す |
+| 認証の窓口の制限の呼び出し（`src/app/api/auth/` の 14 窓口・19 か所。2026-10-28、波 4 の Task 4） | `await import('@/features/auth/middleware/rateLimit')` を先頭の静的な `import { enforceRateLimit }` に替え、`try/catch`（`console.error('Rate limit middleware error ...')`）を外した。呼び出しが投げたら握りつぶさず先へ進まない（外側の `catch` の 500。外側の `catch` が無い窓口は例外がそのまま届く）。数えの DB の失敗は今も `enforceRateLimit` が自分で 503 にする。窓口の外の動的 import（`cart`・`checkout`・`contact`・`news`・`search`・`suggest`）は握りつぶさないので替えない |
+
+**テスト観点:**（単体 `tests/unit/lib/request-ip.test.ts`。名前の先頭は `DD-AUTH-038`）
+
+| # | 観点 |
+| --- | --- |
+| 1 | `VERCEL=1` で `x-vercel-forwarded-for`、`x-real-ip` を読み、両方在れば前者が勝つ。`CLIENT_IP_HEADER` だけでも読む。IPv6 と前後の空白 |
+| 2 | 信じない環境（旗なし・空の `CLIENT_IP_HEADER`・`VERCEL=true`・`TRUST_PROXY_HEADERS` だけ）では見出しが在っても null |
+| 3 | `x-forwarded-for` だけ・両方在る時は `x-real-ip` を返し XFF を無視。不正な値（空・`foo`・複数・ポート付き・`999.1.1.1`）は null で、上位の見出しが不正なら `x-real-ip` が正しくても null |
+| 4 | `request` が `undefined` なら null |
+| 5 | `getAuditRequestContext` の `ip` は `getClientIp` と同じ、`user_agent` は見出し、取れない時は null |
+
+**呼び手のテスト観点:**（`tests/unit/middleware/rateLimit.test.ts`。名前の先頭は `DD-AUTH-038`。jest の準備 `tests/setupClientIp.js` が `CLIENT_IP_HEADER` を立てる）
+
+| # | 観点 |
+| --- | --- |
+| 6 | `x-real-ip` が鍵になる。`x-forwarded-for` だけ・`request` 無し・IP の形でない値は鍵が `null`。両方在れば `x-real-ip`。`subject` は従来どおり渡る |
+| 7 | 429・503 が `Cache-Control: private, no-store` と `Retry-After` を持つ。`NextResponse` が投げる環境の `Response` の枝も同じ |
+| 8 | 取扱店・強制失効・2 要素のリセットの監査の `ip` と、Turnstile に渡す IP が `x-real-ip` の値で、`x-forwarded-for` だけなら `null` |
 
 ## 引き継がなかった古い番号
 

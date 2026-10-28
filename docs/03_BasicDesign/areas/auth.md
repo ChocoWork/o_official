@@ -25,7 +25,7 @@ AUTH の領域の構成・画面・画面遷移・状態遷移・API・データ
 | 項目 | 内容 |
 | --- | --- |
 | 範囲 | `scripts/trace/scope.json` の AUTH |
-| 上位の文書 | [AUTH の要件](../../02_Requirements/areas/auth.md)（要件・`SEC-AUTH-`・`DRV-AUTH-`）、`docs/03_BasicDesign/decisions/ADR-0400`〜`ADR-0415` |
+| 上位の文書 | [AUTH の要件](../../02_Requirements/areas/auth.md)（要件・`SEC-AUTH-`・`DRV-AUTH-`）、`docs/03_BasicDesign/decisions/ADR-0400`〜`ADR-0416` |
 | 対象のコード | `src/app/login/`（3）、`src/app/auth/`（5）、`src/app/api/auth/`（19）、`src/features/auth/return-intent/`（戻り先の部品。ARC-AUTH-010）、`src/components/Header.tsx`・`LoginModal.tsx`・`RegisterModal.tsx`・`AuthTabs.tsx`・`AuthResultScreen.tsx`、`src/hooks/useTurnstileWidget.ts`、`src/lib/format-countdown.ts` |
 | 対象の DB | `supabase/migrations/20261026010000_auth_return_intents.sql`（戻り先の控えの表と関数 2 本。本番へは未適用）、`supabase/migrations/20260901102912_remote_schema.sql`（`password_reset_tokens`・`sessions` の表）、同 （掃除の関数・方針・付与） |
 | 関連文書 | `docs/04_DetailDesign/pages/14_login.md`（表だけで古い記述がある）、`docs/04_DetailDesign/sequence/auth-*.md`、`docs/03_BasicDesign/architecture/auth-structure.md`（過去の初稿）、`docs/03_BasicDesign/api/api-spec.md`・`route-inventory.md`（注文まわりの作り直しが書き換え中なので触らない）、`docs/03_BasicDesign/ui/screen-list.md`・`screen-flow.md`、`docs/superpowers/specs/2026-09-04-login-otp-dedicated-screen-design.md` |
@@ -40,7 +40,8 @@ AUTH の領域の構成・画面・画面遷移・状態遷移・API・データ
 | 保留・再設定の署名 Cookie | `src/features/auth/services/login-2fa-session.ts`・`password-reset-session.ts` | 2段目の保留と再設定の印の Cookie を HMAC で作り、読む |
 | セッションの保存 | `src/features/auth/services/register.ts` の `persistSessionAndCookies`、`session.ts` の `persistNewSession`・`findSessionByRefreshHash` | トークンを Cookie と `sessions` の表に入れる |
 | 入力の形 | `src/features/auth/schemas/*` | 窓口の本文を zod で確かめる。パスワードの 16 文字もここ |
-| 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit` | 窓口が IP 単位・メール単位で数える。数え場所の失敗は 503（ADR-0009（範囲外）） |
+| 回数の制限 | `src/features/auth/middleware/rateLimit.ts` の `enforceRateLimit` | 窓口が IP 単位・メール単位で数える。送り元は `getClientIp`（下の行）で、取れない時の鍵は `null`（全員が 1 つの枠）。数え場所の失敗は 503（ADR-0009（範囲外））。429・503 は `Cache-Control: private, no-store` と `Retry-After`（2026-10-28、波 4 の Task 2） |
+| 送り元の IP | `src/lib/request-ip.ts` の `getClientIp`・`getAuditRequestContext`（範囲に入れた。DD-AUTH-038、ADR-0416） | `VERCEL=1` か `CLIENT_IP_HEADER` の時だけ `x-vercel-forwarded-for`→`x-real-ip` を読み、`x-forwarded-for` は読まない。回数の制限の鍵と監査の IP が呼ぶ。2026-10-28 に関数を足し、同日に `rateLimit.ts` の鍵・取扱店と管理（強制失効・2 要素のリセット）の監査の IP・Turnstile の `remoteip` を切り替えた。同日（Task 2b）に G/H を除く 13 ファイルの監査の ip・`submitted_ip`（会計・role-permissions・settings/shop・users・items・contact・wishlist・Stripe の Webhook）の直読みと自前の複製も `getClientIp` に寄せた（範囲外の窓口。保存先・変数名は変えない）。同日（Task 2c、G-1 了承済み）に G/H の 12 ファイル（注文の管理 4 窓口・返品 2 部品・配送 1 部品・checkout の 2 窓口とガード・カート 2 窓口。範囲外）の監査の ip の直読みと自前の複製（`getClientIp`・`clientIpOf`）も `getClientIp` に寄せた（読み方だけ。保存先・変数名・回数の制限の呼び出しは変えない。Vercel の外で見出しが無い時の ip は null になる）。下の ARC-AUTH-005 の「IP は `x-forwarded-for` の先頭を信じる」は古い記述 |
 | アカウントの照会 | `src/features/auth/services/auth-admin-user.ts` の `findAuthUserIdByEmail` | 会員登録・再設定でメールからアカウントを引く |
 | Cookie の名前と属性 | `src/lib/cookie.ts` | 認証の Cookie の名前・HttpOnly・SameSite・Secure |
 | 認証の確かめ | `src/lib/auth/authenticate.ts`・`request-token.ts` | `me`・`mfa/*`・`logout` が access token を確かめる |
@@ -167,7 +168,7 @@ flowchart LR
 
 | 属性 | 値 |
 | --- | --- |
-| 上位 | SEC-AUTH-001、SEC-AUTH-002、FREQ-330-REQ-01、FREQ-330-REQ-02、FREQ-327-REQ-01、FREQ-327-REQ-03、FREQ-360-REQ-02（範囲外）、ADR-0411、ADR-0415 |
+| 上位 | SEC-AUTH-001、SEC-AUTH-002、FREQ-330-REQ-01、FREQ-330-REQ-02、FREQ-327-REQ-01、FREQ-327-REQ-03、FREQ-360-REQ-02（範囲外）、ADR-0411、ADR-0415、ADR-0416 |
 | 根拠 | パスワードの総当たりとメールの送信の踏み台を止めるため、IP 単位とメール単位の2段で数え、メール単位は Turnstile の後に数えて他人の枠を潰させない（SEC-AUTH-001、FREQ-360-REQ-02（範囲外））。Turnstile のトークンは1回しか使えないので、送るたびに成否によらず引き直し、引き直しの手段を共通のフックに集める（FREQ-330-REQ-01・02、ADR-0411）。状態を変える `POST` の Origin の確かめは窓口に書かず、共有の proxy の1か所に任せる（FREQ-327-REQ-01・03） |
 | 状態 | 推定 |
 | 確かめ方 | 結合テスト |
@@ -191,8 +192,8 @@ flowchart LR
 - Turnstile の描画は共通のフック `useTurnstileWidget` が明示の描画（`flexible`、300px より狭い時は縮める）で行い、ログイン・会員登録・再設定の3つのフォームが使う（FREQ-328-REQ-01・02）
 - 本番で Turnstile の鍵が無い時は 403 で断る（`src/lib/turnstile.ts`）
 - 確認コードの再送（`login/resend`）には Turnstile が無い。FREQ-330-REQ-03 は再送にも当てると書くので、上位にしていない
-- 回数の制限の呼び出しが例外を投げた時は、記録だけして通す（窓口ごとの `try`）。数え場所の失敗の 503 は共有部品が返す
-- IP は `x-forwarded-for` の先頭を信じる（SEC-AUTH-013 は満たさない）。Supabase Auth はアプリのサーバーの IP で数える
+- 回数の制限（共有の `enforceRateLimit`）は各窓口の先頭で静的に import して呼ぶ。呼び出しが例外を投げた時は握りつぶさず、窓口は先へ進まない（外側の `catch` の 500。外側の `catch` が無い `confirm`・`login/resend`・`post-login` は例外がそのまま届き、`password-reset/link` は既存の流儀の 400 `link_expired`）。数え場所の失敗の 503 は共有部品が返す（SEC-AUTH-013-AC-02、ADR-0009（範囲外）、DD-AUTH-038。2026-10-28、波 4 の Task 4）
+- IP は共有の `getClientIp` が Vercel の見出し（`x-vercel-forwarded-for`→`x-real-ip`）だけから取り、`x-forwarded-for` は読まない（SEC-AUTH-013、ADR-0416。2026-10-28、波 4 の Task 2）。取れない時は `null` の 1 つの枠。AUTH 系の E2E は送り元を `x-real-ip`（E2E のアプリが固定の環境 `CLIENT_IP_HEADER` で信頼する）で分ける（Task 5。共通の補助 `member-session-helpers.ts` を含む）。Supabase Auth はアプリのサーバーの IP で数える（この点は SEC-AUTH-013 を満たさない）
 - 回数の制限の無い窓口: `login/cancel`・`logout`・`me`・`mfa/status`・`password-reset/session`
 - 状態を変える `POST` は共有の proxy が Origin で確かめる。許可の一覧が無い時に要求の見出しから比べる元を作る所は proxy にある（SEC-AUTH-025 の一覧が無い時の扱いは満たさない）
 - `/api/auth` 配下の応答の `Cache-Control: no-store` は、窓口ごとに書かず共有の proxy が付ける（SEC-AUTH-022、ADR-0415、DD-AUTH-037）。窓口が自分で付ける値（いずれも `no-store`）と同じなので、どちらが最終の応答に残っても変わらない
@@ -900,7 +901,7 @@ stateDiagram-v2
 
 - 戻り先の控えを既存会員の照会より前に置くのは、3 つの 202 の枝で Cookie の有無が変わると、登録済みかどうかが分かるため（ARC-AUTH-006）。控えは戻り先が無くても必ず作り、登録したメール（小文字）に結ぶ（`bindTo`。SEC-AUTH-007、ADR-0413）。控えの作成に失敗しても応答の形は変えず、Cookie は消す側へ倒す。即ログインの 201 の枝は戻り先の Cookie を消す
 - 管理の見出し（`x-admin-token`・Bearer）は読まず、いつも公開の登録として扱う。管理の鍵で作る枝は削除した（SEC-AUTH-017。`ADMIN_API_KEY` を読む所は `src` に無い）
-- 宛先単位の枠は検証済みの小文字のメールを subject に 5 回／時。Turnstile と漏洩の確かめを通った要求だけを数え（他人の枠を潰させない）、照会より前に置く（429 の有無で登録済みかどうかを判らせない）。枠の呼び出しが投げた時は記録して先へ進む（SEC-AUTH-016）
+- 宛先単位の枠は検証済みの小文字のメールを subject に 5 回／時。Turnstile と漏洩の確かめを通った要求だけを数え（他人の枠を潰させない）、照会より前に置く（429 の有無で登録済みかどうかを判らせない）。枠の呼び出しが投げた時は握りつぶさず、内側の `catch` の 500 で止まる（SEC-AUTH-016、SEC-AUTH-013-AC-02）
 - 201 の応答の本文は `{ user: { id, email } }` だけ（SEC-AUTH-022 の本文）。`no-store` は共有の proxy が付ける（2026-10-28、ADR-0415）
 - Supabase Auth の `/auth/v1/signup` を直接呼ぶ道は塞がない（SEC-AUTH-015 は満たさない）
 
@@ -1360,7 +1361,7 @@ stateDiagram-v2
 - ヘッダーのログインのモーダル・`mfa/status` の使われない欄・`forceReEnroll` を残すか（`unused-code.md` の判断）
 - ヘッダーとドロワーの動き（DRV-AUTH-001〜005）を要件として認めるか。認めれば SCR-AUTH-009・010・STATE-AUTH-005・ARC-AUTH-008 の上位が要件になる
 - 本番の DB で、認証の6つの関数（DATA-AUTH-003）の `proacl` に anon・authenticated が残っているか（SEC-AUTH-012）。手元の DB は移行から作ったので残っている
-- Vercel が `x-forwarded-for` を上書きするか（本番は未デプロイ）。回数の制限の強さが変わる（SEC-AUTH-013）
+- Vercel が `x-vercel-forwarded-for`・`x-real-ip` を利用者の付けた値で上書きするか（本番は未デプロイ。最初の preview で実測する）。回数の制限の強さが変わる（SEC-AUTH-013、ADR-0416）
 - 本番の Supabase Auth の Redirect URLs に `/api/auth/oauth/callback`（クエリ無し）があるか。戻り先を URL に載せなくなったので、許可の一致は短くなる（ADR-0412）
 - 戻り先の控えの移行は本番へ未適用。G-3（発送）の本番適用の後に当てる（本番アプリは未公開なので待てる）
 - 結合テストの名前に構造設計の ID を付けるのは次の段。`tests/integration/api/auth/csrf.test.ts` は共有の `csrfMiddleware` を試すので、どの ID を付けるか決まっていない

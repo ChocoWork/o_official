@@ -1,10 +1,12 @@
 # ADR-0010 管理のニュースの操作を成功と失敗の両方で監査の記録に残し、IP は残さない
 
-> 状態: 現行 | 確認日: 2026-10-24 | 対象: `src/app/api/admin/news/route.ts`、`src/app/api/admin/news/[id]/route.ts` | 基準コミット: `a03beaff`
+> 状態: 現行 | 確認日: 2026-10-28 | 対象: `src/app/api/admin/news/route.ts`、`src/app/api/admin/news/[id]/route.ts` | 基準コミット: `a03beaff`
 
 ## 概要
 
 管理のニュースの作成・更新・公開の切り替え・削除と画像の書き込みの失敗を、成功と失敗の両方で監査の記録に残す。IP の見出しの値は残さない。
+
+**置き換え済み（IP の部分）:** 「IP は残さない」の判断は 2026-10-28（波 4）に `ADR-0462` が置き換えた。監査の IP は共有の `getAuditRequestContext`（`getClientIp` の値。偽れる `x-forwarded-for` は読まない。取れなければ `null`）から取って残す（SEC-NEWS-016-AC-03）。成功と失敗の両方を監査に残す点は今も有効なので、この項目の状態は「現行」のまま残し（「廃止」にすると指している項目が `retired-reference` になる）、本文は当時の判断として直さない。
 
 ## 範囲と根拠
 
@@ -48,6 +50,7 @@
 - 良くなること: 記事の書き換えを後から辿れる
 - 悪くなること: 対象の記事が無くても PUT・PATCH・DELETE は 200 を返し、成功と記録する（SEC-NEWS-016-AC-02）
 - 文書の `api-spec.md` は POST だけに監査と書き、PUT・PATCH・DELETE の監査を書いていない
+- 2026-10-28: IP を残さない点は `ADR-0462` が置き換えた。`logNewsAudit`（`route.ts`・`[id]/route.ts`）が `...getAuditRequestContext(request)` で IP とブラウザの名乗りを渡す。理由は ADR-0462（管理者だけが対象、乗っ取られた session の追跡）。保存期間は法令対応の後回しに従う
 
 ## 未確認事項
 

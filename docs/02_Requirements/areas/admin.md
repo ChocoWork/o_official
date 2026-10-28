@@ -1,6 +1,6 @@
 # ADMIN の要件
 
-> 状態: 推定 | 確認日: 2026-10-26 | 対象: ADMIN（管理のそのほか。利用者の作成・セッションの強制失効・2要素のリセット・監査ログの読み出しと掃除・問い合わせの管理・商品の色見本） | 基準コミット: `4facf63b`
+> 状態: 推定 | 確認日: 2026-10-28 | 対象: ADMIN（管理のそのほか。利用者の作成・セッションの強制失効・2要素のリセット・監査ログの読み出しと掃除・問い合わせの管理・商品の色見本） | 基準コミット: `4facf63b`
 
 ## 概要
 
@@ -13,10 +13,10 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | 要件 | 3 | 既存の `FREQ-25-REQ-01`・`FREQ-508-REQ-01`・`FR-ADMIN-009` |
 | 受け入れ条件 | 10 | 既存の `FREQ-25-AC-01`・`FREQ-508-AC-01`〜`03`、新しい `FR-ADMIN-009-AC-01`〜`06` |
 | 派生要件 | 8 | `DRV-ADMIN-001`〜`008` |
-| セキュリティ要件 | 23 | `SEC-ADMIN-001`〜`023`（受け入れ条件 39 件の `SEC-ADMIN-NNN-AC-NN` を含む。全部「推定」） |
+| セキュリティ要件 | 23 | `SEC-ADMIN-001`〜`023`（受け入れ条件 41 件の `SEC-ADMIN-NNN-AC-NN` を含む。全部「推定」） |
 
 - 状態: 全部「推定」。元の行に理由が書かれていない物は根拠の「なぜ」を書き手が補い、コードと合わない行・新しく起こした項目・実装から読み取った項目も、ユーザーの確認を受けていない。ユーザーが確認したら「現行」にする。どちらが正しいかは決めず、食い違いは `docs/05_Quality/reports/trace-matrix.md` の「食い違い」節（`TM-ADMIN-NN`）に載せた。今のコードがセキュリティ要件を満たさない所は、その `SEC-ADMIN-NNN` の項目に1回だけ書く
-- 結論: 問い合わせの管理（FREQ-25・FR-ADMIN-009）は窓口（API）だけがあり、管理画面に CONTACT のタブが無い。監査ログ（FREQ-508）も読む画面が無い。利用者の作成・2要素のリセット・強制失効・色見本・監査ログの掃除は、どの要求にも書かれていない。画面を足すか、要件を直すかは、ユーザーに決めてもらう
+- 結論: 問い合わせの管理（FREQ-25・FR-ADMIN-009）は、2026-10-28（波 4）に管理画面へ CONTACT のタブを足して画面からも動くようにした。監査ログ（FREQ-508）は読む画面が無い。利用者の作成・2要素のリセット・強制失効・色見本・監査ログの掃除は、どの要求にも書かれていない。画面を足すか、要件を直すかは、ユーザーに決めてもらう
 
 ## 範囲と根拠
 
@@ -67,9 +67,9 @@ ADMIN の領域の要求・要件・受け入れ条件・セキュリティ要�
 | E2E のファイル | テスト名の先頭に付けた受け入れ条件 |
 | --- | --- |
 | FR-ADMIN-MISC-001-admin-api-authorization-gates | SEC-ADMIN-001-AC-01、SEC-ADMIN-001-AC-02、SEC-ADMIN-001-AC-03、SEC-ADMIN-005-AC-01、SEC-ADMIN-005-AC-02 |
-| FR-ADMIN-MISC-002-create-user-screen-and-api | SEC-ADMIN-001-AC-04、SEC-ADMIN-008-AC-02、SEC-ADMIN-012-AC-01、SEC-ADMIN-013-AC-01、SEC-ADMIN-013-AC-02 |
+| FR-ADMIN-MISC-002-create-user-screen-and-api | SEC-ADMIN-001-AC-04、SEC-ADMIN-008-AC-02、SEC-ADMIN-012-AC-01、SEC-ADMIN-013-AC-01、SEC-ADMIN-013-AC-02、SEC-ADMIN-022-AC-03 |
 | FR-ADMIN-MISC-003-session-revocation-and-mfa-reset | SEC-ADMIN-007-AC-01、SEC-ADMIN-008-AC-01、SEC-ADMIN-009-AC-01、SEC-ADMIN-014-AC-01、SEC-ADMIN-014-AC-02、SEC-ADMIN-015-AC-01、SEC-ADMIN-015-AC-02、SEC-ADMIN-016-AC-01 |
-| FR-ADMIN-MISC-004-audit-log-read | FREQ-508-AC-01、FREQ-508-AC-02、SEC-ADMIN-011-AC-01、SEC-ADMIN-023-AC-01 |
+| FR-ADMIN-MISC-004-audit-log-read | FREQ-508-AC-01、FREQ-508-AC-02、SEC-ADMIN-011-AC-01、SEC-ADMIN-023-AC-01、SEC-ADMIN-023-AC-02 |
 | FR-ADMIN-MISC-005-item-color-presets-and-direct-db-access | SEC-ADMIN-002-AC-01、SEC-ADMIN-002-AC-02、SEC-ADMIN-003-AC-01、SEC-ADMIN-004-AC-01、SEC-ADMIN-022-AC-01 |
 | FR-ADMIN-MISC-006-contact-management | FR-ADMIN-009-AC-01、FR-ADMIN-009-AC-05、FR-ADMIN-009-AC-02、FR-ADMIN-009-AC-03、FR-ADMIN-009-AC-04、FR-ADMIN-009-AC-06、SEC-ADMIN-019-AC-01、SEC-ADMIN-020-AC-01、SEC-ADMIN-021-AC-01 |
 | FR-ADMIN-MISC-007-contact-reply-mail-and-threading | FREQ-25-AC-01、SEC-ADMIN-006-AC-01、SEC-ADMIN-006-AC-02、SEC-ADMIN-017-AC-01、SEC-ADMIN-018-AC-01、SEC-ADMIN-022-AC-02 |
@@ -111,7 +111,7 @@ E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-508-AC-03`
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-25 |
-| 根拠 | 問い合わせを探して読み、返信し、片付いたかを状態で示し、テンプレートを店が自分で増やせると、FREQ-25 の「確認・返信・テンプレートで返信」が1つの画面で済む。ただし今のコードには CONTACT のタブが無く、窓口だけがある（食い違いは trace-matrix.md の「食い違い」節の TM-ADMIN-01。状態は推定） |
+| 根拠 | 問い合わせを探して読み、返信し、片付いたかを状態で示し、テンプレートを店が自分で増やせると、FREQ-25 の「確認・返信・テンプレートで返信」が1つの画面で済む。2026-10-28（波 4）に管理画面へ CONTACT のタブを足したので、窓口と画面がそろった（TM-ADMIN-01 は解消。状態は推定） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | ユーザーの依頼（`docs/02_Requirements/requirements.md` の要求の表） |
@@ -119,7 +119,7 @@ E2E が無い受け入れ条件（`missing-child` と同じ）: `FREQ-508-AC-03`
 
 CONTACTタブで一覧・詳細・返信・ステータス変更・テンプレートCRUDが動作すること
 
-今のコード: 窓口は5つ（一覧、詳細と状態の変更、返信、テンプレートの一覧と作成、テンプレートの更新と削除。`src/app/api/admin/contact/`）。管理画面のタブの一覧（`src/app/admin/page.tsx` の `allAdminTabs`）に CONTACT が無く、画面の部品 `src/components/ContactSection.tsx` はどこからも読み込まれない。
+今のコード: 窓口は5つ（一覧、詳細と状態の変更、返信、テンプレートの一覧と作成、テンプレートの更新と削除。`src/app/api/admin/contact/`）。管理画面のタブの一覧（`src/app/admin/page.tsx` の `allAdminTabs`・`supporterTabs`）に CONTACT を足し（2026-10-28、波 4）、画面の部品 `src/components/ContactSection.tsx` を開く。
 
 ### FREQ-508-REQ-01 監査ログの権限を登録して店長だけに付け、ほかの結び付きを保つ
 
@@ -141,7 +141,7 @@ CONTACTタブで一覧・詳細・返信・ステータス変更・テンプレ�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FREQ-25 |
-| 根拠 | FREQ-25 の「確認・返信・テンプレート」を、画面の機能（絞り込み・検索・ページ送り・詳細の項目・返信・状態の変更・テンプレートの作成から削除）に分けて決める。元の行は上位の要求を書いていないが、中身が FREQ-25-REQ-01 と同じなので FREQ-25 につないだ（推定。TM-ADMIN-08）。サポーターも使えるのは、注文の問い合わせに発送の担当が答えるため（推定）。今のコードにはタブが無い（食い違いは TM-ADMIN-01。状態は推定） |
+| 根拠 | FREQ-25 の「確認・返信・テンプレート」を、画面の機能（絞り込み・検索・ページ送り・詳細の項目・返信・状態の変更・テンプレートの作成から削除）に分けて決める。元の行は上位の要求を書いていないが、中身が FREQ-25-REQ-01 と同じなので FREQ-25 につないだ（推定。TM-ADMIN-08）。サポーターも使えるのは、注文の問い合わせに発送の担当が答えるため（推定）。2026-10-28（波 4）に CONTACT のタブを足した（TM-ADMIN-01 は解消。状態は推定） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | `docs/02_Requirements/requirements.md`、`docs/superpowers/plans/legacy-contact-feature-remaining-tasks.md` |
@@ -158,7 +158,7 @@ CONTACT タブで問い合わせスレッドの一覧・ステータス/種別�
 - 返信: 権限 `admin.contact.manage`。1〜5000 字（前後の空白を除く）。管理者の id ごと 30 回 / 10 分で数える（SEC-ADMIN-006）。動きは DRV-ADMIN-006
 - テンプレート: 一覧は `admin.contact.read`、作成・更新・削除は `admin.contact.manage`。題 1〜120 字、本文 1〜5000 字、分類（product・order・other・general・無し）、並び順 0〜9999。一覧は並び順の小さい順、同じなら作った順。作成・更新・削除は状態の変更と同じ枠（60 回 / 10 分）で数え、`id` が UUID でない・変えた行が 0 行のテンプレートの更新と削除は 404（SEC-ADMIN-021）
 - 権限の初期値: 店長とサポーターの両方が `admin.contact.read`・`admin.contact.manage` を持つ（権限の作業の移行）
-- 画面: タブも画面も無い（FREQ-25-REQ-01 の今のコード）
+- 画面: 管理画面に CONTACT のタブがあり、`src/components/ContactSection.tsx` を開く（2026-10-28、波 4 で足した。FREQ-25-REQ-01 の今のコード）
 
 ## 受け入れ条件
 
@@ -225,7 +225,7 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-ADMIN-009 |
-| 根拠 | 要件の「CONTACT タブで」を、店長とサポーターが画面から問い合わせに辿り着けることで確かめる。今のコードはタブを出さず、この条件を満たさない（TM-ADMIN-01） |
+| 根拠 | 要件の「CONTACT タブで」を、店長とサポーターが画面から問い合わせに辿り着けることで確かめる。2026-10-28（波 4）に CONTACT のタブを足して満たす（TM-ADMIN-01 は解消。画面の出し分けは案内で、権限の判定は窓口 `admin.contact.read/manage` が持つ） |
 | 状態 | 推定 |
 | 確かめ方 | E2E（mobile 390・tablet 768・desktop 1280） |
 | 出どころ | 要件の文から起こした（FR-ADMIN-009） |
@@ -273,7 +273,7 @@ FR-ADMIN-009 の文から起こした。今のコードで満たすかを「状�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | FR-ADMIN-009 |
-| 根拠 | 要件の「返信テンプレートを選択して返信」「作成・編集・削除（CRUD）」を、テンプレートの一覧の変化と返信の本文で確かめる。テンプレートを選んで返す所は画面の動きで、今のコードには画面が無い |
+| 根拠 | 要件の「返信テンプレートを選択して返信」「作成・編集・削除（CRUD）」を、テンプレートの一覧の変化と返信の本文で確かめる。テンプレートを選んで返す所は画面の動きで、2026-10-28（波 4）の CONTACT のタブで画面から動く |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | 要件の文から起こした（FR-ADMIN-009） |
@@ -612,7 +612,7 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | 出どころ | ASVS 未対応付け |
 | 優先度 | SHOULD |
 
-強制失効と MFA のリセットが監査ログに書く IP は、中継（Vercel など）が付けた値から取り、送る側が足した値を使わない。今のコードは左端を使う（食い違いは trace-matrix.md の「食い違い」節の TM-ADMIN-50）。本番の中継の振る舞いは確かめていない。
+強制失効と MFA のリセットが監査ログに書く IP は、中継（Vercel など）が付けた値から取り、送る側が足した値を使わない。2026-10-28（波 4）に満たした: 管理の窓口の監査の IP は共有の `src/lib/request-ip.ts` の `getClientIp`（Vercel の `x-vercel-forwarded-for` → `x-real-ip`、手元の E2E は `CLIENT_IP_HEADER` が立つ時だけ `x-real-ip`。`x-forwarded-for` は読まない。ADR-0416）から取る。取れなければ `null` のまま保存する。強制失効の認可で断る行・形の誤り・自分自身・対象なし・誤り・例外・成功の全部、2要素のリセットの全部の行に同じ値が入る。どちらも新しい IP の値は管理者だけが読む（SEC-ADMIN-022・ADR-0462）。本番の中継の振る舞い（Vercel が偽の `x-real-ip` を上書きすること）は、本番の前の preview で実測する（未確認）。
 
 #### SEC-ADMIN-009-AC-01 送る側が足した IP が監査ログに残らない
 
@@ -624,7 +624,7 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | 確かめ方 | E2E（中継の見出しを手元で再現する） |
 | 出どころ | 実装から推定 |
 
-`x-forwarded-for` の左端に `203.0.113.7` を足して強制失効を要求した後、その行の `ip` が `203.0.113.7` でないこと。
+`x-forwarded-for` の左端に `203.0.113.7` を足し、信頼する見出し `x-real-ip` に別の IP を付けて強制失効を要求した後、その行の `ip` が `x-real-ip` の値で、`203.0.113.7` でないこと。
 
 ### SEC-ADMIN-010 監査ログは追記だけにし、消去と書き換えを検知できるようにする
 
@@ -997,7 +997,7 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 
 問い合わせの状態の変更・テンプレートの更新と削除・色見本の削除は、対象が無ければ 404 を返し成功を記録しない。返信の後の状態の更新と、色見本の既存の確かめの誤りは 500 にする。メールを送らなかった返信は `mailSent: false` を返す。2026-10-26 に全部満たした。
 
-- 色見本の分は 2026-10-26 に満たした。削除は消した行が 0 行なら 404 `Color preset not found`（形の悪い `id` も 404）、保存の前の既存の確かめの誤りは作りに進まず 500 `Failed to save color preset`（誤りの文は記録に `code` だけ残す）。色見本の窓口は今も監査を書かないので、404 の時に成功の行も増えない（色見本の監査は SEC-ADMIN-022）
+- 色見本の分は 2026-10-26 に満たした。削除は消した行が 0 行なら 404 `Color preset not found`（形の悪い `id` も 404）、保存の前の既存の確かめの誤りは作りに進まず 500 `Failed to save color preset`（誤りの文は記録に `code` だけ残す）。色見本の窓口は作れた時（201）と消せた時だけ監査を書く（2026-10-28、波 4。SEC-ADMIN-022）ので、404 の時や既にある行を返す 200 の時に成功の行は増えない
 - 問い合わせの状態の変更・テンプレートの更新と削除は、`id` が UUID の形でない時は DB に渡さず 404（`Inquiry not found`・`Template not found`）、変えた行が 0 行でも 404 にする。0 行の時は `outcome: 'failure'`・`detail: 'inquiry_not_found'`（またはテンプレートの `template_not_found`）の監査を 1 行書き、`success` は書かない（形の悪い `id` は監査を書かない）。`.update()`・`.delete()` に `.select('id')` を付けて、変えた行を受け取る
 - 返信は、保存の後の `contact_inquiries` の状態の更新が誤りなら 500 `Failed to update inquiry status` を返し、監査に `outcome: 'error'`・`detail: 'status_update_failed'` を残す。保存した返信は取り消さず、メールは送らない。送り手（`MAIL_FROM_ADDRESS`）の設定が無い時はメールを送らず、201 で `mailSent: false`、監査は `outcome: 'error'`・`detail: 'reply_saved_mail_not_configured'`（`reply_sent` にしない）
 - 返信を保存した後の状態の更新の誤りで 500 を返すと、管理者が送り直した時に返信の行が 2 つになりうる（ADR-0456 の「悪くなること」）。要件はこの 500 を決めている
@@ -1037,7 +1037,12 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | 出どころ | OWASP ASVS 4.0.3 V7.1.3（当てはめは推定）。`docs/05_Quality/reviews/security/security_review_admin.md` |
 | 優先度 | SHOULD |
 
-ユーザー作成・強制失効・色見本の作成・削除と、問い合わせの状態の変更・返信・テンプレートの作成・更新・削除は、どの結果も行為者の id・メール・IP 付きで監査ログに残す。今のコードは色見本を記録せず、問い合わせの記録にメールと IP を入れない。ユーザー作成の記録はどの結果にも IP を入れず、強制失効の記録は誤り・例外・成功に IP を入れない（食い違いは trace-matrix.md の「食い違い」節の TM-ADMIN-63）。
+ユーザー作成・強制失効・色見本の作成・削除と、問い合わせの状態の変更・返信・テンプレートの作成・更新・削除は、どの結果も行為者の id・メール・IP 付きで監査ログに残す。2026-10-28（波 4）に満たした。
+
+- ユーザー作成（`admin_create_user`）・強制失効（`admin_revoke_user_sessions`）・問い合わせの状態の変更・返信・テンプレートの作成・更新・削除は、どの結果の行にも行為者の id・メール（`actor_email`）・送り元の IP（`getAuditRequestContext` が `getClientIp` から取る。取れなければ `null`）・ブラウザの名乗り（`user_agent`）を入れる。2要素のリセットは元から同じ形（IP の取り出しは波 4 で `getClientIp` に替えた）。認可で断る強制失効の行だけは、行為者が分からないので id・メールが `null`
+- 色見本は新しく作れた時（201）に `admin.item_color_preset.create`、消せた時に `admin.item_color_preset.delete` を 1 行ずつ書く（`resource` は `item_color_preset`、`resource_id` は行の id の文字）。色の名前と値は入れない。既にある行を返す 200・消した行が 0 行の 404・誤り・断りは行為者が何も変えていないので書かない
+- 記録に失敗しても窓口の応答は変えない（`logAudit` は失敗を握りつぶす）
+- IP を残すのは管理者だけが対象で、乗っ取られた session の追跡に使うため（ADR-0462。`ADR-0158`・`ADR-0010` が「残さない」とした理由は見出しを偽れることで、`getClientIp` で解けた）。個人情報にあたりうる。保存期間は法令対応の後回しの決めに従う（未確認事項）。`create-user` の失敗の `detail` は固定の符号のまま（ADR-0461）
 
 #### SEC-ADMIN-022-AC-01 色見本の作成と削除が行為者付きで記録される
 
@@ -1061,7 +1066,19 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | 確かめ方 | E2E |
 | 出どころ | 実装から推定 |
 
-店長が問い合わせの状態を変え、返信し、テンプレートを作った後、その3行の監査ログの `actor_email` と `ip` が空でないこと。
+店長が問い合わせの状態を変え、返信し、テンプレートを作った後、その3行の監査ログの `actor_email` が店長のメールで、`ip` が要求に付けた `x-real-ip` の値であること。
+
+#### SEC-ADMIN-022-AC-03 ユーザー作成・強制失効・2要素のリセットの記録に行為者のメール・IP・ブラウザの名乗りが入る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-ADMIN-022 |
+| 根拠 | 一番強い操作（利用者を作る・session を切る・2要素を外す）の記録の粒度がほかの API と揃ったことを確かめるため |
+| 状態 | 推定 |
+| 確かめ方 | E2E・結合（`admin-audit-write.test.ts` の全部の結果） |
+| 出どころ | 実装から推定 |
+
+店長が利用者を作った後（形の誤りの 400 と成功の 201）の `admin_create_user` の行の `actor_email` が店長のメールで、`ip` が要求に付けた `x-real-ip` の値、`user_agent` が付けた名乗りで、偽の `x-forwarded-for` の値を含まないこと。強制失効と2要素のリセットも全部の結果の行で同じであること（強制失効の E2E は SEC-ADMIN-009-AC-01、結合 `tests/integration/api/admin-misc/admin-audit-write.test.ts` が全部の結果を見る）。
 
 ### SEC-ADMIN-023 個人情報と監査ログの読み出しを、行為者付きで監査ログに残す
 
@@ -1077,7 +1094,7 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 問い合わせの一覧・詳細と監査ログの読み出しは、読んだ人の id・メール・IP と、読んだ対象（一覧なら絞り込みの条件、詳細なら問い合わせの id）を監査ログに残す。読んだ個人情報そのものは記録に入れない。
 
 - 読んだ人の id・メールと読んだ対象は 2026-10-26 に満たした。読めた時（200 を返す時）に 1 行ずつ、一覧は `admin.contact.list`（`metadata` は `status`・`type`・`page`・`q_length` だけ。状態と種別は許可の値だけで、無ければ `null`。検索語そのものは入れず長さだけ）、詳細は `admin.contact.read`（`resource_id` は問い合わせの id）、監査ログは `admin.audit_logs.read` で書く。名前・メール・本文・件名・検索語は入れない。読めなかった時（認可の断り・404・読みの誤り）は書かない。記録に失敗しても読み出しは止めない（記録の補助が窓口の応答を変えない）
-- 読んだ人の IP は今のコードは満たさない（IP の取り出し `request-ip.ts` が要る。波 4。食い違いは trace-matrix.md の「食い違い」節の TM-ADMIN-64）。SEC-ADMIN-023-AC-01 は id とメールだけを見る
+- 読んだ人の IP とブラウザの名乗りは 2026-10-28（波 4）に満たした。3 つの読み出しの記録（`admin.contact.list`・`admin.contact.read`・`admin.audit_logs.read`）に `getAuditRequestContext`（`getClientIp` の IP、取れなければ `null`。ADR-0462）を付ける。SEC-ADMIN-023-AC-01 は id とメールだけ、AC-02 が IP を見る
 - テンプレートの一覧と色見本の一覧は読み出しの記録の対象にしない（個人情報を含まない）
 
 #### SEC-ADMIN-023-AC-01 問い合わせの詳細と監査ログを読むと、読んだ人付きの記録が増える
@@ -1091,6 +1108,18 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | 出どころ | 実装から推定 |
 
 店長の `aal2` の JWT で問い合わせの詳細と `/api/admin/audit-logs` を1回ずつ要求した後、監査ログにその2つの読み出しの行があり、どちらにもその店長の id とメールが入り、問い合わせの名前・メール・本文が入らないこと。
+
+#### SEC-ADMIN-023-AC-02 読み出しの記録に読んだ人の IP とブラウザの名乗りが入る
+
+| 属性 | 値 |
+| --- | --- |
+| 上位 | SEC-ADMIN-023 |
+| 根拠 | 読んだ人を後から端末の側からもたどれることを確かめるため。偽の見出しが残らないことも合わせて見る |
+| 状態 | 推定 |
+| 確かめ方 | E2E |
+| 出どころ | 実装から推定 |
+
+AC-01 と同じ 2 つの読み出しを、`x-real-ip`・偽の `x-forwarded-for`・`user-agent` を付けて要求した後、2 つの行の `ip` が `x-real-ip` の値、`user_agent` が付けた名乗りで、偽の `x-forwarded-for` の値を含まないこと。
 
 ## 派生要件
 
@@ -1159,7 +1188,7 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 | 状態 | 推定 |
 | 出どころ | 実装から推定（`src/app/api/admin/audit-logs/route.ts`） |
 
-`GET /api/admin/audit-logs` は、id・作った時刻・操作・操作した人の id・対象・対象の id・結果・詳しい文だけを、新しい順に 100 件まで返す。操作した人のメール・IP・ブラウザの情報・付帯の情報は返さない（`api-spec.md` は操作した人のメールも返すと書く。TM-ADMIN-12）。ページ送りは無い。DB の誤りは 500。読めた時は、読んだ人の id・メールだけで `admin.audit_logs.read` を監査に 1 行残す（ログの中身は入れない。SEC-ADMIN-023）。画面から呼ぶ所は無い。
+`GET /api/admin/audit-logs` は、id・作った時刻・操作・操作した人の id・対象・対象の id・結果・詳しい文だけを、新しい順に 100 件まで返す。操作した人のメール・IP・ブラウザの情報・付帯の情報は返さない（`api-spec.md` は操作した人のメールも返すと書く。TM-ADMIN-12）。ページ送りは無い。DB の誤りは 500。読めた時は、読んだ人の id・メール・IP・ブラウザの名乗りで `admin.audit_logs.read` を監査に 1 行残す（ログの中身は入れない。SEC-ADMIN-023）。画面から呼ぶ所は無い。
 
 ### DRV-ADMIN-006 管理の返信は保存を先にし、メールが送れなくても保存を残す
 
@@ -1203,7 +1232,7 @@ AC-01 と同じ要求を、`x-forwarded-for` の左端を毎回変えて送っ�
 
 ## 未確認事項
 
-- 問い合わせの管理画面（CONTACT のタブ）を作るか、FREQ-25・FR-ADMIN-009 を窓口だけに直すか、`ContactSection.tsx` を使われていないコードとして扱うか（ユーザーの判断。TM-ADMIN-01）
+- 問い合わせの管理画面（CONTACT のタブ）は 2026-10-28（波 4、決定 Q14 D9）に作った。FR-ADMIN-009 を窓口だけに直す案は採らなかった（TM-ADMIN-01 は解消）
 - 監査ログを読む画面を作るか（FREQ-508-AC-01。TM-ADMIN-02）
 - DRV-ADMIN-001〜008 を要件として認めるか。認めた物には受け入れ条件を起こす（TM-ADMIN-04）
 - 読み出しを監査に残す範囲（SEC-ADMIN-023。一覧の頁送りも全部か、詳細と監査ログだけか）と、読み出しの API に回数か件数の制限を求めるか（THR-ADMIN-020。今はどの SEC も求めていない。TM-ADMIN-38・39）

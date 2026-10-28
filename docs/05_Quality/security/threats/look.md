@@ -12,7 +12,7 @@ LOOK（ルック・コーディネート）の領域で考える脅威を、1つ
 | --- | --- |
 | 項目の数 | 23（THR-LOOK-001〜023） |
 | 守りがある物 | 非公開の LOOK を公開の道へ出さない（001）、署名の前に自分の道筋だけに絞り失敗は `null`（007・008。2026-10-28）、`og:image` を同一オリジンの窓口に（006。2026-10-28）、画面の XSS（017）、管理の窓口の権限と aal2（019。カードの操作ボタンも 2026-10-26 から窓口の `meta.canManage` で出し分け）、管理の窓口の回数・大きさの制限（012）、監査の記録（020）、Origin の確かめ（018）、画像の中身と保存名（013。2026-10-26）、画像の後始末（014。2026-10-26）、管理の入口の id と JSON（016 の管理の分。2026-10-26）、内部の誤りの文言を出さない（021 の管理の分。2026-10-26）、取り出しの失敗の分け方（022 の管理の分。2026-10-26） |
-| 守りが欠ける・弱い物 | 非公開の商品の ID が `look_items` から読める（002）、DB が aal2 を見ない（003）、表の権限が広い（004。波 2 で直した）、全件の取得と署名（009）、検索の関数の件数に上限が無い（010）、更新の途中の失敗（015）、DB の段に入力の制約が無い（023）、「新規作成」のボタンが役で出る（019 の残り。波 4） |
+| 守りが欠ける・弱い物 | 非公開の商品の ID が `look_items` から読める（002）、DB が aal2 を見ない（003）、表の権限が広い（004。波 2 で直した）、全件の取得と署名（009）、検索の関数の件数に上限が無い（010）、更新の途中の失敗（015）、DB の段に入力の制約が無い（023）。「新規作成」のボタンが役で出る件（019 の残り）は 2026-10-28 の波 4 で直した |
 | 対策の書き先 | 対策のセキュリティ要件 `SEC-LOOK-NNN` は要件の文書（`docs/02_Requirements/areas/look.md`）に書く。下の「対策」の欄は読み手のための写し |
 | 状態の付け方 | どれもコードを読んで起こし、ユーザーの確認を受けていないので「推定」。実行しての確かめはしていない |
 
@@ -201,11 +201,11 @@ flowchart LR
 | --- | --- |
 | 守るもの | 管理の変更の窓口の回数の制限の効き目と、数えの表の大きさ |
 | 脅威 | 管理の権限を持つ session を手に入れた者が、送るたびに `x-forwarded-for` を変えて、送り元ごとの制限を逃れる |
-| 起こり方 | 回数の制限は送り元を `x-forwarded-for` の先頭、無ければ `x-real-ip` から無条件に取る（`src/features/auth/middleware/rateLimit.ts:4-16`）。LOOK の管理の変更の窓口は送り元と操作者の2段で数える（`src/features/look/services/admin-rate-limit.ts:39-66`） |
-| 影響 | 送り元の段は効かない。操作者の段が同じ上限で残るので、1人の操作者の回数は止まる。偽った送り元の数だけ数えの行が増える |
+| 起こり方 | 基準コミット時点は、回数の制限が送り元を `x-forwarded-for` の先頭、無ければ `x-real-ip` から無条件に取っていた（`src/features/auth/middleware/rateLimit.ts`）。2026-10-28（波 4）に、共有の `getClientIp`（`src/lib/request-ip.ts`）が Vercel の見出し（手元の E2E は `CLIENT_IP_HEADER` が信じる `x-real-ip`）だけから取る形に直した（ADR-0416）。LOOK の管理の変更の窓口は送り元と操作者の2段で数える（`src/features/look/services/admin-rate-limit.ts:39-66`） |
+| 影響 | 基準コミット時点は送り元の段が効かず、操作者の段が同じ上限で残るので1人の操作者の回数は止まった。今は `x-forwarded-for` を読まないので偽って送り元の枠を増やせない。取れない配置は `ip null` の 1 つの枠になる（厳しい側）。操作者の段は元から残る |
 | 対策 | SEC-LOOK-011 |
 | ASVS | V11.1.4 |
-| 根拠 | 過去のレビューで High・Medium として指摘され、今も残る。`rateLimit.ts` は範囲外の共有部品で、LOOK 以外も同じ関数を通る。中継（Vercel など）が見出しを上書きするかは本番の構成で変わる（未デプロイなので未確認） |
+| 根拠 | 過去のレビューで High・Medium として指摘され、今も残る。`rateLimit.ts` は範囲外の共有部品で、LOOK 以外も同じ関数を通る。波 4 で直した。Vercel が `x-vercel-forwarded-for`・`x-real-ip` を上書きするかは本番の構成で変わる（未デプロイなので未確認。配備前に preview で実測する） |
 | 状態 | 推定 |
 | 出どころ | `docs/05_Quality/reviews/security/security_review_look.md:43`、`docs/05_Quality/reviews/security/security_review_look_id.md:44` |
 
@@ -313,8 +313,8 @@ flowchart LR
 | --- | --- |
 | 守るもの | LOOK のデータと非公開の LOOK |
 | 脅威 | ログインしていない人、2要素を済ませていない人、`admin.looks.*` の権限を外された人が、管理の窓口を叩く・管理の画面を開く |
-| 起こり方 | 窓口は操作ごとに `authorizeAdminPermission` で権限と `aal2` を確かめる（読み出しは `admin.looks.read`、変更は `admin.looks.manage`。`src/app/api/admin/looks/route.ts` の POST・GET の `authorizeAdminPermission`、`[id]/route.ts` の GET・PUT・PATCH・DELETE のそれ、`src/lib/auth/admin-rbac.ts:240-249`）。画面の側は作成と編集の頁が端末の側だけで動き、頁を開く前に認可を確かめない（`src/app/admin/look/create/page.tsx:1-7`、`src/app/admin/look/edit/[id]/page.tsx:1-30`）。管理の LOOK のタブは役（`admin`）で出し分け（`src/app/admin/page.tsx` の `case 'LOOK'`）、`LookSection` の編集・公開・削除のボタンは権限で出し分けなかった。**2026-10-26 にカードの3つのボタンを直した**: `GET /api/admin/looks` が `meta.canManage`（`admin.looks.manage` の認可をもう一度行い、権限が無いための 403 だけ false。401・503 はそのまま返す）を添え、`LookSection` は `canManage === true` の時だけ出す（読み込み中・失敗・`meta` なし・偽は出さない）。暫定の作りで、`admin-rbac.ts` が権限の集合を返すようになったら1回にする（ADR-0161）。「新規作成」のボタンは `src/app/admin/page.tsx` のヘッダーが役で出していて、共有の頁なので波 4 まで直せない |
-| 影響 | 窓口が止めるのでデータには届かない。権限の無い人にも「新規作成」とフォームが見え、押すと 403 になる（カードの3つのボタンは出なくなった） |
+| 起こり方 | 窓口は操作ごとに `authorizeAdminPermission` で権限と `aal2` を確かめる（読み出しは `admin.looks.read`、変更は `admin.looks.manage`。`src/app/api/admin/looks/route.ts` の POST・GET の `authorizeAdminPermission`、`[id]/route.ts` の GET・PUT・PATCH・DELETE のそれ、`src/lib/auth/admin-rbac.ts:240-249`）。画面の側は作成と編集の頁が端末の側だけで動き、頁を開く前に認可を確かめない（`src/app/admin/look/create/page.tsx:1-7`、`src/app/admin/look/edit/[id]/page.tsx:1-30`）。管理の LOOK のタブは役（`admin`）で出し分け（`src/app/admin/page.tsx` の `case 'LOOK'`）、`LookSection` の編集・公開・削除のボタンは権限で出し分けなかった。**2026-10-26 にカードの3つのボタンを、2026-10-28（波 4）に「新規作成」を直した**: `GET /api/admin/looks` が `meta.canManage` を添える。はじめは `admin.looks.manage` の認可をもう一度行う暫定の作りだったが、波 4 で `admin-rbac.ts` の認可の成功の結果が権限の集合（`permissions`）を返すようにし、`canManage` はその集合から作る 1 回の認可にした（集合が無ければ false。ADR-0166。ADR-0161 の暫定を解いた）。`LookSection` は `canManage === true` の時だけ「新規作成」とカードの3つのボタンを出す（読み込み中・失敗・`meta` なし・偽は出さない）。以前は「新規作成」を `src/app/admin/page.tsx` のヘッダーが役で出していたが、ヘッダーの分岐を消した |
+| 影響 | 窓口が止めるのでデータには届かない。権限の無い人にも作成のフォームの頁を直に開けば見え、送ると 403 になる（「新規作成」とカードの3つのボタンは出なくなった。作成の頁の入口の確かめは無い） |
 | 対策 | SEC-LOOK-019 |
 | ASVS | V4.1.3、V4.3.1 |
 | 根拠 | 窓口の守りは過去のレビューで確かめられた。権限を役割ごとに切り替えられるようになった（`docs/superpowers/specs/2026-10-23-group-g-design.md:565-566`）ので、役で出す画面と権限で止める窓口がずれうる。`admin-rbac.ts` は範囲外の共有部品。全体の NFR-SEC-005・008（範囲外。権限管理・RBAC）と FREQ-316（範囲外。管理 API の認可を1つの道にまとめる）・FREQ-519（範囲外。役割ごとの操作の設定）に当てはめた |
@@ -327,8 +327,8 @@ flowchart LR
 | --- | --- |
 | 守るもの | LOOK の変更の証跡 |
 | 脅威 | 誰がいつ LOOK を公開・削除したかを後から追えず、不正や誤りを否認される |
-| 起こり方 | 管理の窓口の作成・更新・状態・削除は、成功も失敗も `logAdminLookAudit` で残す（`src/features/look/services/admin-audit.ts:7-30`）。ただし送り元の IP を渡さない（`admin-audit.ts:17-29`）。監査の書き込みの失敗は警告だけで握りつぶす（`src/lib/audit.ts:67-70,87-89`、範囲外）。DB を直接書き換えた時（THR-LOOK-003）は何も残らない |
-| 影響 | 乗っ取られた session での変更を、送り元から追えない。監査の表が止まっても気づけない |
+| 起こり方 | 管理の窓口の作成・更新・状態・削除は、成功も失敗も `logAdminLookAudit` で残す（`src/features/look/services/admin-audit.ts:7-30`）。基準コミット時点は送り元の IP を渡さなかったが、2026-10-28（波 4）に共有の `getAuditRequestContext`（`getClientIp` の値。取れなければ `null`、`x-forwarded-for` は読まない）で IP とブラウザの名乗りを渡す形に直した（ADR-0462）。監査の書き込みの失敗は警告だけで握りつぶす（`src/lib/audit.ts:67-70,87-89`、範囲外）。DB を直接書き換えた時（THR-LOOK-003）は何も残らない |
+| 影響 | 基準コミット時点は、乗っ取られた session での変更を送り元から追えなかった。今は IP が入る（取れない配置では `null`）。IP は個人情報にあたりうる。保存期間は法令対応の後回しの決めに従う。監査の表が止まっても気づけない |
 | 対策 | SEC-LOOK-020 |
 | ASVS | ASVS 未対応付け |
 | 根拠 | 監査の無さは 2026-04-18 のレビューで Must Fix とされ、直った（`security_review_look.md:54` で Fixed）。IP を渡さない点は2026-10-24 のコードと DB の移行の読み直しで見つけた。全体の NFR-SEC-005・011（範囲外。監査ログ）に当てはめた |
@@ -383,7 +383,8 @@ flowchart LR
 
 - 本番の Supabase の置き場 `look-images` の公開の設定・大きさと種類の上限・`storage.objects` の方針（THR-LOOK-005）。移行 `sec_storage_buckets` は書いたが本番にはまだ当てていない。本番の今の値は適用の前に読んで確かめる（読むだけ。値は報告に残す）
 - 本番の PostgREST の `max_rows`（THR-LOOK-010）。手元は 1000
-- 本番の中継（Vercel など）が `x-forwarded-for` を上書きするか（THR-LOOK-011）。本番のアプリはまだデプロイしていない
+- 本番の Vercel が `x-vercel-forwarded-for`・`x-real-ip` を上書きするか（THR-LOOK-011、THR-LOOK-020 の IP）。本番のアプリはまだデプロイしていない。配備前に最初の preview で偽の見出しを送って実測する（ADR-0416）
+- 監査の IP の保存期間と開示（THR-LOOK-020）。法令対応の後回しの決めに従い、ここでは決めない（ADR-0462）
 - `aal1` の JWT で PostgREST から非公開の LOOK を読み書きできるか（THR-LOOK-003）、anon で `look_items` から非公開の商品の ID が読めるか（THR-LOOK-002）は、実際に叩いて確かめていない
 - multipart のファイル名が `/` を残すかと、置き場が道筋を正すか（THR-LOOK-013）
 - `next/image` の最適化のキャッシュの長さの既定と、署名つき URL の期限がどう組み合わさるか（THR-LOOK-006）

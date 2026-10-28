@@ -71,7 +71,7 @@ SEARCH の領域の要求・要件・受け入れ条件・派生要件を、追�
 | FR-SEARCH-019-search-api-contract-and-headers | FREQ-187-AC-01、SEC-SEARCH-004-AC-01、SEC-SEARCH-009-AC-02、SEC-SEARCH-010-AC-01、SEC-SEARCH-012-AC-01、SEC-SEARCH-014-AC-01、SEC-SEARCH-019-AC-01（HTTP だけ） |
 | FR-SEARCH-020-search-db-function-grants | FREQ-186-AC-02、SEC-SEARCH-002-AC-01、SEC-SEARCH-007-AC-01、SEC-SEARCH-008-AC-01、SEC-SEARCH-009-AC-01（手元の DB の PostgREST を直接） |
 | FR-SEARCH-021-search-injected-rows | SEC-SEARCH-001-AC-01・AC-02、SEC-SEARCH-003-AC-01（題に `\` を含む公開の商品を試験の中で足す）、SEC-SEARCH-013-AC-01、SEC-SEARCH-015-AC-01、SEC-SEARCH-016-AC-01 |
-| FR-SEARCH-022-search-rate-limit | SEC-SEARCH-005-AC-01・AC-02、SEC-SEARCH-006-AC-01、SEC-SEARCH-017-AC-01（search_news の EXECUTE を外す）、SEC-SEARCH-020-AC-01（偽の送り元の側。波 4 まで赤）・AC-02（外のオリジンの側）。他の試験を壊すので、playwright.config.ts の isolated-global の project で最後に流す |
+| FR-SEARCH-022-search-rate-limit | SEC-SEARCH-005-AC-01・AC-02、SEC-SEARCH-006-AC-01、SEC-SEARCH-017-AC-01（search_news の EXECUTE を外す）、SEC-SEARCH-020-AC-01（偽の送り元の側。2026-10-28 に直した）・AC-02（外のオリジンの側）。他の試験を壊すので、playwright.config.ts の isolated-global の project で最後に流す |
 | FR-SEARCH-023-search-two-column-heading-results-header | FREQ-188-AC-03、FREQ-191-AC-02、FREQ-196-AC-01・02、FREQ-197-AC-01〜03、FREQ-198-AC-01・03 |
 | FR-SEARCH-024-search-tab-rows-viewport-details | FREQ-192-AC-03、FREQ-193-AC-02、FREQ-195-AC-02、FREQ-199-AC-03、FREQ-200-AC-03、FREQ-201-AC-02 |
 
@@ -1617,13 +1617,13 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で ITEM 検索結果�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-SEARCH-006 |
-| 根拠 | 送り元の見出しを無条件に信じると、送るたびに見出しを変えて制限を逃れられ、数えの行も増え続けるため。共有部品の `rateLimit.ts`（範囲外）の直しが要り、NEWS の SEC-NEWS-011（範囲外）と同じ根 |
+| 根拠 | 送り元の見出しを無条件に信じると、送るたびに見出しを変えて制限を逃れられ、数えの行も増え続けるため。共有部品の `rateLimit.ts`（範囲外）の直しが要り、NEWS の SEC-NEWS-011（範囲外）と同じ根。2026-10-28（波 4）に `rateLimit.ts` が共有の `getClientIp` を使う形に直った（ADR-0416） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | OWASP ASVS 4.0.3 V11.1.4。`docs/05_Quality/reviews/security/security_review_search.md` |
 | 優先度 | MUST |
 
-検索とサジェストの回数の制限は、信頼できる中継が付けた送り元だけを使い、利用者が付けた `x-forwarded-for` を変えても同じ送り元として数える。今のコードは満たさない。
+検索とサジェストの回数の制限は、信頼できる中継が付けた送り元だけを使い、利用者が付けた `x-forwarded-for` を変えても同じ送り元として数える。満たす（2026-10-28。`rateLimit.ts` の鍵は共有の `getClientIp` が Vercel の見出し `x-vercel-forwarded-for`→`x-real-ip` だけから取り、`x-forwarded-for` は読まない。取れない時は `null` の 1 つの枠。ADR-0416）。E2E は書き換え済みで、流して確かめるのは controller の最後の実行。
 
 #### SEC-SEARCH-006-AC-01 送り元の見出しを変えても制限を逃れられない
 
@@ -1635,7 +1635,7 @@ mobile（390px）/ tablet（768px）/ desktop（1280px）で ITEM 検索結果�
 | 確かめ方 | E2E（本番と同じ中継の構成が要る。手元では中継の見出しの付け方をまねる） |
 | 出どころ | 実装から推定 |
 
-`x-forwarded-for` を毎回違う値にして `/api/search` を121回送ると、121回目が 429 になること。
+`x-forwarded-for` を毎回違う値にして `/api/search` を121回送ると、121回目が 429 になること。`x-forwarded-for` は読まれないので、見出しの無い要求が集まる送り元 `null` の 1 つの枠を逃れられない（試験は `isolated-global` の project で枠を消しながら流す）。
 
 ### SEC-SEARCH-007 検索の関数は件数を上限に丸め、直接の呼び出しでも重くならない
 
@@ -1979,13 +1979,13 @@ ITEM・LOOK・NEWS の画像は、URL のホストが自分の Supabase で、�
 | 属性 | 値 |
 | --- | --- |
 | 上位 | THR-SEARCH-020 |
-| 根拠 | 数えが送り元の IP だけで、その IP を他人が名乗れ、外のサイトからも閲覧者の端末に呼び出しを送らせられるので、攻撃者が狙った利用者の検索とホームのプレビューを止められるため。共有部品の `rateLimit.ts`（範囲外）の直しが要り、SEC-SEARCH-006 と根は同じ |
+| 根拠 | 数えが送り元の IP だけで、その IP を他人が名乗れ、外のサイトからも閲覧者の端末に呼び出しを送らせられるので、攻撃者が狙った利用者の検索とホームのプレビューを止められるため。共有部品の `rateLimit.ts`（範囲外）の直しが要り、SEC-SEARCH-006 と根は同じ。2026-10-28（波 4）に直った（ADR-0416） |
 | 状態 | 推定 |
 | 確かめ方 | E2E |
 | 出どころ | OWASP ASVS 4.0.3 V11.1.4（当てはめは推定）。実装から推定（2026-10-24 のセキュリティの点検） |
 | 優先度 | SHOULD |
 
-検索とサジェストの回数の制限は、他人が名乗れない送り元で数え（SEC-SEARCH-006）、外のサイトの頁から送られた呼び出し（`Sec-Fetch-Site` が `cross-site` など）は閲覧者の分の数えに入れない。外のサイト側は満たす（2026-10-26。`/api/search` と `/api/suggest` は、`Sec-Fetch-Site` が付いていて `same-origin`・`none` 以外の要求を、検査と回数の制限より前に 403 で断り、枠に数えない。見出しの無い要求（curl・古いブラウザ）は通す。`same-site` は断る）。偽の送り元の側は満たさない（共有部品 `rateLimit.ts` の直しが要り、波 4）。
+検索とサジェストの回数の制限は、他人が名乗れない送り元で数え（SEC-SEARCH-006）、外のサイトの頁から送られた呼び出し（`Sec-Fetch-Site` が `cross-site` など）は閲覧者の分の数えに入れない。外のサイト側は満たす（2026-10-26。`/api/search` と `/api/suggest` は、`Sec-Fetch-Site` が付いていて `same-origin`・`none` 以外の要求を、検査と回数の制限より前に 403 で断り、枠に数えない。見出しの無い要求（curl・古いブラウザ）は通す。`same-site` は断る）。偽の送り元の側も満たす（2026-10-28。共有部品 `rateLimit.ts` が `getClientIp` を使う形に直った。ADR-0416）。
 
 #### SEC-SEARCH-020-AC-01 他人の送り元を名乗っても、その利用者の検索が止まらない
 
@@ -1997,7 +1997,7 @@ ITEM・LOOK・NEWS の画像は、URL のホストが自分の Supabase で、�
 | 確かめ方 | E2E（本番と同じ中継の構成が要る。手元では中継の見出しの付け方をまねる） |
 | 出どころ | 実装から推定 |
 
-`x-forwarded-for` に利用者 A の送り元を書いて `/api/search?preview=true` を21回送った後も、利用者 A の `/?q=<語>` にプレビューが出ること。今のコードは満たさない（偽の送り元の側。波 4）。外のオリジンの側は SEC-SEARCH-020-AC-02 で確かめる。
+`x-forwarded-for` に利用者 A の送り元を書いて `/api/search?preview=true` を21回送った後も、利用者 A の `/?q=<語>` にプレビューが出ること。偽の送り元の側は 2026-10-28 に直った（`x-forwarded-for` は読まれず、数えの鍵は中継が付けた `x-vercel-forwarded-for`→`x-real-ip`）。外のオリジンの側は SEC-SEARCH-020-AC-02 で確かめる。
 
 #### SEC-SEARCH-020-AC-02 外のサイトの頁から呼ばせた要求は 403 で、その閲覧者のプレビューが止まらない
 

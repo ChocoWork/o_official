@@ -81,14 +81,14 @@ graph LR
 
 #### 対応要件
 
-FR-ADMIN-005、FREQ-17、DRV-LOOK-008・011・012、SEC-LOOK-019-AC-05。
+FR-ADMIN-005、FREQ-17、DRV-LOOK-008・011・012、SEC-LOOK-019-AC-04・AC-05。
 
 #### 入出力
 
 | 項目 | 内容 |
 | --- | --- |
 | 入力 | props なし。`GET /api/admin/looks` の `{data, meta}` |
-| 出力 | 読み込み中・0件・カードの格子（2列、md 3列、lg 4列）。カードは1枚目の画像・状態の札・シーズン・テーマと、`meta.canManage` が真の時だけ3つのボタン |
+| 出力 | 読み込み中・0件・カードの格子（2列、md 3列、lg 4列）。カードは1枚目の画像・状態の札・シーズン・テーマと、`meta.canManage` が真の時だけ3つのボタン。`meta.canManage` が真の時だけ、一覧（0件の表示も）の上に「新規作成」（`/admin/look/create` へのリンクのボタン、右寄せ） |
 | 副作用 | `PATCH /api/admin/looks/<id>`（JSON `{status}`）、`DELETE /api/admin/looks/<id>`、`confirm`・`alert`、`console.error` |
 
 #### 正常フロー
@@ -110,7 +110,8 @@ FR-ADMIN-005、FREQ-17、DRV-LOOK-008・011・012、SEC-LOOK-019-AC-05。
 | 削除の応答が `ok` でない・例外 | 記録して「LOOKの削除に失敗しました」 | `src/components/LookSection.tsx` |
 | `image_urls` が無い・空 | `/placeholder.png` | `src/components/LookSection.tsx` |
 
-- `meta` が無い・`canManage` が真でない（偽・文字・数）時と、読み込み中・取り出しの失敗の時は、3つのボタンを出さない（fail-closed）。LOOK の札・シーズン・テーマ・画像は見える。押された時の守りは窓口の 403 で、画面の出し分けは案内（SEC-LOOK-019-AC-05、ADR-0161）
+- `meta` が無い・`canManage` が真でない（偽・文字・数）時と、読み込み中・取り出しの失敗の時は、3つのボタンと「新規作成」を出さない（fail-closed）。LOOK の札・シーズン・テーマ・画像は見える。押された時の守りは窓口の 403 で、画面の出し分けは案内（SEC-LOOK-019-AC-04・AC-05、ADR-0161、ADR-0166）
+- 「新規作成」は一覧が 0 件の表示（「LOOKがありません」）でも出す（出さないと最初の 1 件を作れない）。2026-10-28（波 4）より前は親の頁が役（`admin`）で出していて、権限を外された店長にも出ていた。親の頁の LOOK の分岐は消した（ADR-0166）
 
 #### 状態・永続化
 
@@ -119,7 +120,7 @@ FR-ADMIN-005、FREQ-17、DRV-LOOK-008・011・012、SEC-LOOK-019-AC-05。
 
 #### 認証認可
 
-- 画面は守りを持たない。タブを出すかは親（`src/app/admin/page.tsx`、範囲外）が役で決める
+- 画面は守りを持たない。タブを出すかは親（`src/app/admin/page.tsx`、範囲外）が役で決める。「新規作成」とカードのボタンは窓口の `meta.canManage` で出す
 - 送信は `clientFetch`（範囲外）。CSRF の守りは proxy の Origin の検査と `clientFetch` の見出しに任せる
 - テーマは JSX の文字として出す
 
@@ -145,6 +146,9 @@ FR-ADMIN-005、FREQ-17、DRV-LOOK-008・011・012、SEC-LOOK-019-AC-05。
 | 14 | 操作ボタンの出し分け（出さない） | `canManage:false`・`meta:{}`・`meta` なし・`canManage:'true'`（文字）・`1` | 3つとも出ない。札・シーズン・テーマ・画像は見える |
 | 15 | 読み込み中・取り出しの失敗 | 応答を待たせる、`ok:false` | ボタンを出さない |
 | 16 | 取り直しで権限が外れた | 2回目の応答が `canManage:false` | ボタンが消える |
+| 17 | 「新規作成」（出す） | `canManage:true`、LOOK が 1 件以上・0 件 | `/admin/look/create` へのリンク「新規作成」が出る（0 件でも） |
+| 18 | 「新規作成」（出さない） | `canManage:false`・`meta:{}`・`meta` なし・`'true'`（文字）。読み込み中・`ok:false` | リンク「新規作成」が出ない（LOOK がある時も 0 件の時も） |
+| 19 | 429 でも本文を読む | 一覧の取得・PATCH・DELETE が 429（`arrayBuffer` を持つ差し替え） | `arrayBuffer` が 1 回呼ばれ、失敗の表示は今までと同じ（波 4 Task 1b） |
 
 ### DD-LOOK-061 作成の頁 create/page.tsx
 
@@ -274,7 +278,7 @@ FR-ADMIN-005、FREQ-17、FREQ-316・327（範囲外、AUTH）、DRV-LOOK-009・0
 
 | 処理 | 入力 | 成功 | 失敗 |
 | --- | --- | --- | --- |
-| 一覧（GET） | なし | 200 `{data, meta:{canManage}}`（`looks` の8つの欄と `look_items(item_id)`、作った日時の新しい順、`image_urls` は署名つき。`canManage` は `admin.looks.manage` の認可をもう一度行った結果） | 認可の応答（`canManage` を決める確かめが 401・503 ならその応答）、500 `Failed to fetch looks`、500 `Internal server error` |
+| 一覧（GET） | なし | 200 `{data, meta:{canManage}}`（`looks` の8つの欄と `look_items(item_id)`、作った日時の新しい順、`image_urls` は署名つき。`canManage` は認可の成功の結果の権限の集合に `admin.looks.manage` があるか） | 認可の応答（401・403・503）、500 `Failed to fetch looks`、500 `Internal server error` |
 | 作成（POST） | multipart: `seasonYear`・`seasonType`・`theme`・`themeDescription`・`status`・`linkedItemIds`（JSON の数の配列）・`images`（1枚以上） | 201 `{success:true, id}` | 下の異常フローの表 |
 
 入力の形（`createLookSchema`）: `seasonYear` は数に直して 2000〜2100 の整数、`seasonType` は SS・AW、`theme` は前後の空白を除いて1〜200字、`themeDescription` は前後の空白を除いて4000字まで（無ければ空）、`status` は private・published、`linkedItemIds` は正の整数の配列で1つ以上。画像は JPEG・PNG・WebP・GIF（申告の種類と中身の先頭の印が合うこと）、1枚 5MB。
@@ -296,7 +300,7 @@ FR-ADMIN-005、FREQ-17、FREQ-316・327（範囲外、AUTH）、DRV-LOOK-009・0
 
 一覧:
 
-1. `admin.looks.read` で認可する。続けて `admin.looks.manage` で認可をもう一度行う（何も書かない）。権限が無いための 403 だけ `canManage:false` にし、401・503 はその応答を返す
+1. `admin.looks.read` で認可する（1回だけ）。成功の結果の `permissions` に `admin.looks.manage` があれば `canManage:true`、無い・`permissions` 自体が無ければ `false`。401・403・503 は認可の応答を返す
 2. service role の client で全部を取り、作った日時の新しい順
 3. LOOK ごとに `image_urls`（無ければ空）を署名して 200 `{data, meta:{canManage}}`
 
@@ -337,7 +341,7 @@ FR-ADMIN-005、FREQ-17、FREQ-316・327（範囲外、AUTH）、DRV-LOOK-009・0
 
 #### 認証認可
 
-- 一覧は `admin.looks.read`（応答の `meta.canManage` のために `admin.looks.manage` もう一度確かめる。暫定。ADR-0161）、作成は `admin.looks.manage`。`authorizeAdminPermission`（範囲外）が token・session・DB の ACL・aal2 を確かめる（SEC-LOOK-019）。読み出しだけの人の一覧では、共有の認可が `[RBAC] Permission denied` の警告を1行足す
+- 一覧は `admin.looks.read`、作成は `admin.looks.manage`。`authorizeAdminPermission`（範囲外）が token・session・DB の ACL・aal2 を確かめる（SEC-LOOK-019）。応答の `meta.canManage` は、一覧の認可（1回）が返す成功の結果の権限の集合 `permissions` に `admin.looks.manage` があるか（集合が無ければ false。2026-10-28、ADR-0166。以前は `admin.looks.manage` をもう一度認可していた暫定で、ADR-0161）
 - 作成の回数は送り元と操作者の2段（SEC-LOOK-011、DD-LOOK-066）。一覧は回数の制限が無い
 - CSRF は proxy の Origin の検査（範囲外）に任せる
 - DB と置き場は service role で操作し、RLS の管理の方針（DATA-LOOK-003）は通らない
@@ -371,7 +375,7 @@ FR-ADMIN-005、FREQ-17、FREQ-316・327（範囲外、AUTH）、DRV-LOOK-009・0
 | 19 | 例外（操作者あり） | 回数の関数が投げる | 500 `Internal server error`、監査 `Unexpected create error` |
 | 20 | 例外（操作者なし） | 認可が投げる | 500、監査なし |
 | 21 | 一覧の認可の失敗 | 認可が `ok:false` | 認可の応答 |
-| 21a | 一覧の `canManage` | 2回目の認可が ok・403・401・503 | `meta.canManage` が true・false、401・503 はその応答 |
+| 21a | 一覧の `canManage` | 認可が 1 回。成功の結果の `permissions` に manage がある・read だけ・`permissions` なし。認可が 403・503 | `meta.canManage` が true・false・false。認可は 1 回だけ呼ぶ。403・503 はその応答 |
 | 22 | 一覧の DB の失敗 | `error` あり | 500 `Failed to fetch looks` |
 | 23 | 一覧の成功 | 2件（片方の `image_urls` が null） | 200、署名つきの画像、null は空として署名 |
 | 24 | 一覧の `data` が空 | `data:null` | 200 `{data:[], meta:{canManage}}` |
@@ -548,7 +552,7 @@ DD-LOOK-063 と同じ差し替え。`params` は `Promise.resolve({id:"1"})`。
 
 #### 対応要件
 
-FR-ADMIN-005。SEC-LOOK-020（送り元を残す）は満たさない。
+FR-ADMIN-005。SEC-LOOK-020（送り元を残す）。2026-10-28（波 4）に満たした（ADR-0462）。
 
 #### 入出力
 
@@ -556,11 +560,11 @@ FR-ADMIN-005。SEC-LOOK-020（送り元を残す）は満たさない。
 | --- | --- |
 | 入力 | `request`、`actorId`、`actorEmail`、`action`、`outcome`（success・failure）、`detail`、`resourceId?`（文字・数・null）、`metadata?` |
 | 出力 | `logAudit`（範囲外）の戻り値 |
-| 書く値 | `action`・`actor_id`・`actor_email`・`resource:'look'`・`resource_id`（文字に直す。無ければ null）・`outcome`・`detail`・`user_agent`（要求の見出し。無ければ null）・`metadata`（無ければ null） |
+| 書く値 | `action`・`actor_id`・`actor_email`・`resource:'look'`・`resource_id`（文字に直す。無ければ null）・`outcome`・`detail`・`ip`（`getClientIp` の値。取れなければ null）・`user_agent`（要求の見出し。無い・空なら null）・`metadata`（無ければ null） |
 
 #### 正常フロー
 
-1. 要求の `user-agent` の見出しを読む
+1. 共有の `getAuditRequestContext(request)` で送り元の IP と `user-agent` を読む（IP は Vercel の見出し、または `CLIENT_IP_HEADER` を立てた配置の `x-real-ip` だけから取り、`x-forwarded-for` は読まない。DD-AUTH-038）
 2. `resourceId` を文字に直し、`logAudit` に渡す
 
 #### 異常フロー
@@ -568,10 +572,11 @@ FR-ADMIN-005。SEC-LOOK-020（送り元を残す）は満たさない。
 | 場合 | 動き | 道 |
 | --- | --- | --- |
 | `user-agent` が無い・空 | null | `src/features/look/services/admin-audit.ts` |
+| 送り元の IP が取れない（信頼する見出しが無い・形が IP でない・旗が無い配置） | `ip` が null。`x-forwarded-for` の値は入れない | `src/features/look/services/admin-audit.ts` |
 | `resourceId` が無い・null | null | `src/features/look/services/admin-audit.ts` |
 | `metadata` が無い | null | `src/features/look/services/admin-audit.ts` |
 
-- 送り元の IP は残さない。`logAudit` の失敗の扱いは共有部品に任せる
+- 送り元の IP は残す（以前の「残さない」は ADR-0462 が置き換えた）。保存期間は法令対応の後回しに従う。`logAudit` の失敗の扱いは共有部品に任せる
 
 #### 状態・永続化
 
@@ -587,9 +592,10 @@ FR-ADMIN-005。SEC-LOOK-020（送り元を残す）は満たさない。
 
 | # | 観点 | 入力 | 期待 |
 | --- | --- | --- | --- |
-| 1 | 全部の値 | `resourceId:5`、`metadata`、`user-agent` あり | `resource:'look'`・`resource_id:'5'`・`user_agent`・`metadata` |
-| 2 | 欠け | `resourceId` なし、`metadata` なし、`user-agent` なし | `resource_id`・`user_agent`・`metadata` が null |
+| 1 | 全部の値 | `resourceId:5`、`metadata`、`user-agent`、`x-real-ip` あり | `resource:'look'`・`resource_id:'5'`・`ip`（`x-real-ip` の値）・`user_agent`・`metadata` |
+| 2 | 欠け | `resourceId` なし、`metadata` なし、`user-agent` なし | `resource_id`・`ip`・`user_agent`・`metadata` が null |
 | 3 | null の id | `resourceId:null` | `resource_id:null` |
+| 4 | 偽の `x-forwarded-for` | `x-forwarded-for` だけ付ける | `ip` が null で、その値は入らない |
 
 ### DD-LOOK-066 管理の変更の回数の制限 enforceAdminLookMutationRateLimit
 
